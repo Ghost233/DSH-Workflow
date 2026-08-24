@@ -1,2 +1,83 @@
 # DSH-Workflow
-DSH-Workflow
+
+这是一个运行在 DeepSeek Harness 之外的 Owner 工作流插件。`deepseek-harness/` 是只读上游子模块；插件、脚本、文档和测试均位于主工程，绝不修改该子模块。
+
+## 启动
+
+推荐按 Harness 来源选择两个启动脚本：
+
+```sh
+# 使用 npm 上指定的 DeepSeek Harness 版本（可替换为 latest 或其他版本）
+./start-owner-workflow-npm.sh --version 0.1.0-rc.8
+
+# 使用 deepseek-harness 子模块当前检出的、已构建版本
+./start-owner-workflow-submodule.sh
+```
+
+npm 模式也可使用环境变量固定版本：
+
+```sh
+DSH_NPM_VERSION=0.1.0-rc.8 ./start-owner-workflow-npm.sh
+```
+
+子模块模式不安装、构建或修改 `deepseek-harness/`。它会以子模块当前 commit 在主工程的 `.dsh-harness-runtime/<commit>/` 准备独立依赖，并从该 commit 的源码构建匹配的 CLI 与 Web 产物后启动。原有启动脚本仍保留为高级入口，可使用 `DSH_LAUNCHER=npx|source|source-runtime` 选择来源。
+
+npm 和独立子模块源码启动模式都会默认传递 `--no-open`，不会自动打开浏览器；需要恢复自动打开时设置 `DSH_WEB_OPEN=1`。
+
+兼容原有调用：
+
+```sh
+./start-owner-workflow.sh
+```
+
+在 Harness 中选择 `owner-workflow` Agent preset 后，直接用自然语言描述需求即可，用户始终只和主代理沟通。只读代码审计进入 `workflow_audit`；需要实际执行但不修改仓库的任务进入后台 Operation；需要修改仓库时才执行 `workflow_preflight` → `workflow_start`，创建独立 workflow 分支和 worktree。既有改动和子模块内部改动不会被自动提交、暂存、丢弃或隐藏。开发工作流使用带优先级与失败策略的 `DSH_PLAN_V2` 任务级 DAG、Owner Registry 审批、固定验证和事件驱动 `workflowd` 调度；没有 Quick 模式。
+
+Operation Operator 默认继承主代理模型。如需使用低成本模型，可在启动前设置：
+
+```sh
+DSH_OWNER_WORKFLOW_OPERATION_MODEL=<模型编号> ./start-owner-workflow-submodule.sh
+```
+
+跨 provider 时同时设置 `DSH_OWNER_WORKFLOW_OPERATION_PROVIDER`。Operation 使用通用受控能力并逐条执行一次性命令，不把 ADB、Docker 或某个项目的临时命令固化进 Workflow 插件；多个只读检查不能用 `&&`、分号或管道拼接。需要外部副作用时，主代理调用 `operation_approve`，由 Harness 在当前对话显示原生“拒绝/允许一次”授权卡片；普通文本不会产生授权。Operator 会主动回报，主代理不会轮询状态。
+
+Owner Registry 提案与 DAG 计划批准使用 Harness 原生问询面板。编排者直接调用 `workflow_owner_change_approve` 或 `workflow_plan_approve`，面板提供“同意”“不同意”和自定义输入；只有明确选择“同意”才会修改 Registry 或固定计划。编排者不会再输出要求用户复制回复的批准口令。
+
+Owner 在独立 worktree 中使用 `workspace-write`，子线程自身不能请求授权。若同一精确命令必须访问 worktree 外的共享 SDK、编译器或缓存，Owner 会调用 `owner_host_exec`，由 Harness 在主对话展示原生授权卡片；只有“允许一次”才执行该命令。用户仍然只与主代理沟通。
+
+Owner、Planner 与 Reviewer 使用正式 descriptor-backed one-shot Harness 子代理，任务结束即释放运行资源；`owner_submit` 的固定验证会自动把共享 SDK/缓存访问请求路由到主代理授权，不依赖子代理猜测。验证契约同时固定 argv 与受限仓库相对 cwd；新的 Flutter 验证必须显式声明包根 cwd。授权后实际执行失败时，Runtime 会保留有界 stdout/stderr 并返回同一 Owner 修复，不会再误报为授权阻塞。验证快照保留相对符号链接，避免虚假的 worktree 内容漂移。
+
+Owner 因等待主代理授权而进入 `blocked` 后，主线程先查询 `workflow_supervisor_status`，再使用返回的完整 workflow、task 和 Owner 编号调用 `workflow_owner_recover`。恢复会继续使用原分支、原 worktree 和未提交修改，不会重建 Workflow；任务超时从本次恢复时间重新计算，不会沿用旧 reservation 的启动时间。
+
+Planner 在计划中只选择 Owner ID。Runtime 会从正式 Registry 注入 Owner 名称、职责、scope、exclude 和父子关系，并使用注入后的范围校验每个任务的 `write`；模型改写描述或伪造更宽 scope 都不会改变权限边界。
+
+独立计划 Reviewer 通过专用 `workflow_plan_review_submit` 提交结构化结果，状态只能是 `passed` 或 `needs_revision`。首次契约错误会携带确定性校验信息自动重试一次，不再解析普通文本 JSON，也不会因模型使用 `failed` 等未知状态而丢失整个工作流。
+
+后台 Operation 存在时，当前会话标题旁会出现“等待 N”；侧边栏底部的“主动等待 N”可以查看所有会话、所有已登记工作区的等待事项。列表明确显示目标、等待对象、状态、已等待时间和最近信息。它直接读取 `.dsh-workflow/operations/` 的确定性状态，不要求模型维护列表，也不会向 Harness 会话日志写入第三方事件。
+
+当前先保留外置 workflowd 的手动启动方式：
+
+```sh
+run-owner-workflow --workflow-id <workflow-id>
+```
+
+Dashboard 会随 Web Harness 一起注入，但本轮不自动启动 workflowd。Harness 启动后，在同一地址打开：
+
+```text
+http://127.0.0.1:3080/owner-workflow
+```
+
+页面先选择 Runtime 已登记的业务工作区，再切换查看开发 workflow 和后台 Operation；只读展示任务级 DAG、Owner、Operation 状态与有限事件摘要，不提供调度、写入、命令或 Git 操作。会话头部和侧边栏等待列表通过同源只读接口 `/owner-workflow/api/waits` 共享同一份状态。浏览器只传 opaque workspace ID，不能传入本地路径。端口不是 `3080` 时，请替换为 Harness 实际监听端口。原 `run-owner-workflow --dashboard --workflow-id <workflow-id>` 保留为兼容的独立只读服务。
+
+完整使用说明见 [插件说明](owner-workflow-plugin/README.zh.md)、[技术路线](docs/OWNER-WORKFLOW-TECHNICAL-ROUTE.md) 与 [V2 迁移说明](docs/OWNER-WORKFLOW-V2-MIGRATION.md)。
+
+## 安装与同步
+
+本地开发默认由启动脚本以 patch 注入当前插件。也可按官方插件方式安装 profile 或 GitHub 地址，具体命令见插件说明。
+
+更新上游 Harness 子模块：
+
+```sh
+git submodule update --remote --merge deepseek-harness
+```
+
+更新命令不会修改插件逻辑；同步后重新运行插件测试并重启终端即可。
