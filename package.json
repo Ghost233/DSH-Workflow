@@ -1,0 +1,53 @@
+{
+  "name": "dsh-owner-workflow",
+  "version": "0.1.0",
+  "description": "面向 DeepSeek Harness 的 Owner 工作流编排插件",
+  "type": "module",
+  "main": "owner-workflow-plugin/index.js",
+  "exports": {
+    ".": "./owner-workflow-plugin/index.js",
+    "./client": "./owner-workflow-plugin/client.js",
+    "./dashboard": "./owner-workflow-plugin/dashboard-host.mjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-owner-workflow": "owner-workflow-plugin/src/external-runner.mjs",
+    "run-owner-workflow": "owner-workflow-plugin/src/external-runner.mjs"
+  },
+  "license": "MIT",
+  "files": [
+    "start-owner-workflow.sh",
+    "start-owner-workflow-npm.sh",
+    "start-owner-workflow-submodule.sh",
+    "run-owner-workflow.sh",
+    "docs/",
+    "owner-workflow-plugin/README.md",
+    "owner-workflow-plugin/README.zh.md",
+    "owner-workflow-plugin/agent-presets/",
+    "owner-workflow-plugin/cordis.patch.yml",
+    "owner-workflow-plugin/client.js",
+    "owner-workflow-plugin/dashboard-host.mjs",
+    "owner-workflow-plugin/index.js",
+    "owner-workflow-plugin/src/",
+    "owner-workflow-plugin/scripts/"
+  ],
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./owner-workflow-plugin/cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build:client": "node owner-workflow-plugin/scripts/build-client.mjs",
+    "check:client": "node owner-workflow-plugin/scripts/build-client.mjs --check",
+    "test": "node --test owner-workflow-plugin/test/*.test.mjs"
+  },
+  "packageManager": "pnpm@11.22.0+sha512.1ff870c4c6133dfd88fb2afc46dd13d47f09c9794b438c6fdb47ca98caf3bc16381ee0be93a091b8e3824cf01f889f46d7d9e20910fb0be1ab0fb5baa80dd621"
+}

@@ -1,0 +1,11 @@
+# 本地工作流状态、控制桥和 Git worktree。
+.dsh-workflow/
+.dsh-harness-runtime/
+
+# 本地依赖安装产物。
+.pnpm-store/
+node_modules/
+owner-workflow-plugin/pnpm-lock.yaml
+
+# macOS 文件管理器产生的元数据。
+.DS_Store

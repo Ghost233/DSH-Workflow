@@ -1,0 +1,19 @@
+# 显式安装入口会把组合包中的 preset 复制到 Harness user root；这里明确保留该根目录。
+# profile-boot 会在最终组合层写入官方随附根目录，因此不能在 bundle 中直接追加安装目录。
+- id: agent-presets
+  config:
+    default: standard
+    includeUserRoot: true
+
+# Dashboard 是 Web profile 的全局只读页面；它不依赖用户是否已选择 owner-workflow Agent preset。
+- insert:
+    # 该轻量宿主不注册工具，只触发 dsh.client 静态模块发现。
+    - id: owner-workflow-client-surface
+      name: dsh-owner-workflow
+      config:
+        surfaceOnly: true
+
+    - id: owner-workflow-dashboard
+      name: dsh-owner-workflow/dashboard
+      config:
+        root: !!js process.env.DSH_OWNER_WORKFLOW_DASHBOARD_ROOT

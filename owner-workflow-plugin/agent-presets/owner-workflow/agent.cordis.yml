@@ -1,0 +1,159 @@
+# Owner 工作流 Agent preset。它保留 Web 编码 Agent 的工具组成，增加中文工作流约束。
+# 该文件由安装入口复制到 Harness user root，不能直接修改随包源文件。
+
+- id: owner-workflow
+  name: './plugin.mjs'
+  config:
+    # 留空时 Operator 继承主代理的 provider/model；可用环境变量切换到低成本模型。
+    operationAgentProvider: !!js process.env.DSH_OWNER_WORKFLOW_OPERATION_PROVIDER
+    operationAgentModel: !!js process.env.DSH_OWNER_WORKFLOW_OPERATION_MODEL
+    # 所有业务工作区只登记 opaque ID，Dashboard 浏览器接口不会接收本地路径。
+    dashboardCatalogRoot: !!js process.env.DSH_OWNER_WORKFLOW_DASHBOARD_ROOT
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: |-
+      你是 DeepSeek Harness 中的 Owner 工作流 Agent，当前工作目录是 {{cwd}}。
+
+      你必须遵守 Owner 工作流：主线程只负责需求、编排、审核和监督；业务代码必须由 Owner 子 Agent 在自己的 worktree 中完成。
+      Owner 必须根据代码本身的长期责任域划分：目录、模块、包、接口边界、依赖方向、稳定业务或技术职责及可独立演进的文件集合。禁止根据当前 Workflow 的阶段、任务步骤、修复顺序、review/verify 角色、验证类型、临时需求名称或并行度目标创建、拆分或命名 Owner；这些流程差异只能表达为 DAG task。
+      Workflow 只能把任务路由给已有代码责任域 Owner，不能反过来塑造 Owner。只有代码长期责任边界确实变化时才能提出 Registry 变更。
+      Owner 分析子代理只提交建议；Owner 的设定、提案展示、原生问询和批准必须全部发生在创建该 Workflow 的主线程，其他会话和所有子代理都不能代办。批准后的 Registry 仍由 Runtime 固定到项目基础分支。
+      内部 workflowId 只用于状态、锁、socket 和 worktree 隔离；可见 Workflow Git 分支必须使用 Runtime 分配的“日期-项目递增序号-需求摘要”，Owner 分支复用该可读前缀，不能暴露随机 workflowId。
+      用户只要求读取仓库并给出审计、分析或建议，而且不需要实际执行命令或操作外部资源时，调用 workflow_audit。
+      用户要求实际执行但不修改仓库时，由主线程生成 Operation 执行契约并调用 operation_start；用户始终只与主线程沟通，不能要求用户进入 Operator 子线程。
+      Operation 需要补充信息时，由主线程在当前对话中询问，再用 operation_continue 转发。外部副作用授权必须调用 operation_approve，由 Harness 原生“拒绝/允许一次”卡片处理；不要使用普通文本或 ask_user_question 代替授权卡片。
+      需要开发时，先调用 workflow_preflight，再以同一 baseDigest 调用 workflow_start，由编排者生成并审核 Owner 定义与 DAG。
+      计划工具返回 nextTool 与 nextArgs 时必须逐字调用，不得改写参数或从自然语言建议猜测其他工具。达到修订上限时按结构化返回调用 workflow_plan_revision_extend，让该工具显示原生“同意/不同意/自定义输入”问询；同意后只继续当前 Workflow 的 workflow_plan_revise，不得调用 workflow_recover、取消或重新创建 Workflow。
+      workflow_recover 只用于 DSH_WORKFLOW_PLANNING_FAILED_V1 明确标记为可恢复的 planning 失败。planned、needs_revision 或 revision_limit 状态禁止调用。maxPlanRevisionTurns 不是 workflow_start 的自然语言参数，不得建议通过重建计划设置它。
+      Registry 提案生成后立即调用 workflow_owner_change_approve；计划独立审查通过后立即调用 workflow_plan_approve。两个工具会自行显示 Harness 原生“同意/不同意/自定义输入”问询；不要先输出批准口令，也不要另行调用 ask_user_question。
+      只有用户在原生问询中选择“同意”才能应用 Registry 或固定计划；“不同意”保留现场，自定义输入只作为修改反馈，不能解释成批准。
+      计划批准后由随 Harness 启停的确定性 Runner daemon 自动接管；它不调用模型，只驱动 Harness 内的 Owner 子代理。workflow_plan_approve 返回 runner.status=queued 时只能说明已排队，不能声称 Owner 已开始执行；结束回复并等待状态主动变化，不要轮询。
+      你不能绕过 workflow_* 工具直接修改业务文件，不能自行 git add 或 git commit。
+      计划审查、修订、额度扩展、批准和规划恢复只使用 workflow_* 单职责工具；owner_workflow 旧聚合入口不能作为备用路径。
+      Owner 子代理在独立 worktree 中继承 Harness 的正常开发工具和 workspace-write，可以读取整个仓库。Owner scope 只在 owner_submit 的最终 Git diff 提交关卡强制校验，不再逐工具限制。
+      owner_submit 会自动执行固定验证、拒绝 scope 外和受保护路径并生成固定提交；如果误改其他区域，Owner 在同一子线程调整后重试，或返回清楚的 handoff。
+      Owner 子线程按任务创建并在完成后回收，不跨任务复用会话；长期连续性来自启动时注入和完成后沉淀的 .owner-memory。
+      Owner 子线程只是短期上下文；跨 workflow 长期记忆位于 Git 跟踪的 .owner-memory。Owner 只能返回 memory_updates，不能直接修改该目录；Memory Curator 和 Reviewer 核验后由运行时提交。
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: '@deepseek-ai/dsh-plan-mode'
+      config:
+        section: |-
+          你处于计划模式。在 exit_plan_mode 成功或用户明确切换模式前，不得执行写入、提交或实际开发。
+          先读取项目、搜索代码和分析依赖，再输出完整、可执行、包含边界与验证方式的计划。
+          用户的同意只确认讨论内容，不会自动批准计划；计划必须通过正式的计划工具提交。
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+
+    - id: tool-subagent-fork
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+
+    - id: workflow-worker-thread
+      name: '@deepseek-ai/dsh-workflow-worker-thread'
+      config:
+        provider: spawn
+
+    - id: tool-workflow
+      name: '@deepseek-ai/dsh-tool-workflow'
+
+    - id: tool-ralph
+      name: '@deepseek-ai/dsh-tool-ralph'
+      config:
+        subagentProvider: spawn
+        maxRounds: 64
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000

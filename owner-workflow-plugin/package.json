@@ -1,0 +1,48 @@
+{
+  "name": "dsh-owner-workflow",
+  "version": "0.1.0",
+  "description": "面向 DeepSeek Harness 的 Owner 工作流编排插件",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./dashboard": "./dashboard-host.mjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-owner-workflow": "src/external-runner.mjs",
+    "run-owner-workflow": "src/external-runner.mjs"
+  },
+  "license": "MIT",
+  "files": [
+    "index.js",
+    "client.js",
+    "dashboard-host.mjs",
+    "scripts/",
+    "src/",
+    "agent-presets/",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md"
+  ],
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build:client": "node scripts/build-client.mjs",
+    "check:client": "node scripts/build-client.mjs --check",
+    "test": "node --test test/*.test.mjs",
+    "test:dashboard": "node --test test/dashboard.test.mjs"
+  }
+}

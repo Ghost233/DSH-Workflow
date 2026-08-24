@@ -1,0 +1,1192 @@
+import { createOwnerWorkflowRuntime } from './src/runtime.mjs'
+import { OWNER_WORKFLOW_SKILLS } from './src/skills.mjs'
+
+export const name = 'dsh-owner-workflow'
+export const inject = ['tools', 'systemPrompt', 'agents', 'skills', 'subagents', 'agentPresets', 'fs', 'shell', 'sandbox', 'sandboxPolicy', 'approval', 'userQuestions']
+
+const appliedContexts = new WeakSet()
+
+const ACTIONS = [
+  'mode_enable',
+  'mode_disable',
+  'mode_status',
+  'audit',
+  'start',
+  'owner_recover',
+  'handoff_replan',
+  'implementation_review',
+  'supervisor_status',
+  'cancel',
+  'finalize',
+  'status',
+  'registry_status',
+  'owner_change_propose',
+  'owner_change_approve',
+]
+
+function requireAgent(exec) {
+  if (exec.agent === undefined) {
+    throw new Error('Owner 工作流工具必须在有会话的 Agent 中调用')
+  }
+  return exec.agent
+}
+
+function losslessJson(value, path = '$', stack = new WeakSet()) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`${path} 包含非有限数值，不能作为工具 JSON 输出`)
+    return value
+  }
+  if (value === undefined) return undefined
+  if (Array.isArray(value)) {
+    if (stack.has(value)) throw new Error(`${path} 包含循环引用，不能作为工具 JSON 输出`)
+    stack.add(value)
+    try {
+      return value.map((item, index) => {
+        const normalized = losslessJson(item, `${path}[${index}]`, stack)
+        if (normalized === undefined) throw new Error(`${path}[${index}] 不能是 undefined`)
+        return normalized
+      })
+    } finally {
+      stack.delete(value)
+    }
+  }
+  if (typeof value !== 'object') {
+    throw new Error(`${path} 包含 ${typeof value}，不能作为工具 JSON 输出`)
+  }
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error(`${path} 包含非普通对象，不能作为工具 JSON 输出`)
+  }
+  if (stack.has(value)) throw new Error(`${path} 包含循环引用，不能作为工具 JSON 输出`)
+  stack.add(value)
+  try {
+    const result = {}
+    for (const [key, item] of Object.entries(value)) {
+      const normalized = losslessJson(item, `${path}.${key}`, stack)
+      if (normalized !== undefined) result[key] = normalized
+    }
+    return result
+  } finally {
+    stack.delete(value)
+  }
+}
+
+function normalizeToolOutput(value) {
+  const normalized = losslessJson(value)
+  if (normalized === undefined) throw new Error('工具不能返回 undefined')
+  return normalized
+}
+
+function renderValue(_args, value) {
+  return [{ type: 'text', text: JSON.stringify(value, null, 2) }]
+}
+
+const TOOL_PARAMETERS = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ACTIONS,
+      description: '旧聚合入口动作：mode_enable、mode_disable、mode_status、audit、start、owner_recover、handoff_replan、implementation_review、supervisor_status、cancel、finalize、status、registry_status、owner_change_propose、owner_change_approve。计划审查、修订、额度扩展、批准与规划恢复只允许使用对应的 workflow_* 单职责工具。',
+    },
+    request: { type: 'string', description: 'audit 或 start 动作的自然语言需求。' },
+    workflow_id: { type: 'string', description: '已经创建的工作流编号。' },
+    plan_digest: { type: 'string', description: '审核 start 返回的计划摘要 digest。' },
+    registry_digest: { type: 'string', description: 'plan_approve 使用的正式 Owner Registry digest。' },
+    proposal_digest: { type: 'string', description: 'owner_change_approve 使用的待批准 Registry 提案 digest。' },
+    operation: { description: 'owner_change_propose 使用的 Registry operation：add、remove、split、merge 或 transfer。' },
+    owner_id: { type: 'string', description: 'Owner 编号。' },
+    stage_id: { type: 'string', description: '需要恢复的阶段编号。' },
+  },
+  additionalProperties: false,
+  required: ['action'],
+}
+
+function requireString(args, key, action) {
+  if (typeof args[key] !== 'string' || args[key].trim() === '') {
+    throw new Error(`${action} 动作必须提供 ${key}`)
+  }
+  return args[key]
+}
+
+function optionalWorkflowId(args, action) {
+  if (!Object.hasOwn(args, 'workflow_id') || args.workflow_id === undefined) return undefined
+  return requireString(args, 'workflow_id', action)
+}
+
+const WORKFLOW_DECISION_CONTRACT = 'DSH_WORKFLOW_USER_DECISION_V1'
+const WORKFLOW_APPROVE_LABEL = '同意'
+const WORKFLOW_REJECT_LABEL = '不同意'
+
+function markdownInline(value) {
+  return String(value ?? '').replace(/([\\`*_[\]{}()#+.!|>\-])/gu, '\\$1')
+}
+
+function ownerDecisionBlock(owner) {
+  const lines = [
+    `Owner：${markdownInline(owner?.id ?? '未知')}`,
+    `名称：${markdownInline(owner?.name ?? '未命名')}`,
+    `职责：${markdownInline(owner?.description ?? '未说明')}`,
+  ]
+  if (typeof owner?.parentOwnerId === 'string' && owner.parentOwnerId.trim() !== '') {
+    lines.push(`父 Owner：${markdownInline(owner.parentOwnerId)}`)
+  }
+  lines.push('范围：')
+  for (const scope of owner?.scope ?? []) lines.push(`- ${markdownInline(scope)}`)
+  lines.push('排除：')
+  if ((owner?.exclude ?? []).length === 0) lines.push('- 无')
+  else for (const exclude of owner.exclude) lines.push(`- ${markdownInline(exclude)}`)
+  return lines.join('\n')
+}
+
+function affectedOwners(registry, ids) {
+  const affected = new Set(ids)
+  return (registry?.owners ?? []).filter(owner => affected.has(owner?.id))
+}
+
+function registryDecisionDetail(workflowId, proposal) {
+  const before = affectedOwners(proposal?.before, proposal?.affectedOwnerIds ?? [])
+  const after = affectedOwners(proposal?.after, proposal?.affectedOwnerIds ?? [])
+  const lines = [
+    `工作流：${markdownInline(workflowId)}`,
+    `提案摘要：${markdownInline(proposal?.digest)}`,
+    `变更类型：${markdownInline(proposal?.operation)}`,
+    `变更原因：${markdownInline(proposal?.reason)}`,
+    '设置位置：创建该 Workflow 的主线程；子代理只提供代码分析建议。',
+    '',
+    '审批标准：Owner 应表示由代码目录、模块、接口和长期职责形成的稳定责任域，不能只是当前 Workflow 的阶段、任务、review、verify、修复步骤或并行分组。',
+    '',
+  ]
+  if (before.length > 0) {
+    lines.push('### 变更前', '')
+    before.forEach((owner, index) => {
+      if (index > 0) lines.push('')
+      lines.push(ownerDecisionBlock(owner))
+    })
+    lines.push('')
+  }
+  lines.push('### 变更后', '')
+  if (after.length === 0) lines.push('相关 Owner 将被移除。')
+  else after.forEach((owner, index) => {
+    if (index > 0) lines.push('')
+    lines.push(ownerDecisionBlock(owner))
+  })
+  return lines.join('\n')
+}
+
+function planDecisionDetail(workflowId, plan, planDigest, registryDigest) {
+  const lines = [
+    `工作流：${markdownInline(workflowId)}`,
+    `计划摘要：${markdownInline(planDigest)}`,
+    `Registry 摘要：${markdownInline(registryDigest)}`,
+    `计划说明：${markdownInline(plan?.summary ?? '未说明')}`,
+  ]
+  if ((plan?.owners ?? []).length > 0) {
+    lines.push('', '### Owner 定义')
+    for (const owner of plan.owners) lines.push('', ownerDecisionBlock(owner))
+  }
+  if ((plan?.verifications ?? []).length > 0) {
+    lines.push('', '### 固定验证')
+    for (const verification of plan.verifications) {
+      lines.push(`- ${markdownInline(verification.id)}：${(verification.argv ?? []).map(markdownInline).join(' ')}`)
+    }
+  }
+  lines.push('', '### 任务 DAG')
+  for (const task of plan?.tasks ?? []) {
+    lines.push('', `#### ${markdownInline(task.id)} · ${markdownInline(task.title)}`)
+    lines.push(`- 角色：${markdownInline(task.role)}`)
+    lines.push(`- Owner：${markdownInline(task.ownerId)}`)
+    lines.push(`- 依赖：${(task.dependsOn ?? []).length === 0 ? '无' : task.dependsOn.map(markdownInline).join('、')}`)
+    lines.push(`- 写入范围：${(task.write ?? []).length === 0 ? '无' : task.write.map(markdownInline).join('、')}`)
+    lines.push(`- 固定验证：${(task.verify ?? []).length === 0 ? '无' : task.verify.map(markdownInline).join('、')}`)
+    lines.push(`- 完成条件：${markdownInline(task.done ?? '未说明')}`)
+  }
+  return lines.join('\n')
+}
+
+function planRevisionExtensionDetail(workflow) {
+  const lines = [
+    `工作流：${markdownInline(workflow?.workflowId)}`,
+    `计划摘要：${markdownInline(workflow?.planDigest)}`,
+    `已使用修订次数：${markdownInline(workflow?.planReviewRevisionCount)}`,
+    `当前修订上限：${markdownInline(workflow?.maxPlanRevisionTurns)}`,
+    `同意后新增额度：${markdownInline(workflow?.configuredMaxPlanRevisionTurns)}`,
+    '',
+    '### 当前审查结论',
+    markdownInline(workflow?.planReview?.summary ?? '未说明'),
+  ]
+  const issues = workflow?.planReview?.issues ?? []
+  if (issues.length > 0) {
+    lines.push('', '### 尚未解决的问题')
+    for (const issue of issues) {
+      lines.push(`- ${markdownInline(issue?.title ?? '未命名问题')}：${markdownInline(issue?.detail ?? '')}`)
+    }
+  }
+  lines.push('', '同意只会增加当前 Workflow 的计划修订额度，不会取消、重建或执行 Owner 任务。')
+  return lines.join('\n')
+}
+
+function workflowCancellationDecisionDetail(workflow) {
+  return [
+    `工作流：${markdownInline(workflow?.workflowId)}`,
+    `当前状态：${markdownInline(workflow?.status)}`,
+    `计划说明：${markdownInline(workflow?.plan?.summary ?? '未说明')}`,
+    '',
+    '同意后将：',
+    '- 停止该 Workflow 的后续 Owner 派发和结算。',
+    '- 删除尚未合入启动分支的 Owner/workflow 临时分支、worktree 和其中的未提交修改。',
+    '- 不把取消 Workflow 的提交合入启动分支。',
+    '- 保留 Runtime 状态、事件日志和 Dashboard 历史用于审计。',
+    '',
+    '如果还希望继续修复或恢复当前工作，请选择“不同意”。failed/blocked 状态会继续保留原现场。',
+  ].join('\n')
+}
+
+/** 使用 Harness 原生问询面板取得一次工作流决定；只有明确选择“同意”才授予批准。 */
+export async function askWorkflowDecision(ctx, { agent, signal, id, header, question, detail }) {
+  const userQuestions = ctx?.userQuestions ?? ctx?.get?.('userQuestions')
+  if (typeof userQuestions?.ask !== 'function') throw new Error('Harness 原生问询服务不可用，工作流批准已安全停止')
+  const answer = await userQuestions.ask({
+    questions: [{
+      id,
+      header,
+      question,
+      detail,
+      options: [
+        { label: WORKFLOW_APPROVE_LABEL, description: '批准当前展示的精确内容并继续工作流。' },
+        { label: WORKFLOW_REJECT_LABEL, description: '不应用当前内容，保留现场等待后续指示。' },
+      ],
+      multiSelect: false,
+    }],
+    agent,
+    signal,
+  })
+  const item = answer?.answers?.find(candidate => candidate?.id === id)
+  const custom = typeof item?.custom === 'string' ? item.custom.trim() : ''
+  if (custom !== '') return { contract: WORKFLOW_DECISION_CONTRACT, decision: 'custom', feedback: custom }
+  if (Array.isArray(item?.selected) && item.selected.length === 1) {
+    if (item.selected[0] === WORKFLOW_APPROVE_LABEL) {
+      return { contract: WORKFLOW_DECISION_CONTRACT, decision: 'approved' }
+    }
+    if (item.selected[0] === WORKFLOW_REJECT_LABEL) {
+      return { contract: WORKFLOW_DECISION_CONTRACT, decision: 'rejected' }
+    }
+  }
+  throw new Error('Harness 原生问询没有返回有效决定，工作流批准已安全停止')
+}
+
+function declinedWorkflowDecision(decision, workflowId, digest, kind) {
+  const custom = decision.decision === 'custom'
+  return {
+    ...decision,
+    workflowId,
+    digest,
+    applied: false,
+    nextAction: custom
+      ? `用户提供了${kind}修改意见；分析 feedback 后执行修订或重新提案，不能应用当前摘要。`
+      : `用户不同意当前${kind}；保留现场，不得应用当前摘要。`,
+  }
+}
+
+export async function confirmPlanApproval(ctx, runtime, agent, exec, workflowId, planDigest, registryDigest) {
+  const status = await runtime.status(agent, workflowId, { ensureBridge: false })
+  const workflow = status?.workflow
+  if (workflow?.status !== 'planned') throw new Error(`工作流 ${workflowId} 当前状态不能批准：${String(workflow?.status)}`)
+  if (typeof workflow?.orchestratorSessionId === 'string' && workflow.orchestratorSessionId !== agent.id) {
+    throw new Error(`计划批准只能在 Workflow 主线程 ${workflow.orchestratorSessionId} 中进行`)
+  }
+  if (workflow?.planDigest !== planDigest) throw new Error(`计划 digest 不匹配，期望 ${String(workflow?.planDigest)}`)
+  if (workflow?.planReview?.status !== 'passed' || workflow?.planReviewDigest !== planDigest) {
+    throw new Error('计划必须先通过当前摘要的独立审查')
+  }
+  if (workflow?.pendingRegistryProposal !== undefined || workflow?.suggestedRegistryOperation !== undefined) {
+    throw new Error('当前仍有 Owner Registry 变更未完成，不能批准计划')
+  }
+  const registry = await runtime.registryStatus(agent, workflowId)
+  if (registry?.registryDigest !== registryDigest) {
+    throw new Error(`Registry digest 不匹配，期望 ${String(registry?.registryDigest)}`)
+  }
+  const decision = await askWorkflowDecision(ctx, {
+    agent,
+    signal: exec.signal,
+    id: 'owner-workflow-plan-approval',
+    header: '计划批准',
+    question: '是否批准当前 Owner 与任务 DAG 计划？',
+    detail: planDecisionDetail(workflowId, workflow.plan, planDigest, registryDigest),
+  })
+  if (decision.decision !== 'approved') {
+    return declinedWorkflowDecision(decision, workflowId, planDigest, '计划')
+  }
+  return {
+    ...await runtime.approvePlan(agent, workflowId, planDigest, registryDigest),
+    decision: 'approved',
+    applied: true,
+  }
+}
+
+export async function confirmPlanRevisionExtension(ctx, runtime, agent, exec, workflowId, planDigest) {
+  const status = await runtime.status(agent, workflowId, { ensureBridge: false })
+  const workflow = status?.workflow
+  if (workflow?.status !== 'planned') {
+    throw new Error(`工作流 ${workflowId} 当前状态不能扩展计划修订额度：${String(workflow?.status)}`)
+  }
+  if (workflow?.planDigest !== planDigest) {
+    throw new Error(`计划 digest 不匹配，期望 ${String(workflow?.planDigest)}`)
+  }
+  if (workflow?.planReview?.status !== 'needs_revision' || workflow?.planReviewDigest !== planDigest) {
+    throw new Error('当前计划没有绑定 needs_revision 的独立审查结果')
+  }
+  if (workflow?.planRevisionRemaining !== 0) {
+    throw new Error(`当前仍可修订 ${String(workflow?.planRevisionRemaining)} 次，不需要扩展额度`)
+  }
+  const decision = await askWorkflowDecision(ctx, {
+    agent,
+    signal: exec.signal,
+    id: 'owner-workflow-plan-revision-extension',
+    header: '扩展计划修订',
+    question: '是否为当前 Workflow 增加一组计划修订额度？',
+    detail: planRevisionExtensionDetail(workflow),
+  })
+  if (decision.decision !== 'approved') {
+    return {
+      ...decision,
+      workflowId,
+      digest: planDigest,
+      applied: false,
+      nextAction: decision.decision === 'custom'
+        ? '用户提供了额度扩展意见；保留当前 Workflow、计划、审查和修订上限，先回应 feedback，不得自动取消、重建或调用 workflow_recover。'
+        : '用户不同意扩展修订额度；保留当前 Workflow、计划和审查，停止自动推进。',
+    }
+  }
+  return {
+    ...await runtime.extendPlanRevisionLimit(agent, workflowId, planDigest),
+    decision: 'approved',
+    applied: true,
+  }
+}
+
+export async function confirmWorkflowCancellation(ctx, runtime, agent, exec, workflowId) {
+  const status = await runtime.status(agent, workflowId, { ensureBridge: false })
+  const workflow = status?.workflow
+  if (workflow === undefined) throw new Error(`找不到工作流 ${workflowId}`)
+  if (workflow.finalized === true) throw new Error(`工作流 ${workflowId} 已完成交付和清理，不能取消`)
+  if (typeof workflow.orchestratorSessionId === 'string' && workflow.orchestratorSessionId !== agent.id) {
+    throw new Error(`取消 Workflow 只能在其主线程 ${workflow.orchestratorSessionId} 中进行`)
+  }
+  if (workflow.status === 'cancelled' && workflow.temporaryArtifactsCleaned === true) {
+    return workflow
+  }
+  const decision = await askWorkflowDecision(ctx, {
+    agent,
+    signal: exec.signal,
+    id: 'owner-workflow-cancellation',
+    header: '取消 Workflow',
+    question: '是否确认放弃当前 Workflow 并清理所有临时开发现场？',
+    detail: workflowCancellationDecisionDetail(workflow),
+  })
+  if (decision.decision !== 'approved') {
+    return {
+      ...decision,
+      workflowId,
+      applied: false,
+      nextAction: decision.decision === 'custom'
+        ? '用户提供了取消意见；保留当前 Workflow、分支和 worktree，先处理 feedback。'
+        : '用户不同意取消；保留当前 Workflow、分支和 worktree，可继续恢复或执行。',
+    }
+  }
+  return {
+    ...await runtime.cancelWorkflow(agent, workflowId, exec.signal),
+    decision: 'approved',
+    applied: true,
+  }
+}
+
+export async function confirmOwnerChangeApproval(ctx, runtime, agent, exec, workflowId, proposalDigest) {
+  const status = await runtime.registryStatus(agent, workflowId)
+  if (typeof status?.orchestratorSessionId === 'string' && status.orchestratorSessionId !== agent.id) {
+    throw new Error(`Owner 设定批准只能在 Workflow 主线程 ${status.orchestratorSessionId} 中进行`)
+  }
+  const proposal = status?.pendingProposal
+  if (proposal === undefined) throw new Error(`工作流 ${workflowId} 没有待批准的 Owner Registry 提案`)
+  if (proposal?.digest !== proposalDigest) {
+    throw new Error(`Owner Registry 提案 digest 不匹配，期望 ${String(proposal?.digest)}`)
+  }
+  const decision = await askWorkflowDecision(ctx, {
+    agent,
+    signal: exec.signal,
+    id: 'owner-workflow-registry-approval',
+    header: 'Owner Registry',
+    question: '是否批准当前 Owner Registry 变更？',
+    detail: registryDecisionDetail(workflowId, proposal),
+  })
+  if (decision.decision !== 'approved') {
+    return declinedWorkflowDecision(decision, workflowId, proposalDigest, 'Owner Registry 提案')
+  }
+  return {
+    ...await runtime.approveOwnerChange(agent, workflowId, proposalDigest),
+    decision: 'approved',
+    applied: true,
+  }
+}
+
+async function executeWorkflowAction(ctx, runtime, args, exec) {
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+    throw new Error('owner_workflow 参数必须是对象')
+  }
+  const agent = requireAgent(exec)
+  switch (args.action) {
+    case 'mode_enable':
+      return runtime.modeEnable(agent)
+    case 'mode_disable':
+      return runtime.modeDisable(agent)
+    case 'mode_status':
+      return runtime.modeStatus(agent)
+    case 'audit':
+      return runtime.auditWorkspace(agent, requireString(args, 'request', 'audit'), exec.signal)
+    case 'start':
+      throw new Error('owner_workflow(action=start) 已停用：必须先调用 workflow_preflight，再用其 baseDigest 调用 workflow_start；不得通过旧聚合入口创建 workflow')
+    case 'plan_review':
+      return {
+        contract: 'DSH_WORKFLOW_LEGACY_ACTION_REDIRECT_V1',
+        workflowId: requireString(args, 'workflow_id', 'plan_review'),
+        nextTool: 'workflow_plan_review',
+        nextAction: '调用 workflow_plan_review 单职责工具；旧聚合入口不会执行计划审查。',
+      }
+    case 'plan_revise':
+      return {
+        contract: 'DSH_WORKFLOW_LEGACY_ACTION_REDIRECT_V1',
+        workflowId: requireString(args, 'workflow_id', 'plan_revise'),
+        nextTool: 'workflow_plan_revise',
+        nextAction: '调用 workflow_plan_revise 单职责工具；旧聚合入口不会修改计划。',
+      }
+    case 'plan_approve':
+      return {
+        contract: 'DSH_WORKFLOW_LEGACY_ACTION_REDIRECT_V1',
+        workflowId: requireString(args, 'workflow_id', 'plan_approve'),
+        nextTool: 'workflow_plan_approve',
+        nextAction: '调用 workflow_plan_approve 单职责工具；旧聚合入口不会申请或应用计划批准。',
+      }
+    case 'owner_recover':
+      return runtime.recoverOwner(
+        agent,
+        requireString(args, 'workflow_id', 'owner_recover'),
+        requireString(args, 'stage_id', 'owner_recover'),
+        requireString(args, 'owner_id', 'owner_recover'),
+        exec.signal,
+      )
+    case 'workflow_recover':
+      return {
+        contract: 'DSH_WORKFLOW_LEGACY_ACTION_REDIRECT_V1',
+        workflowId: requireString(args, 'workflow_id', 'workflow_recover'),
+        nextTool: 'workflow_recover',
+        nextAction: '仅当 DSH_WORKFLOW_PLANNING_FAILED_V1 明确要求恢复时调用 workflow_recover 单职责工具；旧聚合入口不会恢复 Workflow。',
+      }
+    case 'handoff_replan':
+      return runtime.replanHandoffs(
+        agent,
+        requireString(args, 'workflow_id', 'handoff_replan'),
+        exec.signal,
+      )
+    case 'implementation_review':
+      return runtime.implementationReview(
+        agent,
+        requireString(args, 'workflow_id', 'implementation_review'),
+        exec.signal,
+      )
+    case 'supervisor_status':
+      return runtime.supervisorStatus(agent, optionalWorkflowId(args, 'supervisor_status'))
+    case 'cancel':
+      return confirmWorkflowCancellation(
+        ctx,
+        runtime,
+        agent,
+        exec,
+        requireString(args, 'workflow_id', 'cancel'),
+      )
+    case 'finalize':
+      return runtime.finalizeWorkflow(agent, requireString(args, 'workflow_id', 'finalize'), exec.signal)
+    case 'status':
+      return runtime.status(agent, optionalWorkflowId(args, 'status'))
+    case 'registry_status':
+      return runtime.registryStatus(agent, optionalWorkflowId(args, 'registry_status'))
+    case 'owner_change_propose':
+      return runtime.proposeOwnerChange(
+        agent,
+        requireString(args, 'workflow_id', 'owner_change_propose'),
+        args.operation,
+      )
+    case 'owner_change_approve':
+      return confirmOwnerChangeApproval(
+        ctx,
+        runtime,
+        agent,
+        exec,
+        requireString(args, 'workflow_id', 'owner_change_approve'),
+        requireString(args, 'proposal_digest', 'owner_change_approve'),
+      )
+    default:
+      throw new Error(`未知的 Owner 工作流动作：${String(args.action)}`)
+  }
+}
+
+function toolDefinition(ctx, runtime) {
+  return {
+    name: 'owner_workflow',
+    description: [
+      '兼容旧会话的 Owner 工作流聚合入口；新会话应优先使用 workflow_preflight、workflow_start 等单职责工具。',
+      'owner_workflow(action=start) 已停用，不能创建 workflow；创建工作流只能使用 workflow_preflight 和 workflow_start。',
+      '选择 owner-workflow Agent preset 后工作模式自动生效；mode_enable 仅用于不支持 preset 的兼容环境。',
+      '纯仓库只读检查使用 action=audit；需要实际执行命令或操作外部资源时使用单职责 operation_* 工具。',
+      '主编排者先用 action=plan_review 审查 Owner 与 DAG，再立即调用 action=plan_approve；该动作自行显示 Harness 原生问询，只有用户选择同意后才固定计划，不能先输出普通文本索要批准；',
+      'Owner Registry 的增删、拆分、合并、转交和 scope 变化必须先用 owner_change_propose 生成 digest，再立即调用 owner_change_approve；该动作自行显示 Harness 原生问询，只有用户选择同意后才应用提案；',
+      '计划审核后由项目根目录的外置 runner 调度 Owner 子 Agent，主会话不直接执行阶段。',
+      '阶段全部完成后必须调用 implementation_review；发现停滞、失败或控制桥中断时先调用 supervisor_status，再按状态执行 owner_recover。',
+      '只有用户明确放弃当前工作流时才调用 action=cancel；该动作显示原生问询，同意后删除未合入的临时分支和 worktree，只保留 Runtime 状态与日志。',
+      '不要绕过受限工作流工具直接让主会话修改业务文件。',
+    ].join(''),
+    parameters: TOOL_PARAMETERS,
+    output: {
+      schema: {},
+      render: renderValue,
+    },
+    async execute(args, exec) {
+      return normalizeToolOutput(await executeWorkflowAction(ctx, runtime, args, exec))
+    },
+  }
+}
+
+function workflowToolDefinition(name, description, parameters, handler) {
+  return {
+    name,
+    description,
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {},
+      required: [],
+      ...parameters,
+    },
+    output: { schema: {}, render: renderValue },
+    async execute(args, exec) {
+      if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+        throw new Error(`${name} 参数必须是对象`)
+      }
+      return normalizeToolOutput(await handler(args, requireAgent(exec), exec))
+    },
+  }
+}
+
+function workflowToolDefinitions(ctx, runtime) {
+  const workflowId = { workflow_id: { type: 'string', minLength: 1, description: '工作流编号；没有编号时必须省略该字段，不能传空字符串。' } }
+  return [
+    workflowToolDefinition(
+      'workflow_plan_review_submit',
+      '仅供当前计划审查子代理提交一次结构化 DSH_PLAN_REVIEW_V1；主会话、Planner、Owner 和其他 Reviewer 均不能调用。',
+      {
+        properties: {
+          review: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              contract: { type: 'string', enum: ['DSH_PLAN_REVIEW_V1'] },
+              status: { type: 'string', enum: ['passed', 'needs_revision'] },
+              summary: { type: 'string', minLength: 1 },
+              issues: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    severity: { type: 'string', enum: ['high', 'medium', 'low'] },
+                    title: { type: 'string', minLength: 1 },
+                    detail: { type: 'string', minLength: 1 },
+                    suggestion: { type: 'string', minLength: 1 },
+                  },
+                  required: ['severity', 'title', 'detail', 'suggestion'],
+                },
+              },
+            },
+            required: ['contract', 'status', 'summary', 'issues'],
+          },
+        },
+        required: ['review'],
+      },
+      (args, agent) => runtime.submitPlanReview(agent, args.review),
+    ),
+    workflowToolDefinition(
+      'workflow_plan_submit',
+      '仅供当前规划子代理提交一次结构化 DSH_PLAN_V2；主会话、Owner 和 Reviewer 均不能调用。',
+      {
+        properties: {
+          plan: { type: 'object', description: '完整的 DSH_PLAN_V2 结构化对象。' },
+        },
+        required: ['plan'],
+      },
+      (args, agent) => runtime.submitPlannerPlan(agent, args.plan),
+    ),
+    workflowToolDefinition(
+      'workflow_audit',
+      '只读审计当前项目；不会创建 workflow、分支或 worktree。',
+      { properties: { request: { type: 'string', description: '需要审计的中文需求。' } }, required: ['request'] },
+      (args, agent, exec) => runtime.auditWorkspace(agent, requireString(args, 'request', 'workflow_audit'), exec.signal),
+    ),
+    workflowToolDefinition(
+      'workflow_preflight',
+      '只读检查当前 Git 基线、未提交改动和可启动性；workflow_start 必须使用其返回的 baseDigest。',
+      {},
+      (_args, agent, exec) => runtime.preflightWorkflow(agent, exec.signal),
+    ),
+    workflowToolDefinition(
+      'workflow_start',
+      '从经过预检且未变化的干净 Git 基线创建 Owner/DAG 工作流；不会直接修改业务文件。规划契约失败时返回包含 workflowId、recoverable 和恢复动作的结构化结果。',
+      {
+        properties: {
+          request: { type: 'string', description: '明确的中文开发需求。' },
+          base_digest: { type: 'string', description: 'workflow_preflight 返回的 baseDigest。' },
+        },
+        required: ['request', 'base_digest'],
+      },
+      (args, agent, exec) => runtime.startWorkflow(
+        agent,
+        requireString(args, 'request', 'workflow_start'),
+        exec.signal,
+        requireString(args, 'base_digest', 'workflow_start'),
+      ),
+    ),
+    workflowToolDefinition(
+      'workflow_plan_review',
+      '让独立 Reviewer 审查已生成的 Owner 与 DSH_PLAN_V2 DAG。',
+      { properties: workflowId, required: ['workflow_id'] },
+      (args, agent, exec) => runtime.reviewPlan(agent, requireString(args, 'workflow_id', 'workflow_plan_review'), exec.signal),
+    ),
+    workflowToolDefinition(
+      'workflow_plan_revise',
+      '仅在计划审查要求修订时重新规划，保留 Registry 审批边界；非法候选返回可恢复结构，重复调用返回幂等下一步，不得因此取消 Workflow。',
+      { properties: workflowId, required: ['workflow_id'] },
+      (args, agent, exec) => runtime.revisePlan(agent, requireString(args, 'workflow_id', 'workflow_plan_revise'), exec.signal),
+    ),
+    workflowToolDefinition(
+      'workflow_plan_revision_extend',
+      '计划修订额度耗尽时，显示 Harness 原生“同意/不同意/自定义输入”问询；只有用户明确同意后才为当前 Workflow 增加一组额度，不取消或重建 Workflow。',
+      {
+        properties: {
+          ...workflowId,
+          plan_digest: { type: 'string', description: '达到修订上限时当前计划的摘要。' },
+        },
+        required: ['workflow_id', 'plan_digest'],
+      },
+      (args, agent, exec) => confirmPlanRevisionExtension(
+        ctx,
+        runtime,
+        agent,
+        exec,
+        requireString(args, 'workflow_id', 'workflow_plan_revision_extend'),
+        requireString(args, 'plan_digest', 'workflow_plan_revision_extend'),
+      ),
+    ),
+    workflowToolDefinition(
+      'workflow_plan_approve',
+      '为通过独立审查的计划显示 Harness 原生“同意/不同意/自定义输入”问询；只有用户明确选择同意后才使用精确计划与 Registry 摘要批准计划。调用前不得先用普通文本索要批准。',
+      {
+        properties: {
+          ...workflowId,
+          plan_digest: { type: 'string', description: '计划摘要。' },
+          registry_digest: { type: 'string', description: '正式 Owner Registry 摘要。' },
+        },
+        required: ['workflow_id', 'plan_digest', 'registry_digest'],
+      },
+      (args, agent, exec) => confirmPlanApproval(
+        ctx,
+        runtime,
+        agent,
+        exec,
+        requireString(args, 'workflow_id', 'workflow_plan_approve'),
+        requireString(args, 'plan_digest', 'workflow_plan_approve'),
+        requireString(args, 'registry_digest', 'workflow_plan_approve'),
+      ),
+    ),
+    workflowToolDefinition(
+      'workflow_recover',
+      '恢复可安全恢复的 V2 workflow 状态，包括尚未形成合法计划的结构化规划失败；不直接绕过 Owner 或验证门禁。',
+      { properties: workflowId, required: ['workflow_id'] },
+      (args, agent, exec) => runtime.recoverWorkflow(agent, requireString(args, 'workflow_id', 'workflow_recover'), exec.signal),
+    ),
+    workflowToolDefinition(
+      'workflow_handoff_replan',
+      '根据已持久化的跨 Owner handoff 局部重规划 V2 DAG。',
+      { properties: workflowId, required: ['workflow_id'] },
+      (args, agent, exec) => runtime.replanHandoffs(agent, requireString(args, 'workflow_id', 'workflow_handoff_replan'), exec.signal),
+    ),
+    workflowToolDefinition(
+      'workflow_owner_recover',
+      '恢复一个已失败或阻塞且没有活动会话的 Owner task；保留原 Owner 分支、worktree 和未提交修改，不得新建 Workflow。',
+      {
+        properties: {
+          ...workflowId,
+          task_id: { type: 'string', description: '需要恢复的任务编号。' },
+          owner_id: { type: 'string', description: '任务所属 Owner 编号。' },
+        },
+        required: ['workflow_id', 'task_id', 'owner_id'],
+      },
+      (args, agent, exec) => runtime.recoverOwner(
+        agent,
+        requireString(args, 'workflow_id', 'workflow_owner_recover'),
+        requireString(args, 'task_id', 'workflow_owner_recover'),
+        requireString(args, 'owner_id', 'workflow_owner_recover'),
+        exec.signal,
+      ),
+    ),
+    workflowToolDefinition(
+      'workflow_implementation_review',
+      '审查已完成 workflow 的实际合并结果和验证证据。',
+      { properties: workflowId, required: ['workflow_id'] },
+      (args, agent, exec) => runtime.implementationReview(agent, requireString(args, 'workflow_id', 'workflow_implementation_review'), exec.signal),
+    ),
+    workflowToolDefinition(
+      'workflow_supervisor_status',
+      '查询 Supervisor 的受限健康状态与可恢复问题。',
+      { properties: workflowId },
+      (args, agent) => runtime.supervisorStatus(agent, optionalWorkflowId(args, 'workflow_supervisor_status')),
+    ),
+    workflowToolDefinition(
+      'workflow_cancel',
+      '显式放弃当前 Workflow；通过原生“同意/不同意/自定义输入”问询确认后，停止派发并删除未合入的临时分支、worktree 和未提交修改，只保留 Runtime 状态与日志。failed/blocked 恢复场景不得调用。',
+      { properties: workflowId, required: ['workflow_id'] },
+      (args, agent, exec) => confirmWorkflowCancellation(
+        ctx,
+        runtime,
+        agent,
+        exec,
+        requireString(args, 'workflow_id', 'workflow_cancel'),
+      ),
+    ),
+    workflowToolDefinition(
+      'workflow_finalize',
+      '将已通过实现审查的固定 workflow HEAD 预合并并合入最新启动分支。',
+      { properties: workflowId, required: ['workflow_id'] },
+      (args, agent, exec) => runtime.finalizeWorkflow(agent, requireString(args, 'workflow_id', 'workflow_finalize'), exec.signal),
+    ),
+    workflowToolDefinition(
+      'workflow_status',
+      '查询工作流状态；省略 workflow_id 时仅返回当前项目的 Owner Registry 摘要。',
+      { properties: workflowId },
+      (args, agent) => runtime.status(agent, optionalWorkflowId(args, 'workflow_status')),
+    ),
+    workflowToolDefinition(
+      'workflow_registry_status',
+      '查询正式 Owner Registry 和待审批的 Registry 变更。',
+      { properties: workflowId },
+      (args, agent) => runtime.registryStatus(agent, optionalWorkflowId(args, 'workflow_registry_status')),
+    ),
+    workflowToolDefinition(
+      'workflow_owner_change_propose',
+      '仅允许创建该 Workflow 的主线程调用。代码长期责任边界确实变化时，创建 Owner add、remove、split、merge 或 transfer 的只读提案；不得因 Workflow 阶段、任务、review/verify、修复步骤或并行需求改变 Owner，不立即修改 Registry。',
+      {
+        properties: {
+          ...workflowId,
+          operation: { type: 'object', description: 'Owner Registry 的结构化变更操作。' },
+        },
+        required: ['workflow_id', 'operation'],
+      },
+      (args, agent) => runtime.proposeOwnerChange(
+        agent,
+        requireString(args, 'workflow_id', 'workflow_owner_change_propose'),
+        args.operation,
+      ),
+    ),
+    workflowToolDefinition(
+      'workflow_owner_change_approve',
+      '仅允许创建该 Workflow 的主线程调用并显示 Harness 原生“同意/不同意/自定义输入”问询；只有用户明确选择同意后才应用精确摘要对应的 Owner Registry 提案。调用前不得先用普通文本索要批准。',
+      {
+        properties: {
+          ...workflowId,
+          proposal_digest: { type: 'string', description: '待批准 Registry 提案摘要。' },
+        },
+        required: ['workflow_id', 'proposal_digest'],
+      },
+      (args, agent, exec) => confirmOwnerChangeApproval(
+        ctx,
+        runtime,
+        agent,
+        exec,
+        requireString(args, 'workflow_id', 'workflow_owner_change_approve'),
+        requireString(args, 'proposal_digest', 'workflow_owner_change_approve'),
+      ),
+    ),
+    workflowToolDefinition(
+      'workflow_git_inspect',
+      '只读返回当前 worktree 的 Git status、diff 或 log；不允许读取 .git 或运行任意命令。',
+      {
+        properties: {
+          action: { type: 'string', enum: ['status', 'diff', 'log'], description: '只读 Git 查询动作，默认 status。' },
+          files: { type: 'array', items: { type: 'string' }, description: '可选的当前 worktree 相对路径过滤。' },
+          limit: { type: 'integer', minimum: 1, maximum: 50, description: 'log 返回的最大条数，默认 20。' },
+        },
+      },
+      (args, agent, exec) => runtime.inspectWorkflowGit(agent, args, exec.signal),
+    ),
+  ]
+}
+
+function requestSubgraphDefinition(runtime) {
+  return {
+    name: 'request_subgraph',
+    description: '仅当前 V2 Owner running task 可用的结构化 Composite 子图请求；运行时会在 workflow lock 中校验 Owner、task、session、scope 和 verification，并负责局部 delta。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        workflow_id: { type: 'string', description: '当前 Owner 所属 workflow 编号。' },
+        task_id: { type: 'string', description: '当前 V2 running task 编号。' },
+        proposal: { type: 'object', description: 'Composite proposal：children、entry、exit。' },
+      },
+      required: ['workflow_id', 'task_id', 'proposal'],
+    },
+    output: { schema: {}, render: renderValue },
+    async execute(args, exec) {
+      if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+        throw new Error('request_subgraph 参数必须是对象')
+      }
+      return normalizeToolOutput(await runtime.requestSubgraph(args, exec))
+    },
+  }
+}
+
+function requestHandoffDefinition(runtime) {
+  return {
+    name: 'request_handoff',
+    description: '仅当前 V2 Owner running task 可用的结构化 handoff 请求；运行时会校验目标 Owner scope、写入 handoffQueue，并在 workflow lock 中局部失效当前任务及下游。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        workflow_id: { type: 'string', description: '当前 Owner 所属 workflow 编号。' },
+        task_id: { type: 'string', description: '当前 V2 running task 编号。' },
+        handoff: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            targetType: { type: 'string', enum: ['owner', 'orchestrator', 'supervisor'], description: '转交目标类型。' },
+            targetOwnerId: { type: 'string', description: '目标为 Owner 时必须提供的 Owner 编号。' },
+            summary: { type: 'string', description: '转交事项的中文摘要。' },
+            reason: { type: 'string', description: '必须转交的中文原因。' },
+            files: { type: 'array', items: { type: 'string' }, description: '目标 Owner 负责的仓库相对文件路径。' },
+          },
+          required: ['targetType', 'summary', 'reason', 'files'],
+          description: '结构化 handoff：targetType、targetOwnerId、summary、reason、files。',
+        },
+        delta: { type: 'object', description: '可选的受控 V2 局部 plan delta，不得改变 Owner Registry。' },
+      },
+      required: ['workflow_id', 'task_id', 'handoff'],
+    },
+    output: { schema: {}, render: renderValue },
+    async execute(args, exec) {
+      if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+        throw new Error('request_handoff 参数必须是对象')
+      }
+      return normalizeToolOutput(await runtime.requestHandoff(args, exec))
+    },
+  }
+}
+
+function operationToolDefinitions(runtime) {
+  const operationId = {
+    operation_id: {
+      type: 'string',
+      minLength: 1,
+      description: 'Operation 编号；由 operation_start 返回，不能猜测或传空字符串。',
+    },
+  }
+  const stringArray = description => ({
+    type: 'array',
+    items: { type: 'string', minLength: 1 },
+    description,
+  })
+  return [
+    workflowToolDefinition(
+      'operation_start',
+      '为不修改仓库的自适应执行任务启动后台 Operator；用户只与主代理沟通，Operator 通过结构化回报自动返回当前对话。',
+      {
+        properties: {
+          goal: { type: 'string', minLength: 1, description: '主代理从用户自然语言中整理出的执行目标。' },
+          context: stringArray('与本次执行相关的项目、设备和现场上下文。'),
+          constraints: stringArray('本次执行必须遵守的边界和禁止动作，不能为空。'),
+          success_criteria: stringArray('可以判断 Operation 完成的具体标准，不能为空。'),
+          capabilities: {
+            type: 'array',
+            items: { type: 'string', enum: ['project-read', 'shell', 'web', 'skills', 'computer-use'] },
+            description: '本次 Operator 需要的通用能力，不能为空。',
+          },
+        },
+        required: ['goal', 'constraints', 'success_criteria', 'capabilities'],
+      },
+      (args, agent, exec) => runtime.startOperation(agent, {
+        goal: requireString(args, 'goal', 'operation_start'),
+        context: args.context ?? [],
+        constraints: args.constraints,
+        successCriteria: args.success_criteria,
+        capabilities: args.capabilities,
+      }, exec.signal),
+    ),
+    workflowToolDefinition(
+      'operation_status',
+      '仅在用户明确询问状态或恢复中断现场时查询后台 Operation；禁止用它轮询，运行中的 Operator 会主动回报。省略 operation_id 时返回当前会话的列表。',
+      { properties: operationId },
+      (args, agent) => runtime.operationStatus(
+        agent,
+        Object.hasOwn(args, 'operation_id') ? requireString(args, 'operation_id', 'operation_status') : undefined,
+      ),
+    ),
+    workflowToolDefinition(
+      'operation_continue',
+      '只把用户补充信息转发给同一个后台 Operator；外部副作用授权必须使用 operation_approve 原生卡片。',
+      {
+        properties: {
+          ...operationId,
+          response: { type: 'string', minLength: 1, description: '主代理从当前用户回复中整理出的补充内容。' },
+        },
+        required: ['operation_id', 'response'],
+      },
+      (args, agent, exec) => runtime.continueOperation(
+        agent,
+        requireString(args, 'operation_id', 'operation_continue'),
+        requireString(args, 'response', 'operation_continue'),
+        {},
+        exec.signal,
+      ),
+    ),
+    workflowToolDefinition(
+      'operation_approve',
+      '处理 Operator 的 need_approval：调用后由 Harness 在当前主对话显示原生“拒绝/允许一次”授权卡片；不得用普通文本或 ask_user_question 代替。',
+      {
+        properties: {
+          ...operationId,
+          approval_id: { type: 'string', minLength: 1, description: 'Operator 返回的完整一次性授权编号。' },
+          command: { type: 'string', minLength: 1, description: 'Operator 返回的完整精确命令；将显示在 Harness 原生授权卡片中。' },
+        },
+        required: ['operation_id', 'approval_id', 'command'],
+      },
+      (args, agent, exec) => runtime.approveOperation(
+        agent,
+        requireString(args, 'operation_id', 'operation_approve'),
+        requireString(args, 'approval_id', 'operation_approve'),
+        requireString(args, 'command', 'operation_approve'),
+        exec,
+      ),
+    ),
+    workflowToolDefinition(
+      'operation_cancel',
+      '取消当前主会话创建的后台 Operation，并保留状态和事件供审计。',
+      { properties: operationId, required: ['operation_id'] },
+      (args, agent) => runtime.cancelOperation(agent, requireString(args, 'operation_id', 'operation_cancel')),
+    ),
+    workflowToolDefinition(
+      'operation_report',
+      '仅供当前后台 Operator 回报进度、发现、补充信息请求、精确授权请求或最终结果；主代理不能调用。',
+      {
+        properties: {
+          ...operationId,
+          type: { type: 'string', enum: ['progress', 'finding', 'need_input', 'need_approval', 'completed', 'failed'] },
+          summary: { type: 'string', minLength: 1, description: '简洁、可独立理解的中文摘要。' },
+          question: { type: 'string', description: 'need_input 或 need_approval 时主代理需要向用户确认的问题。' },
+          action: { type: 'string', description: 'need_approval 时拟执行的外部副作用动作。' },
+          risk: { type: 'string', description: 'need_approval 时必须向用户展示的具体风险。' },
+          proposed_command: { type: 'string', description: 'need_approval 时等待用户批准的精确命令。' },
+          result: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              summary: { type: 'string' },
+              findings: stringArray('结构化发现；每项必须明确标注“已确认：”“推测：”或“待验证：”。'),
+              evidence: stringArray('支撑结论的命令结果或文件证据摘要。'),
+              nextActions: stringArray('建议的后续动作。'),
+            },
+          },
+        },
+        required: ['operation_id', 'type', 'summary'],
+      },
+      (args, _agent, exec) => runtime.reportOperation(args, exec),
+    ),
+    workflowToolDefinition(
+      'operation_exec',
+      '仅供当前后台 Operator 在文件只读沙箱中执行一次性命令；可能产生外部副作用的命令需要精确的一次性用户授权。',
+      {
+        properties: {
+          ...operationId,
+          command: { type: 'string', minLength: 1, description: '本次需要执行的单条命令；不要使用命令连接符拼接多个动作。' },
+          description: { type: 'string', minLength: 1, description: '本次命令的中文用途说明。' },
+          effect: { type: 'string', enum: ['read-only', 'state-changing'], description: '命令是否可能改变设备、系统、网络或远程状态。' },
+          approval_id: { type: 'string', description: 'state-changing 命令必须使用 operation_approve 原生卡片批准的一次性授权编号。' },
+          timeout_ms: { type: 'number', minimum: 1, description: '可选超时毫秒数，仍受宿主上限约束。' },
+        },
+        required: ['operation_id', 'command', 'description', 'effect'],
+      },
+      (args, _agent, exec) => runtime.executeOperationCommand(args, exec),
+    ),
+  ]
+}
+
+function ownerSubmitDefinition(runtime) {
+  return {
+    name: 'owner_submit',
+    description: 'Owner 的唯一提交关卡：自动运行任务绑定验证，按 Git diff 校验 Owner scope，并生成固定提交。越界或验证失败时返回错误，Owner 应在同一 worktree 调整后重试。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        report: {
+          type: 'object',
+          description: 'DSH_OWNER_RESULT_V1：包含 status、summary、changes、tests、handoffs 和 memory_updates。',
+        },
+      },
+      required: ['report'],
+    },
+    output: { schema: {}, render: renderValue },
+    async execute(args, exec) {
+      if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+        throw new Error('owner_submit 参数必须是对象')
+      }
+      return normalizeToolOutput(await runtime.submitOwnerResult(args.report, exec))
+    },
+  }
+}
+
+function ownerMemoryNoteDefinition(runtime) {
+  return {
+    name: 'owner_memory_note',
+    description: '仅供当前 active Owner 追加本次未完成任务的简短临时记忆。Runtime 会在任务完成后封存它作为 Memory Compiler 的来源；不能直接修改长期 Memory。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        note: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            type: { type: 'string', enum: ['完成', '结论', '下一步', '阻塞'], description: '这条临时记忆的类型。' },
+            text: { type: 'string', minLength: 1, description: '不超过 240 字的简短中文结论；不得写日期、行号、提交 SHA、测试输出或逐文件流水账。' },
+          },
+          required: ['type', 'text'],
+        },
+      },
+      required: ['note'],
+    },
+    output: { schema: {}, render: renderValue },
+    async execute(args, exec) {
+      if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+        throw new Error('owner_memory_note 参数必须是对象')
+      }
+      return normalizeToolOutput(await runtime.recordOwnerMemoryNote(args.note, exec))
+    },
+  }
+}
+
+function ownerHostExecDefinition(runtime) {
+  return {
+    name: 'owner_host_exec',
+    description: '仅供 active Owner 在 workspace-write 拒绝同一精确命令后使用：把授权卡片路由到主代理，明确允许一次后以宿主权限执行该命令。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        command: { type: 'string', minLength: 1, description: '刚被 workspace-write 沙箱拒绝、需要原样重试的精确命令。' },
+        description: { type: 'string', minLength: 1, description: '该命令的中文用途说明。' },
+        justification: { type: 'string', minLength: 1, description: '为什么该精确命令必须访问 Owner worktree 外部资源。' },
+        workdir: { type: 'string', minLength: 1, description: '可选工作目录；必须位于当前 Owner worktree 内，默认是 worktree 根目录。' },
+        timeout_ms: { type: 'number', minimum: 1, description: '可选超时毫秒数，仍受 Harness 宿主上限约束。' },
+      },
+      required: ['command', 'description', 'justification'],
+    },
+    output: { schema: {}, render: renderValue },
+    async execute(args, exec) {
+      if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+        throw new Error('owner_host_exec 参数必须是对象')
+      }
+      return normalizeToolOutput(await runtime.executeOwnerHostCommand(args, exec))
+    },
+  }
+}
+
+export function apply(ctx, config) {
+  if (ctx !== null && typeof ctx === 'object' && appliedContexts.has(ctx)) return
+  if (ctx !== null && typeof ctx === 'object') appliedContexts.add(ctx)
+  // Web 根上下文只用于让 Harness 发现同包的静态客户端，不注册 Agent 工具或提示词。
+  if (config?.surfaceOnly === true) {
+    ctx.effect(() => () => {
+      if (ctx !== null && typeof ctx === 'object') appliedContexts.delete(ctx)
+    }, 'Owner 工作流客户端宿主清理')
+    return
+  }
+  const runtime = createOwnerWorkflowRuntime(ctx, config)
+
+  const disposeAgentCreated = ctx.on('agent/created', ({ agent }) => runtime.onAgentCreated(agent))
+  const disposeAgentDisposed = ctx.on('agent/disposed', ({ agent }) => runtime.onAgentDisposed(agent))
+  const disposeChildProvider = typeof ctx.subagents?.registerProvider === 'function'
+    ? runtime.registerChildProvider()
+    : undefined
+  const disposeContinuableSetup = ctx.subagents?.registerContinuableSetup?.(childCtx => runtime.setupContinuableChild(childCtx))
+
+  for (const skill of OWNER_WORKFLOW_SKILLS) ctx.skills.register(skill)
+
+  ctx.systemPrompt.section({
+    name: 'owner-workflow:orchestrator',
+    order: -20,
+      text: [
+        '你是本项目的唯一主编排者。',
+        '当前 owner-workflow Agent preset 已自动启用强制工作模式；主会话只能读取、规划、审核、查询和调度。',
+      '用户只要求读取仓库并给出检查、审计、分析、解释、评估或优化建议，且不需要实际执行命令、操作设备、访问浏览器或调用外部能力时，调用 workflow_audit。',
+      '用户要求实际执行但不修改仓库的自适应任务时，由你把模糊需求整理成目标、上下文、约束、完成标准和最小 capabilities，再调用 operation_start；不要要求用户提供具体命令，也不要让用户进入子线程。',
+      'Operation Operator 通过 operation_report 自动返回当前主对话。need_input 由你向用户取得信息后 operation_continue；need_approval 必须立即调用 operation_approve，由 Harness 原生授权卡片展示精确动作、风险和命令。不要用普通文本或 ask_user_question 代替授权卡片。',
+      'operation_start 成功后结束当前回复并等待 Operator 主动回报；不要立即或重复调用 operation_status。operation_status 只用于用户明确询问或恢复中断现场，operation_id 必须逐字使用工具返回值，不能缩写或猜测。',
+      'Operation 完成后由你审核证据并向用户汇总；只有用户要求修改仓库时才进入 workflow_preflight → workflow_start 的 Owner 开发流程。',
+      '只有用户明确要求新增、修改、修复、删除、重构或实现代码时，先调用 workflow_preflight；仅当它返回 canStart=true 时，使用同一 baseDigest 调用 workflow_start 创建 Owner/DAG 工作流。',
+      '严禁调用 owner_workflow(action=start)：该旧入口已停用且没有 baseDigest 安全边界。创建 workflow 的唯一入口是 workflow_preflight 后的 workflow_start。',
+      '若 workflow_start 或 workflow_recover 返回 contract=DSH_WORKFLOW_PLANNING_FAILED_V1，必须使用其完整 workflowId：recoverable=true 时立即调用 workflow_recover 恢复同一个 Workflow，不得重新 preflight/start；recoverable=false 时停止自动恢复并通过原生问询交给用户决定。若 workflow_preflight 或工具本身返回原始错误，则停止后续动作，禁止猜测或传入空 workflow_id。',
+      '计划调用严格交替：workflow_plan_review 返回 needs_revision 后只调用一次 workflow_plan_revise；修订成功后必须重新 review。工具返回 nextTool 与 nextArgs 时必须逐字调用，不得改写参数或从 nextAction 猜测其他工具。workflow_plan_revise 返回 DSH_WORKFLOW_PLAN_REVISION_FAILED_V1 且 recoverable=true 时，只重试同一个 workflowId 的 revise，禁止 cancel 或重新 start；返回 DSH_WORKFLOW_PLAN_REVISION_SKIPPED_V1 且 reason=revision_limit 时，立即按 nextTool/nextArgs 调用 workflow_plan_revision_extend，由该工具显示原生问询。用户同意后只继续当前 Workflow 的 workflow_plan_revise；不同意就保留现场停止，自定义输入只作为反馈。',
+      'workflow_recover 只允许处理 DSH_WORKFLOW_PLANNING_FAILED_V1 指明的 planning 失败；planned、needs_revision 或 revision_limit 状态绝不能调用。maxPlanRevisionTurns 是 Runtime 配置，不是 workflow_start 的需求参数，不得声称取消重建后可以在自然语言计划中提高上限。',
+      'Owner Registry 固定在项目启动分支。Owner 只能根据代码本身的长期责任域划分，包括目录、模块、包、接口边界、依赖方向、稳定业务或技术职责及可独立演进的文件集合；绝不能根据当前 Workflow 的阶段、任务步骤、修复顺序、review/verify 角色、验证类型、临时需求名称或并行度目标划分。Workflow 只能把 DAG task 路由给 Owner，不能反过来塑造 Owner。',
+      'Owner 分析子代理只能提交代码责任域建议；Owner 的设定、提案展示、用户问询和批准必须全部发生在创建该 Workflow 的主线程。Owner、Planner、Reviewer、Runner 或其他会话都不能调用 Registry 变更替代主线程。批准后 Runtime 才把 Registry 持久化到项目基础分支，不能只留在单次 Workflow 分支。',
+      '创建新 Workflow 时必须复用已有 Owner ID，只为本次 DAG 创建执行子线程、分支和 worktree；不能因旧 Workflow 取消、当前流程新增阶段或希望并行而重复登记或拆分 Owner。只有代码长期责任边界确实变化时才能提出 Registry 变更。',
+      '内部 workflowId 只用于状态、锁、socket 和 worktree 隔离，不得用作新 Workflow 的可见 Git 分支名。Workflow 分支由 Runtime 确定性分配为 dsh/workflow/<日期>-<项目递增序号>-<需求摘要>，Owner 分支复用同一可读前缀；不得自行猜测或改写分支名。',
+      '你直接接收用户需求，负责解释需求、调用规划子代理生成 DAG，并审核结构化计划。',
+      'Registry 提案生成后必须立即调用 workflow_owner_change_approve；计划独立审查通过后必须立即调用 workflow_plan_approve。两个工具都会在当前主对话显示“同意/不同意/自定义输入”原生问询并等待用户决定；不得先用普通文本、回复口令或单独的 ask_user_question 索要批准。',
+      '用户选择不同意时保留现场并停止应用；用户输入自定义意见时根据工具返回的 feedback 修订或重新提案，绝不能把自定义文字解释成批准。',
+      '你不能在主会话中直接执行 Owner 阶段；使用 workflow_plan_review、workflow_plan_approve、workflow_status 等单职责工具。计划批准后，随 Harness 启停的确定性 Runner daemon 会自动接管并驱动 Harness 内的 Owner 子线程；它不是 LLM Agent。workflow_plan_approve 返回 runner.status=queued 时只能说明“已排队等待接管”，不得宣称 Owner 已开始执行；只有 workflow 状态或等待列表显示 running 后才能说明正在执行。',
+      'Runner daemon 会自动恢复 approved/running Workflow，不要求用户手工运行 run-owner-workflow。批准成功后按 nextAction 结束回复并等待状态变化，不得主动轮询；用户明确查询时才调用 workflow_status 或 workflow_supervisor_status。',
+      '业务代码必须由 Owner 子代理在各自独立 worktree 和分支中完成；Owner 继承正常开发工具并可读取整个仓库，主会话不得直接编辑业务文件。',
+      '同一 Owner 同时只能有一个子线程；每个阶段完成后必须立即合并所有 Owner 分支回 workflow 分支。',
+      '所有任务完成后必须先调用 workflow_implementation_review，再调用 workflow_finalize。Runtime 只能把审查固定的 workflow HEAD 合并回创建时的启动分支；合并成功后必须删除该 Workflow 的全部 Owner/workflow 临时分支和 worktree，只保留状态、日志和已进入启动分支的提交。',
+      'failed 或 blocked 表示仍准备恢复：保留原 Owner/workflow 分支、worktree 和未提交修改，并在同一个 Workflow 中恢复。只有用户明确表示放弃时才能调用 workflow_cancel；该工具自行显示原生问询，同意后不执行合并，直接删除所有未合入的临时分支、worktree 和未提交修改，只保留 Runtime 状态、日志与 Dashboard 历史。不得因为规划、审查、验证或工具错误而自动取消并新建 Workflow。',
+      'Owner scope 只在 owner_submit 提交关卡按真实 Git diff 强制校验；越界时由同一 Owner 调整或 handoff，不使用逐工具写入白名单。',
+      'Owner 子线程的原生 approval policy 固定为 never，不能直接在 bash/pwsh 中设置 sandbox_permissions。workspace-write 拒绝必须访问共享 SDK、编译器或缓存的同一精确命令时，Owner 调用 owner_host_exec；该工具把完整命令、目录和理由显示在当前主对话的 Harness 原生授权卡片中，只有允许一次后才执行。',
+      'owner_submit 的固定验证由 Runtime 确定性处理沙箱拒绝，不依赖 Owner 主动选择工具：当前主线程有开放回合时直接显示原生授权卡片并精确重试一次；后台 Runner 没有主线程开放回合时自动把任务安全停为 blocked 并保留 worktree。你收到该阻塞后先调用 workflow_supervisor_status，随后使用状态中的完整 workflowId、taskId、ownerId 调用 workflow_owner_recover，让同一任务在当前主线程恢复并显示卡片；不得重新规划或创建 Workflow。',
+      '固定验证经过授权并实际执行后若 exitCode 非 0，Runtime 会把有界 stdout/stderr 返回同一 Owner 子线程，并拒绝把它结算为 blocked。这属于代码或测试失败，不是新的授权请求；等待 Owner 在原 worktree 修复并重新提交，不要要求用户手工运行同一命令。',
+      'Owner 子线程按任务创建并在完成后回收；长期记忆由 Memory Curator 和 Reviewer 编译到 .owner-memory，主会话和 Owner 都不能直接改写。',
+      '需要创建计划时只使用 workflow_* 单职责工作流工具，而不是直接使用写文件工具；owner_workflow 只用于兼容旧会话，其中不再暴露 plan_revise 和 workflow_recover，不能把它当作失败后的备用入口。',
+    ].join(''),
+  })
+
+  ctx.tools.register(toolDefinition(ctx, runtime))
+  ctx.tools.register(ownerSubmitDefinition(runtime))
+  ctx.tools.register(ownerMemoryNoteDefinition(runtime))
+  ctx.tools.register(ownerHostExecDefinition(runtime))
+  ctx.tools.register(requestSubgraphDefinition(runtime))
+  ctx.tools.register(requestHandoffDefinition(runtime))
+  for (const definition of workflowToolDefinitions(ctx, runtime)) ctx.tools.register(definition)
+  for (const definition of operationToolDefinitions(runtime)) ctx.tools.register(definition)
+
+  // 使用 Harness 的单调执行守卫，确保后续监听器不能把权限拒绝改回允许。
+  ctx.tools.guard(exec => runtime.checkToolExecution(exec))
+
+  ctx.effect(() => async () => {
+    disposeAgentCreated?.()
+    disposeAgentDisposed?.()
+    disposeChildProvider?.()
+    disposeContinuableSetup?.()
+    if (ctx !== null && typeof ctx === 'object') appliedContexts.delete(ctx)
+    await runtime.dispose()
+  }, 'Owner 工作流运行时清理')
+}
+
+export default { name, inject, apply }
