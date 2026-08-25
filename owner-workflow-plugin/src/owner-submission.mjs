@@ -85,7 +85,7 @@ export async function submitOwnerResult(runtime, rawReport, exec) {
         status: 'blocked',
         summary: error.message,
         accepted: true,
-        nextAction: '固定验证正在等待主代理原生授权；已保留 Owner worktree，停止当前子线程并返回主代理。',
+        nextAction: '固定验证正在等待当前 Owner 任务现场的原生授权；已保留 worktree，可从行动收件箱返回现场处理。',
       }
       active.submission = { report: blockedReport, publicResult }
       return publicResult

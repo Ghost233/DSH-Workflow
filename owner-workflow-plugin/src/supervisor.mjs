@@ -64,6 +64,35 @@ function normalizeTaskRecord(raw, task, index) {
   if (status === 'pending' && executorId !== null) fail(`tasks[${index}] 等待中不能绑定 executorId`)
   if (status !== 'running' && unchangedPolls !== 0) fail(`tasks[${index}] 非运行中时 unchangedPolls 必须为 0`)
 
+  const planRevision = raw.planRevision
+  if (planRevision !== undefined && (!Number.isSafeInteger(planRevision) || planRevision < 1)) {
+    fail(`tasks[${index}].planRevision 必须是正安全整数`)
+  }
+  const checkState = raw.checkState
+  if (checkState !== undefined && checkState !== null && !['valid', 'pending_check', 'invalid'].includes(checkState)) {
+    fail(`tasks[${index}].checkState 不受支持：${String(checkState)}`)
+  }
+  const revisionDisposition = raw.revisionDisposition
+  if (revisionDisposition !== undefined && !['carry_valid', 'pending_check', 'abort'].includes(revisionDisposition)) {
+    fail(`tasks[${index}].revisionDisposition 不受支持：${String(revisionDisposition)}`)
+  }
+  const revisionReason = raw.revisionReason
+  if (revisionReason !== undefined && (typeof revisionReason !== 'string' || revisionReason.trim() === '')) {
+    fail(`tasks[${index}].revisionReason 必须是非空字符串`)
+  }
+  const recheckOnly = raw.recheckOnly
+  if (recheckOnly !== undefined && typeof recheckOnly !== 'boolean') {
+    fail(`tasks[${index}].recheckOnly 必须是布尔值`)
+  }
+  const fixedCommitSha = raw.fixedCommitSha
+  if (fixedCommitSha !== undefined && (typeof fixedCommitSha !== 'string' || fixedCommitSha.trim() === '')) {
+    fail(`tasks[${index}].fixedCommitSha 必须是非空字符串`)
+  }
+  const abortedOwnerId = raw.abortedOwnerId
+  if (abortedOwnerId !== undefined && (typeof abortedOwnerId !== 'string' || abortedOwnerId.trim() === '')) {
+    fail(`tasks[${index}].abortedOwnerId 必须是非空字符串`)
+  }
+
   return {
     taskId,
     status,
@@ -74,6 +103,13 @@ function normalizeTaskRecord(raw, task, index) {
     action,
     // Supervisor 只更新调度字段；提交关卡写入的验证证据必须原样保留。
     ...(verificationResults === undefined ? {} : { verificationResults: structuredClone(verificationResults) }),
+    ...(planRevision === undefined ? {} : { planRevision }),
+    ...(checkState === undefined ? {} : { checkState }),
+    ...(revisionDisposition === undefined ? {} : { revisionDisposition }),
+    ...(revisionReason === undefined ? {} : { revisionReason: revisionReason.trim() }),
+    ...(recheckOnly === undefined ? {} : { recheckOnly }),
+    ...(fixedCommitSha === undefined ? {} : { fixedCommitSha: fixedCommitSha.trim() }),
+    ...(abortedOwnerId === undefined ? {} : { abortedOwnerId: abortedOwnerId.trim() }),
   }
 }
 
@@ -150,6 +186,17 @@ function normalizeState(state) {
   if (tasks.filter(task => task.status === 'running').length > parallel) {
     fail('运行中的 active 任务数量不能超过 config.parallel')
   }
+  const transitionBlockedTaskIds = state.transitionBlockedTaskIds ?? []
+  if (!Array.isArray(transitionBlockedTaskIds)) fail('transitionBlockedTaskIds 必须是数组')
+  const knownTaskIds = new Set(plan.tasks.map(task => task.id))
+  const normalizedBlockedTaskIds = transitionBlockedTaskIds.map((taskId, index) => {
+    const normalized = nonEmptyText(taskId, `transitionBlockedTaskIds[${index}]`)
+    if (!knownTaskIds.has(normalized)) fail(`transitionBlockedTaskIds 包含未知任务：${normalized}`)
+    return normalized
+  })
+  if (new Set(normalizedBlockedTaskIds).size !== normalizedBlockedTaskIds.length) {
+    fail('transitionBlockedTaskIds 不能重复')
+  }
   return {
     workflowId,
     revision,
@@ -157,6 +204,7 @@ function normalizeState(state) {
     tasks,
     parallel,
     actionSequence,
+    transitionBlockedTaskIds: normalizedBlockedTaskIds,
   }
 }
 
@@ -167,6 +215,7 @@ function readyTaskPlans(state) {
   return state.plan.tasks.filter(task => {
     const record = tasks.get(task.id)
     if (task.children !== undefined) return false
+    if (state.transitionBlockedTaskIds.includes(task.id)) return false
     if (record.status !== 'pending' || status(task.id) !== 'pending') return false
     const parent = task.parentTaskId === undefined ? undefined : planById.get(task.parentTaskId)
     const parentReady = parent === undefined
@@ -221,6 +270,7 @@ function actionId(state, action, payload) {
     workflowRevision: state.revision,
     planDigest: fingerprint(state.plan),
     taskProjection: state.tasks,
+    transitionBlockedTaskIds: state.transitionBlockedTaskIds,
     parallel: state.parallel,
     sequence: state.actionSequence,
     action,
@@ -257,6 +307,12 @@ function nextReceipt(state) {
   if (state.tasks.some(task => task.status === 'stopped' && task.reason === 'decision_required')) {
     return receipt(state, 'notify', { notification: { kind: 'main', reason: 'decision_required' } })
   }
+  if (state.tasks.some(task => task.checkState === 'pending_check')
+    || state.transitionBlockedTaskIds.length > 0) {
+    // Owner 结算与 reservation 完成之间存在一个很短的持久化窗口；保持 wait，
+    // 让 Runtime 完成 Revision 失效传播，不能提前把 Workflow 停成 completed。
+    return receipt(state, 'wait', { watches: [] })
+  }
   if (state.tasks.every(task => task.status === 'completed' || task.status === 'stopped')) return receipt(state, 'stop')
   return receipt(state, 'notify', { notification: { kind: 'main', reason: 'decision_required' } })
 }
@@ -268,6 +324,7 @@ function cloneState(state, tasks) {
     tasks: reconcileCompositeParents(state.plan, tasks),
     config: { ...(state.config ?? {}), parallel: state.parallel },
     actionSequence: state.actionSequence + 1,
+    transitionBlockedTaskIds: [...state.transitionBlockedTaskIds],
   }
 }
 

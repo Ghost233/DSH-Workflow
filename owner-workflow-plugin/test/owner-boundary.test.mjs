@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { git, head } from '../src/git.mjs'
-import { commitOwnerChanges, inspectOwnerChanges } from '../src/owner-boundary.mjs'
+import { commitOwnerChanges, inspectOwnerChanges, isProtectedRelativePath } from '../src/owner-boundary.mjs'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-boundary-'))
@@ -26,6 +26,20 @@ async function fixture() {
     },
   }
 }
+
+test('Harness、Synapse 与审批策略上游子模块始终属于受保护路径', () => {
+  for (const path of [
+    'deepseek-harness',
+    'deepseek-harness/package.json',
+    'dsh-synapse',
+    'dsh-synapse/index.js',
+    'owner-workflow-plugin/vendor/dsh-approve-for-me',
+    'owner-workflow-plugin/vendor/dsh-approve-for-me/src/core/index.ts',
+    'DSH-SYNAPSE/client.js',
+  ]) {
+    assert.equal(isProtectedRelativePath(path), true, path)
+  }
+})
 
 test('Owner 可以自由修改 worktree，但提交关卡拒绝 scope 外和受保护路径', async () => {
   const { root, entry } = await fixture()

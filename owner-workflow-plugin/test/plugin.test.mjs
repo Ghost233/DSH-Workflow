@@ -5,7 +5,9 @@ import plugin, {
   confirmOwnerChangeApproval,
   confirmPlanApproval,
   confirmPlanRevisionExtension,
+  confirmPlanRevisionApproval,
   confirmWorkflowCancellation,
+  submitIntentAndAskReplan,
 } from '../index.js'
 import { OWNER_WORKFLOW_SKILLS } from '../src/skills.mjs'
 import { ownerRolePrompt, ownerTaskPrompt } from '../src/owner-agent.mjs'
@@ -16,6 +18,7 @@ test('插件注册主编排工具、全局守卫和九个中文 Skill', () => {
   const guards = []
   const sections = []
   const providers = []
+  const listeners = []
   const ctx = {
     skills: { register: skill => { skills.push(skill); return () => {} } },
     tools: {
@@ -27,7 +30,7 @@ test('插件注册主编排工具、全局守卫和九个中文 Skill', () => {
       registerProvider(provider) { providers.push(provider); return () => {} },
       registerContinuableSetup() { return () => {} },
     },
-    on: () => () => {},
+    on: (event) => { listeners.push(event); return () => {} },
     effect: () => () => {},
   }
 
@@ -60,6 +63,9 @@ test('插件注册主编排工具、全局守卫和九个中文 Skill', () => {
   assert.ok(tools.some(tool => tool.name === 'workflow_plan_revision_extend'))
   assert.ok(tools.some(tool => tool.name === 'workflow_status'))
   assert.ok(tools.some(tool => tool.name === 'workflow_git_inspect'))
+  for (const name of ['workflow_intent_submit', 'workflow_intent_status', 'workflow_revision_plan', 'workflow_revision_review', 'workflow_revision_approve', 'workflow_revision_discard']) {
+    assert.ok(tools.some(tool => tool.name === name), name)
+  }
   const ownerHostExec = tools.find(tool => tool.name === 'owner_host_exec')
   assert.deepEqual(ownerHostExec.parameters.required, ['command', 'description', 'justification'])
   assert.equal(ownerHostExec.parameters.properties.sandbox_permissions, undefined)
@@ -79,12 +85,117 @@ test('插件注册主编排工具、全局守卫和九个中文 Skill', () => {
   assert.ok(plugin.inject.includes('sandbox'))
   assert.ok(plugin.inject.includes('approval'))
   assert.ok(plugin.inject.includes('userQuestions'))
+  assert.equal(listeners.includes('approval/request'), false)
+  assert.equal(listeners.includes('system-prompt/assemble'), true)
   const reviewSubmit = tools.find(tool => tool.name === 'workflow_plan_review_submit')
   assert.deepEqual(reviewSubmit.parameters.properties.review.properties.status.enum, ['passed', 'needs_revision'])
   assert.match(tools.find(tool => tool.name === 'workflow_plan_approve').description, /原生.*同意\/不同意/u)
   assert.match(tools.find(tool => tool.name === 'workflow_plan_revision_extend').description, /原生.*同意\/不同意/u)
   assert.match(tools.find(tool => tool.name === 'workflow_owner_change_approve').description, /原生.*同意\/不同意/u)
   assert.match(tools.find(tool => tool.name === 'workflow_cancel').description, /原生.*同意\/不同意/u)
+})
+
+test('提交 Intent 后明确询问是否重新规划，继续讨论时不唤醒 Planner', async () => {
+  const agent = { id: 'discussion-session' }
+  const exec = { signal: new AbortController().signal }
+  const questions = []
+  const ctx = {
+    userQuestions: {
+      async ask(request) {
+        questions.push(request.questions[0])
+        return { answers: [{ id: request.questions[0].id, selected: ['继续讨论'] }] }
+      },
+    },
+  }
+  let plannerCalls = 0
+  const runtime = {
+    async submitWorkflowIntent(_agent, content) {
+      assert.equal(content, '把任务 B 与 A 并行')
+      return { workflowId: 'wf-1', pendingIntentCount: 2 }
+    },
+    async planWorkflowIntents() { plannerCalls += 1 },
+  }
+  const result = await submitIntentAndAskReplan(
+    ctx, runtime, { content: '把任务 B 与 A 并行' }, agent, exec,
+  )
+  assert.equal(result.plannerInvoked, false)
+  assert.equal(result.replanDecision.decision, 'continue_discussion')
+  assert.equal(plannerCalls, 0)
+  assert.match(questions[0].question, /当前共有 2 条待整理.*是否现在重新规划/u)
+  assert.deepEqual(questions[0].options.map(option => option.label), ['现在重新规划', '继续讨论'])
+})
+
+test('用户在 Intent 问询中选择现在重新规划时只唤醒一次 Planner', async () => {
+  const agent = { id: 'discussion-session' }
+  const exec = { signal: new AbortController().signal }
+  const ctx = {
+    userQuestions: {
+      async ask(request) {
+        return { answers: [{ id: request.questions[0].id, selected: ['现在重新规划'] }] }
+      },
+    },
+  }
+  let plannerCalls = 0
+  const runtime = {
+    async submitWorkflowIntent() { return { workflowId: 'wf-1', pendingIntentCount: 3 } },
+    async planWorkflowIntents() {
+      plannerCalls += 1
+      return { contract: 'DSH_PLAN_REVISION_CANDIDATE_V1', number: 2 }
+    },
+  }
+  const result = await submitIntentAndAskReplan(ctx, runtime, { content: '加入 C' }, agent, exec)
+  assert.equal(result.plannerInvoked, true)
+  assert.equal(result.candidate.number, 2)
+  assert.equal(plannerCalls, 1)
+})
+
+test('PlanRevision 只有根会话原生问询明确同意后才切换', async () => {
+  const agent = { id: 'workflow-root' }
+  const exec = { signal: new AbortController().signal }
+  const answers = ['不同意', '同意']
+  const questions = []
+  const previousTask = {
+    id: 'A', role: 'work', ownerId: 'core', title: '任务 A', dependsOn: [], write: ['src/a.mjs'], verify: ['unit'], done: ['完成'],
+  }
+  const candidateTask = { ...previousTask, dependsOn: ['C'] }
+  const workflow = {
+    workflowId: 'wf-1',
+    conversationRootSessionId: agent.id,
+    plan: { tasks: [previousTask] },
+    pendingPlanRevision: {
+      number: 2,
+      parent: 1,
+      planDigest: 'revision-digest',
+      review: { status: 'passed' },
+      plan: { tasks: [{ ...previousTask, id: 'C', title: '前置 C' }, candidateTask] },
+    },
+  }
+  const ctx = {
+    userQuestions: {
+      async ask(request) {
+        questions.push(request.questions[0])
+        return { answers: [{ id: request.questions[0].id, selected: [answers.shift()] }] }
+      },
+    },
+  }
+  let approvals = 0
+  const runtime = {
+    async workflowIntentStatus() { return { workflowId: workflow.workflowId } },
+    async status() { return { workflow } },
+    async approvePendingPlanRevision() {
+      approvals += 1
+      return { revision: 2 }
+    },
+  }
+
+  const rejected = await confirmPlanRevisionApproval(ctx, runtime, agent, exec, 'revision-digest')
+  assert.equal(rejected.applied, false)
+  assert.equal(approvals, 0)
+  const approved = await confirmPlanRevisionApproval(ctx, runtime, agent, exec, 'revision-digest')
+  assert.equal(approved.applied, true)
+  assert.equal(approvals, 1)
+  assert.match(questions[0].detail, /DAG 差异/u)
+  assert.match(questions[0].detail, /新增 C/u)
 })
 
 test('取消 Workflow 只有原生问询明确同意后才丢弃临时现场', async () => {
@@ -341,7 +452,8 @@ test('Owner 工作流提示要求新 Flutter 验证显式 cwd，且不提供 Qui
   assert.match(skill.content, /DSH_PLAN_V2/u)
   assert.match(skill.content, /不提供 Quick/u)
   assert.match(skill.content, /operation_approve/u)
-  assert.match(skill.content, /原生.*授权卡片/u)
+  assert.match(skill.content, /Operation 不使用 Harness Approval 协议/u)
+  assert.match(skill.content, /原生多选项问询/u)
   assert.match(skill.content, /Owner 必须根据代码本身划分/u)
   assert.match(skill.content, /Workflow 只能把 DAG task 路由给 Owner，不能反过来塑造 Owner/u)
   assert.match(worker.content, /owner_submit/u)

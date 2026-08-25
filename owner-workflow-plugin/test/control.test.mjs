@@ -1335,26 +1335,15 @@ test('Operation 子代理继承完整工具但项目文件使用 read-only 沙�
   }
 })
 
-test('计划必须使用匹配的 digest 显式批准', async () => {
+test('历史 V1 计划即使 digest 匹配也不能批准执行', async () => {
   const { root, runtime, agent, state } = await planApprovalFixture()
   try {
     await assert.rejects(runtime.approvePlan(agent, state.id, 'wrong-digest', state.registryDigest), /计划 digest 不匹配/u)
     await assert.rejects(runtime.approvePlan(agent, state.id, state.planDigest, 'b'.repeat(64)), /Registry digest 不匹配/u)
-    const result = await runtime.approvePlan(agent, state.id, state.planDigest, state.registryDigest)
-    assert.equal(result.approved, true)
-    assert.deepEqual(result.runner, {
-      mode: 'managed-daemon',
-      status: 'queued',
-      pendingTasks: 1,
-      runningTasks: 0,
-    })
-    assert.match(result.nextAction, /等待任务状态主动变化/u)
-    assert.match(result.nextAction, /不得宣称 Owner 已开始执行/u)
-    assert.equal(result.registryDigest, state.registryDigest)
-    const saved = JSON.parse(await readFile(join(root, '.dsh-workflow', 'workflows', `${state.id}.json`), 'utf8'))
-    assert.equal(saved.status, 'approved')
-    assert.equal(saved.planApproved, true)
-    assert.equal(saved.runnerQueuedAt, saved.planApprovedAt)
+    await assert.rejects(
+      runtime.approvePlan(agent, state.id, state.planDigest, state.registryDigest),
+      /DSH_PLAN_V2|V1.*不能|计划契约/u,
+    )
   } finally {
     await runtime.dispose()
     await rm(root, { recursive: true, force: true })
@@ -2540,6 +2529,7 @@ test('规划契约失败返回完整 Workflow ID，并在同一现场有界恢�
     assert.equal(recoveredState.planningFailure, undefined)
     assert.equal(recoveredState.planningFailureCount, 1)
 
+    await runtime.cancelWorkflow(agent, failed.workflowId)
     runtime.config.maxPlanningFailures = 2
     valid = false
     const secondPreflight = await runtime.preflightWorkflow(agent)
@@ -2848,6 +2838,8 @@ test('新建 Workflow 会先迁移已取消旧 Workflow 中最新获批的固定
     const legacy = JSON.parse(await readFile(statePath, 'utf8'))
     legacy.status = 'cancelled'
     legacy.cancelledAt = new Date().toISOString()
+    legacy.temporaryArtifactsCleaned = true
+    legacy.temporaryArtifactsCleanedAt = legacy.cancelledAt
     legacy.approvedProposalDigest = 'legacy-cancelled-approved-registry'
     legacy.registryApprovedAt = new Date().toISOString()
     delete legacy.registryBaseCommit

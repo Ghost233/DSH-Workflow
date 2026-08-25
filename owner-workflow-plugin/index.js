@@ -118,6 +118,8 @@ function optionalWorkflowId(args, action) {
 const WORKFLOW_DECISION_CONTRACT = 'DSH_WORKFLOW_USER_DECISION_V1'
 const WORKFLOW_APPROVE_LABEL = '同意'
 const WORKFLOW_REJECT_LABEL = '不同意'
+const REPLAN_NOW_LABEL = '现在重新规划'
+const REPLAN_LATER_LABEL = '继续讨论'
 
 function markdownInline(value) {
   return String(value ?? '').replace(/([\\`*_[\]{}()#+.!|>\-])/gu, '\\$1')
@@ -241,6 +243,115 @@ function workflowCancellationDecisionDetail(workflow) {
     '',
     '如果还希望继续修复或恢复当前工作，请选择“不同意”。failed/blocked 状态会继续保留原现场。',
   ].join('\n')
+}
+
+function planRevisionDecisionDetail(workflow, candidate) {
+  const previous = new Map((workflow?.plan?.tasks ?? []).map(task => [task.id, task]))
+  const next = new Map((candidate?.plan?.tasks ?? []).map(task => [task.id, task]))
+  const lines = [
+    `工作流：${markdownInline(workflow?.workflowId)}`,
+    `版本：${markdownInline(candidate?.parent)} → ${markdownInline(candidate?.number)}`,
+    `候选摘要：${markdownInline(candidate?.planDigest)}`,
+    '',
+    '### DAG 差异',
+  ]
+  for (const task of next.values()) {
+    const old = previous.get(task.id)
+    if (old === undefined) {
+      lines.push(`- 新增 ${markdownInline(task.id)}：${markdownInline(task.title)}；依赖 ${(task.dependsOn ?? []).map(markdownInline).join('、') || '无'}`)
+      continue
+    }
+    const before = JSON.stringify({ ownerId: old.ownerId, dependsOn: old.dependsOn, write: old.write, verify: old.verify, done: old.done })
+    const after = JSON.stringify({ ownerId: task.ownerId, dependsOn: task.dependsOn, write: task.write, verify: task.verify, done: task.done })
+    if (before !== after) {
+      lines.push(`- 变更 ${markdownInline(task.id)}：依赖 ${(old.dependsOn ?? []).map(markdownInline).join('、') || '无'} → ${(task.dependsOn ?? []).map(markdownInline).join('、') || '无'}；Owner ${markdownInline(old.ownerId)} → ${markdownInline(task.ownerId)}`)
+    }
+  }
+  for (const task of previous.values()) {
+    if (!next.has(task.id)) lines.push(`- 删除 ${markdownInline(task.id)}：${markdownInline(task.title)}`)
+  }
+  if (lines.at(-1) === '### DAG 差异') lines.push('- 任务 DAG 语义未变化。')
+  lines.push('', '同意后 Runtime 才切换到该不可变 DSH_PLAN_V2 快照；运行中可复用结果会先标记“待检查”，权限边界失效的运行会立即中止且不合入。')
+  return lines.join('\n')
+}
+
+async function askIntentReplan(ctx, agent, exec, submitted) {
+  const userQuestions = ctx?.userQuestions ?? ctx?.get?.('userQuestions')
+  if (typeof userQuestions?.ask !== 'function') throw new Error('Harness 原生问询服务不可用，Intent 已保存但不会自动重新规划')
+  const answer = await userQuestions.ask({
+    questions: [{
+      id: 'owner-workflow-intent-replan',
+      header: '更新 DAG',
+      question: `已保存 Intent；当前共有 ${submitted.pendingIntentCount} 条待整理。是否现在重新规划？`,
+      detail: '选择“现在重新规划”会按需唤醒一次 Planner，把当前全部待处理 Intent 统一整理成一个冻结候选；选择“继续讨论”不会调用模型，后续 Intent 会继续合并计数。',
+      options: [
+        { label: REPLAN_NOW_LABEL, description: '立即汇总当前待处理 Intent，并生成一份 PlanRevision 候选。' },
+        { label: REPLAN_LATER_LABEL, description: '暂不调用 Planner，继续在当前会话树中讨论。' },
+      ],
+      multiSelect: false,
+    }],
+    agent,
+    signal: exec.signal,
+  })
+  const item = answer?.answers?.find(candidate => candidate?.id === 'owner-workflow-intent-replan')
+  const custom = typeof item?.custom === 'string' ? item.custom.trim() : ''
+  if (custom !== '') return { decision: 'custom', feedback: custom }
+  if (item?.selected?.[0] === REPLAN_NOW_LABEL) return { decision: 'replan_now' }
+  if (item?.selected?.[0] === REPLAN_LATER_LABEL) return { decision: 'continue_discussion' }
+  throw new Error('Harness 原生问询没有返回有效的重新规划决定')
+}
+
+export async function submitIntentAndAskReplan(ctx, runtime, args, agent, exec) {
+  const submitted = await runtime.submitWorkflowIntent(
+    agent,
+    requireString(args, 'content', 'workflow_intent_submit'),
+    exec.signal,
+  )
+  const decision = await askIntentReplan(ctx, agent, exec, submitted)
+  if (decision.decision !== 'replan_now') {
+    return {
+      ...submitted,
+      replanDecision: decision,
+      nextTool: 'workflow_revision_plan',
+      plannerInvoked: false,
+    }
+  }
+  return {
+    ...submitted,
+    replanDecision: decision,
+    plannerInvoked: true,
+    candidate: await runtime.planWorkflowIntents(agent, exec.signal),
+  }
+}
+
+export async function confirmPlanRevisionApproval(ctx, runtime, agent, exec, planDigest) {
+  const intentStatus = await runtime.workflowIntentStatus(agent)
+  if (intentStatus.workflowId === null) throw new Error('当前项目没有 active Workflow')
+  const status = await runtime.status(agent, intentStatus.workflowId, { ensureBridge: false })
+  const workflow = status?.workflow
+  const candidate = workflow?.pendingPlanRevision
+  if (candidate === undefined) throw new Error('当前没有待批准 PlanRevision 候选')
+  if (workflow.conversationRootSessionId !== agent.id) {
+    throw new Error(`PlanRevision 最终批准必须回到 Workflow 根会话 ${String(workflow.conversationRootSessionId)}`)
+  }
+  if (candidate.planDigest !== planDigest) throw new Error(`PlanRevision digest 不匹配，期望 ${String(candidate.planDigest)}`)
+  if (candidate.review?.status !== 'passed') throw new Error('PlanRevision 必须先通过独立 Review')
+  const decision = await askWorkflowDecision(ctx, {
+    agent,
+    signal: exec.signal,
+    id: 'owner-workflow-plan-revision-approval',
+    header: 'DAG Revision',
+    question: `是否批准 PlanRevision ${candidate.number}？`,
+    detail: planRevisionDecisionDetail(workflow, candidate),
+  })
+  if (decision.decision !== 'approved') {
+    return declinedWorkflowDecision(decision, workflow.workflowId, planDigest, 'PlanRevision')
+  }
+  return {
+    ...await runtime.approvePendingPlanRevision(agent, planDigest, exec.signal),
+    decision: 'approved',
+    applied: true,
+  }
 }
 
 /** 使用 Harness 原生问询面板取得一次工作流决定；只有明确选择“同意”才授予批准。 */
@@ -632,6 +743,62 @@ function workflowToolDefinitions(ctx, runtime) {
       (args, agent, exec) => runtime.auditWorkspace(agent, requireString(args, 'request', 'workflow_audit'), exec.signal),
     ),
     workflowToolDefinition(
+      'workflow_intent_submit',
+      '只在用户明确要求“加入当前 Workflow / 更新 DAG / 与某任务并行或设为前置”时提交一条 Intent。保存后必须显示 Harness 原生问询，明确提醒用户选择现在重新规划或继续讨论；不得从普通讨论中自动推断 Intent。',
+      {
+        properties: {
+          content: { type: 'string', minLength: 1, maxLength: 4000, description: '忠实保留用户明确表达的任务或依赖变更意图。' },
+        },
+        required: ['content'],
+      },
+      (args, agent, exec) => submitIntentAndAskReplan(ctx, runtime, args, agent, exec),
+    ),
+    workflowToolDefinition(
+      'workflow_intent_status',
+      '查询当前唯一 active Workflow 的 Intent Ledger；不会调用 Planner 或修改 DAG。',
+      {},
+      (_args, agent) => runtime.workflowIntentStatus(agent),
+    ),
+    workflowToolDefinition(
+      'workflow_revision_plan',
+      '仅在用户明确选择或要求“现在重新规划/更新 DAG”时按需唤醒一次 Planner，把当前全部 pending Intent 冻结为一个 PlanRevision 候选；已有候选时拒绝覆盖。',
+      {},
+      (_args, agent, exec) => runtime.planWorkflowIntents(agent, exec.signal),
+    ),
+    workflowToolDefinition(
+      'workflow_revision_review',
+      '让独立 Reviewer 审查当前冻结的 PlanRevision 候选；审查期间新 Intent 留给下一轮，不改变候选 digest。',
+      {},
+      (_args, agent, exec) => runtime.reviewPendingPlanRevision(agent, exec.signal),
+    ),
+    workflowToolDefinition(
+      'workflow_revision_approve',
+      '仅在 Workflow 根会话显示 Harness 原生“同意/不同意/自定义输入”问询；明确展示 DAG 差异，只有用户同意后才切换到新的不可变计划快照。',
+      {
+        properties: {
+          plan_digest: { type: 'string', minLength: 1, description: '已通过独立 Review 的 PlanRevision 候选摘要。' },
+        },
+        required: ['plan_digest'],
+      },
+      (args, agent, exec) => confirmPlanRevisionApproval(
+        ctx,
+        runtime,
+        agent,
+        exec,
+        requireString(args, 'plan_digest', 'workflow_revision_approve'),
+      ),
+    ),
+    workflowToolDefinition(
+      'workflow_revision_discard',
+      '仅在 Workflow 根会话明确废止当前冻结候选；Intent 保持 pending，后续可重新规划生成新候选。',
+      {
+        properties: {
+          reason: { type: 'string', description: '废止并重建候选的中文原因。' },
+        },
+      },
+      (args, agent) => runtime.discardPendingPlanRevision(agent, args.reason),
+    ),
+    workflowToolDefinition(
       'workflow_preflight',
       '只读检查当前 Git 基线、未提交改动和可启动性；workflow_start 必须使用其返回的 baseDigest。',
       {},
@@ -906,7 +1073,7 @@ function operationToolDefinitions(runtime) {
   return [
     workflowToolDefinition(
       'operation_start',
-      '为不修改仓库的自适应执行任务启动后台 Operator；用户只与主代理沟通，Operator 通过结构化回报自动返回当前对话。',
+      '为不修改仓库的自适应执行任务启动后台 Operator；同一 Git 项目同时只允许一个未结束 Operation，重复调用不会创建第二个子线程。',
       {
         properties: {
           goal: { type: 'string', minLength: 1, description: '主代理从用户自然语言中整理出的执行目标。' },
@@ -958,12 +1125,12 @@ function operationToolDefinitions(runtime) {
     ),
     workflowToolDefinition(
       'operation_approve',
-      '处理 Operator 的 need_approval：调用后由 Harness 在当前主对话显示原生“拒绝/允许一次”授权卡片；不得用普通文本或 ask_user_question 代替。',
+      '处理 Operator 的 need_approval：统一显示 Harness 原生多选项问询；没有建议前缀时为“仅允许这一次/拒绝”，存在建议前缀时增加“本次会话允许此前缀”。',
       {
         properties: {
           ...operationId,
           approval_id: { type: 'string', minLength: 1, description: 'Operator 返回的完整一次性授权编号。' },
-          command: { type: 'string', minLength: 1, description: 'Operator 返回的完整精确命令；将显示在 Harness 原生授权卡片中。' },
+          command: { type: 'string', minLength: 1, description: 'Operator 返回的完整精确命令；将显示在 Harness 原生多选项问询中。' },
         },
         required: ['operation_id', 'approval_id', 'command'],
       },
@@ -977,13 +1144,13 @@ function operationToolDefinitions(runtime) {
     ),
     workflowToolDefinition(
       'operation_cancel',
-      '取消当前主会话创建的后台 Operation，并保留状态和事件供审计。',
+      '取消当前主会话创建的后台 Operation，回收 Operator 驻留资源，并保留持久会话、状态和事件供审计。',
       { properties: operationId, required: ['operation_id'] },
       (args, agent) => runtime.cancelOperation(agent, requireString(args, 'operation_id', 'operation_cancel')),
     ),
     workflowToolDefinition(
       'operation_report',
-      '仅供当前后台 Operator 回报进度、发现、补充信息请求、精确授权请求或最终结果；主代理不能调用。',
+      '仅供当前后台 Operator 回报进度、发现、补充信息请求或最终结果；need_approval 只保留兼容，正常命令授权由 operation_exec 自动判断。',
       {
         properties: {
           ...operationId,
@@ -993,6 +1160,7 @@ function operationToolDefinitions(runtime) {
           action: { type: 'string', description: 'need_approval 时拟执行的外部副作用动作。' },
           risk: { type: 'string', description: 'need_approval 时必须向用户展示的具体风险。' },
           proposed_command: { type: 'string', description: 'need_approval 时等待用户批准的精确命令。' },
+          proposed_prefix: { type: 'string', description: '兼容路径可选的会话级字面命令前缀；必须是 proposed_command 的完整参数边界前缀。' },
           result: {
             type: 'object',
             additionalProperties: false,
@@ -1010,7 +1178,7 @@ function operationToolDefinitions(runtime) {
     ),
     workflowToolDefinition(
       'operation_exec',
-      '仅供当前后台 Operator 在文件只读沙箱中执行一次性命令；可能产生外部副作用的命令需要精确的一次性用户授权。',
+      '仅供当前后台 Operator 逐条执行一次性命令；专用审批插件先检查会话前缀与 approve-for-me 策略，自动通过只允许当前命令一次，其余情况暂停子线程并通知主线程显示精确授权问询。',
       {
         properties: {
           ...operationId,
@@ -1018,6 +1186,7 @@ function operationToolDefinitions(runtime) {
           description: { type: 'string', minLength: 1, description: '本次命令的中文用途说明。' },
           effect: { type: 'string', enum: ['read-only', 'state-changing'], description: '命令是否可能改变设备、系统、网络或远程状态。' },
           approval_id: { type: 'string', description: 'state-changing 命令必须使用 operation_approve 原生卡片批准的一次性授权编号。' },
+          approval_prefix: { type: 'string', description: '可选的最小可复用字面前缀；Runtime 校验后由用户决定是否在本次主会话全部允许，不能包含通配符语义。' },
           timeout_ms: { type: 'number', minimum: 1, description: '可选超时毫秒数，仍受宿主上限约束。' },
         },
         required: ['operation_id', 'command', 'description', 'effect'],
@@ -1085,7 +1254,7 @@ function ownerMemoryNoteDefinition(runtime) {
 function ownerHostExecDefinition(runtime) {
   return {
     name: 'owner_host_exec',
-    description: '仅供 active Owner 在 workspace-write 拒绝同一精确命令后使用：把授权卡片路由到主代理，明确允许一次后以宿主权限执行该命令。',
+    description: '仅供 active Owner 在 workspace-write 拒绝同一精确命令后使用：在当前 Owner 任务现场显示原生授权卡片，明确允许一次后以宿主权限执行该命令。',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -1122,6 +1291,11 @@ export function apply(ctx, config) {
 
   const disposeAgentCreated = ctx.on('agent/created', ({ agent }) => runtime.onAgentCreated(agent))
   const disposeAgentDisposed = ctx.on('agent/disposed', ({ agent }) => runtime.onAgentDisposed(agent))
+  const disposeOperationApprovalPrompt = ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+    const assembled = await next()
+    if (context.agent?.options?.operationApprovalReviewer !== true) return assembled
+    return { ...assembled, contexts: [] }
+  }, { global: true, prepend: true })
   const disposeChildProvider = typeof ctx.subagents?.registerProvider === 'function'
     ? runtime.registerChildProvider()
     : undefined
@@ -1136,11 +1310,14 @@ export function apply(ctx, config) {
         '你是本项目的唯一主编排者。',
         '当前 owner-workflow Agent preset 已自动启用强制工作模式；主会话只能读取、规划、审核、查询和调度。',
       '用户只要求读取仓库并给出检查、审计、分析、解释、评估或优化建议，且不需要实际执行命令、操作设备、访问浏览器或调用外部能力时，调用 workflow_audit。',
-      '用户要求实际执行但不修改仓库的自适应任务时，由你把模糊需求整理成目标、上下文、约束、完成标准和最小 capabilities，再调用 operation_start；不要要求用户提供具体命令，也不要让用户进入子线程。',
-      'Operation Operator 通过 operation_report 自动返回当前主对话。need_input 由你向用户取得信息后 operation_continue；need_approval 必须立即调用 operation_approve，由 Harness 原生授权卡片展示精确动作、风险和命令。不要用普通文本或 ask_user_question 代替授权卡片。',
+      '用户要求实际执行但不修改仓库的自适应任务时，由你把模糊需求整理成目标、上下文、约束、完成标准和最小 capabilities，再调用 operation_start；同一 Git 项目同时只允许一个未结束 Operation，不要要求用户提供具体命令，也不要让用户进入子线程。',
+      'Operation Operator 通过 operation_report 自动返回当前主对话。need_input 由你向用户取得信息后 operation_continue；operation_exec 需要扩大沙箱时先由 Operation 专用审批插件检查本次会话前缀、Operation 人工风险门禁、approve-for-me 固定风险与配置白名单以及可选无工具模型复核。自动通过只允许当前精确命令一次；仍需人工决定时才暂停 Operator 并通知主线程，此时必须立即调用 operation_approve。若 Operator 提出了最小 approval_prefix，原生问询会让用户选择“仅允许这一次 / 本次会话允许此前缀 / 拒绝”；会话级授权在主会话结束或 Harness 重启时失效。不要用普通文本代替。主代理自己的标准 Bash/PowerShell 仍由独立安装的 approve-for-me 处理。',
       'operation_start 成功后结束当前回复并等待 Operator 主动回报；不要立即或重复调用 operation_status。operation_status 只用于用户明确询问或恢复中断现场，operation_id 必须逐字使用工具返回值，不能缩写或猜测。',
-      'Operation 完成后由你审核证据并向用户汇总；只有用户要求修改仓库时才进入 workflow_preflight → workflow_start 的 Owner 开发流程。',
+      'Operation 完成、失败或取消后 Runtime 会回收 Operator 驻留资源并归档持久会话；审计记录仍然保留。完成后由你审核证据并向用户汇总，只有用户要求修改仓库时才进入 workflow_preflight → workflow_start 的 Owner 开发流程。',
       '只有用户明确要求新增、修改、修复、删除、重构或实现代码时，先调用 workflow_preflight；仅当它返回 canStart=true 时，使用同一 baseDigest 调用 workflow_start 创建 Owner/DAG 工作流。',
+      '同一个 Git 项目同一时间只能有一个未结束 Workflow；不得创建多个并行 Workflow。其他普通会话只允许作为该 Workflow 单根会话树中的讨论分支，一个 Workflow 内部仍可由 DAG 并行不同 Owner task。',
+      '普通会话 fork、自由讨论和方案比较不会自动改变 DAG。只有用户明确要求“加入当前 Workflow”“更新 DAG”“与 A 并行”或“设为前置”时才调用 workflow_intent_submit，不能猜测 Intent。该工具保存后会用原生问询明确提醒是否现在重新规划；选择继续讨论时不调用 Planner，选择现在重新规划时才统一冻结当前 pending Intent。',
+      'PlanRevision 候选依次使用 workflow_revision_review 与 workflow_revision_approve；批准必须回到 Workflow 根会话并展示 DAG 差异。审查期间新 Intent 留给下一轮，候选需要重建时由根会话 workflow_revision_discard，不能原地改写 digest。',
       '严禁调用 owner_workflow(action=start)：该旧入口已停用且没有 baseDigest 安全边界。创建 workflow 的唯一入口是 workflow_preflight 后的 workflow_start。',
       '若 workflow_start 或 workflow_recover 返回 contract=DSH_WORKFLOW_PLANNING_FAILED_V1，必须使用其完整 workflowId：recoverable=true 时立即调用 workflow_recover 恢复同一个 Workflow，不得重新 preflight/start；recoverable=false 时停止自动恢复并通过原生问询交给用户决定。若 workflow_preflight 或工具本身返回原始错误，则停止后续动作，禁止猜测或传入空 workflow_id。',
       '计划调用严格交替：workflow_plan_review 返回 needs_revision 后只调用一次 workflow_plan_revise；修订成功后必须重新 review。工具返回 nextTool 与 nextArgs 时必须逐字调用，不得改写参数或从 nextAction 猜测其他工具。workflow_plan_revise 返回 DSH_WORKFLOW_PLAN_REVISION_FAILED_V1 且 recoverable=true 时，只重试同一个 workflowId 的 revise，禁止 cancel 或重新 start；返回 DSH_WORKFLOW_PLAN_REVISION_SKIPPED_V1 且 reason=revision_limit 时，立即按 nextTool/nextArgs 调用 workflow_plan_revision_extend，由该工具显示原生问询。用户同意后只继续当前 Workflow 的 workflow_plan_revise；不同意就保留现场停止，自定义输入只作为反馈。',
@@ -1159,10 +1336,10 @@ export function apply(ctx, config) {
       '所有任务完成后必须先调用 workflow_implementation_review，再调用 workflow_finalize。Runtime 只能把审查固定的 workflow HEAD 合并回创建时的启动分支；合并成功后必须删除该 Workflow 的全部 Owner/workflow 临时分支和 worktree，只保留状态、日志和已进入启动分支的提交。',
       'failed 或 blocked 表示仍准备恢复：保留原 Owner/workflow 分支、worktree 和未提交修改，并在同一个 Workflow 中恢复。只有用户明确表示放弃时才能调用 workflow_cancel；该工具自行显示原生问询，同意后不执行合并，直接删除所有未合入的临时分支、worktree 和未提交修改，只保留 Runtime 状态、日志与 Dashboard 历史。不得因为规划、审查、验证或工具错误而自动取消并新建 Workflow。',
       'Owner scope 只在 owner_submit 提交关卡按真实 Git diff 强制校验；越界时由同一 Owner 调整或 handoff，不使用逐工具写入白名单。',
-      'Owner 子线程的原生 approval policy 固定为 never，不能直接在 bash/pwsh 中设置 sandbox_permissions。workspace-write 拒绝必须访问共享 SDK、编译器或缓存的同一精确命令时，Owner 调用 owner_host_exec；该工具把完整命令、目录和理由显示在当前主对话的 Harness 原生授权卡片中，只有允许一次后才执行。',
-      'owner_submit 的固定验证由 Runtime 确定性处理沙箱拒绝，不依赖 Owner 主动选择工具：当前主线程有开放回合时直接显示原生授权卡片并精确重试一次；后台 Runner 没有主线程开放回合时自动把任务安全停为 blocked 并保留 worktree。你收到该阻塞后先调用 workflow_supervisor_status，随后使用状态中的完整 workflowId、taskId、ownerId 调用 workflow_owner_recover，让同一任务在当前主线程恢复并显示卡片；不得重新规划或创建 Workflow。',
+      'Owner 子线程使用 workspace-write 与 ask，但只有 Runtime 登记的 owner_host_exec 和固定验证请求可以到达原生授权 UI；直接在 bash/pwsh 中设置 sandbox_permissions 或其他升级会被确定性拒绝。精确卡片显示在当前 Owner 任务现场，行动收件箱只负责跨会话发现并跳转，主会话不代答。',
+      'owner_submit 的固定验证由 Runtime 确定性处理沙箱拒绝，不依赖 Owner 主动选择工具：当前 Owner 回合中直接显示原生授权卡片并精确重试一次；没有开放回合时安全保留 worktree，恢复同一 Workflow/task/Owner 后重试，不得重新规划或创建 Workflow。',
       '固定验证经过授权并实际执行后若 exitCode 非 0，Runtime 会把有界 stdout/stderr 返回同一 Owner 子线程，并拒绝把它结算为 blocked。这属于代码或测试失败，不是新的授权请求；等待 Owner 在原 worktree 修复并重新提交，不要要求用户手工运行同一命令。',
-      'Owner 子线程按任务创建并在完成后回收；长期记忆由 Memory Curator 和 Reviewer 编译到 .owner-memory，主会话和 Owner 都不能直接改写。',
+      'Owner 子线程按任务创建并在完成后回收；未最终有效或仍为“待检查”的结果只保留临时日志。只有按最新 DAG 验证有效后，Memory Curator 和 Reviewer 才编译 .owner-memory，主会话和 Owner 都不能直接改写。',
       '需要创建计划时只使用 workflow_* 单职责工作流工具，而不是直接使用写文件工具；owner_workflow 只用于兼容旧会话，其中不再暴露 plan_revise 和 workflow_recover，不能把它当作失败后的备用入口。',
     ].join(''),
   })
@@ -1182,6 +1359,7 @@ export function apply(ctx, config) {
   ctx.effect(() => async () => {
     disposeAgentCreated?.()
     disposeAgentDisposed?.()
+    disposeOperationApprovalPrompt?.()
     disposeChildProvider?.()
     disposeContinuableSetup?.()
     if (ctx !== null && typeof ctx === 'object') appliedContexts.delete(ctx)

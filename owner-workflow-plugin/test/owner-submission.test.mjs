@@ -73,16 +73,16 @@ test('Owner needs_repair 留在当前子线程继续调整，不能制造脏现�
   assert.equal(active.submission, undefined)
 })
 
-test('固定验证等待主代理授权时自动结算为 blocked，不依赖 Owner 模型猜测', async () => {
+test('固定验证等待 Owner 现场授权时自动结算为 blocked，不依赖 Owner 模型猜测', async () => {
   const { active, calls, runtime, exec } = fixture()
   runtime.recordBoundVerification = async () => {
     calls.push('verify:unit')
-    throw new OwnerVerificationApprovalRequiredError('等待主代理授权固定验证')
+    throw new OwnerVerificationApprovalRequiredError('等待 Owner 现场授权固定验证')
   }
   const result = await submitOwnerResult(runtime, report(), exec)
   assert.equal(result.status, 'blocked')
   assert.equal(result.accepted, true)
-  assert.match(result.nextAction, /主代理原生授权/u)
+  assert.match(result.nextAction, /Owner 任务现场.*原生授权/u)
   assert.equal(active.submission.report.status, 'blocked')
   assert.deepEqual(calls, ['inspect', 'verify:unit'])
 })

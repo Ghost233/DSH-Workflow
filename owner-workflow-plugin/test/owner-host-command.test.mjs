@@ -75,7 +75,7 @@ async function fixture() {
   }
 }
 
-test('Owner 宿主命令把授权路由给主代理，并只执行获批的精确命令', async () => {
+test('Owner 宿主命令把授权留在当前任务现场，并只执行获批的精确命令', async () => {
   const current = await fixture()
   try {
     const result = await current.runtime.executeOwnerHostCommand({
@@ -88,9 +88,9 @@ test('Owner 宿主命令把授权路由给主代理，并只执行获批的精�
 
     assert.equal(result.exitCode, 0)
     assert.equal(current.calls.approvals.length, 1)
-    assert.equal(current.calls.approvals[0].agent, current.parent)
+    assert.equal(current.calls.approvals[0].agent, current.exec.agent)
     assert.equal(current.calls.approvals[0].toolName, 'owner_host_exec')
-    assert.equal(Object.hasOwn(current.calls.approvals[0], 'callId'), false)
+    assert.equal(current.calls.approvals[0].callId, 'child-call-id')
     assert.match(current.calls.approvals[0].reason, /flutter test test\/core_service_test\.dart/u)
     assert.match(current.calls.approvals[0].reason, /共享 SDK 缓存/u)
     assert.equal(current.calls.shells.length, 1)
@@ -155,7 +155,7 @@ test('Owner 宿主命令拒绝 worktree 外工作目录和授权后的失效绑�
   }
 })
 
-test('主代理没有开放回合时，Owner 宿主命令给出可恢复错误且不执行', async () => {
+test('Owner 任务没有开放回合时，宿主命令给出可恢复错误且不执行', async () => {
   const current = await fixture()
   try {
     current.runtime.ctx.approval.request = async () => {
@@ -165,7 +165,7 @@ test('主代理没有开放回合时，Owner 宿主命令给出可恢复错误�
       command: 'flutter test',
       description: '运行 Flutter 测试',
       justification: '需要共享 SDK 缓存。',
-    }, current.exec), /主代理当前没有开放回合.*保留 Owner 现场/u)
+    }, current.exec), /Owner 任务没有开放回合.*保留现场/u)
     assert.equal(current.calls.shells.length, 0)
   } finally {
     await current.dispose()

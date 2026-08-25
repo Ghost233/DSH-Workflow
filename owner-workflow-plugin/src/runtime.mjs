@@ -102,11 +102,14 @@ import {
   operationCommandNeedsApproval,
   operationContinuationPrompt,
   operationInitialPrompt,
+  operationIsActive,
   operationIsTerminal,
   operationPublicSnapshot,
+  normalizeOperationApprovalPrefix,
   readOperationState,
   writeOperationState,
 } from './operation.mjs'
+import { createOperationApprovalPlugin } from './operation-approval.mjs'
 import {
   READ_ONLY_AGENT_ROLES,
   configureChildSandbox,
@@ -125,6 +128,22 @@ import {
 import { ownerRolePrompt, ownerTaskPrompt } from './owner-agent.mjs'
 import { submitOwnerResult as runOwnerSubmission } from './owner-submission.mjs'
 import { executeOwnerHostCommand } from './owner-host-command.mjs'
+import {
+  createWorkflowIntent,
+  pendingWorkflowIntents,
+  publicWorkflowIntent,
+} from './intent.mjs'
+import {
+  advanceRevisionTransition,
+  archiveAbortedRevisionAttempt,
+  classifyTaskRevisionChange,
+  createPlanRevision,
+  planSnapshotDigest,
+} from './plan-revision.mjs'
+import {
+  registerConversationSession,
+  workflowOccupiesActiveSlot,
+} from './workflow-conversation.mjs'
 
 const DEFAULT_CONFIG = Object.freeze({
   runtimeDirectory: '.dsh-workflow',
@@ -167,7 +186,6 @@ const SUPERVISOR_WORKFLOW_STATUS_CODE = Object.freeze({
 const MODE_FILE_NAME = 'mode.json'
 const OPERATION_REPORT_TOOL = 'operation_report'
 const OPERATION_EXEC_TOOL = 'operation_exec'
-const OPERATION_APPROVE_TOOL = 'operation_approve'
 
 function deepFreeze(value) {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -383,6 +401,28 @@ function stateDirectory(runtime, root) {
   return directory
 }
 
+async function activeWorkflowState(runtime, root, exceptWorkflowId) {
+  const directory = join(stateDirectory(runtime, root), 'workflows')
+  if (!existsSync(directory)) return undefined
+  const active = []
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) continue
+    const workflowId = entry.name.slice(0, -'.json'.length)
+    if (workflowId === exceptWorkflowId) continue
+    try {
+      const state = await readJson(join(directory, entry.name))
+      if (state?.id === workflowId && state?.root === root && workflowOccupiesActiveSlot(state)) active.push(state)
+    } catch {
+      // 损坏状态不能被静默当作已结束；使用文件名占用唯一槽位并阻止创建第二个 Workflow。
+      active.push({ id: workflowId, status: 'unreadable' })
+    }
+  }
+  if (active.length > 1) {
+    throw new Error(`项目中存在多个未结束 Workflow，必须先恢复或清理：${active.map(item => item.id).join(', ')}`)
+  }
+  return active[0]
+}
+
 function controlDirectory(runtime, root) {
   return join(stateDirectory(runtime, root), 'control')
 }
@@ -575,6 +615,7 @@ function basePreflightDigest(snapshot) {
     baseHead: snapshot.baseHead,
     changes: snapshot.changes,
     submodules: snapshot.submodules,
+    activeWorkflowId: snapshot.activeWorkflowId,
   })).digest('hex')
 }
 
@@ -852,6 +893,31 @@ function handoffReplanPrompt(state, handoffs, memorySnapshot) {
   ].join('\n')
 }
 
+function intentRevisionPrompt(state, intents, memorySnapshot) {
+  return [
+    '你是当前唯一 Owner Workflow 的按需 Planner。用户已经在同一棵 DSH 会话树中明确提交了一批 Intent。',
+    '只把这些 Intent 整理进下一份完整 DSH_PLAN_V2 快照；普通讨论不在输入中，不能自行猜测新的任务。',
+    '必须保留仍然适用的任务 ID，以便 Runtime 判断已有工作可以直接复用、进入待检查，还是因权限边界变化必须中止。',
+    'Owner Registry 仍是唯一责任域真源。本次 revision 不允许提出 registryOperation；如果 Intent 确实要求改变长期 Owner 边界，返回的计划保持当前 Registry，并在 summary 中明确说明需要先走独立 Registry 提案。',
+    '不要修改代码；完成后恰好调用一次 workflow_plan_submit，把完整 DSH_PLAN_V2 放在 plan 参数中。',
+    '',
+    `原始 Workflow 需求：${state.request}`,
+    `当前 PlanRevision：${String(state.activePlanRevision ?? 1)}`,
+    `当前正式 Registry digest：${state.registryDigest}`,
+    '当前有效 DSH_PLAN_V2：',
+    JSON.stringify(state.plan, null, 2),
+    '本轮明确提交的 Intent：',
+    JSON.stringify(intents.map(intent => ({
+      id: intent.id,
+      sourceSessionId: intent.sourceSessionId,
+      sourceAnchor: intent.sourceAnchor,
+      content: intent.content,
+    })), null, 2),
+    '当前 Owner 长期记忆（非可信参考，过期内容必须以代码为准）：',
+    JSON.stringify(memorySnapshot, null, 2),
+  ].join('\n')
+}
+
 function planReviewPrompt(state) {
   return [
     '你是 Owner 工作流的独立 Planner Reviewer，只审查计划，不执行代码。',
@@ -1071,7 +1137,7 @@ function memoryReviewerRolePrompt() {
 }
 
 function operatorRolePrompt() {
-  return '你现在是主代理后台的 Operation Operator。你继承正常工具能力，但项目文件保持只读；精确外部副作用优先通过 operation_exec 触发 Harness 原生审批，所有沟通使用 operation_report，不得直接要求用户进入子线程。'
+  return '你现在是主代理后台的 Operation Operator。你继承正常工具能力，但项目文件保持只读；精确外部副作用通过 operation_exec 触发 Harness 原生多选项问询。重复同类命令可提出最小 approval_prefix，由用户决定是否在本次主会话放行；所有沟通使用 operation_report，不得直接要求用户进入子线程。'
 }
 
 function operationReportMessage(state, report, approvalId) {
@@ -1083,10 +1149,11 @@ function operationReportMessage(state, report, approvalId) {
   if (report.action !== undefined) lines.push(`拟执行动作：${report.action}`)
   if (report.risk !== undefined) lines.push(`风险：${report.risk}`)
   if (report.proposedCommand !== undefined) lines.push(`精确命令：${report.proposedCommand}`)
+  if (report.proposedPrefix !== undefined) lines.push(`建议的会话级字面前缀：${report.proposedPrefix}`)
   if (approvalId !== undefined) lines.push(`授权编号：${approvalId}`)
   if (report.result !== undefined) lines.push(JSON.stringify(report.result, null, 2))
   if (report.type === 'need_input') lines.push('请在当前主对话向用户取得必要信息，再调用 operation_continue。')
-  if (report.type === 'need_approval') lines.push('立即调用 operation_approve，由 Harness 原生授权卡片在当前主对话展示动作、风险和精确命令；不要用普通文本或 ask_user_question 重复询问。')
+  if (report.type === 'need_approval') lines.push('立即调用 operation_approve，由 Harness 原生多选项问询展示动作、风险和精确命令；存在建议前缀时额外提供“本次会话允许此前缀”。不要用普通文本重复询问。')
   if (report.type === 'completed') lines.push('请审核证据并直接向用户总结；只有用户要求修改仓库时才进入 Owner 开发工作流。')
   return lines.join('\n')
 }
@@ -1443,32 +1510,34 @@ async function approveOwnerVerification(runtime, active, bound, command, exec) {
   const approval = runtime.ctx?.approval
     ?? (typeof runtime.ctx?.get === 'function' ? runtime.ctx.get('approval') : undefined)
   if (typeof approval?.request !== 'function') {
-    throw new OwnerVerificationApprovalRequiredError('正式验证需要访问 Owner worktree 外资源，但 Harness 没有挂载主代理原生授权服务')
-  }
-  if (active.parentAgent === undefined) {
-    throw new OwnerVerificationApprovalRequiredError('正式验证需要宿主权限，但当前 Owner 没有绑定创建 Workflow 的主代理')
+    throw new OwnerVerificationApprovalRequiredError('正式验证需要访问 Owner worktree 外资源，但 Harness 没有挂载原生授权服务')
   }
   let outcome
+  const approvalRequest = {
+    agent: exec.agent,
+    toolName: 'owner_submit',
+    callId: exec.callId,
+    reason: [
+      `Owner：${active.owner.id}`,
+      `任务：${active.stageId}`,
+      `固定验证：${bound.id}`,
+      `精确命令：${command}`,
+      `执行目录：${bound.cwd}`,
+      'workspace-write 已明确拒绝该固定验证访问共享 SDK、编译器或缓存。',
+      '允许后只会在一次性验证快照中以宿主权限执行以上命令一次，不会扩大 Owner 提交范围。',
+    ].join('\n'),
+    signal: exec?.signal,
+  }
+  active.hostApprovalRequest = approvalRequest
   try {
-    outcome = await approval.request({
-      agent: active.parentAgent,
-      toolName: 'owner_submit',
-      reason: [
-        `Owner：${active.owner.id}`,
-        `任务：${active.stageId}`,
-        `固定验证：${bound.id}`,
-        `精确命令：${command}`,
-        `执行目录：${bound.cwd}`,
-        'workspace-write 已明确拒绝该固定验证访问共享 SDK、编译器或缓存。',
-        '允许后只会在一次性验证快照中以宿主权限执行以上命令一次，不会扩大 Owner 提交范围。',
-      ].join('\n'),
-      signal: exec?.signal,
-    })
+    outcome = await approval.request(approvalRequest)
   } catch (error) {
     if (/outside an open turn/u.test(String(error?.message ?? error))) {
-      throw new OwnerVerificationApprovalRequiredError('正式验证需要主代理授权，但当前 Runner 派发时主代理没有开放回合；已保留 Owner worktree，请在主对话恢复当前任务后重试')
+      throw new OwnerVerificationApprovalRequiredError('正式验证需要授权，但当前 Owner 任务没有开放回合；已保留 worktree，恢复当前 Owner 后可重试')
     }
     throw error
+  } finally {
+    if (active.hostApprovalRequest === approvalRequest) delete active.hostApprovalRequest
   }
   await runtime.appendWorkflowLog?.(active.workflowRoot, active.workflowId, 'owner.verification-approval', {
     ownerId: active.owner.id,
@@ -1476,7 +1545,7 @@ async function approveOwnerVerification(runtime, active, bound, command, exec) {
     verificationId: bound.id,
     command,
     outcome,
-    summary: `固定验证 ${bound.id} 的主代理原生授权结果：${outcome}`,
+    summary: `固定验证 ${bound.id} 的 Owner 现场原生授权结果：${outcome}`,
   })
   if (outcome !== 'allowed-once') {
     const reason = outcome === 'rejected'
@@ -1575,6 +1644,13 @@ function ownerWorkflowChildProvider(runtime) {
             if (pending.options.activeOwner !== undefined) {
               pending.options.activeOwner.sessionId = child.id
               runtime.activeOwners.set(child.id, pending.options.activeOwner)
+              // Owner 会话采用 ask，但只有插件显式登记的精确桥接请求可以继续到 Harness UI。
+              // 模型直接通过 bash/shell 申请的任何其他升级都会在这里确定性拒绝。
+              childCtx.on('approval/request', (request, next) => {
+                const activeOwner = runtime.activeOwners.get(child.id)
+                if (activeOwner?.hostApprovalRequest === request) return next()
+                return Promise.resolve('rejected')
+              }, { prepend: true })
             }
             childCtx.systemPrompt.section({
               name: 'owner-workflow:role',
@@ -2454,6 +2530,7 @@ function supervisorProjection(state) {
     tasks: state.tasks,
     config: { parallel: state.config?.parallel },
     actionSequence: state.actionSequence,
+    transitionBlockedTaskIds: state.transitionBlockedTaskIds ?? [],
   }
 }
 
@@ -2780,6 +2857,9 @@ export function createOwnerWorkflowRuntime(ctx, config) {
     operationLocks: new Map(),
     operationBindings: new Map(),
     operationParents: new Map(),
+    operationApproval: createOperationApprovalPlugin(ctx, { clock: now }),
+    operationPauses: new Map(),
+    operationRecycles: new Map(),
     dashboardWorkspaceRoots: new Set(),
     ownerLeases: new Map(),
     agentRoles: new Map(),
@@ -2967,6 +3047,14 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         ? lease.abortController.signal
         : AbortSignal.any([signal, lease.abortController.signal])
     },
+    invalidateOwnerLease(root, ownerId, reason) {
+      const lease = runtime.ownerLeases.get(`${root}:${ownerId}`)
+      if (lease === undefined || lease.abortController.signal.aborted) return false
+      lease.invalidError = reason
+      if (lease.timer !== undefined) clearInterval(lease.timer)
+      lease.abortController.abort(new Error(reason))
+      return true
+    },
     async releaseOwnerLease(lease) {
       if (lease === undefined) return
       if (lease.timer !== undefined) clearInterval(lease.timer)
@@ -3018,6 +3106,103 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       if (runtime.ctx?.subagents !== undefined) return runtime.ctx.subagents
       if (typeof runtime.ctx?.get === 'function') return runtime.ctx.get('subagents')
       return undefined
+    },
+    scheduleOperationPause(state) {
+      if (runtime.operationPauses.has(state.childId) || runtime.disposed) return
+      const pause = new Promise(resolvePause => globalThis.setTimeout(resolvePause, 0))
+        .then(async () => {
+          const parent = runtime.operationParents.get(state.parentSessionId)
+          const subagents = runtime.subagentRuntime()
+          if (parent === undefined || subagents?.interrupt === undefined) return
+          const latest = await readOperationState(state.root, state.id, resolvedConfig.runtimeDirectory).catch(() => undefined)
+          if (latest === undefined || !['waiting_input', 'waiting_approval'].includes(latest.status)) return
+          await Promise.resolve(subagents.interrupt(state.childId, { kind: 'ancestor', agent: parent }))
+        })
+        .catch(() => undefined)
+        .finally(() => runtime.operationPauses.delete(state.childId))
+      runtime.operationPauses.set(state.childId, pause)
+    },
+    grantOperationCommandPrefix(parentSessionId, prefix, approvalId, operationId) {
+      return runtime.operationApproval.grantPrefix(parentSessionId, prefix, approvalId, operationId)
+    },
+    revokeOperationCommandPrefix(parentSessionId, grantId) {
+      runtime.operationApproval.revokePrefix(parentSessionId, grantId)
+    },
+    matchOperationCommandPrefix(parentSessionId, command) {
+      return runtime.operationApproval.matchPrefix(parentSessionId, command)
+    },
+    async askOperationApprovalDecision(agent, pending, exec) {
+      return runtime.operationApproval.askHuman(agent, pending, exec)
+    },
+    async archiveOperationSession(childId) {
+      const workspaceRegistry = runtime.ctx?.workspaceRegistry
+        ?? (typeof runtime.ctx?.get === 'function' ? runtime.ctx.get('workspaceRegistry') : undefined)
+      if (workspaceRegistry?.archiveSession === undefined) return { archived: false }
+      try {
+        await workspaceRegistry.archiveSession(childId)
+        return { archived: true }
+      } catch (error) {
+        return { archived: false, error: errorText(error) }
+      }
+    },
+    async recycleOperationChild(state, parentAgent) {
+      const parent = parentAgent ?? runtime.operationParents.get(state.parentSessionId)
+      const subagents = runtime.subagentRuntime()
+      if (parent !== undefined) {
+        await Promise.resolve(subagents?.interrupt?.(state.childId, { kind: 'ancestor', agent: parent }))
+          .catch(() => undefined)
+        await subagents?.drainContinuableChildren?.(parent, [state.childId])
+      }
+      const archive = await runtime.archiveOperationSession(state.childId)
+      runtime.operationBindings.delete(state.childId)
+      if (![...runtime.operationBindings.values()].some(binding => binding.parentSessionId === state.parentSessionId)) {
+        runtime.operationParents.delete(state.parentSessionId)
+      }
+      await runtime.withOperationLock(state.id, async () => {
+        const latest = await readOperationState(state.root, state.id, resolvedConfig.runtimeDirectory).catch(() => undefined)
+        if (latest === undefined || !operationIsTerminal(latest)) return
+        let changed = false
+        if (latest.childRecycled !== true) {
+          latest.childRecycled = true
+          latest.recycledAt = now()
+          appendOperationEvent(latest, {
+            type: 'operation.child_recycled',
+            summary: archive.archived
+              ? 'Operator 驻留运行资源已回收，持久会话已归档并继续保留用于审计'
+              : 'Operator 驻留运行资源已回收，持久会话继续保留用于审计',
+          })
+          changed = true
+        }
+        if (archive.archived && latest.childArchived !== true) {
+          latest.childArchived = true
+          latest.archivedAt = now()
+          appendOperationEvent(latest, { type: 'operation.child_archived', summary: 'Operator 持久会话已从活动列表归档' })
+          changed = true
+        }
+        if (archive.error !== undefined) {
+          latest.archiveError = archive.error
+          appendOperationEvent(latest, { type: 'operation.child_archive_failed', summary: archive.error })
+          changed = true
+        }
+        if (changed) await writeOperationState(state.root, latest, resolvedConfig.runtimeDirectory)
+      })
+    },
+    scheduleOperationRecycle(state, parentAgent) {
+      if (runtime.operationRecycles.has(state.childId)) return runtime.operationRecycles.get(state.childId)
+      const recycle = new Promise(resolveRecycle => globalThis.setTimeout(resolveRecycle, 0))
+        .then(() => runtime.recycleOperationChild(state, parentAgent))
+        .catch(async error => {
+          await runtime.withOperationLock(state.id, async () => {
+            const latest = await readOperationState(state.root, state.id, resolvedConfig.runtimeDirectory).catch(() => undefined)
+            if (latest === undefined || latest.childRecycled === true) return
+            latest.recycleError = errorText(error)
+            appendOperationEvent(latest, { type: 'operation.child_recycle_failed', summary: latest.recycleError })
+            await writeOperationState(state.root, latest, resolvedConfig.runtimeDirectory)
+          }).catch(() => undefined)
+        })
+        .finally(() => runtime.operationRecycles.delete(state.childId))
+      runtime.operationRecycles.set(state.childId, recycle)
+      return recycle
     },
     registerChildProvider() {
       const subagents = runtime.subagentRuntime()
@@ -3084,6 +3269,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
     async onAgentDisposed(agent) {
       if (agent === undefined || agent.id === undefined) return
       const operationBinding = runtime.operationBindings.get(agent.id)
+      let settledOperation
       if (operationBinding !== undefined && !runtime.disposed) {
         await runtime.withOperationLock(operationBinding.operationId, async () => {
           const state = await readOperationState(
@@ -3095,11 +3281,27 @@ export function createOwnerWorkflowRuntime(ctx, config) {
             state.status = 'failed'
             state.error = 'Operator 子线程结束前没有提交完成、失败或等待主代理的结构化报告'
             appendOperationEvent(state, { type: 'operation.operator_settled_without_report', summary: state.error })
+          }
+          if (state !== undefined && operationIsTerminal(state) && state.childRecycled !== true) {
+            state.childRecycled = true
+            state.recycledAt = now()
+            appendOperationEvent(state, { type: 'operation.child_recycled', summary: 'Operator 子线程已经释放，持久会话继续保留用于审计' })
+          }
+          if (state !== undefined) {
             await writeOperationState(operationBinding.root, state, resolvedConfig.runtimeDirectory)
+            settledOperation = state
           }
         })
       }
+      if (settledOperation !== undefined && operationIsTerminal(settledOperation)) {
+        runtime.scheduleOperationRecycle(settledOperation)
+      }
       if (operationBinding !== undefined) runtime.operationBindings.delete(agent.id)
+      if (operationBinding !== undefined
+        && ![...runtime.operationBindings.values()].some(binding => binding.parentSessionId === operationBinding.parentSessionId)) {
+        runtime.operationParents.delete(operationBinding.parentSessionId)
+      }
+      runtime.operationApproval.clearSession(agent.id)
       runtime.activeOwners.delete(agent.id)
       runtime.agentRoles.delete(agent.id)
     },
@@ -3202,6 +3404,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       const baseHead = await head(root, signal)
       const changes = (await nonRuntimeChanges(root, stateDirectory(runtime, root), signal)).map(publicStatusRecord)
       const submodules = await preflightSubmodules(root, changes, signal)
+      const activeWorkflow = await activeWorkflowState(runtime, root)
       const snapshot = {
         contract: 'DSH_WORKFLOW_BASE_PREFLIGHT_V1',
         root,
@@ -3209,8 +3412,12 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         baseHead,
         changes,
         submodules,
+        activeWorkflowId: activeWorkflow?.id ?? null,
+        activeWorkflowStatus: activeWorkflow?.status ?? null,
       }
-      const canStart = baseBranch !== undefined && (!resolvedConfig.requireCleanBase || changes.length === 0)
+      const canStart = activeWorkflow === undefined
+        && baseBranch !== undefined
+        && (!resolvedConfig.requireCleanBase || changes.length === 0)
       const hasInternalSubmoduleChange = submodules.some(item => item.internalChanges?.length > 0)
       return {
         ...snapshot,
@@ -3218,12 +3425,389 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         canStart,
         nextAction: canStart
           ? '使用同一 baseDigest 调用 workflow_start 创建 Owner/DAG 工作流'
+          : activeWorkflow !== undefined
+            ? `项目当前只有一个 Workflow 槽位，必须继续、恢复、finalize 或取消 ${activeWorkflow.id} 后才能创建下一个`
           : hasInternalSubmoduleChange
             ? '先由用户处理或提交 submodules.internalChanges 中的子模块内部改动；Owner workflow 不能代替子模块提交'
             : changes.length > 0
               ? '先由用户处理或提交上述工作区改动；工作流不会自动提交、暂存、丢弃或隐藏现场'
-            : '当前分支处于 detached HEAD；请切换到可最终合并的本地分支后重新预检',
+              : '当前分支处于 detached HEAD；请切换到可最终合并的本地分支后重新预检',
       }
+    },
+    async submitWorkflowIntent(agent, content, signal) {
+      abortIfNeeded(signal)
+      const root = await runtime.resolveRoot(agent)
+      const active = await activeWorkflowState(runtime, root)
+      if (active === undefined) throw new Error('当前项目没有 active Workflow，讨论内容不会自动创建执行流程')
+      return runtime.withWorkflowLock(active.id, async () => {
+        const state = await readState(runtime, root, active.id)
+        if (!workflowOccupiesActiveSlot(state)) throw new Error(`Workflow ${state.id} 已结束，不能继续提交 Intent`)
+        const node = registerConversationSession(runtime, state, agent)
+        const intent = createWorkflowIntent({
+          workflowId: state.id,
+          sourceSessionId: node.sessionId,
+          sourceAnchor: node,
+          content,
+          time: now(),
+        })
+        state.intents ??= []
+        state.intents.push(intent)
+        await saveState(runtime, state)
+        const pending = pendingWorkflowIntents(state)
+        await appendLog(runtime, root, state.id, 'intent.submitted', {
+          intentId: intent.id,
+          sourceSessionId: intent.sourceSessionId,
+          summary: intent.content,
+          pendingIntentCount: pending.length,
+        })
+        return {
+          contract: 'DSH_WORKFLOW_INTENT_SUBMITTED_V1',
+          workflowId: state.id,
+          intent: publicWorkflowIntent(intent),
+          pendingIntentCount: pending.length,
+        }
+      })
+    },
+    async workflowIntentStatus(agent) {
+      const root = await runtime.resolveRoot(agent)
+      const active = await activeWorkflowState(runtime, root)
+      if (active === undefined) {
+        return { contract: 'DSH_WORKFLOW_INTENT_STATUS_V1', workflowId: null, intents: [], pendingIntentCount: 0 }
+      }
+      const state = await readState(runtime, root, active.id)
+      return {
+        contract: 'DSH_WORKFLOW_INTENT_STATUS_V1',
+        workflowId: state.id,
+        activePlanRevision: state.activePlanRevision ?? null,
+        intents: (state.intents ?? []).map(publicWorkflowIntent),
+        pendingIntentCount: pendingWorkflowIntents(state).length,
+      }
+    },
+    async planWorkflowIntents(agent, signal) {
+      abortIfNeeded(signal)
+      const root = await runtime.resolveRoot(agent)
+      const active = await activeWorkflowState(runtime, root)
+      if (active === undefined) throw new Error('当前项目没有 active Workflow')
+      return runtime.withWorkflowLock(active.id, async () => {
+        const state = await readState(runtime, root, active.id)
+        registerConversationSession(runtime, state, agent)
+        assertV2WorkflowExecutable(state, '根据 Intent 更新 DAG')
+        if (!['approved', 'running', 'blocked', 'failed', 'completed'].includes(state.status)) {
+          throw new Error(`Workflow ${state.id} 当前状态不能根据 Intent 更新 DAG：${state.status}`)
+        }
+        if (state.pendingPlanRevision !== undefined) {
+          throw new Error(`PlanRevision ${state.pendingPlanRevision.number} 已存在；请先审查、批准或明确废止当前候选`)
+        }
+        const intents = pendingWorkflowIntents(state)
+        if (intents.length === 0) throw new Error('当前没有未规划 Intent')
+        const { registry } = await loadLiveRegistryForPlanning(state, { plan: state.plan, requireBoundDigest: true })
+        const memorySnapshot = await loadMemorySnapshot(state.workflowWorktree, {
+          maxBytes: resolvedConfig.ownerMemoryMaxBytes,
+          signal,
+        })
+        const baseHead = await head(state.workflowWorktree, signal)
+        const baseBranch = await currentBranch(state.workflowWorktree, signal)
+        const baseStatus = await statusRecords(state.workflowWorktree, signal)
+        const planned = await requestValidatedPlannerPlan(
+          runtime,
+          agent,
+          state.workflowWorktree,
+          intentRevisionPrompt(state, intents, memorySnapshot),
+          'Intent Planner',
+          registry,
+          signal,
+          state.root,
+        )
+        if (planned.suggestedRegistryOperation !== undefined) {
+          throw new Error('Intent PlanRevision 不能直接改变 Owner Registry；请先在 Workflow 根会话完成独立 Registry 提案')
+        }
+        const afterHead = await head(state.workflowWorktree, signal)
+        const afterBranch = await currentBranch(state.workflowWorktree, signal)
+        const afterStatus = await statusRecords(state.workflowWorktree, signal)
+        if (afterHead !== baseHead || afterBranch !== baseBranch || JSON.stringify(afterStatus) !== JSON.stringify(baseStatus)) {
+          throw new Error('Intent Planner 改变了 workflow worktree，已拒绝候选计划')
+        }
+        const number = Number(state.activePlanRevision ?? 1) + 1
+        const candidateDigest = planDigest(planned.plan)
+        state.pendingPlanRevision = {
+          number,
+          parent: Number(state.activePlanRevision ?? 1),
+          plan: planned.plan,
+          planDigest: candidateDigest,
+          intentIds: intents.map(intent => intent.id),
+          coordinatorSessionId: agent.id,
+          createdAt: now(),
+        }
+        await saveState(runtime, state)
+        await appendLog(runtime, root, state.id, 'plan-revision.candidate-created', {
+          revision: number,
+          parentRevision: state.pendingPlanRevision.parent,
+          planDigest: candidateDigest,
+          intentCount: intents.length,
+          summary: `根据 ${intents.length} 条明确 Intent 生成 PlanRevision 候选`,
+        })
+        return {
+          contract: 'DSH_PLAN_REVISION_CANDIDATE_V1',
+          workflowId: state.id,
+          number,
+          parent: state.pendingPlanRevision.parent,
+          planDigest: candidateDigest,
+          plan: planned.plan,
+          nextTool: 'workflow_revision_review',
+          nextArgs: {},
+        }
+      })
+    },
+    async reviewPendingPlanRevision(agent, signal) {
+      abortIfNeeded(signal)
+      const root = await runtime.resolveRoot(agent)
+      const active = await activeWorkflowState(runtime, root)
+      if (active === undefined) throw new Error('当前项目没有 active Workflow')
+      return runtime.withWorkflowLock(active.id, async () => {
+        const state = await readState(runtime, root, active.id)
+        const candidate = state.pendingPlanRevision
+        if (candidate === undefined) throw new Error('当前没有待审查 PlanRevision 候选')
+        const candidateState = { ...state, plan: candidate.plan, planDigest: candidate.planDigest }
+        await loadLiveRegistryForPlanning(candidateState, { plan: candidate.plan, requireBoundDigest: true })
+        const baseHead = await head(state.workflowWorktree, signal)
+        const baseBranch = await currentBranch(state.workflowWorktree, signal)
+        const baseStatus = await statusRecords(state.workflowWorktree, signal)
+        const review = await requestValidatedPlanReview(runtime, agent, candidateState, signal)
+        const afterHead = await head(state.workflowWorktree, signal)
+        const afterBranch = await currentBranch(state.workflowWorktree, signal)
+        const afterStatus = await statusRecords(state.workflowWorktree, signal)
+        if (afterHead !== baseHead || afterBranch !== baseBranch || JSON.stringify(afterStatus) !== JSON.stringify(baseStatus)) {
+          throw new Error('PlanRevision Reviewer 改变了 workflow worktree，已拒绝审查结果')
+        }
+        candidate.review = review
+        candidate.reviewedAt = now()
+        await saveState(runtime, state)
+        await appendLog(runtime, root, state.id, 'plan-revision.reviewed', {
+          revision: candidate.number,
+          planDigest: candidate.planDigest,
+          status: review.status,
+          summary: review.summary,
+        })
+        return {
+          contract: 'DSH_PLAN_REVISION_REVIEW_RESULT_V1',
+          workflowId: state.id,
+          revision: candidate.number,
+          planDigest: candidate.planDigest,
+          review,
+          nextTool: review.status === 'passed' ? 'workflow_revision_approve' : 'workflow_revision_rebuild',
+        }
+      })
+    },
+    async discardPendingPlanRevision(agent, reason = '用户要求重建候选') {
+      const root = await runtime.resolveRoot(agent)
+      const active = await activeWorkflowState(runtime, root)
+      if (active === undefined) throw new Error('当前项目没有 active Workflow')
+      return runtime.withWorkflowLock(active.id, async () => {
+        const state = await readState(runtime, root, active.id)
+        if (agent.id !== state.conversationRootSessionId) {
+          throw new Error(`废止 PlanRevision 候选必须回到 Workflow 根会话 ${state.conversationRootSessionId}`)
+        }
+        const candidate = state.pendingPlanRevision
+        if (candidate === undefined) throw new Error('当前没有可废止的 PlanRevision 候选')
+        state.pendingPlanRevision = undefined
+        await saveState(runtime, state)
+        await appendLog(runtime, root, state.id, 'plan-revision.candidate-discarded', {
+          revision: candidate.number,
+          planDigest: candidate.planDigest,
+          summary: typeof reason === 'string' && reason.trim() !== '' ? reason.trim() : '用户要求重建候选',
+        })
+        return {
+          contract: 'DSH_PLAN_REVISION_DISCARDED_V1',
+          workflowId: state.id,
+          revision: candidate.number,
+          pendingIntentCount: pendingWorkflowIntents(state).length,
+          nextTool: 'workflow_revision_plan',
+        }
+      })
+    },
+    async approvePendingPlanRevision(agent, expectedPlanDigest, signal) {
+      abortIfNeeded(signal)
+      const root = await runtime.resolveRoot(agent)
+      const active = await activeWorkflowState(runtime, root)
+      if (active === undefined) throw new Error('当前项目没有 active Workflow')
+      return runtime.withWorkflowLock(active.id, async () => {
+        const state = await readState(runtime, root, active.id)
+        const candidate = state.pendingPlanRevision
+        if (candidate === undefined) throw new Error('当前没有待批准 PlanRevision 候选')
+        if (agent.id !== state.conversationRootSessionId) {
+          throw new Error(`PlanRevision 最终批准必须回到 Workflow 根会话 ${state.conversationRootSessionId}`)
+        }
+        if (candidate.parent !== Number(state.activePlanRevision ?? 1)) throw new Error('PlanRevision 候选的父版本已过期')
+        if (candidate.planDigest !== expectedPlanDigest) throw new Error(`PlanRevision digest 不匹配，期望 ${candidate.planDigest}`)
+        if (candidate.review?.status !== 'passed') throw new Error('PlanRevision 候选必须先通过独立 Review')
+        const previousTasks = new Map(state.plan.tasks.map(task => [task.id, task]))
+        const nextTasks = new Map(candidate.plan.tasks.map(task => [task.id, task]))
+        const currentStates = new Map((state.tasks ?? []).map(task => [task.taskId, task]))
+        const hardActive = []
+        for (const taskState of currentStates.values()) {
+          if (taskState.status !== 'running') continue
+          const previous = previousTasks.get(taskState.taskId)
+          if (previous === undefined) continue
+          const classification = classifyTaskRevisionChange(previous, nextTasks.get(taskState.taskId), {
+            registryChanged: candidate.plan.registryDigest !== state.plan.registryDigest,
+          })
+          if (classification.disposition === 'abort') hardActive.push({ taskId: taskState.taskId, reason: classification.reason })
+        }
+        const activeTaskIds = new Set([...currentStates.values()]
+          .filter(task => task.status === 'running' && !hardActive.some(item => item.taskId === task.taskId))
+          .map(task => task.taskId))
+        const transitionBlockedTaskIds = new Set()
+        const drainingTaskIds = new Set()
+        for (const taskId of activeTaskIds) {
+          const previous = previousTasks.get(taskId)
+          const next = nextTasks.get(taskId)
+          if (previous === undefined || next === undefined) continue
+          const addedDependencies = next.dependsOn.filter(id => !previous.dependsOn.includes(id))
+          if (addedDependencies.length > 0) {
+            drainingTaskIds.add(taskId)
+            addedDependencies
+              .filter(id => currentStates.get(id)?.status !== 'completed')
+              .forEach(id => transitionBlockedTaskIds.add(id))
+          }
+        }
+
+        const candidateInitialStates = new Map(
+          createTaskState(candidate.plan).map(taskState => [taskState.taskId, taskState]),
+        )
+        const pendingCheckTaskIds = new Set()
+        const nextTaskStates = []
+        for (const task of candidate.plan.tasks) {
+          const existing = currentStates.get(task.id)
+          const previous = previousTasks.get(task.id)
+          if (existing === undefined || previous === undefined) {
+            const created = candidateInitialStates.get(task.id)
+            nextTaskStates.push({ ...created, planRevision: candidate.number, checkState: null })
+            continue
+          }
+          const classification = classifyTaskRevisionChange(previous, task, {
+            registryChanged: candidate.plan.registryDigest !== state.plan.registryDigest,
+          })
+          const nextState = {
+            ...existing,
+            planRevision: candidate.number,
+            revisionDisposition: classification.disposition,
+            revisionReason: classification.reason,
+          }
+          if (classification.disposition === 'carry_valid' && existing.status === 'completed') {
+            nextState.checkState = 'valid'
+          } else if (classification.disposition === 'pending_check') {
+            if (['running', 'completed'].includes(existing.status)) {
+              nextState.checkState = 'pending_check'
+              nextState.recheckOnly = false
+              pendingCheckTaskIds.add(task.id)
+            } else {
+              // 尚未形成可复用结果的任务直接按新计划首次执行，不需要额外“待检查”轮次。
+              nextState.checkState = null
+              nextState.recheckOnly = false
+            }
+          } else if (classification.disposition === 'abort' && existing.status !== 'running') {
+            nextState.status = 'pending'
+            nextState.executorId = null
+            nextState.cursor = null
+            nextState.unchangedPolls = 0
+            nextState.reason = null
+            nextState.action = null
+            nextState.checkState = 'invalid'
+            nextState.recheckOnly = false
+          }
+          nextTaskStates.push(nextState)
+        }
+
+        for (const item of hardActive) {
+          const previous = previousTasks.get(item.taskId)
+          const taskState = nextTaskStates.find(task => task.taskId === item.taskId)
+          if (previous === undefined || taskState === undefined) continue
+          archiveAbortedRevisionAttempt(state, item.taskId, previous.ownerId, `PlanRevision 硬中止：${item.reason}`, now())
+          taskState.status = 'stopped'
+          taskState.executorId = null
+          taskState.cursor = null
+          taskState.unchangedPolls = 0
+          taskState.reason = 'decision_required'
+          taskState.action = 'await_user'
+          taskState.checkState = 'invalid'
+          taskState.recheckOnly = false
+          taskState.abortedOwnerId = previous.ownerId
+        }
+
+        const revision = createPlanRevision({
+          number: candidate.number,
+          parent: candidate.parent,
+          plan: candidate.plan,
+          planDigest: candidate.planDigest,
+        })
+        state.planRevisions ??= []
+        state.planRevisions.push(revision)
+        state.activePlanRevision = revision.number
+        state.plan = candidate.plan
+        state.planDigest = candidate.planDigest
+        state.planReview = candidate.review
+        state.planReviewDigest = candidate.planDigest
+        state.planApproved = true
+        state.planApprovedAt = now()
+        state.tasks = nextTaskStates
+        state.transitionBlockedTaskIds = [...transitionBlockedTaskIds]
+        state.revisionTransition = pendingCheckTaskIds.size === 0
+          ? undefined
+          : {
+              revision: revision.number,
+              drainingTaskIds: [...drainingTaskIds],
+              blockedTaskIds: [...transitionBlockedTaskIds],
+              pendingCheckTaskIds: [...pendingCheckTaskIds],
+              phase: drainingTaskIds.size > 0 ? 'draining' : 'dependencies',
+              createdAt: now(),
+            }
+        state.intents = (state.intents ?? []).map(intent => (
+          candidate.intentIds.includes(intent.id)
+            ? { ...intent, status: 'incorporated', incorporatedRevision: revision.number }
+            : intent
+        ))
+        state.pendingPlanRevision = undefined
+        delete state.implementationReview
+        delete state.implementationReviewHead
+        delete state.implementationReviewAt
+        advanceRevisionTransition(state)
+        if (hardActive.length > 0) {
+          state.status = 'blocked'
+          state.error = `PlanRevision 已中止权限边界失效的运行中任务：${hardActive.map(item => `${item.taskId}（${item.reason}）`).join('、')}`
+        } else if (state.tasks.some(task => task.status !== 'completed')) {
+          state.status = 'running'
+          state.error = undefined
+        }
+        await saveState(runtime, state)
+        await appendLog(runtime, root, state.id, 'plan-revision.approved', {
+          revision: revision.number,
+          parentRevision: revision.parent,
+          planDigest: revision.planDigest,
+          pendingCheckTaskIds: state.tasks.filter(task => task.checkState === 'pending_check').map(task => task.taskId),
+          summary: '用户批准新的不可变 DSH_PLAN_V2 快照，Runtime 已切换当前 DAG',
+        })
+        for (const item of hardActive) {
+          const previous = previousTasks.get(item.taskId)
+          if (previous !== undefined) runtime.invalidateOwnerLease(root, previous.ownerId, `PlanRevision ${revision.number}：${item.reason}`)
+          for (const [sessionId, activeOwner] of runtime.activeOwners.entries()) {
+            if (activeOwner.workflowId !== state.id || activeOwner.stageId !== item.taskId) continue
+            const child = runtime.ctx?.agents?.get?.(sessionId)
+            if (child?.status === 'running' && typeof child.cancel === 'function') {
+              void Promise.resolve(child.cancel({ kind: 'parent' })).catch(() => undefined)
+            }
+          }
+        }
+        if (['approved', 'running', 'blocked'].includes(state.status)) await runtime.ensureControlBridge(agent, state)
+        return {
+          contract: 'DSH_PLAN_REVISION_APPROVED_V1',
+          workflowId: state.id,
+          revision: revision.number,
+          parent: revision.parent,
+          planDigest: revision.planDigest,
+          transition: state.revisionTransition ?? null,
+          pendingIntentCount: pendingWorkflowIntents(state).length,
+        }
+      })
     },
     async inspectWorkflowGit(agent, args, signal) {
       abortIfNeeded(signal)
@@ -3725,6 +4309,21 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       state.planApprovedAt = now()
       state.planApprovedBy = agent.session.id
       state.runnerQueuedAt = state.planApprovedAt
+      if (!Array.isArray(state.planRevisions) || state.planRevisions.length === 0) {
+        const initialRevision = createPlanRevision({
+          number: 1,
+          parent: null,
+          plan: state.plan,
+          planDigest: state.planDigest,
+        })
+        state.planRevisions = [initialRevision]
+        state.activePlanRevision = 1
+        state.tasks = (state.tasks ?? createTaskState(state.plan)).map(task => ({
+          ...task,
+          planRevision: 1,
+          checkState: task.status === 'completed' ? 'valid' : null,
+        }))
+      }
       const pendingTaskCount = Array.isArray(state.tasks)
         ? state.tasks.filter(task => task.status === 'pending').length
         : Array.isArray(state.plan?.tasks)
@@ -3824,6 +4423,8 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         workflowSequence: state.workflowSequence,
         workflowSlug: state.workflowSlug,
         orchestratorSessionId: state.orchestratorSessionId,
+        conversationRootSessionId: state.conversationRootSessionId,
+        conversationNodes: state.conversationNodes ?? [],
         plan,
         planDigest: state.planDigest,
         registryDigest: state.registryDigest,
@@ -4003,7 +4604,10 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       }
       if (!initialPreflight.canStart) {
         const files = initialPreflight.changes.map(item => item.path).join(', ')
-        throw new Error(`当前基线不能创建 workflow：${files === '' ? '当前分支不是可合并分支' : files}；请先调用 workflow_preflight 查看并处理现场`)
+        const reason = initialPreflight.activeWorkflowId !== null
+          ? `当前未结束 Workflow=${initialPreflight.activeWorkflowId}`
+          : files === '' ? '当前分支不是可合并分支' : files
+        throw new Error(`当前基线不能创建 workflow：${reason}；请先调用 workflow_preflight 查看并处理现场`)
       }
       if (!runtime.modeEnabled(root)) await runtime.modeEnable(agent)
       await runtime.prepareRoot(root, signal)
@@ -4046,6 +4650,16 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         workflowWorktree,
         orchestratorSessionId: agent.id,
         orchestratorSessionHeaderId: agent.session.id,
+        conversationRootSessionId: agent.id,
+        conversationNodes: [{
+          sessionId: agent.id,
+          parentSessionId: null,
+          seedLength: Number.isSafeInteger(agent.session?.header?.seedLength)
+            ? agent.session.header.seedLength
+            : null,
+          role: 'root',
+          registeredAt: now(),
+        }],
         request: request.trim(),
         createdAt: now(),
         updatedAt: now(),
@@ -4121,17 +4735,36 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         throw new Error('Harness 没有挂载 continuable 子代理与回报通道，不能启动 Operation')
       }
       const spec = normalizeOperationSpec(rawSpec)
-      const childId = randomUUID()
-      const state = createOperationState({
-        root,
-        parentSessionId: agent.id,
-        childId,
-        spec,
+      const reservation = await runtime.withOperationLock(`project:${root}`, async () => {
+        const active = (await listOperationStates(root, resolvedConfig.runtimeDirectory)).filter(operationIsActive)
+        if (active.length > 0) return { existing: active[0], conflictCount: active.length }
+        const childId = randomUUID()
+        const state = createOperationState({
+          root,
+          parentSessionId: agent.id,
+          childId,
+          spec,
+        })
+        const binding = { operationId: state.id, root, parentSessionId: agent.id, childId, capabilities: spec.capabilities }
+        runtime.operationBindings.set(childId, binding)
+        runtime.operationParents.set(agent.id, agent)
+        await writeOperationState(root, state, resolvedConfig.runtimeDirectory)
+        return { state }
       })
-      const binding = { operationId: state.id, root, parentSessionId: agent.id, childId, capabilities: spec.capabilities }
-      runtime.operationBindings.set(childId, binding)
-      runtime.operationParents.set(agent.id, agent)
-      await writeOperationState(root, state, resolvedConfig.runtimeDirectory)
+      if (reservation.existing !== undefined) {
+        const ownedByCurrentSession = reservation.existing.parentSessionId === agent.id
+        return {
+          ...operationPublicSnapshot(reservation.existing),
+          started: false,
+          reused: ownedByCurrentSession,
+          activeCount: reservation.conflictCount,
+          nextAction: ownedByCurrentSession
+            ? '当前项目已经有一个未结束 Operation；继续等待它主动回报，不得创建第二个 Operator 子线程。'
+            : '当前项目已经有一个由其他主会话持有的未结束 Operation；请回到原主会话处理或取消，不能并行启动第二个 Operation。',
+        }
+      }
+      const state = reservation.state
+      const childId = state.childId
       try {
         const started = await subagents.startContinuable({
           provider: resolvedConfig.operationSubagentProvider,
@@ -4155,6 +4788,8 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         })
         return {
           ...operationPublicSnapshot(await readOperationState(root, state.id, resolvedConfig.runtimeDirectory)),
+          started: true,
+          reused: false,
           nextAction: 'Operator 已在后台运行并会主动回报。不要立即或重复调用 operation_status；结束当前回复并等待 operation_report 自动唤醒主代理。',
         }
       } catch (error) {
@@ -4165,7 +4800,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           appendOperationEvent(latest, { type: 'operation.start_failed', summary: latest.error })
           await writeOperationState(root, latest, resolvedConfig.runtimeDirectory)
         })
-        runtime.operationBindings.delete(childId)
+        runtime.scheduleOperationRecycle(await readOperationState(root, state.id, resolvedConfig.runtimeDirectory), agent)
         throw error
       }
     },
@@ -4187,7 +4822,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
             : state.status === 'waiting_input'
               ? '在当前主对话取得用户补充信息后调用 operation_continue。'
               : state.status === 'waiting_approval'
-                ? '立即调用 operation_approve，由 Harness 原生授权卡片处理精确命令；不要使用普通文本询问。'
+                ? '立即调用 operation_approve，由 Harness 原生多选项问询处理精确命令或会话级前缀；不要使用普通文本询问。'
                 : '根据当前终态向用户汇总，不要重复查询。',
         }
       }
@@ -4207,7 +4842,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         const state = await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)
         if (state.parentSessionId !== agent.id) throw new Error('当前主代理不能继续其他会话的 Operation')
         if (!['waiting_input', 'waiting_approval'].includes(state.status) || state.pending === undefined) {
-          throw new Error(`Operation ${operationId} 当前不等待主代理回复：${state.status}`)
+          return { stale: state }
         }
         const pending = { ...state.pending }
         const continuation = {
@@ -4215,8 +4850,8 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           requestKind: pending.kind,
         }
         if (pending.kind === 'approval') {
-          if (options?.decisionSource !== 'native-card') {
-            throw new Error('外部副作用授权只能通过 operation_approve 的 Harness 原生授权卡片处理')
+          if (options?.decisionSource !== 'native-question') {
+            throw new Error('外部副作用授权只能通过 operation_approve 的 Harness 原生多选项问询处理')
           }
           if (options?.approvalId !== pending.id) throw new Error('operation_continue 的 approval_id 与待处理授权不匹配')
           if (typeof options?.approved !== 'boolean') throw new Error('处理外部副作用授权时必须明确提供 approved')
@@ -4224,23 +4859,49 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           if (approval === undefined || approval.command !== pending.command || approval.status !== 'pending') {
             throw new Error('Operation 的待授权命令状态不一致')
           }
-          approval.status = options.approved ? 'approved' : 'rejected'
+          approval.scope = options.approvalMode === 'session-prefix' ? 'session-prefix' : 'once'
+          approval.status = options.approved
+            ? approval.scope === 'session-prefix' ? 'prefix-approved' : 'approved'
+            : 'rejected'
           approval.decidedAt = now()
           continuation.approvalId = pending.id
           continuation.approved = options.approved
           continuation.approvedCommand = options.approved ? pending.command : undefined
+          continuation.approvalMode = approval.scope
+          if (options.approved && approval.scope === 'session-prefix') {
+            const approvedPrefix = normalizeOperationApprovalPrefix(options.approvedPrefix, pending.command)
+            const prefixGrant = runtime.grantOperationCommandPrefix(
+              state.parentSessionId,
+              approvedPrefix,
+              pending.id,
+              state.id,
+            )
+            approval.commandPrefix = approvedPrefix
+            approval.prefixGrantId = prefixGrant.id
+            continuation.approvedPrefix = approvedPrefix
+            continuation.prefixGrantId = prefixGrant.id
+          }
         }
         state.status = 'running'
         delete state.pending
         appendOperationEvent(state, {
           type: pending.kind === 'approval' ? 'operation.approval_decided' : 'operation.input_received',
           summary: pending.kind === 'approval'
-            ? `Harness 原生授权卡片决定：${options.approved ? '允许一次' : '拒绝'}`
+            ? options.approved && options.approvalMode === 'session-prefix'
+              ? `Harness 原生问询决定：本次主会话允许命令前缀 ${options.approvedPrefix}`
+              : `Harness 原生授权决定：${options.approved ? '允许一次' : '拒绝'}`
             : '主代理已转发用户补充信息',
         })
         await writeOperationState(root, state, resolvedConfig.runtimeDirectory)
         return { pending, continuation }
       })
+      if (previous.stale !== undefined) {
+        return {
+          ...operationPublicSnapshot(previous.stale),
+          applied: false,
+          nextAction: '该等待请求已经被处理或失效；不要重复调用 operation_continue。',
+        }
+      }
       const state = await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)
       const subagents = runtime.subagentRuntime()
       if (subagents?.followup === undefined) throw new Error('Harness 没有挂载 Operation followup 通道')
@@ -4267,6 +4928,9 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           messageId,
         }
       } catch (error) {
+        if (previous.continuation.prefixGrantId !== undefined) {
+          runtime.revokeOperationCommandPrefix(agent.id, previous.continuation.prefixGrantId)
+        }
         await runtime.withOperationLock(operationId, async () => {
           const latest = await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)
           if (latest.status === 'running' && latest.pending === undefined) {
@@ -4275,6 +4939,9 @@ export function createOwnerWorkflowRuntime(ctx, config) {
             if (previous.pending.kind === 'approval' && latest.approvals?.[previous.pending.id] !== undefined) {
               latest.approvals[previous.pending.id].status = 'pending'
               delete latest.approvals[previous.pending.id].decidedAt
+              delete latest.approvals[previous.pending.id].scope
+              delete latest.approvals[previous.pending.id].commandPrefix
+              delete latest.approvals[previous.pending.id].prefixGrantId
             }
             appendOperationEvent(latest, { type: 'operation.continue_failed', summary: errorText(error) })
             await writeOperationState(root, latest, resolvedConfig.runtimeDirectory)
@@ -4288,11 +4955,11 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       const exactCommand = typeof command === 'string' ? command.trim() : ''
       if (exactCommand === '') throw new Error('operation_approve 必须提供精确 command')
       const root = await runtime.resolveRoot(agent)
-      const pending = await runtime.withOperationLock(operationId, async () => {
+      const pendingState = await runtime.withOperationLock(operationId, async () => {
         const state = await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)
         if (state.parentSessionId !== agent.id) throw new Error('当前主代理不能审批其他会话的 Operation')
         if (state.status !== 'waiting_approval' || state.pending?.kind !== 'approval') {
-          throw new Error(`Operation ${operationId} 当前没有等待原生授权卡片：${state.status}`)
+          return { stale: state }
         }
         if (state.pending.id !== approvalId) throw new Error('operation_approve 的 approval_id 与待处理授权不匹配')
         if (state.pending.command !== exactCommand) throw new Error('operation_approve 的 command 与待处理精确命令不匹配')
@@ -4300,58 +4967,76 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         if (approval === undefined || approval.status !== 'pending' || approval.command !== exactCommand) {
           throw new Error('Operation 的待授权命令状态不一致')
         }
-        return { ...state.pending }
+        return { pending: { ...state.pending } }
       })
-      const approvalService = runtime.ctx?.approval
-        ?? (typeof runtime.ctx?.get === 'function' ? runtime.ctx.get('approval') : undefined)
-      if (approvalService?.request === undefined) {
-        throw new Error('Harness 没有挂载原生 approval 服务，不能显示授权卡片')
+      if (pendingState.stale !== undefined) {
+        return {
+          ...operationPublicSnapshot(pendingState.stale),
+          applied: false,
+          approvalOutcome: 'stale',
+          nextAction: '该授权请求已经被处理或失效；不要重复显示授权卡片，也不要再次调用 operation_approve。',
+        }
       }
-      const outcome = await approvalService.request({
-        agent,
-        toolName: OPERATION_APPROVE_TOOL,
-        ...(exec?.callId === undefined ? {} : { callId: exec.callId }),
-        reason: [
-          'Operation 请求执行一次外部副作用动作。',
-          `动作：${pending.action}`,
-          `风险：${pending.risk}`,
-          '仅允许卡片中显示的精确命令执行一次。',
-        ].join('\n'),
-        signal: exec?.signal,
-      })
-      if (outcome === 'allowed-once' || outcome === 'rejected') {
+      const pending = pendingState.pending
+      let decision
+      try {
+        decision = await runtime.askOperationApprovalDecision(agent, pending, exec)
+      } catch (error) {
+        await runtime.withOperationLock(operationId, async () => {
+          const state = await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)
+          if (state.status === 'waiting_approval' && state.pending?.id === approvalId) {
+            appendOperationEvent(state, { type: 'operation.approval_unavailable', summary: errorText(error) })
+            await writeOperationState(root, state, resolvedConfig.runtimeDirectory)
+          }
+        })
+        return {
+          ...operationPublicSnapshot(await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)),
+          approvalOutcome: 'unavailable',
+          nextAction: '原生问询通道暂不可用；Operation 仍保持等待，不得把它解释为用户拒绝。',
+        }
+      }
+      if (decision.outcome === 'invalid-prefix') {
+        await runtime.withOperationLock(operationId, async () => {
+          const state = await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)
+          if (state.status === 'waiting_approval' && state.pending?.id === approvalId) {
+            appendOperationEvent(state, { type: 'operation.approval_prefix_invalid', summary: decision.feedback })
+            await writeOperationState(root, state, resolvedConfig.runtimeDirectory)
+          }
+        })
+        return {
+          ...operationPublicSnapshot(await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)),
+          approvalOutcome: 'invalid-prefix',
+          feedback: decision.feedback,
+          nextAction: '自定义前缀无效，Operation 仍保持等待；请重新调用 operation_approve 选择已有选项或输入当前命令的更窄字面前缀。',
+        }
+      }
+      if (['allowed-once', 'allowed-session-prefix', 'rejected'].includes(decision.outcome)) {
+        const allowed = decision.outcome !== 'rejected'
+        const prefixAllowed = decision.outcome === 'allowed-session-prefix'
         const continued = await runtime.continueOperation(
           agent,
           operationId,
-          outcome === 'allowed-once'
-            ? '用户通过 Harness 原生授权卡片允许执行一次精确命令。'
-            : '用户通过 Harness 原生授权卡片拒绝执行该命令。',
+          prefixAllowed
+            ? `用户通过 Harness 原生问询允许本次主会话执行命令前缀：${decision.prefix}`
+            : allowed
+              ? '用户通过 Harness 原生问询允许执行一次精确命令。'
+              : '用户通过 Harness 原生问询拒绝执行该命令。',
           {
             approvalId,
-            approved: outcome === 'allowed-once',
-            decisionSource: 'native-card',
+            approved: allowed,
+            decisionSource: 'native-question',
+            approvalMode: prefixAllowed ? 'session-prefix' : 'once',
+            ...(prefixAllowed ? { approvedPrefix: decision.prefix } : {}),
           },
           exec?.signal,
         )
-        return { ...continued, approvalOutcome: outcome }
-      }
-      await runtime.withOperationLock(operationId, async () => {
-        const state = await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)
-        if (state.status === 'waiting_approval' && state.pending?.id === approvalId) {
-          appendOperationEvent(state, {
-            type: `operation.approval_${outcome}`,
-            summary: outcome === 'cancelled' ? 'Harness 原生授权卡片已取消' : 'Harness 原生授权通道暂不可用',
-          })
-          await writeOperationState(root, state, resolvedConfig.runtimeDirectory)
+        return {
+          ...continued,
+          approvalOutcome: decision.outcome,
+          ...(prefixAllowed ? { approvedPrefix: decision.prefix } : {}),
         }
-      })
-      return {
-        ...operationPublicSnapshot(await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)),
-        approvalOutcome: outcome,
-        nextAction: outcome === 'cancelled'
-          ? '授权卡片已取消；Operation 仍保持等待，用户需要时可重新调用 operation_approve。'
-          : '原生授权通道暂不可用；Operation 仍保持等待，不得把它解释为用户拒绝。',
       }
+      throw new Error(`Harness 原生问询返回未知 Operation 授权结果：${String(decision.outcome)}`)
     },
     async cancelOperation(agent, operationId) {
       const root = await runtime.resolveRoot(agent)
@@ -4365,11 +5050,193 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         await writeOperationState(root, latest, resolvedConfig.runtimeDirectory)
         return latest
       })
-      const subagents = runtime.subagentRuntime()
-      subagents?.interrupt?.(state.childId, { kind: 'ancestor', agent })
-      await subagents?.drainContinuableChildren?.(agent, [state.childId]).catch(() => undefined)
-      runtime.operationBindings.delete(state.childId)
-      return operationPublicSnapshot(state)
+      await runtime.scheduleOperationRecycle(state, agent)
+      return operationPublicSnapshot(await readOperationState(root, operationId, resolvedConfig.runtimeDirectory))
+    },
+    async registerAutomaticOperationApproval(binding, command, description, automatic, { commandAlreadyStarted = false } = {}) {
+      return runtime.withOperationLock(binding.operationId, async () => {
+        const state = await readOperationState(binding.root, binding.operationId, resolvedConfig.runtimeDirectory)
+        if (state.status !== 'running') return { state }
+        if (state.childId !== binding.childId || state.parentSessionId !== binding.parentSessionId) {
+          throw new Error('Operation Operator 与持久状态绑定不一致')
+        }
+        const prefixGrant = runtime.matchOperationCommandPrefix(state.parentSessionId, command)
+        if (prefixGrant !== undefined) {
+          appendOperationEvent(state, {
+            type: 'operation.command_prefix_authorized',
+            summary: `命中本次主会话授权前缀：${prefixGrant.prefix}`,
+          })
+          if (!commandAlreadyStarted) appendOperationEvent(state, { type: 'operation.command_started', summary: description })
+          await writeOperationState(binding.root, state, resolvedConfig.runtimeDirectory)
+          return { state, prefixGrant }
+        }
+        const automaticApprovalId = `automatic-approval-${randomUUID()}`
+        state.approvals ??= {}
+        state.approvals[automaticApprovalId] = {
+          id: automaticApprovalId,
+          command,
+          action: description,
+          risk: '由 Operation 专用审批插件按 approve-for-me 固定风险、白名单和可选模型复核自动允许一次。',
+          status: 'executing',
+          source: automatic.source,
+          matchedPrefixes: automatic.matchedPrefixes,
+          requestedAt: now(),
+          decidedAt: now(),
+          executingAt: now(),
+        }
+        appendOperationEvent(state, {
+          type: 'operation.command_auto_approved',
+          summary: automatic.source === 'approve-for-me-reviewer'
+            ? '命令通过 approve-for-me 白名单与独立模型复核，自动允许执行一次'
+            : '命令通过 approve-for-me 固定风险与白名单，自动允许执行一次',
+        })
+        if (!commandAlreadyStarted) appendOperationEvent(state, { type: 'operation.command_started', summary: description })
+        await writeOperationState(binding.root, state, resolvedConfig.runtimeDirectory)
+        return { state, approvalId: automaticApprovalId }
+      })
+    },
+    async pauseOperationForApproval(binding, command, description, exec, details = {}) {
+      let saved
+      let approvalId
+      let created = false
+      await runtime.withOperationLock(binding.operationId, async () => {
+        const state = await readOperationState(binding.root, binding.operationId, resolvedConfig.runtimeDirectory)
+        if (state.childId !== binding.childId || state.parentSessionId !== binding.parentSessionId) {
+          throw new Error('Operation Operator 与持久状态绑定不一致')
+        }
+        if (operationIsTerminal(state) || state.status === 'waiting_input') {
+          saved = state
+          return
+        }
+        if (state.status === 'waiting_approval') {
+          saved = state
+          if (state.pending?.kind === 'approval' && state.pending.command === command) approvalId = state.pending.id
+          return
+        }
+        if (state.status !== 'running') {
+          saved = state
+          return
+        }
+        approvalId = `approval-${randomUUID()}`
+        const action = details.action ?? description
+        const risk = details.risk ?? '该命令可能改变设备、系统、网络、远程服务或其他外部状态。'
+        state.status = 'waiting_approval'
+        state.pending = {
+          kind: 'approval',
+          id: approvalId,
+          question: details.question ?? '是否允许执行这条精确命令？',
+          action,
+          risk,
+          command,
+          ...(details.commandPrefix === undefined ? {} : { commandPrefix: details.commandPrefix }),
+        }
+        state.approvals ??= {}
+        state.approvals[approvalId] = {
+          id: approvalId,
+          command,
+          action,
+          risk,
+          ...(details.commandPrefix === undefined ? {} : { commandPrefix: details.commandPrefix }),
+          ...(details.automaticReviewReason === undefined ? {} : { automaticReviewReason: details.automaticReviewReason }),
+          status: 'pending',
+          requestedAt: now(),
+        }
+        appendOperationEvent(state, {
+          type: 'operation.need_approval',
+          summary: details.summary ?? `需要主线程授权：${description}`,
+        })
+        saved = await writeOperationState(binding.root, state, resolvedConfig.runtimeDirectory)
+        created = true
+      })
+      let messageId = null
+      let delivered = false
+      if (created) {
+        const report = {
+          type: 'need_approval',
+          summary: details.summary ?? `需要主线程授权：${description}`,
+          question: saved.pending.question,
+          action: saved.pending.action,
+          risk: saved.pending.risk,
+          proposedCommand: command,
+          proposedPrefix: saved.pending.commandPrefix,
+        }
+        try {
+          const subagents = runtime.subagentRuntime()
+          if (subagents?.reportFrom === undefined) throw new Error('Harness 没有挂载 Operation 回报通道')
+          messageId = await subagents.reportFrom(
+            exec.agent,
+            [{ type: 'text', text: operationReportMessage(saved, report, approvalId) }],
+            { delivery: 'next-step', signal: exec.signal },
+          )
+          delivered = true
+        } catch {
+          // 请求已持久化；主线程可以从行动收件箱或 operation_status 恢复。
+        }
+      }
+      if (saved.status === 'waiting_approval') runtime.scheduleOperationPause(saved)
+      return {
+        contract: 'DSH_OPERATION_COMMAND_PAUSED_V1',
+        operationId: saved.id,
+        executed: false,
+        status: saved.status,
+        approvalId: approvalId ?? null,
+        delivered,
+        messageId,
+        duplicate: !created && saved.status === 'waiting_approval',
+        nextAction: saved.status === 'waiting_approval'
+          ? 'Runtime 已暂停当前 Operator 并通知主线程；立即结束本轮，不得继续调用工具或重复申请。'
+          : saved.status === 'waiting_input'
+            ? '当前 Operation 正在等待主线程补充信息；立即结束本轮。'
+            : '当前 Operation 已结束；不要继续调用工具。',
+      }
+    },
+    async recordOperationAdjustment(binding, exec, code, summary) {
+      let saved
+      let failed = false
+      await runtime.withOperationLock(binding.operationId, async () => {
+        const state = await readOperationState(binding.root, binding.operationId, resolvedConfig.runtimeDirectory)
+        if (state.status !== 'running') {
+          saved = state
+          return
+        }
+        state.policyAdjustmentCount = Number(state.policyAdjustmentCount ?? 0) + 1
+        if (state.policyAdjustmentCount >= 2) {
+          failed = true
+          state.status = 'failed'
+          state.error = `Operator 连续两次未按命令契约执行，Runtime 已停止本次 Operation：${summary}`
+          appendOperationEvent(state, { type: 'operation.adjustment_limit', summary: state.error })
+        } else {
+          appendOperationEvent(state, { type: `operation.adjustment.${code}`, summary })
+        }
+        saved = await writeOperationState(binding.root, state, resolvedConfig.runtimeDirectory)
+      })
+      if (failed) {
+        const report = { type: 'failed', summary: saved.error }
+        try {
+          await runtime.subagentRuntime()?.reportFrom?.(
+            exec.agent,
+            [{ type: 'text', text: operationReportMessage(saved, report) }],
+            { delivery: 'next-step', signal: exec.signal },
+          )
+        } catch {
+          // 失败终态已经持久化，主线程仍可恢复。
+        }
+        runtime.scheduleOperationRecycle(saved)
+      } else if (saved.status === 'waiting_input' || saved.status === 'waiting_approval') {
+        runtime.scheduleOperationPause(saved)
+      }
+      return {
+        contract: 'DSH_OPERATION_ADJUSTMENT_V1',
+        operationId: saved.id,
+        executed: false,
+        status: saved.status,
+        code,
+        adjustmentCount: saved.policyAdjustmentCount ?? 0,
+        guidance: failed ? saved.error : summary,
+        nextAction: failed
+          ? 'Runtime 已终止并通知主线程；不要继续调用工具。'
+          : '按 guidance 调整后最多重试一次；不要把该结果解释成 Harness 错误。',
+      }
     },
     async reportOperation(args, exec) {
       const binding = activeOperationBinding(runtime, exec, 'operation_report')
@@ -4381,21 +5248,42 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         action: args.action,
         risk: args.risk,
         proposedCommand: args.proposed_command,
+        proposedPrefix: args.proposed_prefix,
         result: args.result,
       })
       if (report.type === 'need_approval' && operationCommandIsCompound(report.proposedCommand)) {
-        throw new Error('Operation 授权请求只能包含一条精确命令；多个只读检查请拆成多次 operation_exec，不得要求用户为复合命令授权')
+        return runtime.recordOperationAdjustment(
+          binding,
+          exec,
+          'compound_approval',
+          '授权请求只能包含一条精确命令；请把多个检查拆成多次 operation_exec，不能为复合命令申请授权。',
+        )
+      }
+      if (report.type === 'need_approval') {
+        return runtime.pauseOperationForApproval(binding, report.proposedCommand, report.action, exec, {
+          summary: report.summary,
+          question: report.question,
+          action: report.action,
+          risk: report.risk,
+          commandPrefix: report.proposedPrefix,
+        })
       }
       let saved
-      let approvalId
+      let ignored = false
       await runtime.withOperationLock(binding.operationId, async () => {
         const state = await readOperationState(binding.root, binding.operationId, resolvedConfig.runtimeDirectory)
         if (state.childId !== binding.childId || state.parentSessionId !== binding.parentSessionId) {
           throw new Error('Operation Operator 与持久状态绑定不一致')
         }
-        if (operationIsTerminal(state)) throw new Error(`Operation ${state.id} 已结束，不能继续报告`)
+        if (operationIsTerminal(state)) {
+          saved = state
+          ignored = true
+          return
+        }
         if (state.status === 'waiting_input' || state.status === 'waiting_approval') {
-          throw new Error(`Operation ${state.id} 正在等待主代理处理 ${state.status}；Operator 必须停止本轮并等待 operation_continue 或 operation_approve，不得继续回报或改写状态`)
+          saved = state
+          ignored = true
+          return
         }
         if (report.type === 'need_input') {
           state.status = 'waiting_input'
@@ -4403,26 +5291,6 @@ export function createOwnerWorkflowRuntime(ctx, config) {
             kind: 'input',
             id: `input-${randomUUID()}`,
             question: report.question,
-          }
-        } else if (report.type === 'need_approval') {
-          approvalId = `approval-${randomUUID()}`
-          state.status = 'waiting_approval'
-          state.pending = {
-            kind: 'approval',
-            id: approvalId,
-            question: report.question,
-            action: report.action,
-            risk: report.risk,
-            command: report.proposedCommand,
-          }
-          state.approvals ??= {}
-          state.approvals[approvalId] = {
-            id: approvalId,
-            command: report.proposedCommand,
-            action: report.action,
-            risk: report.risk,
-            status: 'pending',
-            requestedAt: now(),
           }
         } else if (report.type === 'completed') {
           state.status = 'completed'
@@ -4438,6 +5306,20 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         appendOperationEvent(state, { type: `operation.${report.type}`, summary: report.summary })
         saved = await writeOperationState(binding.root, state, resolvedConfig.runtimeDirectory)
       })
+      if (ignored) {
+        if (saved.status === 'waiting_input' || saved.status === 'waiting_approval') runtime.scheduleOperationPause(saved)
+        return {
+          contract: 'DSH_OPERATION_REPORT_IGNORED_V1',
+          operationId: saved.id,
+          status: saved.status,
+          eventType: report.type,
+          delivered: false,
+          messageId: null,
+          nextAction: operationIsTerminal(saved)
+            ? 'Operation 已结束；不要继续调用工具。'
+            : 'Operation 正在等待主线程处理；Runtime 已暂停当前子线程，不得继续报告或重试。',
+        }
+      }
       let messageId = null
       let delivered = false
       try {
@@ -4445,7 +5327,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         if (subagents?.reportFrom === undefined) throw new Error('Harness 没有挂载 Operation 回报通道')
         messageId = await subagents.reportFrom(
           exec.agent,
-          [{ type: 'text', text: operationReportMessage(saved, report, approvalId) }],
+          [{ type: 'text', text: operationReportMessage(saved, report) }],
           {
             delivery: ['progress', 'finding'].includes(report.type) ? 'quiet' : 'next-step',
             signal: exec.signal,
@@ -4455,11 +5337,13 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       } catch {
         // 状态已经持久化；父代理下次调用 operation_status 仍能恢复结果。
       }
+      if (saved.status === 'waiting_input') runtime.scheduleOperationPause(saved)
+      if (operationIsTerminal(saved)) runtime.scheduleOperationRecycle(saved)
       return {
         operationId: saved.id,
         status: saved.status,
         eventType: report.type,
-        approvalId: approvalId ?? null,
+        approvalId: null,
         delivered,
         messageId,
       }
@@ -4472,30 +5356,113 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       if (command === '') throw new Error('operation_exec 必须提供非空 command')
       if (description === '') throw new Error('operation_exec 必须提供非空中文用途说明')
       if (operationCommandIsCompound(command)) {
-        throw new Error('operation_exec 每次只能执行一条命令；请拆分 &&、分号或管道连接的复合命令')
+        return runtime.recordOperationAdjustment(
+          binding,
+          exec,
+          'compound_command',
+          'operation_exec 每次只能执行一条命令；请拆分 &&、分号、管道、反引号或命令替换连接的复合命令。',
+        )
       }
       const effect = args?.effect ?? 'read-only'
       if (!['read-only', 'state-changing'].includes(effect)) throw new Error(`operation_exec effect 不受支持：${String(effect)}`)
-      let approvalId
-      await runtime.withOperationLock(binding.operationId, async () => {
+      let commandPrefix
+      try {
+        commandPrefix = normalizeOperationApprovalPrefix(args?.approval_prefix, command)
+      } catch (error) {
+        return runtime.recordOperationAdjustment(
+          binding,
+          exec,
+          'invalid_approval_prefix',
+          errorText(error),
+        )
+      }
+      let preflight = await runtime.withOperationLock(binding.operationId, async () => {
         const state = await readOperationState(binding.root, binding.operationId, resolvedConfig.runtimeDirectory)
-        if (state.status !== 'running') throw new Error(`Operation ${state.id} 当前不能执行命令：${state.status}`)
+        if (state.status !== 'running') return { state }
         if (!state.spec.capabilities.includes('shell')) throw new Error('当前 Operation 契约没有授予 shell 能力')
-        if (effect === 'read-only' && operationCommandNeedsApproval(command)) {
-          throw new Error('该命令可能产生外部或本地副作用；请先使用 operation_report(type=need_approval) 提交精确命令')
+        const approvalId = typeof args?.approval_id === 'string' ? args.approval_id : undefined
+        const approval = approvalId === undefined ? undefined : state.approvals?.[approvalId]
+        const approved = approval !== undefined && approval.status === 'approved' && approval.command === command
+        const prefixGrant = runtime.matchOperationCommandPrefix(state.parentSessionId, command)
+        if (approvalId !== undefined && !approved && prefixGrant === undefined) return { state, invalidApproval: true }
+        if ((effect === 'state-changing' || operationCommandNeedsApproval(command)) && !approved && prefixGrant === undefined) {
+          return { state, needsApproval: true }
         }
-        if (effect === 'state-changing') {
-          approvalId = typeof args?.approval_id === 'string' ? args.approval_id : undefined
-          const approval = approvalId === undefined ? undefined : state.approvals?.[approvalId]
-          if (approval === undefined || approval.status !== 'approved' || approval.command !== command) {
-            throw new Error('状态修改命令必须匹配一次尚未使用的用户精确授权')
-          }
+        if (approved) {
           approval.status = 'executing'
           approval.executingAt = now()
         }
         appendOperationEvent(state, { type: 'operation.command_started', summary: description })
+        if (prefixGrant !== undefined) {
+          appendOperationEvent(state, {
+            type: 'operation.command_prefix_authorized',
+            summary: `命中本次主会话授权前缀：${prefixGrant.prefix}`,
+          })
+        }
         await writeOperationState(binding.root, state, resolvedConfig.runtimeDirectory)
+        return { state, approvalId: approved ? approvalId : undefined, prefixGrant }
       })
+      if (preflight.state.status !== 'running') {
+        if (preflight.state.status === 'waiting_input' || preflight.state.status === 'waiting_approval') {
+          runtime.scheduleOperationPause(preflight.state)
+        }
+        return {
+          contract: 'DSH_OPERATION_COMMAND_PAUSED_V1',
+          operationId: preflight.state.id,
+          executed: false,
+          status: preflight.state.status,
+          approvalId: preflight.state.pending?.kind === 'approval' ? preflight.state.pending.id : null,
+          nextAction: operationIsTerminal(preflight.state)
+            ? 'Operation 已结束；不要继续调用工具。'
+            : 'Operation 正在等待主线程处理；立即结束本轮，不得继续调用工具。',
+        }
+      }
+      if (preflight.invalidApproval) {
+        return runtime.recordOperationAdjustment(
+          binding,
+          exec,
+          'invalid_approval',
+          'approval_id 必须匹配主线程刚刚允许、尚未使用且命令完全相同的一次性授权；不要猜测、复用或改写授权编号。',
+        )
+      }
+      if (preflight.needsApproval) {
+        const automatic = await runtime.operationApproval.evaluateAutomatic({
+          operatorAgent: exec.agent,
+          parentAgent: runtime.operationParents.get(binding.parentSessionId),
+          command,
+          description,
+          signal: exec.signal,
+        })
+        if (automatic.outcome !== 'allowed-once') {
+          return runtime.pauseOperationForApproval(binding, command, description, exec, {
+            commandPrefix,
+            automaticReviewReason: automatic.reason,
+          })
+        }
+        preflight = await runtime.registerAutomaticOperationApproval(
+          binding,
+          command,
+          description,
+          automatic,
+        )
+        if (preflight.state.status !== 'running') {
+          if (preflight.state.status === 'waiting_input' || preflight.state.status === 'waiting_approval') {
+            runtime.scheduleOperationPause(preflight.state)
+          }
+          return {
+            contract: 'DSH_OPERATION_COMMAND_PAUSED_V1',
+            operationId: preflight.state.id,
+            executed: false,
+            status: preflight.state.status,
+            approvalId: preflight.state.pending?.kind === 'approval' ? preflight.state.pending.id : null,
+            nextAction: operationIsTerminal(preflight.state)
+              ? 'Operation 已结束；不要继续调用工具。'
+              : 'Operation 正在等待主线程处理；立即结束本轮，不得继续调用工具。',
+          }
+        }
+      }
+      let approvalId = preflight.approvalId
+      let prefixGrant = preflight.prefixGrant
 
       const shell = runtime.ctx?.shell ?? (typeof runtime.ctx?.get === 'function' ? runtime.ctx.get('shell') : undefined)
       const sandbox = runtime.ctx?.sandbox ?? (typeof runtime.ctx?.get === 'function' ? runtime.ctx.get('sandbox') : undefined)
@@ -4512,13 +5479,69 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           stdoutMaxBytes: 256 * 1024,
           env: { GIT_OPTIONAL_LOCKS: '0' },
           sandboxPolicy: {
-            mode: 'read-only',
+            mode: approvalId === undefined && prefixGrant === undefined ? 'read-only' : 'danger-full-access',
             workspaceRoot: binding.root,
             ...(exec.agent?.session?.id === undefined ? {} : { sessionId: exec.agent.session.id }),
           },
         })
         result = await shell.run(spec)
-        if (result?.sandbox?.enforcement !== 'full') {
+        if (approvalId === undefined && prefixGrant === undefined && result?.sandbox?.denied === true) {
+          await runtime.withOperationLock(binding.operationId, async () => {
+            const state = await readOperationState(binding.root, binding.operationId, resolvedConfig.runtimeDirectory)
+            appendOperationEvent(state, { type: 'operation.command_sandbox_blocked', summary: `${description}：只读沙箱要求主线程授权` })
+            await writeOperationState(binding.root, state, resolvedConfig.runtimeDirectory)
+          })
+          const automatic = await runtime.operationApproval.evaluateAutomatic({
+            operatorAgent: exec.agent,
+            parentAgent: runtime.operationParents.get(binding.parentSessionId),
+            command,
+            description,
+            signal: exec.signal,
+          })
+          if (automatic.outcome !== 'allowed-once') {
+            return runtime.pauseOperationForApproval(binding, command, description, exec, {
+              risk: '该只读诊断需要访问 workspace-write 沙箱之外的宿主资源；批准后只执行卡片中的精确命令一次。',
+              commandPrefix,
+              automaticReviewReason: automatic.reason,
+            })
+          }
+          const registered = await runtime.registerAutomaticOperationApproval(
+            binding,
+            command,
+            description,
+            automatic,
+            { commandAlreadyStarted: true },
+          )
+          if (registered.state.status !== 'running') {
+            return {
+              contract: 'DSH_OPERATION_COMMAND_PAUSED_V1',
+              operationId: registered.state.id,
+              executed: false,
+              status: registered.state.status,
+              approvalId: registered.state.pending?.kind === 'approval' ? registered.state.pending.id : null,
+              nextAction: operationIsTerminal(registered.state)
+                ? 'Operation 已结束；不要继续调用工具。'
+                : 'Operation 正在等待主线程处理；立即结束本轮，不得继续调用工具。',
+            }
+          }
+          approvalId = registered.approvalId
+          prefixGrant = registered.prefixGrant
+          const escalatedSpec = shell.resolve({
+            command,
+            workdir: binding.root,
+            signal: exec.signal,
+            timeoutMs: Number.isFinite(args?.timeout_ms) ? args.timeout_ms : undefined,
+            stdoutMaxBytes: 256 * 1024,
+            env: { GIT_OPTIONAL_LOCKS: '0' },
+            sandboxPolicy: {
+              mode: 'danger-full-access',
+              workspaceRoot: binding.root,
+              ...(exec.agent?.session?.id === undefined ? {} : { sessionId: exec.agent.session.id }),
+            },
+          })
+          result = await shell.run(escalatedSpec)
+        }
+        if (approvalId === undefined && prefixGrant === undefined && result?.sandbox?.enforcement !== 'full') {
           throw new Error(`Operation 命令沙箱没有达到 full enforcement，实际为 ${result?.sandbox?.enforcement ?? 'none'}`)
         }
         await runtime.withOperationLock(binding.operationId, async () => {
@@ -4526,6 +5549,10 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           if (approvalId !== undefined && state.approvals?.[approvalId] !== undefined) {
             state.approvals[approvalId].status = 'consumed'
             state.approvals[approvalId].consumedAt = now()
+          }
+          if (prefixGrant !== undefined) {
+            prefixGrant.useCount += 1
+            prefixGrant.lastUsedAt = now()
           }
           appendOperationEvent(state, {
             type: 'operation.command_finished',
@@ -4832,6 +5859,12 @@ export function createOwnerWorkflowRuntime(ctx, config) {
             status: 'completed',
             completedAt: now(),
           }
+          const revisionAdvance = advanceRevisionTransition(state)
+          if (revisionAdvance.reopenedTaskIds.length > 0) {
+            appendSupervisorEvent(state, 'plan-revision.recheck-ready', {
+              taskIds: revisionAdvance.reopenedTaskIds,
+            })
+          }
           await saveState(runtime, state)
           alreadyCompleted = true
           return
@@ -4888,10 +5921,14 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           completedAt: now(),
           error: undefined,
         }
+        const revisionAdvance = advanceRevisionTransition(state)
         appendSupervisorEvent(state, 'supervisor.reservation-completed', {
           taskId: current.taskId,
           ownerId: current.ownerId,
           reservationId: current.reservationId,
+          ...(revisionAdvance.reopenedTaskIds.length === 0
+            ? {}
+            : { revisionRecheckTaskIds: revisionAdvance.reopenedTaskIds }),
         })
         await saveState(runtime, state)
       })
@@ -5975,11 +7012,11 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           throw new Error(`Owner ${ownerId} 的固定提交没有进入 workflow HEAD`)
         }
 
-        // Owner 的代码固定提交已经进入 workflow 分支，但在长期记忆落盘并提交之前，
-        // 不能把任务标记为 completed。这样每一个 V2 任务都会留下可复用的 Owner
-        // 记忆日志；有长期价值的变更还会产生经 Curator/Reviewer 审查的知识页面。
+        // Revision 变更后自然结束的旧运行先进入“待检查”。此时只保留 Runtime 临时日志，
+        // 不封存来源、不编译长期 Memory；新增前置与固定验证全部通过后才统一编译。
+        const deferLongTermMemory = taskState.checkState === 'pending_check' && taskState.recheckOnly !== true
         let memoryResult
-        if (hasWorkflowTarget) {
+        if (hasWorkflowTarget && !deferLongTermMemory) {
           let sealedSource
           try {
             sealedSource = await runtime.sealOwnerWorklog(
@@ -6041,13 +7078,23 @@ export function createOwnerWorkflowRuntime(ctx, config) {
             })
             throw error
           }
-        } else {
+        } else if (!hasWorkflowTarget) {
           // 仅用于无 workflow worktree 的最小测试夹具；正式 V2 工作流一定走上面的持久化路径。
           memoryResult = {
             enabled: false,
             skipped: '当前运行没有 workflow worktree，无法持久化 Owner 长期记忆',
             codeHead: workflowHeadBefore,
             memoryCommitSha: workflowHeadBefore,
+            files: [],
+            memoryDigest: state.memoryDigest,
+          }
+        } else {
+          memoryResult = {
+            enabled: false,
+            deferred: true,
+            skipped: '任务处于待检查状态；临时日志将在重新验证有效后统一编译长期 Memory',
+            codeHead: workflowHeadBefore,
+            memoryCommitSha: null,
             files: [],
             memoryDigest: state.memoryDigest,
           }
@@ -6060,6 +7107,10 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         taskState.reason = null
         taskState.action = null
         taskState.fixedCommitSha = fixedSha
+        if (!deferLongTermMemory) {
+          taskState.checkState = 'valid'
+          taskState.recheckOnly = false
+        }
         const settledResult = {
           ...record.result,
           taskId: stageId,
@@ -6096,8 +7147,8 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         state.workflowHead = workflowHeadBefore
         state.pendingTaskMerge = undefined
         state.pendingMemoryCompilation = undefined
-        state.memoryDigest = memoryResult.memoryDigest
-        if (state.ownerMemoryWorklogs !== undefined) {
+        if (!deferLongTermMemory) state.memoryDigest = memoryResult.memoryDigest
+        if (!deferLongTermMemory && state.ownerMemoryWorklogs !== undefined) {
           delete state.ownerMemoryWorklogs[key]
           if (Object.keys(state.ownerMemoryWorklogs).length === 0) delete state.ownerMemoryWorklogs
         }
@@ -6113,7 +7164,10 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           sessionId: record.result.sessionId,
           memoryCommitSha: memoryResult.memoryCommitSha,
           memoryFiles: memoryResult.files,
-          summary: 'V2 task 固定提交、Owner 长期记忆均已完成并记账',
+          checkState: taskState.checkState,
+          summary: deferLongTermMemory
+            ? 'V2 task 的旧运行已合入并标记待检查；仅保留临时日志，暂不编译长期 Memory'
+            : 'V2 task 固定提交与最终有效 Owner Memory 均已完成并记账',
         })
         for (const handoffId of completedHandoffs) {
           await appendLog(runtime, root, workflowId, 'handoff.completed', {
@@ -6148,6 +7202,63 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       const key = ownerRunKey(stageId, ownerId)
       if (runtime.externalOwnerRuns.has(`${workflowId}:${key}`)) {
         throw new Error(`Owner ${ownerId} 当前仍有控制桥运行，不能重复恢复：${key}`)
+      }
+      const revisionSnapshot = await readState(runtime, root, workflowId)
+      const revisionTask = revisionSnapshot.plan?.tasks?.find(item => item.id === stageId)
+      const revisionTaskState = revisionSnapshot.tasks?.find(item => item.taskId === stageId)
+      const abortedRevisionAttempt = revisionTask?.ownerId === ownerId
+        && revisionTaskState?.revisionDisposition === 'abort'
+        && revisionTaskState?.checkState === 'invalid'
+        && revisionSnapshot.ownerRuns?.[key] === undefined
+      if (abortedRevisionAttempt) {
+        const abortedOwnerId = revisionTaskState.abortedOwnerId ?? ownerId
+        return runtime.withOwnerLease(root, abortedOwnerId, workflowId, stageId, signal, (lease, leaseSignal) => (
+          runtime.withWorkflowLock(workflowId, async () => {
+            const state = await readState(runtime, root, workflowId)
+            const task = state.plan?.tasks?.find(item => item.id === stageId)
+            const taskState = state.tasks?.find(item => item.taskId === stageId)
+            if (task?.ownerId !== ownerId
+              || taskState?.revisionDisposition !== 'abort'
+              || taskState?.checkState !== 'invalid'
+              || state.ownerRuns?.[key] !== undefined) {
+              throw new Error(`PlanRevision 硬中止现场已经变化，不能按旧记录恢复：${key}`)
+            }
+            const staleOwnerId = taskState.abortedOwnerId ?? ownerId
+            const worktree = ownerWorktree(runtime, state, staleOwnerId)
+            const branch = ownerBranch(runtime, state, staleOwnerId)
+            await removeWorktree(state.root, worktree, leaseSignal, { missingOk: true, force: true })
+            await deleteBranch(state.root, branch, leaseSignal, { force: true, missingOk: true })
+            taskState.status = 'pending'
+            taskState.executorId = null
+            taskState.cursor = null
+            taskState.unchangedPolls = 0
+            taskState.reason = null
+            taskState.action = null
+            taskState.checkState = null
+            taskState.recheckOnly = false
+            delete taskState.fixedCommitSha
+            delete taskState.abortedOwnerId
+            if (state.supervisorOutbox !== undefined) delete state.supervisorOutbox[key]
+            state.status = 'running'
+            state.error = undefined
+            await runtime.assertOwnerLease(lease)
+            await saveState(runtime, state, lease)
+            await appendLog(runtime, root, workflowId, 'plan-revision.aborted-task-reset', {
+              taskId: stageId,
+              ownerId,
+              summary: '已丢弃 PlanRevision 权限边界失效的旧 Owner 现场，并从最新 workflow HEAD 重新排队',
+            })
+            await runtime.ensureControlBridge(agent, state)
+            return {
+              contract: 'DSH_PLAN_REVISION_ABORTED_TASK_RESET_V1',
+              workflowId,
+              taskId: stageId,
+              ownerId,
+              status: 'pending',
+              nextAction: 'Runner 将从最新 workflow HEAD 创建干净 Owner 现场并重新执行该任务。',
+            }
+          })
+        ))
       }
       let resumedMemoryCompilation = false
       await runtime.withWorkflowLock(workflowId, async () => {
@@ -6884,6 +7995,12 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           if (state.root !== root) throw new Error(`工作流 ${workflowId} 不属于当前项目：${state.root}`)
           assertV2WorkflowExecutable(state, '修复 Owner 长期记忆元数据')
           if (state.status !== 'completed') return { repaired: false, reason: 'workflow-not-completed' }
+          const unresolvedChecks = (state.tasks ?? [])
+            .filter(task => task.checkState === 'pending_check' || task.checkState === 'invalid')
+            .map(task => task.taskId)
+          if (unresolvedChecks.length > 0 || state.revisionTransition !== undefined) {
+            throw new Error(`Workflow 仍有未完成的 Revision 检查，不能修复或审查长期 Memory：${unresolvedChecks.join('、') || '切换尚未收敛'}`)
+          }
           const dirty = await statusRecords(state.workflowWorktree, leaseSignal)
           if (dirty.length > 0) {
             throw new Error(`修复 Owner 长期记忆元数据前 workflow worktree 不干净：${dirty.map(item => item.path).join('、')}`)
@@ -7157,7 +8274,12 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       activeOwner.memoryDigest = memorySnapshot.digest
       activeOwner.worklog = worklog
       const prompt = ownerTaskPrompt(
-        { ...state, ownerBranch: entry.branch, ownerWorktree: entry.worktree },
+        {
+          ...state,
+          ownerBranch: entry.branch,
+          ownerWorktree: entry.worktree,
+          taskRuntime: latestState.tasks?.find(item => item.taskId === stage.id),
+        },
         stage,
         entry.owner,
         entry.tasks,
@@ -7532,6 +8654,8 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         workflowSlug: state.workflowSlug,
         workflowWorktree: state.workflowWorktree,
         orchestratorSessionId: state.orchestratorSessionId,
+        conversationRootSessionId: state.conversationRootSessionId,
+        conversationNodes: state.conversationNodes ?? [],
         completedStages: state.completedStages,
         workflowHead: state.workflowHead,
         pendingStageMerge: state.pendingStageMerge,
@@ -7551,6 +8675,13 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         planReview: state.planReview,
         planReviewDigest: state.planReviewDigest,
         planRevisionCount: state.planRevisionCount ?? 0,
+        activePlanRevision: state.activePlanRevision,
+        planRevisions: state.planRevisions ?? [],
+        pendingPlanRevision: state.pendingPlanRevision,
+        revisionTransition: state.revisionTransition,
+        transitionBlockedTaskIds: state.transitionBlockedTaskIds ?? [],
+        intents: (state.intents ?? []).map(publicWorkflowIntent),
+        pendingIntentCount: pendingWorkflowIntents(state).length,
         planReviewRevisionCount: planReviewRevisionCount(state),
         configuredMaxPlanRevisionTurns: maxPlanRevisionTurns(resolvedConfig),
         maxPlanRevisionTurns: effectivePlanRevisionLimit(state, resolvedConfig),
@@ -8078,7 +9209,12 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       if (runtime.disposePromise !== undefined) return runtime.disposePromise
       runtime.disposed = true
       const supervisorDispatches = [...runtime.supervisorDispatches.values()]
+      const operationSettlements = [
+        ...runtime.operationPauses.values(),
+        ...runtime.operationRecycles.values(),
+      ]
       runtime.disposePromise = (async () => {
+        await Promise.allSettled(operationSettlements)
         const subagents = runtime.subagentRuntime()
         const parents = [...new Set([
           ...runtime.controlAgents.values(),
@@ -8094,6 +9230,8 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         runtime.supervisorDispatches.clear()
         runtime.operationBindings.clear()
         runtime.operationParents.clear()
+        runtime.operationPauses.clear()
+        runtime.operationRecycles.clear()
         runtime.dashboardWorkspaceRoots.clear()
         runtime.controlAgents.clear()
         runtime.workflowLocks.clear()
@@ -8101,6 +9239,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         runtime.agentRoles.clear()
         runtime.orchestratorRoots.clear()
         runtime.gitRootCache.clear()
+        await runtime.operationApproval.dispose()
         for (const workflowId of [...runtime.controlBridges.keys()]) {
           await runtime.closeControlBridge(workflowId).catch(() => undefined)
         }

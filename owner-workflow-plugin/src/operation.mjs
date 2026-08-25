@@ -22,6 +22,7 @@ const OPERATION_STATUSES = new Set([
   'cancelled',
 ])
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled'])
+const ACTIVE_STATUSES = new Set(['starting', 'running', 'waiting_input', 'waiting_approval'])
 const EVENT_LIMIT = 256
 
 function nonEmptyString(value, field) {
@@ -168,6 +169,10 @@ export function operationPublicSnapshot(state) {
     capabilities: Array.isArray(state.spec?.capabilities) ? [...state.spec.capabilities] : [],
     createdAt: state.createdAt,
     updatedAt: state.updatedAt,
+    childRecycled: state.childRecycled === true,
+    recycledAt: state.recycledAt ?? null,
+    childArchived: state.childArchived === true,
+    archivedAt: state.archivedAt ?? null,
     pending: state.pending === undefined ? null : {
       kind: state.pending.kind,
       id: state.pending.id,
@@ -175,6 +180,7 @@ export function operationPublicSnapshot(state) {
       ...(state.pending.action === undefined ? {} : { action: state.pending.action }),
       ...(state.pending.risk === undefined ? {} : { risk: state.pending.risk }),
       ...(state.pending.command === undefined ? {} : { command: state.pending.command }),
+      ...(state.pending.commandPrefix === undefined ? {} : { commandPrefix: state.pending.commandPrefix }),
     },
     result: state.result === undefined ? null : state.result,
     events: (Array.isArray(state.events) ? state.events : []).map(event => ({
@@ -194,7 +200,9 @@ export function operationInitialPrompt(state) {
     '你是主代理后台的专职 Operation 执行器。用户只与主代理沟通，你不得要求用户进入当前子线程。',
     '你不属于 Owner，不得修改项目文件、创建分支、提交 Git、调用 Owner 工作流或创建其他子代理。',
     '读取项目时使用获准的只读工具；所有一次性命令必须通过 operation_exec 执行，不得调用普通 bash、pwsh 或持久终端。',
-    'operation_exec 每次只接受一条命令，并在文件只读沙箱中运行。多个只读检查必须拆成多次调用，不能使用 &&、; 或管道拼接，也不能因为拼接失败而请求用户授权。可能改变设备、系统、网络、远程服务或其他外部状态的单条命令，必须先用 operation_report(type=need_approval) 提交精确 proposed_command、风险和理由，然后停止本轮。',
+    'operation_exec 每次只接受一条命令。多个检查必须拆成多次调用，不能使用 &&、;、&、管道、反引号或命令替换拼接。Runtime 会先在文件只读沙箱中运行只读命令；需要扩大沙箱时，Operation 专用审批插件依次检查本次主会话前缀、Operation 人工风险门禁、approve-for-me 固定风险与白名单以及可选无工具模型复核。只有全部满足才自动允许当前精确命令一次；其余情况由 operation_exec 生成精确授权请求并通知主线程，不要预先调用 operation_report(type=need_approval)。',
+    '同类命令后续还会重复执行时，可在 operation_exec 的 approval_prefix 中提供当前精确命令的字面前缀。Runtime 只负责校验边界并把“允许一次 / 本次会话允许此前缀 / 拒绝”交给用户选择；不得为了省事提出比任务所需更宽的前缀。',
+    'operation_exec 返回 waiting_approval、waiting_input、adjustment_required 或 terminal 时，必须立即停止本轮；Runtime 会暂停当前子线程，禁止把等待状态解释成工具失败后继续重试。',
     '缺少必要信息时用 operation_report(type=need_input) 提问并停止本轮，不得猜测。',
     '执行过程中可用 progress/finding 回报关键进展；完成时必须调用 operation_report(type=completed) 返回自包含的结构化结果。findings 中必须逐项标明“已确认：”“推测：”或“待验证：”，不能把进程缺失、命令不可用或间接迹象写成确定事实。报告后不要继续执行新的动作。',
     '',
@@ -208,7 +216,7 @@ export function operationContinuationPrompt(state, response) {
     `继续 Operation ${state.id}。`,
     '以下内容由主代理从当前用户对话中转发。只处理这一次回复，不得把它解释为扩大既有能力范围。',
     JSON.stringify(response, null, 2),
-    '继续按原执行契约工作；如仍缺少信息或授权，再通过 operation_report 返回请求。',
+    '继续按原执行契约工作；缺少信息时通过 operation_report(type=need_input) 返回请求；命令授权继续交给 operation_exec 自动判断。',
   ].join('\n')
 }
 
@@ -225,6 +233,7 @@ export function normalizeOperationReport(raw) {
     report.action = nonEmptyString(raw.action, 'action')
     report.risk = nonEmptyString(raw.risk, 'risk')
     report.proposedCommand = nonEmptyString(raw.proposedCommand, 'proposed_command')
+    report.proposedPrefix = normalizeOperationApprovalPrefix(raw.proposedPrefix, report.proposedCommand)
   }
   if (type === 'completed') {
     if (raw.result === null || typeof raw.result !== 'object' || Array.isArray(raw.result)) {
@@ -245,10 +254,34 @@ export function operationIsTerminal(state) {
   return TERMINAL_STATUSES.has(state?.status)
 }
 
+export function operationIsActive(state) {
+  return ACTIVE_STATUSES.has(state?.status)
+}
+
 /** Operation 命令必须逐条执行，避免把多个不同动作捆绑成一次模糊授权。 */
 export function operationCommandIsCompound(command) {
   const value = nonEmptyString(command, 'command')
-  return /(?:&&|\|\||[;|\r\n])/u.test(value)
+  return /(?:&&|\|\||[;&|\r\n]|`|\$\()/u.test(value)
+}
+
+/** 会话级授权使用字面前缀和参数边界，不解释通配符或正则表达式。 */
+export function operationCommandMatchesPrefix(command, prefix) {
+  const exactCommand = nonEmptyString(command, 'command')
+  const exactPrefix = nonEmptyString(prefix, 'approval_prefix')
+  if (exactCommand === exactPrefix) return true
+  return exactCommand.startsWith(exactPrefix) && /\s/u.test(exactCommand[exactPrefix.length] ?? '')
+}
+
+/** 校验 Operator 建议的可复用前缀；它必须是当前精确命令的完整字面参数前缀。 */
+export function normalizeOperationApprovalPrefix(prefix, command) {
+  if (prefix === undefined || prefix === null || prefix === '') return undefined
+  const exactPrefix = nonEmptyString(prefix, 'approval_prefix')
+  if (exactPrefix.length > 512) throw new Error('approval_prefix 不能超过 512 个字符')
+  if (operationCommandIsCompound(exactPrefix)) throw new Error('approval_prefix 不能包含命令连接符、后台符号、反引号或命令替换')
+  if (!operationCommandMatchesPrefix(command, exactPrefix)) {
+    throw new Error('approval_prefix 必须是当前精确命令的完整字面参数前缀')
+  }
+  return exactPrefix
 }
 
 /**
@@ -257,7 +290,8 @@ export function operationCommandIsCompound(command) {
  */
 export function operationCommandNeedsApproval(command) {
   const value = nonEmptyString(command, 'command')
-  if (/[\0\r\n;&|`$()<>]/u.test(value)) return true
+  const withoutNullRedirection = value.replace(/(?:\d*>>?|&>)\s*\/dev\/null\b/gu, '')
+  if (/[\0\r\n;&|`()<>]/u.test(withoutNullRedirection) || /\$\{/u.test(withoutNullRedirection)) return true
   if (/\b(?:sudo|su|rm|mv|cp|mkdir|rmdir|touch|chmod|chown|ln|dd|truncate|tee|kill|pkill|killall|reboot|shutdown|launchctl|systemctl|service|osascript|defaults|open|ssh|scp|rsync|curl|wget)\b/iu.test(value)) return true
   if (/^(?:pm\s+(?!list\b|path\b|dump\b)|am\s+|svc\s+|settings\s+(?!get\b|list\b)|input\s+)/iu.test(value)) return true
   if (/\b(?:git\s+(?:add|commit|merge|rebase|cherry-pick|checkout|switch|restore|reset|clean|push|pull|fetch|tag|branch\s+-[dD])|npm\s+(?:install|publish)|pnpm\s+(?:install|publish)|yarn\s+(?:add|install|publish)|pip\s+install|cargo\s+install)\b/iu.test(value)) return true

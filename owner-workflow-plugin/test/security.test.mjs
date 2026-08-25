@@ -464,7 +464,7 @@ test('固定验证快照和内容摘要跳过 Git 忽略的构建产物', async 
   }
 })
 
-test('固定验证被 workspace-write 拒绝后由主代理原生授权并精确重试一次', async () => {
+test('固定验证被 workspace-write 拒绝后由 Owner 现场原生授权并精确重试一次', async () => {
   const approvalCalls = []
   const fixture = await ownerVerificationFixture({
     shellResult: callCount => callCount === 1
@@ -493,7 +493,7 @@ test('固定验证被 workspace-write 拒绝后由主代理原生授权并精确
     const result = await fixture.runtime.recordBoundVerification({
       task_id: 'T1',
       verification_id: 'unit',
-      description: '验证主代理宿主授权重试',
+      description: '验证 Owner 现场宿主授权重试',
     }, fixture.exec)
     assert.equal(result.passed, true)
     assert.equal(result.enforcement, 'approved-host')
@@ -502,7 +502,7 @@ test('固定验证被 workspace-write 拒绝后由主代理原生授权并精确
     assert.equal(fixture.calls[0].sandboxPolicy.mode, 'workspace-write')
     assert.equal(fixture.calls[1].sandboxPolicy.mode, 'danger-full-access')
     assert.equal(approvalCalls.length, 1)
-    assert.equal(approvalCalls[0].agent, parentAgent)
+    assert.equal(approvalCalls[0].agent, fixture.exec.agent)
     assert.equal(approvalCalls[0].toolName, 'owner_submit')
     assert.match(approvalCalls[0].reason, /固定验证：unit/u)
   } finally {

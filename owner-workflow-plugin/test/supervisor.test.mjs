@@ -403,3 +403,40 @@ test('Supervisor ready 投影只派发 Composite entry/内部节点，exit 完�
   receipt = supervisorNext(state, CLOCK)
   assert.equal(receipt.tasks.some(item => item.taskId === 'T3'), true)
 })
+
+test('Revision 切换阻塞指定任务并在 ACK 后保留待检查元数据', () => {
+  const state = workflowState([
+    task('C', 'work', [], 'api'),
+    task('A', 'work', ['C'], 'web'),
+  ], 2)
+  state.transitionBlockedTaskIds = ['C']
+  state.tasks[1] = {
+    ...state.tasks[1],
+    status: 'running',
+    executorId: 'owner-a',
+    planRevision: 2,
+    checkState: 'pending_check',
+    revisionDisposition: 'pending_check',
+    revisionReason: '新增前置任务',
+    recheckOnly: false,
+    fixedCommitSha: 'abc123',
+  }
+
+  const wait = supervisorNext(state, CLOCK)
+  assert.equal(wait.action, 'wait')
+  const reduced = acknowledge(state, wait, {
+    tasks: [{ taskId: 'A', status: 'completed', cursor: 'new-head' }],
+  })
+  const record = reduced.tasks.find(item => item.taskId === 'A')
+  assert.equal(record.planRevision, 2)
+  assert.equal(record.checkState, 'pending_check')
+  assert.equal(record.revisionDisposition, 'pending_check')
+  assert.equal(record.revisionReason, '新增前置任务')
+  assert.equal(record.fixedCommitSha, 'abc123')
+  assert.deepEqual(supervisorNext(reduced, CLOCK).watches, [])
+
+  reduced.transitionBlockedTaskIds = []
+  const create = supervisorNext(reduced, CLOCK)
+  assert.equal(create.action, 'create')
+  assert.deepEqual(create.tasks.map(item => item.taskId), ['C'])
+})

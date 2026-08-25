@@ -404,7 +404,7 @@ function dashboardOperation(state) {
       question: dashboardText(snapshot.pending.question),
       ...(snapshot.pending.action === undefined ? {} : { action: dashboardText(snapshot.pending.action) }),
       ...(snapshot.pending.risk === undefined ? {} : { risk: dashboardText(snapshot.pending.risk) }),
-      // 精确命令只通过主代理授权对话展示，不进入浏览器投影。
+      // 精确命令只在请求产生的原生授权现场展示，不进入 Dashboard 浏览器投影。
     },
     result: snapshot.result === null ? null : {
       summary: dashboardText(snapshot.result.summary),
@@ -681,8 +681,13 @@ function workflowTaskCounts(state) {
 }
 
 function dashboardWorkflowWaitItem(state, workspace, daemon) {
-  if (!['approved', 'running', 'blocked'].includes(state?.status)) return undefined
-  const sessionId = dashboardText(state.planApprovedBy, 300)
+  const revisionDecision = state.pendingPlanRevision?.review?.status === 'passed'
+  if (!['approved', 'running', 'blocked'].includes(state?.status)
+    && !(state?.status === 'completed' && revisionDecision && state?.finalized !== true)) return undefined
+  const sessionId = dashboardText(
+    revisionDecision ? state.conversationRootSessionId : state.planApprovedBy,
+    300,
+  )
   if (sessionId === '') return undefined
   const workflowId = dashboardText(state.id, 300)
   const counts = workflowTaskCounts(state)
@@ -690,7 +695,11 @@ function dashboardWorkflowWaitItem(state, workspace, daemon) {
   let waitState
   let waitingFor
   let statusText
-  if (state.status === 'blocked' || counts.waitingDecisionTasks > 0) {
+  if (revisionDecision) {
+    waitState = 'waiting_workflow_decision'
+    waitingFor = 'Workflow 根会话批准 PlanRevision'
+    statusText = `PlanRevision ${String(state.pendingPlanRevision.number)} 已通过独立审查，等待用户决定`
+  } else if (state.status === 'blocked' || counts.waitingDecisionTasks > 0) {
     waitState = 'waiting_workflow_decision'
     waitingFor = '主代理或用户决定'
     statusText = 'Owner Workflow 已阻塞，等待处理'
@@ -723,7 +732,9 @@ function dashboardWorkflowWaitItem(state, workspace, daemon) {
     state: waitState,
     waitingFor,
     statusText,
-    detail: `未执行 ${counts.pendingTasks} · 执行中 ${counts.runningTasks} · 已完成 ${counts.completedTasks}`,
+    detail: revisionDecision
+      ? `候选摘要 ${dashboardText(state.pendingPlanRevision.planDigest, 80)}`
+      : `未执行 ${counts.pendingTasks} · 执行中 ${counts.runningTasks} · 已完成 ${counts.completedTasks}`,
     runnerStatus: daemon?.online === true ? (daemonActive ? 'active' : 'online') : 'offline',
     ...counts,
     startedAt: state.planApprovedAt ?? state.createdAt,

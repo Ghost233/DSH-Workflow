@@ -1,12 +1,14 @@
 # DeepSeek Harness Owner 工作流插件
 
-这是主工程中的独立插件包。`deepseek-harness/` 仅作为上游代码子模块，本插件不修改子模块源码、目录、catalog 或 preset。插件通过 Harness profile 或本地 patch 加载，工作流状态写入业务项目的 `.dsh-workflow/`。
+这是主工程中的独立插件包。`deepseek-harness/`、`dsh-synapse/` 与 `vendor/dsh-approve-for-me/` 都是固定 commit 的只读上游子模块，本插件不修改它们的源码。启动脚本把 Owner Workflow 与 Synapse Web 插件加载到同一个 Harness Web 进程；工作流状态写入业务项目的 `.dsh-workflow/`。
 
 ## 当前契约
 
 - 代码写入只使用 `DSH_PLAN_V2`；没有 Quick 模式。
-- 用户始终只与主代理沟通。需要实际执行但不修改仓库的任务使用独立 Operation；后台 Operator 不属于 Owner，通过 `operation_report` 把进展、问题、授权请求和结果返回当前主对话。
-- Operation 不内置 ADB、Docker 或项目临时命令。Operator 使用通用 `operation_exec` 在文件只读沙箱中逐条执行一次性命令；多个检查不能用 `&&`、分号或管道拼接。可能改变设备、系统、网络或远程状态的单条命令必须通过主会话的 Harness 原生“拒绝/允许一次”授权卡片处理。
+- 同一个 Git 项目同一时间只允许一个未结束 Workflow。Workflow 绑定一棵以创建会话为根的 DSH 会话树；其他普通 fork 只用于讨论，同一 Workflow 内的 DAG 仍可并行多个 Owner task。
+- 普通讨论不会自动进入 DAG。只有用户明确要求“加入当前 Workflow”“更新 DAG”“并行”或“新增前置”时才保存 Intent；保存后 Harness 会明确询问“现在重新规划 / 继续讨论”，后者不会唤醒 Planner。
+- 用户始终只与主代理沟通。需要实际执行但不修改仓库的任务使用独立 Operation；同一 Git 项目同时只允许一个未结束 Operation，对应一个可续接 Operator 子线程。重复启动只返回当前 Operation，不创建第二个子线程。
+- Operation 不内置 ADB、Docker 或项目临时命令。Operator 使用通用 `operation_exec` 逐条执行一次性命令；多个检查不能用 `&&`、分号、后台符号、管道、反引号或命令替换拼接。Operation 专用审批插件先匹配用户在本次主会话明确放行的字面前缀；未命中时先执行 Operation 的显式人工风险门禁，再复用 `dsh-approve-for-me` 的固定风险、配置白名单和可选无工具模型复核。自动通过只允许当前精确命令一次；任何异常、超时、不匹配或高风险都持久化请求、暂停 Operator 并回到主线程原生多选项问询。Operation 不监听标准 `approval/request`，不会接管主代理的 Bash/PowerShell；主代理仍使用独立安装的 `dsh-approve-for-me`。问询提供“仅允许这一次/拒绝”，存在最小 `approval_prefix` 时增加“本次会话允许此前缀”，并允许在“其他”中输入更窄前缀。会话前缀只保存在当前进程，主会话结束或 Harness 重启后失效。Operation 终态仍会释放驻留资源并通过 Workspace Registry 归档持久会话，状态和事件继续保留供审计。
 - 旧 V1 计划只允许查询和导出，不允许启动、调度、恢复、验证、合并或 finalize。
 - Owner Registry 是 Git 跟踪的责任域真源。Registry 变化必须经过提案、精确 digest 审批和运行时应用，不能由规划器或 Owner 直接写入。
 - Owner 是由代码本身决定的长期责任域：依据目录、模块、包、接口边界、依赖方向、稳定业务或技术职责以及可独立演进的文件集合。禁止按照当前 Workflow 的阶段、任务步骤、修复顺序、review/verify 角色、验证类型、临时需求名称或并行度目标创建、拆分或命名 Owner。Workflow 只能把 DAG task 路由给 Owner，不能反过来塑造 Owner。
@@ -15,14 +17,24 @@
 - 计划是任务级 DAG。节点使用 `dependsOn`，角色为 `work`、`review` 或 `verify`；任务必须绑定计划中的验证 ID，并声明 `priority`、`onFailure`、`onBlocked` 与 `onTimeout`。Runtime 只执行已经批准的策略，未覆盖的语义决策一律进入主会话 outbox。
 - Owner 在每个 workflow 内固定使用一个 Owner 分支和一个 worktree。同一 Owner 的后续任务复用该现场；任务完成时固定 commit SHA，验证通过后立即合入 workflow HEAD。
 - Owner Memory 采用可编译的两层模型：`当前 Memory` 是 Git 跟踪的简短中文能力说明；`临时 Memory` 是当前未完成 task 的完成、结论、下一步和阻塞记录。Owner 只能调用 `owner_memory_note` 追加临时 Memory，不能直写长期页面。
-- 每个 task 在完成前必须由 Runtime 自动封存临时 Memory 为隐藏编译来源，再由受限 Memory Curator/Reviewer 增量更新当前 Memory 并提交 Git；封存或编译失败时 task 不能标记 `completed`。当前 Memory 只描述系统现在有效的能力，不记录日期、行号、提交 SHA、测试输出、审查过程或逐文件流水账。
+- 未最终有效或仍处于“待检查”的结果只追加 Runtime 临时 Memory，不封存、不修改或编译长期 Memory。只有任务按最新 DAG 验证有效后，Runtime 才封存最终日志并由受限 Memory Curator/Reviewer 增量更新当前 Memory；失败时不能进入最终有效状态。
 - 确定性 Runner daemon 随 Harness 启动和停止，自动发现已登记工作区中 `approved` 或可恢复的 `running` Workflow。它只领取并执行控制桥 receipt：`create` 先形成持久 reservation，只有 runner 的 `execute` 才会启动 Harness 内的 Owner 子代理；`wait` 通过事件游标长等待，不读取或解释计划，不自行选择任务，也不调用模型。
 - Web Harness 启动时会同时加载只读 Dashboard 路由 `/owner-workflow`，可切换查看开发 workflow 和后台 Operation；它只读取 Runtime 投影，不提供调度、写入、Git 或命令接口。
-- 同一个静态客户端插件会在当前会话头部显示“等待 N”，并在侧边栏底部显示跨会话“主动等待 N”。两处列表共享 `/owner-workflow/api/waits`，直接投影 Operation 磁盘状态，不依赖模型维护，也不向 Harness 会话日志追加第三方事件。
+- 静态客户端提供统一“行动收件箱”：会话头部、侧边栏和 `shell.overlay` 全屏浮层都会合并 Runtime 等待项与 Harness 原生 `pendingInteraction`。点击条目只跳转到请求产生的会话，授权和问询仍在原始现场处理；Synapse 全屏地图打开时浮层入口仍可见。
 - `failed`/`blocked` 保留现场供恢复；`cancel` 经用户原生问询明确同意后放弃本次工作，删除未合入的临时分支、worktree 和未提交修改，只保留 Runtime 状态与日志。
 - 所有用户可见文本、提示词、日志摘要和文档使用中文；`deepseek-harness/` 保持零修改。
 
 ## 安装与启动
+
+首次克隆必须初始化固定子模块：
+
+```sh
+git clone --recurse-submodules <本项目地址>
+# 已经克隆时：
+git submodule update --init --recursive
+```
+
+启动前会核对三个子模块的 gitlink、初始化状态和内部脏改动；任一不匹配都会拒绝启动。上游升级只能显式更新父仓库中的 gitlink，不能在子模块里直接开发。
 
 启动时按 Harness 来源选择：
 
@@ -43,6 +55,12 @@ npm 模式可用 `DSH_NPM_VERSION=<版本或 dist-tag>` 指定版本。子模块
 
 npm 与独立子模块源码启动入口默认附加 `--no-open`，Harness 不会自动打开浏览器；如需恢复自动打开，设置 `DSH_WEB_OPEN=1`。
 
+子模块入口也支持直接使用同一 commit 构建出的 DSH CLI 管理 profile 插件。该模式只执行 CLI，不启动 Web、Owner Workflow Runner 或本地临时 patch：
+
+```sh
+./start-owner-workflow-submodule.sh plugin --profile web add dsh-approve-for-me@latest
+```
+
 需要安装 bundle 时，在 Harness checkout 中执行：
 
 ```sh
@@ -58,7 +76,7 @@ dsh --profile web
 
 1. 只需要读取仓库并给出审计、分析或建议时使用 `workflow_audit`，不创建 workflow。
 2. 需要实际执行但不修改仓库时，主代理将自然语言需求整理为目标、上下文、约束、完成标准和最小能力，调用 `operation_start`。Operator 在后台运行，用户不需要进入子线程。
-3. Operator 返回 `need_input` 时，主代理在当前对话取得信息并调用 `operation_continue`；返回 `need_approval` 时，主代理立即调用 `operation_approve`。Harness 会在当前主对话显示包含动作、风险和精确命令的原生授权卡片，用户点击“允许一次”后才恢复同一个 Operator。普通文本与 `ask_user_question` 不能产生授权。Operator 会主动回报；`operation_status` 只用于用户明确查询或恢复中断现场，不能轮询。使用 `operation_cancel` 取消。
+3. Operator 返回 `need_input` 时，主代理在当前对话取得信息并调用 `operation_continue`。`operation_exec` 需要扩大只读沙箱时，专用审批插件先检查本次会话前缀，再复用当前 Profile 中 `approve-for-me` 设置的固定风险、白名单和可选模型复核；通过时只自动执行当前精确命令一次。未通过时 Operator 返回 `need_approval`，主代理立即调用 `operation_approve`。Harness 会在当前主对话显示包含动作、风险、精确命令和可选前缀的原生多选项问询；只有用户明确选择“仅允许这一次”或“本次会话允许此前缀”才恢复同一个 Operator。普通文本不能产生授权。Operator 会主动回报；`operation_status` 只用于用户明确查询或恢复中断现场，不能轮询。使用 `operation_cancel` 取消。
    Operation 活动期间，当前会话头部会显示“等待 N”；侧边栏底部的全局列表会按会话分组显示所有等待事项。列表状态包括“等待后台 Operator”“等待用户补充信息”和“等待用户授权决定”。
 4. 需要改代码时先使用 `workflow_preflight`。它返回当前 Git 基线、未提交改动与 `baseDigest`；只有 `canStart=true` 时，才能将同一个摘要传给 `workflow_start`。这一步不会自动提交、暂存、丢弃或掩盖既有改动；子模块内部脏改动必须由用户先处理。
 5. `workflow_start` 从预检基线创建 workflow 分支，并让规划子代理返回 `DSH_PLAN_V2`、Owner 定义、验证定义和任务 DAG。
@@ -70,7 +88,9 @@ dsh --profile web
    修订候选连续两次不满足 V2 契约时返回 `DSH_WORKFLOW_PLAN_REVISION_FAILED_V1`，保留上一版计划、Reviewer 结果和成功修订额度；可恢复时只能重试同一个 Workflow，不能取消或重新创建。修订成功后的重复调用返回 `DSH_WORKFLOW_PLAN_REVISION_SKIPPED_V1`，并确定性指向重新审查。
 8. 计划批准后 Runner daemon 自动接管，不需要手工运行脚本。`workflow_plan_approve` 首先返回 `runner.status=queued`；此时只能说明“已排队”，等待 Workflow 进入 `running` 后才能说明 Owner 正在执行。需要临时禁用自动 Runner 时，可在启动 Harness 前设置 `DSH_OWNER_WORKFLOW_RUNNER=0`；`run-owner-workflow.sh --workflow-id wf-...` 仅保留为诊断兼容入口。
 
-9. 会话头部和侧边栏“主动等待”会显示未执行、执行中、等待依赖、等待用户决定和 Runner 离线状态；`/owner-workflow` Dashboard 同时显示任务统计。用户明确查询时也可以使用 `workflow_status` 或 `workflow_supervisor_status`。所有任务完成后依次执行 `workflow_implementation_review` 和 `workflow_finalize`。
+9. 执行期间可以在同一会话树的任意普通讨论分支明确提交 `workflow_intent_submit`。工具保存 Intent 后显示“现在重新规划 / 继续讨论”原生问询；只有前者会调用一次 Planner。候选依次经过 `workflow_revision_review` 和根会话中的 `workflow_revision_approve`。不可变版本只保存 `number`、`parent`、`planDigest` 和完整 `DSH_PLAN_V2` 快照。
+   Revision 切换时，无关任务继续有效；新增前置、验证、需求变化或 write 扩大允许旧运行自然结束并合入，但结果先标记“待检查”，新增依赖完成后重新执行固定验证。Owner 变化、任务删除、write 收窄或 Registry 权限变化会立即中止旧运行，旧结果不合入。
+10. 行动收件箱会显示未执行、执行中、等待依赖、Harness 原生授权、用户问询和 Runner 离线状态；点击条目返回请求产生的会话。`/owner-workflow` Dashboard 同时显示任务统计。用户明确查询时也可以使用 `workflow_status` 或 `workflow_supervisor_status`。所有任务完成并且不存在“待检查”结果后，依次执行 `workflow_implementation_review` 和 `workflow_finalize`。
 
 `workflow_git_inspect` 只提供受限 `status`、`diff` 与 `log` 证据，不读取 `.git` 内部文件或执行任意 Shell。计划批准、任务调度和最终集成均由运行时裁决；主会话不直接修改业务文件。
 
@@ -159,7 +179,7 @@ dsh/owner/<日期>-<项目递增序号>-<需求摘要>/<owner-id>
 
 这些短期子线程通过插件注册的正式 one-shot Subagent provider 创建。Harness 自己生成并持久化版本匹配的 `subagent/descriptor`，每个 run 结束后立即 dispose 运行资源；历史记录仍可审计，但会显示为已结束的一次性子代理，而不是“会话记录损坏”。旧版本已经产生、仅缺 descriptor 的诊断记录不会自动改写或删除。
 
-Owner 子代理的原生授权策略固定为 `never`，不会在隐藏子线程中等待用户。普通 Shell 因为必须访问 worktree 外的共享 SDK、编译器或缓存而被沙箱拒绝时，Owner 使用 `owner_host_exec` 原样提交命令、worktree 内工作目录和中文理由。Harness 授权卡片显示在创建 Workflow 的主对话；只有用户选择“允许一次”后，Runtime 才以宿主权限执行这条完全相同的命令一次。直接在 `bash`/`pwsh` 中设置 `sandbox_permissions`、目录越过 Owner worktree、拒绝、取消、授权通道不可用或 Owner 绑定失效都会确定性停止，且不会执行命令。
+Owner 子代理使用 `workspace-write + ask`，但插件在 Owner 会话的 `approval/request` waterfall 前设置严格门禁：只有 Runtime 当前登记的 `owner_host_exec` 或固定验证请求可以继续到 Harness UI，模型通过普通 Shell 直接申请的其他升级会被确定性拒绝。授权卡片显示在当前 Owner 任务现场；行动收件箱负责发现并跳转，主会话不代答。只有用户选择“允许一次”后，Runtime 才执行卡片中的同一精确命令一次。
 
 ### Owner Memory 编译
 
@@ -167,13 +187,14 @@ Memory 的可靠性由插件 Runtime 保证，Skill 只用于固定主代理、O
 
 ```text
 当前 Memory 注入 Owner → Owner 用 owner_memory_note 记录简短临时进展
-→ owner_submit 固定代码提交 → Runtime 封存临时日志 → Memory Curator 生成受限提案
-→ Reviewer/格式校验 → 提交当前 Memory → task completed
+→ owner_submit 固定代码提交 → 若仍“待检查”，只保留临时日志
+→ 最新 DAG 的依赖与固定验证全部通过 → Runtime 封存最终日志
+→ Memory Curator 生成受限提案 → Reviewer/格式校验 → 提交当前 Memory → task 最终有效
 ```
 
 `.owner-memory/owners/`、`interfaces/`、`concepts/` 与 `decisions/` 中的页面是人可读的当前知识；隐藏的 `.owner-memory/.sources/` 仅保存每次任务的简短封存日志，供后续重新编译使用，不会注入给 Owner。隐藏 `.catalog.json` 保存来源、时效和替代关系等机器元数据，避免把审计字段塞进可读 Markdown 页面。
 
-`owner_submit` 的正式固定验证不依赖 Owner 主动调用授权工具。`workspace-write` 明确拒绝固定命令后，Runtime 自动把完整 verification ID 和命令路由到主代理的原生授权卡片；允许一次后在独立快照中精确重试。若后台 Runner 派发时主代理没有开放回合，提交关卡自动结算为 blocked、保留 worktree，并要求主对话恢复同一 Workflow/task/Owner。若授权后的命令已经执行但退出码非 0，Runtime 会持久化有界 stdout/stderr、把证据返回同一 Owner，并拒绝将其误报为 blocked；Owner 必须修复后重新提交。
+`owner_submit` 的正式固定验证不依赖 Owner 主动调用授权工具。`workspace-write` 明确拒绝固定命令后，Runtime 自动把完整 verification ID 和命令登记为当前 Owner 现场的原生授权请求；允许一次后在独立快照中精确重试。若当前 Owner 没有开放回合，提交关卡保留 worktree，恢复同一 Workflow/task/Owner 后重试。若授权后的命令已经执行但退出码非 0，Runtime 会持久化有界 stdout/stderr、把证据返回同一 Owner，并拒绝将其误报为授权阻塞。
 
 Owner 完成时调用唯一的 `owner_submit` 提交关卡。运行时自动执行固定验证，根据真实 Git diff 检查 scope、链接和受保护路径，再生成并固定 commit SHA；复制验证快照时原样保留相对符号链接，Git 忽略文件不会进入提交，因此不作为 Owner 越界。越界时 Owner 在同一短期子线程调整后重试，或创建 handoff。任务通过后立即把固定 SHA 合入 workflow。出现冲突或审计失败时保留现场，不宣称任务或交付成功。最终 `implementation_review` 固定 workflow HEAD；`finalize` 再尝试把已审查 HEAD 合入启动分支的最新 HEAD。
 

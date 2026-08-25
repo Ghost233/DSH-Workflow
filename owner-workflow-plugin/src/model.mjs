@@ -499,6 +499,12 @@ function languageHasWitness(includes, excludes) {
   return false
 }
 
+/** 判断一个 glob 的全部可匹配路径是否都被另一组 glob 覆盖。 */
+export function scopePatternCoveredBy(pattern, coveringPatterns) {
+  if (typeof pattern !== 'string' || !Array.isArray(coveringPatterns)) return false
+  return !languageHasWitness([pattern], coveringPatterns)
+}
+
 export function ownersMayOverlap(left, right) {
   try {
     if (!Array.isArray(left?.scope) || !Array.isArray(right?.scope)

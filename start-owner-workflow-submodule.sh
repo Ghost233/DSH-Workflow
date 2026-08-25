@@ -9,13 +9,36 @@ HARNESS_DIRECTORY="${DSH_HARNESS_DIR:-${SCRIPT_DIRECTORY}/deepseek-harness}"
 RUNTIME_DIRECTORY="${DSH_HARNESS_RUNTIME_DIR:-}"
 RUNTIME_ROOT="${DSH_HARNESS_RUNTIME_ROOT:-${SCRIPT_DIRECTORY}/.dsh-harness-runtime}"
 
+cleanup_obsolete_runtime_caches() {
+  local current_revision="$1"
+  local candidate name
+  shopt -s nullglob
+  for candidate in "${RUNTIME_ROOT}"/*; do
+    name="${candidate##*/}"
+    if [[ "${name}" == "${current_revision}" ]]; then
+      continue
+    fi
+    # 只删除运行时根目录下名称严格为 Git SHA 的真实目录，保留临时构建和故障现场。
+    if [[ -d "${candidate}" ]] && [[ ! -L "${candidate}" ]] && [[ "${name}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+      rm -rf -- "${candidate}"
+      printf '已删除旧 Harness 运行时缓存：%s\n' "${candidate}" >&2
+    fi
+  done
+  shopt -u nullglob
+}
+
 show_help() {
   cat <<'EOF'
 用法：
-  ./start-owner-workflow-submodule.sh [dsh 参数...]
+  ./start-owner-workflow-submodule.sh
+  ./start-owner-workflow-submodule.sh plugin --profile <名称> <pnpm 参数...>
 
-使用 deepseek-harness 子模块当前 commit 的 TypeScript 源码启动。
+无参数时，使用 deepseek-harness 子模块当前 commit 的 TypeScript 源码启动 Web、Owner Workflow 与 Runner。
+首个参数为 plugin 时，直接使用同一套子模块 CLI 管理 profile 插件，不启动 Web、Owner Workflow 或 Runner，后续参数原样转发。
 首次使用某个 commit 时，会在 .dsh-harness-runtime/<commit>/ 创建独立运行时、安装依赖并从该 commit 的源码构建 CLI 与 Web 产物；原子模块保持不变。
+
+示例：
+  ./start-owner-workflow-submodule.sh plugin --profile web add dsh-approve-for-me@latest
 
 可设置：
   DSH_HARNESS_DIR=<子模块路径>
@@ -51,6 +74,7 @@ if [[ -z "${RUNTIME_DIRECTORY}" ]]; then
   fi
   mkdir -p "${RUNTIME_ROOT}"
   RUNTIME_ROOT="$(CDPATH= cd -- "${RUNTIME_ROOT}" && pwd)"
+  cleanup_obsolete_runtime_caches "${REVISION}"
   RUNTIME_DIRECTORY="${RUNTIME_ROOT}/${REVISION}"
   READY_FILE="${RUNTIME_DIRECTORY}/.dsh-owner-runtime-ready"
   if [[ ! -f "${READY_FILE}" ]]; then
@@ -92,4 +116,11 @@ fi
 
 export DSH_LAUNCHER=source-runtime
 export DSH_HARNESS_DIR="${RUNTIME_DIRECTORY}"
+
+# profile 插件管理必须直接进入当前 submodule commit 构建出的 DSH CLI。
+# 不能经过 start-owner-workflow.sh，否则 plugin 参数会被误当成 Web 参数，且会额外启动 Runner 和注入临时 patch。
+if [[ "${1:-}" == "plugin" ]]; then
+  exec node "${RUNTIME_DIRECTORY}/apps/cli/lib/bin.js" "$@"
+fi
+
 exec "${SCRIPT_DIRECTORY}/start-owner-workflow.sh" "$@"

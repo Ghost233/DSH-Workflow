@@ -1,6 +1,6 @@
 # DSH-Workflow
 
-这是一个运行在 DeepSeek Harness 之外的 Owner 工作流插件。`deepseek-harness/` 是只读上游子模块；插件、脚本、文档和测试均位于主工程，绝不修改该子模块。
+这是一个运行在 DeepSeek Harness 之外的 Owner 工作流插件。`deepseek-harness/`、`dsh-synapse/` 与 `owner-workflow-plugin/vendor/dsh-approve-for-me/` 都是固定 commit 的只读上游子模块；插件自有代码、脚本、文档和测试均位于主工程，不修改上游源码。
 
 ## 启动
 
@@ -24,6 +24,12 @@ DSH_NPM_VERSION=0.1.0-rc.8 ./start-owner-workflow-npm.sh
 
 npm 和独立子模块源码启动模式都会默认传递 `--no-open`，不会自动打开浏览器；需要恢复自动打开时设置 `DSH_WEB_OPEN=1`。
 
+子模块入口也可以直接调用同一 commit 构建出的 DSH 插件管理 CLI；该模式不会启动 Web、Runner 或注入临时 patch：
+
+```sh
+./start-owner-workflow-submodule.sh plugin --profile web add dsh-approve-for-me@latest
+```
+
 兼容原有调用：
 
 ```sh
@@ -38,7 +44,7 @@ Operation Operator 默认继承主代理模型。如需使用低成本模型，�
 DSH_OWNER_WORKFLOW_OPERATION_MODEL=<模型编号> ./start-owner-workflow-submodule.sh
 ```
 
-跨 provider 时同时设置 `DSH_OWNER_WORKFLOW_OPERATION_PROVIDER`。Operation 使用通用受控能力并逐条执行一次性命令，不把 ADB、Docker 或某个项目的临时命令固化进 Workflow 插件；多个只读检查不能用 `&&`、分号或管道拼接。需要外部副作用时，主代理调用 `operation_approve`，由 Harness 在当前对话显示原生“拒绝/允许一次”授权卡片；普通文本不会产生授权。Operator 会主动回报，主代理不会轮询状态。
+跨 provider 时同时设置 `DSH_OWNER_WORKFLOW_OPERATION_PROVIDER`。同一个 Git 项目同一时间只保留一个未结束 Operation 和一个可续接 Operator 子线程；重复启动只返回当前状态。Operation 使用通用受控能力并逐条执行一次性命令，不把 ADB、Docker 或某个项目的临时命令固化进插件。`operation_exec` 的专用审批插件依次检查：用户在本次主会话明确放行的字面前缀、Operation 必须人工处理的设备/系统/网络风险、`dsh-approve-for-me` 的固定风险与配置白名单，以及可选的无工具模型复核。自动链路只产生当前精确命令的一次性授权；任何不匹配、异常、超时或高风险都回到主线程原生多选项问询。主代理自己的标准 Bash/PowerShell 审批仍完全由已安装的 `dsh-approve-for-me` 处理，两条链路互不接管。前缀授权不写入长期状态，主会话结束或 Harness 重启后自动失效。Operation 终态释放驻留资源并归档持久会话，历史仍可审计。
 
 Owner Registry 提案与 DAG 计划批准使用 Harness 原生问询面板。编排者直接调用 `workflow_owner_change_approve` 或 `workflow_plan_approve`，面板提供“同意”“不同意”和自定义输入；只有明确选择“同意”才会修改 Registry 或固定计划。编排者不会再输出要求用户复制回复的批准口令。
 
@@ -79,5 +85,7 @@ http://127.0.0.1:3080/owner-workflow
 ```sh
 git submodule update --remote --merge deepseek-harness
 ```
+
+审批策略核心固定在 `owner-workflow-plugin/vendor/dsh-approve-for-me/`。升级它时必须显式更新父仓库 gitlink，并重新运行全量测试；启动脚本会拒绝未初始化、commit 不一致或内部存在改动的策略源码。
 
 更新命令不会修改插件逻辑；同步后重新运行插件测试并重启终端即可。

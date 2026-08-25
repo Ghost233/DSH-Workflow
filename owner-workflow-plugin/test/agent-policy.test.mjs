@@ -15,7 +15,7 @@ test('子代理继承完整工具集，角色只决定文件沙箱模式', () =>
   assert.equal(configureChildSandbox(childCtx, 'planner'), 'read-only')
   assert.deepEqual(events, [
     { type: 'sandbox/mode', data: { mode: 'workspace-write' } },
-    { type: 'approval/policy', data: { policy: 'never', source: 'delegation' } },
+    { type: 'approval/policy', data: { policy: 'ask', source: 'owner-workflow' } },
     { type: 'sandbox/mode', data: { mode: 'read-only' } },
     { type: 'approval/policy', data: { policy: 'never', source: 'delegation' } },
   ])

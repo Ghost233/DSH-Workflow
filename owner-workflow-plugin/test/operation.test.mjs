@@ -11,7 +11,9 @@ import {
   listOperationStates,
   normalizeOperationReport,
   normalizeOperationSpec,
+  normalizeOperationApprovalPrefix,
   operationCommandIsCompound,
+  operationCommandMatchesPrefix,
   operationCommandNeedsApproval,
   operationInitialPrompt,
   operationPublicSnapshot,
@@ -80,13 +82,16 @@ test('Operation 报告区分普通进展、用户输入和精确命令授权', (
     action: '关闭 Wi-Fi 后重新检查 VPN',
     risk: '手机网络会短暂中断',
     proposedCommand: 'adb shell svc wifi disable',
+    proposedPrefix: 'adb shell svc',
   })
   assert.equal(approval.proposedCommand, 'adb shell svc wifi disable')
+  assert.equal(approval.proposedPrefix, 'adb shell svc')
   assert.throws(() => normalizeOperationReport({ type: 'completed', summary: '完成' }), /result/u)
 })
 
 test('通用命令门禁允许典型只读诊断并拦截外部副作用', () => {
   assert.equal(operationCommandIsCompound('adb devices -l && adb shell dumpsys vpn'), true)
+  assert.equal(operationCommandIsCompound('lsof -p $(pgrep dsh)'), true)
   assert.equal(operationCommandIsCompound('adb shell dumpsys vpn'), false)
   for (const command of [
     'adb devices -l',
@@ -94,6 +99,7 @@ test('通用命令门禁允许典型只读诊断并拦截外部副作用', () =>
     'adb shell getprop ro.product.model',
     'adb logcat -d -v threadtime',
     'git status --short',
+    'lsof -nP "$TMPDIR/dsh.pid" 2>/dev/null',
   ]) {
     assert.equal(operationCommandNeedsApproval(command), false, command)
   }
@@ -107,6 +113,16 @@ test('通用命令门禁允许典型只读诊断并拦截外部副作用', () =>
   ]) {
     assert.equal(operationCommandNeedsApproval(command), true, command)
   }
+})
+
+test('会话级命令授权只匹配完整字面参数前缀', () => {
+  const command = 'adb -s 10AFAU29QR003JA shell input tap 720 596'
+  assert.equal(normalizeOperationApprovalPrefix('adb -s 10AFAU29QR003JA shell input', command), 'adb -s 10AFAU29QR003JA shell input')
+  assert.equal(operationCommandMatchesPrefix(command, 'adb -s 10AFAU29QR003JA shell input'), true)
+  assert.equal(operationCommandMatchesPrefix('adb -s 10AFAU29QR003JAX shell input tap 1 1', 'adb -s 10AFAU29QR003JA'), false)
+  assert.throws(() => normalizeOperationApprovalPrefix('adb -s other', command), /完整字面参数前缀/u)
+  assert.throws(() => normalizeOperationApprovalPrefix('adb -s 10AFAU29QR003JA shell input &', command), /后台符号/u)
+  assert.equal(operationCommandIsCompound('adb shell input tap 1 1 &'), true)
 })
 
 test('Operator 提示要求只与主代理结构化通信', () => {

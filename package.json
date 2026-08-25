@@ -23,18 +23,22 @@
     "docs/",
     "owner-workflow-plugin/README.md",
     "owner-workflow-plugin/README.zh.md",
+    "owner-workflow-plugin/THIRD_PARTY_NOTICES.md",
     "owner-workflow-plugin/agent-presets/",
     "owner-workflow-plugin/cordis.patch.yml",
     "owner-workflow-plugin/client.js",
     "owner-workflow-plugin/dashboard-host.mjs",
     "owner-workflow-plugin/index.js",
     "owner-workflow-plugin/src/",
-    "owner-workflow-plugin/scripts/"
+    "owner-workflow-plugin/scripts/",
+    "owner-workflow-plugin/vendor/dsh-approve-for-me/src/core/",
+    "owner-workflow-plugin/vendor/dsh-approve-for-me/LICENSE"
   ],
   "dsh": {
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-sidebar"
       ],

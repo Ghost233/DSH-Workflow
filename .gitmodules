@@ -2,3 +2,9 @@
 	path = deepseek-harness
 	url = https://github.com/deepseek-ai/deepseek-harness.git
 	branch = master
+[submodule "dsh-synapse"]
+	path = dsh-synapse
+	url = https://github.com/liangmianya/dsh-synapse.git
+[submodule "vendor/dsh-approve-for-me"]
+	path = owner-workflow-plugin/vendor/dsh-approve-for-me
+	url = https://github.com/timeance/dsh-approve-for-me.git

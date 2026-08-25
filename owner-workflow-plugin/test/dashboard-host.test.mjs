@@ -317,6 +317,19 @@ test('等待列表投影 Runner 接管、未执行、执行中和依赖任务数
     ],
     ownerRuns: { 'T1:code-owner': { taskId: 'T1', ownerId: 'code-owner', status: 'running' } },
   }, null, 2)}\n`, 'utf8')
+  await writeFile(join(workflowDirectory, 'wf-revision.json'), `${JSON.stringify({
+    ...base,
+    id: 'wf-revision',
+    status: 'running',
+    conversationRootSessionId: 'workflow-root-session',
+    pendingPlanRevision: {
+      number: 2,
+      planDigest: 'f'.repeat(64),
+      review: { status: 'passed' },
+    },
+    tasks: planTasks.map(task => ({ taskId: task.id, status: 'pending' })),
+    ownerRuns: {},
+  }, null, 2)}\n`, 'utf8')
   await writeFile(join(runnerDirectory, 'daemon.json'), `${JSON.stringify({
     contract: 'DSH_WORKFLOW_RUNNER_DAEMON_V1',
     status: 'running',
@@ -343,6 +356,15 @@ test('等待列表投影 Runner 接管、未执行、执行中和依赖任务数
     running: waits.get('wf-running').runningTasks,
     dependencies: waits.get('wf-running').waitingDependencyTasks,
   }, { state: 'running_owner', pending: 2, running: 1, dependencies: 2 })
+  assert.deepEqual({
+    state: waits.get('wf-revision').state,
+    sessionId: waits.get('wf-revision').sessionId,
+    statusText: waits.get('wf-revision').statusText,
+  }, {
+    state: 'waiting_workflow_decision',
+    sessionId: 'workflow-root-session',
+    statusText: 'PlanRevision 2 已通过独立审查，等待用户决定',
+  })
   assert.ok(body.waits.every(item => !Object.hasOwn(item, 'root') && !Object.hasOwn(item, 'pid')))
 })
 

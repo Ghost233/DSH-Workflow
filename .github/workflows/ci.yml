@@ -1,0 +1,66 @@
+name: Owner Workflow CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出固定子模块
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+
+      - name: 启用 Corepack
+        run: corepack enable
+
+      - name: 核对子模块 gitlink 与只读状态
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:deepseek-harness)" = "$(git -C deepseek-harness rev-parse HEAD)"
+          test "$(git rev-parse HEAD:dsh-synapse)" = "$(git -C dsh-synapse rev-parse HEAD)"
+          test "$(git rev-parse HEAD:owner-workflow-plugin/vendor/dsh-approve-for-me)" = "$(git -C owner-workflow-plugin/vendor/dsh-approve-for-me rev-parse HEAD)"
+          test -z "$(git -C deepseek-harness status --porcelain --untracked-files=all)"
+          test -z "$(git -C dsh-synapse status --porcelain --untracked-files=all)"
+          test -z "$(git -C owner-workflow-plugin/vendor/dsh-approve-for-me status --porcelain --untracked-files=all)"
+
+      - name: 核对 Operation 审批策略核心与许可证
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f owner-workflow-plugin/vendor/dsh-approve-for-me/LICENSE
+          grep -q "MIT License" owner-workflow-plugin/vendor/dsh-approve-for-me/LICENSE
+          node --input-type=module -e '
+            import {
+              buildReviewerPrompt,
+              detectFixedHighRisk,
+              evaluateCommandRules,
+              parseApprovalSettings,
+            } from "./owner-workflow-plugin/vendor/dsh-approve-for-me/src/core/index.ts"
+            for (const item of [buildReviewerPrompt, detectFixedHighRisk, evaluateCommandRules, parseApprovalSettings]) {
+              if (typeof item !== "function") process.exit(1)
+            }
+          '
+
+      - name: 核对 Synapse 构建、测试与许可证
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dsh-synapse/LICENSE
+          grep -q "MIT License" dsh-synapse/LICENSE
+          corepack pnpm --dir dsh-synapse run build
+          corepack pnpm --dir dsh-synapse test
+
+      - name: 核对 Owner Workflow 客户端产物
+        run: npm run check:client
+
+      - name: 运行 Owner Workflow 全量测试
+        run: npm test

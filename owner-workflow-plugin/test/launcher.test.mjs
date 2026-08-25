@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -139,6 +139,97 @@ test('子模块启动脚本从显式独立源码运行时执行构建后的 CLI'
   }
 })
 
+test('子模块启动脚本把 plugin 命令原样交给同一源码 CLI 且不启动 Web', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-owner-submodule-plugin-'))
+  const harnessHome = join(root, 'home')
+  const harnessDirectory = join(root, 'harness')
+  const runtimeDirectory = join(root, 'runtime')
+  try {
+    await mkdir(harnessDirectory, { recursive: true })
+    await prepareSourceRuntime(runtimeDirectory)
+
+    const { stdout, stderr } = await executeFile('bash', [
+      SUBMODULE_START_SCRIPT,
+      'plugin',
+      '--profile',
+      'web',
+      'add',
+      'dsh-approve-for-me@latest',
+    ], {
+      cwd: PROJECT_ROOT,
+      env: {
+        ...process.env,
+        DSH_HOME: harnessHome,
+        DSH_HARNESS_DIR: harnessDirectory,
+        DSH_HARNESS_RUNTIME_DIR: runtimeDirectory,
+        DSH_OWNER_WORKFLOW_RUNNER: '1',
+      },
+      maxBuffer: 2 * 1024 * 1024,
+    })
+
+    assert.deepEqual(stdout.trim().split('\n'), [
+      'plugin',
+      '--profile',
+      'web',
+      'add',
+      'dsh-approve-for-me@latest',
+    ])
+    assert.doesNotMatch(stdout, /--patch|--no-open/u)
+    assert.doesNotMatch(stderr, /Runner daemon|Owner Workflow Dashboard|Synapse/u)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('子模块启动脚本只保留当前 commit 的运行时缓存', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-owner-submodule-cache-'))
+  const harnessDirectory = join(root, 'harness')
+  const runtimeRoot = join(root, 'runtime-root')
+  const binDirectory = join(root, 'bin')
+  const currentRevision = '1'.repeat(40)
+  const staleRevision = '2'.repeat(40)
+  const currentRuntime = join(runtimeRoot, currentRevision)
+  const staleRuntime = join(runtimeRoot, staleRevision)
+  const retainedFailure = join(runtimeRoot, '.failed-build')
+  try {
+    await mkdir(harnessDirectory, { recursive: true })
+    await mkdir(binDirectory, { recursive: true })
+    await prepareSourceRuntime(currentRuntime)
+    await writeFile(join(currentRuntime, '.dsh-owner-runtime-ready'), `${currentRevision}\n`, 'utf8')
+    await mkdir(staleRuntime, { recursive: true })
+    await mkdir(retainedFailure, { recursive: true })
+    await writeFile(join(binDirectory, 'git'), `#!/usr/bin/env bash\nprintf '%s\\n' '${currentRevision}'\n`, 'utf8')
+    await writeFile(join(binDirectory, 'corepack'), '#!/usr/bin/env bash\nexit 0\n', 'utf8')
+    await chmod(join(binDirectory, 'git'), 0o755)
+    await chmod(join(binDirectory, 'corepack'), 0o755)
+
+    const { stderr } = await executeFile('bash', [
+      SUBMODULE_START_SCRIPT,
+      'plugin',
+      '--profile',
+      'web',
+      'list',
+    ], {
+      cwd: PROJECT_ROOT,
+      env: {
+        ...process.env,
+        PATH: `${binDirectory}:${process.env.PATH}`,
+        DSH_HOME: join(root, 'home'),
+        DSH_HARNESS_DIR: harnessDirectory,
+        DSH_HARNESS_RUNTIME_ROOT: runtimeRoot,
+      },
+      maxBuffer: 2 * 1024 * 1024,
+    })
+
+    await access(currentRuntime)
+    await access(retainedFailure)
+    await assert.rejects(access(staleRuntime), error => error?.code === 'ENOENT')
+    assert.match(stderr, new RegExp(staleRevision, 'u'))
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('启动脚本让 Runner daemon 随 Harness 启动并在 Harness 退出后停止', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-runner-lifecycle-'))
   const harnessHome = join(root, 'home')
@@ -195,6 +286,47 @@ test('子模块启动脚本拒绝不存在的显式独立源码运行时', async
       }),
       /独立源码运行时不存在/u,
     )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('本地 Web 启动把固定 Synapse 子模块注入同一个 Harness 进程', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-owner-synapse-launcher-'))
+  const harnessHome = join(root, 'home')
+  const runtimeDirectory = join(root, 'runtime')
+  try {
+    await prepareSourceRuntime(runtimeDirectory)
+    await writeFile(
+      join(runtimeDirectory, 'apps', 'cli', 'lib', 'bin.js'),
+      [
+        'const { readFileSync } = require("node:fs")',
+        'process.stdout.write(process.argv.slice(2).join("\\n") + "\\n")',
+        'for (let index = 0; index < process.argv.length; index += 1) {',
+        '  if (process.argv[index] !== "--patch") continue',
+        '  process.stdout.write(readFileSync(process.argv[index + 1], "utf8"))',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+
+    const { stdout } = await executeFile('bash', [START_SCRIPT], {
+      cwd: PROJECT_ROOT,
+      env: {
+        ...process.env,
+        DSH_HOME: harnessHome,
+        DSH_HARNESS_DIR: runtimeDirectory,
+        DSH_LAUNCHER: 'source-runtime',
+        DSH_OWNER_WORKFLOW_MODE: 'local',
+        DSH_OWNER_WORKFLOW_RUNNER: '0',
+      },
+      maxBuffer: 2 * 1024 * 1024,
+    })
+
+    assert.match(stdout, /id: synapse/u)
+    assert.match(stdout, /name: dsh-synapse/u)
+    assert.match(stdout, /synapse\/workspaces\.json/u)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

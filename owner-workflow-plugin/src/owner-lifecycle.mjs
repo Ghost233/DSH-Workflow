@@ -19,7 +19,7 @@ export class OwnerReportedError extends Error {
   }
 }
 
-/** 固定验证需要回到主代理取得原生一次性授权，Owner 当前任务必须安全停住。 */
+/** 固定验证需要在当前 Owner 任务现场取得原生一次性授权，当前任务必须安全停住。 */
 export class OwnerVerificationApprovalRequiredError extends Error {
   constructor(message) {
     super(message)

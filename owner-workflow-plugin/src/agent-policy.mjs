@@ -68,13 +68,17 @@ function childOrchestrationToolAllowed(role, toolName) {
 /** 子代理继承完整工具集；文件写入能力交给 Harness 沙箱。 */
 export function configureChildSandbox(childCtx, role) {
   const mode = role === 'owner' ? 'workspace-write' : 'read-only'
+  const approvalPolicy = role === 'owner' ? 'ask' : 'never'
   childCtx.agent?.session?.append?.('sandbox/mode', { mode })
-  // 用户只与主代理交互；子代理自己的原生授权必须确定性关闭，避免卡片落入隐藏会话。
+  // Owner 的受控桥接请求需要在任务现场显示原生卡片；其他子代理仍确定性关闭授权。
   const approvalEvents = Array.isArray(childCtx.agent?.session?.events)
     ? childCtx.agent.session.events.filter(event => event?.type === 'approval/policy')
     : []
-  if (approvalEvents.at(-1)?.data?.policy !== 'never') {
-    childCtx.agent?.session?.append?.('approval/policy', { policy: 'never', source: 'delegation' })
+  if (approvalEvents.at(-1)?.data?.policy !== approvalPolicy) {
+    childCtx.agent?.session?.append?.('approval/policy', {
+      policy: approvalPolicy,
+      source: role === 'owner' ? 'owner-workflow' : 'delegation',
+    })
   }
   return mode
 }
@@ -89,7 +93,7 @@ export function toolExecutionDenial({ activeOwner, role, modeEnabled, toolName, 
       && toolArguments !== null
       && typeof toolArguments === 'object'
       && Object.hasOwn(toolArguments, 'sandbox_permissions')) {
-      return `Owner ${activeOwner.owner?.id ?? '未知'} 不能在子线程直接申请沙箱升级；请改用 owner_host_exec，让授权卡片显示在主代理会话`
+      return `Owner ${activeOwner.owner?.id ?? '未知'} 不能通过 Shell 参数直接申请沙箱升级；请改用 owner_host_exec，让 Runtime 在当前 Owner 任务现场显示精确授权卡片`
     }
     if (OWNER_DESCENDANT_TOOLS.has(toolName)) {
       return `Owner ${activeOwner.owner?.id ?? '未知'} 同时只能运行一个执行子线程，不能再创建后代 Agent`

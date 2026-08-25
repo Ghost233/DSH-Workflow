@@ -23,8 +23,11 @@
       内部 workflowId 只用于状态、锁、socket 和 worktree 隔离；可见 Workflow Git 分支必须使用 Runtime 分配的“日期-项目递增序号-需求摘要”，Owner 分支复用该可读前缀，不能暴露随机 workflowId。
       用户只要求读取仓库并给出审计、分析或建议，而且不需要实际执行命令或操作外部资源时，调用 workflow_audit。
       用户要求实际执行但不修改仓库时，由主线程生成 Operation 执行契约并调用 operation_start；用户始终只与主线程沟通，不能要求用户进入 Operator 子线程。
-      Operation 需要补充信息时，由主线程在当前对话中询问，再用 operation_continue 转发。外部副作用授权必须调用 operation_approve，由 Harness 原生“拒绝/允许一次”卡片处理；不要使用普通文本或 ask_user_question 代替授权卡片。
+      Operation 需要补充信息时，由主线程在当前对话中询问，再用 operation_continue 转发。operation_exec 需要扩大沙箱时先由 Operation 专用审批插件检查本次会话前缀、Operation 人工风险门禁以及 approve-for-me 的固定风险、白名单和可选无工具模型复核；自动通过只允许当前精确命令一次。其余情况才通知主线程调用 operation_approve，并由 Harness 原生多选项问询处理；不要使用普通文本代替。主代理自己的标准 Bash/PowerShell 审批仍由独立安装的 approve-for-me 处理。
       需要开发时，先调用 workflow_preflight，再以同一 baseDigest 调用 workflow_start，由编排者生成并审核 Owner 定义与 DAG。
+      同一个 Git 项目同一时间只允许一个未结束 Workflow。其他普通会话只能作为该 Workflow 单根会话树中的讨论分支；一个 Workflow 内部仍可由 DAG 并行多个 Owner task。
+      普通 fork、自由讨论和方案比较不会自动改变 DAG。只有用户明确要求加入当前 Workflow、更新 DAG、并行任务或新增前置时，才调用 workflow_intent_submit；保存后必须用原生问询明确提醒是否现在重新规划。选择继续讨论时不调用 Planner，选择现在重新规划时才汇总当前 pending Intent。
+      PlanRevision 候选依次调用 workflow_revision_review 和 workflow_revision_approve；最终批准必须回到 Workflow 根会话并展示 DAG 差异。审查期间的新 Intent 留给下一轮，不能原地修改候选 digest。
       计划工具返回 nextTool 与 nextArgs 时必须逐字调用，不得改写参数或从自然语言建议猜测其他工具。达到修订上限时按结构化返回调用 workflow_plan_revision_extend，让该工具显示原生“同意/不同意/自定义输入”问询；同意后只继续当前 Workflow 的 workflow_plan_revise，不得调用 workflow_recover、取消或重新创建 Workflow。
       workflow_recover 只用于 DSH_WORKFLOW_PLANNING_FAILED_V1 明确标记为可恢复的 planning 失败。planned、needs_revision 或 revision_limit 状态禁止调用。maxPlanRevisionTurns 不是 workflow_start 的自然语言参数，不得建议通过重建计划设置它。
       Registry 提案生成后立即调用 workflow_owner_change_approve；计划独立审查通过后立即调用 workflow_plan_approve。两个工具会自行显示 Harness 原生“同意/不同意/自定义输入”问询；不要先输出批准口令，也不要另行调用 ask_user_question。
@@ -33,9 +36,10 @@
       你不能绕过 workflow_* 工具直接修改业务文件，不能自行 git add 或 git commit。
       计划审查、修订、额度扩展、批准和规划恢复只使用 workflow_* 单职责工具；owner_workflow 旧聚合入口不能作为备用路径。
       Owner 子代理在独立 worktree 中继承 Harness 的正常开发工具和 workspace-write，可以读取整个仓库。Owner scope 只在 owner_submit 的最终 Git diff 提交关卡强制校验，不再逐工具限制。
+      Owner 会话使用 ask，但只有 Runtime 当前登记的 owner_host_exec 或固定验证请求可以到达原生授权卡片；卡片显示在当前 Owner 任务现场，行动收件箱只负责发现并跳转，其他直接升级会被拒绝。
       owner_submit 会自动执行固定验证、拒绝 scope 外和受保护路径并生成固定提交；如果误改其他区域，Owner 在同一子线程调整后重试，或返回清楚的 handoff。
       Owner 子线程按任务创建并在完成后回收，不跨任务复用会话；长期连续性来自启动时注入和完成后沉淀的 .owner-memory。
-      Owner 子线程只是短期上下文；跨 workflow 长期记忆位于 Git 跟踪的 .owner-memory。Owner 只能返回 memory_updates，不能直接修改该目录；Memory Curator 和 Reviewer 核验后由运行时提交。
+      Owner 子线程只是短期上下文；跨 workflow 长期记忆位于 Git 跟踪的 .owner-memory。未最终有效或仍为“待检查”的结果只保留临时日志，不修改或编译长期 Memory；只有按最新 DAG 验证有效后，Memory Curator 和 Reviewer 才核验并由 Runtime 提交。
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

@@ -28,6 +28,10 @@ export function isProtectedRelativePath(file) {
     || normalized.startsWith('.owner-workflow/')
     || normalized === 'deepseek-harness'
     || normalized.startsWith('deepseek-harness/')
+    || normalized === 'dsh-synapse'
+    || normalized.startsWith('dsh-synapse/')
+    || normalized === 'owner-workflow-plugin/vendor/dsh-approve-for-me'
+    || normalized.startsWith('owner-workflow-plugin/vendor/dsh-approve-for-me/')
 }
 
 function recordFiles(record) {

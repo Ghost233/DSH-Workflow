@@ -11,6 +11,9 @@ PATCH_FILE="${DSH_OWNER_WORKFLOW_PATCH:-${PROJECT_ROOT}/owner-workflow-plugin/co
 PLUGIN_ENTRY="${PROJECT_ROOT}/owner-workflow-plugin/index.js"
 DASHBOARD_ENTRY="${PROJECT_ROOT}/owner-workflow-plugin/dashboard-host.mjs"
 CLIENT_ENTRY="${PROJECT_ROOT}/owner-workflow-plugin/client.js"
+SYNAPSE_DIRECTORY="${DSH_SYNAPSE_DIR:-${PROJECT_ROOT}/dsh-synapse}"
+APPROVAL_POLICY_DIRECTORY="${DSH_APPROVE_FOR_ME_SOURCE_DIR:-${PROJECT_ROOT}/owner-workflow-plugin/vendor/dsh-approve-for-me}"
+SYNAPSE_PACKAGE_NAME="dsh-synapse"
 LOCAL_UI_PACKAGE_NAME="dsh-owner-workflow-local-ui"
 LAUNCHER_MODE="${DSH_LAUNCHER:-npx}"
 DSH_PACKAGE="${DSH_PACKAGE:-@deepseek-ai/dsh@0.1.0-rc.8}"
@@ -28,6 +31,7 @@ fi
 PROFILE_DIRECTORY="${DSH_HOME_DIRECTORY}/profiles/${PROFILE_NAME}"
 PROFILE_MANIFEST="${PROFILE_DIRECTORY}/package.json"
 LOCAL_UI_PACKAGE_LINK="${PROFILE_DIRECTORY}/node_modules/${LOCAL_UI_PACKAGE_NAME}"
+SYNAPSE_PACKAGE_LINK="${PROFILE_DIRECTORY}/node_modules/${SYNAPSE_PACKAGE_NAME}"
 HARNESS_DIRECTORY="${DSH_HARNESS_DIR:-${PROJECT_ROOT}/deepseek-harness}"
 WEB_NO_OPEN_ARGUMENTS=()
 WEB_COMMAND_MODE=false
@@ -35,7 +39,9 @@ CALLER_DIRECTORY="$(pwd -P)"
 # Dashboard 永远只观察启动命令所在的业务工作区；可用 DSH_WORKFLOW_ROOT 显式覆盖。
 export DSH_OWNER_WORKFLOW_DASHBOARD_ROOT="${DSH_OWNER_WORKFLOW_DASHBOARD_ROOT:-${DSH_WORKFLOW_ROOT:-${CALLER_DIRECTORY}}}"
 DASHBOARD_RUNTIME_PATCH=""
+SYNAPSE_RUNTIME_PATCH=""
 LOCAL_UI_LINK_CREATED=false
+SYNAPSE_LINK_CREATED=false
 RUNNER_DAEMON_PID=""
 RUNNER_DAEMON_OWNED=false
 RUNNER_DAEMON_ENABLED="${DSH_OWNER_WORKFLOW_RUNNER:-1}"
@@ -48,6 +54,12 @@ cleanup_dashboard_runtime_patch() {
   if [[ "${LOCAL_UI_LINK_CREATED}" == true ]] && [[ -L "${LOCAL_UI_PACKAGE_LINK}" ]]; then
     rm -f -- "${LOCAL_UI_PACKAGE_LINK}"
   fi
+  if [[ -n "${SYNAPSE_RUNTIME_PATCH}" ]]; then
+    rm -f -- "${SYNAPSE_RUNTIME_PATCH}"
+  fi
+  if [[ "${SYNAPSE_LINK_CREATED}" == true ]] && [[ -L "${SYNAPSE_PACKAGE_LINK}" ]]; then
+    rm -f -- "${SYNAPSE_PACKAGE_LINK}"
+  fi
 }
 
 cleanup_owner_workflow_processes() {
@@ -59,6 +71,132 @@ cleanup_owner_workflow_processes() {
 }
 
 trap cleanup_owner_workflow_processes EXIT
+
+verify_synapse_submodule() {
+  if [[ ! -d "${SYNAPSE_DIRECTORY}" ]] \
+    || [[ ! -f "${SYNAPSE_DIRECTORY}/package.json" ]] \
+    || [[ ! -f "${SYNAPSE_DIRECTORY}/index.js" ]] \
+    || [[ ! -f "${SYNAPSE_DIRECTORY}/client.js" ]] \
+    || [[ ! -f "${SYNAPSE_DIRECTORY}/LICENSE" ]]; then
+    printf 'Synapse 子模块尚未初始化或内容不完整：%s\n' "${SYNAPSE_DIRECTORY}" >&2
+    printf '请执行：git submodule update --init --recursive\n' >&2
+    exit 1
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    printf '找不到 git，无法核验 Synapse 子模块固定版本。\n' >&2
+    exit 1
+  fi
+  local expected_revision actual_revision dirty
+  expected_revision="$(git -C "${PROJECT_ROOT}" ls-files --stage -- dsh-synapse | awk '$1 == "160000" { print $2 }')"
+  if [[ -z "${expected_revision}" ]]; then
+    printf '父仓库没有记录 dsh-synapse gitlink，已拒绝加载未固定的上游源码。\n' >&2
+    exit 1
+  fi
+  if ! actual_revision="$(git -C "${SYNAPSE_DIRECTORY}" rev-parse --verify HEAD)"; then
+    printf '无法读取 Synapse 子模块当前 commit；请重新初始化子模块。\n' >&2
+    exit 1
+  fi
+  if [[ "${actual_revision}" != "${expected_revision}" ]]; then
+    printf 'Synapse 子模块当前 commit 与父仓库 gitlink 不一致。\n' >&2
+    printf '期望：%s\n实际：%s\n' "${expected_revision}" "${actual_revision}" >&2
+    exit 1
+  fi
+  dirty="$(git -C "${SYNAPSE_DIRECTORY}" status --porcelain --untracked-files=all)"
+  if [[ -n "${dirty}" ]]; then
+    printf 'Synapse 子模块存在内部改动，已拒绝加载只读上游源码。\n' >&2
+    exit 1
+  fi
+}
+
+verify_approval_policy_submodule() {
+  if [[ ! -d "${APPROVAL_POLICY_DIRECTORY}" ]] \
+    || [[ ! -f "${APPROVAL_POLICY_DIRECTORY}/src/core/index.ts" ]] \
+    || [[ ! -f "${APPROVAL_POLICY_DIRECTORY}/src/core/risk.ts" ]] \
+    || [[ ! -f "${APPROVAL_POLICY_DIRECTORY}/src/core/reviewer.ts" ]] \
+    || [[ ! -f "${APPROVAL_POLICY_DIRECTORY}/LICENSE" ]]; then
+    printf 'Operation 审批策略子模块尚未初始化或内容不完整：%s\n' "${APPROVAL_POLICY_DIRECTORY}" >&2
+    printf '请执行：git submodule update --init --recursive\n' >&2
+    exit 1
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    # 发布包已经只携带固定策略核心和许可证，不再要求存在父仓库 gitlink。
+    return
+  fi
+  if ! git -C "${PROJECT_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # 从 npm 包运行时没有父仓库；打包清单与 CI 已固定随包策略文件。
+    return
+  fi
+  local project_git_root expected_revision actual_revision dirty
+  project_git_root="$(git -C "${PROJECT_ROOT}" rev-parse --show-toplevel)"
+  if [[ "${project_git_root}" != "${PROJECT_ROOT}" ]]; then
+    # 安装在其他项目 node_modules 中时，外层项目不是该策略 gitlink 的权威父仓库。
+    return
+  fi
+  expected_revision="$(git -C "${PROJECT_ROOT}" ls-files --stage -- owner-workflow-plugin/vendor/dsh-approve-for-me | awk '$1 == "160000" { print $2 }')"
+  if [[ -z "${expected_revision}" ]]; then
+    printf '父仓库没有记录 owner-workflow-plugin/vendor/dsh-approve-for-me gitlink，已拒绝加载未固定的审批策略源码。\n' >&2
+    exit 1
+  fi
+  if ! actual_revision="$(git -C "${APPROVAL_POLICY_DIRECTORY}" rev-parse --verify HEAD)"; then
+    printf '无法读取 Operation 审批策略子模块当前 commit；请重新初始化子模块。\n' >&2
+    exit 1
+  fi
+  if [[ "${actual_revision}" != "${expected_revision}" ]]; then
+    printf 'Operation 审批策略子模块当前 commit 与父仓库 gitlink 不一致。\n' >&2
+    printf '期望：%s\n实际：%s\n' "${expected_revision}" "${actual_revision}" >&2
+    exit 1
+  fi
+  dirty="$(git -C "${APPROVAL_POLICY_DIRECTORY}" status --porcelain --untracked-files=all)"
+  if [[ -n "${dirty}" ]]; then
+    printf 'Operation 审批策略子模块存在内部改动，已拒绝加载只读上游源码。\n' >&2
+    exit 1
+  fi
+}
+
+prepare_synapse_patch() {
+  if [[ "${PROFILE_NAME}" != "web" ]]; then
+    return
+  fi
+  verify_synapse_submodule
+  mkdir -p "${PROFILE_DIRECTORY}/node_modules"
+  if [[ -L "${SYNAPSE_PACKAGE_LINK}" ]]; then
+    local resolved_link
+    resolved_link="$(node --input-type=module -e '
+      import { realpathSync } from "node:fs"
+      process.stdout.write(realpathSync(process.argv[1]))
+    ' "${SYNAPSE_PACKAGE_LINK}")"
+    if [[ "${resolved_link}" != "$(CDPATH= cd -- "${SYNAPSE_DIRECTORY}" && pwd -P)" ]]; then
+      printf 'Synapse profile 链接已指向其他目录，已拒绝覆盖：%s\n' "${SYNAPSE_PACKAGE_LINK}" >&2
+      exit 1
+    fi
+  elif [[ -e "${SYNAPSE_PACKAGE_LINK}" ]]; then
+    printf 'Synapse profile 包位置已被普通文件占用，已拒绝覆盖：%s\n' "${SYNAPSE_PACKAGE_LINK}" >&2
+    exit 1
+  else
+    ln -s "${SYNAPSE_DIRECTORY}" "${SYNAPSE_PACKAGE_LINK}"
+    SYNAPSE_LINK_CREATED=true
+  fi
+  SYNAPSE_RUNTIME_PATCH="$(mktemp -t dsh-owner-workflow-synapse)"
+  if ! node --input-type=module -e '
+    import { writeFileSync } from "node:fs"
+    const path = process.argv[1]
+    writeFileSync(path, [
+      "# 由 start-owner-workflow.sh 为本次启动生成；固定加载只读 Synapse 子模块。",
+      "- insert:",
+      "    - id: synapse",
+      "      name: dsh-synapse",
+      "      config:",
+      "        dataFile: !!js dshHomePath(\"synapse/workspaces.json\")",
+      "        autoProjection: true",
+      "        projectionWorkspaceTitle: DSH 任务",
+      "        trustedHosts: []",
+      "",
+    ].join("\n"), "utf8")
+  ' "${SYNAPSE_RUNTIME_PATCH}"; then
+    printf '无法生成 Synapse 本地加载 patch。\n' >&2
+    exit 1
+  fi
+}
 
 prepare_local_dashboard_patch() {
   if [[ "${PROFILE_NAME}" != "web" ]]; then
@@ -440,6 +578,7 @@ if [[ "${1:-}" == "--install-preset" ]]; then
   BUNDLE_STATE="$(profile_bundle_state)"
   case "${INSTALL_MODE}" in
     local)
+      verify_approval_policy_submodule
       install_preset_from_source --force "$@"
       ;;
     profile)
@@ -452,7 +591,10 @@ if [[ "${1:-}" == "--install-preset" ]]; then
     auto)
       case "${BUNDLE_STATE}" in
         present) install_preset_from_profile --force "$@" ;;
-        absent) install_preset_from_source --force "$@" ;;
+        absent)
+          verify_approval_policy_submodule
+          install_preset_from_source --force "$@"
+          ;;
         inconsistent)
           printf 'profile %s 的 Owner 工作流 bundle 状态不一致，已拒绝安装 preset。\n' "${PROFILE_NAME}" >&2
           exit 1
@@ -470,6 +612,7 @@ if [[ "${1:-}" == "--install-preset" ]]; then
 fi
 
 if [[ "${1:-}" == "--install" ]]; then
+  verify_approval_policy_submodule
   INSTALL_SPEC="${2:-${DSH_OWNER_WORKFLOW_INSTALL_SPEC:-${PROJECT_ROOT}}}"
   if [[ "${INSTALL_SPEC}" == --* ]]; then
     INSTALL_SPEC="${DSH_OWNER_WORKFLOW_INSTALL_SPEC:-${PROJECT_ROOT}}"
@@ -514,9 +657,16 @@ case "${INSTALL_MODE}" in
     unset DSH_OWNER_WORKFLOW_PLUGIN_ENTRY
     printf '使用 profile %s 中已安装的 Owner 工作流 bundle。\n' "${PROFILE_NAME}" >&2
     start_runner_daemon
-    run_profile_cli "${WEB_NO_OPEN_ARGUMENTS[@]}" "$@"
+    prepare_synapse_patch
+    if [[ -n "${SYNAPSE_RUNTIME_PATCH}" ]]; then
+      printf 'Synapse 会话地图：使用固定只读子模块 %s。\n' "${SYNAPSE_DIRECTORY}" >&2
+      run_profile_cli --patch "${SYNAPSE_RUNTIME_PATCH}" "${WEB_NO_OPEN_ARGUMENTS[@]}" "$@"
+    else
+      run_profile_cli "${WEB_NO_OPEN_ARGUMENTS[@]}" "$@"
+    fi
     ;;
   local)
+    verify_approval_policy_submodule
     if [[ ! -f "${PATCH_FILE}" ]]; then
       printf '找不到本地开发 patch：%s\n' "${PATCH_FILE}" >&2
       exit 1
@@ -544,8 +694,12 @@ case "${INSTALL_MODE}" in
     if [[ "${PROFILE_NAME}" == "web" ]]; then
       printf 'Owner Workflow Dashboard：启动后可打开 /owner-workflow 查看 DAG 状态。\n' >&2
       printf 'Owner Workflow 等待列表：会话头部与侧边栏已启用。\n' >&2
+      prepare_synapse_patch
       prepare_local_dashboard_patch
-      if [[ -n "${DASHBOARD_RUNTIME_PATCH}" ]]; then
+      printf 'Synapse 会话地图：使用固定只读子模块 %s。\n' "${SYNAPSE_DIRECTORY}" >&2
+      if [[ -n "${DASHBOARD_RUNTIME_PATCH}" ]] && [[ -n "${SYNAPSE_RUNTIME_PATCH}" ]]; then
+        run_profile_cli --patch "${PATCH_FILE}" --patch "${DASHBOARD_RUNTIME_PATCH}" --patch "${SYNAPSE_RUNTIME_PATCH}" "${WEB_NO_OPEN_ARGUMENTS[@]}" "$@"
+      elif [[ -n "${DASHBOARD_RUNTIME_PATCH}" ]]; then
         run_profile_cli --patch "${PATCH_FILE}" --patch "${DASHBOARD_RUNTIME_PATCH}" "${WEB_NO_OPEN_ARGUMENTS[@]}" "$@"
       else
         run_profile_cli --patch "${PATCH_FILE}" "${WEB_NO_OPEN_ARGUMENTS[@]}" "$@"

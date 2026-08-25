@@ -7,8 +7,13 @@
 - `owner-agent.mjs`：生成一次性 Owner 子线程的中文任务、记忆和提交说明。
 - `owner-boundary.mjs`：检查基线到固定 HEAD 的全部提交路径、受保护路径和最终 Git 提交。
 - `owner-submission.mjs`：实现唯一 `owner_submit` 事务，按顺序执行边界检查、固定验证和提交。
-- `owner-host-command.mjs`：处理 Owner 的一次性宿主命令；把原生授权路由到主代理，并在明确允许一次后执行卡片中的精确命令。
+- `owner-host-command.mjs`：处理 Owner 的一次性宿主命令；把原生授权留在当前 Owner 任务现场，并在明确允许一次后执行卡片中的精确命令。
+- `operation-approval.mjs`：Operation 专用审批插件；管理本次主会话前缀、复用固定上游审批策略核心、启动无工具短期复核并回退原生问询，不监听主代理的标准 Approval。
 - `owner-lifecycle.mjs`：定义 blocked、handoff 等 Owner 生命周期信号。
+- `intent.mjs`：保存单根会话树中用户明确提交的执行意图。
+- `plan-revision.mjs`：定义精简不可变 PlanRevision 和运行中任务的变更分类。
+- `workflow-conversation.mjs`：维护项目唯一 Workflow 槽位和可核验的单根普通 fork 会话树。
+- `client-runtime.js`：实现行动收件箱，合并 Runtime 等待投影与 Harness 原生 pendingInteraction，并跳转到目标会话。
 
 子代理的正常开发能力由 Harness 提供，插件只在角色边界和提交事务上实施确定性约束。
 
@@ -16,7 +21,9 @@
 
 本路线描述当前 Owner 工作流 V2 的 Operation、Runtime、Registry、任务调度、验证、Git 集成和只读观测边界。实现采用纯 `DSH_PLAN_V2`：不存在 Quick 模式；任何会写入代码的需求都必须创建独立 workflow 分支、Owner 分支和 Owner worktree。无需修改仓库但需要实际执行的任务使用独立 Operation，不创建开发分支。
 
-`deepseek-harness/` 是上游 Git 子模块，保持零修改。所有用户可见错误、提示词、日志摘要和文档使用中文。Owner 在隔离 worktree 中获得正常开发工具，但不能控制 Workflow、Operation 或派生后代 Agent；状态转移和最终提交仍由运行时裁决。
+Synapse、单活动 Workflow、单根会话树、Intent Ledger、PlanRevision、“待检查”收敛和行动收件箱的最新规则见 [Synapse、Intent 与动态 DAG 设计](SYNAPSE-DYNAMIC-DAG.md)。该文档在相关边界上优先于历史段落。
+
+`deepseek-harness/`、`dsh-synapse/` 与 `owner-workflow-plugin/vendor/dsh-approve-for-me/` 是上游 Git 子模块，保持零修改。审批策略子模块只提供纯命令解析、固定风险、白名单与复核提示构造；Owner Workflow 自己负责 Operation 关联、会话前缀、一次性执行和人工回退。所有用户可见错误、提示词、日志摘要和文档使用中文。Owner 在隔离 worktree 中获得正常开发工具，但不能控制 Workflow、Operation 或派生后代 Agent；状态转移和最终提交仍由运行时裁决。
 
 旧 V1 计划只支持历史查询和导出。它不能被激活、调度、恢复、验证、合并或 finalize；运行时不会从缺失字段猜测 V2 依赖或验证。
 
@@ -62,20 +69,22 @@ Git 忽略的 `.dsh-workflow/` 保存 workflow 状态、Operation 状态、任�
 - `successCriteria`：可判断完成的标准；
 - `capabilities`：本次最小通用能力。
 
-`operation_start` 创建可续接的后台 Operator。Operator 不属于 Owner，不获得文件 scope，不创建开发分支；它继承正常工具，但项目文件沙箱保持只读。需要精确外部副作用时优先使用 `operation_exec` 触发 Harness 原生审批。ADB、Docker、系统日志或项目临时命令由 Operator 根据现场生成，不进入 Workflow 源码。
+`operation_start` 创建可续接的后台 Operator。同一个 Git 项目同一时间只允许一个未结束 Operation；项目级锁会先持久化 `starting` 预留，重复调用只返回现有状态，不能产生第二个 Operator 子线程。Operator 不属于 Owner，不获得文件 scope，不创建开发分支；它继承正常工具，但项目文件沙箱保持只读。ADB、Docker、系统日志或项目临时命令由 Operator 根据现场生成，不进入 Workflow 源码。
 
 Operator 只能通过 `operation_report` 与主代理通信：
 
 ```text
 progress / finding ──▶ 持久事件；不要求用户切换页面
 need_input          ──▶ 主代理在当前对话询问 ──▶ operation_continue
-need_approval       ──▶ operation_approve ──▶ Harness 原生授权卡片
+need_approval       ──▶ operation_approve ──▶ Harness 原生多选项问询
 completed / failed  ──▶ 唤醒主代理并返回结构化结果
 ```
 
-每次 `operation_exec` 只能执行一条命令；复合命令会被确定性拒绝，多个只读检查必须拆分，不能被误转为用户副作用授权。可能改变设备、系统、网络或远程状态的命令不能以 `read-only` 执行。Runtime 为 `need_approval` 固定精确命令并生成一次性授权编号；主代理随后调用 `operation_approve`，以自身会话和当前工具 `callId` 调用 Harness 的 `ctx.approval.request`。Web UI 使用原生卡片显示原因和 `command` 参数；只有 `allowed-once` 才将完全相同的命令标记为可执行一次。普通文本、`ask_user_question`、子代理自述或旧 Operation 的决定都不能产生授权。`operation_start` 后依赖 Operator 主动回报，主代理不得轮询状态。
+每次 `operation_exec` 只能执行一条命令；复合命令返回结构化调整要求，不再制造预期内的红色 Tool Error。连续两次违反同一层命令契约时，Runtime 有界终止 Operation 并主动回报主线程。副作用命令或被只读沙箱拒绝的宿主诊断由 `operation_exec` 自动固定精确命令、生成一次性授权编号并切换到 `waiting_approval`；模型不负责猜测授权流程。Operation 不调用 Harness Approval 协议，主代理的 `operation_approve` 使用 `ctx.userQuestions.ask` 显示原生多选项问询。没有建议前缀时只能“仅允许这一次/拒绝”；存在通过边界校验的最小字面前缀时增加“本次会话允许此前缀”，自定义输入也必须是当前精确命令的完整参数前缀。前缀授权按主会话 ID 只保存在内存，主会话结束或 Harness 重启后失效；每次命中仍写入 Operation 事件。普通文本、子代理自述或旧 Operation 的决定都不能产生授权。
 
-Harness 会把委派子代理的 approval policy 固定为 `never`，所以 Operator 不能直接弹卡片。卡片必须由主代理的 `operation_approve` 工具发起；用户仍然只与主代理沟通。进入 `waiting_input` 或 `waiting_approval` 后，Runtime 拒绝 Operator 的后续 `progress`、`failed`、`completed` 等报告，防止等待状态被低成本模型自行覆盖。
+Harness 会把委派子代理的 approval policy 固定为 `never`，所以 Operator 不能直接弹卡片。卡片必须由主代理的 `operation_approve` 工具发起；用户仍然只与主代理沟通。进入 `waiting_input` 或 `waiting_approval` 后，Runtime 先持久化等待并通知主线程，再中断当前 Operator 回合；竞态中的重复报告返回幂等忽略结果，不能覆盖等待状态，也不会继续累积红色错误。
+
+Operation 进入 `completed`、`failed` 或 `cancelled` 后，Runtime 定向调用 Harness 的 `drainContinuableChildren`，释放该 Operator 的驻留 `AgentHandle` 与后代运行资源；随后调用 Workspace Registry 的幂等归档接口，把已结束子线程从活动会话列表隐藏。Operation 状态、事件和持久会话仍保留用于审计；回收完成前项目级终态已经释放活动槽，可以安全启动下一次 Operation。
 
 Operation 子代理默认继承主代理模型；部署可通过 `DSH_OWNER_WORKFLOW_OPERATION_PROVIDER` 和 `DSH_OWNER_WORKFLOW_OPERATION_MODEL` 选择低成本模型。Operator 继承正常工具，项目文件保持只读；精确外部副作用通过 Harness 原生授权，状态转移仍由 Runtime 控制，而不是交给低成本模型判断。
 
@@ -151,7 +160,7 @@ dsh/owner/<日期>-<项目递增序号>-<需求摘要>/<owner-id>
 
 Planner、Reviewer、Memory 与 Owner 子线程统一由插件注册的正式 one-shot Subagent provider 创建。`SubagentRuntime` 生成版本匹配的 `subagent/descriptor`，provider 在首次请求前写入 descriptor，并保留角色沙箱、提示词与 active Owner 绑定。调用方等待单次 `result` 后在 `finally` 中 dispose；会话历史保留为可审计的 inactive one-shot 记录，不再以只有 `origin=subagent`、缺少 descriptor 的“会话记录损坏”条目出现。
 
-所有子代理的 `approval/policy` 固定为 `never`，所以 Owner 不能自己弹出隐藏授权卡片。普通命令先在 `workspace-write` 中执行；如果同一精确命令因为需要访问 worktree 外的共享 SDK、编译器或缓存而被拒绝，Owner 调用 `owner_host_exec`。Runtime 校验调用者仍是 active Owner、工作目录位于其 worktree、Owner lease 未漂移，然后以创建该 Workflow 的主代理作为 `ctx.approval.request` 的 `agent`，在主对话展示 Owner、任务、用途、理由、目录和完整命令。只有 `allowed-once` 才以 `danger-full-access` 执行该命令一次；拒绝、取消、通道不可用、主代理没有开放回合或 Owner 绑定失效都不会执行。
+Planner、Reviewer、Memory 和 Operator 的 `approval/policy` 固定为 `never`。Owner 使用 `workspace-write + ask`，但 Owner 会话中的前置 waterfall 只放行 Runtime 当前登记且对象身份完全匹配的 `owner_host_exec` 或固定验证请求；模型直接申请的其他升级确定性返回 `rejected`。授权卡片显示在当前 Owner 任务现场，行动收件箱只负责发现和跳转。只有 `allowed-once` 才以 `danger-full-access` 执行卡片中的同一精确命令一次。
 
 Owner 必须调用 `owner_submit`。这个唯一提交关卡自动执行固定验证，按真实 Git diff 检查 scope、链接和受保护路径，生成提交后再次校验固定 SHA；Git 忽略文件不进入提交，不再阻断结算。快照复制使用 `verbatimSymlinks` 保留相对符号链接，避免 `AGENTS.md -> CLAUDE.md` 被改写成宿主绝对路径后产生虚假摘要漂移。通过后立即把固定 SHA 合入 workflow HEAD，并记录任务和事件。冲突、越界或审计失败都会保留 Owner 现场。
 
@@ -161,7 +170,7 @@ Owner 必须调用 `owner_submit`。这个唯一提交关卡自动执行固定�
 
 ## 6. 必需验证
 
-`owner_submit` 根据当前 task 的 `verify` 列表自动执行全部固定验证。运行时确认当前会话、Owner lease、任务绑定和 verification ID，然后在 Owner 当前内容的一次性独立 Git 快照中，以 `workspace-write` 沙箱执行计划保存的固定 argv 与 cwd；cwd 必须留在快照根目录内，且与 argv 一起持久化为审计证据。若该精确命令被沙箱明确拒绝访问共享 SDK、编译器或缓存，Runtime 直接以创建 Workflow 的主代理请求 Harness 原生一次性授权；允许后只在新的独立快照中以 `danger-full-access` 从同一个 cwd 重试同一命令，并把 `approved-host + allowed-once` 作为固定证据。后台 Runner 没有主代理开放回合时，提交关卡自动返回 blocked 并保留 worktree，等待主对话恢复同一任务，不依赖 Owner 模型猜测授权工具。命令一旦实际执行且退出码非 0，就属于验证失败而不是授权阻塞；Runtime 持久化有界 stdout/stderr、返回同一 Owner 修复，并拒绝接受虚假的 blocked 报告。
+`owner_submit` 根据当前 task 的 `verify` 列表自动执行全部固定验证。运行时确认当前会话、Owner lease、任务绑定和 verification ID，然后在 Owner 当前内容的一次性独立 Git 快照中，以 `workspace-write` 沙箱执行计划保存的固定 argv 与 cwd；cwd 必须留在快照根目录内，且与 argv 一起持久化为审计证据。若该精确命令被沙箱明确拒绝访问共享 SDK、编译器或缓存，Runtime 在当前 Owner 现场请求 Harness 原生一次性授权；允许后只在新的独立快照中以 `danger-full-access` 从同一个 cwd 重试同一命令，并把 `approved-host + allowed-once` 作为固定证据。命令一旦实际执行且退出码非 0，就属于验证失败而不是授权阻塞。
 
 运行时记录命令、cwd、退出码、沙箱 enforcement、内容摘要和任务绑定，并检查验证期间内容未漂移。旧计划缺少 Flutter cwd 时，兼容分支只从受控 task.write、固定 `flutter test test/...` 参数和唯一存在的 `pubspec.yaml` 推导包根；缺少或多个候选都会 fail-closed，且同一计划的所有缺失 cwd Flutter 验证复用该唯一目录。该兼容仅服务历史已批准计划，新的 Flutter 验证必须显式声明 cwd。只有全部必需验证在当前内容版本通过，提交关卡才会生成提交；“测试未运行但模型说已完成”不会被接受。
 

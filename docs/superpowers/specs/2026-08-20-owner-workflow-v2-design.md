@@ -107,9 +107,9 @@ Owner 在隔离 worktree 中继承正常开发工具和 `workspace-write`，可�
 
 所有短期角色使用插件专用的正式 one-shot Subagent provider。Harness 生成 descriptor，provider 在首次请求前持久化并在单次结果后释放 run；目录投影因此能把历史识别为 inactive one-shot。验证快照复制必须启用 `verbatimSymlinks`，使相对链接在真实 worktree 与快照中保持相同摘要。
 
-Owner 子代理的 `approval/policy` 固定为 `never`。如果普通 Shell 的同一精确命令因为访问 worktree 外共享 SDK、编译器或缓存而被拒绝，Owner 只能调用 `owner_host_exec`。该桥以主代理身份显示 Harness 原生授权卡片，并在 `allowed-once` 后执行一次；子代理直接设置 `sandbox_permissions`、非 active Owner、越过 worktree 的工作目录和失效 lease 一律拒绝。
+Owner 子代理使用 `workspace-write + ask`，但前置 waterfall 只放行 Runtime 登记的 `owner_host_exec` 与固定验证请求。授权卡片显示在当前 Owner 任务现场，并在 `allowed-once` 后执行一次；子代理直接设置 `sandbox_permissions`、非 active Owner、越过 worktree 的工作目录和失效 lease 一律拒绝。
 
-正式 required verification 由提交关卡直接处理授权：先在 `workspace-write` 快照执行；明确 denied 后以主代理身份申请原生一次性授权，允许后在新快照中执行相同 argv，并持久化 `approved-host` 与 `allowed-once` 证据。主代理没有开放回合时任务进入 blocked 并保留现场。
+正式 required verification 由提交关卡直接处理授权：先在 `workspace-write` 快照执行；明确 denied 后在当前 Owner 现场申请原生一次性授权，允许后在新快照中执行相同 argv，并持久化 `approved-host` 与 `allowed-once` 证据。没有开放 Owner 回合时任务进入 blocked 并保留现场。
 
 跨 Owner 需求只能产生结构化 handoff。scope 增删、Owner split/merge/transfer 只能形成 Registry 提案，不能在 Owner 执行回合中直接生效。
 

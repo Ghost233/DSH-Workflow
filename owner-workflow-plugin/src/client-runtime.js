@@ -220,6 +220,62 @@ function waitSummary(waits, staleCount = 0) {
   return parts.length > 0 ? parts.join(' · ') : '当前没有等待事项'
 }
 
+function nativeInteractionWaits(sessions) {
+  const labels = {
+    approval: { state: 'waiting_user_approval', goal: '等待权限批准', waitingFor: '用户授权' },
+    question: { state: 'waiting_user_input', goal: '等待补充信息', waitingFor: '用户回答' },
+    'plan-review': { state: 'waiting_workflow_decision', goal: '等待计划审查', waitingFor: '用户审查' },
+  }
+  return Object.values(sessions.byId ?? {}).flatMap(session => {
+    const selected = labels[session.pendingInteraction]
+    if (selected === undefined) return []
+    const startedAt = Number.isFinite(session.updatedAt)
+      ? new Date(session.updatedAt).toISOString()
+      : new Date().toISOString()
+    return [{
+      id: `native:${session.id}:${session.pendingInteraction}`,
+      source: 'native',
+      operationId: '',
+      workflowId: '',
+      sessionId: session.id,
+      workspaceId: '',
+      workspaceName: '',
+      title: session.displayTitle || session.title || `会话 ${session.id}`,
+      goal: selected.goal,
+      state: selected.state,
+      waitingFor: selected.waitingFor,
+      statusText: 'Harness 原生交互正在目标会话等待处理',
+      detail: '点击返回请求产生的会话，在原始上下文中完成处理。',
+      action: '',
+      risk: '',
+      runnerStatus: '',
+      totalTasks: 0,
+      pendingTasks: 0,
+      runningTasks: 0,
+      queuedTasks: 0,
+      waitingDependencyTasks: 0,
+      waitingDecisionTasks: 0,
+      completedTasks: 0,
+      disposition: 'active',
+      staleCode: '',
+      staleReason: '',
+      supersededBy: '',
+      startedAt,
+      updatedAt: startedAt,
+    }]
+  })
+}
+
+function mergeActionWaits(snapshot, sessions) {
+  const merged = [...snapshot.waits]
+  const seen = new Set(merged.map(item => `${item.sessionId}:${item.state}`))
+  for (const item of nativeInteractionWaits(sessions)) {
+    const key = `${item.sessionId}:${item.state}`
+    if (!seen.has(key)) merged.push(item)
+  }
+  return merged
+}
+
 function WaitDetails({ item }) {
   const identifier = waitIdentifier(item)
   return h('details', { className: 'dsh-owner-wait-details' },
@@ -235,9 +291,21 @@ function WaitDetails({ item }) {
   )
 }
 
-function WaitItem({ item, now }) {
+function WaitItem({ item, now, openSession }) {
   const status = waitStatus(item.state)
-  return h('li', { className: `dsh-owner-wait-item dsh-owner-wait-item-${status.tone}` },
+  const navigate = event => {
+    if (event.target?.closest?.('details')) return
+    openSession?.(item.sessionId)
+  }
+  return h('li', {
+    className: `dsh-owner-wait-item dsh-owner-wait-item-${status.tone} dsh-owner-wait-item-actionable`,
+    role: 'button',
+    tabIndex: 0,
+    onClick: navigate,
+    onKeyDown: event => {
+      if (event.key === 'Enter' || event.key === ' ') navigate(event)
+    },
+  },
     h('div', { className: 'dsh-owner-wait-card-head' },
       h('span', { className: `dsh-owner-wait-status dsh-owner-wait-status-${status.tone}` }, status.label),
       h('span', { className: 'dsh-owner-wait-elapsed' }, `已等待 ${elapsedText(item.startedAt, now)}`),
@@ -252,7 +320,9 @@ function WaitItem({ item, now }) {
           : 'Runner 会继续驱动 Harness 内的 Owner 子代理，不会额外调用模型。'
         : item.state === 'waiting_operator'
           ? '后台完成后会自动回到主对话。'
-          : '请在主对话处理；结果会继续转给后台 Operation。',
+          : item.source === 'native'
+            ? '点击返回请求产生的会话；授权或问询只在原始现场处理。'
+            : '请在主对话处理；结果会继续转给后台 Operation。',
     ),
   )
 }
@@ -275,25 +345,25 @@ function StaleWaitItem({ item, now }) {
   )
 }
 
-function WaitList({ waits, now, label, stale = false }) {
+function WaitList({ waits, now, label, stale = false, openSession }) {
   if (waits.length === 0) {
     return h('div', { className: 'dsh-owner-wait-empty' }, '当前没有主动等待事项。')
   }
   return h('ul', { className: 'dsh-owner-wait-list', 'aria-label': label },
     waits.map(item => stale
       ? h(StaleWaitItem, { key: item.id, item, now })
-      : h(WaitItem, { key: item.id, item, now })),
+      : h(WaitItem, { key: item.id, item, now, openSession })),
   )
 }
 
-function WaitSection({ title, waits, now, label }) {
+function WaitSection({ title, waits, now, label, openSession }) {
   if (waits.length === 0) return null
   return h('section', { className: 'dsh-owner-wait-section' },
     h('div', { className: 'dsh-owner-wait-section-title' },
       h('span', null, title),
       h('span', { className: 'dsh-owner-wait-section-count' }, waits.length),
     ),
-    h(WaitList, { waits, now, label }),
+    h(WaitList, { waits, now, label, openSession }),
   )
 }
 
@@ -308,11 +378,13 @@ function StaleWaitSection({ waits, now, label, children }) {
   )
 }
 
-function HeaderWaitAction({ sessionId }) {
+function HeaderWaitAction({ sessionId, useSessions, openSession }) {
   const snapshot = useWaitSnapshot()
+  const sessions = useSessions(value => value)
+  const actionWaits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
   const waits = useMemo(
-    () => snapshot.waits.filter(item => item.sessionId === sessionId),
-    [snapshot.waits, sessionId],
+    () => actionWaits.filter(item => item.sessionId === sessionId),
+    [actionWaits, sessionId],
   )
   const staleWaits = useMemo(
     () => snapshot.staleWaits.filter(item => item.sessionId === sessionId),
@@ -349,7 +421,7 @@ function HeaderWaitAction({ sessionId }) {
           ),
           waits.length === 0
             ? h('div', { className: 'dsh-owner-wait-empty dsh-owner-wait-empty-active' }, '当前会话没有正在等待的后台 Operation。')
-            : h(WaitSection, { title: '需要处理', waits, now, label: '当前会话主动等待列表' }),
+            : h(WaitSection, { title: '需要处理', waits, now, label: '当前会话主动等待列表', openSession }),
           h(StaleWaitSection, { waits: staleWaits, now, label: '当前会话遗留等待列表' }),
         )
       : null,
@@ -375,10 +447,11 @@ function groupWaits(waits, sessions) {
   return [...groups.values()]
 }
 
-function SidebarWaitAction({ wide, useSessions }) {
+function SidebarWaitAction({ wide, useSessions, openSession }) {
   const snapshot = useWaitSnapshot()
   const sessions = useSessions(value => value)
-  const groups = useMemo(() => groupWaits(snapshot.waits, sessions), [snapshot.waits, sessions])
+  const actionWaits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
+  const groups = useMemo(() => groupWaits(actionWaits, sessions), [actionWaits, sessions])
   const staleGroups = useMemo(() => groupWaits(snapshot.staleWaits, sessions), [snapshot.staleWaits, sessions])
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
@@ -386,7 +459,7 @@ function SidebarWaitAction({ wide, useSessions }) {
   useDismissOnOutsidePointer(rootRef, open, setOpen)
 
   const staleCount = snapshot.staleWaits.length
-  const summary = waitSummary(snapshot.waits, staleCount)
+  const summary = waitSummary(actionWaits, staleCount)
   const staleContent = staleGroups.map(group => h('section', {
     key: group.sessionId,
     className: 'dsh-owner-wait-group dsh-owner-wait-group-stale',
@@ -400,20 +473,20 @@ function SidebarWaitAction({ wide, useSessions }) {
       type: 'button',
       className: wide ? 'dsh-owner-wait-sidebar-trigger dsh-owner-wait-sidebar-wide' : 'dsh-owner-wait-sidebar-trigger',
       'aria-expanded': open,
-      'aria-label': `等待中心，${snapshot.waits.length} 个待处理，${staleCount} 个遗留`,
+      'aria-label': `行动收件箱，${actionWaits.length} 个待处理，${staleCount} 个遗留`,
       title: wide ? undefined : summary,
       onClick: () => setOpen(value => !value),
     },
     h('span', { className: 'dsh-owner-wait-sidebar-icon', 'aria-hidden': 'true' }, '⏳'),
-    wide ? h('span', { className: 'dsh-owner-wait-sidebar-label' }, '主动等待') : null,
-    snapshot.waits.length > 0 ? h('span', { className: 'dsh-owner-wait-badge' }, snapshot.waits.length) : null,
+    wide ? h('span', { className: 'dsh-owner-wait-sidebar-label' }, '行动收件箱') : null,
+    actionWaits.length > 0 ? h('span', { className: 'dsh-owner-wait-badge' }, actionWaits.length) : null,
     staleCount > 0 ? h('span', { className: 'dsh-owner-wait-stale-badge', title: `${staleCount} 个遗留记录` }, staleCount) : null,
     snapshot.phase === 'error' ? h('span', { className: 'dsh-owner-wait-error-mark', title: snapshot.error || '等待列表暂不可用' }, '!') : null),
     open
       ? h('div', { className: 'dsh-owner-wait-menu dsh-owner-wait-menu-sidebar' },
           h('div', { className: 'dsh-owner-wait-menu-title' },
             h('div', null,
-              h('div', null, '等待中心'),
+              h('div', null, '行动收件箱'),
               h('div', { className: 'dsh-owner-wait-menu-summary' }, summary),
             ),
             h('button', { type: 'button', className: 'dsh-owner-wait-refresh', onClick: () => { void refreshWaits() } }, '刷新'),
@@ -426,13 +499,39 @@ function SidebarWaitAction({ wide, useSessions }) {
             : groups.map(group => h('section', { key: group.sessionId, className: 'dsh-owner-wait-group' },
                 h('div', { className: 'dsh-owner-wait-group-title', title: group.sessionId }, group.title),
                 group.workspaceName === '' ? null : h('div', { className: 'dsh-owner-wait-workspace' }, group.workspaceName),
-                h(WaitList, { waits: group.waits, now, label: `${group.title} 的主动等待列表` }),
+                h(WaitList, { waits: group.waits, now, label: `${group.title} 的主动等待列表`, openSession }),
               )),
           h(StaleWaitSection, {
             waits: snapshot.staleWaits,
             now,
             label: '全部会话遗留等待列表',
           }, staleContent),
+        )
+      : null,
+  )
+}
+
+function FloatingActionInbox({ useSessions, openSession }) {
+  const snapshot = useWaitSnapshot()
+  const sessions = useSessions(value => value)
+  const waits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef(null)
+  const now = useNow(open)
+  useDismissOnOutsidePointer(rootRef, open, setOpen)
+  if (waits.length === 0) return null
+  return h('div', { ref: rootRef, className: 'dsh-owner-action-inbox-floating' },
+    h('button', {
+      type: 'button',
+      className: 'dsh-owner-action-inbox-floating-trigger',
+      'aria-expanded': open,
+      'aria-label': `行动收件箱有 ${waits.length} 个待处理事项`,
+      onClick: () => setOpen(value => !value),
+    }, h('span', { 'aria-hidden': 'true' }, '⏳'), h('span', null, waits.length)),
+    open
+      ? h('div', { className: 'dsh-owner-wait-menu dsh-owner-action-inbox-floating-menu' },
+          h('div', { className: 'dsh-owner-wait-menu-title' }, h('span', null, '行动收件箱'), h('span', { className: 'dsh-owner-wait-menu-summary' }, `待处理 ${waits.length}`)),
+          h(WaitList, { waits, now, label: '跨会话行动收件箱', openSession }),
         )
       : null,
   )
@@ -445,43 +544,53 @@ function installStyles() {
   style.textContent = `
 .dsh-owner-wait-root,.dsh-owner-wait-sidebar-root{position:relative}
 .dsh-owner-wait-trigger{min-height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:transparent;border:0;border-radius:7px;align-items:center;gap:6px;padding:3px 7px;font-size:12px;display:inline-flex}
-.dsh-owner-wait-trigger:hover,.dsh-owner-wait-trigger:focus-visible{background:var(--dsw-alias-fill-l2)}
-.dsh-owner-wait-trigger-stale{color:var(--dsw-alias-label-tertiary,#777)}
-.dsh-owner-wait-dot{width:7px;height:7px;background:#e9a23b;border-radius:50%;box-shadow:0 0 0 3px color-mix(in srgb,#e9a23b 18%,transparent)}
-.dsh-owner-wait-dot-stale{background:#8b8f98;box-shadow:none}
+.dsh-owner-wait-trigger:hover,.dsh-owner-wait-trigger:focus-visible{background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-owner-wait-trigger-stale{color:var(--dsw-alias-label-tertiary)}
+.dsh-owner-wait-dot{width:7px;height:7px;background:var(--dsw-alias-state-warn-primary);border-radius:50%;box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-state-warn-primary) 18%,transparent)}
+.dsh-owner-wait-dot-stale{background:var(--dsw-alias-label-tertiary);box-shadow:none}
 .dsh-owner-wait-chevron{font-size:14px;transition:transform .12s}.dsh-owner-wait-chevron-open{transform:rotate(180deg)}
-.dsh-owner-wait-menu{z-index:220;box-sizing:border-box;color:var(--dsw-alias-label-primary);background:var(--dsw-specific-menu,#fff);border:1px solid var(--dsw-alias-border-l2,#ddd);border-radius:13px;box-shadow:var(--dsw-shadow-lv3,0 12px 36px #0003);padding:8px;position:absolute;overflow:auto;overscroll-behavior:contain}
+.dsh-owner-wait-menu{z-index:220;box-sizing:border-box;color:var(--dsw-alias-label-primary);background:var(--dsw-specific-menu);border:1px solid var(--dsw-alias-border-l2);border-radius:13px;box-shadow:var(--dsw-shadow-lv3);padding:8px;position:absolute;overflow:auto;overscroll-behavior:contain}
 .dsh-owner-wait-menu-header{width:430px;max-width:min(460px,calc(100vw - 32px));max-height:min(560px,calc(100vh - 130px));top:calc(100% + 6px);left:0}
 .dsh-owner-wait-menu-sidebar{width:460px;max-width:min(480px,calc(100vw - 80px));max-height:min(680px,calc(100vh - 32px));bottom:0;left:calc(100% + 8px)}
-.dsh-owner-wait-menu-title{min-height:38px;font-size:13px;font-weight:650;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--dsw-specific-menu,#fff);padding:3px 7px 9px;position:sticky;top:-8px;z-index:2}
-.dsh-owner-wait-menu-summary{color:var(--dsw-alias-label-tertiary,#777);font-size:10px;font-weight:400;white-space:nowrap;margin-top:2px}
-.dsh-owner-wait-section{margin-top:3px}.dsh-owner-wait-section-title{color:var(--dsw-alias-label-secondary);font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px;padding:3px 4px 7px;text-transform:none}.dsh-owner-wait-section-count{min-width:16px;height:16px;color:#fff;background:#d98d27;border-radius:8px;font-size:10px;line-height:16px;text-align:center}
+.dsh-owner-wait-menu-title{min-height:38px;font-size:13px;font-weight:650;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--dsw-specific-menu);padding:3px 7px 9px;position:sticky;top:-8px;z-index:2}
+.dsh-owner-wait-menu-summary{color:var(--dsw-alias-label-tertiary);font-size:10px;font-weight:400;white-space:nowrap;margin-top:2px}
+.dsh-owner-wait-section{margin-top:3px}.dsh-owner-wait-section-title{color:var(--dsw-alias-label-secondary);font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px;padding:3px 4px 7px;text-transform:none}.dsh-owner-wait-section-count{min-width:16px;height:16px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-warn-primary);border-radius:8px;font-size:10px;line-height:16px;text-align:center}
 .dsh-owner-wait-list{display:flex;flex-direction:column;gap:7px;margin:0;padding:0;list-style:none}
-.dsh-owner-wait-item{background:var(--dsw-alias-fill-l1,#f6f6f6);border:1px solid var(--dsw-alias-border-l1,#eee);border-left:3px solid #d98d27;border-radius:10px;padding:10px 11px}
-.dsh-owner-wait-item-running{border-left-color:#4c8bf5}.dsh-owner-wait-item-runner{border-left-color:#d98d27}.dsh-owner-wait-item-dependency{border-left-color:#7d8796}.dsh-owner-wait-item-error{border-left-color:#c75450}.dsh-owner-wait-item-input{border-left-color:#8d6bd1}.dsh-owner-wait-item-stale{border-left-color:#8b8f98;opacity:.86}
+.dsh-owner-wait-item{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-left:3px solid var(--dsw-alias-state-warn-primary);border-radius:10px;padding:10px 11px}
+.dsh-owner-wait-item-actionable{cursor:pointer}.dsh-owner-wait-item-actionable:hover,.dsh-owner-wait-item-actionable:focus-visible{outline:0;background:var(--dsw-alias-interactive-bg-hover);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-warn-primary) 20%,transparent)}
+.dsh-owner-wait-item-running{border-left-color:var(--dsw-alias-state-business-primary)}.dsh-owner-wait-item-runner{border-left-color:var(--dsw-alias-state-warn-primary)}.dsh-owner-wait-item-dependency{border-left-color:var(--dsw-alias-label-tertiary)}.dsh-owner-wait-item-error{border-left-color:var(--dsw-alias-state-error-primary)}.dsh-owner-wait-item-input{border-left-color:var(--dsw-alias-state-business-primary)}.dsh-owner-wait-item-stale{border-left-color:var(--dsw-alias-label-tertiary);opacity:.86}
 .dsh-owner-wait-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
-.dsh-owner-wait-status{height:19px;border-radius:10px;font-size:10px;font-weight:650;line-height:19px;padding:0 7px}.dsh-owner-wait-status-running{color:#3270cc;background:color-mix(in srgb,#4c8bf5 14%,transparent)}.dsh-owner-wait-status-runner{color:#ad6715;background:color-mix(in srgb,#e9a23b 16%,transparent)}.dsh-owner-wait-status-dependency{color:#657080;background:color-mix(in srgb,#7d8796 15%,transparent)}.dsh-owner-wait-status-error{color:#a5423f;background:color-mix(in srgb,#c75450 15%,transparent)}.dsh-owner-wait-status-input{color:#7451bd;background:color-mix(in srgb,#8d6bd1 14%,transparent)}.dsh-owner-wait-status-approval{color:#ad6715;background:color-mix(in srgb,#e9a23b 16%,transparent)}.dsh-owner-wait-status-stale{color:var(--dsw-alias-label-tertiary,#777);background:var(--dsw-alias-fill-l2,#ececec)}
-.dsh-owner-wait-elapsed{color:var(--dsw-alias-label-tertiary,#777);font-size:10px;white-space:nowrap}
+.dsh-owner-wait-status{height:19px;border-radius:10px;font-size:10px;font-weight:650;line-height:19px;padding:0 7px}.dsh-owner-wait-status-running{color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary)}.dsh-owner-wait-status-runner{color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary)}.dsh-owner-wait-status-dependency{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover)}.dsh-owner-wait-status-error{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 14%,var(--dsw-alias-bg-layer-2))}.dsh-owner-wait-status-input{color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary)}.dsh-owner-wait-status-approval{color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary)}.dsh-owner-wait-status-stale{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-owner-wait-elapsed{color:var(--dsw-alias-label-tertiary);font-size:10px;white-space:nowrap}
 .dsh-owner-wait-goal{font-size:12px;font-weight:600;line-height:18px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
-.dsh-owner-wait-current,.dsh-owner-wait-stale-reason{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;background:var(--dsw-alias-fill-l2,#ececec);border-radius:7px;margin-top:7px;padding:7px 8px;overflow-wrap:anywhere}.dsh-owner-wait-stale-reason{color:var(--dsw-alias-label-tertiary,#777)}
-.dsh-owner-wait-details{margin-top:7px}.dsh-owner-wait-details>summary{width:max-content;color:var(--dsw-alias-label-tertiary,#777);cursor:pointer;font-size:11px;list-style:none}.dsh-owner-wait-details>summary::-webkit-details-marker{display:none}.dsh-owner-wait-details>summary:after{content:'›';display:inline-block;margin-left:4px;transition:transform .12s}.dsh-owner-wait-details[open]>summary:after{transform:rotate(90deg)}
-.dsh-owner-wait-detail-body{border-top:1px solid var(--dsw-alias-border-l1,#eee);margin-top:7px;padding-top:7px}.dsh-owner-wait-line{font-size:11px;line-height:17px;overflow-wrap:anywhere}.dsh-owner-wait-line b{font-weight:600}.dsh-owner-wait-risk{color:#b95c35}.dsh-owner-wait-id{color:var(--dsw-alias-label-tertiary,#777);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;margin-top:5px}
-.dsh-owner-wait-note{color:var(--dsw-alias-label-tertiary,#777);border-top:1px solid var(--dsw-alias-border-l1,#eee);font-size:10px;line-height:15px;margin-top:8px;padding-top:7px}
-.dsh-owner-wait-empty,.dsh-owner-wait-warning{color:var(--dsw-alias-label-tertiary,#777);font-size:12px;line-height:18px;padding:11px}.dsh-owner-wait-empty-active{background:var(--dsw-alias-fill-l1,#f6f6f6);border-radius:9px;margin-bottom:7px}.dsh-owner-wait-warning{color:#b95c35;background:#b95c3510;border-radius:8px;margin-bottom:7px}
-.dsh-owner-wait-stale-section{border-top:1px solid var(--dsw-alias-border-l1,#eee);margin-top:9px;padding-top:7px}.dsh-owner-wait-stale-section>summary{color:var(--dsw-alias-label-tertiary,#777);cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px;padding:4px;list-style:none}.dsh-owner-wait-stale-section>summary::-webkit-details-marker{display:none}.dsh-owner-wait-stale-section>summary:before{content:'›';font-size:14px;transition:transform .12s}.dsh-owner-wait-stale-section[open]>summary:before{transform:rotate(90deg)}.dsh-owner-wait-stale-section[open]>summary{margin-bottom:6px}.dsh-owner-wait-stale-count{min-width:16px;height:16px;background:var(--dsw-alias-fill-l2,#ececec);border-radius:8px;font-size:10px;line-height:16px;text-align:center}
-.dsh-owner-wait-sidebar-root{width:100%}.dsh-owner-wait-sidebar-trigger{box-sizing:border-box;width:40px;height:36px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:transparent;border:0;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:7px;margin:auto;position:relative}.dsh-owner-wait-sidebar-trigger:hover,.dsh-owner-wait-sidebar-trigger:focus-visible{background:var(--dsw-alias-fill-l2)}.dsh-owner-wait-sidebar-wide{width:100%;justify-content:flex-start;padding:0 10px}.dsh-owner-wait-sidebar-icon{font-size:15px;line-height:1}.dsh-owner-wait-sidebar-label{font-size:13px;flex:1;text-align:left}.dsh-owner-wait-badge{min-width:17px;height:17px;color:#fff;background:#d98d27;border-radius:9px;font-size:10px;line-height:17px;text-align:center;padding:0 4px}.dsh-owner-wait-stale-badge{min-width:17px;height:17px;color:var(--dsw-alias-label-tertiary,#777);background:var(--dsw-alias-fill-l2,#ececec);border-radius:9px;font-size:10px;line-height:17px;text-align:center;padding:0 4px}.dsh-owner-wait-error-mark{width:15px;height:15px;color:#fff;background:#c75450;border-radius:50%;font-size:10px;line-height:15px;text-align:center}.dsh-owner-wait-refresh{color:var(--dsw-alias-label-secondary);cursor:pointer;background:transparent;border:0;border-radius:5px;padding:4px 7px;font-size:11px}.dsh-owner-wait-refresh:hover{background:var(--dsw-alias-fill-l2)}
-.dsh-owner-wait-group{border-top:1px solid var(--dsw-alias-border-l1,#eee);padding-top:8px;margin-top:7px}.dsh-owner-wait-group:first-of-type{border-top:0;margin-top:0}.dsh-owner-wait-group-stale:first-child{border-top:0}.dsh-owner-wait-group-title{font-size:12px;font-weight:600;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;padding:0 4px}.dsh-owner-wait-workspace{color:var(--dsw-alias-label-tertiary,#777);font-size:10px;padding:2px 4px 6px}
+.dsh-owner-wait-current,.dsh-owner-wait-stale-reason{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;background:var(--dsw-alias-interactive-bg-hover);border-radius:7px;margin-top:7px;padding:7px 8px;overflow-wrap:anywhere}.dsh-owner-wait-stale-reason{color:var(--dsw-alias-label-tertiary)}
+.dsh-owner-wait-details{margin-top:7px}.dsh-owner-wait-details>summary{width:max-content;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;list-style:none}.dsh-owner-wait-details>summary::-webkit-details-marker{display:none}.dsh-owner-wait-details>summary:after{content:'›';display:inline-block;margin-left:4px;transition:transform .12s}.dsh-owner-wait-details[open]>summary:after{transform:rotate(90deg)}
+.dsh-owner-wait-detail-body{border-top:1px solid var(--dsw-alias-border-l1);margin-top:7px;padding-top:7px}.dsh-owner-wait-line{font-size:11px;line-height:17px;overflow-wrap:anywhere}.dsh-owner-wait-line b{font-weight:600}.dsh-owner-wait-risk{color:var(--dsw-alias-state-error-primary)}.dsh-owner-wait-id{color:var(--dsw-alias-label-tertiary);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;margin-top:5px}
+.dsh-owner-wait-note{color:var(--dsw-alias-label-tertiary);border-top:1px solid var(--dsw-alias-border-l1);font-size:10px;line-height:15px;margin-top:8px;padding-top:7px}
+.dsh-owner-wait-empty,.dsh-owner-wait-warning{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;padding:11px}.dsh-owner-wait-empty-active{background:var(--dsw-alias-bg-layer-2);border-radius:9px;margin-bottom:7px}.dsh-owner-wait-warning{color:var(--dsw-alias-state-error-primary);background:var(--dsw-alias-interactive-bg-hover-danger);border-radius:8px;margin-bottom:7px}
+.dsh-owner-wait-stale-section{border-top:1px solid var(--dsw-alias-border-l1);margin-top:9px;padding-top:7px}.dsh-owner-wait-stale-section>summary{color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px;padding:4px;list-style:none}.dsh-owner-wait-stale-section>summary::-webkit-details-marker{display:none}.dsh-owner-wait-stale-section>summary:before{content:'›';font-size:14px;transition:transform .12s}.dsh-owner-wait-stale-section[open]>summary:before{transform:rotate(90deg)}.dsh-owner-wait-stale-section[open]>summary{margin-bottom:6px}.dsh-owner-wait-stale-count{min-width:16px;height:16px;background:var(--dsw-alias-interactive-bg-hover);border-radius:8px;font-size:10px;line-height:16px;text-align:center}
+.dsh-owner-wait-sidebar-root{width:100%}.dsh-owner-wait-sidebar-trigger{box-sizing:border-box;width:40px;height:36px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:transparent;border:0;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:7px;margin:auto;position:relative}.dsh-owner-wait-sidebar-trigger:hover,.dsh-owner-wait-sidebar-trigger:focus-visible{background:var(--dsw-alias-interactive-bg-hover)}.dsh-owner-wait-sidebar-wide{width:100%;justify-content:flex-start;padding:0 10px}.dsh-owner-wait-sidebar-icon{font-size:15px;line-height:1}.dsh-owner-wait-sidebar-label{font-size:13px;flex:1;text-align:left}.dsh-owner-wait-badge{min-width:17px;height:17px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-warn-primary);border-radius:9px;font-size:10px;line-height:17px;text-align:center;padding:0 4px}.dsh-owner-wait-stale-badge{min-width:17px;height:17px;color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover);border-radius:9px;font-size:10px;line-height:17px;text-align:center;padding:0 4px}.dsh-owner-wait-error-mark{width:15px;height:15px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-error-primary);border-radius:50%;font-size:10px;line-height:15px;text-align:center}.dsh-owner-wait-refresh{color:var(--dsw-alias-label-secondary);cursor:pointer;background:transparent;border:0;border-radius:5px;padding:4px 7px;font-size:11px}.dsh-owner-wait-refresh:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-owner-wait-group{border-top:1px solid var(--dsw-alias-border-l1);padding-top:8px;margin-top:7px}.dsh-owner-wait-group:first-of-type{border-top:0;margin-top:0}.dsh-owner-wait-group-stale:first-child{border-top:0}.dsh-owner-wait-group-title{font-size:12px;font-weight:600;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;padding:0 4px}.dsh-owner-wait-workspace{color:var(--dsw-alias-label-tertiary);font-size:10px;padding:2px 4px 6px}
+.dsh-owner-action-inbox-floating{pointer-events:auto;position:fixed;right:18px;top:54px;z-index:520}.dsh-owner-action-inbox-floating-trigger{min-width:48px;height:34px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-warn-primary);border:0;border-radius:17px;box-shadow:var(--dsw-shadow-lv3);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 11px;font-size:12px;font-weight:650}.dsh-owner-action-inbox-floating-trigger:hover,.dsh-owner-action-inbox-floating-trigger:focus-visible{background:var(--dsw-alias-state-warn-secondary);outline:2px solid var(--dsw-alias-state-warn-label)}.dsh-owner-action-inbox-floating-menu{width:440px;max-width:min(460px,calc(100vw - 28px));max-height:min(650px,calc(100vh - 105px));top:42px;right:0;position:absolute}
 @media (max-width:720px){.dsh-owner-wait-menu-header{right:0;left:auto}.dsh-owner-wait-menu-sidebar{width:min(430px,calc(100vw - 24px));max-width:none;bottom:42px;left:8px;position:fixed}}
   `.trim()
   document.head.appendChild(style)
 }
 
-exports.inject = ['slots']
+exports.inject = ['slots', 'sessions']
 
 exports.apply = function apply(ctx) {
   // 正式包名与本地开发别名意外同时进入启动图时，只允许第一份客户端占用 Slot。
   if (window[CLIENT_APPLIED_MARKER] === true) return
   installStyles()
+  const openSession = sessionId => {
+    // 行动收件箱位于 Synapse 全屏层之上；跳转现场前先切回原生对话视图。
+    document.querySelector('.dsh-synapse-switch [data-view="dialog"]')?.click?.()
+    ctx.sessions.open(sessionId)
+  }
+  const HeaderAction = props => h(HeaderWaitAction, { ...props, openSession })
+  const SidebarAction = props => h(SidebarWaitAction, { ...props, openSession })
+  const FloatingInbox = props => h(FloatingActionInbox, { ...props, openSession })
   ctx.slots.inject(
     'conversation.session.header.actions',
     () => ctx.slots.register({
@@ -489,7 +598,7 @@ exports.apply = function apply(ctx) {
       id: 'owner-workflow-waits',
       order: 30,
       label: '主动等待',
-    }, HeaderWaitAction),
+    }, HeaderAction),
   )
   ctx.slots.inject(
     'sidebar.footer.action',
@@ -498,7 +607,16 @@ exports.apply = function apply(ctx) {
       id: 'owner-workflow-waits',
       order: 10,
       label: '主动等待',
-    }, SidebarWaitAction),
+    }, SidebarAction),
+  )
+  ctx.slots.inject(
+    'shell.overlay',
+    () => ctx.slots.register({
+      name: 'shell.overlay',
+      id: 'owner-workflow-action-inbox',
+      order: 40,
+      label: '行动收件箱',
+    }, FloatingInbox),
   )
   window[CLIENT_APPLIED_MARKER] = true
 }

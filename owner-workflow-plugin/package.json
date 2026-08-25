@@ -21,8 +21,11 @@
     "dashboard-host.mjs",
     "scripts/",
     "src/",
+    "vendor/dsh-approve-for-me/src/core/",
+    "vendor/dsh-approve-for-me/LICENSE",
     "agent-presets/",
     "cordis.patch.yml",
+    "THIRD_PARTY_NOTICES.md",
     "README.md",
     "README.zh.md"
   ],
