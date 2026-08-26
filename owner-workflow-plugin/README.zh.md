@@ -51,7 +51,7 @@ cd /Users/admin/code/DSH-Workflow
 ./start-owner-workflow.sh
 ```
 
-npm 模式可用 `DSH_NPM_VERSION=<版本或 dist-tag>` 指定版本。子模块模式不读取原子模块旧的 `apps/cli/lib/bin.js`：它以子模块当前 commit 在主工程 `.dsh-harness-runtime/<commit>/` 创建独立依赖与构建缓存，再运行其中由该 commit 源码构建的 `apps/cli/lib/bin.js`；原子模块不会安装、构建、切换或写入。两个模式都会准备 `owner-workflow` preset，并通过本地 patch 注入当前插件源码。
+npm 模式可用 `DSH_NPM_VERSION=<版本或 dist-tag>` 指定版本。子模块模式直接使用当前检出的 `deepseek-harness/`：首次启动或子模块 commit 变更后，会在其忽略路径中安装依赖、构建 CLI 与 Web 产物，再运行该子模块的 `apps/cli/lib/bin.js`；不会修改受版本控制的子模块文件。两个模式都会准备 `owner-workflow` preset，并通过本地 patch 注入当前插件源码。
 
 npm 与独立子模块源码启动入口默认附加 `--no-open`，Harness 不会自动打开浏览器；如需恢复自动打开，设置 `DSH_WEB_OPEN=1`。
 

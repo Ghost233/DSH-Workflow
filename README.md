@@ -20,7 +20,7 @@ npm 模式也可使用环境变量固定版本：
 DSH_NPM_VERSION=0.1.0-rc.8 ./start-owner-workflow-npm.sh
 ```
 
-子模块模式不安装、构建或修改 `deepseek-harness/`。它会以子模块当前 commit 在主工程的 `.dsh-harness-runtime/<commit>/` 准备独立依赖，并从该 commit 的源码构建匹配的 CLI 与 Web 产物后启动。原有启动脚本仍保留为高级入口，可使用 `DSH_LAUNCHER=npx|source|source-runtime` 选择来源。
+子模块模式直接使用 `deepseek-harness/`。首次启动或子模块 commit 变更后，它会在子模块自身的忽略路径中安装依赖并构建匹配的 CLI 与 Web 产物，不会修改受版本控制的子模块文件。原有启动脚本仍保留为高级入口，可使用 `DSH_LAUNCHER=npx|source|source-runtime` 选择来源。
 
 npm 和独立子模块源码启动模式都会默认传递 `--no-open`，不会自动打开浏览器；需要恢复自动打开时设置 `DSH_WEB_OPEN=1`。
 

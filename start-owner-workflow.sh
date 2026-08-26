@@ -385,8 +385,8 @@ if [[ "${LAUNCHER_MODE}" == "source" ]]; then
   fi
 elif [[ "${LAUNCHER_MODE}" == "source-runtime" ]]; then
   if [[ ! -f "${HARNESS_DIRECTORY}/apps/cli/lib/bin.js" ]] || [[ ! -f "${HARNESS_DIRECTORY}/apps/web/dist/index.html" ]]; then
-    printf '独立源码运行时不完整：%s\n' "${HARNESS_DIRECTORY}" >&2
-    printf '请重新运行 start-owner-workflow-submodule.sh 以构建该 commit 的独立缓存。\n' >&2
+    printf 'Harness 子模块构建产物不完整：%s\n' "${HARNESS_DIRECTORY}" >&2
+    printf '请重新运行 start-owner-workflow-submodule.sh 以构建该 commit。\n' >&2
     exit 1
   fi
 else

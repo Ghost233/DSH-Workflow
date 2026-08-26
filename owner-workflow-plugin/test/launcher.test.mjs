@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { access, chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -23,6 +23,17 @@ async function prepareSourceRuntime(runtimeDirectory) {
     'process.stdout.write(process.argv.slice(2).join("\\n"))\n',
     'utf8',
   )
+}
+
+async function prepareSubmoduleRuntime(harnessDirectory) {
+  await prepareSourceRuntime(harnessDirectory)
+  await executeFile('git', ['init', '--quiet'], { cwd: harnessDirectory })
+  await executeFile('git', ['config', 'user.email', 'test@example.com'], { cwd: harnessDirectory })
+  await executeFile('git', ['config', 'user.name', 'Test User'], { cwd: harnessDirectory })
+  await executeFile('git', ['commit', '--allow-empty', '--quiet', '-m', 'test'], { cwd: harnessDirectory })
+  const { stdout: revision } = await executeFile('git', ['rev-parse', 'HEAD'], { cwd: harnessDirectory })
+  await mkdir(join(harnessDirectory, '.dsh-build'), { recursive: true })
+  await writeFile(join(harnessDirectory, '.dsh-build', 'owner-workflow-source-revision'), revision, 'utf8')
 }
 
 test('本地启动强制刷新过期 preset，忽略缺失的 profile bin 并注入当前源码', async () => {
@@ -108,14 +119,12 @@ test('npm 启动脚本把显式版本固定为 @deepseek-ai/dsh 包规格', asyn
   }
 })
 
-test('子模块启动脚本从显式独立源码运行时执行构建后的 CLI', async () => {
+test('子模块启动脚本直接从子模块执行构建后的 CLI', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-submodule-launcher-'))
   const harnessHome = join(root, 'home')
   const harnessDirectory = join(root, 'harness')
-  const runtimeDirectory = join(root, 'runtime')
   try {
-    await mkdir(harnessDirectory, { recursive: true })
-    await prepareSourceRuntime(runtimeDirectory)
+    await prepareSubmoduleRuntime(harnessDirectory)
 
     const { stdout } = await executeFile('bash', [SUBMODULE_START_SCRIPT], {
       cwd: PROJECT_ROOT,
@@ -123,7 +132,6 @@ test('子模块启动脚本从显式独立源码运行时执行构建后的 CLI'
         ...process.env,
         DSH_HOME: harnessHome,
         DSH_HARNESS_DIR: harnessDirectory,
-        DSH_HARNESS_RUNTIME_DIR: runtimeDirectory,
         DSH_OWNER_WORKFLOW_MODE: 'local',
         DSH_OWNER_WORKFLOW_RUNNER: '0',
       },
@@ -139,14 +147,12 @@ test('子模块启动脚本从显式独立源码运行时执行构建后的 CLI'
   }
 })
 
-test('子模块启动脚本把 plugin 命令原样交给同一源码 CLI 且不启动 Web', async () => {
+test('子模块启动脚本把 plugin 命令原样交给子模块 CLI 且不启动 Web', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-submodule-plugin-'))
   const harnessHome = join(root, 'home')
   const harnessDirectory = join(root, 'harness')
-  const runtimeDirectory = join(root, 'runtime')
   try {
-    await mkdir(harnessDirectory, { recursive: true })
-    await prepareSourceRuntime(runtimeDirectory)
+    await prepareSubmoduleRuntime(harnessDirectory)
 
     const { stdout, stderr } = await executeFile('bash', [
       SUBMODULE_START_SCRIPT,
@@ -161,7 +167,6 @@ test('子模块启动脚本把 plugin 命令原样交给同一源码 CLI 且不�
         ...process.env,
         DSH_HOME: harnessHome,
         DSH_HARNESS_DIR: harnessDirectory,
-        DSH_HARNESS_RUNTIME_DIR: runtimeDirectory,
         DSH_OWNER_WORKFLOW_RUNNER: '1',
       },
       maxBuffer: 2 * 1024 * 1024,
@@ -176,55 +181,6 @@ test('子模块启动脚本把 plugin 命令原样交给同一源码 CLI 且不�
     ])
     assert.doesNotMatch(stdout, /--patch|--no-open/u)
     assert.doesNotMatch(stderr, /Runner daemon|Owner Workflow Dashboard|Synapse/u)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('子模块启动脚本只保留当前 commit 的运行时缓存', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-owner-submodule-cache-'))
-  const harnessDirectory = join(root, 'harness')
-  const runtimeRoot = join(root, 'runtime-root')
-  const binDirectory = join(root, 'bin')
-  const currentRevision = '1'.repeat(40)
-  const staleRevision = '2'.repeat(40)
-  const currentRuntime = join(runtimeRoot, currentRevision)
-  const staleRuntime = join(runtimeRoot, staleRevision)
-  const retainedFailure = join(runtimeRoot, '.failed-build')
-  try {
-    await mkdir(harnessDirectory, { recursive: true })
-    await mkdir(binDirectory, { recursive: true })
-    await prepareSourceRuntime(currentRuntime)
-    await writeFile(join(currentRuntime, '.dsh-owner-runtime-ready'), `${currentRevision}\n`, 'utf8')
-    await mkdir(staleRuntime, { recursive: true })
-    await mkdir(retainedFailure, { recursive: true })
-    await writeFile(join(binDirectory, 'git'), `#!/usr/bin/env bash\nprintf '%s\\n' '${currentRevision}'\n`, 'utf8')
-    await writeFile(join(binDirectory, 'corepack'), '#!/usr/bin/env bash\nexit 0\n', 'utf8')
-    await chmod(join(binDirectory, 'git'), 0o755)
-    await chmod(join(binDirectory, 'corepack'), 0o755)
-
-    const { stderr } = await executeFile('bash', [
-      SUBMODULE_START_SCRIPT,
-      'plugin',
-      '--profile',
-      'web',
-      'list',
-    ], {
-      cwd: PROJECT_ROOT,
-      env: {
-        ...process.env,
-        PATH: `${binDirectory}:${process.env.PATH}`,
-        DSH_HOME: join(root, 'home'),
-        DSH_HARNESS_DIR: harnessDirectory,
-        DSH_HARNESS_RUNTIME_ROOT: runtimeRoot,
-      },
-      maxBuffer: 2 * 1024 * 1024,
-    })
-
-    await access(currentRuntime)
-    await access(retainedFailure)
-    await assert.rejects(access(staleRuntime), error => error?.code === 'ENOENT')
-    assert.match(stderr, new RegExp(staleRevision, 'u'))
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -261,31 +217,6 @@ test('启动脚本让 Runner daemon 随 Harness 启动并在 Harness 退出后�
     assert.equal(daemon.contract, 'DSH_WORKFLOW_RUNNER_DAEMON_V1')
     assert.equal(daemon.status, 'stopped')
     assert.equal(Array.isArray(daemon.activeWorkflows), true)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('子模块启动脚本拒绝不存在的显式独立源码运行时', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-owner-submodule-no-open-'))
-  const harnessDirectory = join(root, 'harness')
-  try {
-    await mkdir(harnessDirectory, { recursive: true })
-
-    await assert.rejects(
-      executeFile('bash', [SUBMODULE_START_SCRIPT], {
-        cwd: PROJECT_ROOT,
-        env: {
-          ...process.env,
-          DSH_HOME: join(root, 'home'),
-          DSH_HARNESS_DIR: harnessDirectory,
-          DSH_HARNESS_RUNTIME_DIR: join(root, 'missing-runtime'),
-          DSH_OWNER_WORKFLOW_MODE: 'local',
-        },
-        maxBuffer: 2 * 1024 * 1024,
-      }),
-      /独立源码运行时不存在/u,
-    )
   } finally {
     await rm(root, { recursive: true, force: true })
   }
