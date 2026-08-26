@@ -156,8 +156,11 @@ const DEFAULT_CONFIG = Object.freeze({
   ownerLeaseMs: 10 * 60 * 1000,
   supervisorStaleMs: 4 * 60 * 60 * 1000,
   operationSubagentProvider: 'spawn',
+  planningSubagentProvider: 'spawn',
   operationAgentProvider: undefined,
   operationAgentModel: undefined,
+  planningChildTimeoutMs: 180_000,
+  maxAutomaticPlanRevisions: 1,
   dashboardCatalogRoot: undefined,
   ownerMemoryEnabled: true,
   ownerMemoryMaxBytes: 96 * 1024,
@@ -1948,6 +1951,7 @@ async function requestValidatedPlannerPlan(runtime, agent, cwd, prompt, label, r
       workflowRoot,
       rolePrompt: plannerRolePrompt(),
       requirePlannerSubmission: true,
+      timeoutMs: runtime.config.planningChildTimeoutMs,
     })
     try {
       return parsePlannerPlan(output, label, registry)
@@ -1974,6 +1978,7 @@ async function requestValidatedPlanReview(runtime, agent, state, signal) {
           workflowRoot: state.root,
           rolePrompt: '你现在是独立 Planner Reviewer，只读审查当前计划，并通过 workflow_plan_review_submit 提交结构化结果。',
           requirePlanReviewSubmission: true,
+          timeoutMs: runtime.config.planningChildTimeoutMs,
         },
       )
       return planReviewResult(parseJsonObject(output, 'Planner Reviewer'))
@@ -2351,7 +2356,7 @@ async function commitApprovedRegistryChanges(runtime, state, signal) {
   if (registryContentDigest(approvedRegistry) !== state.registryDigest) {
     throw new Error(`工作流 ${state.id} 的已批准 Owner Registry 与绑定摘要不一致`)
   }
-  await persistApprovedRegistryToProject(
+  const projectPersistence = await persistApprovedRegistryToProject(
     runtime,
     state,
     approvedRegistry,
@@ -2367,15 +2372,14 @@ async function commitApprovedRegistryChanges(runtime, state, signal) {
     throw new Error(`Registry 批准后的 workflow worktree 出现非 Registry 改动，拒绝继续：${outsideRegistry.join(', ')}`)
   }
   if (registryFiles.length > 0) {
-    await commitFiles(
-      state.workflowWorktree,
-      registryFiles,
-      `应用 Owner Registry 提案 ${state.approvedProposalDigest ?? state.id}`,
-      signal,
-    )
+    const workflowHead = await head(state.workflowWorktree, signal)
+    if (!await isCommitAncestor(state.workflowWorktree, workflowHead, projectPersistence.baseCommit, signal)) {
+      throw new Error('项目级 Owner Registry 提交不是当前 workflow 分支的快进后继，拒绝改写 workflow 起点')
+    }
+    await git(state.workflowWorktree, ['reset', '--hard', projectPersistence.baseCommit], signal)
     state.workflowHead = await head(state.workflowWorktree, signal)
-    await appendLog(runtime, state.root, state.id, 'registry.committed', {
-      summary: '已将用户批准的 Owner Registry 固定到 workflow 分支',
+    await appendLog(runtime, state.root, state.id, 'registry.workflow-fast-forwarded', {
+      summary: 'workflow 分支已快进到项目级 Owner Registry 固定提交，不重复创建 Registry 提交',
       approvedProposalDigest: state.approvedProposalDigest,
       registryDigest: state.registryDigest,
       commitSha: state.workflowHead,
@@ -2857,6 +2861,9 @@ export function createOwnerWorkflowRuntime(ctx, config) {
     operationLocks: new Map(),
     operationBindings: new Map(),
     operationParents: new Map(),
+    planningBindings: new Map(),
+    planningParents: new Map(),
+    planningDrivers: new Map(),
     operationApproval: createOperationApprovalPlugin(ctx, { clock: now }),
     operationPauses: new Map(),
     operationRecycles: new Map(),
@@ -2872,20 +2879,30 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       if (!isWithin(root, directory)) throw new Error(`worktreeDirectory 不能越过项目根目录：${directory}`)
       return directory
     },
-    async resolveRoot(agent) {
-      const cwd = agent?.session?.header?.cwd ?? process.cwd()
-      const root = resolve(await repositoryRoot(cwd))
+    async registerDashboardRoot(root, { gitRepository = false } = {}) {
       if (!runtime.dashboardWorkspaceRoots.has(root)) {
         const catalogRoot = typeof resolvedConfig.dashboardCatalogRoot === 'string'
           && resolvedConfig.dashboardCatalogRoot.trim() !== ''
           ? resolve(resolvedConfig.dashboardCatalogRoot)
           : root
-        if (catalogRoot === root && resolvedConfig.autoAddGitExclude) {
+        if (gitRepository && catalogRoot === root && resolvedConfig.autoAddGitExclude) {
           await ensureGitExclude(root, stateDirectory(runtime, root))
         }
         await registerDashboardWorkspace(catalogRoot, root)
         runtime.dashboardWorkspaceRoots.add(root)
       }
+    },
+    async resolveRoot(agent) {
+      const cwd = agent?.session?.header?.cwd ?? process.cwd()
+      const root = resolve(await repositoryRoot(cwd))
+      await runtime.registerDashboardRoot(root, { gitRepository: true })
+      return root
+    },
+    async resolveWorkspaceRoot(agent) {
+      const cwd = resolve(agent?.session?.header?.cwd ?? process.cwd())
+      const gitRoot = await repositoryRoot(cwd).catch(() => undefined)
+      const root = gitRoot === undefined ? cwd : resolve(gitRoot)
+      await runtime.registerDashboardRoot(root, { gitRepository: gitRoot !== undefined })
       return root
     },
     async runnerDaemonStatus(state) {
@@ -3217,6 +3234,18 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         order: -20,
         text: '',
       })
+      const planningBinding = runtime.planningBindings.get(childCtx.agent?.id)
+      if (planningBinding !== undefined) {
+        runtime.agentRoles.set(childCtx.agent.id, {
+          role: 'planner',
+          workflowRoot: planningBinding.root,
+          worktree: planningBinding.worktree,
+          planningWorkflowId: planningBinding.workflowId,
+          continuablePlanning: true,
+        })
+        configureChildSandbox(childCtx, 'planner')
+        return
+      }
       const binding = runtime.operationBindings.get(childCtx.agent?.id)
       if (binding === undefined) return
       runtime.agentRoles.set(childCtx.agent.id, {
@@ -3230,6 +3259,17 @@ export function createOwnerWorkflowRuntime(ctx, config) {
     },
     onAgentCreated(agent) {
       if (agent === undefined || agent.id === undefined) return
+      const planningBinding = runtime.planningBindings.get(agent.id)
+      if (planningBinding !== undefined) {
+        runtime.agentRoles.set(agent.id, {
+          role: 'planner',
+          workflowRoot: planningBinding.root,
+          worktree: planningBinding.worktree,
+          planningWorkflowId: planningBinding.workflowId,
+          continuablePlanning: true,
+        })
+        return
+      }
       const operationBinding = runtime.operationBindings.get(agent.id)
       if (operationBinding !== undefined) {
         runtime.agentRoles.set(agent.id, {
@@ -3322,6 +3362,305 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           : {}),
       }
     },
+    async setContinuablePlanningPhase(binding, phase, extra = {}) {
+      binding.phase = phase
+      return runtime.withWorkflowLock(binding.workflowId, async () => {
+        const state = await readState(runtime, binding.root, binding.workflowId)
+        state.planningAgent = {
+          childId: binding.childId,
+          phase,
+          startedAt: state.planningAgent?.startedAt ?? now(),
+          updatedAt: now(),
+          ...extra,
+        }
+        await saveState(runtime, state)
+        return state
+      })
+    },
+    async reportContinuablePlanning(binding, type, summary, details = {}) {
+      const subagents = runtime.subagentRuntime()
+      if (subagents?.reportFrom === undefined) return false
+      const child = runtime.ctx?.agents?.get?.(binding.childId) ?? { id: binding.childId }
+      try {
+        await subagents.reportFrom(
+          child,
+          [{
+            type: 'text',
+            text: JSON.stringify({
+              contract: 'DSH_WORKFLOW_PLAN_AGENT_UPDATE_V1',
+              workflowId: binding.workflowId,
+              type,
+              summary,
+              ...details,
+            }),
+          }],
+          { delivery: 'next-step' },
+        )
+        return true
+      } catch {
+        return false
+      }
+    },
+    async prepareContinuablePlanningTurn(binding, state, request, phase, signal) {
+      const { registry } = await loadLiveRegistryForPlanning(state, { initialize: true })
+      const memorySnapshot = await loadMemorySnapshot(state.workflowWorktree, {
+        maxBytes: resolvedConfig.ownerMemoryMaxBytes,
+        signal,
+      })
+      binding.registry = registry
+      binding.memoryDigest = memorySnapshot.digest
+      binding.baseline = {
+        head: await head(state.workflowWorktree, signal),
+        branch: await currentBranch(state.workflowWorktree, signal),
+        status: await statusRecords(state.workflowWorktree, signal),
+      }
+      await runtime.setContinuablePlanningPhase(binding, phase)
+      return plannerPrompt(request, registry.owners, memorySnapshot, state.registryDigest)
+    },
+    async startContinuablePlanning(agent, state, signal) {
+      const subagents = runtime.subagentRuntime()
+      if (subagents?.startContinuable === undefined) {
+        throw new Error('Harness 没有挂载可续接 Plan Agent 通道')
+      }
+      const childId = randomUUID()
+      const binding = {
+        childId,
+        workflowId: state.id,
+        root: state.root,
+        worktree: state.workflowWorktree,
+        parentSessionId: agent.id,
+        parent: agent,
+        phase: 'initial',
+        automaticRevisionCount: 0,
+        abortController: new AbortController(),
+      }
+      runtime.planningBindings.set(childId, binding)
+      runtime.planningParents.set(state.id, agent)
+      try {
+        const planningSignal = signal === undefined
+          ? binding.abortController.signal
+          : AbortSignal.any([signal, binding.abortController.signal])
+        const prompt = await runtime.prepareContinuablePlanningTurn(binding, state, state.request, 'initial', planningSignal)
+        const started = await subagents.startContinuable({
+          provider: resolvedConfig.planningSubagentProvider,
+          childId,
+          label: `Plan ${state.id}`,
+          request: {
+            parent: agent,
+            prompt: [{ type: 'text', text: prompt }],
+            agentOptions: { ...agent.options },
+            maxDepth: resolvedConfig.maxDelegationDepth,
+            persona: plannerRolePrompt(),
+          },
+          signal: planningSignal,
+        })
+        return {
+          contract: 'DSH_WORKFLOW_PLAN_AGENT_STARTED_V1',
+          workflowId: state.id,
+          status: 'planning',
+          plannerSessionId: childId,
+          messageId: started.messageId,
+          nextAction: 'Plan Agent 正在后台生成计划；不要调用 workflow_recover、workflow_plan_review 或 workflow_plan_revise，等待 Runtime 主动回报批准或失败。',
+        }
+      } catch (error) {
+        runtime.planningBindings.delete(childId)
+        runtime.planningParents.delete(state.id)
+        throw error
+      }
+    },
+    async continueContinuablePlanning(binding, mode, signal) {
+      const subagents = runtime.subagentRuntime()
+      if (subagents?.followup === undefined) throw new Error('Harness 没有挂载 Plan Agent followup 通道')
+      const planningSignal = signal === undefined
+        ? binding.abortController.signal
+        : AbortSignal.any([signal, binding.abortController.signal])
+      const state = await readState(runtime, binding.root, binding.workflowId)
+      let request
+      if (mode === 'registry-approved') {
+        if (state.status !== 'registry_pending_plan') {
+          throw new Error(`工作流 ${binding.workflowId} 当前状态不能在 Registry 批准后继续规划：${state.status}`)
+        }
+        await commitApprovedRegistryChanges(runtime, state, planningSignal)
+        state.status = 'planning'
+        state.error = undefined
+        await saveState(runtime, state)
+        request = state.request
+      } else if (mode === 'revision') {
+        if (state.status !== 'planned' || state.planReview?.status !== 'needs_revision') {
+          throw new Error(`工作流 ${binding.workflowId} 当前没有可由 Plan Agent 修订的审查结果`)
+        }
+        request = [
+          state.request,
+          '',
+          'Planner Reviewer 的问题：',
+          JSON.stringify(state.planReview.issues, null, 2),
+          '',
+          '当前计划：',
+          JSON.stringify(state.plan, null, 2),
+          '',
+          '请通过 workflow_plan_submit 提交修订后的完整计划。',
+        ].join('\n')
+      } else {
+        throw new Error(`未知的 Plan Agent 继续模式：${String(mode)}`)
+      }
+      const prompt = await runtime.prepareContinuablePlanningTurn(binding, state, request, mode, planningSignal)
+      return subagents.followup(
+        binding.parent,
+        binding.childId,
+        [{ type: 'text', text: prompt }],
+        { source: { kind: 'coordinator', form: 'relay', senderSessionId: binding.parent.id }, signal: planningSignal },
+      )
+    },
+    async acceptContinuablePlannerSubmission(binding, rawPlan, signal) {
+      const planningSignal = signal === undefined
+        ? binding.abortController.signal
+        : AbortSignal.any([signal, binding.abortController.signal])
+      const result = await runtime.withWorkflowLock(binding.workflowId, async () => {
+        const state = await readState(runtime, binding.root, binding.workflowId)
+        if (!['initial', 'registry-approved', 'revision'].includes(binding.phase)) {
+          throw new Error(`Plan Agent 当前不能提交计划：${binding.phase}`)
+        }
+        if (binding.registry === undefined || binding.baseline === undefined) {
+          throw new Error('Plan Agent 缺少当前规划上下文')
+        }
+        const { plan, suggestedRegistryOperation } = parsePlannerPlan(rawPlan, 'Plan Agent', binding.registry)
+        const currentHead = await head(state.workflowWorktree, planningSignal)
+        const actualBranch = await currentBranch(state.workflowWorktree, planningSignal)
+        const changed = await changedFiles(state.workflowWorktree, binding.baseline.head, currentHead, planningSignal)
+        const dirty = await statusRecords(state.workflowWorktree, planningSignal)
+        if (currentHead !== binding.baseline.head
+          || actualBranch !== binding.baseline.branch
+          || changed.length > 0
+          || JSON.stringify(dirty) !== JSON.stringify(binding.baseline.status)) {
+          throw new Error('Plan Agent 改变了 workflow worktree，已拒绝计划')
+        }
+        if (binding.phase === 'revision') {
+          const reviewedPlanDigest = state.planDigest
+          const reviewedAt = state.planReviewedAt
+          const review = state.planReview
+          const revisionBudget = planRevisionBudget(state, resolvedConfig)
+          state.planReviewHistory = [
+            ...(Array.isArray(state.planReviewHistory) ? state.planReviewHistory : []),
+            { planDigest: reviewedPlanDigest, reviewedAt, archivedAt: now(), review },
+          ].slice(-maxPlanRevisionTurns(resolvedConfig))
+          state.planRevisionCount = Number(state.planRevisionCount ?? 0) + 1
+          state.planReviewRevisionCount = revisionBudget.used + 1
+          state.lastPlanRevision = {
+            at: now(),
+            fromPlanDigest: reviewedPlanDigest,
+            toPlanDigest: planDigest(plan),
+            revision: state.planReviewRevisionCount,
+          }
+        } else {
+          state.planReviewHistory = []
+          state.planRevisionCount = 0
+          state.planReviewRevisionCount = 0
+          state.lastPlanRevision = undefined
+        }
+        state.plan = plan
+        state.tasks = createTaskState(plan)
+        state.status = 'planned'
+        state.planDigest = planDigest(plan)
+        state.planReview = undefined
+        state.planReviewDigest = undefined
+        state.planReviewedAt = undefined
+        state.planRevisionLimitReached = undefined
+        state.planRevisionFailure = undefined
+        state.planRevisionFailureCount = 0
+        state.planApproved = false
+        state.planApprovedAt = undefined
+        state.planApprovedBy = undefined
+        state.suggestedRegistryOperation = suggestedRegistryOperation
+        state.planCreatedAt = now()
+        state.memoryDigest = binding.memoryDigest
+        state.error = undefined
+        state.planningFailure = undefined
+        await saveState(runtime, state)
+        await appendLog(runtime, state.root, state.id, binding.phase === 'revision' ? 'plan.revised' : 'plan.created', {
+          summary: plan.summary,
+          owners: plan.owners.map(owner => owner.id),
+          tasks: plan.tasks.map(task => task.id),
+        })
+        return { state, suggestedRegistryOperation }
+      })
+      if (result.suggestedRegistryOperation !== undefined) {
+        const proposal = await runtime.proposeOwnerChange(binding.parent, binding.workflowId, result.suggestedRegistryOperation)
+        await runtime.setContinuablePlanningPhase(binding, 'awaiting_registry_approval')
+        await runtime.reportContinuablePlanning(
+          binding,
+          'owner_registry_approval_required',
+          'Plan Agent 已提出 Owner Registry 变更，等待用户批准。',
+          { proposalDigest: proposal.digest, nextTool: 'workflow_owner_change_approve' },
+        )
+        return { status: 'awaiting_registry_approval', proposalDigest: proposal.digest }
+      }
+      await runtime.setContinuablePlanningPhase(binding, 'reviewing')
+      runtime.scheduleContinuablePlanReview(binding)
+      return { status: 'reviewing' }
+    },
+    scheduleContinuablePlanReview(binding) {
+      const active = runtime.planningDrivers.get(binding.workflowId)
+      if (active !== undefined) {
+        void active.finally(() => {
+          if (binding.phase === 'reviewing') runtime.scheduleContinuablePlanReview(binding)
+        })
+        return
+      }
+      if (runtime.disposed) return
+      const driver = Promise.resolve().then(async () => {
+        const reviewed = await runtime.reviewPlan(binding.parent, binding.workflowId, binding.abortController.signal)
+        if (reviewed.review.status === 'passed') {
+          await runtime.setContinuablePlanningPhase(binding, 'awaiting_plan_approval')
+          await runtime.reportContinuablePlanning(
+            binding,
+            'plan_approval_required',
+            '独立 Reviewer 已通过当前计划，等待用户批准执行。',
+            {
+              planDigest: reviewed.workflow.planDigest,
+              registryDigest: reviewed.workflow.registryDigest,
+              nextTool: 'workflow_plan_approve',
+            },
+          )
+          return
+        }
+        const automaticLimit = Math.max(0, Number(resolvedConfig.maxAutomaticPlanRevisions) || 0)
+        if (!reviewed.revisionBudget.exhausted && binding.automaticRevisionCount < automaticLimit) {
+          binding.automaticRevisionCount += 1
+          await runtime.continueContinuablePlanning(binding, 'revision')
+          return
+        }
+        await runtime.setContinuablePlanningPhase(binding, 'review_failed', {
+          error: reviewed.review.summary,
+        })
+        await runtime.reportContinuablePlanning(
+          binding,
+          'plan_review_failed',
+          '计划在自动修订上限内仍未通过独立审查，已停止自动重试。',
+          { review: reviewed.review },
+        )
+      }).catch(async error => {
+        await runtime.setContinuablePlanningPhase(binding, 'failed', { error: errorText(error) }).catch(() => undefined)
+        await runtime.reportContinuablePlanning(
+          binding,
+          'planning_failed',
+          `Plan Agent 自动编排失败：${errorText(error)}`,
+        )
+      }).finally(() => runtime.planningDrivers.delete(binding.workflowId))
+      runtime.planningDrivers.set(binding.workflowId, driver)
+    },
+    async recycleContinuablePlanning(workflowId, parentAgent) {
+      const binding = [...runtime.planningBindings.values()].find(item => item.workflowId === workflowId)
+      if (binding === undefined) return false
+      const parent = parentAgent ?? binding.parent
+      const subagents = runtime.subagentRuntime()
+      binding.abortController.abort(new Error('Plan Agent 生命周期已结束'))
+      await Promise.resolve(subagents?.interrupt?.(binding.childId, { kind: 'ancestor', agent: parent })).catch(() => undefined)
+      await subagents?.drainContinuableChildren?.(parent, [binding.childId])
+      runtime.planningBindings.delete(binding.childId)
+      runtime.planningParents.delete(workflowId)
+      runtime.agentRoles.delete(binding.childId)
+      return true
+    },
     async prepareRoot(root, signal) {
       const directory = stateDirectory(runtime, root)
       await mkdir(join(directory, 'workflows'), { recursive: true })
@@ -3332,11 +3671,17 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       abortIfNeeded(signal)
       return directory
     },
+    async prepareOperationRoot(root, signal) {
+      const directory = stateDirectory(runtime, root)
+      await mkdir(join(directory, 'operations'), { recursive: true })
+      abortIfNeeded(signal)
+      return directory
+    },
     async appendWorkflowLog(root, workflowId, event, data) {
       return appendLog(runtime, root, workflowId, event, data)
     },
     async modeStatus(agent) {
-      const root = await runtime.resolveRoot(agent)
+      const root = await runtime.resolveWorkspaceRoot(agent)
       runtime.orchestratorRoots.set(agent.session.id, root)
       const path = modePath(runtime, root)
       const enabled = runtime.modeEnabled(root) || runtime.isOwnerPresetAgent(agent)
@@ -3348,9 +3693,9 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       }
     },
     async modeEnable(agent) {
-      const root = await runtime.resolveRoot(agent)
+      const root = await runtime.resolveWorkspaceRoot(agent)
       runtime.orchestratorRoots.set(agent.session.id, root)
-      await runtime.prepareRoot(root)
+      await mkdir(stateDirectory(runtime, root), { recursive: true })
       const path = modePath(runtime, root)
       await writeJsonAtomic(path, {
         contract: MODE_CONTRACT,
@@ -3361,7 +3706,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       return { contract: MODE_CONTRACT, root, path, enabled: true }
     },
     async modeDisable(agent) {
-      const root = await runtime.resolveRoot(agent)
+      const root = await runtime.resolveWorkspaceRoot(agent)
       runtime.orchestratorRoots.set(agent.session.id, root)
       if (runtime.isOwnerPresetAgent(agent)) {
         throw new Error('owner-workflow Agent preset 本身就是强制工作模式；请在 Harness 中切换到其他 Agent preset')
@@ -3876,6 +4221,11 @@ export function createOwnerWorkflowRuntime(ctx, config) {
     submitPlannerPlan(agent, plan) {
       const sessionId = agent?.id ?? agent?.session?.id
       const binding = sessionId === undefined ? undefined : runtime.agentRoles.get(sessionId)
+      if (binding?.role === 'planner' && binding.continuablePlanning === true) {
+        const planningBinding = runtime.planningBindings.get(sessionId)
+        if (planningBinding === undefined) throw new Error('当前 Plan Agent 没有绑定活动 Workflow')
+        return runtime.acceptContinuablePlannerSubmission(planningBinding, plan)
+      }
       if (binding?.role !== 'planner' || binding.requirePlannerSubmission !== true) {
         throw new Error('workflow_plan_submit 只能由当前规划子代理调用')
       }
@@ -4339,6 +4689,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         summary: '已进入 Runner daemon 自动接管队列',
         pendingTasks: pendingTaskCount,
       })
+      await runtime.recycleContinuablePlanning(workflowId, agent)
       return {
         workflow: runtime.workflowSummary(state),
         planDigest: state.planDigest,
@@ -4591,7 +4942,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       }
       throw new Error(`工作流 ${workflowId} 没有可恢复的 V2 task 计划`)
     },
-    async startWorkflow(agent, request, signal, expectedBaseDigest) {
+    async startWorkflow(agent, request, signal, expectedBaseDigest, { planningMode = 'one-shot' } = {}) {
       abortIfNeeded(signal)
       const root = await runtime.resolveRoot(agent)
       runtime.orchestratorRoots.set(agent.session.id, root)
@@ -4690,6 +5041,9 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           baseBranch,
           workflowBranch,
         })
+        if (planningMode === 'continuable' && runtime.subagentRuntime()?.startContinuable !== undefined) {
+          return runtime.startContinuablePlanning(agent, state, signal)
+        }
         return await runtime.planWorkflowState(agent, state, signal)
       } catch (error) {
         if (signal?.aborted) {
@@ -4724,12 +5078,12 @@ export function createOwnerWorkflowRuntime(ctx, config) {
     },
     async startOperation(agent, rawSpec, signal) {
       abortIfNeeded(signal)
-      const root = await runtime.resolveRoot(agent)
+      const root = await runtime.resolveWorkspaceRoot(agent)
       runtime.orchestratorRoots.set(agent.session.id, root)
       if (!runtime.modeEnabledForActor({ agent })) {
         throw new Error('Owner 工作模式尚未启用，不能启动 Operation')
       }
-      await runtime.prepareRoot(root, signal)
+      await runtime.prepareOperationRoot(root, signal)
       const subagents = runtime.subagentRuntime()
       if (subagents?.startContinuable === undefined || subagents?.reportFrom === undefined) {
         throw new Error('Harness 没有挂载 continuable 子代理与回报通道，不能启动 Operation')
@@ -4805,7 +5159,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       }
     },
     async operationStatus(agent, operationId) {
-      const root = await runtime.resolveRoot(agent)
+      const root = await runtime.resolveWorkspaceRoot(agent)
       runtime.orchestratorRoots.set(agent.session.id, root)
       if (operationId !== undefined) {
         let state
@@ -4837,7 +5191,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
     },
     async continueOperation(agent, operationId, response, options, signal) {
       abortIfNeeded(signal)
-      const root = await runtime.resolveRoot(agent)
+      const root = await runtime.resolveWorkspaceRoot(agent)
       const previous = await runtime.withOperationLock(operationId, async () => {
         const state = await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)
         if (state.parentSessionId !== agent.id) throw new Error('当前主代理不能继续其他会话的 Operation')
@@ -4954,7 +5308,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       abortIfNeeded(exec?.signal)
       const exactCommand = typeof command === 'string' ? command.trim() : ''
       if (exactCommand === '') throw new Error('operation_approve 必须提供精确 command')
-      const root = await runtime.resolveRoot(agent)
+      const root = await runtime.resolveWorkspaceRoot(agent)
       const pendingState = await runtime.withOperationLock(operationId, async () => {
         const state = await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)
         if (state.parentSessionId !== agent.id) throw new Error('当前主代理不能审批其他会话的 Operation')
@@ -5039,7 +5393,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       throw new Error(`Harness 原生问询返回未知 Operation 授权结果：${String(decision.outcome)}`)
     },
     async cancelOperation(agent, operationId) {
-      const root = await runtime.resolveRoot(agent)
+      const root = await runtime.resolveWorkspaceRoot(agent)
       const state = await runtime.withOperationLock(operationId, async () => {
         const latest = await readOperationState(root, operationId, resolvedConfig.runtimeDirectory)
         if (latest.parentSessionId !== agent.id) throw new Error('当前主代理不能取消其他会话的 Operation')
@@ -6494,7 +6848,16 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       throw new Error(`未知的控制动作：${String(action)}`)
     },
     async runChild(parent, cwd, prompt, signal, options = {}) {
-      const runSignal = signal ?? new AbortController().signal
+      const timeoutMs = Number(options.timeoutMs)
+      const timeoutController = Number.isFinite(timeoutMs) && timeoutMs > 0 ? new AbortController() : undefined
+      const timeout = timeoutController === undefined
+        ? undefined
+        : setTimeout(() => timeoutController.abort(new Error(`${options.role ?? '子代理'} 超过 ${timeoutMs}ms 未完成`)), timeoutMs)
+      const runSignal = signal === undefined
+        ? (timeoutController?.signal ?? new AbortController().signal)
+        : timeoutController === undefined
+          ? signal
+          : AbortSignal.any([signal, timeoutController.signal])
       abortIfNeeded(runSignal)
       const parentDepth = Number(parent.session?.header?.delegationDepth ?? 0)
       const childDepth = parentDepth + 1
@@ -6519,6 +6882,9 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         child = run.localAgent
         if (child === undefined) throw new Error('Owner 工作流 one-shot provider 没有返回本地 Harness 子代理')
         const settled = await run.result
+        if (timeoutController?.signal.aborted) {
+          throw new Error(`${options.role ?? '子代理'} 超过 ${timeoutMs}ms 未完成，已停止本次规划阶段`)
+        }
         abortIfNeeded(runSignal)
         const binding = runtime.agentRoles.get(child.id)
         if (options.requirePlannerSubmission === true) {
@@ -6551,6 +6917,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         }
         return contentText(settled.output)
       } finally {
+        if (timeout !== undefined) clearTimeout(timeout)
         runtime.pendingChildStarts.delete(promptContent)
         if (options.activeOwner?.sessionId !== undefined) runtime.activeOwners.delete(options.activeOwner.sessionId)
         if (child?.id !== undefined) runtime.agentRoles.delete(child.id)
@@ -8755,7 +9122,7 @@ export function createOwnerWorkflowRuntime(ctx, config) {
     },
     async approveOwnerChange(agent, workflowId, digest) {
       const root = await runtime.resolveRoot(agent)
-      return runtime.withWorkflowLock(workflowId, async () => {
+      const approved = await runtime.withWorkflowLock(workflowId, async () => {
         const observedState = await readState(runtime, root, workflowId)
         let registry
         let proposal
@@ -8816,6 +9183,18 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           registryDigest: liveDigest,
           registryBaseCommit: projectRegistryCommit,
         })
+        const planningBinding = [...runtime.planningBindings.values()].find(item => item.workflowId === workflowId)
+        if (planningBinding !== undefined) {
+          return {
+            workflow: runtime.workflowSummary(state),
+            registry,
+            approvedProposalDigest: digest,
+            registryDigest: liveDigest,
+            registryBaseCommit: projectRegistryCommit,
+            orchestratorSessionId: state.orchestratorSessionId,
+            planningBinding,
+          }
+        }
         return {
           workflow: runtime.workflowSummary(state),
           registry,
@@ -8826,6 +9205,16 @@ export function createOwnerWorkflowRuntime(ctx, config) {
           nextAction: `调用 workflow_recover(workflow_id=${workflowId}) 重新规划，再执行 workflow_plan_review；审查通过后立即调用 workflow_plan_approve 触发原生问询`,
         }
       })
+      if (approved.planningBinding === undefined) return approved
+      const messageId = await runtime.continueContinuablePlanning(approved.planningBinding, 'registry-approved')
+      const { planningBinding, ...result } = approved
+      return {
+        ...result,
+        workflow: runtime.workflowSummary(await readState(runtime, root, workflowId)),
+        plannerSessionId: planningBinding.childId,
+        messageId,
+        nextAction: 'Plan Agent 已在同一子线程中继续规划；不要调用 workflow_recover、workflow_plan_review 或 workflow_plan_revise，等待 Runtime 主动回报。',
+      }
     },
     async assertRequiredTaskVerifications(state, taskId, ownerId, worktree, options = {}) {
       if (state?.plan?.contract !== PLAN_V2_CONTRACT) return undefined
@@ -9212,13 +9601,18 @@ export function createOwnerWorkflowRuntime(ctx, config) {
       const operationSettlements = [
         ...runtime.operationPauses.values(),
         ...runtime.operationRecycles.values(),
+        ...runtime.planningDrivers.values(),
       ]
       runtime.disposePromise = (async () => {
+        for (const binding of runtime.planningBindings.values()) {
+          binding.abortController.abort(new Error('Owner Workflow Runtime 已停止'))
+        }
         await Promise.allSettled(operationSettlements)
         const subagents = runtime.subagentRuntime()
         const parents = [...new Set([
           ...runtime.controlAgents.values(),
           ...runtime.operationParents.values(),
+          ...runtime.planningParents.values(),
         ])]
         if (subagents?.drainContinuableDescendants !== undefined && parents.length > 0) {
           await subagents.drainContinuableDescendants(parents).catch(() => undefined)
@@ -9232,6 +9626,9 @@ export function createOwnerWorkflowRuntime(ctx, config) {
         runtime.operationParents.clear()
         runtime.operationPauses.clear()
         runtime.operationRecycles.clear()
+        runtime.planningBindings.clear()
+        runtime.planningParents.clear()
+        runtime.planningDrivers.clear()
         runtime.dashboardWorkspaceRoots.clear()
         runtime.controlAgents.clear()
         runtime.workflowLocks.clear()

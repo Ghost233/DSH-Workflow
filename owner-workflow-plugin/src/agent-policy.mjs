@@ -93,7 +93,7 @@ export function toolExecutionDenial({ activeOwner, role, modeEnabled, toolName, 
       && toolArguments !== null
       && typeof toolArguments === 'object'
       && Object.hasOwn(toolArguments, 'sandbox_permissions')) {
-      return `Owner ${activeOwner.owner?.id ?? '未知'} 不能通过 Shell 参数直接申请沙箱升级；请改用 owner_host_exec，让 Runtime 在当前 Owner 任务现场显示精确授权卡片`
+      return `Owner ${activeOwner.owner?.id ?? '未知'} 不能通过 Shell 参数直接申请沙箱升级；移除 sandbox_permissions 后先在 workspace-write 运行。只有该精确命令实际被沙箱拒绝且需要 worktree 外资源时，才可调用 owner_host_exec`
     }
     if (OWNER_DESCENDANT_TOOLS.has(toolName)) {
       return `Owner ${activeOwner.owner?.id ?? '未知'} 同时只能运行一个执行子线程，不能再创建后代 Agent`

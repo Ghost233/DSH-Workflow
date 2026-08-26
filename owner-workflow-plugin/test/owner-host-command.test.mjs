@@ -155,6 +155,66 @@ test('Owner 宿主命令拒绝 worktree 外工作目录和授权后的失效绑�
   }
 })
 
+test('Owner 宿主命令在请求授权前拒绝目录探测和复合命令', async () => {
+  const current = await fixture()
+  try {
+    await assert.rejects(current.runtime.executeOwnerHostCommand({
+      command: 'ls -la',
+      description: '查看目录',
+      justification: '检查工程文件。',
+    }, current.exec), /不能用于 pwd、目录或 Git 状态探测/u)
+    await assert.rejects(current.runtime.executeOwnerHostCommand({
+      command: "pwd && printf '\\nFiles:\\n' && ls",
+      description: '查看目录',
+      justification: '检查工程文件。',
+    }, current.exec), /只能原样重试一条命令/u)
+    assert.equal(current.calls.approvals.length, 0)
+    assert.equal(current.calls.shells.length, 0)
+  } finally {
+    await current.dispose()
+  }
+})
+
+test('Owner 宿主命令的授权和执行都会在 timeout_ms 后结算', async () => {
+  const approvalTimeout = await fixture()
+  try {
+    approvalTimeout.runtime.ctx.approval.request = async request => {
+      approvalTimeout.calls.approvals.push(request)
+      return new Promise(() => {})
+    }
+    await assert.rejects(approvalTimeout.runtime.executeOwnerHostCommand({
+      command: 'flutter test',
+      description: '运行 Flutter 测试',
+      justification: '需要共享 SDK 缓存。',
+      timeout_ms: 50,
+    }, approvalTimeout.exec), /授权等待超过 50ms/u)
+    assert.equal(approvalTimeout.calls.approvals.length, 1)
+    assert.equal(approvalTimeout.calls.approvals[0].signal.aborted, true)
+    assert.equal(approvalTimeout.active.hostCommandPending, false)
+  } finally {
+    await approvalTimeout.dispose()
+  }
+
+  const executionTimeout = await fixture()
+  try {
+    executionTimeout.runtime.ctx.shell.run = async spec => {
+      executionTimeout.calls.shells.push(spec)
+      return new Promise(() => {})
+    }
+    await assert.rejects(executionTimeout.runtime.executeOwnerHostCommand({
+      command: 'flutter test',
+      description: '运行 Flutter 测试',
+      justification: '需要共享 SDK 缓存。',
+      timeout_ms: 50,
+    }, executionTimeout.exec), /执行超过 50ms/u)
+    assert.equal(executionTimeout.calls.shells.length, 1)
+    assert.equal(executionTimeout.calls.shells[0].signal.aborted, true)
+    assert.equal(executionTimeout.active.hostCommandPending, false)
+  } finally {
+    await executionTimeout.dispose()
+  }
+})
+
 test('Owner 任务没有开放回合时，宿主命令给出可恢复错误且不执行', async () => {
   const current = await fixture()
   try {

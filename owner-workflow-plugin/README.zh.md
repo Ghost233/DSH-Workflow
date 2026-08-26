@@ -5,9 +5,10 @@
 ## 当前契约
 
 - 代码写入只使用 `DSH_PLAN_V2`；没有 Quick 模式。
+- `workflow_start` 会启动一个可续接 Plan Agent。它在同一子会话中处理首次规划、Registry 批准后的重新规划以及最多一次自动修订；独立 Reviewer 仍保持一次性只读审查。主会话只接收 Registry 或最终计划的原生批准请求，以及明确的失败回报。
 - 同一个 Git 项目同一时间只允许一个未结束 Workflow。Workflow 绑定一棵以创建会话为根的 DSH 会话树；其他普通 fork 只用于讨论，同一 Workflow 内的 DAG 仍可并行多个 Owner task。
 - 普通讨论不会自动进入 DAG。只有用户明确要求“加入当前 Workflow”“更新 DAG”“并行”或“新增前置”时才保存 Intent；保存后 Harness 会明确询问“现在重新规划 / 继续讨论”，后者不会唤醒 Planner。
-- 用户始终只与主代理沟通。需要实际执行但不修改仓库的任务使用独立 Operation；同一 Git 项目同时只允许一个未结束 Operation，对应一个可续接 Operator 子线程。重复启动只返回当前 Operation，不创建第二个子线程。
+- 用户始终只与主代理沟通。需要实际执行但不修改业务文件的任务使用独立 Operation；它不要求 Git 仓库：Git 工作区使用仓库根，非 Git 目录使用当前会话工作目录。同一工作区同时只允许一个未结束 Operation，对应一个可续接 Operator 子线程。重复启动只返回当前 Operation，不创建第二个子线程。
 - Operation 不内置 ADB、Docker 或项目临时命令。Operator 使用通用 `operation_exec` 逐条执行一次性命令；多个检查不能用 `&&`、分号、后台符号、管道、反引号或命令替换拼接。Operation 专用审批插件先匹配用户在本次主会话明确放行的字面前缀；未命中时先执行 Operation 的显式人工风险门禁，再复用 `dsh-approve-for-me` 的固定风险、配置白名单和可选无工具模型复核。自动通过只允许当前精确命令一次；任何异常、超时、不匹配或高风险都持久化请求、暂停 Operator 并回到主线程原生多选项问询。Operation 不监听标准 `approval/request`，不会接管主代理的 Bash/PowerShell；主代理仍使用独立安装的 `dsh-approve-for-me`。问询提供“仅允许这一次/拒绝”，存在最小 `approval_prefix` 时增加“本次会话允许此前缀”，并允许在“其他”中输入更窄前缀。会话前缀只保存在当前进程，主会话结束或 Harness 重启后失效。Operation 终态仍会释放驻留资源并通过 Workspace Registry 归档持久会话，状态和事件继续保留供审计。
 - 旧 V1 计划只允许查询和导出，不允许启动、调度、恢复、验证、合并或 finalize。
 - Owner Registry 是 Git 跟踪的责任域真源。Registry 变化必须经过提案、精确 digest 审批和运行时应用，不能由规划器或 Owner 直接写入。
@@ -79,13 +80,12 @@ dsh --profile web
 3. Operator 返回 `need_input` 时，主代理在当前对话取得信息并调用 `operation_continue`。`operation_exec` 需要扩大只读沙箱时，专用审批插件先检查本次会话前缀，再复用当前 Profile 中 `approve-for-me` 设置的固定风险、白名单和可选模型复核；通过时只自动执行当前精确命令一次。未通过时 Operator 返回 `need_approval`，主代理立即调用 `operation_approve`。Harness 会在当前主对话显示包含动作、风险、精确命令和可选前缀的原生多选项问询；只有用户明确选择“仅允许这一次”或“本次会话允许此前缀”才恢复同一个 Operator。普通文本不能产生授权。Operator 会主动回报；`operation_status` 只用于用户明确查询或恢复中断现场，不能轮询。使用 `operation_cancel` 取消。
    Operation 活动期间，当前会话头部会显示“等待 N”；侧边栏底部的全局列表会按会话分组显示所有等待事项。列表状态包括“等待后台 Operator”“等待用户补充信息”和“等待用户授权决定”。
 4. 需要改代码时先使用 `workflow_preflight`。它返回当前 Git 基线、未提交改动与 `baseDigest`；只有 `canStart=true` 时，才能将同一个摘要传给 `workflow_start`。这一步不会自动提交、暂存、丢弃或掩盖既有改动；子模块内部脏改动必须由用户先处理。
-5. `workflow_start` 从预检基线创建 workflow 分支，并让规划子代理返回 `DSH_PLAN_V2`、Owner 定义、验证定义和任务 DAG。
+5. `workflow_start` 从预检基线创建 workflow 分支，并启动可续接 Plan Agent。Runtime 在内部让它生成 `DSH_PLAN_V2`、Owner 定义、验证定义和任务 DAG，再调用独立 Reviewer 审查；主会话不得手工串联 `workflow_recover`、`workflow_plan_review` 或 `workflow_plan_revise`。
    计划中的 `owners` 只选择 Owner ID；Runtime 从正式 Registry 确定性注入完整 Owner 定义，再校验任务写入范围。Planner 的描述改写或 scope 扩大不会成为权限来源。
-   如果规划子代理连续两次提交都不满足契约，工具返回 `DSH_WORKFLOW_PLANNING_FAILED_V1`，其中包含真实 `workflowId`、错误、失败次数和 `recoverable`。可恢复时必须对同一个 ID 调用 `workflow_recover`，不能重新创建 Workflow；达到有界上限后才交给用户决定。
-6. 如果规划结果包含 Registry 变化，先使用 `workflow_owner_change_propose` 生成提案和 digest，随后立即调用 `workflow_owner_change_approve`。该工具自行显示 Harness 原生“同意/不同意/自定义输入”问询；只有明确选择“同意”才应用提案，自定义输入只作为修改意见。
-7. 使用 `workflow_plan_review` 执行独立计划审查；需要修改时使用 `workflow_plan_revise`，审查通过后立即调用 `workflow_plan_approve`。该工具用同样的原生问询固定 `plan_digest` 和 `registry_digest`，不再要求用户复制批准口令。
-   计划 Reviewer 必须通过内部 `workflow_plan_review_submit` 提交结构化结果，状态仅允许 `passed` 或 `needs_revision`；首次契约错误由 Runtime 自动携带错误重试一次。计划审查默认最多允许三轮修订，每次修订都会归档对应审查、废止旧摘要的审查与批准，并要求重新独立审查。计划工具会返回可直接调用的 `nextTool` 与 `nextArgs`，主编排者不得自行改写。达到上限后 Runtime 会确定性要求调用 `workflow_plan_revision_extend`；该工具显示原生“同意/不同意/自定义输入”问询，只有用户同意才为当前 Workflow 增加一组额度并继续 `workflow_plan_revise`。不得调用 `workflow_recover`、取消或重新创建 Workflow；`maxPlanRevisionTurns` 也不是 `workflow_start` 自然语言需求可以设置的字段。
-   修订候选连续两次不满足 V2 契约时返回 `DSH_WORKFLOW_PLAN_REVISION_FAILED_V1`，保留上一版计划、Reviewer 结果和成功修订额度；可恢复时只能重试同一个 Workflow，不能取消或重新创建。修订成功后的重复调用返回 `DSH_WORKFLOW_PLAN_REVISION_SKIPPED_V1`，并确定性指向重新审查。
+   Plan Agent 或内部 Reviewer 失败时会主动回报明确原因；主会话保留现场并等待用户决定，不会自行重建 Workflow 或串联旧的规划工具。
+6. 如果规划结果包含 Registry 变化，Plan Agent 会持久化提案并主动回报摘要。主会话只使用回报中的 digest 调用 `workflow_owner_change_approve`；该工具自行显示 Harness 原生“同意/不同意/自定义输入”问询。批准后同一个 Plan Agent 自动继续重新规划。
+7. Runtime 自动执行独立计划审查；若 Reviewer 提出问题，最多将意见回传给同一个 Plan Agent 自动修订一次。审查通过后 Runtime 主动回报 `plan_digest` 和 `registry_digest`，主会话才调用 `workflow_plan_approve`。该工具用原生问询固定两个 digest，不再要求用户复制批准口令。
+   计划 Reviewer 通过内部 `workflow_plan_review_submit` 提交结构化结果，状态仅允许 `passed` 或 `needs_revision`；首次契约错误由 Runtime 自动携带错误重试一次。审查需要修订时，Runtime 最多把问题回传给同一个 Plan Agent 一次；仍未通过则主动回报并停止。主会话不读取或执行旧 `nextTool` / `nextArgs` 来继续规划。
 8. 计划批准后 Runner daemon 自动接管，不需要手工运行脚本。`workflow_plan_approve` 首先返回 `runner.status=queued`；此时只能说明“已排队”，等待 Workflow 进入 `running` 后才能说明 Owner 正在执行。需要临时禁用自动 Runner 时，可在启动 Harness 前设置 `DSH_OWNER_WORKFLOW_RUNNER=0`；`run-owner-workflow.sh --workflow-id wf-...` 仅保留为诊断兼容入口。
 
 9. 执行期间可以在同一会话树的任意普通讨论分支明确提交 `workflow_intent_submit`。工具保存 Intent 后显示“现在重新规划 / 继续讨论”原生问询；只有前者会调用一次 Planner。候选依次经过 `workflow_revision_review` 和根会话中的 `workflow_revision_approve`。不可变版本只保存 `number`、`parent`、`planDigest` 和完整 `DSH_PLAN_V2` 快照。

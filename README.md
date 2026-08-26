@@ -36,7 +36,7 @@ npm 和独立子模块源码启动模式都会默认传递 `--no-open`，不会�
 ./start-owner-workflow.sh
 ```
 
-在 Harness 中选择 `owner-workflow` Agent preset 后，直接用自然语言描述需求即可，用户始终只和主代理沟通。只读代码审计进入 `workflow_audit`；需要实际执行但不修改仓库的任务进入后台 Operation；需要修改仓库时才执行 `workflow_preflight` → `workflow_start`，创建独立 workflow 分支和 worktree。既有改动和子模块内部改动不会被自动提交、暂存、丢弃或隐藏。开发工作流使用带优先级与失败策略的 `DSH_PLAN_V2` 任务级 DAG、Owner Registry 审批、固定验证和事件驱动 `workflowd` 调度；没有 Quick 模式。
+在 Harness 中选择 `owner-workflow` Agent preset 后，直接用自然语言描述需求即可，用户始终只和主代理沟通。只读代码审计进入 `workflow_audit`；需要实际执行但不修改仓库的任务进入后台 Operation；需要修改仓库时才执行 `workflow_preflight` → `workflow_start`，创建独立 workflow 分支和 worktree。`workflow_start` 会启动一个可续接的 Plan Agent，由 Runtime 在内部完成规划、独立审查和最多一次自动修订；主会话只在 Owner Registry 或最终计划需要用户批准时介入。既有改动和子模块内部改动不会被自动提交、暂存、丢弃或隐藏。开发工作流使用带优先级与失败策略的 `DSH_PLAN_V2` 任务级 DAG、Owner Registry 审批、固定验证和事件驱动 `workflowd` 调度；没有 Quick 模式。
 
 Operation Operator 默认继承主代理模型。如需使用低成本模型，可在启动前设置：
 
@@ -44,7 +44,7 @@ Operation Operator 默认继承主代理模型。如需使用低成本模型，�
 DSH_OWNER_WORKFLOW_OPERATION_MODEL=<模型编号> ./start-owner-workflow-submodule.sh
 ```
 
-跨 provider 时同时设置 `DSH_OWNER_WORKFLOW_OPERATION_PROVIDER`。同一个 Git 项目同一时间只保留一个未结束 Operation 和一个可续接 Operator 子线程；重复启动只返回当前状态。Operation 使用通用受控能力并逐条执行一次性命令，不把 ADB、Docker 或某个项目的临时命令固化进插件。`operation_exec` 的专用审批插件依次检查：用户在本次主会话明确放行的字面前缀、Operation 必须人工处理的设备/系统/网络风险、`dsh-approve-for-me` 的固定风险与配置白名单，以及可选的无工具模型复核。自动链路只产生当前精确命令的一次性授权；任何不匹配、异常、超时或高风险都回到主线程原生多选项问询。主代理自己的标准 Bash/PowerShell 审批仍完全由已安装的 `dsh-approve-for-me` 处理，两条链路互不接管。前缀授权不写入长期状态，主会话结束或 Harness 重启后自动失效。Operation 终态释放驻留资源并归档持久会话，历史仍可审计。
+跨 provider 时同时设置 `DSH_OWNER_WORKFLOW_OPERATION_PROVIDER`。Operation 不要求 Git 仓库：Git 工作区使用仓库根，非 Git 目录使用当前会话工作目录；同一工作区同一时间只保留一个未结束 Operation 和一个可续接 Operator 子线程，重复启动只返回当前状态。Operation 使用通用受控能力并逐条执行一次性命令，不把 ADB、Docker 或某个项目的临时命令固化进插件。`operation_exec` 的专用审批插件依次检查：用户在本次主会话明确放行的字面前缀、Operation 必须人工处理的设备/系统/网络风险、`dsh-approve-for-me` 的固定风险与配置白名单，以及可选的无工具模型复核。自动链路只产生当前精确命令的一次性授权；任何不匹配、异常、超时或高风险都回到主线程原生多选项问询。主代理自己的标准 Bash/PowerShell 审批仍完全由已安装的 `dsh-approve-for-me` 处理，两条链路互不接管。前缀授权不写入长期状态，主会话结束或 Harness 重启后自动失效。Operation 终态释放驻留资源并归档持久会话，历史仍可审计。
 
 Owner Registry 提案与 DAG 计划批准使用 Harness 原生问询面板。编排者直接调用 `workflow_owner_change_approve` 或 `workflow_plan_approve`，面板提供“同意”“不同意”和自定义输入；只有明确选择“同意”才会修改 Registry 或固定计划。编排者不会再输出要求用户复制回复的批准口令。
 

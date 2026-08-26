@@ -2,6 +2,10 @@ import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 
 const OWNER_HOST_EXEC_TOOL = 'owner_host_exec'
+const DEFAULT_TIMEOUT_MS = 5 * 60_000
+const MAX_TIMEOUT_MS = 30 * 60_000
+const COMPOUND_COMMAND = /(?:&&|\|\||[;|<>]|[`]|\$\()/u
+const LOCAL_INSPECTION_COMMAND = /^(?:pwd|ls|find|tree)(?:\s|$)|^git\s+(?:status|log|diff|branch|remote|rev-parse)(?:\s|$)/u
 
 function sessionIdOf(exec) {
   return exec?.agent?.id ?? exec?.agent?.session?.header?.id
@@ -12,6 +16,45 @@ function requiredText(value, label) {
     throw new Error(`owner_host_exec 必须提供非空 ${label}`)
   }
   return value.trim()
+}
+
+function commandTimeout(value) {
+  if (value === undefined) return DEFAULT_TIMEOUT_MS
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error('owner_host_exec 的 timeout_ms 必须是正数')
+  }
+  return Math.min(Math.floor(value), MAX_TIMEOUT_MS)
+}
+
+function assertHostCommand(command) {
+  if (COMPOUND_COMMAND.test(command) || /[\r\n]/u.test(command)) {
+    throw new Error('owner_host_exec 只能原样重试一条命令，不能使用管道、重定向或命令连接符')
+  }
+  if (LOCAL_INSPECTION_COMMAND.test(command)) {
+    throw new Error('owner_host_exec 不能用于 pwd、目录或 Git 状态探测；请在 workspace-write 沙箱中直接执行')
+  }
+}
+
+async function awaitWithDeadline(callback, parentSignal, timeoutMs, phase) {
+  const timeout = new AbortController()
+  const timer = globalThis.setTimeout(() => {
+    timeout.abort(new Error(`owner_host_exec ${phase}超过 ${timeoutMs}ms 未完成`))
+  }, timeoutMs)
+  const signal = parentSignal === undefined
+    ? timeout.signal
+    : AbortSignal.any([parentSignal, timeout.signal])
+  let onAbort
+  const aborted = new Promise((_, reject) => {
+    onAbort = () => reject(signal.reason instanceof Error ? signal.reason : new Error(`owner_host_exec ${phase}已中止`))
+    if (signal.aborted) onAbort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try {
+    return await Promise.race([Promise.resolve().then(() => callback(signal)), aborted])
+  } finally {
+    globalThis.clearTimeout(timer)
+    signal.removeEventListener('abort', onAbort)
+  }
 }
 
 function isWithin(root, candidate) {
@@ -66,10 +109,8 @@ export async function executeOwnerHostCommand(runtime, args, exec) {
   const description = requiredText(args?.description, 'description')
   const justification = requiredText(args?.justification, 'justification')
   const workdir = resolveWorkdir(active, args?.workdir)
-  const timeoutMs = args?.timeout_ms
-  if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
-    throw new Error('owner_host_exec 的 timeout_ms 必须是正数')
-  }
+  assertHostCommand(command)
+  const timeoutMs = commandTimeout(args?.timeout_ms)
 
   const approval = runtime.ctx?.approval
     ?? (typeof runtime.ctx?.get === 'function' ? runtime.ctx.get('approval') : undefined)
@@ -97,11 +138,14 @@ export async function executeOwnerHostCommand(runtime, args, exec) {
         `精确命令：${command}`,
         '批准只允许以上命令以 danger-full-access 执行一次。',
       ].join('\n'),
-      signal: exec?.signal,
+      signal: undefined,
     }
     active.hostApprovalRequest = approvalRequest
     try {
-      outcome = await approval.request(approvalRequest)
+      outcome = await awaitWithDeadline(async signal => {
+        approvalRequest.signal = signal
+        return approval.request(approvalRequest)
+      }, exec?.signal, timeoutMs, '授权等待')
     } catch (error) {
       if (/outside an open turn/u.test(String(error?.message ?? error))) {
         throw new Error('当前 Owner 任务没有开放回合，无法显示宿主命令授权卡片；已保留现场，恢复该 Owner 任务后可重试', { cause: error })
@@ -136,8 +180,8 @@ export async function executeOwnerHostCommand(runtime, args, exec) {
     const spec = shell.resolve({
       command,
       workdir: checkedWorkdir,
-      signal: exec?.signal,
-      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      signal: undefined,
+      timeoutMs,
       stdoutMaxBytes: 256 * 1024,
       env: { GIT_OPTIONAL_LOCKS: '0' },
       sandboxPolicy: {
@@ -148,7 +192,7 @@ export async function executeOwnerHostCommand(runtime, args, exec) {
     })
     let result
     try {
-      result = await shell.run(spec)
+      result = await awaitWithDeadline(signal => shell.run({ ...spec, signal }), exec?.signal, timeoutMs, '执行')
     } catch (error) {
       await runtime.appendWorkflowLog?.(active.workflowRoot, active.workflowId, 'owner.host-command-failed', {
         ownerId: active.owner.id,

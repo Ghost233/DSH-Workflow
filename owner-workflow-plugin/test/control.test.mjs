@@ -2552,6 +2552,85 @@ test('规划契约失败返回完整 Workflow ID，并在同一现场有界恢�
   }
 })
 
+test('workflow_start 使用一个可续接 Plan Agent，而不是同步串联规划工具', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-owner-continuable-plan-'))
+  const calls = { starts: [], followups: [] }
+  const ctx = {
+    subagents: {
+      async startContinuable(spec) {
+        calls.starts.push(spec)
+        return { childId: spec.childId, messageId: 'plan-initial-message' }
+      },
+      async followup(parent, childId, content, options) {
+        calls.followups.push({ parent, childId, content, options })
+        return 'plan-followup-message'
+      },
+    },
+  }
+  const runtime = createOwnerWorkflowRuntime(ctx, { ownerMemoryEnabled: false })
+  try {
+    await git(root, ['init', '-b', 'main'])
+    await git(root, ['config', 'user.email', 'owner-workflow@test.invalid'])
+    await git(root, ['config', 'user.name', 'Owner Workflow Test'])
+    await writeFile(join(root, 'README.md'), '可续接 Plan Agent 测试\n', 'utf8')
+    await git(root, ['add', 'README.md'])
+    await git(root, ['commit', '-m', '初始化可续接 Plan Agent 测试'])
+    const agent = {
+      id: 'continuable-plan-parent',
+      options: { provider: 'test-provider', model: 'test-model' },
+      session: { id: 'continuable-plan-parent', header: { cwd: root } },
+    }
+    await runtime.modeEnable(agent)
+    const preflight = await runtime.preflightWorkflow(agent)
+    const started = await runtime.startWorkflow(
+      agent,
+      '创建一个最小可续接 Plan Agent',
+      undefined,
+      preflight.baseDigest,
+      { planningMode: 'continuable' },
+    )
+    assert.equal(started.contract, 'DSH_WORKFLOW_PLAN_AGENT_STARTED_V1')
+    assert.equal(calls.starts.length, 1)
+    assert.equal(calls.starts[0].label, `Plan ${started.workflowId}`)
+    assert.match(calls.starts[0].request.prompt[0].text, /workflow_plan_submit/u)
+    const child = {
+      id: started.plannerSessionId,
+      session: { id: started.plannerSessionId, append() {} },
+    }
+    runtime.setupContinuableChild({ agent: child, systemPrompt: { section() {} } })
+    assert.equal(runtime.agentRoles.get(child.id).role, 'planner')
+    assert.equal(runtime.agentRoles.get(child.id).continuablePlanning, true)
+    assert.equal(calls.followups.length, 0)
+    const plan = {
+      contract: 'DSH_PLAN_V2',
+      summary: '单 Owner 的最小计划',
+      registryOperation: addOwnerOperation('app'),
+      owners: [{ id: 'app' }],
+      verifications: [{ id: 'unit', run: ['node', '--test'] }],
+      tasks: [{
+        id: 'T1', role: 'work', ownerId: 'app', title: '实现最小功能', dependsOn: [],
+        write: ['src/app/**'], verify: ['unit'], done: ['最小功能完成'],
+      }],
+    }
+    const submitted = await runtime.submitPlannerPlan(child, plan)
+    assert.equal(submitted.status, 'awaiting_registry_approval')
+    const registryStatus = await runtime.registryStatus(agent, started.workflowId)
+    assert.ok(registryStatus.pendingProposal)
+    await runtime.approveOwnerChange(agent, started.workflowId, registryStatus.pendingProposal.digest)
+    assert.equal(calls.followups.length, 1)
+    assert.equal(calls.followups[0].childId, child.id)
+    assert.match(calls.followups[0].content[0].text, /workflow_plan_submit/u)
+    const continued = JSON.parse(await readFile(
+      join(root, '.dsh-workflow', 'workflows', `${started.workflowId}.json`),
+      'utf8',
+    ))
+    assert.equal(await git(root, ['rev-parse', continued.workflowBranch]), await git(root, ['rev-parse', 'main']))
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到最终交付', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-full-workflow-'))
   const runtime = createOwnerWorkflowRuntime({}, {

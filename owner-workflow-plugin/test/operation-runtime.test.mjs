@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
@@ -10,9 +10,9 @@ import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
 
 const execFileAsync = promisify(execFile)
 
-async function operationFixture() {
+async function operationFixture({ git = true } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-operation-runtime-'))
-  await execFileAsync('git', ['init', '-b', 'main'], { cwd: root })
+  if (git) await execFileAsync('git', ['init', '-b', 'main'], { cwd: root })
   const calls = {
     starts: [],
     reports: [],
@@ -233,6 +233,39 @@ test('主代理启动低成本后台 Operator，继承工具并用 read-only 文
       fixture.runtime.operationStatus(fixture.parent, 'op-shortened'),
       error => /不存在或状态不可读/u.test(error.message) && !error.message.includes(fixture.root),
     )
+  } finally {
+    await fixture.dispose()
+  }
+})
+
+test('Operation 在非 Git 工作区直接以当前目录持久化状态', async () => {
+  const fixture = await operationFixture({ git: false })
+  try {
+    const agent = {
+      ...fixture.parent,
+      id: 'manual-session',
+      session: {
+        ...fixture.parent.session,
+        id: 'manual-session',
+        header: { ...fixture.parent.session.header, id: 'manual-session' },
+      },
+      ctx: {
+        ...fixture.parent.ctx,
+        get(name) {
+          if (name === 'agentPresets') return { composedPreset: () => 'default' }
+          return undefined
+        },
+      },
+    }
+    const enabled = await fixture.runtime.modeEnable(agent)
+    assert.equal(enabled.root, fixture.root)
+    const started = await fixture.runtime.startOperation(agent, operationSpec())
+    assert.equal(started.status, 'running')
+    assert.equal(fixture.runtime.actorRoot({ agent }), fixture.root)
+    await access(join(fixture.root, '.dsh-workflow', 'operations'))
+    await assert.rejects(access(join(fixture.root, '.dsh-workflow', 'worktrees')))
+    const status = await fixture.runtime.operationStatus(agent, started.operationId)
+    assert.equal(status.operationId, started.operationId)
   } finally {
     await fixture.dispose()
   }
