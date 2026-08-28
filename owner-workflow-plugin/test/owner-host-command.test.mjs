@@ -105,6 +105,23 @@ test('Owner 宿主命令把授权留在当前任务现场，并只执行获批�
   }
 })
 
+test('Owner 宿主命令接受结构化 argv，参数中的连接符不被误判为复合命令', async () => {
+  const current = await fixture()
+  try {
+    const result = await current.runtime.executeOwnerHostCommand({
+      argv: ['flutter', 'test', '--name', 'A; B'],
+      description: '运行包含特殊字符名称的测试',
+      justification: 'Flutter 需要访问共享 SDK 缓存。',
+    }, current.exec)
+
+    assert.equal(result.exitCode, 0)
+    assert.equal(current.calls.shells[0].command, "flutter test --name 'A; B'")
+    assert.match(current.calls.approvals[0].reason, /flutter test --name 'A; B'/u)
+  } finally {
+    await current.dispose()
+  }
+})
+
 test('拒绝、取消或不可用授权都不会执行 Owner 宿主命令', async () => {
   for (const outcome of ['rejected', 'cancelled', 'unavailable']) {
     const current = await fixture()

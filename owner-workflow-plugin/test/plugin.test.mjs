@@ -67,7 +67,8 @@ test('插件注册主编排工具、全局守卫和九个中文 Skill', () => {
     assert.ok(tools.some(tool => tool.name === name), name)
   }
   const ownerHostExec = tools.find(tool => tool.name === 'owner_host_exec')
-  assert.deepEqual(ownerHostExec.parameters.required, ['command', 'description', 'justification'])
+  assert.deepEqual(ownerHostExec.parameters.required, ['description', 'justification'])
+  assert.equal(ownerHostExec.parameters.properties.argv.maxItems, 128)
   assert.equal(ownerHostExec.parameters.properties.sandbox_permissions, undefined)
   for (const name of ['operation_start', 'operation_status', 'operation_continue', 'operation_approve', 'operation_cancel', 'operation_report', 'operation_exec']) {
     assert.ok(tools.some(tool => tool.name === name), name)
@@ -470,7 +471,12 @@ test('Owner 工作流提示要求新 Flutter 验证显式 cwd，且不提供 Qui
     plan: { contract: 'DSH_PLAN_V2', tasks: [{ id: 'T1', verify: ['flutter-test'] }] },
   }
   const task = { id: 'T1', title: '运行 Flutter 测试', write: ['flutter_app/test/core_service_test.dart'] }
-  assert.match(ownerTaskPrompt(state, task, owner, [task], { digest: 'empty', documents: [] }, { notes: [] }), /固定 argv 与 cwd/u)
-  assert.match(ownerRolePrompt(owner), /显式声明包根 cwd/u)
+  const taskPrompt = ownerTaskPrompt(state, task, owner, [task], { digest: 'empty', documents: [] }, { notes: [] })
+  assert.match(taskPrompt, /固定 argv 与 cwd/u)
+  assert.match(taskPrompt, /workspace-write；它是会话权限/u)
+  assert.match(taskPrompt, /省略 sandbox_permissions 和 justification/u)
+  const rolePrompt = ownerRolePrompt(owner)
+  assert.match(rolePrompt, /显式声明包根 cwd/u)
+  assert.match(rolePrompt, /不能把 "workspace-write" 当作参数/u)
   assert.doesNotMatch(skill.content, /\bstage\b|\bstages\b|owner_add/u)
 })

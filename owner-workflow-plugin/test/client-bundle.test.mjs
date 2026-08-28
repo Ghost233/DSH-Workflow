@@ -29,7 +29,7 @@ test('等待列表客户端产物与源码一致并登记正式、本地两个�
   ])
 })
 
-test('行动收件箱同时登记会话头部、侧边栏和全屏浮层 Slot', async () => {
+test('运行状态同时登记会话头部、工作区、侧边栏和全屏待处理 Slot', async () => {
   const registrations = []
   const source = await readFile(CLIENT_BUNDLE, 'utf8')
   const style = { dataset: {} }
@@ -78,22 +78,46 @@ test('行动收件箱同时登记会话头部、侧边栏和全屏浮层 Slot', 
   aliasClient.apply({ ...context })
   assert.deepEqual(slotNames, [
     'conversation.session.header.actions',
+    'sidebar.workspace.action',
     'sidebar.footer.action',
     'shell.overlay',
   ])
 })
 
-test('等待列表客户端显示 Runner 与 Owner 任务执行统计', async () => {
+test('运行状态只通过可重连 SSE 接收更新，总入口按工作区和会话分组且不显示刷新按钮', async () => {
   const source = await readFile(CLIENT_BUNDLE, 'utf8')
-  assert.match(source, /waiting_runner/u)
-  assert.match(source, /running_owner/u)
+  assert.match(source, /\/owner-workflow\/api\/waits\/events/u)
+  assert.match(source, /new EventSource/u)
+  assert.match(source, /waitEvents\.onopen/u)
+  assert.match(source, /实时连接已断开，正在重连/u)
+  assert.match(source, /dsh-owner-wait-workspace-group/u)
+  assert.match(source, /sidebar\.workspace\.action/u)
+  assert.doesNotMatch(source, /WAIT_ENDPOINT/u)
+  assert.doesNotMatch(source, /refreshWaits/u)
+  assert.doesNotMatch(source, /dsh-owner-wait-refresh/u)
+})
+
+test('运行状态按需要处理、总览、主线程和子代理分类显示确定性状态', async () => {
+  const source = await readFile(CLIENT_BUNDLE, 'utf8')
+  assert.match(source, /DSH_RUNTIME_STATUS_V1/u)
+  assert.match(source, /需要处理/u)
+  assert.match(source, /总览/u)
+  assert.match(source, /主线程/u)
+  assert.match(source, /子代理/u)
+  assert.match(source, /空闲，等待接管/u)
+  assert.match(source, /未观测/u)
+  assert.match(source, /已关闭/u)
+  assert.match(source, /已阻塞/u)
+  assert.match(source, /waiting_owner_approval/u)
+  assert.match(source, /Owner 等待授权/u)
   assert.match(source, /Runner 离线/u)
   assert.match(source, /未执行.*执行中/u)
   assert.match(source, /Runner 会继续驱动 Harness 内的 Owner 子代理/u)
+  assert.match(source, /同一后台子代理正以可续接状态等待，并非失败或被中断/u)
   assert.match(source, /pendingInteraction/u)
   assert.match(source, /ctx\.sessions\.open/u)
   assert.match(source, /dsh-synapse-switch/u)
-  assert.match(source, /行动收件箱/u)
+  assert.match(source, /运行状态/u)
   const styleStart = source.indexOf('.dsh-owner-wait-root')
   const styleEnd = source.indexOf('`.trim()', styleStart)
   const inboxStyles = source.slice(styleStart, styleEnd)
@@ -103,4 +127,11 @@ test('等待列表客户端显示 Runner 与 Owner 任务执行统计', async ()
   assert.match(inboxStyles, /--dsw-alias-state-warn-primary/u)
   assert.match(inboxStyles, /--dsw-alias-state-error-primary/u)
   assert.match(inboxStyles, /--dsw-alias-state-business-primary/u)
+})
+
+test('侧栏运行状态使用视口定位，避免被侧栏裁剪和遮住底部操作区', async () => {
+  const source = await readFile(CLIENT_BUNDLE, 'utf8')
+  assert.match(source, /position: 'fixed'/u)
+  assert.match(source, /window\.innerHeight - rect\.top \+ 8/u)
+  assert.match(source, /window\.innerWidth <= 720 \? 8 : rect\.right \+ 8/u)
 })

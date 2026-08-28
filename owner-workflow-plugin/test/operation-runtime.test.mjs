@@ -10,7 +10,7 @@ import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
 
 const execFileAsync = promisify(execFile)
 
-async function operationFixture({ git = true } = {}) {
+async function operationFixture({ git = true, runtimeConfig = {} } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-operation-runtime-'))
   if (git) await execFileAsync('git', ['init', '-b', 'main'], { cwd: root })
   const calls = {
@@ -32,6 +32,7 @@ async function operationFixture({ git = true } = {}) {
     questionCustom: '',
     questionError: undefined,
     shellDenied: false,
+    shellExitCode: 0,
   }
   const subagents = {
     async start(provider, spec) {
@@ -65,7 +66,7 @@ async function operationFixture({ git = true } = {}) {
     async run(spec) {
       calls.shells.push(spec)
       return {
-        exitCode: 0,
+        exitCode: calls.shellExitCode,
         signal: null,
         timedOut: false,
         aborted: false,
@@ -124,7 +125,7 @@ async function operationFixture({ git = true } = {}) {
       return undefined
     },
   }
-  const runtime = createOwnerWorkflowRuntime(ctx, { operationAgentModel: 'low-cost-model' })
+  const runtime = createOwnerWorkflowRuntime(ctx, { operationAgentModel: 'low-cost-model', ...runtimeConfig })
   const toolNames = [
     'read',
     'grep',
@@ -370,6 +371,201 @@ test('Operation 专用审批插件先复用 approve-for-me 固定风险与白名
     assert.equal(fixture.calls.shells[0].sandboxPolicy.mode, 'danger-full-access')
     const status = await fixture.runtime.operationStatus(fixture.parent, started.operationId)
     assert.equal(status.events.some(event => event.type === 'operation.command_auto_approved'), true)
+  } finally {
+    await fixture.dispose()
+  }
+})
+
+test('Operation 接受结构化 argv 并生成可审计的精确命令', async () => {
+  const fixture = await operationFixture()
+  try {
+    const started = await fixture.runtime.startOperation(fixture.parent, operationSpec())
+    const childId = fixture.calls.starts[0].childId
+    const result = await fixture.runtime.executeOperationCommand({
+      operation_id: started.operationId,
+      argv: ['printf', 'A B'],
+      description: '输出带空格的诊断参数',
+      effect: 'read-only',
+    }, {
+      agent: { id: childId, session: { id: childId } },
+      signal: new AbortController().signal,
+    })
+
+    assert.equal(result.exitCode, 0)
+    assert.equal(fixture.calls.shells[0].command, "printf 'A B'")
+  } finally {
+    await fixture.dispose()
+  }
+})
+
+test('Operation 的公开资料读取必须改用 web_search/web_fetch，curl 不会被静默放行', async () => {
+  const fixture = await operationFixture()
+  try {
+    const started = await fixture.runtime.startOperation(fixture.parent, operationSpec())
+    const childId = fixture.calls.starts[0].childId
+    const result = await fixture.runtime.executeOperationCommand({
+      operation_id: started.operationId,
+      argv: ['curl', '-L', '--max-time', '20', 'https://raw.githubusercontent.com/reown-com/reown-swift/main/README.md'],
+      description: '读取公开 Reown 官方说明',
+      effect: 'read-only',
+    }, {
+      agent: { id: childId, session: { id: childId } },
+      signal: new AbortController().signal,
+    })
+
+    assert.equal(result.contract, 'DSH_OPERATION_ADJUSTMENT_V1')
+    assert.equal(result.code, 'public_web_tool_required')
+    assert.match(result.nextAction, /web_search|web_fetch/u)
+    assert.equal(fixture.calls.shells.length, 0)
+    assert.equal(fixture.calls.questions.length, 0)
+  } finally {
+    await fixture.dispose()
+  }
+})
+
+test('等待授权时可原子拒绝当前命令并改向同一 Operator，且不会强制中断或并发普通问询', async () => {
+  const fixture = await operationFixture()
+  try {
+    const started = await fixture.runtime.startOperation(fixture.parent, operationSpec())
+    const childId = fixture.calls.starts[0].childId
+    const childExec = {
+      agent: { id: childId, session: { id: childId } },
+      signal: new AbortController().signal,
+    }
+    const waiting = await fixture.runtime.executeOperationCommand({
+      operation_id: started.operationId,
+      argv: ['adb', 'shell', 'svc', 'wifi', 'disable'],
+      description: '关闭 Wi-Fi',
+      effect: 'state-changing',
+    }, childExec)
+    await new Promise(resolve => globalThis.setTimeout(resolve, 20))
+
+    assert.equal(waiting.status, 'waiting_approval')
+    assert.equal(fixture.calls.interrupts.length, 0)
+    assert.match(fixture.runtime.checkToolExecution({
+      agent: fixture.parent,
+      name: 'ask_user_question',
+      arguments: {},
+    }), /已有.*授权.*operation_continue/u)
+
+    const redirected = await fixture.runtime.continueOperation(
+      fixture.parent,
+      started.operationId,
+      '停止继续查询 Swift，基于已有证据立即提交报告。',
+      { rejectPendingApproval: true },
+      new AbortController().signal,
+    )
+    assert.equal(redirected.status, 'running')
+    assert.equal(redirected.pending, null)
+    assert.equal(fixture.calls.followups.length, 1)
+    assert.equal(fixture.calls.followups[0].childId, childId)
+    assert.match(fixture.calls.followups[0].content[0].text, /停止继续查询 Swift/u)
+    assert.equal(fixture.runtime.checkToolExecution({
+      agent: fixture.parent,
+      name: 'ask_user_question',
+      arguments: {},
+    }), undefined)
+    const status = await fixture.runtime.operationStatus(fixture.parent, started.operationId)
+    assert.equal(status.events.at(-1).type, 'operation.approval_rejected_with_redirect')
+  } finally {
+    await fixture.dispose()
+  }
+})
+
+test('Operation 连续命令失败达到预算后不再执行新命令并要求提交已有证据', async () => {
+  const fixture = await operationFixture({ runtimeConfig: { maxOperationCommandFailures: 2 } })
+  try {
+    fixture.calls.shellExitCode = 1
+    const started = await fixture.runtime.startOperation(fixture.parent, operationSpec())
+    const childId = fixture.calls.starts[0].childId
+    const childExec = {
+      agent: { id: childId, session: { id: childId } },
+      signal: new AbortController().signal,
+    }
+    const args = index => ({
+      operation_id: started.operationId,
+      argv: ['git', 'status', `--short=${index}`],
+      description: `第 ${index} 次失败诊断`,
+      effect: 'read-only',
+    })
+    await fixture.runtime.executeOperationCommand(args(1), childExec)
+    const second = await fixture.runtime.executeOperationCommand(args(2), childExec)
+    const third = await fixture.runtime.executeOperationCommand(args(3), childExec)
+
+    assert.equal(second.commandBudgetExhausted, true)
+    assert.equal(third.contract, 'DSH_OPERATION_COMMAND_BUDGET_EXHAUSTED_V1')
+    assert.equal(fixture.calls.shells.length, 2)
+    assert.match(third.nextAction, /已有证据.*operation_report/u)
+  } finally {
+    await fixture.dispose()
+  }
+})
+
+test('Operation 达到人工授权请求预算后停止生成新卡片', async () => {
+  const fixture = await operationFixture({ runtimeConfig: { maxOperationManualApprovals: 2 } })
+  try {
+    const started = await fixture.runtime.startOperation(fixture.parent, operationSpec())
+    const childId = fixture.calls.starts[0].childId
+    const childExec = {
+      agent: { id: childId, session: { id: childId } },
+      signal: new AbortController().signal,
+    }
+    const request = async index => fixture.runtime.executeOperationCommand({
+      operation_id: started.operationId,
+      argv: ['adb', 'shell', 'svc', 'wifi', index % 2 === 0 ? 'enable' : 'disable'],
+      description: `第 ${index} 次副作用请求`,
+      effect: 'state-changing',
+    }, childExec)
+
+    const first = await request(1)
+    await fixture.runtime.continueOperation(
+      fixture.parent,
+      started.operationId,
+      '拒绝并继续检查。',
+      { rejectPendingApproval: true },
+      new AbortController().signal,
+    )
+    const second = await request(2)
+    await fixture.runtime.continueOperation(
+      fixture.parent,
+      started.operationId,
+      '再次拒绝，基于已有证据收尾。',
+      { rejectPendingApproval: true },
+      new AbortController().signal,
+    )
+    const third = await request(3)
+
+    assert.equal(first.status, 'waiting_approval')
+    assert.equal(second.status, 'waiting_approval')
+    assert.equal(third.contract, 'DSH_OPERATION_COMMAND_BUDGET_EXHAUSTED_V1')
+    assert.equal(third.reason, 'manual_approval_limit')
+    assert.equal(fixture.calls.reports.length, 2)
+    assert.match(third.nextAction, /已有证据.*operation_report/u)
+  } finally {
+    await fixture.dispose()
+  }
+})
+
+test('Operation 超过总时长预算后不再启动命令', async () => {
+  const fixture = await operationFixture({ runtimeConfig: { maxOperationDurationMs: 1 } })
+  try {
+    const started = await fixture.runtime.startOperation(fixture.parent, operationSpec())
+    await new Promise(resolve => globalThis.setTimeout(resolve, 5))
+    const childId = fixture.calls.starts[0].childId
+    const result = await fixture.runtime.executeOperationCommand({
+      operation_id: started.operationId,
+      argv: ['git', 'status', '--short'],
+      description: '超时后的诊断',
+      effect: 'read-only',
+    }, {
+      agent: { id: childId, session: { id: childId } },
+      signal: new AbortController().signal,
+    })
+
+    assert.equal(result.contract, 'DSH_OPERATION_COMMAND_BUDGET_EXHAUSTED_V1')
+    assert.equal(result.reason, 'duration_limit')
+    assert.equal(fixture.calls.shells.length, 0)
+    assert.match(result.nextAction, /已有证据.*operation_report/u)
   } finally {
     await fixture.dispose()
   }

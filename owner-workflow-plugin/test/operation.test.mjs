@@ -12,7 +12,9 @@ import {
   normalizeOperationReport,
   normalizeOperationSpec,
   normalizeOperationApprovalPrefix,
+  operationArgvIsPublicWebRead,
   operationCommandIsCompound,
+  operationCommandIsPublicWebRead,
   operationCommandMatchesPrefix,
   operationCommandNeedsApproval,
   operationInitialPrompt,
@@ -110,9 +112,14 @@ test('通用命令门禁允许典型只读诊断并拦截外部副作用', () =>
     'adb shell monkey -p com.example.app 1',
     'pm clear com.example.app',
     'git status && rm -rf build',
+    'curl -L https://example.com/docs',
   ]) {
     assert.equal(operationCommandNeedsApproval(command), true, command)
   }
+  assert.equal(operationArgvIsPublicWebRead(['curl', '-L', '--max-time', '20', 'https://example.com/docs']), true)
+  assert.equal(operationArgvIsPublicWebRead(['curl', '-X', 'POST', 'https://example.com/api']), false)
+  assert.equal(operationCommandIsPublicWebRead('curl -L https://example.com/docs'), true)
+  assert.equal(operationCommandIsPublicWebRead('curl -X POST https://example.com/api'), false)
 })
 
 test('会话级命令授权只匹配完整字面参数前缀', () => {

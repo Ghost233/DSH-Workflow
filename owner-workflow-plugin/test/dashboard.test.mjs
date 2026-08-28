@@ -7,6 +7,7 @@ import { join } from 'node:path'
 
 import {
   appendProjectionEvent,
+  readDashboardSnapshot,
   startDashboard,
   writeProgressProjection,
 } from '../src/dashboard.mjs'
@@ -130,6 +131,73 @@ test('尚未生成计划的 workflow 也会投影为可读取的空任务进度'
     status: 'initializing',
     summary: '',
     tasks: [],
+  })
+})
+
+test('Dashboard 投影显示 Owner 会话、阶段、心跳、恢复次数和授权等待', async t => {
+  const root = await workspaceFixture(t)
+  const workflowId = 'wf-owner-observability'
+  await writeProgressProjection(root, {
+    id: workflowId,
+    revision: 1,
+    status: 'running',
+    config: { parallel: 1 },
+    plan: {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: 'a'.repeat(64),
+      summary: 'Owner 可观测性测试',
+      owners: [{ id: 'api', name: 'API', description: 'API Owner', scope: ['src/**'], exclude: [] }],
+      verifications: [{ id: 'unit', run: ['node', '--test'] }],
+      tasks: [{
+        id: 'T1',
+        role: 'work',
+        ownerId: 'api',
+        title: '实现 API',
+        dependsOn: [],
+        write: ['src/api.mjs'],
+        verify: ['unit'],
+        done: ['测试通过'],
+      }],
+    },
+    tasks: [{
+      taskId: 'T1',
+      status: 'running',
+      executorId: 'owner-visible-session',
+      cursor: null,
+      unchangedPolls: 0,
+      reason: null,
+      action: null,
+    }],
+    ownerRuns: {
+      'T1:api': {
+        status: 'waiting_approval',
+        phase: 'waiting_approval',
+        taskId: 'T1',
+        ownerId: 'api',
+        sessionId: 'owner-visible-session',
+        startedAt: '2026-08-20T08:00:00.000Z',
+        lastHeartbeatAt: '2026-08-20T08:01:00.000Z',
+        recoveryCount: 2,
+        pendingApprovalId: 'oa-visible',
+      },
+    },
+  })
+
+  const snapshot = await readDashboardSnapshot(root, workflowId)
+  assert.deepEqual(snapshot.tasks[0], {
+    id: 'T1',
+    ownerId: 'api',
+    role: 'work',
+    title: '实现 API',
+    dependsOn: [],
+    status: 'running',
+    ownerStatus: 'waiting_approval',
+    phase: 'waiting_approval',
+    ownerSessionId: 'owner-visible-session',
+    startedAt: '2026-08-20T08:00:00.000Z',
+    lastHeartbeatAt: '2026-08-20T08:01:00.000Z',
+    recoveryCount: 2,
+    pendingApprovalId: 'oa-visible',
   })
 })
 

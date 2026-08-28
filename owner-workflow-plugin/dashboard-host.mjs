@@ -9,6 +9,7 @@ import {
   readDashboardSnapshot,
   registerDashboardWorkspace,
   resolveDashboardWorkspace,
+  serveDashboardWaitEvents,
 } from './src/dashboard.mjs'
 import { renderDashboardPage } from './src/dashboard-page.mjs'
 
@@ -120,6 +121,16 @@ export function createDashboardHandler(root) {
         sendJson(response, 200, await listDashboardWaits(catalogRoot))
       } catch {
         internalError(response)
+      }
+      return
+    }
+    if (url.pathname === '/owner-workflow/api/waits/events') {
+      try {
+        await catalogReady
+        await serveDashboardWaitEvents(catalogRoot, response)
+      } catch {
+        if (!response.headersSent) internalError(response)
+        else response.end()
       }
       return
     }

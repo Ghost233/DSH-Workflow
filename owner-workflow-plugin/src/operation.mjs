@@ -200,9 +200,10 @@ export function operationInitialPrompt(state) {
     '你是主代理后台的专职 Operation 执行器。用户只与主代理沟通，你不得要求用户进入当前子线程。',
     '你不属于 Owner，不得修改项目文件、创建分支、提交 Git、调用 Owner 工作流或创建其他子代理。',
     '读取项目时使用获准的只读工具；所有一次性命令必须通过 operation_exec 执行，不得调用普通 bash、pwsh 或持久终端。',
-    'operation_exec 每次只接受一条命令。多个检查必须拆成多次调用，不能使用 &&、;、&、管道、反引号或命令替换拼接。Runtime 会先在文件只读沙箱中运行只读命令；需要扩大沙箱时，Operation 专用审批插件依次检查本次主会话前缀、Operation 人工风险门禁、approve-for-me 固定风险与白名单以及可选无工具模型复核。只有全部满足才自动允许当前精确命令一次；其余情况由 operation_exec 生成精确授权请求并通知主线程，不要预先调用 operation_report(type=need_approval)。',
+    '查询公开网页或官方文档时必须优先使用继承的 web_search/web_fetch；只要 Web 工具能够完成，就不得改用 curl、wget、npx 或包管理器逐个下载 URL。curl/wget 仍属于需要人工授权的外部命令，不会因只读用途而自动放行。相同 web_search 查询连续失败两次后必须停止重试，改用已有证据、缓存内容或更精确的一手来源。',
+    'operation_exec 每次只接受一条命令，优先传结构化 argv；保留的 command 兼容路径不能使用 &&、;、&、管道、反引号或命令替换拼接。多个检查必须拆成多次调用。Runtime 会先在文件只读沙箱中运行只读命令；需要扩大沙箱时，Operation 专用审批插件依次检查本次主会话前缀、Operation 人工风险门禁、approve-for-me 固定风险与白名单以及可选无工具模型复核。只有全部满足才自动允许当前精确命令一次；其余情况由 operation_exec 生成精确授权请求并通知主线程，不要预先调用 operation_report(type=need_approval)。',
     '同类命令后续还会重复执行时，可在 operation_exec 的 approval_prefix 中提供当前精确命令的字面前缀。Runtime 只负责校验边界并把“允许一次 / 本次会话允许此前缀 / 拒绝”交给用户选择；不得为了省事提出比任务所需更宽的前缀。',
-    'operation_exec 返回 waiting_approval、waiting_input、adjustment_required 或 terminal 时，必须立即停止本轮；Runtime 会暂停当前子线程，禁止把等待状态解释成工具失败后继续重试。',
+    'operation_exec 返回 waiting_approval、waiting_input、adjustment_required 或 terminal 时，必须立即停止本轮；Runtime 会把同一子代理会话标记为可续接等待，不会把它中断或新建替代子代理。禁止把等待状态解释成工具失败后继续重试。',
     '缺少必要信息时用 operation_report(type=need_input) 提问并停止本轮，不得猜测。',
     '执行过程中可用 progress/finding 回报关键进展；完成时必须调用 operation_report(type=completed) 返回自包含的结构化结果。findings 中必须逐项标明“已确认：”“推测：”或“待验证：”，不能把进程缺失、命令不可用或间接迹象写成确定事实。报告后不要继续执行新的动作。',
     '',
@@ -262,6 +263,38 @@ export function operationIsActive(state) {
 export function operationCommandIsCompound(command) {
   const value = nonEmptyString(command, 'command')
   return /(?:&&|\|\||[;&|\r\n]|`|\$\()/u.test(value)
+}
+
+/** 识别本应交给继承 Web 工具处理的单 URL 公网 GET，不改变 curl 的授权等级。 */
+export function operationArgvIsPublicWebRead(argv) {
+  if (!Array.isArray(argv) || argv[0] !== 'curl') return false
+  let urls = 0
+  for (let index = 1; index < argv.length; index += 1) {
+    const argument = argv[index]
+    if (typeof argument !== 'string') return false
+    if (/^https:\/\/[^\s]+$/u.test(argument)) {
+      urls += 1
+      continue
+    }
+    if (['-L', '--location', '-s', '--silent', '-S', '--show-error', '--fail', '--fail-with-body'].includes(argument)) continue
+    if (['--max-time', '--connect-timeout'].includes(argument)) {
+      index += 1
+      if (!/^\d+(?:\.\d+)?$/u.test(argv[index] ?? '')) return false
+      continue
+    }
+    return false
+  }
+  return urls === 1
+}
+
+/** 兼容 command 字段中的简单公开 GET；任何写入、认证或自定义请求参数都保留人工授权。 */
+export function operationCommandIsPublicWebRead(command) {
+  const value = nonEmptyString(command, 'command')
+  if (!/^curl(?:\s|$)/u.test(value) || operationCommandIsCompound(value)) return false
+  if (/(?:^|\s)(?:-X|--request|-d|--data(?:-ascii|-binary|-raw|-urlencode)?|-F|--form|-T|--upload-file|-H|--header|-u|--user|-b|--cookie|-c|--cookie-jar|-o|--output|-O|--remote-name)(?:\s|=|$)/u.test(value)) {
+    return false
+  }
+  return (value.match(/https:\/\/[^\s'"`]+/gu) ?? []).length === 1
 }
 
 /** 会话级授权使用字面前缀和参数边界，不解释通配符或正则表达式。 */

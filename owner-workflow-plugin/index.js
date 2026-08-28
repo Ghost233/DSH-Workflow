@@ -888,7 +888,7 @@ function workflowToolDefinitions(ctx, runtime) {
     ),
     workflowToolDefinition(
       'workflow_owner_recover',
-      '恢复一个已失败或阻塞且没有活动会话的 Owner task；保留原 Owner 分支、worktree 和未提交修改，不得新建 Workflow。',
+      '在后台恢复一个已失败、阻塞或 orphaned 且没有活动会话的 Owner task；立即返回派发状态，后续进度、审批与完成结果由 Owner 主动回报。保留原 Owner 分支、worktree 和未提交修改，不得新建 Workflow。',
       {
         properties: {
           ...workflowId,
@@ -897,12 +897,11 @@ function workflowToolDefinitions(ctx, runtime) {
         },
         required: ['workflow_id', 'task_id', 'owner_id'],
       },
-      (args, agent, exec) => runtime.recoverOwner(
+      (args, agent) => runtime.dispatchOwnerRecovery(
         agent,
         requireString(args, 'workflow_id', 'workflow_owner_recover'),
         requireString(args, 'task_id', 'workflow_owner_recover'),
         requireString(args, 'owner_id', 'workflow_owner_recover'),
-        exec.signal,
       ),
     ),
     workflowToolDefinition(
@@ -937,9 +936,30 @@ function workflowToolDefinitions(ctx, runtime) {
     ),
     workflowToolDefinition(
       'workflow_status',
-      '查询工作流状态；省略 workflow_id 时仅返回当前项目的 Owner Registry 摘要。',
+      '查询紧凑工作流状态；默认只返回当前阶段、任务、活跃 Owner、心跳、审批与阻塞，不携带完整历史。省略 workflow_id 时仅返回当前项目的 Owner Registry 摘要。',
       { properties: workflowId },
       (args, agent) => runtime.status(agent, optionalWorkflowId(args, 'workflow_status')),
+    ),
+    workflowToolDefinition(
+      'workflow_status_detail',
+      '按需查询完整工作流计划、Owner 历史和一页日志；只能在确实需要历史证据时调用，不能用于轮询。',
+      {
+        properties: {
+          ...workflowId,
+          log_cursor: { type: 'integer', minimum: 0, description: '日志分页游标，默认 0。' },
+          log_limit: { type: 'integer', minimum: 1, maximum: 100, description: '本页日志数量，默认 50。' },
+        },
+        required: ['workflow_id'],
+      },
+      (args, agent) => runtime.status(
+        agent,
+        requireString(args, 'workflow_id', 'workflow_status_detail'),
+        {
+          detail: true,
+          logCursor: args.log_cursor,
+          logLimit: args.log_limit,
+        },
+      ),
     ),
     workflowToolDefinition(
       'workflow_registry_status',
@@ -988,7 +1008,12 @@ function workflowToolDefinitions(ctx, runtime) {
       {
         properties: {
           action: { type: 'string', enum: ['status', 'diff', 'log'], description: '只读 Git 查询动作，默认 status。' },
-          files: { type: 'array', items: { type: 'string' }, description: '可选的当前 worktree 相对路径过滤。' },
+          files: {
+            type: 'array',
+            maxItems: 64,
+            items: { type: 'string', minLength: 1 },
+            description: '可选的当前 worktree 相对路径过滤；省略或传空数组都表示不限制路径。',
+          },
           limit: { type: 'integer', minimum: 1, maximum: 50, description: 'log 返回的最大条数，默认 20。' },
         },
       },
@@ -1108,11 +1133,12 @@ function operationToolDefinitions(runtime) {
     ),
     workflowToolDefinition(
       'operation_continue',
-      '只把用户补充信息转发给同一个后台 Operator；外部副作用授权必须使用 operation_approve 原生卡片。',
+      '把用户补充信息转发给同一个后台 Operator；外部副作用授权必须使用 operation_approve 原生卡片。若主代理要改变方向，可显式拒绝当前待授权命令并原子转发新指令。',
       {
         properties: {
           ...operationId,
           response: { type: 'string', minLength: 1, description: '主代理从当前用户回复中整理出的补充内容。' },
+          reject_pending_approval: { type: 'boolean', description: '仅在改变方向时设为 true：拒绝当前待授权命令，并把 response 转发给同一个 Operator；绝不代表允许命令。' },
         },
         required: ['operation_id', 'response'],
       },
@@ -1120,7 +1146,7 @@ function operationToolDefinitions(runtime) {
         agent,
         requireString(args, 'operation_id', 'operation_continue'),
         requireString(args, 'response', 'operation_continue'),
-        {},
+        { rejectPendingApproval: args.reject_pending_approval === true },
         exec.signal,
       ),
     ),
@@ -1179,18 +1205,20 @@ function operationToolDefinitions(runtime) {
     ),
     workflowToolDefinition(
       'operation_exec',
-      '仅供当前后台 Operator 逐条执行一次性命令；专用审批插件先检查会话前缀与 approve-for-me 策略，自动通过只允许当前命令一次，其余情况暂停子线程并通知主线程显示精确授权问询。',
+      '仅供当前后台 Operator 逐条执行一次性命令；公开资料必须使用继承的 web_search/web_fetch，curl/wget 仍需人工授权。专用审批插件先检查会话前缀与 approve-for-me 策略，自动通过只允许当前命令一次，其余情况把同一子代理会话置为可续接等待并通知主线程显示精确授权问询。',
       {
         properties: {
           ...operationId,
-          command: { type: 'string', minLength: 1, description: '本次需要执行的单条命令；不要使用命令连接符拼接多个动作。' },
+          command: { type: 'string', minLength: 1, description: '本次需要执行的单条命令；与 argv 二选一，不要使用命令连接符拼接多个动作。' },
+          argv: { type: 'array', minItems: 1, maxItems: 128, items: { type: 'string' }, description: '推荐：单条命令的结构化参数；与 command 二选一，参数中的特殊字符不会被当成命令连接符。' },
           description: { type: 'string', minLength: 1, description: '本次命令的中文用途说明。' },
           effect: { type: 'string', enum: ['read-only', 'state-changing'], description: '命令是否可能改变设备、系统、网络或远程状态。' },
           approval_id: { type: 'string', description: 'state-changing 命令必须使用 operation_approve 原生卡片批准的一次性授权编号。' },
           approval_prefix: { type: 'string', description: '可选的最小可复用字面前缀；Runtime 校验后由用户决定是否在本次主会话全部允许，不能包含通配符语义。' },
           timeout_ms: { type: 'number', minimum: 1, description: '可选超时毫秒数，仍受宿主上限约束。' },
         },
-        required: ['operation_id', 'command', 'description', 'effect'],
+        required: ['operation_id', 'description', 'effect'],
+        oneOf: [{ required: ['command'] }, { required: ['argv'] }],
       },
       (args, _agent, exec) => runtime.executeOperationCommand(args, exec),
     ),
@@ -1260,13 +1288,15 @@ function ownerHostExecDefinition(runtime) {
       type: 'object',
       additionalProperties: false,
       properties: {
-        command: { type: 'string', minLength: 1, description: '刚被 workspace-write 沙箱拒绝、需要原样重试的精确命令。' },
+        command: { type: 'string', minLength: 1, description: '刚被 workspace-write 沙箱拒绝、需要原样重试的精确命令；与 argv 二选一。' },
+        argv: { type: 'array', minItems: 1, maxItems: 128, items: { type: 'string' }, description: '推荐：被拒绝命令的结构化参数；与 command 二选一，参数中的特殊字符不会被误判成复合命令。' },
         description: { type: 'string', minLength: 1, description: '该命令的中文用途说明。' },
         justification: { type: 'string', minLength: 1, description: '为什么该精确命令必须访问 Owner worktree 外部资源。' },
         workdir: { type: 'string', minLength: 1, description: '可选工作目录；必须位于当前 Owner worktree 内，默认是 worktree 根目录。' },
         timeout_ms: { type: 'number', minimum: 1, description: '可选超时毫秒数，仍受 Harness 宿主上限约束。' },
       },
-      required: ['command', 'description', 'justification'],
+      required: ['description', 'justification'],
+      oneOf: [{ required: ['command'] }, { required: ['argv'] }],
     },
     output: { schema: {}, render: renderValue },
     async execute(args, exec) {
@@ -1291,6 +1321,7 @@ export function apply(ctx, config) {
   const runtime = createOwnerWorkflowRuntime(ctx, config)
 
   const disposeAgentCreated = ctx.on('agent/created', ({ agent }) => runtime.onAgentCreated(agent))
+  const disposeAgentStatus = ctx.on('agent/status', ({ agent, status }) => runtime.onAgentStatus(agent, status))
   const disposeAgentDisposed = ctx.on('agent/disposed', ({ agent }) => runtime.onAgentDisposed(agent))
   const disposeOperationApprovalPrompt = ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
     const assembled = await next()
@@ -1312,7 +1343,7 @@ export function apply(ctx, config) {
         '当前 owner-workflow Agent preset 已自动启用强制工作模式；主会话只能读取、规划、审核、查询和调度。',
       '用户只要求读取仓库并给出检查、审计、分析、解释、评估或优化建议，且不需要实际执行命令、操作设备、访问浏览器或调用外部能力时，调用 workflow_audit。',
       '用户要求实际执行但不修改业务文件的自适应任务时，由你把模糊需求整理成目标、上下文、约束、完成标准和最小 capabilities，再调用 operation_start；Operation 不要求 Git 仓库，非 Git 目录直接以当前会话工作目录作为工作区。不得因缺少 Git 先调用 Bash、git 或普通子代理；同一工作区同时只允许一个未结束 Operation，不要要求用户提供具体命令，也不要让用户进入子线程。',
-      'Operation Operator 通过 operation_report 自动返回当前主对话。need_input 由你向用户取得信息后 operation_continue；operation_exec 需要扩大沙箱时先由 Operation 专用审批插件检查本次会话前缀、Operation 人工风险门禁、approve-for-me 固定风险与配置白名单以及可选无工具模型复核。自动通过只允许当前精确命令一次；仍需人工决定时才暂停 Operator 并通知主线程，此时必须立即调用 operation_approve。若 Operator 提出了最小 approval_prefix，原生问询会让用户选择“仅允许这一次 / 本次会话允许此前缀 / 拒绝”；会话级授权在主会话结束或 Harness 重启时失效。不要用普通文本代替。主代理自己的标准 Bash/PowerShell 仍由独立安装的 approve-for-me 处理。',
+      'Operation Operator 通过 operation_report 自动返回当前主对话。need_input 由你向用户取得信息后 operation_continue；operation_exec 需要扩大沙箱时先由 Operation 专用审批插件检查本次会话前缀、Operation 人工风险门禁、approve-for-me 固定风险与配置白名单以及可选无工具模型复核。自动通过只允许当前精确命令一次；仍需人工决定时才暂停 Operator 并通知主线程。此时只能选择一个动作：调用 operation_approve 显示原生授权卡片，或调用 operation_continue(reject_pending_approval=true) 原子拒绝当前命令并改向，或 operation_cancel；不得同时调用 ask_user_question。若 Operator 提出了最小 approval_prefix，原生问询会让用户选择“仅允许这一次 / 本次会话允许此前缀 / 拒绝”；会话级授权在主会话结束或 Harness 重启时失效。不要用普通文本代替。主代理自己的标准 Bash/PowerShell 仍由独立安装的 approve-for-me 处理。',
       'operation_start 成功后结束当前回复并等待 Operator 主动回报；不要立即或重复调用 operation_status。operation_status 只用于用户明确询问或恢复中断现场，operation_id 必须逐字使用工具返回值，不能缩写或猜测。',
       'Operation 完成、失败或取消后 Runtime 会回收 Operator 驻留资源并归档持久会话；审计记录仍然保留。完成后由你审核证据并向用户汇总，只有用户要求修改仓库时才进入 workflow_preflight → workflow_start 的 Owner 开发流程。',
       '只有用户明确要求新增、修改、修复、删除、重构或实现代码时，先调用 workflow_preflight；仅当它返回 canStart=true 时，使用同一 baseDigest 调用 workflow_start 创建 Owner/DAG 工作流。',
@@ -1330,14 +1361,14 @@ export function apply(ctx, config) {
       '你直接接收用户需求，负责解释需求、启动 Workflow，并只处理 Plan Agent 主动回报的审批与失败。',
       '可续接 Plan Agent 会自行持久化首次 Registry 提案并在需要时主动回报。只有收到 owner_registry_approval_required 或 plan_approval_required 回报后，主会话才调用相应批准工具；两个工具都会在当前主对话显示“同意/不同意/自定义输入”原生问询并等待用户决定，不能先用普通文本索要批准。',
       '用户选择不同意时保留现场并停止应用；用户输入自定义意见时根据工具返回的 feedback 修订或重新提案，绝不能把自定义文字解释成批准。',
-      '你不能在主会话中直接执行 Owner 阶段；只在 Plan Agent 的批准回报后使用 workflow_plan_approve，并按需使用 workflow_status 查询。计划批准后，随 Harness 启停的确定性 Runner daemon 会自动接管并驱动 Harness 内的 Owner 子线程；它不是 LLM Agent。workflow_plan_approve 返回 runner.status=queued 时只能说明“已排队等待接管”，不得宣称 Owner 已开始执行；只有 workflow 状态或等待列表显示 running 后才能说明正在执行。',
+      '你不能在主会话中直接执行 Owner 阶段；只在 Plan Agent 的批准回报后使用 workflow_plan_approve，并按需使用 workflow_status 查询。计划批准后，随 Harness 启停的确定性 Runner daemon 会自动接管并驱动 Harness 内的 Owner 子线程；它不是 LLM Agent。workflow_plan_approve 返回 runner.status=queued 时只能说明“已排队等待接管”，不得宣称 Owner 已开始执行；只有 workflow 或运行状态显示 owner_running 后才能说明正在执行。',
       'Runner daemon 会自动恢复 approved/running Workflow，不要求用户手工运行 run-owner-workflow。批准成功后按 nextAction 结束回复并等待状态变化，不得主动轮询；用户明确查询时才调用 workflow_status 或 workflow_supervisor_status。',
       '业务代码必须由 Owner 子代理在各自独立 worktree 和分支中完成；Owner 继承正常开发工具并可读取整个仓库，主会话不得直接编辑业务文件。',
       '同一 Owner 同时只能有一个子线程；每个阶段完成后必须立即合并所有 Owner 分支回 workflow 分支。',
       '所有任务完成后必须先调用 workflow_implementation_review，再调用 workflow_finalize。Runtime 只能把审查固定的 workflow HEAD 合并回创建时的启动分支；合并成功后必须删除该 Workflow 的全部 Owner/workflow 临时分支和 worktree，只保留状态、日志和已进入启动分支的提交。',
       'failed 或 blocked 表示仍准备恢复：保留原 Owner/workflow 分支、worktree 和未提交修改，并在同一个 Workflow 中恢复。只有用户明确表示放弃时才能调用 workflow_cancel；该工具自行显示原生问询，同意后不执行合并，直接删除所有未合入的临时分支、worktree 和未提交修改，只保留 Runtime 状态、日志与 Dashboard 历史。不得因为规划、审查、验证或工具错误而自动取消并新建 Workflow。',
       'Owner scope 只在 owner_submit 提交关卡按真实 Git diff 强制校验；越界时由同一 Owner 调整或 handoff，不使用逐工具写入白名单。',
-      'Owner 子线程使用 workspace-write 与 ask，但只有 Runtime 登记的 owner_host_exec 和固定验证请求可以到达原生授权 UI；直接在 bash/pwsh 中设置 sandbox_permissions 或其他升级会被确定性拒绝。精确卡片显示在当前 Owner 任务现场，行动收件箱只负责跨会话发现并跳转，主会话不代答。',
+      'Owner 子线程使用 workspace-write 与 ask，但只有 Runtime 登记的 owner_host_exec 和固定验证请求可以到达原生授权 UI；直接在 bash/pwsh 中设置 sandbox_permissions 或其他升级会被确定性拒绝。精确卡片显示在当前 Owner 任务现场，运行状态的“需要处理”只负责跨会话发现并跳转，主会话不代答。',
       'owner_submit 的固定验证由 Runtime 确定性处理沙箱拒绝，不依赖 Owner 主动选择工具：当前 Owner 回合中直接显示原生授权卡片并精确重试一次；没有开放回合时安全保留 worktree，恢复同一 Workflow/task/Owner 后重试，不得重新规划或创建 Workflow。',
       '固定验证经过授权并实际执行后若 exitCode 非 0，Runtime 会把有界 stdout/stderr 返回同一 Owner 子线程，并拒绝把它结算为 blocked。这属于代码或测试失败，不是新的授权请求；等待 Owner 在原 worktree 修复并重新提交，不要要求用户手工运行同一命令。',
       'Owner 子线程按任务创建并在完成后回收；未最终有效或仍为“待检查”的结果只保留临时日志。只有按最新 DAG 验证有效后，Memory Curator 和 Reviewer 才编译 .owner-memory，主会话和 Owner 都不能直接改写。',
@@ -1359,6 +1390,7 @@ export function apply(ctx, config) {
 
   ctx.effect(() => async () => {
     disposeAgentCreated?.()
+    disposeAgentStatus?.()
     disposeAgentDisposed?.()
     disposeOperationApprovalPrompt?.()
     disposeChildProvider?.()

@@ -16,6 +16,8 @@ import {
   normalizeMemoryUpdates,
   repairMemoryCatalogSelfReferences,
   refreshMemoryCatalogVerification,
+  resolveOwnerWorklogBlockers,
+  worklogPromptSnapshot,
   writeSealedOwnerWorklog,
   writeMemoryBundle,
 } from '../src/memory.mjs'
@@ -276,6 +278,21 @@ test('临时 Owner 记忆保持简短，封存后作为编译来源但不注入�
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test('旧阻塞在新执行开始后标记为已解决，不再作为当前提示注入', () => {
+  let worklog = createOwnerWorklog({ taskId: 'T1', title: '恢复任务', ownerId: 'network' })
+  worklog = appendOwnerWorklogNote(worklog, { type: '阻塞', text: '旧工具 Schema 无法写文件。' })
+  worklog = appendOwnerWorklogNote(worklog, { type: '下一步', text: '重新加载工具后继续。' })
+  worklog = resolveOwnerWorklogBlockers(worklog, {
+    at: '2026-08-20T08:00:00.000Z',
+    text: '工具 Schema 已更新并开始新的 Owner 执行',
+  })
+
+  assert.equal(worklog.notes[0].resolvedAt, '2026-08-20T08:00:00.000Z')
+  const prompt = worklogPromptSnapshot(worklog)
+  assert.equal(prompt.resolvedBlockerCount, 1)
+  assert.deepEqual(prompt.notes, [{ type: '下一步', text: '重新加载工具后继续。' }])
 })
 
 test('Memory Curator 被独立 Reviewer 驳回后只允许一次修订', async () => {

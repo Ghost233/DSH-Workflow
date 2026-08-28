@@ -91,7 +91,12 @@ function worklogNote(raw, index) {
   }
   const type = requiredText(raw.type, `worklog.notes[${index}].type`)
   if (!WORKLOG_NOTE_TYPES.has(type)) throw new Error(`worklog.notes[${index}].type 不受支持：${type}`)
-  return { type, text: conciseText(raw.text, `worklog.notes[${index}].text`, MAX_WORKLOG_NOTE_LENGTH) }
+  const result = { type, text: conciseText(raw.text, `worklog.notes[${index}].text`, MAX_WORKLOG_NOTE_LENGTH) }
+  if (raw.resolvedAt !== undefined) {
+    result.resolvedAt = conciseText(raw.resolvedAt, `worklog.notes[${index}].resolvedAt`, 80)
+    result.resolution = conciseText(raw.resolution ?? '后续执行已解除该阻塞', `worklog.notes[${index}].resolution`, MAX_WORKLOG_NOTE_LENGTH)
+  }
+  return result
 }
 
 /** 创建仅服务于当前未完成任务的短期工作记忆；它不进入 Owner 长期知识页。 */
@@ -134,12 +139,37 @@ export function appendOwnerWorklogNote(raw, note, expected = {}) {
   return { ...worklog, notes: [...worklog.notes, normalized] }
 }
 
+/** 新一轮有效执行开始后，将旧阻塞标记为已解决，避免恢复提示继续把历史问题当成当前阻塞。 */
+export function resolveOwnerWorklogBlockers(raw, resolution, expected = {}) {
+  const worklog = normalizeOwnerWorklog(raw, expected)
+  if (worklog.status !== 'active') return worklog
+  const resolvedAt = typeof resolution?.at === 'string' && resolution.at.trim() !== ''
+    ? resolution.at.trim()
+    : new Date().toISOString()
+  const text = conciseText(
+    typeof resolution?.text === 'string' && resolution.text.trim() !== ''
+      ? resolution.text
+      : '后续执行已解除该阻塞',
+    'worklog blocker resolution',
+    MAX_WORKLOG_NOTE_LENGTH,
+  )
+  return {
+    ...worklog,
+    notes: worklog.notes.map(note => (
+      note.type === '阻塞' && note.resolvedAt === undefined
+        ? { ...note, resolvedAt, resolution: text }
+        : note
+    )),
+  }
+}
+
 export function worklogPromptSnapshot(raw, expected = {}) {
   const worklog = normalizeOwnerWorklog(raw, expected)
   return {
     taskId: worklog.taskId,
     title: worklog.title,
-    notes: worklog.notes,
+    notes: worklog.notes.filter(note => note.type !== '阻塞' || note.resolvedAt === undefined),
+    resolvedBlockerCount: worklog.notes.filter(note => note.type === '阻塞' && note.resolvedAt !== undefined).length,
   }
 }
 
@@ -531,7 +561,9 @@ export async function writeSealedOwnerWorklog(worktree, context) {
     ownerId: context.owner.id,
   })
   const sourcePath = `${MEMORY_SOURCE_DIRECTORY}/${sourceSegment(context.workflowId, 'workflowId')}/${sourceSegment(context.task.id, 'taskId')}.md`
-  const notes = worklog.notes.map(note => `- ${note.type}：${note.text}`)
+  const notes = worklog.notes.map(note => note.type === '阻塞' && note.resolvedAt !== undefined
+    ? `- 已解决阻塞：${note.text}（${note.resolution}）`
+    : `- ${note.type}：${note.text}`)
   const finalSummary = safeReportSummary(context.report?.summary)
   if (finalSummary !== undefined && !worklog.notes.some(note => note.text === finalSummary)) {
     notes.push(`- 交付：${finalSummary}`)

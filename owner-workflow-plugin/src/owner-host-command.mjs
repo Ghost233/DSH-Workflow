@@ -1,6 +1,8 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 
+import { normalizeExactCommand } from './exact-command.mjs'
+
 const OWNER_HOST_EXEC_TOOL = 'owner_host_exec'
 const DEFAULT_TIMEOUT_MS = 5 * 60_000
 const MAX_TIMEOUT_MS = 30 * 60_000
@@ -26,8 +28,8 @@ function commandTimeout(value) {
   return Math.min(Math.floor(value), MAX_TIMEOUT_MS)
 }
 
-function assertHostCommand(command) {
-  if (COMPOUND_COMMAND.test(command) || /[\r\n]/u.test(command)) {
+function assertHostCommand(command, structured) {
+  if (!structured && (COMPOUND_COMMAND.test(command) || /[\r\n]/u.test(command))) {
     throw new Error('owner_host_exec 只能原样重试一条命令，不能使用管道、重定向或命令连接符')
   }
   if (LOCAL_INSPECTION_COMMAND.test(command)) {
@@ -105,11 +107,12 @@ export async function executeOwnerHostCommand(runtime, args, exec) {
   if (active === undefined) throw new Error('owner_host_exec 只能由当前正在运行的 Owner 子代理调用')
   if (active.hostCommandPending === true) throw new Error('当前 Owner 已有一个宿主命令等待授权或执行')
 
-  const command = requiredText(args?.command, 'command')
+  const exact = normalizeExactCommand(args, OWNER_HOST_EXEC_TOOL)
+  const command = exact.command
   const description = requiredText(args?.description, 'description')
   const justification = requiredText(args?.justification, 'justification')
   const workdir = resolveWorkdir(active, args?.workdir)
-  assertHostCommand(command)
+  assertHostCommand(command, exact.structured)
   const timeoutMs = commandTimeout(args?.timeout_ms)
 
   const approval = runtime.ctx?.approval

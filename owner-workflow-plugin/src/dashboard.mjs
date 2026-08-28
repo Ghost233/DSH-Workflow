@@ -17,6 +17,7 @@ const EVENTS_FILE = 'events.jsonl'
 const DASHBOARD_DIRECTORY = 'dashboard'
 const WORKSPACE_CATALOG_FILE = 'workspaces.json'
 const RUNNER_DAEMON_CONTRACT = 'DSH_WORKFLOW_RUNNER_DAEMON_V1'
+const AGENT_RUNTIME_STATUS_CONTRACT = 'DSH_AGENT_RUNTIME_STATUS_V1'
 const RUNNER_HEARTBEAT_MIN_STALE_MS = 10_000
 const dashboardInstances = new Set()
 const appendQueues = new Map()
@@ -164,8 +165,24 @@ function progressProjection(state) {
   const workflowId = stateWorkflowId(state)
   if (state.plan !== undefined && Array.isArray(state.tasks)) {
     if (state.plan.contract === 'DSH_PLAN_V2') {
+      const projected = projectProgress(state)
+      const tasks = projected.tasks.map(task => {
+        const record = state.ownerRuns?.[`${task.id}:${task.ownerId}`]
+        if (record === undefined) return task
+        return {
+          ...task,
+          ownerStatus: record.status,
+          phase: record.phase,
+          ownerSessionId: record.sessionId ?? record.result?.sessionId,
+          startedAt: record.startedAt ?? record.recoveredAt,
+          lastHeartbeatAt: record.lastHeartbeatAt,
+          recoveryCount: Number(record.recoveryCount ?? 0),
+          pendingApprovalId: record.pendingApprovalId,
+        }
+      })
       return {
-        ...projectProgress(state),
+        ...projected,
+        tasks,
         workflowId,
         status: state.status ?? null,
         execution: workflowTaskCounts(state),
@@ -272,6 +289,13 @@ function dashboardTask(task) {
     ...(typeof task.status === 'string' && task.status.trim() !== '' ? { status: task.status.trim() } : {}),
     ...(typeof task.reason === 'string' && task.reason.trim() !== '' ? { reason: task.reason.trim() } : {}),
     ...(typeof task.action === 'string' && task.action.trim() !== '' ? { action: task.action.trim() } : {}),
+    ...(typeof task.ownerStatus === 'string' && task.ownerStatus.trim() !== '' ? { ownerStatus: task.ownerStatus.trim() } : {}),
+    ...(typeof task.phase === 'string' && task.phase.trim() !== '' ? { phase: task.phase.trim() } : {}),
+    ...(typeof task.ownerSessionId === 'string' && task.ownerSessionId.trim() !== '' ? { ownerSessionId: task.ownerSessionId.trim() } : {}),
+    ...(typeof task.startedAt === 'string' && task.startedAt.trim() !== '' ? { startedAt: task.startedAt.trim() } : {}),
+    ...(typeof task.lastHeartbeatAt === 'string' && task.lastHeartbeatAt.trim() !== '' ? { lastHeartbeatAt: task.lastHeartbeatAt.trim() } : {}),
+    ...(Number.isSafeInteger(task.recoveryCount) && task.recoveryCount >= 0 ? { recoveryCount: task.recoveryCount } : {}),
+    ...(typeof task.pendingApprovalId === 'string' && task.pendingApprovalId.trim() !== '' ? { pendingApprovalId: task.pendingApprovalId.trim() } : {}),
     ...(typeof task.parentTaskId === 'string' && task.parentTaskId.trim() !== '' ? { parentTaskId: task.parentTaskId.trim() } : {}),
   }
 }
@@ -448,16 +472,6 @@ export async function listDashboardOperations(workspace) {
 }
 
 const ACTIVE_OPERATION_WAIT_STATES = Object.freeze({
-  starting: {
-    state: 'waiting_operator',
-    waitingFor: '后台 Operator',
-    statusText: '正在启动后台 Operator',
-  },
-  running: {
-    state: 'waiting_operator',
-    waitingFor: '后台 Operator',
-    statusText: '等待子线程回报',
-  },
   waiting_input: {
     state: 'waiting_user_input',
     waitingFor: '用户补充信息',
@@ -565,6 +579,9 @@ function dashboardWaitItem(state, workspace, stale) {
   const latestEvent = Array.isArray(state.events) ? state.events.at(-1) : undefined
   const question = dashboardText(state.pending?.question)
   const summary = dashboardText(latestEvent?.summary)
+  const pendingStartedAt = state.pending?.kind === 'approval'
+    ? state.approvals?.[state.pending.id]?.requestedAt
+    : state.pending?.requestedAt
   return {
     id: `operation:${state.id}`,
     source: 'operation',
@@ -586,7 +603,7 @@ function dashboardWaitItem(state, workspace, stale) {
     }),
     ...(dashboardText(state.pending?.action) === '' ? {} : { action: dashboardText(state.pending.action) }),
     ...(dashboardText(state.pending?.risk) === '' ? {} : { risk: dashboardText(state.pending.risk) }),
-    startedAt: state.createdAt,
+    startedAt: pendingStartedAt ?? state.updatedAt ?? state.createdAt,
     updatedAt: state.updatedAt,
   }
 }
@@ -597,12 +614,17 @@ async function readRunnerDaemonState(catalogRoot) {
     if (state?.contract !== RUNNER_DAEMON_CONTRACT) return undefined
     const heartbeat = Date.parse(state.heartbeatAt ?? '')
     const staleAfterMs = Math.max(RUNNER_HEARTBEAT_MIN_STALE_MS, Number(state.pollMs ?? 0) * 5)
+    const online = state.status === 'running' && Number.isFinite(heartbeat) && Date.now() - heartbeat <= staleAfterMs
+    const activeWorkflows = Array.isArray(state.activeWorkflows) ? state.activeWorkflows : []
     return {
-      online: state.status === 'running' && Number.isFinite(heartbeat) && Date.now() - heartbeat <= staleAfterMs,
-      active: new Set((Array.isArray(state.activeWorkflows) ? state.activeWorkflows : []).map(item => (
+      online,
+      process: online ? 'online' : 'offline',
+      assignment: online ? (activeWorkflows.length > 0 ? 'supervising' : 'idle') : 'offline',
+      active: new Set(activeWorkflows.map(item => (
         `${dashboardText(item?.workspaceId, 100)}:${dashboardText(item?.workflowId, 300)}`
       ))),
       heartbeatAt: dashboardText(state.heartbeatAt, 100),
+      startedAt: dashboardText(state.startedAt, 100),
     }
   } catch (error) {
     if (error?.code === 'ENOENT') return undefined
@@ -634,12 +656,60 @@ async function listWorkflowWaitStates(workspace) {
   return states
 }
 
+function dashboardProcessIsAlive(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return error?.code === 'EPERM'
+  }
+}
+
+async function listAgentRuntimeStates(workspace) {
+  const directory = join(projectionDirectory(workspace.root), 'runtime', 'agents')
+  let entries
+  try {
+    entries = await readdir(directory, { withFileTypes: true })
+  } catch (error) {
+    if (error?.code === 'ENOENT') return []
+    throw error
+  }
+  const states = []
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) continue
+    try {
+      const state = JSON.parse(await readFile(join(directory, entry.name), 'utf8'))
+      if (state?.contract !== AGENT_RUNTIME_STATUS_CONTRACT) continue
+      const sessionId = dashboardText(state.sessionId, 300)
+      const role = dashboardText(state.role, 100)
+      const lifecycle = dashboardText(state.lifecycle, 100)
+      if (sessionId === '' || role === '' || !['running', 'idle', 'closed'].includes(lifecycle)) continue
+      const processAlive = dashboardProcessIsAlive(state.processId)
+      states.push({
+        sessionId,
+        parentSessionId: dashboardText(state.parentSessionId, 300) || null,
+        role,
+        workflowId: dashboardText(state.workflowId, 300) || null,
+        operationId: dashboardText(state.operationId, 300) || null,
+        taskId: dashboardText(state.taskId, 300) || null,
+        ownerId: dashboardText(state.ownerId, 300) || null,
+        lifecycle: lifecycle === 'closed' ? 'closed' : processAlive ? lifecycle : 'orphaned',
+        updatedAt: dashboardText(state.updatedAt, 100),
+      })
+    } catch {
+      // 单个损坏或正在替换的运行时状态不会阻断其他 Agent 投影。
+    }
+  }
+  return states.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))
+}
+
 function workflowTaskCounts(state) {
   const tasks = Array.isArray(state?.tasks) ? state.tasks : []
   const plans = new Map((Array.isArray(state?.plan?.tasks) ? state.plan.tasks : []).map(task => [task.id, task]))
   const records = new Map(tasks.map(task => [task.taskId, task]))
   const activeTaskIds = new Set(Object.values(state?.ownerRuns ?? {})
-    .filter(record => ['starting', 'running', 'awaiting_finish', 'committed'].includes(record?.status))
+    .filter(record => ['starting', 'running', 'waiting_approval', 'awaiting_finish', 'committed'].includes(record?.status))
     .map(record => record.taskId))
   let completedTasks = 0
   let runningTasks = 0
@@ -680,18 +750,238 @@ function workflowTaskCounts(state) {
   }
 }
 
+function deterministicWorkflowPhase(state, counts, daemonActive) {
+  if (state.status === 'initializing') return 'initializing'
+  if (state.status === 'planning') return 'planning'
+  if (state.status === 'registry_pending_plan') return 'registry_pending_plan'
+  if (state.status === 'planned') {
+    if (state.planReview?.status === 'passed') return 'awaiting_plan_approval'
+    if (state.planReview?.status === 'needs_revision') return 'plan_revision_required'
+    if (state.planningAgent?.phase === 'awaiting_registry_approval') return 'awaiting_registry_approval'
+    if (state.planningAgent?.phase === 'reviewing') return 'plan_reviewing'
+    if (state.planningAgent?.phase === 'review_failed') return 'plan_review_failed'
+    if (state.planningAgent?.phase === 'failed') return 'planning_failed'
+    return 'plan_review_not_started'
+  }
+  if (state.status === 'approved') return daemonActive ? 'runner_launching' : 'runner_queued'
+  if (state.status === 'running') {
+    if (counts.runningTasks > 0) return 'owner_running'
+    if (counts.waitingDecisionTasks > 0) return 'waiting_workflow_decision'
+    if (counts.waitingDependencyTasks > 0 || counts.pendingTasks > 0) return 'waiting_dependencies'
+    return 'finalizing'
+  }
+  if (state.status === 'blocked') return 'blocked'
+  if (state.status === 'failed') return 'failed'
+  if (state.status === 'cancelled') return 'cancelled'
+  if (state.status === 'completed') {
+    return state.finalized === true
+      ? 'completed'
+      : state.implementationReview?.status === 'passed' ? 'finalizing' : 'implementation_review_required'
+  }
+  return 'unknown'
+}
+
+function workflowLifecycle(state, phase) {
+  if (phase === 'completed') return 'completed'
+  if (phase === 'cancelled') return 'cancelled'
+  if (phase === 'failed' || phase === 'planning_failed' || phase === 'plan_review_failed') return 'failed'
+  if (phase === 'blocked' || phase === 'plan_review_not_started') return 'blocked'
+  if (phase.startsWith('awaiting_') || phase.startsWith('waiting_') || phase === 'runner_queued') return 'waiting'
+  return 'active'
+}
+
+function mainThreadActivity(phase) {
+  if (phase === 'planning') return 'waiting_planner'
+  if (phase === 'plan_reviewing') return 'waiting_plan_reviewer'
+  if (phase === 'awaiting_plan_approval' || phase === 'awaiting_registry_approval') return 'waiting_user_approval'
+  if (phase === 'runner_queued' || phase === 'runner_launching') return 'waiting_runner'
+  if (phase === 'owner_running' || phase === 'waiting_dependencies') return 'waiting_subagents'
+  if (phase === 'plan_review_not_started' || phase === 'plan_review_failed' || phase === 'planning_failed') return 'blocked_runtime'
+  return phase
+}
+
+function agentBySession(runtimeAgents, sessionId) {
+  if (typeof sessionId !== 'string' || sessionId === '') return undefined
+  return runtimeAgents.find(agent => agent.sessionId === sessionId)
+}
+
+function dashboardActor({ sessionId, role, lifecycle, activity, updatedAt, taskId, ownerId }) {
+  return {
+    sessionId: dashboardText(sessionId, 300) || null,
+    role,
+    lifecycle,
+    activity,
+    ...(dashboardText(taskId, 300) === '' ? {} : { taskId: dashboardText(taskId, 300) }),
+    ...(dashboardText(ownerId, 300) === '' ? {} : { ownerId: dashboardText(ownerId, 300) }),
+    updatedAt: dashboardText(updatedAt, 100) || null,
+  }
+}
+
+function ownerActorLifecycle(record, runtimeAgent) {
+  if (record?.status === 'waiting_approval') return 'waiting_user_approval'
+  if (record?.status === 'orphaned') return 'orphaned'
+  if (record?.status === 'completed' || record?.status === 'committed') return 'completed'
+  if (record?.status === 'failed') return 'failed'
+  if (record?.status === 'blocked') return 'blocked'
+  if (record?.status === 'stopped') return 'stopped'
+  if (record?.status === 'starting') return 'starting'
+  return runtimeAgent?.lifecycle ?? (record?.status === 'running' ? 'not_observed' : 'not_started')
+}
+
+function workflowStatusProjection(state, workspace, daemon, runtimeAgents) {
+  const workflowId = dashboardText(state.id, 300)
+  const counts = workflowTaskCounts(state)
+  const daemonActive = daemon?.active?.has(`${workspace.id}:${workflowId}`) === true
+  const phase = deterministicWorkflowPhase(state, counts, daemonActive)
+  const mainSessionId = dashboardText(state.orchestratorSessionId ?? state.conversationRootSessionId, 300)
+  const mainRuntime = agentBySession(runtimeAgents, mainSessionId)
+  const terminal = ['failed', 'cancelled'].includes(state.status)
+    || (state.status === 'completed' && state.finalized === true)
+  const mainThread = dashboardActor({
+    sessionId: mainSessionId,
+    role: 'main',
+    lifecycle: mainRuntime?.lifecycle ?? (terminal ? 'closed' : 'not_observed'),
+    activity: mainThreadActivity(phase),
+    updatedAt: mainRuntime?.updatedAt ?? state.updatedAt,
+  })
+  const subagents = []
+  const seen = new Set()
+  const addActor = actor => {
+    const key = actor.sessionId ?? `${actor.role}:${actor.taskId ?? actor.activity}`
+    if (seen.has(key)) return
+    seen.add(key)
+    subagents.push(actor)
+  }
+  const plannerSessionId = dashboardText(state.planningAgent?.childId, 300)
+  if (plannerSessionId !== '' || ['planning', 'planned', 'registry_pending_plan'].includes(state.status)) {
+    const plannerRuntime = agentBySession(runtimeAgents, plannerSessionId)
+    addActor(dashboardActor({
+      sessionId: plannerSessionId,
+      role: 'planner',
+      lifecycle: plannerRuntime?.lifecycle
+        ?? (state.planningAgent?.phase === 'failed' || state.planningAgent?.phase === 'review_failed'
+          ? 'failed'
+          : 'not_observed'),
+      activity: dashboardText(state.planningAgent?.phase, 100) || (state.status === 'planning' ? 'planning' : 'plan_submitted'),
+      updatedAt: plannerRuntime?.updatedAt ?? state.planningAgent?.updatedAt ?? state.planCreatedAt,
+    }))
+  }
+  const linkedReviewers = runtimeAgents.filter(agent => (
+    agent.workflowId === workflowId && ['plan-reviewer', 'reviewer', 'memory-curator', 'memory-reviewer'].includes(agent.role)
+  ))
+  for (const reviewer of linkedReviewers) {
+    addActor(dashboardActor({
+      sessionId: reviewer.sessionId,
+      role: reviewer.role,
+      lifecycle: reviewer.lifecycle,
+      activity: reviewer.role === 'plan-reviewer' ? 'plan_review' : reviewer.role,
+      updatedAt: reviewer.updatedAt,
+    }))
+  }
+  if (!linkedReviewers.some(agent => agent.role === 'plan-reviewer')
+    && ['plan_review_not_started', 'plan_reviewing', 'awaiting_plan_approval', 'plan_revision_required'].includes(phase)) {
+    addActor(dashboardActor({
+      role: 'plan-reviewer',
+      lifecycle: phase === 'plan_review_not_started'
+        ? 'not_started'
+        : phase === 'plan_reviewing' ? 'starting' : 'closed',
+      activity: state.planReview?.status ?? (phase === 'plan_reviewing' ? 'plan_review' : phase),
+      updatedAt: state.planReviewedAt ?? state.planningAgent?.updatedAt ?? state.planCreatedAt,
+    }))
+  }
+  for (const record of Object.values(state.ownerRuns ?? {})) {
+    const sessionId = dashboardText(record?.sessionId ?? record?.result?.sessionId, 300)
+    const live = agentBySession(runtimeAgents, sessionId)
+    addActor(dashboardActor({
+      sessionId,
+      role: 'owner',
+      lifecycle: ownerActorLifecycle(record, live),
+      activity: dashboardText(record?.phase ?? record?.status, 100) || 'owner_task',
+      taskId: record?.taskId ?? record?.stageId,
+      ownerId: record?.ownerId,
+      updatedAt: live?.updatedAt ?? record?.updatedAt ?? record?.lastHeartbeatAt,
+    }))
+  }
+  for (const agent of runtimeAgents.filter(item => item.workflowId === workflowId)) {
+    if (agent.role === 'main') continue
+    addActor(dashboardActor({
+      sessionId: agent.sessionId,
+      role: agent.role,
+      lifecycle: agent.lifecycle,
+      activity: agent.role,
+      taskId: agent.taskId,
+      ownerId: agent.ownerId,
+      updatedAt: agent.updatedAt,
+    }))
+  }
+  return {
+    workflowId,
+    goal: dashboardText(state.plan?.summary) || dashboardText(state.request),
+    status: dashboardText(state.status, 100),
+    phase,
+    lifecycle: workflowLifecycle(state, phase),
+    runnerAssignment: daemon?.online === true ? (daemonActive ? 'supervising' : 'idle') : 'offline',
+    execution: counts,
+    mainThread,
+    subagents,
+    createdAt: dashboardText(state.createdAt, 100) || null,
+    updatedAt: dashboardText(state.updatedAt, 100) || null,
+  }
+}
+
+function operationStatusProjection(state, runtimeAgents) {
+  const mainRuntime = agentBySession(runtimeAgents, state.parentSessionId)
+  const operatorRuntime = agentBySession(runtimeAgents, state.childId)
+  const terminal = ['completed', 'failed', 'cancelled'].includes(state.status)
+  let operatorLifecycle = operatorRuntime?.lifecycle
+  if (state.status === 'waiting_input') operatorLifecycle = 'waiting_user_input'
+  else if (state.status === 'waiting_approval') operatorLifecycle = 'waiting_user_approval'
+  else if (state.status === 'starting') operatorLifecycle ??= 'starting'
+  else if (state.status === 'completed') operatorLifecycle = 'completed'
+  else if (state.status === 'failed') operatorLifecycle = 'failed'
+  else if (state.status === 'cancelled') operatorLifecycle = 'cancelled'
+  else operatorLifecycle ??= 'not_observed'
+  return {
+    operationId: dashboardText(state.id, 300),
+    goal: dashboardText(state.spec?.goal),
+    status: dashboardText(state.status, 100),
+    lifecycle: terminal ? state.status : ['waiting_input', 'waiting_approval'].includes(state.status) ? 'waiting' : 'active',
+    mainThread: dashboardActor({
+      sessionId: state.parentSessionId,
+      role: 'main',
+      lifecycle: mainRuntime?.lifecycle ?? (terminal ? 'closed' : 'not_observed'),
+      activity: `operation_${state.status}`,
+      updatedAt: mainRuntime?.updatedAt ?? state.updatedAt,
+    }),
+    subagents: [dashboardActor({
+      sessionId: state.childId,
+      role: 'operator',
+      lifecycle: operatorLifecycle,
+      activity: state.status,
+      updatedAt: operatorRuntime?.updatedAt ?? state.updatedAt,
+    })],
+    createdAt: dashboardText(state.createdAt, 100) || null,
+    updatedAt: dashboardText(state.updatedAt, 100) || null,
+  }
+}
+
 function dashboardWorkflowWaitItem(state, workspace, daemon) {
   const revisionDecision = state.pendingPlanRevision?.review?.status === 'passed'
-  if (!['approved', 'running', 'blocked'].includes(state?.status)
-    && !(state?.status === 'completed' && revisionDecision && state?.finalized !== true)) return undefined
+  const activeOwnerRecord = Object.values(state.ownerRuns ?? {})
+    .filter(record => ['starting', 'running', 'waiting_approval'].includes(record?.status))
+    .sort((left, right) => String(right.updatedAt ?? right.lastHeartbeatAt ?? right.startedAt ?? '')
+      .localeCompare(String(left.updatedAt ?? left.lastHeartbeatAt ?? left.startedAt ?? '')))[0]
   const sessionId = dashboardText(
-    revisionDecision ? state.conversationRootSessionId : state.planApprovedBy,
+    revisionDecision
+      ? state.conversationRootSessionId
+      : activeOwnerRecord?.sessionId ?? state.orchestratorSessionId ?? state.planApprovedBy,
     300,
   )
   if (sessionId === '') return undefined
   const workflowId = dashboardText(state.id, 300)
   const counts = workflowTaskCounts(state)
   const daemonActive = daemon?.active?.has(`${workspace.id}:${workflowId}`) === true
+  const phase = deterministicWorkflowPhase(state, counts, daemonActive)
   let waitState
   let waitingFor
   let statusText
@@ -699,26 +989,34 @@ function dashboardWorkflowWaitItem(state, workspace, daemon) {
     waitState = 'waiting_workflow_decision'
     waitingFor = 'Workflow 根会话批准 PlanRevision'
     statusText = `PlanRevision ${String(state.pendingPlanRevision.number)} 已通过独立审查，等待用户决定`
+  } else if (activeOwnerRecord?.status === 'waiting_approval') {
+    waitState = 'waiting_owner_approval'
+    waitingFor = 'Owner 宿主授权'
+    statusText = 'Owner 子代理正在等待宿主授权'
   } else if (state.status === 'blocked' || counts.waitingDecisionTasks > 0) {
     waitState = 'waiting_workflow_decision'
     waitingFor = '主代理或用户决定'
     statusText = 'Owner Workflow 已阻塞，等待处理'
-  } else if (daemon?.online !== true) {
+  } else if (phase === 'awaiting_plan_approval') {
+    waitState = 'waiting_workflow_decision'
+    waitingFor = 'Workflow 根会话批准计划'
+    statusText = '计划已通过独立审查，等待用户批准执行'
+  } else if (phase === 'awaiting_registry_approval') {
+    waitState = 'waiting_workflow_decision'
+    waitingFor = 'Workflow 根会话批准 Owner Registry'
+    statusText = 'Owner Registry 提案等待用户决定'
+  } else if (['plan_review_not_started', 'plan_review_failed', 'planning_failed'].includes(phase)) {
+    waitState = 'workflow_stalled'
+    waitingFor = 'Workflow Runtime 恢复'
+    statusText = phase === 'plan_review_not_started'
+      ? '计划已生成，但独立 Reviewer 尚未启动'
+      : '计划编排已经停止，等待恢复或处理'
+  } else if (['approved', 'running'].includes(state.status) && daemon?.online !== true) {
     waitState = 'runner_offline'
     waitingFor = 'Runner daemon'
     statusText = 'Runner daemon 未运行或心跳已过期'
-  } else if (state.status === 'approved' || (!daemonActive && counts.runningTasks === 0)) {
-    waitState = 'waiting_runner'
-    waitingFor = 'Runner daemon 接管'
-    statusText = '计划已批准，等待 Runner 接管'
-  } else if (counts.runningTasks > 0) {
-    waitState = 'running_owner'
-    waitingFor = 'Harness Owner 子代理'
-    statusText = 'Owner 子代理正在执行'
   } else {
-    waitState = 'waiting_dependencies'
-    waitingFor = 'DAG 前置任务或下一次派发'
-    statusText = '等待依赖满足或 Runner 派发'
+    return undefined
   }
   return {
     id: `workflow:${workflowId}`,
@@ -743,9 +1041,9 @@ function dashboardWorkflowWaitItem(state, workspace, daemon) {
 }
 
 /**
- * 返回所有已登记工作区中的主动等待和遗留等待。磁盘 Operation 状态是唯一权威来源；
- * 浏览器只得到会话编号、工作区显示名和有限摘要，不会得到本地路径或命令。
- * 遗留项不会计入主动等待，也不会伪装成仍可继续的任务。
+ * 返回所有已登记工作区的确定性运行状态、需要处理事项和遗留记录。磁盘 Workflow、
+ * Operation、Agent runtime 与 Runner daemon 状态是唯一权威来源；浏览器不会得到本地路径、
+ * 原始命令或进程编号。遗留项不会计入需要处理，也不会伪装成仍可继续的任务。
  */
 export async function listDashboardWaits(catalogRoot) {
   const catalog = workspacePath(catalogRoot)
@@ -757,9 +1055,12 @@ export async function listDashboardWaits(catalogRoot) {
   ]
   const waits = []
   const staleWaits = []
+  const statusWorkspaces = []
   const daemon = await readRunnerDaemonState(catalog)
   for (const workspace of workspaces) {
     const states = await listOperationStates(workspace.root).catch(() => [])
+    const workflowStates = await listWorkflowWaitStates(workspace).catch(() => [])
+    const runtimeAgents = await listAgentRuntimeStates(workspace).catch(() => [])
     for (const state of states) {
       const stale = staleOperationWait(state, states)
       const item = dashboardWaitItem(state, workspace, stale)
@@ -767,10 +1068,33 @@ export async function listDashboardWaits(catalogRoot) {
       if (stale === undefined) waits.push(item)
       else staleWaits.push(item)
     }
-    for (const state of await listWorkflowWaitStates(workspace).catch(() => [])) {
+    for (const state of workflowStates) {
       const item = dashboardWorkflowWaitItem(state, workspace, daemon)
       if (item !== undefined) waits.push(item)
     }
+    const workflowIds = new Set(workflowStates.map(state => dashboardText(state.id, 300)))
+    const operationIds = new Set(states.map(state => dashboardText(state.id, 300)))
+    statusWorkspaces.push({
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      workflows: workflowStates
+        .map(state => workflowStatusProjection(state, workspace, daemon, runtimeAgents))
+        .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt))),
+      operations: states
+        .map(state => operationStatusProjection(state, runtimeAgents))
+        .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt))),
+      agents: runtimeAgents
+        .filter(agent => !workflowIds.has(agent.workflowId) && !operationIds.has(agent.operationId))
+        .map(agent => dashboardActor({
+          sessionId: agent.sessionId,
+          role: agent.role,
+          lifecycle: agent.lifecycle,
+          activity: agent.role,
+          taskId: agent.taskId,
+          ownerId: agent.ownerId,
+          updatedAt: agent.updatedAt,
+        })),
+    })
   }
   waits.sort((left, right) => {
     const started = String(left.startedAt).localeCompare(String(right.startedAt))
@@ -781,14 +1105,120 @@ export async function listDashboardWaits(catalogRoot) {
     return updated !== 0 ? updated : right.id.localeCompare(left.id)
   })
   return {
-    contract: 'DSH_WAIT_LIST_V3',
+    contract: 'DSH_RUNTIME_STATUS_V1',
     runner: {
-      status: daemon?.online === true ? 'online' : 'offline',
+      process: daemon?.process ?? 'offline',
+      assignment: daemon?.assignment ?? 'offline',
       heartbeatAt: daemon?.heartbeatAt ?? null,
+      startedAt: daemon?.startedAt ?? null,
     },
+    workspaces: statusWorkspaces,
     waits,
     staleWaits,
   }
+}
+
+/**
+ * 通过一个浏览器 SSE 连接持续发布运行状态快照。文件监听覆盖目录表及每个已登记
+ * 工作区的 Operation、Workflow、Agent runtime 与 Runner 状态目录；内容未变化时不会重复发送。
+ * 这里不运行周期轮询；监听器异常时主动断流，由浏览器重新建立 SSE。
+ */
+export async function serveDashboardWaitEvents(catalogRoot, response) {
+  const catalog = workspacePath(catalogRoot)
+  const watchers = new Map()
+  let closed = false
+  let publishTimer
+  let lastPayload = ''
+
+  const closeWatcher = watcher => {
+    try { watcher.close() } catch { /* watcher 已经关闭 */ }
+  }
+  const close = () => {
+    if (closed) return
+    closed = true
+    clearTimeout(publishTimer)
+    for (const watcher of watchers.values()) closeWatcher(watcher)
+    watchers.clear()
+  }
+  const disconnect = () => {
+    if (closed) return
+    response.destroy()
+    close()
+  }
+  const publish = async force => {
+    if (closed || response.destroyed || response.writableEnded) return
+    const payload = JSON.stringify(await listDashboardWaits(catalog))
+    if (!force && payload === lastPayload) return
+    lastPayload = payload
+    response.write(`event: waits\ndata: ${payload}\n\n`)
+  }
+  const watchDirectories = async () => {
+    const records = await readWorkspaceCatalog(catalog)
+    const roots = [catalog, ...records.map(record => record.root)]
+    const operationDirectories = roots.map(root => join(projectionDirectory(root), 'operations'))
+    const directories = new Set([
+      join(projectionDirectory(catalog), DASHBOARD_DIRECTORY),
+      ...roots.flatMap(root => {
+        const runtime = projectionDirectory(root)
+        return [
+          runtime,
+          join(runtime, 'operations'),
+          join(runtime, 'workflows'),
+          join(runtime, 'runner'),
+          join(runtime, 'runtime'),
+          join(runtime, 'runtime', 'agents'),
+        ]
+      }),
+    ])
+    for (const directory of operationDirectories) {
+      if (!existsSync(directory)) continue
+      for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+        if (entry.isDirectory()) directories.add(join(directory, entry.name))
+      }
+    }
+    for (const [directory, watcher] of watchers) {
+      if (directories.has(directory) && existsSync(directory)) continue
+      closeWatcher(watcher)
+      watchers.delete(directory)
+    }
+    for (const directory of directories) {
+      if (watchers.has(directory) || !existsSync(directory)) continue
+      try {
+        const watcher = watch(directory, { persistent: false }, () => schedulePublish())
+        watcher.on('error', () => {
+          closeWatcher(watcher)
+          watchers.delete(directory)
+          schedulePublish()
+        })
+        watchers.set(directory, watcher)
+      } catch {
+        // 父目录监听仍可捕获目录重建；单个细分目录不可监听时保持 SSE 连接。
+      }
+    }
+    return true
+  }
+  const schedulePublish = () => {
+    clearTimeout(publishTimer)
+    publishTimer = setTimeout(() => {
+      void publish(false)
+        .then(() => watchDirectories())
+        .catch(disconnect)
+    }, 20)
+    publishTimer.unref?.()
+  }
+
+  response.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-store',
+    Connection: 'keep-alive',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  response.flushHeaders?.()
+  response.write(': waits 已连接\n\n')
+  response.once('close', close)
+  response.once('error', close)
+  if (!await watchDirectories()) return
+  await publish(true)
 }
 
 function projectionEvents(projection, previous) {

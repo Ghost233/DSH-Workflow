@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -28,6 +28,38 @@ async function listen(handler) {
     close: async () => new Promise(resolveClose => server.close(resolveClose)),
   }
 }
+
+async function readSseData(reader, initial = '') {
+  let buffer = initial
+  const decoder = new TextDecoder()
+  while (true) {
+    const boundary = buffer.indexOf('\n\n')
+    if (boundary !== -1) {
+      const frame = buffer.slice(0, boundary)
+      const rest = buffer.slice(boundary + 2)
+      const data = frame.split('\n')
+        .filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).trimStart())
+        .join('\n')
+      if (data !== '') return { value: JSON.parse(data), rest }
+      buffer = rest
+      continue
+    }
+    const next = await reader.read()
+    if (next.done) throw new Error('SSE 在收到数据前结束')
+    buffer += decoder.decode(next.value, { stream: true })
+  }
+}
+
+test('等待列表 SSE 由文件事件驱动，不运行周期轮询', async () => {
+  const source = await readFile(new URL('../src/dashboard.mjs', import.meta.url), 'utf8')
+  const start = source.indexOf('export async function serveDashboardWaitEvents')
+  const end = source.indexOf('\nfunction projectionEvents', start)
+  assert.ok(start >= 0 && end > start)
+  const streamSource = source.slice(start, end)
+  assert.doesNotMatch(streamSource, /setInterval/u)
+  assert.doesNotMatch(source, /WAIT_STREAM_RECONCILE_MS/u)
+})
 
 test('内嵌 Dashboard 页面、目录与 DAG 快照都从固定工作区只读提供', async t => {
   const root = await workspaceFixture(t)
@@ -73,7 +105,7 @@ test('内嵌 Dashboard 页面、目录与 DAG 快照都从固定工作区只读�
     action: '短暂关闭 Wi-Fi',
     risk: '网络会短暂中断',
     status: 'pending',
-    requestedAt: operation.updatedAt,
+    requestedAt: new Date(Date.parse(operation.createdAt) + 5_000).toISOString(),
   }
   await writeOperationState(root, operation)
   const dashboard = await listen(createDashboardHandler(root))
@@ -133,8 +165,10 @@ test('内嵌 Dashboard 页面、目录与 DAG 快照都从固定工作区只读�
   const waitsResponse = await fetch(`${dashboard.url}/owner-workflow/api/waits`)
   assert.equal(waitsResponse.status, 200)
   const waitsBody = await waitsResponse.json()
-  assert.equal(waitsBody.contract, 'DSH_WAIT_LIST_V3')
-  assert.equal(waitsBody.runner.status, 'offline')
+  assert.equal(waitsBody.contract, 'DSH_RUNTIME_STATUS_V1')
+  assert.equal(waitsBody.runner.process, 'offline')
+  assert.equal(waitsBody.runner.assignment, 'offline')
+  assert.equal(waitsBody.workspaces[0].operations[0].status, 'waiting_approval')
   assert.deepEqual(waitsBody.staleWaits, [])
   assert.deepEqual(waitsBody.waits.map(item => ({
     id: item.id,
@@ -157,6 +191,58 @@ test('内嵌 Dashboard 页面、目录与 DAG 快照都从固定工作区只读�
   }])
   assert.equal(Object.hasOwn(waitsBody.waits[0], 'command'), false)
   assert.equal(Object.hasOwn(waitsBody.waits[0], 'root'), false)
+  assert.equal(waitsBody.waits[0].startedAt, operation.approvals['approval-dashboard'].requestedAt)
+})
+
+test('等待列表 SSE 立即发送快照并在磁盘状态变化后推送新快照', async t => {
+  const root = await workspaceFixture(t)
+  const operation = createOperationState({
+    root,
+    operationId: 'op-waits-stream',
+    parentSessionId: 'main-session',
+    childId: 'operator-session',
+    spec: {
+      goal: '等待 SSE 测试授权',
+      context: [],
+      constraints: ['只用于测试'],
+      successCriteria: ['收到推送'],
+      capabilities: ['shell'],
+    },
+  })
+  operation.status = 'waiting_approval'
+  operation.pending = {
+    kind: 'approval', id: 'approval-stream', question: '允许测试吗？',
+    action: '运行测试动作', risk: '无', command: 'true',
+  }
+  operation.approvals['approval-stream'] = {
+    id: 'approval-stream', command: 'true', action: '运行测试动作', risk: '无',
+    status: 'pending', requestedAt: operation.createdAt,
+  }
+  await writeOperationState(root, operation)
+
+  const dashboard = await listen(createDashboardHandler(root))
+  const controller = new AbortController()
+  t.after(async () => {
+    controller.abort()
+    await dashboard.close()
+  })
+  const response = await fetch(`${dashboard.url}/owner-workflow/api/waits/events`, { signal: controller.signal })
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'text/event-stream; charset=utf-8')
+  const reader = response.body.getReader()
+  const initial = await readSseData(reader)
+  assert.deepEqual(initial.value.waits.map(item => item.operationId), ['op-waits-stream'])
+
+  operation.status = 'completed'
+  operation.pending = null
+  operation.updatedAt = new Date(Date.parse(operation.updatedAt) + 1_000).toISOString()
+  await writeOperationState(root, operation)
+  const changed = await Promise.race([
+    readSseData(reader, initial.rest),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('等待列表 SSE 未推送状态变化')), 4_000)),
+  ])
+  assert.deepEqual(changed.value.waits, [])
+  controller.abort()
 })
 
 test('等待列表把旧版复合授权和已被相同动作取代的 Operation 归入遗留记录', async t => {
@@ -259,7 +345,7 @@ test('等待列表把旧版复合授权和已被相同动作取代的 Operation 
   const dashboard = await listen(createDashboardHandler(root))
   t.after(() => dashboard.close())
   const body = await (await fetch(`${dashboard.url}/owner-workflow/api/waits`)).json()
-  assert.equal(body.contract, 'DSH_WAIT_LIST_V3')
+  assert.equal(body.contract, 'DSH_RUNTIME_STATUS_V1')
   assert.deepEqual(body.waits, [])
   assert.deepEqual(body.staleWaits.map(item => ({
     operationId: item.operationId,
@@ -330,6 +416,25 @@ test('等待列表投影 Runner 接管、未执行、执行中和依赖任务数
     tasks: planTasks.map(task => ({ taskId: task.id, status: 'pending' })),
     ownerRuns: {},
   }, null, 2)}\n`, 'utf8')
+  await writeFile(join(workflowDirectory, 'wf-approval.json'), `${JSON.stringify({
+    ...base,
+    id: 'wf-approval',
+    status: 'running',
+    tasks: [
+      { taskId: 'T1', status: 'running' },
+      { taskId: 'T2', status: 'pending' },
+      { taskId: 'T3', status: 'pending' },
+    ],
+    ownerRuns: {
+      'T1:code-owner': {
+        taskId: 'T1',
+        ownerId: 'code-owner',
+        status: 'waiting_approval',
+        sessionId: 'owner-approval-session',
+        pendingApprovalId: 'oa-dashboard',
+      },
+    },
+  }, null, 2)}\n`, 'utf8')
   await writeFile(join(runnerDirectory, 'daemon.json'), `${JSON.stringify({
     contract: 'DSH_WORKFLOW_RUNNER_DAEMON_V1',
     status: 'running',
@@ -342,20 +447,22 @@ test('等待列表投影 Runner 接管、未执行、执行中和依赖任务数
   const dashboard = await listen(createDashboardHandler(root))
   t.after(() => dashboard.close())
   const body = await (await fetch(`${dashboard.url}/owner-workflow/api/waits`)).json()
-  assert.equal(body.contract, 'DSH_WAIT_LIST_V3')
-  assert.equal(body.runner.status, 'online')
+  assert.equal(body.contract, 'DSH_RUNTIME_STATUS_V1')
+  assert.equal(body.runner.process, 'online')
+  assert.equal(body.runner.assignment, 'supervising')
+  const workflows = new Map(body.workspaces[0].workflows.map(item => [item.workflowId, item]))
+  assert.deepEqual({
+    phase: workflows.get('wf-waiting').phase,
+    pending: workflows.get('wf-waiting').execution.pendingTasks,
+    running: workflows.get('wf-waiting').execution.runningTasks,
+  }, { phase: 'runner_queued', pending: 3, running: 0 })
+  assert.deepEqual({
+    phase: workflows.get('wf-running').phase,
+    pending: workflows.get('wf-running').execution.pendingTasks,
+    running: workflows.get('wf-running').execution.runningTasks,
+    dependencies: workflows.get('wf-running').execution.waitingDependencyTasks,
+  }, { phase: 'owner_running', pending: 2, running: 1, dependencies: 2 })
   const waits = new Map(body.waits.map(item => [item.workflowId, item]))
-  assert.deepEqual({
-    state: waits.get('wf-waiting').state,
-    pending: waits.get('wf-waiting').pendingTasks,
-    running: waits.get('wf-waiting').runningTasks,
-  }, { state: 'waiting_runner', pending: 3, running: 0 })
-  assert.deepEqual({
-    state: waits.get('wf-running').state,
-    pending: waits.get('wf-running').pendingTasks,
-    running: waits.get('wf-running').runningTasks,
-    dependencies: waits.get('wf-running').waitingDependencyTasks,
-  }, { state: 'running_owner', pending: 2, running: 1, dependencies: 2 })
   assert.deepEqual({
     state: waits.get('wf-revision').state,
     sessionId: waits.get('wf-revision').sessionId,
@@ -365,7 +472,86 @@ test('等待列表投影 Runner 接管、未执行、执行中和依赖任务数
     sessionId: 'workflow-root-session',
     statusText: 'PlanRevision 2 已通过独立审查，等待用户决定',
   })
+  assert.deepEqual({
+    state: waits.get('wf-approval').state,
+    sessionId: waits.get('wf-approval').sessionId,
+    statusText: waits.get('wf-approval').statusText,
+  }, {
+    state: 'waiting_owner_approval',
+    sessionId: 'owner-approval-session',
+    statusText: 'Owner 子代理正在等待宿主授权',
+  })
   assert.ok(body.waits.every(item => !Object.hasOwn(item, 'root') && !Object.hasOwn(item, 'pid')))
+})
+
+test('运行状态投影 Harness 主线程、子代理和未启动 Reviewer 的确定性生命周期', async t => {
+  const root = await workspaceFixture(t)
+  const workflowDirectory = join(root, '.dsh-workflow', 'workflows')
+  const agentDirectory = join(root, '.dsh-workflow', 'runtime', 'agents')
+  await mkdir(workflowDirectory, { recursive: true })
+  await mkdir(agentDirectory, { recursive: true })
+  const task = {
+    id: 'T1', role: 'work', ownerId: 'app', title: '实现状态', dependsOn: [],
+    write: ['src/**'], verify: ['unit'], done: ['完成'],
+  }
+  const base = {
+    contract: 'DSH_WORKFLOW_STATE_V2',
+    root,
+    planApproved: false,
+    createdAt: '2026-08-27T00:00:00.000Z',
+    updatedAt: '2026-08-27T00:01:00.000Z',
+    plan: { contract: 'DSH_PLAN_V2', summary: '确定性状态测试', tasks: [task] },
+    tasks: [{ taskId: 'T1', status: 'pending' }],
+    ownerRuns: {},
+  }
+  await writeFile(join(workflowDirectory, 'wf-reviewing.json'), `${JSON.stringify({
+    ...base,
+    id: 'wf-reviewing',
+    status: 'planned',
+    orchestratorSessionId: 'main-live',
+    planningAgent: { childId: 'planner-idle', phase: 'reviewing', updatedAt: base.updatedAt },
+  }, null, 2)}\n`, 'utf8')
+  await writeFile(join(workflowDirectory, 'wf-stalled.json'), `${JSON.stringify({
+    ...base,
+    id: 'wf-stalled',
+    status: 'planned',
+    orchestratorSessionId: 'main-stalled',
+  }, null, 2)}\n`, 'utf8')
+  const writeAgent = async state => writeFile(
+    join(agentDirectory, `${createHash('sha256').update(state.sessionId).digest('hex')}.json`),
+    `${JSON.stringify({
+      contract: 'DSH_AGENT_RUNTIME_STATUS_V1',
+      runtimeId: 'runtime-test',
+      processId: process.pid,
+      parentSessionId: null,
+      workflowId: 'wf-reviewing',
+      operationId: null,
+      taskId: null,
+      ownerId: null,
+      updatedAt: base.updatedAt,
+      ...state,
+    }, null, 2)}\n`,
+    'utf8',
+  )
+  await writeAgent({ sessionId: 'main-live', role: 'main', lifecycle: 'idle' })
+  await writeAgent({ sessionId: 'planner-idle', parentSessionId: 'main-live', role: 'planner', lifecycle: 'idle' })
+  await writeAgent({ sessionId: 'reviewer-running', parentSessionId: 'main-live', role: 'plan-reviewer', lifecycle: 'running' })
+
+  const dashboard = await listen(createDashboardHandler(root))
+  t.after(() => dashboard.close())
+  const body = await (await fetch(`${dashboard.url}/owner-workflow/api/waits`)).json()
+  const workflows = new Map(body.workspaces[0].workflows.map(item => [item.workflowId, item]))
+  assert.equal(workflows.get('wf-reviewing').phase, 'plan_reviewing')
+  assert.equal(workflows.get('wf-reviewing').mainThread.lifecycle, 'idle')
+  assert.deepEqual(workflows.get('wf-reviewing').subagents.map(item => [item.role, item.lifecycle]), [
+    ['planner', 'idle'],
+    ['plan-reviewer', 'running'],
+  ])
+  assert.equal(workflows.get('wf-stalled').phase, 'plan_review_not_started')
+  assert.equal(workflows.get('wf-stalled').subagents.find(item => item.role === 'plan-reviewer').lifecycle, 'not_started')
+  assert.equal(body.waits.find(item => item.workflowId === 'wf-stalled').state, 'workflow_stalled')
+  assert.ok(body.workspaces.every(workspace => !Object.hasOwn(workspace, 'root')))
+  assert.ok(body.workspaces.flatMap(workspace => workspace.agents).every(agent => !Object.hasOwn(agent, 'processId')))
 })
 
 test('内嵌 Dashboard 拒绝写入方法、非法 workflow id 与未知路径', async t => {

@@ -44,6 +44,7 @@ export const STOP_REASON_ACTIONS = Object.freeze({
   thread_failed: 'replace_thread',
   plan_invalid: 'revise_plan',
   runtime_failed: 'retry_runtime',
+  owner_orphaned: 'recover_owner',
 })
 
 export function text(value, field) {

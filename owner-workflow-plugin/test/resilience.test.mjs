@@ -227,6 +227,265 @@ async function createOwner(_root, workflow, taskId = 'stage-1', ownerId = 'owner
   return workflow.runtime.createOwnerEntry(workflow.state, task, ownerId)
 }
 
+test('Supervisor 将没有活跃子代理的 running Owner 收敛为 orphaned，而不是继续报告运行中', async () => {
+  const { root } = await createRepository()
+  const runtime = createOwnerWorkflowRuntime({ agents: { get: () => undefined } }, {})
+  let workflow
+  try {
+    workflow = await createWorkflow(root, runtime, createPlan(), { id: 'wf-owner-orphaned' })
+    const state = await readState(root, workflow.state.id)
+    setTaskStatus(state, 'stage-1', 'running')
+    state.tasks.find(task => task.taskId === 'stage-1').executorId = 'missing-owner-session'
+    state.ownerRuns['stage-1:owner-a'] = {
+      status: 'running',
+      taskId: 'stage-1',
+      stageId: 'stage-1',
+      ownerId: 'owner-a',
+      sessionId: 'missing-owner-session',
+      startedAt: '2026-08-20T08:00:00.000Z',
+    }
+    await writeState(root, state)
+
+    const status = await runtime.supervisorStatus(workflow.agent, state.id)
+    const saved = await readState(root, state.id)
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].status, 'orphaned')
+    assert.deepEqual(
+      saved.tasks.map(task => ({ id: task.taskId, status: task.status, reason: task.reason, action: task.action })),
+      [
+        { id: 'stage-1', status: 'stopped', reason: 'owner_orphaned', action: 'recover_owner' },
+        { id: 'stage-2', status: 'pending', reason: null, action: null },
+      ],
+    )
+    assert.equal(status.workflows[0].issues.some(issue => issue.code === 'owner-orphaned'), true)
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow)
+  }
+})
+
+test('Supervisor inspect 路径同样执行 task timeout，不能以持续 inspect 无限续命', async () => {
+  const { root } = await createRepository()
+  const runtime = createOwnerWorkflowRuntime({ agents: { get: id => (
+    id === 'owner-timeout-session' ? { id, status: 'running' } : undefined
+  ) } }, {})
+  const timeoutPlan = createPlan()
+  timeoutPlan.tasks[0] = {
+    ...timeoutPlan.tasks[0],
+    onTimeout: { action: 'notify_main', afterMs: 60_000 },
+  }
+  let workflow
+  try {
+    workflow = await createWorkflow(root, runtime, timeoutPlan, { id: 'wf-owner-inspect-timeout' })
+    const state = await readState(root, workflow.state.id)
+    setTaskStatus(state, 'stage-1', 'running')
+    Object.assign(state.tasks.find(task => task.taskId === 'stage-1'), {
+      executorId: 'owner-timeout-session',
+      unchangedPolls: 10,
+    })
+    state.ownerRuns['stage-1:owner-a'] = {
+      status: 'running',
+      taskId: 'stage-1',
+      stageId: 'stage-1',
+      ownerId: 'owner-a',
+      sessionId: 'owner-timeout-session',
+      startedAt: '2026-08-20T08:00:00.000Z',
+    }
+    await writeState(root, state)
+
+    const result = await runtime.awaitSupervisorEvent(workflow.agent, state.id, 0, 1)
+    const saved = await readState(root, state.id)
+    assert.equal(result.event.type, 'supervisor.task-timeout')
+    assert.equal(saved.status, 'blocked')
+    assert.equal(saved.tasks[0].status, 'stopped')
+    assert.equal(saved.tasks[0].reason, 'decision_required')
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow)
+  }
+})
+
+test('Owner 子代理启动时立即持久化 session、phase 与 heartbeat', async () => {
+  const { root } = await createRepository()
+  const runtime = createOwnerWorkflowRuntime({}, {})
+  let workflow
+  try {
+    workflow = await createWorkflow(root, runtime, createPlan(), { id: 'wf-owner-session-start' })
+    const state = await readState(root, workflow.state.id)
+    setTaskStatus(state, 'stage-1', 'running')
+    state.ownerRuns['stage-1:owner-a'] = {
+      status: 'starting',
+      taskId: 'stage-1',
+      stageId: 'stage-1',
+      ownerId: 'owner-a',
+      startedAt: new Date().toISOString(),
+    }
+    await writeState(root, state)
+
+    await runtime.persistOwnerSession({
+      workflowRoot: root,
+      workflowId: state.id,
+      stageId: 'stage-1',
+      owner: { id: 'owner-a' },
+    }, 'owner-session-start')
+    const saved = await readState(root, state.id)
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].sessionId, 'owner-session-start')
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].phase, 'running')
+    assert.equal(typeof saved.ownerRuns['stage-1:owner-a'].lastHeartbeatAt, 'string')
+    assert.equal(saved.tasks[0].executorId, 'owner-session-start')
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow)
+  }
+})
+
+test('Owner 宿主授权等待会持久化到 workflow，并在结束后恢复 running', async () => {
+  const { root } = await createRepository()
+  const runtime = createOwnerWorkflowRuntime({}, {})
+  let workflow
+  try {
+    workflow = await createWorkflow(root, runtime, createPlan(), { id: 'wf-owner-approval-state' })
+    const state = await readState(root, workflow.state.id)
+    setTaskStatus(state, 'stage-1', 'running')
+    state.tasks[0].executorId = 'owner-approval-session'
+    state.ownerRuns['stage-1:owner-a'] = {
+      status: 'running',
+      taskId: 'stage-1',
+      stageId: 'stage-1',
+      ownerId: 'owner-a',
+      sessionId: 'owner-approval-session',
+      startedAt: new Date().toISOString(),
+    }
+    await writeState(root, state)
+    const active = {
+      workflowRoot: root,
+      workflowId: state.id,
+      stageId: 'stage-1',
+      owner: { id: 'owner-a' },
+      sessionId: 'owner-approval-session',
+    }
+
+    const pending = await runtime.recordOwnerApprovalState(active, {
+      callId: 'approval-call',
+      toolName: 'owner_host_exec',
+      reason: '需要读取共享 Xcode Package 缓存',
+    })
+    let saved = await readState(root, state.id)
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].status, 'waiting_approval')
+    assert.equal(saved.pendingOwnerApprovals[pending.approvalId].sessionId, 'owner-approval-session')
+
+    await runtime.resolveOwnerApprovalState(active, pending.approvalId, 'allowed-once')
+    saved = await readState(root, state.id)
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].status, 'running')
+    assert.equal(saved.pendingOwnerApprovals[pending.approvalId].status, 'allowed-once')
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow)
+  }
+})
+
+test('主会话 Owner 恢复只负责后台派发，不同步等待完整 LLM 执行', async () => {
+  const runtime = createOwnerWorkflowRuntime({}, {})
+  let release
+  const pending = new Promise(resolvePromise => { release = resolvePromise })
+  runtime.recoverOwner = async () => pending
+  const result = await runtime.dispatchOwnerRecovery(
+    { id: 'root-agent', session: { id: 'root-agent' } },
+    'wf-owner-background',
+    'T1',
+    'owner-a',
+  )
+  assert.equal(result.status, 'recovery_started')
+  assert.equal(runtime.manualOwnerRecoveries.has('wf-owner-background:T1:owner-a'), true)
+  release({ status: 'completed' })
+  await runtime.manualOwnerRecoveries.get('wf-owner-background:T1:owner-a')
+  await new Promise(resolvePromise => setImmediate(resolvePromise))
+  assert.equal(runtime.manualOwnerRecoveries.has('wf-owner-background:T1:owner-a'), false)
+  await disposeRuntime(runtime)
+})
+
+test('workflow_status 默认保持紧凑，完整历史只通过分页 detail 返回', async () => {
+  const { root } = await createRepository()
+  const runtime = createOwnerWorkflowRuntime({}, {})
+  let workflow
+  try {
+    workflow = await createWorkflow(root, runtime, createPlan(), { id: 'wf-compact-status' })
+    const state = await readState(root, workflow.state.id)
+    state.planRevisions = Array.from({ length: 100 }, (_, index) => ({
+      number: index + 1,
+      explanation: '历史修订说明'.repeat(100),
+    }))
+    state.ownerMemoryWorklogs = {
+      'stage-1:owner-a': {
+        contract: 'DSH_OWNER_WORKLOG_V1',
+        taskId: 'stage-1',
+        title: '历史记录',
+        ownerId: 'owner-a',
+        status: 'active',
+        notes: [{ type: '结论', text: '历史上下文'.repeat(100) }],
+      },
+    }
+    await writeState(root, state)
+
+    const compact = await runtime.status(workflow.agent, state.id, { ensureBridge: false })
+    assert.ok(JSON.stringify(compact).length < 8 * 1024)
+    assert.equal(Object.hasOwn(compact, 'logs'), false)
+    assert.equal(Object.hasOwn(compact.workflow, 'planRevisions'), false)
+
+    const detail = await runtime.status(workflow.agent, state.id, {
+      ensureBridge: false,
+      detail: true,
+      logCursor: 0,
+      logLimit: 1,
+    })
+    assert.equal(Array.isArray(detail.workflow.planRevisions), true)
+    assert.equal(detail.logPage.limit, 1)
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow)
+  }
+})
+
+test('相同根因和运行时版本只允许一次 Owner 恢复', async () => {
+  const { root } = await createRepository()
+  const runtime = createOwnerWorkflowRuntime({}, {})
+  let workflow
+  try {
+    workflow = await createWorkflow(root, runtime, createPlan(), { id: 'wf-owner-recovery-fingerprint' })
+    const state = await readState(root, workflow.state.id)
+    state.status = 'failed'
+    state.error = 'Owner 工具 Schema 与运行时不匹配'
+    state.tasks[0] = {
+      ...state.tasks[0],
+      status: 'stopped',
+      reason: 'task_failed',
+      action: 'repair_task',
+    }
+    const failure = 'Owner 工具 Schema 与运行时不匹配'
+    state.ownerRuns['stage-1:owner-a'] = {
+      status: 'failed',
+      taskId: 'stage-1',
+      stageId: 'stage-1',
+      ownerId: 'owner-a',
+      error: failure,
+      recoveryCount: 1,
+      lastRecoveryFingerprint: runtime.ownerRecoveryFingerprint(state, 'stage-1', 'owner-a', failure),
+    }
+    await writeState(root, state)
+
+    await assert.rejects(
+      runtime.recoverOwner(workflow.agent, state.id, 'stage-1', 'owner-a'),
+      /同一根因已经恢复过一次/u,
+    )
+    const saved = await readState(root, state.id)
+    assert.equal(saved.status, 'blocked')
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].phase, 'recovery_blocked')
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].recoveryCount, 1)
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow)
+  }
+})
+
 test('同一 Owner 的第二个 V2 任务复用分支和 worktree 并同步最新 workflow HEAD', async () => {
   const { root } = await createRepository()
   const runtime = createOwnerWorkflowRuntime({}, {})
@@ -583,7 +842,7 @@ test('cancel 活动 Owner 时中止执行并删除 dirty 临时分支与 worktre
     saved = await readState(root, state.id)
     assert.equal(saved.status, 'cancelled')
     assert.equal(saved.ownerRuns['stage-1:owner-a'].status, 'stopped')
-    const status = await runtime.status(workflow.agent, state.id, { ensureBridge: false })
+    const status = await runtime.status(workflow.agent, state.id, { ensureBridge: false, detail: true })
     assert.equal(status.workflow.status, 'cancelled')
     assert.equal(status.workflow.temporaryArtifactsCleaned, true)
     assert.equal(status.logs.filter(entry => entry.event === 'workflow.cancelled').length, 1)

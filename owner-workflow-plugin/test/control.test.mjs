@@ -837,6 +837,11 @@ test('Owner 恢复后使用本次运行时间重置超时基线，不沿用旧 r
         sessionId: 'recovered-owner',
       },
     }
+    fixture.runtime.activeOwners.set('recovered-owner', {
+      workflowId: state.id,
+      stageId: 'T1',
+      owner: { id: 'api' },
+    })
     await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
 
     const waited = await request(fixture.manifest, 'supervisor-await-event', {
@@ -1015,7 +1020,7 @@ test('cancel 结算活动记录、清理临时分支与 worktree，并幂等保�
     assert.equal(existsSync(fixture.state.workflowWorktree), false)
     assert.deepEqual(await listBranches(fixture.root, fixture.state.workflowBranch), [])
 
-    const status = await fixture.runtime.status(fixture.agent, fixture.state.id, { ensureBridge: false })
+    const status = await fixture.runtime.status(fixture.agent, fixture.state.id, { ensureBridge: false, detail: true })
     assert.equal(status.workflow.status, 'cancelled')
     assert.equal(status.workflow.temporaryArtifactsCleaned, true)
     assert.equal(status.workflow.supervisorOutbox['T1:api'].actionId, create.actionId)
@@ -2552,6 +2557,32 @@ test('规划契约失败返回完整 Workflow ID，并在同一现场有界恢�
   }
 })
 
+test('Harness agent/status 持久化运行中、空闲和关闭生命周期', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-agent-runtime-status-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const runtime = createOwnerWorkflowRuntime({}, { ownerMemoryEnabled: false })
+  const agent = {
+    id: 'runtime-status-main',
+    status: 'running',
+    session: { id: 'runtime-status-main', header: { cwd: root } },
+  }
+  runtime.orchestratorRoots.set(agent.id, root)
+  const path = join(
+    root,
+    '.dsh-workflow',
+    'runtime',
+    'agents',
+    `${createHash('sha256').update(agent.id).digest('hex')}.json`,
+  )
+  await runtime.onAgentStatus(agent, 'running')
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).lifecycle, 'running')
+  await runtime.onAgentStatus(agent, 'idle')
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).lifecycle, 'idle')
+  await runtime.onAgentDisposed(agent)
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).lifecycle, 'closed')
+  await runtime.dispose()
+})
+
 test('workflow_start 使用一个可续接 Plan Agent，而不是同步串联规划工具', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-continuable-plan-'))
   const calls = { starts: [], followups: [] }
@@ -2620,10 +2651,27 @@ test('workflow_start 使用一个可续接 Plan Agent，而不是同步串联规
     assert.equal(calls.followups.length, 1)
     assert.equal(calls.followups[0].childId, child.id)
     assert.match(calls.followups[0].content[0].text, /workflow_plan_submit/u)
+    let finishReview
+    runtime.reviewPlan = async () => new Promise(resolveReview => { finishReview = resolveReview })
+    const resubmitted = await runtime.submitPlannerPlan(child, { ...plan, registryOperation: null })
+    assert.equal(resubmitted.status, 'reviewing')
     const continued = JSON.parse(await readFile(
       join(root, '.dsh-workflow', 'workflows', `${started.workflowId}.json`),
       'utf8',
     ))
+    assert.equal(continued.status, 'planned')
+    assert.equal(continued.planningAgent.phase, 'reviewing')
+    finishReview({
+      review: { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '计划通过', issues: [] },
+      workflow: { planDigest: continued.planDigest, registryDigest: continued.registryDigest },
+      revisionBudget: { exhausted: false },
+    })
+    await runtime.planningDrivers.get(started.workflowId)
+    const reviewed = JSON.parse(await readFile(
+      join(root, '.dsh-workflow', 'workflows', `${started.workflowId}.json`),
+      'utf8',
+    ))
+    assert.equal(reviewed.planningAgent.phase, 'awaiting_plan_approval')
     assert.equal(await git(root, ['rev-parse', continued.workflowBranch]), await git(root, ['rev-parse', 'main']))
   } finally {
     await runtime.dispose()
@@ -3484,6 +3532,10 @@ test('workflow_git_inspect 只提供受限 Git 证据且拒绝 .git 内部路径
     assert.equal(status.action, 'status')
     assert.ok(status.changes.every(item => typeof item.path === 'string' && typeof item.code === 'string'))
 
+    const unfiltered = await tool.execute({ action: 'diff', files: [] }, fixture.exec)
+    assert.equal(unfiltered.action, 'diff')
+    assert.deepEqual(unfiltered.files, [])
+
     await assert.rejects(
       tool.execute({ action: 'diff', files: ['.git/index'] }, fixture.exec),
       /\.git/u,
@@ -3524,7 +3576,8 @@ test('公开 Owner 工具只保留提交关卡、宿主授权桥和结构化协�
     assert.deepEqual(Object.keys(submit.parameters.properties), ['report'])
     assert.deepEqual(submit.parameters.required, ['report'])
     assert.equal(submit.parameters.additionalProperties, false)
-    assert.deepEqual(hostExec.parameters.required, ['command', 'description', 'justification'])
+    assert.deepEqual(hostExec.parameters.required, ['description', 'justification'])
+    assert.equal(hostExec.parameters.properties.argv.maxItems, 128)
     for (const removed of ['owner_write', 'owner_edit', 'owner_bash', 'owner_verify', 'owner_repair']) {
       assert.equal(fixture.tools.some(item => item.name === removed), false, removed)
     }

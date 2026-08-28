@@ -405,7 +405,7 @@ test('V2 生命周期使用固定 workflow 和 task 状态', () => {
   assert.deepEqual(TASK_STATUSES, ['pending', 'running', 'completed', 'stopped'])
 })
 
-test('任务停止状态只接受固定的六组 reason/action 配对', () => {
+test('任务停止状态只接受固定的 reason/action 配对', () => {
   assert.deepEqual(STOP_REASON_ACTIONS, {
     input_missing: 'provide_input',
     decision_required: 'await_user',
@@ -413,6 +413,7 @@ test('任务停止状态只接受固定的六组 reason/action 配对', () => {
     thread_failed: 'replace_thread',
     plan_invalid: 'revise_plan',
     runtime_failed: 'retry_runtime',
+    owner_orphaned: 'recover_owner',
   })
 })
 

@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
+import { configureChildSandbox } from '../src/agent-policy.mjs'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const PLUGIN_ROOT = fileURLToPath(new URL('../', import.meta.url))
@@ -319,7 +320,7 @@ test('Owner 子线程在真实 Harness 继承作用域中保留正常开发工�
       meta: { cwd, parentSession: parent.agent.id, origin: 'subagent', delegationDepth: 1 },
       setup: childContext => {
         harnessContext.agentPresets.composeFrom(childContext, parent.agent.ctx)
-        childContext.agent.session.append('sandbox/mode', { mode: 'workspace-write' })
+        configureChildSandbox(childContext, 'owner')
       },
     })
 
@@ -327,6 +328,15 @@ test('Owner 子线程在真实 Harness 继承作用域中保留正常开发工�
     for (const required of ['read', 'write', 'edit', 'bash', 'owner_submit', 'owner_host_exec']) {
       assert.ok(names.includes(required), `Owner 子线程缺少必需工具：${required}`)
     }
+    for (const toolName of ['write', 'edit', 'bash']) {
+      const schema = harnessContext.tools.schemas(child.agent).find(item => item.name === toolName)
+      assert.ok(schema, `Owner 子线程缺少 ${toolName} Schema`)
+      assert.equal(Object.hasOwn(schema.parameters.properties, 'sandbox_permissions'), false)
+      assert.equal(Object.hasOwn(schema.parameters.properties, 'justification'), false)
+    }
+    const parentWrite = harnessContext.tools.schemas(parent.agent).find(item => item.name === 'write')
+    assert.ok(parentWrite)
+    assert.equal(Object.hasOwn(parentWrite.parameters.properties, 'sandbox_permissions'), true)
     assert.equal(runtime.childCapabilityPolicy('owner').inheritTools, true)
   } finally {
     await child?.dispose()

@@ -49,12 +49,13 @@ export function ownerTaskPrompt(state, task, owner, tasks, memorySnapshot, workl
       ? ['3b. 当前是 PlanRevision 的“待检查”轮次：先同步理解最新代码并执行已绑定固定验证，不要为了制造新提交而改代码。验证失败时再按新 DAG 修复；验证通过时可以零业务改动提交 owner_submit。']
       : []),
     `4. 当前任务 required verification：${JSON.stringify(requiredVerifications)}。正式验证的固定 argv 与 cwd 均由已批准计划决定，Owner 不得临时改写；新 Flutter 验证必须在规划时显式声明包根 cwd。当前 task 为 verify 或 write 为空时，不要先手工重复已绑定的 analyze/test/build；完成必要只读检查后直接 owner_submit，由 Runtime 自动执行全部正式验证。`,
-    '5. 普通命令先使用 workspace-write 下的 bash/pwsh；只有同一精确命令因沙箱无法访问 worktree 外的编译器、SDK 或共享缓存而失败，才可以调用 owner_host_exec。不得用 owner_host_exec 执行 pwd 或探测路径；未指定 workdir 时使用当前 Owner worktree，如需指定只能使用其中已确认的相对路径，绝不能猜测 workflow worktree 的绝对路径。不要在 bash/pwsh 中设置 sandbox_permissions。Owner 会话虽采用 ask，但只有 Runtime 登记的 owner_host_exec 或固定验证请求能到达原生授权卡片，其他直接升级会被拒绝。',
+    '5. 当前 Owner 会话已经是 workspace-write；它是会话权限，不是 bash、pwsh、write 或 edit 的参数。所有普通读写调用必须省略 sandbox_permissions 和 justification，绝不能传 "workspace-write"。若误传后收到“not strictly wider”或本插件的提醒，立即原样重试同一调用并省略这两个字段；这不是阻塞，也不需要 owner_host_exec。只有同一精确 Shell 命令因沙箱无法访问 worktree 外的编译器、SDK 或共享缓存而失败，才可以调用 owner_host_exec，并优先用结构化 argv 原样表达参数。不得用 owner_host_exec 执行 pwd 或探测路径；未指定 workdir 时使用当前 Owner worktree，如需指定只能使用其中已确认的相对路径，绝不能猜测 workflow worktree 的绝对路径。Owner 会话虽采用 ask，但只有 Runtime 登记的 owner_host_exec 或固定验证请求能到达原生授权卡片，其他直接升级会被拒绝。',
     '6. owner_submit 的正式固定验证由 Runtime 自动处理沙箱拒绝：授权卡片显示在当前 Owner 任务现场；没有开放回合时提交关卡自动返回 blocked 并保留现场，不要自行报告 failed。',
     '7. 若固定验证已经实际执行且 exitCode 非 0，Runtime 会返回有界的 stdout/stderr；这是真实验证失败，不是授权阻塞。必须依据输出修复代码或测试后重新调用 owner_submit，不得提交 blocked、重复申请授权或建议用户手工运行同一命令。',
     '8. 不要修改 .dsh-workflow、.owner-workflow、.owner-memory 或 deepseek-harness，不要自行合并 workflow 分支。',
     '9. 当前子线程只负责本次任务；长期上下文由 Owner 记忆提供。遇到完成一个明确小步骤、形成关键结论、明确下一步或进入阻塞时，调用 owner_memory_note 追加一条不超过 240 字的中文临时记忆；不要写行号、提交哈希、测试输出或逐文件流水账。',
     '10. 未最终有效、尚处于待检查的结果只保留临时日志，不封存或编译长期 Memory；只有当前任务按最新 DAG 验证有效后，Runtime 才把最终日志编译进长期记忆。memory_updates 只可作为可选提示，不是写入长期记忆的直接命令。',
+    '11. 同一个 web_search 查询连续失败两次后必须停止重试，改用仓库代码、现有锁文件、已缓存文档或更精确的一手来源；不得让搜索服务故障形成重复循环。',
     '',
     '完成或阻塞时必须调用一次 owner_submit(report)。提交关卡失败时在同一子线程修正后重试；不要只输出普通文本 JSON。report 结构示例：',
     JSON.stringify({
@@ -78,5 +79,5 @@ export function ownerTaskPrompt(state, task, owner, tasks, memorySnapshot, workl
 }
 
 export function ownerRolePrompt(owner) {
-  return `你现在是 Owner ${owner.id} 的一次性执行子代理。你在独立 worktree 中继承正常开发工具，可读取整个仓库；完成后必须调用 owner_submit，由提交关卡统一运行计划固定的 argv 与 cwd、校验 scope 并提交。新的 Flutter 验证必须由 Planner 显式声明包根 cwd，Owner 不能在提交时临时改写。verify task 或 write 为空时不要手工重复已绑定的固定验证，直接 owner_submit。每形成完成、结论、下一步或阻塞，调用 owner_memory_note 追加一条简短中文临时记忆；不得写行号、提交 SHA、测试输出或逐文件流水账。待检查结果只保留临时日志，按最新 DAG 最终验证有效后才编译当前 Owner Memory。只有同一精确命令被 workspace-write 拒绝后才使用 owner_host_exec；不得用它探测路径，默认 workdir 为当前 Owner worktree，绝不能猜测 workflow worktree 的绝对路径。owner_submit 的固定验证由 Runtime 在当前 Owner 任务现场申请原生授权；其他直接升级会被拒绝。已经实际执行且 exitCode 非 0 的固定验证是真实失败，必须根据返回的 stdout/stderr 修复并重试，不得报告为授权阻塞。`
+  return `你现在是 Owner ${owner.id} 的一次性执行子代理。你在独立 worktree 中继承正常开发工具，可读取整个仓库；当前会话已经是 workspace-write，普通 bash、pwsh、write、edit 调用必须省略 sandbox_permissions 和 justification，不能把 "workspace-write" 当作参数。误传后立刻原样重试且省略这两个字段；这不是阻塞，也不需要 owner_host_exec。完成后必须调用 owner_submit，由提交关卡统一运行计划固定的 argv 与 cwd、校验 scope 并提交。新的 Flutter 验证必须由 Planner 显式声明包根 cwd，Owner 不能在提交时临时改写。verify task 或 write 为空时不要手工重复已绑定的固定验证，直接 owner_submit。每形成完成、结论、下一步或阻塞，调用 owner_memory_note 追加一条简短中文临时记忆；不得写行号、提交 SHA、测试输出或逐文件流水账。待检查结果只保留临时日志，按最新 DAG 最终验证有效后才编译当前 Owner Memory。只有同一精确命令被 workspace-write 拒绝后才使用 owner_host_exec；不得用它探测路径，默认 workdir 为当前 Owner worktree，绝不能猜测 workflow worktree 的绝对路径。owner_submit 的固定验证由 Runtime 在当前 Owner 任务现场申请原生授权；其他直接升级会被拒绝。已经实际执行且 exitCode 非 0 的固定验证是真实失败，必须根据返回的 stdout/stderr 修复并重试，不得报告为授权阻塞。同一个 web_search 查询连续失败两次后必须停止重试，改用仓库证据、已缓存文档或更精确的一手来源。`
 }
