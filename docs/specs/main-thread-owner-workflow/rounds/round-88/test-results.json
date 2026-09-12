@@ -1,0 +1,36 @@
+{
+  "candidate": "R88-T15-closure",
+  "executionEnvironment": "Outside Codex outer sandbox; actual nested Owner workspace-write sandbox retained",
+  "results": [
+    { "suite": "candidate-arbitration-metered", "pass": 15, "fail": 0, "skip": 0 },
+    { "suite": "candidate-owner-consultation", "pass": 18, "fail": 0, "skip": 0 },
+    { "suite": "candidate-arbitration-recovery", "pass": 4, "fail": 0, "skip": 0 },
+    { "suite": "candidate-rebuild-recovery", "pass": 6, "fail": 0, "skip": 0 },
+    { "suite": "candidate-review-recovery", "pass": 6, "fail": 0, "skip": 0 },
+    { "suite": "candidate-recovery-pause", "pass": 21, "fail": 0, "skip": 0 },
+    { "suite": "candidate-independent-runtime", "pass": 7, "fail": 0, "skip": 0 },
+    { "suite": "candidate-independent-supervisor", "pass": 23, "fail": 0, "skip": 0 },
+    { "suite": "handoff-recovery", "pass": 7, "fail": 0, "skip": 0 },
+    { "suite": "direct-handoff-recovery", "pass": 7, "fail": 0, "skip": 0 },
+    { "suite": "recovery-budget", "pass": 49, "fail": 0, "skip": 0 },
+    { "suite": "recovery-admission", "pass": 59, "fail": 0, "skip": 0 },
+    { "suite": "runtime-recovery-budget", "pass": 48, "fail": 0, "skip": 0 },
+    { "suite": "replan-session", "pass": 9, "fail": 0, "skip": 0 },
+    { "suite": "owner-advice-session", "pass": 6, "fail": 0, "skip": 0 },
+    { "suite": "recovery-session", "pass": 27, "fail": 0, "skip": 0 },
+    { "suite": "recovery-session-restart", "pass": 5, "fail": 0, "skip": 0 },
+    { "suite": "subgraph-recovery-guard", "pass": 4, "fail": 0, "skip": 0 },
+    { "suite": "control", "pass": 159, "fail": 0, "skip": 7 }
+  ],
+  "totals": { "pass": 480, "fail": 0, "skip": 7 },
+  "sourceHashes": {
+    "owner-workflow-plugin/src/runtime.mjs": "8c0cbe92fa3ecd62bd4f250ee6d31307ae31d91e0fccdfd034695a1b7b2081cc",
+    "owner-workflow-plugin/src/recovery-admission.mjs": "e39d707d10d55093c57d141ea248481afdff09a85c781b91fe2c5db4accf0243",
+    "owner-workflow-plugin/src/recovery-budget.mjs": "b6b9a055e9dfb152716b244256f067523b0a89e8cae5f1c6760376c822edc814",
+    "owner-workflow-plugin/src/recovery-session.mjs": "9ae2a7c46498d6379591b71e2e58964ead7535c3e3127715d7ab571a49a0fd5c",
+    "owner-workflow-plugin/src/replan-session.mjs": "17f061c550503b90887b5aaf4082984445d6f9adbd0079eadc89fd4c06b970fa",
+    "owner-workflow-plugin/src/candidate-independent-supervisor.mjs": "deb177f3307048744b1826ceaa7b5aac8b24c982c23a325d2b5eeb45c57147b0",
+    "owner-workflow-plugin/test/recovery-session.test.mjs": "915d995eb0f9427912d573a6f81646ed4a82c494a21b395fff9083966475af7f"
+  },
+  "outerSandboxDiagnostic": "Executable Owner tests can fail before product assertions when nested macOS sandbox-exec returns Operation not permitted; those runs are retained as environment diagnostics and excluded from the formal candidate."
+}

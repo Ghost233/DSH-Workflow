@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: R78 state-lock inspection reacquires a concurrently released directory
+ok 1 - R78 state-lock inspection reacquires a concurrently released directory
+  ---
+  duration_ms: 300.577334
+  type: 'test'
+  ...
+# Subtest: R78 state-lock inspection preserves other filesystem errors
+ok 2 - R78 state-lock inspection preserves other filesystem errors
+  ---
+  duration_ms: 237.866458
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 738.85125

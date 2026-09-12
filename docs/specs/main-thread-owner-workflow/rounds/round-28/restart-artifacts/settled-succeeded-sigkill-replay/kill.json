@@ -1,0 +1,39 @@
+{
+  "producerPid": 38663,
+  "exit": {
+    "code": null,
+    "signal": "SIGKILL"
+  },
+  "checkpoint": {
+    "phase": "settled_succeeded",
+    "ownerStatus": "completed",
+    "budgetAttempt": {
+      "workflowId": "wf-recovery-session",
+      "rootProblemId": "recovery-root-40e8e7e0-9cb0-4157-9dc5-d4e6fc48de65",
+      "requestId": "recovery-request-5874db00-9c4f-4498-8c5b-0c14ffd752a1",
+      "attemptId": "recovery-attempt-f2632310-1b36-43ed-8a0e-2b32911b8fac",
+      "taskId": "T1",
+      "ownerId": "api",
+      "executionVersion": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+      "state": "settled",
+      "executionRef": {
+        "id": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a",
+        "version": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d"
+      },
+      "result": {
+        "status": "succeeded",
+        "reference": {
+          "id": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d",
+          "version": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a"
+        }
+      }
+    },
+    "modelRequests": 4,
+    "executionIdentity": {
+      "sessionId": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a",
+      "promptId": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d"
+    }
+  },
+  "rawLocationPath": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-MsxnAc/dsh-t22-tests-r16-3YCAn9/.dsh-workflow/recovery-sessions/--private-var-folders-pk-4_rtp5211139hr72f5z3yv2c0000gn-T-dsh-t22-restart-owned-MsxnAc-dsh-t22-tests-r16-3YCAn9-.dsh-workflow-worktrees-wf-recovery-session-owners-api--/recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a/session.jsonl",
+  "rawArtifactPresent": true
+}

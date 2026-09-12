@@ -1,0 +1,19 @@
+{
+  "command": [
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+    "--import",
+    "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+    "--test",
+    "--test-force-exit",
+    "--test-reporter=tap",
+    "--test-name-pattern",
+    "settles a real completed Owner|cannot report succeeded",
+    "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-session.test.mjs"
+  ],
+  "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+  "start": "2026-09-11T04:50:25.425753+00:00",
+  "timeoutSeconds": 180,
+  "exitCode": 1,
+  "timedOut": false,
+  "end": "2026-09-11T04:50:31.234569+00:00"
+}

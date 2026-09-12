@@ -1,0 +1,42 @@
+{
+  "mode": "followup-return",
+  "root": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t21-prompt-WeItsU",
+  "start": "2026-09-11T02:50:48.961Z",
+  "first": {
+    "mode": "followup-return",
+    "pid": 76575,
+    "code": null,
+    "signal": "SIGKILL",
+    "payload": {
+      "phase": "kill-ready",
+      "mode": "followup-return",
+      "memory": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": []
+      },
+      "calls": 0
+    },
+    "stdout": "",
+    "stderr": ""
+  },
+  "restart": {
+    "mode": "restart-followup-return",
+    "pid": 76576,
+    "code": 1,
+    "signal": null,
+    "payload": {
+      "phase": "error",
+      "mode": "restart-followup-return",
+      "error": "Error: session \"t21-prompt-session\" not found",
+      "stack": "Error: session \"t21-prompt-session\" not found\n    at PersistenceCoordinator.prepareCore (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence/src/coordinator.ts:894:37)"
+    },
+    "stdout": "",
+    "stderr": ""
+  },
+  "error": "Error: restart probe failed; inspect raw payload",
+  "end": "2026-09-11T02:50:49.447Z"
+}

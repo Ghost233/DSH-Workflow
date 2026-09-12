@@ -1,0 +1,262 @@
+TAP version 13
+# Subtest: Supervisor stop receipt 绑定实际 planDigest，旧 stop 拒绝且 workflow 不变
+ok 1 - Supervisor stop receipt 绑定实际 planDigest，旧 stop 拒绝且 workflow 不变
+  ---
+  duration_ms: 311.639083
+  type: 'test'
+  ...
+# Subtest: blocked、failed、cancelled workflow 都不能把 stop 保存为 completed
+ok 2 - blocked、failed、cancelled workflow 都不能把 stop 保存为 completed
+  ---
+  duration_ms: 693.934333
+  type: 'test'
+  ...
+# Subtest: cancel 结算活动记录、清理临时分支与 worktree，并幂等保留审计状态
+ok 3 - cancel 结算活动记录、清理临时分支与 worktree，并幂等保留审计状态
+  ---
+  duration_ms: 542.164916
+  type: 'test'
+  ...
+# Subtest: cancel 的持久路径记录异常时 fail-closed，不能删除项目根目录或基础分支
+ok 4 - cancel 的持久路径记录异常时 fail-closed，不能删除项目根目录或基础分支
+  ---
+  duration_ms: 365.833541
+  type: 'test'
+  ...
+# Subtest: cancelled workflow 拒绝 Supervisor start，finalized workflow 拒绝 cancel
+ok 5 - cancelled workflow 拒绝 Supervisor start，finalized workflow 拒绝 cancel
+  ---
+  duration_ms: 729.157958
+  type: 'test'
+  ...
+# Subtest: 启用 Owner 工作模式后，主会话写入会被拒绝
+ok 6 - 启用 Owner 工作模式后，主会话写入会被拒绝
+  ---
+  duration_ms: 145.76425
+  type: 'test'
+  ...
+# Subtest: 只读审计在脏工作区中运行，不创建 workflow 分支或 worktree
+ok 7 - 只读审计在脏工作区中运行，不创建 workflow 分支或 worktree
+  ---
+  duration_ms: 151.975583
+  type: 'test'
+  ...
+# Subtest: workflow_recover 可以重建旧缺陷遗留的空 Supervisor task records
+ok 8 - workflow_recover 可以重建旧缺陷遗留的空 Supervisor task records
+  ---
+  duration_ms: 184.835542
+  type: 'test'
+  ...
+# Subtest: 只读子代理继承完整工具集并只设置 read-only 沙箱
+ok 9 - 只读子代理继承完整工具集并只设置 read-only 沙箱
+  ---
+  duration_ms: 1.045834
+  type: 'test'
+  ...
+# Subtest: Owner 子代理策略继承完整工具并使用 workspace-write
+ok 10 - Owner 子代理策略继承完整工具并使用 workspace-write
+  ---
+  duration_ms: 0.084584
+  type: 'test'
+  ...
+# Subtest: Operation 子代理继承完整工具但项目文件使用 read-only 沙箱
+ok 11 - Operation 子代理继承完整工具但项目文件使用 read-only 沙箱
+  ---
+  duration_ms: 0.050334
+  type: 'test'
+  ...
+# Subtest: 历史 V1 计划即使 digest 匹配也不能批准执行
+ok 12 - 历史 V1 计划即使 digest 匹配也不能批准执行
+  ---
+  duration_ms: 393.920292
+  type: 'test'
+  ...
+# Subtest: 批准修订计划时自动恢复旧 Runtime 丢失的已完成任务状态
+ok 13 - 批准修订计划时自动恢复旧 Runtime 丢失的已完成任务状态
+  ---
+  duration_ms: 349.777042
+  type: 'test'
+  ...
+# Subtest: 计划修订冻结 ownerRuns 已完成任务，只迁移新增 repair 与最终 verify
+ok 14 - 计划修订冻结 ownerRuns 已完成任务，只迁移新增 repair 与最终 verify
+  ---
+  duration_ms: 454.313334
+  type: 'test'
+  ...
+# Subtest: 计划批准拒绝缺失的 live Registry，即使缓存 digest 匹配
+ok 15 - 计划批准拒绝缺失的 live Registry，即使缓存 digest 匹配
+  ---
+  duration_ms: 137.189083
+  type: 'test'
+  ...
+# Subtest: 计划批准拒绝 live Registry 内容漂移，并由 registry_status 暴露 live digest
+ok 16 - 计划批准拒绝 live Registry 内容漂移，并由 registry_status 暴露 live digest
+  ---
+  duration_ms: 468.746875
+  type: 'test'
+  ...
+# Subtest: 计划批准在 digest 已重新绑定时仍拒绝 Owner 定义漂移
+ok 17 - 计划批准在 digest 已重新绑定时仍拒绝 Owner 定义漂移
+  ---
+  duration_ms: 522.264458
+  type: 'test'
+  ...
+# Subtest: finalize 会把 workflow 分支合并回启动分支并清理 worktree
+ok 18 - finalize 会把 workflow 分支合并回启动分支并清理 worktree
+  ---
+  duration_ms: 1221.841625
+  type: 'test'
+  ...
+# Subtest: Implementation Review 必须读取实际 workflow HEAD 并保存审查结果
+ok 19 - Implementation Review 必须读取实际 workflow HEAD 并保存审查结果
+  ---
+  duration_ms: 478.574917
+  type: 'test'
+  ...
+# Subtest: Implementation Review 问题自动转换为带自治批准策略的 repair PlanRevision
+ok 20 - Implementation Review 问题自动转换为带自治批准策略的 repair PlanRevision
+  ---
+  duration_ms: 670.040333
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 持久子线程兼容测试（已由按任务回收模型替代）
+ok 21 - 旧版 Owner 持久子线程兼容测试（已由按任务回收模型替代） # SKIP
+  ---
+  duration_ms: 0.056458
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner Shell 白名单测试（已由 worktree 与提交关卡替代）
+ok 22 - 旧版 Owner Shell 白名单测试（已由 worktree 与提交关卡替代） # SKIP
+  ---
+  duration_ms: 0.021375
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 逐写入包装测试（已由提交关卡替代）
+ok 23 - 旧版 Owner 逐写入包装测试（已由提交关卡替代） # SKIP
+  ---
+  duration_ms: 0.013084
+  type: 'test'
+  ...
+# Subtest: 旧版 owner_bash 快照测试（正式验证现在由 owner_submit 自动执行）
+ok 24 - 旧版 owner_bash 快照测试（正式验证现在由 owner_submit 自动执行） # SKIP
+  ---
+  duration_ms: 0.01175
+  type: 'test'
+  ...
+# Subtest: 旧版多轮修复提示测试（现在由 owner_submit 在同一子线程返回错误）
+ok 25 - 旧版多轮修复提示测试（现在由 owner_submit 在同一子线程返回错误） # SKIP
+  ---
+  duration_ms: 0.010959
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 结果文本结算测试（受保护路径由 owner_submit 提交关卡覆盖）
+ok 26 - 旧版 Owner 结果文本结算测试（受保护路径由 owner_submit 提交关卡覆盖） # SKIP
+  ---
+  duration_ms: 0.010791
+  type: 'test'
+  ...
+# Subtest: Owner Registry 提案在没有活动任务时只保存待审批提案
+ok 27 - Owner Registry 提案在没有活动任务时只保存待审批提案
+  ---
+  duration_ms: 290.653875
+  type: 'test'
+  ...
+# Subtest: Owner 设定与批准只能由绑定的 Workflow 主线程执行
+ok 28 - Owner 设定与批准只能由绑定的 Workflow 主线程执行
+  ---
+  duration_ms: 721.102791
+  type: 'test'
+  ...
+# Subtest: 规划器输出 Registry operation 时只保存结构化建议，不写正式 Registry，并由运行时绑定正式 digest
+ok 29 - 规划器输出 Registry operation 时只保存结构化建议，不写正式 Registry，并由运行时绑定正式 digest
+  ---
+  duration_ms: 450.405459
+  type: 'test'
+  ...
+# Subtest: 规划器的 proposal 包装会兼容为直接 Registry operation
+ok 30 - 规划器的 proposal 包装会兼容为直接 Registry operation
+  ---
+  duration_ms: 452.602042
+  type: 'test'
+  ...
+# Subtest: 规划器可一次提交完整 Owner Registry batch 并按最终快照绑定全部 Owner
+ok 31 - 规划器可一次提交完整 Owner Registry batch 并按最终快照绑定全部 Owner
+  ---
+  duration_ms: 461.78875
+  type: 'test'
+  ...
+# Subtest: 规划提交只接受当前规划子代理的一次结构化结果
+ok 32 - 规划提交只接受当前规划子代理的一次结构化结果
+  ---
+  duration_ms: 0.563542
+  type: 'test'
+  ...
+# Subtest: one-shot Planner 在 workflow_plan_submit 时即时校验并允许原线程修正
+ok 33 - one-shot Planner 在 workflow_plan_submit 时即时校验并允许原线程修正
+  ---
+  duration_ms: 1.213917
+  type: 'test'
+  ...
+# Subtest: 计划审查提交只接受当前 Plan Reviewer 的合法结构化结果
+ok 34 - 计划审查提交只接受当前 Plan Reviewer 的合法结构化结果
+  ---
+  duration_ms: 0.504792
+  type: 'test'
+  ...
+# Subtest: 计划 Reviewer 首轮状态非法时自动携带错误重试并保存结构化问题
+ok 35 - 计划 Reviewer 首轮状态非法时自动携带错误重试并保存结构化问题
+  ---
+  duration_ms: 449.8
+  type: 'test'
+  ...
+# Subtest: Reviewer 不能要求 abstract decision 删除必填 Owner 会诊字段，必须重试为 decision
+ok 36 - Reviewer 不能要求 abstract decision 删除必填 Owner 会诊字段，必须重试为 decision
+  ---
+  duration_ms: 482.029
+  type: 'test'
+  ...
+# Subtest: Reviewer 判定 needs_split 后，Owner 会诊参与目标节点的递归拆分
+ok 37 - Reviewer 判定 needs_split 后，Owner 会诊参与目标节点的递归拆分
+  ---
+  duration_ms: 613.511166
+  type: 'test'
+  ...
+# Subtest: Reviewer 判定 needs_decision 后停止自动修订并把问题总结回主线程
+ok 38 - Reviewer 判定 needs_decision 后停止自动修订并把问题总结回主线程
+  ---
+  duration_ms: 505.809542
+  type: 'test'
+  ...
+# Subtest: awaiting_main_discussion 接收明确 Intent 后可以生成 PlanRevision 候选
+ok 39 - awaiting_main_discussion 接收明确 Intent 后可以生成 PlanRevision 候选
+  ---
+  duration_ms: 1765.100583
+  type: 'test'
+  ...
+# Subtest: 同类审查问题连续出现时，Runtime 强制 Reviewer 从 needs_revision 升级分类
+ok 40 - 同类审查问题连续出现时，Runtime 强制 Reviewer 从 needs_revision 升级分类
+  ---
+  duration_ms: 495.784166
+  type: 'test'
+  ...
+# Subtest: 冻结义务无进展时由独立 Arbiter 裁决而不是请求用户扩额
+ok 41 - 冻结义务无进展时由独立 Arbiter 裁决而不是请求用户扩额
+  ---
+  duration_ms: 433.286917
+  type: 'test'
+  ...
+# Subtest: Arbiter 可以把 Runtime 已知的 abstract 节点转入拆分而不误判为新问题
+ok 42 - Arbiter 可以把 Runtime 已知的 abstract 节点转入拆分而不误判为新问题
+  ---
+  duration_ms: 415.190916
+  type: 'test'
+  ...
+1..42
+# tests 42
+# suites 0
+# pass 36
+# fail 0
+# cancelled 0
+# skipped 6
+# todo 0
+# duration_ms 15486.703791

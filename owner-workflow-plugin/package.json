@@ -6,6 +6,7 @@
   "main": "index.js",
   "exports": {
     ".": "./index.js",
+    "./acceptance-runner": "./src/acceptance-runner.mjs",
     "./client": "./client.js",
     "./dashboard": "./dashboard-host.mjs",
     "./package.json": "./package.json"
@@ -46,7 +47,7 @@
   "scripts": {
     "build:client": "node scripts/build-client.mjs",
     "check:client": "node scripts/build-client.mjs --check",
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test --test-force-exit test/*.test.mjs",
     "test:dashboard": "node --test test/dashboard.test.mjs"
   }
 }

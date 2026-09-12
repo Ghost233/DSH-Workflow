@@ -1,0 +1,19 @@
+✔ mixed needs_decision 的失败 Planning Driver 仍由统一决策器恢复 (0.919084ms)
+✔ 真正外部授权的 needs_decision 只形成一次显式等待 (0.497208ms)
+✔ Runner 生命周期由同一决策表覆盖执行、审查、修复和最终合并 (0.164959ms)
+✔ 新 repair 候选不会继承上一轮 awaiting_approval 而绕过 Reviewer (0.121583ms)
+✔ 旧 repair 候选缺少 approvalPolicy 时仍按内部 Intent 自治批准 (0.107084ms)
+✔ pending handoff 在 running 状态也优先进入局部重规划 (0.090417ms)
+✔ 已重规划 handoff 的新 DAG 不受旧 awaiting_main_discussion 阶段阻塞 (0.060166ms)
+✔ 失败与阻塞现场不会从 Runner 视野中静默消失 (0.116792ms)
+✔ 任务计数与唯一 Workflow 槽位使用同一纯状态语义 (0.079708ms)
+✔ 代表性非终态都必须给出 command 或显式 wait，禁止静默空洞 (0.148ms)
+✔ 持久状态交叉空间中的每个组合都收敛为 command、wait、terminal 或 invariant (0.5555ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 44.543

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,6 +20,28 @@ import {
 import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
 import { listBranches, statusRecords } from '../src/git.mjs'
 import { createTaskState } from '../src/supervisor.mjs'
+import { createPlanRevision } from '../src/plan-revision.mjs'
+import { normalizePlanV2 } from '../src/model.mjs'
+import { deriveWorkflowControl } from '../src/workflow-state.mjs'
+
+function reviewClosureContract(obligationId, kind, taskId = 'T1', authority = 'user') {
+  return {
+    obligationId,
+    sourceId: `control/${obligationId}`,
+    sourceVersion: '1',
+    targetTaskIds: [taskId],
+    closeWhen: { kind, taskId, ...(kind === 'decision_record' ? { authority } : {}) },
+    ...(kind === 'decision_record' ? { classificationBasis: {
+      source: { id: `control/${obligationId}`, version: '1' },
+      technicalFacts: ['当前候选的决定尚未记录，原有执行边界保持。'],
+      ...(authority === 'user' ? { businessCommitmentDelta: {
+        currentCommitment: '仅执行已确认的现有方案',
+        proposedCommitment: '采用待确认的方案 A',
+        consequence: '改变当前候选向调用方提供的行为，需要明确选择。',
+      } } : {}),
+    } } : {}),
+  }
+}
 
 const execFileAsync = promisify(execFile)
 const EXTERNAL_RUNNER_PATH = fileURLToPath(new URL('../src/external-runner.mjs', import.meta.url))
@@ -51,6 +73,13 @@ function assertV2PlannerPrompt(prompt) {
   assert.match(prompt, /代码责任域/u)
   assert.match(prompt, /当前 Workflow.*阶段/u)
   assert.match(prompt, /DAG task/u)
+  assert.match(prompt, /\^\[a-z\]\[a-z0-9_-\]\{0,63\}\$/u)
+  assert.match(prompt, /字段名必须是 run/u)
+  assert.match(prompt, /禁止使用 argv/u)
+  assert.match(prompt, /decomposition\.status 只允许 abstract、leaf、expanded/u)
+  assert.match(prompt, /review 或 role=verify 的 task\.write 必须是空数组/u)
+  assert.match(prompt, /所有 work 叶子必须至少绑定一个 verification|leaf work task 必须提供精确 write 与至少一个固定 verification/u)
+  assert.match(prompt, /优先使用扁平 leaf DAG/u)
   assert.doesNotMatch(prompt, /DSH_PLAN_V1/u)
   assert.doesNotMatch(prompt, /\bstages\b/u)
   assert.doesNotMatch(prompt, /\bfiles\b/u)
@@ -148,6 +177,29 @@ async function planApprovalFixture(config = {}) {
   return { ...fixture, registry }
 }
 
+async function closureReceiptFixture() {
+  const fixture = await planApprovalFixture()
+  const { root, state, agent } = fixture
+  state.plan = normalizePlanV2({
+    contract: 'DSH_PLAN_V2', registryDigest: state.registryDigest, summary: '关闭回执测试',
+    owners: state.plan.owners,
+    verifications: [{ id: 'unit', run: ['node', '--test'], cwd: '.' }],
+    tasks: [{ id: 'T1', role: 'work', ownerId: state.plan.owners[0].id,
+      title: '实现已决定的行为', dependsOn: [], write: ['README.md'], verify: ['unit'], done: ['行为验证通过'],
+      decomposition: { status: 'leaf', kind: 'leaf', ownerCandidates: [state.plan.owners[0].id], unknowns: [] },
+    }],
+  })
+  state.planDigest = createHash('sha256').update(JSON.stringify(state.plan)).digest('hex')
+  state.tasks = createTaskState(state.plan)
+  state.planReview = undefined
+  state.planReviewDigest = undefined
+  state.orchestratorSessionId = agent.id
+  state.conversationRootSessionId = agent.id
+  const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
+  await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+  return { ...fixture, statePath }
+}
+
 function request(manifest, action, payload = {}) {
   return new Promise((resolveResponse, rejectResponse) => {
     const socket = createConnection(manifest.socketPath)
@@ -196,9 +248,21 @@ async function waitForCondition(predicate, label) {
   throw new Error(`等待条件超时：${label}`)
 }
 
-async function supervisorControlFixture({ materializeWorkflow = false } = {}) {
+async function removeFixtureRoot(root) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(root, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (error?.code !== 'ENOTEMPTY' || attempt === 4) throw error
+      await delay(25 * (attempt + 1))
+    }
+  }
+}
+
+async function supervisorControlFixture({ materializeWorkflow = false, ctx = {}, config = {} } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-control-'))
-  const runtime = createOwnerWorkflowRuntime({}, {})
+  const runtime = createOwnerWorkflowRuntime(ctx, config)
   await git(root, ['init', '-b', 'main'])
   await git(root, ['config', 'user.email', 'owner-workflow@test.invalid'])
   await git(root, ['config', 'user.name', 'Owner Workflow Test'])
@@ -273,6 +337,46 @@ async function supervisorControlFixture({ materializeWorkflow = false } = {}) {
   }
 }
 
+async function preparePlanReviewRecoveryState(fixture) {
+  let registry = await ensureRegistry(fixture.state.workflowWorktree)
+  registry = await applyRegistryOperation(fixture.state.workflowWorktree, registry, {
+    type: 'add',
+    owner: fixture.state.plan.owners[0],
+    reason: '登记计划审查恢复测试 Owner',
+  })
+  const registryDigest = registryContentDigest(registry)
+  const owner = registry.owners.find(item => item.id === 'api')
+  const plan = {
+    ...fixture.state.plan,
+    registryDigest,
+    owners: [{
+      id: owner.id,
+      name: owner.name,
+      description: owner.description,
+      scope: [...owner.scope],
+      exclude: [...owner.exclude],
+    }],
+  }
+  const state = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+  state.status = 'planned'
+  state.plan = plan
+  state.planDigest = createHash('sha256').update(JSON.stringify(plan)).digest('hex')
+  delete state.registryDigest
+  delete state.planReview
+  delete state.planReviewDigest
+  state.planApproved = false
+  state.planningAgent = {
+    childId: 'planner-recovery-child',
+    phase: 'failed',
+    startedAt: new Date(Date.now() - 60_000).toISOString(),
+    updatedAt: new Date(Date.now() - 30_000).toISOString(),
+    error: '模拟计划审查驱动中断',
+    recoveryAttempts: 0,
+  }
+  await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+  return { state, registryDigest }
+}
+
 test('外部控制桥可以驱动 ping 和 status，并在运行时释放后清理', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-control-'))
   const runtime = createOwnerWorkflowRuntime({}, {})
@@ -331,6 +435,148 @@ test('外部控制桥可以驱动 ping 和 status，并在运行时释放后清�
   }
 })
 
+test('真实审查入口把未关闭义务的 passed 降级，并拒绝激活', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    state.registryDigest = registryDigest
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    const issue = {
+      severity: 'high',
+      title: '固定验证缺少明确绑定',
+      detail: 'T1 必须绑定当前 unit verification。',
+      suggestion: '为 T1 添加 unit。',
+      obligationId: 'ac32-t1-unit',
+      sourceId: 'AC-32',
+      sourceVersion: 'R4',
+      targetTaskIds: ['T1'],
+      closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' },
+    }
+    let reviewCount = 0
+    fixture.runtime.runChild = async (_agent, _cwd, _prompt, _signal, options) => {
+      assert.equal(options.role, 'plan-reviewer')
+      reviewCount += 1
+      return reviewCount === 1
+        ? { contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_revision', summary: '需要补固定验证', issues: [issue] }
+        : { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: 'Reviewer 自报通过', issues: [] }
+    }
+    const first = await fixture.runtime.reviewPlan(fixture.agent, state.id)
+    assert.equal(first.convergence.obligations.filter(item => item.status === 'open').length, 1)
+    const passedWithoutClosure = await fixture.runtime.reviewPlan(fixture.agent, state.id)
+    assert.equal(passedWithoutClosure.review.status, 'needs_revision')
+    assert.match(passedWithoutClosure.review.summary, /未关闭/u)
+    await assert.rejects(
+      fixture.runtime.approvePlan(fixture.agent, state.id, state.planDigest, registryDigest),
+      /必须先通过当前 planDigest/u,
+    )
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.status, 'planned')
+    assert.equal(saved.planApproved, false)
+    assert.equal(saved.planReview.status, 'needs_revision')
+    saved.planReview = { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '伪造 passed', issues: [] }
+    saved.planReviewDigest = saved.planDigest
+    await writeFile(fixture.statePath, `${JSON.stringify(saved, null, 2)}\n`, 'utf8')
+    await assert.rejects(
+      fixture.runtime.approvePlan(fixture.agent, state.id, state.planDigest, registryDigest),
+      /未关闭的证据义务/u,
+    )
+  } finally {
+    await fixture.runtime.dispose()
+    await removeFixtureRoot(fixture.root)
+  }
+})
+
+test('pending revision 的 open 义务不阻断仍有效的 active plan Owner 启动', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    state.registryDigest = registryDigest
+    state.status = 'approved'
+    state.planApproved = true
+    state.planReview = { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '当前 active plan 已通过', issues: [] }
+    state.planReviewDigest = state.planDigest
+    state.tasks = createTaskState(state.plan)
+    state.pendingPlanRevision = { planDigest: 'b'.repeat(64), plan: state.plan }
+    state.planConvergence = {
+      contract: 'DSH_WORKFLOW_CONVERGENCE_V1',
+      history: [{ candidatePlanDigest: 'b'.repeat(64) }],
+      obligations: [{ id: 'pending-only', status: 'open', title: '仅阻断待审批 revision', targetTaskIds: ['T1'] }],
+      closureBlockers: [{ id: 'pending-only', reason: 'closure_evidence_missing' }],
+      unsupportedNewObligations: [],
+      identityConflicts: [],
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    fixture.runtime.createOwnerEntry = async () => ({
+      branch: 'dsh/owner/test/api', worktree: fixture.root, baseCommit: state.workflowHead,
+    })
+    fixture.runtime.runOwnerEntry = async () => ({
+      branch: 'dsh/owner/test/api', worktree: fixture.root, baseCommit: state.workflowHead,
+      commitSha: state.workflowHead, sessionId: 'owner-t02-boundary', report: { summary: '已启动 active plan', changes: [], tests: [] },
+    })
+    const result = await fixture.runtime.runExternalOwner(fixture.agent, state.id, 'T1', 'api', undefined, { deferFinish: true })
+    assert.equal(result.phase, 'synced')
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.status, 'running')
+    assert.equal(saved.ownerRuns['T1:api'].status, 'awaiting_finish')
+  } finally {
+    await fixture.runtime.dispose()
+    await removeFixtureRoot(fixture.root)
+  }
+})
+
+for (const version of ['evidence-lease-v1', 'evidence-lease-v2']) test(`R03 同 digest ${version} 的已批准 Owner 启动与恢复边界`, async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    state.registryDigest = registryDigest
+    state.status = 'approved'
+    state.planApproved = true
+    state.planReview = { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '当前 active plan 已通过', issues: [] }
+    state.planReviewDigest = state.planDigest
+    state.tasks = createTaskState(state.plan)
+    state.planConvergence = {
+      contract: 'DSH_WORKFLOW_CONVERGENCE_V1',
+      runtimeVersion: version,
+      history: [{ candidatePlanDigest: state.planDigest }],
+      obligations: [{ id: 'pending-only', status: 'open', title: '仅阻断待审批 revision', targetTaskIds: ['T1'] }],
+      closureBlockers: [{ id: 'pending-only', reason: 'closure_evidence_missing' }],
+      unsupportedNewObligations: [],
+      identityConflicts: [],
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    fixture.runtime.createOwnerEntry = async () => ({
+      branch: 'dsh/owner/test/api', worktree: fixture.root, baseCommit: state.workflowHead,
+    })
+    fixture.runtime.runOwnerEntry = async () => ({
+      branch: 'dsh/owner/test/api', worktree: fixture.root, baseCommit: state.workflowHead,
+      commitSha: state.workflowHead, sessionId: 'owner-t02-boundary', report: { summary: '已启动 active plan', changes: [], tests: [] },
+    })
+    if (version === 'evidence-lease-v2') {
+      await assert.rejects(fixture.runtime.runExternalOwner(fixture.agent, state.id, 'T1', 'api', undefined, { deferFinish: true }), /未关闭的证据义务/u)
+      await assert.rejects(fixture.runtime.recoverOwner(fixture.agent, state.id, 'T1', 'api'), /未关闭的证据义务/u)
+      return
+    }
+    const result = await fixture.runtime.runExternalOwner(fixture.agent, state.id, 'T1', 'api', undefined, { deferFinish: true })
+    assert.equal(result.phase, 'synced')
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.status, 'running')
+    assert.equal(saved.ownerRuns['T1:api'].status, 'awaiting_finish')
+    saved.ownerRuns['T1:api'].status = 'completed'
+    await writeFile(fixture.statePath, `${JSON.stringify(saved, null, 2)}\n`, 'utf8')
+    let recovered = false
+    fixture.runtime.runExternalOwner = async () => { recovered = true; return {} }
+    fixture.runtime.finishOwner = async () => ({ phase: 'completed' })
+    await fixture.runtime.recoverOwner(fixture.agent, state.id, 'T1', 'api')
+    assert.equal(recovered, true)
+    const unchanged = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(unchanged.planConvergence.runtimeVersion, 'evidence-lease-v1')
+    assert.equal(unchanged.planConvergence.obligations[0].status, 'open')
+  } finally {
+    await fixture.runtime.dispose()
+    await removeFixtureRoot(fixture.root)
+  }
+})
+
 test('Supervisor create 只持久 reservation，必须由外置 runner 显式 execute 才启动 Owner', async () => {
   const fixture = await supervisorControlFixture()
   const ownerCalls = []
@@ -383,6 +629,169 @@ test('Supervisor create 只持久 reservation，必须由外置 runner 显式 ex
   }
 })
 
+test('Supervisor 首次启动保留计划修订迁移后的已完成任务', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    const state = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    state.tasks = createTaskState(state.plan).map(task => ({
+      ...task,
+      status: 'completed',
+      planRevision: 2,
+      checkState: 'valid',
+    }))
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const started = await request(fixture.manifest, 'supervisor-start', { parallel: 1 })
+    assert.equal(started.status, 'running')
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.deepEqual(saved.tasks.map(task => [task.taskId, task.status, task.checkState]), [
+      ['T1', 'completed', 'valid'],
+    ])
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('Supervisor 重启后直接结算已有固定提交，不重新启动 Owner', async () => {
+  const fixture = await supervisorControlFixture()
+  const commitSha = (await execFileAsync('git', ['rev-parse', 'HEAD'], {
+    cwd: fixture.root,
+    encoding: 'utf8',
+  })).stdout.trim()
+  let ownerRuns = 0
+  let finishCalls = 0
+  fixture.runtime.runExternalOwner = async () => { ownerRuns += 1 }
+  fixture.runtime.finishOwner = async () => { finishCalls += 1 }
+  try {
+    const state = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    state.status = 'running'
+    state.tasks = createTaskState(state.plan).map(task => ({
+      ...task,
+      status: 'running',
+      cursor: commitSha,
+      verificationResults: {
+        unit: {
+          passed: true,
+          exitCode: 0,
+          planDigest: state.planDigest,
+          taskId: 'T1',
+          ownerId: 'api',
+        },
+      },
+    }))
+    state.ownerRuns = {
+      'T1:api': {
+        taskId: 'T1',
+        stageId: 'T1',
+        ownerId: 'api',
+        status: 'running',
+        result: { commitSha },
+      },
+    }
+    state.supervisorOutbox = {
+      'T1:api': {
+        contract: 'DSH_SUPERVISOR_OWNER_RESERVATION_V1',
+        reservationId: 'sr-recover-fixed-result',
+        actionId: 'sa-recover-fixed-result',
+        taskId: 'T1',
+        ownerId: 'api',
+        status: 'reserved',
+        attempts: 1,
+        createdAt: new Date().toISOString(),
+      },
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    await fixture.runtime.runSupervisorReservation(fixture.agent, state.id, 'T1:api')
+    assert.equal(ownerRuns, 0)
+    assert.equal(finishCalls, 0)
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.supervisorOutbox['T1:api'].status, 'completed')
+    assert.equal(saved.ownerRuns['T1:api'].status, 'completed')
+    assert.equal(saved.tasks[0].status, 'completed')
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('Supervisor 遇到结构化 handoff 时进入局部重规划，不重跑只读验证任务', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    const state = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    state.status = 'blocked'
+    state.tasks = createTaskState(state.plan).map(task => ({
+      ...task,
+      status: 'stopped',
+      reason: 'decision_required',
+      action: 'await_user',
+    }))
+    state.ownerRuns = {
+      'T1:api': { taskId: 'T1', stageId: 'T1', ownerId: 'api', status: 'blocked' },
+    }
+    state.handoffQueue = [{
+      id: 'handoff-test',
+      status: 'pending',
+      sourceTaskId: 'T1',
+      sourceStageId: 'T1',
+      sourceOwnerId: 'api',
+      targetType: 'orchestrator',
+      summary: '需要新增 repair 节点',
+      reason: '只读验证不能修改实现',
+      files: ['src/api/t1.mjs'],
+    }]
+    state.supervisorOutbox = {
+      'T1:api': {
+        contract: 'DSH_SUPERVISOR_OWNER_RESERVATION_V1',
+        reservationId: 'sr-handoff-test',
+        actionId: 'sa-handoff-test',
+        taskId: 'T1',
+        ownerId: 'api',
+        status: 'launching',
+        attempts: 1,
+        createdAt: new Date().toISOString(),
+      },
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    await fixture.runtime.failSupervisorReservation(
+      fixture.agent,
+      state.id,
+      'T1:api',
+      new Error('Owner api 请求转交 1 项跨区域或监督事项'),
+    )
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.status, 'blocked')
+    assert.equal(saved.tasks[0].status, 'stopped')
+    assert.equal(saved.tasks[0].reason, 'plan_invalid')
+    assert.equal(saved.supervisorOutbox['T1:api'].recoveryStrategy, 'local_subgraph_rewrite')
+    assert.equal(saved.supervisorEvents.at(-1).type, 'supervisor.handoff-replan-required')
+
+    saved.status = 'running'
+    saved.tasks[0] = {
+      ...saved.tasks[0],
+      status: 'pending',
+      reason: null,
+      action: null,
+      verificationResults: { unit: { passed: false, exitCode: 1 } },
+    }
+    saved.ownerRuns['T1:api'].status = 'pending'
+    saved.handoffQueue[0].status = 'acknowledged'
+    await writeFile(fixture.statePath, `${JSON.stringify(saved, null, 2)}\n`, 'utf8')
+    const resumed = await request(fixture.manifest, 'supervisor-start', { parallel: 1 })
+    assert.equal(resumed.resumed, true)
+    const recovered = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(recovered.status, 'blocked')
+    assert.equal(recovered.tasks[0].reason, 'plan_invalid')
+    assert.equal(recovered.ownerRuns['T1:api'].status, 'blocked')
+    assert.equal(recovered.handoffQueue[0].status, 'pending')
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
 test('Runner daemon 自动发现 approved Workflow 并驱动 Harness 内 Owner 子代理', async () => {
   const fixture = await supervisorControlFixture()
   const ownerCalls = []
@@ -417,7 +826,960 @@ test('Runner daemon 自动发现 approved Workflow 并驱动 Harness 内 Owner �
       else daemon.once('exit', resolveExit)
     })
     await fixture.runtime.dispose()
+    await removeFixtureRoot(fixture.root)
+  }
+})
+
+test('planning-recover 控制动作安全补绑缺失 digest 并原地恢复 Reviewer', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    fixture.runtime.reviewPlan = async () => ({
+      review: { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '恢复后的计划审查通过', issues: [] },
+      workflow: { planDigest: state.planDigest, registryDigest },
+      revisionBudget: { exhausted: false },
+    })
+
+    const recovery = await request(fixture.manifest, 'planning-recover')
+    assert.equal(recovery.resumed, true)
+    assert.equal(recovery.registryDigest, registryDigest)
+    assert.equal(recovery.recoveryAttempts, 1)
+    await fixture.runtime.planningDrivers.get(state.id)
+
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.registryDigest, registryDigest)
+    assert.match(saved.registryBindingRecoveredAt, /^\d{4}-\d{2}-\d{2}T/u)
+    assert.equal(saved.planningAgent.phase, 'awaiting_plan_approval')
+    assert.equal(saved.planningAgent.recoverySource, 'runner-daemon')
+    assert.equal(saved.planningAgent.recoveryAttempts, 1)
+    const log = await readFile(join(fixture.root, '.dsh-workflow', 'logs', `${state.id}.jsonl`), 'utf8')
+    assert.match(log, /workflow\.registry-binding-recovered/u)
+    assert.match(log, /workflow\.plan-review-recovery-requested/u)
+  } finally {
+    await fixture.runtime.dispose()
     await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('planning-recover 不会把旧 planDigest 的恢复次数继承到新 DAG', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    state.planningAgent = {
+      ...(state.planningAgent ?? {}),
+      phase: 'failed',
+      recoveryAttempts: 3,
+      recoveryExhausted: true,
+      recoveryLimit: 3,
+      updatedAt: '2020-01-01T00:00:00.000Z',
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    fixture.runtime.reviewPlan = async () => ({
+      review: { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '新 DAG 审查通过', issues: [] },
+      workflow: { planDigest: state.planDigest, registryDigest },
+      revisionBudget: { exhausted: false },
+    })
+
+    const recovery = await request(fixture.manifest, 'planning-recover')
+    assert.equal(recovery.resumed, true)
+    assert.equal(recovery.recoveryAttempts, 1)
+    await fixture.runtime.planningDrivers.get(state.id)
+
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.planningAgent.recoveryAttempts, 1)
+    assert.equal(saved.planningAgent.recoveryExhausted, false)
+    assert.equal(saved.planningAgent.recoveryPlanDigest, saved.planDigest)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('Planner 子代理报告通道失效时直接唤醒主会话，避免状态已变但会话没有入口', async () => {
+  const steered = []
+  const runtime = createOwnerWorkflowRuntime({
+    subagents: {
+      async reportFrom() {
+        throw new Error('模拟持久 childId 已不再对应 live Activation')
+      },
+    },
+  }, {})
+  try {
+    const delivered = await runtime.reportContinuablePlanning({
+      childId: 'stale-planner-child',
+      workflowId: 'wf-planning-report-fallback',
+      parent: { steer: message => { steered.push(message) } },
+    }, 'plan_approval_required', '计划已通过，等待批准。', {
+      planDigest: 'a'.repeat(64),
+    })
+    assert.equal(delivered, true)
+    assert.equal(steered.length, 1)
+    assert.equal(steered[0].role, 'user')
+    assert.equal(steered[0].source.kind, 'plugin')
+    assert.equal(steered[0].source.form, 'notice')
+    assert.match(steered[0].content[0].text, /plan_approval_required/u)
+    assert.match(steered[0].content[0].text, /wf-planning-report-fallback/u)
+  } finally {
+    await runtime.dispose()
+  }
+})
+
+test('Harness 重启后会向根会话幂等补发计划批准通知', async () => {
+  const fixture = await planApprovalFixture()
+  let restartedRuntime
+  try {
+    const statePath = join(fixture.root, '.dsh-workflow', 'workflows', `${fixture.state.id}.json`)
+    const state = JSON.parse(await readFile(statePath, 'utf8'))
+    state.planningAgent = {
+      childId: 'planner-awaiting-approval',
+      phase: 'awaiting_plan_approval',
+      updatedAt: new Date().toISOString(),
+    }
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    const firstSteers = []
+    fixture.agent.steer = message => { firstSteers.push(message) }
+
+    const first = await fixture.runtime.ensurePlanApprovalNotification(
+      fixture.agent,
+      state,
+      { source: 'plan-review' },
+    )
+    assert.equal(first.reported, true)
+    assert.equal(firstSteers.length, 1)
+    assert.match(firstSteers[0].content[0].text, /plan_approval_required/u)
+    const duplicate = await fixture.runtime.ensurePlanApprovalNotification(
+      fixture.agent,
+      state,
+      { source: 'same-runtime-retry' },
+    )
+    assert.equal(duplicate.alreadyDelivered, true)
+    assert.equal(firstSteers.length, 1)
+
+    await fixture.runtime.dispose()
+    restartedRuntime = createOwnerWorkflowRuntime({}, {})
+    await restartedRuntime.prepareRoot(fixture.root)
+    const restartSteers = []
+    const restartedAgent = {
+      ...fixture.agent,
+      steer: message => { restartSteers.push(message) },
+    }
+    const restartedState = JSON.parse(await readFile(statePath, 'utf8'))
+    const recovered = await restartedRuntime.ensurePlanApprovalNotification(
+      restartedAgent,
+      restartedState,
+      { source: 'runtime-restart' },
+    )
+    assert.equal(recovered.reported, true)
+    assert.equal(restartSteers.length, 1)
+    assert.match(restartSteers[0].content[0].text, /workflow_plan_approve/u)
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.planApprovalNotification.status, 'delivered')
+    assert.equal(saved.planApprovalNotification.attemptCount, 2)
+    assert.equal(saved.planApprovalNotification.source, 'runtime-restart')
+  } finally {
+    await fixture.runtime.dispose()
+    await restartedRuntime?.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('计划批准通知只投递到持久化的 Workflow 根会话', async () => {
+  const fixture = await planApprovalFixture()
+  try {
+    const statePath = join(fixture.root, '.dsh-workflow', 'workflows', `${fixture.state.id}.json`)
+    const state = JSON.parse(await readFile(statePath, 'utf8'))
+    state.orchestratorSessionId = 'workflow-root-agent'
+    state.planningAgent = { childId: 'planner-root-target', phase: 'awaiting_plan_approval' }
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    const wrongSteers = []
+    const wrongAgent = {
+      id: 'unrelated-agent',
+      session: { id: 'unrelated-agent', header: { cwd: fixture.root } },
+      steer: message => { wrongSteers.push(message) },
+    }
+    const unavailable = await fixture.runtime.ensurePlanApprovalNotification(
+      wrongAgent,
+      state,
+      { source: 'runtime-restart' },
+    )
+    assert.equal(unavailable.reported, false)
+    assert.equal(unavailable.reason, 'workflow-root-session-unavailable')
+    assert.equal(wrongSteers.length, 0)
+
+    const rootSteers = []
+    const rootAgent = {
+      id: 'workflow-root-agent',
+      session: { id: 'workflow-root-agent', header: { cwd: fixture.root } },
+      steer: message => { rootSteers.push(message) },
+    }
+    const delivered = await fixture.runtime.ensurePlanApprovalNotification(
+      rootAgent,
+      state,
+      { source: 'runtime-restart' },
+    )
+    assert.equal(delivered.reported, true)
+    assert.equal(rootSteers.length, 1)
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.planApprovalNotification.targetSessionId, rootAgent.id)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('Planner 已提交结构化计划后立即结束等待，不受结束确认重试影响', async () => {
+  const submittedPlan = { contract: 'DSH_PLAN_V2', summary: '已提交计划' }
+  let runtime
+  const ctx = {
+    subagents: {
+      async start(_provider, request) {
+        const child = { id: 'planner-submitted-before-timeout' }
+        let resolveSubmission
+        const submissionReady = new Promise(resolve => { resolveSubmission = resolve })
+        runtime.agentRoles.set(child.id, { plannerSubmission: submittedPlan, submissionReady, resolveSubmission })
+        queueMicrotask(() => resolveSubmission({ kind: 'planner', value: submittedPlan }))
+        return {
+          localAgent: child,
+          result: new Promise(() => {}),
+          async dispose() {},
+        }
+      },
+    },
+  }
+  runtime = createOwnerWorkflowRuntime(ctx, {})
+  try {
+    const result = await runtime.runChild(
+      { session: { header: { delegationDepth: 0 } }, options: {} },
+      '/tmp',
+      '提交计划',
+      undefined,
+      { role: 'planner', requirePlannerSubmission: true, timeoutMs: 2_000 },
+    )
+    assert.equal(result, submittedPlan)
+  } finally {
+    await runtime.dispose()
+  }
+})
+
+test('planning-recover 会重建仍有修订预算的 Planner，而不是把 review_failed 当作终态', async () => {
+  const starts = []
+  const fixture = await supervisorControlFixture({
+    ctx: {
+      subagents: {
+        async startContinuable(spec) {
+          starts.push(spec)
+          return { childId: spec.childId, messageId: 'recovered-plan-revision' }
+        },
+      },
+    },
+  })
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    state.registryDigest = registryDigest
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '仍缺少确定性验证',
+      issues: [{
+        severity: 'high',
+        title: '验证范围不完整',
+        detail: '静态检查没有覆盖运行时状态。',
+        suggestion: '补充固定浏览器测试。',
+      }],
+    }
+    state.planReviewDigest = state.planDigest
+    state.planReviewRevisionCount = 1
+    state.planRevisionLimit = 3
+    state.planningAgent.phase = 'review_failed'
+    delete state.planningAgent.automaticRevisionExhausted
+    delete state.planningAgent.revisionBudgetExhausted
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const recovery = await request(fixture.manifest, 'planning-recover')
+    assert.equal(recovery.resumed, true)
+    assert.equal(recovery.status, 'revision')
+    assert.equal(starts.length, 1)
+    assert.match(starts[0].request.prompt[0].text, /Planner Reviewer 的问题/u)
+    assert.match(starts[0].request.prompt[0].text, /验证范围不完整/u)
+
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.planningAgent.phase, 'revision')
+    assert.equal(saved.planningAgent.recoverySource, 'runner-daemon')
+    assert.equal(saved.planningAgent.recoveryAttempts, 1)
+    const log = await readFile(join(fixture.root, '.dsh-workflow', 'logs', `${state.id}.jsonl`), 'utf8')
+    assert.match(log, /workflow\.plan-revision-recovery-requested/u)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('统一 workflow-drive 会恢复无需用户授权的 needs_decision Owner 会诊修订', async () => {
+  const starts = []
+  const fixture = await supervisorControlFixture({
+    ctx: {
+      subagents: {
+        async startContinuable(spec) {
+          starts.push(spec)
+          return { childId: spec.childId, messageId: 'recovered-owner-council-revision' }
+        },
+      },
+    },
+  })
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    state.registryDigest = registryDigest
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_decision',
+      summary: '需要 Owner 裁定内部测试分层',
+      issues: [{
+        severity: 'medium',
+        title: '测试生产者与验证器边界未冻结',
+        detail: '这是仓库内部架构决策，不依赖用户凭据或外部权限。',
+        suggestion: '由受影响 Owner 会诊后修订局部 DAG。',
+      }],
+      decisionQuestions: ['producer 和 validator 应如何分层？'],
+    }
+    state.planReviewDigest = state.planDigest
+    state.planConvergence = {
+      contract: 'DSH_WORKFLOW_CONVERGENCE_V1',
+      runtimeVersion: 'evidence-lease-v1',
+      cycleId: 'initial-cycle',
+      evidenceDigest: 'evidence-a',
+      obligations: [{
+        id: 'obligation-owner-council',
+        category: 'architecture-decision',
+        severity: 'medium',
+        title: '测试生产者与验证器边界未冻结',
+        targetTaskIds: ['T1'],
+        status: 'open',
+      }],
+      unsupportedNewObligations: [],
+      usedStrategies: [],
+      activeStrategy: 'local_subgraph_rewrite',
+      nextStrategy: 'owner_council',
+      progress: 'none',
+      authorityRequired: false,
+      history: [],
+    }
+    state.planningAgent.phase = 'failed'
+    state.planningAgent.error = '模拟 needs_decision 自动修订启动中断'
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const recovery = await request(fixture.manifest, 'workflow-drive', { expectedCommand: 'planning-recover' })
+    assert.equal(recovery.action, 'planning-recover')
+    assert.equal(recovery.resumed, true)
+    assert.equal(recovery.phase, 'planning_owner_consultation')
+    assert.equal(starts.length, 1)
+    const prompt = starts[0].request.prompt[0].text
+    assert.match(prompt, /Owner 会诊裁定/u)
+    assert.match(prompt, /producer 和 validator 应如何分层/u)
+
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.planningAgent.phase, 'revision')
+    assert.equal(saved.planningAgent.recoverySource, 'runner-daemon')
+    const log = await readFile(join(fixture.root, '.dsh-workflow', 'logs', `${state.id}.jsonl`), 'utf8')
+    assert.match(log, /workflow\.plan-revision-recovery-requested/u)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('自治事故的摘要型旧义务不能由 control socket probe 续期', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    const state = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    state.status = 'planned'
+    state.planApproved = false
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '等待新证据',
+      issues: [{
+        severity: 'high',
+        title: '固定验证入口缺失',
+        detail: '需要 Runtime 事实确认入口。',
+        suggestion: '取得新证据后继续。',
+      }],
+    }
+    state.planReviewDigest = state.planDigest
+    state.planConvergence = {
+      contract: 'DSH_WORKFLOW_CONVERGENCE_V1',
+      runtimeVersion: 'evidence-lease-v1',
+      cycleId: 'initial-cycle',
+      evidenceDigest: 'stale-evidence',
+      obligations: [{ id: 'o1', category: 'verification-entry', status: 'open', targetTaskIds: [] }],
+      unsupportedNewObligations: [],
+      usedStrategies: ['local_subgraph_rewrite', 'diagnose', 'owner_council', 'arbitrate', 'alternate_implementation'],
+      nextStrategy: 'autonomous_incident',
+      history: [],
+    }
+    state.planningAgent = { managedBy: 'runner-runtime', phase: 'autonomous_incident' }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const probed = await request(fixture.manifest, 'convergence-probe')
+    assert.equal(probed.resumed, false)
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.planConvergence.progress, 'none')
+    assert.equal(saved.planConvergence.nextStrategy, 'autonomous_incident')
+    assert.equal(saved.planningAgent.phase, 'autonomous_incident')
+    assert.ok(saved.planConvergence.seenEvidence)
+    assert.ok(saved.planConvergence.seenEvidenceFacts)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('control socket probe 只为类型化义务的宿主新文件续期一次', async () => {
+  const fixture = await supervisorControlFixture({ materializeWorkflow: true })
+  try {
+    const state = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    state.status = 'planned'
+    state.planApproved = false
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '等待 T1 当前 Runtime 事实',
+      issues: [{
+        severity: 'high',
+        title: '固定验证缺少当前宿主事实',
+        detail: 'T1 必须取得由 Runtime 重新读取的文件证据。',
+        suggestion: '在 Owner worktree 中补齐 T1 的实际改动。',
+        ...reviewClosureContract('control-socket-runtime-file', 'task_verification_result', 'T1'),
+        closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' },
+      }],
+    }
+    state.planReviewDigest = state.planDigest
+    state.ownerRuns = {
+      'T1:api': { taskId: 'T1', ownerId: 'api', worktree: state.workflowWorktree },
+    }
+    state.planConvergence = {
+      contract: 'DSH_WORKFLOW_CONVERGENCE_V1',
+      runtimeVersion: 'evidence-lease-v3',
+      cycleId: 'initial-cycle',
+      evidenceDigest: 'stale-evidence',
+      obligations: [{
+        id: 'control-socket-runtime-file',
+        declaredId: 'control-socket-runtime-file',
+        category: 'acceptance-evidence',
+        severity: 'high',
+        title: '固定验证缺少当前宿主事实',
+        detail: 'T1 必须取得由 Runtime 重新读取的文件证据。',
+        suggestion: '在 Owner worktree 中补齐 T1 的实际改动。',
+        source: { id: 'control/control-socket-runtime-file', version: '1' },
+        targetTaskIds: ['T1'],
+        closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' },
+        status: 'open',
+      }],
+      unsupportedNewObligations: [],
+      usedStrategies: ['local_subgraph_rewrite', 'diagnose', 'owner_council', 'arbitrate', 'alternate_implementation'],
+      nextStrategy: 'autonomous_incident',
+      history: [],
+    }
+    state.planningAgent = { managedBy: 'runner-runtime', phase: 'autonomous_incident' }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const baseline = await request(fixture.manifest, 'convergence-probe')
+    assert.equal(baseline.resumed, false)
+    const seeded = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.ok(seeded.planConvergence.seenEvidence)
+    assert.ok(seeded.planConvergence.seenEvidenceFacts)
+
+    const changedFile = join(state.workflowWorktree, 'src', 'api', 't1.mjs')
+    await mkdir(join(state.workflowWorktree, 'src', 'api'), { recursive: true })
+    await writeFile(changedFile, 'export const controlSocketRuntimeFact = true\n', 'utf8')
+
+    const renewed = await request(fixture.manifest, 'convergence-probe')
+    assert.equal(renewed.resumed, true)
+    assert.equal(renewed.resumedPlan, true)
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.planConvergence.progress, 'new_evidence')
+    assert.equal(saved.planConvergence.nextStrategy, 'local_subgraph_rewrite')
+    assert.equal(saved.planningAgent.phase, 'revision_retry_pending')
+    assert.ok(saved.planConvergence.seenEvidence['control-socket-runtime-file'].some(proof => (
+      proof.kind === 'verified_file' && proof.path === 'src/api/t1.mjs'
+    )))
+
+    const duplicate = await request(fixture.manifest, 'convergence-probe')
+    assert.equal(duplicate.resumed, false)
+    const afterDuplicate = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(afterDuplicate.planConvergence.nextStrategy, 'local_subgraph_rewrite')
+    assert.deepEqual(
+      afterDuplicate.planConvergence.seenEvidence['control-socket-runtime-file'],
+      saved.planConvergence.seenEvidence['control-socket-runtime-file'],
+    )
+  } finally {
+    await fixture.runtime.dispose()
+    await removeFixtureRoot(fixture.root)
+  }
+})
+
+test('修订预算耗尽会持久通知主线程和 Runner，批准扩展后自动恢复同一 Planner', async () => {
+  const starts = []
+  const steered = []
+  const questions = []
+  let answerQuestion
+  const fixture = await supervisorControlFixture({
+    ctx: {
+      userQuestions: {
+        ask(request) {
+          questions.push(request)
+          return new Promise((resolve, reject) => {
+            answerQuestion = resolve
+            request.signal?.addEventListener('abort', () => reject(request.signal.reason), { once: true })
+          })
+        },
+      },
+      subagents: {
+        async startContinuable(spec) {
+          starts.push(spec)
+          return { childId: spec.childId, messageId: 'revision-after-extension' }
+        },
+      },
+    },
+  })
+  fixture.agent.steer = message => { steered.push(message) }
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    state.registryDigest = registryDigest
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '三轮修订后仍缺少行为验证',
+      issues: [{
+        severity: 'high',
+        title: '行为验证缺失',
+        detail: '连接行为没有固定验证。',
+        suggestion: '补充组件测试。',
+      }],
+    }
+    state.planReviewDigest = state.planDigest
+    state.planReviewRevisionCount = 3
+    state.planRevisionLimit = 3
+    state.planningAgent = {
+      ...(state.planningAgent ?? {}),
+      managedBy: 'runner-runtime',
+      phase: 'review_failed',
+      automaticRevisionCount: 3,
+      automaticRevisionLimit: 3,
+      automaticRevisionExhausted: true,
+      revisionBudgetUsed: 3,
+      revisionBudgetLimit: 3,
+      revisionBudgetExhausted: true,
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const notification = await request(fixture.manifest, 'planning-notify')
+    assert.equal(notification.required, true)
+    assert.equal(notification.reported, true)
+    assert.equal(notification.presented, true)
+    assert.equal(notification.delivery, 'native-question')
+    assert.equal(notification.decision.kind, 'plan_revision_extension')
+    assert.equal(steered.length, 0)
+    assert.equal(questions.length, 1)
+    assert.equal(questions[0].agent, fixture.agent)
+    assert.equal(questions[0].questions[0].header, '扩展计划修订')
+    assert.match(questions[0].questions[0].detail, /三轮修订后仍缺少行为验证/u)
+    assert.deepEqual(questions[0].questions[0].options.map(option => option.label), [
+      '同意',
+      '不同意',
+      '终止流程并退回主线程讨论',
+    ])
+
+    let saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.planningAgent.phase, 'awaiting_revision_extension')
+    assert.equal(saved.planningAgent.decisionQuestionStatus, 'active')
+    assert.equal(saved.pendingPlanningDecision.status, 'pending')
+    assert.equal(Object.values(saved.mainOutbox)[0].status, 'delivered')
+    assert.equal(Object.values(saved.mainOutbox)[0].presentationStatus, 'active')
+    assert.match(Object.values(saved.mainOutbox)[0].delivery, /native-question:runner-daemon/u)
+
+    answerQuestion({
+      answers: [{
+        id: questions[0].questions[0].id,
+        selected: ['同意'],
+      }],
+    })
+    saved = await waitForWorkflowState(
+      fixture.statePath,
+      current => current.pendingPlanningDecision?.status === 'approved' && current.planningAgent?.phase === 'revision',
+      '原生修订额度问询批准后恢复 Planner',
+    )
+    await waitForCondition(() => starts.length === 1, '原生修订额度问询批准后启动同一 Planner')
+    assert.equal(starts.length, 1)
+    assert.match(starts[0].request.prompt[0].text, /行为验证缺失/u)
+
+    assert.equal(saved.pendingPlanningDecision.status, 'approved')
+    assert.equal(saved.planningAgent.phase, 'revision')
+    assert.equal(saved.planningAgent.revisionBudgetLimit, 6)
+    assert.equal(saved.planningAgent.revisionBudgetExhausted, false)
+    assert.equal(Object.values(saved.mainOutbox)[0].presentationStatus, 'answered')
+    assert.equal(Object.values(saved.mainOutbox)[0].resolution, 'approved')
+    await waitForCondition(() => fixture.runtime.planningDecisionQuestions.size === 0, '原生修订额度问询完成结算')
+    const log = await readFile(join(fixture.root, '.dsh-workflow', 'logs', `${state.id}.jsonl`), 'utf8')
+    assert.match(log, /plan\.revision-extension-required/u)
+    assert.match(log, /plan\.revision-extension-question-presented/u)
+    assert.match(log, /plan\.revision-extension-question-answered/u)
+    assert.match(log, /plan\.revision-limit-extended/u)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('重启前只标记 main-steer 已送达的待决策会重新直接打开原生问询', async () => {
+  const questions = []
+  let answerQuestion
+  const fixture = await supervisorControlFixture({
+    ctx: {
+      userQuestions: {
+        ask(request) {
+          questions.push(request)
+          return new Promise((resolve, reject) => {
+            answerQuestion = resolve
+            request.signal?.addEventListener('abort', () => reject(request.signal.reason), { once: true })
+          })
+        },
+      },
+    },
+  })
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    state.registryDigest = registryDigest
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '旧通知已经进入主线程，但没有生成用户可见问询',
+      issues: [],
+    }
+    state.planReviewDigest = state.planDigest
+    state.planReviewRevisionCount = 3
+    state.planRevisionLimit = 3
+    state.planningAgent = {
+      ...(state.planningAgent ?? {}),
+      managedBy: 'runner-runtime',
+      phase: 'awaiting_revision_extension',
+      automaticRevisionExhausted: true,
+      revisionBudgetExhausted: true,
+    }
+    state.pendingPlanningDecision = {
+      contract: 'DSH_WORKFLOW_PLANNING_DECISION_V1',
+      decisionId: 'pd-existing-main-steer',
+      kind: 'plan_revision_extension',
+      status: 'pending',
+      workflowId: state.id,
+      planDigest: state.planDigest,
+      planReviewDigest: state.planDigest,
+      reviewSummary: state.planReview.summary,
+      reviewIssueCount: 0,
+      revisionBudget: { used: 3, limit: 3, remaining: 0, exhausted: true },
+      automaticRevisionLimit: 3,
+      nextTool: 'workflow_plan_revision_extend',
+      nextArgs: { workflow_id: state.id, plan_digest: state.planDigest },
+      createdAt: new Date().toISOString(),
+    }
+    state.mainOutbox = {
+      'mo-existing-main-steer': {
+        notificationId: 'mo-existing-main-steer',
+        kind: 'main',
+        reason: 'plan_revision_extension_required',
+        workflowId: state.id,
+        decisionId: state.pendingPlanningDecision.decisionId,
+        planDigest: state.planDigest,
+        status: 'delivered',
+        delivery: 'main-steer:runtime-restart',
+        deliveredAt: new Date().toISOString(),
+      },
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const notification = await request(fixture.manifest, 'planning-notify')
+    assert.equal(notification.presented, true)
+    assert.equal(notification.delivery, 'native-question')
+    assert.equal(questions.length, 1)
+    let saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.pendingPlanningDecision.status, 'pending')
+    assert.equal(saved.mainOutbox['mo-existing-main-steer'].presentationStatus, 'active')
+    assert.match(saved.mainOutbox['mo-existing-main-steer'].delivery, /native-question:runner-daemon/u)
+
+    answerQuestion({
+      answers: [{ id: questions[0].questions[0].id, selected: ['不同意'] }],
+    })
+    saved = await waitForWorkflowState(
+      fixture.statePath,
+      current => current.pendingPlanningDecision?.status === 'rejected',
+      '旧 main-steer 通知的原生问询拒绝决定',
+    )
+    assert.equal(saved.planningAgent.phase, 'review_failed')
+    assert.equal(saved.mainOutbox['mo-existing-main-steer'].presentationStatus, 'answered')
+    assert.equal(saved.mainOutbox['mo-existing-main-steer'].resolution, 'rejected')
+    const retry = await request(fixture.manifest, 'planning-notify')
+    assert.equal(retry.required, false)
+    assert.equal(questions.length, 1)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('用户终止自动规划后由只读子代理总结并返回主线程讨论', async () => {
+  const questions = []
+  const summaryPrompts = []
+  const followups = []
+  let answerQuestion
+  const fixture = await supervisorControlFixture({
+    ctx: {
+      userQuestions: {
+        ask(request) {
+          questions.push(request)
+          return new Promise((resolve, reject) => {
+            answerQuestion = resolve
+            request.signal?.addEventListener('abort', () => reject(request.signal.reason), { once: true })
+          })
+        },
+      },
+      subagents: {
+        async start(_provider, request) {
+          summaryPrompts.push(request.prompt[0].text)
+          return {
+            localAgent: { id: 'planning-discussion-reviewer' },
+            result: Promise.resolve({
+              output: [{
+                type: 'text',
+                text: '当前只完成计划与审查，Owner 尚未执行。多轮不收敛源于真实组件 harness 和外部证据基础设施缺失，应回到主线程讨论降低验收承诺或补建设施。',
+              }],
+              stopReason: 'completed',
+            }),
+            async dispose() {},
+          }
+        },
+      },
+    },
+  })
+  fixture.agent.followup = message => { followups.push(message) }
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    state.registryDigest = registryDigest
+    state.request = '完成真实 WalletConnect 接入'
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '十二轮后仍缺少真实组件验证',
+      issues: [{
+        severity: 'high',
+        title: '真实组件 harness 缺失',
+        detail: '计划文字不能替代运行时基础设施。',
+        suggestion: '退回主线程讨论。',
+      }],
+    }
+    state.planReviewDigest = state.planDigest
+    state.planReviewRevisionCount = 12
+    state.planRevisionLimit = 12
+    state.planningAgent = {
+      ...(state.planningAgent ?? {}),
+      managedBy: 'runner-runtime',
+      phase: 'review_failed',
+      revisionBudgetExhausted: true,
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    await request(fixture.manifest, 'planning-notify')
+    assert.equal(questions.length, 1)
+    answerQuestion({
+      answers: [{
+        id: questions[0].questions[0].id,
+        selected: ['终止流程并退回主线程讨论'],
+      }],
+    })
+    const saved = await waitForWorkflowState(
+      fixture.statePath,
+      current => current.planningDiscussion?.status === 'delivered',
+      '规划总结返回主线程',
+    )
+    assert.equal(saved.pendingPlanningDecision.status, 'discussion')
+    assert.equal(saved.planningAgent.phase, 'awaiting_main_discussion')
+    assert.equal(saved.planningAgent.decisionQuestionStatus, 'answered')
+    assert.equal(summaryPrompts.length, 1)
+    assert.match(summaryPrompts[0], /十二轮后仍缺少真实组件验证/u)
+    assert.equal(followups.length, 1)
+    const update = JSON.parse(followups[0].content[0].text)
+    assert.equal(update.type, 'planning_discussion_ready')
+    assert.match(update.retrospective, /Owner 尚未执行/u)
+    assert.match(update.nextAction, /不得自动扩展额度/u)
+    assert.equal(Object.keys(saved.ownerRuns ?? {}).length, 0)
+    const log = await readFile(join(fixture.root, '.dsh-workflow', 'logs', `${state.id}.jsonl`), 'utf8')
+    assert.match(log, /plan\.discussion-requested/u)
+    assert.match(log, /plan\.discussion-summary-ready/u)
+    assert.match(log, /plan\.discussion-summary-delivered/u)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('重启后把旧版自定义扩额意见迁移为总结并退回主线程讨论', async () => {
+  const followups = []
+  const fixture = await supervisorControlFixture({
+    ctx: {
+      subagents: {
+        async start() {
+          return {
+            localAgent: { id: 'migrated-planning-discussion-reviewer' },
+            result: Promise.resolve({
+              output: [{ type: 'text', text: '旧版自定义意见已经迁移；当前只完成规划，没有执行代码。' }],
+              stopReason: 'completed',
+            }),
+            async dispose() {},
+          }
+        },
+      },
+    },
+  })
+  fixture.agent.followup = message => { followups.push(message) }
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    state.registryDigest = registryDigest
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_revision', summary: '多轮仍未收敛', issues: [],
+    }
+    state.planReviewDigest = state.planDigest
+    state.planReviewRevisionCount = 12
+    state.planRevisionLimit = 12
+    state.pendingPlanningDecision = {
+      contract: 'DSH_WORKFLOW_PLANNING_DECISION_V1',
+      decisionId: 'pd-legacy-custom-discussion',
+      kind: 'plan_revision_extension',
+      status: 'custom',
+      workflowId: state.id,
+      planDigest: state.planDigest,
+      planReviewDigest: state.planDigest,
+      decidedAt: new Date().toISOString(),
+    }
+    state.planningAgent = {
+      ...(state.planningAgent ?? {}),
+      phase: 'review_failed',
+      decision: 'custom',
+      decisionFeedback: '为什么这么多轮还不行，不要继续了',
+      revisionBudgetExhausted: true,
+      decisionQuestionStatus: 'active',
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const result = await fixture.runtime.ensurePlanningDiscussion(fixture.agent, state, { source: 'runtime-restart' })
+    assert.equal(result.required, true)
+    const saved = await waitForWorkflowState(
+      fixture.statePath,
+      current => current.planningDiscussion?.status === 'delivered',
+      '旧版自定义扩额意见迁移并返回主线程',
+    )
+    assert.equal(saved.pendingPlanningDecision.status, 'discussion')
+    assert.equal(saved.planningAgent.phase, 'awaiting_main_discussion')
+    assert.equal(saved.planningAgent.decisionQuestionStatus, 'answered')
+    assert.equal(saved.planningDiscussion.feedback, '为什么这么多轮还不行，不要继续了')
+    assert.equal(followups.length, 1)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('planning-recover 在 plan digest 与 live Registry 不匹配时拒绝自愈', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    const { state } = await preparePlanReviewRecoveryState(fixture)
+    state.plan.registryDigest = 'f'.repeat(64)
+    state.planDigest = createHash('sha256').update(JSON.stringify(state.plan)).digest('hex')
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    await assert.rejects(
+      request(fixture.manifest, 'planning-recover'),
+      /计划绑定 Registry digest 与当前正式 Registry 不匹配/u,
+    )
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.registryDigest, undefined)
+    assert.equal(saved.planningAgent.phase, 'failed')
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('计划审查驱动失败会落盘诊断并允许 watchdog 有界重试', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+    let reviewCalls = 0
+    fixture.runtime.reviewPlan = async () => {
+      reviewCalls += 1
+      if (reviewCalls === 1) throw new Error('模拟 Reviewer provider 中断')
+      return {
+        review: { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '重试审查通过', issues: [] },
+        workflow: { planDigest: state.planDigest, registryDigest },
+        revisionBudget: { exhausted: false },
+      }
+    }
+
+    await request(fixture.manifest, 'planning-recover')
+    await fixture.runtime.planningDrivers.get(state.id)
+    let saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.planningAgent.phase, 'failed')
+    assert.match(saved.planningAgent.error, /模拟 Reviewer provider 中断/u)
+    let log = await readFile(join(fixture.root, '.dsh-workflow', 'logs', `${state.id}.jsonl`), 'utf8')
+    assert.match(log, /workflow\.planning-driver-failed/u)
+    assert.match(log, /workflow\.planning-report-undelivered/u)
+
+    const retried = await request(fixture.manifest, 'planning-recover')
+    assert.equal(retried.resumed, true)
+    assert.equal(retried.recoveryAttempts, 2)
+    await fixture.runtime.planningDrivers.get(state.id)
+    saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.planningAgent.phase, 'awaiting_plan_approval')
+    assert.equal(saved.planningAgent.recoveryAttempts, 2)
+    assert.equal(reviewCalls, 2)
+    log = await readFile(join(fixture.root, '.dsh-workflow', 'logs', `${state.id}.jsonl`), 'utf8')
+    assert.match(log, /workflow\.plan-review-recovery-requested/u)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('Runner daemon 自动唤醒失败的计划审查且不启动 Supervisor', async () => {
+  const fixture = await supervisorControlFixture()
+  const { state, registryDigest } = await preparePlanReviewRecoveryState(fixture)
+  fixture.runtime.reviewPlan = async () => ({
+    review: { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: 'watchdog 恢复审查通过', issues: [] },
+    workflow: { planDigest: state.planDigest, registryDigest },
+    revisionBudget: { exhausted: false },
+  })
+  const daemon = spawn(process.execPath, [
+    EXTERNAL_RUNNER_PATH,
+    '--daemon',
+    '--catalog-root', fixture.root,
+    '--poll-ms', '200',
+    '--timeout-ms', '10000',
+  ], { cwd: fixture.root, stdio: 'ignore' })
+  try {
+    const recovered = await waitForWorkflowState(
+      fixture.statePath,
+      value => value.planningAgent?.phase === 'awaiting_plan_approval',
+      'Runner daemon 恢复计划审查',
+    )
+    assert.equal(recovered.registryDigest, registryDigest)
+    assert.equal(recovered.planningAgent.recoverySource, 'runner-daemon')
+    assert.equal(recovered.status, 'planned')
+    assert.equal(recovered.supervisorEvents, undefined)
+  } finally {
+    daemon.kill('SIGTERM')
+    await new Promise(resolveExit => {
+      if (daemon.exitCode !== null || daemon.signalCode !== null) resolveExit()
+      else daemon.once('exit', resolveExit)
+    })
+    await fixture.runtime.dispose()
+    await removeFixtureRoot(fixture.root)
   }
 })
 
@@ -628,7 +1990,7 @@ test('Supervisor 查询会在 Runtime 重启后重建控制桥，供新的外置
   }
 })
 
-test('Supervisor Owner 启动失败持久化为决策阻塞，并写入可确认主会话 outbox', async () => {
+test('Supervisor Owner 启动失败由自治恢复重排，不把工程故障写成用户决策', async () => {
   const fixture = await supervisorControlFixture()
   fixture.runtime.runExternalOwner = async () => {
     throw new Error('模拟 Owner 启动失败')
@@ -646,37 +2008,24 @@ test('Supervisor Owner 启动失败持久化为决策阻塞，并写入可确认
       state => state.supervisorOutbox?.['T1:api']?.status === 'failed',
       'Owner 启动失败落盘',
     )
-    assert.equal(failed.status, 'blocked')
+    assert.equal(failed.status, 'running')
     assert.equal(failed.supervisorOutbox['T1:api'].error, '模拟 Owner 启动失败')
-    assert.equal(failed.ownerRuns['T1:api'].status, 'failed')
-    assert.equal(failed.ownerRuns['T1:api'].error, '模拟 Owner 启动失败')
-    assert.deepEqual(failed.tasks[0], {
-      taskId: 'T1',
-      status: 'stopped',
-      executorId: null,
-      cursor: null,
-      unchangedPolls: 0,
-      reason: 'decision_required',
-      action: 'await_user',
-    })
-
-    const notify = await request(fixture.manifest, 'supervisor-next')
-    assert.equal(notify.action, 'notify')
-    const acknowledgedNotify = await request(fixture.manifest, 'supervisor-ack', { actionId: notify.actionId })
-    assert.equal(acknowledgedNotify.notification.status, 'pending')
-    const outbox = await request(fixture.manifest, 'supervisor-outbox-next')
-    assert.equal(outbox.notification.notificationId, acknowledgedNotify.notification.notificationId)
-    const delivered = await request(fixture.manifest, 'supervisor-outbox-ack', {
-      notificationId: outbox.notification.notificationId,
-    })
-    assert.equal(delivered.status, 'delivered')
+    assert.equal(failed.ownerRuns['T1:api'].status, 'pending')
+    assert.equal(failed.ownerRuns['T1:api'].autonomousRecovery.strategy, 'diagnose')
+    assert.equal(failed.tasks[0].status, 'pending')
+    assert.equal(failed.tasks[0].reason, null)
+    assert.equal(failed.tasks[0].action, null)
+    assert.equal(failed.tasks[0].autonomousRecovery.failureClass, 'unknown')
+    const retry = await request(fixture.manifest, 'supervisor-next')
+    assert.equal(retry.action, 'create')
+    assert.equal(Object.keys(failed.mainOutbox ?? {}).length, 0)
   } finally {
     await fixture.runtime.dispose()
     await rm(fixture.root, { recursive: true, force: true })
   }
 })
 
-test('DSH_PLAN_V2 的 repair_owner 失败策略会受 maxAttempts 约束地重新进入 DAG', async () => {
+test('DSH_PLAN_V2 的 repair_owner 保留为意图提示，Runtime 按证据策略重新进入 DAG', async () => {
   const fixture = await supervisorControlFixture()
   fixture.state.plan.tasks[0].onFailure = { action: 'repair_owner', maxAttempts: 2 }
   await writeFile(fixture.statePath, `${JSON.stringify(fixture.state, null, 2)}\n`, 'utf8')
@@ -698,6 +2047,7 @@ test('DSH_PLAN_V2 的 repair_owner 失败策略会受 maxAttempts 约束地重�
     assert.equal(retryState.status, 'running')
     assert.equal(retryState.ownerRuns['T1:api'].status, 'pending')
     assert.equal(retryState.ownerRuns['T1:api'].retryCount, 1)
+    assert.equal(retryState.tasks[0].autonomousRecovery.strategy, 'diagnose')
     const retry = await request(fixture.manifest, 'supervisor-next')
     assert.equal(retry.action, 'create')
     assert.equal(retry.tasks[0].taskId, 'T1')
@@ -758,6 +2108,38 @@ test('Supervisor inspect 只返回有限宿主字段，未知控制动作关闭�
   }
 })
 
+test('Supervisor 主会话通知只有真正 followup 成功后才标记 delivered', async () => {
+  const fixture = await supervisorControlFixture()
+  const delivered = []
+  fixture.agent.followup = message => delivered.push(message)
+  try {
+    const state = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    state.mainOutbox = {
+      'notification-1': {
+        notificationId: 'notification-1',
+        kind: 'main',
+        reason: 'decision_required',
+        summary: '需要一次性处理全部外部决定',
+        status: 'pending',
+      },
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const result = await request(fixture.manifest, 'supervisor-outbox-deliver', {
+      notificationId: 'notification-1',
+    })
+    assert.equal(result.status, 'delivered')
+    assert.equal(result.delivery, 'main-followup')
+    assert.equal(delivered.length, 1)
+    assert.match(delivered[0].content[0].text, /decision_required/u)
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.mainOutbox['notification-1'].status, 'delivered')
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
 test('Supervisor await_event 以持久游标阻塞等待，并在超时后记录一次受控观察', async () => {
   const fixture = await supervisorControlFixture()
   fixture.runtime.queueSupervisorReservations = () => undefined
@@ -780,7 +2162,7 @@ test('Supervisor await_event 以持久游标阻塞等待，并在超时后记录
   }
 })
 
-test('任务达到已批准的 onTimeout.afterMs 后进入主会话决策路径', async () => {
+test('任务达到 onTimeout.afterMs 后切换自治恢复策略而不是交给用户', async () => {
   const fixture = await supervisorControlFixture()
   fixture.runtime.queueSupervisorReservations = () => undefined
   fixture.state.plan.tasks[0].onTimeout = { action: 'handoff_replan', afterMs: 60_000 }
@@ -801,12 +2183,15 @@ test('任务达到已批准的 onTimeout.afterMs 后进入主会话决策路径'
       cursor: acknowledged.eventCursor,
       waitMs: 1,
     })
-    assert.equal(timedOut.event.type, 'supervisor.task-timeout')
-    assert.equal(timedOut.status, 'blocked')
-    const notify = await request(fixture.manifest, 'supervisor-next')
-    assert.equal(notify.action, 'notify')
-    const notification = await request(fixture.manifest, 'supervisor-ack', { actionId: notify.actionId })
-    assert.deepEqual(notification.notification.tasks[0].policy, { action: 'handoff_replan', afterMs: 60_000 })
+    assert.equal(timedOut.event.type, 'supervisor.task-timeout-recovery')
+    assert.equal(timedOut.status, 'running')
+    const recovered = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(recovered.tasks[0].status, 'pending')
+    assert.equal(recovered.tasks[0].autonomousRecovery.failureClass, 'transient')
+    assert.equal(recovered.tasks[0].autonomousRecovery.strategy, 'repair_runtime')
+    assert.equal(Object.keys(recovered.mainOutbox ?? {}).length, 0)
+    const retry = await request(fixture.manifest, 'supervisor-next')
+    assert.equal(retry.action, 'create')
   } finally {
     await fixture.runtime.dispose()
     await rm(fixture.root, { recursive: true, force: true })
@@ -853,6 +2238,54 @@ test('Owner 恢复后使用本次运行时间重置超时基线，不沿用旧 r
     const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
     assert.equal(saved.status, 'running')
     assert.equal(saved.tasks[0].status, 'running')
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('持续产生心跳的长任务按进展续租，不因总运行时间被误杀', async () => {
+  const fixture = await supervisorControlFixture()
+  fixture.runtime.queueSupervisorReservations = () => undefined
+  fixture.state.plan.tasks[0].onTimeout = { action: 'notify_main', afterMs: 60_000 }
+  await writeFile(fixture.statePath, `${JSON.stringify(fixture.state, null, 2)}\n`, 'utf8')
+  try {
+    await request(fixture.manifest, 'supervisor-start', { parallel: 1 })
+    const create = await request(fixture.manifest, 'supervisor-next')
+    const acknowledged = await request(fixture.manifest, 'supervisor-ack', { actionId: create.actionId })
+    const state = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    const old = new Date(Date.now() - 4 * 60 * 60_000).toISOString()
+    state.supervisorOutbox['T1:api'] = {
+      ...state.supervisorOutbox['T1:api'],
+      status: 'launching',
+      launchedAt: old,
+    }
+    state.ownerRuns = {
+      'T1:api': {
+        status: 'running',
+        ownerId: 'api',
+        taskId: 'T1',
+        startedAt: old,
+        lastHeartbeatAt: new Date().toISOString(),
+        sessionId: 'progressing-owner',
+      },
+    }
+    fixture.runtime.activeOwners.set('progressing-owner', {
+      workflowId: state.id,
+      stageId: 'T1',
+      owner: { id: 'api' },
+    })
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const waited = await request(fixture.manifest, 'supervisor-await-event', {
+      cursor: acknowledged.eventCursor,
+      waitMs: 1,
+    })
+    assert.equal(waited.kind, 'timeout')
+    assert.equal(waited.event.type, 'supervisor.wait-timeout')
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.tasks[0].status, 'running')
+    assert.equal(saved.supervisorTimeouts, undefined)
   } finally {
     await fixture.runtime.dispose()
     await rm(fixture.root, { recursive: true, force: true })
@@ -1165,6 +2598,8 @@ test('只读审计在脏工作区中运行，不创建 workflow 分支或 worktr
 
     assert.equal(result.contract, 'DSH_READ_ONLY_AUDIT_RESULT_V1')
     assert.match(result.report, /报警去重测试/u)
+    assert.match(result.nextAction, /workflow_preflight → workflow_start/u)
+    assert.doesNotMatch(result.nextAction, /owner_workflow\(action=start\)/u)
     assert.equal(calls.length, 1)
     assert.equal(calls[0][1], result.root)
     assert.equal(calls[0][4].role, 'reviewer')
@@ -1352,6 +2787,194 @@ test('历史 V1 计划即使 digest 匹配也不能批准执行', async () => {
   } finally {
     await runtime.dispose()
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('批准修订计划时自动恢复旧 Runtime 丢失的已完成任务状态', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    let registry = await ensureRegistry(fixture.state.workflowWorktree)
+    registry = await applyRegistryOperation(fixture.state.workflowWorktree, registry, {
+      type: 'add',
+      owner: fixture.state.plan.owners[0],
+      reason: '登记状态恢复测试 Owner',
+    })
+    const registryDigest = registryContentDigest(registry)
+    const owner = registry.owners.find(item => item.id === 'api')
+    const previousPlan = {
+      ...fixture.state.plan,
+      registryDigest,
+      owners: [owner],
+    }
+    const previousDigest = createHash('sha256').update(JSON.stringify(previousPlan)).digest('hex')
+    const nextPlan = {
+      ...previousPlan,
+      summary: '增加最小修复节点',
+      tasks: [
+        { ...previousPlan.tasks[0], done: ['API 完成且固定验证通过'] },
+        {
+          id: 'T2',
+          role: 'work',
+          ownerId: 'api',
+          title: '补充回归测试',
+          dependsOn: ['T1'],
+          write: ['src/api/t2.mjs'],
+          verify: ['unit'],
+          done: ['回归测试通过'],
+        },
+      ],
+    }
+    const nextDigest = createHash('sha256').update(JSON.stringify(nextPlan)).digest('hex')
+    const state = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    Object.assign(state, {
+      status: 'planned',
+      registryDigest,
+      plan: nextPlan,
+      planDigest: nextDigest,
+      planReview: { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '通过', issues: [] },
+      planReviewDigest: nextDigest,
+      planApproved: false,
+      activePlanRevision: 1,
+      planRevisions: [createPlanRevision({ number: 1, parent: null, plan: previousPlan, planDigest: previousDigest })],
+      tasks: createTaskState(nextPlan),
+      ownerRuns: {
+        'T1:api': { taskId: 'T1', ownerId: 'api', status: 'completed', sessionId: 'owner-t1' },
+      },
+    })
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    await fixture.runtime.approvePlan(fixture.agent, state.id, nextDigest, registryDigest)
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.equal(saved.activePlanRevision, 2)
+    assert.equal(saved.planRevisions.at(-1).planDigest, nextDigest)
+    assert.deepEqual(saved.tasks.map(task => [task.taskId, task.status, task.checkState]), [
+      ['T1', 'completed', 'pending_check'],
+      ['T2', 'pending', null],
+    ])
+    assert.deepEqual(saved.revisionTransition.pendingCheckTaskIds, ['T1'])
+    assert.deepEqual(saved.taskStateRecovery.recoveredTaskIds, ['T1'])
+
+    saved.status = 'running'
+    saved.tasks = createTaskState(nextPlan).map((task, index) => ({
+      ...task,
+      status: index === 0 ? 'running' : 'pending',
+    }))
+    saved.supervisorOutbox = {
+      'T1:api': { taskId: 'T1', ownerId: 'api', status: 'running' },
+    }
+    await writeFile(fixture.statePath, `${JSON.stringify(saved, null, 2)}\n`, 'utf8')
+    const resumed = await request(fixture.manifest, 'supervisor-start', { parallel: 1 })
+    assert.equal(resumed.resumed, true)
+    const recoveredAgain = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.deepEqual(recoveredAgain.tasks.map(task => [task.taskId, task.status, task.checkState]), [
+      ['T1', 'completed', 'pending_check'],
+      ['T2', 'pending', null],
+    ])
+    assert.equal(recoveredAgain.supervisorOutbox['T1:api'], undefined)
+    assert.match(recoveredAgain.taskStateRecovery.supervisorResetRecoveredAt, /^\d{4}-\d{2}-\d{2}T/u)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('计划修订冻结 ownerRuns 已完成任务，只迁移新增 repair 与最终 verify', async () => {
+  const fixture = await supervisorControlFixture()
+  try {
+    let registry = await ensureRegistry(fixture.state.workflowWorktree)
+    registry = await applyRegistryOperation(fixture.state.workflowWorktree, registry, {
+      type: 'add',
+      owner: fixture.state.plan.owners[0],
+      reason: '登记计划修订冻结测试 Owner',
+    })
+    const registryDigest = registryContentDigest(registry)
+    const owner = registry.owners.find(item => item.id === 'api')
+    const previousPlan = {
+      ...fixture.state.plan,
+      registryDigest,
+      owners: [owner],
+      tasks: [{ ...fixture.state.plan.tasks[0], done: ['历史完成条件'] }],
+    }
+    const previousDigest = createHash('sha256').update(JSON.stringify(previousPlan)).digest('hex')
+    const state = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    Object.assign(state, {
+      status: 'planned',
+      registryDigest,
+      plan: previousPlan,
+      planDigest: previousDigest,
+      planReview: {
+        contract: 'DSH_PLAN_REVIEW_V1',
+        status: 'needs_revision',
+        summary: '需要新增修复与最终验证',
+        issues: [{
+          severity: 'high',
+          title: '缺少后置验证',
+          detail: '新增修复后必须重新验证。',
+          suggestion: '新增 repair 和最终 verify，不要改写历史 task。',
+        }],
+      },
+      planReviewDigest: previousDigest,
+      planReviewedAt: new Date().toISOString(),
+      planApproved: false,
+      activePlanRevision: 1,
+      planRevisions: [createPlanRevision({ number: 1, parent: null, plan: previousPlan, planDigest: previousDigest })],
+      tasks: createTaskState(previousPlan),
+      ownerRuns: {
+        'T1:api': { taskId: 'T1', ownerId: 'api', status: 'completed', sessionId: 'owner-t1' },
+      },
+    })
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    fixture.runtime.runChild = async (_agent, _cwd, _prompt, _signal, options) => {
+      if (options?.role === 'reviewer') {
+        return {
+          contract: 'DSH_OWNER_PLANNING_ADVICE_V1',
+          ownerId: 'api',
+          scopeFit: 'full',
+          facts: ['T1 已有持久化完成记录'],
+          constraints: ['历史 task 不应被改写'],
+          suggestedNodes: ['新增 T2 repair 与 T3 verify'],
+          dependencies: ['T2 依赖 T1，T3 依赖 T2'],
+          handoffs: [],
+          risks: [],
+          verificationSuggestions: ['复用 unit'],
+        }
+      }
+      assert.equal(options?.role, 'planner')
+      return {
+        contract: 'DSH_PLAN_V2',
+        registryDigest,
+        summary: '新增修复与最终验证',
+        registryOperation: null,
+        owners: [{ id: 'api' }],
+        verifications: [{ id: 'unit', run: ['node', '--test'] }],
+        tasks: [
+          { ...previousPlan.tasks[0], done: ['Planner 无意改写的历史文案'] },
+          {
+            id: 'T2', role: 'work', ownerId: 'api', title: '修复问题', dependsOn: ['T1'],
+            write: ['src/api/t2.mjs'], verify: ['unit'], done: ['修复完成'],
+          },
+          {
+            id: 'T3', role: 'verify', ownerId: 'api', title: '最终验证', dependsOn: ['T2'],
+            write: [], verify: ['unit'], done: ['最终验证通过'],
+          },
+        ],
+      }
+    }
+
+    await fixture.runtime.revisePlan(fixture.agent, state.id)
+    const saved = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    assert.deepEqual(saved.plan.tasks.map(task => task.id), ['T1', 'T2', 'T3'])
+    assert.deepEqual(saved.plan.tasks[0].done, ['历史完成条件'])
+    assert.deepEqual(saved.tasks.map(task => [task.taskId, task.status, task.checkState]), [
+      ['T1', 'completed', 'valid'],
+      ['T2', 'pending', null],
+      ['T3', 'pending', null],
+    ])
+    assert.equal(saved.revisionTransition, undefined)
+  } finally {
+    await fixture.runtime.dispose()
+    await rm(fixture.root, { recursive: true, force: true })
   }
 })
 
@@ -1599,6 +3222,116 @@ test('Implementation Review 必须读取实际 workflow HEAD 并保存审查结�
   }
 })
 
+test('Implementation Review 问题自动转换为带自治批准策略的 repair PlanRevision', async () => {
+  const { root, runtime, agent, state } = await planApprovalFixture()
+  try {
+    const owner = (await loadRegistry(state.workflowWorktree)).owners[0]
+    const task = {
+      id: 'T1',
+      role: 'work',
+      ownerId: owner.id,
+      title: '保留既有交付',
+      dependsOn: [],
+      write: ['README.md'],
+      verify: ['unit'],
+      done: ['既有交付保持有效'],
+      decomposition: {
+        status: 'leaf',
+        kind: 'leaf',
+        outcome: '保留既有交付',
+        ownerCandidates: [owner.id],
+        unknowns: [],
+      },
+    }
+    state.request = '完成实现并修复独立审查问题'
+    state.orchestratorSessionId = agent.id
+    state.conversationRootSessionId = agent.id
+    state.conversationNodes = [{
+      sessionId: agent.id,
+      parentSessionId: null,
+      seedLength: null,
+      role: 'root',
+      registeredAt: new Date().toISOString(),
+    }]
+    state.plan = {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: state.registryDigest,
+      summary: '既有实现',
+      owners: [owner],
+      verifications: [{ id: 'unit', run: ['node', '--test'] }],
+      tasks: [task],
+    }
+    state.planDigest = createHash('sha256').update(JSON.stringify(state.plan)).digest('hex')
+    state.status = 'completed'
+    state.planApproved = true
+    state.activePlanRevision = 1
+    state.tasks = createTaskState(state.plan).map(record => ({ ...record, status: 'completed' }))
+    state.implementationReview = {
+      contract: 'DSH_IMPLEMENTATION_REVIEW_V1',
+      status: 'needs_repair',
+      summary: '缺少回归覆盖',
+      issues: ['补充真实失败路径的回归测试'],
+    }
+    state.implementationReviewHead = (await execFileAsync('git', ['rev-parse', 'HEAD'], {
+      cwd: state.workflowWorktree,
+      encoding: 'utf8',
+    })).stdout.trim()
+    const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
+      assert.equal(options.role, 'planner')
+      assert.match(prompt, /Implementation Review/u)
+      return {
+        contract: 'DSH_PLAN_V2',
+        registryDigest: state.registryDigest,
+        summary: '保留既有交付并增加最小 repair 叶子',
+        registryOperation: null,
+        owners: [{ id: owner.id }],
+        verifications: [{ id: 'unit', run: ['node', '--test'] }],
+        tasks: [task, {
+          id: 'T2',
+          role: 'work',
+          ownerId: owner.id,
+          title: '补充回归覆盖',
+          dependsOn: ['T1'],
+          write: ['README.md'],
+          verify: ['unit'],
+          done: ['失败路径回归测试通过'],
+          decomposition: {
+            status: 'leaf',
+            kind: 'leaf',
+            outcome: '关闭独立审查问题',
+            ownerCandidates: [owner.id],
+            unknowns: [],
+          },
+        }],
+      }
+    }
+
+    const queued = await runtime.queueImplementationRepair(agent, state.id)
+    assert.equal(queued.action, 'implementation-repair')
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.pendingPlanRevision.origin, 'implementation-review')
+    assert.equal(saved.pendingPlanRevision.approvalPolicy, 'autonomous')
+    assert.equal(saved.implementationRepair.status, 'candidate_created')
+    assert.equal(saved.intents.filter(intent => intent.status === 'pending').length, 1)
+
+    delete saved.pendingPlanRevision
+    saved.intentPlanRevisionCycle.phase = 'rebuild_pending'
+    await writeFile(statePath, `${JSON.stringify(saved, null, 2)}\n`, 'utf8')
+    const rebuilt = await runtime.planWorkflowIntents(agent)
+    assert.match(rebuilt.planDigest, /^[0-9a-f]{64}$/u)
+    const rebuiltState = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(rebuiltState.pendingPlanRevision.origin, 'implementation-review')
+    assert.equal(rebuiltState.pendingPlanRevision.approvalPolicy, 'autonomous')
+    assert.equal(rebuiltState.implementationRepair.candidatePlanDigest, rebuilt.planDigest)
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test.skip('旧版 Owner 持久子线程兼容测试（已由按任务回收模型替代）', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-continuable-'))
   const children = new Map()
@@ -1773,7 +3506,7 @@ test.skip('旧版 Owner 逐写入包装测试（已由提交关卡替代）', as
     )
     await assert.rejects(
       runtime.ownerEdit({
-        file_path: '.owner-workflow/owners/wide-owner.md',
+        file_path: '.owner-workflow/owners/wide-owner/owner.md',
         old_string: '旧定义',
         new_string: '新定义',
         description: '尝试编辑 Registry Owner',
@@ -1990,7 +3723,7 @@ test('Owner Registry 提案在没有活动任务时只保存待审批提案', as
     assert.equal(status.registryDigest, state.registryDigest)
     assert.deepEqual((await loadRegistry(state.workflowWorktree)).owners, [])
     await assert.rejects(
-      readFile(join(state.workflowWorktree, '.owner-workflow', 'owners', 'registry-owner.md')),
+      readFile(join(state.workflowWorktree, '.owner-workflow', 'owners', 'registry-owner', 'owner.md')),
       /ENOENT/u,
     )
   } finally {
@@ -2102,6 +3835,52 @@ test('规划器的 proposal 包装会兼容为直接 Registry operation', async 
   }
 })
 
+test('规划器可一次提交完整 Owner Registry batch 并按最终快照绑定全部 Owner', async () => {
+  const { root, runtime, agent, state } = await registryWorkflowFixture()
+  try {
+    const network = addOwnerOperation('network-owner')
+    const web = addOwnerOperation('web-owner')
+    const operation = {
+      type: 'batch',
+      reason: '一次性建立全部长期代码责任域',
+      operations: [network, web],
+    }
+    let prompt
+    runtime.runChild = async (_agent, _cwd, value) => {
+      prompt = value
+      return {
+        contract: 'DSH_PLAN_V2',
+        registryDigest: '由运行时覆盖',
+        summary: '批量规划 Owner 职责',
+        registryOperation: operation,
+        owners: [{ id: 'network-owner' }, { id: 'web-owner' }],
+        verifications: [{ id: 'unit', run: ['node', '--test'] }],
+        tasks: [{
+          id: 'T1', role: 'work', ownerId: 'network-owner', title: '网络任务', dependsOn: [],
+          write: ['src/network-owner/entry.mjs'], verify: ['unit'], done: ['网络任务完成'],
+        }, {
+          id: 'T2', role: 'work', ownerId: 'web-owner', title: '界面任务', dependsOn: [],
+          write: ['src/web-owner/entry.mjs'], verify: ['unit'], done: ['界面任务完成'],
+        }],
+      }
+    }
+
+    const result = await runtime.planWorkflowState(agent, { ...state, request: '一次建立完整 Owner Registry' })
+    assert.match(prompt, /type=batch/u)
+    assert.match(prompt, /禁止只提出一个 Owner、批准后再逐个补提/u)
+    assert.deepEqual(result.registryOperation, operation)
+    assert.deepEqual(result.plan.owners.map(owner => owner.id), ['network-owner', 'web-owner'])
+
+    const proposal = await runtime.proposeOwnerChange(agent, state.id, result.registryOperation)
+    assert.equal(proposal.operation, 'batch')
+    assert.equal(proposal.operations.length, 2)
+    assert.deepEqual(proposal.affectedOwnerIds, ['network-owner', 'web-owner'])
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('规划提交只接受当前规划子代理的一次结构化结果', async () => {
   const runtime = createOwnerWorkflowRuntime({}, {})
   const planner = { id: 'planner-submit-test', session: { id: 'planner-submit-test' } }
@@ -2123,6 +3902,52 @@ test('规划提交只接受当前规划子代理的一次结构化结果', async
       () => runtime.submitPlannerPlan({ id: 'not-a-planner' }, plan),
       /只能由当前规划子代理调用/u,
     )
+  } finally {
+    await runtime.dispose()
+  }
+})
+
+test('one-shot Planner 在 workflow_plan_submit 时即时校验并允许原线程修正', async () => {
+  const runtime = createOwnerWorkflowRuntime({}, {})
+  const planner = { id: 'planner-inline-validation', session: { id: 'planner-inline-validation' } }
+  const owner = {
+    id: 'api',
+    name: 'API Owner',
+    description: '负责 API 模块',
+    scope: ['src/api/**'],
+    exclude: [],
+  }
+  try {
+    runtime.agentRoles.set(planner.id, {
+      role: 'planner',
+      requirePlannerSubmission: true,
+      plannerRegistry: { contract: 'DSH_OWNER_REGISTRY_V1', version: 1, owners: [owner] },
+      plannerSubmissionLabel: '即时 Planner',
+    })
+    const invalid = {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: '由 Runtime 绑定',
+      summary: '缺少叶子验证',
+      registryOperation: null,
+      owners: [{ id: owner.id }],
+      verifications: [{ id: 'unit', run: ['node', '--test'] }],
+      tasks: [{
+        id: 'T1', role: 'work', ownerId: owner.id, title: '实现 API', dependsOn: [],
+        write: ['src/api/index.mjs'], verify: [], done: ['完成'],
+      }],
+    }
+    assert.throws(
+      () => runtime.submitPlannerPlan(planner, invalid),
+      /work 任务必须绑定至少一个验证/u,
+    )
+    assert.equal(runtime.agentRoles.get(planner.id).plannerSubmission, undefined)
+
+    const valid = {
+      ...invalid,
+      tasks: [{ ...invalid.tasks[0], verify: ['unit'] }],
+    }
+    assert.equal(runtime.submitPlannerPlan(planner, valid).accepted, true)
+    assert.equal(runtime.agentRoles.get(planner.id).plannerSubmission, valid)
   } finally {
     await runtime.dispose()
   }
@@ -2151,6 +3976,11 @@ test('计划审查提交只接受当前 Plan Reviewer 的合法结构化结果',
         title: '缺少 Rust 验证',
         detail: '计划会修改 Rust 模块但没有 cargo test。',
         suggestion: '增加固定 Rust 测试。',
+        obligationId: 'ac-rust-t1-cargo-binding',
+        sourceId: 'AC-RUST-VERIFY',
+        sourceVersion: 'R4',
+        targetTaskIds: ['T1'],
+        closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'cargo-test' },
       }],
     }
     const result = runtime.submitPlanReview(reviewer, review)
@@ -2200,6 +4030,11 @@ test('计划 Reviewer 首轮状态非法时自动携带错误重试并保存结�
               title: '缺少 Rust 验证',
               detail: '修改 Rust 模块却没有绑定固定验证。',
               suggestion: '增加 cargo test。',
+              obligationId: 'ac-rust-t1-cargo-binding',
+              sourceId: 'AC-RUST-VERIFY',
+              sourceVersion: 'R4',
+              targetTaskIds: ['T1'],
+              closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'cargo-test' },
             }],
           }
     }
@@ -2210,6 +4045,8 @@ test('计划 Reviewer 首轮状态非法时自动携带错误重试并保存结�
     assert.match(firstPrompt, /同一代码责任域仅因 Workflow 流程被拆成多个 Owner/u)
     assert.match(firstPrompt, /同一 Owner 下的多个 DAG task/u)
     assert.match(firstPrompt, /registryOperation.*代码依据/u)
+    assert.match(firstPrompt, /对 abstract 节点.*会诊 lead/u)
+    assert.match(firstPrompt, /禁止仅因它含 ownerId\/ownerCandidates 返回 owner-boundary 问题/u)
     assert.match(retryPrompt, /计划审查状态不受支持：failed/u)
     assert.match(retryPrompt, /workflow_plan_review_submit/u)
     assert.equal(result.review.status, 'needs_revision')
@@ -2228,7 +4065,821 @@ test('计划 Reviewer 首轮状态非法时自动携带错误重试并保存结�
   }
 })
 
-test('计划可在审查约束下有界修订三次，并在达到上限后停止自动修订', async () => {
+test('Reviewer 不能要求 abstract decision 删除必填 Owner 会诊字段，必须重试为 decision', async () => {
+  const { root, runtime, agent, state } = await planApprovalFixture()
+  try {
+    const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
+    const owner = state.plan.owners[0]
+    state.plan = {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: state.registryDigest,
+      summary: '编排决策待用户收敛',
+      owners: [owner],
+      verifications: [],
+      tasks: [{
+        id: 'T1',
+        role: 'work',
+        ownerId: owner.id,
+        title: '冻结产品策略输入',
+        dependsOn: [],
+        write: [],
+        verify: [],
+        done: ['冻结本期范围和环境输入'],
+        decomposition: {
+          status: 'abstract',
+          kind: 'decision',
+          outcome: '形成可激活后续实现的产品决策',
+          ownerCandidates: [owner.id],
+          unknowns: ['本期是否包含 TON'],
+        },
+      }],
+    }
+    state.planDigest = createHash('sha256').update(JSON.stringify(state.plan)).digest('hex')
+    state.tasks = createTaskState(state.plan)
+    state.planReview = undefined
+    state.planReviewDigest = undefined
+    state.planApproved = false
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    let calls = 0
+    let retryPrompt
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
+      assert.equal(options?.role, 'plan-reviewer')
+      calls += 1
+      if (calls === 2) retryPrompt = prompt
+      return calls === 1
+        ? {
+            contract: 'DSH_PLAN_REVIEW_V1',
+            status: 'needs_revision',
+            summary: 'T1 不应绑定代码 Owner',
+            issues: [{
+              ...reviewClosureContract('scope-decision', 'decision_record'),
+              severity: 'medium',
+              title: 'T1 仍绑定应用代码 Owner',
+              detail: 'T1 是不产生代码的 abstract decision。',
+              suggestion: '将 T1 改为完全无 Owner 的节点，移除 ownerId 和 ownerCandidates。',
+            }],
+            targetTaskIds: ['T1'],
+          }
+        : {
+            contract: 'DSH_PLAN_REVIEW_V1',
+            status: 'needs_decision',
+            summary: '需要用户冻结产品范围',
+            issues: [{ ...reviewClosureContract('scope-decision', 'decision_record'), severity: 'high', title: '冻结产品范围', detail: '本期是否包含 TON 尚未决定。', suggestion: '请明确本期产品范围。' }],
+            decisionQuestions: ['本期是否同时包含 TON Connect？'],
+          }
+    }
+
+    const reviewed = await runtime.reviewPlan(agent, state.id)
+    assert.equal(calls, 2)
+    assert.match(retryPrompt, /与 DSH_PLAN_V2 schema 冲突的 Owner 要求/u)
+    assert.match(retryPrompt, /不得要求移除这些字段/u)
+    assert.equal(reviewed.review.status, 'needs_decision')
+    assert.deepEqual(reviewed.review.decisionQuestions, ['本期是否同时包含 TON Connect？'])
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.planReview.status, 'needs_decision')
+    assert.equal(saved.plan.tasks[0].ownerId, owner.id)
+    assert.deepEqual(saved.plan.tasks[0].decomposition.ownerCandidates, [owner.id])
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Reviewer 判定 needs_split 后，Owner 会诊参与目标节点的递归拆分', async () => {
+  const { root, runtime, agent, state } = await planApprovalFixture()
+  try {
+    const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
+    const owner = state.plan.owners[0]
+    state.plan = {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: state.registryDigest,
+      summary: '高层节点待递归拆分',
+      owners: [owner],
+      verifications: [],
+      tasks: [{
+        id: 'T1',
+        role: 'work',
+        ownerId: owner.id,
+        title: '完成整体能力',
+        dependsOn: [],
+        write: [],
+        verify: [],
+        done: ['形成可执行子图'],
+        decomposition: {
+          status: 'abstract',
+          kind: 'composite',
+          outcome: '完成整体能力',
+          ownerCandidates: [owner.id],
+          unknowns: ['最小可验收边界'],
+        },
+      }],
+    }
+    state.planDigest = createHash('sha256').update(JSON.stringify(state.plan)).digest('hex')
+    state.tasks = createTaskState(state.plan)
+    state.planReview = undefined
+    state.planReviewDigest = undefined
+    state.planApproved = false
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    let revisionPrompt
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
+      if (options?.role === 'plan-reviewer') {
+        return {
+          contract: 'DSH_PLAN_REVIEW_V1',
+          status: 'needs_split',
+          summary: '节点混合了调查与实现',
+          issues: [{
+            ...reviewClosureContract('split-T1', 'plan_task_executable'),
+            severity: 'high',
+            title: '节点过大',
+            detail: 'T1 不是一个当前可确定验收的叶子。',
+            suggestion: '拆成只读调查和可执行叶子。',
+          }],
+          targetTaskIds: ['T1'],
+        }
+      }
+      if (options?.role === 'reviewer') {
+        return {
+          contract: 'DSH_OWNER_PLANNING_ADVICE_V1',
+          ownerId: owner.id,
+          scopeFit: 'full',
+          facts: ['README.md 是当前唯一可写入叶子'],
+          constraints: ['叶子必须绑定固定验证'],
+          suggestedNodes: ['将 T1 拆为 T1-1'],
+          dependencies: [],
+          handoffs: [],
+          risks: [],
+          verificationSuggestions: ['node --test'],
+        }
+      }
+      revisionPrompt = prompt
+      return {
+        contract: 'DSH_PLAN_V2',
+        registryDigest: state.registryDigest,
+        summary: '已将高层节点拆成叶子',
+        registryOperation: null,
+        owners: [{ id: owner.id }],
+        verifications: [{ id: 'unit', run: ['node', '--test'] }],
+        tasks: [{
+          id: 'T1-1',
+          role: 'work',
+          ownerId: owner.id,
+          title: '完成最小可验收叶子',
+          dependsOn: [],
+          write: ['README.md'],
+          verify: ['unit'],
+          done: ['固定验证通过'],
+          decomposition: {
+            status: 'leaf',
+            kind: 'leaf',
+            outcome: '完成最小可验收叶子',
+            ownerCandidates: [owner.id],
+            unknowns: [],
+          },
+        }],
+      }
+    }
+
+    const reviewed = await runtime.reviewPlan(agent, state.id)
+    assert.equal(reviewed.review.status, 'needs_split')
+    assert.deepEqual(reviewed.review.targetTaskIds, ['T1'])
+    const revised = await runtime.revisePlan(agent, state.id)
+    assert.equal(revised.plan.executable, true)
+    assert.equal(revised.plan.tasks[0].decomposition.status, 'leaf')
+    assert.match(revisionPrompt, /targetTaskIds/u)
+    assert.match(revisionPrompt, /将 T1 拆为 T1-1/u)
+    assert.match(revisionPrompt, /README\.md 是当前唯一可写入叶子/u)
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Reviewer 判定 needs_decision 后停止自动修订并把问题总结回主线程', async () => {
+  const { root, runtime, agent, state } = await closureReceiptFixture()
+  const followups = []
+  agent.followup = message => { followups.push(message) }
+  try {
+    state.orchestratorSessionId = agent.id
+    state.conversationRootSessionId = agent.id
+    state.conversationNodes = [{
+      sessionId: agent.id,
+      parentSessionId: null,
+      seedLength: null,
+      role: 'root',
+      registeredAt: new Date().toISOString(),
+    }]
+    await writeFile(
+      join(root, '.dsh-workflow', 'workflows', `${state.id}.json`),
+      `${JSON.stringify(state, null, 2)}\n`,
+      'utf8',
+    )
+    runtime.runChild = async (_agent, _cwd, _prompt, _signal, options) => {
+      if (options?.role === 'plan-reviewer') {
+        return {
+          contract: 'DSH_PLAN_REVIEW_V1',
+          status: 'needs_decision',
+          summary: '缺少用户策略选择',
+          issues: [{ ...reviewClosureContract('external-service-decision', 'decision_record'), severity: 'high', title: '明确外部服务范围', detail: '是否允许连接真实外部服务尚未决定。', suggestion: '由用户明确允许的环境范围。' }],
+          decisionQuestions: ['本轮是否允许连接真实外部服务？'],
+        }
+      }
+      return '当前未执行 Owner 任务；必须先讨论是否允许真实外部服务。'
+    }
+
+    const reviewed = await runtime.reviewPlan(agent, state.id)
+    assert.equal(reviewed.review.status, 'needs_decision')
+    assert.equal(reviewed.nextTool, 'planning_discussion')
+    const requested = await runtime.requestPlanReviewDiscussion(
+      agent,
+      state.id,
+      reviewed.workflow.planDigest,
+      reviewed.review,
+    )
+    assert.equal(requested.decisionQuestions[0], '明确外部服务范围：从“仅执行已确认的现有方案”改为“采用待确认的方案 A”；改变当前候选向调用方提供的行为，需要明确选择。')
+    const saved = await waitForWorkflowState(
+      join(root, '.dsh-workflow', 'workflows', `${state.id}.json`),
+      current => current.planningDiscussion?.status === 'delivered',
+      '决策问题返回主线程',
+    )
+    assert.equal(saved.planningAgent.phase, 'awaiting_main_discussion')
+    assert.equal(saved.pendingDecisionBundle.status, 'pending')
+    assert.deepEqual(saved.pendingDecisionBundle.questions, requested.decisionQuestions)
+    assert.equal(followups.length, 1)
+    const update = JSON.parse(followups[0].content[0].text)
+    assert.equal(update.type, 'planning_discussion_ready')
+    assert.match(update.retrospective, /必须先讨论/u)
+    const answer = await runtime.submitWorkflowIntent(agent, '一次性答复：允许连接测试环境中的真实外部服务')
+    const answered = JSON.parse(await readFile(join(root, '.dsh-workflow', 'workflows', `${state.id}.json`), 'utf8'))
+    assert.equal(answered.pendingDecisionBundle.status, 'answer_received')
+    assert.equal(answered.pendingDecisionBundle.answerIntentId, answer.intent.id)
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('awaiting_main_discussion 接收明确 Intent 后可以生成 PlanRevision 候选', async () => {
+  const { root, runtime, agent, state } = await planApprovalFixture()
+  try {
+    const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
+    const owner = state.plan.owners[0]
+    state.request = '完成测试能力'
+    state.orchestratorSessionId = agent.id
+    state.conversationRootSessionId = agent.id
+    state.conversationNodes = [{
+      sessionId: agent.id,
+      parentSessionId: null,
+      seedLength: null,
+      role: 'root',
+      registeredAt: new Date().toISOString(),
+    }]
+    state.plan = {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: state.registryDigest,
+      summary: '等待用户决定的抽象计划',
+      owners: [owner],
+      verifications: [],
+      tasks: [{
+        id: 'T1',
+        role: 'work',
+        ownerId: owner.id,
+        title: '等待范围决定',
+        dependsOn: [],
+        write: [],
+        verify: [],
+        done: ['范围明确后展开'],
+        decomposition: {
+          status: 'abstract',
+          kind: 'decision',
+          outcome: '冻结测试范围',
+          ownerCandidates: [owner.id],
+          unknowns: ['是否只交付最小闭环'],
+        },
+      }],
+    }
+    state.planDigest = createHash('sha256').update(JSON.stringify(state.plan)).digest('hex')
+    state.tasks = createTaskState(state.plan)
+    state.tasks[0].status = 'completed'
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_decision',
+      summary: '等待用户冻结范围',
+      issues: [],
+      decisionQuestions: ['是否只交付最小闭环？'],
+    }
+    state.planReviewDigest = state.planDigest
+    state.planApproved = false
+    state.planningAgent = { phase: 'awaiting_main_discussion' }
+    state.planningDiscussion = { status: 'delivered' }
+    const persistedOwnerInput = 'e2e/persisted-owner-input.spec.ts'
+    const persistedOwnerInputContent = 'test("persisted owner input", () => {})\n'
+    await mkdir(join(state.workflowWorktree, 'e2e'), { recursive: true })
+    await writeFile(join(state.workflowWorktree, persistedOwnerInput), persistedOwnerInputContent, 'utf8')
+    state.ownerRuns = {
+      [`T0::${owner.id}`]: {
+        taskId: 'T0',
+        ownerId: owner.id,
+        worktree: state.workflowWorktree,
+        status: 'failed',
+        phase: 'failed',
+      },
+    }
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    const legacyDigest = '9'.repeat(64)
+    await writeFile(
+      join(root, '.dsh-workflow', 'logs', `${state.id}.jsonl`),
+      [
+        JSON.stringify({
+          time: new Date().toISOString(),
+          event: 'plan-revision.reviewed',
+          revision: 2,
+          planDigest: legacyDigest,
+          status: 'needs_revision',
+          summary: '旧版历史审查要求固定 artifact 路径',
+        }),
+        JSON.stringify({
+          time: new Date().toISOString(),
+          event: 'plan-revision.candidate-discarded',
+          revision: 2,
+          planDigest: legacyDigest,
+          summary: '旧版历史约束：固定 artifact 路径必须一次性吸收',
+        }),
+      ].join('\n') + '\n',
+      { encoding: 'utf8', flag: 'a' },
+    )
+
+    let plannerPrompt
+    const plannerRunChild = async (_agent, _cwd, prompt, _signal, options) => {
+      assert.equal(options.role, 'planner')
+      assert.equal(options.timeoutMs >= 5 * 60_000, true)
+      plannerPrompt = prompt
+      return {
+        contract: 'DSH_PLAN_V2',
+        registryDigest: state.registryDigest,
+        summary: '已按明确 Intent 收敛为可执行叶子',
+        registryOperation: null,
+        owners: [{ id: owner.id }],
+        verifications: [{ id: 'unit', run: ['node', '--test'] }],
+        tasks: [{
+          id: 'T1',
+          role: 'work',
+          ownerId: owner.id,
+          title: '完成最小闭环',
+          dependsOn: [],
+          write: ['README.md'],
+          verify: ['unit'],
+          done: ['固定测试通过'],
+          decomposition: {
+            status: 'leaf',
+            kind: 'leaf',
+            outcome: '完成最小闭环',
+            ownerCandidates: [owner.id],
+            unknowns: [],
+          },
+        }],
+      }
+    }
+    runtime.runChild = plannerRunChild
+
+    const submitted = await runtime.submitWorkflowIntent(agent, '范围确认：只交付最小闭环')
+    const candidate = await runtime.planWorkflowIntents(agent)
+
+    assert.equal(submitted.pendingIntentCount, 1)
+    assert.equal(candidate.contract, 'DSH_PLAN_REVISION_CANDIDATE_V1')
+    assert.equal(candidate.plan.executable, true)
+    assert.equal(candidate.nextTool, 'workflow_revision_review')
+    assert.match(plannerPrompt, /范围确认：只交付最小闭环/u)
+    assert.match(plannerPrompt, /\^\[a-z\]\[a-z0-9_-\]\{0,63\}\$/u)
+    assert.match(plannerPrompt, /字段名必须是 run/u)
+    assert.match(plannerPrompt, /每一项必须显式提供受限仓库相对 cwd/u)
+    assert.match(plannerPrompt, /status=completed 的 id 必须在候选中继续存在/u)
+    assert.match(plannerPrompt, /"status": "completed"/u)
+    assert.match(plannerPrompt, /decomposition\.status 只允许 abstract、leaf、expanded/u)
+    assert.match(plannerPrompt, /owners 必须是非空数组/u)
+    assert.match(plannerPrompt, /role=work 且 status=leaf/u)
+    assert.match(plannerPrompt, /优先使用扁平 leaf DAG/u)
+    assert.match(plannerPrompt, /DSH_OWNER_WORKTREE_DISCOVERY_V1/u)
+    assert.match(plannerPrompt, /persisted-owner-input\.spec\.ts/u)
+    assert.match(plannerPrompt, /旧版历史约束：固定 artifact 路径/u)
+    assert.match(
+      plannerPrompt,
+      new RegExp(createHash('sha256').update(persistedOwnerInputContent).digest('hex'), 'u'),
+    )
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.status, 'planned')
+    assert.equal(saved.pendingPlanRevision.planDigest, candidate.planDigest)
+    assert.deepEqual(saved.pendingPlanRevision.intentIds, [submitted.intent.id])
+
+    let reviewPrompt
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
+      assert.equal(options.role, 'plan-reviewer')
+      reviewPrompt = prompt
+      return {
+        contract: 'DSH_PLAN_REVIEW_V1',
+        status: 'passed',
+        summary: '候选计划可执行',
+        issues: [],
+      }
+    }
+    const reviewed = await runtime.reviewPendingPlanRevision(agent)
+    assert.equal(reviewed.review.status, 'passed')
+    assert.match(reviewPrompt, /DSH_OWNER_WORKTREE_DISCOVERY_V1/u)
+    assert.match(reviewPrompt, /persisted-owner-input\.spec\.ts/u)
+    assert.match(reviewPrompt, /不得仅因 Reviewer 当前 cwd 看不到该文件/u)
+    runtime.runChild = plannerRunChild
+
+    const reviewedState = JSON.parse(await readFile(statePath, 'utf8'))
+    reviewedState.pendingPlanRevision.review = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_split',
+      summary: '候选仍有跨域汇总节点',
+      issues: [{
+        severity: 'high',
+        title: '删除跨域汇总',
+        detail: 'T1 汇总了多个 Owner 的结果。',
+        suggestion: '让后续叶子直接依赖各 Owner 发现节点。',
+      }],
+      targetTaskIds: ['T1'],
+    }
+    await writeFile(statePath, `${JSON.stringify(reviewedState, null, 2)}\n`, 'utf8')
+    await runtime.discardPendingPlanRevision(agent, '按 Reviewer 意见删除跨域汇总')
+    plannerPrompt = undefined
+    const rebuilt = await runtime.planWorkflowIntents(agent)
+    assert.equal(rebuilt.contract, 'DSH_PLAN_REVISION_CANDIDATE_V1')
+    assert.match(plannerPrompt, /候选仍有跨域汇总节点/u)
+    assert.match(plannerPrompt, /RUN → CAPTURE\/GENERATION → VERIFY/u)
+    assert.match(plannerPrompt, /Runtime 已持久化每个 fixed verification 的绑定结果/u)
+    assert.match(plannerPrompt, /禁止只改文字或给原节点追加 verification 后原样提交/u)
+    const rebuiltState = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(rebuiltState.lastDiscardedPlanRevision.review.status, 'needs_split')
+    rebuiltState.pendingPlanRevision.review = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: 'Runner 应自动重建普通修订',
+      issues: [{
+        severity: 'medium',
+        title: 'T1 必须保持 unit fixed verification 绑定',
+        detail: '当前候选必须为 T1 绑定 unit fixed verification。',
+        suggestion: '确认 T1 的 unit 绑定后重新完整审查。',
+        obligationId: 'ac32-t1-unit-binding',
+        sourceId: 'AC-32',
+        sourceVersion: 'R4',
+        targetTaskIds: ['T1'],
+        closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' },
+      }],
+    }
+    // 模拟从旧版状态恢复：旧候选没有证据义务账本，由 Runtime 首次审查时自动迁移。
+    rebuiltState.planConvergence = undefined
+    await writeFile(statePath, `${JSON.stringify(rebuiltState, null, 2)}\n`, 'utf8')
+    runtime.runChild = async (...args) => {
+      const options = args[4]
+      if (options.role === 'planner') return plannerRunChild(...args)
+      assert.equal(options.role, 'plan-reviewer')
+      const planDigestMatch = args[2].match(/当前 planDigest：([a-f0-9]{64})/u)
+      assert.notEqual(planDigestMatch, null)
+      return {
+        contract: 'DSH_PLAN_REVIEW_V1',
+        status: 'passed',
+        summary: 'Runner 重建后的候选可执行',
+        issues: [],
+        obligationClosures: [{
+          obligationId: 'ac32-t1-unit-binding',
+          kind: 'plan_verification_binding',
+          taskId: 'T1',
+          verificationId: 'unit',
+          planDigest: planDigestMatch[1],
+        }],
+      }
+    }
+    const driven = await runtime.drivePendingPlanRevision(agent, undefined, { source: 'runner-daemon' })
+    assert.equal(driven.action, 'rebuilt_and_reviewed')
+    assert.equal(driven.review.status, 'passed')
+    const drivenState = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(drivenState.intentPlanRevisionCycle.attempts, 3)
+    assert.equal(drivenState.pendingPlanRevision.review.status, 'passed')
+    assert.equal(drivenState.discardedPlanRevisionHistory.length, 3)
+    assert.equal(drivenState.discardedPlanRevisionHistory[0].migratedFromLog, true)
+    assert.equal(drivenState.discardedPlanRevisionHistory[1].review.status, 'needs_split')
+    assert.equal(drivenState.discardedPlanRevisionHistory[2].review.status, 'needs_revision')
+    drivenState.pendingPlanRevision = undefined
+    drivenState.intentPlanRevisionCycle.phase = 'rebuild_pending'
+    await writeFile(statePath, `${JSON.stringify(drivenState, null, 2)}\n`, 'utf8')
+    const resumed = await runtime.drivePendingPlanRevision(agent, undefined, { source: 'runner-daemon' })
+    assert.equal(resumed.action, 'resumed_rebuild_and_reviewed')
+    assert.equal(resumed.review.status, 'passed')
+    const resumedState = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(resumedState.intentPlanRevisionCycle.attempts, 4)
+    assert.equal(resumedState.intentPlanRevisionCycle.phase, 'awaiting_approval')
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('同类审查问题连续出现时，Runtime 强制 Reviewer 从 needs_revision 升级分类', async () => {
+  const { root, runtime, agent, state } = await closureReceiptFixture()
+  try {
+    const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
+    const repeatedIssue = {
+      ...reviewClosureContract('acceptance-scope', 'decision_record'),
+      severity: 'high',
+      title: '验收边界反复不明',
+      detail: '当前叶子无法确定验收。',
+      suggestion: '升级分类根因。',
+    }
+    state.planReviewHistory = [1, 2].map(index => ({
+      planDigest: String(index).repeat(64).slice(0, 64),
+      review: {
+        contract: 'DSH_PLAN_REVIEW_V1',
+        status: 'needs_revision',
+        summary: '历史重复问题',
+        issues: [repeatedIssue],
+      },
+    }))
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    let calls = 0
+    let retryPrompt
+    runtime.runChild = async (_agent, _cwd, prompt) => {
+      calls += 1
+      if (calls === 2) retryPrompt = prompt
+      return calls === 1
+        ? {
+            contract: 'DSH_PLAN_REVIEW_V1',
+            status: 'needs_revision',
+            summary: '仍然建议普通修订',
+            issues: [repeatedIssue],
+          }
+        : {
+            contract: 'DSH_PLAN_REVIEW_V1',
+            status: 'needs_decision',
+            summary: '根因是用户策略未定',
+            issues: [repeatedIssue],
+            decisionQuestions: ['是否允许扩大验收边界？'],
+          }
+    }
+
+    const reviewed = await runtime.reviewPlan(agent, state.id)
+    assert.equal(calls, 2)
+    assert.equal(reviewed.review.status, 'needs_decision')
+    assert.match(retryPrompt, /不能继续 needs_revision/u)
+    assert.match(retryPrompt, /needs_split、needs_decision 或 needs_discovery/u)
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('冻结义务无进展时由独立 Arbiter 裁决而不是请求用户扩额', async () => {
+  const { root, runtime, agent, state } = await planApprovalFixture()
+  try {
+    const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
+    const ownerId = state.plan.owners[0].id
+    const registeredOwner = state.plan.owners[0]
+    state.plan = {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: state.registryDigest,
+      summary: '等待独立仲裁的可执行计划',
+      owners: [registeredOwner],
+      verifications: [{ id: 'unit', run: ['node', '--test'], cwd: '.' }],
+      tasks: [{
+        id: 'T1',
+        role: 'work',
+        ownerId,
+        title: '实现并验证 README 能力',
+        dependsOn: [],
+        write: ['README.md'],
+        verify: ['unit'],
+        done: ['固定验证通过'],
+        decomposition: {
+          status: 'leaf',
+          kind: 'leaf',
+          outcome: '形成单一可验收结果',
+          ownerCandidates: [ownerId],
+          unknowns: [],
+        },
+      }],
+    }
+    state.planDigest = createHash('sha256').update(JSON.stringify(state.plan)).digest('hex')
+    state.tasks = createTaskState(state.plan)
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '固定验收义务仍待裁决',
+      issues: [{
+        severity: 'high',
+        title: 'T1 必须绑定当前 unit fixed verification',
+        detail: '当前计划必须把 T1 与 unit fixed verification 明确绑定。',
+        suggestion: '由 Arbiter 根据 Runtime 的计划绑定证据裁决。',
+        obligationId: 'ac32-t1-unit-binding',
+        sourceId: 'AC-32',
+        sourceVersion: 'R4',
+        targetTaskIds: ['T1'],
+        closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' },
+      }],
+      targetTaskIds: ['T1'],
+    }
+    state.planReviewDigest = state.planDigest
+    state.planConvergence = {
+      contract: 'DSH_WORKFLOW_CONVERGENCE_V1',
+      runtimeVersion: 'evidence-lease-v2',
+      cycleId: 'initial-cycle',
+      evidenceDigest: 'evidence-a',
+      obligations: [{
+        id: 'ac32-t1-unit-binding',
+        category: 'acceptance-evidence',
+        severity: 'high',
+        title: 'T1 必须绑定当前 unit fixed verification',
+        source: { id: 'AC-32', version: 'R4' },
+        targetTaskIds: ['T1'],
+        closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' },
+        status: 'open',
+      }],
+      unsupportedNewObligations: [],
+      usedStrategies: ['local_subgraph_rewrite', 'diagnose', 'owner_council'],
+      nextStrategy: 'arbitrate',
+      history: [],
+    }
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    let arbitrationPrompt
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
+      if (options.role === 'reviewer') {
+        return {
+          contract: 'DSH_OWNER_PLANNING_ADVICE_V1',
+          ownerId,
+          scopeFit: 'full',
+          facts: ['固定验证入口已经存在'],
+          constraints: [],
+          suggestedNodes: [],
+          dependencies: [],
+          handoffs: [],
+          risks: [],
+          verificationSuggestions: ['使用现有固定验证'],
+        }
+      }
+      assert.equal(options.role, 'plan-reviewer')
+      arbitrationPrompt = prompt
+      return {
+        contract: 'DSH_PLAN_REVIEW_V1',
+        status: 'passed',
+        summary: '冻结义务已经满足，不新增问题',
+        issues: [],
+        obligationClosures: [{
+          obligationId: 'ac32-t1-unit-binding',
+          kind: 'plan_verification_binding',
+          taskId: 'T1',
+          verificationId: 'unit',
+          planDigest: state.planDigest,
+        }],
+      }
+    }
+
+    const result = await runtime.arbitrateCurrentPlan(agent, state.id)
+    assert.equal(result.review.status, 'passed')
+    assert.equal(result.convergence.nextStrategy, 'awaiting_approval')
+    assert.match(arbitrationPrompt, /证据义务集合已经冻结/u)
+    assert.match(arbitrationPrompt, /Owner 会诊/u)
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.planReview.status, 'passed')
+    assert.equal(saved.planConvergence.nextStrategy, 'awaiting_approval')
+    assert.equal(saved.planningAgent.phase, 'awaiting_plan_approval')
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Arbiter 可以把 Runtime 已知的 abstract 节点转入拆分而不误判为新问题', async () => {
+  const { root, runtime, agent, state } = await planApprovalFixture()
+  try {
+    const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
+    const ownerId = state.plan.owners[0].id
+    const registeredOwner = state.plan.owners[0]
+    state.plan = {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: state.registryDigest,
+      summary: '等待拆分的渐进式 DAG',
+      owners: [registeredOwner],
+      verifications: [{ id: 'unit', run: ['node', '--test'], cwd: '.' }],
+      tasks: [{
+        id: 'T1',
+        role: 'work',
+        ownerId,
+        title: '拆分 WalletConnect 行为验证',
+        dependsOn: [],
+        write: [],
+        verify: [],
+        done: ['形成可执行叶子'],
+        decomposition: {
+          status: 'abstract',
+          kind: 'composite',
+          outcome: '形成代码接入与行为验证子图',
+          ownerCandidates: [ownerId],
+          unknowns: ['具体测试入口待拆分'],
+        },
+      }, {
+        id: 'T3',
+        role: 'work',
+        ownerId,
+        title: '实现 WalletConnect 行为验证',
+        dependsOn: [],
+        write: ['README.md'],
+        verify: ['unit'],
+        done: ['固定行为验证通过'],
+        decomposition: {
+          status: 'leaf',
+          kind: 'leaf',
+          outcome: '形成可执行行为验证',
+          ownerCandidates: [ownerId],
+          unknowns: [],
+        },
+      }],
+    }
+    state.planDigest = createHash('sha256').update(JSON.stringify(state.plan)).digest('hex')
+    state.tasks = createTaskState(state.plan)
+    state.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '行为验证仍需形成可执行叶子',
+      issues: [{
+        ...reviewClosureContract('split-T1', 'plan_task_executable'),
+        severity: 'high',
+        title: 'plan-structure',
+        detail: '候选 DAG 的 T1 仍然是抽象节点。',
+        suggestion: '把 T1 拆分为可执行 leaf。',
+      }],
+      targetTaskIds: ['T1'],
+    }
+    state.planReviewDigest = state.planDigest
+    state.planConvergence = {
+      contract: 'DSH_WORKFLOW_CONVERGENCE_V1',
+      runtimeVersion: 'evidence-lease-v1',
+      cycleId: 'existing-cycle',
+      evidenceDigest: 'existing-evidence',
+      obligations: [],
+      unsupportedNewObligations: [{
+        id: 'disputed-plan-structure',
+        category: 'acceptance-evidence',
+        severity: 'high',
+        title: '行为完成条件缺少固定验证',
+        targetTaskIds: ['T3'],
+        status: 'open',
+      }],
+      usedStrategies: [],
+      nextStrategy: 'arbitrate',
+      history: [],
+    }
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    let arbitrationPrompt
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
+      if (options.role === 'reviewer') {
+        return {
+          contract: 'DSH_OWNER_PLANNING_ADVICE_V1',
+          ownerId,
+          scopeFit: 'full',
+          facts: ['T1 仍需拆分为行为验证叶子'],
+          constraints: [],
+          suggestedNodes: [],
+          dependencies: [],
+          handoffs: [],
+          risks: [],
+          verificationSuggestions: ['增加固定行为测试入口'],
+        }
+      }
+      assert.equal(options.role, 'plan-reviewer')
+      arbitrationPrompt = prompt
+      return {
+        contract: 'DSH_PLAN_REVIEW_V1',
+        status: 'needs_split',
+        summary: '保留已知结构问题并拆分 T1',
+        issues: [{
+          ...reviewClosureContract('split-T1', 'plan_task_executable'),
+          severity: 'high',
+          title: 'plan-structure',
+          detail: '候选 DAG 的 T1 仍然是抽象节点。',
+          suggestion: '把 T1 拆分为可执行 leaf。',
+        }],
+        targetTaskIds: ['T1', 'T3'],
+      }
+    }
+
+    const result = await runtime.arbitrateCurrentPlan(agent, state.id)
+    assert.equal(result.review.status, 'needs_split')
+    assert.match(arbitrationPrompt, /等待仲裁的问题/u)
+    assert.match(arbitrationPrompt, /Runtime 检测到的 abstract task/u)
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.planReview.status, 'needs_split')
+    assert.notEqual(saved.planConvergence.nextStrategy, 'arbitrate')
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('计划修订次数只作遥测，无进展时切换策略而不是请求扩额', async () => {
   const { root, runtime, agent, state } = await planApprovalFixture({ maxPlanRevisionTurns: 3 })
   try {
     const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
@@ -2238,9 +4889,14 @@ test('计划可在审查约束下有界修订三次，并在达到上限后停�
       summary: '第一轮仍缺少验证',
       issues: [{
         severity: 'high',
-        title: '缺少固定验证',
-        detail: '当前计划没有覆盖关键验收。',
-        suggestion: '增加固定验证。',
+        title: 'T1 的 unit fixed verification 必须有当前执行结果',
+        detail: '关键验收要求 T1 的 unit fixed verification 有当前成功结果。',
+        suggestion: '执行并持久化 T1 的 unit fixed verification 结果。',
+        obligationId: 'ac32-t1-unit-result',
+        sourceId: 'AC-32',
+        sourceVersion: 'R4',
+        targetTaskIds: ['T1'],
+        closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' },
       }],
     }
     const blockedState = JSON.parse(await readFile(statePath, 'utf8'))
@@ -2259,9 +4915,14 @@ test('计划可在审查约束下有界修订三次，并在达到上限后停�
           summary: '仍需继续修订',
           issues: [{
             severity: 'medium',
-            title: '验收仍不完整',
-            detail: '还缺少一个边界用例。',
-            suggestion: '补充边界验证。',
+            title: 'T1 的 unit fixed verification 必须有当前执行结果',
+            detail: '关键验收要求 T1 的 unit fixed verification 有当前成功结果。',
+            suggestion: '执行并持久化 T1 的 unit fixed verification 结果。',
+            obligationId: 'ac32-t1-unit-result',
+            sourceId: 'AC-32',
+            sourceVersion: 'R4',
+            targetTaskIds: ['T1'],
+            closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' },
           }],
         }
       }
@@ -2298,67 +4959,43 @@ test('计划可在审查约束下有界修订三次，并在达到上限后停�
 
     const secondReview = await runtime.reviewPlan(agent, state.id)
     assert.equal(secondReview.revisionBudget.exhausted, false)
-    assert.match(secondReview.nextAction, /还可修订 1 次/u)
+    assert.match(secondReview.nextAction, /修订次数仅保留为遥测/u)
+    assert.equal(secondReview.nextTool, 'workflow_plan_revise')
 
     const thirdRevision = await runtime.revisePlan(agent, state.id)
     assert.equal(thirdRevision.revisionBudget.used, 3)
     assert.equal(thirdRevision.revisionBudget.remaining, 0)
     const finalReview = await runtime.reviewPlan(agent, state.id)
     assert.equal(finalReview.revisionBudget.exhausted, true)
-    assert.match(finalReview.nextAction, /达到 3 次上限/u)
-    assert.match(finalReview.nextAction, /workflow_plan_revision_extend/u)
-    assert.doesNotMatch(finalReview.nextAction, /取消.*重新规划/u)
-    assert.equal(finalReview.nextTool, 'workflow_plan_revision_extend')
-    assert.deepEqual(finalReview.nextArgs, {
-      workflow_id: state.id,
-      plan_digest: finalReview.workflow.planDigest,
-    })
+    assert.match(finalReview.nextAction, /修订次数仅保留为遥测/u)
+    assert.equal(finalReview.nextTool, 'workflow_plan_revise')
+    assert.ok(['local_subgraph_rewrite', 'diagnose'].includes(finalReview.convergence.nextStrategy))
+    assert.deepEqual(finalReview.nextArgs, { workflow_id: state.id })
 
     saved = JSON.parse(await readFile(statePath, 'utf8'))
     assert.equal(saved.status, 'planned')
     assert.equal(saved.planApproved, false)
     assert.equal(saved.planReviewDigest, saved.planDigest)
-    assert.equal(saved.planRevisionLimitReached.limit, 3)
+    assert.equal(saved.planRevisionLimitReached, undefined)
+    assert.notEqual(saved.planConvergence.nextStrategy, 'request_user_authority')
     assert.equal(saved.planReviewHistory.length, 2)
-    const exhaustedRevision = await runtime.revisePlan(agent, state.id)
-    assert.equal(exhaustedRevision.contract, 'DSH_WORKFLOW_PLAN_REVISION_SKIPPED_V1')
-    assert.equal(exhaustedRevision.reason, 'revision_limit')
-    assert.match(exhaustedRevision.nextAction, /workflow_plan_revision_extend/u)
-    assert.equal(exhaustedRevision.nextTool, 'workflow_plan_revision_extend')
-    assert.deepEqual(exhaustedRevision.nextArgs, {
-      workflow_id: state.id,
-      plan_digest: exhaustedRevision.planDigest,
-    })
-
-    const extended = await runtime.extendPlanRevisionLimit(agent, state.id, saved.planDigest)
-    assert.equal(extended.contract, 'DSH_WORKFLOW_PLAN_REVISION_LIMIT_EXTENDED_V1')
-    assert.equal(extended.previousLimit, 3)
-    assert.equal(extended.increment, 3)
-    assert.deepEqual(extended.revisionBudget, {
-      used: 3,
-      limit: 6,
-      remaining: 3,
-      exhausted: false,
-    })
-    assert.match(extended.nextAction, /workflow_plan_revise/u)
-    assert.match(extended.nextAction, /不得调用 workflow_recover/u)
-    assert.equal(extended.nextTool, 'workflow_plan_revise')
-    assert.deepEqual(extended.nextArgs, { workflow_id: state.id })
-
     const fourthRevision = await runtime.revisePlan(agent, state.id)
     assert.equal(fourthRevision.revisionBudget.used, 4)
-    assert.equal(fourthRevision.revisionBudget.limit, 6)
-    assert.equal(fourthRevision.revisionBudget.remaining, 2)
+    assert.equal(fourthRevision.revisionBudget.limit, 3)
+    assert.equal(fourthRevision.revisionBudget.remaining, 0)
+    assert.equal(fourthRevision.revisionBudget.exhausted, true)
     saved = JSON.parse(await readFile(statePath, 'utf8'))
-    assert.equal(saved.planRevisionLimit, 6)
-    assert.equal(saved.planRevisionLimitExtensions.length, 1)
+    await assert.rejects(
+      runtime.extendPlanRevisionLimit(agent, state.id, saved.planDigest),
+      /证据驱动收敛/u,
+    )
   } finally {
     await runtime.dispose()
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test('非法修订候选保留原计划并可有界重试，重复修订会幂等指向重新审查', async () => {
+test('非法修订候选保留原计划并自动切换恢复策略，修复后继续审查', async () => {
   const { root, runtime, agent, state } = await planApprovalFixture({ maxPlanRevisionFailures: 2 })
   try {
     const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
@@ -2381,7 +5018,21 @@ test('非法修订候选保留原计划并可有界重试，重复修订会幂�
 
     let valid = false
     let plannerCalls = 0
-    runtime.runChild = async () => {
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
+      if (options?.role === 'reviewer') {
+        return {
+          contract: 'DSH_OWNER_PLANNING_ADVICE_V1',
+          ownerId: 'plan-owner',
+          scopeFit: 'full',
+          facts: ['Owner Registry 已持久化'],
+          constraints: [],
+          suggestedNodes: ['复用现有 Owner'],
+          dependencies: [],
+          handoffs: [],
+          risks: [],
+          verificationSuggestions: ['node --test'],
+        }
+      }
       plannerCalls += 1
       return {
         contract: 'DSH_PLAN_V2',
@@ -2413,16 +5064,12 @@ test('非法修订候选保留原计划并可有界重试，重复修订会幂�
     assert.equal(saved.planReviewDigest, original.planDigest)
     assert.equal(saved.planReview.status, 'needs_revision')
 
-    const exhaustedFailure = await runtime.revisePlan(agent, state.id)
-    assert.equal(exhaustedFailure.recoverable, false)
-    assert.equal(exhaustedFailure.planRevisionFailureCount, 2)
-    const callsAtLimit = plannerCalls
+    const secondFailure = await runtime.revisePlan(agent, state.id)
+    assert.equal(secondFailure.recoverable, true)
+    assert.equal(secondFailure.planRevisionFailureCount, 2)
+    assert.notEqual(secondFailure.recoveryStrategy, firstFailure.recoveryStrategy)
+    const callsBeforeRepair = plannerCalls
     valid = true
-    const stillExhausted = await runtime.revisePlan(agent, state.id)
-    assert.equal(stillExhausted.recoverable, false)
-    assert.equal(plannerCalls, callsAtLimit)
-
-    runtime.config.maxPlanRevisionFailures = 3
     const revised = await runtime.revisePlan(agent, state.id)
     assert.equal(revised.plan.summary, '合法修订计划')
     assert.equal(revised.revisionBudget.used, 1)
@@ -2430,13 +5077,89 @@ test('非法修订候选保留原计划并可有界重试，重复修订会幂�
     assert.equal(saved.planRevisionFailure, undefined)
     assert.equal(saved.planRevisionFailureCount, 0)
     assert.equal(saved.lastPlanRevision.toPlanDigest, saved.planDigest)
+    assert.equal(plannerCalls, callsBeforeRepair + 1)
 
     const duplicate = await runtime.revisePlan(agent, state.id)
     assert.equal(duplicate.contract, 'DSH_WORKFLOW_PLAN_REVISION_SKIPPED_V1')
     assert.equal(duplicate.reason, 'awaiting_review')
     assert.match(duplicate.nextAction, /workflow_plan_review/u)
-    assert.equal(plannerCalls, callsAtLimit + 1)
+    assert.equal(plannerCalls, callsBeforeRepair + 1)
   } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('计划修订并发调用复用 single-flight，并用新版超时策略恢复旧 180 秒失败预算', async () => {
+  const { root, runtime, agent, state } = await planApprovalFixture({ maxPlanRevisionFailures: 3 })
+  let releasePlanner
+  try {
+    const statePath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
+    const blocked = JSON.parse(await readFile(statePath, 'utf8'))
+    blocked.planReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '需要一次性修订',
+      issues: [{
+        severity: 'high',
+        title: '验证范围不完整',
+        detail: '补齐确定性验证。',
+        suggestion: '更新完整计划。',
+      }],
+    }
+    blocked.planReviewDigest = blocked.planDigest
+    blocked.planReviewedAt = new Date().toISOString()
+    blocked.planRevisionFailureCount = 3
+    blocked.planRevisionFailure = {
+      at: new Date().toISOString(),
+      error: 'planner 超过 180000ms 未完成，已停止本次规划阶段',
+      count: 3,
+      timeoutMs: 180000,
+      planDigest: blocked.planDigest,
+      planReviewDigest: blocked.planDigest,
+    }
+    blocked.planningAgent = { phase: 'revision' }
+    await writeFile(statePath, `${JSON.stringify(blocked, null, 2)}\n`, 'utf8')
+
+    let plannerCalls = 0
+    const plannerGate = new Promise(resolve => { releasePlanner = resolve })
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
+      plannerCalls += 1
+      assert.equal(options.timeoutMs, 10 * 60 * 1000)
+      assert.match(prompt, /禁止重新进行无边界的全仓库审计/u)
+      assert.match(prompt, /Planner Reviewer 的问题/u)
+      await plannerGate
+      return {
+        contract: 'DSH_PLAN_V2',
+        registryDigest: blocked.registryDigest,
+        summary: '一次完成的快速修订计划',
+        registryOperation: null,
+        owners: [{ id: 'plan-owner' }],
+        verifications: [{ id: 'unit', run: ['node', '--test'] }],
+        tasks: [{
+          id: 'T1', role: 'work', ownerId: 'plan-owner', title: '快速修订', dependsOn: [],
+          write: ['README.md'], verify: ['unit'], done: ['修订完成'],
+        }],
+      }
+    }
+
+    const first = runtime.revisePlan(agent, state.id)
+    const duplicate = runtime.revisePlan(agent, state.id)
+    await waitForCondition(() => plannerCalls === 1, 'single-flight 启动唯一 Planner')
+    assert.equal(plannerCalls, 1)
+    releasePlanner()
+    const [firstResult, duplicateResult] = await Promise.all([first, duplicate])
+    assert.equal(firstResult.planDigest, duplicateResult.planDigest)
+    assert.equal(firstResult.plan.summary, '一次完成的快速修订计划')
+
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.planRevisionFailureCount, 0)
+    assert.equal(saved.planningAgent.phase, 'review_required')
+    assert.equal(saved.planRevisionFailureHistory.length, 1)
+    const log = await readFile(join(root, '.dsh-workflow', 'logs', `${state.id}.jsonl`), 'utf8')
+    assert.match(log, /plan\.revision-timeout-policy-upgraded/u)
+  } finally {
+    releasePlanner?.()
     await runtime.dispose()
     await rm(root, { recursive: true, force: true })
   }
@@ -2575,6 +5298,7 @@ test('Harness agent/status 持久化运行中、空闲和关闭生命周期', as
     `${createHash('sha256').update(agent.id).digest('hex')}.json`,
   )
   await runtime.onAgentStatus(agent, 'running')
+  assert.match(await readFile(join(root, '.dsh-workflow', '.gitignore'), 'utf8'), /\*\n!\.gitignore\n$/u)
   assert.equal(JSON.parse(await readFile(path, 'utf8')).lifecycle, 'running')
   await runtime.onAgentStatus(agent, 'idle')
   assert.equal(JSON.parse(await readFile(path, 'utf8')).lifecycle, 'idle')
@@ -2583,7 +5307,56 @@ test('Harness agent/status 持久化运行中、空闲和关闭生命周期', as
   await runtime.dispose()
 })
 
-test('workflow_start 使用一个可续接 Plan Agent，而不是同步串联规划工具', async () => {
+test('one-shot Reviewer 返回结果后立即持久化 closed，不在会话树中伪装成 idle 工作', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-reviewer-closed-status-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const child = {
+    id: 'audit-reviewer-closed',
+    session: { id: 'audit-reviewer-closed', header: { cwd: root } },
+  }
+  let disposed = false
+  let runtime
+  const ctx = {
+    subagents: {
+      async start() {
+        runtime.agentRoles.set(child.id, { role: 'reviewer', workflowRoot: root, worktree: root })
+        return {
+          localAgent: child,
+          result: Promise.resolve({
+            stopReason: 'completed',
+            output: [{ type: 'text', text: '审计完成' }],
+          }),
+          async dispose() { disposed = true },
+        }
+      },
+    },
+  }
+  runtime = createOwnerWorkflowRuntime(ctx, {})
+  const parent = {
+    id: 'audit-reviewer-parent',
+    session: { id: 'audit-reviewer-parent', header: { cwd: root, delegationDepth: 0 } },
+    options: {},
+  }
+  try {
+    assert.equal(
+      await runtime.runChild(parent, root, '执行只读审计', undefined, { role: 'reviewer', workflowRoot: root }),
+      '审计完成',
+    )
+    const path = join(
+      root,
+      '.dsh-workflow',
+      'runtime',
+      'agents',
+      `${createHash('sha256').update(child.id).digest('hex')}.json`,
+    )
+    assert.equal(JSON.parse(await readFile(path, 'utf8')).lifecycle, 'closed')
+    assert.equal(disposed, true)
+  } finally {
+    await runtime.dispose()
+  }
+})
+
+test.skip('旧版次数驱动 continuable Planner mock（已由证据租约、Arbiter 与完整 Workflow 集成测试替代）', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-continuable-plan-'))
   const calls = { starts: [], followups: [] }
   const ctx = {
@@ -2624,6 +5397,19 @@ test('workflow_start 使用一个可续接 Plan Agent，而不是同步串联规
     assert.equal(calls.starts.length, 1)
     assert.equal(calls.starts[0].label, `Plan ${started.workflowId}`)
     assert.match(calls.starts[0].request.prompt[0].text, /workflow_plan_submit/u)
+    const startedState = JSON.parse(await readFile(
+      join(root, '.dsh-workflow', 'workflows', `${started.workflowId}.json`),
+      'utf8',
+    ))
+    assert.match(startedState.registryDigest, /^[0-9a-f]{64}$/u)
+    assert.equal(startedState.planningAgent.managedBy, 'runner-runtime')
+    const managedReview = await runtime.reviewPlan(agent, started.workflowId)
+    assert.equal(managedReview.contract, 'DSH_WORKFLOW_RUNNER_MANAGED_PLANNING_V1')
+    assert.equal(managedReview.managed, true)
+    const managedRevision = await runtime.revisePlan(agent, started.workflowId)
+    assert.equal(managedRevision.contract, 'DSH_WORKFLOW_RUNNER_MANAGED_PLANNING_V1')
+    const managedRecovery = await runtime.recoverWorkflow(agent, started.workflowId)
+    assert.equal(managedRecovery.contract, 'DSH_WORKFLOW_RUNNER_MANAGED_PLANNING_V1')
     const child = {
       id: started.plannerSessionId,
       session: { id: started.plannerSessionId, append() {} },
@@ -2647,32 +5433,72 @@ test('workflow_start 使用一个可续接 Plan Agent，而不是同步串联规
     assert.equal(submitted.status, 'awaiting_registry_approval')
     const registryStatus = await runtime.registryStatus(agent, started.workflowId)
     assert.ok(registryStatus.pendingProposal)
-    await runtime.approveOwnerChange(agent, started.workflowId, registryStatus.pendingProposal.digest)
-    assert.equal(calls.followups.length, 1)
-    assert.equal(calls.followups[0].childId, child.id)
-    assert.match(calls.followups[0].content[0].text, /workflow_plan_submit/u)
-    let finishReview
-    runtime.reviewPlan = async () => new Promise(resolveReview => { finishReview = resolveReview })
-    const resubmitted = await runtime.submitPlannerPlan(child, { ...plan, registryOperation: null })
+    const registryApproved = await runtime.approveOwnerChange(agent, started.workflowId, registryStatus.pendingProposal.digest)
+    assert.equal(calls.followups.length, 0)
+    assert.equal(calls.starts.length, 2)
+    assert.notEqual(registryApproved.plannerSessionId, child.id)
+    assert.equal(calls.starts[1].childId, registryApproved.plannerSessionId)
+    assert.match(calls.starts[1].request.prompt[0].text, /workflow_plan_submit/u)
+    const replacementChild = {
+      id: registryApproved.plannerSessionId,
+      session: { id: registryApproved.plannerSessionId, append() {} },
+    }
+    runtime.setupContinuableChild({ agent: replacementChild, systemPrompt: { section() {} } })
+    runtime.consultPlanningOwners = async () => []
+    const statePath = join(root, '.dsh-workflow', 'workflows', `${started.workflowId}.json`)
+    const revisionReview = {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '需要一次受限修订',
+      issues: [{ severity: 'medium', title: '补充来源', detail: '依赖来源缺失', suggestion: '补充固定来源' }],
+    }
+    let reviewRound = 0
+    runtime.reviewPlan = async () => {
+      const current = JSON.parse(await readFile(statePath, 'utf8'))
+      const review = reviewRound === 0
+        ? revisionReview
+        : { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '修订计划通过', issues: [] }
+      reviewRound += 1
+      current.planReview = review
+      current.planReviewDigest = current.planDigest
+      await writeFile(statePath, `${JSON.stringify(current, null, 2)}\n`, 'utf8')
+      return {
+        review,
+        workflow: { planDigest: current.planDigest, registryDigest: current.registryDigest },
+        revisionBudget: { used: reviewRound - 1, limit: 3, remaining: 3 - reviewRound, exhausted: false },
+        convergence: {
+          nextStrategy: review.status === 'passed' ? 'awaiting_approval' : 'local_subgraph_rewrite',
+          progress: review.status === 'passed' ? 'passed' : 'none',
+          obligations: [],
+          usedStrategies: [],
+        },
+      }
+    }
+    const resubmitted = await runtime.submitPlannerPlan(replacementChild, { ...plan, registryOperation: null })
     assert.equal(resubmitted.status, 'reviewing')
-    const continued = JSON.parse(await readFile(
-      join(root, '.dsh-workflow', 'workflows', `${started.workflowId}.json`),
-      'utf8',
-    ))
+    const continued = JSON.parse(await readFile(statePath, 'utf8'))
     assert.equal(continued.status, 'planned')
     assert.equal(continued.planningAgent.phase, 'reviewing')
-    finishReview({
-      review: { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '计划通过', issues: [] },
-      workflow: { planDigest: continued.planDigest, registryDigest: continued.registryDigest },
-      revisionBudget: { exhausted: false },
-    })
-    await runtime.planningDrivers.get(started.workflowId)
+    await waitForCondition(() => calls.starts.length === 3, 'Reviewer 触发新的 Planner child')
+    assert.equal(calls.followups.length, 0)
+    assert.equal(calls.starts.length, 3)
+    assert.notEqual(calls.starts[2].childId, replacementChild.id)
+    assert.match(calls.starts[2].request.prompt[0].text, /需要一次受限修订|依赖来源缺失/u)
+    const revisionChild = {
+      id: calls.starts[2].childId,
+      session: { id: calls.starts[2].childId, append() {} },
+    }
+    runtime.setupContinuableChild({ agent: revisionChild, systemPrompt: { section() {} } })
+    const revisedSubmission = await runtime.submitPlannerPlan(revisionChild, { ...plan, registryOperation: null })
+    assert.equal(revisedSubmission.status, 'reviewing')
+    await waitForWorkflowState(statePath, current => current.planningAgent?.phase === 'awaiting_plan_approval', '修订计划通过')
     const reviewed = JSON.parse(await readFile(
-      join(root, '.dsh-workflow', 'workflows', `${started.workflowId}.json`),
+      statePath,
       'utf8',
     ))
     assert.equal(reviewed.planningAgent.phase, 'awaiting_plan_approval')
     assert.equal(await git(root, ['rev-parse', continued.workflowBranch]), await git(root, ['rev-parse', 'main']))
+    await runtime.recycleContinuablePlanning(started.workflowId, agent)
   } finally {
     await runtime.dispose()
     await rm(root, { recursive: true, force: true })
@@ -2715,7 +5541,7 @@ test('完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到
     })
     let plannerCalls = 0
     let reviewerCalls = 0
-    runtime.runChild = async (_agent, _cwd, _prompt, _signal, options) => {
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
       if (options?.role === 'planner') {
         plannerCalls += 1
         return planResponse(plannerCalls, plannerCalls === 1 ? registryOperation : null)
@@ -2729,9 +5555,14 @@ test('完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到
               summary: `第 ${reviewerCalls} 轮审查要求修订`,
               issues: [{
                 severity: 'high',
-                title: '验收仍需收敛',
-                detail: '用完整状态链验证计划修订。',
-                suggestion: '修订后重新独立审查。',
+                title: 'T1 必须保持 unit fixed verification 绑定',
+                detail: '完整状态链要求 T1 绑定当前计划中的 unit fixed verification。',
+                suggestion: '确认 T1 的 unit 绑定后重新独立审查。',
+                obligationId: 'ac32-t1-unit-binding',
+                sourceId: 'AC-32',
+                sourceVersion: 'R4',
+                targetTaskIds: ['T1'],
+                closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' },
               }],
             }
           : {
@@ -2739,6 +5570,17 @@ test('完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到
               status: 'passed',
               summary: '计划审查通过',
               issues: [],
+              obligationClosures: [{
+                obligationId: 'ac32-t1-unit-binding',
+                kind: 'plan_verification_binding',
+                taskId: 'T1',
+                verificationId: 'unit',
+                planDigest: (() => {
+                  const planDigestMatch = prompt.match(/当前 planDigest：([a-f0-9]{64})/u)
+                  assert.notEqual(planDigestMatch, null)
+                  return planDigestMatch[1]
+                })(),
+              }],
             }
       }
       if (options?.role === 'reviewer') {
@@ -2799,6 +5641,18 @@ test('完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到
       passedReview.workflow.registryDigest,
     )
     assert.equal(approved.workflow.status, 'approved')
+    const approvedState = JSON.parse(await readFile(
+      join(root, '.dsh-workflow', 'workflows', `${started.workflowId}.json`),
+      'utf8',
+    ))
+    assert.equal(approvedState.pendingRecoveryRuntimePolicy, undefined)
+    assert.equal(approvedState.recoveryRuntimeRequired, 'DSH_RECOVERY_RUNTIME_POLICY_V1')
+    assert.equal(approvedState.recoveryRuntimePolicy.source, 'R92-T19-REPRESENTATIVE-V1')
+    assert.equal(approvedState.recoveryProtocol, 'DSH_RECOVERY_ADMISSION_V1')
+    assert.deepEqual(approvedState.recoveryAdmissionConfig, {
+      contract: 'DSH_RECOVERY_ADMISSION_CONFIG_V1', executionVersion: approvedState.planDigest,
+      totalLimit: 12, problemLimit: 8,
+    })
     const supervisorStarted = await request(started.control, 'supervisor-start', { parallel: 1 })
     assert.equal(supervisorStarted.status, 'running')
 
@@ -2841,7 +5695,9 @@ test('完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到
         baseCommit: entry.baseCommit,
         result,
       }
-      await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+      const temporaryStatePath = `${statePath}.mock-owner-result.tmp`
+      await writeFile(temporaryStatePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+      await rename(temporaryStatePath, statePath)
       return result
     }
 
@@ -2894,8 +5750,24 @@ test('取消功能 Workflow 后项目级 Owner Registry 仍被后续 Workflow �
     const agent = { id: 'project-registry-agent', session: { id: 'project-registry-agent', header: { cwd: root } } }
     const operation = addOwnerOperation('persistent-owner')
     let plannerCalls = 0
-    runtime.runChild = async () => {
+    const plannerPrompts = []
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
+      if (options?.role === 'reviewer') {
+        return {
+          contract: 'DSH_OWNER_PLANNING_ADVICE_V1',
+          ownerId: 'persistent-owner',
+          scopeFit: 'full',
+          facts: ['Owner Registry 已持久化'],
+          constraints: [],
+          suggestedNodes: ['复用现有 Owner'],
+          dependencies: [],
+          handoffs: [],
+          risks: [],
+          verificationSuggestions: ['node --test'],
+        }
+      }
       plannerCalls += 1
+      plannerPrompts.push(prompt)
       return {
         contract: 'DSH_PLAN_V2',
         registryDigest: '0'.repeat(64),
@@ -2925,6 +5797,8 @@ test('取消功能 Workflow 后项目级 Owner Registry 仍被后续 Workflow �
     assert.equal(second.registryOperation, undefined)
     assert.deepEqual(second.plan.owners.map(owner => owner.id), ['persistent-owner'])
     assert.equal(plannerCalls, 2)
+    assert.match(plannerPrompts[1], /Owner Registry 已持久化/u)
+    assert.match(plannerPrompts[1], /相关 Owner 只读会诊意见/u)
   } finally {
     await runtime.dispose()
     await rm(root, { recursive: true, force: true })
@@ -3091,8 +5965,24 @@ test('Planner 伪造宽 scope 不能绕过正式 Registry 的 task.write 边界'
     const registry = await applyRegistryOperation(state.workflowWorktree, original, operation)
     state.registryDigest = registryContentDigest(registry)
     let calls = 0
-    runtime.runChild = async () => {
+    let plannerPromptValue
+    runtime.runChild = async (_agent, _cwd, prompt, _signal, options) => {
+      if (options?.role === 'reviewer') {
+        return {
+          contract: 'DSH_OWNER_PLANNING_ADVICE_V1',
+          ownerId: operation.owner.id,
+          scopeFit: 'partial',
+          facts: ['README.md 不在 Owner scope 内'],
+          constraints: ['不得扩大 Owner scope'],
+          suggestedNodes: [],
+          dependencies: [],
+          handoffs: [],
+          risks: ['write 越界'],
+          verificationSuggestions: [],
+        }
+      }
       calls += 1
+      plannerPromptValue ??= prompt
       return {
         contract: 'DSH_PLAN_V2',
         registryDigest: state.registryDigest,
@@ -3118,6 +6008,7 @@ test('Planner 伪造宽 scope 不能绕过正式 Registry 的 task.write 边界'
       /write 范围 README\.md 不属于 Owner scope-owner scope/u,
     )
     assert.equal(calls, 2)
+    assert.match(plannerPromptValue, /不得扩大 Owner scope/u)
   } finally {
     await runtime.dispose()
     await rm(root, { recursive: true, force: true })
@@ -3317,6 +6208,16 @@ test('V2 Registry 批准后的 registry_pending_plan 可以原地重新规划', 
     state.tasks = createTaskState(oldPlan)
     state.planDigest = 'a'.repeat(64)
     state.request = '使用新 Registry 重新规划'
+    state.intents = [{
+      contract: 'DSH_WORKFLOW_INTENT_V1',
+      id: 'intent-after-registry',
+      workflowId: state.id,
+      sourceSessionId: agent.id,
+      sourceAnchor: { parentSessionId: null, seedLength: null },
+      content: 'Registry 批准后仍须保留的明确范围决定',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    }]
     await writeFile(
       join(root, '.dsh-workflow', 'workflows', `${state.id}.json`),
       `${JSON.stringify(state, null, 2)}\n`,
@@ -3328,7 +6229,15 @@ test('V2 Registry 批准后的 registry_pending_plan 可以原地重新规划', 
     assert.equal(approved.workflow.status, 'registry_pending_plan')
     const liveRegistry = await loadRegistry(state.workflowWorktree)
     const liveDigest = registryContentDigest(liveRegistry)
-    runtime.runChild = async () => JSON.stringify({
+    const interruptedPath = join(root, '.dsh-workflow', 'workflows', `${state.id}.json`)
+    const interrupted = JSON.parse(await readFile(interruptedPath, 'utf8'))
+    interrupted.status = 'planning'
+    interrupted.planningAgent = { phase: 'awaiting_main_discussion' }
+    await writeFile(interruptedPath, `${JSON.stringify(interrupted, null, 2)}\n`, 'utf8')
+    let replanPrompt
+    runtime.runChild = async (_agent, _cwd, prompt) => {
+      replanPrompt = prompt
+      return JSON.stringify({
       contract: 'DSH_PLAN_V2',
       registryDigest: liveDigest,
       summary: '基于已批准 Registry 的新计划',
@@ -3345,9 +6254,11 @@ test('V2 Registry 批准后的 registry_pending_plan 可以原地重新规划', 
         verify: ['unit'],
         done: ['新任务完成'],
       }],
-    })
+      })
+    }
 
     const recovered = await runtime.recoverWorkflow(agent, state.id)
+    assert.match(replanPrompt, /Registry 批准后仍须保留的明确范围决定/u)
     assert.equal(recovered.status, 'planned')
     assert.equal(recovered.registryDigest, liveDigest)
     assert.deepEqual(recovered.plan.tasks.map(task => task.id), ['NEW'])
@@ -3363,6 +6274,20 @@ test('V2 Registry 批准后的 registry_pending_plan 可以原地重新规划', 
     assert.equal(saved.planReview, undefined)
     assert.equal(saved.planApproved, false)
     assert.deepEqual(saved.ownerRuns, {})
+    saved.planReview = { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '通过', issues: [] }
+    saved.planReviewDigest = saved.planDigest
+    await writeFile(
+      join(root, '.dsh-workflow', 'workflows', `${state.id}.json`),
+      `${JSON.stringify(saved, null, 2)}\n`,
+      'utf8',
+    )
+    await runtime.approvePlan(agent, state.id, saved.planDigest, liveDigest)
+    const approvedState = JSON.parse(await readFile(
+      join(root, '.dsh-workflow', 'workflows', `${state.id}.json`),
+      'utf8',
+    ))
+    assert.equal(approvedState.intents[0].status, 'incorporated')
+    assert.equal(approvedState.intents[0].incorporatedRevision, 1)
   } finally {
     await runtime.dispose()
     await rm(root, { recursive: true, force: true })
@@ -3789,3 +6714,776 @@ test('DSH_PLAN_V1 所有控制桥和外置执行入口拒绝但 status 可读', 
     await rm(root, { recursive: true, force: true })
   }
 })
+
+for (const authority of ['orchestrator', 'user']) test(`R05 决定回执经真实 Review 关闭入口消费：${authority}`, async () => {
+  const { root, statePath, runtime, state, agent } = await closureReceiptFixture()
+  try {
+    const issue = { ...reviewClosureContract('decision-proof', 'decision_record', 'T1', authority),
+      severity: 'high', title: '明确当前方案', detail: '当前方案需要明确决定。', suggestion: '记录具有依据的决定。' }
+    let review = { contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '方案尚未明确', issues: [issue], decisionQuestions: ['应采用哪个已讨论的方案？'] }
+    runtime.runChild = async () => review
+    const first = await runtime.reviewPlan(agent, state.id)
+    assert.equal(first.review.status, 'needs_decision')
+    const closure = { obligationId: issue.obligationId, kind: 'decision_record', taskId: 'T1', planDigest: state.planDigest, decisionId: 'decision-r05-1' }
+    review = { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '要求已明确', issues: [], obligationClosures: [closure] }
+    assert.equal((await runtime.reviewPlan(agent, state.id)).review.status, 'needs_revision')
+    const args = { obligationId: issue.obligationId, planDigest: state.planDigest, decisionId: closure.decisionId, resolution: '采用已讨论的方案 A', rationale: '保留既有接口和范围。' }
+    let asks = 0
+    let approve = false
+    runtime.ctx.userQuestions = { ask: async request => {
+      asks += 1
+      assert.match(request.questions[0].detail, /方案 A/u)
+      return { answers: [{ id: request.questions[0].id, selected: [approve ? '确认记录决定' : '取消'] }] }
+    } }
+    await assert.rejects(runtime.recordObligationDecision({ ...agent, id: 'foreign-agent', session: { ...agent.session, id: 'foreign-agent' } }, state.id, args), /主线程|orchestrator/u)
+    await assert.rejects(runtime.recordObligationDecision(agent, state.id, { ...args, planDigest: 'f'.repeat(64) }), /digest|版本|候选/u)
+    assert.equal(asks, 0)
+    if (authority === 'user') {
+      await assert.rejects(runtime.recordObligationDecision(agent, state.id, args), /取消|确认|决定/u)
+      const canceled = JSON.parse(await readFile(statePath, 'utf8'))
+      assert.equal(canceled.obligationDecisions?.length ?? 0, 0)
+    }
+    approve = true
+    const recorded = await runtime.recordObligationDecision(agent, state.id, args)
+    assert.equal(recorded.receipt.authority, authority)
+    const beforeRepeat = asks
+    const duplicate = await runtime.recordObligationDecision(agent, state.id, args)
+    assert.equal(duplicate.idempotent, true)
+    assert.equal(asks, beforeRepeat)
+    if (authority === 'orchestrator') assert.equal(asks, 0)
+    await assert.rejects(runtime.recordObligationDecision(agent, state.id, { ...args, resolution: '不同的方案 B' }), /冲突|不同|decisionId/u)
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.obligationDecisions.length, 1)
+    assert.equal(saved.planConvergence.obligations[0].status, 'open')
+    assert.equal(saved.planApproved, false)
+    const displayChanged = structuredClone(saved)
+    displayChanged.planConvergence.obligations[0].title = '仅展示标题变化'
+    displayChanged.planConvergence.obligations[0].category = 'owner-boundary'
+    await writeFile(statePath, `${JSON.stringify(displayChanged)}\n`)
+    assert.equal((await runtime.planReviewEvidence(displayChanged, displayChanged.plan, displayChanged.planDigest)).decisionRecords.length, 1, '展示分类变化不改变来源与关闭条件')
+    const changed = structuredClone(saved)
+    changed.planConvergence.obligations[0].source.version = '2'
+    await writeFile(statePath, `${JSON.stringify(changed)}\n`)
+    assert.equal((await runtime.planReviewEvidence(changed, changed.plan, changed.planDigest)).decisionRecords.length, 0)
+    assert.equal((await runtime.planReviewEvidence(saved, saved.plan, saved.planDigest)).decisionRecords.length, 0, '旧调用快照不能保留已变化合同的回执')
+    await writeFile(statePath, `${JSON.stringify(saved)}\n`)
+    const advanced = structuredClone(saved)
+    advanced.plan.summary = '候选发生变化'
+    advanced.planDigest = createHash('sha256').update(JSON.stringify(advanced.plan)).digest('hex')
+    await writeFile(statePath, `${JSON.stringify(advanced)}\n`)
+    assert.equal((await runtime.planReviewEvidence(advanced, advanced.plan, advanced.planDigest)).decisionRecords.length, 0)
+    assert.equal((await runtime.planReviewEvidence(saved, saved.plan, saved.planDigest)).decisionRecords.length, 0, '旧调用快照不能保留旧候选回执')
+    await writeFile(statePath, `${JSON.stringify(saved)}\n`)
+    const closed = await runtime.reviewPlan(agent, state.id)
+    assert.equal(closed.review.status, 'passed')
+    const final = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(final.planConvergence.obligations[0].status, 'resolved')
+    assert.equal(final.planApproved, false)
+    assert.equal((await runtime.recordObligationDecision(agent, state.id, args)).idempotent, true)
+    assert.equal(asks, beforeRepeat)
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('R05 用户确认期间义务版本变化时不记录过期决定', async () => {
+  const { root, statePath, runtime, state, agent } = await closureReceiptFixture()
+  try {
+    const issue = { ...reviewClosureContract('versioned-decision', 'decision_record'), severity: 'high', title: '选择范围', detail: '需要明确范围。', suggestion: '确认具体范围。' }
+    runtime.runChild = async () => ({ contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '范围待定', issues: [issue], decisionQuestions: ['选择哪个范围？'] })
+    await runtime.reviewPlan(agent, state.id)
+    runtime.ctx.userQuestions = { ask: async request => {
+      const changed = JSON.parse(await readFile(statePath, 'utf8'))
+      changed.planConvergence.obligations[0].source.version = 'new-version'
+      await writeFile(statePath, `${JSON.stringify(changed)}\n`)
+      return { answers: [{ id: request.questions[0].id, selected: ['确认记录决定'] }] }
+    } }
+    await assert.rejects(runtime.recordObligationDecision(agent, state.id, {
+      obligationId: issue.obligationId, planDigest: state.planDigest, decisionId: 'stale-answer', resolution: '范围 A', rationale: '明确选择。',
+    }), /版本|变化|失效|过期|合同/u)
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.obligationDecisions?.length ?? 0, 0)
+    assert.equal(saved.planConvergence.obligations[0].status, 'open')
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('R05 结构展开依据经 Runtime 消费，只关闭结构义务而保留业务验证', async () => {
+  const { root, statePath, runtime, state, agent } = await closureReceiptFixture()
+  try {
+    const leaf = structuredClone(state.plan.tasks[0])
+    state.plan.tasks[0] = { ...leaf, write: [], verify: [], decomposition: { status: 'abstract', kind: 'composite', outcome: '形成可执行子图', ownerCandidates: [leaf.ownerId], unknowns: ['具体叶子'] } }
+    state.plan = normalizePlanV2(state.plan)
+    state.planDigest = createHash('sha256').update(JSON.stringify(state.plan)).digest('hex')
+    state.tasks = createTaskState(state.plan)
+    await writeFile(statePath, `${JSON.stringify(state)}\n`)
+    const structure = { ...reviewClosureContract('executable-T1', 'plan_task_executable'), severity: 'high', title: '结构尚未展开', detail: 'T1 仍为 abstract。', suggestion: '展开为可执行叶子。' }
+    const behavior = { ...reviewClosureContract('behavior-T1', 'task_verification_result'), closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' }, severity: 'high', title: '行为验证仍需结果', detail: '业务验证尚未执行。', suggestion: '取得当前成功结果。' }
+    let review = { contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_split', summary: '需展开并保留验收', issues: [structure, behavior], targetTaskIds: ['T1'] }
+    runtime.runChild = async () => review
+    await runtime.reviewPlan(agent, state.id)
+    assert.equal((await runtime.planReviewEvidence(state, state.plan, state.planDigest)).executableTasks.some(x => x.taskId === 'T1'), false)
+    const expanded = JSON.parse(await readFile(statePath, 'utf8'))
+    expanded.plan = normalizePlanV2({ ...state.plan, tasks: [
+      { ...state.plan.tasks[0], children: ['T1a', 'T1r'], entry: ['T1a'], exit: ['T1r'], decomposition: { ...state.plan.tasks[0].decomposition, status: 'expanded', unknowns: [] } },
+      { ...leaf, id: 'T1a', parentTaskId: 'T1' },
+      { ...leaf, id: 'T1r', role: 'review', parentTaskId: 'T1', dependsOn: ['T1a'], write: [], verify: [] },
+    ] })
+    expanded.planDigest = createHash('sha256').update(JSON.stringify(expanded.plan)).digest('hex')
+    expanded.tasks = createTaskState(expanded.plan)
+    await writeFile(statePath, `${JSON.stringify(expanded)}\n`)
+    const evidence = await runtime.planReviewEvidence(expanded, expanded.plan, expanded.planDigest)
+    assert.equal(evidence.executableTasks.some(x => x.taskId === 'T1'), true)
+    assert.equal(evidence.executableTasks.some(x => x.taskId === 'T1r'), true)
+    const disappeared = normalizePlanV2({ ...expanded.plan, tasks: [{ ...leaf, id: 'T2' }] })
+    const otherDigest = createHash('sha256').update(JSON.stringify(disappeared)).digest('hex')
+    assert.equal((await runtime.planReviewEvidence(expanded, disappeared, otherDigest)).executableTasks.some(x => x.taskId === 'T1'), false)
+    review = { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '结构已展开', issues: [], obligationClosures: [{ obligationId: structure.obligationId, kind: 'plan_task_executable', taskId: 'T1', planDigest: expanded.planDigest }] }
+    const checked = await runtime.reviewPlan(agent, state.id)
+    assert.equal(checked.review.status, 'needs_revision')
+    const final = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(final.planConvergence.obligations.find(x => x.id === structure.obligationId).status, 'resolved')
+    assert.equal(final.planConvergence.obligations.find(x => x.id === behavior.obligationId).status, 'open')
+    assert.equal(final.planApproved, false)
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('R05 pending 候选决定不能借用 active 回执，旧快照不能消费已变化候选', async () => {
+  const { root, statePath, runtime, state, agent } = await closureReceiptFixture()
+  try {
+    const issue = { ...reviewClosureContract('pending-decision', 'decision_record', 'T1', 'orchestrator'), severity: 'high', title: '确定候选技术方案', detail: '需要固定当前候选的技术选择。', suggestion: '主线程决定后记录。' }
+    runtime.runChild = async () => ({ contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '技术选择待定', issues: [issue], decisionQuestions: ['采用哪个现有兼容方案？'] })
+    await runtime.reviewPlan(agent, state.id)
+    const base = { obligationId: issue.obligationId, resolution: '采用兼容方案', rationale: '不改变既有范围。' }
+    await runtime.recordObligationDecision(agent, state.id, { ...base, planDigest: state.planDigest, decisionId: 'active-choice' })
+    const pending = JSON.parse(await readFile(statePath, 'utf8'))
+    const plan = normalizePlanV2({ ...pending.plan, summary: '新的待审候选' })
+    const digest = createHash('sha256').update(JSON.stringify(plan)).digest('hex')
+    pending.pendingPlanRevision = { number: 2, plan, planDigest: digest, parent: { planDigest: state.planDigest }, cycleId: 'pending-test' }
+    await writeFile(statePath, `${JSON.stringify(pending)}\n`)
+    assert.equal((await runtime.planReviewEvidence(pending, plan, digest)).decisionRecords.length, 0)
+    await assert.rejects(runtime.recordObligationDecision(agent, state.id, { ...base, planDigest: digest, decisionId: 'active-choice' }), /不同|decisionId|冲突/u)
+    const result = await runtime.recordObligationDecision(agent, state.id, { ...base, planDigest: digest, decisionId: 'pending-choice' })
+    assert.equal(result.receipt.planDigest, digest)
+    const fresh = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.deepEqual((await runtime.planReviewEvidence(fresh, plan, digest)).decisionRecords.map(x => x.decisionId), ['pending-choice'])
+    const replacement = structuredClone(fresh)
+    replacement.pendingPlanRevision.plan.summary = '候选再次更新'
+    replacement.pendingPlanRevision.planDigest = createHash('sha256').update(JSON.stringify(replacement.pendingPlanRevision.plan)).digest('hex')
+    await writeFile(statePath, `${JSON.stringify(replacement)}\n`)
+    const stale = await runtime.planReviewEvidence(fresh, plan, digest)
+    assert.equal(stale.decisionRecords.length, 0)
+    assert.equal(stale.executableTasks.length, 0)
+    assert.equal(stale.planBindings.length, 0)
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('R05 同候选的新决定替代旧回执，取消替代不影响旧决定', async () => {
+  const { root, statePath, runtime, state, agent } = await closureReceiptFixture()
+  try {
+    const issue = { ...reviewClosureContract('replace-decision', 'decision_record'), severity: 'high', title: '明确本期范围', detail: '选择应当采用的范围。', suggestion: '记录明确范围。' }
+    let review = { contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '范围待定', issues: [issue], decisionQuestions: ['采用范围 A 还是 B？'] }
+    runtime.runChild = async () => review
+    await runtime.reviewPlan(agent, state.id)
+    let approve = true
+    runtime.ctx.userQuestions = { ask: async request => ({ answers: [{ id: request.questions[0].id, selected: [approve ? '确认记录决定' : '取消'] }] }) }
+    const base = { obligationId: issue.obligationId, planDigest: state.planDigest, rationale: '依据当前范围讨论。' }
+    await runtime.recordObligationDecision(agent, state.id, { ...base, decisionId: 'choice-A', resolution: '采用范围 A' })
+    approve = false
+    await assert.rejects(runtime.recordObligationDecision(agent, state.id, { ...base, decisionId: 'choice-B', resolution: '改为范围 B' }), /取消|确认|决定/u)
+    let saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.deepEqual((await runtime.planReviewEvidence(saved, saved.plan, saved.planDigest)).decisionRecords.map(x => x.decisionId), ['choice-A'])
+    approve = true
+    await runtime.recordObligationDecision(agent, state.id, { ...base, decisionId: 'choice-B', resolution: '改为范围 B' })
+    saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.obligationDecisions.find(x => x.decisionId === 'choice-A').status, 'superseded')
+    assert.deepEqual((await runtime.planReviewEvidence(saved, saved.plan, saved.planDigest)).decisionRecords.map(x => x.decisionId), ['choice-B'])
+    await assert.rejects(runtime.recordObligationDecision(agent, state.id, { ...base, decisionId: 'choice-A', resolution: '采用范围 A' }), /不同|冲突|decisionId|替代/u)
+    const closure = { obligationId: issue.obligationId, kind: 'decision_record', taskId: 'T1', planDigest: state.planDigest, decisionId: 'choice-A' }
+    review = { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '范围确定', issues: [], obligationClosures: [closure] }
+    assert.equal((await runtime.reviewPlan(agent, state.id)).review.status, 'needs_revision')
+    review.obligationClosures[0] = { ...closure, decisionId: 'choice-B' }
+    assert.equal((await runtime.reviewPlan(agent, state.id)).review.status, 'passed')
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+for (const alternating of [false, true]) test(`R06 真实 Review 会诊${alternating ? '交替' : '固定'}描述在相同事实下耗尽策略`, async () => {
+  const { root, statePath, runtime, state, agent } = await closureReceiptFixture()
+  try {
+    const issue = { ...reviewClosureContract('r06-missing-result', 'task_verification_result'),
+      closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' },
+      severity: 'high', title: '缺少真实验证结果', detail: '必须执行验证', suggestion: '取得当前结果' }
+    runtime.runChild = async () => ({ contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_revision', summary: '等待结果', issues: [issue] })
+    const strategies = []
+    for (let round = 0; round < 12; round += 1) {
+      const saved = JSON.parse(await readFile(statePath, 'utf8'))
+      saved.planningAgent = { ...saved.planningAgent, sessionId: `session-${round}`, ownerConsultations: [{ ownerId: state.plan.owners[0].id,
+        facts: [alternating && round % 2 ? '仍须检查固定命令的实际结果' : '固定命令尚缺实际运行证据'], constraints: [] }] }
+      saved.workflowHead = `unrelated-head-${round}`
+      await writeFile(statePath, JSON.stringify(saved))
+      const result = await runtime.reviewPlan(agent, state.id)
+      strategies.push(result.convergence.nextStrategy)
+      assert.equal(result.convergence.progress, 'none')
+      assert.equal(result.convergence.obligations[0].status, 'open')
+    }
+    assert.ok(strategies.includes('autonomous_incident'), JSON.stringify(strategies))
+    assert.equal(strategies.at(-1), 'autonomous_incident')
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('R06 真实候选补齐绑定只记一次进展，重复与候选文案变化不续期', async () => {
+  const { root, statePath, runtime, state, agent } = await closureReceiptFixture()
+  try {
+    const issue = { ...reviewClosureContract('r06-binding', 'plan_verification_binding'),
+      closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'restored' },
+      severity: 'high', title: '补齐验证入口', detail: '缺少 restored 绑定', suggestion: '补齐固定命令' }
+    runtime.runChild = async () => ({ contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_revision', summary: '等待绑定', issues: [issue] })
+    await runtime.reviewPlan(agent, state.id)
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    saved.plan.verifications.push({ id: 'restored', run: ['node', '--test', 'restored.test.mjs'], cwd: '.' })
+    saved.plan.tasks[0].verify.push('restored')
+    saved.planDigest = createHash('sha256').update(JSON.stringify(saved.plan)).digest('hex')
+    await writeFile(statePath, JSON.stringify(saved))
+    const restored = await runtime.reviewPlan(agent, state.id)
+    assert.equal(restored.convergence.progress, 'new_evidence')
+    assert.equal(restored.convergence.obligations[0].status, 'open', '事实进展不代替显式关闭')
+    assert.equal((await runtime.reviewPlan(agent, state.id)).convergence.progress, 'none')
+    const renamed = JSON.parse(await readFile(statePath, 'utf8'))
+    renamed.plan.summary = '仅候选描述更新'
+    renamed.planDigest = createHash('sha256').update(JSON.stringify(renamed.plan)).digest('hex')
+    await writeFile(statePath, JSON.stringify(renamed))
+    assert.equal((await runtime.reviewPlan(agent, state.id)).convergence.progress, 'none')
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('R06 文件进展由宿主重新读取，伪造缓存与过期候选没有文件事实', async () => {
+  const { root, statePath, runtime, state } = await closureReceiptFixture()
+  try {
+    state.ownerRuns = { [`T1:${state.plan.owners[0].id}`]: { taskId: 'T1', ownerId: state.plan.owners[0].id, worktree: state.workflowWorktree } }
+    state.planningRuntimeFacts = { worktrees: [{ files: [{ path: 'fake', sha256: 'f'.repeat(64), candidateTaskIds: ['T1'] }] }] }
+    await writeFile(statePath, JSON.stringify(state))
+    assert.deepEqual((await runtime.planReviewEvidence(state, state.plan, state.planDigest)).verifiedFiles, [])
+    await writeFile(join(state.workflowWorktree, 'README.md'), 'actual host content\n')
+    const evidence = await runtime.planReviewEvidence(state, state.plan, state.planDigest)
+    assert.deepEqual(evidence.verifiedFiles, [{ taskId: 'T1', path: 'README.md', kind: 'file', sha256: createHash('sha256').update('actual host content\n').digest('hex') }])
+    const changed = structuredClone(state)
+    changed.plan.summary = '新候选'
+    changed.planDigest = createHash('sha256').update(JSON.stringify(changed.plan)).digest('hex')
+    await writeFile(statePath, JSON.stringify(changed))
+    assert.deepEqual((await runtime.planReviewEvidence(state, state.plan, state.planDigest)).verifiedFiles, [])
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('R06 Runner 探针不能凭摘要变化清空策略，真实新文件只恢复一次', async () => {
+  const { root, statePath, runtime, state, agent } = await closureReceiptFixture()
+  try {
+    const issue = { ...reviewClosureContract('r06-probe', 'task_verification_result'),
+      closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' },
+      severity: 'high', title: '缺少验证结果', detail: '缺少真实证据', suggestion: '运行验证' }
+    runtime.runChild = async () => ({ contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_revision', summary: '等待结果', issues: [issue] })
+    for (let i = 0; i < 8; i += 1) await runtime.reviewPlan(agent, state.id)
+    const exhausted = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(exhausted.planConvergence.nextStrategy, 'autonomous_incident')
+    exhausted.planConvergence.evidenceDigest = 'old-diagnostic-digest'
+    delete exhausted.planConvergence.seenEvidence
+    delete exhausted.planConvergence.seenEvidenceFacts
+    await writeFile(statePath, JSON.stringify(exhausted))
+    assert.equal((await runtime.probeAutonomousConvergence(agent, state.id)).resumed, false)
+    const unchanged = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.deepEqual(unchanged.planConvergence.usedStrategies, exhausted.planConvergence.usedStrategies)
+    assert.ok(unchanged.planConvergence.seenEvidence, '旧账本首次探针必须保存基线，后续才能识别进展')
+    assert.ok(unchanged.planConvergence.seenEvidenceFacts)
+    unchanged.ownerRuns = { [`T1:${state.plan.owners[0].id}`]: { taskId: 'T1', ownerId: state.plan.owners[0].id, worktree: state.workflowWorktree } }
+    await writeFile(statePath, JSON.stringify(unchanged))
+    await writeFile(join(state.workflowWorktree, 'README.md'), 'relevant new host content\n')
+    assert.equal((await runtime.probeAutonomousConvergence(agent, state.id)).resumedPlan, true)
+    const renewed = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.deepEqual(renewed.planConvergence.usedStrategies, exhausted.planConvergence.usedStrategies)
+    assert.equal(renewed.planConvergence.nextStrategy, 'local_subgraph_rewrite')
+    await runtime.reviewPlan(agent, state.id)
+    assert.equal((await runtime.probeAutonomousConvergence(agent, state.id)).resumed, false)
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+
+for (const mode of ['technical', 'business', 'permission', 'mixed']) test(`R08 真实 Review 分类与控制路由一致：${mode}`, async () => {
+  const { root, statePath, runtime, state, agent } = await closureReceiptFixture()
+  try {
+    const technical = { ...reviewClosureContract('r08-technical', 'decision_record', 'T1', 'orchestrator'),
+      severity: 'high', title: '用户取消连接时如何释放 token 缓冲', detail: '资源生命周期按现有合同释放。', suggestion: '由模块负责人确认技术顺序。' }
+    const userIssue = { ...reviewClosureContract('r08-choice', 'decision_record', 'T1', 'user'),
+      severity: 'high', title: '选择保留周期', detail: '当前保留三十天，候选保留七天。', suggestion: '明确保留周期。' }
+    if (mode === 'permission') {
+      delete userIssue.classificationBasis.businessCommitmentDelta
+      userIssue.classificationBasis.externalPermissionGap = {
+        requiredPermission: 'read:ledger', target: 'remote-ledger', blockedAction: '读取指定账本',
+      }
+    } else {
+      userIssue.classificationBasis.businessCommitmentDelta = {
+        currentCommitment: '保留三十天', proposedCommitment: '保留七天', consequence: '第八天起的历史数据无法读取',
+      }
+    }
+    let review = { contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '明确方案',
+      issues: mode === 'technical' ? [technical] : mode === 'mixed' ? [technical, userIssue] : [userIssue],
+      decisionQuestions: mode === 'technical' ? ['用户取消连接时如何释放 token 缓冲？'] : ['采用哪个保留周期？'] }
+    runtime.runChild = async () => review
+    const outcome = await runtime.reviewPlan(agent, state.id)
+    const requiresUser = mode !== 'technical'
+    assert.equal(outcome.convergence.authorityRequired, requiresUser)
+    assert.equal(outcome.nextTool === 'planning_discussion', requiresUser)
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    const control = deriveWorkflowControl(saved)
+    assert.equal(control.actionRequired, requiresUser)
+    assert.equal(control.kind, requiresUser ? 'wait' : 'command')
+    assert.ok(saved.planConvergence.obligations.every(item => item.classificationBasis?.source?.id === item.source.id))
+    assert.equal(saved.planApproved, false)
+    runtime.schedulePlanningDiscussion = async () => ({ scheduled: false })
+    if (!requiresUser) {
+      await assert.rejects(runtime.requestPlanReviewDiscussion(agent, state.id, state.planDigest, review), /没有用户待决依据/)
+      assert.equal(JSON.parse(await readFile(statePath, 'utf8')).pendingDecisionBundle, undefined)
+    }
+    if (requiresUser) {
+      review = { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '省略旧问题', issues: [] }
+      const omitted = await runtime.reviewPlan(agent, state.id)
+      assert.equal(omitted.convergence.authorityRequired, true, '遗漏未关闭的待决义务不能降低权限')
+      assert.equal(omitted.nextTool, 'planning_discussion')
+      assert.notEqual(omitted.review.status, 'passed')
+      assert.equal(JSON.parse(await readFile(statePath, 'utf8')).planApproved, false)
+      const discussion = await runtime.requestPlanReviewDiscussion(agent, state.id, state.planDigest, review)
+      assert.equal(discussion.decisionItems.length, 1)
+      assert.equal(discussion.decisionItems[0].obligationId, userIssue.obligationId)
+      assert.equal(discussion.decisionQuestions.length, 1)
+      const pending = JSON.parse(await readFile(statePath, 'utf8')).pendingDecisionBundle
+      assert.deepEqual(pending.targetTaskIds, ['T1'])
+      assert.equal(pending.decisionItems[0].classificationBasis.source.id, userIssue.sourceId)
+    }
+  } finally {
+    await runtime.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+
+for (const mode of ['permission', 'business', 'mixed-decision', 'mixed-verification']) test(`R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：${mode}`, async () => {
+  const { root, statePath, runtime, state, agent } = await closureReceiptFixture()
+  try {
+    const userIssue = { ...reviewClosureContract('r09-user', 'decision_record'), severity: 'high', title: '账本访问选择', detail: '具体权限缺口已有来源。', suggestion: '明确权限。' }
+    delete userIssue.classificationBasis.businessCommitmentDelta
+    userIssue.classificationBasis.externalPermissionGap = { requiredPermission: 'read:ledger', target: 'remote-ledger', blockedAction: '读取指定账本' }
+    if (mode === 'business') {
+      delete userIssue.classificationBasis.externalPermissionGap
+      userIssue.classificationBasis.businessCommitmentDelta = { currentCommitment: '保留三十天', proposedCommitment: '保留七天', consequence: '第八天起的数据无法读取' }
+    }
+    const issues = [userIssue]
+    if (mode.startsWith('mixed')) issues.push({
+      ...reviewClosureContract('r09-technical', mode === 'mixed-decision' ? 'decision_record' : 'plan_verification_binding', 'T1', 'orchestrator'),
+      ...(mode === 'mixed-verification' ? { closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' } } : {}),
+      severity: 'high', title: 'token 清理', detail: '根据既有合同处理资源。', suggestion: '完善技术验证。',
+    })
+    let review = { contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '需要明确权限或承诺', issues, decisionQuestions: ['用户取消连接时如何释放 token 缓冲？'] }
+    runtime.runChild = async () => review
+    runtime.schedulePlanningDiscussion = async () => ({ scheduled: false })
+    await runtime.reviewPlan(agent, state.id)
+    await assert.rejects(runtime.requestPlanReviewDiscussion(agent, state.id, 'f'.repeat(64), review), /过期/)
+    const first = await runtime.requestPlanReviewDiscussion(agent, state.id, state.planDigest, review)
+    assert.equal(first.decisionQuestions.length, 1)
+    assert.doesNotMatch(first.decisionQuestions[0], /token/)
+    assert.match(first.decisionQuestions[0], mode === 'business' ? /三十天.*七天.*第八天/ : /remote-ledger.*read:ledger.*读取指定账本/)
+    assert.deepEqual(first.decisionItems.map(item => item.obligationId), ['r09-user'])
+    // A later display rewrite must not replace the first classified commitment.
+    if (mode === 'business') {
+      userIssue.classificationBasis.businessCommitmentDelta.proposedCommitment = '保留一天'
+      review = { ...review, decisionQuestions: ['新的无关问题'] }
+      await runtime.reviewPlan(agent, state.id)
+      const again = await runtime.requestPlanReviewDiscussion(agent, state.id, state.planDigest, review)
+      assert.match(again.decisionQuestions[0], /七天/)
+      assert.doesNotMatch(again.decisionQuestions[0], /一天|无关/)
+    }
+    const saved = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(saved.planApproved, false)
+    assert.deepEqual(saved.pendingDecisionBundle.targetTaskIds, ['T1'])
+  } finally { await runtime.dispose(); await rm(root, { recursive: true, force: true }) }
+})
+
+
+async function executionFeedbackFixture() {
+  const fixture = await closureReceiptFixture()
+  const { runtime, root, state, statePath } = fixture
+  const registry = await applyRegistryOperation(state.workflowWorktree, await loadRegistry(state.workflowWorktree), addOwnerOperation('independent'))
+  state.registryDigest = registryContentDigest(registry)
+  const independent = registry.owners.find(owner => owner.id === 'independent')
+  state.plan = normalizePlanV2({ ...state.plan, registryDigest: state.registryDigest,
+    owners: [...state.plan.owners, independent],
+    tasks: [...state.plan.tasks, { ...state.plan.tasks[0], id: 'T2', ownerId: 'independent', write: ['src/independent/value.mjs'], decomposition: { status: 'leaf', kind: 'leaf', ownerCandidates: ['independent'], unknowns: [] } }],
+  })
+  state.planDigest = createHash('sha256').update(JSON.stringify(state.plan)).digest('hex')
+  state.planApproved = true
+  state.planReview = { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '当前计划通过', issues: [] }
+  state.planReviewDigest = state.planDigest
+  state.status = 'running'
+  state.attempt = 1
+  state.tasks = createTaskState(state.plan)
+  const owner = state.plan.owners[0]
+  const sessionId = 'r09-active-owner'
+  const key = `T1:${owner.id}`
+  state.tasks[0].status = 'running'
+  state.tasks[0].executorId = sessionId
+  state.ownerRuns[key] = { status: 'running', taskId: 'T1', stageId: 'T1', ownerId: owner.id, sessionId,
+    attempt: 1, planDigest: state.planDigest, startedAt: '2026-09-10T12:10:00.000Z', worktree: state.workflowWorktree, branch: state.workflowBranch }
+  state.supervisorOutbox = { [key]: { status: 'running', taskId: 'T1', ownerId: owner.id, attempts: 1 } }
+  await writeFile(statePath, JSON.stringify(state), 'utf8')
+  const acquired = await runtime.acquireOwnerLease(root, owner.id, state.id, 'T1')
+  const active = { workflowRoot: state.root, workflowId: state.id, stageId: 'T1', owner, sessionId,
+    worktree: state.workflowWorktree, lease: acquired.lease, state, stage: state.plan.tasks[0], attempt: 1, planDigest: state.planDigest,
+    authority: { id: owner.id, name: owner.name, description: owner.description, scope: [...owner.scope], exclude: [...owner.exclude] } }
+  runtime.activeOwners.set(sessionId, active)
+  return { ...fixture, key, active, exec: { agent: { id: sessionId }, signal: undefined },
+    async cleanup() { runtime.activeOwners.delete(sessionId); await runtime.releaseOwnerLease(acquired.lease); await runtime.dispose(); await rm(root, { recursive: true, force: true }) } }
+}
+
+function executionFeedback(mode = 'permission') {
+  return { expected: '按现有合同读取指定账本', actual: '该执行环境无法读取指定账本',
+    evidence: [{ kind: 'service_response', detail: 'remote-ledger 请求返回缺少 read:ledger 范围；本记录保留响应观察' }],
+    technical_facts: ['当前任务需要读取指定账本；权限未在本轮任务中获得。'],
+    ...(mode === 'permission' ? { external_permission_gap: { required_permission: 'read:ledger', target: 'remote-ledger', blocked_action: '读取指定账本' } } : {}),
+    ...(mode === 'business' ? { business_commitment_delta: { current_commitment: '保留三十天', proposed_commitment: '保留七天', consequence: '第八天数据不可读取' } } : {}),
+  }
+}
+
+
+for (const mode of ['technical', 'permission', 'business']) test(`R09 Owner 反馈经实际失败入口分类且保留独立任务：${mode}`, async () => {
+  const f = await executionFeedbackFixture()
+  try {
+    const input = executionFeedback(mode)
+    if (mode === 'technical') { input.actual = '用户取消连接时 token 清理顺序错误'; input.evidence = [{ kind: 'repository_fact', detail: '清理函数在取消回调之前执行' }] }
+    await f.runtime.recordOwnerExecutionDeviation(input, f.exec)
+    const admitted = JSON.parse(await readFile(f.statePath, 'utf8'))
+    const deviation = admitted.ownerRuns[f.key].executionDeviation
+    assert.equal(deviation.workflowId, f.state.id)
+    assert.equal(deviation.taskId, 'T1')
+    assert.equal(deviation.ownerId, f.active.owner.id)
+    assert.equal(deviation.sessionId, f.active.sessionId)
+    assert.equal(deviation.planDigest, f.state.planDigest)
+    const independent = structuredClone(admitted.tasks.find(task => task.taskId === 'T2'))
+    await f.runtime.failSupervisorReservation(f.agent, f.state.id, f.key, new Error(input.actual))
+    const saved = JSON.parse(await readFile(f.statePath, 'utf8'))
+    assert.deepEqual(saved.tasks.find(task => task.taskId === 'T2'), independent)
+    const affected = saved.tasks.find(task => task.taskId === 'T1')
+    if (mode === 'technical') {
+      assert.equal(affected.status, 'pending')
+      assert.notEqual(affected.action, 'await_user')
+      assert.notEqual(affected.autonomousRecovery.strategy, 'request_user_authority')
+      assert.equal(Object.keys(saved.mainOutbox ?? {}).length, 0)
+    } else {
+      assert.equal(affected.status, 'stopped')
+      assert.equal(affected.action, 'await_user')
+      assert.equal(affected.autonomousRecovery.strategy, 'request_user_authority')
+      assert.equal(saved.status, 'running', '独立任务不能因局部待决而全局停止')
+      const notification = Object.values(saved.mainOutbox ?? {}).find(item => item.taskId === 'T1')
+      assert.ok(notification)
+      const deliveries = []
+      f.agent.followup = message => deliveries.push(message)
+      await f.runtime.deliverMainOutbox(f.agent, f.state.id, notification.notificationId)
+      assert.equal(deliveries.length, 1)
+      const delivered = JSON.parse(deliveries[0].content[0].text)
+      assert.equal(delivered.deviationId, deviation.deviationId)
+      assert.equal(delivered.taskId, 'T1')
+      assert.deepEqual(delivered.classificationBasis, deviation.classificationBasis)
+      const manifest = await f.runtime.ensureControlBridge(f.agent, saved)
+      const next = await request(manifest, 'supervisor-next')
+      assert.equal(next.action, 'create')
+      assert.deepEqual(next.tasks.map(task => task.taskId), ['T2'])
+    }
+    assert.equal(saved.planApproved, true, '反馈不能改变已有计划审批记录')
+    assert.equal(saved.obligationDecisions, undefined, '报告不是用户同意的决定回执')
+  } finally { await f.cleanup() }
+})
+
+test('R09 Owner 反馈接纳拒绝伪造绑定、无依据、外来会话和过期候选', async () => {
+  const f = await executionFeedbackFixture()
+  try {
+    const before = await readFile(f.statePath, 'utf8')
+    for (const feedback of [
+      { ...executionFeedback(), owner_id: 'independent' },
+      { ...executionFeedback(), technical_facts: [] },
+      { ...executionFeedback(), evidence: [] },
+      { ...executionFeedback('business'), business_commitment_delta: { current_commitment: '相同承诺', proposed_commitment: '相同承诺', consequence: '没有变化' } },
+    ]) await assert.rejects(f.runtime.recordOwnerExecutionDeviation(feedback, f.exec))
+    await assert.rejects(f.runtime.recordOwnerExecutionDeviation(executionFeedback(), { agent: { id: 'foreign-owner' } }))
+    assert.equal(await readFile(f.statePath, 'utf8'), before)
+    const changed = JSON.parse(before)
+    changed.planDigest = 'f'.repeat(64)
+    await writeFile(f.statePath, JSON.stringify(changed))
+    const staleBefore = await readFile(f.statePath, 'utf8')
+    await assert.rejects(f.runtime.recordOwnerExecutionDeviation(executionFeedback(), f.exec), /失效|版本|digest|当前|绑定/)
+    assert.equal(await readFile(f.statePath, 'utf8'), staleBefore)
+  } finally { await f.cleanup() }
+})
+
+for (const mutation of ['session', 'attempt', 'plan', 'owner']) test(`R09 已接纳反馈消费前重新校验当前来源：${mutation}`, async () => {
+  const f = await executionFeedbackFixture()
+  try {
+    await f.runtime.recordOwnerExecutionDeviation(executionFeedback(), f.exec)
+    const saved = JSON.parse(await readFile(f.statePath, 'utf8'))
+    if (mutation === 'session') saved.ownerRuns[f.key].sessionId = 'replacement-session'
+    if (mutation === 'attempt') saved.ownerRuns[f.key].attempt += 1
+    if (mutation === 'plan') saved.planDigest = 'f'.repeat(64)
+    if (mutation === 'owner') saved.plan.owners[0].scope.push('changed/**')
+    await writeFile(f.statePath, JSON.stringify(saved))
+    await f.runtime.failSupervisorReservation(f.agent, f.state.id, f.key, new Error('连接失败'))
+    const outcome = JSON.parse(await readFile(f.statePath, 'utf8'))
+    assert.notEqual(outcome.tasks[0].autonomousRecovery.strategy, 'request_user_authority')
+    assert.equal(Object.keys(outcome.mainOutbox ?? {}).length, 0)
+  } finally { await f.cleanup() }
+})
+
+
+test('R09 同 attempt 的用户反馈幂等保留，不能由后续技术描述降权', async () => {
+  const f = await executionFeedbackFixture()
+  try {
+    const input = executionFeedback()
+    await f.runtime.recordOwnerExecutionDeviation(input, f.exec)
+    const first = JSON.parse(await readFile(f.statePath, 'utf8')).ownerRuns[f.key].executionDeviation
+    await f.runtime.recordOwnerExecutionDeviation(input, f.exec)
+    const duplicate = JSON.parse(await readFile(f.statePath, 'utf8')).ownerRuns[f.key].executionDeviation
+    assert.deepEqual(duplicate, first)
+    await assert.rejects(f.runtime.recordOwnerExecutionDeviation(executionFeedback('technical'), f.exec), /冲突|覆盖|已有|改变|降/)
+    await f.runtime.failSupervisorReservation(f.agent, f.state.id, f.key, new Error('新的普通技术描述'))
+    const saved = JSON.parse(await readFile(f.statePath, 'utf8'))
+    assert.equal(saved.tasks[0].action, 'await_user')
+    assert.equal(saved.ownerRuns[f.key].executionDeviation.deviationId, first.deviationId)
+  } finally { await f.cleanup() }
+})
+
+
+test('R09 Owner 恢复消费当前反馈，换 attempt 后不继承旧用户门禁', async () => {
+  const f = await executionFeedbackFixture()
+  try {
+    await f.runtime.recordOwnerExecutionDeviation(executionFeedback(), f.exec)
+    await f.runtime.failSupervisorReservation(f.agent, f.state.id, f.key, new Error('缺少访问范围'))
+    f.runtime.activeOwners.delete(f.active.sessionId)
+    await f.runtime.releaseOwnerLease(f.active.lease)
+    let starts = 0
+    f.runtime.runExternalOwner = async () => { starts += 1; throw new Error('R09_NEW_ATTEMPT_STARTED') }
+    const waiting = await f.runtime.recoverOwner(f.agent, f.state.id, 'T1', f.active.owner.id)
+    assert.equal(waiting.strategy, 'request_user_authority')
+    assert.equal(starts, 0)
+    const saved = JSON.parse(await readFile(f.statePath, 'utf8'))
+    saved.ownerRuns[f.key].attempt += 1
+    saved.ownerRuns[f.key].sessionId = 'new-attempt-session'
+    saved.ownerRuns[f.key].status = 'failed'
+    saved.ownerRuns[f.key].error = '新执行的普通失败'
+    await writeFile(f.statePath, JSON.stringify(saved))
+    await assert.rejects(f.runtime.recoverOwner(f.agent, f.state.id, 'T1', f.active.owner.id), /R09_NEW_ATTEMPT_STARTED/)
+    assert.equal(starts, 1)
+    const recovered = JSON.parse(await readFile(f.statePath, 'utf8'))
+    assert.notEqual(recovered.ownerRuns[f.key].autonomousRecovery.strategy, 'request_user_authority')
+    assert.equal(recovered.tasks.find(task => task.taskId === 'T2').status, 'pending')
+  } finally { await f.cleanup() }
+})
+
+
+test('R09 已确认权限缺口优先于技术 handoff 策略', async () => {
+  const f = await executionFeedbackFixture()
+  try {
+    const configured = JSON.parse(await readFile(f.statePath, 'utf8'))
+    configured.plan.tasks[0].onFailure = { action: 'handoff_replan' }
+    configured.plan = normalizePlanV2(configured.plan)
+    configured.planDigest = createHash('sha256').update(JSON.stringify(configured.plan)).digest('hex')
+    configured.planReviewDigest = configured.planDigest
+    configured.ownerRuns[f.key].planDigest = configured.planDigest
+    f.active.planDigest = configured.planDigest
+    await writeFile(f.statePath, JSON.stringify(configured))
+    await f.runtime.recordOwnerExecutionDeviation(executionFeedback(), f.exec)
+    await f.runtime.failSupervisorReservation(f.agent, f.state.id, f.key, new Error('技术 handoff 策略同时适用'))
+    const outcome = JSON.parse(await readFile(f.statePath, 'utf8'))
+    assert.equal(outcome.tasks[0].autonomousRecovery.strategy, 'request_user_authority')
+    assert.equal(outcome.tasks[0].action, 'await_user')
+    assert.equal(outcome.status, 'running')
+  } finally { await f.cleanup() }
+})
+
+
+for (const mode of ['permission', 'business']) test(`R09 已报告用户待决后不能通过 completed 提交越过门禁：${mode}`, async () => {
+  const f = await executionFeedbackFixture()
+  try {
+    await f.runtime.recordOwnerExecutionDeviation(executionFeedback(mode), f.exec)
+    let inspected = 0
+    let committed = 0
+    f.runtime.inspectOwnerAttempt = async () => { inspected += 1; throw new Error('不应进入成功提交检查') }
+    f.runtime.commitOwnerAttempt = async () => { committed += 1; throw new Error('不应提交代码') }
+    // A previous technical verification failure must not hide a separately
+    // sourced user decision or trap submission in the technical repair loop.
+    f.active.verificationResults = { unit: { verificationId: 'unit', passed: false, exitCode: 1, enforcement: 'full' } }
+    const result = await f.runtime.submitOwnerResult({ contract: 'DSH_OWNER_RESULT_V1', status: 'completed', summary: '声称所有工作完成', changes: [], tests: [], handoffs: [], memory_updates: [] }, f.exec)
+    assert.notEqual(result.status, 'completed')
+    assert.equal(result.accepted, true)
+    assert.equal(inspected, 0)
+    assert.equal(committed, 0)
+    assert.notEqual(f.active.submission.report.status, 'completed')
+    await f.runtime.failSupervisorReservation(f.agent, f.state.id, f.key, new Error(result.summary))
+    const saved = JSON.parse(await readFile(f.statePath, 'utf8'))
+    assert.equal(saved.tasks[0].action, 'await_user')
+    assert.equal(saved.tasks[1].status, 'pending')
+  } finally { await f.cleanup() }
+})
+
+
+for (const mode of ['permission-blocked', 'permission-failed', 'business-blocked', 'legacy-blocked']) test(`R10 真实 Owner 非成功结算保留分类与局部待决：${mode}`, async () => {
+  const f = await executionFeedbackFixture()
+  try {
+    f.runtime.activeOwners.delete(f.active.sessionId)
+    await f.runtime.releaseOwnerLease(f.active.lease)
+    const initial = JSON.parse(await readFile(f.statePath, 'utf8'))
+    initial.status = 'approved'
+    initial.ownerRuns = {}
+    initial.supervisorOutbox = {}
+    initial.tasks = createTaskState(initial.plan)
+    await writeFile(f.statePath, JSON.stringify(initial))
+    let receipt
+    f.runtime.runChild = async (_agent, _cwd, _prompt, _signal, options) => {
+      const active = options.activeOwner
+      assert.ok(active, '只模拟模型回合，运行真实 Owner 生命周期')
+      const sessionId = 'r10-direct-owner'
+      f.runtime.activeOwners.set(sessionId, active)
+      await f.runtime.persistOwnerSession(active, sessionId)
+      const exec = { agent: { id: sessionId } }
+      if (mode !== 'legacy-blocked') await f.runtime.recordOwnerExecutionDeviation(executionFeedback(mode.startsWith('business') ? 'business' : 'permission'), exec)
+      if (mode === 'permission-failed') active.verificationResults = { unit: { passed: false, exitCode: 1, enforcement: 'full' } }
+      receipt = await f.runtime.submitOwnerResult({ contract: 'DSH_OWNER_RESULT_V1', status: mode === 'legacy-blocked' ? 'blocked' : 'completed', summary: '模型回报', changes: [], tests: [], handoffs: [], memory_updates: [] }, exec)
+      return { ...active.submission, sessionId }
+    }
+    await assert.rejects(f.runtime.runExternalOwner(f.agent, f.state.id, 'T1', f.active.owner.id, undefined, { deferFinish: true }), /Owner 主动报告/)
+    assert.equal(receipt.status, mode === 'permission-failed' ? 'failed' : 'blocked')
+    const saved = JSON.parse(await readFile(f.statePath, 'utf8'))
+    assert.equal(saved.tasks[0].action, 'await_user')
+    assert.equal(saved.tasks[1].status, 'pending')
+    assert.equal(saved.ownerRuns[f.key].result, undefined, '未生成提交结果')
+    if (mode === 'legacy-blocked') {
+      assert.equal(saved.status, 'blocked')
+      assert.equal(Object.keys(saved.mainOutbox ?? {}).length, 0)
+    } else {
+      assert.equal(saved.status, 'running')
+      assert.equal(saved.ownerRuns[f.key].autonomousRecovery.strategy, 'request_user_authority')
+      const pending = Object.values(saved.mainOutbox ?? {})
+      assert.equal(pending.length, 1)
+      assert.equal(pending[0].reason, 'execution_authority_required')
+      assert.equal(pending[0].taskId, 'T1')
+      assert.equal(pending[0].deviationId, saved.ownerRuns[f.key].executionDeviation.deviationId)
+      const delivered = []
+      f.agent.followup = message => delivered.push(JSON.parse(message.content[0].text))
+      await f.runtime.deliverMainOutbox(f.agent, f.state.id, pending[0].notificationId)
+      assert.equal(delivered.length, 1)
+      assert.deepEqual(delivered[0].classificationBasis, saved.ownerRuns[f.key].executionDeviation.classificationBasis)
+      const manifest = await f.runtime.ensureControlBridge(f.agent, saved)
+      const next = await request(manifest, 'supervisor-next')
+      assert.equal(next.action, 'create')
+      assert.deepEqual(next.tasks.map(task => task.taskId), ['T2'])
+    }
+  } finally { await f.cleanup() }
+})
+
+// F-13: current user grounds must survive incidental budget error wording at
+// actual settlement and recovery boundaries, including repeated recovery.
+for (const entry of ['supervisor', 'direct-owner', 'recover', 'repeated-recover']) {
+  for (const mode of ['permission', 'business', 'technical', 'stale-permission']) {
+    test(`R11 预算错误不覆盖当前用户依据：${entry}/${mode}`, async () => {
+      const f = await executionFeedbackFixture()
+      try {
+        const needsUser = mode === 'permission' || mode === 'business'
+        const admit = async exec => {
+          await f.runtime.recordOwnerExecutionDeviation(executionFeedback(mode === 'stale-permission' ? 'permission' : mode), exec)
+          if (mode === 'stale-permission') {
+            const state = JSON.parse(await readFile(f.statePath, 'utf8'))
+            state.ownerRuns[f.key].executionDeviation.sessionId = 'stale-session'
+            await writeFile(f.statePath, JSON.stringify(state))
+          }
+        }
+        if (entry === 'direct-owner') {
+          f.runtime.activeOwners.delete(f.active.sessionId)
+          await f.runtime.releaseOwnerLease(f.active.lease)
+          const initial = JSON.parse(await readFile(f.statePath, 'utf8'))
+          initial.status = 'approved'
+          initial.ownerRuns = {}
+          initial.supervisorOutbox = {}
+          initial.tasks = createTaskState(initial.plan)
+          await writeFile(f.statePath, JSON.stringify(initial))
+          f.runtime.runChild = async (_agent, _cwd, _prompt, _signal, options) => {
+            const active = options.activeOwner
+            assert.ok(active)
+            const sessionId = 'r11-direct-owner'
+            f.runtime.activeOwners.set(sessionId, active)
+            await f.runtime.persistOwnerSession(active, sessionId)
+            await admit({ agent: { id: sessionId } })
+            throw new Error('token budget exhausted')
+          }
+          await assert.rejects(f.runtime.runExternalOwner(f.agent, f.state.id, 'T1', f.active.owner.id, undefined, { deferFinish: true }), /token budget exhausted/)
+        } else {
+          await admit(f.exec)
+          if (entry === 'supervisor') {
+            await f.runtime.failSupervisorReservation(f.agent, f.state.id, f.key, new Error('token budget exhausted'))
+          } else {
+            f.runtime.activeOwners.delete(f.active.sessionId)
+            await f.runtime.releaseOwnerLease(f.active.lease)
+            const state = JSON.parse(await readFile(f.statePath, 'utf8'))
+            state.ownerRuns[f.key].status = 'failed'
+            state.ownerRuns[f.key].error = 'token budget exhausted'
+            if (entry === 'repeated-recover') state.ownerRuns[f.key].lastRecoveryFingerprint = f.runtime.ownerRecoveryFingerprint(state, 'T1', f.active.owner.id, 'token budget exhausted')
+            await writeFile(f.statePath, JSON.stringify(state))
+            let starts = 0
+            f.runtime.runExternalOwner = async () => { starts += 1; throw new Error('R11_TECHNICAL_RESTART') }
+            if (needsUser) {
+              const result = await f.runtime.recoverOwner(f.agent, f.state.id, 'T1', f.active.owner.id)
+              assert.equal(result.strategy, needsUser ? 'request_user_authority' : 'local_subgraph_rewrite')
+              assert.equal(starts, 0)
+            } else {
+              await assert.rejects(f.runtime.recoverOwner(f.agent, f.state.id, 'T1', f.active.owner.id), /R11_TECHNICAL_RESTART/)
+              assert.equal(starts, 1)
+            }
+          }
+        }
+        const saved = JSON.parse(await readFile(f.statePath, 'utf8'))
+        const task = saved.tasks.find(item => item.taskId === 'T1')
+        const recovery = task.autonomousRecovery ?? saved.ownerRuns[f.key].autonomousRecovery
+        assert.equal(recovery.failureClass, needsUser ? 'external_authority' : 'budget_exhausted')
+        assert.equal(recovery.strategy, needsUser ? 'request_user_authority' : 'local_subgraph_rewrite')
+        assert.equal(saved.tasks.find(item => item.taskId === 'T2').status, 'pending')
+        const notifications = Object.values(saved.mainOutbox ?? {})
+        if (needsUser) {
+          assert.equal(task.action, 'await_user')
+          assert.equal(task.status, 'stopped')
+          assert.equal(saved.status, 'running')
+          assert.equal(notifications.length, 1)
+          assert.deepEqual(notifications[0].classificationBasis, saved.ownerRuns[f.key].executionDeviation.classificationBasis)
+        } else {
+          assert.notEqual(task.action, 'await_user')
+          assert.equal(notifications.length, 0)
+        }
+      } finally { await f.cleanup() }
+    })
+  }
+}

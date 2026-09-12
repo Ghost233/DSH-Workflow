@@ -1,0 +1,922 @@
+--- owner-workflow-plugin/src/recovery-session.mjs (baseline)
++++ owner-workflow-plugin/src/recovery-session.mjs
+@@ -295,7 +295,7 @@
+  * technical pause.  `observed_terminal` is intentionally not a business or
+  * T-13 terminal result.
+  */
+-export async function inspectRecoverySession({ persistence, executionIdentity, prompt: rawPrompt, signal }) {
++export async function readRecoverySessionArtifact({ persistence, executionIdentity, prompt: rawPrompt, signal }) {
+   exactKeys(executionIdentity, ['sessionId', 'promptId'], 'execution_identity')
+   const sessionId = text(executionIdentity.sessionId, 'execution_session_id')
+   const promptId = text(executionIdentity.promptId, 'execution_prompt_id')
+@@ -322,9 +322,17 @@
+       || physicalEvents.some((event, index) => !sameValue(event, events[index]))) {
+       return pause('raw_read_mismatch')
+     }
+-    return { ...turnStepFacts(events, expected), revision: before.revision }
++    return { outcome: 'artifact', revision: before.revision, events }
+   } catch (error) {
+     if (signal?.aborted) throw error
+     return pause('read_failed')
+   }
+ }
++
++// Existing Owner consumers retain their compact observation contract. Replan
++// readers use the same validated artifact instead of rereading an unstable log.
++export async function inspectRecoverySession(options) {
++  const observation = await readRecoverySessionArtifact(options)
++  if (observation.outcome !== 'artifact') return observation
++  return { ...turnStepFacts(observation.events, prompt(options.prompt)), revision: observation.revision }
++}
+--- /dev/null
++++ owner-workflow-plugin/src/replan-session.mjs
+@@ -0,0 +1,209 @@
++import { createHash } from 'node:crypto'
++import { readRecoverySessionArtifact } from './recovery-session.mjs'
++
++export const REPLAN_SESSION_REQUEST_CONTRACT = 'DSH_REPLAN_SESSION_REQUEST_V1'
++export const REPLAN_SESSION_STATE_CONTRACT = 'DSH_REPLAN_SESSION_STATE_V1'
++export const REPLAN_SESSION_RESULT_CONTRACT = 'DSH_REPLAN_SESSION_RESULT_V1'
++const PHASES = new Set(['creating', 'created', 'submitted', 'submission_observed', 'settled_failed', 'settled_cancelled'])
++
++function exact(value, keys, name) {
++  if (value === null || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype
++    || Object.getOwnPropertySymbols(value).length !== 0
++    || Object.getOwnPropertyNames(value).length !== keys.length
++    || keys.some(key => !Object.hasOwn(value, key))
++    || Object.values(Object.getOwnPropertyDescriptors(value)).some(d => !d.enumerable || !Object.hasOwn(d, 'value'))) {
++    throw new Error(`ReplanSession ${name}_invalid`)
++  }
++}
++function text(value, name) {
++  if (typeof value !== 'string' || value.trim() === '') throw new Error(`ReplanSession ${name}_invalid`)
++  return value
++}
++function canonical(value) {
++  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
++  if (value !== null && typeof value === 'object') {
++    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
++  }
++  return JSON.stringify(value)
++}
++export function replanPayloadDigest(value) {
++  return createHash('sha256').update(canonical(value)).digest('hex')
++}
++export function normalizeReplanSessionRequest(value) {
++  exact(value, ['contract', 'requestId', 'prompt'], 'request')
++  if (value.contract !== REPLAN_SESSION_REQUEST_CONTRACT) throw new Error('ReplanSession request_contract_invalid')
++  exact(value.prompt, ['id', 'content'], 'prompt')
++  return {
++    contract: value.contract, requestId: text(value.requestId, 'request_id'),
++    prompt: { id: text(value.prompt.id, 'prompt_id'), content: text(value.prompt.content, 'prompt_content') },
++  }
++}
++function binding(intent, prompt) {
++  if (intent.executionKind !== 'replan_operation' || intent.executionIdentity.promptId !== prompt.id) {
++    throw new Error('ReplanSession reservation_binding_mismatch')
++  }
++  return {
++    contract: REPLAN_SESSION_STATE_CONTRACT, sourceId: intent.sourceId,
++    rootProblemId: intent.rootProblemId, requestId: intent.requestId, attemptId: intent.attemptId,
++    planDigest: intent.planDigest, operationKind: intent.operationKind, operationId: intent.operationId,
++    ordinal: intent.ordinal, executionIdentity: { ...intent.executionIdentity }, prompt: { ...prompt },
++  }
++}
++export function createReplanSessionState(intent, prompt, leaseToken) {
++  return { ...binding(intent, prompt), leaseToken: text(leaseToken, 'lease_token'), phase: 'creating', contextMessages: [] }
++}
++export function assertReplanSessionState(record, intent, prompt) {
++  const expected = binding(intent, prompt)
++  exact(record, [...Object.keys(expected), 'leaseToken', 'phase', 'contextMessages'], 'state')
++  normalizeReplanContexts(record.contextMessages)
++  if (record.contextMessages.some(message => message.id === prompt.id)) throw new Error('ReplanSession context_prompt_collision')
++  if (!PHASES.has(record.phase)) throw new Error('ReplanSession state_phase_invalid')
++  text(record.leaseToken, 'lease_token')
++  for (const key of Object.keys(expected)) {
++    if (canonical(record[key]) !== canonical(expected[key])) throw new Error('ReplanSession state_binding_mismatch')
++  }
++}
++// Captured by the actual provider pre-step boundary before the model sees the
++// snapshot. Matching a plugin name in a log alone never grants this allowance.
++export function normalizeReplanContexts(messages) {
++  if (!Array.isArray(messages)) throw new Error('ReplanSession contexts_invalid')
++  const ids = new Set()
++  return messages.map(message => {
++    exact(message, ['id', 'role', 'content', 'source'], 'context_message')
++    text(message.id, 'context_id')
++    if (ids.has(message.id) || message.role !== 'user' || !Array.isArray(message.content)
++      || message.content.length !== 1 || message.content[0]?.type !== 'text'
++      || typeof message.content[0].text !== 'string') throw new Error('ReplanSession context_message_invalid')
++    ids.add(message.id)
++    const source = message.source
++    exact(source, source?.form === 'snapshot' ? ['kind', 'plugin', 'form', 'sections'] : ['kind', 'plugin'], 'context_source')
++    if (source.kind !== 'plugin' || source.plugin !== '@deepseek-ai/dsh-system-prompt') throw new Error('ReplanSession context_source_invalid')
++    if (source.form === 'snapshot') {
++      if (!Array.isArray(source.sections)) throw new Error('ReplanSession context_sections_invalid')
++      for (const section of source.sections) {
++        exact(section, ['name', 'text'], 'context_section')
++        text(section.name, 'context_section_name')
++        text(section.text, 'context_section_text')
++      }
++    }
++    return structuredClone(message)
++  })
++}
++
++export function assertReplanSessionAttempt(record, intent, attempt) {
++  if (record.phase === 'creating') {
++    if (attempt?.state !== 'reserved') throw new Error('ReplanSession creating_attempt_mismatch')
++    return
++  }
++  const status = record.phase === 'settled_failed' ? 'failed' : record.phase === 'settled_cancelled' ? 'cancelled' : undefined
++  if (attempt?.state !== (status === undefined ? 'running' : 'settled')
++    || canonical(attempt.executionRef) !== canonical({ id: intent.executionIdentity.sessionId, version: intent.executionIdentity.promptId })
++    || (status !== undefined && (attempt.result?.status !== status
++      || canonical(attempt.result.reference) !== canonical({ id: intent.executionIdentity.promptId, version: intent.executionIdentity.sessionId })))) {
++    throw new Error('ReplanSession execution_receipt_mismatch')
++  }
++}
++
++export function replanBudgetBinding(workflowId, intent) {
++  return {
++    workflowId, rootProblemId: intent.rootProblemId, requestId: intent.requestId,
++    attemptId: intent.attemptId, executionVersion: intent.planDigest,
++    executionKind: 'replan_operation', operationKind: intent.operationKind, operationId: intent.operationId,
++  }
++}
++const pause = (reason, extra = {}) => ({ outcome: 'paused', phase: 'technical_pause', reason, ...extra })
++
++function replanTurnFacts(events, prompt, contextMessages) {
++  const matches = value => value?.id === prompt.id && value?.role === 'user'
++    && canonical(value.content) === canonical([{ type: 'text', text: prompt.content }])
++    && canonical(value.source) === canonical({ kind: 'user' })
++  const inputs = events.filter(event => event.type === 'user/message').map(event => event.data)
++  const queued = events.filter(event => event.type === 'agent/inbox/spliced')
++    .flatMap(event => (event.data?.inserted ?? []).filter(item => item?.role === 'user'))
++  const contexts = normalizeReplanContexts(contextMessages)
++  const extras = inputs.filter(item => !matches(item))
++  if (extras.some(item => !contexts.some(saved => canonical(saved) === canonical(item)))
++    || queued.some(item => !matches(item))) return pause('extra_or_wrong_input')
++  if (new Set(inputs.map(item => item.id)).size !== inputs.length
++    || inputs.filter(matches).length !== 1 || queued.length > 1) return pause('prompt_not_unique')
++  const turns = events.filter(event => event.type === 'turn/start')
++  const ends = events.filter(event => event.type === 'turn/end')
++  if (turns.length !== 1 || !Number.isSafeInteger(turns[0].data?.turn)) return pause('prompt_turn_ambiguous')
++  const turn = turns[0].data.turn
++  if (ends.length === 0) return pause('session_not_terminal')
++  if (ends.length !== 1 || ends[0].data?.turn !== turn) return pause('terminal_shape_ambiguous')
++  const starts = events.filter(event => event.type === 'step/start')
++  const stepEnds = events.filter(event => event.type === 'step/end')
++  const assistants = events.filter(event => event.type === 'assistant/message')
++  if (starts.length === 0 || starts.length !== stepEnds.length || starts.length !== assistants.length) {
++    return pause('terminal_step_ambiguous')
++  }
++  const steps = new Set()
++  for (const start of starts) {
++    const step = start.data?.step
++    const end = stepEnds.filter(event => event.data?.turn === turn && event.data?.step === step)
++    const message = assistants.filter(event => event.data?.turn === turn && event.data?.step === step)
++    if (start.data?.turn !== turn || !Number.isSafeInteger(step) || steps.has(step)
++      || end.length !== 1 || message.length !== 1 || start.seq >= end[0].seq
++      || end[0].seq >= ends[0].seq || message[0].seq <= start.seq || message[0].seq >= end[0].seq) {
++      return pause('terminal_step_ambiguous')
++    }
++    steps.add(step)
++  }
++  return { outcome: 'observed_terminal', turn, steps: [...steps], terminalSeq: ends[0].seq }
++}
++
++/** Accepted tool output is submission evidence, never evidence that a DAG was applied. */
++export async function inspectReplanSession({ persistence, intent, prompt, contextMessages = [], signal }) {
++  const observation = await readRecoverySessionArtifact({ persistence, executionIdentity: intent.executionIdentity, prompt, signal })
++  if (observation.outcome !== 'artifact') return pause(observation.reason ?? 'artifact_unavailable')
++  const { events } = observation
++  const facts = { ...replanTurnFacts(events, prompt, contextMessages), revision: observation.revision }
++  if (facts.outcome !== 'observed_terminal') return facts
++  const terminal = events.find(event => event.seq === facts.terminalSeq)
++  const endKind = terminal?.data?.reason?.kind ?? terminal?.data?.kind
++  if (!['completed', 'aborted'].includes(endKind)) return pause('terminal_reason_unknown')
++  const review = intent.operationKind === 'revision_review'
++  const toolName = review ? 'workflow_plan_review_submit' : 'workflow_plan_submit'
++  const receiptContract = review ? 'DSH_WORKFLOW_PLAN_REVIEW_SUBMIT_RESULT_V1' : 'DSH_WORKFLOW_PLAN_SUBMIT_RESULT_V1'
++  const calls = events.filter(event => event.type === 'tool/call' && event.data?.name === toolName)
++  const accepted = []
++  for (const call of calls) {
++    if (call.data.turn !== facts.turn || !facts.steps.includes(call.data.step)) return pause('tool_turn_mismatch')
++    const results = events.filter(event => event.type === 'tool/result'
++      && event.data?.message?.source?.callId === call.data.callId)
++    if (results.length !== 1) return pause('tool_result_unknown')
++    const result = results[0]
++    const message = result.data.message
++    if (result.seq <= call.seq || result.seq >= facts.terminalSeq
++      || canonical(result.sourceEventSeqs) !== canonical([call.seq])
++      || result.data.turn !== facts.turn || result.data.step !== call.data.step
++      || message.role !== 'user' || message.source.kind !== 'tool'
++      || !Array.isArray(message.content) || message.content.length !== 1) return pause('tool_result_binding_mismatch')
++    const block = message.content[0]
++    if (block?.type !== 'tool-result' || block.toolCallId !== call.data.callId) return pause('tool_result_binding_mismatch')
++    if (result.data.error !== undefined || block.isError === true) continue
++    if (block.isError !== false || !Array.isArray(block.content)
++      || block.content.some(item => item?.type !== 'text' || typeof item.text !== 'string')) return pause('tool_result_invalid')
++    let receipt, args
++    try {
++      receipt = JSON.parse(block.content.map(item => item.text).join(''))
++      args = JSON.parse(call.data.arguments)
++    } catch { return pause('tool_payload_invalid') }
++    if (receipt?.contract !== receiptContract || receipt.accepted !== true) return pause('tool_not_accepted')
++    const payload = args?.[review ? 'review' : 'plan']
++    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return pause('tool_payload_invalid')
++    accepted.push({
++      payload,
++      receipt: { toolName, callId: call.data.callId, callSeq: call.seq, resultSeq: result.seq,
++        payloadDigest: replanPayloadDigest(payload), terminalSeq: facts.terminalSeq, terminalKind: endKind, revision: facts.revision },
++    })
++  }
++  if (accepted.length > 1) return pause('submission_not_unique')
++  if (accepted.length === 1) return { outcome: 'submission_observed', phase: 'submission_observed', ...accepted[0] }
++  return {
++    outcome: endKind === 'aborted' ? 'cancelled' : 'failed',
++    phase: endKind === 'aborted' ? 'settled_cancelled' : 'settled_failed',
++    reason: 'submission_missing', observation: facts,
++  }
++}
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -182,6 +182,10 @@
+   normalizeRecoverySessionRequest,
+ } from './recovery-session.mjs'
+ import {
++  REPLAN_SESSION_RESULT_CONTRACT, assertReplanSessionState, assertReplanSessionAttempt, createReplanSessionState,
++  inspectReplanSession, normalizeReplanSessionRequest, normalizeReplanContexts, replanBudgetBinding,
++} from './replan-session.mjs'
++import {
+   startRecoveryAttempt,
+   settleRecoveryAttempt,
+ } from './recovery-budget.mjs'
+@@ -2614,7 +2618,10 @@
+       if (pending === undefined) throw new Error('Owner 工作流 one-shot provider 找不到对应的子代理启动配置')
+       runtime.pendingChildStarts.delete(request.prompt)
+       const recoverySession = pending.options.recoverySession
+-      const childId = recoverySession?.executionIdentity?.sessionId ?? randomUUID()
++      const replanSession = pending.options.replanSession
++      if (recoverySession !== undefined && replanSession !== undefined) throw new Error('子会话不能混合Owner与replan身份')
++      const execution = recoverySession ?? replanSession
++      const childId = execution?.executionIdentity?.sessionId ?? randomUUID()
+       let child
+       let handle
+       let cancelled = false
+@@ -2684,6 +2691,11 @@
+                 await runtime.recordOwnerHeartbeat(pending.options.activeOwner).catch(() => undefined)
+               }
+               const decision = await next()
++              if (replanSession !== undefined && decision.kind === 'enter') {
++                const contexts = (decision.messages ?? []).filter(message => message?.role === 'user'
++                  && message.id !== replanSession.executionIdentity.promptId)
++                if (contexts.length > 0) await replanSession.contexts(contexts)
++              }
+               if (!descriptorAppended && decision.kind === 'enter') {
+                 descriptorAppended = true
+                 agent.session.append('subagent/descriptor', request.descriptor)
+@@ -2696,6 +2708,7 @@
+         if (pending.options.activeOwner !== undefined) {
+           await runtime.persistOwnerSession(pending.options.activeOwner, child.id)
+         }
++        if (replanSession !== undefined) await replanSession.created(child.id)
+       } catch (error) {
+         request.signal.removeEventListener('abort', onAbort)
+         if (handle !== undefined) await handle.dispose().catch(() => undefined)
+@@ -2707,12 +2720,12 @@
+           if (request.signal.aborted) onAbort()
+           if (!cancelled) {
+             child.followup(deepFreeze({
+-              id: recoverySession?.executionIdentity?.promptId ?? randomUUID(),
++              id: execution?.executionIdentity?.promptId ?? randomUUID(),
+               role: 'user',
+               content: request.prompt,
+               source: { kind: 'user' },
+             }))
+-            if (recoverySession !== undefined) {
++            if (execution !== undefined) {
+               const sessions = request.parent.ctx?.get?.('sessions')
+               if (typeof sessions?.flush !== 'function') {
+                 throw new Error('RecoverySession Harness 没有挂载 sessions.flush，不能确认 prompt 持久化')
+@@ -2720,7 +2733,8 @@
+               if (await sessions.flush(child.session) !== true) {
+                 throw new Error('RecoverySession prompt 未被所有持久监听器确认')
+               }
+-              await runtime.persistRecoverySessionSubmitted(pending.options.activeOwner, child.id)
++              if (replanSession !== undefined) await replanSession.submitted(child.id)
++              else await runtime.persistRecoverySessionSubmitted(pending.options.activeOwner, child.id)
+             }
+             await child.whenIdle()
+           }
+@@ -2730,6 +2744,15 @@
+           }
+         } finally {
+           request.signal.removeEventListener('abort', onAbort)
++          // The structured submit signal precedes the scheduler's tool/result.
++          // Drain/dispose and this final flush must complete before raw receipt
++          // inspection; the in-memory signal alone is not durable evidence.
++          if (replanSession !== undefined) {
++            const sessions = request.parent.ctx?.get?.('sessions')
++            if (typeof sessions?.flush !== 'function' || await sessions.flush(child.session) !== true) {
++              throw new Error('ReplanSession terminal flush 未确认')
++            }
++          }
+         }
+       })()
+
+@@ -2750,6 +2773,34 @@
+
+ function stageOwnerIds(stage) {
+   return [...new Set(stage.tasks.map(task => task.ownerId))]
++}
++
++function assertRecoveryAdmissionRuntime(current, origin, isOperation) {
++assertV2WorkflowExecutable(current, '领取恢复预算')
++assertWorkflowNotCancelled(current, '领取恢复预算')
++if (!['approved', 'running', 'blocked', 'planned'].includes(current.status)
++  && !(current.status === 'failed' && origin?.source?.kind === 'owner_failure')) {
++  throw new Error('RecoveryAdmission 当前 Workflow 状态不可领取')
++}
++normalizePlanV2(current.plan)
++if (planDigest(current.plan) !== current.planDigest) {
++  throw new Error('RecoveryAdmission 当前计划内容摘要不匹配')
++}
++if (origin?.source?.kind === 'owner_failure') {
++  if (current.planApproved !== true || current.planReview?.status !== 'passed'
++    || current.planReviewDigest !== current.planDigest) {
++    throw new Error('RecoveryAdmission Owner 失败来源尚未通过当前计划审批')
++  }
++  const record = current.ownerRuns?.[ownerRunKey(origin.taskId, origin.ownerId)]
++  const classified = classifyFailure(record?.error ?? record?.reason ?? '',
++    ownerExecutionDeviationContext(current, origin.taskId, origin.ownerId))
++  if (classified.class === 'external_authority') {
++    throw new RecoveryAdmissionAuthorityRequiredError('RecoveryAdmission 当前失败需要用户决定')
++  }
++  // Replanning consumes the handoff; it must not masquerade as an
++  // Owner retry or bypass the shared user-authority check above.
++  if (!isOperation) assertOwnerRecoveryHandoffs(current, origin.taskId, origin.ownerId)
++}
+ }
+
+ function ownerRunKey(stageId, ownerId) {
+@@ -10162,31 +10213,7 @@
+                 throw refusal
+               }
+             }
+-            assertV2WorkflowExecutable(current, '领取恢复预算')
+-            assertWorkflowNotCancelled(current, '领取恢复预算')
+-            if (!['approved', 'running', 'blocked', 'planned'].includes(current.status)
+-              && !(current.status === 'failed' && origin?.source?.kind === 'owner_failure')) {
+-              throw new Error('RecoveryAdmission 当前 Workflow 状态不可领取')
+-            }
+-            normalizePlanV2(current.plan)
+-            if (planDigest(current.plan) !== current.planDigest) {
+-              throw new Error('RecoveryAdmission 当前计划内容摘要不匹配')
+-            }
+-            if (origin?.source?.kind === 'owner_failure') {
+-              if (current.planApproved !== true || current.planReview?.status !== 'passed'
+-                || current.planReviewDigest !== current.planDigest) {
+-                throw new Error('RecoveryAdmission Owner 失败来源尚未通过当前计划审批')
+-              }
+-              const record = current.ownerRuns?.[ownerRunKey(origin.taskId, origin.ownerId)]
+-              const classified = classifyFailure(record?.error ?? record?.reason ?? '',
+-                ownerExecutionDeviationContext(current, origin.taskId, origin.ownerId))
+-              if (classified.class === 'external_authority') {
+-                throw new RecoveryAdmissionAuthorityRequiredError('RecoveryAdmission 当前失败需要用户决定')
+-              }
+-              // Replanning consumes the handoff; it must not masquerade as an
+-              // Owner retry or bypass the shared user-authority check above.
+-              if (!isOperation) assertOwnerRecoveryHandoffs(current, origin.taskId, origin.ownerId)
+-            }
++            assertRecoveryAdmissionRuntime(current, origin, isOperation)
+             const prepared = prepareRecoveryAdmission(current, request)
+             response = prepared.response
+             if (response.outcome === 'rejected') throw refusal
+@@ -10198,6 +10225,180 @@
+         // The reducer's result must never escape before the write lock commits.
+         return response
+       })
++    },
++    // Internal replan child driver. Trigger/candidate application remains with
++    // the planning entrypoint; an observed submission is not an applied DAG.
++    async reconcileReplanSession(agent, workflowId, rawRequest, signal) {
++      const request = normalizeReplanSessionRequest(rawRequest)
++      if (typeof workflowId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(workflowId)) {
++        throw new Error('ReplanSession workflowId 非法')
++      }
++      abortIfNeeded(signal)
++      const root = await runtime.resolveRoot(agent)
++      const result = (outcome, details = {}) => ({
++        contract: REPLAN_SESSION_RESULT_CONTRACT, workflowId, requestId: request.requestId,
++        outcome, ...details,
++      })
++      const persistence = agent.ctx?.get?.('sessionPersistence')
++      if (persistence?.supportsRawArtifacts !== true || persistence?.constructor?.name !== 'JsonlSessionPersistence'
++        || persistence?.config?.compression !== 'none') return result('paused', { reason: 'unsupported_persistence' })
++      try {
++        // Reuse the existing disk resource-lease mechanism with a dedicated
++        // workflow planning key; this creates no Owner run or fabricated Owner.
++        return await runtime.withOwnerLease(root, `replan-${workflowId}`, workflowId, request.requestId, signal, async lease => {
++          let intent, record, launch = false, worktree, registry
++          const currentBinding = current => {
++            if (current?.contract !== STATE_CONTRACT || current.id !== workflowId || current.root !== root) {
++              throw new Error('ReplanSession workflow_binding_invalid')
++            }
++            if (current.replanSessions !== undefined && (current.replanSessions === null
++              || typeof current.replanSessions !== 'object' || Array.isArray(current.replanSessions))) {
++              throw new Error('ReplanSession session_table_invalid')
++            }
++            const located = lookupRecoveryAdmissionIntent(current, request.requestId)
++            if (located?.intent.executionKind !== 'replan_operation') throw new Error('ReplanSession operation_intent_required')
++            const source = located.source
++            const origin = {
++              contract: 'DSH_RECOVERY_ADMISSION_REQUEST_V1', planDigest: current.planDigest,
++              taskId: source.taskId, ownerId: source.ownerId,
++              source: source.kind === 'owner_failure'
++                ? { kind: 'owner_failure', attempt: source.attempt, sessionId: source.sessionId }
++                : { kind: 'obligation', id: source.obligationId },
++            }
++            assertRecoveryAdmissionRuntime(current, origin, true)
++            const prepared = prepareRecoveryAdmission(current, {
++              contract: REPLAN_ADMISSION_REQUEST_CONTRACT, origin,
++              operation: { operationKind: located.intent.operationKind,
++                operationId: located.intent.operationId, ordinal: located.intent.ordinal },
++            })
++            if (prepared.response.outcome !== 'replayed' || prepared.response.requestId !== request.requestId) {
++              throw new Error(`ReplanSession source_not_current:${prepared.response.reason ?? 'request_mismatch'}`)
++            }
++            const session = current.replanSessions?.[request.requestId]
++            if (session !== undefined) {
++              assertReplanSessionState(session, located.intent, request.prompt)
++              assertReplanSessionAttempt(session, located.intent,
++                current.recoveryAdmission.budget.attempts.find(item => item.requestId === request.requestId))
++            }
++            return located.intent
++          }
++          await runtime.withWorkflowLock(workflowId, async () => {
++            const state = await readState(runtime, root, workflowId)
++            intent = currentBinding(state)
++            worktree = state.workflowWorktree
++            const existing = state.replanSessions?.[request.requestId]
++            if (existing !== undefined) {
++              assertReplanSessionState(existing, intent, request.prompt)
++              record = structuredClone(existing)
++              return
++            }
++            const budgetAttempt = state.recoveryAdmission.budget.attempts.find(item => item.requestId === request.requestId)
++            if (budgetAttempt?.state !== 'reserved') throw new Error('ReplanSession unbound_started_attempt')
++            registry = (await loadLiveRegistryForPlanning(state, { plan: state.plan, requireBoundDigest: true })).registry
++            const raw = await persistence.readRaw(intent.executionIdentity.sessionId, signal)
++            const snapshots = await persistence.listSnapshots(signal)
++            if (raw !== undefined || !Array.isArray(snapshots)
++              || snapshots.some(item => item?.header?.id === intent.executionIdentity.sessionId)) {
++              throw new Error('ReplanSession reserved_session_already_exists')
++            }
++            // Freeze create intent before any provider API. Missing JSONL after
++            // this save is unknown, never permission to create a second child.
++            await saveState(runtime, { root, id: workflowId }, lease, current => {
++              intent = currentBinding(current)
++              if (current.replanSessions?.[request.requestId] !== undefined) throw new Error('ReplanSession concurrent_create')
++              const attempt = current.recoveryAdmission.budget.attempts.find(item => item.requestId === request.requestId)
++              if (attempt?.state !== 'reserved') throw new Error('ReplanSession unbound_started_attempt')
++              record = createReplanSessionState(intent, request.prompt, lease.token)
++              current.replanSessions = { ...(current.replanSessions ?? {}), [request.requestId]: record }
++              return { state: current }
++            })
++            launch = true
++          })
++          const transition = async (from, to, sessionId) => runtime.withWorkflowLock(workflowId, async () => {
++            await saveState(runtime, { root, id: workflowId }, lease, current => {
++              const fresh = currentBinding(current)
++              const currentRecord = current.replanSessions?.[request.requestId]
++              assertReplanSessionState(currentRecord, fresh, request.prompt)
++              if (currentRecord.leaseToken !== lease.token || currentRecord.phase !== from
++                || sessionId !== fresh.executionIdentity.sessionId) throw new Error('ReplanSession transition_binding_mismatch')
++              if (to === 'created') current.recoveryAdmission.budget = startRecoveryAttempt(current.recoveryAdmission.budget, {
++                ...replanBudgetBinding(workflowId, fresh),
++                executionRef: { id: sessionId, version: fresh.executionIdentity.promptId },
++              }).ledger
++              current.replanSessions[request.requestId] = { ...currentRecord, phase: to }
++              return { state: current }
++            })
++          })
++          const captureContexts = async messages => runtime.withWorkflowLock(workflowId, async () => {
++            const incoming = normalizeReplanContexts(messages)
++            await saveState(runtime, { root, id: workflowId }, lease, current => {
++              const fresh = currentBinding(current)
++              const currentRecord = current.replanSessions?.[request.requestId]
++              assertReplanSessionState(currentRecord, fresh, request.prompt)
++              if (currentRecord.leaseToken !== lease.token || !['created', 'submitted'].includes(currentRecord.phase)) {
++                throw new Error('ReplanSession context_binding_mismatch')
++              }
++              const contexts = [...currentRecord.contextMessages]
++              for (const message of incoming) {
++                const existing = contexts.find(item => item.id === message.id)
++                if (existing !== undefined && canonicalDigestValue(existing) !== canonicalDigestValue(message)) {
++                  throw new Error('ReplanSession context_rebound')
++                }
++                if (existing === undefined) contexts.push(message)
++              }
++              current.replanSessions[request.requestId] = { ...currentRecord, contextMessages: contexts }
++              return { state: current }
++            })
++          })
++          let executionError
++          if (launch) {
++            try {
++              const review = intent.operationKind === 'revision_review'
++              await runtime.runChild(agent, worktree, request.prompt.content, signal, {
++                role: review ? 'plan-reviewer' : 'planner', workflowRoot: root, workflowId,
++                rolePrompt: review ? '只读审查计划；通过 workflow_plan_review_submit 提交结构化结果。' : plannerRolePrompt(),
++                requirePlannerSubmission: !review, requirePlanReviewSubmission: review,
++                plannerRegistry: registry, plannerSubmissionLabel: 'Recovery Planner',
++                timeoutMs: resolvedConfig.planningChildTimeoutMs,
++                replanSession: {
++                  executionIdentity: intent.executionIdentity,
++                  created: sessionId => transition('creating', 'created', sessionId),
++                  submitted: sessionId => transition('created', 'submitted', sessionId),
++                  contexts: captureContexts,
++                },
++              })
++            } catch (error) { executionError = errorText(error) }
++          }
++          const latest = await readState(runtime, root, workflowId)
++          record = latest.replanSessions?.[request.requestId]
++          assertReplanSessionState(record, intent, request.prompt)
++          const observed = await inspectReplanSession({ persistence, intent, prompt: request.prompt, contextMessages: record.contextMessages, signal })
++          if (observed.outcome === 'paused') return result('paused', { ...observed, executionError })
++          await runtime.withWorkflowLock(workflowId, async () => {
++            await saveState(runtime, { root, id: workflowId }, lease, current => {
++              const fresh = currentBinding(current)
++              const currentRecord = current.replanSessions?.[request.requestId]
++              assertReplanSessionState(currentRecord, fresh, request.prompt)
++              if (canonicalDigestValue(currentRecord) !== canonicalDigestValue(record)) throw new Error('ReplanSession observation_state_changed')
++              const attempt = current.recoveryAdmission.budget.attempts.find(item => item.requestId === request.requestId)
++              if (attempt?.state === 'reserved') throw new Error('ReplanSession execution_receipt_missing')
++              if (observed.outcome === 'failed' || observed.outcome === 'cancelled') {
++                current.recoveryAdmission.budget = settleRecoveryAttempt(current.recoveryAdmission.budget, {
++                  ...replanBudgetBinding(workflowId, fresh), result: { status: observed.outcome,
++                    reference: { id: fresh.executionIdentity.promptId, version: fresh.executionIdentity.sessionId } },
++                }).ledger
++              } else if (attempt?.state !== 'running') throw new Error('ReplanSession submission_attempt_not_running')
++              current.replanSessions[request.requestId] = { ...currentRecord, phase: observed.phase }
++              return { state: current }
++            })
++          })
++          return result(observed.outcome, { ...observed, executionIdentity: intent.executionIdentity,
++            rootProblemId: intent.rootProblemId, attemptId: intent.attemptId, executionError })
++        })
++      } catch (error) {
++        if (signal?.aborted) throw error
++        return result('paused', { reason: errorText(error) })
++      }
+     },
+     // Explicit local adapter only.  It is intentionally not a runner/control
+     // route: callers name an already-reserved T-20 identity and this router
+--- owner-workflow-plugin/index.js (baseline)
++++ owner-workflow-plugin/index.js
+@@ -843,22 +843,40 @@
+   }
+ }
+
++export function plannerSubmitDefinition(runtime) {
++  return workflowToolDefinition(
++      'workflow_plan_submit',
++      '仅供当前规划子代理提交一次结构化 DSH_PLAN_V2；主会话、Owner 和 Reviewer 均不能调用。',
++      {
++        properties: {
++          plan: { type: 'object', description: '完整的 DSH_PLAN_V2 结构化对象。' },
++        },
++        required: ['plan'],
++      },
++      (args, agent) => runtime.submitPlannerPlan(agent, args.plan),
++    )
++}
++
++export function planReviewSubmitDefinition(runtime) {
++  return workflowToolDefinition(
++      'workflow_plan_review_submit',
++      '仅供当前计划审查子代理提交一次结构化 DSH_PLAN_REVIEW_V1；主会话、Planner、Owner 和其他 Reviewer 均不能调用。',
++      {
++        properties: {
++          review: {
++            ...PLAN_REVIEW_SUBMISSION_SCHEMA,
++          },
++        },
++        required: ['review'],
++      },
++      (args, agent) => runtime.submitPlanReview(agent, args.review),
++    )
++}
++
+ function workflowToolDefinitions(ctx, runtime) {
+   const workflowId = { workflow_id: { type: 'string', minLength: 1, description: '工作流编号；没有编号时必须省略该字段，不能传空字符串。' } }
+   return [
+-    workflowToolDefinition(
+-      'workflow_plan_review_submit',
+-      '仅供当前计划审查子代理提交一次结构化 DSH_PLAN_REVIEW_V1；主会话、Planner、Owner 和其他 Reviewer 均不能调用。',
+-      {
+-        properties: {
+-          review: {
+-            ...PLAN_REVIEW_SUBMISSION_SCHEMA,
+-          },
+-        },
+-        required: ['review'],
+-      },
+-      (args, agent) => runtime.submitPlanReview(agent, args.review),
+-    ),
++    planReviewSubmitDefinition(runtime),
+     workflowToolDefinition(
+       'workflow_obligation_decide',
+       '仅 Workflow 主编排会话可记录当前候选中 closeWhen.kind=decision_record 的指定决定。authority=user 时工具会显示原生“确认记录决定/取消”卡片；只有精确确认后才持久化 receipt。该工具不会关闭义务、伪造验证或激活计划，Reviewer/Planner/Owner 子代理均不能调用。',
+@@ -886,17 +904,7 @@
+         exec.signal,
+       ),
+     ),
+-    workflowToolDefinition(
+-      'workflow_plan_submit',
+-      '仅供当前规划子代理提交一次结构化 DSH_PLAN_V2；主会话、Owner 和 Reviewer 均不能调用。',
+-      {
+-        properties: {
+-          plan: { type: 'object', description: '完整的 DSH_PLAN_V2 结构化对象。' },
+-        },
+-        required: ['plan'],
+-      },
+-      (args, agent) => runtime.submitPlannerPlan(agent, args.plan),
+-    ),
++    plannerSubmitDefinition(runtime),
+     workflowToolDefinition(
+       'workflow_audit',
+       '只读审计当前项目；完成后显示原生“立即开始实施 / 仅保留计划 / 自定义意见”问询。只有用户选择立即实施，工具才自动执行 preflight 并创建可续接 Workflow。',
+--- /dev/null
++++ owner-workflow-plugin/test/replan-session.test.mjs
+@@ -0,0 +1,210 @@
++import assert from 'node:assert/strict'
++import test from 'node:test'
++import { writeFile } from 'node:fs/promises'
++import { plannerSubmitDefinition, planReviewSubmitDefinition } from '../index.js'
++import { inspectReplanSession } from '../src/replan-session.mjs'
++import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
++import {
++  createRecoverySessionFixture, reopenRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState, ownerFailureRequest, appendObservedPrompt,
++} from './fixtures/recovery-session-fixture.mjs'
++
++async function reserve(f, operationKind = 'revision_plan', ordinal = 1) {
++  const response = await f.runtime.reserveRecoveryAdmission(f.admissionAgent, f.workflowId, {
++    contract: 'DSH_REPLAN_ADMISSION_REQUEST_V1', origin: ownerFailureRequest(f),
++    operation: { operationKind, operationId: 'controlled-cycle:step', ordinal },
++  })
++  assert.equal(response.outcome, 'reserved', JSON.stringify(response))
++  return response
++}
++const request = receipt => ({
++  contract: 'DSH_REPLAN_SESSION_REQUEST_V1', requestId: receipt.requestId,
++  prompt: { id: receipt.executionIdentity.promptId, content: 'Read the plan and submit the requested structured result.' },
++})
++function register(f) {
++  f.ctx.tools.register(plannerSubmitDefinition(f.runtime))
++  f.ctx.tools.register(planReviewSubmitDefinition(f.runtime))
++}
++
++for (const review of [false, true]) test(`T15 actual ${review ? 'Review' : 'Planner'} reserved child produces a raw accepted receipt and replays without another model call`, { timeout: 30_000 }, async t => {
++  let payload
++  const f = await createRecoverySessionFixture(t, { executable: true, modelScript: m => [
++    () => m.toolCallResponse('actual-submit', review ? 'workflow_plan_review_submit' : 'workflow_plan_submit', { [review ? 'review' : 'plan']: payload }),
++    'hang-slow',
++  ] })
++  const before = await readRecoverySessionState(f)
++  payload = review
++    ? { contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: 'Controlled review.', issues: [] }
++    : { ...structuredClone(before.plan), owners: before.plan.owners.map(owner => ({ id: owner.id })) }
++  register(f)
++  const receipt = await reserve(f, review ? 'revision_review' : 'revision_plan')
++  const answer = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++  assert.equal(answer.outcome, 'submission_observed', JSON.stringify(answer))
++  assert.deepEqual(answer.payload, payload)
++  assert.equal(answer.receipt.callId, 'actual-submit')
++  assert.equal(answer.receipt.terminalKind, 'aborted')
++  const saved = await readRecoverySessionState(f)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(saved.recoveryAdmission.budget.attempts[0].state, 'running')
++  assert.equal(saved.replanSessions[receipt.requestId].phase, 'submission_observed')
++  const intent = saved.recoveryAdmission.intents[0]
++  assert.equal((await inspectReplanSession({ persistence: f.ctx.sessionPersistence, intent, prompt: request(receipt).prompt })).reason, 'extra_or_wrong_input')
++  assert.equal((await inspectReplanSession({ persistence: f.ctx.sessionPersistence, intent, prompt: request(receipt).prompt, contextMessages: saved.replanSessions[receipt.requestId].contextMessages })).outcome, 'submission_observed')
++  assert.deepEqual(saved.ownerRuns, before.ownerRuns)
++  assert.deepEqual(saved.plan, before.plan)
++  assert.equal(saved.pendingPlanRevision, undefined)
++  const raw = await f.readRaw(receipt.executionIdentity.sessionId)
++  assert.ok(raw.content.includes('actual-submit'))
++  const calls = f.adapter.requests.length
++  const reopened = createOwnerWorkflowRuntime(f.ctx, {})
++  await reopened.prepareRoot(f.root)
++  const replay = await reopened.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++  assert.equal(replay.outcome, 'submission_observed', JSON.stringify(replay))
++  assert.deepEqual(replay.receipt, answer.receipt)
++  assert.equal(f.adapter.requests.length, calls)
++  assert.deepEqual(await f.readRaw(receipt.executionIdentity.sessionId), raw)
++  const fresh = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
++  try {
++    const restarted = await fresh.runtime.reconcileReplanSession(fresh.admissionAgent, fresh.workflowId, request(receipt))
++    assert.equal(restarted.outcome, 'submission_observed', JSON.stringify(restarted))
++    assert.deepEqual(restarted.payload, payload)
++    assert.deepEqual(restarted.receipt, answer.receipt)
++    assert.equal(fresh.adapter.requests.length, 0)
++  } finally { await fresh.dispose() }
++})
++
++test('T15 a real completed child without a submission settles failed and permits one paid next ordinal', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, responses: ['No structured result.'] })
++  register(f)
++  const receipt = await reserve(f)
++  const answer = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++  assert.equal(answer.outcome, 'failed', JSON.stringify(answer))
++  const saved = await readRecoverySessionState(f)
++  assert.equal(saved.recoveryAdmission.budget.attempts[0].state, 'settled')
++  assert.equal(saved.recoveryAdmission.budget.attempts[0].result.status, 'failed')
++  const calls = f.adapter.requests.length
++  assert.equal((await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))).outcome, 'failed')
++  assert.equal(f.adapter.requests.length, calls)
++  const next = await reserve(f, 'revision_plan', 2)
++  assert.equal(next.rootProblemId, receipt.rootProblemId)
++  assert.notEqual(next.requestId, receipt.requestId)
++  assert.equal((await readRecoverySessionState(f)).recoveryAdmission.budget.totalUsed, 2)
++})
++
++test('T15 real multi-step Planner reads evidence before its accepted submission', { timeout: 30_000 }, async t => {
++  let payload
++  const f = await createRecoverySessionFixture(t, { executable: true, modelScript: m => [
++    m.toolCallResponse('inspect-evidence', 'replan_read_probe', {}),
++    () => m.toolCallResponse('multi-submit', 'workflow_plan_submit', { plan: payload }),
++    'hang-slow',
++  ] })
++  const initial = await readRecoverySessionState(f)
++  payload = { ...structuredClone(initial.plan), owners: initial.plan.owners.map(owner => ({ id: owner.id })) }
++  register(f)
++  f.ctx.tools.register({
++    name: 'replan_read_probe', description: 'Return controlled read-only evidence.',
++    parameters: { type: 'object', properties: {}, additionalProperties: false },
++    output: { schema: {}, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
++    async execute() { return { observed: true } },
++  })
++  const receipt = await reserve(f)
++  const answer = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++  assert.equal(answer.outcome, 'submission_observed', JSON.stringify(answer))
++  const events = (await f.readFrom(receipt.executionIdentity.sessionId)).events
++  assert.ok(events.filter(event => event.type === 'step/start').length >= 2)
++  assert.equal(answer.receipt.callId, 'multi-submit')
++  assert.equal((await readRecoverySessionState(f)).recoveryAdmission.budget.totalUsed, 1)
++})
++
++test('T15 an uncertain create after a real session creation never resends its prompt', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  register(f)
++  const receipt = await reserve(f)
++  const create = f.ctx.agents.create.bind(f.ctx.agents)
++  let creates = 0
++  f.ctx.agents.create = async (...args) => {
++    creates++
++    await create(...args)
++    throw new Error('Injected lost response after real create')
++  }
++  const first = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++  assert.equal(first.outcome, 'paused')
++  assert.equal(creates, 1)
++  assert.equal(f.adapter.requests.length, 0)
++  const before = await readRecoverySessionState(f)
++  assert.equal(before.replanSessions[receipt.requestId].phase, 'creating')
++  assert.equal(before.recoveryAdmission.budget.attempts[0].state, 'reserved')
++  f.ctx.agents.create = create
++  const reopened = createOwnerWorkflowRuntime(f.ctx, {})
++  await reopened.prepareRoot(f.root)
++  const second = await reopened.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++  assert.equal(second.outcome, 'paused')
++  assert.equal(f.adapter.requests.length, 0)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++})
++
++test('T15 wrong prompt and a source awaiting user decision cannot start a child', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  register(f)
++  const receipt = await reserve(f)
++  const before = await readRecoverySessionState(f)
++  const wrong = request(receipt); wrong.prompt.id = 'wrong-prompt'
++  assert.equal((await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, wrong)).outcome, 'paused')
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  await mutateRecoverySessionState(f, state => { state.tasks[0].action = 'await_user' })
++  const waiting = await readRecoverySessionState(f)
++  assert.equal((await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))).outcome, 'paused')
++  assert.deepEqual(await readRecoverySessionState(f), waiting)
++  assert.equal(f.adapter.requests.length, 0)
++})
++
++test('T15 replay rejects altered frozen input and execution receipt without a new call', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, responses: ['No submission.'] })
++  register(f)
++  const receipt = await reserve(f)
++  assert.equal((await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))).outcome, 'failed')
++  const calls = f.adapter.requests.length
++  const before = await readRecoverySessionState(f)
++  const changed = request(receipt); changed.prompt.content = 'Changed instructions.'
++  assert.equal((await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, changed)).outcome, 'paused')
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  await mutateRecoverySessionState(f, state => { state.recoveryAdmission.budget.attempts[0].executionRef.id = 'unrelated-session' })
++  const invalid = await readRecoverySessionState(f)
++  assert.equal((await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))).outcome, 'paused')
++  assert.deepEqual(await readRecoverySessionState(f), invalid)
++  assert.equal(f.adapter.requests.length, calls)
++})
++
++test('T15 a physically torn JSONL artifact pauses replay without changing the ledger or resending', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, responses: ['No submission.'] })
++  register(f)
++  const receipt = await reserve(f)
++  assert.equal((await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))).outcome, 'failed')
++  const before = await readRecoverySessionState(f)
++  const raw = await f.readRaw(receipt.executionIdentity.sessionId)
++  const location = f.ctx.sessionPersistence.locate(raw.meta)
++  assert.equal(typeof location.path, 'string')
++  const calls = f.adapter.requests.length
++  await writeFile(location.path, raw.content.slice(0, -1), 'utf8')
++  try {
++    const answer = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++    assert.equal(answer.outcome, 'paused')
++    assert.equal(answer.reason, 'read_failed')
++    assert.deepEqual(await readRecoverySessionState(f), before)
++    assert.equal(f.adapter.requests.length, calls)
++  } finally { await writeFile(location.path, raw.content, 'utf8') }
++})
++
++test('T15 a reserved identity with an existing real session cannot be treated as a fresh launch', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, responses: ['Existing session.'] })
++  const receipt = await reserve(f)
++  await appendObservedPrompt(f, receipt, request(receipt).prompt.content)
++  const before = await readRecoverySessionState(f)
++  const raw = await f.readRaw(receipt.executionIdentity.sessionId)
++  const calls = f.adapter.requests.length
++  const answer = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++  assert.equal(answer.outcome, 'paused')
++  assert.match(answer.reason, /reserved_session_already_exists/)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.deepEqual(await f.readRaw(receipt.executionIdentity.sessionId), raw)
++  assert.equal(f.adapter.requests.length, calls)
++})
+--- docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md
+@@ -122,7 +122,7 @@
+
+ ## T15 重规划执行身份的内部预留扩展（R57）
+
+-同一 `prepareRecoveryAdmission` / Runtime `reserveRecoveryAdmission` 持久当前状态事务也接受以下严格互斥请求。此内部接口只预留来源、预算和执行身份，仍返回 `launchAuthorized:false`；未连接实际Planner/Review/consultation/handoff子会话，不提供新的公开工具。
++同一 `prepareRecoveryAdmission` / Runtime `reserveRecoveryAdmission` 持久当前状态事务也接受以下严格互斥请求。此内部接口只预留来源、预算和执行身份，仍返回 `launchAuthorized:false`；R58增加内部Planner/Review会话对账适配器（见replan-session-v1.md），实际cycle/handoff/consultation入口仍未接线，不提供新的公开工具。
+
+ ```js
+ {
+@@ -142,4 +142,4 @@
+
+ operation intent精确保存旧公共字段 `intentKey/sourceId/strategy/planDigest/rootProblemId/requestId/attemptId/executionIdentity`，以 `executionKind=replan_operation/operationKind/operationId/ordinal` 替代 `taskId/ownerId`。source保留真实Owner/义务身份；不得把来源Owner解释成Planner执行Owner。intentKey由sourceId和完整operation确定，不随策略切换另开同一步骤。首次ordinal为1；重放复用同一request/attempt/session/prompt。下一ordinal必须连续且前项已failed结算，结果引用须为 `{id:promptId,version:sessionId}`，若有执行引用则须为 `{id:sessionId,version:promptId}`；reserved/running/成功/取消及错误回执不能创建下一次物理重试。
+
+-导入mixed intents逐项比对source、root、完整执行绑定和账本，校验ordinal连续与前项失败，缺intent不能隐藏operation用量。Owner continuation仍只引用实际Owner intent，不把Planner失败伪装成Owner新执行。Owner专属 `reconcileRecoverySession` 明确拒绝operation身份；通用Planner启动/结果对账待T15后续接线。旧reader若不支持mixed intent必须拒绝，不删字段降级。
++导入mixed intents逐项比对source、root、完整执行绑定和账本，校验ordinal连续与前项失败，缺intent不能隐藏operation用量。Owner continuation仍只引用实际Owner intent，不把Planner失败伪装成Owner新执行。Owner专属 `reconcileRecoverySession` 明确拒绝operation身份；通用Planner启动及原始提交对账见R58 replan-session-v1.md；实际触发和结果语义应用仍待T15后续接线。旧reader若不支持mixed intent必须拒绝，不删字段降级。
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/replan-session-v1.md
+@@ -0,0 +1,37 @@
++# 重规划会话适配合同 V1（R58）
++
++本合同是T15内部适配器，不是公开Runner工具，不证明三个实际重规划入口或整个T15已完成。它消费R57持久预留的replan_operation，复用真实Harness子代理、JSONL持久后端及Planner/Review提交工具。
++
++## 请求与持久身份
++
++`reconcileReplanSession(agent, workflowId, request, signal)` 接受精确形状：
++
++```js
++{
++  contract: 'DSH_REPLAN_SESSION_REQUEST_V1',
++  requestId: 'reserved-request-id',
++  prompt: { id: 'reserved-prompt-id', content: 'immutable-prompt' },
++}
++```
++
++调用前必须已有正确来源、批准依据、当前计划版本及预算预留；适配器再次检查这些条件。只接受真实JsonlSessionPersistence、supportsRawArtifacts=true、compression=none。持久session/prompt身份不由调用者重新生成。
++
++状态保存在workflow.replanSessions[requestId]，合同DSH_REPLAN_SESSION_STATE_V1，绑定sourceId/rootProblemId/requestId/attemptId/planDigest/operationKind/operationId/ordinal/executionIdentity/prompt，另含leaseToken、phase及contextMessages。使用独立workflow规划资源租约与现有持久状态写锁，不制造Planner Owner运行记录，不占用独立Owner的资源租约。
++
++首次调用核对预留身份不存在原始会话或快照，先持久creating，再调用真实provider创建。实际created回调才记录T13 running及执行引用{id:sessionId,version:promptId}；followup与flush后持久submitted。既有状态仅对账，从不重新创建/发送。creating之后响应丢失、日志缺失或无法判断执行进展均暂停；不退款、不猜测未执行、不自动补发。已存在但没有本适配器绑定的会话也拒绝启动。
++
++## 实际输入与提交证据
++
++provider在实际pre-step边界、模型执行之前持久固定系统提示插件注入的上下文快照或clear消息。仅接纳精确形状和固定插件来源，按消息ID绑定完整内容；同ID不可变更。这些输入必须与原始日志逐字结构匹配，不能仅凭日志中的插件名称放行额外用户输入。请求prompt必须唯一且内容相同。
++
++读取器复用恢复会话的原始JSONL完整性、连续事件与稳定revision核对；允许同一turn多个模型step，每步须有匹配assistant和step/end。仅明确completed或aborted终态可判定。预期提交工具为workflow_plan_submit，revision_review改用workflow_plan_review_submit。严格关联tool/call、tool/result、turn、step、callId、sourceEventSeqs、accepted=true及提交结果合同，再从原始call参数提取plan/review；缺失、错配或多份成功提交均暂停。
++
++真实submit返回后，submissionReady可能先结束runChild，dispose取消尚未结束的模型turn。因此已成功tool receipt加aborted终态可以证明提交已观察到；内存submissionReady、裸completed或裸aborted均不能替代该证据。最终flush在子代理工具与终态完成后进行。
++
++## 结果与结算边界
++
++结果合同DSH_REPLAN_SESSION_RESULT_V1。submission_observed附payload和receipt（toolName/callId/callSeq/resultSeq/payloadDigest/terminalSeq/terminalKind/revision），状态phase=submission_observed，T13仍running。它不证明语义正确、候选被采纳、DAG已应用或根问题关闭。
++
++完整终态且无成功提交时，completed结算failed，aborted结算cancelled，结果引用{id:promptId,version:sessionId}。仅符合R57规则的failed前项允许下一ordinal；未知、取消及尚待语义应用的提交不自动重试。异常或无法确认的原始证据返回paused，不伪造结果，不增加新物理调用。重放仍核对最新来源、身份、账本及完整原始日志。
++
++实际cycle/handoff触发快照、咨询调用计费、候选语义验证和输出应用尚需后续接线。新进程/控制器SIGKILL后的完整结果fencing不是本轮已证明能力；本轮新Harness上下文重开验证不得表述为SIGKILL恢复验收。

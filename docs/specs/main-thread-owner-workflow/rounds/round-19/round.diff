@@ -1,0 +1,12 @@
+--- owner-workflow-plugin/test/resilience.test.mjs (baseline)
++++ owner-workflow-plugin/test/resilience.test.mjs
+@@ -1529,6 +1529,9 @@
+     })}\n`, 'utf8')
+
+     const approval = runtime.approveOwnerChange(workflow.agent, state.id, proposal.digest)
++    // Fault setup awaits can outlive the expected rejection. Observe it now;
++    // assert.rejects below still validates the original promise and error.
++    void approval.catch(() => {})
+     await waitForPath(`${stateFile}.write-lock`, 'workflow state CAS 锁')
+     await rename(stateFile, displacedStateFile)
+     await mkdir(stateFile)

@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-11T15:00:18.458353+00:00",
+  "formalCounts": {
+    "tests": 343,
+    "pass": 322,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 21,
+    "todo": 0
+  },
+  "candidateDrift": [],
+  "reviewFindings": [],
+  "ticketStatus": "T15_developing",
+  "remaining": [
+    "Actual candidate arbitration Owner consultation producer and semantic adoption",
+    "Atomic successful budget settlement",
+    "Paid arbitration Review",
+    "T18 candidate activation and inheritance"
+  ],
+  "committed": false,
+  "pushed": false
+}

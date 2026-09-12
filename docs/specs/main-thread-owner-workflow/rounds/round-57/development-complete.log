@@ -1,0 +1,94 @@
+TAP version 13
+# Subtest: T15 replan admission can originate at first free Owner failure and share its root with an Owner retry
+ok 1 - T15 replan admission can originate at first free Owner failure and share its root with an Owner retry
+  ---
+  duration_ms: 687.747083
+  type: 'test'
+  ...
+# Subtest: T15 replan restart replays reserved call; next ordinal requires a failed matching receipt
+ok 2 - T15 replan restart replays reserved call; next ordinal requires a failed matching receipt
+  ---
+  duration_ms: 849.663334
+  type: 'test'
+  ...
+# Subtest: T15 plan/review/handoff operations cannot reset the source budget by changing step identity
+ok 3 - T15 plan/review/handoff operations cannot reset the source budget by changing step identity
+  ---
+  duration_ms: 998.203
+  type: 'test'
+  ...
+# Subtest: T15 replan operation rejects skipped ordinals and forged envelope/source fields before saving
+ok 4 - T15 replan operation rejects skipped ordinals and forged envelope/source fields before saving
+  ---
+  duration_ms: 900.469625
+  type: 'test'
+  ...
+# Subtest: T15 mixed admission rejects operation/ledger identity corruption and missing intents
+ok 5 - T15 mixed admission rejects operation/ledger identity corruption and missing intents
+  ---
+  duration_ms: 775.514792
+  type: 'test'
+  ...
+# Subtest: T15 succeeded operation does not authorize the next physical retry
+ok 6 - T15 succeeded operation does not authorize the next physical retry
+  ---
+  duration_ms: 420.322125
+  type: 'test'
+  ...
+# Subtest: T15 cancelled operation does not authorize the next physical retry
+ok 7 - T15 cancelled operation does not authorize the next physical retry
+  ---
+  duration_ms: 366.637958
+  type: 'test'
+  ...
+# Subtest: T15 operation admission retains live-source and user-decision gates
+ok 8 - T15 operation admission retains live-source and user-decision gates
+  ---
+  duration_ms: 349.269209
+  type: 'test'
+  ...
+# Subtest: T15 separate processes replay the same operation reservation without double debit
+ok 9 - T15 separate processes replay the same operation reservation without double debit
+  ---
+  duration_ms: 545.229667
+  type: 'test'
+  ...
+# Subtest: T15 separate Owner/replan reservations compete for one shared last Workflow credit
+ok 10 - T15 separate Owner/replan reservations compete for one shared last Workflow credit
+  ---
+  duration_ms: 552.466334
+  type: 'test'
+  ...
+# Subtest: T15 an operation intent cannot enter the Owner-only session driver
+ok 11 - T15 an operation intent cannot enter the Owner-only session driver
+  ---
+  duration_ms: 293.643584
+  type: 'test'
+  ...
+# Subtest: T15 replan after a paid Owner failure inherits the admitted predecessor root
+ok 12 - T15 replan after a paid Owner failure inherits the admitted predecessor root
+  ---
+  duration_ms: 295.726458
+  type: 'test'
+  ...
+# Subtest: T15 replan accepts a live technical obligation but cannot charge a user decision
+ok 13 - T15 replan accepts a live technical obligation but cannot charge a user decision
+  ---
+  duration_ms: 298.868083
+  type: 'test'
+  ...
+# Subtest: T15 a running or mismatched failed operation receipt cannot authorize a new ordinal
+ok 14 - T15 a running or mismatched failed operation receipt cannot authorize a new ordinal
+  ---
+  duration_ms: 352.941666
+  type: 'test'
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8082.875334

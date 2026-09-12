@@ -1,0 +1,212 @@
+[
+  {
+    "suite": "control",
+    "title": "旧版 Owner 持久子线程兼容测试（已由按任务回收模型替代）",
+    "sourceLine": 3335,
+    "rawLogLine": "﹣ 旧版 Owner 持久子线程兼容测试（已由按任务回收模型替代） (0.097709ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "control",
+    "title": "旧版 Owner Shell 白名单测试（已由 worktree 与提交关卡替代）",
+    "sourceLine": 3450,
+    "rawLogLine": "﹣ 旧版 Owner Shell 白名单测试（已由 worktree 与提交关卡替代） (0.026292ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "control",
+    "title": "旧版 Owner 逐写入包装测试（已由提交关卡替代）",
+    "sourceLine": 3484,
+    "rawLogLine": "﹣ 旧版 Owner 逐写入包装测试（已由提交关卡替代） (0.017958ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "control",
+    "title": "旧版 owner_bash 快照测试（正式验证现在由 owner_submit 自动执行）",
+    "sourceLine": 3522,
+    "rawLogLine": "﹣ 旧版 owner_bash 快照测试（正式验证现在由 owner_submit 自动执行） (0.0145ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "control",
+    "title": "旧版多轮修复提示测试（现在由 owner_submit 在同一子线程返回错误）",
+    "sourceLine": 3562,
+    "rawLogLine": "﹣ 旧版多轮修复提示测试（现在由 owner_submit 在同一子线程返回错误） (0.014833ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "control",
+    "title": "旧版 Owner 结果文本结算测试（受保护路径由 owner_submit 提交关卡覆盖）",
+    "sourceLine": 3632,
+    "rawLogLine": "﹣ 旧版 Owner 结果文本结算测试（受保护路径由 owner_submit 提交关卡覆盖） (0.0565ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "control",
+    "title": "旧版次数驱动 continuable Planner mock（已由证据租约、Arbiter 与完整 Workflow 集成测试替代）",
+    "sourceLine": 5359,
+    "rawLogLine": "﹣ 旧版次数驱动 continuable Planner mock（已由证据租约、Arbiter 与完整 Workflow 集成测试替代） (0.044916ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "旧次数Planner协议；当前分类/反馈由R08/R09/R10实际入口覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版普通文本 Owner 结果状态漂移测试（owner_submit 已在子线程内固定结果）",
+    "sourceLine": 893,
+    "rawLogLine": "﹣ 旧版普通文本 Owner 结果状态漂移测试（owner_submit 已在子线程内固定结果） (0.088042ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 手工验证缺失测试（owner_submit 现在自动执行固定验证）",
+    "sourceLine": 1067,
+    "rawLogLine": "﹣ 旧版 Owner 手工验证缺失测试（owner_submit 现在自动执行固定验证） (0.094666ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 owner_write 写入代次测试（已由 contentDigest 提交关卡替代）",
+    "sourceLine": 1118,
+    "rawLogLine": "﹣ 旧版 owner_write 写入代次测试（已由 contentDigest 提交关卡替代） (0.026917ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 owner_edit 写入代次测试（已由 contentDigest 提交关卡替代）",
+    "sourceLine": 1191,
+    "rawLogLine": "﹣ 旧版 owner_edit 写入代次测试（已由 contentDigest 提交关卡替代） (0.018625ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 owner_write 相同内容代次测试（逐写入包装已移除）",
+    "sourceLine": 1228,
+    "rawLogLine": "﹣ 旧版 owner_write 相同内容代次测试（逐写入包装已移除） (0.027166ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 逐写入范围测试（worktree 沙箱与提交关卡已有替代测试）",
+    "sourceLine": 1366,
+    "rawLogLine": "﹣ 旧版 Owner 逐写入范围测试（worktree 沙箱与提交关卡已有替代测试） (0.151458ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 写入包装链接测试（最终提交关卡覆盖受保护现场）",
+    "sourceLine": 1440,
+    "rawLogLine": "﹣ 旧版 Owner 写入包装链接测试（最终提交关卡覆盖受保护现场） (0.104083ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 写入包装长期记忆测试（最终提交关卡覆盖）",
+    "sourceLine": 1476,
+    "rawLogLine": "﹣ 旧版 Owner 写入包装长期记忆测试（最终提交关卡覆盖） (0.066458ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 写入包装 Registry 测试（最终提交关卡覆盖）",
+    "sourceLine": 1496,
+    "rawLogLine": "﹣ 旧版 Owner 写入包装 Registry 测试（最终提交关卡覆盖） (0.027167ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 写入包装大小写路径测试（最终提交关卡覆盖）",
+    "sourceLine": 1522,
+    "rawLogLine": "﹣ 旧版 Owner 写入包装大小写路径测试（最终提交关卡覆盖） (0.053458ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner Shell 命令白名单测试（Owner 现在使用正常 Harness Shell）",
+    "sourceLine": 1662,
+    "rawLogLine": "﹣ 旧版 Owner Shell 命令白名单测试（Owner 现在使用正常 Harness Shell） (0.094208ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 owner_bash 沙箱测试（固定验证仍保留快照证据）",
+    "sourceLine": 1720,
+    "rawLogLine": "﹣ 旧版 owner_bash 沙箱测试（固定验证仍保留快照证据） (0.023667ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版 owner_bash 副本测试（Owner 本身已位于隔离 worktree）",
+    "sourceLine": 1743,
+    "rawLogLine": "﹣ 旧版 owner_bash 副本测试（Owner 本身已位于隔离 worktree） (0.017834ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  },
+  {
+    "suite": "security",
+    "title": "旧版逐写入操作日志测试（现在记录最终功能摘要和真实 diff）",
+    "sourceLine": 1783,
+    "rawLogLine": "﹣ 旧版逐写入操作日志测试（现在记录最终功能摘要和真实 diff） (0.018292ms) # SKIP",
+    "explicitSkip": true,
+    "t04Required": false,
+    "reason": "已替代的Owner会话/逐写入包装/旧结算协议；不属于当前结构化分类入口，现有审批与提交门禁由实际执行回归覆盖",
+    "formalRound": 11
+  }
+]

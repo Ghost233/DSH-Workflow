@@ -8,18 +8,28 @@ import { fileURLToPath } from 'node:url'
 import { pathToFileURL } from 'node:url'
 import { isAbsolute, resolve, join, dirname } from 'node:path'
 import { startDashboard } from './dashboard.mjs'
+import { OWNER_RUNTIME_DIRECTORY, ensureRuntimeGitignore } from './project-layout.mjs'
+import { deriveWorkflowControl } from './workflow-state.mjs'
 
 const CONTROL_CONTRACT = 'DSH_WORKFLOW_CONTROL_V1'
+const RUNNER_ENTRY_PATH = fileURLToPath(import.meta.url)
+const RUNNER_SOURCE_DIGEST = createHash('sha256').update(await readFile(RUNNER_ENTRY_PATH)).digest('hex')
 const DEFAULT_PARALLEL = 4
 const MAX_PARALLEL = 8
 const DEFAULT_TIMEOUT_MS = 4 * 60 * 60 * 1000
 const DEFAULT_EVENT_WAIT_MS = 30_000
 const DEFAULT_DAEMON_POLL_MS = 1000
+const PLANNING_RECOVERY_DELAY_MS = 30_000
+const PLANNING_REVIEW_STALE_MS = 5 * 60_000
+const PLAN_REVISION_CONTROL_TIMEOUT_MS = 12 * 60_000
 const MIN_DAEMON_POLL_MS = 200
 const MAX_DAEMON_POLL_MS = 10_000
 const RUNNER_DAEMON_CONTRACT = 'DSH_WORKFLOW_RUNNER_DAEMON_V1'
+const RUNNER_ATTEMPT_CONTRACT = 'DSH_WORKFLOW_RUNNER_ATTEMPT_V1'
+const RUNNER_ATTEMPT_RETENTION = 100
 const WORKSPACE_CATALOG_CONTRACT = 'DSH_DASHBOARD_WORKSPACES_V1'
 const SUPERVISOR_CONTROL_ACTIONS = new Set([
+  'workflow-drive',
   'supervisor-start',
   'supervisor-next',
   'supervisor-ack',
@@ -29,7 +39,7 @@ const SUPERVISOR_CONTROL_ACTIONS = new Set([
   'supervisor-recover',
   'supervisor-await-event',
   'supervisor-outbox-next',
-  'supervisor-outbox-ack',
+  'supervisor-outbox-deliver',
 ])
 const PRESET_ID = 'owner-workflow'
 const PRESET_SOURCE = fileURLToPath(new URL('../agent-presets/owner-workflow/', import.meta.url))
@@ -47,12 +57,12 @@ function printHelp() {
     '说明：',
     '  这个脚本必须在已经启动 Owner 工作流插件的 Harness 进程之外执行。',
     '  它只执行控制桥返回的 Supervisor 动作，不读取计划或自行选择任务。',
-    '  daemon 只发现已批准或可恢复的 Workflow，并为其启动上述确定性 runner；它不调用模型。',
+    '  daemon 用唯一状态决策表扫描所有非终态 Workflow：执行任务时启动确定性 runner，其余状态统一发送 workflow-drive；脚本不读取计划语义或自行调用模型。',
     '',
     '选项：',
     '  --workflow-id <id>  要执行的工作流编号，必填。',
     '  --root <path>       项目根目录，默认使用当前目录。',
-    '  --daemon            监视已登记工作区，自动接管已批准或运行中的 Workflow。',
+    '  --daemon            监视已登记工作区，自动恢复卡住的计划审查并接管已批准或运行中的 Workflow。',
     '  --catalog-root <path> daemon 使用的工作区目录表根目录。',
     '  --poll-ms <ms>      daemon 扫描与心跳间隔，默认 1000 毫秒。',
     '  --dashboard          只启动本机只读 Dashboard，不读取或解释计划。',
@@ -288,6 +298,8 @@ async function selfCheck() {
   await verifyPresetSource(PRESET_SOURCE)
   return {
     runner: 'dsh-owner-workflow',
+    runnerEntryPath: RUNNER_ENTRY_PATH,
+    runnerSourceDigest: RUNNER_SOURCE_DIGEST,
     presetId: PRESET_ID,
     presetSource: PRESET_SOURCE,
     pluginEntry: PLUGIN_ENTRY,
@@ -308,7 +320,7 @@ function describeError(error) {
   return error instanceof Error ? error.message : String(error)
 }
 
-function sendControlRequest(manifest, workflowId, action, payload, timeoutMs) {
+function sendControlRequest(manifest, workflowId, action, payload, timeoutMs, signal) {
   if (!SUPERVISOR_CONTROL_ACTIONS.has(action)) throw new Error(`runner 控制动作不受支持：${action}`)
   const id = randomUUID()
   return new Promise((resolveResponse, rejectResponse) => {
@@ -324,7 +336,20 @@ function sendControlRequest(manifest, workflowId, action, payload, timeoutMs) {
     const timeout = setTimeout(() => {
       finish(rejectResponse, new Error(`控制请求 ${action} 超时；主 Harness 可能仍在执行，请先查询 status`))
     }, timeoutMs)
-    const clear = () => clearTimeout(timeout)
+    const clear = () => {
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', onAbort)
+    }
+    const onAbort = () => {
+      clear()
+      finish(rejectResponse, new Error(`控制请求 ${action} 已随 Runner 停止`))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted) {
+      clear()
+      finish(rejectResponse, new Error(`控制请求 ${action} 已随 Runner 停止`))
+      return
+    }
     socket.setEncoding('utf8')
     socket.on('connect', () => {
       socket.write(`${JSON.stringify({
@@ -385,7 +410,7 @@ function actionIdOf(receipt) {
 }
 
 function runnerDaemonDirectory(catalogRoot) {
-  return join(resolve(catalogRoot), '.dsh-workflow', 'runner')
+  return join(resolve(catalogRoot), OWNER_RUNTIME_DIRECTORY, 'runner')
 }
 
 function runnerDaemonStatePath(catalogRoot) {
@@ -396,8 +421,20 @@ function runnerDaemonLockDirectory(catalogRoot) {
   return join(runnerDaemonDirectory(catalogRoot), 'daemon.lock')
 }
 
+function runnerAttemptDirectory(catalogRoot, workflow) {
+  return join(
+    runnerDaemonDirectory(catalogRoot),
+    'attempts',
+    `${workspaceId(workflow.root)}--${validateWorkflowId(workflow.workflowId)}`,
+  )
+}
+
+function runnerAttemptPath(catalogRoot, workflow, attemptId) {
+  return join(runnerAttemptDirectory(catalogRoot, workflow), `${attemptId}.json`)
+}
+
 function workspaceCatalogPath(catalogRoot) {
-  return join(resolve(catalogRoot), '.dsh-workflow', 'dashboard', 'workspaces.json')
+  return join(resolve(catalogRoot), OWNER_RUNTIME_DIRECTORY, 'dashboard', 'workspaces.json')
 }
 
 function workspaceId(root) {
@@ -425,6 +462,110 @@ async function writeJsonAtomic(path, value) {
   }
 }
 
+function classifyRunnerFailure(error) {
+  const message = describeError(error)
+  if (/max[-_ ]?tokens|token budget|budget exhausted|context length|上下文.*上限|预算耗尽|额度耗尽/iu.test(message)) return 'provider_budget_exhausted'
+  if (/超时|timeout|timed out|Runner 停止/iu.test(message)) return 'timeout'
+  if (/认证|auth|unauthorized|forbidden|credential|api key/iu.test(message)) return 'provider_auth'
+  if (/限流|rate.?limit|too many requests|\b429\b/iu.test(message)) return 'provider_rate_limited'
+  if (/契约|contract|scope|范围|digest|摘要|不匹配|必须是数组|不受支持/iu.test(message)) return 'validation'
+  if (/控制桥|socket|ECONNREFUSED|ENOENT|EPIPE|lease|租约|令牌|token/iu.test(message)) return 'runtime_unavailable'
+  return 'runner_error'
+}
+
+function runnerRetryDelayMs(failureClass, pollMs, consecutiveFailures = 1) {
+  const exponent = Math.min(6, Math.max(0, consecutiveFailures - 1))
+  const base = failureClass === 'provider_auth' || failureClass === 'validation'
+    ? 60_000
+    : failureClass === 'provider_rate_limited' || failureClass === 'provider_budget_exhausted' || failureClass === 'timeout'
+      ? 30_000
+      : Math.max(10_000, pollMs * 10)
+  const cap = failureClass === 'provider_auth' || failureClass === 'validation'
+    ? 30 * 60_000
+    : 15 * 60_000
+  return Math.min(cap, base * (2 ** exponent))
+}
+
+async function pruneRunnerAttempts(attempt) {
+  const directory = dirname(attempt.path)
+  const entries = (await readdir(directory, { withFileTypes: true }))
+    .filter(entry => entry.isFile() && entry.name.endsWith('.json'))
+  if (entries.length <= RUNNER_ATTEMPT_RETENTION) return
+  const records = await Promise.all(entries.map(async entry => ({
+    path: join(directory, entry.name),
+    modifiedAt: (await stat(join(directory, entry.name))).mtimeMs,
+  })))
+  records.sort((left, right) => right.modifiedAt - left.modifiedAt)
+  await Promise.all(records.slice(RUNNER_ATTEMPT_RETENTION).map(record => rm(record.path, { force: true })))
+}
+
+async function beginRunnerAttempt(catalogRoot, workflow, lease, kind, timeoutMs) {
+  const startedAt = new Date().toISOString()
+  const attempt = {
+    contract: RUNNER_ATTEMPT_CONTRACT,
+    attemptId: randomUUID(),
+    fenceToken: lease.lease.token,
+    fenceGeneration: lease.lease.generation,
+    runnerPid: process.pid,
+    workspaceId: workspaceId(workflow.root),
+    workflowId: workflow.workflowId,
+    kind,
+    status: 'running',
+    reason: workflow.recoveryReason ?? null,
+    startedAt,
+    deadlineAt: new Date(Date.parse(startedAt) + timeoutMs).toISOString(),
+    updatedAt: startedAt,
+  }
+  attempt.path = runnerAttemptPath(catalogRoot, workflow, attempt.attemptId)
+  await writeJsonAtomic(attempt.path, { ...attempt, path: undefined })
+  return attempt
+}
+
+async function settleRunnerAttempt(attempt, status, details = {}) {
+  if (attempt.status !== 'running') return attempt
+  const finishedAt = new Date().toISOString()
+  Object.assign(attempt, details, { status, finishedAt, updatedAt: finishedAt })
+  await writeJsonAtomic(attempt.path, { ...attempt, path: undefined })
+  await pruneRunnerAttempts(attempt)
+  return attempt
+}
+
+async function reconcileInterruptedAttempts(catalogRoot, lease) {
+  const root = join(runnerDaemonDirectory(catalogRoot), 'attempts')
+  let directories
+  try {
+    directories = await readdir(root, { withFileTypes: true })
+  } catch (error) {
+    if (error?.code === 'ENOENT') return []
+    throw error
+  }
+  const reconciled = []
+  for (const directory of directories) {
+    if (!directory.isDirectory()) continue
+    const path = join(root, directory.name)
+    for (const entry of await readdir(path, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue
+      const attemptPath = join(path, entry.name)
+      const attempt = await readJson(attemptPath, 'Runner attempt').catch(() => undefined)
+      if (attempt?.contract !== RUNNER_ATTEMPT_CONTRACT || attempt.status !== 'running') continue
+      const finishedAt = new Date().toISOString()
+      const reconciledAttempt = {
+        ...attempt,
+        status: 'interrupted',
+        failureClass: 'runner_restarted',
+        error: '此前 Runner 已停止；新 Leader 将从 Workflow 持久状态重新发现并执行',
+        supersededByFenceToken: lease.lease.token,
+        supersededByFenceGeneration: lease.lease.generation,
+        finishedAt,
+        updatedAt: finishedAt,
+      }
+      await writeJsonAtomic(attemptPath, reconciledAttempt)
+      reconciled.push(reconciledAttempt)
+    }
+  }
+  return reconciled
+}
+
 async function readDaemonWorkspaces(catalogRoot) {
   const catalog = resolve(catalogRoot)
   let records = []
@@ -447,7 +588,7 @@ async function readDaemonWorkspaces(catalogRoot) {
 async function discoverRunnableWorkflows(catalogRoot) {
   const discovered = []
   for (const root of await readDaemonWorkspaces(catalogRoot)) {
-    const directory = join(root, '.dsh-workflow', 'workflows')
+    const directory = join(root, OWNER_RUNTIME_DIRECTORY, 'workflows')
     let entries
     try {
       entries = await readdir(directory, { withFileTypes: true })
@@ -462,27 +603,69 @@ async function discoverRunnableWorkflows(catalogRoot) {
         validateWorkflowId(workflowId)
         const state = await readJson(join(directory, entry.name), `Workflow ${workflowId}`)
         if (state?.id !== workflowId || resolve(state?.root ?? '') !== root) continue
-        if (!['approved', 'running'].includes(state.status)) continue
-        discovered.push({ root, workflowId, status: state.status })
-      } catch {
-        // 单个损坏或不属于该工作区的状态不能阻断其他 Workflow。
+        const control = deriveWorkflowControl(state, {
+          planningRecoveryDelayMs: PLANNING_RECOVERY_DELAY_MS,
+          planningReviewStaleMs: PLANNING_REVIEW_STALE_MS,
+        })
+        if (control.command === null) continue
+        discovered.push({
+          root,
+          workflowId,
+          status: state.status,
+          mode: control.command === 'execute' ? 'execute' : 'workflow-drive',
+          command: control.command,
+          phase: control.phase,
+          recoveryReason: control.phase,
+        })
+      } catch (error) {
+        discovered.push({
+          root,
+          workflowId,
+          status: 'unreadable',
+          mode: 'state-error',
+          error: describeError(error),
+        })
       }
     }
   }
   return discovered
 }
 
+async function requestWorkflowDrive(workflow, timeoutMs, signal) {
+  const manifestPath = join(workflow.root, OWNER_RUNTIME_DIRECTORY, 'control', `${workflow.workflowId}.json`)
+  const manifest = await readJson(manifestPath, `工作流 ${workflow.workflowId} 控制清单`)
+  if (manifest.contract !== CONTROL_CONTRACT) throw new Error(`控制清单契约不受支持：${manifest.contract ?? '未提供'}`)
+  if (manifest.workflowId !== workflow.workflowId) throw new Error('控制清单与 workflow id 不一致')
+  if (!isAbsolute(manifest.socketPath)) throw new Error('控制清单中的 socket 路径必须是绝对路径')
+  return sendControlRequest(
+    manifest,
+    workflow.workflowId,
+    'workflow-drive',
+    { expectedCommand: workflow.command, reason: workflow.recoveryReason },
+    Math.min(timeoutMs, PLAN_REVISION_CONTROL_TIMEOUT_MS),
+    signal,
+  )
+}
+
 async function acquireDaemonLease(catalogRoot, pollMs) {
   const directory = runnerDaemonLockDirectory(catalogRoot)
   const leasePath = join(directory, 'lease.json')
+  await ensureRuntimeGitignore(join(resolve(catalogRoot), OWNER_RUNTIME_DIRECTORY))
   await mkdir(dirname(directory), { recursive: true })
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       await mkdir(directory)
+      const previousState = await readJson(runnerDaemonStatePath(catalogRoot), 'Runner daemon state').catch(() => undefined)
+      const previousGeneration = Number(previousState?.generation)
       const lease = {
         contract: RUNNER_DAEMON_CONTRACT,
         token: randomUUID(),
+        generation: Number.isSafeInteger(previousGeneration) && previousGeneration >= 0
+          ? previousGeneration + 1
+          : 1,
         pid: process.pid,
+        entryPath: RUNNER_ENTRY_PATH,
+        sourceDigest: RUNNER_SOURCE_DIGEST,
         startedAt: new Date().toISOString(),
         heartbeatAt: new Date().toISOString(),
       }
@@ -493,11 +676,25 @@ async function acquireDaemonLease(catalogRoot, pollMs) {
       const current = await readJson(leasePath, 'Runner daemon lease').catch(() => undefined)
       const heartbeat = Date.parse(current?.heartbeatAt ?? '')
       const fresh = Number.isFinite(heartbeat) && Date.now() - heartbeat <= Math.max(10_000, pollMs * 5)
-      if (fresh && processIsAlive(current?.pid)) return { owned: false, current }
+      if (processIsAlive(current?.pid)) return { owned: false, current }
+      if (current === undefined) {
+        const directoryState = await stat(directory).catch(() => undefined)
+        if (directoryState !== undefined && Date.now() - directoryState.mtimeMs <= Math.max(10_000, pollMs * 5)) {
+          return { owned: false, current: { status: 'initializing', fresh } }
+        }
+      }
       await rm(directory, { recursive: true, force: true })
     }
   }
   throw new Error('无法取得 Runner daemon lease')
+}
+
+async function assertDaemonLease(lease) {
+  if (lease?.owned !== true) throw new Error('Runner daemon 未持有 Leader lease')
+  const current = await readJson(lease.leasePath, 'Runner daemon lease')
+  if (current?.token !== lease.lease.token || current?.generation !== lease.lease.generation) {
+    throw new Error('Runner daemon fencing token 已失效，拒绝继续推进 Workflow')
+  }
 }
 
 async function releaseDaemonLease(lease) {
@@ -534,9 +731,11 @@ async function runDaemon(options) {
   process.once('SIGTERM', stop)
   const active = new Map()
   const retryAfter = new Map()
+  const failureStreaks = new Map()
   const outcomes = new Map()
   const statePath = runnerDaemonStatePath(catalogRoot)
   const publish = async status => {
+    await assertDaemonLease(lease)
     const timestamp = new Date().toISOString()
     lease.lease.heartbeatAt = timestamp
     await writeJsonAtomic(lease.leasePath, lease.lease)
@@ -544,20 +743,40 @@ async function runDaemon(options) {
       contract: RUNNER_DAEMON_CONTRACT,
       status,
       pid: process.pid,
+      entryPath: RUNNER_ENTRY_PATH,
+      sourceDigest: RUNNER_SOURCE_DIGEST,
+      generation: lease.lease.generation,
       startedAt: lease.lease.startedAt,
       heartbeatAt: timestamp,
       pollMs: options.pollMs,
       activeWorkflows: [...active.values()].map(item => ({
         workspaceId: workspaceId(item.root),
         workflowId: item.workflowId,
-        pid: item.child.pid,
+        attemptId: item.attempt.attemptId,
+        kind: item.kind,
+        phase: item.phase ?? (item.kind === 'execution' ? 'executing' : item.kind),
+        pid: item.child?.pid ?? process.pid,
         startedAt: item.startedAt,
+        deadlineAt: item.attempt.deadlineAt,
+        reason: item.attempt.reason,
       })),
       recentOutcomes: [...outcomes.values()].slice(-50),
     })
   }
 
   try {
+    const reconciled = await reconcileInterruptedAttempts(catalogRoot, lease)
+    for (const attempt of reconciled.slice(-50)) {
+      outcomes.set(`${attempt.workspaceId}\0${attempt.workflowId}`, {
+        workspaceId: attempt.workspaceId,
+        workflowId: attempt.workflowId,
+        attemptId: attempt.attemptId,
+        kind: attempt.kind,
+        status: 'interrupted',
+        failureClass: 'runner_restarted',
+        finishedAt: attempt.finishedAt,
+      })
+    }
     process.stdout.write(`Runner daemon 已启动：catalog=${catalogRoot}\n`)
     while (!controller.signal.aborted) {
       const workflows = await discoverRunnableWorkflows(catalogRoot)
@@ -565,62 +784,218 @@ async function runDaemon(options) {
       for (const workflow of workflows) {
         const key = `${workflow.root}\0${workflow.workflowId}`
         if (active.has(key) || Number(retryAfter.get(key) ?? 0) > now) continue
-        const child = spawn(process.execPath, [
-          fileURLToPath(import.meta.url),
-          '--root', workflow.root,
-          '--workflow-id', workflow.workflowId,
-          '--parallel', String(options.parallel),
-          '--timeout-ms', String(options.timeoutMs),
-          '--event-wait-ms', String(options.eventWaitMs),
-        ], {
-          cwd: workflow.root,
-          env: process.env,
-          stdio: 'inherit',
-        })
+        if (workflow.mode === 'state-error') {
+          retryAfter.set(key, Date.now() + 60_000)
+          outcomes.set(key, {
+            workspaceId: workspaceId(workflow.root),
+            workflowId: workflow.workflowId,
+            kind: 'state-error',
+            status: 'state-unreadable',
+            failureClass: 'validation',
+            error: workflow.error,
+            finishedAt: new Date().toISOString(),
+          })
+          continue
+        }
+        if (workflow.mode === 'workflow-drive') {
+          const attempt = await beginRunnerAttempt(
+            catalogRoot,
+            workflow,
+            lease,
+            'workflow-drive',
+            Math.min(options.timeoutMs, PLAN_REVISION_CONTROL_TIMEOUT_MS),
+          )
+          const record = {
+            root: workflow.root,
+            workflowId: workflow.workflowId,
+            kind: 'workflow-drive',
+            phase: workflow.phase,
+            startedAt: attempt.startedAt,
+            attempt,
+          }
+          active.set(key, record)
+          record.settled = (async () => {
+            try {
+              const result = await requestWorkflowDrive(workflow, options.timeoutMs, controller.signal)
+              failureStreaks.delete(key)
+              retryAfter.set(key, Date.now() + (workflow.command === 'convergence-probe'
+                ? 60_000
+                : Math.max(10_000, options.pollMs * 10)))
+              const resultStatus = `workflow-${String(result?.action ?? workflow.command ?? 'driven')}`
+              await settleRunnerAttempt(attempt, 'completed', {
+                resultStatus,
+                recoveryAttempts: result?.recoveryAttempts ?? null,
+                decisionId: result?.decision?.decisionId ?? null,
+              })
+              outcomes.set(key, {
+                workspaceId: workspaceId(workflow.root),
+                workflowId: workflow.workflowId,
+                attemptId: attempt.attemptId,
+                kind: attempt.kind,
+                status: attempt.resultStatus,
+                reason: workflow.recoveryReason,
+                recoveryAttempts: attempt.recoveryAttempts,
+                finishedAt: attempt.finishedAt,
+              })
+            } catch (error) {
+              const failureClass = classifyRunnerFailure(error)
+              const consecutiveFailures = Number(failureStreaks.get(key) ?? 0) + 1
+              failureStreaks.set(key, consecutiveFailures)
+              retryAfter.set(key, Date.now() + runnerRetryDelayMs(failureClass, options.pollMs, consecutiveFailures))
+              await settleRunnerAttempt(attempt, controller.signal.aborted ? 'interrupted' : 'failed', {
+                failureClass,
+                consecutiveFailures,
+                error: describeError(error),
+              })
+              outcomes.set(key, {
+                workspaceId: workspaceId(workflow.root),
+                workflowId: workflow.workflowId,
+                attemptId: attempt.attemptId,
+                kind: attempt.kind,
+                status: controller.signal.aborted ? 'interrupted' : 'workflow-drive-failed',
+                reason: workflow.recoveryReason,
+                failureClass,
+                consecutiveFailures,
+                error: describeError(error),
+                finishedAt: attempt.finishedAt,
+              })
+            } finally {
+              active.delete(key)
+            }
+          })()
+          void record.settled.catch(error => {
+            outcomes.set(key, {
+              workspaceId: workspaceId(workflow.root),
+              workflowId: workflow.workflowId,
+              attemptId: attempt.attemptId,
+              kind: attempt.kind,
+              status: 'attempt-journal-failed',
+              failureClass: 'runner_error',
+              error: describeError(error),
+              finishedAt: new Date().toISOString(),
+            })
+          })
+          continue
+        }
+        const attempt = await beginRunnerAttempt(catalogRoot, workflow, lease, 'execution', options.timeoutMs)
+        let child
+        try {
+          child = spawn(process.execPath, [
+            RUNNER_ENTRY_PATH,
+            '--root', workflow.root,
+            '--workflow-id', workflow.workflowId,
+            '--parallel', String(options.parallel),
+            '--timeout-ms', String(options.timeoutMs),
+            '--event-wait-ms', String(options.eventWaitMs),
+          ], {
+            cwd: workflow.root,
+            env: process.env,
+            stdio: 'inherit',
+          })
+        } catch (error) {
+          const failureClass = classifyRunnerFailure(error)
+          const consecutiveFailures = Number(failureStreaks.get(key) ?? 0) + 1
+          failureStreaks.set(key, consecutiveFailures)
+          retryAfter.set(key, Date.now() + runnerRetryDelayMs(failureClass, options.pollMs, consecutiveFailures))
+          await settleRunnerAttempt(attempt, 'failed', { failureClass, consecutiveFailures, error: describeError(error) })
+          outcomes.set(key, {
+            workspaceId: workspaceId(workflow.root),
+            workflowId: workflow.workflowId,
+            attemptId: attempt.attemptId,
+            kind: attempt.kind,
+            status: 'failed',
+            failureClass,
+            consecutiveFailures,
+            error: describeError(error),
+            finishedAt: attempt.finishedAt,
+          })
+          continue
+        }
         const record = {
           root: workflow.root,
           workflowId: workflow.workflowId,
-          startedAt: new Date().toISOString(),
+          kind: 'execution',
+          startedAt: attempt.startedAt,
+          attempt,
           child,
+          finished: false,
         }
         active.set(key, record)
-        child.once('exit', (code, signal) => {
+        const finishExecution = async (status, details) => {
+          if (record.finished) return
+          record.finished = true
           active.delete(key)
-          retryAfter.set(key, Date.now() + Math.max(2000, options.pollMs * 2))
+          const failureClass = status === 'completed' ? undefined : classifyRunnerFailure(details.error ?? 'runner_error')
+          const consecutiveFailures = failureClass === undefined
+            ? 0
+            : Number(failureStreaks.get(key) ?? 0) + 1
+          if (failureClass === undefined) failureStreaks.delete(key)
+          else failureStreaks.set(key, consecutiveFailures)
+          retryAfter.set(key, Date.now() + (status === 'completed'
+            ? Math.max(2000, options.pollMs * 2)
+            : runnerRetryDelayMs(failureClass, options.pollMs, consecutiveFailures)))
+          await settleRunnerAttempt(attempt, status, {
+            ...details,
+            ...(failureClass === undefined ? {} : { failureClass }),
+            ...(failureClass === undefined ? {} : { consecutiveFailures }),
+          })
           outcomes.set(key, {
             workspaceId: workspaceId(workflow.root),
             workflowId: workflow.workflowId,
-            status: code === 0 ? 'stopped' : 'failed',
+            attemptId: attempt.attemptId,
+            kind: attempt.kind,
+            status: status === 'completed' ? 'stopped' : status,
+            ...details,
+            ...(failureClass === undefined ? {} : { failureClass }),
+            ...(failureClass === undefined ? {} : { consecutiveFailures }),
+            finishedAt: attempt.finishedAt,
+          })
+        }
+        child.once('exit', (code, signal) => {
+          const interrupted = controller.signal.aborted && code !== 0
+          void finishExecution(code === 0 ? 'completed' : interrupted ? 'interrupted' : 'failed', {
             exitCode: code,
             signal: signal ?? null,
-            finishedAt: new Date().toISOString(),
-          })
+            ...(code === 0 ? {} : { error: interrupted ? 'Runner daemon 停止并中断执行子进程' : `Runner 子进程退出码 ${String(code)}` }),
+          }).catch(error => process.stderr.write(`Runner attempt 结算失败：${describeError(error)}\n`))
         })
         child.once('error', error => {
-          outcomes.set(key, {
-            workspaceId: workspaceId(workflow.root),
-            workflowId: workflow.workflowId,
-            status: 'failed',
-            error: describeError(error),
-            finishedAt: new Date().toISOString(),
-          })
+          void finishExecution('failed', { error: describeError(error) })
+            .catch(settleError => process.stderr.write(`Runner attempt 结算失败：${describeError(settleError)}\n`))
         })
       }
       await publish('running')
       await delayMs(options.pollMs, controller.signal)
     }
   } finally {
-    for (const item of active.values()) item.child.kill('SIGTERM')
-    await Promise.allSettled([...active.values()].map(item => new Promise(resolveExit => {
-      if (item.child.exitCode !== null || item.child.signalCode !== null) resolveExit()
-      else item.child.once('exit', resolveExit)
-    })))
+    const finishing = [...active.values()]
+    for (const item of finishing) item.child?.kill('SIGTERM')
+    await Promise.allSettled(finishing.map(item => item.settled !== undefined
+      ? item.settled
+      : new Promise(resolveExit => {
+          if (item.child.exitCode !== null || item.child.signalCode !== null) resolveExit()
+          else item.child.once('exit', resolveExit)
+        })))
     await publish('stopped').catch(() => undefined)
     await releaseDaemonLease(lease).catch(() => undefined)
     process.removeListener('SIGINT', stop)
     process.removeListener('SIGTERM', stop)
   }
   return { alreadyRunning: false, stopped: true }
+}
+
+async function superviseDaemon(options) {
+  let failures = 0
+  for (;;) {
+    try {
+      return await runDaemon(options)
+    } catch (error) {
+      failures += 1
+      const delay = Math.min(60_000, 1_000 * (2 ** Math.min(6, failures - 1)))
+      process.stderr.write(`Runner daemon 异常，${delay}ms 后从持久状态重启：${describeError(error)}\n`)
+      await delayMs(delay)
+    }
+  }
 }
 
 async function main() {
@@ -634,7 +1009,7 @@ async function main() {
     return
   }
   if (options.daemon) {
-    await runDaemon(options)
+    await superviseDaemon(options)
     return
   }
   const root = resolve(options.root)
@@ -656,7 +1031,7 @@ async function main() {
     })
     return
   }
-  const manifestPath = join(root, '.dsh-workflow', 'control', `${options.workflowId}.json`)
+  const manifestPath = join(root, OWNER_RUNTIME_DIRECTORY, 'control', `${options.workflowId}.json`)
   const manifest = await readJson(manifestPath, `工作流 ${options.workflowId} 控制清单`)
   if (manifest.contract !== CONTROL_CONTRACT) throw new Error(`控制清单契约不受支持：${manifest.contract ?? '未提供'}`)
   if (manifest.workflowId !== options.workflowId) throw new Error('控制清单与 workflow id 不一致')
@@ -709,11 +1084,10 @@ async function main() {
     if (typeof notification.notificationId !== 'string' || notification.notificationId === '') {
       throw new Error('主会话 outbox 返回了无效 notificationId')
     }
-    process.stdout.write(`Supervisor 主会话通知（请在 Owner 工作流主会话处理）：${JSON.stringify(notification)}\n`)
     const delivered = await sendControlRequest(
       manifest,
       options.workflowId,
-      'supervisor-outbox-ack',
+      'supervisor-outbox-deliver',
       { notificationId: notification.notificationId },
       options.timeoutMs,
     )
@@ -799,6 +1173,14 @@ async function main() {
         { actionId },
         options.timeoutMs,
       )
+      if (stopped?.technicalNotificationId !== undefined) {
+        const notificationId = stopped.technicalNotificationId
+        const delivered = await sendControlRequest(manifest, options.workflowId,
+          'supervisor-outbox-deliver', { notificationId }, options.timeoutMs)
+        if (delivered?.notificationId !== notificationId || delivered?.status !== 'delivered') {
+          throw new Error('技术暂停报告未确认投递')
+        }
+      }
       process.stdout.write(`工作流 ${options.workflowId} 停止，状态：${stopped?.status ?? 'stopped'}\n`)
       return
     }
@@ -806,11 +1188,19 @@ async function main() {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] === RUNNER_ENTRY_PATH) {
   main().catch(error => {
     process.stderr.write(`Owner 工作流外置 runner 失败：${describeError(error)}\n`)
     process.exitCode = 1
   })
 }
 
-export { discoverRunnableWorkflows, parseArgs, runDaemon, runnerDaemonStatePath }
+export {
+  classifyRunnerFailure,
+  discoverRunnableWorkflows,
+  parseArgs,
+  reconcileInterruptedAttempts,
+  runDaemon,
+  runnerAttemptDirectory,
+  runnerDaemonStatePath,
+}

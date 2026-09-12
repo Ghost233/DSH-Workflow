@@ -1,0 +1,17 @@
+✔ T15 actual Planner reserved child produces a raw accepted receipt and replays without another model call (3689.037ms)
+✔ T15 actual Review reserved child produces a raw accepted receipt and replays without another model call (1363.13725ms)
+✔ T15 a real completed child without a submission settles failed and permits one paid next ordinal (1387.088791ms)
+✔ T15 real multi-step Planner reads evidence before its accepted submission (1555.74875ms)
+✔ T15 an uncertain create after a real session creation never resends its prompt (1770.589375ms)
+✔ T15 wrong prompt and a source awaiting user decision cannot start a child (1473.731125ms)
+✔ T15 replay rejects altered frozen input and execution receipt without a new call (1294.120542ms)
+✔ T15 a physically torn JSONL artifact pauses replay without changing the ledger or resending (1236.731583ms)
+✔ T15 a reserved identity with an existing real session cannot be treated as a fresh launch (1224.475541ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15430.288083

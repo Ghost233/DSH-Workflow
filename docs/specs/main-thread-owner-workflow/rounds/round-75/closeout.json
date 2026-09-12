@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-11T14:41:02.245570+00:00",
+  "formalPass": 199,
+  "formalSkipped": 7,
+  "candidateDrift": [],
+  "closedFindings": [
+    "Actual exhausted-budget recovery arbitration unmetered starts"
+  ],
+  "reviewFindings": [],
+  "withdrawnFindings": [
+    "初审曾将初始会诊检查后出现恢复候选的并发窗口标为P2，复查后撤回：旧初始工作不因此成为恢复operation；同Runtime workflow lock、候选不存在前置与saveState revision CAS阻止旧输出成为恢复候选。跨进程陈旧初始工作是否及时停止属于既有隔离边界，不是本轮恢复预算绕过证据。"
+  ],
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false
+}

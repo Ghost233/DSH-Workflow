@@ -1,0 +1,15 @@
+# 第42轮：T15直接Owner恢复入口
+
+主线程独占runtime.mjs、recovery-admission.mjs、新runtime-recovery-budget.test.mjs及文档；既有用户修改保留。目标：显式协议/config/账本进入预算保护，未知协议/缺配置拒绝，完全无新协议痕迹保持legacy。recoverOwner在旧pending改写前领取；runExternalOwner失败记录入口防绕过，内部recoverySessionRequest不再次领取。已有不确定恢复只按原instruction对账，失败结果后下一次领取沿真实continuation，额度拒绝不重写source。真实用户待决优先不启动。
+
+新协议识别使用可选recoveryProtocol=DSH_RECOVERY_ADMISSION_V1显式声明，兼容已有显式recoveryAdmissionConfig/ledger。该字段不自动为旧Workflow写入、不设置默认额度；新Workflow创建接线/默认配置仍归T19。Supervisor完整outbox/timeout、局部重规划与投影一致性是T15后续，不能在本轮宣称已完成。
+
+正式范围拟新入口测试、recovery-admission、recovery-session、control/resilience相关旧恢复回归；冻结前按实际改动细化。当前开发阶段。
+
+## 实现与冻结
+
+首轮实际接入recoverOwner；runExternalOwner持锁内拒绝未附recoverySessionRequest的失败重启（提示走recoverOwner），不改变owner-sync的deferFinish语义。新协议只读完整验证配置/账本，ledger存在仅用于失败关闭，不是跳过配置的激活依据。未配置的legacy继续原路径。
+
+定向首次5/6，失败暴露reserveRecoveryAdmission拒绝Workflow failed状态；改为仅owner_failure来源可从failed领取，其他来源限制不变。保留Owner失败来源记录，领取后仅在新快照事务核对来源且无用户待决时重新激活task/workflow投影，外部启动仍经Owner租约和完整门禁。新8项全部通过，含真实连续failed两次同根问题额度、已有不确定session只读对账。
+
+正式停止写入：runtime-recovery-budget、recovery-admission、recovery-session、T23边界、control、resilience六套；独立串行各180秒，无首败退出。涉及实际Owner固定验证，外层放行、内部Owner沙箱保留。T15整体仍开发中；Supervisor/outbox/timeout、局部重规划与完整用户/额度投影待后续。

@@ -1,0 +1,58 @@
+TAP version 13
+# Subtest: T15 recoverOwner admits before restarting a failed workflow and enforces the next credit limit
+ok 1 - T15 recoverOwner admits before restarting a failed workflow and enforces the next credit limit
+  ---
+  duration_ms: 5726.230625
+  type: 'test'
+  ...
+# Subtest: T15 direct failed Owner start cannot bypass durable recovery admission
+ok 2 - T15 direct failed Owner start cannot bypass durable recovery admission
+  ---
+  duration_ms: 614.741375
+  type: 'test'
+  ...
+# Subtest: T15 missing_config cannot silently fall back to legacy execution
+ok 3 - T15 missing_config cannot silently fall back to legacy execution
+  ---
+  duration_ms: 550.670042
+  type: 'test'
+  ...
+# Subtest: T15 unknown_protocol cannot silently fall back to legacy execution
+ok 4 - T15 unknown_protocol cannot silently fall back to legacy execution
+  ---
+  duration_ms: 564.666417
+  type: 'test'
+  ...
+# Subtest: T15 invalid_config cannot silently fall back to legacy execution
+ok 5 - T15 invalid_config cannot silently fall back to legacy execution
+  ---
+  duration_ms: 585.833042
+  type: 'test'
+  ...
+# Subtest: T15 explicit user decision takes priority over spending recovery credit
+ok 6 - T15 explicit user decision takes priority over spending recovery credit
+  ---
+  duration_ms: 612.616541
+  type: 'test'
+  ...
+# Subtest: T15 existing uncertain recovery is reconciled without another reservation or prompt
+ok 7 - T15 existing uncertain recovery is reconciled without another reservation or prompt
+  ---
+  duration_ms: 1550.985791
+  type: 'test'
+  ...
+# Subtest: T15 subsequent real failed result inherits the same root and consumes only its next attempt
+ok 8 - T15 subsequent real failed result inherits the same root and consumes only its next attempt
+  ---
+  duration_ms: 2470.989458
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12921.72625

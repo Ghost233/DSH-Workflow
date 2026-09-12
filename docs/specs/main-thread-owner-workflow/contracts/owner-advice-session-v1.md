@@ -1,0 +1,19 @@
+# Owner会诊计费会话 V1（R76）
+
+本轮扩展T15内部持久适配器，使每次实际Owner advice可先领取同一故障root预算，再以固定session/prompt运行。它不是公开Runner仲裁入口，也不解除R75未接线门禁。
+
+## 身份与请求
+
+replan_operation新增operationKind=owner_consultation。来源仍由真实Owner failure/obligation确定；被咨询的Owner与来源Owner可以不同，不能伪造Owner运行历史或另建问题预算。operationId/ordinal遵循原有限重试规则。
+
+reconcileReplanSession请求保留contract/requestId/prompt，仅此kind必须额外提供ownerId。其他kind禁止ownerId。首次创建前核验实际Registry存在该Owner；持久creating记录额外固定ownerId。重放或后续阶段更换ownerId拒绝，不重发、不退款。上层逻辑会诊操作的候选、Owner定义和前驱绑定仍由后继生产者负责，本适配器只证明本次已预留物理会话。
+
+## 只读提交与原始证据
+
+owner-advisor角色采用read-only沙箱、never审批，仅允许其自身workflow_owner_advice_submit编排工具；不能调用Planner/Review/Owner提交工具。Runtime绑定requireOwnerAdviceSubmission和ownerAdviceOwnerId；主会话/其他角色/错误Owner/第二次成功提交均拒绝。
+
+建议沿用DSH_OWNER_PLANNING_ADVICE_V1，含ownerId、scopeFit及事实、约束、节点、依赖、handoff、风险、验证建议数组。工具返回DSH_WORKFLOW_OWNER_ADVICE_SUBMIT_RESULT_V1、accepted=true及绑定ownerId。结构化普通文本不替代工具提交。
+
+真实JSONL读取器关联唯一成功tool/call与tool/result、输入上下文、step/turn和明确终态，并同时检查参数ownerId与接受回执ownerId。返回submission_observed及原始receipt，预算仍running；这不是DAG应用、Owner建议采纳或恢复成功。合法建议的语义结算与仲裁消费后续实现。
+
+无有效提交且completed沿用failed结算，仅允许已失败的下一ordinal再次付费。取消或creating后未知会话不补发。新Harness重开复用同一账本与原始回执，不能把内存成功标记当证据。

@@ -1,0 +1,110 @@
+{
+  "specRevision": "R4-V03-1",
+  "tickets": [
+    {
+      "id": "T-13",
+      "file": "t-13-recovery-budget-ledger.md",
+      "status": "待办",
+      "dependsOn": [
+        "T-02",
+        "T-03",
+        "T-04",
+        "T-09"
+      ],
+      "acceptance": [
+        "AC-15",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-14",
+      "file": "t-14-durable-recovery-admission-proof.md",
+      "status": "阻塞",
+      "dependsOn": [
+        "T-13"
+      ],
+      "acceptance": [
+        "AC-22",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-15",
+      "file": "t-15-runtime-recovery-budget-admission.md",
+      "status": "阻塞",
+      "dependsOn": [
+        "T-13",
+        "T-14"
+      ],
+      "acceptance": [
+        "AC-11",
+        "AC-15",
+        "AC-20",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-16",
+      "file": "t-16-owner-cancellation-fencing-proof.md",
+      "status": "待办",
+      "dependsOn": [
+        "T-09"
+      ],
+      "acceptance": [
+        "AC-21",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-17",
+      "file": "t-17-attempt-deadline-settlement.md",
+      "status": "阻塞",
+      "dependsOn": [
+        "T-13",
+        "T-15",
+        "T-16"
+      ],
+      "acceptance": [
+        "AC-21",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-18",
+      "file": "t-18-recovery-budget-revision-inheritance.md",
+      "status": "阻塞",
+      "dependsOn": [
+        "T-05",
+        "T-07",
+        "T-13",
+        "T-15"
+      ],
+      "acceptance": [
+        "AC-17",
+        "AC-18",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-19",
+      "file": "t-19-recovery-budget-config-activation.md",
+      "status": "阻塞",
+      "dependsOn": [
+        "T-15",
+        "T-17",
+        "T-18"
+      ],
+      "acceptance": [
+        "AC-11",
+        "AC-20",
+        "AC-24",
+        "AC-31"
+      ]
+    }
+  ]
+}

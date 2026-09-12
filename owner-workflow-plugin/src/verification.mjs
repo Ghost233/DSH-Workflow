@@ -200,12 +200,18 @@ export async function runBoundVerification({ task, verifications, verificationId
   }
   const cwd = bound.cwd ?? '.'
   const evidence = await snapshotExecutor.run({ argv: bound.argv, cwd })
+  // 部分 Harness Shell 载体对复合命令只返回 ok/kind，不携带 exitCode。
+  // 明确 ok:true 等价于 0；其他缺失 exitCode 的结果统一归一化为 1。
+  // background、超时和中止仍由 createVerificationResult 的宿主证据判定为失败。
+  const exitCode = Number.isInteger(evidence?.exitCode)
+    ? evidence.exitCode
+    : evidence?.ok === true ? 0 : 1
   return createVerificationResult({
     verificationId: bound.id,
     argv: bound.argv,
     cwd,
     contentDigest: evidence?.contentDigest,
-    exitCode: evidence?.exitCode,
+    exitCode,
     enforcement: evidence?.sandbox?.enforcement,
     approvalOutcome: evidence?.approvalOutcome,
     ok: evidence?.ok,

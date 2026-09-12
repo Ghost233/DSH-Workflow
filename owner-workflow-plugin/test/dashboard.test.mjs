@@ -179,7 +179,23 @@ test('Dashboard 投影显示 Owner 会话、阶段、心跳、恢复次数和授
         lastHeartbeatAt: '2026-08-20T08:01:00.000Z',
         recoveryCount: 2,
         pendingApprovalId: 'oa-visible',
+        autonomousRecovery: {
+          failureClass: 'runtime_environment',
+          strategy: 'diagnose',
+          message: 'typecheck command not found',
+          updatedAt: '2026-08-20T08:00:30.000Z',
+        },
       },
+    },
+    planConvergence: {
+      contract: 'DSH_WORKFLOW_CONVERGENCE_V1',
+      progress: 'none',
+      activeStrategy: 'local_subgraph_rewrite',
+      nextStrategy: 'diagnose',
+      evidenceDigest: 'evidence-a',
+      obligations: [{ id: 'o1', status: 'open' }],
+      unsupportedNewObligations: [],
+      updatedAt: '2026-08-20T08:00:30.000Z',
     },
   })
 
@@ -198,6 +214,21 @@ test('Dashboard 投影显示 Owner 会话、阶段、心跳、恢复次数和授
     lastHeartbeatAt: '2026-08-20T08:01:00.000Z',
     recoveryCount: 2,
     pendingApprovalId: 'oa-visible',
+    autonomousRecovery: {
+      failureClass: 'runtime_environment',
+      strategy: 'diagnose',
+      message: 'typecheck command not found',
+      updatedAt: '2026-08-20T08:00:30.000Z',
+    },
+  })
+  assert.deepEqual(snapshot.convergence, {
+    progress: 'none',
+    activeStrategy: 'local_subgraph_rewrite',
+    nextStrategy: 'diagnose',
+    evidenceDigest: 'evidence-a',
+    openObligationCount: 1,
+    unsupportedNewObligationCount: 0,
+    updatedAt: '2026-08-20T08:00:30.000Z',
   })
 })
 

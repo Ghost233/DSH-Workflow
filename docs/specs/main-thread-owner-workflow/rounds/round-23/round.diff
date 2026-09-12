@@ -1,0 +1,235 @@
+--- owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs (baseline)
++++ owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs
+@@ -294,8 +294,9 @@
+   modelScript,
+   compression = 'none',
+   executable = false,
++  temporaryDirectory = tmpdir(),
+ } = {}) {
+-  const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-t22-tests-r16-')))
++  const root = await realpath(await mkdtemp(join(temporaryDirectory, 'dsh-t22-tests-r16-')))
+   const sessionRoot = join(root, '.dsh-workflow', 'recovery-sessions')
+   const keepRoot = process.env.T22_KEEP_ROOT === '1'
+   await git(root, ['init', '-q', '-b', 'main'])
+--- owner-workflow-plugin/test/recovery-session-restart.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session-restart.test.mjs
+@@ -1,6 +1,6 @@
+ import assert from 'node:assert/strict'
+ import { fork } from 'node:child_process'
+-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
++import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import test from 'node:test'
+@@ -143,75 +143,96 @@
+   ])
+ }
+
+-function cleanupKilledFixture(t, state) {
+-  t.after(async () => {
+-    if (state.root === undefined) return
+-    await chmod(state.root, 0o700).catch(() => undefined)
+-    await chmod(join(state.root, '.dsh-workflow'), 0o700).catch(() => undefined)
+-    await chmod(join(state.root, '.dsh-workflow', 'workflows'), 0o700).catch(() => undefined)
+-    await rm(state.root, { recursive: true, force: true, maxRetries: 3 })
+-  })
+-}
+-
+-test('T22 SIGKILL after the real submitted checkpoint reopens only to a non-mutating technical pause', async t => {
+-  const cleanup = {}
+-  cleanupKilledFixture(t, cleanup)
+-  const producer = await killAtCheckpoint(
+-    startRestartChild({ mode: 'produce_submitted' }),
+-    'submitted',
+-  )
+-  cleanup.root = producer.checkpoint.root
+-  assert.equal(producer.checkpoint.checkpoint.phase, 'submitted')
+-  assert.equal(producer.checkpoint.checkpoint.ownerStatus, 'running')
+-  assert.ok(producer.checkpoint.checkpoint.modelRequests >= 1)
+-  assert.ok(producer.checkpoint.rawContent.includes(producer.checkpoint.receipt.executionIdentity.promptId))
+-  const postKill = await capturePostKill(producer.checkpoint)
+-
+-  // The replay child builds a new Context, parent Agent, and Runtime after
+-  // observing the producer's actual SIGKILL exit.  That initialization is not
+-  // an Owner resend: transparent source API counters begin after it and prove
+-  // reconciliation made no create, resume, or followup call.
+-  const replay = await finishReplay({
+-    scenario: 'submitted',
+-    root: producer.checkpoint.root,
+-    workflowId: producer.checkpoint.workflowId,
+-    receipt: producer.checkpoint.receipt,
+-    request: producer.checkpoint.request,
+-  })
+-  assert.notEqual(replay.pid, producer.checkpoint.pid)
+-  assert.equal(replay.result.outcome, 'paused')
+-  assert.equal(replay.result.phase, 'technical_pause')
+-  assertReplayReadOnly(postKill, replay)
+-  await writeEvidence('submitted-sigkill-pause', producer, postKill, replay)
++// The parent knows this private container before the child can create any
++// fixture files. Cleanup therefore does not depend on a successful IPC reply.
++async function withFixtureContainer(operation) {
++  const container = await realpath(await mkdtemp(join(tmpdir(), 'dsh-t22-restart-owned-')))
++  try {
++    return await operation(container)
++  } finally {
++    await rm(container, { recursive: true, force: true, maxRetries: 3 })
++  }
++}
++
++test('T22 SIGKILL after the real submitted checkpoint reopens only to a non-mutating technical pause', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(
++      startRestartChild({ mode: 'produce_submitted', fixtureParent }),
++      'submitted',
++    )
++    assert.equal(producer.checkpoint.checkpoint.phase, 'submitted')
++    assert.equal(producer.checkpoint.checkpoint.ownerStatus, 'running')
++    assert.ok(producer.checkpoint.checkpoint.modelRequests >= 1)
++    assert.ok(producer.checkpoint.rawContent.includes(producer.checkpoint.receipt.executionIdentity.promptId))
++    const postKill = await capturePostKill(producer.checkpoint)
++
++    // The replay child builds a new Context, parent Agent, and Runtime after
++    // observing the producer's actual SIGKILL exit.  That initialization is not
++    // an Owner resend: transparent source API counters begin after it and prove
++    // reconciliation made no create, resume, or followup call.
++    const replay = await finishReplay({
++      scenario: 'submitted',
++      root: producer.checkpoint.root,
++      workflowId: producer.checkpoint.workflowId,
++      receipt: producer.checkpoint.receipt,
++      request: producer.checkpoint.request,
++    })
++    assert.notEqual(replay.pid, producer.checkpoint.pid)
++    assert.equal(replay.result.outcome, 'paused')
++    assert.equal(replay.result.phase, 'technical_pause')
++    assertReplayReadOnly(postKill, replay)
++    await writeEvidence('submitted-sigkill-pause', producer, postKill, replay)
++  })
+ })
+
+-test('T22 SIGKILL after real failed settlement replays its persisted receipt without a second debit', async t => {
+-  const cleanup = {}
+-  cleanupKilledFixture(t, cleanup)
+-  const producer = await killAtCheckpoint(
+-    startRestartChild({ mode: 'produce_settled_failed' }),
+-    'settled_failed',
+-  )
+-  cleanup.root = producer.checkpoint.root
+-  assert.equal(producer.checkpoint.checkpoint.phase, 'settled_failed')
+-  assert.equal(producer.checkpoint.checkpoint.ownerStatus, 'failed')
+-  assert.equal(producer.checkpoint.checkpoint.budgetAttempt?.state, 'settled')
+-  assert.equal(producer.checkpoint.checkpoint.budgetAttempt?.result?.status, 'failed')
+-  assert.ok(producer.checkpoint.checkpoint.modelRequests >= 2)
+-  assert.match(producer.checkpoint.rawContent, /"name":"owner_submit"/u)
+-  const postKill = await capturePostKill(producer.checkpoint)
+-
+-  const replay = await finishReplay({
+-    scenario: 'settled_failed',
+-    root: producer.checkpoint.root,
+-    workflowId: producer.checkpoint.workflowId,
+-    receipt: producer.checkpoint.receipt,
+-    request: producer.checkpoint.request,
+-  })
+-  assert.notEqual(replay.pid, producer.checkpoint.pid)
+-  assert.equal(replay.result.outcome, 'settled_failed')
+-  assert.equal(replay.result.phase, 'settled_failed')
+-  assert.deepEqual(replay.result.continuation.executionIdentity, producer.checkpoint.receipt.executionIdentity)
+-  assertReplayReadOnly(postKill, replay)
+-  await writeEvidence('settled-failed-sigkill-replay', producer, postKill, replay)
++test('T22 SIGKILL after real failed settlement replays its persisted receipt without a second debit', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(
++      startRestartChild({ mode: 'produce_settled_failed', fixtureParent }),
++      'settled_failed',
++    )
++    assert.equal(producer.checkpoint.checkpoint.phase, 'settled_failed')
++    assert.equal(producer.checkpoint.checkpoint.ownerStatus, 'failed')
++    assert.equal(producer.checkpoint.checkpoint.budgetAttempt?.state, 'settled')
++    assert.equal(producer.checkpoint.checkpoint.budgetAttempt?.result?.status, 'failed')
++    assert.ok(producer.checkpoint.checkpoint.modelRequests >= 2)
++    assert.match(producer.checkpoint.rawContent, /"name":"owner_submit"/u)
++    const postKill = await capturePostKill(producer.checkpoint)
++
++    const replay = await finishReplay({
++      scenario: 'settled_failed',
++      root: producer.checkpoint.root,
++      workflowId: producer.checkpoint.workflowId,
++      receipt: producer.checkpoint.receipt,
++      request: producer.checkpoint.request,
++    })
++    assert.notEqual(replay.pid, producer.checkpoint.pid)
++    assert.equal(replay.result.outcome, 'settled_failed')
++    assert.equal(replay.result.phase, 'settled_failed')
++    assert.deepEqual(replay.result.continuation.executionIdentity, producer.checkpoint.receipt.executionIdentity)
++    assertReplayReadOnly(postKill, replay)
++    await writeEvidence('settled-failed-sigkill-replay', producer, postKill, replay)
++  })
+ })
++
++test('T22 cleans the parent-owned fixture container when the producer fails before its checkpoint', async () => {
++  let containerPath
++  let producerExit
++  await withFixtureContainer(async fixtureParent => {
++    containerPath = fixtureParent
++    const handle = startRestartChild({ mode: 'produce_fixture_error', fixtureParent })
++    await assert.rejects(killAtCheckpoint(handle, 'unreachable'), /controlled pre-checkpoint failure/u)
++    producerExit = await handle.exited
++    assert.ok(producerExit.code !== null || producerExit.signal !== null)
++    const entries = await readdir(fixtureParent)
++    assert.equal(entries.length, 1)
++    assert.ok((await stat(join(fixtureParent, entries[0], '.git'))).isDirectory())
++    assert.ok((await stat(join(fixtureParent, entries[0], '.dsh-workflow', 'worktrees'))).isDirectory())
++  })
++  await assert.rejects(stat(containerPath), { code: 'ENOENT' })
++  await mkdir(EVIDENCE_ROOT, { recursive: true })
++  await writeFile(join(EVIDENCE_ROOT, 'pre-checkpoint-cleanup.json'), `${JSON.stringify({
++    containerPath, producerExit, checkpointReceived: false, realGitWorktreeVerified: true,
++    containerRemoved: true,
++  }, null, 2)}\n`, 'utf8')
++})
+--- owner-workflow-plugin/test/fixtures/recovery-session-restart-child.mjs (baseline)
++++ owner-workflow-plugin/test/fixtures/recovery-session-restart-child.mjs
+@@ -99,9 +99,10 @@
+   await new Promise(() => {})
+ }
+
+-async function produceSubmitted() {
++async function produceSubmitted(input) {
+   const fixture = await createRecoverySessionFixture({ after() {} }, {
+     executable: true,
++    temporaryDirectory: input.fixtureParent,
+     modelScript: submittedOwnerModelScript,
+   })
+   const receipt = await reserveRecoverySession(fixture)
+@@ -119,9 +120,10 @@
+   throw new Error('submitted producer completed after its kill checkpoint')
+ }
+
+-async function produceSettledFailed() {
++async function produceSettledFailed(input) {
+   const fixture = await createRecoverySessionFixture({ after() {} }, {
+     executable: true,
++    temporaryDirectory: input.fixtureParent,
+     modelScript: failedOwnerModelScript,
+   })
+   const receipt = await reserveRecoverySession(fixture)
+@@ -207,9 +209,17 @@
+ async function dispatch(input) {
+   switch (input?.mode) {
+     case 'produce_submitted':
+-      return await produceSubmitted()
++      return await produceSubmitted(input)
+     case 'produce_settled_failed':
+-      return await produceSettledFailed()
++      return await produceSettledFailed(input)
++    case 'produce_fixture_error':
++      // Fail after the real Git/worktree fixture exists but before any
++      // checkpoint reveals its root to the parent.
++      await createRecoverySessionFixture({ after() {} }, {
++        executable: true,
++        temporaryDirectory: input.fixtureParent,
++      })
++      throw new Error('controlled pre-checkpoint failure')
+     case 'replay':
+       return await replay(input)
+     default:

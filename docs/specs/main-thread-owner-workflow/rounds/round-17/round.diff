@@ -1,0 +1,278 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -187,6 +187,12 @@
+   workflowEvidenceDigest,
+ } from './convergence.mjs'
+
++// Only acquisition conflicts use this type. Cancellation, IO failures and
++// loss of an already-held lease must retain their original error semantics.
++class OwnerLeaseUnavailableError extends Error {
++  name = 'OwnerLeaseUnavailableError'
++}
++
+ const DEFAULT_CONFIG = Object.freeze({
+   runtimeDirectory: OWNER_RUNTIME_DIRECTORY,
+   worktreeDirectory: `${OWNER_RUNTIME_DIRECTORY}/worktrees`,
+@@ -4963,7 +4969,7 @@
+       const local = runtime.ownerLeases.get(localKey)
+       if (local !== undefined) {
+         if (local.workflowId !== workflowId || local.stageId !== stageId) {
+-          throw new Error(`Owner ${ownerId} 已被本进程占用：workflow=${local.workflowId}，stage=${local.stageId}`)
++          throw new OwnerLeaseUnavailableError(`Owner ${ownerId} 已被本进程占用：workflow=${local.workflowId}，stage=${local.stageId}`)
+         }
+         return { lease: local, owned: false }
+       }
+@@ -5009,9 +5015,13 @@
+           let current
+           try { current = await readJson(path) } catch (readError) {
+             if (readError?.code === 'ENOENT') {
+-              const directoryStat = lstatSync(directory)
++              let directoryStat
++              try { directoryStat = lstatSync(directory) } catch (statError) {
++                if (statError?.code === 'ENOENT') continue
++                throw statError
++              }
+               if ((Date.now() - directoryStat.mtimeMs) <= ttl) {
+-                throw new Error(`Owner ${ownerId} 的 lease 正在由其他 Harness 进程初始化`)
++                throw new OwnerLeaseUnavailableError(`Owner ${ownerId} 的 lease 正在由其他 Harness 进程初始化`)
+               }
+               current = { expiresAt: new Date(directoryStat.mtimeMs + ttl).toISOString() }
+             } else {
+@@ -5021,7 +5031,7 @@
+           const expiresAt = Date.parse(current?.expiresAt ?? '')
+           const liveProcess = processIsAlive(current?.pid)
+           if (liveProcess) {
+-            throw new Error(`Owner ${ownerId} 已被存活的 Harness 进程占用：workflow=${current?.workflowId ?? '未知'}，stage=${current?.stageId ?? '未知'}，pid=${current.pid}`)
++            throw new OwnerLeaseUnavailableError(`Owner ${ownerId} 已被存活的 Harness 进程占用：workflow=${current?.workflowId ?? '未知'}，stage=${current?.stageId ?? '未知'}，pid=${current.pid}`)
+           }
+           const recordedDeadProcess = current?.contract === 'DSH_OWNER_LEASE_V1'
+             && current?.ownerId === ownerId
+@@ -5030,18 +5040,18 @@
+           // 完整 lease 已记录 PID 且该进程不存在时可立即原子接管；TTL 只保护
+           // PID/契约缺失的初始化中或损坏目录，避免 Harness 重启后无谓等待十分钟。
+           if (!recordedDeadProcess && (!Number.isFinite(expiresAt) || expiresAt > Date.now())) {
+-            throw new Error(`Owner ${ownerId} 已被其他 Harness 进程占用：workflow=${current?.workflowId ?? '未知'}，stage=${current?.stageId ?? '未知'}，pid=${current?.pid ?? '未知'}`)
++            throw new OwnerLeaseUnavailableError(`Owner ${ownerId} 已被其他 Harness 进程占用：workflow=${current?.workflowId ?? '未知'}，stage=${current?.stageId ?? '未知'}，pid=${current?.pid ?? '未知'}`)
+           }
+           const stalePath = `${directory}.expired-${token}`
+           try {
+             await rename(directory, stalePath)
+             await rm(stalePath, { recursive: true, force: true })
+           } catch (recoverError) {
+-            if (recoverError?.code !== 'ENOENT') continue
+-          }
+-        }
+-      }
+-      throw new Error(`Owner ${ownerId} 的磁盘 lease 无法获取，可能有其他进程正在恢复过期 lease`)
++            if (!['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes(recoverError?.code)) throw recoverError
++          }
++        }
++      }
++      throw new OwnerLeaseUnavailableError(`Owner ${ownerId} 的磁盘 lease 无法获取，可能有其他进程正在恢复过期 lease`)
+     },
+     async refreshOwnerLease(lease) {
+       if (lease === undefined || runtime.ownerLeases.get(lease.localKey) !== lease) return
+@@ -9838,7 +9848,22 @@
+         workflowId,
+         reason,
+       })
+-      return runtime.withOwnerLease(root, request.ownerId, workflowId, request.taskId, signal, async (lease, leaseSignal) => {
++      abortIfNeeded(signal)
++      let acquired
++      try {
++        acquired = await runtime.acquireOwnerLease(root, request.ownerId, workflowId, request.taskId, signal)
++      } catch (error) {
++        abortIfNeeded(signal)
++        if (error instanceof OwnerLeaseUnavailableError) return pausedWithoutIntent('owner_lease_unavailable')
++        throw error
++      }
++      if (!acquired.owned) {
++        abortIfNeeded(signal)
++        return pausedWithoutIntent('owner_lease_unavailable')
++      }
++      const lease = acquired.lease
++      const reconcile = async leaseSignal => {
++        abortIfNeeded(leaseSignal)
+         await runtime.assertOwnerLease(lease)
+         let state = await runtime.withWorkflowLock(workflowId, async () => readState(runtime, root, workflowId))
+         if (state.root !== root || state.contract !== STATE_CONTRACT) {
+@@ -9918,7 +9943,15 @@
+         // settlement path.  Starting from a recovered failure with a partial
+         // entry would bypass worktree, branch and submission safeguards.
+         return resultFor(intent, 'paused', 'technical_pause', { reason: 'owner_execution_adapter_not_ready' })
+-      })
++      }
++      try {
++        const result = await reconcile(runtime.leaseSignal(lease, signal))
++        abortIfNeeded(signal)
++        await runtime.assertOwnerLease(lease)
++        return result
++      } finally {
++        await runtime.releaseOwnerLease(lease)
++      }
+     },
+     async withWorkflowLock(workflowId, operation) {
+       const previous = runtime.workflowLocks.get(workflowId) ?? Promise.resolve()
+--- owner-workflow-plugin/test/recovery-session.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session.test.mjs
+@@ -1,5 +1,6 @@
+ import assert from 'node:assert/strict'
+-import { appendFile, readFile } from 'node:fs/promises'
++import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
++import { dirname } from 'node:path'
+ import test from 'node:test'
+
+ import {
+@@ -13,6 +14,7 @@
+   readRecoverySessionState,
+   reserveRecoverySession,
+ } from './fixtures/recovery-session-fixture.mjs'
++import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
+
+ const content = 'recover the failed owner task'
+
+@@ -32,6 +34,18 @@
+     requestId: receipt.requestId,
+     prompt,
+   }
++}
++
++function assertLeaseUnavailable(result) {
++  assert.equal(result.outcome, 'paused')
++  assert.equal(result.phase, 'technical_pause')
++  assert.equal(result.reason, 'owner_lease_unavailable')
++}
++
++async function assertNoReconcileEffects(fixture, receipt, stateBefore, requestsBefore) {
++  assert.equal(fixture.adapter.requests.length, requestsBefore)
++  assert.equal(await fixture.readRaw(receipt.executionIdentity.sessionId), undefined)
++  assert.deepEqual(await readRecoverySessionState(fixture), stateBefore)
+ }
+
+ test('T22 source-plane JSONL observes exactly one completed reserved prompt without writes', async t => {
+@@ -156,3 +170,115 @@
+   })
+   assert.equal(fixture.adapter.requests.length, requestsBefore)
+ })
++
++test('F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause', async t => {
++  const sameRuntime = await createRecoverySessionFixture(t)
++  const sameReceipt = await reserveRecoverySession(sameRuntime)
++  const sameState = await readRecoverySessionState(sameRuntime)
++  const sameRequests = sameRuntime.adapter.requests.length
++  const held = await sameRuntime.runtime.acquireOwnerLease(
++    sameRuntime.root, 'api', sameRuntime.workflowId, 'T2',
++  )
++  assert.equal(held.owned, true)
++  const heldBytes = await readFile(held.lease.path, 'utf8')
++  try {
++    assertLeaseUnavailable(await sameRuntime.runtime.reconcileRecoverySession(
++      sameRuntime.admissionAgent, sameRuntime.workflowId, request(sameReceipt),
++    ))
++    assert.equal(await readFile(held.lease.path, 'utf8'), heldBytes)
++    await assertNoReconcileEffects(sameRuntime, sameReceipt, sameState, sameRequests)
++  } finally {
++    await sameRuntime.runtime.releaseOwnerLease(held.lease)
++  }
++
++  const reentrant = await createRecoverySessionFixture(t)
++  const reentrantReceipt = await reserveRecoverySession(reentrant)
++  const reentrantState = await readRecoverySessionState(reentrant)
++  const reentrantRequests = reentrant.adapter.requests.length
++  const reentrantHolder = await reentrant.runtime.acquireOwnerLease(
++    reentrant.root, 'api', reentrant.workflowId, 'T1',
++  )
++  assert.equal(reentrantHolder.owned, true)
++  const reentrantBytes = await readFile(reentrantHolder.lease.path, 'utf8')
++  try {
++    // Same task returns acquireOwnerLease(...).owned === false.  The new
++    // entrypoint must treat it as unavailable rather than enter a re-entrant
++    // critical section or expose withOwnerLease's ordinary rejection.
++    assertLeaseUnavailable(await reentrant.runtime.reconcileRecoverySession(
++      reentrant.admissionAgent, reentrant.workflowId, request(reentrantReceipt),
++    ))
++    assert.equal(await readFile(reentrantHolder.lease.path, 'utf8'), reentrantBytes)
++    await assertNoReconcileEffects(reentrant, reentrantReceipt, reentrantState, reentrantRequests)
++  } finally {
++    await reentrant.runtime.releaseOwnerLease(reentrantHolder.lease)
++  }
++
++  const onDisk = await createRecoverySessionFixture(t)
++  const onDiskReceipt = await reserveRecoverySession(onDisk)
++  const onDiskState = await readRecoverySessionState(onDisk)
++  const onDiskRequests = onDisk.adapter.requests.length
++  // A separate Runtime has no shared in-memory lease map: the contention is
++  // observed through the same real on-disk lease file, not a stubbed backend.
++  const foreignRuntime = createOwnerWorkflowRuntime(onDisk.ctx, {})
++  const foreign = await foreignRuntime.acquireOwnerLease(onDisk.root, 'api', onDisk.workflowId, 'T2')
++  assert.equal(foreign.owned, true)
++  const foreignBytes = await readFile(foreign.lease.path, 'utf8')
++  try {
++    assertLeaseUnavailable(await onDisk.runtime.reconcileRecoverySession(
++      onDisk.admissionAgent, onDisk.workflowId, request(onDiskReceipt),
++    ))
++    assert.equal(await readFile(foreign.lease.path, 'utf8'), foreignBytes)
++    await assertNoReconcileEffects(onDisk, onDiskReceipt, onDiskState, onDiskRequests)
++  } finally {
++    await foreignRuntime.releaseOwnerLease(foreign.lease)
++  }
++})
++
++test('F16 maps a real lease directory still initializing to a non-mutating pause', async t => {
++  const fixture = await createRecoverySessionFixture(t)
++  const receipt = await reserveRecoverySession(fixture)
++  const stateBefore = await readRecoverySessionState(fixture)
++  const requestsBefore = fixture.adapter.requests.length
++  const directory = fixture.runtime.leasePath(fixture.root, 'owner-api')
++  await mkdir(directory, { recursive: true })
++  try {
++    assertLeaseUnavailable(await fixture.runtime.reconcileRecoverySession(
++      fixture.admissionAgent, fixture.workflowId, request(receipt),
++    ))
++    assert.equal(await fixture.readRaw(receipt.executionIdentity.sessionId), undefined)
++    assert.deepEqual(await readRecoverySessionState(fixture), stateBefore)
++    assert.equal(fixture.adapter.requests.length, requestsBefore)
++    await assert.rejects(readFile(`${directory}/lease.json`, 'utf8'), { code: 'ENOENT' })
++  } finally {
++    await rm(directory, { recursive: true, force: true })
++  }
++})
++
++test('F16 leaves ordinary lease I/O errors and caller cancellation as rejections', async t => {
++  const io = await createRecoverySessionFixture(t)
++  const ioReceipt = await reserveRecoverySession(io)
++  const ioState = await readRecoverySessionState(io)
++  const ioRequests = io.adapter.requests.length
++  const leaseDirectory = io.runtime.leasePath(io.root, 'owner-api')
++  await mkdir(dirname(leaseDirectory), { recursive: true })
++  await writeFile(leaseDirectory, 'not a lease directory\n', 'utf8')
++  try {
++    await assert.rejects(io.runtime.reconcileRecoverySession(
++      io.admissionAgent, io.workflowId, request(ioReceipt),
++    ))
++    await assertNoReconcileEffects(io, ioReceipt, ioState, ioRequests)
++  } finally {
++    await rm(leaseDirectory, { force: true })
++  }
++
++  const cancelled = await createRecoverySessionFixture(t)
++  const cancelledReceipt = await reserveRecoverySession(cancelled)
++  const cancelledState = await readRecoverySessionState(cancelled)
++  const cancelledRequests = cancelled.adapter.requests.length
++  const controller = new AbortController()
++  controller.abort(new Error('test caller cancelled'))
++  await assert.rejects(cancelled.runtime.reconcileRecoverySession(
++    cancelled.admissionAgent, cancelled.workflowId, request(cancelledReceipt), controller.signal,
++  ))
++  await assertNoReconcileEffects(cancelled, cancelledReceipt, cancelledState, cancelledRequests)
++})
+--- docs/specs/main-thread-owner-workflow/contracts/recovery-session-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-session-v1.md
+@@ -51,3 +51,7 @@
+ ## 未在此局部接口结算的边界
+
+ 此版本不从模型 `turn/end` 推导 Owner 业务结果，不伪造 T-13 `failed`，也不生产 `DSH_RECOVERY_CONTINUATION_V1`。该引用只能在同一个新 Owner run 的真实失败已由 Owner 运行时持久化、且当前 lease/attempt/session 与 T-20 intent 完整相等时，通过 `startRecoveryAttempt`/`settleRecoveryAttempt` 的真实失败回执生成。首次启动、resume 与该结算接缝尚未接入本局部入口；T-22 保持开发中，T-15/T-23 不解锁。
++
++## Lease领取冲突（第17轮）
++
++同Owner已被本进程/磁盘持有者占用、初始化中或有限过期恢复竞争尚未取得lease时，入口返回`paused / technical_pause / owner_lease_unavailable`。该返回不含未经锁内验证的intent身份，不读取session或Workflow账本，不释放其他持有者的lease。仅领取边界的可辨识冲突转换为暂停；调用取消、非冲突IO和已持有lease失效继续报错。既有其他Owner运行入口仍按原有异常拒绝规则处理占用。

@@ -1,0 +1,70 @@
+TAP version 13
+# Subtest: runner 对恢复错误使用固定分类，不把模型或控制桥错误混为同一种超时
+ok 1 - runner 对恢复错误使用固定分类，不把模型或控制桥错误混为同一种超时
+  ---
+  duration_ms: 1.059375
+  type: 'test'
+  ...
+# Subtest: runner daemon 参数只启用确定性工作区扫描且不要求 workflow-id
+ok 2 - runner daemon 参数只启用确定性工作区扫描且不要求 workflow-id
+  ---
+  duration_ms: 0.278375
+  type: 'test'
+  ...
+# Subtest: runner daemon 发现可执行 Workflow 与需要恢复的卡住计划审查
+ok 3 - runner daemon 发现可执行 Workflow 与需要恢复的卡住计划审查
+  ---
+  duration_ms: 16.537667
+  type: 'test'
+  ...
+# Subtest: runner daemon 并发唤醒多个卡住的规划且停止时持久化 attempt
+ok 4 - runner daemon 并发唤醒多个卡住的规划且停止时持久化 attempt
+  ---
+  duration_ms: 92.159334
+  type: 'test'
+  ...
+# Subtest: runner 不读取本地 workflow 状态，只执行 Supervisor 指定动作并逐个按 actionId ACK
+ok 5 - runner 不读取本地 workflow 状态，只执行 Supervisor 指定动作并逐个按 actionId ACK
+  ---
+  duration_ms: 54.71025
+  type: 'test'
+  ...
+# Subtest: runner 只把 supervisor-inspect 的有限宿主观察回传给对应 ACK
+ok 6 - runner 只把 supervisor-inspect 的有限宿主观察回传给对应 ACK
+  ---
+  duration_ms: 54.511042
+  type: 'test'
+  ...
+# Subtest: runner 让 Runtime 真正投递 notify 后才停止本次运行
+ok 7 - runner 让 Runtime 真正投递 notify 后才停止本次运行
+  ---
+  duration_ms: 58.8625
+  type: 'test'
+  ...
+# Subtest: runner 对未知 Supervisor 动作关闭处理且不发送派生请求
+ok 8 - runner 对未知 Supervisor 动作关闭处理且不发送派生请求
+  ---
+  duration_ms: 69.745542
+  type: 'test'
+  ...
+# Subtest: runner delivers the durable technical report before exiting a technical stop
+ok 9 - runner delivers the durable technical report before exiting a technical stop
+  ---
+  duration_ms: 65.367125
+  type: 'test'
+  ...
+# Subtest: runner targets the technical notification even when an older pending report exists
+ok 10 - runner targets the technical notification even when an older pending report exists
+  ---
+  duration_ms: 55.576209
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 569.629333

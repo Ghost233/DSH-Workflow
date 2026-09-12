@@ -1,0 +1,24 @@
+{
+  "candidate": "R91-T18-recovery-execution-transition",
+  "executionEnvironment": "Real Harness integration suites ran outside the Codex outer sandbox; nested Owner workspace-write sandbox retained",
+  "results": [
+    { "suite": "candidate-rebuild-recovery", "pass": 12, "fail": 0, "skip": 0 },
+    { "suite": "recovery-admission", "pass": 59, "fail": 0, "skip": 0 },
+    { "suite": "recovery-session", "pass": 27, "fail": 0, "skip": 0 },
+    { "suite": "recovery-session-restart", "pass": 5, "fail": 0, "skip": 0 },
+    { "suite": "runtime-recovery-budget", "pass": 48, "fail": 0, "skip": 0 },
+    { "suite": "owner-hard-deadline", "pass": 6, "fail": 0, "skip": 0 },
+    { "suite": "plan-revision", "pass": 10, "fail": 0, "skip": 0 },
+    { "suite": "workflow-state", "pass": 11, "fail": 0, "skip": 0 },
+    { "suite": "control", "pass": 159, "fail": 0, "skip": 7 },
+    { "suite": "recovery-candidate-dependency-group", "pass": 111, "fail": 0, "skip": 0 }
+  ],
+  "totals": { "pass": 448, "fail": 0, "skip": 7 },
+  "sourceHashes": {
+    "owner-workflow-plugin/src/recovery-admission.mjs": "bc33b9687092fcb6061a0e04687dc248a9baadb233ec9c2d63725b155ae4f8f7",
+    "owner-workflow-plugin/src/runtime.mjs": "2deeef68e741944bf743f6e7c933350460bc5b7fd5ed86c04c08ec973f146ec6",
+    "owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs": "008bb299ba3fb54fcf3942a8c108d909fa9db4f6bc8fe60d0b8ae34a09059c68",
+    "owner-workflow-plugin/test/recovery-session.test.mjs": "fa76dc7133303659339ccdbb225846922685ccdc6d4b12248076b870007a89a0",
+    "docs/specs/main-thread-owner-workflow/contracts/recovery-execution-transition-v1.md": "913ffbf43f880d376908afcea9cdd04716a628deec85d5524325f98df20bca87"
+  }
+}

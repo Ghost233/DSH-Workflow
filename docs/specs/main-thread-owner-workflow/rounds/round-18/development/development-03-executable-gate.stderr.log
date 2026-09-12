@@ -1,0 +1,13 @@
+file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:12332
+            throw new Error(`Owner ${ownerId} 没有调用 owner_submit；普通文本不能代替提交关卡`)
+                  ^
+
+Error: Owner api 没有调用 owner_submit；普通文本不能代替提交关卡
+    at Object.runChild (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:12332:19)
+    at async Object.runOwnerEntry (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:14385:26)
+    at async file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:12600:26
+    at async Object.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:12730:16)
+    at async Object.reconcileRecoverySession (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:9991:29)
+    at async file:///Volumes/LargeStorage/code/DSH-Workflow/[eval1]:1:407
+
+Node.js v24.12.0

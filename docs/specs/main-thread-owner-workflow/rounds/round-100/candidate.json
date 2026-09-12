@@ -1,0 +1,384 @@
+{
+  "contract": "DSH_ACCEPTANCE_CANDIDATE_V1",
+  "candidateId": "CA01-R100-fac087e62075",
+  "workflowId": "main-thread-owner-workflow",
+  "planningSnapshotDigest": "5f8ced825b9259aef5fe78634aa86756633a542fe636d668ab8fd969d19e8091",
+  "planDigest": "1ad39ab5ffab729293926ca350b32f6b38054af023f1d7d1ef8ae38e08da5924",
+  "codeCommitSha": "154914064f5ceb2f8eb413865e10a54e8ffbc663",
+  "contentDigest": "0b2dda26cb40ac22b2e7a3f9f768f2bd89b7e8c94bfc85415d36d0a860081ad4",
+  "spec": {
+    "id": "MAIN-THREAD-SPEC-TICKET-OWNER-DAG",
+    "revision": "R4",
+    "digest": "ef61049dbea0c0ba8d5f577c3c881dbfb6d5f4102041e2756ed5c837c3169ad1"
+  },
+  "tickets": [
+    {
+      "id": "T-01",
+      "revision": "R4",
+      "digest": "49ae4a0e9273542fe3985c9694c6f5cb2a4b57250350363ba84a26c1a1f1404b",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-26",
+        "AC-30"
+      ]
+    },
+    {
+      "id": "T-02",
+      "revision": "R4",
+      "digest": "393eba8683a9c4d785a080a7104e2efe54dd19d833e9ad25ddbc97b0a2dba034",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-16",
+        "AC-32"
+      ]
+    },
+    {
+      "id": "T-03",
+      "revision": "R4",
+      "digest": "103645ec8bd2407eec061330809caa5ccc03af5f4544be3f842bffd4b742188a",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-15"
+      ]
+    },
+    {
+      "id": "T-04",
+      "revision": "R4",
+      "digest": "debb2d1e5aa048e7a918dc3da7e9b09384c2315f97400e806cff67178f9d314d",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-10",
+        "AC-14"
+      ]
+    },
+    {
+      "id": "T-05",
+      "revision": "R4",
+      "digest": "13262f8e7a666b19dd7e36a66c4a8bfb945065c7685da1e487d5bf8f0672c3b8",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-03",
+        "AC-04",
+        "AC-27"
+      ]
+    },
+    {
+      "id": "T-06",
+      "revision": "R4",
+      "digest": "73e5c8afce4f881ec821f86407a479301fffd583c5af4d842c51132ed1472ef1",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-06",
+        "AC-29"
+      ]
+    },
+    {
+      "id": "T-07",
+      "revision": "R4",
+      "digest": "e37d403cfddc57de6cff8053772be3610771562b280f840f6bd3bede05e70846",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-03",
+        "AC-12",
+        "AC-17",
+        "AC-18",
+        "AC-27",
+        "AC-28"
+      ]
+    },
+    {
+      "id": "T-08",
+      "revision": "R4",
+      "digest": "6d7b984720e56b20713a4f6a31713271029b19c06f1261bf5a60e82cc4079414",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-13",
+        "AC-29"
+      ]
+    },
+    {
+      "id": "T-09",
+      "revision": "R4",
+      "digest": "a2ae7b162828c4a102faadff1972be4cfd3978704b8cefea4854a67ad74788d0",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-11",
+        "AC-20",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-10",
+      "revision": "R4",
+      "digest": "57bb0e37074e1196f5d04c6b79c1a30d1080a5685573231bad82a6554c8f78a9",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-22",
+        "AC-23"
+      ]
+    },
+    {
+      "id": "T-11",
+      "revision": "R4",
+      "digest": "1ad5fb8eb3d8898d9f3f8bc55bb4222532b237f73f6626bf77523cc3f7ac6db6",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-19",
+        "AC-25"
+      ]
+    },
+    {
+      "id": "T-12",
+      "revision": "R4",
+      "digest": "344951dbc90c3a6949e5614a19c342f43fe200ce0c1b75abb4f056b84fa531c1",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-19"
+      ]
+    },
+    {
+      "id": "T-13",
+      "revision": "R4-V03-1",
+      "digest": "4c25515b53cb81336224b9a657d5717aa681bd74f21aab7fc6de77ace560dafb",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-15",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-14",
+      "revision": "R4-V03-1",
+      "digest": "31fc7eb3f5ef5b01b1afd192f0c74f8a98f4024efdc94b18e1ecaf11ff859f47",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-22",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-15",
+      "revision": "R4-V03-1",
+      "digest": "8a4c160b3c916f83de3393b106f6ab0eb269316d0a836d08a7a5447826fd7f33",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-11",
+        "AC-15",
+        "AC-20",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-16",
+      "revision": "R4-V03-1",
+      "digest": "3c8039d2b4f8462c3b8908e3383bfaa4c738cb78d064a876a684b453ccf0bad6",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-21",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-17",
+      "revision": "R4-V03-1",
+      "digest": "a5d2214580e3cd95f56d8dcaca21578e8c1677949319b783e505fafdc27bc537",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-21",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-18",
+      "revision": "R4-V03-1",
+      "digest": "72c51213e7b44b5ea66f585b70e65023b3a537bbe23264653ef47d888df9c33a",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-17",
+        "AC-18",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-19",
+      "revision": "R4-V03-1",
+      "digest": "be5c54b8ec17cbffd370d74f4b20ea30fe9df732c38dafbc7756b421935ec182",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-11",
+        "AC-20",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-20",
+      "revision": "R4-V03-1",
+      "digest": "60e194a4a58d50e6e81c37e81e30f674c0b80c98f8b929a08cb70f408490b25b",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-15",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-21",
+      "revision": "R4-V03-1",
+      "digest": "4ccf68b597df88069ff7413464aaf6e79e94197999071a491952eab3fe8b5605",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-22",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-22",
+      "revision": "R4-V03-1",
+      "digest": "f3a9905f48ea82e014ef0e14247555e5989a6d31d0bfde7f715d74f51e5ad8b3",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-22",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-23",
+      "revision": "R4-V03-1",
+      "digest": "e1328233141a0ab424d4c419dd55d1a40f027c69e81d9bcc14e90ea9503b60d5",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-22",
+        "AC-24",
+        "AC-31"
+      ]
+    },
+    {
+      "id": "T-24",
+      "revision": "R4",
+      "digest": "95426dc8c4e3d618e481e23fd21b2a1da00873dbf8a9b47624e3c8e13e99c03c",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-26",
+        "AC-27",
+        "AC-30"
+      ]
+    },
+    {
+      "id": "T-25",
+      "revision": "R4",
+      "digest": "04ff81c89e7a77a82f9b0ec678adb8893c1928cd5de4bb0fa890e93e78522ab0",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-03",
+        "AC-27",
+        "AC-28"
+      ]
+    },
+    {
+      "id": "T-26",
+      "revision": "R4",
+      "digest": "d386f9aaf039be9373fa32799a4bec97898313d505018118414ae27ac5c94d8c",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-03",
+        "AC-04",
+        "AC-09",
+        "AC-18",
+        "AC-27"
+      ]
+    },
+    {
+      "id": "T-27",
+      "revision": "R4",
+      "digest": "24e2291e064705712c2909b267ae1bff57ef144b2e48ef0d8cafd98e7c619535",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-12",
+        "AC-17",
+        "AC-18",
+        "AC-27",
+        "AC-28",
+        "AC-32"
+      ]
+    },
+    {
+      "id": "T-28",
+      "revision": "R4",
+      "digest": "0e8cbcb0daad38eac1e476568aefc9375a6ef367b155c0d6917b326f508e05b7",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-05",
+        "AC-06",
+        "AC-13",
+        "AC-29"
+      ]
+    },
+    {
+      "id": "T-29",
+      "revision": "R4",
+      "digest": "1cdc2d31d3b63188e8b41981e0d1f37f7f029e824fcd8a25c0d916e07aecb3a0",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-21"
+      ]
+    },
+    {
+      "id": "T-30",
+      "revision": "R4",
+      "digest": "96f311000e101040b7251253f216d9993b9ddd78a81d84d744582dda616880ae",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-05",
+        "AC-06",
+        "AC-09",
+        "AC-13",
+        "AC-17",
+        "AC-18",
+        "AC-22",
+        "AC-29"
+      ]
+    },
+    {
+      "id": "T-31",
+      "revision": "R4",
+      "digest": "9588554cf26fa9fceea4ab0d63ca564cee8fb07f6673fa02767c1d4109828265",
+      "status": "验收通过",
+      "acceptance": [
+        "AC-22",
+        "AC-23"
+      ]
+    }
+  ],
+  "sourceBinding": {
+    "digest": "0b2dda26cb40ac22b2e7a3f9f768f2bd89b7e8c94bfc85415d36d0a860081ad4",
+    "fileCount": 10431,
+    "roots": [
+      "package.json",
+      "scripts",
+      "owner-workflow-plugin",
+      "deepseek-harness/package.json",
+      "deepseek-harness/tsconfig.json",
+      "deepseek-harness/packages",
+      "deepseek-harness/vendor/cordis/lib"
+    ]
+  },
+  "dirtyWorkspaceBoundByContentDigest": true
+}

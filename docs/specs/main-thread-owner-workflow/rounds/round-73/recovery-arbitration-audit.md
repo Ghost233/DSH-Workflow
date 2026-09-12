@@ -1,0 +1,9 @@
+# 后继同版本恢复入口审计（只读）
+
+T15还要求所有会启动外部恢复工作的入口走同一有限预算。当前 Runtime drivePendingPlanRevision 在 nextStrategy=arbitrate 时，先调用 arbitratePendingPlanRevision，随后才到 requiresRecoveryCandidateReview 对非 local_subgraph_rewrite 的门禁。因此仲裁不受后者保护。
+
+arbitratePendingPlanRevision 当前先 consultPlanningOwners，再 requestValidatedPlanReview。前者直接 runChild（至多配置上限个顾问，Promise.all）；后者直接 runChild 并允许一次修正重试。这两条方法中没有与R63/R64同根budget/admission/replan session的绑定，仲裁回写仅比较candidate planDigest。该判断依据当前调用链静态证据，尚未由真实恢复候选仲裁测试证明模型实际越过门禁。
+
+后继优先做真实恢复候选 arbitrate 入口实验，确认预算耗尽时是否仍产生会诊/Review请求；同时检验直接方法入口，避免只守住daemon。修复方向应保证已批准的有限恢复预算覆盖每次实际外部工作，不能用文档声明或现有local rewrite测试代替。尚未形成持久协议的顾问会诊先明确门禁，再逐步接入计费和未知提交对账，最终不能将永久拒绝仲裁当作T15交付。
+
+另：discardPendingPlanRevision仍会只保存部分history并删除pending候选；R64仅自动local rewrite避开该路径，手工废止的来源/预算继承待处理。以上不属R73 daemon派发改动，无冻结后代码修补。

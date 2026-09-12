@@ -1,0 +1,11 @@
+{
+  "contract": "DSH_TICKET_CLOSEOUT_V1",
+  "ticketId": "T-28",
+  "candidateId": "R95-T28-public-owner-decision-session",
+  "outcome": "development_complete",
+  "acceptanceStatus": "pending_central_acceptance",
+  "dependenciesReleased": ["B03", "F10"],
+  "remainingDependencies": ["B03", "CA-01"],
+  "gitCommitCreated": false,
+  "remoteUpdated": false
+}

@@ -1,0 +1,11 @@
+{
+  "contract": "DSH_TICKET_CLOSEOUT_V1",
+  "ticketId": "T-17",
+  "candidateId": "R89-T17-hard-deadline-settlement",
+  "outcome": "development_complete",
+  "acceptanceStatus": "pending_central_acceptance",
+  "dependenciesReleased": ["F8"],
+  "remainingDependencies": ["T-18", "T-19", "B04", "CA-01"],
+  "gitCommitCreated": false,
+  "remoteUpdated": false
+}

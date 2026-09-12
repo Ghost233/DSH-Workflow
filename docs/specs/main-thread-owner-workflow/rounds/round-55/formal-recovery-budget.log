@@ -1,0 +1,298 @@
+TAP version 13
+# Subtest: T13 明确有限配置，没有默认无限值或隐式数值转换
+ok 1 - T13 明确有限配置，没有默认无限值或隐式数值转换
+  ---
+  duration_ms: 1.621458
+  type: 'test'
+  ...
+# Subtest: T13 BUD-01 两级限额原子扣减，问题用完不阻止独立问题
+ok 2 - T13 BUD-01 两级限额原子扣减，问题用完不阻止独立问题
+  ---
+  duration_ms: 1.319916
+  type: 'test'
+  ...
+# Subtest: T13 BUD-03 最后一份额度按传入的新快照串行竞争，两级不半扣
+ok 3 - T13 BUD-03 最后一份额度按传入的新快照串行竞争，两级不半扣
+  ---
+  duration_ms: 0.667583
+  type: 'test'
+  ...
+# Subtest: T13 BUD-03 请求重放在耗尽后仍返回原attempt，重载不重扣
+ok 4 - T13 BUD-03 请求重放在耗尽后仍返回原attempt，重载不重扣
+  ---
+  duration_ms: 0.232416
+  type: 'test'
+  ...
+# Subtest: T13 同request改变workflowId拒绝，不借重复请求改绑定
+ok 5 - T13 同request改变workflowId拒绝，不借重复请求改绑定
+  ---
+  duration_ms: 0.206792
+  type: 'test'
+  ...
+# Subtest: T13 同request改变rootProblemId拒绝，不借重复请求改绑定
+ok 6 - T13 同request改变rootProblemId拒绝，不借重复请求改绑定
+  ---
+  duration_ms: 0.177125
+  type: 'test'
+  ...
+# Subtest: T13 同request改变attemptId拒绝，不借重复请求改绑定
+ok 7 - T13 同request改变attemptId拒绝，不借重复请求改绑定
+  ---
+  duration_ms: 0.166833
+  type: 'test'
+  ...
+# Subtest: T13 同request改变taskId拒绝，不借重复请求改绑定
+ok 8 - T13 同request改变taskId拒绝，不借重复请求改绑定
+  ---
+  duration_ms: 0.1445
+  type: 'test'
+  ...
+# Subtest: T13 同request改变ownerId拒绝，不借重复请求改绑定
+ok 9 - T13 同request改变ownerId拒绝，不借重复请求改绑定
+  ---
+  duration_ms: 0.151208
+  type: 'test'
+  ...
+# Subtest: T13 同request改变executionVersion拒绝，不借重复请求改绑定
+ok 10 - T13 同request改变executionVersion拒绝，不借重复请求改绑定
+  ---
+  duration_ms: 0.467167
+  type: 'test'
+  ...
+# Subtest: T13 同attempt不能被不同request占用；不存在问题与外来Workflow拒绝
+ok 11 - T13 同attempt不能被不同request占用；不存在问题与外来Workflow拒绝
+  ---
+  duration_ms: 0.544833
+  type: 'test'
+  ...
+# Subtest: T13 问题注册幂等但来源和限额不可替换，同来源不能另开根问题
+ok 12 - T13 问题注册幂等但来源和限额不可替换，同来源不能另开根问题
+  ---
+  duration_ms: 0.419667
+  type: 'test'
+  ...
+# Subtest: T13 执行开始绑定不可换，未开始不能成功结算，终态不能重启
+ok 13 - T13 执行开始绑定不可换，未开始不能成功结算，终态不能重启
+  ---
+  duration_ms: 0.844834
+  type: 'test'
+  ...
+# Subtest: T13 启动前failed可结算，不退额度；相同回执重放不改状态
+ok 14 - T13 启动前failed可结算，不退额度；相同回执重放不改状态
+  ---
+  duration_ms: 0.265291
+  type: 'test'
+  ...
+# Subtest: T13 启动前cancelled可结算，不退额度；相同回执重放不改状态
+ok 15 - T13 启动前cancelled可结算，不退额度；相同回执重放不改状态
+  ---
+  duration_ms: 0.1875
+  type: 'test'
+  ...
+# Subtest: T13 开始及结算都重新核验完整绑定，调用错误不能写状态
+ok 16 - T13 开始及结算都重新核验完整绑定，调用错误不能写状态
+  ---
+  duration_ms: 0.740584
+  type: 'test'
+  ...
+# Subtest: T13 BUD-04/05 相关新证据不退预算，A/B/A与换引用重放只留两份事实
+ok 17 - T13 BUD-04/05 相关新证据不退预算，A/B/A与换引用重放只留两份事实
+  ---
+  duration_ms: 0.993875
+  type: 'test'
+  ...
+# Subtest: T13 来源不匹配、相同引用内容冲突、进展升格关闭都拒绝
+ok 18 - T13 来源不匹配、相同引用内容冲突、进展升格关闭都拒绝
+  ---
+  duration_ms: 0.34525
+  type: 'test'
+  ...
+# Subtest: T13 问题关闭需当前根的关闭引用且无未结算attempt，关闭不擦历史
+ok 19 - T13 问题关闭需当前根的关闭引用且无未结算attempt，关闭不擦历史
+  ---
+  duration_ms: 0.929959
+  type: 'test'
+  ...
+# Subtest: T13 序列化账本严格校验，不接纳未知版本、重复记录或被改写的计数
+ok 20 - T13 序列化账本严格校验，不接纳未知版本、重复记录或被改写的计数
+  ---
+  duration_ms: 0.872708
+  type: 'test'
+  ...
+# Subtest: T13 返回对象和输入无共享可写引用；冻结输入仍可工作
+ok 21 - T13 返回对象和输入无共享可写引用；冻结输入仍可工作
+  ---
+  duration_ms: 0.171541
+  type: 'test'
+  ...
+# Subtest: T13 原型敏感字符串只作为ID数据，不能串改其他问题
+ok 22 - T13 原型敏感字符串只作为ID数据，不能串改其他问题
+  ---
+  duration_ms: 0.181375
+  type: 'test'
+  ...
+# Subtest: T13 严格输入不静默丢弃错误字段或伪证据标记
+ok 23 - T13 严格输入不静默丢弃错误字段或伪证据标记
+  ---
+  duration_ms: 0.238417
+  type: 'test'
+  ...
+# Subtest: T13 同根问题换task、Owner或版本仍共享已用额度，不重新注册预算
+ok 24 - T13 同根问题换task、Owner或版本仍共享已用额度，不重新注册预算
+  ---
+  duration_ms: 0.672375
+  type: 'test'
+  ...
+# Subtest: T13 同一核验事实可分别关联多个根问题，各自核验来源和关闭引用
+ok 25 - T13 同一核验事实可分别关联多个根问题，各自核验来源和关闭引用
+  ---
+  duration_ms: 0.387875
+  type: 'test'
+  ...
+# Subtest: T13 F-14 跨attempt跨字段引用拒绝：先执行后结算
+ok 26 - T13 F-14 跨attempt跨字段引用拒绝：先执行后结算
+  ---
+  duration_ms: 0.769417
+  type: 'test'
+  ...
+# Subtest: T13 F-14 跨attempt跨字段引用拒绝：先结算后执行
+ok 27 - T13 F-14 跨attempt跨字段引用拒绝：先结算后执行
+  ---
+  duration_ms: 0.22575
+  type: 'test'
+  ...
+# Subtest: T13 F-14 JSON导入拒绝跨字段串用回执，reverse=false
+ok 28 - T13 F-14 JSON导入拒绝跨字段串用回执，reverse=false
+  ---
+  duration_ms: 0.222292
+  type: 'test'
+  ...
+# Subtest: T13 F-14 JSON导入拒绝跨字段串用回执，reverse=true
+ok 29 - T13 F-14 JSON导入拒绝跨字段串用回执，reverse=true
+  ---
+  duration_ms: 0.152708
+  type: 'test'
+  ...
+# Subtest: T13 F-14 同attempt跨字段引用及重放合法，不同版本引用仍独立
+ok 30 - T13 F-14 同attempt跨字段引用及重放合法，不同版本引用仍独立
+  ---
+  duration_ms: 0.330166
+  type: 'test'
+  ...
+# Subtest: T13 F-14 保留同字段跨attempt去重：execution
+ok 31 - T13 F-14 保留同字段跨attempt去重：execution
+  ---
+  duration_ms: 0.344125
+  type: 'test'
+  ...
+# Subtest: T13 F-14 保留同字段跨attempt去重：result
+ok 32 - T13 F-14 保留同字段跨attempt去重：result
+  ---
+  duration_ms: 0.231917
+  type: 'test'
+  ...
+# Subtest: T15 Owner恢复与重规划共用问题预算，换操作类型/版本不重置额度
+ok 33 - T15 Owner恢复与重规划共用问题预算，换操作类型/版本不重置额度
+  ---
+  duration_ms: 0.480583
+  type: 'test'
+  ...
+# Subtest: T15 重规划与Owner跨根共用Workflow额度，独立问题只在总额尚有余量时继续
+ok 34 - T15 重规划与Owner跨根共用Workflow额度，独立问题只在总额尚有余量时继续
+  ---
+  duration_ms: 0.135041
+  type: 'test'
+  ...
+# Subtest: T15 revision_plan持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣
+ok 35 - T15 revision_plan持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣
+  ---
+  duration_ms: 0.538459
+  type: 'test'
+  ...
+# Subtest: T15 revision_review持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣
+ok 36 - T15 revision_review持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣
+  ---
+  duration_ms: 0.361125
+  type: 'test'
+  ...
+# Subtest: T15 handoff_replan持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣
+ok 37 - T15 handoff_replan持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣
+  ---
+  duration_ms: 0.324042
+  type: 'test'
+  ...
+# Subtest: T15 重规划workflowId改变时reserve/start/settle均拒绝且不修改账本
+ok 38 - T15 重规划workflowId改变时reserve/start/settle均拒绝且不修改账本
+  ---
+  duration_ms: 0.171834
+  type: 'test'
+  ...
+# Subtest: T15 重规划rootProblemId改变时reserve/start/settle均拒绝且不修改账本
+ok 39 - T15 重规划rootProblemId改变时reserve/start/settle均拒绝且不修改账本
+  ---
+  duration_ms: 0.147833
+  type: 'test'
+  ...
+# Subtest: T15 重规划requestId改变时reserve/start/settle均拒绝且不修改账本
+ok 40 - T15 重规划requestId改变时reserve/start/settle均拒绝且不修改账本
+  ---
+  duration_ms: 0.176416
+  type: 'test'
+  ...
+# Subtest: T15 重规划attemptId改变时reserve/start/settle均拒绝且不修改账本
+ok 41 - T15 重规划attemptId改变时reserve/start/settle均拒绝且不修改账本
+  ---
+  duration_ms: 0.29475
+  type: 'test'
+  ...
+# Subtest: T15 重规划executionVersion改变时reserve/start/settle均拒绝且不修改账本
+ok 42 - T15 重规划executionVersion改变时reserve/start/settle均拒绝且不修改账本
+  ---
+  duration_ms: 0.168542
+  type: 'test'
+  ...
+# Subtest: T15 重规划executionKind改变时reserve/start/settle均拒绝且不修改账本
+ok 43 - T15 重规划executionKind改变时reserve/start/settle均拒绝且不修改账本
+  ---
+  duration_ms: 0.142791
+  type: 'test'
+  ...
+# Subtest: T15 重规划operationId改变时reserve/start/settle均拒绝且不修改账本
+ok 44 - T15 重规划operationId改变时reserve/start/settle均拒绝且不修改账本
+  ---
+  duration_ms: 0.17325
+  type: 'test'
+  ...
+# Subtest: T15 重规划operationKind改变时reserve/start/settle均拒绝且不修改账本
+ok 45 - T15 重规划operationKind改变时reserve/start/settle均拒绝且不修改账本
+  ---
+  duration_ms: 0.219917
+  type: 'test'
+  ...
+# Subtest: T15 重规划绑定严格拒绝混合身份、未知类型、缺失字段以及静默降级
+ok 46 - T15 重规划绑定严格拒绝混合身份、未知类型、缺失字段以及静默降级
+  ---
+  duration_ms: 2.317625
+  type: 'test'
+  ...
+# Subtest: T15 同request不能在Owner和replan之间换绑，回执也不能跨执行类型串用
+ok 47 - T15 同request不能在Owner和replan之间换绑，回执也不能跨执行类型串用
+  ---
+  duration_ms: 0.720333
+  type: 'test'
+  ...
+# Subtest: T15 未启动重规划取消不退预算，存在未结算操作时根问题不能关闭
+ok 48 - T15 未启动重规划取消不退预算，存在未结算操作时根问题不能关闭
+  ---
+  duration_ms: 0.292666
+  type: 'test'
+  ...
+1..48
+# tests 48
+# suites 0
+# pass 48
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 122.817458

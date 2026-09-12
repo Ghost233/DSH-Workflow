@@ -1,0 +1,41 @@
+# 重规划会话适配合同 V1（R58）
+
+本合同是T15内部适配器，不是公开Runner工具，不证明三个实际重规划入口或整个T15已完成。它消费R57持久预留的replan_operation，复用真实Harness子代理、JSONL持久后端及Planner/Review提交工具。
+
+## 请求与持久身份
+
+`reconcileReplanSession(agent, workflowId, request, signal)` 接受精确形状：
+
+```js
+{
+  contract: 'DSH_REPLAN_SESSION_REQUEST_V1',
+  requestId: 'reserved-request-id',
+  prompt: { id: 'reserved-prompt-id', content: 'immutable-prompt' },
+}
+```
+
+调用前必须已有正确来源、批准依据、当前计划版本及预算预留；适配器再次检查这些条件。只接受真实JsonlSessionPersistence、supportsRawArtifacts=true、compression=none。持久session/prompt身份不由调用者重新生成。
+
+状态保存在workflow.replanSessions[requestId]，合同DSH_REPLAN_SESSION_STATE_V1，绑定sourceId/rootProblemId/requestId/attemptId/planDigest/operationKind/operationId/ordinal/executionIdentity/prompt，另含leaseToken、phase及contextMessages。使用独立workflow规划资源租约与现有持久状态写锁，不制造Planner Owner运行记录，不占用独立Owner的资源租约。
+
+首次调用核对预留身份不存在原始会话或快照，先持久creating，再调用真实provider创建。实际created回调才记录T13 running及执行引用{id:sessionId,version:promptId}；followup与flush后持久submitted。既有状态仅对账，从不重新创建/发送。creating之后响应丢失、日志缺失或无法判断执行进展均暂停；不退款、不猜测未执行、不自动补发。已存在但没有本适配器绑定的会话也拒绝启动。
+
+## 实际输入与提交证据
+
+provider在实际pre-step边界、模型执行之前持久固定系统提示插件注入的上下文快照或clear消息。仅接纳精确形状和固定插件来源，按消息ID绑定完整内容；同ID不可变更。这些输入必须与原始日志逐字结构匹配，不能仅凭日志中的插件名称放行额外用户输入。请求prompt必须唯一且内容相同。
+
+读取器复用恢复会话的原始JSONL完整性、连续事件与稳定revision核对；允许同一turn多个模型step，每步须有匹配assistant和step/end。仅明确completed或aborted终态可判定。预期提交工具为workflow_plan_submit，revision_review改用workflow_plan_review_submit。严格关联tool/call、tool/result、turn、step、callId、sourceEventSeqs、accepted=true及提交结果合同，再从原始call参数提取plan/review；缺失、错配或多份成功提交均暂停。
+
+真实submit返回后，submissionReady可能先结束runChild，dispose取消尚未结束的模型turn。因此已成功tool receipt加aborted终态可以证明提交已观察到；内存submissionReady、裸completed或裸aborted均不能替代该证据。最终flush在子代理工具与终态完成后进行。
+
+## 结果与结算边界
+
+结果合同DSH_REPLAN_SESSION_RESULT_V1。submission_observed附payload和receipt（toolName/callId/callSeq/resultSeq/payloadDigest/terminalSeq/terminalKind/revision），状态phase=submission_observed，T13仍running。它不证明语义正确、候选被采纳、DAG已应用或根问题关闭。
+
+完整终态且无成功提交时，completed结算failed，aborted结算cancelled，结果引用{id:promptId,version:sessionId}。仅符合R57规则的failed前项允许下一ordinal；未知、取消及尚待语义应用的提交不自动重试。异常或无法确认的原始证据返回paused，不伪造结果，不增加新物理调用。重放仍核对最新来源、身份、账本及完整原始日志。
+
+实际cycle/handoff触发快照、咨询调用计费、候选语义验证和输出应用尚需后续接线。新进程/控制器SIGKILL后的完整结果fencing不是本轮已证明能力；本轮新Harness上下文重开验证不得表述为SIGKILL恢复验收。
+
+## R59 语义结果的受控消费
+
+实际失败handoff入口可在同一持久状态事务中写待审候选并将T13结算succeeded，session phase=applied；该applied只指候选落盘，不是active DAG激活。结构提交通过但外层handoff语义检查失败则T13 failed、phase=validated_failed。两者都沿用原session/prompt反向结果引用。此已结算结果的重放由handoff入口核对operation、账本、session和原始receipt，通用reconcile不重新运行或覆盖语义结论。详见handoff-recovery-v1.md。

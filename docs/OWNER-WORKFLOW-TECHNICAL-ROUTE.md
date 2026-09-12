@@ -12,8 +12,9 @@
 - `owner-lifecycle.mjs`：定义 blocked、handoff 等 Owner 生命周期信号。
 - `intent.mjs`：保存单根会话树中用户明确提交的执行意图。
 - `plan-revision.mjs`：定义精简不可变 PlanRevision 和运行中任务的变更分类。
+- `convergence.mjs`：定义冻结证据义务、Runtime 证据摘要、语义进展租约、失败分类和自治策略组合；修订次数只保留为遥测。
 - `workflow-conversation.mjs`：维护项目唯一 Workflow 槽位和可核验的单根普通 fork 会话树。
-- `client-runtime.js`：实现行动收件箱，合并 Runtime 等待投影与 Harness 原生 pendingInteraction，并跳转到目标会话。
+- `client-runtime.js`：实现行动收件箱，合并 Runtime 等待投影与 Harness 原生 pendingInteraction，只投影当前 Workspace 的当前 Session 谱系，并跳转到目标会话。
 
 子代理的正常开发能力由 Harness 提供，插件只在角色边界和提交事务上实施确定性约束。
 
@@ -52,12 +53,30 @@ Git 跟踪的 `.owner-workflow/` 是跨 workflow 的 Owner Registry 真源：
 ```text
 .owner-workflow/
 ├── config.json
-└── owners/<owner-id>.md
+└── owners/
+    └── <owner-id>/
+        ├── owner.md
+        └── memory/
+            ├── index.md
+            ├── log.md
+            ├── .catalog.json
+            └── ...
 ```
 
 Owner 的代码分析可以由专门子代理完成，但设定、提案展示、原生问询与批准必须绑定创建 Workflow 的主线程；批准后才由 Runtime 写入项目基础分支。
 
-Git 忽略的 `.dsh-workflow/` 保存 workflow 状态、Operation 状态、任务记录、lease、控制清单、事件流、临时 worktree、固定 SHA/预合并记录、日志和 Dashboard 投影。`.owner-memory/` 仍是 Git 跟踪的长期知识真源，不授予 Owner scope。
+Git 忽略的 `.dsh-workflow/` 保存 workflow 状态、Operation 状态、任务记录、lease、控制清单、事件流、临时 worktree、固定 SHA/预合并记录、日志和 Dashboard 投影。每个 Owner 的 `memory/` 是 Git 跟踪的长期知识真源，不授予 Owner scope。
+
+项目首次初始化 Runtime、Dashboard 或 Runner 时会创建 `.dsh-workflow/.gitignore`。Git 边界由数据生命周期决定：
+
+| 生命周期 | 目录 | Git 策略 | Owner 示例 |
+| --- | --- | --- | --- |
+| 项目配置 | `.owner-workflow/` | 跟踪 | `config.json`、`owners/<owner-id>/owner.md` |
+| 项目运行时 | `<workspace>/.dsh-workflow/` | 仅跟踪目录内 `.gitignore`，其余忽略 | workflow 状态、Owner lease、worktree、日志、Dashboard 投影 |
+| 全局 Runner | `${DSH_HOME}/owner-workflow/.dsh-workflow/runner/` | 位于项目 Git 外 | 全局 Leader lease、daemon 状态、跨工作区 attempt journal |
+| 长期存储 | `.owner-workflow/owners/<owner-id>/memory/` | 跟踪 | 该 Owner 的知识页、索引、可审计编译来源 |
+
+因此同一 Owner 的职责配置与长期知识位于同一个分类目录，且不会混入可清理的 Runtime；删除 `.dsh-workflow/` 只会丢失本机运行现场，不会删除 Owner 配置或长期资料。
 
 ### 2.1 非编码 Operation 通道
 
@@ -92,19 +111,41 @@ Operation 子代理默认继承主代理模型；部署可通过 `DSH_OWNER_WORK
 
 规划子 Agent 可以提出 Registry 变化，但不能直接写正式 Registry。运行时按以下顺序处理：
 
-1. `owner_change_propose` 校验受管根、scope、父子关系和现有任务影响，生成包含 before/after 与精确 digest 的提案。
+1. Planner 把同一轮分析发现的全部增删、拆分、合并、转交或 scope 变化收进一个 `type=batch` 的 `registryOperation`；`owner_change_propose` 按顺序校验每个子操作的受管根、scope、父子关系和现有任务影响，生成一份包含完整 operations、最终 before/after 与精确 digest 的原子提案。
 2. 主编排者立即调用 `workflow_owner_change_approve`，由工具确定性读取并展示提案摘要、受影响 Owner、文件范围和 digest；不让模型手写批准提示。
 3. `workflow_owner_change_approve` 先校验待批准提案与 digest，再通过 `ctx.userQuestions.ask` 显示“同意/不同意/自定义输入”原生问询。只有明确同意才在 workflow worktree 应用 Registry 并形成可审计 Git 变更；不同意和自定义意见都不修改状态。
 4. `workflow_plan_approve` 使用相同的原生问询门禁。问询前先校验独立审查、`planDigest` 和实时 `registryDigest`；只有明确同意才把计划转为 `approved`。
 5. 受影响的 reserved 或 running task 存在时拒绝应用；应用后使旧计划、Review、验证和完成绑定失效，必须重新规划、审查和审批。
 
-Registry 的正式增删、拆分、合并、转交和 scope 变化没有绕过审批的直写入口。初始 Registry 为空时，Planner 只能提出第一批 Owner；Registry digest 与完整 plan digest 都获批后才能启动 Supervisor。
+可续接 Planner 启动前必须在 Workflow 锁内持久化 live Registry digest，并立即建立控制桥。若旧现场缺失顶层 digest，Runtime 只有在计划 digest、`plan.registryDigest`、Owner 定义与 live Registry 全部一致时才允许自动补绑。外置 Runner daemon 会检测 `planningAgent=failed`、Reviewer 长期未启动、审查超时、待诊断、待会诊或待仲裁的 `planned` Workflow，并发通过控制桥恢复；单个慢请求不会阻塞其他工作区扫描。新版证据租约不再因修订次数耗尽打开扩额问询：计数只用于遥测，继续、切换策略或保存自治事故由 Evidence Obligations、Runtime facts 和语义进展决定。旧状态中的 `pendingPlanningDecision`、`awaiting_revision_extension` 与扩额工具仅用于兼容恢复，不再由新 Workflow 产生。Runner 不直接编辑计划语义，也不调用模型；它只执行 Runtime 给出的确定性恢复策略并持久化 attempt、failure class 与 evidence digest。
+
+Registry 的正式增删、拆分、合并、转交和 scope 变化没有绕过审批的直写入口。初始 Registry 为空时，Planner 必须一次性提出按当前代码结构分析出的完整第一批 Owner，不能批准一个后再逐个补提；整批只问询一次并原子应用。Registry digest 与完整 plan digest 都获批后才能启动 Supervisor。
 
 Planner 计划中的 `owners` 是 Owner ID 选择器，不是第二份 Registry。Runtime 根据这些 ID 从当前正式 Registry（或本轮 `registryOperation` 的确定性 after 快照）注入名称、职责、scope、exclude 与父子关系，然后才规范化任务并校验 `task.write`。因此 Planner 的自然语言改写不会造成伪冲突，伪造宽 scope 也会被正式边界覆盖并拒绝越界任务。
 
-计划 Reviewer 不再通过普通文本返回 JSON。Runtime 只向当前 `plan-reviewer` 角色开放 `workflow_plan_review_submit`，该工具只接受 `DSH_PLAN_REVIEW_V1`、`passed|needs_revision` 和结构化 issues。子线程没有成功提交或提交非法契约时，Runtime 会携带确定性校验错误新建一次独立重试；第二次仍失败才关闭处理。合法结果随后绑定当前 `planDigest` 并原子保存。
+计划 Reviewer 不再通过普通文本返回 JSON。Runtime 只向当前 `plan-reviewer` 角色开放 `workflow_plan_review_submit`，该工具接受 `DSH_PLAN_REVIEW_V1` 与 `passed|needs_revision|needs_split|needs_decision|needs_discovery`；后三种结果分别要求 `targetTaskIds`、`decisionQuestions` 或 `discoveryQuestions`。首次完整审查一次性建立有限的 Evidence Obligations；后续审查只能关闭这些义务。没有新的 Runtime facts 时，新问题进入独立 Arbiter，而不会扩大冻结集合；同类问题换标题或升级 status 也不会被视为进展。子线程没有成功提交或提交非法契约时，Runtime 会携带确定性校验错误新建一次独立重试。
 
 ## 4. DSH_PLAN_V2 与任务 DAG
+
+### 4.1 证据驱动的自治收敛
+
+Runtime 不再用候选次数判断任务大小或决定是否把问题交给用户。每个规划/执行现场持有可自动续期的进展租约；只有下列 Runtime 可核验变化才续期：
+
+- 固定验证从失败变为通过；
+- 未知项转化为仓库、命令、Git 或运行时事实；
+- open Evidence Obligation 数量减少；
+- 新的固定提交、artifact 或任务 checkpoint 生效；
+- 失败范围缩小到具体 Owner、任务、命令或文件族。
+
+Planner 文本、候选 digest、总结改写、DAG 节点增加、重启 Agent 或重复同一命令都不算进展。没有进展时，纯脚本 Runner 不重复同一策略，而是在 `local_subgraph_rewrite → diagnose → owner_council → arbitrate → alternate_implementation` 中选择尚未使用且适合当前失败类别的策略。所有策略均未增加证据时保存 `autonomous_incident` 与全部 checkpoint，不要求用户处理工程问题；只有凭据、真实设备、费用、生产发布、不可逆外部操作或原始 Intent 无法裁决的产品权限才进入用户授权。
+
+`autonomous_incident` 不是永久终态。全局 Runner 定期调用只读 `convergence-probe`；Runtime 重新核验 Git、Owner worktree、固定验证和任务 checkpoint。证据摘要变化时自动清空本轮已用策略、续期租约并从诊断策略继续，证据未变化时不生成新候选。
+
+任务不按预计耗时、代码行数或轮次判断“大/小”。叶子只需同时满足：一个正式 Owner、一个独立可验收结果、一个相关文件/产物族、至少一份 Runtime 可核验证据。满足后必须停止继续拆分。PlanRevision 只允许修改冻结义务指向的目标节点及其必要后继；无关任务的结构契约保持不变，已完成任务继续作为不可删除 checkpoint。
+
+V2 不另建 Roadmap，而是在同一份 DAG 内递归细化。`decomposition.status=abstract` 的高层节点只声明 outcome、Owner 候选与 unknowns，可以暂时没有精确 write/verify；`expanded` 节点由 children/entry/exit 定义子图，并允许子节点继续递归展开；只有 `leaf` 节点可被 Supervisor 执行。任何 abstract 节点存在时，整份计划的 `executable=false`，批准和 Supervisor 都会拒绝。
+
+拆分只沿问题边界和现有长期 Owner 责任边界进行，不从 Workflow 步骤创建 Owner。规划前 Runtime 并行启动相关 Owner 只读会诊：每个 Owner 只能使用自己的设定、scope、长期记忆和仓库事实提供节点、依赖、handoff、风险与验证建议；Planner 仍是唯一 DAG 写入者。
 
 V2 计划的最小契约为：
 
@@ -176,7 +217,7 @@ Owner 必须调用 `owner_submit`。这个唯一提交关卡自动执行固定�
 
 ## 7. Supervisor 控制路径
 
-外置 `run-owner-workflow` 是持久 `workflowd`。它不读取、遍历或解释原始计划，也不自行选择任务，只通过本地控制桥领取确定性 receipt。Runtime 是 DAG、Owner scope、lease、验证、Git 与状态的唯一权威：
+外置 `run-owner-workflow` 是持久 `workflowd`。全局 Leader lease 使用递增 generation 与随机 fencing token；仍存活的同版本 Leader 不会因一次心跳延迟被抢占。daemon 状态同时固定 runner 源码摘要，启动器发现版本变化时先终止旧 Leader，再启动新版本，禁止两个版本并行。每次 planning-recovery 或 execution 都以唯一 `attemptId` 写入 `.dsh-workflow/runner/attempts/`，记录 deadline、终态与错误类别；新 Leader 启动时先结算旧 attempt，再从 Workflow 持久状态重新发现。失败按类别指数退避，每个 Workflow 只保留最近 100 个 attempt，避免 Harness 离线期间产生无界日志。它不读取、遍历或解释原始计划，也不自行选择任务，只通过本地控制桥领取确定性 receipt。Runtime 是 DAG、Owner scope、lease、验证、Git 与 Workflow 状态的唯一权威：
 
 ```text
 supervisor next → create | wait | notify | inspect | stop
@@ -216,14 +257,14 @@ Web Harness 启动时，bundle 会加载一个仅依赖 `webServer` 的 Dashboar
 /owner-workflow
 ```
 
-Runtime 把实际业务工作区登记到启动脚本固定目录中的 `workspaces.json`，页面先通过 opaque `workspace_id` 选择工作区，再使用只读 workflow 与 Operation 接口。页面可查看 workflow、任务级 DAG、Owner、后台 Operation、等待主代理状态和经过字段白名单处理的最近事件；目录接口不返回本地路径，Operation 投影也不暴露父子会话或等待批准的原始命令。浏览器不能传入任意本地路径，也没有状态迁移、Git、Shell、CORS 或命令接口。该实现使用 Harness 已有的命名 Web 路由，不修改子模块，也不要求第三方插件侵入不存在的主界面顶部 Tab 插槽。
+Runtime 把实际业务工作区登记到全局 `DSH_OWNER_WORKFLOW_CATALOG_ROOT` 中的 `workspaces.json`，页面先通过 opaque `workspace_id` 选择工作区，再使用只读 workflow 与 Operation 接口。页面可查看 workflow、任务级 DAG、Owner、后台 Operation、等待主代理状态和经过字段白名单处理的最近事件；目录接口不返回本地路径，Operation 投影也不暴露父子会话或等待批准的原始命令。选中 Workflow 通过 `/owner-workflow/api/snapshot/events` 建立文件事件驱动 SSE，变化后重新获取安全快照；页面不再对 Workflow 做周期轮询。安全投影携带确定性 phase、审查摘要/问题数量和只读 action 提示，使 `plan_review_failed`、`plan_revision_in_progress`、`awaiting_revision_extension` 与 `awaiting_plan_approval` 不会混成一个 `planned` 标签。页面宽度跟随视口、没有最大宽度，最小宽度固定为 1000px。浏览器不能传入任意本地路径，也没有状态迁移、Git、Shell、CORS 或命令接口。
 
 静态客户端模块另外占用两个现有的可加性 Slot：
 
 - `conversation.session.header.actions`：只在当前会话存在活动 Operation 时显示“等待 N”。
 - `sidebar.footer.action`：持续显示跨会话“主动等待 N”，展开后按会话分组。
 
-两个入口共用 `GET /owner-workflow/api/waits`。接口扫描已登记工作区中的 `.dsh-workflow/operations/*/state.json`，只返回活动状态、父会话编号、工作区显示名和经过长度限制的摘要；不会返回本地路径、子线程编号或原始命令。客户端以一秒间隔刷新，并在接口暂不可用时明确显示错误而不伪造状态。
+两个入口共用 `GET /owner-workflow/api/waits` 与 `/owner-workflow/api/waits/events`。接口扫描已登记工作区中的 Runtime 状态，只返回活动状态、父会话编号、工作区显示名和经过长度限制的摘要；不会返回本地路径、子线程编号或原始命令。客户端通过可自动重连的 SSE 接收变化，不运行周期轮询，并在接口暂不可用时明确显示错误而不伪造状态。
 
 这里不使用自定义 Session Event。当前 Harness 的持久化读取端只接受构建时已知事件，外部插件写入未登记事件会破坏会话重载；因此 Operation 磁盘状态保持唯一权威，等待列表只是可丢弃、可重建的只读视图。
 

@@ -1,0 +1,9 @@
+/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs:261
+    sessionId: modules.SessionId('recovery-session-parent'),
+                       ^
+
+TypeError: modules.SessionId is not a function
+    at createRecoverySessionFixture (/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs:261:24)
+    at async file:///Volumes/LargeStorage/code/DSH-Workflow/[eval1]:1:263
+
+Node.js v24.12.0

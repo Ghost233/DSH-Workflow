@@ -10,6 +10,7 @@ import {
   registerDashboardWorkspace,
   resolveDashboardWorkspace,
   serveDashboardWaitEvents,
+  serveDashboardWorkflowEvents,
 } from './src/dashboard.mjs'
 import { renderDashboardPage } from './src/dashboard-page.mjs'
 
@@ -20,6 +21,13 @@ function dashboardRoot(config) {
   const candidate = typeof config?.root === 'string' && config.root.trim() !== ''
     ? config.root
     : process.cwd()
+  return resolve(candidate)
+}
+
+function dashboardCatalogRoot(config, workspaceRoot) {
+  const candidate = typeof config?.catalogRoot === 'string' && config.catalogRoot.trim() !== ''
+    ? config.catalogRoot
+    : workspaceRoot
   return resolve(candidate)
 }
 
@@ -58,14 +66,15 @@ function internalError(response) {
  * 创建 Web 宿主路由。页面与 JSON 接口都只读固定的启动工作区，
  * 因而浏览器请求不能指定本地路径或驱动 Runtime 状态迁移。
  */
-export function createDashboardHandler(root) {
-  const catalogRoot = dashboardRoot({ root })
-  const catalogReady = registerDashboardWorkspace(catalogRoot, catalogRoot)
+export function createDashboardHandler(root, options = {}) {
+  const workspaceRoot = dashboardRoot({ root })
+  const catalogRoot = dashboardCatalogRoot(options, workspaceRoot)
+  const catalogReady = registerDashboardWorkspace(catalogRoot, workspaceRoot)
   const requestWorkspace = async url => {
     await catalogReady
     const workspaceId = url.searchParams.get('workspace_id')
     return workspaceId === null || workspaceId === ''
-      ? catalogRoot
+      ? workspaceRoot
       : resolveDashboardWorkspace(catalogRoot, workspaceId)
   }
   return async (request, response) => {
@@ -150,6 +159,21 @@ export function createDashboardHandler(root) {
       }
       return
     }
+    if (url.pathname === '/owner-workflow/api/snapshot/events') {
+      const workflowId = url.searchParams.get('workflow_id')
+      if (workflowId === null || workflowId.trim() === '') {
+        invalidRequest(response)
+        return
+      }
+      try {
+        const workspace = await requestWorkspace(url)
+        await serveDashboardWorkflowEvents(workspace, workflowId, response)
+      } catch {
+        if (!response.headersSent) unavailable(response)
+        else response.end()
+      }
+      return
+    }
     if (url.pathname === '/owner-workflow/api/snapshot') {
       const workflowId = url.searchParams.get('workflow_id')
       if (workflowId === null || workflowId.trim() === '') {
@@ -172,10 +196,11 @@ export function createDashboardHandler(root) {
 
 export function apply(ctx, config = {}) {
   const root = dashboardRoot(config)
+  const catalogRoot = dashboardCatalogRoot(config, root)
   const dispose = ctx.webServer.register({
     kind: 'prefix',
     path: '/owner-workflow',
-    handler: createDashboardHandler(root),
+    handler: createDashboardHandler(root, { catalogRoot }),
   })
   ctx.effect(() => dispose, 'Owner 工作流 Dashboard 路由')
 }

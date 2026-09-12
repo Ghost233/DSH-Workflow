@@ -1,0 +1,176 @@
+--- owner-workflow-plugin/test/recovery-session-restart.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session-restart.test.mjs
+@@ -99,7 +99,10 @@
+   assert.equal(typeof checkpoint.rawLocationPath, 'string')
+   return {
+     stateBytes: await readFile(workflowStatePath(checkpoint.root, checkpoint.workflowId), 'utf8'),
+-    rawContent: await readFile(checkpoint.rawLocationPath, 'utf8'),
++    rawContent: await readFile(checkpoint.rawLocationPath, 'utf8').catch(error => {
++      if (error.code === 'ENOENT' && checkpoint.scenario === 'created') return null
++      throw error
++    }),
+   }
+ }
+
+@@ -116,7 +119,7 @@
+ async function writeEvidence(scenario, producer, postKill, replay) {
+   const directory = join(EVIDENCE_ROOT, scenario)
+   await mkdir(directory, { recursive: true })
+-  const write = async (name, content) => await writeFile(join(directory, name), content, 'utf8')
++  const write = async (name, content) => await writeFile(join(directory, name), content ?? 'null\n', 'utf8')
+   await Promise.all([
+     write('checkpoint.workflow-state.json', producer.checkpoint.stateBytes),
+     write('checkpoint.reserved-session.jsonl', producer.checkpoint.rawContent),
+@@ -125,6 +128,7 @@
+       exit: producer.exit,
+       checkpoint: producer.checkpoint.checkpoint,
+       rawLocationPath: producer.checkpoint.rawLocationPath,
++      rawArtifactPresent: postKill.rawContent !== null,
+     }, null, 2)}\n`),
+     write('postkill.workflow-state.json', postKill.stateBytes),
+     write('postkill.reserved-session.jsonl', postKill.rawContent),
+@@ -283,3 +287,41 @@
+     await writeEvidence('settled-succeeded-sigkill-replay', producer, postKill, replay)
+   })
+ })
++
++
++test('T22 SIGKILL after real session binding before followup preserves the unsubmitted execution on restart', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(
++      startRestartChild({ mode: 'produce_created', fixtureParent }),
++      'created',
++    )
++    assert.equal(producer.checkpoint.checkpoint.phase, 'created')
++    assert.equal(producer.checkpoint.checkpoint.ownerStatus, 'running')
++    assert.equal(producer.checkpoint.checkpoint.modelRequests, 0)
++    const postKill = await capturePostKill(producer.checkpoint)
++    const state = JSON.parse(postKill.stateBytes)
++    const run = state.ownerRuns['T1:api']
++    const identity = producer.checkpoint.receipt.executionIdentity
++    assert.equal(run.sessionId, identity.sessionId)
++    assert.deepEqual(run.recoverySession.executionIdentity, identity)
++    assert.equal(run.recoverySession.prompt.id, identity.promptId)
++    assert.ok(run.recoverySession.prompt.content.length > 0)
++    assert.equal(postKill.rawContent, null)
++    assert.notEqual(producer.checkpoint.checkpoint.budgetAttempt.state, 'settled')
++    const replay = await finishReplay({
++      scenario: 'created',
++      rawLocationPath: producer.checkpoint.rawLocationPath,
++      root: producer.checkpoint.root,
++      workflowId: producer.checkpoint.workflowId,
++      receipt: producer.checkpoint.receipt,
++      request: producer.checkpoint.request,
++    })
++    assert.notEqual(replay.pid, producer.checkpoint.pid)
++    assert.equal(replay.result.outcome, 'paused')
++    assert.equal(replay.result.phase, 'technical_pause')
++    assertReplayReadOnly(postKill, replay)
++    await assert.rejects(readFile(producer.checkpoint.rawLocationPath), { code: 'ENOENT' })
++    assert.equal(replay.result.reason, 'raw_artifact_missing')
++    await writeEvidence('created-before-followup-sigkill-pause', producer, postKill, replay)
++  })
++})
+--- owner-workflow-plugin/test/fixtures/recovery-session-restart-child.mjs (baseline)
++++ owner-workflow-plugin/test/fixtures/recovery-session-restart-child.mjs
+@@ -84,14 +84,14 @@
+   return join(root, '.dsh-workflow', 'workflows', `${workflowId}.json`)
+ }
+
+-async function capture(fixture, receipt) {
++async function capture(fixture, receipt, unmaterializedLocation) {
+   const stateBytes = await readFile(statePath(fixture.root, fixture.workflowId), 'utf8')
+   const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
+-  if (raw === undefined) throw new Error('restart checkpoint has no reserved session artifact')
++  if (raw === undefined && unmaterializedLocation === undefined) throw new Error('restart checkpoint has no reserved session artifact')
+   // readRaw parses the persisted header from the artifact itself, so this
+   // remains available after a completed one-shot Owner is no longer live in
+   // the Context's session store.
+-  const location = fixture.ctx.sessionPersistence.locate(raw.meta)
++  const location = raw === undefined ? unmaterializedLocation : fixture.ctx.sessionPersistence.locate(raw.meta)
+   const state = JSON.parse(stateBytes)
+   const record = state.ownerRuns?.['T1:api']
+   const budgetAttempt = state.recoveryAdmission?.budget?.attempts?.find(
+@@ -99,7 +99,7 @@
+   )
+   return {
+     stateBytes,
+-    rawContent: raw.content,
++    rawContent: raw?.content ?? null,
+     ...(location?.kind === 'jsonl' ? { rawLocationPath: location.path } : {}),
+     checkpoint: {
+       phase: record?.recoverySession?.phase,
+@@ -111,8 +111,8 @@
+   }
+ }
+
+-async function holdAfterCheckpoint(fixture, receipt, scenario) {
+-  const evidence = await capture(fixture, receipt)
++async function holdAfterCheckpoint(fixture, receipt, scenario, unmaterializedLocation) {
++  const evidence = await capture(fixture, receipt, unmaterializedLocation)
+   await send({
+     type: 'checkpoint',
+     scenario,
+@@ -124,6 +124,35 @@
+     ...evidence,
+   })
+   await new Promise(() => {})
++}
++
++async function produceCreated(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true,
++    temporaryDirectory: input.fixtureParent,
++    modelScript: submittedOwnerModelScript,
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  let location
++  const create = fixture.ctx.agents.create.bind(fixture.ctx.agents)
++  fixture.ctx.agents.create = async (...args) => {
++    const handle = await create(...args)
++    if (handle.agent.id === receipt.executionIdentity.sessionId) {
++      location = fixture.ctx.sessionPersistence.locate(handle.agent.session.header)
++    }
++    return handle
++  }
++  const persistSession = fixture.runtime.persistOwnerSession.bind(fixture.runtime)
++  fixture.runtime.persistOwnerSession = async (...args) => {
++    const saved = await persistSession(...args)
++    if (location?.kind !== 'jsonl') throw new Error('created session has no physical target location')
++    await holdAfterCheckpoint(fixture, receipt, 'created', location)
++    return saved
++  }
++  await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, request(receipt),
++  )
++  throw new Error('created producer completed after its kill checkpoint')
+ }
+
+ async function produceSubmitted(input) {
+@@ -222,7 +251,7 @@
+     executable: true,
+   })
+   try {
+-    const before = await capture(fixture, input.receipt)
++    const before = await capture(fixture, input.receipt, input.scenario === 'created' ? { kind: 'jsonl', path: input.rawLocationPath } : undefined)
+     // These wrappers remain transparent: they count and immediately delegate
+     // to the real source Harness APIs.  The parent itself was created before
+     // instrumentation, so the count covers reconciliation only.
+@@ -232,7 +261,7 @@
+       fixture.workflowId,
+       input.request,
+     )
+-    const after = await capture(fixture, input.receipt)
++    const after = await capture(fixture, input.receipt, input.scenario === 'created' ? { kind: 'jsonl', path: input.rawLocationPath } : undefined)
+     await send({
+       type: 'replayed',
+       scenario: input.scenario,
+@@ -251,6 +280,8 @@
+
+ async function dispatch(input) {
+   switch (input?.mode) {
++    case 'produce_created':
++      return await produceCreated(input)
+     case 'produce_submitted':
+       return await produceSubmitted(input)
+     case 'produce_settled_failed':

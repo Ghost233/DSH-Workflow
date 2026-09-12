@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: R76 owner-advice normalizer canonicalizes optional lists while the public schema requires every field
+ok 1 - R76 owner-advice normalizer canonicalizes optional lists while the public schema requires every field
+  ---
+  duration_ms: 0.843625
+  type: 'test'
+  ...
+# Subtest: R76 paid worker owner-consultation writes an accepted raw receipt and fresh replay cannot spend again
+ok 2 - R76 paid worker owner-consultation writes an accepted raw receipt and fresh replay cannot spend again
+  ---
+  duration_ms: 1668.652625
+  type: 'test'
+  ...
+# Subtest: R76 exhausted owner-consultation admission refuses a second Owner before a child is created
+ok 3 - R76 exhausted owner-consultation admission refuses a second Owner before a child is created
+  ---
+  duration_ms: 693.968542
+  type: 'test'
+  ...
+# Subtest: R76 a wrong-owner structured payload never becomes an accepted advice receipt
+ok 4 - R76 a wrong-owner structured payload never becomes an accepted advice receipt
+  ---
+  duration_ms: 835.373625
+  type: 'test'
+  ...
+# Subtest: R76 an uncertain owner-advisor creation preserves its worker binding for fresh Harness reconciliation without a prompt
+ok 5 - R76 an uncertain owner-advisor creation preserves its worker binding for fresh Harness reconciliation without a prompt
+  ---
+  duration_ms: 863.189167
+  type: 'test'
+  ...
+# Subtest: R76 a completed owner-advisor turn without submission settles failed and permits its next paid ordinal
+ok 6 - R76 a completed owner-advisor turn without submission settles failed and permits its next paid ordinal
+  ---
+  duration_ms: 1091.512792
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5318.507083

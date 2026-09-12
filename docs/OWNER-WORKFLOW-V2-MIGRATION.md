@@ -19,14 +19,14 @@ V2 不是把旧计划字段补齐后继续执行，而是建立新的、经过�
 
 ### 2. 建立并审批正式 Owner Registry
 
-把当前责任域整理为 `.owner-workflow/config.json` 与 `.owner-workflow/owners/<owner-id>.md`。对于新增、移除、拆分、合并、转交或 scope 变化：
+把当前责任域整理为 `.owner-workflow/config.json` 与 `.owner-workflow/owners/<owner-id>/owner.md`；同一 Owner 的长期知识放在相邻 `memory/`。对于新增、移除、拆分、合并、转交或 scope 变化：
 
 Owner 分析子代理只能提出建议；以下提案、展示、问询和批准必须全部在创建该 Workflow 的主线程完成。批准结果再由 Runtime 固定到项目基础分支，不能只保存在单次 Workflow 分支或子代理上下文中。
 
-1. 通过 `workflow_owner_change_propose` 提交结构化 operation。
-2. 展示 before/after、受影响 Owner、文件范围和 proposal digest。
+1. 把同一轮发现的全部变更收进一个 `type=batch`、`operations=[...]` 的结构化 operation，再通过 `workflow_owner_change_propose` 一次提交；不得按 Owner 拆成多轮问询。
+2. 在一张审批卡片中展示全部子操作、最终 before/after、受影响 Owner、文件范围和 proposal digest。
 3. 用户确认完全匹配的 digest。
-4. 调用 `workflow_owner_change_approve` 打开 Harness 原生“同意/不同意/自定义输入”问询；只有明确同意才应用变更，并重新读取 Registry digest。
+4. 调用一次 `workflow_owner_change_approve` 打开 Harness 原生“同意/不同意/自定义输入”问询；只有明确同意才原子应用整批变更，并重新读取 Registry digest。
 
 不能直接编辑正式 Registry 来绕过 digest 审批。运行中存在受影响的 reserved 或 running task 时，先停止或完成安全边界内的任务，再处理 Registry 变化。
 
@@ -51,7 +51,7 @@ Owner 也不能从旧计划的阶段或新 Workflow 的流程反推。Owner 必�
 
 用外置 `workflowd` runner 启动执行：
 
-Runner daemon 会随 Harness 自动启动并接管获批 Workflow；手工 `run-owner-workflow.sh --workflow-id wf-...` 只作为诊断兼容入口。
+Runner daemon 会随 Harness 自动启动：对计划审查驱动失败或超时的 `planned` Workflow，它只请求 Runtime 做可验证的 digest 补绑与 Reviewer 恢复；对获批 Workflow 才接管 Supervisor。手工 `run-owner-workflow.sh --workflow-id wf-...` 只作为诊断兼容入口。
 
 Owner 固定使用：
 

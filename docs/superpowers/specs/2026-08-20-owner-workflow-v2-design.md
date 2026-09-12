@@ -1,5 +1,7 @@
 # Owner 工作流 V2 设计
 
+> 后续目标设计：2026-09-10 的[主线程 Spec/Ticket 与 Owner 自主执行规格 R1](2026-09-10-main-thread-spec-ticket-owner-dag-design.md)记录了新的产物分层与用户参与边界。本文保留 V2 设计基线，不代表该后续方案已经实现；发生目标行为冲突时，请对照新规格及其 ADR，不直接将旧批准流程带入新实现。
+
 ## 目标
 
 将当前按阶段调度的 Owner 工作流升级为脚本驱动的任务级 DAG 系统。所有依赖、Owner 责任域、验证、调度、恢复和最终合并都由运行时或外置脚本判定；LLM 只提供受限的规划语义、代码修改和结构化结果，不能自行推进状态。
@@ -38,19 +40,22 @@ Harness 持久 Owner 子 Agent → 受控写入 / 固定验证 / 固定提交
 .owner-workflow/
 ├── config.json
 └── owners/
-    └── <owner-id>.md
+    └── <owner-id>/
+        ├── owner.md
+        └── memory/
 ```
 
 - `config.json` 记录 schema 版本、受管根目录、最大并发和各角色模型 profile。
-- Owner 文档使用中文 Markdown 与 YAML frontmatter，记录 id、责任、scope、排除范围、父 Owner 和状态。
+- `owner.md` 使用中文 Markdown 与 YAML frontmatter，记录 id、责任、scope、排除范围、父 Owner 和状态；`memory/` 保存同一 Owner 的长期知识。
 - Owner Registry 是跨 workflow 的责任域真源；任何 split、merge、transfer、增删 Owner 或 scope 变化都必须走提案、digest、用户批准和应用。
 - Registry 变更与业务代码一样进入 workflow 分支，最终与 workflow 一并交付；未批准提案只存在于运行时状态。
 
 ### Git 忽略：`.dsh-workflow/`
 
 - workflow 实例、任务状态、lease、控制清单、事件流、临时 worktree、预合并记录和 Dashboard 投影。
+- Runtime、Dashboard 或 Runner 首次创建该目录时，同时创建目录内 `.gitignore`；只保留 `.gitignore` 可跟踪，其余运行现场默认忽略。
 - 所有状态文件带契约版本、revision 和原子写锁；旧 revision 不能覆盖新状态。
-- `.owner-memory/` 继续是 Git 跟踪的长期知识真源，不获得 Owner scope 授权能力。
+- `.owner-workflow/owners/<owner-id>/memory/` 是 Git 跟踪的长期知识真源，不获得 Owner scope 授权能力；不再创建独立 `.owner-memory/`。
 
 ## Owner Registry 治理
 

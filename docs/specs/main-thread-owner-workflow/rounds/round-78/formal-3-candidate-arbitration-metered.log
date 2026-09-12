@@ -1,0 +1,100 @@
+TAP version 13
+# Subtest: R78 real paid predecessor permits a nonpassed arbitration to choose an unused local rewrite
+ok 1 - R78 real paid predecessor permits a nonpassed arbitration to choose an unused local rewrite
+  ---
+  duration_ms: 2488.626625
+  type: 'test'
+  ...
+# Subtest: R78 actual arbitration pays separately after advice, preserves ordinary history, and replays fresh without model calls
+ok 2 - R78 actual arbitration pays separately after advice, preserves ordinary history, and replays fresh without model calls
+  ---
+  duration_ms: 2722.656084
+  type: 'test'
+  ...
+# Subtest: R78 real control socket drives the paid arbitration and next drive recognizes its effective review
+ok 3 - R78 real control socket drives the paid arbitration and next drive recognizes its effective review
+  ---
+  duration_ms: 3347.151666
+  type: 'test'
+  ...
+# Subtest: R78 exhaustion after a paid advisor does not start an unmetered Arbiter or repeat advice
+ok 4 - R78 exhaustion after a paid advisor does not start an unmetered Arbiter or repeat advice
+  ---
+  duration_ms: 4189.853167
+  type: 'test'
+  ...
+# Subtest: R78 invalid arbitration semantics pay a new ordinal while already applied advice stays unchanged
+ok 5 - R78 invalid arbitration semantics pay a new ordinal while already applied advice stays unchanged
+  ---
+  duration_ms: 3837.319042
+  type: 'test'
+  ...
+# Subtest: R78 candidate changes during a real Arbiter turn prevent adoption of its observed receipt
+ok 6 - R78 candidate changes during a real Arbiter turn prevent adoption of its observed receipt
+  ---
+  duration_ms: 2491.681833
+  type: 'test'
+  ...
+# Subtest: R78 real Arbiter creation persisted before response loss never starts twice on a fresh Harness
+ok 7 - R78 real Arbiter creation persisted before response loss never starts twice on a fresh Harness
+  ---
+  duration_ms: 1835.188541
+  type: 'test'
+  ...
+# Subtest: R78 real arbitration then driver local rebuild carries the arbitration source and original failure root
+ok 8 - R78 real arbitration then driver local rebuild carries the arbitration source and original failure root
+  ---
+  duration_ms: 2683.801292
+  type: 'test'
+  ...
+# Subtest: R78 applied arbitration fresh replay authenticates frozen arbitration raw evidence
+ok 9 - R78 applied arbitration fresh replay authenticates frozen arbitration raw evidence
+  ---
+  duration_ms: 2476.824416
+  type: 'test'
+  ...
+# Subtest: R78 applied arbitration fresh replay authenticates frozen advice raw evidence
+ok 10 - R78 applied arbitration fresh replay authenticates frozen advice raw evidence
+  ---
+  duration_ms: 2642.460125
+  type: 'test'
+  ...
+# Subtest: R78 applied arbitration fresh replay authenticates frozen ordinary-review raw evidence
+ok 11 - R78 applied arbitration fresh replay authenticates frozen ordinary-review raw evidence
+  ---
+  duration_ms: 2443.514291
+  type: 'test'
+  ...
+# Subtest: R78 applied arbitration fresh replay authenticates frozen planner raw evidence
+ok 12 - R78 applied arbitration fresh replay authenticates frozen planner raw evidence
+  ---
+  duration_ms: 2449.751166
+  type: 'test'
+  ...
+# Subtest: R78 an earlier caller delayed after real advice replays arbitration completed by a later caller
+ok 13 - R78 an earlier caller delayed after real advice replays arbitration completed by a later caller
+  ---
+  duration_ms: 2291.693083
+  type: 'test'
+  ...
+# Subtest: R78 arbitration replay survives a winner before-review-authentication in consultation
+ok 14 - R78 arbitration replay survives a winner before-review-authentication in consultation
+  ---
+  duration_ms: 2449.232042
+  type: 'test'
+  ...
+# Subtest: R78 arbitration replay survives a winner after-review-authentication in consultation
+ok 15 - R78 arbitration replay survives a winner after-review-authentication in consultation
+  ---
+  duration_ms: 2567.164542
+  type: 'test'
+  ...
+1..15
+# tests 15
+# suites 0
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 41136.499042

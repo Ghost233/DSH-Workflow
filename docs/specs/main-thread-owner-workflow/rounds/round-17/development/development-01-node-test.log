@@ -1,0 +1,16 @@
+✔ T22 source-plane JSONL observes exactly one completed reserved prompt without writes (954.055583ms)
+✔ T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt (762.675208ms)
+✔ T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending (1460.119167ms)
+✔ T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects (429.529334ms)
+✔ T22 refuses a real JSONL backend configured with compression before any read or retry (354.901167ms)
+✔ F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause (1270.143333ms)
+✔ F16 maps a real lease directory still initializing to a non-mutating pause (423.228333ms)
+✔ F16 leaves ordinary lease I/O errors and caller cancellation as rejections (793.898166ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6701.042625

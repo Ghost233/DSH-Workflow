@@ -1,0 +1,13 @@
+# R59 独立只读审查
+
+审查者t21_contract_review，固定candidate.json后只读审查。正式280通过/7既有skip，零失败/超时/漂移。结论：1个P2，无其他本轮P1/P2；主线程复核认可。
+
+## P2：直接request_handoff删除自身恢复来源
+
+runtime.requestHandoff无条件把source task加入invalidate并调用applyPlanDelta；model.applyPlanDelta删除受影响task的ownerRuns/supervisorOutbox并清除review/approval，delta变更plan时还改active planDigest。之后requestHandoff却保存旧active attempt/session/planDigest到sourceExecution。
+
+新恢复入口要求同一active digest及当前terminal Owner record，所以直接request_handoff留下pending但不能领取预算，fail-closed没有绕过计费。7项新测试走recordHandoffs生产路径，未覆盖这个真实直接请求生命周期，测试全绿不能关闭该P2。
+
+R60方向：显式recovery协议的直接请求保留同版本active plan、source Owner record及真实运行状态；delta仅冻结为proposal交给付费Planner；直到实际child终态由现有收尾写入后才能领取，不能强行伪造blocked/terminal。补实际request_handoff工具→child终态→付费Planner→候选测试。
+
+其他范围审查通过：源分组、锁外调用、最新状态核对及候选/T13原子落盘、连续ordinal失败计费和成功原始回执重放。Review/咨询/T18/技术暂停报告仍在后续范围，不标记完整T15验收。

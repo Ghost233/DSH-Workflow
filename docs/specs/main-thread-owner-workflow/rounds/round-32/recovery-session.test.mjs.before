@@ -1,0 +1,893 @@
+import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import test from 'node:test'
+
+import {
+  RECOVERY_SESSION_REQUEST_CONTRACT,
+  inspectRecoverySession,
+} from '../src/recovery-session.mjs'
+import {
+  appendObservedPrompt,
+  createRecoverySessionFixture,
+  injectObservedPrompt,
+  mutateRecoverySessionState,
+  readRecoverySessionState,
+  reserveRecoverySession,
+  writeRecoverySessionState,
+} from './fixtures/recovery-session-fixture.mjs'
+import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
+
+const content = 'recover the failed owner task'
+
+function inspection(fixture, receipt) {
+  return inspectRecoverySession({
+    persistence: fixture.ctx.sessionPersistence,
+    executionIdentity: receipt.executionIdentity,
+    prompt: { id: receipt.executionIdentity.promptId, content },
+  })
+}
+
+function request(receipt, prompt = { id: receipt.executionIdentity.promptId, content }) {
+  return {
+    contract: RECOVERY_SESSION_REQUEST_CONTRACT,
+    taskId: 'T1',
+    ownerId: 'api',
+    requestId: receipt.requestId,
+    prompt,
+  }
+}
+
+function assertLeaseUnavailable(result) {
+  assert.equal(result.outcome, 'paused')
+  assert.equal(result.phase, 'technical_pause')
+  assert.equal(result.reason, 'owner_lease_unavailable')
+}
+
+function completedOwnerModelScript({ toolCallResponse, textResponse }) {
+  const report = {
+    contract: 'DSH_OWNER_RESULT_V1',
+    status: 'completed',
+    summary: 'Controlled Owner completed the recovered task through owner_submit.',
+    changes: [], tests: [], handoffs: [], memory_updates: [],
+  }
+  // The first two responses exercise the production Owner child and its
+  // owner_submit gate.  The next two let finishOwner complete its ordinary
+  // curator/reviewer path, rather than bypassing final task settlement.
+  return [
+    toolCallResponse('t22-owner-submit-completed', 'owner_submit', { report }),
+    textResponse('submission recorded'),
+    textResponse(JSON.stringify({
+      contract: 'DSH_OWNER_MEMORY_CURATOR_V1',
+      summary: 'This controlled recovery has no durable knowledge page to add.',
+      pages: [],
+    })),
+    textResponse(JSON.stringify({
+      contract: 'DSH_OWNER_MEMORY_REVIEW_V1',
+      status: 'passed',
+      summary: 'The controlled empty memory bundle is valid.',
+      issues: [],
+    })),
+  ]
+}
+
+async function assertNoReconcileEffects(fixture, receipt, stateBefore, requestsBefore) {
+  assert.equal(fixture.adapter.requests.length, requestsBefore)
+  assert.equal(await fixture.readRaw(receipt.executionIdentity.sessionId), undefined)
+  assert.deepEqual(await readRecoverySessionState(fixture), stateBefore)
+}
+
+test('T22 source-plane JSONL observes exactly one completed reserved prompt without writes', async t => {
+  const fixture = await createRecoverySessionFixture(t)
+  const receipt = await reserveRecoverySession(fixture)
+  const observed = await appendObservedPrompt(fixture, receipt, content)
+  const rawBefore = await fixture.readRaw(receipt.executionIdentity.sessionId)
+  const eventsBefore = await fixture.readFrom(receipt.executionIdentity.sessionId)
+  const requestsBefore = fixture.adapter.requests.length
+
+  const result = await inspection(fixture, receipt)
+
+  assert.equal(result.outcome, 'observed_terminal')
+  assert.equal(result.phase, 'observed_terminal')
+  assert.equal(result.turn, 1)
+  assert.equal(result.step, 1)
+  assert.equal(fixture.adapter.requests.length, requestsBefore)
+  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), rawBefore)
+  assert.deepEqual(await fixture.readFrom(receipt.executionIdentity.sessionId), eventsBefore)
+  assert.equal((await readRecoverySessionState(fixture)).ownerRuns['T1:api'].recoverySession, undefined)
+  assert.match(observed.location.path, /session\.jsonl$/)
+})
+
+test('T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt', async t => {
+  const absent = await createRecoverySessionFixture(t)
+  const absentReceipt = await reserveRecoverySession(absent)
+  const absentRequests = absent.adapter.requests.length
+  assert.deepEqual(await inspection(absent, absentReceipt), {
+    outcome: 'paused', phase: 'technical_pause', reason: 'raw_artifact_missing',
+  })
+  assert.equal(absent.adapter.requests.length, absentRequests)
+
+  const pending = await createRecoverySessionFixture(t)
+  const pendingReceipt = await reserveRecoverySession(pending)
+  await injectObservedPrompt(pending, pendingReceipt, content)
+  const requestsBefore = pending.adapter.requests.length
+  const result = await inspection(pending, pendingReceipt)
+  assert.equal(result.outcome, 'pending')
+  assert.equal(result.phase, 'durably_queued')
+  assert.equal(pending.adapter.requests.length, requestsBefore)
+})
+
+test('T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending', async t => {
+  const duplicate = await createRecoverySessionFixture(t)
+  const duplicateReceipt = await reserveRecoverySession(duplicate)
+  const observed = await appendObservedPrompt(duplicate, duplicateReceipt, content)
+  observed.agent.inject(duplicate.modules.freezeMessage({
+    id: duplicateReceipt.executionIdentity.promptId,
+    role: 'user',
+    content: [{ type: 'text', text: content }],
+    source: { kind: 'user' },
+  }))
+  await observed.agent.whenIdle()
+  await duplicate.ctx.sessions.flush(observed.agent.session)
+  const duplicateRequests = duplicate.adapter.requests.length
+  const duplicateRaw = await duplicate.readRaw(duplicateReceipt.executionIdentity.sessionId)
+  const duplicateResult = await inspection(duplicate, duplicateReceipt)
+  assert.equal(duplicateResult.outcome, 'paused')
+  assert.equal(duplicateResult.reason, 'prompt_not_unique')
+  assert.equal(duplicate.adapter.requests.length, duplicateRequests)
+  assert.deepEqual(await duplicate.readRaw(duplicateReceipt.executionIdentity.sessionId), duplicateRaw)
+
+  const torn = await createRecoverySessionFixture(t)
+  const tornReceipt = await reserveRecoverySession(torn)
+  const tornObserved = await appendObservedPrompt(torn, tornReceipt, content)
+  await appendFile(tornObserved.location.path, '{"type":"turn/end","seq":999}\n', 'utf8')
+  const rawBefore = await readFile(tornObserved.location.path, 'utf8')
+  const requestsBefore = torn.adapter.requests.length
+  const tornResult = await inspection(torn, tornReceipt)
+  assert.equal(tornResult.outcome, 'paused')
+  assert.equal(torn.adapter.requests.length, requestsBefore)
+  assert.equal(await readFile(tornObserved.location.path, 'utf8'), rawBefore)
+
+  const truncated = await createRecoverySessionFixture(t)
+  const truncatedReceipt = await reserveRecoverySession(truncated)
+  const truncatedObserved = await appendObservedPrompt(truncated, truncatedReceipt, content)
+  await appendFile(truncatedObserved.location.path, '{"type":"turn/end"', 'utf8')
+  const truncatedRaw = await readFile(truncatedObserved.location.path, 'utf8')
+  const truncatedRequests = truncated.adapter.requests.length
+  const truncatedResult = await inspection(truncated, truncatedReceipt)
+  assert.equal(truncatedResult.outcome, 'paused')
+  assert.equal(truncated.adapter.requests.length, truncatedRequests)
+  assert.equal(await readFile(truncatedObserved.location.path, 'utf8'), truncatedRaw)
+})
+
+test('T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects', async t => {
+  const fixture = await createRecoverySessionFixture(t)
+  const receipt = await reserveRecoverySession(fixture)
+  const requestsBefore = fixture.adapter.requests.length
+
+  const wrong = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent,
+    fixture.workflowId,
+    request(receipt, { id: `${receipt.executionIdentity.promptId}-wrong`, content }),
+  )
+  assert.equal(wrong.outcome, 'paused')
+  assert.equal(wrong.reason, 'reservation_binding_mismatch')
+
+  const current = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent,
+    fixture.workflowId,
+    request(receipt),
+  )
+  assert.equal(current.outcome, 'paused')
+  // The minimal test root has no live Owner Registry.  A production-valid
+  // root reaches owner_execution_adapter_not_ready after this same gate.
+  assert.equal(current.reason, 'owner_start_not_authorized')
+  assert.equal(fixture.adapter.requests.length, requestsBefore)
+  assert.equal(await fixture.readRaw(receipt.executionIdentity.sessionId), undefined)
+  const state = await readRecoverySessionState(fixture)
+  assert.equal(state.ownerRuns['T1:api'].recoverySession, undefined)
+  assert.equal(state.ownerSessions[receipt.executionIdentity.sessionId], undefined)
+})
+
+test('T22 refuses a real JSONL backend configured with compression before any read or retry', async t => {
+  const fixture = await createRecoverySessionFixture(t, { compression: 'zstd' })
+  const receipt = await reserveRecoverySession(fixture)
+  const requestsBefore = fixture.adapter.requests.length
+  const result = await inspection(fixture, receipt)
+  assert.deepEqual(result, {
+    outcome: 'paused', phase: 'technical_pause', reason: 'unsupported_persistence',
+  })
+  assert.equal(fixture.adapter.requests.length, requestsBefore)
+})
+
+test('F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause', async t => {
+  const sameRuntime = await createRecoverySessionFixture(t)
+  const sameReceipt = await reserveRecoverySession(sameRuntime)
+  const sameState = await readRecoverySessionState(sameRuntime)
+  const sameRequests = sameRuntime.adapter.requests.length
+  const held = await sameRuntime.runtime.acquireOwnerLease(
+    sameRuntime.root, 'api', sameRuntime.workflowId, 'T2',
+  )
+  assert.equal(held.owned, true)
+  const heldBytes = await readFile(held.lease.path, 'utf8')
+  try {
+    assertLeaseUnavailable(await sameRuntime.runtime.reconcileRecoverySession(
+      sameRuntime.admissionAgent, sameRuntime.workflowId, request(sameReceipt),
+    ))
+    assert.equal(await readFile(held.lease.path, 'utf8'), heldBytes)
+    await assertNoReconcileEffects(sameRuntime, sameReceipt, sameState, sameRequests)
+  } finally {
+    await sameRuntime.runtime.releaseOwnerLease(held.lease)
+  }
+
+  const reentrant = await createRecoverySessionFixture(t)
+  const reentrantReceipt = await reserveRecoverySession(reentrant)
+  const reentrantState = await readRecoverySessionState(reentrant)
+  const reentrantRequests = reentrant.adapter.requests.length
+  const reentrantHolder = await reentrant.runtime.acquireOwnerLease(
+    reentrant.root, 'api', reentrant.workflowId, 'T1',
+  )
+  assert.equal(reentrantHolder.owned, true)
+  const reentrantBytes = await readFile(reentrantHolder.lease.path, 'utf8')
+  try {
+    // Same task returns acquireOwnerLease(...).owned === false.  The new
+    // entrypoint must treat it as unavailable rather than enter a re-entrant
+    // critical section or expose withOwnerLease's ordinary rejection.
+    assertLeaseUnavailable(await reentrant.runtime.reconcileRecoverySession(
+      reentrant.admissionAgent, reentrant.workflowId, request(reentrantReceipt),
+    ))
+    assert.equal(await readFile(reentrantHolder.lease.path, 'utf8'), reentrantBytes)
+    await assertNoReconcileEffects(reentrant, reentrantReceipt, reentrantState, reentrantRequests)
+  } finally {
+    await reentrant.runtime.releaseOwnerLease(reentrantHolder.lease)
+  }
+
+  const onDisk = await createRecoverySessionFixture(t)
+  const onDiskReceipt = await reserveRecoverySession(onDisk)
+  const onDiskState = await readRecoverySessionState(onDisk)
+  const onDiskRequests = onDisk.adapter.requests.length
+  // A separate Runtime has no shared in-memory lease map: the contention is
+  // observed through the same real on-disk lease file, not a stubbed backend.
+  const foreignRuntime = createOwnerWorkflowRuntime(onDisk.ctx, {})
+  const foreign = await foreignRuntime.acquireOwnerLease(onDisk.root, 'api', onDisk.workflowId, 'T2')
+  assert.equal(foreign.owned, true)
+  const foreignBytes = await readFile(foreign.lease.path, 'utf8')
+  try {
+    assertLeaseUnavailable(await onDisk.runtime.reconcileRecoverySession(
+      onDisk.admissionAgent, onDisk.workflowId, request(onDiskReceipt),
+    ))
+    assert.equal(await readFile(foreign.lease.path, 'utf8'), foreignBytes)
+    await assertNoReconcileEffects(onDisk, onDiskReceipt, onDiskState, onDiskRequests)
+  } finally {
+    await foreignRuntime.releaseOwnerLease(foreign.lease)
+  }
+})
+
+test('F16 maps a real lease directory still initializing to a non-mutating pause', async t => {
+  const fixture = await createRecoverySessionFixture(t)
+  const receipt = await reserveRecoverySession(fixture)
+  const stateBefore = await readRecoverySessionState(fixture)
+  const requestsBefore = fixture.adapter.requests.length
+  const directory = fixture.runtime.leasePath(fixture.root, 'owner-api')
+  await mkdir(directory, { recursive: true })
+  try {
+    assertLeaseUnavailable(await fixture.runtime.reconcileRecoverySession(
+      fixture.admissionAgent, fixture.workflowId, request(receipt),
+    ))
+    assert.equal(await fixture.readRaw(receipt.executionIdentity.sessionId), undefined)
+    assert.deepEqual(await readRecoverySessionState(fixture), stateBefore)
+    assert.equal(fixture.adapter.requests.length, requestsBefore)
+    await assert.rejects(readFile(`${directory}/lease.json`, 'utf8'), { code: 'ENOENT' })
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('F16 leaves ordinary lease I/O errors and caller cancellation as rejections', async t => {
+  const io = await createRecoverySessionFixture(t)
+  const ioReceipt = await reserveRecoverySession(io)
+  const ioState = await readRecoverySessionState(io)
+  const ioRequests = io.adapter.requests.length
+  const leaseDirectory = io.runtime.leasePath(io.root, 'owner-api')
+  await mkdir(dirname(leaseDirectory), { recursive: true })
+  await writeFile(leaseDirectory, 'not a lease directory\n', 'utf8')
+  try {
+    await assert.rejects(io.runtime.reconcileRecoverySession(
+      io.admissionAgent, io.workflowId, request(ioReceipt),
+    ))
+    await assertNoReconcileEffects(io, ioReceipt, ioState, ioRequests)
+  } finally {
+    await rm(leaseDirectory, { force: true })
+  }
+
+  const cancelled = await createRecoverySessionFixture(t)
+  const cancelledReceipt = await reserveRecoverySession(cancelled)
+  const cancelledState = await readRecoverySessionState(cancelled)
+  const cancelledRequests = cancelled.adapter.requests.length
+  const controller = new AbortController()
+  controller.abort(new Error('test caller cancelled'))
+  await assert.rejects(cancelled.runtime.reconcileRecoverySession(
+    cancelled.admissionAgent, cancelled.workflowId, request(cancelledReceipt), controller.signal,
+  ))
+  await assertNoReconcileEffects(cancelled, cancelledReceipt, cancelledState, cancelledRequests)
+})
+
+test('T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction', async t => {
+  const failedReport = {
+    contract: 'DSH_OWNER_RESULT_V1',
+    status: 'failed',
+    summary: 'Controlled Owner reports that recovery cannot complete.',
+    changes: [], tests: [], handoffs: [], memory_updates: [],
+  }
+  // The fixture uses the source Harness provider, a live Owner Registry and
+  // controlled Owner worktree/branch.  MockAdapter supplies only this model
+  // stream; owner_submit is the exact production tool definition registered
+  // against this Runtime, rather than a test handler or full plugin host.
+  const fixture = await createRecoverySessionFixture(t, {
+    executable: true,
+    modelScript: ({ toolCallResponse, textResponse }) => [
+      toolCallResponse('t22-owner-submit-failed', 'owner_submit', { report: failedReport }),
+      // Harness makes one final model step after the tool result before the
+      // source provider returns the submitted Owner report.
+      textResponse('submission recorded'),
+    ],
+  })
+  const receipt = await reserveRecoverySession(fixture)
+  const initialRequest = request(receipt)
+
+  await assert.rejects(
+    fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, initialRequest),
+    error => error?.name === 'OwnerReportedError',
+  )
+  assert.equal(fixture.adapter.requests.length, 2)
+
+  const settled = await readRecoverySessionState(fixture)
+  const run = settled.ownerRuns['T1:api']
+  assert.equal(run.status, 'failed')
+  assert.equal(run.attempt, 3)
+  assert.equal(run.sessionId, receipt.executionIdentity.sessionId)
+  assert.equal(run.recoverySession.phase, 'settled_failed')
+  assert.deepEqual(run.recoverySession.executionIdentity, receipt.executionIdentity)
+  assert.deepEqual(run.recoverySession.instruction, {
+    id: receipt.executionIdentity.promptId,
+    content,
+  })
+  assert.equal(run.recoverySession.prompt.id, receipt.executionIdentity.promptId)
+  assert.match(run.recoverySession.prompt.content, /恢复执行上下文/u)
+  assert.match(run.recoverySession.prompt.content, new RegExp(content))
+  assert.deepEqual(run.recoveryContinuation.executionIdentity, receipt.executionIdentity)
+  assert.deepEqual(run.recoveryContinuation.ownerRunBinding, {
+    attempt: 3,
+    sessionId: receipt.executionIdentity.sessionId,
+  })
+
+  const budgetAttempt = settled.recoveryAdmission.budget.attempts.find(
+    item => item.requestId === receipt.requestId,
+  )
+  assert.equal(budgetAttempt.state, 'settled')
+  assert.deepEqual(budgetAttempt.executionRef, {
+    id: receipt.executionIdentity.sessionId,
+    version: receipt.executionIdentity.promptId,
+  })
+  assert.deepEqual(budgetAttempt.result, {
+    status: 'failed',
+    reference: {
+      id: receipt.executionIdentity.promptId,
+      version: receipt.executionIdentity.sessionId,
+    },
+  })
+
+  const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
+  assert.ok(raw)
+  assert.match(raw.content, /"type":"user\/message"/u)
+  assert.ok(raw.content.includes(receipt.executionIdentity.promptId))
+  assert.match(raw.content, /"name":"owner_submit"/u)
+
+  const requestsBeforeReplay = fixture.adapter.requests.length
+  const replay = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent, fixture.workflowId, initialRequest,
+  )
+  assert.equal(replay.outcome, 'settled_failed')
+  assert.equal(replay.phase, 'settled_failed')
+  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
+  assert.deepEqual(await readRecoverySessionState(fixture), settled)
+  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+
+  const changedInstruction = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent,
+    fixture.workflowId,
+    request(receipt, { id: receipt.executionIdentity.promptId, content: 'replacement recovery instruction' }),
+  )
+  assert.equal(changedInstruction.outcome, 'paused')
+  assert.equal(changedInstruction.reason, 'persisted_owner_binding_mismatch')
+  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
+  assert.deepEqual(await readRecoverySessionState(fixture), settled)
+  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+
+  // A legacy retry must not inherit a reserved identity from this failed
+  // recovery. It needs an explicit new recovery request before a new attempt.
+  await assert.rejects(
+    fixture.runtime.runExternalOwner(fixture.admissionAgent, fixture.workflowId, 'T1', 'api'),
+    /recovery|恢复/u,
+  )
+  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
+  assert.deepEqual(await readRecoverySessionState(fixture), settled)
+  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+
+  // Deliberate bad-state injection: the settled receipt still names the
+  // reservation, but the current Owner run no longer names that session.
+  // Reconciliation must not treat the old receipt as authorization to reuse
+  // or launch anything, and must leave the malformed durable state untouched.
+  const corruptSessionId = `${receipt.executionIdentity.sessionId}-wrong`
+  const corrupted = await mutateRecoverySessionState(fixture, state => {
+    state.ownerRuns['T1:api'].sessionId = corruptSessionId
+  })
+  const corruptReplay = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent, fixture.workflowId, initialRequest,
+  )
+  assert.equal(corruptReplay.outcome, 'paused')
+  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
+  assert.deepEqual(await readRecoverySessionState(fixture), corrupted)
+  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+})
+
+test('T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only', async t => {
+  const fixture = await createRecoverySessionFixture(t, {
+    executable: true,
+    // This controlled transport is the sole mock.  The fixture uses the
+    // source Harness, a live Registry, real Git worktrees and JSONL, and the
+    // production owner_submit definition registered against this Runtime.
+    modelScript: completedOwnerModelScript,
+  })
+  const receipt = await reserveRecoverySession(fixture)
+  const initialRequest = request(receipt)
+
+  const first = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent, fixture.workflowId, initialRequest,
+  )
+  assert.equal(first.contract, 'DSH_RECOVERY_SESSION_RESULT_V1')
+  assert.equal(first.outcome, 'settled_succeeded')
+  assert.equal(first.phase, 'settled_succeeded')
+  assert.deepEqual(first.successReceipt.executionRef, {
+    id: receipt.executionIdentity.sessionId,
+    version: receipt.executionIdentity.promptId,
+  })
+  assert.deepEqual(first.successReceipt.result, {
+    status: 'succeeded',
+    reference: {
+      id: receipt.executionIdentity.promptId,
+      version: receipt.executionIdentity.sessionId,
+    },
+  })
+
+  const settled = await readRecoverySessionState(fixture)
+  const run = settled.ownerRuns['T1:api']
+  const task = settled.tasks.find(item => item.taskId === 'T1')
+  const budgetAttempt = settled.recoveryAdmission.budget.attempts.find(
+    item => item.requestId === receipt.requestId,
+  )
+  assert.equal(run.status, 'completed')
+  assert.equal(task.status, 'completed')
+  assert.equal(task.checkState, 'valid')
+  assert.match(run.result.commitSha, /^[0-9a-f]{40}$/u)
+  assert.equal(task.fixedCommitSha, run.result.commitSha)
+  assert.equal(run.result.taskId, 'T1')
+  assert.equal(run.recoverySession.phase, 'settled_succeeded')
+  assert.equal(first.successReceipt.commitSha, run.result.commitSha)
+  assert.equal(first.successReceipt.workflowHead, run.result.workflowHead)
+  assert.deepEqual(run.recoverySession.successReceipt, first.successReceipt)
+  assert.equal(budgetAttempt.state, 'settled')
+  assert.deepEqual(budgetAttempt.executionRef, first.successReceipt.executionRef)
+  assert.deepEqual(budgetAttempt.result, first.successReceipt.result)
+
+  const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
+  assert.ok(raw)
+  assert.match(raw.content, /"name":"owner_submit"/u)
+  assert.ok(raw.content.includes(receipt.executionIdentity.promptId))
+
+  const requestsBeforeReplay = fixture.adapter.requests.length
+  const replay = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent, fixture.workflowId, initialRequest,
+  )
+  assert.equal(replay.contract, 'DSH_RECOVERY_SESSION_RESULT_V1')
+  assert.equal(replay.outcome, 'settled_succeeded')
+  assert.equal(replay.phase, 'settled_succeeded')
+  assert.deepEqual(replay.successReceipt, first.successReceipt)
+  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
+  assert.deepEqual(await readRecoverySessionState(fixture), settled)
+  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+
+  const changedInstruction = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent,
+    fixture.workflowId,
+    request(receipt, { id: receipt.executionIdentity.promptId, content: 'replacement recovery instruction' }),
+  )
+  assert.equal(changedInstruction.outcome, 'paused')
+  assert.equal(changedInstruction.reason, 'persisted_owner_binding_mismatch')
+  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
+  assert.deepEqual(await readRecoverySessionState(fixture), settled)
+  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+
+  // Negative-state injection is confined to replay verification.  The good
+  // completed state above was produced only by the real Owner lifecycle.
+  const wrongCommit = await mutateRecoverySessionState(fixture, state => {
+    state.tasks.find(item => item.taskId === 'T1').fixedCommitSha = 'a'.repeat(40)
+  })
+  const wrongCommitReplay = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent, fixture.workflowId, initialRequest,
+  )
+  assert.equal(wrongCommitReplay.outcome, 'paused')
+  assert.equal(wrongCommitReplay.phase, 'technical_pause')
+  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
+  assert.deepEqual(await readRecoverySessionState(fixture), wrongCommit)
+  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+
+  // Restore the exact state actually produced above, then prove that a stale
+  // Owner/session binding cannot reuse the succeeded receipt either.
+  await writeRecoverySessionState(fixture, settled)
+  const wrongBinding = await mutateRecoverySessionState(fixture, state => {
+    state.ownerRuns['T1:api'].sessionId = `${receipt.executionIdentity.sessionId}-wrong`
+  })
+  const wrongBindingReplay = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent, fixture.workflowId, initialRequest,
+  )
+  assert.equal(wrongBindingReplay.outcome, 'paused')
+  assert.equal(wrongBindingReplay.phase, 'technical_pause')
+  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
+  assert.deepEqual(await readRecoverySessionState(fixture), wrongBinding)
+  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+})
+
+test('T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner', async t => {
+  const fixture = await createRecoverySessionFixture(t, {
+    executable: true,
+    modelScript: completedOwnerModelScript,
+  })
+  const receipt = await reserveRecoverySession(fixture)
+  const initialRequest = request(receipt)
+
+  // This is the normal production execution path, stopped only at its public
+  // deferFinish seam.  owner_submit has already run its fixed verification
+  // and Git gate; the task has not yet passed finishOwner's final checks.
+  const synced = await fixture.runtime.runExternalOwner(
+    fixture.admissionAgent,
+    fixture.workflowId,
+    'T1',
+    'api',
+    undefined,
+    { recoverySessionRequest: initialRequest, deferFinish: true },
+  )
+  assert.equal(synced.phase, 'synced')
+  assert.match(synced.commitSha, /^[0-9a-f]{40}$/u)
+
+  const awaitingFinish = await readRecoverySessionState(fixture)
+  const run = awaitingFinish.ownerRuns['T1:api']
+  const task = awaitingFinish.tasks.find(item => item.taskId === 'T1')
+  const budgetAttempt = awaitingFinish.recoveryAdmission.budget.attempts.find(
+    item => item.requestId === receipt.requestId,
+  )
+  assert.equal(run.status, 'awaiting_finish')
+  assert.equal(task.status, 'running')
+  assert.notEqual(run.recoverySession.phase, 'settled_succeeded')
+  assert.notEqual(budgetAttempt.state, 'settled')
+
+  const requestsBeforeReplay = fixture.adapter.requests.length
+  const paused = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent, fixture.workflowId, initialRequest,
+  )
+  assert.equal(paused.outcome, 'paused')
+  assert.equal(paused.phase, 'technical_pause')
+  assert.notEqual(paused.outcome, 'settled_succeeded')
+  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
+  assert.deepEqual(await readRecoverySessionState(fixture), awaitingFinish)
+})
+
+
+for (const fault of ['create', 'bind']) {
+  test(`T22 L1 ${fault} failure preserves reservation without sending and releases any created handle`, async t => {
+    const fixture = await createRecoverySessionFixture(t, { executable: true })
+    const receipt = await reserveRecoverySession(fixture)
+    const initialRequest = request(receipt)
+    const before = await readRecoverySessionState(fixture)
+    const budgetBefore = structuredClone(before.recoveryAdmission.budget)
+    const calls = { create: 0, bind: 0, followup: 0, dispose: 0 }
+    let created
+    const create = fixture.ctx.agents.create.bind(fixture.ctx.agents)
+    const persistSession = fixture.runtime.persistOwnerSession.bind(fixture.runtime)
+    fixture.ctx.agents.create = async (...args) => {
+      if (args[0]?.sessionId !== receipt.executionIdentity.sessionId) return await create(...args)
+      calls.create += 1
+      if (fault === 'create') throw new Error('L1 controlled create failure')
+      const handle = await create(...args)
+      created = handle.agent
+      assert.equal(fixture.ctx.agents.get(created.id), created)
+      const followup = created.followup.bind(created)
+      created.followup = (...input) => {
+        calls.followup += 1
+        return followup(...input)
+      }
+      const dispose = handle.dispose.bind(handle)
+      return {
+        agent: created,
+        dispose: async () => {
+          calls.dispose += 1
+          await dispose()
+        },
+      }
+    }
+    fixture.runtime.persistOwnerSession = async (...args) => {
+      if (args[1] !== receipt.executionIdentity.sessionId) return await persistSession(...args)
+      calls.bind += 1
+      throw new Error('L1 controlled bind failure')
+    }
+    await assert.rejects(
+      fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, initialRequest),
+      new RegExp(`L1 controlled ${fault} failure`, 'u'),
+    )
+    assert.deepEqual(calls, { create: 1, bind: fault === 'bind' ? 1 : 0, followup: 0, dispose: fault === 'bind' ? 1 : 0 })
+    assert.equal(fixture.adapter.requests.length, 0)
+    assert.equal(fixture.ctx.agents.get(receipt.executionIdentity.sessionId), undefined)
+    if (fault === 'bind') assert.ok(created)
+    const after = await readRecoverySessionState(fixture)
+    assert.deepEqual(after.recoveryAdmission.budget, budgetBefore)
+    const run = after.ownerRuns['T1:api']
+    assert.deepEqual(run.recoverySession.executionIdentity, receipt.executionIdentity)
+    assert.equal(run.recoverySession.successReceipt, undefined)
+    assert.equal(run.recoveryContinuation, undefined)
+    assert.ok(!['settled_failed', 'settled_succeeded'].includes(run.recoverySession.phase))
+    // The failure may leave diagnostic Owner state or a raw artifact. Neither
+    // is authorization to refund, resend, or synthesize a settled receipt.
+    // Disposal starts asynchronous persistence retirement. A read-only cold
+    // inspection waits for that initial drain before the replay baseline;
+    // unlike load(), inspect() does not commit synthetic recovery events.
+    if (created !== undefined) await fixture.ctx.sessionPersistence.inspect(created.id)
+    const rawAfter = await fixture.readRaw(receipt.executionIdentity.sessionId)
+    const replay = await fixture.runtime.reconcileRecoverySession(
+      fixture.admissionAgent, fixture.workflowId, initialRequest,
+    )
+    assert.equal(replay.outcome, 'paused')
+    assert.equal(replay.phase, 'technical_pause')
+    assert.deepEqual(await readRecoverySessionState(fixture), after)
+    assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), rawAfter)
+    assert.deepEqual(calls, { create: 1, bind: fault === 'bind' ? 1 : 0, followup: 0, dispose: fault === 'bind' ? 1 : 0 })
+    assert.equal(fixture.adapter.requests.length, 0)
+  })
+}
+
+
+async function assertUnsettledReplay(fixture, receipt, budgetBefore) {
+  const state = await readRecoverySessionState(fixture)
+  const run = state.ownerRuns['T1:api']
+  assert.deepEqual(state.recoveryAdmission.budget, budgetBefore)
+  assert.deepEqual(run.recoverySession.executionIdentity, receipt.executionIdentity)
+  assert.equal(run.recoverySession.successReceipt, undefined)
+  assert.equal(run.recoveryContinuation, undefined)
+  assert.ok(!['settled_failed', 'settled_succeeded'].includes(run.recoverySession.phase))
+  const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
+  assert.ok(raw)
+  const requests = fixture.adapter.requests.length
+  const calls = { create: 0, resume: 0, followup: 0 }
+  for (const method of ['create', 'resume']) {
+    const original = fixture.ctx.agents[method].bind(fixture.ctx.agents)
+    fixture.ctx.agents[method] = async (...args) => {
+      calls[method] += 1
+      const handle = await original(...args)
+      const followup = handle.agent.followup.bind(handle.agent)
+      handle.agent.followup = (...input) => { calls.followup += 1; return followup(...input) }
+      return handle
+    }
+  }
+  const replay = await fixture.runtime.reconcileRecoverySession(
+    fixture.admissionAgent, fixture.workflowId, request(receipt),
+  )
+  assert.equal(replay.outcome, 'paused')
+  assert.equal(replay.phase, 'technical_pause')
+  assert.deepEqual(calls, { create: 0, resume: 0, followup: 0 })
+  assert.equal(fixture.adapter.requests.length, requests)
+  assert.deepEqual(await readRecoverySessionState(fixture), state)
+  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+  return replay
+}
+
+for (const outcome of ['blocked', 'handoff', 'no_submit']) {
+  test(`T22 L2 real ${outcome} outcome cannot settle or authorize another execution`, async t => {
+    const fixture = await createRecoverySessionFixture(t, {
+      executable: true,
+      modelScript: ({ toolCallResponse, textResponse }) => outcome === 'no_submit'
+        ? [textResponse('The Owner stopped without submitting a result.')]
+        : [
+          toolCallResponse(`t22-l2-${outcome}`, 'owner_submit', { report: {
+            contract: 'DSH_OWNER_RESULT_V1', status: 'blocked',
+            summary: 'This task requires a separate decision before continuing.',
+            changes: [], tests: [], memory_updates: [],
+            handoffs: outcome === 'handoff' ? [{
+              targetType: 'orchestrator', summary: 'Replan this task boundary.',
+              reason: 'The current task boundary needs coordination.', files: [],
+            }] : [],
+          } }),
+          textResponse('submission recorded'),
+        ],
+    })
+    const receipt = await reserveRecoverySession(fixture)
+    const before = await readRecoverySessionState(fixture)
+    await assert.rejects(
+      fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, request(receipt)),
+      error => outcome === 'no_submit'
+        ? /没有调用 owner_submit/u.test(error.message)
+        : error.name === (outcome === 'handoff' ? 'OwnerHandoffError' : 'OwnerReportedError'),
+    )
+    const state = await readRecoverySessionState(fixture)
+    assert.equal(state.ownerRuns['T1:api'].status, outcome === 'no_submit' ? 'failed' : 'blocked')
+    assert.equal(fixture.adapter.requests.length, outcome === 'no_submit' ? 1 : 2)
+    const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
+    const observed = await fixture.readFrom(receipt.executionIdentity.sessionId)
+    const submissions = observed.events.filter(event => event.type === 'tool/call' && event.data.name === 'owner_submit')
+    assert.equal(submissions.length, outcome === 'no_submit' ? 0 : 1)
+    if (outcome === 'handoff') {
+      assert.ok(state.handoffQueue.some(item => item.targetType === 'orchestrator'))
+    }
+    await assertUnsettledReplay(fixture, receipt, before.recoveryAdmission.budget)
+  })
+}
+
+
+test('T22 L2 real PlanRevision pending_check cannot settle the prior recovery intent', async t => {
+  const fixture = await createRecoverySessionFixture(t, {
+    executable: true, modelScript: completedOwnerModelScript,
+  })
+  const receipt = await reserveRecoverySession(fixture)
+  const before = await readRecoverySessionState(fixture)
+  await fixture.runtime.runExternalOwner(
+    fixture.admissionAgent, fixture.workflowId, 'T1', 'api', undefined,
+    { recoverySessionRequest: request(receipt), deferFinish: true },
+  )
+  const synced = await readRecoverySessionState(fixture)
+  assert.equal(synced.ownerRuns['T1:api'].status, 'awaiting_finish')
+  assert.equal(synced.tasks.find(item => item.taskId === 'T1').status, 'running')
+  const candidatePlan = structuredClone(synced.plan)
+  candidatePlan.tasks.find(item => item.id === 'T1').done.push('Recheck this result under the revised acceptance obligation.')
+  const candidateDigest = createHash('sha256').update(JSON.stringify(candidatePlan)).digest('hex')
+  // Input fixture is an already-reviewed candidate. The production approval
+  // transaction, not this setup, must produce pending_check; no task or
+  // Owner completion/check state is written here.
+  await mutateRecoverySessionState(fixture, state => {
+    state.conversationRootSessionId = fixture.admissionAgent.id
+    state.pendingPlanRevision = {
+      number: 2, parent: 1, plan: candidatePlan, planDigest: candidateDigest,
+      intentIds: [], review: {
+        contract: 'DSH_PLAN_REVIEW_V1', status: 'passed',
+        summary: 'Controlled reviewed candidate input for the local consumer test.', issues: [],
+      },
+    }
+  })
+  await fixture.runtime.approvePendingPlanRevision(fixture.admissionAgent, candidateDigest)
+  const revised = await readRecoverySessionState(fixture)
+  assert.equal(revised.tasks.find(item => item.taskId === 'T1').checkState, 'pending_check')
+  assert.notEqual(revised.planDigest, synced.planDigest)
+  // Current fixed-verification evidence belongs to the old plan. The real
+  // finish gate rejects it before the later pending-check settlement branch.
+  await assert.rejects(
+    fixture.runtime.finishOwner(fixture.admissionAgent, fixture.workflowId, 'T1', 'api'),
+    /验证结果 planDigest .* 与当前 .* 不一致/u,
+  )
+  const finished = await readRecoverySessionState(fixture)
+  assert.equal(finished.tasks.find(item => item.taskId === 'T1').checkState, 'pending_check')
+  assert.equal(finished.ownerRuns['T1:api'].status, 'awaiting_finish')
+  // The revision also changes plan binding. Replay is therefore a combined
+  // pending-check/old-plan safety case, not an isolated same-plan proof.
+  const replay = await assertUnsettledReplay(fixture, receipt, before.recoveryAdmission.budget)
+  // Admission config still names the prior plan, so import fails before
+  // the later request/intent binding comparison.
+  assert.equal(replay.reason, 'reservation_invalid')
+})
+
+
+for (const scenario of ['preparing', 'creating', 'pending', 'running', 'terminal', 'interrupted', 'old_plan', 'old_attempt', 'old_lease']) {
+  test(`T22 L3 Runtime safely consumes ${scenario} evidence without execution or settlement`, async t => {
+    const fixture = await createRecoverySessionFixture(t, scenario === 'running'
+      ? { modelScript: () => ['hang'] } : {})
+    const receipt = await reserveRecoverySession(fixture)
+    let observed
+    if (scenario === 'pending') observed = await injectObservedPrompt(fixture, receipt, content)
+    if (scenario === 'terminal') observed = await appendObservedPrompt(fixture, receipt, content)
+    if (scenario === 'interrupted') {
+      const handle = await fixture.ctx.agents.create({
+        sessionId: fixture.modules.SessionId(receipt.executionIdentity.sessionId),
+        meta: { cwd: fixture.root }, agentOptions: fixture.agentOptions,
+      })
+      handle.agent.followup(fixture.modules.freezeMessage({
+        id: receipt.executionIdentity.promptId, role: 'user',
+        content: [{ type: 'text', text: content }], source: { kind: 'user' },
+      }))
+      await handle.agent.whenIdle()
+      await fixture.ctx.sessions.flush(handle.agent.session)
+      observed = { location: fixture.ctx.sessionPersistence.locate(handle.agent.session.header) }
+      await handle.dispose()
+    }
+    if (scenario === 'running') {
+      const handle = await fixture.ctx.agents.create({
+        sessionId: fixture.modules.SessionId(receipt.executionIdentity.sessionId),
+        meta: { cwd: fixture.root }, agentOptions: fixture.agentOptions,
+      })
+      observed = { agent: handle.agent }
+      t.after(async () => { await handle.dispose() })
+      observed.agent.followup(fixture.modules.freezeMessage({
+        id: receipt.executionIdentity.promptId, role: 'user',
+        content: [{ type: 'text', text: content }], source: { kind: 'user' },
+      }))
+      const deadline = Date.now() + 5000
+      while (fixture.adapter.requests.length === 0 && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      assert.equal(fixture.adapter.requests.length, 1)
+      await fixture.ctx.sessions.flush(observed.agent.session)
+    }
+    if (scenario === 'interrupted') {
+      // Deliberate raw negative input: remove a complete turn's terminal
+      // suffix, preserving a valid event prefix. This is not a SIGKILL proof.
+      const text = await readFile(observed.location.path, 'utf8')
+      const rows = text.trimEnd().split('\n')
+      const end = rows.findIndex(row => JSON.parse(row).type === 'step/end')
+      assert.ok(end > 0)
+      await writeFile(observed.location.path, rows.slice(0, end).join('\n') + '\n', 'utf8')
+      const projected = await fixture.ctx.sessionPersistence.inspect(receipt.executionIdentity.sessionId)
+      assert.ok(projected.events.some(event => event.type === 'turn/end' && event.data.reason.kind === 'interrupted'))
+    }
+    // Only negative consumption state is seeded here. No claimed successful
+    // Owner producer or T13 settlement is manufactured by this fixture.
+    await mutateRecoverySessionState(fixture, state => {
+      const run = state.ownerRuns['T1:api']
+      run.status = 'running'
+      run.sessionId = receipt.executionIdentity.sessionId
+      run.leaseToken = 'l3-observed-owner-lease'
+      run.recoverySession = {
+        contract: 'DSH_RECOVERY_SESSION_STATE_V1',
+        requestId: receipt.requestId, attemptId: receipt.attemptId,
+        planDigest: fixture.planDigest, executionIdentity: receipt.executionIdentity,
+        instruction: { id: receipt.executionIdentity.promptId, content },
+        ownerRunBinding: { attempt: run.attempt, leaseToken: run.leaseToken },
+        phase: ['preparing', 'creating'].includes(scenario) ? scenario : 'submitted',
+        ...(scenario === 'preparing' ? {} : { prompt: { id: receipt.executionIdentity.promptId, content } }),
+      }
+      if (scenario === 'old_plan') state.planDigest = 'l3-new-plan-digest'
+      if (scenario === 'old_attempt') run.attempt += 1
+      if (scenario === 'old_lease') run.leaseToken = 'l3-replaced-lease'
+    })
+    const before = await readRecoverySessionState(fixture)
+    const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
+    const requests = fixture.adapter.requests.length
+    const calls = { create: 0, resume: 0, followup: 0 }
+    for (const method of ['create', 'resume']) {
+      const original = fixture.ctx.agents[method].bind(fixture.ctx.agents)
+      fixture.ctx.agents[method] = (...args) => { calls[method] += 1; return original(...args) }
+    }
+    for (const agent of [fixture.admissionAgent, observed?.agent].filter(Boolean)) {
+      const followup = agent.followup.bind(agent)
+      agent.followup = (...args) => { calls.followup += 1; return followup(...args) }
+    }
+    const result = await fixture.runtime.reconcileRecoverySession(
+      fixture.admissionAgent, fixture.workflowId, request(receipt),
+    )
+    assert.equal(result.outcome, 'paused')
+    assert.equal(result.phase, 'technical_pause')
+    const reasons = {
+      preparing: 'recovery_prompt_not_durably_frozen', creating: 'raw_artifact_missing',
+      old_plan: 'reservation_invalid', old_attempt: 'persisted_owner_binding_mismatch',
+      old_lease: 'persisted_owner_binding_mismatch',
+    }
+    if (reasons[scenario]) assert.equal(result.reason, reasons[scenario])
+    if (['pending', 'running', 'terminal'].includes(scenario)) {
+      assert.equal(result.reason, 'persisted_session_requires_owner_lease')
+      assert.equal(result.observation.outcome, { pending: 'pending', running: 'running', terminal: 'observed_terminal' }[scenario])
+    }
+    if (scenario === 'interrupted') {
+      assert.ok(result.observation)
+      assert.ok(!raw.content.includes('"type":"turn/end"'))
+    }
+    assert.deepEqual(calls, { create: 0, resume: 0, followup: 0 })
+    assert.equal(fixture.adapter.requests.length, requests)
+    assert.deepEqual(await readRecoverySessionState(fixture), before)
+    assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+  })
+}

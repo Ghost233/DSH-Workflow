@@ -1,0 +1,174 @@
+{
+  "counts": {
+    "开发完成": 14,
+    "验收通过": 2,
+    "待办": 4,
+    "阻塞": 6,
+    "开发中": 1
+  },
+  "tickets": [
+    {
+      "id": "T-01",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-01-document-root-identity.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-02",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-02-obligation-closure.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-03",
+      "status": "验收通过",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-03-verified-progress.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-04",
+      "status": "验收通过",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-04-decision-classification.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-05",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-05-planning-references.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-06",
+      "status": "待办",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-06-public-owner-request.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-07",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-07-planning-transaction-proof.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-08",
+      "status": "阻塞",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-08-owner-session-proof.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-09",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-09-durable-budget-proof.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-10",
+      "status": "待办",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-10-owner-history-recovery.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-11",
+      "status": "待办",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-11-acceptance-runner-contract.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-12",
+      "status": "阻塞",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-12-acceptance-runner-completion.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-13",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-13-recovery-budget-ledger.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-14",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-14-durable-recovery-admission-proof.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-15",
+      "status": "开发中",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-15-runtime-recovery-budget-admission.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-16",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-16-owner-cancellation-fencing-proof.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-17",
+      "status": "阻塞",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-17-attempt-deadline-settlement.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-18",
+      "status": "阻塞",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-18-recovery-budget-revision-inheritance.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-19",
+      "status": "阻塞",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-19-recovery-budget-config-activation.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-20",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-20-recovery-source-admission.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-21",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-21-session-persistence-contract-proof.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-22",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-22-recovery-session-reconciliation.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-23",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-23-durable-admission-session-proof.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-24",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-24-native-planning-write-provenance.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-25",
+      "status": "开发完成",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-25-planning-checkpoint-snapshot.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-26",
+      "status": "待办",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-26-snapshot-owner-execution-packages.md",
+      "indexMatches": true
+    },
+    {
+      "id": "T-27",
+      "status": "阻塞",
+      "file": "docs/specs/main-thread-owner-workflow/tickets/t-27-planning-version-activation.md",
+      "indexMatches": true
+    }
+  ],
+  "valid": true
+}

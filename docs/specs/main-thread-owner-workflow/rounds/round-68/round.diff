@@ -1,0 +1,43 @@
+--- owner-workflow-plugin/src/candidate-independent-supervisor.mjs (baseline)
++++ owner-workflow-plugin/src/candidate-independent-supervisor.mjs
+@@ -66,6 +66,9 @@
+     }
+   }
+   const records = new Map(state.tasks.map(task => [task.taskId, task]))
++  for (const id of occupied) {
++    if (!['pending', 'running'].includes(records.get(id)?.status)) fail('未终态占用与任务状态矛盾')
++  }
+   const eligible = plan.tasks.filter(task => !excluded.has(task.id) && task.children === undefined
+     && task.decomposition?.status !== 'abstract' && records.get(task.id)?.status === 'pending'
+     && !Object.hasOwn(state.ownerRuns ?? {}, `${task.id}:${task.ownerId}`)
+--- owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs (baseline)
++++ owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs
+@@ -98,3 +98,28 @@
+   repause(state)
+   assert.deepEqual(candidateIndependentNext(state).tasks.map(t => t.taskId), ['i'])
+ })
++
++for (const status of ['stopped', 'completed']) {
++  for (const kind of ['reservation', 'owner']) {
++    test(`reject ${kind} occupancy with ${status} task instead of releasing its parallel slot`, () => {
++      const state = fixture([task('s'), task('t'), task('i'), task('j')], 1)
++      const record = state.tasks.find(t => t.taskId === 'j')
++      record.status = status
++      if (status === 'stopped') Object.assign(record, { reason: 'runtime_failed', action: 'retry_runtime' })
++      if (kind === 'reservation') state.supervisorOutbox = { 'j:j': { taskId: 'j', ownerId: 'j', status: 'launching' } }
++      else state.ownerRuns['j:j'] = { status: 'running' }
++      const before = structuredClone(state)
++      assert.throws(() => candidateIndependentNext(state), /未终态占用与任务状态矛盾/)
++      assert.deepEqual(state, before)
++    })
++  }
++}
++
++test('an already running reservation occupies one slot without duplicate counting', () => {
++  const state = fixture([task('s'), task('t'), task('i'), task('j')], 2)
++  state.tasks.find(t => t.taskId === 'j').status = 'running'
++  state.supervisorOutbox = { 'j:j': { taskId: 'j', ownerId: 'j', status: 'launching' } }
++  assert.deepEqual(candidateIndependentNext(state).tasks.map(t => t.taskId), ['i'])
++  state.config.parallel = 1
++  assert.equal(candidateIndependentNext(state).action, 'wait')
++})

@@ -1,0 +1,9 @@
+# 恢复候选仲裁接线边界（R75）
+
+真实旧入口已证明预算耗尽后仍产生Owner会诊及Reviewer请求，详见round-75/development-pre-gate.log与pre-gate-proof.mjs。该行为不符合T15每次外部恢复启动的有限预算要求。
+
+在会诊和仲裁的逐次持久计费协议接通前，arbitratePendingPlanRevision依据当前真实candidate拒绝未计费启动；consultPlanningOwners同时核验调用者传入state和当前持久Workflow，不能通过去掉传入副本的pending字段降级到初始规划。非恢复初始会诊保持原只读模型调用。
+
+实际driveWorkflow的既有恢复错误路径将此技术拒绝保存为候选暂停及非用户待决通知；通知投递后，同一来源不会重复仲裁。独立首次任务仍依R73/R74判断派发，不扩大为全Workflow停机。直接入口拒绝保持来源、预算与候选不变。
+
+此门禁不是仲裁功能交付。后续完整接线必须为每个Owner会诊及独立仲裁Review分配同根唯一预算/session/prompt，并核验原始回执、语义结果和来源并发。具体实现接缝见round-75/metered-arbitration-path.md。T15保持开发中。

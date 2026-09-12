@@ -1,0 +1,173 @@
+{
+  "results": [
+    {
+      "suite": "runtime-recovery-budget",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/runtime-recovery-budget.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T08:30:47.916085+00:00",
+      "timeoutSeconds": 180,
+      "executionEnvironment": "Outside outer tool sandbox; actual Owner sandbox retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T08:30:53.728719+00:00",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "warnings": []
+    },
+    {
+      "suite": "recovery-admission",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/recovery-admission.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T08:30:53.729934+00:00",
+      "timeoutSeconds": 180,
+      "executionEnvironment": "Outside outer tool sandbox; actual Owner sandbox retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T08:30:59.164030+00:00",
+      "counts": {
+        "tests": 43,
+        "pass": 43,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "warnings": []
+    },
+    {
+      "suite": "recovery-session",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/recovery-session.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T08:30:59.165011+00:00",
+      "timeoutSeconds": 180,
+      "executionEnvironment": "Outside outer tool sandbox; actual Owner sandbox retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T08:31:15.866337+00:00",
+      "counts": {
+        "tests": 27,
+        "pass": 27,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "warnings": []
+    },
+    {
+      "suite": "t23-boundary",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T08:31:15.867304+00:00",
+      "timeoutSeconds": 180,
+      "executionEnvironment": "Outside outer tool sandbox; actual Owner sandbox retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T08:31:45.059950+00:00",
+      "counts": {
+        "tests": 14,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "warnings": []
+    },
+    {
+      "suite": "control",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/control.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T08:31:45.060837+00:00",
+      "timeoutSeconds": 180,
+      "executionEnvironment": "Outside outer tool sandbox; actual Owner sandbox retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T08:33:12.690134+00:00",
+      "counts": {
+        "tests": 166,
+        "pass": 159,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 7,
+        "todo": 0
+      },
+      "warnings": []
+    },
+    {
+      "suite": "resilience",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/resilience.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T08:33:12.691768+00:00",
+      "timeoutSeconds": 180,
+      "executionEnvironment": "Outside outer tool sandbox; actual Owner sandbox retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T08:35:37.686782+00:00",
+      "counts": {
+        "tests": 60,
+        "pass": 60,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "warnings": []
+    }
+  ],
+  "drift": []
+}

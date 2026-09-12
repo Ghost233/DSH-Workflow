@@ -1,0 +1,57 @@
+{
+  "results": [
+    {
+      "suite": "transaction",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T16:35:16.589320+00:00",
+      "timeoutSeconds": 180,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T16:36:49.367132+00:00",
+      "counts": {
+        "tests": 36,
+        "pass": 36,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "planning-references",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/planning-references.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T16:36:49.368018+00:00",
+      "timeoutSeconds": 180,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T16:36:49.672120+00:00",
+      "counts": {
+        "tests": 30,
+        "pass": 30,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    }
+  ],
+  "drift": []
+}

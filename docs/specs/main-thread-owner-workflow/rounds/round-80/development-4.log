@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: T07 real document checkpoint restores existing clean-base preflight and replays one commit
+ok 1 - T07 real document checkpoint restores existing clean-base preflight and replays one commit
+  ---
+  duration_ms: 8971.916
+  type: 'test'
+  ...
+# Subtest: T07 staging after ref advancement is blocked by the index lock or preserved on rejection
+ok 2 - T07 staging after ref advancement is blocked by the index lock or preserved on rejection
+  ---
+  duration_ms: 2011.706875
+  type: 'test'
+  ...
+# Subtest: T07 same-version activation with mismatched checkpointCommit cannot replay
+ok 3 - T07 same-version activation with mismatched checkpointCommit cannot replay
+  ---
+  duration_ms: 7258.064416
+  type: 'test'
+  ...
+# Subtest: T07 same-version activation with mismatched authorizationId cannot replay
+ok 4 - T07 same-version activation with mismatched authorizationId cannot replay
+  ---
+  duration_ms: 7286.954917
+  type: 'test'
+  ...
+# Subtest: T07 same-version activation with mismatched snapshotId cannot replay
+ok 5 - T07 same-version activation with mismatched snapshotId cannot replay
+  ---
+  duration_ms: 5139.688916
+  type: 'test'
+  ...
+# Subtest: T07 same-version activation with mismatched parentExecutionVersionId cannot replay
+ok 6 - T07 same-version activation with mismatched parentExecutionVersionId cannot replay
+  ---
+  duration_ms: 4377.546875
+  type: 'test'
+  ...
+# Subtest: T07 a caught after-ref failure releases its own Git lock and resumes the recorded commit
+ok 7 - T07 a caught after-ref failure releases its own Git lock and resumes the recorded commit
+  ---
+  duration_ms: 3665.44975
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 38968.591333

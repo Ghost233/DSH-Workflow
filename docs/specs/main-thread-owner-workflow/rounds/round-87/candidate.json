@@ -1,0 +1,14 @@
+{
+  "contract": "DSH_R87_FIXED_CANDIDATE_V1",
+  "baseHead": "154914064f5ceb2f8eb413865e10a54e8ffbc663",
+  "branch": "main",
+  "files": {
+    "owner-workflow-plugin/src/planning-checkpoint.mjs": "d44b20253c06b4a25732d709127b89d786950b7f09a1c0492474a89c48a92241",
+    "owner-workflow-plugin/src/runtime.mjs": "8c0cbe92fa3ecd62bd4f250ee6d31307ae31d91e0fccdfd034695a1b7b2081cc",
+    "owner-workflow-plugin/index.js": "6e1d9d2ae654d4775840d0a5e424f7d68341fc568d9184ab8b73f9dc09dd2f89",
+    "owner-workflow-plugin/test/planning-checkpoint-native.test.mjs": "4b80748a95166d774f863c7fbf8fa49bf6d4c50f31fc0fd06cec70d67b18fee6",
+    "owner-workflow-plugin/test/planning-compile-native.test.mjs": "66f40d90fa6793b775f94ea6b1ebf14749aa92e7ed09869b7ba5095cb39048a0",
+    "owner-workflow-plugin/test/plugin.test.mjs": "d777f47166c9876471a820bd5f9ad0174f7d48c96791e94d33b27b1533494391",
+    "docs/specs/main-thread-owner-workflow/contracts/planning-revision-activation-v1.md": "04bac8ea5763a480fc998af8539cb9bd02f15442a82ebc5d391c3e3080f37093"
+  }
+}

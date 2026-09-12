@@ -1,0 +1,13 @@
+✔ T22 source-plane JSONL observes exactly one completed reserved prompt without writes (378.413417ms)
+✔ T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt (299.47425ms)
+✔ T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending (491.63775ms)
+✔ T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects (166.875667ms)
+✔ T22 refuses a real JSONL backend configured with compression before any read or retry (126.303ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1579.199958

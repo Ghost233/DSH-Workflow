@@ -1,0 +1,17 @@
+%% Historical proposal: mandatory per-round user confirmation was superseded.
+%% Current direction: discussion-record.md and ../../superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md
+flowchart TD
+  S["规格：行为、合同、验收编号"] --> T["业务工单：依赖与验收映射"]
+  T --> R["本轮范围：选定就绪工单"]
+  R --> B["执行绑定：Owner、写入范围、固定验证"]
+  B --> G{"依赖满足且写入权无冲突？"}
+  G -->|是| A["Owner A 独立执行"]
+  G -->|是| C["Owner B 独立执行"]
+  G -->|否| W["保留等待原因与解除条件"]
+  A --> J["停止写入并收齐本轮结果"]
+  C --> J
+  W --> J
+  J --> V["固定候选，完成可执行的验收与回归"]
+  V --> Q["只读反思审查：按根因归组"]
+  Q --> D["本轮结束，交付讨论结论"]
+  D -->|用户确认下一轮| R

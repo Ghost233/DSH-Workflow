@@ -1,0 +1,11 @@
+{
+  "contract": "DSH_TICKET_CLOSEOUT_V1",
+  "ticketId": "T-06",
+  "candidateId": "R93-T06-public-owner-change-protocol",
+  "outcome": "development_complete",
+  "acceptanceStatus": "pending_central_acceptance",
+  "dependenciesReleased": ["F3", "T-08"],
+  "remainingDependencies": ["T-08", "B02", "B03", "CA-01"],
+  "gitCommitCreated": false,
+  "remoteUpdated": false
+}

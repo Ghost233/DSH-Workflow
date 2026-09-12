@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: T15 actual candidate needs_revision Review consumes its own attempt in the Planner root and replays raw receipts
+ok 1 - T15 actual candidate needs_revision Review consumes its own attempt in the Planner root and replays raw receipts
+  ---
+  duration_ms: 3146.725667
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3441.635042

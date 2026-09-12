@@ -1,0 +1,26 @@
+{
+  "purpose": "One bounded same-candidate rerun to check suspected fixture read/write race; original formal failure retained",
+  "command": [
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+    "--import",
+    "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+    "--test",
+    "--test-force-exit",
+    "--test-reporter=tap",
+    "--test-name-pattern=完整 Workflow 从预检经过多轮计划审查",
+    "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs"
+  ],
+  "start": "2026-09-11T09:26:50.721819+00:00",
+  "timeoutSeconds": 45,
+  "exitCode": 0,
+  "timedOut": false,
+  "end": "2026-09-11T09:26:56.352901+00:00",
+  "counts": {
+    "tests": 1,
+    "pass": 1,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "drift": []
+}

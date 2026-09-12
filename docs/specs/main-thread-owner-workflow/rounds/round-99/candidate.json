@@ -1,0 +1,15 @@
+{
+  "contract": "DSH_TICKET_IMPLEMENTATION_CANDIDATE_V1",
+  "candidateId": "R99-T11-T12-acceptance-runner",
+  "ticketIds": ["T-11", "T-12"],
+  "specRevision": "R4",
+  "status": "development_complete",
+  "scope": "scope.md",
+  "report": "report.md",
+  "review": "review.md",
+  "testResults": "test-results.json",
+  "fixedCandidateBinding": true,
+  "independentContinuation": true,
+  "dependencyBlocking": true,
+  "zeroTestGate": true
+}

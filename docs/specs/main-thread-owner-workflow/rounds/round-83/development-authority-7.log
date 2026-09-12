@@ -1,0 +1,86 @@
+TAP version 13
+# Subtest: 实际原生问询先持久原始授权，同根重复核验复用，不因后续规格修订扩大实施范围
+ok 1 - 实际原生问询先持久原始授权，同根重复核验复用，不因后续规格修订扩大实施范围
+  ---
+  duration_ms: 492.855792
+  type: 'test'
+  ...
+# Subtest: 原生reject决定不会创建grant或提交代码
+ok 2 - 原生reject决定不会创建grant或提交代码
+  ---
+  duration_ms: 306.88575
+  type: 'test'
+  ...
+# Subtest: 原生custom决定不会创建grant或提交代码
+ok 3 - 原生custom决定不会创建grant或提交代码
+  ---
+  duration_ms: 324.333375
+  type: 'test'
+  ...
+# Subtest: 实际 Runtime 阻止 index 已同步但快照未发布时启动 DAG，原事务恢复后解除
+ok 4 - 实际 Runtime 阻止 index 已同步但快照未发布时启动 DAG，原事务恢复后解除
+  ---
+  duration_ms: 1660.739708
+  type: 'test'
+  ...
+# Subtest: 实际 Runtime 根入口完成原生授权、Git checkpoint 与固定快照，重复调用复用同一授权和提交
+ok 5 - 实际 Runtime 根入口完成原生授权、Git checkpoint 与固定快照，重复调用复用同一授权和提交
+  ---
+  duration_ms: 1760.220916
+  type: 'test'
+  ...
+# Subtest: 实际 Runtime 原生拒绝不会推进 HEAD/index 或建立待恢复事务
+ok 6 - 实际 Runtime 原生拒绝不会推进 HEAD/index 或建立待恢复事务
+  ---
+  duration_ms: 674.7095
+  type: 'test'
+  ...
+# Subtest: 实际规划租约阻止同时进入第二 checkpoint 和旧 Workflow 启动
+ok 7 - 实际规划租约阻止同时进入第二 checkpoint 和旧 Workflow 启动
+  ---
+  duration_ms: 342.615959
+  type: 'test'
+  ...
+# Subtest: 真实授权之后取消会阻止后续 ref CAS，释放租约并以原授权恢复
+not ok 8 - 真实授权之后取消会阻止后续 ref CAS，释放租约并以原授权恢复
+  ---
+  duration_ms: 1367.307459
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-authority-native.test.mjs:185:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /cancel-before-ref/. Input:
+
+    'PlanningCheckpointError: Planning checkpoint: LEASE_ABORTED (withLease)'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: 'Planning checkpoint: LEASE_ABORTED (withLease)'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:26:44)
+    assertLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:389:39)
+    authorize (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:399:9)
+    runUnderLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:812:9)
+    async Object.withOwnerLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:5616:24)
+    async waitForActual (node:assert:646:5)
+    async strict.rejects (node:assert:769:25)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-authority-native.test.mjs:197:3)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-authority-native.test.mjs:197:3)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 7
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7093.545833

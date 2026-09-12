@@ -5,6 +5,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { basename, join, resolve } from 'node:path'
 
 import { projectProgress } from './supervisor.mjs'
+import { OWNER_RUNTIME_DIRECTORY, ensureRuntimeGitignore } from './project-layout.mjs'
+import { deriveWorkflowControl } from './workflow-state.mjs'
 import {
   listOperationStates,
   operationCommandIsCompound,
@@ -19,6 +21,8 @@ const WORKSPACE_CATALOG_FILE = 'workspaces.json'
 const RUNNER_DAEMON_CONTRACT = 'DSH_WORKFLOW_RUNNER_DAEMON_V1'
 const AGENT_RUNTIME_STATUS_CONTRACT = 'DSH_AGENT_RUNTIME_STATUS_V1'
 const RUNNER_HEARTBEAT_MIN_STALE_MS = 10_000
+const DASHBOARD_BASELINE_POLL_MS = 5_000
+const DASHBOARD_HEARTBEAT_MS = 15_000
 const dashboardInstances = new Set()
 const appendQueues = new Map()
 const catalogQueues = new Map()
@@ -31,7 +35,7 @@ function workspacePath(workspace) {
 }
 
 function projectionDirectory(workspace) {
-  return join(workspacePath(workspace), '.dsh-workflow')
+  return join(workspacePath(workspace), OWNER_RUNTIME_DIRECTORY)
 }
 
 function workspaceCatalogPath(catalogRoot) {
@@ -49,6 +53,7 @@ async function readWorkspaceCatalog(catalogRoot) {
       typeof item?.id === 'string'
       && typeof item?.root === 'string'
       && item.id === dashboardWorkspaceId(item.root)
+      && existsSync(item.root)
     )) : []
   } catch (error) {
     if (error?.code === 'ENOENT') return []
@@ -69,6 +74,7 @@ function enqueueCatalog(path, operation) {
 export async function registerDashboardWorkspace(catalogRoot, workspace) {
   const catalog = workspacePath(catalogRoot)
   const root = workspacePath(workspace)
+  await ensureRuntimeGitignore(projectionDirectory(catalog))
   const path = workspaceCatalogPath(catalog)
   return enqueueCatalog(path, async () => {
     const workspaces = await readWorkspaceCatalog(catalog)
@@ -166,6 +172,10 @@ function progressProjection(state) {
   if (state.plan !== undefined && Array.isArray(state.tasks)) {
     if (state.plan.contract === 'DSH_PLAN_V2') {
       const projected = projectProgress(state)
+      const control = deriveWorkflowControl(state)
+      const execution = control.counts
+      const phase = control.phase
+      const action = control.actionRequired ? workflowDashboardAction(state, phase) : undefined
       const tasks = projected.tasks.map(task => {
         const record = state.ownerRuns?.[`${task.id}:${task.ownerId}`]
         if (record === undefined) return task
@@ -178,6 +188,7 @@ function progressProjection(state) {
           lastHeartbeatAt: record.lastHeartbeatAt,
           recoveryCount: Number(record.recoveryCount ?? 0),
           pendingApprovalId: record.pendingApprovalId,
+          autonomousRecovery: task.autonomousRecovery ?? record.autonomousRecovery,
         }
       })
       return {
@@ -185,7 +196,36 @@ function progressProjection(state) {
         tasks,
         workflowId,
         status: state.status ?? null,
-        execution: workflowTaskCounts(state),
+        phase,
+        execution,
+        ...(typeof state.orchestratorSessionId === 'string' && state.orchestratorSessionId.trim() !== ''
+          ? { mainSessionId: state.orchestratorSessionId.trim() }
+          : {}),
+        ...(state.planReview?.status === undefined ? {} : {
+          review: {
+            status: state.planReview.status,
+            summary: dashboardText(state.planReview.summary, 1000),
+            issueCount: Array.isArray(state.planReview.issues) ? state.planReview.issues.length : 0,
+          },
+        }),
+        ...(state.planConvergence?.contract === 'DSH_WORKFLOW_CONVERGENCE_V1' ? {
+          convergence: {
+            progress: state.planConvergence.progress,
+            activeStrategy: state.planConvergence.activeStrategy,
+            nextStrategy: state.planConvergence.nextStrategy,
+            evidenceDigest: state.planConvergence.evidenceDigest,
+            openObligationCount: (state.planConvergence.obligations ?? []).filter(item => item.status === 'open').length,
+            unsupportedNewObligationCount: state.planConvergence.unsupportedNewObligations?.length ?? 0,
+            updatedAt: state.planConvergence.updatedAt,
+          },
+        } : {}),
+        ...(state.pendingDecisionBundle?.contract === 'DSH_WORKFLOW_DECISION_BUNDLE_V1' ? {
+          decisionBundle: {
+            status: state.pendingDecisionBundle.status,
+            questions: (state.pendingDecisionBundle.questions ?? []).map(question => dashboardText(question, 1000)),
+          },
+        } : {}),
+        ...(action === undefined ? {} : { action }),
       }
     }
     return {
@@ -296,7 +336,35 @@ function dashboardTask(task) {
     ...(typeof task.lastHeartbeatAt === 'string' && task.lastHeartbeatAt.trim() !== '' ? { lastHeartbeatAt: task.lastHeartbeatAt.trim() } : {}),
     ...(Number.isSafeInteger(task.recoveryCount) && task.recoveryCount >= 0 ? { recoveryCount: task.recoveryCount } : {}),
     ...(typeof task.pendingApprovalId === 'string' && task.pendingApprovalId.trim() !== '' ? { pendingApprovalId: task.pendingApprovalId.trim() } : {}),
+    ...(task.autonomousRecovery !== null && typeof task.autonomousRecovery === 'object' && !Array.isArray(task.autonomousRecovery)
+      ? {
+          autonomousRecovery: {
+            failureClass: dashboardText(task.autonomousRecovery.failureClass, 80),
+            strategy: dashboardText(task.autonomousRecovery.strategy, 80),
+            message: dashboardText(task.autonomousRecovery.message, 500),
+            updatedAt: dashboardText(task.autonomousRecovery.updatedAt, 100),
+          },
+        }
+      : {}),
     ...(typeof task.parentTaskId === 'string' && task.parentTaskId.trim() !== '' ? { parentTaskId: task.parentTaskId.trim() } : {}),
+    ...(Array.isArray(task.children) ? { children: task.children.filter(item => typeof item === 'string') } : {}),
+    ...(Array.isArray(task.entry) ? { entry: task.entry.filter(item => typeof item === 'string') } : {}),
+    ...(Array.isArray(task.exit) ? { exit: task.exit.filter(item => typeof item === 'string') } : {}),
+    ...(task.decomposition !== null && typeof task.decomposition === 'object' && !Array.isArray(task.decomposition)
+      ? {
+          decomposition: {
+            status: dashboardText(task.decomposition.status, 40),
+            kind: dashboardText(task.decomposition.kind, 40),
+            outcome: dashboardText(task.decomposition.outcome, 500),
+            ownerCandidates: Array.isArray(task.decomposition.ownerCandidates)
+              ? task.decomposition.ownerCandidates.filter(item => typeof item === 'string').slice(0, 20)
+              : [],
+            unknowns: Array.isArray(task.decomposition.unknowns)
+              ? task.decomposition.unknowns.filter(item => typeof item === 'string').map(item => dashboardText(item, 500)).slice(0, 20)
+              : [],
+          },
+        }
+      : {}),
   }
 }
 
@@ -308,6 +376,61 @@ function dashboardExecution(value) {
     result[key] = Number.isSafeInteger(count) && count >= 0 ? count : 0
   }
   return result
+}
+
+function dashboardWorkflowAction(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || value.required !== true) return undefined
+  const kind = dashboardText(value.kind, 100)
+  const title = dashboardText(value.title, 200)
+  const detail = dashboardText(value.detail, 1000)
+  if (kind === '' || title === '' || detail === '') return undefined
+  const mainSessionId = dashboardText(value.mainSessionId, 300)
+  return {
+    required: true,
+    kind,
+    title,
+    detail,
+    ...(mainSessionId === '' ? {} : { mainSessionId }),
+  }
+}
+
+function dashboardReview(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const status = dashboardText(value.status, 100)
+  if (status === '') return undefined
+  const issueCount = Number(value.issueCount)
+  return {
+    status,
+    summary: dashboardText(value.summary, 1000),
+    issueCount: Number.isSafeInteger(issueCount) && issueCount >= 0 ? issueCount : 0,
+  }
+}
+
+function dashboardConvergence(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const nextStrategy = dashboardText(value.nextStrategy, 100)
+  if (nextStrategy === '') return undefined
+  const openObligationCount = Number(value.openObligationCount)
+  const unsupportedNewObligationCount = Number(value.unsupportedNewObligationCount)
+  return {
+    progress: dashboardText(value.progress, 100),
+    activeStrategy: dashboardText(value.activeStrategy, 100),
+    nextStrategy,
+    evidenceDigest: dashboardText(value.evidenceDigest, 100),
+    openObligationCount: Number.isSafeInteger(openObligationCount) && openObligationCount >= 0 ? openObligationCount : 0,
+    unsupportedNewObligationCount: Number.isSafeInteger(unsupportedNewObligationCount) && unsupportedNewObligationCount >= 0
+      ? unsupportedNewObligationCount
+      : 0,
+    updatedAt: dashboardText(value.updatedAt, 100),
+  }
+}
+
+function dashboardDecisionBundle(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const status = dashboardText(value.status, 100)
+  if (status === '') return undefined
+  const questions = dashboardTextList(value.questions)
+  return { status, questions, questionCount: questions.length }
 }
 
 function dashboardEvent(event) {
@@ -342,10 +465,15 @@ export async function readDashboardSnapshot(workspace, workflowId) {
   const targetWorkflowId = requireWorkflowId(workflowId)
   let raw
   try {
-    raw = JSON.parse(await readFile(progressPath(target, targetWorkflowId), 'utf8'))
+    raw = JSON.parse(await readFile(join(target, OWNER_RUNTIME_DIRECTORY, 'workflows', `${targetWorkflowId}.json`), 'utf8'))
   } catch (error) {
-    if (error?.code === 'ENOENT') return undefined
-    throw new Error('Dashboard progress 投影不可用')
+    if (error?.code !== 'ENOENT') throw new Error('Dashboard workflow 状态不可用')
+    try {
+      raw = JSON.parse(await readFile(progressPath(target, targetWorkflowId), 'utf8'))
+    } catch (projectionError) {
+      if (projectionError?.code === 'ENOENT') return undefined
+      throw new Error('Dashboard progress 投影不可用')
+    }
   }
   let progress
   try {
@@ -362,11 +490,23 @@ export async function readDashboardSnapshot(workspace, workflowId) {
     .filter(event => event !== undefined)
     .slice(-100)
   const execution = dashboardExecution(progress.execution)
+  const action = dashboardWorkflowAction(progress.action)
+  const review = dashboardReview(progress.review)
+  const convergence = dashboardConvergence(progress.convergence)
+  const decisionBundle = dashboardDecisionBundle(progress.decisionBundle)
+  const phase = dashboardText(progress.phase, 100)
+  const mainSessionId = dashboardText(progress.mainSessionId, 300)
   return {
     workflowId: targetWorkflowId,
     status: typeof progress.status === 'string' ? progress.status : null,
+    ...(phase === '' ? {} : { phase }),
     summary: typeof progress.summary === 'string' ? progress.summary : '',
     ...(execution === undefined ? {} : { execution }),
+    ...(review === undefined ? {} : { review }),
+    ...(convergence === undefined ? {} : { convergence }),
+    ...(decisionBundle === undefined ? {} : { decisionBundle }),
+    ...(action === undefined ? {} : { action }),
+    ...(mainSessionId === '' ? {} : { mainSessionId }),
     tasks,
     events,
   }
@@ -396,6 +536,8 @@ export async function listDashboardWorkflows(workspace) {
     workflows.push({
       workflowId,
       status: snapshot.status,
+      ...(snapshot.phase === undefined ? {} : { phase: snapshot.phase }),
+      ...(snapshot.action?.required === true ? { actionRequired: true } : {}),
       summary: snapshot.summary,
       taskCount: snapshot.tasks.length,
     })
@@ -616,13 +758,27 @@ async function readRunnerDaemonState(catalogRoot) {
     const staleAfterMs = Math.max(RUNNER_HEARTBEAT_MIN_STALE_MS, Number(state.pollMs ?? 0) * 5)
     const online = state.status === 'running' && Number.isFinite(heartbeat) && Date.now() - heartbeat <= staleAfterMs
     const activeWorkflows = Array.isArray(state.activeWorkflows) ? state.activeWorkflows : []
+    const attempts = new Map()
+    for (const item of activeWorkflows) {
+      const workspaceId = dashboardText(item?.workspaceId, 100)
+      const workflowId = dashboardText(item?.workflowId, 300)
+      if (workspaceId === '' || workflowId === '') continue
+      attempts.set(`${workspaceId}:${workflowId}`, {
+        attemptId: dashboardText(item?.attemptId, 100) || null,
+        kind: dashboardText(item?.kind, 100) || 'execution',
+        phase: dashboardText(item?.phase, 100) || 'executing',
+        reason: dashboardText(item?.reason, 300) || null,
+        startedAt: dashboardText(item?.startedAt, 100) || null,
+        deadlineAt: dashboardText(item?.deadlineAt, 100) || null,
+      })
+    }
     return {
       online,
       process: online ? 'online' : 'offline',
       assignment: online ? (activeWorkflows.length > 0 ? 'supervising' : 'idle') : 'offline',
-      active: new Set(activeWorkflows.map(item => (
-        `${dashboardText(item?.workspaceId, 100)}:${dashboardText(item?.workflowId, 300)}`
-      ))),
+      active: new Set(attempts.keys()),
+      attempts,
+      generation: Number.isSafeInteger(state.generation) ? state.generation : null,
       heartbeatAt: dashboardText(state.heartbeatAt, 100),
       startedAt: dashboardText(state.startedAt, 100),
     }
@@ -704,100 +860,108 @@ async function listAgentRuntimeStates(workspace) {
   return states.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))
 }
 
-function workflowTaskCounts(state) {
-  const tasks = Array.isArray(state?.tasks) ? state.tasks : []
-  const plans = new Map((Array.isArray(state?.plan?.tasks) ? state.plan.tasks : []).map(task => [task.id, task]))
-  const records = new Map(tasks.map(task => [task.taskId, task]))
-  const activeTaskIds = new Set(Object.values(state?.ownerRuns ?? {})
-    .filter(record => ['starting', 'running', 'waiting_approval', 'awaiting_finish', 'committed'].includes(record?.status))
-    .map(record => record.taskId))
-  let completedTasks = 0
-  let runningTasks = 0
-  let queuedTasks = 0
-  let pendingTasks = 0
-  let waitingDependencyTasks = 0
-  let waitingDecisionTasks = 0
-  for (const record of tasks) {
-    if (record.status === 'completed') {
-      completedTasks += 1
-      continue
-    }
-    if (record.status === 'stopped') {
-      waitingDecisionTasks += 1
-      continue
-    }
-    if (record.status === 'running') {
-      if (activeTaskIds.has(record.taskId)) runningTasks += 1
-      else {
-        queuedTasks += 1
-        pendingTasks += 1
-      }
-      continue
-    }
-    if (record.status !== 'pending') continue
-    pendingTasks += 1
-    const dependencies = Array.isArray(plans.get(record.taskId)?.dependsOn) ? plans.get(record.taskId).dependsOn : []
-    if (dependencies.some(id => records.get(id)?.status !== 'completed')) waitingDependencyTasks += 1
-  }
-  return {
-    totalTasks: tasks.length,
-    pendingTasks,
-    runningTasks,
-    queuedTasks,
-    waitingDependencyTasks,
-    waitingDecisionTasks,
-    completedTasks,
-  }
-}
-
-function deterministicWorkflowPhase(state, counts, daemonActive) {
-  if (state.status === 'initializing') return 'initializing'
-  if (state.status === 'planning') return 'planning'
-  if (state.status === 'registry_pending_plan') return 'registry_pending_plan'
-  if (state.status === 'planned') {
-    if (state.planReview?.status === 'passed') return 'awaiting_plan_approval'
-    if (state.planReview?.status === 'needs_revision') return 'plan_revision_required'
-    if (state.planningAgent?.phase === 'awaiting_registry_approval') return 'awaiting_registry_approval'
-    if (state.planningAgent?.phase === 'reviewing') return 'plan_reviewing'
-    if (state.planningAgent?.phase === 'review_failed') return 'plan_review_failed'
-    if (state.planningAgent?.phase === 'failed') return 'planning_failed'
-    return 'plan_review_not_started'
-  }
-  if (state.status === 'approved') return daemonActive ? 'runner_launching' : 'runner_queued'
-  if (state.status === 'running') {
-    if (counts.runningTasks > 0) return 'owner_running'
-    if (counts.waitingDecisionTasks > 0) return 'waiting_workflow_decision'
-    if (counts.waitingDependencyTasks > 0 || counts.pendingTasks > 0) return 'waiting_dependencies'
-    return 'finalizing'
-  }
-  if (state.status === 'blocked') return 'blocked'
-  if (state.status === 'failed') return 'failed'
-  if (state.status === 'cancelled') return 'cancelled'
-  if (state.status === 'completed') {
-    return state.finalized === true
-      ? 'completed'
-      : state.implementationReview?.status === 'passed' ? 'finalizing' : 'implementation_review_required'
-  }
-  return 'unknown'
-}
-
-function workflowLifecycle(state, phase) {
-  if (phase === 'completed') return 'completed'
-  if (phase === 'cancelled') return 'cancelled'
-  if (phase === 'failed' || phase === 'planning_failed' || phase === 'plan_review_failed') return 'failed'
-  if (phase === 'blocked' || phase === 'plan_review_not_started') return 'blocked'
-  if (phase.startsWith('awaiting_') || phase.startsWith('waiting_') || phase === 'runner_queued') return 'waiting'
-  return 'active'
-}
-
 function mainThreadActivity(phase) {
   if (phase === 'planning') return 'waiting_planner'
+  if (phase === 'plan_revision_in_progress') return 'waiting_planner'
+  if (phase === 'planning_owner_consultation') return 'waiting_subagents'
+  if (phase === 'plan_revision_recovery_queued') return 'waiting_runner'
+  if (phase === 'planning_recovery_queued' || phase === 'execution_recovery_queued') return 'waiting_runner'
+  if (phase === 'plan_revision_retry_pending') return 'waiting_runner'
   if (phase === 'plan_reviewing') return 'waiting_plan_reviewer'
+  if (phase === 'plan_arbitrating') return 'waiting_plan_reviewer'
+  if (phase === 'autonomous_incident') return 'blocked_runtime'
   if (phase === 'awaiting_plan_approval' || phase === 'awaiting_registry_approval') return 'waiting_user_approval'
+  if (phase === 'awaiting_revision_extension') return 'waiting_user_approval'
+  if (phase === 'planning_discussion_summarizing') return 'waiting_plan_reviewer'
+  if (phase === 'awaiting_main_discussion') return 'waiting_user_approval'
   if (phase === 'runner_queued' || phase === 'runner_launching') return 'waiting_runner'
   if (phase === 'owner_running' || phase === 'waiting_dependencies') return 'waiting_subagents'
-  if (phase === 'plan_review_not_started' || phase === 'plan_review_failed' || phase === 'planning_failed') return 'blocked_runtime'
+  if (phase === 'handoff_replanning' || phase === 'implementation_review_required' || phase === 'implementation_repair_required') return 'waiting_subagents'
+  if (phase === 'state_invariant_violation') return 'blocked_runtime'
+  if (phase === 'plan_review_not_started' || phase === 'plan_review_failed' || phase === 'plan_revision_failed' || phase === 'planning_failed') return 'blocked_runtime'
   return phase
+}
+
+function workflowDashboardAction(state, phase) {
+  const mainSessionId = typeof state.orchestratorSessionId === 'string' && state.orchestratorSessionId.trim() !== ''
+    ? state.orchestratorSessionId.trim()
+    : undefined
+  const common = {
+    required: true,
+    ...(mainSessionId === undefined ? {} : { mainSessionId }),
+  }
+  const reviewerDecision = state.planReview?.status === 'needs_decision'
+    || state.planningDiscussion?.source === 'plan-review-needs-decision'
+  if (phase === 'awaiting_plan_approval') {
+    return { ...common, kind: 'plan_approval', title: '计划等待批准', detail: '请回到创建该 Workflow 的主会话查看并处理计划审批卡片。Dashboard 保持只读。' }
+  }
+  if (phase === 'awaiting_registry_approval') {
+    return { ...common, kind: 'registry_approval', title: 'Owner Registry 等待批准', detail: '请回到创建该 Workflow 的主会话处理完整 Registry 批次审批。Dashboard 保持只读。' }
+  }
+  if (phase === 'awaiting_revision_extension') {
+    const decisionId = state.pendingPlanningDecision?.decisionId
+    const notification = Object.values(state.mainOutbox ?? {})
+      .find(item => item?.decisionId === decisionId)
+    const questionActive = notification?.presentationStatus === 'active'
+    return {
+      ...common,
+      kind: 'plan_revision_extension',
+      title: '计划修订额度等待决定',
+      detail: questionActive
+        ? '计划已达到自动修订上限，原生决定卡片已直接在创建该 Workflow 的主会话打开；当前没有子代理仍在运行。'
+        : '计划已达到自动修订上限。Runtime 正在主会话打开原生决定卡片；如果暂未出现，Runner 会继续重试。当前没有子代理仍在运行。',
+    }
+  }
+  if (phase === 'planning_discussion_summarizing') {
+    return {
+      ...common,
+      kind: 'planning_discussion_summarizing',
+      title: reviewerDecision ? '正在汇总决策问题' : '正在总结规划现场',
+      detail: reviewerDecision
+        ? 'Reviewer 判定继续拆分前需要用户策略决定。只读总结子代理正在整理决策问题、当前事实和可选方向；不会继续猜测或执行代码。'
+        : '用户已终止自动规划。只读总结子代理正在整理当前现场、多轮不收敛原因和可选方向；不会继续修订或执行代码。',
+    }
+  }
+  if (phase === 'awaiting_main_discussion') {
+    return {
+      ...common,
+      kind: 'planning_discussion_ready',
+      title: reviewerDecision ? '决策问题已返回主线程' : '规划总结已返回主线程',
+      detail: reviewerDecision
+        ? '自动规划已暂停并保留现场。决策问题与当前事实已返回 Workflow 根会话，等待主线程与用户讨论；Runtime 不会自行选择策略。'
+        : '自动规划已经终止并保留现场。总结已返回 Workflow 根会话，等待主线程与用户讨论下一步。',
+    }
+  }
+  if (phase === 'planning_discussion_failed') {
+    return {
+      ...common,
+      kind: 'planning_discussion_failed',
+      title: '规划总结需要恢复',
+      detail: '自动规划已停止且现场保留，但总结子代理未完成；Runtime 将使用持久审查事实生成兜底总结并返回主线程。',
+    }
+  }
+  if (phase === 'plan_review_failed') {
+    return { ...common, kind: 'plan_review_failed', title: '计划审查未通过', detail: '当前不是待批准状态。自动修订后仍未通过，请回到主会话根据 Reviewer 意见决定继续修订或调整范围。' }
+  }
+  if (phase === 'plan_revision_failed') {
+    return { ...common, kind: 'plan_revision_failed', title: '计划修订已失败', detail: '计划修订已达到失败上限。请查看最后错误并决定调整需求、提高运行预算或取消 Workflow。' }
+  }
+  if (phase === 'plan_revision_required') {
+    return { ...common, kind: 'plan_revision_required', title: '计划需要继续修订', detail: 'Reviewer 已要求修订，但当前没有 Planner 在运行；请回到主会话处理。' }
+  }
+  if (phase === 'plan_split_required') {
+    return { ...common, kind: 'plan_split_required', title: 'DAG 节点需要继续拆分', detail: 'Reviewer 判定当前节点仍过大；Runtime 会结合相关 Owner 会诊递归展开目标节点，不应继续润色整份计划。' }
+  }
+  if (phase === 'plan_discovery_required') {
+    return { ...common, kind: 'plan_discovery_required', title: 'DAG 等待只读调查', detail: 'Reviewer 判定缺少仓库或环境事实；Runtime 会先让相关 Owner 只读调查，再细化当前节点。' }
+  }
+  if (phase === 'planning_failed') {
+    return { ...common, kind: 'planning_failed', title: '计划编排失败', detail: 'Runner watchdog 会先尝试有界恢复；若仍停留在这里，请回到主会话查看失败原因。' }
+  }
+  if (phase === 'blocked' || phase === 'failed') {
+    return { ...common, kind: phase, title: phase === 'blocked' ? 'Workflow 已阻塞' : 'Workflow 执行失败', detail: '请回到主会话查看任务证据并决定恢复、调整或取消。' }
+  }
+  return undefined
 }
 
 function agentBySession(runtimeAgents, sessionId) {
@@ -830,9 +994,13 @@ function ownerActorLifecycle(record, runtimeAgent) {
 
 function workflowStatusProjection(state, workspace, daemon, runtimeAgents) {
   const workflowId = dashboardText(state.id, 300)
-  const counts = workflowTaskCounts(state)
-  const daemonActive = daemon?.active?.has(`${workspace.id}:${workflowId}`) === true
-  const phase = deterministicWorkflowPhase(state, counts, daemonActive)
+  const runnerKey = `${workspace.id}:${workflowId}`
+  const daemonActive = daemon?.active?.has(runnerKey) === true
+  const runnerAttempt = daemon?.attempts?.get(runnerKey)
+  const control = deriveWorkflowControl(state, { daemonActive })
+  const counts = control.counts
+  const phase = control.phase
+  if (control.terminal) return undefined
   const mainSessionId = dashboardText(state.orchestratorSessionId ?? state.conversationRootSessionId, 300)
   const mainRuntime = agentBySession(runtimeAgents, mainSessionId)
   const terminal = ['failed', 'cancelled'].includes(state.status)
@@ -919,8 +1087,9 @@ function workflowStatusProjection(state, workspace, daemon, runtimeAgents) {
     goal: dashboardText(state.plan?.summary) || dashboardText(state.request),
     status: dashboardText(state.status, 100),
     phase,
-    lifecycle: workflowLifecycle(state, phase),
+    lifecycle: control.lifecycle,
     runnerAssignment: daemon?.online === true ? (daemonActive ? 'supervising' : 'idle') : 'offline',
+    ...(runnerAttempt === undefined ? {} : { runnerAttempt }),
     execution: counts,
     mainThread,
     subagents,
@@ -979,9 +1148,12 @@ function dashboardWorkflowWaitItem(state, workspace, daemon) {
   )
   if (sessionId === '') return undefined
   const workflowId = dashboardText(state.id, 300)
-  const counts = workflowTaskCounts(state)
   const daemonActive = daemon?.active?.has(`${workspace.id}:${workflowId}`) === true
-  const phase = deterministicWorkflowPhase(state, counts, daemonActive)
+  const control = deriveWorkflowControl(state, { daemonActive })
+  const counts = control.counts
+  const phase = control.phase
+  const reviewerDecision = state.planReview?.status === 'needs_decision'
+    || state.planningDiscussion?.source === 'plan-review-needs-decision'
   let waitState
   let waitingFor
   let statusText
@@ -993,10 +1165,14 @@ function dashboardWorkflowWaitItem(state, workspace, daemon) {
     waitState = 'waiting_owner_approval'
     waitingFor = 'Owner 宿主授权'
     statusText = 'Owner 子代理正在等待宿主授权'
-  } else if (state.status === 'blocked' || counts.waitingDecisionTasks > 0) {
+  } else if (control.command !== null && control.actionRequired !== true && daemon?.online !== true) {
+    waitState = 'runner_offline'
+    waitingFor = 'Runner daemon'
+    statusText = `Runner daemon 未运行；恢复命令：${control.command}`
+  } else if (phase === 'waiting_workflow_decision') {
     waitState = 'waiting_workflow_decision'
-    waitingFor = '主代理或用户决定'
-    statusText = 'Owner Workflow 已阻塞，等待处理'
+    waitingFor = 'Workflow 根会话一次性处理外部决定'
+    statusText = 'Owner Workflow 正等待明确的外部输入或决定'
   } else if (phase === 'awaiting_plan_approval') {
     waitState = 'waiting_workflow_decision'
     waitingFor = 'Workflow 根会话批准计划'
@@ -1005,16 +1181,58 @@ function dashboardWorkflowWaitItem(state, workspace, daemon) {
     waitState = 'waiting_workflow_decision'
     waitingFor = 'Workflow 根会话批准 Owner Registry'
     statusText = 'Owner Registry 提案等待用户决定'
-  } else if (['plan_review_not_started', 'plan_review_failed', 'planning_failed'].includes(phase)) {
+  } else if (phase === 'awaiting_revision_extension') {
+    const decisionId = state.pendingPlanningDecision?.decisionId
+    const notification = Object.values(state.mainOutbox ?? {})
+      .find(item => item?.decisionId === decisionId)
+    const questionActive = notification?.presentationStatus === 'active'
+    waitState = 'waiting_workflow_decision'
+    waitingFor = 'Workflow 根会话决定是否扩展计划修订额度'
+    statusText = questionActive
+      ? '计划修订额度原生决定卡片已打开，等待用户选择'
+      : '计划已达到自动修订上限，等待 Runtime 打开原生决定卡片'
+  } else if (phase === 'planning_discussion_summarizing') {
+    waitState = 'waiting_subagents'
+    waitingFor = reviewerDecision ? '决策问题总结子代理' : '规划复盘总结子代理'
+    statusText = reviewerDecision
+      ? 'Reviewer 要求用户策略决定，正在生成只读现状与问题总结'
+      : '用户已终止自动规划，正在生成只读现状总结'
+  } else if (phase === 'awaiting_main_discussion') {
+    waitState = 'waiting_workflow_decision'
+    waitingFor = 'Workflow 根会话与用户讨论'
+    statusText = reviewerDecision
+      ? '自动规划已暂停，决策问题与现状总结已返回主线程'
+      : '自动规划已终止，现状总结已返回主线程'
+  } else if (phase === 'planning_discussion_failed') {
     waitState = 'workflow_stalled'
-    waitingFor = 'Workflow Runtime 恢复'
-    statusText = phase === 'plan_review_not_started'
-      ? '计划已生成，但独立 Reviewer 尚未启动'
-      : '计划编排已经停止，等待恢复或处理'
-  } else if (['approved', 'running'].includes(state.status) && daemon?.online !== true) {
-    waitState = 'runner_offline'
-    waitingFor = 'Runner daemon'
-    statusText = 'Runner daemon 未运行或心跳已过期'
+    waitingFor = 'Workflow Runtime 生成兜底总结'
+    statusText = '自动规划已终止，总结子代理失败但现场仍保留'
+  } else if (phase === 'planning_owner_consultation') {
+    waitState = 'waiting_subagents'
+    waitingFor = '相关 Owner 只读会诊'
+    statusText = '相关 Owner 正结合各自设定和长期记忆参与 DAG 拆分'
+  } else if (phase === 'plan_split_required') {
+    waitState = 'waiting_runner'
+    waitingFor = 'Planner 递归拆分目标节点'
+    statusText = 'Reviewer 已要求拆小 DAG，而不是继续重写整份计划'
+  } else if (phase === 'plan_discovery_required') {
+    waitState = 'waiting_subagents'
+    waitingFor = '相关 Owner 只读调查'
+    statusText = 'Reviewer 已列出缺失事实，等待调查后再细化 DAG'
+  } else if (phase === 'plan_revision_recovery_queued' || phase === 'plan_revision_retry_pending') {
+    waitState = 'waiting_runner'
+    waitingFor = 'Runner daemon 恢复 Planner'
+    statusText = phase === 'plan_revision_retry_pending'
+      ? '计划修订超时，等待 Runner 使用新版超时策略恢复'
+      : 'Reviewer 要求修订且仍有预算，等待 Runner 自动恢复 Planner'
+  } else if (phase === 'state_invariant_violation') {
+    waitState = 'workflow_stalled'
+    waitingFor = '新版 Workflow Runtime 重新解释持久状态'
+    statusText = control.reason
+  } else if (control.command !== null) {
+    waitState = 'waiting_runner'
+    waitingFor = `Runner 执行 ${control.command}`
+    statusText = control.reason
   } else {
     return undefined
   }
@@ -1048,11 +1266,9 @@ function dashboardWorkflowWaitItem(state, workspace, daemon) {
 export async function listDashboardWaits(catalogRoot) {
   const catalog = workspacePath(catalogRoot)
   const records = await readWorkspaceCatalog(catalog)
-  const catalogId = dashboardWorkspaceId(catalog)
-  const workspaces = [
-    { id: catalogId, root: catalog, name: basename(catalog) || catalog },
-    ...records.filter(record => record.id !== catalogId),
-  ]
+  const workspaces = records.length > 0
+    ? records
+    : [{ id: dashboardWorkspaceId(catalog), root: catalog, name: basename(catalog) || catalog }]
   const waits = []
   const staleWaits = []
   const statusWorkspaces = []
@@ -1109,6 +1325,8 @@ export async function listDashboardWaits(catalogRoot) {
     runner: {
       process: daemon?.process ?? 'offline',
       assignment: daemon?.assignment ?? 'offline',
+      generation: daemon?.generation ?? null,
+      activeAttemptCount: daemon?.attempts?.size ?? 0,
       heartbeatAt: daemon?.heartbeatAt ?? null,
       startedAt: daemon?.startedAt ?? null,
     },
@@ -1128,6 +1346,8 @@ export async function serveDashboardWaitEvents(catalogRoot, response) {
   const watchers = new Map()
   let closed = false
   let publishTimer
+  let baselineTimer
+  let heartbeatTimer
   let lastPayload = ''
 
   const closeWatcher = watcher => {
@@ -1137,6 +1357,8 @@ export async function serveDashboardWaitEvents(catalogRoot, response) {
     if (closed) return
     closed = true
     clearTimeout(publishTimer)
+    clearInterval(baselineTimer)
+    clearInterval(heartbeatTimer)
     for (const watcher of watchers.values()) closeWatcher(watcher)
     watchers.clear()
   }
@@ -1219,6 +1441,13 @@ export async function serveDashboardWaitEvents(catalogRoot, response) {
   response.once('error', close)
   if (!await watchDirectories()) return
   await publish(true)
+  baselineTimer = setInterval(schedulePublish, DASHBOARD_BASELINE_POLL_MS)
+  baselineTimer.unref?.()
+  heartbeatTimer = setInterval(() => {
+    if (closed || response.destroyed || response.writableEnded) return
+    try { response.write(': heartbeat\n\n') } catch { disconnect() }
+  }, DASHBOARD_HEARTBEAT_MS)
+  heartbeatTimer.unref?.()
 }
 
 function projectionEvents(projection, previous) {
@@ -1257,7 +1486,6 @@ function projectionSnapshot(projection) {
 function ssePayload(event) {
   const normalized = normalizeEvent(event) ?? { type: 'progress.updated', progress: event }
   return [
-    `event: ${normalized.type}`,
     `data: ${JSON.stringify(normalized)}`,
     '',
   ].join('\n') + '\n'
@@ -1321,6 +1549,8 @@ function createDashboardInstance(workspace, workflowId) {
   let workspaceWatcher
   let projectionTimer
   let eventsTimer
+  let baselineTimer
+  let heartbeatTimer
 
   function eventKey(event) {
     return typeof event.id === 'string' && event.id !== '' ? `id:${event.id}` : `json:${stableJson(event)}`
@@ -1448,7 +1678,7 @@ function createDashboardInstance(workspace, workflowId) {
       ? targetWorkflowId
       : watchTarget === runtimeRoot
         ? DASHBOARD_DIRECTORY
-        : '.dsh-workflow'
+        : OWNER_RUNTIME_DIRECTORY
     try {
       workspaceWatcher = watch(watchTarget, { persistent: false }, (_eventType, filename) => {
         const name = filename?.toString()
@@ -1479,6 +1709,23 @@ function createDashboardInstance(workspace, workflowId) {
       // Dashboard 可以在 runtime 尚未写出首个投影时启动；请求时仍会 fail-closed。
     }
     if (!attachDirectoryWatcher()) attachWorkspaceWatcher()
+    baselineTimer = setInterval(() => {
+      void Promise.all([
+        loadProjection({ required: false }),
+        processNewEvents(),
+      ]).catch(() => undefined)
+    }, DASHBOARD_BASELINE_POLL_MS)
+    baselineTimer.unref?.()
+    heartbeatTimer = setInterval(() => {
+      for (const client of clients) {
+        if (client.response.destroyed || client.response.writableEnded) {
+          removeClient(client)
+          continue
+        }
+        try { client.response.write(': heartbeat\n\n') } catch { removeClient(client) }
+      }
+    }, DASHBOARD_HEARTBEAT_MS)
+    heartbeatTimer.unref?.()
   }
 
   async function serveEvents(response) {
@@ -1553,6 +1800,8 @@ function createDashboardInstance(workspace, workflowId) {
   async function close() {
     clearTimeout(projectionTimer)
     clearTimeout(eventsTimer)
+    clearInterval(baselineTimer)
+    clearInterval(heartbeatTimer)
     closeWatcher(directoryWatcher)
     closeWatcher(workspaceWatcher)
     for (const client of clients) client.response.end()
@@ -1570,6 +1819,26 @@ function createDashboardInstance(workspace, workflowId) {
     close,
   }
   return instance
+}
+
+export async function serveDashboardWorkflowEvents(workspace, workflowId, response) {
+  const instance = createDashboardInstance(workspace, workflowId)
+  dashboardInstances.add(instance)
+  let closed = false
+  const close = async () => {
+    if (closed) return
+    closed = true
+    await instance.close().catch(() => undefined)
+  }
+  response.once('close', () => { void close() })
+  response.once('error', () => { void close() })
+  try {
+    await instance.initialize()
+    await instance.handle({ method: 'GET', url: '/events' }, response)
+  } catch (error) {
+    await close()
+    throw error
+  }
 }
 
 export async function writeProgressProjection(root, state) {

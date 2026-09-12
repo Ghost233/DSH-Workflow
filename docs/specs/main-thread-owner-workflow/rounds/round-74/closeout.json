@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T14:26:41.341062+00:00",
+  "formalPass": 224,
+  "formalSkipped": 7,
+  "candidateDrift": [],
+  "closedFindings": [
+    "R73 admission and pre-start settlement P2"
+  ],
+  "reviewFindings": [],
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false
+}

@@ -1,0 +1,146 @@
+{
+  "results": [
+    {
+      "suite": "resilience-1",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "--test-name-pattern",
+        "^(?:Supervisor\\ 将没有活跃子代理的\\ running\\ Owner\\ 收敛为\\ orphaned，而不是继续报告运行中|Supervisor\\ inspect\\ 超时会取消旧执行并切换自治恢复，不能以持续\\ inspect\\ 无限续命|Owner\\ 子代理启动时立即持久化\\ session、phase\\ 与\\ heartbeat|Owner\\ 宿主授权等待会持久化到\\ workflow，并在结束后恢复\\ running|主会话\\ Owner\\ 恢复只负责后台派发，不同步等待完整\\ LLM\\ 执行|workflow_status\\ 默认保持紧凑，完整历史只通过分页\\ detail\\ 返回|failed\\ Workflow\\ 存在待推进\\ PlanRevision\\ 时\\ workflow_status\\ 会恢复\\ Runner\\ 控制桥|相同根因没有新证据时自动切换恢复策略而不是\\ await_user|同一\\ Owner\\ 的第二个\\ V2\\ 任务复用分支和\\ worktree\\ 并同步最新\\ workflow\\ HEAD|V2\\ task\\ finish\\ 合入固定\\ SHA、完成\\ task/ownerRun，并让后继从新\\ workflow\\ HEAD\\ 同步|记忆编译失败后恢复\\ awaiting_finish\\ Owner\\ 时只重试结算|cancel\\ 活动\\ Owner\\ 时中止执行并删除\\ dirty\\ 临时分支与\\ worktree|cancel\\ 拒绝已\\ finalized\\ 的\\ workflow，且不改写持久化状态|Owner\\ A\\ 保留未提交修改原地恢复，并以\\ Owner\\ B\\ 已合并的新\\ HEAD\\ 作为共同审计\\ base|恢复记录含独有固定提交但分支历史丢失时拒绝重置审计基线|控制桥使用持久\\ lease，不能被第二个\\ Harness\\ 进程抢占\\ socket|Registry\\ 提案更新后拒绝用陈旧快照重新保存规划状态)$",
+        "owner-workflow-plugin/test/resilience.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:31:26.656315+00:00",
+      "timeoutSeconds": 180,
+      "selectedCases": [
+        "Supervisor 将没有活跃子代理的 running Owner 收敛为 orphaned，而不是继续报告运行中",
+        "Supervisor inspect 超时会取消旧执行并切换自治恢复，不能以持续 inspect 无限续命",
+        "Owner 子代理启动时立即持久化 session、phase 与 heartbeat",
+        "Owner 宿主授权等待会持久化到 workflow，并在结束后恢复 running",
+        "主会话 Owner 恢复只负责后台派发，不同步等待完整 LLM 执行",
+        "workflow_status 默认保持紧凑，完整历史只通过分页 detail 返回",
+        "failed Workflow 存在待推进 PlanRevision 时 workflow_status 会恢复 Runner 控制桥",
+        "相同根因没有新证据时自动切换恢复策略而不是 await_user",
+        "同一 Owner 的第二个 V2 任务复用分支和 worktree 并同步最新 workflow HEAD",
+        "V2 task finish 合入固定 SHA、完成 task/ownerRun，并让后继从新 workflow HEAD 同步",
+        "记忆编译失败后恢复 awaiting_finish Owner 时只重试结算",
+        "cancel 活动 Owner 时中止执行并删除 dirty 临时分支与 worktree",
+        "cancel 拒绝已 finalized 的 workflow，且不改写持久化状态",
+        "Owner A 保留未提交修改原地恢复，并以 Owner B 已合并的新 HEAD 作为共同审计 base",
+        "恢复记录含独有固定提交但分支历史丢失时拒绝重置审计基线",
+        "控制桥使用持久 lease，不能被第二个 Harness 进程抢占 socket",
+        "Registry 提案更新后拒绝用陈旧快照重新保存规划状态"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:31:49.946435+00:00",
+      "counts": {
+        "tests": 17,
+        "pass": 17,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "selectionComplete": true,
+      "warnings": []
+    },
+    {
+      "suite": "resilience-2",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "--test-name-pattern",
+        "^(?:两个\\ Runtime\\ 竞争批准时\\ Registry\\ 与\\ workflow\\ state\\ 保持同一结果|Registry\\ 批准先赢\\ workflow\\ state\\ 锁时，另一个\\ Runtime\\ 不得启动旧计划\\ Owner|Owner\\ 获得\\ lease\\ 后必须用\\ Registry\\ 批准写入的最新\\ state\\ 拒绝启动旧计划|另一个\\ Runtime\\ 持有\\ workflow\\ CAS\\ 锁时批准不会先改\\ Registry|workflow\\ state\\ 原子保存失败时回滚\\ Registry\\ 内容和\\ index|V2\\ workflow\\ recovery\\ 恢复重启遗留的\\ planning\\ 和\\ failed\\ task|Owner\\ 主动报告\\ blocked\\ 时优先结算阻塞，不会被缺失验证误报为\\ planDigest\\ 错误|同一\\ Owner\\ 在不同\\ workflow\\ 间使用磁盘\\ lease\\ 互斥，并在记录进程死亡后立即恢复|Lease\\ 的\\ fencing\\ token\\ 被接管后旧临界区不能继续成功结算|handoff\\ 必须先修复越界文件，再把请求写入\\ handoff\\ 队列|Owner\\ 失败报告携带\\ handoff\\ 时先入队再停止，避免重复启动同一\\ Owner|handoff_replan\\ 在\\ live\\ Registry\\ 缺失时拒绝重规划|handoff_replan\\ 拒绝把任务分配给\\ live\\ Registry\\ 未登记\\ Owner|running\\ 恢复态的\\ handoff_replan\\ 会清除旧批准，并要求新的计划审查后才能批准|V2\\ task\\ finish\\ 使用\\ Owner\\ 结算时登记的固定\\ commit\\ SHA|active\\ Owner\\ 只能追加简短的当前任务临时记忆，并持久化供恢复注入|V2\\ task\\ finish\\ 在固定提交后拒绝跟随\\ Owner\\ 分支移动)$",
+        "owner-workflow-plugin/test/resilience.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:31:49.948004+00:00",
+      "timeoutSeconds": 180,
+      "selectedCases": [
+        "两个 Runtime 竞争批准时 Registry 与 workflow state 保持同一结果",
+        "Registry 批准先赢 workflow state 锁时，另一个 Runtime 不得启动旧计划 Owner",
+        "Owner 获得 lease 后必须用 Registry 批准写入的最新 state 拒绝启动旧计划",
+        "另一个 Runtime 持有 workflow CAS 锁时批准不会先改 Registry",
+        "workflow state 原子保存失败时回滚 Registry 内容和 index",
+        "V2 workflow recovery 恢复重启遗留的 planning 和 failed task",
+        "Owner 主动报告 blocked 时优先结算阻塞，不会被缺失验证误报为 planDigest 错误",
+        "同一 Owner 在不同 workflow 间使用磁盘 lease 互斥，并在记录进程死亡后立即恢复",
+        "Lease 的 fencing token 被接管后旧临界区不能继续成功结算",
+        "handoff 必须先修复越界文件，再把请求写入 handoff 队列",
+        "Owner 失败报告携带 handoff 时先入队再停止，避免重复启动同一 Owner",
+        "handoff_replan 在 live Registry 缺失时拒绝重规划",
+        "handoff_replan 拒绝把任务分配给 live Registry 未登记 Owner",
+        "running 恢复态的 handoff_replan 会清除旧批准，并要求新的计划审查后才能批准",
+        "V2 task finish 使用 Owner 结算时登记的固定 commit SHA",
+        "active Owner 只能追加简短的当前任务临时记忆，并持久化供恢复注入",
+        "V2 task finish 在固定提交后拒绝跟随 Owner 分支移动"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:32:12.497626+00:00",
+      "counts": {
+        "tests": 17,
+        "pass": 17,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "selectionComplete": true,
+      "warnings": []
+    },
+    {
+      "suite": "resilience-3",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "--test-name-pattern",
+        "^(?:V2\\ task\\ finish\\ 在\\ workflow\\ 已合入但状态未记账时恢复并幂等完成|V2\\ task\\ finish\\ 恢复\\ pendingTaskMerge，只清理\\ task\\ preflight\\ 并保留\\ Owner\\ worktree|V2\\ task\\ finish\\ 按\\ task\\.write\\ 覆盖把\\ handoff\\ queue\\ 标记为\\ completed|finalize\\ 只合并固定的\\ review\\ SHA，review\\ 后分支移动时拒绝未审查提交|finalize\\ 遇到\\ tracked、untracked\\ 或\\ ignored\\ Owner\\ dirty\\ 时保存\\ cleanupPending\\ 并保留现场|finalize\\ 对\\ legacy\\ ownerRuns\\ 的越界、链接、分支错配和字段冲突一律\\ fail\\-closed|finalize\\ 可清理合法固定\\ V2\\ Owner\\ 路径|finalize\\ 成功后重复调用可以幂等完成清理|finalize\\ 合并已经完成但状态未记账时，可以在资源缺失后恢复清理|finalize\\ 在启动分支有新提交时以最新\\ base\\ 预合并固定\\ review\\ SHA\\ 并成功交付|finalize\\ 最新\\ base\\ 预合并冲突时记录失败并保留\\ workflow、Owner\\ 和\\ preflight\\ 现场|Runtime\\ 当前\\ Owner\\ 只能通过结构化\\ request_subgraph\\ 请求并在锁内持久化局部\\ delta|Runtime\\ request_handoff\\ 走局部失效并拒绝通过\\ delta\\ 绕过\\ Registry\\ 边界|Runtime\\ request_handoff\\ 只保留白名单字段，调用方元数据不能覆盖生成字段|V2\\ handoff_replan\\ 用\\ task\\.write\\ 覆盖\\ handoff\\ 文件并\\ carry\\ forward\\ completed\\ task|V2\\ handoff_replan\\ 确定性冻结已有\\ ownerRun\\ 对应\\ task\\ 的语义|V2\\ recoverWorkflow\\ 只按\\ task\\ 状态、ownerRuns\\ 和\\ Supervisor\\ queue\\ 恢复失败\\ task)$",
+        "owner-workflow-plugin/test/resilience.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:32:12.498881+00:00",
+      "timeoutSeconds": 180,
+      "selectedCases": [
+        "V2 task finish 在 workflow 已合入但状态未记账时恢复并幂等完成",
+        "V2 task finish 恢复 pendingTaskMerge，只清理 task preflight 并保留 Owner worktree",
+        "V2 task finish 按 task.write 覆盖把 handoff queue 标记为 completed",
+        "finalize 只合并固定的 review SHA，review 后分支移动时拒绝未审查提交",
+        "finalize 遇到 tracked、untracked 或 ignored Owner dirty 时保存 cleanupPending 并保留现场",
+        "finalize 对 legacy ownerRuns 的越界、链接、分支错配和字段冲突一律 fail-closed",
+        "finalize 可清理合法固定 V2 Owner 路径",
+        "finalize 成功后重复调用可以幂等完成清理",
+        "finalize 合并已经完成但状态未记账时，可以在资源缺失后恢复清理",
+        "finalize 在启动分支有新提交时以最新 base 预合并固定 review SHA 并成功交付",
+        "finalize 最新 base 预合并冲突时记录失败并保留 workflow、Owner 和 preflight 现场",
+        "Runtime 当前 Owner 只能通过结构化 request_subgraph 请求并在锁内持久化局部 delta",
+        "Runtime request_handoff 走局部失效并拒绝通过 delta 绕过 Registry 边界",
+        "Runtime request_handoff 只保留白名单字段，调用方元数据不能覆盖生成字段",
+        "V2 handoff_replan 用 task.write 覆盖 handoff 文件并 carry forward completed task",
+        "V2 handoff_replan 确定性冻结已有 ownerRun 对应 task 的语义",
+        "V2 recoverWorkflow 只按 task 状态、ownerRuns 和 Supervisor queue 恢复失败 task"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:33:00.978655+00:00",
+      "counts": {
+        "tests": 26,
+        "pass": 26,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "selectionComplete": true,
+      "warnings": []
+    }
+  ],
+  "drift": []
+}

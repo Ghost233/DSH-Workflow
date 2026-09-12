@@ -1,0 +1,154 @@
+TAP version 13
+# Subtest: T15 socket admission refusal with no independent task persists one notice, then daemon discovery and fresh Harness wait
+ok 1 - T15 socket admission refusal with no independent task persists one notice, then daemon discovery and fresh Harness wait
+  ---
+  duration_ms: 2022.546792
+  type: 'test'
+  ...
+# Subtest: T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses
+ok 2 - T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses
+  ---
+  duration_ms: 2212.5915
+  type: 'test'
+  ...
+# Subtest: T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer
+ok 3 - T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer
+  ---
+  duration_ms: 1432.807292
+  type: 'test'
+  ...
+# Subtest: T15 an authoritative user-wait task projection takes priority over a candidate technical pause
+ok 4 - T15 an authoritative user-wait task projection takes priority over a candidate technical pause
+  ---
+  duration_ms: 1497.042917
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate parent
+ok 5 - T15 stale admission failure cannot pause a concurrently changed candidate parent
+  ---
+  duration_ms: 1251.343833
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate review
+ok 6 - T15 stale admission failure cannot pause a concurrently changed candidate review
+  ---
+  duration_ms: 1194.05475
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate plan content
+ok 7 - T15 stale admission failure cannot pause a concurrently changed candidate plan content
+  ---
+  duration_ms: 988.228125
+  type: 'test'
+  ...
+# Subtest: T15 first uncertain real Reviewer creation persists pause despite its own new operation and session
+ok 8 - T15 first uncertain real Reviewer creation persists pause despite its own new operation and session
+  ---
+  duration_ms: 1015.404625
+  type: 'test'
+  ...
+# Subtest: T15 a delivered candidate pause with an obsolete Review digest cannot discover, drive, or reserve work
+ok 9 - T15 a delivered candidate pause with an obsolete Review digest cannot discover, drive, or reserve work
+  ---
+  duration_ms: 1092.413417
+  type: 'test'
+  ...
+# Subtest: T15 a approval change between candidate dispatch and reserve rejects the latest transaction without target writes
+ok 10 - T15 a approval change between candidate dispatch and reserve rejects the latest transaction without target writes
+  ---
+  duration_ms: 1090.703208
+  type: 'test'
+  ...
+# Subtest: T15 a Review result change between candidate dispatch and reserve rejects the latest transaction without target writes
+ok 11 - T15 a Review result change between candidate dispatch and reserve rejects the latest transaction without target writes
+  ---
+  duration_ms: 1143.417458
+  type: 'test'
+  ...
+# Subtest: T15 a live Registry drift after independent claim pauses only that reservation before an Owner exists
+ok 12 - T15 a live Registry drift after independent claim pauses only that reservation before an Owner exists
+  ---
+  duration_ms: 1285.42525
+  type: 'test'
+  ...
+# Subtest: T15 daemon discovery drives one independent candidate through socket verification, merge, and terminal quiescence
+ok 13 - T15 daemon discovery drives one independent candidate through socket verification, merge, and terminal quiescence
+  ---
+  duration_ms: 3197.811875
+  type: 'test'
+  ...
+# Subtest: T15 fresh Harness resumes a persisted candidate reservation with no Owner history
+ok 14 - T15 fresh Harness resumes a persisted candidate reservation with no Owner history
+  ---
+  duration_ms: 3079.661792
+  type: 'test'
+  ...
+# Subtest: T15 fresh Harness leaves candidate launching as a stable non-dispatch wait
+ok 15 - T15 fresh Harness leaves candidate launching as a stable non-dispatch wait
+  ---
+  duration_ms: 1458.417041
+  type: 'test'
+  ...
+# Subtest: T15 fresh Harness leaves candidate unknown Owner history as a stable non-dispatch wait
+ok 16 - T15 fresh Harness leaves candidate unknown Owner history as a stable non-dispatch wait
+  ---
+  duration_ms: 1472.624917
+  type: 'test'
+  ...
+# Subtest: T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness
+ok 17 - T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness
+  ---
+  duration_ms: 1714.915583
+  type: 'test'
+  ...
+# Subtest: T15 candidate replacement invalidates persisted reservation replay
+ok 18 - T15 candidate replacement invalidates persisted reservation replay
+  ---
+  duration_ms: 1332.650875
+  type: 'test'
+  ...
+# Subtest: T15 a stale create action cannot overwrite a newly arrived Owner history
+ok 19 - T15 a stale create action cannot overwrite a newly arrived Owner history
+  ---
+  duration_ms: 1415.878458
+  type: 'test'
+  ...
+# Subtest: T15 candidate replacement before reservation rejects the stale create action without task writes
+ok 20 - T15 candidate replacement before reservation rejects the stale create action without task writes
+  ---
+  duration_ms: 1545.782291
+  type: 'test'
+  ...
+# Subtest: T15 public and direct Owner entry points cannot bypass a candidate reservation
+ok 21 - T15 public and direct Owner entry points cannot bypass a candidate reservation
+  ---
+  duration_ms: 1974.388292
+  type: 'test'
+  ...
+# Subtest: T15 reservation replay rejects persisted stopped task before neutralizing its projection
+ok 22 - T15 reservation replay rejects persisted stopped task before neutralizing its projection
+  ---
+  duration_ms: 1645.747375
+  type: 'test'
+  ...
+# Subtest: T15 reservation replay rejects persisted completed task before neutralizing its projection
+ok 23 - T15 reservation replay rejects persisted completed task before neutralizing its projection
+  ---
+  duration_ms: 1695.109125
+  type: 'test'
+  ...
+# Subtest: T15 Owner startup rechecks a reservation arriving after its initial read
+ok 24 - T15 Owner startup rechecks a reservation arriving after its initial read
+  ---
+  duration_ms: 1673.276167
+  type: 'test'
+  ...
+1..24
+# tests 24
+# suites 0
+# pass 24
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 38585.6655

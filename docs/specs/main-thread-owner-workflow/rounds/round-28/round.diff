@@ -1,0 +1,137 @@
+--- owner-workflow-plugin/test/recovery-session.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session.test.mjs
+@@ -1,4 +1,5 @@
+ import assert from 'node:assert/strict'
++import { createHash } from 'node:crypto'
+ import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+ import { dirname } from 'node:path'
+ import test from 'node:test'
+@@ -649,3 +650,128 @@
+     assert.equal(fixture.adapter.requests.length, 0)
+   })
+ }
++
++
++async function assertUnsettledReplay(fixture, receipt, budgetBefore) {
++  const state = await readRecoverySessionState(fixture)
++  const run = state.ownerRuns['T1:api']
++  assert.deepEqual(state.recoveryAdmission.budget, budgetBefore)
++  assert.deepEqual(run.recoverySession.executionIdentity, receipt.executionIdentity)
++  assert.equal(run.recoverySession.successReceipt, undefined)
++  assert.equal(run.recoveryContinuation, undefined)
++  assert.ok(!['settled_failed', 'settled_succeeded'].includes(run.recoverySession.phase))
++  const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
++  assert.ok(raw)
++  const requests = fixture.adapter.requests.length
++  const calls = { create: 0, resume: 0, followup: 0 }
++  for (const method of ['create', 'resume']) {
++    const original = fixture.ctx.agents[method].bind(fixture.ctx.agents)
++    fixture.ctx.agents[method] = async (...args) => {
++      calls[method] += 1
++      const handle = await original(...args)
++      const followup = handle.agent.followup.bind(handle.agent)
++      handle.agent.followup = (...input) => { calls.followup += 1; return followup(...input) }
++      return handle
++    }
++  }
++  const replay = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, request(receipt),
++  )
++  assert.equal(replay.outcome, 'paused')
++  assert.equal(replay.phase, 'technical_pause')
++  assert.deepEqual(calls, { create: 0, resume: 0, followup: 0 })
++  assert.equal(fixture.adapter.requests.length, requests)
++  assert.deepEqual(await readRecoverySessionState(fixture), state)
++  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
++  return replay
++}
++
++for (const outcome of ['blocked', 'handoff', 'no_submit']) {
++  test(`T22 L2 real ${outcome} outcome cannot settle or authorize another execution`, async t => {
++    const fixture = await createRecoverySessionFixture(t, {
++      executable: true,
++      modelScript: ({ toolCallResponse, textResponse }) => outcome === 'no_submit'
++        ? [textResponse('The Owner stopped without submitting a result.')]
++        : [
++          toolCallResponse(`t22-l2-${outcome}`, 'owner_submit', { report: {
++            contract: 'DSH_OWNER_RESULT_V1', status: 'blocked',
++            summary: 'This task requires a separate decision before continuing.',
++            changes: [], tests: [], memory_updates: [],
++            handoffs: outcome === 'handoff' ? [{
++              targetType: 'orchestrator', summary: 'Replan this task boundary.',
++              reason: 'The current task boundary needs coordination.', files: [],
++            }] : [],
++          } }),
++          textResponse('submission recorded'),
++        ],
++    })
++    const receipt = await reserveRecoverySession(fixture)
++    const before = await readRecoverySessionState(fixture)
++    await assert.rejects(
++      fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, request(receipt)),
++      error => outcome === 'no_submit'
++        ? /没有调用 owner_submit/u.test(error.message)
++        : error.name === (outcome === 'handoff' ? 'OwnerHandoffError' : 'OwnerReportedError'),
++    )
++    const state = await readRecoverySessionState(fixture)
++    assert.equal(state.ownerRuns['T1:api'].status, outcome === 'no_submit' ? 'failed' : 'blocked')
++    assert.equal(fixture.adapter.requests.length, outcome === 'no_submit' ? 1 : 2)
++    const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
++    const observed = await fixture.readFrom(receipt.executionIdentity.sessionId)
++    const submissions = observed.events.filter(event => event.type === 'tool/call' && event.data.name === 'owner_submit')
++    assert.equal(submissions.length, outcome === 'no_submit' ? 0 : 1)
++    if (outcome === 'handoff') {
++      assert.ok(state.handoffQueue.some(item => item.targetType === 'orchestrator'))
++    }
++    await assertUnsettledReplay(fixture, receipt, before.recoveryAdmission.budget)
++  })
++}
++
++
++test('T22 L2 real PlanRevision pending_check cannot settle the prior recovery intent', async t => {
++  const fixture = await createRecoverySessionFixture(t, {
++    executable: true, modelScript: completedOwnerModelScript,
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  const before = await readRecoverySessionState(fixture)
++  await fixture.runtime.runExternalOwner(
++    fixture.admissionAgent, fixture.workflowId, 'T1', 'api', undefined,
++    { recoverySessionRequest: request(receipt), deferFinish: true },
++  )
++  const synced = await readRecoverySessionState(fixture)
++  assert.equal(synced.ownerRuns['T1:api'].status, 'awaiting_finish')
++  assert.equal(synced.tasks.find(item => item.taskId === 'T1').status, 'running')
++  const candidatePlan = structuredClone(synced.plan)
++  candidatePlan.tasks.find(item => item.id === 'T1').done.push('Recheck this result under the revised acceptance obligation.')
++  const candidateDigest = createHash('sha256').update(JSON.stringify(candidatePlan)).digest('hex')
++  // Input fixture is an already-reviewed candidate. The production approval
++  // transaction, not this setup, must produce pending_check; no task or
++  // Owner completion/check state is written here.
++  await mutateRecoverySessionState(fixture, state => {
++    state.conversationRootSessionId = fixture.admissionAgent.id
++    state.pendingPlanRevision = {
++      number: 2, parent: 1, plan: candidatePlan, planDigest: candidateDigest,
++      intentIds: [], review: {
++        contract: 'DSH_PLAN_REVIEW_V1', status: 'passed',
++        summary: 'Controlled reviewed candidate input for the local consumer test.', issues: [],
++      },
++    }
++  })
++  await fixture.runtime.approvePendingPlanRevision(fixture.admissionAgent, candidateDigest)
++  const revised = await readRecoverySessionState(fixture)
++  assert.equal(revised.tasks.find(item => item.taskId === 'T1').checkState, 'pending_check')
++  assert.notEqual(revised.planDigest, synced.planDigest)
++  // Current fixed-verification evidence belongs to the old plan. The real
++  // finish gate rejects it before the later pending-check settlement branch.
++  await assert.rejects(
++    fixture.runtime.finishOwner(fixture.admissionAgent, fixture.workflowId, 'T1', 'api'),
++    /验证结果 planDigest .* 与当前 .* 不一致/u,
++  )
++  const finished = await readRecoverySessionState(fixture)
++  assert.equal(finished.tasks.find(item => item.taskId === 'T1').checkState, 'pending_check')
++  assert.equal(finished.ownerRuns['T1:api'].status, 'awaiting_finish')
++  // The revision also changes plan binding. Replay is therefore a combined
++  // pending-check/old-plan safety case, not an isolated same-plan proof.
++  const replay = await assertUnsettledReplay(fixture, receipt, before.recoveryAdmission.budget)
++  assert.equal(replay.reason, 'reservation_binding_mismatch')
++})

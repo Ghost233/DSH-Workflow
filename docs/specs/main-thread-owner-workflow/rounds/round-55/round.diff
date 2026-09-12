@@ -1,0 +1,208 @@
+--- owner-workflow-plugin/src/recovery-budget.mjs (baseline)
++++ owner-workflow-plugin/src/recovery-budget.mjs
+@@ -14,6 +14,11 @@
+   'ownerId',
+   'executionVersion',
+ ])
++const OPERATION_REQUEST_FIELDS = Object.freeze([
++  'workflowId', 'rootProblemId', 'requestId', 'attemptId', 'executionVersion',
++  'executionKind', 'operationId', 'operationKind',
++])
++const REPLAN_OPERATION_KINDS = new Set(['revision_plan', 'revision_review', 'handoff_replan'])
+ const ATTEMPT_STATES = new Set(['reserved', 'running', 'settled'])
+ const RESULT_STATUSES = new Set(['succeeded', 'failed', 'cancelled'])
+ const EVIDENCE_PURPOSES = new Set(['progress', 'closure'])
+@@ -87,19 +92,32 @@
+   return JSON.stringify([value.id, value.version])
+ }
+
++// Legacy Owner bindings retain their exact JSON shape. Replan executions have
++// their own identity; their root remains the originating problem, not an Owner
++// fabricated for the planner. Authority and durable call identity belong to the
++// admission adapter, not this structural ledger.
++function requestFields(value, name) {
++  plainRecord(value, name)
++  if (!Object.hasOwn(value, 'executionKind')) return REQUEST_FIELDS
++  if (value.executionKind !== 'replan_operation') fail(`${name}.executionKind 无效`)
++  if (!REPLAN_OPERATION_KINDS.has(value.operationKind)) fail(`${name}.operationKind 无效`)
++  return OPERATION_REQUEST_FIELDS
++}
++
+ function bindingFields(value, name) {
+   const parsed = {}
+-  for (const field of REQUEST_FIELDS) parsed[field] = exactStrings(value[field], `${name}.${field}`)
++  for (const field of requestFields(value, name)) parsed[field] = exactStrings(value[field], `${name}.${field}`)
+   return parsed
+ }
+
+ function binding(value, name, extra = []) {
+-  exactKeys(value, [...REQUEST_FIELDS, ...extra], name)
++  exactKeys(value, [...requestFields(value, name), ...extra], name)
+   return bindingFields(value, name)
+ }
+
+ function sameBinding(left, right) {
+-  return REQUEST_FIELDS.every(field => left[field] === right[field])
++  return left.executionKind === right.executionKind
++    && requestFields(left, 'binding').every(field => left[field] === right[field])
+ }
+
+ function result(value, name) {
+@@ -129,7 +147,7 @@
+   plainRecord(value, name)
+   const state = value.state
+   if (!ATTEMPT_STATES.has(state)) fail(`${name}.state 无效`)
+-  const fields = [...REQUEST_FIELDS, 'state']
++  const fields = [...requestFields(value, name), 'state']
+   if (state === 'running') fields.push('executionRef')
+   if (state === 'settled') fields.push('result')
+   if (Object.hasOwn(value, 'executionRef') && state !== 'reserved') fields.push('executionRef')
+@@ -367,7 +385,6 @@
+
+ export function startRecoveryAttempt(ledgerValue, value) {
+   const ledger = normalizeRecoveryBudget(ledgerValue)
+-  exactKeys(value, [...REQUEST_FIELDS, 'executionRef'], 'start')
+   const request = checkedLedgerRequest(ledger, value, 'start', ['executionRef'])
+   const executionRef = reference(value.executionRef, 'start.executionRef')
+   const current = locatedAttempt(ledger, request)
+@@ -386,7 +403,6 @@
+
+ export function settleRecoveryAttempt(ledgerValue, value) {
+   const ledger = normalizeRecoveryBudget(ledgerValue)
+-  exactKeys(value, [...REQUEST_FIELDS, 'result'], 'settle')
+   const request = checkedLedgerRequest(ledger, value, 'settle', ['result'])
+   const nextResult = result(value.result, 'settle.result')
+   const current = locatedAttempt(ledger, request)
+--- owner-workflow-plugin/test/recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-budget.test.mjs
+@@ -326,3 +326,130 @@
+     assert.throws(() => normalizeRecoveryBudget(snapshot), /其他 attempt/)
+   })
+ }
++
++const replanReq = (id, rootProblemId = 'P1', extra = {}) => ({
++  workflowId: 'wf', rootProblemId, requestId: `r-${id}`, attemptId: `a-${id}`,
++  executionVersion: 'plan-v1', executionKind: 'replan_operation',
++  operationId: 'revision-cycle-1', operationKind: 'revision_plan', ...extra,
++})
++
++test('T15 Owner恢复与重规划共用问题预算，换操作类型/版本不重置额度', () => {
++  let ledger = reserveRecoveryAttempt(setup(5), req(1)).ledger
++  ledger = failure(ledger, req(1))
++  const planner = replanReq(2)
++  ledger = reserveRecoveryAttempt(reload(ledger), planner).ledger
++  ledger = startRecoveryAttempt(ledger, { ...planner, executionRef: ref('planner-session') }).ledger
++  ledger = failure(ledger, planner, 'planner-failed')
++  for (const operationKind of ['revision_plan', 'revision_review', 'handoff_replan']) {
++    const denied = reserveRecoveryAttempt(ledger, replanReq(3, 'P1', {
++      operationId: 'new-cycle', operationKind, executionVersion: 'plan-v2',
++    }))
++    assert.equal(denied.reason, 'problem_exhausted')
++    assert.deepEqual(denied.ledger, ledger)
++  }
++  assert.equal(problem(ledger).used, 2)
++  assert.equal(ledger.totalUsed, 2)
++  assert.equal(Object.hasOwn(ledger.attempts[1], 'ownerId'), false)
++  assert.equal(Object.hasOwn(ledger.attempts[1], 'taskId'), false)
++  assert.deepEqual(reload(ledger), ledger)
++})
++
++test('T15 重规划与Owner跨根共用Workflow额度，独立问题只在总额尚有余量时继续', () => {
++  let ledger = reserveRecoveryAttempt(setup(2), replanReq(1)).ledger
++  ledger = reserveRecoveryAttempt(ledger, req(2, 'P2')).ledger
++  assert.equal(reserveRecoveryAttempt(ledger, replanReq(3, 'P2')).reason, 'workflow_exhausted')
++  assert.equal(reserveRecoveryAttempt(ledger, req(4)).reason, 'workflow_exhausted')
++  assert.equal(problem(ledger, 'P2').used, 1)
++  assert.equal(ledger.attempts.length, 2)
++})
++
++for (const operationKind of ['revision_plan', 'revision_review', 'handoff_replan']) {
++  test(`T15 ${operationKind}持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣`, () => {
++    const request = replanReq(1, 'P1', { operationKind })
++    const reserved = reserveRecoveryAttempt(setup(1), request)
++    assert.equal(reserveRecoveryAttempt(reload(reserved.ledger), request).outcome, 'replayed')
++    assert.throws(() => settleRecoveryAttempt(reserved.ledger, {
++      ...request, result: { status: 'succeeded', reference: ref('result') },
++    }), /未启动/)
++    const running = startRecoveryAttempt(reserved.ledger, { ...request, executionRef: ref('session') })
++    assert.equal(startRecoveryAttempt(reload(running.ledger), { ...request, executionRef: ref('session') }).outcome, 'replayed')
++    const result = { status: 'succeeded', reference: ref('result') }
++    const settled = settleRecoveryAttempt(reload(running.ledger), { ...request, result })
++    assert.equal(settleRecoveryAttempt(reload(settled.ledger), { ...request, result }).outcome, 'replayed')
++    assert.equal(reserveRecoveryAttempt(reload(settled.ledger), request).outcome, 'replayed')
++    assert.equal(settled.ledger.totalUsed, 1)
++    assert.equal(settled.attempt.state, 'settled')
++    assert.throws(() => startRecoveryAttempt(settled.ledger, { ...request, executionRef: ref('session') }), /已结算/)
++    assert.deepEqual(settled.ledger.attempts[0], { ...request, state: 'settled', executionRef: ref('session'), result })
++  })
++}
++
++for (const field of Object.keys(replanReq(1))) {
++  test(`T15 重规划${field}改变时reserve/start/settle均拒绝且不修改账本`, () => {
++    const request = replanReq(1)
++    const ledger = freeze(reserveRecoveryAttempt(setup(), request).ledger)
++    const before = reload(ledger)
++    const changed = { ...request, [field]: field === 'operationKind' ? 'revision_review' : 'different' }
++    assert.throws(() => reserveRecoveryAttempt(ledger, changed))
++    assert.throws(() => startRecoveryAttempt(ledger, { ...changed, executionRef: ref('session') }))
++    assert.throws(() => settleRecoveryAttempt(ledger, { ...changed, result: { status: 'failed', reference: ref('result') } }))
++    assert.deepEqual(ledger, before)
++  })
++}
++
++test('T15 重规划绑定严格拒绝混合身份、未知类型、缺失字段以及静默降级', () => {
++  const valid = replanReq(1)
++  const mutations = [
++    r => { r.ownerId = 'fake' }, r => { r.taskId = 'fake' },
++    r => { r.executionKind = 'owner' }, r => { r.operationKind = 'unknown' },
++    r => { r.operationKind = '' }, r => { r.operationId = ' ' },
++    r => { delete r.executionKind }, r => { delete r.operationKind },
++    r => { delete r.operationId }, r => { r.extra = true },
++  ]
++  for (const mutate of mutations) {
++    const bad = structuredClone(valid); mutate(bad)
++    assert.throws(() => reserveRecoveryAttempt(setup(), bad))
++    const snapshot = reserveRecoveryAttempt(setup(), valid).ledger
++    mutate(snapshot.attempts[0])
++    assert.throws(() => reload(snapshot))
++  }
++  for (const extra of [{ executionKind: 'owner' }, { operationId: 'oops' }, { operationKind: 'revision_plan' }]) {
++    assert.throws(() => reserveRecoveryAttempt(setup(), req(1, 'P1', extra)))
++  }
++  const accessor = { ...valid }
++  Object.defineProperty(accessor, 'executionKind', { get() { assert.fail('must not invoke accessor') }, enumerable: true })
++  assert.throws(() => reserveRecoveryAttempt(setup(), accessor), /数据字段/)
++})
++
++test('T15 同request不能在Owner和replan之间换绑，回执也不能跨执行类型串用', () => {
++  for (const replanFirst of [true, false]) {
++    const first = replanFirst ? replanReq(1) : req(1)
++    const changed = replanFirst ? req(1) : replanReq(1)
++    let ledger = reserveRecoveryAttempt(setup(), first).ledger
++    assert.throws(() => reserveRecoveryAttempt(ledger, changed), /绑定/)
++    assert.throws(() => startRecoveryAttempt(ledger, { ...changed, executionRef: ref('session') }), /绑定/)
++    assert.throws(() => settleRecoveryAttempt(ledger, { ...changed, result: { status: 'failed', reference: ref('result') } }), /绑定/)
++    const second = replanFirst ? req(2) : replanReq(2)
++    ledger = reserveRecoveryAttempt(ledger, second).ledger
++    ledger = startRecoveryAttempt(ledger, { ...first, executionRef: ref('shared') }).ledger
++    assert.throws(() => failure(ledger, second, 'shared'), /其他 attempt/)
++    const malformed = structuredClone(ledger)
++    malformed.attempts[1].state = 'settled'
++    malformed.attempts[1].result = { status: 'failed', reference: ref('shared') }
++    assert.throws(() => reload(malformed), /其他 attempt/)
++  }
++})
++
++test('T15 未启动重规划取消不退预算，存在未结算操作时根问题不能关闭', () => {
++  const request = replanReq(1)
++  let ledger = reserveRecoveryAttempt(setup(1), request).ledger
++  const closure = fact('f', 'P1', { purpose: 'closure' })
++  ledger = recordRecoveryEvidence(ledger, closure).ledger
++  const closing = { rootProblemId: 'P1', evidenceRef: closure.reference }
++  assert.throws(() => closeRecoveryProblem(ledger, closing), /结算/)
++  ledger = settleRecoveryAttempt(ledger, { ...request, result: { status: 'cancelled', reference: ref('cancelled') } }).ledger
++  ledger = closeRecoveryProblem(reload(ledger), closing).ledger
++  assert.equal(ledger.totalUsed, 1)
++  assert.equal(reserveRecoveryAttempt(ledger, replanReq(2)).reason, 'problem_resolved')
++  assert.equal(reserveRecoveryAttempt(ledger, request).outcome, 'replayed')
++})

@@ -1,0 +1,277 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -1604,6 +1604,7 @@
+     summary: handoff.summary,
+     reason: handoff.reason,
+     write: handoff.files,
++    ...(handoff.proposal === undefined ? {} : { proposal: handoff.proposal }),
+   }))
+   const planPromptData = state.plan?.contract === PLAN_V2_CONTRACT
+     ? {
+@@ -1620,6 +1621,7 @@
+     '已经完成的任务必须原样保留；已有 Owner 运行记录对应的任务也必须保留，可以调整说明并增加后续任务，把 handoff 的写入路径分配给已经验证拥有这些路径的目标 Owner。',
+     'pending handoff 的来源任务是失败证据点，不是 repair 的前置成功条件：任何新增或改写的 repair work 都不得直接或间接依赖这个尚未完成的来源任务。应让 repair work 依赖来源任务此前已完成的真实前置，再让最终 verify 依赖 repair work；可以把原失败 verify 改造成 repair 后的最终 verify，或保留为历史节点并新增替代 verify，但绝不能形成“先通过失败 verify 才能开始修复”的死锁。',
+     'handoff 只根据正式 Registry 中由代码责任域确定的 Owner scope 路由；不能因为当前 Workflow 新增了阶段、review、verify、修复步骤或并行需求而新造或拆分 Owner。流程差异必须表达为 DAG task。',
++    'handoff中的proposal是来源Owner的未应用提案；独立判断是否符合当前Registry和局部修复约束，不得把提案当成已批准计划或已经失效的运行现场。',
+     '不要修改代码；完成后恰好调用一次 workflow_plan_submit，把完整 DSH_PLAN_V2 放在 plan 参数中，不要在普通文本中手写 JSON。',
+     '返回对象必须包含 contract、registryDigest、summary、owners、verifications 和 tasks；每个 task 必须使用 role、ownerId、dependsOn、write、verify 和 done。',
+     'verifications 的对象只能使用 {"id":"typecheck","run":["npm","run","typecheck"]}；字段名必须是 run，禁止使用 argv、command 或字符串命令。id 必须匹配 ^[a-z][a-z0-9_-]{0,63}$。',
+@@ -11863,6 +11865,17 @@
+         if (state.root !== active.workflowRoot) throw new Error('request_handoff 的 workflow root 与当前 Owner 不匹配')
+         if (state.plan?.contract !== PLAN_V2_CONTRACT) throw new Error('request_handoff 只允许 DSH_PLAN_V2')
+         if (state.status !== 'running') throw new Error(`request_handoff 只允许 running workflow，当前为 ${state.status}`)
++        const protectedRecovery = recoveryAdmissionEnabled(state)
++        if (protectedRecovery) {
++          assertRecoveryAdmissionState(state)
++          const record = state.ownerRuns?.[ownerRunKey(taskId, active.owner.id)]
++          if (!Number.isSafeInteger(active.attempt) || active.attempt < 1
++            || record?.attempt !== active.attempt || record.sessionId !== sessionIdOf(exec)
++            || record.planDigest !== state.planDigest || active.planDigest !== state.planDigest
++            || !['starting', 'running'].includes(record.status) || record.leaseToken !== active.lease?.token) {
++            throw new Error('request_handoff 当前执行来源与Owner lease不匹配')
++          }
++        }
+         const task = state.plan.tasks.find(item => item.id === taskId)
+         const taskState = requestTaskRecord(state, taskId)
+         if (task === undefined) throw new Error(`request_handoff 找不到任务：${taskId}`)
+@@ -11898,12 +11911,13 @@
+         const invalidate = [...new Set([taskId, ...(delta.invalidate ?? [])])]
+         const carryForward = [...new Set([...(delta.carryForward ?? []), ...completedTaskIds(state)])]
+         if (active.lease !== undefined) await runtime.assertOwnerLease(active.lease)
+-        const deltaState = applyPlanDelta(state, {
++        const proposedState = applyPlanDelta(state, {
+           ...delta,
+           plan: candidatePlan,
+           invalidate,
+           carryForward,
+         })
++        const deltaState = protectedRecovery ? structuredClone(state) : proposedState
+         request = {
+           ...structuredClone(normalizedHandoff),
+           id: `handoff-${randomUUID()}`,
+@@ -11918,13 +11932,19 @@
+             taskId, ownerId: active.owner.id, attempt: active.attempt,
+             sessionId: sessionIdOf(exec), reportStatus: 'blocked', commitSha: null,
+           },
++          ...(protectedRecovery ? { proposal: {
++            contract: 'DSH_HANDOFF_DELTA_PROPOSAL_V1', basePlanDigest: state.planDigest,
++            plan: proposedState.plan, invalidate, carryForward,
++          } } : {}),
+           createdAt: now(),
+           status: 'pending',
+         }
+         deltaState.handoffQueue = [...(state.handoffQueue ?? []), request]
+         deltaState.handoffRequests = [...(state.handoffRequests ?? []), request]
+-        deltaState.status = 'blocked'
+-        deltaState.error = `Owner ${active.owner.id} 请求转交任务 ${taskId}`
++        if (!protectedRecovery) {
++          deltaState.status = 'blocked'
++          deltaState.error = `Owner ${active.owner.id} 请求转交任务 ${taskId}`
++        }
+         deltaState.revision = state.revision ?? 0
+         saved = await saveState(runtime, deltaState, active.lease)
+       })
+@@ -11942,6 +11962,10 @@
+         status: request.status,
+         planDigest: saved.planDigest,
+         revision: saved.revision,
++        ...(request.proposal === undefined ? {} : {
++          proposalOnly: true,
++          nextAction: '转交提案已保存，当前Owner和计划仍有效；请通过owner_submit提交blocked或failed报告结束当前任务，真实终态后由Runtime付费重规划。',
++        }),
+       }
+     },
+     async request_subgraph(args, exec) {
+@@ -13813,7 +13837,17 @@
+             const recordBeforeFailure = latest.ownerRuns[key]
+             let recoverySession = recordBeforeFailure?.recoverySession
+             let recoveryContinuation
+-            const isReportedFailure = reported?.status === 'failed' && handoffs.length === 0
++            const confirmedHandoffFailure = recoveryAdmissionEnabled(latest)
++              && (['failed', 'blocked'].includes(reported?.status)
++                || (error instanceof OwnerHandoffError && partialResult === undefined))
++              && (latest.handoffQueue ?? []).some(item => item.status === 'pending'
++                && ['failed', 'blocked'].includes(item.sourceExecution?.reportStatus)
++                && item.sourceExecution?.commitSha === null
++                && item.sourceExecution?.contract === 'DSH_HANDOFF_SOURCE_EXECUTION_V1'
++                && item.sourceExecution.planDigest === latest.planDigest && item.sourceExecution.taskId === stageId
++                && item.sourceExecution.ownerId === ownerId && item.sourceExecution.attempt === recordBeforeFailure?.attempt
++                && item.sourceExecution.sessionId === recordBeforeFailure?.sessionId)
++            const isReportedFailure = (reported?.status === 'failed' && handoffs.length === 0) || confirmedHandoffFailure
+             if (isReportedFailure && recoverySession !== undefined) {
+               try {
+                 abortIfNeeded(signal)
+@@ -13907,8 +13941,9 @@
+               taskState.executorId = null
+               taskState.cursor = null
+               taskState.unchangedPolls = 0
+-              taskState.reason = blocked || requiresMainDecision ? 'decision_required' : 'task_failed'
+-              taskState.action = blocked || requiresMainDecision ? 'await_user' : 'repair_task'
++              const awaitsUser = requiresMainDecision || (blocked && !confirmedHandoffFailure)
++              taskState.reason = awaitsUser ? 'decision_required' : 'task_failed'
++              taskState.action = awaitsUser ? 'await_user' : 'repair_task'
+               taskState.autonomousRecovery = autonomousRecovery
+             }
+             if (requiresMainDecision) {
+--- owner-workflow-plugin/src/workflow-state.mjs (baseline)
++++ owner-workflow-plugin/src/workflow-state.mjs
+@@ -394,6 +394,15 @@
+   // 可能已把状态从 blocked 恢复成 running，但 pending handoff 仍必须先于
+   // 任何 Owner 再派发被消费，否则会用已失效的 review/approval 重试旧任务。
+   if (hasPendingHandoff(state)) {
++    const liveSource = recoveryAdmissionEnabled(state) && (state.handoffQueue ?? []).some(item => {
++      if (item.status !== 'pending' || item.type !== 'request_handoff') return false
++      const source = item.sourceExecution
++      const record = state.ownerRuns?.[`${source?.taskId}:${source?.ownerId}`]
++      return source?.contract === 'DSH_HANDOFF_SOURCE_EXECUTION_V1' && source.planDigest === state.planDigest
++        && record?.attempt === source.attempt && record.sessionId === source.sessionId
++        && ['starting', 'running', 'waiting_approval'].includes(record.status)
++    })
++    if (liveSource) return wait(state, counts, 'handoff_source_running', '等待转交来源Owner的真实终态')
+     return command(state, counts, 'handoff_replanning', '把 pending handoff 纳入局部 DAG', 'handoff-replan')
+   }
+
+--- owner-workflow-plugin/index.js (baseline)
++++ owner-workflow-plugin/index.js
+@@ -1227,10 +1227,10 @@
+   }
+ }
+
+-function requestHandoffDefinition(runtime) {
++export function requestHandoffDefinition(runtime) {
+   return {
+     name: 'request_handoff',
+-    description: '仅当前 V2 Owner running task 可用的结构化 handoff 请求；运行时会校验目标 Owner scope、写入 handoffQueue，并在 workflow lock 中局部失效当前任务及下游。',
++    description: '仅当前 V2 Owner running task 可用的结构化 handoff 请求；运行时校验目标 Owner scope并保存handoff；恢复协议下delta仅为提案，当前计划和Owner保留到真实终态，随后由Runtime重规划。',
+     parameters: {
+       type: 'object',
+       additionalProperties: false,
+--- /dev/null
++++ owner-workflow-plugin/test/direct-handoff-recovery.test.mjs
+@@ -0,0 +1,109 @@
++import assert from 'node:assert/strict'
++import test from 'node:test'
++import { requestHandoffDefinition, plannerSubmitDefinition } from '../index.js'
++import { deriveWorkflowControl } from '../src/workflow-state.mjs'
++import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState } from './fixtures/recovery-session-fixture.mjs'
++
++for (const { paid, repeatReport, authority } of [{ paid: false }, { paid: true }, { paid: true, repeatReport: true }, { paid: false, authority: true }]) test(`T15 real request_handoff preserves its ${paid ? 'paid' : 'initial free'} Owner${repeatReport ? ' with repeated handoff in report' : ''}${authority ? ' with a real user permission gap' : ''} until terminal and ${authority ? 'returns the permission decision' : 'stages a metered candidate'}`, { timeout: 30_000 }, async t => {
++  let f, proposal, payload, atStart, afterRequest
++  const handoff = { targetType: 'owner', targetOwnerId: 'worker', summary: 'Existing worker must handle its file.',
++    reason: 'The file belongs to worker scope.', files: ['src/worker/independent.mjs'] }
++  f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true,
++    limits: { totalLimit: 4, problemLimit: 3 }, modelScript: m => [
++      () => m.toolCallResponse('direct-request', 'request_handoff', { workflow_id: f.workflowId, task_id: 'T1',
++        handoff, delta: { plan: proposal, invalidate: ['T2'] } }),
++      m.toolCallResponse('direct-blocked', 'owner_submit', { report: {
++        contract: 'DSH_OWNER_RESULT_V1', status: 'blocked', summary: 'Technical transfer recorded for the existing worker.',
++        changes: [], tests: [], handoffs: repeatReport ? [handoff] : [], memory_updates: [],
++      } }),
++      m.textResponse('reported'),
++      () => m.toolCallResponse('direct-planned', 'workflow_plan_submit', { plan: payload }), 'hang-slow',
++    ] })
++  f.ctx.tools.register(requestHandoffDefinition(f.runtime))
++  f.ctx.tools.register(plannerSubmitDefinition(f.runtime))
++  if (!paid) await mutateRecoverySessionState(f, state => { delete state.ownerRuns['T1:api'] })
++  const initial = await readRecoverySessionState(f)
++  proposal = { ...structuredClone(initial.plan), summary: 'Proposed transfer must remain a proposal' }
++  payload = { ...structuredClone(initial.plan), summary: 'Independent Planner candidate', owners: initial.plan.owners.map(owner => ({ id: owner.id })) }
++  const stream = f.adapter.stream.bind(f.adapter)
++  let index = 0
++  f.adapter.stream = async function* (options) {
++    const current = index++
++    if (current === 0) atStart = await readRecoverySessionState(f)
++    if (current === 1) {
++      afterRequest = await readRecoverySessionState(f)
++      assert.equal(afterRequest.planDigest, initial.planDigest)
++      assert.deepEqual(afterRequest.plan, initial.plan)
++      assert.equal(afterRequest.planApproved, true)
++      assert.equal(afterRequest.planReviewDigest, initial.planDigest)
++      assert.equal(afterRequest.status, 'running')
++      const record = afterRequest.ownerRuns['T1:api']
++      assert.equal(record.status, 'running')
++      assert.equal(record.attempt, atStart.ownerRuns['T1:api'].attempt)
++      assert.equal(record.sessionId, atStart.ownerRuns['T1:api'].sessionId)
++      assert.equal(record.leaseToken, atStart.ownerRuns['T1:api'].leaseToken)
++      assert.deepEqual(afterRequest.tasks, atStart.tasks)
++      assert.deepEqual(afterRequest.supervisorOutbox, atStart.supervisorOutbox)
++      assert.equal(afterRequest.handoffQueue.length, 1)
++      assert.equal(afterRequest.handoffQueue[0].proposal.plan.summary, proposal.summary)
++      assert.equal(afterRequest.handoffQueue[0].proposal.basePlanDigest, initial.planDigest)
++      assert.equal(deriveWorkflowControl(afterRequest).phase, 'handoff_source_running')
++      const used = afterRequest.recoveryAdmission?.budget.totalUsed ?? 0
++      await assert.rejects(f.runtime.replanHandoffs(f.admissionAgent, f.workflowId), /owner_failure_task_running/)
++      const stillRunning = await readRecoverySessionState(f)
++      assert.equal(stillRunning.recoveryAdmission?.budget.totalUsed ?? 0, used)
++      assert.equal(stillRunning.handoffReplans, undefined)
++      if (authority) await f.runtime.recordOwnerExecutionDeviation({
++        expected: 'Read a remote ledger', actual: 'Permission denied',
++        evidence: [{ kind: 'service_response', detail: 'Missing read:ledger scope' }],
++        technical_facts: ['Current operation requires read:ledger'],
++        external_permission_gap: { required_permission: 'read:ledger', target: 'remote-ledger', blocked_action: 'Read ledger' },
++      }, { agent: { id: record.sessionId } })
++    }
++    yield* stream(options)
++  }
++  const run = paid
++    ? f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
++    : f.runtime.runExternalOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
++  await assert.rejects(run, { name: repeatReport ? 'OwnerHandoffError' : 'OwnerReportedError' })
++  assert.ok(afterRequest, 'actual request_handoff must have returned to the Owner model')
++  const terminal = await readRecoverySessionState(f)
++  const record = terminal.ownerRuns['T1:api']
++  assert.equal(record.status, 'blocked')
++  if (authority) {
++    assert.equal(terminal.tasks[0].action, 'await_user')
++    assert.equal(record.autonomousRecovery.strategy, 'request_user_authority')
++    const calls = f.adapter.requests.length
++    await assert.rejects(f.runtime.replanHandoffs(f.admissionAgent, f.workflowId), /用户决定/)
++    assert.equal(f.adapter.requests.length, calls)
++    assert.equal(terminal.recoveryAdmission, undefined)
++    assert.ok(Object.values(terminal.mainOutbox).some(item => item.reason === 'execution_authority_required'))
++    return
++  }
++  assert.notEqual(terminal.tasks[0].action, 'await_user')
++  assert.equal(deriveWorkflowControl(terminal).command, 'handoff-replan')
++  assert.equal(record.sessionId, afterRequest.ownerRuns['T1:api'].sessionId)
++  const raw = await f.readRaw(record.sessionId)
++  assert.ok(raw.content.includes('direct-request'))
++  const events = (await f.readFrom(record.sessionId)).events
++  const requestCall = events.find(event => event.type === 'tool/call' && event.data.name === 'request_handoff')
++  const terminalEvent = events.find(event => event.type === 'turn/end')
++  assert.ok(requestCall && terminalEvent && terminalEvent.seq > requestCall.seq)
++  assert.equal(terminalEvent.data.reason.kind, 'completed')
++  if (paid) {
++    assert.equal(terminal.recoveryAdmission.budget.totalUsed, 1)
++    assert.equal(record.recoverySession.phase, 'settled_failed')
++    assert.ok(record.recoveryContinuation)
++  }
++  const result = await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  assert.equal(result.contract, 'DSH_PLAN_REVISION_CANDIDATE_V1')
++  const saved = await readRecoverySessionState(f)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, paid ? 2 : 1)
++  assert.equal(saved.recoveryAdmission.budget.problems.length, 1)
++  assert.equal(saved.pendingPlanRevision.plan.summary, payload.summary)
++  assert.equal(saved.planDigest, initial.planDigest)
++  assert.deepEqual(saved.plan, initial.plan)
++  assert.deepEqual(saved.ownerRuns, terminal.ownerRuns)
++  const plannerRequest = f.adapter.requests.find(options => JSON.stringify(options).includes('未应用提案'))
++  assert.ok(plannerRequest, 'actual Planner sees proposal status in its prompt')
++})
+--- docs/specs/main-thread-owner-workflow/contracts/handoff-recovery-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/handoff-recovery-v1.md
+@@ -15,3 +15,14 @@
+ 候选重放重新核对operation身份、session记录、账本引用、原始完整JSONL receipt以及pending candidate digest；新Harness上下文也不调用模型。若输入或来源在执行中变化，只暂停并保留已用预算，不写过时候选。candidate_staged只证明规划产物持久化，不是Review通过、用户业务决定、版本激活或最终问题关闭。
+
+ 后续必须让candidate Review继承此origin并单独计费，连接咨询、候选重建与T18版本激活；Runner技术暂停报告也需覆盖这些实际入口。当前不能声称完整端到端无人值守验收通过。
++
++
++## R60 直接请求保留来源与真实终态
++
++显式恢复协议的request_handoff核对active Owner与持久记录的attempt/session/planDigest/leaseToken，只允许当前实际执行者请求。仍用applyPlanDelta计算和校验候选，拒绝非法Registry、completed失效等，但不把计算结果写入active状态：source Owner、task/slot、supervisorOutbox、plan/digest/review/approval与workflow running均保留。
++
++提案固定为DSH_HANDOFF_DELTA_PROPOSAL_V1（basePlanDigest/plan/invalidate/carryForward）附在handoff；Planner提示明确其未应用，必须独立校验。工具返回proposalOnly与后续提交blocked/failed报告的指引，不宣称当前Owner已终止。主控制看到与当前active记录匹配的live直接handoff会等待handoff_source_running；admission仍拒绝running来源，不能提前消费预算。
++
++只有runChild真实结束，现有失败收尾才保存Owner blocked/failed和task stopped。存在同版本、同attempt/session且无partial commit的固定handoff时，实际非完成报告（包括报告重复携带handoff）是受控技术交接；已付费Owner可按原session/prompt结算failed并保留continuation，后续Planner同root另付一次。技术blocked不再自动变成await_user，但真实typed user authority继续优先投递主线程，handoff不豁免权限门禁。
++
++本轮真实Harness测试覆盖免费Owner、已付费Owner、报告重复handoff和真实typed permission gap；以实际request_handoff/owner_submit、原始JSONL终态和后续Planner提交验证，不人工伪造terminal。非完成报告的技术结算不是commit成功或问题关闭。没有来源绑定的异常、未知执行、正常partial commit及跨版本状态均不获得本补丁的自动结算许可。

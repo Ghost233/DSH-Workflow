@@ -1,0 +1,11 @@
+{
+  "contract": "DSH_TICKET_CLOSEOUT_V1",
+  "ticketId": "T-29",
+  "candidateId": "R96-T29-unified-owner-resource-admission",
+  "outcome": "development_complete",
+  "acceptanceStatus": "pending_central_acceptance",
+  "dependenciesReleased": ["T-30"],
+  "remainingDependencies": ["T-30", "CA-01"],
+  "gitCommitCreated": false,
+  "remoteUpdated": false
+}

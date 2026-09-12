@@ -1,0 +1,16 @@
+{
+  "before": {
+    "head": "6c8e2cbfe6ccc1828ce5a5844bae7863c281bfd3",
+    "branch": "dev",
+    "index": "eae3c61972368d99ee1f19527184c5e24d6422dae56b885c002b95a31cbec92b",
+    "staged": "",
+    "status": "?? docs/specs/proof/spec.md\n?? docs/specs/proof/tickets/T1.md"
+  },
+  "after": {
+    "head": "6c8e2cbfe6ccc1828ce5a5844bae7863c281bfd3",
+    "branch": "dev",
+    "index": "eae3c61972368d99ee1f19527184c5e24d6422dae56b885c002b95a31cbec92b",
+    "staged": "",
+    "status": "?? docs/specs/proof/spec.md\n?? docs/specs/proof/tickets/T1.md"
+  }
+}

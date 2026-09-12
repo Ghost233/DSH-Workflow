@@ -1,0 +1,640 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -271,6 +271,83 @@
+     && attempt.result?.reference?.version === intent.executionIdentity.sessionId
+ }
+
++// A completed Owner record is a stronger fact than a model turn or
++// `owner_submit`: it exists only after finishOwner has verified the fixed
++// commit, integrated it, and completed the task bookkeeping.  Keep this
++// matcher separate from the failed receipt because success also binds the
++// immutable commit and the task's current verification state.
++function submittedRecoveryCompletionMatches(record, intent, leaseToken) {
++  const recovery = record?.recoverySession
++  return ['awaiting_finish', 'committed'].includes(record?.status)
++    && record.ownerId === intent.ownerId
++    && record.stageId === intent.taskId
++    && record.planDigest === intent.planDigest
++    && record.leaseToken === leaseToken
++    && record.sessionId === intent.executionIdentity.sessionId
++    && record.result?.sessionId === intent.executionIdentity.sessionId
++    && recovery?.contract === RECOVERY_SESSION_STATE_CONTRACT
++    && recovery.phase === 'submitted'
++    && recovery.sourceId === intent.sourceId
++    && recovery.rootProblemId === intent.rootProblemId
++    && recovery.requestId === intent.requestId
++    && recovery.attemptId === intent.attemptId
++    && recovery.planDigest === intent.planDigest
++    && recovery.executionIdentity?.sessionId === intent.executionIdentity.sessionId
++    && recovery.executionIdentity?.promptId === intent.executionIdentity.promptId
++    && recovery.ownerRunBinding?.attempt === record.attempt
++    && recovery.ownerRunBinding?.leaseToken === leaseToken
++    && recovery.prompt?.id === intent.executionIdentity.promptId
++    && typeof recovery.prompt.content === 'string'
++    && recovery.prompt.content.trim() !== ''
++}
++
++function settledRecoverySuccessReceiptMatches(record, recovery, intent, budget, taskState) {
++  const receipt = recovery?.successReceipt
++  const attempt = budget?.attempts?.find(item => item?.requestId === intent.requestId)
++  return record?.status === 'completed'
++    && record.ownerId === intent.ownerId
++    && record.stageId === intent.taskId
++    && record.planDigest === intent.planDigest
++    && record.sessionId === intent.executionIdentity.sessionId
++    && record.result?.sessionId === intent.executionIdentity.sessionId
++    && recovery?.contract === RECOVERY_SESSION_STATE_CONTRACT
++    && recovery.phase === 'settled_succeeded'
++    && recovery.sourceId === intent.sourceId
++    && recovery.rootProblemId === intent.rootProblemId
++    && recovery.requestId === intent.requestId
++    && recovery.attemptId === intent.attemptId
++    && recovery.planDigest === intent.planDigest
++    && recovery.executionIdentity?.sessionId === intent.executionIdentity.sessionId
++    && recovery.executionIdentity?.promptId === intent.executionIdentity.promptId
++    && recovery.ownerRunBinding?.attempt === record.attempt
++    && recovery.ownerRunBinding?.leaseToken === record.leaseToken
++    && recovery.prompt?.id === intent.executionIdentity.promptId
++    && typeof recovery.prompt.content === 'string'
++    && recovery.prompt.content.trim() !== ''
++    && record.recoveryContinuation === undefined
++    && receipt?.executionRef?.id === intent.executionIdentity.sessionId
++    && receipt.executionRef?.version === intent.executionIdentity.promptId
++    && receipt.result?.status === 'succeeded'
++    && receipt.result?.reference?.id === intent.executionIdentity.promptId
++    && receipt.result?.reference?.version === intent.executionIdentity.sessionId
++    && typeof receipt.commitSha === 'string'
++    && receipt.commitSha !== ''
++    && receipt.commitSha === record.result?.commitSha
++    && receipt.commitSha === taskState?.fixedCommitSha
++    && typeof receipt.workflowHead === 'string'
++    && receipt.workflowHead !== ''
++    && receipt.workflowHead === record.workflowHead
++    && taskState?.status === 'completed'
++    && taskState.checkState === 'valid'
++    && taskState.recheckOnly !== true
++    && attempt?.state === 'settled'
++    && attempt.executionRef?.id === intent.executionIdentity.sessionId
++    && attempt.executionRef?.version === intent.executionIdentity.promptId
++    && attempt.result?.status === 'succeeded'
++    && attempt.result?.reference?.id === intent.executionIdentity.promptId
++    && attempt.result?.reference?.version === intent.executionIdentity.sessionId
++}
++
+ const DEFAULT_CONFIG = Object.freeze({
+   runtimeDirectory: OWNER_RUNTIME_DIRECTORY,
+   worktreeDirectory: `${OWNER_RUNTIME_DIRECTORY}/worktrees`,
+@@ -9987,6 +10064,50 @@
+         workflowId,
+         reason,
+       })
++      // Do not recursively reconcile after a normal Owner run.  This is a
++      // read-only check of the receipt just written by finishOwner, so a
++      // first successful call has the same safe result as a later replay.
++      const readSettledSuccess = async intent => runtime.withWorkflowLock(workflowId, async () => {
++        const state = await readState(runtime, root, workflowId)
++        let located
++        try {
++          located = lookupRecoveryAdmissionIntent(state, intent.requestId)
++        } catch {
++          return undefined
++        }
++        const currentRecord = state.ownerRuns?.[ownerRunKey(intent.taskId, intent.ownerId)]
++        const recovery = currentRecord?.recoverySession
++        const planTask = state.plan?.tasks?.find(item => item?.id === intent.taskId)
++        const taskState = state.tasks?.find(item => item?.taskId === intent.taskId)
++        if (located === undefined
++          || located.intent.requestId !== intent.requestId
++          || located.intent.sourceId !== intent.sourceId
++          || located.intent.rootProblemId !== intent.rootProblemId
++          || located.intent.attemptId !== intent.attemptId
++          || located.intent.taskId !== intent.taskId
++          || located.intent.ownerId !== intent.ownerId
++          || located.intent.planDigest !== intent.planDigest
++          || located.intent.executionIdentity?.sessionId !== intent.executionIdentity.sessionId
++          || located.intent.executionIdentity?.promptId !== intent.executionIdentity.promptId
++          || state.id !== workflowId
++          || state.root !== root
++          || state.plan?.contract !== PLAN_V2_CONTRACT
++          || state.planDigest !== intent.planDigest
++          || planDigest(state.plan) !== intent.planDigest
++          || planTask?.ownerId !== intent.ownerId
++          || recovery?.instruction?.id !== request.prompt.id
++          || recovery.instruction?.content !== request.prompt.content
++          || !settledRecoverySuccessReceiptMatches(
++            currentRecord,
++            recovery,
++            intent,
++            state.recoveryAdmission?.budget,
++            taskState,
++          )) {
++          return undefined
++        }
++        return structuredClone(recovery.successReceipt)
++      })
+       abortIfNeeded(signal)
+       const preflight = await runtime.withWorkflowLock(workflowId, async () => {
+         const state = await readState(runtime, root, workflowId)
+@@ -10068,6 +10189,12 @@
+             })
+             : resultFor(intent, 'paused', 'technical_pause', { reason: 'settlement_receipt_mismatch' })
+         }
++        if (recoverySession.phase === 'settled_succeeded') {
++          const successReceipt = await readSettledSuccess(intent)
++          return successReceipt === undefined
++            ? resultFor(intent, 'paused', 'technical_pause', { reason: 'settlement_receipt_mismatch' })
++            : resultFor(intent, 'settled_succeeded', 'settled_succeeded', { successReceipt })
++        }
+         if (['awaiting_finish', 'committed', 'completed'].includes(currentRecord?.status)) {
+           return resultFor(intent, 'paused', 'technical_pause', { reason: 'owner_success_unsettled' })
+         }
+@@ -10106,10 +10233,10 @@
+           signal,
+           { recoverySessionRequest: request },
+         )
+-        // This adapter only writes the T-13 failed receipt from the actual
+-        // Owner failure save path.  A successful Owner lifecycle is preserved
+-        // by the normal pipeline but has no invented recovery settlement.
+-        return resultFor(preflight.launch.intent, 'paused', 'technical_pause', { reason: 'owner_success_unsettled' })
++        const successReceipt = await readSettledSuccess(preflight.launch.intent)
++        return successReceipt === undefined
++          ? resultFor(preflight.launch.intent, 'paused', 'technical_pause', { reason: 'owner_success_unsettled' })
++          : resultFor(preflight.launch.intent, 'settled_succeeded', 'settled_succeeded', { successReceipt })
+       } catch (error) {
+         abortIfNeeded(signal)
+         if (error instanceof OwnerLeaseUnavailableError) {
+@@ -12760,7 +12887,13 @@
+             )
+           })
+           if (completedResult !== undefined) {
+-            if (finishExisting) return runtime.finishOwner(agent, workflowId, stageId, ownerId)
++            if (finishExisting) return await runtime.finishOwner(
++              agent,
++              workflowId,
++              stageId,
++              ownerId,
++              acquiredLease.lease,
++            )
+             return options.deferFinish === true ? { ...completedResult, phase: 'synced' } : completedResult
+           }
+           await runtime.assertOwnerLease(acquiredLease.lease)
+@@ -12824,12 +12957,52 @@
+           })
+           await runtime.assertOwnerLease(acquiredLease.lease)
+           if (options.deferFinish === true) return { ...result, phase: 'synced' }
+-          return runtime.finishOwner(agent, workflowId, stageId, ownerId, acquiredLease.lease)
++          return await runtime.finishOwner(agent, workflowId, stageId, ownerId, acquiredLease.lease)
+         } catch (error) {
++          const latestState = await readState(runtime, root, workflowId)
++          const completedRecord = latestState.ownerRuns?.[key]
++          const completedRecovery = completedRecord?.recoverySession
++          let alreadySettledSucceeded = false
++          if (completedRecovery?.phase === 'settled_succeeded') {
++            try {
++              const located = lookupRecoveryAdmissionIntent(latestState, completedRecovery.requestId)
++              const planTask = latestState.plan?.tasks?.find(item => item?.id === stageId)
++              const taskState = latestState.tasks?.find(item => item?.taskId === stageId)
++              alreadySettledSucceeded = located !== undefined
++                && latestState.id === workflowId
++                && latestState.plan?.contract === PLAN_V2_CONTRACT
++                && latestState.planDigest === completedRecovery.planDigest
++                && planDigest(latestState.plan) === completedRecovery.planDigest
++                && planTask?.ownerId === ownerId
++                && located.intent.sourceId === completedRecovery.sourceId
++                && located.intent.rootProblemId === completedRecovery.rootProblemId
++                && located.intent.requestId === completedRecovery.requestId
++                && located.intent.attemptId === completedRecovery.attemptId
++                && located.intent.taskId === stageId
++                && located.intent.ownerId === ownerId
++                && located.intent.planDigest === completedRecovery.planDigest
++                && located.intent.executionIdentity?.sessionId === completedRecovery.executionIdentity?.sessionId
++                && located.intent.executionIdentity?.promptId === completedRecovery.executionIdentity?.promptId
++                && settledRecoverySuccessReceiptMatches(
++                  completedRecord,
++                  completedRecovery,
++                  located.intent,
++                  latestState.recoveryAdmission?.budget,
++                  taskState,
++                )
++            } catch {
++              alreadySettledSucceeded = false
++            }
++          }
++          // Logging and cleanup happen after finishOwner has atomically
++          // persisted its completed record and T-13 receipt.  If one of
++          // those post-completion effects fails, propagate that IO error but
++          // never reinterpret the already verified success as an Owner
++          // failure and overwrite its receipt.
++          if (alreadySettledSucceeded) throw error
+           await runtime.assertOwnerLease(acquiredLease.lease).catch(leaseError => {
+             throw new Error(`Owner ${ownerId} 的 lease 已失效，旧运行已停止：${errorText(leaseError)}`, { cause: error })
+           })
+-          const latestState = await readState(runtime, root, workflowId)
+           if (latestState.status === 'cancelled') {
+             throw new Error(`工作流 ${workflowId} 已取消，Owner ${ownerId} 的旧运行已停止；未合入的临时现场按取消规则清理`, { cause: error })
+           }
+@@ -13251,13 +13424,99 @@
+           workflowHead: workflowHeadBefore,
+           memory: memoryResult,
+         }
++        // A recovery may settle successfully only at the real Owner-finish
++        // transition.  In particular, a submitted model turn, owner_submit,
++        // or an awaiting_finish record is not enough: the fixed commit must
++        // be integrated and the task's Memory/check state must be final.
++        let settledRecoverySession = record.recoverySession
++        if (settledRecoverySession !== undefined) {
++          const pause = technicalPauseReason => {
++            settledRecoverySession = {
++              ...settledRecoverySession,
++              phase: 'technical_pause',
++              technicalPauseReason,
++            }
++          }
++          if (!hasWorkflowTarget) {
++            pause('recovery_success_workflow_integration_unverified')
++          } else if (deferLongTermMemory || taskState.checkState !== 'valid' || taskState.recheckOnly === true) {
++            pause('recovery_success_check_pending')
++          } else {
++            try {
++              abortIfNeeded(signal)
++              const located = lookupRecoveryAdmissionIntent(state, settledRecoverySession.requestId)
++              if (located === undefined
++                || state.id !== workflowId
++                || state.plan?.contract !== PLAN_V2_CONTRACT
++                || state.planDigest !== settledRecoverySession.planDigest
++                || planDigest(state.plan) !== settledRecoverySession.planDigest
++                || !submittedRecoveryCompletionMatches(record, located.intent, lease.token)
++                || located.intent.sourceId !== settledRecoverySession.sourceId
++                || located.intent.rootProblemId !== settledRecoverySession.rootProblemId
++                || located.intent.requestId !== settledRecoverySession.requestId
++                || located.intent.attemptId !== settledRecoverySession.attemptId
++                || located.intent.taskId !== stageId
++                || located.intent.ownerId !== ownerId
++                || located.intent.planDigest !== settledRecoverySession.planDigest
++                || located.intent.executionIdentity?.sessionId !== settledRecoverySession.executionIdentity?.sessionId
++                || located.intent.executionIdentity?.promptId !== settledRecoverySession.executionIdentity?.promptId
++                || located.rootProblemId !== settledRecoverySession.rootProblemId) {
++                throw new Error('RecoverySession T20 intent 与待完成 Owner 记录不匹配')
++              }
++              const binding = recoveryBudgetBinding(workflowId, located.intent)
++              const executionRef = {
++                id: located.intent.executionIdentity.sessionId,
++                version: located.intent.executionIdentity.promptId,
++              }
++              const started = startRecoveryAttempt(state.recoveryAdmission.budget, { ...binding, executionRef })
++              const settled = settleRecoveryAttempt(started.ledger, {
++                ...binding,
++                result: {
++                  status: 'succeeded',
++                  reference: {
++                    id: located.intent.executionIdentity.promptId,
++                    version: located.intent.executionIdentity.sessionId,
++                  },
++                },
++              })
++              const successReceipt = {
++                executionRef,
++                result: {
++                  status: 'succeeded',
++                  reference: {
++                    id: located.intent.executionIdentity.promptId,
++                    version: located.intent.executionIdentity.sessionId,
++                  },
++                },
++                commitSha: fixedSha,
++                workflowHead: workflowHeadBefore,
++              }
++              state.recoveryAdmission = { ...state.recoveryAdmission, budget: settled.ledger }
++              settledRecoverySession = {
++                ...settledRecoverySession,
++                phase: 'settled_succeeded',
++                successReceipt,
++                settledAt: now(),
++              }
++            } catch {
++              pause('recovery_success_settlement_binding_invalid')
++            }
++          }
++        }
++        const completedRecord = settledRecoverySession?.phase === 'settled_succeeded'
++          ? (() => {
++              const { recoveryContinuation: _recoveryContinuation, ...withoutFailureContinuation } = record
++              return withoutFailureContinuation
++            })()
++          : record
+         state.ownerRuns[key] = {
+-          ...record,
++          ...completedRecord,
+           taskId: stageId,
+           status: 'completed',
+           result: settledResult,
+           workflowHead: workflowHeadBefore,
+           completedAt: now(),
++          ...(settledRecoverySession === undefined ? {} : { recoverySession: settledRecoverySession }),
+         }
+         const completedHandoffs = []
+         state.handoffQueue = (state.handoffQueue ?? []).map(item => {
+--- owner-workflow-plugin/test/recovery-session.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session.test.mjs
+@@ -14,6 +14,7 @@
+   mutateRecoverySessionState,
+   readRecoverySessionState,
+   reserveRecoverySession,
++  writeRecoverySessionState,
+ } from './fixtures/recovery-session-fixture.mjs'
+ import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
+
+@@ -41,6 +42,33 @@
+   assert.equal(result.outcome, 'paused')
+   assert.equal(result.phase, 'technical_pause')
+   assert.equal(result.reason, 'owner_lease_unavailable')
++}
++
++function completedOwnerModelScript({ toolCallResponse, textResponse }) {
++  const report = {
++    contract: 'DSH_OWNER_RESULT_V1',
++    status: 'completed',
++    summary: 'Controlled Owner completed the recovered task through owner_submit.',
++    changes: [], tests: [], handoffs: [], memory_updates: [],
++  }
++  // The first two responses exercise the production Owner child and its
++  // owner_submit gate.  The next two let finishOwner complete its ordinary
++  // curator/reviewer path, rather than bypassing final task settlement.
++  return [
++    toolCallResponse('t22-owner-submit-completed', 'owner_submit', { report }),
++    textResponse('submission recorded'),
++    textResponse(JSON.stringify({
++      contract: 'DSH_OWNER_MEMORY_CURATOR_V1',
++      summary: 'This controlled recovery has no durable knowledge page to add.',
++      pages: [],
++    })),
++    textResponse(JSON.stringify({
++      contract: 'DSH_OWNER_MEMORY_REVIEW_V1',
++      status: 'passed',
++      summary: 'The controlled empty memory bundle is valid.',
++      issues: [],
++    })),
++  ]
+ }
+
+ async function assertNoReconcileEffects(fixture, receipt, stateBefore, requestsBefore) {
+@@ -402,3 +430,154 @@
+   assert.deepEqual(await readRecoverySessionState(fixture), corrupted)
+   assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+ })
++
++test('T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only', async t => {
++  const fixture = await createRecoverySessionFixture(t, {
++    executable: true,
++    // This controlled transport is the sole mock.  The fixture uses the
++    // source Harness, a live Registry, real Git worktrees and JSONL, and the
++    // production owner_submit definition registered against this Runtime.
++    modelScript: completedOwnerModelScript,
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  const initialRequest = request(receipt)
++
++  const first = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, initialRequest,
++  )
++  assert.equal(first.contract, 'DSH_RECOVERY_SESSION_RESULT_V1')
++  assert.equal(first.outcome, 'settled_succeeded')
++  assert.equal(first.phase, 'settled_succeeded')
++  assert.deepEqual(first.successReceipt.executionRef, {
++    id: receipt.executionIdentity.sessionId,
++    version: receipt.executionIdentity.promptId,
++  })
++  assert.deepEqual(first.successReceipt.result, {
++    status: 'succeeded',
++    reference: {
++      id: receipt.executionIdentity.promptId,
++      version: receipt.executionIdentity.sessionId,
++    },
++  })
++
++  const settled = await readRecoverySessionState(fixture)
++  const run = settled.ownerRuns['T1:api']
++  const task = settled.tasks.find(item => item.taskId === 'T1')
++  const budgetAttempt = settled.recoveryAdmission.budget.attempts.find(
++    item => item.requestId === receipt.requestId,
++  )
++  assert.equal(run.status, 'completed')
++  assert.equal(task.status, 'completed')
++  assert.equal(task.checkState, 'valid')
++  assert.match(run.result.commitSha, /^[0-9a-f]{40}$/u)
++  assert.equal(task.fixedCommitSha, run.result.commitSha)
++  assert.equal(run.result.taskId, 'T1')
++  assert.equal(run.recoverySession.phase, 'settled_succeeded')
++  assert.equal(first.successReceipt.commitSha, run.result.commitSha)
++  assert.equal(first.successReceipt.workflowHead, run.result.workflowHead)
++  assert.deepEqual(run.recoverySession.successReceipt, first.successReceipt)
++  assert.equal(budgetAttempt.state, 'settled')
++  assert.deepEqual(budgetAttempt.executionRef, first.successReceipt.executionRef)
++  assert.deepEqual(budgetAttempt.result, first.successReceipt.result)
++
++  const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
++  assert.ok(raw)
++  assert.match(raw.content, /"name":"owner_submit"/u)
++  assert.ok(raw.content.includes(receipt.executionIdentity.promptId))
++
++  const requestsBeforeReplay = fixture.adapter.requests.length
++  const replay = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, initialRequest,
++  )
++  assert.equal(replay.contract, 'DSH_RECOVERY_SESSION_RESULT_V1')
++  assert.equal(replay.outcome, 'settled_succeeded')
++  assert.equal(replay.phase, 'settled_succeeded')
++  assert.deepEqual(replay.successReceipt, first.successReceipt)
++  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
++  assert.deepEqual(await readRecoverySessionState(fixture), settled)
++  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
++
++  const changedInstruction = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent,
++    fixture.workflowId,
++    request(receipt, { id: receipt.executionIdentity.promptId, content: 'replacement recovery instruction' }),
++  )
++  assert.equal(changedInstruction.outcome, 'paused')
++  assert.equal(changedInstruction.reason, 'persisted_owner_binding_mismatch')
++  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
++  assert.deepEqual(await readRecoverySessionState(fixture), settled)
++  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
++
++  // Negative-state injection is confined to replay verification.  The good
++  // completed state above was produced only by the real Owner lifecycle.
++  const wrongCommit = await mutateRecoverySessionState(fixture, state => {
++    state.tasks.find(item => item.taskId === 'T1').fixedCommitSha = 'a'.repeat(40)
++  })
++  const wrongCommitReplay = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, initialRequest,
++  )
++  assert.equal(wrongCommitReplay.outcome, 'paused')
++  assert.equal(wrongCommitReplay.phase, 'technical_pause')
++  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
++  assert.deepEqual(await readRecoverySessionState(fixture), wrongCommit)
++  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
++
++  // Restore the exact state actually produced above, then prove that a stale
++  // Owner/session binding cannot reuse the succeeded receipt either.
++  await writeRecoverySessionState(fixture, settled)
++  const wrongBinding = await mutateRecoverySessionState(fixture, state => {
++    state.ownerRuns['T1:api'].sessionId = `${receipt.executionIdentity.sessionId}-wrong`
++  })
++  const wrongBindingReplay = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, initialRequest,
++  )
++  assert.equal(wrongBindingReplay.outcome, 'paused')
++  assert.equal(wrongBindingReplay.phase, 'technical_pause')
++  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
++  assert.deepEqual(await readRecoverySessionState(fixture), wrongBinding)
++  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
++})
++
++test('T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner', async t => {
++  const fixture = await createRecoverySessionFixture(t, {
++    executable: true,
++    modelScript: completedOwnerModelScript,
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  const initialRequest = request(receipt)
++
++  // This is the normal production execution path, stopped only at its public
++  // deferFinish seam.  owner_submit has already run its fixed verification
++  // and Git gate; the task has not yet passed finishOwner's final checks.
++  const synced = await fixture.runtime.runExternalOwner(
++    fixture.admissionAgent,
++    fixture.workflowId,
++    'T1',
++    'api',
++    undefined,
++    { recoverySessionRequest: initialRequest, deferFinish: true },
++  )
++  assert.equal(synced.phase, 'synced')
++  assert.match(synced.commitSha, /^[0-9a-f]{40}$/u)
++
++  const awaitingFinish = await readRecoverySessionState(fixture)
++  const run = awaitingFinish.ownerRuns['T1:api']
++  const task = awaitingFinish.tasks.find(item => item.taskId === 'T1')
++  const budgetAttempt = awaitingFinish.recoveryAdmission.budget.attempts.find(
++    item => item.requestId === receipt.requestId,
++  )
++  assert.equal(run.status, 'awaiting_finish')
++  assert.equal(task.status, 'running')
++  assert.notEqual(run.recoverySession.phase, 'settled_succeeded')
++  assert.notEqual(budgetAttempt.state, 'settled')
++
++  const requestsBeforeReplay = fixture.adapter.requests.length
++  const paused = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, initialRequest,
++  )
++  assert.equal(paused.outcome, 'paused')
++  assert.equal(paused.phase, 'technical_pause')
++  assert.notEqual(paused.outcome, 'settled_succeeded')
++  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
++  assert.deepEqual(await readRecoverySessionState(fixture), awaitingFinish)
++})
+--- owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs (baseline)
++++ owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs
+@@ -35,6 +35,10 @@
+   'packages/core/agent-loop/src/index.ts',
+   'packages/subagent/subagent/src/index.ts',
+   'packages/preset/agent-presets/src/index.ts',
++  'packages/sandbox/sandbox-local/src/index.ts',
++  'packages/sandbox/sandbox-policy/src/index.ts',
++  'packages/subprocess/subprocess-local/src/index.ts',
++  'packages/shell/bash-sandbox/src/index.ts',
+   'packages/session/session-persistence/src/index.ts',
+   'packages/session/session-persistence/src/coordinator.ts',
+   'packages/session/session-persistence-jsonl/src/index.ts',
+@@ -63,7 +67,8 @@
+
+ async function sourceModules() {
+   const source = async path => await import(pathToFileURL(join(harnessRoot, path)).href)
+-  const [cordis, loader, include, session, sessionTypes, llm, systemPrompt, tools, agent, agentLoop, subagent, agentPresets, jsonl, mock] = await Promise.all([
++  const [cordis, loader, include, session, sessionTypes, llm, systemPrompt, tools, agent, agentLoop, subagent, agentPresets,
++    sandboxLocal, sandboxPolicy, subprocess, bashSandbox, jsonl, mock] = await Promise.all([
+     source('vendor/cordis/src/index.ts'),
+     source('vendor/loader/src/index.ts'),
+     source('vendor/include/src/index.ts'),
+@@ -76,6 +81,10 @@
+     source('packages/core/agent-loop/src/index.ts'),
+     source('packages/subagent/subagent/src/index.ts'),
+     source('packages/preset/agent-presets/src/index.ts'),
++    source('packages/sandbox/sandbox-local/src/index.ts'),
++    source('packages/sandbox/sandbox-policy/src/index.ts'),
++    source('packages/subprocess/subprocess-local/src/index.ts'),
++    source('packages/shell/bash-sandbox/src/index.ts'),
+     source('packages/session/session-persistence-jsonl/src/index.ts'),
+     source('packages/core/agent-loop/tests/mock-adapter.ts'),
+   ])
+@@ -93,6 +102,10 @@
+     AgentLoop: agentLoop.default,
+     SubagentRuntime: subagent.default,
+     AgentPresets: agentPresets.default,
++    LocalSandboxProvider: sandboxLocal.LocalSandboxProvider,
++    SandboxPolicyService: sandboxPolicy.SandboxPolicyService,
++    LocalSubprocessRuntime: subprocess.default,
++    SandboxBashExecutor: bashSandbox.SandboxBashExecutor,
+     JsonlSessionPersistence: jsonl.default,
+     MockAdapter: mock.MockAdapter,
+     textResponse: mock.textResponse,
+@@ -113,6 +126,13 @@
+   await ctx.plugin(modules.AgentRegistry)
+   await ctx.plugin(modules.AgentLoop, { agents: [] })
+   await ctx.plugin(modules.SubagentRuntime)
++  // owner_submit runs its task-bound verification through executeOwnerSnapshot.
++  // Install the real source sandbox stack so this fixture records genuine shell
++  // enforcement rather than accepting a test substitute for the verification.
++  await ctx.plugin(modules.LocalSandboxProvider, {})
++  await ctx.plugin(modules.SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: root })
++  await ctx.plugin(modules.LocalSubprocessRuntime)
++  await ctx.plugin(modules.SandboxBashExecutor, { cwd: root, timeoutMs: 30_000 })
+   // The real AgentPresets service is present for the source provider's
+   // composeFrom contract.  This isolated transport fixture deliberately has
+   // no full host preset profile; the actual production owner_submit definition
+--- docs/specs/main-thread-owner-workflow/contracts/recovery-session-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-session-v1.md
+@@ -35,7 +35,7 @@
+
+ 只有当前 Workflow 已由正式流程处于可启动状态且所有既有开始门禁通过时才会启动。该入口不会把 failed/stopped task 或 failed Workflow 改回 runnable，也不把测试直接重写状态当作正式 repair/resume。失败的授权、Registry、依赖、worktree 或 plan gate 返回 `paused / technical_pause`，不 create、不 followup、不扣额。
+
+-## 实际失败结算与重放
++## 实际结算与重放
+
+ 首次调用中，真实 `OwnerReportedError`（`owner_submit` 的 `report.status === 'failed'`）仍按普通 Owner 生命周期抛出。Runtime 在该真实失败 record 的保存事务中，只有同时满足以下事实才调用 T-13 `startRecoveryAttempt` 和 `settleRecoveryAttempt`：
+
+@@ -51,7 +51,34 @@
+   phase: 'settled_failed', continuation: { contract: 'DSH_RECOVERY_CONTINUATION_V1', ... } }
+ ```
+
+-成功 Owner、blocked/handoff、没有 `owner_submit`、create 后未确认 followup，或任何 lease/plan/receipt 漂移，都不伪造 failed continuation。它们保持 T-20 reservation，记录技术暂停而不退款。若后续有新的 T-20 request 以已结算失败为 source，它仍必须通过正常 runnable/start gate；本入口不负责把失败 Workflow 恢复为 runnable。
++成功 Owner 只在同一 `finishOwner` 事务的真实 `completed` 转换中结算。该转换已经完成固定 `commitSha` 验证、受控 worktree 的集成，并走过 Owner worklog/长期 Memory 流程；`owner_submit`、模型 turn、`committed` 或 `awaiting_finish` 都不能代表成功。Runtime 再次核对当前 Workflow/plan digest、task/Owner、new attempt、实际 lease token、session/prompt 和 `submitted` phase 后，在最终 `saveState` 前调用 T-13：
++
++```js
++executionRef = { id: sessionId, version: promptId }
++result = { status: 'succeeded', reference: { id: promptId, version: sessionId } }
++```
++
++同一持久化记录写入：
++
++```js
++recoverySession: {
++  phase: 'settled_succeeded',
++  successReceipt: {
++    executionRef, result,
++    commitSha: '实际固定提交 SHA',
++    workflowHead: '完成集成与 Memory 后的 head',
++  },
++}
++```
++
++receipt 重放会再次核对 T-13 ledger、Owner record/session/attempt/lease、`record.result.commitSha`、task 的 `fixedCommitSha`、completed/`checkState:'valid'`，以及 record 的 `workflowHead`。它不把随后其他无关 task 推进的 `state.workflowHead` 当成旧 receipt 失效。通过后首次调用和相同 requestId、完全相同 instruction 的后续调用都返回：
++
++```js
++{ contract: 'DSH_RECOVERY_SESSION_RESULT_V1', outcome: 'settled_succeeded',
++  phase: 'settled_succeeded', successReceipt: { executionRef, result, commitSha, workflowHead } }
++```
++
++`pending_check`（也就是 task-specific defer long-term Memory）、无正式 workflow worktree、未确认 followup、blocked/handoff、没有 `owner_submit`，或任何 lease/plan/receipt 漂移都不伪造成功或 failed continuation。普通 Memory 编译降级沿用 `finishOwner` 的既有 completed 语义，不单独阻止 T-13 success。技术暂停保持 T-20 reservation而不退款。若 `finishOwner` 在成功 receipt 已保存后写日志或清理失败，Runtime 保留该 receipt、传播 I/O 错误，不把已完成 Owner 改写为失败。若后续有新的 T-20 request 以已结算失败为 source，它仍必须通过正常 runnable/start gate；本入口不负责把失败 Workflow 恢复为 runnable。
+
+ ## 已存在 session 的只读边界

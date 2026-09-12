@@ -1,0 +1,172 @@
+TAP version 13
+# Subtest: T22 source-plane JSONL observes exactly one completed reserved prompt without writes
+ok 1 - T22 source-plane JSONL observes exactly one completed reserved prompt without writes
+  ---
+  duration_ms: 663.79
+  type: 'test'
+  ...
+# Subtest: T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt
+ok 2 - T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt
+  ---
+  duration_ms: 359.767542
+  type: 'test'
+  ...
+# Subtest: T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending
+ok 3 - T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending
+  ---
+  duration_ms: 592.686666
+  type: 'test'
+  ...
+# Subtest: T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects
+ok 4 - T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects
+  ---
+  duration_ms: 246.430792
+  type: 'test'
+  ...
+# Subtest: T22 refuses a real JSONL backend configured with compression before any read or retry
+ok 5 - T22 refuses a real JSONL backend configured with compression before any read or retry
+  ---
+  duration_ms: 159.432292
+  type: 'test'
+  ...
+# Subtest: F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause
+ok 6 - F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause
+  ---
+  duration_ms: 585.50975
+  type: 'test'
+  ...
+# Subtest: F16 maps a real lease directory still initializing to a non-mutating pause
+ok 7 - F16 maps a real lease directory still initializing to a non-mutating pause
+  ---
+  duration_ms: 195.598583
+  type: 'test'
+  ...
+# Subtest: F16 leaves ordinary lease I/O errors and caller cancellation as rejections
+ok 8 - F16 leaves ordinary lease I/O errors and caller cancellation as rejections
+  ---
+  duration_ms: 357.007917
+  type: 'test'
+  ...
+# Subtest: T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction
+ok 9 - T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction
+  ---
+  duration_ms: 812.71725
+  type: 'test'
+  ...
+# Subtest: T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only
+ok 10 - T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only
+  ---
+  duration_ms: 2133.02825
+  type: 'test'
+  ...
+# Subtest: T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner
+ok 11 - T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner
+  ---
+  duration_ms: 1272.933042
+  type: 'test'
+  ...
+# Subtest: T22 L1 create failure preserves reservation without sending and releases any created handle
+ok 12 - T22 L1 create failure preserves reservation without sending and releases any created handle
+  ---
+  duration_ms: 773.829833
+  type: 'test'
+  ...
+# Subtest: T22 L1 bind failure preserves reservation without sending and releases any created handle
+ok 13 - T22 L1 bind failure preserves reservation without sending and releases any created handle
+  ---
+  duration_ms: 754.727084
+  type: 'test'
+  ...
+# Subtest: T22 L2 real blocked outcome cannot settle or authorize another execution
+ok 14 - T22 L2 real blocked outcome cannot settle or authorize another execution
+  ---
+  duration_ms: 772.344625
+  type: 'test'
+  ...
+# Subtest: T22 L2 real handoff outcome cannot settle or authorize another execution
+ok 15 - T22 L2 real handoff outcome cannot settle or authorize another execution
+  ---
+  duration_ms: 770.923583
+  type: 'test'
+  ...
+# Subtest: T22 L2 real no_submit outcome cannot settle or authorize another execution
+ok 16 - T22 L2 real no_submit outcome cannot settle or authorize another execution
+  ---
+  duration_ms: 788.37
+  type: 'test'
+  ...
+# Subtest: T22 L2 real PlanRevision pending_check cannot settle the prior recovery intent
+ok 17 - T22 L2 real PlanRevision pending_check cannot settle the prior recovery intent
+  ---
+  duration_ms: 1252.646708
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes preparing evidence without execution or settlement
+ok 18 - T22 L3 Runtime safely consumes preparing evidence without execution or settlement
+  ---
+  duration_ms: 174.479541
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes creating evidence without execution or settlement
+ok 19 - T22 L3 Runtime safely consumes creating evidence without execution or settlement
+  ---
+  duration_ms: 174.250416
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes pending evidence without execution or settlement
+ok 20 - T22 L3 Runtime safely consumes pending evidence without execution or settlement
+  ---
+  duration_ms: 202.581292
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes running evidence without execution or settlement
+ok 21 - T22 L3 Runtime safely consumes running evidence without execution or settlement
+  ---
+  duration_ms: 204.884416
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes terminal evidence without execution or settlement
+ok 22 - T22 L3 Runtime safely consumes terminal evidence without execution or settlement
+  ---
+  duration_ms: 197.35325
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes interrupted evidence without execution or settlement
+ok 23 - T22 L3 Runtime safely consumes interrupted evidence without execution or settlement
+  ---
+  duration_ms: 207.007458
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes old_plan evidence without execution or settlement
+ok 24 - T22 L3 Runtime safely consumes old_plan evidence without execution or settlement
+  ---
+  duration_ms: 202.844333
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes old_attempt evidence without execution or settlement
+ok 25 - T22 L3 Runtime safely consumes old_attempt evidence without execution or settlement
+  ---
+  duration_ms: 170.191833
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes old_lease evidence without execution or settlement
+ok 26 - T22 L3 Runtime safely consumes old_lease evidence without execution or settlement
+  ---
+  duration_ms: 177.738875
+  type: 'test'
+  ...
+# Subtest: T22 L4 paused recovery leaves an independent Owner runnable in the same Runtime and ledger
+ok 27 - T22 L4 paused recovery leaves an independent Owner runnable in the same Runtime and ledger
+  ---
+  duration_ms: 2341.78625
+  type: 'test'
+  ...
+1..27
+# tests 27
+# suites 0
+# pass 27
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 16675.352292

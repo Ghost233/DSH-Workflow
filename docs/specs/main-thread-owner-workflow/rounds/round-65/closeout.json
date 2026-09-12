@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-11T13:01:20.743790+00:00",
+  "candidateDrift": [],
+  "formalPass": 186,
+  "formalSkipped": 7,
+  "reviewFindings": [
+    "P2：candidateRecoveryIdentity未覆盖完整候选，失败与暂停事务之间parent/review/content并发变化可能把旧错误写入新候选。下一轮修复完整候选身份，允许本次操作/session正常推进。"
+  ],
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false
+}

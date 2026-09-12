@@ -1,0 +1,37 @@
+{
+  "candidate": "R92-T19-recovery-runtime-policy",
+  "executionEnvironment": "Real Harness integration suites ran outside the Codex outer sandbox; nested Owner workspace-write sandbox retained",
+  "commandMode": "single sequential Node test run with test-concurrency=1 and dot reporter",
+  "results": [
+    { "suite": "recovery-policy", "pass": 4, "fail": 0, "skip": 0 },
+    { "suite": "planning-compile-native", "pass": 13, "fail": 0, "skip": 0 },
+    { "suite": "control", "pass": 159, "fail": 0, "skip": 7 },
+    { "suite": "candidate-arbitration-metered", "pass": 15, "fail": 0, "skip": 0 },
+    { "suite": "candidate-rebuild-recovery", "pass": 12, "fail": 0, "skip": 0 },
+    { "suite": "recovery-admission", "pass": 59, "fail": 0, "skip": 0 },
+    { "suite": "recovery-session", "pass": 27, "fail": 0, "skip": 0 },
+    { "suite": "recovery-session-restart", "pass": 5, "fail": 0, "skip": 0 },
+    { "suite": "runtime-recovery-budget", "pass": 48, "fail": 0, "skip": 0 },
+    { "suite": "owner-hard-deadline", "pass": 8, "fail": 0, "skip": 0 },
+    { "suite": "plan-revision", "pass": 10, "fail": 0, "skip": 0 },
+    { "suite": "workflow-state", "pass": 11, "fail": 0, "skip": 0 }
+  ],
+  "totals": { "pass": 371, "fail": 0, "skip": 7 },
+  "measurementReruns": [
+    { "suite": "candidate-arbitration-metered", "test": "representative arbitration and local rebuild", "pass": 1, "fail": 0, "skip": 0 },
+    { "suite": "owner-hard-deadline", "test": "independent Owner starts while expired Owner stops", "pass": 1, "fail": 0, "skip": 0 }
+  ],
+  "sourceHashes": {
+    "owner-workflow-plugin/src/recovery-policy.mjs": "f0163943b71d3e3ceeb81ca57d9ff07f5d01a505d944639772296a4316838db6",
+    "owner-workflow-plugin/src/recovery-admission.mjs": "bb0a8b94e108732bdc57541acd1c519b5f909cd046080c67f9c7e647fc4fd882",
+    "owner-workflow-plugin/src/runtime.mjs": "aff1ee9c0c08059b6371cc60cc7efe187fff11d54655d931f7b4efaf93a3c0bd",
+    "owner-workflow-plugin/test/recovery-policy.test.mjs": "7b58122ba7fcefa1aa21c263281e2dcfbd41f6a420a4335e96fdff61ed336fa2",
+    "owner-workflow-plugin/test/planning-compile-native.test.mjs": "3a4c9c7124866e46907382768ca978f4d5789fdcd4f65c2fb603a3363f129b14",
+    "owner-workflow-plugin/test/control.test.mjs": "c5fa90375733891e0bb47d8380cdec4242ef316d3a10a2a5f8a7728ca894243f",
+    "owner-workflow-plugin/test/owner-hard-deadline.test.mjs": "7acdf2156ff46c823882adc7cfddc74bf027e9aa3380a41db6cfdc3d05b055b1",
+    "owner-workflow-plugin/test/candidate-arbitration-metered.test.mjs": "2294f01ce378ca7bbc459ea6de743de76a9f3904fe440370db3b715bcc9ae379",
+    "owner-workflow-plugin/test/fixtures/candidate-arbitration-fixture.mjs": "eed343055abdb731374abc807a3c244cda4af0e573d3ecc2c5c02d66304d56f3",
+    "docs/specs/main-thread-owner-workflow/contracts/recovery-runtime-policy-v1.md": "1f4b3320915cd015b14b2fd6dff6d1b11af42501aa07c17a7e9f0689387cf36a",
+    "docs/specs/main-thread-owner-workflow/rounds/round-92/measurement.json": "03705038775a43b3255e15ca2dae4e77c9c338977280e86bb3cddffeebfbaf52"
+  }
+}

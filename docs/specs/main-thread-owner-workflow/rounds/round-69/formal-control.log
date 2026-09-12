@@ -1,0 +1,1006 @@
+TAP version 13
+# Subtest: 外部控制桥可以驱动 ping 和 status，并在运行时释放后清理
+ok 1 - 外部控制桥可以驱动 ping 和 status，并在运行时释放后清理
+  ---
+  duration_ms: 767.391708
+  type: 'test'
+  ...
+# Subtest: 真实审查入口把未关闭义务的 passed 降级，并拒绝激活
+ok 2 - 真实审查入口把未关闭义务的 passed 降级，并拒绝激活
+  ---
+  duration_ms: 1880.085708
+  type: 'test'
+  ...
+# Subtest: pending revision 的 open 义务不阻断仍有效的 active plan Owner 启动
+ok 3 - pending revision 的 open 义务不阻断仍有效的 active plan Owner 启动
+  ---
+  duration_ms: 1113.8335
+  type: 'test'
+  ...
+# Subtest: R03 同 digest evidence-lease-v1 的已批准 Owner 启动与恢复边界
+ok 4 - R03 同 digest evidence-lease-v1 的已批准 Owner 启动与恢复边界
+  ---
+  duration_ms: 1197.102125
+  type: 'test'
+  ...
+# Subtest: R03 同 digest evidence-lease-v2 的已批准 Owner 启动与恢复边界
+ok 5 - R03 同 digest evidence-lease-v2 的已批准 Owner 启动与恢复边界
+  ---
+  duration_ms: 1374.577334
+  type: 'test'
+  ...
+# Subtest: Supervisor create 只持久 reservation，必须由外置 runner 显式 execute 才启动 Owner
+ok 6 - Supervisor create 只持久 reservation，必须由外置 runner 显式 execute 才启动 Owner
+  ---
+  duration_ms: 2038.707167
+  type: 'test'
+  ...
+# Subtest: Supervisor 首次启动保留计划修订迁移后的已完成任务
+ok 7 - Supervisor 首次启动保留计划修订迁移后的已完成任务
+  ---
+  duration_ms: 1252.313125
+  type: 'test'
+  ...
+# Subtest: Supervisor 重启后直接结算已有固定提交，不重新启动 Owner
+ok 8 - Supervisor 重启后直接结算已有固定提交，不重新启动 Owner
+  ---
+  duration_ms: 1837.270791
+  type: 'test'
+  ...
+# Subtest: Supervisor 遇到结构化 handoff 时进入局部重规划，不重跑只读验证任务
+ok 9 - Supervisor 遇到结构化 handoff 时进入局部重规划，不重跑只读验证任务
+  ---
+  duration_ms: 2216.339125
+  type: 'test'
+  ...
+# Subtest: Runner daemon 自动发现 approved Workflow 并驱动 Harness 内 Owner 子代理
+ok 10 - Runner daemon 自动发现 approved Workflow 并驱动 Harness 内 Owner 子代理
+  ---
+  duration_ms: 2432.252167
+  type: 'test'
+  ...
+# Subtest: planning-recover 控制动作安全补绑缺失 digest 并原地恢复 Reviewer
+ok 11 - planning-recover 控制动作安全补绑缺失 digest 并原地恢复 Reviewer
+  ---
+  duration_ms: 2494.897875
+  type: 'test'
+  ...
+# Subtest: planning-recover 不会把旧 planDigest 的恢复次数继承到新 DAG
+ok 12 - planning-recover 不会把旧 planDigest 的恢复次数继承到新 DAG
+  ---
+  duration_ms: 3305.318584
+  type: 'test'
+  ...
+# Subtest: Planner 子代理报告通道失效时直接唤醒主会话，避免状态已变但会话没有入口
+ok 13 - Planner 子代理报告通道失效时直接唤醒主会话，避免状态已变但会话没有入口
+  ---
+  duration_ms: 0.455292
+  type: 'test'
+  ...
+# Subtest: Harness 重启后会向根会话幂等补发计划批准通知
+ok 14 - Harness 重启后会向根会话幂等补发计划批准通知
+  ---
+  duration_ms: 2024.048
+  type: 'test'
+  ...
+# Subtest: 计划批准通知只投递到持久化的 Workflow 根会话
+ok 15 - 计划批准通知只投递到持久化的 Workflow 根会话
+  ---
+  duration_ms: 1293.256583
+  type: 'test'
+  ...
+# Subtest: Planner 已提交结构化计划后立即结束等待，不受结束确认重试影响
+ok 16 - Planner 已提交结构化计划后立即结束等待，不受结束确认重试影响
+  ---
+  duration_ms: 0.934292
+  type: 'test'
+  ...
+# Subtest: planning-recover 会重建仍有修订预算的 Planner，而不是把 review_failed 当作终态
+ok 17 - planning-recover 会重建仍有修订预算的 Planner，而不是把 review_failed 当作终态
+  ---
+  duration_ms: 1942.259417
+  type: 'test'
+  ...
+# Subtest: 统一 workflow-drive 会恢复无需用户授权的 needs_decision Owner 会诊修订
+ok 18 - 统一 workflow-drive 会恢复无需用户授权的 needs_decision Owner 会诊修订
+  ---
+  duration_ms: 2115.42325
+  type: 'test'
+  ...
+# Subtest: 自治事故的摘要型旧义务不能由 control socket probe 续期
+ok 19 - 自治事故的摘要型旧义务不能由 control socket probe 续期
+  ---
+  duration_ms: 841.785541
+  type: 'test'
+  ...
+# Subtest: control socket probe 只为类型化义务的宿主新文件续期一次
+ok 20 - control socket probe 只为类型化义务的宿主新文件续期一次
+  ---
+  duration_ms: 1377.90675
+  type: 'test'
+  ...
+# Subtest: 修订预算耗尽会持久通知主线程和 Runner，批准扩展后自动恢复同一 Planner
+ok 21 - 修订预算耗尽会持久通知主线程和 Runner，批准扩展后自动恢复同一 Planner
+  ---
+  duration_ms: 2074.081917
+  type: 'test'
+  ...
+# Subtest: 重启前只标记 main-steer 已送达的待决策会重新直接打开原生问询
+ok 22 - 重启前只标记 main-steer 已送达的待决策会重新直接打开原生问询
+  ---
+  duration_ms: 1427.265042
+  type: 'test'
+  ...
+# Subtest: 用户终止自动规划后由只读子代理总结并返回主线程讨论
+ok 23 - 用户终止自动规划后由只读子代理总结并返回主线程讨论
+  ---
+  duration_ms: 1259.206041
+  type: 'test'
+  ...
+# Subtest: 重启后把旧版自定义扩额意见迁移为总结并退回主线程讨论
+ok 24 - 重启后把旧版自定义扩额意见迁移为总结并退回主线程讨论
+  ---
+  duration_ms: 811.665417
+  type: 'test'
+  ...
+# Subtest: planning-recover 在 plan digest 与 live Registry 不匹配时拒绝自愈
+ok 25 - planning-recover 在 plan digest 与 live Registry 不匹配时拒绝自愈
+  ---
+  duration_ms: 1028.076333
+  type: 'test'
+  ...
+# Subtest: 计划审查驱动失败会落盘诊断并允许 watchdog 有界重试
+ok 26 - 计划审查驱动失败会落盘诊断并允许 watchdog 有界重试
+  ---
+  duration_ms: 1398.56875
+  type: 'test'
+  ...
+# Subtest: Runner daemon 自动唤醒失败的计划审查且不启动 Supervisor
+ok 27 - Runner daemon 自动唤醒失败的计划审查且不启动 Supervisor
+  ---
+  duration_ms: 1246.01775
+  type: 'test'
+  ...
+# Subtest: Runner 启动前可从固定提交重建尚未执行且已丢失的 Workflow worktree
+ok 28 - Runner 启动前可从固定提交重建尚未执行且已丢失的 Workflow worktree
+  ---
+  duration_ms: 603.742292
+  type: 'test'
+  ...
+# Subtest: V2 控制桥拒绝 legacy owner 调度动作，唯一入口是 Supervisor
+ok 29 - V2 控制桥拒绝 legacy owner 调度动作，唯一入口是 Supervisor
+  ---
+  duration_ms: 501.999
+  type: 'test'
+  ...
+# Subtest: runtime.dispose 阻止新 Supervisor dispatch 并等待已登记 dispatch 终态
+ok 30 - runtime.dispose 阻止新 Supervisor dispatch 并等待已登记 dispatch 终态
+  ---
+  duration_ms: 20.861541
+  type: 'test'
+  ...
+# Subtest: Supervisor create 持久 reservation，并用真实 runExternalOwner 两阶段结算到 completed
+ok 31 - Supervisor create 持久 reservation，并用真实 runExternalOwner 两阶段结算到 completed
+  ---
+  duration_ms: 3608.629
+  type: 'test'
+  ...
+# Subtest: Supervisor 查询会在 Runtime 重启后重建控制桥，供新的外置 runner 显式 recover
+ok 32 - Supervisor 查询会在 Runtime 重启后重建控制桥，供新的外置 runner 显式 recover
+  ---
+  duration_ms: 547.815875
+  type: 'test'
+  ...
+# Subtest: Supervisor Owner 启动失败由自治恢复重排，不把工程故障写成用户决策
+ok 33 - Supervisor Owner 启动失败由自治恢复重排，不把工程故障写成用户决策
+  ---
+  duration_ms: 573.63175
+  type: 'test'
+  ...
+# Subtest: DSH_PLAN_V2 的 repair_owner 保留为意图提示，Runtime 按证据策略重新进入 DAG
+ok 34 - DSH_PLAN_V2 的 repair_owner 保留为意图提示，Runtime 按证据策略重新进入 DAG
+  ---
+  duration_ms: 658.339917
+  type: 'test'
+  ...
+# Subtest: Supervisor inspect 只返回有限宿主字段，未知控制动作关闭处理
+ok 35 - Supervisor inspect 只返回有限宿主字段，未知控制动作关闭处理
+  ---
+  duration_ms: 695.184
+  type: 'test'
+  ...
+# Subtest: Supervisor 主会话通知只有真正 followup 成功后才标记 delivered
+ok 36 - Supervisor 主会话通知只有真正 followup 成功后才标记 delivered
+  ---
+  duration_ms: 444.252625
+  type: 'test'
+  ...
+# Subtest: Supervisor await_event 以持久游标阻塞等待，并在超时后记录一次受控观察
+ok 37 - Supervisor await_event 以持久游标阻塞等待，并在超时后记录一次受控观察
+  ---
+  duration_ms: 529.147625
+  type: 'test'
+  ...
+# Subtest: 任务达到 onTimeout.afterMs 后切换自治恢复策略而不是交给用户
+ok 38 - 任务达到 onTimeout.afterMs 后切换自治恢复策略而不是交给用户
+  ---
+  duration_ms: 535.831083
+  type: 'test'
+  ...
+# Subtest: Owner 恢复后使用本次运行时间重置超时基线，不沿用旧 reservation 时间
+ok 39 - Owner 恢复后使用本次运行时间重置超时基线，不沿用旧 reservation 时间
+  ---
+  duration_ms: 566.954792
+  type: 'test'
+  ...
+# Subtest: 持续产生心跳的长任务按进展续租，不因总运行时间被误杀
+ok 40 - 持续产生心跳的长任务按进展续租，不因总运行时间被误杀
+  ---
+  duration_ms: 553.645875
+  type: 'test'
+  ...
+# Subtest: Supervisor receipt 绑定持久 revision，且 blocked workflow 不能确认旧 create
+ok 41 - Supervisor receipt 绑定持久 revision，且 blocked workflow 不能确认旧 create
+  ---
+  duration_ms: 530.868667
+  type: 'test'
+  ...
+# Subtest: Supervisor create receipt 绑定实际 planDigest，旧 ACK 拒绝且 workflow 不变
+ok 42 - Supervisor create receipt 绑定实际 planDigest，旧 ACK 拒绝且 workflow 不变
+  ---
+  duration_ms: 446.522333
+  type: 'test'
+  ...
+# Subtest: Supervisor stop receipt 绑定实际 planDigest，旧 stop 拒绝且 workflow 不变
+ok 43 - Supervisor stop receipt 绑定实际 planDigest，旧 stop 拒绝且 workflow 不变
+  ---
+  duration_ms: 580.492458
+  type: 'test'
+  ...
+# Subtest: blocked、failed、cancelled workflow 都不能把 stop 保存为 completed
+ok 44 - blocked、failed、cancelled workflow 都不能把 stop 保存为 completed
+  ---
+  duration_ms: 1074.307375
+  type: 'test'
+  ...
+# Subtest: cancel 结算活动记录、清理临时分支与 worktree，并幂等保留审计状态
+ok 45 - cancel 结算活动记录、清理临时分支与 worktree，并幂等保留审计状态
+  ---
+  duration_ms: 676.446
+  type: 'test'
+  ...
+# Subtest: cancel 的持久路径记录异常时 fail-closed，不能删除项目根目录或基础分支
+ok 46 - cancel 的持久路径记录异常时 fail-closed，不能删除项目根目录或基础分支
+  ---
+  duration_ms: 284.333542
+  type: 'test'
+  ...
+# Subtest: cancelled workflow 拒绝 Supervisor start，finalized workflow 拒绝 cancel
+ok 47 - cancelled workflow 拒绝 Supervisor start，finalized workflow 拒绝 cancel
+  ---
+  duration_ms: 490.789541
+  type: 'test'
+  ...
+# Subtest: 启用 Owner 工作模式后，主会话写入会被拒绝
+ok 48 - 启用 Owner 工作模式后，主会话写入会被拒绝
+  ---
+  duration_ms: 208.646
+  type: 'test'
+  ...
+# Subtest: 只读审计在脏工作区中运行，不创建 workflow 分支或 worktree
+ok 49 - 只读审计在脏工作区中运行，不创建 workflow 分支或 worktree
+  ---
+  duration_ms: 192.6045
+  type: 'test'
+  ...
+# Subtest: workflow_recover 可以重建旧缺陷遗留的空 Supervisor task records
+ok 50 - workflow_recover 可以重建旧缺陷遗留的空 Supervisor task records
+  ---
+  duration_ms: 229.887583
+  type: 'test'
+  ...
+# Subtest: 只读子代理继承完整工具集并只设置 read-only 沙箱
+ok 51 - 只读子代理继承完整工具集并只设置 read-only 沙箱
+  ---
+  duration_ms: 1.276625
+  type: 'test'
+  ...
+# Subtest: Owner 子代理策略继承完整工具并使用 workspace-write
+ok 52 - Owner 子代理策略继承完整工具并使用 workspace-write
+  ---
+  duration_ms: 0.130833
+  type: 'test'
+  ...
+# Subtest: Operation 子代理继承完整工具但项目文件使用 read-only 沙箱
+ok 53 - Operation 子代理继承完整工具但项目文件使用 read-only 沙箱
+  ---
+  duration_ms: 0.057875
+  type: 'test'
+  ...
+# Subtest: 历史 V1 计划即使 digest 匹配也不能批准执行
+ok 54 - 历史 V1 计划即使 digest 匹配也不能批准执行
+  ---
+  duration_ms: 702.017542
+  type: 'test'
+  ...
+# Subtest: 批准修订计划时自动恢复旧 Runtime 丢失的已完成任务状态
+ok 55 - 批准修订计划时自动恢复旧 Runtime 丢失的已完成任务状态
+  ---
+  duration_ms: 484.044375
+  type: 'test'
+  ...
+# Subtest: 计划修订冻结 ownerRuns 已完成任务，只迁移新增 repair 与最终 verify
+ok 56 - 计划修订冻结 ownerRuns 已完成任务，只迁移新增 repair 与最终 verify
+  ---
+  duration_ms: 788.322541
+  type: 'test'
+  ...
+# Subtest: 计划批准拒绝缺失的 live Registry，即使缓存 digest 匹配
+ok 57 - 计划批准拒绝缺失的 live Registry，即使缓存 digest 匹配
+  ---
+  duration_ms: 186.72775
+  type: 'test'
+  ...
+# Subtest: 计划批准拒绝 live Registry 内容漂移，并由 registry_status 暴露 live digest
+ok 58 - 计划批准拒绝 live Registry 内容漂移，并由 registry_status 暴露 live digest
+  ---
+  duration_ms: 653.617542
+  type: 'test'
+  ...
+# Subtest: 计划批准在 digest 已重新绑定时仍拒绝 Owner 定义漂移
+ok 59 - 计划批准在 digest 已重新绑定时仍拒绝 Owner 定义漂移
+  ---
+  duration_ms: 744.394375
+  type: 'test'
+  ...
+# Subtest: finalize 会把 workflow 分支合并回启动分支并清理 worktree
+ok 60 - finalize 会把 workflow 分支合并回启动分支并清理 worktree
+  ---
+  duration_ms: 1420.190125
+  type: 'test'
+  ...
+# Subtest: Implementation Review 必须读取实际 workflow HEAD 并保存审查结果
+ok 61 - Implementation Review 必须读取实际 workflow HEAD 并保存审查结果
+  ---
+  duration_ms: 576.6795
+  type: 'test'
+  ...
+# Subtest: Implementation Review 问题自动转换为带自治批准策略的 repair PlanRevision
+ok 62 - Implementation Review 问题自动转换为带自治批准策略的 repair PlanRevision
+  ---
+  duration_ms: 907.036541
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 持久子线程兼容测试（已由按任务回收模型替代）
+ok 63 - 旧版 Owner 持久子线程兼容测试（已由按任务回收模型替代） # SKIP
+  ---
+  duration_ms: 0.129834
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner Shell 白名单测试（已由 worktree 与提交关卡替代）
+ok 64 - 旧版 Owner Shell 白名单测试（已由 worktree 与提交关卡替代） # SKIP
+  ---
+  duration_ms: 0.027959
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 逐写入包装测试（已由提交关卡替代）
+ok 65 - 旧版 Owner 逐写入包装测试（已由提交关卡替代） # SKIP
+  ---
+  duration_ms: 0.016167
+  type: 'test'
+  ...
+# Subtest: 旧版 owner_bash 快照测试（正式验证现在由 owner_submit 自动执行）
+ok 66 - 旧版 owner_bash 快照测试（正式验证现在由 owner_submit 自动执行） # SKIP
+  ---
+  duration_ms: 0.014417
+  type: 'test'
+  ...
+# Subtest: 旧版多轮修复提示测试（现在由 owner_submit 在同一子线程返回错误）
+ok 67 - 旧版多轮修复提示测试（现在由 owner_submit 在同一子线程返回错误） # SKIP
+  ---
+  duration_ms: 0.012375
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 结果文本结算测试（受保护路径由 owner_submit 提交关卡覆盖）
+ok 68 - 旧版 Owner 结果文本结算测试（受保护路径由 owner_submit 提交关卡覆盖） # SKIP
+  ---
+  duration_ms: 0.011958
+  type: 'test'
+  ...
+# Subtest: Owner Registry 提案在没有活动任务时只保存待审批提案
+ok 69 - Owner Registry 提案在没有活动任务时只保存待审批提案
+  ---
+  duration_ms: 354.66
+  type: 'test'
+  ...
+# Subtest: Owner 设定与批准只能由绑定的 Workflow 主线程执行
+ok 70 - Owner 设定与批准只能由绑定的 Workflow 主线程执行
+  ---
+  duration_ms: 916.721
+  type: 'test'
+  ...
+# Subtest: 规划器输出 Registry operation 时只保存结构化建议，不写正式 Registry，并由运行时绑定正式 digest
+ok 71 - 规划器输出 Registry operation 时只保存结构化建议，不写正式 Registry，并由运行时绑定正式 digest
+  ---
+  duration_ms: 647.088959
+  type: 'test'
+  ...
+# Subtest: 规划器的 proposal 包装会兼容为直接 Registry operation
+ok 72 - 规划器的 proposal 包装会兼容为直接 Registry operation
+  ---
+  duration_ms: 618.724375
+  type: 'test'
+  ...
+# Subtest: 规划器可一次提交完整 Owner Registry batch 并按最终快照绑定全部 Owner
+ok 73 - 规划器可一次提交完整 Owner Registry batch 并按最终快照绑定全部 Owner
+  ---
+  duration_ms: 646.301042
+  type: 'test'
+  ...
+# Subtest: 规划提交只接受当前规划子代理的一次结构化结果
+ok 74 - 规划提交只接受当前规划子代理的一次结构化结果
+  ---
+  duration_ms: 0.526625
+  type: 'test'
+  ...
+# Subtest: one-shot Planner 在 workflow_plan_submit 时即时校验并允许原线程修正
+ok 75 - one-shot Planner 在 workflow_plan_submit 时即时校验并允许原线程修正
+  ---
+  duration_ms: 0.808959
+  type: 'test'
+  ...
+# Subtest: 计划审查提交只接受当前 Plan Reviewer 的合法结构化结果
+ok 76 - 计划审查提交只接受当前 Plan Reviewer 的合法结构化结果
+  ---
+  duration_ms: 0.192375
+  type: 'test'
+  ...
+# Subtest: 计划 Reviewer 首轮状态非法时自动携带错误重试并保存结构化问题
+ok 77 - 计划 Reviewer 首轮状态非法时自动携带错误重试并保存结构化问题
+  ---
+  duration_ms: 603.707916
+  type: 'test'
+  ...
+# Subtest: Reviewer 不能要求 abstract decision 删除必填 Owner 会诊字段，必须重试为 decision
+ok 78 - Reviewer 不能要求 abstract decision 删除必填 Owner 会诊字段，必须重试为 decision
+  ---
+  duration_ms: 592.306125
+  type: 'test'
+  ...
+# Subtest: Reviewer 判定 needs_split 后，Owner 会诊参与目标节点的递归拆分
+ok 79 - Reviewer 判定 needs_split 后，Owner 会诊参与目标节点的递归拆分
+  ---
+  duration_ms: 808.925667
+  type: 'test'
+  ...
+# Subtest: Reviewer 判定 needs_decision 后停止自动修订并把问题总结回主线程
+ok 80 - Reviewer 判定 needs_decision 后停止自动修订并把问题总结回主线程
+  ---
+  duration_ms: 802.118416
+  type: 'test'
+  ...
+# Subtest: awaiting_main_discussion 接收明确 Intent 后可以生成 PlanRevision 候选
+ok 81 - awaiting_main_discussion 接收明确 Intent 后可以生成 PlanRevision 候选
+  ---
+  duration_ms: 2626.167667
+  type: 'test'
+  ...
+# Subtest: 同类审查问题连续出现时，Runtime 强制 Reviewer 从 needs_revision 升级分类
+ok 82 - 同类审查问题连续出现时，Runtime 强制 Reviewer 从 needs_revision 升级分类
+  ---
+  duration_ms: 586.896833
+  type: 'test'
+  ...
+# Subtest: 冻结义务无进展时由独立 Arbiter 裁决而不是请求用户扩额
+ok 83 - 冻结义务无进展时由独立 Arbiter 裁决而不是请求用户扩额
+  ---
+  duration_ms: 517.855584
+  type: 'test'
+  ...
+# Subtest: Arbiter 可以把 Runtime 已知的 abstract 节点转入拆分而不误判为新问题
+ok 84 - Arbiter 可以把 Runtime 已知的 abstract 节点转入拆分而不误判为新问题
+  ---
+  duration_ms: 496.416709
+  type: 'test'
+  ...
+# Subtest: 计划修订次数只作遥测，无进展时切换策略而不是请求扩额
+ok 85 - 计划修订次数只作遥测，无进展时切换策略而不是请求扩额
+  ---
+  duration_ms: 1393.599291
+  type: 'test'
+  ...
+# Subtest: 非法修订候选保留原计划并自动切换恢复策略，修复后继续审查
+ok 86 - 非法修订候选保留原计划并自动切换恢复策略，修复后继续审查
+  ---
+  duration_ms: 976.092417
+  type: 'test'
+  ...
+# Subtest: 计划修订并发调用复用 single-flight，并用新版超时策略恢复旧 180 秒失败预算
+ok 87 - 计划修订并发调用复用 single-flight，并用新版超时策略恢复旧 180 秒失败预算
+  ---
+  duration_ms: 772.429291
+  type: 'test'
+  ...
+# Subtest: 计划修订拒绝使用不属于当前 planDigest 的旧审查结果
+ok 88 - 计划修订拒绝使用不属于当前 planDigest 的旧审查结果
+  ---
+  duration_ms: 1320.548291
+  type: 'test'
+  ...
+# Subtest: 规划契约失败返回完整 Workflow ID，并在同一现场有界恢复
+ok 89 - 规划契约失败返回完整 Workflow ID，并在同一现场有界恢复
+  ---
+  duration_ms: 2332.974375
+  type: 'test'
+  ...
+# Subtest: Harness agent/status 持久化运行中、空闲和关闭生命周期
+ok 90 - Harness agent/status 持久化运行中、空闲和关闭生命周期
+  ---
+  duration_ms: 51.217708
+  type: 'test'
+  ...
+# Subtest: one-shot Reviewer 返回结果后立即持久化 closed，不在会话树中伪装成 idle 工作
+ok 91 - one-shot Reviewer 返回结果后立即持久化 closed，不在会话树中伪装成 idle 工作
+  ---
+  duration_ms: 33.451083
+  type: 'test'
+  ...
+# Subtest: 旧版次数驱动 continuable Planner mock（已由证据租约、Arbiter 与完整 Workflow 集成测试替代）
+ok 92 - 旧版次数驱动 continuable Planner mock（已由证据租约、Arbiter 与完整 Workflow 集成测试替代） # SKIP
+  ---
+  duration_ms: 0.071958
+  type: 'test'
+  ...
+# Subtest: 完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到最终交付
+ok 93 - 完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到最终交付
+  ---
+  duration_ms: 7116.339083
+  type: 'test'
+  ...
+# Subtest: 取消功能 Workflow 后项目级 Owner Registry 仍被后续 Workflow 直接复用
+ok 94 - 取消功能 Workflow 后项目级 Owner Registry 仍被后续 Workflow 直接复用
+  ---
+  duration_ms: 2519.237584
+  type: 'test'
+  ...
+# Subtest: 旧 Workflow 中已批准但未进入基础分支的 Registry 会在继续流程时迁移
+ok 95 - 旧 Workflow 中已批准但未进入基础分支的 Registry 会在继续流程时迁移
+  ---
+  duration_ms: 1200.143667
+  type: 'test'
+  ...
+# Subtest: 新建 Workflow 会先迁移已取消旧 Workflow 中最新获批的固定 Owner
+ok 96 - 新建 Workflow 会先迁移已取消旧 Workflow 中最新获批的固定 Owner
+  ---
+  duration_ms: 1885.112541
+  type: 'test'
+  ...
+# Subtest: 规划器首轮提交不满足契约时，运行时会带校验错误重试一次
+ok 97 - 规划器首轮提交不满足契约时，运行时会带校验错误重试一次
+  ---
+  duration_ms: 662.270333
+  type: 'test'
+  ...
+# Subtest: 规划器只选择 Owner ID，Runtime 从正式 Registry 注入完整定义
+ok 98 - 规划器只选择 Owner ID，Runtime 从正式 Registry 注入完整定义
+  ---
+  duration_ms: 765.182459
+  type: 'test'
+  ...
+# Subtest: Planner 伪造宽 scope 不能绕过正式 Registry 的 task.write 边界
+ok 99 - Planner 伪造宽 scope 不能绕过正式 Registry 的 task.write 边界
+  ---
+  duration_ms: 623.305292
+  type: 'test'
+  ...
+# Subtest: handoff 重规划 prompt 只声明 V2 任务计划契约
+ok 100 - handoff 重规划 prompt 只声明 V2 任务计划契约
+  ---
+  duration_ms: 702.377042
+  type: 'test'
+  ...
+# Subtest: 规划器不能用未登记 Owner 绕过 Registry 提案审批
+ok 101 - 规划器不能用未登记 Owner 绕过 Registry 提案审批
+  ---
+  duration_ms: 583.102292
+  type: 'test'
+  ...
+# Subtest: Registry 批准要求完全匹配 digest，写入 workflow worktree 并使旧计划审查失效
+ok 102 - Registry 批准要求完全匹配 digest，写入 workflow worktree 并使旧计划审查失效
+  ---
+  duration_ms: 1459.937792
+  type: 'test'
+  ...
+# Subtest: V2 Registry 批准后的 registry_pending_plan 可以原地重新规划
+ok 103 - V2 Registry 批准后的 registry_pending_plan 可以原地重新规划
+  ---
+  duration_ms: 1541.355208
+  type: 'test'
+  ...
+# Subtest: 运行中任务存在时拒绝 Registry 提案与批准
+ok 104 - 运行中任务存在时拒绝 Registry 提案与批准
+  ---
+  duration_ms: 847.531917
+  type: 'test'
+  ...
+# Subtest: 主工具公开 cancel 描述且保留 status 旧动作
+ok 105 - 主工具公开 cancel 描述且保留 status 旧动作
+  ---
+  duration_ms: 261.151208
+  type: 'test'
+  ...
+# Subtest: 旧聚合入口不再暴露或执行计划修订与规划恢复
+ok 106 - 旧聚合入口不再暴露或执行计划修订与规划恢复
+  ---
+  duration_ms: 229.69225
+  type: 'test'
+  ...
+# Subtest: 旧聚合入口拒绝 start，强制使用带 preflight digest 的单职责工具
+ok 107 - 旧聚合入口拒绝 start，强制使用带 preflight digest 的单职责工具
+  ---
+  duration_ms: 223.473667
+  type: 'test'
+  ...
+# Subtest: workflow_git_inspect 只提供受限 Git 证据且拒绝 .git 内部路径
+ok 108 - workflow_git_inspect 只提供受限 Git 证据且拒绝 .git 内部路径
+  ---
+  duration_ms: 451.279459
+  type: 'test'
+  ...
+# Subtest: Owner 结构化请求工具只暴露 request_subgraph 和 request_handoff 的最小字段
+ok 109 - Owner 结构化请求工具只暴露 request_subgraph 和 request_handoff 的最小字段
+  ---
+  duration_ms: 173.270458
+  type: 'test'
+  ...
+# Subtest: 公开 Owner 工具只保留提交关卡、宿主授权桥和结构化协调入口
+ok 110 - 公开 Owner 工具只保留提交关卡、宿主授权桥和结构化协调入口
+  ---
+  duration_ms: 194.754833
+  type: 'test'
+  ...
+# Subtest: 主工具 cancel 缺少 workflow_id 时拒绝
+ok 111 - 主工具 cancel 缺少 workflow_id 时拒绝
+  ---
+  duration_ms: 191.240917
+  type: 'test'
+  ...
+# Subtest: 主工具 cancel 返回 cancelled，随后 status 返回 cancelled
+ok 112 - 主工具 cancel 返回 cancelled，随后 status 返回 cancelled
+  ---
+  duration_ms: 530.825667
+  type: 'test'
+  ...
+# Subtest: 主工具只暴露 Registry 审批动作，不保留旧 Owner 直写动作
+ok 113 - 主工具只暴露 Registry 审批动作，不保留旧 Owner 直写动作
+  ---
+  duration_ms: 0.474667
+  type: 'test'
+  ...
+# Subtest: DSH_PLAN_V1 所有控制桥和外置执行入口拒绝但 status 可读
+ok 114 - DSH_PLAN_V1 所有控制桥和外置执行入口拒绝但 status 可读
+  ---
+  duration_ms: 1324.381542
+  type: 'test'
+  ...
+# Subtest: R05 决定回执经真实 Review 关闭入口消费：orchestrator
+ok 115 - R05 决定回执经真实 Review 关闭入口消费：orchestrator
+  ---
+  duration_ms: 1503.295959
+  type: 'test'
+  ...
+# Subtest: R05 决定回执经真实 Review 关闭入口消费：user
+ok 116 - R05 决定回执经真实 Review 关闭入口消费：user
+  ---
+  duration_ms: 1742.907416
+  type: 'test'
+  ...
+# Subtest: R05 用户确认期间义务版本变化时不记录过期决定
+ok 117 - R05 用户确认期间义务版本变化时不记录过期决定
+  ---
+  duration_ms: 853.391958
+  type: 'test'
+  ...
+# Subtest: R05 结构展开依据经 Runtime 消费，只关闭结构义务而保留业务验证
+ok 118 - R05 结构展开依据经 Runtime 消费，只关闭结构义务而保留业务验证
+  ---
+  duration_ms: 936.008708
+  type: 'test'
+  ...
+# Subtest: R05 pending 候选决定不能借用 active 回执，旧快照不能消费已变化候选
+ok 119 - R05 pending 候选决定不能借用 active 回执，旧快照不能消费已变化候选
+  ---
+  duration_ms: 837.57725
+  type: 'test'
+  ...
+# Subtest: R05 同候选的新决定替代旧回执，取消替代不影响旧决定
+ok 120 - R05 同候选的新决定替代旧回执，取消替代不影响旧决定
+  ---
+  duration_ms: 1142.386958
+  type: 'test'
+  ...
+# Subtest: R06 真实 Review 会诊固定描述在相同事实下耗尽策略
+ok 121 - R06 真实 Review 会诊固定描述在相同事实下耗尽策略
+  ---
+  duration_ms: 2709.16125
+  type: 'test'
+  ...
+# Subtest: R06 真实 Review 会诊交替描述在相同事实下耗尽策略
+ok 122 - R06 真实 Review 会诊交替描述在相同事实下耗尽策略
+  ---
+  duration_ms: 3886.014625
+  type: 'test'
+  ...
+# Subtest: R06 真实候选补齐绑定只记一次进展，重复与候选文案变化不续期
+ok 123 - R06 真实候选补齐绑定只记一次进展，重复与候选文案变化不续期
+  ---
+  duration_ms: 1652.770875
+  type: 'test'
+  ...
+# Subtest: R06 文件进展由宿主重新读取，伪造缓存与过期候选没有文件事实
+ok 124 - R06 文件进展由宿主重新读取，伪造缓存与过期候选没有文件事实
+  ---
+  duration_ms: 834.123375
+  type: 'test'
+  ...
+# Subtest: R06 Runner 探针不能凭摘要变化清空策略，真实新文件只恢复一次
+ok 125 - R06 Runner 探针不能凭摘要变化清空策略，真实新文件只恢复一次
+  ---
+  duration_ms: 3259.868
+  type: 'test'
+  ...
+# Subtest: R08 真实 Review 分类与控制路由一致：technical
+ok 126 - R08 真实 Review 分类与控制路由一致：technical
+  ---
+  duration_ms: 736.978959
+  type: 'test'
+  ...
+# Subtest: R08 真实 Review 分类与控制路由一致：business
+ok 127 - R08 真实 Review 分类与控制路由一致：business
+  ---
+  duration_ms: 922.573416
+  type: 'test'
+  ...
+# Subtest: R08 真实 Review 分类与控制路由一致：permission
+ok 128 - R08 真实 Review 分类与控制路由一致：permission
+  ---
+  duration_ms: 964.755875
+  type: 'test'
+  ...
+# Subtest: R08 真实 Review 分类与控制路由一致：mixed
+ok 129 - R08 真实 Review 分类与控制路由一致：mixed
+  ---
+  duration_ms: 924.837708
+  type: 'test'
+  ...
+# Subtest: R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：permission
+ok 130 - R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：permission
+  ---
+  duration_ms: 973.53925
+  type: 'test'
+  ...
+# Subtest: R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：business
+ok 131 - R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：business
+  ---
+  duration_ms: 1487.9325
+  type: 'test'
+  ...
+# Subtest: R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：mixed-decision
+ok 132 - R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：mixed-decision
+  ---
+  duration_ms: 890.997084
+  type: 'test'
+  ...
+# Subtest: R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：mixed-verification
+ok 133 - R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：mixed-verification
+  ---
+  duration_ms: 792.544
+  type: 'test'
+  ...
+# Subtest: R09 Owner 反馈经实际失败入口分类且保留独立任务：technical
+ok 134 - R09 Owner 反馈经实际失败入口分类且保留独立任务：technical
+  ---
+  duration_ms: 848.163708
+  type: 'test'
+  ...
+# Subtest: R09 Owner 反馈经实际失败入口分类且保留独立任务：permission
+ok 135 - R09 Owner 反馈经实际失败入口分类且保留独立任务：permission
+  ---
+  duration_ms: 1023.713875
+  type: 'test'
+  ...
+# Subtest: R09 Owner 反馈经实际失败入口分类且保留独立任务：business
+ok 136 - R09 Owner 反馈经实际失败入口分类且保留独立任务：business
+  ---
+  duration_ms: 811.726042
+  type: 'test'
+  ...
+# Subtest: R09 Owner 反馈接纳拒绝伪造绑定、无依据、外来会话和过期候选
+ok 137 - R09 Owner 反馈接纳拒绝伪造绑定、无依据、外来会话和过期候选
+  ---
+  duration_ms: 1064.795625
+  type: 'test'
+  ...
+# Subtest: R09 已接纳反馈消费前重新校验当前来源：session
+ok 138 - R09 已接纳反馈消费前重新校验当前来源：session
+  ---
+  duration_ms: 1096.052458
+  type: 'test'
+  ...
+# Subtest: R09 已接纳反馈消费前重新校验当前来源：attempt
+ok 139 - R09 已接纳反馈消费前重新校验当前来源：attempt
+  ---
+  duration_ms: 3087.245958
+  type: 'test'
+  ...
+# Subtest: R09 已接纳反馈消费前重新校验当前来源：plan
+ok 140 - R09 已接纳反馈消费前重新校验当前来源：plan
+  ---
+  duration_ms: 747.873458
+  type: 'test'
+  ...
+# Subtest: R09 已接纳反馈消费前重新校验当前来源：owner
+ok 141 - R09 已接纳反馈消费前重新校验当前来源：owner
+  ---
+  duration_ms: 777.809875
+  type: 'test'
+  ...
+# Subtest: R09 同 attempt 的用户反馈幂等保留，不能由后续技术描述降权
+ok 142 - R09 同 attempt 的用户反馈幂等保留，不能由后续技术描述降权
+  ---
+  duration_ms: 730.183167
+  type: 'test'
+  ...
+# Subtest: R09 Owner 恢复消费当前反馈，换 attempt 后不继承旧用户门禁
+ok 143 - R09 Owner 恢复消费当前反馈，换 attempt 后不继承旧用户门禁
+  ---
+  duration_ms: 976.234958
+  type: 'test'
+  ...
+# Subtest: R09 已确认权限缺口优先于技术 handoff 策略
+ok 144 - R09 已确认权限缺口优先于技术 handoff 策略
+  ---
+  duration_ms: 857.238667
+  type: 'test'
+  ...
+# Subtest: R09 已报告用户待决后不能通过 completed 提交越过门禁：permission
+ok 145 - R09 已报告用户待决后不能通过 completed 提交越过门禁：permission
+  ---
+  duration_ms: 885.801208
+  type: 'test'
+  ...
+# Subtest: R09 已报告用户待决后不能通过 completed 提交越过门禁：business
+ok 146 - R09 已报告用户待决后不能通过 completed 提交越过门禁：business
+  ---
+  duration_ms: 667.35975
+  type: 'test'
+  ...
+# Subtest: R10 真实 Owner 非成功结算保留分类与局部待决：permission-blocked
+ok 147 - R10 真实 Owner 非成功结算保留分类与局部待决：permission-blocked
+  ---
+  duration_ms: 1111.49675
+  type: 'test'
+  ...
+# Subtest: R10 真实 Owner 非成功结算保留分类与局部待决：permission-failed
+ok 148 - R10 真实 Owner 非成功结算保留分类与局部待决：permission-failed
+  ---
+  duration_ms: 1291.94075
+  type: 'test'
+  ...
+# Subtest: R10 真实 Owner 非成功结算保留分类与局部待决：business-blocked
+ok 149 - R10 真实 Owner 非成功结算保留分类与局部待决：business-blocked
+  ---
+  duration_ms: 1219.454042
+  type: 'test'
+  ...
+# Subtest: R10 真实 Owner 非成功结算保留分类与局部待决：legacy-blocked
+ok 150 - R10 真实 Owner 非成功结算保留分类与局部待决：legacy-blocked
+  ---
+  duration_ms: 1139.490792
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：supervisor/permission
+ok 151 - R11 预算错误不覆盖当前用户依据：supervisor/permission
+  ---
+  duration_ms: 725.944959
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：supervisor/business
+ok 152 - R11 预算错误不覆盖当前用户依据：supervisor/business
+  ---
+  duration_ms: 767.98175
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：supervisor/technical
+ok 153 - R11 预算错误不覆盖当前用户依据：supervisor/technical
+  ---
+  duration_ms: 858.484292
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：supervisor/stale-permission
+ok 154 - R11 预算错误不覆盖当前用户依据：supervisor/stale-permission
+  ---
+  duration_ms: 738.673959
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：direct-owner/permission
+ok 155 - R11 预算错误不覆盖当前用户依据：direct-owner/permission
+  ---
+  duration_ms: 2496.287791
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：direct-owner/business
+ok 156 - R11 预算错误不覆盖当前用户依据：direct-owner/business
+  ---
+  duration_ms: 3402.696167
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：direct-owner/technical
+ok 157 - R11 预算错误不覆盖当前用户依据：direct-owner/technical
+  ---
+  duration_ms: 1409.4395
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：direct-owner/stale-permission
+ok 158 - R11 预算错误不覆盖当前用户依据：direct-owner/stale-permission
+  ---
+  duration_ms: 1348.578041
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：recover/permission
+ok 159 - R11 预算错误不覆盖当前用户依据：recover/permission
+  ---
+  duration_ms: 845.072084
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：recover/business
+ok 160 - R11 预算错误不覆盖当前用户依据：recover/business
+  ---
+  duration_ms: 1195.0335
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：recover/technical
+ok 161 - R11 预算错误不覆盖当前用户依据：recover/technical
+  ---
+  duration_ms: 1160.892458
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：recover/stale-permission
+ok 162 - R11 预算错误不覆盖当前用户依据：recover/stale-permission
+  ---
+  duration_ms: 1216.719
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：repeated-recover/permission
+ok 163 - R11 预算错误不覆盖当前用户依据：repeated-recover/permission
+  ---
+  duration_ms: 1198.51175
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：repeated-recover/business
+ok 164 - R11 预算错误不覆盖当前用户依据：repeated-recover/business
+  ---
+  duration_ms: 1204.199958
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：repeated-recover/technical
+ok 165 - R11 预算错误不覆盖当前用户依据：repeated-recover/technical
+  ---
+  duration_ms: 1153.1235
+  type: 'test'
+  ...
+# Subtest: R11 预算错误不覆盖当前用户依据：repeated-recover/stale-permission
+ok 166 - R11 预算错误不覆盖当前用户依据：repeated-recover/stale-permission
+  ---
+  duration_ms: 1162.027416
+  type: 'test'
+  ...
+1..166
+# tests 166
+# suites 0
+# pass 159
+# fail 0
+# cancelled 0
+# skipped 7
+# todo 0
+# duration_ms 168871.149417

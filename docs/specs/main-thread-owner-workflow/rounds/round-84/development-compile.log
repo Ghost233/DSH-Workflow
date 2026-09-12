@@ -1,0 +1,38 @@
+TAP version 13
+# Subtest: 真实Runtime经生产Planner提交路径编排固定快照；Owner提示保留完整Ticket，未激活Workflow
+not ok 1 - 真实Runtime经生产Planner提交路径编排固定快照；Owner提示保留完整Ticket，未激活Workflow
+  ---
+  duration_ms: 2408.776875
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-compile-native.test.mjs:73:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+
+      assert.ok(prompt.includes(value.documents.finalSpec.replaceAll('\n', '\\n')))
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-compile-native.test.mjs:83:10)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+# Subtest: 丢失ready片段映射由实际Planner校验拒绝，有限两次后不发布候选
+ok 2 - 丢失ready片段映射由实际Planner校验拒绝，有限两次后不发布候选
+  ---
+  duration_ms: 2592.674875
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 1
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5182.751875

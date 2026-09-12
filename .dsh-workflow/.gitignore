@@ -1,0 +1,6 @@
+# 由 DSH Owner Workflow 创建。
+# 本目录只保存本机运行状态；配置和长期资料不要放在这里。
+# 项目配置：../.owner-workflow/
+# Owner 配置与长期存储：../.owner-workflow/owners/<owner-id>/
+*
+!.gitignore

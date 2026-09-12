@@ -1,0 +1,42 @@
+{
+  "source": "development-03 retained source-Harness JSONL; only owner_submit call/result events are preserved",
+  "events": [
+    {
+      "type": "tool/call",
+      "seq": 17,
+      "time": 1789101837301,
+      "data": {
+        "turn": 1,
+        "step": 1,
+        "callId": "t22-owner-submit-completed",
+        "name": "owner_submit",
+        "arguments": "{\"report\":{\"contract\":\"DSH_OWNER_RESULT_V1\",\"status\":\"completed\",\"summary\":\"Controlled Owner completed the recovered task through owner_submit.\",\"changes\":[],\"tests\":[],\"handoffs\":[],\"memory_updates\":[]}}"
+      }
+    },
+    {
+      "type": "tool/result",
+      "seq": 18,
+      "time": 1789101837420,
+      "data": {
+        "turn": 1,
+        "step": 1,
+        "message": {
+          "source": { "kind": "tool", "callId": "t22-owner-submit-completed" },
+          "content": [{
+            "type": "tool-result",
+            "toolCallId": "t22-owner-submit-completed",
+            "content": [{
+              "type": "text",
+              "text": "Error: 固定验证 unit 执行或证据校验失败：Owner 沙箱未完整挂载：需要 ctx.shell、ctx.sandbox 和 ctx.sandboxPolicy。当前 owner_submit report 已通过结构解析，不要给 report、tests 或 changes 添加 exitCode；请根据固定验证输出修复实现或等待 Runtime 环境修复后原样重试。"
+            }],
+            "isError": true
+          }],
+          "role": "user",
+          "id": "67fe03b7-a981-4299-8533-828ce1d74e25"
+        },
+        "sourceEventSeqs": [17],
+        "surfaceOp": "append"
+      }
+    }
+  ]
+}

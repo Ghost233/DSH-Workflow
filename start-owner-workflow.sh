@@ -38,14 +38,18 @@ WEB_COMMAND_MODE=false
 CALLER_DIRECTORY="$(pwd -P)"
 # Dashboard 永远只观察启动命令所在的业务工作区；可用 DSH_WORKFLOW_ROOT 显式覆盖。
 export DSH_OWNER_WORKFLOW_DASHBOARD_ROOT="${DSH_OWNER_WORKFLOW_DASHBOARD_ROOT:-${DSH_WORKFLOW_ROOT:-${CALLER_DIRECTORY}}}"
+# Runner catalog 固定在 Harness home，所有工作区共享同一个 Leader 与 attempt journal。
+export DSH_OWNER_WORKFLOW_CATALOG_ROOT="${DSH_OWNER_WORKFLOW_CATALOG_ROOT:-${DSH_HOME_DIRECTORY}/owner-workflow}"
 DASHBOARD_RUNTIME_PATCH=""
 SYNAPSE_RUNTIME_PATCH=""
+PROJECT_PLUGINS_READY=false
 LOCAL_UI_LINK_CREATED=false
 SYNAPSE_LINK_CREATED=false
 RUNNER_DAEMON_PID=""
 RUNNER_DAEMON_OWNED=false
 RUNNER_DAEMON_ENABLED="${DSH_OWNER_WORKFLOW_RUNNER:-1}"
-RUNNER_DAEMON_LOG="${DSH_OWNER_WORKFLOW_RUNNER_LOG:-${DSH_OWNER_WORKFLOW_DASHBOARD_ROOT}/.dsh-workflow/runner/daemon.log}"
+RUNNER_DAEMON_PERSIST="${DSH_OWNER_WORKFLOW_RUNNER_PERSIST:-1}"
+RUNNER_DAEMON_LOG="${DSH_OWNER_WORKFLOW_RUNNER_LOG:-${DSH_OWNER_WORKFLOW_CATALOG_ROOT}/.dsh-workflow/runner/daemon.log}"
 
 cleanup_dashboard_runtime_patch() {
   if [[ -n "${DASHBOARD_RUNTIME_PATCH}" ]]; then
@@ -63,11 +67,14 @@ cleanup_dashboard_runtime_patch() {
 }
 
 cleanup_owner_workflow_processes() {
-  if [[ "${RUNNER_DAEMON_OWNED}" == true ]] && [[ -n "${RUNNER_DAEMON_PID}" ]]; then
+  if [[ "${RUNNER_DAEMON_PERSIST}" == 0 ]] && [[ "${RUNNER_DAEMON_OWNED}" == true ]] && [[ -n "${RUNNER_DAEMON_PID}" ]]; then
     kill -TERM "${RUNNER_DAEMON_PID}" 2>/dev/null || true
     wait "${RUNNER_DAEMON_PID}" 2>/dev/null || true
   fi
   cleanup_dashboard_runtime_patch
+  if [[ "${PROJECT_PLUGINS_READY}" == true ]]; then
+    node "${PROJECT_ROOT}/scripts/project-plugins.mjs" release "${PROJECT_ROOT}" "$$"
+  fi
 }
 
 trap cleanup_owner_workflow_processes EXIT
@@ -223,7 +230,7 @@ prepare_local_dashboard_patch() {
   DASHBOARD_RUNTIME_PATCH="$(mktemp -t dsh-owner-workflow-dashboard)"
   if ! node --input-type=module -e '
     import { writeFileSync } from "node:fs"
-    const [patchPath, packageName, entryPath, workspacePath, bundlePresent] = process.argv.slice(1)
+    const [patchPath, packageName, entryPath, workspacePath, catalogPath, bundlePresent] = process.argv.slice(1)
     const quote = value => JSON.stringify(value)
     const lines = ["# 由 start-owner-workflow.sh 为本次本地启动生成；进程退出时删除。"]
     if (bundlePresent === "true") {
@@ -248,10 +255,11 @@ prepare_local_dashboard_patch() {
       `      name: ${quote(entryPath)}`,
       "      config:",
       `        root: ${quote(workspacePath)}`,
+      `        catalogRoot: ${quote(catalogPath)}`,
     )
     lines.push("")
     writeFileSync(patchPath, lines.join("\n"), "utf8")
-  ' "${DASHBOARD_RUNTIME_PATCH}" "${LOCAL_UI_PACKAGE_NAME}" "${DASHBOARD_ENTRY}" "${DSH_OWNER_WORKFLOW_DASHBOARD_ROOT}" "$([[ "${BUNDLE_STATE}" == "present" ]] && printf true || printf false)"; then
+  ' "${DASHBOARD_RUNTIME_PATCH}" "${LOCAL_UI_PACKAGE_NAME}" "${DASHBOARD_ENTRY}" "${DSH_OWNER_WORKFLOW_DASHBOARD_ROOT}" "${DSH_OWNER_WORKFLOW_CATALOG_ROOT}" "$([[ "${BUNDLE_STATE}" == "present" ]] && printf true || printf false)"; then
     printf '无法生成本次启动所需的 Web 客户端与 Dashboard patch。\n' >&2
     exit 1
   fi
@@ -405,6 +413,14 @@ run_source_cli() {
 }
 
 run_profile_cli() {
+  if [[ "${PROJECT_PLUGINS_READY}" == true ]]; then
+    if [[ "${WEB_COMMAND_MODE}" == true ]]; then
+      node "${PROJECT_ROOT}/scripts/project-plugins.mjs" run "${PROJECT_ROOT}" web "$@"
+    else
+      node "${PROJECT_ROOT}/scripts/project-plugins.mjs" run "${PROJECT_ROOT}" --profile "${PROFILE_NAME}" "$@"
+    fi
+    return
+  fi
   if [[ "${PROFILE_NAME}" == "web" ]] && [[ "${WEB_COMMAND_MODE}" == true ]]; then
     if [[ "${LAUNCHER_MODE}" == "source" || "${LAUNCHER_MODE}" == "source-runtime" ]]; then
       run_source_cli web "$@"
@@ -416,6 +432,22 @@ run_profile_cli() {
   else
     npx --yes "${DSH_PACKAGE}" --profile "${PROFILE_NAME}" "$@"
   fi
+}
+
+prepare_project_plugins() {
+  [[ "${PROFILE_NAME}" == "web" ]] || return 0
+  # Help/config inspection must stay offline and never update packages.
+  for argument in "$@"; do
+    case "${argument}" in --help|-h|--dump-config|--dump-default-config) return 0 ;; esac
+  done
+  # Browser require.resolve needs NODE_PATH set before Node starts; keep it in this process tree.
+  export NODE_PATH="${PROJECT_ROOT}/.dsh-workflow/plugins/node_modules${NODE_PATH:+:${NODE_PATH}}"
+  if [[ "${LAUNCHER_MODE}" == "source" || "${LAUNCHER_MODE}" == "source-runtime" ]]; then
+    node "${PROJECT_ROOT}/scripts/project-plugins.mjs" prepare "${PROJECT_ROOT}" "${HARNESS_DIRECTORY}/apps/cli/package.json" "$$"
+  else
+    npx --yes --package "${DSH_PACKAGE}" -- node "${PROJECT_ROOT}/scripts/project-plugins.mjs" prepare "${PROJECT_ROOT}" auto "$$"
+  fi
+  PROJECT_PLUGINS_READY=true
 }
 
 install_profile_bundle() {
@@ -495,15 +527,55 @@ start_runner_daemon() {
       exit 1
       ;;
   esac
+  case "${RUNNER_DAEMON_PERSIST}" in
+    0|1) ;;
+    *)
+      printf 'DSH_OWNER_WORKFLOW_RUNNER_PERSIST 只能是 0 或 1。\n' >&2
+      exit 1
+      ;;
+  esac
   local runner_entry
   if ! runner_entry="$(resolve_runner_entry)"; then
     printf '无法解析 Owner Workflow runner，已拒绝启动 Harness。\n' >&2
     exit 1
   fi
+  local runner_source_digest
+  runner_source_digest="$(node --input-type=module -e '
+    import fs from "node:fs"
+    import crypto from "node:crypto"
+    process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))
+  ' "${runner_entry}")"
+  local daemon_state_path="${DSH_OWNER_WORKFLOW_CATALOG_ROOT}/.dsh-workflow/runner/daemon.json"
+  local incompatible_pid=""
+  incompatible_pid="$(node --input-type=module -e '
+    import fs from "node:fs"
+    const [path, expectedDigest] = process.argv.slice(1)
+    try {
+      const state = JSON.parse(fs.readFileSync(path, "utf8"))
+      const heartbeat = Date.parse(state.heartbeatAt ?? "")
+      if (state.contract === "DSH_WORKFLOW_RUNNER_DAEMON_V1"
+        && state.status === "running"
+        && Number.isSafeInteger(state.pid)
+        && Number.isFinite(heartbeat)
+        && Date.now() - heartbeat <= 60000
+        && state.sourceDigest !== expectedDigest) process.stdout.write(String(state.pid))
+    } catch {}
+  ' "${daemon_state_path}" "${runner_source_digest}")"
+  if [[ -n "${incompatible_pid}" ]] && kill -0 "${incompatible_pid}" 2>/dev/null; then
+    kill -TERM "${incompatible_pid}" 2>/dev/null || true
+    for _attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+      if ! kill -0 "${incompatible_pid}" 2>/dev/null; then break; fi
+      sleep 0.1
+    done
+    if kill -0 "${incompatible_pid}" 2>/dev/null; then
+      printf '旧版全局 Runner pid=%s 未能停止，拒绝并行启动新版本。\n' "${incompatible_pid}" >&2
+      exit 1
+    fi
+  fi
   mkdir -p "$(dirname -- "${RUNNER_DAEMON_LOG}")"
   node "${runner_entry}" \
     --daemon \
-    --catalog-root "${DSH_OWNER_WORKFLOW_DASHBOARD_ROOT}" \
+    --catalog-root "${DSH_OWNER_WORKFLOW_CATALOG_ROOT}" \
     >>"${RUNNER_DAEMON_LOG}" 2>&1 &
   RUNNER_DAEMON_PID=$!
   RUNNER_DAEMON_OWNED=true
@@ -512,11 +584,15 @@ start_runner_daemon() {
   for _attempt in 1 2 3 4 5 6 7 8 9 10; do
     if node --input-type=module -e '
       import fs from "node:fs"
-      const path = process.argv[1]
+      const [path, expectedDigest] = process.argv.slice(1)
       const state = JSON.parse(fs.readFileSync(path, "utf8"))
       const heartbeat = Date.parse(state.heartbeatAt ?? "")
-      if (state.contract !== "DSH_WORKFLOW_RUNNER_DAEMON_V1" || state.status !== "running" || !Number.isFinite(heartbeat) || Date.now() - heartbeat > 10000) process.exit(1)
-    ' "${DSH_OWNER_WORKFLOW_DASHBOARD_ROOT}/.dsh-workflow/runner/daemon.json" 2>/dev/null; then
+      if (state.contract !== "DSH_WORKFLOW_RUNNER_DAEMON_V1"
+        || state.status !== "running"
+        || state.sourceDigest !== expectedDigest
+        || !Number.isFinite(heartbeat)
+        || Date.now() - heartbeat > 10000) process.exit(1)
+    ' "${daemon_state_path}" "${runner_source_digest}" 2>/dev/null; then
       ready=true
       break
     fi
@@ -529,7 +605,10 @@ start_runner_daemon() {
     printf 'Owner Workflow Runner daemon 启动失败，日志：%s\n' "${RUNNER_DAEMON_LOG}" >&2
     exit 1
   fi
-  printf 'Owner Workflow Runner daemon 已启用；会自动接管已批准的 Workflow。\n' >&2
+  if ! kill -0 "${RUNNER_DAEMON_PID}" 2>/dev/null; then
+    RUNNER_DAEMON_OWNED=false
+  fi
+  printf 'Owner Workflow Runner daemon 已启用；全局 catalog=%s，会自动接管已批准的 Workflow。\n' "${DSH_OWNER_WORKFLOW_CATALOG_ROOT}" >&2
 }
 
 require_installed_preset() {
@@ -650,6 +729,8 @@ elif [[ "${INSTALL_MODE}" == "profile" ]] && [[ "${BUNDLE_STATE}" != "present" ]
   printf '明确指定 profile 模式，但 profile %s 没有完整的 Owner 工作流 bundle。\n' "${PROFILE_NAME}" >&2
   exit 1
 fi
+
+prepare_project_plugins "$@"
 
 case "${INSTALL_MODE}" in
   profile)

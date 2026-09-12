@@ -95,7 +95,7 @@ export function taskLifecycleTransition(task, event) {
 
 **接口：**
 - 新增：`ensureRegistry(root)`、`loadRegistry(root)`、`proposeRegistryChange(registry, operation)`、`applyApprovedRegistryChange(root, proposal)`。
-- 目录：`.owner-workflow/config.json` 与 `.owner-workflow/owners/<id>.md`。
+- 目录：`.owner-workflow/config.json` 与 `.owner-workflow/owners/<id>/owner.md`；同一 Owner 的长期资料位于相邻 `memory/`。
 - proposal 结构：`{ contract: 'DSH_OWNER_REGISTRY_PROPOSAL_V1', digest, operation, before, after, affectedOwnerIds }`。
 
 - [ ] **步骤 1：写出提案不可直接应用、digest 不匹配和 scope 重叠的失败测试**
@@ -109,7 +109,7 @@ test('Owner Registry 只有匹配 digest 的已批准提案才能写入', async 
   })
   await assert.rejects(applyApprovedRegistryChange(root, { ...proposal, approvedDigest: '0'.repeat(64) }), /digest/u)
   await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
-  assert.match(await readFile(join(root, '.owner-workflow/owners/network-user.md'), 'utf8'), /用户接口/u)
+  assert.match(await readFile(join(root, '.owner-workflow/owners/network-user/owner.md'), 'utf8'), /用户接口/u)
 })
 ```
 

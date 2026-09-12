@@ -1,0 +1,16 @@
+{
+  "previousGoalTurn": "progress",
+  "goalTurn": "progress",
+  "ticket": "T-27",
+  "status": "开发中",
+  "candidateDrift": false,
+  "formalInitialTimeoutRetained": true,
+  "boundedControlRetrySeconds": 115.928677,
+  "sameCandidateSuiteTotal": {
+    "pass": 202,
+    "skipped": 7,
+    "fail": 0
+  },
+  "next": "原子激活、父版本竞争和实际派发",
+  "wholeGoalComplete": false
+}

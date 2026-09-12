@@ -1,0 +1,31 @@
+✔ candidate selection and acknowledgment only expose independent target patches, never a replacement state (23.10725ms)
+✔ excludes source/target Owner tasks and their forward/reverse dependency closure (10.254667ms)
+✔ full active tasks and undispatched reservations consume global slots and Owner identities (14.087333ms)
+✔ existing Owner history and source binding prevent stale or duplicate creates (10.945125ms)
+✔ no eligible work yields side-effect-free wait and cannot acknowledge stop/notify (4.469166ms)
+✔ unproven handoff scope fails closed, and pending notice never dispatches (1.930042ms)
+✔ unrelated stalled activity cannot suppress an available independent create slot (5.18075ms)
+✔ composite relationships keep a source subtree excluded without dropping the independent leaf (7.88375ms)
+✔ reject reservation occupancy with stopped task instead of releasing its parallel slot (2.939333ms)
+✔ reject owner occupancy with stopped task instead of releasing its parallel slot (3.213625ms)
+✔ reject reservation occupancy with completed task instead of releasing its parallel slot (4.171167ms)
+✔ reject owner occupancy with completed task instead of releasing its parallel slot (3.149958ms)
+✔ an already running reservation occupies one slot without duplicate counting (7.109208ms)
+✔ independent selection rejects an existing shared pendingTaskMerge transaction (2.027292ms)
+✔ independent selection rejects an existing shared pendingMemoryCompilation transaction (2.159583ms)
+✔ independent selection excludes other planned handoff targets that finish would implicitly consume (3.963958ms)
+✔ terminal receipts require matching task and Owner outcomes at both replay and execution guards (121.742ms)
+✔ launching permits Owner finish before the reservation settlement transaction (14.4055ms)
+✔ daemon selects independent create then resumes persisted reserved work without rewriting state (6.410292ms)
+✔ daemon waits on launching or ambiguous Owner history and never treats either as first dispatch (9.561666ms)
+✔ daemon returns stable wait for refused approvals, invalid reserved source, or no independent work (8.836875ms)
+✔ a reserved batch advances the next Owner only after the prior independent integration settles (15.045875ms)
+✔ revoked approval or stale Review invalidates both reservation and live execution binding (5.726792ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 354.769666

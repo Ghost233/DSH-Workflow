@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish
+ok 1 - T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish
+  ---
+  duration_ms: 5604.038
+  type: 'test'
+  ...
+# Subtest: T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed
+ok 2 - T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed
+  ---
+  duration_ms: 2481.587583
+  type: 'test'
+  ...
+# Subtest: T15 candidate pause rejects a source change before finish without merging the independent Owner result
+ok 3 - T15 candidate pause rejects a source change before finish without merging the independent Owner result
+  ---
+  duration_ms: 3844.514583
+  type: 'test'
+  ...
+# Subtest: T15 candidate pause rejects a source change before Owner submission without verification or a commit
+ok 4 - T15 candidate pause rejects a source change before Owner submission without verification or a commit
+  ---
+  duration_ms: 2442.740916
+  type: 'test'
+  ...
+# Subtest: T15 candidate pause turns a real external permission gap into awaiting-user without charging recovery
+ok 5 - T15 candidate pause turns a real external permission gap into awaiting-user without charging recovery
+  ---
+  duration_ms: 1935.394625
+  type: 'test'
+  ...
+# Subtest: T15 candidate pause rejects persisted completed reservation replays while its Owner and task are still live
+ok 6 - T15 candidate pause rejects persisted completed reservation replays while its Owner and task are still live
+  ---
+  duration_ms: 2158.047667
+  type: 'test'
+  ...
+# Subtest: T15 candidate pause rejects persisted failed reservation replays while its Owner and task are still live
+ok 7 - T15 candidate pause rejects persisted failed reservation replays while its Owner and task are still live
+  ---
+  duration_ms: 1967.195292
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 20702.486167

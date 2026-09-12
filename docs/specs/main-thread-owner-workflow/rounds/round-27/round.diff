@@ -1,0 +1,74 @@
+--- owner-workflow-plugin/test/recovery-session.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session.test.mjs
+@@ -581,3 +581,71 @@
+   assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
+   assert.deepEqual(await readRecoverySessionState(fixture), awaitingFinish)
+ })
++
++
++for (const fault of ['create', 'bind']) {
++  test(`T22 L1 ${fault} failure preserves reservation without sending and releases any created handle`, async t => {
++    const fixture = await createRecoverySessionFixture(t, { executable: true })
++    const receipt = await reserveRecoverySession(fixture)
++    const initialRequest = request(receipt)
++    const before = await readRecoverySessionState(fixture)
++    const budgetBefore = structuredClone(before.recoveryAdmission.budget)
++    const calls = { create: 0, bind: 0, followup: 0, dispose: 0 }
++    let created
++    const create = fixture.ctx.agents.create.bind(fixture.ctx.agents)
++    const persistSession = fixture.runtime.persistOwnerSession.bind(fixture.runtime)
++    fixture.ctx.agents.create = async (...args) => {
++      if (args[0]?.sessionId !== receipt.executionIdentity.sessionId) return await create(...args)
++      calls.create += 1
++      if (fault === 'create') throw new Error('L1 controlled create failure')
++      const handle = await create(...args)
++      created = handle.agent
++      assert.equal(fixture.ctx.agents.get(created.id), created)
++      const followup = created.followup.bind(created)
++      created.followup = (...input) => {
++        calls.followup += 1
++        return followup(...input)
++      }
++      const dispose = handle.dispose.bind(handle)
++      return {
++        agent: created,
++        dispose: async () => {
++          calls.dispose += 1
++          await dispose()
++        },
++      }
++    }
++    fixture.runtime.persistOwnerSession = async (...args) => {
++      if (args[1] !== receipt.executionIdentity.sessionId) return await persistSession(...args)
++      calls.bind += 1
++      throw new Error('L1 controlled bind failure')
++    }
++    await assert.rejects(
++      fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, initialRequest),
++      new RegExp(`L1 controlled ${fault} failure`, 'u'),
++    )
++    assert.deepEqual(calls, { create: 1, bind: fault === 'bind' ? 1 : 0, followup: 0, dispose: fault === 'bind' ? 1 : 0 })
++    assert.equal(fixture.adapter.requests.length, 0)
++    assert.equal(fixture.ctx.agents.get(receipt.executionIdentity.sessionId), undefined)
++    if (fault === 'bind') assert.ok(created)
++    const after = await readRecoverySessionState(fixture)
++    assert.deepEqual(after.recoveryAdmission.budget, budgetBefore)
++    const run = after.ownerRuns['T1:api']
++    assert.deepEqual(run.recoverySession.executionIdentity, receipt.executionIdentity)
++    assert.equal(run.recoverySession.successReceipt, undefined)
++    assert.equal(run.recoveryContinuation, undefined)
++    assert.ok(!['settled_failed', 'settled_succeeded'].includes(run.recoverySession.phase))
++    // The failure may leave diagnostic Owner state or a raw artifact. Neither
++    // is authorization to refund, resend, or synthesize a settled receipt.
++    const rawAfter = await fixture.readRaw(receipt.executionIdentity.sessionId)
++    const replay = await fixture.runtime.reconcileRecoverySession(
++      fixture.admissionAgent, fixture.workflowId, initialRequest,
++    )
++    assert.equal(replay.outcome, 'paused')
++    assert.equal(replay.phase, 'technical_pause')
++    assert.deepEqual(await readRecoverySessionState(fixture), after)
++    assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), rawAfter)
++    assert.deepEqual(calls, { create: 1, bind: fault === 'bind' ? 1 : 0, followup: 0, dispose: fault === 'bind' ? 1 : 0 })
++    assert.equal(fixture.adapter.requests.length, 0)
++  })
++}

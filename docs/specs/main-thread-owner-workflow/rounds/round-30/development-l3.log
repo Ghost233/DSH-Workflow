@@ -1,0 +1,64 @@
+TAP version 13
+# Subtest: T22 L3 Runtime safely consumes preparing evidence without execution or settlement
+ok 1 - T22 L3 Runtime safely consumes preparing evidence without execution or settlement
+  ---
+  duration_ms: 1668.079
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes creating evidence without execution or settlement
+ok 2 - T22 L3 Runtime safely consumes creating evidence without execution or settlement
+  ---
+  duration_ms: 254.202
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes pending evidence without execution or settlement
+ok 3 - T22 L3 Runtime safely consumes pending evidence without execution or settlement
+  ---
+  duration_ms: 310.219084
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes running evidence without execution or settlement
+ok 4 - T22 L3 Runtime safely consumes running evidence without execution or settlement
+  ---
+  duration_ms: 422.882792
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes terminal evidence without execution or settlement
+ok 5 - T22 L3 Runtime safely consumes terminal evidence without execution or settlement
+  ---
+  duration_ms: 478.448083
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes interrupted evidence without execution or settlement
+ok 6 - T22 L3 Runtime safely consumes interrupted evidence without execution or settlement
+  ---
+  duration_ms: 481.039291
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes old_plan evidence without execution or settlement
+ok 7 - T22 L3 Runtime safely consumes old_plan evidence without execution or settlement
+  ---
+  duration_ms: 371.243625
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes old_attempt evidence without execution or settlement
+ok 8 - T22 L3 Runtime safely consumes old_attempt evidence without execution or settlement
+  ---
+  duration_ms: 361.390292
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes old_lease evidence without execution or settlement
+ok 9 - T22 L3 Runtime safely consumes old_lease evidence without execution or settlement
+  ---
+  duration_ms: 387.057542
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5057.7575

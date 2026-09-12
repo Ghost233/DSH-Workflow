@@ -1,0 +1,116 @@
+--- owner-workflow-plugin/test/recovery-session.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session.test.mjs
+@@ -777,3 +777,113 @@
+   // the later request/intent binding comparison.
+   assert.equal(replay.reason, 'reservation_invalid')
+ })
++
++
++for (const scenario of ['preparing', 'creating', 'pending', 'running', 'terminal', 'interrupted', 'old_plan', 'old_attempt', 'old_lease']) {
++  test(`T22 L3 Runtime safely consumes ${scenario} evidence without execution or settlement`, async t => {
++    const fixture = await createRecoverySessionFixture(t, scenario === 'running'
++      ? { modelScript: () => ['hang'] } : {})
++    const receipt = await reserveRecoverySession(fixture)
++    let observed
++    if (scenario === 'pending') observed = await injectObservedPrompt(fixture, receipt, content)
++    if (scenario === 'terminal') observed = await appendObservedPrompt(fixture, receipt, content)
++    if (scenario === 'interrupted') {
++      const handle = await fixture.ctx.agents.create({
++        sessionId: fixture.modules.SessionId(receipt.executionIdentity.sessionId),
++        meta: { cwd: fixture.root }, agentOptions: fixture.agentOptions,
++      })
++      handle.agent.followup(fixture.modules.freezeMessage({
++        id: receipt.executionIdentity.promptId, role: 'user',
++        content: [{ type: 'text', text: content }], source: { kind: 'user' },
++      }))
++      await handle.agent.whenIdle()
++      await fixture.ctx.sessions.flush(handle.agent.session)
++      observed = { location: fixture.ctx.sessionPersistence.locate(handle.agent.session.header) }
++      await handle.dispose()
++    }
++    if (scenario === 'running') {
++      const handle = await fixture.ctx.agents.create({
++        sessionId: fixture.modules.SessionId(receipt.executionIdentity.sessionId),
++        meta: { cwd: fixture.root }, agentOptions: fixture.agentOptions,
++      })
++      observed = { agent: handle.agent }
++      t.after(async () => { await handle.dispose() })
++      observed.agent.followup(fixture.modules.freezeMessage({
++        id: receipt.executionIdentity.promptId, role: 'user',
++        content: [{ type: 'text', text: content }], source: { kind: 'user' },
++      }))
++      const deadline = Date.now() + 5000
++      while (fixture.adapter.requests.length === 0 && Date.now() < deadline) {
++        await new Promise(resolve => setTimeout(resolve, 10))
++      }
++      assert.equal(fixture.adapter.requests.length, 1)
++      await fixture.ctx.sessions.flush(observed.agent.session)
++    }
++    if (scenario === 'interrupted') {
++      // Deliberate raw negative input: remove a complete turn's terminal
++      // suffix, preserving a valid event prefix. This is not a SIGKILL proof.
++      const text = await readFile(observed.location.path, 'utf8')
++      const rows = text.trimEnd().split('\n')
++      const end = rows.findIndex(row => JSON.parse(row).type === 'step/end')
++      assert.ok(end > 0)
++      await writeFile(observed.location.path, rows.slice(0, end).join('\n') + '\n', 'utf8')
++      const projected = await fixture.ctx.sessionPersistence.inspect(receipt.executionIdentity.sessionId)
++      assert.ok(projected.events.some(event => event.type === 'turn/end' && event.data.reason.kind === 'interrupted'))
++    }
++    // Only negative consumption state is seeded here. No claimed successful
++    // Owner producer or T13 settlement is manufactured by this fixture.
++    await mutateRecoverySessionState(fixture, state => {
++      const run = state.ownerRuns['T1:api']
++      run.status = 'running'
++      run.sessionId = receipt.executionIdentity.sessionId
++      run.leaseToken = 'l3-observed-owner-lease'
++      run.recoverySession = {
++        contract: 'DSH_RECOVERY_SESSION_STATE_V1',
++        requestId: receipt.requestId, attemptId: receipt.attemptId,
++        planDigest: fixture.planDigest, executionIdentity: receipt.executionIdentity,
++        instruction: { id: receipt.executionIdentity.promptId, content },
++        ownerRunBinding: { attempt: run.attempt, leaseToken: run.leaseToken },
++        phase: ['preparing', 'creating'].includes(scenario) ? scenario : 'submitted',
++        ...(scenario === 'preparing' ? {} : { prompt: { id: receipt.executionIdentity.promptId, content } }),
++      }
++      if (scenario === 'old_plan') state.planDigest = 'l3-new-plan-digest'
++      if (scenario === 'old_attempt') run.attempt += 1
++      if (scenario === 'old_lease') run.leaseToken = 'l3-replaced-lease'
++    })
++    const before = await readRecoverySessionState(fixture)
++    const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
++    const requests = fixture.adapter.requests.length
++    const calls = { create: 0, resume: 0, followup: 0 }
++    for (const method of ['create', 'resume']) {
++      const original = fixture.ctx.agents[method].bind(fixture.ctx.agents)
++      fixture.ctx.agents[method] = (...args) => { calls[method] += 1; return original(...args) }
++    }
++    for (const agent of [fixture.admissionAgent, observed?.agent].filter(Boolean)) {
++      const followup = agent.followup.bind(agent)
++      agent.followup = (...args) => { calls.followup += 1; return followup(...args) }
++    }
++    const result = await fixture.runtime.reconcileRecoverySession(
++      fixture.admissionAgent, fixture.workflowId, request(receipt),
++    )
++    assert.equal(result.outcome, 'paused')
++    assert.equal(result.phase, 'technical_pause')
++    const reasons = {
++      preparing: 'recovery_prompt_not_durably_frozen', creating: 'raw_artifact_missing',
++      old_plan: 'reservation_invalid', old_attempt: 'persisted_owner_binding_mismatch',
++      old_lease: 'persisted_owner_binding_mismatch',
++    }
++    if (reasons[scenario]) assert.equal(result.reason, reasons[scenario])
++    if (['pending', 'running', 'terminal'].includes(scenario)) {
++      assert.equal(result.reason, 'persisted_session_requires_owner_lease')
++      assert.equal(result.observation.outcome, { pending: 'pending', running: 'running', terminal: 'observed_terminal' }[scenario])
++    }
++    if (scenario === 'interrupted') {
++      assert.ok(result.observation)
++      assert.ok(!raw.content.includes('"type":"turn/end"'))
++    }
++    assert.deepEqual(calls, { create: 0, resume: 0, followup: 0 })
++    assert.equal(fixture.adapter.requests.length, requests)
++    assert.deepEqual(await readRecoverySessionState(fixture), before)
++    assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
++  })
++}

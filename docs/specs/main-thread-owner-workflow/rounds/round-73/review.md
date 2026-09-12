@@ -1,0 +1,5 @@
+# R73 独立审查
+
+P2：调度准入与Owner启动准入不一致。仅检查passed而不校验planReviewDigest绑定，会先预留并把任务置running，再由Owner启动拒绝；专用driver对尚无Owner的启动前失败又写failed reservation，制造终态配对矛盾与停滞。同根修复需统一前置资格及早期失败结算，不能只补selector条件。
+
+此结论来自当前调用链；正式现有用例未覆盖旧审查摘要及其他启动前拒绝。下轮补真实模型零调用/持久状态证据。

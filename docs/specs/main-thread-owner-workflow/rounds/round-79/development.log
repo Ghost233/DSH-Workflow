@@ -1,0 +1,37 @@
+✔ real selected documents retain complete cross-ticket AC references, multiple segments and fixed content (15.853167ms)
+✔ mixed readiness preserves explicit blockers and blocks dependent tickets while unrelated work remains ready (14.047ms)
+✔ rejects missing-file without modifying planning files (33.57925ms)
+✔ rejects changed-content without modifying planning files (30.295792ms)
+✔ rejects wrong-digest without modifying planning files (16.848958ms)
+✔ rejects duplicate-ticket without modifying planning files (4.604459ms)
+✔ rejects duplicate-path without modifying planning files (7.847709ms)
+✔ rejects missing-revision without modifying planning files (4.834417ms)
+✔ rejects wrong-identity without modifying planning files (7.139875ms)
+✔ rejects wrong-source without modifying planning files (10.163708ms)
+✔ rejects unknown-ac without modifying planning files (7.068667ms)
+✔ rejects wrong-ac-version without modifying planning files (19.838292ms)
+✔ rejects unknown-contract without modifying planning files (33.544792ms)
+✔ rejects wrong-contract-version without modifying planning files (42.316209ms)
+✔ rejects missing-dependency without modifying planning files (19.710667ms)
+✔ rejects cyclic-dependency without modifying planning files (43.871208ms)
+✔ rejects duplicate-segment without modifying planning files (46.09325ms)
+✔ rejects empty-work without modifying planning files (4.315583ms)
+✔ rejects all-blocked without modifying planning files (9.873875ms)
+✔ rejects empty-tickets without modifying planning files (3.677084ms)
+✔ rejects declaration-forgery without modifying planning files (10.166334ms)
+✔ rejects disallowed planning path docs/analysis/spec.md (3.356791ms)
+✔ rejects disallowed planning path docs/superpowers/specs/spec.md (3.348917ms)
+✔ rejects disallowed planning path ../escape.md (3.14825ms)
+✔ rejects disallowed planning path AGENTS.md (5.921042ms)
+✔ linked document source cannot cross the existing document boundary (4.195042ms)
+✔ unready contract blocks its consumers while independent work remains available (12.953167ms)
+✔ a ticket retains its independent ready segment alongside a declared blocked segment (11.046334ms)
+✔ invalid UTF-8 cannot produce content that differs from its bound byte digest (9.757208ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 501.336834

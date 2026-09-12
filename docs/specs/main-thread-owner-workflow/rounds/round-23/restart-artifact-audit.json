@@ -1,0 +1,87 @@
+{
+  "submitted-sigkill-pause": {
+    "producerPid": 59679,
+    "replayerPid": 60404,
+    "hashes": {
+      "workflow-state.json": "5da321f2c98f8bdd895f589db6e41d5d7d9b79d2a2d6aac7de0f2680e971eb91",
+      "reserved-session.jsonl": "f13e5733f0d11607b05f7e646a38d899f75da9f7484bb5977a8106e9cf8879c2"
+    },
+    "container": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-QkbiEH",
+    "existsAfterTest": false,
+    "outcome": {
+      "contract": "DSH_RECOVERY_SESSION_RESULT_V1",
+      "outcome": "paused",
+      "phase": "technical_pause",
+      "workflowId": "wf-recovery-session",
+      "taskId": "T1",
+      "ownerId": "api",
+      "rootProblemId": "recovery-root-8fc14a04-ab66-4eeb-8478-5d148821b488",
+      "requestId": "recovery-request-4bfa153b-ec5a-4bbf-902a-032f09b4ac16",
+      "attemptId": "recovery-attempt-b0b45100-b99d-4342-98a8-59fdf56c9982",
+      "executionIdentity": {
+        "sessionId": "recovery-session-1725dbc1-2365-4936-8250-9a037e82311b",
+        "promptId": "recovery-prompt-a74bc5e2-7992-4c63-ad3c-52b0a17f7056"
+      },
+      "reason": "extra_or_wrong_input",
+      "observation": {
+        "outcome": "paused",
+        "phase": "technical_pause",
+        "reason": "extra_or_wrong_input",
+        "revision": "16777232:193008273:20613:1789104500856903200:1789104500856903200"
+      }
+    }
+  },
+  "settled-failed-sigkill-replay": {
+    "producerPid": 60440,
+    "replayerPid": 61174,
+    "hashes": {
+      "workflow-state.json": "1775b5f7d3d8e8081d5459e8bcab9b8ac2d4b99c0a6a7fe33edf0243c1c83f64",
+      "reserved-session.jsonl": "9499b5d93c5eaf5e2a9dcbef84a0fe7443c8ba23f05362cfbefa91754d5aa4d5"
+    },
+    "container": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-59fVRl",
+    "existsAfterTest": false,
+    "outcome": {
+      "contract": "DSH_RECOVERY_SESSION_RESULT_V1",
+      "outcome": "settled_failed",
+      "phase": "settled_failed",
+      "workflowId": "wf-recovery-session",
+      "taskId": "T1",
+      "ownerId": "api",
+      "rootProblemId": "recovery-root-82bf1d46-d055-4ad9-bcb7-707d075a9efa",
+      "requestId": "recovery-request-fb92301f-b8bb-46f0-85d1-759190308e42",
+      "attemptId": "recovery-attempt-2dbd55e2-75c5-4c0e-9ea7-7781abf45d70",
+      "executionIdentity": {
+        "sessionId": "recovery-session-7ab16c49-0b6b-4466-a0f5-3b90422f8b86",
+        "promptId": "recovery-prompt-998bdfae-473a-41ff-ac37-9cd1ffe2c3cd"
+      },
+      "continuation": {
+        "contract": "DSH_RECOVERY_CONTINUATION_V1",
+        "sourceId": "recovery-source-a72cd741274c282b17b41c43b2373e13d8c2a661d708099cf5f5db0bcb0a761f",
+        "rootProblemId": "recovery-root-82bf1d46-d055-4ad9-bcb7-707d075a9efa",
+        "requestId": "recovery-request-fb92301f-b8bb-46f0-85d1-759190308e42",
+        "attemptId": "recovery-attempt-2dbd55e2-75c5-4c0e-9ea7-7781abf45d70",
+        "taskId": "T1",
+        "ownerId": "api",
+        "planDigest": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+        "executionIdentity": {
+          "sessionId": "recovery-session-7ab16c49-0b6b-4466-a0f5-3b90422f8b86",
+          "promptId": "recovery-prompt-998bdfae-473a-41ff-ac37-9cd1ffe2c3cd"
+        },
+        "ownerRunBinding": {
+          "attempt": 3,
+          "sessionId": "recovery-session-7ab16c49-0b6b-4466-a0f5-3b90422f8b86"
+        }
+      }
+    }
+  },
+  "preCheckpointCleanup": {
+    "containerPath": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-RdVbjH",
+    "producerExit": {
+      "code": null,
+      "signal": "SIGKILL"
+    },
+    "checkpointReceived": false,
+    "realGitWorktreeVerified": true,
+    "containerRemoved": true
+  }
+}

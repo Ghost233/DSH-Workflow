@@ -1,0 +1,154 @@
+TAP version 13
+# Subtest: 证据义务冻结后，相同语义问题不会因改写标题被当成新进展
+ok 1 - 证据义务冻结后，相同语义问题不会因改写标题被当成新进展
+  ---
+  duration_ms: 2.91625
+  type: 'test'
+  ...
+# Subtest: 没有新 Runtime 证据时，Reviewer 新增问题进入仲裁而不是扩大冻结集合
+ok 2 - 没有新 Runtime 证据时，Reviewer 新增问题进入仲裁而不是扩大冻结集合
+  ---
+  duration_ms: 15.378625
+  type: 'test'
+  ...
+# Subtest: 新 Runtime 证据允许吸收新义务，但不会关闭被遗漏的旧义务
+ok 3 - 新 Runtime 证据允许吸收新义务，但不会关闭被遗漏的旧义务
+  ---
+  duration_ms: 0.488209
+  type: 'test'
+  ...
+# Subtest: 交替会诊文本、时间、会话、HEAD 和候选摘要不能在 30 轮内重置策略
+ok 4 - 交替会诊文本、时间、会话、HEAD 和候选摘要不能在 30 轮内重置策略
+  ---
+  duration_ms: 2.209041
+  type: 'test'
+  ...
+# Subtest: 当前候选恢复的验证绑定只登记一次进展，不自动关闭且重复事实不续期
+ok 5 - 当前候选恢复的验证绑定只登记一次进展，不自动关闭且重复事实不续期
+  ---
+  duration_ms: 0.341833
+  type: 'test'
+  ...
+# Subtest: 已解决义务的新文件和反复更换 obligationId 都不能回收策略租约
+ok 6 - 已解决义务的新文件和反复更换 obligationId 都不能回收策略租约
+  ---
+  duration_ms: 0.991542
+  type: 'test'
+  ...
+# Subtest: 决定分类只接受结构化业务差异或外部权限，关键词只是诊断提示
+ok 7 - 决定分类只接受结构化业务差异或外部权限，关键词只是诊断提示
+  ---
+  duration_ms: 0.327333
+  type: 'test'
+  ...
+# Subtest: 未关闭的 user decision 不能被后续 Reviewer 遗漏或改写为 passed 而降权
+ok 8 - 未关闭的 user decision 不能被后续 Reviewer 遗漏或改写为 passed 而降权
+  ---
+  duration_ms: 0.176667
+  type: 'test'
+  ...
+# Subtest: 新 decision_record 分类缺失或冲突被拒绝，旧显式 user authority 保守保留
+ok 9 - 新 decision_record 分类缺失或冲突被拒绝，旧显式 user authority 保守保留
+  ---
+  duration_ms: 0.317875
+  type: 'test'
+  ...
+# Subtest: 失败分类选择不同的自治恢复策略而不是统一 await_user
+ok 10 - 失败分类选择不同的自治恢复策略而不是统一 await_user
+  ---
+  duration_ms: 1.289709
+  type: 'test'
+  ...
+# Subtest: Workflow 证据摘要只投影稳定的任务结果和 Runtime 文件哈希
+ok 11 - Workflow 证据摘要只投影稳定的任务结果和 Runtime 文件哈希
+  ---
+  duration_ms: 0.571667
+  type: 'test'
+  ...
+# Subtest: 稳定义务身份绑定来源、目标和解除条件，不能把同类同节点要求合并
+ok 12 - 稳定义务身份绑定来源、目标和解除条件，不能把同类同节点要求合并
+  ---
+  duration_ms: 0.370375
+  type: 'test'
+  ...
+# Subtest: 展示文案不得参与义务目标或身份，同 ID 的不同合同必须在接收时拒绝
+ok 13 - 展示文案不得参与义务目标或身份，同 ID 的不同合同必须在接收时拒绝
+  ---
+  duration_ms: 0.190584
+  type: 'test'
+  ...
+# Subtest: 严格义务必须有 ID；已见事实不能用新 ID 重新引入已解决的合同
+ok 14 - 严格义务必须有 ID；已见事实不能用新 ID 重新引入已解决的合同
+  ---
+  duration_ms: 0.230667
+  type: 'test'
+  ...
+# Subtest: 不同 obligationId 的同合同要求独立保留，关闭一项不会关闭另一项
+ok 15 - 不同 obligationId 的同合同要求独立保留，关闭一项不会关闭另一项
+  ---
+  duration_ms: 0.178292
+  type: 'test'
+  ...
+# Subtest: 已解决的旧义务重复出现时保持 resolved，不作为新义务重新报告
+ok 16 - 已解决的旧义务重复出现时保持 resolved，不作为新义务重新报告
+  ---
+  duration_ms: 0.094917
+  type: 'test'
+  ...
+# Subtest: 遗漏和 passed 都不能关闭义务；只有 Runtime 核验的当前版本解除证据才能关闭且重复幂等
+ok 17 - 遗漏和 passed 都不能关闭义务；只有 Runtime 核验的当前版本解除证据才能关闭且重复幂等
+  ---
+  duration_ms: 0.234042
+  type: 'test'
+  ...
+# Subtest: 任务验证关闭只接受 Runtime 标记为当前、通过且绑定候选版本的结果
+ok 18 - 任务验证关闭只接受 Runtime 标记为当前、通过且绑定候选版本的结果
+  ---
+  duration_ms: 0.153041
+  type: 'test'
+  ...
+# Subtest: 旧义务缺少关闭合同时保持 open，并拒绝 Reviewer 自报的替代决定
+ok 19 - 旧义务缺少关闭合同时保持 open，并拒绝 Reviewer 自报的替代决定
+  ---
+  duration_ms: 0.066292
+  type: 'test'
+  ...
+# Subtest: 显式 legacy 读取路径保留同一缺关闭合同的已解决义务，不重新引入
+ok 20 - 显式 legacy 读取路径保留同一缺关闭合同的已解决义务，不重新引入
+  ---
+  duration_ms: 0.067458
+  type: 'test'
+  ...
+# Subtest: 旧字符串与问题列表按原文保留不同路径的要求身份
+ok 21 - 旧字符串与问题列表按原文保留不同路径的要求身份
+  ---
+  duration_ms: 0.150458
+  type: 'test'
+  ...
+# Subtest: 结构可执行关闭只依赖 Runtime 记录的任务存在，不将其视为业务完成
+ok 22 - 结构可执行关闭只依赖 Runtime 记录的任务存在，不将其视为业务完成
+  ---
+  duration_ms: 0.137791
+  type: 'test'
+  ...
+# Subtest: 版本化决定必须由 Runtime 当前记录完整绑定，且不同义务 ID 不会共享关闭结果
+ok 23 - 版本化决定必须由 Runtime 当前记录完整绑定，且不同义务 ID 不会共享关闭结果
+  ---
+  duration_ms: 0.364042
+  type: 'test'
+  ...
+# Subtest: decision_record 的 user authority 明确请求用户，同时保留旧问题文本回退
+ok 24 - decision_record 的 user authority 明确请求用户，同时保留旧问题文本回退
+  ---
+  duration_ms: 0.067542
+  type: 'test'
+  ...
+1..24
+# tests 24
+# suites 0
+# pass 24
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 72.181167

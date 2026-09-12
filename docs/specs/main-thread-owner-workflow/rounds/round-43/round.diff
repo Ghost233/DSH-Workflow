@@ -1,0 +1,348 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -588,6 +588,40 @@
+   return state.mainOutbox[notificationId]
+ }
+
++function assertOwnerRecoveryHandoffs(state, taskId, ownerId) {
++  const unresolved = (state.handoffQueue ?? []).some(item => (
++    (item.sourceTaskId ?? item.sourceStageId) === taskId && ['pending', 'planned'].includes(item.status)
++  ))
++  if (state.status === 'blocked' && unresolved) {
++    throw new Error(`Owner ${ownerId} 存在尚未重规划的 handoff，必须先调用 handoff_replan`)
++  }
++}
++
++// Use the same durable Owner/task projection and existing main outbox as the
++// ordinary recovery path. A background dispatch cannot deliver a return value.
++function applyOwnerRecoveryAuthority(state, taskId, ownerId, classified) {
++  const key = ownerRunKey(taskId, ownerId)
++  const record = state.ownerRuns[key]
++  const strategy = 'request_user_authority'
++  const message = record.error ?? record.reason ?? state.error ?? record.status
++  const previous = record.autonomousRecovery
++  const autonomousRecovery = {
++    contract: 'DSH_AUTONOMOUS_RECOVERY_V1', failureClass: classified.class, strategy, message,
++    evidenceDigest: workflowEvidenceDigest(state, state.planningRuntimeFacts),
++    usedStrategies: [...new Set([...(previous?.usedStrategies ?? []), strategy])],
++    fingerprint: failureFingerprint({ workflowId: state.id, planDigest: state.planDigest,
++      taskId, ownerId, failureClass: classified.class, message, strategy }),
++    updatedAt: now(),
++  }
++  state.ownerRuns[key] = { ...record, status: 'blocked', phase: 'awaiting_user_authority', autonomousRecovery }
++  const task = state.tasks?.find(item => item.taskId === taskId)
++  if (task !== undefined) Object.assign(task, { status: 'stopped', executorId: null,
++    unchangedPolls: 0, reason: 'decision_required', action: 'await_user', autonomousRecovery })
++  queueExecutionDeviationDecision(state, taskId, ownerId)
++  state.status = 'running'
++  state.error = undefined
++}
++
+ function currentExecutionDeviationAuthorityGate(state, taskId, ownerId) {
+   const context = ownerExecutionDeviationContext(state, taskId, ownerId)
+   if (context === undefined) return undefined
+@@ -10016,6 +10050,7 @@
+               throw new Error('RecoveryAdmission 当前计划内容摘要不匹配')
+             }
+             if (request?.source?.kind === 'owner_failure') {
++              assertOwnerRecoveryHandoffs(current, request.taskId, request.ownerId)
+               if (current.planApproved !== true || current.planReview?.status !== 'passed'
+                 || current.planReviewDigest !== current.planDigest) {
+                 throw new Error('RecoveryAdmission Owner 失败来源尚未通过当前计划审批')
+@@ -12780,6 +12815,7 @@
+
+                 if (recoveryAdmissionEnabled(current)) {
+                   assertRecoveryAdmissionState(current)
++                  assertOwnerRecoveryHandoffs(current, stageId, ownerId)
+                   if (options.recoverySessionRequest === undefined && ['failed', 'blocked'].includes(latestRecord?.status)) {
+                     throw new Error(`Owner ${ownerId} 的失败重启必须通过 recoverOwner 持久预算领取：${key}`)
+                   }
+@@ -13680,9 +13716,22 @@
+         contract: 'DSH_OWNER_AUTONOMOUS_RECOVERY_PAUSED_V1', workflowId,
+         taskId: stageId, ownerId, strategy, reason,
+       })
+-      if (classified.class === 'external_authority' || task?.action === 'await_user') {
++      if (classified.class === 'external_authority') {
++        await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, undefined, current => {
++          abortIfNeeded(signal)
++          assertWorkflowNotCancelled(current, '恢复 Owner')
++          assertRecoveryAdmissionState(current)
++          const latest = current.ownerRuns?.[key]
++          const authority = classifyFailure(latest?.error ?? latest?.reason ?? '',
++            ownerExecutionDeviationContext(current, stageId, ownerId))
++          if (authority.class !== 'external_authority') throw new Error('用户决策来源已变化，需要重新对账')
++          applyOwnerRecoveryAuthority(current, stageId, ownerId, authority)
++          return { state: current }
++        }))
+         return paused('user_authority_required', 'request_user_authority')
+       }
++      if (task?.action === 'await_user') return paused('user_authority_required', 'request_user_authority')
++      assertOwnerRecoveryHandoffs(state, stageId, ownerId)
+       const existing = record?.recoverySession
+       if (existing !== undefined && existing.phase !== 'settled_failed') {
+         return runtime.reconcileRecoverySession(agent, workflowId, {
+@@ -13702,6 +13751,7 @@
+       if (receipt.outcome === 'rejected') return paused(receipt.reason)
+       // Keep the failed Owner/source untouched. Only reopen the task's runnable
+       // projection after the durable admission, under a fresh state transaction.
++      let authorityRequired = false
+       await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, undefined, current => {
+         abortIfNeeded(signal)
+         assertWorkflowNotCancelled(current, '恢复 Owner')
+@@ -13713,11 +13763,15 @@
+           throw new Error('恢复来源已变化，不能按旧领取重新激活任务')
+         }
+         const currentTask = current.tasks?.find(item => item.taskId === stageId)
+-        if (classifyFailure(latest.error ?? latest.reason ?? '',
+-          ownerExecutionDeviationContext(current, stageId, ownerId)).class === 'external_authority'
+-          || currentTask?.action === 'await_user') {
+-          throw new Error('恢复来源现在需要用户决定，已领取额度保留且不启动')
+-        }
++        const authority = classifyFailure(latest.error ?? latest.reason ?? '',
++          ownerExecutionDeviationContext(current, stageId, ownerId))
++        if (authority.class === 'external_authority') {
++          applyOwnerRecoveryAuthority(current, stageId, ownerId, authority)
++          authorityRequired = true
++          return { state: current }
++        }
++        if (currentTask?.action === 'await_user') throw new Error('恢复来源现在需要用户决定，已领取额度保留且不启动')
++        assertOwnerRecoveryHandoffs(current, stageId, ownerId)
+         if (['failed', 'blocked'].includes(current.status)) {
+           current.status = 'running'
+           current.error = undefined
+@@ -13729,6 +13783,7 @@
+         }
+         return { state: current }
+       }))
++      if (authorityRequired) return paused('user_authority_required', 'request_user_authority')
+       return runtime.reconcileRecoverySession(agent, workflowId, {
+         contract: 'DSH_RECOVERY_SESSION_REQUEST_V1', taskId: stageId, ownerId,
+         requestId: receipt.requestId,
+@@ -13743,9 +13798,8 @@
+         throw new Error(`Owner ${ownerId} 当前仍有控制桥运行，不能重复恢复：${key}`)
+       }
+       const revisionSnapshot = await readState(runtime, root, workflowId)
+-      if (recoveryAdmissionEnabled(revisionSnapshot)) {
+-        return runtime.recoverOwnerWithAdmission(agent, workflowId, stageId, ownerId, signal)
+-      }
++      const protectedRecovery = recoveryAdmissionEnabled(revisionSnapshot)
++      if (protectedRecovery) assertRecoveryAdmissionState(revisionSnapshot)
+       const revisionTask = revisionSnapshot.plan?.tasks?.find(item => item.id === stageId)
+       const revisionTaskState = revisionSnapshot.tasks?.find(item => item.taskId === stageId)
+       const abortedRevisionAttempt = revisionTask?.ownerId === ownerId
+@@ -13757,6 +13811,10 @@
+         return runtime.withOwnerLease(root, abortedOwnerId, workflowId, stageId, signal, (lease, leaseSignal) => (
+           runtime.withWorkflowLock(workflowId, async () => {
+             const state = await readState(runtime, root, workflowId)
++            if (recoveryAdmissionEnabled(state) !== protectedRecovery) {
++              throw new Error('恢复协议已变化，必须重新读取当前恢复现场')
++            }
++            if (protectedRecovery) assertRecoveryAdmissionState(state)
+             const task = state.plan?.tasks?.find(item => item.id === stageId)
+             const taskState = state.tasks?.find(item => item.taskId === stageId)
+             if (task?.ownerId !== ownerId
+@@ -13802,6 +13860,12 @@
+           })
+         ))
+       }
++      const revisionRecord = revisionSnapshot.ownerRuns?.[key]
++      const finishOnly = revisionRecord?.recoverySession === undefined
++        && ['completed', 'awaiting_finish', 'committed'].includes(revisionRecord?.status)
++      if (protectedRecovery && !finishOnly) {
++        return runtime.recoverOwnerWithAdmission(agent, workflowId, stageId, ownerId, signal)
++      }
+       let resumedMemoryCompilation = false
+       let pausedAutonomousRecovery
+       await runtime.withWorkflowLock(workflowId, async () => {
+@@ -13819,6 +13883,16 @@
+         const task = state.plan?.tasks?.find(item => item.id === stageId)
+         if (task === undefined) throw new Error(`找不到 task：${stageId}`)
+         const record = state.ownerRuns?.[key]
++        if (recoveryAdmissionEnabled(state) !== protectedRecovery) {
++          throw new Error('恢复协议已变化，必须重新读取当前恢复现场')
++        }
++        if (protectedRecovery) {
++          assertRecoveryAdmissionState(state)
++          if (record?.recoverySession !== undefined
++            || !['completed', 'awaiting_finish', 'committed'].includes(record?.status)) {
++            throw new Error('恢复来源已变化，必须重新对账，不能按旧结算现场恢复')
++          }
++        }
+         if (record?.status === 'completed') return
+         if (record === undefined) throw new Error(`没有找到可恢复的 Owner 运行记录：${key}`)
+         const recoveryFingerprint = runtime.ownerRecoveryFingerprint(
+@@ -13914,13 +13988,7 @@
+           }
+           return
+         }
+-        const unresolvedHandoff = (state.handoffQueue ?? []).some(item => (
+-          (item.sourceTaskId ?? item.sourceStageId) === stageId
+-          && ['pending', 'planned'].includes(item.status)
+-        ))
+-        if (state.status === 'blocked' && unresolvedHandoff) {
+-          throw new Error(`Owner ${ownerId} 存在尚未重规划的 handoff，必须先调用 handoff_replan`)
+-        }
++        assertOwnerRecoveryHandoffs(state, stageId, ownerId)
+         if (record.status === 'awaiting_finish' || record.status === 'committed') {
+           if (state.status === 'failed') {
+             const pendingMerge = state.pendingTaskMerge
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -117,3 +117,157 @@
+   assert.deepEqual(calls, { create: 2, resume: 0 })
+   assert.equal(f.adapter.requests.length, 4)
+ })
++
++async function admitAuthorityFailure(f) {
++  let state = await mutateRecoverySessionState(f, s => {
++    const record = s.ownerRuns['T1:api']
++    record.status = 'running'
++    record.ownerId = 'api'
++    record.stageId = 'T1'
++    record.planDigest = s.planDigest
++    s.tasks.find(item => item.taskId === 'T1').status = 'running'
++  })
++  const owner = state.plan.owners.find(item => item.id === 'api')
++  const record = state.ownerRuns['T1:api']
++  const acquired = await f.runtime.acquireOwnerLease(f.root, 'api', f.workflowId, 'T1')
++  f.runtime.activeOwners.set(record.sessionId, { workflowRoot: f.root, workflowId: f.workflowId,
++    stageId: 'T1', owner, sessionId: record.sessionId, lease: acquired.lease,
++    attempt: record.attempt, planDigest: state.planDigest,
++    authority: { id: owner.id, name: owner.name, description: owner.description, scope: [...owner.scope], exclude: [...owner.exclude] },
++  })
++  try {
++    await f.runtime.recordOwnerExecutionDeviation({ expected: 'Read the ledger', actual: 'Permission denied',
++      evidence: [{ kind: 'service_response', detail: 'Missing read:ledger scope' }],
++      technical_facts: ['The current operation requires read:ledger'],
++      external_permission_gap: { required_permission: 'read:ledger', target: 'remote-ledger', blocked_action: 'Read ledger' },
++    }, { agent: { id: record.sessionId } })
++  } finally {
++    f.runtime.activeOwners.delete(record.sessionId)
++    await f.runtime.releaseOwnerLease(acquired.lease)
++  }
++  return mutateRecoverySessionState(f, s => {
++    s.status = 'failed'
++    s.ownerRuns['T1:api'].status = 'failed'
++    s.ownerRuns['T1:api'].error = 'Permission denied by the service'
++    Object.assign(s.tasks.find(item => item.taskId === 'T1'), { status: 'stopped', action: 'retry_runtime' })
++  })
++}
++
++test('T15 public background recovery persists and delivers a newly classified user decision', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true })
++  const before = await admitAuthorityFailure(f)
++  assert.equal(before.mainOutbox, undefined)
++  const calls = observe(f)
++  const dispatch = await f.runtime.dispatchOwnerRecovery(f.admissionAgent, f.workflowId, 'T1', 'api')
++  assert.equal(dispatch.status, 'recovery_started')
++  const pending = f.runtime.manualOwnerRecoveries.get(`${f.workflowId}:T1:api`)
++  assert.ok(pending)
++  await pending
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.status, 'running')
++  assert.equal(state.ownerRuns['T1:api'].phase, 'awaiting_user_authority')
++  assert.equal(state.tasks.find(item => item.taskId === 'T1').action, 'await_user')
++  assert.deepEqual(state.tasks.find(item => item.taskId === 'T2'), before.tasks.find(item => item.taskId === 'T2'))
++  assert.equal(state.recoveryAdmission, undefined)
++  assert.deepEqual(calls, { create: 0, resume: 0 })
++  assert.equal(f.adapter.requests.length, 0)
++  const notifications = Object.values(state.mainOutbox)
++  assert.equal(notifications.length, 1)
++  const deliveries = []
++  f.admissionAgent.followup = message => deliveries.push(message)
++  await f.runtime.deliverMainOutbox(f.admissionAgent, f.workflowId, notifications[0].notificationId)
++  assert.equal(deliveries.length, 1)
++  assert.equal(JSON.parse(deliveries[0].content[0].text).classificationBasis.externalPermissionGap.requiredPermission, 'read:ledger')
++})
++
++for (const afterAdmission of [false, true]) {
++  test(`T15 unresolved handoff ${afterAdmission ? 'appearing after' : 'before'} admission prevents execution`, async t => {
++    const f = await createRecoverySessionFixture(t, { executable: true })
++    const inject = () => mutateRecoverySessionState(f, s => {
++      s.status = 'blocked'
++      s.handoffQueue = [{ sourceTaskId: 'T1', status: 'pending' }]
++    })
++    let boundary
++    if (afterAdmission) {
++      const reserve = f.runtime.reserveRecoveryAdmission.bind(f.runtime)
++      f.runtime.reserveRecoveryAdmission = async (...args) => {
++        const receipt = await reserve(...args)
++        boundary = await inject()
++        return receipt
++      }
++    } else boundary = await inject()
++    const calls = observe(f)
++    await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), /handoff_replan/u)
++    const state = await readRecoverySessionState(f)
++    assert.deepEqual(state, boundary)
++    assert.equal(state.recoveryAdmission?.budget.totalUsed ?? 0, afterAdmission ? 1 : 0)
++    assert.equal(state.ownerRuns['T1:api'].recoverySession, undefined)
++    assert.deepEqual(calls, { create: 0, resume: 0 })
++    assert.equal(f.adapter.requests.length, 0)
++  })
++}
++
++function completedModel({ toolCallResponse, textResponse }) {
++  return [toolCallResponse('t15-completed', 'owner_submit', { report: {
++    contract: 'DSH_OWNER_RESULT_V1', status: 'completed', summary: 'Completed the current task.',
++    changes: [], tests: [], handoffs: [], memory_updates: [],
++  } }), textResponse('reported'),
++  textResponse(JSON.stringify({ contract: 'DSH_OWNER_MEMORY_CURATOR_V1', summary: 'No knowledge pages needed.', pages: [] })),
++  textResponse(JSON.stringify({ contract: 'DSH_OWNER_MEMORY_REVIEW_V1', status: 'passed', summary: 'Empty bundle is valid.', issues: [] })),
++  ]
++}
++
++for (const status of ['awaiting_finish', 'committed']) {
++  test(`T15 protected ordinary ${status} result can finish without a recovery debit`, async t => {
++    const f = await createRecoverySessionFixture(t, { executable: true, modelScript: completedModel })
++    await mutateRecoverySessionState(f, s => { delete s.ownerRuns['T1:api'] })
++    await f.runtime.runExternalOwner(f.admissionAgent, f.workflowId, 'T1', 'api', undefined, { deferFinish: true })
++    if (status === 'committed') await mutateRecoverySessionState(f, s => { s.ownerRuns['T1:api'].status = status })
++    const synced = await readRecoverySessionState(f)
++    assert.equal(synced.ownerRuns['T1:api'].status, status)
++    assert.equal(synced.ownerRuns['T1:api'].recoverySession, undefined)
++    const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
++    const state = await readRecoverySessionState(f)
++    assert.equal(state.ownerRuns['T1:api'].status, 'completed')
++    assert.equal(result.commitSha, synced.ownerRuns['T1:api'].result.commitSha)
++    assert.equal(state.recoveryAdmission, undefined)
++    assert.equal(f.adapter.requests.length, 4)
++  })
++}
++
++test('T15 protected PlanRevision abort with no Owner record keeps the reset path', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  await mutateRecoverySessionState(f, s => {
++    delete s.ownerRuns['T1:api']
++    Object.assign(s.tasks.find(item => item.taskId === 'T1'), { revisionDisposition: 'abort', checkState: 'invalid' })
++  })
++  const calls = observe(f)
++  const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
++  assert.equal(result.contract, 'DSH_PLAN_REVISION_ABORTED_TASK_RESET_V1')
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.tasks.find(item => item.taskId === 'T1').status, 'pending')
++  assert.equal(state.tasks.find(item => item.taskId === 'T1').checkState, null)
++  assert.equal(state.recoveryAdmission, undefined)
++  assert.deepEqual(calls, { create: 0, resume: 0 })
++  assert.equal(f.adapter.requests.length, 0)
++})
++
++test('T15 stale finish-only snapshot cannot send a newly failed record through legacy recovery', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  await mutateRecoverySessionState(f, s => { s.ownerRuns['T1:api'].status = 'awaiting_finish' })
++  const lock = f.runtime.withWorkflowLock.bind(f.runtime)
++  let injected = false
++  let boundary
++  f.runtime.withWorkflowLock = async (...args) => {
++    if (!injected) {
++      injected = true
++      boundary = await mutateRecoverySessionState(f, s => { s.ownerRuns['T1:api'].status = 'failed' })
++    }
++    return lock(...args)
++  }
++  const calls = observe(f)
++  await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), /恢复来源已变化/u)
++  assert.deepEqual(await readRecoverySessionState(f), boundary)
++  assert.deepEqual(calls, { create: 0, resume: 0 })
++  assert.equal(f.adapter.requests.length, 0)
++})

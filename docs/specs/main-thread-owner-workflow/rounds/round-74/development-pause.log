@@ -1,0 +1,32 @@
+✔ T15 socket admission refusal with no independent task persists one notice, then daemon discovery and fresh Harness wait (1894.776917ms)
+✔ T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses (1770.22675ms)
+✔ T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer (1076.293083ms)
+✔ T15 an authoritative user-wait task projection takes priority over a candidate technical pause (1021.041542ms)
+✔ T15 stale admission failure cannot pause a concurrently changed candidate parent (1113.236916ms)
+✔ T15 stale admission failure cannot pause a concurrently changed candidate review (1606.617792ms)
+✔ T15 stale admission failure cannot pause a concurrently changed candidate plan content (1734.501459ms)
+✔ T15 first uncertain real Reviewer creation persists pause despite its own new operation and session (1464.189292ms)
+✔ T15 a delivered candidate pause with an obsolete Review digest cannot discover, drive, or reserve work (1927.185209ms)
+✔ T15 a approval change between candidate dispatch and reserve rejects the latest transaction without target writes (1860.466208ms)
+✔ T15 a Review result change between candidate dispatch and reserve rejects the latest transaction without target writes (1518.731167ms)
+✔ T15 a live Registry drift after independent claim pauses only that reservation before an Owner exists (1420.146875ms)
+✔ T15 daemon discovery drives one independent candidate through socket verification, merge, and terminal quiescence (3514.802542ms)
+✔ T15 fresh Harness resumes a persisted candidate reservation with no Owner history (3427.924542ms)
+✔ T15 fresh Harness leaves candidate launching as a stable non-dispatch wait (1238.946292ms)
+✔ T15 fresh Harness leaves candidate unknown Owner history as a stable non-dispatch wait (1138.3365ms)
+✔ T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness (1228.813042ms)
+✔ T15 candidate replacement invalidates persisted reservation replay (1605.146875ms)
+✔ T15 a stale create action cannot overwrite a newly arrived Owner history (1169.080042ms)
+✔ T15 candidate replacement before reservation rejects the stale create action without task writes (1106.986375ms)
+✔ T15 public and direct Owner entry points cannot bypass a candidate reservation (1216.166083ms)
+✔ T15 reservation replay rejects persisted stopped task before neutralizing its projection (1086.839625ms)
+✔ T15 reservation replay rejects persisted completed task before neutralizing its projection (1100.758375ms)
+✔ T15 Owner startup rechecks a reservation arriving after its initial read (1105.572417ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 37636.270333

@@ -1,0 +1,99 @@
+{
+  "replayerPid": 40815,
+  "result": {
+    "contract": "DSH_RECOVERY_SESSION_RESULT_V1",
+    "outcome": "settled_succeeded",
+    "phase": "settled_succeeded",
+    "workflowId": "wf-recovery-session",
+    "taskId": "T1",
+    "ownerId": "api",
+    "rootProblemId": "recovery-root-40e8e7e0-9cb0-4157-9dc5-d4e6fc48de65",
+    "requestId": "recovery-request-5874db00-9c4f-4498-8c5b-0c14ffd752a1",
+    "attemptId": "recovery-attempt-f2632310-1b36-43ed-8a0e-2b32911b8fac",
+    "executionIdentity": {
+      "sessionId": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a",
+      "promptId": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d"
+    },
+    "successReceipt": {
+      "executionRef": {
+        "id": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a",
+        "version": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d"
+      },
+      "result": {
+        "status": "succeeded",
+        "reference": {
+          "id": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d",
+          "version": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a"
+        }
+      },
+      "commitSha": "8aa1b3d27c5598b0555d4218edfa3261635df586",
+      "workflowHead": "81dc472a9659044520bd0f5cad943a842704714a"
+    }
+  },
+  "modelRequests": 0,
+  "agentOperations": {
+    "create": 0,
+    "resume": 0,
+    "followup": 0
+  },
+  "beforeCheckpoint": {
+    "phase": "settled_succeeded",
+    "ownerStatus": "completed",
+    "budgetAttempt": {
+      "workflowId": "wf-recovery-session",
+      "rootProblemId": "recovery-root-40e8e7e0-9cb0-4157-9dc5-d4e6fc48de65",
+      "requestId": "recovery-request-5874db00-9c4f-4498-8c5b-0c14ffd752a1",
+      "attemptId": "recovery-attempt-f2632310-1b36-43ed-8a0e-2b32911b8fac",
+      "taskId": "T1",
+      "ownerId": "api",
+      "executionVersion": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+      "state": "settled",
+      "executionRef": {
+        "id": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a",
+        "version": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d"
+      },
+      "result": {
+        "status": "succeeded",
+        "reference": {
+          "id": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d",
+          "version": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a"
+        }
+      }
+    },
+    "modelRequests": 0,
+    "executionIdentity": {
+      "sessionId": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a",
+      "promptId": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d"
+    }
+  },
+  "afterCheckpoint": {
+    "phase": "settled_succeeded",
+    "ownerStatus": "completed",
+    "budgetAttempt": {
+      "workflowId": "wf-recovery-session",
+      "rootProblemId": "recovery-root-40e8e7e0-9cb0-4157-9dc5-d4e6fc48de65",
+      "requestId": "recovery-request-5874db00-9c4f-4498-8c5b-0c14ffd752a1",
+      "attemptId": "recovery-attempt-f2632310-1b36-43ed-8a0e-2b32911b8fac",
+      "taskId": "T1",
+      "ownerId": "api",
+      "executionVersion": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+      "state": "settled",
+      "executionRef": {
+        "id": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a",
+        "version": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d"
+      },
+      "result": {
+        "status": "succeeded",
+        "reference": {
+          "id": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d",
+          "version": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a"
+        }
+      }
+    },
+    "modelRequests": 0,
+    "executionIdentity": {
+      "sessionId": "recovery-session-6f97dd1c-778b-4535-b5e0-16e973d2863a",
+      "promptId": "recovery-prompt-ab82fe11-7cae-42b8-86ff-ff8369a3ed2d"
+    }
+  }
+}

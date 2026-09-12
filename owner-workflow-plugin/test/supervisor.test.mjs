@@ -14,7 +14,7 @@ function owner(id) {
   return { id, name: id, description: `${id} Owner`, scope: [`src/${id}/**`], exclude: [] }
 }
 
-function task(id, role, dependsOn = [], ownerId = 'api') {
+function task(id, role, dependsOn = [], ownerId = 'api', resources) {
   return {
     id,
     role,
@@ -24,6 +24,7 @@ function task(id, role, dependsOn = [], ownerId = 'api') {
     write: role === 'work' ? [`src/${ownerId}/${id}.mjs`] : [],
     verify: ['unit'],
     done: [`${id} 完成`],
+    ...(resources === undefined ? {} : { resources }),
   }
 }
 
@@ -94,6 +95,68 @@ test('不同 Owner 的任务仍可占用不同并行槽位', () => {
   assert.deepEqual(wait.watches.map(item => item.taskId), ['T1', 'T2'])
 })
 
+test('相同执行资源只派发一个 Owner，并继续选择无冲突任务填充槽位', () => {
+  const state = workflowState([
+    { ...task('T1', 'work', [], 'api', ['tcp:localhost:5432']), priority: 90 },
+    { ...task('T2', 'work', [], 'web', ['tcp:localhost:5432']), priority: 80 },
+    { ...task('T3', 'work', [], 'worker', ['build-cache:flutter']), priority: 70 },
+  ], 3)
+
+  const action = supervisorNext(state, CLOCK)
+  assert.equal(action.action, 'create')
+  assert.deepEqual(action.tasks.map(item => item.taskId), ['T1', 'T3'])
+  assert.deepEqual(action.tasks[0].resources, ['tcp:localhost:5432'])
+})
+
+test('运行任务和外部reservation都阻止相同资源的新任务', () => {
+  const tasks = [
+    task('T1', 'work', [], 'api', ['db:test']),
+    task('T2', 'work', [], 'web', ['db:test']),
+    task('T3', 'work', [], 'worker', ['build-cache:flutter']),
+  ]
+  const state = workflowState(tasks, 3)
+  state.tasks[0] = { ...state.tasks[0], status: 'running', executorId: 'agent-api', cursor: 'c1' }
+  state.externalOccupiedSlots = 1
+  state.externalBusyOwnerIds = []
+  state.externalBusyResourceIds = ['build-cache:flutter']
+
+  const action = supervisorNext(state, CLOCK)
+  assert.equal(action.action, 'wait')
+  assert.deepEqual(action.watches.map(item => item.taskId), ['T1'])
+})
+
+test('恢复状态中两个运行任务占用相同资源时关闭处理', () => {
+  const state = workflowState([
+    task('T1', 'work', [], 'api', ['db:test']),
+    task('T2', 'work', [], 'web', ['db:test']),
+  ], 2)
+  state.tasks = state.tasks.map((record, index) => ({
+    ...record,
+    status: 'running',
+    executorId: `agent-${index}`,
+    cursor: `c${index}`,
+  }))
+  assert.throws(() => supervisorNext(state, CLOCK), /重复占用资源：db:test/u)
+})
+
+test('公共Owner判断reservation占用Supervisor槽位并阻止同Owner写任务', () => {
+  const state = workflowState([
+    task('T1', 'work', [], 'api'),
+    task('T2', 'work', [], 'web'),
+    task('T3', 'work', [], 'worker'),
+  ], 2)
+  state.externalOccupiedSlots = 1
+  state.externalBusyOwnerIds = ['api']
+  const receipt = supervisorNext(state, CLOCK)
+  assert.equal(receipt.action, 'create')
+  assert.deepEqual(receipt.tasks.map(item => item.taskId), ['T2'])
+
+  assert.throws(() => supervisorNext({
+    ...state,
+    externalOccupiedSlots: 3,
+  }, CLOCK), /外部reservation数量不能超过/u)
+})
+
 test('Supervisor wait 确认保留 Owner 提交关卡写入的验证证据', () => {
   const state = workflowState([task('T1', 'work')])
   state.tasks[0] = {
@@ -114,6 +177,32 @@ test('Supervisor wait 确认保留 Owner 提交关卡写入的验证证据', () 
   assert.deepEqual(acknowledged.tasks[0].verificationResults, {
     unit: { planDigest: 'plan-digest', passed: true, exitCode: 0 },
   })
+})
+
+test('Supervisor ACK 保留自治恢复策略和证据租约', () => {
+  const state = workflowState([task('T1', 'work')])
+  state.tasks[0] = {
+    ...state.tasks[0],
+    status: 'running',
+    executorId: 'owner-1',
+    autonomousRecovery: {
+      contract: 'DSH_AUTONOMOUS_RECOVERY_V1',
+      failureClass: 'runtime_environment',
+      strategy: 'diagnose',
+      message: 'tsc command not found',
+      evidenceDigest: 'evidence-a',
+      usedStrategies: ['repair_runtime', 'diagnose'],
+      updatedAt: CLOCK,
+    },
+  }
+
+  const wait = supervisorNext(state, CLOCK)
+  const acknowledged = acknowledge(state, wait, {
+    tasks: [{ taskId: 'T1', status: 'running', executorId: 'owner-1' }],
+  })
+
+  assert.equal(acknowledged.tasks[0].autonomousRecovery.strategy, 'diagnose')
+  assert.deepEqual(acknowledged.tasks[0].autonomousRecovery.usedStrategies, ['repair_runtime', 'diagnose'])
 })
 
 test('同一 Owner 的 ready task 每批最多派发一个，其余保持 pending', () => {
@@ -402,6 +491,74 @@ test('Supervisor ready 投影只派发 Composite entry/内部节点，exit 完�
   assert.equal(state.tasks.find(item => item.taskId === 'T2').status, 'completed')
   receipt = supervisorNext(state, CLOCK)
   assert.equal(receipt.tasks.some(item => item.taskId === 'T3'), true)
+})
+
+test('递归 Composite 叶子必须等待所有祖先的外部依赖', () => {
+  const base = plan([
+    task('T1', 'work', [], 'api'),
+    task('T2', 'work', ['T1'], 'api'),
+    task('T3', 'work', ['T2'], 'web'),
+  ])
+  const first = expandCompositeTask(base, 'T2', {
+    children: [task('T2-1', 'work', [], 'api')],
+    entry: ['T2-1'],
+    exit: ['T2-1'],
+  })
+  const second = expandCompositeTask(first, 'T2-1', {
+    children: [task('T2-1-1', 'work', [], 'api')],
+    entry: ['T2-1-1'],
+    exit: ['T2-1-1'],
+  })
+  const state = {
+    id: 'workflow-nested-composite',
+    revision: 0,
+    plan: second,
+    tasks: createTaskState(second),
+    config: { parallel: 2 },
+  }
+
+  const firstReceipt = supervisorNext(state, CLOCK)
+  assert.deepEqual(firstReceipt.tasks.map(item => item.taskId), ['T1'])
+  assert.equal(firstReceipt.tasks.some(item => item.taskId === 'T2-1-1'), false)
+})
+
+test('Supervisor 拒绝执行 abstract DAG，但进度投影保留拆分信息', () => {
+  const abstractPlan = {
+    contract: 'DSH_PLAN_V2',
+    registryDigest: 'a'.repeat(64),
+    summary: '待递归拆分的计划',
+    owners: [owner('api')],
+    verifications: [],
+    tasks: [{
+      id: 'T1',
+      role: 'work',
+      ownerId: 'api',
+      title: '调查并拆分边界',
+      dependsOn: [],
+      write: [],
+      verify: [],
+      done: ['子图已生成'],
+      decomposition: {
+        status: 'abstract',
+        kind: 'discovery',
+        outcome: '生成可执行子图',
+        ownerCandidates: ['api'],
+        unknowns: ['真实文件边界'],
+      },
+    }],
+  }
+  const state = {
+    id: 'workflow-abstract',
+    revision: 0,
+    plan: abstractPlan,
+    tasks: createTaskState(abstractPlan),
+    config: { parallel: 1 },
+  }
+
+  assert.throws(() => supervisorNext(state, CLOCK), /abstract|渐进式 DAG/u)
+  const progress = projectProgress(state)
+  assert.equal(progress.tasks[0].decomposition.status, 'abstract')
+  assert.deepEqual(progress.tasks[0].decomposition.unknowns, ['真实文件边界'])
 })
 
 test('Revision 切换阻塞指定任务并在 ACK 后保留待检查元数据', () => {

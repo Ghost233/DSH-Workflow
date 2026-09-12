@@ -1,0 +1,16 @@
+{
+  "before": {
+    "head": "9fa8e0a3c8044fab62737fe2d3774f7b64ee570c",
+    "branch": "dev",
+    "index": "73e39859416c20219e99bf1d2c39a42cd38caaec015f22fb4dede3fc51cbec18",
+    "staged": "diff --git a/docs/specs/proof/spec.md b/docs/specs/proof/spec.md\nnew file mode 100644\nindex 0000000..7f6be6a\n--- /dev/null\n+++ b/docs/specs/proof/spec.md\n@@ -0,0 +1,11 @@\n+---\n+planning_document: DSH_PLANNING_DOCUMENT_V1\n+document_kind: spec\n+document_id: SPEC-07\n+document_revision: R1\n+planning_declaration: {\"id\":\"SPEC-07\",\"revision\":\"R1\",\"acceptanceCriteria\":[\"AC-01\"],\"contracts\":[{\"id\":\"K1\",\"revision\":\"v1\"}]}\n+---\n+\n+# SPEC-07\n+\n+T07 reference-bound behavior.",
+    "status": "A  docs/specs/proof/spec.md\n?? docs/specs/proof/tickets/T1.md"
+  },
+  "after": {
+    "head": "9fa8e0a3c8044fab62737fe2d3774f7b64ee570c",
+    "branch": "dev",
+    "index": "73e39859416c20219e99bf1d2c39a42cd38caaec015f22fb4dede3fc51cbec18",
+    "staged": "diff --git a/docs/specs/proof/spec.md b/docs/specs/proof/spec.md\nnew file mode 100644\nindex 0000000..7f6be6a\n--- /dev/null\n+++ b/docs/specs/proof/spec.md\n@@ -0,0 +1,11 @@\n+---\n+planning_document: DSH_PLANNING_DOCUMENT_V1\n+document_kind: spec\n+document_id: SPEC-07\n+document_revision: R1\n+planning_declaration: {\"id\":\"SPEC-07\",\"revision\":\"R1\",\"acceptanceCriteria\":[\"AC-01\"],\"contracts\":[{\"id\":\"K1\",\"revision\":\"v1\"}]}\n+---\n+\n+# SPEC-07\n+\n+T07 reference-bound behavior.",
+    "status": "A  docs/specs/proof/spec.md\n?? docs/specs/proof/tickets/T1.md"
+  }
+}

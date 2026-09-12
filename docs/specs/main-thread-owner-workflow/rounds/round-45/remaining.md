@@ -1,0 +1,9 @@
+# T15剩余入口（未完成）
+
+- recoverWorkflow仍会把Owner失败来源改pending，pendingTaskMerge/finishableTask绕过恢复会话对账。需按新协议接保护分流，不能让whole-workflow恢复清空owner_failure来源。
+- awaitSupervisorEvent旧timeout会改Owner pending并发出未等待结算的cancel；T15需先阻断绕预算再入，并绑定真实可恢复terminal来源。完整deadline/终止结算由T16证明、T17实施，不得以保守暂停冒充完整自动超时恢复。
+- Supervisor占槽投影与超时/watch观察需共同核验：新投影把持久pending恢复任务计为running槽位；旧timeout循环只处理物理running，不能对未处理项不断发超时事件。
+- 主控制、直接recover、Supervisor额度耗尽/真实用户待决的持久投影尚须统一，保证有限自治故障不被当用户授权；R45仅证明Supervisor总额耗尽时独立T2实际首次执行成功。
+- 真正启动外部工作的局部replan应使用obligation来源领取，不得外层内层双扣。
+
+T15继续开发中，T16可独立推进，T17/T18/T19及CA01未完成。R45的局部通过不解除上述要求。

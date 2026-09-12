@@ -1,0 +1,248 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { project, planningManifest, planningContent, sha256, git, observe } from './fixtures.mjs'
+import { recordPlanningWrite, runPlanningTransaction, initializeProofState, readProofState, classifyReceipt } from './transaction.mjs'
+const exec = promisify(execFile)
+const worker = fileURLToPath(new URL('./worker.mjs', import.meta.url))
+const token = value => sha256(value)
+async function fixture(t) {
+  const f = await project(t); f.tempRoot = f.root
+  await initializeProofState(f)
+  const manifest = planningManifest(), receipts = []
+  for (const [d, kind] of [[manifest.spec, 'spec'], ...manifest.tickets.map(d => [d, 'ticket'])]) {
+    const content = planningContent(d, kind)
+    receipts.push(await recordPlanningWrite({ ...f, path: d.path, content, source: { authorizationId: 'AUTH1', sourceId: 'MAIN1' } }))
+    d.sha256 = sha256(content)
+  }
+  const request = { contract: 'DSH_PLANNING_TRANSACTION_REQUEST_V1', id: 'TX1', reason: 'T07 authorized planning checkpoint', expected: { branch: f.branch, head: f.baseHead }, manifest,
+    writeReceiptIds: receipts.map(x => x.id), authorization: { contract: 'DSH_PLANNING_AUTHORIZATION_V1', id: 'AUTH1', sourceId: 'MAIN1', allowedPaths: [manifest.spec.path, ...manifest.tickets.map(d => d.path)], status: 'approved' },
+    parent: { executionVersionId: null, registryDigest: token('registry'), dagDigest: token('dag'), review: { id: 'REVIEW1', digest: token('review'), status: 'passed' } },
+    activation: { id: 'V1', expectedParentExecutionVersionId: null, authorizationId: 'AUTH1' } }
+  return { ...f, request, run: options => runPlanningTransaction({ ...f, request, ...options }) }
+}
+async function evidence(name, value) {
+  if (!process.env.T07_EVIDENCE_DIR) return
+  await mkdir(process.env.T07_EVIDENCE_DIR, { recursive: true })
+  await writeFile(join(process.env.T07_EVIDENCE_DIR, `${name}.json`), JSON.stringify(value, null, 2))
+}
+async function verifyCompleted(f, result) {
+  const current = await observe(f.root)
+  assert.equal(current.branch, 'dev')
+  assert.equal(current.head, result.checkpointCommit)
+  assert.equal(current.staged, '')
+  assert.equal(current.status.split('\n').filter(line => line !== '?? .dsh-workflow/.gitignore').join('\n'), '')
+  assert.equal(await git(f.root, 'rev-list', '--count', 'HEAD'), '2')
+  assert.deepEqual((await git(f.root, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD')).split('\n').sort(), f.request.authorization.allowedPaths.toSorted())
+  for (const d of [f.request.manifest.spec, ...f.request.manifest.tickets]) {
+    const bytes = await readFile(join(f.root, d.path))
+    assert.equal(sha256(bytes), d.sha256)
+    // git helper strips trailing newlines; compare equally without changing hash evidence.
+    assert.equal(await git(f.root, 'show', `HEAD:${d.path}`), bytes.toString('utf8').trimEnd())
+  }
+  const state = await readProofState(f)
+  assert.equal(state.snapshots.length, 1)
+  assert.ok(state.activation.current)
+  return { current, state, result }
+}
+
+test('T07 real document checkpoint restores existing clean-base preflight and replays one commit', async t => {
+  const f = await fixture(t)
+  const { createOwnerWorkflowRuntime } = await import('../../../../../owner-workflow-plugin/src/runtime.mjs')
+  const runtime = createOwnerWorkflowRuntime({}, {}); t.after(() => runtime.dispose())
+  const agent = { id: 'main', session: { id: 'main', header: { cwd: f.root } }, ctx: { get: () => undefined } }
+  assert.equal((await runtime.preflightWorkflow(agent)).canStart, false)
+  const result = await f.run(), settled = await verifyCompleted(f, result)
+  assert.equal((await runtime.preflightWorkflow(agent)).canStart, true)
+  const before = await observe(f.root), replay = await f.run()
+  assert.equal(replay.checkpointCommit, result.checkpointCommit)
+  assert.deepEqual(await observe(f.root), before)
+  await evidence('normal', settled)
+})
+
+for (const stage of ['before-commit', 'after-commit', 'before-snapshot', 'after-snapshot', 'before-activation', 'after-activation']) test(`T07 SIGKILL ${stage} resumes in a new process without a second commit`, { timeout: 30_000 }, async t => {
+  const f = await fixture(t), input = join(f.root, '.git/request.json')
+  await writeFile(input, JSON.stringify({ root: f.root, tempRoot: f.tempRoot, request: f.request }))
+  const before = await observe(f.root)
+  let killed
+  try { await exec(process.execPath, [worker, input, stage], { timeout: 20_000 }); assert.fail('fault worker returned normally') }
+  catch (error) { assert.equal(error.signal, 'SIGKILL', error.stderr ?? error.message); killed = { signal: error.signal, stdout: error.stdout, stderr: error.stderr } }
+  const interrupted = await observe(f.root), durable = await readProofState(f)
+  if (stage !== 'after-activation') assert.equal(durable.activation.current, null)
+  const { stdout } = await exec(process.execPath, [worker, input], { timeout: 20_000 })
+  const result = JSON.parse(stdout.trim().split('\n').at(-1))
+  const completed = await verifyCompleted(f, result)
+  await evidence(stage, { before, killed, interrupted, durable, ...completed })
+})
+
+for (const scenario of ['staged-code', 'staged-document', 'untracked-code', 'modified-code', 'same-file-edit', 'wrong-head', 'wrong-branch', 'missing-source', 'wrong-authority', 'legacy-authority']) test(`T07 ${scenario} is rejected without changing real HEAD/index/worktree`, async t => {
+  const f = await fixture(t)
+  if (scenario === 'staged-code') { await writeFile(join(f.root, 'code.txt'), 'user staged\n'); await git(f.root, 'add', 'code.txt') }
+  if (scenario === 'staged-document') await git(f.root, 'add', f.request.manifest.spec.path)
+  if (scenario === 'untracked-code') await writeFile(join(f.root, 'unrelated.txt'), 'user untracked\n')
+  if (scenario === 'modified-code') await writeFile(join(f.root, 'code.txt'), 'user edit\n')
+  if (scenario === 'same-file-edit') await writeFile(join(f.root, f.request.manifest.spec.path), 'user changed the same document\n')
+  if (scenario === 'wrong-head') f.request.expected.head = '0'.repeat(40)
+  if (scenario === 'wrong-branch') f.request.expected.branch = 'other'
+  if (scenario === 'missing-source') f.request.writeReceiptIds = []
+  if (scenario === 'wrong-authority') f.request.authorization.sourceId = 'SOMEONE-ELSE'
+  if (scenario === 'legacy-authority') f.request.authorization.contract = 'LEGACY'
+  const before = await observe(f.root), contents = await readFile(join(f.root, 'code.txt'))
+  await assert.rejects(f.run)
+  assert.deepEqual(await observe(f.root), before)
+  assert.deepEqual(await readFile(join(f.root, 'code.txt')), contents)
+  assert.equal((await readProofState(f)).activation.current, null)
+  await evidence(scenario, { before, after: await observe(f.root) })
+})
+
+test('T07 concurrent same-parent processes leave one complete activation and one checkpoint', { timeout: 30_000 }, async t => {
+  const f = await fixture(t)
+  const requests = [f.request, { ...structuredClone(f.request), id: 'TX2', activation: { ...f.request.activation, id: 'V2' } }]
+  const inputs = await Promise.all(requests.map(async (request, i) => { const input = join(f.root, `.git/request-${i}.json`); await writeFile(input, JSON.stringify({ root: f.root, tempRoot: f.root, request })); return input }))
+  const outcomes = await Promise.allSettled(inputs.map(input => exec(process.execPath, [worker, input], { timeout: 20_000 })))
+  assert.equal(outcomes.filter(x => x.status === 'fulfilled').length, 1)
+  assert.equal(outcomes.filter(x => x.status === 'rejected').length, 1)
+  const result = JSON.parse(outcomes.find(x => x.status === 'fulfilled').value.stdout.trim().split('\n').at(-1))
+  await evidence('same-parent-race', { outcomes: outcomes.map(x => x.status), ...await verifyCompleted(f, result) })
+})
+
+test('T07 late version receipts remain history-only and cannot change active snapshot', async t => {
+  const f = await fixture(t); const result = await f.run(), before = await readProofState(f)
+  assert.equal((await classifyReceipt({ ...f, receipt: { executionVersionId: 'OLD', id: 'late-receipt' } })).outcome, 'history-only')
+  const after = await readProofState(f)
+  assert.deepEqual(after.activation.current, before.activation.current)
+  assert.deepEqual(after.snapshots, before.snapshots)
+  assert.equal((await classifyReceipt({ ...f, receipt: { executionVersionId: result.executionVersionId, id: 'current-receipt' } })).outcome, 'accepted')
+  await evidence('late-receipt', { result, before, after })
+})
+
+for (const stage of ['before-commit', 'after-commit']) test(`T07 user edits at ${stage} are preserved and prevent activation`, async t => {
+  const f = await fixture(t), path = join(f.root, f.request.manifest.spec.path)
+  let edited = false
+  await assert.rejects(() => f.run({ fault: async at => { if (at === stage && !edited) { edited = true; await writeFile(path, 'concurrent user document\n') } } }), /HASH_MISMATCH|SOURCE_CONTENT_MISMATCH|FROZEN_SOURCE_CHANGED/)
+  assert.equal(edited, true)
+  assert.equal(await readFile(path, 'utf8'), 'concurrent user document\n')
+  assert.equal((await readProofState(f)).activation.current, null)
+  const after = await observe(f.root)
+  if (stage === 'before-commit') assert.equal(after.head, f.baseHead)
+  else assert.notEqual(after.head, f.baseHead)
+  await assert.rejects(f.run)
+  assert.deepEqual(await observe(f.root), after)
+  await evidence(`edit-${stage}`, { after, state: await readProofState(f) })
+})
+
+test('T07 staging after ref advancement is blocked by the index lock or preserved on rejection', async t => {
+  const f = await fixture(t); let attempted = false, stagedBytes, lockRejected
+  const result = await f.run({ fault: async stage => {
+    if (stage === 'after-commit' && !attempted) {
+      attempted = true; await writeFile(join(f.root, 'code.txt'), 'concurrent user staging\n')
+      try { await git(f.root, 'add', 'code.txt'); stagedBytes = await readFile(join(f.root, '.git/index')) }
+      catch (error) { lockRejected = error; assert.match(error.stderr ?? error.message, /index.lock|lock file/i) }
+    }
+  } }).then(value => ({ value }), error => ({ error }))
+  assert.equal(attempted, true)
+  // Even if Git prevented staging, the independent code edit must block activation.
+  assert.match(result.error?.message ?? '', /POST_COMMIT_WORKTREE_CHANGED|INDEX_CHANGED/)
+  assert.equal(await readFile(join(f.root, 'code.txt'), 'utf8'), 'concurrent user staging\n')
+  if (stagedBytes) assert.deepEqual(await readFile(join(f.root, '.git/index')), stagedBytes)
+  else assert.ok(lockRejected)
+  assert.equal((await readProofState(f)).activation.current, null)
+  await assert.rejects(readFile(join(f.root, '.git/index.lock')), { code: 'ENOENT' })
+  await git(f.root, 'add', 'code.txt')
+  await evidence('staging-after-commit', { stagingBlockedByLock: Boolean(lockRejected), state: await readProofState(f), observed: await observe(f.root) })
+})
+
+test('T07 unknown external index lock is preserved', async t => {
+  const f = await fixture(t), lock = join(f.root, '.git/index.lock')
+  await writeFile(lock, 'another writer owns this lock')
+  const before = await observe(f.root)
+  await assert.rejects(f.run)
+  assert.equal(await readFile(lock, 'utf8'), 'another writer owns this lock')
+  assert.deepEqual(await observe(f.root), before)
+})
+
+for (const field of ['review', 'approval', 'allowed-paths', 'activation-parent']) test(`T07 invalid ${field} cannot activate or commit`, async t => {
+  const f = await fixture(t)
+  if (field === 'review') f.request.parent.review.status = 'needs_revision'
+  if (field === 'approval') f.request.authorization.status = 'draft'
+  if (field === 'allowed-paths') f.request.authorization.allowedPaths = []
+  if (field === 'activation-parent') f.request.activation.expectedParentExecutionVersionId = 'STALE'
+  const before = await observe(f.root)
+  await assert.rejects(f.run)
+  assert.deepEqual(await observe(f.root), before)
+  assert.equal((await readProofState(f)).activation.current, null)
+})
+
+test('T07 legacy persisted activation state is not silently migrated or granted new authority', async t => {
+  const f = await fixture(t), path = join(f.root, '.git/planning-transaction-proof/activation.json')
+  const legacy = JSON.stringify({ contract: 'LEGACY_WORKFLOW', approvedBy: 'legacy-user', revision: 1 })
+  await writeFile(path, legacy)
+  const before = await observe(f.root)
+  await assert.rejects(f.run)
+  assert.equal(await readFile(path, 'utf8'), legacy)
+  assert.deepEqual(await observe(f.root), before)
+  await evidence('legacy-state', { before, legacy })
+})
+
+test('T07 a recorded write from a different prior document state cannot claim the expected Git baseline', async t => {
+  const f = await fixture(t), spec = f.request.manifest.spec
+  const original = await readFile(join(f.root, spec.path), 'utf8')
+  await writeFile(join(f.root, spec.path), 'other writer prior state\n')
+  const receipt = await recordPlanningWrite({ ...f, path: spec.path, content: original, source: { authorizationId: 'AUTH1', sourceId: 'MAIN1' } })
+  f.request.writeReceiptIds[0] = receipt.id
+  const before = await observe(f.root)
+  await assert.rejects(f.run)
+  assert.deepEqual(await observe(f.root), before)
+})
+
+for (const timing of ['before-activation', 'completed-replay']) test(`T07 corrupted persisted snapshot is rejected during ${timing}`, async t => {
+  const f = await fixture(t), path = join(f.root, '.git/planning-transaction-proof/snapshots/snapshot-TX1.json')
+  let damaged
+  const corrupt = async () => { const snapshot = JSON.parse(await readFile(path, 'utf8')); snapshot.reason = 'unbound replacement'; damaged = JSON.stringify(snapshot); await writeFile(path, damaged) }
+  if (timing === 'before-activation') {
+    await assert.rejects(() => f.run({ fault: async stage => { if (stage === 'before-activation') await corrupt() } }), /SNAPSHOT_MISMATCH|PERSISTED_VALUE_MISMATCH/)
+    assert.equal((await readProofState(f)).activation.current, null)
+  } else {
+    await f.run(); await corrupt()
+    await assert.rejects(f.run, /SNAPSHOT_MISMATCH|PERSISTED_VALUE_MISMATCH/)
+  }
+  assert.equal(await readFile(path, 'utf8'), damaged)
+})
+
+for (const field of ['checkpointCommit', 'authorizationId', 'snapshotId', 'parentExecutionVersionId']) test(`T07 same-version activation with mismatched ${field} cannot replay`, async t => {
+  const f = await fixture(t); await f.run()
+  const path = join(f.root, '.git/planning-transaction-proof/activation.json')
+  const value = JSON.parse(await readFile(path, 'utf8'))
+  value.current[field] = field === 'checkpointCommit' ? '0'.repeat(40) : 'OTHER'
+  const damaged = JSON.stringify(value); await writeFile(path, damaged)
+  await assert.rejects(f.run, /ACTIVATION_CONFLICT/)
+  assert.equal(await readFile(path, 'utf8'), damaged)
+})
+
+test('T07 a caught after-ref failure releases its own Git lock and resumes the recorded commit', async t => {
+  const f = await fixture(t)
+  await assert.rejects(() => f.run({ fault: stage => { if (stage === 'after-commit') throw new Error('injected after-ref failure') } }), /injected after-ref/)
+  await assert.rejects(readFile(join(f.root, '.git/index.lock')), { code: 'ENOENT' })
+  const interrupted = await observe(f.root)
+  assert.notEqual(interrupted.head, f.baseHead)
+  const completed = await verifyCompleted(f, await f.run())
+  assert.equal(completed.result.checkpointCommit, interrupted.head)
+  await evidence('after-ref-caught-recovery', { interrupted, ...completed })
+})
+
+
+test('T07 a copied foreign index lock with identical bytes is preserved after worker death', async t => {
+  const f = await fixture(t), input = join(f.root, '.git/request.json')
+  await writeFile(input, JSON.stringify({ root: f.root, tempRoot: f.root, request: f.request }))
+  await assert.rejects(exec(process.execPath, [worker, input, 'before-commit'], { timeout: 20_000 }), { signal: 'SIGKILL' })
+  const state = await readProofState(f), lock = join(f.root, '.git/index.lock')
+  await copyFile(state.journals[0].commitInput.indexArtifact, lock)
+  const bytes = await readFile(lock), before = await observe(f.root)
+  await assert.rejects(f.run, /FOREIGN_INDEX_LOCK/)
+  assert.deepEqual(await readFile(lock), bytes)
+  assert.deepEqual(await observe(f.root), before)
+})

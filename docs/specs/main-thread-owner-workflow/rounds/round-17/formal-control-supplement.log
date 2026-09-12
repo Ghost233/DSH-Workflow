@@ -1,0 +1,37 @@
+✔ R09 已接纳反馈消费前重新校验当前来源：session (969.581542ms)
+✔ R09 已接纳反馈消费前重新校验当前来源：attempt (673.381958ms)
+✔ R09 已接纳反馈消费前重新校验当前来源：plan (929.566458ms)
+✔ R09 已接纳反馈消费前重新校验当前来源：owner (652.152791ms)
+✔ R09 同 attempt 的用户反馈幂等保留，不能由后续技术描述降权 (853.509333ms)
+✔ R09 Owner 恢复消费当前反馈，换 attempt 后不继承旧用户门禁 (1314.943583ms)
+✔ R09 已确认权限缺口优先于技术 handoff 策略 (998.100958ms)
+✔ R09 已报告用户待决后不能通过 completed 提交越过门禁：permission (990.493709ms)
+✔ R09 已报告用户待决后不能通过 completed 提交越过门禁：business (1283.744042ms)
+✔ R10 真实 Owner 非成功结算保留分类与局部待决：permission-blocked (1859.489791ms)
+✔ R10 真实 Owner 非成功结算保留分类与局部待决：permission-failed (1805.666625ms)
+✔ R10 真实 Owner 非成功结算保留分类与局部待决：business-blocked (1701.955833ms)
+✔ R10 真实 Owner 非成功结算保留分类与局部待决：legacy-blocked (1687.820709ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/permission (852.498166ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/business (1082.336125ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/technical (1000.161375ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/stale-permission (1240.102542ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/permission (2129.279041ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/business (2105.500416ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/technical (1750.746958ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/stale-permission (1703.029792ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/permission (1118.059125ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/business (1031.96ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/technical (1048.429458ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/stale-permission (1027.928125ms)
+✔ R11 预算错误不覆盖当前用户依据：repeated-recover/permission (1180.13ms)
+✔ R11 预算错误不覆盖当前用户依据：repeated-recover/business (1133.86925ms)
+✔ R11 预算错误不覆盖当前用户依据：repeated-recover/technical (890.19525ms)
+✔ R11 预算错误不覆盖当前用户依据：repeated-recover/stale-permission (842.788834ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 36130.512959

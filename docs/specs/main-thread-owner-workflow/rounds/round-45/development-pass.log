@@ -1,0 +1,40 @@
+TAP version 13
+# Subtest: T15 real Supervisor initial failure and retry preserve source, enforce credit, and allow independent initial work
+ok 1 - T15 real Supervisor initial failure and retry preserve source, enforce credit, and allow independent initial work
+  ---
+  duration_ms: 7083.084709
+  type: 'test'
+  ...
+# Subtest: T15 real Supervisor recovery completes only after the actual successful settlement
+ok 2 - T15 real Supervisor recovery completes only after the actual successful settlement
+  ---
+  duration_ms: 3802.840958
+  type: 'test'
+  ...
+# Subtest: T15 Supervisor replays an unsettled session as paused without another launch or fabricated completion
+ok 3 - T15 Supervisor replays an unsettled session as paused without another launch or fabricated completion
+  ---
+  duration_ms: 1935.609042
+  type: 'test'
+  ...
+# Subtest: T15 Supervisor authority pause is not completed and persists the main notification without spending
+ok 4 - T15 Supervisor authority pause is not completed and persists the main notification without spending
+  ---
+  duration_ms: 1032.848458
+  type: 'test'
+  ...
+# Subtest: T15 Supervisor does not infer recovery settlement from an actual integrated Git result
+ok 5 - T15 Supervisor does not infer recovery settlement from an actual integrated Git result
+  ---
+  duration_ms: 3977.919667
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 18068.383584

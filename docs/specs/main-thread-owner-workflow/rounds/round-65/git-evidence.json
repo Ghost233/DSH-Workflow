@@ -1,0 +1,118 @@
+{
+  "at": "2026-09-11T12:55:50.419709+00:00",
+  "liveRemoteQueried": false,
+  "repositories": [
+    {
+      "repo": ".",
+      "head": {
+        "exit": 0,
+        "output": "154914064f5ceb2f8eb413865e10a54e8ffbc663",
+        "error": ""
+      },
+      "branch": {
+        "exit": 0,
+        "output": "main",
+        "error": ""
+      },
+      "trackingHead": {
+        "exit": 0,
+        "output": "154914064f5ceb2f8eb413865e10a54e8ffbc663",
+        "error": ""
+      },
+      "trackingDifference": {
+        "exit": 0,
+        "output": "0\t0",
+        "error": ""
+      },
+      "status": {
+        "exit": 0,
+        "output": " M .gitignore\n M README.md\n m deepseek-harness\n M docs/OWNER-WORKFLOW-TECHNICAL-ROUTE.md\n M docs/OWNER-WORKFLOW-V2-MIGRATION.md\n M docs/SYNAPSE-DYNAMIC-DAG.md\n M docs/superpowers/plans/2026-08-20-owner-workflow-v2.md\n M docs/superpowers/specs/2026-08-20-owner-workflow-v2-design.md\n M owner-workflow-plugin/README.md\n M owner-workflow-plugin/README.zh.md\n M owner-workflow-plugin/agent-presets/owner-workflow/agent.cordis.yml\n M owner-workflow-plugin/client.js\n M owner-workflow-plugin/cordis.patch.yml\n M owner-workflow-plugin/dashboard-host.mjs\n M owner-workflow-plugin/index.js\n M owner-workflow-plugin/package.json\n M owner-workflow-plugin/scripts/build-client.mjs\n M owner-workflow-plugin/src/agent-policy.mjs\n M owner-workflow-plugin/src/client-runtime.js\n M owner-workflow-plugin/src/dashboard-page.mjs\n M owner-workflow-plugin/src/dashboard.mjs\n M owner-workflow-plugin/src/external-runner.mjs\n M owner-workflow-plugin/src/git.mjs\n M owner-workflow-plugin/src/memory.mjs\n M owner-workflow-plugin/src/model.mjs\n M owner-workflow-plugin/src/operation.mjs\n M owner-workflow-plugin/src/owner-agent.mjs\n M owner-workflow-plugin/src/owner-boundary.mjs\n M owner-workflow-plugin/src/owner-submission.mjs\n M owner-workflow-plugin/src/plan-revision.mjs\n M owner-workflow-plugin/src/registry.mjs\n M owner-workflow-plugin/src/runtime.mjs\n M owner-workflow-plugin/src/skills.mjs\n M owner-workflow-plugin/src/supervisor.mjs\n M owner-workflow-plugin/src/verification.mjs\n M owner-workflow-plugin/src/workflow-conversation.mjs\n M owner-workflow-plugin/test/client-bundle.test.mjs\n M owner-workflow-plugin/test/control.test.mjs\n M owner-workflow-plugin/test/dashboard-host.test.mjs\n M owner-workflow-plugin/test/dashboard.test.mjs\n M owner-workflow-plugin/test/git.test.mjs\n M owner-workflow-plugin/test/launcher.test.mjs\n M owner-workflow-plugin/test/memory.test.mjs\n M owner-workflow-plugin/test/model.test.mjs\n M owner-workflow-plugin/test/owner-submission.test.mjs\n M owner-workflow-plugin/test/plan-revision.test.mjs\n M owner-workflow-plugin/test/plugin.test.mjs\n M owner-workflow-plugin/test/registry.test.mjs\n M owner-workflow-plugin/test/resilience.test.mjs\n M owner-workflow-plugin/test/runner.test.mjs\n M owner-workflow-plugin/test/security.test.mjs\n M owner-workflow-plugin/test/supervisor.test.mjs\n M owner-workflow-plugin/test/verification.test.mjs\n M package.json\n M start-owner-workflow.sh\n?? .dsh-workflow/\n?? .zvec-grep/\n?? CONTEXT.md\n?? docs/ORCHESTRATOR-DOCUMENTS.md\n?? docs/adr/\n?? docs/analysis/\n?? docs/specs/\n?? docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md\n?? owner-workflow-plugin/.dsh-workflow/\n?? owner-workflow-plugin/src/candidate-recovery-pause.mjs\n?? owner-workflow-plugin/src/convergence.mjs\n?? owner-workflow-plugin/src/orchestrator-documents.mjs\n?? owner-workflow-plugin/src/project-layout.mjs\n?? owner-workflow-plugin/src/recovery-admission.mjs\n?? owner-workflow-plugin/src/recovery-budget.mjs\n?? owner-workflow-plugin/src/recovery-session.mjs\n?? owner-workflow-plugin/src/replan-session.mjs\n?? owner-workflow-plugin/src/workflow-state.mjs\n?? owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs\n?? owner-workflow-plugin/test/candidate-recovery-pause.test.mjs\n?? owner-workflow-plugin/test/candidate-review-recovery.test.mjs\n?? owner-workflow-plugin/test/convergence.test.mjs\n?? owner-workflow-plugin/test/direct-handoff-recovery.test.mjs\n?? owner-workflow-plugin/test/fixtures/\n?? owner-workflow-plugin/test/handoff-recovery.test.mjs\n?? owner-workflow-plugin/test/orchestrator-documents-native.test.mjs\n?? owner-workflow-plugin/test/orchestrator-documents.test.mjs\n?? owner-workflow-plugin/test/project-layout.test.mjs\n?? owner-workflow-plugin/test/recovery-admission.test.mjs\n?? owner-workflow-plugin/test/recovery-budget.test.mjs\n?? owner-workflow-plugin/test/recovery-session-restart.test.mjs\n?? owner-workflow-plugin/test/recovery-session.test.mjs\n?? owner-workflow-plugin/test/replan-session.test.mjs\n?? owner-workflow-plugin/test/runtime-recovery-budget.test.mjs\n?? owner-workflow-plugin/test/subgraph-recovery-guard.test.mjs\n?? owner-workflow-plugin/test/workflow-state.test.mjs\n?? test.md",
+        "error": ""
+      }
+    },
+    {
+      "repo": "deepseek-harness",
+      "head": {
+        "exit": 0,
+        "output": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+        "error": ""
+      },
+      "branch": {
+        "exit": 0,
+        "output": "master",
+        "error": ""
+      },
+      "trackingHead": {
+        "exit": 0,
+        "output": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+        "error": ""
+      },
+      "trackingDifference": {
+        "exit": 0,
+        "output": "0\t3364",
+        "error": ""
+      },
+      "status": {
+        "exit": 0,
+        "output": " M packages/host/apiproxy/src/fetch/client.ts\n M packages/host/apiproxy/tests/client-handler.spec.ts",
+        "error": ""
+      }
+    },
+    {
+      "repo": "dsh-synapse",
+      "head": {
+        "exit": 0,
+        "output": "97f8c432de875d97bf7a5e4d675f8010f7b34556",
+        "error": ""
+      },
+      "branch": {
+        "exit": 0,
+        "output": "",
+        "error": ""
+      },
+      "trackingHead": {
+        "exit": 128,
+        "output": "",
+        "error": "fatal: HEAD does not point to a branch"
+      },
+      "trackingDifference": {
+        "exit": 128,
+        "output": "",
+        "error": "fatal: HEAD does not point to a branch"
+      },
+      "status": {
+        "exit": 0,
+        "output": "",
+        "error": ""
+      }
+    },
+    {
+      "repo": "owner-workflow-plugin/vendor/dsh-approve-for-me",
+      "head": {
+        "exit": 0,
+        "output": "a72c8d24dd64f59644b2b0bdb5985edc9bf3c66b",
+        "error": ""
+      },
+      "branch": {
+        "exit": 0,
+        "output": "main",
+        "error": ""
+      },
+      "trackingHead": {
+        "exit": 0,
+        "output": "0e50918ff9dfd49b6cadf86093baa325a3bc16bf",
+        "error": ""
+      },
+      "trackingDifference": {
+        "exit": 0,
+        "output": "0\t4",
+        "error": ""
+      },
+      "status": {
+        "exit": 0,
+        "output": "",
+        "error": ""
+      }
+    }
+  ]
+}

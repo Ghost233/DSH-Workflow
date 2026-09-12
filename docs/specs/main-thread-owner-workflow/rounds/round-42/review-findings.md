@@ -1,0 +1,9 @@
+# 第42轮审查发现（修复进入第43轮）
+
+当前冻结候选不因测试已通过而视为开发完成。独立审查者/root/t21_contract_review已确认：
+
+- P1 首次external_authority只返回paused，未持久化task await_user/Owner blocked与mainOutbox；dispatchOwnerRecovery后台丢弃成功返回值，使真正用户决策不能交付。需复用原权威决策持久路径，支出前及竞态重读后核验。
+- P1 新路由绕过blocked workflow同任务pending/planned handoff门禁，可能在未重规划时领额度并启动。需支出前及领取后激活事务再次校验，未知变化不启动且已领额度不退。
+- P2 无recoverySession的awaiting_finish/committed以及PlanRevision abort无record也被送进owner_failure领取，挡住正常finish-only/重置路径。需保留这些既有路径；不能因此把未知starting/running放回旧盲重启。
+
+共同原因：新预算分支放在旧recoverOwner之前，但未共用完整的恢复前置/决策分流。下一轮先修这个接缝并补真实公开后台入口、结算与handoff测试，再继续Supervisor。当前明确未来范围见remaining.md，与这些本轮回退分开记录。

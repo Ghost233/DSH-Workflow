@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: 真实Runtime经生产Planner提交路径编排固定快照；Owner提示保留完整Ticket，未激活Workflow
+ok 1 - 真实Runtime经生产Planner提交路径编排固定快照；Owner提示保留完整Ticket，未激活Workflow
+  ---
+  duration_ms: 5328.025667
+  type: 'test'
+  ...
+# Subtest: 丢失ready片段映射由实际Planner校验拒绝，有限两次后不发布候选
+ok 2 - 丢失ready片段映射由实际Planner校验拒绝，有限两次后不发布候选
+  ---
+  duration_ms: 2875.042125
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8589.730625

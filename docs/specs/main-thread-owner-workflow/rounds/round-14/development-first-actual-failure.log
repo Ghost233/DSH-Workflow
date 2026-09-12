@@ -1,0 +1,14 @@
+Command: node --test --test-force-exit owner-workflow-plugin/test/recovery-admission.test.mjs
+Working directory: /Volumes/LargeStorage/code/DSH-Workflow
+
+First actual run before the fixture root was canonicalized with realpath:
+
+✖ T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt (173.008291ms)
+Error: RecoveryAdmission 当前持久 Workflow 绑定无效
+    at file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:9710:21
+    at saveState (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:1096:69)
+    at async file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:9708:11
+    at async Object.withWorkflowLock (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:9750:16)
+    at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-admission.test.mjs:245:20)
+
+The same binding error caused all eight initial cases to fail. The fixture had recorded the mkdtemp /var path, while Runtime.resolveRoot used Git's canonical /private/var path. The fixture now derives root with realpath before creating the persisted state.

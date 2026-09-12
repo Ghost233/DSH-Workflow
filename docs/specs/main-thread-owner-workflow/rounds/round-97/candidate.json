@@ -1,0 +1,15 @@
+{
+  "contract": "DSH_TICKET_IMPLEMENTATION_CANDIDATE_V1",
+  "candidateId": "R97-T30-public-change-plan-lifecycle",
+  "ticketId": "T-30",
+  "specRevision": "R4",
+  "status": "development_complete",
+  "scope": "scope.md",
+  "report": "report.md",
+  "review": "review.md",
+  "testResults": "test-results.json",
+  "authoritativePlanBinding": true,
+  "autonomousTechnicalRevision": true,
+  "consumerLifecycle": true,
+  "historicalReplayIdempotent": true
+}

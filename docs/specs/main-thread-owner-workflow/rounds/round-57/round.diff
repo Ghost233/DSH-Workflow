@@ -1,0 +1,583 @@
+--- owner-workflow-plugin/src/recovery-admission.mjs (baseline)
++++ owner-workflow-plugin/src/recovery-admission.mjs
+@@ -9,6 +9,8 @@
+ import { AUTONOMOUS_STRATEGIES, CONVERGENCE_CONTRACT } from './convergence.mjs'
+
+ export const RECOVERY_ADMISSION_REQUEST_CONTRACT = 'DSH_RECOVERY_ADMISSION_REQUEST_V1'
++export const REPLAN_ADMISSION_REQUEST_CONTRACT = 'DSH_REPLAN_ADMISSION_REQUEST_V1'
++const REPLAN_OPERATION_KINDS = new Set(['revision_plan', 'revision_review', 'handoff_replan'])
+ export const RECOVERY_ADMISSION_CONTRACT = 'DSH_RECOVERY_ADMISSION_V1'
+ export const RECOVERY_ADMISSION_CONFIG_CONTRACT = 'DSH_RECOVERY_ADMISSION_CONFIG_V1'
+ export const RECOVERY_ADMISSION_STATE_CONTRACT = 'DSH_RECOVERY_ADMISSION_STATE_V1'
+@@ -146,6 +148,26 @@
+     ownerId: text(value.ownerId, 'request_owner_id'),
+     source: requestSource(value.source),
+   }
++}
++
++function replanOperation(value, name) {
++  exactKeys(value, ['operationKind', 'operationId', 'ordinal'], name)
++  if (!REPLAN_OPERATION_KINDS.has(value.operationKind)) fail(`${name}_kind_invalid`)
++  return {
++    operationKind: value.operationKind,
++    operationId: text(value.operationId, `${name}_id`),
++    ordinal: positiveInteger(value.ordinal, `${name}_ordinal`),
++  }
++}
++
++// Only the internal Runtime admission adapter consumes this envelope. The
++// operation identity is a correlation key, never authority to launch a child.
++export function recoveryAdmissionOrigin(request) {
++  plainRecord(request, 'request')
++  if (request.contract !== REPLAN_ADMISSION_REQUEST_CONTRACT) return admissionRequest(request)
++  exactKeys(request, ['contract', 'origin', 'operation'], 'replan_request')
++  replanOperation(request.operation, 'replan_operation')
++  return admissionRequest(request.origin)
+ }
+
+ function admissionConfig(state) {
+@@ -517,7 +539,38 @@
+   return `recovery-intent-${digest({ sourceId, strategy })}`
+ }
+
++function operationIntentKey(sourceId, operation) {
++  return `replan-intent-${digest({ sourceId, ...replanOperation(operation, 'operation_key') })}`
++}
++
++function persistedOperationIntent(value, name) {
++  exactKeys(value, [
++    'intentKey', 'sourceId', 'strategy', 'planDigest', 'executionKind',
++    'operationKind', 'operationId', 'ordinal', 'rootProblemId',
++    'requestId', 'attemptId', 'executionIdentity',
++  ], name)
++  if (value.executionKind !== 'replan_operation') fail(`${name}_execution_kind_invalid`)
++  const operation = replanOperation({
++    operationKind: value.operationKind, operationId: value.operationId, ordinal: value.ordinal,
++  }, `${name}_operation`)
++  const parsed = {
++    intentKey: text(value.intentKey, `${name}_intent_key`),
++    sourceId: text(value.sourceId, `${name}_source_id`),
++    strategy: validPersistedStrategy(value.strategy),
++    planDigest: text(value.planDigest, `${name}_plan_digest`),
++    executionKind: 'replan_operation', ...operation,
++    rootProblemId: text(value.rootProblemId, `${name}_root_problem_id`),
++    requestId: text(value.requestId, `${name}_request_id`),
++    attemptId: text(value.attemptId, `${name}_attempt_id`),
++    executionIdentity: executionIdentity(value.executionIdentity, `${name}_execution_identity`),
++  }
++  if (parsed.intentKey !== operationIntentKey(parsed.sourceId, operation)) fail('admission_intent_tampered')
++  return parsed
++}
++
+ function persistedIntent(value, name) {
++  plainRecord(value, name)
++  if (Object.hasOwn(value, 'executionKind')) return persistedOperationIntent(value, name)
+   exactKeys(value, [
+     'intentKey', 'sourceId', 'strategy', 'planDigest', 'taskId', 'ownerId', 'rootProblemId',
+     'requestId', 'attemptId', 'executionIdentity',
+@@ -612,7 +665,8 @@
+     const source = sourceById.get(intent.sourceId)
+     if (source === undefined) fail('recovery_admission_intent_source_missing')
+     if (intent.planDigest !== config.executionVersion || intent.planDigest !== source.planDigest
+-      || intent.taskId !== source.taskId || intent.ownerId !== source.ownerId) {
++      || (intent.executionKind !== 'replan_operation'
++        && (intent.taskId !== source.taskId || intent.ownerId !== source.ownerId))) {
+       fail('recovery_admission_intent_source_mismatch')
+     }
+     if (intentKeys.has(intent.intentKey) || intentByRequest.has(intent.requestId) || attemptIds.has(intent.attemptId)) {
+@@ -692,10 +746,28 @@
+       || attempt.workflowId !== workflowId
+       || attempt.rootProblemId !== intent.rootProblemId
+       || attempt.attemptId !== intent.attemptId
+-      || attempt.taskId !== intent.taskId
+-      || attempt.ownerId !== intent.ownerId
++      || attempt.executionKind !== intent.executionKind
++      || (intent.executionKind === 'replan_operation'
++        ? attempt.operationKind !== intent.operationKind || attempt.operationId !== intent.operationId
++        : attempt.taskId !== intent.taskId || attempt.ownerId !== intent.ownerId)
+       || attempt.executionVersion !== intent.planDigest) {
+       fail('recovery_admission_intent_budget_mismatch')
++    }
++  }
++  // A crash cannot authorize a fresh call ordinal. Each operation's history
++  // must be contiguous, with a failed receipt before its next physical call.
++  const groups = new Map()
++  for (const intent of intents.filter(item => item.executionKind === 'replan_operation')) {
++    const key = canonical([intent.sourceId, intent.operationKind, intent.operationId])
++    const group = groups.get(key) ?? []
++    group.push(intent)
++    groups.set(key, group)
++  }
++  for (const group of groups.values()) {
++    group.sort((a, b) => a.ordinal - b.ordinal)
++    for (let index = 0; index < group.length; index += 1) {
++      if (group[index].ordinal !== index + 1) fail('replan_ordinal_gap')
++      if (index > 0) assertOperationFailed(budget, group[index - 1])
+     }
+   }
+   return {
+@@ -798,6 +870,24 @@
+   }
+ }
+
++function assertOperationFailed(budget, intent) {
++  const attempt = budget.attempts.find(item => item.requestId === intent.requestId)
++  if (attempt?.state !== 'settled' || attempt.result?.status !== 'failed') fail('replan_previous_not_failed')
++  if (!sameReference(attempt.result.reference, {
++    id: intent.executionIdentity.promptId, version: intent.executionIdentity.sessionId,
++  }) || (attempt.executionRef !== undefined && !sameReference(attempt.executionRef, {
++    id: intent.executionIdentity.sessionId, version: intent.executionIdentity.promptId,
++  }))) fail('replan_previous_receipt_mismatch')
++}
++
++function assertNextOperation(admission, sourceId, operation) {
++  const previous = admission.intents.filter(item => item.executionKind === 'replan_operation'
++    && item.sourceId === sourceId && item.operationKind === operation.operationKind
++    && item.operationId === operation.operationId).sort((a, b) => a.ordinal - b.ordinal)
++  if (operation.ordinal !== previous.length + 1) fail('replan_ordinal_gap')
++  if (previous.length > 0) assertOperationFailed(admission.budget, previous.at(-1))
++}
++
+ /**
+  * Prepare one purely in-memory, durable-shaped recovery reservation.
+  *
+@@ -809,7 +899,9 @@
+   let copied
+   try {
+     copied = deepCopy(state)
+-    const parsedRequest = admissionRequest(request)
++    const parsedRequest = recoveryAdmissionOrigin(request)
++    const operation = request.contract === REPLAN_ADMISSION_REQUEST_CONTRACT
++      ? replanOperation(request.operation, 'replan_operation') : undefined
+     const binding = taskBinding(copied, parsedRequest)
+     const config = admissionConfig(copied)
+     const admission = normalizedAdmission(copied.recoveryAdmission, binding.workflowId, config)
+@@ -840,10 +932,11 @@
+       fail('continuation_unbound')
+     }
+
+-    const key = intentKey(sourceId, strategy)
++    const key = operation === undefined ? intentKey(sourceId, strategy) : operationIntentKey(sourceId, operation)
+     const replay = admission.intents.find(item => item.intentKey === key)
+     if (replay !== undefined) {
+-      if (replay.taskId !== parsedRequest.taskId || replay.ownerId !== parsedRequest.ownerId
++      if ((operation === undefined
++        && (replay.taskId !== parsedRequest.taskId || replay.ownerId !== parsedRequest.ownerId))
+         || replay.planDigest !== binding.planDigest || replay.sourceId !== sourceId) {
+         fail('admission_intent_conflict')
+       }
+@@ -851,6 +944,7 @@
+       return { state: copied, response: reservationResponse('replayed', replay) }
+     }
+
++    if (operation !== undefined) assertNextOperation(admission, sourceId, operation)
+     const existingRoot = rootForSource(admission, sourceId)
+     if (existingRoot !== undefined && continuationRoot !== undefined && existingRoot !== continuationRoot) {
+       fail('continuation_root_rebound')
+@@ -874,13 +968,15 @@
+         source: { id: sourceId, version: binding.planDigest },
+       })
+     }
++    const executionBinding = operation === undefined
++      ? { taskId: parsedRequest.taskId, ownerId: parsedRequest.ownerId }
++      : { executionKind: 'replan_operation', operationKind: operation.operationKind, operationId: operation.operationId }
+     const reserved = reserveRecoveryAttempt(budget, {
+       workflowId: binding.workflowId,
+       rootProblemId: nextRootProblemId,
+       requestId,
+       attemptId,
+-      taskId: parsedRequest.taskId,
+-      ownerId: parsedRequest.ownerId,
++      ...executionBinding,
+       executionVersion: binding.planDigest,
+     })
+     if (reserved.outcome !== 'reserved') fail('recovery_admission_reservation_inconsistent')
+@@ -889,8 +985,8 @@
+       sourceId,
+       strategy,
+       planDigest: binding.planDigest,
+-      taskId: parsedRequest.taskId,
+-      ownerId: parsedRequest.ownerId,
++      ...executionBinding,
++      ...(operation === undefined ? {} : { ordinal: operation.ordinal }),
+       rootProblemId: nextRootProblemId,
+       requestId,
+       attemptId,
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -171,6 +171,8 @@
+   assertRecoveryAdmissionState,
+   lookupRecoveryAdmissionIntent,
+   prepareRecoveryAdmission,
++  recoveryAdmissionOrigin,
++  REPLAN_ADMISSION_REQUEST_CONTRACT,
+ } from './recovery-admission.mjs'
+ import {
+   RECOVERY_SESSION_RESULT_CONTRACT,
+@@ -10136,7 +10138,8 @@
+         return persistPlanningFailure(runtime, state, resolvedConfig, error)
+       }
+     },
+-    // Explicit local adapter only. No tool/runner routes consume this until T-15.
++    // Current-state reservation shared by Owner recovery and internal replan
++    // identities. A receipt never grants permission to launch a model.
+     async reserveRecoveryAdmission(agent, workflowId, request) {
+       if (typeof workflowId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(workflowId)) {
+         throw new Error('RecoveryAdmission workflowId 非法')
+@@ -10150,28 +10153,39 @@
+             if (current?.contract !== STATE_CONTRACT || current.id !== workflowId || current.root !== root) {
+               throw new Error('RecoveryAdmission 当前持久 Workflow 绑定无效')
+             }
++            const isOperation = request?.contract === REPLAN_ADMISSION_REQUEST_CONTRACT
++            let origin = request
++            if (isOperation) {
++              try { origin = recoveryAdmissionOrigin(request) } catch (error) {
++                response = { contract: 'DSH_RECOVERY_ADMISSION_V1', outcome: 'rejected',
++                  reason: errorText(error), launchAuthorized: false }
++                throw refusal
++              }
++            }
+             assertV2WorkflowExecutable(current, '领取恢复预算')
+             assertWorkflowNotCancelled(current, '领取恢复预算')
+             if (!['approved', 'running', 'blocked', 'planned'].includes(current.status)
+-              && !(current.status === 'failed' && request?.source?.kind === 'owner_failure')) {
++              && !(current.status === 'failed' && origin?.source?.kind === 'owner_failure')) {
+               throw new Error('RecoveryAdmission 当前 Workflow 状态不可领取')
+             }
+             normalizePlanV2(current.plan)
+             if (planDigest(current.plan) !== current.planDigest) {
+               throw new Error('RecoveryAdmission 当前计划内容摘要不匹配')
+             }
+-            if (request?.source?.kind === 'owner_failure') {
++            if (origin?.source?.kind === 'owner_failure') {
+               if (current.planApproved !== true || current.planReview?.status !== 'passed'
+                 || current.planReviewDigest !== current.planDigest) {
+                 throw new Error('RecoveryAdmission Owner 失败来源尚未通过当前计划审批')
+               }
+-              const record = current.ownerRuns?.[ownerRunKey(request.taskId, request.ownerId)]
++              const record = current.ownerRuns?.[ownerRunKey(origin.taskId, origin.ownerId)]
+               const classified = classifyFailure(record?.error ?? record?.reason ?? '',
+-                ownerExecutionDeviationContext(current, request.taskId, request.ownerId))
++                ownerExecutionDeviationContext(current, origin.taskId, origin.ownerId))
+               if (classified.class === 'external_authority') {
+                 throw new RecoveryAdmissionAuthorityRequiredError('RecoveryAdmission 当前失败需要用户决定')
+               }
+-              assertOwnerRecoveryHandoffs(current, request.taskId, request.ownerId)
++              // Replanning consumes the handoff; it must not masquerade as an
++              // Owner retry or bypass the shared user-authority check above.
++              if (!isOperation) assertOwnerRecoveryHandoffs(current, origin.taskId, origin.ownerId)
+             }
+             const prepared = prepareRecoveryAdmission(current, request)
+             response = prepared.response
+@@ -10272,6 +10286,9 @@
+         }
+         if (located === undefined) return { paused: pausedWithoutIntent('reservation_not_found') }
+         const intent = located.intent
++        if (intent.executionKind === 'replan_operation') {
++          return { paused: pausedWithoutIntent('owner_session_requires_owner_intent') }
++        }
+         if (intent.taskId !== request.taskId || intent.ownerId !== request.ownerId
+           || intent.planDigest !== state.planDigest || request.prompt.id !== intent.executionIdentity.promptId) {
+           return { paused: resultFor(intent, 'paused', 'technical_pause', { reason: 'reservation_binding_mismatch' }) }
+--- owner-workflow-plugin/test/recovery-admission.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-admission.test.mjs
+@@ -716,3 +716,242 @@
+   assert.equal(saved.recoveryAdmission.sources.length, 2)
+   assert.equal(saved.recoveryAdmission.budget.totalUsed, 3)
+ })
++
++const replanRequest = (fixture, operation = {}, origin = ownerRequest(fixture)) => ({
++  contract: 'DSH_REPLAN_ADMISSION_REQUEST_V1', origin,
++  operation: { operationKind: 'revision_plan', operationId: 'cycle-1:planner', ordinal: 1, ...operation },
++})
++async function operationSettlement(fixture, receipt, { status = 'failed', start = true } = {}) {
++  return mutateState(fixture, state => {
++    const intent = state.recoveryAdmission.intents.find(item => item.requestId === receipt.requestId)
++    const binding = {
++      workflowId: fixture.workflowId, rootProblemId: intent.rootProblemId,
++      requestId: intent.requestId, attemptId: intent.attemptId, executionVersion: intent.planDigest,
++      executionKind: intent.executionKind, operationKind: intent.operationKind, operationId: intent.operationId,
++    }
++    if (start) state.recoveryAdmission.budget = startRecoveryAttempt(state.recoveryAdmission.budget, {
++      ...binding, executionRef: { id: intent.executionIdentity.sessionId, version: intent.executionIdentity.promptId },
++    }).ledger
++    state.recoveryAdmission.budget = settleRecoveryAttempt(state.recoveryAdmission.budget, {
++      ...binding, result: { status, reference: { id: intent.executionIdentity.promptId, version: intent.executionIdentity.sessionId } },
++    }).ledger
++  })
++}
++
++test('T15 replan admission can originate at first free Owner failure and share its root with an Owner retry', async t => {
++  const f = await createFixture(t)
++  await mutateState(f, s => { s.ownerRuns['T1:api'].attempt = 1 })
++  const origin = ownerRequest(f, { source: { kind: 'owner_failure', attempt: 1, sessionId: 'T1-api-failed-session' } })
++  const operation = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f, {}, origin))
++  assertReceipt(operation, 'reserved')
++  const owner = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, origin)
++  assertReceipt(owner, 'reserved')
++  assert.equal(operation.rootProblemId, owner.rootProblemId)
++  const saved = await readState(f.root, f.workflowId)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 2)
++  assert.equal(saved.recoveryAdmission.sources.length, 1)
++  assert.equal(saved.recoveryAdmission.budget.problems.length, 1)
++  const intent = saved.recoveryAdmission.intents[0]
++  assert.equal(intent.executionKind, 'replan_operation')
++  assert.equal(Object.hasOwn(intent, 'ownerId'), false)
++  assert.equal(Object.hasOwn(intent, 'taskId'), false)
++  assert.equal(saved.ownerRuns['T1:api'].attempt, 1)
++  assert.equal(saved.ownerRuns['T1:api'].status, 'failed')
++})
++
++test('T15 replan restart replays reserved call; next ordinal requires a failed matching receipt', async t => {
++  const f = await createFixture(t, { limits: { totalLimit: 4, problemLimit: 4 } })
++  const first = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f))
++  assertReceipt(first, 'reserved')
++  const reopened = createOwnerWorkflowRuntime({ agents: { get: () => undefined } }, {})
++  const replay = await reopened.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f))
++  assertReceipt(replay, 'replayed')
++  assert.equal(replay.requestId, first.requestId)
++  assert.deepEqual(replay.executionIdentity, first.executionIdentity)
++  const next = replanRequest(f, { ordinal: 2 })
++  const before = await readState(f.root, f.workflowId)
++  const denied = await reopened.reserveRecoveryAdmission(f.agent, f.workflowId, next)
++  assert.equal(denied.reason, 'replan_previous_not_failed')
++  assert.deepEqual(await readState(f.root, f.workflowId), before)
++  await operationSettlement(f, first)
++  const second = await reopened.reserveRecoveryAdmission(f.agent, f.workflowId, next)
++  assertReceipt(second, 'reserved')
++  assert.notEqual(first.requestId, second.requestId)
++  assert.notEqual(first.executionIdentity.sessionId, second.executionIdentity.sessionId)
++  assert.equal(first.rootProblemId, second.rootProblemId)
++  assert.equal((await readState(f.root, f.workflowId)).recoveryAdmission.budget.totalUsed, 2)
++  assert.equal((await reopened.reserveRecoveryAdmission(f.agent, f.workflowId, next)).requestId, second.requestId)
++})
++
++test('T15 plan/review/handoff operations cannot reset the source budget by changing step identity', async t => {
++  const f = await createFixture(t, { limits: { totalLimit: 3, problemLimit: 2 } })
++  const first = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f))
++  const second = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f, {
++    operationKind: 'revision_review', operationId: 'candidate-1:review',
++  }))
++  assert.equal(first.rootProblemId, second.rootProblemId)
++  const before = await readState(f.root, f.workflowId)
++  const denied = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f, {
++    operationKind: 'handoff_replan', operationId: 'different-step',
++  }))
++  assert.equal(denied.reason, 'problem_exhausted')
++  assert.deepEqual(await readState(f.root, f.workflowId), before)
++  const independent = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, ownerRequest(f, { taskId: 'T2', ownerId: 'worker' }))
++  assertReceipt(independent, 'reserved')
++  assert.notEqual(independent.rootProblemId, first.rootProblemId)
++})
++
++test('T15 replan operation rejects skipped ordinals and forged envelope/source fields before saving', async t => {
++  const f = await createFixture(t)
++  const before = await readState(f.root, f.workflowId)
++  const mutations = [
++    q => { q.operation.ordinal = 2 }, q => { q.operation.ordinal = 0 },
++    q => { q.operation.operationKind = 'unlimited_repair' }, q => { q.operation.operationId = ' ' },
++    q => { q.operation.ownerId = 'fake-planner' }, q => { q.rootProblemId = 'fresh-budget' },
++    q => { q.origin.source.attempt = 100 }, q => { q.origin.planDigest = 'wrong' },
++    q => { q.origin.taskId = 'missing' }, q => { q.origin.source.sessionId = 'wrong' },
++  ]
++  for (const mutate of mutations) {
++    const request = replanRequest(f); mutate(request)
++    const response = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, request)
++    assertReceipt(response, 'rejected')
++    assert.deepEqual(await readState(f.root, f.workflowId), before)
++  }
++})
++
++test('T15 mixed admission rejects operation/ledger identity corruption and missing intents', async t => {
++  const f = await createFixture(t)
++  await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f))
++  const original = await readState(f.root, f.workflowId)
++  const cases = [
++    s => { s.recoveryAdmission.intents[0].ownerId = 'fake' },
++    s => { s.recoveryAdmission.intents[0].operationId = 'changed' },
++    s => { s.recoveryAdmission.intents[0].ordinal = 2 },
++    s => { s.recoveryAdmission.intents[0].executionKind = 'owner' },
++    s => { s.recoveryAdmission.budget.attempts[0].operationKind = 'revision_review' },
++    s => { s.recoveryAdmission.intents = [] },
++    s => { s.recoveryAdmission.budget.attempts[0].operationId = 'changed' },
++  ]
++  for (const mutate of cases) {
++    const candidate = structuredClone(original); mutate(candidate)
++    await writeState(f.root, f.workflowId, candidate)
++    const response = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, ownerRequest(f))
++    assertReceipt(response, 'rejected')
++    assert.deepEqual(await readState(f.root, f.workflowId), candidate)
++  }
++})
++
++for (const status of ['succeeded', 'cancelled']) test(`T15 ${status} operation does not authorize the next physical retry`, async t => {
++  const f = await createFixture(t)
++  const first = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f))
++  await operationSettlement(f, first, { status, start: status === 'succeeded' })
++  const before = await readState(f.root, f.workflowId)
++  const response = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f, { ordinal: 2 }))
++  assert.equal(response.reason, 'replan_previous_not_failed')
++  assert.deepEqual(await readState(f.root, f.workflowId), before)
++  assert.equal((await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f))).requestId, first.requestId)
++})
++
++test('T15 operation admission retains live-source and user-decision gates', async t => {
++  const f = await createFixture(t)
++  const original = await readState(f.root, f.workflowId)
++  for (const mutate of [
++    s => { s.tasks[0].status = 'running' },
++    s => { s.tasks[0].action = 'await_user' },
++    s => { s.ownerRuns['T1:api'].autonomousRecovery.strategy = 'request_user_authority' },
++    s => { s.ownerRuns['T1:api'].status = 'completed' },
++  ]) {
++    const candidate = structuredClone(original); mutate(candidate)
++    await writeState(f.root, f.workflowId, candidate)
++    const response = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f))
++    assertReceipt(response, 'rejected')
++    assert.deepEqual(await readState(f.root, f.workflowId), candidate)
++  }
++})
++
++test('T15 separate processes replay the same operation reservation without double debit', async t => {
++  const f = await createFixture(t)
++  const request = replanRequest(f)
++  const results = await Promise.all([1, 2].map(i => childReserve({
++    root: f.root, workflowId: f.workflowId, request, agentId: `replan-process-${i}`,
++  })))
++  for (const result of results) assert.equal(result.ok, true, JSON.stringify(result))
++  assert.deepEqual(results.map(r => r.response.outcome).sort(), ['replayed', 'reserved'])
++  assert.equal(results[0].response.requestId, results[1].response.requestId)
++  assert.equal((await readState(f.root, f.workflowId)).recoveryAdmission.budget.totalUsed, 1)
++})
++
++test('T15 separate Owner/replan reservations compete for one shared last Workflow credit', async t => {
++  const f = await createFixture(t, { limits: { totalLimit: 1, problemLimit: 2 } })
++  const requests = [replanRequest(f), ownerRequest(f, { taskId: 'T2', ownerId: 'worker' })]
++  const results = await Promise.all(requests.map(request => childReserve({ root: f.root, workflowId: f.workflowId, request })))
++  for (const result of results) assert.equal(result.ok, true, JSON.stringify(result))
++  assert.deepEqual(results.map(r => r.response.outcome).sort(), ['rejected', 'reserved'])
++  assert.equal(results.find(r => r.response.outcome === 'rejected').response.reason, 'workflow_exhausted')
++  const saved = await readState(f.root, f.workflowId)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(saved.recoveryAdmission.intents.length, 1)
++})
++
++test('T15 an operation intent cannot enter the Owner-only session driver', async t => {
++  const f = await createFixture(t)
++  const receipt = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f))
++  const before = await readState(f.root, f.workflowId)
++  const response = await f.runtime.reconcileRecoverySession(f.agent, f.workflowId, {
++    contract: 'DSH_RECOVERY_SESSION_REQUEST_V1', requestId: receipt.requestId,
++    taskId: 'T1', ownerId: 'api', prompt: { id: receipt.executionIdentity.promptId, content: 'do not launch an Owner' },
++  })
++  assert.equal(response.reason, 'owner_session_requires_owner_intent')
++  assert.deepEqual(await readState(f.root, f.workflowId), before)
++})
++
++test('T15 replan after a paid Owner failure inherits the admitted predecessor root', async t => {
++  const f = await createFixture(t)
++  const first = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, ownerRequest(f))
++  const failed = await recordRecoveryFailure(f, first)
++  const operation = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId,
++    replanRequest(f, {}, currentFailureRequest(f, failed)))
++  assertReceipt(operation, 'reserved')
++  assert.equal(operation.rootProblemId, first.rootProblemId)
++  const saved = await readState(f.root, f.workflowId)
++  assert.equal(saved.recoveryAdmission.sources.length, 2)
++  assert.equal(saved.recoveryAdmission.budget.problems.length, 1)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 2)
++  const denied = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId,
++    replanRequest(f, { operationId: 'another-plan-step' }, currentFailureRequest(f, saved)))
++  assert.equal(denied.reason, 'problem_exhausted')
++})
++
++test('T15 replan accepts a live technical obligation but cannot charge a user decision', async t => {
++  const f = await createFixture(t)
++  await mutateState(f, s => { s.planConvergence = convergenceFor(s.planDigest, technicalObligation(s.planDigest)) })
++  const response = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId,
++    replanRequest(f, {}, obligationRequest(f)))
++  assertReceipt(response, 'reserved')
++  const owner = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, obligationRequest(f))
++  assert.equal(owner.rootProblemId, response.rootProblemId)
++  await mutateState(f, s => {
++    s.planConvergence = convergenceFor(s.planDigest, technicalObligation(s.planDigest, { authority: 'user', id: 'human' }))
++  })
++  const before = await readState(f.root, f.workflowId)
++  assertReceipt(await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId,
++    replanRequest(f, { operationId: 'human-decision' }, obligationRequest(f, 'human'))), 'rejected')
++  assert.deepEqual(await readState(f.root, f.workflowId), before)
++})
++
++test('T15 a running or mismatched failed operation receipt cannot authorize a new ordinal', async t => {
++  const f = await createFixture(t)
++  const first = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f))
++  const failed = await operationSettlement(f, first)
++  for (const change of [
++    a => { a.state = 'running'; delete a.result },
++    a => { a.result.reference.id = 'wrong-prompt' },
++    a => { a.executionRef.id = 'wrong-session' },
++  ]) {
++    const candidate = structuredClone(failed); change(candidate.recoveryAdmission.budget.attempts[0])
++    await writeState(f.root, f.workflowId, candidate)
++    const response = await f.runtime.reserveRecoveryAdmission(f.agent, f.workflowId, replanRequest(f, { ordinal: 2 }))
++    assertReceipt(response, 'rejected')
++    assert.deepEqual(await readState(f.root, f.workflowId), candidate)
++  }
++})
+--- docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md
+@@ -6,7 +6,7 @@
+
+ `prepareRecoveryAdmission(state, request)` 返回 `{ state, response }`，从不修改传入的 `state` 或 `request`。调用方只能在成功保存返回的 `state` 后把 `response` 交给外部调用者；保存失败、CAS/锁冲突或 Runtime 基础门禁失败都不能把收据当成可启动授权。
+
+-请求必须恰好为：
++既有Owner领取请求必须恰好为：
+
+ ```js
+ {
+@@ -119,3 +119,27 @@
+ 接纳器只调用 `registerRecoveryProblem` 和 `reserveRecoveryAttempt`。新领取在一个纯状态结果中同时登记 source/root、生成意图和占位身份，并使 `DSH_RECOVERY_BUDGET_V1` 的问题及 workflow `used` 一起增加。重放不重复扣减；问题或 workflow 额度耗尽、已关闭根问题都返回拒绝而不改状态。
+
+ T-21/T-22 负责把预留身份与真实 session/prompt 回执对账，调用 `startRecoveryAttempt` / `settleRecoveryAttempt`，以及处理不确定状态。本合同中的 `launchAuthorized:false` 在那些实现和真实持久后端证据完成前始终保持为 false。
++
++## T15 重规划执行身份的内部预留扩展（R57）
++
++同一 `prepareRecoveryAdmission` / Runtime `reserveRecoveryAdmission` 持久当前状态事务也接受以下严格互斥请求。此内部接口只预留来源、预算和执行身份，仍返回 `launchAuthorized:false`；未连接实际Planner/Review/consultation/handoff子会话，不提供新的公开工具。
++
++```js
++{
++  contract: 'DSH_REPLAN_ADMISSION_REQUEST_V1',
++  origin: { /* 上述精确DSH_RECOVERY_ADMISSION_REQUEST_V1 */ },
++  operation: {
++    operationKind: 'revision_plan', // 或revision_review、handoff_replan
++    operationId: 'persisted-logical-step-id',
++    ordinal: 1,
++  },
++}
++```
++
++origin必须通过当前真实Owner失败或open技术义务的既有审批、版本、用户依据、来源和continuation核验。首次免费Owner终态失败可直接注册第一个root，首次operation领取才扣额度；已付费失败通过continuation继承root。已有来源上的Owner/operation交错领取共用一份sources、root和budget，不先制造一次Owner恢复。replan预留不受“Owner重试前先处理handoff”门禁阻拦，因为它准备处理该handoff；用户决定/技术来源门禁不放宽。正常完成来源仍不接受owner_failure。
++
++operationId是受信Runtime调用方固定的逻辑步骤身份，不是根问题身份或启动授权。当前层不证明它对应实际cycle/handoff；后续实际驱动必须持久校验触发来源快照、分组、候选版本和物理调用，不能直接把模型提供的ID传入。咨询等每次真实外部调用同样必须计费。
++
++operation intent精确保存旧公共字段 `intentKey/sourceId/strategy/planDigest/rootProblemId/requestId/attemptId/executionIdentity`，以 `executionKind=replan_operation/operationKind/operationId/ordinal` 替代 `taskId/ownerId`。source保留真实Owner/义务身份；不得把来源Owner解释成Planner执行Owner。intentKey由sourceId和完整operation确定，不随策略切换另开同一步骤。首次ordinal为1；重放复用同一request/attempt/session/prompt。下一ordinal必须连续且前项已failed结算，结果引用须为 `{id:promptId,version:sessionId}`，若有执行引用则须为 `{id:sessionId,version:promptId}`；reserved/running/成功/取消及错误回执不能创建下一次物理重试。
++
++导入mixed intents逐项比对source、root、完整执行绑定和账本，校验ordinal连续与前项失败，缺intent不能隐藏operation用量。Owner continuation仍只引用实际Owner intent，不把Planner失败伪装成Owner新执行。Owner专属 `reconcileRecoverySession` 明确拒绝operation身份；通用Planner启动/结果对账待T15后续接线。旧reader若不支持mixed intent必须拒绝，不删字段降级。
+--- docs/specs/main-thread-owner-workflow/contracts/recovery-budget-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-budget-v1.md
+@@ -1,6 +1,6 @@
+ # T-13 纯恢复预算接口 V1
+
+-来源：[R4-V03-1 第12节](../../../superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md)。实现：[recovery-budget.mjs](../../../../owner-workflow-plugin/src/recovery-budget.mjs)。这是纯状态接口，本身不提供磁盘持久性、锁、会话对账或硬截止保证。Owner恢复已由T20/T22及T15局部接线消费；R55新增的重规划执行形状尚未进入Runtime admission/启动链。
++来源：[R4-V03-1 第12节](../../../superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md)。实现：[recovery-budget.mjs](../../../../owner-workflow-plugin/src/recovery-budget.mjs)。这是纯状态接口，本身不提供磁盘持久性、锁、会话对账或硬截止保证。Owner恢复已由T20/T22及T15局部接线消费；R55新增的重规划执行形状在R57接入内部admission预留；实际Planner启动链仍待接线。
+
+ ## 数据边界
+
+@@ -19,7 +19,7 @@
+
+ 所有ID是非空、无首尾空白字符串。未知 executionKind/operationKind、混合两种身份、缺失字段、额外字段均拒绝。既有 Owner JSON 形状保持不变；同一 V1 账本允许两种 attempt 共存，所有项计入相同 totalUsed 和各自 root 的 used。requestId/attemptId 在全账本唯一，相同request重放不能跨类型或改变任一字段。executionRef/result.reference 的跨attempt去重同样跨两种类型，开始前不能成功结算，失败/取消不退款，未结算的操作同样阻止问题关闭。
+
+-兼容策略：能识别新分支的读者按联合严格读取；旧 V1 reader 遇到新 operation 分支必须拒绝，不删字段、不造 Owner ID、不降级或重建预算。当前 T20 admission 仍是 Owner-only，其完整映射校验拒绝没有对应 intent 的 operation attempt；R55未放宽该门禁。实际重规划必须先完成T15持久来源、mixed intent及启动/结果对账接线才可使用，不能将纯账本支持当作执行授权。
++兼容策略：能识别新分支的读者按联合严格读取；旧 V1 reader 遇到新 operation 分支必须拒绝，不删字段、不造 Owner ID、不降级或重建预算。R57内部admission已支持严格mixed intent，仍拒绝没有对应intent的operation attempt；实际cycle/handoff触发快照、子会话启动及结果对账待T15后续接线，不能将预留回执当作执行授权。
+
+ 公开输入和导入账本严格校验；未知字段/版本、重复身份、冲突来源、计数与attempt记录不符或不合法状态拒绝。校验导入快照只能证明内部一致性，不能证明该快照真实/最新或识别被整体协调篡改的历史；这些属于持久边界。每次调用返回新对象，不修改输入。

@@ -1,0 +1,142 @@
+TAP version 13
+# Subtest: 仅派发依赖完成的任务，Review 未完成时阻塞下游
+ok 1 - 仅派发依赖完成的任务，Review 未完成时阻塞下游
+  ---
+  duration_ms: 14.057791
+  type: 'test'
+  ...
+# Subtest: 不同 Owner 的任务仍可占用不同并行槽位
+ok 2 - 不同 Owner 的任务仍可占用不同并行槽位
+  ---
+  duration_ms: 9.055458
+  type: 'test'
+  ...
+# Subtest: Supervisor wait 确认保留 Owner 提交关卡写入的验证证据
+ok 3 - Supervisor wait 确认保留 Owner 提交关卡写入的验证证据
+  ---
+  duration_ms: 2.347041
+  type: 'test'
+  ...
+# Subtest: Supervisor ACK 保留自治恢复策略和证据租约
+ok 4 - Supervisor ACK 保留自治恢复策略和证据租约
+  ---
+  duration_ms: 1.377583
+  type: 'test'
+  ...
+# Subtest: 同一 Owner 的 ready task 每批最多派发一个，其余保持 pending
+ok 5 - 同一 Owner 的 ready task 每批最多派发一个，其余保持 pending
+  ---
+  duration_ms: 9.274583
+  type: 'test'
+  ...
+# Subtest: 就绪任务按计划 priority 降序选择，同时继续遵守 Owner 排他
+ok 6 - 就绪任务按计划 priority 降序选择，同时继续遵守 Owner 排他
+  ---
+  duration_ms: 3.182542
+  type: 'test'
+  ...
+# Subtest: 已有同 Owner running/reserved task 时不再派发该 Owner
+ok 7 - 已有同 Owner running/reserved task 时不再派发该 Owner
+  ---
+  duration_ms: 5.747291
+  type: 'test'
+  ...
+# Subtest: 连续十次 cursor 未变化时派发 inspect，且不会猜测任务完成
+ok 8 - 连续十次 cursor 未变化时派发 inspect，且不会猜测任务完成
+  ---
+  duration_ms: 1.644333
+  type: 'test'
+  ...
+# Subtest: 所有任务终态时停止；停止任务留下的决策阻塞会通知主会话
+ok 9 - 所有任务终态时停止；停止任务留下的决策阻塞会通知主会话
+  ---
+  duration_ms: 1.798167
+  type: 'test'
+  ...
+# Subtest: 动作枚举固定、actionId 不透明且确认必须匹配当前动作
+ok 10 - 动作枚举固定、actionId 不透明且确认必须匹配当前动作
+  ---
+  duration_ms: 3.604667
+  type: 'test'
+  ...
+# Subtest: wait 确认依据 cursor 投影进展，并重置或累加无进展轮数
+ok 11 - wait 确认依据 cursor 投影进展，并重置或累加无进展轮数
+  ---
+  duration_ms: 3.043917
+  type: 'test'
+  ...
+# Subtest: actionId 绑定计划身份、工作流 revision 与完整任务投影
+ok 12 - actionId 绑定计划身份、工作流 revision 与完整任务投影
+  ---
+  duration_ms: 5.69625
+  type: 'test'
+  ...
+# Subtest: 旧 action ACK 在状态变化或已经确认后被拒绝
+ok 13 - 旧 action ACK 在状态变化或已经确认后被拒绝
+  ---
+  duration_ms: 4.022125
+  type: 'test'
+  ...
+# Subtest: create ACK 只接受 running 状态及其闭合任务字段
+ok 14 - create ACK 只接受 running 状态及其闭合任务字段
+  ---
+  duration_ms: 2.826541
+  type: 'test'
+  ...
+# Subtest: wait、notify 与 stop ACK 拒绝不适用的观测字段
+ok 15 - wait、notify 与 stop ACK 拒绝不适用的观测字段
+  ---
+  duration_ms: 4.79475
+  type: 'test'
+  ...
+# Subtest: 恢复状态的 active 任务数超过并行上限时关闭处理
+ok 16 - 恢复状态的 active 任务数超过并行上限时关闭处理
+  ---
+  duration_ms: 2.368875
+  type: 'test'
+  ...
+# Subtest: 恢复状态包含非法任务状态时关闭处理
+ok 17 - 恢复状态包含非法任务状态时关闭处理
+  ---
+  duration_ms: 1.924
+  type: 'test'
+  ...
+# Subtest: actionSequence 与 unchangedPolls 拒绝非安全整数，并在序列上限关闭处理
+ok 18 - actionSequence 与 unchangedPolls 拒绝非安全整数，并在序列上限关闭处理
+  ---
+  duration_ms: 2.641375
+  type: 'test'
+  ...
+# Subtest: Supervisor ready 投影只派发 Composite entry/内部节点，exit 完成后才放行父后继
+ok 19 - Supervisor ready 投影只派发 Composite entry/内部节点，exit 完成后才放行父后继
+  ---
+  duration_ms: 20.78425
+  type: 'test'
+  ...
+# Subtest: 递归 Composite 叶子必须等待所有祖先的外部依赖
+ok 20 - 递归 Composite 叶子必须等待所有祖先的外部依赖
+  ---
+  duration_ms: 9.027416
+  type: 'test'
+  ...
+# Subtest: Supervisor 拒绝执行 abstract DAG，但进度投影保留拆分信息
+ok 21 - Supervisor 拒绝执行 abstract DAG，但进度投影保留拆分信息
+  ---
+  duration_ms: 2.014916
+  type: 'test'
+  ...
+# Subtest: Revision 切换阻塞指定任务并在 ACK 后保留待检查元数据
+ok 22 - Revision 切换阻塞指定任务并在 ACK 后保留待检查元数据
+  ---
+  duration_ms: 3.755959
+  type: 'test'
+  ...
+1..22
+# tests 22
+# suites 0
+# pass 22
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 235.090917

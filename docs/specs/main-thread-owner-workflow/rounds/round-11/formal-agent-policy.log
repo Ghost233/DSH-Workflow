@@ -1,0 +1,12 @@
+✔ 子代理继承完整工具集，角色只决定文件沙箱模式 (0.779958ms)
+✔ Planner 与 Reviewer 隐藏无效升级字段，并对同一失败搜索执行有界熔断 (0.362042ms)
+✔ Operator 的重复搜索同样使用成功缓存和两次失败熔断 (0.547125ms)
+✔ 主代理禁止直接开发，Owner 和 Operator 不使用工具白名单 (0.467125ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 46.91825

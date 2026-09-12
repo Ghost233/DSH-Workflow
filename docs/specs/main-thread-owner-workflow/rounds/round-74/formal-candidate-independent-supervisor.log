@@ -1,0 +1,148 @@
+TAP version 13
+# Subtest: candidate selection and acknowledgment only expose independent target patches, never a replacement state
+ok 1 - candidate selection and acknowledgment only expose independent target patches, never a replacement state
+  ---
+  duration_ms: 19.322042
+  type: 'test'
+  ...
+# Subtest: excludes source/target Owner tasks and their forward/reverse dependency closure
+ok 2 - excludes source/target Owner tasks and their forward/reverse dependency closure
+  ---
+  duration_ms: 8.580708
+  type: 'test'
+  ...
+# Subtest: full active tasks and undispatched reservations consume global slots and Owner identities
+ok 3 - full active tasks and undispatched reservations consume global slots and Owner identities
+  ---
+  duration_ms: 11.058292
+  type: 'test'
+  ...
+# Subtest: existing Owner history and source binding prevent stale or duplicate creates
+ok 4 - existing Owner history and source binding prevent stale or duplicate creates
+  ---
+  duration_ms: 9.352292
+  type: 'test'
+  ...
+# Subtest: no eligible work yields side-effect-free wait and cannot acknowledge stop/notify
+ok 5 - no eligible work yields side-effect-free wait and cannot acknowledge stop/notify
+  ---
+  duration_ms: 4.25775
+  type: 'test'
+  ...
+# Subtest: unproven handoff scope fails closed, and pending notice never dispatches
+ok 6 - unproven handoff scope fails closed, and pending notice never dispatches
+  ---
+  duration_ms: 2.543417
+  type: 'test'
+  ...
+# Subtest: unrelated stalled activity cannot suppress an available independent create slot
+ok 7 - unrelated stalled activity cannot suppress an available independent create slot
+  ---
+  duration_ms: 5.167708
+  type: 'test'
+  ...
+# Subtest: composite relationships keep a source subtree excluded without dropping the independent leaf
+ok 8 - composite relationships keep a source subtree excluded without dropping the independent leaf
+  ---
+  duration_ms: 16.091334
+  type: 'test'
+  ...
+# Subtest: reject reservation occupancy with stopped task instead of releasing its parallel slot
+ok 9 - reject reservation occupancy with stopped task instead of releasing its parallel slot
+  ---
+  duration_ms: 3.376458
+  type: 'test'
+  ...
+# Subtest: reject owner occupancy with stopped task instead of releasing its parallel slot
+ok 10 - reject owner occupancy with stopped task instead of releasing its parallel slot
+  ---
+  duration_ms: 2.664083
+  type: 'test'
+  ...
+# Subtest: reject reservation occupancy with completed task instead of releasing its parallel slot
+ok 11 - reject reservation occupancy with completed task instead of releasing its parallel slot
+  ---
+  duration_ms: 2.326292
+  type: 'test'
+  ...
+# Subtest: reject owner occupancy with completed task instead of releasing its parallel slot
+ok 12 - reject owner occupancy with completed task instead of releasing its parallel slot
+  ---
+  duration_ms: 2.6375
+  type: 'test'
+  ...
+# Subtest: an already running reservation occupies one slot without duplicate counting
+ok 13 - an already running reservation occupies one slot without duplicate counting
+  ---
+  duration_ms: 6.158375
+  type: 'test'
+  ...
+# Subtest: independent selection rejects an existing shared pendingTaskMerge transaction
+ok 14 - independent selection rejects an existing shared pendingTaskMerge transaction
+  ---
+  duration_ms: 1.180625
+  type: 'test'
+  ...
+# Subtest: independent selection rejects an existing shared pendingMemoryCompilation transaction
+ok 15 - independent selection rejects an existing shared pendingMemoryCompilation transaction
+  ---
+  duration_ms: 1.0635
+  type: 'test'
+  ...
+# Subtest: independent selection excludes other planned handoff targets that finish would implicitly consume
+ok 16 - independent selection excludes other planned handoff targets that finish would implicitly consume
+  ---
+  duration_ms: 2.6895
+  type: 'test'
+  ...
+# Subtest: terminal receipts require matching task and Owner outcomes at both replay and execution guards
+ok 17 - terminal receipts require matching task and Owner outcomes at both replay and execution guards
+  ---
+  duration_ms: 97.73
+  type: 'test'
+  ...
+# Subtest: launching permits Owner finish before the reservation settlement transaction
+ok 18 - launching permits Owner finish before the reservation settlement transaction
+  ---
+  duration_ms: 13.048625
+  type: 'test'
+  ...
+# Subtest: daemon selects independent create then resumes persisted reserved work without rewriting state
+ok 19 - daemon selects independent create then resumes persisted reserved work without rewriting state
+  ---
+  duration_ms: 4.89175
+  type: 'test'
+  ...
+# Subtest: daemon waits on launching or ambiguous Owner history and never treats either as first dispatch
+ok 20 - daemon waits on launching or ambiguous Owner history and never treats either as first dispatch
+  ---
+  duration_ms: 7.170375
+  type: 'test'
+  ...
+# Subtest: daemon returns stable wait for refused approvals, invalid reserved source, or no independent work
+ok 21 - daemon returns stable wait for refused approvals, invalid reserved source, or no independent work
+  ---
+  duration_ms: 8.911333
+  type: 'test'
+  ...
+# Subtest: a reserved batch advances the next Owner only after the prior independent integration settles
+ok 22 - a reserved batch advances the next Owner only after the prior independent integration settles
+  ---
+  duration_ms: 14.326125
+  type: 'test'
+  ...
+# Subtest: revoked approval or stale Review invalidates both reservation and live execution binding
+ok 23 - revoked approval or stale Review invalidates both reservation and live execution binding
+  ---
+  duration_ms: 5.495667
+  type: 'test'
+  ...
+1..23
+# tests 23
+# suites 0
+# pass 23
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 337.019334

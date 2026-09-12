@@ -1,0 +1,372 @@
+TAP version 13
+# Subtest: Supervisor 将没有活跃子代理的 running Owner 收敛为 orphaned，而不是继续报告运行中
+ok 1 - Supervisor 将没有活跃子代理的 running Owner 收敛为 orphaned，而不是继续报告运行中
+  ---
+  duration_ms: 2066.163875
+  type: 'test'
+  ...
+# Subtest: Supervisor inspect 超时会取消旧执行并切换自治恢复，不能以持续 inspect 无限续命
+ok 2 - Supervisor inspect 超时会取消旧执行并切换自治恢复，不能以持续 inspect 无限续命
+  ---
+  duration_ms: 1700.2395
+  type: 'test'
+  ...
+# Subtest: Owner 子代理启动时立即持久化 session、phase 与 heartbeat
+ok 3 - Owner 子代理启动时立即持久化 session、phase 与 heartbeat
+  ---
+  duration_ms: 1646.186458
+  type: 'test'
+  ...
+# Subtest: Owner 宿主授权等待会持久化到 workflow，并在结束后恢复 running
+ok 4 - Owner 宿主授权等待会持久化到 workflow，并在结束后恢复 running
+  ---
+  duration_ms: 2178.811291
+  type: 'test'
+  ...
+# Subtest: 主会话 Owner 恢复只负责后台派发，不同步等待完整 LLM 执行
+ok 5 - 主会话 Owner 恢复只负责后台派发，不同步等待完整 LLM 执行
+  ---
+  duration_ms: 0.937542
+  type: 'test'
+  ...
+# Subtest: workflow_status 默认保持紧凑，完整历史只通过分页 detail 返回
+ok 6 - workflow_status 默认保持紧凑，完整历史只通过分页 detail 返回
+  ---
+  duration_ms: 1450.763709
+  type: 'test'
+  ...
+# Subtest: failed Workflow 存在待推进 PlanRevision 时 workflow_status 会恢复 Runner 控制桥
+ok 7 - failed Workflow 存在待推进 PlanRevision 时 workflow_status 会恢复 Runner 控制桥
+  ---
+  duration_ms: 1757.174542
+  type: 'test'
+  ...
+# Subtest: 相同根因没有新证据时自动切换恢复策略而不是 await_user
+ok 8 - 相同根因没有新证据时自动切换恢复策略而不是 await_user
+  ---
+  duration_ms: 1461.230125
+  type: 'test'
+  ...
+# Subtest: 同一 Owner 的第二个 V2 任务复用分支和 worktree 并同步最新 workflow HEAD
+ok 9 - 同一 Owner 的第二个 V2 任务复用分支和 worktree 并同步最新 workflow HEAD
+  ---
+  duration_ms: 1837.210458
+  type: 'test'
+  ...
+# Subtest: V2 task finish 合入固定 SHA、完成 task/ownerRun，并让后继从新 workflow HEAD 同步
+ok 10 - V2 task finish 合入固定 SHA、完成 task/ownerRun，并让后继从新 workflow HEAD 同步
+  ---
+  duration_ms: 3366.85125
+  type: 'test'
+  ...
+# Subtest: 记忆编译失败后恢复 awaiting_finish Owner 时只重试结算
+ok 11 - 记忆编译失败后恢复 awaiting_finish Owner 时只重试结算
+  ---
+  duration_ms: 1373.986667
+  type: 'test'
+  ...
+# Subtest: cancel 活动 Owner 时中止执行并删除 dirty 临时分支与 worktree
+ok 12 - cancel 活动 Owner 时中止执行并删除 dirty 临时分支与 worktree
+  ---
+  duration_ms: 1970.417709
+  type: 'test'
+  ...
+# Subtest: cancel 拒绝已 finalized 的 workflow，且不改写持久化状态
+ok 13 - cancel 拒绝已 finalized 的 workflow，且不改写持久化状态
+  ---
+  duration_ms: 865.824583
+  type: 'test'
+  ...
+# Subtest: Owner A 保留未提交修改原地恢复，并以 Owner B 已合并的新 HEAD 作为共同审计 base
+ok 14 - Owner A 保留未提交修改原地恢复，并以 Owner B 已合并的新 HEAD 作为共同审计 base
+  ---
+  duration_ms: 9477.702291
+  type: 'test'
+  ...
+# Subtest: 恢复记录含独有固定提交但分支历史丢失时拒绝重置审计基线
+ok 15 - 恢复记录含独有固定提交但分支历史丢失时拒绝重置审计基线
+  ---
+  duration_ms: 3015.84825
+  type: 'test'
+  ...
+# Subtest: 控制桥使用持久 lease，不能被第二个 Harness 进程抢占 socket
+ok 16 - 控制桥使用持久 lease，不能被第二个 Harness 进程抢占 socket
+  ---
+  duration_ms: 642.531584
+  type: 'test'
+  ...
+# Subtest: Registry 提案更新后拒绝用陈旧快照重新保存规划状态
+ok 17 - Registry 提案更新后拒绝用陈旧快照重新保存规划状态
+  ---
+  duration_ms: 1097.399709
+  type: 'test'
+  ...
+# Subtest: 两个 Runtime 竞争批准时 Registry 与 workflow state 保持同一结果
+ok 18 - 两个 Runtime 竞争批准时 Registry 与 workflow state 保持同一结果
+  ---
+  duration_ms: 1468.159792
+  type: 'test'
+  ...
+# Subtest: Registry 批准先赢 workflow state 锁时，另一个 Runtime 不得启动旧计划 Owner
+ok 19 - Registry 批准先赢 workflow state 锁时，另一个 Runtime 不得启动旧计划 Owner
+  ---
+  duration_ms: 1579.570875
+  type: 'test'
+  ...
+# Subtest: Owner 获得 lease 后必须用 Registry 批准写入的最新 state 拒绝启动旧计划
+ok 20 - Owner 获得 lease 后必须用 Registry 批准写入的最新 state 拒绝启动旧计划
+  ---
+  duration_ms: 853.548792
+  type: 'test'
+  ...
+# Subtest: 另一个 Runtime 持有 workflow CAS 锁时批准不会先改 Registry
+ok 21 - 另一个 Runtime 持有 workflow CAS 锁时批准不会先改 Registry
+  ---
+  duration_ms: 889.405084
+  type: 'test'
+  ...
+# Subtest: workflow state 原子保存失败时回滚 Registry 内容和 index
+ok 22 - workflow state 原子保存失败时回滚 Registry 内容和 index
+  ---
+  duration_ms: 1556.946666
+  type: 'test'
+  ...
+# Subtest: V2 workflow recovery 恢复重启遗留的 planning 和 failed task
+ok 23 - V2 workflow recovery 恢复重启遗留的 planning 和 failed task
+  ---
+  duration_ms: 1153.098292
+  type: 'test'
+  ...
+# Subtest: Owner 主动报告 blocked 时优先结算阻塞，不会被缺失验证误报为 planDigest 错误
+ok 24 - Owner 主动报告 blocked 时优先结算阻塞，不会被缺失验证误报为 planDigest 错误
+  ---
+  duration_ms: 1030.035542
+  type: 'test'
+  ...
+# Subtest: 同一 Owner 在不同 workflow 间使用磁盘 lease 互斥，并在记录进程死亡后立即恢复
+ok 25 - 同一 Owner 在不同 workflow 间使用磁盘 lease 互斥，并在记录进程死亡后立即恢复
+  ---
+  duration_ms: 154.860583
+  type: 'test'
+  ...
+# Subtest: Lease 的 fencing token 被接管后旧临界区不能继续成功结算
+ok 26 - Lease 的 fencing token 被接管后旧临界区不能继续成功结算
+  ---
+  duration_ms: 143.406708
+  type: 'test'
+  ...
+# Subtest: handoff 必须先修复越界文件，再把请求写入 handoff 队列
+ok 27 - handoff 必须先修复越界文件，再把请求写入 handoff 队列
+  ---
+  duration_ms: 1619.871542
+  type: 'test'
+  ...
+# Subtest: Owner 失败报告携带 handoff 时先入队再停止，避免重复启动同一 Owner
+ok 28 - Owner 失败报告携带 handoff 时先入队再停止，避免重复启动同一 Owner
+  ---
+  duration_ms: 1013.408166
+  type: 'test'
+  ...
+# Subtest: handoff_replan 在 live Registry 缺失时拒绝重规划
+ok 29 - handoff_replan 在 live Registry 缺失时拒绝重规划
+  ---
+  duration_ms: 708.635583
+  type: 'test'
+  ...
+# Subtest: handoff_replan 拒绝把任务分配给 live Registry 未登记 Owner
+ok 30 - handoff_replan 拒绝把任务分配给 live Registry 未登记 Owner
+  ---
+  duration_ms: 973.824042
+  type: 'test'
+  ...
+# Subtest: running 恢复态的 handoff_replan 会清除旧批准，并要求新的计划审查后才能批准
+ok 31 - running 恢复态的 handoff_replan 会清除旧批准，并要求新的计划审查后才能批准
+  ---
+  duration_ms: 943.908209
+  type: 'test'
+  ...
+# Subtest: V2 task finish 使用 Owner 结算时登记的固定 commit SHA
+ok 32 - V2 task finish 使用 Owner 结算时登记的固定 commit SHA
+  ---
+  duration_ms: 2661.602583
+  type: 'test'
+  ...
+# Subtest: active Owner 只能追加简短的当前任务临时记忆，并持久化供恢复注入
+ok 33 - active Owner 只能追加简短的当前任务临时记忆，并持久化供恢复注入
+  ---
+  duration_ms: 997.692208
+  type: 'test'
+  ...
+# Subtest: V2 task finish 在固定提交后拒绝跟随 Owner 分支移动
+ok 34 - V2 task finish 在固定提交后拒绝跟随 Owner 分支移动
+  ---
+  duration_ms: 1414.575333
+  type: 'test'
+  ...
+# Subtest: V2 task finish 在 workflow 已合入但状态未记账时恢复并幂等完成
+ok 35 - V2 task finish 在 workflow 已合入但状态未记账时恢复并幂等完成
+  ---
+  duration_ms: 2140.254625
+  type: 'test'
+  ...
+# Subtest: V2 task finish 恢复 pendingTaskMerge，只清理 task preflight 并保留 Owner worktree
+ok 36 - V2 task finish 恢复 pendingTaskMerge，只清理 task preflight 并保留 Owner worktree
+  ---
+  duration_ms: 2810.498791
+  type: 'test'
+  ...
+# Subtest: V2 task finish 按 task.write 覆盖把 handoff queue 标记为 completed
+ok 37 - V2 task finish 按 task.write 覆盖把 handoff queue 标记为 completed
+  ---
+  duration_ms: 2315.036833
+  type: 'test'
+  ...
+# Subtest: finalize 只合并固定的 review SHA，review 后分支移动时拒绝未审查提交
+ok 38 - finalize 只合并固定的 review SHA，review 后分支移动时拒绝未审查提交
+  ---
+  duration_ms: 1110.997917
+  type: 'test'
+  ...
+# Subtest: finalize 遇到 tracked、untracked 或 ignored Owner dirty 时保存 cleanupPending 并保留现场
+    # Subtest: tracked
+    ok 1 - tracked
+      ---
+      duration_ms: 2382.978084
+      type: 'test'
+      ...
+    # Subtest: untracked
+    ok 2 - untracked
+      ---
+      duration_ms: 2499.001583
+      type: 'test'
+      ...
+    # Subtest: ignored
+    ok 3 - ignored
+      ---
+      duration_ms: 2491.748125
+      type: 'test'
+      ...
+    1..3
+ok 39 - finalize 遇到 tracked、untracked 或 ignored Owner dirty 时保存 cleanupPending 并保留现场
+  ---
+  duration_ms: 7374.59975
+  type: 'test'
+  ...
+# Subtest: finalize 对 legacy ownerRuns 的越界、链接、分支错配和字段冲突一律 fail-closed
+    # Subtest: top worktree 越出当前 workflow 受控目录
+    ok 1 - top worktree 越出当前 workflow 受控目录
+      ---
+      duration_ms: 1906.381541
+      type: 'test'
+      ...
+    # Subtest: result worktree 越出当前 workflow 受控目录
+    ok 2 - result worktree 越出当前 workflow 受控目录
+      ---
+      duration_ms: 1929.876833
+      type: 'test'
+      ...
+    # Subtest: worktree 路径经过符号链接
+    ok 3 - worktree 路径经过符号链接
+      ---
+      duration_ms: 2241.924458
+      type: 'test'
+      ...
+    # Subtest: 记录 branch 与 worktree attached branch 不一致
+    ok 4 - 记录 branch 与 worktree attached branch 不一致
+      ---
+      duration_ms: 2013.553709
+      type: 'test'
+      ...
+    # Subtest: top 与 result worktree 字段冲突
+    ok 5 - top 与 result worktree 字段冲突
+      ---
+      duration_ms: 1851.602125
+      type: 'test'
+      ...
+    # Subtest: top 与 result branch 字段冲突
+    ok 6 - top 与 result branch 字段冲突
+      ---
+      duration_ms: 1907.22325
+      type: 'test'
+      ...
+    1..6
+ok 40 - finalize 对 legacy ownerRuns 的越界、链接、分支错配和字段冲突一律 fail-closed
+  ---
+  duration_ms: 11851.515917
+  type: 'test'
+  ...
+# Subtest: finalize 可清理合法固定 V2 Owner 路径
+ok 41 - finalize 可清理合法固定 V2 Owner 路径
+  ---
+  duration_ms: 2042.103042
+  type: 'test'
+  ...
+# Subtest: finalize 成功后重复调用可以幂等完成清理
+ok 42 - finalize 成功后重复调用可以幂等完成清理
+  ---
+  duration_ms: 2187.435292
+  type: 'test'
+  ...
+# Subtest: finalize 合并已经完成但状态未记账时，可以在资源缺失后恢复清理
+ok 43 - finalize 合并已经完成但状态未记账时，可以在资源缺失后恢复清理
+  ---
+  duration_ms: 1272.042958
+  type: 'test'
+  ...
+# Subtest: finalize 在启动分支有新提交时以最新 base 预合并固定 review SHA 并成功交付
+ok 44 - finalize 在启动分支有新提交时以最新 base 预合并固定 review SHA 并成功交付
+  ---
+  duration_ms: 2315.825916
+  type: 'test'
+  ...
+# Subtest: finalize 最新 base 预合并冲突时记录失败并保留 workflow、Owner 和 preflight 现场
+ok 45 - finalize 最新 base 预合并冲突时记录失败并保留 workflow、Owner 和 preflight 现场
+  ---
+  duration_ms: 1685.557791
+  type: 'test'
+  ...
+# Subtest: Runtime 当前 Owner 只能通过结构化 request_subgraph 请求并在锁内持久化局部 delta
+ok 46 - Runtime 当前 Owner 只能通过结构化 request_subgraph 请求并在锁内持久化局部 delta
+  ---
+  duration_ms: 633.83075
+  type: 'test'
+  ...
+# Subtest: Runtime request_handoff 走局部失效并拒绝通过 delta 绕过 Registry 边界
+ok 47 - Runtime request_handoff 走局部失效并拒绝通过 delta 绕过 Registry 边界
+  ---
+  duration_ms: 657.618583
+  type: 'test'
+  ...
+# Subtest: Runtime request_handoff 只保留白名单字段，调用方元数据不能覆盖生成字段
+ok 48 - Runtime request_handoff 只保留白名单字段，调用方元数据不能覆盖生成字段
+  ---
+  duration_ms: 662.619
+  type: 'test'
+  ...
+# Subtest: V2 handoff_replan 用 task.write 覆盖 handoff 文件并 carry forward completed task
+ok 49 - V2 handoff_replan 用 task.write 覆盖 handoff 文件并 carry forward completed task
+  ---
+  duration_ms: 805.77775
+  type: 'test'
+  ...
+# Subtest: V2 handoff_replan 确定性冻结已有 ownerRun 对应 task 的语义
+ok 50 - V2 handoff_replan 确定性冻结已有 ownerRun 对应 task 的语义
+  ---
+  duration_ms: 804.209416
+  type: 'test'
+  ...
+# Subtest: V2 recoverWorkflow 只按 task 状态、ownerRuns 和 Supervisor queue 恢复失败 task
+ok 51 - V2 recoverWorkflow 只按 task 状态、ownerRuns 和 Supervisor queue 恢复失败 task
+  ---
+  duration_ms: 723.564458
+  type: 'test'
+  ...
+1..51
+# tests 60
+# suites 0
+# pass 60
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 96689.016208

@@ -1,0 +1,8 @@
+{
+  "method": "Direct scan of raw TAP logs; supersedes runner warnings field whose regex has a trailing-space limitation.",
+  "matches": {
+    "formal-resilience-3.log": [],
+    "formal-resilience-2.log": [],
+    "formal-resilience-1.log": []
+  }
+}

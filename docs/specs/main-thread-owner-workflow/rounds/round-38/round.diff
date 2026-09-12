@@ -1,0 +1,128 @@
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs
+@@ -309,6 +309,67 @@
+   }
+ }
+
++async function produceAdmissionPending(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true, temporaryDirectory: input.fixtureParent,
++  })
++  const target = statePath(fixture.root, fixture.workflowId)
++  const originalWrite = fsPromises.writeFile
++  const originalRename = fsPromises.rename
++  const beforeState = await readFile(target, 'utf8')
++  async function checkpoint(path, bytes) {
++    const pending = JSON.parse(bytes)
++    const intent = pending.recoveryAdmission?.intents?.[0]
++    if (!intent) return
++    await send({ type: 'checkpoint', scenario: input.boundary, pid: process.pid,
++      root: fixture.root, workflowId: fixture.workflowId, beforeState,
++      stateBytes: await readFile(target, 'utf8'), pendingPath: path, pendingBytes: bytes,
++      // This is an uncommitted reducer candidate, NOT an admitted receipt.
++      candidateIntent: intent, request: request(intent),
++      modelRequests: fixture.adapter.requests.length,
++      rawPresent: await fixture.readRaw(intent.executionIdentity.sessionId) !== undefined,
++    })
++    await new Promise(() => {})
++  }
++  fsPromises.writeFile = async (path, bytes, ...args) => {
++    if (input.boundary === 'admission_before_write' && typeof path === 'string'
++      && path.startsWith(`${target}.tmp-`)) await checkpoint(path, bytes)
++    return await originalWrite(path, bytes, ...args)
++  }
++  fsPromises.rename = async (from, to) => {
++    if (input.boundary === 'admission_before_rename' && to === target
++      && typeof from === 'string' && from.startsWith(`${target}.tmp-`)) {
++      await checkpoint(from, await readFile(from, 'utf8'))
++    }
++    return await originalRename(from, to)
++  }
++  syncBuiltinESMExports()
++  try {
++    await reserveRecoverySession(fixture)
++    throw new Error('admission committed without reaching the requested checkpoint')
++  } finally {
++    fsPromises.writeFile = originalWrite
++    fsPromises.rename = originalRename
++    syncBuiltinESMExports()
++  }
++}
++
++async function replayUncommitted(input) {
++  const fixture = await reopenRecoverySessionFixture({ root: input.root, workflowId: input.workflowId, executable: true })
++  try {
++    const beforeState = await readFile(statePath(fixture.root, fixture.workflowId), 'utf8')
++    const operations = observeAgentOperations(fixture)
++    const result = await fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, input.request)
++    await send({ type: 'replayed', pid: process.pid, result, beforeState,
++      afterState: await readFile(statePath(fixture.root, fixture.workflowId), 'utf8'),
++      operations, modelRequests: fixture.adapter.requests.length,
++      rawPresent: await fixture.readRaw(input.candidateIntent.executionIdentity.sessionId) !== undefined,
++    })
++  } finally {
++    await fixture.dispose()
++  }
++}
++
+ async function produceReserved(input) {
+   const fixture = await createRecoverySessionFixture({ after() {} }, {
+     executable: true, temporaryDirectory: input.fixtureParent,
+@@ -458,6 +519,8 @@
+
+ async function dispatch(input) {
+   switch (input?.mode) {
++    case 'produce_admission_pending': return await produceAdmissionPending(input)
++    case 'replay_uncommitted': return await replayUncommitted(input)
+     case 'produce_settlement_pending': return await produceSettlementPending(input)
+     case 'produce_candidates': return await produceCandidates(input)
+     case 'compete_credit': return await competeCredit(input)
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs
+@@ -418,3 +418,46 @@
+     await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, finalBytes, pendingBytes, raw, replay }, null, 2) + '\n', 'utf8')
+   })
+ })
++
++
++for (const boundary of ['admission_before_write', 'admission_before_rename']) {
++  test(`T23 ${boundary} SIGKILL cannot authorize an uncommitted identity`, async () => {
++    return withFixtureContainer(async fixtureParent => {
++      const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_admission_pending', boundary, fixtureParent }), boundary)
++      const cp = producer.checkpoint
++      const stateBytes = await readFile(workflowStatePath(cp.root, cp.workflowId), 'utf8')
++      assert.equal(stateBytes, cp.beforeState)
++      assert.equal(stateBytes, cp.stateBytes)
++      assert.equal(cp.modelRequests, 0)
++      assert.equal(cp.rawPresent, false)
++      const state = JSON.parse(stateBytes)
++      assert.equal(state.recoveryAdmission, undefined)
++      const pending = JSON.parse(cp.pendingBytes)
++      assert.equal(pending.recoveryAdmission.budget.totalUsed, 1)
++      assert.equal(pending.recoveryAdmission.intents.length, 1)
++      assert.deepEqual(pending.recoveryAdmission.intents[0], cp.candidateIntent)
++      if (boundary === 'admission_before_write') {
++        await assert.rejects(readFile(cp.pendingPath), { code: 'ENOENT' })
++      } else {
++        assert.equal(await readFile(cp.pendingPath, 'utf8'), cp.pendingBytes)
++      }
++      const replay = await finishReplay({ ...cp, mode: 'replay_uncommitted' })
++      assert.notEqual(replay.pid, cp.pid)
++      assert.equal(replay.result.outcome, 'paused')
++      assert.equal(replay.result.reason, 'reservation_not_found')
++      assert.deepEqual(replay.operations, { create: 0, resume: 0, followup: 0 })
++      assert.equal(replay.modelRequests, 0)
++      assert.equal(replay.rawPresent, false)
++      assert.equal(replay.beforeState, stateBytes)
++      assert.equal(replay.afterState, stateBytes)
++      if (boundary === 'admission_before_write') {
++        await assert.rejects(readFile(cp.pendingPath), { code: 'ENOENT' })
++      } else {
++        assert.equal(await readFile(cp.pendingPath, 'utf8'), cp.pendingBytes)
++      }
++      const directory = join(EVIDENCE_ROOT, boundary)
++      await mkdir(directory, { recursive: true })
++      await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, stateBytes, replay }, null, 2) + '\n', 'utf8')
++    })
++  })
++}

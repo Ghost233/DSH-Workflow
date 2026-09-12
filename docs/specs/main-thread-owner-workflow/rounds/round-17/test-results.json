@@ -1,0 +1,208 @@
+{
+  "candidate": "2026-09-11T03:41:26.544507+00:00",
+  "results": [
+    {
+      "suite": "recovery-session",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/recovery-session.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:41:26.596229+00:00",
+      "timeoutSeconds": 180,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T03:41:33.561078+00:00",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "recovery-admission",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/recovery-admission.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:41:33.561897+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T03:41:52.726744+00:00",
+      "counts": {
+        "tests": 43,
+        "pass": 43,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "recovery-budget",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/recovery-budget.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:41:52.728981+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T03:41:52.952119+00:00",
+      "counts": {
+        "tests": 32,
+        "pass": 32,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "convergence",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/convergence.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:41:52.955237+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T03:41:53.216556+00:00",
+      "counts": {
+        "tests": 24,
+        "pass": 24,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "model",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/model.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:41:53.218302+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T03:41:53.628323+00:00",
+      "counts": {
+        "tests": 51,
+        "pass": 51,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "plan-revision",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/plan-revision.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:41:53.631014+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T03:41:53.861831+00:00",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "workflow-state",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/workflow-state.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:41:53.864404+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T03:41:54.126168+00:00",
+      "counts": {
+        "tests": 11,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "control",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/control.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:41:54.132642+00:00",
+      "timeoutSeconds": 180,
+      "exitCode": -9,
+      "timedOut": true,
+      "end": "2026-09-11T03:44:54.146520+00:00",
+      "counts": {}
+    },
+    {
+      "suite": "security",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/security.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:44:54.147924+00:00",
+      "timeoutSeconds": 180,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T03:45:31.136865+00:00",
+      "counts": {
+        "tests": 39,
+        "pass": 25,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 14,
+        "todo": 0
+      }
+    }
+  ],
+  "drift": []
+}

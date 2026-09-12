@@ -1,0 +1,7 @@
+# 审查期只读反例
+
+当前冻结源码上，用同一受控blocked/planApproved=true/Review passed/已投递technicalPause来源，调用实际deriveWorkflowControl：不带planConvergence返回wait/technical_pause；仅增加nextStrategy=awaiting_approval后返回command/workflow-recover。此为纯控制反例，不冒充真实approvePlan端到端证明。
+
+真实producer证据：convergence.mjs:1022通过Review产awaiting_approval，runtime.approvePlan写approved/planApproved但保留planConvergence。独立审查确认guard排除此标记有P2。下一轮以真实approvePlan→Supervisor启动→预算耗尽补验，保留真实user/incident计划阻塞。
+
+另一独立P2：Runner收到technicalNotificationId后仍按最早pending取一条报告，可能投递旧项便退出；应直接投递指定ID并确认结果。R52测试无旧pending项，未覆盖此路由。

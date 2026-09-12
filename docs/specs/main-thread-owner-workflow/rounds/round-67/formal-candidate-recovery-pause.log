@@ -1,0 +1,58 @@
+TAP version 13
+# Subtest: T15 socket admission refusal persists one notice, then actual daemon discovery and fresh Harness stop selecting it
+ok 1 - T15 socket admission refusal persists one notice, then actual daemon discovery and fresh Harness stop selecting it
+  ---
+  duration_ms: 3413.730125
+  type: 'test'
+  ...
+# Subtest: T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses
+ok 2 - T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses
+  ---
+  duration_ms: 2548.319416
+  type: 'test'
+  ...
+# Subtest: T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer
+ok 3 - T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer
+  ---
+  duration_ms: 1224.842042
+  type: 'test'
+  ...
+# Subtest: T15 an authoritative user-wait task projection takes priority over a candidate technical pause
+ok 4 - T15 an authoritative user-wait task projection takes priority over a candidate technical pause
+  ---
+  duration_ms: 1342.789208
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate parent
+ok 5 - T15 stale admission failure cannot pause a concurrently changed candidate parent
+  ---
+  duration_ms: 1279.72325
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate review
+ok 6 - T15 stale admission failure cannot pause a concurrently changed candidate review
+  ---
+  duration_ms: 1087.189084
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate plan content
+ok 7 - T15 stale admission failure cannot pause a concurrently changed candidate plan content
+  ---
+  duration_ms: 1345.296041
+  type: 'test'
+  ...
+# Subtest: T15 first uncertain real Reviewer creation persists pause despite its own new operation and session
+ok 8 - T15 first uncertain real Reviewer creation persists pause despite its own new operation and session
+  ---
+  duration_ms: 1399.230083
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 13896.708792

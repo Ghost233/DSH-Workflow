@@ -83,6 +83,10 @@ workflow_revision_approve
 
 最终批准只能在 Workflow 根会话进行。原生问询必须展示新增、删除和变更任务，以及依赖和 Owner 差异；只有明确同意后 Runtime 才切换活动 revision。
 
+PlanRevision 的自动收敛不按候选次数停止。首次 Reviewer 一次性冻结 Evidence Obligations；后续候选只有在 Runtime facts、固定验证、Git checkpoint 或 open obligation 数量发生变化时才续期进展租约。无进展时 Runner 必须切换局部改写、只读诊断、Owner 会诊、独立仲裁或替代实现，不能继续生成同一语义候选。只有外部授权问题才询问用户；工程问题在所有不同策略都无法产生新证据时保存自治事故与完整现场。
+
+DAG 节点不按预计耗时或代码行数判断大小。一个 Owner、一个独立结果、一个相关文件/产物族和一份可核验证据同时成立时，该节点就是叶子并停止拆分。
+
 ## 5. 运行中切换
 
 任务的执行状态仍是 `pending / running / completed / stopped`，另有结果检查状态：
@@ -97,7 +101,7 @@ invalid        已失效
 
 - 任务语义完全无关：继续执行，已完成结果保持 `valid`。
 - 新增前置、验证或需求变化，或者 write 范围扩大：旧运行自然结束并合入 workflow HEAD，但结果标记“待检查”；只保留临时 Memory 日志。
-- Owner 变化、任务删除、write 收窄或 Registry 权限变化：立即使 Owner lease 失效并取消子代理，旧结果不合入；任务进入人工处理状态。
+- Owner 变化、任务删除、write 收窄或 Registry 权限变化：立即使 Owner lease 失效并取消子代理，旧结果不合入；Runtime 从最新 checkpoint 自动重建受影响局部子图。只有需要外部授权时才进入人工决定。
 
 以运行中的 `A || B` 倒插前置 `C` 为例：
 
@@ -118,7 +122,7 @@ Owner Memory 分为：
 - 当前 Memory：Git 跟踪的极简中文能力与设计事实；
 - 临时 Memory：Runtime 中当前 task 的完成、结论、下一步和阻塞日志。
 
-未最终有效、尚未完成最新 DAG 检查或尚未合并到 workflow HEAD 的结果只能追加临时日志，不能封存来源、修改 `.owner-memory` 或运行 Memory Compiler。
+未最终有效、尚未完成最新 DAG 检查或尚未合并到 workflow HEAD 的结果只能追加临时日志，不能封存来源、修改 `.owner-workflow/owners/<owner-id>/memory` 或运行 Memory Compiler。
 
 只有任务按最新 revision 的依赖与固定验证全部通过后，Runtime 才执行：
 

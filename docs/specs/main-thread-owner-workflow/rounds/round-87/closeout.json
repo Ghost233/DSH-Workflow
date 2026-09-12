@@ -1,0 +1,17 @@
+{
+  "previousGoalTurn": "progress",
+  "goalTurn": "progress",
+  "ticket": "T-27",
+  "ticketStatus": "开发中",
+  "deliveredSlice": "活跃父Workflow的Spec/Ticket checkpoint、独立审查与可恢复PlanRevision迁移",
+  "formalEvidence": {
+    "broadPass": 260,
+    "knownLegacySkipped": 7,
+    "failures": 0,
+    "finalTargetedPass": 1,
+    "finalPluginPass": 13,
+    "diffCheck": "passed"
+  },
+  "wholeGoalComplete": false,
+  "next": "权限失效旧attempt的真实终止或隔离、跨进程迟到回执，以及T18恢复继承接缝"
+}

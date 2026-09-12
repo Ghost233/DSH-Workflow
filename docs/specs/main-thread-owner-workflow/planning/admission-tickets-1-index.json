@@ -1,0 +1,306 @@
+{
+  "T-01": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-01-document-root-identity.md",
+    "status": "开发完成",
+    "type": "实现",
+    "depends_on": [],
+    "acceptance": [
+      "AC-26",
+      "AC-30"
+    ]
+  },
+  "T-02": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-02-obligation-closure.md",
+    "status": "开发完成",
+    "type": "实现",
+    "depends_on": [],
+    "acceptance": [
+      "AC-16",
+      "AC-32"
+    ]
+  },
+  "T-03": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-03-verified-progress.md",
+    "status": "验收通过",
+    "type": "实现",
+    "depends_on": [
+      "T-02"
+    ],
+    "acceptance": [
+      "AC-15"
+    ]
+  },
+  "T-04": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-04-decision-classification.md",
+    "status": "验收通过",
+    "type": "实现",
+    "depends_on": [
+      "T-02"
+    ],
+    "acceptance": [
+      "AC-14"
+    ]
+  },
+  "T-05": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-05-planning-references.md",
+    "status": "待办",
+    "type": "协议实现",
+    "depends_on": [],
+    "acceptance": [
+      "AC-03",
+      "AC-04",
+      "AC-27"
+    ]
+  },
+  "T-06": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-06-public-owner-request.md",
+    "status": "待办",
+    "type": "协议实现",
+    "depends_on": [],
+    "acceptance": [
+      "AC-06",
+      "AC-29"
+    ]
+  },
+  "T-07": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-07-planning-transaction-proof.md",
+    "status": "阻塞",
+    "type": "技术验证",
+    "depends_on": [
+      "T-01",
+      "T-05"
+    ],
+    "acceptance": [
+      "AC-03",
+      "AC-12",
+      "AC-17",
+      "AC-18",
+      "AC-27",
+      "AC-28"
+    ]
+  },
+  "T-08": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-08-owner-session-proof.md",
+    "status": "阻塞",
+    "type": "技术验证",
+    "depends_on": [
+      "T-06"
+    ],
+    "acceptance": [
+      "AC-05",
+      "AC-06",
+      "AC-07",
+      "AC-13",
+      "AC-29"
+    ]
+  },
+  "T-09": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-09-durable-budget-proof.md",
+    "status": "开发完成",
+    "type": "技术验证",
+    "depends_on": [
+      "T-02",
+      "T-03",
+      "T-04"
+    ],
+    "acceptance": [
+      "AC-11",
+      "AC-20",
+      "AC-24",
+      "AC-31"
+    ]
+  },
+  "T-10": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-10-owner-history-recovery.md",
+    "status": "待办",
+    "type": "技术验证",
+    "depends_on": [],
+    "acceptance": [
+      "AC-22",
+      "AC-23"
+    ]
+  },
+  "T-11": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-11-acceptance-runner-contract.md",
+    "status": "待办",
+    "type": "技术验证",
+    "depends_on": [],
+    "acceptance": [
+      "AC-19",
+      "AC-25"
+    ]
+  },
+  "T-12": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-12-acceptance-runner-completion.md",
+    "status": "阻塞",
+    "type": "阻塞实现",
+    "depends_on": [
+      "T-07",
+      "T-11"
+    ],
+    "acceptance": [
+      "AC-19"
+    ]
+  },
+  "T-13": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-13-recovery-budget-ledger.md",
+    "status": "开发完成",
+    "type": "实现",
+    "depends_on": [
+      "T-02",
+      "T-03",
+      "T-04",
+      "T-09"
+    ],
+    "acceptance": [
+      "AC-15",
+      "AC-24",
+      "AC-31"
+    ]
+  },
+  "T-14": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-14-durable-recovery-admission-proof.md",
+    "status": "开发完成",
+    "type": "技术验证",
+    "depends_on": [
+      "T-13"
+    ],
+    "acceptance": [
+      "AC-22",
+      "AC-24",
+      "AC-31"
+    ]
+  },
+  "T-15": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-15-runtime-recovery-budget-admission.md",
+    "status": "阻塞",
+    "type": "实现",
+    "depends_on": [
+      "T-13",
+      "T-14",
+      "T-23"
+    ],
+    "acceptance": [
+      "AC-11",
+      "AC-15",
+      "AC-20",
+      "AC-24",
+      "AC-31"
+    ]
+  },
+  "T-16": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-16-owner-cancellation-fencing-proof.md",
+    "status": "待办",
+    "type": "技术验证",
+    "depends_on": [
+      "T-09"
+    ],
+    "acceptance": [
+      "AC-21",
+      "AC-24",
+      "AC-31"
+    ]
+  },
+  "T-17": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-17-attempt-deadline-settlement.md",
+    "status": "阻塞",
+    "type": "实现",
+    "depends_on": [
+      "T-13",
+      "T-15",
+      "T-16"
+    ],
+    "acceptance": [
+      "AC-21",
+      "AC-24",
+      "AC-31"
+    ]
+  },
+  "T-18": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-18-recovery-budget-revision-inheritance.md",
+    "status": "阻塞",
+    "type": "阻塞实现",
+    "depends_on": [
+      "T-05",
+      "T-07",
+      "T-13",
+      "T-15"
+    ],
+    "acceptance": [
+      "AC-17",
+      "AC-18",
+      "AC-31"
+    ]
+  },
+  "T-19": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-19-recovery-budget-config-activation.md",
+    "status": "阻塞",
+    "type": "阻塞实现",
+    "depends_on": [
+      "T-15",
+      "T-17",
+      "T-18"
+    ],
+    "acceptance": [
+      "AC-11",
+      "AC-20",
+      "AC-24",
+      "AC-31"
+    ]
+  },
+  "T-20": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-20-recovery-source-admission.md",
+    "status": "待办",
+    "type": "实现",
+    "depends_on": [
+      "T-13",
+      "T-14"
+    ],
+    "acceptance": [
+      "AC-15",
+      "AC-24",
+      "AC-31"
+    ]
+  },
+  "T-21": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-21-session-persistence-contract-proof.md",
+    "status": "待办",
+    "type": "技术验证",
+    "depends_on": [
+      "T-14"
+    ],
+    "acceptance": [
+      "AC-22",
+      "AC-24",
+      "AC-31"
+    ]
+  },
+  "T-22": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-22-recovery-session-reconciliation.md",
+    "status": "阻塞",
+    "type": "实现",
+    "depends_on": [
+      "T-20",
+      "T-21"
+    ],
+    "acceptance": [
+      "AC-22",
+      "AC-24",
+      "AC-31"
+    ]
+  },
+  "T-23": {
+    "path": "docs/specs/main-thread-owner-workflow/tickets/t-23-durable-admission-session-proof.md",
+    "status": "阻塞",
+    "type": "技术验证",
+    "depends_on": [
+      "T-20",
+      "T-22"
+    ],
+    "acceptance": [
+      "AC-22",
+      "AC-24",
+      "AC-31"
+    ]
+  }
+}

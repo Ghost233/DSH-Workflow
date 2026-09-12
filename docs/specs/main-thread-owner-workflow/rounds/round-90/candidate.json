@@ -1,0 +1,12 @@
+{
+  "contract": "DSH_TICKET_IMPLEMENTATION_CANDIDATE_V1",
+  "candidateId": "R90-T27-revision-stop-integration",
+  "ticketId": "T-27",
+  "specRevision": "R4",
+  "status": "development_complete",
+  "scope": "scope.md",
+  "report": "report.md",
+  "review": "review.md",
+  "testResults": "test-results.json",
+  "remaining": []
+}

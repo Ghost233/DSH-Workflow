@@ -1,0 +1,1 @@
+t21_contract_review只读审查无新增P1/P2。create真实返回后persistOwnerSession前checkpoint，phase creating/model0/raw缺失；followup与flush之后persistSubmitted之前checkpoint，实际phase created而IPC标签submitted，真实prompt已存在且发生模型请求。两处真实SIGKILL/不同重放PID，重放state/raw/budget不变、API/model0、父容器清理。正式45/45，1621无漂移。仅闭合两个局部联合边界，不构成T23完整矩阵正向。

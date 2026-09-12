@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { OWNER_RUNTIME_DIRECTORY } from './project-layout.mjs'
 
 export const OPERATION_CONTRACT = 'DSH_OPERATION_V1'
 export const OPERATION_RESULT_CONTRACT = 'DSH_OPERATION_RESULT_V1'
@@ -56,14 +57,14 @@ function isWithin(root, candidate) {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
-function operationDirectory(root, runtimeDirectory = '.dsh-workflow') {
+function operationDirectory(root, runtimeDirectory = OWNER_RUNTIME_DIRECTORY) {
   const workspace = resolve(root)
   const runtimeRoot = resolve(workspace, runtimeDirectory)
   if (!isWithin(workspace, runtimeRoot)) throw new Error('Operation runtimeDirectory 不能越过项目根目录')
   return join(runtimeRoot, 'operations')
 }
 
-export function operationStatePath(root, operationId, runtimeDirectory = '.dsh-workflow') {
+export function operationStatePath(root, operationId, runtimeDirectory = OWNER_RUNTIME_DIRECTORY) {
   return join(operationDirectory(root, runtimeDirectory), safeIdentifier(operationId, 'operationId'), 'state.json')
 }
 
@@ -124,14 +125,14 @@ export function appendOperationEvent(state, event, time = new Date().toISOString
   return state.events.at(-1)
 }
 
-export async function writeOperationState(root, state, runtimeDirectory = '.dsh-workflow') {
+export async function writeOperationState(root, state, runtimeDirectory = OWNER_RUNTIME_DIRECTORY) {
   if (state?.contract !== OPERATION_CONTRACT) throw new Error('Operation 状态契约无效')
   if (!OPERATION_STATUSES.has(state.status)) throw new Error(`Operation 状态不受支持：${String(state.status)}`)
   await writeJsonAtomic(operationStatePath(root, state.id, runtimeDirectory), state)
   return state
 }
 
-export async function readOperationState(root, operationId, runtimeDirectory = '.dsh-workflow') {
+export async function readOperationState(root, operationId, runtimeDirectory = OWNER_RUNTIME_DIRECTORY) {
   const state = JSON.parse(await readFile(operationStatePath(root, operationId, runtimeDirectory), 'utf8'))
   if (state?.contract !== OPERATION_CONTRACT || state.id !== operationId || !OPERATION_STATUSES.has(state.status)) {
     throw new Error('Operation 状态文件无效')
@@ -139,7 +140,7 @@ export async function readOperationState(root, operationId, runtimeDirectory = '
   return state
 }
 
-export async function listOperationStates(root, runtimeDirectory = '.dsh-workflow') {
+export async function listOperationStates(root, runtimeDirectory = OWNER_RUNTIME_DIRECTORY) {
   let entries
   try {
     entries = await readdir(operationDirectory(root, runtimeDirectory), { withFileTypes: true })

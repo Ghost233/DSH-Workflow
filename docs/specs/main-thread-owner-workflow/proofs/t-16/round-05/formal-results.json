@@ -1,0 +1,23 @@
+{
+  "runs": [
+    {
+      "name": "cancelled-owner-recoverOwner-new-attempt-stale-submit-rejected-and-completes",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-16/round-05/probe.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T10:09:52.865248+00:00",
+      "timeoutSeconds": 45,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T10:09:58.068627+00:00",
+      "collectedScenarios": 1,
+      "probeErrors": [],
+      "collectionComplete": true
+    }
+  ],
+  "drift": []
+}

@@ -1,0 +1,13 @@
+# Owner结构化变更入口的恢复保护边界
+
+## 当前行为
+
+受恢复协议保护的运行中Owner不可通过request_subgraph即时激活新版本。现有applyPlanDelta会invalidate来源任务并删除ownerRuns、清空审批，无法满足T15持久来源与T18预算继承。入口检查当前状态和active启动快照，任一启用保护即在任何delta或持久写入前拒绝；协议被删除不构成降级通行。错误说明任务和执行来源未改变，可继续原任务或通过正常owner_submit报告具体技术阻塞，无须仅因此用户决定。没有排入无法消费的pending proposal。
+
+所有request_subgraph及request_handoff在workflow锁内拒绝active.submitting或已有submission，保证提交门禁及其回执之后不能再插入结构性变化。被拒绝的子图请求不阻止原任务正常完成，因为它没有被接纳。
+
+受保护的直接handoff遵循handoff-recovery-v1：只保存来源绑定的proposal，真实blocked/failed后才预算重排；pending handoff与completed互斥。
+
+## 尚未完成
+
+本修复是保护现有来源的能力门禁，不是子图自动恢复/版本激活实现。真正的子图候选须在真实终态后进入集中Planner、Review及T18版本继承事务。非恢复模式仍沿用旧即时delta，除提交互斥外不声称有恢复来源保护；跨进程Owner停止/迟到结果门禁仍属于T17。T15/T18均不因此完成。

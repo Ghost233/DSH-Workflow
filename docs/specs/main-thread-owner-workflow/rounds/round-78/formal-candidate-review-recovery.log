@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: T15 actual candidate passed Review consumes its own attempt in the Planner root and replays raw receipts
+ok 1 - T15 actual candidate passed Review consumes its own attempt in the Planner root and replays raw receipts
+  ---
+  duration_ms: 3655.277958
+  type: 'test'
+  ...
+# Subtest: T15 actual candidate needs_revision Review consumes its own attempt in the Planner root and replays raw receipts
+ok 2 - T15 actual candidate needs_revision Review consumes its own attempt in the Planner root and replays raw receipts
+  ---
+  duration_ms: 2523.756334
+  type: 'test'
+  ...
+# Subtest: T15 invalid semantic Reviews each consume one ordinal, then exhaustion starts no child
+ok 3 - T15 invalid semantic Reviews each consume one ordinal, then exhaustion starts no child
+  ---
+  duration_ms: 3760.831041
+  type: 'test'
+  ...
+# Subtest: T15 Review does not hold workflow lock during child execution and preserves independent task changes
+ok 4 - T15 Review does not hold workflow lock during child execution and preserves independent task changes
+  ---
+  duration_ms: 3446.787167
+  type: 'test'
+  ...
+# Subtest: T15 candidate replacement during real Review cannot apply or become permission for a free retry
+ok 5 - T15 candidate replacement during real Review cannot apply or become permission for a free retry
+  ---
+  duration_ms: 2149.637
+  type: 'test'
+  ...
+# Subtest: T15 stripped candidate provenance cannot fall back to the unmetered Review entry
+ok 6 - T15 stripped candidate provenance cannot fall back to the unmetered Review entry
+  ---
+  duration_ms: 1236.355
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 17008.947208

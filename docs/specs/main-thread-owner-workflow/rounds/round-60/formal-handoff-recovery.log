@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: T15 actual handoff entry meters one Planner and atomically stages a candidate without activating its version
+ok 1 - T15 actual handoff entry meters one Planner and atomically stages a candidate without activating its version
+  ---
+  duration_ms: 1889.557708
+  type: 'test'
+  ...
+# Subtest: T15 actual invalid handoff candidate consumes its attempt and the next physical call shares the root and finite budget
+ok 2 - T15 actual invalid handoff candidate consumes its attempt and the next physical call shares the root and finite budget
+  ---
+  duration_ms: 1536.826583
+  type: 'test'
+  ...
+# Subtest: T15 unbound handoff or changed producing Owner identity cannot launch an unmetered Planner
+ok 3 - T15 unbound handoff or changed producing Owner identity cannot launch an unmetered Planner
+  ---
+  duration_ms: 801.217375
+  type: 'test'
+  ...
+# Subtest: T15 handoff Planner runs outside the workflow lock and preserves an independent task update
+ok 4 - T15 handoff Planner runs outside the workflow lock and preserves an independent task update
+  ---
+  duration_ms: 1089.949292
+  type: 'test'
+  ...
+# Subtest: T15 a source change during actual Planner execution prevents stale candidate application
+ok 5 - T15 a source change during actual Planner execution prevents stale candidate application
+  ---
+  duration_ms: 1510.171083
+  type: 'test'
+  ...
+# Subtest: T15 normal partial handoff production records completed provenance without fabricating recovery
+ok 6 - T15 normal partial handoff production records completed provenance without fabricating recovery
+  ---
+  duration_ms: 806.955666
+  type: 'test'
+  ...
+# Subtest: T15 multiple failed Owner handoffs are split into one source group per candidate
+ok 7 - T15 multiple failed Owner handoffs are split into one source group per candidate
+  ---
+  duration_ms: 1153.02775
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8984.804125

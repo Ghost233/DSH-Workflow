@@ -1,0 +1,44 @@
+✔ R11 预算错误不覆盖当前用户依据：supervisor/permission (544.991416ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/business (434.333459ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/technical (451.4925ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/stale-permission (477.549542ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/permission (869.364459ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/business (847.69925ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/technical (749.139334ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/stale-permission (825.416417ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/permission (461.667125ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/business (456.31675ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/technical (612.969916ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/stale-permission (478.839208ms)
+✔ R11 预算错误不覆盖当前用户依据：repeated-recover/permission (550.302208ms)
+✔ R11 预算错误不覆盖当前用户依据：repeated-recover/business (685.520167ms)
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/technical (471.097709ms)
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/stale-permission (451.398ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 14
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9488.592167
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/technical (471.097709ms)
+  Error: R11_TECHNICAL_RESTART
+      at f.runtime.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7444:75)
+      at Object.recoverOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13128:23)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7446:30)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/stale-permission (451.398ms)
+  Error: R11_TECHNICAL_RESTART
+      at f.runtime.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7444:75)
+      at Object.recoverOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13128:23)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7446:30)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)

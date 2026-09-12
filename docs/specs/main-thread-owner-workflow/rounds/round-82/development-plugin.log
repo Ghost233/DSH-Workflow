@@ -1,0 +1,88 @@
+TAP version 13
+# Subtest: 插件注册主编排工具、全局守卫和九个中文 Skill
+ok 1 - 插件注册主编排工具、全局守卫和九个中文 Skill
+  ---
+  duration_ms: 3.580875
+  type: 'test'
+  ...
+# Subtest: 决定回执工具仅允许主编排会话，所有子代理角色均被策略拒绝
+ok 2 - 决定回执工具仅允许主编排会话，所有子代理角色均被策略拒绝
+  ---
+  duration_ms: 0.47775
+  type: 'test'
+  ...
+# Subtest: 提交 Intent 后明确询问是否重新规划，继续讨论时不唤醒 Planner
+ok 3 - 提交 Intent 后明确询问是否重新规划，继续讨论时不唤醒 Planner
+  ---
+  duration_ms: 0.33125
+  type: 'test'
+  ...
+# Subtest: 用户在 Intent 问询中选择现在重新规划时只唤醒一次 Planner
+ok 4 - 用户在 Intent 问询中选择现在重新规划时只唤醒一次 Planner
+  ---
+  duration_ms: 0.112166
+  type: 'test'
+  ...
+# Subtest: PlanRevision 只有根会话原生问询明确同意后才切换
+ok 5 - PlanRevision 只有根会话原生问询明确同意后才切换
+  ---
+  duration_ms: 0.498917
+  type: 'test'
+  ...
+# Subtest: 取消 Workflow 只有原生问询明确同意后才丢弃临时现场
+ok 6 - 取消 Workflow 只有原生问询明确同意后才丢弃临时现场
+  ---
+  duration_ms: 0.200834
+  type: 'test'
+  ...
+# Subtest: 计划修订额度只有原生问询明确同意后才扩展当前 Workflow
+ok 7 - 计划修订额度只有原生问询明确同意后才扩展当前 Workflow
+  ---
+  duration_ms: 0.321916
+  type: 'test'
+  ...
+# Subtest: 工作流批准只接受原生问询中的明确同意，并保留不同意与自定义意见
+ok 8 - 工作流批准只接受原生问询中的明确同意，并保留不同意与自定义意见
+  ---
+  duration_ms: 0.117125
+  type: 'test'
+  ...
+# Subtest: 只读审计完成后由原生问询决定是否自动进入 preflight 与 workflow_start
+ok 9 - 只读审计完成后由原生问询决定是否自动进入 preflight 与 workflow_start
+  ---
+  duration_ms: 0.30275
+  type: 'test'
+  ...
+# Subtest: Registry 与计划批准在原生问询同意前绝不修改 Runtime
+ok 10 - Registry 与计划批准在原生问询同意前绝不修改 Runtime
+  ---
+  duration_ms: 0.865292
+  type: 'test'
+  ...
+# Subtest: Web 客户端宿主模式不注册 Agent 工具、Skill 或提示词
+ok 11 - Web 客户端宿主模式不注册 Agent 工具、Skill 或提示词
+  ---
+  duration_ms: 0.078959
+  type: 'test'
+  ...
+# Subtest: Owner 工作流提示要求新 Flutter 验证显式 cwd，且不提供 Quick
+ok 12 - Owner 工作流提示要求新 Flutter 验证显式 cwd，且不提供 Quick
+  ---
+  duration_ms: 0.324833
+  type: 'test'
+  ...
+# Subtest: R09 执行反馈工具拒绝主编排和只读角色，不能冒充活动 Owner
+ok 13 - R09 执行反馈工具拒绝主编排和只读角色，不能冒充活动 Owner
+  ---
+  duration_ms: 0.112208
+  type: 'test'
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 324.783291

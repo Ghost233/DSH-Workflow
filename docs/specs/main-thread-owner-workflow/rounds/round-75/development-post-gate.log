@@ -1,0 +1,76 @@
+✔ R75 direct recovery arbitration refuses before an exhausted candidate can start a model transport (1394.106083ms)
+✖ R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait (923.6655ms)
+✔ R75 consultPlanningOwners rejects a stripped caller copy when the persisted Workflow remains a recovery candidate (756.815334ms)
+✔ R75 an unprotected initial Owner consultation still uses the real model transport (547.186959ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3790.492542
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/candidate-arbitration-recovery.test.mjs:100:1
+✖ R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait (923.6655ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  false !== true
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-arbitration-recovery.test.mjs:129:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+✔ R75 direct recovery arbitration refuses before an exhausted candidate can start a model transport (1496.549084ms)
+✖ R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait (1221.420708ms)
+ℹ {"pausedReason":"Recovery Review admission refused:workflow_exhausted","persistedReason":"Recovery Review admission refused:workflow_exhausted","convergence":{"contract":"DSH_WORKFLOW_CONVERGENCE_V1","runtimeVersion":"r75-pre-gate-proof","cycleId":"handoff-replan-fb3bef53bb7f3b6f4abb96d8ba99dbeb22adef00693a52c29a6e83e5b3b069ed","evidenceDigest":"r75-pre-gate-evidence","obligations":[{"id":"r75-fixed-verification","category":"plan_verification_binding","severity":"high","title":"Unit verification remains a frozen recovery obligation","detail":"The recovery candidate must preserve the existing required unit verification.","suggestion":"Arbitrate only the already-persisted obligation.","source":{"id":"r75-pre-gate","version":"1"},"targetTaskIds":["T1"],"closeWhen":{"kind":"plan_verification_binding","taskId":"T1","verificationId":"unit"},"status":"open"}],"unsupportedNewObligations":[],"usedStrategies":["local_subgraph_rewrite","diagnose","owner_council"],"nextStrategy":"arbitrate","history":[]}}
+✔ R75 consultPlanningOwners rejects a stripped caller copy when the persisted Workflow remains a recovery candidate (1063.403875ms)
+✔ R75 an unprotected initial Owner consultation still uses the real model transport (719.652291ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4752.809042
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/candidate-arbitration-recovery.test.mjs:100:1
+✖ R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait (1221.420708ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  false !== true
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-arbitration-recovery.test.mjs:135:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+✔ R75 direct recovery arbitration refuses before an exhausted candidate can start a model transport (2679.614333ms)
+✔ R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait (2154.781542ms)
+ℹ {"pausedReason":"Recovery候选仲裁尚未接入逐次预算与持久会话，拒绝未计费启动","persistedReason":"Recovery候选仲裁尚未接入逐次预算与持久会话，拒绝未计费启动","modelRequestsBefore":4,"modelRequestsAfterNotification":5,"modelRequestsAfterStableWait":5}
+✔ R75 consultPlanningOwners rejects a stripped caller copy when the persisted Workflow remains a recovery candidate (1256.943917ms)
+✔ R75 an unprotected initial Owner consultation still uses the real model transport (831.325542ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7323.02375

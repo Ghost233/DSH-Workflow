@@ -1,0 +1,366 @@
+TAP version 13
+# Subtest: T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt
+ok 1 - T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt
+  ---
+  duration_ms: 205.346583
+  type: 'test'
+  ...
+# Subtest: T20 reloads the same durable request through a new Runtime without rebilling or changing identity
+ok 2 - T20 reloads the same durable request through a new Runtime without rebilling or changing identity
+  ---
+  duration_ms: 294.905542
+  type: 'test'
+  ...
+# Subtest: T20 derives A/B/A from persisted strategy, keeping one root but distinct durable requests
+ok 3 - T20 derives A/B/A from persisted strategy, keeping one root but distinct durable requests
+  ---
+  duration_ms: 318.315042
+  type: 'test'
+  ...
+# Subtest: T20 rejects forged request fields and incorrect source binding without creating a recovery account
+ok 4 - T20 rejects forged request fields and incorrect source binding without creating a recovery account
+  ---
+  duration_ms: 394.726791
+  type: 'test'
+  ...
+# Subtest: T20 rejects a missing strategy and owner-failure records that no longer describe a failed technical task
+ok 5 - T20 rejects a missing strategy and owner-failure records that no longer describe a failed technical task
+  ---
+  duration_ms: 217.480792
+  type: 'test'
+  ...
+# Subtest: T20 admits only a live technical obligation and preserves the user-authority boundary
+ok 6 - T20 admits only a live technical obligation and preserves the user-authority boundary
+  ---
+  duration_ms: 361.896833
+  type: 'test'
+  ...
+# Subtest: T20 makes approval, current plan digest, cancellation, malformed state, and absent config hard wrapper gates
+ok 7 - T20 makes approval, current plan digest, cancellation, malformed state, and absent config hard wrapper gates
+  ---
+  duration_ms: 267.801042
+  type: 'test'
+  ...
+# Subtest: T20 rejects changed limits after accounting begins and never returns a receipt when the first save cannot commit
+ok 8 - T20 rejects changed limits after accounting begins and never returns a receipt when the first save cannot commit
+  ---
+  duration_ms: 631.46325
+  type: 'test'
+  ...
+# Subtest: T20 cross-process distinct requests consume the final workflow credit once
+ok 9 - T20 cross-process distinct requests consume the final workflow credit once
+  ---
+  duration_ms: 685.983792
+  type: 'test'
+  ...
+# Subtest: T20 cross-process competition for one request yields one receipt identity and one debit
+ok 10 - T20 cross-process competition for one request yields one receipt identity and one debit
+  ---
+  duration_ms: 429.373333
+  type: 'test'
+  ...
+# Subtest: R15 next failed executions with the same strategy inherit the root and persist replay across Runtime restarts
+ok 11 - R15 next failed executions with the same strategy inherit the root and persist replay across Runtime restarts
+  ---
+  duration_ms: 312.688
+  type: 'test'
+  ...
+# Subtest: R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget
+    # Subtest: missing
+    ok 1 - missing
+      ---
+      duration_ms: 18.920375
+      type: 'test'
+      ...
+    # Subtest: contract
+    ok 2 - contract
+      ---
+      duration_ms: 24.088042
+      type: 'test'
+      ...
+    # Subtest: sourceId
+    ok 3 - sourceId
+      ---
+      duration_ms: 20.022458
+      type: 'test'
+      ...
+    # Subtest: rootProblemId
+    ok 4 - rootProblemId
+      ---
+      duration_ms: 21.527792
+      type: 'test'
+      ...
+    # Subtest: requestId
+    ok 5 - requestId
+      ---
+      duration_ms: 20.258667
+      type: 'test'
+      ...
+    # Subtest: attemptId
+    ok 6 - attemptId
+      ---
+      duration_ms: 20.69425
+      type: 'test'
+      ...
+    # Subtest: taskId
+    ok 7 - taskId
+      ---
+      duration_ms: 20.906417
+      type: 'test'
+      ...
+    # Subtest: ownerId
+    ok 8 - ownerId
+      ---
+      duration_ms: 18.987167
+      type: 'test'
+      ...
+    # Subtest: planDigest
+    ok 9 - planDigest
+      ---
+      duration_ms: 19.165958
+      type: 'test'
+      ...
+    # Subtest: identity sessionId
+    ok 10 - identity sessionId
+      ---
+      duration_ms: 18.222917
+      type: 'test'
+      ...
+    # Subtest: identity promptId
+    ok 11 - identity promptId
+      ---
+      duration_ms: 22.975459
+      type: 'test'
+      ...
+    # Subtest: run attempt
+    ok 12 - run attempt
+      ---
+      duration_ms: 17.9485
+      type: 'test'
+      ...
+    # Subtest: run session
+    ok 13 - run session
+      ---
+      duration_ms: 20.665625
+      type: 'test'
+      ...
+    # Subtest: unknown field
+    ok 14 - unknown field
+      ---
+      duration_ms: 17.990833
+      type: 'test'
+      ...
+    # Subtest: execution receipt
+    ok 15 - execution receipt
+      ---
+      duration_ms: 19.830291
+      type: 'test'
+      ...
+    # Subtest: result receipt
+    ok 16 - result receipt
+      ---
+      duration_ms: 17.945084
+      type: 'test'
+      ...
+    1..16
+ok 12 - R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget
+  ---
+  duration_ms: 499.209209
+  type: 'test'
+  ...
+# Subtest: R15 rejects a predecessor that never started
+ok 13 - R15 rejects a predecessor that never started
+  ---
+  duration_ms: 196.457167
+  type: 'test'
+  ...
+# Subtest: R15 rejects a predecessor that still running
+ok 14 - R15 rejects a predecessor that still running
+  ---
+  duration_ms: 188.259333
+  type: 'test'
+  ...
+# Subtest: R15 rejects a predecessor that succeeded
+ok 15 - R15 rejects a predecessor that succeeded
+  ---
+  duration_ms: 182.687708
+  type: 'test'
+  ...
+# Subtest: R15 rejects a predecessor that cancelled
+ok 16 - R15 rejects a predecessor that cancelled
+  ---
+  duration_ms: 187.665709
+  type: 'test'
+  ...
+# Subtest: R15 continuation cannot reset exhausted problem credit
+ok 17 - R15 continuation cannot reset exhausted problem credit
+  ---
+  duration_ms: 183.050667
+  type: 'test'
+  ...
+# Subtest: R15 continuation cannot reset exhausted workflow credit
+ok 18 - R15 continuation cannot reset exhausted workflow credit
+  ---
+  duration_ms: 184.19425
+  type: 'test'
+  ...
+# Subtest: R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed
+    # Subtest: renumber the same execution
+    ok 1 - renumber the same execution
+      ---
+      duration_ms: 19.44325
+      type: 'test'
+      ...
+    # Subtest: drop current continuation
+    ok 2 - drop current continuation
+      ---
+      duration_ms: 18.511125
+      type: 'test'
+      ...
+    # Subtest: drop historical edge
+    ok 3 - drop historical edge
+      ---
+      duration_ms: 22.267917
+      type: 'test'
+      ...
+    # Subtest: redirect historical parent
+    ok 4 - redirect historical parent
+      ---
+      duration_ms: 21.165333
+      type: 'test'
+      ...
+    # Subtest: redirect successor root
+    ok 5 - redirect successor root
+      ---
+      duration_ms: 18.355958
+      type: 'test'
+      ...
+    1..5
+ok 19 - R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed
+  ---
+  duration_ms: 295.539375
+  type: 'test'
+  ...
+# Subtest: R15 concurrent continuation calls from separate processes share one successor receipt and one debit
+ok 20 - R15 concurrent continuation calls from separate processes share one successor receipt and one debit
+  ---
+  duration_ms: 438.711208
+  type: 'test'
+  ...
+# Subtest: R15 a technical obligation recovery can produce a failed Owner continuation under its original root
+ok 21 - R15 a technical obligation recovery can produce a failed Owner continuation under its original root
+  ---
+  duration_ms: 190.766791
+  type: 'test'
+  ...
+# Subtest: R15 derived source retains A/B/A replay without erasing the continuation edge
+ok 22 - R15 derived source retains A/B/A replay without erasing the continuation edge
+  ---
+  duration_ms: 244.634833
+  type: 'test'
+  ...
+# Subtest: T15 replan admission can originate at first free Owner failure and share its root with an Owner retry
+ok 23 - T15 replan admission can originate at first free Owner failure and share its root with an Owner retry
+  ---
+  duration_ms: 202.656458
+  type: 'test'
+  ...
+# Subtest: T15 replan restart replays reserved call; next ordinal requires a failed matching receipt
+ok 24 - T15 replan restart replays reserved call; next ordinal requires a failed matching receipt
+  ---
+  duration_ms: 288.985
+  type: 'test'
+  ...
+# Subtest: T15 plan/review/handoff operations cannot reset the source budget by changing step identity
+ok 25 - T15 plan/review/handoff operations cannot reset the source budget by changing step identity
+  ---
+  duration_ms: 231.428875
+  type: 'test'
+  ...
+# Subtest: T15 replan operation rejects skipped ordinals and forged envelope/source fields before saving
+ok 26 - T15 replan operation rejects skipped ordinals and forged envelope/source fields before saving
+  ---
+  duration_ms: 322.767042
+  type: 'test'
+  ...
+# Subtest: T15 mixed admission rejects operation/ledger identity corruption and missing intents
+ok 27 - T15 mixed admission rejects operation/ledger identity corruption and missing intents
+  ---
+  duration_ms: 297.797667
+  type: 'test'
+  ...
+# Subtest: T15 succeeded operation does not authorize the next physical retry
+ok 28 - T15 succeeded operation does not authorize the next physical retry
+  ---
+  duration_ms: 339.944875
+  type: 'test'
+  ...
+# Subtest: T15 cancelled operation does not authorize the next physical retry
+ok 29 - T15 cancelled operation does not authorize the next physical retry
+  ---
+  duration_ms: 212.484917
+  type: 'test'
+  ...
+# Subtest: T15 operation admission retains live-source and user-decision gates
+ok 30 - T15 operation admission retains live-source and user-decision gates
+  ---
+  duration_ms: 222.350084
+  type: 'test'
+  ...
+# Subtest: T15 separate processes replay the same operation reservation without double debit
+ok 31 - T15 separate processes replay the same operation reservation without double debit
+  ---
+  duration_ms: 374.952125
+  type: 'test'
+  ...
+# Subtest: T15 separate Owner/replan reservations compete for one shared last Workflow credit
+ok 32 - T15 separate Owner/replan reservations compete for one shared last Workflow credit
+  ---
+  duration_ms: 375.565
+  type: 'test'
+  ...
+# Subtest: T15 an operation intent cannot enter the Owner-only session driver
+ok 33 - T15 an operation intent cannot enter the Owner-only session driver
+  ---
+  duration_ms: 185.2695
+  type: 'test'
+  ...
+# Subtest: T15 replan after a paid Owner failure inherits the admitted predecessor root
+ok 34 - T15 replan after a paid Owner failure inherits the admitted predecessor root
+  ---
+  duration_ms: 333.967291
+  type: 'test'
+  ...
+# Subtest: T15 replan accepts a live technical obligation but cannot charge a user decision
+ok 35 - T15 replan accepts a live technical obligation but cannot charge a user decision
+  ---
+  duration_ms: 214.353084
+  type: 'test'
+  ...
+# Subtest: T15 a running or mismatched failed operation receipt cannot authorize a new ordinal
+ok 36 - T15 a running or mismatched failed operation receipt cannot authorize a new ordinal
+  ---
+  duration_ms: 231.751625
+  type: 'test'
+  ...
+# Subtest: R78 state-lock inspection reacquires a concurrently released directory
+ok 37 - R78 state-lock inspection reacquires a concurrently released directory
+  ---
+  duration_ms: 188.547584
+  type: 'test'
+  ...
+# Subtest: R78 state-lock inspection preserves other filesystem errors
+ok 38 - R78 state-lock inspection preserves other filesystem errors
+  ---
+  duration_ms: 164.039583
+  type: 'test'
+  ...
+1..38
+# tests 59
+# suites 0
+# pass 59
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11254.295917

@@ -1,0 +1,165 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -4939,6 +4939,13 @@
+     const key = supervisorReservationKey(task.id, task.ownerId)
+     const reservation = state.supervisorOutbox?.[key]
+     const ownerRun = state.ownerRuns?.[key]
++    if (recoveryAdmissionEnabled(state)) {
++      if (!['starting', 'running', 'waiting_approval', 'awaiting_finish', 'committed'].includes(ownerRun?.status)) continue
++      const previous = state.supervisorTimeouts?.[task.id]
++      if (previous?.contract === 'DSH_OWNER_IDLE_TIMEOUT_V1'
++        && previous.attempt === ownerRun.attempt && previous.sessionId === ownerRun.sessionId
++        && previous.leaseToken === ownerRun.leaseToken) continue
++    }
+     const activeOwnerRun = ['pending', 'starting', 'running', 'awaiting_finish', 'committed']
+       .includes(ownerRun?.status)
+     const reservationStartedAt = Date.parse(reservation?.launchedAt ?? '')
+@@ -12178,6 +12185,58 @@
+         const receipt = supervisorNext(supervisorProjection(state), now())
+         const watchedForTimeout = ['wait', 'inspect'].includes(receipt.action) ? receipt.watches : []
+         const timedOut = supervisorTimedOutTasks(state, watchedForTimeout)
++        if (timedOut.length > 0 && recoveryAdmissionEnabled(state)) {
++          assertRecoveryAdmissionState(state)
++          state.supervisorTimeouts ??= {}
++          const requests = []
++          for (const timeout of timedOut) {
++            const record = state.ownerRuns?.[ownerRunKey(timeout.taskId, timeout.ownerId)]
++            const active = runtime.activeOwners.get(record?.sessionId)
++            const child = record?.sessionId === undefined ? undefined : runtime.ctx?.agents?.get?.(record.sessionId)
++            const matches = active?.workflowId === workflowId && active.stageId === timeout.taskId
++              && active.owner.id === timeout.ownerId && active.attempt === record.attempt
++              && active.planDigest === state.planDigest && active.lease?.token === record.leaseToken
++              && child?.status === 'running' && typeof child.cancel === 'function'
++            let cancellationError
++            if (matches) {
++              try { await runtime.assertOwnerLease(active.lease) }
++              catch (error) { cancellationError = errorText(error) }
++            } else cancellationError = '当前进程没有可核验的活动取消目标；保留Owner不可重入'
++            const request = { ...timeout, contract: 'DSH_OWNER_IDLE_TIMEOUT_V1', requestId: randomUUID(),
++              attempt: record.attempt, sessionId: record.sessionId, leaseToken: record.leaseToken,
++              requestedAt: now(), cancelState: cancellationError === undefined ? 'requested' : 'unavailable',
++              ...(cancellationError === undefined ? {} : { cancellationError }) }
++            state.supervisorTimeouts[timeout.taskId] = request
++            if (cancellationError === undefined) requests.push({ request, child })
++          }
++          const timeoutEvent = appendSupervisorEvent(state, 'supervisor.owner-cancel-requested', {
++            tasks: timedOut.map(timeout => ({ taskId: timeout.taskId, ownerId: timeout.ownerId,
++              ...state.supervisorTimeouts[timeout.taskId] })),
++          })
++          const saved = await saveState(runtime, state)
++          for (const { request, child } of requests) {
++            // Request delivery is not termination. The real Owner pipeline owns
++            // settlement and lease release; its failed source then enters admission.
++            const recordFailure = async error => runtime.withWorkflowLock(workflowId, async () => {
++              const current = await readState(runtime, root, workflowId)
++              const latest = current.supervisorTimeouts?.[request.taskId]
++              if (latest?.requestId !== request.requestId) return
++              latest.cancelState = 'failed'
++              latest.cancellationError = errorText(error)
++              appendSupervisorEvent(current, 'supervisor.owner-cancel-failed', {
++                taskId: request.taskId, requestId: request.requestId, reason: errorText(error),
++              })
++              await saveState(runtime, current)
++            })
++            // Do not await an unknown cancellation transport while holding
++            // the workflow lock; failure recording reacquires it separately.
++            Promise.resolve().then(() => child.cancel({ kind: 'parent' })).catch(recordFailure)
++              .catch(error => appendLog(runtime, root, workflowId, 'supervisor.cancel-record-failed', {
++                taskId: request.taskId, requestId: request.requestId, reason: errorText(error),
++              }).catch(() => undefined))
++          }
++          return { kind: 'event', cursor: timeoutEvent.cursor, event: timeoutEvent, status: saved.status }
++        }
+         if (timedOut.length > 0) {
+             state.supervisorTimeouts ??= {}
+             const evidenceDigest = workflowEvidenceDigest(state, state.planningRuntimeFacts)
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -879,3 +879,87 @@
+   assert.equal(replay.notification.notificationId, ack.notification.notificationId)
+   assert.equal(replay.notification.status, 'delivered')
+ })
++
++test('T15 idle timeout preserves the live Owner until actual termination, then recovery spends credit', { timeout: 30000 }, async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true,
++    limits: { totalLimit: 1, problemLimit: 1 },
++    modelScript: m => [...completedModel(m), ...failedModel(m)] })
++  const release = Promise.withResolvers()
++  const aborted = Promise.withResolvers()
++  const originalStream = f.adapter.stream.bind(f.adapter)
++  let first = true
++  let dispatch
++  const within = async (promise, label) => {
++    let timer
++    try { return await Promise.race([promise, new Promise((_, reject) => {
++      timer = setTimeout(() => reject(new Error(`${label} exceeded finite observation`)), 15000)
++    })]) } finally { clearTimeout(timer) }
++  }
++  f.adapter.stream = async function* (options) {
++    if (!first) { yield* originalStream(options); return }
++    first = false
++    f.adapter.requests.push(options)
++    yield { type: 'block-start', index: 0, blockType: 'text' }
++    yield { type: 'text-delta', index: 0, text: 'controlled Owner work' }
++    assert.ok(options.signal)
++    await within(new Promise(resolve => {
++      const onAbort = () => { aborted.resolve(); resolve() }
++      if (options.signal.aborted) onAbort()
++      else options.signal.addEventListener('abort', onAbort, { once: true })
++    }), 'real abort signal')
++    await within(release.promise, 'transport release')
++    throw new Error('aborted')
++  }
++  try {
++    await mutateRecoverySessionState(f, s => { s.ownerRuns = {} })
++    const next = await supervisorControl(f, 'supervisor-next')
++    const ack = await supervisorControl(f, 'supervisor-ack', { actionId: next.actionId })
++    await supervisorControl(f, 'supervisor-execute', { reservationId: ack.reservations[0].reservationId })
++    dispatch = f.runtime.supervisorDispatches.get(`${f.workflowId}:T1:api`)
++    assert.ok(dispatch)
++    await within((async () => { while (f.adapter.requests.length === 0) await new Promise(resolve => setTimeout(resolve, 5)) })(), 'Owner start')
++    const before = await mutateRecoverySessionState(f, s => {
++      s.supervisorOutbox['T1:api'].launchedAt = '2000-01-01T00:00:00.000Z'
++      Object.assign(s.ownerRuns['T1:api'], { startedAt: '2000-01-01T00:00:00.000Z',
++        updatedAt: '2000-01-01T00:00:00.000Z', lastHeartbeatAt: '2000-01-01T00:00:00.000Z' })
++    })
++    const event = await supervisorControl(f, 'supervisor-await-event', { cursor: before.supervisorEventCursor, waitMs: 1 })
++    assert.equal(event.event.type, 'supervisor.owner-cancel-requested')
++    await within(aborted.promise, 'runtime cancellation delivery')
++    const held = await readRecoverySessionState(f)
++    assert.equal(held.tasks[0].status, 'running')
++    assert.deepEqual(held.ownerRuns['T1:api'], before.ownerRuns['T1:api'])
++    assert.equal(held.recoveryAdmission, undefined)
++    const child = f.ctx.agents.get(held.ownerRuns['T1:api'].sessionId)
++    assert.equal(child.session.events.some(item => item.type === 'turn/end'), false)
++    const active = f.runtime.activeOwners.get(child.id)
++    assert.equal((await f.runtime.assertOwnerLease(active.lease)).token, before.ownerRuns['T1:api'].leaseToken)
++    assert.equal((await supervisorControl(f, 'supervisor-next')).action, 'wait')
++    const again = await supervisorControl(f, 'supervisor-await-event', { cursor: event.cursor, waitMs: 1 })
++    assert.notEqual(again.event.type, 'supervisor.owner-cancel-requested')
++    const same = await readRecoverySessionState(f)
++    assert.deepEqual(same.supervisorTimeouts, held.supervisorTimeouts)
++    await mutateRecoverySessionState(f, s => { s.config.parallel = 2 })
++    await executeNextSupervisorTask(f, 'T2')
++    assert.equal(child.session.events.some(item => item.type === 'turn/end'), false)
++    release.resolve()
++    await within(dispatch, 'Owner failure settlement')
++    const failed = await readRecoverySessionState(f)
++    assert.equal(failed.ownerRuns['T1:api'].status, 'failed')
++    assert.equal(failed.tasks[0].status, 'pending')
++    assert.equal(failed.tasks[1].status, 'completed')
++    const persisted = await f.readFrom(child.id)
++    assert.equal(persisted.events.some(item => item.type === 'turn/end' && item.data.reason.kind === 'aborted'), true)
++    await executeNextSupervisorTask(f, 'T1')
++    const recovered = await readRecoverySessionState(f)
++    assert.equal(recovered.recoveryAdmission.budget.totalUsed, 1)
++    assert.equal(recovered.ownerRuns['T1:api'].recoverySession.phase, 'settled_failed')
++    assert.equal(recovered.ownerRuns['T1:api'].attempt, failed.ownerRuns['T1:api'].attempt + 1)
++    await executeNextSupervisorTask(f, 'T1')
++    assert.equal((await readRecoverySessionState(f)).tasks[0].status, 'stopped')
++    assert.equal(f.adapter.requests.length, 7)
++  } finally {
++    release.resolve()
++    if (dispatch) await within(dispatch, 'cleanup Owner settlement').catch(() => undefined)
++  }
++})

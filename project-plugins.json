@@ -1,0 +1,16 @@
+{
+  "registry": "https://registry.npmjs.org/",
+  "plugins": [
+    { "package": "dshmarket", "version": "latest", "entryId": "dsh-market", "repository": "https://github.com/dsh-market/dsh-market" },
+    { "package": "dsh-better-sidebar", "version": "latest", "entryId": "better-sidebar", "repository": "https://github.com/omdsh-dev/DSH-better-sidebar" },
+    { "package": "dsh-context", "version": "latest", "entryId": "dsh-context", "repository": "https://github.com/bowenliang123/dsh-context" },
+    { "package": "dsh-visualizer", "version": "latest", "source": "git", "ref": "master", "entryId": "dsh-visualizer", "repository": "https://github.com/abiddotdev/dsh-visualizer" },
+    { "package": "@js2hou/dsh-mcp-manager", "version": "latest", "entryId": "mcp-manager", "repository": "https://github.com/Js2Hou/dsh-mcp-manager" },
+    { "package": "dsh-cost-meter", "version": "latest", "entryId": "cost-meter", "repository": "https://github.com/Han-1413141/dsh-cost-meter" },
+    { "package": "dsh-plugin-open-editor", "version": "latest", "source": "git", "ref": "main", "bundle": "entry", "entryId": "open-editor", "repository": "https://github.com/Civitasv/dsh-plugin-open-editor" },
+    { "package": "dsh-plugin-diff-review", "version": "latest", "source": "git", "ref": "main", "bundle": "entry", "entryId": "diff-review", "requires": ["dsh-plugin-open-editor"], "repository": "https://github.com/Civitasv/dsh-plugin-diff-review" },
+    { "package": "@dsh-external/dsh-plannotator", "version": "latest", "source": "git", "ref": "main", "entryId": "dsh-plannotator", "repository": "https://github.com/titanwings/dsh-plannotator" },
+    { "package": "dsh-easyrewrite", "version": "latest", "entryId": "dsh-easyrewrite", "repository": "https://github.com/Renzic-Stone/DSH-EasyRewrite" },
+    { "package": "@dsh-external/dsh-sidechain", "version": "latest", "source": "git", "ref": "master", "entryId": "dsh-sidechain", "repository": "https://github.com/omdsh-dev/dsh-sidechain" }
+  ]
+}

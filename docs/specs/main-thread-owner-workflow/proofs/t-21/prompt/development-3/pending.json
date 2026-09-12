@@ -1,0 +1,94 @@
+{
+  "mode": "pending",
+  "root": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t21-prompt-IeABfi",
+  "start": "2026-09-11T02:53:20.801Z",
+  "first": {
+    "mode": "pending",
+    "pid": 77970,
+    "code": null,
+    "signal": "SIGKILL",
+    "payload": {
+      "phase": "kill-ready",
+      "mode": "pending",
+      "memory": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [],
+        "turnEnds": []
+      },
+      "calls": 0,
+      "duplicatePendingError": "Error: message \"t21-fixed-prompt\" is already pending"
+    },
+    "stdout": "",
+    "stderr": ""
+  },
+  "restart": {
+    "mode": "restart-pending",
+    "pid": 77996,
+    "code": 0,
+    "signal": null,
+    "payload": {
+      "phase": "result",
+      "mode": "restart-pending",
+      "before": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [],
+        "turnEnds": []
+      },
+      "resumed": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [],
+        "turnEnds": [],
+        "pendingIds": [
+          "t21-fixed-prompt"
+        ]
+      },
+      "after": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [],
+        "turnEnds": []
+      },
+      "callsBeforeReplay": 0,
+      "callsAfterReplay": 0,
+      "events": [
+        {
+          "type": "agent/inbox/spliced",
+          "seq": 0,
+          "time": 1789095201116,
+          "data": {
+            "target": "next-step",
+            "start": 0,
+            "inserted": [
+              {
+                "id": "t21-fixed-prompt",
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "controlled prompt"
+                  }
+                ],
+                "source": {
+                  "kind": "user"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "session/end-seed",
+          "seq": 1,
+          "time": 1789095201461,
+          "data": {}
+        }
+      ]
+    },
+    "stdout": "",
+    "stderr": ""
+  },
+  "observationChecked": true,
+  "end": "2026-09-11T02:53:21.482Z"
+}

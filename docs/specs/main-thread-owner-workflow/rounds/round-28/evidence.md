@@ -1,0 +1,11 @@
+# 第28轮L2
+
+四类真实结果入口：blocked/handoff/no_submit/pending_check。主线程独占session测试/必要fixture配置及文档，代理只读分析与审查。不可stub结算、不直接改最终状态。正式范围session17+restart5，每组180秒，生产/合同不变。
+
+开发记录：前三类首次2通过1失败，no_submit原断言误将日志里的工具定义视为调用，改为真实readFrom tool/call后3/3。pending首次真实approve产生pending_check，finish因旧planDigest验证证据更早拒绝；原假设“应进入专用pending暂停分支”错误。保留两次失败，不改产品门禁。修后pending1/1，明确组合状态而非独立分支覆盖。candidate仅作为已review输入夹具写入pendingPlanRevision，真实批准事务产生task check状态，未直接改task/Owner终态，不声称planner/reviewer全链路已测。
+
+独立只读路线审计认可：pending_check必然伴随PlanRevision/旧intent绑定变化，实际finish门禁拒绝满足不伪造结算。无需伪造新验证摘要以强行命中内部后置分支。正式前另显式断言重放reservation_binding_mismatch。
+
+正式结果：restart5/5，session16通过1失败，合计21通过1失败、零跳过/超时/警告；1619无漂移，无补验。失败位于pending用例最后精确reason断言：实际reservation_invalid，期望reservation_binding_mismatch。此前真实pending_check、旧验证证据拒绝、预算/raw/state保持与零agent/model调用断言均通过，不能将此用例计为通过。
+
+只读根因：lookupRecoveryAdmissionIntent先调用admissionConfig（recovery-admission.mjs:705/151），config.executionVersion与新state.planDigest不一致在160抛错。reconcileRecoverySession:10119的catch返回reservation_invalid，尚未到其后的reservation_binding_mismatch。是本轮测试精确原因期望错误F-20，不改变正常版本迁移/预算合同，不添加兼容绕过。正式后未修断言。

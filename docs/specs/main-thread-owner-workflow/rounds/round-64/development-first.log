@@ -1,0 +1,123 @@
+TAP version 13
+# Subtest: T15 actual Runner rebuilds a handoff candidate without ordinary Intents or deleting its source
+not ok 1 - T15 actual Runner rebuilds a handoff candidate without ordinary Intents or deleting its source
+  ---
+  duration_ms: 2258.5165
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:32:1'
+  failureType: 'testCodeFailure'
+  error: '废止 PlanRevision 候选必须回到 Workflow 根会话 undefined'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8349:17
+    async Object.withWorkflowLock (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:11065:16)
+    async Object.drivePendingPlanRevision (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8578:7)
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:35:18)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+# Subtest: T15 failed rebuilt Planner keeps the reviewed predecessor and next ordinal uses the same root
+not ok 2 - T15 failed rebuilt Planner keeps the reviewed predecessor and next ordinal uses the same root
+  ---
+  duration_ms: 1290.171792
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:60:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /改变了无关task:T2/. Input:
+
+    'Error: 废止 PlanRevision 候选必须回到 Workflow 根会话 undefined'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: '废止 PlanRevision 候选必须回到 Workflow 根会话 undefined'
+  stack: |-
+    file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8349:17
+    async Object.withWorkflowLock (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:11065:16)
+    async Object.drivePendingPlanRevision (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8578:7)
+    async waitForActual (node:assert:646:5)
+    async strict.rejects (node:assert:769:25)
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:63:3)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:63:3)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T15 exhausted rebuild preserves the predecessor and starts no Planner
+not ok 3 - T15 exhausted rebuild preserves the predecessor and starts no Planner
+  ---
+  duration_ms: 1550.426625
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:78:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /admission refused/. Input:
+
+    'Error: 废止 PlanRevision 候选必须回到 Workflow 根会话 undefined'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: '废止 PlanRevision 候选必须回到 Workflow 根会话 undefined'
+  stack: |-
+    file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8349:17
+    async Object.withWorkflowLock (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:11065:16)
+    async Object.drivePendingPlanRevision (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8578:7)
+    async waitForActual (node:assert:646:5)
+    async strict.rejects (node:assert:769:25)
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:81:3)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:81:3)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T15 changing the settled Review record prevents a new recovery Planner
+not ok 4 - T15 changing the settled Review record prevents a new recovery Planner
+  ---
+  duration_ms: 1698.692917
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:88:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /applied receipt changed/. Input:
+
+    'Error: 废止 PlanRevision 候选必须回到 Workflow 根会话 undefined'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: '废止 PlanRevision 候选必须回到 Workflow 根会话 undefined'
+  stack: |-
+    file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8349:17
+    async Object.withWorkflowLock (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:11065:16)
+    async Object.drivePendingPlanRevision (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8578:7)
+    async waitForActual (node:assert:646:5)
+    async strict.rejects (node:assert:769:25)
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:92:3)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs:92:3)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 0
+# fail 4
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6966.159916

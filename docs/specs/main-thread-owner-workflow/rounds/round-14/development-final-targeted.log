@@ -1,0 +1,21 @@
+Command: node --test --test-force-exit owner-workflow-plugin/test/recovery-admission.test.mjs
+Working directory: /Volumes/LargeStorage/code/DSH-Workflow
+
+✔ T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt (175.537959ms)
+✔ T20 reloads the same durable request through a new Runtime without rebilling or changing identity (200.027458ms)
+✔ T20 derives A/B/A from persisted strategy, keeping one root but distinct durable requests (230.705125ms)
+✔ T20 rejects forged request fields and incorrect source binding without creating a recovery account (285.004542ms)
+✔ T20 rejects a missing strategy and owner-failure records that no longer describe a failed technical task (189.444042ms)
+✔ T20 admits only a live technical obligation and preserves the user-authority boundary (309.422542ms)
+✔ T20 makes approval, current plan digest, cancellation, malformed state, and absent config hard wrapper gates (238.733125ms)
+✔ T20 rejects changed limits after accounting begins and never returns a receipt when the first save cannot commit (328.089209ms)
+✔ T20 cross-process distinct requests consume the final workflow credit once (299.6995ms)
+✔ T20 cross-process competition for one request yields one receipt identity and one debit (299.60325ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2668.174666

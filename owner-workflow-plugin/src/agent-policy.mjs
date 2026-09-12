@@ -6,6 +6,8 @@ export const READ_ONLY_AGENT_ROLES = new Set([
   'planner',
   'plan-reviewer',
   'reviewer',
+  'owner-advisor',
+  'public-owner-advisor',
   'memory-curator',
   'memory-reviewer',
 ])
@@ -36,6 +38,7 @@ const MAIN_MUTATING_TOOLS = new Set([
   'owner_verify',
   'owner_repair',
   'owner_submit',
+  'owner_execution_feedback',
   'owner_memory_note',
   'owner_host_exec',
   'request_subgraph',
@@ -51,7 +54,7 @@ const OWNER_DESCENDANT_TOOLS = new Set([
   'subagent_claude_code',
 ])
 
-const SEARCH_BREAKER_ROLES = new Set(['owner', 'planner', 'plan-reviewer', 'reviewer', 'operator'])
+const SEARCH_BREAKER_ROLES = new Set(['owner', 'planner', 'plan-reviewer', 'reviewer', 'owner-advisor', 'public-owner-advisor', 'operator'])
 const SEARCH_BREAKER_MARK = Symbol('owner-workflow-search-breaker')
 
 function childToolParameters(parameters) {
@@ -127,6 +130,8 @@ function childOrchestrationToolAllowed(role, toolName) {
   if (toolName === 'workflow_git_inspect') return true
   if (role === 'planner' && toolName === 'workflow_plan_submit') return true
   if (role === 'plan-reviewer' && toolName === 'workflow_plan_review_submit') return true
+  if (role === 'owner-advisor' && toolName === 'workflow_owner_advice_submit') return true
+  if (role === 'public-owner-advisor' && toolName === 'workflow_public_owner_decision_submit') return true
   if (role === 'operator' && ['operation_report', 'operation_exec'].includes(toolName)) return true
   return false
 }
@@ -154,7 +159,7 @@ export function configureChildSandbox(childCtx, role) {
  * 主代理启用 Owner 模式后只阻止已知的直接开发入口。
  * 未知工具不再默认拒绝，避免 Harness 升级后只读能力因白名单漂移而失效。
  */
-export function toolExecutionDenial({ activeOwner, role, modeEnabled, toolName, toolArguments }) {
+export function toolExecutionDenial({ activeOwner, role, modeEnabled, toolName, toolArguments, orchestratorDocumentAllowed = false }) {
   if (activeOwner !== undefined) {
     if (['bash', 'pwsh', 'write', 'edit'].includes(toolName)
       && toolArguments !== null
@@ -173,6 +178,9 @@ export function toolExecutionDenial({ activeOwner, role, modeEnabled, toolName, 
     }
     return undefined
   }
+  if (toolName === 'owner_execution_feedback') {
+    return `${toolName} 只能由当前 active Owner 子代理调用`
+  }
   if (role !== undefined) {
     if (isOrchestrationTool(toolName) && !childOrchestrationToolAllowed(role, toolName)) {
       return `${role} 子代理不能控制主 Workflow 或创建其他 Operation`
@@ -180,6 +188,8 @@ export function toolExecutionDenial({ activeOwner, role, modeEnabled, toolName, 
     return undefined
   }
   if (!modeEnabled) return undefined
+  if (orchestratorDocumentAllowed && ['write', 'edit'].includes(toolName)
+    && !Object.hasOwn(toolArguments ?? {}, 'sandbox_permissions')) return undefined
   if (!MAIN_MUTATING_TOOLS.has(toolName) && !MAIN_MUTATION_NAME.test(toolName)) return undefined
   return `Owner 工作模式已启用，主会话不能直接调用 ${toolName}；代码修改交给 Owner，非编码执行交给 Operator`
 }

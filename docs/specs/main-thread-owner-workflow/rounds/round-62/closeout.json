@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-11T12:14:06.760463+00:00",
+  "candidateDrift": [],
+  "formalPass": 186,
+  "formalSkipped": 7,
+  "closedFindings": [
+    "protected-request-subgraph-live-source-invalidation",
+    "request-subgraph-submission-race"
+  ],
+  "reviewFindings": [],
+  "knownLimitations": [
+    "recovery-aware-subgraph-activation-not-implemented",
+    "legacy-immediate-delta-semantics-remain"
+  ],
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false
+}

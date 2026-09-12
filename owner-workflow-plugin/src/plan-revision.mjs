@@ -28,7 +28,60 @@ export function createPlanRevision({ number, parent, plan, planDigest }) {
     number,
     parent,
     planDigest: digest,
+    ...(plan.publicOwnerChanges === undefined ? {} : {
+      publicOwnerChanges: structuredClone(plan.publicOwnerChanges),
+    }),
     plan: structuredClone(plan),
+  }
+}
+
+/**
+ * 已结算 task 是不可变的执行历史。Planner 若需要补充或修正其语义，必须新增后继
+ * repair/verify 节点，不能通过改写旧节点的 title/done/verification 让它重新执行。
+ */
+export function freezeCompletedTaskDefinitions({ previousPlan, nextPlan, completedTaskIds = [] }) {
+  const frozenIds = new Set(completedTaskIds)
+  const previousTasks = new Map((previousPlan?.tasks ?? []).map(task => [task.id, task]))
+  const nextTasks = new Map((nextPlan?.tasks ?? []).map(task => [task.id, task]))
+  const frozenTaskIds = [...frozenIds].filter(taskId => previousTasks.has(taskId))
+  if (frozenTaskIds.length === 0) {
+    return { plan: structuredClone(nextPlan), frozenTaskIds: [] }
+  }
+
+  const tasks = [
+    ...(previousPlan?.tasks ?? []).flatMap(previous => {
+      if (frozenIds.has(previous.id)) return [structuredClone(previous)]
+      const candidate = nextTasks.get(previous.id)
+      return candidate === undefined ? [] : [structuredClone(candidate)]
+    }),
+    ...(nextPlan?.tasks ?? [])
+      .filter(task => !previousTasks.has(task.id))
+      .map(task => structuredClone(task)),
+  ]
+
+  const frozenVerificationIds = new Set(frozenTaskIds.flatMap(taskId => (
+    previousTasks.get(taskId)?.verify ?? []
+  )))
+  const previousVerifications = new Map((previousPlan?.verifications ?? []).map(item => [item.id, item]))
+  const nextVerificationIds = new Set((nextPlan?.verifications ?? []).map(item => item.id))
+  const verifications = [
+    ...(nextPlan?.verifications ?? []).map(item => (
+      frozenVerificationIds.has(item.id) && previousVerifications.has(item.id)
+        ? structuredClone(previousVerifications.get(item.id))
+        : structuredClone(item)
+    )),
+    ...[...frozenVerificationIds]
+      .filter(id => !nextVerificationIds.has(id) && previousVerifications.has(id))
+      .map(id => structuredClone(previousVerifications.get(id))),
+  ]
+
+  return {
+    plan: {
+      ...structuredClone(nextPlan),
+      tasks,
+      verifications,
+    },
+    frozenTaskIds,
   }
 }
 
@@ -38,6 +91,67 @@ function exactList(value) {
 
 function same(value, other) {
   return canonical(value) === canonical(other)
+}
+
+function selectedVerifications(task, plan) {
+  const catalog = new Map((Array.isArray(plan?.verifications) ? plan.verifications : [])
+    .filter(item => item !== null && typeof item === 'object' && typeof item.id === 'string')
+    .map(item => [item.id, {
+      id: item.id,
+      run: Array.isArray(item.run) ? [...item.run] : null,
+      ...(item.cwd === undefined ? {} : { cwd: item.cwd }),
+    }]))
+  return (task.verify ?? []).map(id => catalog.get(id) ?? { id, missing: true })
+}
+
+function selectedPlanningBinding(task, plan) {
+  if (plan?.planningBindings === undefined) return { present: false }
+  const bindings = plan.planningBindings
+  if (bindings === null || typeof bindings !== 'object' || !Array.isArray(bindings.tasks)) {
+    return { present: true, invalid: true }
+  }
+  const binding = bindings.tasks.find(item => item?.taskId === task.id)
+  if (binding === undefined) return { present: true, missing: true }
+  if (!Array.isArray(binding.tickets) || !Array.isArray(binding.contracts)) {
+    return { present: true, invalid: true }
+  }
+  return {
+    present: true,
+    tickets: binding.tickets.map(ticket => ({
+      id: ticket?.id,
+      revision: ticket?.revision,
+      fragments: exactList(ticket?.fragments),
+    })).sort((left, right) => canonical(left).localeCompare(canonical(right))),
+    contracts: binding.contracts.map(contract => ({
+      id: contract?.id,
+      revision: contract?.revision,
+    })).sort((left, right) => canonical(left).localeCompare(canonical(right))),
+  }
+}
+
+function selectedPublicOwnerBindings(task, plan) {
+  if (plan?.publicOwnerChanges === undefined) return { bindings: [] }
+  if (!Array.isArray(plan.publicOwnerChanges)) return { present: true, invalid: true }
+  return {
+    bindings: plan.publicOwnerChanges.filter(binding => (
+      binding?.implementationTaskId === task.id
+      || binding?.consumers?.some(consumer => consumer?.taskId === task.id)
+    )).sort((left, right) => canonical(left).localeCompare(canonical(right))),
+  }
+}
+
+function changedReferencedInputs(previousTask, nextTask, { previousPlan, nextPlan }) {
+  if (previousPlan === undefined && nextPlan === undefined) return false
+  if (!same(selectedVerifications(previousTask, previousPlan), selectedVerifications(nextTask, nextPlan))) {
+    return '任务引用的固定验证声明已变化'
+  }
+  if (!same(selectedPlanningBinding(previousTask, previousPlan), selectedPlanningBinding(nextTask, nextPlan))) {
+    return '任务引用的冻结规划绑定已变化'
+  }
+  if (!same(selectedPublicOwnerBindings(previousTask, previousPlan), selectedPublicOwnerBindings(nextTask, nextPlan))) {
+    return '任务引用的公共 Owner 决定绑定已变化'
+  }
+  return false
 }
 
 /**
@@ -52,6 +166,11 @@ export function classifyTaskRevisionChange(previousTask, nextTask, options = {})
   if (!(previousTask.write ?? []).every(path => scopePatternCoveredBy(path, nextTask.write ?? []))) {
     return { disposition: 'abort', reason: '任务 write 范围被收窄或改写' }
   }
+  if (!(nextTask.write ?? []).every(path => scopePatternCoveredBy(path, previousTask.write ?? []))) {
+    return { disposition: 'pending_check', reason: '任务 write 范围已扩大，旧 attempt 不得获得新增权限' }
+  }
+  const referencedInputsChanged = changedReferencedInputs(previousTask, nextTask, options)
+  if (referencedInputsChanged) return { disposition: 'pending_check', reason: referencedInputsChanged }
   const unchanged = same({
     title: previousTask.title,
     dependsOn: exactList(previousTask.dependsOn),
@@ -70,6 +189,75 @@ export function classifyTaskRevisionChange(previousTask, nextTask, options = {})
   return unchanged
     ? { disposition: 'carry_valid', reason: '任务权限和语义均未变化' }
     : { disposition: 'pending_check', reason: '任务仍可复用，但必须按新 DAG 检查' }
+}
+
+/**
+ * Project persisted task state onto a revised DAG without discarding reusable work.
+ * The caller supplies freshly initialized records so this module does not duplicate
+ * Supervisor defaults. Runtime-only attempts are deliberately handled by the caller.
+ */
+export function migrateTaskStatesForRevision({
+  previousPlan,
+  nextPlan,
+  currentTaskStates,
+  initialTaskStates,
+  revision,
+  registryChanged = false,
+}) {
+  const previousTasks = new Map((previousPlan?.tasks ?? []).map(task => [task.id, task]))
+  const currentStates = new Map((currentTaskStates ?? []).map(task => [task.taskId, task]))
+  const initialStates = new Map((initialTaskStates ?? []).map(task => [task.taskId, task]))
+  const pendingCheckTaskIds = []
+  const dispositions = {}
+  const taskStates = []
+
+  for (const task of nextPlan?.tasks ?? []) {
+    const initial = initialStates.get(task.id)
+    if (initial === undefined) throw new Error(`PlanRevision 缺少 task ${task.id} 的初始状态`)
+    const previous = previousTasks.get(task.id)
+    const existing = currentStates.get(task.id)
+    if (previous === undefined || existing === undefined) {
+      dispositions[task.id] = { disposition: 'new', reason: '任务由当前 PlanRevision 新增' }
+      taskStates.push({ ...initial, planRevision: revision, checkState: null })
+      continue
+    }
+
+    const classification = classifyTaskRevisionChange(previous, task, {
+      registryChanged,
+      previousPlan,
+      nextPlan,
+    })
+    dispositions[task.id] = classification
+    const nextState = {
+      ...existing,
+      planRevision: revision,
+      revisionDisposition: classification.disposition,
+      revisionReason: classification.reason,
+    }
+    if (classification.disposition === 'carry_valid' && existing.status === 'completed') {
+      nextState.checkState = 'valid'
+    } else if (classification.disposition === 'pending_check') {
+      if (['running', 'completed'].includes(existing.status)) {
+        nextState.checkState = 'pending_check'
+        nextState.recheckOnly = false
+        pendingCheckTaskIds.push(task.id)
+      } else {
+        nextState.checkState = null
+        nextState.recheckOnly = false
+      }
+    } else if (classification.disposition === 'abort' && existing.status !== 'running') {
+      Object.assign(nextState, initial, {
+        planRevision: revision,
+        revisionDisposition: classification.disposition,
+        revisionReason: classification.reason,
+        checkState: 'invalid',
+        recheckOnly: false,
+      })
+    }
+    taskStates.push(nextState)
+  }
+
+  return { taskStates, pendingCheckTaskIds, dispositions }
 }
 
 function ownerRunKey(taskId, ownerId) {

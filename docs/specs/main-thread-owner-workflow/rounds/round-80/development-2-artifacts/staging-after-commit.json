@@ -1,0 +1,163 @@
+{
+  "stagingBlockedByLock": true,
+  "state": {
+    "journals": [
+      {
+        "binding": {
+          "activation": {
+            "authorizationId": "AUTH1",
+            "expectedParentExecutionVersionId": null,
+            "id": "V1"
+          },
+          "authorization": {
+            "allowedPaths": [
+              "docs/specs/proof/spec.md",
+              "docs/specs/proof/tickets/T1.md"
+            ],
+            "contract": "DSH_PLANNING_AUTHORIZATION_V1",
+            "id": "AUTH1",
+            "sourceId": "MAIN1",
+            "status": "approved"
+          },
+          "expected": {
+            "branch": "dev",
+            "head": "84f20e332d6644f62d519d51c2c345fab0d3d774"
+          },
+          "parent": {
+            "dagDigest": "512d0f29088c76daad57b9c3569733021775483b2ca319fa56c99a07dd996d4e",
+            "executionVersionId": null,
+            "registryDigest": "872491a30d60d598962de6e7b834ab76b2aa65fbab102c6ebaaae6acdc238822",
+            "review": {
+              "digest": "c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84",
+              "id": "REVIEW1",
+              "status": "passed"
+            }
+          },
+          "reason": "T07 authorized planning checkpoint",
+          "receipts": [
+            {
+              "afterSha256": "83e709f9afce7d5a99cf04e2bd492ba25fd807f1b94808867da012c91d9d0dae",
+              "authorizationId": "AUTH1",
+              "beforeSha256": null,
+              "contract": "DSH_PLANNING_WRITE_RECEIPT_V1",
+              "id": "write-5e552d34-8238-4dbd-8179-fedd6918ff7d",
+              "path": "docs/specs/proof/spec.md",
+              "sourceId": "MAIN1"
+            },
+            {
+              "afterSha256": "ce894894d02cf7e384b04bbda99b1be648e692a4c990a563deed5ad9f0deb843",
+              "authorizationId": "AUTH1",
+              "beforeSha256": null,
+              "contract": "DSH_PLANNING_WRITE_RECEIPT_V1",
+              "id": "write-1f4aa8cc-7c8e-4c28-ae60-f956caba3cbb",
+              "path": "docs/specs/proof/tickets/T1.md",
+              "sourceId": "MAIN1"
+            }
+          ],
+          "references": {
+            "blocked": [],
+            "contract": "DSH_PLANNING_REFERENCE_SET_V1",
+            "ready": [
+              {
+                "segment": {
+                  "id": "implement"
+                },
+                "ticketId": "T1"
+              }
+            ],
+            "spec": {
+              "acceptanceCriteria": [
+                "AC-01"
+              ],
+              "content": "---\nplanning_document: DSH_PLANNING_DOCUMENT_V1\ndocument_kind: spec\ndocument_id: SPEC-07\ndocument_revision: R1\nplanning_declaration: {\"id\":\"SPEC-07\",\"revision\":\"R1\",\"acceptanceCriteria\":[\"AC-01\"],\"contracts\":[{\"id\":\"K1\",\"revision\":\"v1\"}]}\n---\n\n# SPEC-07\n\nT07 reference-bound behavior.\n",
+              "contracts": [
+                {
+                  "id": "K1",
+                  "revision": "v1"
+                }
+              ],
+              "id": "SPEC-07",
+              "path": "docs/specs/proof/spec.md",
+              "revision": "R1",
+              "sha256": "83e709f9afce7d5a99cf04e2bd492ba25fd807f1b94808867da012c91d9d0dae"
+            },
+            "tickets": [
+              {
+                "acceptanceCriteria": [
+                  {
+                    "id": "AC-01",
+                    "specId": "SPEC-07",
+                    "specRevision": "R1"
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "K1",
+                    "revision": "v1"
+                  }
+                ],
+                "dependsOn": [],
+                "document": {
+                  "content": "---\nplanning_document: DSH_PLANNING_DOCUMENT_V1\ndocument_kind: ticket\ndocument_id: T1\ndocument_revision: R1\nspec_id: SPEC-07\nspec_revision: R1\nplanning_declaration: {\"id\":\"T1\",\"revision\":\"R1\",\"spec\":{\"id\":\"SPEC-07\",\"revision\":\"R1\"},\"acceptanceCriteria\":[{\"id\":\"AC-01\",\"specId\":\"SPEC-07\",\"specRevision\":\"R1\"}],\"contracts\":[{\"id\":\"K1\",\"revision\":\"v1\"}],\"dependsOn\":[],\"work\":{\"ready\":[{\"id\":\"implement\"}],\"blocked\":[]}}\n---\n\n# T1\n\nT07 reference-bound behavior.\n",
+                  "path": "docs/specs/proof/tickets/T1.md",
+                  "sha256": "ce894894d02cf7e384b04bbda99b1be648e692a4c990a563deed5ad9f0deb843"
+                },
+                "id": "T1",
+                "revision": "R1",
+                "spec": {
+                  "id": "SPEC-07",
+                  "revision": "R1"
+                },
+                "work": {
+                  "blocked": [],
+                  "ready": [
+                    {
+                      "id": "implement"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "requestId": "TX1"
+        },
+        "checkpointCommit": "3a0b64bd96e0e647ca06671a4030df086144eff5",
+        "commitInput": {
+          "author": {
+            "email": "proof@example.invalid",
+            "name": "T07 Proof"
+          },
+          "authorDate": "1789144118 +0000",
+          "committer": {
+            "email": "proof@example.invalid",
+            "name": "T07 Proof"
+          },
+          "committerDate": "1789144118 +0000",
+          "indexArtifact": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-gkpFx6/.git/planning-transaction-proof/artifacts/TX1.prepared.index",
+          "message": "planning checkpoint TX1",
+          "parent": "84f20e332d6644f62d519d51c2c345fab0d3d774",
+          "preparedIndexSha256": "9fae2d62dcf78162c12c85c3267ead38fa59d4ce26fc4076dcce476ff1ec79ed",
+          "tree": "733220ccf57d31979922679332e3f3c01e2eab8c"
+        },
+        "contract": "DSH_PLANNING_TRANSACTION_JOURNAL_V1",
+        "id": "TX1",
+        "initialIndexSha256": "1a6ecd74ce95fc05edd20330cfe63f65234b52f7e93f0483c7e0f65e4faa2c14",
+        "lockOwnerPid": 35483,
+        "phase": "ref-updated"
+      }
+    ],
+    "snapshots": [],
+    "activation": {
+      "contract": "DSH_PLANNING_ACTIVATION_STATE_V1",
+      "current": null,
+      "history": []
+    }
+  },
+  "observed": {
+    "head": "3a0b64bd96e0e647ca06671a4030df086144eff5",
+    "branch": "dev",
+    "index": "1a6ecd74ce95fc05edd20330cfe63f65234b52f7e93f0483c7e0f65e4faa2c14",
+    "staged": "diff --git a/docs/specs/proof/spec.md b/docs/specs/proof/spec.md\ndeleted file mode 100644\nindex 7f6be6a..0000000\n--- a/docs/specs/proof/spec.md\n+++ /dev/null\n@@ -1,11 +0,0 @@\n----\n-planning_document: DSH_PLANNING_DOCUMENT_V1\n-document_kind: spec\n-document_id: SPEC-07\n-document_revision: R1\n-planning_declaration: {\"id\":\"SPEC-07\",\"revision\":\"R1\",\"acceptanceCriteria\":[\"AC-01\"],\"contracts\":[{\"id\":\"K1\",\"revision\":\"v1\"}]}\n----\n-\n-# SPEC-07\n-\n-T07 reference-bound behavior.\ndiff --git a/docs/specs/proof/tickets/T1.md b/docs/specs/proof/tickets/T1.md\ndeleted file mode 100644\nindex 013428a..0000000\n--- a/docs/specs/proof/tickets/T1.md\n+++ /dev/null\n@@ -1,13 +0,0 @@\n----\n-planning_document: DSH_PLANNING_DOCUMENT_V1\n-document_kind: ticket\n-document_id: T1\n-document_revision: R1\n-spec_id: SPEC-07\n-spec_revision: R1\n-planning_declaration: {\"id\":\"T1\",\"revision\":\"R1\",\"spec\":{\"id\":\"SPEC-07\",\"revision\":\"R1\"},\"acceptanceCriteria\":[{\"id\":\"AC-01\",\"specId\":\"SPEC-07\",\"specRevision\":\"R1\"}],\"contracts\":[{\"id\":\"K1\",\"revision\":\"v1\"}],\"dependsOn\":[],\"work\":{\"ready\":[{\"id\":\"implement\"}],\"blocked\":[]}}\n----\n-\n-# T1\n-\n-T07 reference-bound behavior.",
+    "status": " M code.txt\nD  docs/specs/proof/spec.md\nD  docs/specs/proof/tickets/T1.md\n?? docs/specs/proof/spec.md\n?? docs/specs/proof/tickets/T1.md"
+  }
+}

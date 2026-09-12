@@ -1,0 +1,19 @@
+{
+  "note": "Fingerprints of on-disk files; HEAD does not include all existing changes.",
+  "gitHead": "154914064f5ceb2f8eb413865e10a54e8ffbc663",
+  "files": {
+    "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs": "80c4265787969cc868b85f01fe4ed8f05d3a9c86361c43f6ea1a0a0cfedb6c49",
+    "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/convergence.mjs": "f388c9508c7b92847bede176b808aff78fdd02a79ed649bbb1f647116109a344",
+    "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/workflow-state.mjs": "441102865e2b756046d7dbb126f829019878aee06b0bc084359fafa80525613d",
+    "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/supervisor.mjs": "57d665112fa471c1adb5e2810ee06813355a1a9e7ff4a3a1dda313b048322898",
+    "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs": "5b93efe34fbe9fb78e1d0b400c6bff1b658ed90a8a3bae5e396a662275de0e5e",
+    "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/owner-boundary.mjs": "307599a1e6dba3f2214fcee610d74f7552fcea4facbcbbe16e22a95c80adcace",
+    "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/skills.mjs": "84e454d9c9aa5d1dafa7a5cbdabd60ce5c7f1360a3cdebee5e2b3054ada861d6",
+    "/Users/admin/code/ghost-agent-market/codex-market/plugins/ghost-agent-skills/skills/ghost-matt-spec/SKILL.md": "97874730bdadb3aecefe4bbfdfed935e8d7d21b6c24377c833b26c25f8f2fe90",
+    "/Users/admin/code/ghost-agent-market/codex-market/plugins/ghost-agent-skills/skills/ghost-matt-ticket/SKILL.md": "ec0061feead32227b32d63906e7a972e229caf1f85940096f759ab94a68c104a",
+    "/Users/admin/code/ghost-agent-market/codex-market/plugins/ghost-agent-skills/skills/ghost-matt-implement/SKILL.md": "c940890eb77a54c71725d2f2b5a9080ffa1bdd4fd3b4f5e32e415710af8719aa",
+    "/Users/admin/code/ghost-agent-market/codex-market/plugins/ghost-agent-skills/skills/ghost-matt-run-test/SKILL.md": "db9692deae3e58b9fdf90ae7f26cb08eba8c87bc1c4cf798432ff7558ddbb937",
+    "/Users/admin/code/ghost-agent-market/codex-market/plugins/ghost-agent-skills/skills/ghost-matt-test-report/SKILL.md": "1d04c5b4d77f90f55846f0ae093f656618b2950ea745c21a3a45f27e28e84f9c",
+    "/Users/admin/code/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh/skills/implement-spec/SKILL.md": "107c7ee768555942310d1299c8f6ee9e8b9e591385c720b44552a3a63ccca6d0"
+  }
+}

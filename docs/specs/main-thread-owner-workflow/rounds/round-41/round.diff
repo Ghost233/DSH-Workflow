@@ -1,0 +1,123 @@
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs
+@@ -347,6 +347,54 @@
+   }
+ }
+
++async function admissionSaveFailure(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true, temporaryDirectory: input.fixtureParent,
++  })
++  const target = statePath(fixture.root, fixture.workflowId)
++  const directory = join(fixture.root, '.dsh-workflow', 'workflows')
++  const originalWrite = fsPromises.writeFile
++  const beforeState = await readFile(target, 'utf8')
++  const operations = observeAgentOperations(fixture)
++  let injected = false
++  let error
++  let receipt
++  fsPromises.writeFile = async (path, ...args) => {
++    if (typeof path === 'string' && path.startsWith(`${target}.tmp-`)) {
++      injected = true
++      // Real OS write refusal after the admission reducer and write-lock
++      // acquisition. Do not replace writeFile with a fabricated exception.
++      await fsPromises.chmod(directory, 0o500)
++      try {
++        return await originalWrite(path, ...args)
++      } finally {
++        // Let normal Runtime cleanup release its write lock; otherwise a
++        // cleanup rmdir error would mask the original temporary-write error.
++        await fsPromises.chmod(directory, 0o700)
++      }
++    }
++    return await originalWrite(path, ...args)
++  }
++  syncBuiltinESMExports()
++  try {
++    try {
++      receipt = await reserveRecoverySession(fixture)
++    } catch (caught) {
++      error = { ...serializeError(caught), code: caught.code }
++    } finally {
++      fsPromises.writeFile = originalWrite
++      syncBuiltinESMExports()
++      await fsPromises.chmod(directory, 0o700)
++    }
++    await send({ type: 'replayed', pid: process.pid, injected, error, receipt,
++      beforeState, afterState: await readFile(target, 'utf8'),
++      operations, modelRequests: fixture.adapter.requests.length,
++    })
++  } finally {
++    await fixture.dispose()
++  }
++}
++
+ async function produceAdmissionPending(input) {
+   const fixture = await createRecoverySessionFixture({ after() {} }, {
+     executable: true, temporaryDirectory: input.fixtureParent,
+@@ -557,6 +605,7 @@
+
+ async function dispatch(input) {
+   switch (input?.mode) {
++    case 'admission_save_failure': return await admissionSaveFailure(input)
+     case 'produce_first_append': return await produceFirstAppend(input)
+     case 'produce_admission_pending': return await produceAdmissionPending(input)
+     case 'replay_uncommitted': return await replayUncommitted(input)
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs
+@@ -540,3 +540,55 @@
+     await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, finalBytes, pendingBytes, raw, branchHead, replay }, null, 2) + '\n', 'utf8')
+   })
+ })
++
++
++for (const corruption of ['bad_row', 'torn_tail', 'bad_budget']) {
++  test(`T23 Runtime rejects persistent ${corruption} after real prompt acceptance`, async () => {
++    return withFixtureContainer(async fixtureParent => {
++      const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_submitted', fixtureParent }), 'submitted')
++      const cp = producer.checkpoint
++      const originalState = await readFile(workflowStatePath(cp.root, cp.workflowId), 'utf8')
++      const originalRaw = await readFile(cp.rawLocationPath, 'utf8')
++      assert.equal(originalState, cp.stateBytes)
++      assert.equal(originalRaw, cp.rawContent)
++      assert.ok(originalRaw.includes(cp.receipt.executionIdentity.promptId))
++      if (corruption === 'bad_budget') {
++        const state = JSON.parse(originalState)
++        state.recoveryAdmission.budget.totalUsed = -1
++        await writeFile(workflowStatePath(cp.root, cp.workflowId), JSON.stringify(state, null, 2) + '\n', 'utf8')
++      } else {
++        const suffix = corruption === 'bad_row' ? '{"type":"turn/end","seq":999}\n' : '{"type":"turn/end"'
++        await writeFile(cp.rawLocationPath, originalRaw + suffix, 'utf8')
++      }
++      const corruptState = await readFile(workflowStatePath(cp.root, cp.workflowId), 'utf8')
++      const corruptRaw = await readFile(cp.rawLocationPath, 'utf8')
++      const replay = await finishReplay({ ...cp, mode: 'replay' })
++      assert.notEqual(replay.pid, cp.pid)
++      assert.equal(replay.result.outcome, 'paused')
++      if (corruption === 'bad_budget') assert.equal(replay.result.reason, 'reservation_invalid')
++      assertReplayReadOnly({ stateBytes: corruptState, rawContent: corruptRaw }, replay)
++      assert.equal(await readFile(workflowStatePath(cp.root, cp.workflowId), 'utf8'), corruptState)
++      assert.equal(await readFile(cp.rawLocationPath, 'utf8'), corruptRaw)
++      const directory = join(EVIDENCE_ROOT, corruption)
++      await mkdir(directory, { recursive: true })
++      await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, corruption, originalState, originalRaw, corruptState, corruptRaw, replay }, null, 2) + '\n', 'utf8')
++    })
++  })
++}
++
++test('T23 actual admission temporary-write failure releases no receipt or execution', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const result = await finishReplay({ mode: 'admission_save_failure', fixtureParent })
++    assert.equal(result.injected, true)
++    assert.equal(result.error?.code, 'EACCES', JSON.stringify(result))
++    assert.match(result.error.message, /open .*wf-recovery-session\.json\.tmp-/u)
++    assert.equal(result.receipt, undefined)
++    assert.equal(result.beforeState, result.afterState)
++    assert.equal(JSON.parse(result.afterState).recoveryAdmission, undefined)
++    assert.deepEqual(result.operations, { create: 0, resume: 0, followup: 0 })
++    assert.equal(result.modelRequests, 0)
++    const directory = join(EVIDENCE_ROOT, 'admission-save-failure')
++    await mkdir(directory, { recursive: true })
++    await writeFile(join(directory, 'proof.json'), JSON.stringify(result, null, 2) + '\n', 'utf8')
++  })
++})

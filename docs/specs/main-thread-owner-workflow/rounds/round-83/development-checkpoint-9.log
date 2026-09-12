@@ -1,0 +1,23 @@
+✔ 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交 (1445.548791ms)
+✔ 暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户文件 (294.784375ms)
+✔ 真实子进程 SIGKILL after-journal-prepared 后复启只形成一个 checkpoint 与不可变 snapshot (1392.499584ms)
+✔ 真实子进程 SIGKILL after-commit-object 后复启只形成一个 checkpoint 与不可变 snapshot (1548.326666ms)
+✔ 真实子进程 SIGKILL after-ref-update-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot (1588.310667ms)
+✔ 真实子进程 SIGKILL after-ref-cas 后复启只形成一个 checkpoint 与不可变 snapshot (1423.64275ms)
+✔ 真实子进程 SIGKILL after-index-sync 后复启只形成一个 checkpoint 与不可变 snapshot (1242.197042ms)
+✔ 真实子进程 SIGKILL after-snapshot 后复启只形成一个 checkpoint 与不可变 snapshot (1546.300042ms)
+✔ 已完成 parent snapshot 以完整持久 journal/snapshot 身份绑定子 checkpoint (1971.303125ms)
+✔ 未知 parent snapshot 在创建 journal 或 Git 变更前拒绝 (252.600958ms)
+✔ 原 checkpoint 尚待恢复时，新 id 不能绕过同一项目的 pending journal (1652.307792ms)
+✔ Git clean filter 改写选中文档 blob 时拒绝，不把原始来源哈希写成 checkpoint (687.093333ms)
+✔ commit object 已持久但 ref 前外部修改选中文档时，恢复拒绝并保留外部字节 (829.751042ms)
+✔ 已完成 checkpoint 的 immutable snapshot 被外部修改时，重放和 pending 检查均拒绝 (1235.202416ms)
+✔ 未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁 (978.110417ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 18276.50975

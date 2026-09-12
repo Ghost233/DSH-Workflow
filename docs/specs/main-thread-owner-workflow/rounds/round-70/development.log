@@ -1,0 +1,59 @@
+TAP version 13
+# Subtest: T15 public and direct Owner entry points cannot bypass a candidate reservation
+not ok 1 - T15 public and direct Owner entry points cannot bypass a candidate reservation
+  ---
+  duration_ms: 6957.016167
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-recovery-pause.test.mjs:258:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /生命周期尚未接线/. Input:
+
+    'Error: V2 工作流拒绝 legacy 控制动作 owner-sync；Supervisor 是唯一调度路径'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: 'V2 工作流拒绝 legacy 控制动作 owner-sync；Supervisor 是唯一调度路径'
+  stack: |-
+    Socket.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-recovery-pause.test.mjs:22:62)
+    Socket.emit (node:events:508:28)
+    addChunk (node:internal/streams/readable:559:12)
+    readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+    Readable.push (node:internal/streams/readable:390:5)
+    Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+  operator: 'rejects'
+  stack: |-
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-recovery-pause.test.mjs:265:5)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+# Subtest: T15 reservation replay rejects persisted stopped task before neutralizing its projection
+ok 2 - T15 reservation replay rejects persisted stopped task before neutralizing its projection
+  ---
+  duration_ms: 3871.962834
+  type: 'test'
+  ...
+# Subtest: T15 reservation replay rejects persisted completed task before neutralizing its projection
+ok 3 - T15 reservation replay rejects persisted completed task before neutralizing its projection
+  ---
+  duration_ms: 2860.44475
+  type: 'test'
+  ...
+# Subtest: T15 Owner startup rechecks a reservation arriving after its initial read
+ok 4 - T15 Owner startup rechecks a reservation arriving after its initial read
+  ---
+  duration_ms: 2504.575709
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 3
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 16718.137958

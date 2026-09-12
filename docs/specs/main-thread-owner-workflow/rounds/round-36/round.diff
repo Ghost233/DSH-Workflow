@@ -1,0 +1,208 @@
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs
+@@ -5,6 +5,7 @@
+ import {
+   createRecoverySessionFixture,
+   readRecoverySessionState,
++  writeRecoverySessionState,
+   reopenRecoverySessionFixture,
+   reserveRecoverySession,
+ } from '../../../../../owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs'
+@@ -272,7 +273,6 @@
+     })
+   } finally {
+     await fixture.dispose()
+-    process.disconnect?.()
+   }
+ }
+
+@@ -319,7 +319,6 @@
+     })
+   } finally {
+     await fixture.dispose()
+-    process.disconnect?.()
+   }
+ }
+
+@@ -345,12 +344,89 @@
+     await send({ type: 'competed', pid: process.pid, result, errorName, operations, modelRequests: fixture.adapter.requests.length })
+   } finally {
+     await fixture.dispose()
+-    process.disconnect?.()
++  }
++}
++
++async function produceCandidates(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true, includeIndependentOwner: true,
++    temporaryDirectory: input.fixtureParent, limits: { totalLimit: 1, problemLimit: 1 },
++  })
++  // Initial failed-source input, just as the existing fixture seeds T1.
++  // No reservation, external recovery or success receipt is manufactured.
++  const state = await readRecoverySessionState(fixture)
++  state.ownerRuns['T2:worker'] = {
++    ...structuredClone(state.ownerRuns['T1:api']),
++    taskId: 'T2', stageId: 'T2', ownerId: 'worker', sessionId: 'T2-worker-failed-session',
++    branch: `dsh/owner/${fixture.workflowId}/worker`,
++    worktree: join(fixture.root, '.dsh-workflow', 'worktrees', fixture.workflowId, 'owners', 'worker'),
++  }
++  await writeRecoverySessionState(fixture, state)
++  await send({ type: 'checkpoint', scenario: 'candidates', pid: process.pid,
++    root: fixture.root, workflowId: fixture.workflowId, planDigest: fixture.planDigest,
++    stateBytes: await readFile(statePath(fixture.root, fixture.workflowId), 'utf8'),
++  })
++  await new Promise(() => {})
++}
++
++async function competeCredit(input) {
++  const fixture = await reopenRecoverySessionFixture({
++    root: input.root, workflowId: input.workflowId, executable: true, modelScript: failedOwnerModelScript,
++  })
++  try {
++    const operations = observeAgentOperations(fixture)
++    const go = new Promise(resolve => process.once('message', resolve))
++    await send({ type: 'ready', pid: process.pid })
++    if ((await go)?.type !== 'go') throw new Error('credit barrier requires go')
++    const admissionRequest = {
++      contract: 'DSH_RECOVERY_ADMISSION_REQUEST_V1', planDigest: input.planDigest,
++      taskId: input.taskId, ownerId: input.ownerId,
++      source: { kind: 'owner_failure', attempt: 2, sessionId: `${input.taskId}-${input.ownerId}-failed-session` },
++    }
++    // Same bounded CAS/lease retry as the T20 cross-process fixture. Never
++    // retry execution; preserve every contention response in the evidence.
++    const admissionErrors = []
++    const deadline = Date.now() + 2500
++    let receipt
++    for (;;) {
++      try {
++        receipt = await fixture.runtime.reserveRecoveryAdmission(
++          fixture.admissionAgent, fixture.workflowId, admissionRequest)
++        break
++      } catch (error) {
++        admissionErrors.push(serializeError(error))
++        if (!/状态正在由另一个 Harness 临界区更新|状态已被其他 Harness 更新/u.test(String(error?.message ?? ''))
++          || Date.now() >= deadline) throw error
++        await new Promise(resolve => setTimeout(resolve, 20))
++      }
++    }
++    let errorName
++    let raw
++    let rawPath
++    if (['reserved', 'replayed'].includes(receipt.outcome)) {
++      try {
++        await fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, {
++          ...request(receipt), taskId: input.taskId, ownerId: input.ownerId,
++        })
++      } catch (error) {
++        if (error.name !== 'OwnerReportedError') throw error
++        errorName = error.name
++      }
++      raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
++      rawPath = fixture.ctx.sessionPersistence.locate(raw.meta).path
++    }
++    await send({ type: 'competed', pid: process.pid, taskId: input.taskId, ownerId: input.ownerId,
++      receipt, admissionErrors, errorName, operations, modelRequests: fixture.adapter.requests.length, raw, rawPath,
++    })
++  } finally {
++    await fixture.dispose()
+   }
+ }
+
+ async function dispatch(input) {
+   switch (input?.mode) {
++    case 'produce_candidates': return await produceCandidates(input)
++    case 'compete_credit': return await competeCredit(input)
+     case 'compete_reserved': return await competeReserved(input)
+     case 'produce_reserved': return await produceReserved(input)
+     case 'launch_reserved': return await launchReserved(input)
+@@ -379,10 +455,8 @@
+
+ process.once('message', input => {
+   void dispatch(input).catch(async error => {
+-    try {
+-      await send({ type: 'error', pid: process.pid, error: serializeError(error) })
+-    } finally {
+-      process.disconnect?.()
+-    }
++    await send({ type: 'error', pid: process.pid, error: serializeError(error) })
++  }).finally(() => {
++    if (process.connected) process.disconnect()
+   })
+ })
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs
+@@ -280,7 +280,7 @@
+       assert.notEqual(ready[0].pid, ready[1].pid)
+       const completions = handles.map(handle => Promise.race([
+         new Promise(resolve => handle.child.once('message', resolve)),
+-        handle.exited.then(exit => { throw new Error(`competition child exited before result: ${JSON.stringify(exit)}`) }),
++        handle.exited.then(exit => { throw new Error(`competition child exited before result: ${JSON.stringify(exit)}; output=${JSON.stringify(handle.output())}`) }),
+       ]))
+       for (const handle of handles) handle.child.send({ type: 'go' })
+       results = await Promise.all(completions)
+@@ -317,3 +317,65 @@
+     await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, results, finalBytes, audit }, null, 2) + '\n', 'utf8')
+   })
+ })
++
++
++test('T23 distinct requests racing for the final credit execute only the admitted Owner', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_candidates', fixtureParent }), 'candidates')
++    const input = { mode: 'compete_credit', root: producer.checkpoint.root,
++      workflowId: producer.checkpoint.workflowId, planDigest: producer.checkpoint.planDigest }
++    const beforeBytes = await readFile(workflowStatePath(input.root, input.workflowId), 'utf8')
++    assert.equal(beforeBytes, producer.checkpoint.stateBytes)
++    const handles = [
++      startRestartChild({ ...input, taskId: 'T1', ownerId: 'api' }),
++      startRestartChild({ ...input, taskId: 'T2', ownerId: 'worker' }),
++    ]
++    let results
++    try {
++      const ready = await Promise.all(handles.map(handle => handle.message))
++      assert.ok(ready.every(item => item.type === 'ready'))
++      assert.notEqual(ready[0].pid, ready[1].pid)
++      const completions = handles.map(handle => Promise.race([
++        new Promise(resolve => handle.child.once('message', resolve)),
++        handle.exited.then(exit => { throw new Error(`competition child exited before result: ${JSON.stringify(exit)}; output=${JSON.stringify(handle.output())}`) }),
++      ]))
++      for (const handle of handles) handle.child.send({ type: 'go' })
++      results = await Promise.all(completions)
++      for (const result of results) assert.equal(result.type, 'competed', JSON.stringify(result))
++      for (const handle of handles) assert.deepEqual(await handle.exited, { code: 0, signal: null })
++    } finally {
++      for (const handle of handles) {
++        if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill('SIGKILL')
++      }
++      await Promise.all(handles.map(handle => handle.exited))
++    }
++
++    const winner = results.find(item => item.receipt.outcome === 'reserved')
++    const loser = results.find(item => item.receipt.outcome === 'rejected')
++    assert.ok(winner, JSON.stringify(results))
++    assert.ok(loser, JSON.stringify(results))
++    assert.equal(winner.errorName, 'OwnerReportedError')
++    assert.deepEqual(winner.operations, { create: 1, resume: 0, followup: 1 })
++    assert.equal(winner.modelRequests, 2)
++    assert.deepEqual(loser.operations, { create: 0, resume: 0, followup: 0 })
++    assert.equal(loser.modelRequests, 0)
++    const finalBytes = await readFile(workflowStatePath(input.root, input.workflowId), 'utf8')
++    const state = JSON.parse(finalBytes)
++    const before = JSON.parse(beforeBytes)
++    assert.equal(state.recoveryAdmission.budget.totalUsed, 1)
++    assert.equal(state.recoveryAdmission.intents.length, 1)
++    const run = state.ownerRuns[`${winner.taskId}:${winner.ownerId}`]
++    assert.deepEqual(run.recoverySession.executionIdentity, winner.receipt.executionIdentity)
++    assert.equal(run.recoverySession.phase, 'settled_failed')
++    assert.equal(run.sessionId, winner.receipt.executionIdentity.sessionId)
++    assert.deepEqual(state.ownerRuns[`${loser.taskId}:${loser.ownerId}`], before.ownerRuns[`${loser.taskId}:${loser.ownerId}`])
++    const raw = await readFile(winner.rawPath, 'utf8')
++    assert.equal(raw, winner.raw.content)
++    const calls = raw.trimEnd().split('\n').map(row => JSON.parse(row))
++      .filter(row => row.type === 'tool/call' && row.data.name === 'owner_submit')
++    assert.equal(calls.length, 1)
++    const directory = join(EVIDENCE_ROOT, 'distinct-credit-concurrent-execution')
++    await mkdir(directory, { recursive: true })
++    await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, results, beforeBytes, finalBytes, raw }, null, 2) + '\n', 'utf8')
++  })
++})

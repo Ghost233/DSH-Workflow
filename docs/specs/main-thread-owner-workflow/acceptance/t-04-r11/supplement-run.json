@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+    "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/acceptance/t-04-r11/supplement.mjs"
+  ],
+  "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+  "start": "2026-09-10T14:02:27.088082+00:00",
+  "timeoutSeconds": 45,
+  "hashes": {
+    "supplement.mjs": "9b224543798dc4a4c4c6634fadad2091c6e77898d04baacfca8bbdb6e3568cb5",
+    "fixtures.mjs": "b3988ed370ee2a0ae3dda9966c07ac8fd5b70892d428f3a4d0c00f22df026d7c"
+  },
+  "originalAcceptanceScriptsUnchanged": true,
+  "end": "2026-09-10T14:02:29.657102+00:00",
+  "exitCode": 0
+}

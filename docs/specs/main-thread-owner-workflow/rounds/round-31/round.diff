@@ -1,0 +1,13 @@
+--- owner-workflow-plugin/test/recovery-session.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session.test.mjs
+@@ -638,6 +638,10 @@
+     assert.ok(!['settled_failed', 'settled_succeeded'].includes(run.recoverySession.phase))
+     // The failure may leave diagnostic Owner state or a raw artifact. Neither
+     // is authorization to refund, resend, or synthesize a settled receipt.
++    // Disposal starts asynchronous persistence retirement. A read-only cold
++    // inspection waits for that initial drain before the replay baseline;
++    // unlike load(), inspect() does not commit synthetic recovery events.
++    if (created !== undefined) await fixture.ctx.sessionPersistence.inspect(created.id)
+     const rawAfter = await fixture.readRaw(receipt.executionIdentity.sessionId)
+     const replay = await fixture.runtime.reconcileRecoverySession(
+       fixture.admissionAgent, fixture.workflowId, initialRequest,

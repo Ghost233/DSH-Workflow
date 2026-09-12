@@ -1,0 +1,420 @@
+import assert from 'node:assert/strict'
+import { fork } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import test from 'node:test'
+
+const CHILD = new URL('./boundary-child.mjs', import.meta.url)
+const EVIDENCE_ROOT = process.env.DSH_T22_RESTART_EVIDENCE_DIR
+  ?? join(tmpdir(), 'dsh-t23-boundaries')
+
+function serializeChildOutput(output) {
+  return output === '' ? '<empty>' : output
+}
+
+function startRestartChild(input) {
+  const child = fork(CHILD, [], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
+  let stdout = ''
+  let stderr = ''
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', chunk => { stdout += chunk })
+  child.stderr.on('data', chunk => { stderr += chunk })
+  let received = false
+  let settleMessage
+  const message = new Promise((resolvePromise, rejectPromise) => {
+    settleMessage = { resolve: resolvePromise, reject: rejectPromise }
+  })
+  const timeout = setTimeout(() => {
+    child.kill('SIGKILL')
+    settleMessage.reject(new Error(`restart child IPC timed out\nstdout=${serializeChildOutput(stdout)}\nstderr=${serializeChildOutput(stderr)}`))
+  }, 30_000)
+  const exited = new Promise(resolvePromise => {
+    child.once('exit', (code, signal) => {
+      clearTimeout(timeout)
+      if (!received) {
+        settleMessage.reject(new Error(
+          `restart child exited before its IPC checkpoint: code=${code} signal=${signal}\n`
+          + `stdout=${serializeChildOutput(stdout)}\nstderr=${serializeChildOutput(stderr)}`,
+        ))
+      }
+      resolvePromise({ code, signal })
+    })
+  })
+  child.once('error', error => {
+    clearTimeout(timeout)
+    settleMessage.reject(error)
+  })
+  child.once('message', value => {
+    received = true
+    settleMessage.resolve(value)
+  })
+  child.send(input)
+  return { child, message, exited, output: () => ({ stdout, stderr }) }
+}
+
+async function killAtCheckpoint(handle, scenario) {
+  try {
+    const checkpoint = await handle.message
+    assert.equal(checkpoint.type, 'checkpoint', `${scenario} child error: ${JSON.stringify(checkpoint)}`)
+    assert.equal(checkpoint.scenario, scenario)
+    assert.equal(typeof checkpoint.pid, 'number')
+    assert.equal(handle.child.pid, checkpoint.pid)
+    assert.equal(handle.child.kill('SIGKILL'), true)
+    const exit = await handle.exited
+    assert.equal(exit.code, null)
+    assert.equal(exit.signal, 'SIGKILL')
+    return { checkpoint, exit }
+  } finally {
+    if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill('SIGKILL')
+    await handle.exited
+  }
+}
+
+async function finishReplay(input) {
+  const handle = startRestartChild({ mode: 'replay', ...input })
+  try {
+    const replay = await handle.message
+    assert.equal(replay.type, 'replayed', `restart replay child error: ${JSON.stringify(replay)}`)
+    const exit = await handle.exited
+    assert.equal(exit.code, 0)
+    assert.equal(exit.signal, null)
+    return replay
+  } finally {
+    if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill('SIGKILL')
+    await handle.exited
+  }
+}
+
+function budgetFrom(bytes) {
+  return JSON.parse(bytes).recoveryAdmission?.budget
+}
+
+function workflowStatePath(root, workflowId) {
+  return join(root, '.dsh-workflow', 'workflows', `${workflowId}.json`)
+}
+
+async function capturePostKill(checkpoint) {
+  assert.equal(typeof checkpoint.rawLocationPath, 'string')
+  return {
+    stateBytes: await readFile(workflowStatePath(checkpoint.root, checkpoint.workflowId), 'utf8'),
+    rawContent: await readFile(checkpoint.rawLocationPath, 'utf8').catch(error => {
+      if (error.code === 'ENOENT' && checkpoint.scenario === 'created') return null
+      throw error
+    }),
+  }
+}
+
+function assertReplayReadOnly(postKill, replay) {
+  assert.equal(replay.modelRequests, 0)
+  assert.deepEqual(replay.agentOperations, { create: 0, resume: 0, followup: 0 })
+  assert.equal(replay.before.stateBytes, postKill.stateBytes)
+  assert.equal(replay.before.rawContent, postKill.rawContent)
+  assert.equal(replay.before.stateBytes, replay.after.stateBytes)
+  assert.equal(replay.before.rawContent, replay.after.rawContent)
+  assert.deepEqual(budgetFrom(replay.after.stateBytes), budgetFrom(replay.before.stateBytes))
+}
+
+async function writeEvidence(scenario, producer, postKill, replay) {
+  const directory = join(EVIDENCE_ROOT, scenario)
+  await mkdir(directory, { recursive: true })
+  const write = async (name, content) => await writeFile(join(directory, name), content ?? 'null\n', 'utf8')
+  await Promise.all([
+    write('checkpoint.workflow-state.json', producer.checkpoint.stateBytes),
+    write('checkpoint.reserved-session.jsonl', producer.checkpoint.rawContent),
+    write('kill.json', `${JSON.stringify({
+      producerPid: producer.checkpoint.pid,
+      exit: producer.exit,
+      checkpoint: producer.checkpoint.checkpoint,
+      rawLocationPath: producer.checkpoint.rawLocationPath,
+      rawArtifactPresent: postKill.rawContent !== null,
+    }, null, 2)}\n`),
+    write('postkill.workflow-state.json', postKill.stateBytes),
+    write('postkill.reserved-session.jsonl', postKill.rawContent),
+    write('replay-before.workflow-state.json', replay.before.stateBytes),
+    write('replay-before.reserved-session.jsonl', replay.before.rawContent),
+    write('replay-after.workflow-state.json', replay.after.stateBytes),
+    write('replay-after.reserved-session.jsonl', replay.after.rawContent),
+    write('replay.json', `${JSON.stringify({
+      replayerPid: replay.pid,
+      result: replay.result,
+      modelRequests: replay.modelRequests,
+      agentOperations: replay.agentOperations,
+      beforeCheckpoint: replay.before.checkpoint,
+      afterCheckpoint: replay.after.checkpoint,
+    }, null, 2)}\n`),
+  ])
+}
+
+// The parent knows this private container before the child can create any
+// fixture files. Cleanup therefore does not depend on a successful IPC reply.
+async function withFixtureContainer(operation) {
+  const container = await realpath(await mkdtemp(join(tmpdir(), 'dsh-t22-restart-owned-')))
+  try {
+    return await operation(container)
+  } finally {
+    await rm(container, { recursive: true, force: true, maxRetries: 3 })
+  }
+}
+
+test('T23 SIGKILL after prompt flush before submitted receipt preserves one accepted prompt', async () => {
+  return withFixtureContainer(async fixtureParent => {
+    const producer = await killAtCheckpoint(
+      startRestartChild({ mode: 'produce_submitted', fixtureParent }),
+      'submitted',
+    )
+    assert.equal(producer.checkpoint.checkpoint.phase, 'created')
+    assert.equal(producer.checkpoint.checkpoint.ownerStatus, 'running')
+    assert.ok(producer.checkpoint.checkpoint.modelRequests >= 1)
+    assert.ok(producer.checkpoint.rawContent.includes(producer.checkpoint.receipt.executionIdentity.promptId))
+    const postKill = await capturePostKill(producer.checkpoint)
+
+    // The replay child builds a new Context, parent Agent, and Runtime after
+    // observing the producer's actual SIGKILL exit.  That initialization is not
+    // an Owner resend: transparent source API counters begin after it and prove
+    // reconciliation made no create, resume, or followup call.
+    const replay = await finishReplay({
+      scenario: 'submitted',
+      root: producer.checkpoint.root,
+      workflowId: producer.checkpoint.workflowId,
+      receipt: producer.checkpoint.receipt,
+      request: producer.checkpoint.request,
+    })
+    assert.notEqual(replay.pid, producer.checkpoint.pid)
+    assert.equal(replay.result.outcome, 'paused')
+    assert.equal(replay.result.phase, 'technical_pause')
+    assertReplayReadOnly(postKill, replay)
+    await writeEvidence('accepted-before-receipt', producer, postKill, replay)
+  })
+})
+
+test('T23 SIGKILL after create returns before Owner binding cannot authorize resend', async () => {
+  return withFixtureContainer(async fixtureParent => {
+    const producer = await killAtCheckpoint(
+      startRestartChild({ mode: 'produce_created', fixtureParent }),
+      'created',
+    )
+    assert.equal(producer.checkpoint.checkpoint.phase, 'creating')
+    assert.equal(producer.checkpoint.checkpoint.ownerStatus, 'running')
+    assert.equal(producer.checkpoint.checkpoint.modelRequests, 0)
+    const postKill = await capturePostKill(producer.checkpoint)
+    const state = JSON.parse(postKill.stateBytes)
+    const run = state.ownerRuns['T1:api']
+    const identity = producer.checkpoint.receipt.executionIdentity
+    assert.deepEqual(run.recoverySession.executionIdentity, identity)
+    assert.equal(run.recoverySession.prompt.id, identity.promptId)
+    assert.ok(run.recoverySession.prompt.content.length > 0)
+    assert.equal(postKill.rawContent, null)
+    assert.notEqual(producer.checkpoint.checkpoint.budgetAttempt.state, 'settled')
+    const replay = await finishReplay({
+      scenario: 'created',
+      rawLocationPath: producer.checkpoint.rawLocationPath,
+      root: producer.checkpoint.root,
+      workflowId: producer.checkpoint.workflowId,
+      receipt: producer.checkpoint.receipt,
+      request: producer.checkpoint.request,
+    })
+    assert.notEqual(replay.pid, producer.checkpoint.pid)
+    assert.equal(replay.result.outcome, 'paused')
+    assert.equal(replay.result.phase, 'technical_pause')
+    assertReplayReadOnly(postKill, replay)
+    await assert.rejects(readFile(producer.checkpoint.rawLocationPath), { code: 'ENOENT' })
+    assert.equal(replay.result.reason, 'raw_artifact_missing')
+    await writeEvidence('create-before-binding', producer, postKill, replay)
+  })
+})
+
+
+test('T23 SIGKILL after durable reservation allows exactly one original-identity Owner execution', async () => {
+  return withFixtureContainer(async fixtureParent => {
+    const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_reserved', fixtureParent }), 'reserved')
+    assert.equal(producer.checkpoint.modelRequests, 0)
+    assert.equal(producer.checkpoint.rawPresent, false)
+    const postKillState = await readFile(workflowStatePath(producer.checkpoint.root, producer.checkpoint.workflowId), 'utf8')
+    assert.equal(postKillState, producer.checkpoint.stateBytes)
+    const before = JSON.parse(postKillState)
+    assert.equal(before.ownerRuns['T1:api'].recoverySession, undefined)
+    assert.equal(before.recoveryAdmission.budget.totalUsed, 1)
+    const replay = await finishReplay({
+      mode: 'launch_reserved', root: producer.checkpoint.root, workflowId: producer.checkpoint.workflowId,
+      receipt: producer.checkpoint.receipt, request: producer.checkpoint.request,
+    })
+    assert.notEqual(replay.pid, producer.checkpoint.pid)
+    assert.equal(replay.beforeState, postKillState)
+    assert.deepEqual(replay.operationsAfterLaunch, { create: 1, resume: 0, followup: 1 })
+    assert.equal(replay.modelRequestsAfterLaunch, 2)
+    assert.deepEqual(replay.operationsAfterReplay, replay.operationsAfterLaunch)
+    assert.equal(replay.modelRequestsAfterReplay, replay.modelRequestsAfterLaunch)
+    assert.equal(replay.replay.outcome, 'settled_failed')
+    assert.deepEqual(replay.afterReplay, replay.settled)
+    const settled = JSON.parse(replay.settled.stateBytes)
+    const identity = producer.checkpoint.receipt.executionIdentity
+    assert.equal(settled.ownerRuns['T1:api'].sessionId, identity.sessionId)
+    assert.deepEqual(settled.ownerRuns['T1:api'].recoverySession.executionIdentity, identity)
+    assert.deepEqual(settled.ownerRuns['T1:api'].recoveryContinuation.executionIdentity, identity)
+    assert.equal(settled.recoveryAdmission.budget.totalUsed, before.recoveryAdmission.budget.totalUsed)
+    const attempt = settled.recoveryAdmission.budget.attempts.find(item => item.requestId === producer.checkpoint.receipt.requestId)
+    assert.equal(attempt.state, 'settled')
+    assert.equal(attempt.result.status, 'failed')
+    assert.deepEqual(attempt.executionRef, { id: identity.sessionId, version: identity.promptId })
+    const directory = join(EVIDENCE_ROOT, 'reserved-before-execution')
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, postKillState, replay }, null, 2) + '\n', 'utf8')
+  })
+})
+
+
+test('T23 two ready processes competing for one durable intent execute its Owner only once', async () => {
+  return withFixtureContainer(async fixtureParent => {
+    const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_reserved', fixtureParent }), 'reserved')
+    const input = {
+      mode: 'compete_reserved', root: producer.checkpoint.root, workflowId: producer.checkpoint.workflowId,
+      receipt: producer.checkpoint.receipt, request: producer.checkpoint.request,
+    }
+    const handles = [startRestartChild(input), startRestartChild(input)]
+    let results
+    try {
+      const ready = await Promise.all(handles.map(handle => handle.message))
+      assert.ok(ready.every(item => item.type === 'ready'))
+      assert.notEqual(ready[0].pid, ready[1].pid)
+      const completions = handles.map(handle => Promise.race([
+        new Promise(resolve => handle.child.once('message', resolve)),
+        handle.exited.then(exit => { throw new Error(`competition child exited before result: ${JSON.stringify(exit)}; output=${JSON.stringify(handle.output())}`) }),
+      ]))
+      for (const handle of handles) handle.child.send({ type: 'go' })
+      results = await Promise.all(completions)
+      for (const result of results) assert.equal(result.type, 'competed', JSON.stringify(result))
+      for (const handle of handles) assert.deepEqual(await handle.exited, { code: 0, signal: null })
+    } finally {
+      for (const handle of handles) {
+        if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill('SIGKILL')
+      }
+      await Promise.all(handles.map(handle => handle.exited))
+    }
+    assert.equal(results.filter(item => item.errorName === 'OwnerReportedError').length, 1)
+    const other = results.find(item => item.errorName !== 'OwnerReportedError')
+    assert.ok(['paused', 'settled_failed'].includes(other.result.outcome))
+    for (const key of ['create', 'followup']) assert.equal(results.reduce((n, item) => n + item.operations[key], 0), 1)
+    assert.equal(results.reduce((n, item) => n + item.operations.resume, 0), 0)
+    assert.equal(results.reduce((n, item) => n + item.modelRequests, 0), 2)
+    const finalBytes = await readFile(workflowStatePath(input.root, input.workflowId), 'utf8')
+    const state = JSON.parse(finalBytes)
+    assert.equal(state.recoveryAdmission.budget.totalUsed, 1)
+    const record = state.ownerRuns['T1:api']
+    assert.equal(record.recoverySession.phase, 'settled_failed')
+    assert.deepEqual(record.recoverySession.executionIdentity, input.receipt.executionIdentity)
+    const audit = await finishReplay({ scenario: 'settled_failed', root: input.root, workflowId: input.workflowId, receipt: input.receipt, request: input.request })
+    assert.equal(audit.before.stateBytes, finalBytes)
+    assert.equal(audit.after.stateBytes, finalBytes)
+    assert.deepEqual(audit.agentOperations, { create: 0, resume: 0, followup: 0 })
+    assert.equal(audit.modelRequests, 0)
+    const calls = audit.before.rawContent.trimEnd().split('\n').map(row => JSON.parse(row))
+      .filter(row => row.type === 'tool/call' && row.data.name === 'owner_submit')
+    assert.equal(calls.length, 1)
+    const directory = join(EVIDENCE_ROOT, 'same-intent-concurrent-execution')
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, results, finalBytes, audit }, null, 2) + '\n', 'utf8')
+  })
+})
+
+
+test('T23 distinct requests racing for the final credit execute only the admitted Owner', async () => {
+  return withFixtureContainer(async fixtureParent => {
+    const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_candidates', fixtureParent }), 'candidates')
+    const input = { mode: 'compete_credit', root: producer.checkpoint.root,
+      workflowId: producer.checkpoint.workflowId, planDigest: producer.checkpoint.planDigest }
+    const beforeBytes = await readFile(workflowStatePath(input.root, input.workflowId), 'utf8')
+    assert.equal(beforeBytes, producer.checkpoint.stateBytes)
+    const handles = [
+      startRestartChild({ ...input, taskId: 'T1', ownerId: 'api' }),
+      startRestartChild({ ...input, taskId: 'T2', ownerId: 'worker' }),
+    ]
+    let results
+    try {
+      const ready = await Promise.all(handles.map(handle => handle.message))
+      assert.ok(ready.every(item => item.type === 'ready'))
+      assert.notEqual(ready[0].pid, ready[1].pid)
+      const completions = handles.map(handle => Promise.race([
+        new Promise(resolve => handle.child.once('message', resolve)),
+        handle.exited.then(exit => { throw new Error(`competition child exited before result: ${JSON.stringify(exit)}; output=${JSON.stringify(handle.output())}`) }),
+      ]))
+      for (const handle of handles) handle.child.send({ type: 'go' })
+      results = await Promise.all(completions)
+      for (const result of results) assert.equal(result.type, 'competed', JSON.stringify(result))
+      for (const handle of handles) assert.deepEqual(await handle.exited, { code: 0, signal: null })
+    } finally {
+      for (const handle of handles) {
+        if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill('SIGKILL')
+      }
+      await Promise.all(handles.map(handle => handle.exited))
+    }
+
+    const winner = results.find(item => item.receipt.outcome === 'reserved')
+    const loser = results.find(item => item.receipt.outcome === 'rejected')
+    assert.ok(winner, JSON.stringify(results))
+    assert.ok(loser, JSON.stringify(results))
+    assert.equal(winner.errorName, 'OwnerReportedError')
+    assert.deepEqual(winner.operations, { create: 1, resume: 0, followup: 1 })
+    assert.equal(winner.modelRequests, 2)
+    assert.deepEqual(loser.operations, { create: 0, resume: 0, followup: 0 })
+    assert.equal(loser.modelRequests, 0)
+    const finalBytes = await readFile(workflowStatePath(input.root, input.workflowId), 'utf8')
+    const state = JSON.parse(finalBytes)
+    const before = JSON.parse(beforeBytes)
+    assert.equal(state.recoveryAdmission.budget.totalUsed, 1)
+    assert.equal(state.recoveryAdmission.intents.length, 1)
+    const run = state.ownerRuns[`${winner.taskId}:${winner.ownerId}`]
+    assert.deepEqual(run.recoverySession.executionIdentity, winner.receipt.executionIdentity)
+    assert.equal(run.recoverySession.phase, 'settled_failed')
+    assert.equal(run.sessionId, winner.receipt.executionIdentity.sessionId)
+    assert.deepEqual(state.ownerRuns[`${loser.taskId}:${loser.ownerId}`], before.ownerRuns[`${loser.taskId}:${loser.ownerId}`])
+    const raw = await readFile(winner.rawPath, 'utf8')
+    assert.equal(raw, winner.raw.content)
+    const calls = raw.trimEnd().split('\n').map(row => JSON.parse(row))
+      .filter(row => row.type === 'tool/call' && row.data.name === 'owner_submit')
+    assert.equal(calls.length, 1)
+    const directory = join(EVIDENCE_ROOT, 'distinct-credit-concurrent-execution')
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, results, beforeBytes, finalBytes, raw }, null, 2) + '\n', 'utf8')
+  })
+})
+
+
+test('T23 SIGKILL before failed settlement rename never accepts the temporary receipt or reexecutes', async () => {
+  return withFixtureContainer(async fixtureParent => {
+    const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_settlement_pending', fixtureParent }), 'settlement_pending')
+    const cp = producer.checkpoint
+    const finalBytes = await readFile(workflowStatePath(cp.root, cp.workflowId), 'utf8')
+    const pendingBytes = await readFile(cp.pendingPath, 'utf8')
+    const raw = await readFile(cp.rawLocationPath, 'utf8')
+    assert.equal(finalBytes, cp.stateBytes)
+    assert.equal(pendingBytes, cp.pendingBytes)
+    assert.equal(raw, cp.rawContent)
+    const final = JSON.parse(finalBytes)
+    const pending = JSON.parse(pendingBytes)
+    const phase = state => state.ownerRuns['T1:api'].recoverySession.phase
+    assert.notEqual(phase(final), 'settled_failed')
+    assert.equal(phase(pending), 'settled_failed')
+    const attempt = state => state.recoveryAdmission.budget.attempts.find(a => a.requestId === cp.receipt.requestId)
+    assert.notEqual(attempt(final).state, 'settled')
+    assert.equal(attempt(pending).state, 'settled')
+    assert.equal(attempt(pending).result.status, 'failed')
+    assert.equal(final.recoveryAdmission.budget.totalUsed, 1)
+    const replay = await finishReplay({ ...cp, mode: 'replay' })
+    assert.notEqual(replay.pid, cp.pid)
+    assert.equal(replay.result.outcome, 'paused')
+    assert.deepEqual(replay.agentOperations, { create: 0, resume: 0, followup: 0 })
+    assert.equal(replay.modelRequests, 0)
+    assert.equal(replay.before.stateBytes, finalBytes)
+    assert.deepEqual(replay.after, replay.before)
+    assert.equal(await readFile(cp.pendingPath, 'utf8'), pendingBytes)
+    assert.equal(await readFile(cp.rawLocationPath, 'utf8'), raw)
+    const calls = raw.trimEnd().split('\n').map(row => JSON.parse(row))
+      .filter(row => row.type === 'tool/call' && row.data.name === 'owner_submit')
+    assert.equal(calls.length, 1)
+    const directory = join(EVIDENCE_ROOT, 'failed-settlement-before-rename')
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, finalBytes, pendingBytes, raw, replay }, null, 2) + '\n', 'utf8')
+  })
+})

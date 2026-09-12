@@ -1,0 +1,28 @@
+{
+  "contract": "DSH_TICKET_TEST_RESULTS_V1",
+  "candidateId": "R99-T11-T12-acceptance-runner",
+  "commands": [
+    {
+      "kind": "affected-regression",
+      "command": "TSX_TSCONFIG_PATH=deepseek-harness/tsconfig.json node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit --test-concurrency=1 owner-workflow-plugin/test/acceptance-runner.test.mjs owner-workflow-plugin/test/verification.test.mjs owner-workflow-plugin/test/owner-submission.test.mjs owner-workflow-plugin/test/plugin.test.mjs",
+      "tests": 34,
+      "passed": 34,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "durationMs": 957.66575
+    }
+  ],
+  "checks": {
+    "nodeCheck": [
+      "owner-workflow-plugin/src/acceptance-runner.mjs",
+      "owner-workflow-plugin/test/acceptance-runner.test.mjs"
+    ],
+    "gitDiffCheck": "passed"
+  },
+  "sha256": {
+    "owner-workflow-plugin/src/acceptance-runner.mjs": "463c8c4561a27f7eec0e30bb1cd06d0bf8506266d759b4b18abd5c8de4f821ac",
+    "owner-workflow-plugin/test/acceptance-runner.test.mjs": "4f3f8905ee4fb3daed53e97f974d1187fe15b048d61b8a7aadbd2b6008569807",
+    "owner-workflow-plugin/package.json": "b79ccda7352b4c0d32c4c9a3c1f5ad277132dde6a9511dde40c7947832e1cc48"
+  }
+}

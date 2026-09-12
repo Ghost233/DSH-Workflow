@@ -1,0 +1,5 @@
+# R54 现有空闲超时接入安全恢复来源
+
+T15：保护协议现有onTimeout.afterMs触发仅持久绑定当前attempt/session/lease的取消请求，保持Owner和task运行占槽；不能预先pending/清error。实际Owner管线终止后，已有Supervisor失败处理识别真实新失败并通过预算恢复。取消不可用/抛错保持现场并记录技术错误，同来源不反复取消。此轮不是T17固定harddeadline/stopping/观察窗口实现，跨进程未知终止仍未承诺自动恢复。主线程独占runtime/test，T16仅proof。
+
+实际开发链1/1通过：旧Owner取消请求后无turn/end且租约有效、Scheduler保留槽位；独立Owner完成后释放传输barrier，真实JSONL aborted及Owner失败才重新pending；下一恢复扣1额度，再次耗尽停止。初次开发测试错误地await同Runtime直接启动，等待旧Owner使有限barrier超时；原失败保存在development-first-failure.log，修为实际Scheduler wait观察，未放宽生产隔离。此用例没有单独证明任意直接启动立即拒绝，也不代替T16跨进程证据。

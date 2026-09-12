@@ -1,0 +1,23 @@
+{
+  "runs": [
+    {
+      "name": "real-cancel-sigkill-jsonl-lease-recovery-and-deadline-reference",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/probe.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T10:24:43.586907+00:00",
+      "timeoutSeconds": 45,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T10:24:46.097699+00:00",
+      "collectedScenarios": 1,
+      "probeErrors": [],
+      "collectionComplete": true
+    }
+  ],
+  "drift": []
+}

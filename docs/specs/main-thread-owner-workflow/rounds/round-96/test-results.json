@@ -1,0 +1,37 @@
+{
+  "contract": "DSH_TICKET_TEST_RESULTS_V1",
+  "candidateId": "R96-T29-unified-owner-resource-admission",
+  "capturedAt": "2026-09-11T22:58:29Z",
+  "command": "TSX_TSCONFIG_PATH=deepseek-harness/tsconfig.json node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit --test-concurrency=1 owner-workflow-plugin/test/model.test.mjs owner-workflow-plugin/test/supervisor.test.mjs owner-workflow-plugin/test/unified-owner-resource-admission.test.mjs owner-workflow-plugin/test/public-owner-decision-session.test.mjs owner-workflow-plugin/test/control.test.mjs owner-workflow-plugin/test/runner.test.mjs owner-workflow-plugin/test/planning-packages.test.mjs owner-workflow-plugin/test/planning-compile-native.test.mjs owner-workflow-plugin/test/plan-revision.test.mjs owner-workflow-plugin/test/security.test.mjs owner-workflow-plugin/test/plugin.test.mjs",
+  "summary": {
+    "tests": 357,
+    "passed": 336,
+    "failed": 0,
+    "skipped": 21,
+    "cancelled": 0,
+    "durationMs": 146709.930833
+  },
+  "focused": {
+    "modelAndSupervisor": { "tests": 79, "passed": 79, "failed": 0, "skipped": 0 },
+    "realHarness": { "tests": 4, "passed": 4, "failed": 0, "skipped": 0, "durationMs": 3691.884708 }
+  },
+  "files": {
+    "owner-workflow-plugin/src/model.mjs": "ae78a24ff5afc869751572ddbecdbfde4727c8eb2de26025257523b0b028bd51",
+    "owner-workflow-plugin/src/supervisor.mjs": "2210bda496ebf74d877aa0236606a2089a41019f0f6133beb74aec63d0115a37",
+    "owner-workflow-plugin/src/runtime.mjs": "f96f8f8007b72a9a2905f1236fda68b2bf7377493ac813db520ea993374464c9",
+    "owner-workflow-plugin/src/skills.mjs": "cc83e8a1f45e8d569a6dc35b86670770b831eb281b66cdd42eb8d42f8031e11d",
+    "owner-workflow-plugin/README.md": "fc380f816e32dbacd64af36702f60fbb4fd56d444d52d6883cc9602aca135640",
+    "owner-workflow-plugin/README.zh.md": "ba3bb6847147b751502356e22cd9d39e6781af258ca3f42eeb43c8c3df17b79e",
+    "owner-workflow-plugin/test/model.test.mjs": "3151212892b5f538206895f1db9a8bee5b87d2c67e90c059cdf9e51ae53644a4",
+    "owner-workflow-plugin/test/supervisor.test.mjs": "81d0caf3a92b621d57a18b56c4ce639847d2cb3279d0229d72831275a1a2c6f5",
+    "owner-workflow-plugin/test/unified-owner-resource-admission.test.mjs": "7ad80f9996c59af0bebf4afabc35e6574858509af6750439d6559f43b698caf1"
+  },
+  "supersededRuns": [
+    {
+      "tests": 4,
+      "passed": 0,
+      "failed": 4,
+      "reason": "test command omitted the repository tsx loader; Node rejected vendored TypeScript during fixture initialization before product assertions"
+    }
+  ]
+}

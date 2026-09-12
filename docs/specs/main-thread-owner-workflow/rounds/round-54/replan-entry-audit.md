@@ -1,0 +1,11 @@
+# T15剩余外部重规划接线核对
+
+独立只读核对 t21_contract_review，主线程核对T13/T20字段：现有T13 REQUEST_FIELDS与T20 admissionRequest都强制taskId/ownerId；T20 obligation同样绑定当前task/Owner，不能给Planner造Owner ID。T22 reconcileRecoverySession强制Owner lease/ownerRuns并只调用runExternalOwner；可复用的是inspectRecoverySession的稳定raw/双snapshot/prompt-turn观察，不能直接冒充Planner启动。
+
+真实最低共同入口：planWorkflowIntents、reviewPendingPlanRevision、replanHandoffs；同时覆盖公开工具、drivePendingPlanRevision各分支、implementation-repair、arbitration。requestValidatedPlannerPlan/requestValidatedPlanReview各有一次内部重试，每次物理runChild都必须进入持久启动/计费约束。
+
+Spec12.2/T15已经要求外部局部重规划计费，绝非以后可选功能。只有protectedReplan防重发而不共用T13总额，不满足T15。下一实施需要明确非Owner replan_operation来源/请求/结算的严格联合绑定，使其与Owner恢复共享同一Workflow预算。旧Owner绑定保持，不能用占位taskId/ownerId，不另建独立总额绕限。
+
+持久启动需冻结operation kind/来源(cycle+intent或handoff IDs+来源版本)/planDigest/prompt身份，并在跨进程保存事务内领取；每次外部调用前登记create意图，未知启动不重送。输出应用必须在锁内重核当前来源/planDigest；仅内存withWorkflowLock不能替代跨进程保存锁。T21真实预留session/prompt接口与T22只读检查可复用，但通用Planner产物/提交回执需独立明确。
+
+这属于已批准T15范围内的技术适配，不是已有实现或验收结论；本轮R54只处理idle-timeout。T17固定截止不能被用来绕过上述计费/持久接线责任。

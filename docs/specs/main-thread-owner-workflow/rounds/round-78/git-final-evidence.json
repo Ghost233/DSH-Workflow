@@ -1,0 +1,116 @@
+{
+  "at": "2026-09-11T15:56:02.384697+00:00",
+  "remoteQueried": false,
+  "committed": false,
+  "pushed": false,
+  "repositories": {
+    ".": {
+      "head": {
+        "exitCode": 0,
+        "output": "154914064f5ceb2f8eb413865e10a54e8ffbc663",
+        "stderr": ""
+      },
+      "branch": {
+        "exitCode": 0,
+        "output": "main",
+        "stderr": ""
+      },
+      "status": {
+        "exitCode": 0,
+        "output": "M .gitignore\nM  .gitmodules\n M README.md\n M deepseek-harness\n M docs/OWNER-WORKFLOW-TECHNICAL-ROUTE.md\n M docs/OWNER-WORKFLOW-V2-MIGRATION.md\n M docs/SYNAPSE-DYNAMIC-DAG.md\n M docs/superpowers/plans/2026-08-20-owner-workflow-v2.md\n M docs/superpowers/specs/2026-08-20-owner-workflow-v2-design.md\n M owner-workflow-plugin/README.md\n M owner-workflow-plugin/README.zh.md\n M owner-workflow-plugin/agent-presets/owner-workflow/agent.cordis.yml\n M owner-workflow-plugin/client.js\n M owner-workflow-plugin/cordis.patch.yml\n M owner-workflow-plugin/dashboard-host.mjs\n M owner-workflow-plugin/index.js\n M owner-workflow-plugin/package.json\n M owner-workflow-plugin/scripts/build-client.mjs\n M owner-workflow-plugin/src/agent-policy.mjs\n M owner-workflow-plugin/src/client-runtime.js\n M owner-workflow-plugin/src/dashboard-page.mjs\n M owner-workflow-plugin/src/dashboard.mjs\n M owner-workflow-plugin/src/external-runner.mjs\n M owner-workflow-plugin/src/git.mjs\n M owner-workflow-plugin/src/memory.mjs\n M owner-workflow-plugin/src/model.mjs\n M owner-workflow-plugin/src/operation.mjs\n M owner-workflow-plugin/src/owner-agent.mjs\n M owner-workflow-plugin/src/owner-boundary.mjs\n M owner-workflow-plugin/src/owner-submission.mjs\n M owner-workflow-plugin/src/plan-revision.mjs\n M owner-workflow-plugin/src/registry.mjs\n M owner-workflow-plugin/src/runtime.mjs\n M owner-workflow-plugin/src/skills.mjs\n M owner-workflow-plugin/src/supervisor.mjs\n M owner-workflow-plugin/src/verification.mjs\n M owner-workflow-plugin/src/workflow-conversation.mjs\n M owner-workflow-plugin/test/client-bundle.test.mjs\n M owner-workflow-plugin/test/control.test.mjs\n M owner-workflow-plugin/test/dashboard-host.test.mjs\n M owner-workflow-plugin/test/dashboard.test.mjs\n M owner-workflow-plugin/test/git.test.mjs\n M owner-workflow-plugin/test/launcher.test.mjs\n M owner-workflow-plugin/test/memory.test.mjs\n M owner-workflow-plugin/test/model.test.mjs\n M owner-workflow-plugin/test/owner-submission.test.mjs\n M owner-workflow-plugin/test/plan-revision.test.mjs\n M owner-workflow-plugin/test/plugin.test.mjs\n M owner-workflow-plugin/test/registry.test.mjs\n M owner-workflow-plugin/test/resilience.test.mjs\n M owner-workflow-plugin/test/runner.test.mjs\n M owner-workflow-plugin/test/security.test.mjs\n M owner-workflow-plugin/test/supervisor.test.mjs\n M owner-workflow-plugin/test/verification.test.mjs\n M package.json\n M start-owner-workflow.sh\nA  vendor/SoL-Pi\n?? .dsh-workflow/\n?? .zvec-grep/\n?? CONTEXT.md\n?? docs/ORCHESTRATOR-DOCUMENTS.md\n?? docs/adr/\n?? docs/analysis/\n?? docs/specs/\n?? docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md\n?? owner-workflow-plugin/.dsh-workflow/\n?? owner-workflow-plugin/src/candidate-independent-supervisor.mjs\n?? owner-workflow-plugin/src/candidate-recovery-pause.mjs\n?? owner-workflow-plugin/src/convergence.mjs\n?? owner-workflow-plugin/src/orchestrator-documents.mjs\n?? owner-workflow-plugin/src/owner-advice.mjs\n?? owner-workflow-plugin/src/project-layout.mjs\n?? owner-workflow-plugin/src/recovery-admission.mjs\n?? owner-workflow-plugin/src/recovery-budget.mjs\n?? owner-workflow-plugin/src/recovery-session.mjs\n?? owner-workflow-plugin/src/replan-session.mjs\n?? owner-workflow-plugin/src/workflow-state.mjs\n?? owner-workflow-plugin/test/candidate-arbitration-metered.test.mjs\n?? owner-workflow-plugin/test/candidate-arbitration-recovery.test.mjs\n?? owner-workflow-plugin/test/candidate-independent-runtime.test.mjs\n?? owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs\n?? owner-workflow-plugin/test/candidate-owner-consultation.test.mjs\n?? owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs\n?? owner-workflow-plugin/test/candidate-recovery-pause.test.mjs\n?? owner-workflow-plugin/test/candidate-review-recovery.test.mjs\n?? owner-workflow-plugin/test/convergence.test.mjs\n?? owner-workflow-plugin/test/direct-handoff-recovery.test.mjs\n?? owner-workflow-plugin/test/fixtures/\n?? owner-workflow-plugin/test/handoff-recovery.test.mjs\n?? owner-workflow-plugin/test/orchestrator-documents-native.test.mjs\n?? owner-workflow-plugin/test/orchestrator-documents.test.mjs\n?? owner-workflow-plugin/test/owner-advice-session.test.mjs\n?? owner-workflow-plugin/test/project-layout.test.mjs\n?? owner-workflow-plugin/test/recovery-admission.test.mjs\n?? owner-workflow-plugin/test/recovery-budget.test.mjs\n?? owner-workflow-plugin/test/recovery-session-restart.test.mjs\n?? owner-workflow-plugin/test/recovery-session.test.mjs\n?? owner-workflow-plugin/test/replan-session.test.mjs\n?? owner-workflow-plugin/test/runtime-recovery-budget.test.mjs\n?? owner-workflow-plugin/test/subgraph-recovery-guard.test.mjs\n?? owner-workflow-plugin/test/workflow-state.test.mjs\n?? project-plugins.json\n?? scripts/\n?? sol-efficiency-plugin/\n?? test.md\n?? vendor/README.md",
+        "stderr": ""
+      },
+      "tracking": {
+        "exitCode": 0,
+        "output": "refs/heads/codex/synapse-dynamic-dag 1b231ddbe2cccebbe12ecaeb189042820ee3b81f refs/remotes/origin/codex/synapse-dynamic-dag \nrefs/heads/main 154914064f5ceb2f8eb413865e10a54e8ffbc663 refs/remotes/origin/main",
+        "stderr": ""
+      },
+      "cachedRemoteRefs": {
+        "exitCode": 0,
+        "output": "refs/remotes/origin/HEAD 154914064f5ceb2f8eb413865e10a54e8ffbc663\nrefs/remotes/origin/codex/synapse-dynamic-dag 1b231ddbe2cccebbe12ecaeb189042820ee3b81f\nrefs/remotes/origin/main 154914064f5ceb2f8eb413865e10a54e8ffbc663",
+        "stderr": ""
+      }
+    },
+    "deepseek-harness": {
+      "head": {
+        "exitCode": 0,
+        "output": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+        "stderr": ""
+      },
+      "branch": {
+        "exitCode": 0,
+        "output": "master",
+        "stderr": ""
+      },
+      "status": {
+        "exitCode": 0,
+        "output": "M packages/host/apiproxy/src/fetch/client.ts\n M packages/host/apiproxy/tests/client-handler.spec.ts",
+        "stderr": ""
+      },
+      "tracking": {
+        "exitCode": 0,
+        "output": "refs/heads/master b150a551b8d465e31e418e1b2eaf5e79bbb7d28e refs/remotes/origin/master [behind 3364]",
+        "stderr": ""
+      },
+      "cachedRemoteRefs": {
+        "exitCode": 0,
+        "output": "refs/remotes/origin/HEAD c291e7961a515f6d7af9304e7fd1d257929aef26\nrefs/remotes/origin/master c291e7961a515f6d7af9304e7fd1d257929aef26",
+        "stderr": ""
+      }
+    },
+    "dsh-synapse": {
+      "head": {
+        "exitCode": 0,
+        "output": "97f8c432de875d97bf7a5e4d675f8010f7b34556",
+        "stderr": ""
+      },
+      "branch": {
+        "exitCode": 0,
+        "output": "",
+        "stderr": ""
+      },
+      "status": {
+        "exitCode": 0,
+        "output": "",
+        "stderr": ""
+      },
+      "tracking": {
+        "exitCode": 0,
+        "output": "refs/heads/main a323f76b0c47ffad59194d8ac7efacb3aa6bdfba refs/remotes/origin/main [behind 15]",
+        "stderr": ""
+      },
+      "cachedRemoteRefs": {
+        "exitCode": 0,
+        "output": "refs/remotes/origin/HEAD 56935dc1862e7791b212f6eb2dd26404def5a575\nrefs/remotes/origin/main 56935dc1862e7791b212f6eb2dd26404def5a575",
+        "stderr": ""
+      }
+    },
+    "owner-workflow-plugin/vendor/dsh-approve-for-me": {
+      "head": {
+        "exitCode": 0,
+        "output": "a72c8d24dd64f59644b2b0bdb5985edc9bf3c66b",
+        "stderr": ""
+      },
+      "branch": {
+        "exitCode": 0,
+        "output": "main",
+        "stderr": ""
+      },
+      "status": {
+        "exitCode": 0,
+        "output": "",
+        "stderr": ""
+      },
+      "tracking": {
+        "exitCode": 0,
+        "output": "refs/heads/main a72c8d24dd64f59644b2b0bdb5985edc9bf3c66b refs/remotes/origin/main [behind 4]",
+        "stderr": ""
+      },
+      "cachedRemoteRefs": {
+        "exitCode": 0,
+        "output": "refs/remotes/origin/HEAD 0e50918ff9dfd49b6cadf86093baa325a3bc16bf\nrefs/remotes/origin/compat/dsh-0.1.1-rc.1 f3a45b67e99a0e83ef0816c96b4e6c5e8289887e\nrefs/remotes/origin/compat/dsh-0.1.1-rc.2 93e6f35ca68d54bb5a1b746fb02b55f29d003b03\nrefs/remotes/origin/compat/rc7 1a88a630b20eb57ccf7e0e4a78d5f7532f7ff5cc\nrefs/remotes/origin/main 0e50918ff9dfd49b6cadf86093baa325a3bc16bf\nrefs/remotes/origin/maintenance/beta2-quality f1b08abdfccb35d475b62d090fc536e6b11aa14f",
+        "stderr": ""
+      }
+    }
+  }
+}

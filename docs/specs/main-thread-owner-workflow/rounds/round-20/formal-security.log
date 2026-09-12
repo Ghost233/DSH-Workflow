@@ -1,0 +1,244 @@
+TAP version 13
+# Subtest: Owner 不再使用工具白名单，完整能力由 worktree 和提交关卡承接
+ok 1 - Owner 不再使用工具白名单，完整能力由 worktree 和提交关卡承接
+  ---
+  duration_ms: 144.642958
+  type: 'test'
+  ...
+# Subtest: recordBoundVerification 把绑定验证结果写入 active、task 状态和日志
+ok 2 - recordBoundVerification 把绑定验证结果写入 active、task 状态和日志
+  ---
+  duration_ms: 384.112416
+  type: 'test'
+  ...
+# Subtest: F02 的 task_verification_result 只接受实时重新核验的 Owner 固定验证证据
+ok 3 - F02 的 task_verification_result 只接受实时重新核验的 Owner 固定验证证据
+  ---
+  duration_ms: 1969.5765
+  type: 'test'
+  ...
+# Subtest: R07 可选文件发现不可用时保留独立验证证据，当前候选与取消门禁不放宽
+ok 4 - R07 可选文件发现不可用时保留独立验证证据，当前候选与取消门禁不放宽
+  ---
+  duration_ms: 577.133041
+  type: 'test'
+  ...
+# Subtest: 旧 Flutter 计划从唯一受控 test/write/pubspec 链推导 flutter_app，并用于同一计划全部 Flutter 验证
+ok 5 - 旧 Flutter 计划从唯一受控 test/write/pubspec 链推导 flutter_app，并用于同一计划全部 Flutter 验证
+  ---
+  duration_ms: 611.618166
+  type: 'test'
+  ...
+# Subtest: 旧 Flutter 计划的 allowed-once 重试复用同一 snapshotRoot/flutter_app
+ok 6 - 旧 Flutter 计划的 allowed-once 重试复用同一 snapshotRoot/flutter_app
+  ---
+  duration_ms: 558.206917
+  type: 'test'
+  ...
+# Subtest: 旧 Flutter 计划没有唯一 Flutter test/write/pubspec 证据时 fail-closed
+ok 7 - 旧 Flutter 计划没有唯一 Flutter test/write/pubspec 证据时 fail-closed
+  ---
+  duration_ms: 420.322292
+  type: 'test'
+  ...
+# Subtest: 验证快照保留相对符号链接，不再制造虚假的 contentDigest 漂移
+ok 8 - 验证快照保留相对符号链接，不再制造虚假的 contentDigest 漂移
+  ---
+  duration_ms: 485.968917
+  type: 'test'
+  ...
+# Subtest: 固定验证快照和内容摘要跳过 Git 忽略的构建产物
+ok 9 - 固定验证快照和内容摘要跳过 Git 忽略的构建产物
+  ---
+  duration_ms: 386.219333
+  type: 'test'
+  ...
+# Subtest: 固定验证快照保留被忽略的 node_modules CLI，但不把依赖计入提交内容
+ok 10 - 固定验证快照保留被忽略的 node_modules CLI，但不把依赖计入提交内容
+  ---
+  duration_ms: 359.774583
+  type: 'test'
+  ...
+# Subtest: 固定验证被 workspace-write 拒绝后由 Owner 现场原生授权并精确重试一次
+ok 11 - 固定验证被 workspace-write 拒绝后由 Owner 现场原生授权并精确重试一次
+  ---
+  duration_ms: 429.93175
+  type: 'test'
+  ...
+# Subtest: 固定验证获批后 Owner 绑定失效时不执行宿主重试
+ok 12 - 固定验证获批后 Owner 绑定失效时不执行宿主重试
+  ---
+  duration_ms: 306.164084
+  type: 'test'
+  ...
+# Subtest: 固定验证失败会持久化并返回有界 stdout 与 stderr
+ok 13 - 固定验证失败会持久化并返回有界 stdout 与 stderr
+  ---
+  duration_ms: 358.502167
+  type: 'test'
+  ...
+# Subtest: required verification result 必须绑定当前 V2 plan/task/Owner/session/status
+ok 14 - required verification result 必须绑定当前 V2 plan/task/Owner/session/status
+  ---
+  duration_ms: 508.286042
+  type: 'test'
+  ...
+# Subtest: persisted Owner completed/awaiting/committed 快路径必须重验 V2 证据和现场
+ok 15 - persisted Owner completed/awaiting/committed 快路径必须重验 V2 证据和现场
+  ---
+  duration_ms: 858.50225
+  type: 'test'
+  ...
+# Subtest: 旧版普通文本 Owner 结果状态漂移测试（owner_submit 已在子线程内固定结果）
+ok 16 - 旧版普通文本 Owner 结果状态漂移测试（owner_submit 已在子线程内固定结果） # SKIP
+  ---
+  duration_ms: 0.07075
+  type: 'test'
+  ...
+# Subtest: recordBoundVerification 拒绝不匹配 active/task、未绑定和未知 verification
+ok 17 - recordBoundVerification 拒绝不匹配 active/task、未绑定和未知 verification
+  ---
+  duration_ms: 207.949042
+  type: 'test'
+  ...
+# Subtest: recordBoundVerification 对非 full 或非零 exit status 持久化负面证据并失败
+ok 18 - recordBoundVerification 对非 full 或非零 exit status 持久化负面证据并失败
+  ---
+  duration_ms: 563.493167
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 手工验证缺失测试（owner_submit 现在自动执行固定验证）
+ok 19 - 旧版 Owner 手工验证缺失测试（owner_submit 现在自动执行固定验证） # SKIP
+  ---
+  duration_ms: 0.079667
+  type: 'test'
+  ...
+# Subtest: 旧版 owner_write 写入代次测试（已由 contentDigest 提交关卡替代）
+ok 20 - 旧版 owner_write 写入代次测试（已由 contentDigest 提交关卡替代） # SKIP
+  ---
+  duration_ms: 0.018
+  type: 'test'
+  ...
+# Subtest: 旧版 owner_edit 写入代次测试（已由 contentDigest 提交关卡替代）
+ok 21 - 旧版 owner_edit 写入代次测试（已由 contentDigest 提交关卡替代） # SKIP
+  ---
+  duration_ms: 0.012667
+  type: 'test'
+  ...
+# Subtest: 旧版 owner_write 相同内容代次测试（逐写入包装已移除）
+ok 22 - 旧版 owner_write 相同内容代次测试（逐写入包装已移除） # SKIP
+  ---
+  duration_ms: 0.013792
+  type: 'test'
+  ...
+# Subtest: owner_verify 执行期间计划代次和真实 worktree 漂移时拒绝记录成功
+ok 23 - owner_verify 执行期间计划代次和真实 worktree 漂移时拒绝记录成功
+  ---
+  duration_ms: 360.11725
+  type: 'test'
+  ...
+# Subtest: owner_verify 忽略其他 Supervisor 记账造成的全局 revision 变化
+ok 24 - owner_verify 忽略其他 Supervisor 记账造成的全局 revision 变化
+  ---
+  duration_ms: 396.6165
+  type: 'test'
+  ...
+# Subtest: owner_verify 执行固定验证前必须确认 shell 为 workspace-write
+ok 25 - owner_verify 执行固定验证前必须确认 shell 为 workspace-write
+  ---
+  duration_ms: 251.235416
+  type: 'test'
+  ...
+# Subtest: owner_verify 对宿主失败证据持久化负面结果并拒绝通过
+ok 26 - owner_verify 对宿主失败证据持久化负面结果并拒绝通过
+  ---
+  duration_ms: 1738.888208
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 逐写入范围测试（worktree 沙箱与提交关卡已有替代测试）
+ok 27 - 旧版 Owner 逐写入范围测试（worktree 沙箱与提交关卡已有替代测试） # SKIP
+  ---
+  duration_ms: 0.064917
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 写入包装链接测试（最终提交关卡覆盖受保护现场）
+ok 28 - 旧版 Owner 写入包装链接测试（最终提交关卡覆盖受保护现场） # SKIP
+  ---
+  duration_ms: 0.018625
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 写入包装长期记忆测试（最终提交关卡覆盖）
+ok 29 - 旧版 Owner 写入包装长期记忆测试（最终提交关卡覆盖） # SKIP
+  ---
+  duration_ms: 0.012542
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 写入包装 Registry 测试（最终提交关卡覆盖）
+ok 30 - 旧版 Owner 写入包装 Registry 测试（最终提交关卡覆盖） # SKIP
+  ---
+  duration_ms: 0.013333
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner 写入包装大小写路径测试（最终提交关卡覆盖）
+ok 31 - 旧版 Owner 写入包装大小写路径测试（最终提交关卡覆盖） # SKIP
+  ---
+  duration_ms: 0.011
+  type: 'test'
+  ...
+# Subtest: Owner scope 过宽时提交前后二次检查都拒绝 Owner Registry 的大小写路径别名
+ok 32 - Owner scope 过宽时提交前后二次检查都拒绝 Owner Registry 的大小写路径别名
+  ---
+  duration_ms: 394.215292
+  type: 'test'
+  ...
+# Subtest: Owner scope 过宽时提交检查拒绝 .owner-workflow 路径
+ok 33 - Owner scope 过宽时提交检查拒绝 .owner-workflow 路径
+  ---
+  duration_ms: 373.312208
+  type: 'test'
+  ...
+# Subtest: 旧版 Owner Shell 命令白名单测试（Owner 现在使用正常 Harness Shell）
+ok 34 - 旧版 Owner Shell 命令白名单测试（Owner 现在使用正常 Harness Shell） # SKIP
+  ---
+  duration_ms: 0.056792
+  type: 'test'
+  ...
+# Subtest: 旧版 owner_bash 沙箱测试（固定验证仍保留快照证据）
+ok 35 - 旧版 owner_bash 沙箱测试（固定验证仍保留快照证据） # SKIP
+  ---
+  duration_ms: 0.019417
+  type: 'test'
+  ...
+# Subtest: 旧版 owner_bash 副本测试（Owner 本身已位于隔离 worktree）
+ok 36 - 旧版 owner_bash 副本测试（Owner 本身已位于隔离 worktree） # SKIP
+  ---
+  duration_ms: 0.013833
+  type: 'test'
+  ...
+# Subtest: 旧版逐写入操作日志测试（现在记录最终功能摘要和真实 diff）
+ok 37 - 旧版逐写入操作日志测试（现在记录最终功能摘要和真实 diff） # SKIP
+  ---
+  duration_ms: 0.013084
+  type: 'test'
+  ...
+# Subtest: 提交代理禁用 Git hook 并在提交后再次校验 Owner 文件范围
+ok 38 - 提交代理禁用 Git hook 并在提交后再次校验 Owner 文件范围
+  ---
+  duration_ms: 654.316125
+  type: 'test'
+  ...
+# Subtest: Owner scope 内的 Git 忽略构建产物不会进入提交，也不阻断结算
+ok 39 - Owner scope 内的 Git 忽略构建产物不会进入提交，也不阻断结算
+  ---
+  duration_ms: 255.704416
+  type: 'test'
+  ...
+1..39
+# tests 39
+# suites 0
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 14
+# todo 0
+# duration_ms 13675.251333

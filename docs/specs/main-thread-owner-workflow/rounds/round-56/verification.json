@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-11T10:38:17.632359+00:00",
+  "kind": "documentation-only; unchanged implementation evidence reuse",
+  "reused": "../round-55/test-results.json",
+  "pass": 118,
+  "fail": 0,
+  "skipped": 0,
+  "manifestCount": 1622,
+  "declaredDocumentationChanges": [
+    "docs/specs/main-thread-owner-workflow/contracts/recovery-budget-v1.md"
+  ],
+  "unexpectedDrift": [],
+  "contractSha256": "d5af7b64d1d81d1d53a96796f8c74c9b88cca4a4fde942392c51b9e95b1dfc66",
+  "verificationNote": "First hash assertion included declared contract edit; after classifying it, no implementation or test changed. No test rerun."
+}

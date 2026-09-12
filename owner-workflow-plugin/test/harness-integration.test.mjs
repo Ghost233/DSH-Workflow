@@ -29,7 +29,6 @@ const execFileAsync = promisify(execFile)
 
 const { boot, healProfilesModuleFallback, loadOverlayPatches } = appRequire('@deepseek-ai/dsh-app-boot')
 const { provideCmdline } = appRequire('@deepseek-ai/dsh-cmdline')
-const { Context } = appRequire('@deepseek-ai/cordis')
 const { SessionId } = appRequire('@deepseek-ai/dsh-session')
 const { CallId } = appRequire('@deepseek-ai/dsh-llm')
 const { assembleContextFor } = appRequire('@deepseek-ai/dsh-agent')
@@ -177,7 +176,13 @@ async function bootHarness() {
     patches,
     bootContext => provideCmdline(bootContext, { args: [], exit: () => {} }),
   )
-  assert.ok(harnessContext instanceof Context)
+  // The profile fallback can load another physical copy of Cordis, so an
+  // instanceof check would reject a valid boot context solely because the two
+  // constructors have different module identities. Check the services this
+  // integration actually consumes instead.
+  assert.equal(typeof harnessContext?.fiber?.dispose, 'function')
+  assert.equal(typeof harnessContext?.agentPresets?.list, 'function')
+  assert.equal(typeof harnessContext?.agents?.create, 'function')
 }
 
 before(async () => {

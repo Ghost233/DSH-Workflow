@@ -1,0 +1,298 @@
+TAP version 13
+# Subtest: T15 recoverOwner admits before restarting a failed workflow and enforces the next credit limit
+ok 1 - T15 recoverOwner admits before restarting a failed workflow and enforces the next credit limit
+  ---
+  duration_ms: 1696.25375
+  type: 'test'
+  ...
+# Subtest: T15 direct failed Owner start cannot bypass durable recovery admission
+ok 2 - T15 direct failed Owner start cannot bypass durable recovery admission
+  ---
+  duration_ms: 655.371959
+  type: 'test'
+  ...
+# Subtest: T15 missing_config cannot silently fall back to legacy execution
+ok 3 - T15 missing_config cannot silently fall back to legacy execution
+  ---
+  duration_ms: 510.706
+  type: 'test'
+  ...
+# Subtest: T15 unknown_protocol cannot silently fall back to legacy execution
+ok 4 - T15 unknown_protocol cannot silently fall back to legacy execution
+  ---
+  duration_ms: 508.59225
+  type: 'test'
+  ...
+# Subtest: T15 invalid_config cannot silently fall back to legacy execution
+ok 5 - T15 invalid_config cannot silently fall back to legacy execution
+  ---
+  duration_ms: 510.776209
+  type: 'test'
+  ...
+# Subtest: T15 explicit user decision takes priority over spending recovery credit
+ok 6 - T15 explicit user decision takes priority over spending recovery credit
+  ---
+  duration_ms: 498.35325
+  type: 'test'
+  ...
+# Subtest: T15 existing uncertain recovery is reconciled without another reservation or prompt
+ok 7 - T15 existing uncertain recovery is reconciled without another reservation or prompt
+  ---
+  duration_ms: 1102.747709
+  type: 'test'
+  ...
+# Subtest: T15 subsequent real failed result inherits the same root and consumes only its next attempt
+ok 8 - T15 subsequent real failed result inherits the same root and consumes only its next attempt
+  ---
+  duration_ms: 1619.964834
+  type: 'test'
+  ...
+# Subtest: T15 public background recovery persists and delivers a newly classified user decision
+ok 9 - T15 public background recovery persists and delivers a newly classified user decision
+  ---
+  duration_ms: 655.244042
+  type: 'test'
+  ...
+# Subtest: T15 unresolved handoff before admission prevents execution
+ok 10 - T15 unresolved handoff before admission prevents execution
+  ---
+  duration_ms: 574.378708
+  type: 'test'
+  ...
+# Subtest: T15 unresolved handoff appearing after admission prevents execution
+ok 11 - T15 unresolved handoff appearing after admission prevents execution
+  ---
+  duration_ms: 561.02
+  type: 'test'
+  ...
+# Subtest: T15 protected ordinary awaiting_finish result can finish without a recovery debit
+ok 12 - T15 protected ordinary awaiting_finish result can finish without a recovery debit
+  ---
+  duration_ms: 2964.466709
+  type: 'test'
+  ...
+# Subtest: T15 protected ordinary committed result can finish without a recovery debit
+ok 13 - T15 protected ordinary committed result can finish without a recovery debit
+  ---
+  duration_ms: 4039.988875
+  type: 'test'
+  ...
+# Subtest: T15 protected PlanRevision abort with no Owner record keeps the reset path
+ok 14 - T15 protected PlanRevision abort with no Owner record keeps the reset path
+  ---
+  duration_ms: 906.514166
+  type: 'test'
+  ...
+# Subtest: T15 stale finish-only snapshot cannot send a newly failed record through legacy recovery
+ok 15 - T15 stale finish-only snapshot cannot send a newly failed record through legacy recovery
+  ---
+  duration_ms: 823.001292
+  type: 'test'
+  ...
+# Subtest: T15 authority before_reserve reaches the main outbox through public background recovery
+ok 16 - T15 authority before_reserve reaches the main outbox through public background recovery
+  ---
+  duration_ms: 691.551375
+  type: 'test'
+  ...
+# Subtest: T15 authority before_reserve_with_handoff reaches the main outbox through public background recovery
+ok 17 - T15 authority before_reserve_with_handoff reaches the main outbox through public background recovery
+  ---
+  duration_ms: 783.647084
+  type: 'test'
+  ...
+# Subtest: T15 authority after_reserve reaches the main outbox through public background recovery
+ok 18 - T15 authority after_reserve reaches the main outbox through public background recovery
+  ---
+  duration_ms: 595.42275
+  type: 'test'
+  ...
+# Subtest: T15 authority source becoming running cannot be overwritten by a stale recovery
+ok 19 - T15 authority source becoming running cannot be overwritten by a stale recovery
+  ---
+  duration_ms: 565.771417
+  type: 'test'
+  ...
+# Subtest: T15 authority source becoming new_attempt cannot be overwritten by a stale recovery
+ok 20 - T15 authority source becoming new_attempt cannot be overwritten by a stale recovery
+  ---
+  duration_ms: 634.978583
+  type: 'test'
+  ...
+# Subtest: T15 an ordinary error resembling authority refusal is not converted to a user decision
+ok 21 - T15 an ordinary error resembling authority refusal is not converted to a user decision
+  ---
+  duration_ms: 635.668083
+  type: 'test'
+  ...
+# Subtest: T15 authority refusal for a now-running source pauses without rewriting the live Owner
+ok 22 - T15 authority refusal for a now-running source pauses without rewriting the live Owner
+  ---
+  duration_ms: 649.316167
+  type: 'test'
+  ...
+# Subtest: T15 real Supervisor initial failure and retry preserve source, enforce credit, and allow independent initial work
+ok 23 - T15 real Supervisor initial failure and retry preserve source, enforce credit, and allow independent initial work
+  ---
+  duration_ms: 5768.810167
+  type: 'test'
+  ...
+# Subtest: T15 real Supervisor recovery completes only after the actual successful settlement
+ok 24 - T15 real Supervisor recovery completes only after the actual successful settlement
+  ---
+  duration_ms: 4576.121792
+  type: 'test'
+  ...
+# Subtest: T15 Supervisor replays an unsettled session as paused without another launch or fabricated completion
+ok 25 - T15 Supervisor replays an unsettled session as paused without another launch or fabricated completion
+  ---
+  duration_ms: 1774.156
+  type: 'test'
+  ...
+# Subtest: T15 Supervisor authority pause is not completed and persists the main notification without spending
+ok 26 - T15 Supervisor authority pause is not completed and persists the main notification without spending
+  ---
+  duration_ms: 750.985292
+  type: 'test'
+  ...
+# Subtest: T15 Supervisor does not infer recovery settlement from an actual integrated Git result
+ok 27 - T15 Supervisor does not infer recovery settlement from an actual integrated Git result
+  ---
+  duration_ms: 3484.280834
+  type: 'test'
+  ...
+# Subtest: T15 Supervisor reserved recovery slot cannot generate phantom Owner execution timeouts
+ok 28 - T15 Supervisor reserved recovery slot cannot generate phantom Owner execution timeouts
+  ---
+  duration_ms: 852.753125
+  type: 'test'
+  ...
+# Subtest: T15 whole-workflow recovery preserves failed source and queues a budgeted Supervisor execution
+ok 29 - T15 whole-workflow recovery preserves failed source and queues a budgeted Supervisor execution
+  ---
+  duration_ms: 1630.063667
+  type: 'test'
+  ...
+# Subtest: T15 whole-workflow recovery keeps typed user decisions ahead of handoff and bulk requeue
+ok 30 - T15 whole-workflow recovery keeps typed user decisions ahead of handoff and bulk requeue
+  ---
+  duration_ms: 709.259708
+  type: 'test'
+  ...
+# Subtest: T15 whole-workflow finishable recovery cannot bypass an unsettled session
+ok 31 - T15 whole-workflow finishable recovery cannot bypass an unsettled session
+  ---
+  duration_ms: 3332.910167
+  type: 'test'
+  ...
+# Subtest: T15 whole-workflow pending_merge recovery cannot bypass an unsettled session
+ok 32 - T15 whole-workflow pending_merge recovery cannot bypass an unsettled session
+  ---
+  duration_ms: 2979.338875
+  type: 'test'
+  ...
+# Subtest: T15 whole-workflow missing configuration cannot fall back to legacy recovery
+ok 33 - T15 whole-workflow missing configuration cannot fall back to legacy recovery
+  ---
+  duration_ms: 574.590958
+  type: 'test'
+  ...
+# Subtest: T15 whole-workflow unknown Owner source is not rewritten into a free initial launch
+ok 34 - T15 whole-workflow unknown Owner source is not rewritten into a free initial launch
+  ---
+  duration_ms: 549.802333
+  type: 'test'
+  ...
+# Subtest: T15 convergence probe preserves failed source and the 1-credit limit
+ok 35 - T15 convergence probe preserves failed source and the 1-credit limit
+  ---
+  duration_ms: 1545.457375
+  type: 'test'
+  ...
+# Subtest: T15 convergence probe preserves failed source and the 2-credit limit
+ok 36 - T15 convergence probe preserves failed source and the 2-credit limit
+  ---
+  duration_ms: 3645.896167
+  type: 'test'
+  ...
+# Subtest: T15 convergence probe persists typed user authority instead of resuming technical execution
+ok 37 - T15 convergence probe persists typed user authority instead of resuming technical execution
+  ---
+  duration_ms: 741.724416
+  type: 'test'
+  ...
+# Subtest: T15 convergence probe cannot manufacture a recoverable Owner from an orphaned source
+ok 38 - T15 convergence probe cannot manufacture a recoverable Owner from an orphaned source
+  ---
+  duration_ms: 982.504625
+  type: 'test'
+  ...
+# Subtest: T15 convergence probe rejects missing protected configuration without a legacy fallback
+ok 39 - T15 convergence probe rejects missing protected configuration without a legacy fallback
+  ---
+  duration_ms: 533.793709
+  type: 'test'
+  ...
+# Subtest: T15 convergence probe keeps an actual persisted Owner incident paused across repeated probes
+ok 40 - T15 convergence probe keeps an actual persisted Owner incident paused across repeated probes
+  ---
+  duration_ms: 554.134
+  type: 'test'
+  ...
+# Subtest: T15 Supervisor admission refusal (autonomous_incident) stops without requeue and permits independent work
+ok 41 - T15 Supervisor admission refusal (autonomous_incident) stops without requeue and permits independent work
+  ---
+  duration_ms: 3518.618041
+  type: 'test'
+  ...
+# Subtest: T15 Supervisor admission refusal (missing strategy) stops without requeue and permits independent work
+ok 42 - T15 Supervisor admission refusal (missing strategy) stops without requeue and permits independent work
+  ---
+  duration_ms: 3641.850084
+  type: 'test'
+  ...
+# Subtest: T15 technical stop reports without user decision and waits after delivery (dependent=false)
+ok 43 - T15 technical stop reports without user decision and waits after delivery (dependent=false)
+  ---
+  duration_ms: 5251.480542
+  type: 'test'
+  ...
+# Subtest: T15 technical stop reports without user decision and waits after delivery (dependent=true)
+ok 44 - T15 technical stop reports without user decision and waits after delivery (dependent=true)
+  ---
+  duration_ms: 1531.797958
+  type: 'test'
+  ...
+# Subtest: T15 technical pause classification preserves explicit missing user input
+ok 45 - T15 technical pause classification preserves explicit missing user input
+  ---
+  duration_ms: 504.362667
+  type: 'test'
+  ...
+# Subtest: T15 actual approved plan retains its review strategy but still settles into technical wait
+ok 46 - T15 actual approved plan retains its review strategy but still settles into technical wait
+  ---
+  duration_ms: 2157.663875
+  type: 'test'
+  ...
+# Subtest: T15 persisted technical incident cannot hide a current typed user decision
+ok 47 - T15 persisted technical incident cannot hide a current typed user decision
+  ---
+  duration_ms: 789.17875
+  type: 'test'
+  ...
+# Subtest: T15 idle timeout preserves the live Owner until actual termination, then recovery spends credit
+ok 48 - T15 idle timeout preserves the live Owner until actual termination, then recovery spends credit
+  ---
+  duration_ms: 4590.168958
+  type: 'test'
+  ...
+1..48
+# tests 48
+# suites 0
+# pass 48
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 79328.558

@@ -1,0 +1,112 @@
+✔ T13 明确有限配置，没有默认无限值或隐式数值转换 (1.448125ms)
+✔ T13 BUD-01 两级限额原子扣减，问题用完不阻止独立问题 (1.314416ms)
+✔ T13 BUD-03 最后一份额度按传入的新快照串行竞争，两级不半扣 (0.150958ms)
+✔ T13 BUD-03 请求重放在耗尽后仍返回原attempt，重载不重扣 (0.337417ms)
+✔ T13 同request改变workflowId拒绝，不借重复请求改绑定 (0.164417ms)
+✔ T13 同request改变rootProblemId拒绝，不借重复请求改绑定 (0.142417ms)
+✔ T13 同request改变attemptId拒绝，不借重复请求改绑定 (0.12725ms)
+✔ T13 同request改变taskId拒绝，不借重复请求改绑定 (0.124291ms)
+✔ T13 同request改变ownerId拒绝，不借重复请求改绑定 (0.133709ms)
+✔ T13 同request改变executionVersion拒绝，不借重复请求改绑定 (0.274708ms)
+✔ T13 同attempt不能被不同request占用；不存在问题与外来Workflow拒绝 (0.447167ms)
+✔ T13 问题注册幂等但来源和限额不可替换，同来源不能另开根问题 (0.149792ms)
+✔ T13 执行开始绑定不可换，未开始不能成功结算，终态不能重启 (0.370167ms)
+✔ T13 启动前failed可结算，不退额度；相同回执重放不改状态 (0.23575ms)
+✔ T13 启动前cancelled可结算，不退额度；相同回执重放不改状态 (0.160333ms)
+✔ T13 开始及结算都重新核验完整绑定，调用错误不能写状态 (0.690833ms)
+✔ T13 BUD-04/05 相关新证据不退预算，A/B/A与换引用重放只留两份事实 (1.115875ms)
+✔ T13 来源不匹配、相同引用内容冲突、进展升格关闭都拒绝 (0.967834ms)
+✔ T13 问题关闭需当前根的关闭引用且无未结算attempt，关闭不擦历史 (0.763583ms)
+✔ T13 序列化账本严格校验，不接纳未知版本、重复记录或被改写的计数 (0.546333ms)
+✔ T13 返回对象和输入无共享可写引用；冻结输入仍可工作 (0.111625ms)
+✔ T13 原型敏感字符串只作为ID数据，不能串改其他问题 (0.106333ms)
+✔ T13 严格输入不静默丢弃错误字段或伪证据标记 (0.260875ms)
+✔ T13 同根问题换task、Owner或版本仍共享已用额度，不重新注册预算 (0.14675ms)
+✔ T13 同一核验事实可分别关联多个根问题，各自核验来源和关闭引用 (0.270167ms)
+✖ T13 F-14 跨attempt跨字段引用拒绝：先执行后结算 (0.684125ms)
+✖ T13 F-14 跨attempt跨字段引用拒绝：先结算后执行 (0.177167ms)
+✖ T13 F-14 JSON导入拒绝跨字段串用回执，reverse=false (0.159709ms)
+✖ T13 F-14 JSON导入拒绝跨字段串用回执，reverse=true (0.213458ms)
+✔ T13 F-14 同attempt跨字段引用及重放合法，不同版本引用仍独立 (0.228333ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 26
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 87.959167
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/recovery-budget.test.mjs:268:3
+✖ T13 F-14 跨attempt跨字段引用拒绝：先执行后结算 (0.684125ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-budget.test.mjs:277:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /其他 attempt/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/recovery-budget.test.mjs:268:3
+✖ T13 F-14 跨attempt跨字段引用拒绝：先结算后执行 (0.177167ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-budget.test.mjs:277:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /其他 attempt/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/recovery-budget.test.mjs:286:3
+✖ T13 F-14 JSON导入拒绝跨字段串用回执，reverse=false (0.159709ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-budget.test.mjs:294:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /其他 attempt/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/recovery-budget.test.mjs:286:3
+✖ T13 F-14 JSON导入拒绝跨字段串用回执，reverse=true (0.213458ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-budget.test.mjs:294:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /其他 attempt/,
+    operator: 'throws',
+    diff: 'simple'
+  }

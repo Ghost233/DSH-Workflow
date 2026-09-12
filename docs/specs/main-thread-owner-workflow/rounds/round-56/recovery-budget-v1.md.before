@@ -1,0 +1,42 @@
+# T-13 纯恢复预算接口 V1
+
+来源：[R4-V03-1 第12节](../../../superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md)。实现：[recovery-budget.mjs](../../../../owner-workflow-plugin/src/recovery-budget.mjs)。这是供T-14验证持久事务的纯状态接口，未接入Runtime，也不提供磁盘持久性、锁、会话对账或硬截止保证。
+
+## 数据边界
+
+`contract = DSH_RECOVERY_BUDGET_V1`。账本保存 `workflowId/totalLimit/totalUsed/problems[]/attempts[]`。数组避免把外部ID用作对象原型属性。limit必须是显式正的安全整数；used从0开始并与保留的领取记录一致，不提供默认值或数值字符串转换。
+
+根问题保存 `rootProblemId/limit/used/source/status/evidence`，状态open或resolved。`source:{id,version}`必须指向具体义务或首次失败记录，不能只指向包含多个问题的整份Review。一个来源在同Workflow中只注册一个root；原root不能换来源或限额。真正新问题的来源识别与旧问题复用由Runtime在T-14验证后实现，纯模块不自行推断。
+
+领取参数包含 `workflowId/rootProblemId/requestId/attemptId/taskId/ownerId/executionVersion`，开始和结算也要提交完整相同绑定。所有ID是非空、无首尾空白的字符串。请求ID/attempt ID由调用者提供，纯模块不读取时间或生成随机数；其可信生产者与跨进程幂等由T-14承接。不能让模型通过更换ID获取新问题额度。
+
+公开输入和导入账本严格校验；未知字段/版本、重复身份、冲突来源、计数与attempt记录不符或不合法状态拒绝。校验导入快照只能证明内部一致性，不能证明该快照真实/最新或识别被整体协调篡改的历史；这些属于持久边界。每次调用返回新对象，不修改输入。
+
+## 调用
+
+| 函数 | 参数（除首个ledger） | 返回与语义 |
+| --- | --- | --- |
+| createRecoveryBudget | `{workflowId,totalLimit}` | 新账本；显式有限值 |
+| normalizeRecoveryBudget | 无，输入整个账本 | 严格校验并复制，供JSON重载；不迁移旧状态 |
+| registerRecoveryProblem | `{rootProblemId,limit,source}` | 新账本；同记录幂等，冲突拒绝 |
+| reserveRecoveryAttempt | 完整领取绑定 | `{ledger,outcome,attempt?,reason?}`；reserved/replayed/rejected |
+| startRecoveryAttempt | 完整绑定＋`executionRef:{id,version}` | started或replayed；开始引用固定，终态不能重启 |
+| settleRecoveryAttempt | 完整绑定＋`result:{status,reference:{id,version}}` | settled或replayed；结果一次写定，无退款 |
+| recordRecoveryEvidence | `{rootProblemId,problemSource,fingerprint,reference,purpose}` | recorded或replayed；不影响额度 |
+| closeRecoveryProblem | `{rootProblemId,evidenceRef:{id,version}}` | closed或replayed；保留全部使用历史 |
+
+参数/身份/状态冲突抛错；余额不足或已解决问题不再领取是正常拒绝，reason为 `problem_exhausted`、`workflow_exhausted` 或 `problem_resolved`。相同请求重放优先于余额/关闭判断，仍返回原attempt，不算重新派发。调用方不能因outcome=replayed而无条件再启动模型。
+
+新领取同一次状态转移同时增加问题和Workflow各1，任何拒绝不半扣。attempt从reserved到running再settled；启动前失败/取消可以从reserved直接settled，succeeded须先running。相同开始/结果引用可重放，冲突引用拒绝；状态变化不减少已用数。executionRef与result.reference分别标识具体执行及其结算回执，同Workflow内不能由两个attempt复用；共享验证事实使用evidence.reference单独登记。返回的开始/成功状态仅是结构化记录，不证明外部会话或测试实际发生。
+
+## 事实和关闭
+
+`problemSource`要与指定根问题的source相同，reference是实际证据引用；`fingerprint`为64位十六进制的稳定完整事实指纹，`purpose`是progress或closure。调用方必须核验来源、当前执行版本、与根问题的关联和事实真伪，不能仅附一个verified布尔值。
+
+同root已见过的fingerprint重放保留第一份记录，不因换reference变成新事实；同root内同reference被绑定到另一指纹或用途拒绝，不能把progress原地升格为closure。事实指纹应绑定完整证据语义/用途；后续验证形成关闭证据时要提交独立的验证事实及引用，不能把裸文件hash直接冒充关闭回执。同一外部验证事实可以在多个root内分别记录，但每次必须匹配该root来源；跨root记录不改变另一root的集合或额度，也不能拿未在本root录入的关闭引用关闭它。
+
+关闭需要该root已录入purpose=closure的证据引用，且该root没有未结算attempt；未知引用、其他root引用或进展引用不能关闭。相同关闭重放保留原记录，不换证据。已关闭问题、失败/取消attempt仍计入Workflow总使用，后续相关重放不退款。源真实性及T-02实际关闭证明仍由Runtime负责。
+
+## 后续接缝
+
+本模块只保证给定正确最新快照的确定性计算，不能处理两个进程各自拿旧副本后的并发写入；T-14必须验证完整读改写和外部启动事务，T-15接线。deadline、取消确认和资源释放由T-16/T-17负责；跨版本派生绑定由T-18负责；有限生产默认值及启用由T-19负责。当前不宣称实际工作流已经有持久预算上限。

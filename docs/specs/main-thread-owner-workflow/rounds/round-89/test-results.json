@@ -1,0 +1,25 @@
+{
+  "candidate": "R89-T17-hard-deadline-settlement",
+  "executionEnvironment": "Real Owner integration suites ran outside the Codex outer sandbox; nested Owner workspace-write sandbox retained",
+  "results": [
+    { "suite": "owner-attempt-control", "pass": 6, "fail": 0, "skip": 0 },
+    { "suite": "owner-hard-deadline", "pass": 6, "fail": 0, "skip": 0 },
+    { "suite": "owner-submission", "pass": 7, "fail": 0, "skip": 0 },
+    { "suite": "model", "pass": 51, "fail": 0, "skip": 0 },
+    { "suite": "supervisor", "pass": 22, "fail": 0, "skip": 0 },
+    { "suite": "control", "pass": 159, "fail": 0, "skip": 7 },
+    { "suite": "resilience", "pass": 60, "fail": 0, "skip": 0 },
+    { "suite": "recovery-session", "pass": 27, "fail": 0, "skip": 0 },
+    { "suite": "runtime-recovery-budget", "pass": 48, "fail": 0, "skip": 0 }
+  ],
+  "totals": { "pass": 386, "fail": 0, "skip": 7 },
+  "sourceHashes": {
+    "owner-workflow-plugin/src/runtime.mjs": "3ef9e30bf41ea1e8b37319d5e8bdc4fa54f19e5e354f58af3c39f39e18361c66",
+    "owner-workflow-plugin/src/owner-attempt-control.mjs": "d7474887e23ddd1adb5a36abe13bbbd78b4acbce862c3afc393e7f492a62710d",
+    "owner-workflow-plugin/src/owner-submission.mjs": "06b5480c7033157d5d591379eb68b7227c31aa38fe0754b5b29930357f27eb06",
+    "owner-workflow-plugin/src/model.mjs": "987b855f85bf60bb49f01c0a677c9741a109ed2b0595fc0293506e62e4f68ec1",
+    "owner-workflow-plugin/test/owner-attempt-control.test.mjs": "ca785578d5d5c50db5223670233166e26f3984a28508ba61c9d337ea79763540",
+    "owner-workflow-plugin/test/owner-hard-deadline.test.mjs": "bb03dfbada00318d9a7e2daac3c02c2e21f07d43fceb6d360d286e9a7d573424",
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "7fbe2f0b493a06c9c9822a162dd8c30a0636a90ac268dceba6a0574a5bef7b55"
+  }
+}

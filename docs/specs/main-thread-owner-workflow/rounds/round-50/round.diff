@@ -1,0 +1,42 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -8268,6 +8268,10 @@
+               authorityTasks.push(task.taskId)
+               continue
+             }
++            // Admission rejects this persisted strategy. Requeueing only the
++            // task would create an endless reserve/fail loop without execution.
++            // Keep the terminal source paused until a strategy transition is admitted.
++            if (record.autonomousRecovery?.strategy === 'autonomous_incident') continue
+           }
+           if (recovery.evidenceDigest === evidenceDigest) continue
+           const strategy = selectFailureRecovery({
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -694,3 +694,26 @@
+   assert.deepEqual(await readRecoverySessionState(f), before)
+   assert.equal(f.adapter.requests.length, 0)
+ })
++
++// Controlled persisted incident state: verifies entry routing, not how strategy
++// exhaustion is produced by the legacy recovery loop.
++test('T15 convergence probe keeps an actual persisted Owner incident paused across repeated probes', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  const before = await mutateRecoverySessionState(f, s => {
++    s.status = 'running'
++    const recovery = { contract: 'DSH_AUTONOMOUS_RECOVERY_V1', strategy: 'autonomous_incident',
++      failureClass: 'transient', evidenceDigest: '0'.repeat(64), usedStrategies: [] }
++    Object.assign(s.ownerRuns['T1:api'], { status: 'blocked', phase: 'autonomous_incident',
++      autonomousRecovery: recovery })
++    Object.assign(s.tasks[0], { status: 'stopped', reason: 'runtime_failed', action: 'retry_runtime',
++      autonomousRecovery: recovery })
++  })
++  const calls = observe(f)
++  for (let i = 0; i < 2; i++) {
++    const probe = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'convergence-probe')
++    assert.equal(probe.resumed, false)
++    assert.deepEqual(await readRecoverySessionState(f), before)
++  }
++  assert.equal(f.adapter.requests.length, 0)
++  assert.deepEqual(calls, { create: 0, resume: 0 })
++})

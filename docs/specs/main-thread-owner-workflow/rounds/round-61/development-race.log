@@ -1,0 +1,94 @@
+TAP version 13
+# Subtest: T15 real request_handoff preserves its initial free Owner until terminal and stages a metered candidate
+ok 1 - T15 real request_handoff preserves its initial free Owner until terminal and stages a metered candidate
+  ---
+  duration_ms: 3649.89575
+  type: 'test'
+  ...
+# Subtest: T15 real request_handoff preserves its paid Owner until terminal and stages a metered candidate
+ok 2 - T15 real request_handoff preserves its paid Owner until terminal and stages a metered candidate
+  ---
+  duration_ms: 1998.227875
+  type: 'test'
+  ...
+# Subtest: T15 real request_handoff preserves its paid Owner with repeated handoff in report until terminal and stages a metered candidate
+ok 3 - T15 real request_handoff preserves its paid Owner with repeated handoff in report until terminal and stages a metered candidate
+  ---
+  duration_ms: 2428.6475
+  type: 'test'
+  ...
+# Subtest: T15 real request_handoff preserves its initial free Owner with a real user permission gap until terminal and returns the permission decision
+ok 4 - T15 real request_handoff preserves its initial free Owner with a real user permission gap until terminal and returns the permission decision
+  ---
+  duration_ms: 1639.882417
+  type: 'test'
+  ...
+# Subtest: T15 real request_handoff preserves its initial free Owner after rejecting premature completed until terminal and stages a metered candidate
+ok 5 - T15 real request_handoff preserves its initial free Owner after rejecting premature completed until terminal and stages a metered candidate
+  ---
+  duration_ms: 2171.816417
+  type: 'test'
+  ...
+# Subtest: T15 real request_handoff preserves its paid Owner after rejecting premature completed until terminal and stages a metered candidate
+ok 6 - T15 real request_handoff preserves its paid Owner after rejecting premature completed until terminal and stages a metered candidate
+  ---
+  duration_ms: 2014.374
+  type: 'test'
+  ...
+# Subtest: T15 a handoff cannot enter after completed submission has acquired its gate
+ok 7 - T15 a handoff cannot enter after completed submission has acquired its gate
+  ---
+  duration_ms: 1919.464709
+  type: 'test'
+  ...
+# Subtest: owner_submit 顺序执行边界检查、固定验证和提交
+ok 8 - owner_submit 顺序执行边界检查、固定验证和提交
+  ---
+  duration_ms: 2.79775
+  type: 'test'
+  ...
+# Subtest: Owner blocked 报告不会运行验证或提交
+ok 9 - Owner blocked 报告不会运行验证或提交
+  ---
+  duration_ms: 0.523417
+  type: 'test'
+  ...
+# Subtest: Owner needs_repair 留在当前子线程继续调整，不能制造脏现场恢复循环
+ok 10 - Owner needs_repair 留在当前子线程继续调整，不能制造脏现场恢复循环
+  ---
+  duration_ms: 0.297916
+  type: 'test'
+  ...
+# Subtest: 固定验证等待 Owner 现场授权时自动结算为 blocked，不依赖 Owner 模型猜测
+ok 11 - 固定验证等待 Owner 现场授权时自动结算为 blocked，不依赖 Owner 模型猜测
+  ---
+  duration_ms: 0.179959
+  type: 'test'
+  ...
+# Subtest: 固定验证已经执行失败后拒绝 Owner 错报为 blocked
+ok 12 - 固定验证已经执行失败后拒绝 Owner 错报为 blocked
+  ---
+  duration_ms: 0.143167
+  type: 'test'
+  ...
+# Subtest: 未获得可执行权限的验证结果仍允许 Owner 报告 blocked
+ok 13 - 未获得可执行权限的验证结果仍允许 Owner 报告 blocked
+  ---
+  duration_ms: 0.096959
+  type: 'test'
+  ...
+# Subtest: completed admission rejection precedes all effects and allows a corrected blocked submission
+ok 14 - completed admission rejection precedes all effects and allows a corrected blocked submission
+  ---
+  duration_ms: 0.12275
+  type: 'test'
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 16117.432458

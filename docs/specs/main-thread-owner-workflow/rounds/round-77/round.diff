@@ -1,0 +1,687 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -8180,6 +8180,335 @@
+         return result
+       })
+     },
++    // This is deliberately a producer/adopter only.  It mints and reconciles
++    // per-Owner advice sessions, but does not reopen R75's arbitration gate or
++    // treat the advice as an arbitration Review result.
++    async consultRecoveryCandidateOwners(agent, workflowId, signal) {
++      const root = await runtime.resolveRoot(agent)
++      // `reviewRecoveryCandidate` owns the same replan-entry resource.  Replay
++      // it before acquiring our lease so raw predecessor authentication cannot
++      // be confused with a re-entrant resource acquisition.
++      const authenticated = await runtime.reviewRecoveryCandidate(agent, workflowId, signal, { replayOnly: true })
++      return runtime.withOwnerLease(root, `replan-entry-${workflowId}`, workflowId, 'candidate-owner-consultation', signal, async lease => {
++        const candidateIdentity = value => value === undefined ? undefined : ({
++          number: value.number, parent: value.parent, plan: value.plan, planDigest: value.planDigest,
++          planStructureDigest: value.planStructureDigest, cycleId: value.cycleId, strategy: value.strategy,
++          origin: value.origin, recoveryRequestId: value.recoveryRequestId,
++          recoveryOrigin: value.recoveryOrigin, handoffIds: value.handoffIds,
++        })
++        const state = await readState(runtime, root, workflowId)
++        const candidate = state.pendingPlanRevision
++        const planner = Object.values(state.handoffReplans ?? {}).find(item => item.requestId === candidate?.recoveryRequestId)
++        if (planner?.phase !== 'candidate_staged') throw new Error('Recovery Owner会诊缺少已结算Planner来源')
++        // The predecessor Review identity deliberately excludes its result so
++        // it can name the Review operation. Advice adoption freezes the full
++        // post-Review candidate: otherwise an old Owner answer could cross
++        // into a candidate whose unrelated-looking field changed in flight.
++        const reviewBinding = candidateIdentity(candidate)
++        const binding = structuredClone(candidate)
++        const origin = structuredClone(planner.origin)
++        const plannerRecord = structuredClone(state.replanSessions?.[planner.requestId])
++        const reviewOperationId = `candidate-review-${createHash('sha256').update(canonicalDigestValue({ requestId: planner.requestId, candidate: reviewBinding })).digest('hex')}`
++        const review = state.candidateReviews?.[reviewOperationId]
++        if (review?.phase !== 'applied') throw new Error('Recovery Owner会诊缺少已结算Review来源')
++        const reviewIntent = lookupRecoveryAdmissionIntent(state, review.requestId)
++        if (reviewIntent?.intent.operationKind !== 'revision_review' || reviewIntent.intent.operationId !== review.operationId
++          || reviewIntent.intent.ordinal !== review.ordinal) throw new Error('Recovery Owner会诊 Review intent changed')
++        const reviewRecord = structuredClone(state.replanSessions?.[review.requestId])
++        assertReplanSessionState(reviewRecord, reviewIntent.intent, review.prompt)
++        assertReplanSessionAttempt(reviewRecord, reviewIntent.intent,
++          state.recoveryAdmission.budget.attempts.find(item => item.requestId === review.requestId))
++        if (reviewRecord.phase !== 'applied') throw new Error('Recovery Owner会诊 Review会话未结算')
++        const predecessor = {
++          operationId: review.operationId,
++          requestId: review.requestId,
++          ordinal: review.ordinal,
++          receipt: structuredClone(review.receipt),
++          result: structuredClone(review.result),
++        }
++        const verify = current => {
++          assertRecoveryAdmissionState(current)
++          assertRecoveryAdmissionRuntime(current, origin, true)
++          const value = current.pendingPlanRevision
++          if (current.root !== root || current.id !== workflowId
++            || canonicalDigestValue(value) !== canonicalDigestValue(binding)
++            || canonicalDigestValue(current.handoffReplans?.[planner.operationId]) !== canonicalDigestValue(planner)
++            || canonicalDigestValue(recoveryHandoffGroup(current, planner.handoffIds)) !== canonicalDigestValue(planner.group)
++            || value?.origin !== 'handoff-recovery' || value.cycleId !== (planner.predecessor?.candidate.cycleId ?? planner.operationId)
++            || value.parent !== planner.parent || value.number !== planner.parent + 1
++            || Number(current.activePlanRevision ?? 1) !== planner.parent
++            || value.planDigest !== planner.candidateDigest || planDigest(value.plan) !== value.planDigest
++            || value.planStructureDigest !== planStructureDigest(value.plan)
++            || canonicalDigestValue(value.recoveryOrigin) !== canonicalDigestValue(origin)
++            || canonicalDigestValue(value.handoffIds) !== canonicalDigestValue(planner.handoffIds)) {
++            throw new Error('Recovery Owner会诊 candidate/source changed')
++          }
++          const plannerIntent = lookupRecoveryAdmissionIntent(current, planner.requestId)
++          if (plannerIntent?.intent.operationKind !== 'handoff_replan' || plannerIntent.intent.operationId !== planner.operationId
++            || plannerIntent.intent.ordinal !== planner.ordinal) throw new Error('Recovery Owner会诊 Planner intent changed')
++          const currentPlannerRecord = current.replanSessions?.[planner.requestId]
++          assertReplanSessionState(currentPlannerRecord, plannerIntent.intent, planner.prompt)
++          assertReplanSessionAttempt(currentPlannerRecord, plannerIntent.intent,
++            current.recoveryAdmission.budget.attempts.find(item => item.requestId === planner.requestId))
++          if (currentPlannerRecord.phase !== 'applied'
++            || canonicalDigestValue(currentPlannerRecord) !== canonicalDigestValue(plannerRecord)) {
++            throw new Error('Recovery Owner会诊 Planner会话已变化')
++          }
++          const currentReview = current.candidateReviews?.[reviewOperationId]
++          if (currentReview?.contract !== 'DSH_CANDIDATE_REVIEW_OPERATION_V1' || currentReview.phase !== 'applied'
++            || canonicalDigestValue(currentReview) !== canonicalDigestValue(review)
++            || canonicalDigestValue(currentReview.origin) !== canonicalDigestValue(origin)
++            || canonicalDigestValue(currentReview.candidate) !== canonicalDigestValue(reviewBinding)
++            || canonicalDigestValue(currentReview.result?.review) !== canonicalDigestValue(authenticated.review)
++            || canonicalDigestValue(currentReview.result?.convergence) !== canonicalDigestValue(authenticated.convergence)
++            || canonicalDigestValue(current.pendingPlanRevision.review) !== canonicalDigestValue(currentReview.result?.review)
++            || canonicalDigestValue(current.planConvergence) !== canonicalDigestValue(currentReview.result?.convergence)
++            || currentReview.result?.review?.status === 'passed'
++            || current.planConvergence?.nextStrategy !== 'arbitrate') {
++            throw new Error('Recovery Owner会诊 predecessor Review/convergence changed')
++          }
++          const currentReviewIntent = lookupRecoveryAdmissionIntent(current, currentReview.requestId)
++          if (currentReviewIntent?.intent.operationKind !== 'revision_review'
++            || currentReviewIntent.intent.operationId !== currentReview.operationId
++            || currentReviewIntent.intent.ordinal !== currentReview.ordinal) {
++            throw new Error('Recovery Owner会诊 Review intent changed')
++          }
++          const currentReviewRecord = current.replanSessions?.[currentReview.requestId]
++          assertReplanSessionState(currentReviewRecord, currentReviewIntent.intent, currentReview.prompt)
++          assertReplanSessionAttempt(currentReviewRecord, currentReviewIntent.intent,
++            current.recoveryAdmission.budget.attempts.find(item => item.requestId === currentReview.requestId))
++          if (currentReviewRecord.phase !== 'applied'
++            || canonicalDigestValue(currentReviewRecord) !== canonicalDigestValue(reviewRecord)) {
++            throw new Error('Recovery Owner会诊 Review会话已变化')
++          }
++          return value
++        }
++        verify(state)
++        const predecessorRaw = await inspectReplanSession({ persistence: agent.ctx.get('sessionPersistence'), intent: reviewIntent.intent,
++          prompt: review.prompt, contextMessages: reviewRecord.contextMessages, signal })
++        if (predecessorRaw.outcome !== 'submission_observed'
++          || canonicalDigestValue(predecessorRaw.receipt) !== canonicalDigestValue(review.receipt)) {
++          throw new Error('Recovery Owner会诊 Review原始回执不匹配')
++        }
++        const { registry, liveDigest } = await loadLiveRegistryForPlanning(state, { plan: candidate.plan, requireBoundDigest: true })
++        const targetIds = new Set((state.planConvergence.obligations ?? [])
++          .filter(item => item.status === 'open')
++          .flatMap(item => item.targetTaskIds ?? []))
++        const candidateOwners = candidate.plan.owners.filter(owner => targetIds.size === 0 || candidate.plan.tasks.some(task => (
++          targetIds.has(task.id) && task.ownerId === owner.id
++        )))
++        const configuredLimit = Number(resolvedConfig.maxPlanningOwnerConsultations)
++        const limit = Number.isSafeInteger(configuredLimit) && configuredLimit >= 1 ? configuredLimit : 8
++        const requiredOwners = (candidateOwners.length > 0 ? candidateOwners : candidate.plan.owners)
++          .map(item => registry.owners.find(owner => owner.id === item.id))
++          .sort((left, right) => String(left?.id).localeCompare(String(right?.id)))
++        if (requiredOwners.some(owner => owner === undefined)) throw new Error('Recovery Owner会诊候选Owner不在当前Registry')
++        const owners = requiredOwners.slice(0, limit)
++        const selection = {
++          requiredOwnerIds: requiredOwners.map(owner => owner.id),
++          selectedOwnerIds: owners.map(owner => owner.id),
++          limit,
++        }
++        const assertRegistryOwner = async (current, owner) => {
++          const latest = await loadLiveRegistryForPlanning(current, { plan: binding.plan, requireBoundDigest: true })
++          const latestOwner = latest.registry.owners.find(item => item.id === owner.id)
++          if (latest.liveDigest !== liveDigest || canonicalDigestValue(latestOwner) !== canonicalDigestValue(owner)) {
++            throw new Error('Recovery Owner会诊 Registry/Owner定义已变化')
++          }
++        }
++        const consultations = []
++        const accepted = new Map()
++        for (const owner of owners) {
++          const operationId = `candidate-owner-consultation-${createHash('sha256').update(canonicalDigestValue({
++            candidate: binding, predecessor, owner, registryDigest: liveDigest, selection,
++          })).digest('hex')}`
++          let operation
++          const assertOperation = (current, value) => {
++            if (value?.contract !== 'DSH_CANDIDATE_OWNER_CONSULTATION_OPERATION_V1'
++              || value.operationId !== operationId || value.ownerId !== owner.id
++              || canonicalDigestValue(value.origin) !== canonicalDigestValue(origin)
++              || canonicalDigestValue(value.candidate) !== canonicalDigestValue(binding)
++              || canonicalDigestValue(value.predecessor) !== canonicalDigestValue(predecessor)
++              || canonicalDigestValue(value.owner) !== canonicalDigestValue(owner)
++              || value.registryDigest !== liveDigest || canonicalDigestValue(value.selection) !== canonicalDigestValue(selection)
++              || !['reserved', 'failed', 'applied', 'cancelled'].includes(value.phase)) {
++              throw new Error('Recovery Owner会诊 operation binding changed')
++            }
++            const located = lookupRecoveryAdmissionIntent(current, value.requestId)
++            if (located?.intent.operationKind !== 'owner_consultation' || located.intent.operationId !== operationId
++              || located.intent.ordinal !== value.ordinal || located.intent.executionIdentity.promptId !== value.prompt?.id) {
++              throw new Error('Recovery Owner会诊 admission intent changed')
++            }
++            return located.intent
++          }
++          const assertTerminal = (current, value) => {
++            const intent = assertOperation(current, value)
++            const record = current.replanSessions?.[value.requestId]
++            assertReplanSessionState(record, intent, value.prompt, owner.id)
++            assertReplanSessionAttempt(record, intent,
++              current.recoveryAdmission.budget.attempts.find(item => item.requestId === value.requestId))
++            return { intent, record }
++          }
++          let current = await readState(runtime, root, workflowId)
++          verify(current)
++          operation = current.candidateOwnerConsultations?.[operationId]
++          if (operation !== undefined) assertOperation(current, operation)
++          if (operation?.phase === 'applied') {
++            const { intent, record } = assertTerminal(current, operation)
++            if (record.phase !== 'applied') throw new Error('Recovery Owner会诊已结算会话阶段不匹配')
++            const observed = await inspectReplanSession({ persistence: agent.ctx.get('sessionPersistence'), intent,
++              prompt: operation.prompt, ownerId: owner.id, contextMessages: record.contextMessages, signal })
++            if (observed.outcome !== 'submission_observed'
++              || canonicalDigestValue(observed.receipt) !== canonicalDigestValue(operation.receipt)) {
++              throw new Error('Recovery Owner会诊已结算原始回执不匹配')
++            }
++            const advice = normalizePlanningOwnerAdvice(observed.payload, owner.id)
++            if (canonicalDigestValue(advice) !== canonicalDigestValue(operation.result)) {
++              throw new Error('Recovery Owner会诊已结算建议不匹配')
++            }
++            const latest = await readState(runtime, root, workflowId)
++            verify(latest)
++            if (canonicalDigestValue(latest.candidateOwnerConsultations?.[operationId]) !== canonicalDigestValue(operation)) {
++              throw new Error('Recovery Owner会诊已结算operation已变化')
++            }
++            const latestTerminal = assertTerminal(latest, operation)
++            if (latestTerminal.record.phase !== 'applied') throw new Error('Recovery Owner会诊已结算会话阶段不匹配')
++            await assertRegistryOwner(latest, owner)
++            accepted.set(operationId, {
++              operation: structuredClone(operation),
++              session: structuredClone(latestTerminal.record),
++              attempt: structuredClone(latest.recoveryAdmission.budget.attempts.find(item => item.requestId === operation.requestId)),
++            })
++            consultations.push(advice)
++            continue
++          }
++          if (operation?.phase === 'cancelled') {
++            assertTerminal(current, operation)
++            throw new Error('Recovery Owner会诊已取消，不能重发')
++          }
++          if (operation?.phase === 'failed') assertTerminal(current, operation)
++
++          if (operation === undefined || operation.phase === 'failed') {
++            const memorySnapshot = await loadMemorySnapshot(state.workflowWorktree, {
++              ownerIds: [owner.id],
++              maxBytes: Math.max(8_192, Math.floor(resolvedConfig.ownerMemoryMaxBytes / Math.max(1, owners.length))),
++              signal,
++            })
++            const promptContent = planningOwnerAdvicePrompt({
++              ...state, plan: candidate.plan, planDigest: candidate.planDigest, planReview: candidate.review,
++            }, owner, memorySnapshot, 'recovery-candidate-arbitration')
++              .replace('只返回一个 JSON 对象，不添加 Markdown 围栏：', '必须恰好调用一次 workflow_owner_advice_submit 工具，把下列结构放入 advice 参数；不能用普通文本或 Markdown 提交：')
++              + '\n本次只记录结构化建议，不能应用 DAG、Registry 或代码变更。'
++            await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, lease, async current => {
++              verify(current)
++              await assertRegistryOwner(current, owner)
++              if (canonicalDigestValue(current.candidateOwnerConsultations?.[operationId]) !== canonicalDigestValue(operation)) {
++                throw new Error('Recovery Owner会诊 preparation changed')
++              }
++              const ordinal = operation === undefined ? 1 : operation.ordinal + 1
++              const prepared = prepareRecoveryAdmission(current, { contract: REPLAN_ADMISSION_REQUEST_CONTRACT, origin,
++                operation: { operationKind: 'owner_consultation', operationId, ordinal } })
++              if (!['reserved', 'replayed'].includes(prepared.response.outcome)) {
++                throw new Error(`Recovery Owner会诊 admission refused:${prepared.response.reason}`)
++              }
++              if (prepared.response.outcome === 'replayed') throw new Error('Recovery Owner会诊缺少持久operation记录')
++              const receipt = prepared.response
++              operation = {
++                contract: 'DSH_CANDIDATE_OWNER_CONSULTATION_OPERATION_V1', operationId, origin,
++                candidate: binding, predecessor, ownerId: owner.id, owner: structuredClone(owner), registryDigest: liveDigest,
++                selection, ordinal, requestId: receipt.requestId,
++                prompt: { id: receipt.executionIdentity.promptId, content: promptContent }, memoryDigest: memorySnapshot.digest,
++                phase: 'reserved',
++              }
++              prepared.state.candidateOwnerConsultations = {
++                ...(prepared.state.candidateOwnerConsultations ?? {}), [operationId]: operation,
++              }
++              return { state: prepared.state }
++            }))
++          }
++          const observed = await runtime.reconcileReplanSession(agent, workflowId, {
++            contract: 'DSH_REPLAN_SESSION_REQUEST_V1', requestId: operation.requestId, prompt: operation.prompt, ownerId: owner.id,
++          }, signal)
++          if (observed.outcome === 'paused') {
++            throw new Error(`Recovery Owner会诊 paused:${observed.reason ?? 'unknown'}`)
++          }
++          if (observed.outcome === 'cancelled' || observed.outcome === 'failed') {
++            const failure = observed.outcome === 'failed' ? 'Owner没有结构化建议提交' : 'Owner会诊已取消'
++            await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, lease, current => {
++              verify(current)
++              if (canonicalDigestValue(current.candidateOwnerConsultations?.[operationId]) !== canonicalDigestValue(operation)) {
++                throw new Error('Recovery Owner会诊 failure settlement changed')
++              }
++              assertTerminal(current, operation)
++              current.candidateOwnerConsultations[operationId] = { ...operation,
++                phase: observed.outcome === 'failed' ? 'failed' : 'cancelled', error: failure,
++              }
++              return { state: current }
++            }))
++            if (observed.outcome === 'failed') throw new RecoverySemanticFailure(`Recovery Owner会诊失败:${failure}`)
++            throw new Error(`Recovery Owner会诊取消:${failure}`)
++          }
++          if (observed.outcome !== 'submission_observed') {
++            throw new Error(`Recovery Owner会诊结果不受支持:${String(observed.outcome)}`)
++          }
++          let advice, failure
++          await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, lease, async current => {
++            verify(current)
++            await assertRegistryOwner(current, owner)
++            if (canonicalDigestValue(current.candidateOwnerConsultations?.[operationId]) !== canonicalDigestValue(operation)) {
++              throw new Error('Recovery Owner会诊 application changed')
++            }
++            const intent = assertOperation(current, operation)
++            const record = current.replanSessions?.[operation.requestId]
++            assertReplanSessionState(record, intent, operation.prompt, owner.id)
++            assertReplanSessionAttempt(record, intent,
++              current.recoveryAdmission.budget.attempts.find(item => item.requestId === operation.requestId))
++            try {
++              advice = normalizePlanningOwnerAdvice(observed.payload, owner.id)
++            } catch (error) { failure = errorText(error) }
++            current.recoveryAdmission.budget = settleRecoveryAttempt(current.recoveryAdmission.budget, {
++              ...replanBudgetBinding(workflowId, intent), result: { status: failure === undefined ? 'succeeded' : 'failed',
++                reference: { id: intent.executionIdentity.promptId, version: intent.executionIdentity.sessionId } },
++            }).ledger
++            current.replanSessions[operation.requestId] = { ...record, phase: failure === undefined ? 'applied' : 'validated_failed' }
++            current.candidateOwnerConsultations[operationId] = { ...operation,
++              phase: failure === undefined ? 'applied' : 'failed', receipt: observed.receipt,
++              ...(failure === undefined ? { result: advice } : { error: failure }),
++            }
++            return { state: current }
++          }))
++          if (failure !== undefined) throw new RecoverySemanticFailure(`Recovery Owner会诊拒绝:${failure}`)
++          const acceptedState = await readState(runtime, root, workflowId)
++          verify(acceptedState)
++          const acceptedOperation = acceptedState.candidateOwnerConsultations?.[operationId]
++          const acceptedTerminal = assertTerminal(acceptedState, acceptedOperation)
++          if (acceptedOperation.phase !== 'applied' || acceptedTerminal.record.phase !== 'applied'
++            || canonicalDigestValue(acceptedOperation.result) !== canonicalDigestValue(advice)) {
++            throw new Error('Recovery Owner会诊结算结果不匹配')
++          }
++          accepted.set(operationId, {
++            operation: structuredClone(acceptedOperation),
++            session: structuredClone(acceptedTerminal.record),
++            attempt: structuredClone(acceptedState.recoveryAdmission.budget.attempts.find(item => item.requestId === acceptedOperation.requestId)),
++          })
++          consultations.push(advice)
++        }
++        const finalState = await readState(runtime, root, workflowId)
++        verify(finalState)
++        for (const [operationId, snapshot] of accepted) {
++          const currentOperation = finalState.candidateOwnerConsultations?.[operationId]
++          const currentSession = finalState.replanSessions?.[snapshot.operation.requestId]
++          const currentAttempt = finalState.recoveryAdmission.budget.attempts
++            .find(item => item.requestId === snapshot.operation.requestId)
++          if (canonicalDigestValue(currentOperation) !== canonicalDigestValue(snapshot.operation)
++            || canonicalDigestValue(currentSession) !== canonicalDigestValue(snapshot.session)
++            || canonicalDigestValue(currentAttempt) !== canonicalDigestValue(snapshot.attempt)) {
++            throw new Error('Recovery Owner会诊批次结算已变化')
++          }
++        }
++        return consultations
++      })
++    },
+     async reviewPendingPlanRevision(agent, signal) {
+       abortIfNeeded(signal)
+       const root = await runtime.resolveRoot(agent)
+--- owner-workflow-plugin/src/candidate-recovery-pause.mjs (baseline)
++++ owner-workflow-plugin/src/candidate-recovery-pause.mjs
+@@ -37,14 +37,16 @@
+   const sameOrigin = op => canonical(op.origin) === canonical(origin)
+   const planners = Object.values(state.handoffReplans ?? {}).filter(sameOrigin).sort((a, b) => a.operationId.localeCompare(b.operationId))
+   const reviews = Object.values(state.candidateReviews ?? {}).filter(sameOrigin).sort((a, b) => a.operationId.localeCompare(b.operationId))
+-  const requestIds = new Set([...planners, ...reviews].map(op => op.requestId))
++  const consultations = Object.values(state.candidateOwnerConsultations ?? {}).filter(sameOrigin)
++    .sort((a, b) => a.operationId.localeCompare(b.operationId))
++  const requestIds = new Set([...planners, ...reviews, ...consultations].map(op => op.requestId))
+   const owner = state.ownerRuns?.[`${origin?.taskId}:${origin?.ownerId}`]
+   const task = state.tasks?.find(item => item.taskId === origin?.taskId)
+   // Excludes daemon clocks, delivery flags, global revision, unrelated Owners,
+   // and the pause itself; actual operation/receipt changes remain observable.
+   return canonical({ workflowId: state.id, planDigest: state.planDigest, plan: state.plan,
+     config: state.recoveryAdmissionConfig, protocol: state.recoveryProtocol,
+-    candidate, convergence: state.planConvergence, planners, reviews,
++    candidate, convergence: state.planConvergence, planners, reviews, consultations,
+     sessions: [...requestIds].sort().map(id => [id, state.replanSessions?.[id]]),
+     attempts: state.recoveryAdmission?.budget?.attempts.filter(item => requestIds.has(item.requestId)),
+     handoffs: state.handoffQueue?.filter(item => candidate?.handoffIds?.includes(item.id)),
+--- /dev/null
++++ owner-workflow-plugin/test/candidate-owner-consultation.test.mjs
+@@ -0,0 +1,301 @@
++import assert from 'node:assert/strict'
++import test from 'node:test'
++import { writeFile } from 'node:fs/promises'
++import { plannerSubmitDefinition, planReviewSubmitDefinition, ownerAdviceSubmitDefinition } from '../index.js'
++import { reconcileReviewConvergence } from '../src/convergence.mjs'
++import { candidateRecoverySource } from '../src/candidate-recovery-pause.mjs'
++import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState, reopenRecoverySessionFixture } from './fixtures/recovery-session-fixture.mjs'
++
++const review = { contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_revision', summary: 'Existing verification obligation remains.', issues: [{
++  severity: 'medium', title: 'Local verification incomplete', detail: 'The repair must retain its verification.', suggestion: 'Resolve the existing obligation.',
++  obligationId: 'r77-local-verification', sourceId: 'r77-prior-observation', sourceVersion: '1', targetTaskIds: ['T1'],
++  closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' },
++}] }
++const advice = ownerId => ({ contract: 'DSH_OWNER_PLANNING_ADVICE_V1', ownerId, scopeFit: 'full', facts: ['The local repair has a fixed unit obligation.'],
++  constraints: ['Retain the approved active plan until candidate activation.'], suggestedNodes: [], dependencies: [], handoffs: [], risks: [], verificationSuggestions: ['Run the existing unit verification.'] })
++
++async function setup(t, { limit = 5, adviceScript, independent = false, reviewPayload = review, noOpenTargets = false } = {}) {
++  let payload
++  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: independent,
++    limits: { totalLimit: limit, problemLimit: limit }, modelScript: m => [
++      () => m.toolCallResponse('r77-planner', 'workflow_plan_submit', { plan: payload }), 'hang-slow',
++      m.toolCallResponse('r77-predecessor-review', 'workflow_plan_review_submit', { review: reviewPayload }), 'hang-slow',
++      ...(adviceScript?.(m) ?? [m.toolCallResponse('r77-advice', 'workflow_owner_advice_submit', { advice: advice('api') }), 'hang-slow']),
++    ] })
++  f.ctx.tools.register(plannerSubmitDefinition(f.runtime)); f.ctx.tools.register(planReviewSubmitDefinition(f.runtime)); f.ctx.tools.register(ownerAdviceSubmitDefinition(f.runtime))
++  const state = await readRecoverySessionState(f)
++  payload = { ...structuredClone(state.plan), summary: 'R77 recovery candidate', owners: state.plan.owners.map(o => ({ id: o.id })) }
++  const stage = state.plan.tasks[0], owner = state.plan.owners.find(o => o.id === stage.ownerId)
++  await f.runtime.recordHandoffs(state, stage, { owner, branch: 'fixture-owner' }, { status: 'blocked', handoffs: [{ targetType: 'owner', targetOwnerId: owner.id, files: ['src/api/repair.mjs'], summary: 'Local repair.' }] })
++  await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  // Controlled prior finite strategy history is fixture input. The predecessor
++  // Review itself is paid and its convergence is never edited after acceptance.
++  await mutateRecoverySessionState(f, s => {
++    s.planConvergence = reconcileReviewConvergence({ candidate: s.pendingPlanRevision, review: reviewPayload, evidenceDigest: 'r77-prior', time: '2026-09-11T00:00:00Z' })
++    s.planConvergence.usedStrategies = ['local_subgraph_rewrite', 'diagnose', 'owner_council']
++    if (noOpenTargets) s.planConvergence.obligations = []
++  })
++  await f.runtime.reviewPendingPlanRevision(f.admissionAgent)
++  const reviewed = await readRecoverySessionState(f)
++  assert.equal(reviewed.planConvergence.nextStrategy, 'arbitrate')
++  assert.equal(reviewed.recoveryAdmission.budget.totalUsed, 2)
++  assert.equal((await f.runtime.reviewRecoveryCandidate(f.admissionAgent, f.workflowId, undefined, { replayOnly: true })).replayed, true)
++  return f
++}
++
++const consult = f => f.runtime.consultRecoveryCandidateOwners(f.admissionAgent, f.workflowId)
++
++test('R77 real paid predecessor is replay-authenticated before consultation', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  const state = await readRecoverySessionState(f)
++  assert.equal(Object.values(state.candidateReviews)[0].phase, 'applied')
++})
++
++test('R77 actual consultation settles advice in the original root and fresh Harness replays without another model', { timeout: 30_000 }, async t => {
++  const f = await setup(t, { independent: true })
++  const before = await readRecoverySessionState(f)
++  const result = await consult(f)
++  assert.deepEqual(result, [advice('api')])
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 3)
++  assert.equal(state.recoveryAdmission.budget.problems.length, 1)
++  const op = Object.values(state.candidateOwnerConsultations)[0]
++  assert.equal(op.phase, 'applied')
++  assert.equal(op.ownerId, 'api')
++  assert.equal(state.replanSessions[op.requestId].phase, 'applied')
++  assert.equal(state.recoveryAdmission.budget.attempts.find(a => a.requestId === op.requestId).result.status, 'succeeded')
++  assert.deepEqual(state.plan, before.plan)
++  assert.deepEqual(state.pendingPlanRevision, before.pendingPlanRevision)
++  assert.deepEqual(state.ownerRuns, before.ownerRuns)
++  assert.notEqual(candidateRecoverySource(state), candidateRecoverySource(before))
++  const events = (await f.readFrom(state.replanSessions[op.requestId].executionIdentity.sessionId)).events
++  assert.ok(events.some(e => e.type === 'tool/call' && e.data.name === 'workflow_owner_advice_submit'))
++  const calls = f.adapter.requests.length
++  assert.deepEqual(await consult(f), result)
++  assert.equal(f.adapter.requests.length, calls)
++  const fresh = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
++  try { assert.deepEqual(await consult(fresh), result); assert.equal(fresh.adapter.requests.length, 0) } finally { await fresh.dispose() }
++})
++
++test('R77 exhausted actual consultation starts no child and leaves the candidate intact', { timeout: 30_000 }, async t => {
++  const f = await setup(t, { limit: 2 })
++  const before = await readRecoverySessionState(f), calls = f.adapter.requests.length
++  await assert.rejects(consult(f), /admission refused/)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.equal(f.adapter.requests.length, calls)
++})
++
++test('R77 known missing advice pays a failed ordinal and retries in the same logical operation', { timeout: 30_000 }, async t => {
++  const f = await setup(t, { adviceScript: m => [m.textResponse('No structured advice.'), m.toolCallResponse('r77-retry', 'workflow_owner_advice_submit', { advice: advice('api') }), 'hang-slow'] })
++  await assert.rejects(consult(f), { name: 'RecoverySemanticFailure' })
++  const failed = await readRecoverySessionState(f), op = Object.values(failed.candidateOwnerConsultations)[0]
++  assert.equal(op.phase, 'failed'); assert.equal(op.ordinal, 1)
++  assert.equal(failed.recoveryAdmission.budget.attempts.at(-1).result.status, 'failed')
++  assert.deepEqual(await consult(f), [advice('api')])
++  const after = await readRecoverySessionState(f)
++  assert.equal(after.recoveryAdmission.budget.totalUsed, 4)
++  assert.equal(after.recoveryAdmission.budget.problems.length, 1)
++  assert.equal(Object.keys(after.candidateOwnerConsultations).length, 1)
++  assert.equal(after.candidateOwnerConsultations[op.operationId].ordinal, 2)
++})
++
++for (const field of ['candidate', 'convergence']) test(`R77 changed ${field} cannot reuse an accepted predecessor to fund advice`, { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  const before = await mutateRecoverySessionState(f, s => {
++    if (field === 'candidate') s.pendingPlanRevision.parent++
++    else s.planConvergence.evidenceDigest = 'changed-after-accepted-review'
++  })
++  const calls = f.adapter.requests.length
++  await assert.rejects(consult(f), /changed|变化|不匹配/)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.equal(f.adapter.requests.length, calls)
++})
++
++test('R77 candidate changes while the actual advisor runs prevent result adoption and preserve the paid attempt', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  const runChild = f.runtime.runChild.bind(f.runtime), stream = f.adapter.stream.bind(f.adapter)
++  let pending = false, changed = false
++  f.runtime.runChild = (...args) => { if (args[4]?.requireOwnerAdviceSubmission) pending = true; return runChild(...args) }
++  f.adapter.stream = async function* (options) {
++    if (pending) {
++      pending = false; changed = true
++      await mutateRecoverySessionState(f, s => { s.pendingPlanRevision.reason = 'A concurrent new candidate decision' })
++    }
++    yield* stream(options)
++  }
++  await assert.rejects(consult(f), /changed|变化/)
++  assert.equal(changed, true)
++  const state = await readRecoverySessionState(f), op = Object.values(state.candidateOwnerConsultations)[0]
++  assert.equal(state.pendingPlanRevision.reason, 'A concurrent new candidate decision')
++  assert.notEqual(op.phase, 'applied')
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 3)
++  assert.equal(state.recoveryAdmission.budget.attempts.at(-1).state, 'running')
++})
++
++test('R77 actual persisted child creation with a lost response pauses and fresh consultation never creates again', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  const create = f.ctx.agents.create.bind(f.ctx.agents)
++  let creates = 0, child
++  f.ctx.agents.create = async (...args) => {
++    creates++; child = await create(...args)
++    await f.ctx.sessions.flush(child.agent.session)
++    throw new Error('R77 injected lost response after actual advisor session persistence')
++  }
++  const calls = f.adapter.requests.length
++  await assert.rejects(consult(f), /paused/)
++  assert.equal(creates, 1); assert.equal(f.adapter.requests.length, calls)
++  const before = await readRecoverySessionState(f), op = Object.values(before.candidateOwnerConsultations)[0]
++  assert.equal(op.phase, 'reserved')
++  assert.equal(before.replanSessions[op.requestId].phase, 'creating')
++  assert.equal(before.recoveryAdmission.budget.totalUsed, 3)
++  assert.equal(before.recoveryAdmission.budget.attempts.at(-1).state, 'reserved')
++  assert.ok(await f.readRaw(child.agent.id))
++  f.ctx.agents.create = create
++  const fresh = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
++  try {
++    await assert.rejects(consult(fresh), /paused/)
++    assert.equal(fresh.adapter.requests.length, 0)
++    assert.deepEqual(await readRecoverySessionState(fresh), before)
++  } finally { await fresh.dispose() }
++})
++
++test('R77 wrong Owner submission is a paid failure, never a successful unavailable advice', { timeout: 30_000 }, async t => {
++  const f = await setup(t, { independent: true, adviceScript: m => [m.toolCallResponse('r77-wrong-owner', 'workflow_owner_advice_submit', { advice: advice('worker') }), m.textResponse('Cannot submit for another Owner.')] })
++  await assert.rejects(consult(f), { name: 'RecoverySemanticFailure' })
++  const state = await readRecoverySessionState(f), op = Object.values(state.candidateOwnerConsultations)[0]
++  assert.equal(op.phase, 'failed')
++  assert.equal(op.result, undefined)
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 3)
++  assert.equal(state.recoveryAdmission.budget.attempts.at(-1).result.status, 'failed')
++  assert.equal(state.ownerRuns['T2:worker'], undefined)
++})
++
++test('R77 independent task updates survive the unlocked advisor and atomic advice settlement', { timeout: 30_000 }, async t => {
++  const f = await setup(t, { independent: true })
++  const runChild = f.runtime.runChild.bind(f.runtime), stream = f.adapter.stream.bind(f.adapter)
++  let pending = false, changed = false
++  f.runtime.runChild = (...args) => { if (args[4]?.requireOwnerAdviceSubmission) pending = true; return runChild(...args) }
++  f.adapter.stream = async function* (options) {
++    if (pending) {
++      pending = false
++      await f.runtime.withWorkflowLock(f.workflowId, () => mutateRecoverySessionState(f, s => { s.tasks.find(t => t.taskId === 'T2').note = 'independent update'; changed = true }))
++    }
++    yield* stream(options)
++  }
++  assert.deepEqual(await consult(f), [advice('api')])
++  assert.equal(changed, true)
++  assert.equal((await readRecoverySessionState(f)).tasks.find(t => t.taskId === 'T2').note, 'independent update')
++})
++
++test('R77 accepted advice cannot replay after its persisted result is altered', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  await consult(f)
++  const before = await mutateRecoverySessionState(f, s => {
++    const op = Object.values(s.candidateOwnerConsultations)[0]
++    op.result = { ...advice('api'), facts: ['Forged result without a new accepted receipt.'] }
++  })
++  const calls = f.adapter.requests.length
++  await assert.rejects(consult(f), /changed|变化|不匹配/)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.equal(f.adapter.requests.length, calls)
++})
++
++test('R77 each selected Owner has a separate paid operation and exhausted partial batches never restart an applied Owner', { timeout: 30_000 }, async t => {
++  const both = { ...review, issues: review.issues.map(i => ({ ...i, targetTaskIds: ['T1', 'T2'] })) }
++  const f = await setup(t, { independent: true, limit: 3, reviewPayload: both })
++  await assert.rejects(consult(f), /admission refused/)
++  const before = await readRecoverySessionState(f)
++  assert.equal(before.recoveryAdmission.budget.totalUsed, 3)
++  const ops = Object.values(before.candidateOwnerConsultations)
++  assert.equal(ops.length, 1)
++  assert.equal(ops[0].ownerId, 'api'); assert.equal(ops[0].phase, 'applied')
++  const calls = f.adapter.requests.length
++  await assert.rejects(consult(f), /admission refused/)
++  assert.equal(f.adapter.requests.length, calls)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++})
++
++test('R77 both selected Owners settle distinct sessions in one root without creating another OwnerRun', { timeout: 30_000 }, async t => {
++  const both = { ...review, issues: review.issues.map(i => ({ ...i, targetTaskIds: ['T1', 'T2'] })) }
++  const f = await setup(t, { independent: true, reviewPayload: both, adviceScript: m => [
++    m.toolCallResponse('r77-api', 'workflow_owner_advice_submit', { advice: advice('api') }), 'hang-slow',
++    m.toolCallResponse('r77-worker', 'workflow_owner_advice_submit', { advice: advice('worker') }), 'hang-slow',
++  ] })
++  assert.deepEqual(await consult(f), [advice('api'), advice('worker')])
++  const state = await readRecoverySessionState(f), ops = Object.values(state.candidateOwnerConsultations)
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 4)
++  assert.equal(state.recoveryAdmission.budget.problems.length, 1)
++  assert.equal(ops.length, 2)
++  assert.equal(new Set(ops.map(o => o.requestId)).size, 2)
++  assert.equal(state.ownerRuns['T2:worker'], undefined)
++})
++
++for (const predecessorKind of ['planner', 'review']) test(`R77 fresh consultation reauthenticates the actual ${predecessorKind} raw receipt before reserving`, { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  const before = await readRecoverySessionState(f)
++  const op = Object.values(predecessorKind === 'planner' ? before.handoffReplans : before.candidateReviews)[0]
++  const raw = await f.readRaw(before.replanSessions[op.requestId].executionIdentity.sessionId)
++  const location = f.ctx.sessionPersistence.locate(raw.meta)
++  // Actual artifact fault injection, not a mocked successful inspect call.
++  await writeFile(location.path, raw.content.slice(0, -1), 'utf8')
++  const fresh = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
++  try {
++    await assert.rejects(consult(fresh), /原始回执|receipt changed/)
++    assert.equal(fresh.adapter.requests.length, 0)
++    assert.deepEqual(await readRecoverySessionState(fresh), before)
++  } finally { await fresh.dispose(); await writeFile(location.path, raw.content, 'utf8') }
++})
++
++test('R77 later Owner failure retries only that Owner while retaining the first accepted consultation', { timeout: 30_000 }, async t => {
++  const both = { ...review, issues: review.issues.map(i => ({ ...i, targetTaskIds: ['T1', 'T2'] })) }
++  const f = await setup(t, { independent: true, reviewPayload: both, adviceScript: m => [
++    m.toolCallResponse('r77-first-api', 'workflow_owner_advice_submit', { advice: advice('api') }), 'hang-slow',
++    m.textResponse('Worker missing submission.'),
++    m.toolCallResponse('r77-worker-retry', 'workflow_owner_advice_submit', { advice: advice('worker') }), 'hang-slow',
++  ] })
++  await assert.rejects(consult(f), { name: 'RecoverySemanticFailure' })
++  const failed = await readRecoverySessionState(f)
++  const api = Object.values(failed.candidateOwnerConsultations).find(o => o.ownerId === 'api')
++  const worker = Object.values(failed.candidateOwnerConsultations).find(o => o.ownerId === 'worker')
++  assert.equal(api.phase, 'applied'); assert.equal(worker.phase, 'failed')
++  assert.deepEqual(await consult(f), [advice('api'), advice('worker')])
++  const after = await readRecoverySessionState(f)
++  assert.equal(after.recoveryAdmission.budget.totalUsed, 5)
++  assert.deepEqual(after.candidateOwnerConsultations[api.operationId], api)
++  assert.equal(after.candidateOwnerConsultations[worker.operationId].ordinal, 2)
++  assert.equal(after.candidateOwnerConsultations[worker.operationId].phase, 'applied')
++})
++
++test('R77 arbitration without open target obligations consults the candidate Owner set', { timeout: 30_000 }, async t => {
++  const f = await setup(t, { independent: true, noOpenTargets: true, adviceScript: m => [
++    m.toolCallResponse('r77-fallback-api', 'workflow_owner_advice_submit', { advice: advice('api') }), 'hang-slow',
++    m.toolCallResponse('r77-fallback-worker', 'workflow_owner_advice_submit', { advice: advice('worker') }), 'hang-slow',
++  ] })
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.planConvergence.obligations.filter(o => o.status === 'open').length, 0)
++  assert.deepEqual(await consult(f), [advice('api'), advice('worker')])
++})
++
++test('R77 an observed raw advice with an uncommitted budget cannot masquerade as an applied operation', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  const reconcile = f.runtime.reconcileReplanSession.bind(f.runtime)
++  let observed
++  f.runtime.reconcileReplanSession = async (...args) => {
++    observed = await reconcile(...args)
++    throw new Error('R77 stopped after real submission observation, before semantic adoption')
++  }
++  await assert.rejects(consult(f), /stopped after real submission/)
++  assert.equal(observed.outcome, 'submission_observed')
++  const before = await mutateRecoverySessionState(f, s => {
++    // Fault injection models an inconsistent restored operation row; real raw
++    // receipt and real running budget/session are intentionally retained.
++    const op = Object.values(s.candidateOwnerConsultations)[0]
++    op.phase = 'applied'; op.receipt = observed.receipt; op.result = observed.payload
++  })
++  assert.equal(before.recoveryAdmission.budget.attempts.at(-1).state, 'running')
++  f.runtime.reconcileReplanSession = reconcile
++  const calls = f.adapter.requests.length
++  await assert.rejects(consult(f), /未结算|phase|applied|结算/)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.equal(f.adapter.requests.length, calls)
++})
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/candidate-owner-consultation-v1.md
+@@ -0,0 +1,21 @@
++# Candidate Owner consultation operation V1
++
++T-15 的恢复仲裁会诊生产与采纳；依赖 Owner advice session V1。内部 `consultRecoveryCandidateOwners(agent, workflowId, signal)` 返回与普通规划会诊一致的有效 advice 数组。它不激活 DAG、不替代仲裁 Review；公开恢复仲裁旧路径在独立计费 Review 接入前仍拒绝未计费启动。
++
++## 来源与写入归属
++
++必须先认证真实已结算恢复 Planner 与候选 Review 的持久 operation、budget/session 及原始接受回执。读取的候选、active A、前驱 Review 与 convergence、失败 origin 和 Owner 定义组成冻结输入。选择 open obligations 指向的候选 Owner，没有目标时使用候选 Owner 集合。沿用 maxPlanningOwnerConsultations 的确定性排序及数量上限，持久化全部相关 Owner、实际选择集合和 limit；本接口返回的是该次有限会诊集合，后继仲裁必须检查覆盖范围，不得将截断集合描述为所有相关 Owner 均已会诊。Owner memory 是会诊上下文，不能充当验证证据或授权。
++
++会诊不创建 OwnerRun。只读 owner-advisor 通过 workflow_owner_advice_submit 提交；Owner 身份由请求、session 与工具绑定。每个 Owner 独立逻辑 operation 和逐次预算，沿用前驱失败 root；不得将一批顾问打包为一次外部启动。
++
++## 持久协议
++
++`candidateOwnerConsultations` 保存每个逻辑 operation 的冻结来源、Owner、ordinal、requestId、prompt、phase 及结算结果。先固定输入并预留预算，再调用持久 replan-session。最新状态事务校验来源及 operation 未变化后，原子保存 advice、session applied 与 budget succeeded。
++
++缺少有效提交是已知失败，保存 failed 并消耗该次预算；下一次明确 ordinal+1，不能以 unavailable advice 冒充成功。未知创建/发送与丢响应保持暂停、保留预留，不重发、不退费。候选或前驱变化使旧结果不可采纳；独立任务的无关状态变化不应使会诊失败。
++
++重放必须核验原始 JSONL 回执与持久结果、固定身份及当前来源；不能只检查 phase=applied。暂停来源指纹包含相关 consultation operation、session 和 attempt，确保真实进展可被 runner 观察。
++
++## 验证范围
++
++真实 Harness/Registry/JSONL、计费 Planner 和计费前驱 Review → 实际顾问结构化回执 → 原子结算；同 root 计费、新 Harness 零模型重放、预算耗尽零创建、错误 Owner/无提交、来源变化及实际创建持久化后丢响应。模型传输可使用 MockAdapter；此证据不代表真实模型输出质量或端到端 DAG 已验收。

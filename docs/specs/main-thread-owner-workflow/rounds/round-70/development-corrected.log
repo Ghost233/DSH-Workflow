@@ -1,0 +1,34 @@
+TAP version 13
+# Subtest: T15 public and direct Owner entry points cannot bypass a candidate reservation
+ok 1 - T15 public and direct Owner entry points cannot bypass a candidate reservation
+  ---
+  duration_ms: 4136.866708
+  type: 'test'
+  ...
+# Subtest: T15 reservation replay rejects persisted stopped task before neutralizing its projection
+ok 2 - T15 reservation replay rejects persisted stopped task before neutralizing its projection
+  ---
+  duration_ms: 2106.661875
+  type: 'test'
+  ...
+# Subtest: T15 reservation replay rejects persisted completed task before neutralizing its projection
+ok 3 - T15 reservation replay rejects persisted completed task before neutralizing its projection
+  ---
+  duration_ms: 1801.644417
+  type: 'test'
+  ...
+# Subtest: T15 Owner startup rechecks a reservation arriving after its initial read
+ok 4 - T15 Owner startup rechecks a reservation arriving after its initial read
+  ---
+  duration_ms: 1815.092875
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10177.75075

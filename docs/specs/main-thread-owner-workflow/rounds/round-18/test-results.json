@@ -1,0 +1,253 @@
+{
+  "candidate": "2026-09-11T04:12:30.226436+00:00",
+  "results": [
+    {
+      "suite": "recovery-session",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/recovery-session.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:12:30.327581+00:00",
+      "timeoutSeconds": 180,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:12:44.654197+00:00",
+      "counts": {
+        "tests": 9,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "recovery-admission",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/recovery-admission.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:12:44.656920+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:13:02.860446+00:00",
+      "counts": {
+        "tests": 43,
+        "pass": 43,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "recovery-budget",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/recovery-budget.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:13:02.863542+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:13:03.112659+00:00",
+      "counts": {
+        "tests": 32,
+        "pass": 32,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "convergence",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/convergence.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:13:03.115230+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:13:03.507333+00:00",
+      "counts": {
+        "tests": 24,
+        "pass": 24,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "model",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/model.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:13:03.509814+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:13:03.966483+00:00",
+      "counts": {
+        "tests": 51,
+        "pass": 51,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "plan-revision",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/plan-revision.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:13:03.969462+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:13:04.275849+00:00",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "workflow-state",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/workflow-state.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:13:04.278172+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:13:04.524033+00:00",
+      "counts": {
+        "tests": 11,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "control-a",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "--test-name-pattern",
+        "^(?:\u5916\u90e8\u63a7\u5236\u6865\u53ef\u4ee5\u9a71\u52a8\\ ping\\ \u548c\\ status\uff0c\u5e76\u5728\u8fd0\u884c\u65f6\u91ca\u653e\u540e\u6e05\u7406|\u771f\u5b9e\u5ba1\u67e5\u5165\u53e3\u628a\u672a\u5173\u95ed\u4e49\u52a1\u7684\\ passed\\ \u964d\u7ea7\uff0c\u5e76\u62d2\u7edd\u6fc0\u6d3b|pending\\ revision\\ \u7684\\ open\\ \u4e49\u52a1\u4e0d\u963b\u65ad\u4ecd\u6709\u6548\u7684\\ active\\ plan\\ Owner\\ \u542f\u52a8|R03\\ \u540c\\ digest\\ evidence\\-lease\\-v1\\ \u7684\u5df2\u6279\u51c6\\ Owner\\ \u542f\u52a8\u4e0e\u6062\u590d\u8fb9\u754c|R03\\ \u540c\\ digest\\ evidence\\-lease\\-v2\\ \u7684\u5df2\u6279\u51c6\\ Owner\\ \u542f\u52a8\u4e0e\u6062\u590d\u8fb9\u754c|Supervisor\\ create\\ \u53ea\u6301\u4e45\\ reservation\uff0c\u5fc5\u987b\u7531\u5916\u7f6e\\ runner\\ \u663e\u5f0f\\ execute\\ \u624d\u542f\u52a8\\ Owner|Supervisor\\ \u9996\u6b21\u542f\u52a8\u4fdd\u7559\u8ba1\u5212\u4fee\u8ba2\u8fc1\u79fb\u540e\u7684\u5df2\u5b8c\u6210\u4efb\u52a1|Supervisor\\ \u91cd\u542f\u540e\u76f4\u63a5\u7ed3\u7b97\u5df2\u6709\u56fa\u5b9a\u63d0\u4ea4\uff0c\u4e0d\u91cd\u65b0\u542f\u52a8\\ Owner|Supervisor\\ \u9047\u5230\u7ed3\u6784\u5316\\ handoff\\ \u65f6\u8fdb\u5165\u5c40\u90e8\u91cd\u89c4\u5212\uff0c\u4e0d\u91cd\u8dd1\u53ea\u8bfb\u9a8c\u8bc1\u4efb\u52a1|Runner\\ daemon\\ \u81ea\u52a8\u53d1\u73b0\\ approved\\ Workflow\\ \u5e76\u9a71\u52a8\\ Harness\\ \u5185\\ Owner\\ \u5b50\u4ee3\u7406|planning\\-recover\\ \u63a7\u5236\u52a8\u4f5c\u5b89\u5168\u8865\u7ed1\u7f3a\u5931\\ digest\\ \u5e76\u539f\u5730\u6062\u590d\\ Reviewer|planning\\-recover\\ \u4e0d\u4f1a\u628a\u65e7\\ planDigest\\ \u7684\u6062\u590d\u6b21\u6570\u7ee7\u627f\u5230\u65b0\\ DAG|Planner\\ \u5b50\u4ee3\u7406\u62a5\u544a\u901a\u9053\u5931\u6548\u65f6\u76f4\u63a5\u5524\u9192\u4e3b\u4f1a\u8bdd\uff0c\u907f\u514d\u72b6\u6001\u5df2\u53d8\u4f46\u4f1a\u8bdd\u6ca1\u6709\u5165\u53e3|Harness\\ \u91cd\u542f\u540e\u4f1a\u5411\u6839\u4f1a\u8bdd\u5e42\u7b49\u8865\u53d1\u8ba1\u5212\u6279\u51c6\u901a\u77e5|\u8ba1\u5212\u6279\u51c6\u901a\u77e5\u53ea\u6295\u9012\u5230\u6301\u4e45\u5316\u7684\\ Workflow\\ \u6839\u4f1a\u8bdd|Planner\\ \u5df2\u63d0\u4ea4\u7ed3\u6784\u5316\u8ba1\u5212\u540e\u7acb\u5373\u7ed3\u675f\u7b49\u5f85\uff0c\u4e0d\u53d7\u7ed3\u675f\u786e\u8ba4\u91cd\u8bd5\u5f71\u54cd|planning\\-recover\\ \u4f1a\u91cd\u5efa\u4ecd\u6709\u4fee\u8ba2\u9884\u7b97\u7684\\ Planner\uff0c\u800c\u4e0d\u662f\u628a\\ review_failed\\ \u5f53\u4f5c\u7ec8\u6001|\u7edf\u4e00\\ workflow\\-drive\\ \u4f1a\u6062\u590d\u65e0\u9700\u7528\u6237\u6388\u6743\u7684\\ needs_decision\\ Owner\\ \u4f1a\u8bca\u4fee\u8ba2|\u81ea\u6cbb\u4e8b\u6545\u7684\u6458\u8981\u578b\u65e7\u4e49\u52a1\u4e0d\u80fd\u7531\\ control\\ socket\\ probe\\ \u7eed\u671f|control\\ socket\\ probe\\ \u53ea\u4e3a\u7c7b\u578b\u5316\u4e49\u52a1\u7684\u5bbf\u4e3b\u65b0\u6587\u4ef6\u7eed\u671f\u4e00\u6b21|\u4fee\u8ba2\u9884\u7b97\u8017\u5c3d\u4f1a\u6301\u4e45\u901a\u77e5\u4e3b\u7ebf\u7a0b\u548c\\ Runner\uff0c\u6279\u51c6\u6269\u5c55\u540e\u81ea\u52a8\u6062\u590d\u540c\u4e00\\ Planner|\u91cd\u542f\u524d\u53ea\u6807\u8bb0\\ main\\-steer\\ \u5df2\u9001\u8fbe\u7684\u5f85\u51b3\u7b56\u4f1a\u91cd\u65b0\u76f4\u63a5\u6253\u5f00\u539f\u751f\u95ee\u8be2|\u7528\u6237\u7ec8\u6b62\u81ea\u52a8\u89c4\u5212\u540e\u7531\u53ea\u8bfb\u5b50\u4ee3\u7406\u603b\u7ed3\u5e76\u8fd4\u56de\u4e3b\u7ebf\u7a0b\u8ba8\u8bba|\u91cd\u542f\u540e\u628a\u65e7\u7248\u81ea\u5b9a\u4e49\u6269\u989d\u610f\u89c1\u8fc1\u79fb\u4e3a\u603b\u7ed3\u5e76\u9000\u56de\u4e3b\u7ebf\u7a0b\u8ba8\u8bba|planning\\-recover\\ \u5728\\ plan\\ digest\\ \u4e0e\\ live\\ Registry\\ \u4e0d\u5339\u914d\u65f6\u62d2\u7edd\u81ea\u6108|\u8ba1\u5212\u5ba1\u67e5\u9a71\u52a8\u5931\u8d25\u4f1a\u843d\u76d8\u8bca\u65ad\u5e76\u5141\u8bb8\\ watchdog\\ \u6709\u754c\u91cd\u8bd5|Runner\\ daemon\\ \u81ea\u52a8\u5524\u9192\u5931\u8d25\u7684\u8ba1\u5212\u5ba1\u67e5\u4e14\u4e0d\u542f\u52a8\\ Supervisor|Runner\\ \u542f\u52a8\u524d\u53ef\u4ece\u56fa\u5b9a\u63d0\u4ea4\u91cd\u5efa\u5c1a\u672a\u6267\u884c\u4e14\u5df2\u4e22\u5931\u7684\\ Workflow\\ worktree|V2\\ \u63a7\u5236\u6865\u62d2\u7edd\\ legacy\\ owner\\ \u8c03\u5ea6\u52a8\u4f5c\uff0c\u552f\u4e00\u5165\u53e3\u662f\\ Supervisor|runtime\\.dispose\\ \u963b\u6b62\u65b0\\ Supervisor\\ dispatch\\ \u5e76\u7b49\u5f85\u5df2\u767b\u8bb0\\ dispatch\\ \u7ec8\u6001|Supervisor\\ create\\ \u6301\u4e45\\ reservation\uff0c\u5e76\u7528\u771f\u5b9e\\ runExternalOwner\\ \u4e24\u9636\u6bb5\u7ed3\u7b97\u5230\\ completed|Supervisor\\ \u67e5\u8be2\u4f1a\u5728\\ Runtime\\ \u91cd\u542f\u540e\u91cd\u5efa\u63a7\u5236\u6865\uff0c\u4f9b\u65b0\u7684\u5916\u7f6e\\ runner\\ \u663e\u5f0f\\ recover|Supervisor\\ Owner\\ \u542f\u52a8\u5931\u8d25\u7531\u81ea\u6cbb\u6062\u590d\u91cd\u6392\uff0c\u4e0d\u628a\u5de5\u7a0b\u6545\u969c\u5199\u6210\u7528\u6237\u51b3\u7b56|DSH_PLAN_V2\\ \u7684\\ repair_owner\\ \u4fdd\u7559\u4e3a\u610f\u56fe\u63d0\u793a\uff0cRuntime\\ \u6309\u8bc1\u636e\u7b56\u7565\u91cd\u65b0\u8fdb\u5165\\ DAG|Supervisor\\ inspect\\ \u53ea\u8fd4\u56de\u6709\u9650\u5bbf\u4e3b\u5b57\u6bb5\uff0c\u672a\u77e5\u63a7\u5236\u52a8\u4f5c\u5173\u95ed\u5904\u7406|Supervisor\\ \u4e3b\u4f1a\u8bdd\u901a\u77e5\u53ea\u6709\u771f\u6b63\\ followup\\ \u6210\u529f\u540e\u624d\u6807\u8bb0\\ delivered|Supervisor\\ await_event\\ \u4ee5\u6301\u4e45\u6e38\u6807\u963b\u585e\u7b49\u5f85\uff0c\u5e76\u5728\u8d85\u65f6\u540e\u8bb0\u5f55\u4e00\u6b21\u53d7\u63a7\u89c2\u5bdf|\u4efb\u52a1\u8fbe\u5230\\ onTimeout\\.afterMs\\ \u540e\u5207\u6362\u81ea\u6cbb\u6062\u590d\u7b56\u7565\u800c\u4e0d\u662f\u4ea4\u7ed9\u7528\u6237|Owner\\ \u6062\u590d\u540e\u4f7f\u7528\u672c\u6b21\u8fd0\u884c\u65f6\u95f4\u91cd\u7f6e\u8d85\u65f6\u57fa\u7ebf\uff0c\u4e0d\u6cbf\u7528\u65e7\\ reservation\\ \u65f6\u95f4|\u6301\u7eed\u4ea7\u751f\u5fc3\u8df3\u7684\u957f\u4efb\u52a1\u6309\u8fdb\u5c55\u7eed\u79df\uff0c\u4e0d\u56e0\u603b\u8fd0\u884c\u65f6\u95f4\u88ab\u8bef\u6740|Supervisor\\ receipt\\ \u7ed1\u5b9a\u6301\u4e45\\ revision\uff0c\u4e14\\ blocked\\ workflow\\ \u4e0d\u80fd\u786e\u8ba4\u65e7\\ create|Supervisor\\ create\\ receipt\\ \u7ed1\u5b9a\u5b9e\u9645\\ planDigest\uff0c\u65e7\\ ACK\\ \u62d2\u7edd\u4e14\\ workflow\\ \u4e0d\u53d8|Supervisor\\ stop\\ receipt\\ \u7ed1\u5b9a\u5b9e\u9645\\ planDigest\uff0c\u65e7\\ stop\\ \u62d2\u7edd\u4e14\\ workflow\\ \u4e0d\u53d8|blocked\u3001failed\u3001cancelled\\ workflow\\ \u90fd\u4e0d\u80fd\u628a\\ stop\\ \u4fdd\u5b58\u4e3a\\ completed|cancel\\ \u7ed3\u7b97\u6d3b\u52a8\u8bb0\u5f55\u3001\u6e05\u7406\u4e34\u65f6\u5206\u652f\u4e0e\\ worktree\uff0c\u5e76\u5e42\u7b49\u4fdd\u7559\u5ba1\u8ba1\u72b6\u6001|cancel\\ \u7684\u6301\u4e45\u8def\u5f84\u8bb0\u5f55\u5f02\u5e38\u65f6\\ fail\\-closed\uff0c\u4e0d\u80fd\u5220\u9664\u9879\u76ee\u6839\u76ee\u5f55\u6216\u57fa\u7840\u5206\u652f|cancelled\\ workflow\\ \u62d2\u7edd\\ Supervisor\\ start\uff0cfinalized\\ workflow\\ \u62d2\u7edd\\ cancel|\u542f\u7528\\ Owner\\ \u5de5\u4f5c\u6a21\u5f0f\u540e\uff0c\u4e3b\u4f1a\u8bdd\u5199\u5165\u4f1a\u88ab\u62d2\u7edd|\u53ea\u8bfb\u5ba1\u8ba1\u5728\u810f\u5de5\u4f5c\u533a\u4e2d\u8fd0\u884c\uff0c\u4e0d\u521b\u5efa\\ workflow\\ \u5206\u652f\u6216\\ worktree|workflow_recover\\ \u53ef\u4ee5\u91cd\u5efa\u65e7\u7f3a\u9677\u9057\u7559\u7684\u7a7a\\ Supervisor\\ task\\ records|\u53ea\u8bfb\u5b50\u4ee3\u7406\u7ee7\u627f\u5b8c\u6574\u5de5\u5177\u96c6\u5e76\u53ea\u8bbe\u7f6e\\ read\\-only\\ \u6c99\u7bb1|Owner\\ \u5b50\u4ee3\u7406\u7b56\u7565\u7ee7\u627f\u5b8c\u6574\u5de5\u5177\u5e76\u4f7f\u7528\\ workspace\\-write|Operation\\ \u5b50\u4ee3\u7406\u7ee7\u627f\u5b8c\u6574\u5de5\u5177\u4f46\u9879\u76ee\u6587\u4ef6\u4f7f\u7528\\ read\\-only\\ \u6c99\u7bb1|\u5386\u53f2\\ V1\\ \u8ba1\u5212\u5373\u4f7f\\ digest\\ \u5339\u914d\u4e5f\u4e0d\u80fd\u6279\u51c6\u6267\u884c|\u6279\u51c6\u4fee\u8ba2\u8ba1\u5212\u65f6\u81ea\u52a8\u6062\u590d\u65e7\\ Runtime\\ \u4e22\u5931\u7684\u5df2\u5b8c\u6210\u4efb\u52a1\u72b6\u6001|\u8ba1\u5212\u4fee\u8ba2\u51bb\u7ed3\\ ownerRuns\\ \u5df2\u5b8c\u6210\u4efb\u52a1\uff0c\u53ea\u8fc1\u79fb\u65b0\u589e\\ repair\\ \u4e0e\u6700\u7ec8\\ verify|\u8ba1\u5212\u6279\u51c6\u62d2\u7edd\u7f3a\u5931\u7684\\ live\\ Registry\uff0c\u5373\u4f7f\u7f13\u5b58\\ digest\\ \u5339\u914d|\u8ba1\u5212\u6279\u51c6\u62d2\u7edd\\ live\\ Registry\\ \u5185\u5bb9\u6f02\u79fb\uff0c\u5e76\u7531\\ registry_status\\ \u66b4\u9732\\ live\\ digest|\u8ba1\u5212\u6279\u51c6\u5728\\ digest\\ \u5df2\u91cd\u65b0\u7ed1\u5b9a\u65f6\u4ecd\u62d2\u7edd\\ Owner\\ \u5b9a\u4e49\u6f02\u79fb|finalize\\ \u4f1a\u628a\\ workflow\\ \u5206\u652f\u5408\u5e76\u56de\u542f\u52a8\u5206\u652f\u5e76\u6e05\u7406\\ worktree|Implementation\\ Review\\ \u5fc5\u987b\u8bfb\u53d6\u5b9e\u9645\\ workflow\\ HEAD\\ \u5e76\u4fdd\u5b58\u5ba1\u67e5\u7ed3\u679c|Implementation\\ Review\\ \u95ee\u9898\u81ea\u52a8\u8f6c\u6362\u4e3a\u5e26\u81ea\u6cbb\u6279\u51c6\u7b56\u7565\u7684\\ repair\\ PlanRevision|\u65e7\u7248\\ Owner\\ \u6301\u4e45\u5b50\u7ebf\u7a0b\u517c\u5bb9\u6d4b\u8bd5\uff08\u5df2\u7531\u6309\u4efb\u52a1\u56de\u6536\u6a21\u578b\u66ff\u4ee3\uff09|\u65e7\u7248\\ Owner\\ Shell\\ \u767d\u540d\u5355\u6d4b\u8bd5\uff08\u5df2\u7531\\ worktree\\ \u4e0e\u63d0\u4ea4\u5173\u5361\u66ff\u4ee3\uff09|\u65e7\u7248\\ Owner\\ \u9010\u5199\u5165\u5305\u88c5\u6d4b\u8bd5\uff08\u5df2\u7531\u63d0\u4ea4\u5173\u5361\u66ff\u4ee3\uff09|\u65e7\u7248\\ owner_bash\\ \u5feb\u7167\u6d4b\u8bd5\uff08\u6b63\u5f0f\u9a8c\u8bc1\u73b0\u5728\u7531\\ owner_submit\\ \u81ea\u52a8\u6267\u884c\uff09|\u65e7\u7248\u591a\u8f6e\u4fee\u590d\u63d0\u793a\u6d4b\u8bd5\uff08\u73b0\u5728\u7531\\ owner_submit\\ \u5728\u540c\u4e00\u5b50\u7ebf\u7a0b\u8fd4\u56de\u9519\u8bef\uff09|\u65e7\u7248\\ Owner\\ \u7ed3\u679c\u6587\u672c\u7ed3\u7b97\u6d4b\u8bd5\uff08\u53d7\u4fdd\u62a4\u8def\u5f84\u7531\\ owner_submit\\ \u63d0\u4ea4\u5173\u5361\u8986\u76d6\uff09|Owner\\ Registry\\ \u63d0\u6848\u5728\u6ca1\u6709\u6d3b\u52a8\u4efb\u52a1\u65f6\u53ea\u4fdd\u5b58\u5f85\u5ba1\u6279\u63d0\u6848|Owner\\ \u8bbe\u5b9a\u4e0e\u6279\u51c6\u53ea\u80fd\u7531\u7ed1\u5b9a\u7684\\ Workflow\\ \u4e3b\u7ebf\u7a0b\u6267\u884c|\u89c4\u5212\u5668\u8f93\u51fa\\ Registry\\ operation\\ \u65f6\u53ea\u4fdd\u5b58\u7ed3\u6784\u5316\u5efa\u8bae\uff0c\u4e0d\u5199\u6b63\u5f0f\\ Registry\uff0c\u5e76\u7531\u8fd0\u884c\u65f6\u7ed1\u5b9a\u6b63\u5f0f\\ digest|\u89c4\u5212\u5668\u7684\\ proposal\\ \u5305\u88c5\u4f1a\u517c\u5bb9\u4e3a\u76f4\u63a5\\ Registry\\ operation|\u89c4\u5212\u5668\u53ef\u4e00\u6b21\u63d0\u4ea4\u5b8c\u6574\\ Owner\\ Registry\\ batch\\ \u5e76\u6309\u6700\u7ec8\u5feb\u7167\u7ed1\u5b9a\u5168\u90e8\\ Owner|\u89c4\u5212\u63d0\u4ea4\u53ea\u63a5\u53d7\u5f53\u524d\u89c4\u5212\u5b50\u4ee3\u7406\u7684\u4e00\u6b21\u7ed3\u6784\u5316\u7ed3\u679c|one\\-shot\\ Planner\\ \u5728\\ workflow_plan_submit\\ \u65f6\u5373\u65f6\u6821\u9a8c\u5e76\u5141\u8bb8\u539f\u7ebf\u7a0b\u4fee\u6b63|\u8ba1\u5212\u5ba1\u67e5\u63d0\u4ea4\u53ea\u63a5\u53d7\u5f53\u524d\\ Plan\\ Reviewer\\ \u7684\u5408\u6cd5\u7ed3\u6784\u5316\u7ed3\u679c|\u8ba1\u5212\\ Reviewer\\ \u9996\u8f6e\u72b6\u6001\u975e\u6cd5\u65f6\u81ea\u52a8\u643a\u5e26\u9519\u8bef\u91cd\u8bd5\u5e76\u4fdd\u5b58\u7ed3\u6784\u5316\u95ee\u9898|Reviewer\\ \u4e0d\u80fd\u8981\u6c42\\ abstract\\ decision\\ \u5220\u9664\u5fc5\u586b\\ Owner\\ \u4f1a\u8bca\u5b57\u6bb5\uff0c\u5fc5\u987b\u91cd\u8bd5\u4e3a\\ decision|Reviewer\\ \u5224\u5b9a\\ needs_split\\ \u540e\uff0cOwner\\ \u4f1a\u8bca\u53c2\u4e0e\u76ee\u6807\u8282\u70b9\u7684\u9012\u5f52\u62c6\u5206|Reviewer\\ \u5224\u5b9a\\ needs_decision\\ \u540e\u505c\u6b62\u81ea\u52a8\u4fee\u8ba2\u5e76\u628a\u95ee\u9898\u603b\u7ed3\u56de\u4e3b\u7ebf\u7a0b|awaiting_main_discussion\\ \u63a5\u6536\u660e\u786e\\ Intent\\ \u540e\u53ef\u4ee5\u751f\u6210\\ PlanRevision\\ \u5019\u9009|\u540c\u7c7b\u5ba1\u67e5\u95ee\u9898\u8fde\u7eed\u51fa\u73b0\u65f6\uff0cRuntime\\ \u5f3a\u5236\\ Reviewer\\ \u4ece\\ needs_revision\\ \u5347\u7ea7\u5206\u7c7b|\u51bb\u7ed3\u4e49\u52a1\u65e0\u8fdb\u5c55\u65f6\u7531\u72ec\u7acb\\ Arbiter\\ \u88c1\u51b3\u800c\u4e0d\u662f\u8bf7\u6c42\u7528\u6237\u6269\u989d)$",
+        "owner-workflow-plugin/test/control.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:13:04.526891+00:00",
+      "timeoutSeconds": 180,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:14:32.725544+00:00",
+      "counts": {
+        "tests": 83,
+        "pass": 77,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 6,
+        "todo": 0
+      },
+      "selectionComplete": true
+    },
+    {
+      "suite": "control-b",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "--test-name-pattern",
+        "^(?:Arbiter\\ \u53ef\u4ee5\u628a\\ Runtime\\ \u5df2\u77e5\u7684\\ abstract\\ \u8282\u70b9\u8f6c\u5165\u62c6\u5206\u800c\u4e0d\u8bef\u5224\u4e3a\u65b0\u95ee\u9898|\u8ba1\u5212\u4fee\u8ba2\u6b21\u6570\u53ea\u4f5c\u9065\u6d4b\uff0c\u65e0\u8fdb\u5c55\u65f6\u5207\u6362\u7b56\u7565\u800c\u4e0d\u662f\u8bf7\u6c42\u6269\u989d|\u975e\u6cd5\u4fee\u8ba2\u5019\u9009\u4fdd\u7559\u539f\u8ba1\u5212\u5e76\u81ea\u52a8\u5207\u6362\u6062\u590d\u7b56\u7565\uff0c\u4fee\u590d\u540e\u7ee7\u7eed\u5ba1\u67e5|\u8ba1\u5212\u4fee\u8ba2\u5e76\u53d1\u8c03\u7528\u590d\u7528\\ single\\-flight\uff0c\u5e76\u7528\u65b0\u7248\u8d85\u65f6\u7b56\u7565\u6062\u590d\u65e7\\ 180\\ \u79d2\u5931\u8d25\u9884\u7b97|\u8ba1\u5212\u4fee\u8ba2\u62d2\u7edd\u4f7f\u7528\u4e0d\u5c5e\u4e8e\u5f53\u524d\\ planDigest\\ \u7684\u65e7\u5ba1\u67e5\u7ed3\u679c|\u89c4\u5212\u5951\u7ea6\u5931\u8d25\u8fd4\u56de\u5b8c\u6574\\ Workflow\\ ID\uff0c\u5e76\u5728\u540c\u4e00\u73b0\u573a\u6709\u754c\u6062\u590d|Harness\\ agent/status\\ \u6301\u4e45\u5316\u8fd0\u884c\u4e2d\u3001\u7a7a\u95f2\u548c\u5173\u95ed\u751f\u547d\u5468\u671f|one\\-shot\\ Reviewer\\ \u8fd4\u56de\u7ed3\u679c\u540e\u7acb\u5373\u6301\u4e45\u5316\\ closed\uff0c\u4e0d\u5728\u4f1a\u8bdd\u6811\u4e2d\u4f2a\u88c5\u6210\\ idle\\ \u5de5\u4f5c|\u65e7\u7248\u6b21\u6570\u9a71\u52a8\\ continuable\\ Planner\\ mock\uff08\u5df2\u7531\u8bc1\u636e\u79df\u7ea6\u3001Arbiter\\ \u4e0e\u5b8c\u6574\\ Workflow\\ \u96c6\u6210\u6d4b\u8bd5\u66ff\u4ee3\uff09|\u5b8c\u6574\\ Workflow\\ \u4ece\u9884\u68c0\u7ecf\u8fc7\u591a\u8f6e\u8ba1\u5212\u5ba1\u67e5\u3001Supervisor\u3001Owner\\ \u5230\u6700\u7ec8\u4ea4\u4ed8|\u53d6\u6d88\u529f\u80fd\\ Workflow\\ \u540e\u9879\u76ee\u7ea7\\ Owner\\ Registry\\ \u4ecd\u88ab\u540e\u7eed\\ Workflow\\ \u76f4\u63a5\u590d\u7528|\u65e7\\ Workflow\\ \u4e2d\u5df2\u6279\u51c6\u4f46\u672a\u8fdb\u5165\u57fa\u7840\u5206\u652f\u7684\\ Registry\\ \u4f1a\u5728\u7ee7\u7eed\u6d41\u7a0b\u65f6\u8fc1\u79fb|\u65b0\u5efa\\ Workflow\\ \u4f1a\u5148\u8fc1\u79fb\u5df2\u53d6\u6d88\u65e7\\ Workflow\\ \u4e2d\u6700\u65b0\u83b7\u6279\u7684\u56fa\u5b9a\\ Owner|\u89c4\u5212\u5668\u9996\u8f6e\u63d0\u4ea4\u4e0d\u6ee1\u8db3\u5951\u7ea6\u65f6\uff0c\u8fd0\u884c\u65f6\u4f1a\u5e26\u6821\u9a8c\u9519\u8bef\u91cd\u8bd5\u4e00\u6b21|\u89c4\u5212\u5668\u53ea\u9009\u62e9\\ Owner\\ ID\uff0cRuntime\\ \u4ece\u6b63\u5f0f\\ Registry\\ \u6ce8\u5165\u5b8c\u6574\u5b9a\u4e49|Planner\\ \u4f2a\u9020\u5bbd\\ scope\\ \u4e0d\u80fd\u7ed5\u8fc7\u6b63\u5f0f\\ Registry\\ \u7684\\ task\\.write\\ \u8fb9\u754c|handoff\\ \u91cd\u89c4\u5212\\ prompt\\ \u53ea\u58f0\u660e\\ V2\\ \u4efb\u52a1\u8ba1\u5212\u5951\u7ea6|\u89c4\u5212\u5668\u4e0d\u80fd\u7528\u672a\u767b\u8bb0\\ Owner\\ \u7ed5\u8fc7\\ Registry\\ \u63d0\u6848\u5ba1\u6279|Registry\\ \u6279\u51c6\u8981\u6c42\u5b8c\u5168\u5339\u914d\\ digest\uff0c\u5199\u5165\\ workflow\\ worktree\\ \u5e76\u4f7f\u65e7\u8ba1\u5212\u5ba1\u67e5\u5931\u6548|V2\\ Registry\\ \u6279\u51c6\u540e\u7684\\ registry_pending_plan\\ \u53ef\u4ee5\u539f\u5730\u91cd\u65b0\u89c4\u5212|\u8fd0\u884c\u4e2d\u4efb\u52a1\u5b58\u5728\u65f6\u62d2\u7edd\\ Registry\\ \u63d0\u6848\u4e0e\u6279\u51c6|\u4e3b\u5de5\u5177\u516c\u5f00\\ cancel\\ \u63cf\u8ff0\u4e14\u4fdd\u7559\\ status\\ \u65e7\u52a8\u4f5c|\u65e7\u805a\u5408\u5165\u53e3\u4e0d\u518d\u66b4\u9732\u6216\u6267\u884c\u8ba1\u5212\u4fee\u8ba2\u4e0e\u89c4\u5212\u6062\u590d|\u65e7\u805a\u5408\u5165\u53e3\u62d2\u7edd\\ start\uff0c\u5f3a\u5236\u4f7f\u7528\u5e26\\ preflight\\ digest\\ \u7684\u5355\u804c\u8d23\u5de5\u5177|workflow_git_inspect\\ \u53ea\u63d0\u4f9b\u53d7\u9650\\ Git\\ \u8bc1\u636e\u4e14\u62d2\u7edd\\ \\.git\\ \u5185\u90e8\u8def\u5f84|Owner\\ \u7ed3\u6784\u5316\u8bf7\u6c42\u5de5\u5177\u53ea\u66b4\u9732\\ request_subgraph\\ \u548c\\ request_handoff\\ \u7684\u6700\u5c0f\u5b57\u6bb5|\u516c\u5f00\\ Owner\\ \u5de5\u5177\u53ea\u4fdd\u7559\u63d0\u4ea4\u5173\u5361\u3001\u5bbf\u4e3b\u6388\u6743\u6865\u548c\u7ed3\u6784\u5316\u534f\u8c03\u5165\u53e3|\u4e3b\u5de5\u5177\\ cancel\\ \u7f3a\u5c11\\ workflow_id\\ \u65f6\u62d2\u7edd|\u4e3b\u5de5\u5177\\ cancel\\ \u8fd4\u56de\\ cancelled\uff0c\u968f\u540e\\ status\\ \u8fd4\u56de\\ cancelled|\u4e3b\u5de5\u5177\u53ea\u66b4\u9732\\ Registry\\ \u5ba1\u6279\u52a8\u4f5c\uff0c\u4e0d\u4fdd\u7559\u65e7\\ Owner\\ \u76f4\u5199\u52a8\u4f5c|DSH_PLAN_V1\\ \u6240\u6709\u63a7\u5236\u6865\u548c\u5916\u7f6e\u6267\u884c\u5165\u53e3\u62d2\u7edd\u4f46\\ status\\ \u53ef\u8bfb|R05\\ \u51b3\u5b9a\u56de\u6267\u7ecf\u771f\u5b9e\\ Review\\ \u5173\u95ed\u5165\u53e3\u6d88\u8d39\uff1aorchestrator|R05\\ \u51b3\u5b9a\u56de\u6267\u7ecf\u771f\u5b9e\\ Review\\ \u5173\u95ed\u5165\u53e3\u6d88\u8d39\uff1auser|R05\\ \u7528\u6237\u786e\u8ba4\u671f\u95f4\u4e49\u52a1\u7248\u672c\u53d8\u5316\u65f6\u4e0d\u8bb0\u5f55\u8fc7\u671f\u51b3\u5b9a|R05\\ \u7ed3\u6784\u5c55\u5f00\u4f9d\u636e\u7ecf\\ Runtime\\ \u6d88\u8d39\uff0c\u53ea\u5173\u95ed\u7ed3\u6784\u4e49\u52a1\u800c\u4fdd\u7559\u4e1a\u52a1\u9a8c\u8bc1|R05\\ pending\\ \u5019\u9009\u51b3\u5b9a\u4e0d\u80fd\u501f\u7528\\ active\\ \u56de\u6267\uff0c\u65e7\u5feb\u7167\u4e0d\u80fd\u6d88\u8d39\u5df2\u53d8\u5316\u5019\u9009|R05\\ \u540c\u5019\u9009\u7684\u65b0\u51b3\u5b9a\u66ff\u4ee3\u65e7\u56de\u6267\uff0c\u53d6\u6d88\u66ff\u4ee3\u4e0d\u5f71\u54cd\u65e7\u51b3\u5b9a|R06\\ \u771f\u5b9e\\ Review\\ \u4f1a\u8bca\u56fa\u5b9a\u63cf\u8ff0\u5728\u76f8\u540c\u4e8b\u5b9e\u4e0b\u8017\u5c3d\u7b56\u7565|R06\\ \u771f\u5b9e\\ Review\\ \u4f1a\u8bca\u4ea4\u66ff\u63cf\u8ff0\u5728\u76f8\u540c\u4e8b\u5b9e\u4e0b\u8017\u5c3d\u7b56\u7565|R06\\ \u771f\u5b9e\u5019\u9009\u8865\u9f50\u7ed1\u5b9a\u53ea\u8bb0\u4e00\u6b21\u8fdb\u5c55\uff0c\u91cd\u590d\u4e0e\u5019\u9009\u6587\u6848\u53d8\u5316\u4e0d\u7eed\u671f|R06\\ \u6587\u4ef6\u8fdb\u5c55\u7531\u5bbf\u4e3b\u91cd\u65b0\u8bfb\u53d6\uff0c\u4f2a\u9020\u7f13\u5b58\u4e0e\u8fc7\u671f\u5019\u9009\u6ca1\u6709\u6587\u4ef6\u4e8b\u5b9e|R06\\ Runner\\ \u63a2\u9488\u4e0d\u80fd\u51ed\u6458\u8981\u53d8\u5316\u6e05\u7a7a\u7b56\u7565\uff0c\u771f\u5b9e\u65b0\u6587\u4ef6\u53ea\u6062\u590d\u4e00\u6b21|R08\\ \u771f\u5b9e\\ Review\\ \u5206\u7c7b\u4e0e\u63a7\u5236\u8def\u7531\u4e00\u81f4\uff1atechnical|R08\\ \u771f\u5b9e\\ Review\\ \u5206\u7c7b\u4e0e\u63a7\u5236\u8def\u7531\u4e00\u81f4\uff1abusiness|R08\\ \u771f\u5b9e\\ Review\\ \u5206\u7c7b\u4e0e\u63a7\u5236\u8def\u7531\u4e00\u81f4\uff1apermission|R08\\ \u771f\u5b9e\\ Review\\ \u5206\u7c7b\u4e0e\u63a7\u5236\u8def\u7531\u4e00\u81f4\uff1amixed|R09\\ \u9996\u6b21\u5f85\u51b3\u95ee\u9898\u6765\u81ea\u51bb\u7ed3\u7528\u6237\u4e49\u52a1\u800c\u975e\\ Reviewer\\ \u81ea\u7531\u6587\u672c\uff1apermission|R09\\ \u9996\u6b21\u5f85\u51b3\u95ee\u9898\u6765\u81ea\u51bb\u7ed3\u7528\u6237\u4e49\u52a1\u800c\u975e\\ Reviewer\\ \u81ea\u7531\u6587\u672c\uff1abusiness|R09\\ \u9996\u6b21\u5f85\u51b3\u95ee\u9898\u6765\u81ea\u51bb\u7ed3\u7528\u6237\u4e49\u52a1\u800c\u975e\\ Reviewer\\ \u81ea\u7531\u6587\u672c\uff1amixed\\-decision|R09\\ \u9996\u6b21\u5f85\u51b3\u95ee\u9898\u6765\u81ea\u51bb\u7ed3\u7528\u6237\u4e49\u52a1\u800c\u975e\\ Reviewer\\ \u81ea\u7531\u6587\u672c\uff1amixed\\-verification|R09\\ Owner\\ \u53cd\u9988\u7ecf\u5b9e\u9645\u5931\u8d25\u5165\u53e3\u5206\u7c7b\u4e14\u4fdd\u7559\u72ec\u7acb\u4efb\u52a1\uff1atechnical|R09\\ Owner\\ \u53cd\u9988\u7ecf\u5b9e\u9645\u5931\u8d25\u5165\u53e3\u5206\u7c7b\u4e14\u4fdd\u7559\u72ec\u7acb\u4efb\u52a1\uff1apermission|R09\\ Owner\\ \u53cd\u9988\u7ecf\u5b9e\u9645\u5931\u8d25\u5165\u53e3\u5206\u7c7b\u4e14\u4fdd\u7559\u72ec\u7acb\u4efb\u52a1\uff1abusiness|R09\\ Owner\\ \u53cd\u9988\u63a5\u7eb3\u62d2\u7edd\u4f2a\u9020\u7ed1\u5b9a\u3001\u65e0\u4f9d\u636e\u3001\u5916\u6765\u4f1a\u8bdd\u548c\u8fc7\u671f\u5019\u9009|R09\\ \u5df2\u63a5\u7eb3\u53cd\u9988\u6d88\u8d39\u524d\u91cd\u65b0\u6821\u9a8c\u5f53\u524d\u6765\u6e90\uff1asession|R09\\ \u5df2\u63a5\u7eb3\u53cd\u9988\u6d88\u8d39\u524d\u91cd\u65b0\u6821\u9a8c\u5f53\u524d\u6765\u6e90\uff1aattempt|R09\\ \u5df2\u63a5\u7eb3\u53cd\u9988\u6d88\u8d39\u524d\u91cd\u65b0\u6821\u9a8c\u5f53\u524d\u6765\u6e90\uff1aplan|R09\\ \u5df2\u63a5\u7eb3\u53cd\u9988\u6d88\u8d39\u524d\u91cd\u65b0\u6821\u9a8c\u5f53\u524d\u6765\u6e90\uff1aowner|R09\\ \u540c\\ attempt\\ \u7684\u7528\u6237\u53cd\u9988\u5e42\u7b49\u4fdd\u7559\uff0c\u4e0d\u80fd\u7531\u540e\u7eed\u6280\u672f\u63cf\u8ff0\u964d\u6743|R09\\ Owner\\ \u6062\u590d\u6d88\u8d39\u5f53\u524d\u53cd\u9988\uff0c\u6362\\ attempt\\ \u540e\u4e0d\u7ee7\u627f\u65e7\u7528\u6237\u95e8\u7981|R09\\ \u5df2\u786e\u8ba4\u6743\u9650\u7f3a\u53e3\u4f18\u5148\u4e8e\u6280\u672f\\ handoff\\ \u7b56\u7565|R09\\ \u5df2\u62a5\u544a\u7528\u6237\u5f85\u51b3\u540e\u4e0d\u80fd\u901a\u8fc7\\ completed\\ \u63d0\u4ea4\u8d8a\u8fc7\u95e8\u7981\uff1apermission|R09\\ \u5df2\u62a5\u544a\u7528\u6237\u5f85\u51b3\u540e\u4e0d\u80fd\u901a\u8fc7\\ completed\\ \u63d0\u4ea4\u8d8a\u8fc7\u95e8\u7981\uff1abusiness|R10\\ \u771f\u5b9e\\ Owner\\ \u975e\u6210\u529f\u7ed3\u7b97\u4fdd\u7559\u5206\u7c7b\u4e0e\u5c40\u90e8\u5f85\u51b3\uff1apermission\\-blocked|R10\\ \u771f\u5b9e\\ Owner\\ \u975e\u6210\u529f\u7ed3\u7b97\u4fdd\u7559\u5206\u7c7b\u4e0e\u5c40\u90e8\u5f85\u51b3\uff1apermission\\-failed|R10\\ \u771f\u5b9e\\ Owner\\ \u975e\u6210\u529f\u7ed3\u7b97\u4fdd\u7559\u5206\u7c7b\u4e0e\u5c40\u90e8\u5f85\u51b3\uff1abusiness\\-blocked|R10\\ \u771f\u5b9e\\ Owner\\ \u975e\u6210\u529f\u7ed3\u7b97\u4fdd\u7559\u5206\u7c7b\u4e0e\u5c40\u90e8\u5f85\u51b3\uff1alegacy\\-blocked|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1asupervisor/permission|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1asupervisor/business|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1asupervisor/technical|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1asupervisor/stale\\-permission|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1adirect\\-owner/permission|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1adirect\\-owner/business|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1adirect\\-owner/technical|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1adirect\\-owner/stale\\-permission|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1arecover/permission|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1arecover/business|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1arecover/technical|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1arecover/stale\\-permission|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1arepeated\\-recover/permission|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1arepeated\\-recover/business|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1arepeated\\-recover/technical|R11\\ \u9884\u7b97\u9519\u8bef\u4e0d\u8986\u76d6\u5f53\u524d\u7528\u6237\u4f9d\u636e\uff1arepeated\\-recover/stale\\-permission)$",
+        "owner-workflow-plugin/test/control.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:14:32.729520+00:00",
+      "timeoutSeconds": 180,
+      "exitCode": -9,
+      "timedOut": true,
+      "end": "2026-09-11T04:17:32.740379+00:00",
+      "counts": {},
+      "selectionComplete": false
+    },
+    {
+      "suite": "security",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/security.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:17:32.747214+00:00",
+      "timeoutSeconds": 180,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T04:18:26.498308+00:00",
+      "counts": {
+        "tests": 39,
+        "pass": 25,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 14,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "resilience",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "owner-workflow-plugin/test/resilience.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T04:18:26.501742+00:00",
+      "timeoutSeconds": 180,
+      "exitCode": -9,
+      "timedOut": true,
+      "end": "2026-09-11T04:21:26.533288+00:00",
+      "counts": {}
+    }
+  ],
+  "drift": []
+}

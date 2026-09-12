@@ -68,7 +68,7 @@ test('Owner Registry 只有匹配 digest 的已批准提案才能写入并进入
       reason: '拆分用户接口',
     })
 
-    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'network-user.md')), false)
+    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'network-user', 'owner.md')), false)
     await assert.rejects(
       applyApprovedRegistryChange(root, { ...proposal, approvedDigest: '0'.repeat(64) }),
       /digest/u,
@@ -76,11 +76,11 @@ test('Owner Registry 只有匹配 digest 的已批准提案才能写入并进入
     await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
 
     assert.match(
-      await readFile(join(root, '.owner-workflow', 'owners', 'network-user.md'), 'utf8'),
+      await readFile(join(root, '.owner-workflow', 'owners', 'network-user', 'owner.md'), 'utf8'),
       /拆分用户接口/u,
     )
     assert.equal(await git(root, ['ls-files', '--error-unmatch', '.owner-workflow/config.json']), '.owner-workflow/config.json')
-    assert.equal(await git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/network-user.md']), '.owner-workflow/owners/network-user.md')
+    assert.equal(await git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/network-user/owner.md']), '.owner-workflow/owners/network-user/owner.md')
     assert.equal(existsSync(join(root, '.dsh-workflow', 'owners')), false)
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -195,7 +195,7 @@ test('Owner Registry 的 split、merge、transfer 和 remove 都只生成内存�
       type: 'transfer', fromOwnerId: 'network', toOwnerId: 'web', scope: ['src/network/user/**'], reason: '转交用户界面',
     })
     assert.deepEqual(proposal.affectedOwnerIds, ['network', 'web'])
-    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'web.md')), true)
+    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'web', 'owner.md')), true)
     registry = await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
 
     proposal = proposeRegistryChange(registry, {
@@ -216,7 +216,86 @@ test('Owner Registry 的 split、merge、transfer 和 remove 都只生成内存�
       type: 'remove', ownerId: 'frontend', reason: '撤销前端职责',
     })
     assert.deepEqual(proposal.after.owners.map(item => item.id), ['network'])
-    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'frontend.md')), true)
+    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'frontend', 'owner.md')), true)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Owner Registry 将同一轮全部变更合并为一个可原子批准的 batch 提案', async () => {
+  const root = await repositoryFixture()
+  try {
+    const registry = await ensureRegistry(root)
+    const operation = {
+      type: 'batch',
+      reason: '一次性建立网络与界面长期职责域',
+      operations: [
+        {
+          type: 'add',
+          owner: owner('network', ['src/network/**'], '网络模块'),
+          reason: 'src/network 是独立网络模块',
+        },
+        {
+          type: 'add',
+          owner: owner('web', ['src/web/**'], '网页模块'),
+          reason: 'src/web 是独立界面模块',
+        },
+      ],
+    }
+    const proposal = proposeRegistryChange(registry, operation)
+
+    assert.equal(proposal.operation, 'batch')
+    assert.equal(proposal.operations.length, 2)
+    assert.deepEqual(proposal.affectedOwnerIds, ['network', 'web'])
+    assert.deepEqual(proposal.after.owners.map(item => item.id), ['network', 'web'])
+    assert.deepEqual((await loadRegistry(root)).owners, [])
+
+    await assert.rejects(
+      applyApprovedRegistryChange(root, {
+        ...proposal,
+        operations: proposal.operations.slice(0, 1),
+        approvedDigest: proposal.digest,
+      }),
+      /提案已被篡改/u,
+    )
+    const applied = await applyApprovedRegistryChange(root, {
+      ...proposal,
+      approvedDigest: proposal.digest,
+    })
+    assert.deepEqual(applied.owners.map(item => item.id), ['network', 'web'])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Owner Registry batch 拒绝空批次、嵌套批次和中途无效变更', async () => {
+  const root = await repositoryFixture()
+  try {
+    const registry = await ensureRegistry(root)
+    assert.throws(
+      () => proposeRegistryChange(registry, { type: 'batch', operations: [], reason: '空批次' }),
+      /batch\.operations 不能为空/u,
+    )
+    assert.throws(
+      () => proposeRegistryChange(registry, {
+        type: 'batch',
+        operations: [{ type: 'batch', operations: [], reason: '嵌套' }],
+        reason: '非法嵌套',
+      }),
+      /不能嵌套 batch/u,
+    )
+    assert.throws(
+      () => proposeRegistryChange(registry, {
+        type: 'batch',
+        operations: [
+          { type: 'add', owner: owner('network', ['src/network/**'], '网络模块'), reason: '首次新增' },
+          { type: 'add', owner: owner('network', ['src/network-v2/**'], '网络模块二'), reason: '重复新增' },
+        ],
+        reason: '包含无效变更',
+      }),
+      /Owner 已存在/u,
+    )
+    assert.deepEqual((await loadRegistry(root)).owners, [])
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -287,7 +366,7 @@ test('Owner Registry 拒绝 config 和 Owner Markdown 文件符号链接', async
       type: 'add', owner: owner('network', ['src/network/**']), reason: '建立网络职责',
     })
     await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
-    const ownerPath = join(root, '.owner-workflow', 'owners', 'network.md')
+    const ownerPath = join(root, '.owner-workflow', 'owners', 'network', 'owner.md')
     const externalOwner = join(external, 'network.md')
     await writeFile(externalOwner, await readFile(ownerPath, 'utf8'))
     await rm(ownerPath)
@@ -305,7 +384,7 @@ test('Owner Registry 暂存失败时回滚整个 Registry 和 Git 索引', async
     const registry = await ensureRegistry(root)
     const beforeConfig = await readFile(join(root, '.owner-workflow', 'config.json'), 'utf8')
     const beforeIndex = await git(root, ['ls-files', '--stage', '.owner-workflow'])
-    await writeFile(join(root, '.gitignore'), '.owner-workflow/owners/blocked.md\n')
+    await writeFile(join(root, '.gitignore'), '.owner-workflow/owners/blocked/owner.md\n')
     const proposal = proposeRegistryChange(registry, {
       type: 'add', owner: owner('blocked', ['src/blocked/**']), reason: '模拟暂存失败',
     })
@@ -315,7 +394,7 @@ test('Owner Registry 暂存失败时回滚整个 Registry 和 Git 索引', async
     )
     assert.equal(await readFile(join(root, '.owner-workflow', 'config.json'), 'utf8'), beforeConfig)
     assert.deepEqual((await loadRegistry(root)).owners, registry.owners)
-    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'blocked.md')), false)
+    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'blocked', 'owner.md')), false)
     assert.equal(await git(root, ['ls-files', '--stage', '.owner-workflow']), beforeIndex)
     assert.deepEqual(
       (await readdir(root)).filter(name => /^\.owner-workflow(?:-(?:backup|transaction))|^\.owner-workflow\.lock$/u.test(name)),
@@ -381,7 +460,7 @@ test('ensureRegistry 跟踪全部正式文件且不暂存非 Markdown 文件', a
 
     await ensureRegistry(root)
     assert.equal(await git(root, ['ls-files', '--error-unmatch', '.owner-workflow/config.json']), '.owner-workflow/config.json')
-    assert.equal(await git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/network.md']), '.owner-workflow/owners/network.md')
+    assert.equal(await git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/network/owner.md']), '.owner-workflow/owners/network/owner.md')
     await assert.rejects(git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/note.txt']))
     assert.equal((await loadRegistry(root)).owners[0].id, registry.owners[0].id)
   } finally {
@@ -401,7 +480,7 @@ test('Owner Markdown 对标题、链接和 HTML 文本做安全编码', async ()
       type: 'add', owner: malicious, reason: '验证 Markdown 编码',
     })
     await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
-    const markdown = await readFile(join(root, '.owner-workflow', 'owners', 'unsafe.md'), 'utf8')
+    const markdown = await readFile(join(root, '.owner-workflow', 'owners', 'unsafe', 'owner.md'), 'utf8')
     const body = /^---\n[\s\S]*?\n---\n([\s\S]*)$/u.exec(markdown)?.[1] ?? ''
     assert.doesNotMatch(body, /^#{1,6}\s+注入$/mu)
     assert.doesNotMatch(body, /\[点击\]\(javascript:/u)
@@ -558,8 +637,8 @@ test('Owner 删除会从 Git 索引移除失效 Markdown', async () => {
     })
     registry = await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
     assert.equal(
-      await git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/obsolete.md']),
-      '.owner-workflow/owners/obsolete.md',
+      await git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/obsolete/owner.md']),
+      '.owner-workflow/owners/obsolete/owner.md',
     )
 
     proposal = proposeRegistryChange(registry, {
@@ -567,8 +646,8 @@ test('Owner 删除会从 Git 索引移除失效 Markdown', async () => {
     })
     await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
 
-    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'obsolete.md')), false)
-    await assert.rejects(git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/obsolete.md']))
+    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'obsolete', 'owner.md')), false)
+    await assert.rejects(git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/obsolete/owner.md']))
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -606,7 +685,7 @@ test('应用失败会精确恢复调用前已暂存版本而不以工作区版�
     await git(root, ['add', '--', '.owner-workflow/config.json'])
     await writeFile(path, worktree)
     const registry = await loadRegistry(root)
-    await writeFile(join(root, '.gitignore'), '.owner-workflow/owners/blocked.md\n')
+    await writeFile(join(root, '.gitignore'), '.owner-workflow/owners/blocked/owner.md\n')
     const proposal = proposeRegistryChange(registry, {
       type: 'add', owner: owner('blocked', ['src/blocked/**']), reason: '触发暂存失败',
     })
@@ -758,7 +837,7 @@ test('Owner Markdown 编码代码围栏、列表、分隔线、表格和强调�
       reason: '验证 Markdown 控制结构编码',
     })
     await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
-    const markdown = await readFile(join(root, '.owner-workflow', 'owners', 'unsafe-controls.md'), 'utf8')
+    const markdown = await readFile(join(root, '.owner-workflow', 'owners', 'unsafe-controls', 'owner.md'), 'utf8')
     const body = /^---\n[\s\S]*?\n---\n([\s\S]*)$/u.exec(markdown)?.[1] ?? ''
 
     assert.doesNotMatch(body, /^(?:```|~~~|[-+*]\s|\d+[.)]\s|>\s|(?:-{3,}|_{3,}|\*{3,})\s*$|\|.*\|$)/mu)
@@ -777,7 +856,7 @@ test('ensureRegistry 拒绝不符合规范生成结果的 Owner Markdown 正文'
       type: 'add', owner: owner('network', ['src/network/**']), reason: '建立网络职责',
     })
     await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
-    const path = join(root, '.owner-workflow', 'owners', 'network.md')
+    const path = join(root, '.owner-workflow', 'owners', 'network', 'owner.md')
     await writeFile(path, `${await readFile(path, 'utf8')}\n- 手工注入\n`)
 
     await assert.rejects(ensureRegistry(root), /Markdown|正文|规范/u)
@@ -792,7 +871,7 @@ test('Registry 回滚无法恢复原目录时保留可人工恢复的备份', as
     const registry = await ensureRegistry(root)
     await writeFile(
       join(root, '.gitattributes'),
-      '.owner-workflow/owners/blocked.md filter=registry-rollback-failure\n',
+      '.owner-workflow/owners/blocked/owner.md filter=registry-rollback-failure\n',
     )
     await git(root, [
       'config',
@@ -848,13 +927,13 @@ test('失败回滚完整保留 assume-unchanged、skip-worktree 和 intent-to-ad
       })
     }
     await git(root, ['update-index', '--assume-unchanged', '.owner-workflow/config.json'])
-    await git(root, ['update-index', '--skip-worktree', '.owner-workflow/owners/skip.md'])
-    await git(root, ['update-index', '--force-remove', '.owner-workflow/owners/intent.md'])
-    await git(root, ['add', '-N', '--', '.owner-workflow/owners/intent.md'])
+    await git(root, ['update-index', '--skip-worktree', '.owner-workflow/owners/skip/owner.md'])
+    await git(root, ['update-index', '--force-remove', '.owner-workflow/owners/intent/owner.md'])
+    await git(root, ['add', '-N', '--', '.owner-workflow/owners/intent/owner.md'])
     const beforeIndex = await gitIndexBytes(root)
     const beforeFlags = await gitBytes(root, ['ls-files', '-v', '-z', '--', '.owner-workflow'])
     const beforeDebug = await gitBytes(root, ['ls-files', '--debug', '-z', '--', '.owner-workflow'])
-    await writeFile(join(root, '.gitignore'), '.owner-workflow/owners/blocked.md\n')
+    await writeFile(join(root, '.gitignore'), '.owner-workflow/owners/blocked/owner.md\n')
     const proposal = proposeRegistryChange(registry, {
       type: 'add', owner: owner('blocked', ['src/blocked/**']), reason: '触发完整索引回滚',
     })
@@ -961,7 +1040,7 @@ test('Owner Markdown 编码四空格和制表符缩进代码结构', async () =>
       reason: '验证缩进代码结构编码',
     })
     await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
-    const markdown = await readFile(join(root, '.owner-workflow', 'owners', 'indented.md'), 'utf8')
+    const markdown = await readFile(join(root, '.owner-workflow', 'owners', 'indented', 'owner.md'), 'utf8')
     const body = /^---\n[\s\S]*?\n---\n([\s\S]*)$/u.exec(markdown)?.[1] ?? ''
 
     assert.doesNotMatch(body, /^(?: {4}|\t)/mu)
@@ -1038,7 +1117,7 @@ test('缺少 status 的旧 Owner 文档按 active 安全迁移并重新暂存', 
       type: 'add', owner: owner('legacy', ['src/legacy/**']), reason: '建立旧格式样本',
     })
     registry = await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
-    const path = join(root, '.owner-workflow', 'owners', 'legacy.md')
+    const path = join(root, '.owner-workflow', 'owners', 'legacy', 'owner.md')
     const legacy = (await readFile(path, 'utf8')).replace(',"status":"active"', '')
     await writeFile(path, legacy)
 
@@ -1047,7 +1126,69 @@ test('缺少 status 的旧 Owner 文档按 active 安全迁移并重新暂存', 
 
     assert.deepEqual(migrated, registry)
     assert.match(await readFile(path, 'utf8'), /"status":"active"/u)
-    assert.equal(await git(root, ['diff', '--cached', '--name-only', '--', '.owner-workflow/owners/legacy.md']), '.owner-workflow/owners/legacy.md')
+    assert.equal(await git(root, ['diff', '--cached', '--name-only', '--', '.owner-workflow/owners/legacy/owner.md']), '.owner-workflow/owners/legacy/owner.md')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Registry 更新保留各 Owner 文件夹内的长期记忆', async () => {
+  const root = await repositoryFixture()
+  try {
+    let registry = await ensureRegistry(root)
+    let proposal = proposeRegistryChange(registry, {
+      type: 'add', owner: owner('network', ['src/network/**']), reason: '登记网络 Owner',
+    })
+    registry = await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
+    const memoryPath = join(root, '.owner-workflow', 'owners', 'network', 'memory', 'api.md')
+    await mkdir(join(root, '.owner-workflow', 'owners', 'network', 'memory'), { recursive: true })
+    await writeFile(memoryPath, '# 网络长期知识\n', 'utf8')
+    await git(root, ['add', '--', '.owner-workflow/owners/network/memory/api.md'])
+
+    proposal = proposeRegistryChange(registry, {
+      type: 'add', owner: owner('web', ['src/web/**']), reason: '登记 Web Owner',
+    })
+    registry = await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
+    assert.match(await readFile(memoryPath, 'utf8'), /网络长期知识/u)
+    assert.equal(
+      await git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/network/memory/api.md']),
+      '.owner-workflow/owners/network/memory/api.md',
+    )
+
+    proposal = proposeRegistryChange(registry, {
+      type: 'remove', ownerId: 'network', reason: '停用网络 Owner 但保留知识',
+    })
+    registry = await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
+    assert.deepEqual(registry.owners.map(item => item.id), ['web'])
+    assert.equal(existsSync(join(root, '.owner-workflow', 'owners', 'network', 'owner.md')), false)
+    assert.match(await readFile(memoryPath, 'utf8'), /网络长期知识/u)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('旧版 owners/<id>.md 自动迁移为 owners/<id>/owner.md', async () => {
+  const root = await repositoryFixture()
+  try {
+    let registry = await ensureRegistry(root)
+    const proposal = proposeRegistryChange(registry, {
+      type: 'add', owner: owner('network', ['src/network/**']), reason: '登记网络 Owner',
+    })
+    registry = await applyApprovedRegistryChange(root, { ...proposal, approvedDigest: proposal.digest })
+    const current = join(root, '.owner-workflow', 'owners', 'network', 'owner.md')
+    const legacy = join(root, '.owner-workflow', 'owners', 'network.md')
+    await rename(current, legacy)
+    await rm(join(root, '.owner-workflow', 'owners', 'network'), { recursive: true, force: true })
+    await git(root, ['add', '-A', '--', '.owner-workflow'])
+
+    const loaded = await ensureRegistry(root)
+    assert.deepEqual(loaded, registry)
+    assert.equal(existsSync(legacy), false)
+    assert.equal(existsSync(current), true)
+    assert.equal(
+      await git(root, ['ls-files', '--error-unmatch', '.owner-workflow/owners/network/owner.md']),
+      '.owner-workflow/owners/network/owner.md',
+    )
   } finally {
     await rm(root, { recursive: true, force: true })
   }

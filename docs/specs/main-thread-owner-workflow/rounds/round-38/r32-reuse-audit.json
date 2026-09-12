@@ -1,0 +1,11 @@
+{
+  "source": "round-32/candidate.json",
+  "target": "round-38/candidate.json",
+  "comparedFiles": 1619,
+  "mismatch": [],
+  "evidence": [
+    "round-32/test-results.json",
+    "owner-workflow-plugin/test/recovery-session.test.mjs L3 old_plan/old_attempt/old_lease",
+    "owner-workflow-plugin/test/recovery-session.test.mjs L4 paused recovery independent Owner"
+  ]
+}

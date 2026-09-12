@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-11T13:15:51.641232+00:00",
+  "formalPass": 54,
+  "formalSkipped": 0,
+  "candidateDrift": [],
+  "reviewFindings": [],
+  "closedFinding": "R67 occupancy slot P2",
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false
+}

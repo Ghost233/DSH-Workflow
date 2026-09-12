@@ -1,0 +1,3 @@
+# 第一组联合故障
+
+proof-local child/test复用第32轮restart基础设施，仅将两个checkpoint前移：persistOwnerSession调用前（真实create返回后，recovery.phase=creating）；persistRecoverySessionSubmitted调用前（真实followup与sessions.flush后，phase=created）。前者记录真实handle header定位缺失raw，后者保留实际prompt日志。真实SIGKILL后新Context/Runtime对账，state/raw与预算保持，不重复create/resume/followup/model。旧scenario键created/submitted只是IPC标签，真实阶段断言分别creating/created。这两个proof不替代完整T23矩阵。

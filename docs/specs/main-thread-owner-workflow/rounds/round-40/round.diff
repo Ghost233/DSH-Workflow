@@ -1,0 +1,94 @@
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs
+@@ -212,8 +212,11 @@
+ }
+
+ async function produceSettlementPending(input) {
+-  const fixture = await createRecoverySessionFixture({ after() {} }, {
+-    executable: true, temporaryDirectory: input.fixtureParent, modelScript: failedOwnerModelScript,
++  const success = input.result === 'succeeded'
++  const phase = success ? 'settled_succeeded' : 'settled_failed'
++  const scenario = success ? 'success_settlement_pending' : 'settlement_pending'
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true, temporaryDirectory: input.fixtureParent, modelScript: success ? completedOwnerModelScript : failedOwnerModelScript,
+   })
+   const receipt = await reserveRecoverySession(fixture)
+   const target = statePath(fixture.root, fixture.workflowId)
+@@ -222,9 +225,9 @@
+     if (to === target && typeof from === 'string' && from.startsWith(`${target}.tmp-`)) {
+       const pendingBytes = await readFile(from, 'utf8')
+       const pending = JSON.parse(pendingBytes)
+-      if (pending.ownerRuns?.['T1:api']?.recoverySession?.phase === 'settled_failed') {
++      if (pending.ownerRuns?.['T1:api']?.recoverySession?.phase === phase) {
+         const evidence = await capture(fixture, receipt)
+-        await send({ type: 'checkpoint', scenario: 'settlement_pending', pid: process.pid,
++        await send({ type: 'checkpoint', scenario, pid: process.pid,
+           root: fixture.root, workflowId: fixture.workflowId, receipt, request: request(receipt),
+           pendingPath: from, pendingBytes, ...evidence,
+         })
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs
+@@ -1,5 +1,5 @@
+ import assert from 'node:assert/strict'
+-import { fork } from 'node:child_process'
++import { fork, execFileSync } from 'node:child_process'
+ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+@@ -487,3 +487,56 @@
+     await writeEvidence('first-physical-append', producer, postKill, replay)
+   })
+ })
++
++
++test('T23 SIGKILL before successful settlement rename never accepts the temporary receipt or reexecutes', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_settlement_pending', result: 'succeeded', fixtureParent }), 'success_settlement_pending')
++    const cp = producer.checkpoint
++    const finalBytes = await readFile(workflowStatePath(cp.root, cp.workflowId), 'utf8')
++    const pendingBytes = await readFile(cp.pendingPath, 'utf8')
++    const raw = await readFile(cp.rawLocationPath, 'utf8')
++    assert.equal(finalBytes, cp.stateBytes)
++    assert.equal(pendingBytes, cp.pendingBytes)
++    assert.equal(raw, cp.rawContent)
++    const final = JSON.parse(finalBytes)
++    const pending = JSON.parse(pendingBytes)
++    const phase = state => state.ownerRuns['T1:api'].recoverySession.phase
++    assert.notEqual(phase(final), 'settled_succeeded')
++    assert.equal(phase(pending), 'settled_succeeded')
++    const attempt = state => state.recoveryAdmission.budget.attempts.find(a => a.requestId === cp.receipt.requestId)
++    assert.notEqual(attempt(final).state, 'settled')
++    assert.equal(attempt(pending).state, 'settled')
++    assert.equal(attempt(pending).result.status, 'succeeded')
++    assert.equal(final.recoveryAdmission.budget.totalUsed, 1)
++    const run = pending.ownerRuns['T1:api']
++    const task = pending.tasks.find(item => item.taskId === 'T1')
++    const successReceipt = run.recoverySession.successReceipt
++    assert.equal(run.status, 'completed')
++    assert.equal(task.status, 'completed')
++    assert.equal(task.checkState, 'valid')
++    assert.match(successReceipt.commitSha, /^[0-9a-f]{40}$/u)
++    assert.equal(task.fixedCommitSha, successReceipt.commitSha)
++    assert.equal(run.result.commitSha, successReceipt.commitSha)
++    const git = (...args) => execFileSync('git', ['-C', cp.root, ...args], { encoding: 'utf8' }).trim()
++    assert.equal(git('cat-file', '-t', successReceipt.commitSha), 'commit')
++    const branchHead = git('rev-parse', pending.workflowBranch)
++    git('merge-base', '--is-ancestor', successReceipt.commitSha, branchHead)
++    const replay = await finishReplay({ ...cp, mode: 'replay' })
++    assert.notEqual(replay.pid, cp.pid)
++    assert.equal(replay.result.outcome, 'paused')
++    assert.deepEqual(replay.agentOperations, { create: 0, resume: 0, followup: 0 })
++    assert.equal(replay.modelRequests, 0)
++    assert.equal(replay.before.stateBytes, finalBytes)
++    assert.deepEqual(replay.after, replay.before)
++    assert.equal(git('rev-parse', pending.workflowBranch), branchHead)
++    assert.equal(await readFile(cp.pendingPath, 'utf8'), pendingBytes)
++    assert.equal(await readFile(cp.rawLocationPath, 'utf8'), raw)
++    const calls = raw.trimEnd().split('\n').map(row => JSON.parse(row))
++      .filter(row => row.type === 'tool/call' && row.data.name === 'owner_submit')
++    assert.equal(calls.length, 1)
++    const directory = join(EVIDENCE_ROOT, 'successful-settlement-before-rename')
++    await mkdir(directory, { recursive: true })
++    await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, finalBytes, pendingBytes, raw, branchHead, replay }, null, 2) + '\n', 'utf8')
++  })
++})

@@ -54,6 +54,7 @@ export async function submitOwnerResult(runtime, rawReport, exec) {
 
   active.submitting = true
   try {
+    await runtime.assertOwnerCompletionAdmission(active, exec)
     const inspection = await runtime.inspectOwnerAttempt(
       active.state,
       active.entry,
@@ -67,11 +68,20 @@ export async function submitOwnerResult(runtime, rawReport, exec) {
     const task = active.state.plan.tasks.find(item => item.id === active.stage.id)
     try {
       for (const verificationId of task?.verify ?? []) {
-        await runtime.recordBoundVerification({
-          task_id: active.stage.id,
-          verification_id: verificationId,
-          description: 'owner_submit 提交关卡自动验证',
-        }, exec)
+        try {
+          await runtime.recordBoundVerification({
+            task_id: active.stage.id,
+            verification_id: verificationId,
+            description: 'owner_submit 提交关卡自动验证',
+          }, exec)
+        } catch (error) {
+          if (error instanceof OwnerVerificationApprovalRequiredError) throw error
+          const message = error instanceof Error ? error.message : String(error)
+          throw new Error(
+            `固定验证 ${verificationId} 执行或证据校验失败：${message}。`
+            + '当前 owner_submit report 已通过结构解析，不要给 report、tests 或 changes 添加 exitCode；请根据固定验证输出修复实现或等待 Runtime 环境修复后原样重试。',
+          )
+        }
       }
     } catch (error) {
       if (!(error instanceof OwnerVerificationApprovalRequiredError)) throw error
@@ -90,6 +100,7 @@ export async function submitOwnerResult(runtime, rawReport, exec) {
       active.submission = { report: blockedReport, publicResult }
       return publicResult
     }
+    if (active.attemptControl !== undefined) await runtime.assertOwnerCompletionAdmission(active, exec)
     const committed = await runtime.commitOwnerAttempt(
       active.state,
       active.stage,
@@ -97,6 +108,7 @@ export async function submitOwnerResult(runtime, rawReport, exec) {
       inspection,
       exec.signal,
     )
+    if (active.attemptControl !== undefined) await runtime.assertOwnerCompletionAdmission(active, exec)
     const publicResult = {
       contract: 'DSH_OWNER_SUBMISSION_V1',
       status: 'completed',

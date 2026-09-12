@@ -1,0 +1,64 @@
+TAP version 13
+# Subtest: T15 actual Planner reserved child produces a raw accepted receipt and replays without another model call
+ok 1 - T15 actual Planner reserved child produces a raw accepted receipt and replays without another model call
+  ---
+  duration_ms: 5471.281625
+  type: 'test'
+  ...
+# Subtest: T15 actual Review reserved child produces a raw accepted receipt and replays without another model call
+ok 2 - T15 actual Review reserved child produces a raw accepted receipt and replays without another model call
+  ---
+  duration_ms: 3533.057333
+  type: 'test'
+  ...
+# Subtest: T15 a real completed child without a submission settles failed and permits one paid next ordinal
+ok 3 - T15 a real completed child without a submission settles failed and permits one paid next ordinal
+  ---
+  duration_ms: 1172.153042
+  type: 'test'
+  ...
+# Subtest: T15 real multi-step Planner reads evidence before its accepted submission
+ok 4 - T15 real multi-step Planner reads evidence before its accepted submission
+  ---
+  duration_ms: 1230.018959
+  type: 'test'
+  ...
+# Subtest: T15 an uncertain create after a real session creation never resends its prompt
+ok 5 - T15 an uncertain create after a real session creation never resends its prompt
+  ---
+  duration_ms: 1209.189166
+  type: 'test'
+  ...
+# Subtest: T15 wrong prompt and a source awaiting user decision cannot start a child
+ok 6 - T15 wrong prompt and a source awaiting user decision cannot start a child
+  ---
+  duration_ms: 784.709375
+  type: 'test'
+  ...
+# Subtest: T15 replay rejects altered frozen input and execution receipt without a new call
+ok 7 - T15 replay rejects altered frozen input and execution receipt without a new call
+  ---
+  duration_ms: 956.820791
+  type: 'test'
+  ...
+# Subtest: T15 a physically torn JSONL artifact pauses replay without changing the ledger or resending
+ok 8 - T15 a physically torn JSONL artifact pauses replay without changing the ledger or resending
+  ---
+  duration_ms: 835.046417
+  type: 'test'
+  ...
+# Subtest: T15 a reserved identity with an existing real session cannot be treated as a fresh launch
+ok 9 - T15 a reserved identity with an existing real session cannot be treated as a fresh launch
+  ---
+  duration_ms: 803.254292
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 16310.923916

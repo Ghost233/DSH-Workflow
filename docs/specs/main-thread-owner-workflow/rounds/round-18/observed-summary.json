@@ -1,0 +1,103 @@
+{
+  "rows": [
+    {
+      "suite": "recovery-session",
+      "pass": 9,
+      "fail": 0,
+      "skip": 0,
+      "timeout": false
+    },
+    {
+      "suite": "recovery-admission",
+      "pass": 43,
+      "fail": 0,
+      "skip": 0,
+      "timeout": false
+    },
+    {
+      "suite": "recovery-budget",
+      "pass": 32,
+      "fail": 0,
+      "skip": 0,
+      "timeout": false
+    },
+    {
+      "suite": "convergence",
+      "pass": 24,
+      "fail": 0,
+      "skip": 0,
+      "timeout": false
+    },
+    {
+      "suite": "model",
+      "pass": 51,
+      "fail": 0,
+      "skip": 0,
+      "timeout": false
+    },
+    {
+      "suite": "plan-revision",
+      "pass": 7,
+      "fail": 0,
+      "skip": 0,
+      "timeout": false
+    },
+    {
+      "suite": "workflow-state",
+      "pass": 11,
+      "fail": 0,
+      "skip": 0,
+      "timeout": false
+    },
+    {
+      "suite": "control-a",
+      "pass": 77,
+      "fail": 0,
+      "skip": 6,
+      "timeout": false
+    },
+    {
+      "suite": "control-b",
+      "pass": 70,
+      "fail": 0,
+      "skip": 1,
+      "timeout": true
+    },
+    {
+      "suite": "security",
+      "pass": 25,
+      "fail": 0,
+      "skip": 14,
+      "timeout": false
+    },
+    {
+      "suite": "resilience",
+      "pass": 33,
+      "fail": 1,
+      "skip": 0,
+      "timeout": true
+    },
+    {
+      "suite": "control-supplement",
+      "pass": 12,
+      "fail": 0,
+      "skip": 0,
+      "timeout": false
+    },
+    {
+      "suite": "resilience-supplement",
+      "pass": 26,
+      "fail": 0,
+      "skip": 0,
+      "timeout": false
+    }
+  ],
+  "totals": {
+    "pass": 420,
+    "fail": 1,
+    "skip": 21,
+    "timeout": 2
+  },
+  "diagnosticExcluded": "Single rollback rerun passed 1/1; original failure retained; not added to unique pass count.",
+  "coverage": "All planned cases reported across bounded runs; not an uninterrupted suite pass."
+}

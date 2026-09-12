@@ -1,0 +1,179 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { readFile, readdir, rm, realpath } from 'node:fs/promises'
+import { join } from 'node:path'
+import { authorizePlanningCheckpoint } from '../src/planning-authority.mjs'
+import { fixture, manifest, writeBoundDocuments, sourceInput, git } from './fixtures/planning-authority-native.mjs'
+import { validatePlanningSourceChain } from '../src/planning-source-chain.mjs'
+import { runPlanningCheckpoint } from '../src/planning-checkpoint.mjs'
+
+async function nativeQuestions(t, value, response = 'approve') {
+  const [{ default: Registry }, { default: Questions }] = await Promise.all([
+    import('../../deepseek-harness/packages/core/agent/lib/index.js'),
+    import('../../deepseek-harness/packages/interaction/user-questions/lib/index.js'),
+  ])
+  const registry = await value.ctx.plugin(Registry)
+  const questions = await value.ctx.plugin(Questions)
+  value.ctx.agents.enter(value.agent, undefined)
+  const seen = []
+  const dispose = value.ctx.userQuestions.registerProvider({
+    async ask(request) {
+      seen.push(request)
+      const question = request.questions[0]
+      if (response === 'custom') return { answers: [{ id: question.id, custom: '仅讨论，不实施' }] }
+      return { answers: [{ id: question.id, selected: [question.options[response === 'approve' ? 0 : 1].label] }] }
+    },
+  })
+  t.after(async () => { dispose(); await questions.dispose(); await registry.dispose() })
+  return seen
+}
+
+async function bindingFor(value) {
+  const chains = await writeBoundDocuments(value)
+  const source = await validatePlanningSourceChain(sourceInput(value, chains))
+  return { root: await realpath(value.root), source,
+    request: { id: 'authority-tx', manifest: manifest(value.documents), baseline: value.baseline,
+      source: source.source, reason: '准备本次规划', parentSnapshotId: null } }
+}
+
+function args(value, binding) {
+  return { ctx: value.ctx, agent: value.agent,
+    exec: { callId: 'checkpoint-real-call', rootCallId: 'checkpoint-real-call' },
+    binding, signal: new AbortController().signal }
+}
+
+test('实际原生问询先持久原始授权，同根重复核验复用，不因后续规格修订扩大实施范围', async t => {
+  const value = await fixture(t)
+  if (!value) return
+  const seen = await nativeQuestions(t, value)
+  const binding = await bindingFor(value)
+  const grant = await authorizePlanningCheckpoint(args(value, binding))
+  assert.equal(seen.length, 1)
+  assert.equal(seen[0].agent, value.agent)
+  assert.equal(grant.receipt.kind, 'native-user-question')
+  assert.equal(grant.implementationScope.content, binding.source.references.spec.content)
+  const directory = join(value.root, '.dsh-workflow/planning-authority')
+  const files = await readdir(directory)
+  assert.equal(files.length, 1)
+  assert.deepEqual(JSON.parse(await readFile(join(directory, files[0]), 'utf8')), grant)
+  assert.deepEqual(await authorizePlanningCheckpoint(args(value, { ...binding, authorizationId: grant.id })), grant)
+  // The permission resolver can reuse document scope; the kernel separately
+  // validates every changed source, and T27 separately validates implementation scope.
+  const later = structuredClone(binding)
+  later.source.references.spec.revision = 'R2'
+  later.source.references.spec.content += '\n新讨论，尚未成为实施授权'
+  assert.deepEqual(await authorizePlanningCheckpoint(args(value, later)), grant)
+  assert.equal(seen.length, 1)
+  await rm(join(directory, files[0]))
+  await assert.rejects(authorizePlanningCheckpoint(args(value, { ...binding, authorizationId: grant.id })), /ORIGINAL_GRANT_UNAVAILABLE/)
+  assert.equal(seen.length, 1, '恢复时原grant消失不得重新询问并换一份授权')
+})
+
+for (const response of ['reject', 'custom']) test(`原生${response}决定不会创建grant或提交代码`, async t => {
+  const value = await fixture(t)
+  if (!value) return
+  const seen = await nativeQuestions(t, value, response)
+  const binding = await bindingFor(value)
+  const index = await readFile(join(value.root, '.git/index'))
+  await assert.rejects(authorizePlanningCheckpoint(args(value, binding)), /NOT_GRANTED/)
+  assert.equal(seen.length, 1)
+  await assert.rejects(readdir(join(value.root, '.dsh-workflow/planning-authority')), { code: 'ENOENT' })
+  assert.deepEqual(await readFile(join(value.root, '.git/index')), index)
+})
+
+export { nativeQuestions }
+
+test('实际 Runtime 阻止 index 已同步但快照未发布时启动 DAG，原事务恢复后解除', async t => {
+  const value = await fixture(t)
+  if (!value) return
+  const seen = await nativeQuestions(t, value)
+  const chains = await writeBoundDocuments(value)
+  await value.runtime.preflightWorkflow(value.agent)
+  const input = { id: 'runtime-interrupted', manifest: manifest(value.documents), baseline: value.baseline,
+    chains, reason: '验证固定快照前的派发门禁' }
+  const root = await realpath(value.root)
+  const exec = { callId: 'runtime-interrupted', signal: new AbortController().signal }
+  const { chains: selectedChains, ...request } = input
+  await assert.rejects(runPlanningCheckpoint({ root, request: { ...request,
+    source: { agentId: value.agent.id, sessionId: value.agent.id, chains }, parentSnapshotId: null },
+    authorize: binding => authorizePlanningCheckpoint({ ...args(value, binding), exec }),
+    withLease: operation => value.runtime.withOwnerLease(root, 'planning-checkpoint', input.id, 'checkpoint', exec.signal,
+      (lease, signal) => operation({ signal, assertLease: () => value.runtime.assertOwnerLease(lease) })),
+    fault: stage => { if (stage === 'after-index-sync') throw new Error('injected-before-snapshot') },
+  }), /injected-before-snapshot/)
+  assert.equal(await git(value.root, 'diff', '--cached', '--name-only'), '')
+  const pending = await value.runtime.preflightWorkflow(value.agent)
+  assert.deepEqual(pending.planningCheckpointPending, [input.id])
+  assert.equal(pending.changes.length, 0)
+  assert.equal(pending.canStart, false)
+  await assert.rejects(value.runtime.startWorkflow(value.agent, '不应派发', exec.signal, pending.baseDigest), /checkpoint 尚未完成/)
+  const restored = await value.runtime.checkpointPlanningDocuments(value.agent, input, exec)
+  assert.equal(restored.phase, 'checkpointed')
+  assert.equal(seen.length, 1)
+  assert.equal(await git(value.root, 'rev-list', '--count', 'HEAD'), '2')
+  assert.equal((await value.runtime.preflightWorkflow(value.agent)).canStart, true)
+})
+
+test('实际 Runtime 根入口完成原生授权、Git checkpoint 与固定快照，重复调用复用同一授权和提交', async t => {
+  const value = await fixture(t)
+  if (!value) return
+  const seen = await nativeQuestions(t, value)
+  const chains = await writeBoundDocuments(value)
+  const input = { id: 'runtime-checkpoint', manifest: manifest(value.documents), baseline: value.baseline,
+    chains, reason: '固定本次完整规格和工单' }
+  const exec = { callId: 'runtime-checkpoint-call', rootCallId: 'runtime-checkpoint-call', signal: new AbortController().signal }
+  const prepared = await value.runtime.preparePlanningCheckpoint(value.agent, input, exec.signal)
+  const first = await value.runtime.checkpointPlanningDocuments(value.agent, input, exec)
+  assert.equal(seen.length, 1)
+  assert.equal(first.phase, 'checkpointed')
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), first.checkpointCommit)
+  assert.equal(await git(value.root, 'diff', '--cached', '--name-only'), '')
+  assert.deepEqual((await git(value.root, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD')).split('\n').sort(),
+    [value.documents.spec.path, value.documents.ticket.path].sort())
+  assert.equal(first.snapshot.source.references.spec.content, value.documents.finalSpec)
+  assert.equal(first.snapshot.source.references.tickets[0].document.content, value.documents.finalTicket)
+  assert.equal(first.snapshot.authorization.implementationScope.content, value.documents.finalSpec)
+  assert.equal(first.sourceDigest, prepared.sourceDigest)
+  assert.equal(first.snapshot.authorization.initialSourceDigest, first.sourceDigest)
+  const second = await value.runtime.checkpointPlanningDocuments(value.agent, input, exec)
+  assert.deepEqual(second, first)
+  assert.equal(seen.length, 1)
+  assert.equal(await git(value.root, 'rev-list', '--count', 'HEAD'), '2')
+  const preflight = await value.runtime.preflightWorkflow(value.agent, exec.signal)
+  assert.deepEqual(preflight.planningCheckpointPending, [])
+  assert.equal(preflight.canStart, true)
+})
+
+test('实际 Runtime 原生拒绝不会推进 HEAD/index 或建立待恢复事务', async t => {
+  const value = await fixture(t)
+  if (!value) return
+  const seen = await nativeQuestions(t, value, 'reject')
+  const chains = await writeBoundDocuments(value)
+  const input = { id: 'runtime-rejected', manifest: manifest(value.documents), baseline: value.baseline,
+    chains, reason: '请求规划固定' }
+  const index = await readFile(join(value.root, '.git/index'))
+  await assert.rejects(value.runtime.checkpointPlanningDocuments(value.agent, input,
+    { callId: 'runtime-rejected', signal: new AbortController().signal }), /NOT_GRANTED/)
+  assert.equal(seen.length, 1)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
+  assert.deepEqual(await readFile(join(value.root, '.git/index')), index)
+  const preflight = await value.runtime.preflightWorkflow(value.agent)
+  assert.deepEqual(preflight.planningCheckpointPending, [])
+  assert.equal(preflight.canStart, false, '拒绝后原始文档仍未提交')
+})
+
+test('实际规划租约阻止同时进入第二 checkpoint 和旧 Workflow 启动', async t => {
+  const value = await fixture(t)
+  if (!value) return
+  const seen = await nativeQuestions(t, value)
+  const chains = await writeBoundDocuments(value)
+  const root = await realpath(value.root)
+  const input = { id: 'racing-checkpoint', manifest: manifest(value.documents), baseline: value.baseline,
+    chains, reason: '并发门禁' }
+  await value.runtime.withOwnerLease(root, 'planning-checkpoint', 'held-checkpoint', 'checkpoint', undefined, async () => {
+    await assert.rejects(value.runtime.checkpointPlanningDocuments(value.agent, input, { callId: 'racing-checkpoint' }), /已被本进程占用/)
+    await assert.rejects(value.runtime.startWorkflow(value.agent, '不能并发启动'), /已被本进程占用/)
+  })
+  assert.equal(seen.length, 0)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
+})

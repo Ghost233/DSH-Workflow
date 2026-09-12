@@ -1,0 +1,145 @@
+# 恢复来源接纳与预留 V1
+
+实现：[recovery-admission.mjs](../../../../owner-workflow-plugin/src/recovery-admission.mjs)。本合同实现 T-20 的纯状态部分：它准备一份需要由 Runtime 在 `saveState(..., prepareState)` 的锁内当前快照中保存的领取结果。它不创建会话、不提交 prompt、不启动 Owner，也不会声明任何外部会话 API 已验证。
+
+## 调用
+
+`prepareRecoveryAdmission(state, request)` 返回 `{ state, response }`，从不修改传入的 `state` 或 `request`。调用方只能在成功保存返回的 `state` 后把 `response` 交给外部调用者；保存失败、CAS/锁冲突或 Runtime 基础门禁失败都不能把收据当成可启动授权。
+
+既有Owner领取请求必须恰好为：
+
+```js
+{
+  contract: 'DSH_RECOVERY_ADMISSION_REQUEST_V1',
+  planDigest: 'current-plan-digest',
+  taskId: 'plan-task-id',
+  ownerId: 'plan-owner-id',
+  source: { kind: 'owner_failure', attempt: 1, sessionId: 'persisted-session-id' }
+  // 或 { kind: 'owner_failure', attempt: 1, sessionId: null }
+  // 或 { kind: 'obligation', id: 'current-open-obligation-id' }
+}
+```
+
+`sessionId:null` 只用于实际尚未绑定 session 的失败记录，`attempt` 必须为正安全整数。调用者不能提供根问题、request/attempt ID、strategy、额度或 `verified` 布尔值。
+
+成功结果为：
+
+```js
+{
+  contract: 'DSH_RECOVERY_ADMISSION_V1',
+  outcome: 'reserved' | 'replayed',
+  rootProblemId: '…',
+  requestId: '…',
+  attemptId: '…',
+  executionIdentity: { sessionId: '…', promptId: '…' },
+  launchAuthorized: false,
+}
+```
+
+`executionIdentity` 是与领取同时保存的随机占位身份。它不是 `recovery-budget` 的 `executionRef`，也不表示 session 或 prompt 已存在。
+
+任何拒绝只返回：
+
+```js
+{
+  contract: 'DSH_RECOVERY_ADMISSION_V1',
+  outcome: 'rejected',
+  reason: 'stable_machine_reason',
+  launchAuthorized: false,
+}
+```
+
+拒绝没有根问题、request、attempt、session 或 prompt 凭据，且返回的 state 是输入的深复制，未新增领取或扣减。
+
+## 显式配置和持久状态
+
+状态必须已有不可迁移的配置：
+
+```js
+state.recoveryAdmissionConfig = {
+  contract: 'DSH_RECOVERY_ADMISSION_CONFIG_V1',
+  executionVersion: state.planDigest,
+  totalLimit: 3,
+  problemLimit: 2,
+}
+```
+
+四个字段均为精确字段；额度都是正安全整数。缺失配置、错误版本、`executionVersion` 与当前计划不符，或已经领取后任何额度/执行版本改变都会被拒绝。该接口不设置生产默认值，也不迁移旧状态；跨版本继承属于 T-18。
+
+首次成功领取创建以下严格导入结构：
+
+```js
+state.recoveryAdmission = {
+  contract: 'DSH_RECOVERY_ADMISSION_STATE_V1',
+  workflowId: state.id,
+  executionVersion: state.planDigest,
+  totalLimit: state.recoveryAdmissionConfig.totalLimit,
+  problemLimit: state.recoveryAdmissionConfig.problemLimit,
+  sources: [/* immutable owner_failure 或 obligation 实际绑定 */],
+  intents: [/* source + strategy -> request/attempt/reservation */],
+  budget: {/* DSH_RECOVERY_BUDGET_V1 */},
+}
+```
+
+`sources` 使用从实际失败绑定或结构化义务合同计算出的稳定 source ID，不含错误文案摘要。首次失败还会保存不可变的原始 `failureReason` 元数据，供后续 Owner run 记录被覆写后追溯；它不参与 source ID 或根问题身份。`intents` 把同一 source 和当前持久 strategy 绑定到唯一根问题、request、attempt 和占位执行身份。一个后继失败 source 会保存不可变的 `continuation` 边，因此删除当前 Owner run 的字段后，不能把它重解释为新的首次失败来源。
+
+已有不含 `continuation` 的 V1 `sources` 是首次来源，无需迁移。带边的 source 的 ID 把完整边纳入摘要。导入严格检查版本、未知字段、重复 ID、T-13 账本计数、source/root/attempt 映射、执行版本及预留身份唯一性：一个 root 可以有多个 source，但只能有一个首次 source；每条边必须指向同 root 的先前 intent，链无环；同一个前序 intent 只能有一个具体后继失败 source。来源、边、intent、root 或额度的局部改写都会拒绝。它不能单独证明攻击者整体替换了一份内部一致的协调状态快照，这属于 Runtime 持久边界和锁/CAS 证据的责任。
+
+## 来源与重放
+
+`owner_failure` 必须匹配当前 `plan.tasks` 的 task/Owner、非完成的实际 task state（`stopped` 或待恢复的 `pending`）和 `ownerRuns[taskId:ownerId]` 的 `ownerId`、`stageId`、`planDigest`、attempt、session。记录只能是 `failed`，或不等待用户决定的技术性 `blocked`，并且必须持久保存非空 `error` 或 `reason`。运行中的记录、用户等待、`request_user_authority`、`autonomous_incident` 和未知 strategy 都不能领取。
+
+`obligation` 从当前 `planConvergence.obligations` 读取，要求它 open、目标和 `closeWhen.taskId` 都指向当前 task，且最后一条 `history` 事件的 `candidatePlanDigest` 等于当前 `state.planDigest`。冲突义务、已关闭义务以及需要用户授权的依据都被排除。不同模型义务 ID 若具有相同物理 target/`closeWhen`，会保守拒绝，不会创建第二个根问题。
+
+失败来源的 strategy 只能读取该 `ownerRuns` 的有效持久自动恢复记录；义务来源只能读取当前、candidate digest 已核验的收敛记录 `nextStrategy`。它可以是已知的自治或执行修复策略（包括 `repair_runtime`、`same_owner_repair`），调用者不能选择它。
+
+相同 source + strategy 重放会复用完整的 request、attempt 和预留身份，即使来自不同 Runtime。策略从 A 切到 B 可在同一 root 建立一份新的领取；再回到 A 会重放原 A 的请求。对尚未关闭的同 task/Owner root，未能精确追溯到已登记来源的新的失败绑定会以 `continuation_unbound` 拒绝，而不是根据 task、Owner、模型 ID 或错误文案猜测新根问题。
+
+下一次真实 Owner 失败要沿未关闭 root 派生新意图，当前 `ownerRuns[taskId:ownerId]` 必须有以下精确的持久 `recoveryContinuation`：
+
+```js
+{
+  contract: 'DSH_RECOVERY_CONTINUATION_V1',
+  sourceId: 'parent-source-id',
+  rootProblemId: 'parent-root-id',
+  requestId: 'parent-request-id',
+  attemptId: 'parent-t13-attempt-id',
+  taskId: 'task-id', ownerId: 'owner-id', planDigest: 'current-plan-digest',
+  executionIdentity: { sessionId: 'reserved-session-id', promptId: 'reserved-prompt-id' },
+  ownerRunBinding: { attempt: 3, sessionId: 'reserved-session-id' },
+}
+```
+
+所有字段和嵌套对象都是精确字段；未知或错误 contract、缺字段或重新绑定均拒绝。接纳器将当前 terminal Owner run 的 task/Owner/plan、`attempt` 和 session 与请求和 `ownerRunBinding` 同时核验，再将 source/root/request/attempt/task/Owner/plan/预留身份与一个已登记 intent 精确匹配。对应 T-13 attempt 必须已经 `startRecoveryAttempt`，已 `settleRecoveryAttempt` 至 `failed`，且采用本模块的本地回执约定：`executionRef:{id:sessionId,version:promptId}`，失败 prompt 回执为 `result.reference:{id:promptId,version:sessionId}`。这只是 T-20 的持久关联格式，不声称任何真实会话 API 已使用它；T-21/T-22 负责真实后端生产和对账。
+
+通过后，新失败 source 保存该完整边并继承 parent root，建立新的 intent/request/attempt/预留身份；两级额度照常各扣一次。丢失或错误边、未开始/未失败终态、跨 task/Owner/plan/root、前序 intent 重绑、已用尽或未知引用都保守拒绝且不扣额。后继 source 自己仍可以 A/B/A 复用，前序 source 也保持原有幂等。
+
+## T-13 和后续边界
+
+接纳器只调用 `registerRecoveryProblem` 和 `reserveRecoveryAttempt`。新领取在一个纯状态结果中同时登记 source/root、生成意图和占位身份，并使 `DSH_RECOVERY_BUDGET_V1` 的问题及 workflow `used` 一起增加。重放不重复扣减；问题或 workflow 额度耗尽、已关闭根问题都返回拒绝而不改状态。
+
+T-21/T-22 负责把预留身份与真实 session/prompt 回执对账，调用 `startRecoveryAttempt` / `settleRecoveryAttempt`，以及处理不确定状态。本合同中的 `launchAuthorized:false` 在那些实现和真实持久后端证据完成前始终保持为 false。
+
+## T15 重规划执行身份的内部预留扩展（R57）
+
+同一 `prepareRecoveryAdmission` / Runtime `reserveRecoveryAdmission` 持久当前状态事务也接受以下严格互斥请求。此内部接口只预留来源、预算和执行身份，仍返回 `launchAuthorized:false`；R58增加内部Planner/Review会话对账适配器（见replan-session-v1.md），实际cycle/handoff/consultation入口仍未接线，不提供新的公开工具。
+
+```js
+{
+  contract: 'DSH_REPLAN_ADMISSION_REQUEST_V1',
+  origin: { /* 上述精确DSH_RECOVERY_ADMISSION_REQUEST_V1 */ },
+  operation: {
+    operationKind: 'revision_plan', // 或revision_review、handoff_replan
+    operationId: 'persisted-logical-step-id',
+    ordinal: 1,
+  },
+}
+```
+
+origin必须通过当前真实Owner失败或open技术义务的既有审批、版本、用户依据、来源和continuation核验。首次免费Owner终态失败可直接注册第一个root，首次operation领取才扣额度；已付费失败通过continuation继承root。已有来源上的Owner/operation交错领取共用一份sources、root和budget，不先制造一次Owner恢复。replan预留不受“Owner重试前先处理handoff”门禁阻拦，因为它准备处理该handoff；用户决定/技术来源门禁不放宽。正常完成来源仍不接受owner_failure。
+
+operationId是受信Runtime调用方固定的逻辑步骤身份，不是根问题身份或启动授权。当前层不证明它对应实际cycle/handoff；后续实际驱动必须持久校验触发来源快照、分组、候选版本和物理调用，不能直接把模型提供的ID传入。咨询等每次真实外部调用同样必须计费。
+
+operation intent精确保存旧公共字段 `intentKey/sourceId/strategy/planDigest/rootProblemId/requestId/attemptId/executionIdentity`，以 `executionKind=replan_operation/operationKind/operationId/ordinal` 替代 `taskId/ownerId`。source保留真实Owner/义务身份；不得把来源Owner解释成Planner执行Owner。intentKey由sourceId和完整operation确定，不随策略切换另开同一步骤。首次ordinal为1；重放复用同一request/attempt/session/prompt。下一ordinal必须连续且前项已failed结算，结果引用须为 `{id:promptId,version:sessionId}`，若有执行引用则须为 `{id:sessionId,version:promptId}`；reserved/running/成功/取消及错误回执不能创建下一次物理重试。
+
+导入mixed intents逐项比对source、root、完整执行绑定和账本，校验ordinal连续与前项失败，缺intent不能隐藏operation用量。Owner continuation仍只引用实际Owner intent，不把Planner失败伪装成Owner新执行。Owner专属 `reconcileRecoverySession` 明确拒绝operation身份；通用Planner启动及原始提交对账见R58 replan-session-v1.md；实际触发和结果语义应用仍待T15后续接线。旧reader若不支持mixed intent必须拒绝，不删字段降级。

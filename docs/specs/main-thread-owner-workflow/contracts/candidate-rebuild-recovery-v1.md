@@ -1,0 +1,11 @@
+# 恢复候选的后继重建
+
+T15，接续candidate-review-recovery-v1与handoff-recovery-v1。当前实际Runner对handoff-recovery且nextStrategy=local_subgraph_rewrite的非通过候选，改走rebuildRecoveryCandidate→计费Planner→计费Review，不调用通用discard/planWorkflowIntents。
+
+旧候选C及其已结算Review通过R63双原始回执重放核验；replayOnly禁止为“验证前置”启动额外Review。既有Review必须有效且非passed，策略仍允许局部重建。前驱完整candidate及candidateReviews操作快照固定为predecessor；新handoff_replan operationId由原来源/分组加此前驱确定。从同一active A来源领取新的logical operation/ordinal1，不把原Planner或Review的succeeded改成failed；语义失败后新逻辑操作的下一ordinal照常计费。
+
+handoffReplans新操作持久保存predecessor，包含完整旧候选及其Review receipt/result。整个实际Planner调用期间旧pendingPlanRevision保留；领取/应用在最新状态事务中核对旧候选、前驱Review、convergence与handoff来源。实际新候选合法时，与预算成功结算一起原子替换pending候选；失败保留旧候选，未知或并发改变不替换/不退款。中间没有“删除后再猜来源”的阶段。新候选的recoveryRequestId指向新Planner操作，但cycleId继承前驱，维持同一收敛周期及冻结义务，不以新执行操作清空义务；原账本和前驱操作持续保留。
+
+默认handoff策略仍不自动批准。根会话批准已通过 Review 的恢复候选时，Runtime 先从固定 `recoveryRequestId` 找到原 root，再依据保留的同 task、显式 composite child 与所选 handoff 文件覆盖关系生成目标映射。计划、配置当前版本和继承边在同一个 PlanRevision 状态事务中激活；旧候选来源、逐次 Planner/Review 回执和预算历史不改写。缺来源、缺开放 root 映射、父版本竞争或映射冲突会在任何计划写入前拒绝。详见 [T18执行版本继承合同](recovery-execution-transition-v1.md)。
+
+仍未实现：手动discard后的重建继承、连续性变化后的自动修复，以及未列入现有实际策略入口的新增会诊方式。现有 Planner→Review→Owner advice→Arbiter→后继重建的计费和 T18 激活已接入；这不表示全部收敛路径或 CA01 已完成。

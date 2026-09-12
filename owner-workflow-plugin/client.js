@@ -12,7 +12,7 @@
         useState,
         useSyncExternalStore,
       } = React
-      
+
       const WAIT_EVENTS_ENDPOINT = '/owner-workflow/api/waits/events'
       const CLIENT_APPLIED_MARKER = '__DSH_OWNER_WORKFLOW_WAIT_SLOTS_APPLIED__'
       const EMPTY_WAITS = Object.freeze([])
@@ -30,23 +30,26 @@
         'runner_error',
         'workflow_stalled',
       ])
-      
+      const TERMINAL_LIFECYCLES = new Set(['closed', 'completed', 'failed', 'cancelled', 'stopped'])
+
       let waitSnapshot = Object.freeze({
         phase: 'idle',
         waits: EMPTY_WAITS,
         staleWaits: EMPTY_WAITS,
-        runner: Object.freeze({ process: 'offline', assignment: 'offline', heartbeatAt: null, startedAt: null }),
+        runner: Object.freeze({
+          process: 'offline', assignment: 'offline', generation: null, activeAttemptCount: 0, heartbeatAt: null, startedAt: null,
+        }),
         workspaces: EMPTY_STATUS_WORKSPACES,
         error: null,
         updatedAt: 0,
       })
       let waitEvents
       const waitListeners = new Set()
-      
+
       function text(value, max = 1000) {
         return typeof value === 'string' ? value.trim().slice(0, max) : ''
       }
-      
+
       function normalizeWait(value, disposition = 'active') {
         if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
         const state = text(value.state, 100)
@@ -85,7 +88,7 @@
           updatedAt: text(value.updatedAt, 100),
         })
       }
-      
+
       function normalizeActor(value) {
         if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
         const role = text(value.role, 100)
@@ -101,7 +104,7 @@
           updatedAt: text(value.updatedAt, 100),
         })
       }
-      
+
       function normalizeRuntimeEntry(value, kind) {
         if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
         const id = text(kind === 'workflow' ? value.workflowId : value.operationId, 300)
@@ -110,6 +113,17 @@
         const subagents = Array.isArray(value.subagents)
           ? value.subagents.map(normalizeActor).filter(item => item !== undefined)
           : []
+        const rawAttempt = value.runnerAttempt
+        const runnerAttempt = rawAttempt === null || typeof rawAttempt !== 'object' || Array.isArray(rawAttempt)
+          ? undefined
+          : Object.freeze({
+              attemptId: text(rawAttempt.attemptId, 100),
+              kind: text(rawAttempt.kind, 100),
+              phase: text(rawAttempt.phase, 100),
+              reason: text(rawAttempt.reason, 300),
+              startedAt: text(rawAttempt.startedAt, 100),
+              deadlineAt: text(rawAttempt.deadlineAt, 100),
+            })
         return Object.freeze({
           kind,
           id,
@@ -118,6 +132,7 @@
           phase: text(value.phase, 100) || text(value.status, 100),
           lifecycle: text(value.lifecycle, 100),
           runnerAssignment: text(value.runnerAssignment, 100),
+          runnerAttempt,
           execution: value.execution === null || typeof value.execution !== 'object' ? {} : Object.freeze({
             totalTasks: Number.isSafeInteger(value.execution.totalTasks) ? value.execution.totalTasks : 0,
             pendingTasks: Number.isSafeInteger(value.execution.pendingTasks) ? value.execution.pendingTasks : 0,
@@ -130,7 +145,7 @@
           updatedAt: text(value.updatedAt, 100),
         })
       }
-      
+
       function normalizeStatusWorkspace(value) {
         if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
         const workspaceId = text(value.workspaceId, 100)
@@ -146,12 +161,12 @@
             .map(normalizeActor).filter(item => item !== undefined)),
         })
       }
-      
+
       function publishWaitSnapshot(next) {
         waitSnapshot = Object.freeze(next)
         for (const listener of waitListeners) listener()
       }
-      
+
       function waitSnapshotFromBody(body) {
         const compatibleV1 = body?.contract === 'DSH_WAIT_LIST_V1' && Array.isArray(body.waits)
         const currentV2 = ['DSH_WAIT_LIST_V2', 'DSH_WAIT_LIST_V3'].includes(body?.contract)
@@ -173,6 +188,8 @@
           runner: runtimeStatus ? Object.freeze({
             process: text(body.runner?.process, 100) || 'offline',
             assignment: text(body.runner?.assignment, 100) || 'offline',
+            generation: Number.isSafeInteger(body.runner?.generation) ? body.runner.generation : null,
+            activeAttemptCount: Number.isSafeInteger(body.runner?.activeAttemptCount) ? body.runner.activeAttemptCount : 0,
             heartbeatAt: text(body.runner?.heartbeatAt, 100) || null,
             startedAt: text(body.runner?.startedAt, 100) || null,
           }) : waitSnapshot.runner,
@@ -183,7 +200,7 @@
           updatedAt: Date.now(),
         }
       }
-      
+
       function connectWaitEvents() {
         if (waitEvents !== undefined) return
         if (typeof EventSource !== 'function') {
@@ -230,7 +247,7 @@
           })
         }
       }
-      
+
       function subscribeWaits(listener) {
         waitListeners.add(listener)
         if (waitListeners.size === 1) connectWaitEvents()
@@ -241,11 +258,11 @@
           waitEvents = undefined
         }
       }
-      
+
       function useWaitSnapshot() {
         return useSyncExternalStore(subscribeWaits, () => waitSnapshot, () => waitSnapshot)
       }
-      
+
       function useDismissOnOutsidePointer(rootRef, open, setOpen) {
         useEffect(() => {
           if (!open) return undefined
@@ -256,7 +273,7 @@
           return () => document.removeEventListener('pointerdown', dismiss)
         }, [open, rootRef, setOpen])
       }
-      
+
       function useNow(open) {
         const [now, setNow] = useState(() => Date.now())
         useEffect(() => {
@@ -267,7 +284,7 @@
         }, [open])
         return now
       }
-      
+
       function elapsedText(startedAt, now) {
         const start = Date.parse(startedAt)
         if (!Number.isFinite(start)) return '未知'
@@ -279,7 +296,7 @@
         if (minutes > 0) return `${minutes} 分 ${seconds} 秒`
         return `${seconds} 秒`
       }
-      
+
       function waitStatus(state) {
         if (state === 'waiting_user_input') return { label: '等待信息', tone: 'input' }
         if (state === 'waiting_user_approval') return { label: '等待授权', tone: 'approval' }
@@ -293,11 +310,11 @@
         if (state === 'running_owner') return { label: 'Owner 执行中', tone: 'running' }
         return { label: '运行中', tone: 'running' }
       }
-      
+
       function waitIdentifier(item) {
         return item.workflowId || item.operationId
       }
-      
+
       function workflowTotals(waits) {
         return waits.reduce((total, item) => ({
           workflows: total.workflows + (item.source === 'workflow' ? 1 : 0),
@@ -305,7 +322,7 @@
           running: total.running + (item.source === 'workflow' ? item.runningTasks : 0),
         }), { workflows: 0, pending: 0, running: 0 })
       }
-      
+
       function waitSummary(waits, staleCount = 0) {
         const workflow = workflowTotals(waits)
         const operationCount = waits.filter(item => item.source === 'operation').length
@@ -315,7 +332,7 @@
         if (staleCount > 0) parts.push(`遗留 ${staleCount}`)
         return parts.length > 0 ? parts.join(' · ') : '当前没有等待事项'
       }
-      
+
       function nativeInteractionWaits(sessions) {
         const labels = {
           approval: { state: 'waiting_user_approval', goal: '等待权限批准', waitingFor: '用户授权' },
@@ -361,7 +378,7 @@
           }]
         })
       }
-      
+
       function mergeActionWaits(snapshot, sessions) {
         const merged = [...snapshot.waits]
         const seen = new Set(merged.map(item => `${item.sessionId}:${item.state}`))
@@ -371,7 +388,90 @@
         }
         return merged
       }
-      
+
+      function sessionDescendsFrom(sessionId, rootSessionId, sessions) {
+        if (sessionId === '' || rootSessionId === '') return false
+        const visited = new Set()
+        let currentId = sessionId
+        while (currentId !== undefined && currentId !== '' && !visited.has(currentId)) {
+          if (currentId === rootSessionId) return true
+          visited.add(currentId)
+          currentId = sessions.byId[currentId]?.parentId
+        }
+        return false
+      }
+
+      function sessionLineageIsArchived(sessionId, archivedSessionIds, sessions) {
+        const archived = new Set(archivedSessionIds)
+        const visited = new Set()
+        let currentId = sessionId
+        while (currentId !== undefined && currentId !== '' && !visited.has(currentId)) {
+          if (archived.has(currentId)) return true
+          visited.add(currentId)
+          currentId = sessions.byId[currentId]?.parentId
+        }
+        return false
+      }
+
+      function currentSessionContext(sessions, workspaces) {
+        const currentSessionId = text(sessions.current, 300)
+        if (currentSessionId === '' || sessions.byId?.[currentSessionId] === undefined) return undefined
+        if (sessionLineageIsArchived(currentSessionId, workspaces.archivedSessionIds ?? [], sessions)) return undefined
+        const workspace = (workspaces.items ?? []).find(item => (
+          sessionBelongsToWorkspace(currentSessionId, item.sessionIds ?? [], sessions)
+        ))
+        return workspace === undefined ? undefined : { currentSessionId, workspace }
+      }
+
+      function waitBelongsToCurrentContext(item, context, sessions, archivedSessionIds = []) {
+        if (context === undefined || sessions.byId?.[item.sessionId] === undefined) return false
+        return !sessionLineageIsArchived(item.sessionId, archivedSessionIds, sessions)
+          && sessionBelongsToWorkspace(item.sessionId, context.workspace.sessionIds ?? [], sessions)
+          && sessionDescendsFrom(item.sessionId, context.currentSessionId, sessions)
+      }
+
+      function actorIsCurrent(actor, context, sessions) {
+        return actor !== undefined
+          && actor.sessionId !== ''
+          && !TERMINAL_LIFECYCLES.has(actor.lifecycle)
+          && sessionDescendsFrom(actor.sessionId, context.currentSessionId, sessions)
+      }
+
+      function projectRuntimeEntryToCurrentSession(entry, context, sessions) {
+        if (TERMINAL_LIFECYCLES.has(entry.lifecycle)) return undefined
+        const mainThread = actorIsCurrent(entry.mainThread, context, sessions) ? entry.mainThread : undefined
+        const subagents = entry.subagents.filter(actor => actorIsCurrent(actor, context, sessions))
+        if (mainThread === undefined && subagents.length === 0) return undefined
+        return Object.freeze({ ...entry, mainThread, subagents: Object.freeze(subagents) })
+      }
+
+      function currentStatusWorkspaces(snapshot, context, sessions) {
+        if (context === undefined) return EMPTY_STATUS_WORKSPACES
+        const workflows = new Map()
+        const operations = new Map()
+        const agents = new Map()
+        for (const workspace of snapshot.workspaces) {
+          for (const entry of workspace.workflows) {
+            const projected = projectRuntimeEntryToCurrentSession(entry, context, sessions)
+            if (projected !== undefined) workflows.set(projected.id, projected)
+          }
+          for (const entry of workspace.operations) {
+            const projected = projectRuntimeEntryToCurrentSession(entry, context, sessions)
+            if (projected !== undefined) operations.set(projected.id, projected)
+          }
+          for (const actor of workspace.agents) {
+            if (actorIsCurrent(actor, context, sessions)) agents.set(actor.sessionId, actor)
+          }
+        }
+        return [Object.freeze({
+          workspaceId: context.workspace.workspaceId,
+          workspaceName: context.workspace.title,
+          workflows: Object.freeze([...workflows.values()]),
+          operations: Object.freeze([...operations.values()]),
+          agents: Object.freeze([...agents.values()]),
+        })]
+      }
+
       function WaitDetails({ item }) {
         const identifier = waitIdentifier(item)
         return h('details', { className: 'dsh-owner-wait-details' },
@@ -386,7 +486,7 @@
           ),
         )
       }
-      
+
       function WaitItem({ item, now, openSession }) {
         const status = waitStatus(item.state)
         const navigate = event => {
@@ -424,7 +524,7 @@
           ),
         )
       }
-      
+
       function StaleWaitItem({ item, now }) {
         return h('li', { className: 'dsh-owner-wait-item dsh-owner-wait-item-stale' },
           h('div', { className: 'dsh-owner-wait-card-head' },
@@ -442,7 +542,7 @@
           ),
         )
       }
-      
+
       function WaitList({ waits, now, label, stale = false, openSession }) {
         if (waits.length === 0) {
           return h('div', { className: 'dsh-owner-wait-empty' }, '当前没有需要处理的事项。')
@@ -453,7 +553,7 @@
             : h(WaitItem, { key: item.id, item, now, openSession })),
         )
       }
-      
+
       function WaitSection({ title, waits, now, label, openSession }) {
         if (waits.length === 0) return null
         return h('section', { className: 'dsh-owner-wait-section' },
@@ -464,7 +564,7 @@
           h(WaitList, { waits, now, label, openSession }),
         )
       }
-      
+
       function StaleWaitSection({ waits, now, label, children }) {
         if (waits.length === 0) return null
         return h('details', { className: 'dsh-owner-wait-stale-section' },
@@ -475,7 +575,7 @@
           children ?? h(WaitList, { waits, now, label, stale: true }),
         )
       }
-      
+
       function HeaderWaitAction({ sessionId, useSessions, openSession }) {
         const snapshot = useWaitSnapshot()
         const sessions = useSessions(value => value)
@@ -492,13 +592,13 @@
         const rootRef = useRef(null)
         const now = useNow(open)
         useDismissOnOutsidePointer(rootRef, open, setOpen)
-      
+
         const total = waits.length + staleWaits.length
         const summary = waitSummary(waits, staleWaits.length)
         useEffect(() => {
           if (total === 0 && open) setOpen(false)
         }, [total, open])
-      
+
         if (total === 0) return null
         return h('div', { ref: rootRef, className: 'dsh-owner-wait-root' },
           h('button', {
@@ -525,7 +625,7 @@
             : null,
         )
       }
-      
+
       function groupWaitsBySession(waits, sessions) {
         const groups = new Map()
         for (const item of waits) {
@@ -543,7 +643,7 @@
         }
         return [...groups.values()]
       }
-      
+
       function sessionBelongsToWorkspace(sessionId, workspaceSessionIds, sessions) {
         const workspaceSessions = new Set(workspaceSessionIds)
         const visited = new Set()
@@ -555,40 +655,7 @@
         }
         return false
       }
-      
-      function workspaceForWait(item, sessions, workspaces) {
-        const workspace = workspaces.items.find(candidate => (
-          sessionBelongsToWorkspace(item.sessionId, candidate.sessionIds, sessions)
-        ))
-        if (workspace !== undefined) {
-          return { id: workspace.workspaceId, title: workspace.title }
-        }
-        return {
-          id: item.workspaceId || 'unassigned',
-          title: item.workspaceName || '未分组',
-        }
-      }
-      
-      function groupWaitsByWorkspace(waits, sessions, workspaces) {
-        const groups = new Map()
-        for (const item of waits) {
-          const workspace = workspaceForWait(item, sessions, workspaces)
-          let group = groups.get(workspace.id)
-          if (group === undefined) {
-            group = { workspaceId: workspace.id, title: workspace.title, waits: [], sessions: [] }
-            groups.set(workspace.id, group)
-          }
-          group.waits.push(item)
-        }
-        const order = new Map(workspaces.items.map((workspace, index) => [workspace.workspaceId, index]))
-        return [...groups.values()]
-          .map(group => ({ ...group, sessions: groupWaitsBySession(group.waits, sessions) }))
-          .sort((left, right) => (
-            (order.get(left.workspaceId) ?? Number.MAX_SAFE_INTEGER)
-            - (order.get(right.workspaceId) ?? Number.MAX_SAFE_INTEGER)
-          ))
-      }
-      
+
       function WorkspaceWaitGroups({ groups, now, stale = false, openSession }) {
         return groups.map(workspace => h('section', {
           key: workspace.workspaceId,
@@ -614,22 +681,32 @@
         }))),
         ))
       }
-      
+
       const STATUS_TABS = Object.freeze([
         { id: 'attention', label: '需要处理' },
         { id: 'overview', label: '总览' },
         { id: 'main', label: '主线程' },
         { id: 'subagents', label: '子代理' },
       ])
-      
+
       const ACTIVITY_LABELS = Object.freeze({
         initializing: '初始化 Workflow', planning: '生成计划', registry_pending_plan: '等待重新规划',
-        plan_submitted: '计划已提交', plan_review_not_started: 'Reviewer 未启动', plan_reviewing: '审查计划',
+        plan_submitted: '计划已提交', plan_review_not_started: 'Reviewer 未启动', plan_reviewing: '审查计划', plan_revision_in_progress: '修订计划',
         awaiting_plan_approval: '等待计划批准', awaiting_registry_approval: '等待 Registry 批准',
+        awaiting_revision_extension: '等待修订额度决定',
+        planning_discussion_summarizing: '正在总结规划现场',
+        awaiting_main_discussion: '等待主线程讨论',
+        planning_discussion_failed: '规划总结待恢复',
+        planning_owner_consultation: 'Owner 会诊中',
+        plan_split_required: '等待递归拆分',
+        plan_discovery_required: '等待只读调查',
         plan_revision_required: '等待修订计划', plan_review_failed: '计划审查失败', planning_failed: '规划失败',
+        planning_recovery_queued: '等待恢复规划', plan_revision_recovery_queued: '等待恢复计划修订',
         runner_queued: '等待 Runner 接管', runner_launching: 'Runner 正在启动', owner_running: '执行 Owner 任务',
-        waiting_dependencies: '等待 DAG 依赖', waiting_workflow_decision: '等待 Workflow 决策',
-        finalizing: '收尾与合并', implementation_review_required: '等待实现审查', completed: '已经完成',
+        waiting_dependencies: '等待 DAG 依赖', waiting_workflow_decision: '等待 Workflow 决策', execution_recovery_queued: '等待恢复执行现场',
+        handoff_replanning: '正在重规划 Handoff', plan_revision_approval: '批准内部修复计划',
+        finalizing: '收尾与合并', implementation_review_required: '等待实现审查', implementation_repair_required: '生成实现修复子图', completed: '已经完成',
+        state_invariant_violation: '状态不变量异常',
         blocked: '流程阻塞', failed: '执行失败', cancelled: '已经取消', plan_review: '审查计划',
         initial: '生成初版计划', revision: '修订计划', reviewing: '等待 Reviewer',
         waiting_planner: '等待 Planner 回报', waiting_plan_reviewer: '等待 Plan Reviewer 回报',
@@ -639,11 +716,11 @@
         operation_waiting_input: '等待用户补充信息', operation_waiting_approval: '等待用户授权',
         operation_completed: 'Operation 已完成', operation_failed: 'Operation 失败', operation_cancelled: 'Operation 已取消',
       })
-      
+
       function activityLabel(activity) {
         return ACTIVITY_LABELS[activity] || activity || '没有活动阶段'
       }
-      
+
       function roleLabel(role) {
         if (role === 'main') return '主线程'
         if (role === 'planner') return 'Planner'
@@ -655,7 +732,7 @@
         if (role === 'memory-reviewer') return 'Memory Reviewer'
         return role || '子代理'
       }
-      
+
       function lifecycleStatus(lifecycle) {
         if (lifecycle === 'running' || lifecycle === 'active') return { label: '运行中', tone: 'running' }
         if (lifecycle === 'idle') return { label: '空闲', tone: 'idle' }
@@ -673,7 +750,7 @@
         if (lifecycle === 'not_observed') return { label: '未观测', tone: 'dependency' }
         return { label: lifecycle || '未知', tone: 'dependency' }
       }
-      
+
       function RuntimeActorCard({ actor, context, openSession }) {
         const status = lifecycleStatus(actor.lifecycle)
         const canOpen = actor.sessionId !== '' && typeof openSession === 'function'
@@ -695,7 +772,7 @@
         actor.sessionId === '' ? null : h('div', { className: 'dsh-runtime-id', title: actor.sessionId }, actor.sessionId),
         )
       }
-      
+
       function RuntimeOverviewCard({ entry }) {
         const status = lifecycleStatus(entry.lifecycle)
         return h('article', { className: 'dsh-runtime-overview-card' },
@@ -708,14 +785,18 @@
           entry.kind !== 'workflow' ? null : h('div', { className: 'dsh-runtime-meta' },
             `未执行 ${entry.execution.pendingTasks} · 执行中 ${entry.execution.runningTasks} · 已完成 ${entry.execution.completedTasks}`,
           ),
+          entry.runnerAttempt === undefined ? null : h('div', { className: 'dsh-runtime-meta' },
+            `Runner ${entry.runnerAttempt.kind === 'planning-recovery' ? '规划恢复' : '执行'} · ${entry.runnerAttempt.phase}`,
+          ),
           h('div', { className: 'dsh-runtime-id', title: entry.id }, entry.id),
         )
       }
-      
+
       function workspaceEntries(workspace) {
         return [...workspace.workflows, ...workspace.operations]
+          .filter(entry => !TERMINAL_LIFECYCLES.has(entry.lifecycle))
       }
-      
+
       function actorWithPendingInteraction(actor, actionWaits) {
         const wait = actionWaits.find(item => item.sessionId === actor.sessionId)
         if (wait?.state === 'waiting_user_approval' || wait?.state === 'waiting_owner_approval') {
@@ -726,7 +807,7 @@
         }
         return actor
       }
-      
+
       function MainThreadGroups({ workspaces, actionWaits, openSession }) {
         return workspaces.map(workspace => {
           const bySession = new Map()
@@ -754,7 +835,7 @@
           )
         })
       }
-      
+
       function subagentCategory(role) {
         if (role === 'planner' || role === 'plan-reviewer') return '规划与审查'
         if (role === 'owner') return 'Owner 执行'
@@ -762,7 +843,7 @@
         if (role === 'reviewer' || role === 'memory-curator' || role === 'memory-reviewer') return '交付与记忆审查'
         return '其他子代理'
       }
-      
+
       function SubagentGroups({ workspaces, actionWaits, openSession }) {
         return workspaces.map(workspace => {
           const actors = []
@@ -803,7 +884,7 @@
           )
         })
       }
-      
+
       function RuntimeStatusTabs({ snapshot, statusWorkspaces, actionGroups, actionWaits, staleWaits, now, showRunner, openSession }) {
         const [tab, setTab] = useState('attention')
         const entries = statusWorkspaces.flatMap(workspaceEntries)
@@ -819,7 +900,10 @@
                 h('span', { className: 'dsh-runtime-card-title' }, 'Runner'),
                 h('span', { className: `dsh-runtime-state dsh-runtime-state-${snapshot.runner.process === 'online' ? 'running' : 'error'}` }, snapshot.runner.process === 'online' ? '在线' : '离线'),
               ),
-              h('div', { className: 'dsh-runtime-activity' }, snapshot.runner.assignment === 'supervising' ? '正在监督 Workflow' : snapshot.runner.assignment === 'idle' ? '空闲，等待接管' : '没有运行'),
+              h('div', { className: 'dsh-runtime-activity' }, snapshot.runner.assignment === 'supervising'
+                ? `正在监督 ${snapshot.runner.activeAttemptCount} 个 Workflow attempt`
+                : snapshot.runner.assignment === 'idle' ? '空闲，等待接管' : '没有运行'),
+              snapshot.runner.generation === null ? null : h('div', { className: 'dsh-runtime-meta' }, `Leader generation ${snapshot.runner.generation}`),
               snapshot.runner.heartbeatAt === null ? null : h('div', { className: 'dsh-runtime-meta' }, `心跳 ${snapshot.runner.heartbeatAt}`),
             ) : null,
             statusWorkspaces.map(workspace => h('section', { key: workspace.workspaceId, className: 'dsh-runtime-workspace' },
@@ -854,42 +938,35 @@
             : null,
         )
       }
-      
-      function statusWorkspaceSessions(workspace) {
-        return workspaceEntries(workspace).flatMap(entry => [
-          entry.mainThread?.sessionId,
-          ...entry.subagents.map(actor => actor.sessionId),
-        ]).concat(workspace.agents.map(actor => actor.sessionId)).filter(Boolean)
-      }
-      
-      function statusWorkspaceBelongsToSessions(workspace, sessionIds, sessions, workspaceName) {
-        if (workspace.workspaceName === workspaceName) return true
-        return statusWorkspaceSessions(workspace).some(sessionId => sessionBelongsToWorkspace(sessionId, sessionIds, sessions))
-      }
-      
+
       function WorkspaceWaitAction({ workspaceName, sessionIds, useSessions, openSession }) {
         const snapshot = useWaitSnapshot()
         const sessions = useSessions(value => value)
+        const context = useMemo(() => {
+          const currentSessionId = text(sessions.current, 300)
+          if (currentSessionId === '' || sessions.byId?.[currentSessionId] === undefined) return undefined
+          if (!sessionBelongsToWorkspace(currentSessionId, sessionIds, sessions)) return undefined
+          return {
+            currentSessionId,
+            workspace: { workspaceId: workspaceName, title: workspaceName, sessionIds },
+          }
+        }, [sessions, sessionIds, workspaceName])
         const actionWaits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
         const waits = useMemo(
-          () => actionWaits.filter(item => sessionBelongsToWorkspace(item.sessionId, sessionIds, sessions)),
-          [actionWaits, sessionIds, sessions],
-        )
-        const staleWaits = useMemo(
-          () => snapshot.staleWaits.filter(item => sessionBelongsToWorkspace(item.sessionId, sessionIds, sessions)),
-          [snapshot.staleWaits, sessionIds, sessions],
+          () => actionWaits.filter(item => waitBelongsToCurrentContext(item, context, sessions)),
+          [actionWaits, context, sessions],
         )
         const groups = useMemo(() => groupWaitsBySession(waits, sessions), [waits, sessions])
         const statusWorkspaces = useMemo(
-          () => snapshot.workspaces.filter(workspace => statusWorkspaceBelongsToSessions(workspace, sessionIds, sessions, workspaceName)),
-          [snapshot.workspaces, sessionIds, sessions, workspaceName],
+          () => currentStatusWorkspaces(snapshot, context, sessions),
+          [snapshot, context, sessions],
         )
         const [open, setOpen] = useState(false)
         const [menuStyle, setMenuStyle] = useState(undefined)
         const rootRef = useRef(null)
         const now = useNow(open)
         useDismissOnOutsidePointer(rootRef, open, setOpen)
-      
+
         useEffect(() => {
           if (!open) {
             setMenuStyle(undefined)
@@ -909,7 +986,7 @@
           window.addEventListener('resize', positionMenu)
           return () => window.removeEventListener('resize', positionMenu)
         }, [open])
-      
+
         const activeCount = statusWorkspaces.reduce((total, workspace) => total + workspaceEntries(workspace).length, 0)
         const summary = `待处理 ${waits.length} · 活动 ${activeCount}`
         const actionGroups = groups.length === 0 ? [] : [{
@@ -918,7 +995,8 @@
           waits,
           sessions: groups,
         }]
-      
+
+        if (context === undefined) return null
         return h('div', { ref: rootRef, className: 'dsh-owner-workspace-inbox-root' },
           h('button', {
             type: 'button',
@@ -947,7 +1025,7 @@
                   statusWorkspaces,
                   actionGroups,
                   actionWaits: waits,
-                  staleWaits,
+                  staleWaits: EMPTY_WAITS,
                   now,
                   showRunner: true,
                   openSession,
@@ -956,22 +1034,38 @@
             : null,
         )
       }
-      
+
       function SidebarWaitAction({ wide, useSessions, useWorkspaces, openSession }) {
         const snapshot = useWaitSnapshot()
         const sessions = useSessions(value => value)
         const workspaces = useWorkspaces(value => value)
-        const actionWaits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
-        const groups = useMemo(
-          () => groupWaitsByWorkspace(actionWaits, sessions, workspaces),
-          [actionWaits, sessions, workspaces],
+        const context = useMemo(() => currentSessionContext(sessions, workspaces), [sessions, workspaces])
+        const mergedWaits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
+        const actionWaits = useMemo(
+          () => mergedWaits.filter(item => waitBelongsToCurrentContext(
+            item,
+            context,
+            sessions,
+            workspaces.archivedSessionIds ?? [],
+          )),
+          [mergedWaits, context, sessions, workspaces.archivedSessionIds],
         )
+        const statusWorkspaces = useMemo(
+          () => currentStatusWorkspaces(snapshot, context, sessions),
+          [snapshot, context, sessions],
+        )
+        const groups = useMemo(() => context === undefined || actionWaits.length === 0 ? [] : [{
+          workspaceId: context.workspace.workspaceId,
+          title: context.workspace.title,
+          waits: actionWaits,
+          sessions: groupWaitsBySession(actionWaits, sessions),
+        }], [actionWaits, context, sessions])
         const [open, setOpen] = useState(false)
         const [menuStyle, setMenuStyle] = useState(undefined)
         const rootRef = useRef(null)
         const now = useNow(open)
         useDismissOnOutsidePointer(rootRef, open, setOpen)
-      
+
         useEffect(() => {
           if (!open) {
             setMenuStyle(undefined)
@@ -991,30 +1085,34 @@
           window.addEventListener('resize', positionMenu)
           return () => window.removeEventListener('resize', positionMenu)
         }, [open, wide])
-      
-        const staleCount = snapshot.staleWaits.length
-        const activeCount = snapshot.workspaces.reduce((total, workspace) => total + workspaceEntries(workspace).length, 0)
-        const summary = `待处理 ${actionWaits.length} · 活动 ${activeCount}${staleCount > 0 ? ` · 遗留 ${staleCount}` : ''}`
-      
+
+        const activeCount = statusWorkspaces.reduce((total, workspace) => total + workspaceEntries(workspace).length, 0)
+        const summary = `待处理 ${actionWaits.length} · 活动 ${activeCount}`
+        const currentSessionTitle = context === undefined
+          ? ''
+          : sessions.byId[context.currentSessionId]?.displayTitle
+            || sessions.byId[context.currentSessionId]?.title
+            || `会话 ${context.currentSessionId}`
+
+        if (context === undefined) return null
         return h('div', { ref: rootRef, className: 'dsh-owner-wait-sidebar-root' },
           h('button', {
             type: 'button',
             className: wide ? 'dsh-owner-wait-sidebar-trigger dsh-owner-wait-sidebar-wide' : 'dsh-owner-wait-sidebar-trigger',
             'aria-expanded': open,
-            'aria-label': `运行状态，${actionWaits.length} 个需要处理`,
+            'aria-label': `${context.workspace.title} 当前会话运行状态，${actionWaits.length} 个需要处理`,
             title: wide ? undefined : summary,
             onClick: () => setOpen(value => !value),
           },
           h('span', { className: 'dsh-owner-wait-sidebar-icon', 'aria-hidden': 'true' }, '◎'),
           wide ? h('span', { className: 'dsh-owner-wait-sidebar-label' }, '运行状态') : null,
           actionWaits.length > 0 ? h('span', { className: 'dsh-owner-wait-badge' }, actionWaits.length) : null,
-          staleCount > 0 ? h('span', { className: 'dsh-owner-wait-stale-badge', title: `${staleCount} 个遗留记录` }, staleCount) : null,
           ['error', 'disconnected'].includes(snapshot.phase) ? h('span', { className: 'dsh-owner-wait-error-mark', title: snapshot.error || '运行状态暂不可用' }, '!') : null),
           open && menuStyle !== undefined
             ? h('div', { className: 'dsh-owner-wait-menu dsh-owner-wait-menu-sidebar', style: menuStyle },
                 h('div', { className: 'dsh-owner-wait-menu-title' },
                   h('div', null,
-                    h('div', null, '运行状态'),
+                    h('div', null, `${context.workspace.title} · ${currentSessionTitle}`),
                     h('div', { className: 'dsh-owner-wait-menu-summary' }, summary),
                   ),
                 ),
@@ -1023,10 +1121,10 @@
                   : null,
                 h(RuntimeStatusTabs, {
                   snapshot,
-                  statusWorkspaces: snapshot.workspaces,
+                  statusWorkspaces,
                   actionGroups: groups,
                   actionWaits,
-                  staleWaits: snapshot.staleWaits,
+                  staleWaits: EMPTY_WAITS,
                   now,
                   showRunner: true,
                   openSession,
@@ -1035,38 +1133,50 @@
             : null,
         )
       }
-      
+
       function FloatingActionInbox({ useSessions, useWorkspaces, openSession }) {
         const snapshot = useWaitSnapshot()
         const sessions = useSessions(value => value)
         const workspaces = useWorkspaces(value => value)
-        const waits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
-        const groups = useMemo(
-          () => groupWaitsByWorkspace(waits, sessions, workspaces),
-          [waits, sessions, workspaces],
+        const context = useMemo(() => currentSessionContext(sessions, workspaces), [sessions, workspaces])
+        const mergedWaits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
+        const waits = useMemo(
+          () => mergedWaits.filter(item => waitBelongsToCurrentContext(
+            item,
+            context,
+            sessions,
+            workspaces.archivedSessionIds ?? [],
+          )),
+          [mergedWaits, context, sessions, workspaces.archivedSessionIds],
         )
+        const groups = useMemo(() => context === undefined || waits.length === 0 ? [] : [{
+          workspaceId: context.workspace.workspaceId,
+          title: context.workspace.title,
+          waits,
+          sessions: groupWaitsBySession(waits, sessions),
+        }], [waits, context, sessions])
         const [open, setOpen] = useState(false)
         const rootRef = useRef(null)
         const now = useNow(open)
         useDismissOnOutsidePointer(rootRef, open, setOpen)
-        if (waits.length === 0) return null
+        if (context === undefined || waits.length === 0) return null
         return h('div', { ref: rootRef, className: 'dsh-owner-action-inbox-floating' },
           h('button', {
             type: 'button',
             className: 'dsh-owner-action-inbox-floating-trigger',
             'aria-expanded': open,
-            'aria-label': `有 ${waits.length} 个需要处理事项`,
+            'aria-label': `${context.workspace.title} 当前会话有 ${waits.length} 个需要处理事项`,
             onClick: () => setOpen(value => !value),
           }, h('span', { 'aria-hidden': 'true' }, '⏳'), h('span', null, waits.length)),
           open
             ? h('div', { className: 'dsh-owner-wait-menu dsh-owner-action-inbox-floating-menu' },
-                h('div', { className: 'dsh-owner-wait-menu-title' }, h('span', null, '需要处理'), h('span', { className: 'dsh-owner-wait-menu-summary' }, `待处理 ${waits.length}`)),
+                h('div', { className: 'dsh-owner-wait-menu-title' }, h('span', null, `${context.workspace.title} · 当前会话`), h('span', { className: 'dsh-owner-wait-menu-summary' }, `待处理 ${waits.length}`)),
                 h(WorkspaceWaitGroups, { groups, now, openSession }),
               )
             : null,
         )
       }
-      
+
       function installStyles() {
         if (document.querySelector('style[data-owner-workflow-waits]') !== null) return
         const style = document.createElement('style')
@@ -1109,9 +1219,9 @@
         `.trim()
         document.head.appendChild(style)
       }
-      
+
       exports.inject = ['slots', 'sessions']
-      
+
       exports.apply = function apply(ctx) {
         // 正式包名与本地开发别名意外同时进入启动图时，只允许第一份客户端占用 Slot。
         if (window[CLIENT_APPLIED_MARKER] === true) return
@@ -1163,9 +1273,9 @@
         )
         window[CLIENT_APPLIED_MARKER] = true
       }
-      
+
       exports.default = { inject: exports.inject, apply: exports.apply }
-      
+
     return module.exports
   }
   for (const id of ['dsh-owner-workflow', 'dsh-owner-workflow-local-ui']) {

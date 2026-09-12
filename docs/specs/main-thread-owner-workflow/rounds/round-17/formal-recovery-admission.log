@@ -1,0 +1,53 @@
+✔ T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt (456.542042ms)
+✔ T20 reloads the same durable request through a new Runtime without rebilling or changing identity (491.844708ms)
+✔ T20 derives A/B/A from persisted strategy, keeping one root but distinct durable requests (726.03ms)
+✔ T20 rejects forged request fields and incorrect source binding without creating a recovery account (660.796459ms)
+✔ T20 rejects a missing strategy and owner-failure records that no longer describe a failed technical task (475.351959ms)
+✔ T20 admits only a live technical obligation and preserves the user-authority boundary (720.64375ms)
+✔ T20 makes approval, current plan digest, cancellation, malformed state, and absent config hard wrapper gates (550.240292ms)
+✔ T20 rejects changed limits after accounting begins and never returns a receipt when the first save cannot commit (681.739ms)
+✔ T20 cross-process distinct requests consume the final workflow credit once (636.957125ms)
+✔ T20 cross-process competition for one request yields one receipt identity and one debit (820.981208ms)
+✔ R15 next failed executions with the same strategy inherit the root and persist replay across Runtime restarts (774.933208ms)
+▶ R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget
+  ✔ missing (99.347291ms)
+  ✔ contract (177.570917ms)
+  ✔ sourceId (63.932375ms)
+  ✔ rootProblemId (82.38225ms)
+  ✔ requestId (85.326333ms)
+  ✔ attemptId (116.479666ms)
+  ✔ taskId (99.375667ms)
+  ✔ ownerId (160.837875ms)
+  ✔ planDigest (212.183958ms)
+  ✔ identity sessionId (92.368834ms)
+  ✔ identity promptId (67.903292ms)
+  ✔ run attempt (193.936583ms)
+  ✔ run session (245.021333ms)
+  ✔ unknown field (291.884042ms)
+  ✔ execution receipt (1155.145042ms)
+  ✔ result receipt (261.047917ms)
+✔ R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget (4149.356417ms)
+✔ R15 rejects a predecessor that never started (1178.839084ms)
+✔ R15 rejects a predecessor that still running (1040.903417ms)
+✔ R15 rejects a predecessor that succeeded (619.497292ms)
+✔ R15 rejects a predecessor that cancelled (510.8945ms)
+✔ R15 continuation cannot reset exhausted problem credit (527.805958ms)
+✔ R15 continuation cannot reset exhausted workflow credit (588.864417ms)
+▶ R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed
+  ✔ renumber the same execution (68.483334ms)
+  ✔ drop current continuation (74.076292ms)
+  ✔ drop historical edge (90.047709ms)
+  ✔ redirect historical parent (52.714083ms)
+  ✔ redirect successor root (62.223208ms)
+✔ R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed (917.265833ms)
+✔ R15 concurrent continuation calls from separate processes share one successor receipt and one debit (1166.211708ms)
+✔ R15 a technical obligation recovery can produce a failed Owner continuation under its original root (552.664791ms)
+✔ R15 derived source retains A/B/A replay without erasing the continuation edge (669.2785ms)
+ℹ tests 43
+ℹ suites 0
+ℹ pass 43
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 19112.289458

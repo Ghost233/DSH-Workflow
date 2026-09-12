@@ -37,11 +37,14 @@ async function readSseData(reader, initial = '') {
     if (boundary !== -1) {
       const frame = buffer.slice(0, boundary)
       const rest = buffer.slice(boundary + 2)
+      const event = frame.split('\n')
+        .find(line => line.startsWith('event:'))
+        ?.slice(6).trimStart()
       const data = frame.split('\n')
         .filter(line => line.startsWith('data:'))
         .map(line => line.slice(5).trimStart())
         .join('\n')
-      if (data !== '') return { value: JSON.parse(data), rest }
+      if (data !== '') return { value: JSON.parse(data), rest, event }
       buffer = rest
       continue
     }
@@ -51,14 +54,41 @@ async function readSseData(reader, initial = '') {
   }
 }
 
-test('等待列表 SSE 由文件事件驱动，不运行周期轮询', async () => {
+test('等待列表 SSE 同时使用文件事件、周期基线重拉和 heartbeat', async () => {
   const source = await readFile(new URL('../src/dashboard.mjs', import.meta.url), 'utf8')
   const start = source.indexOf('export async function serveDashboardWaitEvents')
   const end = source.indexOf('\nfunction projectionEvents', start)
   assert.ok(start >= 0 && end > start)
   const streamSource = source.slice(start, end)
-  assert.doesNotMatch(streamSource, /setInterval/u)
-  assert.doesNotMatch(source, /WAIT_STREAM_RECONCILE_MS/u)
+  assert.match(streamSource, /setInterval\(schedulePublish, DASHBOARD_BASELINE_POLL_MS\)/u)
+  assert.match(streamSource, /: heartbeat/u)
+})
+
+test('Dashboard 用全局 catalog 读取唯一 Runner，同时默认只登记当前业务工作区', async t => {
+  const catalog = await workspaceFixture(t)
+  const workspace = await workspaceFixture(t)
+  await mkdir(join(catalog, '.dsh-workflow', 'runner'), { recursive: true })
+  await writeFile(join(catalog, '.dsh-workflow', 'runner', 'daemon.json'), `${JSON.stringify({
+    contract: 'DSH_WORKFLOW_RUNNER_DAEMON_V1',
+    status: 'running',
+    generation: 7,
+    pollMs: 1000,
+    heartbeatAt: new Date().toISOString(),
+    activeWorkflows: [],
+  }, null, 2)}\n`, 'utf8')
+  const dashboard = await listen(createDashboardHandler(workspace, { catalogRoot: catalog }))
+  t.after(() => dashboard.close())
+
+  const workspaces = await (await fetch(`${dashboard.url}/owner-workflow/api/workspaces`)).json()
+  assert.match(await readFile(join(catalog, '.dsh-workflow', '.gitignore'), 'utf8'), /\*\n!\.gitignore\n$/u)
+  assert.deepEqual(workspaces.workspaces.map(item => item.workspaceId), [
+    createHash('sha256').update(workspace).digest('hex').slice(0, 20),
+  ])
+  const status = await (await fetch(`${dashboard.url}/owner-workflow/api/waits`)).json()
+  assert.equal(status.runner.process, 'online')
+  assert.equal(status.runner.generation, 7)
+  assert.equal(status.workspaces.length, 1)
+  assert.equal(status.workspaces[0].workspaceId, workspaces.workspaces[0].workspaceId)
 })
 
 test('内嵌 Dashboard 页面、目录与 DAG 快照都从固定工作区只读提供', async t => {
@@ -116,6 +146,13 @@ test('内嵌 Dashboard 页面、目录与 DAG 快照都从固定工作区只读�
   const pageText = await page.text()
   assert.match(pageText, /Owner Workflow Dashboard/u)
   assert.match(pageText, /后台 Operation/u)
+  assert.match(pageText, /min-width:\s*1000px/u)
+  assert.match(pageText, /max-width:\s*none/u)
+  assert.match(pageText, /new EventSource/u)
+  assert.match(pageText, /api\/snapshot\/events/u)
+  assert.match(pageText, /stream\.onmessage/u)
+  assert.match(pageText, /awaiting_main_discussion:\s*'等待主线程讨论'/u)
+  assert.doesNotMatch(pageText, /setInterval\(\(\) => void load\(\), 3000\)/u)
   assert.equal(page.headers.get('content-security-policy')?.includes("connect-src 'self'"), true)
 
   const catalog = await fetch(`${dashboard.url}/owner-workflow/api/workflows`)
@@ -194,6 +231,389 @@ test('内嵌 Dashboard 页面、目录与 DAG 快照都从固定工作区只读�
   assert.equal(waitsBody.waits[0].startedAt, operation.approvals['approval-dashboard'].requestedAt)
 })
 
+test('Dashboard 把可自治的计划审查失败显示为 Runner 恢复，而不是用户动作', async t => {
+  const root = await workspaceFixture(t)
+  const workflowId = 'wf-review-failed-dashboard'
+  const plan = {
+    contract: 'DSH_PLAN_V2',
+    registryDigest: 'a'.repeat(64),
+    summary: '审查未通过的计划',
+    owners: [{ id: 'web', name: 'Web', description: 'Web Owner', scope: ['src/**'], exclude: [] }],
+    verifications: [{ id: 'unit', run: ['node', '--test'] }],
+    tasks: [{
+      id: 'T1', role: 'work', ownerId: 'web', title: '实现页面', dependsOn: [],
+      write: ['src/**'], verify: ['unit'], done: ['页面完成'],
+      priority: 100,
+      onFailure: { action: 'repair_owner', maxAttempts: 2 },
+      onBlocked: { action: 'notify_main' },
+      onTimeout: { action: 'notify_main', afterMs: 180000 },
+    }],
+  }
+  await writeProgressProjection(root, {
+    id: workflowId,
+    status: 'planned',
+    orchestratorSessionId: 'main-session-review-failed',
+    plan,
+    planDigest: 'plan-digest',
+    planReview: {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '固定验证仍不完整',
+      issues: [{ title: '缺少运行时验收' }, { title: '清理范围不闭合' }],
+    },
+    planningAgent: { phase: 'review_failed', automaticRevisionExhausted: true },
+    tasks: [{ taskId: 'T1', status: 'pending', executorId: null, cursor: null, unchangedPolls: 0 }],
+    ownerRuns: {},
+  })
+  const dashboard = await listen(createDashboardHandler(root))
+  t.after(() => dashboard.close())
+
+  const snapshot = await (await fetch(`${dashboard.url}/owner-workflow/api/snapshot?workflow_id=${workflowId}`)).json()
+  assert.equal(snapshot.status, 'planned')
+  assert.equal(snapshot.phase, 'plan_revision_recovery_queued')
+  assert.deepEqual(snapshot.review, {
+    status: 'needs_revision',
+    summary: '固定验证仍不完整',
+    issueCount: 2,
+  })
+  assert.equal(snapshot.action, undefined)
+  const workflows = (await (await fetch(`${dashboard.url}/owner-workflow/api/workflows`)).json()).workflows
+  assert.deepEqual(workflows.map(item => ({
+    workflowId: item.workflowId,
+    status: item.status,
+    phase: item.phase,
+    actionRequired: item.actionRequired,
+  })), [{
+    workflowId,
+    status: 'planned',
+    phase: 'plan_revision_recovery_queued',
+    actionRequired: undefined,
+  }])
+})
+
+test('Dashboard 展示 Owner 会诊、abstract 层级和 Reviewer 指定的拆分阶段', async t => {
+  const root = await workspaceFixture(t)
+  const workflowId = 'wf-progressive-dag-dashboard'
+  const state = {
+    id: workflowId,
+    status: 'planned',
+    orchestratorSessionId: 'main-session-progressive-dag',
+    plan: {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: 'a'.repeat(64),
+      summary: '渐进式 DAG',
+      owners: [{ id: 'web', name: 'Web', description: 'Web Owner', scope: ['src/**'], exclude: [] }],
+      verifications: [],
+      tasks: [{
+        id: 'T1',
+        role: 'work',
+        ownerId: 'web',
+        title: '待拆分的高层节点',
+        dependsOn: [],
+        write: [],
+        verify: [],
+        done: ['形成子图'],
+        decomposition: {
+          status: 'abstract',
+          kind: 'discovery',
+          outcome: '生成可执行叶子',
+          ownerCandidates: ['web'],
+          unknowns: ['现有测试 harness 边界'],
+        },
+      }],
+    },
+    planDigest: 'progressive-plan-digest',
+    planningAgent: { phase: 'consulting_owners' },
+    tasks: [{ taskId: 'T1', status: 'pending', executorId: null, cursor: null, unchangedPolls: 0 }],
+    ownerRuns: {},
+  }
+  await writeProgressProjection(root, state)
+  const dashboard = await listen(createDashboardHandler(root))
+  t.after(() => dashboard.close())
+
+  let snapshot = await (await fetch(`${dashboard.url}/owner-workflow/api/snapshot?workflow_id=${workflowId}`)).json()
+  assert.equal(snapshot.phase, 'planning_owner_consultation')
+  assert.equal(snapshot.tasks[0].decomposition.status, 'abstract')
+  assert.equal(snapshot.tasks[0].decomposition.kind, 'discovery')
+  assert.deepEqual(snapshot.tasks[0].decomposition.unknowns, ['现有测试 harness 边界'])
+
+  state.planningAgent = { phase: 'review_complete' }
+  state.planReviewDigest = state.planDigest
+  state.planReview = {
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_split',
+    summary: 'T1 需要继续拆分',
+    issues: [{ title: '节点过大' }],
+    targetTaskIds: ['T1'],
+  }
+  await writeProgressProjection(root, state)
+  snapshot = await (await fetch(`${dashboard.url}/owner-workflow/api/snapshot?workflow_id=${workflowId}`)).json()
+  assert.equal(snapshot.phase, 'plan_split_required')
+  assert.equal(snapshot.action, undefined)
+
+  state.plan.tasks[0].decomposition.kind = 'decision'
+  state.planningAgent = { phase: 'discussion_summary_pending' }
+  state.planReview = {
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_decision',
+    summary: '需要用户策略决定',
+    issues: [],
+    decisionQuestions: ['是否允许连接真实外部服务？'],
+  }
+  state.planningDiscussion = {
+    source: 'plan-review-needs-decision',
+    status: 'summary_pending',
+  }
+  state.pendingDecisionBundle = {
+    contract: 'DSH_WORKFLOW_DECISION_BUNDLE_V1',
+    status: 'pending',
+    questions: ['是否允许连接真实外部服务？', '目标测试环境是什么？'],
+  }
+  await writeProgressProjection(root, state)
+  snapshot = await (await fetch(`${dashboard.url}/owner-workflow/api/snapshot?workflow_id=${workflowId}`)).json()
+  assert.equal(snapshot.phase, 'planning_discussion_summarizing')
+  assert.equal(snapshot.action, undefined)
+  assert.equal(snapshot.decisionBundle.questionCount, 2)
+
+  state.planningAgent = { phase: 'awaiting_main_discussion' }
+  state.planningDiscussion.status = 'delivered'
+  await writeProgressProjection(root, state)
+  snapshot = await (await fetch(`${dashboard.url}/owner-workflow/api/snapshot?workflow_id=${workflowId}`)).json()
+  assert.equal(snapshot.phase, 'awaiting_main_discussion')
+  assert.equal(snapshot.action.title, '决策问题已返回主线程')
+  assert.match(snapshot.action.detail, /自动规划已暂停/u)
+})
+
+test('Dashboard 把修订预算耗尽显示为等待用户决定，而不是运行中或 Runtime 故障', async t => {
+  const root = await workspaceFixture(t)
+  const workflowId = 'wf-revision-extension-dashboard'
+  const state = {
+    id: workflowId,
+    root,
+    status: 'planned',
+    orchestratorSessionId: 'main-session-revision-extension',
+    plan: {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: 'a'.repeat(64),
+      summary: '等待扩展额度的计划',
+      owners: [{ id: 'web', name: 'Web', description: 'Web Owner', scope: ['src/**'], exclude: [] }],
+      verifications: [{ id: 'unit', run: ['node', '--test'] }],
+      tasks: [{
+        id: 'T1', role: 'work', ownerId: 'web', title: '实现页面', dependsOn: [],
+        write: ['src/**'], verify: ['unit'], done: ['页面完成'],
+        priority: 100,
+        onFailure: { action: 'repair_owner', maxAttempts: 2 },
+        onBlocked: { action: 'notify_main' },
+        onTimeout: { action: 'notify_main', afterMs: 180000 },
+      }],
+    },
+    planDigest: 'plan-digest',
+    planReviewDigest: 'plan-digest',
+    planReview: {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '三轮后仍需修订',
+      issues: [{ title: '验证仍不完整' }],
+    },
+    planReviewRevisionCount: 3,
+    planRevisionLimit: 3,
+    planningAgent: {
+      phase: 'awaiting_revision_extension',
+      revisionBudgetUsed: 3,
+      revisionBudgetLimit: 3,
+      revisionBudgetExhausted: true,
+    },
+    pendingPlanningDecision: {
+      decisionId: 'pd-dashboard-revision-extension',
+      kind: 'plan_revision_extension',
+      status: 'pending',
+    },
+    mainOutbox: {
+      'mo-dashboard-revision-extension': {
+        notificationId: 'mo-dashboard-revision-extension',
+        decisionId: 'pd-dashboard-revision-extension',
+        status: 'delivered',
+        presentationStatus: 'active',
+      },
+    },
+    tasks: [{ taskId: 'T1', status: 'pending', executorId: null, cursor: null, unchangedPolls: 0 }],
+    ownerRuns: {},
+  }
+  await writeProgressProjection(root, state)
+  await mkdir(join(root, '.dsh-workflow', 'workflows'), { recursive: true })
+  await writeFile(
+    join(root, '.dsh-workflow', 'workflows', `${workflowId}.json`),
+    `${JSON.stringify(state, null, 2)}\n`,
+    'utf8',
+  )
+  const dashboard = await listen(createDashboardHandler(root))
+  t.after(() => dashboard.close())
+
+  const snapshot = await (await fetch(`${dashboard.url}/owner-workflow/api/snapshot?workflow_id=${workflowId}`)).json()
+  assert.equal(snapshot.phase, 'awaiting_revision_extension')
+  assert.deepEqual(snapshot.action, {
+    required: true,
+    kind: 'plan_revision_extension',
+    title: '计划修订额度等待决定',
+    detail: '计划已达到自动修订上限，原生决定卡片已直接在创建该 Workflow 的主会话打开；当前没有子代理仍在运行。',
+    mainSessionId: 'main-session-revision-extension',
+  })
+  const waits = await (await fetch(`${dashboard.url}/owner-workflow/api/waits`)).json()
+  assert.deepEqual(waits.waits.map(item => ({ state: item.state, waitingFor: item.waitingFor, statusText: item.statusText })), [{
+    state: 'waiting_workflow_decision',
+    waitingFor: 'Workflow 根会话决定是否扩展计划修订额度',
+    statusText: '计划修订额度原生决定卡片已打开，等待用户选择',
+  }])
+})
+
+test('Dashboard 显示自动规划已终止并等待主线程讨论', async t => {
+  const root = await workspaceFixture(t)
+  const workflowId = 'wf-planning-discussion-dashboard'
+  const state = {
+    id: workflowId,
+    root,
+    status: 'planned',
+    orchestratorSessionId: 'main-session-planning-discussion',
+    plan: {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: 'a'.repeat(64),
+      summary: '已停止自动规划的计划',
+      owners: [{ id: 'web', name: 'Web', description: 'Web Owner', scope: ['src/**'], exclude: [] }],
+      verifications: [{ id: 'unit', run: ['node', '--test'] }],
+      tasks: [{
+        id: 'T1', role: 'work', ownerId: 'web', title: '实现页面', dependsOn: [],
+        write: ['src/**'], verify: ['unit'], done: ['页面完成'],
+        priority: 100,
+        onFailure: { action: 'repair_owner', maxAttempts: 2 },
+        onBlocked: { action: 'notify_main' },
+        onTimeout: { action: 'notify_main', afterMs: 180000 },
+      }],
+    },
+    planDigest: 'discussion-plan-digest',
+    planReviewDigest: 'discussion-plan-digest',
+    planReview: {
+      contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_revision', summary: '多轮仍未收敛', issues: [],
+    },
+    planningAgent: { phase: 'awaiting_main_discussion', decisionQuestionStatus: 'answered' },
+    pendingPlanningDecision: { kind: 'plan_revision_extension', status: 'discussion' },
+    planningDiscussion: {
+      contract: 'DSH_WORKFLOW_PLANNING_DISCUSSION_V1',
+      discussionId: 'pds-dashboard',
+      status: 'delivered',
+      summary: '总结已经返回主线程。',
+    },
+    tasks: [{ taskId: 'T1', status: 'pending', executorId: null, cursor: null, unchangedPolls: 0 }],
+    ownerRuns: {},
+  }
+  await writeProgressProjection(root, state)
+  await mkdir(join(root, '.dsh-workflow', 'workflows'), { recursive: true })
+  await writeFile(join(root, '.dsh-workflow', 'workflows', `${workflowId}.json`), `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+  const dashboard = await listen(createDashboardHandler(root))
+  t.after(() => dashboard.close())
+
+  const snapshot = await (await fetch(`${dashboard.url}/owner-workflow/api/snapshot?workflow_id=${workflowId}`)).json()
+  assert.equal(snapshot.phase, 'awaiting_main_discussion')
+  assert.deepEqual(snapshot.action, {
+    required: true,
+    kind: 'planning_discussion_ready',
+    title: '规划总结已返回主线程',
+    detail: '自动规划已经终止并保留现场。总结已返回 Workflow 根会话，等待主线程与用户讨论下一步。',
+    mainSessionId: 'main-session-planning-discussion',
+  })
+  const waits = await (await fetch(`${dashboard.url}/owner-workflow/api/waits`)).json()
+  assert.deepEqual(waits.waits.map(item => ({ state: item.state, waitingFor: item.waitingFor, statusText: item.statusText })), [{
+    state: 'waiting_workflow_decision',
+    waitingFor: 'Workflow 根会话与用户讨论',
+    statusText: '自动规划已终止，现状总结已返回主线程',
+  }])
+})
+
+test('Dashboard 把仍有预算的 review_failed 显示为等待 Runner 自动恢复', async t => {
+  const root = await workspaceFixture(t)
+  const workflowId = 'wf-review-recovery-dashboard'
+  await writeProgressProjection(root, {
+    id: workflowId,
+    status: 'planned',
+    plan: {
+      contract: 'DSH_PLAN_V2',
+      registryDigest: 'a'.repeat(64),
+      summary: '等待自动恢复的计划',
+      owners: [{ id: 'web', name: 'Web', description: 'Web Owner', scope: ['src/**'], exclude: [] }],
+      verifications: [{ id: 'unit', run: ['node', '--test'] }],
+      tasks: [{
+        id: 'T1', role: 'work', ownerId: 'web', title: '实现页面', dependsOn: [],
+        write: ['src/**'], verify: ['unit'], done: ['页面完成'],
+        priority: 100,
+        onFailure: { action: 'repair_owner', maxAttempts: 2 },
+        onBlocked: { action: 'notify_main' },
+        onTimeout: { action: 'notify_main', afterMs: 180000 },
+      }],
+    },
+    planDigest: 'plan-digest',
+    planReview: {
+      contract: 'DSH_PLAN_REVIEW_V1',
+      status: 'needs_revision',
+      summary: '仍需修订',
+      issues: [{ title: '补充确定性验证' }],
+    },
+    planReviewRevisionCount: 1,
+    planRevisionLimit: 3,
+    planningAgent: { phase: 'review_failed' },
+    tasks: [{ taskId: 'T1', status: 'pending', executorId: null, cursor: null, unchangedPolls: 0 }],
+    ownerRuns: {},
+  })
+  const dashboard = await listen(createDashboardHandler(root))
+  t.after(() => dashboard.close())
+
+  const snapshot = await (await fetch(`${dashboard.url}/owner-workflow/api/snapshot?workflow_id=${workflowId}`)).json()
+  assert.equal(snapshot.phase, 'plan_revision_recovery_queued')
+  assert.equal(snapshot.action, undefined)
+})
+
+test('Workflow Dashboard 通过 SSE 在投影变化后实时推送', async t => {
+  const root = await workspaceFixture(t)
+  const workflowId = 'wf-dashboard-realtime'
+  await writeProgressProjection(root, {
+    workflowId,
+    status: 'planned',
+    summary: '实时 Dashboard 测试',
+    tasks: [],
+  })
+  const dashboard = await listen(createDashboardHandler(root))
+  t.after(() => dashboard.close())
+  const controller = new AbortController()
+  t.after(() => controller.abort())
+  const response = await fetch(`${dashboard.url}/owner-workflow/api/snapshot/events?workflow_id=${workflowId}`, {
+    signal: controller.signal,
+  })
+  assert.equal(response.status, 200)
+  assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/u)
+  const reader = response.body.getReader()
+  let rest = ''
+  const initial = await readSseData(reader, rest)
+  rest = initial.rest
+  assert.equal(initial.event, undefined)
+  assert.equal(initial.value.projection.workflowId, workflowId)
+
+  await writeProgressProjection(root, {
+    workflowId,
+    status: 'running',
+    summary: '实时 Dashboard 测试',
+    tasks: [],
+  })
+  let updated
+  for (let index = 0; index < 10; index += 1) {
+    const next = await readSseData(reader, rest)
+    rest = next.rest
+    if (next.value.projection?.status === 'running') {
+      updated = next.value
+      break
+    }
+  }
+  assert.equal(updated?.projection?.status, 'running')
+  await reader.cancel()
+})
+
 test('等待列表 SSE 立即发送快照并在磁盘状态变化后推送新快照', async t => {
   const root = await workspaceFixture(t)
   const operation = createOperationState({
@@ -231,6 +651,7 @@ test('等待列表 SSE 立即发送快照并在磁盘状态变化后推送新快
   assert.equal(response.headers.get('content-type'), 'text/event-stream; charset=utf-8')
   const reader = response.body.getReader()
   const initial = await readSseData(reader)
+  assert.equal(initial.event, 'waits')
   assert.deepEqual(initial.value.waits.map(item => item.operationId), ['op-waits-stream'])
 
   operation.status = 'completed'
@@ -439,9 +860,18 @@ test('等待列表投影 Runner 接管、未执行、执行中和依赖任务数
     contract: 'DSH_WORKFLOW_RUNNER_DAEMON_V1',
     status: 'running',
     pid: process.pid,
+    generation: 3,
     pollMs: 1000,
     heartbeatAt: new Date().toISOString(),
-    activeWorkflows: [{ workspaceId, workflowId: 'wf-running', pid: process.pid }],
+    activeWorkflows: [{
+      workspaceId,
+      workflowId: 'wf-running',
+      attemptId: 'attempt-running',
+      kind: 'execution',
+      phase: 'executing',
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+    }],
   }, null, 2)}\n`, 'utf8')
 
   const dashboard = await listen(createDashboardHandler(root))
@@ -450,6 +880,8 @@ test('等待列表投影 Runner 接管、未执行、执行中和依赖任务数
   assert.equal(body.contract, 'DSH_RUNTIME_STATUS_V1')
   assert.equal(body.runner.process, 'online')
   assert.equal(body.runner.assignment, 'supervising')
+  assert.equal(body.runner.generation, 3)
+  assert.equal(body.runner.activeAttemptCount, 1)
   const workflows = new Map(body.workspaces[0].workflows.map(item => [item.workflowId, item]))
   assert.deepEqual({
     phase: workflows.get('wf-waiting').phase,
@@ -461,7 +893,21 @@ test('等待列表投影 Runner 接管、未执行、执行中和依赖任务数
     pending: workflows.get('wf-running').execution.pendingTasks,
     running: workflows.get('wf-running').execution.runningTasks,
     dependencies: workflows.get('wf-running').execution.waitingDependencyTasks,
-  }, { phase: 'owner_running', pending: 2, running: 1, dependencies: 2 })
+    runnerAttempt: workflows.get('wf-running').runnerAttempt,
+  }, {
+    phase: 'owner_running',
+    pending: 2,
+    running: 1,
+    dependencies: 2,
+    runnerAttempt: {
+      attemptId: 'attempt-running',
+      kind: 'execution',
+      phase: 'executing',
+      reason: null,
+      startedAt: workflows.get('wf-running').runnerAttempt.startedAt,
+      deadlineAt: null,
+    },
+  })
   const waits = new Map(body.waits.map(item => [item.workflowId, item]))
   assert.deepEqual({
     state: waits.get('wf-revision').state,
@@ -547,9 +993,9 @@ test('运行状态投影 Harness 主线程、子代理和未启动 Reviewer 的�
     ['planner', 'idle'],
     ['plan-reviewer', 'running'],
   ])
-  assert.equal(workflows.get('wf-stalled').phase, 'plan_review_not_started')
-  assert.equal(workflows.get('wf-stalled').subagents.find(item => item.role === 'plan-reviewer').lifecycle, 'not_started')
-  assert.equal(body.waits.find(item => item.workflowId === 'wf-stalled').state, 'workflow_stalled')
+  assert.equal(workflows.get('wf-stalled').phase, 'plan_revision_recovery_queued')
+  assert.equal(workflows.get('wf-stalled').subagents.some(item => item.lifecycle === 'running'), false)
+  assert.equal(body.waits.find(item => item.workflowId === 'wf-stalled').state, 'runner_offline')
   assert.ok(body.workspaces.every(workspace => !Object.hasOwn(workspace, 'root')))
   assert.ok(body.workspaces.flatMap(workspace => workspace.agents).every(agent => !Object.hasOwn(agent, 'processId')))
 })
@@ -609,6 +1055,11 @@ test('Dashboard 使用 opaque workspace_id 观察已登记业务工作区，不�
   const invalid = await fetch(`${dashboard.url}/owner-workflow/api/operations?workspace_id=../${encodeURIComponent(businessRoot)}`)
   assert.equal(invalid.status, 400)
   assert.doesNotMatch(await invalid.text(), new RegExp(businessRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+
+  await rm(businessRoot, { recursive: true, force: true })
+  const afterDelete = await fetch(`${dashboard.url}/owner-workflow/api/workspaces`)
+  const remaining = (await afterDelete.json()).workspaces
+  assert.equal(remaining.some(item => item.workspaceId === registered.workspaceId), false)
 })
 
 test('Dashboard 宿主路由随 Cordis 插件生命周期注册和释放', () => {

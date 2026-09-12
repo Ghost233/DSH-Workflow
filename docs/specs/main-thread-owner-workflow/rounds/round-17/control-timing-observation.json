@@ -1,0 +1,5 @@
+{
+  "matchedPassingCases": 130,
+  "medianDurationRatioToRound16": 3.4437705431035135,
+  "assessment": "Most matched cases slowed; no assertion failure observed before timeout. This does not by itself prove environment or exclude regression."
+}

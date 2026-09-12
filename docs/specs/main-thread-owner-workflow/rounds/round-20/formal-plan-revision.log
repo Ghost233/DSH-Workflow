@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: PlanRevision 只保存精简的不可变计划快照
+ok 1 - PlanRevision 只保存精简的不可变计划快照
+  ---
+  duration_ms: 0.992
+  type: 'test'
+  ...
+# Subtest: Workflow 只接受单根普通 fork 会话树中的 Intent 来源
+ok 2 - Workflow 只接受单根普通 fork 会话树中的 Intent 来源
+  ---
+  duration_ms: 1.126458
+  type: 'test'
+  ...
+# Subtest: 只有 finalize 或完整取消清理才释放项目的唯一 Workflow 槽位
+ok 3 - 只有 finalize 或完整取消清理才释放项目的唯一 Workflow 槽位
+  ---
+  duration_ms: 0.07875
+  type: 'test'
+  ...
+# Subtest: Revision 变更只把权限收窄、Owner 变化和删除视为硬中止
+ok 4 - Revision 变更只把权限收窄、Owner 变化和删除视为硬中止
+  ---
+  duration_ms: 2.030291
+  type: 'test'
+  ...
+# Subtest: 计划修订保留完成结果，只重新检查语义变化的节点
+ok 5 - 计划修订保留完成结果，只重新检查语义变化的节点
+  ---
+  duration_ms: 2.021417
+  type: 'test'
+  ...
+# Subtest: Planner 改写历史文案时冻结已完成 task，只执行新增 repair 与最终 verify
+ok 6 - Planner 改写历史文案时冻结已完成 task，只执行新增 repair 与最终 verify
+  ---
+  duration_ms: 1.002125
+  type: 'test'
+  ...
+# Subtest: 旧运行自然结束后先执行新增前置，再把旧结果重新排入待检查
+ok 7 - 旧运行自然结束后先执行新增前置，再把旧结果重新排入待检查
+  ---
+  duration_ms: 0.262334
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 55.484708

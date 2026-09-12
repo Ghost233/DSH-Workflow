@@ -1,0 +1,20 @@
+{
+  "candidate": "R90-T27-revision-stop-integration",
+  "status": "passed",
+  "results": [
+    { "suite": "planning-compile-native", "pass": 12, "fail": 0, "skip": 0 },
+    { "suite": "plan-revision", "pass": 10, "fail": 0, "skip": 0 },
+    { "suite": "owner-attempt-control", "pass": 6, "fail": 0, "skip": 0 },
+    { "suite": "owner-hard-deadline", "pass": 6, "fail": 0, "skip": 0 },
+    { "suite": "control", "pass": 159, "fail": 0, "skip": 7 }
+  ],
+  "totals": { "pass": 193, "fail": 0, "skip": 7 },
+  "sourceHashes": {
+    "owner-workflow-plugin/src/runtime.mjs": "b04c6f1a06459c91a308d5801f5164eea8d899abd81fee3d634f320f48aba688",
+    "owner-workflow-plugin/src/owner-attempt-control.mjs": "d7474887e23ddd1adb5a36abe13bbbd78b4acbce862c3afc393e7f492a62710d",
+    "owner-workflow-plugin/src/plan-revision.mjs": "bcbedd4b329f2cdb5fbbecc0829db73cb633c90dc4c899ebf3f2dd967ca48357",
+    "owner-workflow-plugin/test/planning-compile-native.test.mjs": "8ec7a8a34b5d4bfc1da088f3d979f04bc51feeed460e0bee85505b8b4246afc4",
+    "owner-workflow-plugin/test/fixtures/planning-revision-restart-child.mjs": "5fa4d5f64442edce0c92ca54f9020e0095a5666d20d4461aae454d5921374dae",
+    "owner-workflow-plugin/test/owner-hard-deadline.test.mjs": "bb03dfbada00318d9a7e2daac3c02c2e21f07d43fceb6d360d286e9a7d573424"
+  }
+}

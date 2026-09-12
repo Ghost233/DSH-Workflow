@@ -1,0 +1,20 @@
+command: env DSH_T22_RESTART_EVIDENCE_DIR=/tmp/dsh-t22-restart-r22 TSX_TSCONFIG_PATH=deepseek-harness/tsconfig.json /Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test owner-workflow-plugin/test/recovery-session-restart.test.mjs
+
+✔ T22 SIGKILL after the real submitted checkpoint reopens only to a non-mutating technical pause (2222.189209ms)
+✖ T22 SIGKILL after real failed settlement replays its persisted receipt without a second debit (1430.125791ms)
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ 'undefined'
+- 'string'
+
+capturePostKill received no rawLocationPath for the completed failed Owner because
+the first implementation tried ctx.sessions.get(sessionId), but the source Harness
+had already disposed that one-shot child. The persisted raw artifact and workflow
+state were present; no backend or product failure occurred.
+
+ℹ tests 2
+ℹ pass 1
+ℹ fail 1
+ℹ duration_ms 3739.844958

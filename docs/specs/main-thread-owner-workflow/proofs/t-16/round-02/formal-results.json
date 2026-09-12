@@ -1,0 +1,23 @@
+{
+  "runs": [
+    {
+      "name": "cross-runtime-owner-cancel-isolation-and-independent-owner",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-16/round-02/probe.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T09:33:53.087368+00:00",
+      "timeoutSeconds": 45,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T09:33:56.935344+00:00",
+      "collectedScenarios": 1,
+      "probeErrors": [],
+      "collectionComplete": true
+    }
+  ],
+  "drift": []
+}

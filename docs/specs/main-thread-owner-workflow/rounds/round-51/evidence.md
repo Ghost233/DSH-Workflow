@@ -1,0 +1,3 @@
+# R51 Supervisor技术拒绝与新失败区分
+
+T15范围：持久来源未推进的领取/校验异常不得再次排队；真正新增失败仍进入有限预算恢复。启动前记录plan及Owner来源，失败写入核对reservation/plan并比较终态来源进展。保留用户决定优先及Owner数据，独立首次Owner可执行。主线程独占runtime/test；T16 worker仅proof目录。正式范围runtime-budget/admission/session及control全套；有界串行no-bail。

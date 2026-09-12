@@ -1,0 +1,326 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -8013,7 +8013,7 @@
+         }
+       })
+     },
+-    async reviewRecoveryCandidate(agent, workflowId, signal) {
++    async reviewRecoveryCandidate(agent, workflowId, signal, { replayOnly = false } = {}) {
+       const root = await runtime.resolveRoot(agent)
+       return runtime.withOwnerLease(root, `replan-entry-${workflowId}`, workflowId, 'candidate-review', signal, async lease => {
+         const state = await readState(runtime, root, workflowId)
+@@ -8038,7 +8038,7 @@
+             || canonicalDigestValue(candidateIdentity(value)) !== canonicalDigestValue(binding)
+             || canonicalDigestValue(current.handoffReplans?.[planner.operationId]) !== canonicalDigestValue(planner)
+             || canonicalDigestValue(recoveryHandoffGroup(current, planner.handoffIds)) !== canonicalDigestValue(planner.group)
+-            || value.origin !== 'handoff-recovery' || value.cycleId !== planner.operationId
++            || value.origin !== 'handoff-recovery' || value.cycleId !== (planner.predecessor?.candidate.cycleId ?? planner.operationId)
+             || value.parent !== planner.parent || value.number !== planner.parent + 1
+             || Number(current.activePlanRevision ?? 1) !== planner.parent
+             || value.planDigest !== planner.candidateDigest || planDigest(value.plan) !== value.planDigest
+@@ -8102,6 +8102,7 @@
+           }
+           return { ...operation.result, replayed: true }
+         }
++        if (replayOnly) throw new Error('Recovery Review尚无已结算结果，不能重建候选')
+         if (candidate.review !== undefined) throw new Error('Recovery Review已有未绑定的审查结果')
+         if (operation === undefined || operation.phase === 'failed') {
+           const facts = await ownerWorktreePlanningFacts(runtime, state, signal)
+@@ -8417,6 +8418,7 @@
+       try {
+         assertIntentPlanRuntimeContinuity(state, { plan: candidate.plan })
+       } catch (error) {
++        if (requiresRecoveryCandidateReview(state)) throw new Error(`Recovery候选连续性需重新对账：${errorText(error)}`)
+         const attempts = Number(state.intentPlanRevisionCycle?.attempts ?? 1)
+         await runtime.withWorkflowLock(state.id, async () => {
+           const current = await readState(runtime, root, state.id)
+@@ -8543,6 +8545,14 @@
+           action: 'autonomous_incident',
+           convergence,
+         }
++      }
++      if (requiresRecoveryCandidateReview(state)) {
++        if (nextStrategy !== 'local_subgraph_rewrite') throw new Error(`Recovery候选策略尚未接线：${nextStrategy}`)
++        const rebuilt = await runtime.rebuildRecoveryCandidate(agent, state.id, signal)
++        const reviewed = await runtime.reviewPendingPlanRevision(agent, signal)
++        return { contract: 'DSH_PLAN_REVISION_DRIVE_RESULT_V1', workflowId: state.id, source,
++          action: 'recovery_rebuilt_and_reviewed', candidate: { number: rebuilt.number, planDigest: rebuilt.planDigest },
++          review: reviewed.review, convergence: reviewed.convergence }
+       }
+       const attempts = Number(state.intentPlanRevisionCycle?.attempts ?? 1)
+       const reason = [
+@@ -8918,6 +8928,7 @@
+         if (agent.id !== state.conversationRootSessionId) {
+           throw new Error(`PlanRevision 最终批准必须回到 Workflow 根会话 ${state.conversationRootSessionId}`)
+         }
++        if (requiresRecoveryCandidateReview(state)) throw new Error('Recovery候选版本继承事务尚未实现，不能激活并破坏原执行版本')
+         if (candidate.parent !== Number(state.activePlanRevision ?? 1)) throw new Error('PlanRevision 候选的父版本已过期')
+         if (candidate.planDigest !== expectedPlanDigest) throw new Error(`PlanRevision digest 不匹配，期望 ${candidate.planDigest}`)
+         if (candidate.review?.status !== 'passed') throw new Error('PlanRevision 候选必须先通过独立 Review')
+@@ -9823,12 +9834,30 @@
+         nextAction: '重新调用 workflow_plan_review，只检查冻结证据义务是否减少；审查通过后调用 workflow_plan_approve。修订次数仅作遥测。',
+       }
+     },
+-    async replanRecoveryHandoffs(agent, workflowId, signal) {
++    async rebuildRecoveryCandidate(agent, workflowId, signal) {
++      const root = await runtime.resolveRoot(agent)
++      const before = await readState(runtime, root, workflowId)
++      if (!requiresRecoveryCandidateReview(before)) throw new Error('当前不是可继承来源的Recovery候选')
++      const replayed = await runtime.reviewRecoveryCandidate(agent, workflowId, signal, { replayOnly: true })
++      const current = await readState(runtime, root, workflowId)
++      if (canonicalDigestValue(current.pendingPlanRevision) !== canonicalDigestValue(before.pendingPlanRevision)
++        || replayed.review.status === 'passed' || current.planConvergence?.nextStrategy !== 'local_subgraph_rewrite') {
++        throw new Error('Recovery重建候选或已审查策略发生变化')
++      }
++      const reviewOperation = Object.values(current.candidateReviews ?? {}).find(item => item.phase === 'applied'
++        && item.candidate.recoveryRequestId === current.pendingPlanRevision.recoveryRequestId
++        && item.candidate.planDigest === current.pendingPlanRevision.planDigest)
++      if (reviewOperation === undefined) throw new Error('Recovery重建缺少已结算Review')
++      return runtime.replanRecoveryHandoffs(agent, workflowId, signal, {
++        predecessor: { candidate: structuredClone(current.pendingPlanRevision), reviewOperation: structuredClone(reviewOperation) },
++      })
++    },
++    async replanRecoveryHandoffs(agent, workflowId, signal, { predecessor } = {}) {
+       const root = await runtime.resolveRoot(agent)
+       return runtime.withOwnerLease(root, `replan-entry-${workflowId}`, workflowId, 'handoff-recovery', signal, async lease => {
+         let state = await readState(runtime, root, workflowId)
+         const group = recoveryHandoffGroup(state)
+-        const operationId = `handoff-replan-${createHash('sha256').update(canonicalDigestValue({ origin: group.origin, handoffIds: group.handoffIds })).digest('hex')}`
++        const operationId = `handoff-replan-${createHash('sha256').update(canonicalDigestValue({ origin: group.origin, handoffIds: group.handoffIds, ...(predecessor === undefined ? {} : { predecessor }) })).digest('hex')}`
+         const verifyGroup = current => {
+           assertRecoveryAdmissionState(current)
+           assertRecoveryAdmissionRuntime(current, group.origin, true)
+@@ -9837,7 +9866,21 @@
+             throw new Error('Handoff recovery source changed')
+           }
+         }
++        const pendingMatches = current => predecessor === undefined ? current.pendingPlanRevision === undefined
++          : canonicalDigestValue(current.pendingPlanRevision) === canonicalDigestValue(predecessor.candidate)
++        const verifyPredecessor = current => {
++          if (predecessor === undefined) return
++          const previousReview = current.candidateReviews?.[predecessor.reviewOperation.operationId]
++          if (canonicalDigestValue(previousReview) !== canonicalDigestValue(predecessor.reviewOperation)
++            || previousReview?.phase !== 'applied'
++            || canonicalDigestValue(current.planConvergence) !== canonicalDigestValue(previousReview.result.convergence)
++            || previousReview.result.review.status === 'passed'
++            || canonicalDigestValue(previousReview.origin) !== canonicalDigestValue(group.origin)) {
++            throw new Error('Handoff rebuild predecessor changed')
++          }
++        }
+         verifyGroup(state)
++        verifyPredecessor(state)
+         const { registry } = await loadLiveRegistryForPlanning(state, { plan: state.plan, requireBoundDigest: true })
+         let operation = state.handoffReplans?.[operationId]
+         if (operation !== undefined) {
+@@ -9846,6 +9889,7 @@
+             || canonicalDigestValue(operation.origin) !== canonicalDigestValue(group.origin)
+             || canonicalDigestValue(operation.handoffIds) !== canonicalDigestValue(group.handoffIds)
+             || canonicalDigestValue(operation.group) !== canonicalDigestValue(group)
++            || canonicalDigestValue(operation.predecessor) !== canonicalDigestValue(predecessor)
+             || !['reserved', 'failed', 'candidate_staged'].includes(operation.phase)
+             || located?.intent.operationKind !== 'handoff_replan' || located.intent.operationId !== operationId
+             || located.intent.ordinal !== operation.ordinal || located.intent.executionIdentity.promptId !== operation.prompt?.id) {
+@@ -9870,16 +9914,18 @@
+           return { contract: 'DSH_PLAN_REVISION_CANDIDATE_V1', workflowId,
+             ...state.pendingPlanRevision, nextTool: 'workflow_revision_review', nextArgs: {}, replayed: true }
+         }
+-        if (state.pendingPlanRevision !== undefined) throw new Error('Handoff recovery已有待处理候选')
++        if (!pendingMatches(state)) throw new Error('Handoff recovery已有待处理候选或重建来源已变化')
+         if (operation === undefined || operation.phase === 'failed') {
+           const memory = await loadMemorySnapshot(state.workflowWorktree, { maxBytes: resolvedConfig.ownerMemoryMaxBytes, signal })
+-          const promptContent = handoffReplanPrompt(state, group.handoffs, memory) + '\n本次付费恢复只处理上面列出的handoff组：保留来源task及目标Owner覆盖handoff文件的task之外所有既有task原定义；新增task只能属于该组来源或目标Owner。返回待审候选，不代表当前执行计划已激活。'
++          const promptContent = handoffReplanPrompt(state, group.handoffs, memory)
++            + (predecessor === undefined ? '' : `\n修正此前未通过的候选，保留其有用修改并解决实际Review意见：${JSON.stringify(predecessor.candidate)}\n这属于同一根问题的新逻辑规划步骤，当前执行计划仍未激活。`) + '\n本次付费恢复只处理上面列出的handoff组：保留来源task及目标Owner覆盖handoff文件的task之外所有既有task原定义；新增task只能属于该组来源或目标Owner。返回待审候选，不代表当前执行计划已激活。'
+           const ordinal = operation === undefined ? 1 : operation.ordinal + 1
+           const base = { head: await head(state.workflowWorktree, signal), branch: await currentBranch(state.workflowWorktree, signal),
+             status: await statusRecords(state.workflowWorktree, signal) }
+           await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, lease, current => {
+             verifyGroup(current)
+-            if (current.pendingPlanRevision !== undefined
++            verifyPredecessor(current)
++            if (!pendingMatches(current)
+               || canonicalDigestValue(current.handoffReplans?.[operationId]) !== canonicalDigestValue(operation)) {
+               throw new Error('Handoff recovery preparation changed')
+             }
+@@ -9890,7 +9936,7 @@
+             }
+             const receipt = prepared.response
+             operation = { contract: 'DSH_HANDOFF_REPLAN_OPERATION_V1', operationId, origin: group.origin,
+-              handoffIds: group.handoffIds, group, ordinal, requestId: receipt.requestId,
++              handoffIds: group.handoffIds, group, ...(predecessor === undefined ? {} : { predecessor }), ordinal, requestId: receipt.requestId,
+               prompt: { id: receipt.executionIdentity.promptId, content: promptContent }, base,
+               parent: Number(current.activePlanRevision ?? 1), phase: 'reserved' }
+             prepared.state.handoffReplans = { ...(prepared.state.handoffReplans ?? {}), [operationId]: operation }
+@@ -9909,7 +9955,8 @@
+           status: await statusRecords(state.workflowWorktree, signal) }
+         await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, lease, current => {
+           verifyGroup(current)
+-          if (current.pendingPlanRevision !== undefined
++          verifyPredecessor(current)
++          if (!pendingMatches(current)
+             || canonicalDigestValue(current.handoffReplans?.[operationId]) !== canonicalDigestValue(operation)) {
+             throw new Error('Handoff recovery application changed')
+           }
+@@ -9942,7 +9989,7 @@
+               }
+               const digest = planDigest(plan)
+               applied = { number: operation.parent + 1, parent: operation.parent, plan, planDigest: digest,
+-                planStructureDigest: planStructureDigest(plan), cycleId: operationId,
++                planStructureDigest: planStructureDigest(plan), cycleId: predecessor?.candidate.cycleId ?? operationId,
+                 strategy: 'handoff_replan', intentIds: [], coordinatorSessionId: agent.id, createdAt: now(),
+                 origin: 'handoff-recovery', recoveryRequestId: operation.requestId,
+                 recoveryOrigin: group.origin, handoffIds: group.handoffIds }
+--- /dev/null
++++ owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs
+@@ -0,0 +1,137 @@
++import assert from 'node:assert/strict'
++import test from 'node:test'
++import { plannerSubmitDefinition, planReviewSubmitDefinition } from '../index.js'
++import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState } from './fixtures/recovery-session-fixture.mjs'
++
++const review = status => ({ contract: 'DSH_PLAN_REVIEW_V1', status, summary: status === 'needs_revision' ? 'Refine the local repair candidate.' : 'Refinement accepted.', issues: [] })
++async function setup(t, { invalidFirst = false, limit = 5, obligation = false } = {}) {
++  let plans
++  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true,
++    limits: { totalLimit: limit, problemLimit: limit }, modelScript: m => [
++      () => m.toolCallResponse('initial-plan', 'workflow_plan_submit', { plan: plans.initial }), 'hang-slow',
++      m.toolCallResponse('initial-review', 'workflow_plan_review_submit', { review: { ...review('needs_revision'), ...(obligation ? { issues: [{ severity: 'high', title: 'Missing verified result', detail: 'Repair needs a current fixed verification result.', suggestion: 'Run and bind unit verification.', obligationId: 'repair-unit-result', sourceId: 'repair-contract', sourceVersion: 'v1', targetTaskIds: ['T1'], closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' } }] } : {}) } }), 'hang-slow',
++      ...(invalidFirst ? [() => m.toolCallResponse('invalid-rebuild', 'workflow_plan_submit', { plan: plans.invalid }), 'hang-slow'] : []),
++      () => m.toolCallResponse('rebuilt-plan', 'workflow_plan_submit', { plan: plans.rebuilt }), 'hang-slow',
++      m.toolCallResponse('rebuilt-review', 'workflow_plan_review_submit', { review: review('passed') }), 'hang-slow',
++    ] })
++  f.ctx.tools.register(plannerSubmitDefinition(f.runtime))
++  f.ctx.tools.register(planReviewSubmitDefinition(f.runtime))
++  await mutateRecoverySessionState(f, state => { state.conversationRootSessionId = f.admissionAgent.id })
++  const state = await readRecoverySessionState(f)
++  const base = { ...structuredClone(state.plan), owners: state.plan.owners.map(owner => ({ id: owner.id })) }
++  plans = { initial: { ...base, summary: 'Initial repair candidate' }, rebuilt: { ...base, summary: 'Refined repair candidate' },
++    invalid: { ...base, summary: 'Invalid unrelated change', tasks: base.tasks.map(task => task.id === 'T2' ? { ...task, title: 'Unrelated rewritten task' } : task) } }
++  const stage = state.plan.tasks[0], owner = state.plan.owners.find(item => item.id === stage.ownerId)
++  await f.runtime.recordHandoffs(state, stage, { owner, branch: 'fixture-owner' }, { status: 'blocked',
++    handoffs: [{ targetType: 'owner', targetOwnerId: owner.id, files: ['src/api/repair.mjs'], summary: 'Bounded repair' }] })
++  await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  await f.runtime.reviewPendingPlanRevision(f.admissionAgent)
++  assert.equal((await readRecoverySessionState(f)).planConvergence.nextStrategy, 'local_subgraph_rewrite')
++  return f
++}
++
++test('T15 actual Runner rebuilds a handoff candidate without ordinary Intents or deleting its source', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  const before = await readRecoverySessionState(f)
++  const result = await f.runtime.drivePendingPlanRevision(f.admissionAgent)
++  const state = await readRecoverySessionState(f)
++  assert.equal(result.action, 'recovery_rebuilt_and_reviewed')
++  assert.equal(result.review.status, 'passed')
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 4)
++  assert.equal(state.recoveryAdmission.budget.problems.length, 1)
++  assert.ok(state.recoveryAdmission.budget.attempts.every(attempt => attempt.result.status === 'succeeded'))
++  assert.deepEqual(state.plan, before.plan)
++  assert.deepEqual(state.ownerRuns, before.ownerRuns)
++  assert.deepEqual(state.tasks, before.tasks)
++  assert.equal(state.pendingPlanRevision.plan.summary, 'Refined repair candidate')
++  assert.equal(state.pendingPlanRevision.cycleId, before.pendingPlanRevision.cycleId)
++  assert.equal(state.planConvergence.cycleId, before.planConvergence.cycleId)
++  assert.notEqual(state.pendingPlanRevision.recoveryRequestId, before.pendingPlanRevision.recoveryRequestId)
++  const next = Object.values(state.handoffReplans).find(op => op.requestId === state.pendingPlanRevision.recoveryRequestId)
++  assert.deepEqual(next.predecessor.candidate, before.pendingPlanRevision)
++  assert.equal(next.predecessor.reviewOperation.phase, 'applied')
++  assert.deepEqual(next.origin, before.pendingPlanRevision.recoveryOrigin)
++  assert.equal(state.lastDiscardedPlanRevision, undefined)
++  const calls = f.adapter.requests.length
++  assert.equal((await f.runtime.drivePendingPlanRevision(f.admissionAgent)).action, 'awaiting_approval')
++  assert.equal(f.adapter.requests.length, calls)
++  const stable = await readRecoverySessionState(f)
++  await assert.rejects(f.runtime.approvePendingPlanRevision(f.admissionAgent, stable.pendingPlanRevision.planDigest), /版本继承事务尚未实现/)
++  assert.deepEqual(await readRecoverySessionState(f), stable)
++})
++
++test('T15 failed rebuilt Planner keeps the reviewed predecessor and next ordinal uses the same root', { timeout: 30_000 }, async t => {
++  const f = await setup(t, { invalidFirst: true })
++  const before = await readRecoverySessionState(f)
++  await assert.rejects(f.runtime.drivePendingPlanRevision(f.admissionAgent), /改变了无关task:T2/)
++  const failed = await readRecoverySessionState(f)
++  assert.deepEqual(failed.pendingPlanRevision, before.pendingPlanRevision)
++  assert.equal(failed.recoveryAdmission.budget.totalUsed, 3)
++  assert.equal(failed.recoveryAdmission.budget.attempts[2].result.status, 'failed')
++  await f.runtime.drivePendingPlanRevision(f.admissionAgent)
++  const saved = await readRecoverySessionState(f)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 5)
++  assert.equal(saved.recoveryAdmission.budget.problems.length, 1)
++  assert.equal(saved.pendingPlanRevision.review.status, 'passed')
++  const op = Object.values(saved.handoffReplans).find(item => item.predecessor)
++  assert.equal(op.ordinal, 2)
++  assert.deepEqual(op.predecessor.candidate, before.pendingPlanRevision)
++})
++
++test('T15 exhausted rebuild preserves the predecessor and starts no Planner', { timeout: 30_000 }, async t => {
++  const f = await setup(t, { limit: 2 })
++  const before = await readRecoverySessionState(f), calls = f.adapter.requests.length
++  await assert.rejects(f.runtime.drivePendingPlanRevision(f.admissionAgent), /admission refused/)
++  const state = await readRecoverySessionState(f)
++  assert.deepEqual(state.pendingPlanRevision, before.pendingPlanRevision)
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 2)
++  assert.equal(f.adapter.requests.length, calls)
++})
++
++test('T15 changing the settled Review record prevents a new recovery Planner', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  await mutateRecoverySessionState(f, state => { Object.values(state.candidateReviews)[0].receipt.payloadDigest = 'changed' })
++  const calls = f.adapter.requests.length
++  await assert.rejects(f.runtime.drivePendingPlanRevision(f.admissionAgent), /applied receipt changed/)
++  assert.equal(f.adapter.requests.length, calls)
++  assert.equal((await readRecoverySessionState(f)).recoveryAdmission.budget.totalUsed, 2)
++})
++
++test('T15 predecessor changed during real rebuild cannot be replaced by the late Planner result', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  const child = f.runtime.runChild.bind(f.runtime), stream = f.adapter.stream.bind(f.adapter)
++  let pending = false, changed = false
++  f.runtime.runChild = (...args) => { if (args[4]?.requirePlannerSubmission) pending = true; return child(...args) }
++  f.adapter.stream = async function* (options) {
++    if (pending) {
++      pending = false
++      await mutateRecoverySessionState(f, state => { state.pendingPlanRevision.review.summary = 'Concurrent replacement' })
++      changed = true
++    }
++    yield* stream(options)
++  }
++  await assert.rejects(f.runtime.drivePendingPlanRevision(f.admissionAgent), /application changed/)
++  const state = await readRecoverySessionState(f)
++  assert.equal(changed, true)
++  assert.equal(state.pendingPlanRevision.plan.summary, 'Initial repair candidate')
++  assert.equal(state.pendingPlanRevision.review.summary, 'Concurrent replacement')
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 3)
++  assert.equal(state.recoveryAdmission.budget.attempts[2].state, 'running')
++  const calls = f.adapter.requests.length
++  await assert.rejects(f.runtime.rebuildRecoveryCandidate(f.admissionAgent, f.workflowId), /applied receipt changed/)
++  assert.equal(f.adapter.requests.length, calls)
++})
++
++
++test('T15 rebuilt candidate inherits open evidence obligations even when its Reviewer returns passed', { timeout: 30_000 }, async t => {
++  const f = await setup(t, { obligation: true })
++  const before = await readRecoverySessionState(f)
++  assert.ok(before.planConvergence.obligations.some(item => item.id === 'repair-unit-result' && item.status === 'open'))
++  const result = await f.runtime.drivePendingPlanRevision(f.admissionAgent)
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 4)
++  assert.equal(state.planConvergence.cycleId, before.planConvergence.cycleId)
++  assert.ok(state.planConvergence.obligations.some(item => item.id === 'repair-unit-result' && item.status === 'open'))
++  assert.equal(result.review.status, 'needs_revision')
++  assert.equal(state.recoveryAdmission.budget.attempts[3].result.status, 'succeeded')
++})
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/candidate-rebuild-recovery-v1.md
+@@ -0,0 +1,11 @@
++# 恢复候选的后继重建
++
++T15，接续candidate-review-recovery-v1与handoff-recovery-v1。当前实际Runner对handoff-recovery且nextStrategy=local_subgraph_rewrite的非通过候选，改走rebuildRecoveryCandidate→计费Planner→计费Review，不调用通用discard/planWorkflowIntents。
++
++旧候选C及其已结算Review通过R63双原始回执重放核验；replayOnly禁止为“验证前置”启动额外Review。既有Review必须有效且非passed，策略仍允许局部重建。前驱完整candidate及candidateReviews操作快照固定为predecessor；新handoff_replan operationId由原来源/分组加此前驱确定。从同一active A来源领取新的logical operation/ordinal1，不把原Planner或Review的succeeded改成failed；语义失败后新逻辑操作的下一ordinal照常计费。
++
++handoffReplans新操作持久保存predecessor，包含完整旧候选及其Review receipt/result。整个实际Planner调用期间旧pendingPlanRevision保留；领取/应用在最新状态事务中核对旧候选、前驱Review、convergence与handoff来源。实际新候选合法时，与预算成功结算一起原子替换pending候选；失败保留旧候选，未知或并发改变不替换/不退款。中间没有“删除后再猜来源”的阶段。新候选的recoveryRequestId指向新Planner操作，但cycleId继承前驱，维持同一收敛周期及冻结义务，不以新执行操作清空义务；原账本和前驱操作持续保留。
++
++本次默认handoff策略仍不自动批准。根会话批准恢复候选时，在任何计划写入之前拒绝尚未实现的版本继承事务，避免把active plan切成C而config/source/intent仍绑定A；这只是T18安全前置，不是版本激活交付。
++
++仍未实现：手动discard后的重建继承、连续性变化后的自动修复、arbitrate/owner_council/diagnose等其他实际会诊调用的统一计费、错误的完整主控制投影、T18激活。非通过候选的局部重建路径已落到实际Runner，不能据此宣称全部收敛路径完成。

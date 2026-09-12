@@ -1,0 +1,494 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -3903,6 +3903,86 @@
+   }
+ }
+
++
++function requiresRecoveryCandidateReview(state) {
++  return state.pendingPlanRevision !== undefined && (state.pendingPlanRevision.origin === 'handoff-recovery'
++    || state.pendingPlanRevision.recoveryRequestId !== undefined || state.pendingPlanRevision.recoveryOrigin !== undefined
++    || Object.values(state.handoffReplans ?? {}).some(item => item.phase === 'candidate_staged'))
++}
++
++async function applyCandidateReview(runtime, state, review, planningRuntimeFacts) {
++  const candidate = state.pendingPlanRevision
++  candidate.review = review
++  candidate.reviewedAt = now()
++  candidate.cycleId ??= planRevisionCycleId(candidate.parent, candidate.intentIds)
++  candidate.planStructureDigest ??= planStructureDigest(candidate.plan)
++  candidate.strategy ??= AUTONOMOUS_STRATEGIES.includes(state.planConvergence?.nextStrategy)
++    ? state.planConvergence.nextStrategy
++    : 'local_subgraph_rewrite'
++  const convergence = reconcileReviewConvergence({
++    previous: state.planConvergence,
++    candidate,
++    review,
++    evidenceDigest: workflowEvidenceDigest(state, planningRuntimeFacts),
++    time: candidate.reviewedAt,
++    runtimeEvidence: await runtime.planReviewEvidence(state, candidate.plan, candidate.planDigest),
++  })
++  state.planConvergence = convergence
++  const effectiveReview = effectivePlanReview(review, convergence)
++  candidate.review = effectiveReview
++  candidate.convergence = {
++    progress: convergence.progress,
++    nextStrategy: convergence.nextStrategy,
++    openObligationIds: convergence.obligations.filter(item => item.status === 'open').map(item => item.id),
++    unsupportedNewObligationIds: convergence.unsupportedNewObligations.map(item => item.id),
++  }
++  if (state.intentPlanRevisionCycle !== undefined) {
++    state.intentPlanRevisionCycle.phase = convergence.nextStrategy === 'awaiting_approval'
++      ? 'awaiting_approval'
++      : convergence.nextStrategy === 'request_user_authority'
++        ? 'awaiting_user_authority'
++        : convergence.nextStrategy === 'autonomous_incident'
++          ? 'autonomous_incident'
++          : 'strategy_pending'
++    state.intentPlanRevisionCycle.strategy = convergence.nextStrategy
++    state.intentPlanRevisionCycle.updatedAt = candidate.reviewedAt
++  }
++  return { contract: 'DSH_PLAN_REVISION_REVIEW_RESULT_V1', workflowId: state.id,
++    revision: candidate.number, planDigest: candidate.planDigest, review: effectiveReview, convergence,
++    nextTool: convergence.nextStrategy === 'awaiting_approval' ? 'workflow_revision_approve'
++      : convergence.nextStrategy === 'request_user_authority' ? 'planning_discussion' : 'runner_autonomous_convergence' }
++}
++
++function validatedPlanReview(state, payload, options = {}) {
++  const review = planReviewResult(payload)
++  const planTasks = Array.isArray(state.plan?.tasks) ? state.plan.tasks : []
++  const taskIds = new Set(planTasks.map(task => task.id))
++  for (const taskId of review.targetTaskIds ?? []) {
++    if (!taskIds.has(taskId)) throw new Error(`Planner Reviewer 指定了不存在的 targetTaskId：${taskId}`)
++  }
++  assertPlanReviewAbstractOwnerCompatibility(state, review)
++  if (review.status === 'passed' && planTasks.some(task => task.decomposition?.status === 'abstract')) {
++    throw new Error('Planner Reviewer 不能通过仍包含 abstract 节点的渐进式 DAG')
++  }
++  if (review.status === 'needs_split' && (review.targetTaskIds?.length ?? 0) === 0) {
++    throw new Error('needs_split 必须提供至少一个 targetTaskId')
++  }
++  if (review.status === 'needs_decision' && (review.decisionQuestions?.length ?? 0) === 0) {
++    throw new Error('needs_decision 必须提供至少一个 decisionQuestion')
++  }
++  if (review.status === 'needs_discovery' && (review.discoveryQuestions?.length ?? 0) === 0) {
++    throw new Error('needs_discovery 必须提供至少一个 discoveryQuestion')
++  }
++  if (options.allowRepeated !== true
++    && state.planConvergence?.contract !== CONVERGENCE_CONTRACT
++    && review.status === 'needs_revision'
++    && repeatedPlanReviewIssue(state, review)) {
++    throw new Error('同类问题已连续出现，不能继续 needs_revision；必须分类为 needs_split、needs_decision 或 needs_discovery')
++  }
++  if (typeof options.validateReview === 'function') options.validateReview(review)
++  return review
++}
++
+ async function requestValidatedPlanReview(runtime, agent, state, signal, options = {}) {
+   const reviewState = {
+     ...state,
+@@ -3926,32 +4006,7 @@
+           timeoutMs: runtime.config.planningChildTimeoutMs,
+         },
+       )
+-      const review = planReviewResult(parseJsonObject(output, 'Planner Reviewer'))
+-      const planTasks = Array.isArray(state.plan?.tasks) ? state.plan.tasks : []
+-      const taskIds = new Set(planTasks.map(task => task.id))
+-      for (const taskId of review.targetTaskIds ?? []) {
+-        if (!taskIds.has(taskId)) throw new Error(`Planner Reviewer 指定了不存在的 targetTaskId：${taskId}`)
+-      }
+-      assertPlanReviewAbstractOwnerCompatibility(state, review)
+-      if (review.status === 'passed' && planTasks.some(task => task.decomposition?.status === 'abstract')) {
+-        throw new Error('Planner Reviewer 不能通过仍包含 abstract 节点的渐进式 DAG')
+-      }
+-      if (review.status === 'needs_split' && (review.targetTaskIds?.length ?? 0) === 0) {
+-        throw new Error('needs_split 必须提供至少一个 targetTaskId')
+-      }
+-      if (review.status === 'needs_decision' && (review.decisionQuestions?.length ?? 0) === 0) {
+-        throw new Error('needs_decision 必须提供至少一个 decisionQuestion')
+-      }
+-      if (review.status === 'needs_discovery' && (review.discoveryQuestions?.length ?? 0) === 0) {
+-        throw new Error('needs_discovery 必须提供至少一个 discoveryQuestion')
+-      }
+-      if (options.allowRepeated !== true
+-        && state.planConvergence?.contract !== CONVERGENCE_CONTRACT
+-        && review.status === 'needs_revision'
+-        && repeatedPlanReviewIssue(state, review)) {
+-        throw new Error('同类问题已连续出现，不能继续 needs_revision；必须分类为 needs_split、needs_decision 或 needs_discovery')
+-      }
+-      if (typeof options.validateReview === 'function') options.validateReview(review)
++      const review = validatedPlanReview(state, parseJsonObject(output, 'Planner Reviewer'), options)
+       return review
+     } catch (error) {
+       if (attempt === 1) throw error
+@@ -7958,16 +8013,177 @@
+         }
+       })
+     },
++    async reviewRecoveryCandidate(agent, workflowId, signal) {
++      const root = await runtime.resolveRoot(agent)
++      return runtime.withOwnerLease(root, `replan-entry-${workflowId}`, workflowId, 'candidate-review', signal, async lease => {
++        const state = await readState(runtime, root, workflowId)
++        const candidate = state.pendingPlanRevision
++        const planner = Object.values(state.handoffReplans ?? {}).find(item => item.requestId === candidate?.recoveryRequestId)
++        if (planner?.phase !== 'candidate_staged') throw new Error('Recovery Review缺少已结算Planner来源')
++        const candidateIdentity = value => value === undefined ? undefined : ({
++          number: value.number, parent: value.parent, plan: value.plan, planDigest: value.planDigest,
++          planStructureDigest: value.planStructureDigest, cycleId: value.cycleId, strategy: value.strategy,
++          origin: value.origin, recoveryRequestId: value.recoveryRequestId,
++          recoveryOrigin: value.recoveryOrigin, handoffIds: value.handoffIds,
++        })
++        const binding = candidateIdentity(candidate)
++        const origin = planner.origin
++        const plannerRecord = state.replanSessions?.[planner.requestId]
++        const operationId = `candidate-review-${createHash('sha256').update(canonicalDigestValue({ requestId: planner.requestId, candidate: binding })).digest('hex')}`
++        const verify = current => {
++          assertRecoveryAdmissionState(current)
++          assertRecoveryAdmissionRuntime(current, origin, true)
++          const value = current.pendingPlanRevision
++          if (current.root !== root || current.id !== workflowId
++            || canonicalDigestValue(candidateIdentity(value)) !== canonicalDigestValue(binding)
++            || canonicalDigestValue(current.handoffReplans?.[planner.operationId]) !== canonicalDigestValue(planner)
++            || canonicalDigestValue(recoveryHandoffGroup(current, planner.handoffIds)) !== canonicalDigestValue(planner.group)
++            || value.origin !== 'handoff-recovery' || value.cycleId !== planner.operationId
++            || value.parent !== planner.parent || value.number !== planner.parent + 1
++            || Number(current.activePlanRevision ?? 1) !== planner.parent
++            || value.planDigest !== planner.candidateDigest || planDigest(value.plan) !== value.planDigest
++            || value.planStructureDigest !== planStructureDigest(value.plan)
++            || canonicalDigestValue(value.recoveryOrigin) !== canonicalDigestValue(origin)
++            || canonicalDigestValue(value.handoffIds) !== canonicalDigestValue(planner.handoffIds)) {
++            throw new Error('Recovery Review candidate/source changed')
++          }
++          const located = lookupRecoveryAdmissionIntent(current, planner.requestId)
++          if (located?.intent.operationKind !== 'handoff_replan' || located.intent.operationId !== planner.operationId
++            || located.intent.ordinal !== planner.ordinal) throw new Error('Recovery Review Planner intent changed')
++          const record = current.replanSessions?.[planner.requestId]
++          assertReplanSessionState(record, located.intent, planner.prompt)
++          assertReplanSessionAttempt(record, located.intent,
++            current.recoveryAdmission.budget.attempts.find(item => item.requestId === planner.requestId))
++          if (record.phase !== 'applied' || canonicalDigestValue(record) !== canonicalDigestValue(plannerRecord)) {
++            throw new Error('Recovery Review Planner尚未成功结算或会话记录已变化')
++          }
++          return located.intent
++        }
++        const plannerIntent = verify(state)
++        const original = await inspectReplanSession({ persistence: agent.ctx.get('sessionPersistence'), intent: plannerIntent,
++          prompt: planner.prompt, contextMessages: plannerRecord.contextMessages, signal })
++        if (original.outcome !== 'submission_observed'
++          || canonicalDigestValue(original.receipt) !== canonicalDigestValue(planner.receipt)) {
++          throw new Error('Recovery Review Planner原始回执不匹配')
++        }
++        await loadLiveRegistryForPlanning(state, { plan: candidate.plan, requireBoundDigest: true })
++        let operation = state.candidateReviews?.[operationId]
++        if (operation !== undefined) {
++          const located = lookupRecoveryAdmissionIntent(state, operation.requestId)
++          if (operation.contract !== 'DSH_CANDIDATE_REVIEW_OPERATION_V1' || operation.operationId !== operationId
++            || canonicalDigestValue(operation.candidate) !== canonicalDigestValue(binding)
++            || canonicalDigestValue(operation.origin) !== canonicalDigestValue(origin)
++            || !['reserved', 'failed', 'applied'].includes(operation.phase)
++            || located?.intent.operationKind !== 'revision_review' || located.intent.operationId !== operationId
++            || located.intent.ordinal !== operation.ordinal || located.intent.executionIdentity.promptId !== operation.prompt?.id) {
++            throw new Error('Recovery Review operation binding changed')
++          }
++        }
++        if (operation?.phase === 'applied') {
++          const intent = lookupRecoveryAdmissionIntent(state, operation.requestId).intent
++          const record = state.replanSessions?.[operation.requestId]
++          assertReplanSessionState(record, intent, operation.prompt)
++          assertReplanSessionAttempt(record, intent, state.recoveryAdmission.budget.attempts.find(item => item.requestId === operation.requestId))
++          const raw = await inspectReplanSession({ persistence: agent.ctx.get('sessionPersistence'), intent,
++            prompt: operation.prompt, contextMessages: record.contextMessages, signal })
++          if (raw.outcome !== 'submission_observed' || record.phase !== 'applied'
++            || canonicalDigestValue(raw.receipt) !== canonicalDigestValue(operation.receipt)
++            || canonicalDigestValue(candidate.review) !== canonicalDigestValue(operation.result.review)
++            || canonicalDigestValue(state.planConvergence) !== canonicalDigestValue(operation.result.convergence)) {
++            throw new Error('Recovery Review applied receipt changed')
++          }
++          // Raw I/O can yield to discard or another actor; replay still needs a latest-state check.
++          const latest = await readState(runtime, root, workflowId)
++          verify(latest)
++          if (canonicalDigestValue(latest.candidateReviews?.[operationId]) !== canonicalDigestValue(operation)
++            || canonicalDigestValue(latest.pendingPlanRevision.review) !== canonicalDigestValue(operation.result.review)
++            || canonicalDigestValue(latest.planConvergence) !== canonicalDigestValue(operation.result.convergence)) {
++            throw new Error('Recovery Review replay changed')
++          }
++          return { ...operation.result, replayed: true }
++        }
++        if (candidate.review !== undefined) throw new Error('Recovery Review已有未绑定的审查结果')
++        if (operation === undefined || operation.phase === 'failed') {
++          const facts = await ownerWorktreePlanningFacts(runtime, state, signal)
++          const content = planReviewPrompt({ ...state, plan: candidate.plan, planDigest: candidate.planDigest, planningRuntimeFacts: facts })
++            + (operation?.error === undefined ? '' : `\n前一实际审查未通过结构化语义校验：${operation.error}`)
++          const base = { head: await head(state.workflowWorktree, signal), branch: await currentBranch(state.workflowWorktree, signal),
++            status: await statusRecords(state.workflowWorktree, signal) }
++          await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, lease, current => {
++            verify(current)
++            if (current.pendingPlanRevision.review !== undefined
++              || canonicalDigestValue(current.candidateReviews?.[operationId]) !== canonicalDigestValue(operation)) {
++              throw new Error('Recovery Review preparation changed')
++            }
++            const ordinal = operation === undefined ? 1 : operation.ordinal + 1
++            const prepared = prepareRecoveryAdmission(current, { contract: REPLAN_ADMISSION_REQUEST_CONTRACT, origin,
++              operation: { operationKind: 'revision_review', operationId, ordinal } })
++            if (!['reserved', 'replayed'].includes(prepared.response.outcome)) throw new Error(`Recovery Review admission refused:${prepared.response.reason}`)
++            const receipt = prepared.response
++            operation = { contract: 'DSH_CANDIDATE_REVIEW_OPERATION_V1', operationId, origin, candidate: binding,
++              ordinal, requestId: receipt.requestId, prompt: { id: receipt.executionIdentity.promptId, content },
++              base, facts, phase: 'reserved' }
++            prepared.state.candidateReviews = { ...(prepared.state.candidateReviews ?? {}), [operationId]: operation }
++            return { state: prepared.state }
++          }))
++        }
++        const observed = await runtime.reconcileReplanSession(agent, workflowId, {
++          contract: 'DSH_REPLAN_SESSION_REQUEST_V1', requestId: operation.requestId, prompt: operation.prompt,
++        }, signal)
++        if (observed.outcome === 'paused' || observed.outcome === 'cancelled') {
++          throw new Error(`Recovery Review paused:${observed.reason ?? observed.outcome}`)
++        }
++        await loadLiveRegistryForPlanning(await readState(runtime, root, workflowId), { plan: candidate.plan, requireBoundDigest: true })
++        const after = { head: await head(state.workflowWorktree, signal), branch: await currentBranch(state.workflowWorktree, signal),
++          status: await statusRecords(state.workflowWorktree, signal) }
++        let result, failure
++        await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, lease, async current => {
++          verify(current)
++          if (current.pendingPlanRevision.review !== undefined
++            || canonicalDigestValue(current.candidateReviews?.[operationId]) !== canonicalDigestValue(operation)) {
++            throw new Error('Recovery Review application changed')
++          }
++          const intent = lookupRecoveryAdmissionIntent(current, operation.requestId).intent
++          const record = current.replanSessions?.[operation.requestId]
++          assertReplanSessionState(record, intent, operation.prompt)
++          assertReplanSessionAttempt(record, intent, current.recoveryAdmission.budget.attempts.find(item => item.requestId === operation.requestId))
++          if (observed.outcome === 'failed') failure = 'Reviewer没有结构化提交'
++          else {
++            let review
++            try {
++              if (canonicalDigestValue(after) !== canonicalDigestValue(operation.base)) throw new Error('审查期间worktree发生变化')
++              review = validatedPlanReview({ ...current, plan: candidate.plan, planDigest: candidate.planDigest }, observed.payload)
++            } catch (error) { failure = errorText(error) }
++            if (failure === undefined) result = await applyCandidateReview(runtime, current, review, operation.facts)
++            current.recoveryAdmission.budget = settleRecoveryAttempt(current.recoveryAdmission.budget, {
++              ...replanBudgetBinding(workflowId, intent), result: { status: failure === undefined ? 'succeeded' : 'failed',
++                reference: { id: intent.executionIdentity.promptId, version: intent.executionIdentity.sessionId } },
++            }).ledger
++            current.replanSessions[operation.requestId] = { ...record, phase: failure === undefined ? 'applied' : 'validated_failed' }
++          }
++          current.candidateReviews[operationId] = { ...operation, phase: failure === undefined ? 'applied' : 'failed',
++            ...(observed.receipt === undefined ? {} : { receipt: observed.receipt }),
++            ...(failure === undefined ? { result } : { error: failure }) }
++          return { state: current }
++        }))
++        if (failure !== undefined) throw new Error(`Recovery Review rejected:${failure}`)
++        return result
++      })
++    },
+     async reviewPendingPlanRevision(agent, signal) {
+       abortIfNeeded(signal)
+       const root = await runtime.resolveRoot(agent)
+       const active = await activeWorkflowState(runtime, root)
+       if (active === undefined) throw new Error('当前项目没有 active Workflow')
++      if (requiresRecoveryCandidateReview(active)) {
++        return runtime.reviewRecoveryCandidate(agent, active.id, signal)
++      }
+       return runtime.withWorkflowLock(active.id, async () => {
+         const state = await readState(runtime, root, active.id)
+         if (await migrateDiscardedPlanRevisionHistory(runtime, state)) await saveState(runtime, state)
+         const candidate = state.pendingPlanRevision
+         if (candidate === undefined) throw new Error('当前没有待审查 PlanRevision 候选')
++        if (requiresRecoveryCandidateReview(state)) throw new Error('Review候选来源已变化，请重新进入计费审查入口')
+         const planningRuntimeFacts = await ownerWorktreePlanningFacts(runtime, state, signal)
+         const candidateState = {
+           ...state,
+@@ -7986,41 +8202,8 @@
+         if (afterHead !== baseHead || afterBranch !== baseBranch || JSON.stringify(afterStatus) !== JSON.stringify(baseStatus)) {
+           throw new Error('PlanRevision Reviewer 改变了 workflow worktree，已拒绝审查结果')
+         }
+-        candidate.review = review
+-        candidate.reviewedAt = now()
+-        candidate.cycleId ??= planRevisionCycleId(candidate.parent, candidate.intentIds)
+-        candidate.planStructureDigest ??= planStructureDigest(candidate.plan)
+-        candidate.strategy ??= AUTONOMOUS_STRATEGIES.includes(state.planConvergence?.nextStrategy)
+-          ? state.planConvergence.nextStrategy
+-          : 'local_subgraph_rewrite'
+-        const convergence = reconcileReviewConvergence({
+-          previous: state.planConvergence,
+-          candidate,
+-          review,
+-          evidenceDigest: workflowEvidenceDigest(state, planningRuntimeFacts),
+-          time: candidate.reviewedAt,
+-          runtimeEvidence: await runtime.planReviewEvidence(state, candidate.plan, candidate.planDigest),
+-        })
+-        state.planConvergence = convergence
+-        const effectiveReview = effectivePlanReview(review, convergence)
+-        candidate.review = effectiveReview
+-        candidate.convergence = {
+-          progress: convergence.progress,
+-          nextStrategy: convergence.nextStrategy,
+-          openObligationIds: convergence.obligations.filter(item => item.status === 'open').map(item => item.id),
+-          unsupportedNewObligationIds: convergence.unsupportedNewObligations.map(item => item.id),
+-        }
+-        if (state.intentPlanRevisionCycle !== undefined) {
+-          state.intentPlanRevisionCycle.phase = convergence.nextStrategy === 'awaiting_approval'
+-            ? 'awaiting_approval'
+-            : convergence.nextStrategy === 'request_user_authority'
+-              ? 'awaiting_user_authority'
+-              : convergence.nextStrategy === 'autonomous_incident'
+-                ? 'autonomous_incident'
+-                : 'strategy_pending'
+-          state.intentPlanRevisionCycle.strategy = convergence.nextStrategy
+-          state.intentPlanRevisionCycle.updatedAt = candidate.reviewedAt
+-        }
++        const result = await applyCandidateReview(runtime, state, review, planningRuntimeFacts)
++        const { review: effectiveReview, convergence } = result
+         await saveState(runtime, state)
+         await appendLog(runtime, root, state.id, 'plan-revision.reviewed', {
+           revision: candidate.number,
+--- /dev/null
++++ owner-workflow-plugin/test/candidate-review-recovery.test.mjs
+@@ -0,0 +1,120 @@
++import assert from 'node:assert/strict'
++import test from 'node:test'
++import { planReviewResult } from '../src/model.mjs'
++import { plannerSubmitDefinition, planReviewSubmitDefinition } from '../index.js'
++import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState, reopenRecoverySessionFixture } from './fixtures/recovery-session-fixture.mjs'
++
++const review = status => ({ contract: 'DSH_PLAN_REVIEW_V1', status, summary: 'Independent candidate review.', issues: status === 'needs_revision' ? [{ severity: 'medium', title: 'Local repair incomplete', detail: 'Repair needs another local adjustment.', suggestion: 'Complete the existing local contract.', obligationId: 'review-local-verification', sourceId: 'local-review-observation', sourceVersion: 'fixture-v1', targetTaskIds: ['T1'], closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' } }] : [] })
++async function setup(t, reviews, options = {}) {
++  for (const value of reviews) planReviewResult(value)
++  let payload
++  const f = await createRecoverySessionFixture(t, { executable: true, limits: { totalLimit: 4, problemLimit: 4 },
++    modelScript: m => [() => m.toolCallResponse('plan', 'workflow_plan_submit', { plan: payload }), 'hang-slow',
++      ...reviews.flatMap((result, index) => [m.toolCallResponse(`review-${index}`, 'workflow_plan_review_submit', { review: result }), 'hang-slow'])], ...options })
++  f.ctx.tools.register(plannerSubmitDefinition(f.runtime))
++  f.ctx.tools.register(planReviewSubmitDefinition(f.runtime))
++  const state = await readRecoverySessionState(f)
++  payload = { ...structuredClone(state.plan), summary: 'Candidate awaiting independent review', owners: state.plan.owners.map(owner => ({ id: owner.id })) }
++  const stage = state.plan.tasks[0], owner = state.plan.owners.find(item => item.id === stage.ownerId)
++  await f.runtime.recordHandoffs(state, stage, { owner, branch: 'fixture-owner' }, { status: 'blocked',
++    handoffs: [{ targetType: 'owner', targetOwnerId: owner.id, files: ['src/api/repair.mjs'], summary: 'Bounded local repair.' }] })
++  await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  return f
++}
++
++for (const status of ['passed', 'needs_revision']) test(`T15 actual candidate ${status} Review consumes its own attempt in the Planner root and replays raw receipts`, { timeout: 30_000 }, async t => {
++  const f = await setup(t, [review(status)])
++  const before = await readRecoverySessionState(f)
++  const result = await f.runtime.reviewPendingPlanRevision(f.admissionAgent)
++  const state = await readRecoverySessionState(f)
++  assert.equal(result.contract, 'DSH_PLAN_REVISION_REVIEW_RESULT_V1')
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 2)
++  assert.equal(state.recoveryAdmission.budget.problems.length, 1)
++  assert.equal(state.recoveryAdmission.budget.attempts[1].result.status, 'succeeded')
++  assert.deepEqual(state.plan, before.plan)
++  assert.deepEqual(state.ownerRuns, before.ownerRuns)
++  assert.equal(state.planDigest, before.planDigest)
++  assert.equal(state.pendingPlanRevision.planDigest, before.pendingPlanRevision.planDigest)
++  const op = Object.values(state.candidateReviews)[0]
++  assert.equal(op.phase, 'applied')
++  assert.equal(op.origin.planDigest, before.planDigest)
++  assert.equal(op.candidate.planDigest, before.pendingPlanRevision.planDigest)
++  assert.notEqual(op.origin.planDigest, op.candidate.planDigest)
++  assert.equal(state.replanSessions[op.requestId].phase, 'applied')
++  const events = (await f.readFrom(state.replanSessions[op.requestId].executionIdentity.sessionId)).events
++  assert.ok(events.some(event => event.type === 'tool/call' && event.data.name === 'workflow_plan_review_submit'))
++  assert.ok(events.some(event => event.type === 'turn/end'))
++  const calls = f.adapter.requests.length
++  assert.equal((await f.runtime.reviewPendingPlanRevision(f.admissionAgent)).replayed, true)
++  assert.equal(f.adapter.requests.length, calls)
++  const reopened = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
++  try {
++    assert.equal((await reopened.runtime.reviewPendingPlanRevision(reopened.admissionAgent)).replayed, true)
++    assert.equal(reopened.adapter.requests.length, 0)
++  } finally { await reopened.dispose() }
++})
++
++test('T15 invalid semantic Reviews each consume one ordinal, then exhaustion starts no child', { timeout: 30_000 }, async t => {
++  const invalid = { ...review('needs_split'), targetTaskIds: ['missing-task'] }
++  const f = await setup(t, [invalid, invalid], { limits: { totalLimit: 3, problemLimit: 3 } })
++  for (let used = 2; used <= 3; used++) {
++    await assert.rejects(f.runtime.reviewPendingPlanRevision(f.admissionAgent), /不存在的 targetTaskId/)
++    const state = await readRecoverySessionState(f)
++    assert.equal(state.recoveryAdmission.budget.totalUsed, used)
++    assert.equal(state.recoveryAdmission.budget.problems.length, 1)
++    assert.equal(Object.values(state.candidateReviews)[0].ordinal, used - 1)
++    assert.equal(state.recoveryAdmission.budget.attempts[used - 1].result.status, 'failed')
++    assert.equal(state.pendingPlanRevision.review, undefined)
++  }
++  const calls = f.adapter.requests.length
++  await assert.rejects(f.runtime.reviewPendingPlanRevision(f.admissionAgent), /admission refused/)
++  assert.equal(f.adapter.requests.length, calls)
++})
++
++function duringReview(f, action) {
++  const child = f.runtime.runChild.bind(f.runtime), stream = f.adapter.stream.bind(f.adapter)
++  let pending = false
++  f.runtime.runChild = (...args) => { if (args[4]?.requirePlanReviewSubmission) pending = true; return child(...args) }
++  f.adapter.stream = async function* (options) {
++    if (pending) { pending = false; await action() }
++    yield* stream(options)
++  }
++}
++
++test('T15 Review does not hold workflow lock during child execution and preserves independent task changes', { timeout: 30_000 }, async t => {
++  const f = await setup(t, [review('passed')], { includeIndependentOwner: true })
++  let changed = false
++  duringReview(f, () => f.runtime.withWorkflowLock(f.workflowId, async () => {
++    await mutateRecoverySessionState(f, state => { state.tasks.find(task => task.taskId === 'T2').note = 'independent update' })
++    changed = true
++  }))
++  await f.runtime.reviewPendingPlanRevision(f.admissionAgent)
++  assert.equal(changed, true)
++  assert.equal((await readRecoverySessionState(f)).tasks.find(task => task.taskId === 'T2').note, 'independent update')
++})
++
++test('T15 candidate replacement during real Review cannot apply or become permission for a free retry', { timeout: 30_000 }, async t => {
++  const f = await setup(t, [review('passed')])
++  duringReview(f, () => mutateRecoverySessionState(f, state => { state.pendingPlanRevision.parent += 1 }))
++  await assert.rejects(f.runtime.reviewPendingPlanRevision(f.admissionAgent), /candidate\/source changed/)
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.pendingPlanRevision.review, undefined)
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 2)
++  assert.equal(state.recoveryAdmission.budget.attempts[1].state, 'running')
++  const calls = f.adapter.requests.length
++  await assert.rejects(f.runtime.reviewPendingPlanRevision(f.admissionAgent), /candidate\/source changed/)
++  assert.equal(f.adapter.requests.length, calls)
++})
++
++test('T15 stripped candidate provenance cannot fall back to the unmetered Review entry', { timeout: 30_000 }, async t => {
++  const f = await setup(t, [review('passed')])
++  await mutateRecoverySessionState(f, state => {
++    delete state.pendingPlanRevision.origin
++    delete state.pendingPlanRevision.recoveryRequestId
++    delete state.pendingPlanRevision.recoveryOrigin
++  })
++  const calls = f.adapter.requests.length
++  await assert.rejects(f.runtime.reviewPendingPlanRevision(f.admissionAgent), /缺少已结算Planner来源/)
++  assert.equal(f.adapter.requests.length, calls)
++  assert.equal((await readRecoverySessionState(f)).recoveryAdmission.budget.totalUsed, 1)
++})
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/candidate-review-recovery-v1.md
+@@ -0,0 +1,23 @@
++# 恢复候选的实际 Review 执行合同
++
++T15内部接线，沿用 recovery-admission-v1、replan-session-v1 与 handoff-recovery-v1。公开入口仍为 workflow_revision_review / reviewPendingPlanRevision；只对现有 handoff-recovery 候选启用本链。普通 Intent 候选沿用既有路径，不从文本猜测它属于恢复。
++
++## 来源与版本
++
++active计划A、Owner失败来源、根问题保持不变；候选C只用于Reviewer输入与语义校验。候选必须保留origin、原Planner recoveryRequestId、recoveryOrigin、parent/number、planDigest/structureDigest、cycleId及handoffIds。核对原handoffReplans完整分组、原Planner intent/session/成功预算回执，并重新读取真实JSONL的唯一accepted receipt。缺少或改变来源不能降级为免费Review；入口取得workflow锁后再次检查路由，避免锁前读取与锁后候选替换的竞争。
++
++每个Review使用独立revision_review operation与新requestId/session/prompt；operationId稳定绑定原Planner requestId及候选身份。恢复admission的origin仍是A，不能使用C；prepareRecoveryAdmission从同一来源继承rootProblemId，两级预算与Owner/Planner共用。
++
++## 持久执行
++
++state.candidateReviews[operationId]使用DSH_CANDIDATE_REVIEW_OPERATION_V1，固定origin、candidate、ordinal、requestId、prompt、Git base、planning facts及phase。phase为reserved、failed或applied；已观测的receipt及成功result/失败error一并保存。首次ordinal=1，只有已结算failed的前一ordinal允许后继；取消/未知终态不允许以新ordinal重发。每次实际入口最多启动一个Review child，不复用旧函数的内部两次runChild循环。
++
++整个入口由独立规划资源lease串行；短workflow事务领取并保存operation，锁外调用reconcileReplanSession及读取真实回执，短workflow事务以最新状态核对并结算。候选/来源/父版本并发变化不应用结果；保留已消耗额度及未知/运行中对账状态。正常独立任务的状态写入不能被旧快照覆盖。
++
++通过结构与候选语义校验的passed、needs_revision、needs_split、needs_decision、needs_discovery均为Review执行succeeded。needs_revision不是传输失败，不自动重复审查同一候选。accepted输出语义无效或Git base变化结算failed；没有结构化输出由会话事实结算failed；不确定/取消保持原会话处理。语义成功在同一状态事务写入budget、session.applied、operation.applied/result/receipt、candidate.review及既有convergence投影。
++
++已applied重放重新核对原Planner/Review两个原始回执、预算与session、候选及已存Review/convergence；新Harness上下文也不启动模型。成功只证明候选已审查，不激活C、不重置Owner、不关闭根问题。
++
++## 剩余范围
++
++本接线不完成候选discard/rebuild的根继承、仲裁/会诊逐次计费、普通Intent恢复来源生产、T18版本激活，或所有入口异常的主控制技术暂停投影。原有独立审查/审批与用户权限分类仍适用。T15仍开发中，不视为整套无人值守验收。

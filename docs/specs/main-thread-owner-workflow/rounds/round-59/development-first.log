@@ -1,0 +1,42 @@
+TAP version 13
+# Subtest: T15 actual handoff entry meters one Planner and atomically stages a candidate without activating its version
+not ok 1 - T15 actual handoff entry meters one Planner and atomically stages a candidate without activating its version
+  ---
+  duration_ms: 4023.414917
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/handoff-recovery.test.mjs:22:1'
+  failureType: 'testCodeFailure'
+  error: 'Handoff recovery rejected:Handoff 重规划必须把全部文件分配给目标 Owner api 的同一 task：api/result.txt'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:9718:42
+    async Object.withOwnerLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:5546:24)
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/handoff-recovery.test.mjs:30:18)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+# Subtest: T15 actual invalid handoff candidate consumes its attempt and the next physical call shares the root and finite budget
+not ok 2 - T15 actual invalid handoff candidate consumes its attempt and the next physical call shares the root and finite budget
+  ---
+  duration_ms: 30093.563958
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/handoff-recovery.test.mjs:54:1'
+  failureType: 'testTimeoutFailure'
+  error: 'test timed out after 30000ms'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: T15 unbound handoff or changed producing Owner identity cannot launch an unmetered Planner
+ok 3 - T15 unbound handoff or changed producing Owner identity cannot launch an unmetered Planner
+  ---
+  duration_ms: 652.169167
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 1
+# fail 1
+# cancelled 1
+# skipped 0
+# todo 0
+# duration_ms 35164.007792

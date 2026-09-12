@@ -1,0 +1,9 @@
+{
+  "candidate": "R88-T15-closure",
+  "baseHead": "154914064f5ceb2f8eb413865e10a54e8ffbc663",
+  "productionRuntimeHash": "8c0cbe92fa3ecd62bd4f250ee6d31307ae31d91e0fccdfd034695a1b7b2081cc",
+  "changedContractTest": "owner-workflow-plugin/test/recovery-session.test.mjs",
+  "changedContractTestHash": "915d995eb0f9427912d573a6f81646ed4a82c494a21b395fff9083966475af7f",
+  "productionRuntimeChangedInRound": false,
+  "status": "fixed"
+}

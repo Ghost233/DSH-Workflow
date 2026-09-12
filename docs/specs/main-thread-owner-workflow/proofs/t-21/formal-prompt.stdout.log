@@ -1,0 +1,245 @@
+[
+  {
+    "mode": "pending",
+    "first": {
+      "phase": "kill-ready",
+      "mode": "pending",
+      "memory": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [],
+        "turnEnds": []
+      },
+      "calls": 0,
+      "duplicatePendingError": "Error: message \"t21-fixed-prompt\" is already pending"
+    },
+    "restart": {
+      "phase": "result",
+      "mode": "restart-pending",
+      "physicalBefore": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [],
+        "turnEnds": []
+      },
+      "before": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [],
+        "turnEnds": []
+      },
+      "resumed": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [],
+        "turnEnds": [],
+        "pendingIds": [
+          "t21-fixed-prompt"
+        ]
+      },
+      "after": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [],
+        "turnEnds": []
+      },
+      "callsBeforeReplay": 0,
+      "callsAfterReplay": 0
+    }
+  },
+  {
+    "mode": "followup-return",
+    "first": {
+      "phase": "kill-ready",
+      "mode": "followup-return",
+      "memory": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": []
+      },
+      "calls": 0
+    },
+    "restart": {
+      "phase": "result",
+      "mode": "restart-followup-return",
+      "observation": "no durable session at restart",
+      "loadError": "Error: session \"t21-prompt-session\" not found"
+    }
+  },
+  {
+    "mode": "running",
+    "first": {
+      "phase": "kill-ready",
+      "mode": "running",
+      "memory": {
+        "pendingInsertions": 1,
+        "userMessages": 1,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": []
+      },
+      "calls": 1
+    },
+    "restart": {
+      "phase": "result",
+      "mode": "restart-running",
+      "physicalBefore": {
+        "pendingInsertions": 1,
+        "userMessages": 1,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": []
+      },
+      "before": {
+        "pendingInsertions": 1,
+        "userMessages": 1,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": [
+          {
+            "turn": 1,
+            "reason": {
+              "kind": "interrupted"
+            }
+          }
+        ]
+      },
+      "resumed": {
+        "pendingInsertions": 1,
+        "userMessages": 1,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": [
+          {
+            "turn": 1,
+            "reason": {
+              "kind": "interrupted"
+            }
+          }
+        ],
+        "pendingIds": []
+      },
+      "after": {
+        "pendingInsertions": 1,
+        "userMessages": 1,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": [
+          {
+            "turn": 1,
+            "reason": {
+              "kind": "interrupted"
+            }
+          }
+        ]
+      },
+      "callsBeforeReplay": 0,
+      "callsAfterReplay": 0
+    }
+  },
+  {
+    "mode": "completed",
+    "first": {
+      "phase": "kill-ready",
+      "mode": "completed",
+      "memory": {
+        "pendingInsertions": 1,
+        "userMessages": 1,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": [
+          {
+            "turn": 1,
+            "reason": {
+              "kind": "completed"
+            }
+          }
+        ]
+      },
+      "calls": 1
+    },
+    "restart": {
+      "phase": "result",
+      "mode": "restart-completed",
+      "physicalBefore": {
+        "pendingInsertions": 1,
+        "userMessages": 1,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": [
+          {
+            "turn": 1,
+            "reason": {
+              "kind": "completed"
+            }
+          }
+        ]
+      },
+      "before": {
+        "pendingInsertions": 1,
+        "userMessages": 1,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": [
+          {
+            "turn": 1,
+            "reason": {
+              "kind": "completed"
+            }
+          }
+        ]
+      },
+      "resumed": {
+        "pendingInsertions": 1,
+        "userMessages": 1,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": [
+          {
+            "turn": 1,
+            "reason": {
+              "kind": "completed"
+            }
+          }
+        ],
+        "pendingIds": []
+      },
+      "after": {
+        "pendingInsertions": 2,
+        "userMessages": 2,
+        "turnStarts": [
+          1,
+          2
+        ],
+        "turnEnds": [
+          {
+            "turn": 1,
+            "reason": {
+              "kind": "completed"
+            }
+          },
+          {
+            "turn": 2,
+            "reason": {
+              "kind": "completed"
+            }
+          }
+        ]
+      },
+      "callsBeforeReplay": 0,
+      "callsAfterReplay": 1
+    }
+  }
+]

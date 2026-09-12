@@ -1,0 +1,38 @@
+✔ T22 source-plane JSONL observes exactly one completed reserved prompt without writes (1200.941416ms)
+✔ T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt (709.952584ms)
+✔ T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending (892.718583ms)
+✔ T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects (328.66425ms)
+✔ T22 refuses a real JSONL backend configured with compression before any read or retry (281.619042ms)
+✔ F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause (1881.031958ms)
+✔ F16 maps a real lease directory still initializing to a non-mutating pause (577.788208ms)
+✔ F16 leaves ordinary lease I/O errors and caller cancellation as rejections (870.380917ms)
+✖ T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction (1631.455541ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 8
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8746.61375
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/recovery-session.test.mjs:286:1
+✖ T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction (1631.455541ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'settled_failed'
+  - 'paused'
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-session.test.mjs:361:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'settled_failed',
+    expected: 'paused',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -1,0 +1,11 @@
+# R52：技术暂停控制接线与审查缺陷
+
+Supervisor现可对没有ready/active的技术stopped及依赖后继返回technical_pause；runtime持久报告/暂停来源，Runner新增停止后投递，主控制区分技术暂停与用户计数。实际预算耗尽的独立/依赖测试通过。
+
+正式316通过/7既有跳过、0失败/超时/漂移：runtime45、admission43、session27、supervisor22、workflow-state11、control159通过/7跳过、runner9。见test-results.json及原始日志；candidate.json和round.diff绑定实际未提交候选。
+
+本轮未关闭：审查确认保留awaiting_approval标记跳过新控制分支；Runner未按指定technicalNotificationId投递，旧pending可抢先；混合incident与真实用户待决时notify被execute分支覆盖，用户控制投影不一致。纯控制反例与producer位置在approval-retained-probe.md。下一R53修这三处并补实际approvePlan和混合态测试，R52正式候选保持未改。
+
+T15仍开发中，timeout/replan与完整交付未完成。T16 round03报告用语已更正（Owner执行终止不是进程死亡）；round04有旧lease/旧child门禁拒绝的有限证据，未验证新attempt时旧结果。runExternalOwner拒绝失败现场不等于recoverOwner入口缺失，后续真实恢复证明已派发。
+
+未提交/推送/同步，Git状态见git-evidence.json；依赖仍未同步。

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -44,6 +45,7 @@ async function repository() {
 const plan = {
   owners: [{ id: 'network', name: '网络', description: '网络模块', scope: ['**'], exclude: [] }],
 }
+const NETWORK_MEMORY = '.owner-workflow/owners/network/memory'
 
 test('Owner 记忆契约拒绝越界页面、运行目录来源和未知状态', () => {
   assert.deepEqual(normalizeMemoryUpdates([{
@@ -54,6 +56,13 @@ test('Owner 记忆契约拒绝越界页面、运行目录来源和未知状态',
     ownerIds: ['network'],
     supersedes: [],
   }])[0].ownerIds, ['network'])
+  assert.throws(() => normalizeMemoryUpdates([{
+    type: 'interface',
+    title: '跨 Owner 页面',
+    summary: '每页必须有唯一归属',
+    files: ['api.ts'],
+    ownerIds: ['network', 'web'],
+  }]), /最多包含一个 Owner/u)
   assert.throws(() => normalizeMemoryUpdates([{
     type: 'interface',
     title: '非法来源',
@@ -110,12 +119,12 @@ test('Owner 记忆契约拒绝越界页面、运行目录来源和未知状态',
 test('Runtime 只移除 Owner 记忆 catalog 的自引用元数据', async () => {
   const root = await repository()
   try {
-    const directory = join(root, '.owner-memory')
+    const directory = join(root, NETWORK_MEMORY)
     await mkdir(directory, { recursive: true })
     await writeFile(join(directory, '.catalog.json'), `${JSON.stringify({
       contract: 'DSH_OWNER_MEMORY_CATALOG_V1',
       pages: {
-        'owners/network/api.md': {
+        'api.md': {
           id: 'memory.owners.network.api',
           supersedes: ['memory.owners.network.api'],
           derivedFrom: ['memory.owners.network.api', 'memory.other'],
@@ -123,10 +132,10 @@ test('Runtime 只移除 Owner 记忆 catalog 的自引用元数据', async () =>
       },
     }, null, 2)}\n`, 'utf8')
     const files = await repairMemoryCatalogSelfReferences(root)
-    assert.deepEqual(files, ['.owner-memory/.catalog.json'])
+    assert.deepEqual(files, [`${NETWORK_MEMORY}/.catalog.json`])
     const catalog = JSON.parse(await readFile(join(directory, '.catalog.json'), 'utf8'))
-    assert.deepEqual(catalog.pages['owners/network/api.md'].supersedes, [])
-    assert.deepEqual(catalog.pages['owners/network/api.md'].derivedFrom, ['memory.other'])
+    assert.deepEqual(catalog.pages['api.md'].supersedes, [])
+    assert.deepEqual(catalog.pages['api.md'].derivedFrom, ['memory.other'])
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -162,15 +171,15 @@ test('Markdown Owner Wiki 生成索引和幂等日志，并根据来源提交计
     assert.deepEqual(secondFiles, firstFiles)
     await commitFiles(root, firstFiles, '提交 Owner 长期记忆')
     const before = await loadMemorySnapshot(root, { ownerId: 'network' })
-    assert.equal(before.documents.find(document => document.path === 'owners/network/api.md').computedStatus, 'verified')
-    const log = await readFile(join(root, '.owner-memory', 'log.md'), 'utf8')
+    assert.equal(before.documents.find(document => document.path === `${NETWORK_MEMORY}/api.md`).computedStatus, 'verified')
+    const log = await readFile(join(root, NETWORK_MEMORY, 'log.md'), 'utf8')
     assert.equal((log.match(/owner-memory-stage:wf-memory:stage-1:start/gu) ?? []).length, 1)
-    assert.match(await readFile(join(root, '.owner-memory', 'index.md'), 'utf8'), /网络接口版本/u)
+    assert.match(await readFile(join(root, NETWORK_MEMORY, 'index.md'), 'utf8'), /网络接口版本/u)
 
     await writeFile(join(root, 'api.ts'), 'export const version = 2\n', 'utf8')
     await commitFiles(root, ['api.ts'], '修改接口版本')
     const after = await loadMemorySnapshot(root, { ownerId: 'network' })
-    assert.equal(after.documents.find(document => document.path === 'owners/network/api.md').computedStatus, 'stale')
+    assert.equal(after.documents.find(document => document.path === `${NETWORK_MEMORY}/api.md`).computedStatus, 'stale')
     assert.notEqual(after.digest, before.digest)
 
     const replacement = normalizeCuratorResult({
@@ -196,10 +205,55 @@ test('Markdown Owner Wiki 生成索引和幂等日志，并根据来源提交计
     })
     await commitFiles(root, replacementFiles, '替代旧 Owner 记忆')
     const replacementSnapshot = await loadMemorySnapshot(root, { ownerId: 'network' })
-    assert.equal(replacementSnapshot.documents.find(document => document.path === 'owners/network/api.md').computedStatus, 'superseded')
-    const oldPage = await readFile(join(root, '.owner-memory', 'owners', 'network', 'api.md'), 'utf8')
+    assert.equal(replacementSnapshot.documents.find(document => document.path === `${NETWORK_MEMORY}/api.md`).computedStatus, 'superseded')
+    const oldPage = await readFile(join(root, NETWORK_MEMORY, 'api.md'), 'utf8')
     assert.doesNotMatch(oldPage, /^---/u)
-    assert.match(await readFile(join(root, '.owner-memory', '.catalog.json'), 'utf8'), /supersededBy/u)
+    assert.match(await readFile(join(root, NETWORK_MEMORY, '.catalog.json'), 'utf8'), /supersededBy/u)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('多个 Owner 的长期知识分别写入各自文件夹', async () => {
+  const root = await repository()
+  try {
+    const multiOwnerPlan = {
+      owners: [
+        plan.owners[0],
+        { id: 'web', name: 'Web', description: '网页模块', scope: ['**'], exclude: [] },
+      ],
+    }
+    const curator = normalizeCuratorResult({
+      contract: MEMORY_CURATOR_CONTRACT,
+      summary: '按 Owner 分类长期知识',
+      pages: [
+        {
+          path: 'owners/network/api.md', type: 'interface', title: '网络接口', summary: '网络知识', content: '网络知识正文。',
+          ownerIds: ['network'], tags: [], files: ['api.ts'], supersedes: [], derivedFrom: [],
+        },
+        {
+          path: 'owners/web/page.md', type: 'concept', title: '网页结构', summary: '网页知识', content: '网页知识正文。',
+          ownerIds: ['web'], tags: [], files: ['api.ts'], supersedes: [], derivedFrom: [],
+        },
+      ],
+    }, multiOwnerPlan)
+    await writeMemoryBundle(root, curator, {
+      workflowId: 'wf-owner-folders',
+      stage: { id: 'T1', name: '分类长期知识' },
+      entries: [
+        { owner: { id: 'network' }, report: { summary: '网络任务完成' } },
+        { owner: { id: 'web' }, report: { summary: '网页任务完成' } },
+      ],
+      verifiedAtCommit: await head(root),
+    })
+
+    assert.match(await readFile(join(root, NETWORK_MEMORY, 'api.md'), 'utf8'), /网络知识正文/u)
+    assert.match(await readFile(join(root, '.owner-workflow', 'owners', 'web', 'memory', 'page.md'), 'utf8'), /网页知识正文/u)
+    assert.equal(existsSync(join(root, '.owner-memory')), false)
+    const networkSnapshot = await loadMemorySnapshot(root, { ownerId: 'network' })
+    assert.equal(networkSnapshot.documents.some(document => document.ownerId === 'web'), false)
+    const allSnapshot = await loadMemorySnapshot(root)
+    assert.deepEqual([...new Set(allSnapshot.documents.map(document => document.ownerId))].sort(), ['network', 'web'])
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -236,19 +290,70 @@ test('没有新页面但重新核对来源后会刷新既有记忆的验证基�
     await commitFiles(root, ['api.ts'], '更新接口实现')
     const changedHead = await head(root)
     const staleDocument = (await loadMemorySnapshot(root, { ownerId: 'network' })).documents
-      .find(document => document.path === 'owners/network/api.md')
+      .find(document => document.path === `${NETWORK_MEMORY}/api.md`)
     assert.equal(staleDocument?.computedStatus, 'stale')
 
     const files = await refreshMemoryCatalogVerification(root, {
       verifiedAtCommit: changedHead,
       refreshSources: ['api.ts'],
     })
-    assert.deepEqual(files, ['.owner-memory/.catalog.json'])
+    assert.deepEqual(files, [`${NETWORK_MEMORY}/.catalog.json`])
     await commitFiles(root, files, '刷新记忆验证基线')
     const snapshot = await loadMemorySnapshot(root, { ownerId: 'network' })
-    assert.equal(snapshot.documents.find(document => document.path === 'owners/network/api.md')?.computedStatus, 'verified')
-    const catalog = JSON.parse(await readFile(join(root, '.owner-memory', '.catalog.json'), 'utf8'))
-    assert.equal(catalog.pages['owners/network/api.md'].verifiedAtCommit, changedHead)
+    assert.equal(snapshot.documents.find(document => document.path === `${NETWORK_MEMORY}/api.md`)?.computedStatus, 'verified')
+    const catalog = JSON.parse(await readFile(join(root, NETWORK_MEMORY, '.catalog.json'), 'utf8'))
+    assert.equal(catalog.pages['api.md'].verifiedAtCommit, changedHead)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('旧 .owner-memory 在下一次编译时迁入对应 Owner 文件夹并删除独立目录', async () => {
+  const root = await repository()
+  try {
+    const legacy = join(root, '.owner-memory')
+    await mkdir(join(legacy, 'owners', 'network'), { recursive: true })
+    await mkdir(join(legacy, '.sources', 'wf-legacy'), { recursive: true })
+    await writeFile(join(legacy, 'owners', 'network', 'api.md'), '# 旧网络接口\n\n旧版长期知识。\n', 'utf8')
+    await writeFile(join(legacy, '.sources', 'wf-legacy', 'T1.md'), '# 旧任务来源\n', 'utf8')
+    await writeFile(join(legacy, '.catalog.json'), `${JSON.stringify({
+      contract: 'DSH_OWNER_MEMORY_CATALOG_V1',
+      pages: {
+        'owners/network/api.md': {
+          id: 'memory.owners.network.api',
+          owners: ['network'],
+          status: 'verified',
+          sources: ['api.ts'],
+          verifiedAtCommit: await head(root),
+          supersedes: [],
+          derivedFrom: [],
+        },
+      },
+    }, null, 2)}\n`, 'utf8')
+    await commitFiles(root, [
+      '.owner-memory/owners/network/api.md',
+      '.owner-memory/.sources/wf-legacy/T1.md',
+      '.owner-memory/.catalog.json',
+    ], '提交旧版 Owner 记忆')
+
+    const curator = normalizeCuratorResult({
+      contract: MEMORY_CURATOR_CONTRACT,
+      summary: '迁移旧版记忆布局',
+      pages: [],
+    }, plan)
+    const files = await writeMemoryBundle(root, curator, {
+      workflowId: 'wf-migrate-memory',
+      stage: { id: 'T2', name: '迁移长期记忆' },
+      entries: [{ owner: { id: 'network' }, report: { summary: '迁移旧版记忆' } }],
+      verifiedAtCommit: await head(root),
+    })
+    assert.equal(existsSync(join(root, '.owner-memory')), false)
+    assert.match(await readFile(join(root, NETWORK_MEMORY, 'api.md'), 'utf8'), /旧版长期知识/u)
+    assert.match(await readFile(join(root, NETWORK_MEMORY, '.sources', 'wf-legacy', 'T1.md'), 'utf8'), /旧任务来源/u)
+    assert.equal(files.includes('.owner-memory/owners/network/api.md'), true)
+    await commitFiles(root, files, '迁移到 Owner 分类目录')
+    const snapshot = await loadMemorySnapshot(root, { ownerId: 'network' })
+    assert.equal(snapshot.documents.some(document => document.path === `${NETWORK_MEMORY}/api.md`), true)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -275,6 +380,24 @@ test('临时 Owner 记忆保持简短，封存后作为编译来源但不注入�
     assert.doesNotMatch(content, /提交|SHA|行号|测试输出/u)
     const snapshot = await loadMemorySnapshot(root, { ownerId: 'network' })
     assert.equal(snapshot.documents.some(document => document.path.includes('.sources')), false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Owner 最终摘要过长时截断记忆来源而不阻塞任务结算', async () => {
+  const root = await repository()
+  try {
+    const sourceFile = await writeSealedOwnerWorklog(root, {
+      workflowId: 'wf-long-summary',
+      task: { id: 'T1', title: '完成任务' },
+      owner: { id: 'network' },
+      worklog: createOwnerWorklog({ taskId: 'T1', title: '完成任务', ownerId: 'network' }),
+      report: { summary: '很长的任务摘要'.repeat(80), changes: [] },
+    })
+    const content = await readFile(join(root, sourceFile), 'utf8')
+    assert.match(content, /- 交付：很长的任务摘要/u)
+    assert.match(content, /…/u)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -387,7 +510,7 @@ test('Memory Curator 的无效引用在写入前会获得一次受限修订', as
           tags: [],
           files: ['api.ts'],
           supersedes: [],
-          derivedFrom: ['.owner-memory/.sources/wf-memory/T1.md'],
+          derivedFrom: ['.owner-workflow/owners/network/memory/.sources/wf-memory/T1.md'],
         }],
       },
       {

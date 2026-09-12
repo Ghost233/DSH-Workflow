@@ -1,0 +1,1 @@
+t21_contract_review只读审查：L4真实同Runtime/Workflow/账本T1暂停后T2独立Owner完成owner_submit到synced，固定提交与session分离，T1的admission/record/raw不变；fixture默认关闭且Registry/plan匹配。正式32/32，零失败/跳过/超时/警告，无漂移，无新增P1/P2。L1-L4满足局部关闭门槛，T22可开发完成并启动T23，非全链验收。

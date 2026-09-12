@@ -1,0 +1,86 @@
+{
+  "results": [
+    {
+      "suite": "planning-references",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/planning-references.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T16:07:32.866253+00:00",
+      "timeoutSeconds": 120,
+      "environment": "outside outer tool sandbox; native Harness guards retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T16:07:33.193451+00:00",
+      "counts": {
+        "tests": 30,
+        "pass": 30,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "orchestrator-documents",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/orchestrator-documents.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T16:07:33.193954+00:00",
+      "timeoutSeconds": 120,
+      "environment": "outside outer tool sandbox; native Harness guards retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T16:07:33.438999+00:00",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "suite": "orchestrator-documents-native",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/orchestrator-documents-native.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T16:07:33.439671+00:00",
+      "timeoutSeconds": 120,
+      "environment": "outside outer tool sandbox; native Harness guards retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T16:07:34.973121+00:00",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    }
+  ],
+  "drift": []
+}

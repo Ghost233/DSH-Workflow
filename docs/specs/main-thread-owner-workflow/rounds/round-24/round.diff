@@ -1,0 +1,121 @@
+--- owner-workflow-plugin/test/recovery-session-restart.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session-restart.test.mjs
+@@ -236,3 +236,50 @@
+     containerRemoved: true,
+   }, null, 2)}\n`, 'utf8')
+ })
++
++
++test('T22 SIGKILL after real successful settlement replays the fixed-commit receipt without new execution', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(
++      startRestartChild({ mode: 'produce_settled_succeeded', fixtureParent }),
++      'settled_succeeded',
++    )
++    const postKill = await capturePostKill(producer.checkpoint)
++    const state = JSON.parse(postKill.stateBytes)
++    const run = state.ownerRuns['T1:api']
++    const task = state.tasks.find(item => item.taskId === 'T1')
++    const success = run.recoverySession.successReceipt
++    assert.equal(run.status, 'completed')
++    assert.equal(run.recoverySession.phase, 'settled_succeeded')
++    assert.equal(task.status, 'completed')
++    assert.equal(task.checkState, 'valid')
++    assert.match(run.result.commitSha, /^[0-9a-f]{40}$/u)
++    assert.equal(task.fixedCommitSha, run.result.commitSha)
++    assert.equal(success.commitSha, run.result.commitSha)
++    assert.equal(success.workflowHead, run.result.workflowHead)
++    assert.deepEqual(success.executionRef, {
++      id: producer.checkpoint.receipt.executionIdentity.sessionId,
++      version: producer.checkpoint.receipt.executionIdentity.promptId,
++    })
++    const attempt = producer.checkpoint.checkpoint.budgetAttempt
++    assert.equal(attempt.state, 'settled')
++    assert.equal(attempt.result.status, 'succeeded')
++    assert.deepEqual(attempt.result, success.result)
++    assert.deepEqual(attempt.executionRef, success.executionRef)
++    assert.ok(producer.checkpoint.checkpoint.modelRequests >= 4)
++    assert.match(postKill.rawContent, /"name":"owner_submit"/u)
++    const replay = await finishReplay({
++      scenario: 'settled_succeeded',
++      root: producer.checkpoint.root,
++      workflowId: producer.checkpoint.workflowId,
++      receipt: producer.checkpoint.receipt,
++      request: producer.checkpoint.request,
++    })
++    assert.notEqual(replay.pid, producer.checkpoint.pid)
++    assert.equal(replay.result.outcome, 'settled_succeeded')
++    assert.equal(replay.result.phase, 'settled_succeeded')
++    assert.deepEqual(replay.result.successReceipt, success)
++    assertReplayReadOnly(postKill, replay)
++    await writeEvidence('settled-succeeded-sigkill-replay', producer, postKill, replay)
++  })
++})
+--- owner-workflow-plugin/test/fixtures/recovery-session-restart-child.mjs (baseline)
++++ owner-workflow-plugin/test/fixtures/recovery-session-restart-child.mjs
+@@ -32,6 +32,33 @@
+       },
+     }),
+     textResponse('submission recorded'),
++  ]
++}
++
++function completedOwnerModelScript({ toolCallResponse, textResponse }) {
++  const report = {
++    contract: 'DSH_OWNER_RESULT_V1',
++    status: 'completed',
++    summary: 'Controlled Owner completed the recovered task through owner_submit.',
++    changes: [], tests: [], handoffs: [], memory_updates: [],
++  }
++  // The first two responses exercise the production Owner child and its
++  // owner_submit gate.  The next two let finishOwner complete its ordinary
++  // curator/reviewer path, rather than bypassing final task settlement.
++  return [
++    toolCallResponse('t22-owner-submit-completed', 'owner_submit', { report }),
++    textResponse('submission recorded'),
++    textResponse(JSON.stringify({
++      contract: 'DSH_OWNER_MEMORY_CURATOR_V1',
++      summary: 'This controlled recovery has no durable knowledge page to add.',
++      pages: [],
++    })),
++    textResponse(JSON.stringify({
++      contract: 'DSH_OWNER_MEMORY_REVIEW_V1',
++      status: 'passed',
++      summary: 'The controlled empty memory bundle is valid.',
++      issues: [],
++    })),
+   ]
+ }
+
+@@ -141,6 +168,22 @@
+     throw new Error('failed producer did not durably settle its recovery receipt')
+   }
+   await holdAfterCheckpoint(fixture, receipt, 'settled_failed')
++}
++
++async function produceSettledSucceeded(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true,
++    temporaryDirectory: input.fixtureParent,
++    modelScript: completedOwnerModelScript,
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  const result = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, request(receipt),
++  )
++  if (result.outcome !== 'settled_succeeded') {
++    throw new Error('successful producer did not complete real Owner settlement')
++  }
++  await holdAfterCheckpoint(fixture, receipt, 'settled_succeeded')
+ }
+
+ function observeAgentOperations(fixture) {
+@@ -212,6 +255,8 @@
+       return await produceSubmitted(input)
+     case 'produce_settled_failed':
+       return await produceSettledFailed(input)
++    case 'produce_settled_succeeded':
++      return await produceSettledSucceeded(input)
+     case 'produce_fixture_error':
+       // Fail after the real Git/worktree fixture exists but before any
+       // checkpoint reveals its root to the parent.

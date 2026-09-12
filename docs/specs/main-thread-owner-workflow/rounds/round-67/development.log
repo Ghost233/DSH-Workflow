@@ -1,0 +1,100 @@
+✖ candidate selection and acknowledgment only expose independent target patches, never a replacement state (1.98625ms)
+✖ excludes source/target Owner tasks and their forward/reverse dependency closure (0.274625ms)
+✖ full active tasks and undispatched reservations consume global slots and Owner identities (0.073333ms)
+✖ existing Owner history and source binding prevent stale or duplicate creates (0.073584ms)
+✖ no eligible work yields side-effect-free wait and cannot acknowledge stop/notify (0.061542ms)
+✖ unproven handoff scope fails closed, and pending notice never dispatches (0.049667ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 0
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 101.377125
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:26:1
+✖ candidate selection and acknowledgment only expose independent target patches, never a replacement state (1.98625ms)
+  Error: owner.id 的格式不正确：S
+      at identifier (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:194:36)
+      at normalizeOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:300:14)
+      at Array.map (<anonymous>)
+      at normalizeV2Owners (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:765:28)
+      at normalizePlanV2 (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:980:18)
+      at createTaskState (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/supervisor.mjs:465:26)
+      at fixture (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:18:17)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:27:17)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+
+test at owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:41:1
+✖ excludes source/target Owner tasks and their forward/reverse dependency closure (0.274625ms)
+  Error: owner.id 的格式不正确：S
+      at identifier (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:194:36)
+      at normalizeOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:300:14)
+      at Array.map (<anonymous>)
+      at normalizeV2Owners (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:765:28)
+      at normalizePlanV2 (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:980:18)
+      at createTaskState (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/supervisor.mjs:465:26)
+      at fixture (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:18:17)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:42:17)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+
+test at owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:46:1
+✖ full active tasks and undispatched reservations consume global slots and Owner identities (0.073333ms)
+  Error: owner.id 的格式不正确：S
+      at identifier (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:194:36)
+      at normalizeOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:300:14)
+      at Array.map (<anonymous>)
+      at normalizeV2Owners (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:765:28)
+      at normalizePlanV2 (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:980:18)
+      at createTaskState (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/supervisor.mjs:465:26)
+      at fixture (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:18:17)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:47:17)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+
+test at owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:57:1
+✖ existing Owner history and source binding prevent stale or duplicate creates (0.073584ms)
+  Error: owner.id 的格式不正确：S
+      at identifier (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:194:36)
+      at normalizeOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:300:14)
+      at Array.map (<anonymous>)
+      at normalizeV2Owners (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:765:28)
+      at normalizePlanV2 (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:980:18)
+      at createTaskState (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/supervisor.mjs:465:26)
+      at fixture (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:18:17)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:58:17)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+
+test at owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:67:1
+✖ no eligible work yields side-effect-free wait and cannot acknowledge stop/notify (0.061542ms)
+  Error: owner.id 的格式不正确：S
+      at identifier (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:194:36)
+      at normalizeOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:300:14)
+      at Array.map (<anonymous>)
+      at normalizeV2Owners (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:765:28)
+      at normalizePlanV2 (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:980:18)
+      at createTaskState (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/supervisor.mjs:465:26)
+      at fixture (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:18:17)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:68:17)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+
+test at owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:75:1
+✖ unproven handoff scope fails closed, and pending notice never dispatches (0.049667ms)
+  Error: owner.id 的格式不正确：S
+      at identifier (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:194:36)
+      at normalizeOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:300:14)
+      at Array.map (<anonymous>)
+      at normalizeV2Owners (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:765:28)
+      at normalizePlanV2 (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:980:18)
+      at createTaskState (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/supervisor.mjs:465:26)
+      at fixture (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:18:17)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs:76:17)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)

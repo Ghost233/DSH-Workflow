@@ -1,6 +1,8 @@
 import { isAbsolute, normalize, relative, sep } from 'node:path'
 import { createHash } from 'node:crypto'
 import { MEMORY_DIRECTORY, normalizeMemoryUpdates } from './memory.mjs'
+import { normalizePlanningBindings } from './planning-packages.mjs'
+import { normalizePublicOwnerPlanBindings } from './public-owner-plan.mjs'
 
 export const PLAN_CONTRACT = 'DSH_PLAN_V1'
 export const PLAN_V2_CONTRACT = 'DSH_PLAN_V2'
@@ -9,6 +11,136 @@ export const OWNER_RESULT_CONTRACT = 'DSH_OWNER_RESULT_V1'
 export const MODE_CONTRACT = 'DSH_OWNER_MODE_V1'
 export const PLAN_REVIEW_CONTRACT = 'DSH_PLAN_REVIEW_V1'
 export const IMPLEMENTATION_REVIEW_CONTRACT = 'DSH_IMPLEMENTATION_REVIEW_V1'
+
+// This is shared with the tool definition so the public submission shape and
+// the normalizer below evolve together. Runtime still treats submitted review
+// text as untrusted; only convergence's Runtime-derived evidence can release
+// an obligation.
+export const PLAN_REVIEW_SUBMISSION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    contract: { type: 'string', enum: ['DSH_PLAN_REVIEW_V1'] },
+    status: { type: 'string', enum: ['passed', 'needs_revision', 'needs_split', 'needs_decision', 'needs_discovery'] },
+    summary: { type: 'string', minLength: 1 },
+    issues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          severity: { type: 'string', enum: ['high', 'medium', 'low'] },
+          title: { type: 'string', minLength: 1 },
+          detail: { type: 'string', minLength: 1 },
+          suggestion: { type: 'string', minLength: 1 },
+          obligationId: { type: 'string', minLength: 1 },
+          sourceId: { type: 'string', minLength: 1 },
+          sourceVersion: { type: 'string', minLength: 1 },
+          targetTaskIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+          classificationBasis: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              source: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  id: { type: 'string', minLength: 1 },
+                  version: { type: 'string', minLength: 1 },
+                },
+                required: ['id', 'version'],
+              },
+              technicalFacts: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
+              businessCommitmentDelta: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  currentCommitment: { type: 'string', minLength: 1 },
+                  proposedCommitment: { type: 'string', minLength: 1 },
+                  consequence: { type: 'string', minLength: 1 },
+                },
+                required: ['currentCommitment', 'proposedCommitment', 'consequence'],
+              },
+              externalPermissionGap: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  requiredPermission: { type: 'string', minLength: 1 },
+                  target: { type: 'string', minLength: 1 },
+                  blockedAction: { type: 'string', minLength: 1 },
+                },
+                required: ['requiredPermission', 'target', 'blockedAction'],
+              },
+            },
+            required: ['source', 'technicalFacts'],
+          },
+          closeWhen: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              kind: { type: 'string', enum: ['plan_verification_binding', 'task_verification_result', 'plan_task_executable', 'decision_record'] },
+              taskId: { type: 'string', minLength: 1 },
+              verificationId: { type: 'string', minLength: 1 },
+              authority: { type: 'string', enum: ['orchestrator', 'user'] },
+            },
+            required: ['kind', 'taskId'],
+            allOf: [
+              {
+                if: { properties: { kind: { enum: ['plan_verification_binding', 'task_verification_result'] } }, required: ['kind'] },
+                then: { required: ['verificationId'] },
+              },
+              {
+                if: { properties: { kind: { const: 'decision_record' } }, required: ['kind'] },
+                then: { required: ['authority'] },
+              },
+            ],
+          },
+        },
+        required: ['severity', 'title', 'detail', 'suggestion', 'obligationId', 'sourceId', 'sourceVersion', 'closeWhen'],
+      },
+    },
+    obligationClosures: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          obligationId: { type: 'string', minLength: 1 },
+          kind: { type: 'string', enum: ['plan_verification_binding', 'task_verification_result', 'plan_task_executable', 'decision_record', 'alternative_decision'] },
+          taskId: { type: 'string', minLength: 1 },
+          verificationId: { type: 'string', minLength: 1 },
+          planDigest: { type: 'string', minLength: 1 },
+          decisionId: { type: 'string', minLength: 1 },
+          sourceId: { type: 'string', minLength: 1 },
+          sourceVersion: { type: 'string', minLength: 1 },
+        },
+        required: ['obligationId', 'kind', 'planDigest'],
+        allOf: [
+          {
+            if: { properties: { kind: { enum: ['plan_verification_binding', 'task_verification_result'] } }, required: ['kind'] },
+            then: { required: ['taskId', 'verificationId'] },
+          },
+          {
+            if: { properties: { kind: { const: 'plan_task_executable' } }, required: ['kind'] },
+            then: { required: ['taskId'] },
+          },
+          {
+            if: { properties: { kind: { const: 'decision_record' } }, required: ['kind'] },
+            then: { required: ['taskId', 'decisionId'] },
+          },
+          {
+            if: { properties: { kind: { const: 'alternative_decision' } }, required: ['kind'] },
+            then: { required: ['decisionId', 'sourceId', 'sourceVersion'] },
+          },
+        ],
+      },
+    },
+    targetTaskIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+    decisionQuestions: { type: 'array', items: { type: 'string', minLength: 1 } },
+    discoveryQuestions: { type: 'array', items: { type: 'string', minLength: 1 } },
+  },
+  required: ['contract', 'status', 'summary', 'issues'],
+}
 
 const OWNER_ID = /^[a-z][a-z0-9_-]{0,63}$/u
 const STAGE_ID = /^[a-z][a-z0-9_-]{0,63}$/u
@@ -45,6 +177,7 @@ export const STOP_REASON_ACTIONS = Object.freeze({
   plan_invalid: 'revise_plan',
   runtime_failed: 'retry_runtime',
   owner_orphaned: 'recover_owner',
+  termination_unconfirmed: 'inspect_runtime',
 })
 
 export function text(value, field) {
@@ -682,8 +815,24 @@ function identifierList(value, field, pattern = TASK_ID, { allowEmpty = true } =
   return [...new Set(result)]
 }
 
+const EXECUTION_RESOURCE_ID = /^[A-Za-z][A-Za-z0-9._+:/@-]{0,255}$/u
+
+function normalizeExecutionResources(value, field) {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new Error(`${field} 必须是字符串数组`)
+  const result = value.map((item, index) => {
+    const resourceId = text(item, `${field}[${index}]`)
+    if (!EXECUTION_RESOURCE_ID.test(resourceId)) {
+      throw new Error(`${field}[${index}] 的资源身份格式不正确：${resourceId}`)
+    }
+    return resourceId
+  })
+  if (new Set(result).size !== result.length) throw new Error(`${field} 不能包含重复资源身份`)
+  return result
+}
+
 function normalizeVerifications(raw) {
-  if (!Array.isArray(raw) || raw.length === 0) throw new Error('V2 计划必须至少包含一个验证')
+  if (!Array.isArray(raw)) throw new Error('V2 计划的 verifications 必须是数组')
   const ids = new Set()
   return raw.map((verification, index) => {
     if (verification === null || typeof verification !== 'object') {
@@ -693,7 +842,7 @@ function normalizeVerifications(raw) {
     if (ids.has(id)) throw new Error(`验证编号重复：${id}`)
     ids.add(id)
     if (!Array.isArray(verification.run) || verification.run.length === 0) {
-      throw new Error(`验证 ${id} 的 argv 必须是非空字符串数组`)
+      throw new Error(`验证 ${id} 的 run 必须是非空 argv 字符串数组；字段名必须是 run，不能使用 argv`)
     }
     const cwd = verification.cwd === undefined
       ? undefined
@@ -812,7 +961,7 @@ function assertCompositeTaskMetadata(tasks) {
       if (!Array.isArray(parent.children) || !parent.children.includes(task.id)) {
         throw new Error(`任务 ${task.id} 的 Composite 父任务声明不一致`)
       }
-      if (task.children !== undefined) throw new Error(`Composite child ${task.id} 不能再次声明子图`)
+      // 允许 Composite child 继续递归展开；每个节点仍只能绑定一个直接父任务。
     }
   }
   for (const task of tasks) {
@@ -868,9 +1017,8 @@ export function normalizePlanV2(raw) {
       throw new Error(`任务 ${id} 的 ${role} 角色必须将 write 设为空数组`)
     }
     assertTaskWriteScope(id, owner, write)
-    const verify = identifierList(rawTask.verify, `task(${id}).verify`, OWNER_ID, {
-      allowEmpty: role !== 'work',
-    })
+    const verify = identifierList(rawTask.verify, `task(${id}).verify`, OWNER_ID)
+    const resources = normalizeExecutionResources(rawTask.resources, `task(${id}).resources`)
     for (const verificationId of verify) {
       if (!verificationIds.has(verificationId)) throw new Error(`任务 ${id} 绑定了不存在的验证：${verificationId}`)
     }
@@ -886,6 +1034,51 @@ export function normalizePlanV2(raw) {
     const exit = rawTask.exit === undefined
       ? undefined
       : identifierList(rawTask.exit, `task(${id}).exit`, TASK_ID, { allowEmpty: false })
+    const decompositionRaw = rawTask.decomposition
+    if (decompositionRaw !== undefined
+      && (decompositionRaw === null || typeof decompositionRaw !== 'object' || Array.isArray(decompositionRaw))) {
+      throw new Error(`task(${id}).decomposition 必须是对象`)
+    }
+    const decompositionStatus = decompositionRaw?.status ?? (children === undefined ? 'leaf' : 'expanded')
+    if (!['abstract', 'leaf', 'expanded'].includes(decompositionStatus)) {
+      throw new Error(`任务 ${id} 的 decomposition.status 不受支持：${String(decompositionStatus)}；只允许 abstract、leaf 或 expanded`)
+    }
+    const decompositionKind = decompositionRaw?.kind ?? (decompositionStatus === 'leaf' ? 'leaf' : 'composite')
+    if (!['leaf', 'composite', 'decision', 'discovery'].includes(decompositionKind)) {
+      throw new Error(`任务 ${id} 的 decomposition.kind 不受支持：${String(decompositionKind)}；只允许 leaf、composite、decision 或 discovery`)
+    }
+    if (decompositionStatus === 'abstract' && children !== undefined) {
+      throw new Error(`抽象任务 ${id} 尚未展开，不能声明 children`)
+    }
+    if (decompositionStatus === 'expanded' && children === undefined) {
+      throw new Error(`已展开任务 ${id} 必须声明 children`)
+    }
+    if (decompositionStatus === 'leaf' && children !== undefined) {
+      throw new Error(`叶子任务 ${id} 不能声明 children`)
+    }
+    if (decompositionStatus === 'abstract' && decompositionKind === 'leaf') {
+      throw new Error(`抽象任务 ${id} 的 decomposition.kind 不能是 leaf`)
+    }
+    if (decompositionStatus === 'leaf' && decompositionKind !== 'leaf') {
+      throw new Error(`叶子任务 ${id} 的 decomposition.kind 必须是 leaf`)
+    }
+    const ownerCandidates = identifierList(
+      decompositionRaw?.ownerCandidates ?? [ownerId],
+      `task(${id}).decomposition.ownerCandidates`,
+      OWNER_ID,
+      { allowEmpty: false },
+    )
+    for (const candidate of ownerCandidates) {
+      if (!ownersById.has(candidate)) throw new Error(`任务 ${id} 的 Owner 候选未登记：${candidate}`)
+    }
+    const unknowns = textList(
+      decompositionRaw?.unknowns ?? [],
+      `task(${id}).decomposition.unknowns`,
+      { allowEmpty: true },
+    )
+    if (role === 'work' && decompositionStatus === 'leaf' && verify.length === 0) {
+      throw new Error(`task(${id}).verify 不能为空；可执行 work 任务必须绑定至少一个验证`)
+    }
     return {
       id,
       role,
@@ -893,12 +1086,22 @@ export function normalizePlanV2(raw) {
       title: text(rawTask.title ?? id, `task(${id}).title`),
       dependsOn: identifierList(rawTask.dependsOn, `task(${id}).dependsOn`),
       write,
+      ...(resources === undefined ? {} : { resources }),
       verify,
       done: textList(rawTask.done, `task(${id}).done`, { allowEmpty: false }),
       priority: normalizeTaskPriority(rawTask.priority, `task(${id}).priority`),
       onFailure: normalizeTaskPolicy(rawTask.onFailure, `task(${id}).onFailure`),
       onBlocked: normalizeTaskPolicy(rawTask.onBlocked, `task(${id}).onBlocked`, { allowRepair: false }),
       onTimeout: normalizeTaskPolicy(rawTask.onTimeout, `task(${id}).onTimeout`, { allowRepair: false, timeout: true }),
+      ...(decompositionRaw === undefined ? {} : {
+        decomposition: {
+          status: decompositionStatus,
+          kind: decompositionKind,
+          outcome: text(decompositionRaw.outcome ?? rawTask.title ?? id, `task(${id}).decomposition.outcome`),
+          ownerCandidates,
+          unknowns,
+        },
+      }),
       ...(parentTaskId === undefined ? {} : { parentTaskId }),
       ...(children === undefined ? {} : { children }),
       ...(entry === undefined ? {} : { entry }),
@@ -914,9 +1117,13 @@ export function normalizePlanV2(raw) {
   assertCompositeTaskMetadata(tasks)
   return {
     contract: PLAN_V2_CONTRACT,
-    executable: true,
+    executable: !tasks.some(task => task.decomposition?.status === 'abstract'),
     registryDigest: registryDigest.toLowerCase(),
     summary: text(raw.summary, 'plan.summary'),
+    ...(raw.planningBindings === undefined ? {} : { planningBindings: normalizePlanningBindings(raw.planningBindings) }),
+    ...(raw.publicOwnerChanges === undefined ? {} : {
+      publicOwnerChanges: normalizePublicOwnerPlanBindings(raw.publicOwnerChanges),
+    }),
     owners,
     verifications,
     tasks,
@@ -948,6 +1155,9 @@ function hasBusinessCommit(record) {
 function assertCompositeParentExpandable(plan, parent) {
   if (parent.role !== 'work') throw new Error(`只有未开始的 V2 work task 可以展开 Composite：${parent.id}`)
   if (parent.children !== undefined) throw new Error(`任务 ${parent.id} 已经展开过 Composite`)
+  if (parent.decomposition !== undefined && parent.decomposition.status !== 'abstract') {
+    throw new Error(`只有 decomposition.status=abstract 的任务可以展开 Composite：${parent.id}`)
+  }
   const rawParent = Array.isArray(plan.tasks)
     ? plan.tasks.find(task => task?.id === parent.id)
     : undefined
@@ -997,6 +1207,11 @@ export function expandCompositeTask(plan, parentTaskId, proposal) {
     children: [...childIds],
     entry: [...entry],
     exit: [...exit],
+    decomposition: {
+      ...parent.decomposition,
+      status: 'expanded',
+      kind: 'composite',
+    },
   }
   const expandedTasks = []
   for (const task of normalized.tasks) {
@@ -1067,6 +1282,7 @@ function taskSemantic(task) {
     title: task.title,
     dependsOn: task.dependsOn,
     write: task.write,
+    resources: task.resources,
     verify: task.verify,
     done: task.done,
     parentTaskId: task.parentTaskId,
@@ -1377,26 +1593,46 @@ export function validateHandoffTargets(handoffs, plan, sourceOwnerId) {
   return handoffs
 }
 
-export function planReviewResult(raw) {
+export function planReviewResult(raw, { allowLegacyObligations = false } = {}) {
   if (raw?.contract !== PLAN_REVIEW_CONTRACT) {
     throw new Error(`计划审查结果契约不受支持：${String(raw?.contract)}`)
   }
-  if (!['passed', 'needs_revision'].includes(raw.status)) {
+  if (!['passed', 'needs_revision', 'needs_split', 'needs_decision', 'needs_discovery'].includes(raw.status)) {
     throw new Error(`计划审查状态不受支持：${String(raw.status)}`)
+  }
+  const targetTaskIds = identifierList(raw.targetTaskIds, 'planReview.targetTaskIds', TASK_ID)
+  const decisionQuestions = textList(raw.decisionQuestions, 'planReview.decisionQuestions')
+  const discoveryQuestions = textList(raw.discoveryQuestions, 'planReview.discoveryQuestions')
+  const obligationClosures = normalizePlanReviewClosures(raw.obligationClosures)
+  const issues = normalizePlanReviewIssues(raw.issues, { allowLegacyObligations, reviewTargetTaskIds: targetTaskIds })
+  if (!allowLegacyObligations
+    && issues.length === 0
+    && ((raw.status === 'needs_discovery' && discoveryQuestions.length > 0)
+      || (raw.status === 'needs_decision' && decisionQuestions.length > 0))) {
+    throw new Error(`新的 ${raw.status} 审查必须通过结构化 issues 提供来源、目标和 closeWhen`)
   }
   return {
     contract: PLAN_REVIEW_CONTRACT,
     status: raw.status,
     summary: text(raw.summary ?? '未提供计划审查摘要', 'planReview.summary'),
-    issues: normalizePlanReviewIssues(raw.issues),
+    issues,
+    ...(obligationClosures.length === 0 ? {} : { obligationClosures }),
+    ...(targetTaskIds.length === 0 ? {} : { targetTaskIds }),
+    ...(decisionQuestions.length === 0 ? {} : { decisionQuestions }),
+    ...(discoveryQuestions.length === 0 ? {} : { discoveryQuestions }),
   }
 }
 
-function normalizePlanReviewIssues(value) {
+function normalizePlanReviewIssues(value, { allowLegacyObligations, reviewTargetTaskIds }) {
   if (value === undefined) return []
   if (!Array.isArray(value)) throw new Error('planReview.issues 必须是数组')
-  return value.map((issue, index) => {
-    if (typeof issue === 'string') return text(issue, `planReview.issues[${index}]`)
+  const normalized = value.map((issue, index) => {
+    if (typeof issue === 'string') {
+      if (!allowLegacyObligations) {
+        throw new Error(`planReview.issues[${index}] 新义务必须提供结构化来源、targetTaskIds 和 closeWhen`)
+      }
+      return text(issue, `planReview.issues[${index}]`)
+    }
     if (issue === null || typeof issue !== 'object' || Array.isArray(issue)) {
       throw new Error(`planReview.issues[${index}] 必须是字符串或结构化问题`)
     }
@@ -1404,11 +1640,248 @@ function normalizePlanReviewIssues(value) {
     if (!['high', 'medium', 'low'].includes(severity)) {
       throw new Error(`planReview.issues[${index}].severity 不受支持：${severity}`)
     }
+    const obligationId = issue.obligationId === undefined ? undefined : text(issue.obligationId, `planReview.issues[${index}].obligationId`)
+    const sourceId = issue.sourceId === undefined ? undefined : text(issue.sourceId, `planReview.issues[${index}].sourceId`)
+    const sourceVersion = issue.sourceVersion === undefined ? undefined : text(issue.sourceVersion, `planReview.issues[${index}].sourceVersion`)
+    const targetTaskIds = identifierList(issue.targetTaskIds, `planReview.issues[${index}].targetTaskIds`, TASK_ID)
+    const closeWhen = normalizePlanReviewCloseWhen(issue.closeWhen, `planReview.issues[${index}].closeWhen`)
+    const classificationBasis = normalizeDecisionClassificationBasis(
+      issue.classificationBasis,
+      `planReview.issues[${index}].classificationBasis`,
+      { sourceId, sourceVersion },
+    )
+    const effectiveTargets = targetTaskIds.length === 0 ? reviewTargetTaskIds : targetTaskIds
+    if (!allowLegacyObligations) {
+      if (obligationId === undefined) {
+        throw new Error(`planReview.issues[${index}] 新义务必须提供不可变 obligationId`)
+      }
+      if (sourceId === undefined || sourceVersion === undefined) {
+        throw new Error(`planReview.issues[${index}] 新义务必须提供 sourceId 与 sourceVersion`)
+      }
+      if (effectiveTargets.length === 0) {
+        throw new Error(`planReview.issues[${index}] 新义务必须提供 targetTaskIds`)
+      }
+      if (closeWhen === undefined) {
+        throw new Error(`planReview.issues[${index}] 新义务必须提供 closeWhen`)
+      }
+      if (!effectiveTargets.includes(closeWhen.taskId)) {
+        throw new Error(`planReview.issues[${index}].closeWhen.taskId 必须属于 targetTaskIds`)
+      }
+    }
+    if (closeWhen?.kind === 'decision_record') {
+      if (!allowLegacyObligations && classificationBasis === undefined) {
+        throw new Error(`planReview.issues[${index}] 新 decision_record 义务必须提供 classificationBasis`)
+      }
+      if (classificationBasis !== undefined) {
+        const requiresUserAuthority = classificationBasis.businessCommitmentDelta !== undefined
+          || classificationBasis.externalPermissionGap !== undefined
+        const expectedAuthority = requiresUserAuthority ? 'user' : 'orchestrator'
+        if (closeWhen.authority !== expectedAuthority) {
+          throw new Error(`planReview.issues[${index}].closeWhen.authority 与 classificationBasis 的${requiresUserAuthority ? '业务承诺或外部权限' : '技术事实'}分类冲突`)
+        }
+      }
+    }
+    if (classificationBasis !== undefined
+      && (classificationBasis.businessCommitmentDelta !== undefined || classificationBasis.externalPermissionGap !== undefined)
+      && closeWhen?.kind !== 'decision_record') {
+      throw new Error(`planReview.issues[${index}] 的业务承诺或外部权限分类必须使用 decision_record authority=user`)
+    }
     return {
       severity,
       title: text(issue.title, `planReview.issues[${index}].title`),
       detail: text(issue.detail, `planReview.issues[${index}].detail`),
       suggestion: text(issue.suggestion, `planReview.issues[${index}].suggestion`),
+      ...(obligationId === undefined ? {} : { obligationId }),
+      ...(sourceId === undefined ? {} : { sourceId }),
+      ...(sourceVersion === undefined ? {} : { sourceVersion }),
+      ...(targetTaskIds.length === 0 ? {} : { targetTaskIds }),
+      ...(classificationBasis === undefined ? {} : { classificationBasis }),
+      ...(closeWhen === undefined ? {} : { closeWhen }),
+    }
+  })
+  const contractsByObligationId = new Map()
+  for (const issue of normalized) {
+    if (issue === null || typeof issue !== 'object' || Array.isArray(issue) || issue.obligationId === undefined) continue
+    const identity = JSON.stringify({
+      sourceId: issue.sourceId,
+      sourceVersion: issue.sourceVersion,
+      targetTaskIds: [...(issue.targetTaskIds ?? reviewTargetTaskIds)].sort(),
+      closeWhen: issue.closeWhen,
+    })
+    const existing = contractsByObligationId.get(issue.obligationId)
+    if (existing !== undefined && existing !== identity) {
+      throw new Error(`同一 obligationId 不能声明不同义务合同：${issue.obligationId}`)
+    }
+    contractsByObligationId.set(issue.obligationId, identity)
+  }
+  return normalized
+}
+
+function normalizeDecisionClassificationBasis(value, field, { sourceId, sourceVersion }) {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${field} 必须是对象`)
+  }
+  const allowed = ['source', 'technicalFacts', 'businessCommitmentDelta', 'externalPermissionGap']
+  if (Object.keys(value).some(key => !allowed.includes(key))) {
+    throw new Error(`${field} 包含不受支持的字段`)
+  }
+  if (value.source === null || typeof value.source !== 'object' || Array.isArray(value.source)) {
+    throw new Error(`${field}.source 必须是对象`)
+  }
+  if (Object.keys(value.source).some(key => !['id', 'version'].includes(key))) {
+    throw new Error(`${field}.source 包含不受支持的字段`)
+  }
+  const basisSource = {
+    id: text(value.source.id, `${field}.source.id`),
+    version: text(value.source.version, `${field}.source.version`),
+  }
+  if (sourceId === undefined || sourceVersion === undefined
+    || basisSource.id !== sourceId || basisSource.version !== sourceVersion) {
+    throw new Error(`${field}.source 必须与 obligation sourceId/sourceVersion 一致`)
+  }
+  const technicalFacts = textList(value.technicalFacts, `${field}.technicalFacts`, { allowEmpty: false })
+  const businessCommitmentDelta = normalizeBusinessCommitmentDelta(value.businessCommitmentDelta, `${field}.businessCommitmentDelta`)
+  const externalPermissionGap = normalizeExternalPermissionGap(value.externalPermissionGap, `${field}.externalPermissionGap`)
+  return {
+    source: basisSource,
+    technicalFacts,
+    ...(businessCommitmentDelta === undefined ? {} : { businessCommitmentDelta }),
+    ...(externalPermissionGap === undefined ? {} : { externalPermissionGap }),
+  }
+}
+
+function normalizeBusinessCommitmentDelta(value, field) {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${field} 必须是对象`)
+  }
+  const allowed = ['currentCommitment', 'proposedCommitment', 'consequence']
+  if (Object.keys(value).some(key => !allowed.includes(key))) {
+    throw new Error(`${field} 包含不受支持的字段`)
+  }
+  const currentCommitment = text(value.currentCommitment, `${field}.currentCommitment`)
+  const proposedCommitment = text(value.proposedCommitment, `${field}.proposedCommitment`)
+  if (currentCommitment === proposedCommitment) {
+    throw new Error(`${field}.currentCommitment 必须与 proposedCommitment 不同`)
+  }
+  return {
+    currentCommitment,
+    proposedCommitment,
+    consequence: text(value.consequence, `${field}.consequence`),
+  }
+}
+
+function normalizeExternalPermissionGap(value, field) {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${field} 必须是对象`)
+  }
+  const allowed = ['requiredPermission', 'target', 'blockedAction']
+  if (Object.keys(value).some(key => !allowed.includes(key))) {
+    throw new Error(`${field} 包含不受支持的字段`)
+  }
+  return {
+    requiredPermission: text(value.requiredPermission, `${field}.requiredPermission`),
+    target: text(value.target, `${field}.target`),
+    blockedAction: text(value.blockedAction, `${field}.blockedAction`),
+  }
+}
+
+function normalizePlanReviewCloseWhen(value, field) {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${field} 必须是对象`)
+  }
+  const kind = text(value.kind, `${field}.kind`)
+  if (!['plan_verification_binding', 'task_verification_result', 'plan_task_executable', 'decision_record'].includes(kind)) {
+    throw new Error(`${field}.kind 不受支持：${kind}`)
+  }
+  const fieldsByKind = {
+    plan_verification_binding: ['kind', 'taskId', 'verificationId'],
+    task_verification_result: ['kind', 'taskId', 'verificationId'],
+    plan_task_executable: ['kind', 'taskId'],
+    decision_record: ['kind', 'taskId', 'authority'],
+  }
+  if (Object.keys(value).some(key => !fieldsByKind[kind].includes(key))) {
+    throw new Error(`${field} 包含不受支持的字段`)
+  }
+  const taskId = identifier(value.taskId, `${field}.taskId`, TASK_ID)
+  if (['plan_verification_binding', 'task_verification_result'].includes(kind)) {
+    return {
+      kind,
+      taskId,
+      verificationId: identifier(value.verificationId, `${field}.verificationId`, OWNER_ID),
+    }
+  }
+  if (kind === 'decision_record') {
+    const authority = text(value.authority, `${field}.authority`)
+    if (!['orchestrator', 'user'].includes(authority)) {
+      throw new Error(`${field}.authority 不受支持：${authority}`)
+    }
+    return { kind, taskId, authority }
+  }
+  return { kind, taskId }
+}
+
+function normalizePlanReviewClosures(value) {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw new Error('planReview.obligationClosures 必须是数组')
+  const seen = new Set()
+  return value.map((closure, index) => {
+    const field = `planReview.obligationClosures[${index}]`
+    if (closure === null || typeof closure !== 'object' || Array.isArray(closure)) {
+      throw new Error(`${field} 必须是对象`)
+    }
+    const obligationId = text(closure.obligationId, `${field}.obligationId`)
+    const kind = text(closure.kind, `${field}.kind`)
+    if (!['plan_verification_binding', 'task_verification_result', 'plan_task_executable', 'decision_record', 'alternative_decision'].includes(kind)) {
+      throw new Error(`${field}.kind 不受支持：${kind}`)
+    }
+    const fieldsByKind = {
+      plan_verification_binding: ['obligationId', 'kind', 'taskId', 'verificationId', 'planDigest'],
+      task_verification_result: ['obligationId', 'kind', 'taskId', 'verificationId', 'planDigest'],
+      plan_task_executable: ['obligationId', 'kind', 'taskId', 'planDigest'],
+      decision_record: ['obligationId', 'kind', 'taskId', 'planDigest', 'decisionId'],
+      // Retain the historical parser shape even though convergence never
+      // treats an alternative_decision as trusted closing evidence.
+      alternative_decision: ['obligationId', 'kind', 'taskId', 'verificationId', 'planDigest', 'decisionId', 'sourceId', 'sourceVersion'],
+    }
+    if (Object.keys(closure).some(key => !fieldsByKind[kind].includes(key))) {
+      throw new Error(`${field} 包含不受支持的字段`)
+    }
+    const planDigest = text(closure.planDigest, `${field}.planDigest`)
+    if (!SHA256_DIGEST.test(planDigest)) throw new Error(`${field}.planDigest 必须是 SHA-256 digest`)
+    const key = `${obligationId}:${kind}:${planDigest}`
+    if (seen.has(key)) throw new Error(`${field} 不能重复关闭同一义务`)
+    seen.add(key)
+    const taskId = closure.taskId === undefined ? undefined : identifier(closure.taskId, `${field}.taskId`, TASK_ID)
+    const verificationId = closure.verificationId === undefined ? undefined : identifier(closure.verificationId, `${field}.verificationId`, OWNER_ID)
+    if (['plan_verification_binding', 'task_verification_result'].includes(kind)
+      && (taskId === undefined || verificationId === undefined)) {
+      throw new Error(`${field} 的 ${kind} 必须提供 taskId 与 verificationId`)
+    }
+    const decisionId = closure.decisionId === undefined ? undefined : text(closure.decisionId, `${field}.decisionId`)
+    const sourceId = closure.sourceId === undefined ? undefined : text(closure.sourceId, `${field}.sourceId`)
+    const sourceVersion = closure.sourceVersion === undefined ? undefined : text(closure.sourceVersion, `${field}.sourceVersion`)
+    if (kind === 'alternative_decision' && (decisionId === undefined || sourceId === undefined || sourceVersion === undefined)) {
+      throw new Error(`${field} 的 alternative_decision 必须提供 decisionId、sourceId 与 sourceVersion`)
+    }
+    if (kind === 'plan_task_executable' && taskId === undefined) {
+      throw new Error(`${field} 的 plan_task_executable 必须提供 taskId`)
+    }
+    if (kind === 'decision_record' && (taskId === undefined || decisionId === undefined)) {
+      throw new Error(`${field} 的 decision_record 必须提供 taskId 与 decisionId`)
+    }
+    return {
+      obligationId,
+      kind,
+      planDigest,
+      ...(taskId === undefined ? {} : { taskId }),
+      ...(verificationId === undefined ? {} : { verificationId }),
+      ...(decisionId === undefined ? {} : { decisionId }),
+      ...(sourceId === undefined ? {} : { sourceId }),
+      ...(sourceVersion === undefined ? {} : { sourceVersion }),
     }
   })
 }

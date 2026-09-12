@@ -1,0 +1,224 @@
+--- /dev/null
++++ owner-workflow-plugin/src/candidate-independent-supervisor.mjs
+@@ -0,0 +1,102 @@
++import { normalizePlanV2 } from './model.mjs'
++import { createHash } from 'node:crypto'
++import { activeCandidateRecoveryPause } from './candidate-recovery-pause.mjs'
++import { supervisorNext, ackSupervisorAction } from './supervisor.mjs'
++
++const terminal = new Set(['completed', 'failed', 'cancelled', 'stopped'])
++const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
++function fail(message) { throw new Error(`Candidate Supervisor: ${message}`) }
++
++function prepare(state) {
++  const pause = activeCandidateRecoveryPause(state)
++  if (!pause || state.mainOutbox?.[pause.notificationId]?.status !== 'delivered') fail('需要已投递的有效候选暂停')
++  if (!['running', 'blocked'].includes(state.status)) fail('工作流状态不允许调度')
++  const plan = normalizePlanV2(state.plan)
++  const byId = new Map(plan.tasks.map(task => [task.id, task]))
++  const owners = new Set(plan.owners.map(owner => owner.id))
++  const excludedOwners = new Set()
++  const excluded = new Set()
++  function addTask(id) {
++    if (!byId.has(id)) fail(`未知来源任务 ${String(id)}`)
++    excluded.add(id)
++  }
++  function addOwner(id) {
++    if (!owners.has(id)) fail(`未知来源Owner ${String(id)}`)
++    excludedOwners.add(id)
++  }
++  const candidate = state.pendingPlanRevision
++  addTask(candidate.recoveryOrigin?.taskId)
++  addOwner(candidate.recoveryOrigin?.ownerId)
++  if (!Array.isArray(candidate.handoffIds) || candidate.handoffIds.length === 0) fail('缺少handoff来源')
++  for (const id of candidate.handoffIds) {
++    const matches = (state.handoffQueue ?? []).filter(item => item.id === id)
++    if (matches.length !== 1) fail('handoff来源缺失或重复')
++    const handoff = matches[0]
++    addTask(handoff.sourceTaskId ?? handoff.sourceStageId ?? handoff.taskId)
++    addOwner(handoff.sourceOwnerId)
++    if (handoff.targetType !== 'owner') fail('尚不能证明非Owner目标的独立范围')
++    addOwner(handoff.targetOwnerId)
++  }
++  const edges = []
++  for (const task of plan.tasks) {
++    if (excludedOwners.has(task.ownerId)) excluded.add(task.id)
++    for (const id of [...(task.dependsOn ?? []), ...(task.parentTaskId ? [task.parentTaskId] : []), ...(task.children ?? [])]) {
++      if (!byId.has(id)) fail('任务关系指向未知节点')
++      edges.push([task.id, id])
++    }
++  }
++  let changed = true
++  while (changed) {
++    changed = false
++    for (const [a, b] of edges) {
++      if (excluded.has(a) === excluded.has(b)) continue
++      excluded.add(a); excluded.add(b); changed = true
++    }
++  }
++  const reservations = Object.values(state.supervisorOutbox ?? {}).filter(item => !terminal.has(item.status))
++  for (const reservation of reservations) {
++    if (!['reserved', 'launching'].includes(reservation.status) || byId.get(reservation.taskId)?.ownerId !== reservation.ownerId) fail('无法核验未终态reservation')
++  }
++  const occupied = new Set(reservations.map(item => item.taskId))
++  const busyOwners = new Set(reservations.map(item => item.ownerId))
++  for (const task of plan.tasks) {
++    const run = state.ownerRuns?.[`${task.id}:${task.ownerId}`]
++    if (run && ['running', 'creating', 'starting'].includes(run.status)) {
++      busyOwners.add(task.ownerId); occupied.add(task.id)
++    }
++  }
++  const records = new Map(state.tasks.map(task => [task.taskId, task]))
++  const eligible = plan.tasks.filter(task => !excluded.has(task.id) && task.children === undefined
++    && task.decomposition?.status !== 'abstract' && records.get(task.id)?.status === 'pending'
++    && !Object.hasOwn(state.ownerRuns ?? {}, `${task.id}:${task.ownerId}`)
++    && !occupied.has(task.id) && !busyOwners.has(task.ownerId)).map(task => task.id).sort()
++  // Keep the full task projection: reservations consume slots even before dispatch.
++  const projection = { ...state, tasks: state.tasks.map(task => {
++    const active = task.status === 'running' || (occupied.has(task.taskId) && task.status === 'pending')
++    // This selector only creates. Inspection of unrelated stalled executions is
++    // owned by their lifecycle; these observation counters are never written back.
++    return active ? { ...task, status: 'running', unchangedPolls: 0 } : task
++  }),
++    transitionBlockedTaskIds: [...new Set([...(state.transitionBlockedTaskIds ?? []),
++      ...plan.tasks.filter(task => !eligible.includes(task.id)).map(task => task.id)])].sort() }
++  const scope = { kind: 'candidate_pause', pauseSource: pause.source, activePlanDigest: state.planDigest, eligibleTaskIds: eligible }
++  const normal = supervisorNext(projection)
++  const action = normal.action === 'create' ? 'create' : 'wait'
++  return { projection, normal, receipt: { action, actionId: `csa-${digest([scope, normal.actionId, action])}`, scope,
++    ...(action === 'create' ? { tasks: normal.tasks } : { watches: [] }) } }
++}
++
++export function candidateIndependentNext(state) { return prepare(state).receipt }
++
++export function ackCandidateIndependentCreate(state, actionId, observation) {
++  const { projection, normal, receipt } = prepare(state)
++  if (receipt.actionId !== actionId) fail('候选调度actionId已过期')
++  if (receipt.action !== 'create') fail('仅允许确认create，不允许stop/notify/wait写回')
++  const reduced = ackSupervisorAction(projection, normal.actionId, observation)
++  const targets = new Set(receipt.tasks.map(task => task.taskId))
++  // Never return a replacement tasks array or normalized workflow config.
++  return { scope: receipt.scope, actionSequence: reduced.actionSequence,
++    taskPatches: reduced.tasks.filter(task => targets.has(task.taskId)).map(task => ({ taskId: task.taskId,
++      status: task.status, executorId: task.executorId, cursor: task.cursor,
++      unchangedPolls: task.unchangedPolls, reason: task.reason, action: task.action })) }
++}
+--- /dev/null
++++ owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs
+@@ -0,0 +1,100 @@
++import { expandCompositeTask } from '../src/model.mjs'
++import test from 'node:test'
++import assert from 'node:assert/strict'
++import { candidateIndependentNext, ackCandidateIndependentCreate } from '../src/candidate-independent-supervisor.mjs'
++import { candidateRecoverySource } from '../src/candidate-recovery-pause.mjs'
++import { createTaskState, ackSupervisorAction } from '../src/supervisor.mjs'
++
++function task(id, ownerId = id, dependsOn = []) {
++  return { id, ownerId, role: 'work', title: id, dependsOn, write: [`src/${ownerId}/${id}.mjs`], verify: ['unit'], done: ['done'] }
++}
++function fixture(tasks = [task('s'), task('t'), task('i')], parallel = 2) {
++  const state = { id: 'candidate-independent', revision: 1, actionSequence: 0, status: 'blocked', planDigest: 'active-A',
++    config: { parallel }, plan: { contract: 'DSH_PLAN_V2', registryDigest: 'a'.repeat(64), summary: 'Selection proof',
++      owners: [...new Set(tasks.map(t => t.ownerId))].map(id => ({ id, name: id, description: id, scope: [`src/${id}/**`], exclude: [] })),
++      tasks, verifications: [{ id: 'unit', run: ['node', '--test'] }] },
++    pendingPlanRevision: { origin: 'handoff-recovery', recoveryOrigin: { taskId: 's', ownerId: 's' }, handoffIds: ['h'] },
++    handoffQueue: [{ id: 'h', sourceTaskId: 's', sourceOwnerId: 's', targetType: 'owner', targetOwnerId: 't' }],
++    ownerRuns: {}, mainOutbox: { notice: { status: 'delivered', reason: 'candidate_recovery_pause' } } }
++  state.tasks = createTaskState(state.plan)
++  return repause(state)
++}
++function repause(state) {
++  state.candidateRecoveryPause = { contract: 'DSH_CANDIDATE_RECOVERY_PAUSE_V1', notificationId: 'notice', source: candidateRecoverySource(state) }
++  return state
++}
++
++test('candidate selection and acknowledgment only expose independent target patches, never a replacement state', () => {
++  const state = fixture()
++  state.tasks[0].privateSourceEvidence = { retained: true }
++  const before = structuredClone(state)
++  const receipt = candidateIndependentNext(state)
++  assert.deepEqual(receipt.tasks.map(t => t.taskId), ['i'])
++  const ack = ackCandidateIndependentCreate(state, receipt.actionId, { tasks: [{ taskId: 'i', executorId: 'actual-reservation', cursor: '0' }] })
++  assert.deepEqual(ack.taskPatches.map(t => t.taskId), ['i'])
++  assert.equal(ack.taskPatches[0].status, 'running')
++  assert.equal(ack.tasks, undefined); assert.equal(ack.config, undefined)
++  assert.deepEqual(state, before)
++  assert.throws(() => ackSupervisorAction(state, receipt.actionId, {}), /actionId/)
++  assert.throws(() => ackCandidateIndependentCreate(state, receipt.actionId, { tasks: [{ taskId: 's' }] }), /之外/)
++})
++
++test('excludes source/target Owner tasks and their forward/reverse dependency closure', () => {
++  const state = fixture([task('s', 's', ['u']), task('u'), task('d', 'd', ['s']), task('t'), task('t2', 't'), task('td', 'td', ['t2']), task('i')])
++  assert.deepEqual(candidateIndependentNext(state).tasks.map(t => t.taskId), ['i'])
++})
++
++test('full active tasks and undispatched reservations consume global slots and Owner identities', () => {
++  const state = fixture([task('s'), task('t'), task('i'), task('j'), task('j2', 'j')], 1)
++  state.tasks.find(t => t.taskId === 'j').status = 'running'
++  assert.equal(candidateIndependentNext(state).action, 'wait')
++  state.tasks.find(t => t.taskId === 'j').status = 'pending'
++  state.supervisorOutbox = { 'j:j': { taskId: 'j', ownerId: 'j', status: 'reserved' } }
++  assert.equal(candidateIndependentNext(state).action, 'wait')
++  state.config.parallel = 3
++  assert.deepEqual(candidateIndependentNext(state).tasks.map(t => t.taskId), ['i'])
++})
++
++test('existing Owner history and source binding prevent stale or duplicate creates', () => {
++  const state = fixture([task('s'), task('t'), task('i'), task('j')])
++  const receipt = candidateIndependentNext(state)
++  state.ownerRuns['i:i'] = { status: 'failed' }
++  assert.deepEqual(candidateIndependentNext(state).tasks.map(t => t.taskId), ['j'])
++  assert.throws(() => ackCandidateIndependentCreate(state, receipt.actionId, {}), /过期/)
++  state.pendingPlanRevision.parent = 99
++  assert.throws(() => candidateIndependentNext(state), /有效候选暂停/)
++})
++
++test('no eligible work yields side-effect-free wait and cannot acknowledge stop/notify', () => {
++  const state = fixture([task('s'), task('t')])
++  const receipt = candidateIndependentNext(state)
++  assert.equal(receipt.action, 'wait')
++  assert.deepEqual(receipt.watches, [])
++  assert.throws(() => ackCandidateIndependentCreate(state, receipt.actionId, {}), /仅允许确认create/)
++})
++
++test('unproven handoff scope fails closed, and pending notice never dispatches', () => {
++  const state = fixture()
++  state.mainOutbox.notice.status = 'pending'
++  assert.throws(() => candidateIndependentNext(state), /已投递/)
++  state.mainOutbox.notice.status = 'delivered'
++  state.handoffQueue[0].targetOwnerId = 'unknown'
++  repause(state)
++  assert.throws(() => candidateIndependentNext(state), /未知来源Owner/)
++})
++
++ test('unrelated stalled activity cannot suppress an available independent create slot', () => {
++  const state = fixture([task('s'), task('t'), task('i'), task('j')], 2)
++  Object.assign(state.tasks.find(t => t.taskId === 'j'), { status: 'running', unchangedPolls: 100 })
++  const before = structuredClone(state)
++  assert.deepEqual(candidateIndependentNext(state).tasks.map(t => t.taskId), ['i'])
++  assert.deepEqual(state, before)
++})
++
++test('composite relationships keep a source subtree excluded without dropping the independent leaf', () => {
++  const state = fixture()
++  state.plan = expandCompositeTask(state.plan, 's', { children: [task('child', 'i')], entry: ['child'], exit: ['child'] })
++  state.tasks = createTaskState(state.plan)
++  repause(state)
++  assert.deepEqual(candidateIndependentNext(state).tasks.map(t => t.taskId), ['i'])
++})
+--- owner-workflow-plugin/test/candidate-recovery-pause.test.mjs (baseline)
++++ owner-workflow-plugin/test/candidate-recovery-pause.test.mjs
+@@ -1,3 +1,4 @@
++import { candidateIndependentNext } from '../src/candidate-independent-supervisor.mjs'
+ import assert from 'node:assert/strict'
+ import test from 'node:test'
+ import { createConnection } from 'node:net'
+@@ -61,6 +62,8 @@
+   assert.equal((await drive(f.manifest)).action, 'candidate-recovery-notified')
+   await f.admissionAgent.whenIdle(); await f.ctx.sessions.flush(f.admissionAgent.session)
+   assert.ok((await f.readRaw(f.admissionAgent.id)).content.includes(paused.notificationId))
++  const independent = candidateIndependentNext(await readRecoverySessionState(f))
++  assert.deepEqual(independent.tasks.map(task => task.taskId), ['T2'])
+   const calls = f.adapter.requests.length
+   for (let index = 0; index < 3; index++) {
+     assert.equal((await drive(f.manifest)).action, 'waiting')

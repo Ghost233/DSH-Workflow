@@ -1,0 +1,735 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -1,3 +1,4 @@
++import { normalizeOwnerPlanningAdvice as normalizePlanningOwnerAdvice } from './owner-advice.mjs'
+ import { candidateIndependentNext, candidateIndependentDispatch, ackCandidateIndependentCreate, candidateIndependentBinding, assertCandidateIndependentAdmission, assertCandidateIndependentReservation, assertCandidateIndependentRun } from './candidate-independent-supervisor.mjs'
+ import { isRecoveryCandidate, candidateNeedsUserDecision, candidateRecoveryIdentity, candidateRecoverySource, activeCandidateRecoveryPause, RecoverySemanticFailure } from './candidate-recovery-pause.mjs'
+ import { chmod, appendFile, cp, mkdir, mkdtemp, readFile, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
+@@ -1518,37 +1519,6 @@
+   ].join('\n')
+ }
+
+-function ownerAdviceStringList(value, field) {
+-  if (value === undefined) return []
+-  if (!Array.isArray(value)) throw new Error(`${field} 必须是字符串数组`)
+-  return [...new Set(value.map((item, index) => {
+-    if (typeof item !== 'string' || item.trim() === '') throw new Error(`${field}[${index}] 必须是非空字符串`)
+-    return item.trim()
+-  }))]
+-}
+-
+-function normalizePlanningOwnerAdvice(raw, ownerId) {
+-  if (raw?.contract !== 'DSH_OWNER_PLANNING_ADVICE_V1') {
+-    throw new Error(`Owner ${ownerId} 的规划会诊契约不受支持：${String(raw?.contract)}`)
+-  }
+-  if (raw.ownerId !== ownerId) throw new Error(`Owner 规划会诊身份不匹配，期望 ${ownerId}`)
+-  if (!['full', 'partial', 'none'].includes(raw.scopeFit)) {
+-    throw new Error(`Owner ${ownerId} 的 scopeFit 不受支持：${String(raw.scopeFit)}`)
+-  }
+-  return {
+-    contract: 'DSH_OWNER_PLANNING_ADVICE_V1',
+-    ownerId,
+-    scopeFit: raw.scopeFit,
+-    facts: ownerAdviceStringList(raw.facts, `Owner ${ownerId}.facts`),
+-    constraints: ownerAdviceStringList(raw.constraints, `Owner ${ownerId}.constraints`),
+-    suggestedNodes: ownerAdviceStringList(raw.suggestedNodes, `Owner ${ownerId}.suggestedNodes`),
+-    dependencies: ownerAdviceStringList(raw.dependencies, `Owner ${ownerId}.dependencies`),
+-    handoffs: ownerAdviceStringList(raw.handoffs, `Owner ${ownerId}.handoffs`),
+-    risks: ownerAdviceStringList(raw.risks, `Owner ${ownerId}.risks`),
+-    verificationSuggestions: ownerAdviceStringList(raw.verificationSuggestions, `Owner ${ownerId}.verificationSuggestions`),
+-  }
+-}
+-
+ function planRevisionPrompt(state, registry) {
+   const convergence = state.planConvergence?.contract === CONVERGENCE_CONTRACT
+     ? state.planConvergence
+@@ -2673,6 +2643,8 @@
+               plannerRegistry: pending.options.plannerRegistry,
+               plannerSubmissionLabel: pending.options.plannerSubmissionLabel,
+               requirePlanReviewSubmission: pending.options.requirePlanReviewSubmission === true,
++              requireOwnerAdviceSubmission: pending.options.requireOwnerAdviceSubmission === true,
++              ownerAdviceOwnerId: pending.options.ownerAdviceOwnerId,
+               submissionReady,
+               resolveSubmission,
+             })
+@@ -9504,6 +9476,20 @@
+         summary: '规划结果已接收，运行时将验证 Owner Registry、任务 DAG 与固定验证。',
+       }
+     },
++    submitOwnerAdvice(agent, advice) {
++      const sessionId = agent?.id ?? agent?.session?.id
++      const binding = sessionId === undefined ? undefined : runtime.agentRoles.get(sessionId)
++      if (binding?.role !== 'owner-advisor' || binding.requireOwnerAdviceSubmission !== true
++        || typeof binding.ownerAdviceOwnerId !== 'string' || binding.ownerAdviceOwnerId.trim() === '') {
++        throw new Error('workflow_owner_advice_submit 只能由当前Owner会诊子代理调用')
++      }
++      if (binding.ownerAdviceSubmission !== undefined) throw new Error('Owner会诊子代理每次运行只能成功提交一次')
++      const normalized = normalizePlanningOwnerAdvice(advice, binding.ownerAdviceOwnerId)
++      binding.ownerAdviceSubmission = normalized
++      binding.resolveSubmission?.({ kind: 'owner-advisor', value: normalized })
++      return { contract: 'DSH_WORKFLOW_OWNER_ADVICE_SUBMIT_RESULT_V1', accepted: true,
++        ownerId: binding.ownerAdviceOwnerId, summary: '会诊结果已接收，尚待Runtime核验来源并结算。' }
++    },
+     submitPlanReview(agent, review) {
+       const sessionId = agent?.id ?? agent?.session?.id
+       const binding = sessionId === undefined ? undefined : runtime.agentRoles.get(sessionId)
+@@ -10924,6 +10910,9 @@
+             }
+             const located = lookupRecoveryAdmissionIntent(current, request.requestId)
+             if (located?.intent.executionKind !== 'replan_operation') throw new Error('ReplanSession operation_intent_required')
++            if ((located.intent.operationKind === 'owner_consultation') !== (request.ownerId !== undefined)) {
++              throw new Error('ReplanSession owner_request_binding_invalid')
++            }
+             const source = located.source
+             const origin = {
+               contract: 'DSH_RECOVERY_ADMISSION_REQUEST_V1', planDigest: current.planDigest,
+@@ -10943,7 +10932,7 @@
+             }
+             const session = current.replanSessions?.[request.requestId]
+             if (session !== undefined) {
+-              assertReplanSessionState(session, located.intent, request.prompt)
++              assertReplanSessionState(session, located.intent, request.prompt, request.ownerId)
+               assertReplanSessionAttempt(session, located.intent,
+                 current.recoveryAdmission.budget.attempts.find(item => item.requestId === request.requestId))
+             }
+@@ -10955,13 +10944,16 @@
+             worktree = state.workflowWorktree
+             const existing = state.replanSessions?.[request.requestId]
+             if (existing !== undefined) {
+-              assertReplanSessionState(existing, intent, request.prompt)
++              assertReplanSessionState(existing, intent, request.prompt, request.ownerId)
+               record = structuredClone(existing)
+               return
+             }
+             const budgetAttempt = state.recoveryAdmission.budget.attempts.find(item => item.requestId === request.requestId)
+             if (budgetAttempt?.state !== 'reserved') throw new Error('ReplanSession unbound_started_attempt')
+             registry = (await loadLiveRegistryForPlanning(state, { plan: state.plan, requireBoundDigest: true })).registry
++            if (intent.operationKind === 'owner_consultation' && !registry.owners.some(owner => owner.id === request.ownerId)) {
++              throw new Error('ReplanSession consultation_owner_not_registered')
++            }
+             const raw = await persistence.readRaw(intent.executionIdentity.sessionId, signal)
+             const snapshots = await persistence.listSnapshots(signal)
+             if (raw !== undefined || !Array.isArray(snapshots)
+@@ -10975,7 +10967,7 @@
+               if (current.replanSessions?.[request.requestId] !== undefined) throw new Error('ReplanSession concurrent_create')
+               const attempt = current.recoveryAdmission.budget.attempts.find(item => item.requestId === request.requestId)
+               if (attempt?.state !== 'reserved') throw new Error('ReplanSession unbound_started_attempt')
+-              record = createReplanSessionState(intent, request.prompt, lease.token)
++              record = createReplanSessionState(intent, request.prompt, lease.token, request.ownerId)
+               current.replanSessions = { ...(current.replanSessions ?? {}), [request.requestId]: record }
+               return { state: current }
+             })
+@@ -10985,7 +10977,7 @@
+             await saveState(runtime, { root, id: workflowId }, lease, current => {
+               const fresh = currentBinding(current)
+               const currentRecord = current.replanSessions?.[request.requestId]
+-              assertReplanSessionState(currentRecord, fresh, request.prompt)
++              assertReplanSessionState(currentRecord, fresh, request.prompt, request.ownerId)
+               if (currentRecord.leaseToken !== lease.token || currentRecord.phase !== from
+                 || sessionId !== fresh.executionIdentity.sessionId) throw new Error('ReplanSession transition_binding_mismatch')
+               if (to === 'created') current.recoveryAdmission.budget = startRecoveryAttempt(current.recoveryAdmission.budget, {
+@@ -11001,7 +10993,7 @@
+             await saveState(runtime, { root, id: workflowId }, lease, current => {
+               const fresh = currentBinding(current)
+               const currentRecord = current.replanSessions?.[request.requestId]
+-              assertReplanSessionState(currentRecord, fresh, request.prompt)
++              assertReplanSessionState(currentRecord, fresh, request.prompt, request.ownerId)
+               if (currentRecord.leaseToken !== lease.token || !['created', 'submitted'].includes(currentRecord.phase)) {
+                 throw new Error('ReplanSession context_binding_mismatch')
+               }
+@@ -11021,10 +11013,13 @@
+           if (launch) {
+             try {
+               const review = intent.operationKind === 'revision_review'
++              const advice = intent.operationKind === 'owner_consultation'
+               await runtime.runChild(agent, worktree, request.prompt.content, signal, {
+-                role: review ? 'plan-reviewer' : 'planner', workflowRoot: root, workflowId,
+-                rolePrompt: review ? '只读审查计划；通过 workflow_plan_review_submit 提交结构化结果。' : plannerRolePrompt(),
+-                requirePlannerSubmission: !review, requirePlanReviewSubmission: review,
++                role: advice ? 'owner-advisor' : review ? 'plan-reviewer' : 'planner', workflowRoot: root, workflowId,
++                rolePrompt: advice ? `你是只读Owner顾问 ${request.ownerId}；通过 workflow_owner_advice_submit 提交结构化建议，无DAG、Registry或代码修改权。`
++                  : review ? '只读审查计划；通过 workflow_plan_review_submit 提交结构化结果。' : plannerRolePrompt(),
++                requirePlannerSubmission: !review && !advice, requirePlanReviewSubmission: review,
++                requireOwnerAdviceSubmission: advice, ownerAdviceOwnerId: request.ownerId,
+                 plannerRegistry: registry, plannerSubmissionLabel: 'Recovery Planner',
+                 timeoutMs: resolvedConfig.planningChildTimeoutMs,
+                 replanSession: {
+@@ -11038,14 +11033,14 @@
+           }
+           const latest = await readState(runtime, root, workflowId)
+           record = latest.replanSessions?.[request.requestId]
+-          assertReplanSessionState(record, intent, request.prompt)
+-          const observed = await inspectReplanSession({ persistence, intent, prompt: request.prompt, contextMessages: record.contextMessages, signal })
++          assertReplanSessionState(record, intent, request.prompt, request.ownerId)
++          const observed = await inspectReplanSession({ persistence, intent, prompt: request.prompt, ownerId: request.ownerId, contextMessages: record.contextMessages, signal })
+           if (observed.outcome === 'paused') return result('paused', { ...observed, executionError })
+           await runtime.withWorkflowLock(workflowId, async () => {
+             await saveState(runtime, { root, id: workflowId }, lease, current => {
+               const fresh = currentBinding(current)
+               const currentRecord = current.replanSessions?.[request.requestId]
+-              assertReplanSessionState(currentRecord, fresh, request.prompt)
++              assertReplanSessionState(currentRecord, fresh, request.prompt, request.ownerId)
+               if (canonicalDigestValue(currentRecord) !== canonicalDigestValue(record)) throw new Error('ReplanSession observation_state_changed')
+               const attempt = current.recoveryAdmission.budget.attempts.find(item => item.requestId === request.requestId)
+               if (attempt?.state === 'reserved') throw new Error('ReplanSession execution_receipt_missing')
+@@ -13806,6 +13801,7 @@
+         const binding = runtime.agentRoles.get(child.id)
+         const waitsForStructuredSubmission = options.requirePlannerSubmission === true
+           || options.requirePlanReviewSubmission === true
++          || options.requireOwnerAdviceSubmission === true
+         const completion = waitsForStructuredSubmission && binding?.submissionReady !== undefined
+           ? await Promise.race([
+               run.result.then(settled => ({ kind: 'settled', settled })),
+@@ -13820,6 +13816,7 @@
+         if (options.requirePlanReviewSubmission === true) {
+           if (binding?.planReviewSubmission !== undefined) return binding.planReviewSubmission
+         }
++        if (options.requireOwnerAdviceSubmission === true && binding?.ownerAdviceSubmission !== undefined) return binding.ownerAdviceSubmission
+         if (options.requireOwnerSubmission === true) {
+           if (options.activeOwner?.submission !== undefined) {
+             return {
+@@ -13838,6 +13835,7 @@
+         if (options.requirePlanReviewSubmission === true) {
+           throw new Error('计划审查子代理没有调用 workflow_plan_review_submit；已拒绝解析普通文本 JSON')
+         }
++        if (options.requireOwnerAdviceSubmission === true) throw new Error('Owner会诊子代理没有调用 workflow_owner_advice_submit；已拒绝解析普通文本 JSON')
+         if (options.requireOwnerSubmission === true) {
+           if (options.activeOwner?.submission === undefined) {
+             const ownerId = options.activeOwner?.owner?.id ?? '未知'
+--- /dev/null
++++ owner-workflow-plugin/src/owner-advice.mjs
+@@ -0,0 +1,62 @@
++const OWNER_ADVICE_CONTRACT = 'DSH_OWNER_PLANNING_ADVICE_V1'
++const OWNER_ADVICE_FIELDS = [
++  'contract', 'ownerId', 'scopeFit', 'facts', 'constraints', 'suggestedNodes',
++  'dependencies', 'handoffs', 'risks', 'verificationSuggestions',
++]
++
++const stringListSchema = {
++  type: 'array',
++  items: { type: 'string', minLength: 1 },
++}
++
++// Shared by the public structured tool and the Runtime session-receipt path.
++// Runtime keeps accepting omitted lists from old durable artifacts, then emits
++// the canonical empty arrays below; new tool submissions require every field.
++export const OWNER_ADVICE_SUBMISSION_SCHEMA = {
++  type: 'object',
++  additionalProperties: false,
++  properties: {
++    contract: { type: 'string', enum: [OWNER_ADVICE_CONTRACT] },
++    ownerId: { type: 'string', minLength: 1 },
++    scopeFit: { type: 'string', enum: ['full', 'partial', 'none'] },
++    facts: stringListSchema,
++    constraints: stringListSchema,
++    suggestedNodes: stringListSchema,
++    dependencies: stringListSchema,
++    handoffs: stringListSchema,
++    risks: stringListSchema,
++    verificationSuggestions: stringListSchema,
++  },
++  required: OWNER_ADVICE_FIELDS,
++}
++
++function stringList(value, field) {
++  if (value === undefined) return []
++  if (!Array.isArray(value)) throw new Error(`${field} 必须是字符串数组`)
++  return [...new Set(value.map((item, index) => {
++    if (typeof item !== 'string' || item.trim() === '') throw new Error(`${field}[${index}] 必须是非空字符串`)
++    return item.trim()
++  }))]
++}
++
++export function normalizeOwnerPlanningAdvice(raw, ownerId) {
++  if (raw?.contract !== OWNER_ADVICE_CONTRACT) {
++    throw new Error(`Owner ${ownerId} 的规划会诊契约不受支持：${String(raw?.contract)}`)
++  }
++  if (raw.ownerId !== ownerId) throw new Error(`Owner 规划会诊身份不匹配，期望 ${ownerId}`)
++  if (!['full', 'partial', 'none'].includes(raw.scopeFit)) {
++    throw new Error(`Owner ${ownerId} 的 scopeFit 不受支持：${String(raw.scopeFit)}`)
++  }
++  return {
++    contract: OWNER_ADVICE_CONTRACT,
++    ownerId,
++    scopeFit: raw.scopeFit,
++    facts: stringList(raw.facts, `Owner ${ownerId}.facts`),
++    constraints: stringList(raw.constraints, `Owner ${ownerId}.constraints`),
++    suggestedNodes: stringList(raw.suggestedNodes, `Owner ${ownerId}.suggestedNodes`),
++    dependencies: stringList(raw.dependencies, `Owner ${ownerId}.dependencies`),
++    handoffs: stringList(raw.handoffs, `Owner ${ownerId}.handoffs`),
++    risks: stringList(raw.risks, `Owner ${ownerId}.risks`),
++    verificationSuggestions: stringList(raw.verificationSuggestions, `Owner ${ownerId}.verificationSuggestions`),
++  }
++}
+--- owner-workflow-plugin/src/recovery-budget.mjs (baseline)
++++ owner-workflow-plugin/src/recovery-budget.mjs
+@@ -18,7 +18,7 @@
+   'workflowId', 'rootProblemId', 'requestId', 'attemptId', 'executionVersion',
+   'executionKind', 'operationId', 'operationKind',
+ ])
+-const REPLAN_OPERATION_KINDS = new Set(['revision_plan', 'revision_review', 'handoff_replan'])
++const REPLAN_OPERATION_KINDS = new Set(['revision_plan', 'revision_review', 'handoff_replan', 'owner_consultation'])
+ const ATTEMPT_STATES = new Set(['reserved', 'running', 'settled'])
+ const RESULT_STATUSES = new Set(['succeeded', 'failed', 'cancelled'])
+ const EVIDENCE_PURPOSES = new Set(['progress', 'closure'])
+--- owner-workflow-plugin/src/recovery-admission.mjs (baseline)
++++ owner-workflow-plugin/src/recovery-admission.mjs
+@@ -10,7 +10,7 @@
+
+ export const RECOVERY_ADMISSION_REQUEST_CONTRACT = 'DSH_RECOVERY_ADMISSION_REQUEST_V1'
+ export const REPLAN_ADMISSION_REQUEST_CONTRACT = 'DSH_REPLAN_ADMISSION_REQUEST_V1'
+-const REPLAN_OPERATION_KINDS = new Set(['revision_plan', 'revision_review', 'handoff_replan'])
++const REPLAN_OPERATION_KINDS = new Set(['revision_plan', 'revision_review', 'handoff_replan', 'owner_consultation'])
+ export const RECOVERY_ADMISSION_CONTRACT = 'DSH_RECOVERY_ADMISSION_V1'
+ export const RECOVERY_ADMISSION_CONFIG_CONTRACT = 'DSH_RECOVERY_ADMISSION_CONFIG_V1'
+ export const RECOVERY_ADMISSION_STATE_CONTRACT = 'DSH_RECOVERY_ADMISSION_STATE_V1'
+--- owner-workflow-plugin/src/replan-session.mjs (baseline)
++++ owner-workflow-plugin/src/replan-session.mjs
+@@ -30,30 +30,34 @@
+   return createHash('sha256').update(canonical(value)).digest('hex')
+ }
+ export function normalizeReplanSessionRequest(value) {
+-  exact(value, ['contract', 'requestId', 'prompt'], 'request')
++  const hasOwner = value !== null && typeof value === 'object' && Object.hasOwn(value, 'ownerId')
++  exact(value, ['contract', 'requestId', 'prompt', ...(hasOwner ? ['ownerId'] : [])], 'request')
+   if (value.contract !== REPLAN_SESSION_REQUEST_CONTRACT) throw new Error('ReplanSession request_contract_invalid')
+   exact(value.prompt, ['id', 'content'], 'prompt')
+   return {
+     contract: value.contract, requestId: text(value.requestId, 'request_id'),
+     prompt: { id: text(value.prompt.id, 'prompt_id'), content: text(value.prompt.content, 'prompt_content') },
+-  }
+-}
+-function binding(intent, prompt) {
++    ...(hasOwner ? { ownerId: text(value.ownerId, 'owner_id') } : {}),
++  }
++}
++function binding(intent, prompt, ownerId) {
+   if (intent.executionKind !== 'replan_operation' || intent.executionIdentity.promptId !== prompt.id) {
+     throw new Error('ReplanSession reservation_binding_mismatch')
+   }
++  if (intent.operationKind !== 'owner_consultation' && ownerId !== undefined) throw new Error('ReplanSession unexpected_owner_id')
+   return {
+     contract: REPLAN_SESSION_STATE_CONTRACT, sourceId: intent.sourceId,
+     rootProblemId: intent.rootProblemId, requestId: intent.requestId, attemptId: intent.attemptId,
+     planDigest: intent.planDigest, operationKind: intent.operationKind, operationId: intent.operationId,
+     ordinal: intent.ordinal, executionIdentity: { ...intent.executionIdentity }, prompt: { ...prompt },
+-  }
+-}
+-export function createReplanSessionState(intent, prompt, leaseToken) {
+-  return { ...binding(intent, prompt), leaseToken: text(leaseToken, 'lease_token'), phase: 'creating', contextMessages: [] }
+-}
+-export function assertReplanSessionState(record, intent, prompt) {
+-  const expected = binding(intent, prompt)
++    ...(intent.operationKind === 'owner_consultation' ? { ownerId: text(ownerId, 'owner_id') } : {}),
++  }
++}
++export function createReplanSessionState(intent, prompt, leaseToken, ownerId) {
++  return { ...binding(intent, prompt, ownerId), leaseToken: text(leaseToken, 'lease_token'), phase: 'creating', contextMessages: [] }
++}
++export function assertReplanSessionState(record, intent, prompt, ownerId) {
++  const expected = binding(intent, prompt, ownerId)
+   exact(record, [...Object.keys(expected), 'leaseToken', 'phase', 'contextMessages'], 'state')
+   normalizeReplanContexts(record.contextMessages)
+   if (record.contextMessages.some(message => message.id === prompt.id)) throw new Error('ReplanSession context_prompt_collision')
+@@ -154,7 +158,8 @@
+ }
+
+ /** Accepted tool output is submission evidence, never evidence that a DAG was applied. */
+-export async function inspectReplanSession({ persistence, intent, prompt, contextMessages = [], signal }) {
++export async function inspectReplanSession({ persistence, intent, prompt, ownerId, contextMessages = [], signal }) {
++  if (intent.operationKind === 'owner_consultation' && (typeof ownerId !== 'string' || ownerId.trim() === '')) return pause('owner_advice_binding_invalid')
+   const observation = await readRecoverySessionArtifact({ persistence, executionIdentity: intent.executionIdentity, prompt, signal })
+   if (observation.outcome !== 'artifact') return pause(observation.reason ?? 'artifact_unavailable')
+   const { events } = observation
+@@ -164,8 +169,9 @@
+   const endKind = terminal?.data?.reason?.kind ?? terminal?.data?.kind
+   if (!['completed', 'aborted'].includes(endKind)) return pause('terminal_reason_unknown')
+   const review = intent.operationKind === 'revision_review'
+-  const toolName = review ? 'workflow_plan_review_submit' : 'workflow_plan_submit'
+-  const receiptContract = review ? 'DSH_WORKFLOW_PLAN_REVIEW_SUBMIT_RESULT_V1' : 'DSH_WORKFLOW_PLAN_SUBMIT_RESULT_V1'
++  const advice = intent.operationKind === 'owner_consultation'
++  const toolName = advice ? 'workflow_owner_advice_submit' : review ? 'workflow_plan_review_submit' : 'workflow_plan_submit'
++  const receiptContract = advice ? 'DSH_WORKFLOW_OWNER_ADVICE_SUBMIT_RESULT_V1' : review ? 'DSH_WORKFLOW_PLAN_REVIEW_SUBMIT_RESULT_V1' : 'DSH_WORKFLOW_PLAN_SUBMIT_RESULT_V1'
+   const calls = events.filter(event => event.type === 'tool/call' && event.data?.name === toolName)
+   const accepted = []
+   for (const call of calls) {
+@@ -191,8 +197,9 @@
+       args = JSON.parse(call.data.arguments)
+     } catch { return pause('tool_payload_invalid') }
+     if (receipt?.contract !== receiptContract || receipt.accepted !== true) return pause('tool_not_accepted')
+-    const payload = args?.[review ? 'review' : 'plan']
++    const payload = args?.[advice ? 'advice' : review ? 'review' : 'plan']
+     if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return pause('tool_payload_invalid')
++    if (advice && (payload.ownerId !== ownerId || receipt.ownerId !== ownerId)) return pause('owner_advice_binding_mismatch')
+     accepted.push({
+       payload,
+       receipt: { toolName, callId: call.data.callId, callSeq: call.seq, resultSeq: result.seq,
+--- owner-workflow-plugin/src/agent-policy.mjs (baseline)
++++ owner-workflow-plugin/src/agent-policy.mjs
+@@ -6,6 +6,7 @@
+   'planner',
+   'plan-reviewer',
+   'reviewer',
++  'owner-advisor',
+   'memory-curator',
+   'memory-reviewer',
+ ])
+@@ -52,7 +53,7 @@
+   'subagent_claude_code',
+ ])
+
+-const SEARCH_BREAKER_ROLES = new Set(['owner', 'planner', 'plan-reviewer', 'reviewer', 'operator'])
++const SEARCH_BREAKER_ROLES = new Set(['owner', 'planner', 'plan-reviewer', 'reviewer', 'owner-advisor', 'operator'])
+ const SEARCH_BREAKER_MARK = Symbol('owner-workflow-search-breaker')
+
+ function childToolParameters(parameters) {
+@@ -128,6 +129,7 @@
+   if (toolName === 'workflow_git_inspect') return true
+   if (role === 'planner' && toolName === 'workflow_plan_submit') return true
+   if (role === 'plan-reviewer' && toolName === 'workflow_plan_review_submit') return true
++  if (role === 'owner-advisor' && toolName === 'workflow_owner_advice_submit') return true
+   if (role === 'operator' && ['operation_report', 'operation_exec'].includes(toolName)) return true
+   return false
+ }
+--- owner-workflow-plugin/index.js (baseline)
++++ owner-workflow-plugin/index.js
+@@ -1,5 +1,6 @@
+ import { createOwnerWorkflowRuntime } from './src/runtime.mjs'
+ import { PLAN_REVIEW_SUBMISSION_SCHEMA } from './src/model.mjs'
++import { OWNER_ADVICE_SUBMISSION_SCHEMA } from './src/owner-advice.mjs'
+ import { OWNER_WORKFLOW_SKILLS } from './src/skills.mjs'
+ import { ORCHESTRATOR_DOCUMENT_GUIDANCE, registerOrchestratorDocumentGuards } from './src/orchestrator-documents.mjs'
+
+@@ -857,6 +858,13 @@
+     )
+ }
+
++export function ownerAdviceSubmitDefinition(runtime) {
++  return workflowToolDefinition('workflow_owner_advice_submit',
++    '仅供当前只读Owner顾问提交一次结构化会诊建议；不授予DAG、Registry或代码修改权。',
++    { properties: { advice: OWNER_ADVICE_SUBMISSION_SCHEMA }, required: ['advice'] },
++    (args, agent) => runtime.submitOwnerAdvice(agent, args.advice))
++}
++
+ export function planReviewSubmitDefinition(runtime) {
+   return workflowToolDefinition(
+       'workflow_plan_review_submit',
+@@ -877,6 +885,7 @@
+   const workflowId = { workflow_id: { type: 'string', minLength: 1, description: '工作流编号；没有编号时必须省略该字段，不能传空字符串。' } }
+   return [
+     planReviewSubmitDefinition(runtime),
++    ownerAdviceSubmitDefinition(runtime),
+     workflowToolDefinition(
+       'workflow_obligation_decide',
+       '仅 Workflow 主编排会话可记录当前候选中 closeWhen.kind=decision_record 的指定决定。authority=user 时工具会显示原生“确认记录决定/取消”卡片；只有精确确认后才持久化 receipt。该工具不会关闭义务、伪造验证或激活计划，Reviewer/Planner/Owner 子代理均不能调用。',
+--- owner-workflow-plugin/test/recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-budget.test.mjs
+@@ -340,7 +340,7 @@
+   ledger = reserveRecoveryAttempt(reload(ledger), planner).ledger
+   ledger = startRecoveryAttempt(ledger, { ...planner, executionRef: ref('planner-session') }).ledger
+   ledger = failure(ledger, planner, 'planner-failed')
+-  for (const operationKind of ['revision_plan', 'revision_review', 'handoff_replan']) {
++  for (const operationKind of ['revision_plan', 'revision_review', 'handoff_replan', 'owner_consultation']) {
+     const denied = reserveRecoveryAttempt(ledger, replanReq(3, 'P1', {
+       operationId: 'new-cycle', operationKind, executionVersion: 'plan-v2',
+     }))
+@@ -363,7 +363,7 @@
+   assert.equal(ledger.attempts.length, 2)
+ })
+
+-for (const operationKind of ['revision_plan', 'revision_review', 'handoff_replan']) {
++for (const operationKind of ['revision_plan', 'revision_review', 'handoff_replan', 'owner_consultation']) {
+   test(`T15 ${operationKind}持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣`, () => {
+     const request = replanReq(1, 'P1', { operationKind })
+     const reserved = reserveRecoveryAttempt(setup(1), request)
+--- /dev/null
++++ owner-workflow-plugin/test/owner-advice-session.test.mjs
+@@ -0,0 +1,233 @@
++import assert from 'node:assert/strict'
++import test from 'node:test'
++import { ownerAdviceSubmitDefinition } from '../index.js'
++import { normalizeOwnerPlanningAdvice, OWNER_ADVICE_SUBMISSION_SCHEMA } from '../src/owner-advice.mjs'
++import { inspectReplanSession } from '../src/replan-session.mjs'
++import {
++  createRecoverySessionFixture,
++  mutateRecoverySessionState,
++  ownerFailureRequest,
++  readRecoverySessionState,
++  reopenRecoverySessionFixture,
++} from './fixtures/recovery-session-fixture.mjs'
++
++const adviceFor = ownerId => ({
++  contract: 'DSH_OWNER_PLANNING_ADVICE_V1',
++  ownerId,
++  scopeFit: 'partial',
++  facts: ['The current persisted failure belongs to the API owner.'],
++  constraints: ['The advisor remains read-only.'],
++  suggestedNodes: ['Preserve the existing local verification task.'],
++  dependencies: [],
++  handoffs: [],
++  risks: [],
++  verificationSuggestions: ['Keep unit verification fixed.'],
++})
++
++function register(f) {
++  f.ctx.tools.register(ownerAdviceSubmitDefinition(f.runtime))
++}
++
++async function reserveAdvice(f, { ownerId = 'worker', ordinal = 1, operationId = `owner-advice:${ownerId}` } = {}) {
++  const response = await f.runtime.reserveRecoveryAdmission(f.admissionAgent, f.workflowId, {
++    contract: 'DSH_REPLAN_ADMISSION_REQUEST_V1',
++    origin: ownerFailureRequest(f),
++    operation: { operationKind: 'owner_consultation', operationId, ordinal },
++  })
++  assert.equal(response.outcome, 'reserved', JSON.stringify(response))
++  return response
++}
++
++const request = (receipt, ownerId = 'worker') => ({
++  contract: 'DSH_REPLAN_SESSION_REQUEST_V1',
++  requestId: receipt.requestId,
++  prompt: { id: receipt.executionIdentity.promptId, content: 'Read your Owner memory and submit one structured consultation advice.' },
++  ownerId,
++})
++
++test('R76 owner-advice normalizer canonicalizes optional lists while the public schema requires every field', () => {
++  const normalized = normalizeOwnerPlanningAdvice({
++    contract: 'DSH_OWNER_PLANNING_ADVICE_V1', ownerId: 'worker', scopeFit: 'full',
++    facts: [' fact ', 'fact', 'second'], constraints: undefined,
++    suggestedNodes: undefined, dependencies: undefined, handoffs: undefined,
++    risks: undefined, verificationSuggestions: undefined,
++  }, 'worker')
++  assert.deepEqual(normalized.facts, ['fact', 'second'])
++  for (const field of ['constraints', 'suggestedNodes', 'dependencies', 'handoffs', 'risks', 'verificationSuggestions']) {
++    assert.deepEqual(normalized[field], [])
++  }
++  assert.equal(OWNER_ADVICE_SUBMISSION_SCHEMA.additionalProperties, false)
++  assert.deepEqual(OWNER_ADVICE_SUBMISSION_SCHEMA.required, [
++    'contract', 'ownerId', 'scopeFit', 'facts', 'constraints', 'suggestedNodes',
++    'dependencies', 'handoffs', 'risks', 'verificationSuggestions',
++  ])
++  assert.throws(() => normalizeOwnerPlanningAdvice({ ...adviceFor('api') }, 'worker'), /身份不匹配/)
++})
++
++test('R76 paid worker owner-consultation writes an accepted raw receipt and fresh replay cannot spend again', { timeout: 30_000 }, async t => {
++  const payload = adviceFor('worker')
++  const f = await createRecoverySessionFixture(t, {
++    executable: true,
++    includeIndependentOwner: true,
++    modelScript: m => [
++      m.toolCallResponse('worker-advice-submit', 'workflow_owner_advice_submit', { advice: payload }),
++      'hang-slow',
++    ],
++  })
++  register(f)
++  const before = await readRecoverySessionState(f)
++  assert.equal(before.ownerRuns['T2:worker'], undefined)
++  assert.throws(() => f.runtime.submitOwnerAdvice(f.admissionAgent, payload), /只能由当前Owner会诊子代理调用/)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++
++  const receipt = await reserveAdvice(f)
++  assert.equal(receipt.rootProblemId, (await readRecoverySessionState(f)).recoveryAdmission.budget.problems[0].rootProblemId)
++  const answer = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++  assert.equal(answer.outcome, 'submission_observed', JSON.stringify(answer))
++  assert.deepEqual(answer.payload, payload)
++  assert.equal(answer.receipt.toolName, 'workflow_owner_advice_submit')
++  assert.equal(answer.receipt.callId, 'worker-advice-submit')
++  assert.equal(answer.receipt.terminalKind, 'aborted')
++
++  const saved = await readRecoverySessionState(f)
++  const intent = saved.recoveryAdmission.intents[0]
++  assert.equal(intent.operationKind, 'owner_consultation')
++  assert.equal(intent.rootProblemId, receipt.rootProblemId)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(saved.recoveryAdmission.budget.attempts[0].state, 'running')
++  assert.equal(saved.replanSessions[receipt.requestId].ownerId, 'worker')
++  assert.equal(saved.replanSessions[receipt.requestId].phase, 'submission_observed')
++  assert.equal(saved.ownerRuns['T2:worker'], undefined)
++  const observed = await inspectReplanSession({
++    persistence: f.ctx.sessionPersistence, intent, prompt: request(receipt).prompt,
++    ownerId: 'worker', contextMessages: saved.replanSessions[receipt.requestId].contextMessages,
++  })
++  assert.equal(observed.outcome, 'submission_observed')
++  const events = (await f.readFrom(receipt.executionIdentity.sessionId)).events
++  assert.ok(events.some(event => event.type === 'sandbox/mode' && event.data?.mode === 'read-only'))
++  const raw = await f.readRaw(receipt.executionIdentity.sessionId)
++  assert.ok(raw.content.includes('worker-advice-submit'))
++
++  const calls = f.adapter.requests.length
++  const unchanged = await readRecoverySessionState(f)
++  const wrongOwner = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt, 'api'))
++  assert.equal(wrongOwner.outcome, 'paused')
++  const unknown = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, {
++    ...request(receipt), requestId: 'unknown-owner-advice-request',
++  })
++  assert.equal(unknown.outcome, 'paused')
++  assert.deepEqual(await readRecoverySessionState(f), unchanged)
++  assert.equal(f.adapter.requests.length, calls)
++
++  const fresh = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
++  try {
++    const replay = await fresh.runtime.reconcileReplanSession(fresh.admissionAgent, fresh.workflowId, request(receipt))
++    assert.equal(replay.outcome, 'submission_observed', JSON.stringify(replay))
++    assert.deepEqual(replay.payload, payload)
++    assert.deepEqual(replay.receipt, answer.receipt)
++    assert.equal(fresh.adapter.requests.length, 0)
++  } finally { await fresh.dispose() }
++})
++
++test('R76 exhausted owner-consultation admission refuses a second Owner before a child is created', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, {
++    executable: true,
++    includeIndependentOwner: true,
++    limits: { totalLimit: 1, problemLimit: 1 },
++  })
++  register(f)
++  const first = await reserveAdvice(f, { ownerId: 'worker', operationId: 'owner-advice:worker' })
++  const before = await readRecoverySessionState(f)
++  const refused = await f.runtime.reserveRecoveryAdmission(f.admissionAgent, f.workflowId, {
++    contract: 'DSH_REPLAN_ADMISSION_REQUEST_V1', origin: ownerFailureRequest(f),
++    operation: { operationKind: 'owner_consultation', operationId: 'owner-advice:api', ordinal: 1 },
++  })
++  assert.equal(first.outcome, 'reserved')
++  assert.equal(refused.outcome, 'rejected')
++  assert.equal((await readRecoverySessionState(f)).recoveryAdmission.budget.totalUsed, before.recoveryAdmission.budget.totalUsed)
++  assert.equal(f.adapter.requests.length, 0)
++})
++
++test('R76 a wrong-owner structured payload never becomes an accepted advice receipt', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, {
++    executable: true,
++    includeIndependentOwner: true,
++    modelScript: m => [
++      m.toolCallResponse('wrong-owner-advice', 'workflow_owner_advice_submit', { advice: adviceFor('api') }),
++      m.textResponse('No accepted advice was submitted.'),
++    ],
++  })
++  register(f)
++  const receipt = await reserveAdvice(f)
++  const answer = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++  assert.equal(answer.outcome, 'failed', JSON.stringify(answer))
++  assert.equal(answer.receipt, undefined)
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.replanSessions[receipt.requestId].phase, 'settled_failed')
++  assert.equal(state.recoveryAdmission.budget.attempts[0].result.status, 'failed')
++  const raw = await f.readRaw(receipt.executionIdentity.sessionId)
++  assert.ok(raw.content.includes('wrong-owner-advice'))
++  assert.ok(!raw.content.includes('"accepted":true,"ownerId":"worker"'))
++})
++
++test('R76 an uncertain owner-advisor creation preserves its worker binding for fresh Harness reconciliation without a prompt', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true })
++  register(f)
++  const receipt = await reserveAdvice(f)
++  const create = f.ctx.agents.create.bind(f.ctx.agents)
++  let creates = 0
++  let created
++  f.ctx.agents.create = async (...args) => {
++    creates++
++    created = await create(...args)
++    await f.ctx.sessions.flush(created.agent.session)
++    throw new Error('Injected lost response after real owner-advisor creation')
++  }
++
++  const first = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(receipt))
++  assert.equal(first.outcome, 'paused')
++  assert.equal(creates, 1)
++  assert.equal(f.adapter.requests.length, 0)
++  const before = await readRecoverySessionState(f)
++  assert.equal(before.replanSessions[receipt.requestId].phase, 'creating')
++  assert.equal(before.replanSessions[receipt.requestId].ownerId, 'worker')
++  assert.equal(before.recoveryAdmission.budget.attempts[0].state, 'reserved')
++  assert.equal(created.agent.id, receipt.executionIdentity.sessionId)
++  assert.equal(created.agent.session.header.id, receipt.executionIdentity.sessionId)
++  const raw = await f.readRaw(receipt.executionIdentity.sessionId)
++  assert.ok(raw)
++  assert.ok(!raw.content.includes(request(receipt).prompt.content))
++
++  f.ctx.agents.create = create
++  const fresh = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
++  try {
++    const replay = await fresh.runtime.reconcileReplanSession(fresh.admissionAgent, fresh.workflowId, request(receipt))
++    assert.equal(replay.outcome, 'paused')
++    assert.equal(fresh.adapter.requests.length, 0)
++    assert.deepEqual(await readRecoverySessionState(fresh), before)
++  } finally { await fresh.dispose() }
++})
++
++test('R76 a completed owner-advisor turn without submission settles failed and permits its next paid ordinal', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, {
++    executable: true,
++    includeIndependentOwner: true,
++    limits: { totalLimit: 2, problemLimit: 2 },
++    responses: ['No structured Owner advice.'],
++  })
++  register(f)
++  const first = await reserveAdvice(f)
++  const answer = await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(first))
++  assert.equal(answer.outcome, 'failed', JSON.stringify(answer))
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.replanSessions[first.requestId].phase, 'settled_failed')
++  assert.equal(state.recoveryAdmission.budget.attempts[0].state, 'settled')
++  assert.equal(state.recoveryAdmission.budget.attempts[0].result.status, 'failed')
++  const calls = f.adapter.requests.length
++  assert.equal((await f.runtime.reconcileReplanSession(f.admissionAgent, f.workflowId, request(first))).outcome, 'failed')
++  assert.equal(f.adapter.requests.length, calls)
++  const second = await reserveAdvice(f, { ordinal: 2 })
++  assert.equal(second.rootProblemId, first.rootProblemId)
++  assert.notEqual(second.requestId, first.requestId)
++  assert.equal((await readRecoverySessionState(f)).recoveryAdmission.budget.totalUsed, 2)
++})
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/owner-advice-session-v1.md
+@@ -0,0 +1,19 @@
++# Owner会诊计费会话 V1（R76）
++
++本轮扩展T15内部持久适配器，使每次实际Owner advice可先领取同一故障root预算，再以固定session/prompt运行。它不是公开Runner仲裁入口，也不解除R75未接线门禁。
++
++## 身份与请求
++
++replan_operation新增operationKind=owner_consultation。来源仍由真实Owner failure/obligation确定；被咨询的Owner与来源Owner可以不同，不能伪造Owner运行历史或另建问题预算。operationId/ordinal遵循原有限重试规则。
++
++reconcileReplanSession请求保留contract/requestId/prompt，仅此kind必须额外提供ownerId。其他kind禁止ownerId。首次创建前核验实际Registry存在该Owner；持久creating记录额外固定ownerId。重放或后续阶段更换ownerId拒绝，不重发、不退款。上层逻辑会诊操作的候选、Owner定义和前驱绑定仍由后继生产者负责，本适配器只证明本次已预留物理会话。
++
++## 只读提交与原始证据
++
++owner-advisor角色采用read-only沙箱、never审批，仅允许其自身workflow_owner_advice_submit编排工具；不能调用Planner/Review/Owner提交工具。Runtime绑定requireOwnerAdviceSubmission和ownerAdviceOwnerId；主会话/其他角色/错误Owner/第二次成功提交均拒绝。
++
++建议沿用DSH_OWNER_PLANNING_ADVICE_V1，含ownerId、scopeFit及事实、约束、节点、依赖、handoff、风险、验证建议数组。工具返回DSH_WORKFLOW_OWNER_ADVICE_SUBMIT_RESULT_V1、accepted=true及绑定ownerId。结构化普通文本不替代工具提交。
++
++真实JSONL读取器关联唯一成功tool/call与tool/result、输入上下文、step/turn和明确终态，并同时检查参数ownerId与接受回执ownerId。返回submission_observed及原始receipt，预算仍running；这不是DAG应用、Owner建议采纳或恢复成功。合法建议的语义结算与仲裁消费后续实现。
++
++无有效提交且completed沿用failed结算，仅允许已失败的下一ordinal再次付费。取消或creating后未知会话不补发。新Harness重开复用同一账本与原始回执，不能把内存成功标记当证据。
+--- docs/specs/main-thread-owner-workflow/contracts/recovery-budget-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-budget-v1.md
+@@ -51,3 +51,8 @@
+ ## 后续接缝
+
+ 本模块只保证给定正确最新快照的确定性计算，不能处理两个进程各自拿旧副本后的并发写入；T-14必须验证完整读改写和外部启动事务，T-15接线。deadline、取消确认和资源释放由T-16/T-17负责；跨版本派生绑定由T-18负责；有限生产默认值及启用由T-19负责。当前已有Owner局部持久恢复证据，但不宣称所有重规划入口已受限或完整工作流已验收。
++
++
++## R76：Owner会诊扩展
++
++内部replan_operation新增owner_consultation，仍逐次共用原root预算与固定session/prompt。请求和会话额外绑定被咨询ownerId，原始提交由workflow_owner_advice_submit证明；该Owner不是预算来源Owner，也不创建Owner执行记录。详见[Owner会诊会话](owner-advice-session-v1.md)。旧Planner/Review请求和会话形状不变。实际仲裁消费与成功语义结算仍待后续接线。
+--- docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md
+@@ -146,3 +146,8 @@
+
+
+ R59实际失败handoff生产者固定执行来源后，replanHandoffs保护分支已消费本预留协议并驱动真实Planner、语义检查和候选写入；见handoff-recovery-v1.md。普通Intent/candidate Review/咨询等入口尚未全面接线，不能据此宣称T15完成。
++
++
++## R76：Owner会诊扩展
++
++内部replan_operation新增owner_consultation，仍逐次共用原root预算与固定session/prompt。请求和会话额外绑定被咨询ownerId，原始提交由workflow_owner_advice_submit证明；该Owner不是预算来源Owner，也不创建Owner执行记录。详见[Owner会诊会话](owner-advice-session-v1.md)。旧Planner/Review请求和会话形状不变。实际仲裁消费与成功语义结算仍待后续接线。
+--- docs/specs/main-thread-owner-workflow/contracts/replan-session-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/replan-session-v1.md
+@@ -39,3 +39,8 @@
+ ## R59 语义结果的受控消费
+
+ 实际失败handoff入口可在同一持久状态事务中写待审候选并将T13结算succeeded，session phase=applied；该applied只指候选落盘，不是active DAG激活。结构提交通过但外层handoff语义检查失败则T13 failed、phase=validated_failed。两者都沿用原session/prompt反向结果引用。此已结算结果的重放由handoff入口核对operation、账本、session和原始receipt，通用reconcile不重新运行或覆盖语义结论。详见handoff-recovery-v1.md。
++
++
++## R76：Owner会诊扩展
++
++内部replan_operation新增owner_consultation，仍逐次共用原root预算与固定session/prompt。请求和会话额外绑定被咨询ownerId，原始提交由workflow_owner_advice_submit证明；该Owner不是预算来源Owner，也不创建Owner执行记录。详见[Owner会诊会话](owner-advice-session-v1.md)。旧Planner/Review请求和会话形状不变。实际仲裁消费与成功语义结算仍待后续接线。

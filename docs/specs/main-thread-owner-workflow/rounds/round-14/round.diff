@@ -1,0 +1,1451 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -163,6 +163,7 @@
+   OWNER_RUNTIME_DIRECTORY,
+   ensureRuntimeGitignore,
+ } from './project-layout.mjs'
++import { prepareRecoveryAdmission } from './recovery-admission.mjs'
+ import {
+   AUTONOMOUS_STRATEGIES,
+   CONVERGENCE_CONTRACT,
+@@ -9694,6 +9695,53 @@
+         return persistPlanningFailure(runtime, state, resolvedConfig, error)
+       }
+     },
++    // Explicit local adapter only. No tool/runner routes consume this until T-15.
++    async reserveRecoveryAdmission(agent, workflowId, request) {
++      if (typeof workflowId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(workflowId)) {
++        throw new Error('RecoveryAdmission workflowId 非法')
++      }
++      const root = await runtime.resolveRoot(agent)
++      return runtime.withWorkflowLock(workflowId, async () => {
++        let response
++        const refusal = new Error('RecoveryAdmission 技术拒绝')
++        try {
++          await saveState(runtime, { root, id: workflowId }, undefined, current => {
++            if (current?.contract !== STATE_CONTRACT || current.id !== workflowId || current.root !== root) {
++              throw new Error('RecoveryAdmission 当前持久 Workflow 绑定无效')
++            }
++            assertV2WorkflowExecutable(current, '领取恢复预算')
++            assertWorkflowNotCancelled(current, '领取恢复预算')
++            if (!['approved', 'running', 'blocked', 'planned'].includes(current.status)) {
++              throw new Error('RecoveryAdmission 当前 Workflow 状态不可领取')
++            }
++            normalizePlanV2(current.plan)
++            if (planDigest(current.plan) !== current.planDigest) {
++              throw new Error('RecoveryAdmission 当前计划内容摘要不匹配')
++            }
++            if (request?.source?.kind === 'owner_failure') {
++              if (current.planApproved !== true || current.planReview?.status !== 'passed'
++                || current.planReviewDigest !== current.planDigest) {
++                throw new Error('RecoveryAdmission Owner 失败来源尚未通过当前计划审批')
++              }
++              const record = current.ownerRuns?.[ownerRunKey(request.taskId, request.ownerId)]
++              const classified = classifyFailure(record?.error ?? record?.reason ?? '',
++                ownerExecutionDeviationContext(current, request.taskId, request.ownerId))
++              if (classified.class === 'external_authority') {
++                throw new Error('RecoveryAdmission 当前失败需要用户决定')
++              }
++            }
++            const prepared = prepareRecoveryAdmission(current, request)
++            response = prepared.response
++            if (response.outcome === 'rejected') throw refusal
++            return { state: prepared.state }
++          })
++        } catch (error) {
++          if (error !== refusal) throw error
++        }
++        // The reducer's result must never escape before the write lock commits.
++        return response
++      })
++    },
+     async withWorkflowLock(workflowId, operation) {
+       const previous = runtime.workflowLocks.get(workflowId) ?? Promise.resolve()
+       const current = previous.catch(() => undefined).then(operation)
+--- /dev/null
++++ owner-workflow-plugin/src/recovery-admission.mjs
+@@ -0,0 +1,716 @@
++import { createHash, randomUUID } from 'node:crypto'
++
++import {
++  createRecoveryBudget,
++  normalizeRecoveryBudget,
++  registerRecoveryProblem,
++  reserveRecoveryAttempt,
++} from './recovery-budget.mjs'
++import { AUTONOMOUS_STRATEGIES, CONVERGENCE_CONTRACT } from './convergence.mjs'
++
++export const RECOVERY_ADMISSION_REQUEST_CONTRACT = 'DSH_RECOVERY_ADMISSION_REQUEST_V1'
++export const RECOVERY_ADMISSION_CONTRACT = 'DSH_RECOVERY_ADMISSION_V1'
++export const RECOVERY_ADMISSION_CONFIG_CONTRACT = 'DSH_RECOVERY_ADMISSION_CONFIG_V1'
++export const RECOVERY_ADMISSION_STATE_CONTRACT = 'DSH_RECOVERY_ADMISSION_STATE_V1'
++
++// `AUTONOMOUS_STRATEGIES` is the plan-revision subset. Owner failure recovery
++// also persists the two repair strategies selected by FAILURE_STRATEGIES.
++const AUTONOMOUS_STRATEGY_SET = new Set([
++  ...AUTONOMOUS_STRATEGIES,
++  'repair_runtime',
++  'same_owner_repair',
++])
++
++function canonical(value) {
++  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
++  if (value !== null && typeof value === 'object') {
++    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
++  }
++  return JSON.stringify(value)
++}
++
++function digest(value) {
++  return createHash('sha256').update(canonical(value)).digest('hex')
++}
++
++function fail(reason) {
++  throw new Error(reason)
++}
++
++function rejection(state, reason) {
++  return {
++    state,
++    response: {
++      contract: RECOVERY_ADMISSION_CONTRACT,
++      outcome: 'rejected',
++      reason,
++      launchAuthorized: false,
++    },
++  }
++}
++
++function deepCopy(value) {
++  return structuredClone(value)
++}
++
++function plainRecord(value, name) {
++  if (value === null || typeof value !== 'object' || Array.isArray(value)
++    || Object.getPrototypeOf(value) !== Object.prototype) {
++    fail(`${name}_invalid`)
++  }
++  if (Object.getOwnPropertySymbols(value).length !== 0) fail(`${name}_invalid`)
++  for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
++    if (!descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) fail(`${name}_invalid`)
++  }
++  return value
++}
++
++function exactKeys(value, keys, name) {
++  plainRecord(value, name)
++  const actual = Object.getOwnPropertyNames(value).sort()
++  const expected = [...keys].sort()
++  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
++    fail(`${name}_invalid`)
++  }
++  return value
++}
++
++function ordinaryArray(value, name) {
++  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype
++    || Object.getOwnPropertySymbols(value).length !== 0) fail(`${name}_invalid`)
++  const names = Object.getOwnPropertyNames(value)
++  if (names.length !== value.length + 1 || !names.includes('length')) fail(`${name}_invalid`)
++  for (let index = 0; index < value.length; index += 1) {
++    const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
++    if (descriptor === undefined || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
++      fail(`${name}_invalid`)
++    }
++  }
++  return value
++}
++
++function text(value, name) {
++  if (typeof value !== 'string' || value.length === 0 || value !== value.trim()) fail(`${name}_invalid`)
++  return value
++}
++
++function nonblankText(value, name) {
++  if (typeof value !== 'string' || value.trim() === '') fail(`${name}_invalid`)
++  return value
++}
++
++function positiveInteger(value, name) {
++  if (!Number.isSafeInteger(value) || value < 1) fail(`${name}_invalid`)
++  return value
++}
++
++function reference(value, name) {
++  exactKeys(value, ['id', 'version'], name)
++  return { id: text(value.id, `${name}_id`), version: text(value.version, `${name}_version`) }
++}
++
++function sameReference(left, right) {
++  return left.id === right.id && left.version === right.version
++}
++
++function ownerFailureSource(value, name = 'request_source') {
++  exactKeys(value, ['kind', 'attempt', 'sessionId'], name)
++  if (value.kind !== 'owner_failure') fail(`${name}_invalid`)
++  const sessionId = value.sessionId === null ? null : text(value.sessionId, `${name}_session_id`)
++  return {
++    kind: 'owner_failure',
++    attempt: positiveInteger(value.attempt, `${name}_attempt`),
++    sessionId,
++  }
++}
++
++function requestSource(value) {
++  plainRecord(value, 'request_source')
++  if (value.kind === 'owner_failure') return ownerFailureSource(value)
++  if (value.kind === 'obligation') {
++    exactKeys(value, ['kind', 'id'], 'request_source')
++    if (value.kind !== 'obligation') fail('request_source_invalid')
++    return { kind: 'obligation', id: text(value.id, 'request_source_id') }
++  }
++  fail('request_source_invalid')
++}
++
++function admissionRequest(value) {
++  exactKeys(value, ['contract', 'planDigest', 'taskId', 'ownerId', 'source'], 'request')
++  if (value.contract !== RECOVERY_ADMISSION_REQUEST_CONTRACT) fail('request_contract_invalid')
++  return {
++    contract: RECOVERY_ADMISSION_REQUEST_CONTRACT,
++    planDigest: text(value.planDigest, 'request_plan_digest'),
++    taskId: text(value.taskId, 'request_task_id'),
++    ownerId: text(value.ownerId, 'request_owner_id'),
++    source: requestSource(value.source),
++  }
++}
++
++function admissionConfig(state) {
++  exactKeys(state?.recoveryAdmissionConfig, [
++    'contract', 'executionVersion', 'totalLimit', 'problemLimit',
++  ], 'recovery_admission_config')
++  const config = state.recoveryAdmissionConfig
++  if (config.contract !== RECOVERY_ADMISSION_CONFIG_CONTRACT) fail('recovery_admission_config_contract_invalid')
++  const executionVersion = text(config.executionVersion, 'recovery_admission_config_execution_version')
++  const totalLimit = positiveInteger(config.totalLimit, 'recovery_admission_config_total_limit')
++  const problemLimit = positiveInteger(config.problemLimit, 'recovery_admission_config_problem_limit')
++  if (executionVersion !== state.planDigest) fail('recovery_admission_config_execution_version_mismatch')
++  return { executionVersion, totalLimit, problemLimit }
++}
++
++function closeWhen(value, name) {
++  plainRecord(value, name)
++  const kind = value.kind
++  if (kind === 'plan_verification_binding' || kind === 'task_verification_result') {
++    exactKeys(value, ['kind', 'taskId', 'verificationId'], name)
++    return { kind, taskId: text(value.taskId, `${name}_task_id`), verificationId: text(value.verificationId, `${name}_verification_id`) }
++  }
++  if (kind === 'plan_task_executable') {
++    exactKeys(value, ['kind', 'taskId'], name)
++    return { kind, taskId: text(value.taskId, `${name}_task_id`) }
++  }
++  if (kind === 'decision_record') {
++    exactKeys(value, ['kind', 'taskId', 'authority'], name)
++    const authority = text(value.authority, `${name}_authority`)
++    if (!['orchestrator', 'user'].includes(authority)) fail(`${name}_invalid`)
++    return { kind, taskId: text(value.taskId, `${name}_task_id`), authority }
++  }
++  fail(`${name}_invalid`)
++}
++
++function targetTaskIds(value, name) {
++  ordinaryArray(value, name)
++  const targetIds = value.map((item, index) => text(item, `${name}_${index}`))
++  if (targetIds.length === 0 || new Set(targetIds).size !== targetIds.length) fail(`${name}_invalid`)
++  return [...targetIds].sort()
++}
++
++function hasUserBasis(obligation) {
++  return obligation.closeWhen.authority === 'user'
++    || obligation.decisionClassification === 'external_permission_gap'
++    || obligation.decisionClassification === 'business_commitment_delta'
++    || obligation.classificationBasis?.businessCommitmentDelta !== undefined
++    || obligation.classificationBasis?.externalPermissionGap !== undefined
++}
++
++function obligationPhysicalKey(obligation) {
++  return canonical({ targetTaskIds: obligation.targetTaskIds, closeWhen: obligation.closeWhen })
++}
++
++function liveObligation(state, request) {
++  const convergence = state.planConvergence
++  if (convergence?.contract !== CONVERGENCE_CONTRACT) fail('obligation_convergence_invalid')
++  const history = convergence.history
++  ordinaryArray(history, 'obligation_convergence_history')
++  const latest = history.at(-1)
++  // The history event has evolved with optional renewal fields. It must at
++  // least bind this candidate rather than exposing a guessed top-level digest.
++  if (latest === null || typeof latest !== 'object' || Array.isArray(latest)
++    || latest.candidatePlanDigest !== state.planDigest) fail('obligation_candidate_plan_mismatch')
++  ordinaryArray(convergence.obligations, 'obligation_convergence_obligations')
++  const raw = convergence.obligations.find(item => item?.id === request.source.id)
++  if (raw === undefined) fail('obligation_not_found')
++  exactKeys(raw, [
++    'id', 'declaredId', 'category', 'severity', 'title', 'detail', 'suggestion', 'source',
++    'targetTaskIds', 'classificationBasis', 'decisionClassification', 'closeWhen', 'status',
++    'resolvedAt', 'resolution',
++  ].filter(key => Object.hasOwn(raw, key)), 'obligation')
++  const obligation = {
++    id: text(raw.id, 'obligation_id'),
++    source: reference(raw.source, 'obligation_source'),
++    targetTaskIds: targetTaskIds(raw.targetTaskIds, 'obligation_target_task_ids'),
++    closeWhen: closeWhen(raw.closeWhen, 'obligation_close_when'),
++    status: text(raw.status, 'obligation_status'),
++    ...(raw.declaredId === undefined ? {} : { declaredId: text(raw.declaredId, 'obligation_declared_id') }),
++    ...(raw.decisionClassification === undefined ? {} : { decisionClassification: text(raw.decisionClassification, 'obligation_decision_classification') }),
++    ...(raw.classificationBasis === undefined ? {} : { classificationBasis: raw.classificationBasis }),
++  }
++  if (obligation.status !== 'open') fail('obligation_not_open')
++  if (!obligation.targetTaskIds.includes(request.taskId) || obligation.closeWhen.taskId !== request.taskId) {
++    fail('obligation_task_mismatch')
++  }
++  if (hasUserBasis(obligation)) fail('obligation_user_authority_required')
++  const conflicts = [
++    ...(Array.isArray(convergence.identityConflicts) ? convergence.identityConflicts : []),
++    ...(Array.isArray(convergence.unsupportedNewObligations) ? convergence.unsupportedNewObligations : []),
++  ]
++  if (conflicts.some(item => item?.id === obligation.id || item?.declaredId === obligation.declaredId)) {
++    fail('obligation_identity_conflict')
++  }
++  return obligation
++}
++
++function sourceIdFor(workflowId, source) {
++  return `recovery-source-${digest({
++    contract: RECOVERY_ADMISSION_STATE_CONTRACT,
++    workflowId,
++    source: sourceBinding(source),
++  })}`
++}
++
++function sourceBinding(source) {
++  if (source.kind === 'owner_failure') {
++    return {
++      kind: source.kind,
++      planDigest: source.planDigest,
++      taskId: source.taskId,
++      ownerId: source.ownerId,
++      attempt: source.attempt,
++      sessionId: source.sessionId,
++    }
++  }
++  return {
++    kind: source.kind,
++    planDigest: source.planDigest,
++    taskId: source.taskId,
++    ownerId: source.ownerId,
++    obligationId: source.obligationId,
++    obligationSource: source.obligationSource,
++    targetTaskIds: source.targetTaskIds,
++    closeWhen: source.closeWhen,
++  }
++}
++
++function ownerRun(state, taskId, ownerId) {
++  const record = state.ownerRuns?.[`${taskId}:${ownerId}`]
++  if (record === null || typeof record !== 'object' || Array.isArray(record)) fail('owner_failure_record_missing')
++  if (record.ownerId !== ownerId || (record.stageId ?? record.taskId) !== taskId) fail('owner_failure_record_binding_mismatch')
++  if (record.planDigest !== state.planDigest) fail('owner_failure_record_plan_mismatch')
++  return record
++}
++
++function taskBinding(state, request) {
++  if (state === null || typeof state !== 'object' || Array.isArray(state)) fail('state_invalid')
++  const workflowId = text(state.id, 'state_workflow_id')
++  const planDigest = text(state.planDigest, 'state_plan_digest')
++  if (request.planDigest !== planDigest) fail('request_plan_digest_mismatch')
++  if (!Array.isArray(state.plan?.tasks)) fail('state_plan_tasks_invalid')
++  const planTask = state.plan.tasks.find(item => item?.id === request.taskId)
++  if (planTask === undefined) fail('task_not_found')
++  if (planTask.ownerId !== request.ownerId) fail('task_owner_mismatch')
++  const task = Array.isArray(state.tasks)
++    ? state.tasks.find(item => item?.taskId === request.taskId)
++    : undefined
++  if (task?.action === 'await_user') fail('task_awaits_user')
++  return { workflowId, planDigest, planTask, task }
++}
++
++function validPersistedStrategy(strategy) {
++  if (AUTONOMOUS_STRATEGY_SET.has(strategy)) return strategy
++  if (strategy === 'request_user_authority') fail('recovery_strategy_user_authority')
++  if (strategy === 'autonomous_incident') fail('recovery_strategy_incident')
++  fail('recovery_strategy_invalid')
++}
++
++function ownerFailureStrategy(record) {
++  const saved = record?.autonomousRecovery
++  if (saved === undefined || saved === null || typeof saved !== 'object' || Array.isArray(saved)
++    || saved.contract !== 'DSH_AUTONOMOUS_RECOVERY_V1') fail('recovery_strategy_missing')
++  return validPersistedStrategy(saved.strategy)
++}
++
++function obligationStrategy(state) {
++  const convergence = state.planConvergence
++  if (convergence?.contract !== CONVERGENCE_CONTRACT) fail('recovery_strategy_missing')
++  ordinaryArray(convergence.history, 'recovery_strategy_history')
++  const latest = convergence.history.at(-1)
++  if (latest === null || typeof latest !== 'object' || Array.isArray(latest)
++    || latest.candidatePlanDigest !== state.planDigest) fail('recovery_strategy_plan_mismatch')
++  return validPersistedStrategy(convergence.nextStrategy)
++}
++
++function validatedFailureSource(state, binding, request) {
++  if (binding.task === undefined) fail('owner_failure_task_state_missing')
++  if (binding.task.status === 'completed') fail('owner_failure_task_completed')
++  if (binding.task.status === 'running') fail('owner_failure_task_running')
++  if (binding.task.action === 'await_user') fail('task_awaits_user')
++  if (!['pending', 'stopped'].includes(binding.task.status)) fail('owner_failure_task_not_recoverable')
++  const record = ownerRun(state, request.taskId, request.ownerId)
++  if (record.status === 'starting' || record.status === 'running' || record.status === 'waiting_approval') {
++    fail('owner_failure_still_running')
++  }
++  if (!['failed', 'blocked'].includes(record.status)) fail('owner_failure_not_terminal')
++  if (record.attempt !== request.source.attempt) fail('owner_failure_attempt_mismatch')
++  const recordedSessionId = record.sessionId ?? record.result?.sessionId
++  if (request.source.sessionId === null) {
++    if (recordedSessionId !== undefined && recordedSessionId !== null) fail('owner_failure_session_mismatch')
++  } else if (recordedSessionId !== request.source.sessionId) {
++    fail('owner_failure_session_mismatch')
++  }
++  const reason = typeof record.error === 'string' && record.error.trim() !== ''
++    ? record.error
++    : typeof record.reason === 'string' && record.reason.trim() !== ''
++      ? record.reason
++      : undefined
++  if (reason === undefined) fail('owner_failure_reason_missing')
++  const strategy = ownerFailureStrategy(record)
++  if (record.status === 'blocked' && (binding.task?.action === 'await_user' || strategy === 'request_user_authority')) {
++    fail('owner_failure_not_technical')
++  }
++  const source = {
++    kind: 'owner_failure',
++    planDigest: binding.planDigest,
++    taskId: request.taskId,
++    ownerId: request.ownerId,
++    attempt: request.source.attempt,
++    sessionId: request.source.sessionId,
++    failureReason: reason,
++  }
++  return { source, strategy, record }
++}
++
++function validatedObligationSource(state, binding, request) {
++  const obligation = liveObligation(state, request)
++  const strategy = obligationStrategy(state)
++  const source = {
++    kind: 'obligation',
++    planDigest: binding.planDigest,
++    taskId: request.taskId,
++    ownerId: request.ownerId,
++    obligationId: obligation.id,
++    obligationSource: obligation.source,
++    targetTaskIds: obligation.targetTaskIds,
++    closeWhen: obligation.closeWhen,
++  }
++  return { source, strategy }
++}
++
++function persistedOwnerFailure(value, workflowId, name) {
++  exactKeys(value, [
++    'sourceId', 'kind', 'planDigest', 'taskId', 'ownerId', 'attempt', 'sessionId', 'failureReason',
++  ], name)
++  if (value.kind !== 'owner_failure') fail(`${name}_invalid`)
++  const source = {
++    kind: 'owner_failure',
++    planDigest: text(value.planDigest, `${name}_plan_digest`),
++    taskId: text(value.taskId, `${name}_task_id`),
++    ownerId: text(value.ownerId, `${name}_owner_id`),
++    attempt: positiveInteger(value.attempt, `${name}_attempt`),
++    sessionId: value.sessionId === null ? null : text(value.sessionId, `${name}_session_id`),
++    failureReason: nonblankText(value.failureReason, `${name}_failure_reason`),
++  }
++  const sourceId = text(value.sourceId, `${name}_source_id`)
++  if (sourceId !== sourceIdFor(workflowId, source)) fail('admission_source_tampered')
++  return { sourceId, ...source }
++}
++
++function persistedObligation(value, workflowId, name) {
++  exactKeys(value, [
++    'sourceId', 'kind', 'planDigest', 'taskId', 'ownerId', 'obligationId', 'obligationSource',
++    'targetTaskIds', 'closeWhen',
++  ], name)
++  if (value.kind !== 'obligation') fail(`${name}_invalid`)
++  const source = {
++    kind: 'obligation',
++    planDigest: text(value.planDigest, `${name}_plan_digest`),
++    taskId: text(value.taskId, `${name}_task_id`),
++    ownerId: text(value.ownerId, `${name}_owner_id`),
++    obligationId: text(value.obligationId, `${name}_obligation_id`),
++    obligationSource: reference(value.obligationSource, `${name}_obligation_source`),
++    targetTaskIds: targetTaskIds(value.targetTaskIds, `${name}_target_task_ids`),
++    closeWhen: closeWhen(value.closeWhen, `${name}_close_when`),
++  }
++  const sourceId = text(value.sourceId, `${name}_source_id`)
++  if (sourceId !== sourceIdFor(workflowId, source)) fail('admission_source_tampered')
++  return { sourceId, ...source }
++}
++
++function persistedSource(value, workflowId, name) {
++  plainRecord(value, name)
++  if (value.kind === 'owner_failure') return persistedOwnerFailure(value, workflowId, name)
++  if (value.kind === 'obligation') return persistedObligation(value, workflowId, name)
++  fail(`${name}_invalid`)
++}
++
++function sameSource(left, right) {
++  return left.sourceId === right.sourceId && canonical(sourceBinding(left)) === canonical(sourceBinding(right))
++}
++
++function executionIdentity(value, name) {
++  exactKeys(value, ['sessionId', 'promptId'], name)
++  return {
++    sessionId: text(value.sessionId, `${name}_session_id`),
++    promptId: text(value.promptId, `${name}_prompt_id`),
++  }
++}
++
++function intentKey(sourceId, strategy) {
++  return `recovery-intent-${digest({ sourceId, strategy })}`
++}
++
++function persistedIntent(value, name) {
++  exactKeys(value, [
++    'intentKey', 'sourceId', 'strategy', 'planDigest', 'taskId', 'ownerId', 'rootProblemId',
++    'requestId', 'attemptId', 'executionIdentity',
++  ], name)
++  const sourceId = text(value.sourceId, `${name}_source_id`)
++  const strategy = text(value.strategy, `${name}_strategy`)
++  if (!AUTONOMOUS_STRATEGY_SET.has(strategy)) fail(`${name}_strategy_invalid`)
++  const parsed = {
++    intentKey: text(value.intentKey, `${name}_intent_key`),
++    sourceId,
++    strategy,
++    planDigest: text(value.planDigest, `${name}_plan_digest`),
++    taskId: text(value.taskId, `${name}_task_id`),
++    ownerId: text(value.ownerId, `${name}_owner_id`),
++    rootProblemId: text(value.rootProblemId, `${name}_root_problem_id`),
++    requestId: text(value.requestId, `${name}_request_id`),
++    attemptId: text(value.attemptId, `${name}_attempt_id`),
++    executionIdentity: executionIdentity(value.executionIdentity, `${name}_execution_identity`),
++  }
++  if (parsed.intentKey !== intentKey(sourceId, strategy)) fail('admission_intent_tampered')
++  return parsed
++}
++
++function emptyAdmission(workflowId, config) {
++  return {
++    contract: RECOVERY_ADMISSION_STATE_CONTRACT,
++    workflowId,
++    executionVersion: config.executionVersion,
++    totalLimit: config.totalLimit,
++    problemLimit: config.problemLimit,
++    sources: [],
++    intents: [],
++    budget: createRecoveryBudget({ workflowId, totalLimit: config.totalLimit }),
++  }
++}
++
++function normalizedAdmission(value, workflowId, config) {
++  if (value === undefined) return emptyAdmission(workflowId, config)
++  exactKeys(value, [
++    'contract', 'workflowId', 'executionVersion', 'totalLimit', 'problemLimit', 'sources', 'intents', 'budget',
++  ], 'recovery_admission')
++  if (value.contract !== RECOVERY_ADMISSION_STATE_CONTRACT) fail('recovery_admission_contract_invalid')
++  if (text(value.workflowId, 'recovery_admission_workflow_id') !== workflowId) fail('recovery_admission_workflow_mismatch')
++  if (text(value.executionVersion, 'recovery_admission_execution_version') !== config.executionVersion) {
++    fail('recovery_admission_execution_version_mismatch')
++  }
++  if (positiveInteger(value.totalLimit, 'recovery_admission_total_limit') !== config.totalLimit
++    || positiveInteger(value.problemLimit, 'recovery_admission_problem_limit') !== config.problemLimit) {
++    fail('recovery_admission_limits_mismatch')
++  }
++  ordinaryArray(value.sources, 'recovery_admission_sources')
++  ordinaryArray(value.intents, 'recovery_admission_intents')
++  const sources = value.sources.map((item, index) => persistedSource(item, workflowId, `recovery_admission_source_${index}`))
++  const sourceIds = new Set()
++  for (const source of sources) {
++    if (sourceIds.has(source.sourceId)) fail('recovery_admission_source_duplicate')
++    sourceIds.add(source.sourceId)
++  }
++  const intents = value.intents.map((item, index) => persistedIntent(item, `recovery_admission_intent_${index}`))
++  const intentKeys = new Set()
++  const requestIds = new Set()
++  const attemptIds = new Set()
++  for (const intent of intents) {
++    const source = sources.find(item => item.sourceId === intent.sourceId)
++    if (source === undefined) fail('recovery_admission_intent_source_missing')
++    if (intent.planDigest !== config.executionVersion || intent.planDigest !== source.planDigest
++      || intent.taskId !== source.taskId || intent.ownerId !== source.ownerId) {
++      fail('recovery_admission_intent_source_mismatch')
++    }
++    if (intentKeys.has(intent.intentKey) || requestIds.has(intent.requestId) || attemptIds.has(intent.attemptId)) {
++      fail('recovery_admission_intent_duplicate')
++    }
++    intentKeys.add(intent.intentKey)
++    requestIds.add(intent.requestId)
++    attemptIds.add(intent.attemptId)
++  }
++  const sessionIds = new Set()
++  const promptIds = new Set()
++  for (const intent of intents) {
++    if (sessionIds.has(intent.executionIdentity.sessionId) || promptIds.has(intent.executionIdentity.promptId)) {
++      fail('recovery_admission_execution_identity_duplicate')
++    }
++    sessionIds.add(intent.executionIdentity.sessionId)
++    promptIds.add(intent.executionIdentity.promptId)
++  }
++  const budget = normalizeRecoveryBudget(value.budget)
++  if (budget.workflowId !== workflowId || budget.totalLimit !== config.totalLimit) fail('recovery_admission_budget_mismatch')
++  if (budget.problems.length !== sources.length || budget.attempts.length !== intents.length) {
++    fail('recovery_admission_budget_mapping_mismatch')
++  }
++  for (const source of sources) {
++    const problem = budget.problems.find(item => sameReference(item.source, {
++      id: source.sourceId,
++      version: source.planDigest,
++    }))
++    if (problem === undefined || problem.limit !== config.problemLimit) fail('recovery_admission_source_budget_mismatch')
++    if (!intents.some(intent => intent.sourceId === source.sourceId && intent.rootProblemId === problem.rootProblemId)) {
++      fail('recovery_admission_source_intent_missing')
++    }
++  }
++  for (const intent of intents) {
++    const source = sources.find(item => item.sourceId === intent.sourceId)
++    const attempt = budget.attempts.find(item => item.requestId === intent.requestId)
++    if (source === undefined || attempt === undefined
++      || attempt.workflowId !== workflowId
++      || attempt.rootProblemId !== intent.rootProblemId
++      || attempt.attemptId !== intent.attemptId
++      || attempt.taskId !== intent.taskId
++      || attempt.ownerId !== intent.ownerId
++      || attempt.executionVersion !== intent.planDigest) {
++      fail('recovery_admission_intent_budget_mismatch')
++    }
++    const problem = budget.problems.find(item => item.rootProblemId === intent.rootProblemId)
++    if (problem === undefined || !sameReference(problem.source, { id: source.sourceId, version: source.planDigest })) {
++      fail('recovery_admission_root_source_mismatch')
++    }
++  }
++  return {
++    contract: RECOVERY_ADMISSION_STATE_CONTRACT,
++    workflowId,
++    executionVersion: config.executionVersion,
++    totalLimit: config.totalLimit,
++    problemLimit: config.problemLimit,
++    sources,
++    intents,
++    budget,
++  }
++}
++
++function rootForSource(admission, sourceId) {
++  const source = admission.sources.find(item => item.sourceId === sourceId)
++  if (source === undefined) return undefined
++  const problem = admission.budget.problems.find(item => sameReference(item.source, {
++    id: source.sourceId,
++    version: source.planDigest,
++  }))
++  return problem?.rootProblemId
++}
++
++function hasRelatedOpenRoot(admission, source) {
++  return admission.sources.some(existing => {
++    if (existing.taskId !== source.taskId || existing.ownerId !== source.ownerId) return false
++    const rootProblemId = rootForSource(admission, existing.sourceId)
++    const problem = admission.budget.problems.find(item => item.rootProblemId === rootProblemId)
++    return problem?.status === 'open'
++  })
++}
++
++function reservationResponse(outcome, intent) {
++  return {
++    contract: RECOVERY_ADMISSION_CONTRACT,
++    outcome,
++    rootProblemId: intent.rootProblemId,
++    requestId: intent.requestId,
++    attemptId: intent.attemptId,
++    executionIdentity: { ...intent.executionIdentity },
++    launchAuthorized: false,
++  }
++}
++
++function budgetCanReserve(ledger, rootProblemId, isNewRoot, config) {
++  if (ledger.totalUsed >= ledger.totalLimit) return 'workflow_exhausted'
++  if (isNewRoot) return config.problemLimit < 1 ? 'problem_exhausted' : undefined
++  const problem = ledger.problems.find(item => item.rootProblemId === rootProblemId)
++  if (problem === undefined) fail('recovery_admission_root_missing')
++  if (problem.status === 'resolved') return 'problem_resolved'
++  if (problem.used >= problem.limit) return 'problem_exhausted'
++  return undefined
++}
++
++/**
++ * Prepare one purely in-memory, durable-shaped recovery reservation.
++ *
++ * The Runtime saves the returned state in its locked current-state callback.
++ * This function intentionally does not create a session or mark a T-13
++ * attempt running; executionIdentity is only a persisted placeholder.
++ */
++export function prepareRecoveryAdmission(state, request) {
++  let copied
++  try {
++    copied = deepCopy(state)
++    const parsedRequest = admissionRequest(request)
++    const binding = taskBinding(copied, parsedRequest)
++    const config = admissionConfig(copied)
++    const admission = normalizedAdmission(copied.recoveryAdmission, binding.workflowId, config)
++    const sourceResult = parsedRequest.source.kind === 'owner_failure'
++      ? validatedFailureSource(copied, binding, parsedRequest)
++      : validatedObligationSource(copied, binding, parsedRequest)
++    const source = sourceResult.source
++    const strategy = sourceResult.strategy
++    const sourceId = sourceIdFor(binding.workflowId, source)
++    const existingSource = admission.sources.find(item => item.sourceId === sourceId)
++    if (existingSource !== undefined && !sameSource(existingSource, { sourceId, ...source })) {
++      fail('admission_source_conflict')
++    }
++    if (source.kind === 'obligation' && existingSource === undefined) {
++      const physical = obligationPhysicalKey(source)
++      if (admission.sources.some(item => item.kind === 'obligation'
++        && item.planDigest === source.planDigest
++        && obligationPhysicalKey(item) === physical)) {
++        fail('obligation_physical_conflict')
++      }
++    }
++    if (source.kind === 'owner_failure' && existingSource === undefined && hasRelatedOpenRoot(admission, source)) {
++      fail('continuation_unbound')
++    }
++
++    const key = intentKey(sourceId, strategy)
++    const replay = admission.intents.find(item => item.intentKey === key)
++    if (replay !== undefined) {
++      if (replay.taskId !== parsedRequest.taskId || replay.ownerId !== parsedRequest.ownerId
++        || replay.planDigest !== binding.planDigest || replay.sourceId !== sourceId) {
++        fail('admission_intent_conflict')
++      }
++      copied.recoveryAdmission = admission
++      return { state: copied, response: reservationResponse('replayed', replay) }
++    }
++
++    const existingRoot = rootForSource(admission, sourceId)
++    const reserveReason = budgetCanReserve(admission.budget, existingRoot, existingRoot === undefined, config)
++    if (reserveReason !== undefined) return rejection(copied, reserveReason)
++
++    const rootProblemId = existingRoot ?? `recovery-root-${randomUUID()}`
++    const requestId = `recovery-request-${randomUUID()}`
++    const attemptId = `recovery-attempt-${randomUUID()}`
++    const executionIdentity = {
++      sessionId: `recovery-session-${randomUUID()}`,
++      promptId: `recovery-prompt-${randomUUID()}`,
++    }
++    let budget = admission.budget
++    if (existingRoot === undefined) {
++      budget = registerRecoveryProblem(budget, {
++        rootProblemId,
++        limit: config.problemLimit,
++        source: { id: sourceId, version: binding.planDigest },
++      })
++    }
++    const reserved = reserveRecoveryAttempt(budget, {
++      workflowId: binding.workflowId,
++      rootProblemId,
++      requestId,
++      attemptId,
++      taskId: parsedRequest.taskId,
++      ownerId: parsedRequest.ownerId,
++      executionVersion: binding.planDigest,
++    })
++    if (reserved.outcome !== 'reserved') fail('recovery_admission_reservation_inconsistent')
++    const nextIntent = {
++      intentKey: key,
++      sourceId,
++      strategy,
++      planDigest: binding.planDigest,
++      taskId: parsedRequest.taskId,
++      ownerId: parsedRequest.ownerId,
++      rootProblemId,
++      requestId,
++      attemptId,
++      executionIdentity,
++    }
++    copied.recoveryAdmission = {
++      ...admission,
++      sources: existingSource === undefined ? [...admission.sources, { sourceId, ...source }] : admission.sources,
++      intents: [...admission.intents, nextIntent],
++      budget: reserved.ledger,
++    }
++    return { state: copied, response: reservationResponse('reserved', nextIntent) }
++  } catch (error) {
++    const fallback = copied ?? (() => {
++      try { return deepCopy(state) } catch { return state }
++    })()
++    return rejection(fallback, error instanceof Error ? error.message : 'recovery_admission_invalid')
++  }
++}
+--- /dev/null
++++ owner-workflow-plugin/test/recovery-admission.test.mjs
+@@ -0,0 +1,512 @@
++import assert from 'node:assert/strict'
++import { fork } from 'node:child_process'
++import { createHash } from 'node:crypto'
++import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
++import { tmpdir } from 'node:os'
++import { dirname, join } from 'node:path'
++import { promisify } from 'node:util'
++import { execFile } from 'node:child_process'
++import test from 'node:test'
++import {
++  PLAN_V2_CONTRACT,
++  STATE_CONTRACT,
++  normalizePlanV2,
++} from '../src/model.mjs'
++import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
++import { createTaskState } from '../src/supervisor.mjs'
++
++const execFileAsync = promisify(execFile)
++const WORKER = new URL('./fixtures/recovery-admission-worker.mjs', import.meta.url)
++
++function digest(value) {
++  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
++}
++
++async function git(root, args) {
++  await execFileAsync('git', args, { cwd: root, encoding: 'utf8' })
++}
++
++function recoveryConfig(planDigest, { totalLimit = 3, problemLimit = 2 } = {}) {
++  return {
++    contract: 'DSH_RECOVERY_ADMISSION_CONFIG_V1',
++    executionVersion: planDigest,
++    totalLimit,
++    problemLimit,
++  }
++}
++
++function recoveryRecord(taskId, ownerId, planDigest, {
++  status = 'failed',
++  attempt = 2,
++  sessionId = `${taskId}-${ownerId}-failed-session`,
++  strategy = 'diagnose',
++} = {}) {
++  return {
++    status,
++    taskId,
++    stageId: taskId,
++    ownerId,
++    attempt,
++    sessionId,
++    planDigest,
++    error: 'Owner tool schema did not match the runtime contract',
++    autonomousRecovery: {
++      contract: 'DSH_AUTONOMOUS_RECOVERY_V1',
++      failureClass: 'contract_dag',
++      strategy,
++      message: 'Owner tool schema did not match the runtime contract',
++      evidenceDigest: 'e'.repeat(64),
++      usedStrategies: [strategy],
++      updatedAt: '2026-09-11T00:00:00.000Z',
++    },
++  }
++}
++
++function planFixture() {
++  return normalizePlanV2({
++    contract: PLAN_V2_CONTRACT,
++    registryDigest: 'a'.repeat(64),
++    summary: 'T20 recovery admission integration fixture',
++    owners: [
++      { id: 'api', name: 'API Owner', description: 'Owns API sources', scope: ['src/api/**'], exclude: [] },
++      { id: 'worker', name: 'Worker Owner', description: 'Owns worker sources', scope: ['src/worker/**'], exclude: [] },
++    ],
++    verifications: [{ id: 'unit', run: ['node', '--test'] }],
++    tasks: [
++      {
++        id: 'T1', role: 'work', ownerId: 'api', title: 'Repair API', dependsOn: [],
++        write: ['src/api/repair.mjs'], verify: ['unit'], done: ['API repair is verified'],
++      },
++      {
++        id: 'T2', role: 'work', ownerId: 'worker', title: 'Repair worker', dependsOn: [],
++        write: ['src/worker/repair.mjs'], verify: ['unit'], done: ['Worker repair is verified'],
++      },
++    ],
++  })
++}
++
++function recoveryTaskState(plan, taskId, strategy) {
++  return createTaskState(plan).map(task => task.taskId !== taskId ? task : {
++    ...task,
++    status: 'pending',
++    reason: null,
++    action: null,
++    autonomousRecovery: {
++      contract: 'DSH_AUTONOMOUS_RECOVERY_V1',
++      failureClass: 'contract_dag',
++      strategy,
++    },
++  })
++}
++
++async function createFixture(t, { limits, workflowId = 'wf-recovery-admission' } = {}) {
++  const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-t20-tests-recovery-admission-')))
++  t.after(async () => {
++    await chmod(root, 0o700).catch(() => undefined)
++    await chmod(join(root, '.dsh-workflow'), 0o700).catch(() => undefined)
++    await chmod(join(root, '.dsh-workflow', 'workflows'), 0o700).catch(() => undefined)
++    await rm(root, { recursive: true, force: true, maxRetries: 3 })
++  })
++  await git(root, ['init', '-q', '-b', 'main'])
++  await git(root, ['config', 'user.email', 'recovery-admission@test.invalid'])
++  await git(root, ['config', 'user.name', 'Recovery Admission Test'])
++  await writeFile(join(root, 'README.md'), 'recovery admission fixture\n', 'utf8')
++  await git(root, ['add', 'README.md'])
++  await git(root, ['commit', '-qm', 'fixture'])
++  const baseHead = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' })).stdout.trim()
++
++  const runtime = createOwnerWorkflowRuntime({ agents: { get: () => undefined } }, {})
++  await runtime.prepareRoot(root)
++  const plan = planFixture()
++  const planDigest = digest(plan)
++  const ownerRuns = {
++    'T1:api': recoveryRecord('T1', 'api', planDigest),
++    'T2:worker': recoveryRecord('T2', 'worker', planDigest, {
++      status: 'blocked', attempt: 1, sessionId: null,
++    }),
++  }
++  const state = {
++    contract: STATE_CONTRACT,
++    id: workflowId,
++    root,
++    baseBranch: 'main',
++    baseRef: 'main',
++    baseHead,
++    workflowBranch: `dsh/workflow/${workflowId}`,
++    workflowWorktree: root,
++    request: 'exercise the persisted recovery-admission contract',
++    createdAt: '2026-09-11T00:00:00.000Z',
++    updatedAt: '2026-09-11T00:00:00.000Z',
++    status: 'running',
++    attempt: 1,
++    revision: 0,
++    ownerRuns,
++    ownerSessions: {},
++    plan,
++    planDigest,
++    planReview: {
++      contract: 'DSH_PLAN_REVIEW_V1',
++      status: 'passed',
++      summary: 'The exact plan digest was independently reviewed.',
++      issues: [],
++      planDigest,
++    },
++    planReviewDigest: planDigest,
++    planApproved: true,
++    planApprovedAt: '2026-09-11T00:00:00.000Z',
++    planApprovedBy: 'recovery-admission-test',
++    tasks: recoveryTaskState(plan, 'T1', 'diagnose').map(task => task.taskId !== 'T2' ? task : {
++      ...task,
++      status: 'pending',
++      reason: null,
++      action: null,
++      autonomousRecovery: {
++        contract: 'DSH_AUTONOMOUS_RECOVERY_V1',
++        failureClass: 'contract_dag',
++        strategy: 'diagnose',
++      },
++    }),
++    recoveryAdmissionConfig: recoveryConfig(planDigest, limits),
++  }
++  await writeState(root, workflowId, state)
++  return {
++    root,
++    runtime,
++    workflowId,
++    planDigest,
++    agent: {
++      id: 'recovery-admission-test-agent',
++      session: { id: 'recovery-admission-test-session', header: { cwd: root } },
++    },
++  }
++}
++
++function statePath(root, workflowId) {
++  return join(root, '.dsh-workflow', 'workflows', `${workflowId}.json`)
++}
++
++async function readState(root, workflowId) {
++  return JSON.parse(await readFile(statePath(root, workflowId), 'utf8'))
++}
++
++async function writeState(root, workflowId, state) {
++  const path = statePath(root, workflowId)
++  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
++}
++
++async function mutateState(fixture, mutate) {
++  const state = await readState(fixture.root, fixture.workflowId)
++  await mutate(state)
++  await writeState(fixture.root, fixture.workflowId, state)
++  return state
++}
++
++function ownerRequest(fixture, {
++  taskId = 'T1', ownerId = 'api', source,
++} = {}) {
++  const record = source ?? (taskId === 'T1'
++    ? { kind: 'owner_failure', attempt: 2, sessionId: 'T1-api-failed-session' }
++    : { kind: 'owner_failure', attempt: 1, sessionId: null })
++  return {
++    contract: 'DSH_RECOVERY_ADMISSION_REQUEST_V1',
++    planDigest: fixture.planDigest,
++    taskId,
++    ownerId,
++    source: record,
++  }
++}
++
++function obligationRequest(fixture, id = 'technical-api-obligation') {
++  return {
++    contract: 'DSH_RECOVERY_ADMISSION_REQUEST_V1',
++    planDigest: fixture.planDigest,
++    taskId: 'T1',
++    ownerId: 'api',
++    source: { kind: 'obligation', id },
++  }
++}
++
++function convergenceFor(planDigest, obligation) {
++  return {
++    contract: 'DSH_WORKFLOW_CONVERGENCE_V1',
++    nextStrategy: 'same_owner_repair',
++    history: [{ candidatePlanDigest: planDigest }],
++    obligations: [obligation],
++  }
++}
++
++function technicalObligation(planDigest, {
++  id = 'technical-api-obligation',
++  authority = 'orchestrator',
++} = {}) {
++  return {
++    id,
++    source: { id: 'review/api-contract', version: planDigest },
++    targetTaskIds: ['T1'],
++    closeWhen: authority === 'user'
++      ? { kind: 'decision_record', taskId: 'T1', authority }
++      : { kind: 'plan_task_executable', taskId: 'T1' },
++    status: 'open',
++  }
++}
++
++function assertReceipt(response, outcome) {
++  assert.equal(response.contract, 'DSH_RECOVERY_ADMISSION_V1')
++  assert.equal(response.outcome, outcome)
++  assert.equal(response.launchAuthorized, false)
++  if (outcome !== 'rejected') {
++    assert.equal(typeof response.rootProblemId, 'string')
++    assert.equal(typeof response.requestId, 'string')
++    assert.equal(typeof response.attemptId, 'string')
++    assert.equal(typeof response.executionIdentity?.sessionId, 'string')
++    assert.equal(typeof response.executionIdentity?.promptId, 'string')
++  }
++}
++
++function childReserve(input) {
++  return new Promise((resolvePromise, rejectPromise) => {
++    const child = fork(WORKER, [], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
++    const timeout = setTimeout(() => {
++      child.kill('SIGKILL')
++      rejectPromise(new Error('recovery-admission child IPC timed out'))
++    }, 5_000)
++    const settle = action => value => {
++      clearTimeout(timeout)
++      child.removeAllListeners()
++      action(value)
++    }
++    child.once('message', settle(resolvePromise))
++    child.once('error', settle(rejectPromise))
++    child.once('exit', (code, signal) => {
++      if (code !== 0 && signal === null) settle(rejectPromise)(new Error(`recovery-admission child exited ${code}`))
++    })
++    child.send(input)
++  })
++}
++
++test('T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt', async t => {
++  const fixture = await createFixture(t)
++  const response = await fixture.runtime.reserveRecoveryAdmission(
++    fixture.agent, fixture.workflowId, ownerRequest(fixture),
++  )
++  assertReceipt(response, 'reserved')
++  const saved = await readState(fixture.root, fixture.workflowId)
++  assert.equal(saved.recoveryAdmission.contract, 'DSH_RECOVERY_ADMISSION_STATE_V1')
++  assert.equal(saved.recoveryAdmission.workflowId, fixture.workflowId)
++  assert.equal(saved.recoveryAdmission.executionVersion, fixture.planDigest)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(saved.tasks.find(task => task.taskId === 'T1').action, null)
++})
++
++test('T20 reloads the same durable request through a new Runtime without rebilling or changing identity', async t => {
++  const fixture = await createFixture(t)
++  const request = ownerRequest(fixture)
++  const first = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  const newRuntime = createOwnerWorkflowRuntime({ agents: { get: () => undefined } }, {})
++  const replay = await newRuntime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assertReceipt(first, 'reserved')
++  assertReceipt(replay, 'replayed')
++  assert.equal(replay.requestId, first.requestId)
++  assert.equal(replay.attemptId, first.attemptId)
++  assert.deepEqual(replay.executionIdentity, first.executionIdentity)
++  assert.equal((await readState(fixture.root, fixture.workflowId)).recoveryAdmission.budget.totalUsed, 1)
++})
++
++test('T20 derives A/B/A from persisted strategy, keeping one root but distinct durable requests', async t => {
++  const fixture = await createFixture(t, { limits: { totalLimit: 3, problemLimit: 3 } })
++  const request = ownerRequest(fixture)
++  const originalFailure = '\n Owner tool schema did not match the runtime contract \n'
++  await mutateState(fixture, state => { state.ownerRuns['T1:api'].error = originalFailure })
++  const strategyA = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  const firstSaved = await readState(fixture.root, fixture.workflowId)
++  assert.equal(firstSaved.recoveryAdmission.sources[0].failureReason, originalFailure)
++  const reloadedRuntime = createOwnerWorkflowRuntime({ agents: { get: () => undefined } }, {})
++  const rawReasonReplay = await reloadedRuntime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assertReceipt(rawReasonReplay, 'replayed')
++  assert.deepEqual(rawReasonReplay.executionIdentity, strategyA.executionIdentity)
++  await mutateState(fixture, state => {
++    state.ownerRuns['T1:api'].error = 'A later diagnostic added more detail but did not redefine the cause'
++    state.ownerRuns['T1:api'].autonomousRecovery.strategy = 'repair_runtime'
++    state.ownerRuns['T1:api'].autonomousRecovery.usedStrategies.push('repair_runtime')
++    state.tasks.find(task => task.taskId === 'T1').autonomousRecovery.strategy = 'repair_runtime'
++  })
++  const strategyB = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  await mutateState(fixture, state => {
++    state.ownerRuns['T1:api'].autonomousRecovery.strategy = 'diagnose'
++    state.tasks.find(task => task.taskId === 'T1').autonomousRecovery.strategy = 'diagnose'
++  })
++  const replayA = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assertReceipt(strategyA, 'reserved')
++  assertReceipt(strategyB, 'reserved')
++  assertReceipt(replayA, 'replayed')
++  assert.equal(strategyA.rootProblemId, strategyB.rootProblemId)
++  assert.notEqual(strategyA.requestId, strategyB.requestId)
++  assert.equal(replayA.requestId, strategyA.requestId)
++  const saved = await readState(fixture.root, fixture.workflowId)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 2)
++  assert.equal(saved.recoveryAdmission.sources[0].failureReason, originalFailure)
++})
++
++test('T20 rejects forged request fields and incorrect source binding without creating a recovery account', async t => {
++  const fixture = await createFixture(t)
++  const before = await readState(fixture.root, fixture.workflowId)
++  for (const field of ['strategy', 'rootProblemId', 'requestId', 'attemptId', 'totalLimit', 'problemLimit', 'verified']) {
++    const response = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, {
++      ...ownerRequest(fixture),
++      [field]: field === 'verified' ? true : 'caller-forged',
++    })
++    assertReceipt(response, 'rejected')
++    assert.deepEqual(await readState(fixture.root, fixture.workflowId), before)
++  }
++  const mismatchedAttempt = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, ownerRequest(fixture, {
++    source: { kind: 'owner_failure', attempt: 3, sessionId: 'T1-api-failed-session' },
++  }))
++  const wrongDigest = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, {
++    ...ownerRequest(fixture), planDigest: 'f'.repeat(64),
++  })
++  assertReceipt(mismatchedAttempt, 'rejected')
++  assertReceipt(wrongDigest, 'rejected')
++  assert.deepEqual(await readState(fixture.root, fixture.workflowId), before)
++})
++
++test('T20 rejects a missing strategy and owner-failure records that no longer describe a failed technical task', async t => {
++  const fixture = await createFixture(t)
++  const request = ownerRequest(fixture)
++  const original = await readState(fixture.root, fixture.workflowId)
++  const cases = [
++    state => { delete state.ownerRuns['T1:api'].autonomousRecovery },
++    state => {
++      state.ownerRuns['T1:api'].status = 'completed'
++      state.tasks.find(task => task.taskId === 'T1').status = 'completed'
++      state.tasks.find(task => task.taskId === 'T1').reason = null
++      state.tasks.find(task => task.taskId === 'T1').action = null
++    },
++    state => {
++      state.tasks.find(task => task.taskId === 'T1').status = 'running'
++      state.tasks.find(task => task.taskId === 'T1').reason = null
++      state.tasks.find(task => task.taskId === 'T1').action = null
++    },
++  ]
++  for (const mutate of cases) {
++    const candidate = structuredClone(original)
++    mutate(candidate)
++    await writeState(fixture.root, fixture.workflowId, candidate)
++    const response = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++    assertReceipt(response, 'rejected')
++    assert.deepEqual(await readState(fixture.root, fixture.workflowId), candidate)
++  }
++})
++
++test('T20 admits only a live technical obligation and preserves the user-authority boundary', async t => {
++  const fixture = await createFixture(t)
++  await mutateState(fixture, state => {
++    state.planConvergence = convergenceFor(state.planDigest, technicalObligation(state.planDigest))
++  })
++  const technical = await fixture.runtime.reserveRecoveryAdmission(
++    fixture.agent, fixture.workflowId, obligationRequest(fixture),
++  )
++  assertReceipt(technical, 'reserved')
++  assert.equal((await readState(fixture.root, fixture.workflowId)).recoveryAdmission.budget.totalUsed, 1)
++
++  const userFixture = await createFixture(t, { workflowId: 'wf-recovery-admission-user-obligation' })
++  await mutateState(userFixture, state => {
++    state.planConvergence = convergenceFor(state.planDigest, technicalObligation(state.planDigest, {
++      id: 'user-authority-obligation', authority: 'user',
++    }))
++  })
++  const before = await readState(userFixture.root, userFixture.workflowId)
++  const userAuthority = await userFixture.runtime.reserveRecoveryAdmission(
++    userFixture.agent, userFixture.workflowId, obligationRequest(userFixture, 'user-authority-obligation'),
++  )
++  assertReceipt(userAuthority, 'rejected')
++  assert.deepEqual(await readState(userFixture.root, userFixture.workflowId), before)
++})
++
++test('T20 makes approval, current plan digest, cancellation, malformed state, and absent config hard wrapper gates', async t => {
++  const fixture = await createFixture(t)
++  const request = ownerRequest(fixture)
++  const original = await readState(fixture.root, fixture.workflowId)
++
++  await mutateState(fixture, state => { state.planApproved = false })
++  await assert.rejects(fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request), /审批|通过/u)
++  await writeState(fixture.root, fixture.workflowId, structuredClone(original))
++
++  await mutateState(fixture, state => { state.planReviewDigest = 'f'.repeat(64) })
++  await assert.rejects(fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request), /审批|通过/u)
++  await writeState(fixture.root, fixture.workflowId, structuredClone(original))
++
++  await mutateState(fixture, state => { state.planDigest = 'f'.repeat(64) })
++  await assert.rejects(fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request), /摘要不匹配/u)
++  await writeState(fixture.root, fixture.workflowId, structuredClone(original))
++
++  await mutateState(fixture, state => { state.status = 'cancelled' })
++  await assert.rejects(fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request), /取消/u)
++  await writeState(fixture.root, fixture.workflowId, structuredClone(original))
++
++  await mutateState(fixture, state => { delete state.recoveryAdmissionConfig })
++  const noConfig = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assertReceipt(noConfig, 'rejected')
++  const expectedNoConfig = structuredClone(original)
++  delete expectedNoConfig.recoveryAdmissionConfig
++  assert.deepEqual(await readState(fixture.root, fixture.workflowId), expectedNoConfig)
++
++  await writeFile(statePath(fixture.root, fixture.workflowId), '{', 'utf8')
++  await assert.rejects(fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request))
++})
++
++test('T20 rejects changed limits after accounting begins and never returns a receipt when the first save cannot commit', async t => {
++  const fixture = await createFixture(t)
++  const request = ownerRequest(fixture)
++  const first = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assertReceipt(first, 'reserved')
++  await mutateState(fixture, state => {
++    state.recoveryAdmissionConfig.totalLimit = 4
++    state.ownerRuns['T1:api'].autonomousRecovery.strategy = 'owner_council'
++  })
++  const beforeLimitRejection = await readState(fixture.root, fixture.workflowId)
++  const changedLimits = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assertReceipt(changedLimits, 'rejected')
++  assert.deepEqual(await readState(fixture.root, fixture.workflowId), beforeLimitRejection)
++
++  const saveFixture = await createFixture(t, { workflowId: 'wf-recovery-admission-save-failure' })
++  const workflows = join(saveFixture.root, '.dsh-workflow', 'workflows')
++  const beforeSaveFailure = await readState(saveFixture.root, saveFixture.workflowId)
++  await chmod(workflows, 0o500)
++  try {
++    await assert.rejects(saveFixture.runtime.reserveRecoveryAdmission(
++      saveFixture.agent, saveFixture.workflowId, ownerRequest(saveFixture),
++    ))
++  } finally {
++    await chmod(workflows, 0o700)
++  }
++  assert.deepEqual(await readState(saveFixture.root, saveFixture.workflowId), beforeSaveFailure)
++})
++
++test('T20 cross-process distinct requests consume the final workflow credit once', async t => {
++  const fixture = await createFixture(t, { limits: { totalLimit: 1, problemLimit: 1 } })
++  const [left, right] = await Promise.all([
++    childReserve({ root: fixture.root, workflowId: fixture.workflowId, request: ownerRequest(fixture), agentId: 'child-left' }),
++    childReserve({ root: fixture.root, workflowId: fixture.workflowId, request: ownerRequest(fixture, { taskId: 'T2', ownerId: 'worker' }), agentId: 'child-right' }),
++  ])
++  assert.equal(left.ok, true, left.error?.message)
++  assert.equal(right.ok, true, right.error?.message)
++  assert.equal([left.response.outcome, right.response.outcome].filter(outcome => outcome === 'reserved').length, 1)
++  assert.equal([left.response.outcome, right.response.outcome].filter(outcome => outcome === 'rejected').length, 1)
++  assert.equal((await readState(fixture.root, fixture.workflowId)).recoveryAdmission.budget.totalUsed, 1)
++})
++
++test('T20 cross-process competition for one request yields one receipt identity and one debit', async t => {
++  const fixture = await createFixture(t, { limits: { totalLimit: 1, problemLimit: 1 } })
++  const input = { root: fixture.root, workflowId: fixture.workflowId, request: ownerRequest(fixture) }
++  const [left, right] = await Promise.all([
++    childReserve({ ...input, agentId: 'same-child-left' }),
++    childReserve({ ...input, agentId: 'same-child-right' }),
++  ])
++  assert.equal(left.ok, true, left.error?.message)
++  assert.equal(right.ok, true, right.error?.message)
++  assert.deepEqual(new Set([left.response.outcome, right.response.outcome]), new Set(['reserved', 'replayed']))
++  assert.equal(left.response.requestId, right.response.requestId)
++  assert.equal(left.response.attemptId, right.response.attemptId)
++  assert.deepEqual(left.response.executionIdentity, right.response.executionIdentity)
++  assert.equal((await readState(fixture.root, fixture.workflowId)).recoveryAdmission.budget.totalUsed, 1)
++})
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md
+@@ -0,0 +1,102 @@
++# 恢复来源接纳与预留 V1
++
++实现：[recovery-admission.mjs](../../../../owner-workflow-plugin/src/recovery-admission.mjs)。本合同实现 T-20 的纯状态部分：它准备一份需要由 Runtime 在 `saveState(..., prepareState)` 的锁内当前快照中保存的领取结果。它不创建会话、不提交 prompt、不启动 Owner，也不会声明任何外部会话 API 已验证。
++
++## 调用
++
++`prepareRecoveryAdmission(state, request)` 返回 `{ state, response }`，从不修改传入的 `state` 或 `request`。调用方只能在成功保存返回的 `state` 后把 `response` 交给外部调用者；保存失败、CAS/锁冲突或 Runtime 基础门禁失败都不能把收据当成可启动授权。
++
++请求必须恰好为：
++
++```js
++{
++  contract: 'DSH_RECOVERY_ADMISSION_REQUEST_V1',
++  planDigest: 'current-plan-digest',
++  taskId: 'plan-task-id',
++  ownerId: 'plan-owner-id',
++  source: { kind: 'owner_failure', attempt: 1, sessionId: 'persisted-session-id' }
++  // 或 { kind: 'owner_failure', attempt: 1, sessionId: null }
++  // 或 { kind: 'obligation', id: 'current-open-obligation-id' }
++}
++```
++
++`sessionId:null` 只用于实际尚未绑定 session 的失败记录，`attempt` 必须为正安全整数。调用者不能提供根问题、request/attempt ID、strategy、额度或 `verified` 布尔值。
++
++成功结果为：
++
++```js
++{
++  contract: 'DSH_RECOVERY_ADMISSION_V1',
++  outcome: 'reserved' | 'replayed',
++  rootProblemId: '…',
++  requestId: '…',
++  attemptId: '…',
++  executionIdentity: { sessionId: '…', promptId: '…' },
++  launchAuthorized: false,
++}
++```
++
++`executionIdentity` 是与领取同时保存的随机占位身份。它不是 `recovery-budget` 的 `executionRef`，也不表示 session 或 prompt 已存在。
++
++任何拒绝只返回：
++
++```js
++{
++  contract: 'DSH_RECOVERY_ADMISSION_V1',
++  outcome: 'rejected',
++  reason: 'stable_machine_reason',
++  launchAuthorized: false,
++}
++```
++
++拒绝没有根问题、request、attempt、session 或 prompt 凭据，且返回的 state 是输入的深复制，未新增领取或扣减。
++
++## 显式配置和持久状态
++
++状态必须已有不可迁移的配置：
++
++```js
++state.recoveryAdmissionConfig = {
++  contract: 'DSH_RECOVERY_ADMISSION_CONFIG_V1',
++  executionVersion: state.planDigest,
++  totalLimit: 3,
++  problemLimit: 2,
++}
++```
++
++四个字段均为精确字段；额度都是正安全整数。缺失配置、错误版本、`executionVersion` 与当前计划不符，或已经领取后任何额度/执行版本改变都会被拒绝。该接口不设置生产默认值，也不迁移旧状态；跨版本继承属于 T-18。
++
++首次成功领取创建以下严格导入结构：
++
++```js
++state.recoveryAdmission = {
++  contract: 'DSH_RECOVERY_ADMISSION_STATE_V1',
++  workflowId: state.id,
++  executionVersion: state.planDigest,
++  totalLimit: state.recoveryAdmissionConfig.totalLimit,
++  problemLimit: state.recoveryAdmissionConfig.problemLimit,
++  sources: [/* immutable owner_failure 或 obligation 实际绑定 */],
++  intents: [/* source + strategy -> request/attempt/reservation */],
++  budget: {/* DSH_RECOVERY_BUDGET_V1 */},
++}
++```
++
++`sources` 使用从实际失败绑定或结构化义务合同计算出的稳定 source ID，不含错误文案摘要。首次失败还会保存不可变的原始 `failureReason` 元数据，供后续 Owner run 记录被覆写后追溯；它不参与 source ID 或根问题身份。`intents` 把同一 source 和当前持久 strategy 绑定到唯一根问题、request、attempt 和占位执行身份。导入时模块严格检查版本、未知字段、重复 ID、T-13 账本计数、source/root/attempt 映射、执行版本及预留身份唯一性；因此局部关联或额度改写会被拒绝。它不能单独证明攻击者整体替换了一份内部一致的协调状态快照，这属于 Runtime 持久边界和锁/CAS 证据的责任。
++
++## 来源与重放
++
++`owner_failure` 必须匹配当前 `plan.tasks` 的 task/Owner、非完成的实际 task state（`stopped` 或待恢复的 `pending`）和 `ownerRuns[taskId:ownerId]` 的 `ownerId`、`stageId`、`planDigest`、attempt、session。记录只能是 `failed`，或不等待用户决定的技术性 `blocked`，并且必须持久保存非空 `error` 或 `reason`。运行中的记录、用户等待、`request_user_authority`、`autonomous_incident` 和未知 strategy 都不能领取。
++
++`obligation` 从当前 `planConvergence.obligations` 读取，要求它 open、目标和 `closeWhen.taskId` 都指向当前 task，且最后一条 `history` 事件的 `candidatePlanDigest` 等于当前 `state.planDigest`。冲突义务、已关闭义务以及需要用户授权的依据都被排除。不同模型义务 ID 若具有相同物理 target/`closeWhen`，会保守拒绝，不会创建第二个根问题。
++
++失败来源的 strategy 只能读取该 `ownerRuns` 的有效持久自动恢复记录；义务来源只能读取当前、candidate digest 已核验的收敛记录 `nextStrategy`。它可以是已知的自治或执行修复策略（包括 `repair_runtime`、`same_owner_repair`），调用者不能选择它。
++
++相同 source + strategy 重放会复用完整的 request、attempt 和预留身份，即使来自不同 Runtime。策略从 A 切到 B 可在同一 root 建立一份新的领取；再回到 A 会重放原 A 的请求。对尚未关闭的同 task/Owner root，未能精确追溯到已登记来源的新的失败绑定会以 `continuation_unbound` 拒绝，而不是根据 task、Owner、模型 ID 或错误文案猜测新根问题。
++
++当前仅实现相同实际失败绑定（同 attempt/session）的重放和换 strategy 后的同 source 领取。它还没有一个已核验的“下一次真实 Owner 失败由哪一份已登记 recovery attempt 派生”的持久引用：因此，后续失败即使 T-13 的前一 attempt 已结算，只要同 task/Owner root 仍 open，也会被 `continuation_unbound` 拒绝，不能接回该 root。T-22 需要补充该消费/对账合同，令 Runtime 的当前 `ownerRun` 持有并核验指向已登记 recovery attempt 的持久引用，覆盖 source、task、Owner、plan、预留执行身份和终态后，才能安全地在同 root 派生新意图。该合同尚未确定或实现；本限制意味着 T-20 不能据此标记为开发完成。
++
++## T-13 和后续边界
++
++接纳器只调用 `registerRecoveryProblem` 和 `reserveRecoveryAttempt`。新领取在一个纯状态结果中同时登记 source/root、生成意图和占位身份，并使 `DSH_RECOVERY_BUDGET_V1` 的问题及 workflow `used` 一起增加。重放不重复扣减；问题或 workflow 额度耗尽、已关闭根问题都返回拒绝而不改状态。
++
++T-21/T-22 负责把预留身份与真实 session/prompt 回执对账，调用 `startRecoveryAttempt` / `settleRecoveryAttempt`，以及处理不确定状态。本合同中的 `launchAuthorized:false` 在那些实现和真实持久后端证据完成前始终保持为 false。
+--- /dev/null
++++ owner-workflow-plugin/test/fixtures/recovery-admission-worker.mjs
+@@ -0,0 +1,45 @@
++import { createOwnerWorkflowRuntime } from '../../src/runtime.mjs'
++
++function serializeError(error) {
++  return {
++    name: error?.name ?? 'Error',
++    message: error?.message ?? String(error),
++    code: error?.code,
++  }
++}
++
++async function reserve(input) {
++  const runtime = createOwnerWorkflowRuntime({ agents: { get: () => undefined } }, {})
++  const agent = {
++    id: input.agentId ?? 'recovery-admission-child',
++    session: {
++      id: input.sessionId ?? 'recovery-admission-child-session',
++      header: { cwd: input.root },
++    },
++  }
++  const deadline = Date.now() + (input.timeoutMs ?? 2_500)
++  let lastError
++  do {
++    try {
++      return { ok: true, response: await runtime.reserveRecoveryAdmission(agent, input.workflowId, input.request) }
++    } catch (error) {
++      lastError = error
++      // Independent Harness processes may meet the state CAS/lease boundary.
++      // Retrying the same immutable request proves the persisted idempotency rule.
++      if (!/状态正在由另一个 Harness 临界区更新|状态已被其他 Harness 更新/u.test(String(error?.message ?? ''))) break
++      await new Promise(resolve => setTimeout(resolve, 20))
++    }
++  } while (Date.now() < deadline)
++  return { ok: false, error: serializeError(lastError) }
++}
++
++process.on('message', async input => {
++  try {
++    const result = await reserve(input)
++    process.send?.(result)
++  } catch (error) {
++    process.send?.({ ok: false, error: serializeError(error) })
++  } finally {
++    process.disconnect?.()
++  }
++})

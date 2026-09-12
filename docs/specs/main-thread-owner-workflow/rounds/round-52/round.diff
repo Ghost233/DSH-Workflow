@@ -1,0 +1,308 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -155,6 +155,7 @@
+ } from './workflow-conversation.mjs'
+ import {
+   deriveWorkflowControl,
++  technicalPauseSource,
+   planReviewNeedsAutonomousWork as autonomouslyRevisionablePlanReview,
+   workflowTaskCounts as workflowExecutionCounts,
+ } from './workflow-state.mjs'
+@@ -4505,6 +4506,7 @@
+   return {
+     id: state.id,
+     revision: supervisorReceiptRevision(state),
++    recoveryProtected: recoveryAdmissionEnabled(state),
+     plan: normalizePlanV2(state.plan),
+     tasks: state.tasks.map(task => task.status === 'pending' && pendingSupervisorRecovery(state, task.taskId)
+       ? { ...task, status: 'running' } : task),
+@@ -4607,7 +4609,9 @@
+ }
+
+ function mainOutboxNotification(state, receipt) {
+-  const stopped = (state.tasks ?? []).filter(task => task.reason === 'decision_required')
++  const technical = receipt.reason === 'technical_pause'
++  const stopped = (state.tasks ?? []).filter(task => technical ? task.status === 'stopped' : task.reason === 'decision_required'
++    || (recoveryAdmissionEnabled(state) && task.reason === 'input_missing'))
+   const taskDetails = stopped.map(record => {
+     const task = state.plan.tasks.find(item => item.id === record.taskId)
+     return {
+@@ -4619,13 +4623,15 @@
+     }
+   })
+   const notificationId = `mo-${createHash('sha256')
+-    .update(`${state.id}:${receipt.actionId}`)
++    .update(`${state.id}:${technical ? technicalPauseSource(state) : receipt.actionId}`)
+     .digest('hex')
+     .slice(0, 24)}`
+   return {
+     notificationId,
+     kind: 'main',
+-    reason: receipt.notification?.reason ?? 'decision_required',
++    reason: technical ? 'technical_pause' : receipt.notification?.reason ?? 'decision_required',
++    ...(technical ? { actionRequired: false, blockedTaskIds: receipt.blockedTaskIds,
++      summary: '技术恢复暂停；保留失败来源与预算，等待技术状态变化，不需要产品决定。' } : {}),
+     workflowId: state.id,
+     revision: state.revision,
+     planDigest: state.planDigest,
+@@ -12729,12 +12735,19 @@
+           state.config = { ...(state.config ?? {}), parallel: reduced.config.parallel }
+           state.supervisorRevision = Number(state.supervisorRevision ?? 0) + 1
+           state.status = state.tasks.every(task => task.status === 'completed') ? 'completed' : 'blocked'
++          let technicalNotification
++          if (receipt.reason === 'technical_pause') {
++            technicalNotification = queueMainOutbox(state, receipt)
++            state.technicalPause = { source: technicalPauseSource(state),
++              notificationId: technicalNotification.notificationId, blockedTaskIds: receipt.blockedTaskIds }
++          }
+           appendSupervisorEvent(state, 'supervisor.stopped', { status: state.status })
+           const saved = await saveState(runtime, state)
+           return {
+             action: receipt.action,
+             actionId: receipt.actionId,
+             status: saved.status,
++            ...(technicalNotification === undefined ? {} : { technicalNotificationId: technicalNotification.notificationId }),
+             eventCursor: supervisorEventCursor(saved),
+           }
+         })
+--- owner-workflow-plugin/src/supervisor.mjs (baseline)
++++ owner-workflow-plugin/src/supervisor.mjs
+@@ -211,6 +211,7 @@
+   return {
+     workflowId,
+     revision,
++    recoveryProtected: state.recoveryProtected === true,
+     plan,
+     tasks,
+     parallel,
+@@ -318,7 +319,8 @@
+   })
+   if (slots > 0 && ready.length > 0) return receipt(state, 'create', { tasks: ready.slice(0, slots).map(taskPayload) })
+   if (active.length > 0) return receipt(state, 'wait', { watches: active.map(watchPayload) })
+-  if (state.tasks.some(task => task.status === 'stopped' && task.reason === 'decision_required')) {
++  if (state.tasks.some(task => task.status === 'stopped' && (task.reason === 'decision_required'
++    || (state.recoveryProtected && task.reason === 'input_missing')))) {
+     return receipt(state, 'notify', { notification: { kind: 'main', reason: 'decision_required' } })
+   }
+   if (state.tasks.some(task => task.checkState === 'pending_check')
+@@ -326,6 +328,11 @@
+     // Owner 结算与 reservation 完成之间存在一个很短的持久化窗口；保持 wait，
+     // 让 Runtime 完成 Revision 失效传播，不能提前把 Workflow 停成 completed。
+     return receipt(state, 'wait', { watches: [] })
++  }
++  if (state.recoveryProtected && state.tasks.some(task => task.status === 'stopped'
++    && task.action !== 'await_user')) {
++    return receipt(state, 'stop', { reason: 'technical_pause',
++      blockedTaskIds: state.tasks.filter(task => task.status !== 'completed').map(task => task.taskId) })
+   }
+   if (state.tasks.every(task => task.status === 'completed' || task.status === 'stopped')) return receipt(state, 'stop')
+   return receipt(state, 'notify', { notification: { kind: 'main', reason: 'decision_required' } })
+--- owner-workflow-plugin/src/workflow-state.mjs (baseline)
++++ owner-workflow-plugin/src/workflow-state.mjs
+@@ -1,3 +1,5 @@
++import { supervisorNext } from './supervisor.mjs'
++import { recoveryAdmissionEnabled, assertRecoveryAdmissionState } from './recovery-admission.mjs'
+ import {
+   AUTONOMOUS_STRATEGIES,
+   CONVERGENCE_CONTRACT,
+@@ -80,7 +82,7 @@
+       continue
+     }
+     if (record.status === 'stopped') {
+-      counts.waitingDecisionTasks += 1
++      if (!recoveryAdmissionEnabled(state) || ['await_user', 'provide_input'].includes(record.action)) counts.waitingDecisionTasks += 1
+       continue
+     }
+     if (record.status === 'running') {
+@@ -150,6 +152,16 @@
+   })
+ }
+
++export function technicalPauseSource(state) {
++  return JSON.stringify({ planDigest: state.planDigest,
++    tasks: (state.tasks ?? []).map(task => [task.taskId, task.status, task.reason, task.action,
++      task.checkState, task.autonomousRecovery?.strategy]),
++    owners: Object.entries(state.ownerRuns ?? {}).sort(([a], [b]) => a.localeCompare(b))
++      .map(([key, record]) => [key, record.status, record.attempt, record.sessionId,
++        record.recoverySession?.phase, record.executionDeviation]),
++  })
++}
++
+ function hasAutonomousIncident(state) {
+   return convergenceStrategy(state) === 'autonomous_incident'
+     || (state?.tasks ?? []).some(task => (
+@@ -196,6 +208,43 @@
+   if (state.status === 'stopped') return terminal(state, counts, 'stopped', 'Workflow 已明确停止')
+   if (state.autonomousIncident?.kind === 'state_machine_invariant') {
+     return wait(state, counts, 'state_invariant_violation', '状态不变量现场已持久化，等待新版本 Runtime 重新解释')
++  }
++
++  // Protected technical stops are scheduler facts, not product decisions.
++  // Let the same scheduler select independent work or settle a technical pause.
++  if (recoveryAdmissionEnabled(state) && ['running', 'blocked'].includes(state.status)
++    && state.planApproved === true && state.planReview?.status === 'passed'
++    && state.pendingPlanRevision === undefined && state.intentPlanRevisionCycle === undefined
++    && state.pendingTaskMerge === undefined && !state.cleanupPending
++    && !hasPendingHandoff(state) && !NON_AUTONOMOUS_STRATEGIES.has(convergenceStrategy(state))) {
++    try {
++      assertRecoveryAdmissionState(state)
++      const source = technicalPauseSource(state)
++      if (state.technicalPause?.source === source) {
++        const notification = state.mainOutbox?.[state.technicalPause.notificationId]
++        if (notification?.reason !== 'technical_pause') return invariant(state, counts, '技术暂停缺少对应报告')
++        if (notification?.status === 'pending') {
++          return command(state, counts, 'technical_report_pending', '投递已持久化的技术暂停报告', 'execute')
++        }
++        return wait(state, counts, 'technical_pause', '技术恢复已暂停，保留来源与预算等待状态变化')
++      }
++      const incidents = (state.tasks ?? []).filter(task => task.autonomousRecovery?.strategy === 'autonomous_incident')
++      const persistedIncidents = incidents.every(task => {
++        const plan = state.plan.tasks.find(item => item.id === task.taskId)
++        const record = state.ownerRuns?.[`${task.taskId}:${plan?.ownerId}`]
++        return ['failed', 'blocked'].includes(record?.status)
++          && record.autonomousRecovery?.strategy === 'autonomous_incident'
++      })
++      if (incidents.length === 0 || persistedIncidents) {
++        const receipt = supervisorNext({ ...state, recoveryProtected: true })
++        if (receipt.reason === 'technical_pause' || incidents.length > 0) {
++          return command(state, counts, receipt.reason === 'technical_pause' ? 'technical_pause_pending' : runningPhase(counts),
++            '按当前依赖与Owner状态推进独立任务或报告技术暂停', 'execute')
++        }
++      }
++    } catch (error) {
++      return invariant(state, counts, `恢复控制状态无效：${error.message}`)
++    }
+   }
+
+   if (hasAutonomousIncident(state)) {
+--- owner-workflow-plugin/src/external-runner.mjs (baseline)
++++ owner-workflow-plugin/src/external-runner.mjs
+@@ -1173,6 +1173,9 @@
+         { actionId },
+         options.timeoutMs,
+       )
++      if (stopped?.technicalNotificationId !== undefined && !await deliverPendingNotification()) {
++        throw new Error('技术暂停缺少可投递的主会话报告')
++      }
+       process.stdout.write(`工作流 ${options.workflowId} 停止，状态：${stopped?.status ?? 'stopped'}\n`)
+       return
+     }
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -1,3 +1,5 @@
++import { createHash } from 'node:crypto'
++import { deriveWorkflowControl } from '../src/workflow-state.mjs'
+ import assert from 'node:assert/strict'
+ import test from 'node:test'
+ import {
+@@ -710,7 +712,7 @@
+   })
+   const calls = observe(f)
+   for (let i = 0; i < 2; i++) {
+-    const probe = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'convergence-probe')
++    const probe = await f.runtime.probeAutonomousConvergence(f.admissionAgent, f.workflowId)
+     assert.equal(probe.resumed, false)
+     assert.deepEqual(await readRecoverySessionState(f), before)
+   }
+@@ -745,3 +747,65 @@
+     assert.equal(f.adapter.requests.length, 4)
+   })
+ }
++
++for (const dependent of [false, true]) {
++  test(`T15 technical stop reports without user decision and waits after delivery (dependent=${dependent})`, async t => {
++    const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true,
++      limits: { totalLimit: 1, problemLimit: 1 },
++      modelScript: m => [...failedModel(m), ...completedModel(m)] })
++    if (dependent) await mutateRecoverySessionState(f, s => {
++      s.plan.tasks[1].dependsOn = ['T1']
++      s.planDigest = createHash('sha256').update(JSON.stringify(s.plan)).digest('hex')
++      s.planReview.planDigest = s.planDigest
++      s.planReviewDigest = s.planDigest
++      s.recoveryAdmissionConfig.executionVersion = s.planDigest
++      s.ownerRuns['T1:api'].planDigest = s.planDigest
++    })
++    await executeNextSupervisorTask(f, 'T1')
++    await executeNextSupervisorTask(f, 'T1') // Actual one-credit failure then quota refusal.
++    if (!dependent) await executeNextSupervisorTask(f, 'T2')
++    const before = await readRecoverySessionState(f)
++    assert.equal(before.recoveryAdmission.budget.totalUsed, 1)
++    assert.equal(deriveWorkflowControl(before).counts.waitingDecisionTasks, 0)
++    const next = await supervisorControl(f, 'supervisor-next')
++    assert.equal(next.action, 'stop')
++    assert.equal(next.reason, 'technical_pause')
++    assert.deepEqual(next.blockedTaskIds, dependent ? ['T1', 'T2'] : ['T1'])
++    const stopped = await supervisorControl(f, 'supervisor-stop', { actionId: next.actionId })
++    let state = await readRecoverySessionState(f)
++    const report = state.mainOutbox[stopped.technicalNotificationId]
++    assert.equal(report.reason, 'technical_pause')
++    assert.equal(report.actionRequired, false)
++    assert.deepEqual(report.blockedTaskIds, next.blockedTaskIds)
++    assert.equal(deriveWorkflowControl(state).phase, 'technical_report_pending')
++    await supervisorControl(f, 'supervisor-outbox-ack', { notificationId: report.notificationId })
++    state = await readRecoverySessionState(f)
++    assert.equal(deriveWorkflowControl(state).phase, 'technical_pause')
++    assert.equal(deriveWorkflowControl(state).command, null)
++    assert.equal(deriveWorkflowControl(state).actionRequired, false)
++    const result = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId)
++    assert.equal(result.action, 'waiting')
++    assert.deepEqual(await readRecoverySessionState(f), state)
++    assert.deepEqual(state.ownerRuns, before.ownerRuns)
++    assert.deepEqual(state.recoveryAdmission, before.recoveryAdmission)
++    assert.equal(f.adapter.requests.length, dependent ? 2 : 6)
++    // Source changes invalidate the wait; no persistent marker hides new work.
++    const changed = structuredClone(state)
++    changed.tasks[0].status = 'pending'
++    changed.tasks[0].reason = null
++    changed.tasks[0].action = null
++    assert.notEqual(deriveWorkflowControl(changed).phase, 'technical_pause')
++  })
++}
++
++test('T15 technical pause classification preserves explicit missing user input', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  const state = await mutateRecoverySessionState(f, s => {
++    Object.assign(s.tasks[0], { status: 'stopped', reason: 'input_missing', action: 'provide_input' })
++  })
++  const next = await supervisorControl(f, 'supervisor-next')
++  assert.equal(next.action, 'notify')
++  assert.equal(next.notification.reason, 'decision_required')
++  assert.equal(deriveWorkflowControl(state).counts.waitingDecisionTasks, 1)
++  assert.equal(f.adapter.requests.length, 0)
++})
+--- owner-workflow-plugin/test/runner.test.mjs (baseline)
++++ owner-workflow-plugin/test/runner.test.mjs
+@@ -364,7 +364,7 @@
+   assert.equal(attempts.every(attempt => attempt.fenceGeneration === 1), true)
+ })
+
+-async function runRunnerAgainst(receipts, { inspectObservation, expectFailure = false } = {}) {
++async function runRunnerAgainst(receipts, { inspectObservation, expectFailure = false, technicalStop = false } = {}) {
+   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-runner-'))
+   const workflowId = 'wf-runner-test'
+   const socketPath = join('/tmp', `dsh-owner-runner-${randomUUID()}.sock`)
+@@ -421,7 +421,10 @@
+         } else if (request.action === 'supervisor-outbox-deliver') {
+           result = { notificationId: request.notificationId, status: 'delivered', eventCursor: 0 }
+         } else if (request.action === 'supervisor-stop') {
+-          result = { actionId: request.actionId, status: 'completed' }
++          if (technicalStop) notification = { notificationId: 'technical-1', kind: 'main',
++            reason: 'technical_pause', actionRequired: false, status: 'pending' }
++          result = { actionId: request.actionId, status: technicalStop ? 'blocked' : 'completed',
++            ...(technicalStop ? { technicalNotificationId: notification.notificationId } : {}) }
+         } else {
+           result = { error: `runner 不得发送控制动作：${request.action}` }
+         }
+@@ -552,3 +555,12 @@
+   assert.deepEqual(requests.map(item => item.action), ['supervisor-start', 'supervisor-recover', 'supervisor-next'])
+   assert.match(execution.stderr, /未知 Supervisor 动作：launch/u)
+ })
++
++test('runner delivers the durable technical report before exiting a technical stop', async () => {
++  const { requests } = await runRunnerAgainst([{ action: 'stop', actionId: 'technical-stop' }], { technicalStop: true })
++  assert.deepEqual(requests.map(item => item.action), [
++    'supervisor-start', 'supervisor-recover', 'supervisor-next', 'supervisor-stop',
++    'supervisor-outbox-next', 'supervisor-outbox-deliver',
++  ])
++  assert.equal(requests.at(-1).notificationId, 'technical-1')
++})

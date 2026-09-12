@@ -1,0 +1,310 @@
+TAP version 13
+# Subtest: T07 real document checkpoint restores existing clean-base preflight and replays one commit
+not ok 1 - T07 real document checkpoint restores existing clean-base preflight and replays one commit
+  ---
+  duration_ms: 902.355125
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:53:1'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: UNRELATED_WORKTREE_REFUSED at worktree (.dsh-workflow/.gitignore)'
+  code: 'PLANNING_TRANSACTION_UNRELATED_WORKTREE_REFUSED'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    assertWorkspaceBoundary (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:323:25)
+    runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:722:7)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:59:18)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+# Subtest: T07 SIGKILL before-commit resumes in a new process without a second commit
+not ok 2 - T07 SIGKILL before-commit resumes in a new process without a second commit
+  ---
+  duration_ms: 4788.060334
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: PERSISTED_VALUE_MISMATCH at /private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-WofoOi/.git/planning-transaction-proof/activation.json'
+  code: 'PLANNING_TRANSACTION_PERSISTED_VALUE_MISMATCH'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    writeJsonOnce (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:170:33)
+    async readProofState (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:775:17)
+    async verifyCompleted (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:47:17)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:78:21)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 SIGKILL after-commit resumes in a new process without a second commit
+not ok 3 - T07 SIGKILL after-commit resumes in a new process without a second commit
+  ---
+  duration_ms: 5065.041875
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: PERSISTED_VALUE_MISMATCH at /private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-iwl9rY/.git/planning-transaction-proof/activation.json'
+  code: 'PLANNING_TRANSACTION_PERSISTED_VALUE_MISMATCH'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    writeJsonOnce (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:170:33)
+    async readProofState (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:775:17)
+    async verifyCompleted (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:47:17)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:78:21)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 SIGKILL before-snapshot resumes in a new process without a second commit
+not ok 4 - T07 SIGKILL before-snapshot resumes in a new process without a second commit
+  ---
+  duration_ms: 5918.820334
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: PERSISTED_VALUE_MISMATCH at /private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-QminFi/.git/planning-transaction-proof/activation.json'
+  code: 'PLANNING_TRANSACTION_PERSISTED_VALUE_MISMATCH'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    writeJsonOnce (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:170:33)
+    async readProofState (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:775:17)
+    async verifyCompleted (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:47:17)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:78:21)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 SIGKILL after-snapshot resumes in a new process without a second commit
+not ok 5 - T07 SIGKILL after-snapshot resumes in a new process without a second commit
+  ---
+  duration_ms: 4980.290291
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: PERSISTED_VALUE_MISMATCH at /private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-YfPPaf/.git/planning-transaction-proof/activation.json'
+  code: 'PLANNING_TRANSACTION_PERSISTED_VALUE_MISMATCH'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    writeJsonOnce (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:170:33)
+    async readProofState (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:775:17)
+    async verifyCompleted (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:47:17)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:78:21)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 SIGKILL before-activation resumes in a new process without a second commit
+not ok 6 - T07 SIGKILL before-activation resumes in a new process without a second commit
+  ---
+  duration_ms: 5180.968917
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: PERSISTED_VALUE_MISMATCH at /private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-bEX6AL/.git/planning-transaction-proof/activation.json'
+  code: 'PLANNING_TRANSACTION_PERSISTED_VALUE_MISMATCH'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    writeJsonOnce (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:170:33)
+    async readProofState (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:775:17)
+    async verifyCompleted (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:47:17)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:78:21)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 SIGKILL after-activation resumes in a new process without a second commit
+not ok 7 - T07 SIGKILL after-activation resumes in a new process without a second commit
+  ---
+  duration_ms: 3915.821958
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: PERSISTED_VALUE_MISMATCH at /private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-wnK8U9/.git/planning-transaction-proof/activation.json'
+  code: 'PLANNING_TRANSACTION_PERSISTED_VALUE_MISMATCH'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    writeJsonOnce (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:170:33)
+    async readProofState (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:775:17)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:74:56)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 staged-code is rejected without changing real HEAD/index/worktree
+ok 8 - T07 staged-code is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1311.6465
+  type: 'test'
+  ...
+# Subtest: T07 staged-document is rejected without changing real HEAD/index/worktree
+ok 9 - T07 staged-document is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1334.847416
+  type: 'test'
+  ...
+# Subtest: T07 untracked-code is rejected without changing real HEAD/index/worktree
+ok 10 - T07 untracked-code is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1383.27675
+  type: 'test'
+  ...
+# Subtest: T07 modified-code is rejected without changing real HEAD/index/worktree
+ok 11 - T07 modified-code is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1373.103708
+  type: 'test'
+  ...
+# Subtest: T07 same-file-edit is rejected without changing real HEAD/index/worktree
+ok 12 - T07 same-file-edit is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1418.274875
+  type: 'test'
+  ...
+# Subtest: T07 wrong-head is rejected without changing real HEAD/index/worktree
+ok 13 - T07 wrong-head is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1440.526
+  type: 'test'
+  ...
+# Subtest: T07 wrong-branch is rejected without changing real HEAD/index/worktree
+ok 14 - T07 wrong-branch is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1480.17425
+  type: 'test'
+  ...
+# Subtest: T07 missing-source is rejected without changing real HEAD/index/worktree
+ok 15 - T07 missing-source is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1627.070792
+  type: 'test'
+  ...
+# Subtest: T07 wrong-authority is rejected without changing real HEAD/index/worktree
+ok 16 - T07 wrong-authority is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1132.728917
+  type: 'test'
+  ...
+# Subtest: T07 legacy-authority is rejected without changing real HEAD/index/worktree
+ok 17 - T07 legacy-authority is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 805.341791
+  type: 'test'
+  ...
+# Subtest: T07 concurrent same-parent processes leave one complete activation and one checkpoint
+not ok 18 - T07 concurrent same-parent processes leave one complete activation and one checkpoint
+  ---
+  duration_ms: 3348.840417
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:102:1'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: PERSISTED_VALUE_MISMATCH at /private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-oJed6Y/.git/planning-transaction-proof/activation.json'
+  code: 'PLANNING_TRANSACTION_PERSISTED_VALUE_MISMATCH'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    writeJsonOnce (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:170:33)
+    async readProofState (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:775:17)
+    async verifyCompleted (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:47:17)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:110:82)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 late version receipts remain history-only and cannot change active snapshot
+not ok 19 - T07 late version receipts remain history-only and cannot change active snapshot
+  ---
+  duration_ms: 2262.338041
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:113:1'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: PERSISTED_VALUE_MISMATCH at /private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-rbbvkH/.git/planning-transaction-proof/activation.json'
+  code: 'PLANNING_TRANSACTION_PERSISTED_VALUE_MISMATCH'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    writeJsonOnce (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:170:33)
+    async readProofState (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:775:17)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:114:70)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 user edits at before-commit are preserved and prevent activation
+ok 20 - T07 user edits at before-commit are preserved and prevent activation
+  ---
+  duration_ms: 1011.639458
+  type: 'test'
+  ...
+# Subtest: T07 user edits at after-commit are preserved and prevent activation
+ok 21 - T07 user edits at after-commit are preserved and prevent activation
+  ---
+  duration_ms: 1215.561334
+  type: 'test'
+  ...
+# Subtest: T07 staging after ref advancement is blocked by the index lock or preserved on rejection
+ok 22 - T07 staging after ref advancement is blocked by the index lock or preserved on rejection
+  ---
+  duration_ms: 1333.886125
+  type: 'test'
+  ...
+# Subtest: T07 unknown external index lock is preserved
+ok 23 - T07 unknown external index lock is preserved
+  ---
+  duration_ms: 903.499708
+  type: 'test'
+  ...
+# Subtest: T07 invalid review cannot activate or commit
+ok 24 - T07 invalid review cannot activate or commit
+  ---
+  duration_ms: 588.036417
+  type: 'test'
+  ...
+# Subtest: T07 invalid approval cannot activate or commit
+ok 25 - T07 invalid approval cannot activate or commit
+  ---
+  duration_ms: 668.343292
+  type: 'test'
+  ...
+# Subtest: T07 invalid allowed-paths cannot activate or commit
+ok 26 - T07 invalid allowed-paths cannot activate or commit
+  ---
+  duration_ms: 853.102708
+  type: 'test'
+  ...
+# Subtest: T07 invalid activation-parent cannot activate or commit
+ok 27 - T07 invalid activation-parent cannot activate or commit
+  ---
+  duration_ms: 1020.927667
+  type: 'test'
+  ...
+# Subtest: T07 legacy persisted activation state is not silently migrated or granted new authority
+ok 28 - T07 legacy persisted activation state is not silently migrated or granted new authority
+  ---
+  duration_ms: 1519.305833
+  type: 'test'
+  ...
+# Subtest: T07 a recorded write from a different prior document state cannot claim the expected Git baseline
+ok 29 - T07 a recorded write from a different prior document state cannot claim the expected Git baseline
+  ---
+  duration_ms: 1535.323083
+  type: 'test'
+  ...
+# Subtest: T07 corrupted persisted snapshot is rejected during before-activation
+ok 30 - T07 corrupted persisted snapshot is rejected during before-activation
+  ---
+  duration_ms: 5230.070583
+  type: 'test'
+  ...
+# Subtest: T07 corrupted persisted snapshot is rejected during completed-replay
+ok 31 - T07 corrupted persisted snapshot is rejected during completed-replay
+  ---
+  duration_ms: 4013.606875
+  type: 'test'
+  ...
+1..31
+# tests 31
+# suites 0
+# pass 22
+# fail 9
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 69673.001417

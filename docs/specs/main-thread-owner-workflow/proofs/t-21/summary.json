@@ -1,0 +1,11 @@
+{
+  "sessionGroups": 2,
+  "sessionPassed": 2,
+  "promptScenarios": 4,
+  "promptObservationsChecked": 4,
+  "errors": [],
+  "childProcesses": 12,
+  "sigkillCount": 6,
+  "childStderrNonempty": 0,
+  "productionAcceptancePassed": false
+}

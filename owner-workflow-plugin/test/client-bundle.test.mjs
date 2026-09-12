@@ -84,7 +84,7 @@ test('运行状态同时登记会话头部、工作区、侧边栏和全屏待�
   ])
 })
 
-test('运行状态只通过可重连 SSE 接收更新，总入口按工作区和会话分组且不显示刷新按钮', async () => {
+test('运行状态只通过可重连 SSE 接收更新，并按当前工作区和当前会话过滤', async () => {
   const source = await readFile(CLIENT_BUNDLE, 'utf8')
   assert.match(source, /\/owner-workflow\/api\/waits\/events/u)
   assert.match(source, /new EventSource/u)
@@ -92,6 +92,13 @@ test('运行状态只通过可重连 SSE 接收更新，总入口按工作区和
   assert.match(source, /实时连接已断开，正在重连/u)
   assert.match(source, /dsh-owner-wait-workspace-group/u)
   assert.match(source, /sidebar\.workspace\.action/u)
+  assert.match(source, /currentSessionContext/u)
+  assert.match(source, /sessions\.current/u)
+  assert.match(source, /waitBelongsToCurrentContext/u)
+  assert.match(source, /currentStatusWorkspaces/u)
+  assert.match(source, /archivedSessionIds/u)
+  assert.match(source, /TERMINAL_LIFECYCLES/u)
+  assert.doesNotMatch(source, /groupWaitsByWorkspace/u)
   assert.doesNotMatch(source, /WAIT_ENDPOINT/u)
   assert.doesNotMatch(source, /refreshWaits/u)
   assert.doesNotMatch(source, /dsh-owner-wait-refresh/u)

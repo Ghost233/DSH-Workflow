@@ -1,0 +1,98 @@
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs
+@@ -323,8 +323,35 @@
+   }
+ }
+
++async function competeReserved(input) {
++  const fixture = await reopenRecoverySessionFixture({
++    root: input.root, workflowId: input.workflowId,
++    executable: true, modelScript: failedOwnerModelScript,
++  })
++  try {
++    const operations = observeAgentOperations(fixture)
++    const go = new Promise(resolve => process.once('message', resolve))
++    await send({ type: 'ready', pid: process.pid })
++    const release = await go
++    if (release?.type !== 'go') throw new Error('competition barrier requires go')
++    let result
++    let errorName
++    try {
++      result = await fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, input.request)
++    } catch (error) {
++      if (error.name !== 'OwnerReportedError') throw error
++      errorName = error.name
++    }
++    await send({ type: 'competed', pid: process.pid, result, errorName, operations, modelRequests: fixture.adapter.requests.length })
++  } finally {
++    await fixture.dispose()
++    process.disconnect?.()
++  }
++}
++
+ async function dispatch(input) {
+   switch (input?.mode) {
++    case 'compete_reserved': return await competeReserved(input)
+     case 'produce_reserved': return await produceReserved(input)
+     case 'launch_reserved': return await launchReserved(input)
+     case 'produce_created':
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs
+@@ -263,3 +263,57 @@
+     await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, postKillState, replay }, null, 2) + '\n', 'utf8')
+   })
+ })
++
++
++test('T23 two ready processes competing for one durable intent execute its Owner only once', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_reserved', fixtureParent }), 'reserved')
++    const input = {
++      mode: 'compete_reserved', root: producer.checkpoint.root, workflowId: producer.checkpoint.workflowId,
++      receipt: producer.checkpoint.receipt, request: producer.checkpoint.request,
++    }
++    const handles = [startRestartChild(input), startRestartChild(input)]
++    let results
++    try {
++      const ready = await Promise.all(handles.map(handle => handle.message))
++      assert.ok(ready.every(item => item.type === 'ready'))
++      assert.notEqual(ready[0].pid, ready[1].pid)
++      const completions = handles.map(handle => Promise.race([
++        new Promise(resolve => handle.child.once('message', resolve)),
++        handle.exited.then(exit => { throw new Error(`competition child exited before result: ${JSON.stringify(exit)}`) }),
++      ]))
++      for (const handle of handles) handle.child.send({ type: 'go' })
++      results = await Promise.all(completions)
++      for (const result of results) assert.equal(result.type, 'competed', JSON.stringify(result))
++      for (const handle of handles) assert.deepEqual(await handle.exited, { code: 0, signal: null })
++    } finally {
++      for (const handle of handles) {
++        if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill('SIGKILL')
++      }
++      await Promise.all(handles.map(handle => handle.exited))
++    }
++    assert.equal(results.filter(item => item.errorName === 'OwnerReportedError').length, 1)
++    const other = results.find(item => item.errorName !== 'OwnerReportedError')
++    assert.ok(['paused', 'settled_failed'].includes(other.result.outcome))
++    for (const key of ['create', 'followup']) assert.equal(results.reduce((n, item) => n + item.operations[key], 0), 1)
++    assert.equal(results.reduce((n, item) => n + item.operations.resume, 0), 0)
++    assert.equal(results.reduce((n, item) => n + item.modelRequests, 0), 2)
++    const finalBytes = await readFile(workflowStatePath(input.root, input.workflowId), 'utf8')
++    const state = JSON.parse(finalBytes)
++    assert.equal(state.recoveryAdmission.budget.totalUsed, 1)
++    const record = state.ownerRuns['T1:api']
++    assert.equal(record.recoverySession.phase, 'settled_failed')
++    assert.deepEqual(record.recoverySession.executionIdentity, input.receipt.executionIdentity)
++    const audit = await finishReplay({ scenario: 'settled_failed', root: input.root, workflowId: input.workflowId, receipt: input.receipt, request: input.request })
++    assert.equal(audit.before.stateBytes, finalBytes)
++    assert.equal(audit.after.stateBytes, finalBytes)
++    assert.deepEqual(audit.agentOperations, { create: 0, resume: 0, followup: 0 })
++    assert.equal(audit.modelRequests, 0)
++    const calls = audit.before.rawContent.trimEnd().split('\n').map(row => JSON.parse(row))
++      .filter(row => row.type === 'tool/call' && row.data.name === 'owner_submit')
++    assert.equal(calls.length, 1)
++    const directory = join(EVIDENCE_ROOT, 'same-intent-concurrent-execution')
++    await mkdir(directory, { recursive: true })
++    await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, results, finalBytes, audit }, null, 2) + '\n', 'utf8')
++  })
++})

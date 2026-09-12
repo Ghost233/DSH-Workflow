@@ -1,0 +1,136 @@
+TAP version 13
+# Subtest: T15 recoverOwner admits before restarting a failed workflow and enforces the next credit limit
+ok 1 - T15 recoverOwner admits before restarting a failed workflow and enforces the next credit limit
+  ---
+  duration_ms: 2352.614958
+  type: 'test'
+  ...
+# Subtest: T15 direct failed Owner start cannot bypass durable recovery admission
+ok 2 - T15 direct failed Owner start cannot bypass durable recovery admission
+  ---
+  duration_ms: 643.344791
+  type: 'test'
+  ...
+# Subtest: T15 missing_config cannot silently fall back to legacy execution
+ok 3 - T15 missing_config cannot silently fall back to legacy execution
+  ---
+  duration_ms: 588.987916
+  type: 'test'
+  ...
+# Subtest: T15 unknown_protocol cannot silently fall back to legacy execution
+ok 4 - T15 unknown_protocol cannot silently fall back to legacy execution
+  ---
+  duration_ms: 579.549792
+  type: 'test'
+  ...
+# Subtest: T15 invalid_config cannot silently fall back to legacy execution
+ok 5 - T15 invalid_config cannot silently fall back to legacy execution
+  ---
+  duration_ms: 501.767
+  type: 'test'
+  ...
+# Subtest: T15 explicit user decision takes priority over spending recovery credit
+ok 6 - T15 explicit user decision takes priority over spending recovery credit
+  ---
+  duration_ms: 529.545125
+  type: 'test'
+  ...
+# Subtest: T15 existing uncertain recovery is reconciled without another reservation or prompt
+ok 7 - T15 existing uncertain recovery is reconciled without another reservation or prompt
+  ---
+  duration_ms: 1019.370167
+  type: 'test'
+  ...
+# Subtest: T15 subsequent real failed result inherits the same root and consumes only its next attempt
+ok 8 - T15 subsequent real failed result inherits the same root and consumes only its next attempt
+  ---
+  duration_ms: 1742.102542
+  type: 'test'
+  ...
+# Subtest: T15 public background recovery persists and delivers a newly classified user decision
+ok 9 - T15 public background recovery persists and delivers a newly classified user decision
+  ---
+  duration_ms: 794.870417
+  type: 'test'
+  ...
+# Subtest: T15 unresolved handoff before admission prevents execution
+ok 10 - T15 unresolved handoff before admission prevents execution
+  ---
+  duration_ms: 611.473125
+  type: 'test'
+  ...
+# Subtest: T15 unresolved handoff appearing after admission prevents execution
+ok 11 - T15 unresolved handoff appearing after admission prevents execution
+  ---
+  duration_ms: 644.889917
+  type: 'test'
+  ...
+# Subtest: T15 protected ordinary awaiting_finish result can finish without a recovery debit
+ok 12 - T15 protected ordinary awaiting_finish result can finish without a recovery debit
+  ---
+  duration_ms: 3150.367083
+  type: 'test'
+  ...
+# Subtest: T15 protected ordinary committed result can finish without a recovery debit
+ok 13 - T15 protected ordinary committed result can finish without a recovery debit
+  ---
+  duration_ms: 2595.016625
+  type: 'test'
+  ...
+# Subtest: T15 protected PlanRevision abort with no Owner record keeps the reset path
+ok 14 - T15 protected PlanRevision abort with no Owner record keeps the reset path
+  ---
+  duration_ms: 506.512125
+  type: 'test'
+  ...
+# Subtest: T15 stale finish-only snapshot cannot send a newly failed record through legacy recovery
+ok 15 - T15 stale finish-only snapshot cannot send a newly failed record through legacy recovery
+  ---
+  duration_ms: 518.045708
+  type: 'test'
+  ...
+# Subtest: T15 authority before_reserve reaches the main outbox through public background recovery
+ok 16 - T15 authority before_reserve reaches the main outbox through public background recovery
+  ---
+  duration_ms: 728.545959
+  type: 'test'
+  ...
+# Subtest: T15 authority before_reserve_with_handoff reaches the main outbox through public background recovery
+ok 17 - T15 authority before_reserve_with_handoff reaches the main outbox through public background recovery
+  ---
+  duration_ms: 659.900375
+  type: 'test'
+  ...
+# Subtest: T15 authority after_reserve reaches the main outbox through public background recovery
+ok 18 - T15 authority after_reserve reaches the main outbox through public background recovery
+  ---
+  duration_ms: 612.651417
+  type: 'test'
+  ...
+# Subtest: T15 authority source becoming running cannot be overwritten by a stale recovery
+ok 19 - T15 authority source becoming running cannot be overwritten by a stale recovery
+  ---
+  duration_ms: 566.367292
+  type: 'test'
+  ...
+# Subtest: T15 authority source becoming new_attempt cannot be overwritten by a stale recovery
+ok 20 - T15 authority source becoming new_attempt cannot be overwritten by a stale recovery
+  ---
+  duration_ms: 538.516375
+  type: 'test'
+  ...
+# Subtest: T15 an ordinary error resembling authority refusal is not converted to a user decision
+ok 21 - T15 an ordinary error resembling authority refusal is not converted to a user decision
+  ---
+  duration_ms: 441.309375
+  type: 'test'
+  ...
+1..21
+# tests 21
+# suites 0
+# pass 21
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 20514.778042

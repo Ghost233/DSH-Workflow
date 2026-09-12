@@ -1,0 +1,13 @@
+# R63：恢复候选的真实Review预算与结果落盘
+
+已将实际workflow_revision_review对handoff-recovery候选的调用接到持久revision_review会话。原Planner的root/source/active版本A仍是预算来源；候选C独立固定，不能把C误当作活跃恢复来源。启动前核对原Planner intent、已结算session/budget、handoff分组及真实JSONL回执。每次调用单独计费、最多一个实际Reviewer child；没有旧Review函数内的隐式二次免费调用。
+
+子代理执行不持workflow锁；回到最新状态事务后核对candidate/source、Git base、operation及会话身份，原子写入Review结果、convergence、预算与session/operation阶段。提取共享语义校验与结果投影，普通Review保留原语义。有效needs_revision是Review执行成功；语义无效才failed并允许同root的下一ordinal。耗尽/未知/取消或候选变化不启动未授权新child。重放复核Planner与Reviewer的两份真实回执，新Harness上下文也不调用模型。锁前路由和锁内复查阻止来源变化退回免费入口。
+
+开发首轮4通过、1清理接口错误、1needs_revision超时；后两次5通过、1同夹具超时。诊断确认旧mock式issue不符合真实提交schema/parser（缺结构化证据字段/目标任务），并非产品死锁。修正对象、fixture释放接口后，启动前用实际parser核验夹具，needs_revision定向通过。首次错误与超时全部保留在development日志，不撤销历史失败。
+
+正式candidate-review6/replan-session9/handoff7/control159，共181通过、7项既有跳过，零失败/取消/超时、候选无漂移。独立只读审查未发现新增P1/P2。
+
+本轮不完成discard/rebuild根继承、仲裁/咨询逐次计费、其他恢复来源生产、T18版本激活及所有错误的技术暂停投影。T15仍开发中，整个Spec与无人值守验收尚未完成。
+
+Git：没有提交/推送/fetch/分支同步，原修改保留。main与缓存tracking相同；Harness仍比缓存tracking落后3364，vendor落后4，Synapse detached；没有查询实时远端。详git-evidence.json。

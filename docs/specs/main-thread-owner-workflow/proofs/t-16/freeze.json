@@ -1,0 +1,20 @@
+{
+  "at": "2026-09-11T09:21:45.333579+00:00",
+  "source": {
+    "owner-workflow-plugin/src/runtime.mjs": "bacf87b3bd232fc299c6abd0a918f033fb9dc5b521a6b40cc5e266b5e10b2b4a",
+    "owner-workflow-plugin/src/owner-agent.mjs": "7249b0297a6b99e338b5069e2c08293afdc8ac9bf5cfca3017194dc5b482cbc6",
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "d8e3d555343857dab04453ef2b120488059255d07b983a1bff82a6fefdee5c77",
+    "deepseek-harness/packages/core/agent-loop/src/agent.ts": "8288214410df9e8f611df17768f667eeee67351bfcaf8c5bf92a38f6a5f9117f",
+    "deepseek-harness/packages/core/agent-loop/src/index.ts": "75105e1f439dd37eb6c6c14d67ab668e446f06453dc62237206326f05f734a2c",
+    "deepseek-harness/packages/core/agent-loop/tests/mock-adapter.ts": "47dd92a9c9f8fb4cc468be3be1eb4dd40d2cc2e6fdde83783285cec3bc3d9db0",
+    "deepseek-harness/packages/subagent/subagent/src/index.ts": "14e7c3b7079214a978548b64028f5c4d16d3f2f81a8ccf99e089dcd370e63b6c",
+    "deepseek-harness/packages/subagent/subagent/src/continuation.ts": "fbcbd65ada6dc1e7262e512269e4b7728fcc093f1eecab97fd77179478b3ca94",
+    "deepseek-harness/packages/core/session/src/index.ts": "9594e128e8b170845d703e37a54902cd0cd8b2e73e8555e94594575bd18af8f9",
+    "deepseek-harness/packages/session/session-persistence-jsonl/src/index.ts": "9715f1a45bc1778c1904d018f2a97c0ee1710327cea3b9fc0cf910215fbf3cdb"
+  },
+  "proof": {
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/probe.mjs": "b09ed323373342c9cef463744b4fa1bdbc393497ba8f39a607f1d03e9b9c32ea",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/run-proof.py": "fed77f0d0032e986b6143d8b902044b3573ebd048f9d3b129a07a433cec623d8"
+  },
+  "harnessHead": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
+}

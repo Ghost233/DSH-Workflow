@@ -1,0 +1,15 @@
+{
+  "contract": "DSH_TICKET_IMPLEMENTATION_CANDIDATE_V1",
+  "candidateId": "R96-T29-unified-owner-resource-admission",
+  "ticketId": "T-29",
+  "specRevision": "R4",
+  "status": "development_complete",
+  "scope": "scope.md",
+  "report": "report.md",
+  "review": "review.md",
+  "testResults": "test-results.json",
+  "optionalTaskResources": true,
+  "supervisorAdmission": true,
+  "runtimeAdmission": true,
+  "legacyIdentityCompatible": true
+}

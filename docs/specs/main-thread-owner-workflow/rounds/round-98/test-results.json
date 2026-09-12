@@ -1,0 +1,39 @@
+{
+  "contract": "DSH_TICKET_TEST_RESULTS_V1",
+  "candidateId": "R98-T10-T31-owner-memory-recovery",
+  "commands": [
+    {
+      "kind": "focused",
+      "command": "TSX_TSCONFIG_PATH=deepseek-harness/tsconfig.json node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit --test-concurrency=1 --test-name-pattern='Owner worklog 封存失败|长期摘要失败|缺失 worklog 来源' owner-workflow-plugin/test/resilience.test.mjs",
+      "tests": 3,
+      "passed": 3,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "durationMs": 7914.899625
+    },
+    {
+      "kind": "affected-regression",
+      "command": "TSX_TSCONFIG_PATH=deepseek-harness/tsconfig.json node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit --test-concurrency=1 owner-workflow-plugin/test/memory.test.mjs owner-workflow-plugin/test/resilience.test.mjs owner-workflow-plugin/test/control.test.mjs",
+      "tests": 242,
+      "passed": 235,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 7,
+      "durationMs": 191717.882416
+    }
+  ],
+  "checks": {
+    "nodeCheck": [
+      "owner-workflow-plugin/src/runtime.mjs",
+      "owner-workflow-plugin/src/memory.mjs",
+      "owner-workflow-plugin/test/resilience.test.mjs"
+    ],
+    "gitDiffCheck": "passed"
+  },
+  "sha256": {
+    "owner-workflow-plugin/src/runtime.mjs": "164aa89a6ec8f14a13edb12010db35c8d647a75e79b80900f476fd7a4dca653f",
+    "owner-workflow-plugin/src/memory.mjs": "d02ad3d3dfbd78c3c157c0ee77b7dd127fd8884c274436a721f0b387e0efbe4b",
+    "owner-workflow-plugin/test/resilience.test.mjs": "3de32291f47899ec99bd6d382c55866dabd285c26aaa0f6386313739ba77ff3c"
+  }
+}

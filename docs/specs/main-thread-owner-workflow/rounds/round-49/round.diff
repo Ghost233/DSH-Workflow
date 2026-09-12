@@ -1,0 +1,161 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -8194,11 +8194,19 @@
+       abortIfNeeded(signal)
+       const root = await runtime.resolveRoot(agent)
+       const state = await readState(runtime, root, workflowId)
++      if (recoveryAdmissionEnabled(state)) assertRecoveryAdmissionState(state)
+       const planningRuntimeFacts = await ownerWorktreePlanningFacts(runtime, state, signal)
+       const evidenceDigest = workflowEvidenceDigest(state, planningRuntimeFacts)
+       return runtime.withWorkflowLock(workflowId, async () => {
+         const current = await readState(runtime, root, workflowId)
++        const protectedRecovery = recoveryAdmissionEnabled(current)
++        if (recoveryAdmissionEnabled(state) && !protectedRecovery) throw new Error('恢复协议已变化，不能按旧探针降级执行')
++        if (protectedRecovery) {
++          assertRecoveryAdmissionState(current)
++          if (current.planDigest !== state.planDigest) throw new Error('探针期间执行版本已变化，需要重新读取证据')
++        }
+         let resumedPlan = false
++        const authorityTasks = []
+         const resumedTasks = []
+         const reviewCandidate = current.pendingPlanRevision ?? (current.plan === undefined ? undefined : {
+           plan: current.plan, planDigest: current.planDigest,
+@@ -8247,9 +8255,21 @@
+         for (const task of current.tasks ?? []) {
+           const recovery = task.autonomousRecovery
+           if (task.status !== 'stopped'
+-            || recovery?.strategy !== 'autonomous_incident'
+-            || recovery.evidenceDigest === evidenceDigest) continue
++            || recovery?.strategy !== 'autonomous_incident') continue
+           const taskPlan = current.plan?.tasks?.find(item => item.id === task.taskId)
++          if (protectedRecovery) {
++            if (taskPlan === undefined || task.action === 'await_user') continue
++            const record = current.ownerRuns?.[ownerRunKey(task.taskId, taskPlan.ownerId)]
++            if (record === undefined || !['failed', 'blocked'].includes(record.status)) continue
++            const authority = classifyFailure(record.error ?? record.reason ?? '',
++              ownerExecutionDeviationContext(current, task.taskId, taskPlan.ownerId))
++            if (authority.class === 'external_authority') {
++              applyOwnerRecoveryAuthority(current, task.taskId, taskPlan.ownerId, authority)
++              authorityTasks.push(task.taskId)
++              continue
++            }
++          }
++          if (recovery.evidenceDigest === evidenceDigest) continue
+           const strategy = selectFailureRecovery({
+             failureClass: recovery.failureClass ?? 'unknown',
+             usedStrategies: [],
+@@ -8269,7 +8289,7 @@
+           task.reason = null
+           task.action = null
+           task.autonomousRecovery = nextRecovery
+-          if (taskPlan !== undefined) {
++          if (taskPlan !== undefined && !protectedRecovery) {
+             const key = ownerRunKey(task.taskId, taskPlan.ownerId)
+             current.ownerRuns ??= {}
+             current.ownerRuns[key] = {
+@@ -8282,7 +8302,7 @@
+           }
+           resumedTasks.push(task.taskId)
+         }
+-        if (!resumedPlan && resumedTasks.length === 0) {
++        if (!resumedPlan && resumedTasks.length === 0 && authorityTasks.length === 0) {
+           // Older ledgers have no fact history. Persist their conservative
+           // baseline even when the probe does not resume work, otherwise
+           // every later probe would keep seeding and never observe progress.
+@@ -8309,13 +8329,15 @@
+           evidenceDigest,
+           resumedPlan,
+           resumedTasks,
++          authorityTasks,
+           summary: 'Runtime 检测到新的可核验证据，已续期进展租约并恢复自治处理',
+         })
+         return {
+           contract: 'DSH_AUTONOMOUS_CONVERGENCE_PROBE_V1',
+           workflowId,
+           source,
+-          resumed: true,
++          resumed: resumedPlan || resumedTasks.length > 0,
++          authorityTasks,
+           resumedPlan,
+           resumedTasks,
+           evidenceDigest,
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -620,3 +620,77 @@
+   assert.deepEqual(await readRecoverySessionState(f), before)
+   assert.equal(f.adapter.requests.length, 0)
+ })
++
++for (const totalLimit of [1, 2]) {
++  test(`T15 convergence probe preserves failed source and the ${totalLimit}-credit limit`, async t => {
++    const f = await createRecoverySessionFixture(t, { executable: true,
++      limits: { totalLimit, problemLimit: totalLimit },
++      modelScript: m => [...failedModel(m), ...failedModel(m)] })
++    const calls = observe(f)
++    await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), { name: 'OwnerReportedError' })
++    const before = await mutateRecoverySessionState(f, s => {
++      s.status = 'running'
++      Object.assign(s.tasks[0], { status: 'stopped', reason: 'runtime_failed', action: 'retry_runtime',
++        autonomousRecovery: { contract: 'DSH_AUTONOMOUS_RECOVERY_V1', strategy: 'autonomous_incident',
++          failureClass: 'transient', evidenceDigest: '0'.repeat(64), usedStrategies: [] } })
++    })
++    const probe = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'convergence-probe')
++    assert.equal(probe.resumed, true)
++    const queued = await readRecoverySessionState(f)
++    assert.deepEqual(queued.ownerRuns, before.ownerRuns)
++    assert.deepEqual(queued.recoveryAdmission, before.recoveryAdmission)
++    assert.equal(queued.tasks[0].status, 'pending')
++    await executeNextSupervisorTask(f, 'T1')
++    const after = await readRecoverySessionState(f)
++    assert.equal(after.recoveryAdmission.budget.totalUsed, totalLimit)
++    assert.equal(after.recoveryAdmission.budget.problems.length, 1)
++    assert.equal(after.supervisorOutbox['T1:api'].status, totalLimit === 1 ? 'stopped' : 'failed')
++    assert.equal(f.adapter.requests.length, totalLimit * 2)
++    assert.deepEqual(calls, { create: totalLimit, resume: 0 })
++  })
++}
++
++test('T15 convergence probe persists typed user authority instead of resuming technical execution', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  await admitAuthorityFailure(f)
++  await mutateRecoverySessionState(f, s => {
++    s.status = 'running'
++    Object.assign(s.tasks[0], { status: 'stopped', reason: 'runtime_failed', action: 'retry_runtime',
++      autonomousRecovery: { contract: 'DSH_AUTONOMOUS_RECOVERY_V1', strategy: 'autonomous_incident',
++        failureClass: 'transient', evidenceDigest: '0'.repeat(64), usedStrategies: [] } })
++  })
++  const result = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'convergence-probe')
++  assert.equal(result.resumed, false)
++  assert.deepEqual(result.authorityTasks, ['T1'])
++  const after = await readRecoverySessionState(f)
++  assert.equal(after.tasks[0].action, 'await_user')
++  assert.equal(after.ownerRuns['T1:api'].phase, 'awaiting_user_authority')
++  assert.equal(Object.values(after.mainOutbox).length, 1)
++  assert.equal(after.recoveryAdmission, undefined)
++  assert.equal(f.adapter.requests.length, 0)
++})
++
++test('T15 convergence probe cannot manufacture a recoverable Owner from an orphaned source', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  const before = await mutateRecoverySessionState(f, s => {
++    s.ownerRuns['T1:api'].status = 'orphaned'
++    Object.assign(s.tasks[0], { status: 'stopped', reason: 'owner_orphaned', action: 'recover_owner',
++      autonomousRecovery: { contract: 'DSH_AUTONOMOUS_RECOVERY_V1', strategy: 'autonomous_incident',
++        failureClass: 'transient', evidenceDigest: '0'.repeat(64), usedStrategies: [] } })
++  })
++  const result = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'convergence-probe')
++  assert.equal(result.resumed, false)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.equal(f.adapter.requests.length, 0)
++})
++
++test('T15 convergence probe rejects missing protected configuration without a legacy fallback', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  const before = await mutateRecoverySessionState(f, s => {
++    s.recoveryProtocol = 'DSH_RECOVERY_ADMISSION_V1'
++    delete s.recoveryAdmissionConfig
++  })
++  await assert.rejects(f.runtime.probeAutonomousConvergence(f.admissionAgent, f.workflowId))
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.equal(f.adapter.requests.length, 0)
++})

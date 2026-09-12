@@ -1,0 +1,49 @@
+✖ 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交 (969.38025ms)
+✔ 暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户文件 (309.306333ms)
+✖ 真实子进程 SIGKILL 在 ref CAS 后留下可识别 pending journal，fresh resume 只同步 index 并发布一个快照 (867.107375ms)
+✔ 未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁 (762.560875ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 2
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3050.101208
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:38:1
+✖ 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交 (969.38025ms)
+  Error [PlanningCheckpointError]: Planning checkpoint: STATE_PATH_UNSAFE (/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-planning-checkpoint-ngnXSx/.git/index)
+      at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:26:44)
+      at safeFile (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:194:94)
+      at async hashFile (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:209:17)
+      at async Promise.all (index 3)
+      at async repositoryState (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:345:53)
+      at async assertAfterIndex (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:425:19)
+      at async advanceRefAndIndex (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:597:5)
+      at async runUnderLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:709:13)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:46:17)
+      at async Test.run (node:internal/test_runner/test:1113:7) {
+    code: 'STATE_PATH_UNSAFE',
+    field: '/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-planning-checkpoint-ngnXSx/.git/index'
+  }
+
+test at owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:87:1
+✖ 真实子进程 SIGKILL 在 ref CAS 后留下可识别 pending journal，fresh resume 只同步 index 并发布一个快照 (867.107375ms)
+  Error [PlanningCheckpointError]: Planning checkpoint: AUTHORIZATION_REFUSED (authorize: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'test-grant-1'
+  - undefined
+  )
+      at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:26:44)
+      at authorize (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:334:5)
+      at async runUnderLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:698:5)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:100:19)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    code: 'AUTHORIZATION_REFUSED',
+    field: 'authorize'
+  }

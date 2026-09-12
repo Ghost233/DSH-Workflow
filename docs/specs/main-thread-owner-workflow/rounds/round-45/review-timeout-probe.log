@@ -1,0 +1,10 @@
+{"events":[{"kind":"event","cursor":2,"event":{"cursor":2,"time":"2026-09-11T09:10:47.806Z","type":"supervisor.task-timeout-recovery","status":"running","tasks":[{"taskId":"T1","ownerId":"api","policy":{"action":"notify_main","afterMs":1800000},"recoveryStrategy":"diagnose"}]},"status":"running"},{"kind":"event","cursor":3,"event":{"cursor":3,"time":"2026-09-11T09:10:47.836Z","type":"supervisor.task-timeout-recovery","status":"running","tasks":[{"taskId":"T1","ownerId":"api","policy":{"action":"notify_main","afterMs":1800000},"recoveryStrategy":"diagnose"}]},"status":"running"}],"task":{"taskId":"T1","status":"pending","executorId":null,"cursor":null,"unchangedPolls":0,"reason":null,"action":null,"autonomousRecovery":{"contract":"DSH_AUTONOMOUS_RECOVERY_V1","failureClass":"contract_dag","strategy":"diagnose"}},"timeouts":{}}
+✔ R45 reserved recovery slot timeout observation (1473.679458ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1664.025

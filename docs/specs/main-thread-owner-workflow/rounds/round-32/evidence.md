@@ -1,0 +1,3 @@
+# 第32轮L4
+
+同Runtime/同Workflow账本、不同Owner：T1真实恢复提交后awaiting_finish暂停，T2正常Owner仍能启动并通过固定提交。fixture新增默认false的独立Owner开关，实际Registry与plan一致，未stub门禁/lease/提交。主线程独占fixture/test及文档。正式session27+restart5共32项，各180秒。

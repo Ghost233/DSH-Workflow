@@ -1,0 +1,13 @@
+{
+  "contract": "DSH_TICKET_IMPLEMENTATION_CANDIDATE_V1",
+  "candidateId": "R89-T17-hard-deadline-settlement",
+  "ticketId": "T-17",
+  "specRevision": "R4-V03-1",
+  "status": "development_complete",
+  "scope": "scope.md",
+  "report": "report.md",
+  "review": "review.md",
+  "testResults": "test-results.json",
+  "productionDefaultEnabled": false,
+  "defaultActivationOwner": "T-19"
+}

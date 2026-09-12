@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: T15 real request_handoff preserves its initial free Owner until terminal and stages a metered candidate
+ok 1 - T15 real request_handoff preserves its initial free Owner until terminal and stages a metered candidate
+  ---
+  duration_ms: 2621.548042
+  type: 'test'
+  ...
+# Subtest: T15 real request_handoff preserves its paid Owner until terminal and stages a metered candidate
+ok 2 - T15 real request_handoff preserves its paid Owner until terminal and stages a metered candidate
+  ---
+  duration_ms: 1847.414833
+  type: 'test'
+  ...
+# Subtest: T15 real request_handoff preserves its paid Owner with repeated handoff in report until terminal and stages a metered candidate
+ok 3 - T15 real request_handoff preserves its paid Owner with repeated handoff in report until terminal and stages a metered candidate
+  ---
+  duration_ms: 1727.179375
+  type: 'test'
+  ...
+# Subtest: T15 real request_handoff preserves its initial free Owner with a real user permission gap until terminal and returns the permission decision
+ok 4 - T15 real request_handoff preserves its initial free Owner with a real user permission gap until terminal and returns the permission decision
+  ---
+  duration_ms: 1606.342625
+  type: 'test'
+  ...
+# Subtest: T15 real request_handoff preserves its initial free Owner after rejecting premature completed until terminal and stages a metered candidate
+ok 5 - T15 real request_handoff preserves its initial free Owner after rejecting premature completed until terminal and stages a metered candidate
+  ---
+  duration_ms: 2460.372625
+  type: 'test'
+  ...
+# Subtest: T15 real request_handoff preserves its paid Owner after rejecting premature completed until terminal and stages a metered candidate
+ok 6 - T15 real request_handoff preserves its paid Owner after rejecting premature completed until terminal and stages a metered candidate
+  ---
+  duration_ms: 1983.68825
+  type: 'test'
+  ...
+# Subtest: T15 a handoff cannot enter after completed submission has acquired its gate
+ok 7 - T15 a handoff cannot enter after completed submission has acquired its gate
+  ---
+  duration_ms: 1764.83
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 14289.231334

@@ -1,0 +1,23 @@
+{
+  "contract": "DSH_R87_TEST_RESULTS_V1",
+  "broadCandidate": {
+    "pass": 260,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 7,
+    "suites": {
+      "planning-compile-native": { "pass": 12, "skipped": 0 },
+      "planning-checkpoint-native": { "pass": 18, "skipped": 0 },
+      "plan-revision": { "pass": 10, "skipped": 0 },
+      "plugin-workflow-state": { "pass": 24, "skipped": 0 },
+      "runner": { "pass": 10, "skipped": 0 },
+      "control": { "pass": 159, "skipped": 7 },
+      "packages-authority-source-chain": { "pass": 27, "skipped": 0 }
+    }
+  },
+  "finalCandidateAfterLegacyGuard": {
+    "activeRevisionIntegration": { "pass": 1, "fail": 0, "skipped": 0 },
+    "plugin": { "pass": 13, "fail": 0, "skipped": 0 },
+    "diffCheck": "passed"
+  }
+}

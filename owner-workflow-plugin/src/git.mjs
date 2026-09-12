@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { resolve as resolvePath } from 'node:path'
+import { isGeneratedRuntimeGitignore } from './project-layout.mjs'
 
 const execFileAsync = promisify(execFile)
 const FULL_COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu
@@ -104,18 +105,21 @@ export async function currentBranch(cwd, signal) {
   return branch || undefined
 }
 
-export async function statusRecords(cwd, signal, { includeIgnored = false, untracked = 'all' } = {}) {
+export async function statusRecords(cwd, signal, { includeIgnored = false, untracked = 'all', readOnly = false } = {}) {
   if (!['all', 'normal', 'no'].includes(untracked)) {
     throw new Error(`Git status 未跟踪文件模式不受支持：${String(untracked)}`)
   }
   const output = await git(cwd, [
+    ...(readOnly ? ['--no-optional-locks'] : []),
     'status',
     '--porcelain=v1',
     `--untracked-files=${untracked}`,
     ...(includeIgnored ? ['--ignored'] : []),
     '-z',
   ], signal)
-  return parseStatusRecords(output)
+  return parseStatusRecords(output).filter(record => (
+    record.code !== '??' || !isGeneratedRuntimeGitignore(record.path)
+  ))
 }
 
 export async function changedFiles(cwd, base, target, signal) {

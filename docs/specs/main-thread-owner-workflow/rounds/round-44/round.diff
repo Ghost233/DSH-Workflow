@@ -1,0 +1,206 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -209,6 +209,12 @@
+   name = 'RecoverySessionLaunchUnavailableError'
+ }
+
++// Only a Runtime-admitted typed authority ground uses this refusal. Callers
++// must re-read the bound terminal source before publishing a user decision.
++class RecoveryAdmissionAuthorityRequiredError extends Error {
++  name = 'RecoveryAdmissionAuthorityRequiredError'
++}
++
+ function recoveryBudgetBinding(workflowId, intent) {
+   return {
+     workflowId,
+@@ -10050,7 +10056,6 @@
+               throw new Error('RecoveryAdmission 当前计划内容摘要不匹配')
+             }
+             if (request?.source?.kind === 'owner_failure') {
+-              assertOwnerRecoveryHandoffs(current, request.taskId, request.ownerId)
+               if (current.planApproved !== true || current.planReview?.status !== 'passed'
+                 || current.planReviewDigest !== current.planDigest) {
+                 throw new Error('RecoveryAdmission Owner 失败来源尚未通过当前计划审批')
+@@ -10059,8 +10064,9 @@
+               const classified = classifyFailure(record?.error ?? record?.reason ?? '',
+                 ownerExecutionDeviationContext(current, request.taskId, request.ownerId))
+               if (classified.class === 'external_authority') {
+-                throw new Error('RecoveryAdmission 当前失败需要用户决定')
++                throw new RecoveryAdmissionAuthorityRequiredError('RecoveryAdmission 当前失败需要用户决定')
+               }
++              assertOwnerRecoveryHandoffs(current, request.taskId, request.ownerId)
+             }
+             const prepared = prepareRecoveryAdmission(current, request)
+             response = prepared.response
+@@ -13716,20 +13722,35 @@
+         contract: 'DSH_OWNER_AUTONOMOUS_RECOVERY_PAUSED_V1', workflowId,
+         taskId: stageId, ownerId, strategy, reason,
+       })
+-      if (classified.class === 'external_authority') {
+-        await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, undefined, current => {
+-          abortIfNeeded(signal)
+-          assertWorkflowNotCancelled(current, '恢复 Owner')
+-          assertRecoveryAdmissionState(current)
+-          const latest = current.ownerRuns?.[key]
+-          const authority = classifyFailure(latest?.error ?? latest?.reason ?? '',
+-            ownerExecutionDeviationContext(current, stageId, ownerId))
+-          if (authority.class !== 'external_authority') throw new Error('用户决策来源已变化，需要重新对账')
+-          applyOwnerRecoveryAuthority(current, stageId, ownerId, authority)
+-          return { state: current }
+-        }))
++      const source = { kind: 'owner_failure', attempt: record?.attempt,
++        sessionId: record?.sessionId ?? record?.result?.sessionId ?? null }
++      const isCurrentTerminalSource = latest => record !== undefined
++        && ['failed', 'blocked'].includes(record.status)
++        && latest?.attempt === source.attempt
++        && (latest?.sessionId ?? latest?.result?.sessionId ?? null) === source.sessionId
++        && ['failed', 'blocked'].includes(latest?.status)
++      const persistAuthority = async () => {
++        const changed = new Error('用户决策来源已变化')
++        try {
++          await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, undefined, current => {
++            abortIfNeeded(signal)
++            assertWorkflowNotCancelled(current, '恢复 Owner')
++            assertRecoveryAdmissionState(current)
++            const latest = current.ownerRuns?.[key]
++            if (current.planDigest !== state.planDigest || !isCurrentTerminalSource(latest)) throw changed
++            const authority = classifyFailure(latest?.error ?? latest?.reason ?? '',
++              ownerExecutionDeviationContext(current, stageId, ownerId))
++            if (authority.class !== 'external_authority') throw changed
++            applyOwnerRecoveryAuthority(current, stageId, ownerId, authority)
++            return { state: current }
++          }))
++        } catch (error) {
++          if (error !== changed) throw error
++          return paused('recovery_source_changed')
++        }
+         return paused('user_authority_required', 'request_user_authority')
+       }
++      if (classified.class === 'external_authority') return persistAuthority()
+       if (task?.action === 'await_user') return paused('user_authority_required', 'request_user_authority')
+       assertOwnerRecoveryHandoffs(state, stageId, ownerId)
+       const existing = record?.recoverySession
+@@ -13742,12 +13763,16 @@
+       if (record?.status === 'completed') {
+         return runtime.runExternalOwner(agent, workflowId, stageId, ownerId, signal)
+       }
+-      const source = { kind: 'owner_failure', attempt: record?.attempt,
+-        sessionId: record?.sessionId ?? record?.result?.sessionId ?? null }
+-      const receipt = await runtime.reserveRecoveryAdmission(agent, workflowId, {
+-        contract: RECOVERY_ADMISSION_REQUEST_CONTRACT, planDigest: state.planDigest,
+-        taskId: stageId, ownerId, source,
+-      })
++      let receipt
++      try {
++        receipt = await runtime.reserveRecoveryAdmission(agent, workflowId, {
++          contract: RECOVERY_ADMISSION_REQUEST_CONTRACT, planDigest: state.planDigest,
++          taskId: stageId, ownerId, source,
++        })
++      } catch (error) {
++        if (!(error instanceof RecoveryAdmissionAuthorityRequiredError)) throw error
++        return persistAuthority()
++      }
+       if (receipt.outcome === 'rejected') return paused(receipt.reason)
+       // Keep the failed Owner/source untouched. Only reopen the task's runnable
+       // projection after the durable admission, under a fresh state transaction.
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -271,3 +271,98 @@
+   assert.deepEqual(calls, { create: 0, resume: 0 })
+   assert.equal(f.adapter.requests.length, 0)
+ })
++
++for (const timing of ['before_reserve', 'before_reserve_with_handoff', 'after_reserve']) {
++  test(`T15 authority ${timing} reaches the main outbox through public background recovery`, async t => {
++    const f = await createRecoverySessionFixture(t, { executable: true })
++    const reserve = f.runtime.reserveRecoveryAdmission.bind(f.runtime)
++    f.runtime.reserveRecoveryAdmission = async (...args) => {
++      const receipt = timing === 'after_reserve' ? await reserve(...args) : undefined
++      await admitAuthorityFailure(f)
++      if (timing === 'before_reserve_with_handoff') await mutateRecoverySessionState(f, s => {
++        s.status = 'blocked'
++        s.handoffQueue = [{ sourceTaskId: 'T1', status: 'pending' }]
++      })
++      return receipt ?? reserve(...args)
++    }
++    const calls = observe(f)
++    await f.runtime.dispatchOwnerRecovery(f.admissionAgent, f.workflowId, 'T1', 'api')
++    const pending = f.runtime.manualOwnerRecoveries.get(`${f.workflowId}:T1:api`)
++    assert.ok(pending)
++    const result = await pending
++    assert.equal(result.strategy, 'request_user_authority')
++    const state = await readRecoverySessionState(f)
++    assert.equal(state.ownerRuns['T1:api'].status, 'blocked')
++    assert.equal(state.tasks.find(item => item.taskId === 'T1').action, 'await_user')
++    assert.equal(state.recoveryAdmission?.budget.totalUsed ?? 0, timing === 'after_reserve' ? 1 : 0)
++    assert.equal(state.ownerRuns['T1:api'].recoverySession, undefined)
++    const notifications = Object.values(state.mainOutbox)
++    assert.equal(notifications.length, 1)
++    const deliveries = []
++    f.admissionAgent.followup = message => deliveries.push(message)
++    await f.runtime.deliverMainOutbox(f.admissionAgent, f.workflowId, notifications[0].notificationId)
++    assert.equal(deliveries.length, 1)
++    assert.equal(JSON.parse(deliveries[0].content[0].text).classificationBasis.externalPermissionGap.requiredPermission, 'read:ledger')
++    assert.deepEqual(calls, { create: 0, resume: 0 })
++    assert.equal(f.adapter.requests.length, 0)
++  })
++}
++
++for (const change of ['running', 'new_attempt']) {
++  test(`T15 authority source becoming ${change} cannot be overwritten by a stale recovery`, async t => {
++    const f = await createRecoverySessionFixture(t, { executable: true })
++    await admitAuthorityFailure(f)
++    const lock = f.runtime.withWorkflowLock.bind(f.runtime)
++    let boundary
++    let injected = false
++    f.runtime.withWorkflowLock = async (...args) => {
++      if (!injected) {
++        injected = true
++        boundary = await mutateRecoverySessionState(f, s => {
++          if (change === 'running') {
++            s.ownerRuns['T1:api'].status = 'running'
++            s.tasks.find(item => item.taskId === 'T1').status = 'running'
++          } else s.ownerRuns['T1:api'].attempt += 1
++        })
++      }
++      return lock(...args)
++    }
++    const calls = observe(f)
++    const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
++    assert.equal(result.reason, 'recovery_source_changed')
++    assert.deepEqual(await readRecoverySessionState(f), boundary)
++    assert.deepEqual(calls, { create: 0, resume: 0 })
++    assert.equal(f.adapter.requests.length, 0)
++  })
++}
++
++test('T15 an ordinary error resembling authority refusal is not converted to a user decision', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  const before = await readRecoverySessionState(f)
++  const failure = new Error('RecoveryAdmission 当前失败需要用户决定')
++  f.runtime.reserveRecoveryAdmission = async () => { throw failure }
++  await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), error => error === failure)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.equal(f.adapter.requests.length, 0)
++})
++
++test('T15 authority refusal for a now-running source pauses without rewriting the live Owner', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  const reserve = f.runtime.reserveRecoveryAdmission.bind(f.runtime)
++  let boundary
++  f.runtime.reserveRecoveryAdmission = async (...args) => {
++    await admitAuthorityFailure(f)
++    boundary = await mutateRecoverySessionState(f, s => {
++      s.status = 'running'
++      s.ownerRuns['T1:api'].status = 'running'
++      s.tasks.find(item => item.taskId === 'T1').status = 'running'
++    })
++    return reserve(...args)
++  }
++  const calls = observe(f)
++  const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
++  assert.equal(result.reason, 'recovery_source_changed')
++  assert.deepEqual(await readRecoverySessionState(f), boundary)
++  assert.deepEqual(calls, { create: 0, resume: 0 })
++  assert.equal(f.adapter.requests.length, 0)
++})

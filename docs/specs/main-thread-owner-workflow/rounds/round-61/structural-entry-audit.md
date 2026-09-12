@@ -1,0 +1,9 @@
+# 其他Owner结构性入口审计
+
+只读审计者t16_cancel_proof，主线程核对实际写入点。
+
+requestSubgraph对running任务applyPlanDelta(invalidate:[taskId])，使task pending、删除ownerRuns/outbox、替换plan/digest并清空审批，原child仍运行；只有内存active/task/executor/lease检查，缺attempt/session/digest完整校验和submitting/submission门禁。completed结果已接纳但child尚未退出的窗口也可调用。
+
+受恢复协议保护的requestHandoff已只持久proposal，真实blocked/failed终态后才消费。非恢复handoff仍是旧即时delta，现有控制测试明确期望该行为；不能冒称已受保护。report型handoff只追加queue，不是即时delta。生产applyPlanDelta仅这两个入口。
+
+安全原则：Owner工具不能销毁活跃source再靠恢复门禁补救；共同来源与提交互斥必须在workflow锁内核对，结构性版本激活还需要真实终态与T18继承事务。T11未完成不构成允许销毁来源的依据。若完整消费尚未实现，应拒绝危险操作并明确能力边界，不能保存无人消费的pending请求冒充闭环。

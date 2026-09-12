@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: T07 competing revisions of an already active parent retain its snapshot and reject its late receipt
+ok 1 - T07 competing revisions of an already active parent retain its snapshot and reject its late receipt
+  ---
+  duration_ms: 4109.886167
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4192.025458

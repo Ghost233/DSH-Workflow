@@ -1,0 +1,18 @@
+✔ T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt (178.296334ms)
+✔ T20 reloads the same durable request through a new Runtime without rebilling or changing identity (190.648333ms)
+✔ T20 derives A/B/A from persisted strategy, keeping one root but distinct durable requests (227.731583ms)
+✔ T20 rejects forged request fields and incorrect source binding without creating a recovery account (298.249375ms)
+✔ T20 rejects a missing strategy and owner-failure records that no longer describe a failed technical task (196.030375ms)
+✔ T20 admits only a live technical obligation and preserves the user-authority boundary (346.853959ms)
+✔ T20 makes approval, current plan digest, cancellation, malformed state, and absent config hard wrapper gates (256.296959ms)
+✔ T20 rejects changed limits after accounting begins and never returns a receipt when the first save cannot commit (376.6145ms)
+✔ T20 cross-process distinct requests consume the final workflow credit once (298.0545ms)
+✔ T20 cross-process competition for one request yields one receipt identity and one debit (295.467375ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2765.295208

@@ -1,0 +1,12 @@
+✔ 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交 (1433.426167ms)
+✔ 暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户文件 (343.153166ms)
+✔ 真实子进程 SIGKILL 在 ref CAS 后留下可识别 pending journal，fresh resume 只同步 index 并发布一个快照 (1545.087417ms)
+✔ 未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁 (1204.897917ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4689.209709

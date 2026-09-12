@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-11T13:06:56.303439+00:00",
+  "candidateDrift": [],
+  "formalPass": 190,
+  "formalSkipped": 7,
+  "reviewFindings": [],
+  "closedFinding": "R65 stale candidate pause P2",
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false
+}

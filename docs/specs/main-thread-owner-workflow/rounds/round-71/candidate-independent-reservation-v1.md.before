@@ -1,0 +1,9 @@
+# 候选暂停独立任务reservation
+
+R67–R69，T15。candidateIndependentNext基于active A及已投递有效pause选择独立leaf。来源/目标Owner所有任务和依赖、反向依赖、parent/child闭包不可调度；完整运行投影及未终态占用约束全局parallel与Owner去重。非终态占用对应非pending/running任务时拒绝。仅create/wait，确认仅输出target patch，不返回整表替代状态。
+
+Runtime reserveCandidateIndependentTasks在最新状态写锁内重新检查csa actionId。选择、确认、reservation与target任务补丁同一次落盘；不修改来源task/Owner、候选、预算、mainOutbox或config。并发及新Harness同action重放复用reservation，不启动模型，不生成重复事件。
+
+reservation.candidatePause契约为DSH_CANDIDATE_INDEPENDENT_RESERVATION_V1，固定source、activePlanDigest、taskId、ownerId、reservationId、eligibleTaskIds、scopeDigest。校验必须匹配当前pause与持久reservation，且仅去掉自身reservation/Owner执行投影后重新证明独立性；自身Owner记录若存在也必须有相同绑定。不能把删除其他Owner历史或重写来源当作可执行证据。
+
+截至R69，Runtime真实领取已接入；通用执行/恢复入口拒绝候选专用reservation，通用失败回调保留它。daemon仍不自动派发。实际Owner启动、提交、失败与finish的绑定复核必须完成后再启用该入口。不得以reservation已落盘当作任务已执行或T15验收完成。

@@ -1,0 +1,20 @@
+{
+  "previousGoalTurn": "progress",
+  "goalTurn": "progress",
+  "ticket": "T-27",
+  "ticketStatus": "开发中",
+  "deliveredSlice": "固定候选首次原子激活与生产Runner/Supervisor接线",
+  "formalCandidate": "candidate.json",
+  "formalEvidence": {
+    "validSuites": 8,
+    "pass": 246,
+    "skipped": 7,
+    "assertionFailures": 0,
+    "timeouts": 0,
+    "drift": 0,
+    "collectionErrorRetained": "误写不存在的external-runner.test.mjs",
+    "correctedRunner": "10/10"
+  },
+  "wholeGoalComplete": false,
+  "next": "活跃Workflow规划文档checkpoint、父版本候选与旧attempt迁移"
+}

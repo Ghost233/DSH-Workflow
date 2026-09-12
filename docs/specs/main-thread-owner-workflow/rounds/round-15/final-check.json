@@ -1,0 +1,11 @@
+{
+  "candidateDrift": [],
+  "brokenLinks": [],
+  "ticketStates": {
+    "待办": 6,
+    "开发完成": 6,
+    "阻塞": 9,
+    "验收通过": 2
+  },
+  "candidateFiles": 82
+}

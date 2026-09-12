@@ -1,0 +1,1 @@
+t21_contract_review只读审查：reserve返回后SIGKILL与新进程按原身份create/followup1、model2实际failed结算及同request零增量重放成立。budget1，state基线与身份/continuation/executionRef绑定正确。正式3/3，默认工具沙箱，1621无漂移，无新增P1/P2；不代表保存前或启动内部故障已证明。

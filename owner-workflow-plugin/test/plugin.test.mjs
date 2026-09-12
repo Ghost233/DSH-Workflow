@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import plugin, {
   askWorkflowDecision,
+  confirmAuditImplementation,
   confirmOwnerChangeApproval,
   confirmPlanApproval,
   confirmPlanRevisionExtension,
@@ -11,6 +12,7 @@ import plugin, {
 } from '../index.js'
 import { OWNER_WORKFLOW_SKILLS } from '../src/skills.mjs'
 import { ownerRolePrompt, ownerTaskPrompt } from '../src/owner-agent.mjs'
+import { toolExecutionDenial } from '../src/agent-policy.mjs'
 
 test('插件注册主编排工具、全局守卫和九个中文 Skill', () => {
   const skills = []
@@ -35,6 +37,8 @@ test('插件注册主编排工具、全局守卫和九个中文 Skill', () => {
   }
 
   plugin.apply(ctx, {})
+  assert.ok(listeners.includes('fs/write-intent'))
+  assert.ok(listeners.includes('fs/edit-intent'))
   assert.deepEqual(skills.map(skill => skill.name), [
     'owner-workflow',
     'owner-operator',
@@ -57,9 +61,42 @@ test('插件注册主编排工具、全局守卫和九个中文 Skill', () => {
     assert.equal(tools.some(tool => tool.name === removed), false, removed)
   }
   assert.ok(tools.some(tool => tool.name === 'workflow_preflight'))
+  const planningPrepare = tools.find(tool => tool.name === 'workflow_planning_prepare')
+  assert.ok(planningPrepare, '规划来源核验须有实际主线程工具入口')
+  assert.deepEqual(planningPrepare.parameters.required, ['manifest', 'baseline', 'chains'])
+  const planningCheckpoint = tools.find(tool => tool.name === 'workflow_planning_checkpoint')
+  assert.ok(planningCheckpoint, '真实规划 checkpoint 须有主线程工具入口')
+  assert.deepEqual(planningCheckpoint.parameters.required, ['id', 'manifest', 'baseline', 'chains', 'reason'])
+  const planningCompile = tools.find(tool => tool.name === 'workflow_planning_compile')
+  assert.ok(planningCompile)
+  const planningReview = tools.find(tool => tool.name === 'workflow_planning_review')
+  assert.ok(planningReview)
+  assert.deepEqual(planningReview.parameters.required, ['candidate_id'])
+  assert.deepEqual(Object.keys(planningReview.parameters.properties), ['candidate_id'])
+  const planningActivate = tools.find(tool => tool.name === 'workflow_planning_activate')
+  assert.ok(planningActivate)
+  assert.deepEqual(planningActivate.parameters.required, ['candidate_id', 'review_id'])
+  assert.deepEqual(Object.keys(planningActivate.parameters.properties), ['candidate_id', 'review_id'])
+  const planningRevisionCheckpoint = tools.find(tool => tool.name === 'workflow_planning_revision_checkpoint')
+  assert.ok(planningRevisionCheckpoint, '活跃Workflow的Spec/Ticket修订须有固定父版本的checkpoint入口')
+  assert.deepEqual(planningRevisionCheckpoint.parameters.required,
+    ['workflow_id', 'expected_plan_revision', 'id', 'manifest', 'baseline', 'chains', 'reason'])
+  assert.deepEqual(planningCompile.parameters.required, ['checkpoint_id'])
+  assert.deepEqual(Object.keys(planningCompile.parameters.properties), ['checkpoint_id'])
+  for (const field of ['approved', 'authorization', 'agentId', 'sessionId', 'source']) {
+    assert.equal(Object.hasOwn(planningPrepare.parameters.properties, field), false, field)
+    assert.equal(Object.hasOwn(planningCheckpoint.parameters.properties, field), false, field)
+  }
   assert.ok(tools.some(tool => tool.name === 'workflow_start'))
   assert.ok(tools.some(tool => tool.name === 'workflow_plan_submit'))
   assert.ok(tools.some(tool => tool.name === 'workflow_plan_review_submit'))
+  assert.ok(tools.some(tool => tool.name === 'workflow_obligation_decide'))
+  const executionFeedback = tools.find(tool => tool.name === 'owner_execution_feedback')
+  assert.ok(executionFeedback, '执行反馈必须有实际注册入口')
+  assert.deepEqual(executionFeedback.parameters.required, ['feedback'])
+  for (const name of ['workflow_id', 'owner_id', 'task_id', 'session_id', 'authority', 'approved']) {
+    assert.equal(Object.hasOwn(executionFeedback.parameters.properties, name), false, name)
+  }
   assert.ok(tools.some(tool => tool.name === 'workflow_plan_revision_extend'))
   assert.ok(tools.some(tool => tool.name === 'workflow_status'))
   assert.ok(tools.some(tool => tool.name === 'workflow_git_inspect'))
@@ -89,11 +126,53 @@ test('插件注册主编排工具、全局守卫和九个中文 Skill', () => {
   assert.equal(listeners.includes('approval/request'), false)
   assert.equal(listeners.includes('system-prompt/assemble'), true)
   const reviewSubmit = tools.find(tool => tool.name === 'workflow_plan_review_submit')
-  assert.deepEqual(reviewSubmit.parameters.properties.review.properties.status.enum, ['passed', 'needs_revision'])
+  assert.deepEqual(reviewSubmit.parameters.properties.review.properties.status.enum, [
+    'passed',
+    'needs_revision',
+    'needs_split',
+    'needs_decision',
+    'needs_discovery',
+  ])
+  const reviewSchema = reviewSubmit.parameters.properties.review
+  const issueSchema = reviewSchema.properties.issues.items
+  assert.ok(issueSchema.properties.obligationId)
+  assert.ok(issueSchema.properties.sourceId)
+  assert.ok(issueSchema.properties.sourceVersion)
+  assert.ok(issueSchema.properties.targetTaskIds)
+  assert.ok(issueSchema.properties.closeWhen)
+  assert.ok(reviewSchema.properties.obligationClosures)
+  const obligationDecision = tools.find(tool => tool.name === 'workflow_obligation_decide')
+  assert.deepEqual(obligationDecision.parameters.required, [
+    'workflow_id', 'obligation_id', 'plan_digest', 'decision_id', 'resolution', 'rationale',
+  ])
+  assert.equal(Object.hasOwn(obligationDecision.parameters.properties, 'authority'), false)
+  assert.equal(Object.hasOwn(obligationDecision.parameters.properties, 'verified'), false)
+  assert.equal(Object.hasOwn(obligationDecision.parameters.properties, 'confirmation'), false)
+  assert.match(obligationDecision.description, /主编排会话.*确认记录决定.*不会关闭义务/us)
   assert.match(tools.find(tool => tool.name === 'workflow_plan_approve').description, /原生.*同意\/不同意/u)
   assert.match(tools.find(tool => tool.name === 'workflow_plan_revision_extend').description, /原生.*同意\/不同意/u)
   assert.match(tools.find(tool => tool.name === 'workflow_owner_change_approve').description, /原生.*同意\/不同意/u)
   assert.match(tools.find(tool => tool.name === 'workflow_cancel').description, /原生.*同意\/不同意/u)
+  const audit = tools.find(tool => tool.name === 'workflow_audit')
+  assert.match(audit.description, /立即开始实施.*仅保留计划/u)
+  assert.ok(Object.hasOwn(audit.parameters.properties, 'implementation_request'))
+})
+
+test('决定回执工具仅允许主编排会话，所有子代理角色均被策略拒绝', () => {
+  for (const role of ['planner', 'plan-reviewer', 'reviewer', 'owner', 'operator']) {
+    const denial = toolExecutionDenial({
+      role,
+      modeEnabled: true,
+      toolName: 'workflow_obligation_decide',
+      toolArguments: {},
+    })
+    assert.match(denial, /不能控制主 Workflow/u, role)
+  }
+  assert.equal(toolExecutionDenial({
+    modeEnabled: true,
+    toolName: 'workflow_obligation_decide',
+    toolArguments: {},
+  }), undefined)
 })
 
 test('提交 Intent 后明确询问是否重新规划，继续讨论时不唤醒 Planner', async () => {
@@ -180,9 +259,13 @@ test('PlanRevision 只有根会话原生问询明确同意后才切换', async (
     },
   }
   let approvals = 0
+  const statusOptions = []
   const runtime = {
     async workflowIntentStatus() { return { workflowId: workflow.workflowId } },
-    async status() { return { workflow } },
+    async status(_agent, _workflowId, options) {
+      statusOptions.push(options)
+      return { workflow }
+    },
     async approvePendingPlanRevision() {
       approvals += 1
       return { revision: 2 }
@@ -195,6 +278,10 @@ test('PlanRevision 只有根会话原生问询明确同意后才切换', async (
   const approved = await confirmPlanRevisionApproval(ctx, runtime, agent, exec, 'revision-digest')
   assert.equal(approved.applied, true)
   assert.equal(approvals, 1)
+  assert.deepEqual(statusOptions, [
+    { ensureBridge: false, detail: true },
+    { ensureBridge: false, detail: true },
+  ])
   assert.match(questions[0].detail, /DAG 差异/u)
   assert.match(questions[0].detail, /新增 C/u)
 })
@@ -243,15 +330,18 @@ test('取消 Workflow 只有原生问询明确同意后才丢弃临时现场', a
 test('计划修订额度只有原生问询明确同意后才扩展当前 Workflow', async () => {
   const agent = { id: 'main-agent' }
   const exec = { signal: new AbortController().signal }
-  const answers = ['不同意', '同意']
+  const answers = ['不同意', '终止流程并退回主线程讨论', '同意']
+  const questions = []
   const ctx = {
     userQuestions: {
       async ask(request) {
+        questions.push(request.questions[0])
         return { answers: [{ id: request.questions[0].id, selected: [answers.shift()] }] }
       },
     },
   }
   let extensions = 0
+  const statusOptions = []
   const workflow = {
     workflowId: 'wf-limit',
     status: 'planned',
@@ -267,8 +357,20 @@ test('计划修订额度只有原生问询明确同意后才扩展当前 Workflo
     maxPlanRevisionTurns: 3,
     planRevisionRemaining: 0,
   }
+  let recordedDecisions = 0
+  let discussions = 0
   const runtime = {
-    async status() { return { workflow } },
+    async status(_agent, _workflowId, options) {
+      statusOptions.push(options)
+      return { workflow }
+    },
+    async recordPlanRevisionExtensionDecision(_agent, workflowId, planDigest, decision) {
+      recordedDecisions += 1
+      assert.equal(workflowId, workflow.workflowId)
+      assert.equal(planDigest, workflow.planDigest)
+      assert.equal(decision, 'rejected')
+      return { kind: 'plan_revision_extension', status: 'rejected' }
+    },
     async extendPlanRevisionLimit(_agent, workflowId, planDigest) {
       extensions += 1
       assert.equal(workflowId, workflow.workflowId)
@@ -279,6 +381,14 @@ test('计划修订额度只有原生问询明确同意后才扩展当前 Workflo
         revisionBudget: { used: 3, limit: 6, remaining: 3, exhausted: false },
       }
     },
+    async requestPlanningDiscussion(_agent, workflowId, planDigest, feedback, options) {
+      discussions += 1
+      assert.equal(workflowId, workflow.workflowId)
+      assert.equal(planDigest, workflow.planDigest)
+      assert.equal(feedback, undefined)
+      assert.equal(options.source, 'tool-native-question-option')
+      return { status: 'summary_pending', scheduled: true }
+    },
   }
 
   const rejected = await confirmPlanRevisionExtension(
@@ -286,12 +396,26 @@ test('计划修订额度只有原生问询明确同意后才扩展当前 Workflo
   )
   assert.equal(rejected.applied, false)
   assert.equal(extensions, 0)
+  assert.equal(recordedDecisions, 1)
+
+  const discussion = await confirmPlanRevisionExtension(
+    ctx, runtime, agent, exec, workflow.workflowId, workflow.planDigest,
+  )
+  assert.equal(discussion.decision, 'discussion')
+  assert.equal(discussion.applied, false)
+  assert.equal(discussions, 1)
+  assert.deepEqual(questions[1].options.map(option => option.label), [
+    '同意',
+    '不同意',
+    '终止流程并退回主线程讨论',
+  ])
 
   const approved = await confirmPlanRevisionExtension(
     ctx, runtime, agent, exec, workflow.workflowId, workflow.planDigest,
   )
   assert.equal(approved.applied, true)
   assert.equal(extensions, 1)
+  assert.deepEqual(statusOptions, Array.from({ length: 3 }, () => ({ ensureBridge: false, detail: true })))
 })
 
 test('工作流批准只接受原生问询中的明确同意，并保留不同意与自定义意见', async () => {
@@ -338,6 +462,97 @@ test('工作流批准只接受原生问询中的明确同意，并保留不同�
   assert.equal(requests[0].signal, signal)
 })
 
+test('只读审计完成后由原生问询决定是否自动进入 preflight 与 workflow_start', async () => {
+  const requests = []
+  const answers = [
+    { answers: [{ id: 'owner-workflow-audit-implementation', selected: ['仅保留计划'] }] },
+    { answers: [{ id: 'owner-workflow-audit-implementation', selected: ['立即开始实施'] }] },
+    { answers: [{ id: 'owner-workflow-audit-implementation', selected: [], custom: '先只实现 P0' }] },
+    { answers: [{ id: 'owner-workflow-audit-implementation', selected: ['立即开始实施'] }] },
+  ]
+  const ctx = {
+    userQuestions: {
+      async ask(request) {
+        requests.push(request)
+        return answers.shift()
+      },
+    },
+  }
+  let canStart = true
+  const calls = { audits: 0, preflights: 0, starts: [] }
+  const runtime = {
+    async auditWorkspace(_agent, request) {
+      calls.audits += 1
+      return {
+        contract: 'DSH_READ_ONLY_AUDIT_RESULT_V1',
+        root: '/project',
+        report: `针对 ${request} 的完整审计计划`,
+        nextAction: 'legacy value',
+      }
+    },
+    async preflightWorkflow() {
+      calls.preflights += 1
+      return {
+        canStart,
+        baseBranch: 'main',
+        baseHead: 'a'.repeat(40),
+        baseDigest: 'base-digest',
+      }
+    },
+    async startWorkflow(_agent, request, _signal, baseDigest, options) {
+      calls.starts.push({ request, baseDigest, options })
+      return {
+        contract: 'DSH_WORKFLOW_PLAN_AGENT_STARTED_V1',
+        workflowId: 'wf-audit-start',
+        nextAction: '等待 Plan Agent 主动回报',
+      }
+    },
+  }
+  const agent = { id: 'audit-main' }
+  const exec = { signal: new AbortController().signal }
+
+  const planOnly = await confirmAuditImplementation(
+    ctx, runtime, agent, exec, '审计 WalletConnect', '实施 WalletConnect 完整连接',
+  )
+  assert.equal(planOnly.decision, 'rejected')
+  assert.equal(planOnly.implementationStarted, false)
+  assert.equal(calls.preflights, 0)
+
+  const started = await confirmAuditImplementation(
+    ctx, runtime, agent, exec, '审计 WalletConnect', '实施 WalletConnect 完整连接',
+  )
+  assert.equal(started.decision, 'approved')
+  assert.equal(started.implementationStarted, true)
+  assert.equal(started.workflow.workflowId, 'wf-audit-start')
+  assert.deepEqual(calls.starts, [{
+    request: '实施 WalletConnect 完整连接',
+    baseDigest: 'base-digest',
+    options: { planningMode: 'continuable' },
+  }])
+
+  const custom = await confirmAuditImplementation(
+    ctx, runtime, agent, exec, '审计 WalletConnect', '实施 WalletConnect 完整连接',
+  )
+  assert.equal(custom.decision, 'custom')
+  assert.equal(custom.feedback, '先只实现 P0')
+  assert.equal(custom.implementationStarted, false)
+  assert.equal(calls.preflights, 1)
+
+  canStart = false
+  const blocked = await confirmAuditImplementation(
+    ctx, runtime, agent, exec, '审计 WalletConnect', '实施 WalletConnect 完整连接',
+  )
+  assert.equal(blocked.decision, 'approved')
+  assert.equal(blocked.implementationStarted, false)
+  assert.equal(blocked.preflight.canStart, false)
+  assert.equal(calls.starts.length, 1)
+  assert.equal(calls.audits, 4)
+  assert.deepEqual(requests[0].questions[0].options.map(option => option.label), ['立即开始实施', '仅保留计划'])
+  assert.deepEqual(requests[0].questions[0].intent, { kind: 'plan-review', approve: '立即开始实施' })
+  assert.match(requests[0].questions[0].detail, /完整审计计划/u)
+  assert.match(requests[0].questions[0].detail, /workflow_preflight → workflow_start/u)
+})
+
 test('Registry 与计划批准在原生问询同意前绝不修改 Runtime', async () => {
   const owner = {
     id: 'android-vpn',
@@ -346,13 +561,23 @@ test('Registry 与计划批准在原生问询同意前绝不修改 Runtime', asy
     scope: ['flutter_app/android/**'],
     exclude: [],
   }
+  const webOwner = {
+    id: 'web-shell',
+    name: 'Web Shell',
+    description: 'Web 界面职责',
+    scope: ['flutter_app/lib/**'],
+    exclude: [],
+  }
   const proposal = {
     digest: 'proposal-digest',
-    operation: 'add',
-    reason: '新增 Android VPN Owner',
-    affectedOwnerIds: [owner.id],
+    operation: 'batch',
+    operations: [{ type: 'add', owner, reason: 'Android 目录形成独立平台边界' }, {
+      type: 'add', owner: webOwner, reason: 'lib 目录形成独立界面边界',
+    }],
+    reason: '一次性新增全部长期 Owner',
+    affectedOwnerIds: [owner.id, webOwner.id],
     before: { owners: [] },
-    after: { owners: [owner] },
+    after: { owners: [owner, webOwner] },
   }
   const agent = { id: 'main-agent' }
   const exec = { signal: new AbortController().signal }
@@ -368,11 +593,13 @@ test('Registry 与计划批准在原生问询同意前绝不修改 Runtime', asy
   }
   let registryApplies = 0
   let planApplies = 0
+  const statusOptions = []
   const runtime = {
     async registryStatus() {
       return { registryDigest: 'registry-digest', pendingProposal: proposal }
     },
-    async status() {
+    async status(_agent, _workflowId, options) {
+      statusOptions.push(options)
       return {
         workflow: {
           status: 'planned',
@@ -408,6 +635,10 @@ test('Registry 与计划批准在原生问询同意前绝不修改 Runtime', asy
   assert.match(decisionRequests[0].questions[0].detail, /Owner 应表示由代码目录、模块、接口和长期职责形成的稳定责任域/u)
   assert.match(decisionRequests[0].questions[0].detail, /不能只是当前 Workflow 的阶段、任务/u)
   assert.match(decisionRequests[0].questions[0].detail, /设置位置：创建该 Workflow 的主线程/u)
+  assert.match(decisionRequests[0].questions[0].detail, /本次完整变更（共 2 项）/u)
+  assert.ok(decisionRequests[0].questions[0].detail.includes('新增 android\\-vpn'))
+  assert.ok(decisionRequests[0].questions[0].detail.includes('新增 web\\-shell'))
+  assert.equal(decisionRequests.length, 1)
   const approvedRegistry = await confirmOwnerChangeApproval(
     ctx, runtime, agent, exec, 'wf-1', proposal.digest,
   )
@@ -424,6 +655,7 @@ test('Registry 与计划批准在原生问询同意前绝不修改 Runtime', asy
   )
   assert.equal(approvedPlan.applied, true)
   assert.equal(planApplies, 1)
+  assert.deepEqual(statusOptions, Array.from({ length: 2 }, () => ({ ensureBridge: false, detail: true })))
 })
 
 test('Web 客户端宿主模式不注册 Agent 工具、Skill 或提示词', () => {
@@ -479,4 +711,14 @@ test('Owner 工作流提示要求新 Flutter 验证显式 cwd，且不提供 Qui
   assert.match(rolePrompt, /显式声明包根 cwd/u)
   assert.match(rolePrompt, /不能把 "workspace-write" 当作参数/u)
   assert.doesNotMatch(skill.content, /\bstage\b|\bstages\b|owner_add/u)
+})
+
+
+test('R09 执行反馈工具拒绝主编排和只读角色，不能冒充活动 Owner', () => {
+  for (const role of ['planner', 'plan-reviewer', 'reviewer', 'operator']) {
+    assert.ok(toolExecutionDenial({ role, modeEnabled: true, toolName: 'owner_execution_feedback', toolArguments: {} }), role)
+  }
+  assert.ok(toolExecutionDenial({ modeEnabled: true, toolName: 'owner_execution_feedback', toolArguments: {} }))
+  assert.ok(toolExecutionDenial({ role: 'owner', modeEnabled: true, toolName: 'owner_execution_feedback', toolArguments: {} }))
+  assert.equal(toolExecutionDenial({ activeOwner: { owner: { id: 'api' } }, role: 'owner', modeEnabled: true, toolName: 'owner_execution_feedback', toolArguments: {} }), undefined)
 })

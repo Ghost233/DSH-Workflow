@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/NVlabs/SoL-Pi.git",
+  "submodule": "../vendor/SoL-Pi",
+  "commit": "22277b7e0c3c46ba1259a6687f31fe39ade421a5",
+  "harnessCommit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+  "ported": ["action-fusion", "evidence-preserving-reducer"],
+  "sources": [
+    "src/sol-pi/extensions/action-fusion/then-run.ts",
+    "src/sol-pi/extensions/evidence-preserving-reducer/config.ts",
+    "src/sol-pi/extensions/evidence-preserving-reducer/receipt.ts"
+  ]
+}

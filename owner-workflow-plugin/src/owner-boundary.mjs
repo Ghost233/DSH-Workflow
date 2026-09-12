@@ -10,6 +10,7 @@ import {
 } from './git.mjs'
 import { MEMORY_DIRECTORY } from './memory.mjs'
 import { ownerAllows, scopeMatches } from './model.mjs'
+import { OWNER_CONFIGURATION_DIRECTORY, OWNER_RUNTIME_DIRECTORY } from './project-layout.mjs'
 
 function asciiCaseFold(value) {
   return value.replace(/[A-Z]/gu, character => character.toLowerCase())
@@ -20,12 +21,12 @@ export function isProtectedRelativePath(file) {
   const normalized = asciiCaseFold(file.replaceAll('\\', '/').replace(/^\.\//u, ''))
   return normalized === '.git'
     || normalized.startsWith('.git/')
-    || normalized === '.dsh-workflow'
-    || normalized.startsWith('.dsh-workflow/')
+    || normalized === OWNER_RUNTIME_DIRECTORY
+    || normalized.startsWith(`${OWNER_RUNTIME_DIRECTORY}/`)
     || normalized === MEMORY_DIRECTORY
     || normalized.startsWith(`${MEMORY_DIRECTORY}/`)
-    || normalized === '.owner-workflow'
-    || normalized.startsWith('.owner-workflow/')
+    || normalized === OWNER_CONFIGURATION_DIRECTORY
+    || normalized.startsWith(`${OWNER_CONFIGURATION_DIRECTORY}/`)
     || normalized === 'deepseek-harness'
     || normalized.startsWith('deepseek-harness/')
     || normalized === 'dsh-synapse'

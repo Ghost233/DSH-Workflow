@@ -1,0 +1,7 @@
+# R63后继入口审计
+
+只读t16_cancel_proof，主线程核对调用链：drive非通过写rebuild_pending→discard仅保存number/digest/review并删candidate→planWorkflowIntents在handoff.intentIds=[]时无普通Intent报错；存在普通Intent也因遗留handoff candidate_staged而被R63来源门禁拒绝。直接handoff-replan要求原candidate receipt，删除后也不能继续。
+
+批准路径虽有根会话、父版本、passed/convergence/连续性核验，却直接切换active A→C，config/sources/intents仍绑定A，后续恢复协议校验失败。恢复候选无autonomous审批策略所以不会默认自动激活，但手动批准仍可达。
+
+后继应按前候选+Review回执固定新逻辑operation、继承同root，保留原成功attempt；版本激活须独立T18事务。

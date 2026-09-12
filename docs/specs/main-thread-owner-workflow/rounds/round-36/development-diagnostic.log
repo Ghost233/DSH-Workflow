@@ -1,0 +1,28 @@
+TAP version 13
+# Subtest: T23 distinct requests racing for the final credit execute only the admitted Owner
+not ok 1 - T23 distinct requests racing for the final credit execute only the admitted Owner
+  ---
+  duration_ms: 4181.417208
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs:322:1'
+  failureType: 'testCodeFailure'
+  error: `competition child exited before result: {"code":1,"signal":null}; output={"stdout":"","stderr":"node:internal/child_process:903\\n      this.emit('error', new ERR_IPC_DISCONNECTED());\\n                         ^\\n\\nError [ERR_IPC_DISCONNECTED]: IPC channel is already disconnected\\n    at target.disconnect (node:internal/child_process:903:26)\\n    at file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs:448:27\\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\\nEmitted 'error' event on process instance at:\\n    at target.disconnect (node:internal/child_process:903:12)\\n    at file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs:448:27\\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {\\n  code: 'ERR_IPC_DISCONNECTED'\\n}\\n\\nNode.js v24.12.0\\n"}`
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs:340:44
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Promise.all (index 1)
+    async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs:343:17
+    async withFixtureContainer (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs:155:12)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4315.550167

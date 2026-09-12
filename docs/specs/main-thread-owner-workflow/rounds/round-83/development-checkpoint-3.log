@@ -1,0 +1,34 @@
+✖ 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交 (1173.022333ms)
+✔ 暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户文件 (314.930375ms)
+✔ 真实子进程 SIGKILL 在 ref CAS 后留下可识别 pending journal，fresh resume 只同步 index 并发布一个快照 (1224.23675ms)
+✔ 未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁 (803.605917ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3705.717458
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:38:1
+✖ 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交 (1173.022333ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + '?? .dsh-workflow/'
+  - ''
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:54:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '?? .dsh-workflow/',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

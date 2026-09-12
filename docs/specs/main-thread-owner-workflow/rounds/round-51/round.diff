@@ -1,0 +1,102 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -11535,7 +11535,7 @@
+     async executeOwnerHostCommand(args, exec) {
+       return executeOwnerHostCommand(runtime, args, exec)
+     },
+-    async failSupervisorReservation(agent, workflowId, reservationKey, failure, expectedReservationId) {
++    async failSupervisorReservation(agent, workflowId, reservationKey, failure, expectedReservationId, failureContext) {
+       const root = await runtime.resolveRoot(agent)
+       const message = errorText(failure)
+       let outcome
+@@ -11550,18 +11550,26 @@
+           assertRecoveryAdmissionState(state)
+           if (['cancelled', 'stopped'].includes(reservation.status)
+             || (expectedReservationId !== undefined && reservation.reservationId !== expectedReservationId)) return
++          if (failureContext !== undefined && state.planDigest !== failureContext.planDigest) return
+           const task = state.tasks?.find(item => item.taskId === reservation.taskId)
+           const terminal = ['failed', 'blocked'].includes(ownerRecord?.status)
++          const previous = failureContext?.source
++          const newFailure = terminal && failureContext !== undefined && (previous === undefined
++            || previous.attempt !== ownerRecord.attempt
++            || previous.sessionId !== (ownerRecord.sessionId ?? ownerRecord.result?.sessionId ?? null)
++            || !['failed', 'blocked'].includes(previous.status)
++            || (previous.recoveryPhase !== 'settled_failed'
++              && ownerRecord.recoverySession?.phase === 'settled_failed'))
+           const classified = classifyFailure(message,
+             ownerExecutionDeviationContext(state, reservation.taskId, reservation.ownerId))
+           const handoff = (state.handoffQueue ?? []).some(item =>
+             (item.sourceTaskId ?? item.sourceStageId ?? item.taskId) === reservation.taskId
+             && ['pending', 'planned', 'acknowledged'].includes(item.status))
+           state.supervisorOutbox[reservationKey] = { ...reservation,
+-            status: terminal ? 'failed' : 'stopped', failedAt: now(), error: message }
++            status: newFailure ? 'failed' : 'stopped', failedAt: now(), error: message }
+           if (terminal && classified.class === 'external_authority') {
+             applyOwnerRecoveryAuthority(state, reservation.taskId, reservation.ownerId, classified)
+-          } else if (terminal && !handoff && task !== undefined && task.status !== 'completed') {
++          } else if (newFailure && !handoff && task !== undefined && task.status !== 'completed') {
+             // Retry scheduling only changes the runnable projection. The
+             // authoritative failed attempt/session must survive for admission.
+             Object.assign(task, { status: 'pending', executorId: null, cursor: null,
+@@ -11958,6 +11966,7 @@
+       let reservation
+       let initial = false
+       let sourcePlanDigest
++      let failureContext
+       await runtime.withWorkflowLock(workflowId, async () => {
+         const state = await readState(runtime, root, workflowId)
+         assertRecoveryAdmissionState(state)
+@@ -11972,6 +11981,10 @@
+         const record = state.ownerRuns?.[ownerRunKey(current.taskId, current.ownerId)]
+         initial = record === undefined
+         sourcePlanDigest = state.planDigest
++        failureContext = { planDigest: state.planDigest, source: record === undefined ? undefined : {
++          attempt: record.attempt, sessionId: record.sessionId ?? record.result?.sessionId ?? null,
++          status: record.status, recoveryPhase: record.recoverySession?.phase,
++        } }
+         reservation = { ...current, status: 'launching',
+           attempts: Number(current.attempts ?? 0) + 1, launchedAt: now(), error: undefined }
+         state.supervisorOutbox[reservationKey] = reservation
+@@ -11991,7 +12004,7 @@
+           result = await runtime.recoverOwner(agent, workflowId, reservation.taskId, reservation.ownerId)
+         }
+       } catch (failure) {
+-        await runtime.failSupervisorReservation(agent, workflowId, reservationKey, failure, reservation.reservationId)
++        await runtime.failSupervisorReservation(agent, workflowId, reservationKey, failure, reservation.reservationId, failureContext)
+         return { outcome: 'failed', reason: errorText(failure) }
+       }
+       await runtime.withWorkflowLock(workflowId, async () => {
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -717,3 +717,31 @@
+   assert.equal(f.adapter.requests.length, 0)
+   assert.deepEqual(calls, { create: 0, resume: 0 })
+ })
++
++for (const strategy of ['autonomous_incident', undefined]) {
++  test(`T15 Supervisor admission refusal (${strategy ?? 'missing strategy'}) stops without requeue and permits independent work`, async t => {
++    const f = await createRecoverySessionFixture(t, { executable: true,
++      includeIndependentOwner: true, modelScript: completedModel })
++    const before = await mutateRecoverySessionState(f, s => {
++      if (strategy === undefined) delete s.ownerRuns['T1:api'].autonomousRecovery
++      else s.ownerRuns['T1:api'].autonomousRecovery.strategy = strategy
++    })
++    const calls = observe(f)
++    await executeNextSupervisorTask(f, 'T1')
++    const stopped = await readRecoverySessionState(f)
++    assert.equal(stopped.supervisorOutbox['T1:api'].status, 'stopped')
++    assert.equal(stopped.tasks[0].status, 'stopped')
++    assert.notEqual(stopped.tasks[0].action, 'await_user')
++    assert.deepEqual(stopped.ownerRuns, before.ownerRuns)
++    assert.equal(stopped.recoveryAdmission, undefined)
++    assert.equal(f.adapter.requests.length, 0)
++    assert.deepEqual(calls, { create: 0, resume: 0 })
++    await executeNextSupervisorTask(f, 'T2')
++    const after = await readRecoverySessionState(f)
++    assert.equal(after.tasks[1].status, 'completed')
++    assert.deepEqual(after.supervisorOutbox['T1:api'], stopped.supervisorOutbox['T1:api'])
++    assert.deepEqual(after.ownerRuns['T1:api'], before.ownerRuns['T1:api'])
++    assert.equal(after.recoveryAdmission, undefined)
++    assert.equal(f.adapter.requests.length, 4)
++  })
++}

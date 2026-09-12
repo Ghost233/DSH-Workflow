@@ -1,0 +1,16 @@
+✔ runner 对恢复错误使用固定分类，不把模型或控制桥错误混为同一种超时 (1.4345ms)
+✔ runner daemon 参数只启用确定性工作区扫描且不要求 workflow-id (0.462625ms)
+✔ runner daemon 发现可执行 Workflow 与需要恢复的卡住计划审查 (14.886917ms)
+✔ runner daemon 并发唤醒多个卡住的规划且停止时持久化 attempt (92.688875ms)
+✔ runner 不读取本地 workflow 状态，只执行 Supervisor 指定动作并逐个按 actionId ACK (52.248667ms)
+✔ runner 只把 supervisor-inspect 的有限宿主观察回传给对应 ACK (50.102208ms)
+✔ runner 让 Runtime 真正投递 notify 后才停止本次运行 (48.026083ms)
+✔ runner 对未知 Supervisor 动作关闭处理且不发送派生请求 (47.83875ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 370.112834

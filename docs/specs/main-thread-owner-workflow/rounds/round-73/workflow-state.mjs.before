@@ -1,0 +1,462 @@
+import { isRecoveryCandidate, candidateNeedsUserDecision, activeCandidateRecoveryPause } from './candidate-recovery-pause.mjs'
+import { supervisorNext } from './supervisor.mjs'
+import { recoveryAdmissionEnabled, assertRecoveryAdmissionState } from './recovery-admission.mjs'
+import {
+  AUTONOMOUS_STRATEGIES,
+  CONVERGENCE_CONTRACT,
+} from './convergence.mjs'
+
+const REVISION_REVIEW_STATUSES = new Set(['needs_revision', 'needs_split', 'needs_discovery'])
+const NON_AUTONOMOUS_STRATEGIES = new Set([
+  'awaiting_approval',
+  'request_user_authority',
+  'autonomous_incident',
+])
+const RECOVERABLE_OWNER_STATUSES = new Set([
+  'failed',
+  'blocked',
+  'stopped',
+  'orphaned',
+  'awaiting_finish',
+  'committed',
+])
+
+export const DEFAULT_WORKFLOW_CONTROL_POLICY = Object.freeze({
+  planningRecoveryDelayMs: 30_000,
+  planningReviewStaleMs: 5 * 60_000,
+  planningRevisionStaleMs: 10 * 60_000,
+})
+
+function timestamp(value) {
+  const parsed = Date.parse(value ?? '')
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function ageSince(state, nowMs) {
+  const updatedAt = timestamp(
+    state?.planningAgent?.updatedAt
+      ?? state?.updatedAt
+      ?? state?.planCreatedAt
+      ?? state?.createdAt,
+  )
+  return updatedAt === undefined ? Number.POSITIVE_INFINITY : Math.max(0, nowMs - updatedAt)
+}
+
+function convergenceStrategy(state) {
+  return state?.planConvergence?.nextStrategy
+}
+
+function evidenceManaged(state) {
+  return state?.planConvergence?.contract === CONVERGENCE_CONTRACT
+}
+
+/** A review is autonomous only when its persisted convergence contract says so. */
+export function planReviewNeedsAutonomousWork(state) {
+  const status = state?.planReview?.status
+  if (REVISION_REVIEW_STATUSES.has(status)) return true
+  if (status !== 'needs_decision' || !evidenceManaged(state)) return false
+  const strategy = convergenceStrategy(state)
+  return state.planConvergence.authorityRequired === false
+    && AUTONOMOUS_STRATEGIES.includes(strategy)
+    && !NON_AUTONOMOUS_STRATEGIES.has(strategy)
+}
+
+export function workflowTaskCounts(state) {
+  const tasks = Array.isArray(state?.tasks) ? state.tasks : []
+  const plans = new Map((Array.isArray(state?.plan?.tasks) ? state.plan.tasks : []).map(task => [task.id, task]))
+  const records = new Map(tasks.map(task => [task.taskId, task]))
+  const activeTaskIds = new Set(Object.values(state?.ownerRuns ?? {})
+    .filter(record => ['starting', 'running', 'waiting_approval', 'awaiting_finish', 'committed'].includes(record?.status))
+    .map(record => record.taskId ?? record.stageId))
+  const counts = {
+    totalTasks: tasks.length,
+    pendingTasks: 0,
+    runningTasks: 0,
+    queuedTasks: 0,
+    waitingDependencyTasks: 0,
+    waitingDecisionTasks: 0,
+    completedTasks: 0,
+  }
+  for (const record of tasks) {
+    if (record.status === 'completed') {
+      counts.completedTasks += 1
+      continue
+    }
+    if (record.status === 'stopped') {
+      if (!recoveryAdmissionEnabled(state) || ['await_user', 'provide_input'].includes(record.action)) counts.waitingDecisionTasks += 1
+      continue
+    }
+    if (record.status === 'running') {
+      if (activeTaskIds.has(record.taskId)) counts.runningTasks += 1
+      else {
+        counts.queuedTasks += 1
+        counts.pendingTasks += 1
+      }
+      continue
+    }
+    if (record.status !== 'pending') continue
+    counts.pendingTasks += 1
+    const dependencies = Array.isArray(plans.get(record.taskId)?.dependsOn)
+      ? plans.get(record.taskId).dependsOn
+      : []
+    if (dependencies.some(id => records.get(id)?.status !== 'completed')) {
+      counts.waitingDependencyTasks += 1
+    }
+  }
+  return counts
+}
+
+export function workflowOccupiesActiveSlot(state) {
+  if (state?.finalized === true) return false
+  if (state?.status === 'cancelled' && state?.temporaryArtifactsCleaned === true) return false
+  return true
+}
+
+function result(state, counts, kind, phase, reason, options = {}) {
+  const lifecycle = options.lifecycle ?? (
+    kind === 'terminal'
+      ? phase === 'cancelled' ? 'cancelled' : 'completed'
+      : kind === 'wait'
+        ? 'waiting'
+        : kind === 'invariant'
+          ? 'failed'
+          : 'active'
+  )
+  return {
+    kind,
+    command: options.command ?? null,
+    phase,
+    reason,
+    lifecycle,
+    actionRequired: options.actionRequired === true,
+    counts,
+    terminal: kind === 'terminal',
+  }
+}
+
+function command(state, counts, phase, reason, name, options = {}) {
+  return result(state, counts, 'command', phase, reason, { ...options, command: name })
+}
+
+function wait(state, counts, phase, reason, actionRequired = false) {
+  return result(state, counts, 'wait', phase, reason, { actionRequired })
+}
+
+function terminal(state, counts, phase, reason) {
+  return result(state, counts, 'terminal', phase, reason)
+}
+
+function invariant(state, counts, reason) {
+  return result(state, counts, 'invariant', 'state_invariant_violation', reason, {
+    command: 'reconcile',
+    lifecycle: 'failed',
+  })
+}
+
+export function technicalPauseSource(state) {
+  return JSON.stringify({ planDigest: state.planDigest,
+    tasks: (state.tasks ?? []).map(task => [task.taskId, task.status, task.reason, task.action,
+      task.checkState, task.autonomousRecovery?.strategy]),
+    owners: Object.entries(state.ownerRuns ?? {}).sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, record]) => [key, record.status, record.attempt, record.sessionId,
+        record.recoverySession?.phase, record.executionDeviation]),
+  })
+}
+
+function hasAutonomousIncident(state) {
+  return convergenceStrategy(state) === 'autonomous_incident'
+    || (state?.tasks ?? []).some(task => (
+      task?.status !== 'completed' && task?.autonomousRecovery?.strategy === 'autonomous_incident'
+    ))
+}
+
+function hasPendingHandoff(state) {
+  return (state?.handoffQueue ?? []).some(item => item?.status === 'pending')
+}
+
+function hasRecoverableExecution(state) {
+  if (state?.pendingTaskMerge?.taskId !== undefined || state?.cleanupPending === true) return true
+  const ownerRecords = Object.values(state?.ownerRuns ?? {})
+  if (ownerRecords.some(record => RECOVERABLE_OWNER_STATUSES.has(record?.status))) return true
+  return (state?.tasks ?? []).some(task => (
+    task?.status !== 'completed'
+    && ['task_failed', 'thread_failed', 'runtime_failed', 'owner_orphaned'].includes(task?.reason)
+  ))
+}
+
+function runningPhase(counts) {
+  if (counts.runningTasks > 0) return 'owner_running'
+  if (counts.waitingDecisionTasks > 0) return 'waiting_workflow_decision'
+  if (counts.waitingDependencyTasks > 0 || counts.pendingTasks > 0) return 'waiting_dependencies'
+  return 'finalizing'
+}
+
+/**
+ * The single durable-state decision table for Runtime, Runner and Dashboard.
+ * Every non-terminal state returns either one command or one explicit wait.
+ */
+export function deriveWorkflowControl(state, options = {}) {
+  const policy = { ...DEFAULT_WORKFLOW_CONTROL_POLICY, ...options }
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now()
+  const daemonActive = options.daemonActive === true
+  const counts = workflowTaskCounts(state)
+  if (state === null || typeof state !== 'object' || Array.isArray(state)) {
+    return invariant(state, counts, 'Workflow state 必须是对象')
+  }
+
+  if (state.finalized === true) return terminal(state, counts, 'completed', 'Workflow 已最终交付')
+  if (state.status === 'cancelled') return terminal(state, counts, 'cancelled', 'Workflow 已取消')
+  if (state.status === 'stopped') return terminal(state, counts, 'stopped', 'Workflow 已明确停止')
+  if (state.autonomousIncident?.kind === 'state_machine_invariant') {
+    return wait(state, counts, 'state_invariant_violation', '状态不变量现场已持久化，等待新版本 Runtime 重新解释')
+  }
+
+  if (isRecoveryCandidate(state) && candidateNeedsUserDecision(state)) {
+    return wait(state, counts, 'awaiting_main_discussion', '恢复候选等待已确认的外部决定', true)
+  }
+  const candidatePause = activeCandidateRecoveryPause(state)
+  if (candidatePause !== undefined) {
+    const notification = state.mainOutbox?.[candidatePause.notificationId]
+    if (notification?.reason !== 'candidate_recovery_pause') return invariant(state, counts, '候选恢复暂停缺少对应报告')
+    if (notification.status === 'pending') return command(state, counts, 'candidate_recovery_report_pending',
+      '投递已持久化的候选技术暂停报告', 'plan-revision-drive')
+    if (notification.status !== 'delivered') return invariant(state, counts, '候选恢复暂停报告状态无效')
+    return wait(state, counts, 'candidate_recovery_paused', '候选恢复已暂停，等待来源或回执变化')
+  }
+
+  // Protected technical stops are scheduler facts, not product decisions.
+  // Let the same scheduler select independent work or settle a technical pause.
+  if (recoveryAdmissionEnabled(state) && ['running', 'blocked'].includes(state.status)
+    && state.planApproved === true && state.planReview?.status === 'passed'
+    && state.pendingPlanRevision === undefined && state.intentPlanRevisionCycle === undefined
+    && state.pendingTaskMerge === undefined && !state.cleanupPending
+    && !hasPendingHandoff(state) && !['request_user_authority', 'autonomous_incident'].includes(convergenceStrategy(state))) {
+    try {
+      assertRecoveryAdmissionState(state)
+      if (state.planReviewDigest !== state.planDigest) {
+        return invariant(state, counts, '已批准计划缺少当前Review digest绑定')
+      }
+      const source = technicalPauseSource(state)
+      if (state.technicalPause?.source === source) {
+        const notification = state.mainOutbox?.[state.technicalPause.notificationId]
+        if (notification?.reason !== 'technical_pause') return invariant(state, counts, '技术暂停缺少对应报告')
+        if (notification?.status === 'pending') {
+          return command(state, counts, 'technical_report_pending', '投递已持久化的技术暂停报告', 'execute')
+        }
+        return wait(state, counts, 'technical_pause', '技术恢复已暂停，保留来源与预算等待状态变化')
+      }
+      const incidents = (state.tasks ?? []).filter(task => task.autonomousRecovery?.strategy === 'autonomous_incident')
+      const persistedIncidents = incidents.every(task => {
+        const plan = state.plan.tasks.find(item => item.id === task.taskId)
+        const record = state.ownerRuns?.[`${task.taskId}:${plan?.ownerId}`]
+        return ['failed', 'blocked'].includes(record?.status)
+          && record.autonomousRecovery?.strategy === 'autonomous_incident'
+      })
+      if (incidents.length === 0 || persistedIncidents) {
+        const receipt = supervisorNext({ ...state, recoveryProtected: true })
+        if (receipt.action === 'notify') {
+          const waiting = state.tasks.filter(task => task.status === 'stopped'
+            && ['await_user', 'provide_input'].includes(task.action))
+          const reports = Object.values(state.mainOutbox ?? {}).filter(item => item.planDigest === state.planDigest
+            && (item.controlSource === source || waiting.some(task => {
+              const plan = state.plan.tasks.find(plan => plan.id === task.taskId)
+              const deviation = state.ownerRuns?.[`${task.taskId}:${plan?.ownerId}`]?.executionDeviation
+              return item.reason === 'execution_authority_required' && item.taskId === task.taskId
+                && deviation?.deviationId !== undefined && item.deviationId === deviation.deviationId
+            })))
+          const delivered = waiting.length > 0 && waiting.every(task => reports.some(item => item.status === 'delivered'
+            && (item.taskId === task.taskId || item.tasks?.some(detail => detail.taskId === task.taskId))))
+          if (delivered && !reports.some(item => item.status === 'pending')) {
+            return wait(state, counts, 'waiting_workflow_decision', '等待已报告的外部决定', true)
+          }
+          return command(state, counts, 'user_report_pending', '投递当前用户待决报告', 'execute', { actionRequired: true })
+        }
+        if (receipt.reason === 'technical_pause' || incidents.length > 0) {
+          return command(state, counts, receipt.reason === 'technical_pause' ? 'technical_pause_pending' : runningPhase(counts),
+            '按当前依赖与Owner状态推进独立任务或报告技术暂停', 'execute')
+        }
+      }
+    } catch (error) {
+      return invariant(state, counts, `恢复控制状态无效：${error.message}`)
+    }
+  }
+
+  if (hasAutonomousIncident(state)) {
+    return command(state, counts, 'autonomous_incident', '等待新证据并探测自治恢复', 'convergence-probe')
+  }
+
+  const strategy = convergenceStrategy(state)
+  const pendingRevision = state.pendingPlanRevision
+  const pendingRevisionStrategy = pendingRevision === undefined
+    ? strategy
+    : state.planConvergence?.cycleId === pendingRevision.cycleId
+      ? strategy
+      : pendingRevision.convergence?.nextStrategy
+  const implementationRepairRevision = pendingRevision !== undefined
+    && state.implementationRepair?.intentId !== undefined
+    && (pendingRevision.intentIds ?? []).includes(state.implementationRepair.intentId)
+  const rebuildPending = pendingRevision === undefined
+    && state.intentPlanRevisionCycle?.phase === 'rebuild_pending'
+  if (pendingRevision !== undefined || rebuildPending) {
+    if (pendingRevisionStrategy === 'awaiting_approval' || pendingRevision?.review?.status === 'passed') {
+      if (pendingRevision?.approvalPolicy === 'autonomous' || implementationRepairRevision) {
+        return command(state, counts, 'plan_revision_approval', '批准 Runtime 内部 repair PlanRevision', 'plan-revision-approve')
+      }
+      return wait(state, counts, 'awaiting_plan_approval', 'PlanRevision 等待根会话批准', true)
+    }
+    if (pendingRevisionStrategy === 'request_user_authority') {
+      return wait(state, counts, 'awaiting_main_discussion', 'PlanRevision 等待外部授权或产品决定', true)
+    }
+    return command(state, counts, pendingRevisionStrategy === 'arbitrate' ? 'plan_arbitrating' : 'plan_revision_in_progress',
+      'Runner 推进当前 PlanRevision 收敛策略', 'plan-revision-drive')
+  }
+
+  if (state.status === 'initializing') {
+    return command(state, counts, 'initializing', '初始化中断后恢复同一 Workflow', 'workflow-recover')
+  }
+  if (state.status === 'registry_pending_plan') {
+    return command(state, counts, 'registry_pending_plan', 'Registry 已批准，继续同一 Workflow 规划', 'workflow-recover')
+  }
+  if (state.status === 'planning') {
+    const failed = state.planningAgent?.phase === 'failed'
+    if (!failed && ageSince(state, nowMs) < policy.planningRevisionStaleMs) {
+      return wait(state, counts, 'planning', 'Planner 正在运行')
+    }
+    return command(state, counts, 'planning_recovery_queued', '规划状态已失去活动执行者', 'workflow-recover')
+  }
+
+  if (state.status === 'planned') {
+    const phase = state.planningAgent?.phase
+    if (state.pendingRegistryProposal != null || state.suggestedRegistryOperation != null
+      || phase === 'awaiting_registry_approval') {
+      return wait(state, counts, 'awaiting_registry_approval', '等待 Owner Registry 批准', true)
+    }
+    const handoffReviewPending = state.planApproved !== true
+      && state.planReview === undefined
+      && (state.handoffQueue ?? []).some(item => ['planned', 'acknowledged'].includes(item?.status))
+    if (handoffReviewPending) {
+      return command(state, counts, 'plan_revision_recovery_queued', '审查 Handoff 重规划后的新 DAG', 'planning-recover')
+    }
+    if (['discussion_summary_pending', 'discussion_summarizing'].includes(phase)) {
+      return wait(state, counts, 'planning_discussion_summarizing', '正在生成一次性规划讨论摘要')
+    }
+    if (phase === 'consulting_owners' && state.planReview === undefined) {
+      const active = ageSince(state, nowMs) < policy.planningRevisionStaleMs
+      return active
+        ? wait(state, counts, 'planning_owner_consultation', '相关 Owner 正在提供结构化规划证据')
+        : command(state, counts, 'planning_owner_consultation', 'Owner 会诊失去活动执行者，重建同一规划轮次', 'planning-recover')
+    }
+    if (phase === 'awaiting_main_discussion' || state.planningDiscussion?.status === 'delivered') {
+      return wait(state, counts, 'awaiting_main_discussion', '等待根会话一次性讨论全部决定', true)
+    }
+    if (state.planReview?.status === 'passed' || strategy === 'awaiting_approval'
+      || phase === 'awaiting_plan_approval') {
+      return wait(state, counts, 'awaiting_plan_approval', '当前计划等待根会话批准', true)
+    }
+    if (strategy === 'request_user_authority'
+      || (state.planReview?.status === 'needs_decision' && !planReviewNeedsAutonomousWork(state))) {
+      return wait(state, counts, 'awaiting_main_discussion', '外部授权问题必须一次性返回根会话', true)
+    }
+    if (phase === 'awaiting_revision_extension') {
+      return command(state, counts, 'awaiting_revision_extension', '迁移旧版修订额度决定', 'planning-notify', {
+        actionRequired: true,
+      })
+    }
+
+    const reviewStatus = state.planReview?.status
+    const legacyAutonomousReview = REVISION_REVIEW_STATUSES.has(reviewStatus) && !evidenceManaged(state)
+    if (planReviewNeedsAutonomousWork(state) || legacyAutonomousReview) {
+      const age = ageSince(state, nowMs)
+      if (phase === 'revision' && age < policy.planningRevisionStaleMs) {
+        return wait(state, counts, 'plan_revision_in_progress', 'Planner 正在修订当前计划')
+      }
+      if (phase === 'reviewing' && age < policy.planningReviewStaleMs) {
+        return wait(state, counts, 'plan_reviewing', 'Reviewer 正在审查当前计划')
+      }
+      const recoveryPhase = phase === 'consulting_owners' || (reviewStatus === 'needs_decision' && strategy === 'owner_council')
+        ? 'planning_owner_consultation'
+        : phase === 'reviewing'
+          ? 'plan_reviewing'
+          : reviewStatus === 'needs_split'
+            ? 'plan_split_required'
+            : reviewStatus === 'needs_discovery'
+              ? 'plan_discovery_required'
+              : 'plan_revision_recovery_queued'
+      return command(state, counts, recoveryPhase,
+        `恢复 ${String(reviewStatus)} 的自治规划循环`, 'planning-recover')
+    }
+    if (state.planReview === undefined) {
+      const age = ageSince(state, nowMs)
+      if (phase === 'reviewing' && age < policy.planningReviewStaleMs) {
+        return wait(state, counts, 'plan_reviewing', 'Reviewer 正在审查当前计划')
+      }
+      if (phase !== 'failed' && age < policy.planningRecoveryDelayMs) {
+        return wait(state, counts, 'plan_review_not_started', '等待 Runtime 启动 Reviewer')
+      }
+      return command(
+        state,
+        counts,
+        phase === 'reviewing' ? 'plan_reviewing' : 'plan_revision_recovery_queued',
+        '恢复未完成的计划审查',
+        'planning-recover',
+      )
+    }
+    return invariant(state, counts, `planned 状态没有可处理的 Review/Convergence 组合：${String(reviewStatus)}`)
+  }
+
+  // handoff 是对当前 DAG 权限边界的持久变更请求。Supervisor 的失败收尾
+  // 可能已把状态从 blocked 恢复成 running，但 pending handoff 仍必须先于
+  // 任何 Owner 再派发被消费，否则会用已失效的 review/approval 重试旧任务。
+  if (hasPendingHandoff(state)) {
+    const liveSource = recoveryAdmissionEnabled(state) && (state.handoffQueue ?? []).some(item => {
+      if (item.status !== 'pending' || item.type !== 'request_handoff') return false
+      const source = item.sourceExecution
+      const record = state.ownerRuns?.[`${source?.taskId}:${source?.ownerId}`]
+      return source?.contract === 'DSH_HANDOFF_SOURCE_EXECUTION_V1' && source.planDigest === state.planDigest
+        && record?.attempt === source.attempt && record.sessionId === source.sessionId
+        && ['starting', 'running', 'waiting_approval'].includes(record.status)
+    })
+    if (liveSource) return wait(state, counts, 'handoff_source_running', '等待转交来源Owner的真实终态')
+    return command(state, counts, 'handoff_replanning', '把 pending handoff 纳入局部 DAG', 'handoff-replan')
+  }
+
+  if (state.status === 'approved') {
+    return command(state, counts, daemonActive ? 'runner_launching' : 'runner_queued', '执行已批准 DAG', 'execute')
+  }
+  if (state.status === 'running') {
+    return command(state, counts, runningPhase(counts), '继续 Supervisor 执行循环', 'execute')
+  }
+
+  if (state.status === 'blocked') {
+    const waitsForUser = (state.tasks ?? []).some(task => (
+      task?.status === 'stopped' && ['decision_required', 'input_missing'].includes(task?.reason)
+    ))
+    if (waitsForUser) return wait(state, counts, 'waiting_workflow_decision', '等待一次性外部决定', true)
+    if (hasRecoverableExecution(state)) {
+      return command(state, counts, 'execution_recovery_queued', '恢复阻塞的 Owner/Runtime 现场', 'workflow-recover')
+    }
+    return invariant(state, counts, 'blocked 状态既没有外部决定，也没有可恢复执行现场')
+  }
+
+  if (state.status === 'failed') {
+    if (state.plan === undefined || state.planningFailure !== undefined) {
+      return command(state, counts, 'planning_recovery_queued', '恢复失败的规划现场', 'workflow-recover')
+    }
+    if (hasRecoverableExecution(state)) {
+      return command(state, counts, 'execution_recovery_queued', '恢复失败的 Owner/合并现场', 'workflow-recover')
+    }
+    return invariant(state, counts, 'failed 状态没有可定位的规划或执行失败现场')
+  }
+
+  if (state.status === 'completed') {
+    if (state.implementationReview?.status === 'passed') {
+      return command(state, counts, 'finalizing', 'Implementation Review 已通过，完成最终合并', 'workflow-finalize')
+    }
+    if (state.implementationReview?.status === 'needs_repair') {
+      return command(state, counts, 'implementation_repair_required', '把 Implementation Review 问题转换为 repair 子图', 'implementation-repair')
+    }
+    return command(state, counts, 'implementation_review_required', '运行独立 Implementation Review', 'implementation-review')
+  }
+
+  return invariant(state, counts, `未知 Workflow 状态：${String(state.status)}`)
+}

@@ -1,0 +1,23 @@
+{
+  "runs": [
+    {
+      "name": "cross-process-owner-cancel-isolation-and-new-token",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-16/round-03/probe.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T09:47:44.078550+00:00",
+      "timeoutSeconds": 45,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T09:47:47.449525+00:00",
+      "collectedScenarios": 1,
+      "probeErrors": [],
+      "collectionComplete": true
+    }
+  ],
+  "drift": []
+}

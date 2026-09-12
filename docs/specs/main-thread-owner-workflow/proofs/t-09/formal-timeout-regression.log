@@ -1,0 +1,11 @@
+✔ 任务达到 onTimeout.afterMs 后切换自治恢复策略而不是交给用户 (373.228833ms)
+✔ Owner 恢复后使用本次运行时间重置超时基线，不沿用旧 reservation 时间 (273.469458ms)
+✔ 持续产生心跳的长任务按进展续租，不因总运行时间被误杀 (263.612125ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1051.855916

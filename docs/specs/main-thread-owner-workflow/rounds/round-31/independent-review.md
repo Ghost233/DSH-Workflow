@@ -1,0 +1,1 @@
+t21_contract_review只读核验：inspect在retirement存在时先等待drain，之后不发布session或commit恢复事件。屏障位于原raw基线之前，未改replay、未load/flush，保留所有无副作用断言。正式26/26，F21和L3可关闭，无新增P1/P2。

@@ -1,0 +1,36 @@
+--- recovery-budget-v1.md before R56
++++ recovery-budget-v1.md R56
+@@ -1,6 +1,6 @@
+ # T-13 纯恢复预算接口 V1
+
+-来源：[R4-V03-1 第12节](../../../superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md)。实现：[recovery-budget.mjs](../../../../owner-workflow-plugin/src/recovery-budget.mjs)。这是供T-14验证持久事务的纯状态接口，未接入Runtime，也不提供磁盘持久性、锁、会话对账或硬截止保证。
++来源：[R4-V03-1 第12节](../../../superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md)。实现：[recovery-budget.mjs](../../../../owner-workflow-plugin/src/recovery-budget.mjs)。这是纯状态接口，本身不提供磁盘持久性、锁、会话对账或硬截止保证。Owner恢复已由T20/T22及T15局部接线消费；R55新增的重规划执行形状尚未进入Runtime admission/启动链。
+
+ ## 数据边界
+
+@@ -8,7 +8,18 @@
+
+ 根问题保存 `rootProblemId/limit/used/source/status/evidence`，状态open或resolved。`source:{id,version}`必须指向具体义务或首次失败记录，不能只指向包含多个问题的整份Review。一个来源在同Workflow中只注册一个root；原root不能换来源或限额。真正新问题的来源识别与旧问题复用由Runtime在T-14验证后实现，纯模块不自行推断。
+
+-领取参数包含 `workflowId/rootProblemId/requestId/attemptId/taskId/ownerId/executionVersion`，开始和结算也要提交完整相同绑定。所有ID是非空、无首尾空白的字符串。请求ID/attempt ID由调用者提供，纯模块不读取时间或生成随机数；其可信生产者与跨进程幂等由T-14承接。不能让模型通过更换ID获取新问题额度。
++领取绑定是两个严格互斥的形状，开始和结算必须提交完整相同绑定：
++
++| 执行类型 | 精确字段 |
++| --- | --- |
++| 既有 Owner | `workflowId/rootProblemId/requestId/attemptId/taskId/ownerId/executionVersion`，没有 `executionKind` |
++| 重规划操作 | `workflowId/rootProblemId/requestId/attemptId/executionVersion/executionKind/operationId/operationKind`，其中 `executionKind = replan_operation`，没有 `taskId/ownerId` |
++
++`operationKind` 只接受 `revision_plan`、`revision_review`、`handoff_replan`。`operationId` 标识由持久适配器固定的操作；每次物理外部调用，包括内部重试，都必须有独立且持久的 requestId/attemptId，并沿用真实来源问题的 rootProblemId。操作身份不是根问题身份；换类型、operationId、策略或版本不能重置问题预算。纯账本只检查调用者传入的绑定，来源权威/调用编号/版本校验由T15 adapter负责，不能让模型通过更换ID注册新问题。
++
++所有ID是非空、无首尾空白字符串。未知 executionKind/operationKind、混合两种身份、缺失字段、额外字段均拒绝。既有 Owner JSON 形状保持不变；同一 V1 账本允许两种 attempt 共存，所有项计入相同 totalUsed 和各自 root 的 used。requestId/attemptId 在全账本唯一，相同request重放不能跨类型或改变任一字段。executionRef/result.reference 的跨attempt去重同样跨两种类型，开始前不能成功结算，失败/取消不退款，未结算的操作同样阻止问题关闭。
++
++兼容策略：能识别新分支的读者按联合严格读取；旧 V1 reader 遇到新 operation 分支必须拒绝，不删字段、不造 Owner ID、不降级或重建预算。当前 T20 admission 仍是 Owner-only，其完整映射校验拒绝没有对应 intent 的 operation attempt；R55未放宽该门禁。实际重规划必须先完成T15持久来源、mixed intent及启动/结果对账接线才可使用，不能将纯账本支持当作执行授权。
+
+ 公开输入和导入账本严格校验；未知字段/版本、重复身份、冲突来源、计数与attempt记录不符或不合法状态拒绝。校验导入快照只能证明内部一致性，不能证明该快照真实/最新或识别被整体协调篡改的历史；这些属于持久边界。每次调用返回新对象，不修改输入。
+
+@@ -39,4 +50,4 @@
+
+ ## 后续接缝
+
+-本模块只保证给定正确最新快照的确定性计算，不能处理两个进程各自拿旧副本后的并发写入；T-14必须验证完整读改写和外部启动事务，T-15接线。deadline、取消确认和资源释放由T-16/T-17负责；跨版本派生绑定由T-18负责；有限生产默认值及启用由T-19负责。当前不宣称实际工作流已经有持久预算上限。
++本模块只保证给定正确最新快照的确定性计算，不能处理两个进程各自拿旧副本后的并发写入；T-14必须验证完整读改写和外部启动事务，T-15接线。deadline、取消确认和资源释放由T-16/T-17负责；跨版本派生绑定由T-18负责；有限生产默认值及启用由T-19负责。当前已有Owner局部持久恢复证据，但不宣称所有重规划入口已受限或完整工作流已验收。

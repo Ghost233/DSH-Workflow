@@ -1,0 +1,1008 @@
+import { createHash, randomUUID } from 'node:crypto'
+
+import {
+  createRecoveryBudget,
+  normalizeRecoveryBudget,
+  registerRecoveryProblem,
+  reserveRecoveryAttempt,
+} from './recovery-budget.mjs'
+import { AUTONOMOUS_STRATEGIES, CONVERGENCE_CONTRACT } from './convergence.mjs'
+
+export const RECOVERY_ADMISSION_REQUEST_CONTRACT = 'DSH_RECOVERY_ADMISSION_REQUEST_V1'
+export const REPLAN_ADMISSION_REQUEST_CONTRACT = 'DSH_REPLAN_ADMISSION_REQUEST_V1'
+const REPLAN_OPERATION_KINDS = new Set(['revision_plan', 'revision_review', 'handoff_replan'])
+export const RECOVERY_ADMISSION_CONTRACT = 'DSH_RECOVERY_ADMISSION_V1'
+export const RECOVERY_ADMISSION_CONFIG_CONTRACT = 'DSH_RECOVERY_ADMISSION_CONFIG_V1'
+export const RECOVERY_ADMISSION_STATE_CONTRACT = 'DSH_RECOVERY_ADMISSION_STATE_V1'
+export const RECOVERY_CONTINUATION_CONTRACT = 'DSH_RECOVERY_CONTINUATION_V1'
+
+// `AUTONOMOUS_STRATEGIES` is the plan-revision subset. Owner failure recovery
+// also persists the two repair strategies selected by FAILURE_STRATEGIES.
+const AUTONOMOUS_STRATEGY_SET = new Set([
+  ...AUTONOMOUS_STRATEGIES,
+  'repair_runtime',
+  'same_owner_repair',
+])
+
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+function digest(value) {
+  return createHash('sha256').update(canonical(value)).digest('hex')
+}
+
+function fail(reason) {
+  throw new Error(reason)
+}
+
+function rejection(state, reason) {
+  return {
+    state,
+    response: {
+      contract: RECOVERY_ADMISSION_CONTRACT,
+      outcome: 'rejected',
+      reason,
+      launchAuthorized: false,
+    },
+  }
+}
+
+function deepCopy(value) {
+  return structuredClone(value)
+}
+
+function plainRecord(value, name) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || Object.getPrototypeOf(value) !== Object.prototype) {
+    fail(`${name}_invalid`)
+  }
+  if (Object.getOwnPropertySymbols(value).length !== 0) fail(`${name}_invalid`)
+  for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
+    if (!descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) fail(`${name}_invalid`)
+  }
+  return value
+}
+
+function exactKeys(value, keys, name) {
+  plainRecord(value, name)
+  const actual = Object.getOwnPropertyNames(value).sort()
+  const expected = [...keys].sort()
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    fail(`${name}_invalid`)
+  }
+  return value
+}
+
+function ordinaryArray(value, name) {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype
+    || Object.getOwnPropertySymbols(value).length !== 0) fail(`${name}_invalid`)
+  const names = Object.getOwnPropertyNames(value)
+  if (names.length !== value.length + 1 || !names.includes('length')) fail(`${name}_invalid`)
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    if (descriptor === undefined || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+      fail(`${name}_invalid`)
+    }
+  }
+  return value
+}
+
+function text(value, name) {
+  if (typeof value !== 'string' || value.length === 0 || value !== value.trim()) fail(`${name}_invalid`)
+  return value
+}
+
+function nonblankText(value, name) {
+  if (typeof value !== 'string' || value.trim() === '') fail(`${name}_invalid`)
+  return value
+}
+
+function positiveInteger(value, name) {
+  if (!Number.isSafeInteger(value) || value < 1) fail(`${name}_invalid`)
+  return value
+}
+
+function reference(value, name) {
+  exactKeys(value, ['id', 'version'], name)
+  return { id: text(value.id, `${name}_id`), version: text(value.version, `${name}_version`) }
+}
+
+function sameReference(left, right) {
+  return left.id === right.id && left.version === right.version
+}
+
+function ownerFailureSource(value, name = 'request_source') {
+  exactKeys(value, ['kind', 'attempt', 'sessionId'], name)
+  if (value.kind !== 'owner_failure') fail(`${name}_invalid`)
+  const sessionId = value.sessionId === null ? null : text(value.sessionId, `${name}_session_id`)
+  return {
+    kind: 'owner_failure',
+    attempt: positiveInteger(value.attempt, `${name}_attempt`),
+    sessionId,
+  }
+}
+
+function requestSource(value) {
+  plainRecord(value, 'request_source')
+  if (value.kind === 'owner_failure') return ownerFailureSource(value)
+  if (value.kind === 'obligation') {
+    exactKeys(value, ['kind', 'id'], 'request_source')
+    if (value.kind !== 'obligation') fail('request_source_invalid')
+    return { kind: 'obligation', id: text(value.id, 'request_source_id') }
+  }
+  fail('request_source_invalid')
+}
+
+function admissionRequest(value) {
+  exactKeys(value, ['contract', 'planDigest', 'taskId', 'ownerId', 'source'], 'request')
+  if (value.contract !== RECOVERY_ADMISSION_REQUEST_CONTRACT) fail('request_contract_invalid')
+  return {
+    contract: RECOVERY_ADMISSION_REQUEST_CONTRACT,
+    planDigest: text(value.planDigest, 'request_plan_digest'),
+    taskId: text(value.taskId, 'request_task_id'),
+    ownerId: text(value.ownerId, 'request_owner_id'),
+    source: requestSource(value.source),
+  }
+}
+
+function replanOperation(value, name) {
+  exactKeys(value, ['operationKind', 'operationId', 'ordinal'], name)
+  if (!REPLAN_OPERATION_KINDS.has(value.operationKind)) fail(`${name}_kind_invalid`)
+  return {
+    operationKind: value.operationKind,
+    operationId: text(value.operationId, `${name}_id`),
+    ordinal: positiveInteger(value.ordinal, `${name}_ordinal`),
+  }
+}
+
+// Only the internal Runtime admission adapter consumes this envelope. The
+// operation identity is a correlation key, never authority to launch a child.
+export function recoveryAdmissionOrigin(request) {
+  plainRecord(request, 'request')
+  if (request.contract !== REPLAN_ADMISSION_REQUEST_CONTRACT) return admissionRequest(request)
+  exactKeys(request, ['contract', 'origin', 'operation'], 'replan_request')
+  replanOperation(request.operation, 'replan_operation')
+  return admissionRequest(request.origin)
+}
+
+function admissionConfig(state) {
+  exactKeys(state?.recoveryAdmissionConfig, [
+    'contract', 'executionVersion', 'totalLimit', 'problemLimit',
+  ], 'recovery_admission_config')
+  const config = state.recoveryAdmissionConfig
+  if (config.contract !== RECOVERY_ADMISSION_CONFIG_CONTRACT) fail('recovery_admission_config_contract_invalid')
+  const executionVersion = text(config.executionVersion, 'recovery_admission_config_execution_version')
+  const totalLimit = positiveInteger(config.totalLimit, 'recovery_admission_config_total_limit')
+  const problemLimit = positiveInteger(config.problemLimit, 'recovery_admission_config_problem_limit')
+  if (executionVersion !== state.planDigest) fail('recovery_admission_config_execution_version_mismatch')
+  return { executionVersion, totalLimit, problemLimit }
+}
+
+// An explicit marker survives a missing config; config/ledger presence also
+// selects the new protocol for workflows created by the existing local adapter.
+export function recoveryAdmissionEnabled(state) {
+  return Object.hasOwn(state, 'recoveryProtocol')
+    || Object.hasOwn(state, 'recoveryAdmissionConfig') || Object.hasOwn(state, 'recoveryAdmission')
+}
+
+export function assertRecoveryAdmissionState(state) {
+  if (Object.hasOwn(state, 'recoveryProtocol') && state.recoveryProtocol !== RECOVERY_ADMISSION_CONTRACT) {
+    fail('recovery_protocol_invalid')
+  }
+  const config = admissionConfig(state)
+  normalizedAdmission(state.recoveryAdmission, text(state.id, 'state_workflow_id'), config)
+}
+
+function closeWhen(value, name) {
+  plainRecord(value, name)
+  const kind = value.kind
+  if (kind === 'plan_verification_binding' || kind === 'task_verification_result') {
+    exactKeys(value, ['kind', 'taskId', 'verificationId'], name)
+    return { kind, taskId: text(value.taskId, `${name}_task_id`), verificationId: text(value.verificationId, `${name}_verification_id`) }
+  }
+  if (kind === 'plan_task_executable') {
+    exactKeys(value, ['kind', 'taskId'], name)
+    return { kind, taskId: text(value.taskId, `${name}_task_id`) }
+  }
+  if (kind === 'decision_record') {
+    exactKeys(value, ['kind', 'taskId', 'authority'], name)
+    const authority = text(value.authority, `${name}_authority`)
+    if (!['orchestrator', 'user'].includes(authority)) fail(`${name}_invalid`)
+    return { kind, taskId: text(value.taskId, `${name}_task_id`), authority }
+  }
+  fail(`${name}_invalid`)
+}
+
+function targetTaskIds(value, name) {
+  ordinaryArray(value, name)
+  const targetIds = value.map((item, index) => text(item, `${name}_${index}`))
+  if (targetIds.length === 0 || new Set(targetIds).size !== targetIds.length) fail(`${name}_invalid`)
+  return [...targetIds].sort()
+}
+
+function hasUserBasis(obligation) {
+  return obligation.closeWhen.authority === 'user'
+    || obligation.decisionClassification === 'external_permission_gap'
+    || obligation.decisionClassification === 'business_commitment_delta'
+    || obligation.classificationBasis?.businessCommitmentDelta !== undefined
+    || obligation.classificationBasis?.externalPermissionGap !== undefined
+}
+
+function obligationPhysicalKey(obligation) {
+  return canonical({ targetTaskIds: obligation.targetTaskIds, closeWhen: obligation.closeWhen })
+}
+
+function liveObligation(state, request) {
+  const convergence = state.planConvergence
+  if (convergence?.contract !== CONVERGENCE_CONTRACT) fail('obligation_convergence_invalid')
+  const history = convergence.history
+  ordinaryArray(history, 'obligation_convergence_history')
+  const latest = history.at(-1)
+  // The history event has evolved with optional renewal fields. It must at
+  // least bind this candidate rather than exposing a guessed top-level digest.
+  if (latest === null || typeof latest !== 'object' || Array.isArray(latest)
+    || latest.candidatePlanDigest !== state.planDigest) fail('obligation_candidate_plan_mismatch')
+  ordinaryArray(convergence.obligations, 'obligation_convergence_obligations')
+  const raw = convergence.obligations.find(item => item?.id === request.source.id)
+  if (raw === undefined) fail('obligation_not_found')
+  exactKeys(raw, [
+    'id', 'declaredId', 'category', 'severity', 'title', 'detail', 'suggestion', 'source',
+    'targetTaskIds', 'classificationBasis', 'decisionClassification', 'closeWhen', 'status',
+    'resolvedAt', 'resolution',
+  ].filter(key => Object.hasOwn(raw, key)), 'obligation')
+  const obligation = {
+    id: text(raw.id, 'obligation_id'),
+    source: reference(raw.source, 'obligation_source'),
+    targetTaskIds: targetTaskIds(raw.targetTaskIds, 'obligation_target_task_ids'),
+    closeWhen: closeWhen(raw.closeWhen, 'obligation_close_when'),
+    status: text(raw.status, 'obligation_status'),
+    ...(raw.declaredId === undefined ? {} : { declaredId: text(raw.declaredId, 'obligation_declared_id') }),
+    ...(raw.decisionClassification === undefined ? {} : { decisionClassification: text(raw.decisionClassification, 'obligation_decision_classification') }),
+    ...(raw.classificationBasis === undefined ? {} : { classificationBasis: raw.classificationBasis }),
+  }
+  if (obligation.status !== 'open') fail('obligation_not_open')
+  if (!obligation.targetTaskIds.includes(request.taskId) || obligation.closeWhen.taskId !== request.taskId) {
+    fail('obligation_task_mismatch')
+  }
+  if (hasUserBasis(obligation)) fail('obligation_user_authority_required')
+  const conflicts = [
+    ...(Array.isArray(convergence.identityConflicts) ? convergence.identityConflicts : []),
+    ...(Array.isArray(convergence.unsupportedNewObligations) ? convergence.unsupportedNewObligations : []),
+  ]
+  if (conflicts.some(item => item?.id === obligation.id || item?.declaredId === obligation.declaredId)) {
+    fail('obligation_identity_conflict')
+  }
+  return obligation
+}
+
+function sourceIdFor(workflowId, source) {
+  return `recovery-source-${digest({
+    contract: RECOVERY_ADMISSION_STATE_CONTRACT,
+    workflowId,
+    source: sourceBinding(source),
+  })}`
+}
+
+function sourceBinding(source) {
+  if (source.kind === 'owner_failure') {
+    const binding = {
+      kind: source.kind,
+      planDigest: source.planDigest,
+      taskId: source.taskId,
+      ownerId: source.ownerId,
+      attempt: source.attempt,
+      sessionId: source.sessionId,
+    }
+    if (source.continuation !== undefined) binding.continuation = continuationBinding(source.continuation)
+    return binding
+  }
+  return {
+    kind: source.kind,
+    planDigest: source.planDigest,
+    taskId: source.taskId,
+    ownerId: source.ownerId,
+    obligationId: source.obligationId,
+    obligationSource: source.obligationSource,
+    targetTaskIds: source.targetTaskIds,
+    closeWhen: source.closeWhen,
+  }
+}
+
+function ownerRun(state, taskId, ownerId) {
+  const record = state.ownerRuns?.[`${taskId}:${ownerId}`]
+  if (record === null || typeof record !== 'object' || Array.isArray(record)) fail('owner_failure_record_missing')
+  if (record.ownerId !== ownerId || (record.stageId ?? record.taskId) !== taskId) fail('owner_failure_record_binding_mismatch')
+  if (record.planDigest !== state.planDigest) fail('owner_failure_record_plan_mismatch')
+  return record
+}
+
+function taskBinding(state, request) {
+  if (state === null || typeof state !== 'object' || Array.isArray(state)) fail('state_invalid')
+  const workflowId = text(state.id, 'state_workflow_id')
+  const planDigest = text(state.planDigest, 'state_plan_digest')
+  if (request.planDigest !== planDigest) fail('request_plan_digest_mismatch')
+  if (!Array.isArray(state.plan?.tasks)) fail('state_plan_tasks_invalid')
+  const planTask = state.plan.tasks.find(item => item?.id === request.taskId)
+  if (planTask === undefined) fail('task_not_found')
+  if (planTask.ownerId !== request.ownerId) fail('task_owner_mismatch')
+  const task = Array.isArray(state.tasks)
+    ? state.tasks.find(item => item?.taskId === request.taskId)
+    : undefined
+  if (task?.action === 'await_user') fail('task_awaits_user')
+  return { workflowId, planDigest, planTask, task }
+}
+
+function validPersistedStrategy(strategy) {
+  if (AUTONOMOUS_STRATEGY_SET.has(strategy)) return strategy
+  if (strategy === 'request_user_authority') fail('recovery_strategy_user_authority')
+  if (strategy === 'autonomous_incident') fail('recovery_strategy_incident')
+  fail('recovery_strategy_invalid')
+}
+
+function ownerFailureStrategy(record) {
+  const saved = record?.autonomousRecovery
+  if (saved === undefined || saved === null || typeof saved !== 'object' || Array.isArray(saved)
+    || saved.contract !== 'DSH_AUTONOMOUS_RECOVERY_V1') fail('recovery_strategy_missing')
+  return validPersistedStrategy(saved.strategy)
+}
+
+function obligationStrategy(state) {
+  const convergence = state.planConvergence
+  if (convergence?.contract !== CONVERGENCE_CONTRACT) fail('recovery_strategy_missing')
+  ordinaryArray(convergence.history, 'recovery_strategy_history')
+  const latest = convergence.history.at(-1)
+  if (latest === null || typeof latest !== 'object' || Array.isArray(latest)
+    || latest.candidatePlanDigest !== state.planDigest) fail('recovery_strategy_plan_mismatch')
+  return validPersistedStrategy(convergence.nextStrategy)
+}
+
+function validatedFailureSource(state, binding, request) {
+  if (binding.task === undefined) fail('owner_failure_task_state_missing')
+  if (binding.task.status === 'completed') fail('owner_failure_task_completed')
+  if (binding.task.status === 'running') fail('owner_failure_task_running')
+  if (binding.task.action === 'await_user') fail('task_awaits_user')
+  if (!['pending', 'stopped'].includes(binding.task.status)) fail('owner_failure_task_not_recoverable')
+  const record = ownerRun(state, request.taskId, request.ownerId)
+  if (record.status === 'starting' || record.status === 'running' || record.status === 'waiting_approval') {
+    fail('owner_failure_still_running')
+  }
+  if (!['failed', 'blocked'].includes(record.status)) fail('owner_failure_not_terminal')
+  if (record.attempt !== request.source.attempt) fail('owner_failure_attempt_mismatch')
+  const recordedSessionId = record.sessionId ?? record.result?.sessionId
+  if (request.source.sessionId === null) {
+    if (recordedSessionId !== undefined && recordedSessionId !== null) fail('owner_failure_session_mismatch')
+  } else if (recordedSessionId !== request.source.sessionId) {
+    fail('owner_failure_session_mismatch')
+  }
+  const reason = typeof record.error === 'string' && record.error.trim() !== ''
+    ? record.error
+    : typeof record.reason === 'string' && record.reason.trim() !== ''
+      ? record.reason
+      : undefined
+  if (reason === undefined) fail('owner_failure_reason_missing')
+  const strategy = ownerFailureStrategy(record)
+  if (record.status === 'blocked' && (binding.task?.action === 'await_user' || strategy === 'request_user_authority')) {
+    fail('owner_failure_not_technical')
+  }
+  const continuation = record.recoveryContinuation === undefined
+    ? undefined
+    : continuationBinding(record.recoveryContinuation, 'owner_failure_recovery_continuation')
+  if (continuation !== undefined) {
+    if (continuation.taskId !== request.taskId || continuation.ownerId !== request.ownerId
+      || continuation.planDigest !== binding.planDigest
+      || continuation.ownerRunBinding.attempt !== record.attempt
+      || continuation.ownerRunBinding.attempt !== request.source.attempt
+      || continuation.ownerRunBinding.sessionId !== recordedSessionId
+      || continuation.ownerRunBinding.sessionId !== request.source.sessionId) {
+      fail('continuation_owner_run_mismatch')
+    }
+  }
+  const source = {
+    kind: 'owner_failure',
+    planDigest: binding.planDigest,
+    taskId: request.taskId,
+    ownerId: request.ownerId,
+    attempt: request.source.attempt,
+    sessionId: request.source.sessionId,
+    failureReason: reason,
+  }
+  if (continuation !== undefined) source.continuation = continuation
+  return { source, strategy, record, continuation }
+}
+
+function validatedObligationSource(state, binding, request) {
+  const obligation = liveObligation(state, request)
+  const strategy = obligationStrategy(state)
+  const source = {
+    kind: 'obligation',
+    planDigest: binding.planDigest,
+    taskId: request.taskId,
+    ownerId: request.ownerId,
+    obligationId: obligation.id,
+    obligationSource: obligation.source,
+    targetTaskIds: obligation.targetTaskIds,
+    closeWhen: obligation.closeWhen,
+  }
+  return { source, strategy }
+}
+
+function persistedOwnerFailure(value, workflowId, name) {
+  const keys = [
+    'sourceId', 'kind', 'planDigest', 'taskId', 'ownerId', 'attempt', 'sessionId', 'failureReason',
+  ]
+  if (Object.hasOwn(value, 'continuation')) keys.push('continuation')
+  exactKeys(value, keys, name)
+  if (value.kind !== 'owner_failure') fail(`${name}_invalid`)
+  const source = {
+    kind: 'owner_failure',
+    planDigest: text(value.planDigest, `${name}_plan_digest`),
+    taskId: text(value.taskId, `${name}_task_id`),
+    ownerId: text(value.ownerId, `${name}_owner_id`),
+    attempt: positiveInteger(value.attempt, `${name}_attempt`),
+    sessionId: value.sessionId === null ? null : text(value.sessionId, `${name}_session_id`),
+    failureReason: nonblankText(value.failureReason, `${name}_failure_reason`),
+  }
+  const sourceId = text(value.sourceId, `${name}_source_id`)
+  if (value.continuation !== undefined) source.continuation = continuationBinding(value.continuation, `${name}_continuation`)
+  if (sourceId !== sourceIdFor(workflowId, source)) fail('admission_source_tampered')
+  return { sourceId, ...source }
+}
+
+function persistedObligation(value, workflowId, name) {
+  exactKeys(value, [
+    'sourceId', 'kind', 'planDigest', 'taskId', 'ownerId', 'obligationId', 'obligationSource',
+    'targetTaskIds', 'closeWhen',
+  ], name)
+  if (value.kind !== 'obligation') fail(`${name}_invalid`)
+  const source = {
+    kind: 'obligation',
+    planDigest: text(value.planDigest, `${name}_plan_digest`),
+    taskId: text(value.taskId, `${name}_task_id`),
+    ownerId: text(value.ownerId, `${name}_owner_id`),
+    obligationId: text(value.obligationId, `${name}_obligation_id`),
+    obligationSource: reference(value.obligationSource, `${name}_obligation_source`),
+    targetTaskIds: targetTaskIds(value.targetTaskIds, `${name}_target_task_ids`),
+    closeWhen: closeWhen(value.closeWhen, `${name}_close_when`),
+  }
+  const sourceId = text(value.sourceId, `${name}_source_id`)
+  if (sourceId !== sourceIdFor(workflowId, source)) fail('admission_source_tampered')
+  return { sourceId, ...source }
+}
+
+function persistedSource(value, workflowId, name) {
+  plainRecord(value, name)
+  if (value.kind === 'owner_failure') return persistedOwnerFailure(value, workflowId, name)
+  if (value.kind === 'obligation') return persistedObligation(value, workflowId, name)
+  fail(`${name}_invalid`)
+}
+
+function sameSource(left, right) {
+  return left.sourceId === right.sourceId && canonical(sourceBinding(left)) === canonical(sourceBinding(right))
+}
+
+function executionIdentity(value, name) {
+  exactKeys(value, ['sessionId', 'promptId'], name)
+  return {
+    sessionId: text(value.sessionId, `${name}_session_id`),
+    promptId: text(value.promptId, `${name}_prompt_id`),
+  }
+}
+
+function ownerRunBinding(value, name) {
+  exactKeys(value, ['attempt', 'sessionId'], name)
+  return {
+    attempt: positiveInteger(value.attempt, `${name}_attempt`),
+    sessionId: text(value.sessionId, `${name}_session_id`),
+  }
+}
+
+/*
+ * This is a local, persisted correlation record. T-20 reserves the two
+ * identity strings; T-21/T-22 remain responsible for proving that a real
+ * session and prompt actually use them. The T-13 receipt convention is exact:
+ * executionRef={id:sessionId,version:promptId}; the failed prompt receipt is
+ * result.reference={id:promptId,version:sessionId}.
+ */
+function continuationBinding(value, name = 'recovery_continuation') {
+  exactKeys(value, [
+    'contract', 'sourceId', 'rootProblemId', 'requestId', 'attemptId',
+    'taskId', 'ownerId', 'planDigest', 'executionIdentity', 'ownerRunBinding',
+  ], name)
+  if (value.contract !== RECOVERY_CONTINUATION_CONTRACT) fail(`${name}_contract_invalid`)
+  const execution = executionIdentity(value.executionIdentity, `${name}_execution_identity`)
+  const run = ownerRunBinding(value.ownerRunBinding, `${name}_owner_run_binding`)
+  if (execution.sessionId !== run.sessionId) fail(`${name}_session_binding_mismatch`)
+  return {
+    contract: RECOVERY_CONTINUATION_CONTRACT,
+    sourceId: text(value.sourceId, `${name}_source_id`),
+    rootProblemId: text(value.rootProblemId, `${name}_root_problem_id`),
+    requestId: text(value.requestId, `${name}_request_id`),
+    attemptId: text(value.attemptId, `${name}_attempt_id`),
+    taskId: text(value.taskId, `${name}_task_id`),
+    ownerId: text(value.ownerId, `${name}_owner_id`),
+    planDigest: text(value.planDigest, `${name}_plan_digest`),
+    executionIdentity: execution,
+    ownerRunBinding: run,
+  }
+}
+
+function sameContinuation(left, right) {
+  return canonical(left) === canonical(right)
+}
+
+function intentKey(sourceId, strategy) {
+  return `recovery-intent-${digest({ sourceId, strategy })}`
+}
+
+function operationIntentKey(sourceId, operation) {
+  return `replan-intent-${digest({ sourceId, ...replanOperation(operation, 'operation_key') })}`
+}
+
+function persistedOperationIntent(value, name) {
+  exactKeys(value, [
+    'intentKey', 'sourceId', 'strategy', 'planDigest', 'executionKind',
+    'operationKind', 'operationId', 'ordinal', 'rootProblemId',
+    'requestId', 'attemptId', 'executionIdentity',
+  ], name)
+  if (value.executionKind !== 'replan_operation') fail(`${name}_execution_kind_invalid`)
+  const operation = replanOperation({
+    operationKind: value.operationKind, operationId: value.operationId, ordinal: value.ordinal,
+  }, `${name}_operation`)
+  const parsed = {
+    intentKey: text(value.intentKey, `${name}_intent_key`),
+    sourceId: text(value.sourceId, `${name}_source_id`),
+    strategy: validPersistedStrategy(value.strategy),
+    planDigest: text(value.planDigest, `${name}_plan_digest`),
+    executionKind: 'replan_operation', ...operation,
+    rootProblemId: text(value.rootProblemId, `${name}_root_problem_id`),
+    requestId: text(value.requestId, `${name}_request_id`),
+    attemptId: text(value.attemptId, `${name}_attempt_id`),
+    executionIdentity: executionIdentity(value.executionIdentity, `${name}_execution_identity`),
+  }
+  if (parsed.intentKey !== operationIntentKey(parsed.sourceId, operation)) fail('admission_intent_tampered')
+  return parsed
+}
+
+function persistedIntent(value, name) {
+  plainRecord(value, name)
+  if (Object.hasOwn(value, 'executionKind')) return persistedOperationIntent(value, name)
+  exactKeys(value, [
+    'intentKey', 'sourceId', 'strategy', 'planDigest', 'taskId', 'ownerId', 'rootProblemId',
+    'requestId', 'attemptId', 'executionIdentity',
+  ], name)
+  const sourceId = text(value.sourceId, `${name}_source_id`)
+  const strategy = text(value.strategy, `${name}_strategy`)
+  if (!AUTONOMOUS_STRATEGY_SET.has(strategy)) fail(`${name}_strategy_invalid`)
+  const parsed = {
+    intentKey: text(value.intentKey, `${name}_intent_key`),
+    sourceId,
+    strategy,
+    planDigest: text(value.planDigest, `${name}_plan_digest`),
+    taskId: text(value.taskId, `${name}_task_id`),
+    ownerId: text(value.ownerId, `${name}_owner_id`),
+    rootProblemId: text(value.rootProblemId, `${name}_root_problem_id`),
+    requestId: text(value.requestId, `${name}_request_id`),
+    attemptId: text(value.attemptId, `${name}_attempt_id`),
+    executionIdentity: executionIdentity(value.executionIdentity, `${name}_execution_identity`),
+  }
+  if (parsed.intentKey !== intentKey(sourceId, strategy)) fail('admission_intent_tampered')
+  return parsed
+}
+
+function emptyAdmission(workflowId, config) {
+  return {
+    contract: RECOVERY_ADMISSION_STATE_CONTRACT,
+    workflowId,
+    executionVersion: config.executionVersion,
+    totalLimit: config.totalLimit,
+    problemLimit: config.problemLimit,
+    sources: [],
+    intents: [],
+    budget: createRecoveryBudget({ workflowId, totalLimit: config.totalLimit }),
+  }
+}
+
+function continuationMatchesIntent(continuation, intent) {
+  return continuation.sourceId === intent.sourceId
+    && continuation.rootProblemId === intent.rootProblemId
+    && continuation.requestId === intent.requestId
+    && continuation.attemptId === intent.attemptId
+    && continuation.taskId === intent.taskId
+    && continuation.ownerId === intent.ownerId
+    && continuation.planDigest === intent.planDigest
+    && canonical(continuation.executionIdentity) === canonical(intent.executionIdentity)
+}
+
+function settledFailureMatchesContinuation(continuation, attempt) {
+  return attempt?.state === 'settled'
+    && attempt.result?.status === 'failed'
+    && attempt.executionRef !== undefined
+    && attempt.result?.reference !== undefined
+    && sameReference(attempt.executionRef, {
+      id: continuation.executionIdentity.sessionId,
+      version: continuation.executionIdentity.promptId,
+    })
+    && sameReference(attempt.result.reference, {
+      id: continuation.executionIdentity.promptId,
+      version: continuation.executionIdentity.sessionId,
+    })
+}
+
+function normalizedAdmission(value, workflowId, config) {
+  if (value === undefined) return emptyAdmission(workflowId, config)
+  exactKeys(value, [
+    'contract', 'workflowId', 'executionVersion', 'totalLimit', 'problemLimit', 'sources', 'intents', 'budget',
+  ], 'recovery_admission')
+  if (value.contract !== RECOVERY_ADMISSION_STATE_CONTRACT) fail('recovery_admission_contract_invalid')
+  if (text(value.workflowId, 'recovery_admission_workflow_id') !== workflowId) fail('recovery_admission_workflow_mismatch')
+  if (text(value.executionVersion, 'recovery_admission_execution_version') !== config.executionVersion) {
+    fail('recovery_admission_execution_version_mismatch')
+  }
+  if (positiveInteger(value.totalLimit, 'recovery_admission_total_limit') !== config.totalLimit
+    || positiveInteger(value.problemLimit, 'recovery_admission_problem_limit') !== config.problemLimit) {
+    fail('recovery_admission_limits_mismatch')
+  }
+  ordinaryArray(value.sources, 'recovery_admission_sources')
+  ordinaryArray(value.intents, 'recovery_admission_intents')
+  const sources = value.sources.map((item, index) => persistedSource(item, workflowId, `recovery_admission_source_${index}`))
+  const sourceById = new Map()
+  for (const source of sources) {
+    if (sourceById.has(source.sourceId)) fail('recovery_admission_source_duplicate')
+    sourceById.set(source.sourceId, source)
+  }
+  const intents = value.intents.map((item, index) => persistedIntent(item, `recovery_admission_intent_${index}`))
+  const intentByRequest = new Map()
+  const intentKeys = new Set()
+  const attemptIds = new Set()
+  const sessionIds = new Set()
+  const promptIds = new Set()
+  for (const intent of intents) {
+    const source = sourceById.get(intent.sourceId)
+    if (source === undefined) fail('recovery_admission_intent_source_missing')
+    if (intent.planDigest !== config.executionVersion || intent.planDigest !== source.planDigest
+      || (intent.executionKind !== 'replan_operation'
+        && (intent.taskId !== source.taskId || intent.ownerId !== source.ownerId))) {
+      fail('recovery_admission_intent_source_mismatch')
+    }
+    if (intentKeys.has(intent.intentKey) || intentByRequest.has(intent.requestId) || attemptIds.has(intent.attemptId)) {
+      fail('recovery_admission_intent_duplicate')
+    }
+    if (sessionIds.has(intent.executionIdentity.sessionId) || promptIds.has(intent.executionIdentity.promptId)) {
+      fail('recovery_admission_execution_identity_duplicate')
+    }
+    intentKeys.add(intent.intentKey)
+    intentByRequest.set(intent.requestId, intent)
+    attemptIds.add(intent.attemptId)
+    sessionIds.add(intent.executionIdentity.sessionId)
+    promptIds.add(intent.executionIdentity.promptId)
+  }
+  const budget = normalizeRecoveryBudget(value.budget)
+  if (budget.workflowId !== workflowId || budget.totalLimit !== config.totalLimit
+    || budget.attempts.length !== intents.length) fail('recovery_admission_budget_mismatch')
+
+  const initialSources = sources.filter(source => source.continuation === undefined)
+  if (budget.problems.length !== initialSources.length) fail('recovery_admission_budget_mapping_mismatch')
+  const rootBySource = new Map()
+  const initialRoots = new Set()
+  for (const source of initialSources) {
+    const problem = budget.problems.find(item => sameReference(item.source, {
+      id: source.sourceId,
+      version: source.planDigest,
+    }))
+    if (problem === undefined || problem.limit !== config.problemLimit || initialRoots.has(problem.rootProblemId)) {
+      fail('recovery_admission_source_budget_mismatch')
+    }
+    initialRoots.add(problem.rootProblemId)
+    rootBySource.set(source.sourceId, problem.rootProblemId)
+  }
+
+  const sourceByPredecessorRequest = new Map()
+  const visiting = new Set()
+  const deriveRoot = source => {
+    const known = rootBySource.get(source.sourceId)
+    if (known !== undefined) return known
+    if (visiting.has(source.sourceId)) fail('recovery_admission_continuation_cycle')
+    const continuation = source.continuation
+    if (continuation === undefined) fail('recovery_admission_root_source_missing')
+    const predecessor = sourceById.get(continuation.sourceId)
+    const intent = intentByRequest.get(continuation.requestId)
+    if (predecessor === undefined || intent === undefined || !continuationMatchesIntent(continuation, intent)) {
+      fail('recovery_admission_continuation_intent_missing')
+    }
+    const attempt = budget.attempts.find(item => item.requestId === continuation.requestId)
+    if (!settledFailureMatchesContinuation(continuation, attempt)) {
+      fail('recovery_admission_continuation_attempt_mismatch')
+    }
+    if (source.taskId !== continuation.taskId || source.ownerId !== continuation.ownerId
+      || source.planDigest !== continuation.planDigest) fail('recovery_admission_continuation_source_mismatch')
+    const priorSource = sourceByPredecessorRequest.get(continuation.requestId)
+    if (priorSource !== undefined && priorSource !== source.sourceId) fail('recovery_admission_continuation_rebound')
+    sourceByPredecessorRequest.set(continuation.requestId, source.sourceId)
+    visiting.add(source.sourceId)
+    const inheritedRoot = deriveRoot(predecessor)
+    visiting.delete(source.sourceId)
+    if (inheritedRoot !== continuation.rootProblemId) fail('recovery_admission_continuation_root_mismatch')
+    rootBySource.set(source.sourceId, inheritedRoot)
+    return inheritedRoot
+  }
+  for (const source of sources) deriveRoot(source)
+
+  for (const source of sources) {
+    const rootProblemId = rootBySource.get(source.sourceId)
+    if (!intents.some(intent => intent.sourceId === source.sourceId && intent.rootProblemId === rootProblemId)) {
+      fail('recovery_admission_source_intent_missing')
+    }
+  }
+  for (const intent of intents) {
+    const source = sourceById.get(intent.sourceId)
+    const attempt = budget.attempts.find(item => item.requestId === intent.requestId)
+    if (source === undefined || attempt === undefined
+      || rootBySource.get(source.sourceId) !== intent.rootProblemId
+      || attempt.workflowId !== workflowId
+      || attempt.rootProblemId !== intent.rootProblemId
+      || attempt.attemptId !== intent.attemptId
+      || attempt.executionKind !== intent.executionKind
+      || (intent.executionKind === 'replan_operation'
+        ? attempt.operationKind !== intent.operationKind || attempt.operationId !== intent.operationId
+        : attempt.taskId !== intent.taskId || attempt.ownerId !== intent.ownerId)
+      || attempt.executionVersion !== intent.planDigest) {
+      fail('recovery_admission_intent_budget_mismatch')
+    }
+  }
+  // A crash cannot authorize a fresh call ordinal. Each operation's history
+  // must be contiguous, with a failed receipt before its next physical call.
+  const groups = new Map()
+  for (const intent of intents.filter(item => item.executionKind === 'replan_operation')) {
+    const key = canonical([intent.sourceId, intent.operationKind, intent.operationId])
+    const group = groups.get(key) ?? []
+    group.push(intent)
+    groups.set(key, group)
+  }
+  for (const group of groups.values()) {
+    group.sort((a, b) => a.ordinal - b.ordinal)
+    for (let index = 0; index < group.length; index += 1) {
+      if (group[index].ordinal !== index + 1) fail('replan_ordinal_gap')
+      if (index > 0) assertOperationFailed(budget, group[index - 1])
+    }
+  }
+  return {
+    contract: RECOVERY_ADMISSION_STATE_CONTRACT,
+    workflowId,
+    executionVersion: config.executionVersion,
+    totalLimit: config.totalLimit,
+    problemLimit: config.problemLimit,
+    sources,
+    intents,
+    budget,
+  }
+}
+
+/**
+ * Read one already-reserved recovery intent without changing the admission
+ * ledger.  Session reconciliation consumes this after the Runtime has loaded
+ * its current state; it intentionally uses the same full import validation as
+ * a new admission so a malformed ledger can never look like an unclaimed
+ * first launch.
+ */
+export function lookupRecoveryAdmissionIntent(state, requestId) {
+  const workflowId = text(state?.id, 'state_workflow_id')
+  const id = text(requestId, 'recovery_session_request_id')
+  const config = admissionConfig(state)
+  const admission = normalizedAdmission(state.recoveryAdmission, workflowId, config)
+  const intent = admission.intents.find(item => item.requestId === id)
+  if (intent === undefined) return undefined
+  const source = admission.sources.find(item => item.sourceId === intent.sourceId)
+  if (source === undefined) fail('recovery_admission_intent_source_missing')
+  return structuredClone({
+    intent,
+    source,
+    rootProblemId: rootForSource(admission, source.sourceId),
+  })
+}
+
+function rootForSource(admission, sourceId) {
+  const source = admission.sources.find(item => item.sourceId === sourceId)
+  if (source === undefined) return undefined
+  if (source.continuation !== undefined) return source.continuation.rootProblemId
+  const problem = admission.budget.problems.find(item => sameReference(item.source, {
+    id: source.sourceId,
+    version: source.planDigest,
+  }))
+  return problem?.rootProblemId
+}
+
+function hasRelatedOpenRoot(admission, source) {
+  return admission.sources.some(existing => {
+    if (existing.taskId !== source.taskId || existing.ownerId !== source.ownerId) return false
+    const rootProblemId = rootForSource(admission, existing.sourceId)
+    const problem = admission.budget.problems.find(item => item.rootProblemId === rootProblemId)
+    return problem?.status === 'open'
+  })
+}
+
+function reservationResponse(outcome, intent) {
+  return {
+    contract: RECOVERY_ADMISSION_CONTRACT,
+    outcome,
+    rootProblemId: intent.rootProblemId,
+    requestId: intent.requestId,
+    attemptId: intent.attemptId,
+    executionIdentity: { ...intent.executionIdentity },
+    launchAuthorized: false,
+  }
+}
+
+function budgetCanReserve(ledger, rootProblemId, isNewRoot, config) {
+  if (ledger.totalUsed >= ledger.totalLimit) return 'workflow_exhausted'
+  if (isNewRoot) return config.problemLimit < 1 ? 'problem_exhausted' : undefined
+  const problem = ledger.problems.find(item => item.rootProblemId === rootProblemId)
+  if (problem === undefined) fail('recovery_admission_root_missing')
+  if (problem.status === 'resolved') return 'problem_resolved'
+  if (problem.used >= problem.limit) return 'problem_exhausted'
+  return undefined
+}
+
+function admittedContinuationRoot(admission, continuation) {
+  if (continuation === undefined) return undefined
+  const predecessor = admission.sources.find(source => source.sourceId === continuation.sourceId)
+  const matches = admission.intents.filter(intent => continuationMatchesIntent(continuation, intent))
+  if (predecessor === undefined || matches.length !== 1) fail('continuation_intent_missing')
+  const intent = matches[0]
+  const attempt = admission.budget.attempts.find(item => item.requestId === continuation.requestId)
+  if (!settledFailureMatchesContinuation(continuation, attempt)) fail('continuation_attempt_not_failed')
+  const root = admission.budget.problems.find(item => item.rootProblemId === continuation.rootProblemId)
+  if (root === undefined || intent.rootProblemId !== root.rootProblemId) fail('continuation_root_missing')
+  return root.rootProblemId
+}
+
+function assertContinuationSourceNotRebound(admission, continuation, sourceId) {
+  if (continuation === undefined) return
+  for (const source of admission.sources) {
+    if (source.continuation?.requestId !== continuation.requestId) continue
+    if (source.sourceId !== sourceId || !sameContinuation(source.continuation, continuation)) {
+      fail('continuation_rebound')
+    }
+  }
+}
+
+function assertOperationFailed(budget, intent) {
+  const attempt = budget.attempts.find(item => item.requestId === intent.requestId)
+  if (attempt?.state !== 'settled' || attempt.result?.status !== 'failed') fail('replan_previous_not_failed')
+  if (!sameReference(attempt.result.reference, {
+    id: intent.executionIdentity.promptId, version: intent.executionIdentity.sessionId,
+  }) || (attempt.executionRef !== undefined && !sameReference(attempt.executionRef, {
+    id: intent.executionIdentity.sessionId, version: intent.executionIdentity.promptId,
+  }))) fail('replan_previous_receipt_mismatch')
+}
+
+function assertNextOperation(admission, sourceId, operation) {
+  const previous = admission.intents.filter(item => item.executionKind === 'replan_operation'
+    && item.sourceId === sourceId && item.operationKind === operation.operationKind
+    && item.operationId === operation.operationId).sort((a, b) => a.ordinal - b.ordinal)
+  if (operation.ordinal !== previous.length + 1) fail('replan_ordinal_gap')
+  if (previous.length > 0) assertOperationFailed(admission.budget, previous.at(-1))
+}
+
+/**
+ * Prepare one purely in-memory, durable-shaped recovery reservation.
+ *
+ * The Runtime saves the returned state in its locked current-state callback.
+ * This function intentionally does not create a session or mark a T-13
+ * attempt running; executionIdentity is only a persisted placeholder.
+ */
+export function prepareRecoveryAdmission(state, request) {
+  let copied
+  try {
+    copied = deepCopy(state)
+    const parsedRequest = recoveryAdmissionOrigin(request)
+    const operation = request.contract === REPLAN_ADMISSION_REQUEST_CONTRACT
+      ? replanOperation(request.operation, 'replan_operation') : undefined
+    const binding = taskBinding(copied, parsedRequest)
+    const config = admissionConfig(copied)
+    const admission = normalizedAdmission(copied.recoveryAdmission, binding.workflowId, config)
+    const sourceResult = parsedRequest.source.kind === 'owner_failure'
+      ? validatedFailureSource(copied, binding, parsedRequest)
+      : validatedObligationSource(copied, binding, parsedRequest)
+    const source = sourceResult.source
+    const strategy = sourceResult.strategy
+    const sourceId = sourceIdFor(binding.workflowId, source)
+    const existingSource = admission.sources.find(item => item.sourceId === sourceId)
+    if (existingSource !== undefined && !sameSource(existingSource, { sourceId, ...source })) {
+      fail('admission_source_conflict')
+    }
+    if (source.kind === 'obligation' && existingSource === undefined) {
+      const physical = obligationPhysicalKey(source)
+      if (admission.sources.some(item => item.kind === 'obligation'
+        && item.planDigest === source.planDigest
+        && obligationPhysicalKey(item) === physical)) {
+        fail('obligation_physical_conflict')
+      }
+    }
+    const continuationRoot = source.kind === 'owner_failure'
+      ? admittedContinuationRoot(admission, sourceResult.continuation)
+      : undefined
+    assertContinuationSourceNotRebound(admission, sourceResult.continuation, sourceId)
+    if (source.kind === 'owner_failure' && existingSource === undefined
+      && continuationRoot === undefined && hasRelatedOpenRoot(admission, source)) {
+      fail('continuation_unbound')
+    }
+
+    const key = operation === undefined ? intentKey(sourceId, strategy) : operationIntentKey(sourceId, operation)
+    const replay = admission.intents.find(item => item.intentKey === key)
+    if (replay !== undefined) {
+      if ((operation === undefined
+        && (replay.taskId !== parsedRequest.taskId || replay.ownerId !== parsedRequest.ownerId))
+        || replay.planDigest !== binding.planDigest || replay.sourceId !== sourceId) {
+        fail('admission_intent_conflict')
+      }
+      copied.recoveryAdmission = admission
+      return { state: copied, response: reservationResponse('replayed', replay) }
+    }
+
+    if (operation !== undefined) assertNextOperation(admission, sourceId, operation)
+    const existingRoot = rootForSource(admission, sourceId)
+    if (existingRoot !== undefined && continuationRoot !== undefined && existingRoot !== continuationRoot) {
+      fail('continuation_root_rebound')
+    }
+    const rootProblemId = existingRoot ?? continuationRoot
+    const reserveReason = budgetCanReserve(admission.budget, rootProblemId, rootProblemId === undefined, config)
+    if (reserveReason !== undefined) return rejection(copied, reserveReason)
+
+    const nextRootProblemId = rootProblemId ?? `recovery-root-${randomUUID()}`
+    const requestId = `recovery-request-${randomUUID()}`
+    const attemptId = `recovery-attempt-${randomUUID()}`
+    const executionIdentity = {
+      sessionId: `recovery-session-${randomUUID()}`,
+      promptId: `recovery-prompt-${randomUUID()}`,
+    }
+    let budget = admission.budget
+    if (rootProblemId === undefined) {
+      budget = registerRecoveryProblem(budget, {
+        rootProblemId: nextRootProblemId,
+        limit: config.problemLimit,
+        source: { id: sourceId, version: binding.planDigest },
+      })
+    }
+    const executionBinding = operation === undefined
+      ? { taskId: parsedRequest.taskId, ownerId: parsedRequest.ownerId }
+      : { executionKind: 'replan_operation', operationKind: operation.operationKind, operationId: operation.operationId }
+    const reserved = reserveRecoveryAttempt(budget, {
+      workflowId: binding.workflowId,
+      rootProblemId: nextRootProblemId,
+      requestId,
+      attemptId,
+      ...executionBinding,
+      executionVersion: binding.planDigest,
+    })
+    if (reserved.outcome !== 'reserved') fail('recovery_admission_reservation_inconsistent')
+    const nextIntent = {
+      intentKey: key,
+      sourceId,
+      strategy,
+      planDigest: binding.planDigest,
+      ...executionBinding,
+      ...(operation === undefined ? {} : { ordinal: operation.ordinal }),
+      rootProblemId: nextRootProblemId,
+      requestId,
+      attemptId,
+      executionIdentity,
+    }
+    copied.recoveryAdmission = {
+      ...admission,
+      sources: existingSource === undefined ? [...admission.sources, { sourceId, ...source }] : admission.sources,
+      intents: [...admission.intents, nextIntent],
+      budget: reserved.ledger,
+    }
+    return { state: copied, response: reservationResponse('reserved', nextIntent) }
+  } catch (error) {
+    const fallback = copied ?? (() => {
+      try { return deepCopy(state) } catch { return state }
+    })()
+    return rejection(fallback, error instanceof Error ? error.message : 'recovery_admission_invalid')
+  }
+}

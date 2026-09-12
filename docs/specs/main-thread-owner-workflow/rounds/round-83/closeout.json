@@ -1,0 +1,27 @@
+{
+  "round": 83,
+  "at": "2026-09-11T17:58:57.837209+00:00",
+  "previousGoalTurn": "progress",
+  "ticket": "T-25",
+  "status": "开发完成",
+  "nextTicket": "T-26",
+  "nextStatus": "待办",
+  "candidate1": {
+    "passed": 246,
+    "skipped": 7,
+    "failed": 0,
+    "drift": [],
+    "strictCollectorExit": 1,
+    "strictCollectorReason": "existing explicit legacy skips in control"
+  },
+  "candidate2": {
+    "targetedPassed": 39,
+    "skipped": 0,
+    "failed": 0,
+    "drift": []
+  },
+  "confirmedOpenReviewIssues": [],
+  "overallComplete": false,
+  "committed": false,
+  "pushed": false
+}

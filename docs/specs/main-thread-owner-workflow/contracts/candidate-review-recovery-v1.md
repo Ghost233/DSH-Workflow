@@ -1,0 +1,23 @@
+# 恢复候选的实际 Review 执行合同
+
+T15内部接线，沿用 recovery-admission-v1、replan-session-v1 与 handoff-recovery-v1。公开入口仍为 workflow_revision_review / reviewPendingPlanRevision；只对现有 handoff-recovery 候选启用本链。普通 Intent 候选沿用既有路径，不从文本猜测它属于恢复。
+
+## 来源与版本
+
+active计划A、Owner失败来源、根问题保持不变；候选C只用于Reviewer输入与语义校验。候选必须保留origin、原Planner recoveryRequestId、recoveryOrigin、parent/number、planDigest/structureDigest、cycleId及handoffIds。核对原handoffReplans完整分组、原Planner intent/session/成功预算回执，并重新读取真实JSONL的唯一accepted receipt。缺少或改变来源不能降级为免费Review；入口取得workflow锁后再次检查路由，避免锁前读取与锁后候选替换的竞争。
+
+每个Review使用独立revision_review operation与新requestId/session/prompt；operationId稳定绑定原Planner requestId及候选身份。恢复admission的origin仍是A，不能使用C；prepareRecoveryAdmission从同一来源继承rootProblemId，两级预算与Owner/Planner共用。
+
+## 持久执行
+
+state.candidateReviews[operationId]使用DSH_CANDIDATE_REVIEW_OPERATION_V1，固定origin、candidate、ordinal、requestId、prompt、Git base、planning facts及phase。phase为reserved、failed或applied；已观测的receipt及成功result/失败error一并保存。首次ordinal=1，只有已结算failed的前一ordinal允许后继；取消/未知终态不允许以新ordinal重发。每次实际入口最多启动一个Review child，不复用旧函数的内部两次runChild循环。
+
+整个入口由独立规划资源lease串行；短workflow事务领取并保存operation，锁外调用reconcileReplanSession及读取真实回执，短workflow事务以最新状态核对并结算。候选/来源/父版本并发变化不应用结果；保留已消耗额度及未知/运行中对账状态。正常独立任务的状态写入不能被旧快照覆盖。
+
+通过结构与候选语义校验的passed、needs_revision、needs_split、needs_decision、needs_discovery均为Review执行succeeded。needs_revision不是传输失败，不自动重复审查同一候选。accepted输出语义无效或Git base变化结算failed；没有结构化输出由会话事实结算failed；不确定/取消保持原会话处理。语义成功在同一状态事务写入budget、session.applied、operation.applied/result/receipt、candidate.review及既有convergence投影。
+
+已applied重放重新核对原Planner/Review两个原始回执、预算与session、候选及已存Review/convergence；新Harness上下文也不启动模型。成功只证明候选已审查，不激活C、不重置Owner、不关闭根问题。
+
+## 剩余范围
+
+本接线不完成候选discard/rebuild的根继承、仲裁/会诊逐次计费、普通Intent恢复来源生产、T18版本激活，或所有入口异常的主控制技术暂停投影。原有独立审查/审批与用户权限分类仍适用。T15仍开发中，不视为整套无人值守验收。

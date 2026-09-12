@@ -1,0 +1,262 @@
+TAP version 13
+# Subtest: 外部控制桥可以驱动 ping 和 status，并在运行时释放后清理
+ok 1 - 外部控制桥可以驱动 ping 和 status，并在运行时释放后清理
+  ---
+  duration_ms: 165.218459
+  type: 'test'
+  ...
+# Subtest: 真实审查入口把未关闭义务的 passed 降级，并拒绝激活
+ok 2 - 真实审查入口把未关闭义务的 passed 降级，并拒绝激活
+  ---
+  duration_ms: 670.333458
+  type: 'test'
+  ...
+# Subtest: pending revision 的 open 义务不阻断仍有效的 active plan Owner 启动
+ok 3 - pending revision 的 open 义务不阻断仍有效的 active plan Owner 启动
+  ---
+  duration_ms: 391.7195
+  type: 'test'
+  ...
+# Subtest: R03 同 digest evidence-lease-v1 的已批准 Owner 启动与恢复边界
+ok 4 - R03 同 digest evidence-lease-v1 的已批准 Owner 启动与恢复边界
+  ---
+  duration_ms: 389.538666
+  type: 'test'
+  ...
+# Subtest: R03 同 digest evidence-lease-v2 的已批准 Owner 启动与恢复边界
+ok 5 - R03 同 digest evidence-lease-v2 的已批准 Owner 启动与恢复边界
+  ---
+  duration_ms: 451.954292
+  type: 'test'
+  ...
+# Subtest: Supervisor create 只持久 reservation，必须由外置 runner 显式 execute 才启动 Owner
+ok 6 - Supervisor create 只持久 reservation，必须由外置 runner 显式 execute 才启动 Owner
+  ---
+  duration_ms: 366.307
+  type: 'test'
+  ...
+# Subtest: Supervisor 首次启动保留计划修订迁移后的已完成任务
+ok 7 - Supervisor 首次启动保留计划修订迁移后的已完成任务
+  ---
+  duration_ms: 215.719958
+  type: 'test'
+  ...
+# Subtest: Supervisor 重启后直接结算已有固定提交，不重新启动 Owner
+ok 8 - Supervisor 重启后直接结算已有固定提交，不重新启动 Owner
+  ---
+  duration_ms: 329.127417
+  type: 'test'
+  ...
+# Subtest: Supervisor 遇到结构化 handoff 时进入局部重规划，不重跑只读验证任务
+ok 9 - Supervisor 遇到结构化 handoff 时进入局部重规划，不重跑只读验证任务
+  ---
+  duration_ms: 212.632833
+  type: 'test'
+  ...
+# Subtest: Runner daemon 自动发现 approved Workflow 并驱动 Harness 内 Owner 子代理
+ok 10 - Runner daemon 自动发现 approved Workflow 并驱动 Harness 内 Owner 子代理
+  ---
+  duration_ms: 424.884166
+  type: 'test'
+  ...
+# Subtest: planning-recover 控制动作安全补绑缺失 digest 并原地恢复 Reviewer
+ok 11 - planning-recover 控制动作安全补绑缺失 digest 并原地恢复 Reviewer
+  ---
+  duration_ms: 374.0085
+  type: 'test'
+  ...
+# Subtest: planning-recover 不会把旧 planDigest 的恢复次数继承到新 DAG
+ok 12 - planning-recover 不会把旧 planDigest 的恢复次数继承到新 DAG
+  ---
+  duration_ms: 362.970958
+  type: 'test'
+  ...
+# Subtest: Planner 子代理报告通道失效时直接唤醒主会话，避免状态已变但会话没有入口
+ok 13 - Planner 子代理报告通道失效时直接唤醒主会话，避免状态已变但会话没有入口
+  ---
+  duration_ms: 0.336833
+  type: 'test'
+  ...
+# Subtest: Harness 重启后会向根会话幂等补发计划批准通知
+ok 14 - Harness 重启后会向根会话幂等补发计划批准通知
+  ---
+  duration_ms: 434.170916
+  type: 'test'
+  ...
+# Subtest: 计划批准通知只投递到持久化的 Workflow 根会话
+ok 15 - 计划批准通知只投递到持久化的 Workflow 根会话
+  ---
+  duration_ms: 377.566792
+  type: 'test'
+  ...
+# Subtest: Planner 已提交结构化计划后立即结束等待，不受结束确认重试影响
+ok 16 - Planner 已提交结构化计划后立即结束等待，不受结束确认重试影响
+  ---
+  duration_ms: 0.932541
+  type: 'test'
+  ...
+# Subtest: planning-recover 会重建仍有修订预算的 Planner，而不是把 review_failed 当作终态
+ok 17 - planning-recover 会重建仍有修订预算的 Planner，而不是把 review_failed 当作终态
+  ---
+  duration_ms: 527.026458
+  type: 'test'
+  ...
+# Subtest: 统一 workflow-drive 会恢复无需用户授权的 needs_decision Owner 会诊修订
+ok 18 - 统一 workflow-drive 会恢复无需用户授权的 needs_decision Owner 会诊修订
+  ---
+  duration_ms: 849.901625
+  type: 'test'
+  ...
+# Subtest: 自治事故的摘要型旧义务不能由 control socket probe 续期
+ok 19 - 自治事故的摘要型旧义务不能由 control socket probe 续期
+  ---
+  duration_ms: 210.694541
+  type: 'test'
+  ...
+# Subtest: control socket probe 只为类型化义务的宿主新文件续期一次
+ok 20 - control socket probe 只为类型化义务的宿主新文件续期一次
+  ---
+  duration_ms: 462.08225
+  type: 'test'
+  ...
+# Subtest: 修订预算耗尽会持久通知主线程和 Runner，批准扩展后自动恢复同一 Planner
+ok 21 - 修订预算耗尽会持久通知主线程和 Runner，批准扩展后自动恢复同一 Planner
+  ---
+  duration_ms: 547.744791
+  type: 'test'
+  ...
+# Subtest: 重启前只标记 main-steer 已送达的待决策会重新直接打开原生问询
+ok 22 - 重启前只标记 main-steer 已送达的待决策会重新直接打开原生问询
+  ---
+  duration_ms: 414.2865
+  type: 'test'
+  ...
+# Subtest: 用户终止自动规划后由只读子代理总结并返回主线程讨论
+ok 23 - 用户终止自动规划后由只读子代理总结并返回主线程讨论
+  ---
+  duration_ms: 380.480917
+  type: 'test'
+  ...
+# Subtest: 重启后把旧版自定义扩额意见迁移为总结并退回主线程讨论
+ok 24 - 重启后把旧版自定义扩额意见迁移为总结并退回主线程讨论
+  ---
+  duration_ms: 338.734792
+  type: 'test'
+  ...
+# Subtest: planning-recover 在 plan digest 与 live Registry 不匹配时拒绝自愈
+ok 25 - planning-recover 在 plan digest 与 live Registry 不匹配时拒绝自愈
+  ---
+  duration_ms: 354.726167
+  type: 'test'
+  ...
+# Subtest: 计划审查驱动失败会落盘诊断并允许 watchdog 有界重试
+ok 26 - 计划审查驱动失败会落盘诊断并允许 watchdog 有界重试
+  ---
+  duration_ms: 453.510292
+  type: 'test'
+  ...
+# Subtest: Runner daemon 自动唤醒失败的计划审查且不启动 Supervisor
+ok 27 - Runner daemon 自动唤醒失败的计划审查且不启动 Supervisor
+  ---
+  duration_ms: 409.188542
+  type: 'test'
+  ...
+# Subtest: Runner 启动前可从固定提交重建尚未执行且已丢失的 Workflow worktree
+ok 28 - Runner 启动前可从固定提交重建尚未执行且已丢失的 Workflow worktree
+  ---
+  duration_ms: 316.021875
+  type: 'test'
+  ...
+# Subtest: V2 控制桥拒绝 legacy owner 调度动作，唯一入口是 Supervisor
+ok 29 - V2 控制桥拒绝 legacy owner 调度动作，唯一入口是 Supervisor
+  ---
+  duration_ms: 289.32125
+  type: 'test'
+  ...
+# Subtest: runtime.dispose 阻止新 Supervisor dispatch 并等待已登记 dispatch 终态
+ok 30 - runtime.dispose 阻止新 Supervisor dispatch 并等待已登记 dispatch 终态
+  ---
+  duration_ms: 21.541166
+  type: 'test'
+  ...
+# Subtest: Supervisor create 持久 reservation，并用真实 runExternalOwner 两阶段结算到 completed
+ok 31 - Supervisor create 持久 reservation，并用真实 runExternalOwner 两阶段结算到 completed
+  ---
+  duration_ms: 1362.679417
+  type: 'test'
+  ...
+# Subtest: Supervisor 查询会在 Runtime 重启后重建控制桥，供新的外置 runner 显式 recover
+ok 32 - Supervisor 查询会在 Runtime 重启后重建控制桥，供新的外置 runner 显式 recover
+  ---
+  duration_ms: 286.702125
+  type: 'test'
+  ...
+# Subtest: Supervisor Owner 启动失败由自治恢复重排，不把工程故障写成用户决策
+ok 33 - Supervisor Owner 启动失败由自治恢复重排，不把工程故障写成用户决策
+  ---
+  duration_ms: 299.316416
+  type: 'test'
+  ...
+# Subtest: DSH_PLAN_V2 的 repair_owner 保留为意图提示，Runtime 按证据策略重新进入 DAG
+ok 34 - DSH_PLAN_V2 的 repair_owner 保留为意图提示，Runtime 按证据策略重新进入 DAG
+  ---
+  duration_ms: 313.962833
+  type: 'test'
+  ...
+# Subtest: Supervisor inspect 只返回有限宿主字段，未知控制动作关闭处理
+ok 35 - Supervisor inspect 只返回有限宿主字段，未知控制动作关闭处理
+  ---
+  duration_ms: 393.648625
+  type: 'test'
+  ...
+# Subtest: Supervisor 主会话通知只有真正 followup 成功后才标记 delivered
+ok 36 - Supervisor 主会话通知只有真正 followup 成功后才标记 delivered
+  ---
+  duration_ms: 189.045042
+  type: 'test'
+  ...
+# Subtest: Supervisor await_event 以持久游标阻塞等待，并在超时后记录一次受控观察
+ok 37 - Supervisor await_event 以持久游标阻塞等待，并在超时后记录一次受控观察
+  ---
+  duration_ms: 316.379042
+  type: 'test'
+  ...
+# Subtest: 任务达到 onTimeout.afterMs 后切换自治恢复策略而不是交给用户
+ok 38 - 任务达到 onTimeout.afterMs 后切换自治恢复策略而不是交给用户
+  ---
+  duration_ms: 391.118416
+  type: 'test'
+  ...
+# Subtest: Owner 恢复后使用本次运行时间重置超时基线，不沿用旧 reservation 时间
+ok 39 - Owner 恢复后使用本次运行时间重置超时基线，不沿用旧 reservation 时间
+  ---
+  duration_ms: 300.107042
+  type: 'test'
+  ...
+# Subtest: 持续产生心跳的长任务按进展续租，不因总运行时间被误杀
+ok 40 - 持续产生心跳的长任务按进展续租，不因总运行时间被误杀
+  ---
+  duration_ms: 293.862834
+  type: 'test'
+  ...
+# Subtest: Supervisor receipt 绑定持久 revision，且 blocked workflow 不能确认旧 create
+ok 41 - Supervisor receipt 绑定持久 revision，且 blocked workflow 不能确认旧 create
+  ---
+  duration_ms: 269.014625
+  type: 'test'
+  ...
+# Subtest: Supervisor create receipt 绑定实际 planDigest，旧 ACK 拒绝且 workflow 不变
+ok 42 - Supervisor create receipt 绑定实际 planDigest，旧 ACK 拒绝且 workflow 不变
+  ---
+  duration_ms: 218.722917
+  type: 'test'
+  ...
+1..42
+# tests 42
+# suites 0
+# pass 42
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 15491.910791

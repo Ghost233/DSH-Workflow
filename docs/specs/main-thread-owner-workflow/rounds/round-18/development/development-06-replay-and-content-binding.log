@@ -1,0 +1,58 @@
+{
+  "first": {
+    "error": {
+      "name": "OwnerReportedError",
+      "message": "Owner 主动报告 failed：Controlled Owner reports that recovery cannot complete."
+    }
+  },
+  "replay": {
+    "value": {
+      "contract": "DSH_RECOVERY_SESSION_RESULT_V1",
+      "outcome": "paused",
+      "phase": "technical_pause",
+      "workflowId": "wf-recovery-session",
+      "taskId": "T1",
+      "ownerId": "api",
+      "rootProblemId": "recovery-root-11ad7005-6d1d-4297-a974-fa3c4c69d0e2",
+      "requestId": "recovery-request-f6045543-3142-49cc-a507-adee61a1c13a",
+      "attemptId": "recovery-attempt-c847c707-3555-43bf-bd5e-578482ac52f2",
+      "executionIdentity": {
+        "sessionId": "recovery-session-85d06f65-7334-4cb9-96db-e233aad7ac76",
+        "promptId": "recovery-prompt-c6f61cb0-c107-4447-8862-04ed4af4671f"
+      },
+      "reason": "prompt_turn_step_ambiguous",
+      "observation": {
+        "outcome": "paused",
+        "phase": "technical_pause",
+        "reason": "prompt_turn_step_ambiguous",
+        "revision": "16777232:192770147:22316:1789099521172669515:1789099521172669515"
+      }
+    }
+  },
+  "changed": {
+    "value": {
+      "contract": "DSH_RECOVERY_SESSION_RESULT_V1",
+      "outcome": "paused",
+      "phase": "technical_pause",
+      "workflowId": "wf-recovery-session",
+      "taskId": "T1",
+      "ownerId": "api",
+      "rootProblemId": "recovery-root-11ad7005-6d1d-4297-a974-fa3c4c69d0e2",
+      "requestId": "recovery-request-f6045543-3142-49cc-a507-adee61a1c13a",
+      "attemptId": "recovery-attempt-c847c707-3555-43bf-bd5e-578482ac52f2",
+      "executionIdentity": {
+        "sessionId": "recovery-session-85d06f65-7334-4cb9-96db-e233aad7ac76",
+        "promptId": "recovery-prompt-c6f61cb0-c107-4447-8862-04ed4af4671f"
+      },
+      "reason": "persisted_owner_binding_mismatch"
+    }
+  },
+  "beforeReplay": 2,
+  "afterReplay": 2,
+  "afterChanged": 2,
+  "instruction": {
+    "id": "recovery-prompt-c6f61cb0-c107-4447-8862-04ed4af4671f",
+    "content": "recover the failed owner task"
+  },
+  "phase": "settled_failed"
+}

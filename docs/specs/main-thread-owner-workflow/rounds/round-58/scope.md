@@ -1,0 +1,7 @@
+# R58 T15 实际Planner会话的预留身份与原始提交对账
+
+主线程独占runtime、recovery-session共享只读检查提取、新replan-session、index中两个submit定义提取及新测试。不改Owner来源语义。本轮内部reconcileReplanSession消费R57实际预留，持久creating后真实provider以预留session/prompt启动；created/submitted持久回调及真实JSONL完整性/稳定revision检查，未知启动不重送。
+
+有效submit可能在submissionReady赢得race后被dispose取消，故aborted终态不否定已成功的tool receipt。检查匹配tool/call、tool/result、sourceEventSeqs及accepted合同与原始参数，不能仅相信内存submissionReady或completed。返回submission_observed仍不是plan已应用，也不提前成功结算T13；语义校验/输出应用及实际三入口由下轮接线。明确失败/取消终态才结算相应T13状态，未知不伪造回执不退款。
+
+使用实际Harness/JSONL/注册submit定义，仅替换模型传输。正式范围新replan-session及既有recovery-session/admission/runtime-budget与plugin工具定义回归；严格有限测试预算。冻结后只读审查。此为实际子会话切片，不代表T15完整完成。

@@ -1,0 +1,42 @@
+{
+  "mode": "followup-return",
+  "root": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t21-prompt-TXgQjQ",
+  "start": "2026-09-11T03:00:13.651Z",
+  "first": {
+    "mode": "followup-return",
+    "pid": 83233,
+    "code": null,
+    "signal": "SIGKILL",
+    "payload": {
+      "phase": "kill-ready",
+      "mode": "followup-return",
+      "memory": {
+        "pendingInsertions": 1,
+        "userMessages": 0,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": []
+      },
+      "calls": 0
+    },
+    "stdout": "",
+    "stderr": ""
+  },
+  "restart": {
+    "mode": "restart-followup-return",
+    "pid": 83234,
+    "code": 0,
+    "signal": null,
+    "payload": {
+      "phase": "result",
+      "mode": "restart-followup-return",
+      "observation": "no durable session at restart",
+      "loadError": "Error: session \"t21-prompt-session\" not found"
+    },
+    "stdout": "",
+    "stderr": ""
+  },
+  "observationChecked": true,
+  "end": "2026-09-11T03:00:14.065Z"
+}

@@ -1,0 +1,88 @@
+TAP version 13
+# Subtest: Owner 记忆契约拒绝越界页面、运行目录来源和未知状态
+ok 1 - Owner 记忆契约拒绝越界页面、运行目录来源和未知状态
+  ---
+  duration_ms: 1.650959
+  type: 'test'
+  ...
+# Subtest: Runtime 只移除 Owner 记忆 catalog 的自引用元数据
+ok 2 - Runtime 只移除 Owner 记忆 catalog 的自引用元数据
+  ---
+  duration_ms: 98.2655
+  type: 'test'
+  ...
+# Subtest: Markdown Owner Wiki 生成索引和幂等日志，并根据来源提交计算 stale
+ok 3 - Markdown Owner Wiki 生成索引和幂等日志，并根据来源提交计算 stale
+  ---
+  duration_ms: 620.372167
+  type: 'test'
+  ...
+# Subtest: 多个 Owner 的长期知识分别写入各自文件夹
+ok 4 - 多个 Owner 的长期知识分别写入各自文件夹
+  ---
+  duration_ms: 204.260416
+  type: 'test'
+  ...
+# Subtest: 没有新页面但重新核对来源后会刷新既有记忆的验证基线
+ok 5 - 没有新页面但重新核对来源后会刷新既有记忆的验证基线
+  ---
+  duration_ms: 805.622792
+  type: 'test'
+  ...
+# Subtest: 旧 .owner-memory 在下一次编译时迁入对应 Owner 文件夹并删除独立目录
+ok 6 - 旧 .owner-memory 在下一次编译时迁入对应 Owner 文件夹并删除独立目录
+  ---
+  duration_ms: 582.640167
+  type: 'test'
+  ...
+# Subtest: 临时 Owner 记忆保持简短，封存后作为编译来源但不注入当前长期记忆
+ok 7 - 临时 Owner 记忆保持简短，封存后作为编译来源但不注入当前长期记忆
+  ---
+  duration_ms: 121.693
+  type: 'test'
+  ...
+# Subtest: Owner 最终摘要过长时截断记忆来源而不阻塞任务结算
+ok 8 - Owner 最终摘要过长时截断记忆来源而不阻塞任务结算
+  ---
+  duration_ms: 99.956666
+  type: 'test'
+  ...
+# Subtest: 旧阻塞在新执行开始后标记为已解决，不再作为当前提示注入
+ok 9 - 旧阻塞在新执行开始后标记为已解决，不再作为当前提示注入
+  ---
+  duration_ms: 0.335584
+  type: 'test'
+  ...
+# Subtest: Memory Curator 被独立 Reviewer 驳回后只允许一次修订
+ok 10 - Memory Curator 被独立 Reviewer 驳回后只允许一次修订
+  ---
+  duration_ms: 369.3005
+  type: 'test'
+  ...
+# Subtest: Memory Curator 的无效引用在写入前会获得一次受限修订
+ok 11 - Memory Curator 的无效引用在写入前会获得一次受限修订
+  ---
+  duration_ms: 308.886542
+  type: 'test'
+  ...
+# Subtest: Memory Reviewer 的无效问题列表只重试审查结论
+ok 12 - Memory Reviewer 的无效问题列表只重试审查结论
+  ---
+  duration_ms: 327.157625
+  type: 'test'
+  ...
+# Subtest: Memory Reviewer 不能因新页面的空 derivedFrom 要求任务或提交追溯
+ok 13 - Memory Reviewer 不能因新页面的空 derivedFrom 要求任务或提交追溯
+  ---
+  duration_ms: 294.443583
+  type: 'test'
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3980.936083

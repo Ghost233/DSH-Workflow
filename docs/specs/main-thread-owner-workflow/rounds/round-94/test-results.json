@@ -1,0 +1,25 @@
+{
+  "contract": "DSH_TICKET_TEST_RESULTS_V1",
+  "candidateId": "R94-T08-public-owner-session-proof",
+  "capturedAt": "2026-09-11T22:01:34Z",
+  "command": "TSX_TSCONFIG_PATH=deepseek-harness/tsconfig.json node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit --test-concurrency=1 owner-workflow-plugin/test/public-owner-session-proof.test.mjs owner-workflow-plugin/test/public-owner-change.test.mjs owner-workflow-plugin/test/owner-advice-session.test.mjs",
+  "summary": {
+    "tests": 22,
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "cancelled": 0,
+    "durationMs": 9562.572458
+  },
+  "files": {
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "c24202bff53e9f2d54b22b757955ea4fa4bc0ff8902e5387d615b320f204cd90",
+    "owner-workflow-plugin/test/public-owner-session-proof.test.mjs": "cecc26e6354f65a89b25b498bfc634c8de77473a9491a273e6e90ec2a6d1d5f4",
+    "owner-workflow-plugin/src/public-owner-change.mjs": "be6b02a5432b5c60efa851287057b3ccded421e29dcd8e0b3287c6a86573a93c",
+    "owner-workflow-plugin/test/public-owner-change.test.mjs": "a11de38676c3a80cddddf01593f7a07e39c3c505e61c76130bd8af068fcccbf8"
+  },
+  "regression": {
+    "initial": { "tests": 110, "passed": 109, "failed": 1, "failure": "T22 session-binding-before-followup timing assertion" },
+    "isolatedRerun": { "tests": 1, "passed": 1, "failed": 0 },
+    "fullT22Rerun": { "tests": 5, "passed": 5, "failed": 0 }
+  }
+}

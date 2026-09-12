@@ -1,0 +1,7 @@
+# T16第三、第四切片复核
+
+round03独立审查脚本/证据无P1/P2；报告“第一进程终止”已改为“第一进程中的API Owner原执行终止”，主Node仍活着。认可跨OS进程同根lease拒绝与Owner实际aborted后新token的有限结论。
+
+round04主线程核对真实assertOwnerLease/ownerSubmitDefinition.execute及持久record前后比较。认可旧lease对象不可用、旧child active-session门禁拒绝且失败record不变；未创建新attempt，不是旧token对新结果的强fencing。冻结脚本注释“missing admission path”不代表架构结论：它只尝试runExternalOwner，项目已有recoverOwner恢复入口；报告已改正，保留冻结脚本避免污染原证据。round05实际recoverOwner新attempt证明正在推进。
+
+T16仍开发中，父控制器重启、取消异常/延迟及deadline/观察窗口适配方案仍须完整矩阵与正向接口/失败出口审查；不要求先实现T17再证明T16。

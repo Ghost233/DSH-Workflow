@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: 真实 Harness create → read → edit 使用原生 CAS，写入不可消费的完整 native provenance 链
+ok 1 - 真实 Harness create → read → edit 使用原生 CAS，写入不可消费的完整 native provenance 链
+  ---
+  duration_ms: 207.768541
+  type: 'test'
+  ...
+# Subtest: 真实 CAS stale 在 prepared 后无同调用 observed，明确保留 unknown 而不把 isError 伪造成失败
+ok 2 - 真实 CAS stale 在 prepared 后无同调用 observed，明确保留 unknown 而不把 isError 伪造成失败
+  ---
+  duration_ms: 51.290458
+  type: 'test'
+  ...
+# Subtest: native success followed by downstream observed failure remains native-observed but incomplete
+ok 3 - native success followed by downstream observed failure remains native-observed but incomplete
+  ---
+  duration_ms: 27.76525
+  type: 'test'
+  ...
+# Subtest: 相同真实 callId 的重放不会覆盖 prepared/terminal 或再次修改文档
+ok 4 - 相同真实 callId 的重放不会覆盖 prepared/terminal 或再次修改文档
+  ---
+  duration_ms: 40.081
+  type: 'test'
+  ...
+# Subtest: native 成功后 terminal 发布失败保留 prepared-only 与真实字节，不回滚或伪造 terminal
+ok 5 - native 成功后 terminal 发布失败保留 prepared-only 与真实字节，不回滚或伪造 terminal
+  ---
+  duration_ms: 26.244
+  type: 'test'
+  ...
+# Subtest: BOM 使原始字节与 decoded text 不可逆时保留 native-observed 但拒绝 complete
+ok 6 - BOM 使原始字节与 decoded text 不可逆时保留 native-observed 但拒绝 complete
+  ---
+  duration_ms: 33.233042
+  type: 'test'
+  ...
+# Subtest: 越界文档和状态目录链接在原生 mutation 前拒绝，且没有额外文档权限或 journal 记录
+ok 7 - 越界文档和状态目录链接在原生 mutation 前拒绝，且没有额外文档权限或 journal 记录
+  ---
+  duration_ms: 6.721833
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 543.230584

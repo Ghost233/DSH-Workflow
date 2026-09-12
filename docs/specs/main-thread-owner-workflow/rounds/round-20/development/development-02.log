@@ -1,0 +1,35 @@
+✖ T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only (2351.16725ms)
+✖ T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner (1330.003209ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3920.718667
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/recovery-session.test.mjs:434:1
+✖ T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only (2351.16725ms)
+  Error: Owner api 已调用 owner_submit，但提交关卡未成功且子线程随后结束；失败工具调用后的普通文本不能代替结算结果
+      at Object.runChild (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:12573:21)
+      at async Object.runOwnerEntry (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:14934:26)
+      at async file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:12926:26
+      at async Object.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13182:16)
+      at async Object.reconcileRecoverySession (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:10228:9)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-session.test.mjs:445:17)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+
+test at owner-workflow-plugin/test/recovery-session.test.mjs:541:1
+✖ T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner (1330.003209ms)
+  Error: Owner api 已调用 owner_submit，但提交关卡未成功且子线程随后结束；失败工具调用后的普通文本不能代替结算结果
+      at Object.runChild (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:12573:21)
+      at async Object.runOwnerEntry (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:14934:26)
+      at async file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:12926:26
+      at async Object.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13182:16)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-session.test.mjs:552:18)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)

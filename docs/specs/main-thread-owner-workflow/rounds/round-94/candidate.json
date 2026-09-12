@@ -1,0 +1,14 @@
+{
+  "contract": "DSH_TICKET_IMPLEMENTATION_CANDIDATE_V1",
+  "candidateId": "R94-T08-public-owner-session-proof",
+  "ticketId": "T-08",
+  "specRevision": "R4",
+  "status": "development_complete",
+  "scope": "scope.md",
+  "report": "report.md",
+  "review": "review.md",
+  "testResults": "test-results.json",
+  "runtimeSessionCreated": true,
+  "productionGapConfirmed": true,
+  "followupTicket": "T-28"
+}

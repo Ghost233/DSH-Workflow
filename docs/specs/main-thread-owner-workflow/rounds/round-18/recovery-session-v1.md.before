@@ -1,0 +1,57 @@
+# 恢复会话对账 V1
+
+实现：[recovery-session.mjs](../../../../owner-workflow-plugin/src/recovery-session.mjs)。这是 T-22 的显式局部适配接口；不连接 control、runner 或 legacy 路由，也不宣称所有调度入口已经启用恢复。
+
+## 调用
+
+Runtime 的唯一入口是：
+
+```js
+await runtime.reconcileRecoverySession(agent, workflowId, {
+  contract: 'DSH_RECOVERY_SESSION_REQUEST_V1',
+  taskId: 'plan-task-id',
+  ownerId: 'plan-owner-id',
+  requestId: 't20-persisted-request-id',
+  prompt: { id: 't20-reserved-prompt-id', content: 'frozen recovery prompt' },
+})
+```
+
+调用者不能给出 root、attempt、session、预算、`launchAuthorized`、lease token 或任何“已核验”布尔值。Runtime 用当前持久状态的 T-20 `recoveryAdmission` 完整导入校验读取 `requestId`，并精确导出 plan/task/Owner/root/request/attempt 和预留 `executionIdentity`。缺失意图、结构损坏、错绑定或计划漂移只返回技术暂停；不会再次领取或扣减额度。
+
+`runtime.reconcileRecoverySession(...)` 的结构化返回值为：
+
+```js
+{
+  contract: 'DSH_RECOVERY_SESSION_RESULT_V1',
+  outcome: 'pending' | 'running' | 'observed_terminal' | 'paused',
+  phase: 'durably_queued' | 'observed_running' | 'observed_terminal' | 'technical_pause',
+  workflowId, taskId, ownerId, rootProblemId, requestId, attemptId,
+  executionIdentity: { sessionId, promptId },
+  observation?: { revision, turn?, step?, terminalSeq?, assistantMessageId? },
+  reason?: 'stable_machine_reason',
+}
+```
+
+`inspectRecoverySession(...)` 是纯只读事实投影，不带 Runtime envelope、workflow 或账本身份。它返回 `{ outcome, phase, revision?, turn?, step?, terminalSeq?, assistantMessageId?, reason? }`。其中 `observed_terminal` only means that the stored model turn has a unique matching `turn/end`/`step/end`/assistant message. It is not Owner business success or failure and never substitutes for a T-13 result. 当前投影只支持独占单 prompt、一个 turn 和一个 step；多 step Owner 历史会保守暂停，不能泛化为通用终态归因。
+
+## 当前 Runtime 边界
+
+`runtime.reconcileRecoverySession(...)` 读取 reservation、检查现有 `recoverySession` 时会先做 raw 对账。纯投影可报告 `pending`、`running` 或 `observed_terminal`，但当前 Runtime 新 acquire 的 lease token 与旧持久记录不同时一律封装为 `paused`；它不会把这些只读事实变成启动或结算授权。它不 create、resume、followup 或 settle。一个未绑定 recovery session 的 T-20 reservation 也只在复用 `validateOwnerStartState` 的当前 plan/Registry/依赖/审批门禁后返回 `owner_execution_adapter_not_ready`；不会把旧 failed run 改成新 attempt。
+
+Provider 保留了未来受保护接缝：若后续完整接入，必须使用 Owner Workflow 的 one-shot provider，而不是裸 AgentLoop，并坚持 `create({ sessionId: reservedSessionId }) -> persistOwnerSession -> followup(reservedPromptId) -> ctx.sessions.flush(...)` 的顺序。`persistOwnerSession` 已对 recovery state 的 lease/attempt/session/prompt 绑定执行精确核验。此接缝本身不构成已启用启动能力。
+
+一个已保存的 recovery session 只能由同一持久 Owner run 的同一 lease token 继续变异。新进程即使取得新的 lease，也没有旧 session 的操作权：它最多进行只读检查，随后返回 `paused`，不 create、resume、followup 或 settle。PID 死亡、文件缺失或 caller boolean 都不能改写这条规则。
+
+## JSONL 只读对账
+
+只接受当前真实 `JsonlSessionPersistence` 且 `compression:'none'`、`supportsRawArtifacts:true`。适配器按 `listSnapshots -> readRaw -> readFrom(0) -> listSnapshots` 检查同一 session：raw artifact 必须是完整、以换行结尾且每一行可解析的 JSONL，其 header/id 必须匹配；适配器按已发布的 schema-17 规则严格展开每个 packed chunk record，并要求展开后的全部逻辑事件逐项等于 `readFrom`；`readFrom` 的逻辑事件还必须从 seq 0 连续；前后 session revision 必须完全相同。未知或坏的 packed record 一律暂停。
+
+只接受唯一的冻结 user prompt、唯一 turn/step 和一致的 assistant 事实。pending inbox、运行中 turn、无 artifact、torn/坏日志、raw/read 错误、revision 变化、多 prompt、额外输入、错身份或所有权不明都保持已用额度并返回技术暂停。查询路径不把 `load`/`inspect` 合成的 interrupted 解释成真实失败。
+
+## 未在此局部接口结算的边界
+
+此版本不从模型 `turn/end` 推导 Owner 业务结果，不伪造 T-13 `failed`，也不生产 `DSH_RECOVERY_CONTINUATION_V1`。该引用只能在同一个新 Owner run 的真实失败已由 Owner 运行时持久化、且当前 lease/attempt/session 与 T-20 intent 完整相等时，通过 `startRecoveryAttempt`/`settleRecoveryAttempt` 的真实失败回执生成。首次启动、resume 与该结算接缝尚未接入本局部入口；T-22 保持开发中，T-15/T-23 不解锁。
+
+## Lease领取冲突（第17轮）
+
+同Owner已被本进程/磁盘持有者占用、初始化中或有限过期恢复竞争尚未取得lease时，入口返回`paused / technical_pause / owner_lease_unavailable`。该返回不含未经锁内验证的intent身份，不读取session或Workflow账本，不释放其他持有者的lease。仅领取边界的可辨识冲突转换为暂停；调用取消、非冲突IO和已持有lease失效继续报错。既有其他Owner运行入口仍按原有异常拒绝规则处理占用。

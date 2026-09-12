@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
+import { reconcileReviewConvergence } from '../src/convergence.mjs'
 import { commitFiles, head, statusRecords } from '../src/git.mjs'
 import { ownerResult } from '../src/model.mjs'
 
@@ -339,6 +340,193 @@ test('recordBoundVerification 把绑定验证结果写入 active、task 状态�
   }
 })
 
+test('F02 的 task_verification_result 只接受实时重新核验的 Owner 固定验证证据', async () => {
+  const fixture = await ownerVerificationFixture()
+  let exec = fixture.exec
+  const issue = {
+    obligationId: 'f02-current-unit-result',
+    sourceId: 'F02',
+    sourceVersion: 'R4 5.10',
+    targetTaskIds: ['T1'],
+    closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' },
+    severity: 'high',
+    title: 'T1 必须以当前固定验证结果关闭 F02',
+    detail: 'Reviewer 只能提交当前 T1/unit 的关闭请求，Runtime 必须重新核验真实 Owner 记录。',
+    suggestion: '重新运行 T1 的 unit 固定验证。',
+  }
+  const readWorkflowState = async () => JSON.parse(await readFile(fixture.statePath, 'utf8'))
+  const writeWorkflowState = async update => {
+    const state = await readWorkflowState()
+    update(state)
+    await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    return state
+  }
+  const produce = () => fixture.runtime.recordBoundVerification({
+    task_id: 'T1',
+    verification_id: 'unit',
+    description: '为 F02 提供当前 Owner 固定验证记录',
+  }, exec)
+  const evidence = async () => {
+    const state = await readWorkflowState()
+    assert.equal(state.planDigest, candidate.planDigest, 'F02 的每次实时重验保持同一 planDigest')
+    return fixture.runtime.planReviewEvidence(state, state.plan, state.planDigest, exec.signal)
+  }
+  const state = await readWorkflowState()
+  const candidate = {
+    cycleId: 'f02-current-verification-cycle',
+    planDigest: state.planDigest,
+    planStructureDigest: 'f02-current-verification-structure',
+    strategy: 'diagnose',
+  }
+  const initial = reconcileReviewConvergence({
+    candidate,
+    review: {
+      status: 'needs_revision',
+      summary: 'F02 等待当前 T1/unit 验证结果',
+      issues: [issue],
+      targetTaskIds: ['T1'],
+    },
+    evidenceDigest: 'f02-initial-evidence',
+    time: '2026-09-10T00:00:00.000Z',
+  })
+  const closureReview = {
+    status: 'passed',
+    summary: 'Reviewer 请求使用当前 T1/unit 验证结果关闭 F02',
+    issues: [],
+    targetTaskIds: ['T1'],
+    obligationClosures: [{
+      obligationId: issue.obligationId,
+      kind: 'task_verification_result',
+      taskId: 'T1',
+      verificationId: 'unit',
+      planDigest: candidate.planDigest,
+    }],
+  }
+  const reconcile = (runtimeEvidence, time) => reconcileReviewConvergence({
+    previous: initial,
+    candidate,
+    review: closureReview,
+    evidenceDigest: 'f02-realtime-evidence',
+    time,
+    runtimeEvidence,
+  })
+  const assertEmptyAndOpen = async (label, time) => {
+    const current = await evidence()
+    assert.equal(current.planDigest, candidate.planDigest, `${label} 保留候选计划绑定`)
+    assert.deepEqual(current.taskVerificationResults, [], `${label} 不得投影过期或失败的宿主证据`)
+    const convergence = reconcile(current, time)
+    assert.equal(convergence.obligations[0].status, 'open', `${label} 不能关闭 F02 义务`)
+  }
+  const assertCurrentAndClosed = async (result, time) => {
+    const current = await evidence()
+    assert.deepEqual(current.planBindings, [{ taskId: 'T1', verificationId: 'unit' }])
+    assert.deepEqual(current.taskVerificationResults, [{ ...result, current: true }])
+    const convergence = reconcile(current, time)
+    assert.equal(convergence.obligations[0].status, 'resolved')
+    assert.equal(convergence.obligations[0].resolution.kind, 'task_verification_result')
+    assert.equal(convergence.obligations[0].resolution.contentDigest, result.contentDigest)
+  }
+
+  try {
+    let result = await produce()
+    await assertCurrentAndClosed(result, '2026-09-10T00:01:00.000Z')
+
+    await writeFile(join(fixture.worktree, 'src', 'owned', 'value.mjs'), 'export const value = 2\n', 'utf8')
+    await assertEmptyAndOpen('真实 worktree 内容变化', '2026-09-10T00:02:00.000Z')
+    result = await produce()
+    await assertCurrentAndClosed(result, '2026-09-10T00:03:00.000Z')
+
+    await writeWorkflowState(next => { next.tasks[0].writeGeneration = 1 })
+    await assertEmptyAndOpen('同 planDigest 的写入代次变化', '2026-09-10T00:04:00.000Z')
+    result = await produce()
+    await assertCurrentAndClosed(result, '2026-09-10T00:05:00.000Z')
+
+    const rotatedSessionId = 'owner-verification-session-rotated'
+    await writeWorkflowState(next => {
+      next.tasks[0].executorId = rotatedSessionId
+      next.ownerRuns['T1:security-owner'].sessionId = rotatedSessionId
+    })
+    await assertEmptyAndOpen('同 planDigest 的 Owner session 变化', '2026-09-10T00:06:00.000Z')
+    fixture.runtime.activeOwners.delete('owner-verification-session')
+    fixture.runtime.activeOwners.set(rotatedSessionId, fixture.active)
+    exec = { agent: ownerAgent(rotatedSessionId, fixture.worktree), signal: undefined }
+    result = await produce()
+    await assertCurrentAndClosed(result, '2026-09-10T00:07:00.000Z')
+
+    await writeWorkflowState(next => {
+      next.tasks[0].verificationResults.unit.argv = ['node', '--test', 'test/unbound.test.mjs']
+    })
+    await assertEmptyAndOpen('同 planDigest 的固定 argv 绑定变化', '2026-09-10T00:08:00.000Z')
+    result = await produce()
+    await assertCurrentAndClosed(result, '2026-09-10T00:09:00.000Z')
+
+    for (const [label, hostEvidence] of [
+      ['timedOut', { timedOut: true }],
+      ['aborted', { aborted: true }],
+      ['background', { kind: 'background' }],
+      ['ok:false', { ok: false }],
+    ]) {
+      await writeWorkflowState(next => Object.assign(next.tasks[0].verificationResults.unit, hostEvidence))
+      await assertEmptyAndOpen(`同 planDigest 的 ${label} 宿主证据`, `2026-09-10T00:10:${label.length.toString().padStart(2, '0')}Z`)
+      result = await produce()
+      await assertCurrentAndClosed(result, `2026-09-10T00:11:${label.length.toString().padStart(2, '0')}Z`)
+    }
+  } finally {
+    await fixture.cleanup()
+  }
+})
+
+test('R07 可选文件发现不可用时保留独立验证证据，当前候选与取消门禁不放宽', async () => {
+  const fixture = await ownerVerificationFixture()
+  try {
+    await writeFile(join(fixture.worktree, 'src', 'owned', 'value.mjs'), 'export const value = 7\n')
+    const result = await fixture.runtime.recordBoundVerification({
+      task_id: 'T1', verification_id: 'unit', description: 'R07 当前宿主验证',
+    }, fixture.exec)
+    const original = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+    for (const workflowWorktree of [undefined, '', null, 42, join(fixture.root, 'missing', 'workflow'), '/unavailable-r07/workflow']) {
+      const state = { ...original, workflowWorktree }
+      await writeFile(fixture.statePath, JSON.stringify(state))
+      const evidence = await fixture.runtime.planReviewEvidence(state, state.plan, state.planDigest)
+      assert.deepEqual(evidence.verifiedFiles, [], `不可用发现路径：${String(workflowWorktree)}`)
+      assert.deepEqual(evidence.taskVerificationResults, [{ ...result, current: true }])
+    }
+    const discoverable = { ...original, workflowWorktree: join(fixture.root, 'workflow') }
+    await writeFile(fixture.statePath, JSON.stringify(discoverable))
+    const available = await fixture.runtime.planReviewEvidence(discoverable, discoverable.plan, discoverable.planDigest)
+    assert.ok(available.verifiedFiles.some(file => file.taskId === 'T1' && file.path === 'src/owned/value.mjs'))
+    assert.deepEqual(available.taskVerificationResults, [{ ...result, current: true }])
+
+    const canceled = new AbortController()
+    canceled.abort(new Error('R07 请求取消'))
+    await assert.rejects(fixture.runtime.planReviewEvidence(original, original.plan, original.planDigest, canceled.signal), /Owner 工作流已被调用方取消/)
+
+    const duringVerification = new AbortController()
+    const originalCheck = fixture.runtime.assertRequiredTaskVerifications
+    fixture.runtime.assertRequiredTaskVerifications = async (...args) => {
+      const checked = await originalCheck(...args)
+      duringVerification.abort()
+      return checked
+    }
+    try {
+      await assert.rejects(fixture.runtime.planReviewEvidence(discoverable, discoverable.plan, discoverable.planDigest, duringVerification.signal), /Owner 工作流已被调用方取消/)
+    } finally {
+      fixture.runtime.assertRequiredTaskVerifications = originalCheck
+    }
+
+    const changed = structuredClone(discoverable)
+    changed.plan.summary = 'R07 新候选'
+    changed.planDigest = createHash('sha256').update(JSON.stringify(changed.plan)).digest('hex')
+    await writeFile(fixture.statePath, JSON.stringify(changed))
+    const stale = await fixture.runtime.planReviewEvidence(discoverable, discoverable.plan, discoverable.planDigest)
+    assert.deepEqual(stale.verifiedFiles, [])
+    assert.deepEqual(stale.taskVerificationResults, [])
+    assert.deepEqual(stale.planBindings, [])
+  } finally {
+    await fixture.cleanup()
+  }
+})
+
 test('旧 Flutter 计划从唯一受控 test/write/pubspec 链推导 flutter_app，并用于同一计划全部 Flutter 验证', async () => {
   const fixture = await legacyFlutterVerificationFixture()
   try {
@@ -459,6 +647,37 @@ test('固定验证快照和内容摘要跳过 Git 忽略的构建产物', async 
       description: '跳过 Git 忽略构建产物的固定验证',
     }, fixture.exec)
     assert.equal(result.passed, true)
+  } finally {
+    await fixture.cleanup()
+  }
+})
+
+test('固定验证快照保留被忽略的 node_modules CLI，但不把依赖计入提交内容', async () => {
+  let fixture
+  fixture = await ownerVerificationFixture({
+    shellResult: async () => {
+      const snapshotRoot = fixture.calls.at(-1).sandboxPolicy.workspaceRoot
+      assert.equal(
+        await readFile(join(snapshotRoot, 'node_modules', '.bin', 'fixture-cli'), 'utf8'),
+        'fixture cli\n',
+      )
+      return { kind: 'foreground', ok: true, exitCode: 0, sandbox: { enforcement: 'full' } }
+    },
+  })
+  try {
+    await writeFile(join(fixture.root, '.git', 'info', 'exclude'), 'node_modules/\n')
+    await mkdir(join(fixture.worktree, 'node_modules', '.bin'), { recursive: true })
+    await writeFile(join(fixture.worktree, 'node_modules', '.bin', 'fixture-cli'), 'fixture cli\n')
+    const ignored = await statusRecords(fixture.worktree, undefined, { includeIgnored: true, untracked: 'normal' })
+    assert.equal(ignored.some(record => record.code === '!!' && record.path === 'node_modules/'), true)
+
+    const result = await fixture.runtime.recordBoundVerification({
+      task_id: 'T1',
+      verification_id: 'unit',
+      description: '在隔离快照中使用锁定依赖 CLI',
+    }, fixture.exec)
+    assert.equal(result.passed, true)
+    assert.equal(result.enforcement, 'full')
   } finally {
     await fixture.cleanup()
   }
@@ -1264,7 +1483,7 @@ test.skip('旧版 Owner 写入包装长期记忆测试（最终提交关卡覆�
   })
   try {
     await assert.rejects(runtime.ownerWrite({
-      file_path: '.owner-memory/owners/security-owner/index.md',
+      file_path: '.owner-workflow/owners/security-owner/memory/index.md',
       content: '禁止 Owner 直接改写长期记忆\n',
       description: '尝试绕过记忆整理流程',
     }, { agent: ownerAgent(sessionId, root), signal: undefined }), /受保护路径/u)
@@ -1284,12 +1503,12 @@ test.skip('旧版 Owner 写入包装 Registry 测试（最终提交关卡覆盖�
   })
   try {
     await assert.rejects(runtime.ownerWrite({
-      file_path: '.owner-workflow/owners/x.md',
+      file_path: '.owner-workflow/owners/x/owner.md',
       content: '禁止 Owner 直接改写正式 Owner Registry\n',
       description: '尝试绕过 Owner Registry 提案审批',
     }, { agent: ownerAgent(sessionId, root), signal: undefined }), /受保护路径/u)
     await assert.rejects(runtime.ownerEdit({
-      file_path: '.owner-workflow/owners/x.md',
+      file_path: '.owner-workflow/owners/x/owner.md',
       old_string: '旧内容',
       new_string: '禁止修改',
       description: '尝试通过编辑绕过 Owner Registry 提案审批',
@@ -1390,8 +1609,8 @@ test('Owner scope 过宽时提交前后二次检查都拒绝 Owner Registry 的�
 
 test('Owner scope 过宽时提交检查拒绝 .owner-workflow 路径', async () => {
   const root = await createRepository('dsh-owner-registry-commit-protected-')
-  const protectedFile = '.owner-workflow/owners/x.md'
-  await mkdir(join(root, '.owner-workflow', 'owners'), { recursive: true })
+  const protectedFile = '.owner-workflow/owners/x/owner.md'
+  await mkdir(join(root, '.owner-workflow', 'owners', 'x'), { recursive: true })
   await writeFile(join(root, protectedFile), '禁止直接提交 Registry\n', 'utf8')
   const baseCommit = await head(root)
   const runtime = createOwnerWorkflowRuntime({}, {})

@@ -1,0 +1,64 @@
+TAP version 13
+# Subtest: T15 real Supervisor initial failure and retry preserve source, enforce credit, and allow independent initial work
+not ok 1 - T15 real Supervisor initial failure and retry preserve source, enforce credit, and allow independent initial work
+  ---
+  duration_ms: 1886.165166
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/runtime-recovery-budget.test.mjs:392:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'budget')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/runtime-recovery-budget.test.mjs:406:40)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+# Subtest: T15 real Supervisor recovery completes only after the actual successful settlement
+not ok 2 - T15 real Supervisor recovery completes only after the actual successful settlement
+  ---
+  duration_ms: 600.626708
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/runtime-recovery-budget.test.mjs:429:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+
+    + 'failed'
+    - 'completed'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'completed'
+  actual: 'failed'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/runtime-recovery-budget.test.mjs:434:10)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T15 Supervisor replays an unsettled session as paused without another launch or fabricated completion
+not ok 3 - T15 Supervisor replays an unsettled session as paused without another launch or fabricated completion
+  ---
+  duration_ms: 576.885333
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/runtime-recovery-budget.test.mjs:444:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'phase')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/runtime-recovery-budget.test.mjs:449:59)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 0
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3216.893084

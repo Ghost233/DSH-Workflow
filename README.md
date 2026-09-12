@@ -2,6 +2,10 @@
 
 这是一个运行在 DeepSeek Harness 之外的 Owner 工作流插件。`deepseek-harness/`、`dsh-synapse/` 与 `owner-workflow-plugin/vendor/dsh-approve-for-me/` 都是固定 commit 的只读上游子模块；插件自有代码、脚本、文档和测试均位于主工程，不修改上游源码。
 
+## 工作流设计讨论入口
+
+2026-09-10 确定的下一步方向为：主线程先形成 Spec/Ticket，再编排 Owner 执行 DAG，自主处理技术反馈，仅在必要的需求决定与权限事项上询问用户。相关文档：[术语表](CONTEXT.md)、[讨论记录](docs/analysis/2026-09-10-dsh-matt/discussion-record.md)、[架构决定](docs/adr/0001-main-thread-spec-ticket-owner-execution.md)、[规格草稿 R1](docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md)。这是目标设计，尚未实现；下文仍描述现有启动和使用方式。
+
 ## 启动
 
 推荐按 Harness 来源选择两个启动脚本：
@@ -23,6 +27,44 @@ DSH_NPM_VERSION=0.1.0-rc.8 ./start-owner-workflow-npm.sh
 子模块模式直接使用 `deepseek-harness/`。首次启动或子模块 commit 变更后，它会在子模块自身的忽略路径中安装依赖并构建匹配的 CLI 与 Web 产物，不会修改受版本控制的子模块文件。原有启动脚本仍保留为高级入口，可使用 `DSH_LAUNCHER=npx|source|source-runtime` 选择来源。
 
 npm 和独立子模块源码启动模式都会默认传递 `--no-open`，不会自动打开浏览器；需要恢复自动打开时设置 `DSH_WEB_OPEN=1`。
+
+### 项目内启动插件
+
+[project-plugins.json](project-plugins.json) 是统一的有序清单。每次 Web 启动前，脚本逐项查询 npm `latest` 或指定 Git 分支的最新提交，再锁定实际版本/完整 commit 安装：
+
+1. `dshmarket` — [DSH Market](https://github.com/dsh-market/dsh-market)
+2. `dsh-better-sidebar` — [Better Sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)
+3. `dsh-context` — [Context](https://github.com/bowenliang123/dsh-context)
+4. `dsh-visualizer` — [Visualizer](https://github.com/abiddotdev/dsh-visualizer)，Git `master`
+5. `@js2hou/dsh-mcp-manager` — [MCP Manager](https://github.com/Js2Hou/dsh-mcp-manager)
+6. `dsh-cost-meter` — [Cost Meter](https://github.com/Han-1413141/dsh-cost-meter)
+7. `dsh-plugin-open-editor` — [Open Editor](https://github.com/Civitasv/dsh-plugin-open-editor)，Diff Review 上游要求的前置插件，Git `main`
+8. `dsh-plugin-diff-review` — [Diff Review](https://github.com/Civitasv/dsh-plugin-diff-review)，Git `main`
+9. `@dsh-external/dsh-plannotator` — [Plannotator](https://github.com/titanwings/dsh-plannotator)，Git `main`（计划逐段批注；仓库自带构建产物）
+10. `dsh-easyrewrite` — [EasyRewrite](https://github.com/Renzic-Stone/DSH-EasyRewrite)，npm `latest`（消息撤回与重新编辑；2.4.0 起要求 DSH 0.1.2-rc.1+）
+11. `@dsh-external/dsh-sidechain` — [Sidechain](https://github.com/omdsh-dev/dsh-sidechain)，Git `master`（`/side` 持续侧会话、`/btw` 一次性侧问；安装需要 `prepare` 构建审批）
+
+无需提前安装，也没有新的启动环境变量。包、lockfile、下载缓存、成功启动状态 `launch.json`（含实际版本与 Git commit）和本次启动 patch 都放在项目的 `.dsh-workflow/plugins/`（Git 忽略）。npm 版本通过 `pnpm view` 查询后精确安装；Git 通过 `git ls-remote` 取得最新 commit，不再额外下载远端 package.json。清单中的 `latest` 每次重新查询，不创建新 submodule，不把这些插件安装到用户 profile。
+
+Visualizer 的 npm 同名包指向另一个仓库，因此严格使用用户指定的 Git 来源，不回退到同名 npm 包。Diff Review / Open Editor 仓库已包含构建产物，但没有标准 `dsh.bundle`，清单用 `bundle: "entry"` 显式生成等效的加载条目，不运行它们写入用户 profile 的 `install.sh`。前置插件必须在依赖它的插件之前完成安装。
+
+全部安装、产物检查、宿主兼容性检查与入口导入成功后，才启动 Runner 和 DSH。每次更新先使旧启动状态失效，下载或校验失败会直接停止，不会使用旧状态启动半更新的目录。只保存一份启动状态，模块路径和宿主依赖图在启动时计算；不再生成重复的 `installed.json`（旧文件不再读取）。`--help`、配置 dump、显式安装 preset 和 submodule 的 `plugin` 管理命令不触发自动更新。项目运行期间保留启动锁，防止另一启动进程更新正在使用的包。
+
+仍遵守 pnpm 的供应链安全策略。若 `latest` 尚未超过 `minimumReleaseAge` 冷却期，安装会失败并阻止启动；等待冷却期结束再运行即可，启动脚本不会自动降低安全策略。
+
+加载通过进程内模块解析和 `--patch` 完成，同时处理 Node 入口与浏览器入口；运行时优先使用当前 Harness 提供的模块，不自动安装 peer dependencies；部分上游包自身声明的普通依赖仍由 pnpm 安装。默认仅允许 `node-pty` 原生构建，其余依赖构建不自动放行。Visualizer 的 Git `prepare` 构建可能要求按具体 commit 审批；遇到 pnpm 拦截会停止，需要用户检查并按报错将精确的批准项加入项目插件目录的 `pnpm-workspace.yaml` 后重试。新的 commit 可能需要重新审批，不能保证每次更新都无人值守；脚本保留已有批准项，但不会自行新增 Git 构建授权或降低冷却期。会话、凭据及 DSH home 位置不变。用户 profile 若另装了同名插件，会遮蔽浏览器入口，启动前会报错要求移除重复安装。
+
+**版本要求：** 当前 Better Sidebar `0.19.1` 的 peer dependencies 面向 DSH `0.1.5-rc.1`，Context `0.49.4` 的基线是 `0.1.2-rc.1`。本仓库当前 Harness `0.1.1-rc.2` 不能直接加载这套最新版组合，需要先升级并构建兼容的 Harness；脚本不会自动升级宿主，也不会绕过版本校验。以后发布的 `latest` 若提高要求，同样会停在启动前。
+
+这些插件的启动安装策略由项目清单管理。Market 页面自身的手动安装/卸载仍遵循它的原生 profile 机制，不会修改这份项目清单。Market 的直接重启按钮在此入口关闭，重启请重新运行启动脚本，以保证仍先按顺序更新。
+
+验证启动管理逻辑（离线测试，不下载插件）：
+
+```sh
+node --test scripts/project-plugins.test.mjs owner-workflow-plugin/test/launcher.test.mjs
+```
+
+SoL Efficiency 通过 DSH 的 profile 插件安装机制管理。安装后正常启动，在 **设置 → 插件 → 插件配置 → SoL Efficiency** 勾选动作融合或日志压缩；取消勾选即可关闭，自动保存并实时生效。无需 SoL 专用启动参数或环境变量。安装命令见 [插件说明](sol-efficiency-plugin/README.md)。
 
 子模块入口也可以直接调用同一 commit 构建出的 DSH 插件管理 CLI；该模式不会启动 Web、Runner 或注入临时 patch：
 

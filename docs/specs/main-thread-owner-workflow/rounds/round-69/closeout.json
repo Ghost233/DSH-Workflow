@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-11T13:26:39.873591+00:00",
+  "formalPass": 217,
+  "formalSkipped": 7,
+  "candidateDrift": [],
+  "reviewFindings": [
+    "P2：内部Runtime Owner方法缺少candidate reservation门禁。",
+    "P2：reservation重放掩盖task终态。"
+  ],
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false,
+  "originalReviewFindings": [
+    "P1：直接runExternalOwner及公开owner-sync/run-owner绕过候选reservation门禁，可启动模型。",
+    "P2：reservation重放中性化前未核验真实task pending/running，掩盖矛盾终态。"
+  ],
+  "reviewCorrection": "R70真实socket更正：公开owner-sync/run-owner已被既有V2前置守卫拒绝，原公共入口P1判断错误；确认范围仅为内部Runtime方法门禁缺口（P2）。R70保留失败日志并补内部方法/锁内竞态测试。"
+}

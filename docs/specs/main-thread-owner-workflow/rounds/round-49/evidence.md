@@ -1,0 +1,5 @@
+# R49 收敛探针恢复来源
+
+probeAutonomousConvergence观察到新证据后仍有旧Owner pending重写，可绕实际预算。主线程只写runtime/test，T16 worker只写独立proof。新协议显式配置校验、保留terminal/session来源、真实用户待决优先；未知来源不凭探针制造Owner。实际driveWorkflow convergence-probe→Supervisor执行验证新证据不重置预算。timeout/replan与完整主投影继续待实施，T15未完成。
+
+4项开发测试通过，新增缺配置反例进入正式。正式范围runtime恢复全套、admission、session及control现有R06真实文件证据探针；其余不受影响control/resilience不重复。测试的incident历史摘要0是受控前态，用于触发摘要变化分支；没有把该输入声称为T02新文件证据证明（由R06原有实际文件用例覆盖）。

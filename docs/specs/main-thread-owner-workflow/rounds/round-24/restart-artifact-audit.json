@@ -1,0 +1,127 @@
+{
+  "submitted-sigkill-pause": {
+    "producerPid": 73684,
+    "replayerPid": 74414,
+    "hashes": {
+      "workflow-state.json": "b022ecaad2e921bf32d0082973e781db0b75aa416570f70343f72dea9f53a738",
+      "reserved-session.jsonl": "c3c71c63480cc69fb4a254b2b26067b2fc96b4701ad90af627fddb05485085ec"
+    },
+    "container": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-M7YfX5",
+    "existsAfterTest": false,
+    "outcome": {
+      "contract": "DSH_RECOVERY_SESSION_RESULT_V1",
+      "outcome": "paused",
+      "phase": "technical_pause",
+      "workflowId": "wf-recovery-session",
+      "taskId": "T1",
+      "ownerId": "api",
+      "rootProblemId": "recovery-root-b9c46ada-5045-4f26-901e-6cf7b2e30c9f",
+      "requestId": "recovery-request-93d1fbcf-6a8b-44e5-8e2c-a9a634139775",
+      "attemptId": "recovery-attempt-a97d5291-085a-445c-a2bd-7c5a1d45302e",
+      "executionIdentity": {
+        "sessionId": "recovery-session-6085f82f-c95f-499c-a7ff-b277490a35fa",
+        "promptId": "recovery-prompt-6c0579c0-799d-43f5-8e1e-1dc296d62e27"
+      },
+      "reason": "extra_or_wrong_input",
+      "observation": {
+        "outcome": "paused",
+        "phase": "technical_pause",
+        "reason": "extra_or_wrong_input",
+        "revision": "16777232:193027941:20613:1789104914313893965:1789104914313893965"
+      }
+    }
+  },
+  "settled-failed-sigkill-replay": {
+    "producerPid": 74449,
+    "replayerPid": 75193,
+    "hashes": {
+      "workflow-state.json": "63bd8a110860bfc396c3e8dc166d409ab8921e5a5d1fb148a92daff31e9a7894",
+      "reserved-session.jsonl": "d3e0e3751662fd14dd9548990fd4596f13cffd2c5452b4f62d4eb297bf9edb07"
+    },
+    "container": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-0KYxsb",
+    "existsAfterTest": false,
+    "outcome": {
+      "contract": "DSH_RECOVERY_SESSION_RESULT_V1",
+      "outcome": "settled_failed",
+      "phase": "settled_failed",
+      "workflowId": "wf-recovery-session",
+      "taskId": "T1",
+      "ownerId": "api",
+      "rootProblemId": "recovery-root-1b118845-bad2-4cf0-80bf-249c414f193a",
+      "requestId": "recovery-request-cce9c59e-4915-4e76-bfbe-165ce4e62afd",
+      "attemptId": "recovery-attempt-bc957ff7-d357-4501-b1ca-065ac3979da4",
+      "executionIdentity": {
+        "sessionId": "recovery-session-7a809a36-1b72-4e09-bd9e-55d633d22013",
+        "promptId": "recovery-prompt-c782b548-1cb5-45a0-bb7c-96f2f63ba585"
+      },
+      "continuation": {
+        "contract": "DSH_RECOVERY_CONTINUATION_V1",
+        "sourceId": "recovery-source-a72cd741274c282b17b41c43b2373e13d8c2a661d708099cf5f5db0bcb0a761f",
+        "rootProblemId": "recovery-root-1b118845-bad2-4cf0-80bf-249c414f193a",
+        "requestId": "recovery-request-cce9c59e-4915-4e76-bfbe-165ce4e62afd",
+        "attemptId": "recovery-attempt-bc957ff7-d357-4501-b1ca-065ac3979da4",
+        "taskId": "T1",
+        "ownerId": "api",
+        "planDigest": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+        "executionIdentity": {
+          "sessionId": "recovery-session-7a809a36-1b72-4e09-bd9e-55d633d22013",
+          "promptId": "recovery-prompt-c782b548-1cb5-45a0-bb7c-96f2f63ba585"
+        },
+        "ownerRunBinding": {
+          "attempt": 3,
+          "sessionId": "recovery-session-7a809a36-1b72-4e09-bd9e-55d633d22013"
+        }
+      }
+    }
+  },
+  "settled-succeeded-sigkill-replay": {
+    "producerPid": 75581,
+    "replayerPid": 77722,
+    "hashes": {
+      "workflow-state.json": "03b8ccc6b6194570dc5c8eca109767fdf808c9fca6b47f36c922b89dbc99e7da",
+      "reserved-session.jsonl": "c1c0244f6349f9a9619ac6d4e6ce31dcc8d0063cff6a6f94bc358c25e267d134"
+    },
+    "container": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-qKnXtv",
+    "existsAfterTest": false,
+    "outcome": {
+      "contract": "DSH_RECOVERY_SESSION_RESULT_V1",
+      "outcome": "settled_succeeded",
+      "phase": "settled_succeeded",
+      "workflowId": "wf-recovery-session",
+      "taskId": "T1",
+      "ownerId": "api",
+      "rootProblemId": "recovery-root-5e5b9ebd-407f-472d-9f63-289b37ac2f87",
+      "requestId": "recovery-request-c0b9fdb0-53c3-4141-a8c1-b8a35afe1654",
+      "attemptId": "recovery-attempt-9e25096f-fe13-4135-8691-65aebc403068",
+      "executionIdentity": {
+        "sessionId": "recovery-session-9c370c8e-421e-48ea-b100-4e7bd4eacbb6",
+        "promptId": "recovery-prompt-1ae58cad-a07e-49fd-8b14-4e2a487bcd7e"
+      },
+      "successReceipt": {
+        "executionRef": {
+          "id": "recovery-session-9c370c8e-421e-48ea-b100-4e7bd4eacbb6",
+          "version": "recovery-prompt-1ae58cad-a07e-49fd-8b14-4e2a487bcd7e"
+        },
+        "result": {
+          "status": "succeeded",
+          "reference": {
+            "id": "recovery-prompt-1ae58cad-a07e-49fd-8b14-4e2a487bcd7e",
+            "version": "recovery-session-9c370c8e-421e-48ea-b100-4e7bd4eacbb6"
+          }
+        },
+        "commitSha": "f8036d32c322548af9376acb3cf2b9093247bf3f",
+        "workflowHead": "1efe241a3579ea30a9459955ff6c471b7d499245"
+      }
+    }
+  },
+  "preCheckpointCleanup": {
+    "containerPath": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-X7O5vb",
+    "producerExit": {
+      "code": null,
+      "signal": "SIGKILL"
+    },
+    "checkpointReceived": false,
+    "realGitWorktreeVerified": true,
+    "containerRemoved": true
+  }
+}

@@ -1,0 +1,5 @@
+# R90 实现复核
+
+未发现T27关闭阻断。状态发布、取消投递和terminal结算顺序符合T17合同；新版本完整发布与旧attempt资源释放被分成两个持久阶段。旧结果门禁发生在owner_submit副作用之前，fresh Runtime可消费同一停止记录。
+
+最终联合场景已有两个并存OS进程：旧Owner进程在父Runtime激活删除任务的PlanRevision前启动，激活后才尝试迟到提交；独立fresh Runtime再完成terminal结算。任务删除、跨进程迟到回执、同父竞争、激活中断恢复、legacy兼容及既有control均有固定候选证据。T18预算继承边界未被吸收。

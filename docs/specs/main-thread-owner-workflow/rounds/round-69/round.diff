@@ -1,0 +1,225 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -1,3 +1,4 @@
++import { candidateIndependentNext, ackCandidateIndependentCreate, candidateIndependentBinding, assertCandidateIndependentReservation } from './candidate-independent-supervisor.mjs'
+ import { isRecoveryCandidate, candidateNeedsUserDecision, candidateRecoveryIdentity, candidateRecoverySource, activeCandidateRecoveryPause, RecoverySemanticFailure } from './candidate-recovery-pause.mjs'
+ import { chmod, appendFile, cp, mkdir, mkdtemp, readFile, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
+ import { constants as fsConstants, existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
+@@ -8827,6 +8828,41 @@
+         candidatePlanDigest: candidate.planDigest,
+       }
+     },
++    async reserveCandidateIndependentTasks(agent, workflowId, actionId) {
++      const root = await runtime.resolveRoot(agent)
++      if (typeof actionId !== 'string' || !actionId.startsWith('csa-')) throw new Error('缺少候选独立调度actionId')
++      let result
++      await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, undefined, current => {
++        if (current.root !== root || current.id !== workflowId) throw new Error('候选独立调度Workflow绑定失效')
++        const previous = Object.values(current.supervisorOutbox ?? {}).filter(item => item.actionId === actionId)
++        if (previous.length > 0) {
++          for (const reservation of previous) assertCandidateIndependentReservation(current, reservation)
++          result = { action: 'candidate-independent-reserved', replay: true,
++            reservations: structuredClone(previous) }
++          return { state: current }
++        }
++        const receipt = candidateIndependentNext(current)
++        if (receipt.actionId !== actionId || receipt.action !== 'create') throw new Error('候选独立调度actionId已过期或无可创建任务')
++        const reservations = receipt.tasks.map(task => {
++          const reservation = supervisorReservation(task, actionId)
++          reservation.candidatePause = candidateIndependentBinding(receipt.scope, task, reservation.reservationId)
++          return reservation
++        })
++        const patches = ackCandidateIndependentCreate(current, actionId, {
++          tasks: reservations.map(item => ({ taskId: item.taskId, executorId: item.reservationId, cursor: null })),
++        })
++        for (const patch of patches.taskPatches) Object.assign(current.tasks.find(task => task.taskId === patch.taskId), patch)
++        current.actionSequence = patches.actionSequence
++        current.supervisorOutbox ??= {}
++        for (const reservation of reservations) current.supervisorOutbox[supervisorReservationKey(reservation.taskId, reservation.ownerId)] = reservation
++        appendSupervisorEvent(current, 'supervisor.candidate-independent-reserved', {
++          actionId, reservationIds: reservations.map(item => item.reservationId),
++        })
++        result = { action: 'candidate-independent-reserved', replay: false, reservations: structuredClone(reservations) }
++        return { state: current }
++      }))
++      return result
++    },
+     async pauseCandidateRecovery(agent, workflowId, identity, reason) {
+       const root = await runtime.resolveRoot(agent)
+       let answer
+@@ -12292,6 +12328,7 @@
+         const state = await readState(runtime, root, workflowId)
+         const reservation = state.supervisorOutbox?.[reservationKey]
+         if (reservation === undefined || reservation.status === 'completed') return
++        if (reservation.candidatePause !== undefined) return
+         if (state.status === 'cancelled') return
+         const ownerKey = ownerRunKey(reservation.taskId, reservation.ownerId)
+         const ownerRecord = state.ownerRuns?.[ownerKey]
+@@ -12534,6 +12571,7 @@
+       let alreadyCompleted = false
+       await runtime.withWorkflowLock(workflowId, async () => {
+         const state = await readState(runtime, root, workflowId)
++        if (state.supervisorOutbox?.[reservationKey]?.candidatePause !== undefined) throw new Error('候选独立Owner生命周期尚未接线，保留reservation')
+         if (recoveryAdmissionEnabled(state)) {
+           assertRecoveryAdmissionState(state)
+           protectedReservation = true
+@@ -12721,6 +12759,7 @@
+         assertRecoveryAdmissionState(state)
+         const current = state.supervisorOutbox?.[reservationKey]
+         if (current === undefined || !['reserved', 'launching'].includes(current.status)) return
++        if (current.candidatePause !== undefined) throw new Error('候选独立Owner生命周期尚未接线，保留reservation')
+         if (state.status !== 'running') {
+           state.supervisorOutbox[reservationKey] = { ...current, status: 'stopped',
+             error: `Supervisor reservation 不能在 ${state.status} workflow 中启动` }
+@@ -13414,6 +13453,7 @@
+             throw new Error(`Supervisor 只能在 running 工作流中执行 reservation，当前为 ${state.status}`)
+           }
+           const { key, reservation } = findSupervisorReservation(state, request.reservationId)
++          if (reservation.candidatePause !== undefined) throw new Error('候选独立Owner生命周期尚未接线，保留reservation')
+           const dispatchKey = `${workflowId}:${key}`
+           if (['completed', 'failed', 'cancelled', 'stopped'].includes(reservation.status)) {
+             return {
+--- owner-workflow-plugin/src/candidate-independent-supervisor.mjs (baseline)
++++ owner-workflow-plugin/src/candidate-independent-supervisor.mjs
+@@ -91,6 +91,41 @@
+
+ export function candidateIndependentNext(state) { return prepare(state).receipt }
+
++export function candidateIndependentBinding(scope, task, reservationId) {
++  if (!scope.eligibleTaskIds.includes(task.taskId)) fail('任务不属于确认范围')
++  return { contract: 'DSH_CANDIDATE_INDEPENDENT_RESERVATION_V1',
++    source: scope.pauseSource, activePlanDigest: scope.activePlanDigest,
++    taskId: task.taskId, ownerId: task.ownerId, reservationId,
++    eligibleTaskIds: [...scope.eligibleTaskIds], scopeDigest: digest(scope) }
++}
++
++export function assertCandidateIndependentReservation(state, reservation) {
++  const binding = reservation?.candidatePause
++  const pause = activeCandidateRecoveryPause(state)
++  if (binding?.contract !== 'DSH_CANDIDATE_INDEPENDENT_RESERVATION_V1'
++    || !pause || binding.source !== pause.source || binding.activePlanDigest !== state.planDigest
++    || binding.reservationId !== reservation.reservationId || binding.taskId !== reservation.taskId
++    || binding.ownerId !== reservation.ownerId || !Array.isArray(binding.eligibleTaskIds)
++    || !binding.eligibleTaskIds.includes(binding.taskId)
++    || binding.scopeDigest !== digest({ kind: 'candidate_pause', pauseSource: binding.source,
++      activePlanDigest: binding.activePlanDigest, eligibleTaskIds: binding.eligibleTaskIds })) fail('独立reservation来源绑定失效')
++  // Recompute eligibility with only this reservation's own projection neutralized.
++  // Other reservations, Owners and all dependency/source evidence remain intact.
++  const view = structuredClone(state)
++  const key = `${binding.taskId}:${binding.ownerId}`
++  const persisted = view.supervisorOutbox?.[key]
++  if (persisted?.reservationId !== binding.reservationId || JSON.stringify(persisted.candidatePause) !== JSON.stringify(binding)) fail('reservation已被替换')
++  const owner = view.ownerRuns?.[key]
++  if (owner && JSON.stringify(owner.candidatePause) !== JSON.stringify(binding)) fail('Owner已被其他执行替换')
++  delete view.supervisorOutbox[key]
++  if (view.ownerRuns) delete view.ownerRuns[key]
++  const task = view.tasks.find(task => task.taskId === binding.taskId)
++  if (!task) fail('reservation任务不存在')
++  Object.assign(task, { status: 'pending', executorId: null, cursor: null, unchangedPolls: 0, reason: null, action: null })
++  if (!prepare(view).receipt.scope.eligibleTaskIds.includes(binding.taskId)) fail('任务不再属于独立范围')
++  return binding
++}
++
+ export function ackCandidateIndependentCreate(state, actionId, observation) {
+   const { projection, normal, receipt } = prepare(state)
+   if (receipt.actionId !== actionId) fail('候选调度actionId已过期')
+--- owner-workflow-plugin/test/candidate-recovery-pause.test.mjs (baseline)
++++ owner-workflow-plugin/test/candidate-recovery-pause.test.mjs
+@@ -1,4 +1,4 @@
+-import { candidateIndependentNext } from '../src/candidate-independent-supervisor.mjs'
++import { candidateIndependentNext, assertCandidateIndependentReservation } from '../src/candidate-independent-supervisor.mjs'
+ import assert from 'node:assert/strict'
+ import test from 'node:test'
+ import { createConnection } from 'node:net'
+@@ -178,3 +178,79 @@
+   await assert.rejects(f.runtime.reviewPendingPlanRevision(f.admissionAgent), /暂停/)
+   assert.equal(f.adapter.requests.length, calls)
+ })
++
++async function notifiedPause(t) {
++  const f = await setup(t)
++  await drive(f.manifest)
++  await drive(f.manifest)
++  await f.admissionAgent.whenIdle()
++  await f.ctx.sessions.flush(f.admissionAgent.session)
++  return f
++}
++
++test('T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness', { timeout: 30_000 }, async t => {
++  const f = await notifiedPause(t)
++  await mutateRecoverySessionState(f, state => { state.tasks.find(task => task.taskId === 'T2').customEvidence = 'preserve me' })
++  const before = await readRecoverySessionState(f)
++  const receipt = candidateIndependentNext(before)
++  const calls = f.adapter.requests.length
++  const results = await Promise.all([0, 1].map(() => f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, receipt.actionId)))
++  assert.deepEqual(results.map(result => result.replay).sort(), [false, true])
++  assert.deepEqual(results[0].reservations, results[1].reservations)
++  const state = await readRecoverySessionState(f)
++  for (const key of ['status', 'error', 'plan', 'planDigest', 'pendingPlanRevision', 'candidateRecoveryPause', 'handoffQueue',
++    'handoffReplans', 'candidateReviews', 'replanSessions', 'recoveryAdmission', 'mainOutbox', 'ownerRuns', 'config']) {
++    assert.deepEqual(state[key], before[key], key)
++  }
++  assert.deepEqual(state.tasks.find(task => task.taskId === 'T1'), before.tasks.find(task => task.taskId === 'T1'))
++  const independent = state.tasks.find(task => task.taskId === 'T2')
++  assert.equal(independent.status, 'running')
++  assert.equal(independent.customEvidence, 'preserve me')
++  const reservation = results[0].reservations[0]
++  assert.equal(independent.executorId, reservation.reservationId)
++  assertCandidateIndependentReservation(state, reservation)
++  assert.equal(Object.keys(state.supervisorOutbox).length, 1)
++  assert.equal(state.supervisorEvents.filter(event => event.type === 'supervisor.candidate-independent-reserved').length, 1)
++  assert.equal(f.adapter.requests.length, calls)
++  await assert.rejects(f.runtime.runSupervisorReservation(f.admissionAgent, f.workflowId, 'T2:worker'), /生命周期尚未接线/)
++  await assert.rejects(f.runtime.runProtectedSupervisorReservation(f.admissionAgent, f.workflowId, 'T2:worker'), /生命周期尚未接线/)
++  f.runtime.queueSupervisorReservations(f.admissionAgent, f.workflowId, ['T2:worker'])
++  await f.runtime.supervisorDispatches.get(`${f.workflowId}:T2:worker`)
++  assert.deepEqual(await readRecoverySessionState(f), state)
++  const fresh = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
++  try {
++    const replay = await fresh.runtime.reserveCandidateIndependentTasks(fresh.admissionAgent, f.workflowId, receipt.actionId)
++    assert.equal(replay.replay, true)
++    assert.deepEqual(replay.reservations, results[0].reservations)
++    assert.equal(fresh.adapter.requests.length, 0)
++  } finally { await fresh.dispose() }
++})
++
++test('T15 candidate replacement invalidates persisted reservation replay', { timeout: 30_000 }, async t => {
++  const f = await notifiedPause(t)
++  const receipt = candidateIndependentNext(await readRecoverySessionState(f))
++  const result = await f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, receipt.actionId)
++  await mutateRecoverySessionState(f, state => { state.pendingPlanRevision.parent += 1 })
++  const changed = await readRecoverySessionState(f)
++  assert.throws(() => assertCandidateIndependentReservation(changed, result.reservations[0]), /绑定失效/)
++  await assert.rejects(f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, receipt.actionId), /绑定失效/)
++  assert.deepEqual(await readRecoverySessionState(f), changed)
++})
++
++test('T15 a stale create action cannot overwrite a newly arrived Owner history', { timeout: 30_000 }, async t => {
++  const f = await notifiedPause(t)
++  const receipt = candidateIndependentNext(await readRecoverySessionState(f))
++  await mutateRecoverySessionState(f, state => { state.ownerRuns['T2:worker'] = { status: 'failed', ownerId: 'worker' } })
++  const changed = await readRecoverySessionState(f)
++  await assert.rejects(f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, receipt.actionId), /已过期/)
++  assert.deepEqual(await readRecoverySessionState(f), changed)
++})
++
++test('T15 candidate replacement before reservation rejects the stale create action without task writes', { timeout: 30_000 }, async t => {
++  const f = await notifiedPause(t)
++  const receipt = candidateIndependentNext(await readRecoverySessionState(f))
++  await mutateRecoverySessionState(f, state => { state.pendingPlanRevision.parent += 1 })
++  const changed = await readRecoverySessionState(f)
++  await assert.rejects(f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, receipt.actionId), /有效候选暂停/)
++  assert.deepEqual(await readRecoverySessionState(f), changed)
++})
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/candidate-independent-reservation-v1.md
+@@ -0,0 +1,9 @@
++# 候选暂停独立任务reservation
++
++R67–R69，T15。candidateIndependentNext基于active A及已投递有效pause选择独立leaf。来源/目标Owner所有任务和依赖、反向依赖、parent/child闭包不可调度；完整运行投影及未终态占用约束全局parallel与Owner去重。非终态占用对应非pending/running任务时拒绝。仅create/wait，确认仅输出target patch，不返回整表替代状态。
++
++Runtime reserveCandidateIndependentTasks在最新状态写锁内重新检查csa actionId。选择、确认、reservation与target任务补丁同一次落盘；不修改来源task/Owner、候选、预算、mainOutbox或config。并发及新Harness同action重放复用reservation，不启动模型，不生成重复事件。
++
++reservation.candidatePause契约为DSH_CANDIDATE_INDEPENDENT_RESERVATION_V1，固定source、activePlanDigest、taskId、ownerId、reservationId、eligibleTaskIds、scopeDigest。校验必须匹配当前pause与持久reservation，且仅去掉自身reservation/Owner执行投影后重新证明独立性；自身Owner记录若存在也必须有相同绑定。不能把删除其他Owner历史或重写来源当作可执行证据。
++
++截至R69，Runtime真实领取已接入；通用执行/恢复入口拒绝候选专用reservation，通用失败回调保留它。daemon仍不自动派发。实际Owner启动、提交、失败与finish的绑定复核必须完成后再启用该入口。不得以reservation已落盘当作任务已执行或T15验收完成。

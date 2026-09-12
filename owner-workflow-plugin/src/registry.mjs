@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -9,11 +9,17 @@ import {
   normalizeOwner,
   normalizeRelativePath,
 } from './model.mjs'
+import {
+  OWNER_COLLECTION_DIRECTORY,
+  OWNER_CONFIGURATION_DIRECTORY,
+  OWNER_DESCRIPTOR_FILE,
+  OWNER_MEMORY_DIRECTORY,
+} from './project-layout.mjs'
 
 const execFileAsync = promisify(execFile)
-const ROOT = '.owner-workflow'
+const ROOT = OWNER_CONFIGURATION_DIRECTORY
 const CONFIG = 'config.json'
-const OWNERS = 'owners'
+const OWNERS = OWNER_COLLECTION_DIRECTORY
 const CONTRACT = 'DSH_OWNER_REGISTRY_V1'
 const PROPOSAL = 'DSH_OWNER_REGISTRY_PROPOSAL_V1'
 const LOCK_CONTRACT = 'DSH_OWNER_REGISTRY_LOCK_V1'
@@ -23,8 +29,10 @@ const LOCK_TRANSACTION = 'transaction.json'
 const LOCK_STALE_GRACE_MS = 30_000
 const LOCK_ATTEMPTS = 500
 const AUTOMATA_STATE_LIMIT = 20_000
+const MAX_BATCH_OPERATIONS = 64
 const OTHER_SYMBOL = Symbol('非字面路径字符')
 const OWNER_STATUS = 'active'
+const OWNER_DIRECTORY_ID = /^[a-z][a-z0-9_-]{0,63}$/u
 const DEFAULT_CONFIG = Object.freeze({
   contract: CONTRACT,
   version: 1,
@@ -70,6 +78,8 @@ function safeMarkdown(value) {
 function registryPath(root) { return join(root, ROOT) }
 function ownersPath(root) { return join(root, ROOT, OWNERS) }
 function configPath(root) { return join(root, ROOT, CONFIG) }
+function ownerPath(root, ownerId) { return join(ownersPath(root), ownerId) }
+function ownerDescriptorPath(root, ownerId) { return join(ownerPath(root, ownerId), OWNER_DESCRIPTOR_FILE) }
 
 async function assertNoLink(path, label, { missingOk = false } = {}) {
   try {
@@ -208,7 +218,32 @@ async function writeRegistry(directory, registry) {
   const ownerDirectory = join(directory, OWNERS)
   await mkdir(ownerDirectory, { recursive: true, mode: 0o700 })
   await writeAtomic(join(directory, CONFIG), `${JSON.stringify(registry.config, null, 2)}\n`)
-  for (const owner of registry.owners) await writeAtomic(join(ownerDirectory, `${owner.id}.md`), ownerMarkdown(owner))
+  for (const owner of registry.owners) {
+    const ownerRoot = join(ownerDirectory, owner.id)
+    await mkdir(ownerRoot, { recursive: true, mode: 0o700 })
+    await writeAtomic(join(ownerRoot, OWNER_DESCRIPTOR_FILE), ownerMarkdown(owner))
+  }
+}
+
+async function copyOwnerMemory(base, transaction) {
+  const sourceOwners = join(base, OWNERS)
+  if (!existsSync(sourceOwners)) return
+  for (const entry of await readdir(sourceOwners, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !OWNER_DIRECTORY_ID.test(entry.name)) continue
+    const sourceOwner = join(sourceOwners, entry.name)
+    const sourceMemory = join(sourceOwner, OWNER_MEMORY_DIRECTORY)
+    if (!existsSync(sourceMemory)) continue
+    const memoryEntry = await assertNoLink(sourceMemory, `Owner ${entry.name} 长期记忆目录`)
+    if (!memoryEntry.isDirectory()) throw new Error(`Owner ${entry.name} 长期记忆路径必须是目录`)
+    const targetOwner = join(transaction, OWNERS, entry.name)
+    await mkdir(targetOwner, { recursive: true, mode: 0o700 })
+    await cp(sourceMemory, join(targetOwner, OWNER_MEMORY_DIRECTORY), {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+      verbatimSymlinks: true,
+    })
+  }
 }
 
 async function registryIndexEntries(root) {
@@ -230,13 +265,26 @@ async function registryIndexPaths(root) {
 }
 
 function registryFiles(registry) {
-  return [join(ROOT, CONFIG), ...registry.owners.map(owner => join(ROOT, OWNERS, `${owner.id}.md`))]
+  return [
+    join(ROOT, CONFIG),
+    ...registry.owners.map(owner => join(ROOT, OWNERS, owner.id, OWNER_DESCRIPTOR_FILE)),
+  ]
 }
 
 function isDeletedOwnerMarkdown(root, path, allowed) {
-  return !allowed.has(path)
-    && new RegExp(`^${ROOT}/${OWNERS}/[^/]+\\.md$`, 'u').test(path)
-    && !existsSync(join(root, path))
+  if (allowed.has(path) || existsSync(join(root, path))) return false
+  const prefix = `${ROOT}/${OWNERS}/`
+  if (!path.startsWith(prefix)) return false
+  const segments = path.slice(prefix.length).split('/')
+  return (segments.length === 1 && segments[0].endsWith('.md'))
+    || (segments.length === 2 && OWNER_DIRECTORY_ID.test(segments[0]) && segments[1] === OWNER_DESCRIPTOR_FILE)
+}
+
+function isOwnerMemoryPath(path) {
+  const prefix = `${ROOT}/${OWNERS}/`
+  if (!path.startsWith(prefix)) return false
+  const [ownerId, directory, ...rest] = path.slice(prefix.length).split('/')
+  return OWNER_DIRECTORY_ID.test(ownerId) && directory === OWNER_MEMORY_DIRECTORY && rest.some(Boolean)
 }
 
 async function stageRegistry(root, registry) {
@@ -244,11 +292,13 @@ async function stageRegistry(root, registry) {
   const allowed = new Set(files)
   const tracked = await registryIndexPaths(root)
   const deleted = tracked.filter(path => isDeletedOwnerMarkdown(root, path, allowed))
-  const invalid = tracked.filter(path => !allowed.has(path) && !deleted.includes(path))
+  const invalid = tracked.filter(path => (
+    !allowed.has(path) && !deleted.includes(path) && !isOwnerMemoryPath(path)
+  ))
   if (invalid.length > 0) throw new Error(`Git Registry 索引包含白名单外的已跟踪路径：${invalid.join(', ')}`)
   if (deleted.length > 0) await git(root, ['update-index', '--force-remove', '--', ...deleted])
   await git(root, ['add', '--', ...files])
-  const actual = (await registryIndexPaths(root)).sort()
+  const actual = (await registryIndexPaths(root)).filter(path => !isOwnerMemoryPath(path)).sort()
   const expected = [...allowed].sort()
   if (canonical(actual) !== canonical(expected)) throw new Error('Git Registry 索引未形成正式文件闭集')
 }
@@ -500,8 +550,25 @@ async function loadRegistryUnlocked(root, { withMigration = false } = {}) {
   for (const entry of await readdir(ownersPath(root), { withFileTypes: true })) {
     const path = join(ownersPath(root), entry.name)
     await assertNoLink(path, `Owner 文件 ${entry.name}`)
-    if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-    const parsed = parseOwnerMarkdown(await readFile(path, 'utf8'))
+    let descriptor
+    let pathOwnerId
+    if (entry.isFile() && entry.name.endsWith('.md')) {
+      descriptor = path
+      pathOwnerId = entry.name.slice(0, -'.md'.length)
+      needsMigration = true
+    } else if (entry.isDirectory() && OWNER_DIRECTORY_ID.test(entry.name)) {
+      descriptor = ownerDescriptorPath(root, entry.name)
+      pathOwnerId = entry.name
+      const descriptorEntry = await assertNoLink(descriptor, `Owner ${entry.name} 描述文件`, { missingOk: true })
+      if (descriptorEntry === undefined) continue
+      if (!descriptorEntry.isFile()) throw new Error(`Owner ${entry.name} 描述路径必须是文件`)
+    } else {
+      continue
+    }
+    const parsed = parseOwnerMarkdown(await readFile(descriptor, 'utf8'))
+    if (parsed.owner.id !== pathOwnerId) {
+      throw new Error(`Owner 文件夹 ${pathOwnerId} 与描述中的 id ${parsed.owner.id} 不一致`)
+    }
     owners.push(parsed.owner)
     needsMigration ||= parsed.needsMigration
   }
@@ -539,6 +606,7 @@ async function installRegistry(root, registry, context, { baseExisted }) {
   await context.begin(record)
   try {
     await writeRegistry(transaction, registry)
+    if (baseExisted) await copyOwnerMemory(base, transaction)
     if (baseExisted) {
       await rename(base, backup)
       record.phase = 'base-moved'
@@ -898,11 +966,56 @@ function applyOperation(registry, operation) {
   return { registry: normalizeRegistry({ config: registry.config, owners }), reason, affected }
 }
 
+function applyOperations(registry, operation) {
+  if (operation?.type !== 'batch') return applyOperation(registry, operation)
+  if (!Array.isArray(operation.operations)) throw new Error('batch.operations 必须是数组')
+  if (operation.operations.length === 0) throw new Error('batch.operations 不能为空')
+  if (operation.operations.length > MAX_BATCH_OPERATIONS) {
+    throw new Error(`batch.operations 最多包含 ${MAX_BATCH_OPERATIONS} 项变更`)
+  }
+  let current = registry
+  const reasons = []
+  const affected = []
+  for (const [index, item] of operation.operations.entries()) {
+    if (item?.type === 'batch') throw new Error(`batch.operations[${index}] 不能嵌套 batch`)
+    const result = applyOperation(current, item)
+    current = result.registry
+    reasons.push(result.reason)
+    affected.push(...result.affected)
+  }
+  const reason = operation.reason === undefined
+    ? `一次性提交 ${operation.operations.length} 项 Owner Registry 变更：${reasons.join('；')}`
+    : text(operation.reason, 'batch.reason')
+  return { registry: current, reason, affected }
+}
+
+function proposalPayload(proposal) {
+  return {
+    contract: PROPOSAL,
+    operation: proposal.operation,
+    ...(proposal.operation === 'batch' && Array.isArray(proposal.operations)
+      ? { operations: proposal.operations }
+      : {}),
+    reason: proposal.reason,
+    before: proposal.before,
+    after: proposal.after,
+    affectedOwnerIds: proposal.affectedOwnerIds,
+  }
+}
+
 export function proposeRegistryChange(registry, operation) {
   try {
     const before = normalizeRegistry(registry)
-    const { registry: after, reason, affected } = applyOperation(before, operation)
-    const proposal = { contract: PROPOSAL, operation: operation.type, reason, before, after, affectedOwnerIds: [...new Set(affected)] }
+    const { registry: after, reason, affected } = applyOperations(before, operation)
+    const proposal = {
+      contract: PROPOSAL,
+      operation: operation.type,
+      ...(operation.type === 'batch' ? { operations: structuredClone(operation.operations) } : {}),
+      reason,
+      before,
+      after,
+      affectedOwnerIds: [...new Set(affected)],
+    }
     return Object.freeze({ ...proposal, digest: digest(proposal) })
   } catch (error) {
     throw userBoundaryError(error, '无法生成 Owner Registry 提案')
@@ -918,7 +1031,7 @@ export async function applyApprovedRegistryChange(root, proposal) {
     return await withLock(root, async context => {
       const current = await loadRegistryUnlocked(root)
       if (digest(proposal.before) !== digest(current)) throw new Error('Owner Registry 快照已变化')
-      const expected = { contract: PROPOSAL, operation: proposal.operation, reason: proposal.reason, before: proposal.before, after: proposal.after, affectedOwnerIds: proposal.affectedOwnerIds }
+      const expected = proposalPayload(proposal)
       if (digest(expected) !== proposal.digest) throw new Error('Owner Registry 提案已被篡改')
       const normalizedAfter = normalizeRegistry(proposal.after)
       await assertRegistryPaths(root)

@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-11T12:27:58.890669+00:00",
+  "candidateDrift": [],
+  "formalPass": 181,
+  "formalSkipped": 7,
+  "reviewFindings": [],
+  "delivered": [
+    "metered-handoff-candidate-review",
+    "same-root-review-semantic-settlement",
+    "raw-receipt-replay"
+  ],
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false
+}

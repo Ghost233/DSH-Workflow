@@ -1,0 +1,275 @@
+{
+  "candidate": "2026-09-11T01:50:32.347310+00:00",
+  "results": [
+    {
+      "name": "storage",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/run-development.mjs",
+        "--formal"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T01:50:32.347866+00:00",
+      "timeoutSeconds": 90,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T01:51:05.161307+00:00",
+      "observations": [
+        {
+          "status": "passed",
+          "mode": "--formal",
+          "scenarios": [
+            "normal",
+            "beforeReadKill",
+            "computeKillAndTrueStaleRecovery",
+            "afterSaveKill",
+            "concurrentLastCredit",
+            "concurrentSameRequest",
+            "sameRequestReplay",
+            "unreadableAndSaveFailure",
+            "ordinaryCasCounterexample"
+          ],
+          "failures": {}
+        }
+      ],
+      "unparsedLines": []
+    },
+    {
+      "name": "session",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/session/probe.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T01:51:05.161550+00:00",
+      "timeoutSeconds": 35,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T01:51:05.753473+00:00",
+      "observations": [
+        {
+          "case": "create-before-receipt",
+          "classification": "negative-adapter-evidence",
+          "observed": "direct replay issues a new session identity",
+          "first": {
+            "pid": 75871,
+            "code": null,
+            "signal": "SIGKILL",
+            "barrier": {
+              "phase": "create-before-receipt",
+              "sessionId": "37469c44-ee32-48d1-8ebf-ff3f7224e089"
+            },
+            "stdout": "",
+            "stderr": ""
+          },
+          "receiptAfterFirst": null,
+          "second": {
+            "pid": 75872,
+            "code": null,
+            "signal": "SIGKILL",
+            "barrier": {
+              "phase": "create-before-receipt",
+              "sessionId": "d458d4da-cbb8-4e95-ab26-ddd880fc8639"
+            },
+            "stdout": "",
+            "stderr": ""
+          },
+          "events": [
+            {
+              "pid": 75871,
+              "kind": "start-request",
+              "name": "owner-workflow-one-shot-b361f24f-410c-49ec-9493-97ad1719daec",
+              "fields": [
+                "agentOptions",
+                "label",
+                "maxDepth",
+                "parent",
+                "prompt",
+                "signal"
+              ]
+            },
+            {
+              "pid": 75871,
+              "kind": "create-accepted",
+              "sessionId": "37469c44-ee32-48d1-8ebf-ff3f7224e089"
+            },
+            {
+              "pid": 75872,
+              "kind": "start-request",
+              "name": "owner-workflow-one-shot-93c6e607-d592-4cae-b5a5-422545b04638",
+              "fields": [
+                "agentOptions",
+                "label",
+                "maxDepth",
+                "parent",
+                "prompt",
+                "signal"
+              ]
+            },
+            {
+              "pid": 75872,
+              "kind": "create-accepted",
+              "sessionId": "d458d4da-cbb8-4e95-ab26-ddd880fc8639"
+            }
+          ],
+          "runtimeSourceSha256": "962fdf8b259b80add94dd8fedeac4cc83e5a0485445990a6356b7774b9f63298",
+          "boundary": "real runChild and ownerWorkflowChildProvider; mock agents.create/persistOwnerSession/child; replay bypasses runExternalOwner and lease/reconciliation; not proof production automatically double-starts"
+        },
+        {
+          "case": "prompt-after-session-receipt",
+          "classification": "negative-adapter-evidence",
+          "observed": "direct replay issues a new session identity",
+          "first": {
+            "pid": 75874,
+            "code": null,
+            "signal": "SIGKILL",
+            "barrier": {
+              "phase": "prompt-after-session-receipt",
+              "sessionId": "1c12424f-4d14-4100-bbe2-1553ab780428"
+            },
+            "stdout": "",
+            "stderr": ""
+          },
+          "receiptAfterFirst": {
+            "sessionId": "1c12424f-4d14-4100-bbe2-1553ab780428"
+          },
+          "second": {
+            "pid": 75904,
+            "code": null,
+            "signal": "SIGKILL",
+            "barrier": {
+              "phase": "prompt-after-session-receipt",
+              "sessionId": "de75c936-1541-4f94-9ff4-5be7433c38f5"
+            },
+            "stdout": "",
+            "stderr": ""
+          },
+          "events": [
+            {
+              "pid": 75874,
+              "kind": "start-request",
+              "name": "owner-workflow-one-shot-3ffa95e4-cd6e-4d0f-903f-3dfa35d378b5",
+              "fields": [
+                "agentOptions",
+                "label",
+                "maxDepth",
+                "parent",
+                "prompt",
+                "signal"
+              ]
+            },
+            {
+              "pid": 75874,
+              "kind": "create-accepted",
+              "sessionId": "1c12424f-4d14-4100-bbe2-1553ab780428"
+            },
+            {
+              "pid": 75874,
+              "kind": "session-receipt",
+              "sessionId": "1c12424f-4d14-4100-bbe2-1553ab780428"
+            },
+            {
+              "pid": 75874,
+              "kind": "prompt-accepted",
+              "sessionId": "1c12424f-4d14-4100-bbe2-1553ab780428",
+              "promptId": "bcb90ec5-909a-4a9b-a703-df6a98d53c10"
+            },
+            {
+              "pid": 75904,
+              "kind": "start-request",
+              "name": "owner-workflow-one-shot-8e8034ff-65fc-4f5f-b737-2578997f4b5a",
+              "fields": [
+                "agentOptions",
+                "label",
+                "maxDepth",
+                "parent",
+                "prompt",
+                "signal"
+              ]
+            },
+            {
+              "pid": 75904,
+              "kind": "create-accepted",
+              "sessionId": "de75c936-1541-4f94-9ff4-5be7433c38f5"
+            },
+            {
+              "pid": 75904,
+              "kind": "session-receipt",
+              "sessionId": "de75c936-1541-4f94-9ff4-5be7433c38f5"
+            },
+            {
+              "pid": 75904,
+              "kind": "prompt-accepted",
+              "sessionId": "de75c936-1541-4f94-9ff4-5be7433c38f5",
+              "promptId": "e4620309-8685-4298-a401-acb704d8679c"
+            }
+          ],
+          "runtimeSourceSha256": "962fdf8b259b80add94dd8fedeac4cc83e5a0485445990a6356b7774b9f63298",
+          "boundary": "real runChild and ownerWorkflowChildProvider; mock agents.create/persistOwnerSession/child; replay bypasses runExternalOwner and lease/reconciliation; not proof production automatically double-starts"
+        },
+        {
+          "case": "create-rejected",
+          "classification": "positive-boundary-evidence",
+          "prompts": 0,
+          "disposed": 0,
+          "boundary": "real runChild/provider fail-before-followup; injected service errors; not physical disk error"
+        },
+        {
+          "case": "session-bind-rejected",
+          "classification": "positive-boundary-evidence",
+          "prompts": 0,
+          "disposed": 1,
+          "boundary": "real runChild/provider fail-before-followup; injected service errors; not physical disk error"
+        }
+      ],
+      "unparsedLines": []
+    },
+    {
+      "name": "identity",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/session/identity.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T01:51:05.755667+00:00",
+      "timeoutSeconds": 15,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T01:51:05.884223+00:00",
+      "observations": [
+        {
+          "case": "root-problem-source",
+          "classification": "negative-adapter-evidence",
+          "first": "3feee8282080cb0f4c479ffe4b8d64e220a71d62f90ae808f67688ae3af3fec4",
+          "otherPath": "3feee8282080cb0f4c479ffe4b8d64e220a71d62f90ae808f67688ae3af3fec4",
+          "nextVersion": "18f4e509b3f00c5d77e709d872cc924a7ebc4a5c4230d7b38c1663c68ab6803f",
+          "obligation": {
+            "id": "O1",
+            "declaredId": "O1",
+            "category": "review-issue",
+            "severity": "medium",
+            "title": "task executable",
+            "detail": "T1",
+            "suggestion": "",
+            "source": {
+              "id": "source/O1",
+              "version": "1"
+            },
+            "targetTaskIds": [
+              "T1"
+            ],
+            "closeWhen": {
+              "kind": "plan_task_executable",
+              "taskId": "T1"
+            },
+            "status": "open"
+          },
+          "observed": "existing recovery fingerprint conflates paths and changes with execution version; explicit obligation source is available but requires Runtime-authoritative registration/mapping",
+          "boundary": "pure actual functions, no persistence or new source registration; fingerprint designed for local retry matching, not declared faulty for that purpose"
+        }
+      ],
+      "unparsedLines": []
+    }
+  ],
+  "drift": []
+}

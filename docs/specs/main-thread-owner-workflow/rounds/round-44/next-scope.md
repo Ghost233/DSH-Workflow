@@ -1,0 +1,7 @@
+# 下一轮候选：Supervisor预算接线
+
+依T15既有合同，在runSupervisorReservation与failSupervisorReservation成对处理新协议分支。前者必须在旧integrated-result推定完成、starting/running改pending之前路由；后者不得抹掉真实失败attempt/session来源，否则下一次派发会绕开owner_failure预算。
+
+实际初次任务保持不扣恢复预算；已有恢复intent复用同一领取/会话；明确failed/blocked经recoverOwner；未知live或未结算现场按T22保守对账。paused不能被Supervisor当completed，局部待决/额度耗尽不得拖住独立首次任务。公开queue/outbox与直接入口需真实计数验证。超时与外部局部replan仍另行接线，不能凭本切片标T15完成。
+
+这是既有T15内候选范围，不变更Spec，不代表代码已实施。源码仍主线程独占，完成本轮审查后再启动。

@@ -1,0 +1,13 @@
+{
+  "totals": {
+    "tests": 444,
+    "pass": 421,
+    "fail": 2,
+    "skipped": 21,
+    "cancelled": 0,
+    "timeouts": 0
+  },
+  "allShardSelectionsComplete": true,
+  "candidateDrift": [],
+  "reruns": "No formal reruns; directed development and post-freeze readonly diagnosis excluded."
+}

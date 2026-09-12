@@ -1,0 +1,262 @@
+TAP version 13
+# Subtest: 计划修订次数只作遥测，无进展时切换策略而不是请求扩额
+ok 1 - 计划修订次数只作遥测，无进展时切换策略而不是请求扩额
+  ---
+  duration_ms: 1275.63625
+  type: 'test'
+  ...
+# Subtest: 非法修订候选保留原计划并自动切换恢复策略，修复后继续审查
+ok 2 - 非法修订候选保留原计划并自动切换恢复策略，修复后继续审查
+  ---
+  duration_ms: 758.816875
+  type: 'test'
+  ...
+# Subtest: 计划修订并发调用复用 single-flight，并用新版超时策略恢复旧 180 秒失败预算
+ok 3 - 计划修订并发调用复用 single-flight，并用新版超时策略恢复旧 180 秒失败预算
+  ---
+  duration_ms: 496.582625
+  type: 'test'
+  ...
+# Subtest: 计划修订拒绝使用不属于当前 planDigest 的旧审查结果
+ok 4 - 计划修订拒绝使用不属于当前 planDigest 的旧审查结果
+  ---
+  duration_ms: 376.1995
+  type: 'test'
+  ...
+# Subtest: 规划契约失败返回完整 Workflow ID，并在同一现场有界恢复
+ok 5 - 规划契约失败返回完整 Workflow ID，并在同一现场有界恢复
+  ---
+  duration_ms: 1561.29875
+  type: 'test'
+  ...
+# Subtest: Harness agent/status 持久化运行中、空闲和关闭生命周期
+ok 6 - Harness agent/status 持久化运行中、空闲和关闭生命周期
+  ---
+  duration_ms: 18.83925
+  type: 'test'
+  ...
+# Subtest: one-shot Reviewer 返回结果后立即持久化 closed，不在会话树中伪装成 idle 工作
+ok 7 - one-shot Reviewer 返回结果后立即持久化 closed，不在会话树中伪装成 idle 工作
+  ---
+  duration_ms: 17.170417
+  type: 'test'
+  ...
+# Subtest: 旧版次数驱动 continuable Planner mock（已由证据租约、Arbiter 与完整 Workflow 集成测试替代）
+ok 8 - 旧版次数驱动 continuable Planner mock（已由证据租约、Arbiter 与完整 Workflow 集成测试替代） # SKIP
+  ---
+  duration_ms: 0.056875
+  type: 'test'
+  ...
+# Subtest: 完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到最终交付
+ok 9 - 完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到最终交付
+  ---
+  duration_ms: 5441.086875
+  type: 'test'
+  ...
+# Subtest: 取消功能 Workflow 后项目级 Owner Registry 仍被后续 Workflow 直接复用
+ok 10 - 取消功能 Workflow 后项目级 Owner Registry 仍被后续 Workflow 直接复用
+  ---
+  duration_ms: 1772.243042
+  type: 'test'
+  ...
+# Subtest: 旧 Workflow 中已批准但未进入基础分支的 Registry 会在继续流程时迁移
+ok 11 - 旧 Workflow 中已批准但未进入基础分支的 Registry 会在继续流程时迁移
+  ---
+  duration_ms: 966.838708
+  type: 'test'
+  ...
+# Subtest: 新建 Workflow 会先迁移已取消旧 Workflow 中最新获批的固定 Owner
+ok 12 - 新建 Workflow 会先迁移已取消旧 Workflow 中最新获批的固定 Owner
+  ---
+  duration_ms: 1244.7995
+  type: 'test'
+  ...
+# Subtest: 规划器首轮提交不满足契约时，运行时会带校验错误重试一次
+ok 13 - 规划器首轮提交不满足契约时，运行时会带校验错误重试一次
+  ---
+  duration_ms: 446.03375
+  type: 'test'
+  ...
+# Subtest: 规划器只选择 Owner ID，Runtime 从正式 Registry 注入完整定义
+ok 14 - 规划器只选择 Owner ID，Runtime 从正式 Registry 注入完整定义
+  ---
+  duration_ms: 563.274
+  type: 'test'
+  ...
+# Subtest: Planner 伪造宽 scope 不能绕过正式 Registry 的 task.write 边界
+ok 15 - Planner 伪造宽 scope 不能绕过正式 Registry 的 task.write 边界
+  ---
+  duration_ms: 475.189417
+  type: 'test'
+  ...
+# Subtest: handoff 重规划 prompt 只声明 V2 任务计划契约
+ok 16 - handoff 重规划 prompt 只声明 V2 任务计划契约
+  ---
+  duration_ms: 505.103917
+  type: 'test'
+  ...
+# Subtest: 规划器不能用未登记 Owner 绕过 Registry 提案审批
+ok 17 - 规划器不能用未登记 Owner 绕过 Registry 提案审批
+  ---
+  duration_ms: 381.466
+  type: 'test'
+  ...
+# Subtest: Registry 批准要求完全匹配 digest，写入 workflow worktree 并使旧计划审查失效
+ok 18 - Registry 批准要求完全匹配 digest，写入 workflow worktree 并使旧计划审查失效
+  ---
+  duration_ms: 733.001875
+  type: 'test'
+  ...
+# Subtest: V2 Registry 批准后的 registry_pending_plan 可以原地重新规划
+ok 19 - V2 Registry 批准后的 registry_pending_plan 可以原地重新规划
+  ---
+  duration_ms: 945.570167
+  type: 'test'
+  ...
+# Subtest: 运行中任务存在时拒绝 Registry 提案与批准
+ok 20 - 运行中任务存在时拒绝 Registry 提案与批准
+  ---
+  duration_ms: 297.154333
+  type: 'test'
+  ...
+# Subtest: 主工具公开 cancel 描述且保留 status 旧动作
+ok 21 - 主工具公开 cancel 描述且保留 status 旧动作
+  ---
+  duration_ms: 152.999833
+  type: 'test'
+  ...
+# Subtest: 旧聚合入口不再暴露或执行计划修订与规划恢复
+ok 22 - 旧聚合入口不再暴露或执行计划修订与规划恢复
+  ---
+  duration_ms: 124.439125
+  type: 'test'
+  ...
+# Subtest: 旧聚合入口拒绝 start，强制使用带 preflight digest 的单职责工具
+ok 23 - 旧聚合入口拒绝 start，强制使用带 preflight digest 的单职责工具
+  ---
+  duration_ms: 121.968167
+  type: 'test'
+  ...
+# Subtest: workflow_git_inspect 只提供受限 Git 证据且拒绝 .git 内部路径
+ok 24 - workflow_git_inspect 只提供受限 Git 证据且拒绝 .git 内部路径
+  ---
+  duration_ms: 302.097667
+  type: 'test'
+  ...
+# Subtest: Owner 结构化请求工具只暴露 request_subgraph 和 request_handoff 的最小字段
+ok 25 - Owner 结构化请求工具只暴露 request_subgraph 和 request_handoff 的最小字段
+  ---
+  duration_ms: 121.732833
+  type: 'test'
+  ...
+# Subtest: 公开 Owner 工具只保留提交关卡、宿主授权桥和结构化协调入口
+ok 26 - 公开 Owner 工具只保留提交关卡、宿主授权桥和结构化协调入口
+  ---
+  duration_ms: 120.118792
+  type: 'test'
+  ...
+# Subtest: 主工具 cancel 缺少 workflow_id 时拒绝
+ok 27 - 主工具 cancel 缺少 workflow_id 时拒绝
+  ---
+  duration_ms: 118.565458
+  type: 'test'
+  ...
+# Subtest: 主工具 cancel 返回 cancelled，随后 status 返回 cancelled
+ok 28 - 主工具 cancel 返回 cancelled，随后 status 返回 cancelled
+  ---
+  duration_ms: 327.105083
+  type: 'test'
+  ...
+# Subtest: 主工具只暴露 Registry 审批动作，不保留旧 Owner 直写动作
+ok 29 - 主工具只暴露 Registry 审批动作，不保留旧 Owner 直写动作
+  ---
+  duration_ms: 0.38525
+  type: 'test'
+  ...
+# Subtest: DSH_PLAN_V1 所有控制桥和外置执行入口拒绝但 status 可读
+ok 30 - DSH_PLAN_V1 所有控制桥和外置执行入口拒绝但 status 可读
+  ---
+  duration_ms: 693.364833
+  type: 'test'
+  ...
+# Subtest: R05 决定回执经真实 Review 关闭入口消费：orchestrator
+ok 31 - R05 决定回执经真实 Review 关闭入口消费：orchestrator
+  ---
+  duration_ms: 838.189917
+  type: 'test'
+  ...
+# Subtest: R05 决定回执经真实 Review 关闭入口消费：user
+ok 32 - R05 决定回执经真实 Review 关闭入口消费：user
+  ---
+  duration_ms: 991.444041
+  type: 'test'
+  ...
+# Subtest: R05 用户确认期间义务版本变化时不记录过期决定
+ok 33 - R05 用户确认期间义务版本变化时不记录过期决定
+  ---
+  duration_ms: 477.682125
+  type: 'test'
+  ...
+# Subtest: R05 结构展开依据经 Runtime 消费，只关闭结构义务而保留业务验证
+ok 34 - R05 结构展开依据经 Runtime 消费，只关闭结构义务而保留业务验证
+  ---
+  duration_ms: 629.511208
+  type: 'test'
+  ...
+# Subtest: R05 pending 候选决定不能借用 active 回执，旧快照不能消费已变化候选
+ok 35 - R05 pending 候选决定不能借用 active 回执，旧快照不能消费已变化候选
+  ---
+  duration_ms: 513.680208
+  type: 'test'
+  ...
+# Subtest: R05 同候选的新决定替代旧回执，取消替代不影响旧决定
+ok 36 - R05 同候选的新决定替代旧回执，取消替代不影响旧决定
+  ---
+  duration_ms: 880.8985
+  type: 'test'
+  ...
+# Subtest: R06 真实 Review 会诊固定描述在相同事实下耗尽策略
+ok 37 - R06 真实 Review 会诊固定描述在相同事实下耗尽策略
+  ---
+  duration_ms: 1934.86625
+  type: 'test'
+  ...
+# Subtest: R06 真实 Review 会诊交替描述在相同事实下耗尽策略
+ok 38 - R06 真实 Review 会诊交替描述在相同事实下耗尽策略
+  ---
+  duration_ms: 1851.802084
+  type: 'test'
+  ...
+# Subtest: R06 真实候选补齐绑定只记一次进展，重复与候选文案变化不续期
+ok 39 - R06 真实候选补齐绑定只记一次进展，重复与候选文案变化不续期
+  ---
+  duration_ms: 845.922334
+  type: 'test'
+  ...
+# Subtest: R06 文件进展由宿主重新读取，伪造缓存与过期候选没有文件事实
+ok 40 - R06 文件进展由宿主重新读取，伪造缓存与过期候选没有文件事实
+  ---
+  duration_ms: 421.709333
+  type: 'test'
+  ...
+# Subtest: R06 Runner 探针不能凭摘要变化清空策略，真实新文件只恢复一次
+ok 41 - R06 Runner 探针不能凭摘要变化清空策略，真实新文件只恢复一次
+  ---
+  duration_ms: 1810.11975
+  type: 'test'
+  ...
+# Subtest: R08 真实 Review 分类与控制路由一致：technical
+ok 42 - R08 真实 Review 分类与控制路由一致：technical
+  ---
+  duration_ms: 548.919541
+  type: 'test'
+  ...
+1..42
+# tests 42
+# suites 0
+# pass 41
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 32256.069375

@@ -1,0 +1,51 @@
+✔ T13 明确有限配置，没有默认无限值或隐式数值转换 (2.223ms)
+✔ T13 BUD-01 两级限额原子扣减，问题用完不阻止独立问题 (9.280708ms)
+✔ T13 BUD-03 最后一份额度按传入的新快照串行竞争，两级不半扣 (0.540083ms)
+✔ T13 BUD-03 请求重放在耗尽后仍返回原attempt，重载不重扣 (0.492875ms)
+✔ T13 同request改变workflowId拒绝，不借重复请求改绑定 (0.412292ms)
+✔ T13 同request改变rootProblemId拒绝，不借重复请求改绑定 (0.776917ms)
+✔ T13 同request改变attemptId拒绝，不借重复请求改绑定 (0.459208ms)
+✔ T13 同request改变taskId拒绝，不借重复请求改绑定 (0.284167ms)
+✔ T13 同request改变ownerId拒绝，不借重复请求改绑定 (1.734125ms)
+✔ T13 同request改变executionVersion拒绝，不借重复请求改绑定 (0.23475ms)
+✔ T13 同attempt不能被不同request占用；不存在问题与外来Workflow拒绝 (0.232458ms)
+✔ T13 问题注册幂等但来源和限额不可替换，同来源不能另开根问题 (0.887125ms)
+✔ T13 执行开始绑定不可换，未开始不能成功结算，终态不能重启 (5.958833ms)
+✔ T13 启动前failed可结算，不退额度；相同回执重放不改状态 (0.330208ms)
+✔ T13 启动前cancelled可结算，不退额度；相同回执重放不改状态 (0.245041ms)
+✔ T13 开始及结算都重新核验完整绑定，调用错误不能写状态 (1.61475ms)
+✔ T13 BUD-04/05 相关新证据不退预算，A/B/A与换引用重放只留两份事实 (2.495208ms)
+✔ T13 来源不匹配、相同引用内容冲突、进展升格关闭都拒绝 (0.534583ms)
+✔ T13 问题关闭需当前根的关闭引用且无未结算attempt，关闭不擦历史 (5.125167ms)
+✔ T13 序列化账本严格校验，不接纳未知版本、重复记录或被改写的计数 (7.209083ms)
+✔ T13 返回对象和输入无共享可写引用；冻结输入仍可工作 (0.152875ms)
+✔ T13 原型敏感字符串只作为ID数据，不能串改其他问题 (0.232625ms)
+✖ T13 严格输入不静默丢弃错误字段或伪证据标记 (0.616291ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 22
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 110.280208
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/recovery-budget.test.mjs:228:1
+✖ T13 严格输入不静默丢弃错误字段或伪证据标记 (0.616291ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-budget.test.mjs:235:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: undefined,
+    operator: 'throws',
+    diff: 'simple'
+  }

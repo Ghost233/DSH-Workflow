@@ -1,0 +1,64 @@
+TAP version 13
+# Subtest: T23 SIGKILL after prompt flush before submitted receipt preserves one accepted prompt
+ok 1 - T23 SIGKILL after prompt flush before submitted receipt preserves one accepted prompt
+  ---
+  duration_ms: 2514.620333
+  type: 'test'
+  ...
+# Subtest: T23 SIGKILL after create returns before Owner binding cannot authorize resend
+ok 2 - T23 SIGKILL after create returns before Owner binding cannot authorize resend
+  ---
+  duration_ms: 2291.339209
+  type: 'test'
+  ...
+# Subtest: T23 SIGKILL after durable reservation allows exactly one original-identity Owner execution
+ok 3 - T23 SIGKILL after durable reservation allows exactly one original-identity Owner execution
+  ---
+  duration_ms: 3048.399709
+  type: 'test'
+  ...
+# Subtest: T23 two ready processes competing for one durable intent execute its Owner only once
+ok 4 - T23 two ready processes competing for one durable intent execute its Owner only once
+  ---
+  duration_ms: 3385.595417
+  type: 'test'
+  ...
+# Subtest: T23 distinct requests racing for the final credit execute only the admitted Owner
+ok 5 - T23 distinct requests racing for the final credit execute only the admitted Owner
+  ---
+  duration_ms: 2553.561667
+  type: 'test'
+  ...
+# Subtest: T23 SIGKILL before failed settlement rename never accepts the temporary receipt or reexecutes
+ok 6 - T23 SIGKILL before failed settlement rename never accepts the temporary receipt or reexecutes
+  ---
+  duration_ms: 2578.639542
+  type: 'test'
+  ...
+# Subtest: T23 admission_before_write SIGKILL cannot authorize an uncommitted identity
+ok 7 - T23 admission_before_write SIGKILL cannot authorize an uncommitted identity
+  ---
+  duration_ms: 2055.529667
+  type: 'test'
+  ...
+# Subtest: T23 admission_before_rename SIGKILL cannot authorize an uncommitted identity
+ok 8 - T23 admission_before_rename SIGKILL cannot authorize an uncommitted identity
+  ---
+  duration_ms: 1941.454208
+  type: 'test'
+  ...
+# Subtest: T23 SIGKILL after first physical append preserves identity without resend
+ok 9 - T23 SIGKILL after first physical append preserves identity without resend
+  ---
+  duration_ms: 2307.585667
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 22757.965417

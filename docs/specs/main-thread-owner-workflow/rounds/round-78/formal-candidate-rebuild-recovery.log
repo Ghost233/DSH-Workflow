@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: T15 actual Runner rebuilds a handoff candidate without ordinary Intents or deleting its source
+ok 1 - T15 actual Runner rebuilds a handoff candidate without ordinary Intents or deleting its source
+  ---
+  duration_ms: 4764.483292
+  type: 'test'
+  ...
+# Subtest: T15 failed rebuilt Planner keeps the reviewed predecessor and next ordinal uses the same root
+ok 2 - T15 failed rebuilt Planner keeps the reviewed predecessor and next ordinal uses the same root
+  ---
+  duration_ms: 4466.759875
+  type: 'test'
+  ...
+# Subtest: T15 exhausted rebuild preserves the predecessor and starts no Planner
+ok 3 - T15 exhausted rebuild preserves the predecessor and starts no Planner
+  ---
+  duration_ms: 2623.684667
+  type: 'test'
+  ...
+# Subtest: T15 changing the settled Review record prevents a new recovery Planner
+ok 4 - T15 changing the settled Review record prevents a new recovery Planner
+  ---
+  duration_ms: 3719.955125
+  type: 'test'
+  ...
+# Subtest: T15 predecessor changed during real rebuild cannot be replaced by the late Planner result
+ok 5 - T15 predecessor changed during real rebuild cannot be replaced by the late Planner result
+  ---
+  duration_ms: 2825.500584
+  type: 'test'
+  ...
+# Subtest: T15 rebuilt candidate inherits open evidence obligations even when its Reviewer returns passed
+ok 6 - T15 rebuilt candidate inherits open evidence obligations even when its Reviewer returns passed
+  ---
+  duration_ms: 3755.781875
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 22509.251625

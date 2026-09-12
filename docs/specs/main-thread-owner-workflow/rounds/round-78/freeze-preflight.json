@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-11T15:36:25.459315+00:00",
+  "firstAttempt": "assertion refused before any test suite or candidate freeze",
+  "externalFiles": [
+    "owner-workflow-plugin/test/launcher.test.mjs"
+  ],
+  "codeAndSelectedTestDrift": []
+}

@@ -1,0 +1,5 @@
+# R59 实际失败handoff入口接线
+
+主线程独占runtime/replan-session及新增handoff恢复测试/合同。沿用ghost-matt-implement冻结测试与只读审查。本轮连接真实recordHandoffs来源快照、replanHandoffs保护分支、逐物理调用预算/真实子会话/语义判定/候选持久化；保留正常handoff原路径，不伪造失败，不激活跨版本新计划。独立agent只读核对Intent来源，给后续入口依据。
+
+来源在生产处冻结，失败恢复按同一来源分组，一次只为一个根问题的待处理handoff生成局部候选。未知来源或用户权限仍暂停。外部调用不持workflow内存锁；提交时重新读取状态核验来源和不变约束，不覆盖预算/会话。候选语义成功与T13结算在同一状态事务；重放无新模型调用。开发检查真实Harness，正式预期handoff/replan/session/admission/control受影响回归，按单套有限180秒预算。实际Review/咨询、正常handoff付费边界与版本激活仍是后续范围。

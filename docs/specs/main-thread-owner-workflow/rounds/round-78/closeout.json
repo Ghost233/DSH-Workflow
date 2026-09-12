@@ -1,0 +1,44 @@
+{
+  "at": "2026-09-11T15:57:41.043487+00:00",
+  "candidate": "candidate-3.json",
+  "formalCounts": {
+    "tests": 49,
+    "pass": 49,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "candidateDrift": [],
+  "priorCandidates": [
+    {
+      "evidence": "test-results.json",
+      "pass": 341,
+      "fail": 1,
+      "skip": 7,
+      "drift": [
+        "owner-workflow-plugin/test/launcher.test.mjs"
+      ]
+    },
+    {
+      "evidence": "test-results-2.json",
+      "pass": 345,
+      "fail": 0,
+      "skip": 7,
+      "drift": []
+    }
+  ],
+  "reviewFindings": [],
+  "closedFindings": [
+    "disappearing state write-lock ENOENT",
+    "concurrent arbitration replay across consultation authentication and lease boundaries"
+  ],
+  "ticketStatus": "T15_developing",
+  "nextProductionPath": [
+    "T05",
+    "T07",
+    "B01"
+  ],
+  "committed": false,
+  "pushed": false
+}

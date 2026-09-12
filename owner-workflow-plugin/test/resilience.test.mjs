@@ -263,7 +263,7 @@ test('Supervisor 将没有活跃子代理的 running Owner 收敛为 orphaned，
   }
 })
 
-test('Supervisor inspect 路径同样执行 task timeout，不能以持续 inspect 无限续命', async () => {
+test('Supervisor inspect 超时会取消旧执行并切换自治恢复，不能以持续 inspect 无限续命', async () => {
   const { root } = await createRepository()
   const runtime = createOwnerWorkflowRuntime({ agents: { get: id => (
     id === 'owner-timeout-session' ? { id, status: 'running' } : undefined
@@ -294,10 +294,12 @@ test('Supervisor inspect 路径同样执行 task timeout，不能以持续 inspe
 
     const result = await runtime.awaitSupervisorEvent(workflow.agent, state.id, 0, 1)
     const saved = await readState(root, state.id)
-    assert.equal(result.event.type, 'supervisor.task-timeout')
-    assert.equal(saved.status, 'blocked')
-    assert.equal(saved.tasks[0].status, 'stopped')
-    assert.equal(saved.tasks[0].reason, 'decision_required')
+    assert.equal(result.event.type, 'supervisor.task-timeout-recovery')
+    assert.equal(saved.status, 'running')
+    assert.equal(saved.tasks[0].status, 'pending')
+    assert.equal(saved.tasks[0].reason, null)
+    assert.equal(saved.tasks[0].autonomousRecovery.failureClass, 'transient')
+    assert.equal(saved.tasks[0].autonomousRecovery.strategy, 'repair_runtime')
   } finally {
     await disposeRuntime(runtime)
     await cleanupWorkflow(root, workflow)
@@ -445,7 +447,40 @@ test('workflow_status 默认保持紧凑，完整历史只通过分页 detail �
   }
 })
 
-test('相同根因和运行时版本只允许一次 Owner 恢复', async () => {
+test('failed Workflow 存在待推进 PlanRevision 时 workflow_status 会恢复 Runner 控制桥', async () => {
+  const { root } = await createRepository()
+  const runtime = createOwnerWorkflowRuntime({}, {})
+  let workflow
+  try {
+    workflow = await createWorkflow(root, runtime, createPlan(), { id: 'wf-failed-plan-revision-bridge' })
+    const state = await readState(root, workflow.state.id)
+    state.status = 'failed'
+    state.pendingPlanRevision = {
+      number: 2,
+      parent: 1,
+      plan: state.plan,
+      planDigest: state.planDigest,
+      intentIds: ['intent-1'],
+      review: {
+        contract: 'DSH_PLAN_REVIEW_V1',
+        status: 'needs_revision',
+        summary: '等待纯脚本 Runner 重建',
+        issues: [],
+      },
+    }
+    await writeState(root, state)
+
+    const result = await runtime.status(workflow.agent, state.id)
+    assert.equal(result.workflow.status, 'failed')
+    assert.equal(result.control.workflowId, state.id)
+    assert.equal(existsSync(join(root, '.dsh-workflow', 'control', `${state.id}.json`)), true)
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow)
+  }
+})
+
+test('相同根因没有新证据时自动切换恢复策略而不是 await_user', async () => {
   const { root } = await createRepository()
   const runtime = createOwnerWorkflowRuntime({}, {})
   let workflow
@@ -472,13 +507,11 @@ test('相同根因和运行时版本只允许一次 Owner 恢复', async () => {
     }
     await writeState(root, state)
 
-    await assert.rejects(
-      runtime.recoverOwner(workflow.agent, state.id, 'stage-1', 'owner-a'),
-      /同一根因已经恢复过一次/u,
-    )
+    await assert.rejects(runtime.recoverOwner(workflow.agent, state.id, 'stage-1', 'owner-a'))
     const saved = await readState(root, state.id)
-    assert.equal(saved.status, 'blocked')
-    assert.equal(saved.ownerRuns['stage-1:owner-a'].phase, 'recovery_blocked')
+    assert.notEqual(saved.tasks[0].action, 'await_user')
+    assert.equal(saved.tasks[0].autonomousRecovery.failureClass, 'contract_dag')
+    assert.equal(saved.tasks[0].autonomousRecovery.strategy, 'local_subgraph_rewrite')
     assert.equal(saved.ownerRuns['stage-1:owner-a'].recoveryCount, 1)
   } finally {
     await disposeRuntime(runtime)
@@ -645,15 +678,15 @@ test('V2 task finish 合入固定 SHA、完成 task/ownerRun，并让后继从�
     assert.equal(saved.ownerRuns['T1:owner-a'].result.memory.memoryCommitSha, saved.workflowHead)
     assert.equal(saved.pendingMemoryCompilation, undefined)
     assert.match(
-      await readFile(join(saved.workflowWorktree, '.owner-memory', 'index.md'), 'utf8'),
+      await readFile(join(saved.workflowWorktree, '.owner-workflow', 'owners', 'owner-a', 'memory', 'index.md'), 'utf8'),
       /固定 SHA 交付/u,
     )
     assert.match(
-      await readFile(join(saved.workflowWorktree, '.owner-memory', 'log.md'), 'utf8'),
+      await readFile(join(saved.workflowWorktree, '.owner-workflow', 'owners', 'owner-a', 'memory', 'log.md'), 'utf8'),
       /owner-memory-stage:wf-v2-task-finish:T1:start/u,
     )
     assert.match(
-      await readFile(join(saved.workflowWorktree, '.owner-memory', '.sources', 'wf-v2-task-finish', 't1.md'), 'utf8'),
+      await readFile(join(saved.workflowWorktree, '.owner-workflow', 'owners', 'owner-a', 'memory', '.sources', 'wf-v2-task-finish', 't1.md'), 'utf8'),
       /固定 SHA 完成/u,
     )
 
@@ -1186,7 +1219,7 @@ test('两个 Runtime 竞争批准时 Registry 与 workflow state 保持同一结
     assert.equal(saved.status, 'registry_pending_plan')
     assert.match(
       await runGit(workflow.state.workflowWorktree, ['ls-files', '--stage', '--', '.owner-workflow']),
-      /\.owner-workflow\/owners\/owner-c\.md/u,
+      /\.owner-workflow\/owners\/owner-c\/owner\.md/u,
     )
     assert.equal(await runGit(workflow.state.workflowWorktree, ['diff', '--name-only', '--', '.owner-workflow']), '')
   } finally {
@@ -1496,6 +1529,9 @@ test('workflow state 原子保存失败时回滚 Registry 内容和 index', asyn
     })}\n`, 'utf8')
 
     const approval = runtime.approveOwnerChange(workflow.agent, state.id, proposal.digest)
+    // Fault setup awaits can outlive the expected rejection. Observe it now;
+    // assert.rejects below still validates the original promise and error.
+    void approval.catch(() => {})
     await waitForPath(`${stateFile}.write-lock`, 'workflow state CAS 锁')
     await rename(stateFile, displacedStateFile)
     await mkdir(stateFile)
@@ -1531,7 +1567,7 @@ test('workflow state 原子保存失败时回滚 Registry 内容和 index', asyn
   }
 })
 
-test('V2 workflow recovery 只恢复 failed task，并拒绝 planning 状态恢复', async () => {
+test('V2 workflow recovery 恢复重启遗留的 planning 和 failed task', async () => {
   const { root } = await createRepository()
   const runtime = createOwnerWorkflowRuntime({}, {})
   const plan = createPlan()
@@ -1546,10 +1582,17 @@ test('V2 workflow recovery 只恢复 failed task，并拒绝 planning 状态恢�
       id: 'wf-recover-failed-task',
       status: 'failed',
     })
-    await assert.rejects(
-      runtime.recoverWorkflow(planningWorkflow.agent, planningWorkflow.state.id),
-      /当前状态不需要 workflow_recover：planning/u,
-    )
+    let planningResumed = false
+    const originalPlanWorkflowState = runtime.planWorkflowState
+    runtime.planWorkflowState = async (_agent, planningState) => {
+      planningResumed = true
+      assert.equal(planningState.id, planningWorkflow.state.id)
+      return { contract: 'DSH_TEST_PLANNING_RESUMED_V1', workflowId: planningState.id }
+    }
+    const planningResult = await runtime.recoverWorkflow(planningWorkflow.agent, planningWorkflow.state.id)
+    assert.equal(planningResumed, true)
+    assert.equal(planningResult.contract, 'DSH_TEST_PLANNING_RESUMED_V1')
+    runtime.planWorkflowState = originalPlanWorkflowState
 
     const failedState = await readState(root, failedWorkflow.state.id)
     failedState.tasks = failedState.tasks.map(task => task.taskId === 'stage-1'
@@ -1755,10 +1798,10 @@ async function cleanupFinalizeSafetyFixture(fixture) {
   await Promise.all(fixture.extraRoots.map(path => rm(path, { recursive: true, force: true })))
 }
 
-function ownerResult({ files = ['owned/result.txt'], summary = '完成区域修改', handoffs = [] } = {}) {
+function ownerResult({ files = ['owned/result.txt'], summary = '完成区域修改', handoffs = [], status = 'completed' } = {}) {
   return JSON.stringify({
     contract: 'DSH_OWNER_RESULT_V1',
-    status: 'completed',
+    status,
     summary,
     changes: [{ summary, files, tests: ['未运行自动化测试：故障恢复夹具'] }],
     tests: ['未运行自动化测试：故障恢复夹具'],
@@ -1831,7 +1874,7 @@ test('Owner 主动报告 blocked 时优先结算阻塞，不会被缺失验证�
   }
 })
 
-test('同一 Owner 在不同 workflow 间使用磁盘 lease 互斥，并能在过期后恢复', async () => {
+test('同一 Owner 在不同 workflow 间使用磁盘 lease 互斥，并在记录进程死亡后立即恢复', async () => {
   const { root } = await createRepository()
   const firstRuntime = createOwnerWorkflowRuntime({}, { ownerLeaseMs: 10_000 })
   const secondRuntime = createOwnerWorkflowRuntime({}, { ownerLeaseMs: 10_000 })
@@ -1850,7 +1893,7 @@ test('同一 Owner 在不同 workflow 间使用磁盘 lease 互斥，并能在�
     await writeFile(first.lease.path, `${JSON.stringify({
       ...first.lease,
       pid: 2_147_483_647,
-      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
     })}\n`, 'utf8')
 
     const recovered = await secondRuntime.acquireOwnerLease(root, 'shared-owner', 'workflow-b', 'stage-1')
@@ -1989,6 +2032,52 @@ test('handoff 必须先修复越界文件，再把请求写入 handoff 队列', 
   }
 })
 
+test('Owner 失败报告携带 handoff 时先入队再停止，避免重复启动同一 Owner', async () => {
+  const { root } = await createRepository()
+  const runtime = createOwnerWorkflowRuntime({}, {})
+  const plan = createPlan()
+  let workflow
+  let owner
+  try {
+    workflow = await createWorkflow(root, runtime, plan, { id: 'wf-failed-handoff' })
+    owner = await createOwner(root, workflow)
+    const handoff = {
+      targetType: 'owner',
+      targetOwnerId: 'owner-b',
+      summary: '失败证据属于区域乙',
+      reason: '当前任务不能越过责任边界修复',
+      files: ['handoff/request.txt'],
+    }
+    runtime.runChild = async () => ({
+      sessionId: 'failed-handoff-owner-session',
+      report: JSON.parse(ownerResult({
+        status: 'failed',
+        summary: '当前 Owner 无法完成跨区域修复',
+        files: [],
+        handoffs: [handoff],
+      })),
+    })
+    const runningState = await readState(root, workflow.state.id)
+    runningState.tasks.find(task => task.taskId === 'stage-1').status = 'running'
+    workflow.state.tasks = runningState.tasks
+    await writeState(root, runningState)
+
+    const entry = { ...owner, tasks: [planTask(workflow.state.plan, 'stage-1')] }
+    await assert.rejects(
+      runtime.runOwnerEntry(workflow.agent, workflow.state, planTask(workflow.state.plan, 'stage-1'), entry),
+      error => error?.code === 'OWNER_HANDOFF',
+    )
+
+    const saved = await readState(root, workflow.state.id)
+    assert.equal(saved.handoffQueue.length, 1)
+    assert.equal(saved.handoffQueue[0].status, 'pending')
+    assert.equal(saved.handoffQueue[0].targetOwnerId, 'owner-b')
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow, owner === undefined ? [] : [owner])
+  }
+})
+
 test('handoff_replan 在 live Registry 缺失时拒绝重规划', async () => {
   const { root } = await createRepository()
   const runtime = createOwnerWorkflowRuntime({}, {})
@@ -2082,7 +2171,7 @@ test('handoff_replan 拒绝把任务分配给 live Registry 未登记 Owner', as
   }
 })
 
-test('handoff_replan 会清除旧批准，并要求新的计划审查后才能批准', async () => {
+test('running 恢复态的 handoff_replan 会清除旧批准，并要求新的计划审查后才能批准', async () => {
   const { root } = await createRepository()
   const runtime = createOwnerWorkflowRuntime({}, {})
   const oldPlan = createPlan({ secondStageOwner: 'owner-a', secondStageFile: 'owned/next.txt' })
@@ -2095,6 +2184,16 @@ test('handoff_replan 会清除旧批准，并要求新的计划审查后才能�
     })
     const registry = await registerPlanOwners(workflow.state.workflowWorktree, oldPlan)
     const state = workflow.state
+    state.status = 'running'
+    state.planningAgent = {
+      managedBy: 'runner-runtime',
+      phase: 'awaiting_main_discussion',
+      recoveryAttempts: 3,
+      recoveryExhausted: true,
+      recoveryLimit: 3,
+      recoveryPlanDigest: state.planDigest,
+    }
+    state.planningDiscussion = { status: 'delivered' }
     setTaskStatus(state, 'stage-1', 'completed')
     state.registryDigest = registryContentDigest(registry)
     state.handoffQueue = [{
@@ -2108,6 +2207,18 @@ test('handoff_replan 会清除旧批准，并要求新的计划审查后才能�
       reason: '跨越 Owner 文件边界',
       files: ['handoff/request.txt'],
     }]
+    state.ownerRuns = {
+      'stage-2:owner-a': {
+        status: 'pending',
+        taskId: 'stage-2',
+        ownerId: 'owner-a',
+      },
+      'retired:owner-a': {
+        status: 'completed',
+        taskId: 'retired',
+        ownerId: 'owner-a',
+      },
+    }
     await writeState(root, state)
     runtime.runChild = async () => JSON.stringify(newPlan)
 
@@ -2118,6 +2229,12 @@ test('handoff_replan 会清除旧批准，并要求新的计划审查后才能�
     assert.equal(saved.planApproved, false)
     assert.equal(saved.planReview, undefined)
     assert.equal(saved.planReviewDigest, undefined)
+    assert.equal(saved.planningAgent.phase, 'handoff_replanned')
+    assert.equal(saved.planningAgent.recoveryAttempts, 0)
+    assert.equal(saved.planningAgent.recoveryExhausted, false)
+    assert.equal(saved.planningAgent.recoveryLimit, undefined)
+    assert.equal(saved.planningAgent.recoveryPlanDigest, undefined)
+    assert.equal(saved.planningDiscussion, undefined)
     assert.equal(saved.planDigest, digest(saved.plan))
     assert.equal(saved.plan.registryDigest, state.registryDigest)
     assert.equal(saved.handoffQueue[0].status, 'planned')
@@ -2289,6 +2406,178 @@ test('V2 task finish 在 workflow 已合入但状态未记账时恢复并幂等�
     assert.equal(saved.pendingTaskMerge, undefined)
     assert.equal(await head(workflow.state.workflowWorktree), firstHead)
     assert.equal(await isCommitAncestor(root, fixedSha, firstHead), true)
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow, owner === undefined ? [] : [owner])
+  }
+})
+
+test('Owner worklog 封存失败后 fresh Runtime 只重试结算且不二次合并代码', async () => {
+  const { root } = await createRepository()
+  let runtime = createOwnerWorkflowRuntime({}, {})
+  mockRequiredTaskVerifications(runtime)
+  const plan = createPlan()
+  let workflow
+  let owner
+  try {
+    workflow = await createWorkflow(root, runtime, plan, { id: 'wf-owner-worklog-seal-recovery' })
+    owner = await createOwner(root, workflow)
+    const fixedSha = await commitFile(owner.worktree, 'owned/sealed.txt', '需要可靠封存的实现\n', 'Owner 原始事实封存测试')
+    const state = await readState(root, workflow.state.id)
+    markAwaitingFinish(state, 'stage-1', owner, fixedSha, 'owner-seal-failure')
+    state.ownerMemoryWorklogs = {
+      'stage-1:owner-a': {
+        contract: 'DSH_OWNER_WORKLOG_V1',
+        taskId: 'stage-1',
+        title: '完成基础文件',
+        ownerId: 'owner-a',
+        status: 'active',
+        notes: [{ type: '结论', text: '保留取消后的重连语义。' }],
+      },
+    }
+    await writeState(root, state)
+    runtime.sealOwnerWorklog = async () => { throw new Error('模拟封存介质失败') }
+
+    await assert.rejects(
+      runtime.finishOwner(workflow.agent, state.id, 'stage-1', 'owner-a'),
+      /模拟封存介质失败/u,
+    )
+    const failed = await readState(root, state.id)
+    const integratedHead = await head(failed.workflowWorktree)
+    const mergeCount = Number(await runGit(failed.workflowWorktree, ['rev-list', '--count', '--merges', 'HEAD']))
+    assert.equal(await isCommitAncestor(root, fixedSha, integratedHead), true)
+    assert.equal(failed.ownerRuns['stage-1:owner-a'].status, 'awaiting_finish')
+    assert.equal(failed.ownerMemoryWorklogs['stage-1:owner-a'].notes[0].text, '保留取消后的重连语义。')
+    assert.match(failed.error, /Owner 临时记忆封存失败/u)
+
+    await disposeRuntime(runtime)
+    runtime = createOwnerWorkflowRuntime({}, {})
+    mockRequiredTaskVerifications(runtime)
+    const recovered = await runtime.recoverWorkflow(workflow.agent, state.id)
+    const saved = await readState(root, state.id)
+    assert.equal(recovered.commitSha, fixedSha)
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].status, 'completed')
+    assert.equal(await isCommitAncestor(root, fixedSha, saved.workflowHead), true)
+    assert.equal(Number(await runGit(saved.workflowWorktree, ['rev-list', '--count', '--merges', 'HEAD'])), mergeCount)
+    assert.match(
+      await readFile(join(saved.workflowWorktree, saved.ownerRuns['stage-1:owner-a'].result.memory.worklogSource), 'utf8'),
+      /保留取消后的重连语义/u,
+    )
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow, owner === undefined ? [] : [owner])
+  }
+})
+
+test('长期摘要失败后重复 owner-finish 从封存回执恢复且不改写原始事实', async () => {
+  const { root } = await createRepository()
+  let runtime = createOwnerWorkflowRuntime({}, {})
+  mockRequiredTaskVerifications(runtime)
+  const plan = createPlan()
+  let workflow
+  let owner
+  try {
+    workflow = await createWorkflow(root, runtime, plan, { id: 'wf-owner-summary-recovery' })
+    owner = await createOwner(root, workflow)
+    const fixedSha = await commitFile(owner.worktree, 'owned/summary.txt', '摘要可以延后但事实不能变化\n', 'Owner 摘要恢复测试')
+    const state = await readState(root, workflow.state.id)
+    markAwaitingFinish(state, 'stage-1', owner, fixedSha, 'owner-summary-failure')
+    state.ownerMemoryWorklogs = {
+      'stage-1:owner-a': {
+        contract: 'DSH_OWNER_WORKLOG_V1',
+        taskId: 'stage-1',
+        title: '完成基础文件',
+        ownerId: 'owner-a',
+        status: 'active',
+        notes: [{ type: '完成', text: '完成有界恢复并保持固定代码版本。' }],
+      },
+    }
+    await writeState(root, state)
+    const compileStageMemory = runtime.compileStageMemory.bind(runtime)
+    runtime.compileStageMemory = async (...args) => {
+      await compileStageMemory(...args)
+      throw new Error('模拟Memory提交后、完成结果保存前进程中断')
+    }
+
+    const deferred = await runtime.finishOwner(workflow.agent, state.id, 'stage-1', 'owner-a')
+    const deferredState = await readState(root, state.id)
+    const sourceFile = deferred.memory.worklogSource
+    const sourceBefore = await readFile(join(deferredState.workflowWorktree, sourceFile), 'utf8')
+    const sourceCommitSha = deferred.memory.worklogSourceCommitSha
+    const mergeCount = Number(await runGit(deferredState.workflowWorktree, ['rev-list', '--count', '--merges', 'HEAD']))
+    assert.equal(deferred.memory.deferred, true)
+    assert.equal(deferredState.tasks.find(item => item.taskId === 'stage-1').status, 'completed')
+    assert.equal(deferredState.ownerMemoryWorklogs['stage-1:owner-a'].status, 'sealed')
+    assert.equal(await isCommitAncestor(root, fixedSha, deferredState.workflowHead), true)
+
+    await disposeRuntime(runtime)
+    runtime = createOwnerWorkflowRuntime({}, {})
+    mockRequiredTaskVerifications(runtime)
+    const recovered = await runtime.finishOwner(workflow.agent, state.id, 'stage-1', 'owner-a')
+    const saved = await readState(root, state.id)
+    assert.equal(recovered.memory.enabled, true)
+    assert.equal(recovered.memory.recoveredFromDeferred, true)
+    assert.equal(recovered.commitSha, fixedSha)
+    assert.equal(recovered.memory.worklogSourceCommitSha, sourceCommitSha)
+    assert.equal(await readFile(join(saved.workflowWorktree, sourceFile), 'utf8'), sourceBefore)
+    assert.equal(saved.ownerMemoryWorklogs, undefined)
+    assert.equal(Number(await runGit(saved.workflowWorktree, ['rev-list', '--count', '--merges', 'HEAD'])), mergeCount)
+    const recoveredHead = await head(saved.workflowWorktree)
+    const replay = await runtime.finishOwner(workflow.agent, state.id, 'stage-1', 'owner-a')
+    assert.equal(replay.memory.memoryCommitSha, recovered.memory.memoryCommitSha)
+    assert.equal(await head(saved.workflowWorktree), recoveredHead)
+  } finally {
+    await disposeRuntime(runtime)
+    await cleanupWorkflow(root, workflow, owner === undefined ? [] : [owner])
+  }
+})
+
+test('长期摘要恢复遇到缺失 worklog 来源时保持代码已完成并拒绝补造历史', async () => {
+  const { root } = await createRepository()
+  let runtime = createOwnerWorkflowRuntime({}, {})
+  mockRequiredTaskVerifications(runtime)
+  const plan = createPlan()
+  let workflow
+  let owner
+  try {
+    workflow = await createWorkflow(root, runtime, plan, { id: 'wf-owner-summary-source-missing' })
+    owner = await createOwner(root, workflow)
+    const fixedSha = await commitFile(owner.worktree, 'owned/missing-source.txt', '代码已经结算\n', 'Owner 缺失来源测试')
+    const state = await readState(root, workflow.state.id)
+    markAwaitingFinish(state, 'stage-1', owner, fixedSha, 'owner-source-missing')
+    state.ownerMemoryWorklogs = {
+      'stage-1:owner-a': {
+        contract: 'DSH_OWNER_WORKLOG_V1',
+        taskId: 'stage-1',
+        title: '完成基础文件',
+        ownerId: 'owner-a',
+        status: 'active',
+        notes: [{ type: '结论', text: '来源缺失时必须报告失败。' }],
+      },
+    }
+    await writeState(root, state)
+    runtime.compileStageMemory = async () => { throw new Error('模拟首次摘要失败') }
+    const deferred = await runtime.finishOwner(workflow.agent, state.id, 'stage-1', 'owner-a')
+    const sourceFile = deferred.memory.worklogSource
+    await runGit(workflow.state.workflowWorktree, ['rm', '--', sourceFile])
+    await runGit(workflow.state.workflowWorktree, ['commit', '-qm', '模拟原始来源丢失'])
+    const headBeforeRetry = await head(workflow.state.workflowWorktree)
+
+    await disposeRuntime(runtime)
+    runtime = createOwnerWorkflowRuntime({}, {})
+    mockRequiredTaskVerifications(runtime)
+    await assert.rejects(
+      runtime.finishOwner(workflow.agent, state.id, 'stage-1', 'owner-a'),
+      /原始 worklog 来源缺失/u,
+    )
+    const saved = await readState(root, state.id)
+    assert.equal(saved.tasks.find(item => item.taskId === 'stage-1').status, 'completed')
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].result.commitSha, fixedSha)
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].result.memory.deferred, true)
+    assert.equal(saved.ownerRuns['stage-1:owner-a'].result.memory.recoveryAttempts, 1)
+    assert.equal(existsSync(join(saved.workflowWorktree, sourceFile)), false)
+    assert.equal(await head(saved.workflowWorktree), headBeforeRetry)
+    assert.equal(await isCommitAncestor(root, fixedSha, headBeforeRetry), true)
   } finally {
     await disposeRuntime(runtime)
     await cleanupWorkflow(root, workflow, owner === undefined ? [] : [owner])
@@ -3125,17 +3414,17 @@ test('V2 handoff_replan 用 task.write 覆盖 handoff 文件并 carry forward co
   }
 })
 
-test('V2 handoff_replan 拒绝改写已有 ownerRun 对应 task 的语义', async () => {
+test('V2 handoff_replan 确定性冻结已有 ownerRun 对应 task 的语义', async () => {
   const fixture = await createV2RequestFixture('wf-v2-handoff-replan-owner-run-immutable')
   try {
     const state = await readState(fixture.root, fixture.workflow.state.id)
     state.status = 'blocked'
     state.ownerRuns = {
-      'T2:api': {
+      'T3:web': {
         status: 'failed',
-        taskId: 'T2',
-        ownerId: 'api',
-        stageId: 'T2',
+        taskId: 'T3',
+        ownerId: 'web',
+        stageId: 'T3',
         error: '模拟 Owner 失败',
       },
     }
@@ -3152,21 +3441,19 @@ test('V2 handoff_replan 拒绝改写已有 ownerRun 对应 task 的语义', asyn
     }]
     const nextPlan = {
       ...fixture.plan,
-      tasks: fixture.plan.tasks.map(task => task.id === 'T2'
+      tasks: fixture.plan.tasks.map(task => task.id === 'T3'
         ? { ...task, title: '被篡改的已有 task 语义' }
         : task),
     }
     await writeState(fixture.root, state)
     fixture.runtime.runChild = async () => JSON.stringify(nextPlan)
 
-    await assert.rejects(
-      fixture.runtime.replanHandoffs(fixture.workflow.agent, state.id),
-      /ownerRun|运行现场|task.*语义|immutable/u,
-    )
+    await fixture.runtime.replanHandoffs(fixture.workflow.agent, state.id)
     const saved = await readState(fixture.root, state.id)
-    assert.equal(saved.status, 'blocked')
-    assert.equal(saved.handoffQueue[0].status, 'pending')
-    assert.equal(saved.ownerRuns['T2:api'].status, 'failed')
+    assert.equal(saved.status, 'planned')
+    assert.equal(saved.plan.tasks.find(task => task.id === 'T3').title, fixture.plan.tasks.find(task => task.id === 'T3').title)
+    assert.equal(saved.handoffQueue[0].status, 'planned')
+    assert.equal(saved.ownerRuns['T3:web'].status, 'failed')
   } finally {
     await disposeRuntime(fixture.runtime)
     await cleanupWorkflow(fixture.root, fixture.workflow)

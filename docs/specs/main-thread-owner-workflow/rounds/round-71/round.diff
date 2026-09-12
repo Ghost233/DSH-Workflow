@@ -1,0 +1,889 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -1,4 +1,4 @@
+-import { candidateIndependentNext, ackCandidateIndependentCreate, candidateIndependentBinding, assertCandidateIndependentReservation } from './candidate-independent-supervisor.mjs'
++import { candidateIndependentNext, ackCandidateIndependentCreate, candidateIndependentBinding, assertCandidateIndependentReservation, assertCandidateIndependentRun } from './candidate-independent-supervisor.mjs'
+ import { isRecoveryCandidate, candidateNeedsUserDecision, candidateRecoveryIdentity, candidateRecoverySource, activeCandidateRecoveryPause, RecoverySemanticFailure } from './candidate-recovery-pause.mjs'
+ import { chmod, appendFile, cp, mkdir, mkdtemp, readFile, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
+ import { constants as fsConstants, existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
+@@ -1321,6 +1321,16 @@
+       throw new Error(`工作流 ${state.id} 的持久化状态不受支持：${String(nextState.status)}`)
+     }
+     const preparedLease = prepared.lease ?? lease
++    if (preparedLease?.candidateExecution !== undefined) {
++      const binding = preparedLease.candidateExecution.binding
++      assertCandidateIndependentRun(current, binding)
++      if (candidateRecoverySource(nextState) !== binding.source) throw new Error('候选独立Owner不得改写暂停来源')
++      // Owner integration and Memory use the ordinary pipeline, but its global
++      // failure/cleanup projection cannot replace the enclosing candidate pause.
++      nextState.status = current.status
++      if (Object.hasOwn(current, 'error')) nextState.error = current.error
++      else delete nextState.error
++    }
+     nextState.revision = (prepareState === undefined ? expectedRevision : currentRevision) + 1
+     nextState.updatedAt = now()
+     if (preparedLease !== undefined) await runtime.assertOwnerLease(preparedLease)
+@@ -2335,7 +2345,8 @@
+   if (state.plan?.contract !== PLAN_V2_CONTRACT) {
+     throw new Error('提交关卡固定验证只支持当前 DSH_PLAN_V2 任务')
+   }
+-  if (state.status !== 'running') {
++  if (active.candidatePause !== undefined) assertCandidateIndependentRun(state, active.candidatePause)
++  if (state.status !== 'running' && !(state.status === 'blocked' && active.candidatePause !== undefined)) {
+     throw new Error(`提交关卡固定验证只允许 running workflow，当前为 ${String(state.status)}`)
+   }
+   if (taskId !== active.stageId) {
+@@ -2361,6 +2372,7 @@
+     // state.revision 会因其他任务的 Supervisor receipt、wait 心跳等全局记账递增。
+     // 它不表示当前 Owner、任务或真实 worktree 已发生漂移，不能让长时间授权验证误失败。
+     workflowStatus: state.status,
++    candidateSource: active.candidatePause?.source ?? null,
+     taskId: task.id,
+     taskStatus: taskState.status,
+     taskOwnerId: task.ownerId,
+@@ -2382,6 +2394,7 @@
+ function assertVerificationStateUnchanged(before, after) {
+   const fields = [
+     ['planDigest', '计划摘要'],
++    ['candidateSource', '候选暂停来源'],
+     ['declaredPlanDigest', '计划绑定摘要'],
+     ['workflowStatus', '工作流状态'],
+     ['taskId', '任务绑定'],
+@@ -3126,8 +3139,9 @@
+   })
+ }
+
+-async function validateOwnerStartState(state, workflowId, stageId, ownerId, stageOverride) {
+-  if (!['approved', 'running'].includes(state.status)) {
++async function validateOwnerStartState(state, workflowId, stageId, ownerId, stageOverride, candidateBinding) {
++  if (candidateBinding !== undefined) assertCandidateOwnerLifecycleWired(state, stageId, ownerId, candidateBinding)
++  if (!['approved', 'running'].includes(state.status) && !(state.status === 'blocked' && candidateBinding !== undefined)) {
+     throw new Error(`工作流 ${workflowId} 当前状态不能启动 Owner：${state.status}`)
+   }
+   if (state.plan === undefined || state.planDigest === undefined) {
+@@ -4775,7 +4789,11 @@
+   return receipt
+ }
+
+-function assertCandidateOwnerLifecycleWired(state, taskId, ownerId) {
++function assertCandidateOwnerLifecycleWired(state, taskId, ownerId, binding) {
++  if (binding !== undefined) {
++    if (binding.taskId !== taskId || binding.ownerId !== ownerId) throw new Error('候选独立Owner身份不匹配')
++    return assertCandidateIndependentRun(state, binding)
++  }
+   const key = `${taskId}:${ownerId}`
+   if (state.supervisorOutbox?.[key]?.candidatePause !== undefined || state.ownerRuns?.[key]?.candidatePause !== undefined) {
+     throw new Error('候选独立Owner生命周期尚未接线，保留reservation')
+@@ -5573,6 +5591,11 @@
+       if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+         throw new Error(`Lease ${lease.ownerId} 已过期，旧临界区必须停止`)
+       }
++      if (lease.candidateExecution !== undefined) {
++        const { root, binding } = lease.candidateExecution
++        const state = await readJson(statePath(runtime, root, lease.workflowId))
++        assertCandidateIndependentRun(state, binding)
++      }
+       return current
+     },
+     leaseSignal(lease, signal) {
+@@ -5929,6 +5952,9 @@
+       const orphaned = []
+       for (const [key, record] of Object.entries(state.ownerRuns ?? {})) {
+         if (!['starting', 'running', 'waiting_approval'].includes(record?.status)) continue
++        if (record.candidatePause !== undefined) {
++          try { assertCandidateIndependentRun(state, record.candidatePause) } catch { continue }
++        }
+         if (runtime.ownerSessionIsLive(state, key, record)) continue
+         const orphanedAt = now()
+         state.ownerRuns[key] = {
+@@ -8835,6 +8861,78 @@
+         candidatePlanDigest: candidate.planDigest,
+       }
+     },
++    async runCandidateIndependentReservation(agent, workflowId, reservationKey) {
++      const root = await runtime.resolveRoot(agent)
++      let binding
++      let replay
++      await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, undefined, current => {
++        const reservation = current.supervisorOutbox?.[reservationKey]
++        if (['completed', 'failed'].includes(reservation?.status)) {
++          assertCandidateIndependentRun(current, reservation.candidatePause)
++          const record = current.ownerRuns?.[reservationKey]
++          if (reservation.status === 'completed' && record?.status !== 'completed') throw new Error('独立任务终态回执矛盾')
++          if (reservation.status === 'failed' && !['failed', 'blocked'].includes(record?.status)) throw new Error('独立任务终态回执矛盾')
++          replay = reservation.status === 'completed' ? { outcome: 'completed', result: record.result, replay: true }
++            : { outcome: 'failed', reason: reservation.error, replay: true }
++          return { state: current }
++        }
++        assertCandidateIndependentReservation(current, reservation)
++        if (reservation.status !== 'reserved' || current.ownerRuns?.[reservationKey] !== undefined) {
++          throw new Error('候选独立执行只接受无Owner历史的首次reserved任务')
++        }
++        binding = structuredClone(reservation.candidatePause)
++        reservation.status = 'launching'
++        reservation.attempts = Number(reservation.attempts ?? 0) + 1
++        reservation.launchedAt = now()
++        return { state: current }
++      }))
++      if (replay !== undefined) return replay
++      let result
++      let failure
++      try {
++        await runtime.runExternalOwner(agent, workflowId, binding.taskId, binding.ownerId, undefined,
++          { deferFinish: true, candidatePause: binding })
++        result = await runtime.finishOwner(agent, workflowId, binding.taskId, binding.ownerId, undefined, binding)
++      } catch (error) { failure = error }
++      let outcome
++      await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, undefined, current => {
++        const reservation = current.supervisorOutbox?.[reservationKey]
++        if (reservation?.reservationId !== binding.reservationId) {
++          outcome = { outcome: 'stale', reason: 'reservation已替换' }
++          return { state: current }
++        }
++        const authorityOwner = current.ownerRuns?.[reservationKey]
++        const authorityTask = current.tasks.find(item => item.taskId === binding.taskId)
++        if (authorityOwner?.autonomousRecovery?.strategy === 'request_user_authority' && authorityTask?.action === 'await_user'
++          && canonicalDigestValue(authorityOwner.candidatePause) === canonicalDigestValue(binding)
++          && current.candidateRecoveryPause?.source === binding.source && candidateRecoverySource(current) === binding.source) {
++          reservation.status = 'stopped'
++          reservation.error = failure === undefined ? authorityOwner.error : errorText(failure)
++          outcome = { outcome: 'awaiting-user', reason: reservation.error }
++          return { state: current }
++        }
++        try { assertCandidateIndependentRun(current, binding) }
++        catch (error) {
++          reservation.status = 'stopped'
++          reservation.error = errorText(error)
++          outcome = { outcome: 'stale', reason: errorText(error) }
++          return { state: current }
++        }
++        const record = current.ownerRuns?.[reservationKey]
++        const task = current.tasks.find(item => item.taskId === binding.taskId)
++        const completed = record?.status === 'completed' && task?.status === 'completed'
++        reservation.status = completed ? 'completed' : 'failed'
++        reservation.finishedAt = now()
++        if (failure !== undefined) reservation.error = errorText(failure)
++        outcome = completed ? { outcome: 'completed', result }
++          : { outcome: 'failed', reason: failure === undefined ? '独立Owner尚未完成' : errorText(failure) }
++        appendSupervisorEvent(current, 'supervisor.candidate-independent-settled', {
++          reservationId: reservation.reservationId, outcome: outcome.outcome,
++        })
++        return { state: current }
++      }))
++      return outcome
++    },
+     async reserveCandidateIndependentTasks(agent, workflowId, actionId) {
+       const root = await runtime.resolveRoot(agent)
+       if (typeof actionId !== 'string' || !actionId.startsWith('csa-')) throw new Error('缺少候选独立调度actionId')
+@@ -8843,7 +8941,9 @@
+         if (current.root !== root || current.id !== workflowId) throw new Error('候选独立调度Workflow绑定失效')
+         const previous = Object.values(current.supervisorOutbox ?? {}).filter(item => item.actionId === actionId)
+         if (previous.length > 0) {
+-          for (const reservation of previous) assertCandidateIndependentReservation(current, reservation)
++          for (const reservation of previous) assertCandidateIndependentReservation(current, reservation, {
++            allowSettled: ['completed', 'failed'].includes(reservation.status),
++          })
+           result = { action: 'candidate-independent-reserved', replay: true,
+             reservations: structuredClone(previous) }
+           return { state: current }
+@@ -9270,6 +9370,10 @@
+     async submitOwnerResult(rawReport, exec) {
+       const sessionId = sessionIdOf(exec)
+       const active = sessionId === undefined ? undefined : runtime.activeOwners.get(sessionId)
++      if (active?.candidatePause !== undefined) {
++        await runtime.assertOwnerLease(active.lease)
++        if (Array.isArray(rawReport?.handoffs) && rawReport.handoffs.length > 0) throw new Error('候选独立执行不能提交跨Owner转交，需单独对账')
++      }
+       let authorityGate
+       if (active?.executionDeviationId !== undefined) {
+         authorityGate = await runtime.withWorkflowLock(active.workflowId, async () => {
+@@ -12205,6 +12309,7 @@
+     },
+     async requestHandoff(args, exec) {
+       const { active, workflowId, taskId } = activeOwnerRequest(runtime, args, exec, 'request_handoff')
++      if (active.candidatePause !== undefined) throw new Error('候选独立执行不能创建跨Owner转交，需单独对账')
+       let saved
+       let request
+       await runtime.withWorkflowLock(workflowId, async () => {
+@@ -13824,7 +13929,7 @@
+         let signal = requestSignal
+         try {
+           const initialState = await readState(runtime, root, workflowId)
+-          assertCandidateOwnerLifecycleWired(initialState, stageId, ownerId)
++          assertCandidateOwnerLifecycleWired(initialState, stageId, ownerId, options.candidatePause)
+           if (initialState.root !== root) throw new Error(`工作流 ${workflowId} 不属于当前项目：${initialState.root}`)
+           assertV2WorkflowExecutable(initialState, `启动或结算 Owner ${ownerId}`)
+           assertWorkflowNotCancelled(initialState, '启动或结算 Owner')
+@@ -13833,7 +13938,7 @@
+           if (previous?.status === 'completed') {
+             return runtime.withWorkflowLock(workflowId, async () => {
+               const currentState = await readState(runtime, root, workflowId)
+-                assertCandidateOwnerLifecycleWired(currentState, stageId, ownerId)
++                assertCandidateOwnerLifecycleWired(currentState, stageId, ownerId, options.candidatePause)
+               const current = currentState.ownerRuns?.[key]
+               return runtime.assertCompletedOwnerRecord(currentState, stageId, ownerId, current, requestSignal)
+             })
+@@ -13841,7 +13946,7 @@
+           if (previous?.status === 'awaiting_finish' || previous?.status === 'committed') {
+             const persistedResult = await runtime.withWorkflowLock(workflowId, async () => {
+               const currentState = await readState(runtime, root, workflowId)
+-                assertCandidateOwnerLifecycleWired(currentState, stageId, ownerId)
++                assertCandidateOwnerLifecycleWired(currentState, stageId, ownerId, options.candidatePause)
+               if (currentState.root !== root) throw new Error(`工作流 ${workflowId} 不属于当前项目：${currentState.root}`)
+               assertV2WorkflowExecutable(currentState, `重放 Owner ${ownerId} 的持久化结果`)
+               assertWorkflowNotCancelled(currentState, '重放 Owner 持久化结果')
+@@ -13862,6 +13967,7 @@
+           await runtime.withWorkflowLock(workflowId, async () => {
+             acquiredLease = await runtime.acquireOwnerLease(root, ownerId, workflowId, stageId, requestSignal)
+             if (!acquiredLease.owned) throw new OwnerLeaseUnavailableError(`Owner ${ownerId} 已在本进程的另一个运行中`)
++            if (options.candidatePause !== undefined) acquiredLease.lease.candidateExecution = { root, binding: options.candidatePause }
+             signal = runtime.leaseSignal(acquiredLease.lease, requestSignal)
+             await runtime.assertOwnerLease(acquiredLease.lease)
+             await runtime.withOwnerLease(
+@@ -13872,7 +13978,7 @@
+               signal,
+               async (workflowLease) => {
+                 const current = await readState(runtime, root, workflowId)
+-                assertCandidateOwnerLifecycleWired(current, stageId, ownerId)
++                assertCandidateOwnerLifecycleWired(current, stageId, ownerId, options.candidatePause)
+                 if (current.contract !== STATE_CONTRACT) throw new Error(`工作流 ${workflowId} 的状态契约不受支持`)
+                 if (current.root !== root) throw new Error(`工作流 ${workflowId} 不属于当前项目：${current.root}`)
+                 assertWorkflowNotCancelled(current, '启动或结算 Owner')
+@@ -13935,7 +14041,7 @@
+                   }
+                 }
+                 try {
+-                  stage = await validateOwnerStartState(current, workflowId, stageId, ownerId)
++                  stage = await validateOwnerStartState(current, workflowId, stageId, ownerId, undefined, options.candidatePause)
+                 } catch (error) {
+                   if (options.recoverySessionRequest !== undefined) {
+                     throw new RecoverySessionLaunchUnavailableError('owner_start_not_authorized')
+@@ -14003,6 +14109,7 @@
+                   attempt: nextAttempt,
+                   leaseToken: acquiredLease.lease.token,
+                   startedAt: now(),
++                  ...(options.candidatePause === undefined ? {} : { candidatePause: structuredClone(options.candidatePause) }),
+                   ...(recoverySession === undefined ? {} : { recoverySession }),
+                 }
+                 // 临时工作记忆是同一 task 的可恢复上下文；它只存在于 Runtime 状态，
+@@ -14096,6 +14203,25 @@
+           if (options.deferFinish === true) return { ...result, phase: 'synced' }
+           return await runtime.finishOwner(agent, workflowId, stageId, ownerId, acquiredLease.lease)
+         } catch (error) {
++          if (options.candidatePause !== undefined) {
++            await runtime.withWorkflowLock(workflowId, async () => {
++              const latest = await readState(runtime, root, workflowId)
++              assertCandidateIndependentRun(latest, options.candidatePause)
++              const record = latest.ownerRuns?.[key]
++              if (record?.status === 'completed') return
++              const classified = classifyFailure(errorText(error), ownerExecutionDeviationContext(latest, stageId, ownerId))
++              const authority = classified.class === 'external_authority'
++              latest.ownerRuns[key] = { ...record, status: authority ? 'blocked' : 'failed', error: errorText(error),
++                ...(authority ? { autonomousRecovery: { contract: 'DSH_AUTONOMOUS_RECOVERY_V1',
++                  failureClass: classified.class, strategy: 'request_user_authority', message: errorText(error) } } : {}) }
++              const task = latest.tasks.find(item => item.taskId === stageId)
++              Object.assign(task, { status: 'stopped', executorId: null, cursor: null, unchangedPolls: 0,
++                reason: authority ? 'decision_required' : 'runtime_failed', action: authority ? 'await_user' : 'retry_runtime' })
++              if (authority) queueExecutionDeviationDecision(latest, stageId, ownerId)
++              await saveState(runtime, latest, acquiredLease.lease)
++            })
++            throw error
++          }
+           const latestState = await readState(runtime, root, workflowId)
+           const completedRecord = latestState.ownerRuns?.[key]
+           const completedRecovery = completedRecord?.recoverySession
+@@ -14339,12 +14465,13 @@
+         runtime.externalOwnerRecoveryRequests.delete(externalRunKey)
+       }
+     },
+-    async finishOwner(agent, workflowId, stageId, ownerId, heldLease) {
++    async finishOwner(agent, workflowId, stageId, ownerId, heldLease, candidateBinding) {
+       const root = await runtime.resolveRoot(agent)
+       const key = ownerRunKey(stageId, ownerId)
+       const finish = (lease, signal) => runtime.withWorkflowLock(workflowId, async () => {
+         const state = await readState(runtime, root, workflowId)
+-        assertCandidateOwnerLifecycleWired(state, stageId, ownerId)
++        assertCandidateOwnerLifecycleWired(state, stageId, ownerId, candidateBinding)
++        if (candidateBinding !== undefined) lease.candidateExecution = { root, binding: candidateBinding }
+         await runtime.assertOwnerLease(lease)
+         if (state.root !== root) throw new Error(`工作流 ${workflowId} 不属于当前项目：${state.root}`)
+         assertV2WorkflowExecutable(state, `结算 Owner ${ownerId}`)
+@@ -15355,6 +15482,7 @@
+         title: task.title ?? task.name ?? task.id,
+         ownerId: owner.id,
+       })
++      await runtime.assertOwnerLease(lease)
+       const sourceFile = await writeSealedOwnerWorklog(state.workflowWorktree, {
+         workflowId: state.id,
+         task,
+@@ -15363,6 +15491,7 @@
+         report: record.result?.report,
+         changedFiles,
+         validateTarget: async target => {
++          await runtime.assertOwnerLease(lease)
+           if (pathUsesLink(state.workflowWorktree, target)) {
+             throw new Error(`Owner 临时记忆封存目标经过符号链接、硬链接或无法安全解析：${target}`)
+           }
+@@ -15501,6 +15630,7 @@
+       }
+     },
+     async compileStageMemory(agent, state, stage, entries, codeHead, signal, lease) {
++      if (lease?.candidateExecution !== undefined) await runtime.assertOwnerLease(lease)
+       if (resolvedConfig.ownerMemoryEnabled === false) {
+         return {
+           enabled: false,
+@@ -15533,6 +15663,7 @@
+         await saveState(runtime, state, lease)
+       }
+
++      await runtime.assertOwnerLease(lease)
+       const written = await writeMemoryBundle(state.workflowWorktree, compiled.curator, {
+         workflowId: state.id,
+         stage,
+@@ -15540,6 +15671,7 @@
+         verifiedAtCommit: fixedCodeHead,
+         refreshSources: [...new Set(entries.flatMap(entry => entry.changedFiles))],
+         validateTarget: async target => {
++          await runtime.assertOwnerLease(lease)
+           if (pathUsesLink(state.workflowWorktree, target)) {
+             throw new Error(`Owner 长期记忆写入目标经过符号链接、硬链接或无法安全解析：${target}`)
+           }
+@@ -15637,6 +15769,8 @@
+       }
+     },
+     async preflightTaskMerge(state, task, entry, workflowHeadBefore, signal) {
++      const binding = state.ownerRuns?.[ownerRunKey(task.id, entry.owner.id)]?.candidatePause
++      if (binding !== undefined) assertCandidateIndependentRun(await readState(runtime, state.root, state.id), binding)
+       const suffix = randomUUID().slice(0, 8)
+       const branch = `${resolvedConfig.preflightBranchPrefix}/${sanitizeSegment(state.id)}/${sanitizeSegment(task.id)}-${suffix}`
+       const worktree = join(runtime.worktreeRoot(state.root), state.id, `preflight-${sanitizeSegment(task.id)}-${suffix}`)
+@@ -16153,6 +16287,11 @@
+       return inspectOwnerChanges({ entry, signal })
+     },
+     async commitOwnerAttempt(state, stage, entry, inspection, signal) {
++      const binding = state.ownerRuns?.[ownerRunKey(stage.id, entry.owner.id)]?.candidatePause
++      if (binding !== undefined) {
++        const latest = await readState(runtime, state.root, state.id)
++        assertCandidateIndependentRun(latest, binding)
++      }
+       return commitOwnerChanges({
+         entry,
+         taskName: stage.name,
+@@ -16173,6 +16312,7 @@
+         throw new Error(`Owner ${entry.owner.id} 已经有一个子线程运行`)
+       }
+       const activeOwner = {
++        candidatePause: state.ownerRuns?.[ownerRunKey(stage.id, entry.owner.id)]?.candidatePause,
+         ownerKey,
+         owner: entry.owner,
+         parentAgent: agent,
+@@ -16223,6 +16363,7 @@
+       if (activeOwner.recoverySession !== undefined) {
+         await runtime.persistRecoverySessionPrompt(activeOwner, prompt)
+       }
++      if (activeOwner.candidatePause !== undefined) await runtime.assertOwnerLease(lease)
+       const submission = await runtime.runChild(
+         agent,
+         entry.worktree,
+@@ -16327,7 +16468,8 @@
+             throw new Error(`Owner ${entry.owner.id} 结果写入前 Owner binding 发生漂移`)
+           }
+           const taskState = latest.tasks?.find(item => item.taskId === stage.id)
+-          if (taskState?.status !== 'running' || latest.status !== 'running') {
++          if (activeOwner.candidatePause !== undefined) assertCandidateIndependentRun(latest, activeOwner.candidatePause)
++          if (taskState?.status !== 'running' || (latest.status !== 'running' && !(latest.status === 'blocked' && activeOwner.candidatePause !== undefined))) {
+             throw new Error(`Owner ${entry.owner.id} 结果写入前任务或工作流状态发生漂移`)
+           }
+           const ownerRecord = latest.ownerRuns?.[key]
+@@ -17006,7 +17148,10 @@
+       const taskState = latest.tasks?.find(item => item.taskId === taskId)
+       if (taskState === undefined) throw new Error(`任务 ${taskId} 缺少持久化状态，不能通过验证门禁`)
+       const allowCompleted = options.allowCompleted === true
++      const candidateBinding = latest.ownerRuns?.[ownerRunKey(taskId, ownerId)]?.candidatePause
++      if (candidateBinding !== undefined) assertCandidateIndependentRun(latest, candidateBinding)
+       const workflowStatusAllowed = latest.status === 'running' || (allowCompleted && latest.status === 'completed')
++        || (latest.status === 'blocked' && candidateBinding !== undefined)
+       const taskStatusAllowed = taskState.status === 'running' || (allowCompleted && taskState.status === 'completed')
+       if (!workflowStatusAllowed || !taskStatusAllowed) {
+         throw new Error(`任务 ${taskId} 当前状态为 ${taskState.status}，工作流为 ${latest.status}，不能通过验证门禁`)
+@@ -17140,7 +17285,9 @@
+         if (active.lease === undefined) throw new Error('owner_execution_feedback 缺少当前 Owner lease')
+         await runtime.assertOwnerLease(active.lease)
+         const state = await readState(runtime, active.workflowRoot, active.workflowId)
+-        if (state.root !== active.workflowRoot || state.plan?.contract !== PLAN_V2_CONTRACT || state.status !== 'running') {
++        if (active.candidatePause !== undefined) assertCandidateIndependentRun(state, active.candidatePause)
++        if (state.root !== active.workflowRoot || state.plan?.contract !== PLAN_V2_CONTRACT
++          || (state.status !== 'running' && !(state.status === 'blocked' && active.candidatePause !== undefined))) {
+           throw new Error('owner_execution_feedback 的 Workflow 已不再是当前可执行 V2 现场')
+         }
+         const task = state.plan.tasks.find(item => item.id === active.stageId)
+@@ -17306,6 +17453,7 @@
+           verificationId: binding.bound.id,
+           snapshotExecutor: {
+             run: async ({ argv, cwd }) => {
++              if (active.lease !== undefined) await runtime.assertOwnerLease(active.lease)
+               const command = fixedArgvCommand(argv)
+               const confined = await executeOwnerSnapshot(runtime, active, command, exec, {
+                 captureContentDigest: true,
+@@ -17392,7 +17540,7 @@
+         }
+         taskState.verificationResults ??= {}
+         taskState.verificationResults[currentBound.id] = result
+-        await saveState(runtime, state)
++        await saveState(runtime, state, active.lease)
+
+         active.verificationResults ??= {}
+         active.verificationResults[currentBound.id] = result
+--- owner-workflow-plugin/src/candidate-independent-supervisor.mjs (baseline)
++++ owner-workflow-plugin/src/candidate-independent-supervisor.mjs
+@@ -11,6 +11,7 @@
+   const pause = activeCandidateRecoveryPause(state)
+   if (!pause || state.mainOutbox?.[pause.notificationId]?.status !== 'delivered') fail('需要已投递的有效候选暂停')
+   if (!['running', 'blocked'].includes(state.status)) fail('工作流状态不允许调度')
++  if (state.pendingTaskMerge !== undefined || state.pendingMemoryCompilation !== undefined) fail('共享合并或Memory事务尚未结算')
+   const plan = normalizePlanV2(state.plan)
+   const byId = new Map(plan.tasks.map(task => [task.id, task]))
+   const owners = new Set(plan.owners.map(owner => owner.id))
+@@ -36,6 +37,9 @@
+     addOwner(handoff.sourceOwnerId)
+     if (handoff.targetType !== 'owner') fail('尚不能证明非Owner目标的独立范围')
+     addOwner(handoff.targetOwnerId)
++  }
++  for (const handoff of state.handoffQueue ?? []) {
++    if (handoff.targetType === 'owner' && ['planned', 'acknowledged'].includes(handoff.status)) addOwner(handoff.targetOwnerId)
+   }
+   const edges = []
+   for (const task of plan.tasks) {
+@@ -99,7 +103,7 @@
+     eligibleTaskIds: [...scope.eligibleTaskIds], scopeDigest: digest(scope) }
+ }
+
+-export function assertCandidateIndependentReservation(state, reservation) {
++export function assertCandidateIndependentReservation(state, reservation, { allowSettled = false } = {}) {
+   const binding = reservation?.candidatePause
+   const pause = activeCandidateRecoveryPause(state)
+   if (binding?.contract !== 'DSH_CANDIDATE_INDEPENDENT_RESERVATION_V1'
+@@ -117,13 +121,25 @@
+   if (persisted?.reservationId !== binding.reservationId || JSON.stringify(persisted.candidatePause) !== JSON.stringify(binding)) fail('reservation已被替换')
+   const owner = view.ownerRuns?.[key]
+   if (owner && JSON.stringify(owner.candidatePause) !== JSON.stringify(binding)) fail('Owner已被其他执行替换')
++  if (owner && view.pendingTaskMerge?.taskId === binding.taskId && view.pendingTaskMerge?.ownerId === binding.ownerId) delete view.pendingTaskMerge
++  if (owner && view.pendingMemoryCompilation?.stageId === binding.taskId) delete view.pendingMemoryCompilation
+   delete view.supervisorOutbox[key]
+   if (view.ownerRuns) delete view.ownerRuns[key]
+   const task = view.tasks.find(task => task.taskId === binding.taskId)
+-  if (!task || !['pending', 'running'].includes(task.status)) fail('未终态占用与任务状态矛盾')
++  const settled = allowSettled && ((task?.status === 'completed' && owner?.status === 'completed')
++    || (task?.status === 'stopped' && ['failed', 'blocked'].includes(owner?.status)))
++  if (!task || (!['pending', 'running'].includes(task.status) && !settled)) fail('未终态占用与任务状态矛盾')
+   Object.assign(task, { status: 'pending', executorId: null, cursor: null, unchangedPolls: 0, reason: null, action: null })
+   if (!prepare(view).receipt.scope.eligibleTaskIds.includes(binding.taskId)) fail('任务不再属于独立范围')
+   return binding
++}
++
++export function assertCandidateIndependentRun(state, binding) {
++  if (!binding || !['running', 'blocked'].includes(state.status)) fail('候选独立执行上下文失效')
++  const reservation = state.supervisorOutbox?.[`${binding.taskId}:${binding.ownerId}`]
++  if (!reservation || JSON.stringify(reservation.candidatePause) !== JSON.stringify(binding)
++    || !['launching', 'completed', 'failed'].includes(reservation.status)) fail('候选独立执行reservation失效')
++  return assertCandidateIndependentReservation(state, reservation, { allowSettled: true })
+ }
+
+ export function ackCandidateIndependentCreate(state, actionId, observation) {
+--- owner-workflow-plugin/src/candidate-recovery-pause.mjs (baseline)
++++ owner-workflow-plugin/src/candidate-recovery-pause.mjs
+@@ -16,6 +16,14 @@
+   return state.planConvergence?.nextStrategy === 'request_user_authority'
+     || owner?.autonomousRecovery?.strategy === 'request_user_authority'
+     || ['await_user', 'provide_input'].includes(task?.action)
++    || (state.tasks ?? []).some(item => {
++      const planTask = state.plan?.tasks?.find(candidate => candidate.id === item.taskId)
++      const run = state.ownerRuns?.[`${item.taskId}:${planTask?.ownerId}`]
++      return item.action === 'await_user' && run?.autonomousRecovery?.strategy === 'request_user_authority'
++        && run.candidatePause?.source === state.candidateRecoveryPause?.source
++        && run.candidatePause?.activePlanDigest === state.planDigest
++        && run.candidatePause?.contract === 'DSH_CANDIDATE_INDEPENDENT_RESERVATION_V1'
++    })
+ }
+ export function candidateRecoveryIdentity(state) {
+   // Bind the whole candidate across the unlocked driver and the pause transaction.
+--- owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs (baseline)
++++ owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs
+@@ -123,3 +123,20 @@
+   state.config.parallel = 1
+   assert.equal(candidateIndependentNext(state).action, 'wait')
+ })
++
++for (const field of ['pendingTaskMerge', 'pendingMemoryCompilation']) {
++  test(`independent selection rejects an existing shared ${field} transaction`, () => {
++    const state = fixture()
++    state[field] = { taskId: 'other', stageId: 'other' }
++    const before = structuredClone(state)
++    assert.throws(() => candidateIndependentNext(state), /共享合并或Memory事务/)
++    assert.deepEqual(state, before)
++  })
++}
++
++test('independent selection excludes other planned handoff targets that finish would implicitly consume', () => {
++  const state = fixture()
++  state.handoffQueue.push({ id: 'unrelated', targetType: 'owner', targetOwnerId: 'i', status: 'planned' })
++  const receipt = candidateIndependentNext(state)
++  assert.equal(receipt.action, 'wait')
++})
+--- /dev/null
++++ owner-workflow-plugin/test/candidate-independent-runtime.test.mjs
+@@ -0,0 +1,334 @@
++import assert from 'node:assert/strict'
++import { execFile } from 'node:child_process'
++import test from 'node:test'
++import { promisify } from 'node:util'
++import { plannerSubmitDefinition, planReviewSubmitDefinition } from '../index.js'
++import { candidateIndependentNext } from '../src/candidate-independent-supervisor.mjs'
++import { deriveWorkflowControl } from '../src/workflow-state.mjs'
++import {
++  createRecoverySessionFixture,
++  mutateRecoverySessionState,
++  readRecoverySessionState,
++  reopenRecoverySessionFixture,
++} from './fixtures/recovery-session-fixture.mjs'
++
++const execFileAsync = promisify(execFile)
++
++async function git(cwd, args) {
++  const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], { encoding: 'utf8' })
++  return stdout.trim()
++}
++
++function completedOwnerModel({ toolCallResponse, textResponse }) {
++  return [
++    toolCallResponse('candidate-independent-completed', 'owner_submit', { report: {
++      contract: 'DSH_OWNER_RESULT_V1', status: 'completed', summary: 'Completed the independent task.',
++      changes: [], tests: [], handoffs: [], memory_updates: [],
++    } }),
++    textResponse('The completed result has been submitted.'),
++    textResponse(JSON.stringify({
++      contract: 'DSH_OWNER_MEMORY_CURATOR_V1', summary: 'No knowledge pages needed.', pages: [],
++    })),
++    textResponse(JSON.stringify({
++      contract: 'DSH_OWNER_MEMORY_REVIEW_V1', status: 'passed', summary: 'Empty bundle is valid.', issues: [],
++    })),
++  ]
++}
++
++function failedOwnerModel({ toolCallResponse, textResponse }) {
++  return [
++    toolCallResponse('candidate-independent-failed', 'owner_submit', { report: {
++      contract: 'DSH_OWNER_RESULT_V1', status: 'failed', summary: 'Controlled independent Owner failure.',
++      changes: [], tests: [], handoffs: [], memory_updates: [],
++    } }),
++    textResponse('The controlled failure has been submitted.'),
++  ]
++}
++
++function sourceFootprint(state) {
++  return {
++    status: state.status,
++    error: state.error,
++    plan: state.plan,
++    planDigest: state.planDigest,
++    pendingPlanRevision: state.pendingPlanRevision,
++    candidateRecoveryPause: state.candidateRecoveryPause,
++    handoffQueue: state.handoffQueue,
++    handoffReplans: state.handoffReplans,
++    candidateReviews: state.candidateReviews,
++    replanSessions: state.replanSessions,
++    recoveryAdmission: state.recoveryAdmission,
++    sourceTask: state.tasks.find(task => task.taskId === 'T1'),
++    sourceOwner: state.ownerRuns['T1:api'],
++  }
++}
++
++function pauseNotice(state) {
++  return state.mainOutbox[state.candidateRecoveryPause.notificationId]
++}
++
++async function notifiedCandidatePause(t, ownerModel) {
++  let plan
++  const f = await createRecoverySessionFixture(t, {
++    executable: true,
++    includeIndependentOwner: true,
++    limits: { totalLimit: 1, problemLimit: 1 },
++    modelScript: m => [
++      () => m.toolCallResponse('candidate-independent-planner', 'workflow_plan_submit', { plan }),
++      'hang-slow',
++      m.textResponse('Technical pause notice received.'),
++      ...ownerModel(m),
++    ],
++  })
++  f.ctx.tools.register(plannerSubmitDefinition(f.runtime))
++  f.ctx.tools.register(planReviewSubmitDefinition(f.runtime))
++
++  const state = await readRecoverySessionState(f)
++  plan = {
++    ...structuredClone(state.plan),
++    summary: 'Candidate independent runtime proof.',
++    owners: state.plan.owners.map(owner => ({ id: owner.id })),
++  }
++  const stage = state.plan.tasks.find(task => task.id === 'T1')
++  const owner = state.plan.owners.find(item => item.id === stage.ownerId)
++  await f.runtime.recordHandoffs(state, stage, { owner, branch: 'candidate-independent-fixture' }, {
++    status: 'blocked',
++    handoffs: [{
++      targetType: 'owner', targetOwnerId: owner.id, files: ['src/api/repair.mjs'], summary: 'Repair the failed source task.',
++    }],
++  })
++  await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++
++  const paused = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'plan-revision-drive')
++  assert.equal(paused.action, 'candidate-recovery-paused')
++  const notified = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'plan-revision-drive')
++  assert.equal(notified.action, 'candidate-recovery-notified')
++  await f.admissionAgent.whenIdle()
++  await f.ctx.sessions.flush(f.admissionAgent.session)
++
++  const pausedState = await readRecoverySessionState(f)
++  assert.equal(pausedState.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(pausedState.mainOutbox[pausedState.candidateRecoveryPause.notificationId].status, 'delivered')
++  return f
++}
++
++async function reserveIndependentTask(f) {
++  const before = await readRecoverySessionState(f)
++  const receipt = candidateIndependentNext(before)
++  assert.equal(receipt.action, 'create')
++  assert.deepEqual(receipt.tasks.map(task => task.taskId), ['T2'])
++  assert.deepEqual(receipt.tasks.map(task => task.ownerId), ['worker'])
++  const reserved = await f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, receipt.actionId)
++  assert.equal(reserved.replay, false)
++  assert.equal(reserved.reservations.length, 1)
++  return { before, reservation: reserved.reservations[0] }
++}
++
++test('T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish', { timeout: 45_000 }, async t => {
++  const f = await notifiedCandidatePause(t, completedOwnerModel)
++  await mutateRecoverySessionState(f, state => {
++    state.status = 'blocked'
++    state.error = 'source recovery paused'
++  })
++  const { before, reservation } = await reserveIndependentTask(f)
++  const protectedBefore = sourceFootprint(before)
++  const noticeBefore = pauseNotice(before)
++
++  const outcome = await f.runtime.runCandidateIndependentReservation(f.admissionAgent, f.workflowId, 'T2:worker')
++  assert.equal(outcome.outcome, 'completed', outcome.reason)
++
++  const after = await readRecoverySessionState(f)
++  assert.deepEqual(sourceFootprint(after), protectedBefore)
++  assert.deepEqual(pauseNotice(after), noticeBefore)
++  const task = after.tasks.find(item => item.taskId === 'T2')
++  const owner = after.ownerRuns['T2:worker']
++  const settledReservation = after.supervisorOutbox['T2:worker']
++  assert.equal(task.status, 'completed')
++  assert.equal(task.checkState, 'valid')
++  assert.equal(task.verificationResults.unit.passed, true)
++  assert.equal(task.verificationResults.unit.exitCode, 0)
++  assert.ok(task.verificationResults.unit.enforcement === 'full'
++    || (task.verificationResults.unit.enforcement === 'approved-host'
++      && task.verificationResults.unit.approvalOutcome === 'allowed-once'))
++  assert.equal(task.fixedCommitSha, owner.result.commitSha)
++  assert.equal(owner.status, 'completed')
++  assert.notEqual(owner.result.commitSha, before.workflowHead)
++  assert.notEqual(after.workflowHead, before.workflowHead)
++  assert.equal(await git(after.workflowWorktree, ['rev-parse', 'HEAD']), after.workflowHead)
++  await git(after.workflowWorktree, ['merge-base', '--is-ancestor', owner.result.commitSha, after.workflowHead])
++  assert.deepEqual(owner.candidatePause, reservation.candidatePause)
++  assert.equal(settledReservation.status, 'completed')
++  assert.deepEqual(settledReservation.candidatePause, reservation.candidatePause)
++  assert.equal(after.recoveryAdmission.budget.totalUsed, before.recoveryAdmission.budget.totalUsed)
++
++  const calls = f.adapter.requests.length
++  const replay = await reopenRecoverySessionFixture({
++    root: f.root,
++    workflowId: f.workflowId,
++    modelScript: () => [],
++  })
++  t.after(() => replay.dispose())
++  const replayOutcome = await replay.runtime.runCandidateIndependentReservation(replay.admissionAgent, replay.workflowId, 'T2:worker')
++  assert.equal(replayOutcome.outcome, 'completed')
++  assert.equal(replayOutcome.replay, true)
++  assert.deepEqual(replayOutcome.result, outcome.result)
++  assert.equal(f.adapter.requests.length, calls)
++  assert.equal(replay.adapter.requests.length, 0)
++  const replayed = await readRecoverySessionState(replay)
++  assert.deepEqual(sourceFootprint(replayed), protectedBefore)
++  assert.equal(await git(replayed.workflowWorktree, ['rev-parse', 'HEAD']), after.workflowHead)
++
++})
++
++test('T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed', { timeout: 45_000 }, async t => {
++  const f = await notifiedCandidatePause(t, failedOwnerModel)
++  const { before } = await reserveIndependentTask(f)
++  const protectedBefore = sourceFootprint(before)
++  const noticeBefore = pauseNotice(before)
++
++  const outcome = await f.runtime.runCandidateIndependentReservation(f.admissionAgent, f.workflowId, 'T2:worker')
++  assert.equal(outcome.outcome, 'failed')
++
++  const after = await readRecoverySessionState(f)
++  assert.deepEqual(sourceFootprint(after), protectedBefore)
++  assert.deepEqual(pauseNotice(after), noticeBefore)
++  const task = after.tasks.find(item => item.taskId === 'T2')
++  const owner = after.ownerRuns['T2:worker']
++  const settledReservation = after.supervisorOutbox['T2:worker']
++  assert.equal(owner.status, 'failed')
++  assert.equal(task.status, 'stopped')
++  assert.equal(settledReservation.status, 'failed')
++  assert.equal(after.recoveryAdmission.budget.totalUsed, before.recoveryAdmission.budget.totalUsed)
++
++  const workflowHead = await git(after.workflowWorktree, ['rev-parse', 'HEAD'])
++  const calls = f.adapter.requests.length
++  const replayOutcome = await f.runtime.runCandidateIndependentReservation(f.admissionAgent, f.workflowId, 'T2:worker')
++  assert.equal(replayOutcome.outcome, 'failed')
++  assert.equal(replayOutcome.replay, true)
++  assert.equal(replayOutcome.reason, outcome.reason)
++  assert.equal(f.adapter.requests.length, calls)
++  const replayed = await readRecoverySessionState(f)
++  assert.deepEqual(sourceFootprint(replayed), protectedBefore)
++  assert.equal(await git(replayed.workflowWorktree, ['rev-parse', 'HEAD']), workflowHead)
++})
++
++test('T15 candidate pause rejects a source change before finish without merging the independent Owner result', { timeout: 45_000 }, async t => {
++  const f = await notifiedCandidatePause(t, completedOwnerModel)
++  const { before } = await reserveIndependentTask(f)
++  const noticeBefore = pauseNotice(before)
++  const workflowHeadBefore = await git(before.workflowWorktree, ['rev-parse', 'HEAD'])
++  const originalFinishOwner = f.runtime.finishOwner.bind(f.runtime)
++  let changedSource = false
++  f.runtime.finishOwner = async (...args) => {
++    if (!changedSource) {
++      changedSource = true
++      await mutateRecoverySessionState(f, state => {
++        state.pendingPlanRevision = { ...state.pendingPlanRevision, number: state.pendingPlanRevision.number + 1 }
++      })
++    }
++    return originalFinishOwner(...args)
++  }
++
++  const outcome = await f.runtime.runCandidateIndependentReservation(f.admissionAgent, f.workflowId, 'T2:worker')
++  assert.equal(changedSource, true)
++  assert.equal(outcome.outcome, 'stale')
++
++  const after = await readRecoverySessionState(f)
++  assert.deepEqual(pauseNotice(after), noticeBefore)
++  assert.equal(after.pendingPlanRevision.number, before.pendingPlanRevision.number + 1)
++  assert.equal(after.workflowHead, before.workflowHead)
++  assert.equal(await git(after.workflowWorktree, ['rev-parse', 'HEAD']), workflowHeadBefore)
++  assert.equal(after.status, before.status)
++  assert.equal(after.error, before.error)
++  assert.deepEqual(after.recoveryAdmission, before.recoveryAdmission)
++  const task = after.tasks.find(item => item.taskId === 'T2')
++  const owner = after.ownerRuns['T2:worker']
++  const settledReservation = after.supervisorOutbox['T2:worker']
++  assert.notEqual(task.status, 'completed')
++  assert.notEqual(owner?.status, 'completed')
++  assert.equal(settledReservation.status, 'stopped')
++})
++
++test('T15 candidate pause rejects a source change before Owner submission without verification or a commit', { timeout: 45_000 }, async t => {
++  const f = await notifiedCandidatePause(t, completedOwnerModel)
++  const { before } = await reserveIndependentTask(f)
++  const workflowHeadBefore = await git(before.workflowWorktree, ['rev-parse', 'HEAD'])
++  const originalStream = f.adapter.stream.bind(f.adapter)
++  let changedSource = false
++  f.adapter.stream = async function* (options) {
++    if (!changedSource && options.tools?.some(tool => tool.name === 'owner_submit')) {
++      changedSource = true
++      await mutateRecoverySessionState(f, state => {
++        state.pendingPlanRevision = { ...state.pendingPlanRevision, number: state.pendingPlanRevision.number + 1 }
++      })
++    }
++    yield* originalStream(options)
++  }
++
++  const outcome = await f.runtime.runCandidateIndependentReservation(f.admissionAgent, f.workflowId, 'T2:worker')
++  assert.equal(changedSource, true)
++  assert.equal(outcome.outcome, 'stale')
++
++  const after = await readRecoverySessionState(f)
++  assert.equal(after.pendingPlanRevision.number, before.pendingPlanRevision.number + 1)
++  assert.equal(after.workflowHead, before.workflowHead)
++  assert.equal(await git(after.workflowWorktree, ['rev-parse', 'HEAD']), workflowHeadBefore)
++  assert.equal(after.status, before.status)
++  assert.equal(after.error, before.error)
++  assert.deepEqual(after.recoveryAdmission, before.recoveryAdmission)
++  const task = after.tasks.find(item => item.taskId === 'T2')
++  const owner = after.ownerRuns['T2:worker']
++  const settledReservation = after.supervisorOutbox['T2:worker']
++  assert.equal(task.verificationResults, undefined)
++  assert.equal(owner?.verificationResults, undefined)
++  assert.equal(owner?.result, undefined)
++  assert.notEqual(task.status, 'completed')
++  assert.notEqual(owner?.status, 'completed')
++  assert.equal(settledReservation.status, 'stopped')
++})
++
++test('T15 candidate pause turns a real external permission gap into awaiting-user without charging recovery', { timeout: 45_000 }, async t => {
++  const f = await notifiedCandidatePause(t, completedOwnerModel)
++  const { before } = await reserveIndependentTask(f)
++  const protectedBefore = sourceFootprint(before)
++  const workflowHeadBefore = await git(before.workflowWorktree, ['rev-parse', 'HEAD'])
++  const originalStream = f.adapter.stream.bind(f.adapter)
++  let deviation
++  f.adapter.stream = async function* (options) {
++    if (deviation === undefined && options.tools?.some(tool => tool.name === 'owner_submit')) {
++      const current = await readRecoverySessionState(f)
++      const record = current.ownerRuns['T2:worker']
++      deviation = await f.runtime.recordOwnerExecutionDeviation({
++        expected: 'Read the remote ledger.',
++        actual: 'Permission denied.',
++        evidence: [{ kind: 'service_response', detail: 'Missing read:ledger permission.' }],
++        technical_facts: ['The requested operation requires read:ledger.'],
++        external_permission_gap: {
++          required_permission: 'read:ledger', target: 'remote-ledger', blocked_action: 'Read the ledger.',
++        },
++      }, { agent: { id: record.sessionId } })
++    }
++    yield* originalStream(options)
++  }
++
++  const outcome = await f.runtime.runCandidateIndependentReservation(f.admissionAgent, f.workflowId, 'T2:worker')
++  assert.ok(deviation)
++  assert.equal(outcome.outcome, 'awaiting-user')
++
++  const after = await readRecoverySessionState(f)
++  assert.deepEqual(sourceFootprint(after), protectedBefore)
++  assert.equal(await git(after.workflowWorktree, ['rev-parse', 'HEAD']), workflowHeadBefore)
++  const task = after.tasks.find(item => item.taskId === 'T2')
++  const owner = after.ownerRuns['T2:worker']
++  const settledReservation = after.supervisorOutbox['T2:worker']
++  const control = deriveWorkflowControl(after)
++  assert.equal(task.action, 'await_user')
++  assert.equal(owner.autonomousRecovery.strategy, 'request_user_authority')
++  assert.equal(task.verificationResults, undefined)
++  assert.equal(owner.result, undefined)
++  assert.equal(settledReservation.status, 'stopped')
++  assert.equal(control.phase, 'awaiting_main_discussion')
++  assert.equal(control.actionRequired, true)
++  assert.ok(Object.values(after.mainOutbox).some(item => item.reason === 'execution_authority_required'))
++  assert.equal(after.recoveryAdmission.budget.totalUsed, before.recoveryAdmission.budget.totalUsed)
++})
+--- docs/specs/main-thread-owner-workflow/contracts/candidate-independent-reservation-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/candidate-independent-reservation-v1.md
+@@ -7,3 +7,17 @@
+ reservation.candidatePause契约为DSH_CANDIDATE_INDEPENDENT_RESERVATION_V1，固定source、activePlanDigest、taskId、ownerId、reservationId、eligibleTaskIds、scopeDigest。校验必须匹配当前pause与持久reservation，且仅去掉自身reservation/Owner执行投影后重新证明独立性；自身Owner记录若存在也必须有相同绑定。不能把删除其他Owner历史或重写来源当作可执行证据。
+
+ 截至R69，Runtime真实领取已接入；通用执行/恢复入口拒绝候选专用reservation，通用失败回调保留它。daemon仍不自动派发。实际Owner启动、提交、失败与finish的绑定复核必须完成后再启用该入口。不得以reservation已落盘当作任务已执行或T15验收完成。
++
++## R71：首次独立Owner实际生命周期
++
++专用runCandidateIndependentReservation仅接受无Owner历史的reserved任务；先标launching，携带同一candidatePause进入真实runExternalOwner、固定验证、Owner commit、workflow merge和finish/Memory封存。普通Owner入口仍拒绝该reservation，daemon尚未自动派发。
++
++assertCandidateIndependentRun同时验证pause source、active A、持久reservation、Owner绑定与独立范围。候选执行上下文在物理Owner lease外另行校验，状态写入前还必须保持候选source完全一致。仅当前Owner/task/reservation结果与正常独立集成字段可变化，全局status/error保持原暂停现场。验证在执行前、审批后和保存时复核，Memory写入/commit前复核；来源变化后不提交权威结果或合入workflow，已有隔离Owner工作现场可保留。
++
++成功和技术失败形成completed/failed reservation；同源已结算终态重放返回原结果，fresh Harness不重复调用模型。来源变化只停止匹配reservation，不改旧Owner/task。未知launching或已有未结算Owner不被当作首次任务重启。
++
++真实外部权限/业务依据仍由既有recordOwnerExecutionDeviation生产和classifyFailure判断；Owner结果不能绕过该依据。此时仅自身任务await_user、Owner request_user_authority和既有主通知outbox落盘，reservation停止；控制投影优先awaiting_main_discussion/actionRequired。技术失败不伪造用户权限请求。
++
++首次选择拒绝已有共享pendingTaskMerge/pendingMemoryCompilation，并排除其他planned/acknowledged handoff目标Owner，防止finish隐式消费别人的现场。运行中仅允许自身已绑定的merge/Memory事务。
++
++尚未完成：daemon自动调度接线、未结算launching/进程重启恢复、硬deadline与主动迟到取消，以及失败独立任务的后继恢复编排。不能将本节的首次执行证明等同T15/整套无人值守验收完成。

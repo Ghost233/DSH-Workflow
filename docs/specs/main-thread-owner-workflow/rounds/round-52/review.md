@@ -1,0 +1,1 @@
+独立审查 t21_contract_review：R52三个P2：1批准后的awaiting_approval残留使technicalPause guard跳过；2Runner未按technicalNotificationId定向交付，旧pending抢先；3incident覆盖notify用户等待投影。正式316通过/7既有跳过无漂移，不能关闭这些问题。无P1。下一R53修复，不修改R52冻结候选。

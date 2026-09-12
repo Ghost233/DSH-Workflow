@@ -9,7 +9,7 @@ const pluginDirectory = dirname(scriptDirectory)
 const sourcePath = join(pluginDirectory, 'src', 'client-runtime.js')
 const outputPath = join(pluginDirectory, 'client.js')
 const source = await readFile(sourcePath, 'utf8')
-const indentedSource = source.split('\n').map(line => `      ${line}`).join('\n')
+const indentedSource = source.split('\n').map(line => line === '' ? '' : `      ${line}`).join('\n')
 
 // 本地开发使用别名包，正式安装使用标准包名；同一产物同时登记两个模块编号。
 const output = `// 此文件由 scripts/build-client.mjs 生成，请修改 src/client-runtime.js 后重新构建。\n` +

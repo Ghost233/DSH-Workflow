@@ -1,0 +1,226 @@
+TAP version 13
+# Subtest: T07 real document checkpoint restores existing clean-base preflight and replays one commit
+ok 1 - T07 real document checkpoint restores existing clean-base preflight and replays one commit
+  ---
+  duration_ms: 7318.854292
+  type: 'test'
+  ...
+# Subtest: T07 SIGKILL before-commit resumes in a new process without a second commit
+ok 2 - T07 SIGKILL before-commit resumes in a new process without a second commit
+  ---
+  duration_ms: 5058.245959
+  type: 'test'
+  ...
+# Subtest: T07 SIGKILL after-commit resumes in a new process without a second commit
+ok 3 - T07 SIGKILL after-commit resumes in a new process without a second commit
+  ---
+  duration_ms: 9188.481417
+  type: 'test'
+  ...
+# Subtest: T07 SIGKILL before-snapshot resumes in a new process without a second commit
+ok 4 - T07 SIGKILL before-snapshot resumes in a new process without a second commit
+  ---
+  duration_ms: 7564.660917
+  type: 'test'
+  ...
+# Subtest: T07 SIGKILL after-snapshot resumes in a new process without a second commit
+ok 5 - T07 SIGKILL after-snapshot resumes in a new process without a second commit
+  ---
+  duration_ms: 4614.183708
+  type: 'test'
+  ...
+# Subtest: T07 SIGKILL before-activation resumes in a new process without a second commit
+ok 6 - T07 SIGKILL before-activation resumes in a new process without a second commit
+  ---
+  duration_ms: 7731.166459
+  type: 'test'
+  ...
+# Subtest: T07 SIGKILL after-activation resumes in a new process without a second commit
+ok 7 - T07 SIGKILL after-activation resumes in a new process without a second commit
+  ---
+  duration_ms: 5986.234959
+  type: 'test'
+  ...
+# Subtest: T07 staged-code is rejected without changing real HEAD/index/worktree
+ok 8 - T07 staged-code is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1205.682291
+  type: 'test'
+  ...
+# Subtest: T07 staged-document is rejected without changing real HEAD/index/worktree
+ok 9 - T07 staged-document is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1105.488709
+  type: 'test'
+  ...
+# Subtest: T07 untracked-code is rejected without changing real HEAD/index/worktree
+ok 10 - T07 untracked-code is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1534.585958
+  type: 'test'
+  ...
+# Subtest: T07 modified-code is rejected without changing real HEAD/index/worktree
+ok 11 - T07 modified-code is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1521.047625
+  type: 'test'
+  ...
+# Subtest: T07 same-file-edit is rejected without changing real HEAD/index/worktree
+ok 12 - T07 same-file-edit is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1322.364917
+  type: 'test'
+  ...
+# Subtest: T07 wrong-head is rejected without changing real HEAD/index/worktree
+ok 13 - T07 wrong-head is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1853.272334
+  type: 'test'
+  ...
+# Subtest: T07 wrong-branch is rejected without changing real HEAD/index/worktree
+ok 14 - T07 wrong-branch is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1706.598625
+  type: 'test'
+  ...
+# Subtest: T07 missing-source is rejected without changing real HEAD/index/worktree
+ok 15 - T07 missing-source is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 908.18225
+  type: 'test'
+  ...
+# Subtest: T07 wrong-authority is rejected without changing real HEAD/index/worktree
+ok 16 - T07 wrong-authority is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 838.571875
+  type: 'test'
+  ...
+# Subtest: T07 legacy-authority is rejected without changing real HEAD/index/worktree
+ok 17 - T07 legacy-authority is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 805.224125
+  type: 'test'
+  ...
+# Subtest: T07 concurrent same-parent processes leave one complete activation and one checkpoint
+ok 18 - T07 concurrent same-parent processes leave one complete activation and one checkpoint
+  ---
+  duration_ms: 2695.862083
+  type: 'test'
+  ...
+# Subtest: T07 late version receipts remain history-only and cannot change active snapshot
+ok 19 - T07 late version receipts remain history-only and cannot change active snapshot
+  ---
+  duration_ms: 2492.179083
+  type: 'test'
+  ...
+# Subtest: T07 user edits at before-commit are preserved and prevent activation
+ok 20 - T07 user edits at before-commit are preserved and prevent activation
+  ---
+  duration_ms: 837.926083
+  type: 'test'
+  ...
+# Subtest: T07 user edits at after-commit are preserved and prevent activation
+ok 21 - T07 user edits at after-commit are preserved and prevent activation
+  ---
+  duration_ms: 1044.736041
+  type: 'test'
+  ...
+# Subtest: T07 staging after ref advancement is blocked by the index lock or preserved on rejection
+ok 22 - T07 staging after ref advancement is blocked by the index lock or preserved on rejection
+  ---
+  duration_ms: 1302.4175
+  type: 'test'
+  ...
+# Subtest: T07 unknown external index lock is preserved
+ok 23 - T07 unknown external index lock is preserved
+  ---
+  duration_ms: 956.445875
+  type: 'test'
+  ...
+# Subtest: T07 invalid review cannot activate or commit
+ok 24 - T07 invalid review cannot activate or commit
+  ---
+  duration_ms: 560.43825
+  type: 'test'
+  ...
+# Subtest: T07 invalid approval cannot activate or commit
+ok 25 - T07 invalid approval cannot activate or commit
+  ---
+  duration_ms: 527.533541
+  type: 'test'
+  ...
+# Subtest: T07 invalid allowed-paths cannot activate or commit
+ok 26 - T07 invalid allowed-paths cannot activate or commit
+  ---
+  duration_ms: 543.157167
+  type: 'test'
+  ...
+# Subtest: T07 invalid activation-parent cannot activate or commit
+ok 27 - T07 invalid activation-parent cannot activate or commit
+  ---
+  duration_ms: 623.411791
+  type: 'test'
+  ...
+# Subtest: T07 legacy persisted activation state is not silently migrated or granted new authority
+ok 28 - T07 legacy persisted activation state is not silently migrated or granted new authority
+  ---
+  duration_ms: 513.433417
+  type: 'test'
+  ...
+# Subtest: T07 a recorded write from a different prior document state cannot claim the expected Git baseline
+ok 29 - T07 a recorded write from a different prior document state cannot claim the expected Git baseline
+  ---
+  duration_ms: 484.549709
+  type: 'test'
+  ...
+# Subtest: T07 corrupted persisted snapshot is rejected during before-activation
+ok 30 - T07 corrupted persisted snapshot is rejected during before-activation
+  ---
+  duration_ms: 2225.232166
+  type: 'test'
+  ...
+# Subtest: T07 corrupted persisted snapshot is rejected during completed-replay
+ok 31 - T07 corrupted persisted snapshot is rejected during completed-replay
+  ---
+  duration_ms: 2772.198834
+  type: 'test'
+  ...
+# Subtest: T07 same-version activation with mismatched checkpointCommit cannot replay
+ok 32 - T07 same-version activation with mismatched checkpointCommit cannot replay
+  ---
+  duration_ms: 3140.234291
+  type: 'test'
+  ...
+# Subtest: T07 same-version activation with mismatched authorizationId cannot replay
+ok 33 - T07 same-version activation with mismatched authorizationId cannot replay
+  ---
+  duration_ms: 3181.05
+  type: 'test'
+  ...
+# Subtest: T07 same-version activation with mismatched snapshotId cannot replay
+ok 34 - T07 same-version activation with mismatched snapshotId cannot replay
+  ---
+  duration_ms: 3407.060167
+  type: 'test'
+  ...
+# Subtest: T07 same-version activation with mismatched parentExecutionVersionId cannot replay
+ok 35 - T07 same-version activation with mismatched parentExecutionVersionId cannot replay
+  ---
+  duration_ms: 2551.048916
+  type: 'test'
+  ...
+# Subtest: T07 a caught after-ref failure releases its own Git lock and resumes the recorded commit
+ok 36 - T07 a caught after-ref failure releases its own Git lock and resumes the recorded commit
+  ---
+  duration_ms: 2366.57625
+  type: 'test'
+  ...
+1..36
+# tests 36
+# suites 0
+# pass 36
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 92678.010125

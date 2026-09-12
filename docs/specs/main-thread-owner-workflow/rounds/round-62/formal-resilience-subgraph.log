@@ -1,0 +1,28 @@
+TAP version 13
+# Subtest: Runtime 当前 Owner 只能通过结构化 request_subgraph 请求并在锁内持久化局部 delta
+ok 1 - Runtime 当前 Owner 只能通过结构化 request_subgraph 请求并在锁内持久化局部 delta
+  ---
+  duration_ms: 1110.275
+  type: 'test'
+  ...
+# Subtest: Runtime request_handoff 走局部失效并拒绝通过 delta 绕过 Registry 边界
+ok 2 - Runtime request_handoff 走局部失效并拒绝通过 delta 绕过 Registry 边界
+  ---
+  duration_ms: 938.214125
+  type: 'test'
+  ...
+# Subtest: Runtime request_handoff 只保留白名单字段，调用方元数据不能覆盖生成字段
+ok 3 - Runtime request_handoff 只保留白名单字段，调用方元数据不能覆盖生成字段
+  ---
+  duration_ms: 1163.069167
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3435.611167

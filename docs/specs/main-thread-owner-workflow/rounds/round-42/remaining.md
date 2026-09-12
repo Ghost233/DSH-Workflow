@@ -1,0 +1,10 @@
+# T15 后续必须接线的范围
+
+本轮只把recoverOwner接入持久领取，配置选择失败关闭，普通runExternalOwner失败重启拒绝旁路；T15整体未完成。
+
+1. runSupervisorReservation在旧integrated-result推断/starting-running改pending之前识别新协议。已有恢复身份走真实reconcile；不能在新协议沿旧路径凭Git祖先直接写completed，或把paused当outbox completed。
+2. Supervisor outbox领取/执行/重放应记录同一request/attempt，先领取再外部启动，不让外层与Owner各扣一次。普通初次Owner仍不收费。恢复未知时只停相关reservation。
+3. 超时旧路径会先pending再请求取消；新协议不能依此抢占旧执行。取消/deadline完整语义依赖T16/T17，当前须保守停止并报告未知状态，仍需明确实际恢复入口不绕预算。
+4. 问题/Workflow额度耗尽与真实用户待决需要一致控制投影，现有workflow failed终态可能让Supervisor全局停，必须验证无关初次T2可实际启动。本轮quota结果只为直接调用者提供技术pause，尚未完成全局投影。
+5. 有外部恢复工作的局部重规划消费obligation来源；既有T20能力已可领取，但外部规划子会话尚需接线，不能以Owner-only通过代替。
+6. explicit recoveryProtocol字段、已有显式config/ledger痕迹的失败关闭规则需记录对T19新建/激活的要求；不自动迁移旧Workflow。缺配置、未知版本仍拒绝，既有legacy必须回归。

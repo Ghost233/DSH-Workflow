@@ -1,0 +1,40 @@
+TAP version 13
+# Subtest: T22 SIGKILL after the real submitted checkpoint reopens only to a non-mutating technical pause
+ok 1 - T22 SIGKILL after the real submitted checkpoint reopens only to a non-mutating technical pause
+  ---
+  duration_ms: 2588.076083
+  type: 'test'
+  ...
+# Subtest: T22 SIGKILL after real failed settlement replays its persisted receipt without a second debit
+ok 2 - T22 SIGKILL after real failed settlement replays its persisted receipt without a second debit
+  ---
+  duration_ms: 2354.134792
+  type: 'test'
+  ...
+# Subtest: T22 cleans the parent-owned fixture container when the producer fails before its checkpoint
+ok 3 - T22 cleans the parent-owned fixture container when the producer fails before its checkpoint
+  ---
+  duration_ms: 1210.6725
+  type: 'test'
+  ...
+# Subtest: T22 SIGKILL after real successful settlement replays the fixed-commit receipt without new execution
+ok 4 - T22 SIGKILL after real successful settlement replays the fixed-commit receipt without new execution
+  ---
+  duration_ms: 3984.119417
+  type: 'test'
+  ...
+# Subtest: T22 SIGKILL after real session binding before followup preserves the unsubmitted execution on restart
+ok 5 - T22 SIGKILL after real session binding before followup preserves the unsubmitted execution on restart
+  ---
+  duration_ms: 2443.327
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12651.032833

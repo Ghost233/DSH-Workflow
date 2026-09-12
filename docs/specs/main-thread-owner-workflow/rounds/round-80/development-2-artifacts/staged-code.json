@@ -1,0 +1,16 @@
+{
+  "before": {
+    "head": "1e487981123f337301c9247013e92523d9dc4238",
+    "branch": "dev",
+    "index": "0bf32757bb7a591a42d06397bf04221f0400d612b8eed2be9ca0ae367698ed7e",
+    "staged": "diff --git a/code.txt b/code.txt\nindex fc5ae17..a48e4ea 100644\n--- a/code.txt\n+++ b/code.txt\n@@ -1 +1 @@\n-code baseline\n+user staged",
+    "status": "M  code.txt\n?? docs/specs/proof/spec.md\n?? docs/specs/proof/tickets/T1.md"
+  },
+  "after": {
+    "head": "1e487981123f337301c9247013e92523d9dc4238",
+    "branch": "dev",
+    "index": "0bf32757bb7a591a42d06397bf04221f0400d612b8eed2be9ca0ae367698ed7e",
+    "staged": "diff --git a/code.txt b/code.txt\nindex fc5ae17..a48e4ea 100644\n--- a/code.txt\n+++ b/code.txt\n@@ -1 +1 @@\n-code baseline\n+user staged",
+    "status": "M  code.txt\n?? docs/specs/proof/spec.md\n?? docs/specs/proof/tickets/T1.md"
+  }
+}

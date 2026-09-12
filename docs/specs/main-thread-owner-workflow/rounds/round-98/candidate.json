@@ -1,0 +1,15 @@
+{
+  "contract": "DSH_TICKET_IMPLEMENTATION_CANDIDATE_V1",
+  "candidateId": "R98-T10-T31-owner-memory-recovery",
+  "ticketIds": ["T-10", "T-31"],
+  "specRevision": "R4",
+  "status": "development_complete",
+  "scope": "scope.md",
+  "report": "report.md",
+  "review": "review.md",
+  "testResults": "test-results.json",
+  "sealedSourceBinding": true,
+  "deferredSummaryRecovery": true,
+  "codeIntegrationIdempotent": true,
+  "missingSourceFailClosed": true
+}

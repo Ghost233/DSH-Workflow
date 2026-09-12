@@ -1,0 +1,5 @@
+# R56 独立只读审查
+
+审查者 t21_contract_review。R55公开账本合同P2已关闭，无新增P1/P2。合同与严格联合实现一致，明确旧reader拒绝和T20尚未支持mixed intent，未冒充实际replan接线。
+
+T16六轮真实平台证据、修正后的round06报告及adapter-contract经独立审校，同意技术验证标开发完成，只解除T17的T16前置，T17仍待T15。正向terminal/lease/旧child接缝与SIGKILL反例、有限错误出口已经固定；不要求T16先实现生产stopping，不将未验证的跨进程旧token结果写入标通过。实现及补验仍由T17承担。

@@ -1,0 +1,337 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -1,3 +1,4 @@
++import { isRecoveryCandidate, candidateNeedsUserDecision, candidateRecoveryIdentity, candidateRecoverySource, activeCandidateRecoveryPause, RecoverySemanticFailure } from './candidate-recovery-pause.mjs'
+ import { chmod, appendFile, cp, mkdir, mkdtemp, readFile, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
+ import { constants as fsConstants, existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
+ import { execFileSync } from 'node:child_process'
+@@ -3904,11 +3905,7 @@
+ }
+
+
+-function requiresRecoveryCandidateReview(state) {
+-  return state.pendingPlanRevision !== undefined && (state.pendingPlanRevision.origin === 'handoff-recovery'
+-    || state.pendingPlanRevision.recoveryRequestId !== undefined || state.pendingPlanRevision.recoveryOrigin !== undefined
+-    || Object.values(state.handoffReplans ?? {}).some(item => item.phase === 'candidate_staged'))
+-}
++function requiresRecoveryCandidateReview(state) { return isRecoveryCandidate(state) }
+
+ async function applyCandidateReview(runtime, state, review, planningRuntimeFacts) {
+   const candidate = state.pendingPlanRevision
+@@ -8167,7 +8164,7 @@
+             ...(failure === undefined ? { result } : { error: failure }) }
+           return { state: current }
+         }))
+-        if (failure !== undefined) throw new Error(`Recovery Review rejected:${failure}`)
++        if (failure !== undefined) throw new RecoverySemanticFailure(`Recovery Review rejected:${failure}`)
+         return result
+       })
+     },
+@@ -8176,6 +8173,7 @@
+       const root = await runtime.resolveRoot(agent)
+       const active = await activeWorkflowState(runtime, root)
+       if (active === undefined) throw new Error('当前项目没有 active Workflow')
++      if (activeCandidateRecoveryPause(active)) throw new Error('候选恢复已持久暂停，等待来源或回执变化')
+       if (requiresRecoveryCandidateReview(active)) {
+         return runtime.reviewRecoveryCandidate(agent, active.id, signal)
+       }
+@@ -8829,6 +8827,32 @@
+         candidatePlanDigest: candidate.planDigest,
+       }
+     },
++    async pauseCandidateRecovery(agent, workflowId, identity, reason) {
++      const root = await runtime.resolveRoot(agent)
++      let answer
++      await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, undefined, current => {
++        if (!isRecoveryCandidate(current) || candidateRecoveryIdentity(current) !== identity) {
++          answer = { action: 'state-changed', reason: '恢复候选在失败期间已变化' }
++          return { state: current }
++        }
++        if (candidateNeedsUserDecision(current)) {
++          answer = { action: 'awaiting-user-authority', reason: '保持真实外部决定优先' }
++          return { state: current }
++        }
++        const source = candidateRecoverySource(current)
++        const notificationId = `mo-candidate-${createHash('sha256').update(source).digest('hex').slice(0, 24)}`
++        current.candidateRecoveryPause = { contract: 'DSH_CANDIDATE_RECOVERY_PAUSE_V1', source,
++          notificationId, reason, createdAt: now() }
++        current.mainOutbox ??= {}
++        current.mainOutbox[notificationId] ??= { notificationId, kind: 'main', reason: 'candidate_recovery_pause',
++          workflowId, planDigest: current.planDigest, candidatePlanDigest: current.pendingPlanRevision.planDigest,
++          status: 'pending', actionRequired: false, createdAt: now(),
++          summary: `候选技术恢复暂停：${reason}。保留计划、执行来源及已用预算，等待新的技术状态；不要求产品决定。` }
++        answer = { action: 'candidate-recovery-paused', notificationId, reason }
++        return { state: current }
++      }))
++      return answer
++    },
+     async driveWorkflow(agent, workflowId, expectedCommand, signal, { source = 'runner-daemon' } = {}) {
+       abortIfNeeded(signal)
+       const root = await runtime.resolveRoot(agent)
+@@ -8854,7 +8878,17 @@
+         return { action: 'planning-notify', ...result }
+       }
+       if (control.command === 'plan-revision-drive') {
+-        return runtime.drivePendingPlanRevision(agent, signal, { source })
++        const pause = activeCandidateRecoveryPause(state)
++        if (pause !== undefined) {
++          const delivered = await runtime.deliverMainOutbox(agent, workflowId, pause.notificationId)
++          return { action: 'candidate-recovery-notified', ...delivered }
++        }
++        try { return await runtime.drivePendingPlanRevision(agent, signal, { source }) }
++        catch (error) {
++          if (!isRecoveryCandidate(state) || signal?.aborted || error?.name === 'AbortError') throw error
++          if (error instanceof RecoverySemanticFailure) return { action: 'candidate-recovery-retry-ready', reason: error.message }
++          return runtime.pauseCandidateRecovery(agent, workflowId, candidateRecoveryIdentity(state), errorText(error))
++        }
+       }
+       if (control.command === 'plan-revision-approve') {
+         const result = await runtime.approvePendingPlanRevision(
+@@ -9837,6 +9871,7 @@
+     async rebuildRecoveryCandidate(agent, workflowId, signal) {
+       const root = await runtime.resolveRoot(agent)
+       const before = await readState(runtime, root, workflowId)
++      if (activeCandidateRecoveryPause(before)) throw new Error('候选恢复已持久暂停，等待来源或回执变化')
+       if (!requiresRecoveryCandidateReview(before)) throw new Error('当前不是可继承来源的Recovery候选')
+       const replayed = await runtime.reviewRecoveryCandidate(agent, workflowId, signal, { replayOnly: true })
+       const current = await readState(runtime, root, workflowId)
+@@ -10006,7 +10041,7 @@
+           if (applied !== undefined) current.pendingPlanRevision = applied
+           return { state: current }
+         }))
+-        if (failure !== undefined) throw new Error(`Handoff recovery rejected:${failure}`)
++        if (failure !== undefined) throw new RecoverySemanticFailure(`Handoff recovery rejected:${failure}`)
+         return { contract: 'DSH_PLAN_REVISION_CANDIDATE_V1', workflowId, ...applied,
+           nextTool: 'workflow_revision_review', nextArgs: {} }
+       })
+--- owner-workflow-plugin/src/workflow-state.mjs (baseline)
++++ owner-workflow-plugin/src/workflow-state.mjs
+@@ -1,3 +1,4 @@
++import { isRecoveryCandidate, candidateNeedsUserDecision, activeCandidateRecoveryPause } from './candidate-recovery-pause.mjs'
+ import { supervisorNext } from './supervisor.mjs'
+ import { recoveryAdmissionEnabled, assertRecoveryAdmissionState } from './recovery-admission.mjs'
+ import {
+@@ -208,6 +209,19 @@
+   if (state.status === 'stopped') return terminal(state, counts, 'stopped', 'Workflow 已明确停止')
+   if (state.autonomousIncident?.kind === 'state_machine_invariant') {
+     return wait(state, counts, 'state_invariant_violation', '状态不变量现场已持久化，等待新版本 Runtime 重新解释')
++  }
++
++  if (isRecoveryCandidate(state) && candidateNeedsUserDecision(state)) {
++    return wait(state, counts, 'awaiting_main_discussion', '恢复候选等待已确认的外部决定', true)
++  }
++  const candidatePause = activeCandidateRecoveryPause(state)
++  if (candidatePause !== undefined) {
++    const notification = state.mainOutbox?.[candidatePause.notificationId]
++    if (notification?.reason !== 'candidate_recovery_pause') return invariant(state, counts, '候选恢复暂停缺少对应报告')
++    if (notification.status === 'pending') return command(state, counts, 'candidate_recovery_report_pending',
++      '投递已持久化的候选技术暂停报告', 'plan-revision-drive')
++    if (notification.status !== 'delivered') return invariant(state, counts, '候选恢复暂停报告状态无效')
++    return wait(state, counts, 'candidate_recovery_paused', '候选恢复已暂停，等待来源或回执变化')
+   }
+
+   // Protected technical stops are scheduler facts, not product decisions.
+--- /dev/null
++++ owner-workflow-plugin/src/candidate-recovery-pause.mjs
+@@ -0,0 +1,57 @@
++const OBSERVATION_CLOCKS = new Set(['createdAt', 'updatedAt', 'reviewedAt', 'startedAt', 'settledAt', 'finishedAt', 'observedAt', 'lastProbeAt', 'timestamp', 'time', 'at'])
++function canonical(value, omitClocks = false) {
++  if (Array.isArray(value)) return `[${value.map(item => canonical(item, omitClocks)).join(',')}]`
++  if (value !== null && typeof value === 'object') return `{${Object.keys(value).filter(key => !omitClocks || !OBSERVATION_CLOCKS.has(key)).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key], omitClocks)}`).join(',')}}`
++  return JSON.stringify(value)
++}
++export function isRecoveryCandidate(state) {
++  return state?.pendingPlanRevision !== undefined && (state.pendingPlanRevision.origin === 'handoff-recovery'
++    || state.pendingPlanRevision.recoveryRequestId !== undefined || state.pendingPlanRevision.recoveryOrigin !== undefined
++    || Object.values(state.handoffReplans ?? {}).some(item => item.phase === 'candidate_staged'))
++}
++export function candidateNeedsUserDecision(state) {
++  const origin = state.pendingPlanRevision?.recoveryOrigin
++  const task = state.tasks?.find(item => item.taskId === origin?.taskId)
++  const owner = state.ownerRuns?.[`${origin?.taskId}:${origin?.ownerId}`]
++  return state.planConvergence?.nextStrategy === 'request_user_authority'
++    || owner?.autonomousRecovery?.strategy === 'request_user_authority'
++    || ['await_user', 'provide_input'].includes(task?.action)
++}
++export function candidateRecoveryIdentity(state) {
++  const c = state.pendingPlanRevision
++  return canonical({ workflowId: state.id, active: state.planDigest, candidate: c === undefined ? null : {
++    digest: c.planDigest, cycleId: c.cycleId, recoveryRequestId: c.recoveryRequestId, recoveryOrigin: c.recoveryOrigin,
++  } })
++}
++export function candidateRecoverySource(state) {
++  const candidate = state.pendingPlanRevision
++  const origin = candidate?.recoveryOrigin
++  const sameOrigin = op => canonical(op.origin) === canonical(origin)
++  const planners = Object.values(state.handoffReplans ?? {}).filter(sameOrigin).sort((a, b) => a.operationId.localeCompare(b.operationId))
++  const reviews = Object.values(state.candidateReviews ?? {}).filter(sameOrigin).sort((a, b) => a.operationId.localeCompare(b.operationId))
++  const requestIds = new Set([...planners, ...reviews].map(op => op.requestId))
++  const owner = state.ownerRuns?.[`${origin?.taskId}:${origin?.ownerId}`]
++  const task = state.tasks?.find(item => item.taskId === origin?.taskId)
++  // Excludes daemon clocks, delivery flags, global revision, unrelated Owners,
++  // and the pause itself; actual operation/receipt changes remain observable.
++  return canonical({ workflowId: state.id, planDigest: state.planDigest, plan: state.plan,
++    config: state.recoveryAdmissionConfig, protocol: state.recoveryProtocol,
++    candidate, convergence: state.planConvergence, planners, reviews,
++    sessions: [...requestIds].sort().map(id => [id, state.replanSessions?.[id]]),
++    attempts: state.recoveryAdmission?.budget?.attempts.filter(item => requestIds.has(item.requestId)),
++    handoffs: state.handoffQueue?.filter(item => candidate?.handoffIds?.includes(item.id)),
++    owner: owner === undefined ? null : { status: owner.status, attempt: owner.attempt, sessionId: owner.sessionId,
++      planDigest: owner.planDigest, recoverySession: owner.recoverySession, executionDeviation: owner.executionDeviation,
++      strategy: owner.autonomousRecovery?.strategy },
++    task: task === undefined ? null : { status: task.status, reason: task.reason, action: task.action },
++  }, true)
++}
++export function activeCandidateRecoveryPause(state) {
++  const pause = state.candidateRecoveryPause
++  return isRecoveryCandidate(state) && !candidateNeedsUserDecision(state)
++    && pause?.contract === 'DSH_CANDIDATE_RECOVERY_PAUSE_V1'
++    && pause.source === candidateRecoverySource(state) ? pause : undefined
++}
++export class RecoverySemanticFailure extends Error {
++  constructor(message) { super(message); this.name = 'RecoverySemanticFailure' }
++}
+--- /dev/null
++++ owner-workflow-plugin/test/candidate-recovery-pause.test.mjs
+@@ -0,0 +1,127 @@
++import assert from 'node:assert/strict'
++import test from 'node:test'
++import { createConnection } from 'node:net'
++import { plannerSubmitDefinition, planReviewSubmitDefinition } from '../index.js'
++import { deriveWorkflowControl } from '../src/workflow-state.mjs'
++import { discoverRunnableWorkflows } from '../src/external-runner.mjs'
++import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState, reopenRecoverySessionFixture } from './fixtures/recovery-session-fixture.mjs'
++
++function drive(manifest) {
++  return new Promise((resolve, reject) => {
++    const socket = createConnection(manifest.socketPath)
++    let buffer = ''
++    socket.setEncoding('utf8'); socket.setTimeout(20_000, () => socket.destroy(new Error('control socket timeout')))
++    socket.on('connect', () => socket.write(`${JSON.stringify({ contract: 'DSH_WORKFLOW_CONTROL_V1', id: 'candidate-pause-test',
++      workflowId: manifest.workflowId, token: manifest.token, action: 'workflow-drive', expectedCommand: 'plan-revision-drive' })}\n`))
++    socket.on('data', chunk => {
++      buffer += chunk
++      const end = buffer.indexOf('\n')
++      if (end < 0) return
++      const response = JSON.parse(buffer.slice(0, end)); socket.destroy()
++      if (response.ok) resolve(response.result); else reject(new Error(response.error))
++    })
++    socket.on('error', reject)
++  })
++}
++async function setup(t, limit = 1) {
++  let plan
++  const invalid = { contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_split', summary: 'Wrong target', issues: [], targetTaskIds: ['missing-task'] }
++  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true,
++    limits: { totalLimit: limit, problemLimit: limit }, modelScript: m => [
++      () => m.toolCallResponse('planner', 'workflow_plan_submit', { plan }), 'hang-slow',
++      ...(limit === 3 ? [m.toolCallResponse('review-1', 'workflow_plan_review_submit', { review: invalid }), 'hang-slow',
++        m.toolCallResponse('review-2', 'workflow_plan_review_submit', { review: invalid }), 'hang-slow'] : []),
++      m.textResponse('Technical pause notice received.'),
++    ] })
++  f.ctx.tools.register(plannerSubmitDefinition(f.runtime)); f.ctx.tools.register(planReviewSubmitDefinition(f.runtime))
++  const state = await readRecoverySessionState(f)
++  plan = { ...structuredClone(state.plan), summary: 'Candidate for pause proof', owners: state.plan.owners.map(owner => ({ id: owner.id })) }
++  const stage = state.plan.tasks[0], owner = state.plan.owners.find(item => item.id === stage.ownerId)
++  await f.runtime.recordHandoffs(state, stage, { owner, branch: 'fixture-owner' }, { status: 'blocked',
++    handoffs: [{ targetType: 'owner', targetOwnerId: owner.id, files: ['src/api/repair.mjs'], summary: 'Repair' }] })
++  await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  f.manifest = await f.runtime.ensureControlBridge(f.admissionAgent, await readRecoverySessionState(f))
++  t.after(() => f.runtime.closeControlBridge(f.workflowId))
++  return f
++}
++
++test('T15 socket admission refusal persists one notice, then actual daemon discovery and fresh Harness stop selecting it', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  const before = await readRecoverySessionState(f)
++  assert.equal((await discoverRunnableWorkflows(f.root)).length, 1)
++  const paused = await drive(f.manifest)
++  assert.equal(paused.action, 'candidate-recovery-paused')
++  const state = await readRecoverySessionState(f)
++  assert.deepEqual(state.pendingPlanRevision, before.pendingPlanRevision)
++  assert.deepEqual(state.tasks, before.tasks); assert.deepEqual(state.ownerRuns, before.ownerRuns)
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(state.mainOutbox[paused.notificationId].actionRequired, false)
++  assert.equal(deriveWorkflowControl(state).phase, 'candidate_recovery_report_pending')
++  assert.equal((await discoverRunnableWorkflows(f.root))[0].command, 'plan-revision-drive')
++  assert.equal((await drive(f.manifest)).action, 'candidate-recovery-notified')
++  await f.admissionAgent.whenIdle(); await f.ctx.sessions.flush(f.admissionAgent.session)
++  assert.ok((await f.readRaw(f.admissionAgent.id)).content.includes(paused.notificationId))
++  const calls = f.adapter.requests.length
++  for (let index = 0; index < 3; index++) {
++    assert.equal((await drive(f.manifest)).action, 'waiting')
++    assert.deepEqual(await discoverRunnableWorkflows(f.root), [])
++  }
++  assert.equal(f.adapter.requests.length, calls)
++  await mutateRecoverySessionState(f, current => {
++    current.updatedAt = '2099-01-01T00:00:00Z'
++    current.pendingPlanRevision.createdAt = '2099-01-01T00:00:00Z'
++    current.tasks.find(task => task.taskId === 'T2').note = 'Independent bookkeeping'
++  })
++  assert.equal(deriveWorkflowControl(await readRecoverySessionState(f)).phase, 'candidate_recovery_paused')
++  await f.runtime.closeControlBridge(f.workflowId)
++  const fresh = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
++  try {
++    const manifest = await fresh.runtime.ensureControlBridge(fresh.admissionAgent, await readRecoverySessionState(f))
++    assert.equal((await drive(manifest)).phase, 'candidate_recovery_paused')
++    assert.deepEqual(await discoverRunnableWorkflows(f.root), [])
++    assert.equal(fresh.adapter.requests.length, 0)
++    assert.equal(Object.keys((await readRecoverySessionState(f)).mainOutbox).length, 1)
++    await fresh.runtime.closeControlBridge(f.workflowId)
++  } finally { await fresh.dispose() }
++})
++
++test('T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses', { timeout: 30_000 }, async t => {
++  const f = await setup(t, 3)
++  for (let used = 2; used <= 3; used++) {
++    assert.equal((await drive(f.manifest)).action, 'candidate-recovery-retry-ready')
++    const state = await readRecoverySessionState(f)
++    assert.equal(state.recoveryAdmission.budget.totalUsed, used)
++    assert.equal(state.candidateRecoveryPause, undefined)
++    assert.equal(state.recoveryAdmission.budget.attempts.at(-1).result.status, 'failed')
++  }
++  const calls = f.adapter.requests.length
++  assert.equal((await drive(f.manifest)).action, 'candidate-recovery-paused')
++  assert.equal(f.adapter.requests.length, calls)
++  assert.equal(Object.keys((await readRecoverySessionState(f)).mainOutbox).length, 1)
++})
++
++test('T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  const paused = await drive(f.manifest)
++  await mutateRecoverySessionState(f, state => { state.pendingPlanRevision.parent += 1 })
++  const control = deriveWorkflowControl(await readRecoverySessionState(f))
++  assert.equal(control.command, 'plan-revision-drive')
++  assert.notEqual(control.phase, 'candidate_recovery_report_pending')
++  const calls = f.adapter.requests.length
++  const changed = await drive(f.manifest)
++  assert.equal(changed.action, 'candidate-recovery-paused')
++  assert.notEqual(changed.notificationId, paused.notificationId)
++  assert.equal(f.adapter.requests.length, calls)
++})
++
++test('T15 an authoritative user-wait task projection takes priority over a candidate technical pause', { timeout: 30_000 }, async t => {
++  const f = await setup(t)
++  await drive(f.manifest)
++  await mutateRecoverySessionState(f, state => { state.tasks.find(task => task.taskId === 'T1').action = 'await_user' })
++  const control = deriveWorkflowControl(await readRecoverySessionState(f))
++  assert.equal(control.phase, 'awaiting_main_discussion')
++  assert.equal(control.actionRequired, true)
++  const calls = f.adapter.requests.length
++  assert.equal((await drive(f.manifest)).action, 'waiting')
++  assert.equal(f.adapter.requests.length, calls)
++})
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/candidate-recovery-pause-v1.md
+@@ -0,0 +1,11 @@
++# 候选恢复的持久暂停与主控制投影
++
++T15，覆盖实际控制socket的workflow-drive→plan-revision-drive链。恢复候选的admission拒绝、未知/取消会话、未接线策略及其他需要技术对账的错误，不再仅抛给daemon内存退避；Runtime保存DSH_CANDIDATE_RECOVERY_PAUSE_V1。用户主动取消的AbortError保持取消语义。已由实际Planner/Review事务结算failed的RecoverySemanticFailure返回retry-ready，下一次控制调用仍可按预算领取后继ordinal；耗尽后才暂停。
++
++pause包含稳定source、notificationId、reason和createdAt。source由active A、候选C、恢复来源、关联Planner/Review操作及session/attempt回执、当前handoff与来源Owner/task的技术状态组成。排除Workflow revision、daemon retry/time、投递标记、pause自身、无关Owner，以及createdAt/updatedAt等观察时钟；实际候选/操作/回执或配置改变会使旧pause失效。新的候选身份替换发生在失败期间时，不把旧错误暂停套到新候选上。
++
++同一source生成同一mainOutbox ID，actionRequired=false。控制器优先投递一次候选技术暂停报告，再返回明确wait；使用既有plan-revision-drive命令投递，不增加一条daemon专属分叉。实际deliverMainOutbox使用持久通知与固定消息ID。重复workflow-drive、fresh Harness/控制桥，以及daemon重新从磁盘discover，都不能因为丢失内存退避而再调用同源Planner/Review。公有Review/rebuild入口也拒绝覆盖当前pause。
++
++当前来源任务已有await_user/provide_input或request_user_authority投影，以及候选要求外部决定时，优先保留用户等待，技术暂停不得隐藏它。来源分类沿用已有受保护Owner/Review生产链；本模块不根据错误文字猜测业务权限。
++
++仍未完成：原始JSONL更新但Workflow回执未变时的主动观察/恢复、无候选的初始handoff错误投影、暂停期间新的独立Owner调度接线。已运行Owner/active任务状态不被重置。不可把本轮暂停当作未知执行已终止，也不可将同源不再调度等同整个T15/无人值守验收完成。

@@ -1,0 +1,7 @@
+# R61独立审查
+
+审查者：t21_contract_review。R60 P2关闭，无新增P1/P2。
+
+completed在inspect、verification、commit前核验当前来源和pending请求；finally释放submitting而不写submission，允许改报blocked。request_handoff在同一workflow锁内拒绝提交中/已有结果，覆盖正反两个窗口。真实免费/付费Owner用例证明错误completed零副作用且后续Planner可运行；普通completed期间晚到handler被拒并正常固定提交。
+
+审查先于最后两组正式结果返回，主线程随后核对全部五组228通过/7既有跳过，零失败/超时/漂移。独立审查没有执行这些测试。

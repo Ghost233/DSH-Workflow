@@ -1,0 +1,69 @@
+✖ T15 socket admission refusal with no independent task persists one notice, then daemon discovery and fresh Harness wait (1943.065917ms)
+✔ T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses (2051.972459ms)
+✔ T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer (1146.12825ms)
+✔ T15 an authoritative user-wait task projection takes priority over a candidate technical pause (1039.399417ms)
+✔ T15 stale admission failure cannot pause a concurrently changed candidate parent (1036.560208ms)
+✔ T15 stale admission failure cannot pause a concurrently changed candidate review (1079.967584ms)
+✔ T15 stale admission failure cannot pause a concurrently changed candidate plan content (1273.900708ms)
+✔ T15 first uncertain real Reviewer creation persists pause despite its own new operation and session (1225.066125ms)
+✔ T15 daemon discovery drives one independent candidate through socket verification, merge, and terminal quiescence (3618.227208ms)
+✔ T15 fresh Harness resumes a persisted candidate reservation with no Owner history (3143.144583ms)
+✔ T15 fresh Harness leaves candidate launching as a stable non-dispatch wait (1085.058792ms)
+✔ T15 fresh Harness leaves candidate unknown Owner history as a stable non-dispatch wait (1060.535375ms)
+✔ T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness (1197.756709ms)
+✔ T15 candidate replacement invalidates persisted reservation replay (1064.748084ms)
+✔ T15 a stale create action cannot overwrite a newly arrived Owner history (1032.259208ms)
+✔ T15 candidate replacement before reservation rejects the stale create action without task writes (1005.282208ms)
+✔ T15 public and direct Owner entry points cannot bypass a candidate reservation (1206.481292ms)
+✔ T15 reservation replay rejects persisted stopped task before neutralizing its projection (1071.255125ms)
+✔ T15 reservation replay rejects persisted completed task before neutralizing its projection (1102.205167ms)
+✔ T15 Owner startup rechecks a reservation arriving after its initial read (1069.842792ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 19
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 28649.516
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/candidate-recovery-pause.test.mjs:75:1
+✖ T15 socket admission refusal with no independent task persists one notice, then daemon discovery and fresh Harness wait (1943.065917ms)
+  TypeError: Cannot set properties of undefined (setting 'note')
+      at file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-recovery-pause.test.mjs:100:59
+      at mutateRecoverySessionState (/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs:236:9)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-recovery-pause.test.mjs:97:3)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+
+=== development rerun after no-independent fixture correction ===
+✔ T15 socket admission refusal with no independent task persists one notice, then daemon discovery and fresh Harness wait (2571.622583ms)
+✔ T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses (3078.195083ms)
+✔ T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer (2863.331709ms)
+✔ T15 an authoritative user-wait task projection takes priority over a candidate technical pause (2084.097ms)
+✔ T15 stale admission failure cannot pause a concurrently changed candidate parent (2028.392833ms)
+✔ T15 stale admission failure cannot pause a concurrently changed candidate review (1543.16075ms)
+✔ T15 stale admission failure cannot pause a concurrently changed candidate plan content (1505.520333ms)
+✔ T15 first uncertain real Reviewer creation persists pause despite its own new operation and session (1847.185542ms)
+✔ T15 daemon discovery drives one independent candidate through socket verification, merge, and terminal quiescence (5579.238542ms)
+✔ T15 fresh Harness resumes a persisted candidate reservation with no Owner history (3885.601291ms)
+✔ T15 fresh Harness leaves candidate launching as a stable non-dispatch wait (1299.47ms)
+✔ T15 fresh Harness leaves candidate unknown Owner history as a stable non-dispatch wait (1290.432084ms)
+✔ T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness (1376.910417ms)
+✔ T15 candidate replacement invalidates persisted reservation replay (1116.372916ms)
+✔ T15 a stale create action cannot overwrite a newly arrived Owner history (1051.988792ms)
+✔ T15 candidate replacement before reservation rejects the stale create action without task writes (1151.375542ms)
+✔ T15 public and direct Owner entry points cannot bypass a candidate reservation (1155.68975ms)
+✔ T15 reservation replay rejects persisted stopped task before neutralizing its projection (1188.143083ms)
+✔ T15 reservation replay rejects persisted completed task before neutralizing its projection (1172.159333ms)
+✔ T15 Owner startup rechecks a reservation arriving after its initial read (1212.969417ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 39225.579625

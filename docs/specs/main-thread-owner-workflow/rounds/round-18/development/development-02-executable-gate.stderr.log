@@ -1,0 +1,9 @@
+/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs:288
+    await mkdir(dirname(workflowWorktree), { recursive: true })
+    ^
+
+ReferenceError: dirname is not defined
+    at createRecoverySessionFixture (/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs:288:5)
+    at async file:///Volumes/LargeStorage/code/DSH-Workflow/[eval1]:1:278
+
+Node.js v24.12.0

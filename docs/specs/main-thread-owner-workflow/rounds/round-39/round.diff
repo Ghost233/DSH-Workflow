@@ -1,0 +1,84 @@
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs
+@@ -176,6 +176,41 @@
+   throw new Error('submitted producer completed after its kill checkpoint')
+ }
+
++async function produceFirstAppend(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true, temporaryDirectory: input.fixtureParent, modelScript: () => ['hang'],
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  const persistence = fixture.ctx.sessionPersistence
++  const append = persistence.appendBatch.bind(persistence)
++  persistence.appendBatch = async (meta, events, isMaterialized) => {
++    await append(meta, events, isMaterialized)
++    if (meta.id === receipt.executionIdentity.sessionId && isMaterialized === false) {
++      const location = persistence.locate(meta)
++      if (location.kind !== 'jsonl') throw new Error('first append has no JSONL location')
++      // Read physical bytes directly: entering coordinator readRaw while its
++      // appendBatch is awaiting this checkpoint would wait on ourselves.
++      const rawContent = await readFile(location.path, 'utf8')
++      const stateBytes = await readFile(statePath(fixture.root, fixture.workflowId), 'utf8')
++      const state = JSON.parse(stateBytes)
++      const run = state.ownerRuns['T1:api']
++      await send({ type: 'checkpoint', scenario: 'first_append', pid: process.pid,
++        root: fixture.root, workflowId: fixture.workflowId, receipt, request: request(receipt),
++        stateBytes, rawContent, rawLocationPath: location.path,
++        firstBatch: { isMaterialized, eventTypes: events.map(event => event.type) },
++        checkpoint: { phase: run.recoverySession.phase, ownerStatus: run.status,
++          modelRequests: fixture.adapter.requests.length,
++          executionIdentity: receipt.executionIdentity,
++          budgetAttempt: state.recoveryAdmission.budget.attempts.find(a => a.requestId === receipt.requestId),
++        },
++      })
++      await new Promise(() => {})
++    }
++  }
++  await fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, request(receipt))
++  throw new Error('first append producer completed without its checkpoint')
++}
++
+ async function produceSettlementPending(input) {
+   const fixture = await createRecoverySessionFixture({ after() {} }, {
+     executable: true, temporaryDirectory: input.fixtureParent, modelScript: failedOwnerModelScript,
+@@ -519,6 +554,7 @@
+
+ async function dispatch(input) {
+   switch (input?.mode) {
++    case 'produce_first_append': return await produceFirstAppend(input)
+     case 'produce_admission_pending': return await produceAdmissionPending(input)
+     case 'replay_uncommitted': return await replayUncommitted(input)
+     case 'produce_settlement_pending': return await produceSettlementPending(input)
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs
+@@ -461,3 +461,29 @@
+     })
+   })
+ }
++
++
++test('T23 SIGKILL after first physical append preserves identity without resend', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_first_append', fixtureParent }), 'first_append')
++    const cp = producer.checkpoint
++    assert.equal(cp.firstBatch.isMaterialized, false)
++    assert.ok(cp.firstBatch.eventTypes.length > 0)
++    const rows = cp.rawContent.trimEnd().split('\n').map(row => JSON.parse(row))
++    assert.equal(rows[0].type, 'session')
++    assert.deepEqual(rows.slice(1).map(row => row.type), cp.firstBatch.eventTypes)
++    assert.ok(['creating', 'created'].includes(cp.checkpoint.phase), cp.checkpoint.phase)
++    assert.notEqual(cp.checkpoint.budgetAttempt.state, 'settled')
++    const postKill = await capturePostKill(cp)
++    const state = JSON.parse(postKill.stateBytes)
++    assert.equal(state.recoveryAdmission.budget.totalUsed, 1)
++    assert.deepEqual(state.ownerRuns['T1:api'].recoverySession.executionIdentity, cp.receipt.executionIdentity)
++    const replay = await finishReplay({ root: cp.root, workflowId: cp.workflowId,
++      receipt: cp.receipt, request: cp.request, scenario: 'first_append' })
++    assert.notEqual(replay.pid, cp.pid)
++    assert.equal(replay.result.outcome, 'paused')
++    assert.equal(replay.result.phase, 'technical_pause')
++    assertReplayReadOnly(postKill, replay)
++    await writeEvidence('first-physical-append', producer, postKill, replay)
++  })
++})

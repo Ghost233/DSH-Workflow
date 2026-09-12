@@ -1,0 +1,491 @@
+/**
+ * A deliberately small, serializable recovery-admission ledger.  Runtime owns
+ * source authority, persistence and execution; this module only protects the
+ * structural bindings and monotonic counters supplied to it.
+ */
+export const RECOVERY_BUDGET_CONTRACT = 'DSH_RECOVERY_BUDGET_V1'
+
+const REQUEST_FIELDS = Object.freeze([
+  'workflowId',
+  'rootProblemId',
+  'requestId',
+  'attemptId',
+  'taskId',
+  'ownerId',
+  'executionVersion',
+])
+const OPERATION_REQUEST_FIELDS = Object.freeze([
+  'workflowId', 'rootProblemId', 'requestId', 'attemptId', 'executionVersion',
+  'executionKind', 'operationId', 'operationKind',
+])
+const REPLAN_OPERATION_KINDS = new Set(['revision_plan', 'revision_review', 'handoff_replan', 'owner_consultation'])
+const ATTEMPT_STATES = new Set(['reserved', 'running', 'settled'])
+const RESULT_STATUSES = new Set(['succeeded', 'failed', 'cancelled'])
+const EVIDENCE_PURPOSES = new Set(['progress', 'closure'])
+const FINGERPRINT = /^[0-9a-f]{64}$/i
+
+function fail(message) {
+  throw new Error(`RecoveryBudget ${message}`)
+}
+
+function exactStrings(value, name) {
+  if (typeof value !== 'string' || value.length === 0 || value !== value.trim()) fail(`${name} 必须是非空无首尾空白字符串`)
+  return value
+}
+
+function positiveInteger(value, name) {
+  if (!Number.isSafeInteger(value) || value < 1) fail(`${name} 必须是正安全整数`)
+  return value
+}
+
+function usedInteger(value, name) {
+  if (!Number.isSafeInteger(value) || value < 0) fail(`${name} 必须是非负安全整数`)
+  return value
+}
+
+function plainRecord(value, name) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || Object.getPrototypeOf(value) !== Object.prototype) {
+    fail(`${name} 必须是普通对象`)
+  }
+  if (Object.getOwnPropertySymbols(value).length !== 0) fail(`${name} 不得有 symbol 字段`)
+  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+    if (!descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) fail(`${name}.${key} 必须是可枚举数据字段`)
+  }
+  return value
+}
+
+function plainArray(value, name) {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) fail(`${name} 必须是数组`)
+  if (Object.getOwnPropertySymbols(value).length !== 0) fail(`${name} 不得有 symbol 字段`)
+  const names = Object.getOwnPropertyNames(value)
+  if (names.length !== value.length + 1 || !names.includes('length')) fail(`${name} 不能有稀疏项或额外字段`)
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    if (descriptor === undefined || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+      fail(`${name}[${index}] 必须是数据项`)
+    }
+  }
+  return value
+}
+
+function exactKeys(value, keys, name) {
+  plainRecord(value, name)
+  const actual = Object.getOwnPropertyNames(value).sort()
+  const expected = [...keys].sort()
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    fail(`${name} 字段不符合协议`)
+  }
+  return value
+}
+
+function reference(value, name) {
+  exactKeys(value, ['id', 'version'], name)
+  return { id: exactStrings(value.id, `${name}.id`), version: exactStrings(value.version, `${name}.version`) }
+}
+
+function sameReference(left, right) {
+  return left.id === right.id && left.version === right.version
+}
+
+function referenceKey(value) {
+  return JSON.stringify([value.id, value.version])
+}
+
+// Legacy Owner bindings retain their exact JSON shape. Replan executions have
+// their own identity; their root remains the originating problem, not an Owner
+// fabricated for the planner. Authority and durable call identity belong to the
+// admission adapter, not this structural ledger.
+function requestFields(value, name) {
+  plainRecord(value, name)
+  if (!Object.hasOwn(value, 'executionKind')) return REQUEST_FIELDS
+  if (value.executionKind !== 'replan_operation') fail(`${name}.executionKind 无效`)
+  if (!REPLAN_OPERATION_KINDS.has(value.operationKind)) fail(`${name}.operationKind 无效`)
+  return OPERATION_REQUEST_FIELDS
+}
+
+function bindingFields(value, name) {
+  const parsed = {}
+  for (const field of requestFields(value, name)) parsed[field] = exactStrings(value[field], `${name}.${field}`)
+  return parsed
+}
+
+function binding(value, name, extra = []) {
+  exactKeys(value, [...requestFields(value, name), ...extra], name)
+  return bindingFields(value, name)
+}
+
+function sameBinding(left, right) {
+  return left.executionKind === right.executionKind
+    && requestFields(left, 'binding').every(field => left[field] === right[field])
+}
+
+function result(value, name) {
+  exactKeys(value, ['status', 'reference'], name)
+  if (!RESULT_STATUSES.has(value.status)) fail(`${name}.status 无效`)
+  return { status: value.status, reference: reference(value.reference, `${name}.reference`) }
+}
+
+function sameResult(left, right) {
+  return left.status === right.status && sameReference(left.reference, right.reference)
+}
+
+function evidence(value, name) {
+  exactKeys(value, ['fingerprint', 'reference', 'purpose'], name)
+  if (typeof value.fingerprint !== 'string' || !FINGERPRINT.test(value.fingerprint)) {
+    fail(`${name}.fingerprint 必须是 64 位十六进制摘要`)
+  }
+  if (!EVIDENCE_PURPOSES.has(value.purpose)) fail(`${name}.purpose 无效`)
+  return {
+    fingerprint: value.fingerprint.toLowerCase(),
+    reference: reference(value.reference, `${name}.reference`),
+    purpose: value.purpose,
+  }
+}
+
+function attempt(value, name) {
+  plainRecord(value, name)
+  const state = value.state
+  if (!ATTEMPT_STATES.has(state)) fail(`${name}.state 无效`)
+  const fields = [...requestFields(value, name), 'state']
+  if (state === 'running') fields.push('executionRef')
+  if (state === 'settled') fields.push('result')
+  if (Object.hasOwn(value, 'executionRef') && state !== 'reserved') fields.push('executionRef')
+  exactKeys(value, [...new Set(fields)], name)
+
+  const parsed = { ...bindingFields(value, name), state }
+  if (state === 'running' || Object.hasOwn(value, 'executionRef')) {
+    parsed.executionRef = reference(value.executionRef, `${name}.executionRef`)
+  }
+  if (state === 'settled') {
+    parsed.result = result(value.result, `${name}.result`)
+    if (parsed.result.status === 'succeeded' && parsed.executionRef === undefined) {
+      fail(`${name} 未启动时不能成功结算`)
+    }
+  }
+  return parsed
+}
+
+function problem(value, name) {
+  plainRecord(value, name)
+  const status = value.status
+  if (status !== 'open' && status !== 'resolved') fail(`${name}.status 无效`)
+  exactKeys(value, [
+    'rootProblemId', 'limit', 'used', 'source', 'status', 'evidence',
+    ...(status === 'resolved' ? ['closure'] : []),
+  ], name)
+  const parsed = {
+    rootProblemId: exactStrings(value.rootProblemId, `${name}.rootProblemId`),
+    limit: positiveInteger(value.limit, `${name}.limit`),
+    used: usedInteger(value.used, `${name}.used`),
+    source: reference(value.source, `${name}.source`),
+    status,
+    evidence: [],
+  }
+  plainArray(value.evidence, `${name}.evidence`)
+  const fingerprints = new Set()
+  const references = new Set()
+  for (let index = 0; index < value.evidence.length; index += 1) {
+    const item = evidence(value.evidence[index], `${name}.evidence[${index}]`)
+    if (fingerprints.has(item.fingerprint)) fail(`${name}.evidence 有重复摘要`)
+    fingerprints.add(item.fingerprint)
+    const key = referenceKey(item.reference)
+    if (references.has(key)) fail(`${name}.evidence 有重复引用`)
+    references.add(key)
+    parsed.evidence.push(item)
+  }
+  if (status === 'resolved') {
+    parsed.closure = reference(value.closure, `${name}.closure`)
+    const closureEvidence = parsed.evidence.find(item => (
+      item.purpose === 'closure' && sameReference(item.reference, parsed.closure)
+    ))
+    if (closureEvidence === undefined) fail(`${name}.closure 必须引用本问题已记录的 closure 证据`)
+  }
+  return parsed
+}
+
+/** Validate imported JSON and return a deep, ordinary-object clone. */
+export function normalizeRecoveryBudget(value) {
+  exactKeys(value, ['contract', 'workflowId', 'totalLimit', 'totalUsed', 'problems', 'attempts'], 'ledger')
+  if (value.contract !== RECOVERY_BUDGET_CONTRACT) fail('contract 不受支持')
+  const workflowId = exactStrings(value.workflowId, 'ledger.workflowId')
+  const totalLimit = positiveInteger(value.totalLimit, 'ledger.totalLimit')
+  const totalUsed = usedInteger(value.totalUsed, 'ledger.totalUsed')
+  if (totalUsed > totalLimit) fail('ledger.totalUsed 不能超过 totalLimit')
+
+  plainArray(value.problems, 'ledger.problems')
+  const problems = []
+  const roots = new Map()
+  const sources = new Map()
+  for (let index = 0; index < value.problems.length; index += 1) {
+    const item = problem(value.problems[index], `ledger.problems[${index}]`)
+    if (roots.has(item.rootProblemId)) fail('ledger.problems 有重复 rootProblemId')
+    const source = referenceKey(item.source)
+    if (sources.has(source)) fail('ledger.problems 同一 source 不能绑定多个根问题')
+    roots.set(item.rootProblemId, item)
+    sources.set(source, item.rootProblemId)
+    problems.push(item)
+  }
+
+  plainArray(value.attempts, 'ledger.attempts')
+  const attempts = []
+  const requests = new Set()
+  const attemptIds = new Set()
+  const receiptOwners = new Map()
+  const attemptsByRoot = new Map()
+  for (let index = 0; index < value.attempts.length; index += 1) {
+    const item = attempt(value.attempts[index], `ledger.attempts[${index}]`)
+    if (item.workflowId !== workflowId) fail('attempt.workflowId 与 ledger 不一致')
+    if (!roots.has(item.rootProblemId)) fail('attempt.rootProblemId 未注册')
+    if (requests.has(item.requestId)) fail('ledger.attempts 有重复 requestId')
+    if (attemptIds.has(item.attemptId)) fail('ledger.attempts 有重复 attemptId')
+    for (const receipt of [item.executionRef, item.result?.reference]) {
+      if (receipt === undefined) continue
+      const key = referenceKey(receipt)
+      if (receiptOwners.has(key) && receiptOwners.get(key) !== item.attemptId) {
+        fail('回执引用已被其他 attempt 占用')
+      }
+      receiptOwners.set(key, item.attemptId)
+    }
+    requests.add(item.requestId)
+    attemptIds.add(item.attemptId)
+    attemptsByRoot.set(item.rootProblemId, (attemptsByRoot.get(item.rootProblemId) ?? 0) + 1)
+    attempts.push(item)
+  }
+  if (totalUsed !== attempts.length) fail('ledger.totalUsed 必须等于 attempts 数量')
+  for (const item of problems) {
+    const count = attemptsByRoot.get(item.rootProblemId) ?? 0
+    if (item.used !== count) fail(`problem ${item.rootProblemId} 的 used 必须等于 attempt 数量`)
+    if (item.used > item.limit) fail(`problem ${item.rootProblemId} 的 used 不能超过 limit`)
+    if (item.status === 'resolved' && attempts.some(attemptItem => (
+      attemptItem.rootProblemId === item.rootProblemId && attemptItem.state !== 'settled'
+    ))) {
+      fail(`已关闭问题 ${item.rootProblemId} 不能有未结算 attempt`)
+    }
+  }
+
+  return {
+    contract: RECOVERY_BUDGET_CONTRACT,
+    workflowId,
+    totalLimit,
+    totalUsed,
+    problems,
+    attempts,
+  }
+}
+
+export function createRecoveryBudget(value) {
+  exactKeys(value, ['workflowId', 'totalLimit'], 'create')
+  return {
+    contract: RECOVERY_BUDGET_CONTRACT,
+    workflowId: exactStrings(value.workflowId, 'create.workflowId'),
+    totalLimit: positiveInteger(value.totalLimit, 'create.totalLimit'),
+    totalUsed: 0,
+    problems: [],
+    attempts: [],
+  }
+}
+
+function registeredProblem(ledger, rootProblemId) {
+  const item = ledger.problems.find(problemItem => problemItem.rootProblemId === rootProblemId)
+  if (item === undefined) fail(`根问题 ${rootProblemId} 未注册`)
+  return item
+}
+
+function checkedLedgerRequest(ledger, request, name, extra = []) {
+  const parsed = binding(request, name, extra)
+  if (parsed.workflowId !== ledger.workflowId) fail(`${name}.workflowId 与 ledger 不一致`)
+  return parsed
+}
+
+function cloneAttempt(value) {
+  const copy = { ...value }
+  if (value.executionRef !== undefined) copy.executionRef = { ...value.executionRef }
+  if (value.result !== undefined) copy.result = {
+    ...value.result,
+    reference: { ...value.result.reference },
+  }
+  return copy
+}
+
+function operation(ledger, outcome, attemptItem, reason) {
+  const response = { ledger, outcome }
+  if (attemptItem !== undefined) response.attempt = cloneAttempt(attemptItem)
+  if (reason !== undefined) response.reason = reason
+  return response
+}
+
+export function registerRecoveryProblem(ledgerValue, value) {
+  const ledger = normalizeRecoveryBudget(ledgerValue)
+  exactKeys(value, ['rootProblemId', 'limit', 'source'], 'register')
+  const rootProblemId = exactStrings(value.rootProblemId, 'register.rootProblemId')
+  const limit = positiveInteger(value.limit, 'register.limit')
+  const source = reference(value.source, 'register.source')
+  const existing = ledger.problems.find(item => item.rootProblemId === rootProblemId)
+  if (existing !== undefined) {
+    if (existing.limit !== limit || !sameReference(existing.source, source)) {
+      fail(`根问题 ${rootProblemId} 的来源或额度不能改写`)
+    }
+    return ledger
+  }
+  if (ledger.problems.some(item => sameReference(item.source, source))) {
+    fail('同一具体问题来源不能注册到另一个根问题')
+  }
+  return {
+    ...ledger,
+    problems: [...ledger.problems, {
+      rootProblemId,
+      limit,
+      used: 0,
+      source,
+      status: 'open',
+      evidence: [],
+    }],
+  }
+}
+
+export function reserveRecoveryAttempt(ledgerValue, value) {
+  const ledger = normalizeRecoveryBudget(ledgerValue)
+  const request = checkedLedgerRequest(ledger, value, 'reserve')
+  const replay = ledger.attempts.find(item => item.requestId === request.requestId)
+  if (replay !== undefined) {
+    if (!sameBinding(replay, request)) fail('同一 requestId 不能改写绑定')
+    return operation(ledger, 'replayed', replay)
+  }
+  if (ledger.attempts.some(item => item.attemptId === request.attemptId)) fail('attemptId 已被占用')
+  const currentProblem = registeredProblem(ledger, request.rootProblemId)
+  if (currentProblem.status === 'resolved') return operation(ledger, 'rejected', undefined, 'problem_resolved')
+  if (currentProblem.used >= currentProblem.limit) return operation(ledger, 'rejected', undefined, 'problem_exhausted')
+  if (ledger.totalUsed >= ledger.totalLimit) return operation(ledger, 'rejected', undefined, 'workflow_exhausted')
+
+  const nextAttempt = { ...request, state: 'reserved' }
+  return operation({
+    ...ledger,
+    totalUsed: ledger.totalUsed + 1,
+    problems: ledger.problems.map(item => item.rootProblemId === request.rootProblemId
+      ? { ...item, used: item.used + 1 }
+      : item),
+    attempts: [...ledger.attempts, nextAttempt],
+  }, 'reserved', nextAttempt)
+}
+
+function locatedAttempt(ledger, request) {
+  const item = ledger.attempts.find(attemptItem => attemptItem.requestId === request.requestId)
+  if (item === undefined) fail(`requestId ${request.requestId} 未领取`)
+  if (!sameBinding(item, request)) fail('attempt 绑定不一致')
+  return item
+}
+
+function assertReceiptAvailable(ledger, current, receipt) {
+  if (ledger.attempts.some(item => item.attemptId !== current.attemptId
+    && [item.executionRef, item.result?.reference].some(existing => (
+      existing !== undefined && sameReference(existing, receipt)
+    )))) fail('回执引用已被其他 attempt 占用')
+}
+
+export function startRecoveryAttempt(ledgerValue, value) {
+  const ledger = normalizeRecoveryBudget(ledgerValue)
+  const request = checkedLedgerRequest(ledger, value, 'start', ['executionRef'])
+  const executionRef = reference(value.executionRef, 'start.executionRef')
+  const current = locatedAttempt(ledger, request)
+  if (current.state === 'settled') fail('已结算 attempt 不能重新启动')
+  if (current.state === 'running') {
+    if (!sameReference(current.executionRef, executionRef)) fail('executionRef 不能改写')
+    return operation(ledger, 'replayed', current)
+  }
+  assertReceiptAvailable(ledger, current, executionRef)
+  const nextAttempt = { ...current, state: 'running', executionRef }
+  return operation({
+    ...ledger,
+    attempts: ledger.attempts.map(item => item.requestId === request.requestId ? nextAttempt : item),
+  }, 'started', nextAttempt)
+}
+
+export function settleRecoveryAttempt(ledgerValue, value) {
+  const ledger = normalizeRecoveryBudget(ledgerValue)
+  const request = checkedLedgerRequest(ledger, value, 'settle', ['result'])
+  const nextResult = result(value.result, 'settle.result')
+  const current = locatedAttempt(ledger, request)
+  if (current.state === 'settled') {
+    if (!sameResult(current.result, nextResult)) fail('已结算 attempt 的 result 不能改写')
+    return operation(ledger, 'replayed', current)
+  }
+  if (current.state === 'reserved' && nextResult.status === 'succeeded') {
+    fail('未启动 attempt 不能成功结算')
+  }
+  assertReceiptAvailable(ledger, current, nextResult.reference)
+  const nextAttempt = { ...current, state: 'settled', result: nextResult }
+  return operation({
+    ...ledger,
+    attempts: ledger.attempts.map(item => item.requestId === request.requestId ? nextAttempt : item),
+  }, 'settled', nextAttempt)
+}
+
+function evidenceWithReference(problemItem, evidenceReference) {
+  return problemItem.evidence.find(evidenceItem => sameReference(evidenceItem.reference, evidenceReference))
+}
+
+export function recordRecoveryEvidence(ledgerValue, value) {
+  const ledger = normalizeRecoveryBudget(ledgerValue)
+  exactKeys(value, ['rootProblemId', 'problemSource', 'fingerprint', 'reference', 'purpose'], 'evidence')
+  const rootProblemId = exactStrings(value.rootProblemId, 'evidence.rootProblemId')
+  const source = reference(value.problemSource, 'evidence.problemSource')
+  const nextEvidence = evidence({
+    fingerprint: value.fingerprint,
+    reference: value.reference,
+    purpose: value.purpose,
+  }, 'evidence')
+  const currentProblem = registeredProblem(ledger, rootProblemId)
+  if (!sameReference(currentProblem.source, source)) fail('evidence.problemSource 与根问题来源不一致')
+
+  const existingReference = evidenceWithReference(currentProblem, nextEvidence.reference)
+  if (existingReference !== undefined) {
+    if (existingReference.fingerprint !== nextEvidence.fingerprint
+      || existingReference.purpose !== nextEvidence.purpose) {
+      fail('evidence.reference 不能绑定不同事实或用途')
+    }
+    return { ledger, outcome: 'replayed' }
+  }
+  const existingFingerprint = currentProblem.evidence.find(item => item.fingerprint === nextEvidence.fingerprint)
+  if (existingFingerprint !== undefined) {
+    if (existingFingerprint.purpose !== nextEvidence.purpose) fail('同一事实不能从 progress 升格为 closure')
+    return { ledger, outcome: 'replayed' }
+  }
+  return {
+    ledger: {
+      ...ledger,
+      problems: ledger.problems.map(item => item.rootProblemId === rootProblemId
+        ? { ...item, evidence: [...item.evidence, nextEvidence] }
+        : item),
+    },
+    outcome: 'recorded',
+  }
+}
+
+export function closeRecoveryProblem(ledgerValue, value) {
+  const ledger = normalizeRecoveryBudget(ledgerValue)
+  exactKeys(value, ['rootProblemId', 'evidenceRef'], 'close')
+  const rootProblemId = exactStrings(value.rootProblemId, 'close.rootProblemId')
+  const evidenceRef = reference(value.evidenceRef, 'close.evidenceRef')
+  const currentProblem = registeredProblem(ledger, rootProblemId)
+  const closureEvidence = currentProblem.evidence.find(item => (
+    item.purpose === 'closure' && sameReference(item.reference, evidenceRef)
+  ))
+  if (closureEvidence === undefined) fail('关闭必须引用本问题已记录的 closure 证据')
+  if (currentProblem.status === 'resolved') {
+    if (!sameReference(currentProblem.closure, evidenceRef)) fail('已关闭问题不能替换 closure 证据')
+    return { ledger, outcome: 'replayed' }
+  }
+  if (ledger.attempts.some(item => item.rootProblemId === rootProblemId && item.state !== 'settled')) {
+    fail('关闭前必须结算该根问题的所有 attempt')
+  }
+  return {
+    ledger: {
+      ...ledger,
+      problems: ledger.problems.map(item => item.rootProblemId === rootProblemId
+        ? { ...item, status: 'resolved', closure: evidenceRef }
+        : item),
+    },
+    outcome: 'closed',
+  }
+}

@@ -1,0 +1,35 @@
+TAP version 13
+# [{"type":"agent/inbox/spliced","seq":2,"time":1789124525912,"data":{"target":"next-turn","start":0,"inserted":[{"id":"recovery-prompt-7ffb5a60-66ed-4b21-8456-265c023a2008","role":"user","content":[{"type":"text","text":"Read the plan and submit the requested structured result."}],"source":{"kind":"user"}}]}},{"type":"agent/inbox/spliced","seq":4,"time":1789124525913,"data":{"target":"next-turn","start":0,"removedCount":1,"inserted":[]}},{"type":"user/message","seq":7,"time":1789124525914,"data":{"id":"recovery-prompt-7ffb5a60-66ed-4b21-8456-265c023a2008","role":"user","content":[{"type":"text","text":"Read the plan and submit the requested structured result."}],"source":{"kind":"user"}},"surfaceOp":"append"},{"type":"user/message","seq":8,"time":1789124525914,"data":{"content":[{"type":"text","text":"Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\\n\\nCurrent DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns."}],"source":{"kind":"plugin","plugin":"@deepseek-ai/dsh-system-prompt","form":"snapshot","sections":[{"name":"sandbox:policy","text":"Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns."}]},"role":"user","id":"5b041006-2f9b-46a3-8313-38e53e091049"},"surfaceOp":"append"}]
+# Subtest: T15 actual Planner reserved child produces a raw accepted receipt and replays without another model call
+not ok 1 - T15 actual Planner reserved child produces a raw accepted receipt and replays without another model call
+  ---
+  duration_ms: 1409.736625
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/replan-session.test.mjs:27:37'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"contract":"DSH_REPLAN_SESSION_RESULT_V1","workflowId":"wf-recovery-session","requestId":"recovery-request-70b46c0c-b9bd-45f0-9dc5-057e922a06bc","outcome":"paused","phase":"technical_pause","reason":"extra_or_wrong_input","revision":"16777232:194098262:14972:1789124526000267474:1789124526000267474"}
+    + actual - expected
+
+    + 'paused'
+    - 'submission_observed'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'submission_observed'
+  actual: 'paused'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/replan-session.test.mjs:41:10)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1612.663209

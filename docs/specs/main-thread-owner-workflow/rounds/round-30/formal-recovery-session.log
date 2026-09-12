@@ -1,0 +1,211 @@
+TAP version 13
+# Subtest: T22 source-plane JSONL observes exactly one completed reserved prompt without writes
+ok 1 - T22 source-plane JSONL observes exactly one completed reserved prompt without writes
+  ---
+  duration_ms: 863.618459
+  type: 'test'
+  ...
+# Subtest: T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt
+ok 2 - T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt
+  ---
+  duration_ms: 472.161458
+  type: 'test'
+  ...
+# Subtest: T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending
+ok 3 - T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending
+  ---
+  duration_ms: 665.931625
+  type: 'test'
+  ...
+# Subtest: T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects
+ok 4 - T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects
+  ---
+  duration_ms: 246.392083
+  type: 'test'
+  ...
+# Subtest: T22 refuses a real JSONL backend configured with compression before any read or retry
+ok 5 - T22 refuses a real JSONL backend configured with compression before any read or retry
+  ---
+  duration_ms: 177.74125
+  type: 'test'
+  ...
+# Subtest: F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause
+ok 6 - F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause
+  ---
+  duration_ms: 623.378292
+  type: 'test'
+  ...
+# Subtest: F16 maps a real lease directory still initializing to a non-mutating pause
+ok 7 - F16 maps a real lease directory still initializing to a non-mutating pause
+  ---
+  duration_ms: 202.0945
+  type: 'test'
+  ...
+# Subtest: F16 leaves ordinary lease I/O errors and caller cancellation as rejections
+ok 8 - F16 leaves ordinary lease I/O errors and caller cancellation as rejections
+  ---
+  duration_ms: 390.703125
+  type: 'test'
+  ...
+# Subtest: T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction
+ok 9 - T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction
+  ---
+  duration_ms: 916.023041
+  type: 'test'
+  ...
+# Subtest: T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only
+ok 10 - T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only
+  ---
+  duration_ms: 2402.648333
+  type: 'test'
+  ...
+# Subtest: T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner
+ok 11 - T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner
+  ---
+  duration_ms: 1305.81525
+  type: 'test'
+  ...
+# Subtest: T22 L1 create failure preserves reservation without sending and releases any created handle
+ok 12 - T22 L1 create failure preserves reservation without sending and releases any created handle
+  ---
+  duration_ms: 764.431917
+  type: 'test'
+  ...
+# Subtest: T22 L1 bind failure preserves reservation without sending and releases any created handle
+not ok 13 - T22 L1 bind failure preserves reservation without sending and releases any created handle
+  ---
+  duration_ms: 874.643792
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-session.test.mjs:588:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+
+    + {
+    +   content: '{"type":"session","version":0,"id":"recovery-session-dde01942-bb17-41de-bc0d-6d878ed1cf82","createdAt":1789111776405,"cwd":"/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-tests-r16-cFYu6c/.dsh-workflow/worktrees/wf-recovery-session/owners/api","parentSession":"recovery-session-parent","origin":"subagent","delegationDepth":1}\n' +
+    +     '{"type":"sandbox/mode","seq":0,"time":1789111776406,"data":{"mode":"workspace-write"}}\n' +
+    +     '{"type":"approval/policy","seq":1,"time":1789111776406,"data":{"policy":"ask","source":"owner-workflow"}}\n',
+    +   filename: 'session.jsonl',
+    +   meta: {
+    +     createdAt: 1789111776405,
+    +     cwd: '/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-tests-r16-cFYu6c/.dsh-workflow/worktrees/wf-recovery-session/owners/api',
+    +     delegationDepth: 1,
+    +     id: 'recovery-session-dde01942-bb17-41de-bc0d-6d878ed1cf82',
+    +     origin: 'subagent',
+    +     parentSession: 'recovery-session-parent',
+    +     version: 0
+    +   }
+    + }
+    - undefined
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  actual:
+    meta:
+      version: 0
+      id: 'recovery-session-dde01942-bb17-41de-bc0d-6d878ed1cf82'
+      createdAt: 1789111776405
+      cwd: '/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-tests-r16-cFYu6c/.dsh-workflow/worktrees/wf-recovery-session/owners/api'
+      parentSession: 'recovery-session-parent'
+      origin: 'subagent'
+      delegationDepth: 1
+    filename: 'session.jsonl'
+    content: |-
+      {"type":"session","version":0,"id":"recovery-session-dde01942-bb17-41de-bc0d-6d878ed1cf82","createdAt":1789111776405,"cwd":"/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-tests-r16-cFYu6c/.dsh-workflow/worktrees/wf-recovery-session/owners/api","parentSession":"recovery-session-parent","origin":"subagent","delegationDepth":1}
+      {"type":"sandbox/mode","seq":0,"time":1789111776406,"data":{"mode":"workspace-write"}}
+      {"type":"approval/policy","seq":1,"time":1789111776406,"data":{"policy":"ask","source":"owner-workflow"}}
+
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-session.test.mjs:648:12)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T22 L2 real blocked outcome cannot settle or authorize another execution
+ok 14 - T22 L2 real blocked outcome cannot settle or authorize another execution
+  ---
+  duration_ms: 962.347583
+  type: 'test'
+  ...
+# Subtest: T22 L2 real handoff outcome cannot settle or authorize another execution
+ok 15 - T22 L2 real handoff outcome cannot settle or authorize another execution
+  ---
+  duration_ms: 898.024417
+  type: 'test'
+  ...
+# Subtest: T22 L2 real no_submit outcome cannot settle or authorize another execution
+ok 16 - T22 L2 real no_submit outcome cannot settle or authorize another execution
+  ---
+  duration_ms: 1020.352375
+  type: 'test'
+  ...
+# Subtest: T22 L2 real PlanRevision pending_check cannot settle the prior recovery intent
+ok 17 - T22 L2 real PlanRevision pending_check cannot settle the prior recovery intent
+  ---
+  duration_ms: 1666.506834
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes preparing evidence without execution or settlement
+ok 18 - T22 L3 Runtime safely consumes preparing evidence without execution or settlement
+  ---
+  duration_ms: 213.618541
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes creating evidence without execution or settlement
+ok 19 - T22 L3 Runtime safely consumes creating evidence without execution or settlement
+  ---
+  duration_ms: 205.887416
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes pending evidence without execution or settlement
+ok 20 - T22 L3 Runtime safely consumes pending evidence without execution or settlement
+  ---
+  duration_ms: 223.574167
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes running evidence without execution or settlement
+ok 21 - T22 L3 Runtime safely consumes running evidence without execution or settlement
+  ---
+  duration_ms: 337.596875
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes terminal evidence without execution or settlement
+ok 22 - T22 L3 Runtime safely consumes terminal evidence without execution or settlement
+  ---
+  duration_ms: 522.154333
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes interrupted evidence without execution or settlement
+ok 23 - T22 L3 Runtime safely consumes interrupted evidence without execution or settlement
+  ---
+  duration_ms: 525.694292
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes old_plan evidence without execution or settlement
+ok 24 - T22 L3 Runtime safely consumes old_plan evidence without execution or settlement
+  ---
+  duration_ms: 291.788375
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes old_attempt evidence without execution or settlement
+ok 25 - T22 L3 Runtime safely consumes old_attempt evidence without execution or settlement
+  ---
+  duration_ms: 390.8395
+  type: 'test'
+  ...
+# Subtest: T22 L3 Runtime safely consumes old_lease evidence without execution or settlement
+ok 26 - T22 L3 Runtime safely consumes old_lease evidence without execution or settlement
+  ---
+  duration_ms: 353.675375
+  type: 'test'
+  ...
+1..26
+# tests 26
+# suites 0
+# pass 25
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 17683.289541

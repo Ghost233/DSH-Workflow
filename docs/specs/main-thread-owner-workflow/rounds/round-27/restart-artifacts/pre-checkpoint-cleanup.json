@@ -1,0 +1,10 @@
+{
+  "containerPath": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-lgvFfd",
+  "producerExit": {
+    "code": null,
+    "signal": "SIGKILL"
+  },
+  "checkpointReceived": false,
+  "realGitWorktreeVerified": true,
+  "containerRemoved": true
+}

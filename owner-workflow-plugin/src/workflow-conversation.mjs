@@ -1,9 +1,4 @@
-/** 判断状态是否仍占用当前 Git 项目唯一的 Workflow 槽位。 */
-export function workflowOccupiesActiveSlot(state) {
-  if (state?.finalized === true) return false
-  if (state?.status === 'cancelled' && state?.temporaryArtifactsCleaned === true) return false
-  return true
-}
+export { workflowOccupiesActiveSlot } from './workflow-state.mjs'
 
 function actorSessionId(agent) {
   const id = agent?.id ?? agent?.session?.id

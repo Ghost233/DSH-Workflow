@@ -1,0 +1,16 @@
+# 下一步Owner生命周期接线审计（未实现）
+
+Hilbert只读审计：不能只把candidate binding附加到通用lease并检查lease有效性；需独立assertCandidateIndependentRun(state,binding)，在同一锁内证明当前pause/A/outbox/Owner身份。首个切片只允许无既有ownerRuns的首次reservation，不能混入recoverOwner、恢复session或awaiting_finish重放。
+
+runProtectedSupervisorReservation、runExternalOwner starting/running/awaiting_finish、runOwnerEntry activeOwner、最终reservation与失败事务都携带并重验同binding。blocked例外只能用于经过此证明的任务，validateOwnerStartState及activeVerificationTask都需受限入口。失败只改自身task/Owner/reservation，不触发恢复预算、普通handoff_replan/technicalPause或全局status/error变化。
+
+必须覆盖实际副作用：
+
+- recordBoundVerification在锁外执行，当前末尾saveState不传lease；取快照、执行命令、审批返回、写验证结果各要guard，快照绑定来源。命令期间来源变则拒绝结果落盘。
+- commitOwnerAttempt需在Owner分支commit前重读绑定；可留下隔离分支提交，但不得误写成功/合入workflow。
+- finishOwner预检临时worktree、真实merge、worklog封存、memory写入及commit前后都需guard；不得清除他人的pendingTaskMerge/pendingMemoryCompilation或全局error。
+- persistOwnerSession、heartbeat、approval/dispose、memory note、execution deviation也有旁路写入；来源失效不得落通用失败转换。
+- owner_host_exec授权前后与真正执行前需重验；失效拒绝执行。隔离Owner文件写允许保留未集成现场，完整性边界是不得提交到workflow/写权威状态。
+- selector应拒绝其他pendingTaskMerge/pendingMemoryCompilation，避免finish清除共享现场；其他未终态planned handoff若以本Owner为target且文件被task覆盖，也需排除以免隐式完成无关handoff。
+
+完整正向测试：真实Harness下paused C，独立I完成owner_submit、固定验证、Owner commit、workflow merge、finish与Memory；I终态且source/candidate/review/session/budget/选中handoff/pause/global status/error不变。负向在验证前、finish前及宿主授权返回后换source，断言零相应权威副作用；失败不新建恢复budget，来源不变。

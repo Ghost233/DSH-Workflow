@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-11T16:10:18.361360+00:00",
+  "ticket": "T05",
+  "ticketStatus": "development_complete",
+  "candidate": "candidate.json",
+  "formalCounts": {
+    "tests": 40,
+    "pass": 40,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "candidateDrift": [],
+  "reviewFindings": [],
+  "next": "T07 planning transaction proof, then B01 production integration",
+  "committed": false,
+  "pushed": false
+}

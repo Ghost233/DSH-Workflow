@@ -1,0 +1,127 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { createConnection } from 'node:net'
+import { plannerSubmitDefinition, planReviewSubmitDefinition } from '../index.js'
+import { deriveWorkflowControl } from '../src/workflow-state.mjs'
+import { discoverRunnableWorkflows } from '../src/external-runner.mjs'
+import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState, reopenRecoverySessionFixture } from './fixtures/recovery-session-fixture.mjs'
+
+function drive(manifest) {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection(manifest.socketPath)
+    let buffer = ''
+    socket.setEncoding('utf8'); socket.setTimeout(20_000, () => socket.destroy(new Error('control socket timeout')))
+    socket.on('connect', () => socket.write(`${JSON.stringify({ contract: 'DSH_WORKFLOW_CONTROL_V1', id: 'candidate-pause-test',
+      workflowId: manifest.workflowId, token: manifest.token, action: 'workflow-drive', expectedCommand: 'plan-revision-drive' })}\n`))
+    socket.on('data', chunk => {
+      buffer += chunk
+      const end = buffer.indexOf('\n')
+      if (end < 0) return
+      const response = JSON.parse(buffer.slice(0, end)); socket.destroy()
+      if (response.ok) resolve(response.result); else reject(new Error(response.error))
+    })
+    socket.on('error', reject)
+  })
+}
+async function setup(t, limit = 1) {
+  let plan
+  const invalid = { contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_split', summary: 'Wrong target', issues: [], targetTaskIds: ['missing-task'] }
+  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true,
+    limits: { totalLimit: limit, problemLimit: limit }, modelScript: m => [
+      () => m.toolCallResponse('planner', 'workflow_plan_submit', { plan }), 'hang-slow',
+      ...(limit === 3 ? [m.toolCallResponse('review-1', 'workflow_plan_review_submit', { review: invalid }), 'hang-slow',
+        m.toolCallResponse('review-2', 'workflow_plan_review_submit', { review: invalid }), 'hang-slow'] : []),
+      m.textResponse('Technical pause notice received.'),
+    ] })
+  f.ctx.tools.register(plannerSubmitDefinition(f.runtime)); f.ctx.tools.register(planReviewSubmitDefinition(f.runtime))
+  const state = await readRecoverySessionState(f)
+  plan = { ...structuredClone(state.plan), summary: 'Candidate for pause proof', owners: state.plan.owners.map(owner => ({ id: owner.id })) }
+  const stage = state.plan.tasks[0], owner = state.plan.owners.find(item => item.id === stage.ownerId)
+  await f.runtime.recordHandoffs(state, stage, { owner, branch: 'fixture-owner' }, { status: 'blocked',
+    handoffs: [{ targetType: 'owner', targetOwnerId: owner.id, files: ['src/api/repair.mjs'], summary: 'Repair' }] })
+  await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
+  f.manifest = await f.runtime.ensureControlBridge(f.admissionAgent, await readRecoverySessionState(f))
+  t.after(() => f.runtime.closeControlBridge(f.workflowId))
+  return f
+}
+
+test('T15 socket admission refusal persists one notice, then actual daemon discovery and fresh Harness stop selecting it', { timeout: 30_000 }, async t => {
+  const f = await setup(t)
+  const before = await readRecoverySessionState(f)
+  assert.equal((await discoverRunnableWorkflows(f.root)).length, 1)
+  const paused = await drive(f.manifest)
+  assert.equal(paused.action, 'candidate-recovery-paused')
+  const state = await readRecoverySessionState(f)
+  assert.deepEqual(state.pendingPlanRevision, before.pendingPlanRevision)
+  assert.deepEqual(state.tasks, before.tasks); assert.deepEqual(state.ownerRuns, before.ownerRuns)
+  assert.equal(state.recoveryAdmission.budget.totalUsed, 1)
+  assert.equal(state.mainOutbox[paused.notificationId].actionRequired, false)
+  assert.equal(deriveWorkflowControl(state).phase, 'candidate_recovery_report_pending')
+  assert.equal((await discoverRunnableWorkflows(f.root))[0].command, 'plan-revision-drive')
+  assert.equal((await drive(f.manifest)).action, 'candidate-recovery-notified')
+  await f.admissionAgent.whenIdle(); await f.ctx.sessions.flush(f.admissionAgent.session)
+  assert.ok((await f.readRaw(f.admissionAgent.id)).content.includes(paused.notificationId))
+  const calls = f.adapter.requests.length
+  for (let index = 0; index < 3; index++) {
+    assert.equal((await drive(f.manifest)).action, 'waiting')
+    assert.deepEqual(await discoverRunnableWorkflows(f.root), [])
+  }
+  assert.equal(f.adapter.requests.length, calls)
+  await mutateRecoverySessionState(f, current => {
+    current.updatedAt = '2099-01-01T00:00:00Z'
+    current.pendingPlanRevision.createdAt = '2099-01-01T00:00:00Z'
+    current.tasks.find(task => task.taskId === 'T2').note = 'Independent bookkeeping'
+  })
+  assert.equal(deriveWorkflowControl(await readRecoverySessionState(f)).phase, 'candidate_recovery_paused')
+  await f.runtime.closeControlBridge(f.workflowId)
+  const fresh = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
+  try {
+    const manifest = await fresh.runtime.ensureControlBridge(fresh.admissionAgent, await readRecoverySessionState(f))
+    assert.equal((await drive(manifest)).phase, 'candidate_recovery_paused')
+    assert.deepEqual(await discoverRunnableWorkflows(f.root), [])
+    assert.equal(fresh.adapter.requests.length, 0)
+    assert.equal(Object.keys((await readRecoverySessionState(f)).mainOutbox).length, 1)
+    await fresh.runtime.closeControlBridge(f.workflowId)
+  } finally { await fresh.dispose() }
+})
+
+test('T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses', { timeout: 30_000 }, async t => {
+  const f = await setup(t, 3)
+  for (let used = 2; used <= 3; used++) {
+    assert.equal((await drive(f.manifest)).action, 'candidate-recovery-retry-ready')
+    const state = await readRecoverySessionState(f)
+    assert.equal(state.recoveryAdmission.budget.totalUsed, used)
+    assert.equal(state.candidateRecoveryPause, undefined)
+    assert.equal(state.recoveryAdmission.budget.attempts.at(-1).result.status, 'failed')
+  }
+  const calls = f.adapter.requests.length
+  assert.equal((await drive(f.manifest)).action, 'candidate-recovery-paused')
+  assert.equal(f.adapter.requests.length, calls)
+  assert.equal(Object.keys((await readRecoverySessionState(f)).mainOutbox).length, 1)
+})
+
+test('T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer', { timeout: 30_000 }, async t => {
+  const f = await setup(t)
+  const paused = await drive(f.manifest)
+  await mutateRecoverySessionState(f, state => { state.pendingPlanRevision.parent += 1 })
+  const control = deriveWorkflowControl(await readRecoverySessionState(f))
+  assert.equal(control.command, 'plan-revision-drive')
+  assert.notEqual(control.phase, 'candidate_recovery_report_pending')
+  const calls = f.adapter.requests.length
+  const changed = await drive(f.manifest)
+  assert.equal(changed.action, 'candidate-recovery-paused')
+  assert.notEqual(changed.notificationId, paused.notificationId)
+  assert.equal(f.adapter.requests.length, calls)
+})
+
+test('T15 an authoritative user-wait task projection takes priority over a candidate technical pause', { timeout: 30_000 }, async t => {
+  const f = await setup(t)
+  await drive(f.manifest)
+  await mutateRecoverySessionState(f, state => { state.tasks.find(task => task.taskId === 'T1').action = 'await_user' })
+  const control = deriveWorkflowControl(await readRecoverySessionState(f))
+  assert.equal(control.phase, 'awaiting_main_discussion')
+  assert.equal(control.actionRequired, true)
+  const calls = f.adapter.requests.length
+  assert.equal((await drive(f.manifest)).action, 'waiting')
+  assert.equal(f.adapter.requests.length, calls)
+})

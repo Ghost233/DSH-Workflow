@@ -1,0 +1,40 @@
+# 候选暂停独立任务reservation
+
+R67–R69，T15。candidateIndependentNext基于active A及已投递有效pause选择独立leaf。来源/目标Owner所有任务和依赖、反向依赖、parent/child闭包不可调度；完整运行投影及未终态占用约束全局parallel与Owner去重。非终态占用对应非pending/running任务时拒绝。仅create/wait，确认仅输出target patch，不返回整表替代状态。
+
+Runtime reserveCandidateIndependentTasks在最新状态写锁内重新检查csa actionId。选择、确认、reservation与target任务补丁同一次落盘；不修改来源task/Owner、候选、预算、mainOutbox或config。并发及新Harness同action重放复用reservation，不启动模型，不生成重复事件。
+
+reservation.candidatePause契约为DSH_CANDIDATE_INDEPENDENT_RESERVATION_V1，固定source、activePlanDigest、taskId、ownerId、reservationId、eligibleTaskIds、scopeDigest。校验必须匹配当前pause与持久reservation，且仅去掉自身reservation/Owner执行投影后重新证明独立性；自身Owner记录若存在也必须有相同绑定。不能把删除其他Owner历史或重写来源当作可执行证据。
+
+截至R69，Runtime真实领取已接入；通用执行/恢复入口拒绝候选专用reservation，通用失败回调保留它。daemon仍不自动派发。实际Owner启动、提交、失败与finish的绑定复核必须完成后再启用该入口。不得以reservation已落盘当作任务已执行或T15验收完成。
+
+## R71：首次独立Owner实际生命周期
+
+专用runCandidateIndependentReservation仅接受无Owner历史的reserved任务；先标launching，携带同一candidatePause进入真实runExternalOwner、固定验证、Owner commit、workflow merge和finish/Memory封存。普通Owner入口仍拒绝该reservation，daemon尚未自动派发。
+
+assertCandidateIndependentRun同时验证pause source、active A、持久reservation、Owner绑定与独立范围。候选执行上下文在物理Owner lease外另行校验，状态写入前还必须保持候选source完全一致。仅当前Owner/task/reservation结果与正常独立集成字段可变化，全局status/error保持原暂停现场。验证在执行前、审批后和保存时复核，Memory写入/commit前复核；来源变化后不提交权威结果或合入workflow，已有隔离Owner工作现场可保留。
+
+成功和技术失败形成completed/failed reservation；同源已结算终态重放返回原结果，fresh Harness不重复调用模型。来源变化只停止匹配reservation，不改旧Owner/task。未知launching或已有未结算Owner不被当作首次任务重启。
+
+真实外部权限/业务依据仍由既有recordOwnerExecutionDeviation生产和classifyFailure判断；Owner结果不能绕过该依据。此时仅自身任务await_user、Owner request_user_authority和既有主通知outbox落盘，reservation停止；控制投影优先awaiting_main_discussion/actionRequired。技术失败不伪造用户权限请求。
+
+首次选择拒绝已有共享pendingTaskMerge/pendingMemoryCompilation，并排除其他planned/acknowledged handoff目标Owner，防止finish隐式消费别人的现场。运行中仅允许自身已绑定的merge/Memory事务。
+
+尚未完成：daemon自动调度接线、未结算launching/进程重启恢复、硬deadline与主动迟到取消，以及失败独立任务的后继恢复编排。不能将本节的首次执行证明等同T15/整套无人值守验收完成。
+
+
+## R72：终态回执配对
+
+持久 reservation 为 completed 时，Owner/task 必须同时 completed；为 failed 时，Owner 必须 failed/blocked 且 task stopped。共同断言在中和自身投影前检查，覆盖 lease、写入和两类重放，矛盾状态不得作为有效执行证据。launching 允许正常运行，也允许 Owner finish 已完成、reservation 尚未结算的合法过渡；不因加强终态回执而拒绝该事务间隙。
+
+
+## R73：daemon 派发
+
+有效候选暂停通知已投递、active A已审查并批准时，控制表可产生candidate-independent-drive，复用daemon现有discovery/workflow-drive socket路由。Runtime从最新状态领取并调用专用独立执行入口，每次推进一条。无Owner历史的reserved可在新Harness恢复；launching、正在运行或未知Owner历史稳定等待，不能重新发送。首次集成阶段每workflow仅一个candidate Owner进入执行，最新领取事务复核，防止并发控制请求绕过；其余reserved保留等待下次调度，暂不声称支持并行finish。来源预算和全局暂停状态不变，真实用户决定优先，无可执行任务返回持久事实导出的等待。未接通T17主动取消或未知会话恢复。
+
+
+## R74：准入与启动前拒绝
+
+共同assertCandidateIndependentAdmission要求running/blocked、planApproved、Review passed且planReviewDigest等于当前planDigest；调度投影、最新reserve事务、claim、执行lease及保存前绑定均复用，资格撤销不能只被启动入口观察到。源指纹仍用于候选来源，当前准入另行检查，不能互相替代。
+
+真实Owner启动还可能因磁盘Registry等证据拒绝：无Owner结果时不得生成completed/failed receipt。专用driver将自身reservation标为stopped暂停；Owner尚不存在时仅把自身task标stopped/runtime_failed/retry_runtime并写一次事件，保留来源、预算及其他任务。已有未知Owner保留现场不伪造结果。completed/failed仅由对应Owner/task有效终态形成。停止任务不被同源首次选择重新启动，后续恢复需独立协议。

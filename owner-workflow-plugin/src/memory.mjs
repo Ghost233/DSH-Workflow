@@ -1,12 +1,19 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, normalize, relative, sep } from 'node:path'
-import { changedFiles, head, verifyCommitSha } from './git.mjs'
+import { changedFiles, git, head, verifyCommitSha } from './git.mjs'
+import {
+  OWNER_COLLECTION_DIRECTORY,
+  OWNER_CONFIGURATION_DIRECTORY,
+  OWNER_MEMORY_DIRECTORY,
+  OWNER_RUNTIME_DIRECTORY,
+} from './project-layout.mjs'
 
-export const MEMORY_DIRECTORY = '.owner-memory'
+export const MEMORY_DIRECTORY = `${OWNER_CONFIGURATION_DIRECTORY}/${OWNER_COLLECTION_DIRECTORY}`
 export const MEMORY_SOURCE_DIRECTORY = '.sources'
 export const MEMORY_CATALOG_FILE = '.catalog.json'
+export const LEGACY_MEMORY_DIRECTORY = '.owner-memory'
 export const MEMORY_CURATOR_CONTRACT = 'DSH_OWNER_MEMORY_CURATOR_V1'
 export const MEMORY_REVIEW_CONTRACT = 'DSH_OWNER_MEMORY_REVIEW_V1'
 export const OWNER_WORKLOG_CONTRACT = 'DSH_OWNER_WORKLOG_V1'
@@ -55,8 +62,9 @@ function repositoryPaths(value, field) {
   const result = [...new Set(value.map((item, index) => repositoryPath(item, `${field}[${index}]`)))]
   for (const path of result) {
     if (path === '.git' || path.startsWith('.git/')
-      || path === '.dsh-workflow' || path.startsWith('.dsh-workflow/')
-      || path === MEMORY_DIRECTORY || path.startsWith(`${MEMORY_DIRECTORY}/`)) {
+      || path === OWNER_RUNTIME_DIRECTORY || path.startsWith(`${OWNER_RUNTIME_DIRECTORY}/`)
+      || path === OWNER_CONFIGURATION_DIRECTORY || path.startsWith(`${OWNER_CONFIGURATION_DIRECTORY}/`)
+      || path === LEGACY_MEMORY_DIRECTORY || path.startsWith(`${LEGACY_MEMORY_DIRECTORY}/`)) {
       throw new Error(`${field} 不能引用运行时或记忆管理路径：${path}`)
     }
   }
@@ -69,6 +77,33 @@ function ownerIds(value, field) {
     if (!OWNER_ID.test(ownerId)) throw new Error(`${field} 包含无效 Owner 编号：${ownerId}`)
   }
   return result
+}
+
+export function ownerMemoryRepositoryDirectory(ownerId) {
+  const normalizedOwnerId = ownerIds([ownerId], 'ownerId')[0]
+  return `${MEMORY_DIRECTORY}/${normalizedOwnerId}/${OWNER_MEMORY_DIRECTORY}`
+}
+
+function ownerMemoryAbsoluteDirectory(worktree, ownerId) {
+  return join(worktree, ownerMemoryRepositoryDirectory(ownerId))
+}
+
+export function isOwnerMemoryRelativePath(path) {
+  const normalized = String(path ?? '').replaceAll('\\', '/').replace(/^\.\//u, '')
+  const prefix = `${OWNER_CONFIGURATION_DIRECTORY}/${OWNER_COLLECTION_DIRECTORY}/`
+  if (!normalized.startsWith(prefix)) return false
+  const [ownerId, directory, ...rest] = normalized.slice(prefix.length).split('/')
+  return OWNER_ID.test(ownerId) && directory === OWNER_MEMORY_DIRECTORY && rest.some(Boolean)
+}
+
+function pageRelativePath(page) {
+  const ownerId = page.ownerIds[0]
+  const prefix = `owners/${ownerId}/`
+  return page.path.startsWith(prefix) ? page.path.slice(prefix.length) : page.path
+}
+
+function memoryRepositoryPath(ownerId, path) {
+  return `${ownerMemoryRepositoryDirectory(ownerId)}/${path}`
 }
 
 function memoryIds(value, field) {
@@ -185,12 +220,16 @@ export function normalizeMemoryUpdates(value) {
     const title = requiredText(item.title, `memory_updates[${index}].title`)
     const summary = requiredText(item.summary, `memory_updates[${index}].summary`)
     if (SENSITIVE_CONTENT.test(`${title}\n${summary}`)) throw new Error(`memory_updates[${index}] 疑似包含敏感凭据，不能进入长期记忆提议`)
+    const routedOwnerIds = ownerIds(item.ownerIds, `memory_updates[${index}].ownerIds`)
+    if (routedOwnerIds.length > 1) {
+      throw new Error(`memory_updates[${index}].ownerIds 最多包含一个 Owner，长期记忆必须归入单一 Owner 文件夹`)
+    }
     return {
       type: memoryType(item.type, `memory_updates[${index}].type`),
       title,
       summary,
       files,
-      ownerIds: ownerIds(item.ownerIds, `memory_updates[${index}].ownerIds`),
+      ownerIds: routedOwnerIds,
       supersedes: memoryIds(item.supersedes, `memory_updates[${index}].supersedes`),
       derivedFrom: memoryIds(item.derivedFrom, `memory_updates[${index}].derivedFrom`),
     }
@@ -207,8 +246,8 @@ function normalizePagePath(value, field, pageOwnerIds, knownOwnerIds) {
     if (!pageOwnerIds.includes(ownerId)) throw new Error(`${field} 的 Owner 与 ownerIds 不一致：${ownerId}`)
     return path
   }
-  if (!['interfaces', 'concepts', 'decisions'].includes(root)) {
-    throw new Error(`${field} 只能位于 owners、interfaces、concepts 或 decisions 下：${path}`)
+  if (!['interfaces', 'concepts', 'decisions', 'architecture', 'procedures'].includes(root)) {
+    throw new Error(`${field} 只能位于 owners、interfaces、concepts、decisions、architecture 或 procedures 下：${path}`)
   }
   return path
 }
@@ -225,7 +264,9 @@ export function normalizeCuratorResult(raw, plan) {
       throw new Error(`pages[${index}] 必须是对象`)
     }
     const pageOwnerIds = ownerIds(item.ownerIds, `pages[${index}].ownerIds`)
-    if (pageOwnerIds.length === 0) throw new Error(`pages[${index}].ownerIds 不能为空，记忆页面必须可以路由到 Owner`)
+    if (pageOwnerIds.length !== 1) {
+      throw new Error(`pages[${index}].ownerIds 必须且只能包含一个 Owner，记忆页面必须归入该 Owner 文件夹`)
+    }
     for (const ownerId of pageOwnerIds) {
       if (!knownOwnerIds.has(ownerId)) throw new Error(`pages[${index}] 引用了不存在的 Owner：${ownerId}`)
     }
@@ -294,6 +335,18 @@ async function markdownFiles(directory) {
   return result
 }
 
+async function regularFiles(directory) {
+  if (!existsSync(directory)) return []
+  const result = []
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) result.push(...await regularFiles(path))
+    else if (entry.isFile()) result.push(path)
+    else throw new Error(`Owner 记忆迁移拒绝非常规文件：${path}`)
+  }
+  return result
+}
+
 function frontmatterValue(content, key) {
   const match = content.match(new RegExp(`^${key}:\\s*(.+)$`, 'mu'))
   if (match === null) return undefined
@@ -308,8 +361,8 @@ function sourcePaths(content) {
   return sources.filter(value => typeof value === 'string')
 }
 
-async function loadMemoryCatalog(worktree) {
-  const path = join(worktree, MEMORY_DIRECTORY, MEMORY_CATALOG_FILE)
+async function loadOwnerMemoryCatalog(worktree, ownerId) {
+  const path = join(ownerMemoryAbsoluteDirectory(worktree, ownerId), MEMORY_CATALOG_FILE)
   if (!existsSync(path)) return { contract: 'DSH_OWNER_MEMORY_CATALOG_V1', pages: {} }
   let parsed
   try {
@@ -322,6 +375,33 @@ async function loadMemoryCatalog(worktree) {
     throw new Error('Owner 记忆目录的隐藏目录索引契约不受支持')
   }
   return parsed
+}
+
+async function loadLegacyMemoryCatalog(worktree) {
+  const path = join(worktree, LEGACY_MEMORY_DIRECTORY, MEMORY_CATALOG_FILE)
+  if (!existsSync(path)) return { contract: 'DSH_OWNER_MEMORY_CATALOG_V1', pages: {} }
+  let parsed
+  try {
+    parsed = JSON.parse(await readFile(path, 'utf8'))
+  } catch {
+    throw new Error('旧版 Owner 记忆目录的隐藏目录索引无法解析')
+  }
+  if (parsed?.contract !== 'DSH_OWNER_MEMORY_CATALOG_V1'
+    || parsed.pages === null || typeof parsed.pages !== 'object' || Array.isArray(parsed.pages)) {
+    throw new Error('旧版 Owner 记忆目录的隐藏目录索引契约不受支持')
+  }
+  return parsed
+}
+
+async function memoryOwnerIds(worktree) {
+  const ownersRoot = join(worktree, MEMORY_DIRECTORY)
+  if (!existsSync(ownersRoot)) return []
+  const result = []
+  for (const entry of await readdir(ownersRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !OWNER_ID.test(entry.name)) continue
+    if (existsSync(ownerMemoryAbsoluteDirectory(worktree, entry.name))) result.push(entry.name)
+  }
+  return result.sort()
 }
 
 function pageMetadata(content, catalog, path) {
@@ -337,61 +417,103 @@ function pageMetadata(content, catalog, path) {
   }
 }
 
-function includeForOwners(path, content, selectedOwnerIds, metadata) {
+function legacyPageOwnerIds(path, content, metadata) {
+  const fromMetadata = metadata.owners ?? frontmatterValue(content, 'owners')
+  if (Array.isArray(fromMetadata) && fromMetadata.length > 0) return ownerIds(fromMetadata, `legacy.pages[${path}].owners`)
+  const match = /^owners\/([a-z][a-z0-9_-]{0,63})\//u.exec(path)
+  return match === null ? [] : [match[1]]
+}
+
+function includeLegacyForOwners(path, content, selectedOwnerIds, metadata) {
   if (path.startsWith(`${MEMORY_SOURCE_DIRECTORY}/`)) return false
   if (selectedOwnerIds.length === 0) return true
-  if (path === 'index.md' || selectedOwnerIds.some(ownerId => path.startsWith(`owners/${ownerId}/`))) return true
-  if (['interfaces/', 'concepts/', 'decisions/'].some(prefix => path.startsWith(prefix))) {
-    const pageOwnerIds = metadata.owners ?? frontmatterValue(content, 'owners')
-    return Array.isArray(pageOwnerIds) && pageOwnerIds.some(ownerId => selectedOwnerIds.includes(ownerId))
-  }
-  return false
+  return legacyPageOwnerIds(path, content, metadata).some(ownerId => selectedOwnerIds.includes(ownerId))
 }
 
 export async function loadMemorySnapshot(worktree, options = {}) {
-  const directory = join(worktree, MEMORY_DIRECTORY)
-  const files = await markdownFiles(directory)
-  const catalog = await loadMemoryCatalog(worktree)
   const currentHead = await head(worktree, options.signal).catch(() => undefined)
   const maxBytes = Math.max(8_192, Number(options.maxBytes ?? 96 * 1024))
   const documents = []
-  const selectedOwnerIds = [...new Set([
+  const requestedOwnerIds = ownerIds([...new Set([
     ...(Array.isArray(options.ownerIds) ? options.ownerIds : []),
     ...(options.ownerId === undefined ? [] : [options.ownerId]),
-  ])]
+  ])], 'memory.ownerIds')
+  const selectedOwnerIds = requestedOwnerIds.length > 0 ? requestedOwnerIds : await memoryOwnerIds(worktree)
   let consumed = 0
   let selectedCount = 0
   const digestParts = []
   const changeCache = new Map()
-  for (const absolute of files.sort()) {
-    const path = relative(directory, absolute).replaceAll(sep, '/')
-    const content = await readFile(absolute, 'utf8')
-    const metadata = pageMetadata(content, catalog, path)
-    if (!includeForOwners(path, content, selectedOwnerIds, metadata)) continue
-    selectedCount += 1
-    let computedStatus = metadata.status ?? 'verified'
-    const verifiedAtCommit = metadata.verifiedAtCommit
-    const sources = Array.isArray(metadata.sources) ? metadata.sources : sourcePaths(content)
-    if (computedStatus !== 'superseded' && currentHead !== undefined && typeof verifiedAtCommit === 'string' && sources.length > 0) {
-      if (!changeCache.has(verifiedAtCommit)) {
-        changeCache.set(verifiedAtCommit, verifyCommitSha(worktree, verifiedAtCommit, options.signal)
-          .then(commit => changedFiles(worktree, commit, currentHead, options.signal))
-          .catch(() => undefined))
+  for (const ownerId of selectedOwnerIds) {
+    const directory = ownerMemoryAbsoluteDirectory(worktree, ownerId)
+    const files = await markdownFiles(directory)
+    const catalog = await loadOwnerMemoryCatalog(worktree, ownerId)
+    for (const absolute of files.sort()) {
+      const relativePath = relative(directory, absolute).replaceAll(sep, '/')
+      if (relativePath.startsWith(`${MEMORY_SOURCE_DIRECTORY}/`)) continue
+      const path = memoryRepositoryPath(ownerId, relativePath)
+      const content = await readFile(absolute, 'utf8')
+      const metadata = pageMetadata(content, catalog, relativePath)
+      selectedCount += 1
+      let computedStatus = metadata.status ?? 'verified'
+      const verifiedAtCommit = metadata.verifiedAtCommit
+      const sources = Array.isArray(metadata.sources) ? metadata.sources : sourcePaths(content)
+      if (computedStatus !== 'superseded' && currentHead !== undefined && typeof verifiedAtCommit === 'string' && sources.length > 0) {
+        if (!changeCache.has(verifiedAtCommit)) {
+          changeCache.set(verifiedAtCommit, verifyCommitSha(worktree, verifiedAtCommit, options.signal)
+            .then(commit => changedFiles(worktree, commit, currentHead, options.signal))
+            .catch(() => undefined))
+        }
+        const changed = await changeCache.get(verifiedAtCommit)
+        if (changed === undefined) computedStatus = 'unknown'
+        else if (sources.some(source => changed.includes(source))) computedStatus = 'stale'
       }
-      const changed = await changeCache.get(verifiedAtCommit)
-      if (changed === undefined) computedStatus = 'unknown'
-      else if (sources.some(source => changed.includes(source))) computedStatus = 'stale'
+      digestParts.push(`${path}\0${computedStatus}\0${content}`)
+      const bytes = Buffer.byteLength(content, 'utf8')
+      if (consumed + bytes > maxBytes) continue
+      consumed += bytes
+      documents.push({ path, ownerId, computedStatus, content })
     }
-    digestParts.push(`${path}\0${computedStatus}\0${content}`)
-    const bytes = Buffer.byteLength(content, 'utf8')
-    if (consumed + bytes > maxBytes) continue
-    consumed += bytes
-    documents.push({ path, computedStatus, content })
+  }
+  const legacyDirectory = join(worktree, LEGACY_MEMORY_DIRECTORY)
+  if (existsSync(legacyDirectory)) {
+    const legacyCatalog = await loadLegacyMemoryCatalog(worktree)
+    for (const absolute of (await markdownFiles(legacyDirectory)).sort()) {
+      const relativePath = relative(legacyDirectory, absolute).replaceAll(sep, '/')
+      if (relativePath.startsWith(`${MEMORY_SOURCE_DIRECTORY}/`)) continue
+      const content = await readFile(absolute, 'utf8')
+      const metadata = pageMetadata(content, legacyCatalog, relativePath)
+      if (!includeLegacyForOwners(relativePath, content, requestedOwnerIds, metadata)) continue
+      const path = `${LEGACY_MEMORY_DIRECTORY}/${relativePath}`
+      selectedCount += 1
+      let computedStatus = metadata.status ?? 'verified'
+      const verifiedAtCommit = metadata.verifiedAtCommit
+      const sources = Array.isArray(metadata.sources) ? metadata.sources : sourcePaths(content)
+      if (computedStatus !== 'superseded' && currentHead !== undefined && typeof verifiedAtCommit === 'string' && sources.length > 0) {
+        if (!changeCache.has(verifiedAtCommit)) {
+          changeCache.set(verifiedAtCommit, verifyCommitSha(worktree, verifiedAtCommit, options.signal)
+            .then(commit => changedFiles(worktree, commit, currentHead, options.signal))
+            .catch(() => undefined))
+        }
+        const changed = await changeCache.get(verifiedAtCommit)
+        if (changed === undefined) computedStatus = 'unknown'
+        else if (sources.some(source => changed.includes(source))) computedStatus = 'stale'
+      }
+      digestParts.push(`${path}\0${computedStatus}\0${content}`)
+      const bytes = Buffer.byteLength(content, 'utf8')
+      if (consumed + bytes > maxBytes) continue
+      consumed += bytes
+      documents.push({ path, ownerIds: legacyPageOwnerIds(relativePath, content, metadata), computedStatus, content })
+    }
   }
   const digest = createHash('sha256')
     .update(digestParts.join('\0'))
     .digest('hex')
-  return { directory: MEMORY_DIRECTORY, digest, documents, truncated: selectedCount > documents.length }
+  return {
+    directory: `${OWNER_CONFIGURATION_DIRECTORY}/${OWNER_COLLECTION_DIRECTORY}/<owner-id>/${OWNER_MEMORY_DIRECTORY}`,
+    digest,
+    documents,
+    truncated: selectedCount > documents.length,
+  }
 }
 
 function slug(value) {
@@ -406,9 +528,7 @@ export function fallbackCuratorResult(stage, entries, plan) {
   for (const entry of entries) {
     for (const [index, update] of (entry.report.memoryUpdates ?? []).entries()) {
       const pageOwnerIds = update.ownerIds.length > 0 ? update.ownerIds : [entry.owner.id]
-      const root = update.type === 'interface' && pageOwnerIds.length > 1
-        ? 'interfaces'
-        : `owners/${pageOwnerIds[0]}`
+      const root = `owners/${pageOwnerIds[0]}`
       pages.push({
         path: `${root}/${slug(update.title)}-${index + 1}.md`,
         type: update.type,
@@ -432,7 +552,10 @@ export function fallbackCuratorResult(stage, entries, plan) {
 
 function pageId(page) {
   if (page.id !== undefined) return page.id
-  const candidate = `memory.${page.path.replace(/\.md$/u, '').replaceAll('/', '.')}`
+  const logicalPath = page.path.startsWith('owners/')
+    ? page.path
+    : `owners/${page.ownerIds[0]}/${page.path}`
+  const candidate = `memory.${logicalPath.replace(/\.md$/u, '').replaceAll('/', '.')}`
   if (MEMORY_ID.test(candidate)) return candidate
   return `memory.page.${createHash('sha256').update(page.path).digest('hex').slice(0, 16)}`
 }
@@ -450,7 +573,7 @@ function nextCatalog(catalog, curator, context) {
     }
   }
   for (const page of curator.pages) {
-    pages[page.path] = {
+    pages[pageRelativePath(page)] = {
       id: pageId(page),
       owners: page.ownerIds,
       status: 'verified',
@@ -494,13 +617,13 @@ function refreshCatalogVerification(catalog, context = {}) {
   return changed
 }
 
-async function writeMemoryCatalog(worktree, catalog, validateTarget) {
-  const path = join(worktree, MEMORY_DIRECTORY, MEMORY_CATALOG_FILE)
+async function writeMemoryCatalog(worktree, ownerId, catalog, validateTarget) {
+  const path = join(ownerMemoryAbsoluteDirectory(worktree, ownerId), MEMORY_CATALOG_FILE)
   await validateTarget?.(path)
   await mkdir(dirname(path), { recursive: true })
   await validateTarget?.(path)
   await writeFile(path, `${JSON.stringify(catalog, null, 2)}\n`, 'utf8')
-  return `${MEMORY_DIRECTORY}/${MEMORY_CATALOG_FILE}`
+  return memoryRepositoryPath(ownerId, MEMORY_CATALOG_FILE)
 }
 
 /**
@@ -508,35 +631,42 @@ async function writeMemoryCatalog(worktree, catalog, validateTarget) {
  * 不猜测或改写任何页面正文、Owner、来源文件或长期结论。
  */
 export async function repairMemoryCatalogSelfReferences(worktree, context = {}) {
-  const catalog = await loadMemoryCatalog(worktree)
-  let changed = false
-  for (const [path, metadata] of Object.entries(catalog.pages)) {
-    if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
-      throw new Error(`Owner 记忆目录包含无效页面元数据：${path}`)
+  const written = []
+  for (const ownerId of await memoryOwnerIds(worktree)) {
+    const catalog = await loadOwnerMemoryCatalog(worktree, ownerId)
+    let changed = false
+    for (const [path, metadata] of Object.entries(catalog.pages)) {
+      if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
+        throw new Error(`Owner ${ownerId} 记忆目录包含无效页面元数据：${path}`)
+      }
+      const id = memoryIds([metadata.id], `catalog.pages[${path}].id`)[0]
+      for (const field of ['supersedes', 'derivedFrom']) {
+        const current = memoryIds(metadata[field], `catalog.pages[${path}].${field}`)
+        const next = current.filter(reference => reference !== id)
+        if (next.length === current.length) continue
+        metadata[field] = next
+        changed = true
+      }
     }
-    const id = memoryIds([metadata.id], `catalog.pages[${path}].id`)[0]
-    for (const field of ['supersedes', 'derivedFrom']) {
-      const current = memoryIds(metadata[field], `catalog.pages[${path}].${field}`)
-      const next = current.filter(reference => reference !== id)
-      if (next.length === current.length) continue
-      metadata[field] = next
-      changed = true
-    }
+    if (changed) written.push(await writeMemoryCatalog(worktree, ownerId, catalog, context.validateTarget))
   }
-  if (!changed) return []
-  return [await writeMemoryCatalog(worktree, catalog, context.validateTarget)]
+  return written
 }
 
 /** 仅刷新已由当前阶段 Curator/Reviewer 重新核对过的既有页面验证基线。 */
 export async function refreshMemoryCatalogVerification(worktree, context = {}) {
-  const catalog = await loadMemoryCatalog(worktree)
   const verifiedAtCommit = await verifyCommitSha(
     worktree,
     requiredText(context.verifiedAtCommit, 'verifiedAtCommit'),
     context.signal,
   )
-  if (!refreshCatalogVerification(catalog, { ...context, verifiedAtCommit })) return []
-  return [await writeMemoryCatalog(worktree, catalog, context.validateTarget)]
+  const written = []
+  for (const ownerId of await memoryOwnerIds(worktree)) {
+    const catalog = await loadOwnerMemoryCatalog(worktree, ownerId)
+    if (!refreshCatalogVerification(catalog, { ...context, verifiedAtCommit })) continue
+    written.push(await writeMemoryCatalog(worktree, ownerId, catalog, context.validateTarget))
+  }
+  return written
 }
 
 export function renderMemoryPage(page, context) {
@@ -551,7 +681,15 @@ function sourceSegment(value, label) {
 
 function safeReportSummary(value) {
   if (typeof value !== 'string' || value.trim() === '' || SENSITIVE_CONTENT.test(value)) return undefined
-  return conciseText(value, '任务最终摘要', MAX_WORKLOG_NOTE_LENGTH)
+  const summary = value.trim().replace(/\s+/gu, ' ')
+  if (summary.length <= MAX_WORKLOG_NOTE_LENGTH) return summary
+  return `${summary.slice(0, MAX_WORKLOG_NOTE_LENGTH - 1).trimEnd()}…`
+}
+
+export function sealedOwnerWorklogRelativePath({ workflowId, taskId, ownerId }) {
+  const normalizedOwnerId = ownerIds([ownerId], 'ownerId')[0]
+  const sourcePath = `${MEMORY_SOURCE_DIRECTORY}/${sourceSegment(workflowId, 'workflowId')}/${sourceSegment(taskId, 'taskId')}.md`
+  return memoryRepositoryPath(normalizedOwnerId, sourcePath)
 }
 
 /** 将未完成任务的短期日志封存为编译源；正文只保留可读的功能结论。 */
@@ -560,7 +698,11 @@ export async function writeSealedOwnerWorklog(worktree, context) {
     taskId: context.task.id,
     ownerId: context.owner.id,
   })
-  const sourcePath = `${MEMORY_SOURCE_DIRECTORY}/${sourceSegment(context.workflowId, 'workflowId')}/${sourceSegment(context.task.id, 'taskId')}.md`
+  const sourceFile = sealedOwnerWorklogRelativePath({
+    workflowId: context.workflowId,
+    taskId: context.task.id,
+    ownerId: context.owner.id,
+  })
   const notes = worklog.notes.map(note => note.type === '阻塞' && note.resolvedAt !== undefined
     ? `- 已解决阻塞：${note.text}（${note.resolution}）`
     : `- ${note.type}：${note.text}`)
@@ -573,12 +715,13 @@ export async function writeSealedOwnerWorklog(worktree, context) {
     if (summary !== undefined && !notes.some(note => note.endsWith(`：${summary}`))) notes.push(`- 变更：${summary}`)
   }
   if (notes.length === 0) notes.push('- 交付：本次任务没有留下需要长期解释的功能变化。')
-  const path = join(worktree, MEMORY_DIRECTORY, sourcePath)
+  const ownerId = ownerIds([context.owner.id], 'context.owner.id')[0]
+  const path = join(worktree, sourceFile)
   await context.validateTarget?.(path)
   await mkdir(dirname(path), { recursive: true })
   await context.validateTarget?.(path)
   await writeFile(path, [`# ${worklog.title}`, '', ...notes, ''].join('\n'), 'utf8')
-  return `${MEMORY_DIRECTORY}/${sourcePath}`
+  return sourceFile
 }
 
 function stageLogSection(context) {
@@ -597,8 +740,8 @@ function stageLogSection(context) {
   ].join('\n')
 }
 
-async function upsertStageLog(worktree, context) {
-  const path = join(worktree, MEMORY_DIRECTORY, 'log.md')
+async function upsertStageLog(worktree, ownerId, context) {
+  const path = join(ownerMemoryAbsoluteDirectory(worktree, ownerId), 'log.md')
   const header = '# Owner 记忆编译日志\n\n该文件由 Owner 工作流运行时按阶段维护，不接受 Owner 直接编辑。\n'
   const current = existsSync(path) ? await readFile(path, 'utf8') : header
   const section = stageLogSection(context)
@@ -611,11 +754,11 @@ async function upsertStageLog(worktree, context) {
   await mkdir(dirname(path), { recursive: true })
   await context.validateTarget?.(path)
   await writeFile(path, next, 'utf8')
-  return `${MEMORY_DIRECTORY}/log.md`
+  return memoryRepositoryPath(ownerId, 'log.md')
 }
 
-async function rebuildIndex(worktree, validateTarget) {
-  const directory = join(worktree, MEMORY_DIRECTORY)
+async function rebuildIndex(worktree, ownerId, validateTarget) {
+  const directory = ownerMemoryAbsoluteDirectory(worktree, ownerId)
   const files = (await markdownFiles(directory))
     .map(path => relative(directory, path).replaceAll(sep, '/'))
     .filter(path => !['index.md', 'log.md'].includes(path) && !path.startsWith(`${MEMORY_SOURCE_DIRECTORY}/`))
@@ -632,23 +775,105 @@ async function rebuildIndex(worktree, validateTarget) {
   await mkdir(directory, { recursive: true })
   await validateTarget?.(join(directory, 'index.md'))
   await writeFile(join(directory, 'index.md'), lines.join('\n'), 'utf8')
-  return `${MEMORY_DIRECTORY}/index.md`
+  return memoryRepositoryPath(ownerId, 'index.md')
+}
+
+async function migrateLegacyMemoryLayout(worktree, fallbackOwnerIds, validateTarget) {
+  const legacyDirectory = join(worktree, LEGACY_MEMORY_DIRECTORY)
+  if (!existsSync(legacyDirectory)) return { files: [], ownerIds: [] }
+  const legacyCatalog = await loadLegacyMemoryCatalog(worktree)
+  const legacyFiles = await regularFiles(legacyDirectory)
+  const catalogs = new Map()
+  const migratedOwnerIds = new Set(ownerIds(fallbackOwnerIds, 'legacy.fallbackOwnerIds'))
+
+  for (const absolute of await markdownFiles(legacyDirectory)) {
+    const legacyPath = relative(legacyDirectory, absolute).replaceAll(sep, '/')
+    if (legacyPath === 'index.md' || legacyPath === 'log.md' || legacyPath.startsWith(`${MEMORY_SOURCE_DIRECTORY}/`)) continue
+    const content = await readFile(absolute, 'utf8')
+    const metadata = pageMetadata(content, legacyCatalog, legacyPath)
+    const routed = legacyPageOwnerIds(legacyPath, content, metadata)
+    const targets = routed.length > 0 ? routed : [...migratedOwnerIds]
+    if (targets.length === 0) throw new Error(`旧版 Owner 记忆页面无法确定归属 Owner：${legacyPath}`)
+    for (const ownerId of targets) {
+      migratedOwnerIds.add(ownerId)
+      const relativePath = legacyPath.replace(/^owners\/[a-z][a-z0-9_-]{0,63}\//u, '')
+      const target = join(ownerMemoryAbsoluteDirectory(worktree, ownerId), relativePath)
+      await validateTarget?.(target)
+      await mkdir(dirname(target), { recursive: true })
+      if (existsSync(target) && await readFile(target, 'utf8') !== content) {
+        throw new Error(`旧版 Owner 记忆迁移与现有页面冲突：${memoryRepositoryPath(ownerId, relativePath)}`)
+      }
+      await writeFile(target, content, 'utf8')
+      if (!catalogs.has(ownerId)) catalogs.set(ownerId, await loadOwnerMemoryCatalog(worktree, ownerId))
+      catalogs.get(ownerId).pages[relativePath] = { ...metadata, owners: [ownerId] }
+    }
+  }
+
+  const sourceFiles = legacyFiles.filter(path => (
+    relative(legacyDirectory, path).replaceAll(sep, '/').startsWith(`${MEMORY_SOURCE_DIRECTORY}/`)
+  ))
+  for (const ownerId of migratedOwnerIds) {
+    for (const source of sourceFiles) {
+      const relativePath = relative(legacyDirectory, source).replaceAll(sep, '/')
+      const target = join(ownerMemoryAbsoluteDirectory(worktree, ownerId), relativePath)
+      await validateTarget?.(target)
+      await mkdir(dirname(target), { recursive: true })
+      if (!existsSync(target)) await writeFile(target, await readFile(source))
+    }
+  }
+
+  const written = []
+  for (const [ownerId, catalog] of catalogs) {
+    written.push(await writeMemoryCatalog(worktree, ownerId, catalog, validateTarget))
+  }
+  const trackedLegacyFiles = new Set((await git(worktree, [
+    'ls-files', '-z', '--', LEGACY_MEMORY_DIRECTORY,
+  ])).split('\0').filter(Boolean))
+  const deleted = legacyFiles
+    .map(path => `${LEGACY_MEMORY_DIRECTORY}/${relative(legacyDirectory, path).replaceAll(sep, '/')}`)
+    .filter(path => trackedLegacyFiles.has(path))
+  await rm(legacyDirectory, { recursive: true, force: true })
+  return { files: [...written, ...deleted], ownerIds: [...migratedOwnerIds] }
 }
 
 export async function writeMemoryBundle(worktree, curator, context) {
-  const catalog = nextCatalog(await loadMemoryCatalog(worktree), curator, context)
-  refreshCatalogVerification(catalog, context)
-  const written = []
+  const migration = await migrateLegacyMemoryLayout(worktree, [
+    ...curator.pages.map(page => page.ownerIds[0]),
+    ...(context.entries ?? []).map(entry => entry.owner.id),
+  ], context.validateTarget)
+  const written = [...migration.files]
+  const pagesByOwner = new Map()
   for (const page of curator.pages) {
-    const path = join(worktree, MEMORY_DIRECTORY, page.path)
-    await context.validateTarget?.(path)
-    await mkdir(dirname(path), { recursive: true })
-    await context.validateTarget?.(path)
-    await writeFile(path, renderMemoryPage(page, context), 'utf8')
-    written.push(`${MEMORY_DIRECTORY}/${page.path}`)
+    const ownerId = page.ownerIds[0]
+    if (!pagesByOwner.has(ownerId)) pagesByOwner.set(ownerId, [])
+    pagesByOwner.get(ownerId).push(page)
   }
-  written.push(await writeMemoryCatalog(worktree, catalog, context.validateTarget))
-  written.push(await upsertStageLog(worktree, { ...context, curator }))
-  written.push(await rebuildIndex(worktree, context.validateTarget))
+  const touchedOwnerIds = [...new Set([
+    ...pagesByOwner.keys(),
+    ...migration.ownerIds,
+    ...(context.entries ?? []).map(entry => entry.owner.id),
+  ])].sort()
+  for (const ownerId of touchedOwnerIds) {
+    const ownerPages = pagesByOwner.get(ownerId) ?? []
+    const ownerCurator = { ...curator, pages: ownerPages }
+    const catalog = nextCatalog(await loadOwnerMemoryCatalog(worktree, ownerId), ownerCurator, context)
+    refreshCatalogVerification(catalog, context)
+    for (const page of ownerPages) {
+      const relativePath = pageRelativePath(page)
+      const path = join(ownerMemoryAbsoluteDirectory(worktree, ownerId), relativePath)
+      await context.validateTarget?.(path)
+      await mkdir(dirname(path), { recursive: true })
+      await context.validateTarget?.(path)
+      await writeFile(path, renderMemoryPage(page, context), 'utf8')
+      written.push(memoryRepositoryPath(ownerId, relativePath))
+    }
+    written.push(await writeMemoryCatalog(worktree, ownerId, catalog, context.validateTarget))
+    written.push(await upsertStageLog(worktree, ownerId, {
+      ...context,
+      curator: ownerCurator,
+      entries: (context.entries ?? []).filter(entry => entry.owner.id === ownerId),
+    }))
+    written.push(await rebuildIndex(worktree, ownerId, context.validateTarget))
+  }
   return [...new Set(written)]
 }

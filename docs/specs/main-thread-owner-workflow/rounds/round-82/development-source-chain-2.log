@@ -1,0 +1,27 @@
+✖ 真实 Harness 原生 edit 链绑定 T05 引用和实际 Git baseline，并由只读 Runtime 入口返回 source-validated (589.884084ms)
+✔ 缺失链、补造的同文件 record、以及暂存用户变更均拒绝而不修复来源或 index (337.876625ms)
+✔ 真实 Runtime 入口不接受其他主 agent 复用来源，也不接受有父会话的 child (301.397417ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1474.240791
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/planning-source-chain-native.test.mjs:181:1
+✖ 真实 Harness 原生 edit 链绑定 T05 引用和实际 Git baseline，并由只读 Runtime 入口返回 source-validated (589.884084ms)
+  Error [PlanningSourceChainError]: Planning source chain: IDENTITY_MISMATCH (journal.source-chain-2.prepared.target.displayPath)
+      at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-source-chain.mjs:29:44)
+      at prepared (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-source-chain.mjs:175:5)
+      at validateRecord (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-source-chain.mjs:228:18)
+      at validatePlanningSourceChain (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-source-chain.mjs:383:23)
+      at async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-source-chain-native.test.mjs:186:18)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    code: 'IDENTITY_MISMATCH',
+    field: 'journal.source-chain-2.prepared.target.displayPath'
+  }

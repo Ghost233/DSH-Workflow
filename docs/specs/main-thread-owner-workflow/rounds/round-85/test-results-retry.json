@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "suite": "control",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/control.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T18:38:14.034989+00:00",
+      "timeoutSeconds": 240,
+      "environment": "default tool sandbox; native Harness guards retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T18:40:09.963666+00:00",
+      "counts": {
+        "tests": 166,
+        "pass": 159,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 7,
+        "todo": 0
+      }
+    }
+  ],
+  "drift": []
+}

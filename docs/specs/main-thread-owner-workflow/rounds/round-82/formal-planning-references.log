@@ -1,0 +1,190 @@
+TAP version 13
+# Subtest: real selected documents retain complete cross-ticket AC references, multiple segments and fixed content
+ok 1 - real selected documents retain complete cross-ticket AC references, multiple segments and fixed content
+  ---
+  duration_ms: 21.708917
+  type: 'test'
+  ...
+# Subtest: mixed readiness preserves explicit blockers and blocks dependent tickets while unrelated work remains ready
+ok 2 - mixed readiness preserves explicit blockers and blocks dependent tickets while unrelated work remains ready
+  ---
+  duration_ms: 14.023417
+  type: 'test'
+  ...
+# Subtest: rejects missing-file without modifying planning files
+ok 3 - rejects missing-file without modifying planning files
+  ---
+  duration_ms: 5.801792
+  type: 'test'
+  ...
+# Subtest: rejects changed-content without modifying planning files
+ok 4 - rejects changed-content without modifying planning files
+  ---
+  duration_ms: 6.273583
+  type: 'test'
+  ...
+# Subtest: rejects wrong-digest without modifying planning files
+ok 5 - rejects wrong-digest without modifying planning files
+  ---
+  duration_ms: 5.301875
+  type: 'test'
+  ...
+# Subtest: rejects duplicate-ticket without modifying planning files
+ok 6 - rejects duplicate-ticket without modifying planning files
+  ---
+  duration_ms: 3.377166
+  type: 'test'
+  ...
+# Subtest: rejects duplicate-path without modifying planning files
+ok 7 - rejects duplicate-path without modifying planning files
+  ---
+  duration_ms: 5.595709
+  type: 'test'
+  ...
+# Subtest: rejects missing-revision without modifying planning files
+ok 8 - rejects missing-revision without modifying planning files
+  ---
+  duration_ms: 5.392083
+  type: 'test'
+  ...
+# Subtest: rejects wrong-identity without modifying planning files
+ok 9 - rejects wrong-identity without modifying planning files
+  ---
+  duration_ms: 4.365083
+  type: 'test'
+  ...
+# Subtest: rejects wrong-source without modifying planning files
+ok 10 - rejects wrong-source without modifying planning files
+  ---
+  duration_ms: 3.862042
+  type: 'test'
+  ...
+# Subtest: rejects unknown-ac without modifying planning files
+ok 11 - rejects unknown-ac without modifying planning files
+  ---
+  duration_ms: 4.942916
+  type: 'test'
+  ...
+# Subtest: rejects wrong-ac-version without modifying planning files
+ok 12 - rejects wrong-ac-version without modifying planning files
+  ---
+  duration_ms: 3.392458
+  type: 'test'
+  ...
+# Subtest: rejects unknown-contract without modifying planning files
+ok 13 - rejects unknown-contract without modifying planning files
+  ---
+  duration_ms: 4.37025
+  type: 'test'
+  ...
+# Subtest: rejects wrong-contract-version without modifying planning files
+ok 14 - rejects wrong-contract-version without modifying planning files
+  ---
+  duration_ms: 2.812292
+  type: 'test'
+  ...
+# Subtest: rejects missing-dependency without modifying planning files
+ok 15 - rejects missing-dependency without modifying planning files
+  ---
+  duration_ms: 5.90625
+  type: 'test'
+  ...
+# Subtest: rejects cyclic-dependency without modifying planning files
+ok 16 - rejects cyclic-dependency without modifying planning files
+  ---
+  duration_ms: 4.53925
+  type: 'test'
+  ...
+# Subtest: rejects duplicate-segment without modifying planning files
+ok 17 - rejects duplicate-segment without modifying planning files
+  ---
+  duration_ms: 3.493375
+  type: 'test'
+  ...
+# Subtest: rejects empty-work without modifying planning files
+ok 18 - rejects empty-work without modifying planning files
+  ---
+  duration_ms: 5.099417
+  type: 'test'
+  ...
+# Subtest: rejects all-blocked without modifying planning files
+ok 19 - rejects all-blocked without modifying planning files
+  ---
+  duration_ms: 4.394083
+  type: 'test'
+  ...
+# Subtest: rejects empty-tickets without modifying planning files
+ok 20 - rejects empty-tickets without modifying planning files
+  ---
+  duration_ms: 3.683625
+  type: 'test'
+  ...
+# Subtest: rejects declaration-forgery without modifying planning files
+ok 21 - rejects declaration-forgery without modifying planning files
+  ---
+  duration_ms: 7.594666
+  type: 'test'
+  ...
+# Subtest: rejects disallowed planning path docs/analysis/spec.md
+ok 22 - rejects disallowed planning path docs/analysis/spec.md
+  ---
+  duration_ms: 4.732834
+  type: 'test'
+  ...
+# Subtest: rejects disallowed planning path docs/superpowers/specs/spec.md
+ok 23 - rejects disallowed planning path docs/superpowers/specs/spec.md
+  ---
+  duration_ms: 4.180459
+  type: 'test'
+  ...
+# Subtest: rejects disallowed planning path ../escape.md
+ok 24 - rejects disallowed planning path ../escape.md
+  ---
+  duration_ms: 3.256209
+  type: 'test'
+  ...
+# Subtest: rejects disallowed planning path AGENTS.md
+ok 25 - rejects disallowed planning path AGENTS.md
+  ---
+  duration_ms: 4.610625
+  type: 'test'
+  ...
+# Subtest: linked document source cannot cross the existing document boundary
+ok 26 - linked document source cannot cross the existing document boundary
+  ---
+  duration_ms: 3.937166
+  type: 'test'
+  ...
+# Subtest: unready contract blocks its consumers while independent work remains available
+ok 27 - unready contract blocks its consumers while independent work remains available
+  ---
+  duration_ms: 9.611625
+  type: 'test'
+  ...
+# Subtest: a ticket retains its independent ready segment alongside a declared blocked segment
+ok 28 - a ticket retains its independent ready segment alongside a declared blocked segment
+  ---
+  duration_ms: 8.624542
+  type: 'test'
+  ...
+# Subtest: invalid UTF-8 cannot produce content that differs from its bound byte digest
+ok 29 - invalid UTF-8 cannot produce content that differs from its bound byte digest
+  ---
+  duration_ms: 5.946084
+  type: 'test'
+  ...
+# Subtest: a UTF-8 BOM cannot be silently removed from the bound source content
+ok 30 - a UTF-8 BOM cannot be silently removed from the bound source content
+  ---
+  duration_ms: 8.403208
+  type: 'test'
+  ...
+1..30
+# tests 30
+# suites 0
+# pass 30
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 305.409666

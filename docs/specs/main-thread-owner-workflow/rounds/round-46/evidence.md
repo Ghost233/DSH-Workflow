@@ -1,0 +1,3 @@
+# R46 修复占槽超时事件
+
+仅排除pendingSupervisorRecovery进入实际Owner执行timeout候选，保留普通有界wait-timeout观察。主线程独占runtime/test；R45基线1622已核对。新增真实control ack→旧launchedAt→两次await反例，保留pending和原失败来源/额度。正式runtime-recovery-budget全套与control/resilience已有timeout定向测试，不重复与本改动无关的存储/结算证明。完整超时取消依然待T15/T16/T17，不称已完成。

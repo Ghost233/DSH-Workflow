@@ -1,0 +1,44 @@
+[
+  {
+    "scenario": "settled-failed-sigkill-replay",
+    "producerPid": 47087,
+    "replayerPid": 47820,
+    "exit": {
+      "code": null,
+      "signal": "SIGKILL"
+    },
+    "outcome": "settled_failed",
+    "reason": null,
+    "modelRequests": 0,
+    "agentOperations": {
+      "create": 0,
+      "resume": 0,
+      "followup": 0
+    },
+    "equalArtifactHashes": {
+      "workflow-state.json": "211e832f1a3173f18820c970497d5285910864e82dbda81f4562d1f8fa34eeb3",
+      "reserved-session.jsonl": "25fd63aed5571b408ebc123f2f413dbd9c8470099f3475aefdc06a7a876eaf84"
+    }
+  },
+  {
+    "scenario": "submitted-sigkill-pause",
+    "producerPid": 46330,
+    "replayerPid": 47050,
+    "exit": {
+      "code": null,
+      "signal": "SIGKILL"
+    },
+    "outcome": "paused",
+    "reason": "extra_or_wrong_input",
+    "modelRequests": 0,
+    "agentOperations": {
+      "create": 0,
+      "resume": 0,
+      "followup": 0
+    },
+    "equalArtifactHashes": {
+      "workflow-state.json": "2cf454443d2e0a981bea6373b00b4d2ff661cc1869397e00c9cec5d4a8972669",
+      "reserved-session.jsonl": "c2df6511ccdd623598b00bb43f998acf64c84af673f9c1f8365f05a9baa4265c"
+    }
+  }
+]

@@ -1,0 +1,118 @@
+--- owner-workflow-plugin/test/recovery-session.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session.test.mjs
+@@ -891,3 +891,46 @@
+     assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
+   })
+ }
++
++
++test('T22 L4 paused recovery leaves an independent Owner runnable in the same Runtime and ledger', async t => {
++  const fixture = await createRecoverySessionFixture(t, {
++    executable: true, includeIndependentOwner: true,
++    modelScript: modules => [
++      ...completedOwnerModelScript(modules).slice(0, 2),
++      ...completedOwnerModelScript(modules).slice(0, 2),
++    ],
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  const first = await fixture.runtime.runExternalOwner(
++    fixture.admissionAgent, fixture.workflowId, 'T1', 'api', undefined,
++    { recoverySessionRequest: request(receipt), deferFinish: true },
++  )
++  assert.equal(first.phase, 'synced')
++  const pause = await fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, request(receipt))
++  assert.equal(pause.reason, 'owner_success_unsettled')
++  const before = await readRecoverySessionState(fixture)
++  const rawBefore = await fixture.readRaw(receipt.executionIdentity.sessionId)
++  const requestsBefore = fixture.adapter.requests.length
++  const independent = await fixture.runtime.runExternalOwner(
++    fixture.admissionAgent, fixture.workflowId, 'T2', 'worker', undefined, { deferFinish: true },
++  )
++  assert.equal(independent.phase, 'synced')
++  assert.match(independent.commitSha, /^[0-9a-f]{40}$/u)
++  assert.equal(fixture.adapter.requests.length, requestsBefore + 2)
++  const after = await readRecoverySessionState(fixture)
++  assert.deepEqual(after.recoveryAdmission, before.recoveryAdmission)
++  assert.deepEqual(after.ownerRuns['T1:api'], before.ownerRuns['T1:api'])
++  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), rawBefore)
++  const other = after.ownerRuns['T2:worker']
++  assert.equal(other.status, 'awaiting_finish')
++  assert.equal(other.ownerId, 'worker')
++  assert.notEqual(other.sessionId, receipt.executionIdentity.sessionId)
++  assert.equal(other.recoverySession, undefined)
++  const events = await fixture.readFrom(other.sessionId)
++  assert.equal(events.events.filter(event => event.type === 'tool/call' && event.data.name === 'owner_submit').length, 1)
++  const again = await fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, request(receipt))
++  assert.deepEqual(again, pause)
++  assert.deepEqual(await readRecoverySessionState(fixture), after)
++  assert.equal(fixture.adapter.requests.length, requestsBefore + 2)
++})
+--- owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs (baseline)
++++ owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs
+@@ -180,21 +180,25 @@
+   }
+ }
+
+-function planFixture({ registryDigest: boundRegistryDigest = 'a'.repeat(64) } = {}) {
++function planFixture({ registryDigest: boundRegistryDigest = 'a'.repeat(64), includeIndependentOwner = false } = {}) {
+   return normalizePlanV2({
+     contract: PLAN_V2_CONTRACT,
+     registryDigest: boundRegistryDigest,
+     summary: 'T22 recovery-session reconciliation fixture',
+-    owners: [{ id: 'api', name: 'API Owner', description: 'Owns API sources', scope: ['src/api/**'], exclude: [] }],
++    owners: [{ id: 'api', name: 'API Owner', description: 'Owns API sources', scope: ['src/api/**'], exclude: [] },
++      ...(includeIndependentOwner ? [{ id: 'worker', name: 'Worker Owner', description: 'Owns independent worker sources', scope: ['src/worker/**'], exclude: [] }] : [])],
+     verifications: [{ id: 'unit', run: ['node', '--test'] }],
+     tasks: [{
+       id: 'T1', role: 'work', ownerId: 'api', title: 'Repair API', dependsOn: [],
+       write: ['src/api/repair.mjs'], verify: ['unit'], done: ['API repair is verified'],
+-    }],
+-  })
+-}
+-
+-async function installFixtureRegistry(worktree) {
++    }, ...(includeIndependentOwner ? [{
++      id: 'T2', role: 'work', ownerId: 'worker', title: 'Independent worker task', dependsOn: [],
++      write: ['src/worker/independent.mjs'], verify: ['unit'], done: ['Worker result is verified'],
++    }] : [])],
++  })
++}
++
++async function installFixtureRegistry(worktree, includeIndependentOwner = false) {
+   let registry = await ensureRegistry(worktree)
+   const owner = {
+     id: 'api', name: 'API Owner', description: 'Owns API sources', scope: ['src/api/**'], exclude: [],
+@@ -203,6 +207,13 @@
+     type: 'add', owner, reason: 'Register the long-lived API Owner for recovery-session integration tests',
+   })
+   registry = await applyApprovedRegistryChange(worktree, { ...proposal, approvedDigest: proposal.digest })
++  if (includeIndependentOwner) {
++    const independent = proposeRegistryChange(registry, {
++      type: 'add', owner: { id: 'worker', name: 'Worker Owner', description: 'Owns independent worker sources', scope: ['src/worker/**'], exclude: [] },
++      reason: 'Register an independent Owner for same-runtime isolation proof',
++    })
++    registry = await applyApprovedRegistryChange(worktree, { ...independent, approvedDigest: independent.digest })
++  }
+   await git(worktree, ['add', '.owner-workflow'])
+   await git(worktree, ['commit', '-qm', 'Register recovery-session fixture Owner'])
+   return registry
+@@ -295,6 +306,7 @@
+   compression = 'none',
+   executable = false,
+   temporaryDirectory = tmpdir(),
++  includeIndependentOwner = false,
+ } = {}) {
+   const root = await realpath(await mkdtemp(join(temporaryDirectory, 'dsh-t22-tests-r16-')))
+   const sessionRoot = join(root, '.dsh-workflow', 'recovery-sessions')
+@@ -314,9 +326,10 @@
+   if (executable) {
+     await mkdir(dirname(workflowWorktree), { recursive: true })
+     await git(root, ['worktree', 'add', '-q', '-b', workflowBranch, workflowWorktree, 'main'])
+-    liveRegistry = await installFixtureRegistry(workflowWorktree)
++    liveRegistry = await installFixtureRegistry(workflowWorktree, includeIndependentOwner)
+   }
+   const plan = planFixture({
++    includeIndependentOwner,
+     registryDigest: liveRegistry === undefined ? undefined : registryDigest(liveRegistry),
+   })
+   const planDigest = digest(plan)

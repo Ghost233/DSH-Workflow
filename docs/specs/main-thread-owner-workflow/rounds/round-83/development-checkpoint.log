@@ -1,0 +1,76 @@
+✖ 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交 (605.992125ms)
+✔ 暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户文件 (308.956125ms)
+✖ 真实子进程 SIGKILL 在 ref CAS 后留下可识别 pending journal，fresh resume 只同步 index 并发布一个快照 (378.064042ms)
+✖ 未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁 (354.694625ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 1
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1832.880375
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:38:1
+✖ 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交 (605.992125ms)
+  Error [PlanningCheckpointError]: Planning checkpoint: UNRELATED_WORKTREE_CHANGE (worktree: .dsh-workflow/planning-write-journal/prepared/0727122575ddcc91ed269d09933cca60809bf5550dcdf2628efeda95f38dc030.json)
+      at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:26:44)
+      at assertStatus (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:380:36)
+      at assertInitialState (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:402:9)
+      at async runUnderLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:677:5)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:46:17)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    code: 'UNRELATED_WORKTREE_CHANGE',
+    field: 'worktree'
+  }
+
+test at owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:87:1
+✖ 真实子进程 SIGKILL 在 ref CAS 后留下可识别 pending journal，fresh resume 只同步 index 并发布一个快照 (378.064042ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  null !== 'SIGKILL'
+
+      at Object.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:95:12)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:94:3)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: 'SIGKILL',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:109:1
+✖ 未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁 (354.694625ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /FOREIGN_INDEX_LOCK|GIT_FAILURE/. Input:
+
+  'PlanningCheckpointError: Planning checkpoint: UNRELATED_WORKTREE_CHANGE (worktree: .dsh-workflow/planning-write-journal/prepared/0727122575ddcc91ed269d09933cca60809bf5550dcdf2628efeda95f38dc030.json)'
+
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:117:3)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: PlanningCheckpointError: Planning checkpoint: UNRELATED_WORKTREE_CHANGE (worktree: .dsh-workflow/planning-write-journal/prepared/0727122575ddcc91ed269d09933cca60809bf5550dcdf2628efeda95f38dc030.json)
+        at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:26:44)
+        at assertStatus (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:380:36)
+        at assertInitialState (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:402:9)
+        at async runUnderLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/planning-checkpoint.mjs:677:5)
+        at async waitForActual (node:assert:646:5)
+        at async strict.rejects (node:assert:769:25)
+        at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-checkpoint-native.test.mjs:117:3)
+        at async Test.run (node:internal/test_runner/test:1113:7)
+        at async Test.processPendingSubtests (node:internal/test_runner/test:788:7),
+    expected: /FOREIGN_INDEX_LOCK|GIT_FAILURE/,
+    operator: 'rejects',
+    diff: 'simple'
+  }

@@ -1,0 +1,142 @@
+--- owner-workflow-plugin/src/recovery-budget.mjs (round12)
++++ owner-workflow-plugin/src/recovery-budget.mjs
+@@ -213,8 +213,7 @@
+   const attempts = []
+   const requests = new Set()
+   const attemptIds = new Set()
+-  const executionReferences = new Set()
+-  const resultReferences = new Set()
++  const receiptOwners = new Map()
+   const attemptsByRoot = new Map()
+   for (let index = 0; index < value.attempts.length; index += 1) {
+     const item = attempt(value.attempts[index], `ledger.attempts[${index}]`)
+@@ -222,15 +221,13 @@
+     if (!roots.has(item.rootProblemId)) fail('attempt.rootProblemId 未注册')
+     if (requests.has(item.requestId)) fail('ledger.attempts 有重复 requestId')
+     if (attemptIds.has(item.attemptId)) fail('ledger.attempts 有重复 attemptId')
+-    if (item.executionRef !== undefined) {
+-      const key = referenceKey(item.executionRef)
+-      if (executionReferences.has(key)) fail('ledger.attempts 有重复 executionRef')
+-      executionReferences.add(key)
+-    }
+-    if (item.result !== undefined) {
+-      const key = referenceKey(item.result.reference)
+-      if (resultReferences.has(key)) fail('ledger.attempts 有重复 result.reference')
+-      resultReferences.add(key)
++    for (const receipt of [item.executionRef, item.result?.reference]) {
++      if (receipt === undefined) continue
++      const key = referenceKey(receipt)
++      if (receiptOwners.has(key) && receiptOwners.get(key) !== item.attemptId) {
++        fail('回执引用已被其他 attempt 占用')
++      }
++      receiptOwners.set(key, item.attemptId)
+     }
+     requests.add(item.requestId)
+     attemptIds.add(item.attemptId)
+@@ -361,6 +358,13 @@
+   return item
+ }
+
++function assertReceiptAvailable(ledger, current, receipt) {
++  if (ledger.attempts.some(item => item.attemptId !== current.attemptId
++    && [item.executionRef, item.result?.reference].some(existing => (
++      existing !== undefined && sameReference(existing, receipt)
++    )))) fail('回执引用已被其他 attempt 占用')
++}
++
+ export function startRecoveryAttempt(ledgerValue, value) {
+   const ledger = normalizeRecoveryBudget(ledgerValue)
+   exactKeys(value, [...REQUEST_FIELDS, 'executionRef'], 'start')
+@@ -372,10 +376,7 @@
+     if (!sameReference(current.executionRef, executionRef)) fail('executionRef 不能改写')
+     return operation(ledger, 'replayed', current)
+   }
+-  if (ledger.attempts.some(item => (
+-    item.requestId !== current.requestId && item.executionRef !== undefined
+-      && sameReference(item.executionRef, executionRef)
+-  ))) fail('executionRef 已被其他 attempt 占用')
++  assertReceiptAvailable(ledger, current, executionRef)
+   const nextAttempt = { ...current, state: 'running', executionRef }
+   return operation({
+     ...ledger,
+@@ -396,10 +397,7 @@
+   if (current.state === 'reserved' && nextResult.status === 'succeeded') {
+     fail('未启动 attempt 不能成功结算')
+   }
+-  if (ledger.attempts.some(item => (
+-    item.requestId !== current.requestId && item.result !== undefined
+-      && sameReference(item.result.reference, nextResult.reference)
+-  ))) fail('result.reference 已被其他 attempt 占用')
++  assertReceiptAvailable(ledger, current, nextResult.reference)
+   const nextAttempt = { ...current, state: 'settled', result: nextResult }
+   return operation({
+     ...ledger,
+--- owner-workflow-plugin/test/recovery-budget.test.mjs (round12)
++++ owner-workflow-plugin/test/recovery-budget.test.mjs
+@@ -263,3 +263,66 @@
+   assert.equal(problem(ledger, 'P2').status, 'resolved')
+   assert.equal(ledger.totalUsed, 0)
+ })
++
++for (const executionFirst of [true, false]) {
++  test(`T13 F-14 跨attempt跨字段引用拒绝：${executionFirst ? '先执行后结算' : '先结算后执行'}`, () => {
++    let ledger = reserveRecoveryAttempt(setup(), req(1)).ledger
++    ledger = reserveRecoveryAttempt(ledger, req(2, 'P2')).ledger
++    const shared = ref('shared-receipt')
++    ledger = executionFirst
++      ? startRecoveryAttempt(ledger, { ...req(1), executionRef: shared }).ledger
++      : failure(ledger, req(1), shared.id)
++    const before = reload(ledger)
++    freeze(ledger)
++    assert.throws(() => executionFirst
++      ? failure(ledger, req(2, 'P2'), shared.id)
++      : startRecoveryAttempt(ledger, { ...req(2, 'P2'), executionRef: shared }), /其他 attempt/)
++    assert.deepEqual(ledger, before)
++    assert.equal(ledger.totalUsed, 2)
++  })
++}
++
++for (const reverse of [false, true]) {
++  test(`T13 F-14 JSON导入拒绝跨字段串用回执，reverse=${reverse}`, () => {
++    let ledger = reserveRecoveryAttempt(setup(), req(1)).ledger
++    ledger = reserveRecoveryAttempt(ledger, req(2, 'P2')).ledger
++    ledger = startRecoveryAttempt(ledger, { ...req(1), executionRef: ref('shared-receipt') }).ledger
++    const snapshot = JSON.parse(JSON.stringify(ledger))
++    snapshot.attempts[1].state = 'settled'
++    snapshot.attempts[1].result = { status: 'failed', reference: ref('shared-receipt') }
++    if (reverse) snapshot.attempts.reverse()
++    assert.throws(() => normalizeRecoveryBudget(snapshot), /其他 attempt/)
++  })
++}
++
++test('T13 F-14 同attempt跨字段引用及重放合法，不同版本引用仍独立', () => {
++  let ledger = reserveRecoveryAttempt(setup(), req(1)).ledger
++  const shared = ref('shared-receipt')
++  ledger = startRecoveryAttempt(ledger, { ...req(1), executionRef: shared }).ledger
++  const result = { status: 'succeeded', reference: shared }
++  ledger = settleRecoveryAttempt(ledger, { ...req(1), result }).ledger
++  const replay = settleRecoveryAttempt(reload(ledger), { ...req(1), result })
++  assert.equal(replay.outcome, 'replayed')
++  assert.deepEqual(replay.ledger, ledger)
++  ledger = reserveRecoveryAttempt(replay.ledger, req(2, 'P2')).ledger
++  ledger = startRecoveryAttempt(ledger, { ...req(2, 'P2'), executionRef: ref(shared.id, 'v2') }).ledger
++  assert.equal(ledger.attempts[1].state, 'running')
++  assert.equal(reload(ledger).totalUsed, 2)
++})
++
++for (const kind of ['execution', 'result']) {
++  test(`T13 F-14 保留同字段跨attempt去重：${kind}`, () => {
++    let ledger = reserveRecoveryAttempt(setup(), req(1)).ledger
++    ledger = reserveRecoveryAttempt(ledger, req(2, 'P2')).ledger
++    const record = (value, request) => kind === 'execution'
++      ? startRecoveryAttempt(value, { ...request, executionRef: ref('one-receipt') }).ledger
++      : failure(value, request, 'one-receipt')
++    ledger = record(ledger, req(1))
++    assert.throws(() => record(ledger, req(2, 'P2')), /其他 attempt/)
++    const snapshot = JSON.parse(JSON.stringify(ledger))
++    snapshot.attempts[1].state = snapshot.attempts[0].state
++    if (kind === 'execution') snapshot.attempts[1].executionRef = ref('one-receipt')
++    else snapshot.attempts[1].result = { status: 'failed', reference: ref('one-receipt') }
++    assert.throws(() => normalizeRecoveryBudget(snapshot), /其他 attempt/)
++  })
++}

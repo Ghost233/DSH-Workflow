@@ -1,0 +1,15 @@
+/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/core/session/src/index.ts:318
+    throw new Error(`${subject} message must have role "${expectedRole}"`)
+          ^
+
+Error: session event at seq 4 message must have role "user"
+    at assertMessageEventShape (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/core/session/src/index.ts:318:11)
+    at adoptSessionEvent (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/core/session/src/index.ts:168:3)
+    at snapshotSessionEvent (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/core/session/src/index.ts:193:10)
+    at <anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence/src/coordinator.ts:552:22)
+    at Array.map (<anonymous>)
+    at snapshotStoredEvents (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence/src/coordinator.ts:548:17)
+    at PersistenceCoordinator.readStoredPrefix (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence/src/coordinator.ts:883:20)
+    at async PersistenceCoordinator.readFromCore (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence/src/coordinator.ts:867:19)
+
+Node.js v24.12.0

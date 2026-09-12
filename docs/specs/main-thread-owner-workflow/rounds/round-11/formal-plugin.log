@@ -1,0 +1,21 @@
+✔ 插件注册主编排工具、全局守卫和九个中文 Skill (1.889292ms)
+✔ 决定回执工具仅允许主编排会话，所有子代理角色均被策略拒绝 (0.243083ms)
+✔ 提交 Intent 后明确询问是否重新规划，继续讨论时不唤醒 Planner (0.215542ms)
+✔ 用户在 Intent 问询中选择现在重新规划时只唤醒一次 Planner (0.101291ms)
+✔ PlanRevision 只有根会话原生问询明确同意后才切换 (0.532083ms)
+✔ 取消 Workflow 只有原生问询明确同意后才丢弃临时现场 (0.331167ms)
+✔ 计划修订额度只有原生问询明确同意后才扩展当前 Workflow (0.335ms)
+✔ 工作流批准只接受原生问询中的明确同意，并保留不同意与自定义意见 (0.142875ms)
+✔ 只读审计完成后由原生问询决定是否自动进入 preflight 与 workflow_start (0.306959ms)
+✔ Registry 与计划批准在原生问询同意前绝不修改 Runtime (0.490667ms)
+✔ Web 客户端宿主模式不注册 Agent 工具、Skill 或提示词 (0.06875ms)
+✔ Owner 工作流提示要求新 Flutter 验证显式 cwd，且不提供 Quick (0.304ms)
+✔ R09 执行反馈工具拒绝主编排和只读角色，不能冒充活动 Owner (0.054583ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 114.624583

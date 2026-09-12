@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: T22 L4 paused recovery leaves an independent Owner runnable in the same Runtime and ledger
+ok 1 - T22 L4 paused recovery leaves an independent Owner runnable in the same Runtime and ledger
+  ---
+  duration_ms: 3245.453292
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3421.273291

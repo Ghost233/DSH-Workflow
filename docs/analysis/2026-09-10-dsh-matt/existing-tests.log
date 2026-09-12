@@ -1,0 +1,33 @@
+✔ 证据义务冻结后，相同语义问题不会因改写标题被当成新进展 (3.067583ms)
+✔ 没有新 Runtime 证据时，Reviewer 新增问题进入仲裁而不是扩大冻结集合 (0.365875ms)
+✔ 新 Runtime 证据会续期进展租约并允许吸收新义务 (0.197917ms)
+✔ 只有真正的外部授权问题才请求用户 (0.132125ms)
+✔ 失败分类选择不同的自治恢复策略而不是统一 await_user (1.333583ms)
+✔ Workflow 证据摘要只随可核验任务或 Runtime facts 变化 (3.130875ms)
+✔ runner 对恢复错误使用固定分类，不把模型或控制桥错误混为同一种超时 (1.401667ms)
+✔ runner daemon 参数只启用确定性工作区扫描且不要求 workflow-id (0.32975ms)
+✔ runner daemon 发现可执行 Workflow 与需要恢复的卡住计划审查 (16.559584ms)
+✔ runner daemon 并发唤醒多个卡住的规划且停止时持久化 attempt (67.872ms)
+✔ runner 不读取本地 workflow 状态，只执行 Supervisor 指定动作并逐个按 actionId ACK (46.737ms)
+✔ runner 只把 supervisor-inspect 的有限宿主观察回传给对应 ACK (46.910667ms)
+✔ runner 让 Runtime 真正投递 notify 后才停止本次运行 (47.483125ms)
+✔ runner 对未知 Supervisor 动作关闭处理且不发送派生请求 (45.58475ms)
+✔ mixed needs_decision 的失败 Planning Driver 仍由统一决策器恢复 (1.195375ms)
+✔ 真正外部授权的 needs_decision 只形成一次显式等待 (0.087959ms)
+✔ Runner 生命周期由同一决策表覆盖执行、审查、修复和最终合并 (0.121583ms)
+✔ 新 repair 候选不会继承上一轮 awaiting_approval 而绕过 Reviewer (0.06675ms)
+✔ 旧 repair 候选缺少 approvalPolicy 时仍按内部 Intent 自治批准 (0.062792ms)
+✔ pending handoff 在 running 状态也优先进入局部重规划 (0.664083ms)
+✔ 已重规划 handoff 的新 DAG 不受旧 awaiting_main_discussion 阶段阻塞 (0.08125ms)
+✔ 失败与阻塞现场不会从 Runner 视野中静默消失 (0.168875ms)
+✔ 任务计数与唯一 Workflow 槽位使用同一纯状态语义 (0.074917ms)
+✔ 代表性非终态都必须给出 command 或显式 wait，禁止静默空洞 (0.13825ms)
+✔ 持久状态交叉空间中的每个组合都收敛为 command、wait、terminal 或 invariant (0.628ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 350.037625

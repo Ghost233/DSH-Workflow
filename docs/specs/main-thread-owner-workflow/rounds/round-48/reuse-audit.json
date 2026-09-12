@@ -1,0 +1,56 @@
+{
+  "changedPaths": [
+    "owner-workflow-plugin/test/control.test.mjs"
+  ],
+  "reusedSuites": [
+    {
+      "suite": "runtime-recovery-budget",
+      "counts": {
+        "tests": 34,
+        "pass": 34,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "source": "../round-47/formal-runtime-recovery-budget.log"
+    },
+    {
+      "suite": "recovery-admission",
+      "counts": {
+        "tests": 43,
+        "pass": 43,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "source": "../round-47/formal-recovery-admission.log"
+    },
+    {
+      "suite": "recovery-session",
+      "counts": {
+        "tests": 27,
+        "pass": 27,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "source": "../round-47/formal-recovery-session.log"
+    },
+    {
+      "suite": "resilience",
+      "counts": {
+        "tests": 60,
+        "pass": 60,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "source": "../round-47/formal-resilience.log"
+    }
+  ],
+  "justification": "Only the isolated control.test.mjs fixture writer changed; the reused tests do not import it. Production source, their fixtures, and their own test files retain identical candidate hashes. Original R47 control failure remains archived."
+}

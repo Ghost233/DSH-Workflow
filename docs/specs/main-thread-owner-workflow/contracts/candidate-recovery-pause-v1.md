@@ -1,0 +1,11 @@
+# 候选恢复的持久暂停与主控制投影
+
+T15，覆盖实际控制socket的workflow-drive→plan-revision-drive链。恢复候选的admission拒绝、未知/取消会话、未接线策略及其他需要技术对账的错误，不再仅抛给daemon内存退避；Runtime保存DSH_CANDIDATE_RECOVERY_PAUSE_V1。用户主动取消的AbortError保持取消语义。已由实际Planner/Review事务结算failed的RecoverySemanticFailure返回retry-ready，下一次控制调用仍可按预算领取后继ordinal；耗尽后才暂停。
+
+pause包含稳定source、notificationId、reason和createdAt。source由active A、候选C、恢复来源、关联Planner/Review操作及session/attempt回执、当前handoff与来源Owner/task的技术状态组成。排除Workflow revision、daemon retry/time、投递标记、pause自身、无关Owner，以及createdAt/updatedAt等观察时钟；实际候选/操作/回执或配置改变会使旧pause失效。新的候选身份替换发生在失败期间时，不把旧错误暂停套到新候选上。
+
+同一source生成同一mainOutbox ID，actionRequired=false。控制器优先投递一次候选技术暂停报告，再返回明确wait；使用既有plan-revision-drive命令投递，不增加一条daemon专属分叉。实际deliverMainOutbox使用持久通知与固定消息ID。重复workflow-drive、fresh Harness/控制桥，以及daemon重新从磁盘discover，都不能因为丢失内存退避而再调用同源Planner/Review。公有Review/rebuild入口也拒绝覆盖当前pause。
+
+当前来源任务已有await_user/provide_input或request_user_authority投影，以及候选要求外部决定时，优先保留用户等待，技术暂停不得隐藏它。来源分类沿用已有受保护Owner/Review生产链；本模块不根据错误文字猜测业务权限。
+
+仍未完成：原始JSONL更新但Workflow回执未变时的主动观察/恢复、无候选的初始handoff错误投影、暂停期间新的独立Owner调度接线。已运行Owner/active任务状态不被重置。不可把本轮暂停当作未知执行已终止，也不可将同源不再调度等同整个T15/无人值守验收完成。

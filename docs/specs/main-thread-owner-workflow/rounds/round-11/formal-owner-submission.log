@@ -1,0 +1,14 @@
+✔ owner_submit 顺序执行边界检查、固定验证和提交 (1.110417ms)
+✔ Owner blocked 报告不会运行验证或提交 (0.099125ms)
+✔ Owner needs_repair 留在当前子线程继续调整，不能制造脏现场恢复循环 (0.2395ms)
+✔ 固定验证等待 Owner 现场授权时自动结算为 blocked，不依赖 Owner 模型猜测 (0.280625ms)
+✔ 固定验证已经执行失败后拒绝 Owner 错报为 blocked (0.191583ms)
+✔ 未获得可执行权限的验证结果仍允许 Owner 报告 blocked (0.288791ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 61.471334

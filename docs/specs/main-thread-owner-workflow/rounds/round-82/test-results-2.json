@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "suite": "planning-source-chain-native",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "owner-workflow-plugin/test/planning-source-chain-native.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T17:21:00.001179+00:00",
+      "timeoutSeconds": 120,
+      "environment": "default tool sandbox; native Harness guards retained",
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T17:21:03.419447+00:00",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    }
+  ],
+  "drift": []
+}

@@ -1,0 +1,1 @@
+t21_contract_review只读审查：不同进程完成初始化ready后统一go，30秒timer/退出race/finally回收完整。只有一个OwnerReportedError，总create1/followup1/model2/resume0，另一方暂停或重放。都退出后第三进程核对原identity、settled_failed、totalUsed1、实际tool/call唯一，零新模型/代理。正式4/4、1621无漂移，无新增P1/P2。仅同intent启动竞争，不等于不同请求争额度证明。

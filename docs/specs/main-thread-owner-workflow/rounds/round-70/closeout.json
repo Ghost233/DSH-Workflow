@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-11T13:32:37.409429+00:00",
+  "formalPass": 221,
+  "formalSkipped": 7,
+  "candidateDrift": [],
+  "reviewFindings": [],
+  "closedFindings": [
+    "R69 internal Owner entry gap",
+    "R69 replay occupancy P2"
+  ],
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false
+}

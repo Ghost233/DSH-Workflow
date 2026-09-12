@@ -17,3 +17,4 @@
       name: dsh-owner-workflow/dashboard
       config:
         root: !!js process.env.DSH_OWNER_WORKFLOW_DASHBOARD_ROOT
+        catalogRoot: !!js process.env.DSH_OWNER_WORKFLOW_CATALOG_ROOT

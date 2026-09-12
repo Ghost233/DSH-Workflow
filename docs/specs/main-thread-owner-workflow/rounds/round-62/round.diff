@@ -1,0 +1,170 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -11832,8 +11832,16 @@
+       let saved
+       let request
+       await runtime.withWorkflowLock(workflowId, async () => {
++        if (active.submitting === true || active.submission !== undefined) {
++          throw new Error('request_subgraph Owner已进入提交关卡或已有结果，不能再请求子图展开')
++        }
+         const state = await readState(runtime, active.workflowRoot, workflowId)
+         if (state.root !== active.workflowRoot) throw new Error('request_subgraph 的 workflow root 与当前 Owner 不匹配')
++        // The legacy delta invalidates the live source and its execution identity.
++        // Recovery-aware activation must wait for the version-inheritance transaction.
++        if (recoveryAdmissionEnabled(active.state ?? {}) || recoveryAdmissionEnabled(state)) {
++          throw new Error('request_subgraph 当前恢复协议尚不支持运行中的子图版本激活；原计划和执行来源保持不变。继续当前任务，或通过owner_submit报告具体技术阻塞；不要重复请求子图，也不需要仅因此请求用户决策。')
++        }
+         if (state.plan?.contract !== PLAN_V2_CONTRACT) throw new Error('request_subgraph 只允许 DSH_PLAN_V2')
+         if (state.status !== 'running') throw new Error(`request_subgraph 只允许 running workflow，当前为 ${state.status}`)
+         const task = state.plan.tasks.find(item => item.id === taskId)
+--- owner-workflow-plugin/index.js (baseline)
++++ owner-workflow-plugin/index.js
+@@ -1203,10 +1203,10 @@
+   ]
+ }
+
+-function requestSubgraphDefinition(runtime) {
++export function requestSubgraphDefinition(runtime) {
+   return {
+     name: 'request_subgraph',
+-    description: '仅当前 V2 Owner running task 可用的结构化 Composite 子图请求；运行时会在 workflow lock 中校验 Owner、task、session、scope 和 verification，并负责局部 delta。',
++    description: '仅当前 V2 Owner running task 可用的结构化 Composite 子图请求；提交中或已有结果时拒绝。恢复协议下尚不支持在线子图版本激活，请继续当前任务或报告具体技术阻塞，不要重复调用；旧流程在 workflow lock 中校验 Owner、task、session、scope 和 verification 后应用局部 delta。',
+     parameters: {
+       type: 'object',
+       additionalProperties: false,
+--- /dev/null
++++ owner-workflow-plugin/test/subgraph-recovery-guard.test.mjs
+@@ -0,0 +1,117 @@
++import assert from 'node:assert/strict'
++import test from 'node:test'
++import { expandCompositeTask } from '../src/model.mjs'
++import { requestSubgraphDefinition } from '../index.js'
++import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState } from './fixtures/recovery-session-fixture.mjs'
++
++const proposal = { children: [
++  { id: 'T1-work', role: 'work', ownerId: 'api', title: 'Local work', dependsOn: [], write: ['src/api/repair.mjs'], verify: ['unit'], done: ['Local repair completed'] },
++  { id: 'T1-review', role: 'review', ownerId: 'api', title: 'Local review', dependsOn: ['T1-work'], write: [], verify: ['unit'], done: ['Repair reviewed'] },
++], entry: ['T1-work'], exit: ['T1-review'] }
++
++const report = status => ({ contract: 'DSH_OWNER_RESULT_V1', status,
++  summary: status === 'completed' ? 'Original task completed without expansion.' : 'Original implementation still fails its local requirement.',
++  changes: [], tests: [], handoffs: [], memory_updates: [] })
++
++for (const paid of [false, true]) test(`T15 ${paid ? 'paid' : 'initial free'} real Owner subgraph rejection preserves source and permits a normal ${paid ? 'failure' : 'completion'}`, { timeout: 30_000 }, async t => {
++  let f, before, checked = false
++  f = await createRecoverySessionFixture(t, { executable: true, modelScript: m => [
++    () => m.toolCallResponse('guarded-subgraph', 'request_subgraph', {
++      workflow_id: f.workflowId, task_id: 'T1', proposal,
++    }),
++    m.toolCallResponse('original-result', 'owner_submit', { report: report(paid ? 'failed' : 'completed') }),
++    m.textResponse('reported'),
++  ] })
++  f.ctx.tools.register(requestSubgraphDefinition(f.runtime))
++  assert.ok(expandCompositeTask((await readRecoverySessionState(f)).plan, 'T1', proposal), 'proposal itself is valid')
++  if (!paid) await mutateRecoverySessionState(f, state => { delete state.ownerRuns['T1:api'] })
++  const stream = f.adapter.stream.bind(f.adapter)
++  let calls = 0
++  f.adapter.stream = async function* (options) {
++    const index = calls++
++    if (index === 0) before = await readRecoverySessionState(f)
++    if (index === 1) {
++      checked = true
++      assert.deepEqual(await readRecoverySessionState(f), before, 'rejected tool must not write workflow state or budget')
++    }
++    yield* stream(options)
++  }
++  if (paid) await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), { name: 'OwnerReportedError' })
++  else await f.runtime.runExternalOwner(f.admissionAgent, f.workflowId, 'T1', 'api', undefined, { deferFinish: true })
++  assert.equal(checked, true)
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.planDigest, before.planDigest)
++  assert.equal(state.subgraphRequests, undefined)
++  const run = state.ownerRuns['T1:api']
++  assert.equal(run.sessionId, before.ownerRuns['T1:api'].sessionId)
++  assert.equal(run.attempt, before.ownerRuns['T1:api'].attempt)
++  const events = (await f.readFrom(run.sessionId)).events
++  const rejection = events.find(event => event.type === 'tool/result' && event.data.message?.source?.callId === 'guarded-subgraph')
++  assert.equal(rejection.data.message.content[0].isError, true)
++  assert.match(JSON.stringify(rejection.data), /尚不支持运行中的子图版本激活/)
++  assert.ok(events.some(event => event.type === 'turn/end'))
++  if (paid) {
++    assert.equal(state.recoveryAdmission.budget.totalUsed, 1)
++    assert.equal(run.recoverySession.phase, 'settled_failed')
++    assert.ok(run.recoveryContinuation)
++  } else {
++    assert.equal(run.status, 'awaiting_finish')
++    assert.ok(run.result.commitSha)
++    assert.equal(state.recoveryAdmission, undefined)
++  }
++})
++
++for (const legacy of [false, true]) test(`T15 ${legacy ? 'legacy' : 'protected'} real completion rejects subgraph both during and after accepted submission`, { timeout: 30_000 }, async t => {
++  let f, checkedDuring = false, checkedAfter = false
++  f = await createRecoverySessionFixture(t, { executable: true, modelScript: m => [
++    m.toolCallResponse('ordinary-completed', 'owner_submit', { report: report('completed') }),
++    () => m.toolCallResponse('late-subgraph', 'request_subgraph', { workflow_id: f.workflowId, task_id: 'T1', proposal }),
++    m.textResponse('reported'),
++  ] })
++  f.ctx.tools.register(requestSubgraphDefinition(f.runtime))
++  assert.ok(expandCompositeTask((await readRecoverySessionState(f)).plan, 'T1', proposal), 'proposal itself is valid')
++  await mutateRecoverySessionState(f, state => {
++    delete state.ownerRuns['T1:api']
++    if (legacy) delete state.recoveryAdmissionConfig
++  })
++  const inspect = f.runtime.inspectOwnerAttempt.bind(f.runtime)
++  f.runtime.inspectOwnerAttempt = async (...args) => {
++    if (!checkedDuring) {
++      checkedDuring = true
++      const active = [...f.runtime.activeOwners.values()].find(item => item.workflowId === f.workflowId)
++      assert.equal(active.submitting, true)
++      const before = await readRecoverySessionState(f)
++      await assert.rejects(requestSubgraphDefinition(f.runtime).execute({ workflow_id: f.workflowId, task_id: 'T1', proposal },
++        { agent: { id: active.sessionId } }), /已进入提交关卡或已有结果/)
++      assert.deepEqual(await readRecoverySessionState(f), before)
++    }
++    return inspect(...args)
++  }
++  const stream = f.adapter.stream.bind(f.adapter)
++  let calls = 0, beforeLate
++  f.adapter.stream = async function* (options) {
++    const index = calls++
++    if (index === 1) {
++      const active = [...f.runtime.activeOwners.values()].find(item => item.workflowId === f.workflowId)
++      assert.ok(active.submission)
++      beforeLate = await readRecoverySessionState(f)
++    }
++    if (index === 2) {
++      checkedAfter = true
++      assert.deepEqual(await readRecoverySessionState(f), beforeLate)
++    }
++    yield* stream(options)
++  }
++  await f.runtime.runExternalOwner(f.admissionAgent, f.workflowId, 'T1', 'api', undefined, { deferFinish: true })
++  assert.equal(checkedDuring, true)
++  assert.equal(checkedAfter, true)
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.subgraphRequests, undefined)
++  const run = state.ownerRuns['T1:api']
++  assert.equal(run.status, 'awaiting_finish')
++  assert.ok(run.result.commitSha)
++  const events = (await f.readFrom(run.sessionId)).events
++  const rejection = events.find(event => event.type === 'tool/result' && event.data.message?.source?.callId === 'late-subgraph')
++  assert.equal(rejection.data.message.content[0].isError, true)
++  assert.match(JSON.stringify(rejection.data), /已进入提交关卡或已有结果/)
++})
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/structural-owner-requests-v1.md
+@@ -0,0 +1,13 @@
++# Owner结构化变更入口的恢复保护边界
++
++## 当前行为
++
++受恢复协议保护的运行中Owner不可通过request_subgraph即时激活新版本。现有applyPlanDelta会invalidate来源任务并删除ownerRuns、清空审批，无法满足T15持久来源与T18预算继承。入口检查当前状态和active启动快照，任一启用保护即在任何delta或持久写入前拒绝；协议被删除不构成降级通行。错误说明任务和执行来源未改变，可继续原任务或通过正常owner_submit报告具体技术阻塞，无须仅因此用户决定。没有排入无法消费的pending proposal。
++
++所有request_subgraph及request_handoff在workflow锁内拒绝active.submitting或已有submission，保证提交门禁及其回执之后不能再插入结构性变化。被拒绝的子图请求不阻止原任务正常完成，因为它没有被接纳。
++
++受保护的直接handoff遵循handoff-recovery-v1：只保存来源绑定的proposal，真实blocked/failed后才预算重排；pending handoff与completed互斥。
++
++## 尚未完成
++
++本修复是保护现有来源的能力门禁，不是子图自动恢复/版本激活实现。真正的子图候选须在真实终态后进入集中Planner、Review及T18版本继承事务。非恢复模式仍沿用旧即时delta，除提交互斥外不声称有恢复来源保护；跨进程Owner停止/迟到结果门禁仍属于T17。T15/T18均不因此完成。

@@ -1,0 +1,20 @@
+{
+  "round": 82,
+  "previousGoalTurn": "progress",
+  "ticket": "T-25",
+  "status": "开发中",
+  "completedSlice": "native sources + T05 + Git baseline + root preparation entry",
+  "remaining": "source-backed authority + checkpoint/index/snapshot recovery",
+  "candidate1": {
+    "passed": 64,
+    "reviewFinding": "missing baseline path exit128"
+  },
+  "candidate2": {
+    "targetedPassed": 5,
+    "drift": []
+  },
+  "confirmedOpenReviewIssues": [],
+  "overallComplete": false,
+  "committed": false,
+  "pushed": false
+}

@@ -1,0 +1,7 @@
+# R45审查发现
+
+P2：pendingSupervisorRecovery把物理pending任务投影为占槽running；supervisorTimedOutTasks仍以reservation.launchedAt判超时，而awaitSupervisorEvent循环跳过物理pending任务，却随后写timeout-recovery事件。连续调用可无进展反复写事件。真实控制ack建立reservation、临时夹具回拨launchedAt后连续两次await均复现：event cursor 2/3，task仍pending，supervisorTimeouts为空。见review-timeout-probe.mjs/log；这是缺陷复现通过，不能计入功能验收通过。
+
+独立审查最初提出同reservation跨Runtime派发P1，经正式入口的control-bridge磁盘lease和存活PID校验核对后撤回：正常正式入口无法同时持有第二个控制桥，同Runtime另有dispatch Map。仅保留绕开正式入口的防御性风险，不凭假设新增launch协议。
+
+第46轮只修新投影接缝：尚未实际开始的恢复占槽不能按Owner执行超时处理；确认无超时状态变更就不产生虚假事件。完整取消/deadline与自动超时恢复仍属后续工单，不能用排除占槽代替真实执行超时处理。

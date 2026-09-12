@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: 实际原生问询先持久原始授权，同根重复核验复用，不因后续规格修订扩大实施范围
+ok 1 - 实际原生问询先持久原始授权，同根重复核验复用，不因后续规格修订扩大实施范围
+  ---
+  duration_ms: 549.188834
+  type: 'test'
+  ...
+# Subtest: 原生reject决定不会创建grant或提交代码
+ok 2 - 原生reject决定不会创建grant或提交代码
+  ---
+  duration_ms: 321.321416
+  type: 'test'
+  ...
+# Subtest: 原生custom决定不会创建grant或提交代码
+ok 3 - 原生custom决定不会创建grant或提交代码
+  ---
+  duration_ms: 323.148208
+  type: 'test'
+  ...
+# Subtest: 实际 Runtime 阻止 index 已同步但快照未发布时启动 DAG，原事务恢复后解除
+ok 4 - 实际 Runtime 阻止 index 已同步但快照未发布时启动 DAG，原事务恢复后解除
+  ---
+  duration_ms: 1578.256167
+  type: 'test'
+  ...
+# Subtest: 实际 Runtime 根入口完成原生授权、Git checkpoint 与固定快照，重复调用复用同一授权和提交
+ok 5 - 实际 Runtime 根入口完成原生授权、Git checkpoint 与固定快照，重复调用复用同一授权和提交
+  ---
+  duration_ms: 1239.146083
+  type: 'test'
+  ...
+# Subtest: 实际 Runtime 原生拒绝不会推进 HEAD/index 或建立待恢复事务
+ok 6 - 实际 Runtime 原生拒绝不会推进 HEAD/index 或建立待恢复事务
+  ---
+  duration_ms: 598.277625
+  type: 'test'
+  ...
+# Subtest: 实际规划租约阻止同时进入第二 checkpoint 和旧 Workflow 启动
+ok 7 - 实际规划租约阻止同时进入第二 checkpoint 和旧 Workflow 启动
+  ---
+  duration_ms: 322.104208
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5107.384209

@@ -1,0 +1,9 @@
+{
+  "docs/specs/main-thread-owner-workflow/contracts/recovery-budget-v1.md": "d5af7b64d1d81d1d53a96796f8c74c9b88cca4a4fde942392c51b9e95b1dfc66",
+  "docs/specs/main-thread-owner-workflow/proofs/t-16/adapter-contract.md": "c0e352aac455925746e1f2e82d21028893937a734f64516b5685f4e0d3231d09",
+  "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/report.md": "2abf26f3eb572e507ca1f25fa8320ceff6328294c692d80340eacecab474d285",
+  "docs/specs/main-thread-owner-workflow/tickets/t-16-owner-cancellation-fencing-proof.md": "d4f4b2c5d904aadcd4bd672906910b20596bb3b573c13685f5f50b77cbcbd50f",
+  "docs/specs/main-thread-owner-workflow/tickets/t-17-attempt-deadline-settlement.md": "6cbf223aa4c59bde28c75d105c93db46050cc8e09dbfece1ea58699007b9e640",
+  "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md": "eb634a96aa2089747ddd53fd9b94f1909c354683a50318cbf2078900f240e332",
+  "docs/specs/main-thread-owner-workflow/progress.md": "9c41a18412c1355a27585804c0453ea45889b936ab31773c04634670d2feeb2f"
+}

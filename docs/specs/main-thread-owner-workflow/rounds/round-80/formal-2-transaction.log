@@ -1,0 +1,40 @@
+TAP version 13
+# Subtest: T07 SIGKILL after-commit resumes in a new process without a second commit
+ok 1 - T07 SIGKILL after-commit resumes in a new process without a second commit
+  ---
+  duration_ms: 2717.692041
+  type: 'test'
+  ...
+# Subtest: T07 staging after ref advancement is blocked by the index lock or preserved on rejection
+ok 2 - T07 staging after ref advancement is blocked by the index lock or preserved on rejection
+  ---
+  duration_ms: 1290.764875
+  type: 'test'
+  ...
+# Subtest: T07 unknown external index lock is preserved
+ok 3 - T07 unknown external index lock is preserved
+  ---
+  duration_ms: 796.631292
+  type: 'test'
+  ...
+# Subtest: T07 a caught after-ref failure releases its own Git lock and resumes the recorded commit
+ok 4 - T07 a caught after-ref failure releases its own Git lock and resumes the recorded commit
+  ---
+  duration_ms: 3820.377042
+  type: 'test'
+  ...
+# Subtest: T07 a copied foreign index lock with identical bytes is preserved after worker death
+ok 5 - T07 a copied foreign index lock with identical bytes is preserved after worker death
+  ---
+  duration_ms: 1587.775291
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10305.162667

@@ -1,0 +1,5 @@
+# R53 修复R52三个控制接缝
+
+仅消费已批准且当前Review/digest绑定的awaiting_approval；Runner定向交付并确认technicalNotificationId；notify保持actionRequired且当前报告未交付时执行交付、交付后用户wait。保护协议用户报告以当前source去重，不重复生成无限pending。补真实approvePlan/启动/耗尽，以及持久incident+真实typed依据、旧pending报告在先的反例。主线程独占相关源码/tests，T16仅proof。正式范围同R52七套。
+
+开发期两用例通过。正式前依据真实planReviewResult去除并不存在的嵌套Review digest要求：权威绑定为state.planReviewDigest，真实approve测试使用正常化Review（没有planDigest属性）。这项调整进入正式，不将先前开发日志误称覆盖该最终调整。

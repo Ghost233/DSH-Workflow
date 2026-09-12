@@ -1,0 +1,94 @@
+TAP version 13
+# Subtest: one-owner packages retain full frozen Ticket/Spec data, shared AC contributors and dependency blockers
+ok 1 - one-owner packages retain full frozen Ticket/Spec data, shared AC contributors and dependency blockers
+  ---
+  duration_ms: 12.844917
+  type: 'test'
+  ...
+# Subtest: compiler rejects unknown-fragment
+ok 2 - compiler rejects unknown-fragment
+  ---
+  duration_ms: 0.525
+  type: 'test'
+  ...
+# Subtest: compiler rejects blocked-fragment
+ok 3 - compiler rejects blocked-fragment
+  ---
+  duration_ms: 0.260667
+  type: 'test'
+  ...
+# Subtest: compiler rejects unknown-contract
+ok 4 - compiler rejects unknown-contract
+  ---
+  duration_ms: 0.241667
+  type: 'test'
+  ...
+# Subtest: compiler rejects missing-known-contract
+ok 5 - compiler rejects missing-known-contract
+  ---
+  duration_ms: 0.232834
+  type: 'test'
+  ...
+# Subtest: compiler rejects omitted-ready
+ok 6 - compiler rejects omitted-ready
+  ---
+  duration_ms: 0.383208
+  type: 'test'
+  ...
+# Subtest: compiler rejects missing-ticket-edge
+ok 7 - compiler rejects missing-ticket-edge
+  ---
+  duration_ms: 0.225708
+  type: 'test'
+  ...
+# Subtest: compiler rejects task-cycle
+ok 8 - compiler rejects task-cycle
+  ---
+  duration_ms: 0.166166
+  type: 'test'
+  ...
+# Subtest: compiler rejects wrong-snapshot
+ok 9 - compiler rejects wrong-snapshot
+  ---
+  duration_ms: 0.154375
+  type: 'test'
+  ...
+# Subtest: compiler rejects wrong-source
+ok 10 - compiler rejects wrong-source
+  ---
+  duration_ms: 0.362125
+  type: 'test'
+  ...
+# Subtest: compiler rejects mixed-owner-package
+ok 11 - compiler rejects mixed-owner-package
+  ---
+  duration_ms: 1.01475
+  type: 'test'
+  ...
+# Subtest: bindings normalizer rejects duplicate task, Ticket fragment and contract identities without mutating optional absence
+ok 12 - bindings normalizer rejects duplicate task, Ticket fragment and contract identities without mutating optional absence
+  ---
+  duration_ms: 1.59475
+  type: 'test'
+  ...
+# Subtest: completed checkpoint reader returns frozen persisted snapshot without revalidating current planning files
+ok 13 - completed checkpoint reader returns frozen persisted snapshot without revalidating current planning files
+  ---
+  duration_ms: 1812.044542
+  type: 'test'
+  ...
+# Subtest: checkpoint snapshot reader rejects a nonterminal journal without resuming it
+ok 14 - checkpoint snapshot reader rejects a nonterminal journal without resuming it
+  ---
+  duration_ms: 577.192625
+  type: 'test'
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2597.75325

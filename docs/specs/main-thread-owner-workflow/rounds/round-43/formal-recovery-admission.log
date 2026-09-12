@@ -1,0 +1,270 @@
+TAP version 13
+# Subtest: T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt
+ok 1 - T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt
+  ---
+  duration_ms: 191.699667
+  type: 'test'
+  ...
+# Subtest: T20 reloads the same durable request through a new Runtime without rebilling or changing identity
+ok 2 - T20 reloads the same durable request through a new Runtime without rebilling or changing identity
+  ---
+  duration_ms: 223.975875
+  type: 'test'
+  ...
+# Subtest: T20 derives A/B/A from persisted strategy, keeping one root but distinct durable requests
+ok 3 - T20 derives A/B/A from persisted strategy, keeping one root but distinct durable requests
+  ---
+  duration_ms: 254.204084
+  type: 'test'
+  ...
+# Subtest: T20 rejects forged request fields and incorrect source binding without creating a recovery account
+ok 4 - T20 rejects forged request fields and incorrect source binding without creating a recovery account
+  ---
+  duration_ms: 336.581875
+  type: 'test'
+  ...
+# Subtest: T20 rejects a missing strategy and owner-failure records that no longer describe a failed technical task
+ok 5 - T20 rejects a missing strategy and owner-failure records that no longer describe a failed technical task
+  ---
+  duration_ms: 221.271959
+  type: 'test'
+  ...
+# Subtest: T20 admits only a live technical obligation and preserves the user-authority boundary
+ok 6 - T20 admits only a live technical obligation and preserves the user-authority boundary
+  ---
+  duration_ms: 328.876833
+  type: 'test'
+  ...
+# Subtest: T20 makes approval, current plan digest, cancellation, malformed state, and absent config hard wrapper gates
+ok 7 - T20 makes approval, current plan digest, cancellation, malformed state, and absent config hard wrapper gates
+  ---
+  duration_ms: 240.908625
+  type: 'test'
+  ...
+# Subtest: T20 rejects changed limits after accounting begins and never returns a receipt when the first save cannot commit
+ok 8 - T20 rejects changed limits after accounting begins and never returns a receipt when the first save cannot commit
+  ---
+  duration_ms: 337.297375
+  type: 'test'
+  ...
+# Subtest: T20 cross-process distinct requests consume the final workflow credit once
+ok 9 - T20 cross-process distinct requests consume the final workflow credit once
+  ---
+  duration_ms: 310.232708
+  type: 'test'
+  ...
+# Subtest: T20 cross-process competition for one request yields one receipt identity and one debit
+ok 10 - T20 cross-process competition for one request yields one receipt identity and one debit
+  ---
+  duration_ms: 310.860583
+  type: 'test'
+  ...
+# Subtest: R15 next failed executions with the same strategy inherit the root and persist replay across Runtime restarts
+ok 11 - R15 next failed executions with the same strategy inherit the root and persist replay across Runtime restarts
+  ---
+  duration_ms: 306.228708
+  type: 'test'
+  ...
+# Subtest: R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget
+    # Subtest: missing
+    ok 1 - missing
+      ---
+      duration_ms: 21.441666
+      type: 'test'
+      ...
+    # Subtest: contract
+    ok 2 - contract
+      ---
+      duration_ms: 20.441041
+      type: 'test'
+      ...
+    # Subtest: sourceId
+    ok 3 - sourceId
+      ---
+      duration_ms: 23.378667
+      type: 'test'
+      ...
+    # Subtest: rootProblemId
+    ok 4 - rootProblemId
+      ---
+      duration_ms: 22.0615
+      type: 'test'
+      ...
+    # Subtest: requestId
+    ok 5 - requestId
+      ---
+      duration_ms: 21.378125
+      type: 'test'
+      ...
+    # Subtest: attemptId
+    ok 6 - attemptId
+      ---
+      duration_ms: 22.639875
+      type: 'test'
+      ...
+    # Subtest: taskId
+    ok 7 - taskId
+      ---
+      duration_ms: 22.672625
+      type: 'test'
+      ...
+    # Subtest: ownerId
+    ok 8 - ownerId
+      ---
+      duration_ms: 21.877833
+      type: 'test'
+      ...
+    # Subtest: planDigest
+    ok 9 - planDigest
+      ---
+      duration_ms: 22.379041
+      type: 'test'
+      ...
+    # Subtest: identity sessionId
+    ok 10 - identity sessionId
+      ---
+      duration_ms: 24.688417
+      type: 'test'
+      ...
+    # Subtest: identity promptId
+    ok 11 - identity promptId
+      ---
+      duration_ms: 20.382375
+      type: 'test'
+      ...
+    # Subtest: run attempt
+    ok 12 - run attempt
+      ---
+      duration_ms: 19.760833
+      type: 'test'
+      ...
+    # Subtest: run session
+    ok 13 - run session
+      ---
+      duration_ms: 22.209625
+      type: 'test'
+      ...
+    # Subtest: unknown field
+    ok 14 - unknown field
+      ---
+      duration_ms: 20.6885
+      type: 'test'
+      ...
+    # Subtest: execution receipt
+    ok 15 - execution receipt
+      ---
+      duration_ms: 21.537875
+      type: 'test'
+      ...
+    # Subtest: result receipt
+    ok 16 - result receipt
+      ---
+      duration_ms: 23.524084
+      type: 'test'
+      ...
+    1..16
+ok 12 - R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget
+  ---
+  duration_ms: 543.329125
+  type: 'test'
+  ...
+# Subtest: R15 rejects a predecessor that never started
+ok 13 - R15 rejects a predecessor that never started
+  ---
+  duration_ms: 215.860084
+  type: 'test'
+  ...
+# Subtest: R15 rejects a predecessor that still running
+ok 14 - R15 rejects a predecessor that still running
+  ---
+  duration_ms: 219.220125
+  type: 'test'
+  ...
+# Subtest: R15 rejects a predecessor that succeeded
+ok 15 - R15 rejects a predecessor that succeeded
+  ---
+  duration_ms: 218.477625
+  type: 'test'
+  ...
+# Subtest: R15 rejects a predecessor that cancelled
+ok 16 - R15 rejects a predecessor that cancelled
+  ---
+  duration_ms: 211.259041
+  type: 'test'
+  ...
+# Subtest: R15 continuation cannot reset exhausted problem credit
+ok 17 - R15 continuation cannot reset exhausted problem credit
+  ---
+  duration_ms: 209.73
+  type: 'test'
+  ...
+# Subtest: R15 continuation cannot reset exhausted workflow credit
+ok 18 - R15 continuation cannot reset exhausted workflow credit
+  ---
+  duration_ms: 213.651875
+  type: 'test'
+  ...
+# Subtest: R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed
+    # Subtest: renumber the same execution
+    ok 1 - renumber the same execution
+      ---
+      duration_ms: 18.155458
+      type: 'test'
+      ...
+    # Subtest: drop current continuation
+    ok 2 - drop current continuation
+      ---
+      duration_ms: 18.945334
+      type: 'test'
+      ...
+    # Subtest: drop historical edge
+    ok 3 - drop historical edge
+      ---
+      duration_ms: 19.463458
+      type: 'test'
+      ...
+    # Subtest: redirect historical parent
+    ok 4 - redirect historical parent
+      ---
+      duration_ms: 25.142459
+      type: 'test'
+      ...
+    # Subtest: redirect successor root
+    ok 5 - redirect successor root
+      ---
+      duration_ms: 24.527792
+      type: 'test'
+      ...
+    1..5
+ok 19 - R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed
+  ---
+  duration_ms: 306.985333
+  type: 'test'
+  ...
+# Subtest: R15 concurrent continuation calls from separate processes share one successor receipt and one debit
+ok 20 - R15 concurrent continuation calls from separate processes share one successor receipt and one debit
+  ---
+  duration_ms: 411.038208
+  type: 'test'
+  ...
+# Subtest: R15 a technical obligation recovery can produce a failed Owner continuation under its original root
+ok 21 - R15 a technical obligation recovery can produce a failed Owner continuation under its original root
+  ---
+  duration_ms: 178.65825
+  type: 'test'
+  ...
+# Subtest: R15 derived source retains A/B/A replay without erasing the continuation edge
+ok 22 - R15 derived source retains A/B/A replay without erasing the continuation edge
+  ---
+  duration_ms: 227.165834
+  type: 'test'
+  ...
+1..22
+# tests 43
+# suites 0
+# pass 43
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6156.300709

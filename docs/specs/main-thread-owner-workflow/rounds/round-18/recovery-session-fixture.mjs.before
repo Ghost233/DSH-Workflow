@@ -1,0 +1,326 @@
+import { createHash } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { promisify } from 'node:util'
+
+import {
+  PLAN_V2_CONTRACT,
+  STATE_CONTRACT,
+  normalizePlanV2,
+} from '../../src/model.mjs'
+import { createOwnerWorkflowRuntime } from '../../src/runtime.mjs'
+import { createTaskState } from '../../src/supervisor.mjs'
+
+const execFileAsync = promisify(execFile)
+const harnessRoot = fileURLToPath(new URL('../../../deepseek-harness/', import.meta.url))
+const sourcePaths = [
+  'vendor/cordis/src/index.ts',
+  'packages/core/session/src/index.ts',
+  'packages/core/session/src/types.ts',
+  'packages/llm/llm/src/index.ts',
+  'packages/core/system-prompt/src/index.ts',
+  'packages/core/tools/src/index.ts',
+  'packages/core/agent/src/index.ts',
+  'packages/core/agent-loop/src/index.ts',
+  'packages/subagent/subagent/src/index.ts',
+  'packages/session/session-persistence/src/index.ts',
+  'packages/session/session-persistence/src/coordinator.ts',
+  'packages/session/session-persistence-jsonl/src/index.ts',
+  'packages/core/agent-loop/tests/mock-adapter.ts',
+]
+
+function digest(value) {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+async function git(root, args) {
+  await execFileAsync('git', args, { cwd: root, encoding: 'utf8' })
+}
+
+async function sourceModules() {
+  const source = async path => await import(pathToFileURL(join(harnessRoot, path)).href)
+  const [cordis, session, sessionTypes, llm, systemPrompt, tools, agent, agentLoop, subagent, jsonl, mock] = await Promise.all([
+    source('vendor/cordis/src/index.ts'),
+    source('packages/core/session/src/index.ts'),
+    source('packages/core/session/src/types.ts'),
+    source('packages/llm/llm/src/index.ts'),
+    source('packages/core/system-prompt/src/index.ts'),
+    source('packages/core/tools/src/index.ts'),
+    source('packages/core/agent/src/index.ts'),
+    source('packages/core/agent-loop/src/index.ts'),
+    source('packages/subagent/subagent/src/index.ts'),
+    source('packages/session/session-persistence-jsonl/src/index.ts'),
+    source('packages/core/agent-loop/tests/mock-adapter.ts'),
+  ])
+  return {
+    Context: cordis.Context,
+    SessionStore: session.default,
+    SessionId: sessionTypes.SessionId,
+    LlmRuntime: llm.default,
+    freezeMessage: llm.freezeMessage,
+    SystemPrompt: systemPrompt.default,
+    ToolRuntime: tools.default,
+    AgentRegistry: agent.default,
+    AgentLoop: agentLoop.default,
+    SubagentRuntime: subagent.default,
+    JsonlSessionPersistence: jsonl.default,
+    MockAdapter: mock.MockAdapter,
+    textResponse: mock.textResponse,
+  }
+}
+
+async function mountHarness(root, adapter, compression = 'none') {
+  const modules = await sourceModules()
+  const ctx = new modules.Context()
+  await ctx.plugin(modules.LlmRuntime)
+  await ctx.plugin(modules.SessionStore)
+  await ctx.plugin(modules.SystemPrompt)
+  await ctx.plugin(modules.ToolRuntime)
+  await ctx.plugin(modules.AgentRegistry)
+  await ctx.plugin(modules.AgentLoop, { agents: [] })
+  await ctx.plugin(modules.SubagentRuntime)
+  await ctx.plugin(modules.JsonlSessionPersistence, { root, compression })
+  ctx.llm.registerAdapter(['mock'], adapter)
+  return { ctx, modules }
+}
+
+function recoveryConfig(planDigest, { totalLimit = 3, problemLimit = 2 } = {}) {
+  return {
+    contract: 'DSH_RECOVERY_ADMISSION_CONFIG_V1',
+    executionVersion: planDigest,
+    totalLimit,
+    problemLimit,
+  }
+}
+
+function recoveryRecord(taskId, ownerId, planDigest, {
+  status = 'failed',
+  attempt = 2,
+  sessionId = `${taskId}-${ownerId}-failed-session`,
+} = {}) {
+  return {
+    status,
+    taskId,
+    stageId: taskId,
+    ownerId,
+    attempt,
+    sessionId,
+    planDigest,
+    error: 'Owner tool schema did not match the runtime contract',
+    autonomousRecovery: {
+      contract: 'DSH_AUTONOMOUS_RECOVERY_V1',
+      failureClass: 'contract_dag',
+      strategy: 'diagnose',
+      message: 'Owner tool schema did not match the runtime contract',
+      evidenceDigest: 'e'.repeat(64),
+      usedStrategies: ['diagnose'],
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    },
+  }
+}
+
+function planFixture() {
+  return normalizePlanV2({
+    contract: PLAN_V2_CONTRACT,
+    registryDigest: 'a'.repeat(64),
+    summary: 'T22 recovery-session reconciliation fixture',
+    owners: [{ id: 'api', name: 'API Owner', description: 'Owns API sources', scope: ['src/api/**'], exclude: [] }],
+    verifications: [{ id: 'unit', run: ['node', '--test'] }],
+    tasks: [{
+      id: 'T1', role: 'work', ownerId: 'api', title: 'Repair API', dependsOn: [],
+      write: ['src/api/repair.mjs'], verify: ['unit'], done: ['API repair is verified'],
+    }],
+  })
+}
+
+function statePath(root, workflowId) {
+  return join(root, '.dsh-workflow', 'workflows', `${workflowId}.json`)
+}
+
+export async function readRecoverySessionState(fixture) {
+  return JSON.parse(await readFile(statePath(fixture.root, fixture.workflowId), 'utf8'))
+}
+
+export async function writeRecoverySessionState(fixture, state) {
+  await writeFile(statePath(fixture.root, fixture.workflowId), `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+}
+
+export async function mutateRecoverySessionState(fixture, mutate) {
+  const state = await readRecoverySessionState(fixture)
+  await mutate(state)
+  await writeRecoverySessionState(fixture, state)
+  return state
+}
+
+export function ownerFailureRequest(fixture) {
+  return {
+    contract: 'DSH_RECOVERY_ADMISSION_REQUEST_V1',
+    planDigest: fixture.planDigest,
+    taskId: 'T1',
+    ownerId: 'api',
+    source: { kind: 'owner_failure', attempt: 2, sessionId: 'T1-api-failed-session' },
+  }
+}
+
+export async function reserveRecoverySession(fixture) {
+  return await fixture.runtime.reserveRecoveryAdmission(
+    fixture.admissionAgent,
+    fixture.workflowId,
+    ownerFailureRequest(fixture),
+  )
+}
+
+/** Run one real no-model-owner prompt through the source-plane Harness for read-side observations only. */
+export async function appendObservedPrompt(fixture, receipt, content = 'recover the failed owner task') {
+  const { ctx, modules } = fixture
+  const { agent } = await ctx.agents.create({
+    sessionId: modules.SessionId(receipt.executionIdentity.sessionId),
+    meta: { cwd: fixture.root },
+    agentOptions: fixture.agentOptions,
+  })
+  // Recovery owns a reserved prompt ID.  Preserve it with Harness's immutable
+  // source message constructor instead of manufacturing a test-only event.
+  agent.followup(modules.freezeMessage({
+    id: receipt.executionIdentity.promptId,
+    role: 'user',
+    content: [{ type: 'text', text: content }],
+    source: { kind: 'user' },
+  }))
+  await agent.whenIdle()
+  await ctx.sessions.flush(agent.session)
+  return { agent, location: ctx.sessionPersistence.locate(agent.session.header) }
+}
+
+/** Persist a real idle inbox item without starting a model turn. */
+export async function injectObservedPrompt(fixture, receipt, content = 'recover the failed owner task') {
+  const { ctx, modules } = fixture
+  const { agent } = await ctx.agents.create({
+    sessionId: modules.SessionId(receipt.executionIdentity.sessionId),
+    meta: { cwd: fixture.root },
+    agentOptions: fixture.agentOptions,
+  })
+  agent.inject(modules.freezeMessage({
+    id: receipt.executionIdentity.promptId,
+    role: 'user',
+    content: [{ type: 'text', text: content }],
+    source: { kind: 'user' },
+  }))
+  await agent.whenIdle()
+  await ctx.sessions.flush(agent.session)
+  return { agent, location: ctx.sessionPersistence.locate(agent.session.header) }
+}
+
+export async function createRecoverySessionFixture(t, {
+  workflowId = 'wf-recovery-session',
+  limits,
+  responses = ['recovery answer'],
+  compression = 'none',
+} = {}) {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-t22-tests-r16-')))
+  const sessionRoot = join(root, '.dsh-workflow', 'recovery-sessions')
+  const keepRoot = process.env.T22_KEEP_ROOT === '1'
+  await git(root, ['init', '-q', '-b', 'main'])
+  await git(root, ['config', 'user.email', 'recovery-session@test.invalid'])
+  await git(root, ['config', 'user.name', 'Recovery Session Test'])
+  await writeFile(join(root, 'README.md'), 'T22 recovery-session fixture\n', 'utf8')
+  await git(root, ['add', 'README.md'])
+  await git(root, ['commit', '-qm', 'fixture'])
+  const baseHead = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' })).stdout.trim()
+
+  const plan = planFixture()
+  const planDigest = digest(plan)
+  const state = {
+    contract: STATE_CONTRACT,
+    id: workflowId,
+    root,
+    baseBranch: 'main',
+    baseRef: 'main',
+    baseHead,
+    workflowBranch: `dsh/workflow/${workflowId}`,
+    workflowWorktree: root,
+    request: 'exercise real recovery-session reconciliation',
+    createdAt: '2026-09-11T00:00:00.000Z',
+    updatedAt: '2026-09-11T00:00:00.000Z',
+    status: 'running',
+    attempt: 1,
+    revision: 0,
+    ownerRuns: { 'T1:api': {
+      ...recoveryRecord('T1', 'api', planDigest),
+      worktree: root,
+      branch: 'main',
+    } },
+    ownerSessions: {},
+    plan,
+    planDigest,
+    planReview: {
+      contract: 'DSH_PLAN_REVIEW_V1', status: 'passed',
+      summary: 'The exact plan digest was independently reviewed.', issues: [], planDigest,
+    },
+    planReviewDigest: planDigest,
+    planApproved: true,
+    planApprovedAt: '2026-09-11T00:00:00.000Z',
+    planApprovedBy: 'recovery-session-test',
+    tasks: createTaskState(plan).map(task => ({
+      ...task,
+      status: 'pending',
+      reason: null,
+      action: null,
+      autonomousRecovery: {
+        contract: 'DSH_AUTONOMOUS_RECOVERY_V1', failureClass: 'contract_dag', strategy: 'diagnose',
+      },
+    })),
+    recoveryAdmissionConfig: recoveryConfig(planDigest, limits),
+  }
+  await mkdir(join(root, '.dsh-workflow', 'workflows'), { recursive: true })
+  await writeFile(statePath(root, workflowId), `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+  const modules = await sourceModules()
+  const adapter = new modules.MockAdapter(responses.map(text => modules.textResponse(text)))
+  const mounted = await mountHarness(sessionRoot, adapter, compression)
+  const runtime = createOwnerWorkflowRuntime(mounted.ctx, {})
+  await runtime.prepareRoot(root)
+  runtime.registerChildProvider()
+  const parent = await mounted.ctx.agents.create({
+    sessionId: modules.SessionId('recovery-session-parent'),
+    meta: { cwd: root },
+    agentOptions: { provider: 'mock', model: 'mock' },
+  })
+  const fixture = {
+    root,
+    sessionRoot,
+    runtime,
+    workflowId,
+    planDigest,
+    admissionAgent: parent.agent,
+    agentOptions: { provider: 'mock', model: 'mock' },
+    modules,
+    ctx: mounted.ctx,
+    adapter,
+    harnessSources: sourcePaths.map(path => `deepseek-harness/${path}`),
+  }
+  const mount = async script => {
+    const adapter = new modules.MockAdapter(script.map(text => modules.textResponse(text)))
+    const mounted = await mountHarness(sessionRoot, adapter, compression)
+    fixture.adapter = adapter
+    fixture.ctx = mounted.ctx
+    return mounted.ctx
+  }
+  fixture.restartHarness = async (script = responses) => {
+    if (fixture.ctx !== undefined) await fixture.ctx.fiber.dispose()
+    return await mount(script)
+  }
+  fixture.readRaw = async sessionId => await fixture.ctx.sessionPersistence.readRaw(sessionId)
+  fixture.readFrom = async sessionId => await fixture.ctx.sessionPersistence.readFrom(sessionId, 0)
+  t.after(async () => {
+    if (fixture.ctx !== undefined) await fixture.ctx.fiber.dispose()
+    if (keepRoot) return
+    await chmod(root, 0o700).catch(() => undefined)
+    await chmod(join(root, '.dsh-workflow'), 0o700).catch(() => undefined)
+    await chmod(join(root, '.dsh-workflow', 'workflows'), 0o700).catch(() => undefined)
+    await rm(root, { recursive: true, force: true, maxRetries: 3 })
+  })
+  return fixture
+}

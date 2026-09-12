@@ -1,0 +1,9 @@
+# 后继审计：候选恢复错误仍被daemon反复调度
+
+只读审计者t16_cancel_proof。实际链：deriveWorkflowControl→plan-revision-drive→外置daemon发送workflow-drive→控制桥driveWorkflow→drivePendingPlanRevision。候选Review/rebuild的admission refused、paused/cancelled、未接线策略没有Runtime级catch与候选暂停落盘；语义rejected虽有failed预算回执，也最终耗尽进入同样路径。
+
+external-runner.mjs约465行捕获异常后只写runner-attempt JSON，并更新内存failureStreaks/retryAfter进行指数退避。持久Workflow仍被discover为同一plan-revision-drive，重启清空streak，因此纯拒绝/未接线策略可无限重复；语义失败先有限计费再进入拒绝循环。回执账本正确不等于控制器已停止调度。
+
+既有technicalPause仅覆盖Supervisor stop后的active A task/Owner投影，并要求没有pending candidate、intent cycle及pending handoff；不能直接覆盖恢复候选。可复用mainOutbox持久幂等投递，但需候选专用pause/source和控制优先级：先投递一次，再等待来源变化。稳定source应包含A/C、cycle、recoveryOrigin、handoffIds、operation/ordinal/request/session/prompt、前驱与pause类；不能含时钟或daemon retry次数。candidate/operation/receipt变化才可能解除，不能仅因重启重新执行。
+
+下一优先：在实际候选drive入口捕获非可重试恢复拒绝与未知状态，保存来源绑定的候选暂停；保留已失败receipt允许的有限下一ordinal；接入实际daemon控制选择及mainOutbox，证明反复drive/daemon重启同源不再重排，独立任务仍可继续。autonomousIncident只处理convergence语义停滞，不可混作transport/admission拒绝。

@@ -1,0 +1,118 @@
+TAP version 13
+# Subtest: R77 real paid predecessor is replay-authenticated before consultation
+ok 1 - R77 real paid predecessor is replay-authenticated before consultation
+  ---
+  duration_ms: 4699.125542
+  type: 'test'
+  ...
+# Subtest: R77 actual consultation settles advice in the original root and fresh Harness replays without another model
+ok 2 - R77 actual consultation settles advice in the original root and fresh Harness replays without another model
+  ---
+  duration_ms: 3819.142375
+  type: 'test'
+  ...
+# Subtest: R77 exhausted actual consultation starts no child and leaves the candidate intact
+ok 3 - R77 exhausted actual consultation starts no child and leaves the candidate intact
+  ---
+  duration_ms: 3124.020875
+  type: 'test'
+  ...
+# Subtest: R77 known missing advice pays a failed ordinal and retries in the same logical operation
+ok 4 - R77 known missing advice pays a failed ordinal and retries in the same logical operation
+  ---
+  duration_ms: 3982.013833
+  type: 'test'
+  ...
+# Subtest: R77 changed candidate cannot reuse an accepted predecessor to fund advice
+ok 5 - R77 changed candidate cannot reuse an accepted predecessor to fund advice
+  ---
+  duration_ms: 2260.649125
+  type: 'test'
+  ...
+# Subtest: R77 changed convergence cannot reuse an accepted predecessor to fund advice
+ok 6 - R77 changed convergence cannot reuse an accepted predecessor to fund advice
+  ---
+  duration_ms: 1996.325708
+  type: 'test'
+  ...
+# Subtest: R77 candidate changes while the actual advisor runs prevent result adoption and preserve the paid attempt
+ok 7 - R77 candidate changes while the actual advisor runs prevent result adoption and preserve the paid attempt
+  ---
+  duration_ms: 2841.23225
+  type: 'test'
+  ...
+# Subtest: R77 actual persisted child creation with a lost response pauses and fresh consultation never creates again
+ok 8 - R77 actual persisted child creation with a lost response pauses and fresh consultation never creates again
+  ---
+  duration_ms: 3045.483917
+  type: 'test'
+  ...
+# Subtest: R77 wrong Owner submission is a paid failure, never a successful unavailable advice
+ok 9 - R77 wrong Owner submission is a paid failure, never a successful unavailable advice
+  ---
+  duration_ms: 2348.784375
+  type: 'test'
+  ...
+# Subtest: R77 independent task updates survive the unlocked advisor and atomic advice settlement
+ok 10 - R77 independent task updates survive the unlocked advisor and atomic advice settlement
+  ---
+  duration_ms: 3789.298542
+  type: 'test'
+  ...
+# Subtest: R77 accepted advice cannot replay after its persisted result is altered
+ok 11 - R77 accepted advice cannot replay after its persisted result is altered
+  ---
+  duration_ms: 4169.02575
+  type: 'test'
+  ...
+# Subtest: R77 each selected Owner has a separate paid operation and exhausted partial batches never restart an applied Owner
+ok 12 - R77 each selected Owner has a separate paid operation and exhausted partial batches never restart an applied Owner
+  ---
+  duration_ms: 3679.946667
+  type: 'test'
+  ...
+# Subtest: R77 both selected Owners settle distinct sessions in one root without creating another OwnerRun
+ok 13 - R77 both selected Owners settle distinct sessions in one root without creating another OwnerRun
+  ---
+  duration_ms: 1939.613458
+  type: 'test'
+  ...
+# Subtest: R77 fresh consultation reauthenticates the actual planner raw receipt before reserving
+ok 14 - R77 fresh consultation reauthenticates the actual planner raw receipt before reserving
+  ---
+  duration_ms: 1371.156541
+  type: 'test'
+  ...
+# Subtest: R77 fresh consultation reauthenticates the actual review raw receipt before reserving
+ok 15 - R77 fresh consultation reauthenticates the actual review raw receipt before reserving
+  ---
+  duration_ms: 1868.149583
+  type: 'test'
+  ...
+# Subtest: R77 later Owner failure retries only that Owner while retaining the first accepted consultation
+ok 16 - R77 later Owner failure retries only that Owner while retaining the first accepted consultation
+  ---
+  duration_ms: 3392.135791
+  type: 'test'
+  ...
+# Subtest: R77 arbitration without open target obligations consults the candidate Owner set
+ok 17 - R77 arbitration without open target obligations consults the candidate Owner set
+  ---
+  duration_ms: 6950.328625
+  type: 'test'
+  ...
+# Subtest: R77 an observed raw advice with an uncommitted budget cannot masquerade as an applied operation
+ok 18 - R77 an observed raw advice with an uncommitted budget cannot masquerade as an applied operation
+  ---
+  duration_ms: 4635.419208
+  type: 'test'
+  ...
+1..18
+# tests 18
+# suites 0
+# pass 18
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 60334.95175

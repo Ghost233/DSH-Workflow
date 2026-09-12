@@ -1,0 +1,33 @@
+{
+  "contract": "DSH_CA01_CLOSEOUT_V1",
+  "candidateId": "CA01-R100-fac087e62075",
+  "codeCommitSha": "154914064f5ceb2f8eb413865e10a54e8ffbc663",
+  "contentDigest": "0b2dda26cb40ac22b2e7a3f9f768f2bd89b7e8c94bfc85415d36d0a860081ad4",
+  "planningSnapshotDigest": "5f8ced825b9259aef5fe78634aa86756633a542fe636d668ab8fd969d19e8091",
+  "planDigest": "1ad39ab5ffab729293926ca350b32f6b38054af023f1d7d1ef8ae38e08da5924",
+  "specDigest": "ef61049dbea0c0ba8d5f577c3c881dbfb6d5f4102041e2756ed5c837c3169ad1",
+  "status": "accepted",
+  "tickets": 31,
+  "ticketsAccepted": 31,
+  "unmappedAcceptanceCriteria": 0,
+  "acceptanceItems": 10,
+  "passedItems": 10,
+  "tests": 1114,
+  "passed": 1093,
+  "skippedLegacy": 21,
+  "failed": 0,
+  "cancelled": 0,
+  "blocked": 0,
+  "staleCandidate": 0,
+  "acceptanceCriteria": {
+    "from": "AC-01",
+    "through": "AC-32",
+    "passed": 32,
+    "failed": 0
+  },
+  "f12": "complete",
+  "ca01": "complete",
+  "committed": false,
+  "pushed": false,
+  "published": false
+}

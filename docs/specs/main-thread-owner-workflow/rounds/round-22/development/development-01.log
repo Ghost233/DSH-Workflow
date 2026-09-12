@@ -1,0 +1,12 @@
+command: env DSH_T22_RESTART_EVIDENCE_DIR=/tmp/dsh-t22-restart-r22 TSX_TSCONFIG_PATH=deepseek-harness/tsconfig.json /Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test owner-workflow-plugin/test/recovery-session-restart.test.mjs
+
+✔ T22 SIGKILL after the real submitted checkpoint reopens only to a non-mutating technical pause (4500.80675ms)
+✔ T22 SIGKILL after real failed settlement replays its persisted receipt without a second debit (4128.432416ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8773.144375

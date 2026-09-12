@@ -1,0 +1,7 @@
+{
+  "owner-workflow-plugin/test/launcher.test.mjs": {
+    "baseline": "b6550c3e19347bba3e9e71b7db8feb07d8cfbcc171852f653b6086ed0ddfe882",
+    "current": "f5873e6e4f61b01890243fac7a8211a2ad17c5995cf9db879562f265e05ea404",
+    "reason": "External edit observed before formal freeze; launcher test is outside this round and not imported by selected suites. Preserved without modification."
+  }
+}

@@ -1,0 +1,47 @@
+✔ Owner 不再使用工具白名单，完整能力由 worktree 和提交关卡承接 (504.269709ms)
+✔ recordBoundVerification 把绑定验证结果写入 active、task 状态和日志 (1465.586208ms)
+✔ F02 的 task_verification_result 只接受实时重新核验的 Owner 固定验证证据 (6909.987958ms)
+✔ R07 可选文件发现不可用时保留独立验证证据，当前候选与取消门禁不放宽 (2587.299792ms)
+✔ 旧 Flutter 计划从唯一受控 test/write/pubspec 链推导 flutter_app，并用于同一计划全部 Flutter 验证 (2546.333208ms)
+✔ 旧 Flutter 计划的 allowed-once 重试复用同一 snapshotRoot/flutter_app (2901.314666ms)
+✔ 旧 Flutter 计划没有唯一 Flutter test/write/pubspec 证据时 fail-closed (2214.170209ms)
+✔ 验证快照保留相对符号链接，不再制造虚假的 contentDigest 漂移 (1886.703916ms)
+✔ 固定验证快照和内容摘要跳过 Git 忽略的构建产物 (1719.107916ms)
+✔ 固定验证快照保留被忽略的 node_modules CLI，但不把依赖计入提交内容 (1752.4345ms)
+✔ 固定验证被 workspace-write 拒绝后由 Owner 现场原生授权并精确重试一次 (2432.217708ms)
+✔ 固定验证获批后 Owner 绑定失效时不执行宿主重试 (2987.580208ms)
+✔ 固定验证失败会持久化并返回有界 stdout 与 stderr (2789.358542ms)
+✔ required verification result 必须绑定当前 V2 plan/task/Owner/session/status (1688.02ms)
+✔ persisted Owner completed/awaiting/committed 快路径必须重验 V2 证据和现场 (3422.587791ms)
+﹣ 旧版普通文本 Owner 结果状态漂移测试（owner_submit 已在子线程内固定结果） (0.271375ms) # SKIP
+✔ recordBoundVerification 拒绝不匹配 active/task、未绑定和未知 verification (607.6325ms)
+✔ recordBoundVerification 对非 full 或非零 exit status 持久化负面证据并失败 (1893.4905ms)
+﹣ 旧版 Owner 手工验证缺失测试（owner_submit 现在自动执行固定验证） (0.373291ms) # SKIP
+﹣ 旧版 owner_write 写入代次测试（已由 contentDigest 提交关卡替代） (0.062417ms) # SKIP
+﹣ 旧版 owner_edit 写入代次测试（已由 contentDigest 提交关卡替代） (0.031583ms) # SKIP
+﹣ 旧版 owner_write 相同内容代次测试（逐写入包装已移除） (0.034125ms) # SKIP
+✔ owner_verify 执行期间计划代次和真实 worktree 漂移时拒绝记录成功 (1208.849583ms)
+✔ owner_verify 忽略其他 Supervisor 记账造成的全局 revision 变化 (900.770708ms)
+✔ owner_verify 执行固定验证前必须确认 shell 为 workspace-write (687.748375ms)
+✔ owner_verify 对宿主失败证据持久化负面结果并拒绝通过 (3961.299916ms)
+﹣ 旧版 Owner 逐写入范围测试（worktree 沙箱与提交关卡已有替代测试） (0.202666ms) # SKIP
+﹣ 旧版 Owner 写入包装链接测试（最终提交关卡覆盖受保护现场） (0.046042ms) # SKIP
+﹣ 旧版 Owner 写入包装长期记忆测试（最终提交关卡覆盖） (0.029792ms) # SKIP
+﹣ 旧版 Owner 写入包装 Registry 测试（最终提交关卡覆盖） (0.030875ms) # SKIP
+﹣ 旧版 Owner 写入包装大小写路径测试（最终提交关卡覆盖） (0.02825ms) # SKIP
+✔ Owner scope 过宽时提交前后二次检查都拒绝 Owner Registry 的大小写路径别名 (1161.084791ms)
+✔ Owner scope 过宽时提交检查拒绝 .owner-workflow 路径 (1083.171417ms)
+﹣ 旧版 Owner Shell 命令白名单测试（Owner 现在使用正常 Harness Shell） (0.085292ms) # SKIP
+﹣ 旧版 owner_bash 沙箱测试（固定验证仍保留快照证据） (0.024042ms) # SKIP
+﹣ 旧版 owner_bash 副本测试（Owner 本身已位于隔离 worktree） (0.022042ms) # SKIP
+﹣ 旧版逐写入操作日志测试（现在记录最终功能摘要和真实 diff） (0.019208ms) # SKIP
+✔ 提交代理禁用 Git hook 并在提交后再次校验 Owner 文件范围 (2093.567667ms)
+✔ Owner scope 内的 Git 忽略构建产物不会进入提交，也不阻断结算 (1681.844542ms)
+ℹ tests 39
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 14
+ℹ todo 0
+ℹ duration_ms 53522.660916

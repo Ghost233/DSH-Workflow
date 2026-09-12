@@ -1,0 +1,10 @@
+{
+  "contract": "DSH_TICKET_CLOSEOUT_V1",
+  "ticketId": "T-27",
+  "candidateId": "R90-T27-revision-stop-integration",
+  "status": "development_complete",
+  "tests": { "pass": 193, "fail": 0, "skip": 7 },
+  "remainingTicketWork": [],
+  "unblocked": ["T-18"],
+  "deferredByContract": ["T-18 cross-version root-problem and recovery-budget inheritance"]
+}

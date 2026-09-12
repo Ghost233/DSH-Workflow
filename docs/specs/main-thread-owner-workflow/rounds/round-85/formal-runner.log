@@ -1,0 +1,6 @@
+{'suite': 'planning-compile-native', 'exitCode': 0, 'timedOut': False, 'counts': {'tests': 6, 'pass': 6, 'fail': 0, 'cancelled': 0, 'skipped': 0, 'todo': 0}}
+{'suite': 'plan-revision', 'exitCode': 0, 'timedOut': False, 'counts': {'tests': 10, 'pass': 10, 'fail': 0, 'cancelled': 0, 'skipped': 0, 'todo': 0}}
+{'suite': 'planning-packages', 'exitCode': 0, 'timedOut': False, 'counts': {'tests': 14, 'pass': 14, 'fail': 0, 'cancelled': 0, 'skipped': 0, 'todo': 0}}
+{'suite': 'plugin', 'exitCode': 0, 'timedOut': False, 'counts': {'tests': 13, 'pass': 13, 'fail': 0, 'cancelled': 0, 'skipped': 0, 'todo': 0}}
+{'suite': 'control', 'exitCode': -9, 'timedOut': True, 'counts': {}}
+drift []

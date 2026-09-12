@@ -1,0 +1,15 @@
+✔ PlanRevision 只保存精简的不可变计划快照 (1.317125ms)
+✔ Workflow 只接受单根普通 fork 会话树中的 Intent 来源 (0.857834ms)
+✔ 只有 finalize 或完整取消清理才释放项目的唯一 Workflow 槽位 (0.075417ms)
+✔ Revision 变更只把权限收窄、Owner 变化和删除视为硬中止 (2.22325ms)
+✔ 计划修订保留完成结果，只重新检查语义变化的节点 (0.478625ms)
+✔ Planner 改写历史文案时冻结已完成 task，只执行新增 repair 与最终 verify (1.433542ms)
+✔ 旧运行自然结束后先执行新增前置，再把旧结果重新排入待检查 (0.25825ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 53.598583

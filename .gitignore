@@ -1,5 +1,8 @@
-# 本地工作流状态、控制桥和 Git worktree。
-.dsh-workflow/
+# 本地工作流状态、控制桥和 Git worktree 由 .dsh-workflow/.gitignore 管理。
+**/.dsh-workflow/*
+!**/.dsh-workflow/.gitignore
+# 项目启动插件及其锁文件、下载缓存仅保存在本机。
+/.dsh-workflow/plugins/
 .dsh-harness-runtime/
 
 # 本地依赖安装产物。
@@ -9,3 +12,9 @@ owner-workflow-plugin/pnpm-lock.yaml
 
 # macOS 文件管理器产生的元数据。
 .DS_Store
+
+### CodeGraph
+# Local index and generated Mono configuration
+/.codegraph/
+/codegraph.json
+/codegraph.json.tmp-*

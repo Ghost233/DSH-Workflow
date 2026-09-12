@@ -14,6 +14,64 @@ const START_SCRIPT = join(PROJECT_ROOT, 'start-owner-workflow.sh')
 const NPM_START_SCRIPT = join(PROJECT_ROOT, 'start-owner-workflow-npm.sh')
 const SUBMODULE_START_SCRIPT = join(PROJECT_ROOT, 'start-owner-workflow-submodule.sh')
 
+test('项目插件全部准备成功后才启动，失败时不启动 Runner 或创建 preset', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-plugin-start-gate-'))
+  const harness = join(root, 'harness')
+  const home = join(root, 'home')
+  const log = join(root, 'stages.txt')
+  try {
+    await prepareSourceRuntime(harness)
+    const env = { ...process.env, DSH_HOME: home, DSH_HARNESS_DIR: harness,
+      DSH_LAUNCHER: 'source-runtime', DSH_OWNER_WORKFLOW_MODE: 'local',
+      DSH_OWNER_WORKFLOW_RUNNER: '0', PLUGIN_STAGE_LOG: log, PLUGIN_PREPARE_STATUS: '1' }
+    await assert.rejects(executeLauncher('bash', [START_SCRIPT], {cwd:root,env}))
+    assert.equal((await readFile(log,'utf8')).trim(), 'prepare')
+    await assert.rejects(readFile(join(home,'.agent-presets','owner-workflow','plugin.mjs')))
+    await writeFile(log,'')
+    await executeLauncher('bash', [START_SCRIPT], {cwd:root,env:{...env,PLUGIN_PREPARE_STATUS:'0'},maxBuffer:2*1024*1024})
+    assert.deepEqual((await readFile(log,'utf8')).trim().split('\n'), ['prepare','run','release'])
+  } finally { await rm(root,{recursive:true,force:true}) }
+})
+
+// Stub package preparation here; scripts/project-plugins.test.mjs tests the
+// actual ordered installer and resolver independently, without network.
+async function executeLauncher(executable, args, options) {
+  const bin = await mkdtemp(join(tmpdir(), 'dsh-launcher-node-stub-'))
+  const node = join(bin, 'node')
+  await writeFile(node, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == */scripts/project-plugins.mjs ]]; then
+  action="\${2}"
+  if [[ "$action" != release ]]; then
+    [[ ":\${NODE_PATH:-}:" == *":\${3}/.dsh-workflow/plugins/node_modules:"* ]] || exit 97
+  fi
+  if [[ -n "\${PLUGIN_STAGE_LOG:-}" ]]; then printf '%s\\n' "$action" >> "$PLUGIN_STAGE_LOG"; fi
+  case "$action" in
+    prepare) exit "\${PLUGIN_PREPARE_STATUS:-0}" ;;
+    release) exit 0 ;;
+    run)
+      shift 3
+      if [[ "\${DSH_LAUNCHER:-}" == npx ]]; then exec npx --yes "$DSH_PACKAGE" "$@"; fi
+      exec "$REAL_NODE" "$DSH_HARNESS_DIR/apps/cli/lib/bin.js" "$@"
+      ;;
+  esac
+fi
+exec "$REAL_NODE" "$@"
+`)
+  await chmod(node, 0o755)
+  try {
+    return await executeFile(executable, args, { ...options, env: {
+      ...options.env, REAL_NODE: process.execPath, PATH: `${bin}:${options.env.PATH ?? process.env.PATH}`,
+    } })
+  } finally { await rm(bin, {recursive:true,force:true}) }
+}
+
+test('Owner preset 把动态业务工作区登记到全局 Runner catalog', async () => {
+  const preset = await readFile(join(PLUGIN_ROOT, 'agent-presets', 'owner-workflow', 'agent.cordis.yml'), 'utf8')
+  assert.match(preset, /dashboardCatalogRoot: !!js process\.env\.DSH_OWNER_WORKFLOW_CATALOG_ROOT/u)
+  assert.doesNotMatch(preset, /dashboardCatalogRoot: !!js process\.env\.DSH_OWNER_WORKFLOW_DASHBOARD_ROOT/u)
+})
+
 async function prepareSourceRuntime(runtimeDirectory) {
   await mkdir(join(runtimeDirectory, 'apps', 'cli', 'lib'), { recursive: true })
   await mkdir(join(runtimeDirectory, 'apps', 'web', 'dist'), { recursive: true })
@@ -63,7 +121,7 @@ test('本地启动强制刷新过期 preset，忽略缺失的 profile bin 并注
     await mkdir(stalePreset, { recursive: true })
     await writeFile(join(stalePreset, 'plugin.mjs'), 'export default {}\n', 'utf8')
 
-    const { stdout, stderr } = await executeFile('bash', [START_SCRIPT, '--dump-config'], {
+    const { stdout, stderr } = await executeLauncher('bash', [START_SCRIPT, '--dump-config'], {
       cwd: PROJECT_ROOT,
       env: {
         ...process.env,
@@ -96,7 +154,7 @@ test('npm 启动脚本把显式版本固定为 @deepseek-ai/dsh 包规格', asyn
     await writeFile(fakeNpx, '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$CAPTURE_PATH"\n', 'utf8')
     await chmod(fakeNpx, 0o755)
 
-    await executeFile('bash', [NPM_START_SCRIPT, '--version', '0.1.2-test'], {
+    await executeLauncher('bash', [NPM_START_SCRIPT, '--version', '0.1.2-test'], {
       cwd: PROJECT_ROOT,
       env: {
         ...process.env,
@@ -126,7 +184,7 @@ test('子模块启动脚本直接从子模块执行构建后的 CLI', async () =
   try {
     await prepareSubmoduleRuntime(harnessDirectory)
 
-    const { stdout } = await executeFile('bash', [SUBMODULE_START_SCRIPT], {
+    const { stdout } = await executeLauncher('bash', [SUBMODULE_START_SCRIPT], {
       cwd: PROJECT_ROOT,
       env: {
         ...process.env,
@@ -154,7 +212,7 @@ test('子模块启动脚本把 plugin 命令原样交给子模块 CLI 且不启�
   try {
     await prepareSubmoduleRuntime(harnessDirectory)
 
-    const { stdout, stderr } = await executeFile('bash', [
+    const { stdout, stderr } = await executeLauncher('bash', [
       SUBMODULE_START_SCRIPT,
       'plugin',
       '--profile',
@@ -199,7 +257,7 @@ test('启动脚本让 Runner daemon 随 Harness 启动并在 Harness 退出后�
       'process.stdout.write("Harness 测试进程\\n"); setTimeout(() => {}, 500)\n',
       'utf8',
     )
-    const { stderr } = await executeFile('bash', [START_SCRIPT], {
+    const { stderr } = await executeLauncher('bash', [START_SCRIPT], {
       cwd: PROJECT_ROOT,
       env: {
         ...process.env,
@@ -209,15 +267,73 @@ test('启动脚本让 Runner daemon 随 Harness 启动并在 Harness 退出后�
         DSH_OWNER_WORKFLOW_MODE: 'local',
         DSH_OWNER_WORKFLOW_DASHBOARD_ROOT: workspace,
         DSH_OWNER_WORKFLOW_RUNNER: '1',
+        DSH_OWNER_WORKFLOW_RUNNER_PERSIST: '0',
       },
       maxBuffer: 2 * 1024 * 1024,
     })
     assert.match(stderr, /Runner daemon 已启用/u)
-    const daemon = JSON.parse(await readFile(join(workspace, '.dsh-workflow', 'runner', 'daemon.json'), 'utf8'))
+    const daemon = JSON.parse(await readFile(join(harnessHome, 'owner-workflow', '.dsh-workflow', 'runner', 'daemon.json'), 'utf8'))
     assert.equal(daemon.contract, 'DSH_WORKFLOW_RUNNER_DAEMON_V1')
     assert.equal(daemon.status, 'stopped')
+    assert.equal(daemon.generation, 1)
     assert.equal(Array.isArray(daemon.activeWorkflows), true)
+    assert.equal(await readFile(join(workspace, '.dsh-workflow', 'runner', 'daemon.json'), 'utf8').catch(() => undefined), undefined)
   } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('不同工作区启动复用 Harness home 中同一个持久 Runner Leader', { timeout: 15_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-owner-global-runner-'))
+  const harnessHome = join(root, 'home')
+  const runtimeDirectory = join(root, 'runtime')
+  const workspaceA = join(root, 'workspace-a')
+  const workspaceB = join(root, 'workspace-b')
+  let runnerPid
+  try {
+    await prepareSourceRuntime(runtimeDirectory)
+    await mkdir(workspaceA, { recursive: true })
+    await mkdir(workspaceB, { recursive: true })
+    await writeFile(
+      join(runtimeDirectory, 'apps', 'cli', 'lib', 'bin.js'),
+      'process.stdout.write("Harness 测试进程\\n")\n',
+      'utf8',
+    )
+    const baseEnvironment = {
+      ...process.env,
+      DSH_HOME: harnessHome,
+      DSH_HARNESS_DIR: runtimeDirectory,
+      DSH_LAUNCHER: 'source-runtime',
+      DSH_OWNER_WORKFLOW_MODE: 'local',
+      DSH_OWNER_WORKFLOW_RUNNER: '1',
+      DSH_OWNER_WORKFLOW_RUNNER_PERSIST: '1',
+    }
+    await executeLauncher('bash', [START_SCRIPT], {
+      cwd: PROJECT_ROOT,
+      env: { ...baseEnvironment, DSH_OWNER_WORKFLOW_DASHBOARD_ROOT: workspaceA },
+      maxBuffer: 2 * 1024 * 1024,
+    })
+    const daemonPath = join(harnessHome, 'owner-workflow', '.dsh-workflow', 'runner', 'daemon.json')
+    const first = JSON.parse(await readFile(daemonPath, 'utf8'))
+    runnerPid = first.pid
+    assert.equal(first.status, 'running')
+    assert.equal(first.generation, 1)
+    assert.doesNotThrow(() => process.kill(runnerPid, 0))
+
+    await executeLauncher('bash', [START_SCRIPT], {
+      cwd: PROJECT_ROOT,
+      env: { ...baseEnvironment, DSH_OWNER_WORKFLOW_DASHBOARD_ROOT: workspaceB },
+      maxBuffer: 2 * 1024 * 1024,
+    })
+    const second = JSON.parse(await readFile(daemonPath, 'utf8'))
+    assert.equal(second.pid, runnerPid)
+    assert.equal(second.generation, 1)
+    assert.equal(second.status, 'running')
+  } finally {
+    if (Number.isSafeInteger(runnerPid)) {
+      try { process.kill(runnerPid, 'SIGTERM') } catch { /* Runner 已结束。 */ }
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
     await rm(root, { recursive: true, force: true })
   }
 })
@@ -242,7 +358,7 @@ test('本地 Web 启动把固定 Synapse 子模块注入同一个 Harness 进程
       'utf8',
     )
 
-    const { stdout } = await executeFile('bash', [START_SCRIPT], {
+    const { stdout } = await executeLauncher('bash', [START_SCRIPT], {
       cwd: PROJECT_ROOT,
       env: {
         ...process.env,

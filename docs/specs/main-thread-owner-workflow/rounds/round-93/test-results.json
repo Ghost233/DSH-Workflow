@@ -1,0 +1,17 @@
+{
+  "candidate": "R93-T06-public-owner-change-protocol",
+  "executionEnvironment": "Source DeepSeek Harness integration suites ran outside the Codex outer sandbox; protocol suite itself is pure state",
+  "results": [
+    { "suite": "public-owner-change", "pass": 10, "fail": 0, "skip": 0 },
+    { "suite": "planning-references", "pass": 30, "fail": 0, "skip": 0 },
+    { "suite": "owner-advice-session", "pass": 6, "fail": 0, "skip": 0 }
+  ],
+  "totals": { "pass": 46, "fail": 0, "skip": 0 },
+  "sourceHashes": {
+    "owner-workflow-plugin/src/public-owner-change.mjs": "be6b02a5432b5c60efa851287057b3ccded421e29dcd8e0b3287c6a86573a93c",
+    "owner-workflow-plugin/test/public-owner-change.test.mjs": "a11de38676c3a80cddddf01593f7a07e39c3c505e61c76130bd8af068fcccbf8",
+    "owner-workflow-plugin/test/planning-references.test.mjs": "f54a363bd5dc26168022860c8049f30ec5a4bc3071e1fcc440e59f99b91e39a9",
+    "owner-workflow-plugin/test/owner-advice-session.test.mjs": "3144792946327f2ec5cc752ca1a3dbc72b0a8c8bfff59fa9a75445ccf50e4533",
+    "docs/specs/main-thread-owner-workflow/contracts/public-owner-change-v1.md": "a4eaaf4d2463b9cdc7ef81a5c426023054113c603c32c8e71f21acb523fdda31"
+  }
+}

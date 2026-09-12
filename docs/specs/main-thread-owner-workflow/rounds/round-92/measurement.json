@@ -1,0 +1,43 @@
+{
+  "contract": "DSH_RECOVERY_POLICY_MEASUREMENT_V1",
+  "candidateId": "R92-T19-recovery-runtime-policy",
+  "measuredAt": "2026-09-12",
+  "environment": "source DeepSeek Harness with MockAdapter; real JSONL persistence and Runtime admission paths; nested Owner workspace-write sandbox where applicable",
+  "representativePackage": {
+    "sourceTest": "owner-workflow-plugin/test/candidate-arbitration-metered.test.mjs",
+    "testName": "R78 real arbitration then driver local rebuild carries the arbitration source and original failure root",
+    "modelStages": ["planner", "ordinary_review", "owner_advice", "arbiter", "successor_planner", "successor_review"],
+    "recoveryAttempts": {
+      "total": 6,
+      "byRoot": { "representative_root": 6 },
+      "replayAdditionalAttempts": 0
+    },
+    "observedHarnessDurationMs": 2980.144417,
+    "assertionDurationMs": 2809.431917,
+    "result": "passed"
+  },
+  "independentInitialWork": {
+    "sourceTest": "owner-workflow-plugin/test/owner-hard-deadline.test.mjs",
+    "testName": "T17 an independent Owner starts while the expired Owner is still stopping",
+    "recoveryCreditsRequiredByIndependentInitialTask": 0,
+    "observedHarnessDurationMs": 3416.407125,
+    "assertionDurationMs": 3229.261083,
+    "result": "passed"
+  },
+  "selectedPolicy": {
+    "contract": "DSH_RECOVERY_RUNTIME_POLICY_V1",
+    "version": 1,
+    "source": "R92-T19-REPRESENTATIVE-V1",
+    "totalLimit": 12,
+    "problemLimit": 8,
+    "ownerAttemptDeadline": "approved_task_on_timeout",
+    "normalizedDefaultTaskTimeoutMs": 1800000,
+    "ownerTerminationObservationMs": 30000
+  },
+  "selectionRationale": {
+    "problemLimit": "The measured six-stage root leaves one bounded two-stage Planner/Review semantic repair and then stops.",
+    "totalLimit": "Two measured six-stage root paths fit, while any distribution across roots remains capped at twelve; the fixed exhaustion test also proves an 8+4 split.",
+    "deadline": "The approved task contract is reviewable before activation and is frozen with the plan; Mock/Harness wall time is excluded from production model deadline calibration.",
+    "observationWindow": "Thirty seconds is the T17 cancellation terminal-evidence window, not a model latency estimate."
+  }
+}

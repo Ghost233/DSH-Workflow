@@ -1,0 +1,8 @@
+{
+  "probe": "cross-attempt-cross-field-receipt-reuse",
+  "executionThenResult": "settled",
+  "resultThenExecution": "started",
+  "importAccepted": true,
+  "totalUsed": 2,
+  "classification": "readonly diagnostic; not part of formal 118 tests"
+}

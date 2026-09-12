@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-11T11:53:10.750647+00:00",
+  "candidateDrift": [],
+  "formalPass": 238,
+  "formalSkipped": 7,
+  "closedFindings": [
+    "request-handoff-source-erased"
+  ],
+  "reviewFindings": [
+    {
+      "priority": "P2",
+      "id": "completed-with-pending-direct-handoff"
+    }
+  ],
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false
+}

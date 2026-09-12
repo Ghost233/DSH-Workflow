@@ -1,0 +1,221 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -8965,6 +8965,37 @@
+         nextAction: '只读审计已经完成；实施只能经过 workflow_preflight → workflow_start。公开 workflow_audit 工具会在当前主会话显示原生实施决定并自动完成这两个步骤。',
+       }
+     },
++    async assertOwnerCompletionAdmission(active, exec) {
++      return runtime.withWorkflowLock(active.workflowId, async () => {
++        const state = await readState(runtime, active.workflowRoot, active.workflowId)
++        if (recoveryAdmissionEnabled(active.state ?? {}) && !recoveryAdmissionEnabled(state)) {
++          throw new Error('owner_submit 恢复协议已变化，不能降级提交')
++        }
++        if (!recoveryAdmissionEnabled(state)) return
++        assertRecoveryAdmissionState(state)
++        if (active.lease === undefined) throw new Error('owner_submit 缺少当前Owner lease')
++        await runtime.assertOwnerLease(active.lease)
++        const sessionId = sessionIdOf(exec)
++        const record = state.ownerRuns?.[ownerRunKey(active.stageId, active.owner.id)]
++        const task = state.tasks?.find(item => item.taskId === active.stageId)
++        if (state.root !== active.workflowRoot || state.planDigest !== active.planDigest
++          || planDigest(state.plan) !== state.planDigest || record?.planDigest !== state.planDigest
++          || record?.attempt !== active.attempt || record?.sessionId !== sessionId
++          || record?.leaseToken !== active.lease.token || record?.status !== 'running' || task?.status !== 'running') {
++          throw new Error('owner_submit 当前完成提交的Owner来源已变化')
++        }
++        const pending = (state.handoffQueue ?? []).find(item => item.status === 'pending' && item.type === 'request_handoff'
++          && (item.sourceTaskId ?? item.sourceStageId) === active.stageId && item.sourceOwnerId === active.owner.id)
++        if (pending !== undefined) {
++          const source = pending.sourceExecution
++          if (source?.contract !== 'DSH_HANDOFF_SOURCE_EXECUTION_V1' || source.planDigest !== state.planDigest
++            || source.attempt !== active.attempt || source.sessionId !== sessionId) {
++            throw new Error('owner_submit pending request_handoff 来源需要对账，不能提交completed')
++          }
++          throw new Error('owner_submit 当前仍有pending request_handoff，不能提交completed；请改报blocked或failed，真实终态后处理转交提案')
++        }
++      })
++    },
+     async submitOwnerResult(rawReport, exec) {
+       const sessionId = sessionIdOf(exec)
+       const active = sessionId === undefined ? undefined : runtime.activeOwners.get(sessionId)
+@@ -11861,6 +11892,9 @@
+       let saved
+       let request
+       await runtime.withWorkflowLock(workflowId, async () => {
++        if (active.submitting === true || active.submission !== undefined) {
++          throw new Error('request_handoff Owner已进入提交关卡或已有结果，不能再创建转交提案')
++        }
+         const state = await readState(runtime, active.workflowRoot, workflowId)
+         if (state.root !== active.workflowRoot) throw new Error('request_handoff 的 workflow root 与当前 Owner 不匹配')
+         if (state.plan?.contract !== PLAN_V2_CONTRACT) throw new Error('request_handoff 只允许 DSH_PLAN_V2')
+--- owner-workflow-plugin/src/owner-submission.mjs (baseline)
++++ owner-workflow-plugin/src/owner-submission.mjs
+@@ -54,6 +54,7 @@
+
+   active.submitting = true
+   try {
++    await runtime.assertOwnerCompletionAdmission(active, exec)
+     const inspection = await runtime.inspectOwnerAttempt(
+       active.state,
+       active.entry,
+--- owner-workflow-plugin/test/owner-submission.test.mjs (baseline)
++++ owner-workflow-plugin/test/owner-submission.test.mjs
+@@ -33,6 +33,7 @@
+   const calls = []
+   const runtime = {
+     activeOwners: new Map([['owner-session', active]]),
++    async assertOwnerCompletionAdmission() { calls.push('admission') },
+     async inspectOwnerAttempt() {
+       calls.push('inspect')
+       return { violations: [] }
+@@ -52,7 +53,7 @@
+ test('owner_submit 顺序执行边界检查、固定验证和提交', async () => {
+   const { active, calls, runtime, exec } = fixture()
+   const result = await submitOwnerResult(runtime, report(), exec)
+-  assert.deepEqual(calls, ['inspect', 'verify:unit', 'commit'])
++  assert.deepEqual(calls, ['admission', 'inspect', 'verify:unit', 'commit'])
+   assert.equal(result.status, 'completed')
+   assert.equal(result.commitSha, 'a'.repeat(40))
+   assert.equal(active.submission.report.summary, '完成提交关卡测试')
+@@ -84,7 +85,7 @@
+   assert.equal(result.accepted, true)
+   assert.match(result.nextAction, /Owner 任务现场.*原生授权/u)
+   assert.equal(active.submission.report.status, 'blocked')
+-  assert.deepEqual(calls, ['inspect', 'verify:unit'])
++  assert.deepEqual(calls, ['admission', 'inspect', 'verify:unit'])
+ })
+
+ test('固定验证已经执行失败后拒绝 Owner 错报为 blocked', async () => {
+@@ -122,3 +123,17 @@
+   assert.equal(result.status, 'blocked')
+   assert.deepEqual(calls, [])
+ })
++
++
++test('completed admission rejection precedes all effects and allows a corrected blocked submission', async () => {
++  const { active, calls, runtime, exec } = fixture()
++  runtime.assertOwnerCompletionAdmission = async () => {
++    assert.equal(active.submitting, true)
++    throw new Error('pending request_handoff')
++  }
++  await assert.rejects(submitOwnerResult(runtime, report(), exec), /pending request_handoff/)
++  assert.deepEqual(calls, [])
++  assert.equal(active.submission, undefined)
++  assert.equal(active.submitting, false)
++  assert.equal((await submitOwnerResult(runtime, report('blocked'), exec)).status, 'blocked')
++})
+--- owner-workflow-plugin/test/direct-handoff-recovery.test.mjs (baseline)
++++ owner-workflow-plugin/test/direct-handoff-recovery.test.mjs
+@@ -4,7 +4,7 @@
+ import { deriveWorkflowControl } from '../src/workflow-state.mjs'
+ import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState } from './fixtures/recovery-session-fixture.mjs'
+
+-for (const { paid, repeatReport, authority } of [{ paid: false }, { paid: true }, { paid: true, repeatReport: true }, { paid: false, authority: true }]) test(`T15 real request_handoff preserves its ${paid ? 'paid' : 'initial free'} Owner${repeatReport ? ' with repeated handoff in report' : ''}${authority ? ' with a real user permission gap' : ''} until terminal and ${authority ? 'returns the permission decision' : 'stages a metered candidate'}`, { timeout: 30_000 }, async t => {
++for (const { paid, repeatReport, authority, rejectCompleted } of [{ paid: false }, { paid: true }, { paid: true, repeatReport: true }, { paid: false, authority: true }, { paid: false, rejectCompleted: true }, { paid: true, rejectCompleted: true }]) test(`T15 real request_handoff preserves its ${paid ? 'paid' : 'initial free'} Owner${repeatReport ? ' with repeated handoff in report' : ''}${authority ? ' with a real user permission gap' : ''}${rejectCompleted ? ' after rejecting premature completed' : ''} until terminal and ${authority ? 'returns the permission decision' : 'stages a metered candidate'}`, { timeout: 30_000 }, async t => {
+   let f, proposal, payload, atStart, afterRequest
+   const handoff = { targetType: 'owner', targetOwnerId: 'worker', summary: 'Existing worker must handle its file.',
+     reason: 'The file belongs to worker scope.', files: ['src/worker/independent.mjs'] }
+@@ -12,6 +12,10 @@
+     limits: { totalLimit: 4, problemLimit: 3 }, modelScript: m => [
+       () => m.toolCallResponse('direct-request', 'request_handoff', { workflow_id: f.workflowId, task_id: 'T1',
+         handoff, delta: { plan: proposal, invalidate: ['T2'] } }),
++      ...(rejectCompleted ? [m.toolCallResponse('direct-premature-completed', 'owner_submit', { report: {
++        contract: 'DSH_OWNER_RESULT_V1', status: 'completed', summary: 'Contradictory premature completion',
++        changes: [], tests: [], handoffs: [], memory_updates: [],
++      } })] : []),
+       m.toolCallResponse('direct-blocked', 'owner_submit', { report: {
+         contract: 'DSH_OWNER_RESULT_V1', status: 'blocked', summary: 'Technical transfer recorded for the existing worker.',
+         changes: [], tests: [], handoffs: repeatReport ? [handoff] : [], memory_updates: [],
+@@ -25,6 +29,11 @@
+   const initial = await readRecoverySessionState(f)
+   proposal = { ...structuredClone(initial.plan), summary: 'Proposed transfer must remain a proposal' }
+   payload = { ...structuredClone(initial.plan), summary: 'Independent Planner candidate', owners: initial.plan.owners.map(owner => ({ id: owner.id })) }
++  const completionCalls = { inspectOwnerAttempt: 0, recordBoundVerification: 0, commitOwnerAttempt: 0 }
++  if (rejectCompleted) for (const key of Object.keys(completionCalls)) {
++    const original = f.runtime[key].bind(f.runtime)
++    f.runtime[key] = (...args) => { completionCalls[key]++; return original(...args) }
++  }
+   const stream = f.adapter.stream.bind(f.adapter)
+   let index = 0
+   f.adapter.stream = async function* (options) {
+@@ -60,6 +69,15 @@
+         external_permission_gap: { required_permission: 'read:ledger', target: 'remote-ledger', blocked_action: 'Read ledger' },
+       }, { agent: { id: record.sessionId } })
+     }
++    if (rejectCompleted && current === 2) {
++      assert.deepEqual(completionCalls, { inspectOwnerAttempt: 0, recordBoundVerification: 0, commitOwnerAttempt: 0 })
++      const currentState = await readRecoverySessionState(f)
++      const currentRecord = currentState.ownerRuns['T1:api']
++      assert.equal(currentRecord.status, 'running')
++      const active = f.runtime.activeOwners.get(currentRecord.sessionId)
++      assert.equal(active.submission, undefined)
++      assert.equal(active.submitting, false)
++    }
+     yield* stream(options)
+   }
+   const run = paid
+@@ -90,6 +108,13 @@
+   const terminalEvent = events.find(event => event.type === 'turn/end')
+   assert.ok(requestCall && terminalEvent && terminalEvent.seq > requestCall.seq)
+   assert.equal(terminalEvent.data.reason.kind, 'completed')
++  if (rejectCompleted) {
++    const rejected = events.find(event => event.type === 'tool/result'
++      && event.data.message?.source?.callId === 'direct-premature-completed')
++    assert.equal(rejected.data.message.content[0].isError, true)
++    assert.match(JSON.stringify(rejected.data), /pending request_handoff/)
++    assert.deepEqual(completionCalls, { inspectOwnerAttempt: 0, recordBoundVerification: 0, commitOwnerAttempt: 0 })
++  }
+   if (paid) {
+     assert.equal(terminal.recoveryAdmission.budget.totalUsed, 1)
+     assert.equal(record.recoverySession.phase, 'settled_failed')
+@@ -107,3 +132,33 @@
+   const plannerRequest = f.adapter.requests.find(options => JSON.stringify(options).includes('未应用提案'))
+   assert.ok(plannerRequest, 'actual Planner sees proposal status in its prompt')
+ })
++
++test('T15 a handoff cannot enter after completed submission has acquired its gate', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true, modelScript: m => [
++    m.toolCallResponse('ordinary-completed', 'owner_submit', { report: {
++      contract: 'DSH_OWNER_RESULT_V1', status: 'completed', summary: 'Ordinary completion without a transfer.',
++      changes: [], tests: [], handoffs: [], memory_updates: [],
++    } }), m.textResponse('reported'),
++  ] })
++  await mutateRecoverySessionState(f, state => { delete state.ownerRuns['T1:api'] })
++  const inspect = f.runtime.inspectOwnerAttempt.bind(f.runtime)
++  let checked = false
++  f.runtime.inspectOwnerAttempt = async (...args) => {
++    if (!checked) {
++      checked = true
++      const active = [...f.runtime.activeOwners.values()].find(item => item.workflowId === f.workflowId && item.owner.id === 'api')
++      assert.equal(active.submitting, true)
++      await assert.rejects(requestHandoffDefinition(f.runtime).execute({ workflow_id: f.workflowId, task_id: 'T1',
++        handoff: { targetType: 'owner', targetOwnerId: 'worker', summary: 'Late transfer', reason: 'Late request during commit',
++          files: ['src/worker/independent.mjs'] },
++      }, { agent: { id: active.sessionId } }), /已进入提交关卡/)
++    }
++    return inspect(...args)
++  }
++  await f.runtime.runExternalOwner(f.admissionAgent, f.workflowId, 'T1', 'api', undefined, { deferFinish: true })
++  assert.equal(checked, true)
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.ownerRuns['T1:api'].status, 'awaiting_finish')
++  assert.equal(state.handoffQueue, undefined)
++  assert.ok(state.ownerRuns['T1:api'].result.commitSha)
++})
+--- docs/specs/main-thread-owner-workflow/contracts/handoff-recovery-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/handoff-recovery-v1.md
+@@ -26,3 +26,14 @@
+ 只有runChild真实结束，现有失败收尾才保存Owner blocked/failed和task stopped。存在同版本、同attempt/session且无partial commit的固定handoff时，实际非完成报告（包括报告重复携带handoff）是受控技术交接；已付费Owner可按原session/prompt结算failed并保留continuation，后续Planner同root另付一次。技术blocked不再自动变成await_user，但真实typed user authority继续优先投递主线程，handoff不豁免权限门禁。
+
+ 本轮真实Harness测试覆盖免费Owner、已付费Owner、报告重复handoff和真实typed permission gap；以实际request_handoff/owner_submit、原始JSONL终态和后续Planner提交验证，不人工伪造terminal。非完成报告的技术结算不是commit成功或问题关闭。没有来源绑定的异常、未知执行、正常partial commit及跨版本状态均不获得本补丁的自动结算许可。
++
++
++## R61 completed提交门禁与反向并发窗口
++
++owner_submit的completed路径在active.submitting=true后、inspect/固定验证/commit之前调用assertOwnerCompletionAdmission。Runtime在workflow短锁中读取最新状态，对受保护执行核对协议、实际Owner lease、active plan内容/digest、task运行状态和Owner attempt/session/leaseToken。相同task/Owner仍有pending request_handoff时拒绝completed；来源失配的遗留pending请求也必须对账，不静默忽略并完成。
++
++拒绝仅返回工具错误，finally清除submitting，不写active.submission；同一真实Owner可随后提交blocked/failed并沿R60真实终态及预算继承继续。真正的权限依据仍由原有submission前置分类优先处理。
++
++反向窗口也被封闭：request_handoff在workflow锁内拒绝active.submitting或已有active.submission的Owner，不能在completed已通过门禁后加入新提案。该限制也保护既有非恢复请求的提交次序。未出现pending直接请求的普通完成继续正常检查、验证和固定提交。
++
++真实测试覆盖免费/paid Owner错误completed工具回执、检查/验证/commit均零调用、同会话blocked后Planner继续，以及普通completed检查执行中调用实际request handler被拒绝。它们不代表其他未接线的Review、版本激活或完整工作流已通过验收。

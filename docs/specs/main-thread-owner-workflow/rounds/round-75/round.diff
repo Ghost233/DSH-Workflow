@@ -1,0 +1,273 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -7097,6 +7097,12 @@
+         .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+         .slice(0, limit)
+       if (selected.length === 0) return []
++      // A caller's candidate-shaped copy is not the authority for deciding
++      // whether these physical model calls need recovery admission.
++      const current = await readState(runtime, await runtime.resolveRoot(agent), state.id)
++      if (requiresRecoveryCandidateReview(state) || requiresRecoveryCandidateReview(current)) {
++        throw new Error('Recovery候选Owner会诊尚未接入逐次预算与持久会话，拒绝未计费启动')
++      }
+       const consultations = await Promise.all(selected.map(async owner => {
+         try {
+           const memorySnapshot = await loadMemorySnapshot(state.workflowWorktree, {
+@@ -8271,6 +8277,9 @@
+       const state = await readState(runtime, root, active.id)
+       const candidate = state.pendingPlanRevision
+       if (candidate === undefined) throw new Error('当前没有待仲裁 PlanRevision 候选')
++      if (requiresRecoveryCandidateReview(state)) {
++        throw new Error('Recovery候选仲裁尚未接入逐次预算与持久会话，拒绝未计费启动')
++      }
+       if (state.planConvergence?.nextStrategy !== 'arbitrate') {
+         throw new Error(`当前收敛策略不是 arbitrate：${String(state.planConvergence?.nextStrategy ?? 'missing')}`)
+       }
+--- /dev/null
++++ owner-workflow-plugin/test/candidate-arbitration-recovery.test.mjs
+@@ -0,0 +1,233 @@
++import assert from 'node:assert/strict'
++import test from 'node:test'
++import { plannerSubmitDefinition, planReviewSubmitDefinition } from '../index.js'
++import { planReviewResult } from '../src/model.mjs'
++import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState } from './fixtures/recovery-session-fixture.mjs'
++
++const ownerAdvice = {
++  contract: 'DSH_OWNER_PLANNING_ADVICE_V1',
++  ownerId: 'api',
++  scopeFit: 'full',
++  facts: ['The active API Owner remains the relevant consultation source.'],
++  constraints: ['Do not alter the recovery candidate while only testing arbitration reachability.'],
++  suggestedNodes: [],
++  dependencies: [],
++  handoffs: [],
++  risks: [],
++  verificationSuggestions: [],
++}
++
++const paidNeedsRevisionReview = {
++  contract: 'DSH_PLAN_REVIEW_V1',
++  status: 'needs_revision',
++  summary: 'The recovery candidate needs an additional local verification adjustment.',
++  issues: [{
++    severity: 'medium',
++    title: 'Local recovery verification remains incomplete',
++    detail: 'The candidate must retain the current unit verification obligation.',
++    suggestion: 'Complete the existing local verification contract.',
++    obligationId: 'r75-recovery-review-obligation',
++    sourceId: 'r75-recovery-review',
++    sourceVersion: '1',
++    targetTaskIds: ['T1'],
++    closeWhen: { kind: 'task_verification_result', taskId: 'T1', verificationId: 'unit' },
++  }],
++}
++
++async function setupExhaustedRecoveryCandidate(t) {
++  let payload
++  const f = await createRecoverySessionFixture(t, {
++    executable: true,
++    limits: { totalLimit: 1, problemLimit: 1 },
++    // The first response is the paid recovery Planner.  The following finite
++    // responses make direct arbitration's unmetered Owner consult and invalid
++    // Reviewer retries observable without a hanging transport.
++    modelScript: m => [
++      () => m.toolCallResponse('paid-recovery-planner', 'workflow_plan_submit', { plan: payload }),
++      'hang-slow',
++      m.textResponse(JSON.stringify(ownerAdvice)),
++      m.textResponse('{}'),
++      m.textResponse('{}'),
++    ],
++  })
++  f.ctx.tools.register(plannerSubmitDefinition(f.runtime))
++  f.ctx.tools.register(planReviewSubmitDefinition(f.runtime))
++  const state = await readRecoverySessionState(f)
++  payload = {
++    ...structuredClone(state.plan),
++    summary: 'R75 recovery candidate for arbitration bypass proof',
++    owners: state.plan.owners.map(owner => ({ id: owner.id })),
++  }
++  const stage = state.plan.tasks[0]
++  const owner = state.plan.owners.find(item => item.id === stage.ownerId)
++  await f.runtime.recordHandoffs(state, stage, { owner, branch: 'fixture-owner' }, {
++    status: 'blocked',
++    handoffs: [{ targetType: 'owner', targetOwnerId: owner.id, files: ['src/api/repair.mjs'], summary: 'Bounded local repair.' }],
++  })
++  await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  return f
++}
++
++async function setupReviewedExhaustedRecoveryCandidate(t) {
++  planReviewResult(paidNeedsRevisionReview)
++  let payload
++  const f = await createRecoverySessionFixture(t, {
++    executable: true,
++    limits: { totalLimit: 2, problemLimit: 2 },
++    modelScript: m => [
++      () => m.toolCallResponse('paid-recovery-planner', 'workflow_plan_submit', { plan: payload }),
++      'hang-slow',
++      m.toolCallResponse('paid-recovery-review', 'workflow_plan_review_submit', { review: paidNeedsRevisionReview }),
++      'hang-slow',
++      m.textResponse('Candidate technical pause notice received.'),
++    ],
++  })
++  f.ctx.tools.register(plannerSubmitDefinition(f.runtime))
++  f.ctx.tools.register(planReviewSubmitDefinition(f.runtime))
++  const state = await readRecoverySessionState(f)
++  payload = {
++    ...structuredClone(state.plan),
++    summary: 'R75 reviewed recovery candidate for arbitration gate proof',
++    owners: state.plan.owners.map(owner => ({ id: owner.id })),
++  }
++  const stage = state.plan.tasks[0]
++  const owner = state.plan.owners.find(item => item.id === stage.ownerId)
++  await f.runtime.recordHandoffs(state, stage, { owner, branch: 'fixture-owner' }, {
++    status: 'blocked',
++    handoffs: [{ targetType: 'owner', targetOwnerId: owner.id, files: ['src/api/repair.mjs'], summary: 'Bounded local repair.' }],
++  })
++  await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  await f.runtime.reviewPendingPlanRevision(f.admissionAgent)
++  return f
++}
++
++function arbitrationConvergence(candidate) {
++  return {
++    contract: 'DSH_WORKFLOW_CONVERGENCE_V1',
++    runtimeVersion: 'r75-pre-gate-proof',
++    cycleId: candidate.cycleId ?? `candidate-${candidate.number}`,
++    evidenceDigest: 'r75-pre-gate-evidence',
++    obligations: [{
++      id: 'r75-fixed-verification',
++      category: 'plan_verification_binding',
++      severity: 'high',
++      title: 'Unit verification remains a frozen recovery obligation',
++      detail: 'The recovery candidate must preserve the existing required unit verification.',
++      suggestion: 'Arbitrate only the already-persisted obligation.',
++      source: { id: 'r75-pre-gate', version: '1' },
++      targetTaskIds: ['T1'],
++      closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' },
++      status: 'open',
++    }],
++    unsupportedNewObligations: [],
++    usedStrategies: ['local_subgraph_rewrite', 'diagnose', 'owner_council'],
++    nextStrategy: 'arbitrate',
++    history: [{ candidatePlanDigest: candidate.planDigest }],
++  }
++}
++
++test('R75 direct recovery arbitration refuses before an exhausted candidate can start a model transport', { timeout: 30_000 }, async t => {
++  const f = await setupExhaustedRecoveryCandidate(t)
++  const admitted = await readRecoverySessionState(f)
++  assert.equal(admitted.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(admitted.recoveryAdmission.budget.totalLimit, 1)
++  assert.ok(admitted.pendingPlanRevision?.recoveryOrigin)
++
++  const before = await mutateRecoverySessionState(f, state => {
++    state.planConvergence = arbitrationConvergence(state.pendingPlanRevision)
++  })
++  const modelRequestsBefore = f.adapter.requests.length
++
++  await assert.rejects(
++    f.runtime.arbitratePendingPlanRevision(f.admissionAgent, undefined, { source: 'r75-post-gate-direct' }),
++    /Recovery候选仲裁尚未接入逐次预算与持久会话，拒绝未计费启动/,
++  )
++
++  const after = await readRecoverySessionState(f)
++  assert.deepEqual(after, before)
++  assert.equal(f.adapter.requests.length, modelRequestsBefore)
++})
++
++test('R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait', { timeout: 30_000 }, async t => {
++  const f = await setupReviewedExhaustedRecoveryCandidate(t)
++  const before = await mutateRecoverySessionState(f, state => {
++    state.planConvergence = arbitrationConvergence(state.pendingPlanRevision)
++  })
++  assert.equal(before.pendingPlanRevision.review.status, 'needs_revision')
++  assert.equal(before.recoveryAdmission.budget.totalUsed, 2)
++  assert.equal(before.recoveryAdmission.budget.totalLimit, 2)
++  const modelRequestsBefore = f.adapter.requests.length
++
++  const paused = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'plan-revision-drive', undefined, {
++    source: 'r75-post-gate-driver',
++  })
++  assert.equal(paused.action, 'candidate-recovery-paused')
++  assert.notEqual(paused.action, 'awaiting-user-authority')
++  const afterPause = await readRecoverySessionState(f)
++  assert.equal(afterPause.recoveryAdmission.budget.totalUsed, before.recoveryAdmission.budget.totalUsed)
++  assert.deepEqual(afterPause.recoveryAdmission.budget.attempts, before.recoveryAdmission.budget.attempts)
++  assert.deepEqual(afterPause.pendingPlanRevision, before.pendingPlanRevision)
++  assert.equal(afterPause.tasks.find(task => task.taskId === 'T1').action, before.tasks.find(task => task.taskId === 'T1').action)
++  const notification = afterPause.mainOutbox[paused.notificationId]
++  assert.equal(notification.actionRequired, false)
++  assert.equal(notification.status, 'pending')
++  assert.equal(f.adapter.requests.length, modelRequestsBefore)
++
++  const notified = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'plan-revision-drive')
++  assert.equal(notified.action, 'candidate-recovery-notified')
++  await f.admissionAgent.whenIdle()
++  await f.ctx.sessions.flush(f.admissionAgent.session)
++  const modelRequestsAfterNotification = f.adapter.requests.length
++  const waiting = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'plan-revision-drive')
++  assert.equal(waiting.action, 'waiting')
++  assert.equal(waiting.phase, 'candidate_recovery_paused')
++  const after = await readRecoverySessionState(f)
++  assert.equal(after.mainOutbox[paused.notificationId].status, 'delivered')
++  assert.equal(after.mainOutbox[paused.notificationId].actionRequired, false)
++  t.diagnostic(JSON.stringify({
++    pausedReason: paused.reason,
++    persistedReason: after.candidateRecoveryPause.reason,
++    modelRequestsBefore,
++    modelRequestsAfterNotification,
++    modelRequestsAfterStableWait: f.adapter.requests.length,
++  }))
++  assert.equal(after.candidateRecoveryPause.reason.includes('Recovery候选仲裁尚未接入逐次预算与持久会话'), true)
++  assert.deepEqual(after.pendingPlanRevision, before.pendingPlanRevision)
++  assert.deepEqual(after.recoveryAdmission.budget, before.recoveryAdmission.budget)
++  assert.equal(f.adapter.requests.length, modelRequestsAfterNotification)
++})
++
++test('R75 consultPlanningOwners rejects a stripped caller copy when the persisted Workflow remains a recovery candidate', { timeout: 30_000 }, async t => {
++  const f = await setupExhaustedRecoveryCandidate(t)
++  const before = await readRecoverySessionState(f)
++  const stripped = structuredClone(before)
++  delete stripped.pendingPlanRevision
++  const modelRequestsBefore = f.adapter.requests.length
++
++  await assert.rejects(
++    f.runtime.consultPlanningOwners(f.admissionAgent, stripped, [stripped.plan.owners[0]], undefined, { purpose: 'r75-stripped-copy' }),
++    /Recovery候选Owner会诊尚未接入逐次预算与持久会话，拒绝未计费启动/,
++  )
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.equal(f.adapter.requests.length, modelRequestsBefore)
++})
++
++test('R75 an unprotected initial Owner consultation still uses the real model transport', { timeout: 30_000 }, async t => {
++  const f = await createRecoverySessionFixture(t, {
++    executable: true,
++    modelScript: m => [m.textResponse(JSON.stringify(ownerAdvice))],
++  })
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.pendingPlanRevision, undefined)
++  const modelRequestsBefore = f.adapter.requests.length
++
++  const consultations = await f.runtime.consultPlanningOwners(
++    f.admissionAgent,
++    state,
++    state.plan.owners,
++    undefined,
++    { purpose: 'r75-initial-positive' },
++  )
++  assert.deepEqual(consultations, [ownerAdvice])
++  assert.equal(f.adapter.requests.length, modelRequestsBefore + 1)
++})
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/candidate-arbitration-recovery-v1.md
+@@ -0,0 +1,9 @@
++# 恢复候选仲裁接线边界（R75）
++
++真实旧入口已证明预算耗尽后仍产生Owner会诊及Reviewer请求，详见round-75/development-pre-gate.log与pre-gate-proof.mjs。该行为不符合T15每次外部恢复启动的有限预算要求。
++
++在会诊和仲裁的逐次持久计费协议接通前，arbitratePendingPlanRevision依据当前真实candidate拒绝未计费启动；consultPlanningOwners同时核验调用者传入state和当前持久Workflow，不能通过去掉传入副本的pending字段降级到初始规划。非恢复初始会诊保持原只读模型调用。
++
++实际driveWorkflow的既有恢复错误路径将此技术拒绝保存为候选暂停及非用户待决通知；通知投递后，同一来源不会重复仲裁。独立首次任务仍依R73/R74判断派发，不扩大为全Workflow停机。直接入口拒绝保持来源、预算与候选不变。
++
++此门禁不是仲裁功能交付。后续完整接线必须为每个Owner会诊及独立仲裁Review分配同根唯一预算/session/prompt，并核验原始回执、语义结果和来源并发。具体实现接缝见round-75/metered-arbitration-path.md。T15保持开发中。

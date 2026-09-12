@@ -1,0 +1,30 @@
+{
+  "suite": "recovery-session",
+  "command": [
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+    "--import",
+    "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+    "--test",
+    "--test-force-exit",
+    "--test-reporter=tap",
+    "owner-workflow-plugin/test/recovery-session.test.mjs"
+  ],
+  "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+  "start": "2026-09-11T05:02:41.245569+00:00",
+  "timeoutSeconds": 180,
+  "executionEnvironment": "Outside outer tool sandbox; real Owner sandbox remains enabled",
+  "exitCode": 0,
+  "timedOut": false,
+  "end": "2026-09-11T05:02:52.001366+00:00",
+  "counts": {
+    "tests": 11,
+    "pass": 11,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "warnings": [],
+  "selectionComplete": true,
+  "drift": []
+}

@@ -1,0 +1,36 @@
+✔ V2 task finish 在 workflow 已合入但状态未记账时恢复并幂等完成 (5754.958833ms)
+✔ V2 task finish 恢复 pendingTaskMerge，只清理 task preflight 并保留 Owner worktree (4172.904334ms)
+✔ V2 task finish 按 task.write 覆盖把 handoff queue 标记为 completed (3151.846083ms)
+✔ finalize 只合并固定的 review SHA，review 后分支移动时拒绝未审查提交 (1566.995125ms)
+▶ finalize 遇到 tracked、untracked 或 ignored Owner dirty 时保存 cleanupPending 并保留现场
+  ✔ tracked (4749.830583ms)
+  ✔ untracked (5801.499ms)
+  ✔ ignored (4440.11475ms)
+✔ finalize 遇到 tracked、untracked 或 ignored Owner dirty 时保存 cleanupPending 并保留现场 (14993.821084ms)
+▶ finalize 对 legacy ownerRuns 的越界、链接、分支错配和字段冲突一律 fail-closed
+  ✔ top worktree 越出当前 workflow 受控目录 (2625.274542ms)
+  ✔ result worktree 越出当前 workflow 受控目录 (2405.83825ms)
+  ✔ worktree 路径经过符号链接 (3008.395291ms)
+  ✔ 记录 branch 与 worktree attached branch 不一致 (3380.980833ms)
+  ✔ top 与 result worktree 字段冲突 (2550.234375ms)
+  ✔ top 与 result branch 字段冲突 (2646.286959ms)
+✔ finalize 对 legacy ownerRuns 的越界、链接、分支错配和字段冲突一律 fail-closed (16621.544292ms)
+✔ finalize 可清理合法固定 V2 Owner 路径 (3814.276917ms)
+✔ finalize 成功后重复调用可以幂等完成清理 (3361.5775ms)
+✔ finalize 合并已经完成但状态未记账时，可以在资源缺失后恢复清理 (2260.270667ms)
+✔ finalize 在启动分支有新提交时以最新 base 预合并固定 review SHA 并成功交付 (4224.056625ms)
+✔ finalize 最新 base 预合并冲突时记录失败并保留 workflow、Owner 和 preflight 现场 (3142.547542ms)
+✔ Runtime 当前 Owner 只能通过结构化 request_subgraph 请求并在锁内持久化局部 delta (1650.176625ms)
+✔ Runtime request_handoff 走局部失效并拒绝通过 delta 绕过 Registry 边界 (1268.865166ms)
+✔ Runtime request_handoff 只保留白名单字段，调用方元数据不能覆盖生成字段 (1040.799125ms)
+✔ V2 handoff_replan 用 task.write 覆盖 handoff 文件并 carry forward completed task (1393.962667ms)
+✔ V2 handoff_replan 确定性冻结已有 ownerRun 对应 task 的语义 (1824.468084ms)
+✔ V2 recoverWorkflow 只按 task 状态、ownerRuns 和 Supervisor queue 恢复失败 task (1407.232709ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 71829.888208

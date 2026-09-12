@@ -92,6 +92,16 @@ function normalizeTaskRecord(raw, task, index) {
   if (abortedOwnerId !== undefined && (typeof abortedOwnerId !== 'string' || abortedOwnerId.trim() === '')) {
     fail(`tasks[${index}].abortedOwnerId 必须是非空字符串`)
   }
+  const autonomousRecovery = raw.autonomousRecovery
+  if (autonomousRecovery !== undefined && (
+    autonomousRecovery === null
+    || typeof autonomousRecovery !== 'object'
+    || Array.isArray(autonomousRecovery)
+    || typeof autonomousRecovery.strategy !== 'string'
+    || typeof autonomousRecovery.failureClass !== 'string'
+  )) {
+    fail(`tasks[${index}].autonomousRecovery 必须包含 strategy 与 failureClass`)
+  }
 
   return {
     taskId,
@@ -110,6 +120,7 @@ function normalizeTaskRecord(raw, task, index) {
     ...(recheckOnly === undefined ? {} : { recheckOnly }),
     ...(fixedCommitSha === undefined ? {} : { fixedCommitSha: fixedCommitSha.trim() }),
     ...(abortedOwnerId === undefined ? {} : { abortedOwnerId: abortedOwnerId.trim() }),
+    ...(autonomousRecovery === undefined ? {} : { autonomousRecovery: structuredClone(autonomousRecovery) }),
   }
 }
 
@@ -181,10 +192,36 @@ function normalizeState(state) {
     }
   }
   const parallel = normalizeParallel(state.config?.parallel ?? state.parallel)
+  const externalOccupiedSlots = optionalNonNegativeSafeInteger(state.externalOccupiedSlots, 'externalOccupiedSlots')
+  const externalBusyOwnerIds = state.externalBusyOwnerIds ?? []
+  if (!Array.isArray(externalBusyOwnerIds)) fail('externalBusyOwnerIds 必须是数组')
+  const normalizedExternalBusyOwnerIds = [...new Set(externalBusyOwnerIds.map((ownerId, index) => (
+    nonEmptyText(ownerId, `externalBusyOwnerIds[${index}]`)
+  )))]
+  const knownOwnerIds = new Set(plan.owners.map(owner => owner.id))
+  if (normalizedExternalBusyOwnerIds.some(ownerId => !knownOwnerIds.has(ownerId))) {
+    fail('externalBusyOwnerIds 包含计划外Owner')
+  }
+  const externalBusyResourceIds = state.externalBusyResourceIds ?? []
+  if (!Array.isArray(externalBusyResourceIds)) fail('externalBusyResourceIds 必须是数组')
+  const normalizedExternalBusyResourceIds = [...new Set(externalBusyResourceIds.map((resourceId, index) => (
+    nonEmptyText(resourceId, `externalBusyResourceIds[${index}]`)
+  )))]
   const actionSequence = optionalNonNegativeSafeInteger(state.actionSequence, 'actionSequence')
   if (actionSequence >= Number.MAX_SAFE_INTEGER) fail('actionSequence 已达到安全上限，无法继续确认动作')
-  if (tasks.filter(task => task.status === 'running').length > parallel) {
-    fail('运行中的 active 任务数量不能超过 config.parallel')
+  if (tasks.filter(task => task.status === 'running').length + externalOccupiedSlots > parallel) {
+    fail('运行中的 active 任务和外部reservation数量不能超过 config.parallel')
+  }
+  const runningResourceIds = new Set()
+  for (const record of tasks.filter(task => task.status === 'running')) {
+    const task = plan.tasks.find(item => item.id === record.taskId)
+    for (const resourceId of task.resources ?? []) {
+      if (runningResourceIds.has(resourceId)) fail(`运行中的任务重复占用资源：${resourceId}`)
+      runningResourceIds.add(resourceId)
+    }
+  }
+  for (const resourceId of normalizedExternalBusyResourceIds) {
+    if (runningResourceIds.has(resourceId)) fail(`外部reservation与运行任务重复占用资源：${resourceId}`)
   }
   const transitionBlockedTaskIds = state.transitionBlockedTaskIds ?? []
   if (!Array.isArray(transitionBlockedTaskIds)) fail('transitionBlockedTaskIds 必须是数组')
@@ -200,9 +237,13 @@ function normalizeState(state) {
   return {
     workflowId,
     revision,
+    recoveryProtected: state.recoveryProtected === true,
     plan,
     tasks,
     parallel,
+    externalOccupiedSlots,
+    externalBusyOwnerIds: normalizedExternalBusyOwnerIds,
+    externalBusyResourceIds: normalizedExternalBusyResourceIds,
     actionSequence,
     transitionBlockedTaskIds: normalizedBlockedTaskIds,
   }
@@ -212,16 +253,19 @@ function readyTaskPlans(state) {
   const tasks = taskRecordsById(state.tasks)
   const planById = new Map(state.plan.tasks.map(task => [task.id, task]))
   const status = taskId => effectiveTaskStatus(taskId, planById, tasks)
+  const ancestorsReady = task => {
+    if (task.parentTaskId === undefined) return true
+    const parent = planById.get(task.parentTaskId)
+    if (parent === undefined) fail(`任务 ${task.id} 缺少 Composite 父任务：${task.parentTaskId}`)
+    return parent.dependsOn.every(id => status(id) === 'completed') && ancestorsReady(parent)
+  }
   return state.plan.tasks.filter(task => {
     const record = tasks.get(task.id)
     if (task.children !== undefined) return false
+    if (task.decomposition?.status === 'abstract') return false
     if (state.transitionBlockedTaskIds.includes(task.id)) return false
     if (record.status !== 'pending' || status(task.id) !== 'pending') return false
-    const parent = task.parentTaskId === undefined ? undefined : planById.get(task.parentTaskId)
-    const parentReady = parent === undefined
-      ? true
-      : parent.dependsOn.every(id => status(id) === 'completed')
-    return parentReady && task.dependsOn.every(id => status(id) === 'completed')
+    return ancestorsReady(task) && task.dependsOn.every(id => status(id) === 'completed')
   })
 }
 
@@ -233,6 +277,7 @@ function taskPayload(task) {
     title: task.title,
     dependsOn: [...task.dependsOn],
     write: [...task.write],
+    ...(task.resources === undefined ? {} : { resources: [...task.resources] }),
     verify: [...task.verify],
     done: [...task.done],
     priority: task.priority,
@@ -272,6 +317,9 @@ function actionId(state, action, payload) {
     taskProjection: state.tasks,
     transitionBlockedTaskIds: state.transitionBlockedTaskIds,
     parallel: state.parallel,
+    ...(state.externalOccupiedSlots === 0 ? {} : { externalOccupiedSlots: state.externalOccupiedSlots }),
+    ...(state.externalBusyOwnerIds.length === 0 ? {} : { externalBusyOwnerIds: state.externalBusyOwnerIds }),
+    ...(state.externalBusyResourceIds.length === 0 ? {} : { externalBusyResourceIds: state.externalBusyResourceIds }),
     sequence: state.actionSequence,
     action,
     payload,
@@ -291,20 +339,32 @@ function nextReceipt(state) {
     return receipt(state, 'inspect', { watches, ...(watches.length === 1 ? { watch: watches[0] } : {}) })
   }
 
-  const slots = Math.max(0, state.parallel - active.length)
+  const slots = Math.max(0, state.parallel - active.length - state.externalOccupiedSlots)
   const taskById = new Map(state.plan.tasks.map(task => [task.id, task]))
-  const activeOwnerIds = new Set(active.map(task => taskById.get(task.taskId).ownerId))
+  const activeOwnerIds = new Set([
+    ...active.map(task => taskById.get(task.taskId).ownerId),
+    ...state.externalBusyOwnerIds,
+  ])
+  const occupiedResourceIds = new Set([
+    ...active.flatMap(record => taskById.get(record.taskId).resources ?? []),
+    ...state.externalBusyResourceIds,
+  ])
   const selectedOwnerIds = new Set()
+  const selectedResourceIds = new Set()
   const ready = readyTaskPlans(state)
     .sort((left, right) => right.priority - left.priority)
     .filter(task => {
     if (activeOwnerIds.has(task.ownerId) || selectedOwnerIds.has(task.ownerId)) return false
+    const resources = task.resources ?? []
+    if (resources.some(resourceId => occupiedResourceIds.has(resourceId) || selectedResourceIds.has(resourceId))) return false
     selectedOwnerIds.add(task.ownerId)
+    resources.forEach(resourceId => selectedResourceIds.add(resourceId))
     return true
   })
   if (slots > 0 && ready.length > 0) return receipt(state, 'create', { tasks: ready.slice(0, slots).map(taskPayload) })
   if (active.length > 0) return receipt(state, 'wait', { watches: active.map(watchPayload) })
-  if (state.tasks.some(task => task.status === 'stopped' && task.reason === 'decision_required')) {
+  if (state.tasks.some(task => task.status === 'stopped' && (task.reason === 'decision_required'
+    || (state.recoveryProtected && task.reason === 'input_missing')))) {
     return receipt(state, 'notify', { notification: { kind: 'main', reason: 'decision_required' } })
   }
   if (state.tasks.some(task => task.checkState === 'pending_check')
@@ -312,6 +372,11 @@ function nextReceipt(state) {
     // Owner 结算与 reservation 完成之间存在一个很短的持久化窗口；保持 wait，
     // 让 Runtime 完成 Revision 失效传播，不能提前把 Workflow 停成 completed。
     return receipt(state, 'wait', { watches: [] })
+  }
+  if (state.recoveryProtected && state.tasks.some(task => task.status === 'stopped'
+    && task.action !== 'await_user')) {
+    return receipt(state, 'stop', { reason: 'technical_pause',
+      blockedTaskIds: state.tasks.filter(task => task.status !== 'completed').map(task => task.taskId) })
   }
   if (state.tasks.every(task => task.status === 'completed' || task.status === 'stopped')) return receipt(state, 'stop')
   return receipt(state, 'notify', { notification: { kind: 'main', reason: 'decision_required' } })
@@ -454,11 +519,14 @@ export function createTaskState(plan) {
 }
 
 export function supervisorNext(state, _now) {
-  return nextReceipt(normalizeState(state))
+  const normalized = normalizeState(state)
+  if (normalized.plan.executable !== true) fail('Supervisor 拒绝仍包含 abstract 节点的渐进式 DAG；必须先完成拆分、决策与探索')
+  return nextReceipt(normalized)
 }
 
 export function ackSupervisorAction(state, receivedActionId, observation = {}) {
   const normalized = normalizeState(state)
+  if (normalized.plan.executable !== true) fail('Supervisor 拒绝确认仍包含 abstract 节点的渐进式 DAG')
   const expected = nextReceipt(normalized)
   if (nonEmptyText(receivedActionId, 'actionId') !== expected.actionId) fail('actionId 与当前 Supervisor 动作不匹配')
   if (observation === null || typeof observation !== 'object') fail('动作确认观测必须是对象')
@@ -509,6 +577,10 @@ export function projectProgress(state) {
         reason: record.reason,
         action: record.action,
         ...(task.parentTaskId === undefined ? {} : { parentTaskId: task.parentTaskId }),
+        ...(task.children === undefined ? {} : { children: [...task.children] }),
+        ...(task.entry === undefined ? {} : { entry: [...task.entry] }),
+        ...(task.exit === undefined ? {} : { exit: [...task.exit] }),
+        ...(task.decomposition === undefined ? {} : { decomposition: structuredClone(task.decomposition) }),
       }
     }),
   }

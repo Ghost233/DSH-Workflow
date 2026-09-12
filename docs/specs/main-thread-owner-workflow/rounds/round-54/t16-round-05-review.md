@@ -1,0 +1,5 @@
+# T16第五切片主线程复核
+
+核对实际recoverOwner调用、新record绑定、旧child注册owner_submit调用及深度比较、release后settled_succeeded与实际JSONL tool/call计数。认可同进程下旧child不能覆盖真实恢复的新attempt且新attempt可完成。source归档4fd3f136…，不将本切片自动推广到后续R54源码。
+
+旧结果拒绝来自active-session身份门禁，非公开token参数比对，未证明任意跨进程旧provider回包。remaining-contract.md已区分平台事实与T17应实现的持久stopping/deadline字段。父控制器重启、取消异常/迟到、单调/持久截止与有限失败出口仍需联合验证/可实施合同，round06只写独立proof进行中。T16仍开发中，不以未实现T17作为循环前置。

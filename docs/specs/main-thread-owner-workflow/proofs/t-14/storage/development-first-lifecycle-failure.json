@@ -1,0 +1,565 @@
+{
+  "contract": "DSH_T14_STORAGE_PROBE_V1",
+  "mode": "--development",
+  "startedAt": "2026-09-10T18:07:13.345Z",
+  "source": {
+    "runtime": "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs",
+    "adapter": {
+      "directory": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t14-runtime-zEZhTr",
+      "path": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t14-runtime-zEZhTr/runtime-adapted.mjs",
+      "sourceRuntime": "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs",
+      "sourceSha256": "962fdf8b259b80add94dd8fedeac4cc83e5a0485445990a6356b7774b9f63298",
+      "adapterSha256": "5254bfe49753859cef188ec0bb2d813461e00978f559e4fab12081ac27865e28",
+      "staticRelativeImportsRewritten": 23,
+      "appendedExport": [
+        "saveState",
+        "readJson",
+        "writeJsonAtomic",
+        "statePath"
+      ]
+    },
+    "recoveryBudget": "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/recovery-budget.mjs"
+  },
+  "scenarios": {
+    "normal": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/normal-kehTVR",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-normal",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/normal-kehTVR/.probe-runtime/workflows/wf-normal.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "result": {
+        "pid": 17299,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 17299,
+            "at": "2026-09-10T18:07:13.431Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 17299,
+            "at": "2026-09-10T18:07:13.433Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 17299,
+            "at": "2026-09-10T18:07:13.436Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "simulated-external-start-boundary",
+            "pid": 17299,
+            "at": "2026-09-10T18:07:13.436Z",
+            "requestId": "request-normal"
+          },
+          {
+            "type": "result",
+            "pid": 17299,
+            "at": "2026-09-10T18:07:13.436Z",
+            "status": "ok",
+            "outcome": "reserved"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "state": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/normal-kehTVR",
+        "id": "wf-normal",
+        "status": "running",
+        "revision": 1,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-normal",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-normal",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-normal",
+              "attemptId": "attempt-normal",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-normal",
+          "outcome": "reserved",
+          "persistedByPid": 17299
+        },
+        "updatedAt": "2026-09-10T18:07:13.434Z"
+      }
+    },
+    "beforeReadKill": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/before-read-JwY4US",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-before-read",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/before-read-JwY4US/.probe-runtime/workflows/wf-before-read.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "crashed": {
+        "pid": 17300,
+        "code": null,
+        "signal": "SIGKILL",
+        "messages": [
+          {
+            "type": "barrier-ready",
+            "pid": 17300,
+            "at": "2026-09-10T18:07:13.524Z",
+            "point": "before-read"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "afterKill": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/before-read-JwY4US",
+        "id": "wf-before-read",
+        "status": "running",
+        "revision": 0,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-before-read",
+          "totalLimit": 1,
+          "totalUsed": 0,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 0,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": []
+        }
+      },
+      "restarted": {
+        "pid": 17301,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 17301,
+            "at": "2026-09-10T18:07:13.610Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 17301,
+            "at": "2026-09-10T18:07:13.613Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 17301,
+            "at": "2026-09-10T18:07:13.615Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "simulated-external-start-boundary",
+            "pid": 17301,
+            "at": "2026-09-10T18:07:13.615Z",
+            "requestId": "request-before-read"
+          },
+          {
+            "type": "result",
+            "pid": 17301,
+            "at": "2026-09-10T18:07:13.615Z",
+            "status": "ok",
+            "outcome": "reserved"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "afterRestart": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/before-read-JwY4US",
+        "id": "wf-before-read",
+        "status": "running",
+        "revision": 1,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-before-read",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-before-read",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-before-read",
+              "attemptId": "attempt-before-read",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-before-read",
+          "outcome": "reserved",
+          "persistedByPid": 17301
+        },
+        "updatedAt": "2026-09-10T18:07:13.613Z"
+      }
+    },
+    "computeKillAndTrueStaleRecovery": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/compute-kill-w62bu6",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-compute-kill",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/compute-kill-w62bu6/.probe-runtime/workflows/wf-compute-kill.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "crashed": {
+        "pid": 17302,
+        "code": null,
+        "signal": "SIGKILL",
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 17302,
+            "at": "2026-09-10T18:07:13.772Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 17302,
+            "at": "2026-09-10T18:07:13.776Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "barrier-ready",
+            "pid": 17302,
+            "at": "2026-09-10T18:07:13.776Z",
+            "point": "reserved-in-memory-before-save"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "afterKill": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/compute-kill-w62bu6",
+        "id": "wf-compute-kill",
+        "status": "running",
+        "revision": 0,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-compute-kill",
+          "totalLimit": 1,
+          "totalUsed": 0,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 0,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": []
+        }
+      },
+      "immediate": {
+        "pid": 17321,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 17321,
+            "at": "2026-09-10T18:07:13.882Z"
+          },
+          {
+            "type": "operation-error",
+            "pid": 17321,
+            "at": "2026-09-10T18:07:13.883Z",
+            "message": "工作流 wf-compute-kill 的状态正在由另一个 Harness 临界区更新",
+            "calls": 1
+          },
+          {
+            "type": "result",
+            "pid": 17321,
+            "at": "2026-09-10T18:07:13.883Z",
+            "status": "error"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "trueStaleWaitMs": 30301,
+      "recovered": {
+        "pid": 17496,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 17496,
+            "at": "2026-09-10T18:07:44.292Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 17496,
+            "at": "2026-09-10T18:07:44.296Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 17496,
+            "at": "2026-09-10T18:07:44.298Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "simulated-external-start-boundary",
+            "pid": 17496,
+            "at": "2026-09-10T18:07:44.298Z",
+            "requestId": "request-compute"
+          },
+          {
+            "type": "result",
+            "pid": 17496,
+            "at": "2026-09-10T18:07:44.298Z",
+            "status": "ok",
+            "outcome": "reserved"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "afterRecovery": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/compute-kill-w62bu6",
+        "id": "wf-compute-kill",
+        "status": "running",
+        "revision": 1,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-compute-kill",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-compute-kill",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-compute",
+              "attemptId": "attempt-compute",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-compute",
+          "outcome": "reserved",
+          "persistedByPid": 17496
+        },
+        "updatedAt": "2026-09-10T18:07:44.296Z"
+      }
+    },
+    "afterSaveKill": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/after-save-dq6v8p",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-after-save",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/after-save-dq6v8p/.probe-runtime/workflows/wf-after-save.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "crashed": {
+        "pid": 17497,
+        "code": null,
+        "signal": "SIGKILL",
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 17497,
+            "at": "2026-09-10T18:07:44.391Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 17497,
+            "at": "2026-09-10T18:07:44.393Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 17497,
+            "at": "2026-09-10T18:07:44.396Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "barrier-ready",
+            "pid": 17497,
+            "at": "2026-09-10T18:07:44.396Z",
+            "point": "after-save-before-start"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "afterKill": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/after-save-dq6v8p",
+        "id": "wf-after-save",
+        "status": "running",
+        "revision": 1,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-after-save",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-after-save",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-after-save",
+              "attemptId": "attempt-after-save",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-after-save",
+          "outcome": "reserved",
+          "persistedByPid": 17497
+        },
+        "updatedAt": "2026-09-10T18:07:44.394Z"
+      },
+      "reconciled": {
+        "pid": 17498,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "reconciliation-required",
+            "pid": 17498,
+            "at": "2026-09-10T18:07:44.483Z",
+            "reason": "replayed_reservation_has_no_persisted_external_session_or_start_receipt",
+            "outcome": "replayed",
+            "revision": 1
+          },
+          {
+            "type": "result",
+            "pid": 17498,
+            "at": "2026-09-10T18:07:44.483Z",
+            "status": "ok",
+            "outcome": "replayed"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  },
+  "finishedAt": "2026-09-10T18:07:54.581Z",
+  "status": "failed",
+  "failure": "Error: 子进程 17499 在 10000ms 内未退出\n    at Timeout._onTimeout (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/run-development.mjs:54:70)\n    at listOnTimeout (node:internal/timers:605:17)\n    at process.processTimers (node:internal/timers:541:7)"
+}

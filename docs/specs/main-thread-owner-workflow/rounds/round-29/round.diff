@@ -1,0 +1,12 @@
+--- owner-workflow-plugin/test/recovery-session.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session.test.mjs
+@@ -773,5 +773,7 @@
+   // The revision also changes plan binding. Replay is therefore a combined
+   // pending-check/old-plan safety case, not an isolated same-plan proof.
+   const replay = await assertUnsettledReplay(fixture, receipt, before.recoveryAdmission.budget)
+-  assert.equal(replay.reason, 'reservation_binding_mismatch')
+-})
++  // Admission config still names the prior plan, so import fails before
++  // the later request/intent binding comparison.
++  assert.equal(replay.reason, 'reservation_invalid')
++})

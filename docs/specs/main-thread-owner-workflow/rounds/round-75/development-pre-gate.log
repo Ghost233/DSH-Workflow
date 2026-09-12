@@ -1,0 +1,10 @@
+✔ R75 pre-gate proof: direct recovery arbitration bypasses an exhausted admission budget and starts real model transports (1607.39225ms)
+ℹ {"proof":"R75 pre-gate direct arbitration reachability","route":"direct runtime.arbitratePendingPlanRevision","runtimeSha256":"946d2f165fc4c277dc9d55e3f1449db27862b4fab5d8a86c57b8e7e58fde023c","recoveryCandidate":true,"totalLimit":1,"totalUsedBefore":1,"totalUsedAfter":1,"modelRequestsBefore":2,"modelRequestsAfter":5,"newModelRequests":3,"candidateReviewPersisted":false}
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1800.166166

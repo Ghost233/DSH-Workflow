@@ -1,0 +1,681 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -3660,6 +3660,145 @@
+   ].join('\n')
+ }
+
++function recoveryHandoffGroup(state, selectedIds) {
++  const pending = (state.handoffQueue ?? []).filter(item => item.status === 'pending')
++  const failed = pending.filter(item => item.sourceExecution?.reportStatus !== 'completed')
++  const first = selectedIds === undefined ? failed.slice().sort((a, b) => a.id.localeCompare(b.id))[0]
++    : failed.find(item => item.id === selectedIds[0])
++  const source = first?.sourceExecution
++  if (source?.contract !== 'DSH_HANDOFF_SOURCE_EXECUTION_V1' || source.commitSha !== null
++    || !['failed', 'blocked'].includes(source.reportStatus) || source.planDigest !== state.planDigest
++    || !Number.isSafeInteger(source.attempt) || source.attempt < 1 || typeof source.sessionId !== 'string') {
++    throw new Error('Handoff recovery missing immutable failed execution')
++  }
++  const handoffs = (selectedIds === undefined
++    ? failed.filter(item => canonicalDigestValue(item.sourceExecution) === canonicalDigestValue(source))
++    : selectedIds.map(id => pending.find(item => item.id === id))).sort((a, b) => String(a?.id).localeCompare(String(b?.id)))
++  if (handoffs.length === 0 || handoffs.some(item => item === undefined
++    || canonicalDigestValue(item.sourceExecution) !== canonicalDigestValue(source)
++    || item.sourceOwnerId !== source.ownerId || (item.sourceTaskId ?? item.sourceStageId) !== source.taskId)) {
++    throw new Error('Handoff recovery group changed')
++  }
++  const origin = { contract: RECOVERY_ADMISSION_REQUEST_CONTRACT, planDigest: source.planDigest,
++    taskId: source.taskId, ownerId: source.ownerId,
++    source: { kind: 'owner_failure', attempt: source.attempt, sessionId: source.sessionId } }
++  return { origin, handoffIds: handoffs.map(item => item.id), handoffs }
++}
++
++function validatedHandoffPlan(state, pending, registry, output) {
++      const plannerOutput = parseJsonObject(output, 'Handoff 重规划子代理')
++      if (plannerOutput.registryOperation !== undefined && plannerOutput.registryOperation !== null) {
++        throw new Error('Handoff 重规划不能提出或应用 Owner Registry 变更；必须先走独立的 Registry 提案与批准流程')
++      }
++      if (plannerOutput.contract !== PLAN_V2_CONTRACT) {
++        throw new Error(`Handoff 重规划子代理必须返回 DSH_PLAN_V2，${String(plannerOutput.contract)} 仅允许历史查询和导出`)
++      }
++      const candidatePlan = plannerResultV2({
++        ...plannerOutput,
++        registryDigest: registryContentDigest(registry),
++        owners: bindPlannerOwnersToRegistry(plannerOutput.owners, registry, 'Handoff 重规划子代理'),
++      })
++      const previousTasks = new Map(state.plan.tasks.map(task => [task.id, task]))
++      const pendingHandoffSourceTaskIds = new Set(pending.map(item => item.sourceTaskId ?? item.sourceStageId))
++      const retiredFailedVerifyTaskIds = new Set([...pendingHandoffSourceTaskIds].filter(taskId => {
++        const task = previousTasks.get(taskId)
++        const taskState = state.tasks?.find(item => item.taskId === taskId)
++        return task?.role === 'verify' && taskState?.status !== 'completed'
++      }))
++      const immutableTaskIds = new Set((state.tasks ?? [])
++        .filter(task => task.status === 'completed')
++        .map(task => task.taskId))
++      for (const record of Object.values(state.ownerRuns ?? {})) {
++        const taskId = record.taskId ?? record.stageId
++        if (pendingHandoffSourceTaskIds.has(taskId)
++          && ['pending', 'failed', 'blocked', 'stopped'].includes(record.status)) continue
++        immutableTaskIds.add(taskId)
++      }
++      const executableCandidateTasks = candidatePlan.tasks.filter(task => !retiredFailedVerifyTaskIds.has(task.id))
++      const candidateTasks = new Map(executableCandidateTasks.map(task => [task.id, task]))
++      const plan = {
++        ...candidatePlan,
++        tasks: [
++          ...state.plan.tasks.flatMap(previous => {
++            if (immutableTaskIds.has(previous.id)) return [structuredClone(previous)]
++            const candidate = candidateTasks.get(previous.id)
++            return candidate === undefined ? [] : [candidate]
++          }),
++          ...executableCandidateTasks.filter(task => !previousTasks.has(task.id)),
++        ],
++      }
++      assertPlanOwnerScopes(plan)
++      assertPlanOwnersMatchRegistry(plan, registry)
++      const nextTasks = new Map(plan.tasks.map(task => [task.id, task]))
++      const dependsOnTask = (taskId, dependencyId, visiting = new Set()) => {
++        if (taskId === dependencyId) return true
++        if (visiting.has(taskId)) return false
++        visiting.add(taskId)
++        return (nextTasks.get(taskId)?.dependsOn ?? []).some(parentId => (
++          parentId === dependencyId || dependsOnTask(parentId, dependencyId, visiting)
++        ))
++      }
++      const incompleteHandoffSources = new Set(pending
++        .map(item => item.sourceTaskId ?? item.sourceStageId)
++        .filter(taskId => state.tasks?.find(task => task.taskId === taskId)?.status !== 'completed'))
++      for (const task of plan.tasks) {
++        if (previousTasks.has(task.id) || task.role !== 'work') continue
++        const blockedBySource = [...incompleteHandoffSources].find(sourceTaskId => (
++          dependsOnTask(task.id, sourceTaskId)
++        ))
++        if (blockedBySource !== undefined) {
++          throw new Error(`Handoff repair task ${task.id} 不能依赖尚未完成的失败来源 ${blockedBySource}；必须先修复，再由最终 verify 依赖 repair`)
++        }
++      }
++      const taskFingerprint = task => canonicalDigestValue({
++        id: task.id,
++        role: task.role,
++        ownerId: task.ownerId,
++        title: task.title,
++        dependsOn: task.dependsOn,
++        write: task.write,
++        verify: task.verify,
++        done: task.done,
++        parentTaskId: task.parentTaskId,
++        children: task.children,
++        entry: task.entry,
++        exit: task.exit,
++      })
++      const completedTaskIds = new Set((state.tasks ?? [])
++        .filter(task => task.status === 'completed')
++        .map(task => task.taskId))
++      for (const taskId of completedTaskIds) {
++        const previousTask = previousTasks.get(taskId)
++        const nextTask = nextTasks.get(taskId)
++        if (previousTask === undefined || nextTask === undefined || taskFingerprint(previousTask) !== taskFingerprint(nextTask)) {
++          throw new Error(`Handoff 重规划不能删除或改变已完成 task：${taskId}`)
++        }
++      }
++      for (const record of Object.values(state.ownerRuns ?? {})) {
++        const taskId = record.taskId ?? record.stageId
++        if (pendingHandoffSourceTaskIds.has(taskId)
++          && ['pending', 'failed', 'blocked'].includes(record.status)) continue
++        const previousTask = previousTasks.get(taskId)
++        if (previousTask === undefined) continue
++        const nextTask = nextTasks.get(taskId)
++        if (nextTask === undefined
++          || nextTask.ownerId !== record.ownerId
++          || taskFingerprint(previousTask) !== taskFingerprint(nextTask)) {
++          throw new Error(`Handoff 重规划不能移除已有运行现场：${taskId}:${record.ownerId}`)
++        }
++      }
++      for (const handoff of pending.filter(item => item.targetType === 'owner')) {
++        const coveringTask = plan.tasks.find(task => (
++          task.ownerId === handoff.targetOwnerId
++          && handoff.files.every(file => task.write.some(pattern => scopeMatches(pattern, file)))
++        ))
++        if (coveringTask === undefined) {
++          throw new Error(`Handoff 重规划必须把全部文件分配给目标 Owner ${handoff.targetOwnerId} 的同一 task：${handoff.files.join(', ')}`)
++        }
++      }
++      return plan
++}
++
+ async function requestValidatedPlannerPlan(
+   runtime,
+   agent,
+@@ -9468,10 +9607,159 @@
+         nextAction: '重新调用 workflow_plan_review，只检查冻结证据义务是否减少；审查通过后调用 workflow_plan_approve。修订次数仅作遥测。',
+       }
+     },
++    async replanRecoveryHandoffs(agent, workflowId, signal) {
++      const root = await runtime.resolveRoot(agent)
++      return runtime.withOwnerLease(root, `replan-entry-${workflowId}`, workflowId, 'handoff-recovery', signal, async lease => {
++        let state = await readState(runtime, root, workflowId)
++        const group = recoveryHandoffGroup(state)
++        const operationId = `handoff-replan-${createHash('sha256').update(canonicalDigestValue({ origin: group.origin, handoffIds: group.handoffIds })).digest('hex')}`
++        const verifyGroup = current => {
++          assertRecoveryAdmissionState(current)
++          assertRecoveryAdmissionRuntime(current, group.origin, true)
++          if (current.planDigest !== group.origin.planDigest
++            || canonicalDigestValue(recoveryHandoffGroup(current, group.handoffIds)) !== canonicalDigestValue(group)) {
++            throw new Error('Handoff recovery source changed')
++          }
++        }
++        verifyGroup(state)
++        const { registry } = await loadLiveRegistryForPlanning(state, { plan: state.plan, requireBoundDigest: true })
++        let operation = state.handoffReplans?.[operationId]
++        if (operation !== undefined) {
++          const located = lookupRecoveryAdmissionIntent(state, operation.requestId)
++          if (operation.contract !== 'DSH_HANDOFF_REPLAN_OPERATION_V1' || operation.operationId !== operationId
++            || canonicalDigestValue(operation.origin) !== canonicalDigestValue(group.origin)
++            || canonicalDigestValue(operation.handoffIds) !== canonicalDigestValue(group.handoffIds)
++            || canonicalDigestValue(operation.group) !== canonicalDigestValue(group)
++            || !['reserved', 'failed', 'candidate_staged'].includes(operation.phase)
++            || located?.intent.operationKind !== 'handoff_replan' || located.intent.operationId !== operationId
++            || located.intent.ordinal !== operation.ordinal || located.intent.executionIdentity.promptId !== operation.prompt?.id) {
++            throw new Error('Handoff recovery operation binding changed')
++          }
++        }
++        if (operation?.phase === 'candidate_staged') {
++          const located = lookupRecoveryAdmissionIntent(state, operation.requestId)
++          const record = state.replanSessions?.[operation.requestId]
++          assertReplanSessionState(record, located.intent, operation.prompt)
++          assertReplanSessionAttempt(record, located.intent,
++            state.recoveryAdmission.budget.attempts.find(item => item.requestId === operation.requestId))
++          const observed = await inspectReplanSession({ persistence: agent.ctx.get('sessionPersistence'),
++            intent: located.intent, prompt: operation.prompt, contextMessages: record.contextMessages, signal })
++          if (observed.outcome !== 'submission_observed'
++            || canonicalDigestValue(observed.receipt) !== canonicalDigestValue(operation.receipt)
++            || state.pendingPlanRevision?.recoveryRequestId !== operation.requestId
++            || planDigest(state.pendingPlanRevision.plan) !== operation.candidateDigest
++            || state.pendingPlanRevision.planDigest !== operation.candidateDigest) {
++            throw new Error('Handoff recovery applied receipt changed')
++          }
++          return { contract: 'DSH_PLAN_REVISION_CANDIDATE_V1', workflowId,
++            ...state.pendingPlanRevision, nextTool: 'workflow_revision_review', nextArgs: {}, replayed: true }
++        }
++        if (state.pendingPlanRevision !== undefined) throw new Error('Handoff recovery已有待处理候选')
++        if (operation === undefined || operation.phase === 'failed') {
++          const memory = await loadMemorySnapshot(state.workflowWorktree, { maxBytes: resolvedConfig.ownerMemoryMaxBytes, signal })
++          const promptContent = handoffReplanPrompt(state, group.handoffs, memory) + '\n本次付费恢复只处理上面列出的handoff组：保留来源task及目标Owner覆盖handoff文件的task之外所有既有task原定义；新增task只能属于该组来源或目标Owner。返回待审候选，不代表当前执行计划已激活。'
++          const ordinal = operation === undefined ? 1 : operation.ordinal + 1
++          const base = { head: await head(state.workflowWorktree, signal), branch: await currentBranch(state.workflowWorktree, signal),
++            status: await statusRecords(state.workflowWorktree, signal) }
++          await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, lease, current => {
++            verifyGroup(current)
++            if (current.pendingPlanRevision !== undefined
++              || canonicalDigestValue(current.handoffReplans?.[operationId]) !== canonicalDigestValue(operation)) {
++              throw new Error('Handoff recovery preparation changed')
++            }
++            const prepared = prepareRecoveryAdmission(current, { contract: REPLAN_ADMISSION_REQUEST_CONTRACT,
++              origin: group.origin, operation: { operationKind: 'handoff_replan', operationId, ordinal } })
++            if (!['reserved', 'replayed'].includes(prepared.response.outcome)) {
++              throw new Error(`Handoff recovery admission refused:${prepared.response.reason}`)
++            }
++            const receipt = prepared.response
++            operation = { contract: 'DSH_HANDOFF_REPLAN_OPERATION_V1', operationId, origin: group.origin,
++              handoffIds: group.handoffIds, group, ordinal, requestId: receipt.requestId,
++              prompt: { id: receipt.executionIdentity.promptId, content: promptContent }, base,
++              parent: Number(current.activePlanRevision ?? 1), phase: 'reserved' }
++            prepared.state.handoffReplans = { ...(prepared.state.handoffReplans ?? {}), [operationId]: operation }
++            return { state: prepared.state }
++          }))
++        }
++        const observed = await runtime.reconcileReplanSession(agent, workflowId, {
++          contract: 'DSH_REPLAN_SESSION_REQUEST_V1', requestId: operation.requestId, prompt: operation.prompt,
++        }, signal)
++        if (observed.outcome === 'paused' || observed.outcome === 'cancelled') {
++          throw new Error(`Handoff recovery paused:${observed.reason ?? observed.outcome}`)
++        }
++        await loadLiveRegistryForPlanning(await readState(runtime, root, workflowId), { requireBoundDigest: true })
++        let applied, failure
++        const after = { head: await head(state.workflowWorktree, signal), branch: await currentBranch(state.workflowWorktree, signal),
++          status: await statusRecords(state.workflowWorktree, signal) }
++        await runtime.withWorkflowLock(workflowId, () => saveState(runtime, { root, id: workflowId }, lease, current => {
++          verifyGroup(current)
++          if (current.pendingPlanRevision !== undefined
++            || canonicalDigestValue(current.handoffReplans?.[operationId]) !== canonicalDigestValue(operation)) {
++            throw new Error('Handoff recovery application changed')
++          }
++          const located = lookupRecoveryAdmissionIntent(current, operation.requestId)
++          const intent = located.intent
++          const record = current.replanSessions?.[operation.requestId]
++          assertReplanSessionState(record, intent, operation.prompt)
++          assertReplanSessionAttempt(record, intent,
++            current.recoveryAdmission.budget.attempts.find(item => item.requestId === operation.requestId))
++          if (observed.outcome === 'failed') failure = 'Planner没有结构化提交'
++          else {
++            try {
++              if (canonicalDigestValue(after) !== canonicalDigestValue(operation.base)) throw new Error('规划期间worktree发生变化')
++              if (Number(current.activePlanRevision ?? 1) !== operation.parent) throw new Error('父计划版本已变化')
++              const plan = validatedHandoffPlan(current, group.handoffs, registry, observed.payload)
++              const localIds = new Set(group.handoffs.map(item => item.sourceTaskId ?? item.sourceStageId))
++              const localOwners = new Set(group.handoffs.flatMap(item => [item.sourceOwnerId, item.targetOwnerId].filter(Boolean)))
++              for (const task of current.plan.tasks) {
++                if (group.handoffs.some(item => item.targetOwnerId === task.ownerId
++                  && item.files.some(file => task.write?.some(pattern => scopeMatches(pattern, file))))) localIds.add(task.id)
++              }
++              const next = new Map(plan.tasks.map(task => [task.id, task]))
++              for (const task of current.plan.tasks) if (!localIds.has(task.id)
++                && canonicalDigestValue(next.get(task.id)) !== canonicalDigestValue(task)) {
++                throw new Error(`Handoff recovery改变了无关task:${task.id}`)
++              }
++              const previousIds = new Set(current.plan.tasks.map(task => task.id))
++              if (plan.tasks.some(task => !previousIds.has(task.id) && !localOwners.has(task.ownerId))) {
++                throw new Error('Handoff recovery向无关Owner添加任务')
++              }
++              const digest = planDigest(plan)
++              applied = { number: operation.parent + 1, parent: operation.parent, plan, planDigest: digest,
++                planStructureDigest: planStructureDigest(plan), cycleId: operationId,
++                strategy: 'handoff_replan', intentIds: [], coordinatorSessionId: agent.id, createdAt: now(),
++                origin: 'handoff-recovery', recoveryRequestId: operation.requestId,
++                recoveryOrigin: group.origin, handoffIds: group.handoffIds }
++            } catch (error) { failure = errorText(error) }
++            current.recoveryAdmission.budget = settleRecoveryAttempt(current.recoveryAdmission.budget, {
++              ...replanBudgetBinding(workflowId, intent), result: { status: failure === undefined ? 'succeeded' : 'failed',
++                reference: { id: intent.executionIdentity.promptId, version: intent.executionIdentity.sessionId } },
++            }).ledger
++            current.replanSessions[operation.requestId] = { ...record, phase: failure === undefined ? 'applied' : 'validated_failed' }
++          }
++          current.handoffReplans[operationId] = { ...operation, phase: failure === undefined ? 'candidate_staged' : 'failed',
++            ...(observed.receipt === undefined ? {} : { receipt: observed.receipt }),
++            ...(failure === undefined ? { candidateDigest: applied.planDigest } : { error: failure }) }
++          if (applied !== undefined) current.pendingPlanRevision = applied
++          return { state: current }
++        }))
++        if (failure !== undefined) throw new Error(`Handoff recovery rejected:${failure}`)
++        return { contract: 'DSH_PLAN_REVISION_CANDIDATE_V1', workflowId, ...applied,
++          nextTool: 'workflow_revision_review', nextArgs: {} }
++      })
++    },
+     async replanHandoffs(agent, workflowId, signal) {
+       const root = await runtime.resolveRoot(agent)
+       const state = await readState(runtime, root, workflowId)
+       const pending = (state.handoffQueue ?? []).filter(item => item.status === 'pending')
++      if (recoveryAdmissionEnabled(state)) {
++        assertRecoveryAdmissionState(state)
++        const unknown = pending.find(item => item.sourceExecution?.contract !== 'DSH_HANDOFF_SOURCE_EXECUTION_V1')
++        if (unknown !== undefined) throw new Error(`Handoff ${unknown.id} 缺少固定执行来源，不能猜测免费或恢复调用`)
++        if (pending.some(item => item.sourceExecution.reportStatus !== 'completed')) {
++          return runtime.replanRecoveryHandoffs(agent, workflowId, signal)
++        }
++      }
+       if (!['blocked', 'running'].includes(state.status)) {
+         throw new Error(`工作流 ${workflowId} 当前没有等待重规划的 handoff：${state.status}`)
+       }
+@@ -9491,116 +9779,8 @@
+         signal,
+         { role: 'planner', workflowRoot: root, rolePrompt: plannerRolePrompt(), requirePlannerSubmission: true },
+       )
+-      const plannerOutput = parseJsonObject(output, 'Handoff 重规划子代理')
+-      if (plannerOutput.registryOperation !== undefined && plannerOutput.registryOperation !== null) {
+-        throw new Error('Handoff 重规划不能提出或应用 Owner Registry 变更；必须先走独立的 Registry 提案与批准流程')
+-      }
+-      if (plannerOutput.contract !== PLAN_V2_CONTRACT) {
+-        throw new Error(`Handoff 重规划子代理必须返回 DSH_PLAN_V2，${String(plannerOutput.contract)} 仅允许历史查询和导出`)
+-      }
+-      const candidatePlan = plannerResultV2({
+-        ...plannerOutput,
+-        registryDigest: registryContentDigest(registry),
+-        owners: bindPlannerOwnersToRegistry(plannerOutput.owners, registry, 'Handoff 重规划子代理'),
+-      })
++      const plan = validatedHandoffPlan(state, pending, registry, output)
+       const previousTasks = new Map(state.plan.tasks.map(task => [task.id, task]))
+-      const pendingHandoffSourceTaskIds = new Set(pending.map(item => item.sourceTaskId ?? item.sourceStageId))
+-      const retiredFailedVerifyTaskIds = new Set([...pendingHandoffSourceTaskIds].filter(taskId => {
+-        const task = previousTasks.get(taskId)
+-        const taskState = state.tasks?.find(item => item.taskId === taskId)
+-        return task?.role === 'verify' && taskState?.status !== 'completed'
+-      }))
+-      const immutableTaskIds = new Set((state.tasks ?? [])
+-        .filter(task => task.status === 'completed')
+-        .map(task => task.taskId))
+-      for (const record of Object.values(state.ownerRuns ?? {})) {
+-        const taskId = record.taskId ?? record.stageId
+-        if (pendingHandoffSourceTaskIds.has(taskId)
+-          && ['pending', 'failed', 'blocked', 'stopped'].includes(record.status)) continue
+-        immutableTaskIds.add(taskId)
+-      }
+-      const executableCandidateTasks = candidatePlan.tasks.filter(task => !retiredFailedVerifyTaskIds.has(task.id))
+-      const candidateTasks = new Map(executableCandidateTasks.map(task => [task.id, task]))
+-      const plan = {
+-        ...candidatePlan,
+-        tasks: [
+-          ...state.plan.tasks.flatMap(previous => {
+-            if (immutableTaskIds.has(previous.id)) return [structuredClone(previous)]
+-            const candidate = candidateTasks.get(previous.id)
+-            return candidate === undefined ? [] : [candidate]
+-          }),
+-          ...executableCandidateTasks.filter(task => !previousTasks.has(task.id)),
+-        ],
+-      }
+-      assertPlanOwnerScopes(plan)
+-      assertPlanOwnersMatchRegistry(plan, registry)
+-      const nextTasks = new Map(plan.tasks.map(task => [task.id, task]))
+-      const dependsOnTask = (taskId, dependencyId, visiting = new Set()) => {
+-        if (taskId === dependencyId) return true
+-        if (visiting.has(taskId)) return false
+-        visiting.add(taskId)
+-        return (nextTasks.get(taskId)?.dependsOn ?? []).some(parentId => (
+-          parentId === dependencyId || dependsOnTask(parentId, dependencyId, visiting)
+-        ))
+-      }
+-      const incompleteHandoffSources = new Set(pending
+-        .map(item => item.sourceTaskId ?? item.sourceStageId)
+-        .filter(taskId => state.tasks?.find(task => task.taskId === taskId)?.status !== 'completed'))
+-      for (const task of plan.tasks) {
+-        if (previousTasks.has(task.id) || task.role !== 'work') continue
+-        const blockedBySource = [...incompleteHandoffSources].find(sourceTaskId => (
+-          dependsOnTask(task.id, sourceTaskId)
+-        ))
+-        if (blockedBySource !== undefined) {
+-          throw new Error(`Handoff repair task ${task.id} 不能依赖尚未完成的失败来源 ${blockedBySource}；必须先修复，再由最终 verify 依赖 repair`)
+-        }
+-      }
+-      const taskFingerprint = task => canonicalDigestValue({
+-        id: task.id,
+-        role: task.role,
+-        ownerId: task.ownerId,
+-        title: task.title,
+-        dependsOn: task.dependsOn,
+-        write: task.write,
+-        verify: task.verify,
+-        done: task.done,
+-        parentTaskId: task.parentTaskId,
+-        children: task.children,
+-        entry: task.entry,
+-        exit: task.exit,
+-      })
+-      const completedTaskIds = new Set((state.tasks ?? [])
+-        .filter(task => task.status === 'completed')
+-        .map(task => task.taskId))
+-      for (const taskId of completedTaskIds) {
+-        const previousTask = previousTasks.get(taskId)
+-        const nextTask = nextTasks.get(taskId)
+-        if (previousTask === undefined || nextTask === undefined || taskFingerprint(previousTask) !== taskFingerprint(nextTask)) {
+-          throw new Error(`Handoff 重规划不能删除或改变已完成 task：${taskId}`)
+-        }
+-      }
+-      for (const record of Object.values(state.ownerRuns ?? {})) {
+-        const taskId = record.taskId ?? record.stageId
+-        if (pendingHandoffSourceTaskIds.has(taskId)
+-          && ['pending', 'failed', 'blocked'].includes(record.status)) continue
+-        const previousTask = previousTasks.get(taskId)
+-        if (previousTask === undefined) continue
+-        const nextTask = nextTasks.get(taskId)
+-        if (nextTask === undefined
+-          || nextTask.ownerId !== record.ownerId
+-          || taskFingerprint(previousTask) !== taskFingerprint(nextTask)) {
+-          throw new Error(`Handoff 重规划不能移除已有运行现场：${taskId}:${record.ownerId}`)
+-        }
+-      }
+-      for (const handoff of pending.filter(item => item.targetType === 'owner')) {
+-        const coveringTask = plan.tasks.find(task => (
+-          task.ownerId === handoff.targetOwnerId
+-          && handoff.files.every(file => task.write.some(pattern => scopeMatches(pattern, file)))
+-        ))
+-        if (coveringTask === undefined) {
+-          throw new Error(`Handoff 重规划必须把全部文件分配给目标 Owner ${handoff.targetOwnerId} 的同一 task：${handoff.files.join(', ')}`)
+-        }
+-      }
+       const afterHead = await head(state.workflowWorktree, signal)
+       const afterBranch = await currentBranch(state.workflowWorktree, signal)
+       const dirty = await statusRecords(state.workflowWorktree, signal)
+@@ -11733,6 +11913,11 @@
+           sourceStageId: taskId,
+           sourceOwnerId: active.owner.id,
+           sessionId: sessionIdOf(exec),
++          sourceExecution: {
++            contract: 'DSH_HANDOFF_SOURCE_EXECUTION_V1', planDigest: state.planDigest,
++            taskId, ownerId: active.owner.id, attempt: active.attempt,
++            sessionId: sessionIdOf(exec), reportStatus: 'blocked', commitSha: null,
++          },
+           createdAt: now(),
+           status: 'pending',
+         }
+@@ -15545,6 +15730,17 @@
+         const latest = await readState(runtime, state.root, state.id)
+         if (lease !== undefined) await runtime.assertOwnerLease(lease)
+         latest.handoffQueue ??= []
++        const run = latest.ownerRuns?.[ownerRunKey(stage.id, entry.owner.id)]
++        if (recoveryAdmissionEnabled(latest) && (!Number.isSafeInteger(run?.attempt) || run.attempt < 1
++          || typeof run.sessionId !== 'string' || run.planDigest !== latest.planDigest)) {
++          throw new Error('Handoff recovery source execution is not bound')
++        }
++        if (run !== undefined) for (const item of queued) item.sourceExecution = {
++          contract: 'DSH_HANDOFF_SOURCE_EXECUTION_V1', planDigest: latest.planDigest,
++          taskId: stage.id, ownerId: entry.owner.id, attempt: run.attempt,
++          sessionId: run.sessionId ?? null, reportStatus: report.status,
++          commitSha: committed?.commitSha ?? null,
++        }
+         latest.handoffQueue.push(...queued)
+         if (lease !== undefined) await runtime.assertOwnerLease(lease)
+         await saveState(runtime, latest, lease)
+--- owner-workflow-plugin/src/replan-session.mjs (baseline)
++++ owner-workflow-plugin/src/replan-session.mjs
+@@ -4,7 +4,7 @@
+ export const REPLAN_SESSION_REQUEST_CONTRACT = 'DSH_REPLAN_SESSION_REQUEST_V1'
+ export const REPLAN_SESSION_STATE_CONTRACT = 'DSH_REPLAN_SESSION_STATE_V1'
+ export const REPLAN_SESSION_RESULT_CONTRACT = 'DSH_REPLAN_SESSION_RESULT_V1'
+-const PHASES = new Set(['creating', 'created', 'submitted', 'submission_observed', 'settled_failed', 'settled_cancelled'])
++const PHASES = new Set(['creating', 'created', 'submitted', 'submission_observed', 'settled_failed', 'settled_cancelled', 'applied', 'validated_failed'])
+
+ function exact(value, keys, name) {
+   if (value === null || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype
+@@ -95,7 +95,7 @@
+     if (attempt?.state !== 'reserved') throw new Error('ReplanSession creating_attempt_mismatch')
+     return
+   }
+-  const status = record.phase === 'settled_failed' ? 'failed' : record.phase === 'settled_cancelled' ? 'cancelled' : undefined
++  const status = ['settled_failed', 'validated_failed'].includes(record.phase) ? 'failed' : record.phase === 'settled_cancelled' ? 'cancelled' : record.phase === 'applied' ? 'succeeded' : undefined
+   if (attempt?.state !== (status === undefined ? 'running' : 'settled')
+     || canonical(attempt.executionRef) !== canonical({ id: intent.executionIdentity.sessionId, version: intent.executionIdentity.promptId })
+     || (status !== undefined && (attempt.result?.status !== status
+--- /dev/null
++++ owner-workflow-plugin/test/handoff-recovery.test.mjs
+@@ -0,0 +1,163 @@
++import assert from 'node:assert/strict'
++import test from 'node:test'
++import { plannerSubmitDefinition } from '../index.js'
++import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState, reopenRecoverySessionFixture } from './fixtures/recovery-session-fixture.mjs'
++
++async function queue(f, { completed = false } = {}) {
++  const state = await readRecoverySessionState(f)
++  const stage = state.plan.tasks[0]
++  const owner = state.plan.owners.find(item => item.id === stage.ownerId)
++  return f.runtime.recordHandoffs(state, stage, { owner, branch: 'fixture-owner' }, {
++    status: completed ? 'completed' : 'blocked', handoffs: [{ targetType: 'owner', targetOwnerId: owner.id,
++      files: ['src/api/repair.mjs'], summary: 'Need a bounded repair for this file.' }],
++  }, undefined, completed ? { commitSha: 'fixture-partial-commit' } : undefined)
++}
++
++async function setup(t, script, options = {}) {
++  const f = await createRecoverySessionFixture(t, { executable: true, modelScript: script, ...options })
++  f.ctx.tools.register(plannerSubmitDefinition(f.runtime))
++  return f
++}
++
++test('T15 actual handoff entry meters one Planner and atomically stages a candidate without activating its version', { timeout: 30_000 }, async t => {
++  let payload, f
++  f = await setup(t, m => [() => m.toolCallResponse('handoff-submit', 'workflow_plan_submit', { plan: payload }), 'hang-slow'])
++  const before = await readRecoverySessionState(f)
++  payload = { ...structuredClone(before.plan), summary: 'Repair candidate', owners: before.plan.owners.map(owner => ({ id: owner.id })) }
++  const [handoff] = await queue(f)
++  assert.equal(handoff.sourceExecution.attempt, 2)
++  assert.equal(handoff.sourceExecution.sessionId, 'T1-api-failed-session')
++  const result = await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  assert.equal(result.contract, 'DSH_PLAN_REVISION_CANDIDATE_V1')
++  const saved = await readRecoverySessionState(f)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(saved.recoveryAdmission.budget.attempts[0].result.status, 'succeeded')
++  assert.equal(saved.pendingPlanRevision.planDigest, result.planDigest)
++  assert.notEqual(result.planDigest, before.planDigest)
++  assert.equal(saved.planDigest, before.planDigest)
++  assert.deepEqual(saved.plan, before.plan)
++  assert.deepEqual(saved.tasks, before.tasks)
++  assert.deepEqual(saved.ownerRuns, before.ownerRuns)
++  assert.equal(saved.recoveryAdmission.sources[0].attempt, 2)
++  const calls = f.adapter.requests.length
++  const replay = await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  assert.equal(replay.replayed, true)
++  assert.equal(f.adapter.requests.length, calls)
++  const fresh = await reopenRecoverySessionFixture({ root: f.root, workflowId: f.workflowId })
++  try {
++    const reopened = await fresh.runtime.replanHandoffs(fresh.admissionAgent, fresh.workflowId)
++    assert.equal(reopened.replayed, true)
++    assert.equal(fresh.adapter.requests.length, 0)
++  } finally { await fresh.dispose() }
++})
++
++test('T15 actual invalid handoff candidate consumes its attempt and the next physical call shares the root and finite budget', { timeout: 30_000 }, async t => {
++  let payload
++  const f = await setup(t, m => [() => m.toolCallResponse('invalid-coverage', 'workflow_plan_submit', { plan: payload }), 'hang-slow',
++    () => m.toolCallResponse('invalid-coverage-2', 'workflow_plan_submit', { plan: payload }), 'hang-slow'])
++  const state = await readRecoverySessionState(f)
++  payload = { ...structuredClone(state.plan), owners: state.plan.owners.map(owner => ({ id: owner.id })),
++    tasks: state.plan.tasks.map(task => ({ ...task, write: ['src/api/other.mjs'] })) }
++  await queue(f)
++  await assert.rejects(f.runtime.replanHandoffs(f.admissionAgent, f.workflowId), /Handoff recovery rejected/)
++  const once = await readRecoverySessionState(f)
++  assert.equal(once.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(once.recoveryAdmission.budget.attempts[0].result.status, 'failed')
++  assert.equal(once.pendingPlanRevision, undefined)
++  await assert.rejects(f.runtime.replanHandoffs(f.admissionAgent, f.workflowId), /Handoff recovery rejected/)
++  const twice = await readRecoverySessionState(f)
++  assert.equal(twice.recoveryAdmission.budget.totalUsed, 2)
++  assert.equal(twice.recoveryAdmission.budget.problems.length, 1)
++  assert.deepEqual(twice.recoveryAdmission.intents.map(item => item.ordinal), [1, 2])
++  const calls = f.adapter.requests.length
++  await assert.rejects(f.runtime.replanHandoffs(f.admissionAgent, f.workflowId), /problem_exhausted/)
++  assert.equal(f.adapter.requests.length, calls)
++  assert.equal((await readRecoverySessionState(f)).recoveryAdmission.budget.totalUsed, 2)
++})
++
++test('T15 unbound handoff or changed producing Owner identity cannot launch an unmetered Planner', { timeout: 30_000 }, async t => {
++  const f = await setup(t, () => [])
++  await queue(f)
++  await mutateRecoverySessionState(f, state => { state.handoffQueue[0].sourceExecution.attempt++ })
++  await assert.rejects(f.runtime.replanHandoffs(f.admissionAgent, f.workflowId), /refused|mismatch|source/i)
++  assert.equal(f.adapter.requests.length, 0)
++  await mutateRecoverySessionState(f, state => { delete state.handoffQueue[0].sourceExecution })
++  await assert.rejects(f.runtime.replanHandoffs(f.admissionAgent, f.workflowId), /缺少固定执行来源/)
++  assert.equal(f.adapter.requests.length, 0)
++})
++
++
++test('T15 handoff Planner runs outside the workflow lock and preserves an independent task update', { timeout: 30_000 }, async t => {
++  let f, payload
++  f = await setup(t, m => [() => m.toolCallResponse('unlocked-submit', 'workflow_plan_submit', { plan: payload }), 'hang-slow'], { includeIndependentOwner: true })
++  beforeFirstModel(f, () => f.runtime.withWorkflowLock(f.workflowId, () => mutateRecoverySessionState(f, state => {
++    state.tasks.find(task => task.taskId === 'T2').reason = 'Independent task update during Planner'
++  })))
++  const state = await readRecoverySessionState(f)
++  payload = { ...structuredClone(state.plan), owners: state.plan.owners.map(owner => ({ id: owner.id })) }
++  await queue(f)
++  await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  const saved = await readRecoverySessionState(f)
++  assert.equal(saved.tasks.find(task => task.taskId === 'T2').reason, 'Independent task update during Planner')
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 1)
++})
++
++test('T15 a source change during actual Planner execution prevents stale candidate application', { timeout: 30_000 }, async t => {
++  let f, payload
++  f = await setup(t, m => [() => m.toolCallResponse('stale-submit', 'workflow_plan_submit', { plan: payload }), 'hang-slow'])
++  beforeFirstModel(f, () => mutateRecoverySessionState(f, state => { state.handoffQueue[0].summary = 'Changed handoff intent' }))
++  const state = await readRecoverySessionState(f)
++  payload = { ...structuredClone(state.plan), owners: state.plan.owners.map(owner => ({ id: owner.id })) }
++  await queue(f)
++  await assert.rejects(f.runtime.replanHandoffs(f.admissionAgent, f.workflowId), /source changed/)
++  const saved = await readRecoverySessionState(f)
++  assert.equal(saved.pendingPlanRevision, undefined)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(saved.recoveryAdmission.budget.attempts[0].state, 'running')
++  const calls = f.adapter.requests.length
++  await assert.rejects(f.runtime.replanHandoffs(f.admissionAgent, f.workflowId), /binding changed/)
++  assert.equal(f.adapter.requests.length, calls)
++  assert.equal((await readRecoverySessionState(f)).recoveryAdmission.budget.totalUsed, 1)
++})
++
++test('T15 normal partial handoff production records completed provenance without fabricating recovery', { timeout: 30_000 }, async t => {
++  const f = await setup(t, () => [])
++  const [handoff] = await queue(f, { completed: true })
++  assert.equal(handoff.sourceExecution.reportStatus, 'completed')
++  assert.equal(handoff.sourceExecution.commitSha, 'fixture-partial-commit')
++  assert.equal((await readRecoverySessionState(f)).recoveryAdmission, undefined)
++  assert.equal(f.adapter.requests.length, 0)
++})
++
++function beforeFirstModel(f, action) {
++  const stream = f.adapter.stream.bind(f.adapter)
++  let entered = false
++  f.adapter.stream = async function* (options) {
++    if (!entered) { entered = true; await action() }
++    yield* stream(options)
++  }
++}
++
++
++test('T15 multiple failed Owner handoffs are split into one source group per candidate', { timeout: 30_000 }, async t => {
++  let payload
++  const f = await setup(t, m => [() => m.toolCallResponse('group-submit', 'workflow_plan_submit', { plan: payload }), 'hang-slow'], { includeIndependentOwner: true })
++  await queue(f)
++  await mutateRecoverySessionState(f, state => {
++    state.ownerRuns['T2:worker'] = { ...structuredClone(state.ownerRuns['T1:api']), taskId: 'T2', stageId: 'T2',
++      ownerId: 'worker', attempt: 1, sessionId: 'T2-worker-failed-session' }
++  })
++  const state = await readRecoverySessionState(f)
++  await f.runtime.recordHandoffs(state, state.plan.tasks[1], { owner: state.plan.owners[1], branch: 'fixture-worker' }, {
++    status: 'blocked', handoffs: [{ targetType: 'owner', targetOwnerId: 'worker',
++      files: ['src/worker/independent.mjs'], summary: 'Separate worker repair.' }],
++  })
++  payload = { ...structuredClone(state.plan), owners: state.plan.owners.map(owner => ({ id: owner.id })) }
++  const result = await f.runtime.replanHandoffs(f.admissionAgent, f.workflowId)
++  assert.equal(result.handoffIds.length, 1)
++  const saved = await readRecoverySessionState(f)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 1)
++  const selected = saved.handoffQueue.find(item => item.id === result.handoffIds[0])
++  assert.equal(saved.recoveryAdmission.sources[0].ownerId, selected.sourceOwnerId)
++  assert.equal(saved.handoffQueue.filter(item => item.status === 'pending').length, 2)
++})
+--- docs/specs/main-thread-owner-workflow/contracts/replan-session-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/replan-session-v1.md
+@@ -35,3 +35,7 @@
+ 完整终态且无成功提交时，completed结算failed，aborted结算cancelled，结果引用{id:promptId,version:sessionId}。仅符合R57规则的failed前项允许下一ordinal；未知、取消及尚待语义应用的提交不自动重试。异常或无法确认的原始证据返回paused，不伪造结果，不增加新物理调用。重放仍核对最新来源、身份、账本及完整原始日志。
+
+ 实际cycle/handoff触发快照、咨询调用计费、候选语义验证和输出应用尚需后续接线。新进程/控制器SIGKILL后的完整结果fencing不是本轮已证明能力；本轮新Harness上下文重开验证不得表述为SIGKILL恢复验收。
++
++## R59 语义结果的受控消费
++
++实际失败handoff入口可在同一持久状态事务中写待审候选并将T13结算succeeded，session phase=applied；该applied只指候选落盘，不是active DAG激活。结构提交通过但外层handoff语义检查失败则T13 failed、phase=validated_failed。两者都沿用原session/prompt反向结果引用。此已结算结果的重放由handoff入口核对operation、账本、session和原始receipt，通用reconcile不重新运行或覆盖语义结论。详见handoff-recovery-v1.md。
+--- docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md
+@@ -143,3 +143,6 @@
+ operation intent精确保存旧公共字段 `intentKey/sourceId/strategy/planDigest/rootProblemId/requestId/attemptId/executionIdentity`，以 `executionKind=replan_operation/operationKind/operationId/ordinal` 替代 `taskId/ownerId`。source保留真实Owner/义务身份；不得把来源Owner解释成Planner执行Owner。intentKey由sourceId和完整operation确定，不随策略切换另开同一步骤。首次ordinal为1；重放复用同一request/attempt/session/prompt。下一ordinal必须连续且前项已failed结算，结果引用须为 `{id:promptId,version:sessionId}`，若有执行引用则须为 `{id:sessionId,version:promptId}`；reserved/running/成功/取消及错误回执不能创建下一次物理重试。
+
+ 导入mixed intents逐项比对source、root、完整执行绑定和账本，校验ordinal连续与前项失败，缺intent不能隐藏operation用量。Owner continuation仍只引用实际Owner intent，不把Planner失败伪装成Owner新执行。Owner专属 `reconcileRecoverySession` 明确拒绝operation身份；通用Planner启动及原始提交对账见R58 replan-session-v1.md；实际触发和结果语义应用仍待T15后续接线。旧reader若不支持mixed intent必须拒绝，不删字段降级。
++
++
++R59实际失败handoff生产者固定执行来源后，replanHandoffs保护分支已消费本预留协议并驱动真实Planner、语义检查和候选写入；见handoff-recovery-v1.md。普通Intent/candidate Review/咨询等入口尚未全面接线，不能据此宣称T15完成。
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/contracts/handoff-recovery-v1.md
+@@ -0,0 +1,17 @@
++# 失败handoff的实际Planner预算入口（R59）
++
++适用于显式recovery协议下、已批准active版本中真实失败Owner的handoff。recordHandoffs在最新状态事务中记录sourceExecution：合同DSH_HANDOFF_SOURCE_EXECUTION_V1、planDigest/taskId/ownerId/attempt/sessionId/reportStatus/commitSha；requestHandoff也固定对应live执行身份。该记录只证明生产来源，实际领取仍要求同一Owner执行已经failed/blocked且通过R57来源/审批/权限/continuation核验。生产时completed partial报告保留completed及commitSha，不能假冒失败来源。
++
++实际replanHandoffs首先校验recovery状态。缺少来源的旧pending项拒绝猜测免费或恢复路径；存在失败来源时进入replanRecoveryHandoffs。正常completed handoff沿既有正常路径，不制造恢复root。本轮没有证明正常路径跨版本预算激活，亦没有补齐verification重开触发来源；这两项仍待后续处理。
++
++失败项按相同sourceExecution拆组，按handoff ID确定第一组。一次候选仅消费一个来源，不拿一个root支付其他Owner的独立问题。operationId固定于origin及handoffIds；完整组内容另行冻结，改文字不产生新的操作身份或重送许可。最新来源和完整组在执行前及应用前核对。
++
++准备时持有规划入口资源租约，仅在短workflow事务中将R57预算预留与DSH_HANDOFF_REPLAN_OPERATION_V1一起保存。操作记录固定origin/组/ordinal/requestId/prompt/base Git事实/parent版本/phase。外部Planner调用通过R58真实会话适配器，期间不持workflow锁；独立状态更新可继续。running、unknown、cancelled不得换ordinal重试；明确failed后下一实际调用领取连续ordinal，共用原root及Workflow有限额度。拒绝领取不调用模型。
++
++实际提交后复核live Registry、Git head/branch/status、当前来源与父版本，再在最新状态事务中使用既有handoff语义检查：保留已完成或有运行现场的任务、禁止repair依赖未完成失败源、目标Owner覆盖全部交接文件。另限制本组来源task/覆盖文件的目标task之外既有task原样保留，新增任务只属于本组相关Owner。
++
++语义有效时在同一事务保存pendingPlanRevision与T13 succeeded，session phase=applied。候选保留recoveryRequestId/recoveryOrigin/handoffIds，active plan、active digest、tasks与Owner runs不被覆盖。语义无效时同事务保存失败原因/T13 failed，phase=validated_failed；无结构提交时沿R58终态失败结算。所有情况均不退款，不关闭根问题。
++
++候选重放重新核对operation身份、session记录、账本引用、原始完整JSONL receipt以及pending candidate digest；新Harness上下文也不调用模型。若输入或来源在执行中变化，只暂停并保留已用预算，不写过时候选。candidate_staged只证明规划产物持久化，不是Review通过、用户业务决定、版本激活或最终问题关闭。
++
++后续必须让candidate Review继承此origin并单独计费，连接咨询、候选重建与T18版本激活；Runner技术暂停报告也需覆盖这些实际入口。当前不能声称完整端到端无人值守验收通过。

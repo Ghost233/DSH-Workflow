@@ -33,6 +33,7 @@ function fixture() {
   const calls = []
   const runtime = {
     activeOwners: new Map([['owner-session', active]]),
+    async assertOwnerCompletionAdmission() { calls.push('admission') },
     async inspectOwnerAttempt() {
       calls.push('inspect')
       return { violations: [] }
@@ -52,7 +53,7 @@ function fixture() {
 test('owner_submit 顺序执行边界检查、固定验证和提交', async () => {
   const { active, calls, runtime, exec } = fixture()
   const result = await submitOwnerResult(runtime, report(), exec)
-  assert.deepEqual(calls, ['inspect', 'verify:unit', 'commit'])
+  assert.deepEqual(calls, ['admission', 'inspect', 'verify:unit', 'commit'])
   assert.equal(result.status, 'completed')
   assert.equal(result.commitSha, 'a'.repeat(40))
   assert.equal(active.submission.report.summary, '完成提交关卡测试')
@@ -84,7 +85,7 @@ test('固定验证等待 Owner 现场授权时自动结算为 blocked，不依�
   assert.equal(result.accepted, true)
   assert.match(result.nextAction, /Owner 任务现场.*原生授权/u)
   assert.equal(active.submission.report.status, 'blocked')
-  assert.deepEqual(calls, ['inspect', 'verify:unit'])
+  assert.deepEqual(calls, ['admission', 'inspect', 'verify:unit'])
 })
 
 test('固定验证已经执行失败后拒绝 Owner 错报为 blocked', async () => {
@@ -121,4 +122,18 @@ test('未获得可执行权限的验证结果仍允许 Owner 报告 blocked', as
   const result = await submitOwnerResult(runtime, report('blocked'), exec)
   assert.equal(result.status, 'blocked')
   assert.deepEqual(calls, [])
+})
+
+
+test('completed admission rejection precedes all effects and allows a corrected blocked submission', async () => {
+  const { active, calls, runtime, exec } = fixture()
+  runtime.assertOwnerCompletionAdmission = async () => {
+    assert.equal(active.submitting, true)
+    throw new Error('pending request_handoff')
+  }
+  await assert.rejects(submitOwnerResult(runtime, report(), exec), /pending request_handoff/)
+  assert.deepEqual(calls, [])
+  assert.equal(active.submission, undefined)
+  assert.equal(active.submitting, false)
+  assert.equal((await submitOwnerResult(runtime, report('blocked'), exec)).status, 'blocked')
 })

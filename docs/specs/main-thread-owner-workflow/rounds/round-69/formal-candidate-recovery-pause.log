@@ -1,0 +1,82 @@
+TAP version 13
+# Subtest: T15 socket admission refusal persists one notice, then actual daemon discovery and fresh Harness stop selecting it
+ok 1 - T15 socket admission refusal persists one notice, then actual daemon discovery and fresh Harness stop selecting it
+  ---
+  duration_ms: 9345.861916
+  type: 'test'
+  ...
+# Subtest: T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses
+ok 2 - T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses
+  ---
+  duration_ms: 5945.1155
+  type: 'test'
+  ...
+# Subtest: T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer
+ok 3 - T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer
+  ---
+  duration_ms: 3253.042541
+  type: 'test'
+  ...
+# Subtest: T15 an authoritative user-wait task projection takes priority over a candidate technical pause
+ok 4 - T15 an authoritative user-wait task projection takes priority over a candidate technical pause
+  ---
+  duration_ms: 1753.510708
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate parent
+ok 5 - T15 stale admission failure cannot pause a concurrently changed candidate parent
+  ---
+  duration_ms: 1550.940708
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate review
+ok 6 - T15 stale admission failure cannot pause a concurrently changed candidate review
+  ---
+  duration_ms: 1452.110083
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate plan content
+ok 7 - T15 stale admission failure cannot pause a concurrently changed candidate plan content
+  ---
+  duration_ms: 2534.633167
+  type: 'test'
+  ...
+# Subtest: T15 first uncertain real Reviewer creation persists pause despite its own new operation and session
+ok 8 - T15 first uncertain real Reviewer creation persists pause despite its own new operation and session
+  ---
+  duration_ms: 2602.565541
+  type: 'test'
+  ...
+# Subtest: T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness
+ok 9 - T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness
+  ---
+  duration_ms: 1881.181375
+  type: 'test'
+  ...
+# Subtest: T15 candidate replacement invalidates persisted reservation replay
+ok 10 - T15 candidate replacement invalidates persisted reservation replay
+  ---
+  duration_ms: 1783.590083
+  type: 'test'
+  ...
+# Subtest: T15 a stale create action cannot overwrite a newly arrived Owner history
+ok 11 - T15 a stale create action cannot overwrite a newly arrived Owner history
+  ---
+  duration_ms: 3036.840333
+  type: 'test'
+  ...
+# Subtest: T15 candidate replacement before reservation rejects the stale create action without task writes
+ok 12 - T15 candidate replacement before reservation rejects the stale create action without task writes
+  ---
+  duration_ms: 1644.410958
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 37957.261458

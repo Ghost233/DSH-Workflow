@@ -1,0 +1,17 @@
+{
+  "round": 81,
+  "ticket": "T-24",
+  "status": "开发完成",
+  "formal": {
+    "tests": 47,
+    "passed": 47,
+    "failed": 0,
+    "skipped": 0,
+    "drift": []
+  },
+  "confirmedOpenReviewIssues": [],
+  "next": "T-25",
+  "overallComplete": false,
+  "committed": false,
+  "pushed": false
+}

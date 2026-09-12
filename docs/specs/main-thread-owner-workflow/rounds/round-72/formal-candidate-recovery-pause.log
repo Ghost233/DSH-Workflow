@@ -1,0 +1,106 @@
+TAP version 13
+# Subtest: T15 socket admission refusal persists one notice, then actual daemon discovery and fresh Harness stop selecting it
+ok 1 - T15 socket admission refusal persists one notice, then actual daemon discovery and fresh Harness stop selecting it
+  ---
+  duration_ms: 2441.754541
+  type: 'test'
+  ...
+# Subtest: T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses
+ok 2 - T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses
+  ---
+  duration_ms: 2354.601417
+  type: 'test'
+  ...
+# Subtest: T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer
+ok 3 - T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer
+  ---
+  duration_ms: 2003.546958
+  type: 'test'
+  ...
+# Subtest: T15 an authoritative user-wait task projection takes priority over a candidate technical pause
+ok 4 - T15 an authoritative user-wait task projection takes priority over a candidate technical pause
+  ---
+  duration_ms: 2317.579542
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate parent
+ok 5 - T15 stale admission failure cannot pause a concurrently changed candidate parent
+  ---
+  duration_ms: 2440.886541
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate review
+ok 6 - T15 stale admission failure cannot pause a concurrently changed candidate review
+  ---
+  duration_ms: 1637.265292
+  type: 'test'
+  ...
+# Subtest: T15 stale admission failure cannot pause a concurrently changed candidate plan content
+ok 7 - T15 stale admission failure cannot pause a concurrently changed candidate plan content
+  ---
+  duration_ms: 1482.790417
+  type: 'test'
+  ...
+# Subtest: T15 first uncertain real Reviewer creation persists pause despite its own new operation and session
+ok 8 - T15 first uncertain real Reviewer creation persists pause despite its own new operation and session
+  ---
+  duration_ms: 1724.063
+  type: 'test'
+  ...
+# Subtest: T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness
+ok 9 - T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness
+  ---
+  duration_ms: 2194.15375
+  type: 'test'
+  ...
+# Subtest: T15 candidate replacement invalidates persisted reservation replay
+ok 10 - T15 candidate replacement invalidates persisted reservation replay
+  ---
+  duration_ms: 1996.027209
+  type: 'test'
+  ...
+# Subtest: T15 a stale create action cannot overwrite a newly arrived Owner history
+ok 11 - T15 a stale create action cannot overwrite a newly arrived Owner history
+  ---
+  duration_ms: 2267.534416
+  type: 'test'
+  ...
+# Subtest: T15 candidate replacement before reservation rejects the stale create action without task writes
+ok 12 - T15 candidate replacement before reservation rejects the stale create action without task writes
+  ---
+  duration_ms: 1796.396958
+  type: 'test'
+  ...
+# Subtest: T15 public and direct Owner entry points cannot bypass a candidate reservation
+ok 13 - T15 public and direct Owner entry points cannot bypass a candidate reservation
+  ---
+  duration_ms: 1662.935042
+  type: 'test'
+  ...
+# Subtest: T15 reservation replay rejects persisted stopped task before neutralizing its projection
+ok 14 - T15 reservation replay rejects persisted stopped task before neutralizing its projection
+  ---
+  duration_ms: 1388.613834
+  type: 'test'
+  ...
+# Subtest: T15 reservation replay rejects persisted completed task before neutralizing its projection
+ok 15 - T15 reservation replay rejects persisted completed task before neutralizing its projection
+  ---
+  duration_ms: 1698.37775
+  type: 'test'
+  ...
+# Subtest: T15 Owner startup rechecks a reservation arriving after its initial read
+ok 16 - T15 Owner startup rechecks a reservation arriving after its initial read
+  ---
+  duration_ms: 1385.005083
+  type: 'test'
+  ...
+1..16
+# tests 16
+# suites 0
+# pass 16
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 30980.685875

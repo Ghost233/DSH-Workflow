@@ -1,0 +1,11 @@
+{
+  "contract": "DSH_TICKET_CLOSEOUT_V1",
+  "ticketIds": ["T-10", "T-31"],
+  "candidateId": "R98-T10-T31-owner-memory-recovery",
+  "outcome": "development_complete",
+  "acceptanceStatus": "pending_central_acceptance",
+  "dependenciesReleased": ["B-06", "F5"],
+  "remainingDependencies": ["T-11", "T-12", "CA-01"],
+  "gitCommitCreated": false,
+  "remoteUpdated": false
+}

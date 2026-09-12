@@ -65,6 +65,45 @@ test('绑定验证原样传递固定 argv 与 cwd，忽略调用者伪造的 arg
   assert.ok(Object.isFrozen(result.argv))
 })
 
+test('Shell 缺少 exitCode 时按 ok 确定性归一化，异常载体仍 fail closed', async () => {
+  const foreground = async ok => runBoundVerification({
+    task: task(),
+    verifications: verificationCatalog(),
+    verificationId: 'unit',
+    snapshotExecutor: {
+      async run() {
+        return { contentDigest: DIGEST_A, kind: 'foreground', ok, sandbox: { enforcement: 'full' } }
+      },
+    },
+  })
+  assert.equal((await foreground(true)).exitCode, 0)
+  assert.equal((await foreground(false)).exitCode, 1)
+  const background = await runBoundVerification({
+    task: task(),
+    verifications: verificationCatalog(),
+    verificationId: 'unit',
+    snapshotExecutor: {
+      async run() {
+        return { contentDigest: DIGEST_A, kind: 'background', ok: true, sandbox: { enforcement: 'full' } }
+      },
+    },
+  })
+  assert.equal(background.exitCode, 0)
+  assert.equal(background.passed, false)
+  const unknownFailure = await runBoundVerification({
+    task: task(),
+    verifications: verificationCatalog(),
+    verificationId: 'unit',
+    snapshotExecutor: {
+      async run() {
+        return { contentDigest: DIGEST_A, sandbox: { enforcement: 'full' } }
+      },
+    },
+  })
+  assert.equal(unknownFailure.exitCode, 1)
+  assert.equal(unknownFailure.passed, false)
+})
+
 test('绑定验证保留声明 cwd，旧验证缺省时只使用仓库根目录', () => {
   assert.deepEqual(resolveBoundVerification({
     task: task(),

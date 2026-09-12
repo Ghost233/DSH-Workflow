@@ -1,0 +1,68 @@
+{
+  "replayerPid": 53743,
+  "result": {
+    "contract": "DSH_RECOVERY_SESSION_RESULT_V1",
+    "outcome": "paused",
+    "phase": "technical_pause",
+    "workflowId": "wf-recovery-session",
+    "taskId": "T1",
+    "ownerId": "api",
+    "rootProblemId": "recovery-root-3f9641f5-2fe3-4649-9675-687c6a9c6b84",
+    "requestId": "recovery-request-61a6887f-a12c-413a-bed3-8786fae2906b",
+    "attemptId": "recovery-attempt-0bd939ec-c7d7-4177-ad6d-1aa5a9579233",
+    "executionIdentity": {
+      "sessionId": "recovery-session-8f4fe9b4-2d02-4c0c-b55c-805bdc0258c9",
+      "promptId": "recovery-prompt-86187435-078a-486d-95a9-02ac65586913"
+    },
+    "reason": "raw_artifact_missing",
+    "observation": {
+      "outcome": "paused",
+      "phase": "technical_pause",
+      "reason": "raw_artifact_missing"
+    }
+  },
+  "modelRequests": 0,
+  "agentOperations": {
+    "create": 0,
+    "resume": 0,
+    "followup": 0
+  },
+  "beforeCheckpoint": {
+    "phase": "creating",
+    "ownerStatus": "running",
+    "budgetAttempt": {
+      "workflowId": "wf-recovery-session",
+      "rootProblemId": "recovery-root-3f9641f5-2fe3-4649-9675-687c6a9c6b84",
+      "requestId": "recovery-request-61a6887f-a12c-413a-bed3-8786fae2906b",
+      "attemptId": "recovery-attempt-0bd939ec-c7d7-4177-ad6d-1aa5a9579233",
+      "taskId": "T1",
+      "ownerId": "api",
+      "executionVersion": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+      "state": "reserved"
+    },
+    "modelRequests": 0,
+    "executionIdentity": {
+      "sessionId": "recovery-session-8f4fe9b4-2d02-4c0c-b55c-805bdc0258c9",
+      "promptId": "recovery-prompt-86187435-078a-486d-95a9-02ac65586913"
+    }
+  },
+  "afterCheckpoint": {
+    "phase": "creating",
+    "ownerStatus": "running",
+    "budgetAttempt": {
+      "workflowId": "wf-recovery-session",
+      "rootProblemId": "recovery-root-3f9641f5-2fe3-4649-9675-687c6a9c6b84",
+      "requestId": "recovery-request-61a6887f-a12c-413a-bed3-8786fae2906b",
+      "attemptId": "recovery-attempt-0bd939ec-c7d7-4177-ad6d-1aa5a9579233",
+      "taskId": "T1",
+      "ownerId": "api",
+      "executionVersion": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+      "state": "reserved"
+    },
+    "modelRequests": 0,
+    "executionIdentity": {
+      "sessionId": "recovery-session-8f4fe9b4-2d02-4c0c-b55c-805bdc0258c9",
+      "promptId": "recovery-prompt-86187435-078a-486d-95a9-02ac65586913"
+    }
+  }
+}

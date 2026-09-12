@@ -1,0 +1,29 @@
+# T-14 会话与根问题来源审计
+
+本证据只读当前仓库。下列方法名可定位源文件，正式candidate.json固定实际内容。
+
+## 现有可用行为
+
+- runtime.mjs的runExternalOwner在Owner/workflow lease核验后保存starting记录及attempt，再创建Owner入口；不能把底层provider的直接重放当成完整入口自动重启。
+- ownerWorkflowChildProvider.start先生成randomUUID会话ID，再调用parent.ctx.agents.create。create返回后，Owner调用persistOwnerSession，成功后才child.followup；因此**会话创建成功但绑定未落盘**不能直接等同于模型已工作。persistOwnerSession写ownerRuns/sessionId与task.executorId并检查Owner lease。
+- Harness AgentRegistry.create要求调用者sessionId，另有resume入口；AgentLoop.createAgent在该ID下准备并发布会话。session-persistence的createCore拒绝已有持久日志的同ID创建，提示load/resume。该后端采用lazy materialization，create仅登记intent，首个append才形成artifact；“磁盘没有session”不能单独作为安全重派证据。
+
+## 未打通的预算绑定
+
+runChild只给subagent start传label/prompt/parent/signal/agentOptions/maxDepth，未传预算requestId/attemptId及预留sessionId。provider随机生成childId，并用随机prompt message id；pendingChildStarts以prompt数组引用为内存key。当前预算账本没有被这些实际入口消费。已有sessionId记录和resume API是候选接缝，不构成已验证的跨进程恰好一次启动。
+
+两个有限SIGKILL探针运行真实runChild/provider函数，模拟agents.create、persistOwnerSession和child边界：create接纳后未返回、persist返回且prompt已接纳两个阶段。各自重启新进程并直接调用同底层方法，会得到新sessionId。第一阶段没有prompt，第二阶段有两次prompt接纳。**没有经过完整runExternalOwner、Owner lease或生产恢复决策，也未调用真实模型、实际持久会话后端；不能声称生产自动双启动已经复现。** 这证明该底层方法自身没有预算幂等接口，恢复适配必须在调用前决策。
+
+两个错误边界探针还验证：create拒绝时零prompt；persistOwnerSession拒绝时零prompt且handle.dispose调用一次。错误由模拟服务注入，证明真实provider等待/清理顺序，不代表物理磁盘失败测试（由storage夹具另行覆盖）。
+
+## 根问题来源
+
+convergence.mjs的reviewIssueObligation保留显式obligationId/sourceId/sourceVersion，并校验关闭合同；proofRecord刻意忽略Reviewer可控ID计算实际factId，避免相同事实换ID制造进展。因此不能把模型新声明的obligationId直接当作新预算账户授权。
+
+runtime.ownerRecoveryFingerprint是旧恢复去重摘要，输入含planDigest/task/Owner/失败文案，对UUID、hash和路径做归一。identity.mjs验证同失败换planDigest会变、不同路径可能归一相同；它适合原有局部匹配用途，不满足新合同跨版本稳定根问题身份。autonomousIncident是当前状态快照，部分路径覆盖/清空它；它也没有统一、不可变的首次失败记录身份供新账本注册。
+
+## 待实现前置（待存储证据汇总，不代表已就绪）
+
+1. Runtime在有效义务或首次失败进入持久状态时，固定不可变来源记录及root映射；检查当前未解决映射后复用，不能依靠模型ID或失败摘要重新领取。request/attempt及预留session身份应同事务保留，整个快照损坏时拒绝启动。
+2. runChild/provider接受Runtime预留的执行身份；对账查验会话/日志/lease/执行版本/attempt与提示提交回执。已存在会话走核验后的resume/结果回收，身份不确定保留reserved并停止相关启动，不退款。单纯把randomUUID换成hash不足以解决prompt提交的不确定窗口。
+3. 使用实际Harness持久插件验证create、首次append、prompt接纳、结算回执与重启读取，覆盖模型已工作但预算结算未保存；本次模拟边界不替代该证明。取消隔离与lease释放仍由T-16/T-17承接。

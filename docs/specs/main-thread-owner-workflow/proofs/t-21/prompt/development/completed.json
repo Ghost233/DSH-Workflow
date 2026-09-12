@@ -1,0 +1,53 @@
+{
+  "mode": "completed",
+  "root": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t21-prompt-usthKA",
+  "start": "2026-09-11T02:50:53.780Z",
+  "first": {
+    "mode": "completed",
+    "pid": 76676,
+    "code": null,
+    "signal": "SIGKILL",
+    "payload": {
+      "phase": "kill-ready",
+      "mode": "completed",
+      "memory": {
+        "pendingInsertions": 1,
+        "userMessages": 1,
+        "turnStarts": [
+          1
+        ],
+        "turnEnds": [
+          {
+            "turn": 1,
+            "reason": {
+              "kind": "error",
+              "error": {
+                "message": "agent \"t21-prompt-session\" has no provider/model: set AgentOptions.provider and AgentOptions.model or supply both via the agent/request waterfall",
+                "code": "UNKNOWN"
+              }
+            }
+          }
+        ]
+      },
+      "calls": 0
+    },
+    "stdout": "",
+    "stderr": ""
+  },
+  "restart": {
+    "mode": "restart-completed",
+    "pid": 76687,
+    "code": 1,
+    "signal": null,
+    "payload": {
+      "phase": "error",
+      "mode": "restart-completed",
+      "error": "TypeError: Cannot read properties of undefined (reading 'length')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'length')\n    at encodeSegment (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence-jsonl/src/format.ts:122:11)\n    at JsonlSessionPersistence.rejectLegacyFlatArtifact (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence-jsonl/src/index.ts:896:21)\n    at JsonlSessionPersistence.findLog (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence-jsonl/src/index.ts:778:18)\n    at async JsonlSessionPersistence.loadStored (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence-jsonl/src/index.ts:213:18)\n    at async PersistenceCoordinator.prepareCore (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence/src/coordinator.ts:893:20)"
+    },
+    "stdout": "",
+    "stderr": ""
+  },
+  "error": "Error: restart probe failed; inspect raw payload",
+  "end": "2026-09-11T02:50:54.547Z"
+}

@@ -1,0 +1,84 @@
+constant evidence 6 autonomous_incident
+reworded consultation 30 local_subgraph_rewrite new_evidence []
+omitted obligation obligation_reduced [ 'resolved' ] 1
+✔ control: unchanged evidence exhausts strategies (6.943333ms)
+✖ same missing entry, reworded owner consultation must also terminate (4.66875ms)
+✖ review omission without evidence must not close frozen obligation (1.335417ms)
+✖ ordinary user-facing technical question must not require external authority (0.625375ms)
+historical state under current control handoff-replan handoff_replanning
+✔ current control routes the historical blocked handoff to replanning (7.571416ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 2
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 96.460042
+
+✖ failing tests:
+
+test at ../../../../private/tmp/dsh-convergence-repro.mjs:7:1
+✖ same missing entry, reworded owner consultation must also terminate (4.66875ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'local_subgraph_rewrite'
+  - 'autonomous_incident'
+
+      at TestContext.<anonymous> (file:///private/tmp/dsh-convergence-repro.mjs:7:200)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'local_subgraph_rewrite',
+    expected: 'autonomous_incident',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ../../../../private/tmp/dsh-convergence-repro.mjs:8:1
+✖ review omission without evidence must not close frozen obligation (1.335417ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  'resolved' !== 'open'
+
+      at TestContext.<anonymous> (file:///private/tmp/dsh-convergence-repro.mjs:8:547)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'resolved',
+    expected: 'open',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ../../../../private/tmp/dsh-convergence-repro.mjs:9:1
+✖ ordinary user-facing technical question must not require external authority (0.625375ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  true !== false
+
+      at TestContext.<anonymous> (file:///private/tmp/dsh-convergence-repro.mjs:9:96)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: R78 arbitration replay survives a winner before-review-authentication in consultation
+not ok 1 - R78 arbitration replay survives a winner before-review-authentication in consultation
+  ---
+  duration_ms: 3547.274916
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-arbitration-metered.test.mjs:205:91'
+  failureType: 'testCodeFailure'
+  error: 'Recovery Owner会诊 predecessor Review/convergence changed'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    verify (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8282:19)
+    file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8300:9
+    async Object.withOwnerLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:5612:24)
+    async Object.arbitrateRecoveryCandidate (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8738:34)
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-arbitration-metered.test.mjs:224:20)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+# Subtest: R78 arbitration replay survives a winner after-review-authentication in consultation
+not ok 2 - R78 arbitration replay survives a winner after-review-authentication in consultation
+  ---
+  duration_ms: 2939.71725
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-arbitration-metered.test.mjs:205:91'
+  failureType: 'testCodeFailure'
+  error: 'Recovery Owner会诊 predecessor Review/convergence changed'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    verify (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8282:19)
+    file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8300:9
+    async Object.withOwnerLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:5612:24)
+    async Object.arbitrateRecoveryCandidate (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:8738:34)
+    async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-arbitration-metered.test.mjs:224:20)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6759.546375

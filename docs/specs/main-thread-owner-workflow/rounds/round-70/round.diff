@@ -1,0 +1,169 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -4775,6 +4775,13 @@
+   return receipt
+ }
+
++function assertCandidateOwnerLifecycleWired(state, taskId, ownerId) {
++  const key = `${taskId}:${ownerId}`
++  if (state.supervisorOutbox?.[key]?.candidatePause !== undefined || state.ownerRuns?.[key]?.candidatePause !== undefined) {
++    throw new Error('候选独立Owner生命周期尚未接线，保留reservation')
++  }
++}
++
+ function supervisorReservationKey(taskId, ownerId) {
+   return `${taskId}:${ownerId}`
+ }
+@@ -13817,6 +13824,7 @@
+         let signal = requestSignal
+         try {
+           const initialState = await readState(runtime, root, workflowId)
++          assertCandidateOwnerLifecycleWired(initialState, stageId, ownerId)
+           if (initialState.root !== root) throw new Error(`工作流 ${workflowId} 不属于当前项目：${initialState.root}`)
+           assertV2WorkflowExecutable(initialState, `启动或结算 Owner ${ownerId}`)
+           assertWorkflowNotCancelled(initialState, '启动或结算 Owner')
+@@ -13825,6 +13833,7 @@
+           if (previous?.status === 'completed') {
+             return runtime.withWorkflowLock(workflowId, async () => {
+               const currentState = await readState(runtime, root, workflowId)
++                assertCandidateOwnerLifecycleWired(currentState, stageId, ownerId)
+               const current = currentState.ownerRuns?.[key]
+               return runtime.assertCompletedOwnerRecord(currentState, stageId, ownerId, current, requestSignal)
+             })
+@@ -13832,6 +13841,7 @@
+           if (previous?.status === 'awaiting_finish' || previous?.status === 'committed') {
+             const persistedResult = await runtime.withWorkflowLock(workflowId, async () => {
+               const currentState = await readState(runtime, root, workflowId)
++                assertCandidateOwnerLifecycleWired(currentState, stageId, ownerId)
+               if (currentState.root !== root) throw new Error(`工作流 ${workflowId} 不属于当前项目：${currentState.root}`)
+               assertV2WorkflowExecutable(currentState, `重放 Owner ${ownerId} 的持久化结果`)
+               assertWorkflowNotCancelled(currentState, '重放 Owner 持久化结果')
+@@ -13862,6 +13872,7 @@
+               signal,
+               async (workflowLease) => {
+                 const current = await readState(runtime, root, workflowId)
++                assertCandidateOwnerLifecycleWired(current, stageId, ownerId)
+                 if (current.contract !== STATE_CONTRACT) throw new Error(`工作流 ${workflowId} 的状态契约不受支持`)
+                 if (current.root !== root) throw new Error(`工作流 ${workflowId} 不属于当前项目：${current.root}`)
+                 assertWorkflowNotCancelled(current, '启动或结算 Owner')
+@@ -14333,6 +14344,7 @@
+       const key = ownerRunKey(stageId, ownerId)
+       const finish = (lease, signal) => runtime.withWorkflowLock(workflowId, async () => {
+         const state = await readState(runtime, root, workflowId)
++        assertCandidateOwnerLifecycleWired(state, stageId, ownerId)
+         await runtime.assertOwnerLease(lease)
+         if (state.root !== root) throw new Error(`工作流 ${workflowId} 不属于当前项目：${state.root}`)
+         assertV2WorkflowExecutable(state, `结算 Owner ${ownerId}`)
+@@ -14796,6 +14808,7 @@
+       abortIfNeeded(signal)
+       const root = await runtime.resolveRoot(agent)
+       const state = await readState(runtime, root, workflowId)
++      assertCandidateOwnerLifecycleWired(state, stageId, ownerId)
+       assertRecoveryAdmissionState(state)
+       const key = ownerRunKey(stageId, ownerId)
+       const record = state.ownerRuns?.[key]
+@@ -14907,6 +14920,7 @@
+         throw new Error(`Owner ${ownerId} 当前仍有控制桥运行，不能重复恢复：${key}`)
+       }
+       const revisionSnapshot = await readState(runtime, root, workflowId)
++      assertCandidateOwnerLifecycleWired(revisionSnapshot, stageId, ownerId)
+       const protectedRecovery = recoveryAdmissionEnabled(revisionSnapshot)
+       if (protectedRecovery) assertRecoveryAdmissionState(revisionSnapshot)
+       const revisionTask = revisionSnapshot.plan?.tasks?.find(item => item.id === stageId)
+--- owner-workflow-plugin/src/candidate-independent-supervisor.mjs (baseline)
++++ owner-workflow-plugin/src/candidate-independent-supervisor.mjs
+@@ -120,7 +120,7 @@
+   delete view.supervisorOutbox[key]
+   if (view.ownerRuns) delete view.ownerRuns[key]
+   const task = view.tasks.find(task => task.taskId === binding.taskId)
+-  if (!task) fail('reservation任务不存在')
++  if (!task || !['pending', 'running'].includes(task.status)) fail('未终态占用与任务状态矛盾')
+   Object.assign(task, { status: 'pending', executorId: null, cursor: null, unchangedPolls: 0, reason: null, action: null })
+   if (!prepare(view).receipt.scope.eligibleTaskIds.includes(binding.taskId)) fail('任务不再属于独立范围')
+   return binding
+--- owner-workflow-plugin/test/candidate-recovery-pause.test.mjs (baseline)
++++ owner-workflow-plugin/test/candidate-recovery-pause.test.mjs
+@@ -7,13 +7,13 @@
+ import { discoverRunnableWorkflows } from '../src/external-runner.mjs'
+ import { createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState, reopenRecoverySessionFixture } from './fixtures/recovery-session-fixture.mjs'
+
+-function drive(manifest) {
++function drive(manifest, action = 'workflow-drive', fields = {}) {
+   return new Promise((resolve, reject) => {
+     const socket = createConnection(manifest.socketPath)
+     let buffer = ''
+     socket.setEncoding('utf8'); socket.setTimeout(20_000, () => socket.destroy(new Error('control socket timeout')))
+     socket.on('connect', () => socket.write(`${JSON.stringify({ contract: 'DSH_WORKFLOW_CONTROL_V1', id: 'candidate-pause-test',
+-      workflowId: manifest.workflowId, token: manifest.token, action: 'workflow-drive', expectedCommand: 'plan-revision-drive' })}\n`))
++      workflowId: manifest.workflowId, token: manifest.token, action, ...fields, expectedCommand: 'plan-revision-drive' })}\n`))
+     socket.on('data', chunk => {
+       buffer += chunk
+       const end = buffer.indexOf('\n')
+@@ -254,3 +254,67 @@
+   await assert.rejects(f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, receipt.actionId), /有效候选暂停/)
+   assert.deepEqual(await readRecoverySessionState(f), changed)
+ })
++
++test('T15 public and direct Owner entry points cannot bypass a candidate reservation', { timeout: 30_000 }, async t => {
++  const f = await notifiedPause(t)
++  const action = candidateIndependentNext(await readRecoverySessionState(f))
++  await f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, action.actionId)
++  const before = await readRecoverySessionState(f)
++  const calls = f.adapter.requests.length
++  for (const action of ['owner-sync', 'run-owner', 'owner-finish']) {
++    await assert.rejects(drive(f.manifest, action, { stageId: 'T2', ownerId: 'worker' }), /V2 工作流拒绝 legacy 控制动作/)
++  }
++  for (const name of ['runExternalOwner', 'recoverOwner', 'recoverOwnerWithAdmission', 'finishOwner']) {
++    await assert.rejects(f.runtime[name](f.admissionAgent, f.workflowId, 'T2', 'worker'), /生命周期尚未接线/)
++  }
++  assert.equal(f.adapter.requests.length, calls)
++  assert.equal((await readRecoverySessionState(f)).ownerRuns['T2:worker'], undefined)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++})
++
++for (const status of ['stopped', 'completed']) {
++  test(`T15 reservation replay rejects persisted ${status} task before neutralizing its projection`, { timeout: 30_000 }, async t => {
++    const f = await notifiedPause(t)
++    const receipt = candidateIndependentNext(await readRecoverySessionState(f))
++    await f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, receipt.actionId)
++    await mutateRecoverySessionState(f, state => {
++      const task = state.tasks.find(task => task.taskId === 'T2')
++      Object.assign(task, { status, executorId: null, reason: status === 'stopped' ? 'runtime_failed' : null,
++        action: status === 'stopped' ? 'retry_runtime' : null })
++    })
++    const changed = await readRecoverySessionState(f)
++    await assert.rejects(f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, receipt.actionId), /任务状态矛盾/)
++    assert.deepEqual(await readRecoverySessionState(f), changed)
++  })
++}
++
++test('T15 Owner startup rechecks a reservation arriving after its initial read', { timeout: 30_000 }, async t => {
++  const f = await notifiedPause(t)
++  const receipt = candidateIndependentNext(await readRecoverySessionState(f))
++  await f.runtime.reserveCandidateIndependentTasks(f.admissionAgent, f.workflowId, receipt.actionId)
++  const reserved = await readRecoverySessionState(f)
++  await mutateRecoverySessionState(f, state => {
++    delete state.supervisorOutbox['T2:worker']
++    Object.assign(state.tasks.find(task => task.taskId === 'T2'), { status: 'pending', executorId: null })
++  })
++  const lock = f.runtime.withWorkflowLock.bind(f.runtime)
++  let inserted = false
++  f.runtime.withWorkflowLock = async (workflowId, operation) => {
++    if (!inserted && workflowId === f.workflowId) {
++      inserted = true
++      await mutateRecoverySessionState(f, state => {
++        state.supervisorOutbox['T2:worker'] = reserved.supervisorOutbox['T2:worker']
++        Object.assign(state.tasks.find(task => task.taskId === 'T2'), reserved.tasks.find(task => task.taskId === 'T2'))
++      })
++    }
++    return lock(workflowId, operation)
++  }
++  const calls = f.adapter.requests.length
++  await assert.rejects(f.runtime.runExternalOwner(f.admissionAgent, f.workflowId, 'T2', 'worker'), /生命周期尚未接线/)
++  assert.equal(inserted, true)
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.ownerRuns['T2:worker'], undefined)
++  assert.deepEqual(state.tasks, reserved.tasks)
++  assert.deepEqual(state.supervisorOutbox, reserved.supervisorOutbox)
++  assert.equal(f.adapter.requests.length, calls)
++})

@@ -1,0 +1,719 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+  createRecoverySessionFixture, readRecoverySessionState, mutateRecoverySessionState,
+} from './fixtures/recovery-session-fixture.mjs'
+
+function failedModel({ toolCallResponse, textResponse }) {
+  return [toolCallResponse('t15-failed', 'owner_submit', { report: {
+    contract: 'DSH_OWNER_RESULT_V1', status: 'failed', summary: 'Controlled technical failure.',
+    changes: [], tests: [], handoffs: [], memory_updates: [],
+  } }), textResponse('reported')]
+}
+
+function observe(f) {
+  const calls = { create: 0, resume: 0 }
+  for (const key of Object.keys(calls)) {
+    const original = f.ctx.agents[key].bind(f.ctx.agents)
+    f.ctx.agents[key] = (...args) => { calls[key] += 1; return original(...args) }
+  }
+  return calls
+}
+
+test('T15 recoverOwner admits before restarting a failed workflow and enforces the next credit limit', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true, limits: { totalLimit: 1, problemLimit: 1 }, modelScript: failedModel })
+  await mutateRecoverySessionState(f, s => {
+    s.status = 'failed'
+    s.tasks.find(item => item.taskId === 'T1').status = 'stopped'
+  })
+  const calls = observe(f)
+  await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), { name: 'OwnerReportedError' })
+  const settled = await readRecoverySessionState(f)
+  assert.equal(settled.recoveryAdmission.budget.totalUsed, 1)
+  assert.equal(settled.ownerRuns['T1:api'].recoverySession.phase, 'settled_failed')
+  assert.equal(settled.recoveryAdmission.sources[0].sessionId, 'T1-api-failed-session')
+  assert.deepEqual(calls, { create: 1, resume: 0 })
+  assert.equal(f.adapter.requests.length, 2)
+  const next = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
+  assert.equal(next.contract, 'DSH_OWNER_AUTONOMOUS_RECOVERY_PAUSED_V1')
+  assert.notEqual(next.strategy, 'request_user_authority')
+  assert.deepEqual(await readRecoverySessionState(f), settled)
+  assert.deepEqual(calls, { create: 1, resume: 0 })
+  assert.equal(f.adapter.requests.length, 2)
+})
+
+test('T15 direct failed Owner start cannot bypass durable recovery admission', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  const before = await readRecoverySessionState(f)
+  const calls = observe(f)
+  await assert.rejects(f.runtime.runExternalOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), /持久预算领取/u)
+  assert.deepEqual(await readRecoverySessionState(f), before)
+  assert.deepEqual(calls, { create: 0, resume: 0 })
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+for (const fault of ['missing_config', 'unknown_protocol', 'invalid_config']) {
+  test(`T15 ${fault} cannot silently fall back to legacy execution`, async t => {
+    const f = await createRecoverySessionFixture(t, { executable: true })
+    await mutateRecoverySessionState(f, s => {
+      s.recoveryProtocol = fault === 'unknown_protocol' ? 'future' : 'DSH_RECOVERY_ADMISSION_V1'
+      if (fault === 'missing_config') delete s.recoveryAdmissionConfig
+      if (fault === 'invalid_config') s.recoveryAdmissionConfig.totalLimit = 0
+    })
+    const before = await readRecoverySessionState(f)
+    const calls = observe(f)
+    await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'))
+    await assert.rejects(f.runtime.runExternalOwner(f.admissionAgent, f.workflowId, 'T1', 'api'))
+    assert.deepEqual(await readRecoverySessionState(f), before)
+    assert.deepEqual(calls, { create: 0, resume: 0 })
+    assert.equal(f.adapter.requests.length, 0)
+  })
+}
+
+test('T15 explicit user decision takes priority over spending recovery credit', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  await mutateRecoverySessionState(f, s => {
+    s.tasks.find(item => item.taskId === 'T1').action = 'await_user'
+  })
+  const before = await readRecoverySessionState(f)
+  const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
+  assert.equal(result.strategy, 'request_user_authority')
+  assert.equal(result.reason, 'user_authority_required')
+  assert.deepEqual(await readRecoverySessionState(f), before)
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+
+test('T15 existing uncertain recovery is reconciled without another reservation or prompt', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true, responses: ['No structured result yet.'] })
+  const calls = observe(f)
+  await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'))
+  const before = await readRecoverySessionState(f)
+  assert.equal(before.recoveryAdmission.budget.totalUsed, 1)
+  assert.ok(before.ownerRuns['T1:api'].recoverySession)
+  const count = f.adapter.requests.length
+  const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
+  assert.equal(result.outcome, 'paused')
+  assert.deepEqual(await readRecoverySessionState(f), before)
+  assert.deepEqual(calls, { create: 1, resume: 0 })
+  assert.equal(f.adapter.requests.length, count)
+})
+
+test('T15 subsequent real failed result inherits the same root and consumes only its next attempt', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true, limits: { totalLimit: 2, problemLimit: 2 },
+    modelScript: m => [...failedModel(m), ...failedModel(m)] })
+  const calls = observe(f)
+  for (let used = 1; used <= 2; used += 1) {
+    await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), { name: 'OwnerReportedError' })
+    const state = await readRecoverySessionState(f)
+    assert.equal(state.recoveryAdmission.budget.totalUsed, used)
+    assert.equal(state.recoveryAdmission.budget.problems.length, 1)
+    assert.equal(state.recoveryAdmission.sources.length, used)
+  }
+  const before = await readRecoverySessionState(f)
+  const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
+  assert.equal(result.strategy, 'autonomous_incident')
+  assert.deepEqual(await readRecoverySessionState(f), before)
+  assert.deepEqual(calls, { create: 2, resume: 0 })
+  assert.equal(f.adapter.requests.length, 4)
+})
+
+async function admitAuthorityFailure(f) {
+  let state = await mutateRecoverySessionState(f, s => {
+    const record = s.ownerRuns['T1:api']
+    record.status = 'running'
+    record.ownerId = 'api'
+    record.stageId = 'T1'
+    record.planDigest = s.planDigest
+    s.tasks.find(item => item.taskId === 'T1').status = 'running'
+  })
+  const owner = state.plan.owners.find(item => item.id === 'api')
+  const record = state.ownerRuns['T1:api']
+  const acquired = await f.runtime.acquireOwnerLease(f.root, 'api', f.workflowId, 'T1')
+  f.runtime.activeOwners.set(record.sessionId, { workflowRoot: f.root, workflowId: f.workflowId,
+    stageId: 'T1', owner, sessionId: record.sessionId, lease: acquired.lease,
+    attempt: record.attempt, planDigest: state.planDigest,
+    authority: { id: owner.id, name: owner.name, description: owner.description, scope: [...owner.scope], exclude: [...owner.exclude] },
+  })
+  try {
+    await f.runtime.recordOwnerExecutionDeviation({ expected: 'Read the ledger', actual: 'Permission denied',
+      evidence: [{ kind: 'service_response', detail: 'Missing read:ledger scope' }],
+      technical_facts: ['The current operation requires read:ledger'],
+      external_permission_gap: { required_permission: 'read:ledger', target: 'remote-ledger', blocked_action: 'Read ledger' },
+    }, { agent: { id: record.sessionId } })
+  } finally {
+    f.runtime.activeOwners.delete(record.sessionId)
+    await f.runtime.releaseOwnerLease(acquired.lease)
+  }
+  return mutateRecoverySessionState(f, s => {
+    s.status = 'failed'
+    s.ownerRuns['T1:api'].status = 'failed'
+    s.ownerRuns['T1:api'].error = 'Permission denied by the service'
+    Object.assign(s.tasks.find(item => item.taskId === 'T1'), { status: 'stopped', action: 'retry_runtime' })
+  })
+}
+
+test('T15 public background recovery persists and delivers a newly classified user decision', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true })
+  const before = await admitAuthorityFailure(f)
+  assert.equal(before.mainOutbox, undefined)
+  const calls = observe(f)
+  const dispatch = await f.runtime.dispatchOwnerRecovery(f.admissionAgent, f.workflowId, 'T1', 'api')
+  assert.equal(dispatch.status, 'recovery_started')
+  const pending = f.runtime.manualOwnerRecoveries.get(`${f.workflowId}:T1:api`)
+  assert.ok(pending)
+  await pending
+  const state = await readRecoverySessionState(f)
+  assert.equal(state.status, 'running')
+  assert.equal(state.ownerRuns['T1:api'].phase, 'awaiting_user_authority')
+  assert.equal(state.tasks.find(item => item.taskId === 'T1').action, 'await_user')
+  assert.deepEqual(state.tasks.find(item => item.taskId === 'T2'), before.tasks.find(item => item.taskId === 'T2'))
+  assert.equal(state.recoveryAdmission, undefined)
+  assert.deepEqual(calls, { create: 0, resume: 0 })
+  assert.equal(f.adapter.requests.length, 0)
+  const notifications = Object.values(state.mainOutbox)
+  assert.equal(notifications.length, 1)
+  const deliveries = []
+  f.admissionAgent.followup = message => deliveries.push(message)
+  await f.runtime.deliverMainOutbox(f.admissionAgent, f.workflowId, notifications[0].notificationId)
+  assert.equal(deliveries.length, 1)
+  assert.equal(JSON.parse(deliveries[0].content[0].text).classificationBasis.externalPermissionGap.requiredPermission, 'read:ledger')
+})
+
+for (const afterAdmission of [false, true]) {
+  test(`T15 unresolved handoff ${afterAdmission ? 'appearing after' : 'before'} admission prevents execution`, async t => {
+    const f = await createRecoverySessionFixture(t, { executable: true })
+    const inject = () => mutateRecoverySessionState(f, s => {
+      s.status = 'blocked'
+      s.handoffQueue = [{ sourceTaskId: 'T1', status: 'pending' }]
+    })
+    let boundary
+    if (afterAdmission) {
+      const reserve = f.runtime.reserveRecoveryAdmission.bind(f.runtime)
+      f.runtime.reserveRecoveryAdmission = async (...args) => {
+        const receipt = await reserve(...args)
+        boundary = await inject()
+        return receipt
+      }
+    } else boundary = await inject()
+    const calls = observe(f)
+    await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), /handoff_replan/u)
+    const state = await readRecoverySessionState(f)
+    assert.deepEqual(state, boundary)
+    assert.equal(state.recoveryAdmission?.budget.totalUsed ?? 0, afterAdmission ? 1 : 0)
+    assert.equal(state.ownerRuns['T1:api'].recoverySession, undefined)
+    assert.deepEqual(calls, { create: 0, resume: 0 })
+    assert.equal(f.adapter.requests.length, 0)
+  })
+}
+
+function completedModel({ toolCallResponse, textResponse }) {
+  return [toolCallResponse('t15-completed', 'owner_submit', { report: {
+    contract: 'DSH_OWNER_RESULT_V1', status: 'completed', summary: 'Completed the current task.',
+    changes: [], tests: [], handoffs: [], memory_updates: [],
+  } }), textResponse('reported'),
+  textResponse(JSON.stringify({ contract: 'DSH_OWNER_MEMORY_CURATOR_V1', summary: 'No knowledge pages needed.', pages: [] })),
+  textResponse(JSON.stringify({ contract: 'DSH_OWNER_MEMORY_REVIEW_V1', status: 'passed', summary: 'Empty bundle is valid.', issues: [] })),
+  ]
+}
+
+for (const status of ['awaiting_finish', 'committed']) {
+  test(`T15 protected ordinary ${status} result can finish without a recovery debit`, async t => {
+    const f = await createRecoverySessionFixture(t, { executable: true, modelScript: completedModel })
+    await mutateRecoverySessionState(f, s => { delete s.ownerRuns['T1:api'] })
+    await f.runtime.runExternalOwner(f.admissionAgent, f.workflowId, 'T1', 'api', undefined, { deferFinish: true })
+    if (status === 'committed') await mutateRecoverySessionState(f, s => { s.ownerRuns['T1:api'].status = status })
+    const synced = await readRecoverySessionState(f)
+    assert.equal(synced.ownerRuns['T1:api'].status, status)
+    assert.equal(synced.ownerRuns['T1:api'].recoverySession, undefined)
+    const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
+    const state = await readRecoverySessionState(f)
+    assert.equal(state.ownerRuns['T1:api'].status, 'completed')
+    assert.equal(result.commitSha, synced.ownerRuns['T1:api'].result.commitSha)
+    assert.equal(state.recoveryAdmission, undefined)
+    assert.equal(f.adapter.requests.length, 4)
+  })
+}
+
+test('T15 protected PlanRevision abort with no Owner record keeps the reset path', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  await mutateRecoverySessionState(f, s => {
+    delete s.ownerRuns['T1:api']
+    Object.assign(s.tasks.find(item => item.taskId === 'T1'), { revisionDisposition: 'abort', checkState: 'invalid' })
+  })
+  const calls = observe(f)
+  const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
+  assert.equal(result.contract, 'DSH_PLAN_REVISION_ABORTED_TASK_RESET_V1')
+  const state = await readRecoverySessionState(f)
+  assert.equal(state.tasks.find(item => item.taskId === 'T1').status, 'pending')
+  assert.equal(state.tasks.find(item => item.taskId === 'T1').checkState, null)
+  assert.equal(state.recoveryAdmission, undefined)
+  assert.deepEqual(calls, { create: 0, resume: 0 })
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+test('T15 stale finish-only snapshot cannot send a newly failed record through legacy recovery', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  await mutateRecoverySessionState(f, s => { s.ownerRuns['T1:api'].status = 'awaiting_finish' })
+  const lock = f.runtime.withWorkflowLock.bind(f.runtime)
+  let injected = false
+  let boundary
+  f.runtime.withWorkflowLock = async (...args) => {
+    if (!injected) {
+      injected = true
+      boundary = await mutateRecoverySessionState(f, s => { s.ownerRuns['T1:api'].status = 'failed' })
+    }
+    return lock(...args)
+  }
+  const calls = observe(f)
+  await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), /恢复来源已变化/u)
+  assert.deepEqual(await readRecoverySessionState(f), boundary)
+  assert.deepEqual(calls, { create: 0, resume: 0 })
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+for (const timing of ['before_reserve', 'before_reserve_with_handoff', 'after_reserve']) {
+  test(`T15 authority ${timing} reaches the main outbox through public background recovery`, async t => {
+    const f = await createRecoverySessionFixture(t, { executable: true })
+    const reserve = f.runtime.reserveRecoveryAdmission.bind(f.runtime)
+    f.runtime.reserveRecoveryAdmission = async (...args) => {
+      const receipt = timing === 'after_reserve' ? await reserve(...args) : undefined
+      await admitAuthorityFailure(f)
+      if (timing === 'before_reserve_with_handoff') await mutateRecoverySessionState(f, s => {
+        s.status = 'blocked'
+        s.handoffQueue = [{ sourceTaskId: 'T1', status: 'pending' }]
+      })
+      return receipt ?? reserve(...args)
+    }
+    const calls = observe(f)
+    await f.runtime.dispatchOwnerRecovery(f.admissionAgent, f.workflowId, 'T1', 'api')
+    const pending = f.runtime.manualOwnerRecoveries.get(`${f.workflowId}:T1:api`)
+    assert.ok(pending)
+    const result = await pending
+    assert.equal(result.strategy, 'request_user_authority')
+    const state = await readRecoverySessionState(f)
+    assert.equal(state.ownerRuns['T1:api'].status, 'blocked')
+    assert.equal(state.tasks.find(item => item.taskId === 'T1').action, 'await_user')
+    assert.equal(state.recoveryAdmission?.budget.totalUsed ?? 0, timing === 'after_reserve' ? 1 : 0)
+    assert.equal(state.ownerRuns['T1:api'].recoverySession, undefined)
+    const notifications = Object.values(state.mainOutbox)
+    assert.equal(notifications.length, 1)
+    const deliveries = []
+    f.admissionAgent.followup = message => deliveries.push(message)
+    await f.runtime.deliverMainOutbox(f.admissionAgent, f.workflowId, notifications[0].notificationId)
+    assert.equal(deliveries.length, 1)
+    assert.equal(JSON.parse(deliveries[0].content[0].text).classificationBasis.externalPermissionGap.requiredPermission, 'read:ledger')
+    assert.deepEqual(calls, { create: 0, resume: 0 })
+    assert.equal(f.adapter.requests.length, 0)
+  })
+}
+
+for (const change of ['running', 'new_attempt']) {
+  test(`T15 authority source becoming ${change} cannot be overwritten by a stale recovery`, async t => {
+    const f = await createRecoverySessionFixture(t, { executable: true })
+    await admitAuthorityFailure(f)
+    const lock = f.runtime.withWorkflowLock.bind(f.runtime)
+    let boundary
+    let injected = false
+    f.runtime.withWorkflowLock = async (...args) => {
+      if (!injected) {
+        injected = true
+        boundary = await mutateRecoverySessionState(f, s => {
+          if (change === 'running') {
+            s.ownerRuns['T1:api'].status = 'running'
+            s.tasks.find(item => item.taskId === 'T1').status = 'running'
+          } else s.ownerRuns['T1:api'].attempt += 1
+        })
+      }
+      return lock(...args)
+    }
+    const calls = observe(f)
+    const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
+    assert.equal(result.reason, 'recovery_source_changed')
+    assert.deepEqual(await readRecoverySessionState(f), boundary)
+    assert.deepEqual(calls, { create: 0, resume: 0 })
+    assert.equal(f.adapter.requests.length, 0)
+  })
+}
+
+test('T15 an ordinary error resembling authority refusal is not converted to a user decision', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  const before = await readRecoverySessionState(f)
+  const failure = new Error('RecoveryAdmission 当前失败需要用户决定')
+  f.runtime.reserveRecoveryAdmission = async () => { throw failure }
+  await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), error => error === failure)
+  assert.deepEqual(await readRecoverySessionState(f), before)
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+test('T15 authority refusal for a now-running source pauses without rewriting the live Owner', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  const reserve = f.runtime.reserveRecoveryAdmission.bind(f.runtime)
+  let boundary
+  f.runtime.reserveRecoveryAdmission = async (...args) => {
+    await admitAuthorityFailure(f)
+    boundary = await mutateRecoverySessionState(f, s => {
+      s.status = 'running'
+      s.ownerRuns['T1:api'].status = 'running'
+      s.tasks.find(item => item.taskId === 'T1').status = 'running'
+    })
+    return reserve(...args)
+  }
+  const calls = observe(f)
+  const result = await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
+  assert.equal(result.reason, 'recovery_source_changed')
+  assert.deepEqual(await readRecoverySessionState(f), boundary)
+  assert.deepEqual(calls, { create: 0, resume: 0 })
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+async function supervisorControl(f, action, args = {}) {
+  if (!f.runtime.controlBridges.has(f.workflowId)) {
+    await f.runtime.ensureControlBridge(f.admissionAgent, await readRecoverySessionState(f))
+  }
+  return f.runtime.dispatchControlRequest({ contract: 'DSH_WORKFLOW_CONTROL_V1',
+    workflowId: f.workflowId, token: f.runtime.controlBridges.get(f.workflowId).manifest.token,
+    action, ...args })
+}
+
+async function executeNextSupervisorTask(f, expectedTaskId) {
+  const next = await supervisorControl(f, 'supervisor-next')
+  assert.equal(next.action, 'create')
+  assert.deepEqual(next.tasks.map(item => item.taskId), [expectedTaskId])
+  const ack = await supervisorControl(f, 'supervisor-ack', { actionId: next.actionId })
+  const reservation = ack.reservations[0]
+  await supervisorControl(f, 'supervisor-execute', { reservationId: reservation.reservationId })
+  const pending = f.runtime.supervisorDispatches.get(`${f.workflowId}:${reservation.taskId}:${reservation.ownerId}`)
+  assert.ok(pending)
+  await pending
+  return reservation
+}
+
+test('T15 real Supervisor initial failure and retry preserve source, enforce credit, and allow independent initial work', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true,
+    limits: { totalLimit: 1, problemLimit: 1 },
+    modelScript: m => [...failedModel(m), ...failedModel(m), ...completedModel(m)] })
+  await mutateRecoverySessionState(f, s => { delete s.ownerRuns['T1:api'] })
+  const calls = observe(f)
+  await executeNextSupervisorTask(f, 'T1')
+  const first = await readRecoverySessionState(f)
+  assert.equal(first.ownerRuns['T1:api'].status, 'failed')
+  assert.equal(first.recoveryAdmission, undefined)
+  assert.equal(first.tasks.find(item => item.taskId === 'T1').status, 'pending')
+  assert.equal(first.supervisorOutbox['T1:api'].status, 'failed')
+  await executeNextSupervisorTask(f, 'T1')
+  const retry = await readRecoverySessionState(f)
+  assert.ok(retry.recoveryAdmission, JSON.stringify(retry.supervisorOutbox))
+  assert.equal(retry.recoveryAdmission.budget.totalUsed, 1)
+  assert.equal(retry.recoveryAdmission.sources[0].sessionId, first.ownerRuns['T1:api'].sessionId)
+  assert.equal(retry.ownerRuns['T1:api'].status, 'failed')
+  assert.equal(retry.ownerRuns['T1:api'].recoverySession.phase, 'settled_failed')
+  const exhausted = await executeNextSupervisorTask(f, 'T1')
+  const paused = await readRecoverySessionState(f)
+  assert.equal(paused.status, 'running')
+  assert.equal(paused.supervisorOutbox['T1:api'].status, 'stopped')
+  assert.equal(paused.tasks.find(item => item.taskId === 'T1').status, 'stopped')
+  assert.deepEqual(paused.ownerRuns['T1:api'], retry.ownerRuns['T1:api'])
+  assert.deepEqual(paused.recoveryAdmission, retry.recoveryAdmission)
+  assert.equal(f.adapter.requests.length, 4)
+  const replay = await supervisorControl(f, 'supervisor-execute', { reservationId: exhausted.reservationId })
+  assert.equal(replay.execute, false)
+  await executeNextSupervisorTask(f, 'T2')
+  const done = await readRecoverySessionState(f)
+  assert.equal(done.ownerRuns['T2:worker'].status, 'completed')
+  assert.equal(done.supervisorOutbox['T2:worker'].status, 'completed')
+  assert.equal(done.recoveryAdmission.budget.totalUsed, 1)
+  assert.equal(f.adapter.requests.length, 8)
+  assert.deepEqual(calls, { create: 5, resume: 0 }) // Three Owners plus the successful Owner's curator/reviewer.
+})
+
+test('T15 real Supervisor recovery completes only after the actual successful settlement', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true, modelScript: completedModel })
+  const reserve = f.runtime.reserveRecoveryAdmission.bind(f.runtime)
+  f.runtime.reserveRecoveryAdmission = async (...args) => {
+    const held = await readRecoverySessionState(f)
+    assert.equal(held.tasks[0].status, 'pending')
+    const next = await supervisorControl(f, 'supervisor-next')
+    assert.equal(next.action, 'wait') // The slot remains occupied while admission sees a pending source.
+    await supervisorControl(f, 'supervisor-ack', { actionId: next.actionId })
+    assert.equal((await readRecoverySessionState(f)).tasks[0].status, 'pending')
+    return reserve(...args)
+  }
+  const calls = observe(f)
+  const reservation = await executeNextSupervisorTask(f, 'T1')
+  const done = await readRecoverySessionState(f)
+  assert.equal(done.ownerRuns['T1:api'].status, 'completed', JSON.stringify(done.supervisorOutbox))
+  assert.equal(done.ownerRuns['T1:api'].recoverySession.phase, 'settled_succeeded')
+  assert.equal(done.supervisorOutbox['T1:api'].status, 'completed')
+  assert.equal(done.recoveryAdmission.budget.totalUsed, 1)
+  await supervisorControl(f, 'supervisor-execute', { reservationId: reservation.reservationId })
+  assert.deepEqual(await readRecoverySessionState(f), done)
+  assert.equal(f.adapter.requests.length, 4)
+  assert.deepEqual(calls, { create: 3, resume: 0 }) // One Owner plus curator/reviewer.
+})
+
+test('T15 Supervisor replays an unsettled session as paused without another launch or fabricated completion', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true, responses: ['No structured result yet.'] })
+  const calls = observe(f)
+  await executeNextSupervisorTask(f, 'T1')
+  const before = await readRecoverySessionState(f)
+  assert.ok(before.ownerRuns['T1:api'].recoverySession, JSON.stringify(before.supervisorOutbox))
+  assert.equal(before.ownerRuns['T1:api'].recoverySession.phase, 'technical_pause')
+  await executeNextSupervisorTask(f, 'T1')
+  const after = await readRecoverySessionState(f)
+  assert.equal(after.supervisorOutbox['T1:api'].status, 'stopped')
+  assert.deepEqual(after.ownerRuns['T1:api'], before.ownerRuns['T1:api'])
+  assert.deepEqual(after.recoveryAdmission, before.recoveryAdmission)
+  assert.equal(f.adapter.requests.length, 1)
+  assert.deepEqual(calls, { create: 1, resume: 0 })
+})
+
+test('T15 Supervisor authority pause is not completed and persists the main notification without spending', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  await admitAuthorityFailure(f)
+  await mutateRecoverySessionState(f, s => {
+    s.status = 'running'
+    Object.assign(s.tasks[0], { status: 'pending', action: null, reason: null })
+  })
+  const calls = observe(f)
+  await executeNextSupervisorTask(f, 'T1')
+  const state = await readRecoverySessionState(f)
+  assert.equal(state.supervisorOutbox['T1:api'].status, 'stopped')
+  assert.equal(state.tasks[0].action, 'await_user')
+  assert.equal(state.ownerRuns['T1:api'].phase, 'awaiting_user_authority')
+  assert.equal(Object.values(state.mainOutbox).length, 1)
+  assert.equal(state.recoveryAdmission, undefined)
+  assert.deepEqual(calls, { create: 0, resume: 0 })
+})
+
+test('T15 Supervisor does not infer recovery settlement from an actual integrated Git result', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true, modelScript: completedModel })
+  await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
+  // Keep the real verified/integrated commit, but inject an uncommitted receipt
+  // projection. This is an entry-routing counterexample, not a crash proof.
+  const before = await mutateRecoverySessionState(f, s => {
+    s.status = 'running'
+    s.ownerRuns['T1:api'].status = 'awaiting_finish'
+    s.ownerRuns['T1:api'].recoverySession.phase = 'submitted'
+    delete s.ownerRuns['T1:api'].recoverySession.successReceipt
+    Object.assign(s.tasks[0], { status: 'pending', executorId: null, reason: null, action: null })
+  })
+  const calls = observe(f)
+  await executeNextSupervisorTask(f, 'T1')
+  const after = await readRecoverySessionState(f)
+  assert.equal(after.supervisorOutbox['T1:api'].status, 'stopped')
+  assert.equal(after.supervisorOutbox['T1:api'].recoveryPause.reason, 'owner_success_unsettled')
+  assert.deepEqual(after.ownerRuns['T1:api'], before.ownerRuns['T1:api'])
+  assert.deepEqual(after.recoveryAdmission, before.recoveryAdmission)
+  assert.equal(f.adapter.requests.length, 4)
+  assert.deepEqual(calls, { create: 0, resume: 0 })
+})
+
+test('T15 Supervisor reserved recovery slot cannot generate phantom Owner execution timeouts', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  const next = await supervisorControl(f, 'supervisor-next')
+  await supervisorControl(f, 'supervisor-ack', { actionId: next.actionId })
+  const before = await mutateRecoverySessionState(f, s => {
+    s.supervisorOutbox['T1:api'].status = 'launching'
+    s.supervisorOutbox['T1:api'].launchedAt = '2000-01-01T00:00:00.000Z'
+  })
+  assert.equal(before.tasks[0].status, 'pending')
+  let cursor = before.supervisorEventCursor
+  for (let i = 0; i < 2; i++) {
+    const observation = await supervisorControl(f, 'supervisor-await-event', { cursor, waitMs: 1 })
+    assert.equal(observation.kind, 'timeout')
+    assert.equal(observation.event.type, 'supervisor.wait-timeout')
+    cursor = observation.cursor
+  }
+  const after = await readRecoverySessionState(f)
+  assert.equal(after.tasks[0].status, 'pending')
+  assert.equal(after.supervisorTimeouts, undefined)
+  assert.deepEqual(after.ownerRuns, before.ownerRuns)
+  assert.deepEqual(after.recoveryAdmission, before.recoveryAdmission)
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+test('T15 whole-workflow recovery preserves failed source and queues a budgeted Supervisor execution', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true, modelScript: failedModel,
+    limits: { totalLimit: 1, problemLimit: 1 } })
+  const before = await mutateRecoverySessionState(f, s => {
+    s.status = 'failed'
+    Object.assign(s.tasks[0], { status: 'stopped', reason: 'runtime_failed', action: 'retry_runtime' })
+  })
+  const calls = observe(f)
+  await f.runtime.recoverWorkflow(f.admissionAgent, f.workflowId)
+  const queued = await readRecoverySessionState(f)
+  assert.deepEqual(queued.ownerRuns, before.ownerRuns)
+  assert.equal(queued.recoveryAdmission, undefined)
+  assert.equal(queued.supervisorOutbox['T1:api'].status, 'reserved')
+  const reservationId = queued.supervisorOutbox['T1:api'].reservationId
+  assert.ok(reservationId)
+  await supervisorControl(f, 'supervisor-execute', { reservationId })
+  await f.runtime.supervisorDispatches.get(`${f.workflowId}:T1:api`)
+  const failed = await readRecoverySessionState(f)
+  assert.equal(failed.recoveryAdmission.budget.totalUsed, 1)
+  assert.equal(failed.recoveryAdmission.sources[0].sessionId, before.ownerRuns['T1:api'].sessionId)
+  assert.equal(failed.ownerRuns['T1:api'].recoverySession.phase, 'settled_failed')
+  assert.equal(f.adapter.requests.length, 2)
+  assert.deepEqual(calls, { create: 1, resume: 0 })
+})
+
+test('T15 whole-workflow recovery keeps typed user decisions ahead of handoff and bulk requeue', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true })
+  await admitAuthorityFailure(f)
+  const before = await mutateRecoverySessionState(f, s => {
+    s.status = 'blocked'
+    s.handoffQueue = [{ sourceTaskId: 'T1', status: 'pending' }]
+  })
+  await f.runtime.recoverWorkflow(f.admissionAgent, f.workflowId)
+  const after = await readRecoverySessionState(f)
+  assert.equal(after.tasks[0].action, 'await_user')
+  assert.equal(after.ownerRuns['T1:api'].phase, 'awaiting_user_authority')
+  assert.equal(Object.values(after.mainOutbox).length, 1)
+  assert.deepEqual(after.tasks[1], before.tasks[1])
+  assert.equal(after.supervisorOutbox, undefined)
+  assert.equal(after.recoveryAdmission, undefined)
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+for (const path of ['finishable', 'pending_merge']) {
+  test(`T15 whole-workflow ${path} recovery cannot bypass an unsettled session`, async t => {
+    const f = await createRecoverySessionFixture(t, { executable: true, modelScript: completedModel })
+    await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
+    const before = await mutateRecoverySessionState(f, s => {
+      s.status = 'failed'
+      s.ownerRuns['T1:api'].status = 'awaiting_finish'
+      s.ownerRuns['T1:api'].recoverySession.phase = 'submitted'
+      delete s.ownerRuns['T1:api'].recoverySession.successReceipt
+      if (path === 'pending_merge') s.pendingTaskMerge = { taskId: 'T1', ownerId: 'api' }
+      Object.assign(s.tasks[0], { status: 'pending', executorId: null, reason: null, action: null })
+    })
+    const calls = observe(f)
+    const result = await f.runtime.recoverWorkflow(f.admissionAgent, f.workflowId)
+    assert.equal(result.outcome, 'paused')
+    assert.equal(result.reason, 'owner_success_unsettled')
+    assert.deepEqual(await readRecoverySessionState(f), before)
+    assert.deepEqual(calls, { create: 0, resume: 0 })
+  })
+}
+
+test('T15 whole-workflow missing configuration cannot fall back to legacy recovery', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  const before = await mutateRecoverySessionState(f, s => {
+    s.status = 'failed'
+    s.recoveryProtocol = 'DSH_RECOVERY_ADMISSION_V1'
+    delete s.recoveryAdmissionConfig
+  })
+  await assert.rejects(f.runtime.recoverWorkflow(f.admissionAgent, f.workflowId))
+  assert.deepEqual(await readRecoverySessionState(f), before)
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+test('T15 whole-workflow unknown Owner source is not rewritten into a free initial launch', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  const before = await mutateRecoverySessionState(f, s => {
+    s.status = 'failed'
+    s.ownerRuns['T1:api'].status = 'orphaned'
+    Object.assign(s.tasks[0], { status: 'stopped', reason: 'owner_orphaned', action: 'recover_owner' })
+  })
+  await assert.rejects(f.runtime.recoverWorkflow(f.admissionAgent, f.workflowId), /没有可核验的恢复来源/u)
+  assert.deepEqual(await readRecoverySessionState(f), before)
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+for (const totalLimit of [1, 2]) {
+  test(`T15 convergence probe preserves failed source and the ${totalLimit}-credit limit`, async t => {
+    const f = await createRecoverySessionFixture(t, { executable: true,
+      limits: { totalLimit, problemLimit: totalLimit },
+      modelScript: m => [...failedModel(m), ...failedModel(m)] })
+    const calls = observe(f)
+    await assert.rejects(f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api'), { name: 'OwnerReportedError' })
+    const before = await mutateRecoverySessionState(f, s => {
+      s.status = 'running'
+      Object.assign(s.tasks[0], { status: 'stopped', reason: 'runtime_failed', action: 'retry_runtime',
+        autonomousRecovery: { contract: 'DSH_AUTONOMOUS_RECOVERY_V1', strategy: 'autonomous_incident',
+          failureClass: 'transient', evidenceDigest: '0'.repeat(64), usedStrategies: [] } })
+    })
+    const probe = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'convergence-probe')
+    assert.equal(probe.resumed, true)
+    const queued = await readRecoverySessionState(f)
+    assert.deepEqual(queued.ownerRuns, before.ownerRuns)
+    assert.deepEqual(queued.recoveryAdmission, before.recoveryAdmission)
+    assert.equal(queued.tasks[0].status, 'pending')
+    await executeNextSupervisorTask(f, 'T1')
+    const after = await readRecoverySessionState(f)
+    assert.equal(after.recoveryAdmission.budget.totalUsed, totalLimit)
+    assert.equal(after.recoveryAdmission.budget.problems.length, 1)
+    assert.equal(after.supervisorOutbox['T1:api'].status, totalLimit === 1 ? 'stopped' : 'failed')
+    assert.equal(f.adapter.requests.length, totalLimit * 2)
+    assert.deepEqual(calls, { create: totalLimit, resume: 0 })
+  })
+}
+
+test('T15 convergence probe persists typed user authority instead of resuming technical execution', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  await admitAuthorityFailure(f)
+  await mutateRecoverySessionState(f, s => {
+    s.status = 'running'
+    Object.assign(s.tasks[0], { status: 'stopped', reason: 'runtime_failed', action: 'retry_runtime',
+      autonomousRecovery: { contract: 'DSH_AUTONOMOUS_RECOVERY_V1', strategy: 'autonomous_incident',
+        failureClass: 'transient', evidenceDigest: '0'.repeat(64), usedStrategies: [] } })
+  })
+  const result = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'convergence-probe')
+  assert.equal(result.resumed, false)
+  assert.deepEqual(result.authorityTasks, ['T1'])
+  const after = await readRecoverySessionState(f)
+  assert.equal(after.tasks[0].action, 'await_user')
+  assert.equal(after.ownerRuns['T1:api'].phase, 'awaiting_user_authority')
+  assert.equal(Object.values(after.mainOutbox).length, 1)
+  assert.equal(after.recoveryAdmission, undefined)
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+test('T15 convergence probe cannot manufacture a recoverable Owner from an orphaned source', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  const before = await mutateRecoverySessionState(f, s => {
+    s.ownerRuns['T1:api'].status = 'orphaned'
+    Object.assign(s.tasks[0], { status: 'stopped', reason: 'owner_orphaned', action: 'recover_owner',
+      autonomousRecovery: { contract: 'DSH_AUTONOMOUS_RECOVERY_V1', strategy: 'autonomous_incident',
+        failureClass: 'transient', evidenceDigest: '0'.repeat(64), usedStrategies: [] } })
+  })
+  const result = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'convergence-probe')
+  assert.equal(result.resumed, false)
+  assert.deepEqual(await readRecoverySessionState(f), before)
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+test('T15 convergence probe rejects missing protected configuration without a legacy fallback', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  const before = await mutateRecoverySessionState(f, s => {
+    s.recoveryProtocol = 'DSH_RECOVERY_ADMISSION_V1'
+    delete s.recoveryAdmissionConfig
+  })
+  await assert.rejects(f.runtime.probeAutonomousConvergence(f.admissionAgent, f.workflowId))
+  assert.deepEqual(await readRecoverySessionState(f), before)
+  assert.equal(f.adapter.requests.length, 0)
+})
+
+// Controlled persisted incident state: verifies entry routing, not how strategy
+// exhaustion is produced by the legacy recovery loop.
+test('T15 convergence probe keeps an actual persisted Owner incident paused across repeated probes', async t => {
+  const f = await createRecoverySessionFixture(t, { executable: true })
+  const before = await mutateRecoverySessionState(f, s => {
+    s.status = 'running'
+    const recovery = { contract: 'DSH_AUTONOMOUS_RECOVERY_V1', strategy: 'autonomous_incident',
+      failureClass: 'transient', evidenceDigest: '0'.repeat(64), usedStrategies: [] }
+    Object.assign(s.ownerRuns['T1:api'], { status: 'blocked', phase: 'autonomous_incident',
+      autonomousRecovery: recovery })
+    Object.assign(s.tasks[0], { status: 'stopped', reason: 'runtime_failed', action: 'retry_runtime',
+      autonomousRecovery: recovery })
+  })
+  const calls = observe(f)
+  for (let i = 0; i < 2; i++) {
+    const probe = await f.runtime.driveWorkflow(f.admissionAgent, f.workflowId, 'convergence-probe')
+    assert.equal(probe.resumed, false)
+    assert.deepEqual(await readRecoverySessionState(f), before)
+  }
+  assert.equal(f.adapter.requests.length, 0)
+  assert.deepEqual(calls, { create: 0, resume: 0 })
+})

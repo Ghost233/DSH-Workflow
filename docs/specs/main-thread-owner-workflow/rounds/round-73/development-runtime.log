@@ -1,0 +1,15 @@
+✔ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (3789.891583ms)
+✔ T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed (1487.019417ms)
+✔ T15 candidate pause rejects a source change before finish without merging the independent Owner result (2020.760041ms)
+✔ T15 candidate pause rejects a source change before Owner submission without verification or a commit (1477.324417ms)
+✔ T15 candidate pause turns a real external permission gap into awaiting-user without charging recovery (1498.460625ms)
+✔ T15 candidate pause rejects persisted completed reservation replays while its Owner and task are still live (1547.519708ms)
+✔ T15 candidate pause rejects persisted failed reservation replays while its Owner and task are still live (1498.079583ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 13486.17675

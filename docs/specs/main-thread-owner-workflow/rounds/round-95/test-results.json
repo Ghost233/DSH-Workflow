@@ -1,0 +1,40 @@
+{
+  "contract": "DSH_TICKET_TEST_RESULTS_V1",
+  "candidateId": "R95-T28-public-owner-decision-session",
+  "capturedAt": "2026-09-11T22:32:06Z",
+  "command": "TSX_TSCONFIG_PATH=deepseek-harness/tsconfig.json node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit --test-concurrency=1 owner-workflow-plugin/test/public-owner-change.test.mjs owner-workflow-plugin/test/public-owner-session-proof.test.mjs owner-workflow-plugin/test/public-owner-decision-session.test.mjs owner-workflow-plugin/test/owner-advice-session.test.mjs owner-workflow-plugin/test/replan-session.test.mjs owner-workflow-plugin/test/supervisor.test.mjs owner-workflow-plugin/test/security.test.mjs owner-workflow-plugin/test/plugin.test.mjs",
+  "summary": {
+    "tests": 115,
+    "passed": 101,
+    "failed": 0,
+    "skipped": 14,
+    "cancelled": 0,
+    "durationMs": 37035.848375
+  },
+  "focused": {
+    "tests": 9,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "cancelled": 0,
+    "durationMs": 8273.264208
+  },
+  "files": {
+    "owner-workflow-plugin/src/public-owner-session.mjs": "58c732b1aaec3083adb11a61785d5e815d81d324251e51b70f2058ed5488c9aa",
+    "owner-workflow-plugin/src/runtime.mjs": "9d55d7039292ab2e8f0aec2504a8d2388fbb4cb795dff08397c85213e47a97c0",
+    "owner-workflow-plugin/src/supervisor.mjs": "357ea05370a79620ab319f6c8445b79204d9e1c5c00587765313a823efa8088b",
+    "owner-workflow-plugin/src/agent-policy.mjs": "0e934c88bd1d55e379f2e9d7ab0d040888979eadd4866ad31c64b15c55ba15a5",
+    "owner-workflow-plugin/index.js": "2e4ecfcabd1fc7fdb706c9a9aa0754b839ac9bf6a918ca2f063af67f7a3b8c33",
+    "owner-workflow-plugin/test/public-owner-decision-session.test.mjs": "4a3dc82625106d9f9297e49b69624bb5e08bc63348e38aafb9dbe28efd9a8b6c",
+    "owner-workflow-plugin/test/supervisor.test.mjs": "cdd5a3632f75ec2fd87836437c6f9b1ad724c5890acb1edf23019910b18278af"
+  },
+  "supersededRuns": [
+    {
+      "tests": 32,
+      "passed": 30,
+      "failed": 1,
+      "cancelled": 1,
+      "reason": "timeout cause was not yet distinct and business-decision fixture referenced an unbound AC"
+    }
+  ]
+}

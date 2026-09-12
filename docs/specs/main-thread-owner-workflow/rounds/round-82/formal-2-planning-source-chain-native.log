@@ -1,0 +1,40 @@
+TAP version 13
+# Subtest: 首次原生创建尚未进入 HEAD 的 Spec/Ticket，缺失基线 blob 正确作为 null
+ok 1 - 首次原生创建尚未进入 HEAD 的 Spec/Ticket，缺失基线 blob 正确作为 null
+  ---
+  duration_ms: 693.123666
+  type: 'test'
+  ...
+# Subtest: 真实 Harness 原生 edit 链绑定 T05 引用和实际 Git baseline，并由只读 Runtime 入口返回 source-validated
+ok 2 - 真实 Harness 原生 edit 链绑定 T05 引用和实际 Git baseline，并由只读 Runtime 入口返回 source-validated
+  ---
+  duration_ms: 673.923625
+  type: 'test'
+  ...
+# Subtest: 缺失尾项、跨文件借用、incomplete terminal 与暂存用户变更均拒绝而不修复来源或 index
+ok 3 - 缺失尾项、跨文件借用、incomplete terminal 与暂存用户变更均拒绝而不修复来源或 index
+  ---
+  duration_ms: 851.33075
+  type: 'test'
+  ...
+# Subtest: 已提交的旧来源保留在 journal 时，新 baseline 上仅选择新的原生链仍可验证
+ok 4 - 已提交的旧来源保留在 journal 时，新 baseline 上仅选择新的原生链仍可验证
+  ---
+  duration_ms: 586.293167
+  type: 'test'
+  ...
+# Subtest: 真实 Runtime 入口不接受其他主 agent 复用来源，也不接受有父会话的 child
+ok 5 - 真实 Runtime 入口不接受其他主 agent 复用来源，也不接受有父会话的 child
+  ---
+  duration_ms: 372.523666
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3370.866042

@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+    "--import",
+    "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+    "--test",
+    "--test-force-exit",
+    "owner-workflow-plugin/test/recovery-session.test.mjs"
+  ],
+  "exitCode": 0,
+  "timedOut": false
+}

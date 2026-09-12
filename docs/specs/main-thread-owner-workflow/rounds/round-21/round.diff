@@ -1,0 +1,52 @@
+--- owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs (baseline)
++++ owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs
+@@ -113,7 +113,7 @@
+   }
+ }
+
+-async function mountHarness(root, adapter, compression = 'none') {
++async function mountHarness(root, adapter, compression = 'none', executable = false) {
+   const modules = await sourceModules()
+   const ctx = new modules.Context()
+   ctx.baseUrl = pathToFileURL(harnessRoot).href + '/'
+@@ -126,13 +126,15 @@
+   await ctx.plugin(modules.AgentRegistry)
+   await ctx.plugin(modules.AgentLoop, { agents: [] })
+   await ctx.plugin(modules.SubagentRuntime)
+-  // owner_submit runs its task-bound verification through executeOwnerSnapshot.
+-  // Install the real source sandbox stack so this fixture records genuine shell
+-  // enforcement rather than accepting a test substitute for the verification.
+-  await ctx.plugin(modules.LocalSandboxProvider, {})
+-  await ctx.plugin(modules.SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: root })
+-  await ctx.plugin(modules.LocalSubprocessRuntime)
+-  await ctx.plugin(modules.SandboxBashExecutor, { cwd: root, timeoutMs: 30_000 })
++  // Executable Owners need real sandbox enforcement for fixed verification.
++  // Observation-only fixtures must retain their single reserved input: the
++  // sandbox policy also injects a runtime-context message into the session.
++  if (executable) {
++    await ctx.plugin(modules.LocalSandboxProvider, {})
++    await ctx.plugin(modules.SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: root })
++    await ctx.plugin(modules.LocalSubprocessRuntime)
++    await ctx.plugin(modules.SandboxBashExecutor, { cwd: root, timeoutMs: 30_000 })
++  }
+   // The real AgentPresets service is present for the source provider's
+   // composeFrom contract.  This isolated transport fixture deliberately has
+   // no full host preset profile; the actual production owner_submit definition
+@@ -369,7 +371,7 @@
+   const adapter = new modules.MockAdapter(modelScript === undefined
+     ? responses.map(text => modules.textResponse(text))
+     : modelScript(modules))
+-  const mounted = await mountHarness(sessionRoot, adapter, compression)
++  const mounted = await mountHarness(sessionRoot, adapter, compression, executable)
+   const runtime = createOwnerWorkflowRuntime(mounted.ctx, {})
+   await runtime.prepareRoot(root)
+   mounted.ctx.tools.register(ownerSubmitDefinition(runtime))
+@@ -394,7 +396,7 @@
+   }
+   const mount = async script => {
+     const adapter = new modules.MockAdapter(script.map(text => modules.textResponse(text)))
+-    const mounted = await mountHarness(sessionRoot, adapter, compression)
++    const mounted = await mountHarness(sessionRoot, adapter, compression, executable)
+     fixture.adapter = adapter
+     fixture.ctx = mounted.ctx
+     return mounted.ctx

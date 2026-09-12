@@ -1,0 +1,1368 @@
+{
+  "contract": "DSH_T14_STORAGE_PROBE_V1",
+  "mode": "--formal",
+  "startedAt": "2026-09-11T01:50:32.446Z",
+  "source": {
+    "runtime": "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs",
+    "adapter": {
+      "directory": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t14-runtime-Xg050Z",
+      "path": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t14-runtime-Xg050Z/runtime-adapted.mjs",
+      "sourceRuntime": "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs",
+      "sourceSha256": "962fdf8b259b80add94dd8fedeac4cc83e5a0485445990a6356b7774b9f63298",
+      "adapterSha256": "5254bfe49753859cef188ec0bb2d813461e00978f559e4fab12081ac27865e28",
+      "staticRelativeImportsRewritten": 23,
+      "appendedExport": [
+        "saveState",
+        "readJson",
+        "writeJsonAtomic",
+        "statePath"
+      ]
+    },
+    "recoveryBudget": "/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/recovery-budget.mjs"
+  },
+  "scenarios": {
+    "normal": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/normal-bOCbkB",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-normal",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/normal-bOCbkB/.probe-runtime/workflows/wf-normal.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "result": {
+        "pid": 75448,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 75448,
+            "at": "2026-09-11T01:50:32.535Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75448,
+            "at": "2026-09-11T01:50:32.538Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 75448,
+            "at": "2026-09-11T01:50:32.540Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "simulated-external-start-boundary",
+            "pid": 75448,
+            "at": "2026-09-11T01:50:32.540Z",
+            "requestId": "request-normal"
+          },
+          {
+            "type": "result",
+            "pid": 75448,
+            "at": "2026-09-11T01:50:32.540Z",
+            "status": "ok",
+            "outcome": "reserved"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "state": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/normal-bOCbkB",
+        "id": "wf-normal",
+        "status": "running",
+        "revision": 1,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-normal",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-normal",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-normal",
+              "attemptId": "attempt-normal",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-normal",
+          "outcome": "reserved",
+          "persistedByPid": 75448
+        },
+        "updatedAt": "2026-09-11T01:50:32.538Z"
+      }
+    },
+    "beforeReadKill": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/before-read-0eeW6V",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-before-read",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/before-read-0eeW6V/.probe-runtime/workflows/wf-before-read.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "crashed": {
+        "pid": 75449,
+        "code": null,
+        "signal": "SIGKILL",
+        "messages": [
+          {
+            "type": "barrier-ready",
+            "pid": 75449,
+            "at": "2026-09-11T01:50:32.639Z",
+            "point": "before-read"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "afterKill": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/before-read-0eeW6V",
+        "id": "wf-before-read",
+        "status": "running",
+        "revision": 0,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-before-read",
+          "totalLimit": 1,
+          "totalUsed": 0,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 0,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": []
+        }
+      },
+      "restarted": {
+        "pid": 75451,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 75451,
+            "at": "2026-09-11T01:50:32.731Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75451,
+            "at": "2026-09-11T01:50:32.734Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 75451,
+            "at": "2026-09-11T01:50:32.736Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "simulated-external-start-boundary",
+            "pid": 75451,
+            "at": "2026-09-11T01:50:32.736Z",
+            "requestId": "request-before-read"
+          },
+          {
+            "type": "result",
+            "pid": 75451,
+            "at": "2026-09-11T01:50:32.736Z",
+            "status": "ok",
+            "outcome": "reserved"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "afterRestart": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/before-read-0eeW6V",
+        "id": "wf-before-read",
+        "status": "running",
+        "revision": 1,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-before-read",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-before-read",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-before-read",
+              "attemptId": "attempt-before-read",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-before-read",
+          "outcome": "reserved",
+          "persistedByPid": 75451
+        },
+        "updatedAt": "2026-09-11T01:50:32.734Z"
+      }
+    },
+    "computeKillAndTrueStaleRecovery": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/compute-kill-Pwg2du",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-compute-kill",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/compute-kill-Pwg2du/.probe-runtime/workflows/wf-compute-kill.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "crashed": {
+        "pid": 75452,
+        "code": null,
+        "signal": "SIGKILL",
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 75452,
+            "at": "2026-09-11T01:50:32.829Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75452,
+            "at": "2026-09-11T01:50:32.832Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "barrier-ready",
+            "pid": 75452,
+            "at": "2026-09-11T01:50:32.833Z",
+            "point": "reserved-in-memory-before-save"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "afterKill": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/compute-kill-Pwg2du",
+        "id": "wf-compute-kill",
+        "status": "running",
+        "revision": 0,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-compute-kill",
+          "totalLimit": 1,
+          "totalUsed": 0,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 0,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": []
+        }
+      },
+      "immediate": {
+        "pid": 75453,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 75453,
+            "at": "2026-09-11T01:50:32.925Z"
+          },
+          {
+            "type": "operation-error",
+            "pid": 75453,
+            "at": "2026-09-11T01:50:32.926Z",
+            "message": "工作流 wf-compute-kill 的状态正在由另一个 Harness 临界区更新",
+            "calls": 1
+          },
+          {
+            "type": "result",
+            "pid": 75453,
+            "at": "2026-09-11T01:50:32.926Z",
+            "status": "error"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "trueStaleWaitMs": 30302,
+      "recovered": {
+        "pid": 75803,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 75803,
+            "at": "2026-09-11T01:51:03.346Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75803,
+            "at": "2026-09-11T01:51:03.350Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 75803,
+            "at": "2026-09-11T01:51:03.353Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "simulated-external-start-boundary",
+            "pid": 75803,
+            "at": "2026-09-11T01:51:03.353Z",
+            "requestId": "request-compute"
+          },
+          {
+            "type": "result",
+            "pid": 75803,
+            "at": "2026-09-11T01:51:03.353Z",
+            "status": "ok",
+            "outcome": "reserved"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "afterRecovery": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/compute-kill-Pwg2du",
+        "id": "wf-compute-kill",
+        "status": "running",
+        "revision": 1,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-compute-kill",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-compute-kill",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-compute",
+              "attemptId": "attempt-compute",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-compute",
+          "outcome": "reserved",
+          "persistedByPid": 75803
+        },
+        "updatedAt": "2026-09-11T01:51:03.351Z"
+      }
+    },
+    "afterSaveKill": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/after-save-hfAzVo",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-after-save",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/after-save-hfAzVo/.probe-runtime/workflows/wf-after-save.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "crashed": {
+        "pid": 75804,
+        "code": null,
+        "signal": "SIGKILL",
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 75804,
+            "at": "2026-09-11T01:51:03.496Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75804,
+            "at": "2026-09-11T01:51:03.499Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 75804,
+            "at": "2026-09-11T01:51:03.502Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "barrier-ready",
+            "pid": 75804,
+            "at": "2026-09-11T01:51:03.502Z",
+            "point": "after-save-before-start"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "afterKill": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/after-save-hfAzVo",
+        "id": "wf-after-save",
+        "status": "running",
+        "revision": 1,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-after-save",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-after-save",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-after-save",
+              "attemptId": "attempt-after-save",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-after-save",
+          "outcome": "reserved",
+          "persistedByPid": 75804
+        },
+        "updatedAt": "2026-09-11T01:51:03.499Z"
+      },
+      "reconciled": {
+        "pid": 75806,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "reconciliation-required",
+            "pid": 75806,
+            "at": "2026-09-11T01:51:03.600Z",
+            "reason": "replayed_reservation_has_no_persisted_external_session_or_start_receipt",
+            "outcome": "replayed",
+            "revision": 1
+          },
+          {
+            "type": "result",
+            "pid": 75806,
+            "at": "2026-09-11T01:51:03.600Z",
+            "status": "ok",
+            "outcome": "replayed"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "concurrentLastCredit": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/concurrent-credit-QIGu27",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-concurrent-credit",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/concurrent-credit-QIGu27/.probe-runtime/workflows/wf-concurrent-credit.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "left": {
+        "pid": 75807,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "barrier-ready",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.715Z",
+            "point": "before-read"
+          },
+          {
+            "type": "before-latest-read",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.716Z"
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.717Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 1
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.741Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 2
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.762Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 3
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.784Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 4
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.806Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 5
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.827Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 6
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.848Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 7
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.871Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 8
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:03.893Z",
+            "revision": 1,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:04.047Z",
+            "revision": 2,
+            "outcome": "rejected",
+            "calls": 9
+          },
+          {
+            "type": "reconciliation-required",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:04.047Z",
+            "reason": "replayed_reservation_has_no_persisted_external_session_or_start_receipt",
+            "outcome": "rejected"
+          },
+          {
+            "type": "result",
+            "pid": 75807,
+            "at": "2026-09-11T01:51:04.047Z",
+            "status": "ok",
+            "outcome": "rejected"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "right": {
+        "pid": 75808,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "barrier-ready",
+            "pid": 75808,
+            "at": "2026-09-11T01:51:03.715Z",
+            "point": "before-read"
+          },
+          {
+            "type": "before-latest-read",
+            "pid": 75808,
+            "at": "2026-09-11T01:51:03.717Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75808,
+            "at": "2026-09-11T01:51:03.718Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 75808,
+            "at": "2026-09-11T01:51:03.875Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "simulated-external-start-boundary",
+            "pid": 75808,
+            "at": "2026-09-11T01:51:03.875Z",
+            "requestId": "request-right"
+          },
+          {
+            "type": "result",
+            "pid": 75808,
+            "at": "2026-09-11T01:51:03.875Z",
+            "status": "ok",
+            "outcome": "reserved"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "outcomes": [
+        "rejected",
+        "reserved"
+      ],
+      "state": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/concurrent-credit-QIGu27",
+        "id": "wf-concurrent-credit",
+        "status": "running",
+        "revision": 2,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-concurrent-credit",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-concurrent-credit",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-right",
+              "attemptId": "attempt-right",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-left",
+          "outcome": "rejected",
+          "persistedByPid": 75807
+        },
+        "updatedAt": "2026-09-11T01:51:04.045Z"
+      }
+    },
+    "concurrentSameRequest": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/concurrent-credit-H2j2pw",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-concurrent-credit",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/concurrent-credit-H2j2pw/.probe-runtime/workflows/wf-concurrent-credit.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "left": {
+        "pid": 75831,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "barrier-ready",
+            "pid": 75831,
+            "at": "2026-09-11T01:51:04.151Z",
+            "point": "before-read"
+          },
+          {
+            "type": "before-latest-read",
+            "pid": 75831,
+            "at": "2026-09-11T01:51:04.153Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75831,
+            "at": "2026-09-11T01:51:04.155Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 75831,
+            "at": "2026-09-11T01:51:04.309Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "simulated-external-start-boundary",
+            "pid": 75831,
+            "at": "2026-09-11T01:51:04.309Z",
+            "requestId": "request-left"
+          },
+          {
+            "type": "result",
+            "pid": 75831,
+            "at": "2026-09-11T01:51:04.309Z",
+            "status": "ok",
+            "outcome": "reserved"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "right": {
+        "pid": 75832,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "barrier-ready",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.152Z",
+            "point": "before-read"
+          },
+          {
+            "type": "before-latest-read",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.153Z"
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.154Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 1
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.176Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 2
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.197Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 3
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.218Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 4
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.240Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 5
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.262Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 6
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.283Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 7
+          },
+          {
+            "type": "write-lock-contended",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.305Z",
+            "message": "工作流 wf-concurrent-credit 的状态正在由另一个 Harness 临界区更新",
+            "calls": 8
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.328Z",
+            "revision": 1,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.482Z",
+            "revision": 2,
+            "outcome": "replayed",
+            "calls": 9
+          },
+          {
+            "type": "reconciliation-required",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.482Z",
+            "reason": "replayed_reservation_has_no_persisted_external_session_or_start_receipt",
+            "outcome": "replayed"
+          },
+          {
+            "type": "result",
+            "pid": 75832,
+            "at": "2026-09-11T01:51:04.482Z",
+            "status": "ok",
+            "outcome": "replayed"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "outcomes": [
+        "replayed",
+        "reserved"
+      ],
+      "state": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/concurrent-credit-H2j2pw",
+        "id": "wf-concurrent-credit",
+        "status": "running",
+        "revision": 2,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-concurrent-credit",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-concurrent-credit",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-left",
+              "attemptId": "attempt-left",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-left",
+          "outcome": "replayed",
+          "persistedByPid": 75832
+        },
+        "updatedAt": "2026-09-11T01:51:04.480Z"
+      }
+    },
+    "sameRequestReplay": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/same-request-pXuA6E",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-same-request",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/same-request-pXuA6E/.probe-runtime/workflows/wf-same-request.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "first": {
+        "pid": 75835,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 75835,
+            "at": "2026-09-11T01:51:04.576Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75835,
+            "at": "2026-09-11T01:51:04.579Z",
+            "revision": 0,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 75835,
+            "at": "2026-09-11T01:51:04.582Z",
+            "revision": 1,
+            "outcome": "reserved",
+            "calls": 1
+          },
+          {
+            "type": "simulated-external-start-boundary",
+            "pid": 75835,
+            "at": "2026-09-11T01:51:04.582Z",
+            "requestId": "request-replay"
+          },
+          {
+            "type": "result",
+            "pid": 75835,
+            "at": "2026-09-11T01:51:04.582Z",
+            "status": "ok",
+            "outcome": "reserved"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "replay": {
+        "pid": 75842,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "before-latest-read",
+            "pid": 75842,
+            "at": "2026-09-11T01:51:04.676Z"
+          },
+          {
+            "type": "latest-snapshot",
+            "pid": 75842,
+            "at": "2026-09-11T01:51:04.679Z",
+            "revision": 1,
+            "hasLedger": true
+          },
+          {
+            "type": "state-saved",
+            "pid": 75842,
+            "at": "2026-09-11T01:51:04.681Z",
+            "revision": 2,
+            "outcome": "replayed",
+            "calls": 1
+          },
+          {
+            "type": "reconciliation-required",
+            "pid": 75842,
+            "at": "2026-09-11T01:51:04.681Z",
+            "reason": "replayed_reservation_has_no_persisted_external_session_or_start_receipt",
+            "outcome": "replayed"
+          },
+          {
+            "type": "result",
+            "pid": 75842,
+            "at": "2026-09-11T01:51:04.681Z",
+            "status": "ok",
+            "outcome": "replayed"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "state": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/same-request-pXuA6E",
+        "id": "wf-same-request",
+        "status": "running",
+        "revision": 2,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-same-request",
+          "totalLimit": 1,
+          "totalUsed": 1,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 1,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": [
+            {
+              "workflowId": "wf-same-request",
+              "rootProblemId": "root-problem-1",
+              "requestId": "request-replay",
+              "attemptId": "attempt-replay",
+              "taskId": "task-1",
+              "ownerId": "owner-1",
+              "executionVersion": "plan-v1",
+              "state": "reserved"
+            }
+          ]
+        },
+        "recoveryProbe": {
+          "requestId": "request-replay",
+          "outcome": "replayed",
+          "persistedByPid": 75842
+        },
+        "updatedAt": "2026-09-11T01:51:04.679Z"
+      }
+    },
+    "unreadableAndSaveFailure": {
+      "syntax": {
+        "item": {
+          "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/syntax-corrupt-CFix9Z",
+          "runtimeDirectory": ".probe-runtime",
+          "workflowId": "wf-syntax-corrupt",
+          "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/syntax-corrupt-CFix9Z/.probe-runtime/workflows/wf-syntax-corrupt.json",
+          "runtime": {
+            "config": {
+              "runtimeDirectory": ".probe-runtime"
+            }
+          }
+        },
+        "run": {
+          "pid": 75845,
+          "code": 0,
+          "signal": null,
+          "messages": [
+            {
+              "type": "before-latest-read",
+              "pid": 75845,
+              "at": "2026-09-11T01:51:04.773Z"
+            },
+            {
+              "type": "operation-error",
+              "pid": 75845,
+              "at": "2026-09-11T01:51:04.777Z",
+              "message": "Expected property name or '}' in JSON at position 1 (line 1 column 2)",
+              "calls": 1
+            },
+            {
+              "type": "result",
+              "pid": 75845,
+              "at": "2026-09-11T01:51:04.777Z",
+              "status": "error"
+            }
+          ],
+          "stdout": "",
+          "stderr": ""
+        }
+      },
+      "incomplete": {
+        "item": {
+          "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/shape-incomplete-5pZnwG",
+          "runtimeDirectory": ".probe-runtime",
+          "workflowId": "wf-shape-incomplete",
+          "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/shape-incomplete-5pZnwG/.probe-runtime/workflows/wf-shape-incomplete.json",
+          "runtime": {
+            "config": {
+              "runtimeDirectory": ".probe-runtime"
+            }
+          }
+        },
+        "run": {
+          "pid": 75849,
+          "code": 0,
+          "signal": null,
+          "messages": [
+            {
+              "type": "before-latest-read",
+              "pid": 75849,
+              "at": "2026-09-11T01:51:04.871Z"
+            },
+            {
+              "type": "latest-snapshot",
+              "pid": 75849,
+              "at": "2026-09-11T01:51:04.874Z",
+              "revision": 0,
+              "hasLedger": false
+            },
+            {
+              "type": "operation-error",
+              "pid": 75849,
+              "at": "2026-09-11T01:51:04.876Z",
+              "message": "RecoveryBudget ledger 必须是普通对象",
+              "calls": 1
+            },
+            {
+              "type": "result",
+              "pid": 75849,
+              "at": "2026-09-11T01:51:04.876Z",
+              "status": "error"
+            }
+          ],
+          "stdout": "",
+          "stderr": ""
+        }
+      },
+      "saveFailure": {
+        "item": {
+          "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/save-failure-T7fMOm",
+          "runtimeDirectory": ".probe-runtime",
+          "workflowId": "wf-save-failure",
+          "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/save-failure-T7fMOm/.probe-runtime/workflows/wf-save-failure.json",
+          "runtime": {
+            "config": {
+              "runtimeDirectory": ".probe-runtime"
+            }
+          }
+        },
+        "run": {
+          "pid": 75867,
+          "code": 0,
+          "signal": null,
+          "messages": [
+            {
+              "type": "before-latest-read",
+              "pid": 75867,
+              "at": "2026-09-11T01:51:04.963Z"
+            },
+            {
+              "type": "latest-snapshot",
+              "pid": 75867,
+              "at": "2026-09-11T01:51:04.965Z",
+              "revision": 0,
+              "hasLedger": true
+            },
+            {
+              "type": "save-failure-injected",
+              "pid": 75867,
+              "at": "2026-09-11T01:51:04.966Z",
+              "method": "replace-persisted-json-with-directory"
+            },
+            {
+              "type": "operation-error",
+              "pid": 75867,
+              "at": "2026-09-11T01:51:04.967Z",
+              "message": "EISDIR: illegal operation on a directory, rename '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/save-failure-T7fMOm/.probe-runtime/workflows/wf-save-failure.json.tmp-65f8c80b-eb0e-4e06-88e0-14bfec9cda5d' -> '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/save-failure-T7fMOm/.probe-runtime/workflows/wf-save-failure.json'",
+              "calls": 1
+            },
+            {
+              "type": "result",
+              "pid": 75867,
+              "at": "2026-09-11T01:51:04.967Z",
+              "status": "error"
+            }
+          ],
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    },
+    "ordinaryCasCounterexample": {
+      "item": {
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/ordinary-cas-SJToW5",
+        "runtimeDirectory": ".probe-runtime",
+        "workflowId": "wf-ordinary-cas",
+        "path": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/ordinary-cas-SJToW5/.probe-runtime/workflows/wf-ordinary-cas.json",
+        "runtime": {
+          "config": {
+            "runtimeDirectory": ".probe-runtime"
+          }
+        }
+      },
+      "writer": {
+        "pid": 75869,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "result",
+            "pid": 75869,
+            "at": "2026-09-11T01:51:05.141Z",
+            "status": "ok",
+            "revision": 1
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "stale": {
+        "pid": 75868,
+        "code": 0,
+        "signal": null,
+        "messages": [
+          {
+            "type": "stale-snapshot-read",
+            "pid": 75868,
+            "at": "2026-09-11T01:51:05.054Z",
+            "revision": 0
+          },
+          {
+            "type": "barrier-ready",
+            "pid": 75868,
+            "at": "2026-09-11T01:51:05.055Z",
+            "point": "stale-read"
+          },
+          {
+            "type": "ordinary-cas-rejected",
+            "pid": 75868,
+            "at": "2026-09-11T01:51:05.147Z",
+            "message": "工作流 wf-ordinary-cas 状态已被其他 Harness 更新：期望 revision=0，实际=1"
+          },
+          {
+            "type": "result",
+            "pid": 75868,
+            "at": "2026-09-11T01:51:05.147Z",
+            "status": "error"
+          }
+        ],
+        "stdout": "",
+        "stderr": ""
+      },
+      "state": {
+        "contract": "DSH_T14_PROBE_WORKFLOW_STATE_V1",
+        "root": "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-14/storage/sessions/ordinary-cas-SJToW5",
+        "id": "wf-ordinary-cas",
+        "status": "running",
+        "revision": 1,
+        "recoveryBudget": {
+          "contract": "DSH_RECOVERY_BUDGET_V1",
+          "workflowId": "wf-ordinary-cas",
+          "totalLimit": 1,
+          "totalUsed": 0,
+          "problems": [
+            {
+              "rootProblemId": "root-problem-1",
+              "limit": 1,
+              "used": 0,
+              "source": {
+                "id": "obligation-1",
+                "version": "review-v1"
+              },
+              "status": "open",
+              "evidence": []
+            }
+          ],
+          "attempts": []
+        },
+        "probeMarker": "writer-won",
+        "updatedAt": "2026-09-11T01:51:05.139Z"
+      }
+    }
+  },
+  "failures": {},
+  "finishedAt": "2026-09-11T01:51:05.151Z",
+  "status": "passed"
+}

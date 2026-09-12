@@ -1,0 +1,73 @@
+✔ R76 owner-advice normalizer canonicalizes optional lists while the public schema requires every field (1.428375ms)
+✖ R76 paid worker owner-consultation writes an accepted raw receipt and fresh replay cannot spend again (3532.2115ms)
+✔ R76 exhausted owner-consultation admission refuses a second Owner before a child is created (1507.657917ms)
+✔ R76 a wrong-owner structured payload never becomes an accepted advice receipt (1690.563208ms)
+✔ R76 a completed owner-advisor turn without submission settles failed and permits its next paid ordinal (2253.947791ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 4
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9678.935458
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/owner-advice-session.test.mjs:67:1
+✖ R76 paid worker owner-consultation writes an accepted raw receipt and fresh replay cannot spend again (3532.2115ms)
+  Error: workflow_owner_advice_submit 只能由当前Owner会诊子代理调用
+      at Object.submitOwnerAdvice (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:9484:15)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/owner-advice-session.test.mjs:80:34)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+✔ R76 owner-advice normalizer canonicalizes optional lists while the public schema requires every field (1.005875ms)
+✔ R76 paid worker owner-consultation writes an accepted raw receipt and fresh replay cannot spend again (5887.923333ms)
+✔ R76 exhausted owner-consultation admission refuses a second Owner before a child is created (1721.502583ms)
+✔ R76 a wrong-owner structured payload never becomes an accepted advice receipt (2836.462292ms)
+✔ R76 a completed owner-advisor turn without submission settles failed and permits its next paid ordinal (2308.46175ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 13096.698292
+✔ R76 owner-advice normalizer canonicalizes optional lists while the public schema requires every field (0.960708ms)
+✔ R76 paid worker owner-consultation writes an accepted raw receipt and fresh replay cannot spend again (1983.248625ms)
+✔ R76 exhausted owner-consultation admission refuses a second Owner before a child is created (741.459334ms)
+✔ R76 a wrong-owner structured payload never becomes an accepted advice receipt (1117.862125ms)
+✖ R76 an uncertain owner-advisor creation preserves its worker binding for fresh Harness reconciliation without a prompt (807.744375ms)
+✔ R76 a completed owner-advisor turn without submission settles failed and permits its next paid ordinal (1025.708209ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 5
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5889.555916
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/owner-advice-session.test.mjs:173:1
+✖ R76 an uncertain owner-advisor creation preserves its worker binding for fresh Harness reconciliation without a prompt (807.744375ms)
+  TypeError: Cannot read properties of undefined (reading 'content')
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/owner-advice-session.test.mjs:194:17)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+✔ R76 owner-advice normalizer canonicalizes optional lists while the public schema requires every field (0.761ms)
+✔ R76 paid worker owner-consultation writes an accepted raw receipt and fresh replay cannot spend again (1353.723333ms)
+✔ R76 exhausted owner-consultation admission refuses a second Owner before a child is created (554.02775ms)
+✔ R76 a wrong-owner structured payload never becomes an accepted advice receipt (626.251708ms)
+✔ R76 an uncertain owner-advisor creation preserves its worker binding for fresh Harness reconciliation without a prompt (598.123333ms)
+✔ R76 a completed owner-advisor turn without submission settles failed and permits its next paid ordinal (629.232166ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3925.380792

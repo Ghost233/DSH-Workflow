@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-11T09:47:44.054342+00:00",
+  "source": {
+    "owner-workflow-plugin/src/runtime.mjs": "f7e73677b4a2f9d1888e225392c28cbac1b485d21060afd3a5b2d2a6e8a89e88",
+    "owner-workflow-plugin/src/owner-agent.mjs": "7249b0297a6b99e338b5069e2c08293afdc8ac9bf5cfca3017194dc5b482cbc6",
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "d8e3d555343857dab04453ef2b120488059255d07b983a1bff82a6fefdee5c77",
+    "deepseek-harness/packages/core/agent-loop/src/agent.ts": "8288214410df9e8f611df17768f667eeee67351bfcaf8c5bf92a38f6a5f9117f",
+    "deepseek-harness/packages/core/agent-loop/src/index.ts": "75105e1f439dd37eb6c6c14d67ab668e446f06453dc62237206326f05f734a2c",
+    "deepseek-harness/packages/core/agent-loop/tests/mock-adapter.ts": "47dd92a9c9f8fb4cc468be3be1eb4dd40d2cc2e6fdde83783285cec3bc3d9db0",
+    "deepseek-harness/packages/subagent/subagent/src/index.ts": "14e7c3b7079214a978548b64028f5c4d16d3f2f81a8ccf99e089dcd370e63b6c",
+    "deepseek-harness/packages/subagent/subagent/src/continuation.ts": "fbcbd65ada6dc1e7262e512269e4b7728fcc093f1eecab97fd77179478b3ca94",
+    "deepseek-harness/packages/core/session/src/index.ts": "9594e128e8b170845d703e37a54902cd0cd8b2e73e8555e94594575bd18af8f9",
+    "deepseek-harness/packages/session/session-persistence-jsonl/src/index.ts": "9715f1a45bc1778c1904d018f2a97c0ee1710327cea3b9fc0cf910215fbf3cdb"
+  },
+  "proof": {
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-03/runtime-source.mjs": "f7e73677b4a2f9d1888e225392c28cbac1b485d21060afd3a5b2d2a6e8a89e88",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-03/second-runtime-child.mjs": "0724f64ff73d7bd5475bcc3d85d9f68c5b37e4491527975d51206fcc6b49a736",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-03/probe.mjs": "332ccdd2a3ff2eed4b15ced33c977cf19b8f50d1aa7feab9d161248d2b228410",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-03/run-proof.py": "6adda6b51a71d044304976cb4a285cd0855a7e2b2fdfd24909a85e8624a1ba35"
+  },
+  "harnessHead": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
+}

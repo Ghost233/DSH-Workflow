@@ -1,0 +1,20 @@
+{
+  "sourceCandidateCount": 1619,
+  "sourceDrift": [],
+  "newRuntimeTestsRun": 0,
+  "reusedEvidence": "round-25/test-results.json; 16 pass, not new results",
+  "matrixIds": [
+    "E1",
+    "E2",
+    "E3",
+    "E4",
+    "E5",
+    "E6",
+    "E7",
+    "L1",
+    "L2",
+    "L3",
+    "L4"
+  ],
+  "statusChanged": false
+}

@@ -1,0 +1,10 @@
+✔ T15 actual approved plan retains its review strategy but still settles into technical wait (4375.547208ms)
+✔ T15 persisted technical incident cannot hide a current typed user decision (1411.245917ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6017.201958

@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: Supervisor inspect 超时会取消旧执行并切换自治恢复，不能以持续 inspect 无限续命
+ok 1 - Supervisor inspect 超时会取消旧执行并切换自治恢复，不能以持续 inspect 无限续命
+  ---
+  duration_ms: 667.537291
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 792.105834

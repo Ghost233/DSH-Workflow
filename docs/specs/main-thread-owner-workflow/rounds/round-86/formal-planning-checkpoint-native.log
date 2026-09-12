@@ -1,0 +1,118 @@
+TAP version 13
+# Subtest: 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交
+ok 1 - 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交
+  ---
+  duration_ms: 2699.470583
+  type: 'test'
+  ...
+# Subtest: 暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户文件
+ok 2 - 暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户文件
+  ---
+  duration_ms: 419.69275
+  type: 'test'
+  ...
+# Subtest: 真实子进程 SIGKILL after-journal-prepared 后复启只形成一个 checkpoint 与不可变 snapshot
+ok 3 - 真实子进程 SIGKILL after-journal-prepared 后复启只形成一个 checkpoint 与不可变 snapshot
+  ---
+  duration_ms: 2653.43075
+  type: 'test'
+  ...
+# Subtest: 真实子进程 SIGKILL after-commit-object 后复启只形成一个 checkpoint 与不可变 snapshot
+ok 4 - 真实子进程 SIGKILL after-commit-object 后复启只形成一个 checkpoint 与不可变 snapshot
+  ---
+  duration_ms: 2118.2705
+  type: 'test'
+  ...
+# Subtest: 真实子进程 SIGKILL after-ref-update-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot
+ok 5 - 真实子进程 SIGKILL after-ref-update-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot
+  ---
+  duration_ms: 2028.900875
+  type: 'test'
+  ...
+# Subtest: 真实子进程 SIGKILL after-ref-cas 后复启只形成一个 checkpoint 与不可变 snapshot
+ok 6 - 真实子进程 SIGKILL after-ref-cas 后复启只形成一个 checkpoint 与不可变 snapshot
+  ---
+  duration_ms: 1684.922959
+  type: 'test'
+  ...
+# Subtest: 真实子进程 SIGKILL after-index-rename-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot
+ok 7 - 真实子进程 SIGKILL after-index-rename-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot
+  ---
+  duration_ms: 1880.123125
+  type: 'test'
+  ...
+# Subtest: 真实子进程 SIGKILL after-index-sync 后复启只形成一个 checkpoint 与不可变 snapshot
+ok 8 - 真实子进程 SIGKILL after-index-sync 后复启只形成一个 checkpoint 与不可变 snapshot
+  ---
+  duration_ms: 1796.369167
+  type: 'test'
+  ...
+# Subtest: 真实子进程 SIGKILL after-snapshot-write-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot
+ok 9 - 真实子进程 SIGKILL after-snapshot-write-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot
+  ---
+  duration_ms: 2270.05275
+  type: 'test'
+  ...
+# Subtest: 真实子进程 SIGKILL after-snapshot 后复启只形成一个 checkpoint 与不可变 snapshot
+ok 10 - 真实子进程 SIGKILL after-snapshot 后复启只形成一个 checkpoint 与不可变 snapshot
+  ---
+  duration_ms: 1900.075625
+  type: 'test'
+  ...
+# Subtest: checkpoint lease 在物理断言前后均拒绝已取消 signal，且不创建 journal 或变更 Git
+ok 11 - checkpoint lease 在物理断言前后均拒绝已取消 signal，且不创建 journal 或变更 Git
+  ---
+  duration_ms: 1725.83575
+  type: 'test'
+  ...
+# Subtest: 已完成 parent snapshot 以完整持久 journal/snapshot 身份绑定子 checkpoint
+ok 12 - 已完成 parent snapshot 以完整持久 journal/snapshot 身份绑定子 checkpoint
+  ---
+  duration_ms: 2421.873208
+  type: 'test'
+  ...
+# Subtest: 未知 parent snapshot 在创建 journal 或 Git 变更前拒绝
+ok 13 - 未知 parent snapshot 在创建 journal 或 Git 变更前拒绝
+  ---
+  duration_ms: 279.011125
+  type: 'test'
+  ...
+# Subtest: 原 checkpoint 尚待恢复时，新 id 不能绕过同一项目的 pending journal
+ok 14 - 原 checkpoint 尚待恢复时，新 id 不能绕过同一项目的 pending journal
+  ---
+  duration_ms: 1482.645625
+  type: 'test'
+  ...
+# Subtest: Git clean filter 改写选中文档 blob 时拒绝，不把原始来源哈希写成 checkpoint
+ok 15 - Git clean filter 改写选中文档 blob 时拒绝，不把原始来源哈希写成 checkpoint
+  ---
+  duration_ms: 780.673833
+  type: 'test'
+  ...
+# Subtest: commit object 已持久但 ref 前外部修改选中文档时，恢复拒绝并保留外部字节
+ok 16 - commit object 已持久但 ref 前外部修改选中文档时，恢复拒绝并保留外部字节
+  ---
+  duration_ms: 888.399375
+  type: 'test'
+  ...
+# Subtest: 已完成 checkpoint 的 immutable snapshot 被外部修改时，重放和 pending 检查均拒绝
+ok 17 - 已完成 checkpoint 的 immutable snapshot 被外部修改时，重放和 pending 检查均拒绝
+  ---
+  duration_ms: 1145.412875
+  type: 'test'
+  ...
+# Subtest: 未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁
+ok 18 - 未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁
+  ---
+  duration_ms: 973.583042
+  type: 'test'
+  ...
+1..18
+# tests 18
+# suites 0
+# pass 18
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 29426.985375

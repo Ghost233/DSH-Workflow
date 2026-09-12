@@ -1,0 +1,88 @@
+TAP version 13
+# Subtest: candidate selection and acknowledgment only expose independent target patches, never a replacement state
+ok 1 - candidate selection and acknowledgment only expose independent target patches, never a replacement state
+  ---
+  duration_ms: 50.971583
+  type: 'test'
+  ...
+# Subtest: excludes source/target Owner tasks and their forward/reverse dependency closure
+ok 2 - excludes source/target Owner tasks and their forward/reverse dependency closure
+  ---
+  duration_ms: 22.014959
+  type: 'test'
+  ...
+# Subtest: full active tasks and undispatched reservations consume global slots and Owner identities
+ok 3 - full active tasks and undispatched reservations consume global slots and Owner identities
+  ---
+  duration_ms: 20.901875
+  type: 'test'
+  ...
+# Subtest: existing Owner history and source binding prevent stale or duplicate creates
+ok 4 - existing Owner history and source binding prevent stale or duplicate creates
+  ---
+  duration_ms: 23.383792
+  type: 'test'
+  ...
+# Subtest: no eligible work yields side-effect-free wait and cannot acknowledge stop/notify
+ok 5 - no eligible work yields side-effect-free wait and cannot acknowledge stop/notify
+  ---
+  duration_ms: 10.335917
+  type: 'test'
+  ...
+# Subtest: unproven handoff scope fails closed, and pending notice never dispatches
+ok 6 - unproven handoff scope fails closed, and pending notice never dispatches
+  ---
+  duration_ms: 7.609
+  type: 'test'
+  ...
+# Subtest: unrelated stalled activity cannot suppress an available independent create slot
+ok 7 - unrelated stalled activity cannot suppress an available independent create slot
+  ---
+  duration_ms: 21.834542
+  type: 'test'
+  ...
+# Subtest: composite relationships keep a source subtree excluded without dropping the independent leaf
+ok 8 - composite relationships keep a source subtree excluded without dropping the independent leaf
+  ---
+  duration_ms: 17.602375
+  type: 'test'
+  ...
+# Subtest: reject reservation occupancy with stopped task instead of releasing its parallel slot
+ok 9 - reject reservation occupancy with stopped task instead of releasing its parallel slot
+  ---
+  duration_ms: 9.485792
+  type: 'test'
+  ...
+# Subtest: reject owner occupancy with stopped task instead of releasing its parallel slot
+ok 10 - reject owner occupancy with stopped task instead of releasing its parallel slot
+  ---
+  duration_ms: 12.153
+  type: 'test'
+  ...
+# Subtest: reject reservation occupancy with completed task instead of releasing its parallel slot
+ok 11 - reject reservation occupancy with completed task instead of releasing its parallel slot
+  ---
+  duration_ms: 9.482084
+  type: 'test'
+  ...
+# Subtest: reject owner occupancy with completed task instead of releasing its parallel slot
+ok 12 - reject owner occupancy with completed task instead of releasing its parallel slot
+  ---
+  duration_ms: 4.914291
+  type: 'test'
+  ...
+# Subtest: an already running reservation occupies one slot without duplicate counting
+ok 13 - an already running reservation occupies one slot without duplicate counting
+  ---
+  duration_ms: 15.536125
+  type: 'test'
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 472.857541

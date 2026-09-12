@@ -1,0 +1,1255 @@
+--- owner-workflow-plugin/index.js (baseline)
++++ owner-workflow-plugin/index.js
+@@ -1398,7 +1398,7 @@
+   ]
+ }
+
+-function ownerSubmitDefinition(runtime) {
++export function ownerSubmitDefinition(runtime) {
+   return {
+     name: 'owner_submit',
+     description: 'Owner 的唯一提交关卡：自动运行任务绑定验证，按 Git diff 校验 Owner scope，并生成固定提交。越界或验证失败时返回错误，Owner 应在同一 worktree 调整后重试。',
+--- owner-workflow-plugin/src/recovery-session.mjs (baseline)
++++ owner-workflow-plugin/src/recovery-session.mjs
+@@ -77,7 +77,7 @@
+ }
+
+ export function createRecoverySessionState({ intent, prompt: rawPrompt, ownerRunBinding }) {
+-  const message = prompt(rawPrompt)
++  const instruction = prompt(rawPrompt, 'instruction')
+   exactKeys(intent, [
+     'intentKey', 'sourceId', 'strategy', 'planDigest', 'taskId', 'ownerId', 'rootProblemId',
+     'requestId', 'attemptId', 'executionIdentity',
+@@ -88,20 +88,26 @@
+     sessionId: text(intent.executionIdentity.sessionId, 'intent_session_id'),
+     promptId: text(intent.executionIdentity.promptId, 'intent_prompt_id'),
+   }
+-  if (message.id !== executionIdentity.promptId) fail('prompt_identity_mismatch')
++  if (instruction.id !== executionIdentity.promptId) fail('instruction_identity_mismatch')
+   return {
+     contract: RECOVERY_SESSION_STATE_CONTRACT,
++    sourceId: text(intent.sourceId, 'intent_source_id'),
+     rootProblemId: text(intent.rootProblemId, 'intent_root_problem_id'),
+     requestId: text(intent.requestId, 'intent_request_id'),
+     attemptId: text(intent.attemptId, 'intent_attempt_id'),
+     planDigest: text(intent.planDigest, 'intent_plan_digest'),
+     executionIdentity,
+-    prompt: message,
++    // `instruction` is the caller-provided recovery context, not the model
++    // prompt.  Runtime freezes the complete ownerTaskPrompt after its normal
++    // entry/memory/worklog preparation and before the provider creates a
++    // session.  Keeping them distinct prevents a caller from replacing the
++    // protected Owner prompt with arbitrary text.
++    instruction,
+     ownerRunBinding: {
+       attempt: positiveInteger(ownerRunBinding.attempt, 'owner_run_attempt'),
+       leaseToken: text(ownerRunBinding.leaseToken, 'owner_run_lease_token'),
+     },
+-    phase: 'creating',
++    phase: 'preparing',
+   }
+ }
+
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -164,15 +164,21 @@
+   ensureRuntimeGitignore,
+ } from './project-layout.mjs'
+ import {
++  RECOVERY_CONTINUATION_CONTRACT,
+   lookupRecoveryAdmissionIntent,
+   prepareRecoveryAdmission,
+ } from './recovery-admission.mjs'
+ import {
+   RECOVERY_SESSION_RESULT_CONTRACT,
+   RECOVERY_SESSION_STATE_CONTRACT,
++  createRecoverySessionState,
+   inspectRecoverySession,
+   normalizeRecoverySessionRequest,
+ } from './recovery-session.mjs'
++import {
++  startRecoveryAttempt,
++  settleRecoveryAttempt,
++} from './recovery-budget.mjs'
+ import {
+   AUTONOMOUS_STRATEGIES,
+   CONVERGENCE_CONTRACT,
+@@ -191,6 +197,78 @@
+ // loss of an already-held lease must retain their original error semantics.
+ class OwnerLeaseUnavailableError extends Error {
+   name = 'OwnerLeaseUnavailableError'
++}
++
++// Recovery admission/start gates are an expected non-mutating refusal for the
++// explicit reconciliation API.  They stay distinct from lease acquisition
++// conflicts and from transport/cancellation errors.
++class RecoverySessionLaunchUnavailableError extends Error {
++  name = 'RecoverySessionLaunchUnavailableError'
++}
++
++function recoveryBudgetBinding(workflowId, intent) {
++  return {
++    workflowId,
++    rootProblemId: intent.rootProblemId,
++    requestId: intent.requestId,
++    attemptId: intent.attemptId,
++    taskId: intent.taskId,
++    ownerId: intent.ownerId,
++    executionVersion: intent.planDigest,
++  }
++}
++
++function submittedRecoveryRecordMatches(record, intent, leaseToken) {
++  const recovery = record?.recoverySession
++  return record?.status === 'running'
++    && record.ownerId === intent.ownerId
++    && record.stageId === intent.taskId
++    && record.planDigest === intent.planDigest
++    && record.leaseToken === leaseToken
++    && recovery?.contract === RECOVERY_SESSION_STATE_CONTRACT
++    && recovery.phase === 'submitted'
++    && recovery.sourceId === intent.sourceId
++    && recovery.rootProblemId === intent.rootProblemId
++    && recovery.requestId === intent.requestId
++    && recovery.attemptId === intent.attemptId
++    && recovery.planDigest === intent.planDigest
++    && recovery.executionIdentity?.sessionId === intent.executionIdentity.sessionId
++    && recovery.executionIdentity?.promptId === intent.executionIdentity.promptId
++    && recovery.ownerRunBinding?.attempt === record.attempt
++    && recovery.ownerRunBinding?.leaseToken === leaseToken
++    && record.sessionId === intent.executionIdentity.sessionId
++    && recovery.prompt?.id === intent.executionIdentity.promptId
++    && typeof recovery.prompt.content === 'string'
++    && recovery.prompt.content.trim() !== ''
++}
++
++function settledRecoveryReceiptMatches(record, recovery, intent, budget) {
++  const continuation = record?.recoveryContinuation
++  const attempt = budget?.attempts?.find(item => item?.requestId === intent.requestId)
++  return ['failed', 'blocked'].includes(record?.status)
++    && record.ownerId === intent.ownerId
++    && record.stageId === intent.taskId
++    && record.planDigest === intent.planDigest
++    && record.sessionId === intent.executionIdentity.sessionId
++    && recovery?.phase === 'settled_failed'
++    && continuation?.contract === RECOVERY_CONTINUATION_CONTRACT
++    && continuation.sourceId === intent.sourceId
++    && continuation.rootProblemId === intent.rootProblemId
++    && continuation.requestId === intent.requestId
++    && continuation.attemptId === intent.attemptId
++    && continuation.taskId === intent.taskId
++    && continuation.ownerId === intent.ownerId
++    && continuation.planDigest === intent.planDigest
++    && continuation.executionIdentity?.sessionId === intent.executionIdentity.sessionId
++    && continuation.executionIdentity?.promptId === intent.executionIdentity.promptId
++    && continuation.ownerRunBinding?.attempt === record.attempt
++    && continuation.ownerRunBinding?.sessionId === intent.executionIdentity.sessionId
++    && attempt?.state === 'settled'
++    && attempt.executionRef?.id === intent.executionIdentity.sessionId
++    && attempt.executionRef?.version === intent.executionIdentity.promptId
++    && attempt.result?.status === 'failed'
++    && attempt.result?.reference?.id === intent.executionIdentity.promptId
++    && attempt.result?.reference?.version === intent.executionIdentity.sessionId
+ }
+
+ const DEFAULT_CONFIG = Object.freeze({
+@@ -4805,6 +4883,7 @@
+     controlBridges: new Map(),
+     controlAgents: new Map(),
+     externalOwnerRuns: new Map(),
++    externalOwnerRecoveryRequests: new Map(),
+     manualOwnerRecoveries: new Map(),
+     supervisorDispatches: new Map(),
+     disposePromise: undefined,
+@@ -5198,6 +5277,9 @@
+             || record.recoverySession?.ownerRunBinding?.leaseToken !== active.lease.token
+             || record.recoverySession?.executionIdentity?.sessionId !== sessionId
+             || record.recoverySession?.executionIdentity?.promptId !== recoverySession.executionIdentity.promptId
++            || record.recoverySession?.prompt?.id !== recoverySession.executionIdentity.promptId
++            || typeof record.recoverySession?.prompt?.content !== 'string'
++            || record.recoverySession.prompt.content.trim() === ''
+             || record.recoverySession?.phase !== 'creating') {
+             throw new Error('RecoverySession 当前 Owner lease、attempt 或持久身份不匹配')
+           }
+@@ -5225,6 +5307,60 @@
+       await runtime.reportOwnerProgress(active, 'started', 'Owner 子代理已启动并绑定到当前任务', {
+         phase: 'running',
+         lastHeartbeatAt: heartbeatAt,
++      })
++      return saved.ownerRuns[ownerRunKey(active.stageId, active.owner.id)]
++    },
++    async persistRecoverySessionPrompt(active, finalPrompt) {
++      const recoverySession = active?.recoverySession
++      if (recoverySession === undefined || active?.lease === undefined) {
++        throw new Error('RecoverySession 冻结最终 Owner prompt 缺少当前 Owner 上下文或 lease')
++      }
++      if (typeof finalPrompt !== 'string' || finalPrompt.trim() === '') {
++        throw new Error('RecoverySession 最终 Owner prompt 必须是非空字符串')
++      }
++      const promptId = recoverySession.executionIdentity?.promptId
++      if (typeof promptId !== 'string' || promptId.trim() === ''
++        || recoverySession.instruction?.id !== promptId
++        || recoverySession.phase !== 'preparing') {
++        throw new Error('RecoverySession 冻结最终 Owner prompt 的持久状态无效')
++      }
++      await runtime.assertOwnerLease(active.lease)
++      const saved = await runtime.withWorkflowLock(active.workflowId, async () => {
++        const state = await readState(runtime, active.workflowRoot, active.workflowId)
++        const key = ownerRunKey(active.stageId, active.owner.id)
++        const record = state.ownerRuns?.[key]
++        if (!['starting', 'running'].includes(record?.status)
++          || record.leaseToken !== active.lease.token
++          || record.attempt !== recoverySession.ownerRunBinding.attempt
++          || record.recoverySession?.contract !== RECOVERY_SESSION_STATE_CONTRACT
++          || record.recoverySession?.phase !== 'preparing'
++          || record.recoverySession?.requestId !== recoverySession.requestId
++          || record.recoverySession?.attemptId !== recoverySession.attemptId
++          || record.recoverySession?.planDigest !== recoverySession.planDigest
++          || record.recoverySession?.instruction?.id !== promptId
++          || record.recoverySession?.instruction?.content !== recoverySession.instruction.content
++          || record.recoverySession?.executionIdentity?.sessionId !== recoverySession.executionIdentity.sessionId
++          || record.recoverySession?.executionIdentity?.promptId !== promptId
++          || record.recoverySession?.ownerRunBinding?.attempt !== recoverySession.ownerRunBinding.attempt
++          || record.recoverySession?.ownerRunBinding?.leaseToken !== active.lease.token) {
++          throw new Error('RecoverySession 冻结最终 Owner prompt 前记录发生漂移')
++        }
++        const frozenAt = now()
++        const nextRecoverySession = {
++          ...record.recoverySession,
++          phase: 'creating',
++          prompt: { id: promptId, content: finalPrompt },
++          promptFrozenAt: frozenAt,
++        }
++        state.ownerRuns[key] = {
++          ...record,
++          recoverySession: nextRecoverySession,
++          updatedAt: frozenAt,
++        }
++        await runtime.assertOwnerLease(active.lease)
++        const savedState = await saveState(runtime, state, active.lease)
++        active.recoverySession = nextRecoverySession
++        return savedState
+       })
+       return saved.ownerRuns[ownerRunKey(active.stageId, active.owner.id)]
+     },
+@@ -5245,6 +5381,9 @@
+           || record.recoverySession?.phase !== 'created'
+           || record.recoverySession?.executionIdentity?.sessionId !== sessionId
+           || record.recoverySession?.executionIdentity?.promptId !== recoverySession.executionIdentity.promptId
++          || record.recoverySession?.prompt?.id !== recoverySession.executionIdentity.promptId
++          || typeof record.recoverySession?.prompt?.content !== 'string'
++          || record.recoverySession.prompt.content.trim() === ''
+           || record.recoverySession?.ownerRunBinding?.leaseToken !== active.lease.token) {
+           throw new Error('RecoverySession prompt 提交前 Owner 记录发生漂移')
+         }
+@@ -9819,9 +9958,9 @@
+         return response
+       })
+     },
+-    // Explicit local adapter only.  It consumes one T-20 reservation but is
+-    // deliberately not wired into runner/control routes until their combined
+-    // recovery protocol is separately accepted.
++    // Explicit local adapter only.  It is intentionally not a runner/control
++    // route: callers name an already-reserved T-20 identity and this router
++    // enters the same protected external Owner pipeline used in production.
+     async reconcileRecoverySession(agent, workflowId, rawRequest, signal) {
+       if (typeof workflowId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(workflowId)) {
+         throw new Error('RecoverySession workflowId 非法')
+@@ -9849,23 +9988,8 @@
+         reason,
+       })
+       abortIfNeeded(signal)
+-      let acquired
+-      try {
+-        acquired = await runtime.acquireOwnerLease(root, request.ownerId, workflowId, request.taskId, signal)
+-      } catch (error) {
+-        abortIfNeeded(signal)
+-        if (error instanceof OwnerLeaseUnavailableError) return pausedWithoutIntent('owner_lease_unavailable')
+-        throw error
+-      }
+-      if (!acquired.owned) {
+-        abortIfNeeded(signal)
+-        return pausedWithoutIntent('owner_lease_unavailable')
+-      }
+-      const lease = acquired.lease
+-      const reconcile = async leaseSignal => {
+-        abortIfNeeded(leaseSignal)
+-        await runtime.assertOwnerLease(lease)
+-        let state = await runtime.withWorkflowLock(workflowId, async () => readState(runtime, root, workflowId))
++      const preflight = await runtime.withWorkflowLock(workflowId, async () => {
++        const state = await readState(runtime, root, workflowId)
+         if (state.root !== root || state.contract !== STATE_CONTRACT) {
+           throw new Error('RecoverySession 当前持久 Workflow 绑定无效')
+         }
+@@ -9873,84 +9997,128 @@
+         try {
+           located = lookupRecoveryAdmissionIntent(state, request.requestId)
+         } catch {
+-          return pausedWithoutIntent('reservation_invalid')
+-        }
+-        if (located === undefined) return pausedWithoutIntent('reservation_not_found')
++          return { paused: pausedWithoutIntent('reservation_invalid') }
++        }
++        if (located === undefined) return { paused: pausedWithoutIntent('reservation_not_found') }
+         const intent = located.intent
+         if (intent.taskId !== request.taskId || intent.ownerId !== request.ownerId
+           || intent.planDigest !== state.planDigest || request.prompt.id !== intent.executionIdentity.promptId) {
+-          return resultFor(intent, 'paused', 'technical_pause', { reason: 'reservation_binding_mismatch' })
++          return { paused: resultFor(intent, 'paused', 'technical_pause', { reason: 'reservation_binding_mismatch' }) }
++        }
++        const persistence = agent.ctx?.get?.('sessionPersistence')
++        if (persistence?.supportsRawArtifacts !== true
++          || persistence?.constructor?.name !== 'JsonlSessionPersistence'
++          || persistence?.config?.compression !== 'none') {
++          return { paused: resultFor(intent, 'paused', 'technical_pause', { reason: 'unsupported_persistence' }) }
+         }
+         const key = ownerRunKey(request.taskId, request.ownerId)
+         const currentRecord = state.ownerRuns?.[key]
+         const existing = currentRecord?.recoverySession
+-        const persistence = agent.ctx?.get?.('sessionPersistence')
+         if (existing !== undefined) {
+-          // A newly acquired lease does not inherit authority over an old
+-          // external session.  It may observe raw facts, never resume, submit,
+-          // or settle them.
+-          const facts = await inspectRecoverySession({
+-            persistence,
+-            executionIdentity: intent.executionIdentity,
+-            prompt: request.prompt,
+-            signal: leaseSignal,
+-          })
+-          if (existing.contract !== RECOVERY_SESSION_STATE_CONTRACT
+-            || existing.requestId !== intent.requestId
+-            || existing.attemptId !== intent.attemptId
+-            || existing.planDigest !== intent.planDigest
+-            || existing.executionIdentity?.sessionId !== intent.executionIdentity.sessionId
+-            || existing.executionIdentity?.promptId !== intent.executionIdentity.promptId
+-            || existing.ownerRunBinding?.attempt !== currentRecord.attempt
+-            || existing.ownerRunBinding?.leaseToken !== currentRecord.leaseToken
+-            || currentRecord.leaseToken !== lease.token) {
+-            return resultFor(intent, 'paused', 'technical_pause', {
+-              reason: facts.outcome === 'paused' ? facts.reason : 'owner_lease_mismatch',
+-              observation: facts,
+-            })
+-          }
+-          if (facts.outcome !== 'observed_terminal') {
+-            return resultFor(intent, facts.outcome, facts.phase, {
+-              ...(facts.reason === undefined ? {} : { reason: facts.reason }),
+-              observation: facts,
+-            })
+-          }
+-          return resultFor(intent, 'observed_terminal', facts.phase, { observation: facts })
+-        }
+-
++          if (existing.requestId !== intent.requestId
++            && existing.phase === 'settled_failed'
++            && currentRecord?.recoveryContinuation?.requestId === existing.requestId) {
++            // A later T-20 request may name this now-failed Owner run as its
++            // source.  It still has to clear the regular runnable/start gates
++            // below; the old settled receipt never authorizes it by itself.
++          } else {
++            return {
++              existing: {
++                intent,
++                currentRecord,
++                recoverySession: structuredClone(existing),
++                budget: structuredClone(state.recoveryAdmission?.budget),
++                persistence,
++              },
++            }
++          }
++        }
+         if (!['failed', 'blocked'].includes(currentRecord?.status)
+           || located.source.kind !== 'owner_failure'
+           || located.source.taskId !== request.taskId
+           || located.source.ownerId !== request.ownerId
+           || located.source.attempt !== currentRecord.attempt
+           || located.source.sessionId !== (currentRecord.sessionId ?? currentRecord.result?.sessionId ?? null)) {
+-          return resultFor(intent, 'paused', 'technical_pause', { reason: 'source_owner_run_not_current' })
+-        }
+-        const owner = state.plan?.owners?.find(item => item?.id === request.ownerId)
+-        const task = state.plan?.tasks?.find(item => item?.id === request.taskId)
+-        if (owner === undefined || task?.ownerId !== request.ownerId
+-          || typeof currentRecord.worktree !== 'string' || currentRecord.worktree.trim() === '') {
+-          return resultFor(intent, 'paused', 'technical_pause', { reason: 'owner_execution_context_missing' })
+-        }
+-
+-        try {
+-          await validateOwnerStartState(state, workflowId, request.taskId, request.ownerId)
+-        } catch (error) {
+-          return resultFor(intent, 'paused', 'technical_pause', { reason: 'owner_start_not_authorized' })
+-        }
+-        // Provider-level create/resume is deliberately held until the explicit
+-        // adapter can reuse `createOwnerEntry` and the full owner-submit/
+-        // settlement path.  Starting from a recovered failure with a partial
+-        // entry would bypass worktree, branch and submission safeguards.
+-        return resultFor(intent, 'paused', 'technical_pause', { reason: 'owner_execution_adapter_not_ready' })
++          return { paused: resultFor(intent, 'paused', 'technical_pause', { reason: 'source_owner_run_not_current' }) }
++        }
++        // `runExternalOwner` is the sole lease holder.  It re-reads this
++        // identity and runs validateOwnerStartState/createOwnerEntry under
++        // its Owner lease before any mutation or provider call.
++        return { launch: { intent } }
++      })
++      if (preflight.paused !== undefined) return preflight.paused
++      if (preflight.existing !== undefined) {
++        const { intent, currentRecord, recoverySession, budget, persistence } = preflight.existing
++        if (recoverySession.contract !== RECOVERY_SESSION_STATE_CONTRACT
++          || recoverySession.requestId !== intent.requestId
++          || recoverySession.attemptId !== intent.attemptId
++          || recoverySession.planDigest !== intent.planDigest
++          || recoverySession.instruction?.id !== request.prompt.id
++          || recoverySession.instruction?.content !== request.prompt.content
++          || recoverySession.executionIdentity?.sessionId !== intent.executionIdentity.sessionId
++          || recoverySession.executionIdentity?.promptId !== intent.executionIdentity.promptId
++          || recoverySession.ownerRunBinding?.attempt !== currentRecord?.attempt
++          || recoverySession.ownerRunBinding?.leaseToken !== currentRecord?.leaseToken) {
++          return resultFor(intent, 'paused', 'technical_pause', { reason: 'persisted_owner_binding_mismatch' })
++        }
++        if (recoverySession.phase === 'settled_failed') {
++          return settledRecoveryReceiptMatches(currentRecord, recoverySession, intent, budget)
++            ? resultFor(intent, 'settled_failed', 'settled_failed', {
++              continuation: structuredClone(currentRecord.recoveryContinuation),
++            })
++            : resultFor(intent, 'paused', 'technical_pause', { reason: 'settlement_receipt_mismatch' })
++        }
++        if (['awaiting_finish', 'committed', 'completed'].includes(currentRecord?.status)) {
++          return resultFor(intent, 'paused', 'technical_pause', { reason: 'owner_success_unsettled' })
++        }
++        if (recoverySession.phase === 'technical_pause') {
++          return resultFor(intent, 'paused', 'technical_pause', {
++            reason: recoverySession.technicalPauseReason ?? 'recovery_session_technical_pause',
++          })
++        }
++        if (recoverySession.phase === 'preparing' || recoverySession.prompt?.id !== intent.executionIdentity.promptId
++          || typeof recoverySession.prompt?.content !== 'string' || recoverySession.prompt.content.trim() === '') {
++          return resultFor(intent, 'paused', 'technical_pause', { reason: 'recovery_prompt_not_durably_frozen' })
++        }
++        const facts = await inspectRecoverySession({
++          persistence,
++          executionIdentity: intent.executionIdentity,
++          prompt: recoverySession.prompt,
++          signal,
++        })
++        // Raw session facts are never a substitute for a current Owner lease
++        // or a persisted T-13 receipt.  In particular, real Owner tool turns
++        // can have multiple steps, so even a unique model terminal is only an
++        // observation and cannot authorize resend, resume, or settlement.
++        return resultFor(intent, 'paused', 'technical_pause', {
++          reason: facts.outcome === 'paused'
++            ? facts.reason
++            : 'persisted_session_requires_owner_lease',
++          observation: facts,
++        })
+       }
+       try {
+-        const result = await reconcile(runtime.leaseSignal(lease, signal))
++        await runtime.runExternalOwner(
++          agent,
++          workflowId,
++          request.taskId,
++          request.ownerId,
++          signal,
++          { recoverySessionRequest: request },
++        )
++        // This adapter only writes the T-13 failed receipt from the actual
++        // Owner failure save path.  A successful Owner lifecycle is preserved
++        // by the normal pipeline but has no invented recovery settlement.
++        return resultFor(preflight.launch.intent, 'paused', 'technical_pause', { reason: 'owner_success_unsettled' })
++      } catch (error) {
+         abortIfNeeded(signal)
+-        await runtime.assertOwnerLease(lease)
+-        return result
+-      } finally {
+-        await runtime.releaseOwnerLease(lease)
++        if (error instanceof OwnerLeaseUnavailableError) {
++          return resultFor(preflight.launch.intent, 'paused', 'technical_pause', { reason: 'owner_lease_unavailable' })
++        }
++        if (error instanceof RecoverySessionLaunchUnavailableError) {
++          return resultFor(preflight.launch.intent, 'paused', 'technical_pause', { reason: error.message })
++        }
++        throw error
+       }
+     },
+     async withWorkflowLock(workflowId, operation) {
+@@ -12327,7 +12495,10 @@
+         if (!await isCommitAncestor(state.root, previousBaseCommit, ownerHead, signal)) {
+           throw new Error(`Owner ${ownerId} 的当前 HEAD 不基于持久化审计 base，拒绝恢复`)
+         }
+-        const fixedCommit = previous.result?.commitSha ?? previous.partialCommitSha
++        const fixedCommit = previous.result?.commitSha
++          ?? previous.partialCommitSha
++          ?? previous.recoveryAuditResult?.commitSha
++          ?? previous.recoveryAuditPartialCommitSha
+         if (fixedCommit !== undefined) {
+           const verifiedFixedCommit = await verifyCommitSha(state.root, fixedCommit, signal)
+           if (!await isCommitAncestor(state.root, previousBaseCommit, verifiedFixedCommit, signal)
+@@ -12381,8 +12552,19 @@
+     },
+     async runExternalOwner(agent, workflowId, stageId, ownerId, requestSignal, options = {}) {
+       const key = ownerRunKey(stageId, ownerId)
+-      const existingRun = runtime.externalOwnerRuns.get(`${workflowId}:${key}`)
+-      if (existingRun !== undefined) return existingRun
++      const externalRunKey = `${workflowId}:${key}`
++      const recoveryRequestId = options.recoverySessionRequest?.requestId
++      const recoveryInstruction = options.recoverySessionRequest?.prompt
++      const existingRun = runtime.externalOwnerRuns.get(externalRunKey)
++      if (existingRun !== undefined) {
++        const existingRecovery = runtime.externalOwnerRecoveryRequests.get(externalRunKey)
++        if (existingRecovery?.requestId !== recoveryRequestId
++          || existingRecovery?.instruction?.id !== recoveryInstruction?.id
++          || existingRecovery?.instruction?.content !== recoveryInstruction?.content) {
++          throw new OwnerLeaseUnavailableError(`Owner ${ownerId} 已由不同恢复请求或常规运行占用：${key}`)
++        }
++        return existingRun
++      }
+
+       const run = (async () => {
+         const root = await runtime.resolveRoot(agent)
+@@ -12423,7 +12605,7 @@
+           let claimedWorktree
+           await runtime.withWorkflowLock(workflowId, async () => {
+             acquiredLease = await runtime.acquireOwnerLease(root, ownerId, workflowId, stageId, requestSignal)
+-            if (!acquiredLease.owned) throw new Error(`Owner ${ownerId} 已在本进程的另一个运行中`)
++            if (!acquiredLease.owned) throw new OwnerLeaseUnavailableError(`Owner ${ownerId} 已在本进程的另一个运行中`)
+             signal = runtime.leaseSignal(acquiredLease.lease, requestSignal)
+             await runtime.assertOwnerLease(acquiredLease.lease)
+             await runtime.withOwnerLease(
+@@ -12455,10 +12637,47 @@
+                   return
+                 }
+                 if (latestRecord?.status === 'starting' || latestRecord?.status === 'running') {
++                  if (options.recoverySessionRequest !== undefined) {
++                    throw new RecoverySessionLaunchUnavailableError('recovery_session_already_persisted')
++                  }
+                   throw new Error(`Owner ${ownerId} 已有持久化运行记录，必须先恢复或清理 run：${key}`)
+                 }
+-
+-                stage = await validateOwnerStartState(current, workflowId, stageId, ownerId)
++                if (options.recoverySessionRequest === undefined && latestRecord?.recoverySession !== undefined) {
++                  throw new Error(`Owner ${ownerId} 的恢复会话只能经 reconcileRecoverySession 重新核验：${key}`)
++                }
++
++                let recoveryLocated
++                if (options.recoverySessionRequest !== undefined) {
++                  const recoveryRequest = normalizeRecoverySessionRequest(options.recoverySessionRequest)
++                  try {
++                    recoveryLocated = lookupRecoveryAdmissionIntent(current, recoveryRequest.requestId)
++                  } catch {
++                    throw new RecoverySessionLaunchUnavailableError('reservation_invalid')
++                  }
++                  if (recoveryLocated === undefined) {
++                    throw new RecoverySessionLaunchUnavailableError('reservation_not_found')
++                  }
++                  const intent = recoveryLocated.intent
++                  if (intent.taskId !== stageId || intent.ownerId !== ownerId
++                    || intent.planDigest !== current.planDigest
++                    || recoveryRequest.prompt.id !== intent.executionIdentity.promptId
++                    || recoveryLocated.source.kind !== 'owner_failure'
++                    || recoveryLocated.source.taskId !== stageId
++                    || recoveryLocated.source.ownerId !== ownerId
++                    || recoveryLocated.source.attempt !== latestRecord?.attempt
++                    || recoveryLocated.source.sessionId !== (latestRecord?.sessionId ?? latestRecord?.result?.sessionId ?? null)
++                    || !['failed', 'blocked'].includes(latestRecord?.status)) {
++                    throw new RecoverySessionLaunchUnavailableError('source_owner_run_not_current')
++                  }
++                }
++                try {
++                  stage = await validateOwnerStartState(current, workflowId, stageId, ownerId)
++                } catch (error) {
++                  if (options.recoverySessionRequest !== undefined) {
++                    throw new RecoverySessionLaunchUnavailableError('owner_start_not_authorized')
++                  }
++                  throw error
++                }
+                 if (current.status === 'approved') {
+                   current.status = 'running'
+                   current.attempt = Number(current.attempt ?? 0) + 1
+@@ -12480,7 +12699,35 @@
+                   }
+                 }
+                 current.ownerRuns ??= {}
+-                const { executionDeviation: _previousDeviation, ...previousRun } = latestRecord ?? {}
++                let previousRun
++                if (recoveryLocated === undefined) {
++                  const { executionDeviation: _previousDeviation, ...regularPreviousRun } = latestRecord ?? {}
++                  previousRun = regularPreviousRun
++                } else {
++                  const { executionDeviation: _previousDeviation, recoverySession: _previousRecoverySession,
++                    recoveryContinuation: _previousRecoveryContinuation, result: previousResult,
++                    partialCommitSha: previousPartialCommitSha, error: _previousError,
++                    handoffs: _previousHandoffs, phase: _previousPhase,
++                    leaseToken: _previousLeaseToken, sessionId: _previousSessionId,
++                    recoveryAuditResult: _previousAuditResult,
++                    recoveryAuditPartialCommitSha: _previousAuditPartialCommitSha,
++                    ...recoveryPreviousRun } = latestRecord ?? {}
++                  previousRun = {
++                    ...recoveryPreviousRun,
++                    ...(previousResult === undefined ? {} : { recoveryAuditResult: previousResult }),
++                    ...(previousPartialCommitSha === undefined ? {} : {
++                      recoveryAuditPartialCommitSha: previousPartialCommitSha,
++                    }),
++                  }
++                }
++                const nextAttempt = Number(latestRecord?.attempt ?? 0) + 1
++                const recoverySession = recoveryLocated === undefined
++                  ? undefined
++                  : createRecoverySessionState({
++                    intent: recoveryLocated.intent,
++                    prompt: options.recoverySessionRequest.prompt,
++                    ownerRunBinding: { attempt: nextAttempt, leaseToken: acquiredLease.lease.token },
++                  })
+                 current.ownerRuns[key] = {
+                   ...previousRun,
+                   status: 'starting',
+@@ -12489,9 +12736,10 @@
+                   branch: claimedBranch,
+                   worktree: claimedWorktree,
+                   planDigest: current.planDigest,
+-                  attempt: Number(latestRecord?.attempt ?? 0) + 1,
++                  attempt: nextAttempt,
+                   leaseToken: acquiredLease.lease.token,
+                   startedAt: now(),
++                  ...(recoverySession === undefined ? {} : { recoverySession }),
+                 }
+                 // 临时工作记忆是同一 task 的可恢复上下文；它只存在于 Runtime 状态，
+                 // 不会直接混入 Git 跟踪的当前 Owner Memory。
+@@ -12537,8 +12785,11 @@
+           }
+           await runtime.withWorkflowLock(workflowId, async () => {
+             const latest = await readState(runtime, root, workflowId)
++            const { recoveryAuditResult: _recoveryAuditResult,
++              recoveryAuditPartialCommitSha: _recoveryAuditPartialCommitSha,
++              ...currentOwnerRun } = latest.ownerRuns[key]
+             latest.ownerRuns[key] = {
+-              ...latest.ownerRuns[key],
++              ...currentOwnerRun,
+               status: 'running',
+               baseCommit: entry.baseCommit,
+             }
+@@ -12631,16 +12882,96 @@
+               }),
+               updatedAt: now(),
+             }
++            const recordBeforeFailure = latest.ownerRuns[key]
++            let recoverySession = recordBeforeFailure?.recoverySession
++            let recoveryContinuation
++            const isReportedFailure = reported?.status === 'failed' && handoffs.length === 0
++            if (isReportedFailure && recoverySession !== undefined) {
++              try {
++                abortIfNeeded(signal)
++                const located = lookupRecoveryAdmissionIntent(latest, recoverySession.requestId)
++                if (located === undefined
++                  || latest.id !== workflowId
++                  || latest.planDigest !== recoverySession.planDigest
++                  || latest.plan?.contract !== PLAN_V2_CONTRACT
++                  || planDigest(latest.plan) !== recoverySession.planDigest
++                  || !submittedRecoveryRecordMatches(recordBeforeFailure, located.intent, acquiredLease.lease.token)
++                  || located.intent.sourceId !== recoverySession.sourceId
++                  || located.intent.rootProblemId !== recoverySession.rootProblemId
++                  || located.intent.requestId !== recoverySession.requestId
++                  || located.intent.attemptId !== recoverySession.attemptId
++                  || located.intent.taskId !== stageId
++                  || located.intent.ownerId !== ownerId
++                  || located.intent.planDigest !== recoverySession.planDigest
++                  || located.intent.executionIdentity?.sessionId !== recoverySession.executionIdentity?.sessionId
++                  || located.intent.executionIdentity?.promptId !== recoverySession.executionIdentity?.promptId
++                  || located.rootProblemId !== recoverySession.rootProblemId) {
++                  throw new Error('RecoverySession T20 intent 与已提交 Owner 记录不匹配')
++                }
++                const binding = recoveryBudgetBinding(workflowId, located.intent)
++                const executionRef = {
++                  id: located.intent.executionIdentity.sessionId,
++                  version: located.intent.executionIdentity.promptId,
++                }
++                const started = startRecoveryAttempt(latest.recoveryAdmission.budget, { ...binding, executionRef })
++                const settled = settleRecoveryAttempt(started.ledger, {
++                  ...binding,
++                  result: {
++                    status: 'failed',
++                    reference: {
++                      id: located.intent.executionIdentity.promptId,
++                      version: located.intent.executionIdentity.sessionId,
++                    },
++                  },
++                })
++                const settledAt = now()
++                latest.recoveryAdmission = { ...latest.recoveryAdmission, budget: settled.ledger }
++                recoverySession = { ...recoverySession, phase: 'settled_failed', settledAt }
++                recoveryContinuation = {
++                  contract: RECOVERY_CONTINUATION_CONTRACT,
++                  sourceId: located.intent.sourceId,
++                  rootProblemId: located.intent.rootProblemId,
++                  requestId: located.intent.requestId,
++                  attemptId: located.intent.attemptId,
++                  taskId: located.intent.taskId,
++                  ownerId: located.intent.ownerId,
++                  planDigest: located.intent.planDigest,
++                  executionIdentity: { ...located.intent.executionIdentity },
++                  ownerRunBinding: {
++                    attempt: recordBeforeFailure.attempt,
++                    sessionId: recordBeforeFailure.sessionId,
++                  },
++                }
++              } catch {
++                recoverySession = recoverySession === undefined
++                  ? undefined
++                  : {
++                    ...recoverySession,
++                    phase: 'technical_pause',
++                    technicalPauseReason: 'recovery_settlement_binding_invalid',
++                  }
++              }
++            } else if (recoverySession !== undefined && recoverySession.phase !== 'settled_failed') {
++              recoverySession = {
++                ...recoverySession,
++                phase: 'technical_pause',
++                technicalPauseReason: isReportedFailure
++                  ? 'recovery_submission_unconfirmed'
++                  : 'owner_result_not_failed',
++              }
++            }
+             latest.ownerRuns[key] = {
+-              ...latest.ownerRuns[key],
++              ...recordBeforeFailure,
+               status: blocked || requiresMainDecision ? 'blocked' : 'failed',
+-              phase: requiresMainDecision ? 'awaiting_user_authority' : latest.ownerRuns[key]?.phase,
++              phase: requiresMainDecision ? 'awaiting_user_authority' : recordBeforeFailure?.phase,
+               error: errorText(error),
+               handoffs,
+               autonomousRecovery,
+               ...(partialResult === undefined ? {} : { result: partialResult, partialCommitSha: partialResult.commitSha }),
+               branch: entry?.branch ?? claimedBranch,
+               worktree: entry?.worktree ?? claimedWorktree,
++              ...(recoverySession === undefined ? {} : { recoverySession }),
++              ...(recoveryContinuation === undefined ? {} : { recoveryContinuation }),
+             }
+             const taskState = latest.tasks?.find(item => item.taskId === stageId)
+             if (taskState !== undefined && taskState.status !== 'completed') {
+@@ -12673,11 +13004,18 @@
+           if (acquiredLease?.owned) await runtime.releaseOwnerLease(acquiredLease.lease)
+         }
+       })()
+-      runtime.externalOwnerRuns.set(`${workflowId}:${key}`, run)
++      runtime.externalOwnerRuns.set(externalRunKey, run)
++      if (recoveryRequestId !== undefined) {
++        runtime.externalOwnerRecoveryRequests.set(externalRunKey, {
++          requestId: recoveryRequestId,
++          instruction: recoveryInstruction,
++        })
++      }
+       try {
+         return await run
+       } finally {
+-        runtime.externalOwnerRuns.delete(`${workflowId}:${key}`)
++        runtime.externalOwnerRuns.delete(externalRunKey)
++        runtime.externalOwnerRecoveryRequests.delete(externalRunKey)
+       }
+     },
+     async finishOwner(agent, workflowId, stageId, ownerId, heldLease) {
+@@ -14311,13 +14649,17 @@
+         signal,
+       })
+       const latestState = await readState(runtime, state.root, state.id)
++      const persistedRecoverySession = latestState.ownerRuns?.[ownerRunKey(stage.id, entry.owner.id)]?.recoverySession
++      if (persistedRecoverySession !== undefined) {
++        activeOwner.recoverySession = structuredClone(persistedRecoverySession)
++      }
+       const worklog = worklogPromptSnapshot(
+         latestState.ownerMemoryWorklogs?.[ownerRunKey(stage.id, entry.owner.id)],
+         { taskId: stage.id, title: stage.title ?? stage.name ?? stage.id, ownerId: entry.owner.id },
+       )
+       activeOwner.memoryDigest = memorySnapshot.digest
+       activeOwner.worklog = worklog
+-      const prompt = ownerTaskPrompt(
++      const ownerPrompt = ownerTaskPrompt(
+         {
+           ...state,
+           ownerBranch: entry.branch,
+@@ -14330,6 +14672,12 @@
+         memorySnapshot,
+         worklog,
+       )
++      const prompt = activeOwner.recoverySession === undefined
++        ? ownerPrompt
++        : `${ownerPrompt}\n\n恢复执行上下文（已持久冻结，不能替代以上 Owner 任务约束）：\n${activeOwner.recoverySession.instruction?.content ?? ''}`
++      if (activeOwner.recoverySession !== undefined) {
++        await runtime.persistRecoverySessionPrompt(activeOwner, prompt)
++      }
+       const submission = await runtime.runChild(
+         agent,
+         entry.worktree,
+@@ -14341,6 +14689,7 @@
+           rolePrompt: ownerRolePrompt(entry.owner),
+           activeOwner,
+           requireOwnerSubmission: true,
++          ...(activeOwner.recoverySession === undefined ? {} : { recoverySession: activeOwner.recoverySession }),
+         },
+       )
+       const report = submission.report
+@@ -15643,6 +15992,7 @@
+         runtime.activeOwners.clear()
+         runtime.runningWorkflows.clear()
+         runtime.externalOwnerRuns.clear()
++        runtime.externalOwnerRecoveryRequests.clear()
+         runtime.manualOwnerRecoveries.clear()
+         runtime.supervisorDispatches.clear()
+         runtime.operationBindings.clear()
+--- owner-workflow-plugin/test/recovery-session.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-session.test.mjs
+@@ -11,6 +11,7 @@
+   appendObservedPrompt,
+   createRecoverySessionFixture,
+   injectObservedPrompt,
++  mutateRecoverySessionState,
+   readRecoverySessionState,
+   reserveRecoverySession,
+ } from './fixtures/recovery-session-fixture.mjs'
+@@ -282,3 +283,122 @@
+   ))
+   await assertNoReconcileEffects(cancelled, cancelledReceipt, cancelledState, cancelledRequests)
+ })
++
++test('T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction', async t => {
++  const failedReport = {
++    contract: 'DSH_OWNER_RESULT_V1',
++    status: 'failed',
++    summary: 'Controlled Owner reports that recovery cannot complete.',
++    changes: [], tests: [], handoffs: [], memory_updates: [],
++  }
++  // The fixture uses the source Harness provider, a live Owner Registry and
++  // controlled Owner worktree/branch.  MockAdapter supplies only this model
++  // stream; owner_submit is the exact production tool definition registered
++  // against this Runtime, rather than a test handler or full plugin host.
++  const fixture = await createRecoverySessionFixture(t, {
++    executable: true,
++    modelScript: ({ toolCallResponse, textResponse }) => [
++      toolCallResponse('t22-owner-submit-failed', 'owner_submit', { report: failedReport }),
++      // Harness makes one final model step after the tool result before the
++      // source provider returns the submitted Owner report.
++      textResponse('submission recorded'),
++    ],
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  const initialRequest = request(receipt)
++
++  await assert.rejects(
++    fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, initialRequest),
++    error => error?.name === 'OwnerReportedError',
++  )
++  assert.equal(fixture.adapter.requests.length, 2)
++
++  const settled = await readRecoverySessionState(fixture)
++  const run = settled.ownerRuns['T1:api']
++  assert.equal(run.status, 'failed')
++  assert.equal(run.attempt, 3)
++  assert.equal(run.sessionId, receipt.executionIdentity.sessionId)
++  assert.equal(run.recoverySession.phase, 'settled_failed')
++  assert.deepEqual(run.recoverySession.executionIdentity, receipt.executionIdentity)
++  assert.deepEqual(run.recoverySession.instruction, {
++    id: receipt.executionIdentity.promptId,
++    content,
++  })
++  assert.equal(run.recoverySession.prompt.id, receipt.executionIdentity.promptId)
++  assert.match(run.recoverySession.prompt.content, /恢复执行上下文/u)
++  assert.match(run.recoverySession.prompt.content, new RegExp(content))
++  assert.deepEqual(run.recoveryContinuation.executionIdentity, receipt.executionIdentity)
++  assert.deepEqual(run.recoveryContinuation.ownerRunBinding, {
++    attempt: 3,
++    sessionId: receipt.executionIdentity.sessionId,
++  })
++
++  const budgetAttempt = settled.recoveryAdmission.budget.attempts.find(
++    item => item.requestId === receipt.requestId,
++  )
++  assert.equal(budgetAttempt.state, 'settled')
++  assert.deepEqual(budgetAttempt.executionRef, {
++    id: receipt.executionIdentity.sessionId,
++    version: receipt.executionIdentity.promptId,
++  })
++  assert.deepEqual(budgetAttempt.result, {
++    status: 'failed',
++    reference: {
++      id: receipt.executionIdentity.promptId,
++      version: receipt.executionIdentity.sessionId,
++    },
++  })
++
++  const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
++  assert.ok(raw)
++  assert.match(raw.content, /"type":"user\/message"/u)
++  assert.ok(raw.content.includes(receipt.executionIdentity.promptId))
++  assert.match(raw.content, /"name":"owner_submit"/u)
++
++  const requestsBeforeReplay = fixture.adapter.requests.length
++  const replay = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, initialRequest,
++  )
++  assert.equal(replay.outcome, 'settled_failed')
++  assert.equal(replay.phase, 'settled_failed')
++  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
++  assert.deepEqual(await readRecoverySessionState(fixture), settled)
++  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
++
++  const changedInstruction = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent,
++    fixture.workflowId,
++    request(receipt, { id: receipt.executionIdentity.promptId, content: 'replacement recovery instruction' }),
++  )
++  assert.equal(changedInstruction.outcome, 'paused')
++  assert.equal(changedInstruction.reason, 'persisted_owner_binding_mismatch')
++  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
++  assert.deepEqual(await readRecoverySessionState(fixture), settled)
++  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
++
++  // A legacy retry must not inherit a reserved identity from this failed
++  // recovery. It needs an explicit new recovery request before a new attempt.
++  await assert.rejects(
++    fixture.runtime.runExternalOwner(fixture.admissionAgent, fixture.workflowId, 'T1', 'api'),
++    /recovery|恢复/u,
++  )
++  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
++  assert.deepEqual(await readRecoverySessionState(fixture), settled)
++  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
++
++  // Deliberate bad-state injection: the settled receipt still names the
++  // reservation, but the current Owner run no longer names that session.
++  // Reconciliation must not treat the old receipt as authorization to reuse
++  // or launch anything, and must leave the malformed durable state untouched.
++  const corruptSessionId = `${receipt.executionIdentity.sessionId}-wrong`
++  const corrupted = await mutateRecoverySessionState(fixture, state => {
++    state.ownerRuns['T1:api'].sessionId = corruptSessionId
++  })
++  const corruptReplay = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, initialRequest,
++  )
++  assert.equal(corruptReplay.outcome, 'paused')
++  assert.equal(fixture.adapter.requests.length, requestsBeforeReplay)
++  assert.deepEqual(await readRecoverySessionState(fixture), corrupted)
++  assert.deepEqual(await fixture.readRaw(receipt.executionIdentity.sessionId), raw)
++})
+--- docs/specs/main-thread-owner-workflow/contracts/recovery-session-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-session-v1.md
+@@ -1,10 +1,6 @@
+ # 恢复会话对账 V1
+
+-实现：[recovery-session.mjs](../../../../owner-workflow-plugin/src/recovery-session.mjs)。这是 T-22 的显式局部适配接口；不连接 control、runner 或 legacy 路由，也不宣称所有调度入口已经启用恢复。
+-
+-## 调用
+-
+-Runtime 的唯一入口是：
++实现：[recovery-session.mjs](../../../../owner-workflow-plugin/src/recovery-session.mjs)。这是 T-22 的显式局部入口；不接入 runner、control 或 legacy 路由。调用方只能消费已持久化的 T-20 reservation，不能创建新的 reservation、重扣额度、传入 lease、session、attempt 或授权布尔值。
+
+ ```js
+ await runtime.reconcileRecoverySession(agent, workflowId, {
+@@ -12,46 +8,57 @@
+   taskId: 'plan-task-id',
+   ownerId: 'plan-owner-id',
+   requestId: 't20-persisted-request-id',
+-  prompt: { id: 't20-reserved-prompt-id', content: 'frozen recovery prompt' },
++  prompt: { id: 't20-reserved-prompt-id', content: 'frozen recovery instruction' },
+ })
+ ```
+
+-调用者不能给出 root、attempt、session、预算、`launchAuthorized`、lease token 或任何“已核验”布尔值。Runtime 用当前持久状态的 T-20 `recoveryAdmission` 完整导入校验读取 `requestId`，并精确导出 plan/task/Owner/root/request/attempt 和预留 `executionIdentity`。缺失意图、结构损坏、错绑定或计划漂移只返回技术暂停；不会再次领取或扣减额度。
++`prompt.content` 是冻结的恢复上下文，不是模型的 Owner prompt。Runtime 在已有 `runOwnerEntry` 完成 `createOwnerEntry`、Registry、依赖、worktree/baseCommit、memory 和 worklog 准备后，生成完整 `ownerTaskPrompt`，附加这段持久 instruction，并在 provider `create` 前锁内持久化最终文本。调用方不能替换 Owner 角色提示、沙箱、工具或 `owner_submit` 提交关卡。
+
+-`runtime.reconcileRecoverySession(...)` 的结构化返回值为：
++## 首次启动
++
++入口先只读导入完整 T-20 ledger，核对 request/task/Owner/plan/prompt ID 与 JSONL `compression:'none'` 后，进入同一个 `runExternalOwner → createOwnerEntry → runOwnerEntry` 链路。`runExternalOwner` 是唯一领取 Owner lease 的位置，并在其锁内再次导入 T-20、匹配原 Owner failure source、运行 `validateOwnerStartState`，再写新的 Owner record。预检不授予权限；全部变异都在第二次核验之后。
++
++新 record 的 attempt 递增，并以实际 lease token 持久化：
+
+ ```js
+-{
+-  contract: 'DSH_RECOVERY_SESSION_RESULT_V1',
+-  outcome: 'pending' | 'running' | 'observed_terminal' | 'paused',
+-  phase: 'durably_queued' | 'observed_running' | 'observed_terminal' | 'technical_pause',
+-  workflowId, taskId, ownerId, rootProblemId, requestId, attemptId,
++recoverySession: {
++  contract: 'DSH_RECOVERY_SESSION_STATE_V1',
++  sourceId, rootProblemId, requestId, attemptId, planDigest,
+   executionIdentity: { sessionId, promptId },
+-  observation?: { revision, turn?, step?, terminalSeq?, assistantMessageId? },
+-  reason?: 'stable_machine_reason',
++  instruction: { id: promptId, content: 'caller recovery instruction' },
++  ownerRunBinding: { attempt, leaseToken },
++  phase: 'preparing'
+ }
+ ```
+
+-`inspectRecoverySession(...)` 是纯只读事实投影，不带 Runtime envelope、workflow 或账本身份。它返回 `{ outcome, phase, revision?, turn?, step?, terminalSeq?, assistantMessageId?, reason? }`。其中 `observed_terminal` only means that the stored model turn has a unique matching `turn/end`/`step/end`/assistant message. It is not Owner business success or failure and never substitutes for a T-13 result. 当前投影只支持独占单 prompt、一个 turn 和一个 step；多 step Owner 历史会保守暂停，不能泛化为通用终态归因。
++随后状态顺序为：`preparing`（无外部 session）→ `creating`（最终 Owner prompt 已锁内冻结）→ `created`（真实 `agents.create({sessionId})` 后 `persistOwnerSession` 成功）→ `submitted`（`followup({id: promptId})` 后 `sessions.flush` 成功）。provider 仍使用正式 preset 组合、Owner sandbox、`activeOwners` 注册和 `requireOwnerSubmission:true`；没有裸 AgentLoop 路径。
+
+-## 当前 Runtime 边界
++只有当前 Workflow 已由正式流程处于可启动状态且所有既有开始门禁通过时才会启动。该入口不会把 failed/stopped task 或 failed Workflow 改回 runnable，也不把测试直接重写状态当作正式 repair/resume。失败的授权、Registry、依赖、worktree 或 plan gate 返回 `paused / technical_pause`，不 create、不 followup、不扣额。
+
+-`runtime.reconcileRecoverySession(...)` 读取 reservation、检查现有 `recoverySession` 时会先做 raw 对账。纯投影可报告 `pending`、`running` 或 `observed_terminal`，但当前 Runtime 新 acquire 的 lease token 与旧持久记录不同时一律封装为 `paused`；它不会把这些只读事实变成启动或结算授权。它不 create、resume、followup 或 settle。一个未绑定 recovery session 的 T-20 reservation 也只在复用 `validateOwnerStartState` 的当前 plan/Registry/依赖/审批门禁后返回 `owner_execution_adapter_not_ready`；不会把旧 failed run 改成新 attempt。
++## 实际失败结算与重放
+
+-Provider 保留了未来受保护接缝：若后续完整接入，必须使用 Owner Workflow 的 one-shot provider，而不是裸 AgentLoop，并坚持 `create({ sessionId: reservedSessionId }) -> persistOwnerSession -> followup(reservedPromptId) -> ctx.sessions.flush(...)` 的顺序。`persistOwnerSession` 已对 recovery state 的 lease/attempt/session/prompt 绑定执行精确核验。此接缝本身不构成已启用启动能力。
++首次调用中，真实 `OwnerReportedError`（`owner_submit` 的 `report.status === 'failed'`）仍按普通 Owner 生命周期抛出。Runtime 在该真实失败 record 的保存事务中，只有同时满足以下事实才调用 T-13 `startRecoveryAttempt` 和 `settleRecoveryAttempt`：
+
+-一个已保存的 recovery session 只能由同一持久 Owner run 的同一 lease token 继续变异。新进程即使取得新的 lease，也没有旧 session 的操作权：它最多进行只读检查，随后返回 `paused`，不 create、resume、followup 或 settle。PID 死亡、文件缺失或 caller boolean 都不能改写这条规则。
++- recovery phase 已是 `submitted`，即 followup 已获 JSONL flush 确认；
++- 当前 record 的 workflow/task/Owner/plan/attempt/session/lease 与 T-20 intent 完全相等，且 lease 未失效、调用未取消；
++- 当前 plan digest 及计划内容摘要仍等于 intent；
++- T-13 回执精确使用 `executionRef={id:sessionId,version:promptId}` 与 failed `reference={id:promptId,version:sessionId}`。
+
+-## JSONL 只读对账
++结算成功会持久化 `phase:'settled_failed'` 和 `DSH_RECOVERY_CONTINUATION_V1`。相同 requestId 且完全相同 instruction 的后续调用不会重送或重结算；它只核验 Owner record、continuation 和 T-13 receipt 后返回：
+
+-只接受当前真实 `JsonlSessionPersistence` 且 `compression:'none'`、`supportsRawArtifacts:true`。适配器按 `listSnapshots -> readRaw -> readFrom(0) -> listSnapshots` 检查同一 session：raw artifact 必须是完整、以换行结尾且每一行可解析的 JSONL，其 header/id 必须匹配；适配器按已发布的 schema-17 规则严格展开每个 packed chunk record，并要求展开后的全部逻辑事件逐项等于 `readFrom`；`readFrom` 的逻辑事件还必须从 seq 0 连续；前后 session revision 必须完全相同。未知或坏的 packed record 一律暂停。
++```js
++{ contract: 'DSH_RECOVERY_SESSION_RESULT_V1', outcome: 'settled_failed',
++  phase: 'settled_failed', continuation: { contract: 'DSH_RECOVERY_CONTINUATION_V1', ... } }
++```
+
+-只接受唯一的冻结 user prompt、唯一 turn/step 和一致的 assistant 事实。pending inbox、运行中 turn、无 artifact、torn/坏日志、raw/read 错误、revision 变化、多 prompt、额外输入、错身份或所有权不明都保持已用额度并返回技术暂停。查询路径不把 `load`/`inspect` 合成的 interrupted 解释成真实失败。
++成功 Owner、blocked/handoff、没有 `owner_submit`、create 后未确认 followup，或任何 lease/plan/receipt 漂移，都不伪造 failed continuation。它们保持 T-20 reservation，记录技术暂停而不退款。若后续有新的 T-20 request 以已结算失败为 source，它仍必须通过正常 runnable/start gate；本入口不负责把失败 Workflow 恢复为 runnable。
+
+-## 未在此局部接口结算的边界
++## 已存在 session 的只读边界
+
+-此版本不从模型 `turn/end` 推导 Owner 业务结果，不伪造 T-13 `failed`，也不生产 `DSH_RECOVERY_CONTINUATION_V1`。该引用只能在同一个新 Owner run 的真实失败已由 Owner 运行时持久化、且当前 lease/attempt/session 与 T-20 intent 完整相等时，通过 `startRecoveryAttempt`/`settleRecoveryAttempt` 的真实失败回执生成。首次启动、resume 与该结算接缝尚未接入本局部入口；T-22 保持开发中，T-15/T-23 不解锁。
++`inspectRecoverySession(...)` 是纯事实投影，返回 `{ outcome, phase, revision?, turn?, step?, terminalSeq?, assistantMessageId?, reason? }`。它只接受真实 `JsonlSessionPersistence`、`compression:'none'`、raw artifacts；按 schema-17 展开 packed records，要求完整 raw 逻辑事件与 `readFrom(0)` 逐项相等、seq 连续，且 `listSnapshots` 前后 revision 稳定。raw 数据中一条匹配 prompt、turn/end 或 assistant message 不是 Owner 业务成功或失败。当前投影也只支持单 turn/step；真实 Owner tool 链的多 step 结果不能据此结算。
+
+-## Lease领取冲突（第17轮）
++已有但未结算的 session 无论 raw 投影为 pending、running 或 observed terminal，Runtime 都只返回顶层 `paused / technical_pause`，把事实放在 `observation`。它不 resume、create、followup 或 settle。`preparing`、没有最终冻结 prompt、坏 raw、未知 persistence 或旧 lease 都同样暂停。重放时 caller instruction 必须逐字等于持久 `instruction`；相同 requestId 不能借由替换 instruction 取得运行中的 promise 或旧 session 权限。
+
+-同Owner已被本进程/磁盘持有者占用、初始化中或有限过期恢复竞争尚未取得lease时，入口返回`paused / technical_pause / owner_lease_unavailable`。该返回不含未经锁内验证的intent身份，不读取session或Workflow账本，不释放其他持有者的lease。仅领取边界的可辨识冲突转换为暂停；调用取消、非冲突IO和已持有lease失效继续报错。既有其他Owner运行入口仍按原有异常拒绝规则处理占用。
++## Lease 冲突
++
++入口会在领取 lease 前做只读 Workflow/T-20/persistence 预检，但不会读取外部 session artifact 或改写账本。真正获取 lease 仍只在 `runExternalOwner`；同 Owner 被其他运行占用、lease 初始化竞争或可辨识磁盘领取冲突映射为 `paused / technical_pause / owner_lease_unavailable`。取消、I/O、已持有 lease 失效和其他运行错误继续抛出。冲突路径不释放其他持有者的 lease，也不产生 model request 或预算变化。
+--- owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs (baseline)
++++ owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs
+@@ -2,7 +2,7 @@
+ import { execFile } from 'node:child_process'
+ import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+ import { tmpdir } from 'node:os'
+-import { join } from 'node:path'
++import { dirname, join } from 'node:path'
+ import { fileURLToPath, pathToFileURL } from 'node:url'
+ import { promisify } from 'node:util'
+
+@@ -11,6 +11,12 @@
+   STATE_CONTRACT,
+   normalizePlanV2,
+ } from '../../src/model.mjs'
++import {
++  applyApprovedRegistryChange,
++  ensureRegistry,
++  proposeRegistryChange,
++} from '../../src/registry.mjs'
++import { ownerSubmitDefinition } from '../../index.js'
+ import { createOwnerWorkflowRuntime } from '../../src/runtime.mjs'
+ import { createTaskState } from '../../src/supervisor.mjs'
+
+@@ -18,6 +24,8 @@
+ const harnessRoot = fileURLToPath(new URL('../../../deepseek-harness/', import.meta.url))
+ const sourcePaths = [
+   'vendor/cordis/src/index.ts',
++  'vendor/loader/src/index.ts',
++  'vendor/include/src/index.ts',
+   'packages/core/session/src/index.ts',
+   'packages/core/session/src/types.ts',
+   'packages/llm/llm/src/index.ts',
+@@ -26,6 +34,7 @@
+   'packages/core/agent/src/index.ts',
+   'packages/core/agent-loop/src/index.ts',
+   'packages/subagent/subagent/src/index.ts',
++  'packages/preset/agent-presets/src/index.ts',
+   'packages/session/session-persistence/src/index.ts',
+   'packages/session/session-persistence/src/coordinator.ts',
+   'packages/session/session-persistence-jsonl/src/index.ts',
+@@ -36,14 +45,28 @@
+   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+ }
+
++function canonical(value) {
++  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
++  if (value !== null && typeof value === 'object') {
++    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
++  }
++  return JSON.stringify(value)
++}
++
++function registryDigest(registry) {
++  return createHash('sha256').update(canonical(registry)).digest('hex')
++}
++
+ async function git(root, args) {
+   await execFileAsync('git', args, { cwd: root, encoding: 'utf8' })
+ }
+
+ async function sourceModules() {
+   const source = async path => await import(pathToFileURL(join(harnessRoot, path)).href)
+-  const [cordis, session, sessionTypes, llm, systemPrompt, tools, agent, agentLoop, subagent, jsonl, mock] = await Promise.all([
++  const [cordis, loader, include, session, sessionTypes, llm, systemPrompt, tools, agent, agentLoop, subagent, agentPresets, jsonl, mock] = await Promise.all([
+     source('vendor/cordis/src/index.ts'),
++    source('vendor/loader/src/index.ts'),
++    source('vendor/include/src/index.ts'),
+     source('packages/core/session/src/index.ts'),
+     source('packages/core/session/src/types.ts'),
+     source('packages/llm/llm/src/index.ts'),
+@@ -52,11 +75,14 @@
+     source('packages/core/agent/src/index.ts'),
+     source('packages/core/agent-loop/src/index.ts'),
+     source('packages/subagent/subagent/src/index.ts'),
++    source('packages/preset/agent-presets/src/index.ts'),
+     source('packages/session/session-persistence-jsonl/src/index.ts'),
+     source('packages/core/agent-loop/tests/mock-adapter.ts'),
+   ])
+   return {
+     Context: cordis.Context,
++    Loader: loader.default,
++    Include: include.default,
+     SessionStore: session.default,
+     SessionId: sessionTypes.SessionId,
+     LlmRuntime: llm.default,
+@@ -66,15 +92,20 @@
+     AgentRegistry: agent.default,
+     AgentLoop: agentLoop.default,
+     SubagentRuntime: subagent.default,
++    AgentPresets: agentPresets.default,
+     JsonlSessionPersistence: jsonl.default,
+     MockAdapter: mock.MockAdapter,
+     textResponse: mock.textResponse,
++    toolCallResponse: mock.toolCallResponse,
+   }
+ }
+
+ async function mountHarness(root, adapter, compression = 'none') {
+   const modules = await sourceModules()
+   const ctx = new modules.Context()
++  ctx.baseUrl = pathToFileURL(harnessRoot).href + '/'
++  await ctx.plugin(modules.Loader)
++  ctx.loader.builtins.include = modules.Include
+   await ctx.plugin(modules.LlmRuntime)
+   await ctx.plugin(modules.SessionStore)
+   await ctx.plugin(modules.SystemPrompt)
+@@ -82,6 +113,11 @@
+   await ctx.plugin(modules.AgentRegistry)
+   await ctx.plugin(modules.AgentLoop, { agents: [] })
+   await ctx.plugin(modules.SubagentRuntime)
++  // The real AgentPresets service is present for the source provider's
++  // composeFrom contract.  This isolated transport fixture deliberately has
++  // no full host preset profile; the actual production owner_submit definition
++  // is registered below against this fixture's actual Runtime instance.
++  await ctx.plugin(modules.AgentPresets, { default: 'none', roots: [], includeUserRoot: false })
+   await ctx.plugin(modules.JsonlSessionPersistence, { root, compression })
+   ctx.llm.registerAdapter(['mock'], adapter)
+   return { ctx, modules }
+@@ -122,10 +158,10 @@
+   }
+ }
+
+-function planFixture() {
++function planFixture({ registryDigest: boundRegistryDigest = 'a'.repeat(64) } = {}) {
+   return normalizePlanV2({
+     contract: PLAN_V2_CONTRACT,
+-    registryDigest: 'a'.repeat(64),
++    registryDigest: boundRegistryDigest,
+     summary: 'T22 recovery-session reconciliation fixture',
+     owners: [{ id: 'api', name: 'API Owner', description: 'Owns API sources', scope: ['src/api/**'], exclude: [] }],
+     verifications: [{ id: 'unit', run: ['node', '--test'] }],
+@@ -134,6 +170,20 @@
+       write: ['src/api/repair.mjs'], verify: ['unit'], done: ['API repair is verified'],
+     }],
+   })
++}
++
++async function installFixtureRegistry(worktree) {
++  let registry = await ensureRegistry(worktree)
++  const owner = {
++    id: 'api', name: 'API Owner', description: 'Owns API sources', scope: ['src/api/**'], exclude: [],
++  }
++  const proposal = proposeRegistryChange(registry, {
++    type: 'add', owner, reason: 'Register the long-lived API Owner for recovery-session integration tests',
++  })
++  registry = await applyApprovedRegistryChange(worktree, { ...proposal, approvedDigest: proposal.digest })
++  await git(worktree, ['add', '.owner-workflow'])
++  await git(worktree, ['commit', '-qm', 'Register recovery-session fixture Owner'])
++  return registry
+ }
+
+ function statePath(root, workflowId) {
+@@ -217,7 +267,11 @@
+   workflowId = 'wf-recovery-session',
+   limits,
+   responses = ['recovery answer'],
++  // This is limited to the model transport.  Persistence, Owner gates,
++  // provider registration, and owner_submit remain their production code.
++  modelScript,
+   compression = 'none',
++  executable = false,
+ } = {}) {
+   const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-t22-tests-r16-')))
+   const sessionRoot = join(root, '.dsh-workflow', 'recovery-sessions')
+@@ -229,9 +283,22 @@
+   await git(root, ['add', 'README.md'])
+   await git(root, ['commit', '-qm', 'fixture'])
+   const baseHead = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' })).stdout.trim()
+-
+-  const plan = planFixture()
++  const workflowBranch = `dsh/workflow/${workflowId}`
++  const workflowWorktree = executable
++    ? join(root, '.dsh-workflow', 'worktrees', workflowId, 'workflow')
++    : root
++  let liveRegistry
++  if (executable) {
++    await mkdir(dirname(workflowWorktree), { recursive: true })
++    await git(root, ['worktree', 'add', '-q', '-b', workflowBranch, workflowWorktree, 'main'])
++    liveRegistry = await installFixtureRegistry(workflowWorktree)
++  }
++  const plan = planFixture({
++    registryDigest: liveRegistry === undefined ? undefined : registryDigest(liveRegistry),
++  })
+   const planDigest = digest(plan)
++  const ownerWorktree = join(root, '.dsh-workflow', 'worktrees', workflowId, 'owners', 'api')
++  const ownerBranch = `dsh/owner/${workflowId}/api`
+   const state = {
+     contract: STATE_CONTRACT,
+     id: workflowId,
+@@ -239,8 +306,8 @@
+     baseBranch: 'main',
+     baseRef: 'main',
+     baseHead,
+-    workflowBranch: `dsh/workflow/${workflowId}`,
+-    workflowWorktree: root,
++    workflowBranch,
++    workflowWorktree,
+     request: 'exercise real recovery-session reconciliation',
+     createdAt: '2026-09-11T00:00:00.000Z',
+     updatedAt: '2026-09-11T00:00:00.000Z',
+@@ -249,12 +316,13 @@
+     revision: 0,
+     ownerRuns: { 'T1:api': {
+       ...recoveryRecord('T1', 'api', planDigest),
+-      worktree: root,
+-      branch: 'main',
++      worktree: executable ? ownerWorktree : root,
++      branch: executable ? ownerBranch : 'main',
+     } },
+     ownerSessions: {},
+     plan,
+     planDigest,
++    ...(liveRegistry === undefined ? {} : { registryDigest: registryDigest(liveRegistry) }),
+     planReview: {
+       contract: 'DSH_PLAN_REVIEW_V1', status: 'passed',
+       summary: 'The exact plan digest was independently reviewed.', issues: [], planDigest,
+@@ -278,10 +346,13 @@
+   await writeFile(statePath(root, workflowId), `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+   const modules = await sourceModules()
+-  const adapter = new modules.MockAdapter(responses.map(text => modules.textResponse(text)))
++  const adapter = new modules.MockAdapter(modelScript === undefined
++    ? responses.map(text => modules.textResponse(text))
++    : modelScript(modules))
+   const mounted = await mountHarness(sessionRoot, adapter, compression)
+   const runtime = createOwnerWorkflowRuntime(mounted.ctx, {})
+   await runtime.prepareRoot(root)
++  mounted.ctx.tools.register(ownerSubmitDefinition(runtime))
+   runtime.registerChildProvider()
+   const parent = await mounted.ctx.agents.create({
+     sessionId: modules.SessionId('recovery-session-parent'),

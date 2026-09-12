@@ -1,0 +1,30 @@
+
+for (const checkpoint of ['before-review-authentication', 'after-review-authentication']) test(`R78 arbitration replay survives a winner ${checkpoint} in consultation`, { timeout: 30_000 }, async t => {
+  const f = await ready(t)
+  const authenticate = f.runtime.reviewRecoveryCandidate.bind(f.runtime)
+  let release, reached, first = true
+  const barrier = new Promise(resolve => { release = resolve })
+  const firstReady = new Promise(resolve => { reached = resolve })
+  f.runtime.reviewRecoveryCandidate = async (...args) => {
+    const pause = first; first = false
+    if (pause && checkpoint === 'before-review-authentication') { reached(); await barrier }
+    const result = await authenticate(...args)
+    if (pause && checkpoint === 'after-review-authentication') { reached(); await barrier }
+    return result
+  }
+  const early = arbitrate(f)
+  try {
+    await firstReady
+    const winner = await arbitrate(f)
+    const before = await readRecoverySessionState(f), calls = f.adapter.requests.length
+    release()
+    const replay = await early
+    assert.equal(winner.review.status, 'passed')
+    assert.equal(replay.review.status, 'passed')
+    assert.equal(replay.replayed, true)
+    assert.equal(replay.provenance.kind, 'arbitration')
+    assert.equal(f.adapter.requests.length, calls)
+    assert.equal(before.recoveryAdmission.budget.totalUsed, 4)
+    assert.deepEqual(await readRecoverySessionState(f), before)
+  } finally { release(); await early.catch(() => undefined) }
+})

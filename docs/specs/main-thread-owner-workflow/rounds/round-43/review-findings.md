@@ -1,0 +1,7 @@
+# R43 审查发现
+
+P1 用户决策竞态仍未闭合：recoverOwnerWithAdmission初读为技术失败后，reserveRecoveryAdmission事务前到达真实typed external_authority；领取事务正确拒绝，但抛出的错误未转为持久化Owner/task/mainOutbox。dispatchOwnerRecovery后台仅记background-recovery-failed，主线程无法收到用户待决。
+
+独立审查/root/t21_contract_review确认。初读authority与成功领取后authority已处理，不能据此代替该中间窗口。下一轮最小修复为结构化authority拒绝标识及锁内当前依据重读，持久化原有决策队列；不得匹配错误文本把任意技术故障变成用户授权。补实际dispatch、typed deviation、零支出/零执行与outbox交付回归。冻结期间不修改源码。
+
+同一根因的优先级维度：reserve目前先检查handoff，才检查typed external_authority；同源terminal失败同时满足两者时，应优先产生用户决策。后续锁内重读须限定同attempt/session且failed|blocked，若当前已running或身份改变，只安全暂停/来源变化，不把仍运行的Owner强写blocked。初读authority路径也应遵循该限定，不能因为存在typed记录就改变live运行状态。

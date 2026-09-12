@@ -1,0 +1,13 @@
+{
+  "contract": "DSH_TICKET_IMPLEMENTATION_CANDIDATE_V1",
+  "candidateId": "R93-T06-public-owner-change-protocol",
+  "ticketId": "T-06",
+  "specRevision": "R4",
+  "status": "development_complete",
+  "scope": "scope.md",
+  "report": "report.md",
+  "review": "review.md",
+  "testResults": "test-results.json",
+  "runtimeSessionCreated": false,
+  "protocolContract": "DSH_PUBLIC_OWNER_CHANGE_REQUEST_V1"
+}

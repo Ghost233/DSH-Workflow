@@ -1,0 +1,39 @@
+{
+  "producerPid": 89682,
+  "exit": {
+    "code": null,
+    "signal": "SIGKILL"
+  },
+  "checkpoint": {
+    "phase": "settled_failed",
+    "ownerStatus": "failed",
+    "budgetAttempt": {
+      "workflowId": "wf-recovery-session",
+      "rootProblemId": "recovery-root-c216a5a8-579e-4897-9530-a2e460767cba",
+      "requestId": "recovery-request-0cbfb0e4-fc70-4e18-9da2-98e61a42b693",
+      "attemptId": "recovery-attempt-50623ac6-30d1-4ef1-84f2-eb97501e0daa",
+      "taskId": "T1",
+      "ownerId": "api",
+      "executionVersion": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+      "state": "settled",
+      "executionRef": {
+        "id": "recovery-session-16b76983-0bf0-4f5d-90d5-27e46afa56db",
+        "version": "recovery-prompt-380880d1-fc8e-4ff5-ac1a-3f9dbec6bbe2"
+      },
+      "result": {
+        "status": "failed",
+        "reference": {
+          "id": "recovery-prompt-380880d1-fc8e-4ff5-ac1a-3f9dbec6bbe2",
+          "version": "recovery-session-16b76983-0bf0-4f5d-90d5-27e46afa56db"
+        }
+      }
+    },
+    "modelRequests": 2,
+    "executionIdentity": {
+      "sessionId": "recovery-session-16b76983-0bf0-4f5d-90d5-27e46afa56db",
+      "promptId": "recovery-prompt-380880d1-fc8e-4ff5-ac1a-3f9dbec6bbe2"
+    }
+  },
+  "rawLocationPath": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-fMtrdh/dsh-t22-tests-r16-bEmB8i/.dsh-workflow/recovery-sessions/--private-var-folders-pk-4_rtp5211139hr72f5z3yv2c0000gn-T-dsh-t22-restart-owned-fMtrdh-dsh-t22-tests-r16-bEmB8i-.dsh-workflow-worktrees-wf-recovery-session-owners-api--/recovery-session-16b76983-0bf0-4f5d-90d5-27e46afa56db/session.jsonl",
+  "rawArtifactPresent": true
+}

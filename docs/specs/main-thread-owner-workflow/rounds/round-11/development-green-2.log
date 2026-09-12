@@ -1,0 +1,24 @@
+✔ R11 预算错误不覆盖当前用户依据：supervisor/permission (540.903667ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/business (509.491458ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/technical (489.738834ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/stale-permission (561.187834ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/permission (912.259666ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/business (2130.516125ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/technical (1505.533583ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/stale-permission (1251.549041ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/permission (663.204459ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/business (575.131083ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/technical (710.680875ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/stale-permission (543.277667ms)
+✔ R11 预算错误不覆盖当前用户依据：repeated-recover/permission (577.173958ms)
+✔ R11 预算错误不覆盖当前用户依据：repeated-recover/business (573.641167ms)
+✔ R11 预算错误不覆盖当前用户依据：repeated-recover/technical (515.261708ms)
+✔ R11 预算错误不覆盖当前用户依据：repeated-recover/stale-permission (565.371708ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12755.593875

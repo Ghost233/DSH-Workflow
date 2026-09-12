@@ -1,0 +1,3 @@
+# R69：独立任务的真实持久reservation
+
+T15：锁内复核selector action，目标task补丁和candidatePause绑定reservation原子落盘；同action重放幂等；来源变化拒绝。现有通用执行入口拒绝这种reservation，待Owner生命周期接线后解除；不提前激活daemon派发。主线程独占写入，代理只读审查。

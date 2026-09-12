@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: T07 real document checkpoint restores existing clean-base preflight and replays one commit
+not ok 1 - T07 real document checkpoint restores existing clean-base preflight and replays one commit
+  ---
+  duration_ms: 1981.204
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:53:1'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: UNRELATED_WORKTREE_REFUSED at worktree (.dsh-workflow/.gitignore)'
+  code: 'PLANNING_TRANSACTION_UNRELATED_WORKTREE_REFUSED'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    assertWorkspaceBoundary (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:339:25)
+    runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:738:7)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:59:18)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+# Subtest: T07 SIGKILL after-activation resumes in a new process without a second commit
+ok 2 - T07 SIGKILL after-activation resumes in a new process without a second commit
+  ---
+  duration_ms: 7607.029458
+  type: 'test'
+  ...
+# Subtest: T07 concurrent same-parent processes leave one complete activation and one checkpoint
+ok 3 - T07 concurrent same-parent processes leave one complete activation and one checkpoint
+  ---
+  duration_ms: 7814.272625
+  type: 'test'
+  ...
+# Subtest: T07 late version receipts remain history-only and cannot change active snapshot
+ok 4 - T07 late version receipts remain history-only and cannot change active snapshot
+  ---
+  duration_ms: 3633.430916
+  type: 'test'
+  ...
+# Subtest: T07 corrupted persisted snapshot is rejected during completed-replay
+ok 5 - T07 corrupted persisted snapshot is rejected during completed-replay
+  ---
+  duration_ms: 4173.490042
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 4
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 25370.218416

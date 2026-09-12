@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: T22 L2 real PlanRevision pending_check cannot settle the prior recovery intent
+ok 1 - T22 L2 real PlanRevision pending_check cannot settle the prior recovery intent
+  ---
+  duration_ms: 2493.913584
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2698.309292

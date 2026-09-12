@@ -1,0 +1,156 @@
+✖ R11 预算错误不覆盖当前用户依据：supervisor/permission (520.505084ms)
+✖ R11 预算错误不覆盖当前用户依据：supervisor/business (467.6575ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/technical (454.239875ms)
+✔ R11 预算错误不覆盖当前用户依据：supervisor/stale-permission (452.010333ms)
+✖ R11 预算错误不覆盖当前用户依据：direct-owner/permission (847.401459ms)
+✖ R11 预算错误不覆盖当前用户依据：direct-owner/business (794.29625ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/technical (914.271917ms)
+✔ R11 预算错误不覆盖当前用户依据：direct-owner/stale-permission (855.490083ms)
+✖ R11 预算错误不覆盖当前用户依据：recover/permission (583.558834ms)
+✖ R11 预算错误不覆盖当前用户依据：recover/business (491.245667ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/technical (552.878333ms)
+✔ R11 预算错误不覆盖当前用户依据：recover/stale-permission (497.855042ms)
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/permission (482.473041ms)
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/business (484.191833ms)
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/technical (519.928625ms)
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/stale-permission (534.017042ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 6
+ℹ fail 10
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9609.944417
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：supervisor/permission (520.505084ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'budget_exhausted'
+  - 'external_authority'
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7458:16)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'budget_exhausted',
+    expected: 'external_authority',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：supervisor/business (467.6575ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'budget_exhausted'
+  - 'external_authority'
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7458:16)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'budget_exhausted',
+    expected: 'external_authority',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：direct-owner/permission (847.401459ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'budget_exhausted'
+  - 'external_authority'
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7458:16)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'budget_exhausted',
+    expected: 'external_authority',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：direct-owner/business (794.29625ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'budget_exhausted'
+  - 'external_authority'
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7458:16)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'budget_exhausted',
+    expected: 'external_authority',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：recover/permission (583.558834ms)
+  Error: R11_TECHNICAL_RESTART
+      at f.runtime.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7444:75)
+      at Object.recoverOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13128:23)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7446:30)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：recover/business (491.245667ms)
+  Error: R11_TECHNICAL_RESTART
+      at f.runtime.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7444:75)
+      at Object.recoverOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13128:23)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7446:30)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/permission (482.473041ms)
+  Error: R11_TECHNICAL_RESTART
+      at f.runtime.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7444:75)
+      at Object.recoverOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13128:23)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7446:30)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/business (484.191833ms)
+  Error: R11_TECHNICAL_RESTART
+      at f.runtime.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7444:75)
+      at Object.recoverOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13128:23)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7446:30)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/technical (519.928625ms)
+  Error: R11_TECHNICAL_RESTART
+      at f.runtime.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7444:75)
+      at Object.recoverOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13128:23)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7446:30)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at owner-workflow-plugin/test/control.test.mjs:7400:5
+✖ R11 预算错误不覆盖当前用户依据：repeated-recover/stale-permission (534.017042ms)
+  Error: R11_TECHNICAL_RESTART
+      at f.runtime.runExternalOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7444:75)
+      at Object.recoverOwner (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13128:23)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/control.test.mjs:7446:30)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)

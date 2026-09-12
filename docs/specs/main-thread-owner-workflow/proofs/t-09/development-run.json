@@ -1,0 +1,10 @@
+{
+  "command": [
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+    "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-09/probe.mjs"
+  ],
+  "start": "2026-09-10T14:13:24.808762+00:00",
+  "end": "2026-09-10T14:13:28.414168+00:00",
+  "exitCode": 0,
+  "timeoutSeconds": 60
+}

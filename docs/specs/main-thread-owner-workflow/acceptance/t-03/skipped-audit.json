@@ -1,0 +1,170 @@
+[
+  {
+    "suite": "control",
+    "title": "旧版 Owner 持久子线程兼容测试（已由按任务回收模型替代）",
+    "sourceLine": 3325,
+    "rawLogLine": "﹣ 旧版 Owner 持久子线程兼容测试（已由按任务回收模型替代） (0.11675ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "control",
+    "title": "旧版 Owner Shell 白名单测试（已由 worktree 与提交关卡替代）",
+    "sourceLine": 3440,
+    "rawLogLine": "﹣ 旧版 Owner Shell 白名单测试（已由 worktree 与提交关卡替代） (0.034959ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "control",
+    "title": "旧版 Owner 逐写入包装测试（已由提交关卡替代）",
+    "sourceLine": 3474,
+    "rawLogLine": "﹣ 旧版 Owner 逐写入包装测试（已由提交关卡替代） (0.019167ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "control",
+    "title": "旧版 owner_bash 快照测试（正式验证现在由 owner_submit 自动执行）",
+    "sourceLine": 3512,
+    "rawLogLine": "﹣ 旧版 owner_bash 快照测试（正式验证现在由 owner_submit 自动执行） (0.014667ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "control",
+    "title": "旧版多轮修复提示测试（现在由 owner_submit 在同一子线程返回错误）",
+    "sourceLine": 3552,
+    "rawLogLine": "﹣ 旧版多轮修复提示测试（现在由 owner_submit 在同一子线程返回错误） (0.023333ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "control",
+    "title": "旧版 Owner 结果文本结算测试（受保护路径由 owner_submit 提交关卡覆盖）",
+    "sourceLine": 3622,
+    "rawLogLine": "﹣ 旧版 Owner 结果文本结算测试（受保护路径由 owner_submit 提交关卡覆盖） (0.115208ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "control",
+    "title": "旧版次数驱动 continuable Planner mock（已由证据租约、Arbiter 与完整 Workflow 集成测试替代）",
+    "sourceLine": 5349,
+    "rawLogLine": "﹣ 旧版次数驱动 continuable Planner mock（已由证据租约、Arbiter 与完整 Workflow 集成测试替代） (0.125042ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧次数驱动 Planner mock；当前证据驱动连续状态测试已执行，旧会话复用不属本工单"
+  },
+  {
+    "suite": "security",
+    "title": "旧版普通文本 Owner 结果状态漂移测试（owner_submit 已在子线程内固定结果）",
+    "sourceLine": 893,
+    "rawLogLine": "﹣ 旧版普通文本 Owner 结果状态漂移测试（owner_submit 已在子线程内固定结果） (0.188583ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 手工验证缺失测试（owner_submit 现在自动执行固定验证）",
+    "sourceLine": 1067,
+    "rawLogLine": "﹣ 旧版 Owner 手工验证缺失测试（owner_submit 现在自动执行固定验证） (0.187708ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 owner_write 写入代次测试（已由 contentDigest 提交关卡替代）",
+    "sourceLine": 1118,
+    "rawLogLine": "﹣ 旧版 owner_write 写入代次测试（已由 contentDigest 提交关卡替代） (0.02675ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 owner_edit 写入代次测试（已由 contentDigest 提交关卡替代）",
+    "sourceLine": 1191,
+    "rawLogLine": "﹣ 旧版 owner_edit 写入代次测试（已由 contentDigest 提交关卡替代） (0.01675ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 owner_write 相同内容代次测试（逐写入包装已移除）",
+    "sourceLine": 1228,
+    "rawLogLine": "﹣ 旧版 owner_write 相同内容代次测试（逐写入包装已移除） (0.01475ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 逐写入范围测试（worktree 沙箱与提交关卡已有替代测试）",
+    "sourceLine": 1366,
+    "rawLogLine": "﹣ 旧版 Owner 逐写入范围测试（worktree 沙箱与提交关卡已有替代测试） (0.065417ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 写入包装链接测试（最终提交关卡覆盖受保护现场）",
+    "sourceLine": 1440,
+    "rawLogLine": "﹣ 旧版 Owner 写入包装链接测试（最终提交关卡覆盖受保护现场） (0.019292ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 写入包装长期记忆测试（最终提交关卡覆盖）",
+    "sourceLine": 1476,
+    "rawLogLine": "﹣ 旧版 Owner 写入包装长期记忆测试（最终提交关卡覆盖） (0.015125ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 写入包装 Registry 测试（最终提交关卡覆盖）",
+    "sourceLine": 1496,
+    "rawLogLine": "﹣ 旧版 Owner 写入包装 Registry 测试（最终提交关卡覆盖） (0.0125ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner 写入包装大小写路径测试（最终提交关卡覆盖）",
+    "sourceLine": 1522,
+    "rawLogLine": "﹣ 旧版 Owner 写入包装大小写路径测试（最终提交关卡覆盖） (0.010833ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 Owner Shell 命令白名单测试（Owner 现在使用正常 Harness Shell）",
+    "sourceLine": 1662,
+    "rawLogLine": "﹣ 旧版 Owner Shell 命令白名单测试（Owner 现在使用正常 Harness Shell） (0.110292ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 owner_bash 沙箱测试（固定验证仍保留快照证据）",
+    "sourceLine": 1720,
+    "rawLogLine": "﹣ 旧版 owner_bash 沙箱测试（固定验证仍保留快照证据） (0.025084ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版 owner_bash 副本测试（Owner 本身已位于隔离 worktree）",
+    "sourceLine": 1743,
+    "rawLogLine": "﹣ 旧版 owner_bash 副本测试（Owner 本身已位于隔离 worktree） (0.019167ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  },
+  {
+    "suite": "security",
+    "title": "旧版逐写入操作日志测试（现在记录最终功能摘要和真实 diff）",
+    "sourceLine": 1783,
+    "rawLogLine": "﹣ 旧版逐写入操作日志测试（现在记录最终功能摘要和真实 diff） (0.0295ms) # SKIP",
+    "t03Required": false,
+    "reason": "旧 Owner 会话/写入包装/Shell/结果结算协议，不是 T03 当前事实进展验收入口"
+  }
+]

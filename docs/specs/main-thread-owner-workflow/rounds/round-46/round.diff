@@ -1,0 +1,41 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -4927,7 +4927,7 @@
+   const result = []
+   for (const watch of watches) {
+     const task = state.plan.tasks.find(item => item.id === watch.taskId)
+-    if (task === undefined) continue
++    if (task === undefined || pendingSupervisorRecovery(state, task.id)) continue
+     const key = supervisorReservationKey(task.id, task.ownerId)
+     const reservation = state.supervisorOutbox?.[key]
+     const ownerRun = state.ownerRuns?.[key]
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -508,3 +508,27 @@
+   assert.equal(f.adapter.requests.length, 4)
+   assert.deepEqual(calls, { create: 0, resume: 0 })
+ })
++
++test('T15 Supervisor reserved recovery slot cannot generate phantom Owner execution timeouts', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  const next = await supervisorControl(f, 'supervisor-next')
++  await supervisorControl(f, 'supervisor-ack', { actionId: next.actionId })
++  const before = await mutateRecoverySessionState(f, s => {
++    s.supervisorOutbox['T1:api'].status = 'launching'
++    s.supervisorOutbox['T1:api'].launchedAt = '2000-01-01T00:00:00.000Z'
++  })
++  assert.equal(before.tasks[0].status, 'pending')
++  let cursor = before.supervisorEventCursor
++  for (let i = 0; i < 2; i++) {
++    const observation = await supervisorControl(f, 'supervisor-await-event', { cursor, waitMs: 1 })
++    assert.equal(observation.kind, 'timeout')
++    assert.equal(observation.event.type, 'supervisor.wait-timeout')
++    cursor = observation.cursor
++  }
++  const after = await readRecoverySessionState(f)
++  assert.equal(after.tasks[0].status, 'pending')
++  assert.equal(after.supervisorTimeouts, undefined)
++  assert.deepEqual(after.ownerRuns, before.ownerRuns)
++  assert.deepEqual(after.recoveryAdmission, before.recoveryAdmission)
++  assert.equal(f.adapter.requests.length, 0)
++})

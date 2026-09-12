@@ -1,0 +1,151 @@
+✔ T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt (784.782833ms)
+✔ T20 reloads the same durable request through a new Runtime without rebilling or changing identity (410.87475ms)
+✔ T20 derives A/B/A from persisted strategy, keeping one root but distinct durable requests (562.893666ms)
+✔ T20 rejects forged request fields and incorrect source binding without creating a recovery account (857.344042ms)
+✔ T20 rejects a missing strategy and owner-failure records that no longer describe a failed technical task (771.27125ms)
+✔ T20 admits only a live technical obligation and preserves the user-authority boundary (2344.763791ms)
+✔ T20 makes approval, current plan digest, cancellation, malformed state, and absent config hard wrapper gates (1028.288833ms)
+✔ T20 rejects changed limits after accounting begins and never returns a receipt when the first save cannot commit (940.627833ms)
+✔ T20 cross-process distinct requests consume the final workflow credit once (926.561167ms)
+✔ T20 cross-process competition for one request yields one receipt identity and one debit (775.595208ms)
+✖ R15 next failed executions with the same strategy inherit the root and persist replay across Runtime restarts (522.360125ms)
+▶ R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget
+  ✔ missing (55.560833ms)
+  ✔ contract (80.229167ms)
+  ✔ sourceId (78.282667ms)
+  ✔ rootProblemId (63.869834ms)
+  ✔ requestId (48.466041ms)
+  ✔ attemptId (46.707792ms)
+  ✔ taskId (67.080875ms)
+  ✔ ownerId (71.063291ms)
+  ✔ planDigest (37.612416ms)
+  ✔ identity sessionId (59.620167ms)
+  ✔ identity promptId (49.732584ms)
+  ✔ run attempt (45.712292ms)
+  ✔ run session (46.5055ms)
+  ✔ unknown field (45.51975ms)
+  ✔ execution receipt (41.720834ms)
+  ✔ result receipt (37.605041ms)
+✔ R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget (2115.264042ms)
+✔ R15 rejects a predecessor that never started (536.364542ms)
+✔ R15 rejects a predecessor that still running (591.811292ms)
+✔ R15 rejects a predecessor that succeeded (746.275084ms)
+✔ R15 rejects a predecessor that cancelled (1819.111875ms)
+✖ R15 continuation cannot reset exhausted problem credit (2077.438583ms)
+✖ R15 continuation cannot reset exhausted workflow credit (546.828959ms)
+✖ R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed (697.768667ms)
+✖ R15 concurrent continuation calls from separate processes share one successor receipt and one debit (1335.5105ms)
+ℹ tests 36
+ℹ suites 0
+ℹ pass 31
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20937.646583
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/recovery-admission.test.mjs:567:1
+✖ R15 next failed executions with the same strategy inherit the root and persist replay across Runtime restarts (522.360125ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'rejected'
+  - 'reserved'
+       ^
+
+      at assertReceipt (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-admission.test.mjs:256:10)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-admission.test.mjs:577:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'rejected',
+    expected: 'reserved',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/recovery-admission.test.mjs:633:4
+✖ R15 continuation cannot reset exhausted problem credit (2077.438583ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'continuation_unbound'
+  - 'problem_exhausted'
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-admission.test.mjs:638:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'continuation_unbound',
+    expected: 'problem_exhausted',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/recovery-admission.test.mjs:633:4
+✖ R15 continuation cannot reset exhausted workflow credit (546.828959ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'continuation_unbound'
+  - 'workflow_exhausted'
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-admission.test.mjs:638:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'continuation_unbound',
+    expected: 'workflow_exhausted',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/recovery-admission.test.mjs:641:1
+✖ R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed (697.768667ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'rejected'
+  - 'reserved'
+       ^
+
+      at assertReceipt (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-admission.test.mjs:256:10)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-admission.test.mjs:647:3)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'rejected',
+    expected: 'reserved',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/recovery-admission.test.mjs:667:1
+✖ R15 concurrent continuation calls from separate processes share one successor receipt and one debit (1335.5105ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+
+    [
+  +   'rejected',
+  +   'rejected'
+  -   'replayed',
+  -   'reserved'
+    ]
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-admission.test.mjs:676:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'rejected', 'rejected' ],
+    expected: [ 'replayed', 'reserved' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

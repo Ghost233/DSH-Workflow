@@ -1,0 +1,105 @@
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs
+@@ -276,8 +276,57 @@
+   }
+ }
+
++async function produceReserved(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true, temporaryDirectory: input.fixtureParent,
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  await send({
++    type: 'checkpoint', scenario: 'reserved', pid: process.pid,
++    root: fixture.root, workflowId: fixture.workflowId, receipt, request: request(receipt),
++    stateBytes: await readFile(statePath(fixture.root, fixture.workflowId), 'utf8'),
++    modelRequests: fixture.adapter.requests.length,
++    rawPresent: await fixture.readRaw(receipt.executionIdentity.sessionId) !== undefined,
++  })
++  await new Promise(() => {})
++}
++
++async function launchReserved(input) {
++  const fixture = await reopenRecoverySessionFixture({
++    root: input.root, workflowId: input.workflowId,
++    executable: true, modelScript: failedOwnerModelScript,
++  })
++  try {
++    const beforeState = await readFile(statePath(fixture.root, fixture.workflowId), 'utf8')
++    const operations = observeAgentOperations(fixture)
++    let errorName
++    try {
++      await fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, input.request)
++    } catch (error) {
++      if (error.name !== 'OwnerReportedError') throw error
++      errorName = error.name
++    }
++    if (errorName !== 'OwnerReportedError') throw new Error('Expected real failed Owner submission')
++    const settled = await capture(fixture, input.receipt)
++    const operationsAfterLaunch = { ...operations }
++    const modelRequestsAfterLaunch = fixture.adapter.requests.length
++    const replay = await fixture.runtime.reconcileRecoverySession(fixture.admissionAgent, fixture.workflowId, input.request)
++    const afterReplay = await capture(fixture, input.receipt)
++    await send({
++      type: 'replayed', pid: process.pid, beforeState, errorName, settled, replay, afterReplay,
++      operationsAfterLaunch, operationsAfterReplay: operations,
++      modelRequestsAfterLaunch, modelRequestsAfterReplay: fixture.adapter.requests.length,
++    })
++  } finally {
++    await fixture.dispose()
++    process.disconnect?.()
++  }
++}
++
+ async function dispatch(input) {
+   switch (input?.mode) {
++    case 'produce_reserved': return await produceReserved(input)
++    case 'launch_reserved': return await launchReserved(input)
+     case 'produce_created':
+       return await produceCreated(input)
+     case 'produce_submitted':
+--- docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs (baseline)
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs
+@@ -224,3 +224,42 @@
+     await writeEvidence('create-before-binding', producer, postKill, replay)
+   })
+ })
++
++
++test('T23 SIGKILL after durable reservation allows exactly one original-identity Owner execution', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(startRestartChild({ mode: 'produce_reserved', fixtureParent }), 'reserved')
++    assert.equal(producer.checkpoint.modelRequests, 0)
++    assert.equal(producer.checkpoint.rawPresent, false)
++    const postKillState = await readFile(workflowStatePath(producer.checkpoint.root, producer.checkpoint.workflowId), 'utf8')
++    assert.equal(postKillState, producer.checkpoint.stateBytes)
++    const before = JSON.parse(postKillState)
++    assert.equal(before.ownerRuns['T1:api'].recoverySession, undefined)
++    assert.equal(before.recoveryAdmission.budget.totalUsed, 1)
++    const replay = await finishReplay({
++      mode: 'launch_reserved', root: producer.checkpoint.root, workflowId: producer.checkpoint.workflowId,
++      receipt: producer.checkpoint.receipt, request: producer.checkpoint.request,
++    })
++    assert.notEqual(replay.pid, producer.checkpoint.pid)
++    assert.equal(replay.beforeState, postKillState)
++    assert.deepEqual(replay.operationsAfterLaunch, { create: 1, resume: 0, followup: 1 })
++    assert.equal(replay.modelRequestsAfterLaunch, 2)
++    assert.deepEqual(replay.operationsAfterReplay, replay.operationsAfterLaunch)
++    assert.equal(replay.modelRequestsAfterReplay, replay.modelRequestsAfterLaunch)
++    assert.equal(replay.replay.outcome, 'settled_failed')
++    assert.deepEqual(replay.afterReplay, replay.settled)
++    const settled = JSON.parse(replay.settled.stateBytes)
++    const identity = producer.checkpoint.receipt.executionIdentity
++    assert.equal(settled.ownerRuns['T1:api'].sessionId, identity.sessionId)
++    assert.deepEqual(settled.ownerRuns['T1:api'].recoverySession.executionIdentity, identity)
++    assert.deepEqual(settled.ownerRuns['T1:api'].recoveryContinuation.executionIdentity, identity)
++    assert.equal(settled.recoveryAdmission.budget.totalUsed, before.recoveryAdmission.budget.totalUsed)
++    const attempt = settled.recoveryAdmission.budget.attempts.find(item => item.requestId === producer.checkpoint.receipt.requestId)
++    assert.equal(attempt.state, 'settled')
++    assert.equal(attempt.result.status, 'failed')
++    assert.deepEqual(attempt.executionRef, { id: identity.sessionId, version: identity.promptId })
++    const directory = join(EVIDENCE_ROOT, 'reserved-before-execution')
++    await mkdir(directory, { recursive: true })
++    await writeFile(join(directory, 'proof.json'), JSON.stringify({ producer, postKillState, replay }, null, 2) + '\n', 'utf8')
++  })
++})

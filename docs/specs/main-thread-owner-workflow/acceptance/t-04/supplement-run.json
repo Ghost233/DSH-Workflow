@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+    "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/acceptance/t-04/supplement.mjs"
+  ],
+  "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+  "start": "2026-09-10T12:59:04.877737+00:00",
+  "end": "2026-09-10T12:59:07.622995+00:00",
+  "timeoutSeconds": 45,
+  "exitCode": 1,
+  "hashes": {
+    "fixtures.mjs": "b3988ed370ee2a0ae3dda9966c07ac8fd5b70892d428f3a4d0c00f22df026d7c",
+    "supplement.mjs": "9b224543798dc4a4c4c6634fadad2091c6e77898d04baacfca8bbdb6e3568cb5"
+  },
+  "fixtureSource": "owner-workflow-plugin/test/control.test.mjs frozen R10 helper excerpts; only import paths adjusted"
+}

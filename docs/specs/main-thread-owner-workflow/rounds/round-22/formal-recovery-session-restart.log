@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: T22 SIGKILL after the real submitted checkpoint reopens only to a non-mutating technical pause
+ok 1 - T22 SIGKILL after the real submitted checkpoint reopens only to a non-mutating technical pause
+  ---
+  duration_ms: 2330.761834
+  type: 'test'
+  ...
+# Subtest: T22 SIGKILL after real failed settlement replays its persisted receipt without a second debit
+ok 2 - T22 SIGKILL after real failed settlement replays its persisted receipt without a second debit
+  ---
+  duration_ms: 2162.30075
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4560.31475

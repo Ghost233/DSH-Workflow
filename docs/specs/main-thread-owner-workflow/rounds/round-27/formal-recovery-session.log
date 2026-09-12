@@ -1,0 +1,88 @@
+TAP version 13
+# Subtest: T22 source-plane JSONL observes exactly one completed reserved prompt without writes
+ok 1 - T22 source-plane JSONL observes exactly one completed reserved prompt without writes
+  ---
+  duration_ms: 895.057291
+  type: 'test'
+  ...
+# Subtest: T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt
+ok 2 - T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt
+  ---
+  duration_ms: 447.614916
+  type: 'test'
+  ...
+# Subtest: T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending
+ok 3 - T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending
+  ---
+  duration_ms: 656.599667
+  type: 'test'
+  ...
+# Subtest: T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects
+ok 4 - T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects
+  ---
+  duration_ms: 253.655625
+  type: 'test'
+  ...
+# Subtest: T22 refuses a real JSONL backend configured with compression before any read or retry
+ok 5 - T22 refuses a real JSONL backend configured with compression before any read or retry
+  ---
+  duration_ms: 182.304125
+  type: 'test'
+  ...
+# Subtest: F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause
+ok 6 - F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause
+  ---
+  duration_ms: 681.186084
+  type: 'test'
+  ...
+# Subtest: F16 maps a real lease directory still initializing to a non-mutating pause
+ok 7 - F16 maps a real lease directory still initializing to a non-mutating pause
+  ---
+  duration_ms: 200.952459
+  type: 'test'
+  ...
+# Subtest: F16 leaves ordinary lease I/O errors and caller cancellation as rejections
+ok 8 - F16 leaves ordinary lease I/O errors and caller cancellation as rejections
+  ---
+  duration_ms: 580.338958
+  type: 'test'
+  ...
+# Subtest: T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction
+ok 9 - T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction
+  ---
+  duration_ms: 974.626583
+  type: 'test'
+  ...
+# Subtest: T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only
+ok 10 - T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only
+  ---
+  duration_ms: 2585.056125
+  type: 'test'
+  ...
+# Subtest: T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner
+ok 11 - T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner
+  ---
+  duration_ms: 1343.996625
+  type: 'test'
+  ...
+# Subtest: T22 L1 create failure preserves reservation without sending and releases any created handle
+ok 12 - T22 L1 create failure preserves reservation without sending and releases any created handle
+  ---
+  duration_ms: 769.481709
+  type: 'test'
+  ...
+# Subtest: T22 L1 bind failure preserves reservation without sending and releases any created handle
+ok 13 - T22 L1 bind failure preserves reservation without sending and releases any created handle
+  ---
+  duration_ms: 871.788625
+  type: 'test'
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10626.165042

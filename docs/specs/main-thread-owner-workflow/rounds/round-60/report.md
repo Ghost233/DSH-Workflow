@@ -1,0 +1,11 @@
+# R60：直接request_handoff保留恢复来源
+
+修复R59 P2的实现已完成：显式恢复协议的直接请求核对真实active Owner身份，applyPlanDelta仅用于验证和生成proposal，不再删除source Owner/任务/slot或改active计划与审批。提案单独固定，Planner收到的是未应用建议。主控制在同一live来源时等待真实终态，预算领取仍拒绝running task。
+
+实际Owner结束后，固定同源技术handoff允许blocked/failed收尾；已付费Owner保存失败结算与原root continuation，报告重复handoff也不丢来源。真正typed用户权限仍保留await_user与主线程通知，不能借转交掩盖。未直接改terminal或伪造会话回执。
+
+开发4/4：首次免费Owner、paid Owner、paid报告重复handoff，以及同一真实直接请求后的typed permission gap。前三例真实request_handoff→owner_submit→JSONL completed终态→Planner成功候选；最后一例拒绝Planner并保留用户决定。正式238通过/7既有跳过：direct-handoff4、handoff7、replan9、runtime-budget48、control159、workflow-state11，零失败/超时/漂移。本轮结束，详见test-results.json及review.md。独立审查确认R59 P2已关闭，但新增P2：pending直接handoff后Owner仍可提交completed并真正完成，使旧pending失败来源与completed记录冲突。需下一轮在completed提交事务之前增加同源pending请求门禁，不能依赖模型nextAction。
+
+T15保持开发中；下一步优先候选Review逐物理调用计费、候选废弃后继承、技术暂停报告及T18激活。此修复不是完整无人值守或整份规格验收。
+
+无提交/推送/fetch/同步。git-evidence.json记录主main与本地tracking一致；Harness原落后3364、vendor原落后4、Synapse detached；未查询实时远端，未移动或覆盖用户原有修改。

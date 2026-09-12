@@ -1,0 +1,208 @@
+{
+  "result": {
+    "outcome": "paused",
+    "phase": "technical_pause",
+    "reason": "extra_or_wrong_input",
+    "revision": "16777232:192931601:4184:1789102474674341806:1789102474683324328"
+  },
+  "rawEventTypes": [
+    "session",
+    "agent/inbox/spliced",
+    "turn/start",
+    "agent/inbox/spliced",
+    "step/start",
+    "user/message",
+    "user/message",
+    "request/header",
+    "request/context",
+    "assistant/chunk",
+    "text-chunks",
+    "assistant/chunk",
+    "assistant/chunk",
+    "assistant/chunk",
+    "assistant/message",
+    "step/end",
+    "turn/end"
+  ],
+  "readEvents": [
+    {
+      "seq": 0,
+      "type": "agent/inbox/spliced",
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "inserted": [
+          {
+            "id": "recovery-prompt-dae3334a-1a2b-42aa-bd6d-61c6d7ae68cd",
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "recover the failed owner task"
+              }
+            ],
+            "source": {
+              "kind": "user"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "seq": 1,
+      "type": "turn/start"
+    },
+    {
+      "seq": 2,
+      "type": "agent/inbox/spliced",
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "removedCount": 1,
+        "inserted": []
+      }
+    },
+    {
+      "seq": 3,
+      "type": "step/start"
+    },
+    {
+      "seq": 4,
+      "type": "user/message",
+      "data": {
+        "id": "recovery-prompt-dae3334a-1a2b-42aa-bd6d-61c6d7ae68cd",
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "recover the failed owner task"
+          }
+        ],
+        "source": {
+          "kind": "user"
+        }
+      }
+    },
+    {
+      "seq": 5,
+      "type": "user/message",
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: \"/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-tests-r16-RBkqsl\". Some platform temporary areas may also be writable."
+          }
+        ],
+        "source": {
+          "kind": "plugin",
+          "plugin": "@deepseek-ai/dsh-system-prompt",
+          "form": "snapshot",
+          "sections": [
+            {
+              "name": "sandbox:policy",
+              "text": "Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: \"/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-tests-r16-RBkqsl\". Some platform temporary areas may also be writable."
+            }
+          ]
+        },
+        "role": "user",
+        "id": "f17a2e34-b4ce-4b2a-a55e-fb460bcd4d74"
+      }
+    },
+    {
+      "seq": 6,
+      "type": "request/header"
+    },
+    {
+      "seq": 7,
+      "type": "request/context"
+    },
+    {
+      "seq": 8,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 9,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 10,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 11,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 12,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 13,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 14,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 15,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 16,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 17,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 18,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 19,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 20,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 21,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 22,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 23,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 24,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 25,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 26,
+      "type": "assistant/chunk"
+    },
+    {
+      "seq": 27,
+      "type": "assistant/message"
+    },
+    {
+      "seq": 28,
+      "type": "step/end"
+    },
+    {
+      "seq": 29,
+      "type": "turn/end"
+    }
+  ]
+}

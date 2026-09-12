@@ -1,0 +1,836 @@
+{
+  "status": "passed",
+  "checks": [
+    "same-target relabeling (30 rounds)",
+    "unrelated content",
+    "one relevant renewal",
+    "duplicate and recycled content (10 rounds)",
+    "no implicit closure"
+  ],
+  "trace": [
+    {
+      "label": "seed same-target physical fact A",
+      "progress": "none",
+      "nextStrategy": "local_subgraph_rewrite",
+      "usedStrategies": [],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": []
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 0",
+      "progress": "none",
+      "nextStrategy": "arbitrate",
+      "usedStrategies": [
+        "local_subgraph_rewrite"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-0"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 1",
+      "progress": "none",
+      "nextStrategy": "owner_council",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-1"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 2",
+      "progress": "none",
+      "nextStrategy": "diagnose",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-2"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 3",
+      "progress": "none",
+      "nextStrategy": "alternate_implementation",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-3"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 4",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-4"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 5",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-5"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 6",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-6"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 7",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-7"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 8",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-8"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 9",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-9"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 10",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-10"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 11",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-11"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 12",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-12"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 13",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-13"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 14",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-14"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 15",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-15"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 16",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-16"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 17",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-17"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 18",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-18"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 19",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-19"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 20",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-20"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 21",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-21"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 22",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-22"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 23",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-23"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 24",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-24"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 25",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-25"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 26",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-26"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 27",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-27"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 28",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-28"
+      ]
+    },
+    {
+      "label": "same T1/file/hash, new obligation and source 29",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 1,
+      "renewals": [],
+      "unsupported": [
+        "relabeled-29"
+      ]
+    },
+    {
+      "label": "unrelated T2 content is not T1 progress",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 2,
+      "renewals": [],
+      "unsupported": []
+    },
+    {
+      "label": "new relevant T1 content B",
+      "progress": "new_evidence",
+      "nextStrategy": "local_subgraph_rewrite",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "repeat relevant B",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "recycle A/B 0",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "recycle A/B 1",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "recycle A/B 2",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "recycle A/B 3",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "recycle A/B 4",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "recycle A/B 5",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "recycle A/B 6",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "recycle A/B 7",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "recycle A/B 8",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "label": "recycle A/B 9",
+      "progress": "none",
+      "nextStrategy": "autonomous_incident",
+      "usedStrategies": [
+        "local_subgraph_rewrite",
+        "arbitrate",
+        "owner_council",
+        "diagnose",
+        "alternate_implementation"
+      ],
+      "seenFactCount": 3,
+      "renewals": [
+        {
+          "id": "47dccb2fa7ffe58e801d6de2ec184e9af68b2d7d748def552c1053de78d83148",
+          "evidenceIds": [
+            "0cccc20154f43d3e2f3dc6680991055eba99c5307780b1b365f7a0724c81ad56"
+          ],
+          "status": "consumed",
+          "grantedAt": "2026-09-10T12:00:32.000Z",
+          "consumedAt": "2026-09-10T12:00:32.000Z"
+        }
+      ],
+      "unsupported": []
+    }
+  ]
+}

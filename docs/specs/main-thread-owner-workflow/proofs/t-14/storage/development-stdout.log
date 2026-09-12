@@ -1,0 +1,1 @@
+{"status":"passed","mode":"--development","scenarios":["normal","beforeReadKill","computeKillAndTrueStaleRecovery","afterSaveKill","concurrentLastCredit","sameRequestReplay","unreadableAndSaveFailure","ordinaryCasCounterexample"]}

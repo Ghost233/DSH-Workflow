@@ -1,0 +1,35 @@
+TAP version 13
+# Subtest: R75 regression: paid recovery arbitration refuses an exhausted root before any advisor starts
+ok 1 - R75 regression: paid recovery arbitration refuses an exhausted root before any advisor starts
+  ---
+  duration_ms: 3186.691292
+  type: 'test'
+  ...
+# Subtest: R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait
+ok 2 - R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait
+  ---
+  duration_ms: 2364.751875
+  type: 'test'
+  ...
+# {"pausedReason":"Recovery Owner会诊 admission refused:workflow_exhausted","persistedReason":"Recovery Owner会诊 admission refused:workflow_exhausted","modelRequestsBefore":4,"modelRequestsAfterNotification":5,"modelRequestsAfterStableWait":5}
+# Subtest: R75 consultPlanningOwners rejects a stripped caller copy when the persisted Workflow remains a recovery candidate
+ok 3 - R75 consultPlanningOwners rejects a stripped caller copy when the persisted Workflow remains a recovery candidate
+  ---
+  duration_ms: 1326.732833
+  type: 'test'
+  ...
+# Subtest: R75 an unprotected initial Owner consultation still uses the real model transport
+ok 4 - R75 an unprotected initial Owner consultation still uses the real model transport
+  ---
+  duration_ms: 1445.109541
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8555.917209

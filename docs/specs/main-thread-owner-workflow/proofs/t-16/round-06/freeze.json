@@ -1,0 +1,31 @@
+{
+  "at": "2026-09-11T10:24:43.565240+00:00",
+  "source": {
+    "owner-workflow-plugin/src/runtime.mjs": "6f586b70874f3edb7a56fbe2116d44842821b290f9f103467832e0477ab30c35",
+    "owner-workflow-plugin/src/recovery-admission.mjs": "b6aed0ab209b4c8d975e618f179186c6cda45a55cec9dcfb5a140934b68687e0",
+    "owner-workflow-plugin/src/recovery-session.mjs": "96c9d9958a81a082a6c33fb6c24b845e9fc0b717604672cab9da7f0c3ab204a3",
+    "owner-workflow-plugin/src/owner-agent.mjs": "7249b0297a6b99e338b5069e2c08293afdc8ac9bf5cfca3017194dc5b482cbc6",
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "d8e3d555343857dab04453ef2b120488059255d07b983a1bff82a6fefdee5c77",
+    "deepseek-harness/packages/core/agent-loop/src/agent.ts": "8288214410df9e8f611df17768f667eeee67351bfcaf8c5bf92a38f6a5f9117f",
+    "deepseek-harness/packages/core/session/src/index.ts": "9594e128e8b170845d703e37a54902cd0cd8b2e73e8555e94594575bd18af8f9",
+    "deepseek-harness/packages/session/session-persistence/src/coordinator.ts": "80f044b43da1224e0e97208d27d0451f29f8acb579a43389af398eb36f98c096",
+    "deepseek-harness/packages/session/session-persistence-jsonl/src/index.ts": "9715f1a45bc1778c1904d018f2a97c0ee1710327cea3b9fc0cf910215fbf3cdb",
+    "deepseek-harness/packages/core/agent-loop/tests/mock-adapter.ts": "47dd92a9c9f8fb4cc468be3be1eb4dd40d2cc2e6fdde83783285cec3bc3d9db0"
+  },
+  "proof": {
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/runtime-source.mjs": "6f586b70874f3edb7a56fbe2116d44842821b290f9f103467832e0477ab30c35",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/recovery-admission-source.mjs": "b6aed0ab209b4c8d975e618f179186c6cda45a55cec9dcfb5a140934b68687e0",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/recovery-session-source.mjs": "96c9d9958a81a082a6c33fb6c24b845e9fc0b717604672cab9da7f0c3ab204a3",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/owner-agent-source.mjs": "7249b0297a6b99e338b5069e2c08293afdc8ac9bf5cfca3017194dc5b482cbc6",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/recovery-session-fixture-source.mjs": "d8e3d555343857dab04453ef2b120488059255d07b983a1bff82a6fefdee5c77",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/agent-loop-agent-source.ts": "8288214410df9e8f611df17768f667eeee67351bfcaf8c5bf92a38f6a5f9117f",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/session-source.ts": "9594e128e8b170845d703e37a54902cd0cd8b2e73e8555e94594575bd18af8f9",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/persistence-coordinator-source.ts": "80f044b43da1224e0e97208d27d0451f29f8acb579a43389af398eb36f98c096",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/jsonl-persistence-source.ts": "9715f1a45bc1778c1904d018f2a97c0ee1710327cea3b9fc0cf910215fbf3cdb",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/mock-adapter-source.ts": "47dd92a9c9f8fb4cc468be3be1eb4dd40d2cc2e6fdde83783285cec3bc3d9db0",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/primary.mjs": "6c2debe1d88cae8fca57f8b7524c5b3397e809f9199bedbfcf86bfa56cd1137b",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/probe.mjs": "cfd7bc8562055b45f3d72acc676ad875a508b0f25e67d152cecc8a81ecfcbaa1",
+    "docs/specs/main-thread-owner-workflow/proofs/t-16/round-06/run-proof.py": "9029fb9e12a0c27cd6a8c0fc48a62c0170e90b0fc2cd526491293cf18a4cd45d"
+  },
+  "harnessHead": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
+}

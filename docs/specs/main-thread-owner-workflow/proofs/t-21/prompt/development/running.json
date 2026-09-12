@@ -1,0 +1,21 @@
+{
+  "mode": "running",
+  "root": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t21-prompt-UYa3ZF",
+  "start": "2026-09-11T02:50:49.448Z",
+  "first": {
+    "mode": "running",
+    "pid": 76582,
+    "code": 1,
+    "signal": null,
+    "payload": {
+      "phase": "error",
+      "mode": "running",
+      "error": "Error: probe wait timed out",
+      "stack": "Error: probe wait timed out\n    at until (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-21/prompt/worker.mjs:27:54)\n    at async <anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-21/prompt/worker.mjs:66:31)"
+    },
+    "stdout": "",
+    "stderr": ""
+  },
+  "error": "Error: first process did not reach declared crash boundary",
+  "end": "2026-09-11T02:50:53.778Z"
+}

@@ -1,0 +1,10 @@
+{
+  "before": {
+    "head": "22efd3bbe1647064c37ebaac3c1b24761de38073",
+    "branch": "dev",
+    "index": "64d734209cd7d787d77250faf86a9c728d90aacfce6dac0fe28a7817c557b0d4",
+    "staged": "",
+    "status": "?? docs/specs/proof/spec.md\n?? docs/specs/proof/tickets/T1.md"
+  },
+  "legacy": "{\"contract\":\"LEGACY_WORKFLOW\",\"approvedBy\":\"legacy-user\",\"revision\":1}"
+}

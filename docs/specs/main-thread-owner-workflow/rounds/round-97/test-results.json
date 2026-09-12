@@ -1,0 +1,31 @@
+{
+  "contract": "DSH_TICKET_TEST_RESULTS_V1",
+  "candidateId": "R97-T30-public-change-plan-lifecycle",
+  "capturedAt": "2026-09-11T23:23:27Z",
+  "command": "TSX_TSCONFIG_PATH=deepseek-harness/tsconfig.json node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit --test-concurrency=1 owner-workflow-plugin/test/model.test.mjs owner-workflow-plugin/test/plan-revision.test.mjs owner-workflow-plugin/test/supervisor.test.mjs owner-workflow-plugin/test/unified-owner-resource-admission.test.mjs owner-workflow-plugin/test/public-owner-change.test.mjs owner-workflow-plugin/test/public-owner-session-proof.test.mjs owner-workflow-plugin/test/public-owner-decision-session.test.mjs owner-workflow-plugin/test/public-owner-plan.test.mjs owner-workflow-plugin/test/public-owner-plan-lifecycle.test.mjs owner-workflow-plugin/test/control.test.mjs owner-workflow-plugin/test/runner.test.mjs owner-workflow-plugin/test/planning-packages.test.mjs owner-workflow-plugin/test/planning-compile-native.test.mjs owner-workflow-plugin/test/plan-revision.test.mjs owner-workflow-plugin/test/security.test.mjs owner-workflow-plugin/test/plugin.test.mjs",
+  "summary": {
+    "tests": 379,
+    "passed": 358,
+    "failed": 0,
+    "skipped": 21,
+    "cancelled": 0,
+    "durationMs": 155109.319959
+  },
+  "focused": {
+    "contract": { "tests": 4, "passed": 4, "failed": 0, "skipped": 0 },
+    "realHarness": { "tests": 2, "passed": 2, "failed": 0, "skipped": 0, "durationMs": 2681.146125 },
+    "t28AndT30Harness": { "tests": 11, "passed": 11, "failed": 0, "skipped": 0, "durationMs": 10453.338958 }
+  },
+  "files": {
+    "owner-workflow-plugin/src/public-owner-plan.mjs": "48c01256780bbcb2fd456cbff944bae45a489ad2f97ea8e3420e1d093c3704b4",
+    "owner-workflow-plugin/src/model.mjs": "1cb9f0866d15ff9fa7d1ac18689d42fb60ecfe3eed00b17b173193081af7393a",
+    "owner-workflow-plugin/src/plan-revision.mjs": "253df3c8e3d895c9e007ad28872d7aeea2594af85862accf63e82f7654335ab6",
+    "owner-workflow-plugin/src/runtime.mjs": "5e73af3d169858c0a5af8bdf61f049140f75da6816294edace77c2a788359b1a",
+    "owner-workflow-plugin/src/skills.mjs": "77c3f108c7958e41ff67e75ad05c14b9fae465cada63e52489bced24bbe30d7e",
+    "owner-workflow-plugin/README.md": "199ad4f3144c1ab2879eda281f790e612b11ef3f76dfade035e49eb3f1b4034d",
+    "owner-workflow-plugin/README.zh.md": "318eeda083410a6881b53737cbfe2ad96ccf0f5baf546f5a4572fad0ba4a04aa",
+    "owner-workflow-plugin/test/public-owner-plan.test.mjs": "6bdc7f32c59d687089e87e70f1627ddd2fbc2ad58e359f5c5900ac4b5c059fa6",
+    "owner-workflow-plugin/test/public-owner-plan-lifecycle.test.mjs": "a479c3e7206cb4d840792816d9126bbef4e9bb2ea5cba4bb1914197a36d5737c",
+    "owner-workflow-plugin/test/public-owner-decision-session.test.mjs": "40dc11f7ccac8ac046dba267ce9b4cd7ab837493f5b8ef7e09c1d3a6364fbb3f"
+  }
+}

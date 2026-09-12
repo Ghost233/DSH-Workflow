@@ -1,0 +1,419 @@
+TAP version 13
+# Subtest: T07 real document checkpoint restores existing clean-base preflight and replays one commit
+not ok 1 - T07 real document checkpoint restores existing clean-base preflight and replays one commit
+  ---
+  duration_ms: 1405.6425
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:53:1'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: UNRELATED_WORKTREE_REFUSED at worktree (.dsh-workflow/.gitignore)'
+  code: 'PLANNING_TRANSACTION_UNRELATED_WORKTREE_REFUSED'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    assertWorkspaceBoundary (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:323:25)
+    runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:692:7)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:59:18)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+# Subtest: T07 SIGKILL before-commit resumes in a new process without a second commit
+not ok 2 - T07 SIGKILL before-commit resumes in a new process without a second commit
+  ---
+  duration_ms: 1920.294708
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: |-
+    Command failed: /Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node /Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs /var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-rs8qeQ/.git/request.json
+    file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30
+    function fail(code, field, detail) { throw new PlanningTransactionError(code, field, detail) }
+                                               ^
+
+    PlanningTransactionError: Planning transaction: PARENT_ACTIVATION_CONFLICT at request.parent.executionVersionId
+        at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+        at activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+        at async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+        at async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+      code: 'PLANNING_TRANSACTION_PARENT_ACTIVATION_CONFLICT',
+      field: 'request.parent.executionVersionId'
+    }
+
+    Node.js v24.12.0
+
+  code: 1
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+    async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+    async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+    genericNodeError (node:internal/errors:985:15)
+    wrappedFn (node:internal/errors:539:14)
+    ChildProcess.exithandler (node:child_process:417:12)
+    ChildProcess.emit (node:events:508:28)
+    maybeClose (node:internal/child_process:1101:16)
+    ChildProcess._handle.onexit (node:internal/child_process:305:5)
+  ...
+# Subtest: T07 SIGKILL after-commit resumes in a new process without a second commit
+not ok 3 - T07 SIGKILL after-commit resumes in a new process without a second commit
+  ---
+  duration_ms: 1843.579542
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: |-
+    Command failed: /Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node /Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs /var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-lpPBTX/.git/request.json
+    file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30
+    function fail(code, field, detail) { throw new PlanningTransactionError(code, field, detail) }
+                                               ^
+
+    PlanningTransactionError: Planning transaction: PARENT_ACTIVATION_CONFLICT at request.parent.executionVersionId
+        at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+        at activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+        at async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+        at async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+      code: 'PLANNING_TRANSACTION_PARENT_ACTIVATION_CONFLICT',
+      field: 'request.parent.executionVersionId'
+    }
+
+    Node.js v24.12.0
+
+  code: 1
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+    async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+    async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+    genericNodeError (node:internal/errors:985:15)
+    wrappedFn (node:internal/errors:539:14)
+    ChildProcess.exithandler (node:child_process:417:12)
+    ChildProcess.emit (node:events:508:28)
+    maybeClose (node:internal/child_process:1101:16)
+    ChildProcess._handle.onexit (node:internal/child_process:305:5)
+  ...
+# Subtest: T07 SIGKILL before-snapshot resumes in a new process without a second commit
+not ok 4 - T07 SIGKILL before-snapshot resumes in a new process without a second commit
+  ---
+  duration_ms: 2700.478375
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: |-
+    Command failed: /Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node /Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs /var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-GCVHpf/.git/request.json
+    file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30
+    function fail(code, field, detail) { throw new PlanningTransactionError(code, field, detail) }
+                                               ^
+
+    PlanningTransactionError: Planning transaction: INDEX_RECONCILIATION_REQUIRED at journal:TX1
+        at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+        at reconcileCommit (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:545:5)
+        at async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:707:15)
+        at async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+      code: 'PLANNING_TRANSACTION_INDEX_RECONCILIATION_REQUIRED',
+      field: 'journal:TX1'
+    }
+
+    Node.js v24.12.0
+
+  code: 1
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    reconcileCommit (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:545:5)
+    async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:707:15)
+    async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+    genericNodeError (node:internal/errors:985:15)
+    wrappedFn (node:internal/errors:539:14)
+    ChildProcess.exithandler (node:child_process:417:12)
+    ChildProcess.emit (node:events:508:28)
+    maybeClose (node:internal/child_process:1101:16)
+    Socket.<anonymous> (node:internal/child_process:457:11)
+    Socket.emit (node:events:508:28)
+    Pipe.<anonymous> (node:net:346:12)
+  ...
+# Subtest: T07 SIGKILL after-snapshot resumes in a new process without a second commit
+not ok 5 - T07 SIGKILL after-snapshot resumes in a new process without a second commit
+  ---
+  duration_ms: 2224.363209
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: |-
+    Command failed: /Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node /Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs /var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-77YEfH/.git/request.json
+    file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30
+    function fail(code, field, detail) { throw new PlanningTransactionError(code, field, detail) }
+                                               ^
+
+    PlanningTransactionError: Planning transaction: PARENT_ACTIVATION_CONFLICT at request.parent.executionVersionId
+        at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+        at activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+        at async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+        at async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+      code: 'PLANNING_TRANSACTION_PARENT_ACTIVATION_CONFLICT',
+      field: 'request.parent.executionVersionId'
+    }
+
+    Node.js v24.12.0
+
+  code: 1
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+    async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+    async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+    genericNodeError (node:internal/errors:985:15)
+    wrappedFn (node:internal/errors:539:14)
+    ChildProcess.exithandler (node:child_process:417:12)
+    ChildProcess.emit (node:events:508:28)
+    maybeClose (node:internal/child_process:1101:16)
+    Socket.<anonymous> (node:internal/child_process:457:11)
+    Socket.emit (node:events:508:28)
+    Pipe.<anonymous> (node:net:346:12)
+  ...
+# Subtest: T07 SIGKILL before-activation resumes in a new process without a second commit
+not ok 6 - T07 SIGKILL before-activation resumes in a new process without a second commit
+  ---
+  duration_ms: 1789.134875
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: |-
+    Command failed: /Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node /Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs /var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t07-qryD1P/.git/request.json
+    file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30
+    function fail(code, field, detail) { throw new PlanningTransactionError(code, field, detail) }
+                                               ^
+
+    PlanningTransactionError: Planning transaction: PARENT_ACTIVATION_CONFLICT at request.parent.executionVersionId
+        at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+        at activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+        at async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+        at async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+      code: 'PLANNING_TRANSACTION_PARENT_ACTIVATION_CONFLICT',
+      field: 'request.parent.executionVersionId'
+    }
+
+    Node.js v24.12.0
+
+  code: 1
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+    async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+    async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+    genericNodeError (node:internal/errors:985:15)
+    wrappedFn (node:internal/errors:539:14)
+    ChildProcess.exithandler (node:child_process:417:12)
+    ChildProcess.emit (node:events:508:28)
+    maybeClose (node:internal/child_process:1101:16)
+    Socket.<anonymous> (node:internal/child_process:457:11)
+    Socket.emit (node:events:508:28)
+    Pipe.<anonymous> (node:net:346:12)
+  ...
+# Subtest: T07 SIGKILL after-activation resumes in a new process without a second commit
+not ok 7 - T07 SIGKILL after-activation resumes in a new process without a second commit
+  ---
+  duration_ms: 1455.434
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:67:134'
+  failureType: 'testCodeFailure'
+  error: |-
+    file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30
+    function fail(code, field, detail) { throw new PlanningTransactionError(code, field, detail) }
+                                               ^
+
+    PlanningTransactionError: Planning transaction: PARENT_ACTIVATION_CONFLICT at request.parent.executionVersionId
+        at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+        at activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+        at async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+        at async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+      code: 'PLANNING_TRANSACTION_PARENT_ACTIVATION_CONFLICT',
+      field: 'request.parent.executionVersionId'
+    }
+
+    Node.js v24.12.0
+
+
+    null !== 'SIGKILL'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'SIGKILL'
+  actual: ~
+  operator: 'strictEqual'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+    async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+    async file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/worker.mjs:18:20 {
+    TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:73:26)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 staged-code is rejected without changing real HEAD/index/worktree
+ok 8 - T07 staged-code is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1027.155709
+  type: 'test'
+  ...
+# Subtest: T07 staged-document is rejected without changing real HEAD/index/worktree
+ok 9 - T07 staged-document is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 760.86725
+  type: 'test'
+  ...
+# Subtest: T07 untracked-code is rejected without changing real HEAD/index/worktree
+ok 10 - T07 untracked-code is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 934.26975
+  type: 'test'
+  ...
+# Subtest: T07 modified-code is rejected without changing real HEAD/index/worktree
+ok 11 - T07 modified-code is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 911.486542
+  type: 'test'
+  ...
+# Subtest: T07 same-file-edit is rejected without changing real HEAD/index/worktree
+ok 12 - T07 same-file-edit is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1060.595792
+  type: 'test'
+  ...
+# Subtest: T07 wrong-head is rejected without changing real HEAD/index/worktree
+ok 13 - T07 wrong-head is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1267.776666
+  type: 'test'
+  ...
+# Subtest: T07 wrong-branch is rejected without changing real HEAD/index/worktree
+ok 14 - T07 wrong-branch is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 1865.755125
+  type: 'test'
+  ...
+# Subtest: T07 missing-source is rejected without changing real HEAD/index/worktree
+ok 15 - T07 missing-source is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 909.385542
+  type: 'test'
+  ...
+# Subtest: T07 wrong-authority is rejected without changing real HEAD/index/worktree
+ok 16 - T07 wrong-authority is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 847.295542
+  type: 'test'
+  ...
+# Subtest: T07 legacy-authority is rejected without changing real HEAD/index/worktree
+ok 17 - T07 legacy-authority is rejected without changing real HEAD/index/worktree
+  ---
+  duration_ms: 902.318667
+  type: 'test'
+  ...
+# Subtest: T07 concurrent same-parent processes leave one complete activation and one checkpoint
+not ok 18 - T07 concurrent same-parent processes leave one complete activation and one checkpoint
+  ---
+  duration_ms: 1430.306917
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:102:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+
+    0 !== 1
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:107:10)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 late version receipts remain history-only and cannot change active snapshot
+not ok 19 - T07 late version receipts remain history-only and cannot change active snapshot
+  ---
+  duration_ms: 1686.81525
+  type: 'test'
+  location: '/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:113:1'
+  failureType: 'testCodeFailure'
+  error: 'Planning transaction: PARENT_ACTIVATION_CONFLICT at request.parent.executionVersionId'
+  code: 'PLANNING_TRANSACTION_PARENT_ACTIVATION_CONFLICT'
+  name: 'PlanningTransactionError'
+  stack: |-
+    fail (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:30:44)
+    activate (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:647:9)
+    async runPlanningTransaction (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.mjs:712:15)
+    async TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-07/transaction.test.mjs:114:46)
+    async Test.run (node:internal/test_runner/test:1113:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: T07 user edits at before-commit are preserved and prevent activation
+ok 20 - T07 user edits at before-commit are preserved and prevent activation
+  ---
+  duration_ms: 2061.594417
+  type: 'test'
+  ...
+# Subtest: T07 user edits at after-commit are preserved and prevent activation
+ok 21 - T07 user edits at after-commit are preserved and prevent activation
+  ---
+  duration_ms: 1926.533791
+  type: 'test'
+  ...
+# Subtest: T07 staging after ref advancement is blocked by the index lock or preserved on rejection
+ok 22 - T07 staging after ref advancement is blocked by the index lock or preserved on rejection
+  ---
+  duration_ms: 1824.687625
+  type: 'test'
+  ...
+# Subtest: T07 unknown external index lock is preserved
+ok 23 - T07 unknown external index lock is preserved
+  ---
+  duration_ms: 1696.417667
+  type: 'test'
+  ...
+# Subtest: T07 invalid review cannot activate or commit
+ok 24 - T07 invalid review cannot activate or commit
+  ---
+  duration_ms: 1311.468167
+  type: 'test'
+  ...
+# Subtest: T07 invalid approval cannot activate or commit
+ok 25 - T07 invalid approval cannot activate or commit
+  ---
+  duration_ms: 1700.41725
+  type: 'test'
+  ...
+# Subtest: T07 invalid allowed-paths cannot activate or commit
+ok 26 - T07 invalid allowed-paths cannot activate or commit
+  ---
+  duration_ms: 954.891292
+  type: 'test'
+  ...
+# Subtest: T07 invalid activation-parent cannot activate or commit
+ok 27 - T07 invalid activation-parent cannot activate or commit
+  ---
+  duration_ms: 936.561917
+  type: 'test'
+  ...
+# Subtest: T07 legacy persisted activation state is not silently migrated or granted new authority
+ok 28 - T07 legacy persisted activation state is not silently migrated or granted new authority
+  ---
+  duration_ms: 973.384292
+  type: 'test'
+  ...
+# Subtest: T07 a recorded write from a different prior document state cannot claim the expected Git baseline
+ok 29 - T07 a recorded write from a different prior document state cannot claim the expected Git baseline
+  ---
+  duration_ms: 1961.181375
+  type: 'test'
+  ...
+1..29
+# tests 29
+# suites 0
+# pass 20
+# fail 9
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 42481.259916

@@ -1,0 +1,188 @@
+✖ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (4604.531375ms)
+✖ T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed (1577.184834ms)
+✖ T15 candidate pause rejects a source change before finish without merging the independent Owner result (2074.955125ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 0
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8655.150166
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:116:1
+✖ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (4604.531375ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'f5abe9d89f8a79e6d06b4c87d04aa69a7ad6bf98'
+  - '65506b216a51629ad03d72796692323ca9cebbe6'
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:135:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'f5abe9d89f8a79e6d06b4c87d04aa69a7ad6bf98',
+    expected: '65506b216a51629ad03d72796692323ca9cebbe6',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:145:1
+✖ T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed (1577.184834ms)
+  TypeError: Cannot read properties of undefined (reading 'status')
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:162:35)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:166:1
+✖ T15 candidate pause rejects a source change before finish without merging the independent Owner result (2074.955125ms)
+  TypeError: Cannot read properties of undefined (reading 'status')
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:198:35)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+=== development rerun after test assertion correction ===
+✖ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (4589.358958ms)
+✔ T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed (2107.0095ms)
+✔ T15 candidate pause rejects a source change before finish without merging the independent Owner result (2426.710375ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9365.405417
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:116:1
+✖ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (4589.358958ms)
+  AssertionError [ERR_ASSERTION]: false == true
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:143:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+=== development rerun with Git ancestry and pre-submit stale coverage ===
+✖ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (3279.544125ms)
+✔ T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed (2088.414208ms)
+✔ T15 candidate pause rejects a source change before finish without merging the independent Owner result (4085.101209ms)
+✔ T15 candidate pause rejects a source change before Owner submission without verification or a commit (1788.649708ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11421.119292
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:125:1
+✖ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (3279.544125ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'failed'
+  - 'completed'
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:136:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'failed',
+    expected: 'completed',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+=== development rerun with blocked source outcome detail ===
+✖ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (3984.943917ms)
+✔ T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed (2310.185084ms)
+✔ T15 candidate pause rejects a source change before finish without merging the independent Owner result (2616.454166ms)
+✔ T15 candidate pause rejects a source change before Owner submission without verification or a commit (1622.809916ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10732.449542
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:125:1
+✖ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (3984.943917ms)
+  AssertionError [ERR_ASSERTION]: Owner worker 结果写入前任务或工作流状态发生漂移
+  + actual - expected
+
+  + 'failed'
+  - 'completed'
+
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/candidate-independent-runtime.test.mjs:136:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'failed',
+    expected: 'completed',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+=== development rerun after bounded blocked result-write repair ===
+✔ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (5785.118625ms)
+✔ T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed (4247.78075ms)
+✔ T15 candidate pause rejects a source change before finish without merging the independent Owner result (3493.200625ms)
+✔ T15 candidate pause rejects a source change before Owner submission without verification or a commit (1912.237583ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15700.014708
+
+=== development rerun with completed and failed terminal replay coverage ===
+✔ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (4280.03775ms)
+✔ T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed (2072.137625ms)
+✔ T15 candidate pause rejects a source change before finish without merging the independent Owner result (2399.818208ms)
+✔ T15 candidate pause rejects a source change before Owner submission without verification or a commit (1501.467333ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10417.808917
+
+=== development rerun with typed external-permission awaiting-user coverage ===
+✔ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (4075.393084ms)
+✔ T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed (2027.892667ms)
+✔ T15 candidate pause rejects a source change before finish without merging the independent Owner result (2380.489084ms)
+✔ T15 candidate pause rejects a source change before Owner submission without verification or a commit (1405.555666ms)
+✔ T15 candidate pause turns a real external permission gap into awaiting-user without charging recovery (1457.82975ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11507.804166

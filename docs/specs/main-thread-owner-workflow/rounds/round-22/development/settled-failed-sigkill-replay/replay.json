@@ -1,0 +1,102 @@
+{
+  "replayerPid": 46015,
+  "result": {
+    "contract": "DSH_RECOVERY_SESSION_RESULT_V1",
+    "outcome": "settled_failed",
+    "phase": "settled_failed",
+    "workflowId": "wf-recovery-session",
+    "taskId": "T1",
+    "ownerId": "api",
+    "rootProblemId": "recovery-root-e7551409-8b9f-4ee0-a406-684df7ad03af",
+    "requestId": "recovery-request-0f11be4f-f3ba-47a4-8f19-4b1718044f80",
+    "attemptId": "recovery-attempt-b3674995-ec78-4742-8426-82a2fabd7b1e",
+    "executionIdentity": {
+      "sessionId": "recovery-session-75c705d3-2547-4857-979f-ea93d7c90615",
+      "promptId": "recovery-prompt-3e93ea96-5674-43d8-88a3-aeac3a305a32"
+    },
+    "continuation": {
+      "contract": "DSH_RECOVERY_CONTINUATION_V1",
+      "sourceId": "recovery-source-a72cd741274c282b17b41c43b2373e13d8c2a661d708099cf5f5db0bcb0a761f",
+      "rootProblemId": "recovery-root-e7551409-8b9f-4ee0-a406-684df7ad03af",
+      "requestId": "recovery-request-0f11be4f-f3ba-47a4-8f19-4b1718044f80",
+      "attemptId": "recovery-attempt-b3674995-ec78-4742-8426-82a2fabd7b1e",
+      "taskId": "T1",
+      "ownerId": "api",
+      "planDigest": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+      "executionIdentity": {
+        "sessionId": "recovery-session-75c705d3-2547-4857-979f-ea93d7c90615",
+        "promptId": "recovery-prompt-3e93ea96-5674-43d8-88a3-aeac3a305a32"
+      },
+      "ownerRunBinding": {
+        "attempt": 3,
+        "sessionId": "recovery-session-75c705d3-2547-4857-979f-ea93d7c90615"
+      }
+    }
+  },
+  "modelRequests": 0,
+  "agentOperations": {
+    "create": 0,
+    "resume": 0,
+    "followup": 0
+  },
+  "beforeCheckpoint": {
+    "phase": "settled_failed",
+    "ownerStatus": "failed",
+    "budgetAttempt": {
+      "workflowId": "wf-recovery-session",
+      "rootProblemId": "recovery-root-e7551409-8b9f-4ee0-a406-684df7ad03af",
+      "requestId": "recovery-request-0f11be4f-f3ba-47a4-8f19-4b1718044f80",
+      "attemptId": "recovery-attempt-b3674995-ec78-4742-8426-82a2fabd7b1e",
+      "taskId": "T1",
+      "ownerId": "api",
+      "executionVersion": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+      "state": "settled",
+      "executionRef": {
+        "id": "recovery-session-75c705d3-2547-4857-979f-ea93d7c90615",
+        "version": "recovery-prompt-3e93ea96-5674-43d8-88a3-aeac3a305a32"
+      },
+      "result": {
+        "status": "failed",
+        "reference": {
+          "id": "recovery-prompt-3e93ea96-5674-43d8-88a3-aeac3a305a32",
+          "version": "recovery-session-75c705d3-2547-4857-979f-ea93d7c90615"
+        }
+      }
+    },
+    "modelRequests": 0,
+    "executionIdentity": {
+      "sessionId": "recovery-session-75c705d3-2547-4857-979f-ea93d7c90615",
+      "promptId": "recovery-prompt-3e93ea96-5674-43d8-88a3-aeac3a305a32"
+    }
+  },
+  "afterCheckpoint": {
+    "phase": "settled_failed",
+    "ownerStatus": "failed",
+    "budgetAttempt": {
+      "workflowId": "wf-recovery-session",
+      "rootProblemId": "recovery-root-e7551409-8b9f-4ee0-a406-684df7ad03af",
+      "requestId": "recovery-request-0f11be4f-f3ba-47a4-8f19-4b1718044f80",
+      "attemptId": "recovery-attempt-b3674995-ec78-4742-8426-82a2fabd7b1e",
+      "taskId": "T1",
+      "ownerId": "api",
+      "executionVersion": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+      "state": "settled",
+      "executionRef": {
+        "id": "recovery-session-75c705d3-2547-4857-979f-ea93d7c90615",
+        "version": "recovery-prompt-3e93ea96-5674-43d8-88a3-aeac3a305a32"
+      },
+      "result": {
+        "status": "failed",
+        "reference": {
+          "id": "recovery-prompt-3e93ea96-5674-43d8-88a3-aeac3a305a32",
+          "version": "recovery-session-75c705d3-2547-4857-979f-ea93d7c90615"
+        }
+      }
+    },
+    "modelRequests": 0,
+    "executionIdentity": {
+      "sessionId": "recovery-session-75c705d3-2547-4857-979f-ea93d7c90615",
+      "promptId": "recovery-prompt-3e93ea96-5674-43d8-88a3-aeac3a305a32"
+    }
+  }
+}

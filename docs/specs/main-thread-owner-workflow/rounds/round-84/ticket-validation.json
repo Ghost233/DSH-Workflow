@@ -1,0 +1,119 @@
+{
+  "counts": {
+    "开发完成": 15,
+    "验收通过": 2,
+    "待办": 4,
+    "阻塞": 5,
+    "开发中": 1
+  },
+  "tickets": [
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-01-document-root-identity.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-02-obligation-closure.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-03-verified-progress.md",
+      "status": "验收通过"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-04-decision-classification.md",
+      "status": "验收通过"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-05-planning-references.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-06-public-owner-request.md",
+      "status": "待办"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-07-planning-transaction-proof.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-08-owner-session-proof.md",
+      "status": "阻塞"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-09-durable-budget-proof.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-10-owner-history-recovery.md",
+      "status": "待办"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-11-acceptance-runner-contract.md",
+      "status": "待办"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-12-acceptance-runner-completion.md",
+      "status": "阻塞"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-13-recovery-budget-ledger.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-14-durable-recovery-admission-proof.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-15-runtime-recovery-budget-admission.md",
+      "status": "开发中"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-16-owner-cancellation-fencing-proof.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-17-attempt-deadline-settlement.md",
+      "status": "阻塞"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-18-recovery-budget-revision-inheritance.md",
+      "status": "阻塞"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-19-recovery-budget-config-activation.md",
+      "status": "阻塞"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-20-recovery-source-admission.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-21-session-persistence-contract-proof.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-22-recovery-session-reconciliation.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-23-durable-admission-session-proof.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-24-native-planning-write-provenance.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-25-planning-checkpoint-snapshot.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-26-snapshot-owner-execution-packages.md",
+      "status": "开发完成"
+    },
+    {
+      "path": "docs/specs/main-thread-owner-workflow/tickets/t-27-planning-version-activation.md",
+      "status": "待办"
+    }
+  ]
+}

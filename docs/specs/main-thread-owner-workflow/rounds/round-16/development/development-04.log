@@ -1,0 +1,25 @@
+{
+  "root": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-tests-r16-12GCMg",
+  "receipt": {
+    "contract": "DSH_RECOVERY_ADMISSION_V1",
+    "outcome": "reserved",
+    "rootProblemId": "recovery-root-8f453c8e-8168-45d4-9026-653538461c1c",
+    "requestId": "recovery-request-33b40ffa-490f-4593-b054-0793294a0fdc",
+    "attemptId": "recovery-attempt-30596ea4-1162-40f7-a76f-0a7d7d732e1f",
+    "executionIdentity": {
+      "sessionId": "recovery-session-859ded4c-2dbc-41b1-a939-b08d03d09e3a",
+      "promptId": "recovery-prompt-00614e79-2ab2-4b03-84b6-954b77a063bf"
+    },
+    "launchAuthorized": false
+  },
+  "requests": 1,
+  "location": {
+    "kind": "jsonl",
+    "path": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-tests-r16-12GCMg/.dsh-workflow/recovery-sessions/--private-var-folders-pk-4_rtp5211139hr72f5z3yv2c0000gn-T-dsh-t22-tests-r16-12GCMg--/recovery-session-859ded4c-2dbc-41b1-a939-b08d03d09e3a/session.jsonl"
+  },
+  "result": {
+    "outcome": "paused",
+    "phase": "technical_pause",
+    "reason": "read_failed"
+  }
+}

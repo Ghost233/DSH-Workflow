@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T06:03:34.078421+00:00",
+  "candidateCount": 1619,
+  "drift": [],
+  "allHeadsUnchanged": true,
+  "removedRestartContainers": [
+    "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-kGmSMw",
+    "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-E15T1Q",
+    "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-geAE8t",
+    "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-xK1mCl",
+    "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-lgvFfd"
+  ]
+}

@@ -1,0 +1,361 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { execFile as execFileCallback } from 'node:child_process'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+import { planningCheckpointPending, readPlanningCheckpoint, runPlanningCheckpoint } from '../src/planning-checkpoint.mjs'
+import { createBoundSource, fixture, git, indexBytes, request, sha256, trustedAuthorize } from './fixtures/planning-checkpoint-fixture.mjs'
+
+const execFile = promisify(execFileCallback)
+const worker = fileURLToPath(new URL('./fixtures/planning-checkpoint-worker.mjs', import.meta.url))
+
+function trustedLease(counter = { calls: 0 }) {
+  return {
+    counter,
+    withLease: operation => operation({
+      signal: new AbortController().signal,
+      assertLease: async () => { counter.calls += 1 },
+    }),
+  }
+}
+
+async function checkpoint(value, currentRequest, { authorization = { calls: 0 }, lease = trustedLease().counter, fault } = {}) {
+  return runPlanningCheckpoint({
+    root: value.root,
+    cwd: value.root,
+    request: currentRequest,
+    authorize: trustedAuthorize(authorization),
+    withLease: operation => operation({
+      signal: new AbortController().signal,
+      assertLease: async () => { lease.calls += 1 },
+    }),
+    fault,
+  })
+}
+
+async function checkpointWithLease(value, currentRequest, lease, { fault } = {}) {
+  return runPlanningCheckpoint({
+    root: value.root,
+    cwd: value.root,
+    request: currentRequest,
+    authorize: trustedAuthorize({ calls: 0 }),
+    withLease: operation => operation(lease),
+    fault,
+  })
+}
+
+function documentContent(document, kind, body) {
+  const { path, sha256, ...declaration } = document
+  const headers = {
+    planning_document: 'DSH_PLANNING_DOCUMENT_V1',
+    document_kind: kind,
+    document_id: document.id,
+    document_revision: document.revision,
+    ...(kind === 'ticket' ? { spec_id: document.spec.id, spec_revision: document.spec.revision } : {}),
+    planning_declaration: JSON.stringify(declaration),
+  }
+  return `---\n${Object.entries(headers).map(([key, value]) => `${key}: ${value}`).join('\n')}\n---\n\n# ${document.id}\n\n${body}\n`
+}
+
+function revisedDocuments(value) {
+  const spec = {
+    path: value.docs.spec.path,
+    id: value.docs.spec.id,
+    revision: 'R2',
+    acceptanceCriteria: ['AC-27'],
+    contracts: [{ id: 'planning-checkpoint-v1', revision: 'v1' }],
+  }
+  const ticket = {
+    path: value.docs.ticket.path,
+    id: value.docs.ticket.id,
+    revision: 'R2',
+    spec: { id: spec.id, revision: spec.revision },
+    acceptanceCriteria: [{ id: 'AC-27', specId: spec.id, specRevision: spec.revision }],
+    contracts: [{ id: 'planning-checkpoint-v1', revision: 'v1' }],
+    dependsOn: [],
+    work: { ready: [{ id: 'checkpoint-kernel-r2' }], blocked: [] },
+  }
+  const specContent = documentContent(spec, 'spec', 'second checkpoint specification.')
+  const ticketContent = documentContent(ticket, 'ticket', 'second checkpoint ticket.')
+  return {
+    spec: { ...spec, sha256: sha256(Buffer.from(specContent)) },
+    ticket: { ...ticket, sha256: sha256(Buffer.from(ticketContent)) },
+    specContent,
+    ticketContent,
+  }
+}
+
+function revisedManifest(docs) {
+  return { contract: 'DSH_PLANNING_REFERENCE_MANIFEST_V1', spec: docs.spec, tickets: [docs.ticket] }
+}
+
+async function createRevisedBoundSource(value, docs) {
+  const spec = join(value.root, docs.spec.path)
+  const ticket = join(value.root, docs.ticket.path)
+  assert.equal((await value.call('read', { file_path: spec })).isError, false)
+  assert.equal((await value.call('edit', {
+    file_path: spec,
+    old_string: await readFile(spec, 'utf8'),
+    new_string: docs.specContent,
+  })).isError, false)
+  assert.equal((await value.call('read', { file_path: ticket })).isError, false)
+  assert.equal((await value.call('edit', {
+    file_path: ticket,
+    old_string: await readFile(ticket, 'utf8'),
+    new_string: docs.ticketContent,
+  })).isError, false)
+  return [
+    { path: docs.spec.path, callIds: ['checkpoint-source-6'] },
+    { path: docs.ticket.path, callIds: ['checkpoint-source-8'] },
+  ]
+}
+
+test('真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交', async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const chains = await createBoundSource(value)
+  const currentRequest = request(value, chains)
+  const initialIndex = await indexBytes(value.root)
+  const authorization = { calls: 0 }
+  const lease = { calls: 0 }
+  const first = await checkpoint(value, currentRequest, { authorization, lease })
+  assert.equal(first.contract, 'DSH_PLANNING_CHECKPOINT_RESULT_V1')
+  assert.equal(first.phase, 'checkpointed')
+  assert.equal(first.authorization.id, 'test-grant-1')
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), first.checkpointCommit)
+  assert.equal(await git(value.root, 'symbolic-ref', '--short', 'HEAD'), value.baseline.branch)
+  assert.notDeepEqual(await indexBytes(value.root), initialIndex, 'actual index advances only after ref CAS')
+  assert.equal(await git(value.root, 'diff', '--cached', '--name-only'), '')
+  assert.deepEqual((await git(value.root, 'status', '--porcelain=v1')).split('\n').filter(line => line !== '?? .dsh-workflow/'), [])
+  assert.deepEqual((await git(value.root, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD')).split('\n').filter(Boolean).toSorted(), [
+    value.docs.spec.path,
+    value.docs.ticket.path,
+  ].toSorted())
+  assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
+  const durable = await readPlanningCheckpoint({ root: value.root, id: currentRequest.id })
+  assert.equal(durable.journal.phase, 'snapshot-persisted')
+  assert.equal(durable.snapshot.codeBaseline.checkpointCommit, first.checkpointCommit)
+  assert.equal(durable.snapshot.source.references.spec.sha256, value.docs.spec.sha256)
+  assert.equal(lease.calls > 6, true, 'lease is checked at every kernel boundary')
+  const beforeReplay = await git(value.root, 'rev-list', '--count', 'HEAD')
+  const replay = await checkpoint(value, currentRequest, { authorization, lease })
+  assert.equal(replay.checkpointCommit, first.checkpointCommit)
+  assert.equal(await git(value.root, 'rev-list', '--count', 'HEAD'), beforeReplay)
+  assert.equal(authorization.calls > 2, true, 'durable test grant is re-read rather than assumed')
+})
+
+test('暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户文件', async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const chains = await createBoundSource(value)
+  const currentRequest = request(value, chains)
+  await writeFile(join(value.root, 'code.txt'), 'user staged change\n')
+  await git(value.root, 'add', 'code.txt')
+  const before = { head: await git(value.root, 'rev-parse', 'HEAD'), index: await indexBytes(value.root), code: await readFile(join(value.root, 'code.txt'), 'utf8') }
+  await assert.rejects(checkpoint(value, currentRequest), /STAGED_CHANGES|UNRELATED_WORKTREE_CHANGE/)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), before.head)
+  assert.deepEqual(await indexBytes(value.root), before.index)
+  assert.equal(await readFile(join(value.root, 'code.txt'), 'utf8'), before.code)
+  assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
+})
+
+for (const stage of ['after-journal-prepared', 'after-commit-object', 'after-ref-update-before-journal', 'after-ref-cas', 'after-index-rename-before-journal', 'after-index-sync', 'after-snapshot-write-before-journal', 'after-snapshot']) test(`真实子进程 SIGKILL ${stage} 后复启只形成一个 checkpoint 与不可变 snapshot`, { timeout: 30_000 }, async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const chains = await createBoundSource(value)
+  const currentRequest = request(value, chains)
+  const input = join(value.root, '.git', 'planning-checkpoint-worker.json')
+  await writeFile(input, JSON.stringify({ root: value.root, request: currentRequest }))
+  await assert.rejects(execFile(process.execPath, [worker, input, stage], { timeout: 20_000 }), error => {
+    assert.equal(error.signal, 'SIGKILL')
+    return true
+  })
+  if (stage === 'after-journal-prepared' || stage === 'after-commit-object') {
+    assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
+  } else assert.notEqual(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
+  if (stage === 'after-snapshot') assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
+  else assert.deepEqual(await planningCheckpointPending({ root: value.root }), [currentRequest.id])
+  const resumed = await checkpoint(value, currentRequest)
+  assert.equal(await git(value.root, 'rev-list', '--count', 'HEAD'), '2')
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), resumed.checkpointCommit)
+  assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
+  const durable = await readPlanningCheckpoint({ root: value.root, id: currentRequest.id })
+  assert.equal(durable.journal.phase, 'snapshot-persisted')
+  assert.equal(durable.snapshot.id, `snapshot-${currentRequest.id}`)
+  assert.equal(durable.journal.binding.source.source.agentId, value.agent.id)
+  assert.equal(durable.journal.grant.id, 'test-grant-1')
+  const snapshotPath = join(value.root, '.git/dsh-planning-checkpoints/snapshots', `${currentRequest.id}.json`)
+  const fixedSnapshot = await readFile(snapshotPath, 'utf8')
+  const replay = await checkpoint(value, currentRequest)
+  assert.equal(replay.checkpointCommit, resumed.checkpointCommit)
+  assert.equal(await readFile(snapshotPath, 'utf8'), fixedSnapshot)
+})
+
+test('checkpoint lease 在物理断言前后均拒绝已取消 signal，且不创建 journal 或变更 Git', async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const chains = await createBoundSource(value)
+  const currentRequest = request(value, chains)
+  const before = { head: await git(value.root, 'rev-parse', 'HEAD'), index: await indexBytes(value.root) }
+  const beforeController = new AbortController()
+  beforeController.abort(new Error('pre-physical assertion cancellation'))
+  let beforeCalls = 0
+  await assert.rejects(checkpointWithLease(value, currentRequest, {
+    signal: beforeController.signal,
+    assertLease: async () => { beforeCalls += 1 },
+  }), /LEASE_ABORTED/)
+  assert.equal(beforeCalls, 0)
+
+  const afterController = new AbortController()
+  let afterCalls = 0
+  await assert.rejects(checkpointWithLease(value, currentRequest, {
+    signal: afterController.signal,
+    assertLease: async () => {
+      afterCalls += 1
+      afterController.abort(new Error('post-physical assertion cancellation'))
+    },
+  }), /LEASE_ABORTED/)
+  assert.equal(afterCalls, 1)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), before.head)
+  assert.deepEqual(await indexBytes(value.root), before.index)
+  assert.equal((await readPlanningCheckpoint({ root: value.root, id: currentRequest.id })).journal, null)
+
+  const duringController = new AbortController()
+  let duringCalls = 0
+  await assert.rejects(checkpointWithLease(value, currentRequest, {
+    signal: duringController.signal,
+    // Deliberately ignores the passed signal; this establishes that the kernel,
+    // not the trusted test seam, prevents the post-commit ref CAS.
+    assertLease: async () => { duringCalls += 1 },
+  }, {
+    fault: async stage => {
+      if (stage === 'after-commit-object') duringController.abort(new Error('cancel before ref CAS'))
+    },
+  }), /LEASE_ABORTED/)
+  assert.equal(duringCalls > 0, true)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), before.head)
+  assert.deepEqual(await planningCheckpointPending({ root: value.root }), [currentRequest.id])
+  assert.equal((await readPlanningCheckpoint({ root: value.root, id: currentRequest.id })).journal.phase, 'commit-proposed')
+  const resumed = await checkpoint(value, currentRequest)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), resumed.checkpointCommit)
+  assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
+})
+
+test('已完成 parent snapshot 以完整持久 journal/snapshot 身份绑定子 checkpoint', async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const parentChains = await createBoundSource(value)
+  const parentRequest = request(value, parentChains, 'checkpoint-parent')
+  const parent = await checkpoint(value, parentRequest)
+  const docs = revisedDocuments(value)
+  const childChains = await createRevisedBoundSource(value, docs)
+  const childRequest = {
+    id: 'checkpoint-child',
+    manifest: revisedManifest(docs),
+    baseline: { branch: value.baseline.branch, head: parent.checkpointCommit },
+    source: { agentId: value.agent.id, sessionId: value.agent.session.header.id, chains: childChains },
+    reason: 'child checkpoint retains its completed parent snapshot identity',
+    parentSnapshotId: parent.snapshot.id,
+  }
+  const child = await checkpoint(value, childRequest)
+  assert.equal(child.snapshot.parentSnapshotId, parent.snapshot.id)
+  assert.equal(child.snapshot.codeBaseline.sourceHead, parent.checkpointCommit)
+  const durable = await readPlanningCheckpoint({ root: value.root, id: childRequest.id })
+  assert.equal(durable.snapshot.parentSnapshotId, parent.snapshot.id)
+})
+
+test('未知 parent snapshot 在创建 journal 或 Git 变更前拒绝', async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const chains = await createBoundSource(value)
+  const currentRequest = { ...request(value, chains), parentSnapshotId: 'snapshot-unknown-parent' }
+  const authorization = { calls: 0 }
+  const before = { head: await git(value.root, 'rev-parse', 'HEAD'), index: await indexBytes(value.root) }
+  await assert.rejects(checkpoint(value, currentRequest, { authorization }), /PARENT_SNAPSHOT_MISSING/)
+  assert.equal(authorization.calls, 0)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), before.head)
+  assert.deepEqual(await indexBytes(value.root), before.index)
+  assert.equal((await readPlanningCheckpoint({ root: value.root, id: currentRequest.id })).journal, null)
+})
+
+test('原 checkpoint 尚待恢复时，新 id 不能绕过同一项目的 pending journal', async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const chains = await createBoundSource(value)
+  const original = request(value, chains, 'checkpoint-original')
+  await assert.rejects(checkpoint(value, original, {
+    fault: async stage => {
+      if (stage === 'after-journal-prepared') throw new Error('deterministic interruption after durable journal')
+    },
+  }), /deterministic interruption/)
+  const before = { head: await git(value.root, 'rev-parse', 'HEAD'), index: await indexBytes(value.root) }
+  const replacement = { ...original, id: 'checkpoint-replacement' }
+  await assert.rejects(checkpoint(value, replacement), /ORIGINAL_CHECKPOINT_PENDING/)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), before.head)
+  assert.deepEqual(await indexBytes(value.root), before.index)
+  assert.equal((await readPlanningCheckpoint({ root: value.root, id: replacement.id })).journal, null)
+  assert.deepEqual(await planningCheckpointPending({ root: value.root }), [original.id])
+  const resumed = await checkpoint(value, original)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), resumed.checkpointCommit)
+  assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
+})
+
+test('Git clean filter 改写选中文档 blob 时拒绝，不把原始来源哈希写成 checkpoint', async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const chains = await createBoundSource(value)
+  await writeFile(join(value.root, '.gitattributes'), 'docs/specs/checkpoint/** filter=checkpoint-source\n')
+  await git(value.root, 'add', '.gitattributes')
+  await git(value.root, 'commit', '-m', 'enable deterministic checkpoint clean filter')
+  const baseline = { branch: value.baseline.branch, head: await git(value.root, 'rev-parse', 'HEAD') }
+  await git(value.root, 'config', 'filter.checkpoint-source.clean', 'tr a-z A-Z')
+  const currentRequest = { ...request(value, chains), baseline }
+  await assert.rejects(checkpoint(value, currentRequest), /CHECKPOINT_SOURCE_BLOB_MISMATCH/)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), baseline.head)
+})
+
+test('commit object 已持久但 ref 前外部修改选中文档时，恢复拒绝并保留外部字节', { timeout: 30_000 }, async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const chains = await createBoundSource(value)
+  const currentRequest = request(value, chains)
+  const input = join(value.root, '.git', 'planning-checkpoint-worker.json')
+  await writeFile(input, JSON.stringify({ root: value.root, request: currentRequest }))
+  await assert.rejects(execFile(process.execPath, [worker, input, 'after-commit-object'], { timeout: 20_000 }), error => error.signal === 'SIGKILL')
+  const selected = join(value.root, value.docs.spec.path)
+  await writeFile(selected, 'external selected planning document bytes\n')
+  await assert.rejects(checkpoint(value, currentRequest), /HASH_MISMATCH|FROZEN_SOURCE_CHANGED|SOURCE/)
+  assert.equal(await readFile(selected, 'utf8'), 'external selected planning document bytes\n')
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
+})
+
+test('已完成 checkpoint 的 immutable snapshot 被外部修改时，重放和 pending 检查均拒绝', async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const chains = await createBoundSource(value)
+  const currentRequest = request(value, chains)
+  await checkpoint(value, currentRequest)
+  const snapshotPath = join(value.root, '.git/dsh-planning-checkpoints/snapshots', `${currentRequest.id}.json`)
+  const altered = JSON.parse(await readFile(snapshotPath, 'utf8'))
+  altered.reason = 'unbound external replacement'
+  const raw = `${JSON.stringify(altered)}\n`
+  await writeFile(snapshotPath, raw)
+  await assert.rejects(checkpoint(value, currentRequest), /SNAPSHOT_MISMATCH/)
+  await assert.rejects(planningCheckpointPending({ root: value.root }), /STATE_CORRUPT/)
+  assert.equal(await readFile(snapshotPath, 'utf8'), raw)
+})
+
+test('未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁', async t => {
+  const value = await fixture(t)
+  if (value === undefined) return
+  const chains = await createBoundSource(value)
+  const currentRequest = request(value, chains)
+  const lock = join(value.root, '.git', 'index.lock')
+  await writeFile(lock, 'foreign index owner')
+  const before = await git(value.root, 'rev-parse', 'HEAD')
+  await assert.rejects(checkpoint(value, currentRequest), /FOREIGN_INDEX_LOCK|GIT_FAILURE/)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), before)
+  assert.equal(await readFile(lock, 'utf8'), 'foreign index owner')
+})

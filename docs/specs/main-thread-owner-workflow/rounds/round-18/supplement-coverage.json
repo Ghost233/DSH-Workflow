@@ -1,0 +1,12 @@
+{
+  "control": {
+    "selectedTopLevel": 12,
+    "reportedTopLevel": 12,
+    "exactOrderAndSet": true
+  },
+  "resilience": {
+    "selectedTopLevel": 17,
+    "reportedTopLevel": 17,
+    "exactOrderAndSet": true
+  }
+}

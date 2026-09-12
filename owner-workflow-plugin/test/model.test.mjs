@@ -16,6 +16,7 @@ import {
   STOP_REASON_ACTIONS,
   validateHandoffTargets,
   plannerResult,
+  PLAN_REVIEW_SUBMISSION_SCHEMA,
   planReviewResult,
   implementationReviewResult,
 } from '../src/model.mjs'
@@ -118,6 +119,35 @@ test('展开 Composite 后保留父外部依赖、后继依赖父且子图 entry
   assert.deepEqual(expanded.tasks.find(task => task.id === 'T2').exit, ['T2-3'])
   assert.deepEqual(expanded.tasks.find(task => task.id === 'T2-2').dependsOn, ['T2-1'])
   assert.equal(expanded.tasks.find(task => task.id === 'T2-3').parentTaskId, 'T2')
+})
+
+test('Composite 可递归拆分，直到所有 abstract 节点变成可执行叶子', () => {
+  const first = expandCompositeTask(compositePlan(), 'T2', {
+    children: [compositeTask('T2-1', 'work', [], 'api', {
+      write: [],
+      verify: [],
+      decomposition: {
+        status: 'abstract',
+        kind: 'composite',
+        outcome: '完成二级拆分',
+        ownerCandidates: ['api'],
+        unknowns: ['子任务边界待确定'],
+      },
+    })],
+    entry: ['T2-1'],
+    exit: ['T2-1'],
+  })
+  assert.equal(first.executable, false)
+
+  const second = expandCompositeTask(first, 'T2-1', {
+    children: [compositeTask('T2-1-1')],
+    entry: ['T2-1-1'],
+    exit: ['T2-1-1'],
+  })
+  assert.equal(second.executable, true)
+  assert.equal(second.tasks.find(task => task.id === 'T2-1').parentTaskId, 'T2')
+  assert.equal(second.tasks.find(task => task.id === 'T2-1-1').parentTaskId, 'T2-1')
+  assert.deepEqual(second.tasks.find(task => task.id === 'T2-1').children, ['T2-1-1'])
 })
 
 test('Composite 只允许未开始且没有业务提交的 work task', () => {
@@ -346,7 +376,77 @@ test('V2 计划拒绝未绑定的验证 ID', () => {
 test('V2 work task 必须绑定至少一个 required verification', () => {
   assert.throws(() => normalizePlanV2(v2Plan({
     tasks: [{ id: 'T1', role: 'work', ownerId: 'api', title: '实现', dependsOn: [], write: ['src/api/route.mjs'], verify: [], done: ['通过'] }],
-  })), /verify.*不能为空|验证.*不能为空/u)
+  })), /verify.*不能为空|验证.*不能为空|必须绑定至少一个验证/u)
+})
+
+test('V2 task保留显式稳定执行资源，旧task省略字段时不注入默认值', () => {
+  const legacy = normalizePlanV2(v2Plan())
+  assert.equal(Object.hasOwn(legacy.tasks[0], 'resources'), false)
+  const withResources = normalizePlanV2(v2Plan({
+    tasks: [{
+      ...v2Plan().tasks[0],
+      resources: ['tcp:localhost:5432', 'build-cache:flutter'],
+    }],
+  }))
+  assert.deepEqual(withResources.tasks[0].resources, ['tcp:localhost:5432', 'build-cache:flutter'])
+})
+
+test('V2 task拒绝重复或不稳定的执行资源身份', () => {
+  const base = v2Plan().tasks[0]
+  assert.throws(() => normalizePlanV2(v2Plan({
+    tasks: [{ ...base, resources: ['db:test', 'db:test'] }],
+  })), /重复资源身份/u)
+  assert.throws(() => normalizePlanV2(v2Plan({
+    tasks: [{ ...base, resources: ['db:test resource'] }],
+  })), /资源身份格式/u)
+})
+
+test('渐进式 DAG 允许 abstract work 暂不绑定写入和验证，并标记为不可执行', () => {
+  const plan = normalizePlanV2(v2Plan({
+    verifications: [],
+    tasks: [{
+      id: 'T1',
+      role: 'work',
+      ownerId: 'api',
+      title: '先确定子图边界',
+      dependsOn: [],
+      write: [],
+      verify: [],
+      done: ['子图边界已明确'],
+      decomposition: {
+        status: 'abstract',
+        kind: 'discovery',
+        outcome: '形成可执行子图',
+        ownerCandidates: ['api'],
+        unknowns: ['实际文件边界'],
+      },
+    }],
+  }))
+  assert.equal(plan.executable, false)
+  assert.deepEqual(plan.verifications, [])
+  assert.equal(plan.tasks[0].decomposition.status, 'abstract')
+})
+
+test('V2 计划拒绝未定义的 decomposition 状态并列出允许值', () => {
+  assert.throws(() => normalizePlanV2(v2Plan({
+    tasks: [{
+      id: 'T1',
+      role: 'work',
+      ownerId: 'api',
+      title: '错误状态',
+      dependsOn: [],
+      write: ['src/api/a.mjs'],
+      verify: ['unit'],
+      done: ['通过'],
+      decomposition: {
+        status: 'planned',
+        kind: 'leaf',
+        outcome: '错误状态',
+        ownerCandidates: ['api'],
+        unknowns: [],
+      },
+    }],
+  })), /只允许 abstract、leaf 或 expanded/u)
 })
 
 test('V2 计划拒绝任务依赖环', () => {
@@ -362,6 +462,12 @@ test('V2 计划拒绝空验证 argv', () => {
   assert.throws(() => normalizePlanV2(v2Plan({
     verifications: [{ id: 'unit', run: [] }],
   })), /argv/u)
+})
+
+test('V2 计划拒绝用 argv 字段替代 run 并返回可修复错误', () => {
+  assert.throws(() => normalizePlanV2(v2Plan({
+    verifications: [{ id: 'unit', argv: ['node', '--test'] }],
+  })), /字段名必须是 run，不能使用 argv/u)
 })
 
 test('V2 验证 cwd 只接受受限仓库相对目录并规范化保存', () => {
@@ -414,6 +520,7 @@ test('任务停止状态只接受固定的 reason/action 配对', () => {
     plan_invalid: 'revise_plan',
     runtime_failed: 'retry_runtime',
     owner_orphaned: 'recover_owner',
+    termination_unconfirmed: 'inspect_runtime',
   })
 })
 
@@ -434,6 +541,8 @@ test('任务停止接受其余固定 reason/action 配对', () => {
     ['thread_failed', 'replace_thread'],
     ['plan_invalid', 'revise_plan'],
     ['runtime_failed', 'retry_runtime'],
+    ['owner_orphaned', 'recover_owner'],
+    ['termination_unconfirmed', 'inspect_runtime'],
   ]) {
     assert.deepEqual(taskLifecycleTransition({ status: 'running' }, { type: 'stop', reason, action }), {
       status: 'stopped', reason, action,
@@ -463,7 +572,7 @@ test('V2 计划原样保留 done 验收文本', () => {
 test('V1 历史计划可读取运行时目录范围且不可执行', () => {
   const plan = normalizePlan({
     summary: '历史计划',
-    owners: [{ id: 'history', name: '历史', description: '历史范围', scope: ['.owner-memory/**'] }],
+    owners: [{ id: 'history', name: '历史', description: '历史范围', scope: ['.owner-workflow/owners/history/memory/**'] }],
     stages: [{ id: 'stage', name: '阶段', dependsOn: [], tasks: [{ id: 'task', ownerId: 'history', title: '展示', description: '展示' }] }],
   })
   assert.equal(plan.executable, false)
@@ -597,9 +706,9 @@ test('计划拒绝所有者范围重叠', () => {
 
 test('V2 计划拒绝运行时管理目录的 Owner scope', () => {
   assert.throws(() => normalizePlanV2(v2Plan({
-    owners: [v2Owner('memory-writer', ['.owner-memory/**'])],
-    tasks: [{ id: 'T1', role: 'work', ownerId: 'memory-writer', title: '写入', dependsOn: [], write: ['.owner-memory/fact.mjs'], verify: ['unit'], done: ['完成'] }],
-  })), /不能覆盖运行时管理的 \.owner-memory/u)
+    owners: [v2Owner('memory-writer', ['.owner-workflow/owners/memory-writer/memory/**'])],
+    tasks: [{ id: 'T1', role: 'work', ownerId: 'memory-writer', title: '写入', dependsOn: [], write: ['.owner-workflow/owners/memory-writer/memory/fact.mjs'], verify: ['unit'], done: ['完成'] }],
+  })), /不能覆盖运行时管理的 \.owner-workflow\/owners/u)
 })
 
 test('父 Owner 排除完整子模块后允许合法拆分', () => {
@@ -812,13 +921,63 @@ test('规划和所有者结果契约未知时按关闭处理', () => {
       title: '缺少验证',
       detail: '计划修改 native 模块但没有固定验证。',
       suggestion: '增加对应测试。',
+      obligationId: 'ac32-native-verification',
+      sourceId: 'AC-32',
+      sourceVersion: 'R4',
+      targetTaskIds: ['T1'],
+      closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' },
     }],
   }).issues[0], {
     severity: 'high',
     title: '缺少验证',
     detail: '计划修改 native 模块但没有固定验证。',
     suggestion: '增加对应测试。',
+    obligationId: 'ac32-native-verification',
+    sourceId: 'AC-32',
+    sourceVersion: 'R4',
+    targetTaskIds: ['T1'],
+    closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' },
   })
+  assert.deepEqual(planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'passed',
+    summary: '关闭现有义务',
+    issues: [],
+    obligationClosures: [{
+      obligationId: 'ac32-native-verification',
+      kind: 'plan_verification_binding',
+      taskId: 'T1',
+      verificationId: 'unit',
+      planDigest: 'a'.repeat(64),
+    }],
+  }).obligationClosures, [{
+    obligationId: 'ac32-native-verification',
+    kind: 'plan_verification_binding',
+    taskId: 'T1',
+    verificationId: 'unit',
+    planDigest: 'a'.repeat(64),
+  }])
+  assert.deepEqual(planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_split',
+    summary: '需要拆分',
+    issues: [],
+    targetTaskIds: ['T1'],
+  }).targetTaskIds, ['T1'])
+  assert.deepEqual(planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_decision',
+    summary: '需要决策',
+    issues: [],
+    decisionQuestions: ['是否允许真实外部服务？'],
+  }, { allowLegacyObligations: true }).decisionQuestions, ['是否允许真实外部服务？'])
+  assert.deepEqual(planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_discovery',
+    summary: '需要调查',
+    issues: [],
+    discoveryQuestions: ['仓库是否已有测试 harness？'],
+  }, { allowLegacyObligations: true }).discoveryQuestions, ['仓库是否已有测试 harness？'])
   assert.throws(() => planReviewResult({ status: 'passed' }), /计划审查结果契约/u)
   assert.throws(() => planReviewResult({
     contract: 'DSH_PLAN_REVIEW_V1', status: 'failed', summary: '失败', issues: [],
@@ -836,6 +995,221 @@ test('规划和所有者结果契约未知时按关闭处理', () => {
     issues: [{ severity: 'high', title: '边界遗漏', detail: '测试未覆盖异常路径', suggestion: '补充回归测试' }],
   }).issues, ['[high] 边界遗漏：测试未覆盖异常路径 建议：补充回归测试'])
   assert.throws(() => implementationReviewResult({ status: 'passed' }), /实现审查结果契约/u)
+})
+
+test('新计划审查义务必须有显式来源、目标和可核验关闭合同，旧记录只能显式读取', () => {
+  const incompleteIssue = {
+    severity: 'high',
+    title: '缺少关闭合同',
+    detail: '必须补齐。',
+    suggestion: '重新提交。',
+  }
+  const raw = {
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_revision',
+    summary: '缺少义务合同',
+    issues: [incompleteIssue],
+  }
+  assert.throws(() => planReviewResult(raw), /obligationId|来源|sourceId|targetTaskIds|closeWhen|关闭/u)
+  assert.equal(planReviewResult(raw, { allowLegacyObligations: true }).issues[0].title, '缺少关闭合同')
+  assert.throws(() => planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_discovery',
+    summary: '只有自由文本问题',
+    issues: [],
+    discoveryQuestions: ['仓库是否已有测试 harness？'],
+  }), /结构化 issues|closeWhen/u)
+  assert.throws(() => planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_revision',
+    summary: '同 ID 不同合同',
+    issues: [
+      {
+        ...incompleteIssue,
+        obligationId: 'AC-16-proof',
+        sourceId: 'AC-16',
+        sourceVersion: 'R4',
+        targetTaskIds: ['T1'],
+        closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' },
+      },
+      {
+        ...incompleteIssue,
+        obligationId: 'AC-16-proof',
+        sourceId: 'AC-16',
+        sourceVersion: 'R4',
+        targetTaskIds: ['T1'],
+        closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'integration' },
+      },
+    ],
+  }), /同一.*义务|obligationId.*合同/u)
+})
+
+test('新计划审查义务在 Schema 与 normalizer 中都必须提供不可变 obligationId', () => {
+  assert.ok(PLAN_REVIEW_SUBMISSION_SCHEMA.properties.issues.items.required.includes('obligationId'))
+  const otherwiseComplete = {
+    severity: 'high',
+    title: '缺少独立义务身份',
+    detail: '同一来源可以包含多个独立要求。',
+    suggestion: '为每项要求提供稳定 ID。',
+    sourceId: 'AC-16',
+    sourceVersion: 'R4',
+    targetTaskIds: ['T1'],
+    closeWhen: { kind: 'plan_verification_binding', taskId: 'T1', verificationId: 'unit' },
+  }
+  const review = {
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_revision',
+    summary: '缺少 obligationId',
+    issues: [otherwiseComplete],
+  }
+  assert.throws(() => planReviewResult(review), /obligationId/u)
+  assert.equal(
+    planReviewResult(review, { allowLegacyObligations: true }).issues[0].sourceId,
+    'AC-16',
+  )
+})
+
+test('计划审查关闭合同支持结构可执行与版本化决定，并按类型要求字段', () => {
+  const issueCloseWhenSchema = PLAN_REVIEW_SUBMISSION_SCHEMA.properties.issues.items.properties.closeWhen
+  const classificationBasisSchema = PLAN_REVIEW_SUBMISSION_SCHEMA.properties.issues.items.properties.classificationBasis
+  const closureSchema = PLAN_REVIEW_SUBMISSION_SCHEMA.properties.obligationClosures.items
+  assert.deepEqual(issueCloseWhenSchema.required, ['kind', 'taskId'])
+  assert.ok(issueCloseWhenSchema.allOf.some(rule => rule.then?.required?.includes('verificationId')))
+  assert.ok(issueCloseWhenSchema.allOf.some(rule => rule.then?.required?.includes('authority')))
+  assert.deepEqual(classificationBasisSchema.required, ['source', 'technicalFacts'])
+  assert.ok(closureSchema.allOf.some(rule => rule.then?.required?.includes('decisionId')))
+  const baseIssue = {
+    severity: 'high',
+    title: '需要结构或决定凭据',
+    detail: '义务必须由 Runtime 记录解除。',
+    suggestion: '提交对应的关闭合同。',
+    sourceId: 'AC-32',
+    sourceVersion: 'R4',
+    targetTaskIds: ['T1'],
+  }
+  const executable = planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_split',
+    summary: '任务必须可执行',
+    issues: [{
+      ...baseIssue,
+      obligationId: 'ac32-structural-executable',
+      closeWhen: { kind: 'plan_task_executable', taskId: 'T1' },
+    }],
+  })
+  assert.deepEqual(executable.issues[0].closeWhen, { kind: 'plan_task_executable', taskId: 'T1' })
+
+  const decision = planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'needs_decision',
+    summary: '需要用户确认范围',
+    issues: [{
+      ...baseIssue,
+      obligationId: 'ac32-user-decision',
+      closeWhen: { kind: 'decision_record', taskId: 'T1', authority: 'user' },
+      classificationBasis: {
+        source: { id: 'AC-32', version: 'R4' },
+        technicalFacts: ['当前恢复实现会继续读取取消前的缓存。'],
+        businessCommitmentDelta: {
+          currentCommitment: '取消后允许恢复消费者使用缓存',
+          proposedCommitment: '取消后立即清空缓存',
+          consequence: '恢复消费者无法继续按原承诺恢复。',
+        },
+      },
+    }],
+    obligationClosures: [{
+      obligationId: 'ac32-user-decision',
+      kind: 'decision_record',
+      taskId: 'T1',
+      planDigest: 'a'.repeat(64),
+      decisionId: 'decision-1',
+    }],
+  })
+  assert.deepEqual(decision.issues[0].closeWhen, { kind: 'decision_record', taskId: 'T1', authority: 'user' })
+  assert.equal(decision.issues[0].classificationBasis.businessCommitmentDelta.currentCommitment, '取消后允许恢复消费者使用缓存')
+  assert.deepEqual(decision.obligationClosures, [{
+    obligationId: 'ac32-user-decision', kind: 'decision_record', taskId: 'T1', planDigest: 'a'.repeat(64), decisionId: 'decision-1',
+  }])
+  assert.deepEqual(planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1',
+    status: 'passed',
+    summary: '结构可执行',
+    issues: [],
+    obligationClosures: [{
+      obligationId: 'ac32-structural-executable',
+      kind: 'plan_task_executable',
+      taskId: 'T1',
+      planDigest: 'a'.repeat(64),
+    }],
+  }).obligationClosures[0], {
+    obligationId: 'ac32-structural-executable', kind: 'plan_task_executable', taskId: 'T1', planDigest: 'a'.repeat(64),
+  })
+
+  assert.throws(() => planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_revision', summary: '缺少验证名',
+    issues: [{ ...baseIssue, obligationId: 'missing-verification', closeWhen: { kind: 'plan_verification_binding', taskId: 'T1' } }],
+  }), /verificationId/u)
+  assert.throws(() => planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '缺少权限',
+    issues: [{ ...baseIssue, obligationId: 'missing-authority', closeWhen: { kind: 'decision_record', taskId: 'T1' } }],
+  }), /authority/u)
+  const technicalBasis = {
+    source: { id: 'AC-32', version: 'R4' },
+    technicalFacts: ['取消回调必须先读取连接状态。'],
+  }
+  assert.throws(() => planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '新决定缺依据',
+    issues: [{ ...baseIssue, obligationId: 'missing-basis', closeWhen: { kind: 'decision_record', taskId: 'T1', authority: 'user' } }],
+  }), /classificationBasis/u)
+  assert.throws(() => planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '技术问题不能转人工',
+    issues: [{ ...baseIssue, obligationId: 'technical-user-conflict', closeWhen: { kind: 'decision_record', taskId: 'T1', authority: 'user' }, classificationBasis: technicalBasis }],
+  }), /classificationBasis.*技术事实|authority/u)
+  assert.throws(() => planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '业务承诺不能自动关闭',
+    issues: [{
+      ...baseIssue,
+      obligationId: 'business-auto-close-conflict',
+      closeWhen: { kind: 'plan_task_executable', taskId: 'T1' },
+      classificationBasis: {
+        ...technicalBasis,
+        businessCommitmentDelta: {
+          currentCommitment: '保留恢复', proposedCommitment: '清空恢复', consequence: '恢复承诺变化。',
+        },
+      },
+    }],
+  }), /业务承诺.*decision_record|外部权限/u)
+  assert.throws(() => planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '依据来源不能漂移',
+    issues: [{
+      ...baseIssue,
+      obligationId: 'mismatched-basis-source',
+      closeWhen: { kind: 'decision_record', taskId: 'T1', authority: 'orchestrator' },
+      classificationBasis: { ...technicalBasis, source: { id: 'AC-15', version: 'R4' } },
+    }],
+  }), /source.*sourceId|来源/u)
+  assert.deepEqual(planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1', status: 'needs_decision', summary: '读取旧决定',
+    issues: [{ ...baseIssue, obligationId: 'legacy-user-decision', closeWhen: { kind: 'decision_record', taskId: 'T1', authority: 'user' } }],
+  }, { allowLegacyObligations: true }).issues[0].closeWhen.authority, 'user')
+  assert.throws(() => planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '缺少决定 ID', issues: [],
+    obligationClosures: [{ obligationId: 'ac32-user-decision', kind: 'decision_record', taskId: 'T1', planDigest: 'a'.repeat(64) }],
+  }), /decisionId/u)
+  assert.throws(() => planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '未知字段', issues: [],
+    obligationClosures: [{ obligationId: 'ac32-structural-executable', kind: 'plan_task_executable', taskId: 'T1', planDigest: 'a'.repeat(64), authority: 'user' }],
+  }), /不受支持的字段/u)
+  assert.deepEqual(planReviewResult({
+    contract: 'DSH_PLAN_REVIEW_V1', status: 'passed', summary: '保留旧决定形状', issues: [],
+    obligationClosures: [{
+      obligationId: 'legacy-alternative', kind: 'alternative_decision', planDigest: 'a'.repeat(64),
+      decisionId: 'historical-decision', sourceId: 'AC-16', sourceVersion: 'R4',
+    }],
+  }).obligationClosures[0], {
+    obligationId: 'legacy-alternative', kind: 'alternative_decision', planDigest: 'a'.repeat(64),
+    decisionId: 'historical-decision', sourceId: 'AC-16', sourceVersion: 'R4',
+  })
 })
 
 test('带计划上下文时验证转交目标所有者和文件范围', () => {

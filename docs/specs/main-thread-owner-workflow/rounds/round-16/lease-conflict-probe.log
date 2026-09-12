@@ -1,0 +1,9 @@
+{
+  "observed": {
+    "kind": "threw",
+    "message": "资源 api 已在本进程的另一个临界区中运行"
+  },
+  "workflowUnchanged": true,
+  "rawArtifactAbsent": true,
+  "modelRequests": 0
+}

@@ -1,0 +1,58 @@
+TAP version 13
+# Subtest: candidate selection and acknowledgment only expose independent target patches, never a replacement state
+ok 1 - candidate selection and acknowledgment only expose independent target patches, never a replacement state
+  ---
+  duration_ms: 42.250459
+  type: 'test'
+  ...
+# Subtest: excludes source/target Owner tasks and their forward/reverse dependency closure
+ok 2 - excludes source/target Owner tasks and their forward/reverse dependency closure
+  ---
+  duration_ms: 14.402375
+  type: 'test'
+  ...
+# Subtest: full active tasks and undispatched reservations consume global slots and Owner identities
+ok 3 - full active tasks and undispatched reservations consume global slots and Owner identities
+  ---
+  duration_ms: 15.809375
+  type: 'test'
+  ...
+# Subtest: existing Owner history and source binding prevent stale or duplicate creates
+ok 4 - existing Owner history and source binding prevent stale or duplicate creates
+  ---
+  duration_ms: 15.88175
+  type: 'test'
+  ...
+# Subtest: no eligible work yields side-effect-free wait and cannot acknowledge stop/notify
+ok 5 - no eligible work yields side-effect-free wait and cannot acknowledge stop/notify
+  ---
+  duration_ms: 6.602292
+  type: 'test'
+  ...
+# Subtest: unproven handoff scope fails closed, and pending notice never dispatches
+ok 6 - unproven handoff scope fails closed, and pending notice never dispatches
+  ---
+  duration_ms: 4.808666
+  type: 'test'
+  ...
+# Subtest: unrelated stalled activity cannot suppress an available independent create slot
+ok 7 - unrelated stalled activity cannot suppress an available independent create slot
+  ---
+  duration_ms: 7.2095
+  type: 'test'
+  ...
+# Subtest: composite relationships keep a source subtree excluded without dropping the independent leaf
+ok 8 - composite relationships keep a source subtree excluded without dropping the independent leaf
+  ---
+  duration_ms: 12.740792
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 261.052625

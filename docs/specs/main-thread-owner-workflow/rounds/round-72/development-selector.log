@@ -1,0 +1,26 @@
+✔ candidate selection and acknowledgment only expose independent target patches, never a replacement state (22.456125ms)
+✔ excludes source/target Owner tasks and their forward/reverse dependency closure (10.902334ms)
+✔ full active tasks and undispatched reservations consume global slots and Owner identities (14.357959ms)
+✔ existing Owner history and source binding prevent stale or duplicate creates (10.308875ms)
+✔ no eligible work yields side-effect-free wait and cannot acknowledge stop/notify (3.780916ms)
+✔ unproven handoff scope fails closed, and pending notice never dispatches (1.799792ms)
+✔ unrelated stalled activity cannot suppress an available independent create slot (5.058208ms)
+✔ composite relationships keep a source subtree excluded without dropping the independent leaf (8.954708ms)
+✔ reject reservation occupancy with stopped task instead of releasing its parallel slot (3.243708ms)
+✔ reject owner occupancy with stopped task instead of releasing its parallel slot (2.363125ms)
+✔ reject reservation occupancy with completed task instead of releasing its parallel slot (3.616625ms)
+✔ reject owner occupancy with completed task instead of releasing its parallel slot (2.403042ms)
+✔ an already running reservation occupies one slot without duplicate counting (6.202875ms)
+✔ independent selection rejects an existing shared pendingTaskMerge transaction (1.253666ms)
+✔ independent selection rejects an existing shared pendingMemoryCompilation transaction (1.120166ms)
+✔ independent selection excludes other planned handoff targets that finish would implicitly consume (3.736458ms)
+✔ terminal receipts require matching task and Owner outcomes at both replay and execution guards (141.932ms)
+✔ launching permits Owner finish before the reservation settlement transaction (14.014ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 323.138

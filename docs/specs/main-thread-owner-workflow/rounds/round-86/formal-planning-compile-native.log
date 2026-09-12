@@ -1,0 +1,76 @@
+TAP version 13
+# Subtest: 真实Runtime经生产Planner提交路径编排固定快照；Owner提示保留完整Ticket，未激活Workflow
+ok 1 - 真实Runtime经生产Planner提交路径编排固定快照；Owner提示保留完整Ticket，未激活Workflow
+  ---
+  duration_ms: 2538.815833
+  type: 'test'
+  ...
+# Subtest: 丢失ready片段映射由实际Planner校验拒绝，有限两次后不发布候选
+ok 2 - 丢失ready片段映射由实际Planner校验拒绝，有限两次后不发布候选
+  ---
+  duration_ms: 1979.281792
+  type: 'test'
+  ...
+# Subtest: 固定候选通过独立Reviewer工具提交后持久保存原始来源，passed不激活
+ok 3 - 固定候选通过独立Reviewer工具提交后持久保存原始来源，passed不激活
+  ---
+  duration_ms: 3117.316667
+  type: 'test'
+  ...
+# Subtest: 固定候选Reviewer缺少原始调用来源时两次后拒绝，无审查回执
+ok 4 - 固定候选Reviewer缺少原始调用来源时两次后拒绝，无审查回执
+  ---
+  duration_ms: 2419.449083
+  type: 'test'
+  ...
+# Subtest: Reviewer改写当前规划文档即使仍为相同Git dirty状态也不能发布回执
+ok 5 - Reviewer改写当前规划文档即使仍为相同Git dirty状态也不能发布回执
+  ---
+  duration_ms: 2337.568791
+  type: 'test'
+  ...
+# Subtest: 真实agents.create/provider与原生工具提交保留候选身份和独立审查原始来源
+ok 6 - 真实agents.create/provider与原生工具提交保留候选身份和独立审查原始来源
+  ---
+  duration_ms: 2745.238959
+  type: 'test'
+  ...
+# Subtest: 同一固定父快照的两个候选竞争时只有一个完整Workflow可见
+ok 7 - 同一固定父快照的两个候选竞争时只有一个完整Workflow可见
+  ---
+  duration_ms: 3146.117709
+  type: 'test'
+  ...
+# Subtest: worktree就绪但状态未发布的激活可恢复，期间preflight拒绝另一条图
+ok 8 - worktree就绪但状态未发布的激活可恢复，期间preflight拒绝另一条图
+  ---
+  duration_ms: 3133.627792
+  type: 'test'
+  ...
+# Subtest: 固定候选与独立审查在一个持久事务中激活完整Workflow，重放不创建第二版本
+ok 9 - 固定候选与独立审查在一个持久事务中激活完整Workflow，重放不创建第二版本
+  ---
+  duration_ms: 2926.688875
+  type: 'test'
+  ...
+# Subtest: 激活拒绝错配审查和blocked包，且不暴露半激活Workflow
+ok 10 - 激活拒绝错配审查和blocked包，且不暴露半激活Workflow
+  ---
+  duration_ms: 2157.812583
+  type: 'test'
+  ...
+# Subtest: 没有事务记录的同名workflow branch不能被激活入口接管
+ok 11 - 没有事务记录的同名workflow branch不能被激活入口接管
+  ---
+  duration_ms: 3453.696666
+  type: 'test'
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 30181.480708

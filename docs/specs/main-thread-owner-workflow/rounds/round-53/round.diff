@@ -1,0 +1,201 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -4610,6 +4610,7 @@
+
+ function mainOutboxNotification(state, receipt) {
+   const technical = receipt.reason === 'technical_pause'
++  const protectedDecision = !technical && recoveryAdmissionEnabled(state)
+   const stopped = (state.tasks ?? []).filter(task => technical ? task.status === 'stopped' : task.reason === 'decision_required'
+     || (recoveryAdmissionEnabled(state) && task.reason === 'input_missing'))
+   const taskDetails = stopped.map(record => {
+@@ -4623,12 +4624,13 @@
+     }
+   })
+   const notificationId = `mo-${createHash('sha256')
+-    .update(`${state.id}:${technical ? technicalPauseSource(state) : receipt.actionId}`)
++    .update(`${state.id}:${technical || protectedDecision ? `${technical ? 'technical' : 'decision'}:${technicalPauseSource(state)}` : receipt.actionId}`)
+     .digest('hex')
+     .slice(0, 24)}`
+   return {
+     notificationId,
+     kind: 'main',
++    ...(protectedDecision ? { controlSource: technicalPauseSource(state), actionRequired: true } : {}),
+     reason: technical ? 'technical_pause' : receipt.notification?.reason ?? 'decision_required',
+     ...(technical ? { actionRequired: false, blockedTaskIds: receipt.blockedTaskIds,
+       summary: '技术恢复暂停；保留失败来源与预算，等待技术状态变化，不需要产品决定。' } : {}),
+--- owner-workflow-plugin/src/workflow-state.mjs (baseline)
++++ owner-workflow-plugin/src/workflow-state.mjs
+@@ -216,9 +216,12 @@
+     && state.planApproved === true && state.planReview?.status === 'passed'
+     && state.pendingPlanRevision === undefined && state.intentPlanRevisionCycle === undefined
+     && state.pendingTaskMerge === undefined && !state.cleanupPending
+-    && !hasPendingHandoff(state) && !NON_AUTONOMOUS_STRATEGIES.has(convergenceStrategy(state))) {
++    && !hasPendingHandoff(state) && !['request_user_authority', 'autonomous_incident'].includes(convergenceStrategy(state))) {
+     try {
+       assertRecoveryAdmissionState(state)
++      if (state.planReviewDigest !== state.planDigest) {
++        return invariant(state, counts, '已批准计划缺少当前Review digest绑定')
++      }
+       const source = technicalPauseSource(state)
+       if (state.technicalPause?.source === source) {
+         const notification = state.mainOutbox?.[state.technicalPause.notificationId]
+@@ -237,6 +240,23 @@
+       })
+       if (incidents.length === 0 || persistedIncidents) {
+         const receipt = supervisorNext({ ...state, recoveryProtected: true })
++        if (receipt.action === 'notify') {
++          const waiting = state.tasks.filter(task => task.status === 'stopped'
++            && ['await_user', 'provide_input'].includes(task.action))
++          const reports = Object.values(state.mainOutbox ?? {}).filter(item => item.planDigest === state.planDigest
++            && (item.controlSource === source || waiting.some(task => {
++              const plan = state.plan.tasks.find(plan => plan.id === task.taskId)
++              const deviation = state.ownerRuns?.[`${task.taskId}:${plan?.ownerId}`]?.executionDeviation
++              return item.reason === 'execution_authority_required' && item.taskId === task.taskId
++                && deviation?.deviationId !== undefined && item.deviationId === deviation.deviationId
++            })))
++          const delivered = waiting.length > 0 && waiting.every(task => reports.some(item => item.status === 'delivered'
++            && (item.taskId === task.taskId || item.tasks?.some(detail => detail.taskId === task.taskId))))
++          if (delivered && !reports.some(item => item.status === 'pending')) {
++            return wait(state, counts, 'waiting_workflow_decision', '等待已报告的外部决定', true)
++          }
++          return command(state, counts, 'user_report_pending', '投递当前用户待决报告', 'execute', { actionRequired: true })
++        }
+         if (receipt.reason === 'technical_pause' || incidents.length > 0) {
+           return command(state, counts, receipt.reason === 'technical_pause' ? 'technical_pause_pending' : runningPhase(counts),
+             '按当前依赖与Owner状态推进独立任务或报告技术暂停', 'execute')
+--- owner-workflow-plugin/src/external-runner.mjs (baseline)
++++ owner-workflow-plugin/src/external-runner.mjs
+@@ -1173,8 +1173,13 @@
+         { actionId },
+         options.timeoutMs,
+       )
+-      if (stopped?.technicalNotificationId !== undefined && !await deliverPendingNotification()) {
+-        throw new Error('技术暂停缺少可投递的主会话报告')
++      if (stopped?.technicalNotificationId !== undefined) {
++        const notificationId = stopped.technicalNotificationId
++        const delivered = await sendControlRequest(manifest, options.workflowId,
++          'supervisor-outbox-deliver', { notificationId }, options.timeoutMs)
++        if (delivered?.notificationId !== notificationId || delivered?.status !== 'delivered') {
++          throw new Error('技术暂停报告未确认投递')
++        }
+       }
+       process.stdout.write(`工作流 ${options.workflowId} 停止，状态：${stopped?.status ?? 'stopped'}\n`)
+       return
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -1,3 +1,5 @@
++import { planReviewResult } from '../src/model.mjs'
++import { reconcileReviewConvergence, planStructureDigest } from '../src/convergence.mjs'
+ import { createHash } from 'node:crypto'
+ import { deriveWorkflowControl } from '../src/workflow-state.mjs'
+ import assert from 'node:assert/strict'
+@@ -809,3 +811,71 @@
+   assert.equal(deriveWorkflowControl(state).counts.waitingDecisionTasks, 1)
+   assert.equal(f.adapter.requests.length, 0)
+ })
++
++test('T15 actual approved plan retains its review strategy but still settles into technical wait', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true,
++    limits: { totalLimit: 1, problemLimit: 1 }, modelScript: m => [...failedModel(m), ...failedModel(m)] })
++  const reviewed = await mutateRecoverySessionState(f, s => {
++    s.status = 'planned'
++    s.planApproved = false
++    s.ownerRuns = {}
++    s.planReview = planReviewResult(s.planReview)
++    s.planConvergence = reconcileReviewConvergence({
++      candidate: { cycleId: 'real-approval', planDigest: s.planDigest, planStructureDigest: planStructureDigest(s.plan) },
++      review: s.planReview, evidenceDigest: 'e'.repeat(64), time: '2026-09-11T00:00:00.000Z',
++    })
++  })
++  assert.equal(Object.hasOwn(reviewed.planReview, 'planDigest'), false)
++  assert.equal(reviewed.planConvergence.nextStrategy, 'awaiting_approval')
++  await f.runtime.approvePlan(f.admissionAgent, f.workflowId, reviewed.planDigest, reviewed.registryDigest)
++  await supervisorControl(f, 'supervisor-start')
++  const started = await readRecoverySessionState(f)
++  assert.equal(started.planApproved, true)
++  assert.equal(started.planConvergence.nextStrategy, 'awaiting_approval')
++  await executeNextSupervisorTask(f, 'T1') // Initial free failure.
++  await executeNextSupervisorTask(f, 'T1') // Actual paid recovery failure.
++  await executeNextSupervisorTask(f, 'T1') // Quota refusal.
++  const next = await supervisorControl(f, 'supervisor-next')
++  assert.equal(next.reason, 'technical_pause')
++  const stop = await supervisorControl(f, 'supervisor-stop', { actionId: next.actionId })
++  await supervisorControl(f, 'supervisor-outbox-ack', { notificationId: stop.technicalNotificationId })
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(deriveWorkflowControl(state).phase, 'technical_pause')
++  assert.equal(deriveWorkflowControl(state).command, null)
++  assert.equal(f.adapter.requests.length, 4)
++})
++
++test('T15 persisted technical incident cannot hide a current typed user decision', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true })
++  await admitAuthorityFailure(f)
++  await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
++  await mutateRecoverySessionState(f, s => {
++    const recovery = { contract: 'DSH_AUTONOMOUS_RECOVERY_V1', strategy: 'autonomous_incident', failureClass: 'transient' }
++    s.ownerRuns['T2:worker'] = { status: 'blocked', taskId: 'T2', ownerId: 'worker', attempt: 1,
++      sessionId: 'controlled-incident', autonomousRecovery: recovery }
++    Object.assign(s.tasks[1], { status: 'stopped', reason: 'runtime_failed', action: 'retry_runtime', autonomousRecovery: recovery })
++  })
++  const before = await readRecoverySessionState(f)
++  assert.equal(deriveWorkflowControl(before).phase, 'user_report_pending')
++  assert.equal(deriveWorkflowControl(before).actionRequired, true)
++  const next = await supervisorControl(f, 'supervisor-next')
++  assert.equal(next.action, 'notify')
++  const ack = await supervisorControl(f, 'supervisor-ack', { actionId: next.actionId })
++  const pending = await readRecoverySessionState(f)
++  for (const report of Object.values(pending.mainOutbox)) {
++    await supervisorControl(f, 'supervisor-outbox-ack', { notificationId: report.notificationId })
++  }
++  const after = await readRecoverySessionState(f)
++  assert.equal(deriveWorkflowControl(after).phase, 'waiting_workflow_decision')
++  assert.equal(deriveWorkflowControl(after).actionRequired, true)
++  assert.equal(deriveWorkflowControl(after).command, null)
++  assert.deepEqual(after.ownerRuns, before.ownerRuns)
++  assert.equal(f.adapter.requests.length, 0)
++  assert.ok(ack.notification.notificationId)
++  // A repeated notify projection cannot manufacture another pending report.
++  const repeated = await supervisorControl(f, 'supervisor-next')
++  const replay = await supervisorControl(f, 'supervisor-ack', { actionId: repeated.actionId })
++  assert.equal(replay.notification.notificationId, ack.notification.notificationId)
++  assert.equal(replay.notification.status, 'delivered')
++})
+--- owner-workflow-plugin/test/runner.test.mjs (baseline)
++++ owner-workflow-plugin/test/runner.test.mjs
+@@ -364,7 +364,7 @@
+   assert.equal(attempts.every(attempt => attempt.fenceGeneration === 1), true)
+ })
+
+-async function runRunnerAgainst(receipts, { inspectObservation, expectFailure = false, technicalStop = false } = {}) {
++async function runRunnerAgainst(receipts, { inspectObservation, expectFailure = false, technicalStop = false, oldPending = false } = {}) {
+   const root = await mkdtemp(join(tmpdir(), 'dsh-owner-runner-'))
+   const workflowId = 'wf-runner-test'
+   const socketPath = join('/tmp', `dsh-owner-runner-${randomUUID()}.sock`)
+@@ -424,7 +424,8 @@
+           if (technicalStop) notification = { notificationId: 'technical-1', kind: 'main',
+             reason: 'technical_pause', actionRequired: false, status: 'pending' }
+           result = { actionId: request.actionId, status: technicalStop ? 'blocked' : 'completed',
+-            ...(technicalStop ? { technicalNotificationId: notification.notificationId } : {}) }
++            ...(technicalStop ? { technicalNotificationId: 'technical-1' } : {}) }
++          if (oldPending) notification = { notificationId: 'older-pending', status: 'pending', reason: 'decision_required' }
+         } else {
+           result = { error: `runner 不得发送控制动作：${request.action}` }
+         }
+@@ -560,7 +561,15 @@
+   const { requests } = await runRunnerAgainst([{ action: 'stop', actionId: 'technical-stop' }], { technicalStop: true })
+   assert.deepEqual(requests.map(item => item.action), [
+     'supervisor-start', 'supervisor-recover', 'supervisor-next', 'supervisor-stop',
+-    'supervisor-outbox-next', 'supervisor-outbox-deliver',
++    'supervisor-outbox-deliver',
+   ])
+   assert.equal(requests.at(-1).notificationId, 'technical-1')
+ })
++
++test('runner targets the technical notification even when an older pending report exists', async () => {
++  const { requests } = await runRunnerAgainst([{ action: 'stop', actionId: 'technical-stop' }],
++    { technicalStop: true, oldPending: true })
++  assert.equal(requests.some(item => item.action === 'supervisor-outbox-next'), false)
++  assert.equal(requests.at(-1).action, 'supervisor-outbox-deliver')
++  assert.equal(requests.at(-1).notificationId, 'technical-1')
++})

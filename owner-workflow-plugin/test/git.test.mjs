@@ -298,6 +298,18 @@ test('保留已跟踪文件修改状态中的前导空格', async () => {
   }
 })
 
+test('Git 状态忽略 Runtime 自动生成但尚未跟踪的 .gitignore', async () => {
+  const root = await createRepository()
+  try {
+    await mkdir(join(root, '.dsh-workflow'), { recursive: true })
+    await writeFile(join(root, '.dsh-workflow', '.gitignore'), '!keep\n', 'utf8')
+    await writeFile(join(root, 'visible.txt'), '业务改动\n', 'utf8')
+    assert.deepEqual(await statusRecords(root), [{ code: '??', path: 'visible.txt' }])
+  } finally {
+    await removeRepository(root)
+  }
+})
+
 test('正确解析真实重命名和双路径记录', async () => {
   const root = await createRepository()
   try {

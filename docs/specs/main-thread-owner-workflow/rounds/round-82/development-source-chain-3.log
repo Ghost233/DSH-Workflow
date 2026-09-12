@@ -1,0 +1,11 @@
+✔ 真实 Harness 原生 edit 链绑定 T05 引用和实际 Git baseline，并由只读 Runtime 入口返回 source-validated (703.498167ms)
+✔ 缺失链、补造的同文件 record、以及暂存用户变更均拒绝而不修复来源或 index (329.260167ms)
+✔ 真实 Runtime 入口不接受其他主 agent 复用来源，也不接受有父会话的 child (432.740084ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1630.635625

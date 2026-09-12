@@ -1,0 +1,27 @@
+{
+  "producerPid": 73684,
+  "exit": {
+    "code": null,
+    "signal": "SIGKILL"
+  },
+  "checkpoint": {
+    "phase": "submitted",
+    "ownerStatus": "running",
+    "budgetAttempt": {
+      "workflowId": "wf-recovery-session",
+      "rootProblemId": "recovery-root-b9c46ada-5045-4f26-901e-6cf7b2e30c9f",
+      "requestId": "recovery-request-93d1fbcf-6a8b-44e5-8e2c-a9a634139775",
+      "attemptId": "recovery-attempt-a97d5291-085a-445c-a2bd-7c5a1d45302e",
+      "taskId": "T1",
+      "ownerId": "api",
+      "executionVersion": "e4f0e2ad53d55552540e196f5ea5acbd97452ffd2be68df9770e5254beb4d69d",
+      "state": "reserved"
+    },
+    "modelRequests": 1,
+    "executionIdentity": {
+      "sessionId": "recovery-session-6085f82f-c95f-499c-a7ff-b277490a35fa",
+      "promptId": "recovery-prompt-6c0579c0-799d-43f5-8e1e-1dc296d62e27"
+    }
+  },
+  "rawLocationPath": "/private/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/dsh-t22-restart-owned-M7YfX5/dsh-t22-tests-r16-WlZ8fB/.dsh-workflow/recovery-sessions/--private-var-folders-pk-4_rtp5211139hr72f5z3yv2c0000gn-T-dsh-t22-restart-owned-M7YfX5-dsh-t22-tests-r16-WlZ8fB-.dsh-workflow-worktrees-wf-recovery-session-owners-api--/recovery-session-6085f82f-c95f-499c-a7ff-b277490a35fa/session.jsonl"
+}

@@ -1,0 +1,24 @@
+✔ T22 source-plane JSONL observes exactly one completed reserved prompt without writes (633.745583ms)
+✔ T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt (401.779667ms)
+✔ T22 raw inspection pauses on duplicate input and malformed physical rows without re-sending (423.58575ms)
+✖ T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects (207.988875ms)
+✔ T22 refuses a real JSONL backend configured with compression before any read or retry (185.310167ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 4
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2190.046625
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/recovery-session.test.mjs:109:1
+✖ T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects (207.988875ms)
+  Error: cannot get property "sessionPersistence" without inject
+      at file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:9863:38
+      at async Object.withOwnerLease (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:5106:24)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/recovery-session.test.mjs:122:19)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)

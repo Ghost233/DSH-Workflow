@@ -1,0 +1,94 @@
+TAP version 13
+# Subtest: T23 SIGKILL after prompt flush before submitted receipt preserves one accepted prompt
+ok 1 - T23 SIGKILL after prompt flush before submitted receipt preserves one accepted prompt
+  ---
+  duration_ms: 2440.36925
+  type: 'test'
+  ...
+# Subtest: T23 SIGKILL after create returns before Owner binding cannot authorize resend
+ok 2 - T23 SIGKILL after create returns before Owner binding cannot authorize resend
+  ---
+  duration_ms: 2458.305958
+  type: 'test'
+  ...
+# Subtest: T23 SIGKILL after durable reservation allows exactly one original-identity Owner execution
+ok 3 - T23 SIGKILL after durable reservation allows exactly one original-identity Owner execution
+  ---
+  duration_ms: 2412.495625
+  type: 'test'
+  ...
+# Subtest: T23 two ready processes competing for one durable intent execute its Owner only once
+ok 4 - T23 two ready processes competing for one durable intent execute its Owner only once
+  ---
+  duration_ms: 3342.226542
+  type: 'test'
+  ...
+# Subtest: T23 distinct requests racing for the final credit execute only the admitted Owner
+ok 5 - T23 distinct requests racing for the final credit execute only the admitted Owner
+  ---
+  duration_ms: 2967.826667
+  type: 'test'
+  ...
+# Subtest: T23 SIGKILL before failed settlement rename never accepts the temporary receipt or reexecutes
+ok 6 - T23 SIGKILL before failed settlement rename never accepts the temporary receipt or reexecutes
+  ---
+  duration_ms: 2308.203958
+  type: 'test'
+  ...
+# Subtest: T23 admission_before_write SIGKILL cannot authorize an uncommitted identity
+ok 7 - T23 admission_before_write SIGKILL cannot authorize an uncommitted identity
+  ---
+  duration_ms: 2050.7515
+  type: 'test'
+  ...
+# Subtest: T23 admission_before_rename SIGKILL cannot authorize an uncommitted identity
+ok 8 - T23 admission_before_rename SIGKILL cannot authorize an uncommitted identity
+  ---
+  duration_ms: 1925.059416
+  type: 'test'
+  ...
+# Subtest: T23 SIGKILL after first physical append preserves identity without resend
+ok 9 - T23 SIGKILL after first physical append preserves identity without resend
+  ---
+  duration_ms: 2469.178042
+  type: 'test'
+  ...
+# Subtest: T23 SIGKILL before successful settlement rename never accepts the temporary receipt or reexecutes
+ok 10 - T23 SIGKILL before successful settlement rename never accepts the temporary receipt or reexecutes
+  ---
+  duration_ms: 4317.402042
+  type: 'test'
+  ...
+# Subtest: T23 Runtime rejects persistent bad_row after real prompt acceptance
+ok 11 - T23 Runtime rejects persistent bad_row after real prompt acceptance
+  ---
+  duration_ms: 2369.277292
+  type: 'test'
+  ...
+# Subtest: T23 Runtime rejects persistent torn_tail after real prompt acceptance
+ok 12 - T23 Runtime rejects persistent torn_tail after real prompt acceptance
+  ---
+  duration_ms: 2458.7545
+  type: 'test'
+  ...
+# Subtest: T23 Runtime rejects persistent bad_budget after real prompt acceptance
+ok 13 - T23 Runtime rejects persistent bad_budget after real prompt acceptance
+  ---
+  duration_ms: 2244.018333
+  type: 'test'
+  ...
+# Subtest: T23 actual admission temporary-write failure releases no receipt or execution
+ok 14 - T23 actual admission temporary-write failure releases no receipt or execution
+  ---
+  duration_ms: 1290.875792
+  type: 'test'
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 35140.475333

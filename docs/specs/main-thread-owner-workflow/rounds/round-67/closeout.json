@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-11T13:13:11.847996+00:00",
+  "formalPass": 49,
+  "formalSkipped": 0,
+  "candidateDrift": [],
+  "reviewFindings": [
+    "P2：reserved/launching reservation对应stopped/completed任务时没有计入全局槽位，需在选择前拒绝矛盾持久状态。"
+  ],
+  "ticketStatus": "T15_developing",
+  "committed": false,
+  "pushed": false
+}

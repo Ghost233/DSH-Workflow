@@ -1,0 +1,35 @@
+TAP version 13
+# Subtest: R75 direct recovery arbitration refuses before an exhausted candidate can start a model transport
+ok 1 - R75 direct recovery arbitration refuses before an exhausted candidate can start a model transport
+  ---
+  duration_ms: 2492.405458
+  type: 'test'
+  ...
+# Subtest: R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait
+ok 2 - R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait
+  ---
+  duration_ms: 2672.158625
+  type: 'test'
+  ...
+# {"pausedReason":"Recovery候选仲裁尚未接入逐次预算与持久会话，拒绝未计费启动","persistedReason":"Recovery候选仲裁尚未接入逐次预算与持久会话，拒绝未计费启动","modelRequestsBefore":4,"modelRequestsAfterNotification":5,"modelRequestsAfterStableWait":5}
+# Subtest: R75 consultPlanningOwners rejects a stripped caller copy when the persisted Workflow remains a recovery candidate
+ok 3 - R75 consultPlanningOwners rejects a stripped caller copy when the persisted Workflow remains a recovery candidate
+  ---
+  duration_ms: 1310.645916
+  type: 'test'
+  ...
+# Subtest: R75 an unprotected initial Owner consultation still uses the real model transport
+ok 4 - R75 an unprotected initial Owner consultation still uses the real model transport
+  ---
+  duration_ms: 891.084875
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7665.260708

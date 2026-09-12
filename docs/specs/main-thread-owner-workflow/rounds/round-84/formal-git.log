@@ -1,0 +1,112 @@
+TAP version 13
+# Subtest: Owner 分支以 ff-only 同步到最新 workflow HEAD
+ok 1 - Owner 分支以 ff-only 同步到最新 workflow HEAD
+  ---
+  duration_ms: 790.263042
+  type: 'test'
+  ...
+# Subtest: Owner worktree 脏时拒绝同步 workflow
+ok 2 - Owner worktree 脏时拒绝同步 workflow
+  ---
+  duration_ms: 607.935125
+  type: 'test'
+  ...
+# Subtest: 只有显式 force 才能删除包含未提交修改的 worktree
+ok 3 - 只有显式 force 才能删除包含未提交修改的 worktree
+  ---
+  duration_ms: 283.873667
+  type: 'test'
+  ...
+# Subtest: Owner worktree 只有忽略的验证产物时允许同步 workflow
+ok 4 - Owner worktree 只有忽略的验证产物时允许同步 workflow
+  ---
+  duration_ms: 586.666625
+  type: 'test'
+  ...
+# Subtest: Owner worktree 绑定错误分支时拒绝同步且不移动 HEAD
+ok 5 - Owner worktree 绑定错误分支时拒绝同步且不移动 HEAD
+  ---
+  duration_ms: 529.855208
+  type: 'test'
+  ...
+# Subtest: Owner 分支与 workflow 分叉时拒绝非 ff 同步且不移动 HEAD
+ok 6 - Owner 分支与 workflow 分叉时拒绝非 ff 同步且不移动 HEAD
+  ---
+  duration_ms: 823.003834
+  type: 'test'
+  ...
+# Subtest: clean paused rebase 时拒绝同步且不移动 HEAD 或 Owner ref
+ok 7 - clean paused rebase 时拒绝同步且不移动 HEAD 或 Owner ref
+  ---
+  duration_ms: 690.919417
+  type: 'test'
+  ...
+# Subtest: clean paused merge 时拒绝同步且不移动 HEAD 或 Owner ref
+ok 8 - clean paused merge 时拒绝同步且不移动 HEAD 或 Owner ref
+  ---
+  duration_ms: 612.778291
+  type: 'test'
+  ...
+# Subtest: clean paused cherry-pick 时拒绝同步且不移动 HEAD 或 Owner ref
+ok 9 - clean paused cherry-pick 时拒绝同步且不移动 HEAD 或 Owner ref
+  ---
+  duration_ms: 680.602792
+  type: 'test'
+  ...
+# Subtest: 保留已跟踪文件修改状态中的前导空格
+ok 10 - 保留已跟踪文件修改状态中的前导空格
+  ---
+  duration_ms: 115.042584
+  type: 'test'
+  ...
+# Subtest: Git 状态忽略 Runtime 自动生成但尚未跟踪的 .gitignore
+ok 11 - Git 状态忽略 Runtime 自动生成但尚未跟踪的 .gitignore
+  ---
+  duration_ms: 119.485541
+  type: 'test'
+  ...
+# Subtest: 正确解析真实重命名和双路径记录
+ok 12 - 正确解析真实重命名和双路径记录
+  ---
+  duration_ms: 129.506041
+  type: 'test'
+  ...
+# Subtest: 正确解析复制记录的双路径
+ok 13 - 正确解析复制记录的双路径
+  ---
+  duration_ms: 0.189709
+  type: 'test'
+  ...
+# Subtest: 提交代理禁用仓库钩子并返回固定提交和实际文件
+ok 14 - 提交代理禁用仓库钩子并返回固定提交和实际文件
+  ---
+  duration_ms: 298.118917
+  type: 'test'
+  ...
+# Subtest: 固定提交哈希可以校验变更并安全合并
+ok 15 - 固定提交哈希可以校验变更并安全合并
+  ---
+  duration_ms: 587.4205
+  type: 'test'
+  ...
+# Subtest: 分支和工作树清理支持明确的幂等 missing-ok
+ok 16 - 分支和工作树清理支持明确的幂等 missing-ok
+  ---
+  duration_ms: 273.781959
+  type: 'test'
+  ...
+# Subtest: 工作树清理默认拒绝删除 dirty worktree 并保留现场
+ok 17 - 工作树清理默认拒绝删除 dirty worktree 并保留现场
+  ---
+  duration_ms: 217.460791
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7448.972875

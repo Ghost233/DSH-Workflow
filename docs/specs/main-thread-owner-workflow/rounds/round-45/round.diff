@@ -1,0 +1,389 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -4471,6 +4471,29 @@
+   return fingerprint
+ }
+
++// A Supervisor slot reservation is not evidence that its recovery Owner has
++// started. Keep the admission-facing task pending until the Owner pipeline
++// starts, while the scheduler view still counts the reserved slot as occupied.
++function pendingSupervisorRecovery(state, taskId) {
++  if (!recoveryAdmissionEnabled(state)) return false
++  const task = state.plan?.tasks?.find(item => item.id === taskId)
++  if (task === undefined) return false
++  const key = ownerRunKey(taskId, task.ownerId)
++  const record = state.ownerRuns?.[key]
++  return ['failed', 'blocked'].includes(record?.status)
++    && ['reserved', 'launching'].includes(state.supervisorOutbox?.[key]?.status)
++}
++
++function preservePendingSupervisorRecoveries(state) {
++  if (!recoveryAdmissionEnabled(state)) return
++  for (const task of state.tasks ?? []) {
++    if (task.status === 'running' && pendingSupervisorRecovery(state, task.taskId)) {
++      Object.assign(task, { status: 'pending', executorId: null, cursor: null,
++        unchangedPolls: 0, reason: null, action: null })
++    }
++  }
++}
++
+ function supervisorProjection(state) {
+   if (state.plan?.contract !== PLAN_V2_CONTRACT) {
+     throw new Error('Supervisor 只执行 DSH_PLAN_V2；DSH_PLAN_V1 仅允许查看和导出')
+@@ -4483,7 +4506,8 @@
+     id: state.id,
+     revision: supervisorReceiptRevision(state),
+     plan: normalizePlanV2(state.plan),
+-    tasks: state.tasks,
++    tasks: state.tasks.map(task => task.status === 'pending' && pendingSupervisorRecovery(state, task.taskId)
++      ? { ...task, status: 'running' } : task),
+     config: { parallel: state.config?.parallel },
+     actionSequence: state.actionSequence,
+     transitionBlockedTaskIds: state.transitionBlockedTaskIds ?? [],
+@@ -4842,6 +4866,7 @@
+ function supervisorTaskObservation(state, watch) {
+   const task = state.plan.tasks.find(item => item.id === watch.taskId)
+   if (task === undefined) throw new Error(`Supervisor 宿主观察包含计划外任务：${watch.taskId}`)
++  if (pendingSupervisorRecovery(state, task.id)) return { taskId: task.id, status: 'running' }
+   const record = state.ownerRuns?.[ownerRunKey(task.id, task.ownerId)]
+   const knownStatuses = new Set([
+     'pending',
+@@ -11445,7 +11470,7 @@
+     async executeOwnerHostCommand(args, exec) {
+       return executeOwnerHostCommand(runtime, args, exec)
+     },
+-    async failSupervisorReservation(agent, workflowId, reservationKey, failure) {
++    async failSupervisorReservation(agent, workflowId, reservationKey, failure, expectedReservationId) {
+       const root = await runtime.resolveRoot(agent)
+       const message = errorText(failure)
+       let outcome
+@@ -11456,6 +11481,44 @@
+         if (state.status === 'cancelled') return
+         const ownerKey = ownerRunKey(reservation.taskId, reservation.ownerId)
+         const ownerRecord = state.ownerRuns?.[ownerKey]
++        if (recoveryAdmissionEnabled(state)) {
++          assertRecoveryAdmissionState(state)
++          if (['cancelled', 'stopped'].includes(reservation.status)
++            || (expectedReservationId !== undefined && reservation.reservationId !== expectedReservationId)) return
++          const task = state.tasks?.find(item => item.taskId === reservation.taskId)
++          const terminal = ['failed', 'blocked'].includes(ownerRecord?.status)
++          const classified = classifyFailure(message,
++            ownerExecutionDeviationContext(state, reservation.taskId, reservation.ownerId))
++          const handoff = (state.handoffQueue ?? []).some(item =>
++            (item.sourceTaskId ?? item.sourceStageId ?? item.taskId) === reservation.taskId
++            && ['pending', 'planned', 'acknowledged'].includes(item.status))
++          state.supervisorOutbox[reservationKey] = { ...reservation,
++            status: terminal ? 'failed' : 'stopped', failedAt: now(), error: message }
++          if (terminal && classified.class === 'external_authority') {
++            applyOwnerRecoveryAuthority(state, reservation.taskId, reservation.ownerId, classified)
++          } else if (terminal && !handoff && task !== undefined && task.status !== 'completed') {
++            // Retry scheduling only changes the runnable projection. The
++            // authoritative failed attempt/session must survive for admission.
++            Object.assign(task, { status: 'pending', executorId: null, cursor: null,
++              unchangedPolls: 0, reason: null, action: null })
++            state.status = 'running'
++            state.error = undefined
++          } else if (task !== undefined && task.status !== 'completed'
++            && !['starting', 'running'].includes(ownerRecord?.status)) {
++            Object.assign(task, { status: 'stopped', executorId: null, unchangedPolls: 0,
++              reason: handoff ? 'plan_invalid' : 'runtime_failed',
++              action: handoff ? 'revise_plan' : 'retry_runtime' })
++            state.status = handoff ? 'blocked' : 'running'
++            state.error = handoff ? message : undefined
++          }
++          appendSupervisorEvent(state, 'supervisor.reservation-failed', {
++            taskId: reservation.taskId, ownerId: reservation.ownerId,
++            reservationId: reservation.reservationId, summary: message,
++            recoverySourcePreserved: true,
++          })
++          outcome = await saveState(runtime, state)
++          return
++        }
+         const blocked = state.status === 'blocked' || ownerRecord?.status === 'blocked'
+         const pendingHandoff = (state.handoffQueue ?? []).find(item => (
+           ['pending', 'acknowledged'].includes(item.status)
+@@ -11644,10 +11707,16 @@
+     async runSupervisorReservation(agent, workflowId, reservationKey) {
+       const root = await runtime.resolveRoot(agent)
+       let reservation
++      let protectedReservation = false
+       let finishOnly = false
+       let alreadyCompleted = false
+       await runtime.withWorkflowLock(workflowId, async () => {
+         const state = await readState(runtime, root, workflowId)
++        if (recoveryAdmissionEnabled(state)) {
++          assertRecoveryAdmissionState(state)
++          protectedReservation = true
++          return
++        }
+         const current = state.supervisorOutbox?.[reservationKey]
+         if (current === undefined || ['completed', 'failed', 'cancelled', 'stopped'].includes(current.status)) return
+         if (state.status !== 'running') {
+@@ -11780,6 +11849,7 @@
+         })
+         await saveState(runtime, state)
+       })
++      if (protectedReservation) return runtime.runProtectedSupervisorReservation(agent, workflowId, reservationKey)
+       if (reservation === undefined || alreadyCompleted) return
+
+       if (finishOnly) {
+@@ -11817,6 +11887,79 @@
+         })
+         await saveState(runtime, state)
+       })
++    },
++    async runProtectedSupervisorReservation(agent, workflowId, reservationKey) {
++      const root = await runtime.resolveRoot(agent)
++      let reservation
++      let initial = false
++      let sourcePlanDigest
++      await runtime.withWorkflowLock(workflowId, async () => {
++        const state = await readState(runtime, root, workflowId)
++        assertRecoveryAdmissionState(state)
++        const current = state.supervisorOutbox?.[reservationKey]
++        if (current === undefined || !['reserved', 'launching'].includes(current.status)) return
++        if (state.status !== 'running') {
++          state.supervisorOutbox[reservationKey] = { ...current, status: 'stopped',
++            error: `Supervisor reservation 不能在 ${state.status} workflow 中启动` }
++          await saveState(runtime, state)
++          return
++        }
++        const record = state.ownerRuns?.[ownerRunKey(current.taskId, current.ownerId)]
++        initial = record === undefined
++        sourcePlanDigest = state.planDigest
++        reservation = { ...current, status: 'launching',
++          attempts: Number(current.attempts ?? 0) + 1, launchedAt: now(), error: undefined }
++        state.supervisorOutbox[reservationKey] = reservation
++        preservePendingSupervisorRecoveries(state)
++        await saveState(runtime, state)
++      })
++      if (reservation === undefined) return
++      let result
++      try {
++        if (initial) {
++          await runtime.runExternalOwner(agent, workflowId, reservation.taskId, reservation.ownerId,
++            undefined, { deferFinish: true })
++          result = await runtime.finishOwner(agent, workflowId, reservation.taskId, reservation.ownerId)
++        } else {
++          // Includes existing recovery intents and ordinary finish-only results.
++          // No pending rewrite or inference from an integrated Git commit.
++          result = await runtime.recoverOwner(agent, workflowId, reservation.taskId, reservation.ownerId)
++        }
++      } catch (failure) {
++        await runtime.failSupervisorReservation(agent, workflowId, reservationKey, failure, reservation.reservationId)
++        return { outcome: 'failed', reason: errorText(failure) }
++      }
++      await runtime.withWorkflowLock(workflowId, async () => {
++        const state = await readState(runtime, root, workflowId)
++        assertRecoveryAdmissionState(state)
++        const current = state.supervisorOutbox?.[reservationKey]
++        if (current === undefined || current.reservationId !== reservation.reservationId
++          || state.status === 'cancelled' || state.planDigest !== sourcePlanDigest
++          || ['cancelled', 'stopped', 'completed'].includes(current.status)) return
++        const record = state.ownerRuns?.[ownerRunKey(reservation.taskId, reservation.ownerId)]
++        const task = state.tasks?.find(item => item.taskId === reservation.taskId)
++        const paused = result?.outcome === 'paused'
++          || result?.contract === 'DSH_OWNER_AUTONOMOUS_RECOVERY_PAUSED_V1'
++        const completed = !paused && record?.status === 'completed' && task?.status === 'completed'
++        state.supervisorOutbox[reservationKey] = { ...current,
++          status: completed ? 'completed' : 'stopped',
++          ...(completed ? { completedAt: now(), error: undefined }
++            : { stoppedAt: now(), recoveryPause: result, error: result?.reason ?? 'recovery_unsettled' }),
++        }
++        if (!completed && task !== undefined && task.status !== 'completed'
++          && !['starting', 'running'].includes(record?.status) && task.action !== 'await_user') {
++          Object.assign(task, { status: 'stopped', executorId: null, unchangedPolls: 0,
++            reason: 'runtime_failed', action: 'retry_runtime' })
++          if (state.status === 'failed') { state.status = 'running'; state.error = undefined }
++        }
++        if (completed) advanceRevisionTransition(state)
++        appendSupervisorEvent(state, completed ? 'supervisor.reservation-completed' : 'supervisor.reservation-stopped', {
++          taskId: current.taskId, ownerId: current.ownerId, reservationId: current.reservationId,
++          ...(completed ? {} : { reason: result?.reason ?? 'recovery_unsettled' }),
++        })
++        await saveState(runtime, state)
++      })
++      return result
+     },
+     queueSupervisorReservations(agent, workflowId, reservationKeys) {
+       if (runtime.disposed) return
+@@ -12038,6 +12181,7 @@
+           const observation = supervisorWatchObservation(state, receipt.watches)
+           const reduced = ackSupervisorAction(supervisorProjection(state), receipt.actionId, observation)
+           state.tasks = reduced.tasks
++          preservePendingSupervisorRecoveries(state)
+           state.actionSequence = reduced.actionSequence
+           state.config = { ...(state.config ?? {}), parallel: reduced.config.parallel }
+           state.supervisorRevision = Number(state.supervisorRevision ?? 0) + 1
+@@ -12338,6 +12482,7 @@
+
+           const reduced = ackSupervisorAction(projection, request.actionId, observation)
+           state.tasks = reduced.tasks
++          preservePendingSupervisorRecoveries(state)
+           state.actionSequence = reduced.actionSequence
+           state.config = { ...(state.config ?? {}), parallel: reduced.config.parallel }
+           state.supervisorRevision = Number(state.supervisorRevision ?? 0) + 1
+@@ -12361,6 +12506,7 @@
+               reservationKeys.push(reservationKey)
+             }
+           }
++          preservePendingSupervisorRecoveries(state)
+           if (receipt.action === 'notify') notification = queueMainOutbox(state, receipt)
+           appendSupervisorEvent(state, 'supervisor.receipt-acknowledged', {
+             action: receipt.action,
+@@ -12500,6 +12646,7 @@
+           const receipt = supervisorReceipt(state, request.actionId, 'stop')
+           const reduced = ackSupervisorAction(projection, request.actionId, {})
+           state.tasks = reduced.tasks
++          preservePendingSupervisorRecoveries(state)
+           state.actionSequence = reduced.actionSequence
+           state.config = { ...(state.config ?? {}), parallel: reduced.config.parallel }
+           state.supervisorRevision = Number(state.supervisorRevision ?? 0) + 1
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -366,3 +366,145 @@
+   assert.deepEqual(calls, { create: 0, resume: 0 })
+   assert.equal(f.adapter.requests.length, 0)
+ })
++
++async function supervisorControl(f, action, args = {}) {
++  if (!f.runtime.controlBridges.has(f.workflowId)) {
++    await f.runtime.ensureControlBridge(f.admissionAgent, await readRecoverySessionState(f))
++  }
++  return f.runtime.dispatchControlRequest({ contract: 'DSH_WORKFLOW_CONTROL_V1',
++    workflowId: f.workflowId, token: f.runtime.controlBridges.get(f.workflowId).manifest.token,
++    action, ...args })
++}
++
++async function executeNextSupervisorTask(f, expectedTaskId) {
++  const next = await supervisorControl(f, 'supervisor-next')
++  assert.equal(next.action, 'create')
++  assert.deepEqual(next.tasks.map(item => item.taskId), [expectedTaskId])
++  const ack = await supervisorControl(f, 'supervisor-ack', { actionId: next.actionId })
++  const reservation = ack.reservations[0]
++  await supervisorControl(f, 'supervisor-execute', { reservationId: reservation.reservationId })
++  const pending = f.runtime.supervisorDispatches.get(`${f.workflowId}:${reservation.taskId}:${reservation.ownerId}`)
++  assert.ok(pending)
++  await pending
++  return reservation
++}
++
++test('T15 real Supervisor initial failure and retry preserve source, enforce credit, and allow independent initial work', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true,
++    limits: { totalLimit: 1, problemLimit: 1 },
++    modelScript: m => [...failedModel(m), ...failedModel(m), ...completedModel(m)] })
++  await mutateRecoverySessionState(f, s => { delete s.ownerRuns['T1:api'] })
++  const calls = observe(f)
++  await executeNextSupervisorTask(f, 'T1')
++  const first = await readRecoverySessionState(f)
++  assert.equal(first.ownerRuns['T1:api'].status, 'failed')
++  assert.equal(first.recoveryAdmission, undefined)
++  assert.equal(first.tasks.find(item => item.taskId === 'T1').status, 'pending')
++  assert.equal(first.supervisorOutbox['T1:api'].status, 'failed')
++  await executeNextSupervisorTask(f, 'T1')
++  const retry = await readRecoverySessionState(f)
++  assert.ok(retry.recoveryAdmission, JSON.stringify(retry.supervisorOutbox))
++  assert.equal(retry.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(retry.recoveryAdmission.sources[0].sessionId, first.ownerRuns['T1:api'].sessionId)
++  assert.equal(retry.ownerRuns['T1:api'].status, 'failed')
++  assert.equal(retry.ownerRuns['T1:api'].recoverySession.phase, 'settled_failed')
++  const exhausted = await executeNextSupervisorTask(f, 'T1')
++  const paused = await readRecoverySessionState(f)
++  assert.equal(paused.status, 'running')
++  assert.equal(paused.supervisorOutbox['T1:api'].status, 'stopped')
++  assert.equal(paused.tasks.find(item => item.taskId === 'T1').status, 'stopped')
++  assert.deepEqual(paused.ownerRuns['T1:api'], retry.ownerRuns['T1:api'])
++  assert.deepEqual(paused.recoveryAdmission, retry.recoveryAdmission)
++  assert.equal(f.adapter.requests.length, 4)
++  const replay = await supervisorControl(f, 'supervisor-execute', { reservationId: exhausted.reservationId })
++  assert.equal(replay.execute, false)
++  await executeNextSupervisorTask(f, 'T2')
++  const done = await readRecoverySessionState(f)
++  assert.equal(done.ownerRuns['T2:worker'].status, 'completed')
++  assert.equal(done.supervisorOutbox['T2:worker'].status, 'completed')
++  assert.equal(done.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(f.adapter.requests.length, 8)
++  assert.deepEqual(calls, { create: 5, resume: 0 }) // Three Owners plus the successful Owner's curator/reviewer.
++})
++
++test('T15 real Supervisor recovery completes only after the actual successful settlement', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, modelScript: completedModel })
++  const reserve = f.runtime.reserveRecoveryAdmission.bind(f.runtime)
++  f.runtime.reserveRecoveryAdmission = async (...args) => {
++    const held = await readRecoverySessionState(f)
++    assert.equal(held.tasks[0].status, 'pending')
++    const next = await supervisorControl(f, 'supervisor-next')
++    assert.equal(next.action, 'wait') // The slot remains occupied while admission sees a pending source.
++    await supervisorControl(f, 'supervisor-ack', { actionId: next.actionId })
++    assert.equal((await readRecoverySessionState(f)).tasks[0].status, 'pending')
++    return reserve(...args)
++  }
++  const calls = observe(f)
++  const reservation = await executeNextSupervisorTask(f, 'T1')
++  const done = await readRecoverySessionState(f)
++  assert.equal(done.ownerRuns['T1:api'].status, 'completed', JSON.stringify(done.supervisorOutbox))
++  assert.equal(done.ownerRuns['T1:api'].recoverySession.phase, 'settled_succeeded')
++  assert.equal(done.supervisorOutbox['T1:api'].status, 'completed')
++  assert.equal(done.recoveryAdmission.budget.totalUsed, 1)
++  await supervisorControl(f, 'supervisor-execute', { reservationId: reservation.reservationId })
++  assert.deepEqual(await readRecoverySessionState(f), done)
++  assert.equal(f.adapter.requests.length, 4)
++  assert.deepEqual(calls, { create: 3, resume: 0 }) // One Owner plus curator/reviewer.
++})
++
++test('T15 Supervisor replays an unsettled session as paused without another launch or fabricated completion', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, responses: ['No structured result yet.'] })
++  const calls = observe(f)
++  await executeNextSupervisorTask(f, 'T1')
++  const before = await readRecoverySessionState(f)
++  assert.ok(before.ownerRuns['T1:api'].recoverySession, JSON.stringify(before.supervisorOutbox))
++  assert.equal(before.ownerRuns['T1:api'].recoverySession.phase, 'technical_pause')
++  await executeNextSupervisorTask(f, 'T1')
++  const after = await readRecoverySessionState(f)
++  assert.equal(after.supervisorOutbox['T1:api'].status, 'stopped')
++  assert.deepEqual(after.ownerRuns['T1:api'], before.ownerRuns['T1:api'])
++  assert.deepEqual(after.recoveryAdmission, before.recoveryAdmission)
++  assert.equal(f.adapter.requests.length, 1)
++  assert.deepEqual(calls, { create: 1, resume: 0 })
++})
++
++test('T15 Supervisor authority pause is not completed and persists the main notification without spending', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  await admitAuthorityFailure(f)
++  await mutateRecoverySessionState(f, s => {
++    s.status = 'running'
++    Object.assign(s.tasks[0], { status: 'pending', action: null, reason: null })
++  })
++  const calls = observe(f)
++  await executeNextSupervisorTask(f, 'T1')
++  const state = await readRecoverySessionState(f)
++  assert.equal(state.supervisorOutbox['T1:api'].status, 'stopped')
++  assert.equal(state.tasks[0].action, 'await_user')
++  assert.equal(state.ownerRuns['T1:api'].phase, 'awaiting_user_authority')
++  assert.equal(Object.values(state.mainOutbox).length, 1)
++  assert.equal(state.recoveryAdmission, undefined)
++  assert.deepEqual(calls, { create: 0, resume: 0 })
++})
++
++test('T15 Supervisor does not infer recovery settlement from an actual integrated Git result', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, modelScript: completedModel })
++  await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
++  // Keep the real verified/integrated commit, but inject an uncommitted receipt
++  // projection. This is an entry-routing counterexample, not a crash proof.
++  const before = await mutateRecoverySessionState(f, s => {
++    s.status = 'running'
++    s.ownerRuns['T1:api'].status = 'awaiting_finish'
++    s.ownerRuns['T1:api'].recoverySession.phase = 'submitted'
++    delete s.ownerRuns['T1:api'].recoverySession.successReceipt
++    Object.assign(s.tasks[0], { status: 'pending', executorId: null, reason: null, action: null })
++  })
++  const calls = observe(f)
++  await executeNextSupervisorTask(f, 'T1')
++  const after = await readRecoverySessionState(f)
++  assert.equal(after.supervisorOutbox['T1:api'].status, 'stopped')
++  assert.equal(after.supervisorOutbox['T1:api'].recoveryPause.reason, 'owner_success_unsettled')
++  assert.deepEqual(after.ownerRuns['T1:api'], before.ownerRuns['T1:api'])
++  assert.deepEqual(after.recoveryAdmission, before.recoveryAdmission)
++  assert.equal(f.adapter.requests.length, 4)
++  assert.deepEqual(calls, { create: 0, resume: 0 })
++})

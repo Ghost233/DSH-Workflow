@@ -1,0 +1,14 @@
+{
+  "contract": "DSH_TICKET_IMPLEMENTATION_CANDIDATE_V1",
+  "candidateId": "R92-T19-recovery-runtime-policy",
+  "ticketId": "T-19",
+  "specRevision": "R4-V03-1",
+  "status": "development_complete",
+  "scope": "scope.md",
+  "measurement": "measurement.json",
+  "report": "report.md",
+  "review": "review.md",
+  "testResults": "test-results.json",
+  "productionDefaultEnabled": true,
+  "policyContract": "DSH_RECOVERY_RUNTIME_POLICY_V1"
+}

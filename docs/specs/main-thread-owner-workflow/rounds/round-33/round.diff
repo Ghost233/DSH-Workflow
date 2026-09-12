@@ -1,0 +1,544 @@
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary-child.mjs
+@@ -0,0 +1,312 @@
++import { readFile } from 'node:fs/promises'
++import { join } from 'node:path'
++
++import { RECOVERY_SESSION_REQUEST_CONTRACT } from '../../../../../owner-workflow-plugin/src/recovery-session.mjs'
++import {
++  createRecoverySessionFixture,
++  readRecoverySessionState,
++  reopenRecoverySessionFixture,
++  reserveRecoverySession,
++} from '../../../../../owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs'
++
++const content = 'recover the failed owner task'
++
++function request(receipt) {
++  return {
++    contract: RECOVERY_SESSION_REQUEST_CONTRACT,
++    taskId: 'T1',
++    ownerId: 'api',
++    requestId: receipt.requestId,
++    prompt: { id: receipt.executionIdentity.promptId, content },
++  }
++}
++
++function failedOwnerModelScript({ toolCallResponse, textResponse }) {
++  return [
++    toolCallResponse('t22-restart-owner-submit-failed', 'owner_submit', {
++      report: {
++        contract: 'DSH_OWNER_RESULT_V1',
++        status: 'failed',
++        summary: 'Controlled Owner reports a recoverable failure before fixed verification.',
++        changes: [], tests: [], handoffs: [], memory_updates: [],
++      },
++    }),
++    textResponse('submission recorded'),
++  ]
++}
++
++function completedOwnerModelScript({ toolCallResponse, textResponse }) {
++  const report = {
++    contract: 'DSH_OWNER_RESULT_V1',
++    status: 'completed',
++    summary: 'Controlled Owner completed the recovered task through owner_submit.',
++    changes: [], tests: [], handoffs: [], memory_updates: [],
++  }
++  // The first two responses exercise the production Owner child and its
++  // owner_submit gate.  The next two let finishOwner complete its ordinary
++  // curator/reviewer path, rather than bypassing final task settlement.
++  return [
++    toolCallResponse('t22-owner-submit-completed', 'owner_submit', { report }),
++    textResponse('submission recorded'),
++    textResponse(JSON.stringify({
++      contract: 'DSH_OWNER_MEMORY_CURATOR_V1',
++      summary: 'This controlled recovery has no durable knowledge page to add.',
++      pages: [],
++    })),
++    textResponse(JSON.stringify({
++      contract: 'DSH_OWNER_MEMORY_REVIEW_V1',
++      status: 'passed',
++      summary: 'The controlled empty memory bundle is valid.',
++      issues: [],
++    })),
++  ]
++}
++
++function submittedOwnerModelScript({ textResponse }) {
++  return [textResponse('The Owner is ready to submit its controlled result.')]
++}
++
++function serializeError(error) {
++  return {
++    name: error?.name ?? 'Error',
++    message: error?.message ?? String(error),
++  }
++}
++
++async function send(message) {
++  if (typeof process.send !== 'function') throw new Error('restart child requires an IPC parent')
++  await new Promise((resolvePromise, rejectPromise) => {
++    process.send(message, error => error === null || error === undefined ? resolvePromise() : rejectPromise(error))
++  })
++}
++
++function statePath(root, workflowId) {
++  return join(root, '.dsh-workflow', 'workflows', `${workflowId}.json`)
++}
++
++async function capture(fixture, receipt, unmaterializedLocation) {
++  const stateBytes = await readFile(statePath(fixture.root, fixture.workflowId), 'utf8')
++  const raw = await fixture.readRaw(receipt.executionIdentity.sessionId)
++  if (raw === undefined && unmaterializedLocation === undefined) throw new Error('restart checkpoint has no reserved session artifact')
++  // readRaw parses the persisted header from the artifact itself, so this
++  // remains available after a completed one-shot Owner is no longer live in
++  // the Context's session store.
++  const location = raw === undefined ? unmaterializedLocation : fixture.ctx.sessionPersistence.locate(raw.meta)
++  const state = JSON.parse(stateBytes)
++  const record = state.ownerRuns?.['T1:api']
++  const budgetAttempt = state.recoveryAdmission?.budget?.attempts?.find(
++    item => item.requestId === receipt.requestId,
++  )
++  return {
++    stateBytes,
++    rawContent: raw?.content ?? null,
++    ...(location?.kind === 'jsonl' ? { rawLocationPath: location.path } : {}),
++    checkpoint: {
++      phase: record?.recoverySession?.phase,
++      ownerStatus: record?.status,
++      budgetAttempt: structuredClone(budgetAttempt),
++      modelRequests: fixture.adapter.requests.length,
++      executionIdentity: structuredClone(receipt.executionIdentity),
++    },
++  }
++}
++
++async function holdAfterCheckpoint(fixture, receipt, scenario, unmaterializedLocation) {
++  const evidence = await capture(fixture, receipt, unmaterializedLocation)
++  await send({
++    type: 'checkpoint',
++    scenario,
++    pid: process.pid,
++    root: fixture.root,
++    workflowId: fixture.workflowId,
++    receipt,
++    request: request(receipt),
++    ...evidence,
++  })
++  await new Promise(() => {})
++}
++
++async function produceCreated(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true,
++    temporaryDirectory: input.fixtureParent,
++    modelScript: submittedOwnerModelScript,
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  let location
++  const create = fixture.ctx.agents.create.bind(fixture.ctx.agents)
++  fixture.ctx.agents.create = async (...args) => {
++    const handle = await create(...args)
++    if (handle.agent.id === receipt.executionIdentity.sessionId) {
++      location = fixture.ctx.sessionPersistence.locate(handle.agent.session.header)
++    }
++    return handle
++  }
++  const persistSession = fixture.runtime.persistOwnerSession.bind(fixture.runtime)
++  fixture.runtime.persistOwnerSession = async (...args) => {
++    if (location?.kind !== 'jsonl') throw new Error('created session has no physical target location')
++    await holdAfterCheckpoint(fixture, receipt, 'created', location)
++    return await persistSession(...args)
++  }
++  await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, request(receipt),
++  )
++  throw new Error('created producer completed after its kill checkpoint')
++}
++
++async function produceSubmitted(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true,
++    temporaryDirectory: input.fixtureParent,
++    modelScript: submittedOwnerModelScript,
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  const persistSubmitted = fixture.runtime.persistRecoverySessionSubmitted.bind(fixture.runtime)
++  fixture.runtime.persistRecoverySessionSubmitted = async (...args) => {
++    await holdAfterCheckpoint(fixture, receipt, 'submitted')
++    return await persistSubmitted(...args)
++  }
++  await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent,
++    fixture.workflowId,
++    request(receipt),
++  )
++  throw new Error('submitted producer completed after its kill checkpoint')
++}
++
++async function produceSettledFailed(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true,
++    temporaryDirectory: input.fixtureParent,
++    modelScript: failedOwnerModelScript,
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  try {
++    await fixture.runtime.reconcileRecoverySession(
++      fixture.admissionAgent,
++      fixture.workflowId,
++      request(receipt),
++    )
++  } catch (error) {
++    if (error?.name !== 'OwnerReportedError') throw error
++  }
++  const state = await readRecoverySessionState(fixture)
++  if (state.ownerRuns?.['T1:api']?.recoverySession?.phase !== 'settled_failed') {
++    throw new Error('failed producer did not durably settle its recovery receipt')
++  }
++  await holdAfterCheckpoint(fixture, receipt, 'settled_failed')
++}
++
++async function produceSettledSucceeded(input) {
++  const fixture = await createRecoverySessionFixture({ after() {} }, {
++    executable: true,
++    temporaryDirectory: input.fixtureParent,
++    modelScript: completedOwnerModelScript,
++  })
++  const receipt = await reserveRecoverySession(fixture)
++  const result = await fixture.runtime.reconcileRecoverySession(
++    fixture.admissionAgent, fixture.workflowId, request(receipt),
++  )
++  if (result.outcome !== 'settled_succeeded') {
++    throw new Error('successful producer did not complete real Owner settlement')
++  }
++  await holdAfterCheckpoint(fixture, receipt, 'settled_succeeded')
++}
++
++function observeAgentOperations(fixture) {
++  const operations = { create: 0, resume: 0, followup: 0 }
++  const observeFollowup = agent => {
++    if (typeof agent?.followup !== 'function') return agent
++    const followup = agent.followup.bind(agent)
++    agent.followup = (...args) => {
++      operations.followup += 1
++      return followup(...args)
++    }
++    return agent
++  }
++  observeFollowup(fixture.admissionAgent)
++  const create = fixture.ctx.agents.create.bind(fixture.ctx.agents)
++  fixture.ctx.agents.create = async (...args) => {
++    operations.create += 1
++    const handle = await create(...args)
++    observeFollowup(handle.agent)
++    return handle
++  }
++  const resume = fixture.ctx.agents.resume.bind(fixture.ctx.agents)
++  fixture.ctx.agents.resume = async (...args) => {
++    operations.resume += 1
++    const handle = await resume(...args)
++    observeFollowup(handle.agent)
++    return handle
++  }
++  return operations
++}
++
++async function replay(input) {
++  const fixture = await reopenRecoverySessionFixture({
++    root: input.root,
++    workflowId: input.workflowId,
++    executable: true,
++  })
++  try {
++    const before = await capture(fixture, input.receipt, input.scenario === 'created' ? { kind: 'jsonl', path: input.rawLocationPath } : undefined)
++    // These wrappers remain transparent: they count and immediately delegate
++    // to the real source Harness APIs.  The parent itself was created before
++    // instrumentation, so the count covers reconciliation only.
++    const agentOperations = observeAgentOperations(fixture)
++    const result = await fixture.runtime.reconcileRecoverySession(
++      fixture.admissionAgent,
++      fixture.workflowId,
++      input.request,
++    )
++    const after = await capture(fixture, input.receipt, input.scenario === 'created' ? { kind: 'jsonl', path: input.rawLocationPath } : undefined)
++    await send({
++      type: 'replayed',
++      scenario: input.scenario,
++      pid: process.pid,
++      result,
++      modelRequests: fixture.adapter.requests.length,
++      agentOperations,
++      before,
++      after,
++    })
++  } finally {
++    await fixture.dispose()
++    process.disconnect?.()
++  }
++}
++
++async function dispatch(input) {
++  switch (input?.mode) {
++    case 'produce_created':
++      return await produceCreated(input)
++    case 'produce_submitted':
++      return await produceSubmitted(input)
++    case 'produce_settled_failed':
++      return await produceSettledFailed(input)
++    case 'produce_settled_succeeded':
++      return await produceSettledSucceeded(input)
++    case 'produce_fixture_error':
++      // Fail after the real Git/worktree fixture exists but before any
++      // checkpoint reveals its root to the parent.
++      await createRecoverySessionFixture({ after() {} }, {
++        executable: true,
++        temporaryDirectory: input.fixtureParent,
++      })
++      throw new Error('controlled pre-checkpoint failure')
++    case 'replay':
++      return await replay(input)
++    default:
++      throw new Error(`unknown restart child mode ${String(input?.mode)}`)
++  }
++}
++
++process.once('message', input => {
++  void dispatch(input).catch(async error => {
++    try {
++      await send({ type: 'error', pid: process.pid, error: serializeError(error) })
++    } finally {
++      process.disconnect?.()
++    }
++  })
++})
+--- /dev/null
++++ docs/specs/main-thread-owner-workflow/proofs/t-23/boundary.test.mjs
+@@ -0,0 +1,226 @@
++import assert from 'node:assert/strict'
++import { fork } from 'node:child_process'
++import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import test from 'node:test'
++
++const CHILD = new URL('./boundary-child.mjs', import.meta.url)
++const EVIDENCE_ROOT = process.env.DSH_T22_RESTART_EVIDENCE_DIR
++  ?? join(tmpdir(), 'dsh-t23-boundaries')
++
++function serializeChildOutput(output) {
++  return output === '' ? '<empty>' : output
++}
++
++function startRestartChild(input) {
++  const child = fork(CHILD, [], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
++  let stdout = ''
++  let stderr = ''
++  child.stdout.setEncoding('utf8')
++  child.stderr.setEncoding('utf8')
++  child.stdout.on('data', chunk => { stdout += chunk })
++  child.stderr.on('data', chunk => { stderr += chunk })
++  let received = false
++  let settleMessage
++  const message = new Promise((resolvePromise, rejectPromise) => {
++    settleMessage = { resolve: resolvePromise, reject: rejectPromise }
++  })
++  const timeout = setTimeout(() => {
++    child.kill('SIGKILL')
++    settleMessage.reject(new Error(`restart child IPC timed out\nstdout=${serializeChildOutput(stdout)}\nstderr=${serializeChildOutput(stderr)}`))
++  }, 30_000)
++  const exited = new Promise(resolvePromise => {
++    child.once('exit', (code, signal) => {
++      clearTimeout(timeout)
++      if (!received) {
++        settleMessage.reject(new Error(
++          `restart child exited before its IPC checkpoint: code=${code} signal=${signal}\n`
++          + `stdout=${serializeChildOutput(stdout)}\nstderr=${serializeChildOutput(stderr)}`,
++        ))
++      }
++      resolvePromise({ code, signal })
++    })
++  })
++  child.once('error', error => {
++    clearTimeout(timeout)
++    settleMessage.reject(error)
++  })
++  child.once('message', value => {
++    received = true
++    settleMessage.resolve(value)
++  })
++  child.send(input)
++  return { child, message, exited, output: () => ({ stdout, stderr }) }
++}
++
++async function killAtCheckpoint(handle, scenario) {
++  try {
++    const checkpoint = await handle.message
++    assert.equal(checkpoint.type, 'checkpoint', `${scenario} child error: ${JSON.stringify(checkpoint)}`)
++    assert.equal(checkpoint.scenario, scenario)
++    assert.equal(typeof checkpoint.pid, 'number')
++    assert.equal(handle.child.pid, checkpoint.pid)
++    assert.equal(handle.child.kill('SIGKILL'), true)
++    const exit = await handle.exited
++    assert.equal(exit.code, null)
++    assert.equal(exit.signal, 'SIGKILL')
++    return { checkpoint, exit }
++  } finally {
++    if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill('SIGKILL')
++    await handle.exited
++  }
++}
++
++async function finishReplay(input) {
++  const handle = startRestartChild({ mode: 'replay', ...input })
++  try {
++    const replay = await handle.message
++    assert.equal(replay.type, 'replayed', `restart replay child error: ${JSON.stringify(replay)}`)
++    const exit = await handle.exited
++    assert.equal(exit.code, 0)
++    assert.equal(exit.signal, null)
++    return replay
++  } finally {
++    if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill('SIGKILL')
++    await handle.exited
++  }
++}
++
++function budgetFrom(bytes) {
++  return JSON.parse(bytes).recoveryAdmission?.budget
++}
++
++function workflowStatePath(root, workflowId) {
++  return join(root, '.dsh-workflow', 'workflows', `${workflowId}.json`)
++}
++
++async function capturePostKill(checkpoint) {
++  assert.equal(typeof checkpoint.rawLocationPath, 'string')
++  return {
++    stateBytes: await readFile(workflowStatePath(checkpoint.root, checkpoint.workflowId), 'utf8'),
++    rawContent: await readFile(checkpoint.rawLocationPath, 'utf8').catch(error => {
++      if (error.code === 'ENOENT' && checkpoint.scenario === 'created') return null
++      throw error
++    }),
++  }
++}
++
++function assertReplayReadOnly(postKill, replay) {
++  assert.equal(replay.modelRequests, 0)
++  assert.deepEqual(replay.agentOperations, { create: 0, resume: 0, followup: 0 })
++  assert.equal(replay.before.stateBytes, postKill.stateBytes)
++  assert.equal(replay.before.rawContent, postKill.rawContent)
++  assert.equal(replay.before.stateBytes, replay.after.stateBytes)
++  assert.equal(replay.before.rawContent, replay.after.rawContent)
++  assert.deepEqual(budgetFrom(replay.after.stateBytes), budgetFrom(replay.before.stateBytes))
++}
++
++async function writeEvidence(scenario, producer, postKill, replay) {
++  const directory = join(EVIDENCE_ROOT, scenario)
++  await mkdir(directory, { recursive: true })
++  const write = async (name, content) => await writeFile(join(directory, name), content ?? 'null\n', 'utf8')
++  await Promise.all([
++    write('checkpoint.workflow-state.json', producer.checkpoint.stateBytes),
++    write('checkpoint.reserved-session.jsonl', producer.checkpoint.rawContent),
++    write('kill.json', `${JSON.stringify({
++      producerPid: producer.checkpoint.pid,
++      exit: producer.exit,
++      checkpoint: producer.checkpoint.checkpoint,
++      rawLocationPath: producer.checkpoint.rawLocationPath,
++      rawArtifactPresent: postKill.rawContent !== null,
++    }, null, 2)}\n`),
++    write('postkill.workflow-state.json', postKill.stateBytes),
++    write('postkill.reserved-session.jsonl', postKill.rawContent),
++    write('replay-before.workflow-state.json', replay.before.stateBytes),
++    write('replay-before.reserved-session.jsonl', replay.before.rawContent),
++    write('replay-after.workflow-state.json', replay.after.stateBytes),
++    write('replay-after.reserved-session.jsonl', replay.after.rawContent),
++    write('replay.json', `${JSON.stringify({
++      replayerPid: replay.pid,
++      result: replay.result,
++      modelRequests: replay.modelRequests,
++      agentOperations: replay.agentOperations,
++      beforeCheckpoint: replay.before.checkpoint,
++      afterCheckpoint: replay.after.checkpoint,
++    }, null, 2)}\n`),
++  ])
++}
++
++// The parent knows this private container before the child can create any
++// fixture files. Cleanup therefore does not depend on a successful IPC reply.
++async function withFixtureContainer(operation) {
++  const container = await realpath(await mkdtemp(join(tmpdir(), 'dsh-t22-restart-owned-')))
++  try {
++    return await operation(container)
++  } finally {
++    await rm(container, { recursive: true, force: true, maxRetries: 3 })
++  }
++}
++
++test('T23 SIGKILL after prompt flush before submitted receipt preserves one accepted prompt', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(
++      startRestartChild({ mode: 'produce_submitted', fixtureParent }),
++      'submitted',
++    )
++    assert.equal(producer.checkpoint.checkpoint.phase, 'created')
++    assert.equal(producer.checkpoint.checkpoint.ownerStatus, 'running')
++    assert.ok(producer.checkpoint.checkpoint.modelRequests >= 1)
++    assert.ok(producer.checkpoint.rawContent.includes(producer.checkpoint.receipt.executionIdentity.promptId))
++    const postKill = await capturePostKill(producer.checkpoint)
++
++    // The replay child builds a new Context, parent Agent, and Runtime after
++    // observing the producer's actual SIGKILL exit.  That initialization is not
++    // an Owner resend: transparent source API counters begin after it and prove
++    // reconciliation made no create, resume, or followup call.
++    const replay = await finishReplay({
++      scenario: 'submitted',
++      root: producer.checkpoint.root,
++      workflowId: producer.checkpoint.workflowId,
++      receipt: producer.checkpoint.receipt,
++      request: producer.checkpoint.request,
++    })
++    assert.notEqual(replay.pid, producer.checkpoint.pid)
++    assert.equal(replay.result.outcome, 'paused')
++    assert.equal(replay.result.phase, 'technical_pause')
++    assertReplayReadOnly(postKill, replay)
++    await writeEvidence('accepted-before-receipt', producer, postKill, replay)
++  })
++})
++
++test('T23 SIGKILL after create returns before Owner binding cannot authorize resend', async () => {
++  return withFixtureContainer(async fixtureParent => {
++    const producer = await killAtCheckpoint(
++      startRestartChild({ mode: 'produce_created', fixtureParent }),
++      'created',
++    )
++    assert.equal(producer.checkpoint.checkpoint.phase, 'creating')
++    assert.equal(producer.checkpoint.checkpoint.ownerStatus, 'running')
++    assert.equal(producer.checkpoint.checkpoint.modelRequests, 0)
++    const postKill = await capturePostKill(producer.checkpoint)
++    const state = JSON.parse(postKill.stateBytes)
++    const run = state.ownerRuns['T1:api']
++    const identity = producer.checkpoint.receipt.executionIdentity
++    assert.deepEqual(run.recoverySession.executionIdentity, identity)
++    assert.equal(run.recoverySession.prompt.id, identity.promptId)
++    assert.ok(run.recoverySession.prompt.content.length > 0)
++    assert.equal(postKill.rawContent, null)
++    assert.notEqual(producer.checkpoint.checkpoint.budgetAttempt.state, 'settled')
++    const replay = await finishReplay({
++      scenario: 'created',
++      rawLocationPath: producer.checkpoint.rawLocationPath,
++      root: producer.checkpoint.root,
++      workflowId: producer.checkpoint.workflowId,
++      receipt: producer.checkpoint.receipt,
++      request: producer.checkpoint.request,
++    })
++    assert.notEqual(replay.pid, producer.checkpoint.pid)
++    assert.equal(replay.result.outcome, 'paused')
++    assert.equal(replay.result.phase, 'technical_pause')
++    assertReplayReadOnly(postKill, replay)
++    await assert.rejects(readFile(producer.checkpoint.rawLocationPath), { code: 'ENOENT' })
++    assert.equal(replay.result.reason, 'raw_artifact_missing')
++    await writeEvidence('create-before-binding', producer, postKill, replay)
++  })
++})

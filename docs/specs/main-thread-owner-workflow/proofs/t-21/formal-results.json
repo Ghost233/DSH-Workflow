@@ -1,0 +1,37 @@
+{
+  "candidate": "2026-09-11T03:00:12.137302+00:00",
+  "results": [
+    {
+      "name": "session",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-21/session/probe.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:00:12.138483+00:00",
+      "timeoutSeconds": 150,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T03:00:13.085174+00:00",
+      "stderrBytes": 0
+    },
+    {
+      "name": "prompt",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-21/prompt/run.mjs",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-21/formal-prompt"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-11T03:00:13.085522+00:00",
+      "timeoutSeconds": 150,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-11T03:00:15.071290+00:00",
+      "stderrBytes": 0
+    }
+  ],
+  "drift": []
+}

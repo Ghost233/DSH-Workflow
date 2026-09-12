@@ -1,0 +1,648 @@
+--- owner-workflow-plugin/src/recovery-admission.mjs (baseline)
++++ owner-workflow-plugin/src/recovery-admission.mjs
+@@ -12,6 +12,7 @@
+ export const RECOVERY_ADMISSION_CONTRACT = 'DSH_RECOVERY_ADMISSION_V1'
+ export const RECOVERY_ADMISSION_CONFIG_CONTRACT = 'DSH_RECOVERY_ADMISSION_CONFIG_V1'
+ export const RECOVERY_ADMISSION_STATE_CONTRACT = 'DSH_RECOVERY_ADMISSION_STATE_V1'
++export const RECOVERY_CONTINUATION_CONTRACT = 'DSH_RECOVERY_CONTINUATION_V1'
+
+ // `AUTONOMOUS_STRATEGIES` is the plan-revision subset. Owner failure recovery
+ // also persists the two repair strategies selected by FAILURE_STRATEGIES.
+@@ -252,7 +253,7 @@
+
+ function sourceBinding(source) {
+   if (source.kind === 'owner_failure') {
+-    return {
++    const binding = {
+       kind: source.kind,
+       planDigest: source.planDigest,
+       taskId: source.taskId,
+@@ -260,6 +261,8 @@
+       attempt: source.attempt,
+       sessionId: source.sessionId,
+     }
++    if (source.continuation !== undefined) binding.continuation = continuationBinding(source.continuation)
++    return binding
+   }
+   return {
+     kind: source.kind,
+@@ -349,6 +352,19 @@
+   if (record.status === 'blocked' && (binding.task?.action === 'await_user' || strategy === 'request_user_authority')) {
+     fail('owner_failure_not_technical')
+   }
++  const continuation = record.recoveryContinuation === undefined
++    ? undefined
++    : continuationBinding(record.recoveryContinuation, 'owner_failure_recovery_continuation')
++  if (continuation !== undefined) {
++    if (continuation.taskId !== request.taskId || continuation.ownerId !== request.ownerId
++      || continuation.planDigest !== binding.planDigest
++      || continuation.ownerRunBinding.attempt !== record.attempt
++      || continuation.ownerRunBinding.attempt !== request.source.attempt
++      || continuation.ownerRunBinding.sessionId !== recordedSessionId
++      || continuation.ownerRunBinding.sessionId !== request.source.sessionId) {
++      fail('continuation_owner_run_mismatch')
++    }
++  }
+   const source = {
+     kind: 'owner_failure',
+     planDigest: binding.planDigest,
+@@ -358,7 +374,8 @@
+     sessionId: request.source.sessionId,
+     failureReason: reason,
+   }
+-  return { source, strategy, record }
++  if (continuation !== undefined) source.continuation = continuation
++  return { source, strategy, record, continuation }
+ }
+
+ function validatedObligationSource(state, binding, request) {
+@@ -378,9 +395,11 @@
+ }
+
+ function persistedOwnerFailure(value, workflowId, name) {
+-  exactKeys(value, [
++  const keys = [
+     'sourceId', 'kind', 'planDigest', 'taskId', 'ownerId', 'attempt', 'sessionId', 'failureReason',
+-  ], name)
++  ]
++  if (Object.hasOwn(value, 'continuation')) keys.push('continuation')
++  exactKeys(value, keys, name)
+   if (value.kind !== 'owner_failure') fail(`${name}_invalid`)
+   const source = {
+     kind: 'owner_failure',
+@@ -392,6 +411,7 @@
+     failureReason: nonblankText(value.failureReason, `${name}_failure_reason`),
+   }
+   const sourceId = text(value.sourceId, `${name}_source_id`)
++  if (value.continuation !== undefined) source.continuation = continuationBinding(value.continuation, `${name}_continuation`)
+   if (sourceId !== sourceIdFor(workflowId, source)) fail('admission_source_tampered')
+   return { sourceId, ...source }
+ }
+@@ -434,6 +454,48 @@
+     sessionId: text(value.sessionId, `${name}_session_id`),
+     promptId: text(value.promptId, `${name}_prompt_id`),
+   }
++}
++
++function ownerRunBinding(value, name) {
++  exactKeys(value, ['attempt', 'sessionId'], name)
++  return {
++    attempt: positiveInteger(value.attempt, `${name}_attempt`),
++    sessionId: text(value.sessionId, `${name}_session_id`),
++  }
++}
++
++/*
++ * This is a local, persisted correlation record. T-20 reserves the two
++ * identity strings; T-21/T-22 remain responsible for proving that a real
++ * session and prompt actually use them. The T-13 receipt convention is exact:
++ * executionRef={id:sessionId,version:promptId}; the failed prompt receipt is
++ * result.reference={id:promptId,version:sessionId}.
++ */
++function continuationBinding(value, name = 'recovery_continuation') {
++  exactKeys(value, [
++    'contract', 'sourceId', 'rootProblemId', 'requestId', 'attemptId',
++    'taskId', 'ownerId', 'planDigest', 'executionIdentity', 'ownerRunBinding',
++  ], name)
++  if (value.contract !== RECOVERY_CONTINUATION_CONTRACT) fail(`${name}_contract_invalid`)
++  const execution = executionIdentity(value.executionIdentity, `${name}_execution_identity`)
++  const run = ownerRunBinding(value.ownerRunBinding, `${name}_owner_run_binding`)
++  if (execution.sessionId !== run.sessionId) fail(`${name}_session_binding_mismatch`)
++  return {
++    contract: RECOVERY_CONTINUATION_CONTRACT,
++    sourceId: text(value.sourceId, `${name}_source_id`),
++    rootProblemId: text(value.rootProblemId, `${name}_root_problem_id`),
++    requestId: text(value.requestId, `${name}_request_id`),
++    attemptId: text(value.attemptId, `${name}_attempt_id`),
++    taskId: text(value.taskId, `${name}_task_id`),
++    ownerId: text(value.ownerId, `${name}_owner_id`),
++    planDigest: text(value.planDigest, `${name}_plan_digest`),
++    executionIdentity: execution,
++    ownerRunBinding: run,
++  }
++}
++
++function sameContinuation(left, right) {
++  return canonical(left) === canonical(right)
+ }
+
+ function intentKey(sourceId, strategy) {
+@@ -477,6 +539,32 @@
+   }
+ }
+
++function continuationMatchesIntent(continuation, intent) {
++  return continuation.sourceId === intent.sourceId
++    && continuation.rootProblemId === intent.rootProblemId
++    && continuation.requestId === intent.requestId
++    && continuation.attemptId === intent.attemptId
++    && continuation.taskId === intent.taskId
++    && continuation.ownerId === intent.ownerId
++    && continuation.planDigest === intent.planDigest
++    && canonical(continuation.executionIdentity) === canonical(intent.executionIdentity)
++}
++
++function settledFailureMatchesContinuation(continuation, attempt) {
++  return attempt?.state === 'settled'
++    && attempt.result?.status === 'failed'
++    && attempt.executionRef !== undefined
++    && attempt.result?.reference !== undefined
++    && sameReference(attempt.executionRef, {
++      id: continuation.executionIdentity.sessionId,
++      version: continuation.executionIdentity.promptId,
++    })
++    && sameReference(attempt.result.reference, {
++      id: continuation.executionIdentity.promptId,
++      version: continuation.executionIdentity.sessionId,
++    })
++}
++
+ function normalizedAdmission(value, workflowId, config) {
+   if (value === undefined) return emptyAdmission(workflowId, config)
+   exactKeys(value, [
+@@ -494,57 +582,98 @@
+   ordinaryArray(value.sources, 'recovery_admission_sources')
+   ordinaryArray(value.intents, 'recovery_admission_intents')
+   const sources = value.sources.map((item, index) => persistedSource(item, workflowId, `recovery_admission_source_${index}`))
+-  const sourceIds = new Set()
++  const sourceById = new Map()
+   for (const source of sources) {
+-    if (sourceIds.has(source.sourceId)) fail('recovery_admission_source_duplicate')
+-    sourceIds.add(source.sourceId)
++    if (sourceById.has(source.sourceId)) fail('recovery_admission_source_duplicate')
++    sourceById.set(source.sourceId, source)
+   }
+   const intents = value.intents.map((item, index) => persistedIntent(item, `recovery_admission_intent_${index}`))
++  const intentByRequest = new Map()
+   const intentKeys = new Set()
+-  const requestIds = new Set()
+   const attemptIds = new Set()
++  const sessionIds = new Set()
++  const promptIds = new Set()
+   for (const intent of intents) {
+-    const source = sources.find(item => item.sourceId === intent.sourceId)
++    const source = sourceById.get(intent.sourceId)
+     if (source === undefined) fail('recovery_admission_intent_source_missing')
+     if (intent.planDigest !== config.executionVersion || intent.planDigest !== source.planDigest
+       || intent.taskId !== source.taskId || intent.ownerId !== source.ownerId) {
+       fail('recovery_admission_intent_source_mismatch')
+     }
+-    if (intentKeys.has(intent.intentKey) || requestIds.has(intent.requestId) || attemptIds.has(intent.attemptId)) {
++    if (intentKeys.has(intent.intentKey) || intentByRequest.has(intent.requestId) || attemptIds.has(intent.attemptId)) {
+       fail('recovery_admission_intent_duplicate')
+     }
+-    intentKeys.add(intent.intentKey)
+-    requestIds.add(intent.requestId)
+-    attemptIds.add(intent.attemptId)
+-  }
+-  const sessionIds = new Set()
+-  const promptIds = new Set()
+-  for (const intent of intents) {
+     if (sessionIds.has(intent.executionIdentity.sessionId) || promptIds.has(intent.executionIdentity.promptId)) {
+       fail('recovery_admission_execution_identity_duplicate')
+     }
++    intentKeys.add(intent.intentKey)
++    intentByRequest.set(intent.requestId, intent)
++    attemptIds.add(intent.attemptId)
+     sessionIds.add(intent.executionIdentity.sessionId)
+     promptIds.add(intent.executionIdentity.promptId)
+   }
+   const budget = normalizeRecoveryBudget(value.budget)
+-  if (budget.workflowId !== workflowId || budget.totalLimit !== config.totalLimit) fail('recovery_admission_budget_mismatch')
+-  if (budget.problems.length !== sources.length || budget.attempts.length !== intents.length) {
+-    fail('recovery_admission_budget_mapping_mismatch')
+-  }
+-  for (const source of sources) {
++  if (budget.workflowId !== workflowId || budget.totalLimit !== config.totalLimit
++    || budget.attempts.length !== intents.length) fail('recovery_admission_budget_mismatch')
++
++  const initialSources = sources.filter(source => source.continuation === undefined)
++  if (budget.problems.length !== initialSources.length) fail('recovery_admission_budget_mapping_mismatch')
++  const rootBySource = new Map()
++  const initialRoots = new Set()
++  for (const source of initialSources) {
+     const problem = budget.problems.find(item => sameReference(item.source, {
+       id: source.sourceId,
+       version: source.planDigest,
+     }))
+-    if (problem === undefined || problem.limit !== config.problemLimit) fail('recovery_admission_source_budget_mismatch')
+-    if (!intents.some(intent => intent.sourceId === source.sourceId && intent.rootProblemId === problem.rootProblemId)) {
++    if (problem === undefined || problem.limit !== config.problemLimit || initialRoots.has(problem.rootProblemId)) {
++      fail('recovery_admission_source_budget_mismatch')
++    }
++    initialRoots.add(problem.rootProblemId)
++    rootBySource.set(source.sourceId, problem.rootProblemId)
++  }
++
++  const sourceByPredecessorRequest = new Map()
++  const visiting = new Set()
++  const deriveRoot = source => {
++    const known = rootBySource.get(source.sourceId)
++    if (known !== undefined) return known
++    if (visiting.has(source.sourceId)) fail('recovery_admission_continuation_cycle')
++    const continuation = source.continuation
++    if (continuation === undefined) fail('recovery_admission_root_source_missing')
++    const predecessor = sourceById.get(continuation.sourceId)
++    const intent = intentByRequest.get(continuation.requestId)
++    if (predecessor === undefined || intent === undefined || !continuationMatchesIntent(continuation, intent)) {
++      fail('recovery_admission_continuation_intent_missing')
++    }
++    const attempt = budget.attempts.find(item => item.requestId === continuation.requestId)
++    if (!settledFailureMatchesContinuation(continuation, attempt)) {
++      fail('recovery_admission_continuation_attempt_mismatch')
++    }
++    if (source.taskId !== continuation.taskId || source.ownerId !== continuation.ownerId
++      || source.planDigest !== continuation.planDigest) fail('recovery_admission_continuation_source_mismatch')
++    const priorSource = sourceByPredecessorRequest.get(continuation.requestId)
++    if (priorSource !== undefined && priorSource !== source.sourceId) fail('recovery_admission_continuation_rebound')
++    sourceByPredecessorRequest.set(continuation.requestId, source.sourceId)
++    visiting.add(source.sourceId)
++    const inheritedRoot = deriveRoot(predecessor)
++    visiting.delete(source.sourceId)
++    if (inheritedRoot !== continuation.rootProblemId) fail('recovery_admission_continuation_root_mismatch')
++    rootBySource.set(source.sourceId, inheritedRoot)
++    return inheritedRoot
++  }
++  for (const source of sources) deriveRoot(source)
++
++  for (const source of sources) {
++    const rootProblemId = rootBySource.get(source.sourceId)
++    if (!intents.some(intent => intent.sourceId === source.sourceId && intent.rootProblemId === rootProblemId)) {
+       fail('recovery_admission_source_intent_missing')
+     }
+   }
+   for (const intent of intents) {
+-    const source = sources.find(item => item.sourceId === intent.sourceId)
++    const source = sourceById.get(intent.sourceId)
+     const attempt = budget.attempts.find(item => item.requestId === intent.requestId)
+     if (source === undefined || attempt === undefined
++      || rootBySource.get(source.sourceId) !== intent.rootProblemId
+       || attempt.workflowId !== workflowId
+       || attempt.rootProblemId !== intent.rootProblemId
+       || attempt.attemptId !== intent.attemptId
+@@ -552,10 +681,6 @@
+       || attempt.ownerId !== intent.ownerId
+       || attempt.executionVersion !== intent.planDigest) {
+       fail('recovery_admission_intent_budget_mismatch')
+-    }
+-    const problem = budget.problems.find(item => item.rootProblemId === intent.rootProblemId)
+-    if (problem === undefined || !sameReference(problem.source, { id: source.sourceId, version: source.planDigest })) {
+-      fail('recovery_admission_root_source_mismatch')
+     }
+   }
+   return {
+@@ -573,6 +698,7 @@
+ function rootForSource(admission, sourceId) {
+   const source = admission.sources.find(item => item.sourceId === sourceId)
+   if (source === undefined) return undefined
++  if (source.continuation !== undefined) return source.continuation.rootProblemId
+   const problem = admission.budget.problems.find(item => sameReference(item.source, {
+     id: source.sourceId,
+     version: source.planDigest,
+@@ -609,6 +735,29 @@
+   if (problem.status === 'resolved') return 'problem_resolved'
+   if (problem.used >= problem.limit) return 'problem_exhausted'
+   return undefined
++}
++
++function admittedContinuationRoot(admission, continuation) {
++  if (continuation === undefined) return undefined
++  const predecessor = admission.sources.find(source => source.sourceId === continuation.sourceId)
++  const matches = admission.intents.filter(intent => continuationMatchesIntent(continuation, intent))
++  if (predecessor === undefined || matches.length !== 1) fail('continuation_intent_missing')
++  const intent = matches[0]
++  const attempt = admission.budget.attempts.find(item => item.requestId === continuation.requestId)
++  if (!settledFailureMatchesContinuation(continuation, attempt)) fail('continuation_attempt_not_failed')
++  const root = admission.budget.problems.find(item => item.rootProblemId === continuation.rootProblemId)
++  if (root === undefined || intent.rootProblemId !== root.rootProblemId) fail('continuation_root_missing')
++  return root.rootProblemId
++}
++
++function assertContinuationSourceNotRebound(admission, continuation, sourceId) {
++  if (continuation === undefined) return
++  for (const source of admission.sources) {
++    if (source.continuation?.requestId !== continuation.requestId) continue
++    if (source.sourceId !== sourceId || !sameContinuation(source.continuation, continuation)) {
++      fail('continuation_rebound')
++    }
++  }
+ }
+
+ /**
+@@ -644,7 +793,12 @@
+         fail('obligation_physical_conflict')
+       }
+     }
+-    if (source.kind === 'owner_failure' && existingSource === undefined && hasRelatedOpenRoot(admission, source)) {
++    const continuationRoot = source.kind === 'owner_failure'
++      ? admittedContinuationRoot(admission, sourceResult.continuation)
++      : undefined
++    assertContinuationSourceNotRebound(admission, sourceResult.continuation, sourceId)
++    if (source.kind === 'owner_failure' && existingSource === undefined
++      && continuationRoot === undefined && hasRelatedOpenRoot(admission, source)) {
+       fail('continuation_unbound')
+     }
+
+@@ -660,10 +814,14 @@
+     }
+
+     const existingRoot = rootForSource(admission, sourceId)
+-    const reserveReason = budgetCanReserve(admission.budget, existingRoot, existingRoot === undefined, config)
++    if (existingRoot !== undefined && continuationRoot !== undefined && existingRoot !== continuationRoot) {
++      fail('continuation_root_rebound')
++    }
++    const rootProblemId = existingRoot ?? continuationRoot
++    const reserveReason = budgetCanReserve(admission.budget, rootProblemId, rootProblemId === undefined, config)
+     if (reserveReason !== undefined) return rejection(copied, reserveReason)
+
+-    const rootProblemId = existingRoot ?? `recovery-root-${randomUUID()}`
++    const nextRootProblemId = rootProblemId ?? `recovery-root-${randomUUID()}`
+     const requestId = `recovery-request-${randomUUID()}`
+     const attemptId = `recovery-attempt-${randomUUID()}`
+     const executionIdentity = {
+@@ -671,16 +829,16 @@
+       promptId: `recovery-prompt-${randomUUID()}`,
+     }
+     let budget = admission.budget
+-    if (existingRoot === undefined) {
++    if (rootProblemId === undefined) {
+       budget = registerRecoveryProblem(budget, {
+-        rootProblemId,
++        rootProblemId: nextRootProblemId,
+         limit: config.problemLimit,
+         source: { id: sourceId, version: binding.planDigest },
+       })
+     }
+     const reserved = reserveRecoveryAttempt(budget, {
+       workflowId: binding.workflowId,
+-      rootProblemId,
++      rootProblemId: nextRootProblemId,
+       requestId,
+       attemptId,
+       taskId: parsedRequest.taskId,
+@@ -695,7 +853,7 @@
+       planDigest: binding.planDigest,
+       taskId: parsedRequest.taskId,
+       ownerId: parsedRequest.ownerId,
+-      rootProblemId,
++      rootProblemId: nextRootProblemId,
+       requestId,
+       attemptId,
+       executionIdentity,
+--- owner-workflow-plugin/test/recovery-admission.test.mjs (baseline)
++++ owner-workflow-plugin/test/recovery-admission.test.mjs
+@@ -14,6 +14,7 @@
+ } from '../src/model.mjs'
+ import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
+ import { createTaskState } from '../src/supervisor.mjs'
++import { startRecoveryAttempt, settleRecoveryAttempt } from '../src/recovery-budget.mjs'
+
+ const execFileAsync = promisify(execFile)
+ const WORKER = new URL('./fixtures/recovery-admission-worker.mjs', import.meta.url)
+@@ -510,3 +511,208 @@
+   assert.deepEqual(left.response.executionIdentity, right.response.executionIdentity)
+   assert.equal((await readState(fixture.root, fixture.workflowId)).recoveryAdmission.budget.totalUsed, 1)
+ })
++
++// T22 producer state is constructed here; no external session or model runs.
++// Admission itself is always exercised through real Runtime + saveState.
++async function recordRecoveryFailure(fixture, receipt, { started = true, terminal = 'failed' } = {}) {
++  return mutateState(fixture, state => {
++    const admission = state.recoveryAdmission
++    const intent = admission.intents.find(item => item.attemptId === receipt.attemptId)
++    const predecessor = admission.sources.find(item => item.sourceId === intent.sourceId)
++    const binding = {
++      workflowId: state.id, rootProblemId: intent.rootProblemId,
++      requestId: intent.requestId, attemptId: intent.attemptId,
++      taskId: intent.taskId, ownerId: intent.ownerId, executionVersion: intent.planDigest,
++    }
++    const { sessionId, promptId } = intent.executionIdentity
++    let budget = admission.budget
++    if (started) budget = startRecoveryAttempt(budget, {
++      ...binding, executionRef: { id: sessionId, version: promptId },
++    }).ledger
++    if (terminal !== null) budget = settleRecoveryAttempt(budget, {
++      ...binding, result: { status: terminal, reference: { id: promptId, version: sessionId } },
++    }).ledger
++    admission.budget = budget
++    const attempt = (predecessor.attempt ?? 0) + 1
++    state.ownerRuns[`${intent.taskId}:${intent.ownerId}`] = {
++      ...recoveryRecord(intent.taskId, intent.ownerId, intent.planDigest, { attempt, sessionId }),
++      recoveryContinuation: {
++        contract: 'DSH_RECOVERY_CONTINUATION_V1',
++        sourceId: intent.sourceId, rootProblemId: intent.rootProblemId,
++        requestId: intent.requestId, attemptId: intent.attemptId,
++        taskId: intent.taskId, ownerId: intent.ownerId, planDigest: intent.planDigest,
++        executionIdentity: { sessionId, promptId },
++        ownerRunBinding: { attempt, sessionId },
++      },
++    }
++  })
++}
++
++function currentFailureRequest(fixture, state) {
++  const record = state.ownerRuns['T1:api']
++  return ownerRequest(fixture, { source: {
++    kind: 'owner_failure', attempt: record.attempt, sessionId: record.sessionId,
++  } })
++}
++
++async function assertAdmissionRefusedUnchanged(fixture, request) {
++  const before = await readState(fixture.root, fixture.workflowId)
++  const response = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assertReceipt(response, 'rejected')
++  assert.equal(Object.hasOwn(response, 'attemptId'), false)
++  assert.deepEqual(await readState(fixture.root, fixture.workflowId), before)
++  return response
++}
++
++test('R15 next failed executions with the same strategy inherit the root and persist replay across Runtime restarts', async t => {
++  const fixture = await createFixture(t, { limits: { totalLimit: 4, problemLimit: 4 } })
++  const first = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, ownerRequest(fixture))
++  const initial = await readState(fixture.root, fixture.workflowId)
++  const firstSource = structuredClone(initial.recoveryAdmission.sources[0])
++  let prior = first
++  for (let used = 2; used <= 3; used++) {
++    const failed = await recordRecoveryFailure(fixture, prior)
++    const request = currentFailureRequest(fixture, failed)
++    const next = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++    assertReceipt(next, 'reserved')
++    assert.equal(next.rootProblemId, first.rootProblemId)
++    assert.notEqual(next.requestId, prior.requestId)
++    assert.notEqual(next.attemptId, prior.attemptId)
++    const reloaded = createOwnerWorkflowRuntime({ agents: { get: () => undefined } }, {})
++    const replay = await reloaded.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++    assertReceipt(replay, 'replayed')
++    assert.deepEqual(replay, { ...next, outcome: 'replayed' })
++    const saved = await readState(fixture.root, fixture.workflowId)
++    assert.equal(saved.recoveryAdmission.budget.problems.length, 1)
++    assert.equal(saved.recoveryAdmission.budget.totalUsed, used)
++    assert.equal(saved.recoveryAdmission.budget.problems[0].used, used)
++    assert.deepEqual(saved.recoveryAdmission.sources[0], firstSource)
++    prior = next
++  }
++})
++
++test('R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget', async t => {
++  const fixture = await createFixture(t)
++  const first = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, ownerRequest(fixture))
++  const valid = await recordRecoveryFailure(fixture, first)
++  const cases = [
++    ['missing', state => { delete state.ownerRuns['T1:api'].recoveryContinuation }],
++    ...['contract', 'sourceId', 'rootProblemId', 'requestId', 'attemptId', 'taskId', 'ownerId', 'planDigest'].map(field => [field, state => {
++      state.ownerRuns['T1:api'].recoveryContinuation[field] = 'incorrect'
++    }]),
++    ...['sessionId', 'promptId'].map(field => [`identity ${field}`, state => {
++      state.ownerRuns['T1:api'].recoveryContinuation.executionIdentity[field] = 'incorrect'
++    }]),
++    ['run attempt', state => { state.ownerRuns['T1:api'].recoveryContinuation.ownerRunBinding.attempt++ }],
++    ['run session', state => { state.ownerRuns['T1:api'].recoveryContinuation.ownerRunBinding.sessionId = 'incorrect' }],
++    ['unknown field', state => { state.ownerRuns['T1:api'].recoveryContinuation.verified = true }],
++    ['execution receipt', state => { state.recoveryAdmission.budget.attempts[0].executionRef.id = 'incorrect' }],
++    ['result receipt', state => { state.recoveryAdmission.budget.attempts[0].result.reference.id = 'incorrect' }],
++  ]
++  for (const [name, change] of cases) await t.test(name, async () => {
++    const changed = structuredClone(valid)
++    change(changed)
++    await writeState(fixture.root, fixture.workflowId, changed)
++    await assertAdmissionRefusedUnchanged(fixture, currentFailureRequest(fixture, changed))
++  })
++})
++
++for (const [name, options] of [
++  ['never started', { started: false }], ['still running', { terminal: null }],
++  ['succeeded', { terminal: 'succeeded' }], ['cancelled', { terminal: 'cancelled' }],
++]) test(`R15 rejects a predecessor that ${name}`, async t => {
++  const fixture = await createFixture(t)
++  const first = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, ownerRequest(fixture))
++  const state = await recordRecoveryFailure(fixture, first, options)
++  await assertAdmissionRefusedUnchanged(fixture, currentFailureRequest(fixture, state))
++})
++
++for (const [name, limits] of [
++  ['problem', { totalLimit: 3, problemLimit: 1 }],
++  ['workflow', { totalLimit: 1, problemLimit: 3 }],
++]) test(`R15 continuation cannot reset exhausted ${name} credit`, async t => {
++  const fixture = await createFixture(t, { limits })
++  const first = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, ownerRequest(fixture))
++  const state = await recordRecoveryFailure(fixture, first)
++  const response = await assertAdmissionRefusedUnchanged(fixture, currentFailureRequest(fixture, state))
++  assert.equal(response.reason, `${name}_exhausted`)
++})
++
++test('R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed', async t => {
++  const fixture = await createFixture(t, { limits: { totalLimit: 5, problemLimit: 5 } })
++  const first = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, ownerRequest(fixture))
++  const failed = await recordRecoveryFailure(fixture, first)
++  const request = currentFailureRequest(fixture, failed)
++  const second = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assertReceipt(second, 'reserved')
++  const saved = await readState(fixture.root, fixture.workflowId)
++  const cases = [
++    ['renumber the same execution', state => {
++      state.ownerRuns['T1:api'].attempt++
++      state.ownerRuns['T1:api'].recoveryContinuation.ownerRunBinding.attempt++
++    }],
++    ['drop current continuation', state => { delete state.ownerRuns['T1:api'].recoveryContinuation }],
++    ['drop historical edge', state => { delete state.recoveryAdmission.sources[1].continuation }],
++    ['redirect historical parent', state => { state.recoveryAdmission.sources[1].continuation.attemptId = second.attemptId }],
++    ['redirect successor root', state => { state.recoveryAdmission.intents[1].rootProblemId = 'incorrect' }],
++  ]
++  for (const [name, change] of cases) await t.test(name, async () => {
++    const changed = structuredClone(saved)
++    change(changed)
++    await writeState(fixture.root, fixture.workflowId, changed)
++    await assertAdmissionRefusedUnchanged(fixture, currentFailureRequest(fixture, changed))
++  })
++})
++
++test('R15 concurrent continuation calls from separate processes share one successor receipt and one debit', async t => {
++  const fixture = await createFixture(t)
++  const first = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, ownerRequest(fixture))
++  const failed = await recordRecoveryFailure(fixture, first)
++  const request = currentFailureRequest(fixture, failed)
++  const input = { root: fixture.root, workflowId: fixture.workflowId, request }
++  const [left, right] = await Promise.all([childReserve(input), childReserve(input)])
++  assert.equal(left.ok, true)
++  assert.equal(right.ok, true)
++  assert.deepEqual([left.response.outcome, right.response.outcome].sort(), ['replayed', 'reserved'])
++  assert.equal(left.response.rootProblemId, first.rootProblemId)
++  assert.equal(left.response.attemptId, right.response.attemptId)
++  assert.deepEqual(left.response.executionIdentity, right.response.executionIdentity)
++  assert.equal((await readState(fixture.root, fixture.workflowId)).recoveryAdmission.budget.totalUsed, 2)
++})
++
++test('R15 a technical obligation recovery can produce a failed Owner continuation under its original root', async t => {
++  const fixture = await createFixture(t)
++  await mutateState(fixture, state => {
++    state.planConvergence = convergenceFor(fixture.planDigest, technicalObligation(fixture.planDigest))
++  })
++  const first = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, obligationRequest(fixture))
++  assertReceipt(first, 'reserved')
++  const failed = await recordRecoveryFailure(fixture, first)
++  const second = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, currentFailureRequest(fixture, failed))
++  assertReceipt(second, 'reserved')
++  assert.equal(second.rootProblemId, first.rootProblemId)
++  const saved = await readState(fixture.root, fixture.workflowId)
++  assert.equal(saved.recoveryAdmission.sources[0].kind, 'obligation')
++  assert.equal(saved.recoveryAdmission.sources[1].kind, 'owner_failure')
++  assert.equal(saved.recoveryAdmission.budget.problems.length, 1)
++})
++
++test('R15 derived source retains A/B/A replay without erasing the continuation edge', async t => {
++  const fixture = await createFixture(t, { limits: { totalLimit: 4, problemLimit: 4 } })
++  const first = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, ownerRequest(fixture))
++  const failed = await recordRecoveryFailure(fixture, first)
++  const request = currentFailureRequest(fixture, failed)
++  const a = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assertReceipt(a, 'reserved')
++  await mutateState(fixture, state => { state.ownerRuns['T1:api'].autonomousRecovery.strategy = 'repair_runtime' })
++  const b = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assertReceipt(b, 'reserved')
++  assert.equal(b.rootProblemId, first.rootProblemId)
++  assert.notEqual(b.attemptId, a.attemptId)
++  await mutateState(fixture, state => { state.ownerRuns['T1:api'].autonomousRecovery.strategy = 'diagnose' })
++  const replay = await fixture.runtime.reserveRecoveryAdmission(fixture.agent, fixture.workflowId, request)
++  assert.deepEqual(replay, { ...a, outcome: 'replayed' })
++  const saved = await readState(fixture.root, fixture.workflowId)
++  assert.equal(saved.recoveryAdmission.sources.length, 2)
++  assert.equal(saved.recoveryAdmission.budget.totalUsed, 3)
++})
+--- docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md (baseline)
++++ docs/specs/main-thread-owner-workflow/contracts/recovery-admission-v1.md
+@@ -81,7 +81,9 @@
+ }
+ ```
+
+-`sources` 使用从实际失败绑定或结构化义务合同计算出的稳定 source ID，不含错误文案摘要。首次失败还会保存不可变的原始 `failureReason` 元数据，供后续 Owner run 记录被覆写后追溯；它不参与 source ID 或根问题身份。`intents` 把同一 source 和当前持久 strategy 绑定到唯一根问题、request、attempt 和占位执行身份。导入时模块严格检查版本、未知字段、重复 ID、T-13 账本计数、source/root/attempt 映射、执行版本及预留身份唯一性；因此局部关联或额度改写会被拒绝。它不能单独证明攻击者整体替换了一份内部一致的协调状态快照，这属于 Runtime 持久边界和锁/CAS 证据的责任。
++`sources` 使用从实际失败绑定或结构化义务合同计算出的稳定 source ID，不含错误文案摘要。首次失败还会保存不可变的原始 `failureReason` 元数据，供后续 Owner run 记录被覆写后追溯；它不参与 source ID 或根问题身份。`intents` 把同一 source 和当前持久 strategy 绑定到唯一根问题、request、attempt 和占位执行身份。一个后继失败 source 会保存不可变的 `continuation` 边，因此删除当前 Owner run 的字段后，不能把它重解释为新的首次失败来源。
++
++已有不含 `continuation` 的 V1 `sources` 是首次来源，无需迁移。带边的 source 的 ID 把完整边纳入摘要。导入严格检查版本、未知字段、重复 ID、T-13 账本计数、source/root/attempt 映射、执行版本及预留身份唯一性：一个 root 可以有多个 source，但只能有一个首次 source；每条边必须指向同 root 的先前 intent，链无环；同一个前序 intent 只能有一个具体后继失败 source。来源、边、intent、root 或额度的局部改写都会拒绝。它不能单独证明攻击者整体替换了一份内部一致的协调状态快照，这属于 Runtime 持久边界和锁/CAS 证据的责任。
+
+ ## 来源与重放
+
+@@ -93,7 +95,24 @@
+
+ 相同 source + strategy 重放会复用完整的 request、attempt 和预留身份，即使来自不同 Runtime。策略从 A 切到 B 可在同一 root 建立一份新的领取；再回到 A 会重放原 A 的请求。对尚未关闭的同 task/Owner root，未能精确追溯到已登记来源的新的失败绑定会以 `continuation_unbound` 拒绝，而不是根据 task、Owner、模型 ID 或错误文案猜测新根问题。
+
+-当前仅实现相同实际失败绑定（同 attempt/session）的重放和换 strategy 后的同 source 领取。它还没有一个已核验的“下一次真实 Owner 失败由哪一份已登记 recovery attempt 派生”的持久引用：因此，后续失败即使 T-13 的前一 attempt 已结算，只要同 task/Owner root 仍 open，也会被 `continuation_unbound` 拒绝，不能接回该 root。T-22 需要补充该消费/对账合同，令 Runtime 的当前 `ownerRun` 持有并核验指向已登记 recovery attempt 的持久引用，覆盖 source、task、Owner、plan、预留执行身份和终态后，才能安全地在同 root 派生新意图。该合同尚未确定或实现；本限制意味着 T-20 不能据此标记为开发完成。
++下一次真实 Owner 失败要沿未关闭 root 派生新意图，当前 `ownerRuns[taskId:ownerId]` 必须有以下精确的持久 `recoveryContinuation`：
++
++```js
++{
++  contract: 'DSH_RECOVERY_CONTINUATION_V1',
++  sourceId: 'parent-source-id',
++  rootProblemId: 'parent-root-id',
++  requestId: 'parent-request-id',
++  attemptId: 'parent-t13-attempt-id',
++  taskId: 'task-id', ownerId: 'owner-id', planDigest: 'current-plan-digest',
++  executionIdentity: { sessionId: 'reserved-session-id', promptId: 'reserved-prompt-id' },
++  ownerRunBinding: { attempt: 3, sessionId: 'reserved-session-id' },
++}
++```
++
++所有字段和嵌套对象都是精确字段；未知或错误 contract、缺字段或重新绑定均拒绝。接纳器将当前 terminal Owner run 的 task/Owner/plan、`attempt` 和 session 与请求和 `ownerRunBinding` 同时核验，再将 source/root/request/attempt/task/Owner/plan/预留身份与一个已登记 intent 精确匹配。对应 T-13 attempt 必须已经 `startRecoveryAttempt`，已 `settleRecoveryAttempt` 至 `failed`，且采用本模块的本地回执约定：`executionRef:{id:sessionId,version:promptId}`，失败 prompt 回执为 `result.reference:{id:promptId,version:sessionId}`。这只是 T-20 的持久关联格式，不声称任何真实会话 API 已使用它；T-21/T-22 负责真实后端生产和对账。
++
++通过后，新失败 source 保存该完整边并继承 parent root，建立新的 intent/request/attempt/预留身份；两级额度照常各扣一次。丢失或错误边、未开始/未失败终态、跨 task/Owner/plan/root、前序 intent 重绑、已用尽或未知引用都保守拒绝且不扣额。后继 source 自己仍可以 A/B/A 复用，前序 source 也保持原有幂等。
+
+ ## T-13 和后续边界

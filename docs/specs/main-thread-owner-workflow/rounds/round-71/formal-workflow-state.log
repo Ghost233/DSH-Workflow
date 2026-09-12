@@ -1,0 +1,76 @@
+TAP version 13
+# Subtest: mixed needs_decision 的失败 Planning Driver 仍由统一决策器恢复
+ok 1 - mixed needs_decision 的失败 Planning Driver 仍由统一决策器恢复
+  ---
+  duration_ms: 1.088125
+  type: 'test'
+  ...
+# Subtest: 真正外部授权的 needs_decision 只形成一次显式等待
+ok 2 - 真正外部授权的 needs_decision 只形成一次显式等待
+  ---
+  duration_ms: 0.089083
+  type: 'test'
+  ...
+# Subtest: Runner 生命周期由同一决策表覆盖执行、审查、修复和最终合并
+ok 3 - Runner 生命周期由同一决策表覆盖执行、审查、修复和最终合并
+  ---
+  duration_ms: 0.135292
+  type: 'test'
+  ...
+# Subtest: 新 repair 候选不会继承上一轮 awaiting_approval 而绕过 Reviewer
+ok 4 - 新 repair 候选不会继承上一轮 awaiting_approval 而绕过 Reviewer
+  ---
+  duration_ms: 0.065208
+  type: 'test'
+  ...
+# Subtest: 旧 repair 候选缺少 approvalPolicy 时仍按内部 Intent 自治批准
+ok 5 - 旧 repair 候选缺少 approvalPolicy 时仍按内部 Intent 自治批准
+  ---
+  duration_ms: 0.060417
+  type: 'test'
+  ...
+# Subtest: pending handoff 在 running 状态也优先进入局部重规划
+ok 6 - pending handoff 在 running 状态也优先进入局部重规划
+  ---
+  duration_ms: 0.077417
+  type: 'test'
+  ...
+# Subtest: 已重规划 handoff 的新 DAG 不受旧 awaiting_main_discussion 阶段阻塞
+ok 7 - 已重规划 handoff 的新 DAG 不受旧 awaiting_main_discussion 阶段阻塞
+  ---
+  duration_ms: 0.066125
+  type: 'test'
+  ...
+# Subtest: 失败与阻塞现场不会从 Runner 视野中静默消失
+ok 8 - 失败与阻塞现场不会从 Runner 视野中静默消失
+  ---
+  duration_ms: 0.089625
+  type: 'test'
+  ...
+# Subtest: 任务计数与唯一 Workflow 槽位使用同一纯状态语义
+ok 9 - 任务计数与唯一 Workflow 槽位使用同一纯状态语义
+  ---
+  duration_ms: 0.0665
+  type: 'test'
+  ...
+# Subtest: 代表性非终态都必须给出 command 或显式 wait，禁止静默空洞
+ok 10 - 代表性非终态都必须给出 command 或显式 wait，禁止静默空洞
+  ---
+  duration_ms: 0.135541
+  type: 'test'
+  ...
+# Subtest: 持久状态交叉空间中的每个组合都收敛为 command、wait、terminal 或 invariant
+ok 11 - 持久状态交叉空间中的每个组合都收敛为 command、wait、terminal 或 invariant
+  ---
+  duration_ms: 0.571791
+  type: 'test'
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 97.458

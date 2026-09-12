@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: T23 two ready processes competing for one durable intent execute its Owner only once
+ok 1 - T23 two ready processes competing for one durable intent execute its Owner only once
+  ---
+  duration_ms: 4723.516542
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4833.485583

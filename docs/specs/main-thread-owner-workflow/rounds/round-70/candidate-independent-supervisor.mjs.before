@@ -1,0 +1,140 @@
+import { normalizePlanV2 } from './model.mjs'
+import { createHash } from 'node:crypto'
+import { activeCandidateRecoveryPause } from './candidate-recovery-pause.mjs'
+import { supervisorNext, ackSupervisorAction } from './supervisor.mjs'
+
+const terminal = new Set(['completed', 'failed', 'cancelled', 'stopped'])
+const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+function fail(message) { throw new Error(`Candidate Supervisor: ${message}`) }
+
+function prepare(state) {
+  const pause = activeCandidateRecoveryPause(state)
+  if (!pause || state.mainOutbox?.[pause.notificationId]?.status !== 'delivered') fail('需要已投递的有效候选暂停')
+  if (!['running', 'blocked'].includes(state.status)) fail('工作流状态不允许调度')
+  const plan = normalizePlanV2(state.plan)
+  const byId = new Map(plan.tasks.map(task => [task.id, task]))
+  const owners = new Set(plan.owners.map(owner => owner.id))
+  const excludedOwners = new Set()
+  const excluded = new Set()
+  function addTask(id) {
+    if (!byId.has(id)) fail(`未知来源任务 ${String(id)}`)
+    excluded.add(id)
+  }
+  function addOwner(id) {
+    if (!owners.has(id)) fail(`未知来源Owner ${String(id)}`)
+    excludedOwners.add(id)
+  }
+  const candidate = state.pendingPlanRevision
+  addTask(candidate.recoveryOrigin?.taskId)
+  addOwner(candidate.recoveryOrigin?.ownerId)
+  if (!Array.isArray(candidate.handoffIds) || candidate.handoffIds.length === 0) fail('缺少handoff来源')
+  for (const id of candidate.handoffIds) {
+    const matches = (state.handoffQueue ?? []).filter(item => item.id === id)
+    if (matches.length !== 1) fail('handoff来源缺失或重复')
+    const handoff = matches[0]
+    addTask(handoff.sourceTaskId ?? handoff.sourceStageId ?? handoff.taskId)
+    addOwner(handoff.sourceOwnerId)
+    if (handoff.targetType !== 'owner') fail('尚不能证明非Owner目标的独立范围')
+    addOwner(handoff.targetOwnerId)
+  }
+  const edges = []
+  for (const task of plan.tasks) {
+    if (excludedOwners.has(task.ownerId)) excluded.add(task.id)
+    for (const id of [...(task.dependsOn ?? []), ...(task.parentTaskId ? [task.parentTaskId] : []), ...(task.children ?? [])]) {
+      if (!byId.has(id)) fail('任务关系指向未知节点')
+      edges.push([task.id, id])
+    }
+  }
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const [a, b] of edges) {
+      if (excluded.has(a) === excluded.has(b)) continue
+      excluded.add(a); excluded.add(b); changed = true
+    }
+  }
+  const reservations = Object.values(state.supervisorOutbox ?? {}).filter(item => !terminal.has(item.status))
+  for (const reservation of reservations) {
+    if (!['reserved', 'launching'].includes(reservation.status) || byId.get(reservation.taskId)?.ownerId !== reservation.ownerId) fail('无法核验未终态reservation')
+  }
+  const occupied = new Set(reservations.map(item => item.taskId))
+  const busyOwners = new Set(reservations.map(item => item.ownerId))
+  for (const task of plan.tasks) {
+    const run = state.ownerRuns?.[`${task.id}:${task.ownerId}`]
+    if (run && ['running', 'creating', 'starting'].includes(run.status)) {
+      busyOwners.add(task.ownerId); occupied.add(task.id)
+    }
+  }
+  const records = new Map(state.tasks.map(task => [task.taskId, task]))
+  for (const id of occupied) {
+    if (!['pending', 'running'].includes(records.get(id)?.status)) fail('未终态占用与任务状态矛盾')
+  }
+  const eligible = plan.tasks.filter(task => !excluded.has(task.id) && task.children === undefined
+    && task.decomposition?.status !== 'abstract' && records.get(task.id)?.status === 'pending'
+    && !Object.hasOwn(state.ownerRuns ?? {}, `${task.id}:${task.ownerId}`)
+    && !occupied.has(task.id) && !busyOwners.has(task.ownerId)).map(task => task.id).sort()
+  // Keep the full task projection: reservations consume slots even before dispatch.
+  const projection = { ...state, tasks: state.tasks.map(task => {
+    const active = task.status === 'running' || (occupied.has(task.taskId) && task.status === 'pending')
+    // This selector only creates. Inspection of unrelated stalled executions is
+    // owned by their lifecycle; these observation counters are never written back.
+    return active ? { ...task, status: 'running', unchangedPolls: 0 } : task
+  }),
+    transitionBlockedTaskIds: [...new Set([...(state.transitionBlockedTaskIds ?? []),
+      ...plan.tasks.filter(task => !eligible.includes(task.id)).map(task => task.id)])].sort() }
+  const scope = { kind: 'candidate_pause', pauseSource: pause.source, activePlanDigest: state.planDigest, eligibleTaskIds: eligible }
+  const normal = supervisorNext(projection)
+  const action = normal.action === 'create' ? 'create' : 'wait'
+  return { projection, normal, receipt: { action, actionId: `csa-${digest([scope, normal.actionId, action])}`, scope,
+    ...(action === 'create' ? { tasks: normal.tasks } : { watches: [] }) } }
+}
+
+export function candidateIndependentNext(state) { return prepare(state).receipt }
+
+export function candidateIndependentBinding(scope, task, reservationId) {
+  if (!scope.eligibleTaskIds.includes(task.taskId)) fail('任务不属于确认范围')
+  return { contract: 'DSH_CANDIDATE_INDEPENDENT_RESERVATION_V1',
+    source: scope.pauseSource, activePlanDigest: scope.activePlanDigest,
+    taskId: task.taskId, ownerId: task.ownerId, reservationId,
+    eligibleTaskIds: [...scope.eligibleTaskIds], scopeDigest: digest(scope) }
+}
+
+export function assertCandidateIndependentReservation(state, reservation) {
+  const binding = reservation?.candidatePause
+  const pause = activeCandidateRecoveryPause(state)
+  if (binding?.contract !== 'DSH_CANDIDATE_INDEPENDENT_RESERVATION_V1'
+    || !pause || binding.source !== pause.source || binding.activePlanDigest !== state.planDigest
+    || binding.reservationId !== reservation.reservationId || binding.taskId !== reservation.taskId
+    || binding.ownerId !== reservation.ownerId || !Array.isArray(binding.eligibleTaskIds)
+    || !binding.eligibleTaskIds.includes(binding.taskId)
+    || binding.scopeDigest !== digest({ kind: 'candidate_pause', pauseSource: binding.source,
+      activePlanDigest: binding.activePlanDigest, eligibleTaskIds: binding.eligibleTaskIds })) fail('独立reservation来源绑定失效')
+  // Recompute eligibility with only this reservation's own projection neutralized.
+  // Other reservations, Owners and all dependency/source evidence remain intact.
+  const view = structuredClone(state)
+  const key = `${binding.taskId}:${binding.ownerId}`
+  const persisted = view.supervisorOutbox?.[key]
+  if (persisted?.reservationId !== binding.reservationId || JSON.stringify(persisted.candidatePause) !== JSON.stringify(binding)) fail('reservation已被替换')
+  const owner = view.ownerRuns?.[key]
+  if (owner && JSON.stringify(owner.candidatePause) !== JSON.stringify(binding)) fail('Owner已被其他执行替换')
+  delete view.supervisorOutbox[key]
+  if (view.ownerRuns) delete view.ownerRuns[key]
+  const task = view.tasks.find(task => task.taskId === binding.taskId)
+  if (!task) fail('reservation任务不存在')
+  Object.assign(task, { status: 'pending', executorId: null, cursor: null, unchangedPolls: 0, reason: null, action: null })
+  if (!prepare(view).receipt.scope.eligibleTaskIds.includes(binding.taskId)) fail('任务不再属于独立范围')
+  return binding
+}
+
+export function ackCandidateIndependentCreate(state, actionId, observation) {
+  const { projection, normal, receipt } = prepare(state)
+  if (receipt.actionId !== actionId) fail('候选调度actionId已过期')
+  if (receipt.action !== 'create') fail('仅允许确认create，不允许stop/notify/wait写回')
+  const reduced = ackSupervisorAction(projection, normal.actionId, observation)
+  const targets = new Set(receipt.tasks.map(task => task.taskId))
+  // Never return a replacement tasks array or normalized workflow config.
+  return { scope: receipt.scope, actionSequence: reduced.actionSequence,
+    taskPatches: reduced.tasks.filter(task => targets.has(task.taskId)).map(task => ({ taskId: task.taskId,
+      status: task.status, executorId: task.executorId, cursor: task.cursor,
+      unchangedPolls: task.unchangedPolls, reason: task.reason, action: task.action })) }
+}

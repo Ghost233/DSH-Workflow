@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: 主线程可在启动 DAG 前创建和修改所有约定文档，原生观察策略继续执行
+ok 1 - 主线程可在启动 DAG 前创建和修改所有约定文档，原生观察策略继续执行
+  ---
+  duration_ms: 30.450625
+  type: 'test'
+  ...
+# Subtest: 文档例外不放开代码、治理文件、状态、升级参数和其他写入工具
+ok 2 - 文档例外不放开代码、治理文件、状态、升级参数和其他写入工具
+  ---
+  duration_ms: 10.221542
+  type: 'test'
+  ...
+# Subtest: 解析路径二次校验阻止冒充 displayPath、目标漂移和链接换入
+ok 3 - 解析路径二次校验阻止冒充 displayPath、目标漂移和链接换入
+  ---
+  duration_ms: 6.398542
+  type: 'test'
+  ...
+# Subtest: 路径绑定到项目和会话，允许根目录别名，拒绝软硬链接和无效目标
+ok 4 - 路径绑定到项目和会话，允许根目录别名，拒绝软硬链接和无效目标
+  ---
+  duration_ms: 8.966875
+  type: 'test'
+  ...
+# Subtest: 只读子代理不继承文档例外，Owner 和停用模式沿用原策略
+ok 5 - 只读子代理不继承文档例外，Owner 和停用模式沿用原策略
+  ---
+  duration_ms: 1.671708
+  type: 'test'
+  ...
+# Subtest: 真实 root 与会话根别名混用时只归一化项目根，保留内部链接拒绝
+ok 6 - 真实 root 与会话根别名混用时只归一化项目根，保留内部链接拒绝
+  ---
+  duration_ms: 7.346792
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 256.790125

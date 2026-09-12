@@ -1,0 +1,7 @@
+# R57 T15 混合执行身份的持久领取
+
+主线程独占recovery-admission/runtime及admission测试。沿现有saveState当前状态事务扩展内部领取请求，origin必须是已有严格Owner failure/obligation来源，新增operationKind/operationId/ordinal身份。首次免费Owner失败可直接为replan注册root；已有关联root必须复用，不要求先发生付费Owner恢复。Owner与operation intents共用同一sources/budget，并在导入时逐一核验映射，不能漏掉operation额度。
+
+operationId/ordinal由受信Runtime调用者提供，仅标识步骤，不授予模型启动权。序号1开始、后续只能在同operation前项已失败结算后连续领取，未知/运行中重放原请求，不跳号。实际handoff/cycle来源快照、全部物理runChild与输出应用对账下一步接线；本轮不得声称实际replan已受限，也不启用新公开工具或默认协议。Owner专属session路由显式拒绝operation。
+
+正式范围budget/admission/session/runtime-recovery-budget，覆盖真实当前状态事务、跨进程同请求重放及最后额度、来源/版本/混合账本损坏、首次失败直接操作/Owner共享root、序号与旧执行门禁。冻结后只读审查。公开合同在冻结前同步。

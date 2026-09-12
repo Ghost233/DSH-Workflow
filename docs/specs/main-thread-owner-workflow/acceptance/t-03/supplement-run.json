@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+    "docs/specs/main-thread-owner-workflow/acceptance/t-03/supplement.mjs"
+  ],
+  "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+  "timeoutSeconds": 30,
+  "start": "2026-09-10T11:38:28.495950+00:00",
+  "end": "2026-09-10T11:38:28.549301+00:00",
+  "exitCode": 0,
+  "scriptSha256": "038b0620efecd9f1156b4811d4190f3a96754e5bb84ccc3ff7bf62ddfa40c7db",
+  "initialAttempt": "exit1 ERR_MODULE_NOT_FOUND before assertions; corrected one excess ../ in import only; original log retained"
+}

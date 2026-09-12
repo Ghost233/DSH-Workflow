@@ -1,0 +1,94 @@
+TAP version 13
+# Subtest: T15 recoverOwner admits before restarting a failed workflow and enforces the next credit limit
+ok 1 - T15 recoverOwner admits before restarting a failed workflow and enforces the next credit limit
+  ---
+  duration_ms: 1974.90875
+  type: 'test'
+  ...
+# Subtest: T15 direct failed Owner start cannot bypass durable recovery admission
+ok 2 - T15 direct failed Owner start cannot bypass durable recovery admission
+  ---
+  duration_ms: 491.32975
+  type: 'test'
+  ...
+# Subtest: T15 missing_config cannot silently fall back to legacy execution
+ok 3 - T15 missing_config cannot silently fall back to legacy execution
+  ---
+  duration_ms: 526.688125
+  type: 'test'
+  ...
+# Subtest: T15 unknown_protocol cannot silently fall back to legacy execution
+ok 4 - T15 unknown_protocol cannot silently fall back to legacy execution
+  ---
+  duration_ms: 500.899208
+  type: 'test'
+  ...
+# Subtest: T15 invalid_config cannot silently fall back to legacy execution
+ok 5 - T15 invalid_config cannot silently fall back to legacy execution
+  ---
+  duration_ms: 496.712375
+  type: 'test'
+  ...
+# Subtest: T15 explicit user decision takes priority over spending recovery credit
+ok 6 - T15 explicit user decision takes priority over spending recovery credit
+  ---
+  duration_ms: 481.25275
+  type: 'test'
+  ...
+# Subtest: T15 existing uncertain recovery is reconciled without another reservation or prompt
+ok 7 - T15 existing uncertain recovery is reconciled without another reservation or prompt
+  ---
+  duration_ms: 1025.339042
+  type: 'test'
+  ...
+# Subtest: T15 subsequent real failed result inherits the same root and consumes only its next attempt
+ok 8 - T15 subsequent real failed result inherits the same root and consumes only its next attempt
+  ---
+  duration_ms: 1703.689
+  type: 'test'
+  ...
+# Subtest: T15 public background recovery persists and delivers a newly classified user decision
+ok 9 - T15 public background recovery persists and delivers a newly classified user decision
+  ---
+  duration_ms: 670.147708
+  type: 'test'
+  ...
+# Subtest: T15 unresolved handoff before admission prevents execution
+ok 10 - T15 unresolved handoff before admission prevents execution
+  ---
+  duration_ms: 511.9205
+  type: 'test'
+  ...
+# Subtest: T15 unresolved handoff appearing after admission prevents execution
+ok 11 - T15 unresolved handoff appearing after admission prevents execution
+  ---
+  duration_ms: 589.673125
+  type: 'test'
+  ...
+# Subtest: T15 protected ordinary awaiting_finish result can finish without a recovery debit
+ok 12 - T15 protected ordinary awaiting_finish result can finish without a recovery debit
+  ---
+  duration_ms: 2428.443833
+  type: 'test'
+  ...
+# Subtest: T15 protected ordinary committed result can finish without a recovery debit
+ok 13 - T15 protected ordinary committed result can finish without a recovery debit
+  ---
+  duration_ms: 2290.477125
+  type: 'test'
+  ...
+# Subtest: T15 protected PlanRevision abort with no Owner record keeps the reset path
+ok 14 - T15 protected PlanRevision abort with no Owner record keeps the reset path
+  ---
+  duration_ms: 586.992792
+  type: 'test'
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 14503.486125

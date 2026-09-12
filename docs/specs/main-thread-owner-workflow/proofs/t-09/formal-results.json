@@ -1,0 +1,61 @@
+{
+  "runs": [
+    {
+      "name": "recovery",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-09/probe.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-10T14:17:07.244529+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-10T14:17:11.140770+00:00",
+      "collectedScenarios": 5,
+      "probeErrors": [],
+      "collectionComplete": true
+    },
+    {
+      "name": "boundaries",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "/Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/t-09/boundaries.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-10T14:17:11.141970+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-10T14:17:12.410373+00:00",
+      "collectedScenarios": 3,
+      "probeErrors": [],
+      "collectionComplete": true
+    },
+    {
+      "name": "timeout-regression",
+      "command": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--test",
+        "--test-force-exit",
+        "--test-name-pattern=\u4efb\u52a1\u8fbe\u5230 onTimeout|Owner \u6062\u590d\u540e\u4f7f\u7528\u672c\u6b21\u8fd0\u884c\u65f6\u95f4|\u6301\u7eed\u4ea7\u751f\u5fc3\u8df3\u7684\u957f\u4efb\u52a1",
+        "owner-workflow-plugin/test/control.test.mjs"
+      ],
+      "cwd": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "start": "2026-09-10T14:17:12.411449+00:00",
+      "timeoutSeconds": 60,
+      "exitCode": 0,
+      "timedOut": false,
+      "end": "2026-09-10T14:17:13.491057+00:00",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    }
+  ],
+  "drift": []
+}

@@ -1,0 +1,7 @@
+# 第28轮独立审查
+
+审查者t21_contract_review，只读审查本轮差异与正式证据。没有新增产品P1/P2；F-20为测试期望错误，L2暂不能关闭。
+
+PlanRevision改变planDigest后，lookupRecoveryAdmissionIntent先导入配置/账本，executionVersion不匹配抛错，Runtime preflight返回reservation_invalid，早于binding比较。实际安全暂停、预算/state/raw保持和零发送符合合同；用例最后reason期望不正确。正式session16/17、restart5/5。
+
+其余三类真实Owner链证据有效，实际tool/call计数排除工具定义，预算/receipt/continuation/重放无副作用；pending由真实批准产生，finish在旧验证门禁拒绝，是pending+旧plan组合而非特定后置分支证据。下一轮最小修正断言为reservation_invalid，保留说明，重跑受影响session17即可，不必改生产门禁或预算继承。正式后不修。

@@ -1,0 +1,5 @@
+# R45 Supervisor预算接线
+
+主线程独占runtime.mjs及runtime-recovery-budget.test.mjs；基线R44的1622文件hash已核对。接入Supervisor派发与失败处理两端，保留Owner失败来源、复用恢复会话、初次免费、暂停不误报完成。测试真实queue/outbox、一次失败再恢复、耗尽及独立Owner。Supervisor尚不包含timeout/workflow_recover/replan旧投影路径，这些仍必须完成，不能标T15开发完成。开发后冻结并正式恢复/领取/会话/控制/稳定性回归，保留7旧control跳过。独立只读审查后再下一轮。
+
+开发发现并修复真实control ack把调度占槽误记成实际running，导致owner_failure_task_running拒绝。保留预算禁止running校验，改由Supervisor视图计占槽、持久任务在Owner开始前仍pending；ack/watch三处归一化保持一致。新增5项真实控制链通过。正式固定5套runtime-recovery-budget/recovery-admission/recovery-session/control/resilience；不重新计入T23既有故障证明。首次失败及诊断日志保留，不掩盖测试阶段计数/phase断言装配修正。

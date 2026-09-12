@@ -1,0 +1,204 @@
+--- owner-workflow-plugin/src/runtime.mjs (baseline)
++++ owner-workflow-plugin/src/runtime.mjs
+@@ -9766,6 +9766,8 @@
+       const state = await readState(runtime, root, workflowId)
+       if (state.root !== root) throw new Error(`工作流 ${workflowId} 不属于当前项目：${state.root}`)
+       assertWorkflowNotCancelled(state, '恢复 workflow')
++      const protectedRecovery = recoveryAdmissionEnabled(state)
++      if (protectedRecovery) assertRecoveryAdmissionState(state)
+       if (!runnerManaged && planningOwnedByRunner(state) && ['planning', 'planned', 'registry_pending_plan'].includes(state.status)) {
+         return runnerManagedPlanningResult(state)
+       }
+@@ -9839,6 +9841,25 @@
+         if (state.finalMergeHead !== undefined && state.cleanupPending === true) {
+           return runtime.finalizeWorkflow(agent, workflowId, signal)
+         }
++        if (protectedRecovery) {
++          const decisions = state.plan.tasks.filter(task => {
++            const record = state.ownerRuns?.[ownerRunKey(task.id, task.ownerId)]
++            return ['failed', 'blocked'].includes(record?.status)
++              && classifyFailure(record.error ?? record.reason ?? '',
++                ownerExecutionDeviationContext(state, task.id, task.ownerId)).class === 'external_authority'
++          })
++          if (decisions.length > 0) {
++            for (const task of decisions) {
++              const record = state.ownerRuns[ownerRunKey(task.id, task.ownerId)]
++              applyOwnerRecoveryAuthority(state, task.id, task.ownerId,
++                classifyFailure(record.error ?? record.reason ?? '', ownerExecutionDeviationContext(state, task.id, task.ownerId)))
++            }
++            await saveState(runtime, state)
++            const control = await runtime.ensureControlBridge(agent, state)
++            return { workflow: runtime.workflowSummary(state), control,
++              nextAction: '真实用户决策已进入主会话通知队列；该任务等待决定，独立任务可继续。' }
++          }
++        }
+         if (state.pendingTaskMerge?.taskId !== undefined) {
+           const pendingTask = state.plan.tasks.find(task => task.id === state.pendingTaskMerge.taskId)
+           const pendingRecord = state.ownerRuns?.[ownerRunKey(
+@@ -9846,6 +9867,7 @@
+             state.pendingTaskMerge.ownerId,
+           )]
+           if (pendingTask !== undefined && pendingRecord?.result !== undefined) {
++            if (protectedRecovery) return runtime.recoverOwner(agent, workflowId, pendingTask.id, pendingTask.ownerId, signal)
+             return runtime.finishOwner(
+               agent,
+               workflowId,
+@@ -9858,6 +9880,7 @@
+           ['awaiting_finish', 'committed'].includes(state.ownerRuns?.[ownerRunKey(task.id, task.ownerId)]?.status)
+         ))
+         if (finishableTask !== undefined) {
++          if (protectedRecovery) return runtime.recoverOwner(agent, workflowId, finishableTask.id, finishableTask.ownerId, signal)
+           return runtime.finishOwner(agent, workflowId, finishableTask.id, finishableTask.ownerId)
+         }
+         const pendingHandoffs = (state.handoffQueue ?? []).filter(item => item.status === 'pending')
+@@ -9881,6 +9904,7 @@
+         }
+
+         state.supervisorOutbox ??= {}
++        const queuedTaskIds = []
+         for (const task of recoverable) {
+           const taskState = taskStates.get(task.id)
+           const key = ownerRunKey(task.id, task.ownerId)
+@@ -9891,13 +9915,20 @@
+           if (live?.status === 'running') {
+             throw new Error(`Owner ${task.ownerId} 的 task ${task.id} 仍在运行，不能恢复`)
+           }
++          if (protectedRecovery) {
++            if (taskState.action === 'await_user') continue
++            if (ownerRecord === undefined
++              || (!['failed', 'blocked'].includes(ownerRecord.status) && ownerRecord.recoverySession === undefined)) {
++              throw new Error(`Owner ${task.ownerId} 没有可核验的恢复来源，不能重新排队：${key}`)
++            }
++          }
+           taskState.status = 'pending'
+           taskState.executorId = null
+           taskState.cursor = null
+           taskState.unchangedPolls = 0
+           taskState.reason = null
+           taskState.action = null
+-          if (ownerRecord !== undefined) {
++          if (ownerRecord !== undefined && !protectedRecovery) {
+             state.ownerRuns[key] = {
+               ...ownerRecord,
+               taskId: task.id,
+@@ -9908,7 +9939,15 @@
+               error: undefined,
+             }
+           }
++          queuedTaskIds.push(task.id)
+           const reservation = state.supervisorOutbox[key]
++          if (protectedRecovery) {
++            if (!['reserved', 'launching'].includes(reservation?.status)) {
++              state.supervisorOutbox[key] = supervisorReservation(
++                { taskId: task.id, ownerId: task.ownerId }, `workflow-recover-${state.revision ?? 0}`)
++            }
++            continue
++          }
+           state.supervisorOutbox[key] = {
+             contract: 'DSH_SUPERVISOR_OWNER_RESERVATION_V1',
+             ...(reservation ?? {}),
+@@ -9924,8 +9963,8 @@
+         await saveState(runtime, state)
+         const control = await runtime.ensureControlBridge(agent, state)
+         await appendLog(runtime, root, workflowId, 'workflow.recovery-requested', {
+-          summary: `准备恢复 ${recoverable.length} 个失败 task`,
+-          taskIds: recoverable.map(task => task.id),
++          summary: `准备恢复 ${queuedTaskIds.length} 个失败 task`,
++          taskIds: queuedTaskIds,
+         })
+         return {
+           workflow: runtime.workflowSummary(state),
+--- owner-workflow-plugin/test/runtime-recovery-budget.test.mjs (baseline)
++++ owner-workflow-plugin/test/runtime-recovery-budget.test.mjs
+@@ -532,3 +532,91 @@
+   assert.deepEqual(after.recoveryAdmission, before.recoveryAdmission)
+   assert.equal(f.adapter.requests.length, 0)
+ })
++
++test('T15 whole-workflow recovery preserves failed source and queues a budgeted Supervisor execution', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, modelScript: failedModel,
++    limits: { totalLimit: 1, problemLimit: 1 } })
++  const before = await mutateRecoverySessionState(f, s => {
++    s.status = 'failed'
++    Object.assign(s.tasks[0], { status: 'stopped', reason: 'runtime_failed', action: 'retry_runtime' })
++  })
++  const calls = observe(f)
++  await f.runtime.recoverWorkflow(f.admissionAgent, f.workflowId)
++  const queued = await readRecoverySessionState(f)
++  assert.deepEqual(queued.ownerRuns, before.ownerRuns)
++  assert.equal(queued.recoveryAdmission, undefined)
++  assert.equal(queued.supervisorOutbox['T1:api'].status, 'reserved')
++  const reservationId = queued.supervisorOutbox['T1:api'].reservationId
++  assert.ok(reservationId)
++  await supervisorControl(f, 'supervisor-execute', { reservationId })
++  await f.runtime.supervisorDispatches.get(`${f.workflowId}:T1:api`)
++  const failed = await readRecoverySessionState(f)
++  assert.equal(failed.recoveryAdmission.budget.totalUsed, 1)
++  assert.equal(failed.recoveryAdmission.sources[0].sessionId, before.ownerRuns['T1:api'].sessionId)
++  assert.equal(failed.ownerRuns['T1:api'].recoverySession.phase, 'settled_failed')
++  assert.equal(f.adapter.requests.length, 2)
++  assert.deepEqual(calls, { create: 1, resume: 0 })
++})
++
++test('T15 whole-workflow recovery keeps typed user decisions ahead of handoff and bulk requeue', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true, includeIndependentOwner: true })
++  await admitAuthorityFailure(f)
++  const before = await mutateRecoverySessionState(f, s => {
++    s.status = 'blocked'
++    s.handoffQueue = [{ sourceTaskId: 'T1', status: 'pending' }]
++  })
++  await f.runtime.recoverWorkflow(f.admissionAgent, f.workflowId)
++  const after = await readRecoverySessionState(f)
++  assert.equal(after.tasks[0].action, 'await_user')
++  assert.equal(after.ownerRuns['T1:api'].phase, 'awaiting_user_authority')
++  assert.equal(Object.values(after.mainOutbox).length, 1)
++  assert.deepEqual(after.tasks[1], before.tasks[1])
++  assert.equal(after.supervisorOutbox, undefined)
++  assert.equal(after.recoveryAdmission, undefined)
++  assert.equal(f.adapter.requests.length, 0)
++})
++
++for (const path of ['finishable', 'pending_merge']) {
++  test(`T15 whole-workflow ${path} recovery cannot bypass an unsettled session`, async t => {
++    const f = await createRecoverySessionFixture(t, { executable: true, modelScript: completedModel })
++    await f.runtime.recoverOwner(f.admissionAgent, f.workflowId, 'T1', 'api')
++    const before = await mutateRecoverySessionState(f, s => {
++      s.status = 'failed'
++      s.ownerRuns['T1:api'].status = 'awaiting_finish'
++      s.ownerRuns['T1:api'].recoverySession.phase = 'submitted'
++      delete s.ownerRuns['T1:api'].recoverySession.successReceipt
++      if (path === 'pending_merge') s.pendingTaskMerge = { taskId: 'T1', ownerId: 'api' }
++      Object.assign(s.tasks[0], { status: 'pending', executorId: null, reason: null, action: null })
++    })
++    const calls = observe(f)
++    const result = await f.runtime.recoverWorkflow(f.admissionAgent, f.workflowId)
++    assert.equal(result.outcome, 'paused')
++    assert.equal(result.reason, 'owner_success_unsettled')
++    assert.deepEqual(await readRecoverySessionState(f), before)
++    assert.deepEqual(calls, { create: 0, resume: 0 })
++  })
++}
++
++test('T15 whole-workflow missing configuration cannot fall back to legacy recovery', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  const before = await mutateRecoverySessionState(f, s => {
++    s.status = 'failed'
++    s.recoveryProtocol = 'DSH_RECOVERY_ADMISSION_V1'
++    delete s.recoveryAdmissionConfig
++  })
++  await assert.rejects(f.runtime.recoverWorkflow(f.admissionAgent, f.workflowId))
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.equal(f.adapter.requests.length, 0)
++})
++
++test('T15 whole-workflow unknown Owner source is not rewritten into a free initial launch', async t => {
++  const f = await createRecoverySessionFixture(t, { executable: true })
++  const before = await mutateRecoverySessionState(f, s => {
++    s.status = 'failed'
++    s.ownerRuns['T1:api'].status = 'orphaned'
++    Object.assign(s.tasks[0], { status: 'stopped', reason: 'owner_orphaned', action: 'recover_owner' })
++  })
++  await assert.rejects(f.runtime.recoverWorkflow(f.admissionAgent, f.workflowId), /没有可核验的恢复来源/u)
++  assert.deepEqual(await readRecoverySessionState(f), before)
++  assert.equal(f.adapter.requests.length, 0)
++})
