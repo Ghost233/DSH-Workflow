@@ -18,8 +18,25 @@ on:
       - .gitmodules
       - deepseek-harness
   push:
+    branches:
+      - main
     tags:
       - macos-v*
+    paths:
+      - .github/workflows/macos-app.yml
+      - macos-launcher/**
+      - owner-workflow-plugin/**
+      - sol-efficiency-plugin/**
+      - approve-for-me-workflow-plugin/**
+      - scripts/project-plugins.mjs
+      - scripts/project-plugin-resolver.mjs
+      - scripts/harness-runtime.mjs
+      - scripts/kernel-launch-composition.mjs
+      - scripts/web-host-lifecycle.mjs
+      - package.json
+      - dsh-runtime.json
+      - .gitmodules
+      - deepseek-harness
   workflow_dispatch:
 
 permissions:

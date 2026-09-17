@@ -51,5 +51,12 @@ jobs:
       - name: 核对 Owner Workflow 客户端产物
         run: npm run check:client
 
+      - name: 安装固定 DSH 开发依赖
+        working-directory: deepseek-harness
+        run: pnpm install --frozen-lockfile
+
+      - name: 安装 Owner 原生依赖
+        run: npm ci --prefix owner-workflow-plugin --no-audit --no-fund
+
       - name: 运行 Owner Workflow 全量测试
         run: npm test
