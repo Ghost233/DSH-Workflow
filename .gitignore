@@ -9,6 +9,8 @@
 .pnpm-store/
 node_modules/
 owner-workflow-plugin/pnpm-lock.yaml
+/.build/
+/.zvec-grep/
 
 # macOS 文件管理器产生的元数据。
 .DS_Store
