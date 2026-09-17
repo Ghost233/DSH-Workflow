@@ -4,7 +4,10 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
-test('native macOS escaped descendant does not turn managed-range exit into source write closure', { timeout: 45_000 }, async () => {
+test('native macOS escaped descendant does not turn managed-range exit into source write closure', {
+  timeout: 45_000,
+  skip: process.platform !== 'darwin',
+}, async () => {
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT
   const { stdout } = await promisify(execFile)(process.execPath,
     [fileURLToPath(new URL('./fixtures/kernel-process-range-probe.mjs', import.meta.url))],

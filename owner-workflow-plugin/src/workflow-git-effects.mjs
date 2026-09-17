@@ -14,8 +14,16 @@ const execFileAsync = promisify(execFile)
 async function indexedGit(root, args, { index, input, date, signal } = {}) {
   const pending = execFileAsync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, signal,
     env: { ...process.env, ...(index ? { GIT_INDEX_FILE: index } : {}), ...(date ? { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } : {}) } })
-  pending.child.stdin?.end(input ?? '')
-  return (await pending).stdout.trimEnd()
+  let inputError
+  if (input !== undefined) {
+    const stdin = pending.child.stdin
+    if (!stdin) throw new Error('Git stdin unavailable')
+    stdin.on('error', error => { inputError = error })
+    stdin.end(input)
+  }
+  const result = await pending
+  if (inputError) throw inputError
+  return result.stdout.trimEnd()
 }
 async function treeEntries(root, revision, signal) {
   const records = (await git(root, ['ls-tree', '-r', '-z', revision], signal)).split('\0').filter(Boolean)
