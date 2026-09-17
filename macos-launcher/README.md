@@ -26,8 +26,8 @@ node macos-launcher/build.mjs
 
 ## GitHub 构建与更新
 
-`.github/workflows/macos-app.yml` 在相关 PR、手动触发和 `macos-v<版本>` 标签推送时编译 Apple Silicon 与 Intel 两种应用。每次构建都会上传 ZIP 作为 Actions artifact；标签构建全部通过后，自动把两个 ZIP 附到同名 GitHub Release。发布前把 `macos-launcher/package.json` 和 `package-lock.json` 的版本一起更新，再创建与该版本完全一致的标签，例如 `macos-v0.1.0`。标签版本不匹配时构建会失败，不会发布。
+`.github/workflows/macos-app.yml` 在相关 PR、`main` 推送、手动触发和 `macos-v<版本>` 标签推送时编译 Apple Silicon 与 Intel 两种应用。每次构建都会上传 DMG 作为 Actions artifact；标签构建全部通过后，自动把两个 DMG 附到同名 GitHub Release。打开 DMG 后可将应用拖入“应用程序”文件夹。发布前把 `macos-launcher/package.json` 和 `package-lock.json` 的版本一起更新，再创建与该版本完全一致的标签，例如 `macos-v0.1.0`。标签版本不匹配时构建会失败，不会发布。
 
 应用启动时会检查一次 [GitHub Releases](https://github.com/Ghost233/DSH-Workflow/releases)，也可以从菜单或管理窗口手动检查。只认 `macos-v<主版本>.<次版本>.<修订版本>`、非草稿且非预发布的版本。发现更新后显示“查看新版本”；只有点击它才会用系统浏览器打开对应 Release 页面。应用不会自动下载或替换自身，网络错误也不影响 DSH 运行。
 
-Actions 的 ZIP 为 ad-hoc 签名、未经 Apple 公证的构建产物；准备给其他 Mac 正式分发时，还需要配置 Developer ID 签名和公证流程。
+Actions 的 DMG 内含 ad-hoc 签名、未经 Apple 公证的应用；准备给其他 Mac 正式分发时，还需要配置 Developer ID 签名和公证流程。

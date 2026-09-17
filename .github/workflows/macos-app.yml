@@ -91,7 +91,7 @@ jobs:
       - name: Build macOS application
         run: node macos-launcher/build.mjs
 
-      - name: Package and verify app
+      - name: Package and verify DMG
         id: package
         shell: bash
         env:
@@ -101,17 +101,22 @@ jobs:
           APP_VERSION="$(node -p "require('./macos-launcher/package.json').version")"
           DSH_VERSION="$(node -p "require('./dsh-runtime.json').version")"
           APP=".build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-${TARGET_ARCH}.app"
-          ZIP="DSH-Workflow-macOS-${APP_VERSION}-${TARGET_ARCH}.zip"
+          DMG="DSH-Workflow-macOS-${APP_VERSION}-${TARGET_ARCH}.dmg"
+          STAGING="$RUNNER_TEMP/dsh-workflow-dmg-${TARGET_ARCH}"
           codesign --verify --deep --strict "$APP"
-          ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
-          test -s "$ZIP"
-          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          mkdir -p "$STAGING"
+          ditto "$APP" "$STAGING/DSH Workflow.app"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -quiet -ov -format UDZO -volname "DSH Workflow" -srcfolder "$STAGING" "$DMG"
+          hdiutil verify -quiet "$DMG"
+          test -s "$DMG"
+          echo "dmg=$DMG" >> "$GITHUB_OUTPUT"
 
       - name: Upload macOS application
         uses: actions/upload-artifact@v4
         with:
           name: dsh-workflow-${{ matrix.arch }}
-          path: ${{ steps.package.outputs.zip }}
+          path: ${{ steps.package.outputs.dmg }}
           if-no-files-found: error
 
   release:
@@ -136,11 +141,11 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          test "$(find release-assets -maxdepth 1 -name '*.zip' -type f | wc -l | tr -d ' ')" = 2
+          test "$(find release-assets -maxdepth 1 -name '*.dmg' -type f | wc -l | tr -d ' ')" = 2
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/*.zip --clobber
+            gh release upload "$RELEASE_TAG" release-assets/*.dmg --clobber
           else
-            gh release create "$RELEASE_TAG" release-assets/*.zip --verify-tag \
+            gh release create "$RELEASE_TAG" release-assets/*.dmg --verify-tag \
               --title "DSH Workflow macOS ${RELEASE_TAG#macos-v}" \
               --notes "Automated macOS builds for Apple Silicon and Intel. Locally ad-hoc signed; not notarized."
           fi
