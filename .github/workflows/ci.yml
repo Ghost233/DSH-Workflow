@@ -59,6 +59,14 @@ jobs:
         working-directory: deepseek-harness
         run: pnpm run build:lib
 
+      - name: 构建当前平台 DSH 原生模块
+        working-directory: deepseek-harness
+        run: pnpm run build:native-system
+
+      - name: 准备 DSH CI 沙箱
+        working-directory: deepseek-harness
+        run: bash scripts/prepare-ci-bubblewrap.sh
+
       - name: 安装 Owner 原生依赖
         run: npm ci --prefix owner-workflow-plugin --no-audit --no-fund
 
