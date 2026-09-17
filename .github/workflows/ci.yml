@@ -55,6 +55,10 @@ jobs:
         working-directory: deepseek-harness
         run: pnpm install --frozen-lockfile
 
+      - name: 构建固定 DSH 库
+        working-directory: deepseek-harness
+        run: pnpm run build:lib
+
       - name: 安装 Owner 原生依赖
         run: npm ci --prefix owner-workflow-plugin --no-audit --no-fund
 
