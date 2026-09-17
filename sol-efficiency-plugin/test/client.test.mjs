@@ -4,7 +4,6 @@ import vm from 'node:vm'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { boot } from './helpers.mjs'
 
 async function loadCard(scope) {
@@ -48,7 +47,7 @@ test('browser checkbox uses the DSH settings seam and changes real host tool reg
   const path = join(cwd, 'settings.yaml')
   await ctx.loader.create({ name: '@deepseek-ai/dsh-settings-file', config: { path, watch: false } })
   await ctx.loader.await()
-  const ns = settingsNamespace('sol-efficiency')
+  const ns = 'sol-efficiency'
   const scope = {
     getSnapshot() { return { status: 'ready', writable: true, value: ctx.settings.describe().find(row => row.ns === ns).value } },
     set(field, value) { return ctx.settings.mutate(ns, [{ op: 'set', path: [field], value: structuredClone(value) }]) },

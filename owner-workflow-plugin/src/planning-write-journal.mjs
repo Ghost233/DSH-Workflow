@@ -320,11 +320,13 @@ export function registerPlanningWriteJournal(ctx, runtime) {
   const observed = new Map()
 
   const registerIntent = event => ctx.on(event, async (target, actor, next) => {
-    const accepted = acceptedActor(ctx, runtime, target, actor)
+    const actorFs = actor?.agent?.ctx?.get?.('fs')
+    const filesystem = actorFs ? { fs: actorFs } : ctx
+    const accepted = acceptedActor(filesystem, runtime, target, actor)
     if (accepted === undefined) return next()
     const intent = finalIntent(event, await next())
     if (intent === undefined) fail('NATIVE_CAS_REQUIRED', accepted.call.callId)
-    const before = await snapshotBefore(ctx, target, intent.journal, actor.signal)
+    const before = await snapshotBefore(filesystem, target, intent.journal, actor.signal)
     const paths = await ensureJournalDirectories(accepted.root)
     const id = journalId(accepted.call.callId)
     const expectedAfter = writeExpectedAfter(actor)
@@ -345,7 +347,7 @@ export function registerPlanningWriteJournal(ctx, runtime) {
       expectedAfter,
     }
     await publishExclusive(paths.prepared, id, record)
-    pending.set(pendingKey(accepted.call), { ...record, paths, target })
+    pending.set(pendingKey(accepted.call), { ...record, paths, target, filesystem })
     return intent.provider
   }, { global: true, prepend: true })
 
@@ -392,7 +394,7 @@ export function registerPlanningWriteJournal(ctx, runtime) {
             journalId: active.journalId,
             call: active.call,
             preparedContract: active.contract,
-            ...(await verifyPost(ctx, active, marker, result)),
+            ...(await verifyPost(active.filesystem, active, marker, result)),
           }
       // A terminal publication failure deliberately propagates after the native call. The immutable
       // prepared record remains the sole durable fact; it is never checkpoint-eligible.

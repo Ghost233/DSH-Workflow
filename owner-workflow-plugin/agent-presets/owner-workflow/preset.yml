@@ -1,2 +1,0 @@
-name: Owner 工作流模式
-description: 由主编排者统一沟通；非编码任务交给后台 Operator，开发任务按 DAG 交给受文件范围约束的 Owner。

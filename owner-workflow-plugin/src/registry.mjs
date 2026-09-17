@@ -364,18 +364,27 @@ function processIsAlive(pid) {
   }
 }
 
-async function lockIsStale(lock) {
-  const entry = await lstat(lock)
+async function registryLockState(lock) {
+  let entry
+  try {
+    entry = await lstat(lock)
+  } catch (error) {
+    // A prior holder may remove the directory after this contender's mkdir
+    // observed EEXIST but before inspection starts. That hand-off is ordinary
+    // contention; retry acquisition without re-running the Registry read.
+    if (error?.code === 'ENOENT') return 'missing'
+    throw error
+  }
   try {
     const metadata = JSON.parse(await readFile(join(lock, LOCK_OWNER), 'utf8'))
     if (metadata?.contract !== LOCK_CONTRACT || typeof metadata.token !== 'string'
       || !Number.isSafeInteger(metadata.pid) || metadata.pid < 1) {
-      return Date.now() - entry.mtimeMs >= LOCK_STALE_GRACE_MS
+      return Date.now() - entry.mtimeMs >= LOCK_STALE_GRACE_MS ? 'stale' : 'active'
     }
-    return !processIsAlive(metadata.pid)
+    return processIsAlive(metadata.pid) ? 'active' : 'stale'
   } catch (error) {
     if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
-    return Date.now() - entry.mtimeMs >= LOCK_STALE_GRACE_MS
+    return Date.now() - entry.mtimeMs >= LOCK_STALE_GRACE_MS ? 'stale' : 'active'
   }
 }
 
@@ -502,7 +511,9 @@ async function withLock(root, operation) {
       acquired = true
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error
-      if (await lockIsStale(lock)) {
+      const state = await registryLockState(lock)
+      if (state === 'missing') continue
+      if (state === 'stale') {
         try {
           await rename(lock, join(root, `${ROOT}.lock-stale-${randomUUID()}`))
         } catch (renameError) {
@@ -696,6 +707,16 @@ export async function loadRegistry(root) {
   } catch (error) {
     throw userBoundaryError(error, '无法读取 Owner Registry')
   }
+}
+
+/** Missing is distinct from corrupt; proposal preview must never create files. */
+export async function readRegistryForProposal(root) {
+  try { await lstat(registryPath(root)) }
+  catch (error) {
+    if (error.code === 'ENOENT') return { exists: false, registry: normalizeRegistry({ config: DEFAULT_CONFIG, owners: [] }) }
+    throw error
+  }
+  return { exists: true, registry: await loadRegistry(root) }
 }
 
 function find(owners, id) { const owner = owners.find(item => item.id === id); if (!owner) throw new Error(`找不到 Owner：${id}`); return owner }

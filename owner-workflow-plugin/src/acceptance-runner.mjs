@@ -13,9 +13,7 @@ const ITEM_STATUSES = new Set([
   'cancelled',
   'skipped',
   'blocked',
-  'zero_tests',
   'not_run',
-  'evidence_incomplete',
   'stale_candidate',
 ])
 const MAX_OUTPUT_BYTES = 64 * 1024
@@ -65,7 +63,6 @@ export function normalizeAcceptanceCandidate(value) {
     planningSnapshotDigest: digest(value.planningSnapshotDigest, 'candidate.planningSnapshotDigest'),
     planDigest: digest(value.planDigest, 'candidate.planDigest'),
     codeCommitSha: commit(value.codeCommitSha, 'candidate.codeCommitSha'),
-    contentDigest: digest(value.contentDigest, 'candidate.contentDigest'),
     spec: documentReference(value.spec, 'candidate.spec'),
     tickets: Object.freeze(tickets),
   })
@@ -83,8 +80,6 @@ function normalizeItem(value, index) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${field}必须是对象`)
   const timeoutMs = Number(value.timeoutMs)
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error(`${field}.timeoutMs必须是正整数`)
-  const adapter = text(value.adapter, `${field}.adapter`)
-  if (adapter !== 'node-test') throw new Error(`${field}.adapter不受支持：${adapter}`)
   const argv = stringList(value.argv, `${field}.argv`)
   if (argv.length === 0) throw new Error(`${field}.argv必须非空`)
   return Object.freeze({
@@ -94,7 +89,6 @@ function normalizeItem(value, index) {
     argv: Object.freeze(argv),
     cwd: normalizeVerificationCwd(value.cwd ?? '.', `${field}.cwd`),
     timeoutMs,
-    adapter,
     disposition: normalizeDisposition(value.disposition, `${field}.disposition`),
   })
 }
@@ -130,23 +124,6 @@ export function normalizeAcceptanceItems(values) {
   return Object.freeze(ordered)
 }
 
-function count(summary, name) {
-  const matches = [...summary.matchAll(new RegExp(`(?:^|\\n)(?:#|ℹ)\\s*${name}\\s+(\\d+)\\s*$`, 'gmu'))]
-  return matches.length === 0 ? undefined : Number(matches.at(-1)[1])
-}
-
-export function parseNodeTestSummary(stdout = '', stderr = '') {
-  const output = `${String(stdout ?? '')}\n${String(stderr ?? '')}`.replaceAll('\r\n', '\n')
-  const tests = count(output, 'tests')
-  if (!Number.isSafeInteger(tests) || tests < 0) return undefined
-  const result = { tests }
-  for (const field of ['pass', 'fail', 'cancelled', 'skipped', 'todo']) {
-    const value = count(output, field)
-    if (value !== undefined) result[field] = value
-  }
-  return Object.freeze(result)
-}
-
 function boundedOutput(value) {
   const buffer = Buffer.from(String(value ?? ''), 'utf8')
   if (buffer.byteLength <= MAX_OUTPUT_BYTES) return { text: buffer.toString('utf8'), truncated: false }
@@ -162,7 +139,6 @@ function itemResult(item, candidate, status, detail = {}) {
     status,
     candidateId: candidate.candidateId,
     codeCommitSha: candidate.codeCommitSha,
-    contentDigest: candidate.contentDigest,
     argv: item.argv,
     cwd: item.cwd,
     dependsOn: item.dependsOn,
@@ -182,28 +158,17 @@ function classifyEvidence(item, candidate, evidence) {
     stdoutTruncated: stdout.truncated,
     stderrTruncated: stderr.truncated,
   }
-  if (evidence?.contentDigest !== candidate.contentDigest || evidence?.codeCommitSha !== candidate.codeCommitSha) {
+  if (evidence?.codeCommitSha !== candidate.codeCommitSha) {
     return itemResult(item, candidate, 'stale_candidate', {
       ...base,
-      reason: '执行证据与固定候选的内容摘要或代码提交不一致',
-      observedContentDigest: evidence?.contentDigest ?? null,
+      reason: '执行证据与固定候选的代码提交不一致',
       observedCodeCommitSha: evidence?.codeCommitSha ?? null,
     })
   }
   if (evidence?.timedOut === true) return itemResult(item, candidate, 'timed_out', base)
   if (evidence?.aborted === true) return itemResult(item, candidate, 'cancelled', base)
   if (!Number.isInteger(evidence?.exitCode) || evidence.exitCode !== 0) return itemResult(item, candidate, 'failed', base)
-  const summary = parseNodeTestSummary(stdout.text, stderr.text)
-  if (summary === undefined) {
-    return itemResult(item, candidate, 'evidence_incomplete', { ...base, reason: 'Node test输出没有可核验的用例计数' })
-  }
-  if (summary.tests === 0) return itemResult(item, candidate, 'zero_tests', { ...base, testSummary: summary })
-  if (Number(summary.fail ?? 0) > 0) return itemResult(item, candidate, 'failed', { ...base, testSummary: summary })
-  if (Number(summary.cancelled ?? 0) > 0) return itemResult(item, candidate, 'cancelled', { ...base, testSummary: summary })
-  if (Number(summary.skipped ?? 0) === summary.tests) {
-    return itemResult(item, candidate, 'skipped', { ...base, reason: 'Node test报告全部用例跳过', testSummary: summary })
-  }
-  return itemResult(item, candidate, 'passed', { ...base, testSummary: summary })
+  return itemResult(item, candidate, 'passed', base)
 }
 
 function runStatus(results) {

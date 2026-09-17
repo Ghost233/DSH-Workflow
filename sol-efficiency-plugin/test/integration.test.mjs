@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { boot, logCommand } from './helpers.mjs'
-import { requests, setResponseMode } from './fixtures/reducer-model.mjs'
+import { Adapter, requests, setResponseMode } from './fixtures/reducer-model.mjs'
 
 test('real Loader + native write/bash: apply, verify, preserve audit and dispose registrations', async t => {
   const { ctx, cwd, session, tree, execute } = await boot(t)
@@ -14,9 +14,13 @@ test('real Loader + native write/bash: apply, verify, preserve audit and dispose
   assert.equal(result.isError, false, JSON.stringify(result))
   assert.equal(result.value.commandStatus, 'succeeded', JSON.stringify(result))
   assert.equal(await readFile(join(cwd, 'hello.txt'), 'utf8'), 'hello')
-  assert.equal(session.events.filter(event => event.type === 'tool/code-dispatch').length, 2)
+  assert.equal(session.snapshotEvents().filter(event => event.type === 'tool/ptc-dispatch').length, 2)
   assert.equal(ctx.tools.executionMode({ name: 'write_then_run', arguments: {} }).kind, 'exclusive')
   await tree.remove('sol-efficiency')
+  await ctx.loader.await()
+  for (let i = 0; i < 100 && ctx.tools.get('write_then_run'); i++) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
   assert.equal(ctx.tools.get('write_then_run'), undefined)
   assert.equal(ctx.tools.get('edit_then_run'), undefined)
 })
@@ -95,8 +99,85 @@ test('EPR compresses native failed test output, preserves exit status/value and 
   const saved = JSON.parse(await readFile(audit, 'utf8'))
   assert.equal(saved.validationPassed, true)
   assert.equal(saved.request.reasoningEffort, 'off')
+  assert.equal(saved.adapterDefaults.reasoningEffort, true)
   assert.equal(requests.length, before + 1)
   assert.equal(requests.at(-1).purpose, 'compaction')
+})
+
+test('EPR auto uses model defaults and omits reasoning for models without that capability', async t => {
+  const { tree, execute } = await boot(t)
+  for (const [model, effort] of [['default-medium', 'medium'], ['no-reasoning', undefined]]) {
+    await tree.update('sol-efficiency', { config: { evidenceReducer: {
+      enabled: true, provider: 'sol-test', model,
+    } } })
+    const before = requests.length
+    const result = await execute('bash', { command: logCommand(), description: 'Verify model capability defaults' })
+    assert.match(result.content[0].text, /^dsh_sol_evidence_receipt_v1/)
+    assert.equal(requests.length, before + 1)
+    assert.equal(requests.at(-1).reasoningEffort, effort)
+    const audit = JSON.parse(result.content[0].text.match(/^audit_artifact=(.+)$/m)[1])
+    const saved = JSON.parse(await readFile(audit, 'utf8'))
+    assert.equal(saved.request.reasoningEffort, effort)
+    assert.equal(saved.request.model, model)
+    assert.deepEqual(saved.adapterDefaults, effort === undefined ? {} : { reasoningEffort: true })
+    if (effort === undefined) assert.equal(Object.hasOwn(saved.request, 'reasoningEffort'), false)
+  }
+})
+
+test('EPR keeps explicit reasoning settings and falls back before dispatch when unsupported', async t => {
+  const { tree, execute } = await boot(t)
+  for (const [model, supported] of [['fixture', true], ['default-medium', false], ['no-reasoning', false]]) {
+    await tree.update('sol-efficiency', { config: { evidenceReducer: {
+      enabled: true, provider: 'sol-test', model, reasoningEffort: 'off',
+    } } })
+    const before = requests.length
+    const result = await execute('bash', { command: logCommand(true), description: 'Verify explicit reducer reasoning' })
+    assert.equal(result.isError, false)
+    assert.equal(result.value.exitCode, 1)
+    assert.equal(result.content[0].text.startsWith('dsh_sol_evidence_receipt_v1'), supported)
+    assert.equal(requests.length, before + Number(supported))
+    if (supported) {
+      const audit = JSON.parse(result.content[0].text.match(/^audit_artifact=(.+)$/m)[1])
+      assert.deepEqual(JSON.parse(await readFile(audit, 'utf8')).adapterDefaults, {})
+    } else assert.match(result.content[0].text, /error: test failed/)
+  }
+})
+
+test('EPR binds capability resolution, stream and audit to one adapter generation during replacement', async t => {
+  const { ctx, tree, execute } = await boot(t)
+  const first = new Adapter()
+  let prepared = 0
+  const basePrepare = first.prepareCall.bind(first)
+  first.prepareCall = async (...args) => { prepared++; return basePrepare(...args) }
+  const release = ctx.llm.registerAdapter(['sol-generation'], first)
+  await tree.update('sol-efficiency', { config: { evidenceReducer: {
+    enabled: true, provider: 'sol-generation', model: 'default-medium',
+  } } })
+  const replacement = new Adapter()
+  let replacementCalls = 0
+  replacement.stream = async function* () { replacementCalls++; throw new Error('Replacement adapter unavailable') }
+  let replaced = false
+  ctx.on('llm/stream', async function* (options, next) {
+    if (options.provider === 'sol-generation' && !replaced) {
+      replaced = true
+      release()
+      ctx.llm.registerAdapter(['sol-generation'], replacement)
+    }
+    yield* next()
+  })
+  const args = { command: logCommand(), description: 'Verify reducer generation consistency' }
+  const original = await execute('bash', args)
+  assert.match(original.content[0].text, /^dsh_sol_evidence_receipt_v1/)
+  assert.equal(prepared, 1)
+  assert.equal(replaced, true)
+  assert.equal(replacementCalls, 0)
+  const audit = JSON.parse(original.content[0].text.match(/^audit_artifact=(.+)$/m)[1])
+  const saved = JSON.parse(await readFile(audit, 'utf8'))
+  assert.equal(saved.request.reasoningEffort, 'medium')
+  assert.equal(saved.request.provider, 'sol-generation')
+  const after = await execute('bash', args)
+  assert.doesNotMatch(after.content[0].text, /^dsh_sol_evidence_receipt_v1/)
+  assert.equal(replacementCalls, 1)
 })
 
 test('EPR composes with fusion and does not replace the file mutation confirmation', async t => {
@@ -196,8 +277,9 @@ test('unloading EPR aborts in-flight reduction and removes its listener', { time
 
 test('Code Mode reaches fusion through native nested dispatch; ordinary bash skips reducer', { timeout: 10000 }, async t => {
   const { ctx, tree, execute, cwd } = await boot(t)
+  await ctx.loader.create({ name: '@deepseek-ai/dsh-ptc-runtime-node' })
   await ctx.loader.create({ name: '@deepseek-ai/dsh-code-runtime-worker-thread' })
-  await tree.update('tools', { config: { mode: 'code' } })
+  await tree.update('tools', { config: { mode: 'ptc' } })
   await ctx.loader.await()
   const args = { file_path: 'code.txt', content: 'code mode',
     then_run: { command: 'test "$(cat code.txt)" = "code mode"', description: 'Verify file from Code Mode' } }
@@ -253,4 +335,46 @@ test('existing post-execute content replacement is preserved without a reducer c
   const result = await execute('bash', { command: logCommand(), description: 'Preserve another policy result projection' })
   assert.equal(result.content[0].text, 'Policy-owned projection')
   assert.equal(requests.length, before)
+})
+
+for (const broken of [false, true]) test(`nested log projection ${broken ? 'failure retains the settled result' : 'changes only the durable preview'}`, async t => {
+  const { ctx, agent, session, execute } = await boot(t)
+  const seen = []
+  ctx.on('tools/ptc-dispatch-log', async (dispatch, next) => {
+    assert.equal(dispatch.agent, agent)
+    assert.equal(dispatch.exec.agent, agent)
+    seen.push(dispatch.name)
+    if (broken) throw new Error('Broken optional log projection')
+    return [{ type: 'text', text: `preview:${dispatch.name}` }]
+  })
+  const result = await execute('write_then_run', { file_path: 'preview.txt', content: 'content',
+    then_run: { command: 'printf original-output', description: 'Verify nested log projection isolation' } })
+  assert.equal(result.value.commandStatus, 'succeeded')
+  assert.match(JSON.stringify(result.content), /original-output/)
+  assert.deepEqual(seen, ['write', 'bash'])
+  const ends = session.snapshotEvents().filter(event => event.type === 'tool/ptc-dispatch')
+  assert.equal(ends.length, 2)
+  assert.match(JSON.stringify(ends[1].data.content), broken ? /original-output/ : /preview:bash/)
+})
+
+test('cancellation after a native write settles its log and skips bash without pretending the file was rolled back', async t => {
+  const { ctx, cwd, session, execute } = await boot(t)
+  const controller = new AbortController()
+  ctx.on('tools/post-execute', async (exec, _result, next) => {
+    const decision = await next()
+    if (exec.name === 'write') controller.abort(new Error('Cancelled after mutation'))
+    return decision
+  })
+  const result = await execute('write_then_run', { file_path: 'cancel-after-write.txt', content: 'applied',
+    then_run: { command: 'touch must-not-run', description: 'Must not execute after cancellation' } }, { signal: controller.signal })
+  assert.equal(result.isError, true)
+  assert.equal(await readFile(join(cwd, 'cancel-after-write.txt'), 'utf8'), 'applied')
+  await assert.rejects(readFile(join(cwd, 'must-not-run')))
+  const starts = session.snapshotEvents().filter(event => event.type === 'tool/ptc-dispatch-start')
+  const ends = session.snapshotEvents().filter(event => event.type === 'tool/ptc-dispatch')
+  assert.equal(starts.length, 1)
+  assert.equal(ends.length, 1)
+  assert.equal(ends[0].data.name, 'write')
+  assert.equal(ends[0].data.subCallId, starts[0].data.subCallId)
+  assert.equal(ends[0].data.isError, true)
 })

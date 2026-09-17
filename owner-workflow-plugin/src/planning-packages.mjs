@@ -327,9 +327,13 @@ export function compilePlanningPackages({ snapshot, plan } = {}) {
   const tickets = ticketMap(frozen.references)
   const contracts = contractMap(frozen.references)
   const bindingByTask = new Map(binding.tasks.map(item => [item.taskId, item]))
-  if (bindingByTask.size !== normalizedPlan.tasks.size) fail('TASK_BINDING_MISMATCH', 'plan.planningBindings.tasks')
-  for (const taskId of normalizedPlan.tasks.keys()) if (!bindingByTask.has(taskId)) fail('MISSING_TASK_BINDING', 'plan.planningBindings.tasks', taskId)
-  for (const taskId of bindingByTask.keys()) if (!normalizedPlan.tasks.has(taskId)) fail('UNKNOWN_TASK', 'plan.planningBindings.tasks', taskId)
+  const missingTaskIds = [...normalizedPlan.tasks.keys()].filter(id => !bindingByTask.has(id)).sort()
+  const unknownTaskIds = [...bindingByTask.keys()].filter(id => !normalizedPlan.tasks.has(id)).sort()
+  if (missingTaskIds.length || unknownTaskIds.length) {
+    const code = bindingByTask.size !== normalizedPlan.tasks.size ? 'TASK_BINDING_MISMATCH'
+      : missingTaskIds.length ? 'MISSING_TASK_BINDING' : 'UNKNOWN_TASK'
+    fail(code, 'plan.planningBindings.tasks', JSON.stringify({ missingTaskIds, unknownTaskIds }))
+  }
 
   const contributors = new Map()
   const packageDrafts = []
@@ -393,8 +397,23 @@ export function compilePlanningPackages({ snapshot, plan } = {}) {
         const producerIds = [...new Set([...dependency.ready]
           .flatMap(fragment => contributors.get(`${dependency.id}\u0000${fragment}`) ?? []))]
           .toSorted()
-        if (producerIds.length > 0 && producerIds.some(taskId => taskId === draft.task.id || !reaches(normalizedPlan.tasks, draft.task.id, taskId))) {
-          fail('TICKET_DEPENDENCY_UNSATISFIED', `task(${draft.task.id}).dependsOn`, dependencyTicketId)
+        const missingProducerTaskIds = producerIds
+          .filter(taskId => taskId === draft.task.id || !reaches(normalizedPlan.tasks, draft.task.id, taskId))
+          .toSorted()
+        if (missingProducerTaskIds.length > 0) {
+          const downstreamProducerTaskIds = missingProducerTaskIds
+            .filter(taskId => taskId !== draft.task.id && reaches(normalizedPlan.tasks, taskId, draft.task.id))
+            .toSorted()
+          const detail = {
+            dependencyTicketId,
+            missingProducerTaskIds,
+            downstreamProducerTaskIds,
+            ...(downstreamProducerTaskIds.length === 0 ? {} : {
+              sourceTicketIssue: 'upstream_and_downstream_work_share_dependency_ticket',
+              requiredResolution: 'main_thread_must_split_source_ticket',
+            }),
+          }
+          fail('TICKET_DEPENDENCY_UNSATISFIED', `task(${draft.task.id}).dependsOn`, JSON.stringify(detail))
         }
         const dependencyBlockers = allBlockedForTicket(frozen.references, dependencyTicketId)
         draft.blockers.push(...dependencyBlockers)
@@ -469,4 +488,37 @@ export function planningPackageForTask({ snapshot, plan, packages, taskId, owner
   if (selected.owner.id !== owner) fail('MIXED_OWNER_REFERENCE', 'ownerId', owner)
   if (selected.status !== 'planned') fail('BLOCKED_PACKAGE', 'taskId', task)
   return selected
+}
+
+function sameVerificationDefinitions(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
+  const definitions = new Map(left.map(item => [item?.id, item]))
+  return definitions.size === left.length && !definitions.has(undefined)
+    && new Set(right.map(item => item?.id)).size === right.length
+    && right.every(item => definitions.has(item?.id) && same(definitions.get(item.id), item))
+}
+
+/**
+ * Read an already compiled dispatch package by its content address. A later
+ * reviewed plan may retain this attempt, but cannot rewrite its provenance.
+ * Current-plan compilation remains mandatory for new planning publications.
+ */
+export function dispatchedPlanningPackage({ snapshot, packages, packageDigest, dispatch } = {}) {
+  const frozen = snapshotReferences(snapshot)
+  if (!SHA256.test(packageDigest ?? '') || digest(packages) !== packageDigest
+    || packages.contract !== PLANNING_PACKAGE_SET_CONTRACT) fail('PACKAGE_SET_MISMATCH', 'packages')
+  if (packages.snapshotId !== frozen.id || packages.sourceDigest !== frozen.sourceDigest
+    || !same(packages.spec, frozen.references.spec)) fail('PACKAGE_SET_MISMATCH', 'snapshot')
+  const taskId = text(dispatch?.task?.id, 'taskId', { task: true })
+  const selected = packages.packages.filter(item => item.taskId === taskId)
+  if (selected.length !== 1) fail('UNKNOWN_TASK', 'taskId', taskId)
+  const item = selected[0]
+  if (item.contract !== PLANNING_PACKAGE_CONTRACT || item.snapshotId !== frozen.id
+    || item.sourceDigest !== frozen.sourceDigest || item.registryDigest !== packages.registryDigest
+    || !same(item.spec, frozen.references.spec) || !same(item.task, dispatch.task)
+    || !same(item.owner, dispatch.owner) || !sameVerificationDefinitions(item.verification, dispatch.verifications)) {
+    fail('PACKAGE_SET_MISMATCH', 'dispatch')
+  }
+  if (item.status !== 'planned' || item.blockedBy.length) fail('BLOCKED_PACKAGE', 'taskId', taskId)
+  return deepFreeze(clone(item))
 }

@@ -124,12 +124,12 @@ test('真实 native T24 来源以 alternate index 建立仅含选中文档的 ch
   assert.equal(first.contract, 'DSH_PLANNING_CHECKPOINT_RESULT_V1')
   assert.equal(first.phase, 'checkpointed')
   assert.equal(first.authorization.id, 'test-grant-1')
-  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), first.checkpointCommit)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
+  assert.equal(await git(value.root, 'rev-parse', `refs/dsh/planning/${currentRequest.id}`), first.checkpointCommit)
   assert.equal(await git(value.root, 'symbolic-ref', '--short', 'HEAD'), value.baseline.branch)
-  assert.notDeepEqual(await indexBytes(value.root), initialIndex, 'actual index advances only after ref CAS')
+  assert.deepEqual(await indexBytes(value.root), initialIndex, 'checkpoint does not mutate the user index')
   assert.equal(await git(value.root, 'diff', '--cached', '--name-only'), '')
-  assert.deepEqual((await git(value.root, 'status', '--porcelain=v1')).split('\n').filter(line => line !== '?? .dsh-workflow/'), [])
-  assert.deepEqual((await git(value.root, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD')).split('\n').filter(Boolean).toSorted(), [
+  assert.deepEqual((await git(value.root, 'diff-tree', '--no-commit-id', '--name-only', '-r', first.checkpointCommit)).split('\n').filter(Boolean).toSorted(), [
     value.docs.spec.path,
     value.docs.ticket.path,
   ].toSorted())
@@ -161,7 +161,7 @@ test('暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户�
   assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
 })
 
-for (const stage of ['after-journal-prepared', 'after-commit-object', 'after-ref-update-before-journal', 'after-ref-cas', 'after-index-rename-before-journal', 'after-index-sync', 'after-snapshot-write-before-journal', 'after-snapshot']) test(`真实子进程 SIGKILL ${stage} 后复启只形成一个 checkpoint 与不可变 snapshot`, { timeout: 30_000 }, async t => {
+for (const stage of ['after-journal-prepared', 'after-commit-object', 'after-ref-update-before-journal', 'after-ref-cas', 'after-index-sync', 'after-snapshot-write-before-journal', 'after-snapshot']) test(`真实子进程 SIGKILL ${stage} 后复启只形成一个 checkpoint 与不可变 snapshot`, { timeout: 30_000 }, async t => {
   const value = await fixture(t)
   if (value === undefined) return
   const chains = await createBoundSource(value)
@@ -172,14 +172,13 @@ for (const stage of ['after-journal-prepared', 'after-commit-object', 'after-ref
     assert.equal(error.signal, 'SIGKILL')
     return true
   })
-  if (stage === 'after-journal-prepared' || stage === 'after-commit-object') {
-    assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
-  } else assert.notEqual(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
   if (stage === 'after-snapshot') assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
   else assert.deepEqual(await planningCheckpointPending({ root: value.root }), [currentRequest.id])
   const resumed = await checkpoint(value, currentRequest)
-  assert.equal(await git(value.root, 'rev-list', '--count', 'HEAD'), '2')
-  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), resumed.checkpointCommit)
+  assert.equal(await git(value.root, 'rev-list', '--count', resumed.checkpointCommit), '2')
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
+  assert.equal(await git(value.root, 'rev-parse', `refs/dsh/planning/${currentRequest.id}`), resumed.checkpointCommit)
   assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
   const durable = await readPlanningCheckpoint({ root: value.root, id: currentRequest.id })
   assert.equal(durable.journal.phase, 'snapshot-persisted')
@@ -239,7 +238,8 @@ test('checkpoint lease 在物理断言前后均拒绝已取消 signal，且不�
   assert.deepEqual(await planningCheckpointPending({ root: value.root }), [currentRequest.id])
   assert.equal((await readPlanningCheckpoint({ root: value.root, id: currentRequest.id })).journal.phase, 'commit-proposed')
   const resumed = await checkpoint(value, currentRequest)
-  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), resumed.checkpointCommit)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
+  assert.equal(await git(value.root, 'rev-parse', `refs/dsh/planning/${currentRequest.id}`), resumed.checkpointCommit)
   assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
 })
 
@@ -254,7 +254,7 @@ test('已完成 parent snapshot 以完整持久 journal/snapshot 身份绑定子
   const childRequest = {
     id: 'checkpoint-child',
     manifest: revisedManifest(docs),
-    baseline: { branch: value.baseline.branch, head: parent.checkpointCommit },
+    baseline: { branch: value.baseline.branch, head: value.baseline.head },
     source: { agentId: value.agent.id, sessionId: value.agent.session.header.id, chains: childChains },
     reason: 'child checkpoint retains its completed parent snapshot identity',
     parentSnapshotId: parent.snapshot.id,
@@ -267,7 +267,8 @@ test('已完成 parent snapshot 以完整持久 journal/snapshot 身份绑定子
   }
   const child = await checkpoint(value, childRequest)
   assert.equal(child.snapshot.parentSnapshotId, parent.snapshot.id)
-  assert.equal(child.snapshot.codeBaseline.sourceHead, parent.checkpointCommit)
+  assert.equal(child.snapshot.codeBaseline.sourceHead, value.baseline.head)
+  assert.equal(await git(value.root, 'rev-parse', `${child.checkpointCommit}^`), parent.checkpointCommit)
   assert.deepEqual(child.snapshot.executionParent, childRequest.executionParent)
   const durable = await readPlanningCheckpoint({ root: value.root, id: childRequest.id })
   assert.equal(durable.snapshot.parentSnapshotId, parent.snapshot.id)
@@ -305,7 +306,8 @@ test('原 checkpoint 尚待恢复时，新 id 不能绕过同一项目的 pendin
   assert.equal((await readPlanningCheckpoint({ root: value.root, id: replacement.id })).journal, null)
   assert.deepEqual(await planningCheckpointPending({ root: value.root }), [original.id])
   const resumed = await checkpoint(value, original)
-  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), resumed.checkpointCommit)
+  assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
+  assert.equal(await git(value.root, 'rev-parse', `refs/dsh/planning/${original.id}`), resumed.checkpointCommit)
   assert.deepEqual(await planningCheckpointPending({ root: value.root }), [])
 })
 
@@ -354,7 +356,7 @@ test('已完成 checkpoint 的 immutable snapshot 被外部修改时，重放和
   assert.equal(await readFile(snapshotPath, 'utf8'), raw)
 })
 
-test('未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁', async t => {
+test('外部 Git index.lock 保留，私有 checkpoint 不触碰用户 index', async t => {
   const value = await fixture(t)
   if (value === undefined) return
   const chains = await createBoundSource(value)
@@ -362,7 +364,8 @@ test('未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 che
   const lock = join(value.root, '.git', 'index.lock')
   await writeFile(lock, 'foreign index owner')
   const before = await git(value.root, 'rev-parse', 'HEAD')
-  await assert.rejects(checkpoint(value, currentRequest), /FOREIGN_INDEX_LOCK|GIT_FAILURE/)
+  const result = await checkpoint(value, currentRequest)
+  assert.equal(result.phase, 'checkpointed')
   assert.equal(await git(value.root, 'rev-parse', 'HEAD'), before)
   assert.equal(await readFile(lock, 'utf8'), 'foreign index owner')
 })

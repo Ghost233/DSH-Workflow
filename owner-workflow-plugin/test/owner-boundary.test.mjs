@@ -27,15 +27,12 @@ async function fixture() {
   }
 }
 
-test('Harness、Synapse 与审批策略上游子模块始终属于受保护路径', () => {
+test('Harness 与审批策略上游子模块始终属于受保护路径', () => {
   for (const path of [
     'deepseek-harness',
     'deepseek-harness/package.json',
-    'dsh-synapse',
-    'dsh-synapse/index.js',
     'owner-workflow-plugin/vendor/dsh-approve-for-me',
     'owner-workflow-plugin/vendor/dsh-approve-for-me/src/core/index.ts',
-    'DSH-SYNAPSE/client.js',
   ]) {
     assert.equal(isProtectedRelativePath(path), true, path)
   }

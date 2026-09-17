@@ -1,4 +1,4 @@
-import { LlmAdapter, CallId } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { RECEIPT_SCHEMA } from '../../src/receipt.mjs'
 
 export const name = 'sol-test-model'
@@ -7,8 +7,11 @@ export const requests = []
 export let responseMode = 'valid'
 export function setResponseMode(mode) { responseMode = mode }
 
-class Adapter extends LlmAdapter {
+export class Adapter extends LlmAdapter {
   async resolveModel(provider, model) {
+    if (model === 'no-reasoning') return { provider, id: model, name: model }
+    if (model === 'default-medium') return { provider, id: model, name: model,
+      reasoning: { efforts: [{ id: 'medium', name: 'Medium' }], defaultEffort: 'medium' } }
     return { provider, id: model, name: model, reasoning: { efforts: [{ id: 'off', name: 'Off' }], defaultEffort: 'off' } }
   }
   async *stream(options) {
@@ -22,7 +25,7 @@ class Adapter extends LlmAdapter {
           : 'Verification result did not contain an evidence receipt.' }
         yield { type: 'finish', reason: { kind: 'stop' } }
       } else {
-        yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('demo-fusion'), name: 'write_then_run',
+        yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('demo-fusion'), name: 'write_then_run',
           arguments: JSON.stringify({ file_path: 'demo.txt', content: 'demo content\n', then_run: {
             command: `node -e 'process.stdout.write("compiling module\\n".repeat(700) + "PASS verification\\n")' # npm test`,
             description: 'Verify the demo file with test output',

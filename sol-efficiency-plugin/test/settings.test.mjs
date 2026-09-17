@@ -3,11 +3,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { boot, logCommand } from './helpers.mjs'
 import { requests } from './fixtures/reducer-model.mjs'
 
-const ns = settingsNamespace('sol-efficiency')
+const ns = 'sol-efficiency'
 async function until(condition) {
   for (let i = 0; i < 100; i++) { if (condition()) return; await delay(10) }
   assert.fail('settings change did not take effect')
@@ -39,7 +38,6 @@ test('EPR checkbox follows the session model and disabling removes reduction', a
   await tree.update('sol-efficiency', { config: {} })
   await ctx.loader.create({ name: '@deepseek-ai/dsh-settings-file', config: { path: join(cwd, 'settings.yaml'), watch: false } })
   await ctx.loader.await()
-  agent.options = { provider: 'sol-test', model: 'fixture' }
   await ctx.settings.mutate(ns, [{ op: 'set', path: ['evidenceReducer', 'enabled'], value: true }])
   await delay(20)
   const before = requests.length

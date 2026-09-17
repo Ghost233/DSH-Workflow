@@ -468,7 +468,7 @@ test('Workflow 证据摘要只投影稳定的任务结果和 Runtime 文件哈�
         unit: {
           passed: true,
           exitCode: 0,
-          contentDigest: 'content-a',
+          commitSha: 'content-a',
           sessionId: 'session-a',
           startedAt: '2026-01-01T00:00:00.000Z',
         },
@@ -504,7 +504,7 @@ test('Workflow 证据摘要只投影稳定的任务结果和 Runtime 文件哈�
   assert.notEqual(first, contentChanged)
   const verificationChanged = workflowEvidenceDigest({
     ...base,
-    tasks: [{ ...base.tasks[0], verificationResults: { unit: { ...base.tasks[0].verificationResults.unit, contentDigest: 'content-b' } } }],
+    tasks: [{ ...base.tasks[0], verificationResults: { unit: { ...base.tasks[0].verificationResults.unit, commitSha: 'content-b' } } }],
   }, facts)
   assert.notEqual(first, verificationChanged)
 })
@@ -834,7 +834,7 @@ test('任务验证关闭只接受 Runtime 标记为当前、通过且绑定候�
     planDigest: initial.history[0].candidatePlanDigest,
     passed: true,
     exitCode: 0,
-    contentDigest: 'content-a',
+    commitSha: 'content-a',
   }
   const stale = reconcileReviewConvergence({
     previous: initial,

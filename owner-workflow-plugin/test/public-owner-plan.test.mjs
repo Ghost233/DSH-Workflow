@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { normalizePlanV2 } from '../src/model.mjs'
-import { createPlanRevision } from '../src/plan-revision.mjs'
 import {
   PUBLIC_OWNER_CHANGE_DECISION_CONTRACT,
   PUBLIC_OWNER_CHANGE_REQUEST_CONTRACT,
@@ -139,14 +138,12 @@ function state(outcome = 'compatible_extension', overrides = {}) {
   }
 }
 
-test('T30 normalizes a PlanRevision with an explicit authoritative public decision binding', () => {
+test('T30 normalizes a plan with an explicit authoritative public decision binding', () => {
   const candidate = plan()
   const accepted = assertPublicOwnerPlanAuthority({
     state: state(), plan: candidate, requiredDecisionDigests: [decisionDigest],
   })
   assert.equal(accepted[0].decisionDigest, decisionDigest)
-  const revision = createPlanRevision({ number: 2, parent: 1, plan: candidate })
-  assert.deepEqual(revision.publicOwnerChanges, candidate.publicOwnerChanges)
 })
 
 test('T30 rejects incomplete consumers, wrong Owner, missing implementation predecessor, and stale authority', () => {
@@ -185,6 +182,15 @@ test('T30 migration order is an executable dependency chain rooted at the public
     state: state('migration_required'), plan: plan({ ...migration, migrationOrder: [] }),
     requiredDecisionDigests: [migrationAuthority.decisionDigest],
   }), /migration_order_invalid/u)
+})
+
+test('compatible consumers may use real verification tasks but required migrations still require implementation', () => {
+  const verification = tasks().map(task => task.id === 'A-consume' ? { ...task, role: 'verify', write: [] } : task)
+  assert.doesNotThrow(() => assertPublicOwnerPlanAuthority({ state: state(), plan: plan(binding(), verification), requiredDecisionDigests: [decisionDigest] }))
+  const migration = binding({ outcome: 'migration_required', decisionDigest: migrationAuthority.decisionDigest, migrationOrder: ['app-ui'],
+    consumers: binding().consumers.map(item => item.consumerId === 'app-ui' ? { ...item, impact: 'update_required' } : item) })
+  assert.throws(() => assertPublicOwnerPlanAuthority({ state: state('migration_required'), plan: plan(migration, verification),
+    requiredDecisionDigests: [migrationAuthority.decisionDigest] }), /consumer_owner_invalid/)
 })
 
 test('T30 carried historical bindings remain immutable without treating their original baseline as current', () => {

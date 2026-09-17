@@ -12,6 +12,49 @@ const PLUGIN_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const CLIENT_BUNDLE = join(PLUGIN_ROOT, 'client.js')
 const CLIENT_BUILDER = join(PLUGIN_ROOT, 'scripts', 'build-client.mjs')
 
+test('only actionable kernel entries contribute deduplicated wait counts while every result remains visible', async () => {
+  const source = await readFile(join(PLUGIN_ROOT, 'src/client-runtime.js'), 'utf8')
+  const context = { require: () => ({ createElement: (tag, props, ...children) => ({ tag: typeof tag === 'string' ? tag : tag.name, children }) }), exports: {} }
+  vm.runInNewContext(`${source}\nexports.probe = { kernelStatusForDisplay, waitSnapshotFromBody, projectRuntimeEntryToCurrentSession, workspaceEntries, activeWorkspaceEntries, waitSummary, WaitItem }`, context)
+  const { kernelStatusForDisplay, waitSnapshotFromBody, projectRuntimeEntryToCurrentSession, workspaceEntries, activeWorkspaceEntries, waitSummary, WaitItem } = context.exports.probe
+  const attention = (id, detail = id) => ({ id, reason: 'task_failed', responsibleParty: 'root_session',
+    resumeCondition: 'bound_task_repair', detail })
+  const entries = [
+    { workflowId: 'failed', status: 'failed', kind: 'workflow', terminal: true, rootSessionId: 'main',
+      counts: {}, recovery: {}, attention: [attention('denied', 'permission_rejected'), attention('follow-up')] },
+    { workflowId: 'completed', status: 'completed', kind: 'workflow', terminal: true, rootSessionId: 'main',
+      counts: { pendingTasks: 90, runningTasks: 80 }, recovery: {}, attention: [attention('old-complete')] },
+    { workflowId: 'historical', status: 'historical', kind: 'workflow', terminal: true, rootSessionId: 'main',
+      counts: {}, recovery: {}, attention: [attention('old-history')] },
+    { workflowId: 'cancelled', status: 'cancelled', kind: 'workflow', terminal: true, rootSessionId: 'main',
+      counts: { pendingTasks: 70, runningTasks: 60 }, recovery: {}, attention: [attention('old-cancel')] },
+    { workflowId: 'running', status: 'running', kind: 'workflow', terminal: false, rootSessionId: 'main',
+      counts: { pendingTasks: 2, runningTasks: 1 }, recovery: {}, attention: [attention('blocked-one'), attention('blocked-two'),
+        { ...attention('old-isolated'), reason: 'isolated_execution_unconfirmed' }] },
+  ]
+  const body = { contract: 'DSH_KERNEL_STATUS_V1', runner: { status: 'running' }, workspaces: [{ workspaceId: 'test', workflows: entries }] }
+  const projection = kernelStatusForDisplay(body)
+  assert.deepEqual(Array.from(projection.waits, item => item.id), [
+    'running:blocked-one', 'running:blocked-two',
+  ])
+  assert.equal(projection.staleWaits[0].detail, 'permission_rejected')
+  assert.equal(waitSummary(projection.waits), '未执行 2 · 执行中 1')
+  assert.deepEqual(Array.from(projection.staleWaits, item => item.id), ['failed:denied', 'failed:follow-up', 'running:old-isolated'])
+  assert.deepEqual(Array.from(workspaceEntries(projection.workspaces[0]), item => item.workflowId), ['failed', 'historical', 'running'])
+  assert.deepEqual(Array.from(projection.workspaces[0].workflows, item => item.workflowId),
+    ['failed', 'completed', 'historical', 'cancelled', 'running'])
+  const normalized = waitSnapshotFromBody(body)
+  assert.equal(normalized.runner.process, 'online')
+  assert.equal(normalized.staleWaits[0].terminal, true)
+  const rendered = JSON.stringify(WaitItem({ item: normalized.staleWaits[0], now: Date.now() }))
+  assert.match(rendered, /任务已结束/)
+  assert.doesNotMatch(rendered, /已等待|同一后台子代理正以可续接状态等待/)
+  assert.deepEqual(Array.from(activeWorkspaceEntries(normalized.workspaces[0]), item => item.id), ['running'])
+  const failed = normalized.workspaces[0].workflows.find(item => item.id === 'failed')
+  assert.equal(failed.terminal, true)
+  assert.equal(projectRuntimeEntryToCurrentSession(failed, { currentSessionId: 'main' }, { byId: { main: { id: 'main' } } }).id, 'failed')
+})
+
 test('等待列表客户端产物与源码一致并登记正式、本地两个模块编号', async () => {
   await executeFile(process.execPath, [CLIENT_BUILDER, '--check'])
   const registrations = []
@@ -29,7 +72,7 @@ test('等待列表客户端产物与源码一致并登记正式、本地两个�
   ])
 })
 
-test('运行状态同时登记会话头部、工作区、侧边栏和全屏待处理 Slot', async () => {
+test('运行状态和 Owner 输入限制只登记官方 Slot', async () => {
   const registrations = []
   const source = await readFile(CLIENT_BUNDLE, 'utf8')
   const style = { dataset: {} }
@@ -76,9 +119,12 @@ test('运行状态同时登记会话头部、工作区、侧边栏和全屏待�
   }
   client.apply(context)
   aliasClient.apply({ ...context })
+  assert.match(style.textContent, /@media \(max-width:520px\)/)
+  assert.match(style.textContent, /title="主线程维护需求、Spec 和 Ticket；统一 Runner 按模块 Owner 执行、验证和交付。"/)
+  assert.match(style.textContent, /font-size:0!important/)
   assert.deepEqual(slotNames, [
+    'conversation.composer',
     'conversation.session.header.actions',
-    'sidebar.workspace.action',
     'sidebar.footer.action',
     'shell.overlay',
   ])
@@ -91,7 +137,7 @@ test('运行状态只通过可重连 SSE 接收更新，并按当前工作区和
   assert.match(source, /waitEvents\.onopen/u)
   assert.match(source, /实时连接已断开，正在重连/u)
   assert.match(source, /dsh-owner-wait-workspace-group/u)
-  assert.match(source, /sidebar\.workspace\.action/u)
+  assert.doesNotMatch(source, /sidebar\.workspace\.action/u)
   assert.match(source, /currentSessionContext/u)
   assert.match(source, /sessions\.current/u)
   assert.match(source, /waitBelongsToCurrentContext/u)
@@ -123,7 +169,7 @@ test('运行状态按需要处理、总览、主线程和子代理分类显示�
   assert.match(source, /同一后台子代理正以可续接状态等待，并非失败或被中断/u)
   assert.match(source, /pendingInteraction/u)
   assert.match(source, /ctx\.sessions\.open/u)
-  assert.match(source, /dsh-synapse-switch/u)
+  assert.doesNotMatch(source, /dsh-synapse-switch/u)
   assert.match(source, /运行状态/u)
   const styleStart = source.indexOf('.dsh-owner-wait-root')
   const styleEnd = source.indexOf('`.trim()', styleStart)

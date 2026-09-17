@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -15,7 +14,6 @@ import {
   RUNTIME_GITIGNORE_CONTENT,
   ensureRuntimeGitignore,
 } from '../src/project-layout.mjs'
-import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -33,23 +31,23 @@ test('项目存储目录把配置和长期资料归入各自 Owner 文件夹', (
   assert.doesNotMatch(RUNTIME_GITIGNORE_CONTENT, /\.owner-memory/u)
 })
 
-test('Runtime 初始化创建目录内 .gitignore 并只暴露该文件给 Git', async () => {
+test('运行目录规则隐藏内部状态并保留现有 Git 排除配置', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-project-layout-'))
   try {
     await git(root, ['init', '-q', '-b', 'main'])
     const gitDirectory = await git(root, ['rev-parse', '--git-dir'])
     const legacyExclude = join(root, gitDirectory, 'info', 'exclude')
-    await writeFile(legacyExclude, '# DSH Owner 工作流运行目录\n.dsh-workflow/\n', 'utf8')
+    await writeFile(legacyExclude, '# User custom excludes\nuser-cache/\n', 'utf8')
 
-    const runtime = createOwnerWorkflowRuntime({}, {})
-    await runtime.prepareRoot(root)
+    await ensureRuntimeGitignore(join(root, OWNER_RUNTIME_DIRECTORY))
+    await mkdir(join(root, OWNER_RUNTIME_DIRECTORY, 'logs'))
     await writeFile(join(root, OWNER_RUNTIME_DIRECTORY, 'logs', 'runtime.jsonl'), '{}\n', 'utf8')
 
     assert.equal(
       await readFile(join(root, OWNER_RUNTIME_DIRECTORY, '.gitignore'), 'utf8'),
       RUNTIME_GITIGNORE_CONTENT,
     )
-    assert.equal(await readFile(legacyExclude, 'utf8'), '')
+    assert.equal(await readFile(legacyExclude, 'utf8'), '# User custom excludes\nuser-cache/\n')
     assert.equal(
       await git(root, ['status', '--short', '--untracked-files=all']),
       '?? .dsh-workflow/.gitignore',
@@ -70,18 +68,6 @@ test('Runtime 初始化不覆盖项目已有的自定义 .gitignore', async () =
     const second = await ensureRuntimeGitignore(directory)
     assert.equal(second.created, false)
     assert.equal(await readFile(first.path, 'utf8'), '# 项目自定义规则\n*\n!.gitignore\n')
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('旧 autoAddGitExclude=false 配置继续关闭自动 .gitignore', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-project-layout-disabled-'))
-  try {
-    await git(root, ['init', '-q', '-b', 'main'])
-    const runtime = createOwnerWorkflowRuntime({}, { autoAddGitExclude: false })
-    await runtime.prepareRoot(root)
-    assert.equal(existsSync(join(root, OWNER_RUNTIME_DIRECTORY, '.gitignore')), false)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

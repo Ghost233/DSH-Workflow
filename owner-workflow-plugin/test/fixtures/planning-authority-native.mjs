@@ -5,9 +5,11 @@ import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { createOwnerWorkflowRuntime } from '../../src/runtime.mjs'
 import { registerOrchestratorDocumentGuards } from '../../src/orchestrator-documents.mjs'
 import { validatePlanningSourceChain } from '../../src/planning-source-chain.mjs'
+import { ensureRuntimeGitignore } from '../../src/project-layout.mjs'
+import { createPlanningNativeAgent } from './planning-native-agent.mjs'
+import { planningDocumentRuntime } from './planning-document-runtime.mjs'
 
 const execFile = promisify(execFileCallback)
 const sha256 = value => createHash('sha256').update(value).digest('hex')
@@ -107,20 +109,13 @@ async function fixture(t, { existingDocuments = true, setup } = {}) {
   if (setup !== undefined) await setup(root)
   await git(root, 'add', '.')
   await git(root, 'commit', '-m', 'baseline')
+  await ensureRuntimeGitignore(join(root, '.dsh-workflow'))
   const baseline = { branch: 'source-chain', head: await git(root, 'rev-parse', 'HEAD') }
 
   const ctx = new Context()
   const fibers = []
-  const runtime = createOwnerWorkflowRuntime(ctx, {})
-  const agent = {
-    id: 'main-source-agent',
-    session: { id: 'main-source-agent', header: { id: 'main-source-agent', cwd: root } },
-    ctx: { get: name => name === 'agentPresets' ? { composedPreset: () => 'owner-workflow' } : undefined },
-  }
-  runtime.orchestratorRoots.set(agent.id, root)
   t.after(async () => {
     for (const fiber of fibers.reverse()) await fiber.dispose()
-    await runtime.dispose()
     await rm(root, { recursive: true, force: true })
   })
   fibers.push(await ctx.plugin(SystemPrompt.default))
@@ -128,6 +123,8 @@ async function fixture(t, { existingDocuments = true, setup } = {}) {
   fibers.push(await ctx.plugin(LocalFs.default, { cwd: root }))
   fibers.push(await ctx.plugin(FsPolicy))
   fibers.push(await ctx.plugin(ToolFs))
+  const agent = await createPlanningNativeAgent(t, ctx, root, 'main-source-agent')
+  const runtime = planningDocumentRuntime(ctx, root, agent)
   const disposers = registerOrchestratorDocumentGuards(ctx, runtime)
   t.after(async () => { for (const dispose of disposers.toReversed()) await dispose?.() })
   t.after(ctx.tools.guard(execution => runtime.checkToolExecution(execution)))

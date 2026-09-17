@@ -10,16 +10,9 @@
     "./dashboard": "./owner-workflow-plugin/dashboard-host.mjs",
     "./package.json": "./package.json"
   },
-  "bin": {
-    "dsh-owner-workflow": "owner-workflow-plugin/src/external-runner.mjs",
-    "run-owner-workflow": "owner-workflow-plugin/src/external-runner.mjs"
-  },
   "license": "MIT",
   "files": [
     "start-owner-workflow.sh",
-    "start-owner-workflow-npm.sh",
-    "start-owner-workflow-submodule.sh",
-    "run-owner-workflow.sh",
     "project-plugins.json",
     "scripts/project-plugins.mjs",
     "scripts/project-plugin-resolver.mjs",
@@ -36,7 +29,6 @@
     "owner-workflow-plugin/README.md",
     "owner-workflow-plugin/README.zh.md",
     "owner-workflow-plugin/THIRD_PARTY_NOTICES.md",
-    "owner-workflow-plugin/agent-presets/",
     "owner-workflow-plugin/cordis.patch.yml",
     "owner-workflow-plugin/client.js",
     "owner-workflow-plugin/dashboard-host.mjs",
@@ -44,15 +36,32 @@
     "owner-workflow-plugin/src/",
     "owner-workflow-plugin/scripts/",
     "owner-workflow-plugin/vendor/dsh-approve-for-me/src/core/",
-    "owner-workflow-plugin/vendor/dsh-approve-for-me/LICENSE"
+    "owner-workflow-plugin/vendor/dsh-approve-for-me/LICENSE",
+    "approve-for-me-workflow-plugin/index.js",
+    "approve-for-me-workflow-plugin/client.js",
+    "approve-for-me-workflow-plugin/compose-patch.mjs",
+    "approve-for-me-workflow-plugin/cordis.patch.yml",
+    "approve-for-me-workflow-plugin/package.json",
+    "approve-for-me-workflow-plugin/upstream.json",
+    "approve-for-me-workflow-plugin/LICENSE",
+    "approve-for-me-workflow-plugin/README.md",
+    "approve-for-me-workflow-plugin/THIRD_PARTY_NOTICES.md",
+    "dsh-runtime.json",
+    "project-plugins.lock.json",
+    "scripts/harness-runtime.mjs",
+    "owner-workflow-plugin/kernel-presets/",
+    "scripts/kernel-web-launch.mjs",
+    "scripts/kernel-launch-composition.mjs",
+    "scripts/web-host-lifecycle.mjs"
   ],
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-sidebar"
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-workspace"
       ],
       "platform": "web"
     },
@@ -61,11 +70,12 @@
     }
   },
   "scripts": {
-    "acceptance:ca01": "node scripts/run-ca01.mjs",
+    "acceptance:kernel": "node scripts/run-kernel-acceptance.mjs",
+    "test:kernel": "node scripts/run-kernel-regression.mjs",
     "build:client": "node owner-workflow-plugin/scripts/build-client.mjs",
     "check:client": "node owner-workflow-plugin/scripts/build-client.mjs --check",
-    "test:project-plugins": "node --test scripts/project-plugins.test.mjs owner-workflow-plugin/test/launcher.test.mjs",
-    "test": "node --test --test-force-exit owner-workflow-plugin/test/*.test.mjs"
+    "test:project-plugins": "node scripts/run-workflow-tests.mjs scripts/project-plugins.test.mjs scripts/daily-workflow-launch.test.mjs scripts/kernel-web-launch.test.mjs",
+    "test": "node scripts/run-workflow-tests.mjs"
   },
   "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000"
 }

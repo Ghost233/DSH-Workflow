@@ -2,7 +2,6 @@ import { resolveConfig } from './src/config.mjs'
 import { installActionFusion } from './src/action-fusion.mjs'
 import { installEvidenceReducer } from './src/evidence-reducer.mjs'
 import { createLifetime } from './src/lifetime.mjs'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { SettingsSchema } from './src/settings.mjs'
 
 export const name = 'sol-efficiency'
@@ -39,9 +38,10 @@ export async function apply(ctx, config = {}) {
   }
   ctx.effect(() => async () => { stopped = true; await tail; await runtime?.dispose() })
   await reconcile()
-  installSettingsSection(ctx, settingsNamespace('sol-efficiency'), SettingsSchema, entry, {
+  ctx.inject(['settings'], settingsCtx => settingsCtx.settings.installSection(ctx, 'sol-efficiency', SettingsSchema, entry, {
     validate: resolveConfig,
     setSource: current => { source = current },
     onChange: () => { void reconcile().catch(error => ctx.logger.error(error)) },
-  })
+  }))
+  ctx.provide('workflowComponent:sol', Object.freeze({ ready: true }))
 }

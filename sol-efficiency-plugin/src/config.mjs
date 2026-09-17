@@ -14,7 +14,7 @@ export function resolveConfig(input) {
   const root = object(input, 'config', ['actionFusion', 'evidenceReducer'])
   const actionFusion = { enabled: false, ...object(root.actionFusion, 'actionFusion', ['enabled']) }
   const defaults = {
-    enabled: false, provider: '', model: '', reasoningEffort: 'off',
+    enabled: false, provider: '', model: '', reasoningEffort: 'auto',
     minBytes: 4096, maxBytes: 600000, maxOutputTokens: 2048,
     maxResponseBytes: 32768, maxReceiptBytes: 12000, timeoutMs: 90000,
   }

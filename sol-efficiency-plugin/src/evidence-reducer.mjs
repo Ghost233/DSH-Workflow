@@ -30,10 +30,10 @@ export async function candidateBody(ctx, value, signal, maxBytes) {
   return Buffer.byteLength(body) <= maxBytes ? body : undefined
 }
 
-async function callReducer(ctx, options, config) {
+async function callReducer(prepared, options, config) {
   const assembler = new BlockAssembler()
   let bytes = 0
-  for await (const chunk of ctx.llm.stream(options)) {
+  for await (const chunk of prepared.stream(options)) {
     options.signal.throwIfAborted()
     // Bound all returned chunk data, including reasoning and assembled blocks.
     bytes += Buffer.byteLength(JSON.stringify(chunk))
@@ -83,16 +83,24 @@ export function installEvidenceReducer(ctx, config, fusionCalls, lifetime) {
         })
         const source = await save('source', body)
         signal.throwIfAborted()
+        // Resolve metadata and dispatch through the same public one-shot handle.
+        // "auto" leaves reasoning to this model's declared default, including
+        // omitting it entirely for models without reasoning controls.
+        const prepared = await ctx.llm.prepareCall({
+          provider, model, maxTokens: config.maxOutputTokens,
+          ...(config.reasoningEffort === 'auto' ? {} : { reasoningEffort: config.reasoningEffort }),
+        }, signal)
+        signal.throwIfAborted()
         const request = {
-          provider, model, reasoningEffort: config.reasoningEffort,
-          maxTokens: config.maxOutputTokens, purpose: 'compaction', sessionId: exec.agent.session.header.id,
+          ...prepared.config, purpose: 'compaction', sessionId: exec.agent.session.header.id,
           system: reducerInstructions(),
           messages: [createUserMessage({ content: [{ type: 'text', text: reducerInput(exec.arguments.command, body, failed) }],
             source: { kind: 'plugin', plugin: 'sol-efficiency' } })],
         }
-        const response = await callReducer(ctx, { ...request, signal }, config)
+        const response = await callReducer(prepared, { ...request, signal }, config)
         const validated = validateReceipt(response.raw, body, failed)
-        const audit = await save('audit', JSON.stringify({ request, source, response, validationPassed: Boolean(validated) }))
+        const audit = await save('audit', JSON.stringify({ request, adapterDefaults: prepared.adapterDefaults,
+          source, response, validationPassed: Boolean(validated) }))
         signal.throwIfAborted()
         if (!validated) return decision
         const text = receiptText({ command: exec.arguments.command, body, validated, source, audit,

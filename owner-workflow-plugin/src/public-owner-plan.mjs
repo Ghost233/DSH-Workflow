@@ -6,6 +6,85 @@ const STABLE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u
 const SHA256 = /^[a-f0-9]{64}$/u
 const TECHNICAL_OUTCOMES = new Set(['compatible_extension', 'migration_required'])
 const CONSUMER_IMPACTS = new Set(['no_change', 'compatible', 'update_required'])
+const CONTRACT_REFERENCE_FIELDS = ['id', 'revision']
+const CONSUMER_BINDING_FIELDS = ['consumerId', 'ownerId', 'impact', 'taskId', 'contract']
+const PLAN_BINDING_FIELDS = [
+  'contract', 'requestId', 'requestVersion', 'requestDigest', 'decisionId',
+  'decisionDigest', 'targetOwnerId', 'outcome', 'implementationTaskId',
+  'consumers', 'migrationOrder',
+]
+
+const stableIdSchema = description => ({
+  type: 'string',
+  pattern: STABLE_ID.source,
+  ...(description === undefined ? {} : { description }),
+})
+const digestSchema = description => ({
+  type: 'string',
+  pattern: SHA256.source,
+  ...(description === undefined ? {} : { description }),
+})
+const exactSchema = (properties, required = Object.keys(properties), extra = {}) => ({
+  type: 'object',
+  additionalProperties: false,
+  properties,
+  required,
+  ...extra,
+})
+
+const publicOwnerConsumerBindingSchema = exactSchema({
+  consumerId: stableIdSchema('Consumer identity from the authoritative public-Owner decision.'),
+  ownerId: stableIdSchema('Existing Owner Registry id responsible for this consumer.'),
+  impact: { type: 'string', enum: [...CONSUMER_IMPACTS] },
+  taskId: {
+    anyOf: [
+      { type: 'null' },
+      stableIdSchema('Task implementing this consumer migration or compatible update.'),
+    ],
+  },
+  contract: exactSchema({
+    id: stableIdSchema('Public contract id.'),
+    revision: stableIdSchema('Authoritative public contract revision.'),
+  }, CONTRACT_REFERENCE_FIELDS),
+}, CONSUMER_BINDING_FIELDS, {
+  allOf: [{
+    if: { properties: { impact: { const: 'no_change' } }, required: ['impact'] },
+    then: { properties: { taskId: { type: 'null' } } },
+    else: { properties: { taskId: stableIdSchema('Task implementing the affected consumer change.') } },
+  }],
+})
+
+/** Exact model-visible shape of one persisted public-Owner decision binding. */
+export const PUBLIC_OWNER_PLAN_BINDING_SCHEMA = exactSchema({
+  contract: { const: PUBLIC_OWNER_PLAN_BINDING_CONTRACT },
+  requestId: stableIdSchema('Authoritative public-Owner change request id.'),
+  requestVersion: { type: 'integer', minimum: 1 },
+  requestDigest: digestSchema('Lowercase SHA-256 digest of the authoritative request.'),
+  decisionId: stableIdSchema('Authoritative public-Owner decision id.'),
+  decisionDigest: digestSchema('Lowercase SHA-256 digest of the authoritative decision.'),
+  targetOwnerId: stableIdSchema('Existing Owner Registry id selected by the decision.'),
+  outcome: { type: 'string', enum: [...TECHNICAL_OUTCOMES] },
+  implementationTaskId: stableIdSchema('Task implementing the public contract change.'),
+  consumers: {
+    type: 'array',
+    minItems: 1,
+    items: publicOwnerConsumerBindingSchema,
+    description: 'Every consumer recorded by the authoritative decision.',
+  },
+  migrationOrder: {
+    type: 'array',
+    uniqueItems: true,
+    items: stableIdSchema('Consumer ids in authoritative migration order.'),
+  },
+}, PLAN_BINDING_FIELDS)
+
+/** Omit publicOwnerChanges when no authoritative public-Owner decision is in scope. */
+export const PUBLIC_OWNER_PLAN_BINDINGS_SCHEMA = {
+  type: 'array',
+  minItems: 1,
+  items: PUBLIC_OWNER_PLAN_BINDING_SCHEMA,
+  description: 'Authoritative bindings supplied by the runtime. Omit this field when there is no public Owner change; never submit an empty array.',
+}
 
 function fail(reason) {
   throw new Error(`PublicOwnerPlan ${reason}`)
@@ -52,7 +131,7 @@ function unique(items, field, key = value => value) {
 }
 
 function contractReference(raw, field) {
-  exact(raw, ['id', 'revision'], field)
+  exact(raw, CONTRACT_REFERENCE_FIELDS, field)
   return {
     id: text(raw.id, `${field}.id`),
     revision: text(raw.revision, `${field}.revision`),
@@ -60,7 +139,7 @@ function contractReference(raw, field) {
 }
 
 function consumerBinding(raw, field) {
-  exact(raw, ['consumerId', 'ownerId', 'impact', 'taskId', 'contract'], field)
+  exact(raw, CONSUMER_BINDING_FIELDS, field)
   const impact = text(raw.impact, `${field}.impact`)
   if (!CONSUMER_IMPACTS.has(impact)) fail(`${field}.impact_invalid`)
   const taskId = raw.taskId === null ? null : text(raw.taskId, `${field}.taskId`)
@@ -76,11 +155,7 @@ function consumerBinding(raw, field) {
 
 function normalizeBinding(raw, index) {
   const field = `bindings[${index}]`
-  exact(raw, [
-    'contract', 'requestId', 'requestVersion', 'requestDigest', 'decisionId',
-    'decisionDigest', 'targetOwnerId', 'outcome', 'implementationTaskId',
-    'consumers', 'migrationOrder',
-  ], field)
+  exact(raw, PLAN_BINDING_FIELDS, field)
   if (raw.contract !== PUBLIC_OWNER_PLAN_BINDING_CONTRACT) fail(`${field}.contract_invalid`)
   const outcome = text(raw.outcome, `${field}.outcome`)
   if (!TECHNICAL_OUTCOMES.has(outcome)) fail(`${field}.outcome_not_technical`)
@@ -214,7 +289,9 @@ function assertBindingPlan(plan, binding, record) {
     }
     if (consumer.taskId === null) continue
     const task = tasks.find(item => item.id === consumer.taskId)
-    if (task?.role !== 'work' || task.ownerId !== consumer.ownerId) {
+    const validRole = task?.role === 'work'
+      || consumer.impact === 'compatible' && task?.role === 'verify' && task.verify.length > 0
+    if (!validRole || task.ownerId !== consumer.ownerId) {
       fail(`consumer_owner_invalid:${consumer.consumerId}`)
     }
     if (!taskDependsOn(tasks, task.id, implementation.id)) {

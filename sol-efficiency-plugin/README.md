@@ -6,7 +6,7 @@
 
 安装一次，之后在 DSH 内勾选启停。启动脚本不临时注入插件，也不提供 SoL 专用环境变量。
 
-当前适配 Harness `0.1.1-rc.2`；完整基线见 [upstream.json](upstream.json)。需要宿主已加载 `tools`；Action Fusion 还需要 `fs` 和原生 `edit`、`write`、`bash` 工具；EPR 需要 `llm`、`fs`、`spillStore`。标准 Web profile 已提供这些能力。安装时 npm peer dependencies 由宿主提供，不能在 Pi 中加载此包。
+当前适配 Harness `0.1.6-alpha.1`；完整基线见 [upstream.json](upstream.json)。需要宿主已加载 `tools`；Action Fusion 还需要 `fs` 和原生 `edit`、`write`、`bash` 工具；EPR 需要 `llm`、`fs`、`spillStore`。标准 Web profile 已提供这些能力。安装时 npm peer dependencies 由宿主提供，不能在 Pi 中加载此包。
 
 ```bash
 dsh plugin --profile web add file:/Volumes/LargeStorage/code/DSH-Workflow/sol-efficiency-plugin
@@ -20,7 +20,7 @@ dsh plugin --profile web add file:/Volumes/LargeStorage/code/DSH-Workflow/sol-ef
 
 “已安装插件”列表只展示加载状态；功能开关位于插件配置页。插件保持加载，以便关闭功能后仍可在页面重新开启。界面写入使用 DSH 原生 settings 服务，沿用其本机访问限制、持久化和并发版本检查。日志压缩会产生额外模型调用；可只开动作融合。
 
-reducer 的凭据、base URL 和供应商连接由 Harness 管理，插件不接受 API key。模型必须支持 `reasoningEffort: off`，不支持时保留原始工具输出。下方高级限制只用于特殊部署，不是启动所需参数。
+reducer 的凭据、base URL 和供应商连接由 Harness 管理，插件不接受 API key。`reasoningEffort` 默认 `auto`，采用所选模型声明的默认值；没有推理控制的模型不传此参数。已有配置中显式设置的 `off` 等值继续保留，不支持时回退原始工具输出。下方高级限制只用于特殊部署，不是启动所需参数。
 
 ## Action Fusion
 
@@ -43,21 +43,23 @@ reducer 的凭据、base URL 和供应商连接由 Harness 管理，插件不接
 
 内部调用 `ctx.tools.execute`，传播 agent、父调用身份、取消信号、附加上下文及终止回合标记，并记录嵌套调用事件。原生 read-before-edit、写入版本检查、工具审批和沙箱仍生效。文件变更失败、取消或终止回合时不启动命令；命令失败时文件变更保留。返回值分别记录 `mutation`、`command`、`commandStatus`，外层成功表示组合结果已生成，不代表命令通过。
 
+嵌套日志使用 V3 `tool/ptc-dispatch-start` / `tool/ptc-dispatch`，带完整父子调用 ID；日志展示经过公开的 `tools/ptc-dispatch-log` 策略，展示策略失败时保留原文，不改写工具的结构化结果。Owner Team 中仍由原生工具执行隔离与授权检查，由 `owner_submit` 核验 scope、固定验证和提交；复合工具不会替代这些关卡。
+
 插件捕获原生 `fs/observed` 的文件版本，在进入 bash 调度时重新检查，发现版本变化则跳过命令。这个检查不能锁住其他进程，也不保证检查至子进程启动期间文件绝不变化。组合工具按独占调用分类；Code Mode 内仍遵循宿主调度语义。
 
 ## EPR
 
 只处理构建、测试、lint 等诊断命令的前台 bash 结果。非零退出码也是可压缩的日志，receipt 会明确标为 failure。取消、超时、未知退出码、工具审批失败、非文本结果，以及已被其他策略替换的结果都会跳过。
 
-流程为：取得完整 stdout/stderr → 检查字节数和常见秘密特征 → 通过 spillStore 归档 → 经 `ctx.llm.stream` 调用指定模型 → 校验 source hash、退出状态和每条原文引用 → 仅当完整 receipt 小于原始内联结果且不超上限时替换 `content`。结构化 `value` 和实际退出码不变。压缩不是证据完整性的证明；receipt 会提示主模型按需读回日志。
+流程为：取得完整 stdout/stderr → 检查字节数和常见秘密特征 → 通过 spillStore 归档 → 经 `ctx.llm.prepareCall` 解析模型参数并使用同一 handle 的 `stream` 调用 → 校验 source hash、退出状态和每条原文引用 → 仅当完整 receipt 小于原始内联结果且不超上限时替换 `content`。结构化 `value` 和实际退出码不变。压缩不是证据完整性的证明；receipt 会提示主模型按需读回日志。
 
-原生日志已截断时，通过挂载的 `fs` 服务读取 `spillPath`，不会直接访问宿主文件路径。如果完整日志不可读或超过上限则跳过，不会把尾部预览描述成完整日志。stdout/stderr 以标签分段归档，不重建两条流的时间交错。校验后的引用具有原文行号和独立 SHA-256。原文与审计文件都交给宿主 spillStore，生命周期遵循该存储后端；审计包含 reducer 请求、响应、用量和校验结果。
+原生日志已截断时，通过挂载的 `fs` 服务读取 `spillPath`，不会直接访问宿主文件路径。如果完整日志不可读或超过上限则跳过，不会把尾部预览描述成完整日志。stdout/stderr 以标签分段归档，不重建两条流的时间交错。校验后的引用具有原文行号和独立 SHA-256。原文与审计文件都交给宿主 spillStore，生命周期遵循该存储后端；审计包含实际解析的 reducer 请求、模型默认参数标记、响应、用量和校验结果。参数解析和模型请求绑定同一适配器代际，热更新不混用新旧配置。
 
 | EPR 配置 | 默认值 | 含义 |
 |---|---:|---|
 | `enabled` | `false` | 是否启用 |
 | `provider` / `model` | 跟随会话 | 高级覆盖时两项一起填写，使用宿主已有连接 |
-| `reasoningEffort` | `off` | 必须被所选模型支持 |
+| `reasoningEffort` | `auto` | 使用模型默认值；显式覆盖必须被所选模型支持 |
 | `minBytes` | 4096 | 源日志和当前内联结果的最低 UTF-8 字节数 |
 | `maxBytes` | 600000 | 完整源日志上限，含 stdout/stderr 标签 |
 | `maxOutputTokens` | 2048 | reducer 输出 token 预算 |
@@ -93,7 +95,7 @@ npm run check:upstream
 
 ## 开发验证
 
-测试需要相邻 `deepseek-harness` 的依赖与构建产物。测试专用模块解析器只在测试进程中映射这些产物，不影响插件的安装和运行。
+测试需要相邻 `deepseek-harness` 的依赖与构建产物，包含测试 fixture 使用的 `tsx`。测试专用模块解析器只在测试进程中映射这些产物，不影响插件的安装和运行。
 
 ```bash
 cd sol-efficiency-plugin
@@ -104,3 +106,5 @@ npm pack --dry-run
 ```
 
 测试通过真实 Cordis Loader 读取临时 YAML，装配原生文件、bash、spill、LLM runtime 和 agent loop；仅远程模型响应采用固定 fixture。包含错误与证据校验、原生观察策略、拒绝执行、文件竞争、取消/超时、卸载、Code Mode 及完整 agent 回合快照。`demo` 使用真实文件和命令但无需 API key，不验证供应商网络行为。
+
+Owner Runner 集成另使用真实 worktree、原生沙箱、验证命令和 Git 提交。该测试在本仓库内创建并清理一次性测试仓库：官方 `workspace-write` 也允许系统临时目录，不能把隔离测试的目标放在这些默认授权目录中。Web 集成位于 `owner-workflow-plugin/test/harness-integration.test.mjs`，使用真实 Web profile 和隔离 Chrome 检查设置开关、主线程限制、Owner 导航与原生授权。

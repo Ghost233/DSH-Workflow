@@ -1,8 +1,8 @@
 import { normalizeVerificationCwd } from './model.mjs'
 
-export const CONTENT_DIGEST_SCHEMA = Object.freeze({
+export const COMMIT_SHA_SCHEMA = Object.freeze({
   type: 'string',
-  pattern: '^[a-f0-9]{64}$',
+  pattern: '^(?:[a-f0-9]{40}|[a-f0-9]{64})$',
 })
 
 export const VERIFICATION_RESULT_SCHEMA = Object.freeze({
@@ -12,14 +12,14 @@ export const VERIFICATION_RESULT_SCHEMA = Object.freeze({
     'verificationId',
     'argv',
     'cwd',
-    'contentDigest',
+    'commitSha',
     'exitCode',
     'enforcement',
     'passed',
   ]),
 })
 
-const CONTENT_DIGEST = /^[a-f0-9]{64}$/iu
+const COMMIT_SHA = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/iu
 const MAX_EVIDENCE_BYTES = 16 * 1024
 
 function nonEmptyText(value, field) {
@@ -52,10 +52,10 @@ function verificationEntries(verifications) {
   throw new Error('验证目录必须是数组或 Map')
 }
 
-export function parseContentDigest(value) {
-  const digest = nonEmptyText(value, 'contentDigest').toLowerCase()
-  if (!CONTENT_DIGEST.test(digest)) {
-    throw new Error('contentDigest 必须是 64 位十六进制 SHA-256 摘要')
+export function parseCommitSha(value) {
+  const digest = nonEmptyText(value, 'commitSha').toLowerCase()
+  if (!COMMIT_SHA.test(digest)) {
+    throw new Error('commitSha 必须是完整 Git commit SHA')
   }
   return digest
 }
@@ -87,7 +87,7 @@ export function createVerificationResult({
   verificationId,
   argv,
   cwd = '.',
-  contentDigest,
+  commitSha,
   exitCode,
   enforcement,
   approvalOutcome,
@@ -121,7 +121,7 @@ export function createVerificationResult({
     verificationId: id,
     argv: parseFixedArgv(argv, id),
     cwd: fixedCwd,
-    contentDigest: parseContentDigest(contentDigest),
+    commitSha: parseCommitSha(commitSha),
     exitCode,
     enforcement: fixedEnforcement,
   }
@@ -160,22 +160,22 @@ export function parseVerificationResult(value) {
   return result
 }
 
-export function isVerificationCurrent(result, currentContentDigest) {
+export function isVerificationCurrent(result, currentCommitSha) {
   try {
-    return parseVerificationResult(result).contentDigest === parseContentDigest(currentContentDigest)
+    return parseVerificationResult(result).commitSha === parseCommitSha(currentCommitSha)
   } catch {
     return false
   }
 }
 
-export function assertPassingVerification(result, currentContentDigest) {
+export function assertPassingVerification(result, currentCommitSha) {
   let verified
   try {
     verified = parseVerificationResult(result)
   } catch (error) {
     throw new Error(`验证结果证据无效：${error.message}`)
   }
-  if (!isVerificationCurrent(verified, currentContentDigest)) {
+  if (!isVerificationCurrent(verified, currentCommitSha)) {
     throw new Error('验证结果已过期：工作区内容已变化，必须重新运行验证')
   }
   if (verified.enforcement !== 'full'
@@ -210,7 +210,7 @@ export async function runBoundVerification({ task, verifications, verificationId
     verificationId: bound.id,
     argv: bound.argv,
     cwd,
-    contentDigest: evidence?.contentDigest,
+    commitSha: evidence?.commitSha,
     exitCode,
     enforcement: evidence?.sandbox?.enforcement,
     approvalOutcome: evidence?.approvalOutcome,

@@ -1,9 +1,11 @@
 # 主线程 Spec/Ticket 与 Owner 自主执行工作流规格
 
+> 2026-09-13：用户要求一次性替换未跑通的执行架构。当前实施计划见 [UKR-1](../../specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md)，尚未实施、尚未验收。本规格的业务目标、授权与 AC-01～AC-32 保留；旧调度/恢复实现布局、兼容路线和分轮推进安排由 UKR-1 替换。历史验收结果不继承到新候选。
+
 | 字段 | 值 |
 | --- | --- |
 | 修订 | R4，2026-09-10 |
-| 状态 | 已验收：R100固定候选通过，AC-01至AC-32全部满足 |
+| 状态 | 旧宿主 R100 候选已验收；DSH 0.1.5 / Owner Team 的新候选验收中，不继承旧通过结论 |
 | 当前授权 | 用户已授权持续本地实施、验证和技术修复直至完成；未授权提交、推送、发布或其他外部写入 |
 | 来源 | [讨论记录 U1–U12](../../analysis/2026-09-10-dsh-matt/discussion-record.md)、[ADR-0001](../../adr/0001-main-thread-spec-ticket-owner-execution.md)、当前本地代码及第 10 节本轮验证 |
 | 术语 | [CONTEXT.md](../../../CONTEXT.md) |
@@ -11,7 +13,7 @@
 
 按技能“已有文件原位更新”，本文件保留在原日期化 `docs/superpowers/specs/` 位置。R3 根据 U11 将主线程默认写入范围收窄至根 CONTEXT/CONTEXT-MAP 与 docs/adr、docs/specs；新 Spec/Ticket 使用 docs/specs/<主题>/，本文件不自动迁移，也不重新加入 DSH 默认写入范围。R1 建立稳定 AC 编号，后续修订追加或更新，不重编号现有项。AC-26 已局部实现，但 R4 补查发现预检后的根路径别名缺陷，新增 AC-30 承接，不能宣称文档入口全场景已通过。
 
-R4 合同的工单批次及后续有界实现拆分见[R4-Tickets-1](../../specs/main-thread-owner-workflow/progress.md)：31张工单、B-01至B-06生产切片及共同验收CA-01均已完成。执行记录没有改变验收合同；当前规格版本仍为R4。
+R4 合同的工单批次及后续有界实现拆分见[R4-Tickets-1](../../specs/main-thread-owner-workflow/progress.md)：31张工单、B-01至B-06生产切片及共同验收CA-01在旧宿主 R100 候选上已完成。执行记录没有改变验收合同；当前规格版本仍为R4。2026-09-12 已确认迁移到官方 DSH 0.1.5-rc.2 和项目侧 Owner Team，范围与后续证据见[升级评估](../../specs/main-thread-owner-workflow/dsh-0.1.5-upgrade-assessment.md)。下文 R100 的验收陈述仅指历史候选，不能证明当前迁移版本已满足这些 AC。
 
 ## 1. 问题、目标与范围
 

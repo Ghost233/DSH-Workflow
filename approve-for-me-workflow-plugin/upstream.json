@@ -1,0 +1,20 @@
+{
+  "repository": "https://github.com/timeance/dsh-approve-for-me",
+  "version": "0.2.2",
+  "commit": "a72c8d24dd64f59644b2b0bdb5985edc9bf3c66b",
+  "harnessCommit": "0d1f50007f9bca3f52b06e1c3074fa14d5fb0720",
+  "files": {
+    "src/index.ts": "fd9b5b369b115d8a82316bd9c3b09ccccce0b85e80bd97b951781e9297c9af4b",
+    "src/client/settings-form.ts": "de3f77511b1cc8cfd1b7bc4d58abd5d7e44619ff1429a541829458828079a2af",
+    "src/client/rules.ts": "c4520df2079c190ff518777d7a3075adecff9cba9019f9f0df6e1d9501299e0d",
+    "src/client/settings-types.ts": "d0b5669c898bdf1845661190b439e10c592ca2a9a69d7c5971dba9f71a3bb01b",
+    "LICENSE": "d925c2c9cab40be2acbd60e07fd8c27b13803b2a95549946e9ff31cd1910d21b",
+    "src/core/decision.ts": "b609f5389c4ef21af5b0a41e174e35c2ed196eedc68a94fcc4ea3c13c51f6026",
+    "src/core/defaults.ts": "6de79053e71d87fdba913b152cc05fb26e5deaf4976bc91e9ba70771a9a5f492",
+    "src/core/index.ts": "785bde8d5b0faf1bd85e8a113272e30301b78574da0a97cd6d2a2d882e01bab7",
+    "src/core/reviewer.ts": "690276302dcff43767afa06752baa847907a62c8d15de630fd43d209e276da5f",
+    "src/core/risk.ts": "ceeda240691f9bbd7b7a90e81eb45e5c0f0de3bbf51e3107145b9e01b103425c",
+    "src/core/settings.ts": "af44fe72838b2694ded4092a69f662d3a3972c6285181ca12836df864f791d48",
+    "src/core/shell.ts": "a0b2dba7296d514e67f2610b31998282b181693eb67ec6f2a9174f865006e020"
+  }
+}

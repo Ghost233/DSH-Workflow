@@ -375,6 +375,23 @@ export function normalizePublicOwnerChangeDecision(raw, request, rawContext) {
   }
 }
 
+/** Bind a model-supplied judgment to the immutable request fields owned by Runtime. */
+export function bindPublicOwnerChangeDecision(rawJudgment, request, rawContext) {
+  exact(rawJudgment, [
+    'decisionId', 'outcome', 'summary', 'basisRefs', 'affectedConsumers',
+    'contractChange', 'migrationOrder', 'alternative', 'unknowns', 'businessChange',
+  ], 'decision')
+  return normalizePublicOwnerChangeDecision({
+    ...rawJudgment,
+    contract: PUBLIC_OWNER_CHANGE_DECISION_CONTRACT,
+    requestId: request.requestId,
+    requestVersion: request.requestVersion,
+    requestDigest: digest(request),
+    targetOwnerId: request.targetOwnerId,
+    baseline: clone(request.baseline),
+  }, request, rawContext)
+}
+
 export function createPublicOwnerChangeLog() {
   return { contract: PUBLIC_OWNER_CHANGE_LOG_CONTRACT, requests: [], decisions: [] }
 }

@@ -1,0 +1,2 @@
+name: Owner 工作流模式
+description: 主线程维护需求、Spec 和 Ticket；统一 Runner 按模块 Owner 执行、验证和交付。

@@ -26,10 +26,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD:deepseek-harness)" = "$(git -C deepseek-harness rev-parse HEAD)"
-          test "$(git rev-parse HEAD:dsh-synapse)" = "$(git -C dsh-synapse rev-parse HEAD)"
           test "$(git rev-parse HEAD:owner-workflow-plugin/vendor/dsh-approve-for-me)" = "$(git -C owner-workflow-plugin/vendor/dsh-approve-for-me rev-parse HEAD)"
           test -z "$(git -C deepseek-harness status --porcelain --untracked-files=all)"
-          test -z "$(git -C dsh-synapse status --porcelain --untracked-files=all)"
           test -z "$(git -C owner-workflow-plugin/vendor/dsh-approve-for-me status --porcelain --untracked-files=all)"
 
       - name: 核对 Operation 审批策略核心与许可证
@@ -49,15 +47,6 @@ jobs:
               if (typeof item !== "function") process.exit(1)
             }
           '
-
-      - name: 核对 Synapse 构建、测试与许可证
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f dsh-synapse/LICENSE
-          grep -q "MIT License" dsh-synapse/LICENSE
-          corepack pnpm --dir dsh-synapse run build
-          corepack pnpm --dir dsh-synapse test
 
       - name: 核对 Owner Workflow 客户端产物
         run: npm run check:client

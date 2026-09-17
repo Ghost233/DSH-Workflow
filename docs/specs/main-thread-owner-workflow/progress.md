@@ -1,8 +1,16 @@
 # 主线程 Spec/Ticket 与 Owner 工作流进度
 
+## 当前批次：UKR-1 一次性架构替换
+
+2026-09-13：当前完整实施计划为 [UKR-1：统一执行内核一次性替换](unified-kernel-replacement-plan.md)。状态：开发中，尚未切换生产入口、尚未完整验收；局部实现与测试见 [开发记录](unified-kernel-development.md)。W01～W11 为同一交付候选的工作项，全部完成后一次切换与完整验收，不按阶段发布，不再以逐轮补丁作为交付安排。
+
+R4 的 AC-01～AC-32 继续有效，并与本次新增 KAC 在新候选上重新验收。以下 R100、31 张旧 Ticket 和原收敛清单都是历史候选记录，不代表当前 DSH/Owner Team 已跑通，也不能作为 UKR-1 的通过证据。
+
+## 历史 R100 批次
+
 日期：2026-09-12。工单批次保持R4既有范围。当前阶段：R100固定候选集中验收已通过，F12/CA01关闭；R4 Spec、31张Ticket、B01–B06和AC-01至AC-32均已完成本地交付级验证。
 
-当前唯一推进清单：[整体收敛盘点](convergence-checklist.md)。R100最终候选`CA01-R100-fac087e62075`的10个集中验证项全部通过，共1114个Node test：1093通过、21个明确旧版替代用例跳过、0失败、0取消、0阻塞、0候选漂移。逐项依据见[R100报告](rounds/round-100/report.md)、[AC矩阵](rounds/round-100/ac-matrix.md)与[原始结果](rounds/round-100/test-results.json)。历史轮次段落保留原文，不作为当前待办或授权限制。
+R100 批次推进清单：[整体收敛盘点](convergence-checklist.md)。R100最终候选`CA01-R100-fac087e62075`的10个集中验证项全部通过，共1114个Node test：1093通过、21个明确旧版替代用例跳过、0失败、0取消、0阻塞、0候选漂移。逐项依据见[R100报告](rounds/round-100/report.md)、[AC矩阵](rounds/round-100/ac-matrix.md)与[原始结果](rounds/round-100/test-results.json)。历史轮次段落保留原文，不作为当前待办或授权限制。
 
 唯一规格：[R4 规格](../../superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md)。这里沿用既有规格，不复制第二份 spec.md；新工单与进度使用当前允许的 docs/specs/<主题>/ 约定。既有 Superpowers Task 1 等属于旧 V2 计划，不与本主题 T 编号混用。
 

@@ -39,6 +39,7 @@ test('secret heuristic rejects common credentials without claiming completeness'
 test('config is default-off, permits session routes and rejects partial routes, invalid limits and misspellings', () => {
   assert.equal(resolveConfig({}).actionFusion.enabled, false)
   assert.equal(resolveConfig({}).evidenceReducer.enabled, false)
+  assert.equal(resolveConfig({}).evidenceReducer.reasoningEffort, 'auto')
   assert.equal(resolveConfig({ evidenceReducer: { enabled: true } }).evidenceReducer.provider, '')
   for (const config of [{ actionFusion: { enabled: 'false' } }, { evidenceReducer: { provider: 'partial' } },
     { evidenceReducer: { minBytes: 0 } }, { evidenceReducer: { maxBytes: 1 } }, { enabled: true },

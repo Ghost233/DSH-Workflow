@@ -1,93 +1,126 @@
-# Owner 工作流 V2 迁移说明
+# Owner Workflow 统一 Kernel 迁移说明
 
-## 结论
+本文用于把当前项目的使用方式收敛到统一 Kernel。历史 Spec、讨论记录和 proof 保留原文作为审计证据；其中出现的旧入口、旧工具顺序或旧进程模型不再用于当前运行。
 
-V2 不是把旧计划字段补齐后继续执行，而是建立新的、经过审批的 `DSH_PLAN_V2` workflow。旧 V1 只可查询和导出；运行时不会猜测依赖、Owner scope、验证或合并关系，也不会自动把旧计划转换为可执行计划。
+## 已生效的终态
 
-## 迁移前提
+- 日常启动只有无参数 `./start-owner-workflow.sh`。
+- 公开 package root 和项目 `index.js` 都导出 `src/kernel-entry.mjs`。
+- 公开 Dashboard host 导出 `src/kernel-dashboard-host.mjs`。
+- `owner-workflow-plugin/kernel-presets/` 是唯一当前 preset 目录。
+- Owner 工具、Dashboard、Store、Engine、effects 和 Runner 在同一 Cordis 宿主组合中工作。
+- Runner 随宿主自动启动和关闭，不需要调用者维护另一个进程。
+- 项目启动组合自动加载 Owner、SoL 和自研审批适配层。
+- 用户 profile、凭据、模型、审批、沙箱、Git 身份和缓存保持原样。
 
-- 没有 Quick 迁移路径。任何需要写代码的需求都从当前分支重新启动 V2 workflow。
-- 先执行 `workflow_preflight`。只有 `canStart=true` 且同一个 `baseDigest` 仍有效时，才能执行 `workflow_start`；它不会自动处理既有改动或子模块内部脏改动。
-- 先确认 `deepseek-harness/` 子模块状态，不向其中写入任何插件或业务文件。
-- 旧 workflow 的状态、日志、分支和 worktree 作为审计现场保留；不要通过清理操作掩盖未审计改动。
+## 操作者迁移
 
-## 迁移步骤
+### 启动
 
-### 1. 只读盘点并导出旧计划
+从要作为 catalog root 的项目目录运行：
 
-使用状态查询或导出能力保存旧计划、Owner 定义、日志和已有提交信息。盘点结果只能作为人工规划输入，不能直接交给 Supervisor 执行。若旧状态不是 `DSH_PLAN_V2`，应明确标记为只读历史资料。
-
-### 2. 建立并审批正式 Owner Registry
-
-把当前责任域整理为 `.owner-workflow/config.json` 与 `.owner-workflow/owners/<owner-id>/owner.md`；同一 Owner 的长期知识放在相邻 `memory/`。对于新增、移除、拆分、合并、转交或 scope 变化：
-
-Owner 分析子代理只能提出建议；以下提案、展示、问询和批准必须全部在创建该 Workflow 的主线程完成。批准结果再由 Runtime 固定到项目基础分支，不能只保存在单次 Workflow 分支或子代理上下文中。
-
-1. 把同一轮发现的全部变更收进一个 `type=batch`、`operations=[...]` 的结构化 operation，再通过 `workflow_owner_change_propose` 一次提交；不得按 Owner 拆成多轮问询。
-2. 在一张审批卡片中展示全部子操作、最终 before/after、受影响 Owner、文件范围和 proposal digest。
-3. 用户确认完全匹配的 digest。
-4. 调用一次 `workflow_owner_change_approve` 打开 Harness 原生“同意/不同意/自定义输入”问询；只有明确同意才原子应用整批变更，并重新读取 Registry digest。
-
-不能直接编辑正式 Registry 来绕过 digest 审批。运行中存在受影响的 reserved 或 running task 时，先停止或完成安全边界内的任务，再处理 Registry 变化。
-
-### 3. 从零生成 DSH_PLAN_V2
-
-规划器必须重新声明：
-
-- `registryDigest` 与正式 Registry 的绑定；
-- 每个固定验证的唯一 ID 和 argv；
-- 每个任务的 `id`、`role`、`ownerId`、`dependsOn`、`write`、`verify` 和 `done`；
-- 显式 Review/Verify 节点及其下游依赖。
-
-旧计划中的阶段边界不能直接当作任务依赖；缺少信息时返回 `plan_invalid/revise_plan`，由用户或主编排者补充，而不是由模型猜测。
-
-Owner 也不能从旧计划的阶段或新 Workflow 的流程反推。Owner 必须依据代码目录、模块、包、接口、依赖方向和长期职责划分；阶段、work/review/verify、修复步骤与并行分组全部属于 DAG task。同一代码责任域可以包含多个不同流程任务，不能为了当前 Workflow 拆成临时 Owner。
-
-### 4. 独立审查与审批
-
-使用 `workflow_plan_review` 检查真实并行度、过度拆分、依赖环、Owner 路由、验证绑定和 Registry digest。修订后使用 `workflow_plan_revise` 并重新审查。审查通过后立即调用 `workflow_plan_approve` 打开原生问询；只有用户明确同意 plan digest 与 registry digest，Supervisor 才能启动。
-
-### 5. 固定现场执行
-
-用外置 `workflowd` runner 启动执行：
-
-Runner daemon 会随 Harness 自动启动：对计划审查驱动失败或超时的 `planned` Workflow，它只请求 Runtime 做可验证的 digest 补绑与 Reviewer 恢复；对获批 Workflow 才接管 Supervisor。手工 `run-owner-workflow.sh --workflow-id wf-...` 只作为诊断兼容入口。
-
-Owner 固定使用：
-
-```text
-dsh/owner/<日期>-<项目递增序号>-<需求摘要>/<owner-id>
-.dsh-workflow/worktrees/<workflow-id>/owners/<owner-id>
+```sh
+./start-owner-workflow.sh
 ```
 
-任务完成时固定提交 SHA，必需验证通过后立即合入 workflow。下一任务复用同一 Owner 现场并先同步到最新 workflow HEAD；不通过阶段性批处理来决定合并。
+不要附加版本、profile、插件或 Runner 参数。启动器使用现有 Web profile 生成项目内临时 patch，核验固定 DSH 构建和端口，然后启动同一 Web host。它不会自动打开浏览器。
 
-### 6. 审查、集成或取消
+### Preset
 
-全部任务完成后执行 `workflow_implementation_review`，再执行 `workflow_finalize`。finalize 把固定 workflow HEAD 合并回启动分支，随后删除全部 Owner/workflow 临时分支和 worktree。`failed`/`blocked` 保留现场供同一 Workflow 恢复；只有用户明确放弃时才执行 `workflow_cancel`，并在原生问询同意后删除未合入的临时分支、worktree 和未提交修改，只保留 Runtime 状态与日志。
+部署或检查 preset 时只看：
 
-## 历史名称的替换边界
+```text
+owner-workflow-plugin/kernel-presets/owner-workflow/
+```
 
-下表只用于识别历史文档中的旧说法，不是可执行接口：
+该 preset 的 plugin 和 agent 配置都绑定当前 Kernel entry。不要从历史资料恢复第二套 preset root，也不要让 profile 同时加载多个 Owner host。
 
-| 历史说法 | V2 替换 | 约束 |
-| --- | --- | --- |
-| `DSH_PLAN_V1` | 新建 `DSH_PLAN_V2` 任务 DAG | V1 仅查询、导出，不能启动执行 |
-| `stage` / `stages` | `tasks` + `dependsOn` | 不把阶段顺序自动猜成任务依赖 |
-| `merge-stage` | 任务 finish 时固定 SHA 并合入 workflow | 不由 runner 解释或批量合并阶段 |
-| `owner_add` 或 scope 直写 | `owner_change_propose` → digest 审批 → `owner_change_approve` | 正式 Registry 没有绕过审批的直写入口 |
+### 项目数据
 
-旧名称若出现在日志或历史计划中，只作为迁移识别标签；不得复制到新的 V2 计划、提示词或执行命令中。
+运行态数据位于当前 catalog 的 `.dsh-workflow/`。迁移不通过清空该目录来制造“干净状态”，也不修改用户工作区内容。
 
-## 迁移验收清单
+历史控制记录若需要读取，由专门的兼容导入和恢复守卫处理。无法证明执行已经停止、源码写入已经关闭或 Git 身份仍匹配的记录必须保持阻塞；不能直接创建新 Workflow 绕过它。
 
-- [ ] 旧计划已经只读导出，未被当作可执行输入。
-- [ ] 正式 Registry 已生成，所有变化都有审批 digest。
-- [ ] 新计划契约为 `DSH_PLAN_V2`，任务依赖无环，并声明 priority 与失败、阻塞、超时策略。
-- [ ] 每个任务的 `write` 在 Owner scope 内，所有必需验证引用固定 ID。
-- [ ] plan review 通过，plan digest 与 registry digest 已批准。
-- [ ] `create` 只形成持久 reservation，只有外置 runner 的 `supervisor-execute` 可以启动 Owner。
-- [ ] runner 通过 `supervisor-await-event` 以事件游标等待；`notify` 进入持久 main outbox 后才交付主会话。
-- [ ] 每个任务都记录固定 commit SHA、验证结果和合入 workflow 的结果。
-- [ ] Web Harness 的 `/owner-workflow` Dashboard 能只读显示固定启动工作区的投影；兼容的 `127.0.0.1:57357` 独立 Dashboard 也不写状态；`failed`/`blocked` 显示可恢复现场，明确取消后只保留状态与日志。
-- [ ] `deepseek-harness/` 子模块没有修改。
+## 主线程调用迁移
+
+当前实施流程是：
+
+1. 在主线程讨论需求并维护 Spec/Ticket。
+2. 责任域需要建立或变更时调用 `workflow_registry_change`。
+3. 用户明确授权实施后调用 `workflow_planning_finalize`，冻结文档、代码、Registry 和授权来源。
+4. 调用 `workflow_start` 创建持久 Workflow。
+5. 等待宿主内 Planner、Reviewer、Runner 和 Owner Team 自动推进。
+6. 用户查询或中断诊断时调用 `workflow_status`。
+7. 技术恢复按场景调用 `workflow_retry_task`、`workflow_retry_action` 或 `workflow_replan`。
+8. 跨模块公开合同请求调用 `workflow_public_owner_request`。
+9. 用户决定放弃时调用 `workflow_cancel`，等待全部停止证据结算。
+
+不再由主线程逐步构造计划、手工驱动每个任务或启动独立 Runner。工具调用成功只表示请求已持久受理；完成、失败或取消以 Store/Engine 的终态 view 和原生持久通知为准。
+
+## 计划与授权迁移
+
+旧计划不能只因为 JSON 结构可解析就进入执行。当前计划必须绑定：
+
+- `workflow_planning_finalize` 生成的 checkpoint；
+- 当前文档 snapshot digest；
+- 当前代码和 Git baseline；
+- 当前 Registry digest；
+- 用户实施授权；
+- 独立 Reviewer 的 plan digest 与 evidence reference。
+
+Planner 的 `owners` 只包含 Registry 中的 Owner ID。完整 scope、exclude、长期指令和固定验证由 Kernel 从正式 Registry 注入。Registry 变化后，受影响执行必须先停止并关闭源码写入，再在新摘要上重新规划。
+
+## 执行与恢复迁移
+
+每个任务 action 都绑定持久 ID、input digest、authority 和资源锁。候选提交之后还必须经过源码关闭确认、候选封存、候选验证、集成、最终验证和 checkout 交付。
+
+取消和超时采用先停止、后结算的语义：
+
+- 发出取消请求时状态可以是 `stopping`。
+- 所有相关 action/attempt 取得真实停止回执且没有 quarantine 后才是 `cancelled`。
+- 停止失败或超时保持 `failed` 和隔离，不伪报普通执行错误。
+- 迟到的有效停止回执可产生一次带 supersedes 的 `cancelled` 纠正通知。
+- 同一终态的重复回执不产生重复通知。
+
+技术恢复继承原 issue、证据义务和预算。失败的 Workflow 继续保留项目 reservation；恢复或完整取消之前不能另起一个同项目 Workflow 绕过现场。
+
+## 通知和 Dashboard 迁移
+
+主线程只认绑定 root session 且已经持久化的原生通知。canonical 终态通知提供 workflow ID、status、revision、任务计数、attention、recovery issues、主要 failure，以及 Registry、交付或取消 outcome。
+
+Dashboard 位于 `/owner-workflow`，并与主线程通知读取相同的 Store/Engine view。它是只读观测面，不创建、修复或推进 Workflow。浏览器页面状态不能替代 action receipt、Git 证据或主线程持久通知。
+
+## 配置保护
+
+迁移和日常启动必须保持：
+
+- 用户真实 profile 与 patch；
+- credentials、provider/model 与 reasoning 配置；
+- approval policy 与 sandbox；
+- Git user、当前分支、未提交和未跟踪文件；
+- npm 缓存和已经存在的用户数据。
+
+不得为迁移自动 stash、reset、rebase、clean、覆盖或重写提交。项目自研适配只修改自研插件和集成层；DSH 与第三方上游源码保持原样。
+
+## 核对清单
+
+- [ ] 使用无参数 `./start-owner-workflow.sh`。
+- [ ] 公开 root 与 Dashboard export 都指向 Kernel 实现。
+- [ ] 当前组合只使用 `kernel-presets/`。
+- [ ] 同一宿主内只有一份 Owner Kernel、Store 和 Runner。
+- [ ] Planner 来源链包含授权、文档、代码和 Registry 摘要。
+- [ ] Owner 写入范围、依赖、资源和验证都来自受审查计划。
+- [ ] 停止证据不完整时仍保留锁、容量和 quarantine。
+- [ ] terminal notice 包含可解释原因或具体 outcome，并按状态边缘去重。
+- [ ] Dashboard 只读，不能代替控制面。
+- [ ] 用户配置、Git 状态和第三方源码未被迁移改写。
+
+## 验收边界
+
+确定性回归可运行：
+
+```sh
+node scripts/run-kernel-regression.mjs
+```
+
+真实 Web host、系统沙箱和浏览器链路仍需在对应环境完成验收。新版浏览器全流程验收目前仍在进行中，不能把定向测试或历史 proof 描述成已经完成的全程验收。

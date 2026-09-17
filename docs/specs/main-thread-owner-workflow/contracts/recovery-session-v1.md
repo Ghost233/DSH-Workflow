@@ -16,7 +16,7 @@ await runtime.reconcileRecoverySession(agent, workflowId, {
 
 ## 首次启动
 
-入口先只读导入完整 T-20 ledger，核对 request/task/Owner/plan/prompt ID 与 JSONL `compression:'none'` 后，进入同一个 `runExternalOwner → createOwnerEntry → runOwnerEntry` 链路。`runExternalOwner` 是唯一领取 Owner lease 的位置，并在其锁内再次导入 T-20、匹配原 Owner failure source、运行 `validateOwnerStartState`，再写新的 Owner record。预检不授予权限；全部变异都在第二次核验之后。
+入口先只读导入完整 T-20 ledger，核对 request/task/Owner/plan/prompt ID 与公开 `SessionPersistence.open/stat` 能力后，进入同一个 `runExternalOwner → createOwnerEntry → runOwnerEntry` 链路。`runExternalOwner` 是唯一领取 Owner lease 的位置，并在其锁内再次导入 T-20、匹配原 Owner failure source、运行 `validateOwnerStartState`，再写新的 Owner record。预检不授予权限；全部变异都在第二次核验之后。
 
 新 record 的 attempt 递增，并以实际 lease token 持久化：
 
@@ -31,7 +31,7 @@ recoverySession: {
 }
 ```
 
-随后状态顺序为：`preparing`（无外部 session）→ `creating`（最终 Owner prompt 已锁内冻结）→ `created`（真实 `agents.create({sessionId})` 后 `persistOwnerSession` 成功）→ `submitted`（`followup({id: promptId})` 后 `sessions.flush` 成功）。provider 仍使用正式 preset 组合、Owner sandbox、`activeOwners` 注册和 `requireOwnerSubmission:true`；没有裸 AgentLoop 路径。
+随后状态顺序为：`preparing`（无外部 session）→ `creating`（最终 Owner prompt 已锁内冻结）→ `created`（真实 `agents.create({sessionId})` 后 `persistOwnerSession` 成功）→ `submitted`（`followup({id: promptId})` 后 `sessions.flush` 成功）。Owner Team 执行适配仍使用正式 preset 组合、Owner sandbox、`activeOwners` 注册和 `requireOwnerSubmission:true`。绑定失败时释放已激活成员；保留原派发身份，不能因此重新投递。
 
 只有当前 Workflow 已由正式流程处于可启动状态且所有既有开始门禁通过时才会启动。该入口不会把 failed/stopped task 或 failed Workflow 改回 runnable，也不把测试直接重写状态当作正式 repair/resume。失败的授权、Registry、依赖、worktree 或 plan gate 返回 `paused / technical_pause`，不 create、不 followup、不扣额。
 
@@ -82,9 +82,17 @@ receipt 重放会再次核对 T-13 ledger、Owner record/session/attempt/lease�
 
 ## 已存在 session 的只读边界
 
-`inspectRecoverySession(...)` 是纯事实投影，返回 `{ outcome, phase, revision?, turn?, step?, terminalSeq?, assistantMessageId?, reason? }`。它只接受真实 `JsonlSessionPersistence`、`compression:'none'`、raw artifacts；按 schema-17 展开 packed records，要求完整 raw 逻辑事件与 `readFrom(0)` 逐项相等、seq 连续，且 `listSnapshots` 前后 revision 稳定。raw 数据中一条匹配 prompt、turn/end 或 assistant message 不是 Owner 业务成功或失败。当前投影也只支持单 turn/step；真实 Owner tool 链的多 step 结果不能据此结算。
+`inspectRecoverySession(...)` 是纯事实投影，返回 `{ outcome, phase, revision?, turn?, step?, terminalSeq?, assistantMessageId?, reason? }`。DSH 0.1.5 适配使用公开 `stat(id)`、`open(id, 'read')`、`handle.read()` 与 `handle.close()`，核对会话身份、头信息、连续 seq 和读取前后不变的 revision。物理格式校验、解压和历史格式解码由正式持久化服务负责，插件不复制解码器、不获取写句柄。压缩日志可读取；历史格式是否可读由宿主明确判定。匹配 prompt、turn/end 或 assistant message 本身不是 Owner 业务成功或失败。当前投影也只支持单 turn/step；真实 Owner tool 链的多 step 结果不能据此结算。
 
-已有但未结算的 session 无论 raw 投影为 pending、running 或 observed terminal，Runtime 都只返回顶层 `paused / technical_pause`，把事实放在 `observation`。它不 resume、create、followup 或 settle。`preparing`、没有最终冻结 prompt、坏 raw、未知 persistence 或旧 lease 都同样暂停。重放时 caller instruction 必须逐字等于持久 `instruction`；相同 requestId 不能借由替换 instruction 取得运行中的 promise 或旧 session 权限。
+已有但未结算的 session 无论逻辑投影为 pending、running 或 observed terminal，Runtime 都只返回顶层 `paused / technical_pause`，把事实放在 `observation`。它不 resume、create、followup 或 settle。`preparing`、没有最终冻结 prompt、坏 raw、未知 persistence 或旧 lease 都同样暂停。重放时 caller instruction 必须逐字等于持久 `instruction`；相同 requestId 不能借由替换 instruction 取得运行中的 promise 或旧 session 权限。
+
+### V3 完整性与错误结果
+
+正式读取只返回已提交且完整的逻辑前缀。截断发生在终态记录内时，读取不能产生终态；完整终态之后多出的未提交尾部不抹去既有终态。两种情况都不修复原文件，也不启动 Agent 来补齐事件。只读读取不会合成 interrupted 终态。
+
+错误原因区分 `artifact_missing`、`unsupported_session_format`、`artifact_corrupt`、`snapshot_changed`、`read_identity_mismatch` 和 `read_failed`；均不授权重投。取消向调用方传播，已打开的读取句柄必须释放。首次创建前通过 `stat` 判定保留身份是否存在，不能因为旧接口缺失或日志尚无 prompt 就创建第二个会话。
+
+版本化日志副本与真实 V3 运行时测试独立于旧候选验收。升级评估记录当前测试范围，不能沿用旧 CA01 的整体通过结论。
 
 ## Lease 冲突
 

@@ -1,0 +1,23 @@
+- id: permission
+  config:
+    presets:
+      # Cordis replaces the config object; it does not merge nested tables.
+      # Keep the official standard profile presets and their declaration order.
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+      approve-for-me:
+        sandbox: workspace-write
+        approval: ask
+        name: Approve for me
+        description: Review shell escalation with fixed rules and an optional reviewer, with native human fallback.
+
+- insert:
+    - id: approve-for-me
+      name: dsh-approve-for-me-workflow

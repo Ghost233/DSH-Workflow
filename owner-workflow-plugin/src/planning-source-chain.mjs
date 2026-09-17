@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto'
 import { execFile as execFileCallback } from 'node:child_process'
-import { realpath } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { validatePlanningReferences } from './planning-references.mjs'
+import { orchestratorDocumentPath } from './orchestrator-documents.mjs'
 import {
   PLANNING_WRITE_JOURNAL_CONTRACT,
   PLANNING_WRITE_PREPARED_CONTRACT,
@@ -301,10 +302,32 @@ async function baselineBlob(root, head, path) {
   return value.stdout
 }
 
-function documentMap(references) {
+async function supportingDocuments(root, cwd, value, formal) {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) fail('INVALID_INPUT', 'supporting', 'expected array')
+  const result = []
+  const paths = new Set(formal.keys())
+  for (const [index, descriptor] of value.entries()) {
+    exactKeys(descriptor, ['path', 'sha256'], `supporting[${index}]`)
+    const path = canonicalRelative(root, descriptor.path, `supporting[${index}].path`)
+    if (paths.has(path)) fail('DUPLICATE_PATH', `supporting[${index}].path`, path)
+    const expected = digest(descriptor.sha256, `supporting[${index}].sha256`, { code: 'INVALID_INPUT' })
+    const absolute = orchestratorDocumentPath({ root, cwd, filePath: path })
+    if (absolute === undefined) fail('UNSUPPORTED_PATH', `supporting[${index}].path`, path)
+    let bytes
+    try { bytes = await readFile(absolute) } catch { fail('MISSING_SOURCE', `supporting[${index}].path`, path) }
+    if (sha256(bytes) !== expected) fail('HASH_MISMATCH', `supporting[${index}].sha256`)
+    paths.add(path)
+    result.push({ path, sha256: expected })
+  }
+  return result.toSorted((left, right) => left.path.localeCompare(right.path))
+}
+
+function documentMap(references, supporting = []) {
   const entries = [
     { path: references.spec.path, sha256: references.spec.sha256, kind: 'spec', id: references.spec.id },
     ...references.tickets.map(ticket => ({ path: ticket.document.path, sha256: ticket.document.sha256, kind: 'ticket', id: ticket.id })),
+    ...supporting.map(document => ({ ...document, kind: 'supporting', id: document.path })),
   ]
   const result = new Map()
   for (const item of entries) {
@@ -314,12 +337,40 @@ function documentMap(references) {
   return result
 }
 
+function parentDocumentMap(value, root, identity) {
+  if (value === undefined || value === null) return new Map()
+  if (!isObject(value) || value.contract !== PLANNING_SOURCE_CHAIN_CONTRACT
+    || !isObject(value.references) || !isObject(value.references.spec)
+    || !Array.isArray(value.references.tickets)
+    || (value.references.supporting !== undefined && !Array.isArray(value.references.supporting))
+    || !isObject(value.source)
+    || value.source.agentId !== identity.agentId || value.source.sessionId !== identity.sessionId) {
+    fail('PARENT_SOURCE_MISMATCH', 'parentSource')
+  }
+  const entries = [
+    { path: value.references.spec.path, sha256: value.references.spec.sha256, kind: 'spec', id: value.references.spec.id },
+    ...value.references.tickets.map(ticket => ({ path: ticket?.document?.path, sha256: ticket?.document?.sha256,
+      kind: 'ticket', id: ticket?.id })),
+    ...(value.references.supporting ?? []).map(document => ({ path: document?.path, sha256: document?.sha256,
+      kind: 'supporting', id: document?.path })),
+  ]
+  const result = new Map()
+  for (const [index, item] of entries.entries()) {
+    const path = canonicalRelative(root, item.path, `parentSource.documents[${index}].path`)
+    const sha = digest(item.sha256, `parentSource.documents[${index}].sha256`, { code: 'PARENT_SOURCE_MISMATCH' })
+    if (typeof item.id !== 'string' || item.id === '' || result.has(path)) fail('PARENT_SOURCE_MISMATCH', `parentSource.documents[${index}]`)
+    result.set(path, { path, sha256: sha, kind: item.kind, id: item.id })
+  }
+  return result
+}
+
 /**
  * Validates an already-authorized, native-observed planning document edit chain.
  * It provides evidence only: callers retain responsibility for authorization,
  * checkpoint locking, snapshot creation, and activation.
  */
-export async function validatePlanningSourceChain({ root, cwd = root, manifest, baseline: expectedBaseline, source: requestedSource } = {}) {
+export async function validatePlanningSourceChain({ root, cwd = root, manifest, baseline: expectedBaseline, sourceBaselineCommit,
+  source: requestedSource, supporting, parentSource } = {}) {
   if (typeof root !== 'string' || !isAbsolute(root)) fail('INVALID_ROOT', 'root')
   let canonicalRoot
   try { canonicalRoot = await realpath(root) } catch { fail('INVALID_ROOT', 'root') }
@@ -331,7 +382,10 @@ export async function validatePlanningSourceChain({ root, cwd = root, manifest, 
   const sourceValue = source(requestedSource)
   await currentRepository(canonicalRoot, baselineValue)
   const references = await validatePlanningReferences({ root: canonicalRoot, cwd: canonicalCwd, manifest })
-  const documents = documentMap(references)
+  const formal = documentMap(references)
+  const supplemental = await supportingDocuments(canonicalRoot, canonicalCwd, supporting, formal)
+  const documents = documentMap(references, supplemental)
+  const inheritedDocuments = parentDocumentMap(parentSource, canonicalRoot, sourceValue)
 
   const chainsByPath = new Map()
   const allCallIds = new Set()
@@ -345,8 +399,21 @@ export async function validatePlanningSourceChain({ root, cwd = root, manifest, 
     }
     chainsByPath.set(path, { path, callIds: [...chain.callIds] })
   }
-  for (const path of documents.keys()) {
-    if (!chainsByPath.has(path)) fail('MISSING_CHAIN', 'source.chains', path)
+  for (const [path, parent] of inheritedDocuments.entries()) {
+    if (!documents.has(path)) fail('PARENT_SOURCE_MISSING', 'manifest', path)
+    const current = documents.get(path)
+    if (!chainsByPath.has(path)
+      && (current.sha256 !== parent.sha256 || current.kind !== parent.kind || current.id !== parent.id)) {
+      fail('PARENT_SOURCE_MISMATCH', 'manifest', path)
+    }
+  }
+  for (const [path, current] of documents.entries()) {
+    if (chainsByPath.has(path)) continue
+    const parent = inheritedDocuments.get(path)
+    if (parent === undefined) fail('MISSING_CHAIN', 'source.chains', path)
+    if (current.sha256 !== parent.sha256 || current.kind !== parent.kind || current.id !== parent.id) {
+      fail('PARENT_SOURCE_MISMATCH', 'manifest', path)
+    }
   }
 
   const journal = await readPlanningWriteJournal({ root: canonicalRoot })
@@ -366,7 +433,7 @@ export async function validatePlanningSourceChain({ root, cwd = root, manifest, 
   for (const [path, chain] of chainsByPath.entries()) {
     const absolute = resolve(canonicalRoot, path)
     const document = documents.get(path)
-    const baselineBytes = await baselineBlob(canonicalRoot, baselineValue.head, path)
+    const baselineBytes = await baselineBlob(canonicalRoot, sourceBaselineCommit ?? baselineValue.head, path)
     const selected = []
     let previous
     for (const [index, callId] of chain.callIds.entries()) {
@@ -399,7 +466,7 @@ export async function validatePlanningSourceChain({ root, cwd = root, manifest, 
   await currentRepository(canonicalRoot, baselineValue)
   return immutable({
     contract: PLANNING_SOURCE_CHAIN_CONTRACT,
-    references: clone(references),
+    references: clone({ ...references, supporting: supplemental }),
     baseline: clone(baselineValue),
     source: {
       agentId: sourceValue.agentId,

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { validatePlanningReferences } from '../src/planning-references.mjs'
+import { inferPlanningManifest, validatePlanningReferences } from '../src/planning-references.mjs'
 
 const digest = value => createHash('sha256').update(value).digest('hex')
 async function fixture(t) {
@@ -26,6 +26,30 @@ async function fixture(t) {
   for (const document of manifest.tickets) await save(document)
   return { root, manifest, save, ticket, validate: () => validatePlanningReferences({ root, manifest }) }
 }
+
+test('只把带正式封套的 Spec 和 Ticket 纳入执行 manifest，普通 Matt 文档保持 supporting', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-planning-inference-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const specPath = 'docs/specs/journey/spec.md'
+  const ticketPath = 'docs/specs/journey/ticket-T-01.md'
+  const progressPath = 'docs/specs/journey/progress.md'
+  await mkdir(join(root, 'docs/specs/journey'), { recursive: true })
+  await writeFile(join(root, specPath), '# Critical journey spec\n\n1. A human-readable requirement.\n')
+  await writeFile(join(root, ticketPath), '# T-01 — Build it\n\n- Acceptance: works.\n')
+  await writeFile(join(root, progressPath), '# Progress\n\nDraft.\n')
+  await assert.rejects(
+    () => inferPlanningManifest({ root, cwd: root, paths: [specPath, ticketPath, progressPath] }),
+    /Planning references: INVALID_MANIFEST at paths \(exactly one Spec is required\)/u,
+  )
+  const specDeclaration = { id: 'SPEC-JOURNEY', revision: 'R1', acceptanceCriteria: ['AC-01'], contracts: [] }
+  const ticketDeclaration = { id: 'T-01', revision: 'R1', spec: { id: 'SPEC-JOURNEY', revision: 'R1' }, acceptanceCriteria: [{ id: 'AC-01', specId: 'SPEC-JOURNEY', specRevision: 'R1' }], contracts: [], dependsOn: [], work: { ready: [{ id: 'implementation' }], blocked: [] } }
+  await writeFile(join(root, specPath), `---\nplanning_document: DSH_PLANNING_DOCUMENT_V1\ndocument_kind: spec\ndocument_id: SPEC-JOURNEY\ndocument_revision: R1\nplanning_declaration: ${JSON.stringify(specDeclaration)}\n---\n\n# Critical journey spec\n`)
+  await writeFile(join(root, ticketPath), `---\nplanning_document: DSH_PLANNING_DOCUMENT_V1\ndocument_kind: ticket\ndocument_id: T-01\ndocument_revision: R1\nspec_id: SPEC-JOURNEY\nspec_revision: R1\nplanning_declaration: ${JSON.stringify(ticketDeclaration)}\n---\n\n# T-01 — Build it\n`)
+  const result = await inferPlanningManifest({ root, cwd: root, paths: [specPath, ticketPath, progressPath] })
+  assert.equal(result.manifest.spec.id, 'SPEC-JOURNEY')
+  assert.deepEqual(result.manifest.tickets.map(ticket => ticket.id), ['T-01'])
+  assert.deepEqual(result.supporting.map(document => document.path), [progressPath])
+})
 
 test('real selected documents retain complete cross-ticket AC references, multiple segments and fixed content', async t => {
   const f = await fixture(t), a = f.manifest.tickets[0]

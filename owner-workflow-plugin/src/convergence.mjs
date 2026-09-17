@@ -277,6 +277,7 @@ export function reviewIssueObligation(issue, review = {}, { allowLegacyObligatio
     suggestion: String(issue?.suggestion ?? '').trim(),
     source: { id: source.id, version: source.version },
     targetTaskIds: targets,
+    ...(issue?.targetVerificationIds?.length ? { targetVerificationIds: [...new Set(issue.targetVerificationIds)].sort() } : {}),
     ...(classification?.basis === undefined ? {} : { classificationBasis: classification.basis }),
     ...(classification === undefined ? {} : { decisionClassification: classification.kind }),
     closeWhen,
@@ -352,7 +353,7 @@ function stableVerificationResult(result) {
     passed: result?.passed === true,
     exitCode: Number.isSafeInteger(result?.exitCode) ? result.exitCode : null,
     timedOut: result?.timedOut === true,
-    contentDigest: nonEmptyText(result?.contentDigest) ?? null,
+    commitSha: nonEmptyText(result?.commitSha) ?? null,
   }
 }
 
@@ -542,12 +543,12 @@ function obligationProgressEvidence(obligation, candidate, runtimeEvidence) {
         || result?.current !== true
         || result?.passed !== true
         || result?.exitCode !== 0
-        || nonEmptyText(result?.contentDigest) === undefined) continue
+        || nonEmptyText(result?.commitSha) === undefined) continue
       facts.push({
         kind: 'task_verification_result',
         taskId: condition.taskId,
         verificationId: condition.verificationId,
-        contentDigest: result.contentDigest,
+        commitSha: result.commitSha,
       })
     }
   }
@@ -609,15 +610,15 @@ function runtimePhysicalEvidence(candidate, runtimeEvidence) {
   for (const result of evidence.taskVerificationResults) {
     const taskId = nonEmptyText(result?.taskId)
     const verificationId = nonEmptyText(result?.verificationId)
-    const contentDigest = nonEmptyText(result?.contentDigest)
+    const commitSha = nonEmptyText(result?.commitSha)
     if (taskId !== undefined
       && verificationId !== undefined
-      && contentDigest !== undefined
+      && commitSha !== undefined
       && result?.planDigest === candidate.planDigest
       && result?.current === true
       && result?.passed === true
       && result?.exitCode === 0) {
-      facts.push({ kind: 'task_verification_result', taskId, verificationId, contentDigest })
+      facts.push({ kind: 'task_verification_result', taskId, verificationId, commitSha })
     }
   }
   for (const task of evidence.executableTasks) {
@@ -710,7 +711,7 @@ function renewalForEvidence(proofs, time) {
   }
 }
 
-function verifiedClosure(obligation, review, candidate, runtimeEvidence, time) {
+export function verifiedClosure(obligation, review, candidate, runtimeEvidence, time) {
   if (!hasClosureContract(obligation)) return { reason: 'missing_closure_contract' }
   const requested = (review?.obligationClosures ?? []).filter(item => item?.obligationId === obligation.id)
   if (requested.length === 0) return { reason: 'closure_evidence_missing' }
@@ -744,8 +745,8 @@ function verifiedClosure(obligation, review, candidate, runtimeEvidence, time) {
         && item?.passed === true
         && item?.exitCode === 0
         && item?.current === true
-        && typeof item?.contentDigest === 'string'
-        && item.contentDigest !== ''
+        && typeof item?.commitSha === 'string'
+        && item.commitSha !== ''
       ))
       if (result === undefined) continue
       return {
@@ -754,7 +755,7 @@ function verifiedClosure(obligation, review, candidate, runtimeEvidence, time) {
           taskId: condition.taskId,
           verificationId: condition.verificationId,
           planDigest: candidate.planDigest,
-          contentDigest: result.contentDigest,
+          commitSha: result.commitSha,
           resolvedAt: time,
         },
       }

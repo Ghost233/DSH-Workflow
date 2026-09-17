@@ -6,9 +6,12 @@ import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
+import { KernelRuntime } from '../src/kernel-runtime.mjs'
+import { kernelToolDefinitions } from '../src/kernel-tools.mjs'
 import { registerOrchestratorDocumentGuards } from '../src/orchestrator-documents.mjs'
 import { validatePlanningSourceChain } from '../src/planning-source-chain.mjs'
+import { createPlanningNativeAgent } from './fixtures/planning-native-agent.mjs'
+import { planningDocumentRuntime } from './fixtures/planning-document-runtime.mjs'
 
 const execFile = promisify(execFileCallback)
 const sha256 = value => createHash('sha256').update(value).digest('hex')
@@ -111,16 +114,8 @@ async function fixture(t, { existingDocuments = true } = {}) {
 
   const ctx = new Context()
   const fibers = []
-  const runtime = createOwnerWorkflowRuntime({}, {})
-  const agent = {
-    id: 'main-source-agent',
-    session: { id: 'main-source-session', header: { id: 'main-source-session', cwd: root } },
-    ctx: { get: name => name === 'agentPresets' ? { composedPreset: () => 'owner-workflow' } : undefined },
-  }
-  runtime.orchestratorRoots.set(agent.id, root)
   t.after(async () => {
     for (const fiber of fibers.reverse()) await fiber.dispose()
-    await runtime.dispose()
     await rm(root, { recursive: true, force: true })
   })
   fibers.push(await ctx.plugin(SystemPrompt.default))
@@ -128,6 +123,10 @@ async function fixture(t, { existingDocuments = true } = {}) {
   fibers.push(await ctx.plugin(LocalFs.default, { cwd: root }))
   fibers.push(await ctx.plugin(FsPolicy))
   fibers.push(await ctx.plugin(ToolFs))
+  const agent = await createPlanningNativeAgent(t, ctx, root, 'main-source-agent')
+  const runtime = planningDocumentRuntime(ctx, root, agent)
+  runtime.rootFor = async () => root
+  runtime.preparePlanningCheckpoint = KernelRuntime.prototype.preparePlanningCheckpoint.bind(runtime)
   const disposers = registerOrchestratorDocumentGuards(ctx, runtime)
   t.after(async () => { for (const dispose of disposers.toReversed()) await dispose?.() })
   t.after(ctx.tools.guard(execution => runtime.checkToolExecution(execution)))
@@ -194,7 +193,6 @@ test('首次原生创建尚未进入 HEAD 的 Spec/Ticket，缺失基线 blob �
   const prepared = await value.runtime.preparePlanningCheckpoint(value.agent, {
     manifest: manifest(documents), baseline: value.baseline, chains,
   }, new AbortController().signal)
-  assert.equal(prepared.phase, 'source-validated')
   for (const chain of prepared.source.source.chains) {
     assert.equal(chain.records[0].prepared.before.sha256, null)
     assert.equal(chain.records[0].prepared.finalIntent.kind, 'createIfAbsent')
@@ -223,10 +221,8 @@ test('真实 Harness 原生 edit 链绑定 T05 引用和实际 Git baseline，�
     baseline: value.baseline,
     chains,
   }, new AbortController().signal)
-  assert.equal(prepared.contract, 'DSH_PLANNING_CHECKPOINT_PREPARATION_V1')
-  assert.equal(prepared.phase, 'source-validated')
   assert.equal(prepared.checkpointCreated, false)
-  assert.equal(prepared.executionAuthorized, false)
+  assert.match(prepared.sourceDigest, /^[a-f0-9]{64}$/)
   assert.equal(prepared.source.baseline.head, value.baseline.head)
   assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
   assert.equal(await git(value.root, 'symbolic-ref', '--short', 'HEAD'), value.baseline.branch)
@@ -313,25 +309,37 @@ test('已提交的旧来源保留在 journal 时，新 baseline 上仅选择新�
   assert.equal(second.source.chains[1].records[0].prepared.call.callId, 'source-chain-10')
 })
 
-test('真实 Runtime 入口不接受其他主 agent 复用来源，也不接受有父会话的 child', async t => {
+test('Kernel 规划入口不接受其他 agent 或 child 复用根线程来源', async t => {
   const value = await fixture(t)
   if (value === undefined) return
   const chains = await writeBoundDocuments(value)
   const input = { manifest: manifest(value.documents), baseline: value.baseline, chains }
-  const other = {
-    id: 'other-source-agent',
-    session: { id: 'other-source-session', header: { id: 'other-source-session', cwd: value.root } },
-    ctx: { get: name => name === 'agentPresets' ? { composedPreset: () => 'owner-workflow' } : undefined },
-  }
-  value.runtime.orchestratorRoots.set(other.id, value.root)
-  await assert.rejects(value.runtime.preparePlanningCheckpoint(other, input, new AbortController().signal), /IDENTITY_MISMATCH/)
+  const catalog = await mkdtemp(join(tmpdir(), 'dsh-kernel-source-chain-'))
+  const [sandbox, subprocess] = await Promise.all([
+    import('../../deepseek-harness/packages/sandbox/sandbox-local/lib/index.js'),
+    import('../../deepseek-harness/packages/subprocess/subprocess-local/lib/index.js'),
+  ])
+  await value.ctx.plugin(sandbox.LocalSandboxProvider, {})
+  await value.ctx.plugin(subprocess.default)
+  const runtime = new KernelRuntime(value.ctx, { catalogRoot: catalog })
+  await runtime.ready
+  const rootTools = kernelToolDefinitions(runtime).map(definition => value.agent.ctx.tools.register(definition))
+  const other = await value.ctx.agents.create({ sessionId: 'other-source-agent', meta: { cwd: value.root },
+    agentOptions: { provider: 'planning-test', model: 'unused-direct-service-test' } })
+  const child = await value.ctx.agents.create({ sessionId: 'child-source-agent', parentAgent: value.agent,
+    meta: { cwd: value.root, parentSession: value.agent.id, origin: 'subagent', delegationDepth: 1 } })
+  t.after(async () => {
+    for (const dispose of rootTools.reverse()) dispose()
+    await child.dispose()
+    await other.dispose()
+    await runtime.dispose()
+    await rm(catalog, { recursive: true, force: true })
+  })
 
-  const child = {
-    id: 'child-source-agent',
-    session: { id: 'child-source-session', header: { id: 'child-source-session', cwd: value.root, meta: { parentSession: value.agent.session.header.id } } },
-    ctx: { get: name => name === 'agentPresets' ? { composedPreset: () => 'owner-workflow' } : undefined },
-  }
-  value.runtime.orchestratorRoots.set(child.id, value.root)
-  await assert.rejects(value.runtime.preparePlanningCheckpoint(child, input, new AbortController().signal), /仅允许 Owner 模式的主线程调用/)
+  const prepared = await runtime.preparePlanningCheckpoint(value.agent, input, new AbortController().signal)
+  assert.equal(prepared.source.source.agentId, value.agent.id)
+  assert.equal(prepared.source.source.sessionId, value.agent.id)
+  await assert.rejects(runtime.preparePlanningCheckpoint(other.agent, input, new AbortController().signal), /actual live root Agent/)
+  await assert.rejects(runtime.preparePlanningCheckpoint(child.agent, input, new AbortController().signal), /actual live root Agent/)
   assert.equal(await git(value.root, 'rev-parse', 'HEAD'), value.baseline.head)
 })

@@ -8,7 +8,6 @@ import test from 'node:test'
 import {
   ACCEPTANCE_CANDIDATE_CONTRACT,
   normalizeAcceptanceItems,
-  parseNodeTestSummary,
   runAcceptanceSuite,
 } from '../src/acceptance-runner.mjs'
 
@@ -23,7 +22,7 @@ function candidate() {
     planningSnapshotDigest: digest('1'),
     planDigest: digest('2'),
     codeCommitSha: '3'.repeat(40),
-    contentDigest: digest('4'),
+    commitSha: digest('4'),
     spec: { id: 'SPEC-CA01', revision: 'R4', digest: digest('5') },
     tickets: [{ id: 'T-12', revision: 'R4', digest: digest('6') }],
   }
@@ -37,24 +36,10 @@ function item(id, overrides = {}) {
     argv: [process.execPath, '--test', `${id}.test.mjs`],
     cwd: '.',
     timeoutMs: 2_000,
-    adapter: 'node-test',
+    adapter: 'command',
     ...overrides,
   }
 }
-
-test('Node test适配器只把有非零用例且证据完整的结果识别为可通过', () => {
-  assert.deepEqual(parseNodeTestSummary('# tests 2\n# pass 2\n# fail 0\n'), {
-    tests: 2,
-    pass: 2,
-    fail: 0,
-  })
-  assert.deepEqual(parseNodeTestSummary('ℹ tests 0\nℹ pass 0\nℹ fail 0\n'), {
-    tests: 0,
-    pass: 0,
-    fail: 0,
-  })
-  assert.equal(parseNodeTestSummary('command succeeded without test summary'), undefined)
-})
 
 test('集中验收拒绝未知依赖、依赖环和空命令', () => {
   assert.throws(() => normalizeAcceptanceItems([
@@ -69,7 +54,7 @@ test('集中验收拒绝未知依赖、依赖环和空命令', () => {
   ]), /argv必须非空/u)
 })
 
-test('真实Node入口在首项失败后继续独立项，并分类阻塞、超时、取消、零用例和未运行', async () => {
+test('集中验收只按项目命令的退出状态分类，不解释测试框架输出', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-acceptance-runner-'))
   const fixedCandidate = candidate()
   try {
@@ -83,10 +68,10 @@ test('真实Node入口在首项失败后继续独立项，并分类阻塞、超�
     const executor = {
       async run(request) {
         if (request.itemId === 'cancelled') {
-          return { exitCode: 1, aborted: true, contentDigest: fixedCandidate.contentDigest, codeCommitSha: fixedCandidate.codeCommitSha }
+          return { exitCode: 1, aborted: true, commitSha: fixedCandidate.commitSha, codeCommitSha: fixedCandidate.codeCommitSha }
         }
         if (request.itemId === 'incomplete') {
-          return { exitCode: 0, stdout: '没有用例计数', contentDigest: fixedCandidate.contentDigest, codeCommitSha: fixedCandidate.codeCommitSha }
+          return { exitCode: 0, stdout: '没有用例计数', commitSha: fixedCandidate.commitSha, codeCommitSha: fixedCandidate.codeCommitSha }
         }
         try {
           const result = await execFileAsync(request.argv[0], request.argv.slice(1), {
@@ -99,7 +84,7 @@ test('真实Node入口在首项失败后继续独立项，并分类阻塞、超�
             exitCode: 0,
             stdout: result.stdout,
             stderr: result.stderr,
-            contentDigest: fixedCandidate.contentDigest,
+            commitSha: fixedCandidate.commitSha,
             codeCommitSha: fixedCandidate.codeCommitSha,
           }
         } catch (error) {
@@ -108,7 +93,7 @@ test('真实Node入口在首项失败后继续独立项，并分类阻塞、超�
             timedOut: error.killed === true,
             stdout: error.stdout,
             stderr: error.stderr,
-            contentDigest: fixedCandidate.contentDigest,
+            commitSha: fixedCandidate.commitSha,
             codeCommitSha: fixedCandidate.codeCommitSha,
           }
         }
@@ -136,9 +121,9 @@ test('真实Node入口在首项失败后继续独立项，并分类阻塞、超�
         fail: 'failed',
         pass: 'passed',
         timeout: 'timed_out',
-        zero: 'zero_tests',
+        zero: 'passed',
         cancelled: 'cancelled',
-        incomplete: 'evidence_incomplete',
+        incomplete: 'passed',
         'declared-skip': 'skipped',
         'declared-not-run': 'not_run',
         blocked: 'blocked',
@@ -147,15 +132,32 @@ test('真实Node入口在首项失败后继续独立项，并分类阻塞、超�
     assert.deepEqual(result.results.find(entry => entry.itemId === 'blocked').blockedBy, [
       { itemId: 'fail', status: 'failed' },
     ])
-    assert.equal(result.results.find(entry => entry.itemId === 'pass').testSummary.tests, 1)
-    assert.equal(result.results.find(entry => entry.itemId === 'zero').testSummary.tests, 0)
     assert.match(result.results.find(entry => entry.itemId === 'fail').stdout, /tests 1/u)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test('候选摘要或代码提交变化时旧结果不能计为通过', async () => {
+test('中断和超时保留原始输出，但不解释项目测试格式', async () => {
+  const fixedCandidate = candidate()
+  for (const [flags, status] of [[{ timedOut: true }, 'timed_out'], [{ aborted: true }, 'cancelled']]) {
+    const result = await runAcceptanceSuite({
+      candidate: fixedCandidate,
+      items: [item('interrupted')],
+      executor: { async run() { return {
+        ...flags, exitCode: 1, codeCommitSha: fixedCandidate.codeCommitSha,
+        commitSha: fixedCandidate.commitSha,
+        stdout: '# tests 3\n# pass 2\n# fail 0\n# cancelled 1\n',
+      } } },
+    })
+    assert.equal(result.results[0].status, status)
+    assert.match(result.results[0].stdout, /tests 3/u)
+    assert.equal(result.results[0].testSummary, undefined)
+    assert.notEqual(result.status, 'passed')
+  }
+})
+
+test('代码提交变化时旧结果不能计为通过', async () => {
   const fixedCandidate = candidate()
   const result = await runAcceptanceSuite({
     candidate: fixedCandidate,
@@ -165,8 +167,7 @@ test('候选摘要或代码提交变化时旧结果不能计为通过', async ()
         return {
           exitCode: 0,
           stdout: '# tests 1\n# pass 1\n# fail 0\n',
-          contentDigest: digest('a'),
-          codeCommitSha: fixedCandidate.codeCommitSha,
+          codeCommitSha: digest('a').slice(0, 40),
         }
       },
     },

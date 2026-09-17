@@ -331,6 +331,66 @@ async function loadDocument({ root, cwd, descriptor, kind, field, usedPaths }) {
 
 function errorText(error) { return error instanceof Error ? error.message : String(error) }
 
+/**
+ * Derive the formal planning manifest from a bounded set of main-thread
+ * documents.  This is deliberately kept next to the strict frontmatter
+ * parser: callers never need to reproduce the declaration schema in a model
+ * tool argument.
+ *
+ * Files without planning frontmatter remain supporting documents.  A file
+ * that claims to be a planning document, but fails the strict parser, is an
+ * error rather than an opportunity to smuggle an invalid Spec/Ticket into the
+ * supporting bundle.
+ */
+export async function inferPlanningManifest({ root, cwd = root, paths } = {}) {
+  if (!Array.isArray(paths) || paths.length === 0) fail('NO_EXECUTABLE_WORK', 'paths')
+  const seen = new Set()
+  const specs = []
+  const tickets = []
+  const supporting = []
+  for (const [index, rawPath] of paths.entries()) {
+    const absolute = orchestratorDocumentPath({ root, cwd, filePath: rawPath })
+    if (absolute === undefined) fail('UNSUPPORTED_PATH', `paths[${index}]`)
+    const path = relative(realpathSync(root), absolute).split(sep).join('/')
+    if (seen.has(path)) fail('DUPLICATE_PATH', `paths[${index}]`, path)
+    seen.add(path)
+    let bytes
+    try { bytes = await readFile(absolute) } catch (error) {
+      if (error?.code === 'ENOENT') fail('MISSING_SOURCE', `paths[${index}]`, path)
+      fail('INVALID_SOURCE', `paths[${index}]`, errorText(error))
+    }
+    const sha256 = createHash('sha256').update(bytes).digest('hex')
+    let content
+    try { content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) } catch {
+      fail('INVALID_SOURCE', `paths[${index}]`, 'invalid UTF-8')
+    }
+    const claimsPlanningDocument = /^---\r?\n/u.test(content)
+      && /^(?:planning_document|document_kind|document_id|document_revision|planning_declaration):/mu.test(content)
+    if (!claimsPlanningDocument) {
+      supporting.push({ path, sha256 })
+      continue
+    }
+    const header = parseDocumentHeader(content, `paths[${index}]`)
+    if (header.kind === 'spec') {
+      const declaration = specDeclaration(header.declaration, `paths[${index}].planning_declaration`)
+      specs.push({ path, sha256, ...declaration })
+    } else {
+      const declaration = ticketDeclaration(header.declaration, `paths[${index}].planning_declaration`)
+      tickets.push({ path, sha256, ...declaration })
+    }
+  }
+  if (specs.length !== 1) fail('INVALID_MANIFEST', 'paths', 'exactly one Spec is required')
+  if (tickets.length === 0) fail('NO_EXECUTABLE_WORK', 'paths', 'at least one Ticket is required')
+  return deepFreeze({
+    manifest: {
+      contract: PLANNING_REFERENCE_MANIFEST_CONTRACT,
+      spec: specs[0],
+      tickets: tickets.toSorted((left, right) => left.path.localeCompare(right.path)),
+    },
+    supporting: supporting.toSorted((left, right) => left.path.localeCompare(right.path)),
+  })
+}
+
 function validateReferences(spec, tickets) {
   const contractVersions = new Map(spec.contracts.map(item => [item.id, item]))
   const acceptance = new Set(spec.acceptanceCriteria)

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import {
+import fsPromises, {
   chmod,
   mkdir,
   mkdtemp,
@@ -12,6 +12,7 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -1071,6 +1072,58 @@ test('loadRegistry 与写操作共享 Registry 锁并且只读取完整目录状
     const registry = await loading
     if (assertionError !== undefined) throw assertionError
     assert.deepEqual(registry.owners, [])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Registry 锁在 EEXIST 后、检查前已释放时按 missing 重取而不伪造读取失败', async () => {
+  const root = await repositoryFixture()
+  const originalMkdir = fsPromises.mkdir
+  try {
+    const expected = await ensureRegistry(root)
+    const lock = join(root, '.owner-workflow.lock')
+    await mkdir(lock)
+    let lockMkdirAttempts = 0
+    fsPromises.mkdir = async (path, options) => {
+      if (path !== lock) return originalMkdir(path, options)
+      lockMkdirAttempts += 1
+      try {
+        return await originalMkdir(path, options)
+      } catch (error) {
+        if (lockMkdirAttempts === 1 && error?.code === 'EEXIST') {
+          // Release the prior holder only after this exact acquisition attempt
+          // observed EEXIST, before production inspects the contested path.
+          await rm(lock, { recursive: true, force: true })
+        }
+        throw error
+      }
+    }
+    syncBuiltinESMExports()
+
+    const loaded = await loadRegistry(root)
+
+    assert.equal(lockMkdirAttempts, 2)
+    assert.deepEqual(loaded, expected)
+  } finally {
+    fsPromises.mkdir = originalMkdir
+    syncBuiltinESMExports()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Registry 锁检查只把 ENOENT 当作 missing，其他文件错误保留 cause', async () => {
+  const root = await repositoryFixture()
+  try {
+    await ensureRegistry(root)
+    const lock = join(root, '.owner-workflow.lock')
+    await writeFile(lock, 'not a lock directory')
+
+    await assert.rejects(loadRegistry(root), error => {
+      assert.equal(error.message, '无法读取 Owner Registry')
+      assert.equal(error.cause?.code, 'ENOTDIR')
+      return true
+    })
   } finally {
     await rm(root, { recursive: true, force: true })
   }

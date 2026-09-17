@@ -30,7 +30,7 @@
         'runner_error',
         'workflow_stalled',
       ])
-      const TERMINAL_LIFECYCLES = new Set(['closed', 'completed', 'failed', 'cancelled', 'stopped'])
+      const TERMINAL_LIFECYCLES = new Set(['closed', 'completed', 'cancelled', 'stopped'])
 
       let waitSnapshot = Object.freeze({
         phase: 'idle',
@@ -59,14 +59,14 @@
         return Object.freeze({
           id,
           source: text(value.source, 100),
-          operationId: text(value.operationId, 300),
           workflowId: text(value.workflowId, 300),
           sessionId,
           workspaceId: text(value.workspaceId, 100),
           workspaceName: text(value.workspaceName, 300),
-          title: text(value.title, 200) || '后台 Operation',
+          title: text(value.title, 200) || '工作流',
           goal: text(value.goal),
           state,
+          terminal: value.terminal === true,
           waitingFor: text(value.waitingFor, 200),
           statusText: text(value.statusText, 300),
           detail: text(value.detail),
@@ -105,9 +105,9 @@
         })
       }
 
-      function normalizeRuntimeEntry(value, kind) {
+      function normalizeRuntimeEntry(value) {
         if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
-        const id = text(kind === 'workflow' ? value.workflowId : value.operationId, 300)
+        const id = text(value.workflowId, 300)
         if (id === '') return undefined
         const mainThread = normalizeActor(value.mainThread)
         const subagents = Array.isArray(value.subagents)
@@ -125,14 +125,16 @@
               deadlineAt: text(rawAttempt.deadlineAt, 100),
             })
         return Object.freeze({
-          kind,
+          kind: 'workflow',
           id,
           goal: text(value.goal),
           status: text(value.status, 100),
           phase: text(value.phase, 100) || text(value.status, 100),
           lifecycle: text(value.lifecycle, 100),
+          terminal: value.terminal === true,
           runnerAssignment: text(value.runnerAssignment, 100),
           runnerAttempt,
+          recovery: value.recovery && { used: value.recovery.used, limit: value.recovery.limit },
           execution: value.execution === null || typeof value.execution !== 'object' ? {} : Object.freeze({
             totalTasks: Number.isSafeInteger(value.execution.totalTasks) ? value.execution.totalTasks : 0,
             pendingTasks: Number.isSafeInteger(value.execution.pendingTasks) ? value.execution.pendingTasks : 0,
@@ -154,9 +156,7 @@
           workspaceId,
           workspaceName: text(value.workspaceName, 300) || '未命名工作区',
           workflows: Object.freeze((Array.isArray(value.workflows) ? value.workflows : [])
-            .map(item => normalizeRuntimeEntry(item, 'workflow')).filter(item => item !== undefined)),
-          operations: Object.freeze((Array.isArray(value.operations) ? value.operations : [])
-            .map(item => normalizeRuntimeEntry(item, 'operation')).filter(item => item !== undefined)),
+            .map(normalizeRuntimeEntry).filter(item => item !== undefined)),
           agents: Object.freeze((Array.isArray(value.agents) ? value.agents : [])
             .map(normalizeActor).filter(item => item !== undefined)),
         })
@@ -168,6 +168,7 @@
       }
 
       function waitSnapshotFromBody(body) {
+        if (body?.contract === 'DSH_KERNEL_STATUS_V1') body = kernelStatusForDisplay(body)
         const compatibleV1 = body?.contract === 'DSH_WAIT_LIST_V1' && Array.isArray(body.waits)
         const currentV2 = ['DSH_WAIT_LIST_V2', 'DSH_WAIT_LIST_V3'].includes(body?.contract)
           && Array.isArray(body.waits)
@@ -199,6 +200,41 @@
           error: null,
           updatedAt: Date.now(),
         }
+      }
+
+      // Display aliases only. Status, waits and completion come from the public kernel
+      // view, not a second client-side workflow state machine.
+      function actionableKernelEntry(item) {
+        return !item.terminal && !['failed', 'cancelled', 'canceled', 'completed', 'historical'].includes(item.status)
+      }
+
+      function kernelStatusForDisplay(body) {
+        const iso = value => Number.isFinite(value) ? new Date(value).toISOString() : ''
+        const runner = { process: body.runner.status === 'running' ? 'online' : body.runner.status, assignment: body.runner.status,
+          heartbeatAt: iso(body.runner.lastCheckAt), startedAt: '', activeAttemptCount: 0 }
+        const waits = [], staleWaits = []
+        const workspaces = body.workspaces.map(workspace => {
+          const entries = workspace.workflows.map(item => {
+            const date = { startedAt: iso(item.createdAt), updatedAt: iso(item.updatedAt) }
+            const actionable = actionableKernelEntry(item)
+            const attention = actionable || item.status === 'failed' || item.retainedExecutions?.length ? [...item.attention] : []
+            if (actionable && !item.terminal && body.runner.status !== 'running') attention.unshift({ id: 'runner', reason: `runner_${body.runner.status === 'error' ? 'error' : 'offline'}`,
+              responsibleParty: 'runtime', resumeCondition: 'original_executor_available', detail: body.runner.lastError ?? 'Runner 没有运行' })
+            for (const issue of attention) (item.terminal || issue.reason === 'isolated_execution_unconfirmed' ? staleWaits : waits).push({ id: `${item.workflowId}:${issue.id}`, source: 'workflow',
+              workflowId: item.workflowId,
+              sessionId: item.rootSessionId, workspaceId: workspace.workspaceId, workspaceName: workspace.workspaceName, terminal: item.terminal,
+              goal: item.goal, title: item.goal, state: issue.reason === 'user_decision' ? 'waiting_workflow_decision'
+                : ['runner_offline', 'runner_error'].includes(issue.reason) ? issue.reason : 'workflow_stalled',
+              waitingFor: issue.responsibleParty, statusText: issue.reason, action: issue.resumeCondition,
+              detail: typeof issue.detail === 'string' ? issue.detail : JSON.stringify(issue.detail ?? ''), ...item.counts, ...date })
+            return { workflowId: item.workflowId, goal: item.goal, status: item.status, phase: item.status,
+              lifecycle: item.status, terminal: item.terminal, execution: item.counts, recovery: item.recovery, attention: item.attention,
+              mainThread: { sessionId: item.rootSessionId, role: 'main', lifecycle: item.status === 'failed' ? 'blocked' : 'not_observed', activity: item.status },
+              subagents: [], createdAt: iso(item.createdAt), updatedAt: iso(item.updatedAt), kind: item.kind }
+          })
+          return { ...workspace, workflows: entries, agents: [] }
+        })
+        return { contract: 'DSH_RUNTIME_STATUS_V1', runner, waits, staleWaits, workspaces }
       }
 
       function connectWaitEvents() {
@@ -311,44 +347,50 @@
         return { label: '运行中', tone: 'running' }
       }
 
-      function waitIdentifier(item) {
-        return item.workflowId || item.operationId
-      }
+      function waitIdentifier(item) { return item.workflowId }
 
       function workflowTotals(waits) {
-        return waits.reduce((total, item) => ({
-          workflows: total.workflows + (item.source === 'workflow' ? 1 : 0),
-          pending: total.pending + (item.source === 'workflow' ? item.pendingTasks : 0),
-          running: total.running + (item.source === 'workflow' ? item.runningTasks : 0),
+        const workflows = new Map()
+        for (const item of waits) if (item.source === 'workflow' && !workflows.has(item.workflowId)) workflows.set(item.workflowId, item)
+        return [...workflows.values()].reduce((total, item) => ({
+          workflows: total.workflows + 1,
+          pending: total.pending + item.pendingTasks,
+          running: total.running + item.runningTasks,
         }), { workflows: 0, pending: 0, running: 0 })
       }
 
       function waitSummary(waits, staleCount = 0) {
         const workflow = workflowTotals(waits)
-        const operationCount = waits.filter(item => item.source === 'operation').length
         const parts = []
         if (workflow.workflows > 0) parts.push(`未执行 ${workflow.pending}`, `执行中 ${workflow.running}`)
-        if (operationCount > 0) parts.push(`Operation ${operationCount}`)
+        for (const [state, label] of [
+          ['waiting_user_input', '待回答'],
+          ['waiting_user_approval', '待授权'],
+          ['waiting_workflow_decision', '待审查'],
+        ]) {
+          const count = waits.filter(item => item.source === 'native' && item.state === state).length
+          if (count > 0) parts.push(`${label} ${count}`)
+        }
         if (staleCount > 0) parts.push(`遗留 ${staleCount}`)
-        return parts.length > 0 ? parts.join(' · ') : '当前没有等待事项'
+        return parts.length > 0 ? parts.join(' · ') : waits.length > 0 ? `待处理 ${waits.length}` : '当前没有等待事项'
       }
 
-      function nativeInteractionWaits(sessions) {
+      function nativeInteractionWaits(sessions, pendingInteractions) {
         const labels = {
           approval: { state: 'waiting_user_approval', goal: '等待权限批准', waitingFor: '用户授权' },
           question: { state: 'waiting_user_input', goal: '等待补充信息', waitingFor: '用户回答' },
           'plan-review': { state: 'waiting_workflow_decision', goal: '等待计划审查', waitingFor: '用户审查' },
         }
-        return Object.values(sessions.byId ?? {}).flatMap(session => {
-          const selected = labels[session.pendingInteraction]
-          if (selected === undefined) return []
+        return Array.from(pendingInteractions.values()).flatMap(interaction => {
+          const session = knownSession(sessions, interaction.sessionId)
+          const selected = labels[interaction.kind]
+          if (session === undefined || selected === undefined) return []
           const startedAt = Number.isFinite(session.updatedAt)
             ? new Date(session.updatedAt).toISOString()
             : new Date().toISOString()
           return [{
-            id: `native:${session.id}:${session.pendingInteraction}`,
+            id: `native:${session.id}:${interaction.key}`,
             source: 'native',
-            operationId: '',
             workflowId: '',
             sessionId: session.id,
             workspaceId: '',
@@ -379,10 +421,21 @@
         })
       }
 
-      function mergeActionWaits(snapshot, sessions) {
+      // Official byId contains ordinary sessions and the selected child's breadcrumbs.
+      // Unselected children live in the parent catalogs, including pending approvals.
+      function knownSession(sessions, sessionId) {
+        const summary = sessions.byId[sessionId]
+        for (const [parentId, catalog] of Object.entries(sessions.subagentsByParent ?? {})) {
+          const child = catalog.entries.find(entry => entry.kind === 'child' && entry.id === sessionId)
+          if (child !== undefined) return { ...summary, id: child.id, parentId, displayTitle: child.label || summary?.displayTitle || child.id }
+        }
+        return summary
+      }
+
+      function mergeActionWaits(snapshot, sessions, pendingInteractions) {
         const merged = [...snapshot.waits]
         const seen = new Set(merged.map(item => `${item.sessionId}:${item.state}`))
-        for (const item of nativeInteractionWaits(sessions)) {
+        for (const item of nativeInteractionWaits(sessions, pendingInteractions)) {
           const key = `${item.sessionId}:${item.state}`
           if (!seen.has(key)) merged.push(item)
         }
@@ -396,7 +449,7 @@
         while (currentId !== undefined && currentId !== '' && !visited.has(currentId)) {
           if (currentId === rootSessionId) return true
           visited.add(currentId)
-          currentId = sessions.byId[currentId]?.parentId
+          currentId = knownSession(sessions, currentId)?.parentId
         }
         return false
       }
@@ -408,7 +461,7 @@
         while (currentId !== undefined && currentId !== '' && !visited.has(currentId)) {
           if (archived.has(currentId)) return true
           visited.add(currentId)
-          currentId = sessions.byId[currentId]?.parentId
+          currentId = knownSession(sessions, currentId)?.parentId
         }
         return false
       }
@@ -424,7 +477,7 @@
       }
 
       function waitBelongsToCurrentContext(item, context, sessions, archivedSessionIds = []) {
-        if (context === undefined || sessions.byId?.[item.sessionId] === undefined) return false
+        if (context === undefined || knownSession(sessions, item.sessionId) === undefined) return false
         return !sessionLineageIsArchived(item.sessionId, archivedSessionIds, sessions)
           && sessionBelongsToWorkspace(item.sessionId, context.workspace.sessionIds ?? [], sessions)
           && sessionDescendsFrom(item.sessionId, context.currentSessionId, sessions)
@@ -448,16 +501,11 @@
       function currentStatusWorkspaces(snapshot, context, sessions) {
         if (context === undefined) return EMPTY_STATUS_WORKSPACES
         const workflows = new Map()
-        const operations = new Map()
         const agents = new Map()
         for (const workspace of snapshot.workspaces) {
           for (const entry of workspace.workflows) {
             const projected = projectRuntimeEntryToCurrentSession(entry, context, sessions)
             if (projected !== undefined) workflows.set(projected.id, projected)
-          }
-          for (const entry of workspace.operations) {
-            const projected = projectRuntimeEntryToCurrentSession(entry, context, sessions)
-            if (projected !== undefined) operations.set(projected.id, projected)
           }
           for (const actor of workspace.agents) {
             if (actorIsCurrent(actor, context, sessions)) agents.set(actor.sessionId, actor)
@@ -467,7 +515,6 @@
           workspaceId: context.workspace.workspaceId,
           workspaceName: context.workspace.title,
           workflows: Object.freeze([...workflows.values()]),
-          operations: Object.freeze([...operations.values()]),
           agents: Object.freeze([...agents.values()]),
         })]
       }
@@ -488,7 +535,7 @@
       }
 
       function WaitItem({ item, now, openSession }) {
-        const status = waitStatus(item.state)
+        const status = item.terminal ? { label: '任务已结束', tone: 'warn' } : waitStatus(item.state)
         const navigate = event => {
           if (event.target?.closest?.('details')) return
           openSession?.(item.sessionId)
@@ -504,13 +551,13 @@
         },
           h('div', { className: 'dsh-owner-wait-card-head' },
             h('span', { className: `dsh-owner-wait-status dsh-owner-wait-status-${status.tone}` }, status.label),
-            h('span', { className: 'dsh-owner-wait-elapsed' }, `已等待 ${elapsedText(item.startedAt, now)}`),
+            h('span', { className: 'dsh-owner-wait-elapsed' }, item.terminal ? '结果已保留' : `已等待 ${elapsedText(item.startedAt, now)}`),
           ),
-          h('div', { className: 'dsh-owner-wait-goal' }, item.goal || (item.source === 'workflow' ? 'Owner Workflow' : '后台 Operation')),
+          h('div', { className: 'dsh-owner-wait-goal' }, item.goal || 'Owner Workflow'),
           item.detail === '' ? null : h('div', { className: 'dsh-owner-wait-current' }, item.detail),
           h(WaitDetails, { item }),
           h('div', { className: 'dsh-owner-wait-note' },
-            item.source === 'workflow'
+            item.terminal ? '任务已结束；请查看结果与剩余问题。' : item.source === 'workflow'
               ? item.state === 'waiting_owner_approval'
                 ? '点击返回 Owner 子代理会话处理精确授权；主流程已经保留任务与审批状态。'
                 : item.state === 'runner_offline' || item.state === 'runner_error' || item.state === 'workflow_stalled' || item.state === 'waiting_workflow_decision'
@@ -531,13 +578,13 @@
             h('span', { className: 'dsh-owner-wait-status dsh-owner-wait-status-stale' }, '已失效'),
             h('span', { className: 'dsh-owner-wait-elapsed' }, `创建于 ${elapsedText(item.startedAt, now)}前`),
           ),
-          h('div', { className: 'dsh-owner-wait-goal' }, item.goal || '后台 Operation'),
+          h('div', { className: 'dsh-owner-wait-goal' }, item.goal || '工作流'),
           h('div', { className: 'dsh-owner-wait-stale-reason' }, item.staleReason || '这条记录已不能继续处理。'),
           h('details', { className: 'dsh-owner-wait-details' },
             h('summary', null, '查看记录'),
             h('div', { className: 'dsh-owner-wait-detail-body' },
               item.detail === '' ? null : h('div', { className: 'dsh-owner-wait-line' }, h('b', null, '原等待信息：'), item.detail),
-              h('div', { className: 'dsh-owner-wait-id', title: item.operationId }, item.operationId),
+              h('div', { className: 'dsh-owner-wait-id', title: item.workflowId }, item.workflowId),
             ),
           ),
         )
@@ -576,19 +623,21 @@
         )
       }
 
-      function HeaderWaitAction({ sessionId, useSessions, openSession }) {
+      function HeaderWaitAction({ sessionId, useSessions, useSessionPendingInteraction, openSession }) {
         const snapshot = useWaitSnapshot()
         const sessions = useSessions(value => value)
-        const actionWaits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
+        const pendingInteractions = useSessionPendingInteraction(value => value)
+        const actionWaits = useMemo(() => mergeActionWaits(snapshot, sessions, pendingInteractions), [snapshot, sessions, pendingInteractions])
         const waits = useMemo(
-          () => actionWaits.filter(item => item.sessionId === sessionId),
-          [actionWaits, sessionId],
+          () => actionWaits.filter(item => sessionDescendsFrom(item.sessionId, sessionId, sessions)),
+          [actionWaits, sessionId, sessions],
         )
         const staleWaits = useMemo(
           () => snapshot.staleWaits.filter(item => item.sessionId === sessionId),
           [snapshot.staleWaits, sessionId],
         )
         const [open, setOpen] = useState(false)
+        useEffect(() => setOpen(false), [sessionId])
         const rootRef = useRef(null)
         const now = useNow(open)
         useDismissOnOutsidePointer(rootRef, open, setOpen)
@@ -618,7 +667,7 @@
                   h('span', { className: 'dsh-owner-wait-menu-summary' }, summary),
                 ),
                 waits.length === 0
-                  ? h('div', { className: 'dsh-owner-wait-empty dsh-owner-wait-empty-active' }, '当前会话没有正在等待的后台 Operation。')
+                  ? h('div', { className: 'dsh-owner-wait-empty dsh-owner-wait-empty-active' }, '当前会话没有正在等待的工作流。')
                   : h(WaitSection, { title: '需要处理', waits, now, label: '当前会话主动等待列表', openSession }),
                 h(StaleWaitSection, { waits: staleWaits, now, label: '当前会话遗留等待列表' }),
               )
@@ -631,7 +680,7 @@
         for (const item of waits) {
           let group = groups.get(item.sessionId)
           if (group === undefined) {
-            const session = sessions.byId[item.sessionId]
+            const session = knownSession(sessions, item.sessionId)
             group = {
               sessionId: item.sessionId,
               title: session?.displayTitle || `会话 ${item.sessionId}`,
@@ -651,7 +700,7 @@
         while (currentId !== undefined && !visited.has(currentId)) {
           if (workspaceSessions.has(currentId)) return true
           visited.add(currentId)
-          currentId = sessions.byId[currentId]?.parentId
+          currentId = knownSession(sessions, currentId)?.parentId
         }
         return false
       }
@@ -712,9 +761,6 @@
         waiting_planner: '等待 Planner 回报', waiting_plan_reviewer: '等待 Plan Reviewer 回报',
         waiting_user_approval: '等待用户授权或批准', waiting_runner: '等待 Runner 接管',
         waiting_subagents: '等待子代理执行或回报', blocked_runtime: 'Runtime 流程已阻塞',
-        operation_starting: '启动 Operation', operation_running: '执行 Operation',
-        operation_waiting_input: '等待用户补充信息', operation_waiting_approval: '等待用户授权',
-        operation_completed: 'Operation 已完成', operation_failed: 'Operation 失败', operation_cancelled: 'Operation 已取消',
       })
 
       function activityLabel(activity) {
@@ -777,11 +823,12 @@
         const status = lifecycleStatus(entry.lifecycle)
         return h('article', { className: 'dsh-runtime-overview-card' },
           h('div', { className: 'dsh-runtime-card-head' },
-            h('span', { className: 'dsh-runtime-card-title' }, entry.kind === 'workflow' ? 'Workflow' : 'Operation'),
+            h('span', { className: 'dsh-runtime-card-title' }, 'Workflow'),
             h('span', { className: `dsh-runtime-state dsh-runtime-state-${status.tone}` }, status.label),
           ),
           h('div', { className: 'dsh-runtime-goal' }, entry.goal || entry.id),
           h('div', { className: 'dsh-runtime-activity' }, activityLabel(entry.phase)),
+          entry.recovery === undefined ? null : h('div', { className: 'dsh-runtime-meta' }, `恢复额度 ${entry.recovery.used ?? '待对账'}/${entry.recovery.limit}`),
           entry.kind !== 'workflow' ? null : h('div', { className: 'dsh-runtime-meta' },
             `未执行 ${entry.execution.pendingTasks} · 执行中 ${entry.execution.runningTasks} · 已完成 ${entry.execution.completedTasks}`,
           ),
@@ -793,8 +840,14 @@
       }
 
       function workspaceEntries(workspace) {
-        return [...workspace.workflows, ...workspace.operations]
+        return [...workspace.workflows]
           .filter(entry => !TERMINAL_LIFECYCLES.has(entry.lifecycle))
+      }
+
+      // Failed entries remain visible for diagnosis; visibility is not active work.
+      function activeWorkspaceEntries(workspace) {
+        return workspaceEntries(workspace).filter(entry => entry.terminal !== true
+          && !['failed', 'historical'].includes(entry.lifecycle))
       }
 
       function actorWithPendingInteraction(actor, actionWaits) {
@@ -839,7 +892,6 @@
       function subagentCategory(role) {
         if (role === 'planner' || role === 'plan-reviewer') return '规划与审查'
         if (role === 'owner') return 'Owner 执行'
-        if (role === 'operator') return 'Operation'
         if (role === 'reviewer' || role === 'memory-curator' || role === 'memory-reviewer') return '交付与记忆审查'
         return '其他子代理'
       }
@@ -902,14 +954,14 @@
               ),
               h('div', { className: 'dsh-runtime-activity' }, snapshot.runner.assignment === 'supervising'
                 ? `正在监督 ${snapshot.runner.activeAttemptCount} 个 Workflow attempt`
-                : snapshot.runner.assignment === 'idle' ? '空闲，等待接管' : '没有运行'),
+                : snapshot.runner.assignment === 'idle' ? '空闲，等待接管' : snapshot.runner.assignment === 'running' ? '调度器运行中' : '没有运行'),
               snapshot.runner.generation === null ? null : h('div', { className: 'dsh-runtime-meta' }, `Leader generation ${snapshot.runner.generation}`),
               snapshot.runner.heartbeatAt === null ? null : h('div', { className: 'dsh-runtime-meta' }, `心跳 ${snapshot.runner.heartbeatAt}`),
             ) : null,
             statusWorkspaces.map(workspace => h('section', { key: workspace.workspaceId, className: 'dsh-runtime-workspace' },
               h('div', { className: 'dsh-runtime-workspace-title' }, workspace.workspaceName),
               workspaceEntries(workspace).length === 0
-                ? h('div', { className: 'dsh-owner-wait-empty' }, '当前没有 Workflow 或 Operation。')
+                ? h('div', { className: 'dsh-owner-wait-empty' }, '当前没有 Workflow。')
                 : h('div', { className: 'dsh-runtime-grid' }, workspaceEntries(workspace).map(entry => h(RuntimeOverviewCard, { key: `${entry.kind}:${entry.id}`, entry }))),
             )),
           )
@@ -939,108 +991,13 @@
         )
       }
 
-      function WorkspaceWaitAction({ workspaceName, sessionIds, useSessions, openSession }) {
+      function SidebarWaitAction({ wide, useSessions, useWorkspaces, useSessionPendingInteraction, openSession }) {
         const snapshot = useWaitSnapshot()
         const sessions = useSessions(value => value)
-        const context = useMemo(() => {
-          const currentSessionId = text(sessions.current, 300)
-          if (currentSessionId === '' || sessions.byId?.[currentSessionId] === undefined) return undefined
-          if (!sessionBelongsToWorkspace(currentSessionId, sessionIds, sessions)) return undefined
-          return {
-            currentSessionId,
-            workspace: { workspaceId: workspaceName, title: workspaceName, sessionIds },
-          }
-        }, [sessions, sessionIds, workspaceName])
-        const actionWaits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
-        const waits = useMemo(
-          () => actionWaits.filter(item => waitBelongsToCurrentContext(item, context, sessions)),
-          [actionWaits, context, sessions],
-        )
-        const groups = useMemo(() => groupWaitsBySession(waits, sessions), [waits, sessions])
-        const statusWorkspaces = useMemo(
-          () => currentStatusWorkspaces(snapshot, context, sessions),
-          [snapshot, context, sessions],
-        )
-        const [open, setOpen] = useState(false)
-        const [menuStyle, setMenuStyle] = useState(undefined)
-        const rootRef = useRef(null)
-        const now = useNow(open)
-        useDismissOnOutsidePointer(rootRef, open, setOpen)
-
-        useEffect(() => {
-          if (!open) {
-            setMenuStyle(undefined)
-            return undefined
-          }
-          const positionMenu = () => {
-            const rect = rootRef.current?.getBoundingClientRect()
-            if (rect === undefined) return
-            setMenuStyle({
-              position: 'fixed',
-              left: window.innerWidth <= 720 ? 8 : rect.right + 8,
-              top: Math.max(8, rect.top),
-              maxHeight: Math.max(96, window.innerHeight - Math.max(8, rect.top) - 16),
-            })
-          }
-          positionMenu()
-          window.addEventListener('resize', positionMenu)
-          return () => window.removeEventListener('resize', positionMenu)
-        }, [open])
-
-        const activeCount = statusWorkspaces.reduce((total, workspace) => total + workspaceEntries(workspace).length, 0)
-        const summary = `待处理 ${waits.length} · 活动 ${activeCount}`
-        const actionGroups = groups.length === 0 ? [] : [{
-          workspaceId: statusWorkspaces[0]?.workspaceId || workspaceName,
-          title: workspaceName,
-          waits,
-          sessions: groups,
-        }]
-
-        if (context === undefined) return null
-        return h('div', { ref: rootRef, className: 'dsh-owner-workspace-inbox-root' },
-          h('button', {
-            type: 'button',
-            className: 'dsh-owner-workspace-inbox-trigger',
-            'aria-expanded': open,
-            'aria-label': `${workspaceName} 运行状态，${waits.length} 个需要处理`,
-            title: summary,
-            onClick: event => { event.stopPropagation(); setOpen(value => !value) },
-          },
-          h('span', { 'aria-hidden': 'true' }, '◎'),
-          waits.length > 0 ? h('span', { className: 'dsh-owner-workspace-inbox-badge' }, waits.length) : null,
-          ['error', 'disconnected'].includes(snapshot.phase) ? h('span', { className: 'dsh-owner-wait-error-mark', title: snapshot.error || '运行状态暂不可用' }, '!') : null),
-          open && menuStyle !== undefined
-            ? h('div', { className: 'dsh-owner-wait-menu dsh-owner-workspace-inbox-menu', style: menuStyle },
-                h('div', { className: 'dsh-owner-wait-menu-title' },
-                  h('div', null,
-                    h('div', null, `${workspaceName} · 运行状态`),
-                    h('div', { className: 'dsh-owner-wait-menu-summary' }, summary),
-                  ),
-                ),
-                ['error', 'disconnected'].includes(snapshot.phase)
-                  ? h('div', { className: 'dsh-owner-wait-warning' }, snapshot.error)
-                  : null,
-                h(RuntimeStatusTabs, {
-                  snapshot,
-                  statusWorkspaces,
-                  actionGroups,
-                  actionWaits: waits,
-                  staleWaits: EMPTY_WAITS,
-                  now,
-                  showRunner: true,
-                  openSession,
-                }),
-              )
-            : null,
-        )
-      }
-
-      function SidebarWaitAction({ wide, useSessions, useWorkspaces, openSession }) {
-        const snapshot = useWaitSnapshot()
-        const sessions = useSessions(value => value)
+        const pendingInteractions = useSessionPendingInteraction(value => value)
         const workspaces = useWorkspaces(value => value)
         const context = useMemo(() => currentSessionContext(sessions, workspaces), [sessions, workspaces])
-        const mergedWaits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
+        const mergedWaits = useMemo(() => mergeActionWaits(snapshot, sessions, pendingInteractions), [snapshot, sessions, pendingInteractions])
         const actionWaits = useMemo(
           () => mergedWaits.filter(item => waitBelongsToCurrentContext(
             item,
@@ -1061,6 +1018,7 @@
           sessions: groupWaitsBySession(actionWaits, sessions),
         }], [actionWaits, context, sessions])
         const [open, setOpen] = useState(false)
+        useEffect(() => setOpen(false), [sessions.current])
         const [menuStyle, setMenuStyle] = useState(undefined)
         const rootRef = useRef(null)
         const now = useNow(open)
@@ -1086,7 +1044,7 @@
           return () => window.removeEventListener('resize', positionMenu)
         }, [open, wide])
 
-        const activeCount = statusWorkspaces.reduce((total, workspace) => total + workspaceEntries(workspace).length, 0)
+        const activeCount = statusWorkspaces.reduce((total, workspace) => total + activeWorkspaceEntries(workspace).length, 0)
         const summary = `待处理 ${actionWaits.length} · 活动 ${activeCount}`
         const currentSessionTitle = context === undefined
           ? ''
@@ -1134,12 +1092,13 @@
         )
       }
 
-      function FloatingActionInbox({ useSessions, useWorkspaces, openSession }) {
+      function FloatingActionInbox({ useSessions, useWorkspaces, useSessionPendingInteraction, openSession }) {
         const snapshot = useWaitSnapshot()
         const sessions = useSessions(value => value)
+        const pendingInteractions = useSessionPendingInteraction(value => value)
         const workspaces = useWorkspaces(value => value)
         const context = useMemo(() => currentSessionContext(sessions, workspaces), [sessions, workspaces])
-        const mergedWaits = useMemo(() => mergeActionWaits(snapshot, sessions), [snapshot, sessions])
+        const mergedWaits = useMemo(() => mergeActionWaits(snapshot, sessions, pendingInteractions), [snapshot, sessions, pendingInteractions])
         const waits = useMemo(
           () => mergedWaits.filter(item => waitBelongsToCurrentContext(
             item,
@@ -1156,6 +1115,7 @@
           sessions: groupWaitsBySession(waits, sessions),
         }], [waits, context, sessions])
         const [open, setOpen] = useState(false)
+        useEffect(() => setOpen(false), [sessions.current])
         const rootRef = useRef(null)
         const now = useNow(open)
         useDismissOnOutsidePointer(rootRef, open, setOpen)
@@ -1182,7 +1142,7 @@
         const style = document.createElement('style')
         style.dataset.ownerWorkflowWaits = 'true'
         style.textContent = `
-      .dsh-owner-wait-root,.dsh-owner-wait-sidebar-root,.dsh-owner-workspace-inbox-root{position:relative}
+      .dsh-owner-wait-root,.dsh-owner-wait-sidebar-root{position:relative}
       .dsh-owner-wait-trigger{min-height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:transparent;border:0;border-radius:7px;align-items:center;gap:6px;padding:3px 7px;font-size:12px;display:inline-flex}
       .dsh-owner-wait-trigger:hover,.dsh-owner-wait-trigger:focus-visible{background:var(--dsw-alias-interactive-bg-hover)}
       .dsh-owner-wait-trigger-stale{color:var(--dsw-alias-label-tertiary)}
@@ -1191,7 +1151,7 @@
       .dsh-owner-wait-chevron{font-size:14px;transition:transform .12s}.dsh-owner-wait-chevron-open{transform:rotate(180deg)}
       .dsh-owner-wait-menu{z-index:220;box-sizing:border-box;color:var(--dsw-alias-label-primary);background:var(--dsw-specific-menu);border:1px solid var(--dsw-alias-border-l2);border-radius:13px;box-shadow:var(--dsw-shadow-lv3);padding:8px;position:absolute;overflow:auto;overscroll-behavior:contain}
       .dsh-owner-wait-menu-header{width:430px;max-width:min(460px,calc(100vw - 32px));max-height:min(560px,calc(100vh - 130px));top:calc(100% + 6px);left:0}
-      .dsh-owner-wait-menu-sidebar,.dsh-owner-workspace-inbox-menu{width:460px;max-width:min(480px,calc(100vw - 80px))}
+      .dsh-owner-wait-menu-sidebar{width:460px;max-width:min(480px,calc(100vw - 80px))}
       .dsh-owner-wait-menu-title{min-height:38px;font-size:13px;font-weight:650;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--dsw-specific-menu);padding:3px 7px 9px;position:sticky;top:-8px;z-index:2}
       .dsh-owner-wait-menu-summary{color:var(--dsw-alias-label-tertiary);font-size:10px;font-weight:400;white-space:nowrap;margin-top:2px}
       .dsh-owner-wait-section{margin-top:3px}.dsh-owner-wait-section-title{color:var(--dsw-alias-label-secondary);font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px;padding:3px 4px 7px;text-transform:none}.dsh-owner-wait-section-count{min-width:16px;height:16px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-warn-primary);border-radius:8px;font-size:10px;line-height:16px;text-align:center}
@@ -1210,12 +1170,13 @@
       .dsh-owner-wait-empty,.dsh-owner-wait-warning{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;padding:11px}.dsh-owner-wait-empty-active{background:var(--dsw-alias-bg-layer-2);border-radius:9px;margin-bottom:7px}.dsh-owner-wait-warning{color:var(--dsw-alias-state-error-primary);background:var(--dsw-alias-interactive-bg-hover-danger);border-radius:8px;margin-bottom:7px}
       .dsh-owner-wait-stale-section{border-top:1px solid var(--dsw-alias-border-l1);margin-top:9px;padding-top:7px}.dsh-owner-wait-stale-section>summary{color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px;padding:4px;list-style:none}.dsh-owner-wait-stale-section>summary::-webkit-details-marker{display:none}.dsh-owner-wait-stale-section>summary:before{content:'›';font-size:14px;transition:transform .12s}.dsh-owner-wait-stale-section[open]>summary:before{transform:rotate(90deg)}.dsh-owner-wait-stale-section[open]>summary{margin-bottom:6px}.dsh-owner-wait-stale-count{min-width:16px;height:16px;background:var(--dsw-alias-interactive-bg-hover);border-radius:8px;font-size:10px;line-height:16px;text-align:center}
       .dsh-owner-wait-sidebar-root{width:100%}.dsh-owner-wait-sidebar-trigger{box-sizing:border-box;width:40px;height:36px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:transparent;border:0;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:7px;margin:auto;position:relative}.dsh-owner-wait-sidebar-trigger:hover,.dsh-owner-wait-sidebar-trigger:focus-visible{background:var(--dsw-alias-interactive-bg-hover)}.dsh-owner-wait-sidebar-wide{width:100%;justify-content:flex-start;padding:0 10px}.dsh-owner-wait-sidebar-icon{font-size:15px;line-height:1}.dsh-owner-wait-sidebar-label{font-size:13px;flex:1;text-align:left}.dsh-owner-wait-badge{min-width:17px;height:17px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-warn-primary);border-radius:9px;font-size:10px;line-height:17px;text-align:center;padding:0 4px}.dsh-owner-wait-stale-badge{min-width:17px;height:17px;color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover);border-radius:9px;font-size:10px;line-height:17px;text-align:center;padding:0 4px}.dsh-owner-wait-error-mark{width:15px;height:15px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-error-primary);border-radius:50%;font-size:10px;line-height:15px;text-align:center}
-      .dsh-owner-workspace-inbox-trigger{min-width:24px;height:24px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:transparent;border:0;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;gap:3px;padding:0 4px;font-size:12px}.dsh-owner-workspace-inbox-trigger:hover,.dsh-owner-workspace-inbox-trigger:focus-visible{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover)}.dsh-owner-workspace-inbox-badge{min-width:14px;height:14px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-warn-primary);border-radius:7px;font-size:9px;line-height:14px;text-align:center;padding:0 3px}.dsh-owner-workspace-inbox-menu{z-index:420}
       .dsh-owner-wait-workspace-group{border-top:1px solid var(--dsw-alias-border-l2);padding-top:9px;margin-top:8px}.dsh-owner-wait-workspace-group:first-of-type{border-top:0;margin-top:0}.dsh-owner-wait-workspace-title{font-size:12px;font-weight:650;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:1px 4px 4px}.dsh-owner-wait-workspace-count{min-width:18px;height:18px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:9px;font-size:10px;font-weight:500;line-height:18px;text-align:center;padding:0 3px}.dsh-owner-wait-group{border-left:1px solid var(--dsw-alias-border-l1);padding:7px 0 0 9px;margin:3px 0 0 5px}.dsh-owner-wait-group:first-of-type{margin-top:0}.dsh-owner-wait-group-title{color:var(--dsw-alias-label-secondary);font-size:11px;font-weight:600;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;padding:0 4px 5px}
       .dsh-runtime-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;background:var(--dsw-alias-bg-layer-2);border-radius:9px;padding:3px;margin:1px 0 9px;position:sticky;top:40px;z-index:2}.dsh-runtime-tab{min-width:0;height:28px;color:var(--dsw-alias-label-secondary);background:transparent;border:0;border-radius:7px;cursor:pointer;font-size:11px;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:4px}.dsh-runtime-tab:hover,.dsh-runtime-tab:focus-visible{background:var(--dsw-alias-interactive-bg-hover)}.dsh-runtime-tab-active{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv1)}.dsh-runtime-tab-count{min-width:15px;height:15px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-warn-primary);border-radius:8px;font-size:9px;line-height:15px;padding:0 2px}
       .dsh-runtime-runner,.dsh-runtime-overview-card,.dsh-runtime-actor{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:10px 11px}.dsh-runtime-runner{margin-bottom:9px}.dsh-runtime-workspace{border-top:1px solid var(--dsw-alias-border-l2);padding-top:9px;margin-top:9px}.dsh-runtime-workspace:first-of-type{border-top:0;margin-top:0}.dsh-runtime-workspace-title{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:650;padding:0 3px 7px}.dsh-runtime-grid{display:grid;grid-template-columns:1fr;gap:7px}.dsh-runtime-category{margin-top:8px}.dsh-runtime-category:first-of-type{margin-top:0}.dsh-runtime-category-title{color:var(--dsw-alias-label-tertiary);font-size:10px;font-weight:600;padding:0 3px 5px}.dsh-runtime-card-head{display:flex;align-items:center;justify-content:space-between;gap:9px}.dsh-runtime-card-title{font-size:12px;font-weight:650}.dsh-runtime-state{height:19px;border-radius:10px;font-size:10px;font-weight:650;line-height:19px;padding:0 7px;white-space:nowrap}.dsh-runtime-state-running{color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary)}.dsh-runtime-state-idle,.dsh-runtime-state-completed{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover)}.dsh-runtime-state-runner,.dsh-runtime-state-approval{color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary)}.dsh-runtime-state-input{color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary)}.dsh-runtime-state-error{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 14%,var(--dsw-alias-bg-layer-2))}.dsh-runtime-state-closed,.dsh-runtime-state-dependency{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover)}.dsh-runtime-goal{font-size:12px;font-weight:600;line-height:18px;margin-top:7px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.dsh-runtime-activity{color:var(--dsw-alias-label-secondary);font-size:11px;line-height:17px;margin-top:6px}.dsh-runtime-context{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px;margin-top:5px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.dsh-runtime-meta{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px;margin-top:5px}.dsh-runtime-id{color:var(--dsw-alias-label-tertiary);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;margin-top:5px}.dsh-runtime-actor-actionable{cursor:pointer}.dsh-runtime-actor-actionable:hover,.dsh-runtime-actor-actionable:focus-visible{outline:0;background:var(--dsw-alias-interactive-bg-hover);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 16%,transparent)}
       .dsh-owner-action-inbox-floating{pointer-events:auto;position:fixed;right:18px;top:54px;z-index:520}.dsh-owner-action-inbox-floating-trigger{min-width:48px;height:34px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-warn-primary);border:0;border-radius:17px;box-shadow:var(--dsw-shadow-lv3);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 11px;font-size:12px;font-weight:650}.dsh-owner-action-inbox-floating-trigger:hover,.dsh-owner-action-inbox-floating-trigger:focus-visible{background:var(--dsw-alias-state-warn-secondary);outline:2px solid var(--dsw-alias-state-warn-label)}.dsh-owner-action-inbox-floating-menu{width:440px;max-width:min(460px,calc(100vw - 28px));max-height:min(650px,calc(100vh - 105px));top:42px;right:0;position:absolute}
-      @media (max-width:720px){.dsh-owner-wait-menu-header{right:0;left:auto}.dsh-owner-wait-menu-sidebar,.dsh-owner-workspace-inbox-menu{width:min(430px,calc(100vw - 24px));max-width:none}}
+      .dsh-owner-team-composer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;font-size:13px;line-height:1.6}.dsh-owner-team-composer p{margin:0}.dsh-owner-team-composer button{flex-shrink:0;padding:6px 12px;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;cursor:pointer}
+      @media (max-width:520px){span[title="主线程维护需求、Spec 和 Ticket；统一 Runner 按模块 Owner 执行、验证和交付。"]{max-width:18px!important;padding-right:0!important;font-size:0!important}}
+      @media (max-width:720px){.dsh-owner-wait-menu-header{right:0;left:auto}.dsh-owner-wait-menu-sidebar{width:min(430px,calc(100vw - 24px));max-width:none}.dsh-owner-team-composer{align-items:flex-start;flex-direction:column}}
         `.trim()
         document.head.appendChild(style)
       }
@@ -1227,14 +1188,27 @@
         if (window[CLIENT_APPLIED_MARKER] === true) return
         installStyles()
         const openSession = sessionId => {
-          // 运行状态面板位于 Synapse 全屏层之上；跳转现场前先切回原生对话视图。
-          document.querySelector('.dsh-synapse-switch [data-view="dialog"]')?.click?.()
           ctx.sessions.open(sessionId)
         }
         const HeaderAction = props => h(HeaderWaitAction, { ...props, openSession })
-        const WorkspaceAction = props => h(WorkspaceWaitAction, { ...props, openSession })
         const SidebarAction = props => h(SidebarWaitAction, { ...props, openSession })
         const FloatingInbox = props => h(FloatingActionInbox, { ...props, openSession })
+        // Presentation only: server admission uses the durable provider and exact Agent.
+        // Pending native interactions always retain their own composer seats.
+        ctx.slots.inject('conversation.composer', () => ctx.slots.register({
+          name: 'conversation.composer', priority: -5,
+          select: ({ session, pendingInteraction }) => {
+            if (pendingInteraction !== undefined && pendingInteraction !== null) return null
+            const address = session?.subagent?.address
+            if (address === undefined) return null
+            const child = ctx.sessions.list.getSnapshot().subagentsByParent[address.parentSessionId]?.entries
+              .find(entry => entry.kind === 'child' && entry.id === address.childSessionId)
+            return child?.label?.startsWith('Owner ') ? { parentSessionId: address.parentSessionId } : null
+          },
+        }, ({ matched }) => h('div', { className: 'dsh-owner-team-composer', role: 'status' },
+          h('p', null, 'Owner Team 由 Runner 按任务派发。需求调整请回到主线程。'),
+          h('button', { type: 'button', onClick: () => openSession(matched.parentSessionId) }, '返回主线程'),
+        )))
         ctx.slots.inject(
           'conversation.session.header.actions',
           () => ctx.slots.register({
@@ -1243,15 +1217,6 @@
             order: 30,
             label: '需要处理',
           }, HeaderAction),
-        )
-        ctx.slots.inject(
-          'sidebar.workspace.action',
-          () => ctx.slots.register({
-            name: 'sidebar.workspace.action',
-            id: 'owner-workflow-workspace-inbox',
-            order: 10,
-            label: '工作区运行状态',
-          }, WorkspaceAction),
         )
         ctx.slots.inject(
           'sidebar.footer.action',

@@ -2,7 +2,10 @@ import { isAbsolute, normalize, relative, sep } from 'node:path'
 import { createHash } from 'node:crypto'
 import { MEMORY_DIRECTORY, normalizeMemoryUpdates } from './memory.mjs'
 import { normalizePlanningBindings } from './planning-packages.mjs'
-import { normalizePublicOwnerPlanBindings } from './public-owner-plan.mjs'
+import {
+  normalizePublicOwnerPlanBindings,
+  PUBLIC_OWNER_PLAN_BINDINGS_SCHEMA,
+} from './public-owner-plan.mjs'
 
 export const PLAN_CONTRACT = 'DSH_PLAN_V1'
 export const PLAN_V2_CONTRACT = 'DSH_PLAN_V2'
@@ -37,6 +40,7 @@ export const PLAN_REVIEW_SUBMISSION_SCHEMA = {
           sourceId: { type: 'string', minLength: 1 },
           sourceVersion: { type: 'string', minLength: 1 },
           targetTaskIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+          targetVerificationIds: { type: 'array', uniqueItems: true, items: { type: 'string', minLength: 1 }, description: 'Existing verifications affected by this issue: review attention and permitted repair scope, not a requirement to change every command or binding. Use [] when none; closeWhen defines the required evidence.' },
           classificationBasis: {
             type: 'object',
             additionalProperties: false,
@@ -154,6 +158,204 @@ const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1000
 const MIN_TASK_TIMEOUT_MS = 60 * 1000
 const MAX_TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000
 const POLICY_ACTIONS = new Set(['repair_owner', 'handoff_replan', 'notify_main'])
+const EXECUTION_RESOURCE_ID = /^[A-Za-z][A-Za-z0-9._+:/@-]{0,255}$/u
+
+const schemaText = (description, pattern) => ({
+  type: 'string',
+  minLength: 1,
+  ...(pattern === undefined ? {} : { pattern }),
+  ...(description === undefined ? {} : { description }),
+})
+const schemaArray = (items, description, options = {}) => ({ type: 'array', items, ...options,
+  ...(description === undefined ? {} : { description }) })
+const schemaObject = (properties, required = Object.keys(properties), extra = {}) => ({
+  type: 'object', additionalProperties: false, properties, required, ...extra,
+})
+const ownerIdSchema = description => schemaText(description, OWNER_ID.source)
+const taskIdSchema = description => schemaText(description, TASK_ID.source)
+const verificationIdSchema = description => ownerIdSchema(description)
+const relativeCwdPattern = String.raw`^(?![/\\])(?![A-Za-z]:[/\\])(?!.*[?*\u0000])(?!\.\.(?:[/\\]|$))(?!.*[/\\]\.\.(?:[/\\]|$))(?:\.|[^/\\]+(?:[/\\][^/\\]+)*)$`
+const relativeGlobPattern = String.raw`^(?![/\\])(?!\.\.?$)(?!\.\.(?:[/\\]|$))(?!.*[/\\]\.\.(?:[/\\]|$)).+$`
+const globSchema = description => ({
+  ...schemaText(description, relativeGlobPattern),
+  maxLength: MAX_GLOB_PATH_LENGTH,
+})
+
+const planningBindingSchema = schemaObject({
+  contract: { const: 'DSH_PLANNING_BINDINGS_V1' },
+  snapshotId: schemaText('Frozen planning snapshot id.'),
+  sourceDigest: schemaText('SHA-256 digest of the complete frozen source evidence.', '^[a-f0-9]{64}$'),
+  tasks: schemaArray(schemaObject({
+    taskId: taskIdSchema('Task id from this plan.'),
+    tickets: schemaArray(schemaObject({
+      id: schemaText('Frozen Ticket id.'), revision: schemaText('Frozen Ticket revision.'),
+      fragments: schemaArray(schemaText('Ready Ticket fragment id.'), undefined, { minItems: 1 }),
+    }), 'Frozen Ticket work this task actually delivers. Every binding makes the task a contributor that all consumers of that Ticket must await. Downstream acceptance or evidence must bind its own terminal Ticket, not claim the upstream Ticket merely for traceability. If frozen source mixes both deliveries, return the source decomposition gap to the root for revision.', { minItems: 1 }),
+    contracts: schemaArray(schemaObject({ id: schemaText('Frozen contract id.'), revision: schemaText('Frozen contract revision.') }),
+      'Frozen contracts consumed or produced by this task.'),
+  }), 'One source binding for every task.', { minItems: 1 }),
+})
+
+const ownerSubmissionSchema = schemaObject({
+  id: ownerIdSchema('Existing Owner Registry id.'),
+  name: schemaText('Existing Owner display name.'),
+  description: schemaText('Existing Owner responsibility description.'),
+  scope: schemaArray(globSchema('Repository-relative Owner glob; it must not escape the repository.'), undefined, { minItems: 1 }),
+  exclude: schemaArray(globSchema('Repository-relative excluded glob; it must not escape the repository.')),
+  parentOwnerId: ownerIdSchema('Optional parent Owner Registry id.'),
+}, ['id', 'scope'])
+
+const verificationSubmissionSchema = schemaObject({
+  id: verificationIdSchema('Stable verification id referenced by task.verify.'),
+  run: schemaArray(schemaText('One argv element; do not combine a shell command into one string.'),
+    'Executable and arguments as an argv array.', { minItems: 1 }),
+  cwd: { ...schemaText('Optional repository-relative working directory; use "." for the repository root. Absolute paths, glob characters and .. segments are forbidden.', relativeCwdPattern) },
+}, ['id', 'run'])
+
+const taskSubmissionSchema = schemaObject({
+  id: taskIdSchema('Stable task id.'),
+  title: schemaText('Human-readable task title.'),
+  role: { type: 'string', enum: ['work', 'review', 'verify'] },
+  ownerId: ownerIdSchema('Exactly one existing Owner Registry id.'),
+  write: schemaArray(globSchema('Repository-relative write glob; it must be inside the selected Owner scope.'), 'Allowed source paths; review and verify tasks may omit this field or use an empty array.'),
+  dependsOn: schemaArray(taskIdSchema('Predecessor task id.'), 'Task ids whose integrated results are required first.'),
+  resources: schemaArray(schemaText('Exclusive resource/lock identity such as db:test or tcp:localhost:3080; prose belongs in done.', EXECUTION_RESOURCE_ID.source),
+    'Optional exclusive resource identities; these are lock tokens, not requirements or Ticket text.', { uniqueItems: true }),
+  verify: schemaArray(verificationIdSchema('Verification id declared in plan.verifications; never put a command here.'),
+    'Verification references. Every executable leaf work task needs at least one.'),
+  done: schemaArray(schemaText('Observable completion condition.'), undefined, { minItems: 1 }),
+  priority: { type: 'integer', minimum: 0, maximum: MAX_TASK_PRIORITY },
+  parentTaskId: taskIdSchema('Composite parent task id.'),
+  children: schemaArray(taskIdSchema('Direct child task id.'), 'Direct child task ids for an expanded composite.', { minItems: 1 }),
+  entry: schemaArray(taskIdSchema('Child task id with no dependency inside this composite.'),
+    'Entry child ids, not readiness prose or conditions.', { minItems: 1 }),
+  exit: schemaArray(taskIdSchema('Child task id with no successor inside this composite.'),
+    'Exit child ids for an expanded composite.', { minItems: 1 }),
+  decomposition: schemaObject({
+    status: { type: 'string', enum: ['abstract', 'leaf', 'expanded'] },
+    kind: { type: 'string', enum: ['leaf', 'composite', 'decision', 'discovery'] },
+    outcome: schemaText('Outcome produced by this task or composite.'),
+    ownerCandidates: schemaArray(ownerIdSchema('Existing Owner Registry id.'), undefined, { minItems: 1 }),
+    unknowns: schemaArray(schemaText('Fact that must be discovered before expansion.')),
+  }, []),
+  onFailure: schemaObject({ action: { type: 'string', enum: ['repair_owner', 'handoff_replan', 'notify_main'] }, maxAttempts: { type: 'integer', minimum: 1, maximum: MAX_POLICY_ATTEMPTS } }, ['action'], {
+    allOf: [{
+      if: { properties: { action: { const: 'repair_owner' } }, required: ['action'] },
+      then: { required: ['maxAttempts'] },
+      else: { not: { required: ['maxAttempts'] } },
+    }],
+  }),
+  onBlocked: schemaObject({ action: { type: 'string', enum: ['handoff_replan', 'notify_main'] } }),
+  onTimeout: schemaObject({ action: { type: 'string', enum: ['handoff_replan', 'notify_main'] }, afterMs: { type: 'integer', minimum: MIN_TASK_TIMEOUT_MS, maximum: MAX_TASK_TIMEOUT_MS } }, ['action']),
+}, ['id', 'role', 'ownerId', 'done'], {
+  allOf: [
+    {
+      if: { properties: { role: { enum: ['review', 'verify'] } }, required: ['role'] },
+      then: { properties: { write: { maxItems: 0 } } },
+    },
+    {
+      if: { required: ['children'] },
+      then: { properties: { role: { const: 'work' } }, required: ['entry', 'exit'] },
+    },
+    {
+      if: { anyOf: [{ required: ['entry'] }, { required: ['exit'] }] },
+      then: { required: ['children'] },
+    },
+    {
+      if: {
+        properties: { role: { const: 'work' } },
+        required: ['role'],
+        anyOf: [
+          {
+            properties: {
+              decomposition: {
+                properties: { status: { const: 'leaf' } },
+                required: ['status'],
+              },
+            },
+            required: ['decomposition'],
+          },
+          {
+            not: { required: ['children'] },
+            anyOf: [
+              { not: { required: ['decomposition'] } },
+              {
+                properties: { decomposition: { not: { required: ['status'] } } },
+                required: ['decomposition'],
+              },
+            ],
+          },
+        ],
+      },
+      then: { properties: { verify: { minItems: 1 } }, required: ['verify'] },
+    },
+    {
+      if: {
+        properties: {
+          decomposition: { properties: { status: { const: 'abstract' } }, required: ['status'] },
+        },
+        required: ['decomposition'],
+      },
+      then: {
+        not: { required: ['children'] },
+        properties: {
+          decomposition: { properties: { kind: { not: { const: 'leaf' } } } },
+        },
+      },
+    },
+    {
+      if: {
+        properties: {
+          decomposition: { properties: { status: { const: 'expanded' } }, required: ['status'] },
+        },
+        required: ['decomposition'],
+      },
+      then: { required: ['children'] },
+    },
+    {
+      if: {
+        properties: {
+          decomposition: { properties: { status: { const: 'leaf' } }, required: ['status'] },
+        },
+        required: ['decomposition'],
+      },
+      then: {
+        not: { required: ['children'] },
+        properties: {
+          decomposition: { properties: { kind: { const: 'leaf' } } },
+        },
+      },
+    },
+  ],
+})
+
+/**
+ * Public Planner action contract. Its explicit required list follows the full
+ * normalizePlanV2 + compilePlanningPackages validation chain: planningBindings
+ * is optional to the reusable normalizer but mandatory for a Planner action.
+ * The normalizer remains authoritative for cross-record graph and scope checks.
+ */
+export const PLAN_V2_SUBMISSION_SCHEMA = schemaObject({
+  contract: { const: PLAN_V2_CONTRACT },
+  registryDigest: schemaText('SHA-256 digest supplied by the runtime.', '^[a-fA-F0-9]{64}$'),
+  summary: schemaText('Concise execution-DAG summary.'),
+  owners: schemaArray(ownerSubmissionSchema, 'Existing Owner Registry projections used by the plan; ids and normalized scope/exclude must match the registry.', { minItems: 1 }),
+  tasks: schemaArray(taskSubmissionSchema, 'DAG tasks. dependsOn, verify, children, entry and exit always contain ids.', { minItems: 1 }),
+  verifications: schemaArray(verificationSubmissionSchema, 'Fixed verifications referenced by task.verify.'),
+  planningBindings: planningBindingSchema,
+  publicOwnerChanges: PUBLIC_OWNER_PLAN_BINDINGS_SCHEMA,
+}, ['contract', 'registryDigest', 'summary', 'owners', 'tasks', 'verifications', 'planningBindings'])
+
+/** Compact examples used in the Planner prompt; ids are references, while commands live only in verifications.run. */
+export const PLAN_V2_SUBMISSION_EXAMPLES = Object.freeze({
+  leaf: {
+    task: { id: 'implement_cli', title: 'Implement CLI', role: 'work', ownerId: 'build-tooling', write: ['scripts/**'], dependsOn: [], resources: ['cli:offline-precheck'], verify: ['blackbox-suite'], done: ['Black-box scenarios pass'] },
+    verification: { id: 'blackbox-suite', run: ['node', '--test', 'test/offline-precheck.test.mjs'], cwd: '.' },
+  },
+  composite: {
+    parent: { id: 'ship_cli', title: 'Ship CLI', role: 'work', ownerId: 'build-tooling', write: [], dependsOn: [], verify: [], done: ['All child exits complete'], children: ['implement_cli', 'document_cli'], entry: ['implement_cli'], exit: ['document_cli'], decomposition: { status: 'expanded', kind: 'composite', outcome: 'Shipped CLI', ownerCandidates: ['build-tooling'], unknowns: [] } },
+  },
+})
 
 export const TASK_STATUSES = Object.freeze(['pending', 'running', 'completed', 'stopped'])
 export const WORKFLOW_STATUSES = Object.freeze([
@@ -814,8 +1016,6 @@ function identifierList(value, field, pattern = TASK_ID, { allowEmpty = true } =
   if (!allowEmpty && result.length === 0) throw new Error(`${field} 不能为空`)
   return [...new Set(result)]
 }
-
-const EXECUTION_RESOURCE_ID = /^[A-Za-z][A-Za-z0-9._+:/@-]{0,255}$/u
 
 function normalizeExecutionResources(value, field) {
   if (value === undefined) return undefined
@@ -1644,6 +1844,7 @@ function normalizePlanReviewIssues(value, { allowLegacyObligations, reviewTarget
     const sourceId = issue.sourceId === undefined ? undefined : text(issue.sourceId, `planReview.issues[${index}].sourceId`)
     const sourceVersion = issue.sourceVersion === undefined ? undefined : text(issue.sourceVersion, `planReview.issues[${index}].sourceVersion`)
     const targetTaskIds = identifierList(issue.targetTaskIds, `planReview.issues[${index}].targetTaskIds`, TASK_ID)
+    const targetVerificationIds = identifierList(issue.targetVerificationIds, `planReview.issues[${index}].targetVerificationIds`, TASK_ID)
     const closeWhen = normalizePlanReviewCloseWhen(issue.closeWhen, `planReview.issues[${index}].closeWhen`)
     const classificationBasis = normalizeDecisionClassificationBasis(
       issue.classificationBasis,
@@ -1695,6 +1896,7 @@ function normalizePlanReviewIssues(value, { allowLegacyObligations, reviewTarget
       ...(sourceId === undefined ? {} : { sourceId }),
       ...(sourceVersion === undefined ? {} : { sourceVersion }),
       ...(targetTaskIds.length === 0 ? {} : { targetTaskIds }),
+      ...(targetVerificationIds.length === 0 ? {} : { targetVerificationIds }),
       ...(classificationBasis === undefined ? {} : { classificationBasis }),
       ...(closeWhen === undefined ? {} : { closeWhen }),
     }

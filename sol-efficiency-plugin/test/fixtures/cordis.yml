@@ -4,12 +4,31 @@
   name: '@deepseek-ai/dsh-tools'
 - id: sessions
   name: '@deepseek-ai/dsh-session'
+- id: session-projection
+  name: '@deepseek-ai/dsh-session-projection'
+- id: session-persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: SESSION_ROOT
+    compression: none
+- id: agents
+  name: '@deepseek-ai/dsh-agent'
+- id: agent-loop
+  name: '@deepseek-ai/dsh-agent-loop'
+  config:
+    agents: []
 - id: fs
   name: '@deepseek-ai/dsh-fs-local'
 - id: tool-fs
   name: '@deepseek-ai/dsh-tool-fs'
 - id: subprocess
   name: '@deepseek-ai/dsh-subprocess-local'
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+- id: sandbox-policy
+  name: '@deepseek-ai/dsh-sandbox-policy'
+  config:
+    mode: workspace-write
 - id: bash
   name: '@deepseek-ai/dsh-bash-local'
   config:
@@ -25,6 +44,8 @@
   name: './reducer-model.mjs'
 - id: spill-store
   name: '@deepseek-ai/dsh-spill-local'
+  config:
+    root: SPILL_ROOT
 - id: spill-policy
   name: '@deepseek-ai/dsh-spill-policy'
   config:

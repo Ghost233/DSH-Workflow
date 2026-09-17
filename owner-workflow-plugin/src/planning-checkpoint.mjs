@@ -15,15 +15,18 @@ const COMMIT = /^[a-f0-9]{40}$/u
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u
 
 export class PlanningCheckpointError extends Error {
-  constructor(code, field, detail) {
-    super(`Planning checkpoint: ${code}${field === undefined ? '' : ` (${field}${detail === undefined ? '' : `: ${detail}`})`}`)
+  constructor(code, field, detail, options = {}) {
+    super(`Planning checkpoint: ${code}${field === undefined ? '' : ` (${field}${detail === undefined ? '' : `: ${detail}`})`}`,
+      options.cause === undefined ? undefined : { cause: options.cause })
     this.name = 'PlanningCheckpointError'
     this.code = code
     this.field = field
+    this.detail = detail
+    if (options.decision !== undefined) this.decision = clone(options.decision)
   }
 }
 
-function fail(code, field, detail) { throw new PlanningCheckpointError(code, field, detail) }
+function fail(code, field, detail, options) { throw new PlanningCheckpointError(code, field, detail, options) }
 
 function isObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
@@ -86,9 +89,11 @@ function runtimeGitignorePath(root) {
 
 function requestShape(value) {
   const requestKeys = ['id', 'manifest', 'baseline', 'source', 'reason', 'parentSnapshotId']
-  const keys = Object.hasOwn(object(value, 'request'), 'executionParent')
-    ? [...requestKeys, 'executionParent']
-    : requestKeys
+  const request = object(value, 'request')
+  const keys = [...requestKeys,
+    ...(Object.hasOwn(request, 'supporting') ? ['supporting'] : []),
+    ...(Object.hasOwn(request, 'executionParent') ? ['executionParent'] : []),
+  ]
   exact(value, keys, 'request')
   const id = text(value.id, 'request.id', { id: true })
   if (typeof value.reason !== 'string' || value.reason.trim() === '') fail('INVALID_REQUEST', 'request.reason')
@@ -280,6 +285,7 @@ function documents(source) {
   return [
     { path: source.references.spec.path, sha256: source.references.spec.sha256 },
     ...source.references.tickets.map(ticket => ({ path: ticket.document.path, sha256: ticket.document.sha256 })),
+    ...(source.references.supporting ?? []).map(document => ({ path: document.path, sha256: document.sha256 })),
   ]
 }
 
@@ -299,7 +305,10 @@ function bindingFor(location, request, source) {
     request: clone(request),
     source: clone(source),
     sourceDigest: sourceDigest(source),
-    selectedPaths: documents(source).map(item => item.path).toSorted(),
+    // Only native-journaled writes belong in this checkpoint's Git delta.
+    // Inherited parent documents remain in the complete reference closure but
+    // must not be rewritten or staged merely to carry them forward.
+    selectedPaths: source.source.chains.map(item => item.path).toSorted(),
   }
 }
 
@@ -343,7 +352,7 @@ async function loadJournal(paths, id) {
 }
 
 async function assertParentSnapshot(location, paths, parentSnapshotId) {
-  if (parentSnapshotId === null) return
+  if (parentSnapshotId === null) return null
   const names = await readdir(paths.journals)
   const matches = []
   for (const name of names) {
@@ -361,6 +370,15 @@ async function assertParentSnapshot(location, paths, parentSnapshotId) {
     || digest(canonical(snapshot)) !== parent.snapshotSha256
     || !same(snapshot, snapshotFor(location, parent))) {
     fail('PARENT_SNAPSHOT_MISSING', 'request.parentSnapshotId')
+  }
+  return snapshot
+}
+
+function assertParentContinuation(request, parent) {
+  if (parent === null) return
+  if (request.baseline.head !== parent.codeBaseline?.sourceHead
+    || request.baseline.branch !== parent.codeBaseline?.branch) {
+    fail('PARENT_BASELINE_MISMATCH', 'request.parentSnapshotId')
   }
 }
 
@@ -422,7 +440,12 @@ async function authorize(authorizer, location, request, source, journal, lease) 
     })
   } catch (error) {
     if (error instanceof PlanningCheckpointError) throw error
-    fail('AUTHORIZATION_REFUSED', 'authorize', error instanceof Error ? error.message : String(error))
+    const detail = error instanceof Error ? error.message : String(error)
+    if (error?.decision?.contract === 'DSH_PLANNING_AUTHORIZATION_DECISION_V1'
+      && ['revision_requested', 'rejected', 'cancelled'].includes(error.decision.outcome)) {
+      fail('AUTHORIZATION_REFUSED', 'authorize', detail, { cause: error, decision: error.decision })
+    }
+    fail('AUTHORIZATION_REFUSED', 'authorize', detail, { cause: error })
   }
   await assertLease(lease)
   const grant = grantValue(granted)
@@ -469,7 +492,7 @@ async function assertStatus(location, entries, selected, { awaitingIndex = false
     }
     if (!selected.has(entry.path)) fail('UNRELATED_WORKTREE_CHANGE', 'worktree', entry.path)
     if (entry.original !== undefined) fail('UNSUPPORTED_WORKTREE_CHANGE', 'worktree', entry.path)
-    if (!awaitingIndex && entry.code[0] !== ' ') fail('STAGED_CHANGES', 'index', entry.path)
+    if (!awaitingIndex && entry.code !== '??' && entry.code[0] !== ' ') fail('STAGED_CHANGES', 'index', entry.path)
   }
 }
 
@@ -492,58 +515,84 @@ async function assertInitialState(location, request, source, journal, runtimeMet
   await assertStatus(location, await statusEntries(location), new Set(documents(source).map(item => item.path)), { runtimeMetadata })
 }
 
-async function assertBeforeRef(location, request, source, journal, runtimeMetadata) {
+async function assertBeforeRef(location, paths, request, source, journal, runtimeMetadata) {
   await assertInitialState(location, request, source, journal, runtimeMetadata)
+  const parent = await assertParentSnapshot(location, paths, request.parentSnapshotId)
+  assertParentContinuation(request, parent)
   const fresh = await validatePlanningSourceChain({
     root: location.root,
     cwd: location.cwd,
     manifest: request.manifest,
     baseline: request.baseline,
+    sourceBaselineCommit: parent?.codeBaseline.checkpointCommit,
     source: request.source,
+    supporting: request.supporting,
+    parentSource: parent?.source,
   })
   if (sourceDigest(fresh) !== journal.binding.sourceDigest) fail('FROZEN_SOURCE_CHANGED', 'source')
 }
 
 async function assertAfterRefBeforeIndex(location, request, journal, runtimeMetadata) {
   const current = await repositoryState(location)
-  if (current.head !== journal.checkpointCommit || current.branch !== request.baseline.branch) fail('CHECKPOINT_REF_CONFLICT', 'ref')
+  if (current.head !== request.baseline.head || current.branch !== request.baseline.branch) fail('BASELINE_CHANGED', 'baseline')
   if (current.indexSha256 !== journal.initialIndexSha256) fail('INDEX_RECONCILIATION_REQUIRED', 'index')
+  const ref = gitText(await git(location.root, ['rev-parse', '--verify', planningRef(request)]))
+  if (ref !== journal.checkpointCommit) fail('CHECKPOINT_REF_CONFLICT', 'ref')
   await assertSourceFiles(location, journal.binding.source)
-  await assertStatus(location, await statusEntries(location), new Set(journal.binding.selectedPaths), { awaitingIndex: true, runtimeMetadata })
+  await assertStatus(location, await statusEntries(location), new Set(documents(journal.binding.source).map(item => item.path)), { runtimeMetadata })
 }
 
 async function assertAfterIndex(location, request, journal, runtimeMetadata) {
   const current = await repositoryState(location)
-  if (current.head !== journal.checkpointCommit || current.branch !== request.baseline.branch || current.staged) {
+  if (current.head !== request.baseline.head || current.branch !== request.baseline.branch || current.staged
+    || current.indexSha256 !== journal.initialIndexSha256) {
     fail('CHECKPOINT_STATE_CHANGED', 'repository')
   }
-  const tree = gitText(await git(location.root, ['write-tree']))
-  if (tree !== journal.commitInput.tree) fail('INDEX_CHANGED', 'index')
+  const ref = gitText(await git(location.root, ['rev-parse', '--verify', planningRef(request)]))
+  if (ref !== journal.checkpointCommit) fail('CHECKPOINT_REF_CONFLICT', 'ref')
   await assertSourceFiles(location, journal.binding.source)
-  await assertStatus(location, await statusEntries(location), new Set(journal.binding.selectedPaths), { runtimeMetadata })
+  await assertStatus(location, await statusEntries(location), new Set(documents(journal.binding.source).map(item => item.path)), { runtimeMetadata })
 }
 
-async function localIdentity(location) {
-  const [name, email] = await Promise.all([
-    git(location.root, ['config', '--local', '--get', 'user.name']),
-    git(location.root, ['config', '--local', '--get', 'user.email']),
-  ])
-  const result = { name: gitText(name), email: gitText(email) }
-  if (result.name === '' || result.email === '') fail('GIT_IDENTITY_REQUIRED', 'git config --local')
-  return result
+function planningRef(request) { return `refs/dsh/planning/${request.id}` }
+
+async function planningRefCommit(location, request) {
+  const ref = planningRef(request)
+  const lines = gitText(await git(location.root, ['for-each-ref', '--format=%(refname) %(objectname)', '--', ref])).split('\n')
+  return lines.find(line => line.startsWith(`${ref} `))?.slice(ref.length + 1) ?? null
+}
+
+async function resolvedIdentity(location) {
+  const read = async field => {
+    let stdout
+    try { ({ stdout } = await execFile('git', ['var', field], { cwd: location.root, encoding: 'utf8', env: process.env })) }
+    catch { fail('GIT_IDENTITY_REQUIRED', field) }
+    const match = /^(.+) <([^<>\r\n]+)> \d+ [+-]\d{4}\s*$/u.exec(stdout)
+    if (!match) fail('GIT_IDENTITY_REQUIRED', field)
+    return { name: match[1], email: match[2] }
+  }
+  const [author, committer] = await Promise.all([read('GIT_AUTHOR_IDENT'), read('GIT_COMMITTER_IDENT')])
+  return { author, committer }
+}
+
+/** Reject stale callers until the legacy tool export is removed at cutover. */
+export async function configureDefaultPlanningGitIdentity() {
+  throw new Error('Automatic Git identity configuration is disabled; use the existing author and committer identity')
 }
 
 async function prepareCommit(location, paths, request, journal, lease, runtimeGitignore) {
   if (journal.phase !== 'source-validated') return journal
   await assertLease(lease)
-  await assertBeforeRef(location, request, journal.binding.source, journal, runtimeGitignore)
+  await assertBeforeRef(location, paths, request, journal.binding.source, journal, runtimeGitignore)
+  const parentSnapshot = await assertParentSnapshot(location, paths, request.parentSnapshotId)
+  const commitParent = parentSnapshot?.codeBaseline.checkpointCommit ?? request.baseline.head
   const temporary = `${paths.artifact}.${process.pid}.${randomUUID()}.tmp`
   const env = { GIT_INDEX_FILE: temporary }
   try {
-    await git(location.root, ['read-tree', request.baseline.head], { env })
+    await git(location.root, ['read-tree', commitParent], { env })
     await git(location.root, ['add', '--', ...journal.binding.selectedPaths], { env })
     const tree = gitText(await git(location.root, ['write-tree'], { env }))
-    const changed = gitText(await git(location.root, ['diff-tree', '--no-commit-id', '--name-only', '-r', request.baseline.head, tree]))
+    const changed = gitText(await git(location.root, ['diff-tree', '--no-commit-id', '--name-only', '-r', commitParent, tree]))
       .split(/\r?\n/u).filter(Boolean).toSorted()
     if (!same(changed, journal.binding.selectedPaths)) fail('CHECKPOINT_FILE_SET_MISMATCH', 'tree')
     const artifactHash = await hashFile(temporary)
@@ -551,17 +600,17 @@ async function prepareCommit(location, paths, request, journal, lease, runtimeGi
     const existing = await safeFile(paths.artifact, { missing: true })
     if (existing === undefined) await rename(temporary, paths.artifact)
     else if (digest(existing) !== artifactHash) fail('PERSISTED_VALUE_MISMATCH', paths.artifact)
-    const identity = await localIdentity(location)
+    const identity = await resolvedIdentity(location)
     const fixedDate = `${Math.floor(Date.now() / 1000)} +0000`
     const next = {
       ...journal,
       phase: 'commit-input',
       commitInput: {
         tree,
-        parent: request.baseline.head,
+        parent: commitParent,
         message: `planning checkpoint ${request.id}`,
-        author: identity,
-        committer: identity,
+        author: identity.author,
+        committer: identity.committer,
         authorDate: fixedDate,
         committerDate: fixedDate,
         artifactSha256: artifactHash,
@@ -575,7 +624,10 @@ async function prepareCommit(location, paths, request, journal, lease, runtimeGi
 async function assertCommitInput(location, paths, journal) {
   const input = journal.commitInput
   exact(input, ['tree', 'parent', 'message', 'author', 'committer', 'authorDate', 'committerDate', 'artifactSha256'], 'journal.commitInput', 'STATE_CORRUPT')
-  if (!/^[a-f0-9]{40}$/u.test(input.tree) || input.parent !== journal.binding.request.baseline.head || !/^[a-f0-9]{64}$/u.test(input.artifactSha256)) {
+  const parentSnapshot = await assertParentSnapshot(location, paths, journal.binding.request.parentSnapshotId)
+  if (!/^[a-f0-9]{40}$/u.test(input.tree)
+    || input.parent !== (parentSnapshot?.codeBaseline.checkpointCommit ?? journal.binding.request.baseline.head)
+    || !/^[a-f0-9]{64}$/u.test(input.artifactSha256)) {
     fail('STATE_CORRUPT', 'journal.commitInput')
   }
   if (await hashFile(paths.artifact, { missing: true, allowHardlinks: true }) !== input.artifactSha256) fail('PERSISTED_VALUE_MISMATCH', paths.artifact)
@@ -620,46 +672,13 @@ async function assertProposedCommit(location, journal) {
   if (gitText(tree) !== journal.commitInput.tree || gitText(parents) !== journal.commitInput.parent) fail('PERSISTED_VALUE_MISMATCH', 'checkpointCommit')
 }
 
-async function lockMatches(location, paths, journal) {
-  const lock = join(location.gitDirectory, 'index.lock')
-  try {
-    const [left, right] = await Promise.all([lstat(lock), lstat(paths.artifact)])
-    return left.isFile() && right.isFile() && !left.isSymbolicLink() && !right.isSymbolicLink()
-      && left.dev === right.dev && left.ino === right.ino
-      && await hashFile(lock, { allowHardlinks: true }) === journal.commitInput.artifactSha256
-  } catch (error) { if (error?.code === 'ENOENT') return false; throw error }
-}
-
-async function installOwnIndexLock(location, paths, journal) {
-  const lock = join(location.gitDirectory, 'index.lock')
-  if (await lockMatches(location, paths, journal)) return lock
-  try { await lstat(lock); fail('FOREIGN_INDEX_LOCK', lock) } catch (error) {
-    if (error instanceof PlanningCheckpointError) throw error
-    if (error?.code !== 'ENOENT') fail('STATE_IO', lock, error instanceof Error ? error.message : String(error))
-  }
-  try { await link(paths.artifact, lock) } catch (error) {
-    if (error?.code === 'EEXIST') fail('FOREIGN_INDEX_LOCK', lock)
-    fail('STATE_IO', lock, error instanceof Error ? error.message : String(error))
-  }
-  if (!await lockMatches(location, paths, journal)) fail('FOREIGN_INDEX_LOCK', lock)
-  return lock
-}
-
-async function removeOwnIndexLock(location, paths, journal) {
-  const lock = join(location.gitDirectory, 'index.lock')
-  if (await lockMatches(location, paths, journal)) await rm(lock, { force: false })
-}
-
 async function reconcileUnjournaledRefAdvance(location, paths, request, journal, lease, runtimeGitignore) {
   if (journal.phase !== 'commit-proposed') return journal
-  const current = await repositoryState(location)
-  if (current.head !== journal.checkpointCommit || current.branch !== request.baseline.branch) return journal
+  const currentRef = await planningRefCommit(location, request)
+  if (currentRef !== journal.checkpointCommit) return journal
   await assertLease(lease)
   await assertCommitInput(location, paths, journal)
   await assertProposedCommit(location, journal)
-  if (current.indexSha256 !== journal.initialIndexSha256 || !await lockMatches(location, paths, journal)) {
-    fail('INDEX_RECONCILIATION_REQUIRED', 'index')
-  }
   await assertAfterRefBeforeIndex(location, request, journal, runtimeGitignore)
   return saveJournal(paths, journal, { ...journal, phase: 'ref-updated' })
 }
@@ -669,14 +688,13 @@ async function advanceRefAndIndex(location, paths, request, journal, lease, faul
     await assertLease(lease)
     await assertCommitInput(location, paths, journal)
     await assertProposedCommit(location, journal)
-    await assertBeforeRef(location, request, journal.binding.source, journal, runtimeGitignore)
+    await assertBeforeRef(location, paths, request, journal.binding.source, journal, runtimeGitignore)
     await authorize(authorizeCallback, location, request, journal.binding.source, journal, lease)
-    const lock = await installOwnIndexLock(location, paths, journal)
     try {
-      await git(location.root, ['update-ref', `refs/heads/${request.baseline.branch}`, journal.checkpointCommit, request.baseline.head])
+      await git(location.root, ['update-ref', planningRef(request), journal.checkpointCommit, '0'.repeat(journal.checkpointCommit.length)])
     } catch (error) {
-      await removeOwnIndexLock(location, paths, journal)
-      throw error
+      const current = await planningRefCommit(location, request)
+      if (current !== journal.checkpointCommit) throw error
     }
     await invokeFault(fault, 'after-ref-update-before-journal', journal)
     journal = await saveJournal(paths, journal, { ...journal, phase: 'ref-updated' })
@@ -684,8 +702,6 @@ async function advanceRefAndIndex(location, paths, request, journal, lease, faul
     await assertLease(lease)
     await authorize(authorizeCallback, location, request, journal.binding.source, journal, lease)
     await assertAfterRefBeforeIndex(location, request, journal, runtimeGitignore)
-    await rename(lock, join(location.gitDirectory, 'index'))
-    await invokeFault(fault, 'after-index-rename-before-journal', journal)
     journal = await saveJournal(paths, journal, { ...journal, phase: 'index-synced' })
     await invokeFault(fault, 'after-index-sync', journal)
   }
@@ -693,23 +709,10 @@ async function advanceRefAndIndex(location, paths, request, journal, lease, faul
     await assertLease(lease)
     await assertCommitInput(location, paths, journal)
     await assertProposedCommit(location, journal)
-    const current = await repositoryState(location)
-    if (current.head !== journal.checkpointCommit || current.branch !== request.baseline.branch) fail('CHECKPOINT_REF_CONFLICT', 'ref')
-    const lock = join(location.gitDirectory, 'index.lock')
-    if (current.indexSha256 !== journal.initialIndexSha256) {
-      if (await lockMatches(location, paths, journal)) fail('INDEX_RECONCILIATION_REQUIRED', 'index')
-      const tree = gitText(await git(location.root, ['write-tree']))
-      if (tree !== journal.commitInput.tree) fail('INDEX_RECONCILIATION_REQUIRED', 'index')
-      journal = await saveJournal(paths, journal, { ...journal, phase: 'index-synced' })
-    } else {
-      const ownLock = await installOwnIndexLock(location, paths, journal)
-      await authorize(authorizeCallback, location, request, journal.binding.source, journal, lease)
-      await assertAfterRefBeforeIndex(location, request, journal, runtimeGitignore)
-      await rename(ownLock, join(location.gitDirectory, 'index'))
-      await invokeFault(fault, 'after-index-rename-before-journal', journal)
-      journal = await saveJournal(paths, journal, { ...journal, phase: 'index-synced' })
-      await invokeFault(fault, 'after-index-sync', journal)
-    }
+    await authorize(authorizeCallback, location, request, journal.binding.source, journal, lease)
+    await assertAfterRefBeforeIndex(location, request, journal, runtimeGitignore)
+    journal = await saveJournal(paths, journal, { ...journal, phase: 'index-synced' })
+    await invokeFault(fault, 'after-index-sync', journal)
   }
   if (journal.phase === 'index-synced') {
     await assertLease(lease)
@@ -732,6 +735,7 @@ function snapshotFor(location, journal) {
       sourceHead: journal.binding.request.baseline.head,
       checkpointCommit: journal.checkpointCommit,
       checkpointTree: journal.commitInput.tree,
+      sourcePaths: documents(journal.binding.source).map(document => document.path).toSorted(),
     },
     authorization: clone(journal.grant.value),
     reason: journal.binding.request.reason,
@@ -785,13 +789,17 @@ async function runUnderLease(location, paths, request, authorizer, lease, fault,
   let journal = await loadJournal(paths, request.id)
   if (journal === undefined) {
     await assertNoOtherPendingCheckpoint(paths, request.id)
-    await assertParentSnapshot(location, paths, request.parentSnapshotId)
+    const parent = await assertParentSnapshot(location, paths, request.parentSnapshotId)
+    assertParentContinuation(request, parent)
     const source = await validatePlanningSourceChain({
       root: location.root,
       cwd: location.cwd,
       manifest: request.manifest,
       baseline: request.baseline,
+      sourceBaselineCommit: parent?.codeBaseline.checkpointCommit,
       source: request.source,
+      supporting: request.supporting,
+      parentSource: parent?.source,
     })
     await assertLease(lease)
     await assertInitialState(location, request, source, undefined, runtimeGitignore)
@@ -819,7 +827,7 @@ async function runUnderLease(location, paths, request, authorizer, lease, fault,
     await authorize(authorizer, location, request, journal.binding.source, journal, lease)
     journal = await reconcileUnjournaledRefAdvance(location, paths, request, journal, lease, runtimeGitignore)
     if (['source-validated', 'commit-input', 'commit-proposed'].includes(journal.phase)) {
-      await assertBeforeRef(location, request, journal.binding.source, journal, runtimeGitignore)
+      await assertBeforeRef(location, paths, request, journal.binding.source, journal, runtimeGitignore)
     }
   }
   await authorize(authorizer, location, request, journal.binding.source, journal, lease)
@@ -877,6 +885,29 @@ export async function loadPlanningCheckpointSnapshot({ root, id } = {}) {
   if (journal === undefined || journal.phase !== 'snapshot-persisted') fail('CHECKPOINT_SNAPSHOT_INCOMPLETE', 'id')
   const result = await resultFor(location, paths, journal)
   return deepFreeze(clone(result.snapshot))
+}
+
+/**
+ * Read every durably completed checkpoint snapshot for a repository. This is
+ * deliberately read-only: callers must choose and bind a unique snapshot
+ * themselves instead of inferring requirements from mutable Markdown.
+ */
+export async function listCompletedPlanningCheckpointSnapshots({ root } = {}) {
+  if (typeof root !== 'string' || !isAbsolute(root)) fail('INVALID_ROOT', 'root')
+  const location = await rootLocation(root, root)
+  const placeholder = pathsFor(location.gitDirectory, 'placeholder')
+  if (!await stateExists(placeholder, location.gitDirectory)) return deepFreeze([])
+  const names = await readdir(placeholder.journals)
+  const snapshots = []
+  for (const name of names.toSorted()) {
+    const match = /^([A-Za-z0-9][A-Za-z0-9._:-]*)\.json$/u.exec(name)
+    if (match === null) fail('STATE_AMBIGUOUS', join(placeholder.journals, name))
+    const paths = pathsFor(location.gitDirectory, match[1])
+    const journal = await loadJournal(paths, match[1])
+    if (journal === undefined || journal.phase !== 'snapshot-persisted') continue
+    snapshots.push(clone((await resultFor(location, paths, journal)).snapshot))
+  }
+  return deepFreeze(snapshots)
 }
 
 /**

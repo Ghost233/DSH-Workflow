@@ -24,14 +24,14 @@ function task() {
   return { id: 'T1', verify: ['unit'] }
 }
 
-function fakeSnapshotExecutor({ contentDigest = DIGEST_A, exitCode = 0, enforcement = 'full', approvalOutcome } = {}) {
+function fakeSnapshotExecutor({ commitSha = DIGEST_A, exitCode = 0, enforcement = 'full', approvalOutcome } = {}) {
   const calls = []
   return {
     calls,
     async run(request) {
       calls.push({ argv: [...request.argv], cwd: request.cwd })
       return {
-        contentDigest,
+        commitSha,
         exitCode,
         approvalOutcome,
         sandbox: { enforcement },
@@ -72,7 +72,7 @@ test('Shell 缺少 exitCode 时按 ok 确定性归一化，异常载体仍 fail 
     verificationId: 'unit',
     snapshotExecutor: {
       async run() {
-        return { contentDigest: DIGEST_A, kind: 'foreground', ok, sandbox: { enforcement: 'full' } }
+        return { commitSha: DIGEST_A, kind: 'foreground', ok, sandbox: { enforcement: 'full' } }
       },
     },
   })
@@ -84,7 +84,7 @@ test('Shell 缺少 exitCode 时按 ok 确定性归一化，异常载体仍 fail 
     verificationId: 'unit',
     snapshotExecutor: {
       async run() {
-        return { contentDigest: DIGEST_A, kind: 'background', ok: true, sandbox: { enforcement: 'full' } }
+        return { commitSha: DIGEST_A, kind: 'background', ok: true, sandbox: { enforcement: 'full' } }
       },
     },
   })
@@ -96,7 +96,7 @@ test('Shell 缺少 exitCode 时按 ok 确定性归一化，异常载体仍 fail 
     verificationId: 'unit',
     snapshotExecutor: {
       async run() {
-        return { contentDigest: DIGEST_A, sandbox: { enforcement: 'full' } }
+        return { commitSha: DIGEST_A, sandbox: { enforcement: 'full' } }
       },
     },
   })
@@ -132,11 +132,11 @@ test('未知或未绑定验证 ID 在创建快照前拒绝', async () => {
   assert.deepEqual(executor.calls, [])
 })
 
-test('验证结果包含固定 contentDigest 与可序列化证据字段', () => {
+test('验证结果包含固定 commitSha 与可序列化证据字段', () => {
   const result = createVerificationResult({
     verificationId: 'unit',
     argv: ['node', '--test'],
-    contentDigest: DIGEST_A.toUpperCase(),
+    commitSha: DIGEST_A.toUpperCase(),
     exitCode: 0,
     enforcement: 'full',
   })
@@ -146,12 +146,12 @@ test('验证结果包含固定 contentDigest 与可序列化证据字段', () =>
     verificationId: 'unit',
     argv: ['node', '--test'],
     cwd: '.',
-    contentDigest: DIGEST_A,
+    commitSha: DIGEST_A,
     exitCode: 0,
     enforcement: 'full',
     passed: true,
   })
-  assert.throws(() => createVerificationResult({ ...result, contentDigest: 'short' }), /contentDigest/u)
+  assert.throws(() => createVerificationResult({ ...result, commitSha: 'short' }), /commitSha/u)
   assert.throws(() => createVerificationResult({ ...result, exitCode: '0' }), /exitCode/u)
   assert.throws(() => parseVerificationResult({ ...result, passed: true, enforcement: 'partial' }), /passed/u)
   assert.throws(() => parseVerificationResult({ ...result, argv: [] }), /argv/u)
@@ -179,9 +179,9 @@ test('验证结果包含固定 contentDigest 与可序列化证据字段', () =>
   assert.equal(bounded.stdoutTruncated, true)
 })
 
-test('验证结果仅在 contentDigest 完全相同时有效', () => {
+test('验证结果仅在 commitSha 完全相同时有效', () => {
   const result = createVerificationResult({
-    verificationId: 'unit', argv: ['node', '--test'], contentDigest: DIGEST_A, exitCode: 0, enforcement: 'full',
+    verificationId: 'unit', argv: ['node', '--test'], commitSha: DIGEST_A, exitCode: 0, enforcement: 'full',
   })
   assert.equal(isVerificationCurrent(result, DIGEST_A), true)
   assert.equal(isVerificationCurrent(result, DIGEST_B), false)
@@ -241,7 +241,7 @@ test('ok:false、超时、中止或后台宿主证据绝不能成为 passed:true
           return {
             argv,
             ...failure,
-            contentDigest: DIGEST_A,
+            commitSha: DIGEST_A,
             exitCode: 0,
             sandbox: { enforcement: 'full' },
           }

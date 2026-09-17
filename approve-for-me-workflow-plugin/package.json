@@ -1,0 +1,60 @@
+{
+  "name": "dsh-approve-for-me-workflow",
+  "version": "0.1.0",
+  "description": "Project-owned adapter of the pinned approve-for-me policy for official DSH 0.1.6",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./compose-patch": "./compose-patch.mjs"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "compose-patch.mjs",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md",
+    "upstream.json"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@deepseek-ai/dsh-agent": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-settings": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-sandbox": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-sandbox-policy": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-permission-presets": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-subagent": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-system-prompt": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-tools": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-user-approval": "0.1.6-alpha.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-plugins",
+        "@deepseek-ai/dsh-client-ui-session"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check:build": "node scripts/build.mjs --check",
+    "test": "node --import ../deepseek-harness/node_modules/tsx/dist/esm/index.mjs --import ../sol-efficiency-plugin/test/workspace-loader.mjs --test test/*.test.mjs"
+  }
+}

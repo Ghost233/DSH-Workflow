@@ -5,9 +5,10 @@ import { renameSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { createOwnerWorkflowRuntime } from '../src/runtime.mjs'
 import { registerOrchestratorDocumentGuards } from '../src/orchestrator-documents.mjs'
 import { readPlanningWriteJournal } from '../src/planning-write-journal.mjs'
+import { createPlanningNativeAgent } from './fixtures/planning-native-agent.mjs'
+import { planningDocumentRuntime } from './fixtures/planning-document-runtime.mjs'
 
 function hash(value) {
   return createHash('sha256').update(value, 'utf8').digest('hex')
@@ -35,16 +36,8 @@ async function fixture(t, { downstreamObservedFailure = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-planning-write-journal-'))
   const ctx = new Context()
   const fibers = []
-  const runtime = createOwnerWorkflowRuntime({}, {})
-  const agent = {
-    id: 'main-journal-agent',
-    session: { id: 'main-journal-session', header: { id: 'main-journal-session', cwd: root } },
-    ctx: { get: name => name === 'agentPresets' ? { composedPreset: () => 'owner-workflow' } : undefined },
-  }
-  runtime.orchestratorRoots.set(agent.id, root)
   t.after(async () => {
     for (const fiber of fibers.reverse()) await fiber.dispose()
-    await runtime.dispose()
     await rm(root, { recursive: true, force: true })
   })
   fibers.push(await ctx.plugin(SystemPrompt.default))
@@ -52,6 +45,8 @@ async function fixture(t, { downstreamObservedFailure = false } = {}) {
   fibers.push(await ctx.plugin(LocalFs.default, { cwd: root }))
   fibers.push(await ctx.plugin(FsPolicy))
   fibers.push(await ctx.plugin(ToolFs))
+  const agent = await createPlanningNativeAgent(t, ctx, root, 'main-journal-agent')
+  const runtime = planningDocumentRuntime(ctx, root, agent)
   const disposers = registerOrchestratorDocumentGuards(ctx, runtime)
   t.after(async () => { for (const dispose of disposers.toReversed()) await dispose?.() })
   t.after(ctx.tools.guard(exec => runtime.checkToolExecution(exec)))
@@ -94,7 +89,7 @@ test('真实 Harness create → read → edit 使用原生 CAS，写入不可消
   assert.notEqual(create.journalId, edit.journalId)
   for (const record of [create, edit]) {
     assert.equal(record.prepared.call.agentId, 'main-journal-agent')
-    assert.equal(record.prepared.call.sessionId, 'main-journal-session')
+    assert.equal(record.prepared.call.sessionId, 'main-journal-agent')
     assert.equal(record.prepared.call.rootCallId, record.prepared.call.callId)
     assert.equal(record.terminal.status, 'native-observed')
     assert.equal(record.terminal.completeness, 'complete')

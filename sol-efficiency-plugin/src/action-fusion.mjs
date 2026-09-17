@@ -1,5 +1,6 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { CallId, HarnessError } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, HarnessError } from '@deepseek-ai/dsh-llm'
+import { scopeTarget } from '@deepseek-ai/dsh-scope'
 
 const escalation = {
   sandbox_permissions: { type: 'string', description: 'Forwarded to the native tool; it still enforces supported modes and approval.' },
@@ -77,14 +78,25 @@ export function installActionFusion(ctx, calls, lifetime) {
             }
           }
           const dispatch = async (name, arguments_) => {
-            const callId = CallId(`${exec.callId}:sol:${name}`)
+            const callId = ToolCallId(`${exec.callId}:sol:${name}`)
             const log = { rootCallId: exec.rootCallId, parentCallId: exec.callId, subCallId: callId, name, arguments: arguments_ }
-            exec.agent?.session.append('tool/code-dispatch-start', log)
+            exec.agent?.session.append('tool/ptc-dispatch-start', log)
             const result = await ctx.tools.execute({ name, arguments: arguments_, callId,
               rootCallId: exec.rootCallId, parent: exec.token, agent: exec.agent, signal })
             for (const context of result.additionalContexts ?? []) exec.deferContext(context)
             if (!result.isError && result.concludesTurn) exec.concludeTurn()
-            exec.agent?.session.append('tool/code-dispatch', { ...log, isError: result.isError, content: result.content })
+            if (exec.agent !== undefined) {
+              let content = result.content
+              try {
+                content = await ctx.waterfall(scopeTarget(ctx.tools, exec.agent), 'tools/ptc-dispatch-log', {
+                  exec, agent: exec.agent, subCallId: callId, name, isError: result.isError, content,
+                }, () => Promise.resolve(content))
+              } catch {
+                // Log-shaping failure cannot erase a settled mutation or change its value.
+                ctx.logger.warn('sol-efficiency: nested log shaping failed; retaining the original result')
+              }
+              exec.agent.session.append('tool/ptc-dispatch', { ...log, isError: result.isError, content })
+            }
             return result
           }
           calls.set(exec.token, { mutationName })

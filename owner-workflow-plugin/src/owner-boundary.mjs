@@ -29,8 +29,6 @@ export function isProtectedRelativePath(file) {
     || normalized.startsWith(`${OWNER_CONFIGURATION_DIRECTORY}/`)
     || normalized === 'deepseek-harness'
     || normalized.startsWith('deepseek-harness/')
-    || normalized === 'dsh-synapse'
-    || normalized.startsWith('dsh-synapse/')
     || normalized === 'owner-workflow-plugin/vendor/dsh-approve-for-me'
     || normalized.startsWith('owner-workflow-plugin/vendor/dsh-approve-for-me/')
 }
