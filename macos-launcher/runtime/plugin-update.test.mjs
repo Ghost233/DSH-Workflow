@@ -46,6 +46,43 @@ test('an empty new profile needs no package-manager invocation', async () => {
   assert.deepEqual(result.updated, [])
 })
 
+test('a selected subset updates only the chosen plugin', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-plugin-only-'))
+  const profile = join(home, 'profiles/web')
+  try {
+    await mkdir(join(profile, 'node_modules/dsh-context'), { recursive: true })
+    await mkdir(join(profile, 'node_modules/dsh-other'), { recursive: true })
+    const manifestPath = join(profile, 'package.json')
+    await writeFile(manifestPath, JSON.stringify({ dependencies: { 'dsh-context': '1.0.0', 'dsh-other': '1.0.0' },
+      dsh: { profile: { bundles: ['dsh-context', 'dsh-other'] } } }))
+    await writeFile(join(profile, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.0.0' }))
+    await writeFile(join(profile, 'node_modules/dsh-other/package.json'), JSON.stringify({ name: 'dsh-other', version: '1.0.0' }))
+    const rows = [
+      { source: 'DSH Web profile', name: 'dsh-context', current: '1.0.0', latest: '1.1.0', status: 'newer' },
+      { source: 'DSH Web profile', name: 'dsh-other', current: '1.0.0', latest: '2.0.0', status: 'newer' },
+    ]
+    const result = await updateProfilePlugins({ resourcesRoot: home, home, only: ['dsh-context'],
+      check: async () => ({ checkedAt: '2026-09-18T00:00:00Z', rows }),
+      run: async ({ candidates }) => {
+        assert.deepEqual(candidates.map(row => row.name), ['dsh-context'])
+        const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+        manifest.dependencies['dsh-context'] = '1.1.0'
+        await writeFile(manifestPath, JSON.stringify(manifest))
+        await writeFile(join(profile, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.1.0' }))
+      } })
+    assert.deepEqual(result.updated, [{ name: 'dsh-context', from: '1.0.0', to: '1.1.0' }])
+    assert.equal(JSON.parse(await readFile(manifestPath, 'utf8')).dependencies['dsh-other'], '1.0.0')
+  } finally { await rm(home, { recursive: true, force: true }) }
+})
+
+test('invalid selections are rejected before any check runs', async () => {
+  const fail = () => { throw new Error('must not check') }
+  await assert.rejects(updateProfilePlugins({ resourcesRoot: '/unused', home: '/unused', only: [], check: fail }),
+    /Invalid plugin selection/u)
+  await assert.rejects(updateProfilePlugins({ resourcesRoot: '/unused', home: '/unused', only: ['not a name'], check: fail }),
+    /Invalid plugin selection/u)
+})
+
 test('a failed update reports packages already changed so the launcher can still offer restart', async () => {
   const home = await mkdtemp(join(tmpdir(), 'dsh-plugin-partial-'))
   const profile = join(home, 'profiles/web')

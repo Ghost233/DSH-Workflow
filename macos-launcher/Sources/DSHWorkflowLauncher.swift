@@ -74,12 +74,14 @@ struct PluginVersionRow: Decodable, Identifiable {
     let latest: String?
     let status: String
     let note: String
+    let updatable: Bool?
 
     var id: String { "\(source):\(name)" }
+    var isUpdatable: Bool { updatable == true }
     var statusText: String {
         switch status {
         case "newer": return "有新版本"
-        case "current": return "已是 latest"
+        case "current": return "已是最新"
         case "ahead": return "当前版本高于 latest"
         case "bundled": return "随 App 更新"
         case "coupled": return "随 DSH 更新"
@@ -110,8 +112,9 @@ final class LauncherModel: ObservableObject {
     @Published private(set) var pluginRows: [PluginVersionRow] = []
     @Published private(set) var pluginCheckStatus = "尚未检查插件版本"
     @Published private(set) var isCheckingPlugins = false
-    @Published private(set) var pluginUpdateStatus = "启动后自动检查插件更新"
+    @Published private(set) var pluginUpdateStatus = "在插件管理窗口逐个选择要更新的插件"
     @Published private(set) var isUpdatingPlugins = false
+    @Published private(set) var updatingPackages: Set<String> = []
     @Published private(set) var pluginRestartAvailable = false
     @Published var showPluginRestartPrompt = false
 
@@ -327,7 +330,7 @@ final class LauncherModel: ObservableObject {
         }
     }
 
-    func updatePlugins() {
+    func updatePlugins(_ names: [String] = []) {
         guard !isUpdatingPlugins && !isCheckingPlugins else { return }
         guard let resources = Bundle.main.resourceURL else {
             pluginUpdateStatus = "应用资源目录不可用，无法更新插件。"
@@ -341,13 +344,17 @@ final class LauncherModel: ObservableObject {
             return
         }
         isUpdatingPlugins = true
-        pluginUpdateStatus = "正在检查并更新 Web profile 插件…"
+        updatingPackages = Set(names)
+        pluginUpdateStatus = names.isEmpty ? "正在检查并更新全部可更新的 Web profile 插件…"
+            : "正在更新 \(names.joined(separator: "、"))…"
         Task {
             let resourcesPath = resources.path
+            let arguments = names.isEmpty ? [scriptPath, resourcesPath]
+                : [scriptPath, resourcesPath, "--only", names.joined(separator: ",")]
             let result = await Task.detached(priority: .utility) { () -> (Int32, Data) in
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: nodePath)
-                process.arguments = [scriptPath, resourcesPath]
+                process.arguments = arguments
                 let output = Pipe()
                 process.standardOutput = output
                 process.standardError = output
@@ -358,6 +365,7 @@ final class LauncherModel: ObservableObject {
                 return (process.terminationStatus, data)
             }.value
             isUpdatingPlugins = false
+            updatingPackages = []
             guard result.0 == 0, let report = try? JSONDecoder().decode(PluginUpdateReport.self, from: result.1) else {
                 pluginUpdateStatus = "插件更新失败：\(String(decoding: result.1.suffix(400), as: UTF8.self))"
                 return
@@ -375,7 +383,7 @@ final class LauncherModel: ObservableObject {
             pluginRows = pluginRows.map { row in
                 guard let version = versions[row.name], row.source == "DSH Web profile" else { return row }
                 return PluginVersionRow(source: row.source, name: row.name, current: version,
-                                        latest: version, status: "current", note: "已更新；重启后运行中的引擎才会加载")
+                                        latest: version, status: "current", note: "已更新；重启后运行中的引擎才会加载", updatable: false)
             }
             pluginUpdateStatus = report.error.map { "已更新 \(report.updated.count) 个插件，但其余更新失败：\($0)" }
                 ?? "已更新 \(report.updated.count) 个 Web profile 插件；运行中的 DSH 尚未切换版本。"
@@ -460,7 +468,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
         LauncherModel.shared.start()
         ManagementWindow.shared.show()
         LauncherModel.shared.checkForUpdates()
-        LauncherModel.shared.updatePlugins()
+        LauncherModel.shared.checkPluginVersions()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -512,27 +520,19 @@ private struct ManagementView: View {
             HStack {
                 Text("插件管理").font(.headline)
                 Spacer()
-                Button("一键检查新版本") { model.checkPluginVersions() }.disabled(model.isCheckingPlugins)
+                Button("插件管理…") { PluginWindow.shared.show() }
             }
             Text(model.pluginCheckStatus).font(.caption)
-            HStack {
-                Text(model.pluginUpdateStatus).font(.caption)
-                Spacer()
-                Button("更新插件") { model.updatePlugins() }.disabled(model.isCheckingPlugins || model.isUpdatingPlugins)
-                if model.pluginRestartAvailable {
+            Text(model.pluginUpdateStatus).font(.caption).foregroundStyle(.secondary)
+            if model.pluginRestartAvailable {
+                HStack {
+                    Text("插件已更新，等待重启生效。").font(.caption).foregroundStyle(.orange)
+                    Spacer()
                     Button("重启以应用") { model.restartAfterPluginUpdate() }
                 }
             }
-            Text("启动时只更新 npm 安装的 Web profile 第三方插件；DSH 与 App 内置插件随应用构建更新。运行中的引擎不会热切换插件。")
+            Text("每个插件的当前版本和最新版本逐行显示在插件管理窗口；npm 安装的第三方插件可单独更新。DSH、自研插件与内置 Bundle 随应用构建更新。")
                 .font(.caption).foregroundStyle(.secondary)
-            ForEach(model.pluginRows) { row in
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(row.name).font(.body)
-                    Text("\(row.source) · 当前 \(row.current ?? "未知") · latest \(row.latest ?? "—") · \(row.statusText)")
-                        .font(.caption).foregroundStyle(row.status == "newer" ? Color.orange : Color.secondary)
-                    Text(row.note).font(.caption2).foregroundStyle(.secondary)
-                }
-            }
             if !model.lastError.isEmpty {
                 Text(model.lastError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
@@ -540,12 +540,84 @@ private struct ManagementView: View {
         }
         .padding(20)
         .frame(width: 560)
+    }
+}
+
+private struct PluginManageView: View {
+    @ObservedObject var model: LauncherModel
+
+    private var updatableNames: [String] { model.pluginRows.filter { $0.isUpdatable }.map(\.name) }
+    private var busy: Bool { model.isCheckingPlugins || model.isUpdatingPlugins }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.pluginCheckStatus).font(.caption)
+                    Text(model.pluginUpdateStatus).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("重新检查") { model.checkPluginVersions() }.disabled(busy)
+                Button("全部更新") { model.updatePlugins() }
+                    .disabled(busy || updatableNames.isEmpty)
+                if model.pluginRestartAvailable {
+                    Button("重启以应用") { model.restartAfterPluginUpdate() }
+                }
+            }
+            .padding(14)
+            Divider()
+            if model.pluginRows.isEmpty {
+                Spacer()
+                if model.isCheckingPlugins {
+                    ProgressView()
+                } else {
+                    Text("还没有插件版本数据。").foregroundStyle(.secondary)
+                }
+                Spacer()
+            } else {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        ForEach(model.pluginRows) { row in
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(alignment: .firstTextBaseline) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(row.name).font(.body.weight(.medium))
+                                        Text(row.source).font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text("当前 \(row.current ?? "未知")")
+                                        Text("最新 \(row.latest ?? "—")")
+                                    }
+                                    .font(.caption)
+                                    Text(row.statusText).font(.caption)
+                                        .foregroundStyle(row.status == "newer" ? Color.orange : Color.secondary)
+                                        .frame(width: 130, alignment: .leading)
+                                    if model.updatingPackages.contains(row.name) {
+                                        Text("更新中…").font(.caption).foregroundStyle(.secondary)
+                                    } else if row.isUpdatable {
+                                        Button("更新") { model.updatePlugins([row.name]) }.disabled(busy)
+                                    }
+                                }
+                                Text(row.note).font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .padding(10)
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .cornerRadius(8)
+                        }
+                    }
+                    .padding(14)
+                }
+            }
+        }
+        .frame(minWidth: 720, minHeight: 480)
         .alert("插件已更新", isPresented: $model.showPluginRestartPrompt) {
             Button("重启服务") { model.restartAfterPluginUpdate() }
             Button("稍后") { model.postponePluginRestart() }
         } message: {
             Text("\(model.pluginUpdateStatus) 重启会关闭当前所有 Catalog 引擎，再按需启动；选择稍后时，运行中的引擎继续使用旧版本。")
         }
+        .task { if model.pluginRows.isEmpty { model.checkPluginVersions() } }
     }
 }
 
@@ -564,6 +636,32 @@ private final class ManagementWindow {
         )
         window.title = "DSH Workflow 管理"
         window.contentViewController = NSHostingController(rootView: ManagementView(model: LauncherModel.shared))
+        window.isReleasedWhenClosed = false
+        window.center()
+        self.window = window
+    }
+
+    func show() {
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+@MainActor
+private final class PluginWindow {
+    static let shared = PluginWindow()
+
+    private let window: NSWindow
+
+    private init() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "插件管理"
+        window.contentViewController = NSHostingController(rootView: PluginManageView(model: LauncherModel.shared))
         window.isReleasedWhenClosed = false
         window.center()
         self.window = window
@@ -599,10 +697,9 @@ private struct MenuContent: View {
         Button("重启") { model.restart() }.disabled(!model.isActive)
         Divider()
         Button("管理…") { ManagementWindow.shared.show() }
+        Button("插件管理…") { PluginWindow.shared.show() }
         Button("查看日志") { model.showLog() }.disabled(model.logPath == nil)
         Button("检查应用更新") { model.checkForUpdates() }.disabled(model.isCheckingUpdates)
-        Button("检查插件新版本") { model.checkPluginVersions() }.disabled(model.isCheckingPlugins)
-        Button("更新插件") { model.updatePlugins() }.disabled(model.isCheckingPlugins || model.isUpdatingPlugins)
         if model.pluginRestartAvailable {
             Button("重启以应用插件") { model.restartAfterPluginUpdate() }
         }

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { checkPluginVersions } from './plugin-versions.mjs'
 
 const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const packageNamePattern = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i
 const owned = new Set(['dsh-owner-workflow', 'dsh-sol-efficiency', 'dsh-approve-for-me-workflow'])
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'))
@@ -51,11 +52,15 @@ async function runProfileUpdate({ resources, home, candidates }) {
 
 /** Update eligible profile packages on disk. Never restart or alter packaged plugins. */
 export async function updateProfilePlugins({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
-  check = checkPluginVersions, run = runProfileUpdate } = {}) {
+  only, check = checkPluginVersions, run = runProfileUpdate } = {}) {
+  const selection = only === undefined ? undefined : new Set(only)
+  if (selection !== undefined && (selection.size === 0 || [...selection].some(name => !packageNamePattern.test(name)))) {
+    throw new Error('Invalid plugin selection')
+  }
   const resources = resolve(resourcesRoot)
   const profile = join(home, 'profiles/web')
   const report = await check({ resourcesRoot: resources, home })
-  const available = updateCandidates(report)
+  const available = updateCandidates(report).filter(row => selection === undefined || selection.has(row.name))
   if (available.length === 0) return { checkedAt: report.checkedAt, updated: [], failedChecks: report.rows.filter(row => row.status === 'error').length }
   const profileManifest = await readJson(join(profile, 'package.json'))
   const enabled = new Set(profileManifest.dsh?.profile?.bundles ?? [])
@@ -80,8 +85,12 @@ export async function updateProfilePlugins({ resourcesRoot, home = process.env.D
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    if (!process.argv[2]) throw new Error('Usage: plugin-update.mjs RESOURCES')
-    process.stdout.write(JSON.stringify(await updateProfilePlugins({ resourcesRoot: process.argv[2] })) + '\n')
+    const onlyIndex = process.argv.indexOf('--only')
+    const only = onlyIndex >= 0 ? process.argv[onlyIndex + 1]?.split(',') : undefined
+    if (!process.argv[2] || onlyIndex >= 0 && !only) {
+      throw new Error('Usage: plugin-update.mjs RESOURCES [--only name1,name2]')
+    }
+    process.stdout.write(JSON.stringify(await updateProfilePlugins({ resourcesRoot: process.argv[2], only })) + '\n')
   } catch (error) {
     process.stderr.write(`${error.stack ?? error}\n`)
     process.exitCode = 1

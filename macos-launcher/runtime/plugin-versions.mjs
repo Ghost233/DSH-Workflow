@@ -135,6 +135,13 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
         : comparison === 1 ? 'ahead' : 'unknown'
     } catch (error) { row.status = 'error'; row.note = String(error.message).slice(0, 180) }
   }))
+  const enabledBundles = new Set(profileManifest?.dsh?.profile?.bundles ?? [])
+  const ownedNames = new Set(owned.map(([name]) => name))
+  for (const row of rows) {
+    row.updatable = row.source === 'DSH Web profile' && row.status === 'newer' && typeof row.latest === 'string'
+      && exactVersion(row.latest) && enabledBundles.has(row.name)
+      && !row.name.startsWith('@deepseek-ai/') && !ownedNames.has(row.name)
+  }
   return { checkedAt: new Date().toISOString(), rows }
 }
 

@@ -1,6 +1,6 @@
 # DSH Workflow macOS 启动器
 
-这个应用仅管理 DSH Web 进程。菜单栏和管理窗口由 SwiftUI 绘制；DSH 的界面始终在系统浏览器中打开，没有 WebView。应用资源包含固定版本的 DSH、Node 和三个自研插件。第三方插件仍由 `$DSH_HOME/profiles/web` 的 DSH 原生 profile 加载；应用启动时检查并更新其中由 npm 安装的第三方插件，更新后由用户决定是否重启服务。
+这个应用仅管理 DSH Web 进程。菜单栏和管理窗口由 SwiftUI 绘制；DSH 的界面始终在系统浏览器中打开，没有 WebView。应用资源包含固定版本的 DSH、Node 和三个自研插件。第三方插件仍由 `$DSH_HOME/profiles/web` 的 DSH 原生 profile 加载；应用启动时检查其中由 npm 安装的第三方插件是否有新版本，由用户在插件管理窗口逐个选择更新，更新后由用户决定是否重启服务。
 
 ## 构建
 
@@ -20,7 +20,7 @@ node macos-launcher/build.mjs
 
 “完整访问权限”只设置本次 DSH 进程的 `DSH_PERMISSION_MODE=danger-full-access`，不修改用户的 DSH 配置；关闭时使用 `workspace-write`。DSH 已保存的会话或 General settings 权限仍按 DSH 自身规则生效。权限更改需重启导航服务和相应引擎。
 
-管理窗口的“插件管理 → 一键检查新版本”会读取当前 `$DSH_HOME/profiles/web/package.json` 中的直接依赖和启用的 Bundle、应用打包时的 `project-plugins.json`/锁定清单，以及三个内置自研插件。可比较的 npm 公共 registry 包会查询 `latest` 标记并显示当前版本、最新版本和检查结果；本地/Git 依赖、自研打包插件及与 DSH 版本绑定的内置 Bundle 会分别标明来源，不把它们误报为可独立升级。项目侧清单是构建时快照，不代表安装在这个 macOS App 里的插件。检查只读，不安装、不修改锁文件、不热替换插件，也不重启运行中的 DSH；`latest` 更不代表与当前 DSH 兼容。私有 registry 和网络故障会显示为无法确认。
+管理窗口和菜单栏的“插件管理…”会打开独立的插件管理窗口，逐行显示每个插件的名称、来源、当前版本、最新版本和检查结果；数据来自当前 `$DSH_HOME/profiles/web/package.json` 中的直接依赖和启用的 Bundle、应用打包时的 `project-plugins.json`/锁定清单，以及三个内置自研插件。可比较的 npm 公共 registry 包会查询 `latest` 标记；本地/Git 依赖、自研打包插件及与 DSH 版本绑定的内置 Bundle 会分别标明来源，不把它们误报为可独立升级。项目侧清单是构建时快照，不代表安装在这个 macOS App 里的插件。检查只读，不安装、不修改锁文件、不热替换插件，也不重启运行中的 DSH；`latest` 更不代表与当前 DSH 兼容。私有 registry 和网络故障会显示为无法确认。
 
 在同一局域网或私有 VPN 的设备上打开管理窗口显示的 `http://<Mac 的内网 IPv4>:33080/`，输入密码后可查看 Catalog 列表。新建 Catalog 会在 `~/Library/Application Support/DSH Workflow/catalogs/<UUID>/` 创建独立目录；也可以把已有 Catalog 目录按原路径加入列表，以保留 Owner Registry 的既有绑定。列表持久化在同目录的 `catalogs.json`，不会自动迁移、合并或删除既有运行数据。点击“打开”才启动该 Catalog 的 DSH；两个 Catalog 可以同时运行，互不共用 catalog 工作目录。点击“关闭引擎”只停止对应实例，不删除目录或历史。
 
@@ -36,6 +36,6 @@ node macos-launcher/build.mjs
 
 应用启动时会检查一次 [GitHub Releases](https://github.com/Ghost233/DSH-Workflow/releases)，也可以从菜单或管理窗口手动检查。只认 `macos-v<主版本>.<次版本>.<修订版本>`、非草稿且非预发布的版本。发现更新后显示“查看新版本”；只有点击它才会用系统浏览器打开对应 Release 页面。应用不会自动下载或替换自身，网络错误也不影响 DSH 运行。
 
-启动器还会检查 Web profile 中通过 npm 安装的第三方插件，并将有新版本的插件更新到确定版本。它不会更新 DSH 本体、Agent Teams 等与 DSH 版本绑定的官方包、本地链接的自研插件或应用包内的项目插件快照。更新成功后管理窗口提供“重启服务”与“稍后”；只有用户选择重启，运行中的 Catalog 引擎才会重新加载插件。检查或更新失败会显示错误，不自动重启。
+启动器启动时会检查 Web profile 中通过 npm 安装的第三方插件是否有新版本，并在插件管理窗口逐行标出。更新完全由用户手动触发：对单个插件点“更新”，或点“全部更新”，所选插件会安装到确定的 `latest` 版本；启动时不会自动安装任何新版本。它不会更新 DSH 本体、Agent Teams 等与 DSH 版本绑定的官方包、本地链接的自研插件或应用包内的项目插件快照。更新成功后插件管理窗口提供“重启服务”与“稍后”；只有用户选择重启，运行中的 Catalog 引擎才会重新加载插件。检查或更新失败会显示错误，不自动重启。
 
 Actions 的 DMG 内含 ad-hoc 签名、未经 Apple 公证的应用；准备给其他 Mac 正式分发时，还需要配置 Developer ID 签名和公证流程。
