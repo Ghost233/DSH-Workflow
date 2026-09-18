@@ -75,6 +75,37 @@ private struct DshRuntimeInfo: Decodable {
     let version: String
 }
 
+struct CatalogState: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let path: String
+    let state: String
+    let error: String
+    let webPort: Int?
+    let gatePort: Int?
+    let url: String?
+
+    var stateText: String {
+        switch state {
+        case "running": return "运行中"
+        case "starting": return "正在启动"
+        default: return "未启动"
+        }
+    }
+}
+
+private struct CatalogsEvent: Decodable {
+    let catalogs: [CatalogState]
+}
+
+private struct ControlReply: Decodable {
+    let requestId: Int
+    let ok: Bool
+    let catalogs: [CatalogState]?
+    let url: String?
+    let error: String?
+}
+
 struct PluginVersionRow: Decodable, Identifiable {
     let source: String
     let name: String
@@ -125,6 +156,10 @@ final class LauncherModel: ObservableObject {
     @Published private(set) var updatingPackages: Set<String> = []
     @Published private(set) var pluginRestartAvailable = false
     @Published var showPluginRestartPrompt = false
+    @Published private(set) var catalogs: [CatalogState] = []
+    @Published var newCatalogName = ""
+    @Published var attachCatalogName = ""
+    @Published var attachCatalogPath = ""
     private(set) var appVersionText = ""
 
     private var child: Process?
@@ -267,6 +302,51 @@ final class LauncherModel: ObservableObject {
         if let logPath {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: logPath)])
         }
+    }
+
+    // MARK: Catalog management over the supervisor control channel
+
+    private var controlSequence = 0
+
+    private func sendControl(_ fields: [String: Any]) {
+        guard let control, let child, child.isRunning else { return }
+        controlSequence += 1
+        var command = fields
+        command["requestId"] = controlSequence
+        guard let data = try? JSONSerialization.data(withJSONObject: command) else { return }
+        do { try control.fileHandleForWriting.write(contentsOf: data + Data([10])) }
+        catch { lastError = "发送管理指令失败：\(error.localizedDescription)" }
+    }
+
+    func refreshCatalogs() {
+        sendControl(["type": "list"])
+    }
+
+    func createCatalog() {
+        let name = newCatalogName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        newCatalogName = ""
+        sendControl(["type": "create", "name": name])
+    }
+
+    func attachCatalog() {
+        let name = attachCatalogName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path = attachCatalogPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, path.hasPrefix("/") else {
+            lastError = "加入已有 Catalog 需要名称和以 / 开头的目录绝对路径。"
+            return
+        }
+        attachCatalogName = ""
+        attachCatalogPath = ""
+        sendControl(["type": "attach", "name": name, "path": path])
+    }
+
+    func openCatalog(_ id: String) {
+        sendControl(["type": "open", "id": id])
+    }
+
+    func stopCatalog(_ id: String) {
+        sendControl(["type": "stop", "id": id])
     }
 
     func checkForUpdates() {
@@ -442,6 +522,20 @@ final class LauncherModel: ObservableObject {
                 lanURLs = ready.lanUrls ?? []
                 logPath = ready.logPath
                 status = "导航页运行中 · 端口 \(ready.port)；DSH 按需启动"
+                refreshCatalogs()
+            } else if line.hasPrefix("DSH_WORKFLOW_STATE\t"),
+               let payload = line.split(separator: "\t", maxSplits: 1).last?.data(using: .utf8),
+               let event = try? JSONDecoder().decode(CatalogsEvent.self, from: payload) {
+                catalogs = event.catalogs
+            } else if line.hasPrefix("DSH_WORKFLOW_REPLY\t"),
+               let payload = line.split(separator: "\t", maxSplits: 1).last?.data(using: .utf8),
+               let reply = try? JSONDecoder().decode(ControlReply.self, from: payload) {
+                if let list = reply.catalogs { catalogs = list }
+                if !reply.ok {
+                    lastError = reply.error ?? "管理指令失败。"
+                } else if let url = reply.url, let target = URL(string: url) {
+                    NSWorkspace.shared.open(target)
+                }
             } else if !line.isEmpty {
                 let clean = line.replacingOccurrences(of: "token=[^&\\s]+", with: "token=[redacted]", options: .regularExpression)
                 if lastError.isEmpty { lastError = String(clean.suffix(600)) }
@@ -501,10 +595,60 @@ private struct ManagementView: View {
             HStack {
                 Button("在浏览器中打开") { model.openBrowser() }.disabled(!model.isReady)
                 Button("启动") { model.start() }.disabled(model.isActive)
-                Button("停止") { model.stop() }.disabled(!model.isActive)
-                Button("重启") { model.restart() }.disabled(!model.isActive)
+                Button("停止") { model.stop() }.disabled(model.isActive)
+                Button("重启") { model.restart() }.disabled(model.isActive)
             }
-            Text("Catalog 列表、目录及各 DSH 引擎在导航页管理；新 Catalog 会创建独立目录，也可以加入已有目录保留 Registry 绑定。")
+            Divider()
+            HStack {
+                Text("Catalog 管理").font(.headline)
+                Spacer()
+                Button("刷新") { model.refreshCatalogs() }.disabled(!model.isActive)
+            }
+            if model.catalogs.isEmpty {
+                Text(model.isActive ? "还没有 Catalog；新建或加入后，可在导航页或这里打开。" : "启动服务后在这里管理 Catalog。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(model.catalogs) { catalog in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(catalog.name)
+                            Text(catalog.path).font(.caption2).foregroundStyle(.secondary)
+                                .lineLimit(1).truncationMode(.middle).help(catalog.path)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(catalog.stateText)
+                                .foregroundStyle(catalog.state == "running" ? Color.green : Color.secondary)
+                            if catalog.state == "running" {
+                                Text("本机 \(catalog.webPort.map(String.init) ?? "?") · 内网 \(catalog.gatePort.map(String.init) ?? "?")")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        Button(catalog.state == "stopped" ? "启动" : "打开") { model.openCatalog(catalog.id) }
+                            .disabled(catalog.state == "starting")
+                        if catalog.state != "stopped" {
+                            Button("关闭引擎") { model.stopCatalog(catalog.id) }
+                                .disabled(catalog.state == "starting")
+                        }
+                    }
+                    if !catalog.error.isEmpty {
+                        Text(catalog.error).font(.caption2).foregroundStyle(.red)
+                    }
+                }
+            }
+            HStack {
+                TextField("新 Catalog 名称", text: $model.newCatalogName)
+                Button("新建") { model.createCatalog() }
+                    .disabled(model.newCatalogName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.isActive)
+            }
+            HStack {
+                TextField("名称", text: $model.attachCatalogName)
+                TextField("目录绝对路径", text: $model.attachCatalogPath)
+                Button("加入") { model.attachCatalog() }
+                    .disabled(model.attachCatalogName.isEmpty || model.attachCatalogPath.isEmpty || !model.isActive)
+            }
+            Text("Catalog 的创建、加入、启停和状态都在这里管理；导航页只保留密码验证和打开入口。新建会创建独立目录，加入已有目录可保留 Registry 绑定；两个 Catalog 可同时运行。")
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("DSH 工具使用完整访问权限", isOn: $model.fullAccess)
             HStack {

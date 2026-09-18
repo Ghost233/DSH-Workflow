@@ -21,6 +21,74 @@ function rawPost(port, path, headers, body = '') {
   })
 }
 
+test('catalogs are managed through the control API while the page only verifies and jumps', async t => {
+  const base = await mkdtemp('/private/tmp/dsh-catalog-test-')
+  t.after(() => rm(base, { recursive: true, force: true }))
+  const existing = join(base, 'existing')
+  await mkdir(existing)
+  const started = [], stopped = [], passwords = []
+  let stateEvents = 0
+  const supervisor = await startCatalogSupervisor({ resourcesRoot: base, catalogBase: join(base, 'data'),
+    host: '127.0.0.1', port: 0, password: 'secret', launchInstance: ({ workspace, signal, onReady, password }) => {
+      started.push(workspace)
+      passwords.push(password)
+      onReady({ url: `http://127.0.0.1:40123/?token=${started.length}` })
+      return new Promise(resolve => signal.addEventListener('abort', () => { stopped.push(workspace); resolve() }, { once: true }))
+    } })
+  t.after(() => supervisor.close())
+  supervisor.onState(() => { stateEvents += 1 })
+  const baseURL = supervisor.url
+  assert.equal(started.length, 0)
+  const page = await fetch(baseURL)
+  assert.match(await page.text(), /输入在 macOS App 中设置的内网密码/u)
+  assert.equal((await fetch(`${baseURL}catalog/create`, { method: 'POST', body: new URLSearchParams({ name: 'alpha' }) })).status, 401)
+  await supervisor.createCatalog('alpha')
+  await supervisor.attachCatalog('old', existing)
+  const saved = JSON.parse(await readFile(join(base, 'data', 'catalogs.json'), 'utf8'))
+  assert.equal(saved.length, 2)
+  assert.equal(saved[1].path, existing)
+  assert.equal(started.length, 0, 'managing catalogs must not start DSH')
+  assert.deepEqual(supervisor.catalogs().map(state => state.state), ['stopped', 'stopped'])
+  const login = await fetch(`${baseURL}login`, { method: 'POST', redirect: 'manual',
+    body: new URLSearchParams({ password: 'secret' }), headers: { 'content-type': 'application/x-www-form-urlencoded' } })
+  assert.equal(login.status, 303)
+  const cookie = login.headers.get('set-cookie')?.split(';', 1)[0]
+  assert.ok(cookie)
+  const authorizedPage = await fetch(baseURL, { headers: { cookie } })
+  const html = await authorizedPage.text()
+  assert.match(html, /alpha/u)
+  assert.match(html, /old/u)
+  assert.doesNotMatch(html, /新建 Catalog|加入已有 Catalog|关闭引擎/u, 'the page must not offer management actions')
+  const first = await supervisor.openCatalog(saved[0].id)
+  assert.match(first, /token=1/u)
+  assert.deepEqual(started, [saved[0].path])
+  const running = supervisor.catalogs()[0]
+  assert.equal(running.state, 'running')
+  assert.ok(Number.isInteger(running.webPort) && running.webPort > 0, 'running state must expose the DSH port')
+  assert.ok(Number.isInteger(running.gatePort) && running.gatePort > 0, 'running state must expose the LAN gateway port')
+  const jump = await fetch(new URL(`catalog/open/${saved[1].id}`, baseURL), { method: 'POST', redirect: 'manual',
+    headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' } })
+  assert.equal(jump.status, 303)
+  assert.match(jump.headers.get('location') ?? '', /token=2/u)
+  await supervisor.stopCatalog(saved[0].id)
+  assert.deepEqual(stopped, [saved[0].path])
+  assert.equal(supervisor.catalogs()[0].state, 'stopped')
+  assert.equal(supervisor.catalogs()[1].state, 'running')
+  await assert.rejects(supervisor.openCatalog('missing'), /Catalog 不存在/u)
+  await assert.rejects(supervisor.createCatalog('   '), /名称不能为空/u)
+  await assert.rejects(supervisor.attachCatalog('ok', 'relative/path'), /绝对路径/u)
+  assert.ok(stateEvents >= 3, 'state changes must be published to subscribers')
+  supervisor.setPassword('new-secret')
+  assert.equal((await fetch(new URL(`catalog/open/${saved[1].id}`, baseURL), { method: 'POST', redirect: 'manual',
+    headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' } })).status, 401, 'old navigation session must be revoked')
+  assert.equal((await fetch(`${baseURL}login`, { method: 'POST', body: new URLSearchParams({ password: 'secret' }),
+    headers: { 'content-type': 'application/x-www-form-urlencoded' } })).status, 401)
+  const relogin = await fetch(`${baseURL}login`, { method: 'POST', redirect: 'manual',
+    body: new URLSearchParams({ password: 'new-secret' }) })
+  assert.equal(relogin.status, 303)
+  assert.deepEqual(passwords, ['secret', 'secret'], 'engines keep the password they were launched with')
+})
+
 test('navigation accepts opaque-origin browsers and explains rejected request sources', async t => {
   const base = await mkdtemp('/private/tmp/dsh-catalog-origin-')
   t.after(() => rm(base, { recursive: true, force: true }))
@@ -51,62 +119,4 @@ test('navigation accepts opaque-origin browsers and explains rejected request so
   })
   assert.equal(forgedHost.status, 403)
   assert.match(forgedHost.text, /访问地址不属于这台 Mac/u)
-})
-
-test('navigation persists separate catalogs and starts/stops only the chosen engine', async t => {
-  const base = await mkdtemp('/private/tmp/dsh-catalog-test-')
-  t.after(() => rm(base, { recursive: true, force: true }))
-  const existing = join(base, 'existing')
-  await mkdir(existing)
-  const started = [], stopped = [], passwords = []
-  const supervisor = await startCatalogSupervisor({ resourcesRoot: base, catalogBase: join(base, 'data'),
-    host: '127.0.0.1', port: 0, password: 'secret', launchInstance: ({ workspace, signal, onReady, password }) => {
-      started.push(workspace)
-      passwords.push(password)
-      onReady({ url: `http://127.0.0.1:40123/?token=${started.length}` })
-      return new Promise(resolve => signal.addEventListener('abort', () => { stopped.push(workspace); resolve() }, { once: true }))
-    } })
-  t.after(() => supervisor.close())
-  const baseURL = supervisor.url
-  assert.equal(started.length, 0)
-  const page = await fetch(baseURL)
-  assert.match(await page.text(), /输入在 macOS App 中设置的内网密码/u)
-  assert.equal((await fetch(`${baseURL}catalog/create`, { method: 'POST', body: new URLSearchParams({ name: 'alpha' }) })).status, 401)
-  const login = await fetch(`${baseURL}login`, { method: 'POST', redirect: 'manual',
-    body: new URLSearchParams({ password: 'secret' }), headers: { 'content-type': 'application/x-www-form-urlencoded' } })
-  assert.equal(login.status, 303)
-  const cookie = login.headers.get('set-cookie')?.split(';', 1)[0]
-  assert.ok(cookie)
-  const post = async (route, data = {}) => fetch(new URL(route, baseURL), { method: 'POST', redirect: 'manual',
-    headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(data) })
-  assert.equal((await post('catalog/create', { name: 'alpha' })).status, 303)
-  assert.equal((await post('catalog/attach', { name: 'old', path: existing })).status, 303)
-  const saved = JSON.parse(await readFile(join(base, 'data', 'catalogs.json'), 'utf8'))
-  assert.equal(saved.length, 2)
-  assert.equal(saved[1].path, existing)
-  assert.notEqual(saved[0].path, saved[1].path)
-  assert.equal(started.length, 0, 'creating a catalog must not start DSH')
-  const first = await post(`catalog/open/${saved[0].id}`)
-  assert.equal(first.status, 303)
-  assert.match(first.headers.get('location') ?? '', /token=1/u)
-  assert.deepEqual(started, [saved[0].path])
-  assert.equal((await post(`catalog/stop/${saved[1].id}`)).status, 303)
-  assert.deepEqual(stopped, [])
-  const second = await post(`catalog/open/${saved[1].id}`)
-  assert.equal(second.status, 303)
-  assert.deepEqual(started, [saved[0].path, existing])
-  assert.equal((await post(`catalog/stop/${saved[0].id}`)).status, 303)
-  assert.deepEqual(stopped, [saved[0].path])
-  supervisor.setPassword('new-secret')
-  assert.equal((await post(`catalog/open/${saved[1].id}`)).status, 401, 'old navigation session must be revoked')
-  assert.equal((await fetch(`${baseURL}login`, { method: 'POST', body: new URLSearchParams({ password: 'secret' }),
-    headers: { 'content-type': 'application/x-www-form-urlencoded' } })).status, 401)
-  const relogin = await fetch(`${baseURL}login`, { method: 'POST', redirect: 'manual',
-    body: new URLSearchParams({ password: 'new-secret' }) })
-  assert.equal(relogin.status, 303)
-  const newCookie = relogin.headers.get('set-cookie')?.split(';', 1)[0]
-  const reopened = await fetch(new URL(`catalog/open/${saved[0].id}`, baseURL), { method: 'POST', redirect: 'manual',
-    headers: { cookie: newCookie }, body: new URLSearchParams() })
-  assert.equal(reopened.status, 303)
-  assert.deepEqual(passwords, ['secret', 'secret', 'new-secret'])
 })

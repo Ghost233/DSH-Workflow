@@ -64,6 +64,7 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
   const failures = new Map()
   const engines = new Map()
   const reservedPorts = new Set()
+  const listeners = new Set()
   let mutation = Promise.resolve()
   let currentPassword = password
   let actualPort = port
@@ -107,19 +108,21 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
   }
   const render = (response, status, content) => { response.writeHead(status, headers); response.end(page(content)) }
   const redirect = (response, location) => { response.writeHead(303, { ...headers, location }); response.end() }
+  /** The page only verifies the password and jumps to an engine; management lives in the macOS app. */
   const renderList = response => {
-    const entries = catalogList.map(item => {
-      const engine = engines.get(item.id)
-      const state = engine?.ready ? '运行中' : engine ? '正在启动或停止' : '未启动'
-      return `<article><h2>${escapeHtml(item.name)}</h2><small>${escapeHtml(item.path)}</small><p>${state}${engine?.error ? ` · <span class="error">${escapeHtml(engine.error)}</span>` : ''}</p>
-        <form method="post" action="/catalog/open/${encodeURIComponent(item.id)}"><button>打开（首次访问时启动）</button></form>
-        ${engine ? `<form method="post" action="/catalog/stop/${encodeURIComponent(item.id)}"><button class="stop">关闭引擎</button></form>` : ''}</article>`
-    }).join('')
-    render(response, 200, `<p>每个 Catalog 都使用自己的目录和 DSH 实例。打开后浏览器会转到该实例的独立端口。</p>${entries || '<p>还没有 Catalog。</p>'}
-      <article><h2>新建 Catalog</h2><form method="post" action="/catalog/create"><input name="name" aria-label="名称" placeholder="环境名称" maxlength="80" required><button>新建目录</button></form></article>
-      <article><h2>加入已有 Catalog</h2><p><small>用原路径加入可保留项目已有的 Registry 绑定；不会移动或修改目录。</small></p>
-      <form method="post" action="/catalog/attach"><input name="name" aria-label="名称" placeholder="环境名称" maxlength="80" required><input name="path" aria-label="目录绝对路径" placeholder="目录绝对路径" size="38" required><button>加入</button></form></article>`)
+    const entries = catalogList.map(item =>
+      `<article><h2>${escapeHtml(item.name)}</h2><form method="post" action="/catalog/open/${encodeURIComponent(item.id)}"><button>打开</button></form></article>`).join('')
+    render(response, 200, entries || '<p>还没有 Catalog；请在 macOS App 的管理窗口中新建或加入。</p>')
   }
+
+  const stateOf = item => {
+    const engine = engines.get(item.id)
+    return { id: item.id, name: item.name, path: item.path,
+      state: engine?.ready ? 'running' : engine ? 'starting' : 'stopped',
+      error: engine?.error || '', webPort: engine?.webPort ?? null, gatePort: engine?.gatePort ?? null,
+      url: engine?.url ?? null }
+  }
+  const emitState = () => { for (const notify of listeners) notify(catalogList.map(stateOf)) }
 
   const startEngine = async item => {
     let engine = engines.get(item.id)
@@ -145,6 +148,8 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
       try {
         webPort = await reservePort('127.0.0.1')
         gatePort = await reservePort(host)
+        engine.webPort = webPort
+        engine.gatePort = gatePort
         if (controller.signal.aborted || stopping) throw new Error('Engine startup cancelled')
         await launchInstance({ resourcesRoot, workspace: item.path, port: webPort, gatewayHost: host,
           gatewayPort: gatePort, gatewaySessions: sessions, signal: controller.signal, controlStream: null,
@@ -153,6 +158,7 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
             engine.ready = true
             engine.url = entryUrl ?? state.url
             completeReady(engine.url)
+            emitState()
           } })
       } finally {
         if (webPort) reservedPorts.delete(webPort)
@@ -161,6 +167,7 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
     })().catch(error => { engine.error = error.message; failReady(error) }).finally(() => {
       if (!engine.ready) failReady(new Error(engine.error || 'Engine stopped before it became ready'))
       if (engines.get(item.id) === engine) engines.delete(item.id)
+      emitState()
     })
     return await engine.readyPromise
   }
@@ -170,6 +177,7 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
     engine.controller.abort()
     await engine.task
     if (engines.get(id) === engine) engines.delete(id)
+    emitState()
   }
 
   const server = http.createServer((request, response) => {
@@ -205,30 +213,9 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
         response.end(); return
       }
       if (!authorized(request)) { render(response, 401, '<p>请先登录。</p>'); return }
-      if (request.url === '/catalog/create') {
-        const name = fields.get('name')?.trim()
-        if (!name || name.length > 80) { render(response, 400, '<p>名称不能为空且不能超过 80 字符。</p>'); return }
-        const id = randomUUID(), path = join(root, 'catalogs', id)
-        await mkdir(path, { recursive: true, mode: 0o700 })
-        await addCatalog({ id, name, path })
-        redirect(response, '/'); return
-      }
-      if (request.url === '/catalog/attach') {
-        const name = fields.get('name')?.trim(), inputPath = fields.get('path')?.trim()
-        if (!name || name.length > 80 || !inputPath?.startsWith('/')) { render(response, 400, '<p>请输入名称和已有目录的绝对路径。</p>'); return }
-        const path = await realpath(inputPath)
-        if (path === '/' || catalogList.some(item => item.path === path)
-          || catalogList.some(item => path.startsWith(item.path + sep) || item.path.startsWith(path + sep))) {
-          render(response, 409, '<p>目录与已有 Catalog 重复或重叠。</p>'); return
-        }
-        if (!(await stat(path)).isDirectory()) { render(response, 400, '<p>这不是目录。</p>'); return }
-        await addCatalog({ id: randomUUID(), name, path })
-        redirect(response, '/'); return
-      }
-      const match = /^\/catalog\/(open|stop)\/([a-f0-9-]+)$/.exec(request.url ?? '')
-      const item = catalogList.find(row => row.id === match?.[2])
-      if (!item) { render(response, 404, '<p>Catalog 不存在。</p>'); return }
-      if (match[1] === 'stop') { await stopEngine(item.id); redirect(response, '/'); return }
+      const match = /^\/catalog\/open\/([a-f0-9-]+)$/.exec(request.url ?? '')
+      const item = catalogList.find(row => row.id === match?.[1])
+      if (!item) { render(response, 404, '<p>页面不存在。</p>'); return }
       try { redirect(response, await startEngine(item)) }
       catch (error) { render(response, 503, `<p class="error">启动失败：${escapeHtml(error.message)}</p><a href="/">返回列表</a>`) }
     })().catch(error => {
@@ -251,6 +238,42 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
       failures.clear()
       for (const engine of engines.values()) engine.gateway?.setPassword(next)
     },
+    catalogs: () => catalogList.map(stateOf),
+    onState(notify) {
+      listeners.add(notify)
+      return () => listeners.delete(notify)
+    },
+    async createCatalog(name) {
+      const clean = typeof name === 'string' ? name.trim() : ''
+      if (!clean || clean.length > 80) throw new Error('名称不能为空且不能超过 80 字符。')
+      const id = randomUUID(), path = join(root, 'catalogs', id)
+      await mkdir(path, { recursive: true, mode: 0o700 })
+      await addCatalog({ id, name: clean, path })
+      emitState()
+    },
+    async attachCatalog(name, inputPath) {
+      const clean = typeof name === 'string' ? name.trim() : ''
+      const target = typeof inputPath === 'string' ? inputPath.trim() : ''
+      if (!clean || clean.length > 80 || !target.startsWith('/')) throw new Error('请输入名称和已有目录的绝对路径。')
+      const path = await realpath(target)
+      if (path === '/' || catalogList.some(item => item.path === path)
+        || catalogList.some(item => path.startsWith(item.path + sep) || item.path.startsWith(path + sep))) {
+        throw new Error('目录与已有 Catalog 重复或重叠。')
+      }
+      if (!(await stat(path)).isDirectory()) throw new Error('这不是目录。')
+      await addCatalog({ id: randomUUID(), name: clean, path })
+      emitState()
+    },
+    async openCatalog(id) {
+      const item = catalogList.find(row => row.id === id)
+      if (!item) throw new Error('Catalog 不存在。')
+      return await startEngine(item)
+    },
+    async stopCatalog(id) {
+      if (!catalogList.some(row => row.id === id)) throw new Error('Catalog 不存在。')
+      await stopEngine(id)
+      emitState()
+    },
     async close() {
       stopping = true
       await Promise.all([...engines.keys()].map(stopEngine))
@@ -272,7 +295,33 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     if (!resourcesRoot || !catalogBase) throw new Error('Usage: catalog-supervisor.mjs RESOURCES CATALOG_BASE')
     supervisor = await startCatalogSupervisor({ resourcesRoot, catalogBase, password: process.env.DSH_LAUNCH_PASSWORD })
-    process.stdout.write(`DSH_WORKFLOW_READY\t${JSON.stringify({ port: supervisor.port, url: supervisor.url, lanUrls: supervisor.lanUrls })}\n`)
+    const writeLine = (label, payload) => process.stdout.write(`${label}\t${JSON.stringify(payload)}\n`)
+    writeLine('DSH_WORKFLOW_READY', { port: supervisor.port, url: supervisor.url, lanUrls: supervisor.lanUrls })
+    writeLine('DSH_WORKFLOW_STATE', { catalogs: supervisor.catalogs() })
+    supervisor.onState(catalogs => writeLine('DSH_WORKFLOW_STATE', { catalogs }))
+    const handleCommand = async command => {
+      if (command?.type === 'set-password') { supervisor.setPassword(command.password); return }
+      const requestId = command?.requestId
+      if (typeof requestId !== 'number' || !Number.isInteger(requestId)) return
+      let reply
+      try {
+        if (command.type === 'list') reply = { requestId, ok: true, catalogs: supervisor.catalogs() }
+        else if (command.type === 'create') {
+          await supervisor.createCatalog(command.name)
+          reply = { requestId, ok: true, catalogs: supervisor.catalogs() }
+        } else if (command.type === 'attach') {
+          await supervisor.attachCatalog(command.name, command.path)
+          reply = { requestId, ok: true, catalogs: supervisor.catalogs() }
+        } else if (command.type === 'open') reply = { requestId, ok: true, url: await supervisor.openCatalog(command.id) }
+        else if (command.type === 'stop') {
+          await supervisor.stopCatalog(command.id)
+          reply = { requestId, ok: true, catalogs: supervisor.catalogs() }
+        } else reply = { requestId, ok: false, error: `未知指令：${command.type}` }
+      } catch (error) {
+        reply = { requestId, ok: false, error: String(error?.message ?? error).slice(0, 300) }
+      }
+      writeLine('DSH_WORKFLOW_REPLY', reply)
+    }
     let buffer = ''
     process.stdin.on('data', chunk => {
       buffer += chunk.toString('utf8')
@@ -280,10 +329,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       while (buffer.includes('\n')) {
         const index = buffer.indexOf('\n'), line = buffer.slice(0, index)
         buffer = buffer.slice(index + 1)
-        try {
-          const command = JSON.parse(line)
-          if (command?.type === 'set-password') supervisor.setPassword(command.password)
-        } catch { /* Ignore malformed control messages. */ }
+        try { void handleCommand(JSON.parse(line)) } catch { /* Ignore malformed control messages. */ }
       }
     })
     process.stdin.resume()
