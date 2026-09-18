@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { privateBindAddress } from './lan-gateway.mjs'
+import { localAddresses, privateBindAddress } from './lan-gateway.mjs'
 import { launchPackagedWeb } from './web-launch.mjs'
 
 const COOKIE = 'dsh-workflow-gate'
@@ -89,6 +89,22 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
     if (expires === undefined || expires <= Date.now()) { if (token) sessions.delete(token); return false }
     return true
   }
+  /** DNS-rebinding and CSRF guard; returns the rejection reason or undefined when trusted. */
+  const untrustedReason = request => {
+    let authority
+    try { authority = new URL(`http://${request.headers.host}`) } catch { return '请求头 Host 无法解析' }
+    if (authority.host !== request.headers.host?.toLowerCase()) return '请求头 Host 格式异常'
+    if (authority.port !== String(actualPort)) return '访问端口与导航服务不一致'
+    if (!localAddresses().has(authority.hostname)) return '访问地址不属于这台 Mac'
+    if (request.headers['sec-fetch-site'] === 'cross-site') return '请求来自跨站页面'
+    // WebKit webviews and privacy modes submit same-origin forms with the opaque origin "null".
+    if (request.headers.origin !== undefined && request.headers.origin !== 'null') {
+      try {
+        if (new URL(request.headers.origin).origin !== `http://${request.headers.host}`) return 'Origin 与访问地址不一致'
+      } catch { return '请求头 Origin 无法解析' }
+    }
+    return undefined
+  }
   const render = (response, status, content) => { response.writeHead(status, headers); response.end(page(content)) }
   const redirect = (response, location) => { response.writeHead(303, { ...headers, location }); response.end() }
   const renderList = response => {
@@ -158,16 +174,10 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
 
   const server = http.createServer((request, response) => {
     void (async () => {
-      let trusted = false
-      try {
-        const authority = new URL(`http://${request.headers.host}`)
-        trusted = authority.host === request.headers.host?.toLowerCase() && authority.hostname === host
-          && authority.port === String(actualPort) && request.headers['sec-fetch-site'] !== 'cross-site'
-          && (request.headers.origin === undefined
-            || new URL(request.headers.origin).origin === `http://${request.headers.host}`)
-      } catch { /* Reject malformed authority and Origin. */ }
-      if (!trusted) {
-        render(response, 403, '<p class="error">请求来源不受信任。</p>'); return
+      const reason = untrustedReason(request)
+      if (reason !== undefined) {
+        render(response, 403, `<p class="error">请求来源不受信任：${escapeHtml(reason)}。</p><p><small>请在设备浏览器地址栏直接打开管理窗口显示的完整内网地址后再试。</small></p>`)
+        return
       }
       if (request.method === 'GET' && request.url === '/') {
         if (authorized(request)) renderList(response)

@@ -1,11 +1,56 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import http from 'node:http'
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { NAVIGATION_PORT, startCatalogSupervisor } from './catalog-supervisor.mjs'
 
 test('navigation uses the configured fixed port', () => {
   assert.equal(NAVIGATION_PORT, 33080)
+})
+
+function rawPost(port, path, headers, body = '') {
+  return new Promise((resolve, reject) => {
+    const request = http.request({ hostname: '127.0.0.1', port, path, method: 'POST', headers }, response => {
+      let text = ''
+      response.on('data', chunk => { text += chunk })
+      response.once('end', () => resolve({ status: response.statusCode, text }))
+    })
+    request.once('error', reject)
+    request.end(body)
+  })
+}
+
+test('navigation accepts opaque-origin browsers and explains rejected request sources', async t => {
+  const base = await mkdtemp('/private/tmp/dsh-catalog-origin-')
+  t.after(() => rm(base, { recursive: true, force: true }))
+  const supervisor = await startCatalogSupervisor({ resourcesRoot: base, catalogBase: join(base, 'data'),
+    host: '127.0.0.1', port: 0, password: 'secret', launchInstance: () => new Promise(() => {}) })
+  t.after(() => supervisor.close())
+  const port = supervisor.port
+  const form = { 'content-type': 'application/x-www-form-urlencoded' }
+  const password = new URLSearchParams({ password: 'secret' }).toString()
+  // WebKit webviews and privacy modes submit the login form with the opaque origin "null".
+  const opaque = await rawPost(port, '/login', { ...form, origin: 'null' }, password)
+  assert.equal(opaque.status, 303)
+  const foreign = await rawPost(port, '/login', { ...form, origin: 'http://evil.example' }, password)
+  assert.equal(foreign.status, 403)
+  assert.match(foreign.text, /Origin 与访问地址不一致/u)
+  const crossSite = await rawPost(port, '/login', { ...form, 'sec-fetch-site': 'cross-site' }, password)
+  assert.equal(crossSite.status, 403)
+  assert.match(crossSite.text, /请求来自跨站页面/u)
+  const forgedHost = await new Promise((resolve, reject) => {
+    const request = http.request({ hostname: '127.0.0.1', port, path: '/', method: 'GET',
+      headers: { host: `evil.example:${port}` } }, response => {
+      let text = ''
+      response.on('data', chunk => { text += chunk })
+      response.once('end', () => resolve({ status: response.statusCode, text }))
+    })
+    request.once('error', reject)
+    request.end()
+  })
+  assert.equal(forgedHost.status, 403)
+  assert.match(forgedHost.text, /访问地址不属于这台 Mac/u)
 })
 
 test('navigation persists separate catalogs and starts/stops only the chosen engine', async t => {

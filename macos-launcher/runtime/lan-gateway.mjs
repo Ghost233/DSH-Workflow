@@ -10,7 +10,7 @@ const LOCKOUT_MS = 60 * 1000
 const digest = value => createHash('sha256').update(value, 'utf8').digest()
 const secretMatches = (a, b) => timingSafeEqual(digest(a), digest(b))
 
-function localAddresses() {
+export function localAddresses() {
   const addresses = new Set(['127.0.0.1', 'localhost'])
   for (const rows of Object.values(networkInterfaces())) {
     for (const row of rows ?? []) if (row.family === 'IPv4') addresses.add(row.address)
@@ -104,7 +104,8 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
   }
   const sameOrigin = request => {
     if (request.headers['sec-fetch-site'] === 'cross-site') return false
-    if (request.headers.origin === undefined) return true
+    // WebKit webviews and privacy modes submit same-origin forms with the opaque origin "null".
+    if (request.headers.origin === undefined || request.headers.origin === 'null') return true
     try { return new URL(request.headers.origin).origin === `http://${request.headers.host}` }
     catch { return false }
   }

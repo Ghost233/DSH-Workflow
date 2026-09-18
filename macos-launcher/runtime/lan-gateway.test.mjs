@@ -51,6 +51,17 @@ test('LAN gate requires password, proxies the process URL and revokes sessions o
     headers: { 'content-type': 'application/x-www-form-urlencoded' } })
   assert.equal(login.status, 303)
   assert.equal(login.headers.get('location'), `${base}/?token=process-token`)
+  // WebKit webviews submit the login form with the opaque origin "null"; the gate must still serve them.
+  const opaqueLogin = await new Promise((resolve, reject) => {
+    const request = http.request({ hostname: '127.0.0.1', port: gate.port, path: '/login', method: 'POST',
+      headers: { origin: 'null', 'content-type': 'application/x-www-form-urlencoded' } }, response => {
+      response.resume()
+      response.once('end', () => resolve(response.statusCode))
+    })
+    request.once('error', reject)
+    request.end('password=first-secret')
+  })
+  assert.equal(opaqueLogin, 303)
   const gateCookie = login.headers.get('set-cookie')?.split(';', 1)[0]
   assert.ok(gateCookie)
   const exchanged = await fetch(login.headers.get('location'), { redirect: 'manual', headers: { cookie: gateCookie } })
