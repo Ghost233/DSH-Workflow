@@ -645,7 +645,7 @@ private struct PluginManageView: View {
                 .frame(maxHeight: 500)
             }
         }
-        .frame(minWidth: 500, maxWidth: 800)
+        .frame(minWidth: 500, maxWidth: 800, minHeight: 420)
         .alert("插件已更新", isPresented: $model.showPluginRestartPrompt) {
             Button("重启服务") { model.restartAfterPluginUpdate() }
             Button("稍后") { model.postponePluginRestart() }
@@ -706,6 +706,9 @@ private final class PluginWindow {
         )
         window.title = "插件管理"
         window.contentViewController = NSHostingController(rootView: PluginManageView(model: LauncherModel.shared))
+        // NSHostingController shrinks the window to the view's fitting size; the table's
+        // ideal height collapses without this, leaving no room for the rows.
+        window.setContentSize(NSSize(width: 720, height: 560))
         window.contentMinSize = NSSize(width: 500, height: 380)
         window.contentMaxSize = NSSize(width: 800, height: 2000)
         window.isReleasedWhenClosed = false
