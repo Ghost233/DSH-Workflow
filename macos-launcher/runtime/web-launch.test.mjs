@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createServer } from 'node:net'
-import { authenticatedUrl, launchPackagedWeb, portPatch } from './web-launch.mjs'
+import { authenticatedUrl, browserUrlPatch, launchPackagedWeb, portPatch } from './web-launch.mjs'
 
 test('packaged port patch preserves the selected Web server configuration', () => {
   const entries = [{ id: 'server', name: '@deepseek-ai/dsh-host-webserver', config: { host: '127.0.0.1', port: 3080 } }]
@@ -15,6 +15,12 @@ test('browser handoff reads only the upstream authenticated loopback URL', () =>
     'http://127.0.0.1:3080/?token=abc')
   assert.throws(() => authenticatedUrl('dsh web: http://example.com/?token=abc\n'), /Unexpected/)
   assert.throws(() => authenticatedUrl('dsh web: http://127.0.0.1:3080/\n'), /did not publish/)
+})
+
+test('packaged browser patch enables URL publication without mutating the profile', () => {
+  const entries = [{ id: 'web-runtime', name: '@deepseek-ai/dsh-web-app', config: { printUrl: false, other: true } }]
+  assert.deepEqual(browserUrlPatch(entries), { id: 'web-runtime', config: { printUrl: true, other: true } })
+  assert.equal(entries[0].config.printUrl, false)
 })
 
 test('an occupied port fails before reading the profile or packaged plugins', async () => {

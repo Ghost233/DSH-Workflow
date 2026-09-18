@@ -38,6 +38,9 @@ async function verifyInputs() {
 
 async function copyOwned(workflow) {
   for (const name of ['package.json', 'dsh-runtime.json']) await cp(join(root, name), join(workflow, name))
+  for (const name of ['project-plugins.json', 'project-plugins.lock.json']) {
+    if (existsSync(join(root, name))) await cp(join(root, name), join(workflow, name))
+  }
   for (const name of ['owner-workflow-plugin', 'sol-efficiency-plugin', 'approve-for-me-workflow-plugin']) {
     await cp(join(root, name), join(workflow, name), { recursive: true, filter: path => {
       const relative = path.slice(join(root, name).length).replaceAll('\\', '/')
@@ -52,6 +55,10 @@ async function copyOwned(workflow) {
     await cp(join(root, 'scripts', name), join(workflow, 'scripts', name))
   }
   await cp(join(root, 'macos-launcher/runtime/web-launch.mjs'), join(workflow, 'macos-launcher/runtime/web-launch.mjs'))
+  await cp(join(root, 'macos-launcher/runtime/lan-gateway.mjs'), join(workflow, 'macos-launcher/runtime/lan-gateway.mjs'))
+  await cp(join(root, 'macos-launcher/runtime/catalog-supervisor.mjs'), join(workflow, 'macos-launcher/runtime/catalog-supervisor.mjs'))
+  await cp(join(root, 'macos-launcher/runtime/plugin-versions.mjs'), join(workflow, 'macos-launcher/runtime/plugin-versions.mjs'))
+  await cp(join(root, 'macos-launcher/runtime/plugin-update.mjs'), join(workflow, 'macos-launcher/runtime/plugin-update.mjs'))
   await cp(join(root, 'macos-launcher/runtime/run-dsh.mjs'), join(workflow, 'macos-launcher/runtime/run-dsh.mjs'))
 }
 
@@ -74,7 +81,9 @@ function plist() {
 
 await verifyInputs()
 await mkdir(buildRoot, { recursive: true })
-const destination = join(buildRoot, `DSH Workflow-${appVersion}-dsh${version}-${arch}.app`)
+const buildLabel = process.env.DSH_MACOS_BUILD_LABEL
+if (buildLabel !== undefined && !/^[A-Za-z0-9-]{1,32}$/.test(buildLabel)) throw new Error('Invalid DSH_MACOS_BUILD_LABEL')
+const destination = join(buildRoot, `DSH Workflow-${appVersion}-dsh${version}-${arch}${buildLabel ? `-${buildLabel}` : ''}.app`)
 if (existsSync(destination)) throw new Error(`Build output exists: ${destination}`)
 const staging = await mkdtemp(join(buildRoot, 'launcher-stage-'))
 const app = join(staging, 'DSH Workflow.app')
@@ -97,10 +106,15 @@ try {
   await cp(join(root, 'macos-launcher/package-lock.json'), join(resources, 'package-lock.json'))
   await run('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund',
     '--cache', join(buildRoot, 'npm-cache')], resources)
+  await mkdir(join(resources, 'bin'), { recursive: true })
+  const pnpmShim = join(resources, 'bin', 'pnpm')
+  await writeFile(pnpmShim, '#!/bin/sh\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexec "$ROOT/node" "$ROOT/node_modules/pnpm/bin/pnpm.mjs" "$@"\n')
+  await chmod(pnpmShim, 0o755)
   const dsh = join(resources, 'node_modules', '@deepseek-ai', 'dsh')
   const packaged = JSON.parse(await readFile(join(dsh, 'package.json'), 'utf8'))
   if (packaged.name !== '@deepseek-ai/dsh' || packaged.version !== version) throw new Error('DSH deploy identity mismatch')
-  if (!existsSync(join(dsh, 'lib/bin.js')) || !existsSync(join(resources, 'node_modules/@deepseek-ai/dsh-app-boot/package.json'))) {
+  if (!existsSync(join(dsh, 'lib/bin.js')) || !existsSync(join(resources, 'node_modules/@deepseek-ai/dsh-app-boot/package.json'))
+    || !existsSync(join(resources, 'node_modules/pnpm/bin/pnpm.mjs'))) {
     throw new Error('DSH production runtime is incomplete')
   }
   await run(join(resources, 'node'), [join(dsh, 'lib/bin.js'), '--version'], resources)

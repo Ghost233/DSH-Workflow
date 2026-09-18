@@ -1,6 +1,6 @@
 # DSH Workflow macOS 启动器
 
-这个应用仅管理 DSH Web 进程。菜单栏和管理窗口由 SwiftUI 绘制；DSH 的界面始终在系统浏览器中打开，没有 WebView。应用资源包含固定版本的 DSH、Node 和三个自研插件。第三方插件仍由 `$DSH_HOME/profiles/web` 的 DSH 原生 profile 加载；打包与启动都不会安装、更新或改写第三方插件。
+这个应用仅管理 DSH Web 进程。菜单栏和管理窗口由 SwiftUI 绘制；DSH 的界面始终在系统浏览器中打开，没有 WebView。应用资源包含固定版本的 DSH、Node 和三个自研插件。第三方插件仍由 `$DSH_HOME/profiles/web` 的 DSH 原生 profile 加载；应用启动时检查并更新其中由 npm 安装的第三方插件，更新后由用户决定是否重启服务。
 
 ## 构建
 
@@ -12,15 +12,21 @@ node macos-launcher/build.mjs
 
 要求 macOS、Xcode 命令行工具、固定 commit 的 DSH submodule、npm，以及与当前 Node 架构和版本对应的 `owner-workflow-plugin/node_modules/fs-ext`。不需要先构建 DSH 源码；构建脚本从上游 npm 发行版按 `package-lock.json` 安装固定版本的生产运行时到 `.build/`，不运行 DSH 的 Git hooks 安装脚本，也不改动上游源码。产物是 `.build/DSH Workflow-<应用版本>-dsh<DSH 版本>-<架构>.app`；本地构建使用 ad-hoc 签名。向其他 Mac 分发时需另行使用自己的 Developer ID 签名并公证。
 
-运行时不会查找 Git 仓库、系统 Node、pnpm 或源码构建标记。修改自研插件后重新构建应用。用户凭据、会话、工作目录、第三方插件和 DSH profile 都保留在应用包之外，应用升级不会清空它们。
+运行时不会查找 Git 仓库、系统 Node、系统 pnpm 或源码构建标记；更新插件使用应用内附带的 pnpm。修改自研插件后重新构建应用。用户凭据、会话、工作目录、第三方插件和 DSH profile 都保留在应用包之外，应用升级不会清空它们。
 
 ## 使用
 
-启动应用后，菜单栏显示 DSH 状态。首次启动默认以当前用户的主目录为工作目录、使用 3080 端口；请在“管理…”中选择实际工程目录，再重启 DSH。设置窗口提供启动、停止、重启、端口、工作目录和 DSH 工具权限选项。关闭管理窗口不停止 DSH；退出启动器会停止它管理的 DSH。可选择登录后自动启动应用；启用这个选项前，先将 `.app` 放到固定位置（如 `/Applications`），避免之后移动应用导致登录项失效。
+启动应用后，在“管理…”中设置内网访问密码并启动导航服务。密码保存于 macOS 钥匙串；运行中可随时修改，新密码立即生效，旧的导航及引擎代理登录会话、WebSocket 会被撤销。导航服务固定使用 33080；此时不会启动任何 DSH 引擎。关闭管理窗口不停止服务；退出启动器会停止它管理的所有引擎。可选择登录后自动启动应用；启用前先将 `.app` 放到固定位置（如 `/Applications`），避免之后移动应用导致登录项失效。
 
-“完整访问权限”只设置本次 DSH 进程的 `DSH_PERMISSION_MODE=danger-full-access`，不修改用户的 DSH 配置；关闭时使用 `workspace-write`。DSH 已保存的会话或 General settings 权限仍按 DSH 自身规则生效。端口和权限更改需重启 DSH。
+“完整访问权限”只设置本次 DSH 进程的 `DSH_PERMISSION_MODE=danger-full-access`，不修改用户的 DSH 配置；关闭时使用 `workspace-write`。DSH 已保存的会话或 General settings 权限仍按 DSH 自身规则生效。权限更改需重启导航服务和相应引擎。
 
-浏览器入口使用 DSH 本次启动签发的认证 URL。该 URL 只通过启动器进程内存传给菜单栏应用；DSH 原生日志保留在工作目录下的 `.dsh-workflow/web-host/logs/`，文件权限为 `0600`。远程访问仍应使用 SSH 端口转发或私有网络代理，DSH 默认只监听 `127.0.0.1`。
+管理窗口的“插件管理 → 一键检查新版本”会读取当前 `$DSH_HOME/profiles/web/package.json` 中的直接依赖和启用的 Bundle、应用打包时的 `project-plugins.json`/锁定清单，以及三个内置自研插件。可比较的 npm 公共 registry 包会查询 `latest` 标记并显示当前版本、最新版本和检查结果；本地/Git 依赖、自研打包插件及与 DSH 版本绑定的内置 Bundle 会分别标明来源，不把它们误报为可独立升级。项目侧清单是构建时快照，不代表安装在这个 macOS App 里的插件。检查只读，不安装、不修改锁文件、不热替换插件，也不重启运行中的 DSH；`latest` 更不代表与当前 DSH 兼容。私有 registry 和网络故障会显示为无法确认。
+
+在同一局域网或私有 VPN 的设备上打开管理窗口显示的 `http://<Mac 的内网 IPv4>:33080/`，输入密码后可查看 Catalog 列表。新建 Catalog 会在 `~/Library/Application Support/DSH Workflow/catalogs/<UUID>/` 创建独立目录；也可以把已有 Catalog 目录按原路径加入列表，以保留 Owner Registry 的既有绑定。列表持久化在同目录的 `catalogs.json`，不会自动迁移、合并或删除既有运行数据。点击“打开”才启动该 Catalog 的 DSH；两个 Catalog 可以同时运行，互不共用 catalog 工作目录。点击“关闭引擎”只停止对应实例，不删除目录或历史。
+
+每个引擎分别使用系统分配的本机 DSH 端口和内网代理端口；导航页跳转到该引擎独立的 `http://<Mac 的内网 IPv4>:<端口>/` 认证 URL。这样浏览器页面、API、WebSocket 都保持原生根路径，避免不同实例互相串路由。Mac 防火墙除了 33080，还需要允许这些动态代理端口。DSH 本身始终只监听 `127.0.0.1`。导航服务只绑定启动时检测到的一个私有 IPv4 地址（RFC1918、CGNAT 或链路本地地址）；网络地址变化后需要重启 App。若没有这样的地址，启动会失败并显示原因。
+
+此入口使用明文 HTTP。内网中的旁路监听者可能看到密码和会话，故只应在可信网络或加密的私有 VPN 使用；对不可信网络应另加 HTTPS，不要把 33080 直接映射到公网。DSH 原生日志保留在工作目录下的 `.dsh-workflow/web-host/logs/`，文件权限为 `0600`，其中可能包含本次启动的 token。直接在 Mac 上访问 DSH 的本机端口仍受 DSH 自身认证保护，不经过导航密码页。
 
 启动器只控制自己创建的进程；若端口已被其他 DSH 实例占用，会显示启动失败，不会接管或关闭现有实例。
 
@@ -29,5 +35,7 @@ node macos-launcher/build.mjs
 `.github/workflows/macos-app.yml` 在相关 PR、`main` 推送、手动触发和 `macos-v<版本>` 标签推送时编译 Apple Silicon 与 Intel 两种应用。每次构建都会上传 DMG 作为 Actions artifact；标签构建全部通过后，自动把两个 DMG 附到同名 GitHub Release。打开 DMG 后可将应用拖入“应用程序”文件夹。发布前把 `macos-launcher/package.json` 和 `package-lock.json` 的版本一起更新，再创建与该版本完全一致的标签，例如 `macos-v0.1.0`。标签版本不匹配时构建会失败，不会发布。
 
 应用启动时会检查一次 [GitHub Releases](https://github.com/Ghost233/DSH-Workflow/releases)，也可以从菜单或管理窗口手动检查。只认 `macos-v<主版本>.<次版本>.<修订版本>`、非草稿且非预发布的版本。发现更新后显示“查看新版本”；只有点击它才会用系统浏览器打开对应 Release 页面。应用不会自动下载或替换自身，网络错误也不影响 DSH 运行。
+
+启动器还会检查 Web profile 中通过 npm 安装的第三方插件，并将有新版本的插件更新到确定版本。它不会更新 DSH 本体、Agent Teams 等与 DSH 版本绑定的官方包、本地链接的自研插件或应用包内的项目插件快照。更新成功后管理窗口提供“重启服务”与“稍后”；只有用户选择重启，运行中的 Catalog 引擎才会重新加载插件。检查或更新失败会显示错误，不自动重启。
 
 Actions 的 DMG 内含 ad-hoc 签名、未经 Apple 公证的应用；准备给其他 Mac 正式分发时，还需要配置 Developer ID 签名和公证流程。

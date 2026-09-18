@@ -11,6 +11,7 @@ import { composeApprovalPatches } from '../../approve-for-me-workflow-plugin/com
 import { hostPackageMap } from '../../scripts/project-plugins.mjs'
 import { installProjectResolver } from '../../scripts/project-plugin-resolver.mjs'
 import { launchWebHost, assertWebPortAvailable } from '../../scripts/web-host-lifecycle.mjs'
+import { privateBindAddress, startLanGateway } from './lan-gateway.mjs'
 
 const workflowRoot = fileURLToPath(new URL('../../', import.meta.url))
 const flattened = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flattened(row.config) : [])])
@@ -44,9 +45,14 @@ async function waitForAuthenticatedUrl(logPath, signal) {
 }
 
 /** Boot the upstream Web profile with only the project's immutable owned overlay. */
-export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal, onReady = () => {} }) {
+export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal, onReady = () => {},
+  gatewayHost = privateBindAddress(), gatewayPort = 3081, gatewaySessions, controlStream = process.stdin,
+  onGateway = () => {}, password = process.env.DSH_LAUNCH_PASSWORD }) {
   signal?.throwIfAborted()
+  if (port === gatewayPort) throw new Error('DSH Web port must differ from the LAN gateway port')
   await assertWebPortAvailable(port)
+  if (gatewayPort !== 0) await assertWebPortAvailable(gatewayPort)
+  if (typeof password !== 'string' || password.length === 0) throw new Error('Set the LAN access password in the macOS app first')
   signal?.throwIfAborted()
   const resources = await realpath(resourcesRoot)
   const catalog = await realpath(workspace)
@@ -69,7 +75,7 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
   const hostPackages = hostPackageMap(anchor)
   signal?.throwIfAborted()
   const hooks = installProjectResolver({ anchor, packages, hostPackages, directory: workflow })
-  let launchDirectory
+  let launchDirectory, gateway, currentUrl, onControl
   try {
     const boot = createRequire(anchor)('@deepseek-ai/dsh-app-boot')
     const home = process.env.DSH_HOME || join(process.env.HOME, '.dsh')
@@ -81,28 +87,63 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
     const patches = [
       ...composeApprovalPatches(entries),
       ...composeKernelLaunch(entries, { projectRoot: workflow, catalogRoot: catalog }),
+      browserUrlPatch(entries),
       portPatch(entries, port),
     ]
     signal?.throwIfAborted()
+    gateway = await startLanGateway({ port: gatewayPort, host: gatewayHost, upstreamPort: port,
+      password, authenticatedUrl: () => currentUrl, sessions: gatewaySessions })
+    onGateway(gateway)
+    let controlBuffer = ''
+    onControl = chunk => {
+      controlBuffer += chunk.toString('utf8')
+      if (controlBuffer.length > 16_384) { controlBuffer = ''; return }
+      while (controlBuffer.includes('\n')) {
+        const index = controlBuffer.indexOf('\n')
+        const line = controlBuffer.slice(0, index)
+        controlBuffer = controlBuffer.slice(index + 1)
+        try {
+          const command = JSON.parse(line)
+          if (command?.type === 'set-password') gateway.setPassword(command.password)
+        } catch { /* Ignore malformed control messages. */ }
+      }
+    }
+    if (controlStream) { controlStream.on('data', onControl); controlStream.resume() }
     launchDirectory = await mkdtemp(join(tmpdir(), 'dsh-workflow-app-'))
     const patchPath = join(launchDirectory, 'launch.patch.yml')
     await writeFile(patchPath, JSON.stringify(patches, null, 2) + '\n', { mode: 0o600 })
     const runner = join(workflow, 'macos-launcher', 'runtime', 'run-dsh.mjs')
+    const childEnvironment = { ...process.env }
+    delete childEnvironment.DSH_LAUNCH_PASSWORD
     return await launchWebHost({
       argv: [process.execPath, runner, resources, '--profile', 'web', '--patch', patchPath, '--no-open'],
       cwd: catalog,
       port,
       logRoot: join(catalog, '.dsh-workflow', 'web-host', 'logs'),
+      environment: childEnvironment,
+      stdin: 'ignore',
       signal,
       onReady: async ({ logPath, ...state }) => {
         const url = await waitForAuthenticatedUrl(logPath, signal)
-        onReady({ ...state, logPath, url })
+        currentUrl = url
+        const publicUrl = gateway.lanUrls[0] ?? `http://127.0.0.1:${gateway.port}/`
+        const entryUrl = new URL(publicUrl)
+        entryUrl.search = new URL(url).search
+        await onReady({ ...state, logPath, url: publicUrl, lanUrls: gateway.lanUrls }, entryUrl.toString())
       },
     })
   } finally {
+    if (onControl && controlStream) { controlStream.off('data', onControl); controlStream.pause() }
+    await gateway?.close()
     hooks.deregister()
     if (launchDirectory) await rm(launchDirectory, { recursive: true, force: true })
   }
+}
+
+export function browserUrlPatch(entries) {
+  const matches = flattened(entries).filter(row => row.id === 'web-runtime' && row.name === '@deepseek-ai/dsh-web-app' && row.disabled !== true)
+  if (matches.length !== 1) throw new Error('Expected one active DSH Web runtime to publish its authenticated URL')
+  return { id: matches[0].id, config: { ...structuredClone(matches[0].config ?? {}), printUrl: true } }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

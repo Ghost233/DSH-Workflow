@@ -2,31 +2,122 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 import Darwin
+import Security
+
+private enum LanPasswordStore {
+    static let service = "com.ghostagent.dsh-workflow-launcher"
+    static let account = "lan-password"
+
+    static func load() -> String? {
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching([
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ] as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func save(_ password: String) throws {
+        let query = [kSecClass: kSecClassGenericPassword,
+                     kSecAttrService: service,
+                     kSecAttrAccount: account] as CFDictionary
+        let bytes = Data(password.utf8)
+        let status = SecItemUpdate(query, [kSecValueData: bytes] as CFDictionary)
+        if status == errSecSuccess { return }
+        guard status == errSecItemNotFound else { throw error(status) }
+        let add = [kSecClass: kSecClassGenericPassword,
+                   kSecAttrService: service,
+                   kSecAttrAccount: account,
+                   kSecValueData: bytes] as CFDictionary
+        let added = SecItemAdd(add, nil)
+        guard added == errSecSuccess else { throw error(added) }
+    }
+
+    private static func error(_ status: OSStatus) -> NSError {
+        NSError(domain: NSOSStatusErrorDomain, code: Int(status),
+                userInfo: [NSLocalizedDescriptionKey: "钥匙串保存失败（\(status)）"])
+    }
+}
 
 private struct ReadyEvent: Decodable {
     let port: Int
     let url: URL
-    let logPath: String
+    let logPath: String?
+    let lanUrls: [URL]?
+}
+
+private struct PluginVersionReport: Decodable {
+    let checkedAt: String
+    let rows: [PluginVersionRow]
+}
+
+private struct PluginUpdateReport: Decodable {
+    let updated: [UpdatedPlugin]
+    let failedChecks: Int
+    let error: String?
+}
+
+private struct UpdatedPlugin: Decodable {
+    let name: String
+    let from: String?
+    let to: String
+}
+
+struct PluginVersionRow: Decodable, Identifiable {
+    let source: String
+    let name: String
+    let current: String?
+    let latest: String?
+    let status: String
+    let note: String
+
+    var id: String { "\(source):\(name)" }
+    var statusText: String {
+        switch status {
+        case "newer": return "有新版本"
+        case "current": return "已是 latest"
+        case "ahead": return "当前版本高于 latest"
+        case "bundled": return "随 App 更新"
+        case "coupled": return "随 DSH 更新"
+        case "local": return "本地依赖"
+        case "error": return "检查失败"
+        case "unsupported": return "暂不支持查询"
+        default: return "无法比较"
+        }
+    }
 }
 
 @MainActor
 final class LauncherModel: ObservableObject {
     static let shared = LauncherModel()
 
-    @Published var portText: String
-    @Published var workspacePath: String
     @Published var fullAccess: Bool
+    @Published var passwordDraft = ""
+    @Published private(set) var hasLanPassword = false
     @Published private(set) var status = "已停止"
     @Published private(set) var lastError = ""
     @Published private(set) var browserURL: URL?
+    @Published private(set) var lanURLs: [URL] = []
     @Published private(set) var logPath: String?
     @Published private(set) var launchAtLogin = false
     @Published private(set) var updateStatus = "尚未检查更新"
     @Published private(set) var updatePage: URL?
     @Published private(set) var isCheckingUpdates = false
+    @Published private(set) var pluginRows: [PluginVersionRow] = []
+    @Published private(set) var pluginCheckStatus = "尚未检查插件版本"
+    @Published private(set) var isCheckingPlugins = false
+    @Published private(set) var pluginUpdateStatus = "启动后自动检查插件更新"
+    @Published private(set) var isUpdatingPlugins = false
+    @Published private(set) var pluginRestartAvailable = false
+    @Published var showPluginRestartPrompt = false
 
     private var child: Process?
     private var output: Pipe?
+    private var control: Pipe?
     private var outputBuffer = Data()
     private var restartPending = false
 
@@ -35,38 +126,36 @@ final class LauncherModel: ObservableObject {
 
     private init() {
         let defaults = UserDefaults.standard
-        portText = String(defaults.integer(forKey: "webPort") == 0 ? 3080 : defaults.integer(forKey: "webPort"))
-        workspacePath = defaults.string(forKey: "workspacePath") ?? FileManager.default.homeDirectoryForCurrentUser.path
         fullAccess = defaults.object(forKey: "fullAccess") as? Bool ?? true
+        hasLanPassword = LanPasswordStore.load()?.isEmpty == false
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     func start() {
         guard child == nil else { return }
-        guard let port = Int(portText), (1...65535).contains(port) else {
-            lastError = "端口必须是 1–65535 之间的整数。"
+        guard let lanPassword = LanPasswordStore.load(), !lanPassword.isEmpty else {
+            lastError = "请先在管理窗口设置内网访问密码。"
             return
         }
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: workspacePath, isDirectory: &isDirectory), isDirectory.boolValue else {
-            lastError = "工作目录不存在：\(workspacePath)"
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            lastError = "无法定位应用数据目录。"
             return
         }
+        let catalogBase = support.appendingPathComponent("DSH Workflow", isDirectory: true)
         guard let resources = Bundle.main.resourceURL else {
             lastError = "应用资源目录不可用。"
             return
         }
         let node = resources.appendingPathComponent("node")
-        let launcher = resources.appendingPathComponent("workflow/macos-launcher/runtime/web-launch.mjs")
+        let launcher = resources.appendingPathComponent("workflow/macos-launcher/runtime/catalog-supervisor.mjs")
         guard FileManager.default.isExecutableFile(atPath: node.path),
               FileManager.default.fileExists(atPath: launcher.path) else {
             lastError = "包内 DSH 运行时不完整，请重新构建应用。"
             return
         }
-        UserDefaults.standard.set(port, forKey: "webPort")
-        UserDefaults.standard.set(workspacePath, forKey: "workspacePath")
         UserDefaults.standard.set(fullAccess, forKey: "fullAccess")
         browserURL = nil
+        lanURLs = []
         logPath = nil
         lastError = ""
         status = "正在启动"
@@ -74,12 +163,15 @@ final class LauncherModel: ObservableObject {
 
         let process = Process()
         process.executableURL = node
-        process.arguments = [launcher.path, resources.path, workspacePath, String(port)]
-        process.currentDirectoryURL = URL(fileURLWithPath: workspacePath, isDirectory: true)
+        process.arguments = [launcher.path, resources.path, catalogBase.path]
+        process.currentDirectoryURL = resources
         var environment = ProcessInfo.processInfo.environment
         environment["DSH_PERMISSION_MODE"] = fullAccess ? "danger-full-access" : "workspace-write"
+        environment["DSH_LAUNCH_PASSWORD"] = lanPassword
         process.environment = environment
         let pipe = Pipe()
+        let controlPipe = Pipe()
+        process.standardInput = controlPipe
         process.standardOutput = pipe
         process.standardError = pipe
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -92,12 +184,16 @@ final class LauncherModel: ObservableObject {
         }
         child = process
         output = pipe
+        control = controlPipe
         do {
             try process.run()
+            pluginRestartAvailable = false
+            showPluginRestartPrompt = false
         } catch {
             pipe.fileHandleForReading.readabilityHandler = nil
             child = nil
             output = nil
+            control = nil
             status = "启动失败"
             lastError = error.localizedDescription
         }
@@ -121,6 +217,32 @@ final class LauncherModel: ObservableObject {
 
     func openBrowser() {
         if let browserURL { NSWorkspace.shared.open(browserURL) }
+    }
+
+    func saveLanPassword() {
+        guard !passwordDraft.isEmpty else {
+            lastError = "内网访问密码不能为空。"
+            return
+        }
+        guard passwordDraft.utf8.count <= 1024 else {
+            lastError = "内网访问密码不能超过 1024 字节。"
+            return
+        }
+        do { try LanPasswordStore.save(passwordDraft) }
+        catch { lastError = error.localizedDescription; return }
+        hasLanPassword = true
+        if let child, child.isRunning, let control {
+            do {
+                let command = try JSONSerialization.data(withJSONObject: ["type": "set-password", "password": passwordDraft])
+                try control.fileHandleForWriting.write(contentsOf: command + Data([10]))
+            } catch {
+                lastError = "密码已保存，但通知运行中的服务失败：\(error.localizedDescription)；请重启服务。"
+                passwordDraft = ""
+                return
+            }
+        }
+        passwordDraft = ""
+        lastError = ""
     }
 
     func showLog() {
@@ -163,6 +285,115 @@ final class LauncherModel: ObservableObject {
         if let updatePage { NSWorkspace.shared.open(updatePage) }
     }
 
+    func checkPluginVersions() {
+        guard !isCheckingPlugins && !isUpdatingPlugins else { return }
+        guard let resources = Bundle.main.resourceURL else {
+            pluginCheckStatus = "应用资源目录不可用。"
+            return
+        }
+        let nodePath = resources.appendingPathComponent("node").path
+        let scriptPath = resources.appendingPathComponent("workflow/macos-launcher/runtime/plugin-versions.mjs").path
+        guard FileManager.default.isExecutableFile(atPath: nodePath),
+              FileManager.default.fileExists(atPath: scriptPath) else {
+            pluginCheckStatus = "包内缺少插件检查器，请重新构建应用。"
+            return
+        }
+        isCheckingPlugins = true
+        pluginCheckStatus = "正在检查 npm 最新版本…"
+        Task {
+            let resourcesPath = resources.path
+            let result = await Task.detached(priority: .userInitiated) { () -> (Int32, Data) in
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: nodePath)
+                process.arguments = [scriptPath, resourcesPath]
+                let output = Pipe()
+                process.standardOutput = output
+                process.standardError = FileHandle.nullDevice
+                do { try process.run() }
+                catch { return (-1, Data()) }
+                let data = output.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                return (process.terminationStatus, data)
+            }.value
+            defer { isCheckingPlugins = false }
+            guard result.0 == 0, let report = try? JSONDecoder().decode(PluginVersionReport.self, from: result.1) else {
+                pluginCheckStatus = "插件检查失败；清单或网络不可用。未修改任何插件。"
+                return
+            }
+            pluginRows = report.rows
+            let newer = report.rows.filter { $0.status == "newer" }.count
+            let errors = report.rows.filter { $0.status == "error" || $0.status == "unknown" || $0.status == "unsupported" }.count
+            pluginCheckStatus = "检查完成：\(newer) 个新版本，\(errors) 个无法确认；共 \(report.rows.count) 项。"
+        }
+    }
+
+    func updatePlugins() {
+        guard !isUpdatingPlugins && !isCheckingPlugins else { return }
+        guard let resources = Bundle.main.resourceURL else {
+            pluginUpdateStatus = "应用资源目录不可用，无法更新插件。"
+            return
+        }
+        let nodePath = resources.appendingPathComponent("node").path
+        let scriptPath = resources.appendingPathComponent("workflow/macos-launcher/runtime/plugin-update.mjs").path
+        guard FileManager.default.isExecutableFile(atPath: nodePath),
+              FileManager.default.fileExists(atPath: scriptPath) else {
+            pluginUpdateStatus = "包内缺少插件更新器，请重新构建应用。"
+            return
+        }
+        isUpdatingPlugins = true
+        pluginUpdateStatus = "正在检查并更新 Web profile 插件…"
+        Task {
+            let resourcesPath = resources.path
+            let result = await Task.detached(priority: .utility) { () -> (Int32, Data) in
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: nodePath)
+                process.arguments = [scriptPath, resourcesPath]
+                let output = Pipe()
+                process.standardOutput = output
+                process.standardError = output
+                do { try process.run() }
+                catch { return (-1, Data(error.localizedDescription.utf8)) }
+                let data = output.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                return (process.terminationStatus, data)
+            }.value
+            isUpdatingPlugins = false
+            guard result.0 == 0, let report = try? JSONDecoder().decode(PluginUpdateReport.self, from: result.1) else {
+                pluginUpdateStatus = "插件更新失败：\(String(decoding: result.1.suffix(400), as: UTF8.self))"
+                return
+            }
+            if report.updated.isEmpty {
+                if let error = report.error {
+                    pluginUpdateStatus = "插件更新失败：\(error)"
+                } else {
+                    pluginUpdateStatus = report.failedChecks == 0 ? "插件已是最新，未修改 DSH 或自研插件。"
+                        : "没有可更新的插件；\(report.failedChecks) 项版本检查失败。"
+                }
+                return
+            }
+            let versions = Dictionary(uniqueKeysWithValues: report.updated.map { ($0.name, $0.to) })
+            pluginRows = pluginRows.map { row in
+                guard let version = versions[row.name], row.source == "DSH Web profile" else { return row }
+                return PluginVersionRow(source: row.source, name: row.name, current: version,
+                                        latest: version, status: "current", note: "已更新；重启后运行中的引擎才会加载")
+            }
+            pluginUpdateStatus = report.error.map { "已更新 \(report.updated.count) 个插件，但其余更新失败：\($0)" }
+                ?? "已更新 \(report.updated.count) 个 Web profile 插件；运行中的 DSH 尚未切换版本。"
+            pluginRestartAvailable = isActive
+            showPluginRestartPrompt = isActive
+        }
+    }
+
+    func restartAfterPluginUpdate() {
+        showPluginRestartPrompt = false
+        pluginRestartAvailable = false
+        restart()
+    }
+
+    func postponePluginRestart() {
+        showPluginRestartPrompt = false
+    }
+
     func setLaunchAtLogin(_ enabled: Bool) {
         do {
             if enabled { try SMAppService.mainApp.register() }
@@ -185,8 +416,9 @@ final class LauncherModel: ObservableObject {
                let payload = line.split(separator: "\t", maxSplits: 1).last?.data(using: .utf8),
                let ready = try? JSONDecoder().decode(ReadyEvent.self, from: payload) {
                 browserURL = ready.url
+                lanURLs = ready.lanUrls ?? []
                 logPath = ready.logPath
-                status = "运行中 · 127.0.0.1:\(ready.port)"
+                status = "导航页运行中 · 端口 \(ready.port)；DSH 按需启动"
             } else if !line.isEmpty {
                 let clean = line.replacingOccurrences(of: "token=[^&\\s]+", with: "token=[redacted]", options: .regularExpression)
                 if lastError.isEmpty { lastError = String(clean.suffix(600)) }
@@ -199,8 +431,11 @@ final class LauncherModel: ObservableObject {
         guard child === ended else { return }
         output?.fileHandleForReading.readabilityHandler = nil
         output = nil
+        control?.fileHandleForWriting.closeFile()
+        control = nil
         child = nil
         browserURL = nil
+        lanURLs = []
         logPath = nil
         if restartPending {
             restartPending = false
@@ -225,6 +460,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
         LauncherModel.shared.start()
         ManagementWindow.shared.show()
         LauncherModel.shared.checkForUpdates()
+        LauncherModel.shared.updatePlugins()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -244,25 +480,58 @@ private struct ManagementView: View {
                 Button("停止") { model.stop() }.disabled(!model.isActive)
                 Button("重启") { model.restart() }.disabled(!model.isActive)
             }
-            TextField("端口", text: $model.portText)
+            Text("Catalog 列表、目录及各 DSH 引擎在导航页管理；新 Catalog 会创建独立目录，也可以加入已有目录保留 Registry 绑定。")
+                .font(.caption).foregroundStyle(.secondary)
+            Toggle("DSH 工具使用完整访问权限", isOn: $model.fullAccess)
             HStack {
-                TextField("工作目录", text: $model.workspacePath)
-                Button("选择…") {
-                    let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true
-                    panel.canChooseFiles = false
-                    if panel.runModal() == .OK, let url = panel.url { model.workspacePath = url.path }
+                SecureField("内网访问密码", text: $model.passwordDraft)
+                Button(model.hasLanPassword ? "修改密码" : "设置密码") { model.saveLanPassword() }
+                    .disabled(model.passwordDraft.isEmpty)
+            }
+            Text(model.hasLanPassword ? "密码保存在 macOS 钥匙串，修改后立即撤销旧的内网登录。" : "设置密码后才能开启内网入口。")
+                .font(.caption).foregroundStyle(.secondary)
+            if !model.lanURLs.isEmpty {
+                LabeledContent("内网入口") {
+                    VStack(alignment: .trailing) {
+                        ForEach(model.lanURLs, id: \.absoluteString) { url in
+                            Text(url.absoluteString).textSelection(.enabled)
+                        }
+                    }
                 }
             }
-            Toggle("DSH 工具使用完整访问权限", isOn: $model.fullAccess)
             Toggle("登录后启动应用", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
-            Text("端口、工作目录和权限在下次启动或重启时生效。第三方插件由 DSH 用户 profile 管理。")
+            Text("权限在下次启动或重启时生效。第三方插件由 DSH 用户 profile 管理。")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Text(model.updateStatus).font(.caption)
                 Spacer()
                 Button("检查更新") { model.checkForUpdates() }.disabled(model.isCheckingUpdates)
                 Button("查看新版本") { model.openUpdatePage() }.disabled(model.updatePage == nil)
+            }
+            Divider()
+            HStack {
+                Text("插件管理").font(.headline)
+                Spacer()
+                Button("一键检查新版本") { model.checkPluginVersions() }.disabled(model.isCheckingPlugins)
+            }
+            Text(model.pluginCheckStatus).font(.caption)
+            HStack {
+                Text(model.pluginUpdateStatus).font(.caption)
+                Spacer()
+                Button("更新插件") { model.updatePlugins() }.disabled(model.isCheckingPlugins || model.isUpdatingPlugins)
+                if model.pluginRestartAvailable {
+                    Button("重启以应用") { model.restartAfterPluginUpdate() }
+                }
+            }
+            Text("启动时只更新 npm 安装的 Web profile 第三方插件；DSH 与 App 内置插件随应用构建更新。运行中的引擎不会热切换插件。")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(model.pluginRows) { row in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(row.name).font(.body)
+                    Text("\(row.source) · 当前 \(row.current ?? "未知") · latest \(row.latest ?? "—") · \(row.statusText)")
+                        .font(.caption).foregroundStyle(row.status == "newer" ? Color.orange : Color.secondary)
+                    Text(row.note).font(.caption2).foregroundStyle(.secondary)
+                }
             }
             if !model.lastError.isEmpty {
                 Text(model.lastError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
@@ -271,6 +540,12 @@ private struct ManagementView: View {
         }
         .padding(20)
         .frame(width: 560)
+        .alert("插件已更新", isPresented: $model.showPluginRestartPrompt) {
+            Button("重启服务") { model.restartAfterPluginUpdate() }
+            Button("稍后") { model.postponePluginRestart() }
+        } message: {
+            Text("\(model.pluginUpdateStatus) 重启会关闭当前所有 Catalog 引擎，再按需启动；选择稍后时，运行中的引擎继续使用旧版本。")
+        }
     }
 }
 
@@ -282,7 +557,7 @@ private final class ManagementWindow {
 
     private init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 380),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 560),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -325,7 +600,12 @@ private struct MenuContent: View {
         Divider()
         Button("管理…") { ManagementWindow.shared.show() }
         Button("查看日志") { model.showLog() }.disabled(model.logPath == nil)
-        Button("检查更新") { model.checkForUpdates() }.disabled(model.isCheckingUpdates)
+        Button("检查应用更新") { model.checkForUpdates() }.disabled(model.isCheckingUpdates)
+        Button("检查插件新版本") { model.checkPluginVersions() }.disabled(model.isCheckingPlugins)
+        Button("更新插件") { model.updatePlugins() }.disabled(model.isCheckingPlugins || model.isUpdatingPlugins)
+        if model.pluginRestartAvailable {
+            Button("重启以应用插件") { model.restartAfterPluginUpdate() }
+        }
         if model.updatePage != nil {
             Button("查看新版本") { model.openUpdatePage() }
         }
