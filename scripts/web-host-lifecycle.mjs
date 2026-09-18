@@ -15,7 +15,7 @@ export async function assertWebPortAvailable(port) {
 
 /** Own only the child we create. An HTTP response from another instance is never readiness. */
 export async function launchWebHost({ argv, cwd, logRoot, port = 3080, signal, startupTimeoutMs = 30_000, pollMs = 250,
-  requiredComponents = ['owner', 'sol', 'approval'], onReady = () => {}, environment = process.env, stdin = 'inherit' }) {
+  requiredComponents = ['owner', 'sol', 'approval'], onLogPath = () => {}, onReady = () => {}, environment = process.env, stdin = 'inherit' }) {
   if (!Array.isArray(argv) || !argv.length || argv.some(item => typeof item !== 'string')
     || !Number.isSafeInteger(port) || port < 1 || port > 65535 || !Number.isFinite(startupTimeoutMs) || startupTimeoutMs <= 0) throw new Error('Invalid Web host launch contract')
   signal?.throwIfAborted()
@@ -24,6 +24,7 @@ export async function launchWebHost({ argv, cwd, logRoot, port = 3080, signal, s
   await mkdir(logRoot, { recursive: true, mode: 0o700 })
   const instanceId = randomUUID(), logPath = join(logRoot, `${Date.now()}-${instanceId}.log`)
   const log = await open(logPath, 'wx', 0o600)
+  onLogPath(logPath)
   let child, exit, settled = false, stopping = false, escalation, lastProbe = 'not_started'
   const grouped = process.platform !== 'win32'
   const kill = name => {

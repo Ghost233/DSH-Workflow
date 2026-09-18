@@ -47,7 +47,7 @@ async function waitForAuthenticatedUrl(logPath, signal) {
 /** Boot the upstream Web profile with only the project's immutable owned overlay. */
 export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal, onReady = () => {},
   gatewayHost = privateBindAddress(), gatewayPort = 3081, gatewaySessions, controlStream = process.stdin,
-  onGateway = () => {}, password = process.env.DSH_LAUNCH_PASSWORD }) {
+  onGateway = () => {}, onLog = () => {}, password = process.env.DSH_LAUNCH_PASSWORD }) {
   signal?.throwIfAborted()
   if (port === gatewayPort) throw new Error('DSH Web port must differ from the LAN gateway port')
   await assertWebPortAvailable(port)
@@ -123,6 +123,7 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
       environment: childEnvironment,
       stdin: 'ignore',
       signal,
+      onLogPath: onLog,
       onReady: async ({ logPath, ...state }) => {
         const url = await waitForAuthenticatedUrl(logPath, signal)
         currentUrl = url
