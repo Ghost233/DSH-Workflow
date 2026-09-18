@@ -1,0 +1,137 @@
+{
+  "complete": false,
+  "recordedAt": "2026-09-14T12:14:30.071888+08:00",
+  "workflowId": "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+  "planVersion": 3,
+  "recoveryUsed": 15,
+  "recoveryLimit": 15,
+  "attemptId": "try-48d6473a0eea88f4c907fec34a2c172632060cd6",
+  "attemptPhase": "failed",
+  "candidateDigest": "ab6c1c53f3b04f39e22eccc46709922abdc63e25f8e4f197c3b746ebaba0d9f5",
+  "candidateArtifact": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/act-ac9ba94424cddba802d55cfd1a2c5e39a3a183aa/tree",
+  "newActions": [
+    {
+      "id": "act-b309c01f0421658282229bdf875a09498eafe86f",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "attemptId": null,
+      "createdAt": 1789358927073
+    },
+    {
+      "id": "act-0e84b382751eed64999277ab52607c1b2ef86972",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "attemptId": "try-48d6473a0eea88f4c907fec34a2c172632060cd6",
+      "createdAt": 1789358963831
+    },
+    {
+      "id": "act-ac9ba94424cddba802d55cfd1a2c5e39a3a183aa",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "attemptId": "try-48d6473a0eea88f4c907fec34a2c172632060cd6",
+      "createdAt": 1789359064890
+    },
+    {
+      "id": "act-5fd287e21f17baa260d9c79fd745cbb1319697f6",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "attemptId": "try-48d6473a0eea88f4c907fec34a2c172632060cd6",
+      "createdAt": 1789359086347
+    },
+    {
+      "id": "act-17ca55db475b09c25fa0f0e39e3f61542eaf5924",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "attemptId": null,
+      "createdAt": 1789359179319
+    },
+    {
+      "id": "act-dd8c61e11676d580f00eaefa9e258bb516c57c70",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "attemptId": null,
+      "createdAt": 1789359179319
+    }
+  ],
+  "newPlannerActions": 0,
+  "preserved": {
+    "plan": true,
+    "activation": true,
+    "policy": true,
+    "integrationHead": true,
+    "otherTaskRecords": true,
+    "allPriorAttemptRecords": true,
+    "userConfiguration": true
+  },
+  "ownerReport": {
+    "status": "completed",
+    "summary": "Repaired `package-lock.json` so the existing `fsevents@2.3.3` record uses the confirmed matching integrity `sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==`; version and resolved URL remain 2.3.3-consistent. Reviewed all newly added Playwright lock entries: official browser helper, test package, playwright, and playwright-core are consistently pinned to 1.58.2 and retain expected lifecycle metadata. Existing wrapper, local browser path contract, configuration, and actual launch smoke were preserved. Evidence: `git diff --check` plus Node syntax checks for all three harness scripts passed (exit 0). No dependency installation was run and no node_modules, cache, user configuration, proxy, certificate, or timeout setting was modified."
+  },
+  "dependencyFailure": {
+    "dependencyKey": "75ebb950b522511973764a064c0cd4ab946dc0073129c70c94d83d0883202e09",
+    "manager": "npm",
+    "phase": "install",
+    "commandId": "cmd-e4c82d2bda6249491f0abb083b434e80fc19d445",
+    "exitCode": 1,
+    "timedOut": false,
+    "quarantine": "75ebb950b522511973764a064c0cd4ab946dc0073129c70c94d83d0883202e09/quarantine-ac129c41-aea6-4e28-9600-97c54783fbb6",
+    "failureArtifact": "75ebb950b522511973764a064c0cd4ab946dc0073129c70c94d83d0883202e09/failure-08f9f956-8e4b-4688-a8f9-06fa3572cf1f.json",
+    "metrics": {
+      "cacheHit": false,
+      "installRuns": 1,
+      "fullTreeCopies": 0,
+      "overlayLinks": 0,
+      "logicalBytes": 0,
+      "baseHashedBytes": 0,
+      "overlayHashedBytes": 0,
+      "hashedBytes": 0,
+      "copiedBytes": 0,
+      "baseDigestEntries": 0,
+      "overlayDigestEntries": 0,
+      "digestEntries": 0,
+      "hardlinkNormalized": 0,
+      "hardlinkCopiedBytes": 0,
+      "durations": {
+        "cacheAcquireMs": 11306,
+        "promoteMs": 0,
+        "normalizeMs": 0,
+        "sealMs": 0,
+        "overlayMs": 0
+      },
+      "validationMode": "not_available",
+      "fallbackReason": null
+    }
+  },
+  "commandResult": {
+    "exitCode": 1,
+    "ok": false,
+    "timedOut": false,
+    "aborted": false,
+    "managedRangeStopped": true
+  },
+  "npmErrors": [
+    "npm error code EUSAGE",
+    "npm error `npm ci` can only install packages when your package.json and package-lock.json or npm-shrinkwrap.json are in sync. Please update your lock file with `npm install` before continuing.",
+    "npm error Missing: fsevents@2.3.2 from lock file"
+  ],
+  "review": {
+    "passed": false,
+    "contentDigest": "ab6c1c53f3b04f39e22eccc46709922abdc63e25f8e4f197c3b746ebaba0d9f5",
+    "reasons": [
+      "Rejected: the supplied fixed verification failed during formal dependency preparation (`npm ci`, exit 1), so the required actual headless-Chromium smoke never ran.",
+      "The failure is reproducible from the candidate manifests: `package-lock.json` records `playwright@1.58.2` with optional dependency `fsevents@2.3.2` (lines 16147–16164), but its only locked `node_modules/fsevents` entry is version 2.3.3 (lines 14989–15002). This is exactly the lock/package inconsistency reported by npm: “Missing: fsevents@2.3.2 from lock file.” Consequently the candidate does not provide an installable locked browser runtime as required.",
+      "The source structure otherwise substantially targets the harness contract: `.npmrc` sets `playwright_browsers_path=0`; both Playwright packages are exact, equal 1.58.2 versions in `package.json` and lock; the wrapper sets `PLAYWRIGHT_BROWSERS_PATH=0` before spawning the local CLI; and the smoke sets it before import, launches Chromium, serves/asserts a local DOM page, routes non-local requests to abort, and closes browser/server. These unexecuted implementation details cannot overcome the failed dependency-install acceptance gate."
+    ],
+    "managedRangeStopped": true,
+    "terminationScope": "dsh-managed-range",
+    "terminationId": "range-adf6ad6589cc74ab3cab7de5d1e6f71940693666c279bd3f6fd7123b771ca8a6",
+    "sessionId": "owner-9efc2bec6dbc3c25bdf82d4f45497ba53fd476af",
+    "promptId": "owner-9efc2bec6dbc3c25bdf82d4f45497ba53fd476af",
+    "executionSettled": true,
+    "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-9efc2bec6dbc3c25bdf82d4f45497ba53fd476af/result.json"
+  },
+  "smokeExecuted": false,
+  "fsevents233IntegrityCorrected": true,
+  "remainingDefect": "playwright@1.58.2 requires exact optional fsevents@2.3.2; lock contains only root 2.3.3, missing resolvable 2.3.2 record",
+  "priorBrowserInstallTimeoutResolved": false
+}

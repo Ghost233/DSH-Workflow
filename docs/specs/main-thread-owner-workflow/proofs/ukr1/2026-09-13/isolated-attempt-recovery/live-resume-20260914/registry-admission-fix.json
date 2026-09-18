@@ -1,0 +1,50 @@
+{
+  "finding": "Registry admission blocked project-authority-retired private execution because quarantined remained true",
+  "actionId": "act-71a2c78b7ef1c8edef1f86bf876a59d21af1a794",
+  "proposalDigest": "c6689633eff2508a5f00ed8340a733345112962dc0a43db4e000aa8d7a42003e",
+  "changes": [
+    {
+      "owner": "build-tooling",
+      "field": "scope",
+      "before": [
+        "package.json",
+        "package-lock.json",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "tsconfig.extension.json",
+        "vite.config.ts",
+        "scripts/**"
+      ],
+      "after": [
+        "package.json",
+        "package-lock.json",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "tsconfig.extension.json",
+        "vite.config.ts",
+        "scripts/**",
+        ".npmrc"
+      ]
+    }
+  ],
+  "engineTests": 82,
+  "nativeTests": 11,
+  "readOnlyLiveReplayPassed": true,
+  "sourceHash": "633e0ea43fec5fe9657d2b2e912490ff7d3f1bcccb9e62abf68356d4b0111414",
+  "interfaceFindings": [
+    "operations items expose no discriminated schema; model guessed add and unsupported update",
+    "owner.md null parent requires omitted field in tool input",
+    "Glob returned no matches; model incorrectly inferred no other Owner documents"
+  ],
+  "remainingRecovery": 3,
+  "liveResult": {
+    "applied": true,
+    "proposalDigest": "c6689633eff2508a5f00ed8340a733345112962dc0a43db4e000aa8d7a42003e",
+    "registryDigest": "b6742d21b995c5dbce7c6d362890c3a92a1094650f403df330f71f4162afc09b",
+    "commitSha": "799d708fd45b9cfe83744c17a9a5555e38af7e1d",
+    "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/decisions/act-1ca67ce5baf29dcca8201dca65d1e4482841c499/answer.json",
+    "executionSettled": true
+  },
+  "liveStatus": "succeeded",
+  "replanAction": "act-5aa72251d1504836a92c1b089ede8bbcf64ba70f"
+}

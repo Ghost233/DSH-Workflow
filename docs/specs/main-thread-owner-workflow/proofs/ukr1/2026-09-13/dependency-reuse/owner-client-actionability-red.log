@@ -1,0 +1,37 @@
+✖ only actionable kernel entries contribute deduplicated wait counts while every result remains visible (6.718875ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 49.472125
+
+✖ failing tests:
+
+test at test/client-bundle.test.mjs:15:1
+✖ only actionable kernel entries contribute deduplicated wait counts while every result remains visible (6.718875ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+      'failed:denied',
+      'failed:follow-up',
+  +   'completed:old-complete',
+  +   'historical:old-history',
+  +   'cancelled:old-cancel',
+      'running:blocked-one',
+      'running:blocked-two'
+    ]
+  
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/client-bundle.test.mjs:36:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'failed:denied', 'failed:follow-up', 'completed:old-complete', 'historical:old-history', 'cancelled:old-cancel', 'running:blocked-one', 'running:blocked-two' ],
+    expected: [ 'failed:denied', 'failed:follow-up', 'running:blocked-one', 'running:blocked-two' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

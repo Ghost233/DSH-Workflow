@@ -1,0 +1,18 @@
+✔ native Planner accepts a bound no-progress report before the formal transition records failure (3089.469542ms)
+✔ native Planner keeps one admitted frozen source across later live checkout changes and rejects binding tampering (3906.407958ms)
+✔ native Owner and candidate Reviewer receive only the same bound task package and direct consumer command contract (4622.39375ms)
+✔ 主线程提示要求正式 planning 文档封套，并只通过零参数 finalizer 建立检查点 (0.8755ms)
+✔ 主线程可在启动 DAG 前创建和修改所有约定文档，原生观察策略继续执行 (1340.798209ms)
+✔ 冻结只读审核允许后继文档编辑，修改用户 checkout 的动作仍阻止并发写入 (305.281458ms)
+✔ 文档例外不放开代码、治理文件、状态和其他写入工具 (55.639917ms)
+✔ 解析路径二次校验阻止冒充 displayPath、目标漂移和链接换入 (50.98125ms)
+✔ 路径绑定到项目和会话，允许根目录别名，拒绝软硬链接和无效目标 (15.7475ms)
+✔ 真实 root 与会话根别名混用时只归一化项目根，保留内部链接拒绝 (25.164792ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12248.817375

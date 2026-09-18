@@ -1,0 +1,19 @@
+{
+  "observation": "existing-browser-tab-only",
+  "url": "http://127.0.0.1:3080/",
+  "target": "切换子代理：Owner planner-owner-7091a956e319c2f22770739ef52a3e2e706cb03f",
+  "rect": { "x": 222.1015625, "y": 11, "width": 136.0390625, "height": 28 },
+  "centerHitTag": "BUTTON",
+  "centerHitText": "对话",
+  "covered": true,
+  "actualClickResult": "teammate tree did not open; Synapse conversation button became active",
+  "readSessions": [
+    "owner-ecf2dddb4ec7a99573d1a694177b27e3c24df1e9",
+    "owner-51fe7c89aed941b68bf222b8b5d84ff127b0f22b",
+    "owner-fc1edab3de9a212bcd465d16b34eb352b12350e3",
+    "owner-b52a3f25cf259cff7b6c63e3c3ca181755285a2e",
+    "owner-7091a956e319c2f22770739ef52a3e2e706cb03f",
+    "owner-8bf0d8659fce851094c970414ee43f41fcd10fdb"
+  ],
+  "note": "Read each conversation's actual tool-call sequence and submitted result. These are planning teammates; business Owners have not started."
+}

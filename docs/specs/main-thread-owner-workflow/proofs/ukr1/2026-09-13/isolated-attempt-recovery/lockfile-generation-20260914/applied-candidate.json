@@ -1,0 +1,12 @@
+{
+  "attemptId": "try-c06a36e7452e58891103a8f64f243ced962a2eb3",
+  "candidateDigest": "99d625c28c94508015cfe389ea8c08d770c8766c00b2d432d290647dc0ebc021",
+  "artifact": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/act-f75d4c4fe20c5db65092f48bfdfce6b999eaffd2/tree",
+  "lockSha256": "851d4898f222a181e18bd075b313a14e39a612d6be5cbf3d511a6e5c00f5df06",
+  "packageJsonUnchanged": true,
+  "projectNpmrcUnchanged": true,
+  "ownerReport": {
+    "status": "completed",
+    "summary": "Repaired `package-lock.json` by adding the npm-generated nested `node_modules/playwright/node_modules/fsevents` 2.3.2 optional Darwin entry required by playwright@1.58.2. Read-only verification confirms a clean diff (`git diff --check`) and SHA-256 `851d4898f222a181e18bd075b313a14e39a612d6be5cbf3d511a6e5c00f5df06`, matching the specified target. `npm ci --dry-run` progressed past the prior missing-lock-entry validation but could not complete because the host npm cache at `/Users/admin/.npm` has root-owned files (EPERM); no cache, node_modules, or user configuration was modified."
+  }
+}

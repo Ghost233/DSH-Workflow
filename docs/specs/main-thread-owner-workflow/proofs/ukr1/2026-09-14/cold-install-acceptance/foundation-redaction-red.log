@@ -1,0 +1,61 @@
+✖ structured string evidence remains parseable and keeps public fields (0.926375ms)
+✖ structured nested object evidence remains parseable and keeps public fields (0.117209ms)
+✖ structured array evidence remains parseable and keeps public fields (0.054333ms)
+✖ JSON text redaction keeps valid syntax and sibling metadata (0.096125ms)
+✔ freeform log still removes whitespace secrets and retains field boundaries (0.12675ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 1
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 61.128916
+
+✖ failing tests:
+
+test at docs/specs/main-thread-owner-workflow/proofs/ukr1/2026-09-14/cold-install-acceptance/foundation-redaction-probe.mjs:6:3
+✖ structured string evidence remains parseable and keeps public fields (0.926375ms)
+  SyntaxError: Unexpected token 'R', ..."payload":[REDACTED]]"... is not valid JSON
+      at JSON.parse (<anonymous>)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/ukr1/2026-09-14/cold-install-acceptance/foundation-redaction-probe.mjs:10:25)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.start (node:internal/test_runner/test:1003:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17)
+
+test at docs/specs/main-thread-owner-workflow/proofs/ukr1/2026-09-14/cold-install-acceptance/foundation-redaction-probe.mjs:6:3
+✖ structured nested object evidence remains parseable and keeps public fields (0.117209ms)
+  SyntaxError: Unexpected token 'R', ..."payload":[REDACTED],"... is not valid JSON
+      at JSON.parse (<anonymous>)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/ukr1/2026-09-14/cold-install-acceptance/foundation-redaction-probe.mjs:10:25)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+
+test at docs/specs/main-thread-owner-workflow/proofs/ukr1/2026-09-14/cold-install-acceptance/foundation-redaction-probe.mjs:6:3
+✖ structured array evidence remains parseable and keeps public fields (0.054333ms)
+  SyntaxError: Unexpected token 'R', ..."payload":[REDACTED],"... is not valid JSON
+      at JSON.parse (<anonymous>)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/ukr1/2026-09-14/cold-install-acceptance/foundation-redaction-probe.mjs:10:25)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at docs/specs/main-thread-owner-workflow/proofs/ukr1/2026-09-14/cold-install-acceptance/foundation-redaction-probe.mjs:19:1
+✖ JSON text redaction keeps valid syntax and sibling metadata (0.096125ms)
+  SyntaxError: Unexpected token 'R', ...""ToKeN": [REDACTED]]"... is not valid JSON
+      at JSON.parse (<anonymous>)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/docs/specs/main-thread-owner-workflow/proofs/ukr1/2026-09-14/cold-install-acceptance/foundation-redaction-probe.mjs:21:23)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)

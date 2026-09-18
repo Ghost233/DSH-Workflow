@@ -1,0 +1,984 @@
+{
+  "contract": "UKR1_LIVE_NEW_DAG_TEST_V1",
+  "recordedAt": "2026-09-13T06:08:37.812Z",
+  "workflowId": "wf-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+  "model": "gpt-5.6-terra",
+  "browser": {
+    "existingTab": true,
+    "newTabs": 0,
+    "url": "http://127.0.0.1:3080/"
+  },
+  "candidateDigest": "564240a27471b0115d9ca7da63d3afe463c9a323bd3ca696594d41b0c2a69394",
+  "scope": "Real model source checkpoint, Planner schema recovery and reviewer cancellation. Owner implementation and delivery not reached.",
+  "view": {
+    "contract": "DSH_WORKFLOW_VIEW_V1",
+    "workflowId": "wf-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+    "root": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+    "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+    "goal": "刚才拒绝的是规格中的一处矛盾，不是取消本轮实施。我在审批备注里的要求是：范围明确不实际运行构建/typecheck，但 AC-04 却要求完整 typecheck、Web build、扩展 build 通过；请从新的 Spec 和 Ticket 中删除这三项完整构建要求，保留 CLI 黑盒测试和重复稳定性验收。修订后继续本轮 checkpoint 和 DAG 实施，不改变其它需求，不改配置。",
+    "createdAt": 1789279385526,
+    "updatedAt": 1789279641130,
+    "planVersion": 0,
+    "attention": [],
+    "revision": 7,
+    "status": "cancelled",
+    "kind": "workflow",
+    "operationResult": null,
+    "registryResult": null,
+    "terminal": true,
+    "import": null,
+    "actionRequired": false,
+    "decisionId": null,
+    "deliveryFailure": null,
+    "nextWakeAt": null,
+    "counts": {
+      "totalTasks": 0,
+      "completedTasks": 0,
+      "failedTasks": 0,
+      "pendingTasks": 0,
+      "runningTasks": 0
+    },
+    "tasks": [],
+    "notices": [
+      {
+        "id": "act-ada4fea681754f35d9d82fdb134a3ae2f5fef117",
+        "status": "succeeded",
+        "reason": "execution_failure"
+      }
+    ],
+    "actions": [
+      {
+        "id": "act-b43e5967522c8a9d85f3db4e965a73abf270d91f",
+        "kind": "prepare_workflow",
+        "status": "succeeded",
+        "failure": null,
+        "resolution": null,
+        "quarantined": false,
+        "nextWakeAt": null,
+        "waiting": null
+      },
+      {
+        "id": "act-fbee79d6f06e6611c32cc481f5deb5e880ede5a5",
+        "kind": "plan",
+        "status": "succeeded",
+        "failure": null,
+        "resolution": null,
+        "quarantined": false,
+        "nextWakeAt": null,
+        "waiting": null
+      },
+      {
+        "id": "act-8eeb700fd2f15fc6406492e8c0f566b3bf52f495",
+        "kind": "review_plan",
+        "status": "cancelled",
+        "failure": "Persisted action stopped",
+        "resolution": null,
+        "quarantined": false,
+        "nextWakeAt": null,
+        "waiting": null
+      },
+      {
+        "id": "act-0add2ce59c2d717bfa099a1ace1b39fdc9ffdf43",
+        "kind": "stop_execution",
+        "status": "succeeded",
+        "failure": null,
+        "resolution": null,
+        "quarantined": false,
+        "nextWakeAt": null,
+        "waiting": null
+      },
+      {
+        "id": "act-ada4fea681754f35d9d82fdb134a3ae2f5fef117",
+        "kind": "notify_main",
+        "status": "succeeded",
+        "failure": null,
+        "resolution": null,
+        "quarantined": false,
+        "nextWakeAt": null,
+        "waiting": null
+      }
+    ],
+    "recovery": {
+      "used": 0,
+      "limit": 12,
+      "issues": []
+    },
+    "delivery": null
+  },
+  "workflow": {
+    "id": "wf-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+    "root": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+    "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+    "request": "刚才拒绝的是规格中的一处矛盾，不是取消本轮实施。我在审批备注里的要求是：范围明确不实际运行构建/typecheck，但 AC-04 却要求完整 typecheck、Web build、扩展 build 通过；请从新的 Spec 和 Ticket 中删除这三项完整构建要求，保留 CLI 黑盒测试和重复稳定性验收。修订后继续本轮 checkpoint 和 DAG 实施，不改变其它需求，不改配置。",
+    "revision": 7,
+    "createdAt": 1789279385526,
+    "updatedAt": 1789279641130,
+    "policy": {
+      "parallel": 4,
+      "totalRecovery": 12,
+      "issueRecovery": 8,
+      "deadlineMs": 1800000,
+      "terminationWindowMs": 30000
+    },
+    "integrationRef": "refs/heads/dsh/workflow/ukr-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+    "baseBranch": "dev",
+    "baseCommit": "966250b0fa6c0c97283066a7c8f4eda0c8a54adb",
+    "plan": null,
+    "planVersion": 0,
+    "tasks": {},
+    "attempts": {},
+    "issues": {},
+    "decisions": {},
+    "notices": {},
+    "recoveryUsed": 0,
+    "cancelRequested": true,
+    "activation": null,
+    "planningSources": {
+      "snapshotDigest": "e5ec00e1235a847e2ee85828c2658484ecd7c89cfaa07feaf130a27f938af792",
+      "sourceDigest": "f0f2451a886f314ebe5cef3d8ac815d922b0cdb1263e3c48a93dabbd90457471",
+      "checkpointId": "planning-finalize-22ddd00069545c207fb3df38",
+      "codeBaseline": {
+        "branch": "dev",
+        "checkpointCommit": "966250b0fa6c0c97283066a7c8f4eda0c8a54adb",
+        "checkpointTree": "3b068ec5725d28fa2310bb778908866f50cf9101",
+        "sourceHead": "6c691c5dae51f4a2d993d4852dbfe3f3e530b803"
+      }
+    },
+    "integrationHead": "966250b0fa6c0c97283066a7c8f4eda0c8a54adb",
+    "delivery": null
+  },
+  "actions": [
+    {
+      "id": "act-b43e5967522c8a9d85f3db4e965a73abf270d91f",
+      "workflowId": "wf-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+      "kind": "prepare_workflow",
+      "input": {
+        "integrationRef": "refs/heads/dsh/workflow/ukr-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+        "baseCommit": "966250b0fa6c0c97283066a7c8f4eda0c8a54adb",
+        "planning": {
+          "checkpointId": "planning-finalize-22ddd00069545c207fb3df38",
+          "snapshotDigest": "e5ec00e1235a847e2ee85828c2658484ecd7c89cfaa07feaf130a27f938af792",
+          "registryDigest": "6cd9acc95787634b1a0ce004cfaed68adf92ec0eb0d3a8805e5dd231aeaf1d13",
+          "parentVersion": 0,
+          "sources": {
+            "snapshotDigest": "e5ec00e1235a847e2ee85828c2658484ecd7c89cfaa07feaf130a27f938af792",
+            "sourceDigest": "f0f2451a886f314ebe5cef3d8ac815d922b0cdb1263e3c48a93dabbd90457471",
+            "checkpointId": "planning-finalize-22ddd00069545c207fb3df38",
+            "codeBaseline": {
+              "branch": "dev",
+              "checkpointCommit": "966250b0fa6c0c97283066a7c8f4eda0c8a54adb",
+              "checkpointTree": "3b068ec5725d28fa2310bb778908866f50cf9101",
+              "sourceHead": "6c691c5dae51f4a2d993d4852dbfe3f3e530b803"
+            }
+          },
+          "authorization": {
+            "scope": "implementation",
+            "sourceId": "a0faa8c9-2465-4f0c-a008-217333d4a658"
+          }
+        }
+      },
+      "inputDigest": "4067b50e1bbc896d3078b5daf3a4f2c1937c46f1a4d34963103908b6956edf7d",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789279385526,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "a0167862-71df-4168-8337-5367b647a22f",
+        "startedAt": 1789279385566
+      },
+      "observation": null,
+      "evidence": null,
+      "result": {
+        "integrationRef": "refs/heads/dsh/workflow/ukr-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+        "baseCommit": "966250b0fa6c0c97283066a7c8f4eda0c8a54adb",
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/act-b43e5967522c8a9d85f3db4e965a73abf270d91f-prepared/result.json"
+      },
+      "admitted": true,
+      "locks": [
+        "project:/Volumes/LargeStorage/code/Coinhub_Online_Demo:integration"
+      ],
+      "occupiesSlot": false,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789281185548,
+      "observationCount": 0,
+      "admittedAt": 1789279385548,
+      "completedAt": 1789279385674
+    },
+    {
+      "id": "act-fbee79d6f06e6611c32cc481f5deb5e880ede5a5",
+      "workflowId": "wf-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+      "kind": "plan",
+      "input": {
+        "checkpointId": "planning-finalize-22ddd00069545c207fb3df38",
+        "snapshotDigest": "e5ec00e1235a847e2ee85828c2658484ecd7c89cfaa07feaf130a27f938af792",
+        "registryDigest": "6cd9acc95787634b1a0ce004cfaed68adf92ec0eb0d3a8805e5dd231aeaf1d13",
+        "parentVersion": 0,
+        "sources": {
+          "snapshotDigest": "e5ec00e1235a847e2ee85828c2658484ecd7c89cfaa07feaf130a27f938af792",
+          "sourceDigest": "f0f2451a886f314ebe5cef3d8ac815d922b0cdb1263e3c48a93dabbd90457471",
+          "checkpointId": "planning-finalize-22ddd00069545c207fb3df38",
+          "codeBaseline": {
+            "branch": "dev",
+            "checkpointCommit": "966250b0fa6c0c97283066a7c8f4eda0c8a54adb",
+            "checkpointTree": "3b068ec5725d28fa2310bb778908866f50cf9101",
+            "sourceHead": "6c691c5dae51f4a2d993d4852dbfe3f3e530b803"
+          }
+        },
+        "authorization": {
+          "scope": "implementation",
+          "sourceId": "a0faa8c9-2465-4f0c-a008-217333d4a658"
+        }
+      },
+      "inputDigest": "c615f02dd940f66f0360443f36886de95ffab2988b63fe69ac47032bc58dd264",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789279385674,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "cf796fb4-f693-4140-8024-5b347fab63bb",
+        "startedAt": 1789279385702
+      },
+      "observation": null,
+      "evidence": {
+        "handleId": "owner-a5ac8cda06dbbab32fee5a7f036cf5cff15e3ef4",
+        "taskId": "act-fbee79d6f06e6611c32cc481f5deb5e880ede5a5",
+        "attemptId": "act-fbee79d6f06e6611c32cc481f5deb5e880ede5a5",
+        "planDigest": "c615f02dd940f66f0360443f36886de95ffab2988b63fe69ac47032bc58dd264",
+        "promptId": "owner-a5ac8cda06dbbab32fee5a7f036cf5cff15e3ef4",
+        "sessionId": "owner-a5ac8cda06dbbab32fee5a7f036cf5cff15e3ef4"
+      },
+      "result": {
+        "plan": {
+          "contract": "DSH_PLAN_V2",
+          "executable": true,
+          "registryDigest": "6cd9acc95787634b1a0ce004cfaed68adf92ec0eb0d3a8805e5dd231aeaf1d13",
+          "summary": "Implement the offline deterministic npm-script readiness precheck with the existing build-tooling owner, independently author black-box coverage, document user-facing behavior, then run quality-owned integrated verification. The snapshot has one ready implementation fragment and no blocked fragments, ticket dependencies, or contracts.",
+          "planningBindings": {
+            "contract": "DSH_PLANNING_BINDINGS_V1",
+            "snapshotId": "snapshot-planning-finalize-22ddd00069545c207fb3df38",
+            "sourceDigest": "f0f2451a886f314ebe5cef3d8ac815d922b0cdb1263e3c48a93dabbd90457471",
+            "tasks": [
+              {
+                "taskId": "implement-offline-precheck-cli",
+                "tickets": [
+                  {
+                    "id": "OFFLINE-PRECHECK-001",
+                    "revision": "R2",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": []
+              },
+              {
+                "taskId": "document-offline-precheck",
+                "tickets": [
+                  {
+                    "id": "OFFLINE-PRECHECK-001",
+                    "revision": "R2",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": []
+              },
+              {
+                "taskId": "author-offline-precheck-blackbox-tests",
+                "tickets": [
+                  {
+                    "id": "OFFLINE-PRECHECK-001",
+                    "revision": "R2",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": []
+              },
+              {
+                "taskId": "verify-offline-precheck-integration",
+                "tickets": [
+                  {
+                    "id": "OFFLINE-PRECHECK-001",
+                    "revision": "R2",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": []
+              }
+            ]
+          },
+          "owners": [
+            {
+              "id": "build-tooling",
+              "name": "构建与工程配置",
+              "description": "负责根目录 npm 工作区清单、TypeScript/Vite 配置及可复用开发构建脚本这一稳定工程边界。",
+              "scope": [
+                "package.json",
+                "package-lock.json",
+                "tsconfig.json",
+                "tsconfig.node.json",
+                "tsconfig.extension.json",
+                "vite.config.ts",
+                "scripts/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "quality-automation",
+              "name": "质量自动化",
+              "description": "负责独立于产品实现的本地测试框架、版本化 fixture、fake 场景、旅程断言和脱敏测试产物。",
+              "scope": [
+                "tests/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "product-docs",
+              "name": "产品与验收文档",
+              "description": "负责产品合同、集成资料、规格、Ticket、计划记录和可审计验收证据文档。",
+              "scope": [
+                "README.md",
+                "CONTEXT.md",
+                "CONTEXT-MAP.md",
+                "docs/**",
+                "api-doc/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            }
+          ],
+          "verifications": [
+            {
+              "id": "cli-root-smoke",
+              "run": [
+                "node scripts/offline-acceptance-precheck.mjs package.json"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "documentation-content",
+              "run": [
+                "node --input-type=module -e \"import {readFileSync} from 'node:fs'; const s=readFileSync('README.md','utf8'); if(!s.includes('offline')||!s.includes('package.json')||!s.includes('ready')) process.exit(1);\""
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "blackbox-test-syntax",
+              "run": [
+                "node --check tests/offline-acceptance-precheck.test.mjs"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "blackbox-suite",
+              "run": [
+                "node --test tests/offline-acceptance-precheck.test.mjs"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "root-cli-repeatability",
+              "run": [
+                "node --input-type=module -e \"import {spawnSync} from 'node:child_process'; const run=()=>spawnSync(process.execPath,['scripts/offline-acceptance-precheck.mjs','package.json'],{encoding:'utf8'}); const a=run(), b=run(); if(a.status!==0||b.status!==0||a.stdout!==b.stdout||a.stderr!==b.stderr) process.exit(1);\""
+              ],
+              "cwd": "."
+            }
+          ],
+          "tasks": [
+            {
+              "id": "implement-offline-precheck-cli",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Implement deterministic offline readiness CLI and npm entry",
+              "dependsOn": [],
+              "write": [
+                "scripts/offline-acceptance-precheck.mjs",
+                "package.json"
+              ],
+              "verify": [
+                "cli-root-smoke"
+              ],
+              "done": [
+                "A Node-only CLI reads the root package.json by default or one supplied package.json path, emits deterministic JSON, and exits 0 only when typecheck, build, and build:ext are non-empty strings.",
+                "The root npm manifest exposes an argument-forwarding npm entry for the CLI.",
+                "The implementation only reads the selected JSON file and never invokes checked scripts, services, network, or credentials."
+              ],
+              "priority": 0,
+              "onFailure": {
+                "action": "notify_main"
+              },
+              "onBlocked": {
+                "action": "notify_main"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              }
+            },
+            {
+              "id": "document-offline-precheck",
+              "role": "work",
+              "ownerId": "product-docs",
+              "title": "Document CLI usage and offline result semantics",
+              "dependsOn": [
+                "implement-offline-precheck-cli"
+              ],
+              "write": [
+                "README.md"
+              ],
+              "verify": [
+                "documentation-content"
+              ],
+              "done": [
+                "User documentation states the npm command, optional package.json path, stable JSON ready/error semantics and success/non-success exit-code semantics.",
+                "Documentation explicitly records that the checker is offline, read-only, and does not execute typecheck, build, or build:ext."
+              ],
+              "priority": 0,
+              "onFailure": {
+                "action": "notify_main"
+              },
+              "onBlocked": {
+                "action": "notify_main"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              }
+            },
+            {
+              "id": "author-offline-precheck-blackbox-tests",
+              "role": "work",
+              "ownerId": "quality-automation",
+              "title": "Author independent Node black-box fixtures and tests",
+              "dependsOn": [
+                "implement-offline-precheck-cli"
+              ],
+              "write": [
+                "tests/offline-acceptance-precheck.test.mjs"
+              ],
+              "verify": [
+                "blackbox-test-syntax"
+              ],
+              "done": [
+                "A native Node black-box test invokes the actual completed npm/CLI entry against fixtures and verifies success, default and supplied paths, missing script, empty/whitespace script, non-string script, absent input, malformed JSON, and repeat-run JSON/exit-code stability.",
+                "Fixtures/assertions prove marker scripts are not executed.",
+                "This producer only syntax-checks its test artifact and does not run the downstream scenario before final verification."
+              ],
+              "priority": 0,
+              "onFailure": {
+                "action": "notify_main"
+              },
+              "onBlocked": {
+                "action": "notify_main"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              }
+            },
+            {
+              "id": "verify-offline-precheck-integration",
+              "role": "verify",
+              "ownerId": "quality-automation",
+              "title": "Run black-box acceptance and repeatability verification",
+              "dependsOn": [
+                "author-offline-precheck-blackbox-tests",
+                "document-offline-precheck"
+              ],
+              "write": [],
+              "verify": [
+                "blackbox-suite",
+                "root-cli-repeatability"
+              ],
+              "done": [
+                "The independent black-box suite passes after its producer task has completed.",
+                "Two direct identical CLI runs against the root manifest produce identical stdout and successful exit status.",
+                "The completed implementation, documentation, and black-box evidence jointly cover AC-01, AC-02, AC-03, and AC-04."
+              ],
+              "priority": 0,
+              "onFailure": {
+                "action": "notify_main"
+              },
+              "onBlocked": {
+                "action": "notify_main"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              }
+            }
+          ]
+        },
+        "snapshotDigest": "e5ec00e1235a847e2ee85828c2658484ecd7c89cfaa07feaf130a27f938af792",
+        "packagesRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/packages-145b7df1562eea71ae4b4abb6710180558f878d5051a56110b8573f6a78bf053/result.json",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-0aa0cebc2cff3d5555d05bdcb9759e61805d231f5f5efbf40035f62366b6ea11",
+        "sessionId": "owner-a5ac8cda06dbbab32fee5a7f036cf5cff15e3ef4",
+        "promptId": "owner-a5ac8cda06dbbab32fee5a7f036cf5cff15e3ef4",
+        "executionSettled": true,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-a5ac8cda06dbbab32fee5a7f036cf5cff15e3ef4/result.json"
+      },
+      "admitted": true,
+      "locks": [],
+      "occupiesSlot": true,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789281185689,
+      "observationCount": 0,
+      "admittedAt": 1789279385689,
+      "completedAt": 1789279633738
+    },
+    {
+      "id": "act-8eeb700fd2f15fc6406492e8c0f566b3bf52f495",
+      "workflowId": "wf-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+      "kind": "review_plan",
+      "input": {
+        "checkpointId": "planning-finalize-22ddd00069545c207fb3df38",
+        "snapshotDigest": "e5ec00e1235a847e2ee85828c2658484ecd7c89cfaa07feaf130a27f938af792",
+        "registryDigest": "6cd9acc95787634b1a0ce004cfaed68adf92ec0eb0d3a8805e5dd231aeaf1d13",
+        "parentVersion": 0,
+        "sources": {
+          "snapshotDigest": "e5ec00e1235a847e2ee85828c2658484ecd7c89cfaa07feaf130a27f938af792",
+          "sourceDigest": "f0f2451a886f314ebe5cef3d8ac815d922b0cdb1263e3c48a93dabbd90457471",
+          "checkpointId": "planning-finalize-22ddd00069545c207fb3df38",
+          "codeBaseline": {
+            "branch": "dev",
+            "checkpointCommit": "966250b0fa6c0c97283066a7c8f4eda0c8a54adb",
+            "checkpointTree": "3b068ec5725d28fa2310bb778908866f50cf9101",
+            "sourceHead": "6c691c5dae51f4a2d993d4852dbfe3f3e530b803"
+          }
+        },
+        "authorization": {
+          "scope": "implementation",
+          "sourceId": "a0faa8c9-2465-4f0c-a008-217333d4a658"
+        },
+        "plan": {
+          "contract": "DSH_PLAN_V2",
+          "executable": true,
+          "registryDigest": "6cd9acc95787634b1a0ce004cfaed68adf92ec0eb0d3a8805e5dd231aeaf1d13",
+          "summary": "Implement the offline deterministic npm-script readiness precheck with the existing build-tooling owner, independently author black-box coverage, document user-facing behavior, then run quality-owned integrated verification. The snapshot has one ready implementation fragment and no blocked fragments, ticket dependencies, or contracts.",
+          "planningBindings": {
+            "contract": "DSH_PLANNING_BINDINGS_V1",
+            "snapshotId": "snapshot-planning-finalize-22ddd00069545c207fb3df38",
+            "sourceDigest": "f0f2451a886f314ebe5cef3d8ac815d922b0cdb1263e3c48a93dabbd90457471",
+            "tasks": [
+              {
+                "taskId": "implement-offline-precheck-cli",
+                "tickets": [
+                  {
+                    "id": "OFFLINE-PRECHECK-001",
+                    "revision": "R2",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": []
+              },
+              {
+                "taskId": "document-offline-precheck",
+                "tickets": [
+                  {
+                    "id": "OFFLINE-PRECHECK-001",
+                    "revision": "R2",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": []
+              },
+              {
+                "taskId": "author-offline-precheck-blackbox-tests",
+                "tickets": [
+                  {
+                    "id": "OFFLINE-PRECHECK-001",
+                    "revision": "R2",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": []
+              },
+              {
+                "taskId": "verify-offline-precheck-integration",
+                "tickets": [
+                  {
+                    "id": "OFFLINE-PRECHECK-001",
+                    "revision": "R2",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": []
+              }
+            ]
+          },
+          "owners": [
+            {
+              "id": "build-tooling",
+              "name": "构建与工程配置",
+              "description": "负责根目录 npm 工作区清单、TypeScript/Vite 配置及可复用开发构建脚本这一稳定工程边界。",
+              "scope": [
+                "package.json",
+                "package-lock.json",
+                "tsconfig.json",
+                "tsconfig.node.json",
+                "tsconfig.extension.json",
+                "vite.config.ts",
+                "scripts/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "quality-automation",
+              "name": "质量自动化",
+              "description": "负责独立于产品实现的本地测试框架、版本化 fixture、fake 场景、旅程断言和脱敏测试产物。",
+              "scope": [
+                "tests/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "product-docs",
+              "name": "产品与验收文档",
+              "description": "负责产品合同、集成资料、规格、Ticket、计划记录和可审计验收证据文档。",
+              "scope": [
+                "README.md",
+                "CONTEXT.md",
+                "CONTEXT-MAP.md",
+                "docs/**",
+                "api-doc/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            }
+          ],
+          "verifications": [
+            {
+              "id": "cli-root-smoke",
+              "run": [
+                "node scripts/offline-acceptance-precheck.mjs package.json"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "documentation-content",
+              "run": [
+                "node --input-type=module -e \"import {readFileSync} from 'node:fs'; const s=readFileSync('README.md','utf8'); if(!s.includes('offline')||!s.includes('package.json')||!s.includes('ready')) process.exit(1);\""
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "blackbox-test-syntax",
+              "run": [
+                "node --check tests/offline-acceptance-precheck.test.mjs"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "blackbox-suite",
+              "run": [
+                "node --test tests/offline-acceptance-precheck.test.mjs"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "root-cli-repeatability",
+              "run": [
+                "node --input-type=module -e \"import {spawnSync} from 'node:child_process'; const run=()=>spawnSync(process.execPath,['scripts/offline-acceptance-precheck.mjs','package.json'],{encoding:'utf8'}); const a=run(), b=run(); if(a.status!==0||b.status!==0||a.stdout!==b.stdout||a.stderr!==b.stderr) process.exit(1);\""
+              ],
+              "cwd": "."
+            }
+          ],
+          "tasks": [
+            {
+              "id": "implement-offline-precheck-cli",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Implement deterministic offline readiness CLI and npm entry",
+              "dependsOn": [],
+              "write": [
+                "scripts/offline-acceptance-precheck.mjs",
+                "package.json"
+              ],
+              "verify": [
+                "cli-root-smoke"
+              ],
+              "done": [
+                "A Node-only CLI reads the root package.json by default or one supplied package.json path, emits deterministic JSON, and exits 0 only when typecheck, build, and build:ext are non-empty strings.",
+                "The root npm manifest exposes an argument-forwarding npm entry for the CLI.",
+                "The implementation only reads the selected JSON file and never invokes checked scripts, services, network, or credentials."
+              ],
+              "priority": 0,
+              "onFailure": {
+                "action": "notify_main"
+              },
+              "onBlocked": {
+                "action": "notify_main"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              }
+            },
+            {
+              "id": "document-offline-precheck",
+              "role": "work",
+              "ownerId": "product-docs",
+              "title": "Document CLI usage and offline result semantics",
+              "dependsOn": [
+                "implement-offline-precheck-cli"
+              ],
+              "write": [
+                "README.md"
+              ],
+              "verify": [
+                "documentation-content"
+              ],
+              "done": [
+                "User documentation states the npm command, optional package.json path, stable JSON ready/error semantics and success/non-success exit-code semantics.",
+                "Documentation explicitly records that the checker is offline, read-only, and does not execute typecheck, build, or build:ext."
+              ],
+              "priority": 0,
+              "onFailure": {
+                "action": "notify_main"
+              },
+              "onBlocked": {
+                "action": "notify_main"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              }
+            },
+            {
+              "id": "author-offline-precheck-blackbox-tests",
+              "role": "work",
+              "ownerId": "quality-automation",
+              "title": "Author independent Node black-box fixtures and tests",
+              "dependsOn": [
+                "implement-offline-precheck-cli"
+              ],
+              "write": [
+                "tests/offline-acceptance-precheck.test.mjs"
+              ],
+              "verify": [
+                "blackbox-test-syntax"
+              ],
+              "done": [
+                "A native Node black-box test invokes the actual completed npm/CLI entry against fixtures and verifies success, default and supplied paths, missing script, empty/whitespace script, non-string script, absent input, malformed JSON, and repeat-run JSON/exit-code stability.",
+                "Fixtures/assertions prove marker scripts are not executed.",
+                "This producer only syntax-checks its test artifact and does not run the downstream scenario before final verification."
+              ],
+              "priority": 0,
+              "onFailure": {
+                "action": "notify_main"
+              },
+              "onBlocked": {
+                "action": "notify_main"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              }
+            },
+            {
+              "id": "verify-offline-precheck-integration",
+              "role": "verify",
+              "ownerId": "quality-automation",
+              "title": "Run black-box acceptance and repeatability verification",
+              "dependsOn": [
+                "author-offline-precheck-blackbox-tests",
+                "document-offline-precheck"
+              ],
+              "write": [],
+              "verify": [
+                "blackbox-suite",
+                "root-cli-repeatability"
+              ],
+              "done": [
+                "The independent black-box suite passes after its producer task has completed.",
+                "Two direct identical CLI runs against the root manifest produce identical stdout and successful exit status.",
+                "The completed implementation, documentation, and black-box evidence jointly cover AC-01, AC-02, AC-03, and AC-04."
+              ],
+              "priority": 0,
+              "onFailure": {
+                "action": "notify_main"
+              },
+              "onBlocked": {
+                "action": "notify_main"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              }
+            }
+          ]
+        },
+        "planDigest": "5a7c8bac6a1583edee7e54dd1d7ff240971444cc4ad27d09f90477077c562e80",
+        "packagesRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/packages-145b7df1562eea71ae4b4abb6710180558f878d5051a56110b8573f6a78bf053/result.json",
+        "plannerEvidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-a5ac8cda06dbbab32fee5a7f036cf5cff15e3ef4/result.json"
+      },
+      "inputDigest": "7f19284d319e433fc0566be339f6d74d1383b6988b16f0c83c10edba58769d29",
+      "attemptId": null,
+      "status": "cancelled",
+      "createdAt": 1789279633738,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "9b825480-5f08-4aa9-8a20-95d5cb309d08",
+        "startedAt": 1789279633797
+      },
+      "observation": null,
+      "evidence": {
+        "handleId": "owner-686b2cf4327f534254d14181672a2afc376e3cc4",
+        "taskId": "act-8eeb700fd2f15fc6406492e8c0f566b3bf52f495",
+        "attemptId": "act-8eeb700fd2f15fc6406492e8c0f566b3bf52f495",
+        "planDigest": "7f19284d319e433fc0566be339f6d74d1383b6988b16f0c83c10edba58769d29",
+        "promptId": "owner-686b2cf4327f534254d14181672a2afc376e3cc4",
+        "sessionId": "owner-686b2cf4327f534254d14181672a2afc376e3cc4"
+      },
+      "result": null,
+      "admitted": true,
+      "locks": [],
+      "occupiesSlot": true,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789281433779,
+      "observationCount": 0,
+      "admittedAt": 1789279633779,
+      "stopRequested": true,
+      "failure": "Persisted action stopped",
+      "stopDeadlineAt": 1789279670801,
+      "quarantined": false,
+      "termination": {
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-ce695a25ee9d3e608de39d602457b9e61c50429c42a0b606cabab1e59f96afaa",
+        "executionSettled": true,
+        "targetActionId": "act-8eeb700fd2f15fc6406492e8c0f566b3bf52f495"
+      }
+    },
+    {
+      "id": "act-0add2ce59c2d717bfa099a1ace1b39fdc9ffdf43",
+      "workflowId": "wf-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+      "kind": "stop_execution",
+      "input": {
+        "targetActionId": "act-8eeb700fd2f15fc6406492e8c0f566b3bf52f495",
+        "reason": "cancelled"
+      },
+      "inputDigest": "c7bde72402bd618c57569df914da8ddece85df725f81616973a808f3e06039ae",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789279640801,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "77b9e49c-6285-4a74-b6cf-881d3da6584b",
+        "startedAt": 1789279640942
+      },
+      "observation": null,
+      "evidence": null,
+      "result": {
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-ce695a25ee9d3e608de39d602457b9e61c50429c42a0b606cabab1e59f96afaa",
+        "executionSettled": true,
+        "targetActionId": "act-8eeb700fd2f15fc6406492e8c0f566b3bf52f495"
+      },
+      "admitted": true,
+      "locks": [],
+      "occupiesSlot": false,
+      "deadlineMs": 30000,
+      "deadlineAt": 1789279670837,
+      "observationCount": 0,
+      "admittedAt": 1789279640837,
+      "completedAt": 1789279641045
+    },
+    {
+      "id": "act-ada4fea681754f35d9d82fdb134a3ae2f5fef117",
+      "workflowId": "wf-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+      "kind": "notify_main",
+      "input": {
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "reason": "execution_failure",
+        "detail": {
+          "actionId": "act-8eeb700fd2f15fc6406492e8c0f566b3bf52f495",
+          "reason": "Persisted action stopped"
+        }
+      },
+      "inputDigest": "f4ea5171b8334ec84ddfa35306408c1e22c43b24f33719bcee2c870558f4e5ae",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789279640916,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "62499246-6b24-40fa-b68a-4eaef964bc27",
+        "startedAt": 1789279641007
+      },
+      "observation": null,
+      "evidence": null,
+      "result": {
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "messageId": "act-ada4fea681754f35d9d82fdb134a3ae2f5fef117",
+        "persisted": true
+      },
+      "admitted": true,
+      "locks": [],
+      "occupiesSlot": false,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789281440988,
+      "observationCount": 0,
+      "admittedAt": 1789279640988,
+      "completedAt": 1789279641130
+    }
+  ],
+  "observedPlannerErrors": [
+    "verification(blackbox-suite).cwd 必须是仓库相对路径",
+    "task(implement-offline-precheck-cli).verify[0] 的格式不正确：node scripts/offline-acceptance-precheck.mjs package.json",
+    "task(implement-offline-precheck-cli).resources[0] 的资源身份格式不正确：OFFLINE-PRECHECK-001 implementation fragment",
+    "task(implement-offline-precheck-cli).entry[0] 的格式不正确：The supplied ready implementation fragment is available.",
+    "task(implement-offline-precheck-cli).verify 不能为空；可执行 work 任务必须绑定至少一个验证"
+  ],
+  "testInterventions": [
+    "Rejected contradictory initial Spec and gave detailed feedback in native question",
+    "Repeated feedback in conversation because NOT_GRANTED omitted native rejection detail",
+    "Approved corrected R2 native question",
+    "Requested cancel after repeated Planner schema failures; Planner succeeded before cancellation took effect, review_plan was cancelled",
+    "Requested one final workflow_status because main thread continued waiting after persisted cancellation notice"
+  ],
+  "completeUkrAcceptance": false,
+  "productionCutover": false,
+  "settings": {
+    "checked": 11,
+    "changes": []
+  },
+  "finalBrowserConfirmed": {
+    "status": "cancelled",
+    "terminal": true,
+    "runningTasks": 0,
+    "pendingTasks": 0,
+    "rootStoppedWaiting": true,
+    "requiredManualStatusQuery": true
+  }
+}

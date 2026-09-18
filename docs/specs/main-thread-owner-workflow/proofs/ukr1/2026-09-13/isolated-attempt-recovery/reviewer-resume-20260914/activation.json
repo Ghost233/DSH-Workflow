@@ -1,0 +1,31 @@
+{
+  "planVersion": 3,
+  "review": {
+    "contract": "DSH_PLAN_REVIEW_V1",
+    "status": "passed",
+    "summary": "R10 Spec/Ticket acceptance criteria and ACCEPTANCE-SUITE-RUNNER/R2 are concretely routed through executable, owner-scoped leaf tasks. The DAG seeds the runner before any suite use; separates API/Worker implementation from tests/** behavioral producers; places browser-dependent producers after the local browser harness; revalidates registered consumers after each runner change; and reserves all-suite, typechecks, and Web/extension builds for the final integration gate. The revised actual Panel and host-parity producer commands invoke scripts/playwright-acceptance.mjs, while the relevant registry tasks explicitly require the same wrapper dispatch, satisfying the project-local browser-path contract without treating future execution results as plan-review prerequisites. The worker owner-feedback record was considered as non-blocking execution evidence: the revised task uses test-injected Worker bindings and correctly does not expand its required deliverable to wrangler.local.jsonc.",
+    "issues": [],
+    "obligationClosures": [
+      {
+        "obligationId": "ACCEPTANCE-SUITE-RUNNER-R2-browser-wrapper-binding",
+        "kind": "plan_task_executable",
+        "planDigest": "41adfe2a80b7fa2e4f6008a95339cf34fdca18837e12047c66186d2ebafce0ef",
+        "taskId": "provision_browser_ui_harness"
+      }
+    ]
+  },
+  "exactDagPreserved": true,
+  "activePlanMatchesReviewedDag": true,
+  "seedRecordPreserved": true,
+  "foundationRecordPreserved": true,
+  "retainedIsolatedAttemptPreserved": true,
+  "integrationHead": "437424b007e63e5fa36dcca1099e9b5bcd961a4c",
+  "newPlannerActions": 0,
+  "newAttempts": [
+    {
+      "id": "try-079e32f49bbfe7a46e3776f15df75212450c55d8",
+      "taskId": "provision_browser_ui_harness",
+      "phase": "executing"
+    }
+  ]
+}

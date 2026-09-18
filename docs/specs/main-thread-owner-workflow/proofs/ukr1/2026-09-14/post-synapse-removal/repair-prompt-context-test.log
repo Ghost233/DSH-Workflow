@@ -1,0 +1,11 @@
+✔ projects a large repair into exact model-facing instructions and bounded evidence (3.148584ms)
+✔ Owner and its exact Reviewer resolve the same immutable persisted repair (12.139625ms)
+✔ missing repair stays absent and mismatched persisted identities do not expose repair (32.3575ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 123.280125

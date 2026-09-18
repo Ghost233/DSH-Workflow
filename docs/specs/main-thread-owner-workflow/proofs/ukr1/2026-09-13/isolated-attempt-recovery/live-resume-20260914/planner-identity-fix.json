@@ -1,0 +1,44 @@
+{
+  "status": "targeted_passed_live_loaded",
+  "observedAt": "2026-09-13T18:50:06.509614+00:00",
+  "finding": "Runtime required the model to transcribe authoritative Registry identity; live planner repeatedly mixed current and previous digest bytes.",
+  "fix": "Native planner schema allows omission; validate binds missing registryDigest only after immutable admission validation. Explicit mismatch, source tampering, and Owner scope change remain rejected. Stored DAG identity remains mandatory.",
+  "red": {
+    "passed": 8,
+    "failed": 2
+  },
+  "final": {
+    "passed": 21,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 46930.158083
+  },
+  "intermediateFailure": {
+    "passed": 13,
+    "failed": 8,
+    "reason": "Nested sandbox-exec denied by outer test sandbox; full native tests rerun outside outer sandbox, DSH isolation unchanged."
+  },
+  "sourceHashes": {
+    "owner-workflow-plugin/src/kernel-role-contracts.mjs": "fc2083008ac949fa1839d22a154ecd8012e403df2fea9c68a0c82bfa62f0ce02",
+    "owner-workflow-plugin/src/native-planning-effects.mjs": "c8317d022b0f934da1f3b16635a3ec3cfa37ca5dfd67f6382f16578a1214c317",
+    "owner-workflow-plugin/test/kernel-plan-contract.test.mjs": "62001b09ee1c6f9e017cba1b4b9083c31f7cc53b9f4ef1d560597f7b8c1bef73",
+    "owner-workflow-plugin/test/native-owner-planning-package.test.mjs": "6c405eada26af6a74e55dddc3eda61f323bc0cd24a711de0099ced592b1d47db",
+    "owner-workflow-plugin/test/fixtures/kernel-planning-smoke.mjs": "62123db4656f11532619cdffc7acff03090be725ed170fb49729be3860cce9bb"
+  },
+  "liveLoaded": true,
+  "liveReplanAfterFix": false,
+  "sameConfigurationFingerprints": true,
+  "sameTasks": true,
+  "remainingRecovery": 3,
+  "health": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "229f815c-f2aa-4c02-a286-bf084524af57",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  }
+}

@@ -1,0 +1,20 @@
+✖ seals actual uncommitted source once, verifies independently and resumes from receipts (387.6525ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 470.12875
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/submission-pipeline.test.mjs:84:1
+✖ seals actual uncommitted source once, verifies independently and resumes from receipts (387.6525ms)
+  TypeError: Cannot read properties of undefined (reading 'bindings')
+      at file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/submission-pipeline.test.mjs:105:74
+      at Array.map (<anonymous>)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/submission-pipeline.test.mjs:105:35)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)

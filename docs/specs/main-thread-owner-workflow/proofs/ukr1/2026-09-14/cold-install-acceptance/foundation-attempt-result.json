@@ -1,0 +1,100 @@
+{
+  "attemptId": "try-ed4b8c924108e159197190181c8e97da8ffdc3ca",
+  "candidateDigest": "f59e9d9692d9e54e3165a5262d8aa153e456b6f93852644f1096d285909c970b",
+  "phase": "failed",
+  "verification": {
+    "contentDigest": "f59e9d9692d9e54e3165a5262d8aa153e456b6f93852644f1096d285909c970b",
+    "passed": false,
+    "results": [
+      {
+        "contract": "DSH_VERIFICATION_RESULT_V1",
+        "verificationId": "foundation_producer",
+        "argv": [
+          "node",
+          "--test",
+          "tests/foundation/**/*.test.mjs"
+        ],
+        "cwd": ".",
+        "contentDigest": "f59e9d9692d9e54e3165a5262d8aa153e456b6f93852644f1096d285909c970b",
+        "exitCode": 0,
+        "enforcement": "full",
+        "ok": true,
+        "timedOut": false,
+        "aborted": false,
+        "stdout": "✔ versioned fixtures are deeply immutable and producers cannot mutate shared data (1.156ms)\n✔ controlled clock, random, retry, auth, interruption, write and trade scripts are deterministic (0.569166ms)\n✔ versioned named unary scenarios are discoverable, deterministic, and isolated (0.332458ms)\n✔ versioned stream scenarios preserve event order, terminal behavior, and instance isolation (0.239625ms)\n✔ local unary and stream fakes reject undeclared external network access (0.182583ms)\n✔ redacted evidence removes sensitive values across whitespace, nested, and delimiter variants (0.899ms)\nℹ tests 6\nℹ suites 0\nℹ pass 6\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 61.587\n",
+        "stderr": "",
+        "passed": true,
+        "commandTermination": {
+          "managedRangeStopped": true,
+          "terminationScope": "dsh-managed-range",
+          "terminationId": "cmd-41f3bed71ec1c91082de48d4bea916039db70b46:managed-range-exit"
+        },
+        "dependencyPreparation": {
+          "bindings": [
+            {
+              "packageDirectory": ".",
+              "key": "9e2789263c2151d12d4077c770f2caa32c73d64dc2b9d982f3ed60c47858a143",
+              "inputDigest": "7ad77a9f0ce1b199adf8447422fed81adc3a499b9fabeef40d128d57f6facb69",
+              "baseDigest": "ae98df921f7165fa5be3aee9bf48c32d46a035c68851f7833d363fe127f883a7",
+              "mode": "readonly-overlay",
+              "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/9e2789263c2151d12d4077c770f2caa32c73d64dc2b9d982f3ed60c47858a143/base",
+              "metrics": {
+                "cacheHit": true,
+                "installRuns": 0,
+                "fullTreeCopies": 0,
+                "overlayLinks": 591,
+                "logicalBytes": 1761456007,
+                "baseHashedBytes": 0,
+                "overlayHashedBytes": 545493,
+                "hashedBytes": 545493,
+                "copiedBytes": 545493,
+                "baseDigestEntries": 0,
+                "overlayDigestEntries": 691,
+                "digestEntries": 691,
+                "hardlinkNormalized": 0,
+                "hardlinkCopiedBytes": 0,
+                "durations": {
+                  "cacheAcquireMs": 1894,
+                  "promoteMs": 0,
+                  "normalizeMs": 0,
+                  "sealMs": 0,
+                  "overlayMs": 294
+                },
+                "validationMode": "sealed-receipt",
+                "fallbackReason": null,
+                "cacheGeneration": null,
+                "installationEnvironment": {
+                  "directories": 22,
+                  "entries": 2073,
+                  "providers": 1896,
+                  "durationMs": 1374
+                }
+              }
+            }
+          ]
+        },
+        "zeroTests": false,
+        "testCount": 6
+      }
+    ],
+    "review": {
+      "passed": false,
+      "contentDigest": "f59e9d9692d9e54e3165a5262d8aa153e456b6f93852644f1096d285909c970b",
+      "reasons": [
+        "The fixed verification was independently rerun successfully: `node --test 'tests/foundation/**/*.test.mjs'` passed all 6 tests (exit code 0). The versioned fixture catalogue, fresh unary/stream scenario instances, local-prefix guard, and deterministic script coverage are otherwise present.",
+        "Rejected because the redaction evidence producer does not preserve a usable evidence representation after it redacts sensitive fields. `redactEvidence()` replaces JSON string values—including output from `produceScenarioEvidence()`—with the unquoted token `[REDACTED]` (tests/foundation/evidence.mjs:13-18). Thus a normal producer call generates invalid JSON, e.g. a JSON value becomes `\"payload\":[REDACTED]`; nested object values also leave unmatched closing braces. The independent probe demonstrated this malformed output. This contradicts its documented promise to “Preserve structure” and prevents consumers from reliably processing the required redacted evidence.",
+        "The supplied redaction test only checks that synthetic secrets are absent; it does not assert that `produceScenarioEvidence()` remains parseable or structurally valid after redaction (tests/foundation/foundation.test.mjs:103-116). The producer and its tests should redact with a valid JSON string/null/sentinel representation and add parseability/structure assertions for nested, whitespace, and delimiter cases."
+      ],
+      "managedRangeStopped": true,
+      "terminationScope": "dsh-managed-range",
+      "terminationId": "range-0f4414f3cbf08896e233f169a1bf81f1a33984621382b87b7b5a6bb7b14113e6",
+      "sessionId": "owner-1bcc2a72a0e27ecde99b39bb9042a213a2fa9154",
+      "promptId": "owner-1bcc2a72a0e27ecde99b39bb9042a213a2fa9154",
+      "executionSettled": true,
+      "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-1bcc2a72a0e27ecde99b39bb9042a213a2fa9154/result.json"
+    },
+    "executionSettled": true
+  },
+  "recoveryUsed": 17,
+  "recoveryLimit": 17
+}

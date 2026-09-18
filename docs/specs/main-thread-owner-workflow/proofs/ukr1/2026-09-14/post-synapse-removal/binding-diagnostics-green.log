@@ -1,0 +1,47 @@
+✔ local Planner patch preserves omitted definitions and rejects edits outside its admitted boundary (2.663667ms)
+✔ a local Planner may create a verification identity only through a real authorized task binding (2.003958ms)
+✔ an R11-sized rejected candidate can add one evidence leaf without rewriting its 18 tasks or 16 verifications (16.36975ms)
+✔ Planner contract accepts an executable plan with no public Owner change (0.657792ms)
+✔ Planner required fields follow normalization defaults plus package compilation (0.095875ms)
+✔ Planner public Owner binding schema is the exact domain-owned shape (0.312084ms)
+✔ omission cannot bypass required or historical public Owner authority (0.328041ms)
+✔ Planner tool contract rejects the five invalid shapes observed in the live workflow (0.450417ms)
+✔ Planner receives frozen requirements without authorization receipts or write journals (0.352291ms)
+✔ Planner and Reviewer receive readable Owner feedback as a non-blocking fact (0.639ms)
+✔ native Planner accepts a bound no-progress report before the formal transition records failure (2283.07975ms)
+✔ native Planner keeps one admitted frozen source across later live checkout changes and rejects binding tampering (2490.604541ms)
+✔ native Owner and candidate Reviewer receive only the same bound task package and direct consumer command contract (2477.875ms)
+✔ public Owner independently reads the contract and consumer before compatible_extension (1068.179209ms)
+✔ public Owner independently reads the contract and consumer before migration_required (538.891167ms)
+✔ public Owner independently reads the contract and consumer before capability_sufficient (632.640542ms)
+✔ public Owner independently reads the contract and consumer before rejected (462.961583ms)
+✔ public Owner independently reads the contract and consumer before facts_missing (724.002792ms)
+✔ public Owner independently reads the contract and consumer before business_decision_required (379.4285ms)
+✔ root public request survives a native contract source revision before independent decision and main notice (5363.213167ms)
+✔ binding diagnostics identify every missing and unknown task: partial-patch (11.446416ms)
+✔ binding diagnostics identify every missing and unknown task: extra-binding (1.614875ms)
+✔ binding diagnostics identify every missing and unknown task: wrong-binding (0.614875ms)
+✔ a retained dispatch keeps its original content-addressed source package and rejects provenance or contract drift (2.766333ms)
+✔ dispatch package compares complete verification definitions by identity without rewriting dispatch order (1.767083ms)
+✔ one-owner packages retain full frozen Ticket/Spec data, shared AC contributors and dependency blockers (1.9345ms)
+✔ compiler rejects unknown-fragment (0.367375ms)
+✔ compiler rejects blocked-fragment (0.264625ms)
+✔ compiler rejects unknown-contract (0.20575ms)
+✔ compiler rejects missing-known-contract (0.355209ms)
+✔ compiler rejects omitted-ready (0.176333ms)
+✔ compiler rejects missing-ticket-edge (0.139958ms)
+✔ compiler rejects task-cycle (0.104125ms)
+✔ compiler rejects wrong-snapshot (0.110125ms)
+✔ compiler rejects wrong-source (0.507209ms)
+✔ compiler rejects mixed-owner-package (0.84ms)
+✔ bindings normalizer rejects duplicate task, Ticket fragment and contract identities without mutating optional absence (0.141833ms)
+✔ completed checkpoint reader returns frozen persisted snapshot without revalidating current planning files (2177.105125ms)
+✔ checkpoint snapshot reader rejects a nonterminal journal without resuming it (618.450375ms)
+ℹ tests 39
+ℹ suites 0
+ℹ pass 39
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9472.352917

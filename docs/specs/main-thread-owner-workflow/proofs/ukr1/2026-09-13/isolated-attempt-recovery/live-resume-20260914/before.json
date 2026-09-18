@@ -1,0 +1,254 @@
+{
+  "id": "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+  "root": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+  "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+  "planVersion": 2,
+  "integrationHead": "1ef4949a3ba76a77d68db7613c72624438a97d8c",
+  "pendingPlanning": {
+    "actionId": "act-30bd15f77aea36f1bb713123180731f114a0dccd",
+    "inputDigest": "d0f70a5c60bb051590e98602f6cba07f26a64e5976022df60fadd9fc94d7ce78"
+  },
+  "recoveryUsed": 8,
+  "policy": {
+    "parallel": 4,
+    "totalRecovery": 12,
+    "issueRecovery": 8,
+    "deadlineMs": 1800000,
+    "terminationWindowMs": 30000
+  },
+  "tasks": {
+    "seed_acceptance_runner": {
+      "id": "seed_acceptance_runner",
+      "definitionDigest": "540e01e1f26d1bf228f9411b5358eee7c9af1a9f62a4183fe22e088605c61142",
+      "generation": 3,
+      "attemptId": "try-37d69dea5c1c97b36bbbfbee169e08779b75da6e",
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "provision_browser_ui_harness": {
+      "id": "provision_browser_ui_harness",
+      "definitionDigest": "b58612738184483611ea6ae8853e515340427de70b4740a85446339011d78b19",
+      "generation": 1,
+      "attemptId": "try-9bce68890f75f4671f5f60fc0d2683c6aaee9503",
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "build_deterministic_foundation": {
+      "id": "build_deterministic_foundation",
+      "definitionDigest": "e6b1d7dfb2c861fd754a4aa0196a79bacb598088b9b265422fcca16be74ca4e0",
+      "generation": 3,
+      "attemptId": "try-5e6b59faeb07b412da627e23178ee16f36566db0",
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "register_foundation_suite": {
+      "id": "register_foundation_suite",
+      "definitionDigest": "5548239d44d642880326bf92aebeba3136cc8eaef8f6538e5ba14a4e4ac5b789",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "inject_api_transport_seams": {
+      "id": "inject_api_transport_seams",
+      "definitionDigest": "498daa7ac4e328970bf39137d8ebc39c124575d776f97b313c1861f08fa457cf",
+      "generation": 2,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "adapt_worker_fake_boundary": {
+      "id": "adapt_worker_fake_boundary",
+      "definitionDigest": "922197296e9eb13502308d0ab7028dbdc070e5424e42902f0cfb166d6c2856ea",
+      "generation": 2,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c",
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4"
+      ]
+    },
+    "prove_network_worker_contracts": {
+      "id": "prove_network_worker_contracts",
+      "definitionDigest": "646b1917536ccc58527cf577af9a8eb8287cad5b1829067ef1577c71633900c2",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "register_network_worker_suites": {
+      "id": "register_network_worker_suites",
+      "definitionDigest": "2306954b92e1e97a09f8bd8b22b71f2a2ecfa906cbf3caf018cdb86b79001c90",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "make_panel_testable": {
+      "id": "make_panel_testable",
+      "definitionDigest": "80ece0af3238519ce8d25c901ab8cb85d0fd8b992338cc8e64216104c1de7b59",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "produce_panel_journeys": {
+      "id": "produce_panel_journeys",
+      "definitionDigest": "43a8a5b166f63b2ccfcacb21df1835ef790a14dae6adee7676ef0134aca8239c",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "register_panel_journey_suites": {
+      "id": "register_panel_journey_suites",
+      "definitionDigest": "be58df985229ca223415171267388c8ad8fff393c10d0b0fbcb086f27cb70c48",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "adapt_web_host_parity": {
+      "id": "adapt_web_host_parity",
+      "definitionDigest": "df55875720a1a964d0aff5b1795e4d79c357956aefda83e30ac3b8edba0fcd8b",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "adapt_extension_host_parity": {
+      "id": "adapt_extension_host_parity",
+      "definitionDigest": "99d68230f61e42ef9f58db153fe7c31aee553b8a6de1f2d5fe3fad236f6a0f26",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "produce_host_parity": {
+      "id": "produce_host_parity",
+      "definitionDigest": "4f7cc3496b467b4925db8ab12d91c95391cb8ff125f3ac07fe1c27ca30fabeb9",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "register_host_parity_and_all": {
+      "id": "register_host_parity_and_all",
+      "definitionDigest": "5e87aa999b3a56474912f5d447285a03f7ed2ea7a196baae9e7a35ea39ea4a19",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    },
+    "integrate_critical_journeys": {
+      "id": "integrate_critical_journeys",
+      "definitionDigest": "a6f11976d3f44dc73080e1bebf97f44c3057f04bfb65a4b2e386b1f137801af2",
+      "generation": 0,
+      "attemptId": null,
+      "inheritedIssueIds": [
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c"
+      ]
+    }
+  },
+  "counts": {
+    "succeeded": 1,
+    "failed": 2,
+    "pending": 13
+  },
+  "observedAt": "2026-09-13T18:21:18.559193+00:00",
+  "hostHealth": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "d4198cc3-3647-47ce-b095-f285444e91b7",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  },
+  "isolatedActions": [
+    {
+      "id": "act-61ad74dae66aae0b91383d27544af20d0f64938a",
+      "attemptId": "try-84c42c9a1bfab47db78d05609603d719dcfd488c",
+      "kind": "verify_candidate",
+      "status": "running",
+      "execution": {
+        "hostId": "e495b6f0-505c-4825-80ce-021eca39c2c8",
+        "token": "62e607e9-80ae-4fb1-aa6c-3ba8fa30e07a",
+        "startedAt": 1789302012693
+      }
+    },
+    {
+      "id": "act-15392f48c4959c9b0eb31df3c6fdc9575a19f720",
+      "attemptId": "try-84c42c9a1bfab47db78d05609603d719dcfd488c",
+      "kind": "stop_execution",
+      "status": "uncertain",
+      "execution": {
+        "hostId": "b3c8817a-37e8-4313-83fc-a3acea61d15d",
+        "token": "8b5d7883-dbe8-4976-8013-1141ec6bd004",
+        "startedAt": 1789307850494
+      }
+    }
+  ]
+}

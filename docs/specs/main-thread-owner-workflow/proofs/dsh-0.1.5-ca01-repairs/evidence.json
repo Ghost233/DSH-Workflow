@@ -1,0 +1,70 @@
+{
+  "recordedAt": "2026-09-12T08:51:31.948307+00:00",
+  "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+  "harnessCommitSha": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "scope": "CA01 test contract migration, startup sampling races, question failure cleanup, adapter test loader, failure-count reporting",
+  "sourceSha256": {
+    "owner-workflow-plugin/src/acceptance-runner.mjs": "61c6a8cc3c55c9405bfcf41bf84c2de89273d8363dc42a8e2f3ed05951470ec6",
+    "owner-workflow-plugin/test/acceptance-runner.test.mjs": "f2482795159c62a7c9a3f988342c5735dc1b16b73d9f65389a4d9b5ffad20f5d",
+    "owner-workflow-plugin/test/owner-attempt-control.test.mjs": "0011672757f568a3ce3a755978904ab7f181c72511b1de3fec3a935a31219d1a",
+    "owner-workflow-plugin/test/runtime-recovery-budget.test.mjs": "33f44a0576a6c6f3e0d21abc97fde08d0238c7afe636d533764bd4667f3db4a0",
+    "owner-workflow-plugin/test/subgraph-recovery-guard.test.mjs": "3e7957c70958467522cdea9544d7e12fd56e6b3606f2111c173cbaef64a7a648",
+    "owner-workflow-plugin/test/operation-harness.test.mjs": "705152b070bbef1526d191e87bda18845a654b2313218ccd627d65436b49a594",
+    "owner-workflow-plugin/test/plugin.test.mjs": "91f40142d1e2417f8b2849ae677ac732f6b62d5e035feb77656a0b86cbc2cfdd",
+    "scripts/run-ca01.mjs": "f558293f20b8b098a854619cbf5f174d29e93fa010e8960c9012b47376c64ee3",
+    "scripts/acceptance-process.mjs": "a17d85c7d7315b466c891f660db7cb101b03711ad64cc8c636d38959838beca1",
+    "scripts/acceptance-process.test.mjs": "a1384d991931e9a8d096fa05a1fab8b1e2cef7c3b8856f775cf46b08462bac15",
+    "sol-efficiency-plugin/test/workspace-loader.mjs": "2ea48832ec41b2b6bf50ef0f5d46f328ba3ae4ce2b95879beb6c3704e1a84b8b"
+  },
+  "artifactSha256": {
+    "operation-controlled-failure.log": "e6b1064d4a28ee8b651878dea57eae530c7bfeb51b52bea455d0b5aeff5cd6f7",
+    "paid-race.json": "690fed85522dd04d92b2bc6721fc14352558bbd0e4859edea43e5a32379e33f4",
+    "paid-recovery-repetitions-5.json": "dc4c955cd0a0e70fd501647f751a53e08068d4fa13946e7235f7746493da9e1b",
+    "counts-before.log": "b2c09e2b202302ecfaf0f6ed660aad1de898f542b245e75ae719635243f32aba",
+    "fixtures-34.log": "27ba3b74b5f07363e3feacc9362a3838ac5c566efa356dba92d3586913afb126",
+    "operation-before.log": "62cc7c39107bf3da7a82963e9c1f99f9b29fd96a883e4c9fca7f92a92a4008f1",
+    "acceptance-10.log": "bb1627996196f71628fee4f6f1b526e7e34b89c3da68ab9944708b3f6943880e",
+    "budget-1.log": "8fc007927b8ece51073349c43bebbee61d86c09c933665b8c64bf667c6f515fc",
+    "adapters-67.log": "810ace6a096fb8bb03a3aed2e43527f3da36786a7db65de67f38b83f7b697bb7"
+  },
+  "checks": {
+    "fixtures": {
+      "tests": 34,
+      "pass": 34
+    },
+    "acceptance": {
+      "tests": 10,
+      "pass": 10
+    },
+    "idleTimeoutRecovery": {
+      "tests": 1,
+      "pass": 1
+    },
+    "projectAdapters": {
+      "tests": 67,
+      "pass": 67
+    },
+    "paidRecoveryRepetitions": {
+      "runs": 5,
+      "pass": 5
+    },
+    "questionFailureCleanup": {
+      "injectedFailureExpected": true,
+      "timedOut": false,
+      "exitCode": 1,
+      "injection": {
+        "source": "owner-workflow-plugin/test/operation-harness.test.mjs",
+        "replace": "assert.equal(checkedDelegated, true)",
+        "with": "assert.fail('Controlled failure while the main question is pending')",
+        "testNamePattern": "native question tool",
+        "processTimeoutMs": 10000
+      }
+    }
+  },
+  "limitations": [
+    "Targeted checks do not replace the separately bound full CA01 run-03.",
+    "Deterministic model adapters; not a live paid-model evaluation.",
+    "External marketplace plugin loading is not covered.",
+    "POSIX process-group cleanup only; Windows descendants not verified."
+  ]
+}

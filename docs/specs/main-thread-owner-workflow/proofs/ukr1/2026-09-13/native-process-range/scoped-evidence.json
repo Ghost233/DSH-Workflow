@@ -1,0 +1,28 @@
+{
+  "contract": "UKR1_SCOPED_PROCESS_RANGE_EVIDENCE_V1",
+  "candidateDigest": "f754724949b0b806ca86d1b607044e98b79ac741eaf9f82490251117f2d3cf3f",
+  "commandExitCode": 0,
+  "result": {
+    "contract": "DSH_NATIVE_RANGE_PROBE_V2",
+    "platform": "darwin",
+    "status": "scoped_receipt_confirmed",
+    "managedRangeStopped": true,
+    "terminationScope": "dsh-managed-range",
+    "claimsAllWritersStopped": false,
+    "finishedBeforeRelease": false,
+    "escapedWriter": true,
+    "receiptAt": 1789275180776,
+    "finishedAtNs": "1789275180782737000",
+    "exitCode": 0,
+    "sandbox": "full",
+    "helperFinished": true,
+    "stderr": ""
+  },
+  "sourceHashes": {
+    "owner-workflow-plugin/src/execution-evidence.mjs": "555c198c48eba50901356a7ee18a7d80748a9799a8126c755d4889f63ee483f7",
+    "owner-workflow-plugin/src/native-command-effects.mjs": "1875ffde84be3acf7024bd8d964800ab07e8ca0fdf8e08b711e39c51b2f7c13d",
+    "owner-workflow-plugin/src/native-session-effects.mjs": "ec44a2a6d0554c795a411c110dba4095cdf9a9017f5c3da3be7b96b70d76c72c",
+    "owner-workflow-plugin/test/fixtures/kernel-process-range-probe.mjs": "4fd5057e4a31c03efc01fd0e80ba3d5f2d6d195cd8ec5c8722e6673478622c3a"
+  },
+  "scope": "Native managed-range receipt only; escaped descendants are deliberately not claimed stopped. Native full sandbox retained."
+}

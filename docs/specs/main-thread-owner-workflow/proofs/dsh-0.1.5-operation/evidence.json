@@ -1,0 +1,37 @@
+{
+  "kind": "development-targeted-validation",
+  "date": "2026-09-12",
+  "dshCommit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "node": "v24.12.0",
+  "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/operation-harness.test.mjs owner-workflow-plugin/test/owner-team-runner.test.mjs owner-workflow-plugin/test/public-owner-decision-session.test.mjs",
+  "result": {
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0
+  },
+  "limits": [
+    "Controlled model transport; real Agent, continuation manager, session query, persistence and Runner.",
+    "Lifecycle listeners match production; full preset boot is not covered.",
+    "Planner test covers creation and messaging, not full planning/revision acceptance.",
+    "Main user input is supplied by the test; real user-question UI is not covered."
+  ],
+  "sha256": {
+    "owner-workflow-plugin/src/runtime.mjs": "bd1c9da50eeb201cbdeb905c336186873a99b6798e720bcfc629b2441e00c80c",
+    "owner-workflow-plugin/src/dsh-execution.mjs": "519fb88d5620534425a06b02352e806b57346cce03ad3accab232e0f74163e79",
+    "owner-workflow-plugin/src/agent-policy.mjs": "0ab00b52d5a2c5ce4af91ab3e5384581abda9b9604f738127c249b649eda316d",
+    "owner-workflow-plugin/index.js": "465c9fa1c7a6523548a36b6a042ec0c802405b040633fd56de1a319c2bf14165",
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "a95b5e9b37a138cbc31c2142d612cd00ad14572d776cc60fac0177be9cd68828",
+    "owner-workflow-plugin/test/operation-harness.test.mjs": "08d2866b327ea260f2750ad161a3cb6e613a48cfee11218ad31a8672842d03bd",
+    "owner-workflow-plugin/test/owner-team-runner.test.mjs": "f8f2a102a9866e9218c4db604e07c69217a0133dfcff330da914a6647a967537",
+    "owner-workflow-plugin/test/public-owner-decision-session.test.mjs": "40dc11f7ccac8ac046dba267ce9b4cd7ab837493f5b8ef7e09c1d3a6364fbb3f",
+    "owner-workflow-plugin/test/control.test.mjs": "f1ddaef09f18a417b867d25d77f5a3f1046ea8c22e68a50d71a0038799d08b5c",
+    "owner-workflow-plugin/test/operation-runtime.test.mjs": "a32fc0ca111a7c2c4f97945cc60d475c7ea63747506c842c73123e13d044417c"
+  },
+  "controlRegression": {
+    "command": "node --test --test-force-exit owner-workflow-plugin/test/control.test.mjs owner-workflow-plugin/test/operation-runtime.test.mjs",
+    "passed": 184,
+    "failed": 0,
+    "skipped": 7,
+    "note": "Existing skips; business regression uses service doubles."
+  }
+}

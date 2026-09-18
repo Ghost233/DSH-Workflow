@@ -1,0 +1,12 @@
+✔ integration hashes a real 1223-entry candidate in bounded Git batches while preserving raw paths and modes (3763.669917ms)
+✔ revised Spec/Tickets merge with integrated Owner code and reconcile the same ref after interruption (702.63875ms)
+✔ actual Git integration preserves the user checkout and reconciles a crash after ref update (722.545792ms)
+✔ a read-only Owner review seals its report into history and worklog without business file changes (666.886417ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5923.885708

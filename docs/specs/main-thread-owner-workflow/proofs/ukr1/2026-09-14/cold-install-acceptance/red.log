@@ -1,0 +1,39 @@
+✖ cold installation owns its deadline after acquisition and still honors external cancellation (1094.483791ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1180.04725
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/dependency-preparation.test.mjs:363:1
+✖ cold installation owns its deadline after acquisition and still honors external cancellation (1094.483791ms)
+  Error: Dependency command range settlement is unconfirmed
+      at withControlLock.signal.signal (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/dependency-preparation.mjs:590:140)
+      at async withControlLock (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/workflow-store.mjs:62:12)
+      ... 3 lines matching cause stack trace ...
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    code: 'EXECUTION_UNCONFIRMED',
+    [cause]: AssertionError [ERR_ASSERTION]: finished acquisition must not cancel an active cold install
+    
+    true !== false
+    
+        at DependencyPreparation.executeCommand (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/dependency-preparation.test.mjs:377:14)
+        at withControlLock.signal.signal (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/dependency-preparation.mjs:570:37)
+        at async withControlLock (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/workflow-store.mjs:62:12)
+        at async DependencyPreparation.prepare (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/dependency-preparation.mjs:510:21)
+        at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/dependency-preparation.test.mjs:382:17)
+        at async Test.run (node:internal/test_runner/test:1113:7)
+        at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+      generatedMessage: false,
+      code: 'ERR_ASSERTION',
+      actual: true,
+      expected: false,
+      operator: 'strictEqual',
+      diff: 'simple'
+    }
+  }

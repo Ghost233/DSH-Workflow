@@ -1,0 +1,27 @@
+{
+  "recordedAt": "2026-09-14T12:28:24.290922",
+  "lockfileGeneratedAndValidated": true,
+  "nativeApplicationPendingUntil": "2026-09-14T12:39:23.831000",
+  "ownerCommandsReadOnlySource": "owner-workflow-plugin/src/owner-access.mjs:30",
+  "repairAdmissionSource": "owner-workflow-plugin/src/workflow-engine.mjs:1882",
+  "recoveryUsed": 15,
+  "recoveryLimit": 16,
+  "diagnosticInstall": {
+    "argv": [
+      "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+      "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/lib/node_modules/npm/bin/npm-cli.js",
+      "ci",
+      "--foreground-scripts",
+      "--cache",
+      "/private/tmp/dsh-lockfile-generation-_fev9co5/npm-cache"
+    ],
+    "cwd": "/private/tmp/dsh-lockfile-generation-_fev9co5",
+    "exitCode": -15,
+    "timedOut": true,
+    "elapsedSeconds": 300.024,
+    "diagnosticOnly": true,
+    "fixedWorkflowVerification": false,
+    "foregroundLifecycleLogging": true
+  },
+  "downloadObservation": "Chromium 162.3 MiB completed; Headless Shell 91.1 MiB reached 40% before 300s timeout. This reproduction establishes active downloading, not a dead loop. Formal workflow verification has not run on generated repair yet."
+}

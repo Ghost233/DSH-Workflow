@@ -1,0 +1,28 @@
+✖ session synchronization waits for the previous request and keeps removals after a lost acknowledgement (3.429667ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41.120375
+
+✖ failing tests:
+
+test at synapse-workflow-plugin/test/client.test.mjs:113:1
+✖ session synchronization waits for the previous request and keeps removals after a lost acknowledgement (3.429667ms)
+  AssertionError [ERR_ASSERTION]: A newer sync must not race the request still in flight
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/synapse-workflow-plugin/test/client.test.mjs:123:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

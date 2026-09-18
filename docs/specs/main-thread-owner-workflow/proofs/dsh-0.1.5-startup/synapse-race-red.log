@@ -1,0 +1,46 @@
+✖ Synapse canvas reads a consistent projection while a workspace is pruned (7331.883292ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8510.232667
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/harness-integration.test.mjs:484:1
+✖ Synapse canvas reads a consistent projection while a workspace is pruned (7331.883292ms)
+  AssertionError [ERR_ASSERTION]: Synapse
+  新会话
+  工作区
+  synapse-pruned-workspace
+  会话
+  
+  暂未同步会话
+  
+  对话
+  会话地图
+  工作空间不存在
+  ×
+  地图
+  详情
+  当前工作目录还没有 DSH 对话。
+  
+  点击新会话，在画布中输入第一条消息。
+  
+  新建会话
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/harness-integration.test.mjs:512:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

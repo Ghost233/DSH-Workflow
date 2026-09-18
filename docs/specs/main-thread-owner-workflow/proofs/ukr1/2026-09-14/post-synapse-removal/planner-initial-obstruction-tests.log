@@ -1,0 +1,12 @@
+✔ an initial native Planner with no previous plan reports a frozen-source needs_split issue without fabricating a candidate (833.116208ms)
+✔ native Planner accepts a bound no-progress report before the formal transition records failure (2254.532459ms)
+✔ native Planner preserves an exact Ticket dependency rejection before reporting every out-of-bound consumer (168.137708ms)
+✔ a Planner reports two out-of-bound Ticket consumers and the root formally replans the same workflow with the complete boundary (76.643542ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2434.534375

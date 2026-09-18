@@ -1,0 +1,14 @@
+✔ isolation proof preserves unknown command truth and binds current sealed candidate (80.679167ms)
+✔ isolation refuses missing writer closure, omitted effects, changed candidate, or unsafe command binding (593.229458ms)
+✔ retired writable directories cannot be reused via ancestor, descendant, or symlink; sibling is independent (54.028541ms)
+✔ new action cannot dispatch or prepare files inside an old isolated installer (57.444667ms)
+✔ retirement coexists with stop settlement while its OS lock is held (82.871833ms)
+✔ retirement rejects active verification while its OS lock is held (34.060791ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1048.22675

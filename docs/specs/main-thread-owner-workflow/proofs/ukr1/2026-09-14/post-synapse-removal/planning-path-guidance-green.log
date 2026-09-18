@@ -1,0 +1,17 @@
+✔ complete production preset mounts native capabilities and delivers without manual kernel registration (6127.395084ms)
+✔ 主线程提示要求正式 planning 文档封套，并只通过零参数 finalizer 建立检查点 (0.981ms)
+✔ 主线程指引中的默认文档与 Ticket 搜索示例均属于真实允许写入范围 (19.926667ms)
+✔ 主线程可在启动 DAG 前创建和修改所有约定文档，原生观察策略继续执行 (811.799792ms)
+✔ 冻结只读审核允许后继文档编辑，修改用户 checkout 的动作仍阻止并发写入 (234.023375ms)
+✔ 文档例外不放开代码、治理文件、状态和其他写入工具 (61.432667ms)
+✔ 解析路径二次校验阻止冒充 displayPath、目标漂移和链接换入 (37.947166ms)
+✔ 路径绑定到项目和会话，允许根目录别名，拒绝软硬链接和无效目标 (21.2225ms)
+✔ 真实 root 与会话根别名混用时只归一化项目根，保留内部链接拒绝 (21.864208ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6344.674875

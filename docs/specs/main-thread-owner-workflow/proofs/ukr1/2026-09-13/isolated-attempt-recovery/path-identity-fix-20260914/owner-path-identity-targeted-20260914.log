@@ -1,0 +1,44 @@
+✔ directory aliases, duplicates and temporary symlink namespaces publish one stable PATH (65.784ms)
+✔ provider priority, executable state and target metadata change the namespace identity (44.675208ms)
+✔ relative, empty and missing PATH values conservatively retain the caller environment (4.121958ms)
+✔ concurrent publishers reuse one sealed namespace (87.0445ms)
+✔ invocation-relative scripts fail under the real stable PATH without fallback to the original namespace (594.154959ms)
+✔ canonical input ignores JSON order, non-lifecycle scripts and ordinary business source (50.43025ms)
+✔ an install lifecycle conservatively binds indirect file and shell inputs (56.957667ms)
+✔ implicit workspaces and recursive file dependencies bind their complete candidate content (21.890042ms)
+✔ local paths that escape the candidate fail closed instead of being clamped below root (12.729125ms)
+✔ manager fields, project config files and install environment are bound without retaining secrets (12.984792ms)
+✔ canonicalize recursively sorts JSON object keys without reordering arrays (0.130792ms)
+✔ installation identity survives session aliases only after the actual command environment is stabilized (34.350208ms)
+✔ canonical input ignores JSON order, test/build scripts, business source, and action identity (1183.941667ms)
+✔ input binds manager version, config, lifecycle source, and local dependency source (1446.142625ms)
+✔ base uses base/node_modules so CJS and ESM consumers resolve their siblings (1085.474458ms)
+✔ explicit private COW records one full tree copy, and clone unsupported fails closed (908.216375ms)
+✔ parallel overlays share a sealed base but private write locations remain isolated (672.012ms)
+✔ sealed validation rejects a writable base root and fresh sealing rejects every unsafe base link (2905.978041ms)
+✔ installer-local workspace links are normalized into the sealed base (618.865167ms)
+✔ internal npm hard-link groups are atomically detached before the base is sealed (614.418708ms)
+✔ external hard-link references remain untouched while every base path becomes private (589.043417ms)
+✔ an external Finder .DS_Store hard-link is detached before readonly sealing (594.965792ms)
+✔ readonly unreceipted bases and interrupted hard-link work recover without another install (1462.432583ms)
+✔ unconfirmed active installer fences a later action without restaging or dispatching (673.623458ms)
+✔ settled failure preserves nested cwd download cache and publishes primary error metrics (767.986292ms)
+✔ failure artifact ENOSPC keeps the primary npm error and active marker fenced (657.859125ms)
+✔ a durable settled-failure terminal allows a different action to reclaim the installer (744.848709ms)
+✔ durable receipt, promotion, and cache receipt interruptions recover without another install (2909.015291ms)
+✔ target replay validates its overlay receipt and does not rerun an already completed install (1025.734042ms)
+✔ missing or conflicting durable receipts never delete staged or promoted trees (1943.0165ms)
+✔ fresh sealing hashes the base once and every later instance trusts its sealed receipt (1128.154916ms)
+✔ install, promotion, hardlink normalization and seal have independent bounded signals and recover without reinstall (1013.424208ms)
+✔ seal timeout reports its own phase and recovers the installed readonly base without npm (961.175917ms)
+✔ production manager resolver uses a cwd-bound managed command and no-lock projects return no bindings (828.78275ms)
+✔ same canonical input recovers in one shared generation while unknown installer bytes remain untouched (2269.264791ms)
+✔ dependency generation selector cannot escape or traverse a directory alias (751.220917ms)
+ℹ tests 36
+ℹ suites 0
+ℹ pass 36
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 28040.18375

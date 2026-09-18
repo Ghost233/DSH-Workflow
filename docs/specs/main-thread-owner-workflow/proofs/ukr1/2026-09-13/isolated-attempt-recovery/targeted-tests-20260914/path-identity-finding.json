@@ -1,0 +1,16 @@
+{
+  "historicalCacheKey": "e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04",
+  "currentCacheKey": "97841020443e974d5ffbdca1ee415711a31a3fe6308354c740e4fea7d60796b8",
+  "historicalInputDigest": "de0d017529cdaa41c51c11c18cb37f26fbc7031cd31d022c321b21940a374399",
+  "currentInputDigest": "de18e7122a5cb3903dc83a4bb5fdb7f65cca5ed9252caead62cc5cef03e7102b",
+  "differingFields": [
+    "input.installConfig.env[0][1]"
+  ],
+  "sameFrozenCandidate": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/act-1d8c78ea3c5bbb68a4ebca26384b8a9f7dacb289/tree",
+  "classification": "cache_identity_over_invalidation_from_session_PATH",
+  "status": "resolved",
+  "configurationChanged": false,
+  "resolution": "../path-identity-fix-20260914/README.md",
+  "resolutionReport": "../path-identity-fix-20260914/report.json",
+  "resolvedAt": "2026-09-13T18:15:30.598295+00:00"
+}

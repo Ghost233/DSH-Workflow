@@ -1,0 +1,40 @@
+{
+  "observedAt": "2026-09-14T06:34:46.382Z",
+  "workflowId": "wf-03d397fffe12a1d0e9726a73ccb53ba315e3d7eb",
+  "rootSessionId": "session-b2249c70-f3d5-4432-bd7e-c342bf6d302b",
+  "status": "planning",
+  "planVersion": 0,
+  "counts": {
+    "totalTasks": 0,
+    "completedTasks": 0,
+    "failedTasks": 0,
+    "pendingTasks": 0,
+    "runningTasks": 0
+  },
+  "baseCommit": "897642d0ef31570fecbc94417be6e080d5ae29f7",
+  "planningSources": {
+    "snapshotDigest": "2a7919be4199dd0b54007db4320edfca1914152dc4f6ca179138c69354522d6e",
+    "sourceDigest": "dd70b985a7e4b9cf95faee5003aca721957d5e93a4c46ebb63ee7116f8801dce",
+    "checkpointId": "planning-finalize-108c1a48c688020cfd21c603",
+    "codeBaseline": {
+      "branch": "dev",
+      "checkpointCommit": "897642d0ef31570fecbc94417be6e080d5ae29f7",
+      "checkpointTree": "33d309f5b764b76c8cedfd69810c9030e2cfb467",
+      "sourceHead": "799d708fd45b9cfe83744c17a9a5555e38af7e1d"
+    }
+  },
+  "actions": [
+    {
+      "id": "act-0f0c97844860959adb0cc8328650c58e19db1078",
+      "kind": "prepare_workflow",
+      "status": "succeeded",
+      "createdAt": 1789367629991
+    },
+    {
+      "id": "act-9c51637b7b7a90baead468a3826dbf235d2231ad",
+      "kind": "plan",
+      "status": "running",
+      "createdAt": 1789367642000
+    }
+  ]
+}

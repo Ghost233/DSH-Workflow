@@ -1,0 +1,25 @@
+✖ immutable dependency inputs reject writable roots before native dispatch (277.383208ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 474.36975
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/native-kernel-effects.test.mjs:123:1
+✖ immutable dependency inputs reject writable roots before native dispatch (277.383208ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/native-kernel-effects.test.mjs:129:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /Immutable dependency input overlaps a writable sandbox root/,
+    operator: 'rejects',
+    diff: 'simple'
+  }

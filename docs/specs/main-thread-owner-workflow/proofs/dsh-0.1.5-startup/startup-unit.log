@@ -1,0 +1,282 @@
+[harness] Building 0.1.5-rc.2 ebe8fdac0ff3d9cdd5d29109c6f61f92e42b7f32; only ignored outputs are writable.
+[harness] Building 0.1.5-rc.2 ebe8fdac0ff3d9cdd5d29109c6f61f92e42b7f32; only ignored outputs are writable.
+[harness] Building 0.1.5-rc.2 ebe8fdac0ff3d9cdd5d29109c6f61f92e42b7f32; only ignored outputs are writable.
+✔ verified build is reused; changed client artifacts and stale extra libraries force a clean rebuild (543.205042ms)
+✔ dirty source and unsupported revision fail before installation or cleanup (142.918458ms)
+[harness] Building 0.1.5-rc.2 e987484c4a07bcc93e2a9e37064b6b308badd508; only ignored outputs are writable.
+[harness] Building 0.1.5-rc.2 e987484c4a07bcc93e2a9e37064b6b308badd508; only ignored outputs are writable.
+✔ failed build and concurrent source modification cannot publish a successful build stamp (251.30575ms)
+[harness] Building 0.1.5-rc.2 e987484c4a07bcc93e2a9e37064b6b308badd508; only ignored outputs are writable.
+✔ concurrent launchers cannot clean or build the same Harness at the same time (218.477875ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.1 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.1 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.1 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.1 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.1 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.1 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ ordered latest resolution, project-local install, patch publication and profile deduplication (82.5275ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+✔ failed second installation stops the sequence, releases lock and never publishes launch state (11.667541ms)
+[project-plugins] 1/11 显式更新 dshmarket
+✔ missing build artifact fails closed even when the package manager reports success (16.071042ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+✔ Git build approval failure stops before subsequent plugins without npm fallback (24.754625ms)
+✔ invalid Git revision rejects the package before installation (10.776625ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+✔ installed Git package must still match the configured identity (31.781167ms)
+[project-plugins] 1/11 显式更新 dshmarket
+✔ missing legacy bundle needs an explicit adapter (15.533958ms)
+✔ required predecessor is validated before any installation (6.257333ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+✔ all installs finish before host compatibility check; missing peers block publication (63.614959ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ resolver supports Node ESM, browser package.json lookup, and one shared host peer instance (132.045958ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ run keeps original CLI args and inserts --patch before web app options (100.423333ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+[project-plugins] 1/11 显式更新 dshmarket
+✔ failed refresh invalidates previous launch; state stores facts only (56.335ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+[project-plugins] 1/11 检查固定版本 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 检查固定版本 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 检查固定版本 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 检查固定版本 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 检查固定版本 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 检查固定版本 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 检查固定版本 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 检查固定版本 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 检查固定版本 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 检查固定版本 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 检查固定版本 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ ordinary startup reuses pinned versions without network resolution or reinstalling complete packages (49.424583ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ missing pins, changed manifest and wrong host version fail before package mutation (52.508417ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ a removed client module is rejected from pinned metadata before installing any external code (65.440375ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1199.372166

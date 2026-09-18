@@ -1,0 +1,14 @@
+{
+  "checkedAt": "2026-09-14T08:30:08.962Z",
+  "scope": "read-only replay of live persisted authoring candidate; no state mutation",
+  "workflowId": "wf-03d397fffe12a1d0e9726a73ccb53ba315e3d7eb",
+  "planVersion": 0,
+  "recoveryUsed": 2,
+  "candidate": {
+    "actionId": "act-95812a95d98e74401d98b90ec8bbc35e23bac8c6",
+    "planDigest": "a2d8342cf5c6244ebb9056d35cebd9f017d387d1ce383d1ec08417915d3cbbc0",
+    "snapshotDigest": "d3659c8f9eb5a215ad89c46c8338fd07c31c59e5071a11bf0de192c9e54c5ddb",
+    "taskCount": 17,
+    "verificationCount": 14
+  }
+}

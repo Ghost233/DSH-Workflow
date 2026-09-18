@@ -1,0 +1,18 @@
+{
+  "used": 13,
+  "limit": 14,
+  "issueLimits": {
+    "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d": 10,
+    "issue-06a9b1201cb291d9afbccce256c053f7cf715a0e": 2,
+    "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165": 10,
+    "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4": 10,
+    "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c": 10,
+    "issue-22e29a6884361d5292f747f023ec58eaa7210ce4": 1,
+    "issue-f657edb5cf16c9a49ddc9cc54aa6f06fcc6f7f3e": 9,
+    "AC-04": 1,
+    "ACCEPTANCE-SUITE-RUNNER-R2-browser-wrapper-binding": 1
+  },
+  "decisionId": "recovery-5c7a5c49433082612ebe339db372371fce57d45b",
+  "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/decisions/act-79dc8814cb38edc34f6fb381e9f8dd1732a2ce42/answer.json",
+  "authorizedAt": 1789356675938
+}

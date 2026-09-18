@@ -1,0 +1,21 @@
+{
+  "candidateDigest": "ab6c1c53f3b04f39e22eccc46709922abdc63e25f8e4f197c3b746ebaba0d9f5",
+  "candidateArtifact": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/act-ac9ba94424cddba802d55cfd1a2c5e39a3a183aa/tree",
+  "passed": true,
+  "actual": {
+    "version": "2.3.3",
+    "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
+    "integrity": "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==",
+    "dev": true,
+    "hasInstallScript": true,
+    "license": "MIT",
+    "optional": true,
+    "os": [
+      "darwin"
+    ],
+    "engines": {
+      "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
+    }
+  },
+  "diff": "--- \n+++ \n@@ -14989,7 +14989,7 @@\n     \"node_modules/fsevents\": {\n       \"version\": \"2.3.3\",\n       \"resolved\": \"https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz\",\n-      \"integrity\": \"sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==\",\n+      \"integrity\": \"sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==\",\n       \"dev\": true,\n       \"hasInstallScript\": true,\n       \"license\": \"MIT\",\n"
+}

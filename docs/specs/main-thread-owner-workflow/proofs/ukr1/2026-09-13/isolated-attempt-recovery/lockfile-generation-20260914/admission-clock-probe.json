@@ -1,0 +1,19 @@
+{
+  "pureSimulation": true,
+  "wroteLiveState": false,
+  "liveStateUnchanged": true,
+  "deadlineAt": 1789360763831,
+  "results": [
+    {
+      "now": 1789360397271,
+      "accepted": false,
+      "error": "Settled technical candidate verification failures must retry the bound candidate verification, not dispatch an Owner repair"
+    },
+    {
+      "now": 1789360763832,
+      "accepted": true,
+      "status": "running",
+      "simulatedRecoveryUsed": 16
+    }
+  ]
+}

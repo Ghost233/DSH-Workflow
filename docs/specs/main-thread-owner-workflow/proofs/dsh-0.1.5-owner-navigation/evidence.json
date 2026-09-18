@@ -1,0 +1,102 @@
+{
+  "kind": "development-targeted-validation",
+  "date": "2026-09-12",
+  "dshCommit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "dshTrackedChanges": "",
+  "node": "v24.12.0",
+  "browser": "Chrome 152.0.7977.83 (isolated Playwright profile)",
+  "runs": [
+    {
+      "name": "web-preset",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/harness-integration.test.mjs",
+      "log": "web-preset.log",
+      "result": {
+        "tests": 10,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "owner-client-dashboard",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/owner-team.test.mjs owner-workflow-plugin/test/client-bundle.test.mjs owner-workflow-plugin/test/dashboard.test.mjs",
+      "log": "owner-client-dashboard.log",
+      "result": {
+        "tests": 20,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "native-integration",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/owner-team-runner.test.mjs owner-workflow-plugin/test/planning-harness.test.mjs owner-workflow-plugin/test/operation-harness.test.mjs",
+      "log": "native-integration.log",
+      "result": {
+        "tests": 16,
+        "pass": 16,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "control-security-recovery",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/control.test.mjs owner-workflow-plugin/test/security.test.mjs owner-workflow-plugin/test/operation-runtime.test.mjs owner-workflow-plugin/test/recovery-session-restart.test.mjs owner-workflow-plugin/test/owner-submission.test.mjs",
+      "log": "control-security-recovery.log",
+      "result": {
+        "tests": 242,
+        "pass": 221,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 21
+      }
+    }
+  ],
+  "total": {
+    "tests": 288,
+    "pass": 267,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 21
+  },
+  "limits": [
+    "Actual official DSH Web/presets, public Session events, Agent creation rollback, native child history, pending-interaction and ApprovalService transports. Model and browser inputs are controlled.",
+    "Browser approval transport does not execute a host command; exact verification approval, Runner submission/isolation and process recovery are checked in separate regressions.",
+    "Native direct cold resume fails with OWNER_TEAM_RUNNER_REQUIRED as its cause; plugin-owned recovery retains the same session identity.",
+    "Twenty-one existing control/security legacy skips remain; they are not counted as passes.",
+    "Full Spec/Ticket/DAG candidate, shared Owner decisions, integration/long-term Memory, launchers and optional external plugins remain outside this targeted evidence."
+  ],
+  "sha256": {
+    "owner-workflow-plugin/index.js": "62a29bce66b1e8b6d74cf58d25b55079b14db3f20cd6fa831f128b9710249b0a",
+    "owner-workflow-plugin/client.js": "d6b52fa51a35125f19fd409ce316501915cf3b1af509ea0d798bc1be34ea5c72",
+    "owner-workflow-plugin/package.json": "96b0fc1f469102cf75042015b9d9651ba3c4696800e26c5eab8729851b6bcc32",
+    "owner-workflow-plugin/src/owner-team.mjs": "29e947393f9e4f38726209ebed70b2745b94867f5f7feb9dcd39bf3832da2b92",
+    "owner-workflow-plugin/src/owner-team-runtime.mjs": "495aecd0009b87c4a4cb0047a4c08c0ffcee8dd937830eb11322a0deca4ea65f",
+    "owner-workflow-plugin/src/client-runtime.js": "e0b7786b255d2705911ea1dc414ed4f4614e025f6aed1aa1b517958b85e11e0d",
+    "owner-workflow-plugin/src/runtime.mjs": "a81fac5a515bd6bcf2bd6acef29b902ce06892ff26cb74b223116ebfa2ae1fb8",
+    "owner-workflow-plugin/src/agent-policy.mjs": "3ecafcbcc69adcdf4c4a180134c24ee583577570e44eefa34bfb12a15d8e319e",
+    "owner-workflow-plugin/src/dsh-execution.mjs": "118b16c1535413e2c4a9ef444e87d8914215e41499b81d27d2d00038e45d07fb",
+    "owner-workflow-plugin/test/harness-integration.test.mjs": "2a5b91e6684294336de4ec66a167232f6e5044a2070c45711ae10566cb2e44f1",
+    "owner-workflow-plugin/test/owner-team.test.mjs": "575498c9cb427169805467f4cf31eef96271b083b564b08aec521a32e818e159",
+    "owner-workflow-plugin/test/client-bundle.test.mjs": "123ec59c1c48e822d5e97c167292564bb215b6f4a2acee2ef6819527ca02e6f3",
+    "owner-workflow-plugin/test/dashboard.test.mjs": "ec99b2b7fa542012c3c21ec2cc139ce9969e593c2edffe3a4224c0adaf7282bc",
+    "owner-workflow-plugin/test/owner-team-runner.test.mjs": "f8f2a102a9866e9218c4db604e07c69217a0133dfcff330da914a6647a967537",
+    "owner-workflow-plugin/test/planning-harness.test.mjs": "a40e55b5a14ae84081148bcf9012eca65963fc73198855fd67bbb08416ab0ce0",
+    "owner-workflow-plugin/test/operation-harness.test.mjs": "e46e65014f34586eafdac2c32a768b106b695f68ae3880b1611ecc85498acf80",
+    "owner-workflow-plugin/test/control.test.mjs": "f1ddaef09f18a417b867d25d77f5a3f1046ea8c22e68a50d71a0038799d08b5c",
+    "owner-workflow-plugin/test/security.test.mjs": "9083d9558a9e78162df324014a29d59c6ab5e8c65027eb2aab7ab04026401902",
+    "owner-workflow-plugin/test/operation-runtime.test.mjs": "56a2054e68cd28fc32052e52306e2effeb3121cb03c3320b16b2d34432d8201d",
+    "owner-workflow-plugin/test/recovery-session-restart.test.mjs": "3b278c640220a63a4bd155866e99c81be37a97d8e2bb7aa89b47109766b30385",
+    "owner-workflow-plugin/test/owner-submission.test.mjs": "b68762899214d10b3fefb5a05212583b5ffac68e9656545e177a27f29cf9e6fb"
+  },
+  "artifactSha256": {
+    "owner-client-dashboard.log": "c332606071ec891e1b02ee4fed08579943bc383b28223a943a245805c5e7a15c",
+    "owner-web-child-approval.png": "c2cdb5196a3408e99f823432b08a83405df28edf6f087274b9beecf54042c4f6",
+    "control-security-recovery.log": "5504702ff561ce2a50317cf8130c9890653363e94f51735313aa0af5922b390b",
+    "web-preset.log": "8e8fb57c88746f7d5af7cf2ff51896ea53113046c40e83bf1f149c959bf7cae9",
+    "native-integration.log": "e4f655064556feba95ffad415801047a9efc8b462b413e8bc0b511477330b024"
+  }
+}

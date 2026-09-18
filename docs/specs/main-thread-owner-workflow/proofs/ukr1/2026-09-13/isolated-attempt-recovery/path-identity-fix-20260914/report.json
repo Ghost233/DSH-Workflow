@@ -1,0 +1,98 @@
+{
+  "status": "passed",
+  "sourceHashes": "source-hashes.json",
+  "red": {
+    "tests": 7,
+    "pass": 6,
+    "fail": 1,
+    "log": "owner-path-identity-red-20260914.log"
+  },
+  "intermediate": {
+    "tests": 36,
+    "pass": 36,
+    "fail": 0,
+    "log": "owner-path-identity-targeted-20260914.log"
+  },
+  "finalFocused": {
+    "tests": 44,
+    "pass": 44,
+    "fail": 0,
+    "log": "owner-path-identity-final-20260914.log"
+  },
+  "realProof": ".dsh-workflow/dependency-proofs/dependency-reuse-1789322816933/report.json",
+  "businessWorkflowMutations": 0,
+  "configurationChanged": false,
+  "liveHostRestarted": false,
+  "recoveryRemaining": 4,
+  "scope": "dependency_install_environment_PATH_identity_only",
+  "completedAt": "2026-09-13T18:15:30.598295+00:00",
+  "sourceHashesVerified": true,
+  "realProofCopy": "dependency-proof-report.json",
+  "realProofPassed": true,
+  "realScenarios": 13,
+  "metrics": {
+    "bindings": 13,
+    "cacheHits": 11,
+    "installRuns": 2,
+    "hotReuse": {
+      "bindings": 11,
+      "installRuns": 0,
+      "fullTreeCopies": 0,
+      "baseHashedBytes": 0
+    },
+    "expectedColdInputChange": {
+      "bindings": 1,
+      "cacheMisses": 1,
+      "installRuns": 1
+    },
+    "fullTreeCopies": 0,
+    "baseHashedBytes": 3522912077,
+    "overlayHashedBytes": 7091472,
+    "hashedBytes": 3530003549,
+    "copiedBytes": 333797512,
+    "baseDigestEntries": 558372,
+    "overlayDigestEntries": 8983,
+    "digestEntries": 567355,
+    "durations": {
+      "cacheAcquireMs": 175952,
+      "promoteMs": 20196,
+      "normalizeMs": 27624,
+      "sealMs": 192259,
+      "overlayMs": 2267
+    }
+  },
+  "originalWorkflowComplete": false,
+  "independentIntegrationReview": "passed_no_blocking_findings",
+  "crossProcessCases": [
+    {
+      "id": "session-path-a",
+      "rawPathDigest": "aaae63046f512fa59ba2f832d6abd1ced0b41105d437b42c6641f3a0052b1c38",
+      "key": "9e2789263c2151d12d4077c770f2caa32c73d64dc2b9d982f3ed60c47858a143",
+      "cacheHit": true,
+      "installRuns": 0
+    },
+    {
+      "id": "session-path-b",
+      "rawPathDigest": "dbd537a7d0caca6cf0295e51b10fbd516940af6ba37d6de06362557357e8fac4",
+      "key": "9e2789263c2151d12d4077c770f2caa32c73d64dc2b9d982f3ed60c47858a143",
+      "cacheHit": true,
+      "installRuns": 0
+    }
+  ],
+  "workflowReadback": {
+    "workflowId": "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+    "planVersion": 2,
+    "integrationHead": "1ef4949a3ba76a77d68db7613c72624438a97d8c",
+    "pendingPlanning": {
+      "actionId": "act-30bd15f77aea36f1bb713123180731f114a0dccd",
+      "inputDigest": "d0f70a5c60bb051590e98602f6cba07f26a64e5976022df60fadd9fc94d7ce78"
+    },
+    "recoveryUsed": 8,
+    "recoveryLimit": 12,
+    "counts": {
+      "succeeded": 1,
+      "failed": 2,
+      "pending": 13
+    }
+  }
+}

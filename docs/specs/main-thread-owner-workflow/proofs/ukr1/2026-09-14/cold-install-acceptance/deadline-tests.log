@@ -1,0 +1,10 @@
+✔ cold installation owns its deadline after acquisition and still honors external cancellation (12795.84325ms)
+✔ cold install deadline quarantines partial dependencies and never publishes a reusable base (2790.756416ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15817.238959

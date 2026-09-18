@@ -1,0 +1,14 @@
+✔ native revised Spec/Ticket checkpoint replaces the same task, retains the issue and delivers on its new baseline (7870.083875ms)
+✔ native main-thread documents, checkpoint, independent planning and execution reach the user checkout (4481.524166ms)
+✔ actual failed verification returns to the root and repairs its retained candidate within the same budget (5258.660917ms)
+✔ a no-progress first DAG returns to native Spec/Ticket R2 and delivers in the original workflow (8829.670291ms)
+✔ active Registry narrowing uses one native approval and replans the same Spec/Ticket workflow through delivery (7220.577875ms)
+✔ actual scoped preset tools reach Owner execution without inheriting root orchestration instructions (4194.205959ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 38084.816

@@ -1,0 +1,11 @@
+✔ runner exit 2 closes only the resource observation while failed typecheck recovery stays open (30.566542ms)
+✔ missing runner resources, sandbox failure, and missing dependency preparation do not close feedback (28.009ms)
+✔ restart drive narrowly migrates the exact legacy typecheck observation from settled evidence (29.796041ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 182.066375

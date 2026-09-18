@@ -1,0 +1,36 @@
+{
+  "health": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "eb2b818f-30a9-41cb-8e71-ac10e90dea27",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  },
+  "configsUnchanged": {
+    "/Users/admin/.dsh/settings.yaml": true,
+    "/Users/admin/.dsh/cordis.patch.yml": true,
+    "/Users/admin/.dsh/.credentials.yaml": true
+  },
+  "preserved": {
+    "wf-03d397fffe12a1d0e9726a73ccb53ba315e3d7eb": {
+      "plan": true,
+      "planVersion": true,
+      "tasks": true,
+      "attempts": true,
+      "recoveryUsed": true,
+      "integrationHead": true
+    },
+    "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354": {
+      "plan": true,
+      "planVersion": true,
+      "tasks": true,
+      "attempts": true,
+      "recoveryUsed": true,
+      "integrationHead": true
+    }
+  }
+}

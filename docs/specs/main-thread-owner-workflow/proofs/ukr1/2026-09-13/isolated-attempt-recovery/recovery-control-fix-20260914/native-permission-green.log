@@ -1,0 +1,16 @@
+✔ Owner root guards use native tool scope and do not capture unrelated roots (140.104416ms)
+✔ native workflow_retry_action keeps a settled technical candidate retry bound and returns a lossless view (216.578791ms)
+✔ plan retry verifies its admitted planning identity instead of the obsolete active Registry (0.372416ms)
+✔ review_plan retry verifies its admitted planning identity instead of the obsolete active Registry (0.090292ms)
+✔ two native Owner preset scopes share one catalog executor and dispose independently (36.239208ms)
+✔ native finite recovery permission allow preserves history and never dispatches a Planner (385.440416ms)
+✔ native finite recovery permission reject preserves history and never dispatches a Planner (151.640208ms)
+✔ native finite recovery permission cancel preserves history and never dispatches a Planner (141.467875ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 812.042708

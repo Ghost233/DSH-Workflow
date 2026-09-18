@@ -1,0 +1,19 @@
+✔ Owner feedback schema distinguishes a frozen runner observation from an explicit public contract gap (0.93425ms)
+✔ native owner_submit ends the actual turn after durable acceptance without waiting for verification (732.649042ms)
+✔ Owner preparation interruption resumes the same worktree with one native dispatch (512.872708ms)
+✔ a fast native model waits for the persisted dispatch receipt before submitting (652.377583ms)
+✔ failed dispatch receipt cancels waiting native tools without accepting a candidate (259.022ms)
+✔ a rejected owner_submit ends through the persisted stop path with its primary error (344.176916ms)
+✔ an Owner turn ending without tools settles through one persisted stop (347.066791ms)
+✔ a terminal read-only role without a report settles a legacy uncertain action through native observation (325.638417ms)
+✔ a native Planner preserves a rejected submission and settles a negative review into a concrete root replan notice (230.084834ms)
+✔ an initial native Planner with no previous plan reports a frozen-source needs_split issue without fabricating a candidate (201.7885ms)
+✔ native observation reads a late structured report only after the write-permit barrier (199.413958ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3921.55725

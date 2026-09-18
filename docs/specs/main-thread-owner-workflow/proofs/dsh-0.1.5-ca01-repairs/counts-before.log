@@ -1,0 +1,32 @@
+✔ Node test适配器只把有非零用例且证据完整的结果识别为可通过 (1.077333ms)
+✔ 集中验收拒绝未知依赖、依赖环和空命令 (0.424667ms)
+✖ 真实Node入口在首项失败后继续独立项，并分类阻塞、超时、取消、零用例和未运行 (322.071459ms)
+✔ 候选摘要或代码提交变化时旧结果不能计为通过 (0.627083ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 367.994
+
+✖ failing tests:
+
+test at ../../../../private/tmp/dsh015-counts.test.mjs:72:1
+✖ 真实Node入口在首项失败后继续独立项，并分类阻塞、超时、取消、零用例和未运行 (322.071459ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  undefined !== 1
+  
+      at TestContext.<anonymous> (file:///private/tmp/dsh015-counts.test.mjs:153:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

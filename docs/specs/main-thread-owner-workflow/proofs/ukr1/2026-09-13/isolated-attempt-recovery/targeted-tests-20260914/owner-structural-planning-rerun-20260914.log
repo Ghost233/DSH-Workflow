@@ -1,0 +1,19 @@
+✔ workflow fixture wait does not let observation churn renew a stuck semantic state (0.8655ms)
+✔ workflow fixture wait renews only for semantic progress and retains an absolute cap (1.310541ms)
+✔ native planning feedback is persisted in the root tool result and never starts a workflow (1467.367625ms)
+✔ native revised Spec/Ticket checkpoint replaces the same task, retains the issue and delivers on its new baseline (7873.541209ms)
+✔ native Reviewer corrects an invalid obligation id in the same session before any report is accepted (4459.087667ms)
+✔ native main-thread documents, checkpoint, independent planning and execution reach the user checkout (4592.488041ms)
+✔ two frozen independent Owner tasks reach actual combined and final Reviewer acceptance with their grouped packages (6216.52225ms)
+✔ actual failed verification returns to the root and repairs its retained candidate within the same budget (5856.742834ms)
+✔ a no-progress first DAG returns to native Spec/Ticket R2 and delivers in the original workflow (7650.369708ms)
+✔ active Registry narrowing uses one native approval and replans the same Spec/Ticket workflow through delivery (6780.549959ms)
+✔ actual scoped preset tools reach Owner execution without inheriting root orchestration instructions (4096.895708ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 49345.93125

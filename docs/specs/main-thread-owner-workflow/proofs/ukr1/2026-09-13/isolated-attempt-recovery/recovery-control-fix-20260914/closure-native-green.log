@@ -1,0 +1,9 @@
+✔ native positive Reviewer fixes its missing closure in the same action and activates without another recovery (7934.348083ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7981.124375

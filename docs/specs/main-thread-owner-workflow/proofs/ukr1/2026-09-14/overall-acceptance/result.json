@@ -1,0 +1,104 @@
+{
+  "complete": false,
+  "verdict": "framework_rechecked_live_service_restored_business_acceptance_incomplete",
+  "liveWorkflow": {
+    "id": "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+    "planVersion": 3,
+    "completed": 1,
+    "failed": 2,
+    "pending": 13,
+    "running": 0,
+    "recoveryUsed": 16,
+    "recoveryLimit": 16
+  },
+  "initialRegression": {
+    "tests": 411,
+    "passed": 387,
+    "failed": 24,
+    "directNestedSandboxFailureEvidence": 16,
+    "report": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/ukr1-regression-1789362750001-32341e5ac2f2/acceptance.json"
+  },
+  "nativeRegression": {
+    "tests": 411,
+    "passed": 410,
+    "failed": 1,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "candidateDigest": "32341e5ac2f2fa1d5e3787da00945a8ba4d2abd015c58811d7d35be69e4f7a42",
+    "sourceStable": true,
+    "failure": "ENOSPC creating .native-dependency-boundary-*/other-base in project volume",
+    "report": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/ukr1-regression-1789362904416-32341e5ac2f2/acceptance.json"
+  },
+  "builds": {
+    "ownerClient": "passed",
+    "approvalClient": "passed"
+  },
+  "liveService": {
+    "port": 3080,
+    "listening": true,
+    "ready": true,
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    }
+  },
+  "storage": {
+    "mount": "/Volumes/LargeStorage",
+    "freeMiB": 32,
+    "observedWriteError": "ENOSPC",
+    "repositoryReportCopy": "incomplete; 0-byte sandbox-run/report.json is not valid evidence"
+  },
+  "businessBlockers": [
+    "Browser cold installation exceeded dependency preparation 300s; smoke not executed",
+    "Missing reusable versioned unary/stream scenario producers in foundation",
+    "13 dependent tasks and final business builds not reached"
+  ],
+  "preserved": {
+    "controlStateUnchanged": true,
+    "configurationUnchanged": true
+  },
+  "completedAt": "2026-09-14T05:17:50.745699+00:00",
+  "resume": {
+    "observedAt": "2026-09-14T05:28:16.793141+00:00",
+    "freeSpaceGiB": 287,
+    "targetedRegression": {
+      "file": "owner-workflow-plugin/test/native-kernel-effects.test.mjs",
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "exitCode": 0,
+      "sourceDigest": "32341e5ac2f2fa1d5e3787da00945a8ba4d2abd015c58811d7d35be69e4f7a42",
+      "sameSourceAsFullRegression": true
+    },
+    "startup": "automatic approval rejected again; command not executed",
+    "preserved": {
+      "controlStateUnchanged": true,
+      "configurationUnchanged": true
+    }
+  },
+  "normalStart": {
+    "observedAt": "2026-09-14T05:30:34.204377+00:00",
+    "entry": "./start-owner-workflow.sh",
+    "health": {
+      "contract": "DSH_WEB_HOST_READY_V1",
+      "instanceId": "53076d45-b5eb-4c8d-a1d4-62f9a4dfa589",
+      "components": {
+        "owner": "ready",
+        "sol": "ready",
+        "synapse": "ready",
+        "approval": "ready"
+      },
+      "ready": true
+    },
+    "existingBrowserTabReused": true,
+    "originalCoinhubSessionVisible": true,
+    "userConfigurationUnchanged": true,
+    "planVersion": 3,
+    "recoveryUsed": 16,
+    "recoveryLimit": 16,
+    "integrationHead": "437424b007e63e5fa36dcca1099e9b5bcd961a4c"
+  }
+}

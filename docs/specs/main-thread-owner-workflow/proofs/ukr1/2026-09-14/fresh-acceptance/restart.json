@@ -1,0 +1,28 @@
+{
+  "health": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "d7915ee2-cba6-4e15-9486-e342919e4a84",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  },
+  "preserved": {
+    "plan": true,
+    "planVersion": true,
+    "tasks": true,
+    "attempts": true,
+    "recoveryUsed": true,
+    "recoveryWindow": true,
+    "integrationHead": true,
+    "registryBaseline": true
+  },
+  "configsUnchanged": {
+    "/Users/admin/.dsh/settings.yaml": true,
+    "/Users/admin/.dsh/cordis.patch.yml": true,
+    "/Users/admin/.dsh/.credentials.yaml": true
+  }
+}

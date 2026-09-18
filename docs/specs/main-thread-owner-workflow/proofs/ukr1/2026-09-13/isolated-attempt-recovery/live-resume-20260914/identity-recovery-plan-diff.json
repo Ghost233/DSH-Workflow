@@ -1,0 +1,38 @@
+{
+  "changedFields": {
+    "tasks": {
+      "produce_panel_journeys": [
+        "done"
+      ],
+      "provision_browser_ui_harness": [
+        "done",
+        "title",
+        "decomposition",
+        "write"
+      ]
+    },
+    "verifications": {
+      "browser_harness_tooling": [
+        "run"
+      ]
+    }
+  },
+  "boundary": {
+    "taskIds": [
+      "adapt_extension_host_parity",
+      "adapt_web_host_parity",
+      "integrate_critical_journeys",
+      "make_panel_testable",
+      "produce_host_parity",
+      "produce_panel_journeys",
+      "provision_browser_ui_harness",
+      "register_host_parity_and_all",
+      "register_panel_journey_suites"
+    ],
+    "verificationIds": [
+      "browser_harness_tooling"
+    ]
+  },
+  "registryDigest": "b6742d21b995c5dbce7c6d362890c3a92a1094650f403df330f71f4162afc09b",
+  "planEvidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-ac0c6abb1c08e848bf123c5c075e6f2b5e0d37ff/result.json"
+}

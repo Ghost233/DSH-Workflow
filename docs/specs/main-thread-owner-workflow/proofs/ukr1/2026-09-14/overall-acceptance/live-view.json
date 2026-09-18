@@ -1,0 +1,2159 @@
+{
+  "contract": "DSH_WORKFLOW_VIEW_V1",
+  "workflowId": "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+  "root": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+  "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+  "goal": "这是一次 Owner Workflow 全流程验收，请直接推进，除非遇到会改变产品方向、需要真实凭据或无法回退的操作，否则不要等待我参与。\n目标：为 Coinhub_Online_Demo 建立一套“本地、确定性、可重复”的关键用户旅程验收系统，覆盖 Web 页面与浏览器扩展共享 Panel 的核心路径，并修复验收中暴露的项目内缺陷。完整路径至少包括：模拟登录状态进入 Market；Onchain/Top 列表加载与筛选；搜索代币；进入 Detail 并切换 Chart/Data/Holders/Profit/Trades；关注、取消关注和 Watchlist 排序；进入 Trade 表单并完成报价、授权判断、预检与交易状态展示的模拟流程，但绝不连接真实钱包、签名、广播或部署。\n先分析现有架构、历史文档和当前缺口，然后在主线程完成需求总结、Spec 和 Ticket；再编排可执行 DAG，并按文件所有权拆给独立 Owner。建议至少区分：测试基础设施与确定性 fixtures、Panel 用户旅程、网络层与 Worker 路由契约、Web/扩展宿主一致性。公共模块需要修改时，由公共模块 Owner 独立评估影响，并要求受影响下游重新验收。\n实现要求：优先复用共享 Panel，不复制产品实现；使用本地 mock/fake 隔离不稳定上游；补齐有意义的自动化测试和必要的可测试性接缝；覆盖成功、未登录、401、网络中断、流重连和失败回滚；保持现有用户行为和协议契约；不修改外部服务、不使用生产凭据、不部署。最终必须通过 typecheck、Web build、扩展 build 和新增验收测试，保存可审计的 Spec、Ticket、DAG、Owner 记录与测试证据，并给出发现的问题、修复内容、剩余外部阻塞和整个编排流程是否收敛的结论。",
+  "createdAt": 1789301301084,
+  "updatedAt": 1789361440069,
+  "planVersion": 3,
+  "attention": [
+    {
+      "id": "retained:try-84c42c9a1bfab47db78d05609603d719dcfd488c",
+      "reason": "isolated_execution_unconfirmed",
+      "responsibleParty": "runtime",
+      "resumeCondition": "scoped_stop_evidence",
+      "nextWakeAt": null,
+      "detail": "Project write authority is closed; old private files and execution capacity remain quarantined",
+      "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/retirements/isolation-8edd70b5326afb95b8674869a6dd7183d7fed8789a75de175ce1a587c90f4655/result.json"
+    },
+    {
+      "id": "task:provision_browser_ui_harness",
+      "taskId": "provision_browser_ui_harness",
+      "reason": "task_failed",
+      "responsibleParty": "root_session",
+      "resumeCondition": "attempt_deadline_expired_then_bound_task_retry",
+      "nextWakeAt": null,
+      "detail": "verification_failed",
+      "diagnostic": {
+        "contract": "DSH_VERIFICATION_FAILURE_SUMMARY_V1",
+        "kind": "candidate_verification",
+        "actionId": "act-290426d8a646c3a590fa380dfc12c964de0b3987",
+        "classification": "technical_execution_failure",
+        "retryTool": "workflow_retry_task",
+        "deadlineAt": 1789362678094,
+        "deadlineExpired": true,
+        "resumeCondition": "attempt_deadline_expired_then_bound_task_retry",
+        "executionSettled": true,
+        "results": [
+          {
+            "verificationId": "browser_harness_tooling",
+            "status": "execution_error",
+            "passed": false,
+            "argv": [
+              "node",
+              "scripts/playwright-harness-smoke.mjs"
+            ],
+            "cwd": ".",
+            "exitCode": null,
+            "testStatus": null,
+            "timedOut": true,
+            "aborted": false,
+            "zeroTests": false,
+            "testCount": null,
+            "message": "Dependency preparation failed: cmd-2c8cf0eed4ba5fa02247277841b84070b3f2c6c0; npm warn Unknown project config \"playwright_browsers_path\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.\nnpm warn ERESOLVE overriding peer dependency\nnpm warn While resolving: @dynamic-labs-connectors/base-account-evm@4.6.16\nnpm warn Found: @dynamic-labs/ethereum-core@5.7.0\nnpm warn node_modules/@dynamic-labs/ethereum-core\nnpm warn   @dynamic-labs/ethereum-core@\"5.7.0\" from @dynamic-labs/ethereum@5.7.0\nnpm warn   node_modules/@dynamic-labs/ethereum\nnpm warn     @dynamic-labs/ethereum@\"^5.7.0\" from the root project\nnpm warn   2 more (@dynamic-labs/waas, @dynamic-labs/waas-evm)\nnpm warn\nnpm warn Could not resolve dependency:\nnpm warn peer @dynamic-labs/ethereum-core@\"^4.88.7\" from @dynamic-labs-connectors/base-account-evm@4.6.16\nnpm warn node_modules/@dynamic-labs-connectors/base-account-evm\nnpm warn   @dynamic-labs-connectors/base-account-evm@\"4.6.16\" from @dynamic-labs/ethereum@5.7.0\nnpm warn   node_modules/@dynamic-labs/ethereum\nnpm warn   1 more (@dynamic-labs/ethereum)\nnpm warn\nnpm warn Conflicting peer dependency: @dynamic-labs/ethereum-core@4.100.0\nnpm warn node_modules/@dynamic-labs/ethereum-core\nnpm warn   peer @dynamic-labs/ethereum-core@\"^4.88.7\" from @dynamic-labs-connectors/base-account-evm@4.6.16\nnpm warn   node_modules/@dynamic-labs-connectors/base-account-evm\nnpm warn     @dynamic-labs-connectors/base-account-evm@\"4.6.16\" from @dynamic-labs/ethereum@5.7.0\nnpm warn     node_modules/@dynamic-labs/ethereum\nnpm warn     1 more (@dynamic-labs/ethereum)\nnpm warn ERESOLVE overriding peer dependency\nnpm warn While resolving: @dynamic-labs-connectors/metamask-evm@4.6.16\nnpm warn Found: @dynamic-labs/ethereum-core@5.7.0\nnpm warn node_modules/@dynamic-labs/ethereum-core\nnpm warn   @dynamic-labs/ethereum-core@\"5.7.0\" from @dynamic-labs/ethereum@5.7.0\nnpm warn   node_modules/@dynamic-labs/ethereum\nnpm warn     @dynamic-labs/…",
+            "messageSource": "error",
+            "messageTruncated": true,
+            "dependencyFailure": {
+              "code": "DEPENDENCY_PREPARATION_FAILED",
+              "stage": "install",
+              "manager": "npm",
+              "commandId": "cmd-2c8cf0eed4ba5fa02247277841b84070b3f2c6c0",
+              "exitCode": -1,
+              "timedOut": true,
+              "quarantineRetained": true,
+              "quarantineError": null
+            }
+          }
+        ],
+        "reviewFindings": [
+          "Static review confirms the candidate contains the requested project-local setting (`.npmrc`: `playwright_browsers_path=0`), exact version-matched `@playwright/test` and official `@playwright/browser-chromium` dependencies (both 1.58.2) with corresponding lockfile entries, a wrapper which sets `PLAYWRIGHT_BROWSERS_PATH=0` before spawning the local Playwright CLI, and a smoke script that starts a loopback HTTP server, launches headless Chromium, blocks non-local routes, verifies the DOM, and closes context/browser/server in cleanup.",
+          "However, the sole fixed verification `node scripts/playwright-harness-smoke.mjs` did not execute: formal dependency preparation timed out during npm install (reported `execution_error`, exit code -1). No local Chromium directory was available to independently establish that the browser helper lifecycle installed Chromium under `node_modules/playwright-core/.local-browsers`, and there is no successful evidence of the required real headless launch/smoke.",
+          "The npm warning that `playwright_browsers_path` is an unknown project config was reported during the failed preparation. This does not by itself disprove the source configuration required by the task, but reinforces that installation and the smoke must be rerun successfully in the formal lifecycle before this candidate can be accepted."
+        ]
+      }
+    },
+    {
+      "id": "task:build_deterministic_foundation",
+      "taskId": "build_deterministic_foundation",
+      "reason": "task_failed",
+      "responsibleParty": "root_session",
+      "resumeCondition": "attempt_deadline_expired_then_bound_task_retry",
+      "nextWakeAt": null,
+      "detail": "verification_failed",
+      "diagnostic": {
+        "contract": "DSH_VERIFICATION_FAILURE_SUMMARY_V1",
+        "kind": "candidate_verification",
+        "actionId": "act-cb8680d7178d4870a9cd8de4243e096c093ce38b",
+        "classification": "candidate_failure",
+        "retryTool": "workflow_retry_task",
+        "deadlineAt": 1789317366580,
+        "deadlineExpired": true,
+        "resumeCondition": "attempt_deadline_expired_then_bound_task_retry",
+        "executionSettled": true,
+        "results": [
+          {
+            "verificationId": "foundation_producer",
+            "status": "passed",
+            "passed": true,
+            "argv": [
+              "node",
+              "--test",
+              "tests/foundation/**/*.test.mjs"
+            ],
+            "cwd": ".",
+            "exitCode": 0,
+            "testStatus": null,
+            "timedOut": false,
+            "aborted": false,
+            "zeroTests": false,
+            "testCount": 4,
+            "message": null,
+            "dependencyFailure": null
+          }
+        ],
+        "reviewFindings": [
+          "Independent execution of the fixed verification command succeeded: `node --test 'tests/foundation/**/*.test.mjs'` passed all 4 tests (exit code 0), consistent with the supplied verification result.",
+          "The deeply immutable versioned fixture requirement is substantively implemented in `tests/foundation/fixtures.mjs`: `FIXTURE_VERSION`, recursive `deepFreeze`, a canonical frozen fixture, and an isolated frozen producer are present; the test exercises nested arrays/objects and producer isolation.",
+          "The candidate does not meet the separate completion requirement to create *versioned fake unary and stream transport scenarios*. `tests/foundation/fakes.mjs` provides an unversioned generic `createLocalTransport` which defaults to empty `unary` and `streams` maps. `createScenarioScripts()` is also unversioned and contains auth/network/write/trade fragments, but no named unary transport scenario and no stream transport scenario wired into `createLocalTransport`. The sole unary/stream scripts exist inline only inside the test at `foundation.test.mjs:45`, so they are not reusable versioned scenario producers.",
+          "Redaction and deterministic-control assertions pass for the exercised whitespace/nested/delimiter samples, but that does not cure the missing reusable, versioned unary/stream scenario deliverable."
+        ]
+      }
+    }
+  ],
+  "retainedExecutions": [
+    {
+      "attemptId": "try-84c42c9a1bfab47db78d05609603d719dcfd488c",
+      "taskId": "seed_acceptance_runner",
+      "scope": "project_write_authority",
+      "retainedCapacity": 1,
+      "executionSettled": false,
+      "sharedTempEffectsUnconfirmed": true,
+      "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/retirements/isolation-8edd70b5326afb95b8674869a6dd7183d7fed8789a75de175ce1a587c90f4655/result.json",
+      "commands": [
+        {
+          "commandId": "cmd-95e578cb65c810d7e7ef86c10c8ecb08982bc827",
+          "cwd": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/66efc9ad4adea8d88172b6e5f413b0f3a136259586b5373a680d00da175d74fc/install-9c1c4aa5d0b7fbfb99909bce403b688da80819ad"
+        }
+      ],
+      "commandCount": 1
+    }
+  ],
+  "revision": 165,
+  "status": "failed",
+  "kind": "workflow",
+  "operationResult": null,
+  "registryResult": {
+    "applied": true,
+    "proposalDigest": "c6689633eff2508a5f00ed8340a733345112962dc0a43db4e000aa8d7a42003e",
+    "registryDigest": "b6742d21b995c5dbce7c6d362890c3a92a1094650f403df330f71f4162afc09b",
+    "commitSha": "799d708fd45b9cfe83744c17a9a5555e38af7e1d",
+    "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/decisions/act-1ca67ce5baf29dcca8201dca65d1e4482841c499/answer.json",
+    "executionSettled": true
+  },
+  "terminal": true,
+  "import": null,
+  "actionRequired": false,
+  "decisionId": null,
+  "deliveryFailure": null,
+  "nextWakeAt": 1789362525104,
+  "counts": {
+    "totalTasks": 16,
+    "completedTasks": 1,
+    "failedTasks": 2,
+    "pendingTasks": 13,
+    "runningTasks": 0
+  },
+  "tasks": [
+    {
+      "taskId": "seed_acceptance_runner",
+      "title": "Seed the acceptance-suite command contract",
+      "dependsOn": [],
+      "ownerId": "build-tooling",
+      "phase": "succeeded",
+      "attemptId": "try-37d69dea5c1c97b36bbbfbee169e08779b75da6e",
+      "deadlineAt": 1789317128373,
+      "deadlineExpired": false,
+      "waiting": null,
+      "failure": null,
+      "diagnostic": null,
+      "integration": {
+        "inputDigest": "26e37a743acf2fdef66c3eed3bdd85e9fb3733321cca7f4f3cc2fa440aedbc79",
+        "commitSha": "1ef4949a3ba76a77d68db7613c72624438a97d8c",
+        "worklogRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/integrations/act-e9720ee23874fca2f59ec164fdc5a6fde6cc9942/worklog.json",
+        "candidateDigest": "0eb957b3d057e56b2719a7b66f677594ef70f34c6e245f7b312a1481fba08405",
+        "baseCommit": "13c824b132ce8f677cfab51ae2d5d73c612907b4",
+        "verified": true,
+        "integrationRef": "refs/heads/dsh/workflow/ukr-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+        "memoryPending": true
+      }
+    },
+    {
+      "taskId": "provision_browser_ui_harness",
+      "title": "Provision deterministic browser UI acceptance harness",
+      "dependsOn": [
+        "seed_acceptance_runner"
+      ],
+      "ownerId": "build-tooling",
+      "phase": "failed",
+      "attemptId": "try-c06a36e7452e58891103a8f64f243ced962a2eb3",
+      "deadlineAt": 1789362678094,
+      "deadlineExpired": true,
+      "waiting": null,
+      "failure": "verification_failed",
+      "diagnostic": {
+        "contract": "DSH_VERIFICATION_FAILURE_SUMMARY_V1",
+        "kind": "candidate_verification",
+        "actionId": "act-290426d8a646c3a590fa380dfc12c964de0b3987",
+        "classification": "technical_execution_failure",
+        "retryTool": "workflow_retry_task",
+        "deadlineAt": 1789362678094,
+        "deadlineExpired": true,
+        "resumeCondition": "attempt_deadline_expired_then_bound_task_retry",
+        "executionSettled": true,
+        "results": [
+          {
+            "verificationId": "browser_harness_tooling",
+            "status": "execution_error",
+            "passed": false,
+            "argv": [
+              "node",
+              "scripts/playwright-harness-smoke.mjs"
+            ],
+            "cwd": ".",
+            "exitCode": null,
+            "testStatus": null,
+            "timedOut": true,
+            "aborted": false,
+            "zeroTests": false,
+            "testCount": null,
+            "message": "Dependency preparation failed: cmd-2c8cf0eed4ba5fa02247277841b84070b3f2c6c0; npm warn Unknown project config \"playwright_browsers_path\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.\nnpm warn ERESOLVE overriding peer dependency\nnpm warn While resolving: @dynamic-labs-connectors/base-account-evm@4.6.16\nnpm warn Found: @dynamic-labs/ethereum-core@5.7.0\nnpm warn node_modules/@dynamic-labs/ethereum-core\nnpm warn   @dynamic-labs/ethereum-core@\"5.7.0\" from @dynamic-labs/ethereum@5.7.0\nnpm warn   node_modules/@dynamic-labs/ethereum\nnpm warn     @dynamic-labs/ethereum@\"^5.7.0\" from the root project\nnpm warn   2 more (@dynamic-labs/waas, @dynamic-labs/waas-evm)\nnpm warn\nnpm warn Could not resolve dependency:\nnpm warn peer @dynamic-labs/ethereum-core@\"^4.88.7\" from @dynamic-labs-connectors/base-account-evm@4.6.16\nnpm warn node_modules/@dynamic-labs-connectors/base-account-evm\nnpm warn   @dynamic-labs-connectors/base-account-evm@\"4.6.16\" from @dynamic-labs/ethereum@5.7.0\nnpm warn   node_modules/@dynamic-labs/ethereum\nnpm warn   1 more (@dynamic-labs/ethereum)\nnpm warn\nnpm warn Conflicting peer dependency: @dynamic-labs/ethereum-core@4.100.0\nnpm warn node_modules/@dynamic-labs/ethereum-core\nnpm warn   peer @dynamic-labs/ethereum-core@\"^4.88.7\" from @dynamic-labs-connectors/base-account-evm@4.6.16\nnpm warn   node_modules/@dynamic-labs-connectors/base-account-evm\nnpm warn     @dynamic-labs-connectors/base-account-evm@\"4.6.16\" from @dynamic-labs/ethereum@5.7.0\nnpm warn     node_modules/@dynamic-labs/ethereum\nnpm warn     1 more (@dynamic-labs/ethereum)\nnpm warn ERESOLVE overriding peer dependency\nnpm warn While resolving: @dynamic-labs-connectors/metamask-evm@4.6.16\nnpm warn Found: @dynamic-labs/ethereum-core@5.7.0\nnpm warn node_modules/@dynamic-labs/ethereum-core\nnpm warn   @dynamic-labs/ethereum-core@\"5.7.0\" from @dynamic-labs/ethereum@5.7.0\nnpm warn   node_modules/@dynamic-labs/ethereum\nnpm warn     @dynamic-labs/…",
+            "messageSource": "error",
+            "messageTruncated": true,
+            "dependencyFailure": {
+              "code": "DEPENDENCY_PREPARATION_FAILED",
+              "stage": "install",
+              "manager": "npm",
+              "commandId": "cmd-2c8cf0eed4ba5fa02247277841b84070b3f2c6c0",
+              "exitCode": -1,
+              "timedOut": true,
+              "quarantineRetained": true,
+              "quarantineError": null
+            }
+          }
+        ],
+        "reviewFindings": [
+          "Static review confirms the candidate contains the requested project-local setting (`.npmrc`: `playwright_browsers_path=0`), exact version-matched `@playwright/test` and official `@playwright/browser-chromium` dependencies (both 1.58.2) with corresponding lockfile entries, a wrapper which sets `PLAYWRIGHT_BROWSERS_PATH=0` before spawning the local Playwright CLI, and a smoke script that starts a loopback HTTP server, launches headless Chromium, blocks non-local routes, verifies the DOM, and closes context/browser/server in cleanup.",
+          "However, the sole fixed verification `node scripts/playwright-harness-smoke.mjs` did not execute: formal dependency preparation timed out during npm install (reported `execution_error`, exit code -1). No local Chromium directory was available to independently establish that the browser helper lifecycle installed Chromium under `node_modules/playwright-core/.local-browsers`, and there is no successful evidence of the required real headless launch/smoke.",
+          "The npm warning that `playwright_browsers_path` is an unknown project config was reported during the failed preparation. This does not by itself disprove the source configuration required by the task, but reinforces that installation and the smoke must be rerun successfully in the formal lifecycle before this candidate can be accepted."
+        ]
+      },
+      "integration": null
+    },
+    {
+      "taskId": "build_deterministic_foundation",
+      "title": "Build deterministic fixtures, fakes, and redacted evidence producers",
+      "dependsOn": [
+        "seed_acceptance_runner"
+      ],
+      "ownerId": "quality-automation",
+      "phase": "failed",
+      "attemptId": "try-5e6b59faeb07b412da627e23178ee16f36566db0",
+      "deadlineAt": 1789317366580,
+      "deadlineExpired": true,
+      "waiting": null,
+      "failure": "verification_failed",
+      "diagnostic": {
+        "contract": "DSH_VERIFICATION_FAILURE_SUMMARY_V1",
+        "kind": "candidate_verification",
+        "actionId": "act-cb8680d7178d4870a9cd8de4243e096c093ce38b",
+        "classification": "candidate_failure",
+        "retryTool": "workflow_retry_task",
+        "deadlineAt": 1789317366580,
+        "deadlineExpired": true,
+        "resumeCondition": "attempt_deadline_expired_then_bound_task_retry",
+        "executionSettled": true,
+        "results": [
+          {
+            "verificationId": "foundation_producer",
+            "status": "passed",
+            "passed": true,
+            "argv": [
+              "node",
+              "--test",
+              "tests/foundation/**/*.test.mjs"
+            ],
+            "cwd": ".",
+            "exitCode": 0,
+            "testStatus": null,
+            "timedOut": false,
+            "aborted": false,
+            "zeroTests": false,
+            "testCount": 4,
+            "message": null,
+            "dependencyFailure": null
+          }
+        ],
+        "reviewFindings": [
+          "Independent execution of the fixed verification command succeeded: `node --test 'tests/foundation/**/*.test.mjs'` passed all 4 tests (exit code 0), consistent with the supplied verification result.",
+          "The deeply immutable versioned fixture requirement is substantively implemented in `tests/foundation/fixtures.mjs`: `FIXTURE_VERSION`, recursive `deepFreeze`, a canonical frozen fixture, and an isolated frozen producer are present; the test exercises nested arrays/objects and producer isolation.",
+          "The candidate does not meet the separate completion requirement to create *versioned fake unary and stream transport scenarios*. `tests/foundation/fakes.mjs` provides an unversioned generic `createLocalTransport` which defaults to empty `unary` and `streams` maps. `createScenarioScripts()` is also unversioned and contains auth/network/write/trade fragments, but no named unary transport scenario and no stream transport scenario wired into `createLocalTransport`. The sole unary/stream scripts exist inline only inside the test at `foundation.test.mjs:45`, so they are not reusable versioned scenario producers.",
+          "Redaction and deterministic-control assertions pass for the exercised whitespace/nested/delimiter samples, but that does not cure the missing reusable, versioned unary/stream scenario deliverable."
+        ]
+      },
+      "integration": null
+    },
+    {
+      "taskId": "register_foundation_suite",
+      "title": "Register and revalidate the completed foundation suite",
+      "dependsOn": [
+        "build_deterministic_foundation"
+      ],
+      "ownerId": "build-tooling",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "inject_api_transport_seams",
+      "title": "Add local fake transport injection to API protocol service",
+      "dependsOn": [
+        "build_deterministic_foundation"
+      ],
+      "ownerId": "api-protocol",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "adapt_worker_fake_boundary",
+      "title": "Preserve Worker route gates under local fake routing",
+      "dependsOn": [
+        "build_deterministic_foundation"
+      ],
+      "ownerId": "worker-gateway",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "prove_network_worker_contracts",
+      "title": "Produce API and Worker behavioral contract scenarios",
+      "dependsOn": [
+        "register_foundation_suite",
+        "inject_api_transport_seams",
+        "adapt_worker_fake_boundary"
+      ],
+      "ownerId": "quality-automation",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "register_network_worker_suites",
+      "title": "Register and revalidate completed API and Worker suites",
+      "dependsOn": [
+        "prove_network_worker_contracts"
+      ],
+      "ownerId": "build-tooling",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "make_panel_testable",
+      "title": "Add shared Panel test seams and stable semantics",
+      "dependsOn": [
+        "prove_network_worker_contracts",
+        "provision_browser_ui_harness"
+      ],
+      "ownerId": "shared-panel",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "produce_panel_journeys",
+      "title": "Produce browser-executed shared Panel journeys",
+      "dependsOn": [
+        "make_panel_testable",
+        "register_network_worker_suites",
+        "provision_browser_ui_harness"
+      ],
+      "ownerId": "quality-automation",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "register_panel_journey_suites",
+      "title": "Register and revalidate completed Panel journeys",
+      "dependsOn": [
+        "produce_panel_journeys"
+      ],
+      "ownerId": "build-tooling",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "adapt_web_host_parity",
+      "title": "Adapt Web bridge for shared Panel parity",
+      "dependsOn": [
+        "make_panel_testable",
+        "provision_browser_ui_harness"
+      ],
+      "ownerId": "web-auth-host",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "adapt_extension_host_parity",
+      "title": "Adapt extension bridge for shared Panel parity",
+      "dependsOn": [
+        "make_panel_testable",
+        "provision_browser_ui_harness"
+      ],
+      "ownerId": "extension-host",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "produce_host_parity",
+      "title": "Produce browser-executed Web and extension host parity",
+      "dependsOn": [
+        "produce_panel_journeys",
+        "adapt_web_host_parity",
+        "adapt_extension_host_parity",
+        "provision_browser_ui_harness"
+      ],
+      "ownerId": "quality-automation",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "register_host_parity_and_all",
+      "title": "Register host parity and integrated all suite",
+      "dependsOn": [
+        "register_panel_journey_suites",
+        "produce_host_parity"
+      ],
+      "ownerId": "build-tooling",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    },
+    {
+      "taskId": "integrate_critical_journeys",
+      "title": "Run integrated critical-journey acceptance gate",
+      "dependsOn": [
+        "register_host_parity_and_all"
+      ],
+      "ownerId": "quality-automation",
+      "phase": "pending",
+      "attemptId": null,
+      "deadlineAt": null,
+      "deadlineExpired": false,
+      "waiting": {
+        "reason": "dependency",
+        "responsibleParty": "runner",
+        "resumeCondition": "predecessor_integrated",
+        "nextWakeAt": null
+      },
+      "failure": null,
+      "diagnostic": null,
+      "integration": null
+    }
+  ],
+  "notices": [
+    {
+      "id": "act-f979401746d3388a7f8b2c0363f67ca3a480171c",
+      "status": "cancelled",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-60ccf30daa8e672cf06e43dac54b2b7be1d268c4",
+      "status": "succeeded",
+      "reason": "workflow_terminal"
+    },
+    {
+      "id": "act-586ac9a1b18a0ce0afcb68f2ba11fae8d7c8d7fb",
+      "status": "cancelled",
+      "reason": "technical_failure"
+    },
+    {
+      "id": "act-3577141fa4ebc0b7f58bf571987c7ae0b2b31d81",
+      "status": "succeeded",
+      "reason": "workflow_terminal"
+    },
+    {
+      "id": "act-ecd2697d8517766ec7226d059438780f2cb66801",
+      "status": "cancelled",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-36f9b70caf97ddde3914fc84ec6d591a7b6813f1",
+      "status": "succeeded",
+      "reason": "workflow_terminal"
+    },
+    {
+      "id": "act-50c3c5e802910190b6ba022a53ec3493cce86664",
+      "status": "succeeded",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-ce17b43f3a5ac5e2adc9f261aedecc87f77c0861",
+      "status": "cancelled",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-8dd4e9bc9cf029a597c23708be5efb93e49ab70d",
+      "status": "succeeded",
+      "reason": "workflow_terminal"
+    },
+    {
+      "id": "act-71ae0c2e96a1de7e3f9b471cf2383da3bac4ab50",
+      "status": "succeeded",
+      "reason": "owner_feedback"
+    },
+    {
+      "id": "act-d9d911ab3491b5611e3662f11359b10aa530ccbc",
+      "status": "succeeded",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-1dabc3082c39fb5583a53977eb0ee9f6f7d70b3d",
+      "status": "cancelled",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-66a942e1ac663ced61fd79071cb252500e57dfa5",
+      "status": "succeeded",
+      "reason": "workflow_terminal"
+    },
+    {
+      "id": "act-7ecf28c34b61046132ba84797468a0de79820f11",
+      "status": "succeeded",
+      "reason": "plan_activated"
+    },
+    {
+      "id": "act-30a654660f813aa06ceb32a5599400480bb1ac24",
+      "status": "succeeded",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-848a398ce3e77474c5a2c492618a0c8c385a8c20",
+      "status": "succeeded",
+      "reason": "execution_failure"
+    },
+    {
+      "id": "act-4ba6942f6f48b215f5fb0fc5951a4452fd7ac683",
+      "status": "succeeded",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-e9d4e47dea21a7475f62e14f71116b115e7ef2a1",
+      "status": "succeeded",
+      "reason": "workflow_terminal"
+    },
+    {
+      "id": "act-8da699d71fa891661df66c7a8025d39bfdf8288a",
+      "status": "succeeded",
+      "reason": "decision_answered"
+    },
+    {
+      "id": "act-65b524c1a16a5be75f0c103c73887603bd845e97",
+      "status": "succeeded",
+      "reason": "registry_changed"
+    },
+    {
+      "id": "act-306e4f68f140b31e0a582023fee848fd6f41c3ef",
+      "status": "succeeded",
+      "reason": "execution_failure"
+    },
+    {
+      "id": "act-d977871da5b19dad2633bd4561d11395278a3b97",
+      "status": "succeeded",
+      "reason": "execution_failure"
+    },
+    {
+      "id": "act-39e1ff2929dbb69317191e8ce28ccdc03f237628",
+      "status": "succeeded",
+      "reason": "decision_answered"
+    },
+    {
+      "id": "act-929fef60644f8eb515b3564e93baaeaea53e8611",
+      "status": "cancelled",
+      "reason": "planning_failed"
+    },
+    {
+      "id": "act-6b8f8c6c921bc9753bf7ca528cc6c3ac39218d45",
+      "status": "succeeded",
+      "reason": "workflow_terminal"
+    },
+    {
+      "id": "act-b9a1d8669f2273a0863ab4c177809ee156cbe5cf",
+      "status": "succeeded",
+      "reason": "decision_answered"
+    },
+    {
+      "id": "act-e6eae27fb8bc1bfb98fe0a2c37c97dcdc428e864",
+      "status": "succeeded",
+      "reason": "plan_activated"
+    },
+    {
+      "id": "act-5c3315feb3c847382008bd4a8433623e76232a15",
+      "status": "cancelled",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-0ac494d3cafe981ad24d9e93074ab9251180daae",
+      "status": "succeeded",
+      "reason": "workflow_terminal"
+    },
+    {
+      "id": "act-b309c01f0421658282229bdf875a09498eafe86f",
+      "status": "succeeded",
+      "reason": "decision_answered"
+    },
+    {
+      "id": "act-17ca55db475b09c25fa0f0e39e3f61542eaf5924",
+      "status": "cancelled",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-dd8c61e11676d580f00eaefa9e258bb516c57c70",
+      "status": "succeeded",
+      "reason": "workflow_terminal"
+    },
+    {
+      "id": "act-e96727ff4e617060ec0ad3bee5ef1a3c22b10220",
+      "status": "succeeded",
+      "reason": "decision_answered"
+    },
+    {
+      "id": "act-c3b777b5993646a7302054e5a4f247df5ae9dc16",
+      "status": "cancelled",
+      "reason": "verification_failed"
+    },
+    {
+      "id": "act-ea41e90fde7d688599c86e1cad681e67659c29c5",
+      "status": "succeeded",
+      "reason": "workflow_terminal"
+    }
+  ],
+  "actions": [
+    {
+      "id": "act-09b961131d8af4fc76005b437b42bf733b263b75",
+      "kind": "prepare_workflow",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-846470f86dbfbb3db5d61d81ee468e84da25a18f",
+      "kind": "plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-c3c276b7d6663e79bd92fe0fbf076f9f90089b8b",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-bf2b32450f29ff5710da297e9a7150c44c1491d7",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-1d8c78ea3c5bbb68a4ebca26384b8a9f7dacb289",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-d3f8cbb8217c754d8a699ce80a93335f968ef147",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": {
+        "kind": "retry_requested",
+        "actionId": "act-61ad74dae66aae0b91383d27544af20d0f64938a",
+        "decisionRef": "root-call:session-85c160fc-4a74-4c9c-9a2b-a989631e1845:call_cQ3UPhZYbcQFFRcfMUyJ5kV9"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-f979401746d3388a7f8b2c0363f67ca3a480171c",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "failure": null,
+      "resolution": {
+        "kind": "superseded_by_terminal_notice",
+        "status": "failed"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-60ccf30daa8e672cf06e43dac54b2b7be1d268c4",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-61ad74dae66aae0b91383d27544af20d0f64938a",
+      "kind": "verify_candidate",
+      "status": "running",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": {
+        "reason": "termination",
+        "responsibleParty": "runner",
+        "resumeCondition": "writers_stopped_evidence",
+        "nextWakeAt": null
+      }
+    },
+    {
+      "id": "act-15392f48c4959c9b0eb31df3c6fdc9575a19f720",
+      "kind": "stop_execution",
+      "status": "uncertain",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": 1789362525104,
+      "waiting": {
+        "reason": "effect_result",
+        "responsibleParty": "runner",
+        "resumeCondition": "bound_effect_result",
+        "nextWakeAt": 1789362525104
+      }
+    },
+    {
+      "id": "act-586ac9a1b18a0ce0afcb68f2ba11fae8d7c8d7fb",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "failure": null,
+      "resolution": {
+        "kind": "superseded_by_terminal_notice",
+        "status": "failed"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-3577141fa4ebc0b7f58bf571987c7ae0b2b31d81",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-69237caf8611d27cbf8b558c0b7b1960f8035141",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-bb7960c1eb2f72df84663094289c766bbb9bddc2",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-0259467269140d3faf428ffb7c46530e1d5fb896",
+      "kind": "verify_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-50bd817b435294c6d92f98efeba58ebd23376d24",
+      "kind": "integrate_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-fd2a2c1ed528a5abcd94662265acebdd375198d1",
+      "kind": "summarize_memory",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-bff6495a491fd471db0d822fc229f86eda0aef4d",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-2506e60ff8de35254be1022eb075b7a5fe5fd186",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-0b78daf7e3510eb683f222662090b42aacac815e",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-ecd2697d8517766ec7226d059438780f2cb66801",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "failure": null,
+      "resolution": {
+        "kind": "superseded_by_terminal_notice",
+        "status": "failed"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-36f9b70caf97ddde3914fc84ec6d591a7b6813f1",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-3bac836a47f1b641544805a7dc76445677f88132",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-5040b4b9b26f09ccd77bd5bdb542062470339bf6",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-5519ce6f541c5ad185808b2b5173bc7444b5aa09",
+      "kind": "verify_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-15c2d967134f4648fba5462baacbee44c41d8f51",
+      "kind": "integrate_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-a3c30cf5070c24ceda4c3dac9a968e51053b12f5",
+      "kind": "summarize_memory",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-98cdbf4edcfeee43886d125d18c6dc5eac55fe08",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-f891e26ceec74f2b00b4f952614c53f1a2490a61",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-1cb037c7c1b4b4e7b3e2ab556ba19b10a5a28c5a",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-71fa25c191d6d2f486d1cf1862055754729e243a",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-1ae6a368b3868264c9364767b80e173b1d8285d8",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-c8f9592e48617a75497c357793a305ed34e54951",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-50c3c5e802910190b6ba022a53ec3493cce86664",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-ce17b43f3a5ac5e2adc9f261aedecc87f77c0861",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "failure": null,
+      "resolution": {
+        "kind": "superseded_by_terminal_notice",
+        "status": "failed"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-8dd4e9bc9cf029a597c23708be5efb93e49ab70d",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-faddcde7e2b16cf486eb70eaa2b2cc9a9456faca",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-0b2597d91b11f87bbc9bf25d59e5ee96b208c1db",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-4627b6f1d65a76181c05a7144c4a9d492d7f2c43",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-77ea26208f96afe872c31e41c73296d515d712ba",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-71ae0c2e96a1de7e3f9b471cf2383da3bac4ab50",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-2e4ca27ee5e9a47bfce9ca28e9d6e036081c0640",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-bf5714f05e4246cb7b50e0ca1d3cb64322a7aa85",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-d9d911ab3491b5611e3662f11359b10aa530ccbc",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-1dabc3082c39fb5583a53977eb0ee9f6f7d70b3d",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "failure": null,
+      "resolution": {
+        "kind": "superseded_by_terminal_notice",
+        "status": "failed"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-66a942e1ac663ced61fd79071cb252500e57dfa5",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-46f1191aee93080837828665f73b04c62199be54",
+      "kind": "plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-2eea08ba5845f551ee3f9166466b1e6d9c64d1e0",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-6d6b3646d61c33aa2e77e91533cbfe27091a74c6",
+      "kind": "plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-9726fa0d492f755928705fc2071ba8bcdfdb1b7d",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-ddfb60ed287e6b2eac4f3be82cd51b9865d091e9",
+      "kind": "prepare_revision",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-7ecf28c34b61046132ba84797468a0de79820f11",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-c0f2b793d7ccb34da9e378f1687f79f51afe654f",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-e713e4c0917cfff875bf7a9e2b56adda31003c8e",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-ec7b7c7c7e6bc67d27d909fc1e4d7b3fec88ef98",
+      "kind": "verify_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-e9720ee23874fca2f59ec164fdc5a6fde6cc9942",
+      "kind": "integrate_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-06e5a9f195f5edd7917b8da63effeae7e71fcccc",
+      "kind": "summarize_memory",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-cc78ea497f2fcbfd1169c159a474cdb26361df77",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-c20ba497d8722a5491326db2cb15fe8f55fa3d24",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-fd4b6ff65585c2db92e81ec8fb115393d41cb44e",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-cb8680d7178d4870a9cd8de4243e096c093ce38b",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-30a654660f813aa06ceb32a5599400480bb1ac24",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-30bd15f77aea36f1bb713123180731f114a0dccd",
+      "kind": "plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-6be0dcef337dd4d349e8316de4e0e2c5a3f3b876",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-4b2d8b91b3fb9a5dca1c9426a48a1ff86566e42e",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-2adb5e3910be379e15fed3ed5aac82748a536b92",
+      "kind": "review_plan",
+      "status": "failed",
+      "failure": "hard_deadline",
+      "resolution": {
+        "kind": "plan_superseded",
+        "planVersion": 3,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-1298f9ee6794daf9d999ad4802791362fa4ee4b0/result.json"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-848a398ce3e77474c5a2c492618a0c8c385a8c20",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-4ba6942f6f48b215f5fb0fc5951a4452fd7ac683",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-5af1dd2f1ea255717f69fbde7ef9adb829a20539",
+      "kind": "stop_execution",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-e9d4e47dea21a7475f62e14f71116b115e7ef2a1",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-71a2c78b7ef1c8edef1f86bf876a59d21af1a794",
+      "kind": "change_registry",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-1ca67ce5baf29dcca8201dca65d1e4482841c499",
+      "kind": "request_decision",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-8da699d71fa891661df66c7a8025d39bfdf8288a",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-65b524c1a16a5be75f0c103c73887603bd845e97",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-5aa72251d1504836a92c1b089ede8bbcf64ba70f",
+      "kind": "plan",
+      "status": "failed",
+      "failure": "execution_identity_unconfirmed",
+      "resolution": {
+        "kind": "plan_superseded",
+        "planVersion": 3,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-1298f9ee6794daf9d999ad4802791362fa4ee4b0/result.json"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-306e4f68f140b31e0a582023fee848fd6f41c3ef",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-836d0b2030db0526838723fd73319779363755b6",
+      "kind": "stop_execution",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-bb983a34145fa3a924bb7a6ae0c3bff215fe929c",
+      "kind": "plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-be49088e73d7a6d79abd7193a7805827c3833bd0",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-83ba600f34cc0568c48b19f73055596897c42e3f",
+      "kind": "plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-34f3849f6e2ff043d99da5e35e1b09da2c8c5bff",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-b3f7948d15741f24cad52b0dcdd1b0901d8e1268",
+      "kind": "plan",
+      "status": "failed",
+      "failure": "execution_identity_unconfirmed",
+      "resolution": {
+        "kind": "plan_superseded",
+        "planVersion": 3,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-1298f9ee6794daf9d999ad4802791362fa4ee4b0/result.json"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-d977871da5b19dad2633bd4561d11395278a3b97",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-124517698bd83c734f84dde185d5e5a0c84ee593",
+      "kind": "stop_execution",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-b2363ef1a1e18a0c352b709847e5b1b0bdd56c31",
+      "kind": "request_decision",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-39e1ff2929dbb69317191e8ce28ccdc03f237628",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-53e2c056216219aaac9dc876a31b4f4ca5397ff9",
+      "kind": "plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-5cd01dd096c9b1374604c307379b179c5cf0fac1",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": {
+        "kind": "retry_succeeded",
+        "actionId": "act-436c085e769b9bab4c29a220fd4da7b7dc719555",
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-1298f9ee6794daf9d999ad4802791362fa4ee4b0/result.json"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-929fef60644f8eb515b3564e93baaeaea53e8611",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "failure": null,
+      "resolution": {
+        "kind": "superseded_by_terminal_notice",
+        "status": "failed"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-6b8f8c6c921bc9753bf7ca528cc6c3ac39218d45",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-79dc8814cb38edc34f6fb381e9f8dd1732a2ce42",
+      "kind": "request_decision",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-b9a1d8669f2273a0863ab4c177809ee156cbe5cf",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-436c085e769b9bab4c29a220fd4da7b7dc719555",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-7e85dfb0c3592e29db8c7ce98854809357f5b4d6",
+      "kind": "prepare_revision",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-e6eae27fb8bc1bfb98fe0a2c37c97dcdc428e864",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-f2e7871fe295031c70a706bfb92fbd346d3ad1ec",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-529bce18afd5e3bcaec369a402dbb3c4cd161dd4",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-6ca4b95540704add9df58fe258e8c34adbbec38f",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-5c3315feb3c847382008bd4a8433623e76232a15",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "failure": null,
+      "resolution": {
+        "kind": "superseded_by_terminal_notice",
+        "status": "failed"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-0ac494d3cafe981ad24d9e93074ab9251180daae",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-423ce76e1539e0b27012009f7a3cd0b129bcdfeb",
+      "kind": "request_decision",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-b309c01f0421658282229bdf875a09498eafe86f",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-0e84b382751eed64999277ab52607c1b2ef86972",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-ac9ba94424cddba802d55cfd1a2c5e39a3a183aa",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-5fd287e21f17baa260d9c79fd745cbb1319697f6",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-17ca55db475b09c25fa0f0e39e3f61542eaf5924",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "failure": null,
+      "resolution": {
+        "kind": "superseded_by_terminal_notice",
+        "status": "failed"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-dd8c61e11676d580f00eaefa9e258bb516c57c70",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-2cfcc179c46fd73cf53325aa9f8ce28937d072be",
+      "kind": "request_decision",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-e96727ff4e617060ec0ad3bee5ef1a3c22b10220",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-2338a90ee8071dcd817f941bee97524666c25c63",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-f75d4c4fe20c5db65092f48bfdfce6b999eaffd2",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-290426d8a646c3a590fa380dfc12c964de0b3987",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "failure": "verification_failed",
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-c3b777b5993646a7302054e5a4f247df5ae9dc16",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "failure": null,
+      "resolution": {
+        "kind": "superseded_by_terminal_notice",
+        "status": "failed"
+      },
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    },
+    {
+      "id": "act-ea41e90fde7d688599c86e1cad681e67659c29c5",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "resolution": null,
+      "quarantined": false,
+      "nextWakeAt": null,
+      "waiting": null
+    }
+  ],
+  "recovery": {
+    "used": 16,
+    "limit": 16,
+    "baseLimit": 12,
+    "authorization": {
+      "used": 15,
+      "limit": 16,
+      "issueLimits": {
+        "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d": 12,
+        "issue-06a9b1201cb291d9afbccce256c053f7cf715a0e": 2,
+        "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165": 12,
+        "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4": 12,
+        "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c": 12,
+        "issue-22e29a6884361d5292f747f023ec58eaa7210ce4": 1,
+        "issue-f657edb5cf16c9a49ddc9cc54aa6f06fcc6f7f3e": 9,
+        "AC-04": 1,
+        "ACCEPTANCE-SUITE-RUNNER-R2-browser-wrapper-binding": 1,
+        "issue-27b813b1c5279e33c01a6dfe5f9527aaa1af2c06": 2
+      },
+      "decisionId": "recovery-ba02632bd8ca95a08c76a19de235b1d57582ebf5",
+      "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/decisions/act-2cfcc179c46fd73cf53325aa9f8ce28937d072be/answer.json",
+      "authorizedAt": 1789359842220
+    },
+    "issues": [
+      {
+        "id": "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d",
+        "status": "open",
+        "used": 12,
+        "limit": 12,
+        "sourceId": "da2c7e1a9159b7546c3f148f5f5913c4c10c9a7d45229017dd5fb6dd31166ae8",
+        "closeWhen": {
+          "passingCurrentTaskVerification": [
+            "acceptance_command_contract_seed"
+          ],
+          "verifications": [
+            {
+              "id": "acceptance_command_contract_seed",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "command-contract"
+              ],
+              "cwd": "."
+            }
+          ]
+        },
+        "lastReason": "verification_failed"
+      },
+      {
+        "id": "issue-06a9b1201cb291d9afbccce256c053f7cf715a0e",
+        "status": "closed",
+        "used": 1,
+        "limit": 2,
+        "sourceId": "act-d3f8cbb8217c754d8a699ce80a93335f968ef147",
+        "closeWhen": {
+          "actionKind": "verify_candidate",
+          "inputDigest": "5b51a83d1dd401aa6a15b0977c0d52cd1eeb9dde7d3a88595f592aa03c072c7f"
+        },
+        "lastReason": null
+      },
+      {
+        "id": "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165",
+        "status": "open",
+        "used": 12,
+        "limit": 12,
+        "sourceId": "af7463cd225d361c00dce4694621ee5af1c6ad0d7ed21965b6c1804ea87bf2fd",
+        "closeWhen": {
+          "passingCurrentTaskVerification": [
+            "foundation_producer_tests"
+          ],
+          "verifications": [
+            {
+              "id": "foundation_producer_tests",
+              "run": [
+                "node",
+                "--test",
+                "tests/foundation/**/*.test.mjs"
+              ],
+              "cwd": "."
+            }
+          ]
+        },
+        "lastReason": "verification_failed"
+      },
+      {
+        "id": "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4",
+        "status": "open",
+        "used": 12,
+        "limit": 12,
+        "sourceId": "c29156a47e814f152825bbece5f776408b25cadb2530467a61b6e6ad28b1fdf4",
+        "closeWhen": {
+          "passingCurrentTaskVerification": [
+            "api_typecheck"
+          ],
+          "verifications": [
+            {
+              "id": "api_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            }
+          ]
+        },
+        "lastReason": "verification_failed"
+      },
+      {
+        "id": "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c",
+        "status": "open",
+        "used": 12,
+        "limit": 12,
+        "sourceId": "e5689aa9c5d6a98b9d7d5cd830e2853ed034999ec132b89b9a8faa74b8747179",
+        "closeWhen": {
+          "passingCurrentTaskVerification": [
+            "worker_typecheck"
+          ],
+          "verifications": [
+            {
+              "id": "worker_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            }
+          ]
+        },
+        "lastReason": "verification_failed"
+      },
+      {
+        "id": "issue-22e29a6884361d5292f747f023ec58eaa7210ce4",
+        "status": "open",
+        "used": 0,
+        "limit": 1,
+        "sourceId": "call_FFy6zDWSdvSbWeaI01c5HhAu",
+        "closeWhen": null,
+        "lastReason": null
+      },
+      {
+        "id": "issue-f657edb5cf16c9a49ddc9cc54aa6f06fcc6f7f3e",
+        "status": "closed",
+        "used": 8,
+        "limit": 9,
+        "sourceId": "7b821675bbe1cdb6f150b88afeff03916ff6ddee51fceaf04c5ec1d452ddd82b",
+        "closeWhen": "bound plan review passes with source evidence",
+        "lastReason": null
+      },
+      {
+        "id": "AC-04",
+        "status": "closed",
+        "used": 0,
+        "limit": 1,
+        "sourceId": "COINHUB-CRITICAL-JOURNEYS",
+        "closeWhen": {
+          "kind": "plan_task_executable",
+          "taskId": "produce_host_parity"
+        },
+        "lastReason": null
+      },
+      {
+        "id": "ACCEPTANCE-SUITE-RUNNER-R2-browser-wrapper-binding",
+        "status": "closed",
+        "used": 0,
+        "limit": 1,
+        "sourceId": "COINHUB-CRITICAL-JOURNEYS",
+        "closeWhen": {
+          "kind": "plan_task_executable",
+          "taskId": "provision_browser_ui_harness"
+        },
+        "lastReason": null
+      },
+      {
+        "id": "issue-27b813b1c5279e33c01a6dfe5f9527aaa1af2c06",
+        "status": "closed",
+        "used": 1,
+        "limit": 2,
+        "sourceId": "act-5cd01dd096c9b1374604c307379b179c5cf0fac1",
+        "closeWhen": {
+          "actionKind": "review_plan",
+          "inputDigest": "e2fd4331c5d7ccfc54ed22ea44e3356f97db1c1fe690e29f3053794f9bc14d42"
+        },
+        "lastReason": null
+      }
+    ]
+  },
+  "delivery": null
+}

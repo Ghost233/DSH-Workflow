@@ -1,0 +1,98 @@
+{
+  "complete": false,
+  "testedAt": "2026-09-14T02:38:32.068033+00:00",
+  "workflowId": "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+  "planVersion": 2,
+  "planningFailure": "revision_required",
+  "recoveryUsed": 13,
+  "recoveryLimit": 13,
+  "newPlannerActions": 1,
+  "newReviewerActions": 1,
+  "newBusinessAttempts": 0,
+  "review": {
+    "contract": "DSH_PLAN_REVIEW_V1",
+    "status": "passed",
+    "summary": "The executable DAG is structurally ready against COINHUB-CRITICAL-JOURNEYS R10 and COINHUB-E2E-001 R10. It routes work through the stated long-lived owners and scopes; makes deterministic foundation precede API/Worker behavioral producers and all journey work; keeps API and Worker implementation scopes respectively limited to src/api/** and worker/**; sequences runner registration only after the respective tests exist; and makes the final registry update rerun command-contract plus every registered suite before the integrated acceptance/typecheck/build gate. The browser producer verification bindings invoke scripts/playwright-acceptance.mjs, and the harness task defines the required pre-load PLAYWRIGHT_BROWSERS_PATH=0 wrapper and actual launch/DOM/external-network-block/clean-close smoke, resolving the prior wrapper-binding plan issue. The current repository evidence confirms the baseline has no test:acceptance script or test tree, so no future producer is falsely represented as an existing prerequisite. ownerFeedbackFacts concerning a previous Worker configuration-write conflict were considered as non-blocking execution evidence only; the revised Worker task explicitly uses test-injected bindings and does not require wrangler.local.jsonc, consistent with the frozen R10 source.",
+    "issues": []
+  },
+  "missingClosureObligations": [
+    {
+      "id": "ACCEPTANCE-SUITE-RUNNER-R2-browser-wrapper-binding",
+      "closeWhen": {
+        "kind": "plan_task_executable",
+        "taskId": "provision_browser_ui_harness"
+      }
+    }
+  ],
+  "preserved": {
+    "activePlan": true,
+    "taskRecords": true,
+    "attemptRecords": true,
+    "integrationHead": true,
+    "registryBaseline": true,
+    "baseRecoveryPolicy": true,
+    "userConfigurationHashes": true
+  },
+  "actions": [
+    {
+      "id": "act-b2363ef1a1e18a0c352b709847e5b1b0bdd56c31",
+      "kind": "request_decision",
+      "status": "succeeded",
+      "failure": null,
+      "createdAt": 1789352517311,
+      "completedAt": 1789352542336
+    },
+    {
+      "id": "act-39e1ff2929dbb69317191e8ce28ccdc03f237628",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "createdAt": 1789352537830,
+      "completedAt": 1789352549218
+    },
+    {
+      "id": "act-53e2c056216219aaac9dc876a31b4f4ca5397ff9",
+      "kind": "plan",
+      "status": "succeeded",
+      "failure": null,
+      "createdAt": 1789352615311,
+      "completedAt": 1789352709851
+    },
+    {
+      "id": "act-5cd01dd096c9b1374604c307379b179c5cf0fac1",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "failure": null,
+      "createdAt": 1789352709851,
+      "completedAt": 1789352787373
+    },
+    {
+      "id": "act-929fef60644f8eb515b3564e93baaeaea53e8611",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "failure": null,
+      "createdAt": 1789352787373,
+      "completedAt": null
+    },
+    {
+      "id": "act-6b8f8c6c921bc9753bf7ca528cc6c3ac39218d45",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "failure": null,
+      "createdAt": 1789352787373,
+      "completedAt": 1789352803773
+    }
+  ],
+  "followupFix": {
+    "sameSessionClosureCorrectionNativeTest": "passed",
+    "legacyReviewerOnlyRecoveryDryRun": "passed_without_mutating_live_state",
+    "loadedInstance": "909e84fb-6082-4cc3-b291-aefb68b97267",
+    "secondLiveRetry": false
+  },
+  "tests": {
+    "core": 189,
+    "native": 25,
+    "total": 214,
+    "failed": 0
+  }
+}

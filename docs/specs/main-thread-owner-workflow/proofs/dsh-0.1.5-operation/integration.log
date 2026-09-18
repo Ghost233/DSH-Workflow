@@ -1,0 +1,26 @@
+(node:56209) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ native Operation waits for main input, cold-resumes the same child and reports completion (1366.282416ms)
+✔ native Operation progress is durable without waking an idle parent (983.9325ms)
+✔ native Operation creation rejects failed role setup before any model turn (899.626792ms)
+✔ native Planner receives scoped read-only policy and delivers through the live child identity (954.527875ms)
+✔ Runner 使用真实 Owner Team 连续执行、休眠后恢复，提交关卡仍验证并固定 SHA (10575.077834ms)
+✔ Runner 双 Owner 并行与 worktree 隔离：两个合法修改均验证提交 (2219.791375ms)
+✔ Runner 双 Owner 并行与 worktree 隔离：scope 越界拒绝并保留现场 (1702.9345ms)
+✔ T28 real public Owner structured submission persists and fresh Runtime replays without a model call (1877.745708ms)
+✔ T28 ordinary assistant text is a durable no-submit failure and is never parsed as a decision (1657.860709ms)
+✔ T28 wrong Owner structured submission cannot produce a public decision (1613.605292ms)
+✔ T28 K1 response becomes durable stale history when active execution changes during the model turn (1329.413208ms)
+✔ T28 a durable consultation reservation occupies capacity and queues another Owner (1306.443042ms)
+✔ T28 timeout settles the consultation and releases capacity for a later request (1129.21525ms)
+✔ T28 parent cancellation settles the durable consultation and releases its reservation (1044.225333ms)
+✔ T28 a public Owner business change reaches the main outbox as an explicit user decision (1015.212958ms)
+✔ T28 uncertain child creation is never retried from a missing durable binding (1005.844083ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 14756.502625

@@ -1,0 +1,55 @@
+{
+  "attemptId": "try-3ba7d50e7ef9e877b09344c1dd15b7405c7d1ae9",
+  "candidateDigest": "1f8308fbc0e917c1708360ffff8c04d4b35b84b8c81fd99036a5703e08a0dc74",
+  "phase": "succeeded",
+  "verification": {
+    "contentDigest": "1f8308fbc0e917c1708360ffff8c04d4b35b84b8c81fd99036a5703e08a0dc74",
+    "passed": true,
+    "results": [],
+    "review": {
+      "passed": true,
+      "contentDigest": "1f8308fbc0e917c1708360ffff8c04d4b35b84b8c81fd99036a5703e08a0dc74",
+      "reasons": [
+        "The durable owner submission report records the required impact disposition: the opt-in local transport changes the execution source for Panel API consumers, requires reruns in the existing Panel, Web-host, and extension-host deliveries, identifies Worker as not directly affected, and requires terminal acceptance to aggregate the downstream results before acceptance.",
+        "Static inspection supports the recorded compatibility conclusion. `src/api/network/service.ts` selects the local transport only when explicitly installed; otherwise it retains generated `CONSO_ENDPOINTS` route resolution, AuthV2 credential resolution, and the existing `unaryApi`/`streamApi` paths. `src/api/wallet-trade-client.ts` likewise retains the original protobuf/header/fetch/decode remote branch when no local transport is installed. `src/api/network/local-acceptance-transport.ts` gates installation to test/development local-acceptance configuration and returns no transport otherwise.",
+        "The generated registry remains a separate generated protocol definition, and no fixed verification was specified for this write-free review. The supplied prior fixture test and failed typecheck are not acceptance gates for this task; the report appropriately relies on its recorded static compatibility review and does not claim execution evidence that was not supplied."
+      ],
+      "managedRangeStopped": true,
+      "terminationScope": "dsh-managed-range",
+      "terminationId": "range-3c22970ab7c11e8c255141e6f32e6becc66e4e35b36f5da39dc7cd271781b306",
+      "sessionId": "owner-3dfa8b73c18b8f134548f99bef5d800797c5520f",
+      "promptId": "owner-3dfa8b73c18b8f134548f99bef5d800797c5520f",
+      "executionSettled": true,
+      "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-3dfa8b73c18b8f134548f99bef5d800797c5520f/result.json"
+    },
+    "executionSettled": true
+  },
+  "integration": {
+    "inputDigest": "6fbae0ba120e46c48a58066e30f8542c941bcb2b8f023e97b652714f41a9b4ed",
+    "commitSha": "24043f736b5043adb330a645a070992cbd1eb508",
+    "worklogRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/integrations/act-69b6d4b5b2baa0e9385e9b4151638c7b108d8e09/worklog.json",
+    "candidateDigest": "1f8308fbc0e917c1708360ffff8c04d4b35b84b8c81fd99036a5703e08a0dc74",
+    "baseCommit": "bca4f7190160e9b53d94e4003475072559424ed7",
+    "verified": true,
+    "integrationRef": "refs/heads/dsh/workflow/ukr-13331145b1376e2eb664d2876ac6e576aac57af3",
+    "memoryPending": true
+  },
+  "issue": {
+    "kind": "review_report_verified_integration",
+    "resolvedAt": 1789396049832,
+    "planDigest": "8372aba3b6f3d8b7efd6fb1e91b889f6974c94bdd5f81872224971af4c42ba46",
+    "taskId": "api_impact_review",
+    "failedAttemptIds": [
+      "try-0b12f8fea194ccd097f4b78fdf3e4c5491c8dce2"
+    ],
+    "attemptId": "try-3ba7d50e7ef9e877b09344c1dd15b7405c7d1ae9",
+    "submissionId": "sub-try-3ba7d50e7ef9e877b09344c1dd15b7405c7d1ae9",
+    "ownerSessionId": "owner-85d213a3b1f6e233992e87875606567df2dfc5e0",
+    "reviewerSessionId": "owner-3dfa8b73c18b8f134548f99bef5d800797c5520f",
+    "reviewEvidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-3dfa8b73c18b8f134548f99bef5d800797c5520f/result.json",
+    "candidateDigest": "1f8308fbc0e917c1708360ffff8c04d4b35b84b8c81fd99036a5703e08a0dc74",
+    "commitSha": "24043f736b5043adb330a645a070992cbd1eb508",
+    "ref": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/integrations/act-69b6d4b5b2baa0e9385e9b4151638c7b108d8e09/worklog.json"
+  },
+  "recoveryUsed": 11
+}

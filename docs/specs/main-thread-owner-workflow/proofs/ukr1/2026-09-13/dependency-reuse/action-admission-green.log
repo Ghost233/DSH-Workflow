@@ -1,0 +1,29 @@
+✔ native root delivery is deduplicated using persisted messages, not followup return (219.375875ms)
+✔ native root receives the canonical workflow terminal status and revision (66.357208ms)
+✔ a root session closing during notification becomes a durable offline wait without hiding persistence failures (66.501833ms)
+✔ native fixed command proves managed-range exit and does not rerun a received command (77.132333ms)
+✔ new command identities cannot bypass an unresolved same-action intent, even with the same host ID (54.392959ms)
+✔ action admission serializes competing hosts while allowing owned live commands in parallel (48.01575ms)
+✔ native read-only sandbox rejects an actual source write (62.528916ms)
+✔ immutable dependency inputs reject writable roots before native dispatch (7.576834ms)
+✔ native verification reads external dependencies but cannot write or chmod them (77.264875ms)
+✔ old and wrong-scope command receipts are not reused or promoted to termination proof (74.4655ms)
+✔ native termination covers a helper that outlives the command leader (446.35275ms)
+✔ verification resumes after the native command receipt without rerunning or changing its directory (122.832333ms)
+✔ failed materialization waits for already-started copies before releasing cleanup authority (32.845833ms)
+✔ shared dependency preparation without a valid base binding never dispatches verification (477.887917ms)
+✔ seals actual uncommitted source once, verifies independently and resumes from receipts (346.220833ms)
+✔ fixed verification collects independent failures and never passes zero Node tests (281.4705ms)
+✔ late verification writers cannot replace the settled dependency failure and saved replay drains owned cleanup (245.471875ms)
+✔ a settled observation reclaims a saved successful receipt after a delayed .DS_Store without repeating command or review (595.854625ms)
+✔ a settled cleanup gives persistent ENOTEMPTY only its fixed retry window (279.134833ms)
+✔ source symlink escape and changed immutable candidate are rejected (144.241917ms)
+✔ KAC-21: writes check scope and linked ancestors before the native mutation (103.006625ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2573.074792

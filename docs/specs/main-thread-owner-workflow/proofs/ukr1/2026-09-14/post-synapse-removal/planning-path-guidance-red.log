@@ -1,0 +1,32 @@
+✔ 主线程提示要求正式 planning 文档封套，并只通过零参数 finalizer 建立检查点 (1.263041ms)
+✖ 主线程指引中的默认文档与 Ticket 搜索示例均属于真实允许写入范围 (20.814208ms)
+✔ 主线程可在启动 DAG 前创建和修改所有约定文档，原生观察策略继续执行 (806.268166ms)
+✔ 冻结只读审核允许后继文档编辑，修改用户 checkout 的动作仍阻止并发写入 (235.701625ms)
+✔ 文档例外不放开代码、治理文件、状态和其他写入工具 (44.910833ms)
+✔ 解析路径二次校验阻止冒充 displayPath、目标漂移和链接换入 (31.373458ms)
+✔ 路径绑定到项目和会话，允许根目录别名，拒绝软硬链接和无效目标 (9.835667ms)
+✔ 真实 root 与会话根别名混用时只归一化项目根，保留内部链接拒绝 (15.320958ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 7
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2360.859875
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/orchestrator-documents.test.mjs:62:1
+✖ 主线程指引中的默认文档与 Ticket 搜索示例均属于真实允许写入范围 (20.814208ms)
+  AssertionError [ERR_ASSERTION]: tickets/<编号>-<标题>.md
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/orchestrator-documents.test.mjs:70:12)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

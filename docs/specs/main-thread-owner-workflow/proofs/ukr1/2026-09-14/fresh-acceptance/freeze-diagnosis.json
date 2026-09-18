@@ -1,0 +1,46 @@
+{
+  "checkedAt": "2026-09-14T09:01:27.518Z",
+  "question": "Repeated DSH page freeze and inability to refresh: self-owned plugin vs host",
+  "readOnly": true,
+  "host": {
+    "pid": 99812,
+    "listener": "127.0.0.1:3080",
+    "instance": "3dac078a-7697-47c4-a128-94d46c52c38d",
+    "snapshotCpuPercent": 69.7,
+    "snapshotRssMB": 605.2
+  },
+  "summaryEndpoint": {
+    "status": 200,
+    "bytes": 25734,
+    "elapsedMs": 20,
+    "workspaces": 84,
+    "containsFullProjections": false
+  },
+  "confirmedCode": {
+    "preloadedHiddenIframe": "synapse-workflow-plugin/client.js:105",
+    "unconditionalPoll": "synapse-workflow-plugin/app.js:1276",
+    "legacyFullEndpointRetained": "synapse-workflow-plugin/index.js:120",
+    "filteredReadFetchesWorkspaceBeforeFiltering": "synapse-workflow-plugin/index.js:128"
+  },
+  "limits": [
+    "Browser focus/refresh tool timeouts do not alone locate a DSH defect",
+    "Renderer process measurements cannot map one-to-one to the DSH tab",
+    "Host sample shows IO/JSON/GC activity, not a unique application-level cause",
+    "Frontend may still be executing an earlier loaded script; current-tab JS cannot be inspected while browser control is unresponsive"
+  ],
+  "sample": "/private/tmp/dsh-freeze-host.sample.txt",
+  "independentAudit": {
+    "model": "gpt-5.6-sol",
+    "effort": "high",
+    "conclusion": "Confirmed defects in self-owned Synapse integration; no evidence of a DSH-core infinite loop",
+    "remainingCurrentCodeRisks": [
+      "Hidden overlay does not stop iframe polling or rendering",
+      "Selected workspace updatedAt changes invalidate projection cache and rebuild DOM even while map is hidden",
+      "Server fetches/clones full workspace before session filtering",
+      "Selected sessionIds cover workspace member sessions, not solely the current session",
+      "Conversation-card layout includes quadratic scans; large histories are not covered by 430 functional regressions"
+    ],
+    "refreshFailure": "No refresh interception found; renderer saturation or memory pressure is a hypothesis, not a proven browser-level root cause",
+    "scope": "Read-only analysis; no code, config or browser changes; original-tab-only constraint preserved"
+  }
+}

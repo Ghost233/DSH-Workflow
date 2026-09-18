@@ -1,0 +1,35 @@
+{
+  "restartedAt": "2026-09-13T18:26:04.031335+00:00",
+  "oldHostPid": 92850,
+  "entry": "./start-owner-workflow.sh",
+  "health": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "229f815c-f2aa-4c02-a286-bf084524af57",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  },
+  "configurationFingerprintsUnchanged": true,
+  "browserTab": "1",
+  "newTabs": 0,
+  "status": "both_fixes_loaded_original_workflow_retained",
+  "businessRetryStarted": false,
+  "initialHealth": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "c39197ca-fd65-4816-ba02-2ab7d23b4fa5",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  },
+  "plannerReplanStarted": true,
+  "plannerReplanResult": "failed_without_accepted_report",
+  "newReplanAfterIdentityFix": false
+}

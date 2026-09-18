@@ -1,0 +1,1 @@
+{"contract":"DSH_NATIVE_RANGE_PROBE_V1","platform":"darwin","status":"contract_violation","writersStoppedClaim":true,"finishedBeforeRelease":false,"escapedWriter":true,"receiptAt":1789271989241,"finishedAtNs":"1789271989248441000","exitCode":0,"sandbox":"full","helperFinished":true,"stderr":""}

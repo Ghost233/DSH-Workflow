@@ -1,0 +1,52 @@
+✖ Registry approval proceeds after project authority retirement while retaining unknown execution (55.357708ms)
+✖ Registry rejection proceeds after project authority retirement while retaining unknown execution (23.293417ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 174.793584
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/workflow-engine.test.mjs:1521:39
+✖ Registry approval proceeds after project authority retirement while retaining unknown execution (55.357708ms)
+  AssertionError [ERR_ASSERTION]: retained private execution must not prevent the native Registry decision from dispatching
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/workflow-engine.test.mjs:1535:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.start (node:internal/test_runner/test:1003:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/workflow-engine.test.mjs:1521:39
+✖ Registry rejection proceeds after project authority retirement while retaining unknown execution (23.293417ms)
+  AssertionError [ERR_ASSERTION]: retained private execution must not prevent the native Registry decision from dispatching
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/workflow-engine.test.mjs:1535:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

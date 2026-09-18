@@ -1,0 +1,10 @@
+{
+  "checkedAt": "2026-09-14T07:49:56.665Z",
+  "previousCheckpoint": "snapshot-planning-finalize-108c1a48c688020cfd21c603",
+  "currentCheckpoint": "snapshot-planning-finalize-9edc6b05edd093601c13d7ce",
+  "previousRevision": "R11",
+  "currentRevision": "R12",
+  "sameAuthorization": true,
+  "authorizationKind": "native-user-question",
+  "checkpointCommit": "56db60bb1c39000a179ae06587a452041b86abed"
+}

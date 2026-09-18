@@ -1,0 +1,10 @@
+✔ T30 authoritative K1 decision executes one K2 writer, integrates real commits and Memory, then unlocks its consumer (10167.495458ms)
+✔ T30 activation rejects a consumer plan that omits the authoritative decision binding (663.147917ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11022.372834

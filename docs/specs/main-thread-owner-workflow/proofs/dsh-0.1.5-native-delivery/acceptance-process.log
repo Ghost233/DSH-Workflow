@@ -1,0 +1,13 @@
+✔ acceptance preserves ordinary configuration but excludes source aliases and parent test context (0.550208ms)
+✔ normal command captures stdout, stderr and exit status (25.32725ms)
+✔ timeout terminates a test worker that survives its parent and holds output pipes (507.18425ms)
+✔ cancel terminates a test worker that survives its parent and holds output pipes (505.57225ms)
+✔ an already cancelled acceptance never starts a command (0.187417ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1076.010791

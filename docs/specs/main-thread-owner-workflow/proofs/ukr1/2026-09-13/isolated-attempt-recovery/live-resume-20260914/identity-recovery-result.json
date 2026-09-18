@@ -1,0 +1,3014 @@
+{
+  "observedAt": "2026-09-13T19:12:15.130485+00:00",
+  "actionId": "act-bb983a34145fa3a924bb7a6ae0c3bff215fe929c",
+  "status": "planning_chain_failed_without_activation",
+  "recoveryRemaining": 0,
+  "planVersion": 2,
+  "taskRecordsPreserved": true,
+  "activePlanPreserved": true,
+  "integrationHeadPreserved": true,
+  "revisionBoundary": {
+    "taskIds": [
+      "adapt_extension_host_parity",
+      "adapt_web_host_parity",
+      "integrate_critical_journeys",
+      "make_panel_testable",
+      "produce_host_parity",
+      "produce_panel_journeys",
+      "provision_browser_ui_harness",
+      "register_host_parity_and_all",
+      "register_panel_journey_suites"
+    ],
+    "verificationIds": [
+      "browser_harness_tooling"
+    ]
+  },
+  "entryCorrection": {
+    "rejected": "workflow_retry_action: Owner Registry changed; existing execution authority is no longer valid",
+    "accepted": "workflow_replan using same R10 and approved registryBaseline",
+    "rejectedCallConsumedBudget": false
+  },
+  "review": {
+    "actionId": "act-be49088e73d7a6d79abd7193a7805827c3833bd0",
+    "result": {
+      "review": {
+        "contract": "DSH_PLAN_REVIEW_V1",
+        "status": "needs_revision",
+        "summary": "The DAG is otherwise executable and correctly routes the R10 work to durable owners: foundation precedes scenario producers, API/Worker implementation scopes are separated from tests, host parity is transitively gated on Panel/network/harness work, and the final gate owns the all-suite/typecheck/build results. The persisted Worker owner-feedback fact is non-blocking and does not create a planning obligation because R10 expressly requires test-injected Worker bindings without a wrangler.local.jsonc deliverable. One browser-harness contract obligation remains unresolved: the declared actual browser producer commands bypass the required pre-load wrapper.",
+        "issues": [
+          {
+            "severity": "high",
+            "title": "Browser test producer verifications bypass the mandatory Playwright pre-load wrapper",
+            "detail": "R10 requires the unified wrapper to set PLAYWRIGHT_BROWSERS_PATH=0 before Playwright is first loaded. Although provision_browser_ui_harness promises such a wrapper, the actual verification producers panel_browser_producer and host_parity_browser_producer invoke `npm exec playwright test` directly. That CLI can load Playwright before the planned wrapper runs. The plan also does not concretely bind `test:acceptance` browser-suite dispatch to that wrapper. Thus the sealed project-local Chromium contract is not carried by the actual verification producers for Panel and parity acceptance.",
+            "suggestion": "Revise the browser producer verification commands to invoke the planned wrapper (for example `node scripts/playwright-acceptance.mjs ...`) rather than `npm exec playwright test` directly, and make the runner's Panel/host-parity/all dispatch explicitly use that same wrapper. Retain the smoke's launch/DOM/external-network-block/clean-close proof. This is a contract-and-DAG correction only; do not require those future browser tests to pass during plan review.",
+            "obligationId": "ACCEPTANCE-SUITE-RUNNER-R2-browser-wrapper-binding",
+            "sourceId": "COINHUB-CRITICAL-JOURNEYS",
+            "sourceVersion": "R10",
+            "targetTaskIds": [
+              "provision_browser_ui_harness",
+              "produce_panel_journeys",
+              "produce_host_parity",
+              "register_panel_journey_suites",
+              "register_host_parity_and_all"
+            ],
+            "classificationBasis": {
+              "source": {
+                "id": "COINHUB-CRITICAL-JOURNEYS",
+                "version": "R10"
+              },
+              "technicalFacts": [
+                "Spec R10 requires a single wrapper to set PLAYWRIGHT_BROWSERS_PATH=0 before the first Playwright load.",
+                "The plan's panel_browser_producer and host_parity_browser_producer verifications directly execute npm exec playwright test.",
+                "A wrapper is only promised in provision_browser_ui_harness.done and is not invoked by those producer verification commands."
+              ]
+            },
+            "closeWhen": {
+              "kind": "plan_task_executable",
+              "taskId": "provision_browser_ui_harness"
+            }
+          }
+        ],
+        "targetTaskIds": [
+          "provision_browser_ui_harness",
+          "produce_panel_journeys",
+          "produce_host_parity",
+          "register_panel_journey_suites",
+          "register_host_parity_and_all"
+        ]
+      },
+      "planDigest": "e8f509eac185561d0726edca30b218f5052f6d8f2bfbc8738b388df1382e800c",
+      "snapshotDigest": "ea09fe8f791763cfded3071ea826b89edffaf250999752267974f9f4a8f15e8a",
+      "managedRangeStopped": true,
+      "terminationScope": "dsh-managed-range",
+      "terminationId": "range-a86667886367d9a0c93311dfd21692cb56e71af62374a51d2d304849c2c2191b",
+      "sessionId": "owner-a3a84a69c5b7fe7de5064d9b0031323dfb86b3ca",
+      "promptId": "owner-a3a84a69c5b7fe7de5064d9b0031323dfb86b3ca",
+      "executionSettled": true,
+      "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-a3a84a69c5b7fe7de5064d9b0031323dfb86b3ca/result.json"
+    }
+  },
+  "automaticRepair": {
+    "actionId": "act-83ba600f34cc0568c48b19f73055596897c42e3f",
+    "status": "running",
+    "revisionBoundary": {
+      "taskIds": [
+        "adapt_extension_host_parity",
+        "adapt_web_host_parity",
+        "integrate_critical_journeys",
+        "make_panel_testable",
+        "produce_host_parity",
+        "produce_panel_journeys",
+        "provision_browser_ui_harness",
+        "register_host_parity_and_all",
+        "register_panel_journey_suites"
+      ],
+      "verificationIds": [
+        "browser_harness_tooling"
+      ]
+    },
+    "consumedRecovery": 1,
+    "trigger": "workflow-engine review_plan needs_revision branch",
+    "observedRejection": "Planning revision exceeds declared boundary: tasks=[]; verifications=[host_parity_browser_producer, panel_browser_producer]"
+  },
+  "finding": "Review auto-repair admission checks task targets only. It charged recovery and dispatched a planner even though the requested fix changes verifications outside the declared boundary; submission correctly rejects those verification changes. Root conversational retry limit does not govern the runner automatic recovery policy.",
+  "recoveryUsed": 12,
+  "chain": [
+    {
+      "id": "act-bb983a34145fa3a924bb7a6ae0c3bff215fe929c",
+      "kind": "plan",
+      "status": "succeeded",
+      "failure": null,
+      "termination": null,
+      "result": {
+        "plan": {
+          "contract": "DSH_PLAN_V2",
+          "executable": true,
+          "registryDigest": "b6742d21b995c5dbce7c6d362890c3a92a1094650f403df330f71f4162afc09b",
+          "summary": "Seed the acceptance command contract and sealed browser harness, then build deterministic fakes, API/Worker seams, shared Panel and host testability, produce only completed browser suites, and finish with the integrated acceptance/build gate.",
+          "planningBindings": {
+            "contract": "DSH_PLANNING_BINDINGS_V1",
+            "snapshotId": "snapshot-planning-finalize-347ad7d3ceb529e6d83355f4",
+            "sourceDigest": "d3263b1341d4f853a36b9f52902c5ed73d28b09d27dbac8d20c86892d354c7ea",
+            "tasks": [
+              {
+                "taskId": "seed_acceptance_runner",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "provision_browser_ui_harness",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "build_deterministic_foundation",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "register_foundation_suite",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "inject_api_transport_seams",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "adapt_worker_fake_boundary",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "prove_network_worker_contracts",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "register_network_worker_suites",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "make_panel_testable",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "produce_panel_journeys",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "register_panel_journey_suites",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "adapt_web_host_parity",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "adapt_extension_host_parity",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "produce_host_parity",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "register_host_parity_and_all",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "integrate_critical_journeys",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              }
+            ]
+          },
+          "owners": [
+            {
+              "id": "api-protocol",
+              "name": "API 与协议传输",
+              "description": "负责浏览器 API 客户端、网络路由/鉴权/重连服务、wallet-trade 客户端和 protobuf 合同。",
+              "scope": [
+                "src/api/**",
+                "src/proto/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "build-tooling",
+              "name": "构建与工程配置",
+              "description": "负责根目录 npm 工作区清单、TypeScript/Vite 配置及可复用开发构建脚本这一稳定工程边界。",
+              "scope": [
+                "package.json",
+                "package-lock.json",
+                "tsconfig.json",
+                "tsconfig.node.json",
+                "tsconfig.extension.json",
+                "vite.config.ts",
+                "scripts/**",
+                ".npmrc"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "extension-host",
+              "name": "浏览器扩展宿主",
+              "description": "负责 MV3 manifest、MAIN/isolated content bridge、后台 AuthV2 状态机及扩展 API 基址适配。",
+              "scope": [
+                "extension-src/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "quality-automation",
+              "name": "质量自动化",
+              "description": "负责独立于产品实现的本地测试框架、版本化 fixture、fake 场景、旅程断言和脱敏测试产物。",
+              "scope": [
+                "tests/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "shared-panel",
+              "name": "共享 Panel 体验",
+              "description": "负责 Web page 与扩展 float 共用的 Panel UI、数据 hooks、市场/搜索/详情/Watchlist/交易视图、Panel 挂载契约及其内部资源。",
+              "scope": [
+                "src/panel/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "web-auth-host",
+              "name": "Web 与 AuthV2 宿主",
+              "description": "负责 Web 页面外壳、Web AuthV2 状态机、桥接和共享认证常量。",
+              "scope": [
+                "src/app/**",
+                "src/auth/**",
+                "src/shared/auth-constants.ts"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "worker-gateway",
+              "name": "Worker 网关",
+              "description": "负责 Cloudflare Worker 静态资源、Auth BFF、上游 family 路由、CORS、WalletConnect 和 wallet-trade 代理边界。",
+              "scope": [
+                "worker/**",
+                "wrangler.jsonc",
+                "wrangler.local.jsonc",
+                "wrangler.demo.main.jsonc",
+                "wrangler.demo.test.jsonc"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            }
+          ],
+          "verifications": [
+            {
+              "id": "runner_seed_contract",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "command-contract"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "browser_harness_tooling",
+              "run": [
+                "node",
+                "scripts/playwright-harness-smoke.mjs"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "foundation_producer",
+              "run": [
+                "node",
+                "--test",
+                "tests/foundation/**/*.test.mjs"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "foundation_suite",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "foundation"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "api_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "worker_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "network_worker_producer",
+              "run": [
+                "node",
+                "--test",
+                "tests/network-worker/**/*.test.mjs"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "api_suite",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "api"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "worker_suite",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "worker"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "panel_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "panel_browser_producer",
+              "run": [
+                "npm",
+                "exec",
+                "playwright",
+                "test",
+                "--",
+                "--config",
+                "scripts/playwright.acceptance.config.mjs",
+                "tests/panel"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "panel_suite",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "panel"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "web_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "extension_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck:ext"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "host_parity_browser_producer",
+              "run": [
+                "npm",
+                "exec",
+                "playwright",
+                "test",
+                "--",
+                "--config",
+                "scripts/playwright.acceptance.config.mjs",
+                "tests/host-parity"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "host_parity_suite",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "host-parity"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "final_command_contract",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "command-contract"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "acceptance_all",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "all"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "project_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "web_build",
+              "run": [
+                "npm",
+                "run",
+                "build"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "extension_build",
+              "run": [
+                "npm",
+                "run",
+                "build:ext"
+              ],
+              "cwd": "."
+            }
+          ],
+          "tasks": [
+            {
+              "id": "seed_acceptance_runner",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Seed the acceptance-suite command contract",
+              "dependsOn": [],
+              "write": [
+                "package.json",
+                "scripts/test-acceptance.mjs"
+              ],
+              "resources": [
+                "acceptance-runner:registry"
+              ],
+              "verify": [
+                "runner_seed_contract"
+              ],
+              "done": [
+                "Adds root test:acceptance and scripts/test-acceptance.mjs as the earliest ACCEPTANCE-SUITE-RUNNER/R2 source deliverable.",
+                "command-contract lists registered suites and rejects an unknown or unregistered suite with non-zero status that names it.",
+                "Does not register or invoke a future foundation, API, Worker, Panel, parity, or all producer."
+              ],
+              "priority": 10,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Seeded public acceptance command contract",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "provision_browser_ui_harness",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Provision sealed project-local browser UI acceptance harness",
+              "dependsOn": [
+                "seed_acceptance_runner"
+              ],
+              "write": [
+                ".npmrc",
+                "package.json",
+                "package-lock.json",
+                "scripts/playwright.acceptance.config.mjs",
+                "scripts/playwright-acceptance.mjs",
+                "scripts/playwright-harness-smoke.mjs"
+              ],
+              "resources": [
+                "browser-harness:acceptance"
+              ],
+              "verify": [
+                "browser_harness_tooling"
+              ],
+              "done": [
+                "Sets project-local .npmrc playwright_browsers_path=0 and declares lockfile-pinned, strictly matching @playwright/test and official @playwright/browser-chromium helper versions, so formal dependency preparation installs Chromium at node_modules/playwright-core/.local-browsers for sealed node_modules reuse.",
+                "Provides a single wrapper that sets PLAYWRIGHT_BROWSERS_PATH=0 before importing or loading Playwright, plus deterministic configuration used by Panel and host-parity producers.",
+                "Its smoke verification actually launches headless Chromium, loads a local page, asserts DOM content, blocks external network, and cleanly closes the browser; it neither creates a root postinstall nor modifies user npm configuration, caches, standalone browser assets, or node_modules."
+              ],
+              "priority": 15,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Verified sealed local browser UI harness",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "build_deterministic_foundation",
+              "role": "work",
+              "ownerId": "quality-automation",
+              "title": "Build deterministic fixtures, fakes, and redacted evidence producers",
+              "dependsOn": [
+                "seed_acceptance_runner"
+              ],
+              "write": [
+                "tests/**"
+              ],
+              "resources": [
+                "test-fixtures:versioned"
+              ],
+              "verify": [
+                "foundation_producer"
+              ],
+              "done": [
+                "Creates versioned fake unary and stream transport scenarios that reject undeclared external network access.",
+                "Deep-freezes every nested fixture object and array, proving producer mutation cannot alter a shared fixture.",
+                "Provides controlled time, random, retry, stream event, authentication, interruption, and write-failure scripts plus evidence redacted for payload, token, session, and txHash in whitespace, nested, and delimiter forms."
+              ],
+              "priority": 20,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Reusable deterministic local acceptance foundation",
+                "ownerCandidates": [
+                  "quality-automation"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "register_foundation_suite",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Register and revalidate the completed foundation suite",
+              "dependsOn": [
+                "build_deterministic_foundation"
+              ],
+              "write": [
+                "package.json",
+                "scripts/test-acceptance.mjs"
+              ],
+              "resources": [
+                "acceptance-runner:registry"
+              ],
+              "verify": [
+                "runner_seed_contract",
+                "foundation_suite"
+              ],
+              "done": [
+                "Registers only the completed foundation tests producer.",
+                "Maps --suite foundation to real assertions and retains named non-zero unknown-suite behavior.",
+                "Revalidates command-contract and foundation through the public runner."
+              ],
+              "priority": 25,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Foundation suite available through public runner",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "inject_api_transport_seams",
+              "role": "work",
+              "ownerId": "api-protocol",
+              "title": "Add local fake transport injection to API protocol service",
+              "dependsOn": [
+                "build_deterministic_foundation"
+              ],
+              "write": [
+                "src/api/**"
+              ],
+              "resources": [
+                "api-transport:injection-contract"
+              ],
+              "verify": [
+                "api_typecheck"
+              ],
+              "done": [
+                "Adds explicit test-only injection at the consoCall/consoStream transport boundary while retaining production routing/defaults.",
+                "Preserves payload isolation, endpoint compatibility, missing-auth and terminal 401-after-refresh behavior, and controlled interruption/reconnection.",
+                "Keeps acceptance paths away from real credentials, wallet connections, signing, and broadcasts."
+              ],
+              "priority": 30,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Compatible injectable API transport seam",
+                "ownerCandidates": [
+                  "api-protocol"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "adapt_worker_fake_boundary",
+              "role": "work",
+              "ownerId": "worker-gateway",
+              "title": "Preserve Worker route gates under local fake routing",
+              "dependsOn": [
+                "build_deterministic_foundation"
+              ],
+              "write": [
+                "worker/**"
+              ],
+              "resources": [
+                "worker-gateway:fake-route-contract"
+              ],
+              "verify": [
+                "worker_typecheck"
+              ],
+              "done": [
+                "Adds explicit Worker-scoped local-test routing/adaptation while preserving normal method, path, family, AuthV2, CORS, upgrade, and proxy gates.",
+                "Fake handling cannot access an external upstream and does not alter deployment or user configuration.",
+                "Uses test-injected Worker bindings rather than writing wrangler.local.jsonc, which remains outside this task's required deliverable."
+              ],
+              "priority": 30,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Worker-compatible local fake routing boundary",
+                "ownerCandidates": [
+                  "worker-gateway"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "prove_network_worker_contracts",
+              "role": "work",
+              "ownerId": "quality-automation",
+              "title": "Produce API and Worker behavioral contract scenarios",
+              "dependsOn": [
+                "register_foundation_suite",
+                "inject_api_transport_seams",
+                "adapt_worker_fake_boundary"
+              ],
+              "write": [
+                "tests/**"
+              ],
+              "resources": [
+                "acceptance-scenarios:network-worker"
+              ],
+              "verify": [
+                "network_worker_producer"
+              ],
+              "done": [
+                "Adds real API and Worker suite producers using the completed deterministic foundation.",
+                "Covers unary/stream, anonymous and terminal-401 behavior, disconnect/backoff/reconnect/eventual error, valid fake, unauthorized, invalid method/path/family, CORS, upgrade, and no-upstream cases.",
+                "Verifies local-only behavior with no sensitive evidence, wallet connection, signing, or broadcast."
+              ],
+              "priority": 40,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Fixed local API and Worker behavioral evidence",
+                "ownerCandidates": [
+                  "quality-automation"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "register_network_worker_suites",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Register and revalidate completed API and Worker suites",
+              "dependsOn": [
+                "prove_network_worker_contracts"
+              ],
+              "write": [
+                "package.json",
+                "scripts/test-acceptance.mjs"
+              ],
+              "resources": [
+                "acceptance-runner:registry"
+              ],
+              "verify": [
+                "runner_seed_contract",
+                "foundation_suite",
+                "api_suite",
+                "worker_suite"
+              ],
+              "done": [
+                "Registers only completed API and Worker producers after foundation.",
+                "Maps each suite to actual tests and preserves command-contract failure semantics.",
+                "Reexecutes foundation, API, and Worker suites after this runner change."
+              ],
+              "priority": 45,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Foundation, API, Worker suites public",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "make_panel_testable",
+              "role": "work",
+              "ownerId": "shared-panel",
+              "title": "Add shared Panel test seams and stable semantics",
+              "dependsOn": [
+                "prove_network_worker_contracts",
+                "provision_browser_ui_harness"
+              ],
+              "write": [
+                "src/panel/**"
+              ],
+              "resources": [
+                "panel:injection-contract"
+              ],
+              "verify": [
+                "panel_typecheck"
+              ],
+              "done": [
+                "Adds minimal injection seams and stable roles, labels, or test identifiers to the existing shared Panel without duplicating product views.",
+                "Connects Market, Search, Detail Chart/Data/Holders/Profit/Trades, Watchlist, and Trade to completed fake transport contracts while preserving production defaults.",
+                "Supports deterministic Watchlist rollback/retry/local-order submission and no-wallet Trade quote, allowance, preflight, approve/swap/submission/status branches."
+              ],
+              "priority": 50,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Testable shared Panel with compatible production behavior",
+                "ownerCandidates": [
+                  "shared-panel"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "produce_panel_journeys",
+              "role": "work",
+              "ownerId": "quality-automation",
+              "title": "Produce browser-executed shared Panel journeys",
+              "dependsOn": [
+                "make_panel_testable",
+                "register_network_worker_suites",
+                "provision_browser_ui_harness"
+              ],
+              "write": [
+                "tests/**"
+              ],
+              "resources": [
+                "acceptance-scenarios:panel-journeys"
+              ],
+              "verify": [
+                "panel_browser_producer"
+              ],
+              "done": [
+                "Uses the verified browser harness to mount the existing shared Panel with fixture-injected local page/float adapters and stable semantic selectors.",
+                "Adds authenticated-market, search-detail, watchlist-recovery, trade-simulation, and auth-and-network-failures assertions covering lists, search, all Detail views/periods, rollback/retry/order submission, and Trade success/rejection/timeout/failure/retry.",
+                "Performs no real network, credential, wallet, signing, or broadcast action."
+              ],
+              "priority": 60,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Browser-executed shared Panel journey producer",
+                "ownerCandidates": [
+                  "quality-automation"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "register_panel_journey_suites",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Register and revalidate completed Panel journeys",
+              "dependsOn": [
+                "produce_panel_journeys"
+              ],
+              "write": [
+                "package.json",
+                "scripts/test-acceptance.mjs"
+              ],
+              "resources": [
+                "acceptance-runner:registry"
+              ],
+              "verify": [
+                "runner_seed_contract",
+                "foundation_suite",
+                "api_suite",
+                "worker_suite",
+                "panel_suite"
+              ],
+              "done": [
+                "Registers the completed browser Panel producer only after it exists.",
+                "Maps --suite panel to the real browser assertions.",
+                "Reexecutes all registered consumer suites after runner modification."
+              ],
+              "priority": 65,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Panel suite available through public runner",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "adapt_web_host_parity",
+              "role": "work",
+              "ownerId": "web-auth-host",
+              "title": "Adapt Web bridge for shared Panel parity",
+              "dependsOn": [
+                "make_panel_testable",
+                "provision_browser_ui_harness"
+              ],
+              "write": [
+                "src/app/**",
+                "src/auth/**",
+                "src/shared/auth-constants.ts"
+              ],
+              "resources": [
+                "host-bridge:web"
+              ],
+              "verify": [
+                "web_typecheck"
+              ],
+              "done": [
+                "Makes the existing Web Auth/bridge shell explicitly selectable for anonymous local acceptance state without changing production authentication defaults.",
+                "Uses PanelApp page mode rather than a parallel product implementation.",
+                "Provides deterministic visible-state and bridge-event inputs for the common browser parity scenario."
+              ],
+              "priority": 70,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Web host compatible with common parity scenario",
+                "ownerCandidates": [
+                  "web-auth-host"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "adapt_extension_host_parity",
+              "role": "work",
+              "ownerId": "extension-host",
+              "title": "Adapt extension bridge for shared Panel parity",
+              "dependsOn": [
+                "make_panel_testable",
+                "provision_browser_ui_harness"
+              ],
+              "write": [
+                "extension-src/**"
+              ],
+              "resources": [
+                "host-bridge:extension"
+              ],
+              "verify": [
+                "extension_typecheck"
+              ],
+              "done": [
+                "Makes the MV3 bridge explicitly selectable for anonymous local acceptance state without changing installed-extension production defaults.",
+                "Continues to mount the existing shared Panel in float mode rather than a parallel UI.",
+                "Provides deterministic visible-state and bridge-event inputs for the common browser parity scenario."
+              ],
+              "priority": 70,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Extension host compatible with common parity scenario",
+                "ownerCandidates": [
+                  "extension-host"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "produce_host_parity",
+              "role": "work",
+              "ownerId": "quality-automation",
+              "title": "Produce browser-executed Web and extension host parity",
+              "dependsOn": [
+                "produce_panel_journeys",
+                "adapt_web_host_parity",
+                "adapt_extension_host_parity",
+                "provision_browser_ui_harness"
+              ],
+              "write": [
+                "tests/**"
+              ],
+              "resources": [
+                "acceptance-scenarios:host-parity"
+              ],
+              "verify": [
+                "host_parity_browser_producer"
+              ],
+              "done": [
+                "Executes the identical fixture and scenario script in a browser against Web page and extension float host adapters mounting the existing PanelApp.",
+                "Compares user-visible key states through semantic selectors and bridge events, allowing only documented mode/bridge differences.",
+                "Revalidates Panel and network behavior through both hosts without real network, credentials, wallet connection, signing, or broadcast."
+              ],
+              "priority": 80,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Browser-backed host-parity suite producer",
+                "ownerCandidates": [
+                  "quality-automation"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "register_host_parity_and_all",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Register host parity and integrated all suite",
+              "dependsOn": [
+                "register_panel_journey_suites",
+                "produce_host_parity"
+              ],
+              "write": [
+                "package.json",
+                "scripts/test-acceptance.mjs"
+              ],
+              "resources": [
+                "acceptance-runner:registry"
+              ],
+              "verify": [
+                "final_command_contract",
+                "foundation_suite",
+                "api_suite",
+                "worker_suite",
+                "panel_suite",
+                "host_parity_suite",
+                "acceptance_all"
+              ],
+              "done": [
+                "Registers completed browser host-parity and integrated all-suite producers only after their assertions exist.",
+                "Maps all registered suite names to real producers; --suite all executes every registered producer; unknown/unregistered names fail non-zero with the name.",
+                "As the final registry update, reruns command-contract and every registered consumer suite."
+              ],
+              "priority": 90,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Final ACCEPTANCE-SUITE-RUNNER/R2 registry",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "integrate_critical_journeys",
+              "role": "verify",
+              "ownerId": "quality-automation",
+              "title": "Run integrated critical-journey acceptance gate",
+              "dependsOn": [
+                "register_host_parity_and_all"
+              ],
+              "write": [],
+              "resources": [
+                "acceptance-gate:integrated"
+              ],
+              "verify": [
+                "acceptance_all",
+                "project_typecheck",
+                "extension_typecheck",
+                "web_build",
+                "extension_build"
+              ],
+              "done": [
+                "Reexecutes all registered acceptance suites after final runner registration.",
+                "Confirms AC-01 through AC-06: deterministic core journeys, failure states, Search/Detail/Watchlist/Trade coverage, shared Panel browser host parity, redacted evidence, and typecheck/build success.",
+                "Reports only redacted evidence and genuine external blockers without modifying runtime artifacts or user configuration."
+              ],
+              "priority": 100,
+              "onFailure": {
+                "action": "notify_main"
+              },
+              "onBlocked": {
+                "action": "notify_main"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Integrated acceptance and build gate",
+                "ownerCandidates": [
+                  "quality-automation"
+                ],
+                "unknowns": []
+              }
+            }
+          ]
+        },
+        "snapshotDigest": "ea09fe8f791763cfded3071ea826b89edffaf250999752267974f9f4a8f15e8a",
+        "packagesRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/packages-e8202eda6aab98c23e684b1ec874aef7f20254bd8d413eebbc82476149f81257/result.json",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-7a562fd034c530484ad255b7435b9669567cd463fef1f017529734586a505f87",
+        "sessionId": "owner-ac0c6abb1c08e848bf123c5c075e6f2b5e0d37ff",
+        "promptId": "owner-ac0c6abb1c08e848bf123c5c075e6f2b5e0d37ff",
+        "executionSettled": true,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-ac0c6abb1c08e848bf123c5c075e6f2b5e0d37ff/result.json"
+      }
+    },
+    {
+      "id": "act-be49088e73d7a6d79abd7193a7805827c3833bd0",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "failure": null,
+      "termination": null,
+      "result": {
+        "review": {
+          "contract": "DSH_PLAN_REVIEW_V1",
+          "status": "needs_revision",
+          "summary": "The DAG is otherwise executable and correctly routes the R10 work to durable owners: foundation precedes scenario producers, API/Worker implementation scopes are separated from tests, host parity is transitively gated on Panel/network/harness work, and the final gate owns the all-suite/typecheck/build results. The persisted Worker owner-feedback fact is non-blocking and does not create a planning obligation because R10 expressly requires test-injected Worker bindings without a wrangler.local.jsonc deliverable. One browser-harness contract obligation remains unresolved: the declared actual browser producer commands bypass the required pre-load wrapper.",
+          "issues": [
+            {
+              "severity": "high",
+              "title": "Browser test producer verifications bypass the mandatory Playwright pre-load wrapper",
+              "detail": "R10 requires the unified wrapper to set PLAYWRIGHT_BROWSERS_PATH=0 before Playwright is first loaded. Although provision_browser_ui_harness promises such a wrapper, the actual verification producers panel_browser_producer and host_parity_browser_producer invoke `npm exec playwright test` directly. That CLI can load Playwright before the planned wrapper runs. The plan also does not concretely bind `test:acceptance` browser-suite dispatch to that wrapper. Thus the sealed project-local Chromium contract is not carried by the actual verification producers for Panel and parity acceptance.",
+              "suggestion": "Revise the browser producer verification commands to invoke the planned wrapper (for example `node scripts/playwright-acceptance.mjs ...`) rather than `npm exec playwright test` directly, and make the runner's Panel/host-parity/all dispatch explicitly use that same wrapper. Retain the smoke's launch/DOM/external-network-block/clean-close proof. This is a contract-and-DAG correction only; do not require those future browser tests to pass during plan review.",
+              "obligationId": "ACCEPTANCE-SUITE-RUNNER-R2-browser-wrapper-binding",
+              "sourceId": "COINHUB-CRITICAL-JOURNEYS",
+              "sourceVersion": "R10",
+              "targetTaskIds": [
+                "provision_browser_ui_harness",
+                "produce_panel_journeys",
+                "produce_host_parity",
+                "register_panel_journey_suites",
+                "register_host_parity_and_all"
+              ],
+              "classificationBasis": {
+                "source": {
+                  "id": "COINHUB-CRITICAL-JOURNEYS",
+                  "version": "R10"
+                },
+                "technicalFacts": [
+                  "Spec R10 requires a single wrapper to set PLAYWRIGHT_BROWSERS_PATH=0 before the first Playwright load.",
+                  "The plan's panel_browser_producer and host_parity_browser_producer verifications directly execute npm exec playwright test.",
+                  "A wrapper is only promised in provision_browser_ui_harness.done and is not invoked by those producer verification commands."
+                ]
+              },
+              "closeWhen": {
+                "kind": "plan_task_executable",
+                "taskId": "provision_browser_ui_harness"
+              }
+            }
+          ],
+          "targetTaskIds": [
+            "provision_browser_ui_harness",
+            "produce_panel_journeys",
+            "produce_host_parity",
+            "register_panel_journey_suites",
+            "register_host_parity_and_all"
+          ]
+        },
+        "planDigest": "e8f509eac185561d0726edca30b218f5052f6d8f2bfbc8738b388df1382e800c",
+        "snapshotDigest": "ea09fe8f791763cfded3071ea826b89edffaf250999752267974f9f4a8f15e8a",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-a86667886367d9a0c93311dfd21692cb56e71af62374a51d2d304849c2c2191b",
+        "sessionId": "owner-a3a84a69c5b7fe7de5064d9b0031323dfb86b3ca",
+        "promptId": "owner-a3a84a69c5b7fe7de5064d9b0031323dfb86b3ca",
+        "executionSettled": true,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-a3a84a69c5b7fe7de5064d9b0031323dfb86b3ca/result.json"
+      }
+    },
+    {
+      "id": "act-83ba600f34cc0568c48b19f73055596897c42e3f",
+      "kind": "plan",
+      "status": "succeeded",
+      "failure": null,
+      "termination": null,
+      "result": {
+        "plan": {
+          "contract": "DSH_PLAN_V2",
+          "executable": true,
+          "registryDigest": "b6742d21b995c5dbce7c6d362890c3a92a1094650f403df330f71f4162afc09b",
+          "summary": "Seed the acceptance command contract and sealed browser harness, build deterministic fakes and API/Worker seams, then produce Panel and host browser scenarios through the mandatory wrapper before the integrated acceptance/build gate.",
+          "planningBindings": {
+            "contract": "DSH_PLANNING_BINDINGS_V1",
+            "snapshotId": "snapshot-planning-finalize-347ad7d3ceb529e6d83355f4",
+            "sourceDigest": "d3263b1341d4f853a36b9f52902c5ed73d28b09d27dbac8d20c86892d354c7ea",
+            "tasks": [
+              {
+                "taskId": "seed_acceptance_runner",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "provision_browser_ui_harness",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "build_deterministic_foundation",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "register_foundation_suite",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "inject_api_transport_seams",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "adapt_worker_fake_boundary",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "prove_network_worker_contracts",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "register_network_worker_suites",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "make_panel_testable",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "produce_panel_journeys",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "register_panel_journey_suites",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "adapt_web_host_parity",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "adapt_extension_host_parity",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "produce_host_parity",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "register_host_parity_and_all",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              },
+              {
+                "taskId": "integrate_critical_journeys",
+                "tickets": [
+                  {
+                    "id": "COINHUB-E2E-001",
+                    "revision": "R10",
+                    "fragments": [
+                      "implementation"
+                    ]
+                  }
+                ],
+                "contracts": [
+                  {
+                    "id": "ACCEPTANCE-SUITE-RUNNER",
+                    "revision": "R2"
+                  }
+                ]
+              }
+            ]
+          },
+          "owners": [
+            {
+              "id": "api-protocol",
+              "name": "API 与协议传输",
+              "description": "负责浏览器 API 客户端、网络路由/鉴权/重连服务、wallet-trade 客户端和 protobuf 合同。",
+              "scope": [
+                "src/api/**",
+                "src/proto/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "build-tooling",
+              "name": "构建与工程配置",
+              "description": "负责根目录 npm 工作区清单、TypeScript/Vite 配置及可复用开发构建脚本这一稳定工程边界。",
+              "scope": [
+                "package.json",
+                "package-lock.json",
+                "tsconfig.json",
+                "tsconfig.node.json",
+                "tsconfig.extension.json",
+                "vite.config.ts",
+                "scripts/**",
+                ".npmrc"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "extension-host",
+              "name": "浏览器扩展宿主",
+              "description": "负责 MV3 manifest、MAIN/isolated content bridge、后台 AuthV2 状态机及扩展 API 基址适配。",
+              "scope": [
+                "extension-src/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "quality-automation",
+              "name": "质量自动化",
+              "description": "负责独立于产品实现的本地测试框架、版本化 fixture、fake 场景、旅程断言和脱敏测试产物。",
+              "scope": [
+                "tests/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "shared-panel",
+              "name": "共享 Panel 体验",
+              "description": "负责 Web page 与扩展 float 共用的 Panel UI、数据 hooks、市场/搜索/详情/Watchlist/交易视图、Panel 挂载契约及其内部资源。",
+              "scope": [
+                "src/panel/**"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "web-auth-host",
+              "name": "Web 与 AuthV2 宿主",
+              "description": "负责 Web 页面外壳、Web AuthV2 状态机、桥接和共享认证常量。",
+              "scope": [
+                "src/app/**",
+                "src/auth/**",
+                "src/shared/auth-constants.ts"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            },
+            {
+              "id": "worker-gateway",
+              "name": "Worker 网关",
+              "description": "负责 Cloudflare Worker 静态资源、Auth BFF、上游 family 路由、CORS、WalletConnect 和 wallet-trade 代理边界。",
+              "scope": [
+                "worker/**",
+                "wrangler.jsonc",
+                "wrangler.local.jsonc",
+                "wrangler.demo.main.jsonc",
+                "wrangler.demo.test.jsonc"
+              ],
+              "exclude": [],
+              "declaredExclude": [],
+              "managedExclude": []
+            }
+          ],
+          "verifications": [
+            {
+              "id": "runner_seed_contract",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "command-contract"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "browser_harness_tooling",
+              "run": [
+                "node",
+                "scripts/playwright-harness-smoke.mjs"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "foundation_producer",
+              "run": [
+                "node",
+                "--test",
+                "tests/foundation/**/*.test.mjs"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "foundation_suite",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "foundation"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "api_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "worker_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "network_worker_producer",
+              "run": [
+                "node",
+                "--test",
+                "tests/network-worker/**/*.test.mjs"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "api_suite",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "api"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "worker_suite",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "worker"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "panel_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "panel_browser_producer",
+              "run": [
+                "npm",
+                "exec",
+                "playwright",
+                "test",
+                "--",
+                "--config",
+                "scripts/playwright.acceptance.config.mjs",
+                "tests/panel"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "panel_suite",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "panel"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "web_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "extension_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck:ext"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "host_parity_browser_producer",
+              "run": [
+                "npm",
+                "exec",
+                "playwright",
+                "test",
+                "--",
+                "--config",
+                "scripts/playwright.acceptance.config.mjs",
+                "tests/host-parity"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "host_parity_suite",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "host-parity"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "final_command_contract",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "command-contract"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "acceptance_all",
+              "run": [
+                "npm",
+                "run",
+                "test:acceptance",
+                "--",
+                "--suite",
+                "all"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "project_typecheck",
+              "run": [
+                "npm",
+                "run",
+                "typecheck"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "web_build",
+              "run": [
+                "npm",
+                "run",
+                "build"
+              ],
+              "cwd": "."
+            },
+            {
+              "id": "extension_build",
+              "run": [
+                "npm",
+                "run",
+                "build:ext"
+              ],
+              "cwd": "."
+            }
+          ],
+          "tasks": [
+            {
+              "id": "seed_acceptance_runner",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Seed the acceptance-suite command contract",
+              "dependsOn": [],
+              "write": [
+                "package.json",
+                "scripts/test-acceptance.mjs"
+              ],
+              "resources": [
+                "acceptance-runner:registry"
+              ],
+              "verify": [
+                "runner_seed_contract"
+              ],
+              "done": [
+                "Adds root test:acceptance and scripts/test-acceptance.mjs as the earliest ACCEPTANCE-SUITE-RUNNER/R2 source deliverable.",
+                "command-contract lists registered suites and rejects an unknown or unregistered suite with non-zero status that names it.",
+                "Does not register or invoke a future foundation, API, Worker, Panel, parity, or all producer."
+              ],
+              "priority": 10,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Seeded public acceptance command contract",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "provision_browser_ui_harness",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Provision sealed project-local browser UI acceptance harness",
+              "dependsOn": [
+                "seed_acceptance_runner"
+              ],
+              "write": [
+                ".npmrc",
+                "package.json",
+                "package-lock.json",
+                "scripts/playwright.acceptance.config.mjs",
+                "scripts/playwright-acceptance.mjs",
+                "scripts/playwright-harness-smoke.mjs"
+              ],
+              "resources": [
+                "browser-harness:acceptance"
+              ],
+              "verify": [
+                "browser_harness_tooling"
+              ],
+              "done": [
+                "Sets project-local .npmrc playwright_browsers_path=0 and declares lockfile-pinned, strictly matching @playwright/test and official @playwright/browser-chromium helper versions, so formal dependency preparation installs Chromium at node_modules/playwright-core/.local-browsers for sealed node_modules reuse.",
+                "Provides a single wrapper that sets PLAYWRIGHT_BROWSERS_PATH=0 before importing or loading Playwright, plus deterministic configuration used by Panel and host-parity producers and by the runner browser dispatch.",
+                "Its smoke verification actually launches headless Chromium, loads a local page, asserts DOM content, blocks external network, and cleanly closes the browser; it neither creates a root postinstall nor modifies user npm configuration, caches, standalone browser assets, or node_modules."
+              ],
+              "priority": 15,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Verified sealed local browser UI harness",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "build_deterministic_foundation",
+              "role": "work",
+              "ownerId": "quality-automation",
+              "title": "Build deterministic fixtures, fakes, and redacted evidence producers",
+              "dependsOn": [
+                "seed_acceptance_runner"
+              ],
+              "write": [
+                "tests/**"
+              ],
+              "resources": [
+                "test-fixtures:versioned"
+              ],
+              "verify": [
+                "foundation_producer"
+              ],
+              "done": [
+                "Creates versioned fake unary and stream transport scenarios that reject undeclared external network access.",
+                "Deep-freezes every nested fixture object and array, proving producer mutation cannot alter a shared fixture.",
+                "Provides controlled time, random, retry, stream event, authentication, interruption, and write-failure scripts plus evidence redacted for payload, token, session, and txHash in whitespace, nested, and delimiter forms."
+              ],
+              "priority": 20,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Reusable deterministic local acceptance foundation",
+                "ownerCandidates": [
+                  "quality-automation"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "register_foundation_suite",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Register and revalidate the completed foundation suite",
+              "dependsOn": [
+                "build_deterministic_foundation"
+              ],
+              "write": [
+                "package.json",
+                "scripts/test-acceptance.mjs"
+              ],
+              "resources": [
+                "acceptance-runner:registry"
+              ],
+              "verify": [
+                "runner_seed_contract",
+                "foundation_suite"
+              ],
+              "done": [
+                "Registers only the completed foundation tests producer.",
+                "Maps --suite foundation to real assertions and retains named non-zero unknown-suite behavior.",
+                "Revalidates command-contract and foundation through the public runner."
+              ],
+              "priority": 25,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Foundation suite available through public runner",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "inject_api_transport_seams",
+              "role": "work",
+              "ownerId": "api-protocol",
+              "title": "Add local fake transport injection to API protocol service",
+              "dependsOn": [
+                "build_deterministic_foundation"
+              ],
+              "write": [
+                "src/api/**"
+              ],
+              "resources": [
+                "api-transport:injection-contract"
+              ],
+              "verify": [
+                "api_typecheck"
+              ],
+              "done": [
+                "Adds explicit test-only injection at the consoCall/consoStream transport boundary while retaining production routing/defaults.",
+                "Preserves payload isolation, endpoint compatibility, missing-auth and terminal 401-after-refresh behavior, and controlled interruption/reconnection.",
+                "Keeps acceptance paths away from real credentials, wallet connections, signing, and broadcasts."
+              ],
+              "priority": 30,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Compatible injectable API transport seam",
+                "ownerCandidates": [
+                  "api-protocol"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "adapt_worker_fake_boundary",
+              "role": "work",
+              "ownerId": "worker-gateway",
+              "title": "Preserve Worker route gates under local fake routing",
+              "dependsOn": [
+                "build_deterministic_foundation"
+              ],
+              "write": [
+                "worker/**"
+              ],
+              "resources": [
+                "worker-gateway:fake-route-contract"
+              ],
+              "verify": [
+                "worker_typecheck"
+              ],
+              "done": [
+                "Adds explicit Worker-scoped local-test routing/adaptation while preserving normal method, path, family, AuthV2, CORS, upgrade, and proxy gates.",
+                "Fake handling cannot access an external upstream and does not alter deployment or user configuration.",
+                "Uses test-injected Worker bindings rather than writing wrangler.local.jsonc, which remains outside this task's required deliverable."
+              ],
+              "priority": 30,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Worker-compatible local fake routing boundary",
+                "ownerCandidates": [
+                  "worker-gateway"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "prove_network_worker_contracts",
+              "role": "work",
+              "ownerId": "quality-automation",
+              "title": "Produce API and Worker behavioral contract scenarios",
+              "dependsOn": [
+                "register_foundation_suite",
+                "inject_api_transport_seams",
+                "adapt_worker_fake_boundary"
+              ],
+              "write": [
+                "tests/**"
+              ],
+              "resources": [
+                "acceptance-scenarios:network-worker"
+              ],
+              "verify": [
+                "network_worker_producer"
+              ],
+              "done": [
+                "Adds real API and Worker suite producers using the completed deterministic foundation.",
+                "Covers unary/stream, anonymous and terminal-401 behavior, disconnect/backoff/reconnect/eventual error, valid fake, unauthorized, invalid method/path/family, CORS, upgrade, and no-upstream cases.",
+                "Verifies local-only behavior with no sensitive evidence, wallet connection, signing, or broadcast."
+              ],
+              "priority": 40,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Fixed local API and Worker behavioral evidence",
+                "ownerCandidates": [
+                  "quality-automation"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "register_network_worker_suites",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Register and revalidate completed API and Worker suites",
+              "dependsOn": [
+                "prove_network_worker_contracts"
+              ],
+              "write": [
+                "package.json",
+                "scripts/test-acceptance.mjs"
+              ],
+              "resources": [
+                "acceptance-runner:registry"
+              ],
+              "verify": [
+                "runner_seed_contract",
+                "foundation_suite",
+                "api_suite",
+                "worker_suite"
+              ],
+              "done": [
+                "Registers only completed API and Worker producers after foundation.",
+                "Maps each suite to actual tests and preserves command-contract failure semantics.",
+                "Reexecutes foundation, API, and Worker suites after this runner change."
+              ],
+              "priority": 45,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Foundation, API, Worker suites public",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "make_panel_testable",
+              "role": "work",
+              "ownerId": "shared-panel",
+              "title": "Add shared Panel test seams and stable semantics",
+              "dependsOn": [
+                "prove_network_worker_contracts",
+                "provision_browser_ui_harness"
+              ],
+              "write": [
+                "src/panel/**"
+              ],
+              "resources": [
+                "panel:injection-contract"
+              ],
+              "verify": [
+                "panel_typecheck"
+              ],
+              "done": [
+                "Adds minimal injection seams and stable roles, labels, or test identifiers to the existing shared Panel without duplicating product views.",
+                "Connects Market, Search, Detail Chart/Data/Holders/Profit/Trades, Watchlist, and Trade to completed fake transport contracts while preserving production defaults.",
+                "Supports deterministic Watchlist rollback/retry/local-order submission and no-wallet Trade quote, allowance, preflight, approve/swap/submission/status branches."
+              ],
+              "priority": 50,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Testable shared Panel with compatible production behavior",
+                "ownerCandidates": [
+                  "shared-panel"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "produce_panel_journeys",
+              "role": "work",
+              "ownerId": "quality-automation",
+              "title": "Produce browser-executed shared Panel journeys",
+              "dependsOn": [
+                "make_panel_testable",
+                "register_network_worker_suites",
+                "provision_browser_ui_harness"
+              ],
+              "write": [
+                "tests/**"
+              ],
+              "resources": [
+                "acceptance-scenarios:panel-journeys"
+              ],
+              "verify": [
+                "panel_browser_producer"
+              ],
+              "done": [
+                "Uses the verified browser harness to mount the existing shared Panel with fixture-injected local page/float adapters and stable semantic selectors.",
+                "Adds authenticated-market, search-detail, watchlist-recovery, trade-simulation, and auth-and-network-failures assertions covering lists, search, all Detail views/periods, rollback/retry/order submission, and Trade success/rejection/timeout/failure/retry.",
+                "Performs no real network, credential, wallet, signing, or broadcast action."
+              ],
+              "priority": 60,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Browser-executed shared Panel journey producer",
+                "ownerCandidates": [
+                  "quality-automation"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "register_panel_journey_suites",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Register and revalidate completed Panel journeys",
+              "dependsOn": [
+                "produce_panel_journeys"
+              ],
+              "write": [
+                "package.json",
+                "scripts/test-acceptance.mjs"
+              ],
+              "resources": [
+                "acceptance-runner:registry"
+              ],
+              "verify": [
+                "runner_seed_contract",
+                "foundation_suite",
+                "api_suite",
+                "worker_suite",
+                "panel_suite"
+              ],
+              "done": [
+                "Registers the completed browser Panel producer only after it exists.",
+                "Maps --suite panel to the real browser assertions through scripts/playwright-acceptance.mjs, which sets PLAYWRIGHT_BROWSERS_PATH=0 before loading Playwright.",
+                "Reexecutes all registered consumer suites after runner modification."
+              ],
+              "priority": 65,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Panel suite available through public runner",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "adapt_web_host_parity",
+              "role": "work",
+              "ownerId": "web-auth-host",
+              "title": "Adapt Web bridge for shared Panel parity",
+              "dependsOn": [
+                "make_panel_testable",
+                "provision_browser_ui_harness"
+              ],
+              "write": [
+                "src/app/**",
+                "src/auth/**",
+                "src/shared/auth-constants.ts"
+              ],
+              "resources": [
+                "host-bridge:web"
+              ],
+              "verify": [
+                "web_typecheck"
+              ],
+              "done": [
+                "Makes the existing Web Auth/bridge shell explicitly selectable for anonymous local acceptance state without changing production authentication defaults.",
+                "Uses PanelApp page mode rather than a parallel product implementation.",
+                "Provides deterministic visible-state and bridge-event inputs for the common browser parity scenario."
+              ],
+              "priority": 70,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Web host compatible with common parity scenario",
+                "ownerCandidates": [
+                  "web-auth-host"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "adapt_extension_host_parity",
+              "role": "work",
+              "ownerId": "extension-host",
+              "title": "Adapt extension bridge for shared Panel parity",
+              "dependsOn": [
+                "make_panel_testable",
+                "provision_browser_ui_harness"
+              ],
+              "write": [
+                "extension-src/**"
+              ],
+              "resources": [
+                "host-bridge:extension"
+              ],
+              "verify": [
+                "extension_typecheck"
+              ],
+              "done": [
+                "Makes the MV3 bridge explicitly selectable for anonymous local acceptance state without changing installed-extension production defaults.",
+                "Continues to mount the existing shared Panel in float mode rather than a parallel UI.",
+                "Provides deterministic visible-state and bridge-event inputs for the common browser parity scenario."
+              ],
+              "priority": 70,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Extension host compatible with common parity scenario",
+                "ownerCandidates": [
+                  "extension-host"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "produce_host_parity",
+              "role": "work",
+              "ownerId": "quality-automation",
+              "title": "Produce browser-executed Web and extension host parity",
+              "dependsOn": [
+                "produce_panel_journeys",
+                "adapt_web_host_parity",
+                "adapt_extension_host_parity",
+                "provision_browser_ui_harness"
+              ],
+              "write": [
+                "tests/**"
+              ],
+              "resources": [
+                "acceptance-scenarios:host-parity"
+              ],
+              "verify": [
+                "host_parity_browser_producer"
+              ],
+              "done": [
+                "Executes the identical fixture and scenario script in a browser against Web page and extension float host adapters mounting the existing PanelApp.",
+                "Compares user-visible key states through semantic selectors and bridge events, allowing only documented mode/bridge differences.",
+                "Revalidates Panel and network behavior through both hosts without real network, credentials, wallet connection, signing, or broadcast."
+              ],
+              "priority": 80,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Browser-backed host-parity suite producer",
+                "ownerCandidates": [
+                  "quality-automation"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "register_host_parity_and_all",
+              "role": "work",
+              "ownerId": "build-tooling",
+              "title": "Register host parity and integrated all suite",
+              "dependsOn": [
+                "register_panel_journey_suites",
+                "produce_host_parity"
+              ],
+              "write": [
+                "package.json",
+                "scripts/test-acceptance.mjs"
+              ],
+              "resources": [
+                "acceptance-runner:registry"
+              ],
+              "verify": [
+                "final_command_contract",
+                "foundation_suite",
+                "api_suite",
+                "worker_suite",
+                "panel_suite",
+                "host_parity_suite",
+                "acceptance_all"
+              ],
+              "done": [
+                "Registers completed browser host-parity and integrated all-suite producers only after their assertions exist.",
+                "Maps all registered suite names to real producers; public Panel, host-parity, and all browser dispatch uses scripts/playwright-acceptance.mjs before Playwright loading; --suite all executes every registered producer; unknown/unregistered names fail non-zero with the name.",
+                "As the final registry update, reruns command-contract and every registered consumer suite."
+              ],
+              "priority": 90,
+              "onFailure": {
+                "action": "repair_owner",
+                "maxAttempts": 2
+              },
+              "onBlocked": {
+                "action": "handoff_replan"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Final ACCEPTANCE-SUITE-RUNNER/R2 registry",
+                "ownerCandidates": [
+                  "build-tooling"
+                ],
+                "unknowns": []
+              }
+            },
+            {
+              "id": "integrate_critical_journeys",
+              "role": "verify",
+              "ownerId": "quality-automation",
+              "title": "Run integrated critical-journey acceptance gate",
+              "dependsOn": [
+                "register_host_parity_and_all"
+              ],
+              "write": [],
+              "resources": [
+                "acceptance-gate:integrated"
+              ],
+              "verify": [
+                "acceptance_all",
+                "project_typecheck",
+                "extension_typecheck",
+                "web_build",
+                "extension_build"
+              ],
+              "done": [
+                "Reexecutes all registered acceptance suites after final runner registration.",
+                "Confirms AC-01 through AC-06: deterministic core journeys, failure states, Search/Detail/Watchlist/Trade coverage, shared Panel browser host parity, redacted evidence, and typecheck/build success.",
+                "Reports only redacted evidence and genuine external blockers without modifying runtime artifacts or user configuration."
+              ],
+              "priority": 100,
+              "onFailure": {
+                "action": "notify_main"
+              },
+              "onBlocked": {
+                "action": "notify_main"
+              },
+              "onTimeout": {
+                "action": "notify_main",
+                "afterMs": 1800000
+              },
+              "decomposition": {
+                "status": "leaf",
+                "kind": "leaf",
+                "outcome": "Integrated acceptance and build gate",
+                "ownerCandidates": [
+                  "quality-automation"
+                ],
+                "unknowns": []
+              }
+            }
+          ]
+        },
+        "snapshotDigest": "ea09fe8f791763cfded3071ea826b89edffaf250999752267974f9f4a8f15e8a",
+        "packagesRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/packages-c0b3327f2fc398f3de5d623de51c02cfd2ee8814f027907ec116ce019b17dc2c/result.json",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-6a9782460ff215a2711e8709ca6b589c58ed7474be72e60c50808ec714f9f667",
+        "sessionId": "owner-45b1e5cfaa145cd2f195cbf3a4ea3c8606d1dada",
+        "promptId": "owner-45b1e5cfaa145cd2f195cbf3a4ea3c8606d1dada",
+        "executionSettled": true,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-45b1e5cfaa145cd2f195cbf3a4ea3c8606d1dada/result.json"
+      }
+    },
+    {
+      "id": "act-34f3849f6e2ff043d99da5e35e1b09da2c8c5bff",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "failure": null,
+      "termination": null,
+      "result": {
+        "review": {
+          "contract": "DSH_PLAN_REVIEW_V1",
+          "status": "needs_revision",
+          "summary": "The DAG is otherwise executable and correctly stages test producers before suite registration without requiring future test results at plan time. However, the actual browser producer verification commands bypass the mandated pre-load wrapper, leaving the R10 sealed-browser contract unresolved.",
+          "issues": [
+            {
+              "severity": "high",
+              "title": "Browser verification producers invoke Playwright without the required pre-load wrapper",
+              "detail": "The frozen R10 Spec/Ticket requires the single wrapper to set PLAYWRIGHT_BROWSERS_PATH=0 before Playwright is first loaded, and requires browser-suite dispatch through that wrapper. The executable verification definitions for panel_browser_producer and host_parity_browser_producer instead run `npm exec playwright test ...` directly. Those commands may load Playwright before `scripts/playwright-acceptance.mjs` can set the environment. The task.done claims that later runner dispatch will use the wrapper, but the concrete verification producers are the controlling execution contracts and do not do so. This remains a planning-contract defect, not a request that future browser tests pass now.",
+              "suggestion": "Change panel_browser_producer and host_parity_browser_producer to invoke the planned wrapper directly (for example, `node scripts/playwright-acceptance.mjs ...`), with that wrapper forwarding the acceptance config and test path. Keep the runner’s panel, host-parity, and all dispatch explicitly bound to the same wrapper, and retain the separate actual-launch smoke verification. Do not add a plan-review requirement to execute these future tests before their producer tasks run.",
+              "obligationId": "ACCEPTANCE-SUITE-RUNNER-R2-browser-wrapper-binding",
+              "sourceId": "COINHUB-CRITICAL-JOURNEYS",
+              "sourceVersion": "R10",
+              "targetTaskIds": [
+                "provision_browser_ui_harness",
+                "produce_panel_journeys",
+                "register_panel_journey_suites",
+                "produce_host_parity",
+                "register_host_parity_and_all"
+              ],
+              "classificationBasis": {
+                "source": {
+                  "id": "COINHUB-CRITICAL-JOURNEYS",
+                  "version": "R10"
+                },
+                "technicalFacts": [
+                  "Spec R10 mandates that the unified wrapper set PLAYWRIGHT_BROWSERS_PATH=0 before first loading Playwright.",
+                  "The plan's panel_browser_producer and host_parity_browser_producer verification commands directly execute `npm exec playwright test`.",
+                  "The workspace currently has neither a scripts/*playwright* harness file nor a tests/** tree; these are planned outputs, so no current execution pass is required for this review."
+                ]
+              },
+              "closeWhen": {
+                "kind": "plan_task_executable",
+                "taskId": "provision_browser_ui_harness"
+              }
+            }
+          ],
+          "targetTaskIds": [
+            "provision_browser_ui_harness",
+            "produce_panel_journeys",
+            "register_panel_journey_suites",
+            "produce_host_parity",
+            "register_host_parity_and_all"
+          ]
+        },
+        "planDigest": "41fbf2ce4add2a69f66cb28bbf20fb9b84902ef2db22bd7389a85cb602d683a4",
+        "snapshotDigest": "ea09fe8f791763cfded3071ea826b89edffaf250999752267974f9f4a8f15e8a",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-20d696c5b3d28dd05a001fc14b242ac24a7d8f3272aeef1270cbee7877f7e0e2",
+        "sessionId": "owner-7e00c0f52ef2a383b4cd358ea8e4e68ef8e217f8",
+        "promptId": "owner-7e00c0f52ef2a383b4cd358ea8e4e68ef8e217f8",
+        "executionSettled": true,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-7e00c0f52ef2a383b4cd358ea8e4e68ef8e217f8/result.json"
+      }
+    },
+    {
+      "id": "act-b3f7948d15741f24cad52b0dcdd1b0901d8e1268",
+      "kind": "plan",
+      "status": "failed",
+      "failure": "execution_identity_unconfirmed",
+      "termination": {
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-e3dd0dc4ec1e05cce9e980d1c87b334cf70962bb868bb4aa50027826b196ebe0",
+        "executionSettled": true,
+        "targetActionId": "act-b3f7948d15741f24cad52b0dcdd1b0901d8e1268"
+      },
+      "result": null
+    }
+  ],
+  "configurationHashesUnchanged": true
+}

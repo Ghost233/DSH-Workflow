@@ -1,0 +1,27 @@
+✔ native root delivery is deduplicated using persisted messages, not followup return (266.584ms)
+✔ native root receives the canonical workflow terminal status and revision (77.206792ms)
+✔ a root session closing during notification becomes a durable offline wait without hiding persistence failures (92.625542ms)
+✔ native fixed command proves managed-range exit and does not rerun a received command (108.431584ms)
+✔ native read-only sandbox rejects an actual source write (91.350083ms)
+✔ immutable dependency inputs reject writable roots before native dispatch (23.414209ms)
+✔ native verification reads external dependencies but cannot write or chmod them (133.105916ms)
+✔ old and wrong-scope command receipts are not reused or promoted to termination proof (118.133625ms)
+✔ native termination covers a helper that outlives the command leader (527.689583ms)
+✔ verification resumes after the native command receipt without rerunning or changing its directory (188.628833ms)
+✔ failed materialization waits for already-started copies before releasing cleanup authority (40.906042ms)
+✔ shared dependency preparation without a valid base binding never dispatches verification (647.51875ms)
+✔ seals actual uncommitted source once, verifies independently and resumes from receipts (665.584791ms)
+✔ fixed verification collects independent failures and never passes zero Node tests (540.341042ms)
+✔ late verification writers cannot replace the settled dependency failure and saved replay drains owned cleanup (328.218292ms)
+✔ a settled observation reclaims a saved successful receipt after a delayed .DS_Store without repeating command or review (863.039291ms)
+✔ a settled cleanup gives persistent ENOTEMPTY only its fixed retry window (414.918625ms)
+✔ source symlink escape and changed immutable candidate are rejected (256.797083ms)
+✔ KAC-21: writes check scope and linked ancestors before the native mutation (124.772583ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3965.792541

@@ -1,0 +1,9 @@
+✔ 技术拆分只改 T01 并新增 T06 时从唯一父 checkpoint 继承未变 Spec 与 T02-T05 (9910.111166ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10124.476208

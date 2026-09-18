@@ -1,0 +1,80 @@
+{
+  "contract": "DSH_DEPENDENCY_REUSE_ACCEPTANCE_V1",
+  "source": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/act-1d8c78ea3c5bbb68a4ebca26384b8a9f7dacb289/tree",
+  "projectRoot": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+  "proofId": "dependency-reuse-1789306105017",
+  "startedAt": "2026-09-13T13:28:25.018Z",
+  "passed": false,
+  "cases": [
+    {
+      "id": "imports-and-cache",
+      "contentDigest": "c0c6aa456c7e5ba269124881f62ba724936a6c1bb1284986bbbecfe1a5aa7be6",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "-e",
+        "const fs=require('node:fs'); console.log(JSON.stringify({react:require('react').version,typescript:require('typescript').version})); fs.mkdirSync('node_modules/.vite',{recursive:true}); fs.writeFileSync('node_modules/.vite/probe',process.argv[1]); import('vite').then(v=>console.log('vite:'+v.version))",
+        "first"
+      ],
+      "expectedExitCode": 0,
+      "passed": false,
+      "error": {
+        "message": "Dependency preparation failed: cmd-b0fc89d8c6f56b9faac2182de3e5d7f81fda57f4; Dependency base contains a hard-linked file; pnpm/store hardlinks are unsupported until normalized",
+        "code": "DEPENDENCY_PREPARATION_FAILED",
+        "details": {
+          "dependencyKey": "e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04",
+          "manager": "npm",
+          "phase": "cache_seal",
+          "commandId": "cmd-b0fc89d8c6f56b9faac2182de3e5d7f81fda57f4",
+          "exitCode": 0,
+          "timedOut": false,
+          "installReceipt": "install-result.json",
+          "metrics": {
+            "cacheHit": false,
+            "installRuns": 1,
+            "fullTreeCopies": 0,
+            "overlayLinks": 0,
+            "logicalBytes": 0,
+            "hashedBytes": 0,
+            "copiedBytes": 0,
+            "durations": {
+              "cacheAcquireMs": 290980,
+              "overlayMs": 0
+            },
+            "validationMode": "not_available",
+            "fallbackReason": null
+          }
+        }
+      }
+    }
+  ],
+  "contentDigest": "c0c6aa456c7e5ba269124881f62ba724936a6c1bb1284986bbbecfe1a5aa7be6",
+  "error": {
+    "message": "Dependency preparation failed: cmd-b0fc89d8c6f56b9faac2182de3e5d7f81fda57f4; Dependency base contains a hard-linked file; pnpm/store hardlinks are unsupported until normalized",
+    "code": "DEPENDENCY_PREPARATION_FAILED",
+    "details": {
+      "dependencyKey": "e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04",
+      "manager": "npm",
+      "phase": "cache_seal",
+      "commandId": "cmd-b0fc89d8c6f56b9faac2182de3e5d7f81fda57f4",
+      "exitCode": 0,
+      "timedOut": false,
+      "installReceipt": "install-result.json",
+      "metrics": {
+        "cacheHit": false,
+        "installRuns": 1,
+        "fullTreeCopies": 0,
+        "overlayLinks": 0,
+        "logicalBytes": 0,
+        "hashedBytes": 0,
+        "copiedBytes": 0,
+        "durations": {
+          "cacheAcquireMs": 290980,
+          "overlayMs": 0
+        },
+        "validationMode": "not_available",
+        "fallbackReason": null
+      }
+    }
+  },
+  "finishedAt": "2026-09-13T13:33:17.830Z"
+}

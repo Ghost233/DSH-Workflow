@@ -1,0 +1,30 @@
+✖ a cold-cache follower gets a fresh preparation deadline after waiting for the installer (1461.751458ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1544.25225
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/dependency-preparation.test.mjs:399:1
+✖ a cold-cache follower gets a fresh preparation deadline after waiting for the installer (1461.751458ms)
+  AssertionError [ERR_ASSERTION]: Completed input stage expired while waiting
+  + actual - expected
+  
+  + 'rejected'
+  - 'fulfilled'
+  
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/dependency-preparation.test.mjs:418:40)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'rejected',
+    expected: 'fulfilled',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

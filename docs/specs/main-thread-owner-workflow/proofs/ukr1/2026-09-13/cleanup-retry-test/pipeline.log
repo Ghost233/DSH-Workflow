@@ -1,0 +1,16 @@
+✔ failed materialization waits for already-started copies before releasing cleanup authority (34.302ms)
+✔ seals actual uncommitted source once, verifies independently and resumes from receipts (269.513083ms)
+✔ fixed verification collects independent failures and never passes zero Node tests (267.606667ms)
+✔ late verification writers cannot replace the settled dependency failure and saved replay drains owned cleanup (202.917208ms)
+✔ a settled observation reclaims a saved successful receipt after a delayed .DS_Store without repeating command or review (625.787291ms)
+✔ a settled cleanup gives persistent ENOTEMPTY only its fixed retry window (288.724791ms)
+✔ source symlink escape and changed immutable candidate are rejected (145.36175ms)
+✔ KAC-21: writes check scope and linked ancestors before the native mutation (108.870416ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1997.156167

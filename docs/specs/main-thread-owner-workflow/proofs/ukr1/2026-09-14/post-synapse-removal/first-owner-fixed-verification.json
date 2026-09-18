@@ -1,0 +1,108 @@
+[
+  {
+    "actionId": "act-a055fbf75c42161227507629537ee5ee3aa14762",
+    "verificationId": "fixtures-suite",
+    "passed": true,
+    "exitCode": 0,
+    "testCount": 4,
+    "stdout": "✔ versioned local fixture returns stable Market, search, and Detail frames (1.577708ms)\n✔ logged-out and 401 terminals are explicit and deterministic (0.367333ms)\n✔ network interruption and stream reconnect are virtual-time controlled (0.655875ms)\n✔ watch writes roll back and simulated trade states never represent a chain transaction (0.243291ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 46.803417\n",
+    "stderr": "",
+    "dependencyPreparation": {
+      "bindings": [
+        {
+          "packageDirectory": ".",
+          "key": "9e2789263c2151d12d4077c770f2caa32c73d64dc2b9d982f3ed60c47858a143",
+          "inputDigest": "7ad77a9f0ce1b199adf8447422fed81adc3a499b9fabeef40d128d57f6facb69",
+          "baseDigest": "ae98df921f7165fa5be3aee9bf48c32d46a035c68851f7833d363fe127f883a7",
+          "mode": "readonly-overlay",
+          "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/9e2789263c2151d12d4077c770f2caa32c73d64dc2b9d982f3ed60c47858a143/base",
+          "metrics": {
+            "cacheHit": true,
+            "installRuns": 0,
+            "fullTreeCopies": 0,
+            "overlayLinks": 591,
+            "logicalBytes": 1761456007,
+            "baseHashedBytes": 0,
+            "overlayHashedBytes": 545493,
+            "hashedBytes": 545493,
+            "copiedBytes": 545493,
+            "baseDigestEntries": 0,
+            "overlayDigestEntries": 691,
+            "digestEntries": 691,
+            "hardlinkNormalized": 0,
+            "hardlinkCopiedBytes": 0,
+            "durations": {
+              "cacheAcquireMs": 18,
+              "promoteMs": 0,
+              "normalizeMs": 0,
+              "sealMs": 0,
+              "overlayMs": 25498
+            },
+            "validationMode": "sealed-receipt",
+            "fallbackReason": null,
+            "cacheGeneration": null,
+            "installationEnvironment": {
+              "directories": 22,
+              "entries": 2073,
+              "providers": 1896,
+              "durationMs": 52617
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "actionId": "act-1b06af19b27a46f8b7a98b8ee74e16e4931fc417",
+    "verificationId": "typecheck",
+    "passed": false,
+    "exitCode": 2,
+    "testCount": null,
+    "stdout": "\n> coinhub-online-demo@0.1.0 typecheck\n> tsc --noEmit\n\nsrc/api/network/local-acceptance-transport.ts(105,4): error TS2366: Function lacks ending return statement and return type does not include 'undefined'.\n",
+    "stderr": "",
+    "dependencyPreparation": {
+      "bindings": [
+        {
+          "packageDirectory": ".",
+          "key": "9e2789263c2151d12d4077c770f2caa32c73d64dc2b9d982f3ed60c47858a143",
+          "inputDigest": "7ad77a9f0ce1b199adf8447422fed81adc3a499b9fabeef40d128d57f6facb69",
+          "baseDigest": "ae98df921f7165fa5be3aee9bf48c32d46a035c68851f7833d363fe127f883a7",
+          "mode": "readonly-overlay",
+          "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/9e2789263c2151d12d4077c770f2caa32c73d64dc2b9d982f3ed60c47858a143/base",
+          "metrics": {
+            "cacheHit": true,
+            "installRuns": 0,
+            "fullTreeCopies": 0,
+            "overlayLinks": 591,
+            "logicalBytes": 1761456007,
+            "baseHashedBytes": 0,
+            "overlayHashedBytes": 545493,
+            "hashedBytes": 545493,
+            "copiedBytes": 545493,
+            "baseDigestEntries": 0,
+            "overlayDigestEntries": 691,
+            "digestEntries": 691,
+            "hardlinkNormalized": 0,
+            "hardlinkCopiedBytes": 0,
+            "durations": {
+              "cacheAcquireMs": 15,
+              "promoteMs": 0,
+              "normalizeMs": 0,
+              "sealMs": 0,
+              "overlayMs": 18487
+            },
+            "validationMode": "sealed-receipt",
+            "fallbackReason": null,
+            "cacheGeneration": null,
+            "installationEnvironment": {
+              "directories": 22,
+              "entries": 2073,
+              "providers": 1896,
+              "durationMs": 48773
+            }
+          }
+        }
+      ]
+    }
+  }
+]

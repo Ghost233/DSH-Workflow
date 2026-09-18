@@ -1,0 +1,49 @@
+{
+  "tasks": [
+    "provision_browser_ui_harness",
+    "produce_panel_journeys",
+    "register_panel_journey_suites",
+    "produce_host_parity",
+    "register_host_parity_and_all"
+  ],
+  "verifications": [
+    "browser_harness_tooling",
+    "panel_browser_producer",
+    "host_parity_browser_producer"
+  ],
+  "verificationsActual": [
+    {
+      "id": "browser_harness_tooling",
+      "run": [
+        "node",
+        "scripts/playwright-harness-smoke.mjs"
+      ],
+      "cwd": "."
+    },
+    {
+      "id": "panel_browser_producer",
+      "run": [
+        "node",
+        "scripts/playwright-acceptance.mjs",
+        "test",
+        "--config",
+        "scripts/playwright.acceptance.config.mjs",
+        "tests/panel"
+      ],
+      "cwd": "."
+    },
+    {
+      "id": "host_parity_browser_producer",
+      "run": [
+        "node",
+        "scripts/playwright-acceptance.mjs",
+        "test",
+        "--config",
+        "scripts/playwright.acceptance.config.mjs",
+        "tests/host-parity"
+      ],
+      "cwd": "."
+    }
+  ],
+  "allTaskRecordsUnchanged": true
+}

@@ -1,0 +1,15 @@
+✔ business verification failure keeps task repair and shares one diagnostic with the terminal notice (19.475334ms)
+✔ reviewer-only rejection remains explainable but unbound or malformed findings are not projected (21.111583ms)
+✔ business diagnostics bound each finding and their aggregate in UTF-8 bytes (14.083167ms)
+✔ dependency execution failure exposes the current retry target while redacting retained evidence (15.695333ms)
+✔ runtime status uses its current clock to expose the expired technical task recovery path (8.796708ms)
+✔ retry tool descriptions distinguish a live bound verification from an expired attempt (0.280458ms)
+✔ final verification failure uses the same safe diagnostic instead of exposing raw results (12.910208ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 577.845542

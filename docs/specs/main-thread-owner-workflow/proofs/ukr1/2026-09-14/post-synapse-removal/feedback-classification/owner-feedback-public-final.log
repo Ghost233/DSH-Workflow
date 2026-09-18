@@ -1,0 +1,17 @@
+✔ root public Owner schema exposes only nine observed facts and no hidden protocol objects (1.883625ms)
+✔ old feedback is rebound to the same task and Owner in the current frozen source (1.801ms)
+✔ feedback seed keeps the real issue field while bounding and redacting its persisted text (0.784916ms)
+✔ missing producer contract returns source_revision_required without creating internal request facts (0.786333ms)
+✔ unknown legacy feedback without a current contract does not invent a public source revision (0.315792ms)
+✔ an explicit runner resource observation never enters the public contract request path (0.694333ms)
+✔ an unknown legacy feedback kind remains informational instead of becoming a source gap (0.209541ms)
+✔ runtime materialization binds the explicit producer and derives every protocol version and digest (2.378ms)
+✔ public Owner submits judgment only and Runtime supplies immutable decision bindings (1.609042ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 198.7005

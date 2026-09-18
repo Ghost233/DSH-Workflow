@@ -1,0 +1,29 @@
+✔ Planner contract accepts an executable plan with no public Owner change (7.153708ms)
+✔ Planner required fields follow normalization defaults plus package compilation (0.535833ms)
+✔ Planner public Owner binding schema is the exact domain-owned shape (0.779875ms)
+✔ omission cannot bypass required or historical public Owner authority (0.572ms)
+✔ Planner tool contract rejects the five invalid shapes observed in the live workflow (0.43175ms)
+✔ Planner receives frozen requirements without authorization receipts or write journals (0.6245ms)
+✔ Planner and Reviewer receive readable Owner feedback as a non-blocking fact (2.453833ms)
+✔ workflow fixture wait does not let observation churn renew a stuck semantic state (2.216583ms)
+✔ workflow fixture wait renews only for semantic progress and retains an absolute cap (2.075167ms)
+✔ native planning feedback is persisted in the root tool result and never starts a workflow (1765.054125ms)
+✔ native revised Spec/Ticket checkpoint replaces the same task, retains the issue and delivers on its new baseline (8074.221ms)
+✔ native Reviewer corrects an invalid obligation id in the same session before any report is accepted (4040.429166ms)
+✔ native main-thread documents, checkpoint, independent planning and execution reach the user checkout (4182.911583ms)
+✔ two frozen independent Owner tasks reach actual combined and final Reviewer acceptance with their grouped packages (5785.890584ms)
+✔ actual failed verification returns to the root and repairs its retained candidate within the same budget (4853.836375ms)
+✔ a no-progress first DAG returns to native Spec/Ticket R2 and delivers in the original workflow (6812.485625ms)
+✔ active Registry narrowing uses one native approval and replans the same Spec/Ticket workflow through delivery (6721.95ms)
+✔ actual scoped preset tools reach Owner execution without inheriting root orchestration instructions (4368.804458ms)
+✔ native Planner accepts a bound no-progress report before the formal transition records failure (2485.937ms)
+✔ native Planner keeps one admitted frozen source across later live checkout changes and rejects binding tampering (2131.225ms)
+✔ native Owner and candidate Reviewer receive only the same bound task package and direct consumer command contract (2256.097875ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 46930.158083

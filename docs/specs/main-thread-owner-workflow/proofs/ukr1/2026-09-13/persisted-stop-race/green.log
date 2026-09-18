@@ -1,0 +1,10 @@
+✔ a persisted governance stop owns an arbitrary adapter interruption before the local controller aborts (221.52575ms)
+✔ the same arbitrary adapter error without a persisted stop remains a technical failure (96.593625ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 390.548792

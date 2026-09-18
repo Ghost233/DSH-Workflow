@@ -1,0 +1,23 @@
+✖ one recovery window respects retired project authority without settling or releasing private quarantine (21.283167ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 92.934375
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/workflow-engine.test.mjs:1624:1
+✖ one recovery window respects retired project authority without settling or releasing private quarantine (21.283167ms)
+  Error: Execution must settle before authorizing recovery
+      at assertRecoverySettled (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/workflow-engine.mjs:28:69)
+      at transition (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/workflow-engine.mjs:1900:7)
+      at Object.send (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/workflow-engine.test.mjs:19:43)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/workflow-engine.test.mjs:1632:5)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.start (node:internal/test_runner/test:1003:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17)

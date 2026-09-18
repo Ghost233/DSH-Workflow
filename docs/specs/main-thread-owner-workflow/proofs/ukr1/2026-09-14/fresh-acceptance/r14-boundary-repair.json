@@ -1,0 +1,31 @@
+{
+  "checkedAt": "2026-09-14T08:48:30.542Z",
+  "workflowId": "wf-03d397fffe12a1d0e9726a73ccb53ba315e3d7eb",
+  "recoveryUsed": 3,
+  "planVersion": 0,
+  "checkpoint": "planning-finalize-3235dd314dc77bc9ccadbf13",
+  "action": {
+    "id": "act-5307dca9813bf9faa5a80b1414bdddd8f2fa3e1f",
+    "status": "failed",
+    "previousPlanDigest": "a2d8342cf5c6244ebb9056d35cebd9f017d387d1ce383d1ec08417915d3cbbc0",
+    "previousTaskCount": 17
+  },
+  "observedFailure": "R14 Planner UI: Verification patch exceeds revision boundary or repeats an id; native effect later: Role finished without a structured report",
+  "fix": "New verification ids may bind only actually changed/new tasks within authorized task boundary. Existing definitions remain protected; no extra state machine.",
+  "validation": {
+    "core": 103,
+    "corePassed": 103,
+    "liveInputPureReplay": "Original R14 input accepts adding web_build and extension_build bound only to integrate_critical_journeys; no state mutation"
+  },
+  "host": {
+    "instance": "3dac078a-7697-47c4-a128-94d46c52c38d",
+    "launcher": "./start-owner-workflow.sh",
+    "session": 12164
+  },
+  "pending": [
+    "frozen full regression session 51077",
+    "existing browser tab refresh currently times out at focus command",
+    "formal recovery of R14 action after live state settles",
+    "full Coinhub business execution and evidence"
+  ]
+}

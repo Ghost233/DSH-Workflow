@@ -1,0 +1,62 @@
+{
+  "kind": "development-targeted-validation",
+  "date": "2026-09-12",
+  "dshCommit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "dshTrackedChanges": "",
+  "node": "v24.12.0",
+  "runs": [
+    {
+      "name": "planning-chain",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/planning-write-journal-native.test.mjs owner-workflow-plugin/test/planning-checkpoint-native.test.mjs owner-workflow-plugin/test/planning-compile-native.test.mjs owner-workflow-plugin/test/planning-authority-native.test.mjs owner-workflow-plugin/test/planning-source-chain-native.test.mjs",
+      "log": "planning-chain.log",
+      "result": {
+        "tests": 52,
+        "pass": 52,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    }
+  ],
+  "total": {
+    "tests": 52,
+    "pass": 52,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "limits": [
+    "Real AgentRegistry, V3 Session/persistence, native file tools and scoped UserQuestionService; direct main-tool tests hold an explicit open turn without a main model loop.",
+    "New candidate chain uses actual Planner and Reviewer Agents/providers with controlled model responses, preserves source and activates one candidate; it does not start the Runner.",
+    "Several adversarial planning tests retain an explicitly controlled Subagent backend; they are business-boundary tests, not evidence of native transport by themselves.",
+    "Full Web preset composition has separate evidence; shared Owner decisions, execution/integration/Memory and full CA01 candidate remain unfinished."
+  ],
+  "sha256": {
+    "owner-workflow-plugin/test/planning-write-journal-native.test.mjs": "79f09590a73893db669f1f5ee225f01255b5aaa9aa3b57511ac0f98ea2463b2b",
+    "owner-workflow-plugin/test/planning-checkpoint-native.test.mjs": "4b80748a95166d774f863c7fbf8fa49bf6d4c50f31fc0fd06cec70d67b18fee6",
+    "owner-workflow-plugin/test/planning-compile-native.test.mjs": "5d1dbc561034c1bb477dc301f6c5dd83c5ea6cb29f9f574f298fb0980003180f",
+    "owner-workflow-plugin/test/planning-authority-native.test.mjs": "707f21627c56fb780220df049bba609d6bb3a44f5b030c01b9faff03fdfca745",
+    "owner-workflow-plugin/test/planning-source-chain-native.test.mjs": "f271fae448d802fd817b48e7118448f28d6684be48d79b32c7392cc0cbe03b35",
+    "owner-workflow-plugin/test/fixtures/planning-native-agent.mjs": "d7df3a2ff3a575f890f75fe7611c37751899be55e363b4a11be7a38816cf232d",
+    "owner-workflow-plugin/test/fixtures/planning-authority-native.mjs": "20ba3cb00b6d2d5c650f4be7aab5094f17e1952d086d71664b5e3e0a39b6a1fd",
+    "owner-workflow-plugin/test/fixtures/planning-checkpoint-fixture.mjs": "cedfc0f8c69df30f982d0399d7f792c53361fc1b48acb96ec3495d048346305e",
+    "owner-workflow-plugin/test/fixtures/planning-checkpoint-worker.mjs": "780dddf15ab0c9ec09a0715e9b0169eefb420e69f58bec8046386723faaa053b",
+    "owner-workflow-plugin/test/fixtures/planning-revision-restart-child.mjs": "5fa4d5f64442edce0c92ca54f9020e0095a5666d20d4461aae454d5921374dae",
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "a95b5e9b37a138cbc31c2142d612cd00ad14572d776cc60fac0177be9cd68828",
+    "owner-workflow-plugin/index.js": "62a29bce66b1e8b6d74cf58d25b55079b14db3f20cd6fa831f128b9710249b0a",
+    "owner-workflow-plugin/src/runtime.mjs": "a81fac5a515bd6bcf2bd6acef29b902ce06892ff26cb74b223116ebfa2ae1fb8",
+    "owner-workflow-plugin/src/agent-policy.mjs": "3ecafcbcc69adcdf4c4a180134c24ee583577570e44eefa34bfb12a15d8e319e",
+    "owner-workflow-plugin/src/dsh-execution.mjs": "118b16c1535413e2c4a9ef444e87d8914215e41499b81d27d2d00038e45d07fb",
+    "owner-workflow-plugin/src/orchestrator-documents.mjs": "fec9b8422fe345b4d12d527d4035b3fe495bdc655ecd9f37ea64bb6006cc6488",
+    "owner-workflow-plugin/src/planning-write-journal.mjs": "825c3fdfb6131bc606e231fa4a3926cc586117503609f9808f2b11ecdff13740",
+    "owner-workflow-plugin/src/planning-source-chain.mjs": "d2aea917bde17e6c913ffd9774320872dcedcbe1cee22365af98888da3f5e342",
+    "owner-workflow-plugin/src/planning-authority.mjs": "e8332d89d1d143f479a2cf02e31f67403b22b63f5a6e9a62b3ab5bb006894148",
+    "owner-workflow-plugin/src/planning-checkpoint.mjs": "d44b20253c06b4a25732d709127b89d786950b7f09a1c0492474a89c48a92241",
+    "owner-workflow-plugin/src/planning-candidate.mjs": "480a811b2993f2397ff46a8075d48293a128e551302e0e9a9b1eba80e81c13f1",
+    "owner-workflow-plugin/src/planning-review.mjs": "d417fb8d3a69714805b7c326377f8901424e87965557eab1603418b93c33b4a6",
+    "owner-workflow-plugin/src/planning-packages.mjs": "2d984c46259b97f84d7b9d0bf74dbf9297e8e30d0d8fe2f98db827396e314da4"
+  },
+  "artifactSha256": {
+    "planning-chain.log": "b66a4cc1d5beb04c5fe9b204b02105d99a0de82a0e13569f7079ea8ae9fca805"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "observedAt": "2026-09-14T06:19:07.062180+00:00",
+  "status": "request_submitted_planning",
+  "sessionTitle": "Coinhub 完整 Owner 验收工作流",
+  "workflowComplete": false,
+  "health": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "9f689f7b-9f76-4155-bb66-c10a95b1133b",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  },
+  "controlStateSha256": "77bb18a5d6df8d4f0fdbcc8308e1ddf64b8ea844b96219703219a77eeb421a16",
+  "controlRevision": 4083,
+  "priorWorkflows": [
+    {
+      "id": "op-a32fddd325ee86acc944fffe9f0e2e6c4b59fe9f",
+      "planVersion": 0,
+      "recoveryUsed": 0
+    },
+    {
+      "id": "op-115472171b2a38e7824b6a7dae5fdfe5f07aa320",
+      "planVersion": 0,
+      "recoveryUsed": 0
+    },
+    {
+      "id": "wf-b709c7b88104c4cfeb0d6618f7c746b7c3c5227b",
+      "planVersion": 0,
+      "recoveryUsed": 0
+    },
+    {
+      "id": "wf-a2e54b28d82dbcf70f8f82e712e260c3a9aed36a",
+      "planVersion": 1,
+      "recoveryUsed": 3
+    },
+    {
+      "id": "wf-e6b98b7f1bb0ad5d898c7f470bad25e99b02e6db",
+      "planVersion": 2,
+      "recoveryUsed": 12
+    },
+    {
+      "id": "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+      "planVersion": 3,
+      "recoveryUsed": 17
+    }
+  ],
+  "baselines": [
+    {
+      "root": "/Volumes/LargeStorage/code/DSH-Workflow",
+      "head": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "statusSha256": "310ddb09d9f89b512fc015ff071d9705211a101ba45cbb0adddf42ca9e4bf180",
+      "statusEntries": 405
+    },
+    {
+      "root": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+      "head": "799d708fd45b9cfe83744c17a9a5555e38af7e1d",
+      "statusSha256": "2155a1221b49aec0fba7c271f278d40f4eb5a249a52618a580a0c8597278de54",
+      "statusEntries": 1
+    }
+  ]
+}

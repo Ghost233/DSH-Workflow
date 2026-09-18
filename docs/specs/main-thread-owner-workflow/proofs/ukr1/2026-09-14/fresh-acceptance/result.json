@@ -1,0 +1,19 @@
+{
+  "observedAt": "2026-09-14T06:45:25.074866+00:00",
+  "workflowId": "wf-03d397fffe12a1d0e9726a73ccb53ba315e3d7eb",
+  "workflowComplete": false,
+  "frameworkRegression": {
+    "pass": 415,
+    "fail": 0
+  },
+  "fixedAndLiveVerified": "Same-project blocker discovery and native confirmed cancellation from a new root",
+  "compiledPlan": {
+    "tasks": 18,
+    "verifications": 16,
+    "review": "needs_revision"
+  },
+  "recoveryUsed": 0,
+  "planVersion": 0,
+  "pending": "Root drafted R12 evidence producer contract; direct implementation receipt validation rejected twice; native root question pending. Existing authorization should be reused through workflow_planning_finalize without a new implementation_request. Browser control disconnected; existing tab refresh requested.",
+  "configurationUnchanged": true
+}

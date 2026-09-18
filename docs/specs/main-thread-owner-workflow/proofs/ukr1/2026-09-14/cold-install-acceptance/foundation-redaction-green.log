@@ -1,0 +1,19 @@
+✔ versioned fixtures are deeply immutable and producers cannot mutate shared data (2.233ms)
+✔ controlled clock, random, retry, auth, interruption, write and trade scripts are deterministic (1.275666ms)
+✔ versioned named unary scenarios are discoverable, deterministic, and isolated (0.991916ms)
+✔ versioned stream scenarios preserve event order, terminal behavior, and instance isolation (0.403416ms)
+✔ local unary and stream fakes reject undeclared external network access (0.190208ms)
+✔ redacted evidence removes sensitive values across whitespace, nested, and delimiter variants (1.251208ms)
+✔ structured string evidence remains parseable and keeps public fields (1.67475ms)
+✔ structured nested object evidence remains parseable and keeps public fields (0.187959ms)
+✔ structured array evidence remains parseable and keeps public fields (0.10275ms)
+✔ JSON text redaction keeps valid syntax and sibling metadata (0.106ms)
+✔ freeform log still removes whitespace secrets and retains field boundaries (2.097917ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 55.714167

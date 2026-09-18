@@ -1,0 +1,14 @@
+{
+  "recordedFailure": "IMPLEMENTATION_REQUEST_NOT_NATIVE_USER",
+  "toolCallSeq": 232,
+  "latestUserSeq": 154,
+  "nativeSourceKeys": [
+    "kind",
+    "rpcId",
+    "clientTimeZone"
+  ],
+  "replayedResult": "accepted",
+  "receiptMessageId": "9d9c614e-b9b1-49d6-87f3-1b41a41695a8",
+  "receiptMessageDigest": "6d1fe4fb07ad4c1ed811e940b3468cce8809fbaca23e1300d959540ba48246f4",
+  "writesToSession": false
+}

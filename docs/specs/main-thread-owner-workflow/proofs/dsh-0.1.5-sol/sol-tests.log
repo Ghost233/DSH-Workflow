@@ -1,0 +1,54 @@
+
+> dsh-sol-efficiency@0.1.0 test
+> node --import ../deepseek-harness/node_modules/tsx/dist/esm/index.mjs --import ./test/workspace-loader.mjs --test test/*.test.mjs
+
+✔ assembled agent round logs fusion and feeds the evidence receipt into the next model request (709.914625ms)
+✔ V3 managed cold read retains the complete nested dispatch chain inside the actual model turn (335.062ms)
+✔ truncated output is reconstructed from the mounted filesystem before reduction (2.016125ms)
+✔ missing full output and oversized Unicode source are not reduced as complete logs (0.380042ms)
+✔ a size-unknown spilled stream is stopped at the full UTF-8 byte budget (0.40425ms)
+✔ browser checkbox uses the DSH settings seam and changes real host tool registrations (770.199708ms)
+✔ read-only browser disables both switches and failed saves show an error (4.906291ms)
+✔ launchers no longer inject SoL or expose launch-specific switches (6.473791ms)
+✔ real Loader + native write/bash: apply, verify, preserve audit and dispose registrations (690.5585ms)
+✔ failed edit skips bash; failed bash preserves the successful mutation (334.109208ms)
+✔ native guard denial is enforced on the nested bash dispatch (76.249417ms)
+✔ version change between mutation and bash prevents verification (55.454875ms)
+✔ nested additional context and turn conclusion reach the outer result (54.316375ms)
+✔ EPR compresses native failed test output, preserves exit status/value and archives exact source (126.868625ms)
+✔ EPR auto uses model defaults and omits reasoning for models without that capability (174.77375ms)
+✔ EPR keeps explicit reasoning settings and falls back before dispatch when unsupported (182.870208ms)
+✔ EPR binds capability resolution, stream and audit to one adapter generation during replacement (198.368167ms)
+✔ EPR composes with fusion and does not replace the file mutation confirmation (98.071625ms)
+✔ invalid reducer output and provider errors retain the original content (130.698625ms)
+✔ secret logs and non-diagnostic commands never reach reducer (177.086083ms)
+✔ native read-before-edit policy also governs fused edits (136.128708ms)
+✔ EPR deadline falls back without changing the native bash result (118.762917ms)
+✔ pre-cancelled fusion never writes and command timeout retains the mutation (79.86875ms)
+✔ unloading EPR aborts in-flight reduction and removes its listener (164.354916ms)
+(node:43138) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ Code Mode reaches fusion through native nested dispatch; ordinary bash skips reducer (303.689333ms)
+✔ default-off configuration removes both features through Loader reload (91.735375ms)
+✔ missing native bash fails before mutation (89.2355ms)
+✔ storage failure is fail-open and happens before any reducer request (103.570541ms)
+✔ existing post-execute content replacement is preserved without a reducer call (83.606333ms)
+✔ nested log projection changes only the durable preview (100.706125ms)
+✔ nested log projection failure retains the settled result (90.400458ms)
+✔ cancellation after a native write settles its log and skips bash without pretending the file was rolled back (90.606708ms)
+✔ actual Owner Runner retains Agent identity, sandbox/escalation gates and fixed submission through SoL fusion (3872.222791ms)
+✔ receipt preserves exact Unicode quotes, source hash, line and quote hash (1.33225ms)
+✔ wrong source, status, invented quotes, empty evidence and disguised failure are rejected (0.273875ms)
+✔ diagnostic command routing includes common DSH workflows and excludes plain reads (1.167583ms)
+✔ secret heuristic rejects common credentials without claiming completeness (1.43575ms)
+✔ config is default-off, permits session routes and rejects partial routes, invalid limits and misspellings (1.087958ms)
+✔ DSH file settings persist checkbox changes and hot-toggle tools without duplicates (796.672292ms)
+✔ EPR checkbox follows the session model and disabling removes reduction (329.893917ms)
+ℹ tests 40
+ℹ suites 0
+ℹ pass 40
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4659.446959

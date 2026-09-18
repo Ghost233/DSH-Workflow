@@ -1,0 +1,24 @@
+✔ workflow fixture wait does not let observation churn renew a stuck semantic state (0.974334ms)
+✔ workflow fixture wait renews only for semantic progress and retains an absolute cap (0.391709ms)
+✔ native planning feedback is persisted in the root tool result and never starts a workflow (1284.299ms)
+✔ native revised Spec/Ticket checkpoint replaces the same task, retains the issue and delivers on its new baseline (7834.748167ms)
+✔ native Reviewer corrects an invalid obligation id in the same session before any report is accepted (4071.117417ms)
+✔ native main-thread documents, checkpoint, independent planning and execution reach the user checkout (3788.748667ms)
+✔ two frozen independent Owner tasks reach actual combined and final Reviewer acceptance with their grouped packages (5365.711375ms)
+✔ actual failed verification returns to the root and repairs its retained candidate within the same budget (4637.939ms)
+✔ a no-progress first DAG returns to native Spec/Ticket R2 and delivers in the original workflow (6531.482667ms)
+✔ active Registry narrowing uses one native approval and replans the same Spec/Ticket workflow through delivery (6711.142458ms)
+✔ actual scoped preset tools reach Owner execution without inheriting root orchestration instructions (4778.238542ms)
+✔ native Registry batch allow: one exact decision, no speculative ownership or Git identity changes (1256.812375ms)
+✔ native Registry batch reject: one exact decision, no speculative ownership or Git identity changes (406.624708ms)
+✔ native Registry batch cancel: one exact decision, no speculative ownership or Git identity changes (433.860125ms)
+✔ native Registry reconciles installed interruption from the original approval and preserves user index (1150.084583ms)
+✔ native Registry reconciles ref_updated interruption from the original approval and preserves user index (1205.152167ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 45054.3265

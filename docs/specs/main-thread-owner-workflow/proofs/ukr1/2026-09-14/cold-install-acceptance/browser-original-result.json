@@ -1,0 +1,79 @@
+{
+  "startedAt": "2026-09-14T05:46:15.976Z",
+  "source": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/act-f75d4c4fe20c5db65092f48bfdfce6b999eaffd2/tree",
+  "contentDigest": "99d625c28c94508015cfe389ea8c08d770c8766c00b2d432d290647dc0ebc021",
+  "passed": false,
+  "workflowResult": false,
+  "cases": [
+    {
+      "name": "first",
+      "preparation": {
+        "bindings": [
+          {
+            "packageDirectory": ".",
+            "key": "cf16c885fbaa72824ad401e34a9c37e5b9fcff956ac0cc366ed8c409f3f6a14a",
+            "inputDigest": "553111b9c22acbc4d76228a4cec44277624de3eefb0ebae67d3f3ff28b8ad1c8",
+            "baseDigest": "037ea39f4998f2abafa8960c2ad8a3f86d978ef1db3ee0f6dc64fb4bd59ad2e2",
+            "mode": "readonly-overlay",
+            "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/cf16c885fbaa72824ad401e34a9c37e5b9fcff956ac0cc366ed8c409f3f6a14a/base",
+            "metrics": {
+              "cacheHit": true,
+              "installRuns": 0,
+              "fullTreeCopies": 0,
+              "overlayLinks": 595,
+              "logicalBytes": 2318713461,
+              "baseHashedBytes": 0,
+              "overlayHashedBytes": 547945,
+              "hashedBytes": 547945,
+              "copiedBytes": 547945,
+              "baseDigestEntries": 0,
+              "overlayDigestEntries": 698,
+              "digestEntries": 698,
+              "hardlinkNormalized": 0,
+              "hardlinkCopiedBytes": 0,
+              "durations": {
+                "cacheAcquireMs": 333,
+                "promoteMs": 0,
+                "normalizeMs": 0,
+                "sealMs": 0,
+                "overlayMs": 473
+              },
+              "validationMode": "sealed-receipt",
+              "fallbackReason": null,
+              "cacheGeneration": null,
+              "installationEnvironment": {
+                "directories": 22,
+                "entries": 2073,
+                "providers": 1896,
+                "durationMs": 480
+              }
+            }
+          }
+        ]
+      },
+      "result": {
+        "commandId": "cmd-cf42a76aeff2701085f36980c838cddc1301fab9",
+        "bindingDigest": "c68a45d0b8396a35d52e3593b2f86d1fe1bd97fc695a1384de6a917b311e94b6",
+        "hostId": "d9d60060-8d71-444f-99f1-6c1f5613a654",
+        "exitCode": 1,
+        "enforcement": "full",
+        "timedOut": false,
+        "aborted": false,
+        "ok": false,
+        "kind": "completed",
+        "stdout": "",
+        "stderr": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\npage.goto: Navigation to \"http://127.0.0.1:61347/\" is interrupted by another navigation to \"chrome-error://chromewebdata/\"\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:61347/\", waiting until \"load\"\u001b[22m\n\n    at /Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependency-proofs/browser-smoke-20260914/first/scripts/playwright-harness-smoke.mjs:55:14 {\n  name: 'Error'\n}\n\nNode.js v24.12.0\n",
+        "stdoutTruncated": false,
+        "stderrTruncated": false,
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "cmd-cf42a76aeff2701085f36980c838cddc1301fab9:managed-range-exit"
+      }
+    }
+  ],
+  "error": {
+    "message": "{\"exitCode\":1,\"stderr\":\"node:internal/modules/run_main:107\\n    triggerUncaughtException(\\n    ^\\n\\npage.goto: Navigation to \\\"http://127.0.0.1:61347/\\\" is interrupted by another navigation to \\\"chrome-error://chromewebdata/\\\"\\nCall log:\\n\\u001b[2m  - navigating to \\\"http://127.0.0.1:61347/\\\", waiting until \\\"load\\\"\\u001b[22m\\n\\n    at /Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependency-proofs/browser-smoke-20260914/first/scripts/playwright-harness-smoke.mjs:55:14 {\\n  name: 'Error'\\n}\\n\\nNode.js v24.12.0\\n\"}\n\nfalse !== true\n",
+    "code": "ERR_ASSERTION"
+  },
+  "completedAt": "2026-09-14T05:46:26.131Z"
+}

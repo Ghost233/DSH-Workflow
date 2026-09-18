@@ -1,0 +1,7 @@
+{
+  "exitCode": 0,
+  "timedOut": false,
+  "aborted": false,
+  "stdout": "✔ 真实Runtime经生产Planner提交路径编排固定快照；Owner提示保留完整Ticket，未激活Workflow (4806.013541ms)\n✔ 丢失ready片段映射由实际Planner校验拒绝，有限两次后不发布候选 (2870.604125ms)\n✔ 真实Agent从Spec/Ticket和checkpoint经Planner/Reviewer激活候选，再由Owner Team执行、审查并交付 (23882.606958ms)\n✔ 固定候选通过独立Reviewer工具提交后持久保存原始来源，passed不激活 (2312.32575ms)\n✔ 固定候选Reviewer缺少原始调用来源时两次后拒绝，无审查回执 (2514.159292ms)\n✔ Reviewer改写当前规划文档即使仍为相同Git dirty状态也不能发布回执 (3900.715125ms)\n✔ 真实agents.create/provider与原生工具提交保留候选身份和独立审查原始来源 (3210.387083ms)\n✔ 同一固定父快照的两个候选竞争时只有一个完整Workflow可见 (3352.280792ms)\n✔ worktree就绪但状态未发布的激活可恢复，期间preflight拒绝另一条图 (2956.95175ms)\n✔ 固定候选与独立审查在一个持久事务中激活完整Workflow，重放不创建第二版本 (3068.537584ms)\n✔ T19 legacy active Workflow replay is not silently enrolled into the new recovery policy (2923.433625ms)\n✔ 激活拒绝错配审查和blocked包，且不暴露半激活Workflow (2412.9305ms)\n✔ 没有事务记录的同名workflow branch不能被激活入口接管 (2578.288333ms)\n✔ 活跃Workflow从修订Spec/Ticket固定父版本，经独立审查切换PlanRevision且重放不重复迁移 (6120.227375ms)\nℹ tests 14\nℹ suites 0\nℹ pass 14\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 67184.26375\n",
+  "stderr": ""
+}

@@ -1,0 +1,12 @@
+✔ native Planner rejects a bound no-progress report immediately and preserves its validation evidence (1612.633875ms)
+✔ native Planner keeps one admitted frozen source across later live checkout changes and rejects binding tampering (1868.27575ms)
+✔ native Owner and candidate Reviewer receive only the same bound task package and direct consumer command contract (1827.586959ms)
+✔ native repair Owner and custom candidate Reviewer receive the same compact persisted repair context (2096.646833ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7532.660542

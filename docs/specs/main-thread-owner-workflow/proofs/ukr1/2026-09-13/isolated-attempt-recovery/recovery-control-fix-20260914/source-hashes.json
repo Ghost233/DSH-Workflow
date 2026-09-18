@@ -1,0 +1,10 @@
+{
+  "workflow-engine.mjs": "4ad06b470acae9b5e35f2d0c4de6e775e295bb27eabd0cc756b9e6a5086130bf",
+  "model.mjs": "f0db8af73545dae597fd07aa65145bcb73e7a4792fcf047677dc3e19b74b015c",
+  "convergence.mjs": "b255dda49d46cfcc74220df824347ebfc1cde2297e07d456d8383f1765ab90ab",
+  "kernel-runtime.mjs": "b6cab3d7b5ec2703af79db14e96ef173d77f48014014d9cb3b33b0073a0aa6f4",
+  "kernel-tools.mjs": "6cf7076f13d5b56317d27c7949878e34af34dfaffb53dffefc0301e2b65ab5b7",
+  "kernel-guidance.mjs": "ba7578d45de550003c7173aea74e0f7663eb7472a58f57be805899b72c6609f4",
+  "kernel-role-contracts.mjs": "7350ccd80a3cc876671b941501074ebedcaeed58d9d9b29fc83f818adbac226a",
+  "native-planning-effects.mjs": "c476c7315cd4a4d7dde50b02137bf7ea7c11bfbd4e0f203298f046f33cc18f8f"
+}

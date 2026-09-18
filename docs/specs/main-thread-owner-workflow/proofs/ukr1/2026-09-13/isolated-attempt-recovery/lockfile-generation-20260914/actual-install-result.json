@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/lib/node_modules/npm/bin/npm-cli.js",
+    "ci",
+    "--foreground-scripts",
+    "--cache",
+    "/private/tmp/dsh-lockfile-generation-_fev9co5/npm-cache"
+  ],
+  "cwd": "/private/tmp/dsh-lockfile-generation-_fev9co5",
+  "exitCode": -15,
+  "timedOut": true,
+  "elapsedSeconds": 300.024,
+  "diagnosticOnly": true,
+  "fixedWorkflowVerification": false,
+  "foregroundLifecycleLogging": true
+}

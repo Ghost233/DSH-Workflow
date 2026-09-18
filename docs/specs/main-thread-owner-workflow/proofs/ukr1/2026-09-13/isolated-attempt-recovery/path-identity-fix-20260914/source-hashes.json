@@ -1,0 +1,7 @@
+{
+  "owner-workflow-plugin/src/dependency-install-environment.mjs": "c9465438432fa09158fbc2330da2b91853375e960762738063c0fbb492d2e6da",
+  "owner-workflow-plugin/src/dependency-install-input.mjs": "7cbaba8bc59d240584dbf11fa4f8e1d91791e3221f04e51387d83acbb8c8cc91",
+  "owner-workflow-plugin/src/dependency-preparation.mjs": "4749b297c366734f17f69a586be96923341ae0416fcd377258df39e528095e48",
+  "scripts/verify-dependency-reuse.mjs": "dfd325f0aa8a5dfa04baf24cd24d9909333b447edf5a2f9cc37e415fcb3b066c",
+  "owner-workflow-plugin/test/fixtures/dependency-session-path.mjs": "a37de236ddbbddfa17e4fac335d30b79bb01750e53369f5220f2464ea5e572fa"
+}

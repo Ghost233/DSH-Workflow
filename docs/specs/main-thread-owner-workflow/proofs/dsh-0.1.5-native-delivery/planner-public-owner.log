@@ -1,0 +1,21 @@
+(node:23586) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ native Planner and Reviewer complete a revision with a live Planner (1707.355542ms)
+✔ native Planner and Reviewer complete a revision with cold resume (1428.217708ms)
+✔ T28 real public Owner structured submission persists and fresh Runtime replays without a model call (1121.65225ms)
+✔ T28 ordinary assistant text is a durable no-submit failure and is never parsed as a decision (875.084333ms)
+✔ T28 wrong Owner structured submission cannot produce a public decision (812.061583ms)
+✔ T28 K1 response becomes durable stale history when active execution changes during the model turn (846.308708ms)
+✔ T28 a durable consultation reservation occupies capacity and queues another Owner (823.587625ms)
+✔ T28 timeout settles the consultation and releases capacity for a later request (891.074583ms)
+✔ T28 parent cancellation settles the durable consultation and releases its reservation (829.047333ms)
+✔ T28 a public Owner business change reaches the main outbox as an explicit user decision (869.8195ms)
+✔ T28 uncertain child creation is never retried from a missing durable binding (719.173125ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7975.505084

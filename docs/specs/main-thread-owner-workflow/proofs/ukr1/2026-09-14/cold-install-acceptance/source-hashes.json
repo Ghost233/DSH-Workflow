@@ -1,0 +1,4 @@
+{
+  "owner-workflow-plugin/src/dependency-preparation.mjs": "949c2c42b72dab6acee708ac1e44ea5eecb9968e7687616c1174318d19f853cf",
+  "owner-workflow-plugin/test/dependency-preparation.test.mjs": "ef30f89d10b699acd28d06decd071f46367ea0d3789982fc278b0382009bc3a0"
+}

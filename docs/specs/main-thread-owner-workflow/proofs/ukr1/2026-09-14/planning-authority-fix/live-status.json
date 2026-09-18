@@ -1,0 +1,20 @@
+{
+  "checkedAt": "2026-09-14T07:50:42.414Z",
+  "workflowId": "wf-03d397fffe12a1d0e9726a73ccb53ba315e3d7eb",
+  "status": "planning",
+  "counts": {
+    "totalTasks": 0,
+    "completedTasks": 0,
+    "failedTasks": 0,
+    "pendingTasks": 0,
+    "runningTasks": 0
+  },
+  "recoveryUsed": 1,
+  "activeActions": [
+    {
+      "id": "act-4f8dba20835bc2174b31bbc4adcca55cdd045e57",
+      "kind": "plan",
+      "status": "running"
+    }
+  ]
+}

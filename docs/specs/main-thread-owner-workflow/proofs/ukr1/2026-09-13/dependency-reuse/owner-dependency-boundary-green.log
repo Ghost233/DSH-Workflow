@@ -1,0 +1,29 @@
+✔ immutable dependency inputs reject writable roots before native dispatch (142.75725ms)
+✖ native verification reads external dependencies but cannot write or chmod them (77.050167ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 307.119375
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/native-kernel-effects.test.mjs:135:1
+✖ native verification reads external dependencies but cannot write or chmod them (77.050167ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /shared-value/. Input:
+  
+  '[Module: null prototype] {  }\n'
+  
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/native-kernel-effects.test.mjs:151:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '[Module: null prototype] {  }\n',
+    expected: /shared-value/,
+    operator: 'match',
+    diff: 'simple'
+  }

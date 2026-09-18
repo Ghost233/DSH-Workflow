@@ -1,0 +1,11 @@
+✔ a successful fresh task attempt closes only the expired candidate action repair it superseded (36.7685ms)
+✔ a later plan can close a pre-upgrade action repair from its retained successful task-retry chain (23.152792ms)
+✔ a task retry cannot close its old candidate action repair after the verification definition changes (19.18675ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 136.884375

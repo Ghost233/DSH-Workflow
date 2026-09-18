@@ -1,0 +1,11 @@
+{
+  "source": "controlled read-only state probe during the failing paid recovery test",
+  "observedChanges": [
+    {
+      "ownerRun": "T1:api",
+      "beforeRecoveryPhase": "created",
+      "afterRecoveryPhase": "submitted",
+      "dispatchPhase": "accepted"
+    }
+  ]
+}

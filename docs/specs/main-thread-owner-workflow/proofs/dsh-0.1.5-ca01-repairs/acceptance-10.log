@@ -1,0 +1,18 @@
+✔ Node test适配器只把有非零用例且证据完整的结果识别为可通过 (1.146792ms)
+✔ 集中验收拒绝未知依赖、依赖环和空命令 (0.452083ms)
+✔ 真实Node入口在首项失败后继续独立项，并分类阻塞、超时、取消、零用例和未运行 (283.893625ms)
+✔ 中断和超时保留已观测用例计数，但不将部分通过升级为验收通过 (0.759209ms)
+✔ 候选摘要或代码提交变化时旧结果不能计为通过 (0.128542ms)
+✔ acceptance preserves ordinary configuration but excludes source aliases and parent test context (0.630416ms)
+✔ normal command captures stdout, stderr and exit status (27.184916ms)
+✔ timeout terminates a test worker that survives its parent and holds output pipes (507.132292ms)
+✔ cancel terminates a test worker that survives its parent and holds output pipes (507.869292ms)
+✔ an already cancelled acceptance never starts a command (0.411084ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1083.468042

@@ -1,0 +1,33 @@
+✔ workflow fixture wait does not let observation churn renew a stuck semantic state (0.685125ms)
+✔ workflow fixture wait renews only for semantic progress and retains an absolute cap (1.041375ms)
+✔ native planning feedback is persisted in the root tool result and never starts a workflow (1632.585917ms)
+✔ native revised Spec/Ticket checkpoint replaces the same task, retains the issue and delivers on its new baseline (9364.771167ms)
+✔ native Reviewer corrects an invalid obligation id in the same session before any report is accepted (5675.611459ms)
+✔ native positive Reviewer fixes its missing closure in the same action and activates without another recovery (7589.635834ms)
+✔ native main-thread documents, checkpoint, independent planning and execution reach the user checkout (4790.596458ms)
+✔ two frozen independent Owner tasks reach actual combined and final Reviewer acceptance with their grouped packages (6628.888209ms)
+✔ actual failed verification returns to the root and repairs its retained candidate within the same budget (5860.390542ms)
+✔ a no-progress first DAG returns to native Spec/Ticket R2 and delivers in the original workflow (7601.674541ms)
+✔ active Registry narrowing uses one native approval and replans the same Spec/Ticket workflow through delivery (8591.93125ms)
+✔ actual scoped preset tools reach Owner execution without inheriting root orchestration instructions (5888.315084ms)
+✔ Owner root guards use native tool scope and do not capture unrelated roots (326.49875ms)
+✔ native workflow_retry_action keeps a settled technical candidate retry bound and returns a lossless view (258.393042ms)
+✔ plan retry verifies its admitted planning identity instead of the obsolete active Registry (0.55425ms)
+✔ review_plan retry verifies its admitted planning identity instead of the obsolete active Registry (0.0815ms)
+✔ two native Owner preset scopes share one catalog executor and dispose independently (57.821667ms)
+✔ native finite recovery permission allow preserves history and never dispatches a Planner (566.600667ms)
+✔ native finite recovery permission reject preserves history and never dispatches a Planner (322.318334ms)
+✔ native finite recovery permission cancel preserves history and never dispatches a Planner (277.480959ms)
+✔ native Registry batch allow: one exact decision, no speculative ownership or Git identity changes (1558.772333ms)
+✔ native Registry batch reject: one exact decision, no speculative ownership or Git identity changes (447.293709ms)
+✔ native Registry batch cancel: one exact decision, no speculative ownership or Git identity changes (489.421917ms)
+✔ native Registry reconciles installed interruption from the original approval and preserves user index (1364.328084ms)
+✔ native Registry reconciles ref_updated interruption from the original approval and preserves user index (1472.282417ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 63691.638291

@@ -1,0 +1,21 @@
+✔ 项目插件全部准备成功后才启动，失败时不启动 Runner 或创建 preset (1546.218208ms)
+✔ Owner preset 把动态业务工作区登记到全局 Runner catalog (0.681791ms)
+✔ 只有显式更新参数会更新外部插件，参数不会传给 DSH (845.506084ms)
+✔ 本地启动强制刷新过期 preset，忽略缺失的 profile bin 并注入当前源码 (951.712ms)
+✔ npm 启动脚本把显式版本固定为 @deepseek-ai/dsh 包规格 (1363.231792ms)
+✔ 子模块启动脚本直接从子模块执行构建后的 CLI (1016.407417ms)
+✔ 子模块启动脚本把 plugin 命令原样交给子模块 CLI 且不启动 Web (349.0195ms)
+✔ 启动脚本让 Runner daemon 随 Harness 启动并在 Harness 退出后停止 (1561.863709ms)
+✔ 不同工作区启动复用 Harness home 中同一个持久 Runner Leader (2508.592833ms)
+✔ 本地 Web 启动经项目适配层加载固定 Synapse，退出清理临时链接 (773.492917ms)
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ real profile preparation replaces the legacy approval host and preserves custom permission and settings (4646.040334ms)
+ℹ Native client graph: [{"id":"@deepseek-ai/dsh-client-ui-slots","provided":false},{"id":"@deepseek-ai/dsh-client-ui-primitives","provided":false},{"id":"@deepseek-ai/dsh-client-runtime","provided":false}]
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10957.963125

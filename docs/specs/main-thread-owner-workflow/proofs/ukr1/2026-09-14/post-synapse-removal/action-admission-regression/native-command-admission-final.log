@@ -1,0 +1,12 @@
+✔ a restarted command host detects an unresolved same-action intent from the legacy flat layout (76.807292ms)
+✔ action admission serializes competing hosts while allowing owned live commands in parallel (109.572375ms)
+✔ command admission scans a large legacy flat history once per host instead of once per command (163.822084ms)
+✔ action-scoped intent recovery fails closed when its legacy alias is absent or inconsistent (6.224292ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 505.592375

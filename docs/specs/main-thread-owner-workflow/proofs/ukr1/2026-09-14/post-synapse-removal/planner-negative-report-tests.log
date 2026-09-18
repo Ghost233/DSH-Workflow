@@ -1,0 +1,14 @@
+✔ Planner tool contract rejects the five invalid shapes observed in the live workflow (0.903042ms)
+✔ a native Planner preserves a rejected submission and settles a negative review into a concrete root replan notice (441.387291ms)
+✔ native Planner accepts a bound no-progress report before the formal transition records failure (1779.030625ms)
+✔ native Planner preserves an exact Ticket dependency rejection before reporting every out-of-bound consumer (162.442459ms)
+✔ a Planner reports two out-of-bound Ticket consumers and the root formally replans the same workflow with the complete boundary (62.267625ms)
+✔ a Planner needs_split report inside its boundary requests source revision without inventing boundary expansion (6.961666ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1952.702584

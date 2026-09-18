@@ -1,0 +1,13 @@
+{
+  "contract": "DSH_NATIVE_IMMUTABLE_HARDLINK_PROBE_V1",
+  "ok": true,
+  "exitCode": 0,
+  "child": {
+    "linkCode": "EPERM",
+    "chmodCode": "SKIP",
+    "writeCode": "SKIP"
+  },
+  "baseContent": "immutable",
+  "baseMode": 292,
+  "originalMode": 292
+}

@@ -1,0 +1,436 @@
+{
+  "contract": "DSH_KERNEL_ACCEPTANCE_REPORT_V1",
+  "status": "incomplete",
+  "candidateDigest": "f754724949b0b806ca86d1b607044e98b79ac741eaf9f82490251117f2d3cf3f",
+  "candidateManifest": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/ukr1-regression-1789275089743-f754724949b0/report.json",
+  "afterDigest": "f754724949b0b806ca86d1b607044e98b79ac741eaf9f82490251117f2d3cf3f",
+  "regression": {
+    "status": "passed",
+    "counts": {
+      "tests": 268,
+      "pass": 268,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "report": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/ukr1-regression-1789275089743-f754724949b0/report.json"
+  },
+  "checks": [
+    {
+      "name": "owner_client_build",
+      "status": "passed",
+      "exitCode": 0,
+      "log": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/ukr1-regression-1789275089743-f754724949b0/owner_client_build.log"
+    },
+    {
+      "name": "approval_build",
+      "status": "passed",
+      "exitCode": 0,
+      "log": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/ukr1-regression-1789275089743-f754724949b0/approval_build.log"
+    }
+  ],
+  "criteria": [
+    {
+      "id": "AC-01",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-01 | 主线程只有普通需求讨论 | 总结需求，不授权实施 | 没有执行节点被派发，不因讨论创建代码执行现场 | 主线程入口集成；授权识别 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-02",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-02 | 明确要求仅生成 Spec | 调用规划入口 | 输出规格及状态；不拆执行 Ticket、不启动 DAG | 主线程入口集成；范围约束 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-03",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-03 | 已授权完成开发，需求足够明确 | 完成 Spec、Ticket、编排并推进 | 产物依次形成且互相引用，不弹逐阶段/逐轮重复批准 | 协议集成；产物适配 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-04",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-04 | 一项业务行为涉及 S/A/B | Ticket 编排为执行包 | Ticket 保持完整 AC；每个可执行包只有一个 Owner，跨模块验收不丢失 | 编排集成；就绪 Spec |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-05",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-05 | S/A/B 代表场景，K1 有恢复承诺 | A 提出清空缓存请求 | S 独立核对 B；提供兼容决定或明确需求冲突，不能直接照单实施 | 代表场景 E2E；Owner 判断适配 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-06",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-06 | 公共 Owner 请求缺少版本或证据 | 提交请求 | 返回具体缺失项，不猜测已批准合同；相关消费者不派发 | 协议集成；请求校验 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-07",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-07 | 两个无依赖且不同 Owner 的就绪节点，有两个槽位 | Runner 领取 | 能并行；同 Owner 第二节点或超容量节点保持明确排队 | Supervisor/Harness 集成；容量观测 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-08",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-08 | 两个节点申请同一公共路径或独占测试资源 | 并发领取/写入/提交 | 只有合法唯一责任方获写权；资源冲突串行，越界不进入集成结果 | 临时 Git/资源集成；lease 与 scope |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-09",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-09 | 下游依赖公共产物，或需要尚未创建的验证入口 | 派发消费者 | 上游结果集成且入口检查就绪后才执行；未就绪有明确解除条件 | 调度/验证集成；前置产物 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-10",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-10 | cwd 中缺少固定命令，模拟历史 127 | 调用提交验证并反馈 | 保留精确环境错误，路由主线程处理；不把它当业务断言失败或泛化授权问题 | Runtime/验证集成；固定命令接缝 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-11",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-11 | 局部实现违反已确认合同 | 执行反馈与修复 | 主线程指导原节点有限修复，未无故重写 Spec 或全图 | Runtime 反馈集成；技术分类 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-12",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-12 | Ticket 漏项/依赖错误，另有无关任务 | 主线程应用局部修订 | 只暂停或重检受影响工作；无关结果保留，新图引用一致 | PlanRevision 集成；版本切换 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-13",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-13 | 必须改变 B 的业务恢复承诺 | 反馈主线程；用户尚未答复 | 明确呈现取舍，禁止受影响变更；回答后绑定新决定继续，无关工作可推进 | 主线程交互集成；需求决定 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-14",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-14 | 只有“用户取消时如何释放资源”等技术描述 | 分类反馈 | 不凭关键词请求外部授权，按合同和事实处理 | 分类/反馈集成；诊断反例 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-15",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-15 | 计划、代码和事实不变，只交替近义会诊描述 | 连续推进恢复 | 不当作新进展，不清空预算；有界到明确结果 | 连续状态测试；收敛修复 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-16",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-16 | 未解决问题在下一份 review 中被遗漏 | 更新审查结果 | 旧义务仍 open；仅有可核验关闭依据才结束 | 收敛协议测试；稳定义务身份 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-17",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-17 | handoff 已使旧节点/审批失效 | 再派发或收到旧回执 | 先处理交接与修订，不重跑旧节点；迟到回执不能覆盖新版本 | Runtime/Supervisor 集成；历史故障回放 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-18",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-18 | 两个消费者依赖不同版本结果 | 合同切到 K2 后验收 | 受影响结果待检查，不能把 K1 与 K2 的证据混成通过 | PlanRevision/验收集成；版本绑定 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-19",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-19 | 当前候选含未提交源码，独立测试一项失败 | 固定候选并运行整组验收 | 绑定实际内容、继续独立项、完整分类；零用例和未运行不算通过 | 验证集成；候选快照 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-20",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-20 | 测试/审查发现授权范围内技术缺陷 | 主线程生成必要修复并继续 | 不进入固定 awaiting_discussion 门禁；保持范围和预算，不自行降低 AC | 生命周期集成；修复编排 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-21",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-21 | 主动取消或旧执行者失效 | 停止并结算尝试 | 不派新任务，安全释放资源，保留现场；旧执行者不能继续提交 | Harness/Git 集成；取消与 fencing |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-22",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-22 | 提交完成后 Runtime 重启或回执重复 | 恢复/重放 | 根据持久证据恢复，不重复提交或分配双写入者 | 临时 Git/Harness 集成；持久状态 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-23",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-23 | 代码已核验，记忆摘要整理失败 | 结算并重新读取 Owner 历史 | 原始原因/版本/证据存在；代码结果不失效；旧决定不会冒充当前合同 | Memory/结算集成；原始历史 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-24",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-24 | 恢复无进展且预算耗尽 | Runner 再次唤醒 | 形成明确失败和根因/证据报告，保留现场；不无限重试或假称需业务决定 | 生命周期集成；有限恢复策略 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-25",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-25 | 全部范围内 AC 有当前证据 | 完成交付 | 明确实现/验收/最终交付差别；不等待固定轮次确认，不越权推送或发布 | 代表场景 E2E；授权与汇总 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-26",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-26 | 主线程启用 Owner 模式，尚未创建 DAG | 原生 write/edit 保存约定 Matt 文档 | 在项目内有限 Markdown 路径创建/修改成功；无需启动 DAG/Operation 或额外实施确认；代码、状态、治理文件、越界和链接拒绝；保留原生观察/版本检查及子代理隔离 | 基础路径/角色及原生工具测试通过；路径身份组合缺陷由 AC-30 承接；[权限范围与证据](../../ORCHESTRATOR-DOCUMENTS.md) |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-27",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-27 | 干净代码基线，仅本次已登记的规划文档有修改，已有实施/本地提交授权 | 固定文档并进入预检/编排 | 生成可追溯规划快照与匹配基线，执行者读取固定内容；无额外人工门禁；若混入他人编辑、无关暂存或基线漂移则明确拒绝/安全保留，不扩大提交范围 | 临时 Git + 原生文档写入 + Runtime 集成；V-02 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-28",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-28 | 两份候选共享父版本，期间又到达反馈或发生重启 | 并发激活和恢复 | 仅一个候选基于该父版本生效；后到反馈保留；快照/Registry/DAG 引用完整；重复激活无重复提交，崩溃不派发半更新版本 | 版本事务与故障注入；V-02/V-05 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-29",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-29 | S 正在判断请求，合同或消费者证据从 K1 更新到 K2 | 回传旧决定，再提交原请求 | 旧决定可查但不解锁节点；重新评估准确影响范围；同一版本请求幂等；缺失消费者事实不等于兼容 | Owner 判断/Harness 适配；V-01 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-30",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-30 | 会话 cwd 和 Git 预检 root 是同一项目的合法别名 | 预检后以原别名绝对路径、真实绝对路径、相对路径写同一允许文档 | 三者指向同一项目身份并均可写；项目内部软/硬链接、兄弟项目仍拒绝；不得恢复已移除目录权限 | 临时 Git 预检 + 原生文件工具/路径集成；R4 已复现缺陷 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-31",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-31 | 无进展问题已有持久尝试和上限 | 重启、拆节点、重复证据并继续恢复 | 继承原义务与预算，开始前扣减；尝试数有限；到上限停止该问题，保留无关工作的执行资格 | 收敛/Runtime 重启集成；V-03 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "AC-32",
+      "contract": "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "requirement": "| AC-32 | Reviewer 返回 passed，但尚有无关闭证据的旧义务 | 核验审查并尝试激活 | 不标为完成或执行批准；指出未满足义务；只有对应有效证据或有来源的替代决定可关闭 | 收敛协议 + 激活守卫；无需真实模型 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-01",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-01 | 当前 technical_pause + 无新会话事件 | 到期仍被观察；在预算内恢复或明确失败，不能无负责方等待 | 控制状态回放 + 真实 Runner |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-02",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-02 | 连续无变化检查 | 无重复动作、无伪进展、业务版本稳定、无忙循环 | 可注入时钟 + Runner 计数 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-03",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-03 | 同一状态并发两个 Runner/重复点击 | 只领取一个动作；同 Owner/共享资源无双写；不同 Owner 可并行 | 两个 OS 进程 + 实际工具 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-04",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-04 | 状态已保存但未派发时崩溃 | 恢复同一 Action，不新扣额度、不生成重复身份 | 进程故障注入 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-05",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-05 | DSH 已接收派发但回执未保存时崩溃 | 查找原 Session/prompt 接收证据；不盲目重送；不明则明确阻塞 | 真实 DSH 持久会话 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-06",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-06 | Owner 提交后回合/宿主中断 | 接收回执与封存阶段分清；可恢复验证，无需重做有效代码 | 真实 Owner + 文件/Git 证据 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-07",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-07 | 依赖准备或测试运行中取消 | 受控进程和复制停止；私有目录不污染其他验证；进展可见 | 实际进程/文件系统 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-08",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-08 | 验证通过后候选被改动/基线推进 | 旧验证不误用；新集成候选重验；无关心跳不使结果失效 | 实际源码/Git |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-09",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-09 | 合并后未保存完成状态即崩溃 | 查验原合并结果，集成和 Memory 原始记账只结算一次 | 真实 Git + 重启 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-10",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-10 | 旧 Owner 迟到写入/提交/审批回答 | 在副作用前拒绝旧授权；不覆盖新 Attempt | 并存执行进程 + 原生工具 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-11",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-11 | 取消返回但子进程仍在/终止不明 | 不释放同 Owner 写资格；明确技术失败及残留占用 | 受控子进程 + 故障注入 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-12",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-12 | 根会话离线/通知重复/只有 followup 返回 | 无假 delivered；恢复后同 ID 接收可证；必要决定才等待回答 | 真实根会话日志 + UI |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-13",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-13 | 原生审批中宿主重启/内容变更 | 待决可找回；过期回答无效；人类等待不耗尽执行预算 | 原生审批 + 重启 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-14",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-14 | T2 产生命令，T9 才产出完整场景 | 上游验证基础设施、下游验证完整场景；空测试/诊断占位不冒充最终通过 | 真实多节点执行 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-15",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-15 | 改图、拆节点、公共 Owner 判断失败 | 新旧来源明确、无关任务继续、问题与预算继承、不会递归重开无限会诊 | 同一 S/A/B 场景 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-16",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-16 | 未解决技术暂停、Runner 离线、预算耗尽 | Owner Dashboard/Synapse 显示相同事实、负责方与下一步；不以无待办冒充正常 | 公共视图 + 客户端 + 当前页面 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-17",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-17 | 已有无关服务占端口/本次宿主退出 | 启动失败准确；就绪绑定本次实例及自研插件加载；日志不覆盖用户日志 | 启动进程集成 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-18",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-18 | TS 测试加载失败/零用例/未释放句柄 | 分开报告收集失败；不计通过；正式入口不靠 force-exit 掩盖泄漏 | 统一测试入口 + 退出检查 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-19",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-19 | 导入旧 Workflow/切换时中断 | 源数据保留、身份和预算不丢、旧未知执行者不重派、一个生效引擎 | 脱敏旧状态 + 导入中断 + 真实现场核验 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-20",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-20 | 正常无参数启动并执行完整目标 | 使用原配置，全部插件接线，真实模型跑完规划/Owner/验证/集成；AC 全有证据 | 真实 DSH + 当前浏览器 + 最终候选 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-21",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-21 | Owner 用 shell/别名/链接越过允许范围 | 实际越界写入被拒绝；提交审计不是唯一保护；不改沙箱配置绕过 | 原生工具与命令负向测试 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-22",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-22 | 替换后扫描生产入口 | 无旧引擎、旧协议派发、自动 Git 身份或私有消费者残留；配置摘要保持一致 | 引用/打包审计 + 脱敏配置比对 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-23",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-23 | 控制写入中断、磁盘写失败、损坏记录、残留锁、根路径别名 | 原记录或新记录完整；无未持久化派发；不清空重建；单一锁归属且有明确恢复/阻塞结果 | 文件系统故障注入 + 跨进程竞争 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    },
+    {
+      "id": "KAC-24",
+      "contract": "docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md",
+      "requirement": "| KAC-24 | 直接 Operation、会诊和 DAG 任务同时申请 Owner/资源 | 统一准入；直调不能绕过写权限、容量和取消；只读操作不增加无关 DAG 门槛 | 原生工具 + 共享控制记录 |",
+      "status": "not_run",
+      "reason": "Full criterion evidence has not been collected for this production candidate; deterministic regression is recorded separately."
+    }
+  ],
+  "completeUkrAcceptance": false,
+  "productionCutover": false,
+  "remainingGates": [
+    "Complete active Registry and source-change recovery",
+    "Reconcile and activate the legacy workflow with actual writer termination proof",
+    "Replace production entrypoints and consumers together, remove the old control path",
+    "Run every AC/KAC against the same candidate",
+    "Use original configured models and the existing browser for joint workflow acceptance"
+  ]
+}

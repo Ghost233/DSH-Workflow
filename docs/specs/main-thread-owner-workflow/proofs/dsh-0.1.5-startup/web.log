@@ -1,0 +1,23 @@
+✔ official Web composition serves the shell and Owner dashboard over the real HTTP host (4065.800333ms)
+✔ real browser settles Owner interactions and hot-toggles SoL through native settings (5821.55225ms)
+ℹ Browser: 152.0.7977.83
+✔ Synapse canvas reads a consistent projection while a workspace is pruned (1880.520458ms)
+✔ Synapse browser sends, streams, creates and forks through native session services (4041.809333ms)
+✔ approval adapter uses native Web settings, preserves conflicts and settles real Bash approval (3484.610375ms)
+ℹ Approval browser: 152.0.7977.83
+✔ 真实加载器可以从 Harness 用户根目录发现所有者工作流预设 (9.594084ms)
+✔ Owner 工作流的运行时 Skill 能被当前 Agent 正确加载 (48.721667ms)
+✔ 插件只在所有者工作流预设中挂载，已安装 bundle 与本地 patch 不会重复注册 (74.1845ms)
+✔ 规划器、审查器和记忆子代理继承完整工具，文件写入由 read-only 沙箱限制 (158.633792ms)
+✔ Owner 子线程在真实 Harness 继承作用域中保留正常开发工具和提交关卡 (80.8425ms)
+✔ 主代理选择所有者工作流预设后无需调用 mode_enable 也会被工具守卫限制 (63.037833ms)
+✔ 专用状态与预检工具通过真实 Harness 输出无损 JSON (535.083292ms)
+✔ 标准预设保持原有工具且不受所有者插件影响 (92.682709ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 21218.952791

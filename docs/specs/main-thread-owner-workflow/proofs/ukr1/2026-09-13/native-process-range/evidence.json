@@ -1,0 +1,30 @@
+{
+  "contract": "UKR1_PROCESS_RANGE_EVIDENCE_V1",
+  "status": "contract_violation",
+  "result": {
+    "contract": "DSH_NATIVE_RANGE_PROBE_V1",
+    "platform": "darwin",
+    "status": "contract_violation",
+    "writersStoppedClaim": true,
+    "finishedBeforeRelease": false,
+    "escapedWriter": true,
+    "receiptAt": 1789271989241,
+    "finishedAtNs": "1789271989248441000",
+    "exitCode": 0,
+    "sandbox": "full",
+    "helperFinished": true,
+    "stderr": ""
+  },
+  "command": "node owner-workflow-plugin/test/fixtures/kernel-process-range-probe.mjs",
+  "commandExitCode": 1,
+  "upstreamCommit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "sourceHashes": {
+    "owner-workflow-plugin/test/fixtures/kernel-process-range-probe.mjs": "27d145822213a5c2aeb4bceff0001c1401323b276ca4a1784064166f881e2dba",
+    "owner-workflow-plugin/test/fixtures/kernel-native-host.mjs": "f6a3957daea2753ccff5190b4b60f26b055d1ab2ce3c87c4bedce3a9e82ce9ce",
+    "owner-workflow-plugin/src/native-command-effects.mjs": "3b9bd55eac54b5ecf4cf10ffcfe8ea913afe7a66f530a57aaa2c3b1ecd95adc1",
+    "deepseek-harness/packages/subprocess/subprocess-local/src/index.ts": "81398ec668d58923aa5f23555b7f56b10637b9f0ad04706a7023002c58b7665d",
+    "deepseek-harness/packages/subprocess/subprocess/src/index.ts": "eb1bf274d0d94a6a8fd4e949b46043a6159cd2d82b6428fff243e6741f242fc3"
+  },
+  "scope": "Temporary fixture, native DSH subprocess and full native sandbox. No user configuration or process targeted.",
+  "priorRegression": "kernel-regression-263 predates this diagnostic and does not prove arbitrary descendant termination."
+}

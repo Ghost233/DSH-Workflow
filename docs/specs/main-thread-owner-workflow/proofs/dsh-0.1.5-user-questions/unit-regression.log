@@ -1,0 +1,48 @@
+✔ 新版角色配置只使用显式 Agent；缺失 Session API 必须拒绝 (1.0165ms)
+✔ 子代理继承完整工具集，角色只决定文件沙箱模式 (0.405208ms)
+✔ Planner 与 Reviewer 隐藏无效升级字段，并对同一失败搜索执行有界熔断 (0.2685ms)
+✔ Operator 的重复搜索同样使用成功缓存和两次失败熔断 (0.133916ms)
+✔ 主代理禁止直接开发，Owner 和 Operator 不使用工具白名单 (0.613542ms)
+✔ delegated roles route human questions to main without changing the main question tool (0.494542ms)
+✔ Operation 审批插件只读取 approve-for-me 设置，不注册或监听主代理 Approval (2.928166ms)
+✔ 会话前缀使用最长字面边界匹配，并在主会话清理时全部失效 (0.677167ms)
+✔ 模型即使返回 allow，复核子代理无法回收时也必须回退人工 (8.940333ms)
+✔ 上游设置不存在或格式不兼容时关闭自动审批 (0.843042ms)
+✔ Operation reviewer reads only current trusted surface entries through public Session.eventAt (5.748667ms)
+✔ missing or inconsistent current Session surface disables the approval model (1.138ms)
+✔ pending native approval drains on session closure even when the answerer ignores abort (0.706833ms)
+✔ pending native approval drains on plugin closure even when the answerer ignores abort (0.520167ms)
+✔ an already answered approval cannot open a second card before durable settlement (0.699917ms)
+✔ 主代理启动低成本后台 Operator，继承工具并用 read-only 文件沙箱 (145.733958ms)
+✔ Operation 在非 Git 工作区直接以当前目录持久化状态 (73.628958ms)
+✔ 同一项目同一时间只启动一个 Operation，终态回收后才允许下一个 (155.718ms)
+✔ Operator 通过主代理补充信息并恢复同一个 continuable 子线程 (275.595167ms)
+✔ Operation 专用审批插件先复用 approve-for-me 固定风险与白名单，并只允许当前命令一次 (154.123667ms)
+✔ Operation 接受结构化 argv 并生成可审计的精确命令 (124.695584ms)
+✔ Operation 的公开资料读取必须改用 web_search/web_fetch，curl 不会被静默放行 (160.118209ms)
+✔ 等待授权时可原子拒绝当前命令并改向同一 Operator，且不会强制中断或并发普通问询 (223.833541ms)
+✔ Operation 连续命令失败达到预算后不再执行新命令并要求提交已有证据 (112.719334ms)
+✔ Operation 达到人工授权请求预算后停止生成新卡片 (243.947583ms)
+✔ Operation 超过总时长预算后不再启动命令 (117.126916ms)
+✔ rules-and-llm 使用无工具短生命周期复核子代理，完成后立即回收 (85.467458ms)
+✔ 固定高风险命令不能被 approve-for-me 白名单或模型越权，仍回到主线程问询 (89.183ms)
+✔ 只读沙箱阻塞后才触发自动审批，并用同一精确命令升级重试一次 (103.840167ms)
+✔ 外部副作用命令必须经过主对话的精确一次性授权 (301.209292ms)
+✔ 用户可以在原生问询中按字面前缀放行本次主会话的后续命令 (3620.337167ms)
+✔ 原生问询的其他输入只接受当前命令的更窄字面前缀 (421.430125ms)
+✔ 主会话结束后前缀授权和当前命令的持久授权都立即失效 (279.858792ms)
+✔ 只读沙箱拒绝宿主诊断时自动通知主线程授权，不产生 Tool Error (489.247333ms)
+✔ 原生多选项问询拒绝会被转发给同一个 Operator，而不是留下可执行授权 (481.291416ms)
+✔ 原生问询通道不可用时保留等待状态，不得伪造用户拒绝或失败 (483.758792ms)
+✔ 多个只读命令必须逐条执行，不能被误转成用户副作用授权 (381.004083ms)
+✔ Operator 连续违反命令契约时有界停止并主动回报主线程 (354.820708ms)
+✔ Operator 完成后结果回到主代理，修改仓库仍由 Owner 流程接管 (306.03425ms)
+✔ Operator 子线程未报告就结束时 Runtime 不把 Operation 留在伪运行状态 (383.848916ms)
+ℹ tests 40
+ℹ suites 0
+ℹ pass 40
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9877.692458

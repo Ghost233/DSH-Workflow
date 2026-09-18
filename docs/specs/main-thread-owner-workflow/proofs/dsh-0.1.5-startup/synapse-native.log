@@ -1,0 +1,15 @@
+✔ reconnect preserves the authoritative removal baseline and never prunes unloaded child catalogs (4.119042ms)
+✔ map streams official trajectory snapshots, navigates complete child addresses and tears down subscriptions (1.507166ms)
+✔ session synchronization waits for the previous request and keeps removals after a lost acknowledgement (1.722333ms)
+✔ one snapshot excludes interleaved sync pruning and recovers after a failed request (9.49075ms)
+✔ native live replay, cold fork recovery and unload preserve own history and durable fork cut (139.8135ms)
+✔ unsupported Session read contracts fail explicitly instead of projecting empty history (0.279833ms)
+✔ verified alternate upstream directory works without Git and rejects changed shipped assets (15.849834ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 208.837958

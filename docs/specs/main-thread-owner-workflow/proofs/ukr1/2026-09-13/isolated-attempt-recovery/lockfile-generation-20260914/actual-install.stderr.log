@@ -1,0 +1,79 @@
+npm warn Unknown project config "playwright_browsers_path". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn ERESOLVE overriding peer dependency
+npm warn While resolving: @dynamic-labs-connectors/base-account-evm@4.6.16
+npm warn Found: @dynamic-labs/ethereum-core@5.7.0
+npm warn node_modules/@dynamic-labs/ethereum-core
+npm warn   @dynamic-labs/ethereum-core@"5.7.0" from @dynamic-labs/ethereum@5.7.0
+npm warn   node_modules/@dynamic-labs/ethereum
+npm warn     @dynamic-labs/ethereum@"^5.7.0" from the root project
+npm warn   2 more (@dynamic-labs/waas, @dynamic-labs/waas-evm)
+npm warn
+npm warn Could not resolve dependency:
+npm warn peer @dynamic-labs/ethereum-core@"^4.88.7" from @dynamic-labs-connectors/base-account-evm@4.6.16
+npm warn node_modules/@dynamic-labs-connectors/base-account-evm
+npm warn   @dynamic-labs-connectors/base-account-evm@"4.6.16" from @dynamic-labs/ethereum@5.7.0
+npm warn   node_modules/@dynamic-labs/ethereum
+npm warn   1 more (@dynamic-labs/ethereum)
+npm warn
+npm warn Conflicting peer dependency: @dynamic-labs/ethereum-core@4.100.0
+npm warn node_modules/@dynamic-labs/ethereum-core
+npm warn   peer @dynamic-labs/ethereum-core@"^4.88.7" from @dynamic-labs-connectors/base-account-evm@4.6.16
+npm warn   node_modules/@dynamic-labs-connectors/base-account-evm
+npm warn     @dynamic-labs-connectors/base-account-evm@"4.6.16" from @dynamic-labs/ethereum@5.7.0
+npm warn     node_modules/@dynamic-labs/ethereum
+npm warn     1 more (@dynamic-labs/ethereum)
+npm warn ERESOLVE overriding peer dependency
+npm warn While resolving: @dynamic-labs-connectors/metamask-evm@4.6.16
+npm warn Found: @dynamic-labs/ethereum-core@5.7.0
+npm warn node_modules/@dynamic-labs/ethereum-core
+npm warn   @dynamic-labs/ethereum-core@"5.7.0" from @dynamic-labs/ethereum@5.7.0
+npm warn   node_modules/@dynamic-labs/ethereum
+npm warn     @dynamic-labs/ethereum@"^5.7.0" from the root project
+npm warn   2 more (@dynamic-labs/waas, @dynamic-labs/waas-evm)
+npm warn
+npm warn Could not resolve dependency:
+npm warn peer @dynamic-labs/ethereum-core@"^4.88.7" from @dynamic-labs-connectors/metamask-evm@4.6.16
+npm warn node_modules/@dynamic-labs/ethereum/node_modules/@dynamic-labs-connectors/metamask-evm
+npm warn   @dynamic-labs-connectors/metamask-evm@"4.6.16" from @dynamic-labs/ethereum@5.7.0
+npm warn   node_modules/@dynamic-labs/ethereum
+npm warn   1 more (@dynamic-labs/ethereum)
+npm warn
+npm warn Conflicting peer dependency: @dynamic-labs/ethereum-core@4.100.0
+npm warn node_modules/@dynamic-labs/ethereum-core
+npm warn   peer @dynamic-labs/ethereum-core@"^4.88.7" from @dynamic-labs-connectors/metamask-evm@4.6.16
+npm warn   node_modules/@dynamic-labs/ethereum/node_modules/@dynamic-labs-connectors/metamask-evm
+npm warn     @dynamic-labs-connectors/metamask-evm@"4.6.16" from @dynamic-labs/ethereum@5.7.0
+npm warn     node_modules/@dynamic-labs/ethereum
+npm warn     1 more (@dynamic-labs/ethereum)
+npm warn ERESOLVE overriding peer dependency
+npm warn While resolving: @dynamic-labs-connectors/metamask-evm@4.6.16
+npm warn Found: @dynamic-labs/wallet-connector-core@5.7.0
+npm warn node_modules/@dynamic-labs/ethereum/node_modules/@dynamic-labs/wallet-connector-core
+npm warn   @dynamic-labs/wallet-connector-core@"5.7.0" from @dynamic-labs/ethereum@5.7.0
+npm warn   node_modules/@dynamic-labs/ethereum
+npm warn     @dynamic-labs/ethereum@"^5.7.0" from the root project
+npm warn
+npm warn Could not resolve dependency:
+npm warn peer @dynamic-labs/wallet-connector-core@"^4.88.7" from @dynamic-labs-connectors/metamask-evm@4.6.16
+npm warn node_modules/@dynamic-labs/ethereum/node_modules/@dynamic-labs-connectors/metamask-evm
+npm warn   @dynamic-labs-connectors/metamask-evm@"4.6.16" from @dynamic-labs/ethereum@5.7.0
+npm warn   node_modules/@dynamic-labs/ethereum
+npm warn   1 more (@dynamic-labs/ethereum)
+npm warn
+npm warn Conflicting peer dependency: @dynamic-labs/wallet-connector-core@4.100.0
+npm warn node_modules/@dynamic-labs/wallet-connector-core
+npm warn   peer @dynamic-labs/wallet-connector-core@"^4.88.7" from @dynamic-labs-connectors/metamask-evm@4.6.16
+npm warn   node_modules/@dynamic-labs/ethereum/node_modules/@dynamic-labs-connectors/metamask-evm
+npm warn     @dynamic-labs-connectors/metamask-evm@"4.6.16" from @dynamic-labs/ethereum@5.7.0
+npm warn     node_modules/@dynamic-labs/ethereum
+npm warn     1 more (@dynamic-labs/ethereum)
+npm warn deprecated text-encoding@0.7.0: no longer maintained
+npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+npm warn deprecated @thumbmarkjs/thumbmarkjs@0.16.0: Please upgrade to v1
+npm warn deprecated @simplewebauthn/types@12.0.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @paulmillr/qr@0.2.1: Switch to "qr" (new package name) for security updates: npm install qr
+npm warn deprecated uuid@8.3.2: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+npm warn deprecated uuid@9.0.1: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+npm warn deprecated uuid@9.0.1: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+npm warn deprecated @walletconnect/sign-client@2.21.5: Reliability and performance improvements. See: https://github.com/WalletConnect/walletconnect-monorepo/releases
+npm warn deprecated @walletconnect/sign-client@2.21.5: Reliability and performance improvements. See: https://github.com/WalletConnect/walletconnect-monorepo/releases

@@ -1,0 +1,18 @@
+{
+  "observedAt": "2026-09-14T05:28:16.793141+00:00",
+  "freeSpaceGiB": 287,
+  "targetedRegression": {
+    "file": "owner-workflow-plugin/test/native-kernel-effects.test.mjs",
+    "tests": 12,
+    "pass": 12,
+    "fail": 0,
+    "exitCode": 0,
+    "sourceDigest": "32341e5ac2f2fa1d5e3787da00945a8ba4d2abd015c58811d7d35be69e4f7a42",
+    "sameSourceAsFullRegression": true
+  },
+  "startup": "automatic approval rejected again; command not executed",
+  "preserved": {
+    "controlStateUnchanged": true,
+    "configurationUnchanged": true
+  }
+}

@@ -1,0 +1,17 @@
+✔ T17 normal deadline-clock observation acknowledges the new durable revision without stale actionId (1512.686583ms)
+✔ T19 frozen Workflow policy uses the approved task timeout despite later Runtime settings (1332.901375ms)
+✔ T19 missing or unknown required policy state refuses Owner startup without model calls (717.303375ms)
+✔ T17 real hard deadline persists stopping before cancellation and settles only after JSONL terminal (1380.186ms)
+✔ T17 a deadline-ended recovery attempt settles the existing T13 debit once (1323.371959ms)
+✔ T17 an independent Owner starts while the expired Owner is still stopping (3342.496542ms)
+✔ T17 cancellation adapter failure pauses, while later persistent terminal proof safely settles it (905.237875ms)
+✔ T17 missing terminal reaches a bounded termination-unknown pause (418.888666ms)
+✔ T17 unavailable cancellation target enters a finite technical pause and blocks same Owner re-entry (507.734291ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11719.561375

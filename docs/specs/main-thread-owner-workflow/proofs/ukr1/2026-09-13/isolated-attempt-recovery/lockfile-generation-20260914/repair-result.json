@@ -1,0 +1,34 @@
+{
+  "generatedEntry": {
+    "version": "2.3.2",
+    "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.2.tgz",
+    "integrity": "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==",
+    "dev": true,
+    "hasInstallScript": true,
+    "license": "MIT",
+    "optional": true,
+    "os": [
+      "darwin"
+    ],
+    "engines": {
+      "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
+    }
+  },
+  "repairSha256": "851d4898f222a181e18bd075b313a14e39a612d6be5cbf3d511a6e5c00f5df06",
+  "repairPath": "/private/tmp/dsh-lockfile-generation-_fev9co5/package-lock.json",
+  "argv": [
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+    "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/lib/node_modules/npm/bin/npm-cli.js",
+    "ci",
+    "--dry-run",
+    "--ignore-scripts",
+    "--no-audit",
+    "--no-fund",
+    "--cache",
+    "/private/tmp/dsh-lockfile-generation-_fev9co5/npm-cache"
+  ],
+  "exitCode": 0,
+  "elapsedSeconds": 1.667,
+  "allOriginalPackageEntriesPreserved": true,
+  "reason": "Apply only npm-generated missing nested entry; retain four unrelated optional peer lock entries removed by npm normalization. Same full npm ci dry-run validates the resulting lock."
+}

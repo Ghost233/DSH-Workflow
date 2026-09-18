@@ -1,0 +1,7 @@
+{
+  "status": "interrupted",
+  "at": "2026-09-12T08:11:41.330Z",
+  "reason": "Confirmed mixed TS source / built JS module identities under forced TSX_TSCONFIG_PATH; preserve first two completed failing groups, stop remaining invalid composition tests",
+  "pid": 61932,
+  "processGroup": 61932
+}

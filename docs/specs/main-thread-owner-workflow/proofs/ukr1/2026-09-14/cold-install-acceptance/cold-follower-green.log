@@ -1,0 +1,11 @@
+✔ cold installation owns its deadline after acquisition and still honors external cancellation (3400.5135ms)
+✔ a cold-cache follower gets a fresh preparation deadline after waiting for the installer (1425.789291ms)
+✔ cold install deadline quarantines partial dependencies and never publishes a reusable base (954.756416ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5907.8265

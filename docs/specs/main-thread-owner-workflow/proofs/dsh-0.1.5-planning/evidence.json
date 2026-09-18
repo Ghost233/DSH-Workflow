@@ -1,0 +1,57 @@
+{
+  "kind": "development-targeted-validation",
+  "date": "2026-09-12",
+  "dshCommit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "dshTrackedChanges": "",
+  "node": "v24.12.0",
+  "runs": [
+    {
+      "name": "integration",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/planning-harness.test.mjs owner-workflow-plugin/test/operation-harness.test.mjs owner-workflow-plugin/test/owner-team-runner.test.mjs owner-workflow-plugin/test/public-owner-decision-session.test.mjs",
+      "log": "integration.log",
+      "result": {
+        "tests": 25,
+        "pass": 25,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "control-regression",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/control.test.mjs",
+      "log": "control-regression.log",
+      "result": {
+        "tests": 166,
+        "pass": 159,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 7
+      }
+    }
+  ],
+  "total": {
+    "tests": 191,
+    "pass": 184,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 7
+  },
+  "limits": [
+    "Controlled model transport with actual native Planner/Reviewer/Owner consultation, structured tools, managed sessions, JSONL, read-only sandbox and messages.",
+    "Two cases prove one revision and independent review closure, retaining the same Planner session while resident or cold-resumed after official drain.",
+    "Seven pre-existing control-test skips remain. Explicit replacement recovery is checked by control regressions; it is not silently used on ordinary delivery failure.",
+    "Does not replace full Spec/Ticket checkpoint-to-candidate or DAG execution/integration, long-term memory, external-plugin and full new candidate acceptance."
+  ],
+  "sha256": {
+    "owner-workflow-plugin/src/runtime.mjs": "90c588a101a145dc92aa10b7a2b6e296004de77b1e2fc94041801558fa862ac0",
+    "owner-workflow-plugin/src/dsh-execution.mjs": "118b16c1535413e2c4a9ef444e87d8914215e41499b81d27d2d00038e45d07fb",
+    "owner-workflow-plugin/index.js": "209ed5ef4b484d444f9ec9742a4e828a03e9d3cc4c698e4019e3c022e798d06b",
+    "owner-workflow-plugin/test/planning-harness.test.mjs": "a40e55b5a14ae84081148bcf9012eca65963fc73198855fd67bbb08416ab0ce0",
+    "owner-workflow-plugin/test/operation-harness.test.mjs": "e46e65014f34586eafdac2c32a768b106b695f68ae3880b1611ecc85498acf80",
+    "owner-workflow-plugin/test/control.test.mjs": "f1ddaef09f18a417b867d25d77f5a3f1046ea8c22e68a50d71a0038799d08b5c",
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "a95b5e9b37a138cbc31c2142d612cd00ad14572d776cc60fac0177be9cd68828",
+    "docs/specs/main-thread-owner-workflow/proofs/dsh-0.1.5-planning/control-regression.log": "6058a431e322269ebda3eec451619e1cf4e0819a04fe620eeaf1fe2adf08b33d",
+    "docs/specs/main-thread-owner-workflow/proofs/dsh-0.1.5-planning/integration.log": "4bf4f81bc5b3011b18bd7e26444ba7757aab1344fd2143c68696cc2ad015b3ff"
+  }
+}

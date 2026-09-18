@@ -1,0 +1,44 @@
+(node:99489) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ native Operation waits for main input, cold-resumes the same child and reports completion (1288.0205ms)
+✔ native Operation progress is durable without waking an idle parent (772.42225ms)
+✔ native Operation creation rejects failed role setup before any model turn (579.424416ms)
+✔ native Planner receives scoped read-only policy and delivers through the live child identity (533.03025ms)
+✔ native question tool routes Operator input through main and resumes after the actual answer (690.344792ms)
+✔ native approval coalesces duplicates and applies one decision: 仅允许这一次 (625.081167ms)
+✔ native approval coalesces duplicates and applies one decision: 本次会话允许此前缀 (575.970958ms)
+✔ cancelling an Operation closes a stalled native question and a late answer grants nothing (582.433375ms)
+✔ workflow question cancellation settles without waiting for an unresponsive answerer (373.049709ms)
+✔ native plan revision question is deduplicated and reject preserves the budget (422.386625ms)
+✔ native plan revision question is deduplicated and dispose preserves the budget (384.526458ms)
+✔ T17 fixed deadline only decreases and heartbeats cannot extend it (1.143959ms)
+✔ T17 wall-clock rollback fails closed without replenishing remaining time (0.078625ms)
+✔ T17 stop request, cancellation failure, unknown termination and terminal settlement are finite and idempotent (0.152916ms)
+✔ T17 late results must match attempt, session, token and settlement generation (0.089791ms)
+✔ T17 a fresh Runtime settles stopping from a persistent terminal event (1.085542ms)
+✔ T17 Runtime rejects invalid hard-deadline configuration (0.19425ms)
+✔ 插件注册主编排工具、全局守卫和九个中文 Skill (3.139833ms)
+✔ 决定回执工具仅允许主编排会话，所有子代理角色均被策略拒绝 (0.229417ms)
+✔ 提交 Intent 后明确询问是否重新规划，继续讨论时不唤醒 Planner (0.242667ms)
+✔ 用户在 Intent 问询中选择现在重新规划时只唤醒一次 Planner (0.117541ms)
+✔ PlanRevision 只有根会话原生问询明确同意后才切换 (0.464416ms)
+✔ 取消 Workflow 只有原生问询明确同意后才丢弃临时现场 (0.22675ms)
+✔ 计划修订额度只有原生问询明确同意后才扩展当前 Workflow (0.297458ms)
+✔ 工作流批准只接受原生问询中的明确同意，并保留不同意与自定义意见 (0.139459ms)
+✔ 只读审计完成后由原生问询决定是否自动进入 preflight 与 workflow_start (0.314125ms)
+✔ Registry 与计划批准在原生问询同意前绝不修改 Runtime (0.453334ms)
+✔ Web 客户端宿主模式不注册 Agent 工具、Skill 或提示词 (0.070875ms)
+✔ Owner 工作流提示要求新 Flutter 验证显式 cwd，且不提供 Quick (0.255167ms)
+✔ R09 执行反馈工具拒绝主编排和只读角色，不能冒充活动 Owner (0.046917ms)
+✔ T15 initial free real Owner subgraph rejection preserves source and permits a normal completion (1494.2755ms)
+✔ T15 paid real Owner subgraph rejection preserves source and permits a normal failure (875.574709ms)
+✔ T15 protected real completion rejects subgraph both during and after accepted submission (1286.025083ms)
+✔ T15 legacy real completion rejects subgraph both during and after accepted submission (1282.36925ms)
+ℹ tests 34
+ℹ suites 0
+ℹ pass 34
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12474.881917

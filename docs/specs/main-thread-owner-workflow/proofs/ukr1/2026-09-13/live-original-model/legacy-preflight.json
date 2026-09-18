@@ -1,0 +1,28 @@
+{
+  "contract": "DSH_LEGACY_IMPORT_PREFLIGHT_V1",
+  "digest": "94b9325be1b68566dc71492ecdbe852cc153b5862bb97d1b1905c40acf0a6f76",
+  "records": [
+    {
+      "id": "wf-mtytv0hv-f4ee79f0",
+      "sourceDigest": "69ec65c64d60cfbc3e9d0b65b01ab2bab3cc6928bd613f80d9979336f4e86b01",
+      "sourceRevision": 551,
+      "sourceStatus": "blocked",
+      "historical": false,
+      "blocks": [
+        {
+          "reason": "legacy_writers_unconfirmed",
+          "owners": [
+            "product-docs"
+          ],
+          "sessions": [
+            "c5edc4f1-4379-41c9-8dbe-a0ba8c20b7bd"
+          ]
+        }
+      ],
+      "budget": {
+        "totalUsed": 1,
+        "totalLimit": 12
+      }
+    }
+  ]
+}

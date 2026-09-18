@@ -1,0 +1,37 @@
+(node:99445) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ native Operation waits for main input, cold-resumes the same child and reports completion (2444.114292ms)
+✔ native Operation progress is durable without waking an idle parent (1865.303375ms)
+✔ native Operation creation rejects failed role setup before any model turn (2133.346ms)
+✔ native Planner receives scoped read-only policy and delivers through the live child identity (2094.786875ms)
+✔ native question tool routes Operator input through main and resumes after the actual answer (1728.124958ms)
+✔ native approval coalesces duplicates and applies one decision: 仅允许这一次 (1370.149708ms)
+✔ native approval coalesces duplicates and applies one decision: 本次会话允许此前缀 (1145.870334ms)
+✔ cancelling an Operation closes a stalled native question and a late answer grants nothing (1241.903625ms)
+✔ workflow question cancellation settles without waiting for an unresponsive answerer (827.639791ms)
+✔ native plan revision question is deduplicated and reject preserves the budget (798.205041ms)
+✔ native plan revision question is deduplicated and dispose preserves the budget (872.222959ms)
+✔ Runner 使用真实 Owner Team 连续执行、休眠后恢复，提交关卡仍验证并固定 SHA (18427.400833ms)
+✔ Runner 双 Owner 并行与 worktree 隔离：两个合法修改均验证提交 (3770.439167ms)
+✔ Runner 双 Owner 并行与 worktree 隔离：scope 越界拒绝并保留现场 (2286.728792ms)
+(node:99447) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ native Planner and Reviewer complete a revision with a live Planner (5591.972709ms)
+✔ native Planner and Reviewer complete a revision with cold resume (5150.886709ms)
+✔ T28 real public Owner structured submission persists and fresh Runtime replays without a model call (3693.605583ms)
+✔ T28 ordinary assistant text is a durable no-submit failure and is never parsed as a decision (3905.765375ms)
+✔ T28 wrong Owner structured submission cannot produce a public decision (2731.666584ms)
+✔ T28 K1 response becomes durable stale history when active execution changes during the model turn (2009.623416ms)
+✔ T28 a durable consultation reservation occupies capacity and queues another Owner (1992.742459ms)
+✔ T28 timeout settles the consultation and releases capacity for a later request (1653.796459ms)
+✔ T28 parent cancellation settles the durable consultation and releases its reservation (1743.774084ms)
+✔ T28 a public Owner business change reaches the main outbox as an explicit user decision (1737.019583ms)
+✔ T28 uncertain child creation is never retried from a missing durable binding (1683.91325ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 24928.825875

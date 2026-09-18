@@ -1,0 +1,41 @@
+(node:10204) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ native Operation waits for main input, cold-resumes the same child and reports completion (968.092709ms)
+✔ native Operation progress is durable without waking an idle parent (609.668125ms)
+✔ native Operation creation rejects failed role setup before any model turn (559.652542ms)
+✔ native Planner receives scoped read-only policy and delivers through the live child identity (592.698958ms)
+✖ native question tool routes Operator input through main and resumes after the actual answer (45527.936542ms)
+✔ native approval coalesces duplicates and applies one decision: 仅允许这一次 (641.289166ms)
+✔ native approval coalesces duplicates and applies one decision: 本次会话允许此前缀 (1269.587209ms)
+✔ cancelling an Operation closes a stalled native question and a late answer grants nothing (519.102291ms)
+✔ workflow question cancellation settles without waiting for an unresponsive answerer (382.003042ms)
+✔ native plan revision question is deduplicated and reject preserves the budget (430.864167ms)
+✔ native plan revision question is deduplicated and dispose preserves the budget (394.629625ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 10
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 52083.536708
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/operation-harness.test.mjs:195:1
+✖ native question tool routes Operator input through main and resumes after the actual answer (45527.936542ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(child)
+  
+      at TestContext.<anonymous> (/Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/operation-harness.test.mjs:240:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+

@@ -1,0 +1,97 @@
+{
+  "workflowId": "wf-13331145b1376e2eb664d2876ac6e576aac57af3",
+  "rootSessionId": "session-357c433f-0c49-4cfd-a594-fdfa816bd31f",
+  "recoveryUsed": 11,
+  "loadedCandidate": "2ef615f246c2671600011b6f04b9f7b66b11a4f1caab085991e37f7456c7dc91",
+  "regression": {
+    "tests": 471,
+    "pass": 471
+  },
+  "attempts": [
+    {
+      "taskId": "fixtures",
+      "phase": "succeeded"
+    },
+    {
+      "taskId": "api_transport",
+      "phase": "failed"
+    },
+    {
+      "taskId": "api_transport",
+      "phase": "failed"
+    },
+    {
+      "taskId": "api_transport",
+      "phase": "failed"
+    },
+    {
+      "taskId": "api_transport",
+      "phase": "succeeded"
+    },
+    {
+      "taskId": "api_impact_review",
+      "phase": "failed"
+    },
+    {
+      "taskId": "api_impact_review",
+      "phase": "succeeded"
+    },
+    {
+      "taskId": "panel_journeys",
+      "phase": "failed"
+    },
+    {
+      "taskId": "worker_transport",
+      "phase": "failed"
+    }
+  ],
+  "completeAcceptance": false,
+  "observedAt": "2026-09-14T15:17:58.106097+00:00",
+  "currentTasks": [
+    {
+      "taskId": "fixtures",
+      "phase": "succeeded"
+    },
+    {
+      "taskId": "api_transport",
+      "phase": "succeeded"
+    },
+    {
+      "taskId": "api_impact_review",
+      "phase": "succeeded"
+    },
+    {
+      "taskId": "panel_journeys",
+      "phase": "failed"
+    },
+    {
+      "taskId": "worker_transport",
+      "phase": "failed"
+    },
+    {
+      "taskId": "web_host_parity",
+      "phase": "pending"
+    },
+    {
+      "taskId": "extension_host_parity",
+      "phase": "pending"
+    },
+    {
+      "taskId": "final_acceptance",
+      "phase": "pending"
+    },
+    {
+      "taskId": "worker_impact_review",
+      "phase": "pending"
+    }
+  ],
+  "hostId": "5e969edf-7399-4b61-8f3f-56547b6b30c6",
+  "currentFrameworkFixAcceptance": "passed: 471/471 fixed regression and real readonly report review/integration/issue closure",
+  "finalAcceptance": "not passed: two candidate business defects independently reproduced; downstream gates unexecuted",
+  "diagnosticProbe": {
+    "tests": 3,
+    "pass": 1,
+    "fail": 2,
+    "repeatSameResult": true
+  }
+}

@@ -1,0 +1,373 @@
+{
+  "contract": "DSH_DEPENDENCY_REUSE_ACCEPTANCE_V1",
+  "source": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/act-1d8c78ea3c5bbb68a4ebca26384b8a9f7dacb289/tree",
+  "projectRoot": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+  "proofId": "dependency-reuse-1789307456056",
+  "startedAt": "2026-09-13T13:50:56.056Z",
+  "passed": true,
+  "cases": [
+    {
+      "id": "imports-and-cache",
+      "contentDigest": "c0c6aa456c7e5ba269124881f62ba724936a6c1bb1284986bbbecfe1a5aa7be6",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "-e",
+        "const fs=require('node:fs'); console.log(JSON.stringify({react:require('react').version,typescript:require('typescript').version})); fs.mkdirSync('node_modules/.vite',{recursive:true}); fs.writeFileSync('node_modules/.vite/probe',process.argv[1]); import('vite').then(v=>console.log('vite:'+v.version))",
+        "first"
+      ],
+      "expectedExitCode": 0,
+      "preparation": {
+        "bindings": [
+          {
+            "packageDirectory": ".",
+            "key": "e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04",
+            "inputDigest": "de0d017529cdaa41c51c11c18cb37f26fbc7031cd31d022c321b21940a374399",
+            "baseDigest": "2069111e54c374adc41d54183824f194365aa3cae79ba815ff0bc0ab0b4e5ed2",
+            "mode": "readonly-overlay",
+            "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04/base",
+            "metrics": {
+              "cacheHit": false,
+              "installRuns": 0,
+              "fullTreeCopies": 0,
+              "overlayLinks": 591,
+              "logicalBytes": 1761456007,
+              "hashedBytes": 1761456007,
+              "copiedBytes": 163898513,
+              "hardlinkNormalized": 3,
+              "hardlinkCopiedBytes": 163353020,
+              "durations": {
+                "cacheAcquireMs": 352,
+                "sealMs": 136380,
+                "overlayMs": 171
+              },
+              "validationMode": "fresh-seal",
+              "fallbackReason": null
+            }
+          }
+        ]
+      },
+      "command": {
+        "commandId": "cmd-9897f50413908e5ddd0c1f2bc76a33addcc7404c",
+        "exitCode": 0,
+        "ok": true,
+        "enforcement": "full",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "stdout": "{\"react\":\"18.3.1\",\"typescript\":\"5.9.3\"}\nvite:6.4.3\n",
+        "stderr": ""
+      },
+      "passed": true
+    },
+    {
+      "id": "typescript-bin",
+      "contentDigest": "c0c6aa456c7e5ba269124881f62ba724936a6c1bb1284986bbbecfe1a5aa7be6",
+      "argv": [
+        "./node_modules/.bin/tsc",
+        "--version"
+      ],
+      "expectedExitCode": 0,
+      "preparation": {
+        "bindings": [
+          {
+            "packageDirectory": ".",
+            "key": "e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04",
+            "inputDigest": "de0d017529cdaa41c51c11c18cb37f26fbc7031cd31d022c321b21940a374399",
+            "baseDigest": "2069111e54c374adc41d54183824f194365aa3cae79ba815ff0bc0ab0b4e5ed2",
+            "mode": "readonly-overlay",
+            "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04/base",
+            "metrics": {
+              "cacheHit": true,
+              "installRuns": 0,
+              "fullTreeCopies": 0,
+              "overlayLinks": 591,
+              "logicalBytes": 1761456007,
+              "hashedBytes": 0,
+              "copiedBytes": 545493,
+              "hardlinkNormalized": 0,
+              "hardlinkCopiedBytes": 0,
+              "durations": {
+                "cacheAcquireMs": 293,
+                "sealMs": 0,
+                "overlayMs": 185
+              },
+              "validationMode": "sealed-memory",
+              "fallbackReason": null
+            }
+          }
+        ]
+      },
+      "command": {
+        "commandId": "cmd-b71025ce2528ebbf60ac38ccdc28ab2e035ecd90",
+        "exitCode": 0,
+        "ok": true,
+        "enforcement": "full",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "stdout": "Version 5.9.3\n",
+        "stderr": ""
+      },
+      "passed": true
+    },
+    {
+      "id": "failed-command",
+      "contentDigest": "c0c6aa456c7e5ba269124881f62ba724936a6c1bb1284986bbbecfe1a5aa7be6",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "-e",
+        "process.exit(23)"
+      ],
+      "expectedExitCode": 23,
+      "preparation": {
+        "bindings": [
+          {
+            "packageDirectory": ".",
+            "key": "e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04",
+            "inputDigest": "de0d017529cdaa41c51c11c18cb37f26fbc7031cd31d022c321b21940a374399",
+            "baseDigest": "2069111e54c374adc41d54183824f194365aa3cae79ba815ff0bc0ab0b4e5ed2",
+            "mode": "readonly-overlay",
+            "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04/base",
+            "metrics": {
+              "cacheHit": true,
+              "installRuns": 0,
+              "fullTreeCopies": 0,
+              "overlayLinks": 591,
+              "logicalBytes": 1761456007,
+              "hashedBytes": 0,
+              "copiedBytes": 545493,
+              "hardlinkNormalized": 0,
+              "hardlinkCopiedBytes": 0,
+              "durations": {
+                "cacheAcquireMs": 248,
+                "sealMs": 0,
+                "overlayMs": 240
+              },
+              "validationMode": "sealed-memory",
+              "fallbackReason": null
+            }
+          }
+        ]
+      },
+      "command": {
+        "commandId": "cmd-a1d00b6571c1a41b912b2a28c5b09fc777428953",
+        "exitCode": 23,
+        "ok": false,
+        "enforcement": "full",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "stdout": "",
+        "stderr": ""
+      },
+      "passed": true
+    },
+    {
+      "id": "retry-command",
+      "contentDigest": "c0c6aa456c7e5ba269124881f62ba724936a6c1bb1284986bbbecfe1a5aa7be6",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "-e",
+        "const fs=require('node:fs'); console.log(JSON.stringify({react:require('react').version,typescript:require('typescript').version})); fs.mkdirSync('node_modules/.vite',{recursive:true}); fs.writeFileSync('node_modules/.vite/probe',process.argv[1]); import('vite').then(v=>console.log('vite:'+v.version))",
+        "retry"
+      ],
+      "expectedExitCode": 0,
+      "preparation": {
+        "bindings": [
+          {
+            "packageDirectory": ".",
+            "key": "e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04",
+            "inputDigest": "de0d017529cdaa41c51c11c18cb37f26fbc7031cd31d022c321b21940a374399",
+            "baseDigest": "2069111e54c374adc41d54183824f194365aa3cae79ba815ff0bc0ab0b4e5ed2",
+            "mode": "readonly-overlay",
+            "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04/base",
+            "metrics": {
+              "cacheHit": true,
+              "installRuns": 0,
+              "fullTreeCopies": 0,
+              "overlayLinks": 591,
+              "logicalBytes": 1761456007,
+              "hashedBytes": 0,
+              "copiedBytes": 545493,
+              "hardlinkNormalized": 0,
+              "hardlinkCopiedBytes": 0,
+              "durations": {
+                "cacheAcquireMs": 226,
+                "sealMs": 0,
+                "overlayMs": 180
+              },
+              "validationMode": "sealed-memory",
+              "fallbackReason": null
+            }
+          }
+        ]
+      },
+      "command": {
+        "commandId": "cmd-349c95cfd8872caba4d1659390f26789594205c2",
+        "exitCode": 0,
+        "ok": true,
+        "enforcement": "full",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "stdout": "{\"react\":\"18.3.1\",\"typescript\":\"5.9.3\"}\nvite:6.4.3\n",
+        "stderr": ""
+      },
+      "passed": true
+    },
+    {
+      "id": "changed-source",
+      "contentDigest": "26a4199470b5ae7f73829bbfdecb092cb6f30befebd21e8b0463daca0fee56bb",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "-e",
+        "const fs=require('node:fs'); console.log(JSON.stringify({react:require('react').version,typescript:require('typescript').version})); fs.mkdirSync('node_modules/.vite',{recursive:true}); fs.writeFileSync('node_modules/.vite/probe',process.argv[1]); import('vite').then(v=>console.log('vite:'+v.version))",
+        "changed"
+      ],
+      "expectedExitCode": 0,
+      "preparation": {
+        "bindings": [
+          {
+            "packageDirectory": ".",
+            "key": "e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04",
+            "inputDigest": "de0d017529cdaa41c51c11c18cb37f26fbc7031cd31d022c321b21940a374399",
+            "baseDigest": "2069111e54c374adc41d54183824f194365aa3cae79ba815ff0bc0ab0b4e5ed2",
+            "mode": "readonly-overlay",
+            "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04/base",
+            "metrics": {
+              "cacheHit": true,
+              "installRuns": 0,
+              "fullTreeCopies": 0,
+              "overlayLinks": 591,
+              "logicalBytes": 1761456007,
+              "hashedBytes": 0,
+              "copiedBytes": 545493,
+              "hardlinkNormalized": 0,
+              "hardlinkCopiedBytes": 0,
+              "durations": {
+                "cacheAcquireMs": 180,
+                "sealMs": 0,
+                "overlayMs": 194
+              },
+              "validationMode": "sealed-memory",
+              "fallbackReason": null
+            }
+          }
+        ]
+      },
+      "command": {
+        "commandId": "cmd-1ca0bb3c60d7a6daa6e751033fec3144476faea6",
+        "exitCode": 0,
+        "ok": true,
+        "enforcement": "full",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "stdout": "{\"react\":\"18.3.1\",\"typescript\":\"5.9.3\"}\nvite:6.4.3\n",
+        "stderr": ""
+      },
+      "passed": true
+    },
+    {
+      "id": "parallel-a",
+      "contentDigest": "c0c6aa456c7e5ba269124881f62ba724936a6c1bb1284986bbbecfe1a5aa7be6",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "-e",
+        "const fs=require('node:fs'); console.log(JSON.stringify({react:require('react').version,typescript:require('typescript').version})); fs.mkdirSync('node_modules/.vite',{recursive:true}); fs.writeFileSync('node_modules/.vite/probe',process.argv[1]); import('vite').then(v=>console.log('vite:'+v.version))",
+        "parallel-a"
+      ],
+      "expectedExitCode": 0,
+      "preparation": {
+        "bindings": [
+          {
+            "packageDirectory": ".",
+            "key": "e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04",
+            "inputDigest": "de0d017529cdaa41c51c11c18cb37f26fbc7031cd31d022c321b21940a374399",
+            "baseDigest": "2069111e54c374adc41d54183824f194365aa3cae79ba815ff0bc0ab0b4e5ed2",
+            "mode": "readonly-overlay",
+            "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04/base",
+            "metrics": {
+              "cacheHit": true,
+              "installRuns": 0,
+              "fullTreeCopies": 0,
+              "overlayLinks": 591,
+              "logicalBytes": 1761456007,
+              "hashedBytes": 0,
+              "copiedBytes": 545493,
+              "hardlinkNormalized": 0,
+              "hardlinkCopiedBytes": 0,
+              "durations": {
+                "cacheAcquireMs": 236,
+                "sealMs": 0,
+                "overlayMs": 220
+              },
+              "validationMode": "sealed-memory",
+              "fallbackReason": null
+            }
+          }
+        ]
+      },
+      "command": {
+        "commandId": "cmd-1776bca7a6ab11f61f78f54ddb2f3aa4bb3dede5",
+        "exitCode": 0,
+        "ok": true,
+        "enforcement": "full",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "stdout": "{\"react\":\"18.3.1\",\"typescript\":\"5.9.3\"}\nvite:6.4.3\n",
+        "stderr": ""
+      },
+      "passed": true
+    },
+    {
+      "id": "parallel-b",
+      "contentDigest": "c0c6aa456c7e5ba269124881f62ba724936a6c1bb1284986bbbecfe1a5aa7be6",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "-e",
+        "const fs=require('node:fs'); console.log(JSON.stringify({react:require('react').version,typescript:require('typescript').version})); fs.mkdirSync('node_modules/.vite',{recursive:true}); fs.writeFileSync('node_modules/.vite/probe',process.argv[1]); import('vite').then(v=>console.log('vite:'+v.version))",
+        "parallel-b"
+      ],
+      "expectedExitCode": 0,
+      "preparation": {
+        "bindings": [
+          {
+            "packageDirectory": ".",
+            "key": "e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04",
+            "inputDigest": "de0d017529cdaa41c51c11c18cb37f26fbc7031cd31d022c321b21940a374399",
+            "baseDigest": "2069111e54c374adc41d54183824f194365aa3cae79ba815ff0bc0ab0b4e5ed2",
+            "mode": "readonly-overlay",
+            "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/e88471236be4c0d4f938a5d13fb53d8b52bd4f5120679b122686b69dde358a04/base",
+            "metrics": {
+              "cacheHit": true,
+              "installRuns": 0,
+              "fullTreeCopies": 0,
+              "overlayLinks": 591,
+              "logicalBytes": 1761456007,
+              "hashedBytes": 0,
+              "copiedBytes": 545493,
+              "hardlinkNormalized": 0,
+              "hardlinkCopiedBytes": 0,
+              "durations": {
+                "cacheAcquireMs": 218,
+                "sealMs": 0,
+                "overlayMs": 224
+              },
+              "validationMode": "sealed-memory",
+              "fallbackReason": null
+            }
+          }
+        ]
+      },
+      "command": {
+        "commandId": "cmd-177dfc571b794c7bf74423c43e0d3210c9d9373f",
+        "exitCode": 0,
+        "ok": true,
+        "enforcement": "full",
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "stdout": "{\"react\":\"18.3.1\",\"typescript\":\"5.9.3\"}\nvite:6.4.3\n",
+        "stderr": ""
+      },
+      "passed": true
+    }
+  ],
+  "contentDigest": "c0c6aa456c7e5ba269124881f62ba724936a6c1bb1284986bbbecfe1a5aa7be6",
+  "finishedAt": "2026-09-13T13:53:22.791Z"
+}

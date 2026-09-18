@@ -1,0 +1,39 @@
+✔ 等待列表客户端产物与源码一致并登记正式、本地两个模块编号 (74.569833ms)
+✔ 运行状态只登记官方会话头部、侧边栏和全屏待处理 Slot (7.621458ms)
+✔ 运行状态只通过可重连 SSE 接收更新，并按当前工作区和当前会话过滤 (2.641208ms)
+✔ 运行状态按需要处理、总览、主线程和子代理分类显示确定性状态 (4.655625ms)
+✔ 侧栏运行状态使用视口定位，避免被侧栏裁剪和遮住底部操作区 (3.391875ms)
+✔ 等待列表 SSE 同时使用文件事件、周期基线重拉和 heartbeat (9.588542ms)
+✔ Dashboard 用全局 catalog 读取唯一 Runner，同时默认只登记当前业务工作区 (114.905708ms)
+✔ 内嵌 Dashboard 页面、目录与 DAG 快照都从固定工作区只读提供 (100.119916ms)
+✔ Dashboard 把可自治的计划审查失败显示为 Runner 恢复，而不是用户动作 (52.531ms)
+✔ Dashboard 展示 Owner 会诊、abstract 层级和 Reviewer 指定的拆分阶段 (66.674625ms)
+✔ Dashboard 把修订预算耗尽显示为等待用户决定，而不是运行中或 Runtime 故障 (64.428333ms)
+✔ Dashboard 显示自动规划已终止并等待主线程讨论 (51.81525ms)
+✔ Dashboard 把仍有预算的 review_failed 显示为等待 Runner 自动恢复 (33.4865ms)
+✔ Workflow Dashboard 通过 SSE 在投影变化后实时推送 (65.755583ms)
+✔ 等待列表 SSE 立即发送快照并在磁盘状态变化后推送新快照 (59.321667ms)
+✔ 等待列表把旧版复合授权和已被相同动作取代的 Operation 归入遗留记录 (62.144541ms)
+✔ 等待列表投影 Runner 接管、未执行、执行中和依赖任务数量 (85.616292ms)
+✔ 运行状态投影 Harness 主线程、子代理和未启动 Reviewer 的确定性生命周期 (37.806209ms)
+✔ 内嵌 Dashboard 拒绝写入方法、非法 workflow id 与未知路径 (23.480959ms)
+✔ Dashboard 使用 opaque workspace_id 观察已登记业务工作区，不接受浏览器路径 (61.639417ms)
+✔ Dashboard 宿主路由随 Cordis 插件生命周期注册和释放 (0.3315ms)
+✔ Dashboard 只读取指定 workflow 的 progress 投影并将投影变化作为 SSE 推送 (4078.653583ms)
+✔ 尚未生成计划的 workflow 也会投影为可读取的空任务进度 (47.39725ms)
+✔ Dashboard 投影显示 Owner 会话、阶段、心跳、恢复次数和授权等待 (46.751791ms)
+✔ Dashboard 先推送指定 workflow 的既有事件，再推送后续 projection 变化 (97.574666ms)
+✔ Dashboard 按 workflowId 隔离 progress、事件和 SSE，不发生跨 workflow 污染 (4554.301583ms)
+✔ Dashboard、投影和事件缺失 workflowId 时 fail closed (7.270709ms)
+✔ runner 的 Dashboard 模式必须验证并传递安全 workflow-id (0.636958ms)
+✔ Dashboard 只绑定 127.0.0.1，且没有写状态、调度、命令或 CORS 接口 (66.872042ms)
+✔ 缺失或畸形 progress 投影安全失败，不泄露本地路径 (44.98625ms)
+✔ progress 投影原子写入后不遗留临时文件 (39.959125ms)
+ℹ tests 31
+ℹ suites 0
+ℹ pass 31
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9297.654417

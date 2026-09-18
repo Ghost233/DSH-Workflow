@@ -1,0 +1,18 @@
+✔ local Planner patch preserves omitted definitions and rejects edits outside its admitted boundary (1.856792ms)
+✔ a local Planner may create a verification identity only through a real authorized task binding (1.256083ms)
+✔ an R11-sized rejected candidate can add one evidence leaf without rewriting its 18 tasks or 16 verifications (16.830042ms)
+✔ Planner contract accepts an executable plan with no public Owner change (0.622917ms)
+✔ Planner required fields follow normalization defaults plus package compilation (0.117458ms)
+✔ Planner public Owner binding schema is the exact domain-owned shape (0.198167ms)
+✔ omission cannot bypass required or historical public Owner authority (0.163417ms)
+✔ Planner tool contract rejects the five invalid shapes observed in the live workflow (0.229708ms)
+✔ Planner receives frozen requirements without authorization receipts or write journals (0.240833ms)
+✔ Planner and Reviewer receive readable Owner feedback as a non-blocking fact (0.891459ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 106.532958

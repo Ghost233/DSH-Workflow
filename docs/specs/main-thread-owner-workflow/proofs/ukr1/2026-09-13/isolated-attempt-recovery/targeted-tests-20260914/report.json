@@ -1,0 +1,97 @@
+{
+  "status": "completed_with_open_finding",
+  "scope": [
+    "local_replan_identity",
+    "frozen_planning_lifecycle",
+    "dependency_reuse"
+  ],
+  "businessWorkflowMutations": 0,
+  "recoveryRemaining": 4,
+  "initialRuns": [
+    {
+      "log": "/private/tmp/owner-structural-targeted-20260914.log",
+      "tests": 143,
+      "pass": 142,
+      "fail": 1,
+      "finding": "Test attempted forbidden direct prepare_revision enqueue.",
+      "retainedLog": "owner-structural-targeted-20260914.log"
+    },
+    {
+      "log": "/private/tmp/owner-structural-native-20260914.log",
+      "tests": 24,
+      "pass": 23,
+      "fail": 1,
+      "finding": "Revision smoke fixture changed only source revision but expected automatic replacement of execution-equivalent failed task.",
+      "retainedLog": "owner-structural-native-20260914.log"
+    }
+  ],
+  "realDependencyProof": ".dsh-workflow/dependency-proofs/dependency-reuse-1789321356776/report.json",
+  "sourceHashes": "source-hashes.json",
+  "reruns": [
+    {
+      "log": "/private/tmp/owner-structural-planning-rerun-20260914.log",
+      "tests": 11,
+      "pass": 11,
+      "fail": 0,
+      "retainedLog": "owner-structural-planning-rerun-20260914.log"
+    },
+    {
+      "log": "/private/tmp/owner-structural-freeze-rerun-20260914.log",
+      "tests": 10,
+      "pass": 10,
+      "fail": 0,
+      "retainedLog": "owner-structural-freeze-rerun-20260914.log"
+    }
+  ],
+  "finalDistinctTestCases": 168,
+  "targetedTestStatus": "passed_after_fixture_corrections",
+  "productionSourceChangedDuringTests": [],
+  "openFindings": [
+    "path-identity-finding.json"
+  ],
+  "realDependencyProofStatus": "11_of_11_passed_within_unchanged_environment",
+  "dependencyCacheAcceptance": "incomplete_due_to_cross_session_PATH_over_invalidation",
+  "realDependencyMetrics": {
+    "bindings": 11,
+    "cacheHits": 9,
+    "installRuns": 2,
+    "hotReuse": {
+      "bindings": 9,
+      "installRuns": 0,
+      "fullTreeCopies": 0,
+      "baseHashedBytes": 0
+    },
+    "expectedColdInputChange": {
+      "bindings": 1,
+      "cacheMisses": 1,
+      "installRuns": 1
+    },
+    "fullTreeCopies": 0,
+    "baseHashedBytes": 3522912077,
+    "overlayHashedBytes": 6000486,
+    "hashedBytes": 3528912563,
+    "copiedBytes": 332706526,
+    "baseDigestEntries": 558372,
+    "overlayDigestEntries": 7601,
+    "digestEntries": 565973,
+    "durations": {
+      "cacheAcquireMs": 216391,
+      "promoteMs": 26244,
+      "normalizeMs": 25152,
+      "sealMs": 234616,
+      "overlayMs": 4135
+    }
+  },
+  "finishedAt": "2026-09-13T17:51:20.493Z",
+  "workflowAfter": {
+    "planVersion": 2,
+    "tasks": {
+      "succeeded": 1,
+      "failed": 2,
+      "pending": 13
+    },
+    "recoveryUsed": 8,
+    "recoveryLimit": 12,
+    "integrationHead": "1ef4949a3ba76a77d68db7613c72624438a97d8c"
+  }
+}

@@ -1,0 +1,53 @@
+✔ T19 frozen Workflow policy uses the approved task timeout despite later Runtime settings (1198.492542ms)
+✔ T19 missing or unknown required policy state refuses Owner startup without model calls (427.470375ms)
+✖ T17 real hard deadline persists stopping before cancellation and settles only after JSONL terminal (861.010875ms)
+✔ T17 a deadline-ended recovery attempt settles the existing T13 debit once (964.073917ms)
+✖ T17 an independent Owner starts while the expired Owner is still stopping (1437.200042ms)
+✔ T17 cancellation adapter failure pauses, while later persistent terminal proof safely settles it (909.395791ms)
+✖ T17 missing terminal reaches a bounded termination-unknown pause (409.490417ms)
+✔ T17 unavailable cancellation target enters a finite technical pause and blocks same Owner re-entry (444.08975ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 5
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6836.228333
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/owner-hard-deadline.test.mjs:151:1
+✖ T17 real hard deadline persists stopping before cancellation and settles only after JSONL terminal (861.010875ms)
+  Error: actionId 与当前 Supervisor 动作不匹配
+      at fail (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/supervisor.mjs:12:9)
+      at ackSupervisorAction (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/supervisor.mjs:531:73)
+      at file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:15929:27
+      at async Object.withWorkflowLock (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13865:16)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/owner-hard-deadline.test.mjs:161:25)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at owner-workflow-plugin/test/owner-hard-deadline.test.mjs:210:1
+✖ T17 an independent Owner starts while the expired Owner is still stopping (1437.200042ms)
+  TypeError: Cannot read properties of undefined (reading 'some')
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/owner-hard-deadline.test.mjs:259:41)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at owner-workflow-plugin/test/owner-hard-deadline.test.mjs:298:1
+✖ T17 missing terminal reaches a bounded termination-unknown pause (409.490417ms)
+  Error [SessionPersistenceNotFoundError]: session "partial-session" not found
+      at Proxy.requireStoredLog (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence-jsonl/lib/index.js:2485:34)
+      at async Proxy.open (/Volumes/LargeStorage/code/DSH-Workflow/deepseek-harness/packages/session/session-persistence-jsonl/lib/index.js:2356:19)
+      at async readSessionEvents (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/dsh-execution.mjs:57:18)
+      at async Object.inspectOwnerSessionTerminal (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:6488:24)
+      at async Object.reconcileStoppingOwnerAttempts (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:6504:26)
+      at async file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:15658:39
+      at async Object.withWorkflowLock (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/runtime.mjs:13865:16)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/owner-hard-deadline.test.mjs:320:19)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    sessionId: 'partial-session'
+  }
+{"exitCode":1,"timedOut":false,"aborted":false}

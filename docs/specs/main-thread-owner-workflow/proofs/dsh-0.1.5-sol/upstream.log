@@ -1,0 +1,5 @@
+
+> dsh-sol-efficiency@0.1.0 check:upstream
+> node scripts/check-upstream.mjs
+
+SoL-Pi submodule and port baseline match: 22277b7e0c3c46ba1259a6687f31fe39ade421a5

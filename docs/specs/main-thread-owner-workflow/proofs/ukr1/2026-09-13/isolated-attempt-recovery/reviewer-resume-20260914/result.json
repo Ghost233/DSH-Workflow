@@ -1,0 +1,147 @@
+{
+  "complete": false,
+  "recordedAt": "2026-09-14T03:50:46.376483+00:00",
+  "workflowId": "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+  "planVersion": 3,
+  "recoveryUsed": 14,
+  "recoveryLimit": 14,
+  "newPlannerActions": 0,
+  "newReviewPlanActions": 1,
+  "newOwnerAttempts": 1,
+  "verificationActionId": "act-6ca4b95540704add9df58fe258e8c34adbbec38f",
+  "candidateDigest": "7febdf0adb3778432ef21d8fb428f14644de07cdbd4c30943cef13d7f6610ae6",
+  "verificationStatus": "execution_error",
+  "browserSmokeExecuted": false,
+  "dependencyFailure": {
+    "dependencyKey": "318775a6b40bce5872b41506d5b029312bdea4e9fc2288830ab360203c7c9510",
+    "manager": "npm",
+    "phase": "install",
+    "commandId": "cmd-8184d1263fc0ab8812f8ff077cf079c36a192f02",
+    "exitCode": -1,
+    "timedOut": true,
+    "quarantine": "318775a6b40bce5872b41506d5b029312bdea4e9fc2288830ab360203c7c9510/quarantine-331a404c-deb5-41dc-a87a-fa81f8b626ed",
+    "failureArtifact": "318775a6b40bce5872b41506d5b029312bdea4e9fc2288830ab360203c7c9510/failure-998e0515-d03f-4bf3-8cc4-30dbbb0eaefe.json",
+    "metrics": {
+      "cacheHit": false,
+      "installRuns": 1,
+      "fullTreeCopies": 0,
+      "overlayLinks": 0,
+      "logicalBytes": 0,
+      "baseHashedBytes": 0,
+      "overlayHashedBytes": 0,
+      "hashedBytes": 0,
+      "copiedBytes": 0,
+      "baseDigestEntries": 0,
+      "overlayDigestEntries": 0,
+      "digestEntries": 0,
+      "hardlinkNormalized": 0,
+      "hardlinkCopiedBytes": 0,
+      "durations": {
+        "cacheAcquireMs": 302047,
+        "promoteMs": 0,
+        "normalizeMs": 0,
+        "sealMs": 0,
+        "overlayMs": 0
+      },
+      "validationMode": "not_available",
+      "fallbackReason": null
+    }
+  },
+  "commandTermination": {
+    "managedRangeStopped": true,
+    "terminationScope": "dsh-managed-range",
+    "terminationId": "range-d82d5015fb475856cede2a44d042d026932446ce2a0b29624ab83240afe5b9d3"
+  },
+  "candidateReview": {
+    "passed": false,
+    "contentDigest": "7febdf0adb3778432ef21d8fb428f14644de07cdbd4c30943cef13d7f6610ae6",
+    "reasons": [
+      "Static review supports most of the harness contract: `.npmrc` sets `playwright_browsers_path=0`; `package.json` and `package-lock.json` pin both `@playwright/test` and official `@playwright/browser-chromium` to 1.58.2; and the lockfile records the browser helper install lifecycle plus matching `playwright`/`playwright-core` transitive versions.",
+      "`scripts/playwright-acceptance.mjs` sets `PLAYWRIGHT_BROWSERS_PATH=0` before resolving/spawning the project-local Playwright CLI. `scripts/playwright-harness-smoke.mjs` independently sets it before importing Playwright, launches headless Chromium, serves and asserts a local DOM page, routes non-local origins to `blockedbyclient`, and closes the context/browser/server in cleanup.",
+      "The required fixed verification did not run to a passing result: dependency preparation timed out during npm installation (reported exit code -1), and this candidate has no installed local Playwright runtime to provide independent launch evidence. Therefore the required actual Chromium launch/smoke acceptance remains unproven and this candidate cannot be approved.",
+      "The recorded npm warning about the project `.npmrc` key is not itself proof that the candidate configuration is wrong; the decisive issue is the timed-out dependency preparation. Re-run the same fixed verification after the formal dependency-preparation environment completes successfully, without changing user configuration or runtime artifacts."
+    ],
+    "managedRangeStopped": true,
+    "terminationScope": "dsh-managed-range",
+    "terminationId": "range-d82d5015fb475856cede2a44d042d026932446ce2a0b29624ab83240afe5b9d3",
+    "sessionId": "owner-c62a0ea7b0286120dade61fc36d1e57d6b06fe8e",
+    "promptId": "owner-c62a0ea7b0286120dade61fc36d1e57d6b06fe8e",
+    "executionSettled": true,
+    "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-c62a0ea7b0286120dade61fc36d1e57d6b06fe8e/result.json"
+  },
+  "confirmedCandidateBug": "fsevents 2.3.3 version/tarball with 2.3.2 integrity; official registry metadata confirmed. npm reported corrupted tarball twice.",
+  "remainingUncertainty": "Browser-chromium install hook had no completion entry before npm ci timed out. Current output does not prove its exact blocking step, or that the fsevents integrity defect alone caused the full timeout.",
+  "preserved": {
+    "userConfigurationHashes": true,
+    "registryBaseline": true,
+    "basePolicy": true,
+    "seedRecord": true,
+    "foundationRecord": true,
+    "oldIsolatedAttempt": true
+  },
+  "actions": [
+    {
+      "id": "act-b9a1d8669f2273a0863ab4c177809ee156cbe5cf",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "createdAt": 1789356675938,
+      "completedAt": 1789356690812
+    },
+    {
+      "id": "act-436c085e769b9bab4c29a220fd4da7b7dc719555",
+      "kind": "review_plan",
+      "status": "succeeded",
+      "createdAt": 1789356700518,
+      "completedAt": 1789356765059
+    },
+    {
+      "id": "act-7e85dfb0c3592e29db8c7ce98854809357f5b4d6",
+      "kind": "prepare_revision",
+      "status": "succeeded",
+      "createdAt": 1789356765059,
+      "completedAt": 1789356776845
+    },
+    {
+      "id": "act-e6eae27fb8bc1bfb98fe0a2c37c97dcdc428e864",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "createdAt": 1789356776845,
+      "completedAt": 1789356793661
+    },
+    {
+      "id": "act-f2e7871fe295031c70a706bfb92fbd346d3ad1ec",
+      "kind": "execute_owner",
+      "status": "succeeded",
+      "createdAt": 1789356778979,
+      "completedAt": 1789357159133
+    },
+    {
+      "id": "act-529bce18afd5e3bcaec369a402dbb3c4cd161dd4",
+      "kind": "seal_candidate",
+      "status": "succeeded",
+      "createdAt": 1789357159133,
+      "completedAt": 1789357169775
+    },
+    {
+      "id": "act-6ca4b95540704add9df58fe258e8c34adbbec38f",
+      "kind": "verify_candidate",
+      "status": "failed",
+      "createdAt": 1789357169775,
+      "completedAt": 1789357573238
+    },
+    {
+      "id": "act-5c3315feb3c847382008bd4a8433623e76232a15",
+      "kind": "notify_main",
+      "status": "cancelled",
+      "createdAt": 1789357573238,
+      "completedAt": null
+    },
+    {
+      "id": "act-0ac494d3cafe981ad24d9e93074ab9251180daae",
+      "kind": "notify_main",
+      "status": "succeeded",
+      "createdAt": 1789357573238,
+      "completedAt": 1789357584067
+    }
+  ]
+}

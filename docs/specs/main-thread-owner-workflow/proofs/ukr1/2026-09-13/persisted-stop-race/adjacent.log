@@ -1,0 +1,12 @@
+✔ cancelling a live persisted action reports one terminal cancellation after its stop receipt (141.719709ms)
+✔ a stop adapter failure remains an observable exception and cannot confirm cancellation (99.26725ms)
+✔ host shutdown preserves uncertain work and does not report its own cancellation as an execution error (61.091292ms)
+✔ host shutdown preserves uncertain work and reports a distinct cleanup failure (55.924625ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 412.166042

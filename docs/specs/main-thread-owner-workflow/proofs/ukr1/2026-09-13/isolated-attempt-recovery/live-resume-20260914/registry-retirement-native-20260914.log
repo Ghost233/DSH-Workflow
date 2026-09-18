@@ -1,0 +1,19 @@
+✔ isolation proof preserves unknown command truth and binds current sealed candidate (84.889959ms)
+✔ isolation refuses missing writer closure, omitted effects, changed candidate, or unsafe command binding (1382.965292ms)
+✔ retired writable directories cannot be reused via ancestor, descendant, or symlink; sibling is independent (84.395292ms)
+✔ new action cannot dispatch or prepare files inside an old isolated installer (75.907584ms)
+✔ retirement coexists with stop settlement while its OS lock is held (117.280541ms)
+✔ retirement rejects active verification while its OS lock is held (51.622208ms)
+✔ native Registry batch allow: one exact decision, no speculative ownership or Git identity changes (1819.414416ms)
+✔ native Registry batch reject: one exact decision, no speculative ownership or Git identity changes (480.518792ms)
+✔ native Registry batch cancel: one exact decision, no speculative ownership or Git identity changes (415.605083ms)
+✔ native Registry reconciles installed interruption from the original approval and preserves user index (1378.037417ms)
+✔ native Registry reconciles ref_updated interruption from the original approval and preserves user index (1295.912416ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5711.734959

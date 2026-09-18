@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-13T08:01:07.481009+00:00",
+  "status": "removed",
+  "resource": ".dsh-workflow/dependencies/ac62e4809cf8383954a332b8ce85a27ceeb4e868c994115deb7781a5fec3c362/install-c6109c5bad477cba483d6c281d83d460e906bb99/node_modules",
+  "reason": "reclaim generated partial dependencies after host shutdown and persisted managed range stop",
+  "actionId": "act-e603657d520b204eefdcd8fbab6022ffd2bb5588",
+  "commandId": "cmd-99136113e6b052f65797da702d456cad5ac5f9bd",
+  "aborted": true,
+  "managedRangeStopped": true,
+  "terminationId": "cmd-99136113e6b052f65797da702d456cad5ac5f9bd:managed-range-exit",
+  "commandReceiptSha256": "e77867a1d7dd1ba5c1eb4de83d2e7db1ab4d17d24a3ee10e60949f3ee1bd0339",
+  "preserved": [
+    "command receipts",
+    "npm logs and staging source",
+    "all candidate artifacts",
+    "owner worktrees",
+    "control state"
+  ],
+  "retiredResource": ".dsh-workflow/dependencies/ac62e4809cf8383954a332b8ce85a27ceeb4e868c994115deb7781a5fec3c362/install-c6109c5bad477cba483d6c281d83d460e906bb99/retired-aborted-node-modules",
+  "firstCleanupError": "ENOTEMPTY: residual .DS_Store",
+  "completedAt": "2026-09-13T08:03:12.289407+00:00"
+}

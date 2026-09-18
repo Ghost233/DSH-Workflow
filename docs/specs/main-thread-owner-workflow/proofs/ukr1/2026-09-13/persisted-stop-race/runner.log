@@ -1,0 +1,19 @@
+✔ runner wakes after durable changes, completes once, then sleeps without a polling feedback loop (353.004458ms)
+✔ effect result validation failures become observable failure facts (78.094958ms)
+✔ another effects host cannot observe or replay an invocation while its OS action lock is held (92.274875ms)
+✔ a claimed but undispatched action can resume after a quiescent observation (172.078917ms)
+✔ cancelling a live persisted action reports one terminal cancellation after its stop receipt (296.967542ms)
+✔ a persisted governance stop owns an arbitrary adapter interruption before the local controller aborts (246.013708ms)
+✔ the same arbitrary adapter error without a persisted stop remains a technical failure (93.021208ms)
+✔ a failed Operation reaches the main notification adapter with its real findings and evidence (96.442542ms)
+✔ a stop adapter failure remains an observable exception and cannot confirm cancellation (92.373375ms)
+✔ host shutdown preserves uncertain work and does not report its own cancellation as an execution error (66.277209ms)
+✔ host shutdown preserves uncertain work and reports a distinct cleanup failure (82.875459ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1769.917792

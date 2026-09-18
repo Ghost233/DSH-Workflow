@@ -1,0 +1,144 @@
+{
+  "startedAt": "2026-09-14T05:54:04.308Z",
+  "source": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependency-proofs/browser-smoke-final-20260914/candidate",
+  "contentDigest": "514c7073bdf5dc44894631866ef26e77ddcee40094bf76894fa7cc14515a38c1",
+  "passed": true,
+  "workflowResult": false,
+  "diagnosticRepair": true,
+  "original": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/artifacts/act-f75d4c4fe20c5db65092f48bfdfce6b999eaffd2/tree",
+  "cases": [
+    {
+      "name": "first",
+      "preparation": {
+        "bindings": [
+          {
+            "packageDirectory": ".",
+            "key": "cf16c885fbaa72824ad401e34a9c37e5b9fcff956ac0cc366ed8c409f3f6a14a",
+            "inputDigest": "553111b9c22acbc4d76228a4cec44277624de3eefb0ebae67d3f3ff28b8ad1c8",
+            "baseDigest": "037ea39f4998f2abafa8960c2ad8a3f86d978ef1db3ee0f6dc64fb4bd59ad2e2",
+            "mode": "readonly-overlay",
+            "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/cf16c885fbaa72824ad401e34a9c37e5b9fcff956ac0cc366ed8c409f3f6a14a/base",
+            "metrics": {
+              "cacheHit": true,
+              "installRuns": 0,
+              "fullTreeCopies": 0,
+              "overlayLinks": 595,
+              "logicalBytes": 2318713461,
+              "baseHashedBytes": 0,
+              "overlayHashedBytes": 547945,
+              "hashedBytes": 547945,
+              "copiedBytes": 547945,
+              "baseDigestEntries": 0,
+              "overlayDigestEntries": 698,
+              "digestEntries": 698,
+              "hardlinkNormalized": 0,
+              "hardlinkCopiedBytes": 0,
+              "durations": {
+                "cacheAcquireMs": 41,
+                "promoteMs": 0,
+                "normalizeMs": 0,
+                "sealMs": 0,
+                "overlayMs": 1137
+              },
+              "validationMode": "sealed-receipt",
+              "fallbackReason": null,
+              "cacheGeneration": null,
+              "installationEnvironment": {
+                "directories": 22,
+                "entries": 2073,
+                "providers": 1896,
+                "durationMs": 2309
+              }
+            }
+          }
+        ]
+      },
+      "result": {
+        "commandId": "cmd-d08cd4e6a9337f3382f7cc4ad47f97e21a0c84e2",
+        "bindingDigest": "6d6a014bb5e26254aa34c46cb9251a3a4f04ade55acdf66ced70f749b1a1aae9",
+        "hostId": "409c7b6d-076d-4563-8fd6-6d1d397a9272",
+        "exitCode": 0,
+        "enforcement": "full",
+        "timedOut": false,
+        "aborted": false,
+        "ok": true,
+        "kind": "completed",
+        "stdout": "playwright harness smoke: passed\n",
+        "stderr": "",
+        "stdoutTruncated": false,
+        "stderrTruncated": false,
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "cmd-d08cd4e6a9337f3382f7cc4ad47f97e21a0c84e2:managed-range-exit"
+      },
+      "passed": true
+    },
+    {
+      "name": "repeat",
+      "preparation": {
+        "bindings": [
+          {
+            "packageDirectory": ".",
+            "key": "cf16c885fbaa72824ad401e34a9c37e5b9fcff956ac0cc366ed8c409f3f6a14a",
+            "inputDigest": "553111b9c22acbc4d76228a4cec44277624de3eefb0ebae67d3f3ff28b8ad1c8",
+            "baseDigest": "037ea39f4998f2abafa8960c2ad8a3f86d978ef1db3ee0f6dc64fb4bd59ad2e2",
+            "mode": "readonly-overlay",
+            "basePath": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/dependencies/cf16c885fbaa72824ad401e34a9c37e5b9fcff956ac0cc366ed8c409f3f6a14a/base",
+            "metrics": {
+              "cacheHit": true,
+              "installRuns": 0,
+              "fullTreeCopies": 0,
+              "overlayLinks": 595,
+              "logicalBytes": 2318713461,
+              "baseHashedBytes": 0,
+              "overlayHashedBytes": 547945,
+              "hashedBytes": 547945,
+              "copiedBytes": 547945,
+              "baseDigestEntries": 0,
+              "overlayDigestEntries": 698,
+              "digestEntries": 698,
+              "hardlinkNormalized": 0,
+              "hardlinkCopiedBytes": 0,
+              "durations": {
+                "cacheAcquireMs": 27,
+                "promoteMs": 0,
+                "normalizeMs": 0,
+                "sealMs": 0,
+                "overlayMs": 659
+              },
+              "validationMode": "sealed-receipt",
+              "fallbackReason": null,
+              "cacheGeneration": null,
+              "installationEnvironment": {
+                "directories": 22,
+                "entries": 2073,
+                "providers": 1896,
+                "durationMs": 1568
+              }
+            }
+          }
+        ]
+      },
+      "result": {
+        "commandId": "cmd-56012360bddf024a61b577e1971f0044d3da27d0",
+        "bindingDigest": "9b6d9b512f13f13bf9870de980771891ff3fce98adbd87342e964bc46ec0a876",
+        "hostId": "409c7b6d-076d-4563-8fd6-6d1d397a9272",
+        "exitCode": 0,
+        "enforcement": "full",
+        "timedOut": false,
+        "aborted": false,
+        "ok": true,
+        "kind": "completed",
+        "stdout": "playwright harness smoke: passed\n",
+        "stderr": "",
+        "stdoutTruncated": false,
+        "stderrTruncated": false,
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "cmd-56012360bddf024a61b577e1971f0044d3da27d0:managed-range-exit"
+      },
+      "passed": true
+    }
+  ],
+  "completedAt": "2026-09-14T05:54:24.725Z"
+}

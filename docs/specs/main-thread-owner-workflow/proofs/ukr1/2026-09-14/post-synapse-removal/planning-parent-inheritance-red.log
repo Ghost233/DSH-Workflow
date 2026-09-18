@@ -1,0 +1,26 @@
+Captured pre-fix run:
+node --test --test-name-pattern='技术拆分只改 T01' owner-workflow-plugin/test/planning-authority-native.test.mjs
+
+✖ 技术拆分只改 T01 并新增 T06 时从唯一父 checkpoint 继承未变 Spec 与 T02-T05 (3334.153875ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3514.176125
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/planning-authority-native.test.mjs:314:1
+✖ 技术拆分只改 T01 并新增 T06 时从唯一父 checkpoint 继承未变 Spec 与 T02-T05 (3334.153875ms)
+  Error [PlanningReferenceError]: Planning references: INVALID_MANIFEST at paths (exactly one Spec is required)
+      at fail (owner-workflow-plugin/src/planning-references.mjs:24:44)
+      at inferPlanningManifest (owner-workflow-plugin/src/planning-references.mjs:382:27)
+      at async derivePlanningBundle (owner-workflow-plugin/src/planning-bundle.mjs:130:20)
+      at async Object.finalizePlanningDocuments (owner-workflow-plugin/src/kernel-runtime.mjs:315:20)
+      at async TestContext.<anonymous> (owner-workflow-plugin/test/planning-authority-native.test.mjs:403:19) {
+    code: 'PLANNING_REFERENCES_INVALID_MANIFEST',
+    field: 'paths'
+  }

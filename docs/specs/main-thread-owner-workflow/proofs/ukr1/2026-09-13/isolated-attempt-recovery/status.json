@@ -1,0 +1,326 @@
+{
+  "complete": false,
+  "kernel": {
+    "status": "historical_passed_before_structural_changes",
+    "counts": {
+      "tests": 388,
+      "pass": 388,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "report": "/var/folders/pk/4_rtp5211139hr72f5z3yv2c0000gn/T/ukr1-regression-1789317644229-ad182aa656f1/report.json",
+    "candidateDigest": "ad182aa656f106ce558daf63684ca7c2390af15e519fc16ad52ca0e0fdfda3c7"
+  },
+  "fullRegression": {
+    "status": "historical_passed_before_structural_changes",
+    "tests": 588,
+    "pass": 588,
+    "fail": 0,
+    "note": "Historical 588-test result is for ebfa2eef predecessor (with its recorded final-projection caveat). The 388-test kernel result is also historical; neither validates current structural changes."
+  },
+  "liveRecovery": "npm_generated_lock_repair_applied_browser_install_deadline",
+  "workflowId": "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+  "attemptId": "try-84c42c9a1bfab47db78d05609603d719dcfd488c",
+  "independentReview": "PATH integration read-only review passed; original live end-to-end verification remains pending",
+  "retainsUnknownExecution": true,
+  "resetsConfiguration": false,
+  "liveHost": {
+    "instanceId": "229f815c-f2aa-4c02-a286-bf084524af57",
+    "port": 3080,
+    "entry": "./start-owner-workflow.sh",
+    "allComponentsReady": true
+  },
+  "browser": {
+    "id": "1",
+    "tab": "1",
+    "newTabs": 0
+  },
+  "childrenInspectedBeforeRecovery": 66,
+  "firstBrowserFailure": {
+    "error": "Isolation proof is incomplete or stale",
+    "retirementApplied": false,
+    "retriedTask": false
+  },
+  "observationRaceFix": {
+    "focusedTests": 88,
+    "status": "full_regression_passed"
+  },
+  "secondBrowserFailure": {
+    "error": "Control lock acquisition timed out",
+    "retirementApplied": false,
+    "retriedTask": false,
+    "cause": "stopped verify observer reentered preparation and held action OS lock"
+  },
+  "stopReentryFix": {
+    "focusedTests": 93,
+    "finalViewTests": 72,
+    "independentReview": "passed",
+    "status": "final_kernel_passed"
+  },
+  "recoveryAttemptId": "try-4b4f8016d0845378edf9c2c175cb51e597527674",
+  "retirementEvidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/retirements/isolation-8edd70b5326afb95b8674869a6dd7183d7fed8789a75de175ce1a587c90f4655/result.json",
+  "childrenInspected": 96,
+  "latestOwner": {
+    "sessionId": "owner-3dba9fe18bbf82cedf0de7eb79335d89258a49e4",
+    "submissionAccepted": true,
+    "modifiedSource": false,
+    "commandContractExit": 0,
+    "unknownSuiteExit": 1,
+    "runnerVerification": "passed"
+  },
+  "seedIntegrationHead": "57def70d868e14bacd5ca307164009af8757f0a2",
+  "counts": {
+    "total": 16,
+    "completed": 1,
+    "failed": 2,
+    "running": 0,
+    "pending": 13
+  },
+  "realDependencyReuse": {
+    "cacheHit": true,
+    "installRuns": 0,
+    "fullTreeCopies": 0,
+    "copiedBytes": 545493,
+    "coldValidationMs": 234224
+  },
+  "foundationReview": {
+    "candidateDigest": "400330382b1aa6ab680fb89860eb9b67c5bbaac69ba08ad00f6285a482017271",
+    "producerTestsPassed": 4,
+    "passed": false,
+    "findings": [
+      "unquoted whitespace sensitive value disclosure",
+      "scenario scripts nested array not frozen"
+    ],
+    "independentDiagnosis": "normal business repair; no plugin change",
+    "automaticRootRetry": true,
+    "repairCandidateDigest": "e19f6d4f538bcfbf422328b8ef0e8d17399e8c039b8b94ae3f28a370aeaccc72",
+    "repairPassed": true
+  },
+  "integrationHead": "437424b007e63e5fa36dcca1099e9b5bcd961a4c",
+  "apiWorkerReview": {
+    "typechecksPassed": true,
+    "passed": false,
+    "automaticRootRetry": true,
+    "findings": [
+      "API transport raw requestData and missing local guard",
+      "Worker fake branch bypasses normal route gates"
+    ],
+    "scopeConflictObserved": "Worker repair attempted wrangler.local.jsonc; write denied by task scope",
+    "secondApiFindings": [
+      "fake mode calls real credential provider",
+      "anonymous 401 stream can reconnect indefinitely"
+    ],
+    "secondWorkerFindings": [
+      "route gates repaired",
+      "downstream evidence responsibility mismatch",
+      "flag/binding comment contradicts fail-closed 503"
+    ]
+  },
+  "responsibilityReplan": {
+    "checkpointId": "planning-finalize-811d89bb5c5744ec136132b6",
+    "sameWorkflow": true,
+    "requested": true,
+    "reason": "implementation nodes cannot own downstream tests or Wrangler configuration",
+    "candidateTasks": 16,
+    "review": "passed",
+    "remainingPlanningIssue": "missing browser/UI harness provider before Panel and host-parity producers",
+    "automaticPlannerRepair": true,
+    "planDigest": "066361683fd9f1228bcb60630558f732f3295f0c76b2d17d734091f15e1c74c9",
+    "activatedPlanVersion": 2
+  },
+  "r8Seed": {
+    "candidateDigest": "0eb957b3d057e56b2719a7b66f677594ef70f34c6e245f7b312a1481fba08405",
+    "modifiedSource": false,
+    "reviewPassed": true,
+    "integrationHead": "1ef4949a3ba76a77d68db7613c72624438a97d8c"
+  },
+  "browserProviderGap": {
+    "runtimeProvidesBrowser": false,
+    "versionOnlyInsufficient": true,
+    "rootLifecycleAvoided": "would bind full source and invalidate dependency reuse",
+    "mainThreadInformed": true
+  },
+  "planningContractRepair": {
+    "status": "historical_checks_passed_superseded_by_unverified_structure",
+    "focusedTests": 110,
+    "additionalEngineTests": 75,
+    "scope": [
+      "explicit recursive task and verification revision boundary",
+      "root native document writes serialized with planning action admission",
+      "checkpoint mutation guarded against unsettled planning",
+      "final mutable source validation under control lock",
+      "out-of-bound review obligations returned to root without automatic repair loop"
+    ],
+    "sourceBindingPolicy": "Superseded by structural-adjustment.md: execution equivalence excludes document-wide Ticket revision and unrelated Owner metadata; original attempt provenance remains immutable.",
+    "liveLoaded": true
+  },
+  "r9PlanningFailure": {
+    "actionId": "act-2adb5e3910be379e15fed3ed5aac82748a536b92",
+    "status": "failed_settled",
+    "reason": "Root wrote and finalized R10 while R9 review was active; structured report rejected on dirty/changed baseline",
+    "deadlineAt": 1789317755243,
+    "all16DefinitionsRewritten": true,
+    "nativeTurnDurationSeconds": 170,
+    "nativeToolCalls": 17,
+    "observationCount": 45,
+    "executionSettled": true,
+    "settlementAt": 1789317768010,
+    "missingReportFixTests": {
+      "passed": 7,
+      "failed": 0,
+      "log": "/private/tmp/planning-native-cleanup-final.log",
+      "liveLoaded": false
+    }
+  },
+  "r8BrowserCandidate": {
+    "candidateDigest": "578bd3023b4be2bf368c421147d52abcd5c1e3122cb942d1e5999c19e09656d7",
+    "passed": false,
+    "reviewAccepted": true,
+    "dependencyFailure": {
+      "phase": "cache_seal",
+      "key": "8f9b790bfd77ef2afd9c68e24989524953683121b49b0c307bf6888ff9db2289",
+      "installExitCode": 0,
+      "cacheAcquireMs": 300672,
+      "managedRangeStopped": true
+    },
+    "findings": [
+      "No shared browser invocation",
+      "Network guard is opt-in"
+    ]
+  },
+  "r8FoundationReview": {
+    "candidateDigest": "b7c028d298797ea884219eee5f1b881c38e264e327ecd7d680d0d06a8565e234",
+    "producerTestsPassed": 4,
+    "passed": false,
+    "finding": "Missing reusable versioned unary/stream scenario bundle required by R8 task"
+  },
+  "recoveryBudget": {
+    "used": 16,
+    "limit": 16,
+    "remaining": 0,
+    "baseLimit": 12,
+    "newAttemptsThisTurn": 1
+  },
+  "preHoldTests": {
+    "passed": 93,
+    "failed": 0,
+    "log": "/private/tmp/recovery-boundary-registry-current.log",
+    "note": "Started before the user's hold; allowed to settle. No further tests started after the hold."
+  },
+  "structureReview": {
+    "status": "targeted_tested_PATH_identity_fixed",
+    "entryChecks": "recovery-entry-checks.md",
+    "structureDocument": "structural-adjustment.md",
+    "executionIdentity": "168 targeted scenarios passed across final versions and necessary reruns; historical full regression is not current-source evidence.",
+    "dependencyFollowup": "PATH installation environment identity fixed; final 44 focused checks and 13 real-size scenarios passed. See pathIdentityFix."
+  },
+  "dependencyPhaseRepair": {
+    "focusedTests": 39,
+    "fixedTimeoutMs": 300000,
+    "phases": [
+      "cache_acquire",
+      "promote",
+      "cache_normalize",
+      "cache_seal",
+      "materialize_target"
+    ],
+    "outerDeadlinePreserved": true,
+    "timeoutRecoveryWithoutInstall": true,
+    "liveLoaded": true
+  },
+  "r10Checkpoint": {
+    "id": "planning-finalize-347ad7d3ceb529e6d83355f4",
+    "parentId": "planning-finalize-06eaf5a407ff1dfb5ecc9d26",
+    "checkpointCommit": "1a9c7caecd97754f3493e010d366c844992de322",
+    "sourceDigest": "d3263b1341d4f853a36b9f52902c5ed73d28b09d27dbac8d20c86892d354c7ea"
+  },
+  "lastTestedCandidateDigest": "ad182aa656f106ce558daf63684ca7c2390af15e519fc16ad52ca0e0fdfda3c7",
+  "currentSource": {
+    "status": "targeted_passed_recovery_and_closure_fixes_loaded",
+    "testsRunAfterStructuralChanges": true,
+    "liveLoaded": true,
+    "businessAttemptsStarted": 1,
+    "syntaxChecks": "passed",
+    "targetedTests": 214,
+    "realDependencyScenariosPassed": 13,
+    "openFinding": "Missing nested fsevents lock entry repaired using npm-generated and validated data; exact generated file applied to new candidate. Formal npm install now passes lock consistency but hits preparation 300s deadline during browser lifecycle; headless smoke unexecuted. Scratch foreground diagnostic proves active Chromium then Headless Shell downloads. Source-defect recovery classification still forces deadline wait.",
+    "dependencyFixFocusedTests": 44
+  },
+  "gitAudit": {
+    "localMain": "aac638899edb3f4e028d01dfd44e555847aceded",
+    "remoteMain": "154914064f5ceb2f8eb413865e10a54e8ffbc663",
+    "trackingMainMatchesRemote": true,
+    "ahead": 1,
+    "behind": 0,
+    "committedOrPushedThisTurn": false,
+    "upstreamTrackedSourceClean": true
+  },
+  "targetedTesting": {
+    "report": "targeted-tests-20260914/report.json",
+    "summary": "targeted-tests-20260914/README.md",
+    "status": "completed_finding_resolved_by_followup",
+    "pathIdentityFinding": "targeted-tests-20260914/path-identity-finding.json",
+    "resolution": "path-identity-fix-20260914/report.json"
+  },
+  "pathIdentityFix": {
+    "status": "passed",
+    "report": "path-identity-fix-20260914/report.json",
+    "summary": "path-identity-fix-20260914/README.md",
+    "focusedTests": 44,
+    "realScenarios": 13,
+    "liveLoaded": true
+  },
+  "registryRetirementAdmissionFix": {
+    "engineTests": 82,
+    "nativeTests": 11,
+    "liveApplied": true,
+    "proof": "live-resume-20260914/registry-admission-fix.json"
+  },
+  "plannerIdentityFix": {
+    "tests": 21,
+    "passed": 21,
+    "liveLoaded": true,
+    "liveReplanAfterFix": true,
+    "proof": "live-resume-20260914/planner-identity-fix.json",
+    "liveIdentityBindingPassed": true
+  },
+  "r10LivePlanning": {
+    "status": "activated",
+    "planVersion": 3,
+    "proof": "reviewer-resume-20260914/activation.json",
+    "exactReviewedDagPreserved": true,
+    "newPlannerActions": 0
+  },
+  "recoveryControlFix": {
+    "proof": "recovery-control-fix-20260914/result.json",
+    "summary": "recovery-control-fix-20260914/README.md",
+    "tests": 214,
+    "failed": 0,
+    "realPlannerActions": 1,
+    "realReviewerActions": 1,
+    "autoRecoveryAfterReview": false
+  },
+  "reviewerResume": {
+    "status": "review_passed_dag_activated_candidate_failed_install",
+    "proof": "reviewer-resume-20260914/result.json",
+    "summary": "reviewer-resume-20260914/README.md"
+  },
+  "browserRetest": {
+    "proof": "browser-retest-20260914/result.json",
+    "report": "browser-retest-20260914/README.md",
+    "candidateDigest": "ab6c1c53f3b04f39e22eccc46709922abdc63e25f8e4f197c3b746ebaba0d9f5",
+    "finding": "playwright@1.58.2 requires exact optional fsevents@2.3.2; lock contains only root 2.3.3, missing resolvable 2.3.2 record",
+    "smokeExecuted": false
+  },
+  "lockfileGeneration": {
+    "proof": "lockfile-generation-20260914/result.json",
+    "report": "lockfile-generation-20260914/README.md",
+    "repairPatch": "lockfile-generation-20260914/repair.patch",
+    "appliedCandidate": "99d625c28c94508015cfe389ea8c08d770c8766c00b2d432d290647dc0ebc021",
+    "lockConsistencyPassed": true,
+    "candidateAccepted": false,
+    "integrated": false
+  }
+}

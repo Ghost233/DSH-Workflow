@@ -1,0 +1,18 @@
+✔ settled failed and historical kernel entries leave active counts without hiding their findings (6.265625ms)
+✔ 等待列表客户端产物与源码一致并登记正式、本地两个模块编号 (43.7815ms)
+✔ 运行状态和 Owner 输入限制只登记官方 Slot (3.274625ms)
+✔ 运行状态只通过可重连 SSE 接收更新，并按当前工作区和当前会话过滤 (1.2445ms)
+✔ 运行状态按需要处理、总览、主线程和子代理分类显示确定性状态 (1.107166ms)
+✔ 侧栏运行状态使用视口定位，避免被侧栏裁剪和遮住底部操作区 (0.677833ms)
+✔ Dashboard and main thread read exactly the same workflow view without writing control or projections (51.112042ms)
+✔ read-only routes do not create missing state or hide corrupt state behind an empty result (11.670917ms)
+✔ opaque workspace selection, GET-only routes and SSE disposal preserve the same snapshot (35.165583ms)
+✔ native client retains a failed workflow and runner failure when no user approval is pending (60.891583ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 435.961125

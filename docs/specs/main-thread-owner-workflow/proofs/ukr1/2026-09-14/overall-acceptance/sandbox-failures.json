@@ -1,0 +1,146 @@
+[
+  {
+    "location": "owner-workflow-plugin/test/kernel-full-preset.test.mjs:6:1",
+    "test": "✖ complete production preset mounts native capabilities and delivers without manual kernel registration (5726.78125ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-pipeline-smoke.test.mjs:7:39",
+    "test": "✖ native runtime executes scoped edit, async submission, real verification, integration and final verification (1434.134042ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-pipeline-smoke.test.mjs:7:39",
+    "test": "✖ two native Owners overlap, integrate disjoint candidates and unlock their real downstream verification (2009.405958ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-planning-smoke.test.mjs:83:1",
+    "test": "✖ native revised Spec/Ticket checkpoint replaces the same task, retains the issue and delivers on its new baseline (18412.393875ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-planning-smoke.test.mjs:91:1",
+    "test": "✖ native Reviewer corrects an invalid obligation id in the same session before any report is accepted (4076.79ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-planning-smoke.test.mjs:99:1",
+    "test": "✖ native positive Reviewer fixes its missing closure in the same action and activates without another recovery (17466.720125ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-planning-smoke.test.mjs:109:1",
+    "test": "✖ native main-thread documents, checkpoint, independent planning and execution reach the user checkout (4293.014ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-planning-smoke.test.mjs:117:1",
+    "test": "✖ two frozen independent Owner tasks reach actual combined and final Reviewer acceptance with their grouped packages (4267.840042ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-planning-smoke.test.mjs:125:1",
+    "test": "✖ actual failed verification returns to the root and repairs its retained candidate within the same budget (13976.56025ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-planning-smoke.test.mjs:134:1",
+    "test": "✖ a no-progress first DAG returns to native Spec/Ticket R2 and delivers in the original workflow (15353.854208ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-planning-smoke.test.mjs:143:1",
+    "test": "✖ active Registry narrowing uses one native approval and replans the same Spec/Ticket workflow through delivery (15032.478292ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-planning-smoke.test.mjs:152:1",
+    "test": "✖ actual scoped preset tools reach Owner execution without inheriting root orchestration instructions (2912.734042ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-process-range.test.mjs:7:1",
+    "test": "✖ native macOS escaped descendant does not turn managed-range exit into source write closure (9369.598875ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/kernel-public-migration.test.mjs:7:1",
+    "test": "✖ independent public Owner migration closes only after shared implementation, app migration and unchanged consumer verification deliver (1590.120708ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/native-approval-policy-kernel.test.mjs:18:71",
+    "test": "✖ Operation honors rules-only policy using the same action and real native sessions (482.124291ms)",
+    "sandboxUnavailable": false,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/native-approval-policy-kernel.test.mjs:18:71",
+    "test": "✖ Operation honors reviewer-allow policy using the same action and real native sessions (416.431917ms)",
+    "sandboxUnavailable": false,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/native-approval-policy-kernel.test.mjs:76:1",
+    "test": "✖ native prefix permission is explicit and scoped to the host, main session, directory and literal argument boundary (729.061083ms)",
+    "sandboxUnavailable": false,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/native-kernel-effects.test.mjs:98:1",
+    "test": "✖ native fixed command proves managed-range exit and does not rerun a received command (50.519334ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/native-kernel-effects.test.mjs:166:1",
+    "test": "✖ native read-only sandbox rejects an actual source write (36.546125ms)",
+    "sandboxUnavailable": false,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/native-kernel-effects.test.mjs:192:1",
+    "test": "✖ native verification reads external dependencies but cannot write or chmod them (41.111958ms)",
+    "sandboxUnavailable": true,
+    "missingOutput": false
+  },
+  {
+    "location": "owner-workflow-plugin/test/native-kernel-effects.test.mjs:222:1",
+    "test": "✖ old and wrong-scope command receipts are not reused or promoted to termination proof (35.948583ms)",
+    "sandboxUnavailable": false,
+    "missingOutput": true
+  },
+  {
+    "location": "owner-workflow-plugin/test/native-kernel-effects.test.mjs:238:1",
+    "test": "✖ native termination covers a helper that outlives the command leader (34.410166ms)",
+    "sandboxUnavailable": false,
+    "missingOutput": true
+  },
+  {
+    "location": "owner-workflow-plugin/test/native-kernel-effects.test.mjs:250:1",
+    "test": "✖ verification resumes after the native command receipt without rerunning or changing its directory (51.076334ms)",
+    "sandboxUnavailable": false,
+    "missingOutput": true
+  },
+  {
+    "location": "owner-workflow-plugin/test/native-operation-kernel.test.mjs:17:53",
+    "test": "✖ native non-Git Operation: allow reaches the main thread and retains source protection (502.690833ms)",
+    "sandboxUnavailable": false,
+    "missingOutput": false
+  }
+]

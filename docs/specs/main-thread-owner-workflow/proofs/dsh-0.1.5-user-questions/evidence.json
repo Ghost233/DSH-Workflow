@@ -1,0 +1,78 @@
+{
+  "kind": "development-targeted-validation",
+  "date": "2026-09-12",
+  "dshCommit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "dshTrackedChanges": "",
+  "node": "v24.12.0",
+  "runs": [
+    {
+      "name": "integration",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/operation-harness.test.mjs owner-workflow-plugin/test/owner-team-runner.test.mjs owner-workflow-plugin/test/public-owner-decision-session.test.mjs",
+      "log": "integration.log",
+      "result": {
+        "tests": 23,
+        "pass": 23,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "unit-regression",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/operation-approval.test.mjs owner-workflow-plugin/test/agent-policy.test.mjs owner-workflow-plugin/test/operation-runtime.test.mjs",
+      "log": "unit-regression.log",
+      "result": {
+        "tests": 40,
+        "pass": 40,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "control-regression",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/control.test.mjs",
+      "log": "control-regression.log",
+      "result": {
+        "tests": 166,
+        "pass": 159,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 7
+      }
+    }
+  ],
+  "total": {
+    "tests": 229,
+    "pass": 222,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 7
+  },
+  "limits": [
+    "Real native UserQuestionService, Agent-scoped controlled answerer, public Agent registry, native tools, continuation, persistence and Runner. Model transport and human answers are controlled.",
+    "No browser question-card rendering or human clicking; no full preset boot, full planning/revision execution, or full candidate acceptance.",
+    "Existing seven control-test skips remain; unit/control regressions use service doubles.",
+    "Only Operation approval context migrated here; independent vendored approve-for-me entry still requires its own upgrade."
+  ],
+  "sha256": {
+    "owner-workflow-plugin/src/dsh-execution.mjs": "118b16c1535413e2c4a9ef444e87d8914215e41499b81d27d2d00038e45d07fb",
+    "owner-workflow-plugin/src/agent-policy.mjs": "3ecafcbcc69adcdf4c4a180134c24ee583577570e44eefa34bfb12a15d8e319e",
+    "owner-workflow-plugin/src/operation-approval.mjs": "e675179ba9cbe1d4d5cc4eaf2bd3e7dcb69d709dae68c3ef2fe4f72f63828ac8",
+    "owner-workflow-plugin/src/runtime.mjs": "c0e4e76fa4273ae6886f254d5ec2fcfed8f33884b5dd6ab2dfc1677d8ef51287",
+    "owner-workflow-plugin/index.js": "209ed5ef4b484d444f9ec9742a4e828a03e9d3cc4c698e4019e3c022e798d06b",
+    "owner-workflow-plugin/test/operation-harness.test.mjs": "e46e65014f34586eafdac2c32a768b106b695f68ae3880b1611ecc85498acf80",
+    "owner-workflow-plugin/test/operation-approval.test.mjs": "413cce45ab22df695c8cf9f344135f958791e2934c10ddaa2800c580b127c63a",
+    "owner-workflow-plugin/test/agent-policy.test.mjs": "c16d7d22bed285c7d2194f0b643edde8c380034672a9a1f7eb59135121af085a",
+    "owner-workflow-plugin/test/operation-runtime.test.mjs": "56a2054e68cd28fc32052e52306e2effeb3121cb03c3320b16b2d34432d8201d",
+    "owner-workflow-plugin/test/control.test.mjs": "f1ddaef09f18a417b867d25d77f5a3f1046ea8c22e68a50d71a0038799d08b5c",
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "a95b5e9b37a138cbc31c2142d612cd00ad14572d776cc60fac0177be9cd68828",
+    "owner-workflow-plugin/test/owner-team-runner.test.mjs": "f8f2a102a9866e9218c4db604e07c69217a0133dfcff330da914a6647a967537",
+    "owner-workflow-plugin/test/public-owner-decision-session.test.mjs": "40dc11f7ccac8ac046dba267ce9b4cd7ab837493f5b8ef7e09c1d3a6364fbb3f"
+  },
+  "logSha256": {
+    "integration.log": "26b74ed3599107d5ca8e157bdb5f3828ce9809342eebad18b2d8626915ac853a",
+    "unit-regression.log": "9fc781ef7af322e820290b8e0d5796e27e5dbdb08b432bcd8852d24d88d7dcf4",
+    "control-regression.log": "716da3d10bffb657ef0ab55f04630051d48935b6696a6e976fe33f2cea01c04b"
+  }
+}

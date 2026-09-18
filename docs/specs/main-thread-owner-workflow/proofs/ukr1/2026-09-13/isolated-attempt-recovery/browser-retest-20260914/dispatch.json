@@ -1,0 +1,38 @@
+{
+  "recordedAt": "2026-09-14T12:11:27.944090",
+  "planVersion": 3,
+  "planUnchanged": true,
+  "activationUnchanged": true,
+  "recoveryUsed": 15,
+  "recoveryWindow": {
+    "used": 14,
+    "limit": 15,
+    "issueLimits": {
+      "issue-0227a51d5c40a6df2ad80cdf1ece309f5a184e3d": 11,
+      "issue-06a9b1201cb291d9afbccce256c053f7cf715a0e": 2,
+      "issue-22a7b5bb826cfeeb2080635cb63ddffad4bfe165": 11,
+      "issue-5bdd8c8753d15b38d7e938555c2e0b0672bbbcb4": 11,
+      "issue-1fc515234682eabe7d2fe84a13f23c69476fc36c": 11,
+      "issue-22e29a6884361d5292f747f023ec58eaa7210ce4": 1,
+      "issue-f657edb5cf16c9a49ddc9cc54aa6f06fcc6f7f3e": 9,
+      "AC-04": 1,
+      "ACCEPTANCE-SUITE-RUNNER-R2-browser-wrapper-binding": 1,
+      "issue-27b813b1c5279e33c01a6dfe5f9527aaa1af2c06": 2
+    },
+    "decisionId": "recovery-ea100e795f06f4d0edf3a24f2dab0d97fbcbdc91",
+    "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/decisions/act-423ce76e1539e0b27012009f7a3cd0b129bcdfeb/answer.json",
+    "authorizedAt": 1789358927073
+  },
+  "attemptId": "try-48d6473a0eea88f4c907fec34a2c172632060cd6",
+  "executeActionId": "act-0e84b382751eed64999277ab52607c1b2ef86972",
+  "phase": "sealing",
+  "submissionReport": {
+    "status": "completed",
+    "summary": "Repaired `package-lock.json` so the existing `fsevents@2.3.3` record uses the confirmed matching integrity `sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==`; version and resolved URL remain 2.3.3-consistent. Reviewed all newly added Playwright lock entries: official browser helper, test package, playwright, and playwright-core are consistently pinned to 1.58.2 and retain expected lifecycle metadata. Existing wrapper, local browser path contract, configuration, and actual launch smoke were preserved. Evidence: `git diff --check` plus Node syntax checks for all three harness scripts passed (exit 0). No dependency installation was run and no node_modules, cache, user configuration, proxy, certificate, or timeout setting was modified."
+  },
+  "rootStatusMisreport": {
+    "claim": "immediate terminal failure after retry task",
+    "actual": "execute_owner running; no new verify action",
+    "correctedThroughRoot": true
+  }
+}

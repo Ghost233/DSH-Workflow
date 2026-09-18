@@ -1,0 +1,87 @@
+{
+  "completedAt": "2026-09-14T05:59:26.229432+00:00",
+  "workflowComplete": false,
+  "frameworkRegression": {
+    "tests": 414,
+    "pass": 414,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "frameworkCandidateDigest": "c59dafe3d435d6cc507c7dbff210316320eb46d739a8338b4ff5c65f4af272ef",
+  "realDependencyReuse": {
+    "passed": true,
+    "cases": 13,
+    "metrics": {
+      "bindings": 13,
+      "cacheHits": 11,
+      "installRuns": 2,
+      "hotReuse": {
+        "bindings": 11,
+        "installRuns": 0,
+        "fullTreeCopies": 0,
+        "baseHashedBytes": 0
+      },
+      "expectedColdInputChange": {
+        "bindings": 1,
+        "cacheMisses": 1,
+        "installRuns": 1
+      },
+      "fullTreeCopies": 0,
+      "baseHashedBytes": 4637426985,
+      "overlayHashedBytes": 7123348,
+      "hashedBytes": 4644550333,
+      "copiedBytes": 333829388,
+      "baseDigestEntries": 561032,
+      "overlayDigestEntries": 9074,
+      "digestEntries": 570106,
+      "durations": {
+        "cacheAcquireMs": 819679,
+        "promoteMs": 30766,
+        "normalizeMs": 25179,
+        "sealMs": 326623,
+        "overlayMs": 3795
+      }
+    }
+  },
+  "browserDiagnostic": {
+    "originalSmokePassed": false,
+    "repairPassedTwiceWithFinalFramework": true,
+    "ownerSubmissionPending": true
+  },
+  "foundation": {
+    "formalTestsPassed": 6,
+    "formalReviewPassed": false,
+    "diagnosticRepairTestsPassed": 11,
+    "ownerSubmissionPending": true
+  },
+  "recoveryUsed": 17,
+  "recoveryLimit": 17,
+  "planVersion": 3,
+  "browserControlBlocked": "Existing tab listed but CDP commands consistently time out; refresh requested; no new tab created",
+  "userConfigurationUnchanged": true,
+  "liveHost": {
+    "health": {
+      "contract": "DSH_WEB_HOST_READY_V1",
+      "instanceId": "9f689f7b-9f76-4155-bb66-c10a95b1133b",
+      "components": {
+        "owner": "ready",
+        "sol": "ready",
+        "synapse": "ready",
+        "approval": "ready"
+      },
+      "ready": true
+    },
+    "preserved": {
+      "plan": true,
+      "planVersion": true,
+      "tasks": true,
+      "attempts": true,
+      "recoveryUsed": true,
+      "recoveryWindow": true,
+      "integrationHead": true,
+      "registryBaseline": true
+    }
+  }
+}

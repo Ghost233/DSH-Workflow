@@ -1,0 +1,28 @@
+✔ native patch composition preserves custom presets, default and legacy settings without double-loading (1.256875ms)
+✔ adapted nested profiles are idempotent and an explicitly disabled plugin stays disabled (0.23025ms)
+✔ conflicting policy, duplicate plugins and computed config require review instead of silent replacement (0.287042ms)
+✔ native Bash escalation is allowed once only under the selected preset and matching fixed rules (778.885041ms)
+✔ unmatched commands and unassociated approval requests reach the native human fallback (50.897583ms)
+✔ native settings preserve user configuration, reject invalid prefixes and apply changed rules immediately (55.744209ms)
+✔ real AgentLoop calls Bash and the native no-tools reviewer, then resumes after a single approval (832.388625ms)
+✔ reviewer deny cannot grant permission and reaches native manual fallback (74.647167ms)
+✔ reviewer escalate cannot grant permission and reaches native manual fallback (52.7115ms)
+✔ reviewer invalid cannot grant permission and reaches native manual fallback (51.917875ms)
+✔ a pending allow verdict cannot outlive settings (55.34875ms)
+✔ a pending allow verdict cannot outlive preset (46.150375ms)
+✔ a pending allow verdict cannot outlive cancel (52.320708ms)
+✔ a pending allow verdict cannot outlive dispose (49.971916ms)
+✔ review timeout disposes the native child before falling back (1028.681ms)
+✔ fixed high risk is rejected before an allowlisted command can reach the reviewer (37.146208ms)
+✔ a recovered rejected write keeps its draft; conflicting host edits cannot be overwritten (1.534792ms)
+✔ saving preserves an unavailable existing route and hidden limits; reset uses native unset (0.654333ms)
+✔ new unavailable routes, malformed rules and read-only settings cannot be saved (0.183708ms)
+✔ late catalog responses cannot repopulate a reconnected or disposed controller (0.139542ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2626.292959

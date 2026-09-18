@@ -1,0 +1,45 @@
+{
+  "kind": "development-targeted-validation",
+  "date": "2026-09-12",
+  "dshCommit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "node": "v24.12.0",
+  "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/recovery-session-reader.test.mjs owner-workflow-plugin/test/recovery-session.test.mjs owner-workflow-plugin/test/replan-session.test.mjs owner-workflow-plugin/test/owner-advice-session.test.mjs owner-workflow-plugin/test/public-owner-session-proof.test.mjs owner-workflow-plugin/test/public-owner-decision-session.test.mjs owner-workflow-plugin/test/recovery-session-restart.test.mjs owner-workflow-plugin/test/owner-team-runner.test.mjs",
+  "result": {
+    "passed": 72,
+    "failed": 0,
+    "skipped": 0
+  },
+  "limits": [
+    "Uncommitted working tree; not full candidate acceptance.",
+    "Model responses are controlled test adapters.",
+    "Historical coverage is a controlled V2-format copy, not all user history."
+  ],
+  "sha256": {
+    "owner-workflow-plugin/src/recovery-session.mjs": "3dd3c2c7eaa22a89ee6fc3cbffcb37a3cfb345dba64b0502fd724af4ea702844",
+    "owner-workflow-plugin/src/runtime.mjs": "4abcda52c15b35daabe9d97b3f16d99d67ec53fffc401415b6deea78d0f63e90",
+    "owner-workflow-plugin/src/owner-team.mjs": "5851e2397f3e512a159c8faff2d8e24c2a1a1d655540394f71a6b0d8813012f8",
+    "owner-workflow-plugin/src/owner-team-runtime.mjs": "495aecd0009b87c4a4cb0047a4c08c0ffcee8dd937830eb11322a0deca4ea65f",
+    "owner-workflow-plugin/src/dsh-execution.mjs": "fecd9da914a3c4f6491b824e13fccd409275b7fc0fce38c84663eac8e880e2f9",
+    "owner-workflow-plugin/src/agent-policy.mjs": "0ab00b52d5a2c5ce4af91ab3e5384581abda9b9604f738127c249b649eda316d",
+    "owner-workflow-plugin/index.js": "79667b7296e14d4347283c0d318c771cca14d06634c34dce44a1b0534577685d",
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "a95b5e9b37a138cbc31c2142d612cd00ad14572d776cc60fac0177be9cd68828",
+    "owner-workflow-plugin/test/fixtures/recovery-session-restart-child.mjs": "b8e38ef1bd69e8d03609662073e9b03e04c45ad4a27ae93a21bd7f2ec2756870",
+    "owner-workflow-plugin/test/recovery-session-reader.test.mjs": "ba7e65577fb2d2c6e219e465dc883dd30d54093ba1292c3e3af0dffc9053d53c",
+    "owner-workflow-plugin/test/recovery-session.test.mjs": "dcde13c4121beb813f38f218cbb2fe1138c2a6f3bfc3944a74cb07cb5b6f1b32",
+    "owner-workflow-plugin/test/replan-session.test.mjs": "041858bdc8f743e9894b3540d90023d30738a716bf271034ed3c42ebc1c599cf",
+    "owner-workflow-plugin/test/owner-advice-session.test.mjs": "3144792946327f2ec5cc752ca1a3dbc72b0a8c8bfff59fa9a75445ccf50e4533",
+    "owner-workflow-plugin/test/public-owner-session-proof.test.mjs": "fb22f4f8144afa96311e362bbc18e17fb094947f32640ba49f6969aeefea3ad1",
+    "owner-workflow-plugin/test/public-owner-decision-session.test.mjs": "40dc11f7ccac8ac046dba267ce9b4cd7ab837493f5b8ef7e09c1d3a6364fbb3f",
+    "owner-workflow-plugin/test/recovery-session-restart.test.mjs": "3b278c640220a63a4bd155866e99c81be37a97d8e2bb7aa89b47109766b30385",
+    "owner-workflow-plugin/test/owner-team-runner.test.mjs": "f8f2a102a9866e9218c4db604e07c69217a0133dfcff330da914a6647a967537",
+    "owner-workflow-plugin/test/control.test.mjs": "04f43986e2609ebffe569d17f933cef184e712d78408a4788b7684a742691768",
+    "owner-workflow-plugin/test/operation-runtime.test.mjs": "9b79b37f512aff57c531ecff0e488505c4063b8ad0dcd14e97a47d11d0ec9b79"
+  },
+  "controlRegression": {
+    "command": "node --test --test-force-exit owner-workflow-plugin/test/control.test.mjs owner-workflow-plugin/test/operation-runtime.test.mjs",
+    "passed": 184,
+    "failed": 0,
+    "skipped": 7,
+    "note": "Existing skips; service-double business regression, not native Operation integration."
+  }
+}

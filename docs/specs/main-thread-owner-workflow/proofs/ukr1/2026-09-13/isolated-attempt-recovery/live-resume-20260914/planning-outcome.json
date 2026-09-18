@@ -1,0 +1,47 @@
+{
+  "observedAt": "2026-09-13T18:47:01.388858+00:00",
+  "workflowId": "wf-90bbced7a68641494bb651e73f3c22d6ba4b3354",
+  "planActionId": "act-5aa72251d1504836a92c1b089ede8bbcf64ba70f",
+  "status": "failed",
+  "failure": "execution_identity_unconfirmed",
+  "termination": {
+    "managedRangeStopped": true,
+    "terminationScope": "dsh-managed-range",
+    "terminationId": "range-2b02516a2193070a8cce4c99c98443d8a5b9ce27d406e7f38752aba58f13bf7b",
+    "executionSettled": true,
+    "targetActionId": "act-5aa72251d1504836a92c1b089ede8bbcf64ba70f"
+  },
+  "planVersion": 2,
+  "allTaskRecordsPreserved": true,
+  "activePlanPreserved": true,
+  "integrationHeadPreserved": true,
+  "recoveryUsed": 9,
+  "recoveryRemaining": 3,
+  "oldQuarantineRetained": true,
+  "configurationHashesUnchanged": {
+    "/Users/admin/.dsh/settings.yaml": true,
+    "/Users/admin/.dsh/cordis.patch.yml": true,
+    "/Users/admin/.dsh/.credentials.yaml": true
+  },
+  "currentHostHealth": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "bb1b70bc-668a-4580-bee0-05b561824806",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  },
+  "plannerObservedDurationSeconds": 332,
+  "plannerObservedToolCalls": 13,
+  "boundRegistryDigest": "b6742d21b995c5dbce7c6d362890c3a92a1094650f403df330f71f4162afc09b",
+  "submittedRegistryDigests": [
+    "b6742d21b995c5dbce7c6d362890c3a92a1094650f403df330f71f4162af1d13",
+    "6cd9acc95787634b1a0ce004cfaed68adf92ec0eb0d3a8805e5dd231aeaf1d13",
+    "b6742d21b995c5dbce7c6d362890c3a92a1094650f403df330f71f4162af1d13"
+  ],
+  "finding": "First and third submissions combine current digest prefix with old digest suffix. Second submits previousPlan digest. The planner never submitted the correct bound value; its final claim of runtime/input mismatch is unsupported.",
+  "nextAction": "Fix native submission identity binding; no unchanged live retry."
+}

@@ -1,0 +1,7 @@
+{
+  "exitCode": 0,
+  "timedOut": false,
+  "aborted": false,
+  "stdout": "✔ T30 authoritative K1 decision executes one K2 writer, integrates real commits and Memory, then unlocks its consumer (10711.036ms)\n✔ T30 activation rejects a consumer plan that omits the authoritative decision binding (1456.599875ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 12353.822709\n",
+  "stderr": ""
+}

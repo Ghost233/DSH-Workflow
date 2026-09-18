@@ -1,0 +1,61 @@
+[
+  {
+    "id": "dsh-approve-for-me-workflow@0.1.0",
+    "name": "dsh-approve-for-me-workflow",
+    "version": "0.1.0",
+    "size": 23168,
+    "unpackedSize": 80727,
+    "shasum": "21ae8d06364ebf7a069b5af20d56f5d36f75cf47",
+    "integrity": "sha512-DQwi/Algloir2wdl6z+EucpJsMGAIgBIgpuRLLy64jqqtdV6om4zuWUMNZ4uHK+QS4OuYPME2mTmHT+A5SMMPA==",
+    "filename": "dsh-approve-for-me-workflow-0.1.0.tgz",
+    "files": [
+      {
+        "path": "LICENSE",
+        "size": 1065,
+        "mode": 420
+      },
+      {
+        "path": "README.md",
+        "size": 3762,
+        "mode": 420
+      },
+      {
+        "path": "THIRD_PARTY_NOTICES.md",
+        "size": 563,
+        "mode": 420
+      },
+      {
+        "path": "client.js",
+        "size": 22067,
+        "mode": 420
+      },
+      {
+        "path": "compose-patch.mjs",
+        "size": 2747,
+        "mode": 420
+      },
+      {
+        "path": "cordis.patch.yml",
+        "size": 724,
+        "mode": 420
+      },
+      {
+        "path": "index.js",
+        "size": 46604,
+        "mode": 420
+      },
+      {
+        "path": "package.json",
+        "size": 1833,
+        "mode": 420
+      },
+      {
+        "path": "upstream.json",
+        "size": 1362,
+        "mode": 420
+      }
+    ],
+    "entryCount": 9,
+    "bundled": []
+  }
+]

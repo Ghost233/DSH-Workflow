@@ -1,0 +1,11 @@
+✔ native finite recovery permission allow preserves history and never dispatches a Planner (369.115083ms)
+✔ native finite recovery permission reject preserves history and never dispatches a Planner (160.715166ms)
+✔ native finite recovery permission cancel preserves history and never dispatches a Planner (144.359625ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 825.624584

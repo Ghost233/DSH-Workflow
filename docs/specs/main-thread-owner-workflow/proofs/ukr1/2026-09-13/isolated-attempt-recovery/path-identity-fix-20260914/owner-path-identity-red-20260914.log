@@ -1,0 +1,48 @@
+✔ canonical input ignores JSON order, non-lifecycle scripts and ordinary business source (12.772792ms)
+✔ an install lifecycle conservatively binds indirect file and shell inputs (14.754666ms)
+✔ implicit workspaces and recursive file dependencies bind their complete candidate content (21.073666ms)
+✔ local paths that escape the candidate fail closed instead of being clamped below root (12.218875ms)
+✔ manager fields, project config files and install environment are bound without retaining secrets (14.090083ms)
+✔ canonicalize recursively sorts JSON object keys without reordering arrays (0.135333ms)
+✖ installation identity survives session PATH aliases that resolve to the same toolchain (8.77875ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 6
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 314.042791
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/dependency-install-input.test.mjs:135:1
+✖ installation identity survives session PATH aliases that resolve to the same toolchain (8.77875ms)
+  AssertionError [ERR_ASSERTION]: changing only directory aliases and duplicate entries must preserve the installation identity
+  + actual - expected
+  
+    {
+      arch: 'arm64',
+      contract: 'DSH_DEPENDENCY_INSTALL_INPUT_V2',
+      installConfig: {
+        env: [
+          [
+            'PATH',
+  +         '26f624a6843138bfd2345b3ded1fe1d805d7df3992ad11dc39e5f8807f6f147f'
+  -         'd11e0dcf907bc83bbaa4a89f550e9b53f6c87c9d561e1923550ccd3e66672185'
+          ]
+        ],
+        files: []
+      },
+      lifecycle: {
+  
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/dependency-install-input.test.mjs:149:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: { arch: 'arm64', contract: 'DSH_DEPENDENCY_INSTALL_INPUT_V2', installConfig: { env: [Array], files: [] }, lifecycle: { dynamic: true, files: [Array], reason: 'lifecycle_may_read_any_package_source', scripts: [Object] }, localDependencies: [], lockfile: { digest: 'e25b3e26894b0261fafd86d044f10b48e92e8cd8670493effd8207ff149019e5', executable: false, kind: 'file', path: 'package-lock.json', target: null }, manager: 'npm', managerVersion: '10.9.0', manifest: { name: 'fixture', scripts: [Object] }, packageDirectory: '.', platform: 'darwin', runtime: 'v24.12.0', workspaces: [] },
+    expected: { arch: 'arm64', contract: 'DSH_DEPENDENCY_INSTALL_INPUT_V2', installConfig: { env: [Array], files: [] }, lifecycle: { dynamic: true, files: [Array], reason: 'lifecycle_may_read_any_package_source', scripts: [Object] }, localDependencies: [], lockfile: { digest: 'e25b3e26894b0261fafd86d044f10b48e92e8cd8670493effd8207ff149019e5', executable: false, kind: 'file', path: 'package-lock.json', target: null }, manager: 'npm', managerVersion: '10.9.0', manifest: { name: 'fixture', scripts: [Object] }, packageDirectory: '.', platform: 'darwin', runtime: 'v24.12.0', workspaces: [] },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

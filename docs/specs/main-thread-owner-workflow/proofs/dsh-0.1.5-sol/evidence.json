@@ -1,0 +1,115 @@
+{
+  "kind": "development-targeted-validation",
+  "date": "2026-09-12",
+  "dshCommit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "dshTrackedChanges": "",
+  "node": "v24.12.0",
+  "browser": "Chrome 152.0.7977.83 (isolated Playwright profile)",
+  "runs": [
+    {
+      "name": "sol-tests",
+      "command": "npm test",
+      "cwd": "sol-efficiency-plugin",
+      "log": "sol-tests.log",
+      "result": {
+        "tests": 40,
+        "pass": 40,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "web-preset",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/harness-integration.test.mjs",
+      "cwd": ".",
+      "log": "web-preset.log",
+      "result": {
+        "tests": 10,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    }
+  ],
+  "total": {
+    "tests": 50,
+    "pass": 50,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "additionalChecks": [
+    {
+      "command": "npm run demo",
+      "cwd": "sol-efficiency-plugin",
+      "log": "demo.log",
+      "exitCode": 0
+    },
+    {
+      "command": "npm run check:upstream",
+      "cwd": "sol-efficiency-plugin",
+      "log": "upstream.log",
+      "exitCode": 0
+    },
+    {
+      "command": "npm pack --dry-run --json --cache /private/tmp/dsh-sol-package-cache",
+      "cwd": "sol-efficiency-plugin",
+      "log": "package-preview.json",
+      "exitCode": 0
+    }
+  ],
+  "limits": [
+    "Official DSH composition and native services; model responses are controlled fixtures, no paid provider or net cost benchmark.",
+    "Owner integration performs a real sandboxed command, fixed verification and Git commit in a disposable repository outside host temp grants.",
+    "Browser settings and Owner question/approval transports use real Web and isolated Chrome; approval UI tests do not execute a host command.",
+    "Full Spec/Ticket/DAG candidate, shared Owner decisions, integration/Memory, launchers, Synapse and independent approve-for-me remain outside this targeted evidence."
+  ],
+  "sha256": {
+    "owner-workflow-plugin/client.js": "d6b52fa51a35125f19fd409ce316501915cf3b1af509ea0d798bc1be34ea5c72",
+    "owner-workflow-plugin/index.js": "62a29bce66b1e8b6d74cf58d25b55079b14db3f20cd6fa831f128b9710249b0a",
+    "owner-workflow-plugin/src/agent-policy.mjs": "3ecafcbcc69adcdf4c4a180134c24ee583577570e44eefa34bfb12a15d8e319e",
+    "owner-workflow-plugin/src/owner-team-runtime.mjs": "495aecd0009b87c4a4cb0047a4c08c0ffcee8dd937830eb11322a0deca4ea65f",
+    "owner-workflow-plugin/src/owner-team.mjs": "29e947393f9e4f38726209ebed70b2745b94867f5f7feb9dcd39bf3832da2b92",
+    "owner-workflow-plugin/src/runtime.mjs": "a81fac5a515bd6bcf2bd6acef29b902ce06892ff26cb74b223116ebfa2ae1fb8",
+    "owner-workflow-plugin/test/fixtures/recovery-session-fixture.mjs": "a95b5e9b37a138cbc31c2142d612cd00ad14572d776cc60fac0177be9cd68828",
+    "owner-workflow-plugin/test/harness-integration.test.mjs": "c0fff297689e154d4e031fe62601e1aba03b02ab7bf3c81a23e5894e74511cd3",
+    "sol-efficiency-plugin/README.md": "a98315c5ac0e15339b2fbe98fe23c185c125b9fb30f357aefedad23e32c305c0",
+    "sol-efficiency-plugin/THIRD_PARTY_NOTICES.md": "54628b59d26c142be45a7060efb7aa980a1621f542d4241c2b9b1b234ae926fa",
+    "sol-efficiency-plugin/client.js": "94fb87016cd5ef1361345ebf9b24c0a7add9cf680daa10c0a013e12a6021006e",
+    "sol-efficiency-plugin/cordis.patch.yml": "d27ba098025f1260f27601785e0766297954c67323c87b01d0e40232360a5d21",
+    "sol-efficiency-plugin/index.js": "5a2d806601450f75576b960bb9465cc598f7cf83d200bb0860b4350deb745937",
+    "sol-efficiency-plugin/package.json": "a84398c9ef796271f19aa4a56a9d9a2f0908ec05812826ec11be6fda456297ae",
+    "sol-efficiency-plugin/scripts/check-upstream.mjs": "7590540a2862d2807469e2fa753d636d69c8cb2d2fb07a3a32bbeb2f8224f474",
+    "sol-efficiency-plugin/scripts/demo.mjs": "458256a66f82feb2808c737311132d16bfe686537f2303cca8fd11b1277ae25e",
+    "sol-efficiency-plugin/src/action-fusion.mjs": "4572d80f7ba42ea4b73ac777ebf2c5c1276cbf4a8b2d566d00f97f010a7ab4ed",
+    "sol-efficiency-plugin/src/config.mjs": "34e3d6a327893543303013ae96f889dc290572c2b1a3479eeced507ca2a75708",
+    "sol-efficiency-plugin/src/evidence-reducer.mjs": "d612d6fae0d224a14e18d3736a57d85cd8210c0f4194a9d9d93146a7a9c6393a",
+    "sol-efficiency-plugin/src/lifetime.mjs": "7856fac0757648b15051426f9ae0100d8bb9779dee4c4a9232a4c819549fd7f8",
+    "sol-efficiency-plugin/src/receipt.mjs": "56aacb25f0dbb2e9a274f8c6b0741e413ec2b586062b958b77061a477f22d944",
+    "sol-efficiency-plugin/src/settings.mjs": "d43df40f42050686f6bd31391ce9781d7aa1c1909ed606a718455f90f24ffb35",
+    "sol-efficiency-plugin/test/agent-round.test.mjs": "09d0de8481d513004da242ae6a4acad2ce89a9fc34827783744a33d595d6c8c0",
+    "sol-efficiency-plugin/test/candidate.test.mjs": "72cf154c00dab34f29acd785f460e18234ff830f672ecf3be2693ff535be942b",
+    "sol-efficiency-plugin/test/client.test.mjs": "2bf46fa63248a31fee3687c9e2dbf9369cf5d2aa12211f728cf7ee21d638ddea",
+    "sol-efficiency-plugin/test/demo.mjs": "99babeb24bd458f22aba80e406fce8779cfff4d957f5174884a697dc3e404cdb",
+    "sol-efficiency-plugin/test/fixtures/cordis.yml": "45314134de3daeacb2a6c7779d29594d5cb34a0db27035b53fb912c39159e0b3",
+    "sol-efficiency-plugin/test/fixtures/reducer-model.mjs": "7067c108ffef79fb0db398e17f3ad20eb8c850ef68b07a647900e8adf204b30a",
+    "sol-efficiency-plugin/test/fixtures/transcript.json": "2cb3cf3df04c6cff6d062a588a50ad6fd5fbe750ea6c0a6d1283dc2443df9ee0",
+    "sol-efficiency-plugin/test/helpers.mjs": "e43bab95c506bca374052c54366f48bbd9818d7d27785d95fe7c43b88e25f179",
+    "sol-efficiency-plugin/test/integration.test.mjs": "a71f46fe2b04568049ca6950a63535349e05f18652b343f1e0b497cdcfbd9c32",
+    "sol-efficiency-plugin/test/owner-team.test.mjs": "85e7ced280e85a4b27c59743c7370a3677a0be0f8c29eb07929a86e901b328d4",
+    "sol-efficiency-plugin/test/receipt.test.mjs": "3b66233122ebc90f419fd1f9d8b9c505fd925aef88664d4e2c2a7fcd6a2ad820",
+    "sol-efficiency-plugin/test/settings.test.mjs": "a67c4d381444416630de83a23f50975d5cbe3326a42d1dbd51871dd734feb072",
+    "sol-efficiency-plugin/test/workspace-loader.mjs": "2ea48832ec41b2b6bf50ef0f5d46f328ba3ae4ce2b95879beb6c3704e1a84b8b",
+    "sol-efficiency-plugin/upstream.json": "d2cd5e2fa429e6ae8b282e91193c3f2d5a89fb224a773b2c8266b7ae34a4bcaf"
+  },
+  "artifactSha256": {
+    "sol-tests.log": "d5fbac3bb298c34c57460ac1cb6ae3fb8c3dac2a982eed406d1ae81f5a2ba160",
+    "web-preset.log": "b613283da07169a8d362ba20ab00087f2dc5cee25ebc31428af6b4e5b71340cb",
+    "demo.log": "b92d4e2892cf84d7ced3b498f391753c2d74982213d2c2f4110298258cdac443",
+    "upstream.log": "d71580c63f3bbb0d6b753a427e31cc849bca271aca5aa68ecbd9ba92d7d47bd3",
+    "sol-web-settings.png": "1d26db0dd52d29c8ec93c308155550b865dcec0ee6a9de7c33516b286a21643e",
+    "package-preview.json": "96bc086ebcc4122339266bfe64366eb2fe752a32059250c1511582603f97172b"
+  }
+}

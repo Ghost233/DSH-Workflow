@@ -1,0 +1,658 @@
+{
+  "contract": "DSH_ACCEPTANCE_RUN_V1",
+  "candidate": {
+    "contract": "DSH_ACCEPTANCE_CANDIDATE_V1",
+    "candidateId": "CA01-DSH015-43f85397dc08",
+    "workflowId": "main-thread-owner-workflow",
+    "planningSnapshotDigest": "e60a4aa42988c6016d9d535e620207adaa8f2622102d8183295d23443b6d7204",
+    "planDigest": "bbdb5c2a554015f38a0e7bea9d295d88b2a8735022a7ddf86d3322fe9eafc6d5",
+    "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+    "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+    "spec": {
+      "id": "MAIN-THREAD-SPEC-TICKET-OWNER-DAG",
+      "revision": "R4",
+      "digest": "27a605db08682da87fc91a466be43a57ea25f5c750495d94eb1aaf82498fe7da"
+    },
+    "tickets": [
+      {
+        "id": "T-01",
+        "revision": "R4",
+        "digest": "49ae4a0e9273542fe3985c9694c6f5cb2a4b57250350363ba84a26c1a1f1404b"
+      },
+      {
+        "id": "T-02",
+        "revision": "R4",
+        "digest": "393eba8683a9c4d785a080a7104e2efe54dd19d833e9ad25ddbc97b0a2dba034"
+      },
+      {
+        "id": "T-03",
+        "revision": "R4",
+        "digest": "103645ec8bd2407eec061330809caa5ccc03af5f4544be3f842bffd4b742188a"
+      },
+      {
+        "id": "T-04",
+        "revision": "R4",
+        "digest": "debb2d1e5aa048e7a918dc3da7e9b09384c2315f97400e806cff67178f9d314d"
+      },
+      {
+        "id": "T-05",
+        "revision": "R4",
+        "digest": "13262f8e7a666b19dd7e36a66c4a8bfb945065c7685da1e487d5bf8f0672c3b8"
+      },
+      {
+        "id": "T-06",
+        "revision": "R4",
+        "digest": "73e5c8afce4f881ec821f86407a479301fffd583c5af4d842c51132ed1472ef1"
+      },
+      {
+        "id": "T-07",
+        "revision": "R4",
+        "digest": "e37d403cfddc57de6cff8053772be3610771562b280f840f6bd3bede05e70846"
+      },
+      {
+        "id": "T-08",
+        "revision": "R4",
+        "digest": "6d7b984720e56b20713a4f6a31713271029b19c06f1261bf5a60e82cc4079414"
+      },
+      {
+        "id": "T-09",
+        "revision": "R4",
+        "digest": "a2ae7b162828c4a102faadff1972be4cfd3978704b8cefea4854a67ad74788d0"
+      },
+      {
+        "id": "T-10",
+        "revision": "R4",
+        "digest": "57bb0e37074e1196f5d04c6b79c1a30d1080a5685573231bad82a6554c8f78a9"
+      },
+      {
+        "id": "T-11",
+        "revision": "R4",
+        "digest": "1ad5fb8eb3d8898d9f3f8bc55bb4222532b237f73f6626bf77523cc3f7ac6db6"
+      },
+      {
+        "id": "T-12",
+        "revision": "R4",
+        "digest": "344951dbc90c3a6949e5614a19c342f43fe200ce0c1b75abb4f056b84fa531c1"
+      },
+      {
+        "id": "T-13",
+        "revision": "R4-V03-1",
+        "digest": "4c25515b53cb81336224b9a657d5717aa681bd74f21aab7fc6de77ace560dafb"
+      },
+      {
+        "id": "T-14",
+        "revision": "R4-V03-1",
+        "digest": "31fc7eb3f5ef5b01b1afd192f0c74f8a98f4024efdc94b18e1ecaf11ff859f47"
+      },
+      {
+        "id": "T-15",
+        "revision": "R4-V03-1",
+        "digest": "8a4c160b3c916f83de3393b106f6ab0eb269316d0a836d08a7a5447826fd7f33"
+      },
+      {
+        "id": "T-16",
+        "revision": "R4-V03-1",
+        "digest": "3c8039d2b4f8462c3b8908e3383bfaa4c738cb78d064a876a684b453ccf0bad6"
+      },
+      {
+        "id": "T-17",
+        "revision": "R4-V03-1",
+        "digest": "a5d2214580e3cd95f56d8dcaca21578e8c1677949319b783e505fafdc27bc537"
+      },
+      {
+        "id": "T-18",
+        "revision": "R4-V03-1",
+        "digest": "72c51213e7b44b5ea66f585b70e65023b3a537bbe23264653ef47d888df9c33a"
+      },
+      {
+        "id": "T-19",
+        "revision": "R4-V03-1",
+        "digest": "be5c54b8ec17cbffd370d74f4b20ea30fe9df732c38dafbc7756b421935ec182"
+      },
+      {
+        "id": "T-20",
+        "revision": "R4-V03-1",
+        "digest": "60e194a4a58d50e6e81c37e81e30f674c0b80c98f8b929a08cb70f408490b25b"
+      },
+      {
+        "id": "T-21",
+        "revision": "R4-V03-1",
+        "digest": "4ccf68b597df88069ff7413464aaf6e79e94197999071a491952eab3fe8b5605"
+      },
+      {
+        "id": "T-22",
+        "revision": "R4-V03-1",
+        "digest": "f3a9905f48ea82e014ef0e14247555e5989a6d31d0bfde7f715d74f51e5ad8b3"
+      },
+      {
+        "id": "T-23",
+        "revision": "R4-V03-1",
+        "digest": "e1328233141a0ab424d4c419dd55d1a40f027c69e81d9bcc14e90ea9503b60d5"
+      },
+      {
+        "id": "T-24",
+        "revision": "R4",
+        "digest": "95426dc8c4e3d618e481e23fd21b2a1da00873dbf8a9b47624e3c8e13e99c03c"
+      },
+      {
+        "id": "T-25",
+        "revision": "R4",
+        "digest": "04ff81c89e7a77a82f9b0ec678adb8893c1928cd5de4bb0fa890e93e78522ab0"
+      },
+      {
+        "id": "T-26",
+        "revision": "R4",
+        "digest": "d386f9aaf039be9373fa32799a4bec97898313d505018118414ae27ac5c94d8c"
+      },
+      {
+        "id": "T-27",
+        "revision": "R4",
+        "digest": "24e2291e064705712c2909b267ae1bff57ef144b2e48ef0d8cafd98e7c619535"
+      },
+      {
+        "id": "T-28",
+        "revision": "R4",
+        "digest": "0e8cbcb0daad38eac1e476568aefc9375a6ef367b155c0d6917b326f508e05b7"
+      },
+      {
+        "id": "T-29",
+        "revision": "R4",
+        "digest": "1cdc2d31d3b63188e8b41981e0d1f37f7f029e824fcd8a25c0d916e07aecb3a0"
+      },
+      {
+        "id": "T-30",
+        "revision": "R4",
+        "digest": "96f311000e101040b7251253f216d9993b9ddd78a81d84d744582dda616880ae"
+      },
+      {
+        "id": "T-31",
+        "revision": "R4",
+        "digest": "9588554cf26fa9fceea4ab0d63ca564cee8fb07f6673fa02767c1d4109828265"
+      }
+    ]
+  },
+  "status": "failed",
+  "counts": {
+    "passed": 2,
+    "failed": 0,
+    "timed_out": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "blocked": 1,
+    "zero_tests": 0,
+    "not_run": 0,
+    "evidence_incomplete": 0,
+    "stale_candidate": 8
+  },
+  "results": [
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "planning-foundation",
+      "title": "Spec/Ticket来源、文档权限、checkpoint与Owner执行包",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/orchestrator-documents-native.test.mjs",
+        "owner-workflow-plugin/test/orchestrator-documents.test.mjs",
+        "owner-workflow-plugin/test/planning-authority-native.test.mjs",
+        "owner-workflow-plugin/test/planning-checkpoint-native.test.mjs",
+        "owner-workflow-plugin/test/planning-harness.test.mjs",
+        "owner-workflow-plugin/test/planning-packages.test.mjs",
+        "owner-workflow-plugin/test/planning-references.test.mjs",
+        "owner-workflow-plugin/test/planning-source-chain-native.test.mjs",
+        "owner-workflow-plugin/test/planning-write-journal-native.test.mjs",
+        "owner-workflow-plugin/test/project-layout.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ 真实 Harness write/read/edit 链保存文档，并保留观察和冲突保护 (135.323584ms)\n▶ 真实 Git 预检后，Harness 接受根别名、真实路径和相对路径的同一文档\n  ✔ 会话位于项目根 (540.181625ms)\n  ✔ 会话位于 docs 子目录 (557.508792ms)\n✔ 真实 Git 预检后，Harness 接受根别名、真实路径和相对路径的同一文档 (1098.940084ms)\n✔ 主线程可在启动 DAG 前创建和修改所有约定文档，原生观察策略继续执行 (18.553417ms)\n✔ 文档例外不放开代码、治理文件、状态、升级参数和其他写入工具 (6.283792ms)\n✔ 解析路径二次校验阻止冒充 displayPath、目标漂移和链接换入 (2.914542ms)\n✔ 路径绑定到项目和会话，允许根目录别名，拒绝软硬链接和无效目标 (4.731459ms)\n✔ 只读子代理不继承文档例外，Owner 和停用模式沿用原策略 (2.473209ms)\n✔ 真实 root 与会话根别名混用时只归一化项目根，保留内部链接拒绝 (8.070125ms)\n✔ 实际原生问询先持久原始授权，同根重复核验复用，不因后续规格修订扩大实施范围 (686.356667ms)\n✔ 原生reject决定不会创建grant或提交代码 (351.140375ms)\n✔ 原生custom决定不会创建grant或提交代码 (353.086167ms)\n✔ 实际 Runtime 阻止 index 已同步但快照未发布时启动 DAG，原事务恢复后解除 (2220.055333ms)\n✔ 实际 Runtime 根入口完成原生授权、Git checkpoint 与固定快照，重复调用复用同一授权和提交 (1702.256708ms)\n✔ 实际 Runtime 原生拒绝不会推进 HEAD/index 或建立待恢复事务 (587.299209ms)\n✔ 实际规划租约阻止同时进入第二 checkpoint 和旧 Workflow 启动 (298.677792ms)\n✔ 真实授权之后取消会阻止后续 ref CAS，释放租约并以原授权恢复 (1766.202458ms)\n✔ 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交 (1432.313042ms)\n✔ 暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户文件 (350.447333ms)\n✔ 真实子进程 SIGKILL after-journal-prepared 后复启只形成一个 checkpoint 与不可变 snapshot (1477.973084ms)\n✔ 真实子进程 SIGKILL after-commit-object 后复启只形成一个 checkpoint 与不可变 snapshot (1486.166375ms)\n✔ 真实子进程 SIGKILL after-ref-update-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot (1539.989333ms)\n✔ 真实子进程 SIGKILL after-ref-cas 后复启只形成一个 checkpoint 与不可变 snapshot (1385.802791ms)\n✔ 真实子进程 SIGKILL after-index-rename-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot (1452.5295ms)\n✔ 真实子进程 SIGKILL after-index-sync 后复启只形成一个 checkpoint 与不可变 snapshot (1802.138625ms)\n✔ 真实子进程 SIGKILL after-snapshot-write-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot (1452.112542ms)\n✔ 真实子进程 SIGKILL after-snapshot 后复启只形成一个 checkpoint 与不可变 snapshot (1300.425875ms)\n✔ checkpoint lease 在物理断言前后均拒绝已取消 signal，且不创建 journal 或变更 Git (1555.75ms)\n✔ 已完成 parent snapshot 以完整持久 journal/snapshot 身份绑定子 checkpoint (2256.062459ms)\n✔ 未知 parent snapshot 在创建 journal 或 Git 变更前拒绝 (295.212167ms)\n✔ 原 checkpoint 尚待恢复时，新 id 不能绕过同一项目的 pending journal (1621.352792ms)\n✔ Git clean filter 改写选中文档 blob 时拒绝，不把原始来源哈希写成 checkpoint (723.472792ms)\n✔ commit object 已持久但 ref 前外部修改选中文档时，恢复拒绝并保留外部字节 (1053.010542ms)\n✔ 已完成 checkpoint 的 immutable snapshot 被外部修改时，重放和 pending 检查均拒绝 (1181.725833ms)\n✔ 未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁 (959.822542ms)\n(node:53057) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ native Planner and Reviewer complete a revision with a live Planner (1811.110375ms)\n✔ native Planner and Reviewer complete a revision with cold resume (1664.099208ms)\n✔ one-owner packages retain full frozen Ticket/Spec data, shared AC contributors and dependency blockers (12.439875ms)\n✔ compiler rejects unknown-fragment (0.372833ms)\n✔ compiler rejects blocked-fragment (0.175834ms)\n✔ compiler rejects unknown-contract (0.174375ms)\n✔ compiler rejects missing-known-contract (0.181708ms)\n✔ compiler rejects omitted-ready (0.191625ms)\n✔ compiler rejects missing-ticket-edge (0.196333ms)\n✔ compiler rejects task-cycle (0.154ms)\n✔ compiler rejects wrong-snapshot (0.151583ms)\n✔ compiler rejects wrong-source (0.19ms)\n✔ compiler rejects mixed-owner-package (0.799625ms)\n✔ bindings normalizer rejects duplicate task, Ticket fragment and contract identities without mutating optional absence (0.175208ms)\n✔ completed checkpoint reader returns frozen persisted snapshot without revalidating current planning files (1334.801ms)\n✔ checkpoint snapshot reader rejects a nonterminal journal without resuming it (373.082083ms)\n✔ real selected documents retain complete cross-ticket AC references, multiple segments and fixed content (11.486083ms)\n✔ mixed readiness preserves explicit blockers and blocks dependent tickets while unrelated work remains ready (5.445459ms)\n✔ rejects missing-file without modifying planning files (3.61475ms)\n✔ rejects changed-content without modifying planning files (4.033334ms)\n✔ rejects wrong-digest without modifying planning files (3.563875ms)\n✔ rejects duplicate-ticket without modifying planning files (2.98925ms)\n✔ rejects duplicate-path without modifying planning files (3.375ms)\n✔ rejects missing-revision without modifying planning files (3.162667ms)\n✔ rejects wrong-identity without modifying planning files (3.164417ms)\n✔ rejects wrong-source without modifying planning files (3.615459ms)\n✔ rejects unknown-ac without modifying planning files (2.967625ms)\n✔ rejects wrong-ac-version without modifying planning files (4.271375ms)\n✔ rejects unknown-contract without modifying planning files (2.419333ms)\n✔ rejects wrong-contract-version without modifying planning files (3.058166ms)\n✔ rejects missing-dependency without modifying planning files (2.754458ms)\n✔ rejects cyclic-dependency without modifying planning files (2.9305ms)\n✔ rejects duplicate-segment without modifying planning files (2.864083ms)\n✔ rejects empty-work without modifying planning files (2.383666ms)\n✔ rejects all-blocked without modifying planning files (4.846291ms)\n✔ rejects empty-tickets without modifying planning files (2.256375ms)\n✔ rejects declaration-forgery without modifying planning files (3.630125ms)\n✔ rejects disallowed planning path docs/analysis/spec.md (2.204ms)\n✔ rejects disallowed planning path docs/superpowers/specs/spec.md (2.633125ms)\n✔ rejects disallowed planning path ../escape.md (2.399ms)\n✔ rejects disallowed planning path AGENTS.md (2.407625ms)\n✔ linked document source cannot cross the existing document boundary (2.753ms)\n✔ unready contract blocks its consumers while independent work remains available (4.0485ms)\n✔ a ticket retains its independent ready segment alongside a declared blocked segment (3.572292ms)\n✔ invalid UTF-8 cannot produce content that differs from its bound byte digest (2.567917ms)\n✔ a UTF-8 BOM cannot be silently removed from the bound source content (3.021958ms)\n✔ 首次原生创建尚未进入 HEAD 的 Spec/Ticket，缺失基线 blob 正确作为 null (396.023334ms)\n✔ 真实 Harness 原生 edit 链绑定 T05 引用和实际 Git baseline，并由只读 Runtime 入口返回 source-validated (448.649834ms)\n✔ 缺失尾项、跨文件借用、incomplete terminal 与暂存用户变更均拒绝而不修复来源或 index (425.710584ms)\n✔ 已提交的旧来源保留在 journal 时，新 baseline 上仅选择新的原生链仍可验证 (438.644208ms)\n✔ 真实 Runtime 入口不接受其他主 agent 复用来源，也不接受有父会话的 child (302.842792ms)\n✔ 真实 Harness create → read → edit 使用原生 CAS，写入不可消费的完整 native provenance 链 (186.255667ms)\n✔ 真实 CAS stale 在 prepared 后无同调用 observed，明确保留 unknown 而不把 isError 伪造成失败 (108.199167ms)\n✔ native success followed by downstream observed failure remains native-observed but incomplete (54.930208ms)\n✔ 相同真实 callId 的重放不会覆盖 prepared/terminal 或再次修改文档 (65.5485ms)\n✔ native 成功后 terminal 发布失败保留 prepared-only 与真实字节，不回滚或伪造 terminal (51.1855ms)\n✔ BOM 使原始字节与 decoded text 不可逆时保留 native-observed 但拒绝 complete (52.880292ms)\n✔ 越界文档和状态目录链接在原生 mutation 前拒绝，且没有额外文档权限或 journal 记录 (30.240667ms)\n✔ 项目存储目录把配置和长期资料归入各自 Owner 文件夹 (0.4025ms)\n✔ Runtime 初始化创建目录内 .gitignore 并只暴露该文件给 Git (73.153333ms)\n✔ Runtime 初始化不覆盖项目已有的自定义 .gitignore (1.989ms)\n✔ 旧 autoAddGitExclude=false 配置继续关闭自动 .gitignore (24.394125ms)\nℹ tests 98\nℹ suites 0\nℹ pass 98\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 41855.769292\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 98,
+        "pass": 98,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "public-owner-protocol",
+      "title": "公共Owner请求、会话决定与消费者影响协议",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/public-owner-change.test.mjs",
+        "owner-workflow-plugin/test/public-owner-decision-session.test.mjs",
+        "owner-workflow-plugin/test/public-owner-plan.test.mjs",
+        "owner-workflow-plugin/test/public-owner-session-proof.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ T06 accepts and replays one complete versioned public Owner request (2.666041ms)\n✔ T06 rejects absent fields and unknown Owner, Ticket, AC, contract, or evidence references (0.854292ms)\n✔ T06 same ID and version conflict, while the next version must exactly supersede the prior digest (1.349333ms)\n✔ T06 capability-sufficient decision requires every known consumer fact and is the only immediately ready result (1.747458ms)\n✔ T06 compatible extension stays blocked until the public Owner implementation exists (0.442584ms)\n✔ T06 migration decision binds the complete impacted consumer set and exact order (0.99325ms)\n✔ T06 rejection, missing facts, and business change use distinct evidence-bearing outcomes (1.258459ms)\n✔ T06 a decision bound to an older execution, contract, or consumer context becomes stale (0.704042ms)\n✔ T06 conflicting decisions cannot overwrite an accepted decision for the same request (0.47675ms)\n✔ T06 persisted request or decision tampering fails closed even when the attacker recomputes no digest (0.574459ms)\n✔ T28 real public Owner structured submission persists and fresh Runtime replays without a model call (1132.061208ms)\n✔ T28 ordinary assistant text is a durable no-submit failure and is never parsed as a decision (808.826584ms)\n✔ T28 wrong Owner structured submission cannot produce a public decision (786.477625ms)\n✔ T28 K1 response becomes durable stale history when active execution changes during the model turn (842.564083ms)\n✔ T28 a durable consultation reservation occupies capacity and queues another Owner (832.155208ms)\n✔ T28 timeout settles the consultation and releases capacity for a later request (905.835416ms)\n✔ T28 parent cancellation settles the durable consultation and releases its reservation (830.570834ms)\n✔ T28 a public Owner business change reaches the main outbox as an explicit user decision (794.894167ms)\n✔ T28 uncertain child creation is never retried from a missing durable binding (690.554083ms)\n✔ T30 normalizes a PlanRevision with an explicit authoritative public decision binding (12.501458ms)\n✔ T30 rejects incomplete consumers, wrong Owner, missing implementation predecessor, and stale authority (7.914458ms)\n✔ T30 migration order is an executable dependency chain rooted at the public implementation (3.153541ms)\n✔ T30 carried historical bindings remain immutable without treating their original baseline as current (3.858667ms)\n✔ T08 real Harness read-only S session returns a T06-compatible decision to the main adapter (860.531708ms)\n✔ T08 public Owner cannot write its module before returning the fixed decision (694.49575ms)\n✔ T08 a wrong public Owner identity cannot become a decision even after a real model turn (683.24925ms)\n✔ T08 K1 changing while S is deciding makes its real late K1 response stale (713.45975ms)\n✔ T08 timeout and parent cancellation both terminate the read-only judgment without a decision (2458.931625ms)\n✔ T08 current generic consultation seam has no Runner capacity reservation (710.366875ms)\nℹ tests 29\nℹ suites 0\nℹ pass 29\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 14204.324667\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 29,
+        "pass": 29,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "scheduler-resource-lifecycle",
+      "title": "容量、Owner、资源、截止、Runner与Harness准入",
+      "status": "stale_candidate",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/agent-policy.test.mjs",
+        "owner-workflow-plugin/test/harness-integration.test.mjs",
+        "owner-workflow-plugin/test/launcher.test.mjs",
+        "owner-workflow-plugin/test/owner-attempt-control.test.mjs",
+        "owner-workflow-plugin/test/owner-boundary.test.mjs",
+        "owner-workflow-plugin/test/owner-hard-deadline.test.mjs",
+        "owner-workflow-plugin/test/owner-host-command.test.mjs",
+        "owner-workflow-plugin/test/owner-team-runner.test.mjs",
+        "owner-workflow-plugin/test/owner-team.test.mjs",
+        "owner-workflow-plugin/test/runner.test.mjs",
+        "owner-workflow-plugin/test/supervisor.test.mjs",
+        "owner-workflow-plugin/test/unified-owner-resource-admission.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 1,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ 新版角色配置只使用显式 Agent；缺失 Session API 必须拒绝 (0.685875ms)\n✔ 子代理继承完整工具集，角色只决定文件沙箱模式 (0.369208ms)\n✔ Planner 与 Reviewer 隐藏无效升级字段，并对同一失败搜索执行有界熔断 (0.256667ms)\n✔ Operator 的重复搜索同样使用成功缓存和两次失败熔断 (0.137709ms)\n✔ 主代理禁止直接开发，Owner 和 Operator 不使用工具白名单 (0.475959ms)\n✔ delegated roles route human questions to main without changing the main question tool (0.129ms)\n✔ official Web composition serves the shell and Owner dashboard over the real HTTP host (4354.962625ms)\n✔ real browser settles Owner interactions and hot-toggles SoL through native settings (7145.453875ms)\nℹ Browser: 152.0.7977.83\n✔ Synapse canvas reads a consistent projection while a workspace is pruned (2098.502166ms)\n✔ Synapse browser sends, streams, creates and forks through native session services (4096.660417ms)\n✔ approval adapter uses native Web settings, preserves conflicts and settles real Bash approval (4016.102083ms)\nℹ Approval browser: 152.0.7977.83\n✔ 真实加载器可以从 Harness 用户根目录发现所有者工作流预设 (16.487458ms)\n✔ Owner 工作流的运行时 Skill 能被当前 Agent 正确加载 (42.678667ms)\n✔ 插件只在所有者工作流预设中挂载，已安装 bundle 与本地 patch 不会重复注册 (65.729333ms)\n✔ 规划器、审查器和记忆子代理继承完整工具，文件写入由 read-only 沙箱限制 (155.981959ms)\n✔ Owner 子线程在真实 Harness 继承作用域中保留正常开发工具和提交关卡 (89.103333ms)\n✔ 主代理选择所有者工作流预设后无需调用 mode_enable 也会被工具守卫限制 (53.783791ms)\n✔ 专用状态与预检工具通过真实 Harness 输出无损 JSON (532.575542ms)\n✔ 标准预设保持原有工具且不受所有者插件影响 (39.431625ms)\n✔ 项目插件全部准备成功后才启动，失败时不启动 Runner 或创建 preset (905.829584ms)\n✔ Owner preset 把动态业务工作区登记到全局 Runner catalog (0.815417ms)\n✔ 只有显式更新参数会更新外部插件，参数不会传给 DSH (686.900333ms)\n✔ 本地启动强制刷新过期 preset，忽略缺失的 profile bin 并注入当前源码 (722.494667ms)\n✔ npm 启动脚本把显式版本固定为 @deepseek-ai/dsh 包规格 (816.88725ms)\n✔ 子模块启动脚本直接从子模块执行构建后的 CLI (885.393666ms)\n✔ 子模块启动脚本把 plugin 命令原样交给子模块 CLI 且不启动 Web (327.031958ms)\n✔ 启动脚本让 Runner daemon 随 Harness 启动并在 Harness 退出后停止 (1410.775333ms)\n✔ 不同工作区启动复用 Harness home 中同一个持久 Runner Leader (1886.124209ms)\n✔ 本地 Web 启动经项目适配层加载固定 Synapse，退出清理临时链接 (667.489459ms)\n✔ T17 fixed deadline only decreases and heartbeats cannot extend it (1.059125ms)\n✔ T17 wall-clock rollback fails closed without replenishing remaining time (0.08ms)\n✔ T17 stop request, cancellation failure, unknown termination and terminal settlement are finite and idempotent (0.147209ms)\n✔ T17 late results must match attempt, session, token and settlement generation (0.093459ms)\n✔ T17 a fresh Runtime settles stopping from a persistent terminal event (0.84275ms)\n✔ T17 Runtime rejects invalid hard-deadline configuration (0.180792ms)\n✔ Harness、Synapse 与审批策略上游子模块始终属于受保护路径 (0.445875ms)\n✔ Owner 可以自由修改 worktree，但提交关卡拒绝 scope 外和受保护路径 (226.002417ms)\n✔ 提交关卡忽略构建产物，自动提交 scope 内真实 diff 并再次校验 (572.734875ms)\n✔ 提交关卡检查全部提交历史，不能用后续删除隐藏中间越界提交 (369.560416ms)\n✔ review 或 verify task 不能借用 Owner scope 提交业务改动 (404.678042ms)\n✔ T17 normal deadline-clock observation acknowledges the new durable revision without stale actionId (1138.755042ms)\n✔ T19 frozen Workflow policy uses the approved task timeout despite later Runtime settings (1008.211792ms)\n✔ T19 missing or unknown required policy state refuses Owner startup without model calls (436.54325ms)\n✔ T17 real hard deadline persists stopping before cancellation and settles only after JSONL terminal (899.087333ms)\n✖ T17 a deadline-ended recovery attempt settles the existing T13 debit once (180089.165ms)\n✔ T17 an independent Owner starts while the expired Owner is still stopping (2286.170125ms)\n✔ T17 cancellation adapter failure pauses, while later persistent terminal proof safely settles it (736.188084ms)\n✔ T17 missing terminal reaches a bounded termination-unknown pause (427.622291ms)\n✔ T17 unavailable cancellation target enters a finite technical pause and blocks same Owner re-entry (474.639542ms)\n✔ Owner 宿主命令把授权留在当前任务现场，并只执行获批的精确命令 (6.2585ms)\n✔ Owner 宿主命令接受结构化 argv，参数中的连接符不被误判为复合命令 (1.38925ms)\n✔ 拒绝、取消或不可用授权都不会执行 Owner 宿主命令 (3.0715ms)\n✔ Owner 宿主命令拒绝 worktree 外工作目录和授权后的失效绑定 (3.159833ms)\n✔ Owner 宿主命令在请求授权前拒绝目录探测和复合命令 (2.494375ms)\n✔ Owner 宿主命令的授权和执行都会在 timeout_ms 后结算 (105.334125ms)\n✔ Owner 任务没有开放回合时，宿主命令给出可恢复错误且不执行 (1.547333ms)\n✔ Runner 使用真实 Owner Team 连续执行、休眠后恢复，提交关卡仍验证并固定 SHA (6146.765542ms)\n✔ Runner 双 Owner 并行与 worktree 隔离：两个合法修改均验证提交 (1962.503458ms)\n✔ Runner 双 Owner 并行与 worktree 隔离：scope 越界拒绝并保留现场 (1202.571125ms)\n✔ 真实 DSH：稳定 Owner 续接与恢复，派发证据只属于当前任务 (243.234583ms)\n✔ 真实 DSH：两个 Owner 并行、同 Owner 串行，取消收敛前保持占用 (75.251ms)\n✔ 真实 DSH：接收回执失败保留已接收事实，停止执行并拒绝重投 (69.022875ms)\n✔ 受管理会话读取失败时仍关闭 read handle (0.358209ms)\n✔ Owner Team 释放失败仍清理 Runtime 其他状态，并保留原始错误 (0.608083ms)\n✔ runner 对恢复错误使用固定分类，不把模型或控制桥错误混为同一种超时 (0.9745ms)\n✔ runner daemon 参数只启用确定性工作区扫描且不要求 workflow-id (0.273292ms)\n✔ runner daemon 发现可执行 Workflow 与需要恢复的卡住计划审查 (13.094875ms)\n✔ runner daemon 并发唤醒多个卡住的规划且停止时持久化 attempt (64.90875ms)\n✔ runner 不读取本地 workflow 状态，只执行 Supervisor 指定动作并逐个按 actionId ACK (48.880709ms)\n✔ runner 只把 supervisor-inspect 的有限宿主观察回传给对应 ACK (49.44125ms)\n✔ runner 让 Runtime 真正投递 notify 后才停止本次运行 (48.566167ms)\n✔ runner 对未知 Supervisor 动作关闭处理且不发送派生请求 (47.857916ms)\n✔ runner delivers the durable technical report before exiting a technical stop (48.123541ms)\n✔ runner targets the technical notification even when an older pending report exists (58.23975ms)\n✔ 仅派发依赖完成的任务，Review 未完成时阻塞下游 (12.538833ms)\n✔ 不同 Owner 的任务仍可占用不同并行槽位 (5.78275ms)\n✔ 相同执行资源只派发一个 Owner，并继续选择无冲突任务填充槽位 (2.958666ms)\n✔ 运行任务和外部reservation都阻止相同资源的新任务 (3.242458ms)\n✔ 恢复状态中两个运行任务占用相同资源时关闭处理 (1.946291ms)\n✔ 公共Owner判断reservation占用Supervisor槽位并阻止同Owner写任务 (3.714083ms)\n✔ Supervisor wait 确认保留 Owner 提交关卡写入的验证证据 (1.710041ms)\n✔ Supervisor ACK 保留自治恢复策略和证据租约 (1.546417ms)\n✔ 同一 Owner 的 ready task 每批最多派发一个，其余保持 pending (6.461042ms)\n✔ 就绪任务按计划 priority 降序选择，同时继续遵守 Owner 排他 (2.56575ms)\n✔ 已有同 Owner running/reserved task 时不再派发该 Owner (1.911042ms)\n✔ 连续十次 cursor 未变化时派发 inspect，且不会猜测任务完成 (1.041666ms)\n✔ 所有任务终态时停止；停止任务留下的决策阻塞会通知主会话 (1.538459ms)\n✔ 动作枚举固定、actionId 不透明且确认必须匹配当前动作 (1.433959ms)\n✔ wait 确认依据 cursor 投影进展，并重置或累加无进展轮数 (2.073584ms)\n✔ actionId 绑定计划身份、工作流 revision 与完整任务投影 (5.012208ms)\n✔ 旧 action ACK 在状态变化或已经确认后被拒绝 (2.036667ms)\n✔ create ACK 只接受 running 状态及其闭合任务字段 (2.945ms)\n✔ wait、notify 与 stop ACK 拒绝不适用的观测字段 (3.413458ms)\n✔ 恢复状态的 active 任务数超过并行上限时关闭处理 (1.250833ms)\n✔ 恢复状态包含非法任务状态时关闭处理 (0.839042ms)\n✔ actionSequence 与 unchangedPolls 拒绝非安全整数，并在序列上限关闭处理 (1.590125ms)\n✔ Supervisor ready 投影只派发 Composite entry/内部节点，exit 完成后才放行父后继 (17.747334ms)\n✔ 递归 Composite 叶子必须等待所有祖先的外部依赖 (5.962166ms)\n✔ Supervisor 拒绝执行 abstract DAG，但进度投影保留拆分信息 (0.988875ms)\n✔ Revision 切换阻塞指定任务并在 ACK 后保留待检查元数据 (3.987625ms)\n✔ T29 direct Owner start cannot bypass an active public Owner consultation (1148.051416ms)\n✔ T29 concurrent direct Owner starts cannot claim the same execution resource (1239.119375ms)\n✔ T29 direct Owner starts share the configured capacity gate (939.249042ms)\n✔ T29 persisted Supervisor reservations participate in direct admission (510.197792ms)\nℹ tests 104\nℹ suites 0\nℹ pass 103\nℹ fail 0\nℹ cancelled 1\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 236613.058458\n\n✖ failing tests:\n\ntest at owner-workflow-plugin/test/owner-hard-deadline.test.mjs:206:1\n✖ T17 a deadline-ended recovery attempt settles the existing T13 debit once (180089.165ms)\n  'test timed out after 180000ms'\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "reason": "执行证据与固定候选的内容摘要或代码提交不一致",
+      "observedContentDigest": "0bd40e8ccff3610de6d1ed0cd36f03a67c2cab86c3e2459d2f2e0272fe0ac395",
+      "observedCodeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded"
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "bounded-recovery",
+      "title": "有界恢复、预算、会诊、重建、重启与handoff故障变体",
+      "status": "stale_candidate",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/candidate-arbitration-metered.test.mjs",
+        "owner-workflow-plugin/test/candidate-arbitration-recovery.test.mjs",
+        "owner-workflow-plugin/test/candidate-independent-runtime.test.mjs",
+        "owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs",
+        "owner-workflow-plugin/test/candidate-owner-consultation.test.mjs",
+        "owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs",
+        "owner-workflow-plugin/test/candidate-recovery-pause.test.mjs",
+        "owner-workflow-plugin/test/candidate-review-recovery.test.mjs",
+        "owner-workflow-plugin/test/direct-handoff-recovery.test.mjs",
+        "owner-workflow-plugin/test/handoff-recovery.test.mjs",
+        "owner-workflow-plugin/test/recovery-admission.test.mjs",
+        "owner-workflow-plugin/test/recovery-budget.test.mjs",
+        "owner-workflow-plugin/test/recovery-policy.test.mjs",
+        "owner-workflow-plugin/test/recovery-session-reader.test.mjs",
+        "owner-workflow-plugin/test/recovery-session-restart.test.mjs",
+        "owner-workflow-plugin/test/recovery-session.test.mjs",
+        "owner-workflow-plugin/test/replan-session.test.mjs",
+        "owner-workflow-plugin/test/runtime-recovery-budget.test.mjs",
+        "owner-workflow-plugin/test/subgraph-recovery-guard.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": null,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "",
+      "stderr": "候选在验证项启动前发生漂移",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "reason": "执行证据与固定候选的内容摘要或代码提交不一致",
+      "observedContentDigest": "0bd40e8ccff3610de6d1ed0cd36f03a67c2cab86c3e2459d2f2e0272fe0ac395",
+      "observedCodeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded"
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "convergence-revision-control",
+      "title": "义务收敛、决定分类、PlanRevision与控制桥",
+      "status": "stale_candidate",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/control.test.mjs",
+        "owner-workflow-plugin/test/convergence.test.mjs",
+        "owner-workflow-plugin/test/operation-approval.test.mjs",
+        "owner-workflow-plugin/test/operation-harness.test.mjs",
+        "owner-workflow-plugin/test/operation-runtime.test.mjs",
+        "owner-workflow-plugin/test/operation.test.mjs",
+        "owner-workflow-plugin/test/plan-revision.test.mjs",
+        "owner-workflow-plugin/test/workflow-state.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": null,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "",
+      "stderr": "候选在验证项启动前发生漂移",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "reason": "执行证据与固定候选的内容摘要或代码提交不一致",
+      "observedContentDigest": "0bd40e8ccff3610de6d1ed0cd36f03a67c2cab86c3e2459d2f2e0272fe0ac395",
+      "observedCodeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded"
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "history-git-replay",
+      "title": "Owner原始历史、摘要延后、Git结算与重复回执",
+      "status": "stale_candidate",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/git.test.mjs",
+        "owner-workflow-plugin/test/memory.test.mjs",
+        "owner-workflow-plugin/test/owner-submission.test.mjs",
+        "owner-workflow-plugin/test/resilience.test.mjs",
+        "owner-workflow-plugin/test/verification.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": null,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "",
+      "stderr": "候选在验证项启动前发生漂移",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "reason": "执行证据与固定候选的内容摘要或代码提交不一致",
+      "observedContentDigest": "0bd40e8ccff3610de6d1ed0cd36f03a67c2cab86c3e2459d2f2e0272fe0ac395",
+      "observedCodeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded"
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "platform-security-ui",
+      "title": "模型、Registry、安全、插件、Dashboard与项目集成边界",
+      "status": "stale_candidate",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/client-bundle.test.mjs",
+        "owner-workflow-plugin/test/dashboard-host.test.mjs",
+        "owner-workflow-plugin/test/dashboard.test.mjs",
+        "owner-workflow-plugin/test/model.test.mjs",
+        "owner-workflow-plugin/test/owner-advice-session.test.mjs",
+        "owner-workflow-plugin/test/plugin.test.mjs",
+        "owner-workflow-plugin/test/registry.test.mjs",
+        "owner-workflow-plugin/test/security.test.mjs",
+        "scripts/project-plugins.test.mjs",
+        "scripts/harness-runtime.test.mjs",
+        "scripts/project-plugins-native.test.mjs",
+        "scripts/acceptance-process.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": null,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "",
+      "stderr": "候选在验证项启动前发生漂移",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "reason": "执行证据与固定候选的内容摘要或代码提交不一致",
+      "observedContentDigest": "0bd40e8ccff3610de6d1ed0cd36f03a67c2cab86c3e2459d2f2e0272fe0ac395",
+      "observedCodeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded"
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "project-adapters",
+      "title": "SoL、Synapse、审批原生适配与生命周期",
+      "status": "stale_candidate",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--import",
+        "./sol-efficiency-plugin/test/workspace-loader.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "sol-efficiency-plugin/test/agent-round.test.mjs",
+        "sol-efficiency-plugin/test/candidate.test.mjs",
+        "sol-efficiency-plugin/test/client.test.mjs",
+        "sol-efficiency-plugin/test/integration.test.mjs",
+        "sol-efficiency-plugin/test/owner-team.test.mjs",
+        "sol-efficiency-plugin/test/receipt.test.mjs",
+        "sol-efficiency-plugin/test/settings.test.mjs",
+        "synapse-workflow-plugin/test/client.test.mjs",
+        "synapse-workflow-plugin/test/projection-access.test.mjs",
+        "synapse-workflow-plugin/test/projection.test.mjs",
+        "approve-for-me-workflow-plugin/test/composition.test.mjs",
+        "approve-for-me-workflow-plugin/test/host.test.mjs",
+        "approve-for-me-workflow-plugin/test/reviewer.test.mjs",
+        "approve-for-me-workflow-plugin/test/settings.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": null,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "",
+      "stderr": "候选在验证项启动前发生漂移",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "reason": "执行证据与固定候选的内容摘要或代码提交不一致",
+      "observedContentDigest": "0bd40e8ccff3610de6d1ed0cd36f03a67c2cab86c3e2459d2f2e0272fe0ac395",
+      "observedCodeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded"
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "acceptance-classification",
+      "title": "集中验收独立继续与完整失败分类自验",
+      "status": "stale_candidate",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/acceptance-runner.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": null,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "",
+      "stderr": "候选在验证项启动前发生漂移",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "reason": "执行证据与固定候选的内容摘要或代码提交不一致",
+      "observedContentDigest": "0bd40e8ccff3610de6d1ed0cd36f03a67c2cab86c3e2459d2f2e0272fe0ac395",
+      "observedCodeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded"
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "planning-activation",
+      "title": "固定候选审查、执行版本激活、竞争与重放",
+      "status": "stale_candidate",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/planning-compile-native.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [
+        "planning-foundation"
+      ],
+      "exitCode": null,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "",
+      "stderr": "候选在验证项启动前发生漂移",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "reason": "执行证据与固定候选的内容摘要或代码提交不一致",
+      "observedContentDigest": "0bd40e8ccff3610de6d1ed0cd36f03a67c2cab86c3e2459d2f2e0272fe0ac395",
+      "observedCodeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded"
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "representative-sab-k1-k2",
+      "title": "S/A/B代表场景：K1到兼容K2及唯一公共实现",
+      "status": "blocked",
+      "candidateId": "CA01-DSH015-43f85397dc08",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/public-owner-plan-lifecycle.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [
+        "planning-activation",
+        "public-owner-protocol",
+        "scheduler-resource-lifecycle"
+      ],
+      "blockedBy": [
+        {
+          "itemId": "planning-activation",
+          "status": "stale_candidate"
+        },
+        {
+          "itemId": "scheduler-resource-lifecycle",
+          "status": "stale_candidate"
+        }
+      ],
+      "reason": "真实前置没有通过，当前项未执行"
+    }
+  ],
+  "startedAt": "2026-09-12T13:11:02.362Z",
+  "completedAt": "2026-09-12T13:16:32.914Z",
+  "durationMs": 330552,
+  "sourceBinding": {
+    "digest": "0b0baffb2d1c85f62b2d13f8d66d88768f1d1ed3582868b2c40801cbca2bdd31",
+    "fileCount": 13481,
+    "roots": [
+      "package.json",
+      "dsh-runtime.json",
+      "project-plugins.json",
+      "project-plugins.lock.json",
+      "start-owner-workflow.sh",
+      "start-owner-workflow-npm.sh",
+      "start-owner-workflow-submodule.sh",
+      "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "docs/specs/main-thread-owner-workflow/tickets",
+      "scripts",
+      "owner-workflow-plugin",
+      "sol-efficiency-plugin",
+      "synapse-workflow-plugin",
+      "approve-for-me-workflow-plugin",
+      "dsh-synapse",
+      "deepseek-harness/package.json",
+      "deepseek-harness/pnpm-lock.yaml",
+      "deepseek-harness/tsconfig.json",
+      "deepseek-harness/.dsh-build/owner-workflow-runtime.json",
+      "deepseek-harness/apps/cli",
+      "deepseek-harness/apps/web/dist",
+      "deepseek-harness/native/system",
+      "deepseek-harness/packages",
+      "deepseek-harness/vendor/cordis/lib"
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+✖ action admission serializes competing hosts while allowing owned live commands in parallel (329.345167ms)
+✖ command admission scans a large legacy flat history once per host instead of once per command (166.750416ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 621.070708
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/native-kernel-effects.test.mjs:138:1
+✖ action admission serializes competing hosts while allowing owned live commands in parallel (329.345167ms)
+  Error: An unrelated Action was blocked by the catalog admission lock
+      at Timeout.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/native-kernel-effects.test.mjs:157:63)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7)
+
+test at owner-workflow-plugin/test/native-kernel-effects.test.mjs:186:1
+✖ command admission scans a large legacy flat history once per host instead of once per command (166.750416ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/native-kernel-effects.test.mjs:209:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -1,0 +1,51 @@
+{
+  "observedAt": "2026-09-14T06:39:11.241Z",
+  "workflowId": "wf-03d397fffe12a1d0e9726a73ccb53ba315e3d7eb",
+  "status": "planning",
+  "planVersion": 0,
+  "counts": {
+    "totalTasks": 0,
+    "completedTasks": 0,
+    "failedTasks": 0,
+    "pendingTasks": 0,
+    "runningTasks": 0
+  },
+  "attention": [],
+  "actions": [
+    {
+      "id": "act-0f0c97844860959adb0cc8328650c58e19db1078",
+      "kind": "prepare_workflow",
+      "status": "succeeded",
+      "resultKeys": [
+        "integrationRef",
+        "baseCommit",
+        "evidenceRef"
+      ]
+    },
+    {
+      "id": "act-9c51637b7b7a90baead468a3826dbf235d2231ad",
+      "kind": "plan",
+      "status": "succeeded",
+      "sessionId": "owner-ecf2dddb4ec7a99573d1a694177b27e3c24df1e9",
+      "resultKeys": [
+        "plan",
+        "snapshotDigest",
+        "packagesRef",
+        "managedRangeStopped",
+        "terminationScope",
+        "terminationId",
+        "sessionId",
+        "promptId",
+        "executionSettled",
+        "evidenceRef"
+      ]
+    },
+    {
+      "id": "act-8c64ebe8a682213d9803eeaa79470200950212a7",
+      "kind": "review_plan",
+      "status": "running",
+      "sessionId": "owner-51fe7c89aed941b68bf222b8b5d84ff127b0f22b",
+      "resultKeys": []
+    }
+  ]
+}

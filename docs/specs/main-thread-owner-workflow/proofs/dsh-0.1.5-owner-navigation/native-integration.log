@@ -1,0 +1,28 @@
+(node:87331) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ native Operation waits for main input, cold-resumes the same child and reports completion (1304.888833ms)
+✔ native Operation progress is durable without waking an idle parent (805.48ms)
+✔ native Operation creation rejects failed role setup before any model turn (590.380875ms)
+✔ native Planner receives scoped read-only policy and delivers through the live child identity (607.723833ms)
+✔ native question tool routes Operator input through main and resumes after the actual answer (731.148042ms)
+✔ native approval coalesces duplicates and applies one decision: 仅允许这一次 (672.376833ms)
+✔ native approval coalesces duplicates and applies one decision: 本次会话允许此前缀 (647.1545ms)
+✔ cancelling an Operation closes a stalled native question and a late answer grants nothing (644.204083ms)
+✔ workflow question cancellation settles without waiting for an unresponsive answerer (440.580791ms)
+✔ native plan revision question is deduplicated and reject preserves the budget (524.609458ms)
+✔ native plan revision question is deduplicated and dispose preserves the budget (472.5685ms)
+✔ Runner 使用真实 Owner Team 连续执行、休眠后恢复，提交关卡仍验证并固定 SHA (8567.399209ms)
+✔ Runner 双 Owner 并行与 worktree 隔离：两个合法修改均验证提交 (2057.153042ms)
+✔ Runner 双 Owner 并行与 worktree 隔离：scope 越界拒绝并保留现场 (1390.50775ms)
+(node:87334) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ native Planner and Reviewer complete a revision with a live Planner (2397.826792ms)
+✔ native Planner and Reviewer complete a revision with cold resume (1724.673583ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12235.949709

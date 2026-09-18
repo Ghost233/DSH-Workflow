@@ -1,0 +1,17 @@
+✔ 项目插件全部准备成功后才启动，失败时不启动 Runner 或创建 preset (2046.24925ms)
+✔ Owner preset 把动态业务工作区登记到全局 Runner catalog (2.580166ms)
+✔ 本地启动强制刷新过期 preset，忽略缺失的 profile bin 并注入当前源码 (1334.997458ms)
+✔ npm 启动脚本把显式版本固定为 @deepseek-ai/dsh 包规格 (1740.421792ms)
+✔ 子模块启动脚本直接从子模块执行构建后的 CLI (983.748167ms)
+✔ 子模块启动脚本把 plugin 命令原样交给子模块 CLI 且不启动 Web (395.990583ms)
+✔ 启动脚本让 Runner daemon 随 Harness 启动并在 Harness 退出后停止 (1613.798ms)
+✔ 不同工作区启动复用 Harness home 中同一个持久 Runner Leader (2114.127917ms)
+✔ 本地 Web 启动经项目适配层加载固定 Synapse，退出清理临时链接 (751.884125ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11065.71525

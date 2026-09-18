@@ -1,0 +1,24 @@
+✔ local Planner patch preserves omitted definitions and rejects edits outside its admitted boundary (1.760417ms)
+✔ a local Planner may create a verification identity only through a real authorized task binding (0.83ms)
+✔ an R11-sized rejected candidate can add one evidence leaf without rewriting its 18 tasks or 16 verifications (14.850042ms)
+✔ Planner contract accepts an executable plan with no public Owner change (1.029708ms)
+✔ Planner required fields follow normalization defaults plus package compilation (0.116708ms)
+✔ Planner public Owner binding schema is the exact domain-owned shape (0.547375ms)
+✔ omission cannot bypass required or historical public Owner authority (0.328917ms)
+✔ Planner tool contract rejects the five invalid shapes observed in the live workflow (0.262792ms)
+✔ Planner receives frozen requirements without authorization receipts or write journals (0.341542ms)
+✔ Planner and Reviewer receive readable Owner feedback as a non-blocking fact (1.174666ms)
+✔ a new root can discover and explicitly cancel a same-project blocker without taking over its execution (461.448208ms)
+✔ Owner root guards use native tool scope and do not capture unrelated roots (19.659167ms)
+✔ native workflow_retry_action keeps a settled technical candidate retry bound and returns a lossless view (138.436083ms)
+✔ plan retry verifies its admitted planning identity instead of the obsolete active Registry (0.272125ms)
+✔ review_plan retry verifies its admitted planning identity instead of the obsolete active Registry (0.068333ms)
+✔ two native Owner preset scopes share one catalog executor and dispose independently (43.113833ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1024.263709

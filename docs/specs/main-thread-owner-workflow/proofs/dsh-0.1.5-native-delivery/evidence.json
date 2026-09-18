@@ -1,0 +1,35 @@
+{
+  "recordedAt": "2026-09-12T08:23:37.785Z",
+  "scope": "Directed native chains and acceptance harness fixes; not full CA01 acceptance",
+  "passingGroups": {
+    "plannerPublicOwner": 11,
+    "acceptanceProcess": 5,
+    "publicOwnerIntegration": 2,
+    "planningDelivery": 1,
+    "ownerDeadlines": 9
+  },
+  "sourceHashes": {
+    "scripts/run-ca01.mjs": "eedf46d051bab68eddfbbd4f07cb4a5718957df8b4bd1f7d3bb3b07d68a1a287",
+    "scripts/acceptance-process.mjs": "a17d85c7d7315b466c891f660db7cb101b03711ad64cc8c636d38959838beca1",
+    "scripts/acceptance-process.test.mjs": "a1384d991931e9a8d096fa05a1fab8b1e2cef7c3b8856f775cf46b08462bac15",
+    "owner-workflow-plugin/src/runtime.mjs": "cebd6fc3bdcdc9f2c19e1640c1e9901f57b4dddd0b845d55c732712226b6184c",
+    "owner-workflow-plugin/test/owner-hard-deadline.test.mjs": "f43d2ed2f9271647de75853227033b98f44d0944cebe06774acb3a36d25ec99a",
+    "owner-workflow-plugin/test/planning-compile-native.test.mjs": "3c0043edce0d8acb2aee0a870a80de9fdd9f2c70ca51e804695f428df6082668",
+    "owner-workflow-plugin/test/public-owner-plan-lifecycle.test.mjs": "468101bbf8357b4118326c2eed1a935b70d8da549020b1bb2b51c3fd4525f945"
+  },
+  "artifactHashes": {
+    "planner-source-alias-failure.log": "cd43fe2130d5f3925d31df294c2d74f936aeb6dec360e639f3f749d883c788db",
+    "planner-public-owner.log": "5e687a35f677612ce5fb687a18d63becb36e4ee2ab2896d1ce928b3e18f560ec",
+    "acceptance-process.log": "043bec8bf11ff77ed09657e8afb9d565464497c3ce86996243149d6afd1144f2",
+    "public-owner-integration.log": "ef566b3e429311882e4730c8601236b86d08e6b6c33cf337f485502c5cdddbd1",
+    "planning-delivery.log": "6039067c21bcb8a3c0f0cffbfc7a064c11d673fa2e16615909d47e42fe3b5489",
+    "owner-deadlines-before.log": "dae24d01cb01d65889921859509c16241188ec2d1fcc1faadded54f0a1900b1b",
+    "owner-deadlines-after.log": "8346eb58f07e74f756864f3a2690a04753eec7d13e0791fe52e93c6fa3786d44"
+  },
+  "limitations": [
+    "Model responses use deterministic adapters",
+    "Public Owner revision review is a controlled fixture input",
+    "Full CA01 is separately running",
+    "External plugins are not executed"
+  ]
+}

@@ -1,0 +1,33 @@
+(node:81869) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ native Operation waits for main input, cold-resumes the same child and reports completion (2679.363333ms)
+✔ native Operation progress is durable without waking an idle parent (1542.476333ms)
+✔ native Operation creation rejects failed role setup before any model turn (1375.872958ms)
+✔ native Planner receives scoped read-only policy and delivers through the live child identity (1625.612875ms)
+✔ native question tool routes Operator input through main and resumes after the actual answer (1637.126125ms)
+✔ native approval coalesces duplicates and applies one decision: 仅允许这一次 (1340.869583ms)
+✔ native approval coalesces duplicates and applies one decision: 本次会话允许此前缀 (1771.513041ms)
+✔ cancelling an Operation closes a stalled native question and a late answer grants nothing (1270.031083ms)
+✔ workflow question cancellation settles without waiting for an unresponsive answerer (1202.492541ms)
+✔ native plan revision question is deduplicated and reject preserves the budget (1292.749125ms)
+✔ native plan revision question is deduplicated and dispose preserves the budget (1399.750625ms)
+✔ Runner 使用真实 Owner Team 连续执行、休眠后恢复，提交关卡仍验证并固定 SHA (18767.427709ms)
+✔ Runner 双 Owner 并行与 worktree 隔离：两个合法修改均验证提交 (3100.953917ms)
+✔ Runner 双 Owner 并行与 worktree 隔离：scope 越界拒绝并保留现场 (1798.021625ms)
+✔ T28 real public Owner structured submission persists and fresh Runtime replays without a model call (3475.546791ms)
+✔ T28 ordinary assistant text is a durable no-submit failure and is never parsed as a decision (2555.351333ms)
+✔ T28 wrong Owner structured submission cannot produce a public decision (2794.242917ms)
+✔ T28 K1 response becomes durable stale history when active execution changes during the model turn (2351.39125ms)
+✔ T28 a durable consultation reservation occupies capacity and queues another Owner (2246.393792ms)
+✔ T28 timeout settles the consultation and releases capacity for a later request (2527.004209ms)
+✔ T28 parent cancellation settles the durable consultation and releases its reservation (2368.209917ms)
+✔ T28 a public Owner business change reaches the main outbox as an explicit user decision (1513.564042ms)
+✔ T28 uncertain child creation is never retried from a missing durable binding (1441.86975ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 24000.025

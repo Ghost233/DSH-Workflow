@@ -1,0 +1,51 @@
+✔ Planner contract accepts an executable plan with no public Owner change (3.564416ms)
+✔ Planner required fields follow normalization defaults plus package compilation (0.186417ms)
+✔ Planner public Owner binding schema is the exact domain-owned shape (0.486791ms)
+✔ omission cannot bypass required or historical public Owner authority (0.216292ms)
+✖ Planner tool contract rejects the five invalid shapes observed in the live workflow (1.001584ms)
+✔ Planner receives frozen requirements without authorization receipts or write journals (0.277666ms)
+✔ Planner and Reviewer receive readable Owner feedback as a non-blocking fact (1.080417ms)
+✔ native Planner accepts a bound no-progress report before the formal transition records failure (1753.920167ms)
+✖ native Planner keeps one admitted frozen source across later live checkout changes and rejects binding tampering (2226.598833ms)
+✔ native Owner and candidate Reviewer receive only the same bound task package and direct consumer command contract (2789.572042ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 8
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7105.42575
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/kernel-plan-contract.test.mjs:110:1
+✖ Planner tool contract rejects the five invalid shapes observed in the live workflow (1.001584ms)
+  AssertionError [ERR_ASSERTION]: the admitted action binds Registry identity without model transcription
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/kernel-plan-contract.test.mjs:114:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/native-owner-planning-package.test.mjs:157:1
+✖ native Planner keeps one admitted frozen source across later live checkout changes and rejects binding tampering (2226.598833ms)
+  Error: plan.registryDigest 必须是非空字符串
+      at text (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:386:11)
+      at normalizePlanV2 (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/model.mjs:1196:26)
+      at NativePlanningEffects.validate (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/src/native-planning-effects.mjs:192:20)
+      at async TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/native-owner-planning-package.test.mjs:231:23)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)

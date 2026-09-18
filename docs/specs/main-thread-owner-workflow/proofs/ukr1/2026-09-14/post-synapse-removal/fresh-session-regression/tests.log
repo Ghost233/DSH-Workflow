@@ -1,0 +1,719 @@
+✔ native Bash escalation is allowed once only under the selected preset and matching fixed rules (687.844583ms)
+✔ unmatched commands and unassociated approval requests reach the native human fallback (111.202166ms)
+✔ native settings preserve user configuration, reject invalid prefixes and apply changed rules immediately (71.252833ms)
+✔ only actionable kernel entries contribute deduplicated wait counts while every result remains visible (41.7935ms)
+✔ 等待列表客户端产物与源码一致并登记正式、本地两个模块编号 (96.728208ms)
+✔ 运行状态和 Owner 输入限制只登记官方 Slot (4.56075ms)
+✔ 运行状态只通过可重连 SSE 接收更新，并按当前工作区和当前会话过滤 (3.3975ms)
+✔ 运行状态按需要处理、总览、主线程和子代理分类显示确定性状态 (1.874834ms)
+✔ 侧栏运行状态使用视口定位，避免被侧栏裁剪和遮住底部操作区 (1.536792ms)
+✔ 证据义务冻结后，相同语义问题不会因改写标题被当成新进展 (18.635209ms)
+✔ 没有新 Runtime 证据时，Reviewer 新增问题进入仲裁而不是扩大冻结集合 (15.869417ms)
+✔ 新 Runtime 证据允许吸收新义务，但不会关闭被遗漏的旧义务 (1.8895ms)
+✔ 交替会诊文本、时间、会话、HEAD 和候选摘要不能在 30 轮内重置策略 (6.413958ms)
+✔ 当前候选恢复的验证绑定只登记一次进展，不自动关闭且重复事实不续期 (1.7615ms)
+✔ 已解决义务的新文件和反复更换 obligationId 都不能回收策略租约 (3.266791ms)
+✔ 决定分类只接受结构化业务差异或外部权限，关键词只是诊断提示 (0.403292ms)
+✔ 未关闭的 user decision 不能被后续 Reviewer 遗漏或改写为 passed 而降权 (0.27625ms)
+✔ 新 decision_record 分类缺失或冲突被拒绝，旧显式 user authority 保守保留 (2.224875ms)
+✔ 失败分类选择不同的自治恢复策略而不是统一 await_user (3.429125ms)
+✔ Workflow 证据摘要只投影稳定的任务结果和 Runtime 文件哈希 (0.843167ms)
+✔ 稳定义务身份绑定来源、目标和解除条件，不能把同类同节点要求合并 (0.210625ms)
+✔ 展示文案不得参与义务目标或身份，同 ID 的不同合同必须在接收时拒绝 (0.301208ms)
+✔ 严格义务必须有 ID；已见事实不能用新 ID 重新引入已解决的合同 (1.27525ms)
+✔ 不同 obligationId 的同合同要求独立保留，关闭一项不会关闭另一项 (1.015791ms)
+✔ 已解决的旧义务重复出现时保持 resolved，不作为新义务重新报告 (0.226709ms)
+✔ 遗漏和 passed 都不能关闭义务；只有 Runtime 核验的当前版本解除证据才能关闭且重复幂等 (0.86075ms)
+✔ 任务验证关闭只接受 Runtime 标记为当前、通过且绑定候选版本的结果 (0.592375ms)
+✔ 旧义务缺少关闭合同时保持 open，并拒绝 Reviewer 自报的替代决定 (0.47725ms)
+✔ 显式 legacy 读取路径保留同一缺关闭合同的已解决义务，不重新引入 (0.386667ms)
+✔ 旧字符串与问题列表按原文保留不同路径的要求身份 (1.035167ms)
+✔ 结构可执行关闭只依赖 Runtime 记录的任务存在，不将其视为业务完成 (1.384625ms)
+✔ 版本化决定必须由 Runtime 当前记录完整绑定，且不同义务 ID 不会共享关闭结果 (3.231125ms)
+✔ decision_record 的 user authority 明确请求用户，同时保留旧问题文本回退 (0.36275ms)
+✔ canonical input ignores JSON order, non-lifecycle scripts and ordinary business source (205.9805ms)
+✔ an install lifecycle conservatively binds indirect file and shell inputs (116.203542ms)
+✔ implicit workspaces and recursive file dependencies bind their complete candidate content (97.32225ms)
+✔ local paths that escape the candidate fail closed instead of being clamped below root (29.616084ms)
+✔ manager fields, project config files and install environment are bound without retaining secrets (54.077875ms)
+✔ canonicalize recursively sorts JSON object keys without reordering arrays (0.162ms)
+✔ installation identity survives session aliases only after the actual command environment is stabilized (74.402334ms)
+✔ canonical input ignores JSON order, test/build scripts, business source, and action identity (9660.019667ms)
+✔ input binds manager version, config, lifecycle source, and local dependency source (14290.595792ms)
+✔ base uses base/node_modules so CJS and ESM consumers resolve their siblings (5981.808709ms)
+✔ explicit private COW records one full tree copy, and clone unsupported fails closed (8620.942458ms)
+✔ parallel overlays share a sealed base but private write locations remain isolated (5738.875ms)
+✔ sealed validation rejects a writable base root and fresh sealing rejects every unsafe base link (24483.737208ms)
+✔ installer-local workspace links are normalized into the sealed base (5367.082375ms)
+✔ internal npm hard-link groups are atomically detached before the base is sealed (5517.534875ms)
+✔ external hard-link references remain untouched while every base path becomes private (3580.868459ms)
+✔ an external Finder .DS_Store hard-link is detached before readonly sealing (3565.856ms)
+✔ readonly unreceipted bases and interrupted hard-link work recover without another install (10561.745709ms)
+✔ unconfirmed active installer fences a later action without restaging or dispatching (3930.094292ms)
+✔ settled failure preserves nested cwd download cache and publishes primary error metrics (3369.314625ms)
+✔ failure artifact ENOSPC keeps the primary npm error and active marker fenced (3101.331958ms)
+✔ a durable settled-failure terminal allows a different action to reclaim the installer (2676.60525ms)
+✔ durable receipt, promotion, and cache receipt interruptions recover without another install (9833.912542ms)
+✔ target replay validates its overlay receipt and does not rerun an already completed install (3970.267792ms)
+✔ missing or conflicting durable receipts never delete staged or promoted trees (6416.617875ms)
+✔ fresh sealing hashes the base once and every later instance trusts its sealed receipt (3215.292792ms)
+✔ install, promotion, hardlink normalization and seal have independent bounded signals and recover without reinstall (2288.629167ms)
+✔ cold installation owns its deadline after acquisition and still honors external cancellation (3820.522584ms)
+✔ a cold-cache follower gets a fresh preparation deadline after waiting for the installer (2058.000083ms)
+✔ cold install deadline quarantines partial dependencies and never publishes a reusable base (1406.723041ms)
+✔ seal timeout reports its own phase and recovers the installed readonly base without npm (1603.435792ms)
+✔ production manager resolver uses a cwd-bound managed command and no-lock projects return no bindings (1069.22475ms)
+✔ same canonical input recovers in one shared generation while unknown installer bytes remain untouched (2525.279417ms)
+✔ dependency generation selector cannot escape or traverse a directory alias (1259.71475ms)
+✔ isolation proof preserves unknown command truth and binds current sealed candidate (152.759167ms)
+✔ isolation refuses missing writer closure, omitted effects, changed candidate, or unsafe command binding (1372.209083ms)
+✔ retired writable directories cannot be reused via ancestor, descendant, or symlink; sibling is independent (166.287042ms)
+✔ new action cannot dispatch or prepare files inside an old isolated installer (257.540333ms)
+✔ retirement coexists with stop settlement while its OS lock is held (159.633208ms)
+✔ retirement rejects active verification while its OS lock is held (105.922417ms)
+✔ Dashboard and main thread read exactly the same workflow view without writing control or projections (70.093125ms)
+✔ read-only routes do not create missing state or hide corrupt state behind an empty result (24.520875ms)
+✔ opaque workspace selection, GET-only routes and SSE disposal preserve the same snapshot (63.904667ms)
+✔ native client retains a terminal failure as a historical item without claiming an active wait (114.844875ms)
+✔ complete production preset mounts native capabilities and delivers without manual kernel registration (11119.967667ms)
+✔ native plugin scopes and the bundled approval adapter share load health only within their host (611.359375ms)
+✔ implementation interpretation binds native user evidence, not a magic phrase or agent notification (329.219667ms)
+✔ native Web user provenance accepts RPC metadata but rejects other source shapes (3.321083ms)
+✔ native runtime executes scoped edit, async submission, real verification, integration and final verification (4596.628959ms)
+✔ two native Owners overlap, integrate disjoint candidates and unlock their real downstream verification (9836.891416ms)
+✔ local Planner patch preserves omitted definitions and rejects edits outside its admitted boundary (1.118625ms)
+✔ a local Planner may create a verification identity only through a real authorized task binding (0.490584ms)
+✔ an R11-sized rejected candidate can add one evidence leaf without rewriting its 18 tasks or 16 verifications (35.695875ms)
+✔ Planner contract accepts an executable plan with no public Owner change (3.373834ms)
+✔ Planner required fields follow normalization defaults plus package compilation (0.173458ms)
+✔ Planner public Owner binding schema is the exact domain-owned shape (0.20275ms)
+✔ omission cannot bypass required or historical public Owner authority (0.154833ms)
+✔ Planner tool contract rejects the five invalid shapes observed in the live workflow (0.872417ms)
+✔ Planner receives frozen requirements without authorization receipts or write journals (1.449084ms)
+✔ Planner and Reviewer receive readable Owner feedback as a non-blocking fact (3.304542ms)
+✔ workflow fixture wait does not let observation churn renew a stuck semantic state (1.423333ms)
+✔ workflow fixture wait renews only for semantic progress and retains an absolute cap (1.818333ms)
+✔ native planning feedback is persisted in the root tool result and never starts a workflow (2819.0255ms)
+✔ native revised Spec/Ticket checkpoint replaces the same task, retains the issue and delivers on its new baseline (16537.686ms)
+✔ native Reviewer corrects an invalid obligation id in the same session before any report is accepted (8845.596ms)
+✔ native positive Reviewer fixes its missing closure in the same action and activates without another recovery (13943.557208ms)
+✔ native main-thread documents, checkpoint, independent planning and execution reach the user checkout (8401.987ms)
+✔ two frozen independent Owner tasks reach actual combined and final Reviewer acceptance with their grouped packages (11991.774ms)
+✔ actual failed verification returns to the root and repairs its retained candidate within the same budget (11237.500542ms)
+✔ a no-progress first DAG returns to native Spec/Ticket R2 and delivers in the original workflow (12707.762875ms)
+✔ active Registry narrowing uses one native approval and replans the same Spec/Ticket workflow through delivery (12625.304583ms)
+✔ actual scoped preset tools reach Owner execution without inheriting root orchestration instructions (6521.753625ms)
+✔ Owner Team joins the actual parent preset generation before its task tools are configured (637.030875ms)
+✔ native macOS escaped descendant does not turn managed-range exit into source write closure (704.969542ms)
+✔ independent public Owner migration closes only after shared implementation, app migration and unchanged consumer verification deliver (9731.467666ms)
+✔ a new root can discover and explicitly cancel a same-project blocker without taking over its execution (736.341459ms)
+✔ Owner root guards use native tool scope and do not capture unrelated roots (35.239459ms)
+✔ native workflow_retry_action keeps a settled technical candidate retry bound and returns a lossless view (264.024625ms)
+✔ plan retry verifies its admitted planning identity instead of the obsolete active Registry (1.267666ms)
+✔ review_plan retry verifies its admitted planning identity instead of the obsolete active Registry (0.151208ms)
+✔ two native Owner preset scopes share one catalog executor and dispose independently (79.89825ms)
+✔ offline legacy reconciliation retains planning use and refuses missing or inconsistent accounting (4.578375ms)
+✔ legacy source binding selects the exact persisted checkpoint, never a later or reworded document (0.2965ms)
+✔ a legacy completed label alone cannot release a possible native writer as historical data (20.10325ms)
+✔ legacy reservation preserves exact source and budget, blocks duplicate work, and replays idempotently (154.552416ms)
+✔ Operation honors rules-only policy using the same action and real native sessions (853.713875ms)
+✔ Operation honors reviewer-allow policy using the same action and real native sessions (492.262833ms)
+✔ Operation honors reviewer-deny policy using the same action and real native sessions (631.653834ms)
+✔ native prefix permission is explicit and scoped to the host, main session, directory and literal argument boundary (2158.34775ms)
+✔ native root delivery is deduplicated using persisted messages, not followup return (423.009792ms)
+✔ native root receives the canonical workflow terminal status and revision (95.783708ms)
+✔ a root session closing during notification becomes a durable offline wait without hiding persistence failures (99.871625ms)
+✔ native fixed command proves managed-range exit and does not rerun a received command (149.409666ms)
+✔ new command identities cannot bypass an unresolved same-action intent, even with the same host ID (101.781042ms)
+✔ action admission serializes competing hosts while allowing owned live commands in parallel (94.755416ms)
+✔ native read-only sandbox rejects an actual source write (124.711792ms)
+✔ immutable dependency inputs reject writable roots before native dispatch (37.508834ms)
+✔ native verification reads external dependencies but cannot write or chmod them (125.973542ms)
+✔ old and wrong-scope command receipts are not reused or promoted to termination proof (134.174333ms)
+✔ native termination covers a helper that outlives the command leader (483.170625ms)
+✔ verification resumes after the native command receipt without rerunning or changing its directory (256.19525ms)
+✔ native non-Git Operation: allow reaches the main thread and retains source protection (895.04225ms)
+✔ native non-Git Operation: reject reaches the main thread and retains source protection (544.10225ms)
+✔ native non-Git Operation: cancel reaches the main thread and retains source protection (515.081834ms)
+✔ native owner_submit ends the actual turn after durable acceptance without waiting for verification (1190.468083ms)
+✔ Owner preparation interruption resumes the same worktree with one native dispatch (968.922458ms)
+✔ a fast native model waits for the persisted dispatch receipt before submitting (935.803625ms)
+✔ failed dispatch receipt cancels waiting native tools without accepting a candidate (502.907125ms)
+✔ a rejected owner_submit ends through the persisted stop path with its primary error (627.08525ms)
+✔ an Owner turn ending without tools settles through one persisted stop (640.54525ms)
+✔ a reviewer ending without a report promptly enters formal stop instead of remaining live until deadline (416.594375ms)
+✔ native Planner accepts a bound no-progress report before the formal transition records failure (3036.575584ms)
+✔ native Planner keeps one admitted frozen source across later live checkout changes and rejects binding tampering (4113.189083ms)
+✔ native Owner and candidate Reviewer receive only the same bound task package and direct consumer command contract (4204.65625ms)
+✔ public Owner independently reads the contract and consumer before compatible_extension (1609.754458ms)
+✔ public Owner independently reads the contract and consumer before migration_required (660.646667ms)
+✔ public Owner independently reads the contract and consumer before capability_sufficient (690.359667ms)
+✔ public Owner independently reads the contract and consumer before rejected (680.292708ms)
+✔ public Owner independently reads the contract and consumer before facts_missing (1452.530208ms)
+✔ public Owner independently reads the contract and consumer before business_decision_required (728.831834ms)
+✔ root public request survives a native contract source revision before independent decision and main notice (9429.427667ms)
+✔ project status discovers the complete existing Registry and reports a missing Registry without creating it (504.853208ms)
+✔ root tool descriptions direct a fresh thread to inspect Registry status before proposing a change (0.99325ms)
+✔ native Registry batch allow: one exact decision, no speculative ownership or Git identity changes (1695.8435ms)
+✔ native Registry batch reject: one exact decision, no speculative ownership or Git identity changes (635.754375ms)
+✔ native Registry batch cancel: one exact decision, no speculative ownership or Git identity changes (707.764375ms)
+✔ native Registry reconciles installed interruption from the original approval and preserves user index (2257.120292ms)
+✔ native Registry reconciles ref_updated interruption from the original approval and preserves user index (2035.870125ms)
+✔ 主线程提示要求正式 planning 文档封套，并只通过零参数 finalizer 建立检查点 (1.665375ms)
+✔ 主线程指引中的默认文档与 Ticket 搜索示例均属于真实允许写入范围 (19.16925ms)
+✔ 主线程可在启动 DAG 前创建和修改所有约定文档，原生观察策略继续执行 (1218.833041ms)
+✔ 冻结只读审核允许后继文档编辑，修改用户 checkout 的动作仍阻止并发写入 (285.226375ms)
+✔ 文档例外不放开代码、治理文件、状态和其他写入工具 (59.514167ms)
+✔ 解析路径二次校验阻止冒充 displayPath、目标漂移和链接换入 (45.713625ms)
+✔ 路径绑定到项目和会话，允许根目录别名，拒绝软硬链接和无效目标 (13.27325ms)
+✔ 真实 root 与会话根别名混用时只归一化项目根，保留内部链接拒绝 (19.453708ms)
+✔ dispatch and Owner repair retain the same immutable planning package binding (97.082541ms)
+✔ a legacy same-candidate verification retry derives and persists its current immutable package binding (13.2285ms)
+✔ 实际原生问询先持久原始授权，同根重复核验复用，不因后续规格修订扩大实施范围 (1000.809458ms)
+✔ 原生reject决定不会创建grant或提交代码 (762.992875ms)
+✔ 原生custom决定不会创建grant或提交代码 (730.838833ms)
+✔ 原生approve-with-custom决定不会创建grant或提交代码 (698.874375ms)
+✔ 原生cancel决定不会创建grant或提交代码 (696.241459ms)
+✔ 原生decline决定不会创建grant或提交代码 (666.293541ms)
+✔ 规划 checkpoint 拒绝保留主线程可读的修订决定，且不产生授权或提交 (798.008125ms)
+✔ Kernel finalize 将 checkpoint 修订决定作为普通结果返回主线程 (570.163959ms)
+✔ Kernel finalize 复用已有授权后不再解释历史引用 (3355.105792ms)
+✔ Kernel finalize 无已有授权仍拒绝无原生来源的引用 (1135.434458ms)
+✔ checkpoint 在 snapshot 发布前中断后只恢复同一事务并复用原始 grant (2675.925292ms)
+✔ checkpoint 重放返回同一冻结 source、grant 和 commit (2774.017042ms)
+✔ 原生用户实施请求只能经受信解释绑定到最新消息并作为 directProceed receipt (3227.720834ms)
+✔ 没有 directProceed receipt 时同一 checkpoint 必须经过原生问询 (2904.686083ms)
+✔ 规划包之外的脏文件在授权前拒绝且不改变 HEAD 或 index (962.073667ms)
+✔ 同一规划锁阻止第二 checkpoint 在获取授权前并发进入 (693.20525ms)
+✔ 授权后取消阻止 ref CAS，恢复时复用同一原始授权 (3712.255834ms)
+✔ binding diagnostics identify every missing and unknown task: partial-patch (11.531458ms)
+✔ binding diagnostics identify every missing and unknown task: extra-binding (0.879458ms)
+✔ binding diagnostics identify every missing and unknown task: wrong-binding (0.709792ms)
+✔ a retained dispatch keeps its original content-addressed source package and rejects provenance or contract drift (3.290041ms)
+✔ dispatch package compares complete verification definitions by identity without rewriting dispatch order (2.049875ms)
+✔ one-owner packages retain full frozen Ticket/Spec data, shared AC contributors and dependency blockers (1.141542ms)
+✔ compiler rejects unknown-fragment (0.240959ms)
+✔ compiler rejects blocked-fragment (0.750208ms)
+✔ compiler rejects unknown-contract (0.444417ms)
+✔ compiler rejects missing-known-contract (0.277167ms)
+✔ compiler rejects omitted-ready (0.176083ms)
+✔ compiler rejects missing-ticket-edge (0.148292ms)
+✔ compiler rejects task-cycle (0.107792ms)
+✔ compiler rejects wrong-snapshot (0.083291ms)
+✔ compiler rejects wrong-source (1.068958ms)
+✔ compiler rejects mixed-owner-package (2.112667ms)
+✔ bindings normalizer rejects duplicate task, Ticket fragment and contract identities without mutating optional absence (0.552291ms)
+✔ completed checkpoint reader returns frozen persisted snapshot without revalidating current planning files (2789.371292ms)
+✔ checkpoint snapshot reader rejects a nonterminal journal without resuming it (887.874291ms)
+✔ 首次原生创建尚未进入 HEAD 的 Spec/Ticket，缺失基线 blob 正确作为 null (776.177625ms)
+✔ 真实 Harness 原生 edit 链绑定 T05 引用和实际 Git baseline，并由只读 Runtime 入口返回 source-validated (941.498ms)
+✔ 缺失尾项、跨文件借用、incomplete terminal 与暂存用户变更均拒绝而不修复来源或 index (1661.066292ms)
+✔ 已提交的旧来源保留在 journal 时，新 baseline 上仅选择新的原生链仍可验证 (821.005583ms)
+✔ Kernel 规划入口不接受其他 agent 或 child 复用根线程来源 (732.659625ms)
+✔ 真实 Harness create → read → edit 使用原生 CAS，写入不可消费的完整 native provenance 链 (437.669166ms)
+✔ 真实 CAS stale 在 prepared 后无同调用 observed，明确保留 unknown 而不把 isError 伪造成失败 (130.911834ms)
+✔ native success followed by downstream observed failure remains native-observed but incomplete (107.596625ms)
+✔ 相同真实 callId 的重放不会覆盖 prepared/terminal 或再次修改文档 (96.318792ms)
+✔ native 成功后 terminal 发布失败保留 prepared-only 与真实字节，不回滚或伪造 terminal (75.919458ms)
+✔ BOM 使原始字节与 decoded text 不可逆时保留 native-observed 但拒绝 complete (101.71025ms)
+✔ 越界文档和状态目录链接在原生 mutation 前拒绝，且没有额外文档权限或 journal 记录 (67.409208ms)
+✔ package and daily composition share one Owner implementation and no independent runner bin (12.375792ms)
+✔ root public Owner schema exposes only nine observed facts and no hidden protocol objects (0.95675ms)
+✔ old feedback is rebound to the same task and Owner in the current frozen source (4.017166ms)
+✔ feedback seed keeps the real issue field while bounding and redacting its persisted text (2.041417ms)
+✔ missing producer contract returns source_revision_required without creating internal request facts (1.297125ms)
+✔ runtime materialization binds the explicit producer and derives every protocol version and digest (4.081375ms)
+✔ public Owner submits judgment only and Runtime supplies immutable decision bindings (0.766959ms)
+✔ T06 accepts and replays one complete versioned public Owner request (4.566208ms)
+✔ T06 rejects absent fields and unknown Owner, Ticket, AC, contract, or evidence references (3.027125ms)
+✔ T06 same ID and version conflict, while the next version must exactly supersede the prior digest (2.610583ms)
+✔ T06 capability-sufficient decision requires every known consumer fact and is the only immediately ready result (5.115916ms)
+✔ T06 compatible extension stays blocked until the public Owner implementation exists (1.422125ms)
+✔ T06 migration decision binds the complete impacted consumer set and exact order (0.724875ms)
+✔ T06 rejection, missing facts, and business change use distinct evidence-bearing outcomes (5.001667ms)
+✔ T06 a decision bound to an older execution, contract, or consumer context becomes stale (1.1795ms)
+✔ T06 conflicting decisions cannot overwrite an accepted decision for the same request (0.52ms)
+✔ T06 persisted request or decision tampering fails closed even when the attacker recomputes no digest (2.143167ms)
+✔ T30 normalizes a plan with an explicit authoritative public decision binding (24.244458ms)
+✔ T30 rejects incomplete consumers, wrong Owner, missing implementation predecessor, and stale authority (15.53325ms)
+✔ T30 migration order is an executable dependency chain rooted at the public implementation (5.457417ms)
+✔ compatible consumers may use real verification tasks but required migrations still require implementation (5.419708ms)
+✔ T30 carried historical bindings remain immutable without treating their original baseline as current (11.216875ms)
+✔ failed materialization waits for already-started copies before releasing cleanup authority (67.06525ms)
+✔ shared dependency preparation without a valid base binding never dispatches verification (975.507833ms)
+✔ seals actual uncommitted source once, verifies independently and resumes from receipts (581.08375ms)
+✔ fixed verification collects independent failures and never passes zero Node tests (556.200875ms)
+✔ late verification writers cannot replace the settled dependency failure and saved replay drains owned cleanup (427.242542ms)
+✔ a settled observation reclaims a saved successful receipt after a delayed .DS_Store without repeating command or review (1151.326833ms)
+✔ a settled cleanup gives persistent ENOTEMPTY only its fixed retry window (590.702083ms)
+✔ source symlink escape and changed immutable candidate are rejected (393.947375ms)
+✔ KAC-21: writes check scope and linked ancestors before the native mutation (199.080583ms)
+✔ delivery refuses a dirty checkout with a durable explicit failure and leaves every file intact (629.065167ms)
+✔ delivery reconciles actual fast-forward after host failure without replaying checkout mutation (773.667541ms)
+✔ a fresh delivery action succeeds after the fixture obstruction is resolved while retaining its failed receipt (928.666792ms)
+✔ business verification failure keeps task repair and shares one diagnostic with the terminal notice (37.385167ms)
+✔ reviewer-only rejection remains explainable but unbound or malformed findings are not projected (30.003792ms)
+✔ business diagnostics bound each finding and their aggregate in UTF-8 bytes (17.271ms)
+✔ dependency execution failure exposes the current retry target while redacting retained evidence (18.608458ms)
+✔ runtime status uses its current clock to expose the expired technical task recovery path (8.06525ms)
+✔ retry tool descriptions distinguish a live bound verification from an expired attempt (0.846ms)
+✔ final verification failure uses the same safe diagnostic instead of exposing raw results (21.083084ms)
+✔ local replanning rejects unrelated changes and preserves a completed independent task (171.710417ms)
+✔ revision boundary includes recursive consumers, source changes, and explicit verification changes (31.400166ms)
+✔ task execution identity ignores global verification definition order but binds each full definition (2.962458ms)
+✔ reviewed source and unrelated Owner scope revisions preserve a legacy task identity and its dispatch contract (196.95075ms)
+✔ a legacy in-flight attempt without exact persisted Owner action facts cannot be carried forward (7.922041ms)
+✔ a reviewer persists an obligation outside the revision boundary and returns it to the root without a repair loop (10.089458ms)
+✔ review command repair returns to root without automatic dispatch or charge (verification allowed: false) (21.993667ms)
+✔ review command repair returns to root without automatic dispatch or charge (verification allowed: true) (23.580166ms)
+✔ one native recovery authorization preserves exhausted history and allows exactly one root repair across reload (21.235833ms)
+✔ recovery approval cannot apply after another recovery changed its bound counter (6.403583ms)
+✔ recovery permission [] grants nothing (2.327625ms)
+✔ recovery permission ["保持暂停"] grants nothing (2.172083ms)
+✔ changed source activation waits for its Git baseline binding and preserves unrelated execution (16.891417ms)
+✔ a persisted legacy Owner feedback issue remains visible without deadlocking its source revision (18.025292ms)
+✔ plan activation does not notify for absent, closed or unproved Owner feedback (9.140584ms)
+✔ a feedback notice without its bound execute action remains an ordinary blocking obligation (2.741666ms)
+✔ composite children wait for parent inputs and carry real upstream integration evidence (47.033541ms)
+✔ a ready sibling behind a quarantined Owner is a visible technical failure, not endless running (4.176667ms)
+✔ equivalent local port spellings contend across projects while project resources remain independent (5.429959ms)
+✔ plan replacement fences affected attempts and preserves unrelated work until safe activation (16.759834ms)
+✔ source replacement supersedes a pending product question and rejects a late answer (7.154958ms)
+✔ known checkout obstruction ends delivery explicitly and preserves integrated candidate (36.269333ms)
+✔ KAC-02: unchanged drive is referentially stable and does not manufacture progress (45.169541ms)
+✔ KAC-03: same owner and host resource are serialized across workflows (8.93675ms)
+✔ KAC-06: submit acknowledges a durable candidate without claiming verification or delivery (3.619625ms)
+✔ KAC-10: a model turn ending without writer termination cannot start sealing (3.4085ms)
+✔ managed process settlement and obsolete writersStopped cannot replace Owner source closure (7.286416ms)
+✔ managed range termination alone cannot release a stopped Owner for redispatch (8.347833ms)
+✔ pre-split kernel control records are rejected without silently upgrading evidence (0.157583ms)
+✔ KAC-08/09: verification and integration bind content and expected base (16.811083ms)
+✔ KAC-01/11: deadline produces stop action, unknown termination stays quarantined and observable (9.041083ms)
+✔ KAC-11: later real termination releases quarantine without reviving failed task (5.362666ms)
+✔ KAC-12: notification completion requires correct root and persistent message identity (4.795125ms)
+✔ KAC-13: genuine user wait suspends active deadline; stale root cannot answer (5.352958ms)
+✔ KAC-15: open obligations prevent activation; same label does not replace closure evidence (6.458292ms)
+✔ KAC-24: direct operations share Owner/resource admission with DAG work (3.685583ms)
+✔ terminal Operation notice preserves the settled result needed by the root session (2.481375ms)
+✔ upstream semantic changes invalidate completed or pending consumer inputs (6.798125ms)
+✔ workflow capacity is local while catalog capacity remains global (75.988542ms)
+✔ duplicate operation enqueue is idempotent even while its resource is occupied (12.96875ms)
+✔ bound verification failure becomes a visible failure instead of a hanging action (11.732333ms)
+✔ a nonterminal verification notification carries the same safe summary instead of raw command results (11.776542ms)
+✔ a settled dependency preparation failure retries the same candidate verification without redispatching its Owner (22.006792ms)
+✔ an expired settled candidate verification routes to one task repair without consuming a doomed action retry (25.88375ms)
+✔ a successful fresh task attempt closes only the expired candidate action repair it superseded (129.59975ms)
+✔ a later plan can close a pre-upgrade action repair from its retained successful task-retry chain (46.930583ms)
+✔ a task retry cannot close its old candidate action repair after the verification definition changes (72.841208ms)
+✔ a candidate action retry admitted before the attempt deadline keeps that original deadline (41.234ms)
+✔ an execution-identity-unconfirmed attempt cannot be converted into an Owner repair (15.526541ms)
+✔ deferred root-session action attention remains lossless JSON (4.391791ms)
+✔ planning, independent review and activation are one persisted action chain (9.49375ms)
+✔ a rejected initial candidate remains the bounded authoring parent and is recoverable from settled history (27.925875ms)
+✔ an unactivated candidate enforces its revision boundary for full plan submissions (7.668625ms)
+✔ a full plan may add a verification only when every real binding is inside the authorized task boundary (9.5825ms)
+✔ a verification binding-only repair keeps argv stable while a completely unchanged repair is rejected (24.717583ms)
+✔ planning preflight rejects an invalid obligation id without mutating control state (2.53075ms)
+✔ planning preflight accepts a bound no-progress result without mutating state before formal failure (7.800125ms)
+✔ a valid planning preflight cannot authorize a stale later commit (5.303208ms)
+✔ planning preflight updates current obligation text for the same identity and rejects a different identity (22.41225ms)
+✔ execution obligations permit implementation, close only on integration and reopen when their task changes (25.7785ms)
+✔ a final passing test cannot hide an unclosed obligation or deliver the checkout (16.33375ms)
+✔ a real permission wait pauses an ordinary action deadline and cancellation expires its question (15.066333ms)
+✔ parallel cancellation emits one canonical terminal notice only after every stop settles (11.153708ms)
+✔ a late stop receipt corrects failed cancellation once and identifies the superseded notice (13.508125ms)
+✔ identical technical replan requests consume one persistent recovery slot (2.813375ms)
+✔ renaming and splitting a Ticket preserves its issue, budget and all descendant closure evidence (60.23275ms)
+✔ keeping a verification ID while replacing its command cannot close the original failure (21.778583ms)
+✔ a failed recoverable workflow still reserves its project until explicitly cancelled and settled (9.784334ms)
+✔ replanning cannot bypass the original execution issue limit (22.157458ms)
+✔ settled verify_workflow failure repairs the same input with inherited budget and retained evidence (14.377125ms)
+✔ settled deliver_workflow failure repairs the same input with inherited budget and retained evidence (9.719ms)
+✔ initial plan transport failure can recover without fabricating an active plan (7.766166ms)
+✔ initial review_plan transport failure can recover without fabricating an active plan (10.49725ms)
+✔ a stopped source preparation retries the exact pending reviewed proposal once (13.1075ms)
+✔ Registry changes cannot use failed-but-recoverable work as a settled project (10.50375ms)
+✔ review failure returns to root without automatically charging an exhausted execution issue (14.281583ms)
+✔ technical planner retries cannot bypass the original execution issue limit (14.803709ms)
+✔ an initial no-progress plan is a recoverable failure and receives the bound root diagnosis (6.910583ms)
+✔ first rejected planning sources can be revised before any plan exists without resetting the workflow (4.073875ms)
+✔ a failed prepared proposal can be retired only after termination and unchanged integration evidence (5.021792ms)
+✔ failed Registry governance reserves the project and retries the original proposal with its budget (8.217792ms)
+✔ active Registry change approval waits for actual stopped owners and supersedes their old questions (10.619666ms)
+✔ active Registry change rejection waits for actual stopped owners and supersedes their old questions (3.992833ms)
+✔ Registry pending checkpoint approval preserves failed planning and exact source lineage (11.600666ms)
+✔ Registry pending checkpoint rejection preserves failed planning and exact source lineage (9.588083ms)
+✔ one recovery window respects retired project authority without settling or releasing private quarantine (15.930208ms)
+✔ Registry approval proceeds after project authority retirement while retaining unknown execution (17.718541ms)
+✔ Registry rejection proceeds after project authority retirement while retaining unknown execution (19.248167ms)
+✔ isolated failed verification can repair the same task while old range and capacity remain quarantined (20.749792ms)
+✔ isolated retirement rejects stale, missing, or unsafe proofs without changing control state (67.875875ms)
+✔ retiring project locks does not free execution capacity or host resource locks (16.885666ms)
+✔ observer lease renewal cannot invalidate a source-isolation proof, but changed command inputs can (25.291334ms)
+✔ stop lane owns settlement while stopped actions cannot be scheduled or claimed again (14.61475ms)
+✔ revised Spec/Tickets merge with integrated Owner code and reconcile the same ref after interruption (1482.284ms)
+✔ actual Git integration preserves the user checkout and reconciles a crash after ref update (1562.717334ms)
+✔ catalog admits one executor and releases only after its owned work closes (28.071542ms)
+✔ actual executor death releases the OS fence without PID or age takeover (133.576375ms)
+✔ runner wakes after durable changes, completes once, then sleeps without a polling feedback loop (424.331208ms)
+✔ effect result validation failures become observable failure facts (157.887667ms)
+✔ another effects host cannot observe or replay an invocation while its OS action lock is held (223.438167ms)
+✔ a claimed but undispatched action can resume after a quiescent observation (225.273166ms)
+✔ cancelling a live persisted action reports one terminal cancellation after its stop receipt (336.991583ms)
+✔ a persisted governance stop owns an arbitrary adapter interruption before the local controller aborts (255.181125ms)
+✔ the same arbitrary adapter error without a persisted stop remains a technical failure (197.164917ms)
+✔ a failed Operation reaches the main notification adapter with its real findings and evidence (172.73325ms)
+✔ a stop adapter failure remains an observable exception and cannot confirm cancellation (137.580583ms)
+✔ host shutdown preserves uncertain work and does not report its own cancellation as an execution error (109.518708ms)
+✔ host shutdown preserves uncertain work and reports a distinct cleanup failure (134.561208ms)
+✔ retirement winning between due snapshot and claim does not fail the runner or invoke an adapter (88.834209ms)
+✔ retirement committed after a claim fences the adapter when its execution lock is acquired (52.806541ms)
+✔ a stop committed after claim prevents adapter reentry under the action lock (85.270125ms)
+✔ stopped work does not keep the runner on its expired observation clock (77.340917ms)
+✔ source writes and action admission share one lock and validate the final mutable baseline (170.701958ms)
+✔ store commits concurrent events against fresh state, without lost updates (339.541083ms)
+✔ readers retain a valid immutable snapshot when a writer replaces its opened inode (82.18925ms)
+✔ a failing subscriber cannot turn an already committed event into a failed mutation (89.528917ms)
+✔ KAC-23: failure before rename preserves state and releases lock (83.139417ms)
+✔ KAC-23: corrupt control state is never initialized as empty state (59.343542ms)
+✔ KAC-04/23: OS lock is released when writer crashes, without deleting lock inode (165.974792ms)
+✔ abort does not release the OS lock before the transaction callback exits (102.538792ms)
+✔ daily shell delegates once to the unified host, preserving caller cwd and settings (541.497125ms)
+✔ daily shell rejects arguments before launching a host (14.117917ms)
+✔ readiness follows the existing numeric port and never evaluates or replaces custom expressions (0.512916ms)
+✔ kernel composition preserves user policies and custom roots while replacing only project runtime rows (1.576ms)
+✔ actual Web composition loads all three project components and the root preset without rewriting its fixture profile (8224.662833ms)
+✔ daily shell uses the real CLI, discovers every project plugin and drains its own host with the profile intact (16443.806708ms)
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ real profile preparation replaces the legacy approval host and preserves custom permission and settings (7786.650709ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.1 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.1 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.1 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.1 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.1 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.1 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ ordered latest resolution, project-local install, patch publication and profile deduplication (404.806375ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+✔ failed second installation stops the sequence, releases lock and never publishes launch state (66.557167ms)
+[project-plugins] 1/11 显式更新 dshmarket
+✔ missing build artifact fails closed even when the package manager reports success (54.0005ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+✔ Git build approval failure stops before subsequent plugins without npm fallback (72.114792ms)
+✔ invalid Git revision rejects the package before installation (26.226ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+✔ installed Git package must still match the configured identity (72.282625ms)
+[project-plugins] 1/11 显式更新 dshmarket
+✔ missing legacy bundle needs an explicit adapter (48.698375ms)
+✔ required predecessor is validated before any installation (43.318958ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+✔ all installs finish before host compatibility check; missing peers block publication (115.430125ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ resolver supports Node ESM/CommonJS, browser package.json lookup, and one shared host peer instance (257.834875ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ run keeps original CLI args and inserts --patch before web app options (283.835125ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+[project-plugins] 1/11 显式更新 dshmarket
+✔ failed refresh invalidates previous launch; state stores facts only (169.086625ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+[project-plugins] 1/11 检查固定版本 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 检查固定版本 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 检查固定版本 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 检查固定版本 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 检查固定版本 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 检查固定版本 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 检查固定版本 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 检查固定版本 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 检查固定版本 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 检查固定版本 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 检查固定版本 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ ordinary startup reuses pinned versions without network resolution or reinstalling complete packages (212.510958ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ missing pins, changed manifest and wrong host version fail before package mutation (179.164209ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ a removed client module is rejected from pinned metadata before installing any external code (236.356083ms)
+[project-plugins] 1/11 显式更新 dshmarket
+[project-plugins] dshmarket@1.0.0 安装产物完整
+[project-plugins] 2/11 显式更新 dsh-better-sidebar
+[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整
+[project-plugins] 3/11 显式更新 dsh-context
+[project-plugins] dsh-context@1.0.0 安装产物完整
+[project-plugins] 4/11 显式更新 dsh-visualizer
+[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager
+[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整
+[project-plugins] 6/11 显式更新 dsh-cost-meter
+[project-plugins] dsh-cost-meter@1.0.0 安装产物完整
+[project-plugins] 7/11 显式更新 dsh-plugin-open-editor
+[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 8/11 显式更新 dsh-plugin-diff-review
+[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator
+[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 10/11 显式更新 dsh-easyrewrite
+[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整
+[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain
+[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+[project-plugins] 仅准备自研插件，第三方插件不安装、不检查兼容性。
+[project-plugins] 全部插件准备成功，可以启动 DSH。
+✔ owned scope preserves the external lock and excludes configured third-party profile entries without installation (161.653334ms)
+✔ test selection fails before any test runs when a file is absent, duplicated or a directory (166.002292ms)
+✔ occupied user port refuses launch without changing its response or existing logs (42.020958ms)
+✔ Web readiness rejects wrong-instance and drains only its own test child (730.394083ms)
+✔ Web readiness rejects missing-plugin and drains only its own test child (721.866458ms)
+✔ Web readiness rejects early-exit and drains only its own test child (66.001542ms)
+✔ instance-bound success uses distinct logs and preserves caller environment across two lifetimes (202.512333ms)
+✔ early host exit also stops its surviving process-group child (136.986792ms)
+✔ real Loader + native write/bash: apply, verify, preserve audit and dispose registrations (494.82175ms)
+✔ failed edit skips bash; failed bash preserves the successful mutation (138.857791ms)
+✔ native guard denial is enforced on the nested bash dispatch (123.111584ms)
+✔ version change between mutation and bash prevents verification (124.983542ms)
+✔ nested additional context and turn conclusion reach the outer result (134.784875ms)
+✔ EPR compresses native failed test output, preserves exit status/value and archives exact source (180.098375ms)
+✔ EPR auto uses model defaults and omits reasoning for models without that capability (199.743125ms)
+✔ EPR keeps explicit reasoning settings and falls back before dispatch when unsupported (222.930125ms)
+✔ EPR binds capability resolution, stream and audit to one adapter generation during replacement (162.950291ms)
+✔ EPR composes with fusion and does not replace the file mutation confirmation (146.080834ms)
+✔ invalid reducer output and provider errors retain the original content (173.11475ms)
+✔ secret logs and non-diagnostic commands never reach reducer (177.432542ms)
+✔ native read-before-edit policy also governs fused edits (138.327334ms)
+✔ EPR deadline falls back without changing the native bash result (157.143875ms)
+✔ pre-cancelled fusion never writes and command timeout retains the mutation (136.404375ms)
+✔ unloading EPR aborts in-flight reduction and removes its listener (186.016ms)
+(node:80469) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ Code Mode reaches fusion through native nested dispatch; ordinary bash skips reducer (239.99075ms)
+✔ default-off configuration removes both features through Loader reload (110.085458ms)
+✔ missing native bash fails before mutation (91.841042ms)
+✔ storage failure is fail-open and happens before any reducer request (127.625833ms)
+✔ existing post-execute content replacement is preserved without a reducer call (117.179333ms)
+✔ nested log projection changes only the durable preview (126.522291ms)
+✔ nested log projection failure retains the settled result (101.717833ms)
+✔ cancellation after a native write settles its log and skips bash without pretending the file was rolled back (124.569708ms)
+ℹ tests 434
+ℹ suites 0
+ℹ pass 434
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 150855.376

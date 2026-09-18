@@ -1,0 +1,702 @@
+{
+  "contract": "DSH_ACCEPTANCE_RUN_V1",
+  "candidate": {
+    "contract": "DSH_ACCEPTANCE_CANDIDATE_V1",
+    "candidateId": "CA01-DSH015-ced3970c5f00",
+    "workflowId": "main-thread-owner-workflow",
+    "planningSnapshotDigest": "e60a4aa42988c6016d9d535e620207adaa8f2622102d8183295d23443b6d7204",
+    "planDigest": "bbdb5c2a554015f38a0e7bea9d295d88b2a8735022a7ddf86d3322fe9eafc6d5",
+    "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+    "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+    "spec": {
+      "id": "MAIN-THREAD-SPEC-TICKET-OWNER-DAG",
+      "revision": "R4",
+      "digest": "27a605db08682da87fc91a466be43a57ea25f5c750495d94eb1aaf82498fe7da"
+    },
+    "tickets": [
+      {
+        "id": "T-01",
+        "revision": "R4",
+        "digest": "49ae4a0e9273542fe3985c9694c6f5cb2a4b57250350363ba84a26c1a1f1404b"
+      },
+      {
+        "id": "T-02",
+        "revision": "R4",
+        "digest": "393eba8683a9c4d785a080a7104e2efe54dd19d833e9ad25ddbc97b0a2dba034"
+      },
+      {
+        "id": "T-03",
+        "revision": "R4",
+        "digest": "103645ec8bd2407eec061330809caa5ccc03af5f4544be3f842bffd4b742188a"
+      },
+      {
+        "id": "T-04",
+        "revision": "R4",
+        "digest": "debb2d1e5aa048e7a918dc3da7e9b09384c2315f97400e806cff67178f9d314d"
+      },
+      {
+        "id": "T-05",
+        "revision": "R4",
+        "digest": "13262f8e7a666b19dd7e36a66c4a8bfb945065c7685da1e487d5bf8f0672c3b8"
+      },
+      {
+        "id": "T-06",
+        "revision": "R4",
+        "digest": "73e5c8afce4f881ec821f86407a479301fffd583c5af4d842c51132ed1472ef1"
+      },
+      {
+        "id": "T-07",
+        "revision": "R4",
+        "digest": "e37d403cfddc57de6cff8053772be3610771562b280f840f6bd3bede05e70846"
+      },
+      {
+        "id": "T-08",
+        "revision": "R4",
+        "digest": "6d7b984720e56b20713a4f6a31713271029b19c06f1261bf5a60e82cc4079414"
+      },
+      {
+        "id": "T-09",
+        "revision": "R4",
+        "digest": "a2ae7b162828c4a102faadff1972be4cfd3978704b8cefea4854a67ad74788d0"
+      },
+      {
+        "id": "T-10",
+        "revision": "R4",
+        "digest": "57bb0e37074e1196f5d04c6b79c1a30d1080a5685573231bad82a6554c8f78a9"
+      },
+      {
+        "id": "T-11",
+        "revision": "R4",
+        "digest": "1ad5fb8eb3d8898d9f3f8bc55bb4222532b237f73f6626bf77523cc3f7ac6db6"
+      },
+      {
+        "id": "T-12",
+        "revision": "R4",
+        "digest": "344951dbc90c3a6949e5614a19c342f43fe200ce0c1b75abb4f056b84fa531c1"
+      },
+      {
+        "id": "T-13",
+        "revision": "R4-V03-1",
+        "digest": "4c25515b53cb81336224b9a657d5717aa681bd74f21aab7fc6de77ace560dafb"
+      },
+      {
+        "id": "T-14",
+        "revision": "R4-V03-1",
+        "digest": "31fc7eb3f5ef5b01b1afd192f0c74f8a98f4024efdc94b18e1ecaf11ff859f47"
+      },
+      {
+        "id": "T-15",
+        "revision": "R4-V03-1",
+        "digest": "8a4c160b3c916f83de3393b106f6ab0eb269316d0a836d08a7a5447826fd7f33"
+      },
+      {
+        "id": "T-16",
+        "revision": "R4-V03-1",
+        "digest": "3c8039d2b4f8462c3b8908e3383bfaa4c738cb78d064a876a684b453ccf0bad6"
+      },
+      {
+        "id": "T-17",
+        "revision": "R4-V03-1",
+        "digest": "a5d2214580e3cd95f56d8dcaca21578e8c1677949319b783e505fafdc27bc537"
+      },
+      {
+        "id": "T-18",
+        "revision": "R4-V03-1",
+        "digest": "72c51213e7b44b5ea66f585b70e65023b3a537bbe23264653ef47d888df9c33a"
+      },
+      {
+        "id": "T-19",
+        "revision": "R4-V03-1",
+        "digest": "be5c54b8ec17cbffd370d74f4b20ea30fe9df732c38dafbc7756b421935ec182"
+      },
+      {
+        "id": "T-20",
+        "revision": "R4-V03-1",
+        "digest": "60e194a4a58d50e6e81c37e81e30f674c0b80c98f8b929a08cb70f408490b25b"
+      },
+      {
+        "id": "T-21",
+        "revision": "R4-V03-1",
+        "digest": "4ccf68b597df88069ff7413464aaf6e79e94197999071a491952eab3fe8b5605"
+      },
+      {
+        "id": "T-22",
+        "revision": "R4-V03-1",
+        "digest": "f3a9905f48ea82e014ef0e14247555e5989a6d31d0bfde7f715d74f51e5ad8b3"
+      },
+      {
+        "id": "T-23",
+        "revision": "R4-V03-1",
+        "digest": "e1328233141a0ab424d4c419dd55d1a40f027c69e81d9bcc14e90ea9503b60d5"
+      },
+      {
+        "id": "T-24",
+        "revision": "R4",
+        "digest": "95426dc8c4e3d618e481e23fd21b2a1da00873dbf8a9b47624e3c8e13e99c03c"
+      },
+      {
+        "id": "T-25",
+        "revision": "R4",
+        "digest": "04ff81c89e7a77a82f9b0ec678adb8893c1928cd5de4bb0fa890e93e78522ab0"
+      },
+      {
+        "id": "T-26",
+        "revision": "R4",
+        "digest": "d386f9aaf039be9373fa32799a4bec97898313d505018118414ae27ac5c94d8c"
+      },
+      {
+        "id": "T-27",
+        "revision": "R4",
+        "digest": "24e2291e064705712c2909b267ae1bff57ef144b2e48ef0d8cafd98e7c619535"
+      },
+      {
+        "id": "T-28",
+        "revision": "R4",
+        "digest": "0e8cbcb0daad38eac1e476568aefc9375a6ef367b155c0d6917b326f508e05b7"
+      },
+      {
+        "id": "T-29",
+        "revision": "R4",
+        "digest": "1cdc2d31d3b63188e8b41981e0d1f37f7f029e824fcd8a25c0d916e07aecb3a0"
+      },
+      {
+        "id": "T-30",
+        "revision": "R4",
+        "digest": "96f311000e101040b7251253f216d9993b9ddd78a81d84d744582dda616880ae"
+      },
+      {
+        "id": "T-31",
+        "revision": "R4",
+        "digest": "9588554cf26fa9fceea4ab0d63ca564cee8fb07f6673fa02767c1d4109828265"
+      }
+    ]
+  },
+  "status": "passed",
+  "counts": {
+    "passed": 11,
+    "failed": 0,
+    "timed_out": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "blocked": 0,
+    "zero_tests": 0,
+    "not_run": 0,
+    "evidence_incomplete": 0,
+    "stale_candidate": 0
+  },
+  "results": [
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "planning-foundation",
+      "title": "Spec/Ticket来源、文档权限、checkpoint与Owner执行包",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/orchestrator-documents-native.test.mjs",
+        "owner-workflow-plugin/test/orchestrator-documents.test.mjs",
+        "owner-workflow-plugin/test/planning-authority-native.test.mjs",
+        "owner-workflow-plugin/test/planning-checkpoint-native.test.mjs",
+        "owner-workflow-plugin/test/planning-harness.test.mjs",
+        "owner-workflow-plugin/test/planning-packages.test.mjs",
+        "owner-workflow-plugin/test/planning-references.test.mjs",
+        "owner-workflow-plugin/test/planning-source-chain-native.test.mjs",
+        "owner-workflow-plugin/test/planning-write-journal-native.test.mjs",
+        "owner-workflow-plugin/test/project-layout.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ 真实 Harness write/read/edit 链保存文档，并保留观察和冲突保护 (173.271542ms)\n▶ 真实 Git 预检后，Harness 接受根别名、真实路径和相对路径的同一文档\n  ✔ 会话位于项目根 (528.699542ms)\n  ✔ 会话位于 docs 子目录 (575.835292ms)\n✔ 真实 Git 预检后，Harness 接受根别名、真实路径和相对路径的同一文档 (1105.56ms)\n✔ 主线程可在启动 DAG 前创建和修改所有约定文档，原生观察策略继续执行 (24.138958ms)\n✔ 文档例外不放开代码、治理文件、状态、升级参数和其他写入工具 (8.095834ms)\n✔ 解析路径二次校验阻止冒充 displayPath、目标漂移和链接换入 (3.822167ms)\n✔ 路径绑定到项目和会话，允许根目录别名，拒绝软硬链接和无效目标 (5.878292ms)\n✔ 只读子代理不继承文档例外，Owner 和停用模式沿用原策略 (5.536208ms)\n✔ 真实 root 与会话根别名混用时只归一化项目根，保留内部链接拒绝 (7.96825ms)\n✔ 实际原生问询先持久原始授权，同根重复核验复用，不因后续规格修订扩大实施范围 (780.114917ms)\n✔ 原生reject决定不会创建grant或提交代码 (468.035209ms)\n✔ 原生custom决定不会创建grant或提交代码 (492.876458ms)\n✔ 实际 Runtime 阻止 index 已同步但快照未发布时启动 DAG，原事务恢复后解除 (3164.715792ms)\n✔ 实际 Runtime 根入口完成原生授权、Git checkpoint 与固定快照，重复调用复用同一授权和提交 (3704.706208ms)\n✔ 实际 Runtime 原生拒绝不会推进 HEAD/index 或建立待恢复事务 (1109.257375ms)\n✔ 实际规划租约阻止同时进入第二 checkpoint 和旧 Workflow 启动 (504.44325ms)\n✔ 真实授权之后取消会阻止后续 ref CAS，释放租约并以原授权恢复 (2580.990708ms)\n✔ 真实 native T24 来源以 alternate index 建立仅含选中文档的 checkpoint 与不可变快照，replay 不重复提交 (1674.507459ms)\n✔ 暂存或无关工作区改动拒绝且不改动真实 HEAD/index/用户文件 (323.635917ms)\n✔ 真实子进程 SIGKILL after-journal-prepared 后复启只形成一个 checkpoint 与不可变 snapshot (1471.471333ms)\n✔ 真实子进程 SIGKILL after-commit-object 后复启只形成一个 checkpoint 与不可变 snapshot (1485.438375ms)\n✔ 真实子进程 SIGKILL after-ref-update-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot (1504.4315ms)\n✔ 真实子进程 SIGKILL after-ref-cas 后复启只形成一个 checkpoint 与不可变 snapshot (1369.860417ms)\n✔ 真实子进程 SIGKILL after-index-rename-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot (1447.744667ms)\n✔ 真实子进程 SIGKILL after-index-sync 后复启只形成一个 checkpoint 与不可变 snapshot (1344.375625ms)\n✔ 真实子进程 SIGKILL after-snapshot-write-before-journal 后复启只形成一个 checkpoint 与不可变 snapshot (1482.381792ms)\n✔ 真实子进程 SIGKILL after-snapshot 后复启只形成一个 checkpoint 与不可变 snapshot (1290.542375ms)\n✔ checkpoint lease 在物理断言前后均拒绝已取消 signal，且不创建 journal 或变更 Git (1433.119208ms)\n✔ 已完成 parent snapshot 以完整持久 journal/snapshot 身份绑定子 checkpoint (1993.679792ms)\n✔ 未知 parent snapshot 在创建 journal 或 Git 变更前拒绝 (283.987375ms)\n✔ 原 checkpoint 尚待恢复时，新 id 不能绕过同一项目的 pending journal (1561.131291ms)\n✔ Git clean filter 改写选中文档 blob 时拒绝，不把原始来源哈希写成 checkpoint (953.234083ms)\n✔ commit object 已持久但 ref 前外部修改选中文档时，恢复拒绝并保留外部字节 (819.0065ms)\n✔ 已完成 checkpoint 的 immutable snapshot 被外部修改时，重放和 pending 检查均拒绝 (1283.343375ms)\n✔ 未知实际 Git index.lock 保留并拒绝，不将其视为可恢复 checkpoint 锁 (1029.507833ms)\n(node:51026) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ native Planner and Reviewer complete a revision with a live Planner (1656.267041ms)\n✔ native Planner and Reviewer complete a revision with cold resume (1399.000792ms)\n✔ one-owner packages retain full frozen Ticket/Spec data, shared AC contributors and dependency blockers (9.665333ms)\n✔ compiler rejects unknown-fragment (0.302583ms)\n✔ compiler rejects blocked-fragment (0.16625ms)\n✔ compiler rejects unknown-contract (0.1635ms)\n✔ compiler rejects missing-known-contract (0.176542ms)\n✔ compiler rejects omitted-ready (0.34375ms)\n✔ compiler rejects missing-ticket-edge (0.784333ms)\n✔ compiler rejects task-cycle (0.3805ms)\n✔ compiler rejects wrong-snapshot (0.259292ms)\n✔ compiler rejects wrong-source (0.297167ms)\n✔ compiler rejects mixed-owner-package (0.921ms)\n✔ bindings normalizer rejects duplicate task, Ticket fragment and contract identities without mutating optional absence (0.180458ms)\n✔ completed checkpoint reader returns frozen persisted snapshot without revalidating current planning files (1466.710792ms)\n✔ checkpoint snapshot reader rejects a nonterminal journal without resuming it (431.53425ms)\n✔ real selected documents retain complete cross-ticket AC references, multiple segments and fixed content (12.11375ms)\n✔ mixed readiness preserves explicit blockers and blocks dependent tickets while unrelated work remains ready (5.603416ms)\n✔ rejects missing-file without modifying planning files (4.346334ms)\n✔ rejects changed-content without modifying planning files (4.361875ms)\n✔ rejects wrong-digest without modifying planning files (4.987208ms)\n✔ rejects duplicate-ticket without modifying planning files (3.577125ms)\n✔ rejects duplicate-path without modifying planning files (4.847375ms)\n✔ rejects missing-revision without modifying planning files (2.727333ms)\n✔ rejects wrong-identity without modifying planning files (3.348333ms)\n✔ rejects wrong-source without modifying planning files (3.874417ms)\n✔ rejects unknown-ac without modifying planning files (2.94425ms)\n✔ rejects wrong-ac-version without modifying planning files (3.865041ms)\n✔ rejects unknown-contract without modifying planning files (3.195375ms)\n✔ rejects wrong-contract-version without modifying planning files (2.952708ms)\n✔ rejects missing-dependency without modifying planning files (2.787959ms)\n✔ rejects cyclic-dependency without modifying planning files (3.186583ms)\n✔ rejects duplicate-segment without modifying planning files (3.699417ms)\n✔ rejects empty-work without modifying planning files (3.032166ms)\n✔ rejects all-blocked without modifying planning files (5.618709ms)\n✔ rejects empty-tickets without modifying planning files (2.731542ms)\n✔ rejects declaration-forgery without modifying planning files (3.0925ms)\n✔ rejects disallowed planning path docs/analysis/spec.md (2.475459ms)\n✔ rejects disallowed planning path docs/superpowers/specs/spec.md (3.100208ms)\n✔ rejects disallowed planning path ../escape.md (2.263583ms)\n✔ rejects disallowed planning path AGENTS.md (2.584959ms)\n✔ linked document source cannot cross the existing document boundary (4.419208ms)\n✔ unready contract blocks its consumers while independent work remains available (3.737833ms)\n✔ a ticket retains its independent ready segment alongside a declared blocked segment (4.707ms)\n✔ invalid UTF-8 cannot produce content that differs from its bound byte digest (3.865125ms)\n✔ a UTF-8 BOM cannot be silently removed from the bound source content (3.920583ms)\n✔ 首次原生创建尚未进入 HEAD 的 Spec/Ticket，缺失基线 blob 正确作为 null (416.472084ms)\n✔ 真实 Harness 原生 edit 链绑定 T05 引用和实际 Git baseline，并由只读 Runtime 入口返回 source-validated (499.571166ms)\n✔ 缺失尾项、跨文件借用、incomplete terminal 与暂存用户变更均拒绝而不修复来源或 index (445.463333ms)\n✔ 已提交的旧来源保留在 journal 时，新 baseline 上仅选择新的原生链仍可验证 (453.848042ms)\n✔ 真实 Runtime 入口不接受其他主 agent 复用来源，也不接受有父会话的 child (366.603625ms)\n✔ 真实 Harness create → read → edit 使用原生 CAS，写入不可消费的完整 native provenance 链 (210.5205ms)\n✔ 真实 CAS stale 在 prepared 后无同调用 observed，明确保留 unknown 而不把 isError 伪造成失败 (75.187708ms)\n✔ native success followed by downstream observed failure remains native-observed but incomplete (83.766041ms)\n✔ 相同真实 callId 的重放不会覆盖 prepared/terminal 或再次修改文档 (65.979542ms)\n✔ native 成功后 terminal 发布失败保留 prepared-only 与真实字节，不回滚或伪造 terminal (45.5605ms)\n✔ BOM 使原始字节与 decoded text 不可逆时保留 native-observed 但拒绝 complete (55.465333ms)\n✔ 越界文档和状态目录链接在原生 mutation 前拒绝，且没有额外文档权限或 journal 记录 (28.699292ms)\n✔ 项目存储目录把配置和长期资料归入各自 Owner 文件夹 (0.97925ms)\n✔ Runtime 初始化创建目录内 .gitignore 并只暴露该文件给 Git (104.098167ms)\n✔ Runtime 初始化不覆盖项目已有的自定义 .gitignore (2.367292ms)\n✔ 旧 autoAddGitExclude=false 配置继续关闭自动 .gitignore (34.728125ms)\nℹ tests 98\nℹ suites 0\nℹ pass 98\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 46454.52375\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 98,
+        "pass": 98,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "public-owner-protocol",
+      "title": "公共Owner请求、会话决定与消费者影响协议",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/public-owner-change.test.mjs",
+        "owner-workflow-plugin/test/public-owner-decision-session.test.mjs",
+        "owner-workflow-plugin/test/public-owner-plan.test.mjs",
+        "owner-workflow-plugin/test/public-owner-session-proof.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ T06 accepts and replays one complete versioned public Owner request (4.020208ms)\n✔ T06 rejects absent fields and unknown Owner, Ticket, AC, contract, or evidence references (1.4135ms)\n✔ T06 same ID and version conflict, while the next version must exactly supersede the prior digest (1.734208ms)\n✔ T06 capability-sufficient decision requires every known consumer fact and is the only immediately ready result (2.288583ms)\n✔ T06 compatible extension stays blocked until the public Owner implementation exists (0.894625ms)\n✔ T06 migration decision binds the complete impacted consumer set and exact order (0.8ms)\n✔ T06 rejection, missing facts, and business change use distinct evidence-bearing outcomes (1.464667ms)\n✔ T06 a decision bound to an older execution, contract, or consumer context becomes stale (0.956167ms)\n✔ T06 conflicting decisions cannot overwrite an accepted decision for the same request (0.561833ms)\n✔ T06 persisted request or decision tampering fails closed even when the attacker recomputes no digest (0.60075ms)\n✔ T28 real public Owner structured submission persists and fresh Runtime replays without a model call (1322.175583ms)\n✔ T28 ordinary assistant text is a durable no-submit failure and is never parsed as a decision (990.715584ms)\n✔ T28 wrong Owner structured submission cannot produce a public decision (818.072875ms)\n✔ T28 K1 response becomes durable stale history when active execution changes during the model turn (890.534209ms)\n✔ T28 a durable consultation reservation occupies capacity and queues another Owner (986.916208ms)\n✔ T28 timeout settles the consultation and releases capacity for a later request (1117.794708ms)\n✔ T28 parent cancellation settles the durable consultation and releases its reservation (862.813875ms)\n✔ T28 a public Owner business change reaches the main outbox as an explicit user decision (1074.670084ms)\n✔ T28 uncertain child creation is never retried from a missing durable binding (1032.603792ms)\n✔ T30 normalizes a PlanRevision with an explicit authoritative public decision binding (13.588625ms)\n✔ T30 rejects incomplete consumers, wrong Owner, missing implementation predecessor, and stale authority (8.551292ms)\n✔ T30 migration order is an executable dependency chain rooted at the public implementation (3.089208ms)\n✔ T30 carried historical bindings remain immutable without treating their original baseline as current (4.531875ms)\n✔ T08 real Harness read-only S session returns a T06-compatible decision to the main adapter (932.628333ms)\n✔ T08 public Owner cannot write its module before returning the fixed decision (746.141042ms)\n✔ T08 a wrong public Owner identity cannot become a decision even after a real model turn (728.364417ms)\n✔ T08 K1 changing while S is deciding makes its real late K1 response stale (831.368625ms)\n✔ T08 timeout and parent cancellation both terminate the read-only judgment without a decision (2517.631917ms)\n✔ T08 current generic consultation seam has no Runner capacity reservation (701.168916ms)\nℹ tests 29\nℹ suites 0\nℹ pass 29\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 16104.455667\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 29,
+        "pass": 29,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "scheduler-resource-lifecycle",
+      "title": "容量、Owner、资源、截止、Runner与Harness准入",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/agent-policy.test.mjs",
+        "owner-workflow-plugin/test/harness-integration.test.mjs",
+        "owner-workflow-plugin/test/launcher.test.mjs",
+        "owner-workflow-plugin/test/owner-attempt-control.test.mjs",
+        "owner-workflow-plugin/test/owner-boundary.test.mjs",
+        "owner-workflow-plugin/test/owner-hard-deadline.test.mjs",
+        "owner-workflow-plugin/test/owner-host-command.test.mjs",
+        "owner-workflow-plugin/test/owner-team-runner.test.mjs",
+        "owner-workflow-plugin/test/owner-team.test.mjs",
+        "owner-workflow-plugin/test/runner.test.mjs",
+        "owner-workflow-plugin/test/supervisor.test.mjs",
+        "owner-workflow-plugin/test/unified-owner-resource-admission.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ 新版角色配置只使用显式 Agent；缺失 Session API 必须拒绝 (0.73575ms)\n✔ 子代理继承完整工具集，角色只决定文件沙箱模式 (0.382625ms)\n✔ Planner 与 Reviewer 隐藏无效升级字段，并对同一失败搜索执行有界熔断 (0.274333ms)\n✔ Operator 的重复搜索同样使用成功缓存和两次失败熔断 (0.188041ms)\n✔ 主代理禁止直接开发，Owner 和 Operator 不使用工具白名单 (0.421542ms)\n✔ delegated roles route human questions to main without changing the main question tool (0.113209ms)\n✔ official Web composition serves the shell and Owner dashboard over the real HTTP host (5289.958458ms)\n✔ real browser settles Owner interactions and hot-toggles SoL through native settings (6094.030708ms)\nℹ Browser: 152.0.7977.83\n✔ Synapse canvas reads a consistent projection while a workspace is pruned (1821.734417ms)\n✔ Synapse browser sends, streams, creates and forks through native session services (3224.697167ms)\n✔ approval adapter uses native Web settings, preserves conflicts and settles real Bash approval (3368.302458ms)\nℹ Approval browser: 152.0.7977.83\n✔ 真实加载器可以从 Harness 用户根目录发现所有者工作流预设 (13.7295ms)\n✔ Owner 工作流的运行时 Skill 能被当前 Agent 正确加载 (50.000667ms)\n✔ 插件只在所有者工作流预设中挂载，已安装 bundle 与本地 patch 不会重复注册 (75.368333ms)\n✔ 规划器、审查器和记忆子代理继承完整工具，文件写入由 read-only 沙箱限制 (167.533708ms)\n✔ Owner 子线程在真实 Harness 继承作用域中保留正常开发工具和提交关卡 (80.435958ms)\n✔ 主代理选择所有者工作流预设后无需调用 mode_enable 也会被工具守卫限制 (61.529041ms)\n✔ 专用状态与预检工具通过真实 Harness 输出无损 JSON (663.215542ms)\n✔ 标准预设保持原有工具且不受所有者插件影响 (39.433167ms)\n✔ 项目插件全部准备成功后才启动，失败时不启动 Runner 或创建 preset (1579.779917ms)\n✔ Owner preset 把动态业务工作区登记到全局 Runner catalog (1.746292ms)\n✔ 只有显式更新参数会更新外部插件，参数不会传给 DSH (787.632792ms)\n✔ 本地启动强制刷新过期 preset，忽略缺失的 profile bin 并注入当前源码 (798.222083ms)\n✔ npm 启动脚本把显式版本固定为 @deepseek-ai/dsh 包规格 (1264.5145ms)\n✔ 子模块启动脚本直接从子模块执行构建后的 CLI (1149.15475ms)\n✔ 子模块启动脚本把 plugin 命令原样交给子模块 CLI 且不启动 Web (429.964ms)\n✔ 启动脚本让 Runner daemon 随 Harness 启动并在 Harness 退出后停止 (1774.571ms)\n✔ 不同工作区启动复用 Harness home 中同一个持久 Runner Leader (2559.3135ms)\n✔ 本地 Web 启动经项目适配层加载固定 Synapse，退出清理临时链接 (853.091416ms)\n✔ T17 fixed deadline only decreases and heartbeats cannot extend it (1.719583ms)\n✔ T17 wall-clock rollback fails closed without replenishing remaining time (0.109834ms)\n✔ T17 stop request, cancellation failure, unknown termination and terminal settlement are finite and idempotent (0.1695ms)\n✔ T17 late results must match attempt, session, token and settlement generation (0.10375ms)\n✔ T17 a fresh Runtime settles stopping from a persistent terminal event (0.958208ms)\n✔ T17 Runtime rejects invalid hard-deadline configuration (0.374417ms)\n✔ Harness、Synapse 与审批策略上游子模块始终属于受保护路径 (0.551208ms)\n✔ Owner 可以自由修改 worktree，但提交关卡拒绝 scope 外和受保护路径 (338.023334ms)\n✔ 提交关卡忽略构建产物，自动提交 scope 内真实 diff 并再次校验 (695.085625ms)\n✔ 提交关卡检查全部提交历史，不能用后续删除隐藏中间越界提交 (429.280209ms)\n✔ review 或 verify task 不能借用 Owner scope 提交业务改动 (532.406125ms)\n✔ T17 normal deadline-clock observation acknowledges the new durable revision without stale actionId (1254.103375ms)\n✔ T19 frozen Workflow policy uses the approved task timeout despite later Runtime settings (907.217417ms)\n✔ T19 missing or unknown required policy state refuses Owner startup without model calls (439.634584ms)\n✔ T17 real hard deadline persists stopping before cancellation and settles only after JSONL terminal (917.712334ms)\n✔ T17 a deadline-ended recovery attempt settles the existing T13 debit once (1028.447542ms)\n✔ T17 an independent Owner starts while the expired Owner is still stopping (3452.4625ms)\n✔ T17 cancellation adapter failure pauses, while later persistent terminal proof safely settles it (1520.240792ms)\n✔ T17 missing terminal reaches a bounded termination-unknown pause (796.772625ms)\n✔ T17 unavailable cancellation target enters a finite technical pause and blocks same Owner re-entry (740.262208ms)\n✔ Owner 宿主命令把授权留在当前任务现场，并只执行获批的精确命令 (10.617125ms)\n✔ Owner 宿主命令接受结构化 argv，参数中的连接符不被误判为复合命令 (4.94475ms)\n✔ 拒绝、取消或不可用授权都不会执行 Owner 宿主命令 (20.248583ms)\n✔ Owner 宿主命令拒绝 worktree 外工作目录和授权后的失效绑定 (15.574333ms)\n✔ Owner 宿主命令在请求授权前拒绝目录探测和复合命令 (3.139833ms)\n✔ Owner 宿主命令的授权和执行都会在 timeout_ms 后结算 (109.508292ms)\n✔ Owner 任务没有开放回合时，宿主命令给出可恢复错误且不执行 (3.026125ms)\n✔ Runner 使用真实 Owner Team 连续执行、休眠后恢复，提交关卡仍验证并固定 SHA (8158.835708ms)\n✔ Runner 双 Owner 并行与 worktree 隔离：两个合法修改均验证提交 (1914.523625ms)\n✔ Runner 双 Owner 并行与 worktree 隔离：scope 越界拒绝并保留现场 (1258.374625ms)\n✔ 真实 DSH：稳定 Owner 续接与恢复，派发证据只属于当前任务 (237.221709ms)\n✔ 真实 DSH：两个 Owner 并行、同 Owner 串行，取消收敛前保持占用 (68.9485ms)\n✔ 真实 DSH：接收回执失败保留已接收事实，停止执行并拒绝重投 (51.748709ms)\n✔ 受管理会话读取失败时仍关闭 read handle (0.23275ms)\n✔ Owner Team 释放失败仍清理 Runtime 其他状态，并保留原始错误 (0.609167ms)\n✔ runner 对恢复错误使用固定分类，不把模型或控制桥错误混为同一种超时 (1.073958ms)\n✔ runner daemon 参数只启用确定性工作区扫描且不要求 workflow-id (0.286208ms)\n✔ runner daemon 发现可执行 Workflow 与需要恢复的卡住计划审查 (14.481709ms)\n✔ runner daemon 并发唤醒多个卡住的规划且停止时持久化 attempt (94.033792ms)\n✔ runner 不读取本地 workflow 状态，只执行 Supervisor 指定动作并逐个按 actionId ACK (59.831625ms)\n✔ runner 只把 supervisor-inspect 的有限宿主观察回传给对应 ACK (61.637958ms)\n✔ runner 让 Runtime 真正投递 notify 后才停止本次运行 (61.0875ms)\n✔ runner 对未知 Supervisor 动作关闭处理且不发送派生请求 (56.357959ms)\n✔ runner delivers the durable technical report before exiting a technical stop (55.042583ms)\n✔ runner targets the technical notification even when an older pending report exists (54.527292ms)\n✔ 仅派发依赖完成的任务，Review 未完成时阻塞下游 (14.446959ms)\n✔ 不同 Owner 的任务仍可占用不同并行槽位 (6.043667ms)\n✔ 相同执行资源只派发一个 Owner，并继续选择无冲突任务填充槽位 (3.610375ms)\n✔ 运行任务和外部reservation都阻止相同资源的新任务 (3.787708ms)\n✔ 恢复状态中两个运行任务占用相同资源时关闭处理 (2.427416ms)\n✔ 公共Owner判断reservation占用Supervisor槽位并阻止同Owner写任务 (3.963625ms)\n✔ Supervisor wait 确认保留 Owner 提交关卡写入的验证证据 (1.254792ms)\n✔ Supervisor ACK 保留自治恢复策略和证据租约 (1.989792ms)\n✔ 同一 Owner 的 ready task 每批最多派发一个，其余保持 pending (8.189208ms)\n✔ 就绪任务按计划 priority 降序选择，同时继续遵守 Owner 排他 (2.884416ms)\n✔ 已有同 Owner running/reserved task 时不再派发该 Owner (2.549833ms)\n✔ 连续十次 cursor 未变化时派发 inspect，且不会猜测任务完成 (0.924583ms)\n✔ 所有任务终态时停止；停止任务留下的决策阻塞会通知主会话 (1.4855ms)\n✔ 动作枚举固定、actionId 不透明且确认必须匹配当前动作 (1.562084ms)\n✔ wait 确认依据 cursor 投影进展，并重置或累加无进展轮数 (2.5605ms)\n✔ actionId 绑定计划身份、工作流 revision 与完整任务投影 (4.702875ms)\n✔ 旧 action ACK 在状态变化或已经确认后被拒绝 (3.108334ms)\n✔ create ACK 只接受 running 状态及其闭合任务字段 (3.121125ms)\n✔ wait、notify 与 stop ACK 拒绝不适用的观测字段 (4.814334ms)\n✔ 恢复状态的 active 任务数超过并行上限时关闭处理 (1.117583ms)\n✔ 恢复状态包含非法任务状态时关闭处理 (0.765ms)\n✔ actionSequence 与 unchangedPolls 拒绝非安全整数，并在序列上限关闭处理 (1.700958ms)\n✔ Supervisor ready 投影只派发 Composite entry/内部节点，exit 完成后才放行父后继 (24.054959ms)\n✔ 递归 Composite 叶子必须等待所有祖先的外部依赖 (10.097667ms)\n✔ Supervisor 拒绝执行 abstract DAG，但进度投影保留拆分信息 (0.934084ms)\n✔ Revision 切换阻塞指定任务并在 ACK 后保留待检查元数据 (3.847875ms)\n✔ T29 direct Owner start cannot bypass an active public Owner consultation (1174.054708ms)\n✔ T29 concurrent direct Owner starts cannot claim the same execution resource (942.250291ms)\n✔ T29 direct Owner starts share the configured capacity gate (862.65025ms)\n✔ T29 persisted Supervisor reservations participate in direct admission (534.559875ms)\nℹ tests 104\nℹ suites 0\nℹ pass 104\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 63621.518125\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 104,
+        "pass": 104,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "bounded-recovery",
+      "title": "有界恢复、预算、会诊、重建、重启与handoff故障变体",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/candidate-arbitration-metered.test.mjs",
+        "owner-workflow-plugin/test/candidate-arbitration-recovery.test.mjs",
+        "owner-workflow-plugin/test/candidate-independent-runtime.test.mjs",
+        "owner-workflow-plugin/test/candidate-independent-supervisor.test.mjs",
+        "owner-workflow-plugin/test/candidate-owner-consultation.test.mjs",
+        "owner-workflow-plugin/test/candidate-rebuild-recovery.test.mjs",
+        "owner-workflow-plugin/test/candidate-recovery-pause.test.mjs",
+        "owner-workflow-plugin/test/candidate-review-recovery.test.mjs",
+        "owner-workflow-plugin/test/direct-handoff-recovery.test.mjs",
+        "owner-workflow-plugin/test/handoff-recovery.test.mjs",
+        "owner-workflow-plugin/test/recovery-admission.test.mjs",
+        "owner-workflow-plugin/test/recovery-budget.test.mjs",
+        "owner-workflow-plugin/test/recovery-policy.test.mjs",
+        "owner-workflow-plugin/test/recovery-session-reader.test.mjs",
+        "owner-workflow-plugin/test/recovery-session-restart.test.mjs",
+        "owner-workflow-plugin/test/recovery-session.test.mjs",
+        "owner-workflow-plugin/test/replan-session.test.mjs",
+        "owner-workflow-plugin/test/runtime-recovery-budget.test.mjs",
+        "owner-workflow-plugin/test/subgraph-recovery-guard.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ R78 real paid predecessor permits a nonpassed arbitration to choose an unused local rewrite (1714.436875ms)\n✔ R78 actual arbitration pays separately after advice, preserves ordinary history, and replays fresh without model calls (2464.840834ms)\n✔ R78 real control socket drives the paid arbitration and next drive recognizes its effective review (1773.2735ms)\n✔ R78 exhaustion after a paid advisor does not start an unmetered Arbiter or repeat advice (1627.133708ms)\n✔ R78 invalid arbitration semantics pay a new ordinal while already applied advice stays unchanged (2101.267208ms)\n✔ R78 candidate changes during a real Arbiter turn prevent adoption of its observed receipt (1730.123042ms)\n✔ R78 real Arbiter creation persisted before response loss never starts twice on a fresh Harness (1735.200958ms)\n✔ R78 real arbitration then driver local rebuild carries the arbitration source and original failure root (2434.390958ms)\n✔ R78 applied arbitration fresh replay authenticates frozen arbitration raw evidence (1791.928792ms)\n✔ R78 applied arbitration fresh replay authenticates frozen advice raw evidence (2158.833084ms)\n✔ R78 applied arbitration fresh replay authenticates frozen ordinary-review raw evidence (1833.21475ms)\n✔ R78 applied arbitration fresh replay authenticates frozen planner raw evidence (1663.71725ms)\n✔ R78 an earlier caller delayed after real advice replays arbitration completed by a later caller (1668.336459ms)\n✔ R78 arbitration replay survives a winner before-review-authentication in consultation (1798.811125ms)\n✔ R78 arbitration replay survives a winner after-review-authentication in consultation (1794.871375ms)\n✔ R75 regression: paid recovery arbitration refuses an exhausted root before any advisor starts (1467.650958ms)\n✔ R75 driver durably pauses an exhausted recovery arbitration and then remains a technical wait (1477.7545ms)\nℹ {\"pausedReason\":\"Recovery Owner会诊 admission refused:workflow_exhausted\",\"persistedReason\":\"Recovery Owner会诊 admission refused:workflow_exhausted\",\"modelRequestsBefore\":4,\"modelRequestsAfterNotification\":5,\"modelRequestsAfterStableWait\":5}\n✔ R75 consultPlanningOwners rejects a stripped caller copy when the persisted Workflow remains a recovery candidate (834.311375ms)\n✔ R75 an unprotected initial Owner consultation still uses the real model transport (533.924375ms)\n✔ T15 candidate pause dispatch runs an independent Owner through verify, commit, merge, and finish (3986.765667ms)\n✔ T15 candidate pause keeps the source and budget unchanged when its independent Owner reports failed (1809.489541ms)\n✔ T15 candidate pause rejects a source change before finish without merging the independent Owner result (2547.9365ms)\n✔ T15 candidate pause rejects a source change before Owner submission without verification or a commit (1728.197667ms)\n✔ T15 candidate pause turns a real external permission gap into awaiting-user without charging recovery (1770.9185ms)\n✔ T15 candidate pause rejects persisted completed reservation replays while its Owner and task are still live (1683.18375ms)\n✔ T15 candidate pause rejects persisted failed reservation replays while its Owner and task are still live (1733.426042ms)\n✔ candidate selection and acknowledgment only expose independent target patches, never a replacement state (19.21125ms)\n✔ excludes source/target Owner tasks and their forward/reverse dependency closure (8.806333ms)\n✔ full active tasks and undispatched reservations consume global slots and Owner identities (12.45775ms)\n✔ existing Owner history and source binding prevent stale or duplicate creates (9.72825ms)\n✔ no eligible work yields side-effect-free wait and cannot acknowledge stop/notify (2.952375ms)\n✔ unproven handoff scope fails closed, and pending notice never dispatches (1.761792ms)\n✔ unrelated stalled activity cannot suppress an available independent create slot (5.32675ms)\n✔ composite relationships keep a source subtree excluded without dropping the independent leaf (6.774084ms)\n✔ reject reservation occupancy with stopped task instead of releasing its parallel slot (3.602209ms)\n✔ reject owner occupancy with stopped task instead of releasing its parallel slot (3.03275ms)\n✔ reject reservation occupancy with completed task instead of releasing its parallel slot (3.542541ms)\n✔ reject owner occupancy with completed task instead of releasing its parallel slot (3.204167ms)\n✔ an already running reservation occupies one slot without duplicate counting (7.579625ms)\n✔ independent selection rejects an existing shared pendingTaskMerge transaction (1.249042ms)\n✔ independent selection rejects an existing shared pendingMemoryCompilation transaction (1.98575ms)\n✔ independent selection excludes other planned handoff targets that finish would implicitly consume (2.888083ms)\n✔ terminal receipts require matching task and Owner outcomes at both replay and execution guards (109.078791ms)\n✔ launching permits Owner finish before the reservation settlement transaction (11.359333ms)\n✔ daemon selects independent create then resumes persisted reserved work without rewriting state (4.495458ms)\n✔ daemon waits on launching or ambiguous Owner history and never treats either as first dispatch (6.711ms)\n✔ daemon returns stable wait for refused approvals, invalid reserved source, or no independent work (8.241625ms)\n✔ a reserved batch advances the next Owner only after the prior independent integration settles (14.496958ms)\n✔ revoked approval or stale Review invalidates both reservation and live execution binding (4.862833ms)\n✔ R77 real paid predecessor is replay-authenticated before consultation (1202.68975ms)\n✔ R77 actual consultation settles advice in the original root and fresh Harness replays without another model (1631.256958ms)\n✔ R77 exhausted actual consultation starts no child and leaves the candidate intact (1123.647708ms)\n✔ R77 known missing advice pays a failed ordinal and retries in the same logical operation (1345.604291ms)\n✔ R77 changed candidate cannot reuse an accepted predecessor to fund advice (1089.479125ms)\n✔ R77 changed convergence cannot reuse an accepted predecessor to fund advice (1172.993167ms)\n✔ R77 candidate changes while the actual advisor runs prevent result adoption and preserve the paid attempt (1234.162083ms)\n✔ R77 actual persisted child creation with a lost response pauses and fresh consultation never creates again (1233.691458ms)\n✔ R77 wrong Owner submission is a paid failure, never a successful unavailable advice (1444.65525ms)\n✔ R77 independent task updates survive the unlocked advisor and atomic advice settlement (1497.878584ms)\n✔ R77 accepted advice cannot replay after its persisted result is altered (1284.088125ms)\n✔ R77 each selected Owner has a separate paid operation and exhausted partial batches never restart an applied Owner (1442.1235ms)\n✔ R77 both selected Owners settle distinct sessions in one root without creating another OwnerRun (1484.696083ms)\n✔ R77 fresh consultation reauthenticates the actual planner raw receipt before reserving (1202.910333ms)\n✔ R77 fresh consultation reauthenticates the actual review raw receipt before reserving (1064.993958ms)\n✔ R77 later Owner failure retries only that Owner while retaining the first accepted consultation (1643.253917ms)\n✔ R77 arbitration without open target obligations consults the candidate Owner set (1465.413ms)\n✔ R77 an observed raw advice with an uncommitted budget cannot masquerade as an applied operation (1222.806584ms)\n✔ T18 actual Runner activates a rebuilt recovery candidate and preserves its immutable history (2068.702ms)\n✔ T18 split task and cross-Owner target inherit one root without resetting the Workflow budget (1766.830333ms)\n✔ T18 renamed task inherits the unresolved root through the reviewed handoff target (1759.001959ms)\n✔ T18 consecutive PlanRevisions retain one immutable recovery root chain (1811.331792ms)\n✔ T18 missing inheritance source rejects activation without changing plan or budget (1822.432625ms)\n✔ T18 old-version running recovery settles after activation without another debit (2417.58425ms)\n✔ T18 tampered persisted transition fails closed without another debit (2951.658292ms)\n✔ T15 failed rebuilt Planner keeps the reviewed predecessor and next ordinal uses the same root (2834.846833ms)\n✔ T15 exhausted rebuild preserves the predecessor and starts no Planner (1315.58325ms)\n✔ T15 changing the settled Review record prevents a new recovery Planner (1105.233417ms)\n✔ T15 predecessor changed during real rebuild cannot be replaced by the late Planner result (1423.728625ms)\n✔ T15 rebuilt candidate inherits open evidence obligations even when its Reviewer returns passed (1686.49925ms)\n✔ T15 socket admission refusal with no independent task persists one notice, then daemon discovery and fresh Harness wait (1292.725958ms)\n✔ T15 socket preserves finite semantic retry ordinals and only persists pause when the shared budget refuses (1672.429667ms)\n✔ T15 changed candidate evidence invalidates the prior pause but cannot start an unbound Reviewer (1025.497625ms)\n✔ T15 an authoritative user-wait task projection takes priority over a candidate technical pause (1006.936ms)\n✔ T15 stale admission failure cannot pause a concurrently changed candidate parent (960.522875ms)\n✔ T15 stale admission failure cannot pause a concurrently changed candidate review (1004.578416ms)\n✔ T15 stale admission failure cannot pause a concurrently changed candidate plan content (1044.819333ms)\n✔ T15 first uncertain real Reviewer creation persists pause despite its own new operation and session (1036.854583ms)\n✔ T15 a delivered candidate pause with an obsolete Review digest cannot discover, drive, or reserve work (1190.23875ms)\n✔ T15 a approval change between candidate dispatch and reserve rejects the latest transaction without target writes (1458.849334ms)\n✔ T15 a Review result change between candidate dispatch and reserve rejects the latest transaction without target writes (1482.633125ms)\n✔ T15 a live Registry drift after independent claim pauses only that reservation before an Owner exists (2021.00075ms)\n✔ T15 daemon discovery drives one independent candidate through socket verification, merge, and terminal quiescence (4437.940125ms)\n✔ T15 fresh Harness resumes a persisted candidate reservation with no Owner history (3715.901833ms)\n✔ T15 fresh Harness leaves candidate launching as a stable non-dispatch wait (1126.171333ms)\n✔ T15 fresh Harness leaves candidate unknown Owner history as a stable non-dispatch wait (1091.958375ms)\n✔ T15 independent reservation atomically patches only its task and survives concurrent replay and fresh Harness (1678.71475ms)\n✔ T15 candidate replacement invalidates persisted reservation replay (1131.837667ms)\n✔ T15 a stale create action cannot overwrite a newly arrived Owner history (1080.161625ms)\n✔ T15 candidate replacement before reservation rejects the stale create action without task writes (1208.572916ms)\n✔ T15 public and direct Owner entry points cannot bypass a candidate reservation (1161.167333ms)\n✔ T15 reservation replay rejects persisted stopped task before neutralizing its projection (1047.39375ms)\n✔ T15 reservation replay rejects persisted completed task before neutralizing its projection (1061.751875ms)\n✔ T15 Owner startup rechecks a reservation arriving after its initial read (1074.283708ms)\n✔ T15 actual candidate passed Review consumes its own attempt in the Planner root and replays raw receipts (1287.723167ms)\n✔ T15 actual candidate needs_revision Review consumes its own attempt in the Planner root and replays raw receipts (1045.682ms)\n✔ T15 invalid semantic Reviews each consume one ordinal, then exhaustion starts no child (1276.026417ms)\n✔ T15 Review does not hold workflow lock during child execution and preserves independent task changes (1078.152875ms)\n✔ T15 candidate replacement during real Review cannot apply or become permission for a free retry (976.737667ms)\n✔ T15 stripped candidate provenance cannot fall back to the unmetered Review entry (735.55075ms)\n✔ T15 real request_handoff preserves its initial free Owner until terminal and stages a metered candidate (1523.012292ms)\n✔ T15 real request_handoff preserves its paid Owner until terminal and stages a metered candidate (1404.540208ms)\n✔ T15 real request_handoff preserves its paid Owner with repeated handoff in report until terminal and stages a metered candidate (1474.911833ms)\n✔ T15 real request_handoff preserves its initial free Owner with a real user permission gap until terminal and returns the permission decision (1035.005959ms)\n✔ T15 real request_handoff preserves its initial free Owner after rejecting premature completed until terminal and stages a metered candidate (1291.017208ms)\n✔ T15 real request_handoff preserves its paid Owner after rejecting premature completed until terminal and stages a metered candidate (1507.703208ms)\n✔ T15 a handoff cannot enter after completed submission has acquired its gate (1533.296625ms)\n✔ T15 actual handoff entry meters one Planner and atomically stages a candidate without activating its version (989.674417ms)\n✔ T15 actual invalid handoff candidate consumes its attempt and the next physical call shares the root and finite budget (1051.083666ms)\n✔ T15 unbound handoff or changed producing Owner identity cannot launch an unmetered Planner (506.144167ms)\n✔ T15 handoff Planner runs outside the workflow lock and preserves an independent task update (834.314792ms)\n✔ T15 a source change during actual Planner execution prevents stale candidate application (747.76ms)\n✔ T15 normal partial handoff production records completed provenance without fabricating recovery (404.498875ms)\n✔ T15 multiple failed Owner handoffs are split into one source group per candidate (906.800917ms)\n✔ T20 persists a bounded owner-failure reservation and returns only a launch-disabled receipt (370.80025ms)\n✔ T20 reloads the same durable request through a new Runtime without rebilling or changing identity (277.33325ms)\n✔ T20 derives A/B/A from persisted strategy, keeping one root but distinct durable requests (336.499584ms)\n✔ T20 rejects forged request fields and incorrect source binding without creating a recovery account (309.506541ms)\n✔ T20 rejects a missing strategy and owner-failure records that no longer describe a failed technical task (270.219167ms)\n✔ T20 admits only a live technical obligation and preserves the user-authority boundary (399.611833ms)\n✔ T20 makes approval, current plan digest, cancellation, malformed state, and absent config hard wrapper gates (280.49575ms)\n✔ T20 rejects changed limits after accounting begins and never returns a receipt when the first save cannot commit (359.194958ms)\n✔ T20 cross-process distinct requests consume the final workflow credit once (353.002ms)\n✔ T20 cross-process competition for one request yields one receipt identity and one debit (347.293291ms)\n✔ R15 next failed executions with the same strategy inherit the root and persist replay across Runtime restarts (281.479083ms)\n▶ R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget\n  ✔ missing (19.085375ms)\n  ✔ contract (17.898791ms)\n  ✔ sourceId (17.702ms)\n  ✔ rootProblemId (18.879459ms)\n  ✔ requestId (17.281417ms)\n  ✔ attemptId (17.96425ms)\n  ✔ taskId (16.471792ms)\n  ✔ ownerId (17.652333ms)\n  ✔ planDigest (17.2895ms)\n  ✔ identity sessionId (17.94125ms)\n  ✔ identity promptId (16.264125ms)\n  ✔ run attempt (18.848166ms)\n  ✔ run session (17.021083ms)\n  ✔ unknown field (17.993917ms)\n  ✔ execution receipt (17.375292ms)\n  ✔ result receipt (17.293875ms)\n✔ R15 rejects missing, wrong, and unknown continuation bindings without changing the saved revision or budget (447.208667ms)\n✔ R15 rejects a predecessor that never started (176.481959ms)\n✔ R15 rejects a predecessor that still running (179.331167ms)\n✔ R15 rejects a predecessor that succeeded (181.4945ms)\n✔ R15 rejects a predecessor that cancelled (238.761584ms)\n✔ R15 continuation cannot reset exhausted problem credit (178.511625ms)\n✔ R15 continuation cannot reset exhausted workflow credit (256.379083ms)\n▶ R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed\n  ✔ renumber the same execution (34.105083ms)\n  ✔ drop current continuation (41.769125ms)\n  ✔ drop historical edge (26.612208ms)\n  ✔ redirect historical parent (17.900583ms)\n  ✔ redirect successor root (18.980958ms)\n✔ R15 a settled execution cannot be reused as a differently numbered successor; saved chain and missing edges fail closed (493.624ms)\n✔ R15 concurrent continuation calls from separate processes share one successor receipt and one debit (474.134458ms)\n✔ R15 a technical obligation recovery can produce a failed Owner continuation under its original root (184.913166ms)\n✔ R15 derived source retains A/B/A replay without erasing the continuation edge (320.35375ms)\n✔ T15 replan admission can originate at first free Owner failure and share its root with an Owner retry (215.968208ms)\n✔ T15 replan restart replays reserved call; next ordinal requires a failed matching receipt (276.084375ms)\n✔ T15 plan/review/handoff operations cannot reset the source budget by changing step identity (236.657042ms)\n✔ T15 replan operation rejects skipped ordinals and forged envelope/source fields before saving (314.07525ms)\n✔ T15 mixed admission rejects operation/ledger identity corruption and missing intents (287.135125ms)\n✔ T15 succeeded operation does not authorize the next physical retry (201.493292ms)\n✔ T15 cancelled operation does not authorize the next physical retry (204.877ms)\n✔ T15 operation admission retains live-source and user-decision gates (215.396458ms)\n✔ T15 separate processes replay the same operation reservation without double debit (346.261417ms)\n✔ T15 separate Owner/replan reservations compete for one shared last Workflow credit (330.836334ms)\n✔ T15 an operation intent cannot enter the Owner-only session driver (177.5545ms)\n✔ T15 replan after a paid Owner failure inherits the admitted predecessor root (196.322834ms)\n✔ T15 replan accepts a live technical obligation but cannot charge a user decision (240.165041ms)\n✔ T15 a running or mismatched failed operation receipt cannot authorize a new ordinal (209.901041ms)\n✔ R78 state-lock inspection reacquires a concurrently released directory (180.792042ms)\n✔ R78 state-lock inspection preserves other filesystem errors (159.144458ms)\n✔ T13 明确有限配置，没有默认无限值或隐式数值转换 (1.239166ms)\n✔ T13 BUD-01 两级限额原子扣减，问题用完不阻止独立问题 (1.057041ms)\n✔ T13 BUD-03 最后一份额度按传入的新快照串行竞争，两级不半扣 (0.633834ms)\n✔ T13 BUD-03 请求重放在耗尽后仍返回原attempt，重载不重扣 (0.248625ms)\n✔ T13 同request改变workflowId拒绝，不借重复请求改绑定 (0.214833ms)\n✔ T13 同request改变rootProblemId拒绝，不借重复请求改绑定 (0.171416ms)\n✔ T13 同request改变attemptId拒绝，不借重复请求改绑定 (0.126959ms)\n✔ T13 同request改变taskId拒绝，不借重复请求改绑定 (0.11475ms)\n✔ T13 同request改变ownerId拒绝，不借重复请求改绑定 (0.13475ms)\n✔ T13 同request改变executionVersion拒绝，不借重复请求改绑定 (0.153667ms)\n✔ T13 同attempt不能被不同request占用；不存在问题与外来Workflow拒绝 (0.510666ms)\n✔ T13 问题注册幂等但来源和限额不可替换，同来源不能另开根问题 (0.165375ms)\n✔ T13 执行开始绑定不可换，未开始不能成功结算，终态不能重启 (0.537209ms)\n✔ T13 启动前failed可结算，不退额度；相同回执重放不改状态 (0.473125ms)\n✔ T13 启动前cancelled可结算，不退额度；相同回执重放不改状态 (0.216583ms)\n✔ T13 开始及结算都重新核验完整绑定，调用错误不能写状态 (0.690125ms)\n✔ T13 BUD-04/05 相关新证据不退预算，A/B/A与换引用重放只留两份事实 (0.789834ms)\n✔ T13 来源不匹配、相同引用内容冲突、进展升格关闭都拒绝 (0.606375ms)\n✔ T13 问题关闭需当前根的关闭引用且无未结算attempt，关闭不擦历史 (0.674792ms)\n✔ T13 序列化账本严格校验，不接纳未知版本、重复记录或被改写的计数 (0.51625ms)\n✔ T13 返回对象和输入无共享可写引用；冻结输入仍可工作 (0.129833ms)\n✔ T13 原型敏感字符串只作为ID数据，不能串改其他问题 (0.172458ms)\n✔ T13 严格输入不静默丢弃错误字段或伪证据标记 (0.209875ms)\n✔ T13 同根问题换task、Owner或版本仍共享已用额度，不重新注册预算 (0.199ms)\n✔ T13 同一核验事实可分别关联多个根问题，各自核验来源和关闭引用 (0.293709ms)\n✔ T13 F-14 跨attempt跨字段引用拒绝：先执行后结算 (0.344458ms)\n✔ T13 F-14 跨attempt跨字段引用拒绝：先结算后执行 (0.369875ms)\n✔ T13 F-14 JSON导入拒绝跨字段串用回执，reverse=false (0.175958ms)\n✔ T13 F-14 JSON导入拒绝跨字段串用回执，reverse=true (0.130625ms)\n✔ T13 F-14 同attempt跨字段引用及重放合法，不同版本引用仍独立 (0.251291ms)\n✔ T13 F-14 保留同字段跨attempt去重：execution (0.245042ms)\n✔ T13 F-14 保留同字段跨attempt去重：result (0.386084ms)\n✔ T15 Owner恢复与重规划共用问题预算，换操作类型/版本不重置额度 (0.744584ms)\n✔ T15 重规划与Owner跨根共用Workflow额度，独立问题只在总额尚有余量时继续 (0.1875ms)\n✔ T15 revision_plan持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣 (0.653125ms)\n✔ T15 revision_review持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣 (0.350917ms)\n✔ T15 handoff_replan持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣 (0.373125ms)\n✔ T15 owner_consultation持久重放/实际引用开始/结算使用同一绑定，耗尽后不重扣 (0.368541ms)\n✔ T15 重规划workflowId改变时reserve/start/settle均拒绝且不修改账本 (0.350458ms)\n✔ T15 重规划rootProblemId改变时reserve/start/settle均拒绝且不修改账本 (0.147083ms)\n✔ T15 重规划requestId改变时reserve/start/settle均拒绝且不修改账本 (0.258375ms)\n✔ T15 重规划attemptId改变时reserve/start/settle均拒绝且不修改账本 (0.166958ms)\n✔ T15 重规划executionVersion改变时reserve/start/settle均拒绝且不修改账本 (0.13875ms)\n✔ T15 重规划executionKind改变时reserve/start/settle均拒绝且不修改账本 (0.142084ms)\n✔ T15 重规划operationId改变时reserve/start/settle均拒绝且不修改账本 (0.150125ms)\n✔ T15 重规划operationKind改变时reserve/start/settle均拒绝且不修改账本 (0.15375ms)\n✔ T15 重规划绑定严格拒绝混合身份、未知类型、缺失字段以及静默降级 (1.420375ms)\n✔ T15 同request不能在Owner和replan之间换绑，回执也不能跨执行类型串用 (1.085875ms)\n✔ T15 未启动重规划取消不退预算，存在未结算操作时根问题不能关闭 (0.401417ms)\n✔ T19 new Workflow policy freezes the measured finite V1 values (0.724959ms)\n✔ T19 policy import rejects missing, unknown, and locally changed configuration (0.337459ms)\n✔ T19 persisted policy and admission limits must remain one immutable binding (0.477666ms)\n✔ T19 frozen 12/8 limits preserve both problem and Workflow exhaustion (2.186666ms)\n✔ recovery reader pauses on a revision race and releases its read handle (0.93425ms)\n✔ recovery reader refuses substituted identity or missing logical events (0.176166ms)\n✔ recovery reader distinguishes unsupported formats, corruption and ordinary read failure (0.16175ms)\n✔ recovery reader propagates cancellation while releasing its handle (0.262666ms)\n✔ T22 SIGKILL after the real submitted checkpoint reopens only to a non-mutating technical pause (1425.871167ms)\n✔ T22 SIGKILL after real failed settlement replays its persisted receipt without a second debit (1514.003208ms)\n✔ T22 cleans the parent-owned fixture container when the producer fails before its checkpoint (627.673791ms)\n✔ T22 SIGKILL after real successful settlement replays the fixed-commit receipt without new execution (3091.561208ms)\n✔ T22 SIGKILL after real session binding before followup preserves the unsubmitted execution on restart (1398.466291ms)\n✔ T22 source-plane JSONL observes exactly one completed reserved prompt without writes (333.581292ms)\n✔ T22 source-plane JSONL distinguishes no artifact from one durable idle inbox prompt (362.765125ms)\n✔ T22 managed inspection rejects duplicate input and corrupt committed rows without re-sending (590.543459ms)\n✔ T22 Runtime rejects wrong reservation binding and pauses the unready producer before session effects (226.292209ms)\n✔ T22 compressed V3 logs are read through public handles without writes or retry (204.732041ms)\n✔ T22 an uncommitted suffix preserves an already committed terminal without repairing bytes (198.276417ms)\n✔ T22 a controlled V2 copy is inspected without publishing a V3 file or changing its bytes (200.77575ms)\n✔ T22 a future-format artifact is explicitly refused without altering it or starting an Agent (171.224834ms)\n✔ F16 maps real same-process and independent-runtime Owner lease conflicts to a non-mutating pause (662.923958ms)\n✔ F16 maps a real lease directory still initializing to a non-mutating pause (222.48475ms)\n✔ F16 leaves ordinary lease I/O errors and caller cancellation as rejections (397.950209ms)\n✔ T22 starts the reserved Owner once, settles its real failed submission, and never rewrites the frozen instruction (1077.119791ms)\n✔ T22 settles a real completed Owner only after owner-sync and finishOwner, then replays the T13 succeeded receipt read-only (2374.096125ms)\n✔ T22 cannot report succeeded while a real owner-submit result is awaiting finishOwner (1388.923875ms)\n✔ T22 L1 create failure preserves reservation without sending and releases any created handle (811.722208ms)\n✔ T22 L1 bind failure preserves reservation without sending and releases any created handle (839.499667ms)\n✔ T22 L2 real blocked outcome cannot settle or authorize another execution (869.001916ms)\n✔ T22 L2 real no_submit outcome cannot settle or authorize another execution (849.2345ms)\n✔ T22/T15 a real handoff settles the bound recovery attempt as failed and replays without execution (868.573333ms)\n✔ T22 L2 real PlanRevision pending_check cannot settle the prior recovery intent (1496.476625ms)\n✔ T22 L3 Runtime safely consumes preparing evidence without execution or settlement (199.099ms)\n✔ T22 L3 Runtime safely consumes creating evidence without execution or settlement (230.926084ms)\n✔ T22 L3 Runtime safely consumes pending evidence without execution or settlement (232.442625ms)\n✔ T22 L3 Runtime safely consumes running evidence without execution or settlement (262.908166ms)\n✔ T22 L3 Runtime safely consumes terminal evidence without execution or settlement (221.895083ms)\n✔ T22 L3 Runtime safely consumes interrupted evidence without execution or settlement (255.658416ms)\n✔ T22 L3 Runtime safely consumes old_plan evidence without execution or settlement (221.101792ms)\n✔ T22 L3 Runtime safely consumes old_attempt evidence without execution or settlement (212.930833ms)\n✔ T22 L3 Runtime safely consumes old_lease evidence without execution or settlement (208.851ms)\n✔ T22 L4 paused recovery leaves an independent Owner runnable in the same Runtime and ledger (3068.616ms)\n✔ T15 actual Planner reserved child produces a raw accepted receipt and replays without another model call (1523.8665ms)\n✔ T15 actual Review reserved child produces a raw accepted receipt and replays without another model call (843.30575ms)\n✔ T15 a real completed child without a submission settles failed and permits one paid next ordinal (571.998708ms)\n✔ T15 real multi-step Planner reads evidence before its accepted submission (572.5245ms)\n✔ T15 an uncertain create after a real session creation never resends its prompt (525.485792ms)\n✔ T15 wrong prompt and a source awaiting user decision cannot start a child (452.906709ms)\n✔ T15 replay rejects altered frozen input and execution receipt without a new call (563.250209ms)\n✔ T15 a physically torn JSONL artifact pauses replay without changing the ledger or resending (552.880583ms)\n✔ T15 a reserved identity with an existing real session cannot be treated as a fresh launch (446.464542ms)\n✔ T15 recoverOwner admits before restarting a failed workflow and enforces the next credit limit (1211.429042ms)\n✔ T15 direct failed Owner start cannot bypass durable recovery admission (416.780792ms)\n✔ T15 missing_config cannot silently fall back to legacy execution (423.642833ms)\n✔ T15 unknown_protocol cannot silently fall back to legacy execution (437.421917ms)\n✔ T15 invalid_config cannot silently fall back to legacy execution (441.818125ms)\n✔ T15 explicit user decision takes priority over spending recovery credit (430.982542ms)\n✔ T15 existing uncertain recovery is reconciled without another reservation or prompt (1025.305916ms)\n✔ T15 subsequent real failed result inherits the same root and consumes only its next attempt (1538.0005ms)\n✔ T15 public background recovery persists and delivers a newly classified user decision (537.521292ms)\n✔ T15 unresolved handoff before admission prevents execution (413.895ms)\n✔ T15 unresolved handoff appearing after admission prevents execution (470.755291ms)\n✔ T15 protected ordinary awaiting_finish result can finish without a recovery debit (2585.924208ms)\n✔ T15 protected ordinary committed result can finish without a recovery debit (2369.628666ms)\n✔ T15 protected PlanRevision abort with no Owner record keeps the reset path (498.463417ms)\n✔ T15 stale finish-only snapshot cannot send a newly failed record through legacy recovery (412.859875ms)\n✔ T15 authority before_reserve reaches the main outbox through public background recovery (480.8705ms)\n✔ T15 authority before_reserve_with_handoff reaches the main outbox through public background recovery (475.822708ms)\n✔ T15 authority after_reserve reaches the main outbox through public background recovery (454.845375ms)\n✔ T15 authority source becoming running cannot be overwritten by a stale recovery (768.888ms)\n✔ T15 authority source becoming new_attempt cannot be overwritten by a stale recovery (592.261125ms)\n✔ T15 an ordinary error resembling authority refusal is not converted to a user decision (417.667166ms)\n✔ T15 authority refusal for a now-running source pauses without rewriting the live Owner (433.227125ms)\n✔ T15 real Supervisor initial failure and retry preserve source, enforce credit, and allow independent initial work (3874.589166ms)\n✔ T15 real Supervisor recovery completes only after the actual successful settlement (2636.923625ms)\n✔ T15 Supervisor replays an unsettled session as paused without another launch or fabricated completion (1279.521625ms)\n✔ T15 Supervisor authority pause is not completed and persists the main notification without spending (590.756916ms)\n✔ T15 Supervisor does not infer recovery settlement from an actual integrated Git result (2855.575417ms)\n✔ T15 Supervisor reserved recovery slot cannot generate phantom Owner execution timeouts (559.219584ms)\n✔ T15 whole-workflow recovery preserves failed source and queues a budgeted Supervisor execution (1015.875833ms)\n✔ T15 whole-workflow recovery keeps typed user decisions ahead of handoff and bulk requeue (740.194167ms)\n✔ T15 whole-workflow finishable recovery cannot bypass an unsettled session (2715.920916ms)\n✔ T15 whole-workflow pending_merge recovery cannot bypass an unsettled session (2479.777916ms)\n✔ T15 whole-workflow missing configuration cannot fall back to legacy recovery (418.679209ms)\n✔ T15 whole-workflow unknown Owner source is not rewritten into a free initial launch (397.015375ms)\n✔ T15 convergence probe preserves failed source and the 1-credit limit (1098.197709ms)\n✔ T15 convergence probe preserves failed source and the 2-credit limit (1568.646792ms)\n✔ T15 convergence probe persists typed user authority instead of resuming technical execution (420.913792ms)\n✔ T15 convergence probe cannot manufacture a recoverable Owner from an orphaned source (434.802667ms)\n✔ T15 convergence probe rejects missing protected configuration without a legacy fallback (402.367375ms)\n✔ T15 convergence probe keeps an actual persisted Owner incident paused across repeated probes (425.257584ms)\n✔ T15 Supervisor admission refusal (autonomous_incident) stops without requeue and permits independent work (2803.317958ms)\n✔ T15 Supervisor admission refusal (missing strategy) stops without requeue and permits independent work (2652.096333ms)\n✔ T15 technical stop reports without user decision and waits after delivery (dependent=false) (3858.524875ms)\n✔ T15 technical stop reports without user decision and waits after delivery (dependent=true) (1468.77775ms)\n✔ T15 technical pause classification preserves explicit missing user input (436.924125ms)\n✔ T15 actual approved plan retains its review strategy but still settles into technical wait (2587.819458ms)\n✔ T15 persisted technical incident cannot hide a current typed user decision (955.550292ms)\n✔ T15 idle timeout preserves the live Owner until actual termination, then recovery spends credit (6713.681958ms)\n✔ T15 initial free real Owner subgraph rejection preserves source and permits a normal completion (2428.355458ms)\n✔ T15 paid real Owner subgraph rejection preserves source and permits a normal failure (1367.473375ms)\n✔ T15 protected real completion rejects subgraph both during and after accepted submission (1843.595708ms)\n✔ T15 legacy real completion rejects subgraph both during and after accepted submission (1496.238041ms)\nℹ tests 335\nℹ suites 0\nℹ pass 335\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 267530.792042\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 335,
+        "pass": 335,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "convergence-revision-control",
+      "title": "义务收敛、决定分类、PlanRevision与控制桥",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/control.test.mjs",
+        "owner-workflow-plugin/test/convergence.test.mjs",
+        "owner-workflow-plugin/test/operation-approval.test.mjs",
+        "owner-workflow-plugin/test/operation-harness.test.mjs",
+        "owner-workflow-plugin/test/operation-runtime.test.mjs",
+        "owner-workflow-plugin/test/operation.test.mjs",
+        "owner-workflow-plugin/test/plan-revision.test.mjs",
+        "owner-workflow-plugin/test/workflow-state.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ 外部控制桥可以驱动 ping 和 status，并在运行时释放后清理 (215.7365ms)\n✔ 真实审查入口把未关闭义务的 passed 降级，并拒绝激活 (919.04125ms)\n✔ pending revision 的 open 义务不阻断仍有效的 active plan Owner 启动 (456.944084ms)\n✔ R03 同 digest evidence-lease-v1 的已批准 Owner 启动与恢复边界 (527.09825ms)\n✔ R03 同 digest evidence-lease-v2 的已批准 Owner 启动与恢复边界 (449.597542ms)\n✔ Supervisor create 只持久 reservation，必须由外置 runner 显式 execute 才启动 Owner (591.51875ms)\n✔ Supervisor 首次启动保留计划修订迁移后的已完成任务 (245.060708ms)\n✔ Supervisor 重启后直接结算已有固定提交，不重新启动 Owner (368.306208ms)\n✔ Supervisor 遇到结构化 handoff 时进入局部重规划，不重跑只读验证任务 (274.916ms)\n✔ Runner daemon 自动发现 approved Workflow 并驱动 Harness 内 Owner 子代理 (557.091833ms)\n✔ planning-recover 控制动作安全补绑缺失 digest 并原地恢复 Reviewer (460.08675ms)\n✔ planning-recover 不会把旧 planDigest 的恢复次数继承到新 DAG (434.978834ms)\n✔ Planner 子代理报告通道失效时直接唤醒主会话，避免状态已变但会话没有入口 (0.373542ms)\n✔ Harness 重启后会向根会话幂等补发计划批准通知 (499.896625ms)\n✔ 计划批准通知只投递到持久化的 Workflow 根会话 (424.986708ms)\n✔ Planner 已提交结构化计划后立即结束等待，不受结束确认重试影响 (0.697542ms)\n✔ planning-recover 会重建仍有修订预算的 Planner，而不是把 review_failed 当作终态 (593.262334ms)\n✔ 统一 workflow-drive 会恢复无需用户授权的 needs_decision Owner 会诊修订 (594.953042ms)\n✔ 自治事故的摘要型旧义务不能由 control socket probe 续期 (220.103333ms)\n✔ control socket probe 只为类型化义务的宿主新文件续期一次 (536.564917ms)\n✔ 修订预算耗尽会持久通知主线程和 Runner，批准扩展后自动恢复同一 Planner (653.971625ms)\n✔ 重启前只标记 main-steer 已送达的待决策会重新直接打开原生问询 (467.503208ms)\n✔ 用户终止自动规划后由只读子代理总结并返回主线程讨论 (441.748167ms)\n✔ 重启后把旧版自定义扩额意见迁移为总结并退回主线程讨论 (419.552167ms)\n✔ planning-recover 在 plan digest 与 live Registry 不匹配时拒绝自愈 (412.2245ms)\n✔ 计划审查驱动失败会落盘诊断并允许 watchdog 有界重试 (459.593625ms)\n✔ Runner daemon 自动唤醒失败的计划审查且不启动 Supervisor (485.946125ms)\n✔ Runner 启动前可从固定提交重建尚未执行且已丢失的 Workflow worktree (376.96725ms)\n✔ V2 控制桥拒绝 legacy owner 调度动作，唯一入口是 Supervisor (292.736ms)\n✔ runtime.dispose 阻止新 Supervisor dispatch 并等待已登记 dispatch 终态 (21.569542ms)\n✔ Supervisor create 持久 reservation，并用真实 runExternalOwner 两阶段结算到 completed (1568.798083ms)\n✔ Supervisor 查询会在 Runtime 重启后重建控制桥，供新的外置 runner 显式 recover (350.381292ms)\n✔ Supervisor Owner 启动失败由自治恢复重排，不把工程故障写成用户决策 (352.083625ms)\n✔ DSH_PLAN_V2 的 repair_owner 保留为意图提示，Runtime 按证据策略重新进入 DAG (350.428625ms)\n✔ Supervisor inspect 只返回有限宿主字段，未知控制动作关闭处理 (425.033625ms)\n✔ Supervisor 主会话通知只有真正 followup 成功后才标记 delivered (228.481417ms)\n✔ Supervisor await_event 以持久游标阻塞等待，并在超时后记录一次受控观察 (324.029791ms)\n✔ 任务达到 onTimeout.afterMs 后切换自治恢复策略而不是交给用户 (340.971083ms)\n✔ Owner 恢复后使用本次运行时间重置超时基线，不沿用旧 reservation 时间 (315.466417ms)\n✔ 持续产生心跳的长任务按进展续租，不因总运行时间被误杀 (311.632875ms)\n✔ Supervisor receipt 绑定持久 revision，且 blocked workflow 不能确认旧 create (317.48825ms)\n✔ Supervisor create receipt 绑定实际 planDigest，旧 ACK 拒绝且 workflow 不变 (279.180708ms)\n✔ Supervisor stop receipt 绑定实际 planDigest，旧 stop 拒绝且 workflow 不变 (370.920209ms)\n✔ blocked、failed、cancelled workflow 都不能把 stop 保存为 completed (787.678166ms)\n✔ cancel 结算活动记录、清理临时分支与 worktree，并幂等保留审计状态 (662.139334ms)\n✔ cancel 的持久路径记录异常时 fail-closed，不能删除项目根目录或基础分支 (254.244333ms)\n✔ cancelled workflow 拒绝 Supervisor start，finalized workflow 拒绝 cancel (443.985167ms)\n✔ 启用 Owner 工作模式后，主会话写入会被拒绝 (211.728084ms)\n✔ 只读审计在脏工作区中运行，不创建 workflow 分支或 worktree (186.540458ms)\n✔ workflow_recover 可以重建旧缺陷遗留的空 Supervisor task records (301.331333ms)\n✔ 只读子代理继承完整工具集并只设置 read-only 沙箱 (1.005583ms)\n✔ Owner 子代理策略继承完整工具并使用 workspace-write (0.084875ms)\n✔ Operation 子代理继承完整工具但项目文件使用 read-only 沙箱 (0.046541ms)\n✔ 历史 V1 计划即使 digest 匹配也不能批准执行 (477.607167ms)\n✔ 批准修订计划时自动恢复旧 Runtime 丢失的已完成任务状态 (455.993ms)\n✔ 计划修订冻结 ownerRuns 已完成任务，只迁移新增 repair 与最终 verify (556.471958ms)\n✔ 计划批准拒绝缺失的 live Registry，即使缓存 digest 匹配 (156.519625ms)\n✔ 计划批准拒绝 live Registry 内容漂移，并由 registry_status 暴露 live digest (537.392792ms)\n✔ 计划批准在 digest 已重新绑定时仍拒绝 Owner 定义漂移 (638.876083ms)\n✔ finalize 会把 workflow 分支合并回启动分支并清理 worktree (1260.485375ms)\n✔ Implementation Review 必须读取实际 workflow HEAD 并保存审查结果 (581.456167ms)\n✔ Implementation Review 问题自动转换为带自治批准策略的 repair PlanRevision (877.044708ms)\n﹣ 旧版 Owner 持久子线程兼容测试（已由按任务回收模型替代） (0.15925ms) # SKIP\n﹣ 旧版 Owner Shell 白名单测试（已由 worktree 与提交关卡替代） (0.032666ms) # SKIP\n﹣ 旧版 Owner 逐写入包装测试（已由提交关卡替代） (0.022208ms) # SKIP\n﹣ 旧版 owner_bash 快照测试（正式验证现在由 owner_submit 自动执行） (0.087458ms) # SKIP\n﹣ 旧版多轮修复提示测试（现在由 owner_submit 在同一子线程返回错误） (0.015459ms) # SKIP\n﹣ 旧版 Owner 结果文本结算测试（受保护路径由 owner_submit 提交关卡覆盖） (0.015042ms) # SKIP\n✔ Owner Registry 提案在没有活动任务时只保存待审批提案 (380.232833ms)\n✔ Owner 设定与批准只能由绑定的 Workflow 主线程执行 (925.098ms)\n✔ 规划器输出 Registry operation 时只保存结构化建议，不写正式 Registry，并由运行时绑定正式 digest (618.015584ms)\n✔ 规划器的 proposal 包装会兼容为直接 Registry operation (588.094167ms)\n✔ 规划器可一次提交完整 Owner Registry batch 并按最终快照绑定全部 Owner (701.837291ms)\n✔ 规划提交只接受当前规划子代理的一次结构化结果 (0.475667ms)\n✔ one-shot Planner 在 workflow_plan_submit 时即时校验并允许原线程修正 (0.835625ms)\n✔ 计划审查提交只接受当前 Plan Reviewer 的合法结构化结果 (0.226667ms)\n✔ 计划 Reviewer 首轮状态非法时自动携带错误重试并保存结构化问题 (824.102334ms)\n✔ Reviewer 不能要求 abstract decision 删除必填 Owner 会诊字段，必须重试为 decision (706.77325ms)\n✔ Reviewer 判定 needs_split 后，Owner 会诊参与目标节点的递归拆分 (1114.704583ms)\n✔ Reviewer 判定 needs_decision 后停止自动修订并把问题总结回主线程 (922.929625ms)\n✔ awaiting_main_discussion 接收明确 Intent 后可以生成 PlanRevision 候选 (3782.402542ms)\n✔ 同类审查问题连续出现时，Runtime 强制 Reviewer 从 needs_revision 升级分类 (1000.338834ms)\n✔ 冻结义务无进展时由独立 Arbiter 裁决而不是请求用户扩额 (909.529959ms)\n✔ Arbiter 可以把 Runtime 已知的 abstract 节点转入拆分而不误判为新问题 (875.465292ms)\n✔ 计划修订次数只作遥测，无进展时切换策略而不是请求扩额 (2199.064834ms)\n✔ 非法修订候选保留原计划并自动切换恢复策略，修复后继续审查 (1357.10675ms)\n✔ 计划修订并发调用复用 single-flight，并用新版超时策略恢复旧 180 秒失败预算 (1155.945417ms)\n✔ 计划修订拒绝使用不属于当前 planDigest 的旧审查结果 (566.703458ms)\n✔ 规划契约失败返回完整 Workflow ID，并在同一现场有界恢复 (3237.303875ms)\n✔ Harness agent/status 持久化运行中、空闲和关闭生命周期 (27.277875ms)\n✔ one-shot Reviewer 返回结果后立即持久化 closed，不在会话树中伪装成 idle 工作 (24.437542ms)\n﹣ 旧版次数驱动 continuable Planner mock（已由证据租约、Arbiter 与完整 Workflow 集成测试替代） (0.095667ms) # SKIP\n✔ 完整 Workflow 从预检经过多轮计划审查、Supervisor、Owner 到最终交付 (8572.743625ms)\n✔ 取消功能 Workflow 后项目级 Owner Registry 仍被后续 Workflow 直接复用 (2813.570875ms)\n✔ 旧 Workflow 中已批准但未进入基础分支的 Registry 会在继续流程时迁移 (1339.342042ms)\n✔ 新建 Workflow 会先迁移已取消旧 Workflow 中最新获批的固定 Owner (1967.96375ms)\n✔ 规划器首轮提交不满足契约时，运行时会带校验错误重试一次 (738.465333ms)\n✔ 规划器只选择 Owner ID，Runtime 从正式 Registry 注入完整定义 (791.043625ms)\n✔ Planner 伪造宽 scope 不能绕过正式 Registry 的 task.write 边界 (725.063625ms)\n✔ handoff 重规划 prompt 只声明 V2 任务计划契约 (735.291709ms)\n✔ 规划器不能用未登记 Owner 绕过 Registry 提案审批 (552.794166ms)\n✔ Registry 批准要求完全匹配 digest，写入 workflow worktree 并使旧计划审查失效 (975.629917ms)\n✔ V2 Registry 批准后的 registry_pending_plan 可以原地重新规划 (1379.688916ms)\n✔ 运行中任务存在时拒绝 Registry 提案与批准 (411.744875ms)\n✔ 主工具公开 cancel 描述且保留 status 旧动作 (242.167375ms)\n✔ 旧聚合入口不再暴露或执行计划修订与规划恢复 (143.293125ms)\n✔ 旧聚合入口拒绝 start，强制使用带 preflight digest 的单职责工具 (179.374375ms)\n✔ workflow_git_inspect 只提供受限 Git 证据且拒绝 .git 内部路径 (420.795917ms)\n✔ Owner 结构化请求工具只暴露 request_subgraph 和 request_handoff 的最小字段 (148.349709ms)\n✔ 公开 Owner 工具只保留提交关卡、宿主授权桥和结构化协调入口 (199.588375ms)\n✔ 主工具 cancel 缺少 workflow_id 时拒绝 (147.488792ms)\n✔ 主工具 cancel 返回 cancelled，随后 status 返回 cancelled (434.658083ms)\n✔ 主工具只暴露 Registry 审批动作，不保留旧 Owner 直写动作 (1.103334ms)\n✔ DSH_PLAN_V1 所有控制桥和外置执行入口拒绝但 status 可读 (944.798667ms)\n✔ R05 决定回执经真实 Review 关闭入口消费：orchestrator (936.475709ms)\n✔ R05 决定回执经真实 Review 关闭入口消费：user (1105.385209ms)\n✔ R05 用户确认期间义务版本变化时不记录过期决定 (577.975209ms)\n✔ R05 结构展开依据经 Runtime 消费，只关闭结构义务而保留业务验证 (764.911667ms)\n✔ R05 pending 候选决定不能借用 active 回执，旧快照不能消费已变化候选 (576.528792ms)\n✔ R05 同候选的新决定替代旧回执，取消替代不影响旧决定 (988.468917ms)\n✔ R06 真实 Review 会诊固定描述在相同事实下耗尽策略 (2638.543292ms)\n✔ R06 真实 Review 会诊交替描述在相同事实下耗尽策略 (2480.356125ms)\n✔ R06 真实候选补齐绑定只记一次进展，重复与候选文案变化不续期 (1133.839708ms)\n✔ R06 文件进展由宿主重新读取，伪造缓存与过期候选没有文件事实 (620.731667ms)\n✔ R06 Runner 探针不能凭摘要变化清空策略，真实新文件只恢复一次 (2368.772125ms)\n✔ R08 真实 Review 分类与控制路由一致：technical (694.838709ms)\n✔ R08 真实 Review 分类与控制路由一致：business (806.731666ms)\n✔ R08 真实 Review 分类与控制路由一致：permission (870.165167ms)\n✔ R08 真实 Review 分类与控制路由一致：mixed (824.825584ms)\n✔ R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：permission (804.349875ms)\n✔ R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：business (883.501833ms)\n✔ R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：mixed-decision (748.08325ms)\n✔ R09 首次待决问题来自冻结用户义务而非 Reviewer 自由文本：mixed-verification (683.8055ms)\n✔ R09 Owner 反馈经实际失败入口分类且保留独立任务：technical (662.965375ms)\n✔ R09 Owner 反馈经实际失败入口分类且保留独立任务：permission (666.850875ms)\n✔ R09 Owner 反馈经实际失败入口分类且保留独立任务：business (677.291791ms)\n✔ R09 Owner 反馈接纳拒绝伪造绑定、无依据、外来会话和过期候选 (633.030625ms)\n✔ R09 已接纳反馈消费前重新校验当前来源：session (645.932833ms)\n✔ R09 已接纳反馈消费前重新校验当前来源：attempt (626.723583ms)\n✔ R09 已接纳反馈消费前重新校验当前来源：plan (575.957292ms)\n✔ R09 已接纳反馈消费前重新校验当前来源：owner (621.59125ms)\n✔ R09 同 attempt 的用户反馈幂等保留，不能由后续技术描述降权 (668.632ms)\n✔ R09 Owner 恢复消费当前反馈，换 attempt 后不继承旧用户门禁 (746.4815ms)\n✔ R09 已确认权限缺口优先于技术 handoff 策略 (656.876083ms)\n✔ R09 已报告用户待决后不能通过 completed 提交越过门禁：permission (649.181541ms)\n✔ R09 已报告用户待决后不能通过 completed 提交越过门禁：business (595.543792ms)\n✔ R10 真实 Owner 非成功结算保留分类与局部待决：permission-blocked (1744.900542ms)\n✔ R10 真实 Owner 非成功结算保留分类与局部待决：permission-failed (1087.14725ms)\n✔ R10 真实 Owner 非成功结算保留分类与局部待决：business-blocked (898.074042ms)\n✔ R10 真实 Owner 非成功结算保留分类与局部待决：legacy-blocked (779.078709ms)\n✔ R11 预算错误不覆盖当前用户依据：supervisor/permission (475.981292ms)\n✔ R11 预算错误不覆盖当前用户依据：supervisor/business (482.2345ms)\n✔ R11 预算错误不覆盖当前用户依据：supervisor/technical (485.594208ms)\n✔ R11 预算错误不覆盖当前用户依据：supervisor/stale-permission (496.12325ms)\n✔ R11 预算错误不覆盖当前用户依据：direct-owner/permission (913.173583ms)\n✔ R11 预算错误不覆盖当前用户依据：direct-owner/business (905.067625ms)\n✔ R11 预算错误不覆盖当前用户依据：direct-owner/technical (909.430666ms)\n✔ R11 预算错误不覆盖当前用户依据：direct-owner/stale-permission (882.765667ms)\n✔ R11 预算错误不覆盖当前用户依据：recover/permission (511.729375ms)\n✔ R11 预算错误不覆盖当前用户依据：recover/business (512.173667ms)\n✔ R11 预算错误不覆盖当前用户依据：recover/technical (539.725458ms)\n✔ R11 预算错误不覆盖当前用户依据：recover/stale-permission (569.524875ms)\n✔ R11 预算错误不覆盖当前用户依据：repeated-recover/permission (608.527458ms)\n✔ R11 预算错误不覆盖当前用户依据：repeated-recover/business (501.497167ms)\n✔ R11 预算错误不覆盖当前用户依据：repeated-recover/technical (513.391542ms)\n✔ R11 预算错误不覆盖当前用户依据：repeated-recover/stale-permission (575.477167ms)\n✔ 证据义务冻结后，相同语义问题不会因改写标题被当成新进展 (2.699125ms)\n✔ 没有新 Runtime 证据时，Reviewer 新增问题进入仲裁而不是扩大冻结集合 (6.282958ms)\n✔ 新 Runtime 证据允许吸收新义务，但不会关闭被遗漏的旧义务 (0.531792ms)\n✔ 交替会诊文本、时间、会话、HEAD 和候选摘要不能在 30 轮内重置策略 (3.025417ms)\n✔ 当前候选恢复的验证绑定只登记一次进展，不自动关闭且重复事实不续期 (0.398375ms)\n✔ 已解决义务的新文件和反复更换 obligationId 都不能回收策略租约 (0.638583ms)\n✔ 决定分类只接受结构化业务差异或外部权限，关键词只是诊断提示 (0.340125ms)\n✔ 未关闭的 user decision 不能被后续 Reviewer 遗漏或改写为 passed 而降权 (0.195291ms)\n✔ 新 decision_record 分类缺失或冲突被拒绝，旧显式 user authority 保守保留 (0.330959ms)\n✔ 失败分类选择不同的自治恢复策略而不是统一 await_user (1.226417ms)\n✔ Workflow 证据摘要只投影稳定的任务结果和 Runtime 文件哈希 (0.243917ms)\n✔ 稳定义务身份绑定来源、目标和解除条件，不能把同类同节点要求合并 (0.120208ms)\n✔ 展示文案不得参与义务目标或身份，同 ID 的不同合同必须在接收时拒绝 (0.1275ms)\n✔ 严格义务必须有 ID；已见事实不能用新 ID 重新引入已解决的合同 (0.315ms)\n✔ 不同 obligationId 的同合同要求独立保留，关闭一项不会关闭另一项 (0.230375ms)\n✔ 已解决的旧义务重复出现时保持 resolved，不作为新义务重新报告 (0.117792ms)\n✔ 遗漏和 passed 都不能关闭义务；只有 Runtime 核验的当前版本解除证据才能关闭且重复幂等 (0.302709ms)\n✔ 任务验证关闭只接受 Runtime 标记为当前、通过且绑定候选版本的结果 (0.233083ms)\n✔ 旧义务缺少关闭合同时保持 open，并拒绝 Reviewer 自报的替代决定 (0.085666ms)\n✔ 显式 legacy 读取路径保留同一缺关闭合同的已解决义务，不重新引入 (0.113917ms)\n✔ 旧字符串与问题列表按原文保留不同路径的要求身份 (0.184791ms)\n✔ 结构可执行关闭只依赖 Runtime 记录的任务存在，不将其视为业务完成 (0.165083ms)\n✔ 版本化决定必须由 Runtime 当前记录完整绑定，且不同义务 ID 不会共享关闭结果 (0.405792ms)\n✔ decision_record 的 user authority 明确请求用户，同时保留旧问题文本回退 (0.078916ms)\n✔ Operation 审批插件只读取 approve-for-me 设置，不注册或监听主代理 Approval (0.900333ms)\n✔ 会话前缀使用最长字面边界匹配，并在主会话清理时全部失效 (0.585542ms)\n✔ 模型即使返回 allow，复核子代理无法回收时也必须回退人工 (5.757625ms)\n✔ 上游设置不存在或格式不兼容时关闭自动审批 (0.446459ms)\n✔ Operation reviewer reads only current trusted surface entries through public Session.eventAt (2.471708ms)\n✔ missing or inconsistent current Session surface disables the approval model (0.259542ms)\n✔ pending native approval drains on session closure even when the answerer ignores abort (0.4965ms)\n✔ pending native approval drains on plugin closure even when the answerer ignores abort (0.1665ms)\n✔ an already answered approval cannot open a second card before durable settlement (0.20975ms)\n(node:40797) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ native Operation waits for main input, cold-resumes the same child and reports completion (1008.42425ms)\n✔ native Operation progress is durable without waking an idle parent (598.325541ms)\n✔ native Operation creation rejects failed role setup before any model turn (517.195042ms)\n✔ native Planner receives scoped read-only policy and delivers through the live child identity (679.168666ms)\n✔ native question tool routes Operator input through main and resumes after the actual answer (708.003375ms)\n✔ native approval coalesces duplicates and applies one decision: 仅允许这一次 (586.948167ms)\n✔ native approval coalesces duplicates and applies one decision: 本次会话允许此前缀 (644.12975ms)\n✔ cancelling an Operation closes a stalled native question and a late answer grants nothing (542.889875ms)\n✔ workflow question cancellation settles without waiting for an unresponsive answerer (508.126667ms)\n✔ native plan revision question is deduplicated and reject preserves the budget (556.796917ms)\n✔ native plan revision question is deduplicated and dispose preserves the budget (435.169791ms)\n✔ 主代理启动低成本后台 Operator，继承工具并用 read-only 文件沙箱 (104.454791ms)\n✔ Operation 在非 Git 工作区直接以当前目录持久化状态 (70.121417ms)\n✔ 同一项目同一时间只启动一个 Operation，终态回收后才允许下一个 (162.748083ms)\n✔ Operator 通过主代理补充信息并恢复同一个 continuable 子线程 (112.234333ms)\n✔ Operation 专用审批插件先复用 approve-for-me 固定风险与白名单，并只允许当前命令一次 (107.714292ms)\n✔ Operation 接受结构化 argv 并生成可审计的精确命令 (86.51875ms)\n✔ Operation 的公开资料读取必须改用 web_search/web_fetch，curl 不会被静默放行 (175.599791ms)\n✔ 等待授权时可原子拒绝当前命令并改向同一 Operator，且不会强制中断或并发普通问询 (143.87825ms)\n✔ Operation 连续命令失败达到预算后不再执行新命令并要求提交已有证据 (85.584375ms)\n✔ Operation 达到人工授权请求预算后停止生成新卡片 (118.199708ms)\n✔ Operation 超过总时长预算后不再启动命令 (86.904583ms)\n✔ rules-and-llm 使用无工具短生命周期复核子代理，完成后立即回收 (84.320625ms)\n✔ 固定高风险命令不能被 approve-for-me 白名单或模型越权，仍回到主线程问询 (82.398666ms)\n✔ 只读沙箱阻塞后才触发自动审批，并用同一精确命令升级重试一次 (79.348583ms)\n✔ 外部副作用命令必须经过主对话的精确一次性授权 (182.245792ms)\n✔ 用户可以在原生问询中按字面前缀放行本次主会话的后续命令 (159.593084ms)\n✔ 原生问询的其他输入只接受当前命令的更窄字面前缀 (129.66775ms)\n✔ 主会话结束后前缀授权和当前命令的持久授权都立即失效 (114.257709ms)\n✔ 只读沙箱拒绝宿主诊断时自动通知主线程授权，不产生 Tool Error (117.51075ms)\n✔ 原生多选项问询拒绝会被转发给同一个 Operator，而不是留下可执行授权 (113.224083ms)\n✔ 原生问询通道不可用时保留等待状态，不得伪造用户拒绝或失败 (111.518708ms)\n✔ 多个只读命令必须逐条执行，不能被误转成用户副作用授权 (95.663375ms)\n✔ Operator 连续违反命令契约时有界停止并主动回报主线程 (90.575875ms)\n✔ Operator 完成后结果回到主代理，修改仓库仍由 Owner 流程接管 (121.212833ms)\n✔ Operator 子线程未报告就结束时 Runtime 不把 Operation 留在伪运行状态 (95.218208ms)\n✔ Operation 执行契约要求目标、边界、完成标准和最小能力 (1.369083ms)\n✔ Operation 状态独立持久化并只公开受限投影 (6.611875ms)\n✔ Operation 报告区分普通进展、用户输入和精确命令授权 (0.267167ms)\n✔ 通用命令门禁允许典型只读诊断并拦截外部副作用 (2.915167ms)\n✔ 会话级命令授权只匹配完整字面参数前缀 (0.137667ms)\n✔ Operator 提示要求只与主代理结构化通信 (0.764917ms)\n✔ PlanRevision 只保存精简的不可变计划快照 (1.001084ms)\n✔ Workflow 只接受单根普通 fork 会话树中的 Intent 来源 (0.938625ms)\n✔ 只有 finalize 或完整取消清理才释放项目的唯一 Workflow 槽位 (0.068958ms)\n✔ Revision 变更只把权限收窄、Owner 变化和删除视为硬中止 (3.41575ms)\n✔ Revision classification compares only each task’s selected verification and frozen planning binding (2.315584ms)\n✔ expanded write permissions require a pending check instead of carry-valid reuse (1.876459ms)\n✔ Revision migration supplies plan context so changed frozen inputs never carry completed work as valid (0.579375ms)\n✔ 计划修订保留完成结果，只重新检查语义变化的节点 (0.4475ms)\n✔ Planner 改写历史文案时冻结已完成 task，只执行新增 repair 与最终 verify (1.087417ms)\n✔ 旧运行自然结束后先执行新增前置，再把旧结果重新排入待检查 (0.310625ms)\n✔ mixed needs_decision 的失败 Planning Driver 仍由统一决策器恢复 (1.035375ms)\n✔ 真正外部授权的 needs_decision 只形成一次显式等待 (0.078375ms)\n✔ Runner 生命周期由同一决策表覆盖执行、审查、修复和最终合并 (0.124375ms)\n✔ 新 repair 候选不会继承上一轮 awaiting_approval 而绕过 Reviewer (0.066917ms)\n✔ 旧 repair 候选缺少 approvalPolicy 时仍按内部 Intent 自治批准 (0.069666ms)\n✔ pending handoff 在 running 状态也优先进入局部重规划 (0.13275ms)\n✔ 已重规划 handoff 的新 DAG 不受旧 awaiting_main_discussion 阶段阻塞 (0.198375ms)\n✔ 失败与阻塞现场不会从 Runner 视野中静默消失 (0.115875ms)\n✔ 任务计数与唯一 Workflow 槽位使用同一纯状态语义 (0.079583ms)\n✔ 代表性非终态都必须给出 command 或显式 wait，禁止静默空洞 (0.19875ms)\n✔ 持久状态交叉空间中的每个组合都收敛为 command、wait、terminal 或 invariant (0.630209ms)\nℹ tests 262\nℹ suites 0\nℹ pass 255\nℹ fail 0\nℹ cancelled 0\nℹ skipped 7\nℹ todo 0\nℹ duration_ms 126047.48175\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 262,
+        "pass": 255,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 7,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "history-git-replay",
+      "title": "Owner原始历史、摘要延后、Git结算与重复回执",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/git.test.mjs",
+        "owner-workflow-plugin/test/memory.test.mjs",
+        "owner-workflow-plugin/test/owner-submission.test.mjs",
+        "owner-workflow-plugin/test/resilience.test.mjs",
+        "owner-workflow-plugin/test/verification.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ Owner 分支以 ff-only 同步到最新 workflow HEAD (605.7185ms)\n✔ Owner worktree 脏时拒绝同步 workflow (532.965792ms)\n✔ 只有显式 force 才能删除包含未提交修改的 worktree (311.231458ms)\n✔ Owner worktree 只有忽略的验证产物时允许同步 workflow (683.606ms)\n✔ Owner worktree 绑定错误分支时拒绝同步且不移动 HEAD (619.55ms)\n✔ Owner 分支与 workflow 分叉时拒绝非 ff 同步且不移动 HEAD (1072.747042ms)\n✔ clean paused rebase 时拒绝同步且不移动 HEAD 或 Owner ref (666.288709ms)\n✔ clean paused merge 时拒绝同步且不移动 HEAD 或 Owner ref (675.675458ms)\n✔ clean paused cherry-pick 时拒绝同步且不移动 HEAD 或 Owner ref (776.296375ms)\n✔ 保留已跟踪文件修改状态中的前导空格 (137.240834ms)\n✔ Git 状态忽略 Runtime 自动生成但尚未跟踪的 .gitignore (136.844666ms)\n✔ 正确解析真实重命名和双路径记录 (164.193125ms)\n✔ 正确解析复制记录的双路径 (0.195417ms)\n✔ 提交代理禁用仓库钩子并返回固定提交和实际文件 (307.548209ms)\n✔ 固定提交哈希可以校验变更并安全合并 (544.892458ms)\n✔ 分支和工作树清理支持明确的幂等 missing-ok (311.047833ms)\n✔ 工作树清理默认拒绝删除 dirty worktree 并保留现场 (247.22675ms)\n✔ Owner 记忆契约拒绝越界页面、运行目录来源和未知状态 (1.888ms)\n✔ Runtime 只移除 Owner 记忆 catalog 的自引用元数据 (121.81725ms)\n✔ Markdown Owner Wiki 生成索引和幂等日志，并根据来源提交计算 stale (770.694625ms)\n✔ 多个 Owner 的长期知识分别写入各自文件夹 (231.194458ms)\n✔ 没有新页面但重新核对来源后会刷新既有记忆的验证基线 (698.585208ms)\n✔ 旧 .owner-memory 在下一次编译时迁入对应 Owner 文件夹并删除独立目录 (530.038541ms)\n✔ 临时 Owner 记忆保持简短，封存后作为编译来源但不注入当前长期记忆 (155.876875ms)\n✔ Owner 最终摘要过长时截断记忆来源而不阻塞任务结算 (127.672583ms)\n✔ 旧阻塞在新执行开始后标记为已解决，不再作为当前提示注入 (0.425625ms)\n✔ Memory Curator 被独立 Reviewer 驳回后只允许一次修订 (494.813042ms)\n✔ Memory Curator 的无效引用在写入前会获得一次受限修订 (458.33575ms)\n✔ Memory Reviewer 的无效问题列表只重试审查结论 (386.136958ms)\n✔ Memory Reviewer 不能因新页面的空 derivedFrom 要求任务或提交追溯 (330.241042ms)\n✔ owner_submit 顺序执行边界检查、固定验证和提交 (1.208042ms)\n✔ Owner blocked 报告不会运行验证或提交 (0.128542ms)\n✔ Owner needs_repair 留在当前子线程继续调整，不能制造脏现场恢复循环 (0.273792ms)\n✔ 固定验证等待 Owner 现场授权时自动结算为 blocked，不依赖 Owner 模型猜测 (0.184167ms)\n✔ 固定验证已经执行失败后拒绝 Owner 错报为 blocked (0.296542ms)\n✔ 未获得可执行权限的验证结果仍允许 Owner 报告 blocked (0.221208ms)\n✔ completed admission rejection precedes all effects and allows a corrected blocked submission (0.247417ms)\n✔ Supervisor 将没有活跃子代理的 running Owner 收敛为 orphaned，而不是继续报告运行中 (824.323958ms)\n✔ Supervisor inspect 超时会取消旧执行并切换自治恢复，不能以持续 inspect 无限续命 (789.469458ms)\n✔ Owner 子代理启动时立即持久化 session、phase 与 heartbeat (732.438333ms)\n✔ Owner 宿主授权等待会持久化到 workflow，并在结束后恢复 running (737.489792ms)\n✔ 主会话 Owner 恢复只负责后台派发，不同步等待完整 LLM 执行 (0.906042ms)\n✔ workflow_status 默认保持紧凑，完整历史只通过分页 detail 返回 (942.893291ms)\n✔ failed Workflow 存在待推进 PlanRevision 时 workflow_status 会恢复 Runner 控制桥 (940.969ms)\n✔ 相同根因没有新证据时自动切换恢复策略而不是 await_user (963.2265ms)\n✔ 同一 Owner 的第二个 V2 任务复用分支和 worktree 并同步最新 workflow HEAD (1688.125416ms)\n✔ V2 task finish 合入固定 SHA、完成 task/ownerRun，并让后继从新 workflow HEAD 同步 (3042.6295ms)\n✔ 记忆编译失败后恢复 awaiting_finish Owner 时只重试结算 (1020.83975ms)\n✔ cancel 活动 Owner 时中止执行并删除 dirty 临时分支与 worktree (1461.8375ms)\n✔ cancel 拒绝已 finalized 的 workflow，且不改写持久化状态 (678.810917ms)\n✔ Owner A 保留未提交修改原地恢复，并以 Owner B 已合并的新 HEAD 作为共同审计 base (3721.501375ms)\n✔ 恢复记录含独有固定提交但分支历史丢失时拒绝重置审计基线 (2007.384833ms)\n✔ 控制桥使用持久 lease，不能被第二个 Harness 进程抢占 socket (646.109ms)\n✔ Registry 提案更新后拒绝用陈旧快照重新保存规划状态 (1009.3045ms)\n✔ 两个 Runtime 竞争批准时 Registry 与 workflow state 保持同一结果 (1228.318792ms)\n✔ Registry 批准先赢 workflow state 锁时，另一个 Runtime 不得启动旧计划 Owner (1346.354584ms)\n✔ Owner 获得 lease 后必须用 Registry 批准写入的最新 state 拒绝启动旧计划 (744.071125ms)\n✔ 另一个 Runtime 持有 workflow CAS 锁时批准不会先改 Registry (810.315666ms)\n✔ workflow state 原子保存失败时回滚 Registry 内容和 index (1311.523125ms)\n✔ V2 workflow recovery 恢复重启遗留的 planning 和 failed task (1126.458583ms)\n✔ Owner 主动报告 blocked 时优先结算阻塞，不会被缺失验证误报为 planDigest 错误 (1058.53175ms)\n✔ 同一 Owner 在不同 workflow 间使用磁盘 lease 互斥，并在记录进程死亡后立即恢复 (205.747458ms)\n✔ Lease 的 fencing token 被接管后旧临界区不能继续成功结算 (145.211917ms)\n✔ handoff 必须先修复越界文件，再把请求写入 handoff 队列 (1581.159375ms)\n✔ Owner 失败报告携带 handoff 时先入队再停止，避免重复启动同一 Owner (941.529667ms)\n✔ handoff_replan 在 live Registry 缺失时拒绝重规划 (661.235375ms)\n✔ handoff_replan 拒绝把任务分配给 live Registry 未登记 Owner (755.805375ms)\n✔ running 恢复态的 handoff_replan 会清除旧批准，并要求新的计划审查后才能批准 (916.012708ms)\n✔ V2 task finish 使用 Owner 结算时登记的固定 commit SHA (2341.373792ms)\n✔ active Owner 只能追加简短的当前任务临时记忆，并持久化供恢复注入 (916.091333ms)\n✔ V2 task finish 在固定提交后拒绝跟随 Owner 分支移动 (1385.634917ms)\n✔ V2 task finish 在 workflow 已合入但状态未记账时恢复并幂等完成 (2156.433ms)\n✔ Owner worklog 封存失败后 fresh Runtime 只重试结算且不二次合并代码 (2918.426875ms)\n✔ 长期摘要失败后重复 owner-finish 从封存回执恢复且不改写原始事实 (2978.031416ms)\n✔ 长期摘要恢复遇到缺失 worklog 来源时保持代码已完成并拒绝补造历史 (2227.193417ms)\n✔ V2 task finish 恢复 pendingTaskMerge，只清理 task preflight 并保留 Owner worktree (2717.51875ms)\n✔ V2 task finish 按 task.write 覆盖把 handoff queue 标记为 completed (2537.941834ms)\n✔ finalize 只合并固定的 review SHA，review 后分支移动时拒绝未审查提交 (1167.997375ms)\n▶ finalize 遇到 tracked、untracked 或 ignored Owner dirty 时保存 cleanupPending 并保留现场\n  ✔ tracked (2439.95425ms)\n  ✔ untracked (2432.654917ms)\n  ✔ ignored (2367.416125ms)\n✔ finalize 遇到 tracked、untracked 或 ignored Owner dirty 时保存 cleanupPending 并保留现场 (7240.765917ms)\n▶ finalize 对 legacy ownerRuns 的越界、链接、分支错配和字段冲突一律 fail-closed\n  ✔ top worktree 越出当前 workflow 受控目录 (1868.111833ms)\n  ✔ result worktree 越出当前 workflow 受控目录 (2248.117583ms)\n  ✔ worktree 路径经过符号链接 (2264.106083ms)\n  ✔ 记录 branch 与 worktree attached branch 不一致 (1866.43675ms)\n  ✔ top 与 result worktree 字段冲突 (1845.914958ms)\n  ✔ top 与 result branch 字段冲突 (1888.444625ms)\n✔ finalize 对 legacy ownerRuns 的越界、链接、分支错配和字段冲突一律 fail-closed (11981.92075ms)\n✔ finalize 可清理合法固定 V2 Owner 路径 (2029.660917ms)\n✔ finalize 成功后重复调用可以幂等完成清理 (2606.038959ms)\n✔ finalize 合并已经完成但状态未记账时，可以在资源缺失后恢复清理 (1630.08375ms)\n✔ finalize 在启动分支有新提交时以最新 base 预合并固定 review SHA 并成功交付 (3710.35425ms)\n✔ finalize 最新 base 预合并冲突时记录失败并保留 workflow、Owner 和 preflight 现场 (1927.634625ms)\n✔ Runtime 当前 Owner 只能通过结构化 request_subgraph 请求并在锁内持久化局部 delta (703.183792ms)\n✔ Runtime request_handoff 走局部失效并拒绝通过 delta 绕过 Registry 边界 (624.563375ms)\n✔ Runtime request_handoff 只保留白名单字段，调用方元数据不能覆盖生成字段 (654.959167ms)\n✔ V2 handoff_replan 用 task.write 覆盖 handoff 文件并 carry forward completed task (810.677042ms)\n✔ V2 handoff_replan 确定性冻结已有 ownerRun 对应 task 的语义 (769.797584ms)\n✔ V2 recoverWorkflow 只按 task 状态、ownerRuns 和 Supervisor queue 恢复失败 task (657.183917ms)\n✔ 固定 argv 解析复制并冻结目录定义，拒绝非 argv 输入 (0.952458ms)\n✔ 绑定验证原样传递固定 argv 与 cwd，忽略调用者伪造的 argv (0.382542ms)\n✔ Shell 缺少 exitCode 时按 ok 确定性归一化，异常载体仍 fail closed (0.217084ms)\n✔ 绑定验证保留声明 cwd，旧验证缺省时只使用仓库根目录 (0.082667ms)\n✔ 未知或未绑定验证 ID 在创建快照前拒绝 (0.194334ms)\n✔ 验证结果包含固定 contentDigest 与可序列化证据字段 (0.332667ms)\n✔ 验证结果仅在 contentDigest 完全相同时有效 (0.111041ms)\n✔ 通过结果必须同时具备 full enforcement 与零 exitCode 证据 (0.156167ms)\n✔ 主代理原生允许一次可以作为 approved-host 固定验证证据 (0.115042ms)\n✔ ok:false、超时、中止或后台宿主证据绝不能成为 passed:true (0.409958ms)\nℹ tests 110\nℹ suites 0\nℹ pass 110\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 103394.267167\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 110,
+        "pass": 110,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "platform-security-ui",
+      "title": "模型、Registry、安全、插件、Dashboard与项目集成边界",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/client-bundle.test.mjs",
+        "owner-workflow-plugin/test/dashboard-host.test.mjs",
+        "owner-workflow-plugin/test/dashboard.test.mjs",
+        "owner-workflow-plugin/test/model.test.mjs",
+        "owner-workflow-plugin/test/owner-advice-session.test.mjs",
+        "owner-workflow-plugin/test/plugin.test.mjs",
+        "owner-workflow-plugin/test/registry.test.mjs",
+        "owner-workflow-plugin/test/security.test.mjs",
+        "scripts/project-plugins.test.mjs",
+        "scripts/harness-runtime.test.mjs",
+        "scripts/project-plugins-native.test.mjs",
+        "scripts/acceptance-process.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ 等待列表客户端产物与源码一致并登记正式、本地两个模块编号 (33.410625ms)\n✔ 运行状态和 Owner 输入限制只登记官方 Slot (2.68125ms)\n✔ 运行状态只通过可重连 SSE 接收更新，并按当前工作区和当前会话过滤 (1.179792ms)\n✔ 运行状态按需要处理、总览、主线程和子代理分类显示确定性状态 (0.844125ms)\n✔ 侧栏运行状态使用视口定位，避免被侧栏裁剪和遮住底部操作区 (0.44925ms)\n✔ 等待列表 SSE 同时使用文件事件、周期基线重拉和 heartbeat (4.259625ms)\n✔ Dashboard 用全局 catalog 读取唯一 Runner，同时默认只登记当前业务工作区 (25.238209ms)\n✔ 内嵌 Dashboard 页面、目录与 DAG 快照都从固定工作区只读提供 (34.205ms)\n✔ Dashboard 把可自治的计划审查失败显示为 Runner 恢复，而不是用户动作 (17.890333ms)\n✔ Dashboard 展示 Owner 会诊、abstract 层级和 Reviewer 指定的拆分阶段 (25.759042ms)\n✔ Dashboard 把修订预算耗尽显示为等待用户决定，而不是运行中或 Runtime 故障 (8.827958ms)\n✔ Dashboard 显示自动规划已终止并等待主线程讨论 (10.092167ms)\n✔ Dashboard 把仍有预算的 review_failed 显示为等待 Runner 自动恢复 (6.369542ms)\n✔ Workflow Dashboard 通过 SSE 在投影变化后实时推送 (13.120167ms)\n✔ 等待列表 SSE 立即发送快照并在磁盘状态变化后推送新快照 (38.978083ms)\n✔ 等待列表把旧版复合授权和已被相同动作取代的 Operation 归入遗留记录 (15.931917ms)\n✔ 等待列表投影 Runner 接管、未执行、执行中和依赖任务数量 (10.199167ms)\n✔ 运行状态投影 Harness 主线程、子代理和未启动 Reviewer 的确定性生命周期 (8.140708ms)\n✔ 内嵌 Dashboard 拒绝写入方法、非法 workflow id 与未知路径 (6.873875ms)\n✔ Dashboard 使用 opaque workspace_id 观察已登记业务工作区，不接受浏览器路径 (13.5885ms)\n✔ Dashboard 宿主路由随 Cordis 插件生命周期注册和释放 (0.162375ms)\n✔ Dashboard 只读取指定 workflow 的 progress 投影并将投影变化作为 SSE 推送 (4029.816459ms)\n✔ 尚未生成计划的 workflow 也会投影为可读取的空任务进度 (16.750417ms)\n✔ Dashboard 投影显示 Owner 会话、阶段、心跳、恢复次数和授权等待 (19.160333ms)\n✔ Dashboard 先推送指定 workflow 的既有事件，再推送后续 projection 变化 (42.227875ms)\n✔ Dashboard 按 workflowId 隔离 progress、事件和 SSE，不发生跨 workflow 污染 (4453.770583ms)\n✔ Dashboard、投影和事件缺失 workflowId 时 fail closed (2.034459ms)\n✔ runner 的 Dashboard 模式必须验证并传递安全 workflow-id (0.378333ms)\n✔ Dashboard 只绑定 127.0.0.1，且没有写状态、调度、命令或 CORS 接口 (8.093ms)\n✔ 缺失或畸形 progress 投影安全失败，不泄露本地路径 (5.6945ms)\n✔ progress 投影原子写入后不遗留临时文件 (3.1265ms)\n✔ 展开 Composite 后保留父外部依赖、后继依赖父且子图 entry/exit 可达 (6.694ms)\n✔ Composite 可递归拆分，直到所有 abstract 节点变成可执行叶子 (4.793583ms)\n✔ Composite 只允许未开始且没有业务提交的 work task (1.811875ms)\n✔ Composite 拒绝 ID 冲突、内部环、不可达 entry/exit、越界 Owner 和未绑定验证 (6.391833ms)\n✔ 局部 delta 使被修改任务、Review 和依赖后继失效，并清空旧执行证据 (2.314709ms)\n✔ 局部 delta 要求明确 carryForward，且不允许改写已完成任务或固定提交 (3.326167ms)\n✔ 局部 delta 的失效闭包包含 Composite 父任务和父任务后继 (4.185083ms)\n✔ Composite 子任务不能成为父任务外部依赖，delta 也不能改变 Registry 或删除固定提交证据 (6.923792ms)\n✔ Plan delta 拒绝 V1 并规范化新增 V2 任务 (1.858833ms)\n✔ V2 计划在构建自动机前拒绝超长 scope glob (0.281625ms)\n✔ V2 计划在构建自动机前拒绝字面字符种类过多的 write glob (0.529791ms)\n✔ V2 计划拒绝超出单层 Owner scope 的递归 write (0.33925ms)\n✔ V2 计划拒绝与 Owner exclude 相交的 write (0.467125ms)\n✔ V2 计划拒绝用单层通配符扩大问号 Owner scope (0.519834ms)\n✔ V2 计划拒绝未绑定的验证 ID (0.375084ms)\n✔ V2 work task 必须绑定至少一个 required verification (0.459833ms)\n✔ V2 task保留显式稳定执行资源，旧task省略字段时不注入默认值 (1.473583ms)\n✔ V2 task拒绝重复或不稳定的执行资源身份 (0.81675ms)\n✔ 渐进式 DAG 允许 abstract work 暂不绑定写入和验证，并标记为不可执行 (0.263042ms)\n✔ V2 计划拒绝未定义的 decomposition 状态并列出允许值 (0.509125ms)\n✔ V2 计划拒绝任务依赖环 (0.593542ms)\n✔ V2 计划拒绝空验证 argv (0.248167ms)\n✔ V2 计划拒绝用 argv 字段替代 run 并返回可修复错误 (0.289625ms)\n✔ V2 验证 cwd 只接受受限仓库相对目录并规范化保存 (3.679459ms)\n✔ V2 计划拒绝把 legacy stages 或 completedStages 带入执行模型 (0.370375ms)\n✔ V2 计划拒绝字符串验证 argv (0.317083ms)\n✔ V2 生命周期使用固定 workflow 和 task 状态 (0.095459ms)\n✔ 任务停止状态只接受固定的 reason/action 配对 (0.049958ms)\n✔ 任务停止拒绝未定义的 reason/action 配对 (0.151791ms)\n✔ 任务停止接受 input_missing/provide_input 配对 (0.037125ms)\n✔ 任务停止接受其余固定 reason/action 配对 (0.060917ms)\n✔ V2 计划拒绝 review 任务的 write (0.293083ms)\n✔ V2 计划拒绝 verify 任务的 write (0.27025ms)\n✔ V2 计划原样保留 done 验收文本 (0.519375ms)\n✔ V1 历史计划可读取运行时目录范围且不可执行 (0.300416ms)\n✔ V2 计划规范化显式角色，并按完成的依赖返回可执行任务 (0.563791ms)\n✔ V2 就绪计算跳过运行中和已停止的根任务，并保留并行根任务顺序 (0.546792ms)\n✔ 所有者范围支持目录范围和排除范围 (0.258667ms)\n✔ 所有者范围正确处理问号、单层通配符和目录边界 (0.190375ms)\n✔ 计划拒绝循环和未知 Owner (0.074125ms)\n✔ 计划拒绝所有者范围重叠 (0.320458ms)\n✔ V2 计划拒绝运行时管理目录的 Owner scope (0.361875ms)\n✔ 父 Owner 排除完整子模块后允许合法拆分 (0.304208ms)\n✔ 局部 exclude 不能掩盖父 scope 剩余区域的重叠 (0.175125ms)\n✔ 所有者范围正确区分文件、目录和相邻路径 (1.147583ms)\n✔ 所有者范围的问号和递归通配符参与重叠判断 (0.850459ms)\n✔ 规划和所有者结果契约未知时按关闭处理 (0.830791ms)\n✔ 新计划审查义务必须有显式来源、目标和可核验关闭合同，旧记录只能显式读取 (0.183792ms)\n✔ 新计划审查义务在 Schema 与 normalizer 中都必须提供不可变 obligationId (0.088208ms)\n✔ 计划审查关闭合同支持结构可执行与版本化决定，并按类型要求字段 (0.546667ms)\n✔ 带计划上下文时验证转交目标所有者和文件范围 (0.301958ms)\n✔ Owner 结果可以提出结构化长期记忆，但不能直接引用运行时目录 (0.35525ms)\n✔ V2 计划规范化任务优先级和显式失败策略，并拒绝不完整修复策略 (1.344375ms)\n✔ R76 owner-advice normalizer canonicalizes optional lists while the public schema requires every field (1.323542ms)\n✔ R76 paid worker owner-consultation writes an accepted raw receipt and fresh replay cannot spend again (1054.552708ms)\n✔ R76 exhausted owner-consultation admission refuses a second Owner before a child is created (546.599041ms)\n✔ R76 a wrong-owner structured payload never becomes an accepted advice receipt (618.9435ms)\n✔ R76 an uncertain owner-advisor creation preserves its worker binding for fresh Harness reconciliation without a prompt (594.193417ms)\n✔ R76 a completed owner-advisor turn without submission settles failed and permits its next paid ordinal (664.72475ms)\n✔ 插件注册主编排工具、全局守卫和九个中文 Skill (2.639709ms)\n✔ 决定回执工具仅允许主编排会话，所有子代理角色均被策略拒绝 (0.285666ms)\n✔ 提交 Intent 后明确询问是否重新规划，继续讨论时不唤醒 Planner (0.31425ms)\n✔ 用户在 Intent 问询中选择现在重新规划时只唤醒一次 Planner (0.248083ms)\n✔ PlanRevision 只有根会话原生问询明确同意后才切换 (0.570125ms)\n✔ 取消 Workflow 只有原生问询明确同意后才丢弃临时现场 (0.2625ms)\n✔ 计划修订额度只有原生问询明确同意后才扩展当前 Workflow (0.319292ms)\n✔ 工作流批准只接受原生问询中的明确同意，并保留不同意与自定义意见 (0.13725ms)\n✔ 只读审计完成后由原生问询决定是否自动进入 preflight 与 workflow_start (0.381334ms)\n✔ Registry 与计划批准在原生问询同意前绝不修改 Runtime (0.514542ms)\n✔ Web 客户端宿主模式不注册 Agent 工具、Skill 或提示词 (0.078917ms)\n✔ Owner 工作流提示要求新 Flutter 验证显式 cwd，且不提供 Quick (0.287125ms)\n✔ R09 执行反馈工具拒绝主编排和只读角色，不能冒充活动 Owner (0.055541ms)\n✔ Owner Registry 只有匹配 digest 的已批准提案才能写入并进入 Git 暂存区 (262.881875ms)\n✔ Owner Registry 在提案阶段拒绝超出受管根和重叠的 scope (159.581083ms)\n✔ Owner Registry 拒绝把单层 managedRoots glob 解释为递归受管根 (145.028958ms)\n✔ 批准后的 Owner 完整 round-trip declaredExclude、managedExclude 和 status (222.334375ms)\n✔ Owner Registry 的 split、merge、transfer 和 remove 都只生成内存提案 (598.34ms)\n✔ Owner Registry 将同一轮全部变更合并为一个可原子批准的 batch 提案 (242.815833ms)\n✔ Owner Registry batch 拒绝空批次、嵌套批次和中途无效变更 (132.826875ms)\n✔ Owner Registry 拒绝被篡改或基于旧快照的批准提案 (218.2405ms)\n✔ Owner Registry 拒绝 Registry 目录或 owners 目录符号链接 (135.771708ms)\n✔ Owner Registry 拒绝 config 和 Owner Markdown 文件符号链接 (221.271666ms)\n✔ Owner Registry 暂存失败时回滚整个 Registry 和 Git 索引 (247.721ms)\n✔ Owner Registry 写入失败时保持原 Registry 不变 (138.674084ms)\n✔ Owner Registry 并发批准最多应用一个相同 before 的提案 (230.863583ms)\n✔ ensureRegistry 跟踪全部正式文件且不暂存非 Markdown 文件 (334.73125ms)\n✔ Owner Markdown 对标题、链接和 HTML 文本做安全编码 (215.611375ms)\n✔ Registry digest 不受对象键顺序和 Owner 输入顺序影响且批准摘要不可缺失 (134.376292ms)\n✔ Owner Registry 严格校验父 Owner 引用、删除子引用和父级环 (132.074167ms)\n✔ split 必须保持来源有效范围且拒绝重复结果 Owner (132.20725ms)\n✔ merge 必须拒绝重复来源并保持全部来源有效范围 (175.040625ms)\n✔ 所有 Registry operation 对缺失、重复、同源和越界输入 fail-closed (135.955833ms)\n✔ Owner 删除会从 Git 索引移除失效 Markdown (338.206208ms)\n✔ ensureRegistry 拒绝 Registry 白名单外的已跟踪文件并保持索引不变 (255.069333ms)\n✔ 应用失败会精确恢复调用前已暂存版本而不以工作区版本覆盖 (247.252208ms)\n✔ transfer 不得重新授予源 Owner 已排除的范围 (149.111084ms)\n✔ transfer 不得把范围转入目标 Owner 的 exclude (136.624417ms)\n✔ split 和 merge 必须保持 scope 减 exclude 的有效范围 (141.980583ms)\n✔ ensureRegistry 与批准应用共同遵守同一把 Registry 锁 (370.560042ms)\n✔ Owner Markdown 编码代码围栏、列表、分隔线、表格和强调控制结构 (216.953041ms)\n✔ ensureRegistry 拒绝不符合规范生成结果的 Owner Markdown 正文 (238.221833ms)\n✔ Registry 回滚无法恢复原目录时保留可人工恢复的备份 (255.992958ms)\n✔ ensureRegistry 初始化暂存失败时不留下正式目录或索引变化 (135.187583ms)\n✔ 失败回滚完整保留 assume-unchanged、skip-worktree 和 intent-to-add 索引状态 (527.989542ms)\n✔ split 可对含星号和问号的 scope 做精确有效范围守恒 (153.95425ms)\n✔ merge 可原样合并非字面 glob 且不会扩大授权 (159.897333ms)\n✔ transfer 可安全转交非字面 glob 并在来源建立等值排除 (368.180833ms)\n✔ Owner Markdown 编码四空格和制表符缩进代码结构 (414.130167ms)\n✔ loadRegistry 与写操作共享 Registry 锁并且只读取完整目录状态 (208.891791ms)\n✔ 死亡写者留下的锁和目录切换中间态会在下次读取前恢复 (148.246875ms)\n✔ 缺少 status 的旧 Owner 文档按 active 安全迁移并重新暂存 (311.043875ms)\n✔ Registry 更新保留各 Owner 文件夹内的长期记忆 (430.420708ms)\n✔ 旧版 owners/<id>.md 自动迁移为 owners/<id>/owner.md (411.311125ms)\n✔ Registry 对未知 Owner status fail-closed (134.972917ms)\n✔ Registry 配置 JSON 错误转换为带 cause 的中文边界错误 (132.142292ms)\n✔ split 缺少 owners 时返回中文契约错误而不是 TypeError (146.755875ms)\n✔ 读取缺失 Registry 时返回保留 cause 的中文文件错误 (61.084708ms)\n✔ Owner 不再使用工具白名单，完整能力由 worktree 和提交关卡承接 (129.297959ms)\n✔ recordBoundVerification 把绑定验证结果写入 active、task 状态和日志 (366.793875ms)\n✔ F02 的 task_verification_result 只接受实时重新核验的 Owner 固定验证证据 (1829.417834ms)\n✔ R07 可选文件发现不可用时保留独立验证证据，当前候选与取消门禁不放宽 (583.407625ms)\n✔ 旧 Flutter 计划从唯一受控 test/write/pubspec 链推导 flutter_app，并用于同一计划全部 Flutter 验证 (658.002ms)\n✔ 旧 Flutter 计划的 allowed-once 重试复用同一 snapshotRoot/flutter_app (455.190291ms)\n✔ 旧 Flutter 计划没有唯一 Flutter test/write/pubspec 证据时 fail-closed (448.746834ms)\n✔ 验证快照保留相对符号链接，不再制造虚假的 contentDigest 漂移 (458.129834ms)\n✔ 固定验证快照和内容摘要跳过 Git 忽略的构建产物 (403.620916ms)\n✔ 固定验证快照保留被忽略的 node_modules CLI，但不把依赖计入提交内容 (398.082458ms)\n✔ 固定验证被 workspace-write 拒绝后由 Owner 现场原生授权并精确重试一次 (473.032042ms)\n✔ 固定验证获批后 Owner 绑定失效时不执行宿主重试 (317.684209ms)\n✔ 固定验证失败会持久化并返回有界 stdout 与 stderr (344.402916ms)\n✔ required verification result 必须绑定当前 V2 plan/task/Owner/session/status (455.4225ms)\n✔ persisted Owner completed/awaiting/committed 快路径必须重验 V2 证据和现场 (885.605208ms)\n﹣ 旧版普通文本 Owner 结果状态漂移测试（owner_submit 已在子线程内固定结果） (0.075958ms) # SKIP\n✔ recordBoundVerification 拒绝不匹配 active/task、未绑定和未知 verification (213.685208ms)\n✔ recordBoundVerification 对非 full 或非零 exit status 持久化负面证据并失败 (578.772334ms)\n﹣ 旧版 Owner 手工验证缺失测试（owner_submit 现在自动执行固定验证） (0.084167ms) # SKIP\n﹣ 旧版 owner_write 写入代次测试（已由 contentDigest 提交关卡替代） (0.022125ms) # SKIP\n﹣ 旧版 owner_edit 写入代次测试（已由 contentDigest 提交关卡替代） (0.016791ms) # SKIP\n﹣ 旧版 owner_write 相同内容代次测试（逐写入包装已移除） (0.015833ms) # SKIP\n✔ owner_verify 执行期间计划代次和真实 worktree 漂移时拒绝记录成功 (346.917084ms)\n✔ owner_verify 忽略其他 Supervisor 记账造成的全局 revision 变化 (380.525042ms)\n✔ owner_verify 执行固定验证前必须确认 shell 为 workspace-write (241.747875ms)\n✔ owner_verify 对宿主失败证据持久化负面结果并拒绝通过 (1467.149875ms)\n﹣ 旧版 Owner 逐写入范围测试（worktree 沙箱与提交关卡已有替代测试） (0.099834ms) # SKIP\n﹣ 旧版 Owner 写入包装链接测试（最终提交关卡覆盖受保护现场） (0.024708ms) # SKIP\n﹣ 旧版 Owner 写入包装长期记忆测试（最终提交关卡覆盖） (0.018292ms) # SKIP\n﹣ 旧版 Owner 写入包装 Registry 测试（最终提交关卡覆盖） (0.016333ms) # SKIP\n﹣ 旧版 Owner 写入包装大小写路径测试（最终提交关卡覆盖） (0.013834ms) # SKIP\n✔ Owner scope 过宽时提交前后二次检查都拒绝 Owner Registry 的大小写路径别名 (413.948ms)\n✔ Owner scope 过宽时提交检查拒绝 .owner-workflow 路径 (493.28625ms)\n﹣ 旧版 Owner Shell 命令白名单测试（Owner 现在使用正常 Harness Shell） (0.087ms) # SKIP\n﹣ 旧版 owner_bash 沙箱测试（固定验证仍保留快照证据） (0.026583ms) # SKIP\n﹣ 旧版 owner_bash 副本测试（Owner 本身已位于隔离 worktree） (0.027416ms) # SKIP\n﹣ 旧版逐写入操作日志测试（现在记录最终功能摘要和真实 diff） (0.018333ms) # SKIP\n✔ 提交代理禁用 Git hook 并在提交后再次校验 Owner 文件范围 (713.451708ms)\n✔ Owner scope 内的 Git 忽略构建产物不会进入提交，也不阻断结算 (267.6095ms)\n✔ acceptance preserves ordinary configuration but excludes source aliases and parent test context (1.0945ms)\n✔ normal command captures stdout, stderr and exit status (25.626541ms)\n✔ timeout terminates a test worker that survives its parent and holds output pipes (502.8905ms)\n✔ cancel terminates a test worker that survives its parent and holds output pipes (505.506833ms)\n✔ an already cancelled acceptance never starts a command (0.437167ms)\n[harness] Building 0.1.5-rc.2 96d64b6c495e804ea8605094338a186333084de2; only ignored outputs are writable.\n[harness] Building 0.1.5-rc.2 96d64b6c495e804ea8605094338a186333084de2; only ignored outputs are writable.\n[harness] Building 0.1.5-rc.2 96d64b6c495e804ea8605094338a186333084de2; only ignored outputs are writable.\n✔ verified build is reused; changed client artifacts and stale extra libraries force a clean rebuild (450.026458ms)\n✔ dirty source and unsupported revision fail before installation or cleanup (125.262041ms)\n[harness] Building 0.1.5-rc.2 955217335f199d454230d5682c56db722f204cdd; only ignored outputs are writable.\n[harness] Building 0.1.5-rc.2 955217335f199d454230d5682c56db722f204cdd; only ignored outputs are writable.\n✔ failed build and concurrent source modification cannot publish a successful build stamp (230.189875ms)\n[harness] Building 0.1.5-rc.2 955217335f199d454230d5682c56db722f204cdd; only ignored outputs are writable.\n✔ concurrent launchers cannot clean or build the same Harness at the same time (212.438584ms)\n[project-plugins] 全部插件准备成功，可以启动 DSH。\n✔ real profile preparation replaces the legacy approval host and preserves custom permission and settings (3589.623208ms)\nℹ Native client graph: [{\"id\":\"@deepseek-ai/dsh-client-ui-slots\",\"provided\":false},{\"id\":\"@deepseek-ai/dsh-client-ui-primitives\",\"provided\":false},{\"id\":\"@deepseek-ai/dsh-client-runtime\",\"provided\":false}]\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager\n[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整\n[project-plugins] 6/11 显式更新 dsh-cost-meter\n[project-plugins] dsh-cost-meter@1.0.0 安装产物完整\n[project-plugins] 7/11 显式更新 dsh-plugin-open-editor\n[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 8/11 显式更新 dsh-plugin-diff-review\n[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator\n[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 10/11 显式更新 dsh-easyrewrite\n[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整\n[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain\n[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 全部插件准备成功，可以启动 DSH。\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.1 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.1 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.1 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n[project-plugins] dsh-visualizer@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整\n[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager\n[project-plugins] @js2hou/dsh-mcp-manager@1.0.1 安装产物完整\n[project-plugins] 6/11 显式更新 dsh-cost-meter\n[project-plugins] dsh-cost-meter@1.0.1 安装产物完整\n[project-plugins] 7/11 显式更新 dsh-plugin-open-editor\n[project-plugins] dsh-plugin-open-editor@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整\n[project-plugins] 8/11 显式更新 dsh-plugin-diff-review\n[project-plugins] dsh-plugin-diff-review@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整\n[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator\n[project-plugins] @dsh-external/dsh-plannotator@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整\n[project-plugins] 10/11 显式更新 dsh-easyrewrite\n[project-plugins] dsh-easyrewrite@1.0.1 安装产物完整\n[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain\n[project-plugins] @dsh-external/dsh-sidechain@1.0.0#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 安装产物完整\n[project-plugins] 全部插件准备成功，可以启动 DSH。\n✔ ordered latest resolution, project-local install, patch publication and profile deduplication (60.460708ms)\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n✔ failed second installation stops the sequence, releases lock and never publishes launch state (7.63525ms)\n[project-plugins] 1/11 显式更新 dshmarket\n✔ missing build artifact fails closed even when the package manager reports success (7.250375ms)\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n✔ Git build approval failure stops before subsequent plugins without npm fallback (11.694333ms)\n✔ invalid Git revision rejects the package before installation (3.634416ms)\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n✔ installed Git package must still match the configured identity (13.943375ms)\n[project-plugins] 1/11 显式更新 dshmarket\n✔ missing legacy bundle needs an explicit adapter (6.929875ms)\n✔ required predecessor is validated before any installation (3.971667ms)\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager\n[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整\n[project-plugins] 6/11 显式更新 dsh-cost-meter\n[project-plugins] dsh-cost-meter@1.0.0 安装产物完整\n[project-plugins] 7/11 显式更新 dsh-plugin-open-editor\n[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 8/11 显式更新 dsh-plugin-diff-review\n[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator\n[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 10/11 显式更新 dsh-easyrewrite\n[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整\n[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain\n[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n✔ all installs finish before host compatibility check; missing peers block publication (27.833417ms)\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager\n[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整\n[project-plugins] 6/11 显式更新 dsh-cost-meter\n[project-plugins] dsh-cost-meter@1.0.0 安装产物完整\n[project-plugins] 7/11 显式更新 dsh-plugin-open-editor\n[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 8/11 显式更新 dsh-plugin-diff-review\n[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator\n[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 10/11 显式更新 dsh-easyrewrite\n[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整\n[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain\n[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 全部插件准备成功，可以启动 DSH。\n✔ resolver supports Node ESM, browser package.json lookup, and one shared host peer instance (67.711208ms)\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager\n[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整\n[project-plugins] 6/11 显式更新 dsh-cost-meter\n[project-plugins] dsh-cost-meter@1.0.0 安装产物完整\n[project-plugins] 7/11 显式更新 dsh-plugin-open-editor\n[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 8/11 显式更新 dsh-plugin-diff-review\n[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator\n[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 10/11 显式更新 dsh-easyrewrite\n[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整\n[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain\n[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 全部插件准备成功，可以启动 DSH。\n✔ run keeps original CLI args and inserts --patch before web app options (72.156667ms)\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager\n[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整\n[project-plugins] 6/11 显式更新 dsh-cost-meter\n[project-plugins] dsh-cost-meter@1.0.0 安装产物完整\n[project-plugins] 7/11 显式更新 dsh-plugin-open-editor\n[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 8/11 显式更新 dsh-plugin-diff-review\n[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator\n[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 10/11 显式更新 dsh-easyrewrite\n[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整\n[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain\n[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 全部插件准备成功，可以启动 DSH。\n[project-plugins] 1/11 显式更新 dshmarket\n✔ failed refresh invalidates previous launch; state stores facts only (47.185583ms)\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager\n[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整\n[project-plugins] 6/11 显式更新 dsh-cost-meter\n[project-plugins] dsh-cost-meter@1.0.0 安装产物完整\n[project-plugins] 7/11 显式更新 dsh-plugin-open-editor\n[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 8/11 显式更新 dsh-plugin-diff-review\n[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator\n[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 10/11 显式更新 dsh-easyrewrite\n[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整\n[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain\n[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 全部插件准备成功，可以启动 DSH。\n[project-plugins] 1/11 检查固定版本 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 检查固定版本 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 检查固定版本 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 检查固定版本 dsh-visualizer\n[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 5/11 检查固定版本 @js2hou/dsh-mcp-manager\n[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整\n[project-plugins] 6/11 检查固定版本 dsh-cost-meter\n[project-plugins] dsh-cost-meter@1.0.0 安装产物完整\n[project-plugins] 7/11 检查固定版本 dsh-plugin-open-editor\n[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 8/11 检查固定版本 dsh-plugin-diff-review\n[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 9/11 检查固定版本 @dsh-external/dsh-plannotator\n[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 10/11 检查固定版本 dsh-easyrewrite\n[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整\n[project-plugins] 11/11 检查固定版本 @dsh-external/dsh-sidechain\n[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 全部插件准备成功，可以启动 DSH。\n✔ ordinary startup reuses pinned versions without network resolution or reinstalling complete packages (44.334959ms)\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager\n[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整\n[project-plugins] 6/11 显式更新 dsh-cost-meter\n[project-plugins] dsh-cost-meter@1.0.0 安装产物完整\n[project-plugins] 7/11 显式更新 dsh-plugin-open-editor\n[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 8/11 显式更新 dsh-plugin-diff-review\n[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator\n[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 10/11 显式更新 dsh-easyrewrite\n[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整\n[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain\n[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 全部插件准备成功，可以启动 DSH。\n✔ missing pins, changed manifest and wrong host version fail before package mutation (36.084416ms)\n[project-plugins] 1/11 显式更新 dshmarket\n[project-plugins] dshmarket@1.0.0 安装产物完整\n[project-plugins] 2/11 显式更新 dsh-better-sidebar\n[project-plugins] dsh-better-sidebar@1.0.0 安装产物完整\n[project-plugins] 3/11 显式更新 dsh-context\n[project-plugins] dsh-context@1.0.0 安装产物完整\n[project-plugins] 4/11 显式更新 dsh-visualizer\n[project-plugins] dsh-visualizer@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 5/11 显式更新 @js2hou/dsh-mcp-manager\n[project-plugins] @js2hou/dsh-mcp-manager@1.0.0 安装产物完整\n[project-plugins] 6/11 显式更新 dsh-cost-meter\n[project-plugins] dsh-cost-meter@1.0.0 安装产物完整\n[project-plugins] 7/11 显式更新 dsh-plugin-open-editor\n[project-plugins] dsh-plugin-open-editor@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 8/11 显式更新 dsh-plugin-diff-review\n[project-plugins] dsh-plugin-diff-review@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 9/11 显式更新 @dsh-external/dsh-plannotator\n[project-plugins] @dsh-external/dsh-plannotator@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 10/11 显式更新 dsh-easyrewrite\n[project-plugins] dsh-easyrewrite@1.0.0 安装产物完整\n[project-plugins] 11/11 显式更新 @dsh-external/dsh-sidechain\n[project-plugins] @dsh-external/dsh-sidechain@1.0.0#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 安装产物完整\n[project-plugins] 全部插件准备成功，可以启动 DSH。\n✔ a removed client module is rejected from pinned metadata before installing any external code (32.788667ms)\nℹ tests 212\nℹ suites 0\nℹ pass 198\nℹ fail 0\nℹ cancelled 0\nℹ skipped 14\nℹ todo 0\nℹ duration_ms 43411.851292\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 212,
+        "pass": 198,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 14,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "project-adapters",
+      "title": "SoL、Synapse、审批原生适配与生命周期",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--import",
+        "./sol-efficiency-plugin/test/workspace-loader.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "sol-efficiency-plugin/test/agent-round.test.mjs",
+        "sol-efficiency-plugin/test/candidate.test.mjs",
+        "sol-efficiency-plugin/test/client.test.mjs",
+        "sol-efficiency-plugin/test/integration.test.mjs",
+        "sol-efficiency-plugin/test/owner-team.test.mjs",
+        "sol-efficiency-plugin/test/receipt.test.mjs",
+        "sol-efficiency-plugin/test/settings.test.mjs",
+        "synapse-workflow-plugin/test/client.test.mjs",
+        "synapse-workflow-plugin/test/projection-access.test.mjs",
+        "synapse-workflow-plugin/test/projection.test.mjs",
+        "approve-for-me-workflow-plugin/test/composition.test.mjs",
+        "approve-for-me-workflow-plugin/test/host.test.mjs",
+        "approve-for-me-workflow-plugin/test/reviewer.test.mjs",
+        "approve-for-me-workflow-plugin/test/settings.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ native patch composition preserves custom presets, default and legacy settings without double-loading (0.865291ms)\n✔ adapted nested profiles are idempotent and an explicitly disabled plugin stays disabled (0.174ms)\n✔ conflicting policy, duplicate plugins and computed config require review instead of silent replacement (0.217292ms)\n✔ native Bash escalation is allowed once only under the selected preset and matching fixed rules (364.247ms)\n✔ unmatched commands and unassociated approval requests reach the native human fallback (33.880125ms)\n✔ native settings preserve user configuration, reject invalid prefixes and apply changed rules immediately (30.866417ms)\n✔ real AgentLoop calls Bash and the native no-tools reviewer, then resumes after a single approval (271.211583ms)\n✔ reviewer deny cannot grant permission and reaches native manual fallback (57.765417ms)\n✔ reviewer escalate cannot grant permission and reaches native manual fallback (52.469666ms)\n✔ reviewer invalid cannot grant permission and reaches native manual fallback (48.734167ms)\n✔ a pending allow verdict cannot outlive settings (50.126958ms)\n✔ a pending allow verdict cannot outlive preset (49.118875ms)\n✔ a pending allow verdict cannot outlive cancel (45.530083ms)\n✔ a pending allow verdict cannot outlive dispose (41.8505ms)\n✔ review timeout disposes the native child before falling back (1032.937167ms)\n✔ fixed high risk is rejected before an allowlisted command can reach the reviewer (27.725041ms)\n✔ a recovered rejected write keeps its draft; conflicting host edits cannot be overwritten (1.378125ms)\n✔ saving preserves an unavailable existing route and hidden limits; reset uses native unset (1.285292ms)\n✔ new unavailable routes, malformed rules and read-only settings cannot be saved (0.329083ms)\n✔ late catalog responses cannot repopulate a reconnected or disposed controller (0.151625ms)\n✔ assembled agent round logs fusion and feeds the evidence receipt into the next model request (293.189167ms)\n✔ V3 managed cold read retains the complete nested dispatch chain inside the actual model turn (109.004708ms)\n✔ truncated output is reconstructed from the mounted filesystem before reduction (0.75ms)\n✔ missing full output and oversized Unicode source are not reduced as complete logs (0.09275ms)\n✔ a size-unknown spilled stream is stopped at the full UTF-8 byte budget (0.118ms)\n✔ browser checkbox uses the DSH settings seam and changes real host tool registrations (243.436958ms)\n✔ read-only browser disables both switches and failed saves show an error (1.759542ms)\n✔ launchers no longer inject SoL or expose launch-specific switches (0.769041ms)\n✔ real Loader + native write/bash: apply, verify, preserve audit and dispose registrations (220.866667ms)\n✔ failed edit skips bash; failed bash preserves the successful mutation (56.934416ms)\n✔ native guard denial is enforced on the nested bash dispatch (48.086333ms)\n✔ version change between mutation and bash prevents verification (45.259792ms)\n✔ nested additional context and turn conclusion reach the outer result (35.410375ms)\n✔ EPR compresses native failed test output, preserves exit status/value and archives exact source (71.078042ms)\n✔ EPR auto uses model defaults and omits reasoning for models without that capability (105.574791ms)\n✔ EPR keeps explicit reasoning settings and falls back before dispatch when unsupported (141.369583ms)\n✔ EPR binds capability resolution, stream and audit to one adapter generation during replacement (96.279292ms)\n✔ EPR composes with fusion and does not replace the file mutation confirmation (76.477958ms)\n✔ invalid reducer output and provider errors retain the original content (102.150625ms)\n✔ secret logs and non-diagnostic commands never reach reducer (99.760083ms)\n✔ native read-before-edit policy also governs fused edits (55.163666ms)\n✔ EPR deadline falls back without changing the native bash result (92.94ms)\n✔ pre-cancelled fusion never writes and command timeout retains the mutation (59.162416ms)\n✔ unloading EPR aborts in-flight reduction and removes its listener (106.65875ms)\n(node:55324) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ Code Mode reaches fusion through native nested dispatch; ordinary bash skips reducer (171.879084ms)\n✔ default-off configuration removes both features through Loader reload (79.168958ms)\n✔ missing native bash fails before mutation (40.941292ms)\n✔ storage failure is fail-open and happens before any reducer request (68.338083ms)\n✔ existing post-execute content replacement is preserved without a reducer call (67.674833ms)\n✔ nested log projection changes only the durable preview (47.348292ms)\n✔ nested log projection failure retains the settled result (47.101791ms)\n✔ cancellation after a native write settles its log and skips bash without pretending the file was rolled back (32.222ms)\n✔ actual Owner Runner retains Agent identity, sandbox/escalation gates and fixed submission through SoL fusion (1890.215125ms)\n✔ receipt preserves exact Unicode quotes, source hash, line and quote hash (1.160459ms)\n✔ wrong source, status, invented quotes, empty evidence and disguised failure are rejected (0.227125ms)\n✔ diagnostic command routing includes common DSH workflows and excludes plain reads (0.456ms)\n✔ secret heuristic rejects common credentials without claiming completeness (0.279584ms)\n✔ config is default-off, permits session routes and rejects partial routes, invalid limits and misspellings (0.646583ms)\n✔ DSH file settings persist checkbox changes and hot-toggle tools without duplicates (266.381ms)\n✔ EPR checkbox follows the session model and disabling removes reduction (165.278333ms)\n✔ reconnect preserves the authoritative removal baseline and never prunes unloaded child catalogs (3.576292ms)\n✔ map streams official trajectory snapshots, navigates complete child addresses and tears down subscriptions (1.301375ms)\n✔ session synchronization waits for the previous request and keeps removals after a lost acknowledgement (1.655875ms)\n✔ one snapshot excludes interleaved sync pruning and recovers after a failed request (9.10725ms)\n✔ native live replay, cold fork recovery and unload preserve own history and durable fork cut (191.857959ms)\n✔ unsupported Session read contracts fail explicitly instead of projecting empty history (0.289375ms)\n✔ verified alternate upstream directory works without Git and rejects changed shipped assets (15.746416ms)\nℹ tests 67\nℹ suites 0\nℹ pass 67\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 8969.737666\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 67,
+        "pass": 67,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "acceptance-classification",
+      "title": "集中验收独立继续与完整失败分类自验",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/acceptance-runner.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ Node test适配器只把有非零用例且证据完整的结果识别为可通过 (1.174792ms)\n✔ 集中验收拒绝未知依赖、依赖环和空命令 (0.413084ms)\n✔ 真实Node入口在首项失败后继续独立项，并分类阻塞、超时、取消、零用例和未运行 (278.974042ms)\n✔ 中断和超时保留已观测用例计数，但不将部分通过升级为验收通过 (0.979583ms)\n✔ 候选摘要或代码提交变化时旧结果不能计为通过 (0.314583ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 354.792834\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "planning-activation",
+      "title": "固定候选审查、执行版本激活、竞争与重放",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/planning-compile-native.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [
+        "planning-foundation"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ 真实Runtime经生产Planner提交路径编排固定快照；Owner提示保留完整Ticket，未激活Workflow (4806.013541ms)\n✔ 丢失ready片段映射由实际Planner校验拒绝，有限两次后不发布候选 (2870.604125ms)\n✔ 真实Agent从Spec/Ticket和checkpoint经Planner/Reviewer激活候选，再由Owner Team执行、审查并交付 (23882.606958ms)\n✔ 固定候选通过独立Reviewer工具提交后持久保存原始来源，passed不激活 (2312.32575ms)\n✔ 固定候选Reviewer缺少原始调用来源时两次后拒绝，无审查回执 (2514.159292ms)\n✔ Reviewer改写当前规划文档即使仍为相同Git dirty状态也不能发布回执 (3900.715125ms)\n✔ 真实agents.create/provider与原生工具提交保留候选身份和独立审查原始来源 (3210.387083ms)\n✔ 同一固定父快照的两个候选竞争时只有一个完整Workflow可见 (3352.280792ms)\n✔ worktree就绪但状态未发布的激活可恢复，期间preflight拒绝另一条图 (2956.95175ms)\n✔ 固定候选与独立审查在一个持久事务中激活完整Workflow，重放不创建第二版本 (3068.537584ms)\n✔ T19 legacy active Workflow replay is not silently enrolled into the new recovery policy (2923.433625ms)\n✔ 激活拒绝错配审查和blocked包，且不暴露半激活Workflow (2412.9305ms)\n✔ 没有事务记录的同名workflow branch不能被激活入口接管 (2578.288333ms)\n✔ 活跃Workflow从修订Spec/Ticket固定父版本，经独立审查切换PlanRevision且重放不重复迁移 (6120.227375ms)\nℹ tests 14\nℹ suites 0\nℹ pass 14\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 67184.26375\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 14,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "contract": "DSH_ACCEPTANCE_ITEM_RESULT_V1",
+      "itemId": "representative-sab-k1-k2",
+      "title": "S/A/B代表场景：K1到兼容K2及唯一公共实现",
+      "status": "passed",
+      "candidateId": "CA01-DSH015-ced3970c5f00",
+      "codeCommitSha": "aac638899edb3f4e028d01dfd44e555847aceded",
+      "contentDigest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "--import",
+        "./deepseek-harness/node_modules/tsx/dist/esm/index.mjs",
+        "--test",
+        "--test-force-exit",
+        "--test-concurrency=1",
+        "--test-timeout=180000",
+        "owner-workflow-plugin/test/public-owner-plan-lifecycle.test.mjs"
+      ],
+      "cwd": ".",
+      "dependsOn": [
+        "planning-activation",
+        "public-owner-protocol",
+        "scheduler-resource-lifecycle"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "aborted": false,
+      "stdout": "✔ T30 authoritative K1 decision executes one K2 writer, integrates real commits and Memory, then unlocks its consumer (10711.036ms)\n✔ T30 activation rejects a consumer plan that omits the authoritative decision binding (1456.599875ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 12353.822709\n",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "testSummary": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    }
+  ],
+  "startedAt": "2026-09-12T08:50:48.093Z",
+  "completedAt": "2026-09-12T09:06:06.952Z",
+  "durationMs": 918859,
+  "sourceBinding": {
+    "digest": "bb46d7b8aaadfe1b6f8bf2803c1917c0845072f0b9855e440cfbfdcb749f9e81",
+    "fileCount": 13480,
+    "roots": [
+      "package.json",
+      "dsh-runtime.json",
+      "project-plugins.json",
+      "project-plugins.lock.json",
+      "start-owner-workflow.sh",
+      "start-owner-workflow-npm.sh",
+      "start-owner-workflow-submodule.sh",
+      "docs/superpowers/specs/2026-09-10-main-thread-spec-ticket-owner-dag-design.md",
+      "docs/specs/main-thread-owner-workflow/tickets",
+      "scripts",
+      "owner-workflow-plugin",
+      "sol-efficiency-plugin",
+      "synapse-workflow-plugin",
+      "approve-for-me-workflow-plugin",
+      "dsh-synapse",
+      "deepseek-harness/package.json",
+      "deepseek-harness/pnpm-lock.yaml",
+      "deepseek-harness/tsconfig.json",
+      "deepseek-harness/.dsh-build/owner-workflow-runtime.json",
+      "deepseek-harness/apps/cli",
+      "deepseek-harness/apps/web/dist",
+      "deepseek-harness/native/system",
+      "deepseek-harness/packages",
+      "deepseek-harness/vendor/cordis/lib"
+    ]
+  }
+}

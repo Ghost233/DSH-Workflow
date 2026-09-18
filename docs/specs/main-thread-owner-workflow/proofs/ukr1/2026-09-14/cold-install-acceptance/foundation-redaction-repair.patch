@@ -1,0 +1,17 @@
+--- a/tests/foundation/evidence.mjs
++++ b/tests/foundation/evidence.mjs
+@@ -6,7 +6,13 @@
+  * delimiter-separated evidence without retaining the original values.
+  */
+ export function redactEvidence(input) {
+-  let text = typeof input === 'string' ? input : JSON.stringify(input);
++  const serialize = (value) => JSON.stringify(value, (key, child) =>
++    SENSITIVE_KEYS.some((sensitive) => sensitive.toLowerCase() === key.toLowerCase())
++      ? '[REDACTED]' : child);
++  if (typeof input !== 'string') return serialize(input);
++  try { return serialize(JSON.parse(input)); }
++  catch (error) { if (!(error instanceof SyntaxError)) throw error; }
++  let text = input;
+   for (const key of SENSITIVE_KEYS) {
+     const name = escaped(key);
+     // JSON/nested object and key=value or key:value forms. Preserve structure.

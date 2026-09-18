@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-14T08:35:14.614Z",
+  "launcher": "./start-owner-workflow.sh",
+  "previousInstance": "eb2b818f-30a9-41cb-8e71-ac10e90dea27",
+  "instance": "06171703-74fe-4732-9781-37bbc12830fa",
+  "previousLauncherPid": 93882,
+  "stop": "verified launcher SIGTERM; process exited 0",
+  "launchSession": 19560,
+  "log": "/private/tmp/dsh-planning-candidate-fixed-host.log",
+  "workflowId": "wf-03d397fffe12a1d0e9726a73ccb53ba315e3d7eb",
+  "preserved": {
+    "planVersion": 0,
+    "recoveryUsed": 2,
+    "cancelRequested": false
+  },
+  "browser": "same tab 1 refreshed; original main history visible; targeted resume message submitted"
+}

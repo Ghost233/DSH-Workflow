@@ -1,0 +1,63 @@
+{
+  "kind": "development-targeted-validation",
+  "date": "2026-09-12",
+  "dshCommit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "dshTrackedChanges": "",
+  "node": "v24.12.0",
+  "browser": "152.0.7977.83",
+  "runs": [
+    {
+      "name": "integration",
+      "command": "node --import ./deepseek-harness/node_modules/tsx/dist/esm/index.mjs --test --test-force-exit owner-workflow-plugin/test/harness-integration.test.mjs",
+      "log": "integration.log",
+      "result": {
+        "tests": 10,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "regression",
+      "command": "node --test --test-force-exit owner-workflow-plugin/test/client-bundle.test.mjs owner-workflow-plugin/test/dashboard.test.mjs owner-workflow-plugin/test/dashboard-host.test.mjs",
+      "log": "regression.log",
+      "result": {
+        "tests": 31,
+        "pass": 31,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    }
+  ],
+  "total": {
+    "tests": 41,
+    "pass": 41,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "limits": [
+    "Official locally built base + web-app composition, real HTTP authentication and browser modules, Owner and standard presets, native UserQuestionService and isolated Chrome.",
+    "Session display history is deterministic fixture data written through public Session APIs. Questions use the production adapter and native service; answers are entered by browser automation. No live model or human participant.",
+    "Three official slots only; the removed custom sidebar.workspace.action is not restored. Workspace status remains available in the sidebar footer.",
+    "No complete planning/revision, Spec/Ticket/DAG candidate, Owner child authorization/navigation, SoL/Synapse or independent approve-for-me acceptance."
+  ],
+  "sha256": {
+    "package.json": "4f0a1dfc0feec75d2457690a9bb790bd91930d36567b98101565fb6855d5ce44",
+    "owner-workflow-plugin/package.json": "96b0fc1f469102cf75042015b9d9651ba3c4696800e26c5eab8729851b6bcc32",
+    "owner-workflow-plugin/src/client-runtime.js": "bf388945cf0b8082b57711ba928ff3aef2438ddfb17d84c6ae562d6e2cec810e",
+    "owner-workflow-plugin/client.js": "063b8a6cb91b1cb69f9f17f9434f25bb46522da4297171e179dbdb721629f6ee",
+    "owner-workflow-plugin/test/harness-integration.test.mjs": "0dc0f95314c60ff3e4f35c2e87196aa0e7de2e2e6549b7df20d80e495eebf793",
+    "owner-workflow-plugin/test/client-bundle.test.mjs": "ed6e4ea58b1e1705fb369b65af0887b3d45d25887e1d27ca367d0c67da8870f5",
+    "owner-workflow-plugin/agent-presets/owner-workflow/agent.cordis.yml": "2f347c3d14728cfc9ea6cd026569af33af6d3d3ddf91b2734614f3f4abdb05a8",
+    "owner-workflow-plugin/src/dsh-execution.mjs": "118b16c1535413e2c4a9ef444e87d8914215e41499b81d27d2d00038e45d07fb",
+    "owner-workflow-plugin/src/agent-policy.mjs": "3ecafcbcc69adcdf4c4a180134c24ee583577570e44eefa34bfb12a15d8e319e",
+    "owner-workflow-plugin/index.js": "209ed5ef4b484d444f9ec9742a4e828a03e9d3cc4c698e4019e3c022e798d06b",
+    "owner-workflow-plugin/src/runtime.mjs": "90c588a101a145dc92aa10b7a2b6e296004de77b1e2fc94041801558fa862ac0",
+    "docs/specs/main-thread-owner-workflow/proofs/dsh-0.1.5-web-preset/owner-web-question.png": "ff1e73f9315aca06489f172c98d99b2a744425146d1d4ed73b11f721bfe63b31",
+    "docs/specs/main-thread-owner-workflow/proofs/dsh-0.1.5-web-preset/regression.log": "39415471a58f0e7ddee38dfc8c4133ec49b62fac07830465af3ed02feefae257",
+    "docs/specs/main-thread-owner-workflow/proofs/dsh-0.1.5-web-preset/integration.log": "74e2085df51833a81d3d61a4908e4fad07a28bd5f4ff58c5bf457417973a5091"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "observedAt": "2026-09-14T05:30:34.204377+00:00",
+  "entry": "./start-owner-workflow.sh",
+  "health": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "53076d45-b5eb-4c8d-a1d4-62f9a4dfa589",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  },
+  "existingBrowserTabReused": true,
+  "originalCoinhubSessionVisible": true,
+  "userConfigurationUnchanged": true,
+  "planVersion": 3,
+  "recoveryUsed": 16,
+  "recoveryLimit": 16,
+  "integrationHead": "437424b007e63e5fa36dcca1099e9b5bcd961a4c"
+}

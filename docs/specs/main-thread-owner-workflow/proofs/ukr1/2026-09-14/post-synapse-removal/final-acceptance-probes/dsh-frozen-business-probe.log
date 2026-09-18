@@ -1,0 +1,51 @@
+(node:91129) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Frozen source SHA256: {"worker/families.ts":"d562d12304f2630f16af05181d613b8b9540dd0c67efea8a0be626415ef0b83e","worker/local-acceptance.ts":"5703800975fe75f33d3345b58678e25f31d3e6f6f4e82b5c51ff56bd09d4c0c6","src/proto/aa-bb.ts":"94ebe7472826d31b09d723ad1c894eaecdb04f058bd7aca34de98fb7bbf8dc4e","src/panel/views/MarketView.tsx":"34d11be74d777d090c870c67200a0bc9f77fe38271a208da7da94dab3c1b2c7c"}
+Panel acknowledged order: [ 'b', 'a', 'c' ] actual UI rollback: [ 'a', 'b', 'c' ]
+Worker stream content type: application/json; charset=utf-8 bytes: 87
+✖ Panel overlapping writes retain acknowledged A when later B fails (1.797625ms)
+✖ Worker local stream can be decoded by the real production frame reader (10.790458ms)
+✔ Control: local gate is opt-in and probing performs no external fetch (0.155917ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 1
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 100.620625
+
+✖ failing tests:
+
+test at ../../../../private/tmp/dsh-frozen-business-probe.mjs:40:1
+✖ Panel overlapping writes retain acknowledged A when later B fails (1.797625ms)
+  AssertionError [ERR_ASSERTION]: UI must retain the last server-acknowledged order
+  + actual - expected
+  
+    [
+  +   'a',
+      'b',
+  -   'a',
+      'c'
+    ]
+  
+      at TestContext.<anonymous> (file:///private/tmp/dsh-frozen-business-probe.mjs:54:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'a', 'b', 'c' ],
+    expected: [ 'b', 'a', 'c' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at ../../../../private/tmp/dsh-frozen-business-probe.mjs:57:1
+✖ Worker local stream can be decoded by the real production frame reader (10.790458ms)
+  Error [AaBbFrameError]: invalid AA-BB frame magic
+      at AaBbFrameReader.feed (file:///private/tmp/dsh-business-probe-GbyrhU/aa-bb.mjs:95:13)
+      at TestContext.<anonymous> (file:///private/tmp/dsh-frozen-business-probe.mjs:64:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    frameCode: 'BAD_MAGIC'
+  }

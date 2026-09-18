@@ -1,0 +1,60 @@
+{
+  "complete": false,
+  "scope": "dependency reuse; original full Coinhub workflow not passed",
+  "verified": {
+    "native_and_pipeline": {
+      "passed": 21,
+      "failed": 0,
+      "independent_review": "passed"
+    },
+    "client_actionability": {
+      "passed": 2,
+      "failed": 0
+    },
+    "kernel": {
+      "passed": 366,
+      "failed": 0,
+      "candidateDigest": "528b6bf32b0451f6d7ee19a9842178f797f3a62db950bedbbc2dfa1b2cc11d07"
+    },
+    "default_suite": {
+      "passed": 571,
+      "failed": 0,
+      "candidateDigest": "528b6bf32b0451f6d7ee19a9842178f797f3a62db950bedbbc2dfa1b2cc11d07"
+    },
+    "dependency_target": {
+      "passed": 27,
+      "failed": 0
+    }
+  },
+  "dependency_module_review": "passed including hardlink normalization, hidden entries, phase budgets, and native link alias EPERM probe",
+  "live_host": {
+    "status": "running",
+    "id": "449e5f08-b4f1-43d6-a18b-b8cf30912e0e",
+    "port": 3080,
+    "entry": "./start-owner-workflow.sh",
+    "existing_browser_tab": true
+  },
+  "r7": {
+    "status": "failed",
+    "completedTasks": 0,
+    "failedTasks": 1,
+    "pendingTasks": 11,
+    "runningTasks": 0,
+    "blocker": "termination_unconfirmed; old managed-range exit receipt missing",
+    "preserved": true
+  },
+  "real_size": {
+    "passed": 7,
+    "failed": 0,
+    "installRunsAcrossFirstAndRecovery": 1,
+    "recoveryInstallRuns": 0,
+    "fullTreeCopies": 0,
+    "logicalBytes": 1761456007,
+    "hardlinkCopiedBytes": 163353020,
+    "hotHashedBytes": 0,
+    "hotCopiedBytesPerOverlay": 545493,
+    "report": ".dsh-workflow/dependency-proofs/dependency-reuse-1789307456056/report.json"
+  },
+  "dependency_reuse_complete": true,
+  "native_conversations_inspected": 66
+}

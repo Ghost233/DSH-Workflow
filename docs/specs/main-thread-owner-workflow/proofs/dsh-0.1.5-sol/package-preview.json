@@ -1,0 +1,86 @@
+[
+  {
+    "id": "dsh-sol-efficiency@0.1.0",
+    "name": "dsh-sol-efficiency",
+    "version": "0.1.0",
+    "size": 16844,
+    "unpackedSize": 40009,
+    "shasum": "39fee95b6dc93e46bbac419c9ef3471ff82bbe13",
+    "integrity": "sha512-nVmGGRZbU/MzSx0YuxPruc/GQR9QEAAHqceaN/mH0siciIAJyNkopAUmfQnt6hbOGdLQcY4SzXQlrYX/nHCo3A==",
+    "filename": "dsh-sol-efficiency-0.1.0.tgz",
+    "files": [
+      {
+        "path": "LICENSE",
+        "size": 1155,
+        "mode": 420
+      },
+      {
+        "path": "README.md",
+        "size": 9663,
+        "mode": 420
+      },
+      {
+        "path": "THIRD_PARTY_NOTICES.md",
+        "size": 748,
+        "mode": 420
+      },
+      {
+        "path": "client.js",
+        "size": 2834,
+        "mode": 420
+      },
+      {
+        "path": "cordis.patch.yml",
+        "size": 177,
+        "mode": 420
+      },
+      {
+        "path": "index.js",
+        "size": 1967,
+        "mode": 420
+      },
+      {
+        "path": "package.json",
+        "size": 1367,
+        "mode": 420
+      },
+      {
+        "path": "src/action-fusion.mjs",
+        "size": 6356,
+        "mode": 420
+      },
+      {
+        "path": "src/config.mjs",
+        "size": 2329,
+        "mode": 420
+      },
+      {
+        "path": "src/evidence-reducer.mjs",
+        "size": 6880,
+        "mode": 420
+      },
+      {
+        "path": "src/lifetime.mjs",
+        "size": 663,
+        "mode": 420
+      },
+      {
+        "path": "src/receipt.mjs",
+        "size": 4800,
+        "mode": 420
+      },
+      {
+        "path": "src/settings.mjs",
+        "size": 586,
+        "mode": 420
+      },
+      {
+        "path": "upstream.json",
+        "size": 484,
+        "mode": 420
+      }
+    ],
+    "entryCount": 14,
+    "bundled": []
+  }
+]

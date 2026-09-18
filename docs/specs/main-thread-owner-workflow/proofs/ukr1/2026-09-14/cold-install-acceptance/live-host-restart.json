@@ -1,0 +1,23 @@
+{
+  "health": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "9f689f7b-9f76-4155-bb66-c10a95b1133b",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  },
+  "preserved": {
+    "plan": true,
+    "planVersion": true,
+    "tasks": true,
+    "attempts": true,
+    "recoveryUsed": true,
+    "recoveryWindow": true,
+    "integrationHead": true,
+    "registryBaseline": true
+  }
+}

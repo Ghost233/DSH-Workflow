@@ -1,0 +1,603 @@
+[
+  {
+    "package": "dshmarket",
+    "actualName": "dshmarket",
+    "version": "1.45.1",
+    "pin": {
+      "package": "dshmarket",
+      "version": "1.45.1"
+    },
+    "archiveSha256": "4733315682ce0a963ec34dd6e6d4532a3699985d0a5590f61c8054bf50f0326d",
+    "directory": "/private/tmp/dsh-plugin-static-review/dshmarket",
+    "scripts": {
+      "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.tests.json --noEmit",
+      "build": "tsc -p tsconfig.json && npm run build:client",
+      "build:client": "tsdown && node scripts/normalize-client-banner.mjs",
+      "check": "npm run typecheck && npm run build && node scripts/restart-smoke.mjs",
+      "test": "vitest run",
+      "test:compat": "vitest run --config vitest.compat.config.ts",
+      "prepack": "npm run build && node scripts/preflight.mjs",
+      "prepare": "npm run build",
+      "validate:registry": "node scripts/validate-registry.mjs",
+      "snapshot": "curl -sf https://awesome-dsh-plugin.com/plugins.json -o data/registry-snapshot.json && curl -sf https://awesome-dsh-plugin.com/readmes.json -o data/readmes-snapshot.json",
+      "check:web-auth-capture": "node scripts/check-web-auth-capture.mjs",
+      "test:web": "node scripts/check-web-auth-capture.mjs && vitest run --config vitest.web.config.ts",
+      "build:site": "node scripts/build-site.mjs"
+    },
+    "main": "lib/index.js",
+    "exports": {
+      ".": {
+        "types": "./lib/types/index.d.ts",
+        "default": "./lib/index.js"
+      },
+      "./update-api-v1": {
+        "types": "./lib/types/update-api-v1.d.ts",
+        "default": "./lib/update-api-v1.js"
+      },
+      "./client": "./client/client.js",
+      "./cordis.patch.yml": "./cordis.patch.yml",
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {
+      "@deepseek-ai/cordis": "^4.0.1",
+      "@deepseek-ai/dsh-settings": "^0.1.0-rc.7 || ^0.1.1-rc.2 || ^0.1.2-alpha.2",
+      "@deepseek-ai/schemastery": "^3.18.1"
+    },
+    "dsh": {
+      "bundle": {
+        "patch": "./cordis.patch.yml"
+      },
+      "client": {
+        "inject": [
+          "@deepseek-ai/dsh-client-locale",
+          "@deepseek-ai/dsh-client-ui-settings",
+          "@deepseek-ai/dsh-client-ui-theme"
+        ],
+        "platform": "web"
+      }
+    },
+    "files": 154
+  },
+  {
+    "package": "dsh-better-sidebar",
+    "actualName": "dsh-better-sidebar",
+    "version": "0.19.1",
+    "pin": {
+      "package": "dsh-better-sidebar",
+      "version": "0.19.1"
+    },
+    "archiveSha256": "67969b94e96747ad910ce945bafa2b8176af584fb8bc02f87dce5ed132986884",
+    "directory": "/private/tmp/dsh-plugin-static-review/dsh-better-sidebar",
+    "scripts": {
+      "build": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && tsdown",
+      "typecheck": "tsc --noEmit",
+      "bundle": "tsdown",
+      "watch": "tsdown --watch",
+      "test": "vitest run",
+      "test:windows": "vitest run --maxWorkers=1",
+      "test:mount": "bash scripts/e2e-mount.sh",
+      "test:mount:aggregate": "bash scripts/e2e-aggregate-mount.sh",
+      "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
+      "check:consumer-types": "bash scripts/check-consumer-types.sh",
+      "lint": "eslint ."
+    },
+    "main": "lib/index.js",
+    "exports": {
+      ".": {
+        "types": "./lib/types/index.d.ts",
+        "default": "./lib/index.js"
+      },
+      "./invariant": {
+        "types": "./lib/types/invariant.d.ts",
+        "default": "./lib/invariant.js"
+      },
+      "./client": {
+        "types": "./lib/types/client/index.d.ts",
+        "default": "./lib/client.js"
+      },
+      "./client/service": {
+        "types": "./lib/types/client/service.d.ts",
+        "default": "./lib/client.js"
+      },
+      "./client/api": {
+        "types": "./lib/types/client/service.d.ts",
+        "default": "./lib/client.js"
+      },
+      "./src/*": "./src/*",
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {
+      "@deepseek-ai/cordis": "^4.0.2",
+      "@deepseek-ai/dsh-agent": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-host-webserver": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-llm": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-settings": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-subagent": "^0.1.5-rc.1",
+      "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
+      "@huanlin/dsh-plugin-better-locale": "^0.1.0",
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0"
+    },
+    "dsh": {
+      "bundle": {
+        "patch": "./cordis.patch.yml"
+      },
+      "client": {
+        "inject": [
+          "@deepseek-ai/dsh-client-locale",
+          "@deepseek-ai/dsh-client-ui-slots",
+          "@deepseek-ai/dsh-client-ui-conversation",
+          "@deepseek-ai/dsh-client-ui-sidebar-right",
+          "@deepseek-ai/dsh-client-modules"
+        ],
+        "platform": "web"
+      }
+    },
+    "files": 349
+  },
+  {
+    "package": "dsh-context",
+    "actualName": "dsh-context",
+    "version": "0.50.0",
+    "pin": {
+      "package": "dsh-context",
+      "version": "0.50.0"
+    },
+    "archiveSha256": "c7a51b1ea2022e16aaa0e7e4d001897bc81e15ccdbb63181021660edd44c6c09",
+    "directory": "/private/tmp/dsh-plugin-static-review/dsh-context",
+    "scripts": {
+      "build": "tsdown",
+      "lint": "oxlint",
+      "lint:fix": "oxlint --fix",
+      "watch": "bash scripts/watch.sh",
+      "web": "bash scripts/web.sh",
+      "register": "bash scripts/register.sh",
+      "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
+      "test": "pnpm run typecheck && vitest run --coverage",
+      "coverage": "vitest run --coverage",
+      "release": "bash scripts/publish.sh",
+      "social-preview": "node docs/social-preview/generate.ts",
+      "prepare": "husky"
+    },
+    "main": "lib/index.js",
+    "exports": {
+      ".": {
+        "types": "./lib/index.d.ts",
+        "default": "./lib/index.js"
+      },
+      "./client": "./lib/client.js",
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {
+      "@deepseek-ai/cordis": "^4.0.2",
+      "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.2-rc.1",
+      "@deepseek-ai/dsh-session": ">=0.1.2-rc.1",
+      "@deepseek-ai/dsh-settings": ">=0.1.2-rc.1",
+      "@deepseek-ai/schemastery": "^3.18.2",
+      "react": "^18.3.1"
+    },
+    "dsh": {
+      "bundle": {
+        "patch": "./cordis.patch.yml"
+      },
+      "client": {
+        "inject": [
+          "@deepseek-ai/dsh-api-remotes",
+          "@deepseek-ai/dsh-client-connection",
+          "@deepseek-ai/dsh-client-locale",
+          "@deepseek-ai/dsh-client-ui-conversation",
+          "@deepseek-ai/dsh-client-ui-settings",
+          "@deepseek-ai/dsh-client-ui-sidebar-right"
+        ],
+        "platform": "web"
+      },
+      "compatibility": {
+        "dshReleases": {
+          "0.1.2-rc.1": "compatible",
+          "0.1.3-alpha.2": "compatible",
+          "0.1.5-rc.1": "compatible"
+        }
+      }
+    },
+    "files": 7
+  },
+  {
+    "package": "dsh-visualizer",
+    "actualName": "dsh-visualizer",
+    "version": "0.9.0",
+    "pin": {
+      "package": "dsh-visualizer",
+      "commit": "af61080a04babd75feb7dc8eac0986b266ea8fdb"
+    },
+    "archiveSha256": "cc82c1712f16c2068c3e0a59ef838b49a700dc6f94f33722d59860b46dfacfa6",
+    "directory": "/private/tmp/dsh-plugin-static-review/dsh-visualizer",
+    "scripts": {
+      "build": "tsc -b . && tsdown",
+      "prepare": "pnpm run build",
+      "test": "vitest run"
+    },
+    "main": "lib/index.js",
+    "exports": {
+      ".": {
+        "types": "./lib/types/index.d.ts",
+        "default": "./lib/index.js"
+      },
+      "./invariant": {
+        "types": "./lib/types/invariant.d.ts",
+        "default": "./lib/invariant.js"
+      },
+      "./client": {
+        "types": "./lib/types/client/index.d.ts",
+        "default": "./lib/client.js"
+      },
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {
+      "@deepseek-ai/cordis": "^4.0.2",
+      "@deepseek-ai/dsh-client-locale": "^0.1.2-rc.1",
+      "@deepseek-ai/dsh-client-ui-chat": "^0.1.2-rc.1",
+      "@deepseek-ai/dsh-client-ui-conversation": "^0.1.2-rc.1",
+      "@deepseek-ai/dsh-client-ui-primitives": "^0.1.2-rc.1",
+      "@deepseek-ai/dsh-client-ui-slots": "^0.1.2-rc.1",
+      "@deepseek-ai/dsh-client-ui-tool": "^0.1.2-rc.1",
+      "@deepseek-ai/dsh-invariants": "^0.1.2-rc.1",
+      "@deepseek-ai/dsh-session": "^0.1.2-rc.1",
+      "@deepseek-ai/dsh-tools": "^0.1.2-rc.1",
+      "react": "^18.2.0"
+    },
+    "dsh": {
+      "bundle": {
+        "patch": "./cordis.patch.yml"
+      },
+      "client": {
+        "inject": [
+          "@deepseek-ai/dsh-client-locale",
+          "@deepseek-ai/dsh-client-ui-primitives",
+          "@deepseek-ai/dsh-client-ui-slots",
+          "@deepseek-ai/dsh-client-ui-tool",
+          "@deepseek-ai/dsh-client-ui-conversation",
+          "@deepseek-ai/dsh-client-ui-chat"
+        ],
+        "platform": "web"
+      }
+    },
+    "files": 105
+  },
+  {
+    "package": "@js2hou/dsh-mcp-manager",
+    "actualName": "@js2hou/dsh-mcp-manager",
+    "version": "0.1.5",
+    "pin": {
+      "package": "@js2hou/dsh-mcp-manager",
+      "version": "0.1.5"
+    },
+    "archiveSha256": "b6b8bef59e59dc436c3f5ee213182389d0dec86b15bcd6fe0d3072b7e0dc01fc",
+    "directory": "/private/tmp/dsh-plugin-static-review/@js2hou__dsh-mcp-manager",
+    "scripts": {
+      "build": "node scripts/build.mjs",
+      "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "main": "lib/index.js",
+    "exports": {
+      ".": {
+        "types": "./lib/types/index.d.ts",
+        "default": "./lib/index.js"
+      },
+      "./client": {
+        "types": "./lib/types/client/index.d.ts",
+        "default": "./lib/client.js"
+      },
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {},
+    "dsh": {
+      "bundle": {
+        "patch": "./cordis.patch.yml"
+      },
+      "client": {
+        "inject": [
+          "@deepseek-ai/dsh-client-runtime",
+          "@deepseek-ai/dsh-client-ui-slots",
+          "@deepseek-ai/dsh-client-connection",
+          "@deepseek-ai/dsh-client-locale"
+        ],
+        "platform": "web"
+      }
+    },
+    "files": 8
+  },
+  {
+    "package": "dsh-cost-meter",
+    "actualName": "dsh-cost-meter",
+    "version": "1.7.21",
+    "pin": {
+      "package": "dsh-cost-meter",
+      "version": "1.7.21"
+    },
+    "archiveSha256": "11c52a54dc9925a6302d5d0b2b1fb46f0e0bdaeed4bd169e2a7b168246a08b93",
+    "directory": "/private/tmp/dsh-plugin-static-review/dsh-cost-meter",
+    "scripts": {
+      "build": "node scripts/build.mjs",
+      "test": "node test/verify.mjs"
+    },
+    "main": "lib/index.js",
+    "exports": {
+      ".": {
+        "default": "./lib/index.js"
+      },
+      "./client": {
+        "default": "./lib/client.js"
+      },
+      "./typert": {
+        "default": "./lib/typert.host.js"
+      },
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {
+      "@deepseek-ai/dsh-credentials": "^0.1.0-rc.6 || ^0.1.1-0 || ^0.1.2-0 || ^0.1.3-0 || ^0.1.5-0",
+      "@deepseek-ai/dsh-home-paths": "^0.1.0-rc.6 || ^0.1.1-0 || ^0.1.2-0 || ^0.1.3-0 || ^0.1.5-0"
+    },
+    "dsh": {
+      "bundle": {
+        "patch": "./cordis.patch.yml"
+      },
+      "client": {
+        "platform": "web"
+      },
+      "compatibility": {
+        "dsh": ">=0.1.0-rc.5",
+        "dshReleases": {
+          "0.1.2-alpha.3": "compatible",
+          "0.1.2-alpha.4": "compatible",
+          "0.1.2-alpha.5": "compatible",
+          "0.1.2-rc.1": "compatible",
+          "0.1.3-alpha.1": "unknown",
+          "0.1.3-alpha.2": "compatible",
+          "0.1.5-alpha.1": "compatible"
+        }
+      }
+    },
+    "files": 24
+  },
+  {
+    "package": "dsh-plugin-open-editor",
+    "actualName": "dsh-plugin-open-editor",
+    "version": "0.1.0",
+    "pin": {
+      "package": "dsh-plugin-open-editor",
+      "commit": "6afc0003ab950b5fbb49edd37704168351cd3d99"
+    },
+    "archiveSha256": "3d5d5c25d9d20aa2793eeaf249ac0aa1e063d459bfd19518fdef3fd808fcd002",
+    "directory": "/private/tmp/dsh-plugin-static-review/dsh-plugin-open-editor",
+    "scripts": {
+      "build": "node scripts/build.mjs",
+      "typecheck": "tsc --noEmit"
+    },
+    "main": "./dist/index.js",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./client": "./client.js",
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {},
+    "dsh": {
+      "client": {
+        "platform": "web",
+        "inject": [
+          "@deepseek-ai/dsh-client-connection",
+          "@deepseek-ai/dsh-client-runtime",
+          "@deepseek-ai/dsh-client-locale",
+          "@deepseek-ai/dsh-client-ui-slots",
+          "@deepseek-ai/dsh-client-ui-conversation",
+          "@deepseek-ai/dsh-api-remotes"
+        ],
+        "immediately": true
+      }
+    },
+    "files": 21
+  },
+  {
+    "package": "dsh-plugin-diff-review",
+    "actualName": "dsh-plugin-diff-review",
+    "version": "0.1.0",
+    "pin": {
+      "package": "dsh-plugin-diff-review",
+      "commit": "961596edc67524704b94d149c6a3be086254b701"
+    },
+    "archiveSha256": "639162d70d7c7b220c0953a95de3017755cde46446059c36b9c2b8f6c1e40c68",
+    "directory": "/private/tmp/dsh-plugin-static-review/dsh-plugin-diff-review",
+    "scripts": {
+      "build": "node scripts/build.mjs",
+      "typecheck": "tsc --noEmit",
+      "test:git": "node scripts/git-semantics-test.mjs",
+      "test:session": "node scripts/session-extract-test.mjs",
+      "test:package": "node scripts/review-package-test.mjs",
+      "test:files-path": "node scripts/files-path-test.mjs",
+      "test:file-tree-layout": "node scripts/file-tree-layout-test.mjs",
+      "test:diff-line-layout": "node scripts/diff-line-layout-test.mjs",
+      "test:unified-line-numbers": "node scripts/unified-line-numbers-test.mjs",
+      "test:split-diff-layout": "node scripts/split-diff-layout-test.mjs",
+      "test:commit-scope-stats": "node scripts/commit-scope-stats-test.mjs",
+      "test:readonly-scope-actions": "node scripts/readonly-scope-actions-test.mjs",
+      "test:comment-navigation": "node scripts/comment-navigation-test.mjs",
+      "test:nonrepo-last-turn": "node scripts/nonrepo-last-turn-test.mjs",
+      "test:ui": "node scripts/ui-smoke-test.mjs"
+    },
+    "main": "./dist/index.js",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./client": "./client.js",
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {},
+    "dsh": {
+      "client": {
+        "platform": "web",
+        "inject": [
+          "@deepseek-ai/dsh-client-connection",
+          "@deepseek-ai/dsh-client-runtime",
+          "@deepseek-ai/dsh-client-locale",
+          "@deepseek-ai/dsh-client-ui-slots",
+          "@deepseek-ai/dsh-client-ui-conversation",
+          "@deepseek-ai/dsh-client-ui-layout",
+          "@deepseek-ai/dsh-client-ui-theme",
+          "@deepseek-ai/dsh-client-ui-settings",
+          "@deepseek-ai/dsh-api-remotes"
+        ],
+        "immediately": true
+      }
+    },
+    "files": 56
+  },
+  {
+    "package": "@dsh-external/dsh-plannotator",
+    "actualName": "@dsh-external/dsh-plannotator",
+    "version": "0.1.4",
+    "pin": {
+      "package": "@dsh-external/dsh-plannotator",
+      "commit": "053c982f96b77fd750360ee66384bf90d5c1e603"
+    },
+    "archiveSha256": "81e8f7997e6f14f8bc96fe739aea003d60407239999e9f1fd83304f3eea9dde8",
+    "directory": "/private/tmp/dsh-plugin-static-review/@dsh-external__dsh-plannotator",
+    "scripts": {
+      "build": "node scripts/build.mjs",
+      "typecheck": "tsc --noEmit -p tsconfig.json",
+      "pretest": "npm run build",
+      "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx",
+      "check": "npm run typecheck && npm test"
+    },
+    "main": "./lib/index.js",
+    "exports": {
+      ".": {
+        "types": "./lib/types/index.d.ts",
+        "default": "./lib/index.js"
+      },
+      "./client": {
+        "types": "./lib/types/client/index.d.ts",
+        "default": "./lib/client.js"
+      },
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0"
+    },
+    "dsh": {
+      "bundle": {
+        "patch": "./cordis.patch.yml"
+      },
+      "client": {
+        "platform": "web",
+        "inject": [
+          "@deepseek-ai/dsh-client-runtime",
+          "@deepseek-ai/dsh-client-connection",
+          "@deepseek-ai/dsh-client-locale",
+          "@deepseek-ai/dsh-client-ui-conversation",
+          "@deepseek-ai/dsh-client-ui-primitives"
+        ]
+      }
+    },
+    "files": 65
+  },
+  {
+    "package": "dsh-easyrewrite",
+    "actualName": "dsh-easyrewrite",
+    "version": "2.5.0",
+    "pin": {
+      "package": "dsh-easyrewrite",
+      "version": "2.5.0"
+    },
+    "archiveSha256": "08336d1dc85240a3e5eb955862b6a18b56e4555b720faed07759f40219d5025d",
+    "directory": "/private/tmp/dsh-plugin-static-review/dsh-easyrewrite",
+    "scripts": {
+      "build": "node build.mjs",
+      "prepare": "node build.mjs",
+      "prepack": "node build.mjs"
+    },
+    "main": "lib/index.js",
+    "exports": {
+      ".": "./lib/index.js",
+      "./client": "./lib/client.js",
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {},
+    "dsh": {
+      "bundle": {
+        "patch": "./cordis.patch.yml"
+      },
+      "client": {
+        "inject": [
+          "slots",
+          "sessions",
+          "workspaces"
+        ],
+        "platform": "web"
+      }
+    },
+    "files": 8
+  },
+  {
+    "package": "@dsh-external/dsh-sidechain",
+    "actualName": "@dsh-external/dsh-sidechain",
+    "version": "0.6.7",
+    "pin": {
+      "package": "@dsh-external/dsh-sidechain",
+      "commit": "deca4cf874c38d322448b798a87aafb2ae0b3f30"
+    },
+    "archiveSha256": "30f3725e9434bb3aa02d73a622a7c4b41fee7f51568c478b73c182594b28e27e",
+    "directory": "/private/tmp/dsh-plugin-static-review/@dsh-external__dsh-sidechain",
+    "scripts": {
+      "build": "tsdown",
+      "prepare": "tsdown",
+      "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json",
+      "test": "vitest run",
+      "check": "pnpm run typecheck && pnpm run test && pnpm run build"
+    },
+    "main": "lib/index.js",
+    "exports": {
+      ".": {
+        "types": "./lib/index.d.ts",
+        "default": "./lib/index.js"
+      },
+      "./client": "./lib/client.js",
+      "./cordis.patch.yml": "./cordis.patch.yml",
+      "./package.json": "./package.json"
+    },
+    "peerDependencies": {
+      "@deepseek-ai/cordis": "^4.0.1-rc.4",
+      "@deepseek-ai/dsh-agent": "0.0.1-rc.5 || 0.1.0-rc.6 || 0.1.0-rc.7 || 0.1.0-rc.8 || 0.1.1-rc.1 || 0.1.1-rc.2",
+      "@deepseek-ai/dsh-commands": "0.0.1-rc.5 || 0.1.0-rc.6 || 0.1.0-rc.7 || 0.1.0-rc.8 || 0.1.1-rc.1 || 0.1.1-rc.2",
+      "@deepseek-ai/dsh-llm": "0.0.1-rc.5 || 0.1.0-rc.6 || 0.1.0-rc.7 || 0.1.0-rc.8 || 0.1.1-rc.1 || 0.1.1-rc.2",
+      "@deepseek-ai/dsh-session": "0.0.1-rc.5 || 0.1.0-rc.6 || 0.1.0-rc.7 || 0.1.0-rc.8 || 0.1.1-rc.1 || 0.1.1-rc.2",
+      "@deepseek-ai/dsh-subagent": "0.0.1-rc.5 || 0.1.0-rc.6 || 0.1.0-rc.7 || 0.1.0-rc.8 || 0.1.1-rc.1 || 0.1.1-rc.2",
+      "@deepseek-ai/dsh-tools": "0.0.1-rc.5 || 0.1.0-rc.6 || 0.1.0-rc.7 || 0.1.0-rc.8 || 0.1.1-rc.1 || 0.1.1-rc.2",
+      "react": "^18.2.0"
+    },
+    "dsh": {
+      "bundle": {
+        "patch": "./cordis.patch.yml"
+      },
+      "client": {
+        "inject": [
+          "@deepseek-ai/dsh-client-runtime"
+        ],
+        "platform": "web"
+      }
+    },
+    "files": 36
+  }
+]

@@ -1,0 +1,15 @@
+✔ public Owner independently reads the contract and consumer before compatible_extension (947.771584ms)
+✔ public Owner independently reads the contract and consumer before migration_required (442.446583ms)
+✔ public Owner independently reads the contract and consumer before capability_sufficient (422.897375ms)
+✔ public Owner independently reads the contract and consumer before rejected (416.764083ms)
+✔ public Owner independently reads the contract and consumer before facts_missing (663.583458ms)
+✔ public Owner independently reads the contract and consumer before business_decision_required (418.747875ms)
+✔ root public request survives a native contract source revision before independent decision and main notice (5371.719917ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8841.220042

@@ -1,0 +1,14 @@
+✔ settled failed and historical kernel entries leave active counts without hiding their findings (10.027875ms)
+✔ 等待列表客户端产物与源码一致并登记正式、本地两个模块编号 (121.440333ms)
+✔ 运行状态和 Owner 输入限制只登记官方 Slot (7.723541ms)
+✔ 运行状态只通过可重连 SSE 接收更新，并按当前工作区和当前会话过滤 (3.170542ms)
+✔ 运行状态按需要处理、总览、主线程和子代理分类显示确定性状态 (3.114583ms)
+✔ 侧栏运行状态使用视口定位，避免被侧栏裁剪和遮住底部操作区 (3.951375ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 777.216

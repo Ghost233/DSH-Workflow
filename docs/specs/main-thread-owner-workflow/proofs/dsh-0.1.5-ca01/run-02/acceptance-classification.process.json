@@ -1,0 +1,7 @@
+{
+  "exitCode": 0,
+  "timedOut": false,
+  "aborted": false,
+  "stdout": "✔ Node test适配器只把有非零用例且证据完整的结果识别为可通过 (1.287417ms)\n✔ 集中验收拒绝未知依赖、依赖环和空命令 (0.444542ms)\n✔ 真实Node入口在首项失败后继续独立项，并分类阻塞、超时、取消、零用例和未运行 (304.18175ms)\n✔ 候选摘要或代码提交变化时旧结果不能计为通过 (0.306125ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 386.152542\n",
+  "stderr": ""
+}

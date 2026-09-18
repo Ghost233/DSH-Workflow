@@ -1,0 +1,25 @@
+{
+  "diagnosticOnly": true,
+  "liveStateUnchanged": true,
+  "before": {
+    "status": "failed",
+    "reservesProject": true
+  },
+  "after": {
+    "status": "failed",
+    "reservesProject": false
+  },
+  "preserved": {
+    "recoveryUsed": true,
+    "plan": true,
+    "integrationHead": true,
+    "attemptCount": true,
+    "retiredQuarantine": [
+      {
+        "id": "try-84c42c9a1bfab47db78d05609603d719dcfd488c",
+        "quarantined": true,
+        "retirementPreserved": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,855 @@
+{
+  "contract": "UKR1_LIVE_ORIGINAL_MODEL_TEST_V1",
+  "date": "2026-09-13T05:08:29.570Z",
+  "scope": "Original Web profile, existing browser tab and real configured model; read-only status and Operation allow/deny paths. Not legacy DAG delivery or production cutover.",
+  "model": "gpt-5.6-terra",
+  "browser": {
+    "browserId": "1",
+    "tabId": "1",
+    "url": "http://127.0.0.1:3080/",
+    "newTabs": 0,
+    "observedAfterClientFix": "待处理 1 · 活动 0",
+    "retainedFinding": "permission_rejected",
+    "finalVerified": {
+      "activity": "待处理 1 · 活动 0",
+      "failedResult": "任务已结束；结果已保留",
+      "runner": "Runner 在线；调度器运行中",
+      "overviewRetainsFailure": true
+    }
+  },
+  "health": {
+    "contract": "DSH_WEB_HOST_READY_V1",
+    "instanceId": "d3389156-7a98-4254-b57d-6f0422a2b064",
+    "components": {
+      "owner": "ready",
+      "sol": "ready",
+      "synapse": "ready",
+      "approval": "ready"
+    },
+    "ready": true
+  },
+  "settings": {
+    "checked": 11,
+    "changes": [],
+    "finalChanges": []
+  },
+  "legacy": {
+    "id": "wf-mtytv0hv-f4ee79f0",
+    "revision": 551,
+    "status": "blocked",
+    "sha256": "69ec65c64d60cfbc3e9d0b65b01ab2bab3cc6928bd613f80d9979336f4e86b01",
+    "newStatusToolResult": "Unknown workflow: wf-mtytv0hv-f4ee79f0",
+    "imported": false
+  },
+  "snapshots": [
+    {
+      "contract": "DSH_WORKFLOW_VIEW_V1",
+      "workflowId": "op-a32fddd325ee86acc944fffe9f0e2e6c4b59fe9f",
+      "root": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+      "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+      "goal": "在当前项目中执行一次仅输出固定标记的原生 Runner Operation。",
+      "createdAt": 1789275738657,
+      "updatedAt": 1789275782269,
+      "planVersion": 0,
+      "attention": [],
+      "revision": 6,
+      "status": "completed",
+      "kind": "operation",
+      "operationResult": {
+        "passed": true,
+        "summary": "已通过原生 Runner Operation 执行唯一获准命令；命令成功并输出固定标记 UKR_NATIVE_OPERATION_OK。",
+        "findings": [
+          "已验证事实：在 /Volumes/LargeStorage/code/Coinhub_Online_Demo 以原生 Operation 执行了 argv：node、-e、console.log('UKR_NATIVE_OPERATION_OK')。",
+          "已验证事实：Operation 返回 exitCode 0，stdout 精确包含 UKR_NATIVE_OPERATION_OK，stderr 为空，且 enforcement 为 full。",
+          "已验证事实：本操作没有执行文件、配置、凭据、网络、Registry 或旧 Workflow 的修改。",
+          "推断：该结果已由 operation_exec 原生结果通道回传至本主线程，满足“通过原生 Operation 通知回到本主线程”的要求。",
+          "未知项：未独立检查文件系统状态；但实际执行的唯一命令仅调用 console.log，未包含写入行为。"
+        ],
+        "evidence": [
+          "commandId: cmd-3ed1546f25c404925db564f7d4d43b52148d4621",
+          "exitCode: 0",
+          "stdout: UKR_NATIVE_OPERATION_OK\\n",
+          "stderr: 空",
+          "kind: completed；enforcement: full；timedOut: false；aborted: false"
+        ],
+        "nextActions": [],
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-8254e5529bd2b6fa92f051b06eed85293d91d0c8d0420d6125a88c214d913480",
+        "sessionId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e",
+        "promptId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e",
+        "executionSettled": true,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-d86dd5a08994a86963eeddd130fd896aafb5098e/result.json"
+      },
+      "registryResult": null,
+      "terminal": true,
+      "import": null,
+      "actionRequired": false,
+      "decisionId": null,
+      "deliveryFailure": null,
+      "nextWakeAt": null,
+      "counts": {
+        "totalTasks": 0,
+        "completedTasks": 0,
+        "failedTasks": 0,
+        "pendingTasks": 0,
+        "runningTasks": 0
+      },
+      "tasks": [],
+      "notices": [
+        {
+          "id": "act-01ab07ad7fc3cb2be52e09f0f9fc9b758fefe14c",
+          "status": "succeeded",
+          "reason": "decision_answered"
+        },
+        {
+          "id": "act-bd74ed59f484c2754d99de7f819ed67a264b87d4",
+          "status": "succeeded",
+          "reason": "operation_completed"
+        }
+      ],
+      "actions": [
+        {
+          "id": "act-63e19ed47f060823ec9ba432f1d9cee0f1e28eff",
+          "kind": "operation",
+          "status": "succeeded",
+          "failure": null,
+          "resolution": null,
+          "quarantined": false,
+          "nextWakeAt": null,
+          "waiting": null
+        },
+        {
+          "id": "act-50e03c86d018deaba5d2f4dd39dd90b75db95582",
+          "kind": "request_decision",
+          "status": "succeeded",
+          "failure": null,
+          "resolution": null,
+          "quarantined": false,
+          "nextWakeAt": null,
+          "waiting": null
+        },
+        {
+          "id": "act-01ab07ad7fc3cb2be52e09f0f9fc9b758fefe14c",
+          "kind": "notify_main",
+          "status": "succeeded",
+          "failure": null,
+          "resolution": null,
+          "quarantined": false,
+          "nextWakeAt": null,
+          "waiting": null
+        },
+        {
+          "id": "act-bd74ed59f484c2754d99de7f819ed67a264b87d4",
+          "kind": "notify_main",
+          "status": "succeeded",
+          "failure": null,
+          "resolution": null,
+          "quarantined": false,
+          "nextWakeAt": null,
+          "waiting": null
+        }
+      ],
+      "recovery": {
+        "used": 0,
+        "limit": 12,
+        "issues": []
+      },
+      "delivery": null
+    },
+    {
+      "contract": "DSH_WORKFLOW_VIEW_V1",
+      "workflowId": "op-115472171b2a38e7824b6a7dae5fdfe5f07aa320",
+      "root": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+      "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+      "goal": "验收原生 Runner Operation 的权限拒绝路径。",
+      "createdAt": 1789275828555,
+      "updatedAt": 1789275904853,
+      "planVersion": 0,
+      "attention": [
+        {
+          "id": "operation",
+          "reason": "operation_failed",
+          "responsibleParty": "root_session",
+          "resumeCondition": "review_operation_findings",
+          "nextWakeAt": null,
+          "detail": "原生 Runner 权限请求被拒绝；唯一获准请求的命令未实际执行，Operation 已结束并通过原生结果返回主线程。"
+        }
+      ],
+      "revision": 6,
+      "status": "failed",
+      "kind": "operation",
+      "operationResult": {
+        "passed": false,
+        "summary": "原生 Runner 权限请求被拒绝；唯一获准请求的命令未实际执行，Operation 已结束并通过原生结果返回主线程。",
+        "findings": [
+          "已验证事实：仅发起了合同指定的命令请求：node -e \"console.log('UKR_DENIAL_MUST_NOT_RUN')\"。",
+          "已验证事实：原生 Operation 返回 executed=false、reason=permission_rejected。",
+          "已验证事实：没有重试、没有替代 Operation、没有使用其他能力，也没有修改文件或配置。",
+          "推断：由于执行器明确标记 executed=false，该命令的 UKR_DENIAL_MUST_NOT_RUN 输出未产生，命令未成功执行。",
+          "未知：原生 GUI 中测试者执行拒绝动作的具体交互细节不在该执行器返回内容中；但 permission_rejected 已明确记录拒绝结果。"
+        ],
+        "evidence": [
+          "operation_exec 对唯一命令的返回：{\"executed\":false,\"reason\":\"permission_rejected\"}。",
+          "未收到任何命令 stdout，且执行器状态为 executed=false。"
+        ],
+        "nextActions": [
+          "无需后续操作；拒绝路径已按约束终止。"
+        ],
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-215e82427795b902723551441d0f4abe4f13f4a9d6005e7f6ae632b5398aea4b",
+        "sessionId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb",
+        "promptId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb",
+        "executionSettled": true,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb/result.json"
+      },
+      "registryResult": null,
+      "terminal": true,
+      "import": null,
+      "actionRequired": false,
+      "decisionId": null,
+      "deliveryFailure": null,
+      "nextWakeAt": null,
+      "counts": {
+        "totalTasks": 0,
+        "completedTasks": 0,
+        "failedTasks": 0,
+        "pendingTasks": 0,
+        "runningTasks": 0
+      },
+      "tasks": [],
+      "notices": [
+        {
+          "id": "act-b670e5dfa882201fd61c7c0e8d64c8b8eece9b5e",
+          "status": "succeeded",
+          "reason": "decision_answered"
+        },
+        {
+          "id": "act-421ba87812f38b6964d381d99e46ab8be4493a1d",
+          "status": "succeeded",
+          "reason": "operation_failed"
+        }
+      ],
+      "actions": [
+        {
+          "id": "act-6242ca31cc0c5e9e55b2927e49abeac5a161c6f4",
+          "kind": "operation",
+          "status": "succeeded",
+          "failure": null,
+          "resolution": null,
+          "quarantined": false,
+          "nextWakeAt": null,
+          "waiting": null
+        },
+        {
+          "id": "act-a556cafaed15af23d6e4958d6ed60ec5c14a25dd",
+          "kind": "request_decision",
+          "status": "succeeded",
+          "failure": null,
+          "resolution": null,
+          "quarantined": false,
+          "nextWakeAt": null,
+          "waiting": null
+        },
+        {
+          "id": "act-b670e5dfa882201fd61c7c0e8d64c8b8eece9b5e",
+          "kind": "notify_main",
+          "status": "succeeded",
+          "failure": null,
+          "resolution": null,
+          "quarantined": false,
+          "nextWakeAt": null,
+          "waiting": null
+        },
+        {
+          "id": "act-421ba87812f38b6964d381d99e46ab8be4493a1d",
+          "kind": "notify_main",
+          "status": "succeeded",
+          "failure": null,
+          "resolution": null,
+          "quarantined": false,
+          "nextWakeAt": null,
+          "waiting": null
+        }
+      ],
+      "recovery": {
+        "used": 0,
+        "limit": 12,
+        "issues": []
+      },
+      "delivery": null
+    }
+  ],
+  "actions": [
+    {
+      "id": "act-63e19ed47f060823ec9ba432f1d9cee0f1e28eff",
+      "workflowId": "op-a32fddd325ee86acc944fffe9f0e2e6c4b59fe9f",
+      "kind": "operation",
+      "input": {
+        "spec": {
+          "goal": "在当前项目中执行一次仅输出固定标记的原生 Runner Operation。",
+          "context": [
+            "项目根目录：/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+            "唯一允许运行的命令：node -e \"console.log('UKR_NATIVE_OPERATION_OK')\"",
+            "结果必须通过原生 Operation 通知回到本主线程。"
+          ],
+          "constraints": [
+            "capabilities 仅使用 shell。",
+            "不修改文件、配置、凭据、网络、Registry 或旧 Workflow。",
+            "只允许运行 node -e \"console.log('UKR_NATIVE_OPERATION_OK')\"。",
+            "沿用现有模型、沙箱和审批机制；如产生权限请求，正常呈现。"
+          ],
+          "successCriteria": [
+            "实际 stdout 包含 UKR_NATIVE_OPERATION_OK。",
+            "Operation 正式结算并通过原生结果通知回到主线程。"
+          ],
+          "capabilities": [
+            "shell"
+          ]
+        },
+        "root": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845"
+      },
+      "inputDigest": "68b5188ebf500148f9d6782c1b55b28abfd4b793b7dcb33f2f79e895d9f52b5e",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789275738657,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "81cce964-e774-4298-b382-6fff71404097",
+        "startedAt": 1789275738713
+      },
+      "observation": null,
+      "evidence": {
+        "handleId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e",
+        "taskId": "act-63e19ed47f060823ec9ba432f1d9cee0f1e28eff",
+        "attemptId": "act-63e19ed47f060823ec9ba432f1d9cee0f1e28eff",
+        "planDigest": "68b5188ebf500148f9d6782c1b55b28abfd4b793b7dcb33f2f79e895d9f52b5e",
+        "promptId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e",
+        "sessionId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e"
+      },
+      "result": {
+        "passed": true,
+        "summary": "已通过原生 Runner Operation 执行唯一获准命令；命令成功并输出固定标记 UKR_NATIVE_OPERATION_OK。",
+        "findings": [
+          "已验证事实：在 /Volumes/LargeStorage/code/Coinhub_Online_Demo 以原生 Operation 执行了 argv：node、-e、console.log('UKR_NATIVE_OPERATION_OK')。",
+          "已验证事实：Operation 返回 exitCode 0，stdout 精确包含 UKR_NATIVE_OPERATION_OK，stderr 为空，且 enforcement 为 full。",
+          "已验证事实：本操作没有执行文件、配置、凭据、网络、Registry 或旧 Workflow 的修改。",
+          "推断：该结果已由 operation_exec 原生结果通道回传至本主线程，满足“通过原生 Operation 通知回到本主线程”的要求。",
+          "未知项：未独立检查文件系统状态；但实际执行的唯一命令仅调用 console.log，未包含写入行为。"
+        ],
+        "evidence": [
+          "commandId: cmd-3ed1546f25c404925db564f7d4d43b52148d4621",
+          "exitCode: 0",
+          "stdout: UKR_NATIVE_OPERATION_OK\\n",
+          "stderr: 空",
+          "kind: completed；enforcement: full；timedOut: false；aborted: false"
+        ],
+        "nextActions": [],
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-8254e5529bd2b6fa92f051b06eed85293d91d0c8d0420d6125a88c214d913480",
+        "sessionId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e",
+        "promptId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e",
+        "executionSettled": true,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-d86dd5a08994a86963eeddd130fd896aafb5098e/result.json"
+      },
+      "admitted": true,
+      "locks": [
+        "host:operation"
+      ],
+      "occupiesSlot": true,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789277557978,
+      "observationCount": 0,
+      "admittedAt": 1789275738692,
+      "completedAt": 1789275782139
+    },
+    {
+      "id": "act-50e03c86d018deaba5d2f4dd39dd90b75db95582",
+      "workflowId": "op-a32fddd325ee86acc944fffe9f0e2e6c4b59fe9f",
+      "kind": "request_decision",
+      "input": {
+        "id": "permission-407276d2c1bfe831b6966789ea6e696b1e8f7492",
+        "kind": "permission",
+        "request": {
+          "question": "是否允许这一次精确的 Operation 操作？",
+          "detail": "{\"goal\":\"在当前项目中执行一次仅输出固定标记的原生 Runner Operation。\",\"argv\":[\"node\",\"-e\",\"console.log('UKR_NATIVE_OPERATION_OK')\"],\"cwd\":\"/Volumes/LargeStorage/code/Coinhub_Online_Demo\",\"mode\":\"read-only\",\"description\":\"Run the requested native Runner operation that prints the fixed success marker only.\"}",
+          "options": [
+            "仅允许这一次",
+            "拒绝"
+          ]
+        },
+        "binding": {
+          "actionId": "act-63e19ed47f060823ec9ba432f1d9cee0f1e28eff",
+          "inputDigest": "68b5188ebf500148f9d6782c1b55b28abfd4b793b7dcb33f2f79e895d9f52b5e",
+          "exactDigest": "c5bd6c6abb7ac2b60e9c04e6bf75d76cdaafea33c2e94d19bd0a4d5c679c798a",
+          "toolCallId": "call_hJpaAVHoP3pANCDGusFw41nM",
+          "sessionId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e"
+        },
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "decisionId": "permission-407276d2c1bfe831b6966789ea6e696b1e8f7492",
+        "requestDigest": "b6ab7ccd9036307a0395df8e9b79fc0d1832866d4c2ab5b5ba22206cfda7fae0"
+      },
+      "inputDigest": "9738846dd61db4814d1f3a37c3a965f2f6f07824b8fccb694768d5dc464182f2",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789275755321,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "d859c05d-87f8-4eef-abca-b3e77c5afe26",
+        "startedAt": 1789275755387
+      },
+      "observation": null,
+      "evidence": null,
+      "result": {
+        "decisionId": "permission-407276d2c1bfe831b6966789ea6e696b1e8f7492",
+        "requestDigest": "b6ab7ccd9036307a0395df8e9b79fc0d1832866d4c2ab5b5ba22206cfda7fae0",
+        "persisted": true
+      },
+      "admitted": true,
+      "locks": [],
+      "occupiesSlot": false,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789277555366,
+      "observationCount": 0,
+      "admittedAt": 1789275755366,
+      "completedAt": 1789275774671
+    },
+    {
+      "id": "act-01ab07ad7fc3cb2be52e09f0f9fc9b758fefe14c",
+      "workflowId": "op-a32fddd325ee86acc944fffe9f0e2e6c4b59fe9f",
+      "kind": "notify_main",
+      "input": {
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "reason": "decision_answered",
+        "detail": {
+          "decisionId": "permission-407276d2c1bfe831b6966789ea6e696b1e8f7492",
+          "answer": {
+            "answers": [
+              {
+                "id": "permission-407276d2c1bfe831b6966789ea6e696b1e8f7492",
+                "selected": [
+                  "仅允许这一次"
+                ]
+              }
+            ]
+          },
+          "binding": {
+            "actionId": "act-63e19ed47f060823ec9ba432f1d9cee0f1e28eff",
+            "inputDigest": "68b5188ebf500148f9d6782c1b55b28abfd4b793b7dcb33f2f79e895d9f52b5e",
+            "exactDigest": "c5bd6c6abb7ac2b60e9c04e6bf75d76cdaafea33c2e94d19bd0a4d5c679c798a",
+            "toolCallId": "call_hJpaAVHoP3pANCDGusFw41nM",
+            "sessionId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e"
+          },
+          "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/decisions/act-50e03c86d018deaba5d2f4dd39dd90b75db95582/answer.json"
+        }
+      },
+      "inputDigest": "3e54e0c8010bba1f7a5b100983be430ceccc32012badb91d3009e4eb49a14e28",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789275774607,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "f07493d7-beac-4cbb-a5a4-dded15da2163",
+        "startedAt": 1789275774653
+      },
+      "observation": null,
+      "evidence": null,
+      "result": {
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "messageId": "act-01ab07ad7fc3cb2be52e09f0f9fc9b758fefe14c",
+        "persisted": true
+      },
+      "admitted": true,
+      "locks": [],
+      "occupiesSlot": false,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789277574623,
+      "observationCount": 0,
+      "admittedAt": 1789275774623,
+      "completedAt": 1789275774817
+    },
+    {
+      "id": "act-bd74ed59f484c2754d99de7f819ed67a264b87d4",
+      "workflowId": "op-a32fddd325ee86acc944fffe9f0e2e6c4b59fe9f",
+      "kind": "notify_main",
+      "input": {
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "reason": "operation_completed",
+        "detail": {
+          "passed": true,
+          "summary": "已通过原生 Runner Operation 执行唯一获准命令；命令成功并输出固定标记 UKR_NATIVE_OPERATION_OK。",
+          "findings": [
+            "已验证事实：在 /Volumes/LargeStorage/code/Coinhub_Online_Demo 以原生 Operation 执行了 argv：node、-e、console.log('UKR_NATIVE_OPERATION_OK')。",
+            "已验证事实：Operation 返回 exitCode 0，stdout 精确包含 UKR_NATIVE_OPERATION_OK，stderr 为空，且 enforcement 为 full。",
+            "已验证事实：本操作没有执行文件、配置、凭据、网络、Registry 或旧 Workflow 的修改。",
+            "推断：该结果已由 operation_exec 原生结果通道回传至本主线程，满足“通过原生 Operation 通知回到本主线程”的要求。",
+            "未知项：未独立检查文件系统状态；但实际执行的唯一命令仅调用 console.log，未包含写入行为。"
+          ],
+          "evidence": [
+            "commandId: cmd-3ed1546f25c404925db564f7d4d43b52148d4621",
+            "exitCode: 0",
+            "stdout: UKR_NATIVE_OPERATION_OK\\n",
+            "stderr: 空",
+            "kind: completed；enforcement: full；timedOut: false；aborted: false"
+          ],
+          "nextActions": [],
+          "managedRangeStopped": true,
+          "terminationScope": "dsh-managed-range",
+          "terminationId": "range-8254e5529bd2b6fa92f051b06eed85293d91d0c8d0420d6125a88c214d913480",
+          "sessionId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e",
+          "promptId": "owner-d86dd5a08994a86963eeddd130fd896aafb5098e",
+          "executionSettled": true,
+          "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-d86dd5a08994a86963eeddd130fd896aafb5098e/result.json"
+        }
+      },
+      "inputDigest": "d3fa80cc1bbc6b278694fd022077698cffea0aaf12939edafed8bed82310a20c",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789275782139,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "49136645-7c2f-43f5-96db-a81cb2cd0977",
+        "startedAt": 1789275782175
+      },
+      "observation": null,
+      "evidence": null,
+      "result": {
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "messageId": "act-bd74ed59f484c2754d99de7f819ed67a264b87d4",
+        "persisted": true
+      },
+      "admitted": true,
+      "locks": [],
+      "occupiesSlot": false,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789277582160,
+      "observationCount": 0,
+      "admittedAt": 1789275782160,
+      "completedAt": 1789275782269
+    },
+    {
+      "id": "act-6242ca31cc0c5e9e55b2927e49abeac5a161c6f4",
+      "workflowId": "op-115472171b2a38e7824b6a7dae5fdfe5f07aa320",
+      "kind": "operation",
+      "input": {
+        "spec": {
+          "goal": "验收原生 Runner Operation 的权限拒绝路径。",
+          "context": [
+            "项目根目录：/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+            "唯一请求执行的命令：node -e \"console.log('UKR_DENIAL_MUST_NOT_RUN')\"",
+            "原生权限请求将由测试者选择拒绝。"
+          ],
+          "constraints": [
+            "capabilities 仅使用 shell。",
+            "仅请求执行 node -e \"console.log('UKR_DENIAL_MUST_NOT_RUN')\"。",
+            "不修改文件或配置。",
+            "不访问网络。",
+            "若权限被拒绝，不另找工具、不重试、不创建替代 Operation，不将拒绝表述为命令成功。"
+          ],
+          "successCriteria": [
+            "准确报告该命令是否实际执行。",
+            "权限拒绝后 Operation 结束并通过原生通知回到主线程。",
+            "拒绝时报告 passed=false。"
+          ],
+          "capabilities": [
+            "shell"
+          ]
+        },
+        "root": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845"
+      },
+      "inputDigest": "a0c54cc7c6019634c765e7de6f4dc9f0478ff410b82c88b1a65831e780f7aece",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789275828555,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "4e333ca2-f16e-4caf-84de-a461ac88834c",
+        "startedAt": 1789275828613
+      },
+      "observation": null,
+      "evidence": {
+        "handleId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb",
+        "taskId": "act-6242ca31cc0c5e9e55b2927e49abeac5a161c6f4",
+        "attemptId": "act-6242ca31cc0c5e9e55b2927e49abeac5a161c6f4",
+        "planDigest": "a0c54cc7c6019634c765e7de6f4dc9f0478ff410b82c88b1a65831e780f7aece",
+        "promptId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb",
+        "sessionId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb"
+      },
+      "result": {
+        "passed": false,
+        "summary": "原生 Runner 权限请求被拒绝；唯一获准请求的命令未实际执行，Operation 已结束并通过原生结果返回主线程。",
+        "findings": [
+          "已验证事实：仅发起了合同指定的命令请求：node -e \"console.log('UKR_DENIAL_MUST_NOT_RUN')\"。",
+          "已验证事实：原生 Operation 返回 executed=false、reason=permission_rejected。",
+          "已验证事实：没有重试、没有替代 Operation、没有使用其他能力，也没有修改文件或配置。",
+          "推断：由于执行器明确标记 executed=false，该命令的 UKR_DENIAL_MUST_NOT_RUN 输出未产生，命令未成功执行。",
+          "未知：原生 GUI 中测试者执行拒绝动作的具体交互细节不在该执行器返回内容中；但 permission_rejected 已明确记录拒绝结果。"
+        ],
+        "evidence": [
+          "operation_exec 对唯一命令的返回：{\"executed\":false,\"reason\":\"permission_rejected\"}。",
+          "未收到任何命令 stdout，且执行器状态为 executed=false。"
+        ],
+        "nextActions": [
+          "无需后续操作；拒绝路径已按约束终止。"
+        ],
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "range-215e82427795b902723551441d0f4abe4f13f4a9d6005e7f6ae632b5398aea4b",
+        "sessionId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb",
+        "promptId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb",
+        "executionSettled": true,
+        "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb/result.json"
+      },
+      "admitted": true,
+      "locks": [
+        "host:operation"
+      ],
+      "occupiesSlot": true,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789277672503,
+      "observationCount": 0,
+      "admittedAt": 1789275828593,
+      "completedAt": 1789275904689
+    },
+    {
+      "id": "act-a556cafaed15af23d6e4958d6ed60ec5c14a25dd",
+      "workflowId": "op-115472171b2a38e7824b6a7dae5fdfe5f07aa320",
+      "kind": "request_decision",
+      "input": {
+        "id": "permission-efa585f7184243685b846e5dc868572867c48f99",
+        "kind": "permission",
+        "request": {
+          "question": "是否允许这一次精确的 Operation 操作？",
+          "detail": "{\"goal\":\"验收原生 Runner Operation 的权限拒绝路径。\",\"argv\":[\"node\",\"-e\",\"console.log('UKR_DENIAL_MUST_NOT_RUN')\"],\"cwd\":\"/Volumes/LargeStorage/code/Coinhub_Online_Demo\",\"mode\":\"read-only\",\"description\":\"Execute the sole requested Node command for the Runner permission-denial acceptance test.\"}",
+          "options": [
+            "仅允许这一次",
+            "拒绝"
+          ]
+        },
+        "binding": {
+          "actionId": "act-6242ca31cc0c5e9e55b2927e49abeac5a161c6f4",
+          "inputDigest": "a0c54cc7c6019634c765e7de6f4dc9f0478ff410b82c88b1a65831e780f7aece",
+          "exactDigest": "aac0861347332ad2c8f64f7d85283d43d48be8a12b28aaf1f820649a6966dd89",
+          "toolCallId": "call_tZDn5wRNktoeLOpMhrZlG3QL",
+          "sessionId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb"
+        },
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "decisionId": "permission-efa585f7184243685b846e5dc868572867c48f99",
+        "requestDigest": "009074f7f9a7a57d984c63a8e24b778a56dca1d96f4d4ef5479b3d175ee87da4"
+      },
+      "inputDigest": "3126e1f5c4d4cc39989806efe9716b2d0b61bad55904fb38fdd0a056f3091bc3",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789275854281,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "bc4ab635-3d3c-4527-9ad3-ec25718a21a8",
+        "startedAt": 1789275854333
+      },
+      "observation": null,
+      "evidence": null,
+      "result": {
+        "decisionId": "permission-efa585f7184243685b846e5dc868572867c48f99",
+        "requestDigest": "009074f7f9a7a57d984c63a8e24b778a56dca1d96f4d4ef5479b3d175ee87da4",
+        "persisted": true
+      },
+      "admitted": true,
+      "locks": [],
+      "occupiesSlot": false,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789277654313,
+      "observationCount": 0,
+      "admittedAt": 1789275854313,
+      "completedAt": 1789275898287
+    },
+    {
+      "id": "act-b670e5dfa882201fd61c7c0e8d64c8b8eece9b5e",
+      "workflowId": "op-115472171b2a38e7824b6a7dae5fdfe5f07aa320",
+      "kind": "notify_main",
+      "input": {
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "reason": "decision_answered",
+        "detail": {
+          "decisionId": "permission-efa585f7184243685b846e5dc868572867c48f99",
+          "answer": {
+            "answers": [
+              {
+                "id": "permission-efa585f7184243685b846e5dc868572867c48f99",
+                "selected": [
+                  "拒绝"
+                ]
+              }
+            ]
+          },
+          "binding": {
+            "actionId": "act-6242ca31cc0c5e9e55b2927e49abeac5a161c6f4",
+            "inputDigest": "a0c54cc7c6019634c765e7de6f4dc9f0478ff410b82c88b1a65831e780f7aece",
+            "exactDigest": "aac0861347332ad2c8f64f7d85283d43d48be8a12b28aaf1f820649a6966dd89",
+            "toolCallId": "call_tZDn5wRNktoeLOpMhrZlG3QL",
+            "sessionId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb"
+          },
+          "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/decisions/act-a556cafaed15af23d6e4958d6ed60ec5c14a25dd/answer.json"
+        }
+      },
+      "inputDigest": "149857142c84c9c4cdf2dd20d64f89651519c8df02af6289c47a328fb287274e",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789275898191,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "99475a57-6d07-4e14-86d2-20387e778734",
+        "startedAt": 1789275898237
+      },
+      "observation": null,
+      "evidence": null,
+      "result": {
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "messageId": "act-b670e5dfa882201fd61c7c0e8d64c8b8eece9b5e",
+        "persisted": true
+      },
+      "admitted": true,
+      "locks": [],
+      "occupiesSlot": false,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789277698214,
+      "observationCount": 0,
+      "admittedAt": 1789275898214,
+      "completedAt": 1789275898419
+    },
+    {
+      "id": "act-421ba87812f38b6964d381d99e46ab8be4493a1d",
+      "workflowId": "op-115472171b2a38e7824b6a7dae5fdfe5f07aa320",
+      "kind": "notify_main",
+      "input": {
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "reason": "operation_failed",
+        "detail": {
+          "passed": false,
+          "summary": "原生 Runner 权限请求被拒绝；唯一获准请求的命令未实际执行，Operation 已结束并通过原生结果返回主线程。",
+          "findings": [
+            "已验证事实：仅发起了合同指定的命令请求：node -e \"console.log('UKR_DENIAL_MUST_NOT_RUN')\"。",
+            "已验证事实：原生 Operation 返回 executed=false、reason=permission_rejected。",
+            "已验证事实：没有重试、没有替代 Operation、没有使用其他能力，也没有修改文件或配置。",
+            "推断：由于执行器明确标记 executed=false，该命令的 UKR_DENIAL_MUST_NOT_RUN 输出未产生，命令未成功执行。",
+            "未知：原生 GUI 中测试者执行拒绝动作的具体交互细节不在该执行器返回内容中；但 permission_rejected 已明确记录拒绝结果。"
+          ],
+          "evidence": [
+            "operation_exec 对唯一命令的返回：{\"executed\":false,\"reason\":\"permission_rejected\"}。",
+            "未收到任何命令 stdout，且执行器状态为 executed=false。"
+          ],
+          "nextActions": [
+            "无需后续操作；拒绝路径已按约束终止。"
+          ],
+          "managedRangeStopped": true,
+          "terminationScope": "dsh-managed-range",
+          "terminationId": "range-215e82427795b902723551441d0f4abe4f13f4a9d6005e7f6ae632b5398aea4b",
+          "sessionId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb",
+          "promptId": "owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb",
+          "executionSettled": true,
+          "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-2cba1500a083307a90f77fbbc135c3a82ec6cbfb/result.json"
+        }
+      },
+      "inputDigest": "e6f7b71e9647c868cee825cf760b08e461d41755989e6844212afb97a8bfa045",
+      "attemptId": null,
+      "status": "succeeded",
+      "createdAt": 1789275904689,
+      "nextWakeAt": null,
+      "execution": {
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "token": "5163bf0c-57ec-4671-9c79-602250bcc9c2",
+        "startedAt": 1789275904719
+      },
+      "observation": null,
+      "evidence": null,
+      "result": {
+        "rootSessionId": "session-85c160fc-4a74-4c9c-9a2b-a989631e1845",
+        "messageId": "act-421ba87812f38b6964d381d99e46ab8be4493a1d",
+        "persisted": true
+      },
+      "admitted": true,
+      "locks": [],
+      "occupiesSlot": false,
+      "deadlineMs": 1800000,
+      "deadlineAt": 1789277704704,
+      "observationCount": 0,
+      "admittedAt": 1789275904704,
+      "completedAt": 1789275904853
+    }
+  ],
+  "commands": [
+    {
+      "intent": {
+        "id": "cmd-3ed1546f25c404925db564f7d4d43b52148d4621",
+        "actionId": "act-63e19ed47f060823ec9ba432f1d9cee0f1e28eff",
+        "attemptId": null,
+        "argv": [
+          "node",
+          "-e",
+          "console.log('UKR_NATIVE_OPERATION_OK')"
+        ],
+        "cwd": "/Volumes/LargeStorage/code/Coinhub_Online_Demo",
+        "mode": "read-only",
+        "verificationId": "operation-call_hJpaAVHoP3pANCDGusFw41nM",
+        "authority": null,
+        "bindingDigest": "c1e852e961796516b67a8d07661f066bbe6f6c5258725624a3177d02a480185a",
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182"
+      },
+      "result": {
+        "commandId": "cmd-3ed1546f25c404925db564f7d4d43b52148d4621",
+        "bindingDigest": "c1e852e961796516b67a8d07661f066bbe6f6c5258725624a3177d02a480185a",
+        "hostId": "f36bcc21-c612-474c-b704-8b9d2697d182",
+        "exitCode": 0,
+        "enforcement": "full",
+        "timedOut": false,
+        "aborted": false,
+        "ok": true,
+        "kind": "completed",
+        "stdout": "UKR_NATIVE_OPERATION_OK\n",
+        "stderr": "",
+        "stdoutTruncated": false,
+        "stderrTruncated": false,
+        "managedRangeStopped": true,
+        "terminationScope": "dsh-managed-range",
+        "terminationId": "cmd-3ed1546f25c404925db564f7d4d43b52148d4621:managed-range-exit"
+      }
+    }
+  ],
+  "completeUkrAcceptance": false,
+  "productionCutover": false,
+  "finalRegression": {
+    "candidateDigest": "564240a27471b0115d9ca7da63d3afe463c9a323bd3ca696594d41b0c2a69394",
+    "report": "../kernel-regression-269-final/acceptance.json",
+    "counts": {
+      "tests": 269,
+      "pass": 269,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "checks": [
+      {
+        "name": "owner_client_build",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "approval_build",
+        "status": "passed",
+        "exitCode": 0
+      }
+    ],
+    "scope": "Regression and builds bind the final candidate. The real-model host started before the UI-only fixes; its unchanged runtime and final refreshed client were observed separately. This does not upgrade all AC/KAC criteria to passed."
+  }
+}

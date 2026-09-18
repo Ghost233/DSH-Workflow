@@ -1,0 +1,91 @@
+✖ binding diagnostics identify every missing and unknown task: partial-patch (5.895417ms)
+✖ binding diagnostics identify every missing and unknown task: extra-binding (1.135583ms)
+✖ binding diagnostics identify every missing and unknown task: wrong-binding (0.377708ms)
+✔ a retained dispatch keeps its original content-addressed source package and rejects provenance or contract drift (20.338625ms)
+✔ dispatch package compares complete verification definitions by identity without rewriting dispatch order (1.931583ms)
+✔ one-owner packages retain full frozen Ticket/Spec data, shared AC contributors and dependency blockers (7.031625ms)
+✔ compiler rejects unknown-fragment (0.473959ms)
+✔ compiler rejects blocked-fragment (0.307042ms)
+✔ compiler rejects unknown-contract (0.194583ms)
+✔ compiler rejects missing-known-contract (0.249584ms)
+✔ compiler rejects omitted-ready (0.164666ms)
+✔ compiler rejects missing-ticket-edge (0.350125ms)
+✔ compiler rejects task-cycle (2.156667ms)
+✔ compiler rejects wrong-snapshot (1.0495ms)
+✔ compiler rejects wrong-source (0.158791ms)
+✔ compiler rejects mixed-owner-package (1.195792ms)
+✔ bindings normalizer rejects duplicate task, Ticket fragment and contract identities without mutating optional absence (0.514458ms)
+✔ completed checkpoint reader returns frozen persisted snapshot without revalidating current planning files (3693.2795ms)
+✔ checkpoint snapshot reader rejects a nonterminal journal without resuming it (779.513959ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 16
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5977.664583
+
+✖ failing tests:
+
+test at owner-workflow-plugin/test/planning-packages.test.mjs:86:77
+✖ binding diagnostics identify every missing and unknown task: partial-patch (5.895417ms)
+  AssertionError [ERR_ASSERTION]: Planning packages: TASK_BINDING_MISMATCH (plan.planningBindings.tasks)
+      at Object.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-packages.test.mjs:105:12)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-packages.test.mjs:103:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.start (node:internal/test_runner/test:1003:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/planning-packages.test.mjs:86:77
+✖ binding diagnostics identify every missing and unknown task: extra-binding (1.135583ms)
+  AssertionError [ERR_ASSERTION]: Planning packages: TASK_BINDING_MISMATCH (plan.planningBindings.tasks)
+      at Object.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-packages.test.mjs:105:12)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-packages.test.mjs:103:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at owner-workflow-plugin/test/planning-packages.test.mjs:86:77
+✖ binding diagnostics identify every missing and unknown task: wrong-binding (0.377708ms)
+  AssertionError [ERR_ASSERTION]: Planning packages: MISSING_TASK_BINDING (plan.planningBindings.tasks: task-a)
+      at Object.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-packages.test.mjs:105:12)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Volumes/LargeStorage/code/DSH-Workflow/owner-workflow-plugin/test/planning-packages.test.mjs:103:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

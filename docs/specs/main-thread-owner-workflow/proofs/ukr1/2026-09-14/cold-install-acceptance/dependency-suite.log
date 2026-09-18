@@ -1,0 +1,33 @@
+✔ canonical input ignores JSON order, test/build scripts, business source, and action identity (1902.23975ms)
+✔ input binds manager version, config, lifecycle source, and local dependency source (2781.33475ms)
+✔ base uses base/node_modules so CJS and ESM consumers resolve their siblings (1536.2925ms)
+✔ explicit private COW records one full tree copy, and clone unsupported fails closed (1692.672625ms)
+✔ parallel overlays share a sealed base but private write locations remain isolated (1011.890417ms)
+✔ sealed validation rejects a writable base root and fresh sealing rejects every unsafe base link (7449.38775ms)
+✔ installer-local workspace links are normalized into the sealed base (1616.987167ms)
+✔ internal npm hard-link groups are atomically detached before the base is sealed (1446.41075ms)
+✔ external hard-link references remain untouched while every base path becomes private (1247.623791ms)
+✔ an external Finder .DS_Store hard-link is detached before readonly sealing (936.71625ms)
+✔ readonly unreceipted bases and interrupted hard-link work recover without another install (2627.373625ms)
+✔ unconfirmed active installer fences a later action without restaging or dispatching (1159.181417ms)
+✔ settled failure preserves nested cwd download cache and publishes primary error metrics (1556.129667ms)
+✔ failure artifact ENOSPC keeps the primary npm error and active marker fenced (1120.180042ms)
+✔ a durable settled-failure terminal allows a different action to reclaim the installer (1195.56275ms)
+✔ durable receipt, promotion, and cache receipt interruptions recover without another install (5127.811458ms)
+✔ target replay validates its overlay receipt and does not rerun an already completed install (1698.238791ms)
+✔ missing or conflicting durable receipts never delete staged or promoted trees (3474.362375ms)
+✔ fresh sealing hashes the base once and every later instance trusts its sealed receipt (2342.215584ms)
+✔ install, promotion, hardlink normalization and seal have independent bounded signals and recover without reinstall (1290.985833ms)
+✔ cold installation owns its deadline after acquisition and still honors external cancellation (2126.453583ms)
+✔ seal timeout reports its own phase and recovers the installed readonly base without npm (1444.47875ms)
+✔ production manager resolver uses a cwd-bound managed command and no-lock projects return no bindings (869.025125ms)
+✔ same canonical input recovers in one shared generation while unknown installer bytes remain untouched (2432.480208ms)
+✔ dependency generation selector cannot escape or traverse a directory alias (1158.087625ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 51329.347917

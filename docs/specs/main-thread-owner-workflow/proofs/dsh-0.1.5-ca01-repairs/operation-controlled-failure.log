@@ -1,0 +1,28 @@
+(node:93162) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✖ native question tool routes Operator input through main and resumes after the actual answer (978.686333ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1198.960584
+
+✖ failing tests:
+
+test at ../../../../private/tmp/dsh015-operation-cleanup.test.mjs:195:1
+✖ native question tool routes Operator input through main and resumes after the actual answer (978.686333ms)
+  AssertionError [ERR_ASSERTION]: Controlled failure while the main question is pending
+      at TestContext.<anonymous> (/private/tmp/dsh015-operation-cleanup.test.mjs:257:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: undefined,
+    operator: 'fail',
+    diff: 'simple'
+  }
+

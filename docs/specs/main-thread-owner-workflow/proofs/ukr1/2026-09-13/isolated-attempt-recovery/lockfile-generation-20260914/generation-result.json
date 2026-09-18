@@ -1,0 +1,82 @@
+{
+  "scratch": "/private/tmp/dsh-lockfile-generation-_fev9co5",
+  "generatedLockfile": "/private/tmp/dsh-lockfile-generation-_fev9co5/package-lock.json",
+  "generatedSha256": "c14a4b337a63a4b37df37f83ef7d7b44e5d44d5d24eff3ad3a9bc11313db29bb",
+  "sourceCandidate": "ab6c1c53f3b04f39e22eccc46709922abdc63e25f8e4f197c3b746ebaba0d9f5",
+  "changes": {
+    "added": [
+      "node_modules/playwright/node_modules/fsevents"
+    ],
+    "removed": [
+      "node_modules/@dynamic-labs/solana/node_modules/viem/node_modules/zod",
+      "node_modules/@dynamic-labs/wallet-connect/node_modules/zod",
+      "node_modules/@walletconnect/jsonrpc-ws-connection/node_modules/utf-8-validate",
+      "node_modules/jayson/node_modules/utf-8-validate"
+    ],
+    "changed": []
+  },
+  "commands": [
+    {
+      "name": "before-ci-dry-run",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/lib/node_modules/npm/bin/npm-cli.js",
+        "ci",
+        "--dry-run",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--cache",
+        "/private/tmp/dsh-lockfile-generation-_fev9co5/npm-cache"
+      ],
+      "cwd": "/private/tmp/dsh-lockfile-generation-_fev9co5",
+      "exitCode": 1,
+      "elapsedSeconds": 5.756,
+      "errors": [
+        "npm error code EUSAGE",
+        "npm error `npm ci` can only install packages when your package.json and package-lock.json or npm-shrinkwrap.json are in sync. Please update your lock file with `npm install` before continuing.",
+        "npm error Missing: fsevents@2.3.2 from lock file"
+      ]
+    },
+    {
+      "name": "generate-lockfile",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/lib/node_modules/npm/bin/npm-cli.js",
+        "install",
+        "--package-lock-only",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--cache",
+        "/private/tmp/dsh-lockfile-generation-_fev9co5/npm-cache"
+      ],
+      "cwd": "/private/tmp/dsh-lockfile-generation-_fev9co5",
+      "exitCode": 0,
+      "elapsedSeconds": 1.178,
+      "errors": []
+    },
+    {
+      "name": "after-ci-dry-run",
+      "argv": [
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/bin/node",
+        "/Users/admin/.local/share/fnm/node-versions/v24.12.0/installation/lib/node_modules/npm/bin/npm-cli.js",
+        "ci",
+        "--dry-run",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--cache",
+        "/private/tmp/dsh-lockfile-generation-_fev9co5/npm-cache"
+      ],
+      "cwd": "/private/tmp/dsh-lockfile-generation-_fev9co5",
+      "exitCode": 0,
+      "elapsedSeconds": 1.317,
+      "errors": []
+    }
+  ],
+  "packageJsonUnchanged": true,
+  "projectNpmrcUnchanged": true,
+  "nodeModulesCreated": false,
+  "browserSmokeVerified": false
+}

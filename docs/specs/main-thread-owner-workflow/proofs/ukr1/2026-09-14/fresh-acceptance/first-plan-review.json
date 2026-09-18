@@ -1,0 +1,45 @@
+{
+  "review": {
+    "contract": "DSH_PLAN_REVIEW_V1",
+    "status": "needs_revision",
+    "summary": "DAG ownership, dependency order, producer-before-registration sequencing, and the existing execution-time verification bindings are otherwise executable. However, AC-07’s required auditable, per-workflow evidence and records do not have a concrete producing task or verification obligation, so the frozen R11 acceptance contract is not fully carried by the plan.",
+    "issues": [
+      {
+        "severity": "high",
+        "title": "AC-07 audit evidence and required records have no concrete producer or verification",
+        "detail": "Spec R11 requires current-workflow evidence identifying source baseline, workflow ID, Spec/Ticket/DAG versions, dependency installation/tree-copy/digest costs, plus auditable test evidence, issue/fix records, the actual DSH_PLAN_V2 DAG, Owner Registry record, and external-block conclusion. Ticket R11 repeats this as an acceptance requirement. No task is owned by product-docs; every quality task is limited to tests/**, while integrate_critical_journeys has write: [] and only asserts unspecified “sanitized workflow evidence” in done. None of the 16 existing verification bindings checks that a durable sanitized record contains the mandated fields and conclusions. Therefore the plan cannot establish either the output location/owner or an executable acceptance producer for this non-test artifact requirement.",
+        "suggestion": "Revise the final integration path to include a product-docs-owned leaf task after integration (or an explicitly scoped equivalent) that writes a defined sanitized R11 evidence/record artifact under docs/**. Its done must enumerate the required provenance, dependency-cost accounting, actual verification-result references, defect/fix and external-block conclusions, DSH_PLAN_V2/Owner Registry references, and must explicitly prohibit sensitive values. Bind a concrete verification that validates the artifact’s required fields and redaction. Make it depend on integrate_critical_journeys so it records actual execution results; if final acceptance is meant to include this artifact check, add that dependency and binding explicitly.",
+        "obligationId": "COINHUB-CRITICAL-JOURNEYS:R11:AC-07-auditable-evidence",
+        "sourceId": "COINHUB-CRITICAL-JOURNEYS",
+        "sourceVersion": "R11",
+        "targetTaskIds": [
+          "integrate_critical_journeys"
+        ],
+        "classificationBasis": {
+          "source": {
+            "id": "COINHUB-CRITICAL-JOURNEYS",
+            "version": "R11"
+          },
+          "technicalFacts": [
+            "The plan has no product-docs task despite the registry defining product-docs with docs/** scope.",
+            "integrate_critical_journeys has write: [] and its existing bindings only execute suites, typechecks, and builds.",
+            "No existing verification command validates a durable evidence record or its required R11 provenance, cost, and conclusion fields."
+          ]
+        },
+        "closeWhen": {
+          "kind": "plan_task_executable",
+          "taskId": "integrate_critical_journeys"
+        }
+      }
+    ]
+  },
+  "planDigest": "84307773d9e6b4aa295f958df67cce36297782d5735a59cb960ddc12ea31b1bf",
+  "snapshotDigest": "2a7919be4199dd0b54007db4320edfca1914152dc4f6ca179138c69354522d6e",
+  "managedRangeStopped": true,
+  "terminationScope": "dsh-managed-range",
+  "terminationId": "range-4a8e9bc2acc07b656f36293a793003fca227b54219725a2ce2f8691a8e985b90",
+  "sessionId": "owner-51fe7c89aed941b68bf222b8b5d84ff127b0f22b",
+  "promptId": "owner-51fe7c89aed941b68bf222b8b5d84ff127b0f22b",
+  "executionSettled": true,
+  "evidenceRef": "/Volumes/LargeStorage/code/DSH-Workflow/.dsh-workflow/native-sessions/owner-51fe7c89aed941b68bf222b8b5d84ff127b0f22b/result.json"
+}

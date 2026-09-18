@@ -1,0 +1,17 @@
+固定插件依赖当前宿主未提供的客户端模块；安装前已停止，请先适配相关插件：
+dsh-better-sidebar: @deepseek-ai/dsh-client-ui-slots
+dsh-visualizer: @deepseek-ai/dsh-client-ui-primitives
+dsh-visualizer: @deepseek-ai/dsh-client-ui-slots
+@js2hou/dsh-mcp-manager: @deepseek-ai/dsh-client-runtime
+@js2hou/dsh-mcp-manager: @deepseek-ai/dsh-client-ui-slots
+dsh-plugin-open-editor: @deepseek-ai/dsh-client-runtime
+dsh-plugin-open-editor: @deepseek-ai/dsh-client-ui-slots
+dsh-plugin-diff-review: @deepseek-ai/dsh-client-runtime
+dsh-plugin-diff-review: @deepseek-ai/dsh-client-ui-slots
+@dsh-external/dsh-plannotator: @deepseek-ai/dsh-client-runtime
+@dsh-external/dsh-plannotator: @deepseek-ai/dsh-client-ui-primitives
+dsh-easyrewrite: slots
+dsh-easyrewrite: sessions
+dsh-easyrewrite: workspaces
+@dsh-external/dsh-sidechain: @deepseek-ai/dsh-client-runtime
+External installation commands: 0

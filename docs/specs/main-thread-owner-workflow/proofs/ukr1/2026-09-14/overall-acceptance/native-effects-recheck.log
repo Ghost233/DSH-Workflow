@@ -1,0 +1,20 @@
+✔ native root delivery is deduplicated using persisted messages, not followup return (1366.350458ms)
+✔ native root receives the canonical workflow terminal status and revision (41.210167ms)
+✔ a root session closing during notification becomes a durable offline wait without hiding persistence failures (50.541ms)
+✔ native fixed command proves managed-range exit and does not rerun a received command (65.601958ms)
+✔ new command identities cannot bypass an unresolved same-action intent, even with the same host ID (37.916083ms)
+✔ action admission serializes competing hosts while allowing owned live commands in parallel (69.30525ms)
+✔ native read-only sandbox rejects an actual source write (56.954583ms)
+✔ immutable dependency inputs reject writable roots before native dispatch (7.009666ms)
+✔ native verification reads external dependencies but cannot write or chmod them (68.268958ms)
+✔ old and wrong-scope command receipts are not reused or promoted to termination proof (77.852584ms)
+✔ native termination covers a helper that outlives the command leader (438.845458ms)
+✔ verification resumes after the native command receipt without rerunning or changing its directory (127.008584ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4367.407333

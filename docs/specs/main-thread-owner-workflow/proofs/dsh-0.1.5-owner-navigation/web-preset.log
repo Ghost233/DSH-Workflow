@@ -1,0 +1,19 @@
+✔ official Web composition serves the shell and Owner dashboard over the real HTTP host (5483.515ms)
+✔ real browser settles main questions and navigates Owner Team approvals without bypassing Runner (3739.132541ms)
+ℹ Browser: 152.0.7977.83
+✔ 真实加载器可以从 Harness 用户根目录发现所有者工作流预设 (16.979125ms)
+✔ Owner 工作流的运行时 Skill 能被当前 Agent 正确加载 (63.68625ms)
+✔ 插件只在所有者工作流预设中挂载，已安装 bundle 与本地 patch 不会重复注册 (83.542875ms)
+✔ 规划器、审查器和记忆子代理继承完整工具，文件写入由 read-only 沙箱限制 (153.190833ms)
+✔ Owner 子线程在真实 Harness 继承作用域中保留正常开发工具和提交关卡 (76.845959ms)
+✔ 主代理选择所有者工作流预设后无需调用 mode_enable 也会被工具守卫限制 (63.003125ms)
+✔ 专用状态与预检工具通过真实 Harness 输出无损 JSON (581.924917ms)
+✔ 标准预设保持原有工具且不受所有者插件影响 (27.028791ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11080.833458
