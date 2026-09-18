@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { hostPackageMap } from './project-plugins.mjs'
 import { installProjectResolver } from './project-plugin-resolver.mjs'
 import { composeKernelLaunch } from './kernel-launch-composition.mjs'
-import { configuredWebPort } from './kernel-web-launch.mjs'
+import { configuredWebPort, launchCatalogRoot } from './kernel-web-launch.mjs'
 import { composeApprovalPatches } from '../approve-for-me-workflow-plugin/compose-patch.mjs'
 
 const project = resolve('.')
@@ -17,6 +17,11 @@ const anchor = join(project, 'deepseek-harness/apps/cli/package.json')
 const req = createRequire(anchor)
 const { boot, initProfile, loadProfile, composeEntries, healProfilesModuleFallback } = req('@deepseek-ai/dsh-app-boot')
 const { provideCmdline } = req('@deepseek-ai/dsh-cmdline')
+
+test('source launcher chooses its catalog from the checkout, independent of the caller cwd', () => {
+  assert.equal(launchCatalogRoot(project), resolve(project, '..'))
+  assert.equal(launchCatalogRoot(join(project, 'fixtures', 'checkout')), join(project, 'fixtures'))
+})
 
 test('actual Web composition loads all three project components and the root preset without rewriting its fixture profile', { timeout: 30_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'ukr-web-composition-'))

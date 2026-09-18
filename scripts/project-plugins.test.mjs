@@ -64,6 +64,13 @@ async function fixture(t) {
     resolvePackage: async item => item.source === 'git' ? { commit: 'a'.repeat(40) } : { version: '1.0.0' } }
 }
 
+async function withGitPlugin(f) {
+  const item = { package: 'fixture-git-plugin', version: 'latest', source: 'git', ref: 'main',
+    entryId: 'fixture-git-plugin', repository: 'https://github.com/example/fixture-git-plugin' }
+  f.list.plugins.splice(1, 0, item)
+  await writeJson(join(f.root, 'project-plugins.json'), f.list)
+}
+
 test('ordered latest resolution, project-local install, patch publication and profile deduplication', async t => {
   const f = await fixture(t)
   const state = await prepare(f.root, f.anchor, process.pid, f)
@@ -86,8 +93,9 @@ test('ordered latest resolution, project-local install, patch publication and pr
 
 test('failed second installation stops the sequence, releases lock and never publishes launch state', async t => {
   const f = await fixture(t)
+  await withGitPlugin(f)
   await assert.rejects(prepare(f.root, f.anchor, process.pid, { ...f, run: async (...args) => {
-    if (args[1][1].startsWith('dsh-visualizer@')) throw new Error('network failure')
+    if (args[1][1].startsWith('fixture-git-plugin@')) throw new Error('network failure')
     return f.run(...args)
   } }), /network failure/)
   assert.deepEqual(f.calls, ['dsh-context@1.0.0'])
@@ -107,8 +115,9 @@ test('missing build artifact fails closed even when the package manager reports 
 
 test('Git build approval failure stops before subsequent plugins without npm fallback', async t => {
   const f = await fixture(t)
+  await withGitPlugin(f)
   await assert.rejects(prepare(f.root, f.anchor, process.pid, { ...f, run: async (...args) => {
-    if (args[1][1].startsWith('dsh-visualizer@git+')) throw new Error('Git prepare requires allowBuilds approval')
+    if (args[1][1].startsWith('fixture-git-plugin@git+')) throw new Error('Git prepare requires allowBuilds approval')
     return f.run(...args)
   } }), /requires allowBuilds approval/)
   assert.equal(f.calls.length, 1)
@@ -118,16 +127,18 @@ test('Git build approval failure stops before subsequent plugins without npm fal
 
 test('invalid Git revision rejects the package before installation', async t => {
   const f = await fixture(t)
+  await withGitPlugin(f)
   await assert.rejects(prepare(f.root, f.anchor, process.pid, { ...f, resolvePackage: async item => item.source === 'git' ? { commit: 'main' } : { version: '1.0.0' } }), /Invalid plugin revision/)
   assert.equal(f.calls.length, 0)
 })
 
 test('installed Git package must still match the configured identity', async t => {
   const f = await fixture(t)
+  await withGitPlugin(f)
   await assert.rejects(prepare(f.root, f.anchor, process.pid, { ...f, run: async (...args) => {
     await f.run(...args)
-    if (!args[1][1].startsWith('dsh-visualizer@git+')) return
-    const path = join(pluginDirectory(f.root), 'node_modules', 'dsh-visualizer', 'package.json')
+    if (!args[1][1].startsWith('fixture-git-plugin@git+')) return
+    const path = join(pluginDirectory(f.root), 'node_modules', 'fixture-git-plugin', 'package.json')
     const manifest = JSON.parse(await readFile(path, 'utf8'))
     await writeJson(path, { ...manifest, name: 'unrelated-plugin' })
   } }), /Installed version mismatch/)
@@ -251,7 +262,7 @@ test('a removed client module is rejected from pinned metadata before installing
   await releaseLock(first.directory, process.pid)
   const path = join(f.root, 'project-plugins.lock.json')
   const lock = JSON.parse(await readFile(path, 'utf8'))
-  lock.plugins[4].metadata = { dsh: { client: { inject: ['@deepseek-ai/dsh-client-runtime'] } } }
+  lock.plugins[1].metadata = { dsh: { client: { inject: ['@deepseek-ai/dsh-client-runtime'] } } }
   await writeJson(path, lock)
   const calls = f.calls.length
   await assert.rejects(prepare(f.root, f.anchor, process.pid, { ...f, update: false }), /安装前已停止.*\n.*dsh-client-runtime/)

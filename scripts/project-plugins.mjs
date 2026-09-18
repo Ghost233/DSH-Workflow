@@ -111,6 +111,17 @@ export function hostPackageMap(anchor) {
       }
     }
   }
+  // The Web bundle compiles the slot registry into its static client artifact,
+  // but it is a development dependency of that bundle and therefore is not
+  // reachable from the CLI's production dependency walk. External client
+  // plugins still need the package-name resolver entry when running from the
+  // source checkout.
+  let harnessRoot = dirname(anchor)
+  while (dirname(harnessRoot) !== harnessRoot && !existsSync(join(harnessRoot, 'apps', 'cli', 'package.json'))) {
+    harnessRoot = dirname(harnessRoot)
+  }
+  const slots = join(harnessRoot, 'packages', 'client', 'ui-slots')
+  if (existsSync(join(slots, 'package.json'))) packages['@deepseek-ai/dsh-client-ui-slots'] = slots
   return packages
 }
 
@@ -353,7 +364,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     if (action === 'prepare' || action === 'update') await prepare(resolve(root), await harnessAnchor(value), Number(pidText), {
       update: action === 'update',
-      scope: action === 'update' ? 'all' : 'owned',
+      scope: 'all',
     })
     else if (action === 'release') await releaseLock(pluginDirectory(resolve(root)), Number(value))
     else if (action === 'run') {

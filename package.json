@@ -51,6 +51,7 @@
     "scripts/harness-runtime.mjs",
     "owner-workflow-plugin/kernel-presets/",
     "scripts/kernel-web-launch.mjs",
+    "scripts/agent-team-profile.mjs",
     "scripts/kernel-launch-composition.mjs",
     "scripts/web-host-lifecycle.mjs"
   ],
@@ -74,7 +75,7 @@
     "test:kernel": "node scripts/run-kernel-regression.mjs",
     "build:client": "node owner-workflow-plugin/scripts/build-client.mjs",
     "check:client": "node owner-workflow-plugin/scripts/build-client.mjs --check",
-    "test:project-plugins": "node scripts/run-workflow-tests.mjs scripts/project-plugins.test.mjs scripts/daily-workflow-launch.test.mjs scripts/kernel-web-launch.test.mjs",
+    "test:project-plugins": "node scripts/run-workflow-tests.mjs scripts/project-plugins.test.mjs scripts/daily-workflow-launch.test.mjs scripts/agent-team-profile.test.mjs scripts/kernel-web-launch.test.mjs",
     "test": "node scripts/run-workflow-tests.mjs"
   },
   "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000"

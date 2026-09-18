@@ -1,15 +1,18 @@
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { mkdtemp, writeFile, rm, realpath } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkLaunchReady } from './harness-runtime.mjs'
 import { prepare, releaseLock, pluginDirectory } from './project-plugins.mjs'
 import { composeKernelLaunch } from './kernel-launch-composition.mjs'
 import { launchWebHost, assertWebPortAvailable } from './web-host-lifecycle.mjs'
+import { ensureAgentTeamProfile } from './agent-team-profile.mjs'
 
 const repository = fileURLToPath(new URL('../', import.meta.url))
 const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
+
+export const launchCatalogRoot = projectRoot => dirname(resolve(projectRoot))
 
 export function configuredWebPort(entries) {
   const matches = flatten(entries).filter(row => row.name === '@deepseek-ai/dsh-host-webserver' && row.disabled !== true)
@@ -23,25 +26,30 @@ export function configuredWebPort(entries) {
 }
 
 /** Single no-argument host behind start-owner-workflow.sh.
- * No profile/preset installer, daemon or legacy Runner. */
-export async function launchKernelWeb({ projectRoot = repository, catalogRoot = process.cwd(), signal,
+ * Agent Teams is enabled through DSH's own profile manager; no preset installer or legacy Runner. */
+export async function launchKernelWeb({ projectRoot = repository, catalogRoot, signal,
   onReady = ({ port, instanceId, logPath }) => process.stderr.write(`DSH Web ready: http://127.0.0.1:${port}/ (${instanceId})\nLog: ${logPath}\n`) } = {}) {
-  const project = await realpath(projectRoot), catalog = await realpath(catalogRoot)
+  const project = await realpath(projectRoot), catalog = await realpath(catalogRoot ?? launchCatalogRoot(project))
   const harness = join(project, 'deepseek-harness'), anchor = join(harness, 'apps/cli/package.json')
   if (process.env.DSH_PROFILE && process.env.DSH_PROFILE !== 'web') throw new Error('The daily workflow entry requires the existing Web profile; DSH_PROFILE selects another profile')
   if (!await checkLaunchReady(harness)) throw new Error('The official DSH build is not ready for its fixed source; run the explicit build command before launch')
   const boot = createRequire(anchor)('@deepseek-ai/dsh-app-boot')
   const home = process.env.DSH_HOME || join(process.env.HOME, '.dsh')
-  const profile = boot.loadProfile('dsh', 'web', anchor, home)
   const userPatch = join(home, 'cordis.patch.yml')
-  const layers = [...profile.layers.map(layer => layer.patches), profile.patches,
-    existsSync(userPatch) ? boot.loadOverlayPatches('dsh', userPatch) : []]
-  const port = configuredWebPort(boot.composeEntries(layers))
+  const profileLayers = () => {
+    const profile = boot.loadProfile('dsh', 'web', anchor, home)
+    return [...profile.layers.map(layer => layer.patches), profile.patches,
+      existsSync(userPatch) ? boot.loadOverlayPatches('dsh', userPatch) : []]
+  }
+  const port = configuredWebPort(boot.composeEntries(profileLayers()))
   // Refuse an occupied port before project preparation mutates its launch metadata.
   await assertWebPortAvailable(port)
+  await ensureAgentTeamProfile({ harness, home, signal })
+  const layers = profileLayers()
+  if (configuredWebPort(boot.composeEntries(layers)) !== port) throw new Error('Agent Teams activation unexpectedly changed the Web port')
   let launchDirectory, prepared = false
   try {
-    const state = await prepare(project, anchor, process.pid, { scope: 'owned' }); prepared = true
+    const state = await prepare(project, anchor, process.pid, { scope: 'all' }); prepared = true
     const entries = boot.composeEntries([...layers, boot.loadOverlayPatches('dsh', state.patch)])
     if (configuredWebPort(entries) !== port) throw new Error('Project plugin composition unexpectedly changed the Web port')
     launchDirectory = await mkdtemp(join(pluginDirectory(project), 'kernel-launch-'))

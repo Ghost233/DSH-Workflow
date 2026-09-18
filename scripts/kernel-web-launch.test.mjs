@@ -23,7 +23,14 @@ test('daily shell uses the real CLI, discovers every project plugin and drains i
     const modules = join(project, '.dsh-workflow/plugins/node_modules'); await mkdir(modules, { recursive: true })
     await symlink(join(source, 'deepseek-harness/node_modules/.pnpm/semver@7.8.5/node_modules/semver'), join(modules, 'semver'))
     const { initProfile } = createRequire(join(source, 'deepseek-harness/apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
-    initProfile(profileDir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'], 'startup')
+    initProfile(profileDir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app',
+      '@deepseek-ai/dsh-experimental-agent-team-profile', '@deepseek-ai/dsh-experimental-agent-team-web-profile'], 'startup')
+    const scope = join(profileDir, 'node_modules/@deepseek-ai')
+    await mkdir(scope, { recursive: true })
+    for (const directory of ['agent-team-profile', 'agent-team-web-profile']) {
+      await symlink(join(source, 'deepseek-harness/packages/experimental', directory),
+        join(scope, `dsh-experimental-${directory}`))
+    }
     const probe = net.createServer()
     await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve))
     const port = probe.address().port; await new Promise(resolve => probe.close(resolve))
