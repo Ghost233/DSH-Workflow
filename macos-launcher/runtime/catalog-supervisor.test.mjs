@@ -183,10 +183,10 @@ test('engine ports stay inside the configured range and foreign bind addresses a
   await supervisor.openCatalog(supervisor.catalogs()[1].id)
   assert.equal(seen.length, 2)
   for (const [webPort, gatePort] of seen) {
-    assert.ok(webPort >= 41200 && webPort <= 41209, 'the DSH port must stay inside the range')
-    assert.ok(gatePort >= 41200 && gatePort <= 41209, 'the gateway port must stay inside the range')
+    assert.ok(Number.isInteger(webPort) && webPort > 0, 'the internal DSH port is auto-assigned')
+    assert.ok(gatePort >= 41200 && gatePort <= 41209, 'the exposed gateway port must stay inside the range')
   }
-  assert.equal(new Set(seen.flat()).size, 4, 'the four allocated ports must be distinct')
+  assert.equal(new Set(seen.map(([, gatePort]) => gatePort)).size, 2, 'the exposed ports must be distinct')
   await assert.rejects(startCatalogSupervisor({ resourcesRoot: base, catalogBase: join(base, 'data-other'),
     host: '203.0.113.5', port: 0, password: 'secret' }), /不在本机网卡上/u)
   await assert.rejects(startCatalogSupervisor({ resourcesRoot: base, catalogBase: join(base, 'data-other'),

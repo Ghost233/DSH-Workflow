@@ -203,10 +203,10 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
     let completeReady, failReady
     engine.readyPromise = new Promise((resolveReady, rejectReady) => { completeReady = resolveReady; failReady = rejectReady })
     engine.readyPromise.catch(() => {})
-    const reservePort = async bindHost => {
+    const reservePort = async (bindHost, useRange) => {
       for (let attempt = 0; attempt < 60; attempt++) {
         let candidate
-        if (portRange) {
+        if (useRange && portRange) {
           candidate = portRange.min + Math.floor(Math.random() * (portRange.max - portRange.min + 1))
           if (candidate === actualPort || reservedPorts.has(candidate) || !await canBind(bindHost, candidate)) continue
         } else {
@@ -216,16 +216,16 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
         reservedPorts.add(candidate)
         return candidate
       }
-      throw new Error(portRange ? '引擎端口范围内没有可用端口' : 'Could not allocate a distinct DSH port')
+      throw new Error(useRange && portRange ? '引擎端口范围内没有可用端口' : 'Could not allocate a distinct DSH port')
     }
     engine.task = (async () => {
       let webPort, gatePort
       try {
-        webPort = await reservePort('127.0.0.1')
-        gatePort = await reservePort(host)
+        webPort = await reservePort('127.0.0.1', false)
+        gatePort = await reservePort(host, true)
         engine.webPort = webPort
         engine.gatePort = gatePort
-        note(`端口已分配：本机 DSH ${webPort} · 内网代理 ${gatePort}`)
+        note(`对外端口已分配：${gatePort}`)
         if (controller.signal.aborted || stopping) throw new Error('Engine startup cancelled')
         note('正在拉起 DSH 进程…')
         await launchInstance({ resourcesRoot, workspace: item.path, port: webPort, gatewayHost: host,

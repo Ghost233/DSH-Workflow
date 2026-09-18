@@ -789,7 +789,7 @@ private struct ManagementView: View {
                     Text(catalog.stateText).font(.caption)
                         .foregroundStyle(catalog.state == "running" ? Color.primary : Color.secondary)
                     if catalog.state == "running" {
-                        Text("本机 \(catalog.webPort.map(String.init) ?? "?") · 内网 \(catalog.gatePort.map(String.init) ?? "?")")
+                        Text("端口 \(catalog.gatePort.map(String.init) ?? "?")")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
