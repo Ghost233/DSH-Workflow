@@ -100,15 +100,21 @@ test('运行状态和 Owner 输入限制只登记官方 Slot', async () => {
   }
   const client = registrations[0].factory(name => {
     if (name === 'react') return React
+    if (name === '@deepseek-ai/dsh-client-ui-primitives') return { MarkdownText() {} }
     throw new Error(`测试遇到未声明的客户端依赖：${name}`)
   })
   const aliasClient = registrations[1].factory(name => {
     if (name === 'react') return React
+    if (name === '@deepseek-ai/dsh-client-ui-primitives') return { MarkdownText() {} }
     throw new Error(`测试遇到未声明的客户端依赖：${name}`)
   })
   const slotNames = []
   const context = {
-    sessions: { open() {} },
+    sessions: { open() {}, list: { getSnapshot: () => ({ current: undefined }), subscribe: () => () => {} } },
+    uiSession: { pendingInteractions: { getSnapshot: () => new Map(), subscribe: () => () => {} } },
+    sidebarRightTabs: { register() { return () => {} } },
+    sidebarRight: { openTab() {} },
+    effect(callback) { callback() },
     slots: {
       inject(name, factory) {
         slotNames.push(name)
@@ -123,11 +129,115 @@ test('运行状态和 Owner 输入限制只登记官方 Slot', async () => {
   assert.match(style.textContent, /title="主线程维护需求、Spec 和 Ticket；统一 Runner 按模块 Owner 执行、验证和交付。"/)
   assert.match(style.textContent, /font-size:0!important/)
   assert.deepEqual(slotNames, [
+    'sidebar.right.pane.tab',
+    'sidebar.right.pane.tab',
     'conversation.composer',
+    'conversation.composer',
+    'conversation.session.header.actions',
     'conversation.session.header.actions',
     'sidebar.footer.action',
     'shell.overlay',
   ])
+})
+
+test('Exec 授权只接管自己的审批并在右侧展示完整内容', async () => {
+  const registrations = []
+  vm.runInNewContext(await readFile(CLIENT_BUNDLE, 'utf8'), {
+    document: { querySelector: () => null, createElement: () => ({ dataset: {} }), head: { appendChild() {} } },
+    window: { __ModuleLoader__: { load(item) { registrations.push(item) } } },
+  })
+  const React = {
+    createElement: (tag, props, ...children) => ({ tag, props, children }),
+    useEffect: effect => { effect() },
+    useMemo: value => value(),
+    useRef: value => ({ current: value }),
+    useState: value => [value, () => {}],
+    useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
+  }
+  const MarkdownText = () => {}
+  const client = registrations[0].factory(name => name === 'react' ? React
+    : name === '@deepseek-ai/dsh-client-ui-primitives' ? { MarkdownText } : undefined)
+  const slots = []
+  const opened = []
+  const types = []
+  client.apply({
+    sessions: { open() {}, list: { getSnapshot: () => ({ current: undefined }), subscribe: () => () => {} } },
+    uiSession: { pendingInteractions: { getSnapshot: () => new Map(), subscribe: () => () => {} } },
+    sidebarRightTabs: { register(definition) { types.push(definition); return () => {} } },
+    sidebarRight: { openTab(...args) { opened.push(args) } },
+    effect(callback) { callback() },
+    slots: { inject(_name, callback) { callback() }, register(definition, component) { slots.push({ definition, component }); return () => {} } },
+  })
+  assert.equal(types[0].kind, 'owner-exec-approval')
+  const takeover = slots.find(item => item.definition.name === 'conversation.composer' && item.definition.priority === -1)
+  const pending = { kind: 'approval', toolName: 'workflow_exec_task', sessionId: 'main', key: 'approval-1',
+    reason: '任务：删除旧模块\n预计步骤：\n1. 检查依赖\n2. 删除模块', answer: async () => {} }
+  assert.equal(takeover.definition.select({ pendingInteraction: pending }), pending)
+  assert.equal(takeover.definition.select({ pendingInteraction: { ...pending, toolName: 'bash' } }), null)
+  const composerElement = takeover.component({ matched: pending })
+  composerElement.tag(composerElement.props)
+  assert.equal(opened.length, 1)
+  assert.equal(opened[0][0], 'owner-exec-approval')
+  assert.equal(opened[0][1].params.sessionId, 'main')
+  const tab = slots.find(item => item.definition.name === 'sidebar.right.pane.tab')
+  const panel = tab.component({ useTabInfo: () => ({ tab: { navigation: { params: { sessionId: 'main' } } } }) })
+  assert.equal(panel.children[1].children[0].tag, MarkdownText)
+  assert.match(panel.children[1].children[0].props.text, /### 预计步骤\n\n1\. 检查依赖\n2\. 删除模块/u)
+})
+
+test('Owner 问询保留底部原生卡，并可在 DSH 右侧查看和回答同一请求', async () => {
+  const registrations = []
+  vm.runInNewContext(await readFile(CLIENT_BUNDLE, 'utf8'), {
+    document: { querySelector: () => null, createElement: () => ({ dataset: {} }), head: { appendChild() {} } },
+    window: { __ModuleLoader__: { load(item) { registrations.push(item) } } },
+  })
+  const React = {
+    createElement: (tag, props, ...children) => ({ tag, props, children }),
+    useEffect: effect => { effect() }, useMemo: value => value(), useRef: value => ({ current: value }),
+    useState: value => [value, () => {}], useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
+  }
+  const MarkdownText = () => {}
+  const client = registrations[0].factory(name => name === 'react' ? React
+    : name === '@deepseek-ai/dsh-client-ui-primitives' ? { MarkdownText } : undefined)
+  const opened = [], slots = [], answers = []
+  let notify = () => {}
+  const question = { kind: 'question', key: 'question:1', sessionId: 'main',
+    questions: [{ id: 'registry-123', header: '执行权限', question: '应用 Owner 范围？', detail: '### 变更\n- 新增 `api/**`',
+      options: [{ label: '取消' }, { label: '应用这批职责' }], multiSelect: false }],
+    answer: async value => { answers.push(value) } }
+  let current = new Map([['main', question]])
+  client.apply({
+    sessions: { open() {}, list: { getSnapshot: () => ({ current: 'main' }), subscribe: () => () => {} } },
+    uiSession: { pendingInteractions: { getSnapshot: () => current, subscribe(listener) { notify = listener; return () => {} } } },
+    sidebarRightTabs: { register() { return () => {} } },
+    sidebarRight: { openTab(...args) { opened.push(args) } },
+    effect(callback) { callback() },
+    slots: { inject(_name, callback) { callback() }, register(definition, component) {
+      slots.push({ definition, component }); return () => {}
+    } },
+  })
+  assert.deepEqual(opened.map(item => item[0]), ['owner-question-detail'])
+  notify()
+  assert.equal(opened.length, 1, 'the same pending question must not repeatedly reopen the Sidebar')
+  const side = slots.find(item => item.definition.key === 'dsh-owner-workflow/question-detail')
+  const element = side.component({ useTabInfo: () => ({ tab: { navigation: { params: { sessionId: 'main' } } } }) })
+  const panel = element.tag(element.props)
+  assert.equal(panel.children[2].children[0].tag, MarkdownText)
+  assert.equal(panel.children[2].children[0].props.text, question.questions[0].detail)
+  panel.children[3].children[1].props.onClick()
+  await Promise.resolve()
+  assert.deepEqual(JSON.parse(JSON.stringify(answers)),
+    [{ answers: [{ id: 'registry-123', selected: ['应用这批职责'] }] }])
+  assert.equal(slots.filter(item => item.definition.name === 'conversation.composer').length, 2,
+    'Owner questions must continue to use the DSH native composer')
+  const opener = slots.find(item => item.definition.id === 'owner-workflow-question-detail')
+  const header = opener.component({ sessionId: 'main', useSessionPendingInteraction: select => select(current) })
+  const button = header.tag(header.props)
+  button.props.onClick()
+  assert.equal(opened.length, 2, 'the conversation header must reopen a closed side detail')
+  current = new Map([['main', { ...question, key: 'question:2', questions: [{ ...question.questions[0], id: 'unrelated-question' }] }]])
+  notify()
+  assert.equal(opened.length, 2, 'unrelated DSH questions must not be claimed')
 })
 
 test('运行状态只通过可重连 SSE 接收更新，并按当前工作区和当前会话过滤', async () => {

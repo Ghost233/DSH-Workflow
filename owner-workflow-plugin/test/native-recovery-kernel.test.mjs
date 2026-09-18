@@ -22,7 +22,7 @@ for (const choice of ['allow', 'reject', 'cancel']) test(`native finite recovery
   host.ctx.on('user-questions/request', async request => {
     questions++
     assert.equal(request.agent, host.parent.agent)
-    assert.match(request.questions[0].detail, /上限 1/)
+    assert.match(request.questions[0].detail, /恢复总上限.*1 次/u)
     if (choice === 'cancel') throw Object.assign(new Error('human cancelled'), { name: 'UserQuestionError', code: 'ASK_CANCELLED' })
     return { answers: [{ id: request.questions[0].id, selected: [choice === 'allow' ? '允许这轮恢复' : '保持暂停'] }] }
   })

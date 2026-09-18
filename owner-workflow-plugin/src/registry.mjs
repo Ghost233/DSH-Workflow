@@ -953,7 +953,10 @@ function applyOperation(registry, operation) {
   if (operation === null || typeof operation !== 'object' || Array.isArray(operation)) {
     throw new Error('Owner Registry operation 必须是对象')
   }
-  const reason = text(operation?.reason, 'operation.reason')
+  if (typeof operation.reason !== 'string' || !operation.reason.trim()) {
+    throw new Error('每项 Owner Registry 操作都需要非空 reason；批次的 reason 不能代替它')
+  }
+  const reason = operation.reason
   const owners = registry.owners.map(owner => ({ ...owner, scope: [...owner.scope], exclude: [...owner.exclude] }))
   let affected = []
   if (operation.type === 'add') { const owner = normalizeRegistryOwner(operation.owner); if (owners.some(item => item.id === owner.id)) throw new Error('Owner 已存在'); owners.push(owner); affected = [owner.id] }
@@ -983,7 +986,7 @@ function applyOperation(registry, operation) {
       throw new Error('合并范围必须保持全部来源 Owner 的有效范围')
     }
     owners.splice(0, owners.length, ...owners.filter(item => !ids.includes(item.id)), owner); affected = [...ids, owner.id]
-  } else throw new Error(`不支持的 Owner Registry 操作：${String(operation?.type)}`)
+  } else throw new Error(`不支持的 Owner Registry 操作：${String(operation?.type)}。仅支持 add、remove、transfer、split、merge；没有 update。若从现有根 Owner 的 ** 范围划出新模块，请使用单个 split 操作。`)
   return { registry: normalizeRegistry({ config: registry.config, owners }), reason, affected }
 }
 

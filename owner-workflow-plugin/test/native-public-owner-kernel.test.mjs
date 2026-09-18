@@ -118,7 +118,11 @@ for (const outcome of ['compatible_extension', 'migration_required', 'capability
   await runtime.store.transact({ type: 'drive' })
   assert.equal(Object.values((await runtime.store.read()).actions).filter(action => action.kind === 'execute_owner').length, outcome === 'capability_sufficient' ? 3 : 0)
   const projected = await runtime.store.readView('wf')
-  if (outcome === 'business_decision_required') { assert.equal(projected.actionRequired, true); assert.equal(projected.status, 'waiting') }
+  if (outcome === 'business_decision_required') {
+    assert.equal(projected.actionRequired, true); assert.equal(projected.status, 'waiting')
+    const question = Object.values(state.workflows.wf.decisions).find(item => item.kind === 'product')?.request
+    assert.equal(JSON.parse(question.detail).currentCommitment, 'Keep recovery after reset')
+  }
   else if (outcome !== 'capability_sufficient') { assert.equal(projected.status, 'failed'); assert.equal(projected.attention.find(item => item.id === 'public-owner:reset').responsibleParty, 'root_session') }
   if (['compatible_extension', 'migration_required'].includes(outcome)) await assert.rejects(runtime.store.transact({ type: 'plan.activate', workflowId: 'wf', parentVersion: 1, plan,
     sources: { snapshotDigest: 'fixture-2' }, authorization: { scope: 'implementation', sourceId: 'fixture' },

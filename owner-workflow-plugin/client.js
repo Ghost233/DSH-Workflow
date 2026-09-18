@@ -4,6 +4,7 @@
     const module = { exports: {} }
     const exports = module.exports
       const React = require('react')
+      const { MarkdownText } = require('@deepseek-ai/dsh-client-ui-primitives')
       const {
         createElement: h,
         useEffect,
@@ -15,6 +16,137 @@
 
       const WAIT_EVENTS_ENDPOINT = '/owner-workflow/api/waits/events'
       const CLIENT_APPLIED_MARKER = '__DSH_OWNER_WORKFLOW_WAIT_SLOTS_APPLIED__'
+      const EXEC_APPROVAL_TAB = 'owner-exec-approval'
+      const OWNER_QUESTION_TAB = 'owner-question-detail'
+      const OWNER_QUESTION_ID = /^(?:registry|decision|planning-authority|cancel|recovery)-[A-Za-z0-9_.:-]+$/u
+      const MARKDOWN_LABELS = { code: { copyLabel: '复制', copiedLabel: '已复制' }, footnotes: '脚注' }
+      const execApprovals = new Map()
+      const execApprovalListeners = new Set()
+
+      function execApprovalMarkdown(reason) {
+        const lines = reason.split('\n')
+        let markdown = `### ${lines.shift() ?? 'Exec 任务授权'}\n\n`
+        for (const line of lines) {
+          if (line === '预计步骤：') { markdown += '### 预计步骤\n\n'; continue }
+          if (/^\d+\.\s/u.test(line)) { markdown += `${line}\n`; continue }
+          const field = /^(任务|理由|项目根目录|会话工作目录|工具)：(.*)$/u.exec(line)
+          markdown += field ? `\n**${field[1]}**：${field[2]}\n\n` : `\n${line}\n\n`
+        }
+        return markdown.trim()
+      }
+
+      function setExecApproval(sessionId, record) {
+        execApprovals.set(sessionId, record)
+        for (const listener of execApprovalListeners) listener()
+      }
+
+      function useExecApproval(sessionId) {
+        return useSyncExternalStore(
+          listener => { execApprovalListeners.add(listener); return () => execApprovalListeners.delete(listener) },
+          () => execApprovals.get(sessionId),
+        )
+      }
+
+      async function answerExecApproval(sessionId, outcome) {
+        const current = execApprovals.get(sessionId)
+        if (!current?.pending || current.status !== 'pending') return
+        setExecApproval(sessionId, { ...current, status: 'answering' })
+        try {
+          await current.pending.answer(outcome)
+          setExecApproval(sessionId, { ...current, pending: null, status: outcome })
+        } catch {
+          setExecApproval(sessionId, { ...current, status: 'pending' })
+        }
+      }
+
+      function ExecApprovalComposer({ matched, openDetails }) {
+        const pending = matched
+        const sessionId = pending.sessionId
+        const record = useExecApproval(sessionId)
+        useEffect(() => {
+          setExecApproval(sessionId, { pending, reason: pending.reason ?? '', status: 'pending' })
+          try { openDetails(sessionId) } catch { /* The bottom card remains usable if the side panel is unavailable. */ }
+          return () => {
+            const current = execApprovals.get(sessionId)
+            if (current?.pending === pending) setExecApproval(sessionId, { ...current, pending: null, status: 'closed' })
+          }
+        }, [sessionId, pending, openDetails])
+        const busy = record?.status !== 'pending'
+        const task = (pending.reason ?? '').split('\n').find(line => line.startsWith('任务：'))?.slice(3) ?? '一次非 Owner 操作'
+        return h('div', { className: 'dsh-owner-exec-approval-composer', 'data-exec-approval-key': pending.key },
+          h('div', { className: 'dsh-owner-exec-approval-summary' },
+            h('strong', null, 'Exec 任务授权'),
+            h('span', { title: task }, task),
+            h('button', { type: 'button', onClick: () => { try { openDetails(sessionId) } catch {} } }, '右侧查看完整内容'),
+          ),
+          h('div', { className: 'dsh-owner-exec-approval-actions' },
+            h('button', { type: 'button', disabled: busy, onClick: () => { void answerExecApproval(sessionId, 'rejected') } }, '拒绝'),
+            h('button', { type: 'button', disabled: busy, onClick: () => { void answerExecApproval(sessionId, 'allowed-once') } }, '允许一次'),
+          ),
+          h('details', { className: 'dsh-owner-exec-approval-fallback' },
+            h('summary', null, '在此展开完整授权内容'),
+            h('div', null, h(MarkdownText, { text: execApprovalMarkdown(pending.reason ?? ''), labels: MARKDOWN_LABELS })),
+          ),
+        )
+      }
+
+      function ExecApprovalSide({ useTabInfo }) {
+        const { tab } = useTabInfo()
+        const sessionId = tab.navigation.params?.sessionId
+        const record = useExecApproval(sessionId)
+        if (!record) return h('div', { className: 'dsh-owner-exec-approval-side' }, '当前没有待审的 Exec 任务。')
+        const pending = record.status === 'pending'
+        return h('div', { className: 'dsh-owner-exec-approval-side' },
+          h('div', { className: 'dsh-owner-exec-approval-side-heading' }, 'Exec 任务授权',
+            h('span', null, pending ? '等待你的决定' : record.status === 'allowed-once' ? '已提交允许' : record.status === 'rejected' ? '已提交拒绝' : '已结束')),
+          h('div', { className: 'dsh-owner-exec-approval-side-detail' },
+            h(MarkdownText, { text: execApprovalMarkdown(record.reason), labels: MARKDOWN_LABELS })),
+          pending ? h('div', { className: 'dsh-owner-exec-approval-side-actions' },
+            h('button', { type: 'button', onClick: () => { void answerExecApproval(sessionId, 'rejected') } }, '拒绝'),
+            h('button', { type: 'button', onClick: () => { void answerExecApproval(sessionId, 'allowed-once') } }, '允许一次'),
+          ) : null,
+        )
+      }
+
+      function ownerPendingQuestion(pending) {
+        if (pending?.kind !== 'question' || !Array.isArray(pending.questions) || pending.questions.length !== 1) return null
+        const question = pending.questions[0]
+        return OWNER_QUESTION_ID.test(question?.id ?? '') && typeof question.detail === 'string'
+          && question.multiSelect !== true && Array.isArray(question.options) && question.options.length === 2
+          ? question : null
+      }
+
+      function OwnerQuestionSide({ useTabInfo, pendingInteractions }) {
+        const { tab } = useTabInfo()
+        const sessionId = tab.navigation.params?.sessionId
+        const pending = useSyncExternalStore(pendingInteractions.subscribe,
+          () => pendingInteractions.getSnapshot().get(sessionId))
+        const question = ownerPendingQuestion(pending)
+        const [busy, setBusy] = useState(false)
+        useEffect(() => { setBusy(false) }, [pending?.key])
+        if (!question) return h('div', { className: 'dsh-owner-question-side' }, '当前没有待处理的 Owner 工作流决定。')
+        const answer = async label => {
+          setBusy(true)
+          try { await pending.answer({ answers: [{ id: question.id, selected: [label] }] }) }
+          catch { setBusy(false) }
+        }
+        return h('section', { className: 'dsh-owner-question-side', 'data-owner-question-key': pending.key },
+          h('div', { className: 'dsh-owner-question-side-heading' }, question.header ?? 'Owner 工作流决定'),
+          h('h2', null, question.question),
+          h('div', { className: 'dsh-owner-question-side-detail' }, h(MarkdownText, { text: question.detail, labels: MARKDOWN_LABELS })),
+          h('div', { className: 'dsh-owner-question-side-actions' },
+            ...question.options.map(option => h('button', { key: option.label, type: 'button', disabled: busy,
+              title: option.description ?? option.label, onClick: () => { void answer(option.label) } }, option.label))),
+          h('p', { className: 'dsh-owner-question-side-hint' }, '需要补充说明或跳过时，请使用底部原生卡片。'),
+        )
+      }
+
+      function OwnerQuestionHeaderAction({ sessionId, useSessionPendingInteraction, openQuestion }) {
+        const pending = useSessionPendingInteraction(value => value.get(sessionId))
+        if (!ownerPendingQuestion(pending)) return null
+        return h('button', { type: 'button', className: 'dsh-owner-question-open',
+          onClick: () => openQuestion(sessionId) }, '右侧查看决定')
+      }
       const EMPTY_WAITS = Object.freeze([])
       const EMPTY_STATUS_WORKSPACES = Object.freeze([])
       const ALLOWED_STATES = new Set([
@@ -1175,13 +1307,16 @@
       .dsh-runtime-runner,.dsh-runtime-overview-card,.dsh-runtime-actor{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:10px 11px}.dsh-runtime-runner{margin-bottom:9px}.dsh-runtime-workspace{border-top:1px solid var(--dsw-alias-border-l2);padding-top:9px;margin-top:9px}.dsh-runtime-workspace:first-of-type{border-top:0;margin-top:0}.dsh-runtime-workspace-title{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:650;padding:0 3px 7px}.dsh-runtime-grid{display:grid;grid-template-columns:1fr;gap:7px}.dsh-runtime-category{margin-top:8px}.dsh-runtime-category:first-of-type{margin-top:0}.dsh-runtime-category-title{color:var(--dsw-alias-label-tertiary);font-size:10px;font-weight:600;padding:0 3px 5px}.dsh-runtime-card-head{display:flex;align-items:center;justify-content:space-between;gap:9px}.dsh-runtime-card-title{font-size:12px;font-weight:650}.dsh-runtime-state{height:19px;border-radius:10px;font-size:10px;font-weight:650;line-height:19px;padding:0 7px;white-space:nowrap}.dsh-runtime-state-running{color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary)}.dsh-runtime-state-idle,.dsh-runtime-state-completed{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover)}.dsh-runtime-state-runner,.dsh-runtime-state-approval{color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary)}.dsh-runtime-state-input{color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary)}.dsh-runtime-state-error{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 14%,var(--dsw-alias-bg-layer-2))}.dsh-runtime-state-closed,.dsh-runtime-state-dependency{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover)}.dsh-runtime-goal{font-size:12px;font-weight:600;line-height:18px;margin-top:7px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.dsh-runtime-activity{color:var(--dsw-alias-label-secondary);font-size:11px;line-height:17px;margin-top:6px}.dsh-runtime-context{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px;margin-top:5px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.dsh-runtime-meta{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px;margin-top:5px}.dsh-runtime-id{color:var(--dsw-alias-label-tertiary);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;margin-top:5px}.dsh-runtime-actor-actionable{cursor:pointer}.dsh-runtime-actor-actionable:hover,.dsh-runtime-actor-actionable:focus-visible{outline:0;background:var(--dsw-alias-interactive-bg-hover);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 16%,transparent)}
       .dsh-owner-action-inbox-floating{pointer-events:auto;position:fixed;right:18px;top:54px;z-index:520}.dsh-owner-action-inbox-floating-trigger{min-width:48px;height:34px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-state-warn-primary);border:0;border-radius:17px;box-shadow:var(--dsw-shadow-lv3);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 11px;font-size:12px;font-weight:650}.dsh-owner-action-inbox-floating-trigger:hover,.dsh-owner-action-inbox-floating-trigger:focus-visible{background:var(--dsw-alias-state-warn-secondary);outline:2px solid var(--dsw-alias-state-warn-label)}.dsh-owner-action-inbox-floating-menu{width:440px;max-width:min(460px,calc(100vw - 28px));max-height:min(650px,calc(100vh - 105px));top:42px;right:0;position:absolute}
       .dsh-owner-team-composer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;font-size:13px;line-height:1.6}.dsh-owner-team-composer p{margin:0}.dsh-owner-team-composer button{flex-shrink:0;padding:6px 12px;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;cursor:pointer}
+      .dsh-owner-exec-approval-composer{max-width:var(--dsh-chat-content-width);margin:auto;padding:12px 16px;border:1px solid var(--dsw-alias-state-warn-secondary);border-radius:14px;background:var(--dsw-specific-input-major);color:var(--dsw-alias-label-primary);display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}.dsh-owner-exec-approval-summary{display:flex;align-items:center;gap:10px;min-width:0;flex:1}.dsh-owner-exec-approval-summary span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}.dsh-owner-exec-approval-composer button,.dsh-owner-exec-approval-side button{cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsh-owner-exec-approval-composer button:disabled,.dsh-owner-exec-approval-side button:disabled{opacity:.55;cursor:default}.dsh-owner-exec-approval-actions,.dsh-owner-exec-approval-side-actions{display:flex;gap:8px}.dsh-owner-exec-approval-actions button:last-child,.dsh-owner-exec-approval-side-actions button:last-child{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-inverted);border-color:transparent}.dsh-owner-exec-approval-fallback{width:100%;font-size:12px}.dsh-owner-exec-approval-fallback>div{max-height:40vh;overflow:auto;overflow-wrap:anywhere;padding:10px}.dsh-owner-exec-approval-side{box-sizing:border-box;height:100%;min-height:0;display:flex;flex-direction:column;gap:12px;padding:16px;color:var(--dsw-alias-label-primary)}.dsh-owner-exec-approval-side-heading{font-size:16px;font-weight:650;display:flex;justify-content:space-between;gap:8px}.dsh-owner-exec-approval-side-heading span{font-size:12px;color:var(--dsw-alias-label-secondary);font-weight:400}.dsh-owner-exec-approval-side-detail{flex:1;min-height:0;overflow:auto;overflow-wrap:anywhere;font-size:13px;line-height:1.65;margin:0;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}.dsh-owner-exec-approval-side-actions{justify-content:flex-end}
+      .dsh-owner-question-side{box-sizing:border-box;height:100%;min-height:0;display:flex;flex-direction:column;gap:12px;padding:16px;color:var(--dsw-alias-label-primary)}.dsh-owner-question-side-heading{font-size:12px;font-weight:650;color:var(--dsw-alias-state-warn-label)}.dsh-owner-question-side h2{font-size:16px;line-height:1.45;margin:0}.dsh-owner-question-side-detail{flex:1;min-height:0;overflow:auto;overflow-wrap:anywhere;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}.dsh-owner-question-side-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}.dsh-owner-question-side-actions button{cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsh-owner-question-side-actions button:disabled{opacity:.55;cursor:default}.dsh-owner-question-side-actions button:last-child{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-inverted);border-color:transparent}.dsh-owner-question-side-hint{font-size:11px;color:var(--dsw-alias-label-tertiary);margin:0}
+      .dsh-owner-question-open{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:5px 9px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:12px;cursor:pointer}
       @media (max-width:520px){span[title="主线程维护需求、Spec 和 Ticket；统一 Runner 按模块 Owner 执行、验证和交付。"]{max-width:18px!important;padding-right:0!important;font-size:0!important}}
       @media (max-width:720px){.dsh-owner-wait-menu-header{right:0;left:auto}.dsh-owner-wait-menu-sidebar{width:min(430px,calc(100vw - 24px));max-width:none}.dsh-owner-team-composer{align-items:flex-start;flex-direction:column}}
         `.trim()
         document.head.appendChild(style)
       }
 
-      exports.inject = ['slots', 'sessions']
+      exports.inject = ['slots', 'sessions', 'uiSession', 'sidebarRight', 'sidebarRightTabs']
 
       exports.apply = function apply(ctx) {
         // 正式包名与本地开发别名意外同时进入启动图时，只允许第一份客户端占用 Slot。
@@ -1193,6 +1328,42 @@
         const HeaderAction = props => h(HeaderWaitAction, { ...props, openSession })
         const SidebarAction = props => h(SidebarWaitAction, { ...props, openSession })
         const FloatingInbox = props => h(FloatingActionInbox, { ...props, openSession })
+        const openQuestion = sessionId => ctx.sidebarRight.openTab(OWNER_QUESTION_TAB, { params: { sessionId } })
+        const QuestionHeaderAction = props => h(OwnerQuestionHeaderAction, { ...props, openQuestion })
+        ctx.sidebarRightTabs.register({ id: 'dsh-owner-workflow/exec-approval', kind: EXEC_APPROVAL_TAB,
+          title: () => 'Exec 授权' })
+        ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+          name: 'sidebar.right.pane.tab', key: 'dsh-owner-workflow/exec-approval',
+        }, ExecApprovalSide))
+        const pendingInteractions = ctx.uiSession.pendingInteractions
+        ctx.sidebarRightTabs.register({ id: 'dsh-owner-workflow/question-detail', kind: OWNER_QUESTION_TAB,
+          title: () => '工作流决定' })
+        ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+          name: 'sidebar.right.pane.tab', key: 'dsh-owner-workflow/question-detail',
+        }, props => h(OwnerQuestionSide, { ...props, pendingInteractions })))
+        ctx.effect(() => {
+          const opened = new Map()
+          const sync = () => {
+            const sessionId = ctx.sessions.list.getSnapshot().current
+            const pending = pendingInteractions.getSnapshot().get(sessionId)
+            if (!ownerPendingQuestion(pending)) return
+            if (opened.get(sessionId) === pending.key) return
+            try {
+              openQuestion(sessionId)
+              opened.set(sessionId, pending.key)
+            } catch { /* The bottom native question remains answerable without the Sidebar. */ }
+          }
+          const stopQuestions = pendingInteractions.subscribe(sync)
+          const stopSessions = ctx.sessions.list.subscribe(sync)
+          sync()
+          return () => { stopQuestions(); stopSessions() }
+        }, 'owner workflow question detail sidebar')
+        const openExecApproval = sessionId => ctx.sidebarRight.openTab(EXEC_APPROVAL_TAB, { params: { sessionId } })
+        ctx.slots.inject('conversation.composer', () => ctx.slots.register({
+          name: 'conversation.composer', priority: -1,
+          select: ({ pendingInteraction }) => pendingInteraction?.kind === 'approval'
+            && pendingInteraction.toolName === 'workflow_exec_task' ? pendingInteraction : null,
+        }, props => h(ExecApprovalComposer, { ...props, openDetails: openExecApproval })))
         // Presentation only: server admission uses the durable provider and exact Agent.
         // Pending native interactions always retain their own composer seats.
         ctx.slots.inject('conversation.composer', () => ctx.slots.register({
@@ -1217,6 +1388,15 @@
             order: 30,
             label: '需要处理',
           }, HeaderAction),
+        )
+        ctx.slots.inject(
+          'conversation.session.header.actions',
+          () => ctx.slots.register({
+            name: 'conversation.session.header.actions',
+            id: 'owner-workflow-question-detail',
+            order: 31,
+            label: '右侧查看决定',
+          }, QuestionHeaderAction),
         )
         ctx.slots.inject(
           'sidebar.footer.action',

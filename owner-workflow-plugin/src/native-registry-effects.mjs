@@ -7,6 +7,8 @@ import { OWNER_CONFIGURATION_DIRECTORY, OWNER_COLLECTION_DIRECTORY, OWNER_DESCRI
 import { kernelDigest } from './workflow-engine.mjs'
 import { requestActionDecision } from './native-decision-effects.mjs'
 import { artifactPath, publishArtifact, readArtifact } from './effect-artifacts.mjs'
+import { registryApprovalDetail } from './approval-markdown.mjs'
+export { registryApprovalDetail } from './approval-markdown.mjs'
 
 const execute = promisify(execFile)
 async function registryGit(root, argv, index, signal) {
@@ -35,10 +37,12 @@ export class NativeRegistryEffects {
     if (!decision) {
       const state = await this.store.read()
       const original = state.workflows[action.workflowId].decisions[`registry-${identity}`]
-      if (original?.status === 'answered' && original.binding.proposalDigest === proposal.digest
-        && original.binding.root === root && original.binding.inputDigest === action.inputDigest) decision = original
-      else decision = await requestActionDecision(this.store, action, { id: `registry-${action.id}`, kind: 'permission',
-        request: { question: '是否应用这一批 Owner 职责与写入范围？', detail: JSON.stringify(proposal, null, 2), options: ['应用这批职责', '取消'] },
+      const sameRequest = original?.binding.proposalDigest === proposal.digest && original.binding.root === root
+        && original.binding.actionId === action.id && original.binding.inputDigest === action.inputDigest
+      if (sameRequest && original.status === 'answered') decision = original
+      else decision = await requestActionDecision(this.store, action, { id: sameRequest ? original.id : `registry-${action.id}`, kind: 'permission',
+        request: sameRequest ? original.request : { question: '是否应用这一批 Owner 职责与写入范围？',
+          detail: registryApprovalDetail(proposal, root), options: ['应用这批职责', '取消'] },
         binding: { proposalDigest: proposal.digest, root } }, signal)
       await publishArtifact(decisionPath, decision)
     }

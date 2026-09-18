@@ -865,7 +865,7 @@ export function assertOwnerScopesDisjoint(owners) {
       const left = owners[leftIndex]
       const right = owners[rightIndex]
       if (ownersMayOverlap(left, right)) {
-        throw new Error(`Owner scope 重叠：${left.id} 与 ${right.id}，必须拆分或设置 exclude`)
+        throw new Error(`Owner scope 重叠：${left.id} 与 ${right.id}。若从 scope 为 ** 的根 Owner 划出新模块，请用单个 split 操作同时保留根 Owner（新增该路径的 exclude）和创建新 Owner；否则调整互斥 scope/exclude。`)
       }
     }
   }

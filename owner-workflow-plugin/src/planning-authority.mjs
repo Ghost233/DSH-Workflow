@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { lstat, realpath, mkdir, readdir, readFile, open, link, unlink } from 'node:fs/promises'
 import { join, isAbsolute, relative, sep } from 'node:path'
 import { sessionEvents } from './dsh-execution.mjs'
+import { planningAuthorizationDetail } from './approval-markdown.mjs'
 
 const CONTRACT = 'DSH_PLANNING_AUTHORITY_V1'
 const DECISION_CONTRACT = 'DSH_PLANNING_AUTHORIZATION_DECISION_V1'
@@ -264,14 +265,8 @@ export async function authorizePlanningCheckpoint({ ctx, agent, exec, binding, s
   const question = {
     id: `planning-authority-${id}`, header: '实施与文档提交',
     question: '是否按这份规格继续实施，并允许在当前本地分支提交规划文档？',
-    detail: [
-      `项目：${bound.root}\n分支：${bound.branch}\n规格：${spec.id} / ${spec.revision}`,
-      '实施范围以本次展示的规格为准；后续业务承诺变化仍需你的决定。',
-      `本地文档提交范围：${[...scope.roots.map(path => `${path}/**/*.md`), ...scope.files].join('、')}。这个范围内的后续规划文档修订复用本次授权，不逐阶段重复询问。`,
-      '每次提交仍核验本次写入来源与代码基线，不包含其他人的修改、业务源码或远程推送。',
-      `本次文件：\n${paths(binding.source).map(path => `- ${path}`).join('\n')}`,
-      `规格内容：\n${spec.content}`,
-    ].join('\n\n'),
+    detail: planningAuthorizationDetail({ root: bound.root, branch: bound.branch, spec, scope,
+      files: paths(binding.source) }),
     options: [{ label: APPROVE, description: '按当前规格推进，并允许上述范围内的本地规划文档提交。' },
       { label: REJECT, description: '保留当前文档，不提交或启动执行。' }], multiSelect: false,
   }

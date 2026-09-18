@@ -155,7 +155,9 @@ export class WorkflowStore {
       const path = join(dir, 'catalog-binding.json')
       const current = await readArtifact(path)
       const binding = { contract: 'DSH_WORKFLOW_CATALOG_BINDING_V1', root: canonical, catalogId: this.root }
-      if (current && (current.contract !== binding.contract || current.root !== canonical || current.catalogId !== this.root)) throw new Error('Project belongs to another workflow catalog')
+      if (current && (current.contract !== binding.contract || current.root !== canonical || current.catalogId !== this.root)) {
+        throw new Error(`Project ${canonical} belongs to workflow catalog ${String(current.catalogId)}; current catalog is ${this.root}. Reopen the existing catalog; do not rewrite the binding or clear its history.`)
+      }
       if (!current) await publishArtifact(path, binding)
     }, { ...this.lockOptions, signal })
     return canonical

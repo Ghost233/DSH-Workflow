@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { withControlLock } from './workflow-store.mjs'
 import { artifactPath, readArtifact, publishArtifact } from './effect-artifacts.mjs'
 import { askNativeQuestion } from './dsh-execution.mjs'
+import { decisionPresentationDetail } from './approval-markdown.mjs'
 
 /** Real root question/answer handling; persisted requests survive a presentation host restart. */
 export class NativeDecisionEffects {
@@ -22,10 +23,15 @@ export class NativeDecisionEffects {
       const answerPath = artifactPath(this.root, action.id, 'answer.json')
       let saved = await readArtifact(answerPath)
       if (!saved) {
-        const question = { id: decision.id, header: decision.kind === 'permission' ? '执行权限' : '需求决定',
-          question: decision.request.question, detail: decision.request.detail,
+        const requestPath = artifactPath(this.root, action.id, 'request.json')
+        const previous = await readArtifact(requestPath)
+        if (previous && (previous.requestDigest !== decision.requestDigest || previous.rootSessionId !== parent.id)) {
+          throw new Error('Persisted question does not match the original decision')
+        }
+        const question = previous?.question ?? { id: decision.id, header: decision.kind === 'permission' ? '执行权限' : '需求决定',
+          question: decision.request.question, detail: decisionPresentationDetail(decision),
           options: (decision.request.options ?? []).map(option => typeof option === 'string' ? { label: option, description: option } : option), multiSelect: false }
-        await publishArtifact(artifactPath(this.root, action.id, 'request.json'), { question, requestDigest: decision.requestDigest, rootSessionId: parent.id })
+        if (!previous) await publishArtifact(requestPath, { question, requestDigest: decision.requestDigest, rootSessionId: parent.id })
         let answer
         try { answer = await askNativeQuestion(this.ctx.userQuestions, { agent: parent, questions: [question], signal }) }
         catch (error) {

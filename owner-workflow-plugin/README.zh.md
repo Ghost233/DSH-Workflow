@@ -4,13 +4,13 @@ Owner Workflow 把主线程中的需求讨论、文档授权、长期 Owner 分�
 
 ## 当前入口
 
-在需要作为 catalog 和工作目录的项目中运行：
+在本项目目录运行（也可从其他工作目录调用同一脚本）：
 
 ```sh
 ./start-owner-workflow.sh
 ```
 
-这是唯一的日常启动入口，并且不接受参数。脚本直接启动项目的 Kernel Web 宿主；公开插件入口和 Dashboard 都已经指向新实现。当前唯一的 preset 目录是 `owner-workflow-plugin/kernel-presets/`。
+这是唯一的日常启动入口，并且不接受参数。源码启动固定以本仓库的父目录作为 Workflow catalog，不随调用者当前目录改变；macOS 启动器使用其已配置的 catalog。项目已有其他 catalog 绑定时，Registry 工具会在审批前报告两个目录，不会改写绑定或清除历史。脚本直接启动项目的 Kernel Web 宿主；公开插件入口和 Dashboard 都已经指向新实现。当前唯一的 preset 目录是 `owner-workflow-plugin/kernel-presets/`。
 
 启动器会：
 
@@ -29,6 +29,10 @@ Owner Workflow 把主线程中的需求讨论、文档授权、长期 Owner 分�
 
 只读分析由主线程按原生能力完成。需要 Owner 执行和验收的项目工作进入 Spec/Ticket、DAG 和 Workflow。
 
+一次明确的非 Owner 任务可以留在原会话处理。主线程使用 `workflow_exec_task` 提交任务、预计步骤和理由，原生卡片由用户手动“允许一次”后，DSH 创建一条专用的一次性 Exec 子会话。Exec 可在同一任务中多次使用读写、命令等获准工具；不能调用 Owner 控制工具、再委派代理或向用户追加授权，且仍受现有 DSH 沙箱约束。执行结束后子会话释放，结果回到主线程；新的任务须重新授权。相同调用恢复时不会自动重跑不明状态的操作。
+
+Web 中这项 Exec 授权会自动打开右侧的“Exec 授权”页，以 Markdown 显示任务、理由、步骤和工具范围，并提供“拒绝”和“允许一次”按钮。底部保留简要提醒与相同操作按钮，也可展开完整内容。关闭右侧栏后仍可从底部重新打开；两处操作的是同一项待审批请求。其他 DSH 审批仍使用原生显示方式。
+
 ## 标准流程
 
 ### 1. 讨论和写入文档
@@ -36,6 +40,10 @@ Owner Workflow 把主线程中的需求讨论、文档授权、长期 Owner 分�
 主线程和用户确定范围、非目标、验收条件与风险，把它们写入项目的 Spec/Ticket。文档写入仍遵守当前会话的文件权限和 Git 边界。
 
 如果项目没有正式 Registry，或长期 Owner 的责任域确实需要变化，使用 `workflow_registry_change`。Registry 变更是一项独立治理操作，必须绑定提案摘要、基线和证据；正在执行且尚未安全停止的工作不会被新责任域绕过。
+
+Registry 审批使用 DSH 原生问题卡，但正文只展示本次受影响 Owner 的字段变化、未变化的 Owner 数量和完整提案校验值；`scope` 与 `exclude` 的 glob 用行内代码显示，避免 Markdown 吞掉 `**`。完整前后快照仍由持久 Action 与摘要绑定，不把整棵 Registry JSON 放进审批卡。
+
+其他自研原生问题卡也按同一方式显示 Markdown：规划审查和公共 Owner 的业务变更展示当前承诺、建议承诺及影响；实施授权展示文件范围和完整 Spec；跨会话取消与恢复授权展示实际作用范围和额度。新问题出现时会打开 DSH 右侧“工作流决定”页，展示同一份 Markdown 和选择按钮；底部原生问题卡仍可作答，补充说明或跳过也在底部完成。关闭右侧后可用会话标题旁的“右侧查看决定”重新打开。右侧与底部共用同一项待回答请求。Markdown 仅用于新问题的展示；机器读取的提案、决策绑定和证据仍保留原值，已持久化的旧问题继续复用原卡片。Exec 使用 DSH 原生 Approval 与右侧专用详情页，不依赖问题卡的 Markdown 渲染。
 
 ### 2. 冻结实施授权
 
@@ -83,6 +91,7 @@ Owner Workflow 把主线程中的需求讨论、文档授权、长期 Owner 分�
 
 | 工具 | 用途 |
 |---|---|
+| `workflow_exec_task` | 为一次非 Owner 任务请求授权，并交由一次性 Exec 会话完成多个步骤 |
 | `workflow_registry_change` | 创建或变更正式 Owner Registry |
 | `workflow_planning_finalize` | 冻结文档、基线与实施授权 |
 | `workflow_start` | 从冻结 checkpoint 创建持久 Workflow |

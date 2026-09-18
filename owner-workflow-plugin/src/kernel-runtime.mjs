@@ -18,6 +18,7 @@ import { artifactPath, readArtifact, publishArtifact } from './effect-artifacts.
 import { kernelDigest, view, reservesProject, planningSources, planningPackageSourceBinding, planningIssueContext, ownerFeedbackEvidence,
   planningRevisionBoundary, planningAuthoringCandidate } from './workflow-engine.mjs'
 import { askNativeQuestion } from './dsh-execution.mjs'
+import { crossThreadCancellationDetail } from './approval-markdown.mjs'
 import { git, repositoryRoot, statusRecords } from './git.mjs'
 import { loadRegistry, readRegistryForProposal, proposeRegistryChange } from './registry.mjs'
 import { derivePlanningBundle } from './planning-bundle.mjs'
@@ -56,6 +57,9 @@ export function reviewScopeBinding(workflow, kind, tasks, { integrationHead, can
   return { kind, taskIds: tasks.map(task => task.id), ...source, integrationHead,
     ...(candidateCommit ? { candidateCommit } : {}) }
 }
+
+const EXEC_TASK_TOOLS = ['read', 'grep', 'glob', 'ls', 'write', 'edit', 'bash', 'run_code',
+  'web_search', 'web_fetch', 'skill', 'list_skills', 'read_skill']
 
 /** Composition of the replacement kernel. The legacy runtime is never imported. */
 export class KernelRuntime {
@@ -274,6 +278,61 @@ export class KernelRuntime {
       'ask_user_question', 'run_code', ...(this.rootTools ?? []).map(tool => tool.name)])
     return allowed.has(exec.name) ? undefined : 'Use an Owner task in the controlled Workflow for this capability'
   }
+  async execTask(agent, args, exec) {
+    await this.ready
+    const root = await this.rootFor(agent)
+    if (typeof args?.task !== 'string' || !args.task.trim() || typeof args.reason !== 'string' || !args.reason.trim()
+      || !Array.isArray(args.steps) || args.steps.length < 1 || args.steps.length > 20
+      || args.steps.some(step => typeof step !== 'string' || !step.trim())) throw new Error('Exec task requires a concrete task, 1–20 steps and a reason')
+    if (typeof exec.callId !== 'string' || !exec.callId || !exec.signal) throw new Error('A live DSH tool execution is required')
+    const subagents = this.ctx.get('subagents')
+    if (typeof subagents?.start !== 'function' || !subagents.getProvider?.('spawn')) throw new Error('Native one-shot Exec sessions are unavailable')
+    const approval = this.ctx.get('approval')
+    if (typeof approval?.request !== 'function') throw new Error('Native user approval is unavailable')
+    const allowed = EXEC_TASK_TOOLS.filter(name => this.ctx.tools.get(name, agent) !== undefined)
+    if (!allowed.includes('bash') || !allowed.includes('read')) throw new Error('Exec session requires the native bash and read tools')
+    const id = kernelDigest({ agentId: agent.id, callId: exec.callId })
+    const binding = kernelDigest({ agentId: agent.id, callId: exec.callId, root, args, allowed })
+    const dir = join(this.store.directory, 'exec-tasks', id)
+    const claimPath = artifactPath(join(this.store.directory, 'exec-tasks'), id, 'claim.json')
+    const resultPath = artifactPath(join(this.store.directory, 'exec-tasks'), id, 'result.json')
+    const lockPath = artifactPath(join(this.store.directory, 'exec-tasks'), id, 'lock')
+    await mkdir(dir, { recursive: true, mode: 0o700 })
+    return withControlLock(lockPath, async () => {
+      const claim = await readArtifact(claimPath)
+      if (claim && claim.binding !== binding) throw new Error('Exec task call identity was reused with different scope')
+      if (claim) return await readArtifact(resultPath) ?? { status: 'outcome_unknown', callId: exec.callId,
+        reason: 'This approved Exec task was already claimed and cannot be started again automatically.' }
+      const outcome = await approval.request({ agent, toolName: 'workflow_exec_task', callId: exec.callId,
+        reason: `一次非 Owner Exec 任务\n任务：${args.task}\n理由：${args.reason}\n项目根目录：${root}\n会话工作目录：${agent.session.header.cwd}\n预计步骤：\n${args.steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}\n工具：${allowed.join(', ')}\n仍受 DSH 沙箱限制；本次授权结束后失效。`,
+        signal: exec.signal })
+      if (outcome !== 'allowed-once') {
+        await publishArtifact(claimPath, { binding, decision: outcome })
+        return publishArtifact(resultPath, { status: outcome, executed: false })
+      }
+      exec.signal.throwIfAborted()
+      await publishArtifact(claimPath, { binding, decision: outcome, task: args.task, steps: args.steps, reason: args.reason, root, allowed })
+      const prompt = [
+        'You are a single-use Exec session for one user-approved non-Owner task. Complete only the task and steps below in the project workspace.',
+        'You may use the provided tools repeatedly as needed. Do not run an Owner Workflow, delegate, expand the task, change permission settings, or seek another approval.',
+        'If a requirement or product decision is missing, stop and report the precise question to the main thread. Report what changed, what was verified and any unfinished work. Do not claim success without evidence.',
+        JSON.stringify({ task: args.task, steps: args.steps, reason: args.reason, root }),
+      ].join('\n\n')
+      const run = await subagents.start('spawn', { parent: agent, label: `Exec: ${args.task.slice(0, 80)}`,
+        prompt: [{ type: 'text', text: prompt }], signal: exec.signal, maxDepth: 1,
+        toolFilter: { allow: allowed }, persona: 'You are the one-time Exec task agent. Stay within the approved task; report decisions to the main thread.' })
+      try {
+        const result = await run.result
+        if (!run.localAgent || await this.ctx.sessions.flush(run.localAgent.session) !== true) {
+          throw new Error('Exec session result was not durably recorded')
+        }
+        const receipt = { status: 'settled', callId: exec.callId, sessionId: run.id,
+          stopReason: result.stopReason, output: result.output,
+          ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}) }
+        return publishArtifact(resultPath, receipt)
+      } finally { await run.dispose() }
+    }, { signal: exec.signal })
+  }
   checkFilesystemWrite(target, actor, ctx) {
     if (!this.modeEnabledForActor(actor)) return
     const path = (actor.agent.ctx?.get('fs') ?? ctx.get('fs')).processPath(target)
@@ -435,6 +494,9 @@ export class KernelRuntime {
         runner: this.runner.health,
       }
     }
+    if (!Object.hasOwn(state.workflows, workflowId)) {
+      throw new Error(`Unknown workflow: ${workflowId}. workflow_id must be an existing Workflow ID; to view the Registry, call workflow_status({}).`)
+    }
     const result = view(state, workflowId, now)
     if (result.rootSessionId !== agent.id) throw new Error('Workflow belongs to a different root thread')
     const publicOwnerRequests = await this.publicOwnerSeeds(state, state.workflows[workflowId])
@@ -558,7 +620,8 @@ export class KernelRuntime {
       if (!exec?.callId || exec.agent !== agent) throw new Error('Cross-thread cancellation requires a native root call')
       const id = `cancel-${kernelDigest([workflow.id, workflow.rootSessionId, agent.id, exec.callId]).slice(0, 40)}`
       const question = { id, header: '旧工作流处理', question: '是否取消同项目旧工作流，以便开始用户要求的新一轮验收？',
-        detail: `项目：${root}\n旧工作流：${workflow.id}\n原主线程：${workflow.rootSessionId}\n请求主线程：${agent.id}\n仅取消旧流程；保留候选、历史、恢复计数和未确认终止的占用。不会接管旧线程的执行权限，也不保证未结算资源立即释放。`,
+        detail: crossThreadCancellationDetail({ root, workflowId: workflow.id,
+          originalSessionId: workflow.rootSessionId, requestingSessionId: agent.id }),
         options: [{ label: '取消该旧工作流', description: '通过正常生命周期停止旧流程，保留历史与隔离资源。' },
           { label: '保留旧工作流', description: '不改变旧流程，本轮启动继续等待。' }], multiSelect: false }
       const answer = await askNativeQuestion(this.ctx.userQuestions, { agent, questions: [question], signal: exec.signal })
