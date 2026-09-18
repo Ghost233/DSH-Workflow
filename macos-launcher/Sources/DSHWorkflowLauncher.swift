@@ -590,116 +590,161 @@ private struct ManagementView: View {
 
     var body: some View {
         Form {
-            LabeledContent("服务状态") { Text(model.status) }
-            LabeledContent("应用版本") { Text(model.appVersionText).textSelection(.enabled) }
-            HStack {
-                Button("在浏览器中打开") { model.openBrowser() }.disabled(!model.isReady)
-                Button("启动") { model.start() }.disabled(model.isActive)
-                Button("停止") { model.stop() }.disabled(model.isActive)
-                Button("重启") { model.restart() }.disabled(model.isActive)
+            Section {
+                LabeledContent("服务状态") {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(model.isReady ? Color.green : model.isActive ? Color.orange : Color.secondary.opacity(0.5))
+                            .frame(width: 8, height: 8)
+                        Text(model.status)
+                    }
+                }
+                LabeledContent("应用版本") { Text(model.appVersionText).textSelection(.enabled) }
+                HStack {
+                    Button("在浏览器中打开") { model.openBrowser() }.disabled(!model.isReady)
+                    Spacer()
+                    Button("启动") { model.start() }.disabled(model.isActive)
+                    Button("停止") { model.stop() }.disabled(!model.isActive)
+                    Button("重启") { model.restart() }.disabled(!model.isActive)
+                }
             }
-            Divider()
-            HStack {
-                Text("Catalog 管理").font(.headline)
-                Spacer()
-                Button("刷新") { model.refreshCatalogs() }.disabled(!model.isActive)
+
+            Section {
+                if model.catalogs.isEmpty {
+                    Text(model.isActive ? "还没有 Catalog；新建或加入后，可在导航页或这里打开。" : "启动服务后在这里管理 Catalog。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(model.catalogs) { catalog in
+                    catalogRow(catalog)
+                }
+                HStack {
+                    TextField("新 Catalog 名称", text: $model.newCatalogName, prompt: Text("新 Catalog 名称"))
+                        .labelsHidden()
+                    Button("新建") { model.createCatalog() }
+                        .disabled(model.newCatalogName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.isActive)
+                }
+                HStack {
+                    TextField("名称", text: $model.attachCatalogName, prompt: Text("名称"))
+                        .labelsHidden()
+                        .frame(maxWidth: 160)
+                    TextField("目录绝对路径", text: $model.attachCatalogPath, prompt: Text("目录绝对路径"))
+                        .labelsHidden()
+                    Button("加入") { model.attachCatalog() }
+                        .disabled(model.attachCatalogName.isEmpty || model.attachCatalogPath.isEmpty || !model.isActive)
+                }
+            } header: {
+                HStack {
+                    Text("Catalog")
+                    Spacer()
+                    Button("刷新") { model.refreshCatalogs() }
+                        .disabled(!model.isActive)
+                        .controlSize(.small)
+                }
+            } footer: {
+                Text("新建会创建独立目录；加入已有目录可保留 Registry 绑定，两个 Catalog 可同时运行。导航页只保留密码验证和打开入口。")
             }
-            if model.catalogs.isEmpty {
-                Text(model.isActive ? "还没有 Catalog；新建或加入后，可在导航页或这里打开。" : "启动服务后在这里管理 Catalog。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            ForEach(model.catalogs) { catalog in
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(catalog.name)
-                            Text(catalog.path).font(.caption2).foregroundStyle(.secondary)
-                                .lineLimit(1).truncationMode(.middle).help(catalog.path)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(catalog.stateText)
-                                .foregroundStyle(catalog.state == "running" ? Color.green : Color.secondary)
-                            if catalog.state == "running" {
-                                Text("本机 \(catalog.webPort.map(String.init) ?? "?") · 内网 \(catalog.gatePort.map(String.init) ?? "?")")
-                                    .font(.caption2).foregroundStyle(.secondary)
+
+            Section {
+                Toggle("DSH 工具使用完整访问权限", isOn: $model.fullAccess)
+                HStack {
+                    SecureField("内网访问密码", text: $model.passwordDraft, prompt: Text("内网访问密码"))
+                        .labelsHidden()
+                    Button(model.hasLanPassword ? "修改密码" : "设置密码") { model.saveLanPassword() }
+                        .disabled(model.passwordDraft.isEmpty)
+                }
+                if !model.lanURLs.isEmpty {
+                    LabeledContent("内网入口") {
+                        VStack(alignment: .trailing) {
+                            ForEach(model.lanURLs, id: \.absoluteString) { url in
+                                Text(url.absoluteString).textSelection(.enabled)
                             }
                         }
-                        Button(catalog.state == "stopped" ? "启动" : "打开") { model.openCatalog(catalog.id) }
-                            .disabled(catalog.state == "starting")
-                        if catalog.state != "stopped" {
-                            Button("关闭引擎") { model.stopCatalog(catalog.id) }
-                                .disabled(catalog.state == "starting")
-                        }
-                    }
-                    if !catalog.error.isEmpty {
-                        Text(catalog.error).font(.caption2).foregroundStyle(.red)
                     }
                 }
-            }
-            HStack {
-                TextField("新 Catalog 名称", text: $model.newCatalogName)
-                Button("新建") { model.createCatalog() }
-                    .disabled(model.newCatalogName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.isActive)
-            }
-            HStack {
-                TextField("名称", text: $model.attachCatalogName)
-                TextField("目录绝对路径", text: $model.attachCatalogPath)
-                Button("加入") { model.attachCatalog() }
-                    .disabled(model.attachCatalogName.isEmpty || model.attachCatalogPath.isEmpty || !model.isActive)
-            }
-            Text("Catalog 的创建、加入、启停和状态都在这里管理；导航页只保留密码验证和打开入口。新建会创建独立目录，加入已有目录可保留 Registry 绑定；两个 Catalog 可同时运行。")
-                .font(.caption).foregroundStyle(.secondary)
-            Toggle("DSH 工具使用完整访问权限", isOn: $model.fullAccess)
-            HStack {
-                SecureField("内网访问密码", text: $model.passwordDraft)
-                Button(model.hasLanPassword ? "修改密码" : "设置密码") { model.saveLanPassword() }
-                    .disabled(model.passwordDraft.isEmpty)
-            }
-            Text(model.hasLanPassword ? "密码保存在 macOS 钥匙串，修改后立即撤销旧的内网登录。" : "设置密码后才能开启内网入口。")
-                .font(.caption).foregroundStyle(.secondary)
-            if !model.lanURLs.isEmpty {
-                LabeledContent("内网入口") {
-                    VStack(alignment: .trailing) {
-                        ForEach(model.lanURLs, id: \.absoluteString) { url in
-                            Text(url.absoluteString).textSelection(.enabled)
-                        }
-                    }
+            } header: {
+                Text("访问")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("完整访问权限在下次启动或重启时生效。")
+                    Text(model.hasLanPassword ? "密码保存在 macOS 钥匙串，修改后立即撤销旧的内网登录。" : "设置密码后才能开启内网入口。")
                 }
             }
-            Toggle("登录后启动应用", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
-            Text("权限在下次启动或重启时生效。第三方插件由 DSH 用户 profile 管理。")
-                .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Text(model.updateStatus).font(.caption)
-                Spacer()
-                Button("检查更新") { model.checkForUpdates() }.disabled(model.isCheckingUpdates)
-                Button("查看新版本") { model.openUpdatePage() }.disabled(model.updatePage == nil)
-            }
-            Divider()
-            HStack {
-                Text("插件管理").font(.headline)
-                Spacer()
-                Button("插件管理…") { PluginWindow.shared.show() }
-            }
-            Text(model.pluginCheckStatus).font(.caption)
-            Text(model.pluginUpdateStatus).font(.caption).foregroundStyle(.secondary)
-            if model.pluginRestartAvailable {
+
+            Section("通用") {
+                Toggle("登录后启动应用", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
                 HStack {
-                    Text("插件已更新，等待重启生效。").font(.caption).foregroundStyle(.orange)
+                    Text(model.updateStatus).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button("重启以应用") { model.restartAfterPluginUpdate() }
+                    Button("检查更新") { model.checkForUpdates() }.disabled(model.isCheckingUpdates)
+                    if model.updatePage != nil {
+                        Button("查看新版本") { model.openUpdatePage() }
+                    }
+                }
+                Button("查看日志") { model.showLog() }.disabled(model.logPath == nil)
+            }
+
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.pluginCheckStatus)
+                        Text(model.pluginUpdateStatus).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("插件管理…") { PluginWindow.shared.show() }
+                }
+                if model.pluginRestartAvailable {
+                    HStack {
+                        Text("插件已更新，等待重启生效。").font(.caption).foregroundStyle(.orange)
+                        Spacer()
+                        Button("重启以应用") { model.restartAfterPluginUpdate() }
+                    }
+                }
+            } header: {
+                Text("插件")
+            } footer: {
+                Text("npm 安装的第三方插件可在插件管理窗口逐个更新；DSH、自研插件与内置 Bundle 随应用更新。")
+            }
+
+            if !model.lastError.isEmpty {
+                Section("错误") {
+                    Text(model.lastError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
                 }
             }
-            Text("每个插件的当前版本和最新版本逐行显示在插件管理窗口；npm 安装的第三方插件可单独更新。DSH、自研插件与内置 Bundle 随应用构建更新。")
-                .font(.caption).foregroundStyle(.secondary)
-            if !model.lastError.isEmpty {
-                Text(model.lastError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
-            }
-            Button("查看日志") { model.showLog() }.disabled(model.logPath == nil)
         }
-        .padding(20)
-        .frame(width: 560)
+        .formStyle(.grouped)
+        .frame(minWidth: 560, maxWidth: 620, minHeight: 480)
+    }
+
+    @ViewBuilder
+    private func catalogRow(_ catalog: CatalogState) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Circle()
+                    .fill(catalog.state == "running" ? Color.green : catalog.state == "starting" ? Color.orange : Color.secondary.opacity(0.4))
+                    .frame(width: 8, height: 8)
+                Text(catalog.name)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(catalog.stateText).font(.caption)
+                        .foregroundStyle(catalog.state == "running" ? Color.primary : Color.secondary)
+                    if catalog.state == "running" {
+                        Text("本机 \(catalog.webPort.map(String.init) ?? "?") · 内网 \(catalog.gatePort.map(String.init) ?? "?")")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Button(catalog.state == "stopped" ? "启动" : "打开") { model.openCatalog(catalog.id) }
+                    .disabled(catalog.state == "starting")
+                if catalog.state != "stopped" {
+                    Button("关闭") { model.stopCatalog(catalog.id) }
+                        .disabled(catalog.state == "starting")
+                }
+            }
+            Text(catalog.path).font(.caption2).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle).help(catalog.path)
+            if !catalog.error.isEmpty {
+                Text(catalog.error).font(.caption2).foregroundStyle(.red)
+            }
+        }
     }
 }
 
@@ -834,13 +879,18 @@ private final class ManagementWindow {
 
     private init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 560),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "DSH Workflow 管理"
         window.contentViewController = NSHostingController(rootView: ManagementView(model: LauncherModel.shared))
+        // The grouped Form wraps content in a scroll container whose ideal height collapses;
+        // NSHostingController would otherwise shrink the window to the title bar.
+        window.setContentSize(NSSize(width: 620, height: 680))
+        window.contentMinSize = NSSize(width: 560, height: 480)
+        window.contentMaxSize = NSSize(width: 620, height: 2000)
         window.isReleasedWhenClosed = false
         window.center()
         self.window = window
