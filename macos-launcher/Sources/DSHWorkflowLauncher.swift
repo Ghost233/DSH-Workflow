@@ -546,6 +546,32 @@ private struct ManagementView: View {
 private struct PluginManageView: View {
     @ObservedObject var model: LauncherModel
 
+    private struct PluginGroup: Identifiable {
+        let title: String
+        let rows: [PluginVersionRow]
+        var id: String { title }
+    }
+
+    private static let groupOrder: [(source: String, title: String)] = [
+        ("DSH Web profile", "DSH Web profile 插件（npm 安装）"),
+        ("DSH Web profile Bundle", "Profile Bundle"),
+        ("项目插件锁定清单（打包快照）", "项目插件（打包时快照）"),
+        ("DSH 内置 Bundle", "DSH 内置 Bundle（随 DSH 更新）"),
+        ("DSH 版本绑定插件", "DSH 版本绑定插件"),
+        ("App 内置自研插件", "自研插件（随 App 更新）"),
+    ]
+
+    private var pluginGroups: [PluginGroup] {
+        var groups = Self.groupOrder.compactMap { entry -> PluginGroup? in
+            let rows = model.pluginRows.filter { $0.source == entry.source }
+            return rows.isEmpty ? nil : PluginGroup(title: entry.title, rows: rows)
+        }
+        let known = Set(Self.groupOrder.map(\.source))
+        let rest = model.pluginRows.filter { !known.contains($0.source) }
+        if !rest.isEmpty { groups.append(PluginGroup(title: "其他", rows: rest)) }
+        return groups
+    }
+
     private var updatableNames: [String] { model.pluginRows.filter { $0.isUpdatable }.map(\.name) }
     private var busy: Bool { model.isCheckingPlugins || model.isUpdatingPlugins }
 
@@ -575,34 +601,46 @@ private struct PluginManageView: View {
                 }
                 Spacer()
             } else {
-                Table(model.pluginRows) {
-                    TableColumn("插件") { row in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(row.name).font(.body.weight(.medium))
-                            Text(row.source).font(.caption2).foregroundStyle(.secondary)
-                            if !row.note.isEmpty {
-                                Text(row.note).font(.caption2).foregroundStyle(.secondary)
+                ScrollView {
+                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 7) {
+                        GridRow {
+                            Text("插件").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Text("当前版本").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                .frame(width: 88, alignment: .leading)
+                            Text("最新版本").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                .frame(width: 88, alignment: .leading)
+                            Text("状态").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                .frame(width: 104, alignment: .leading)
+                            Text("操作").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                .frame(width: 68, alignment: .leading)
+                        }
+                        ForEach(pluginGroups) { group in
+                            GridRow {
+                                Text("\(group.title)（\(group.rows.count)）")
+                                    .font(.callout.weight(.semibold))
+                                    .padding(.top, 8)
+                                    .gridCellColumns(5)
+                            }
+                            ForEach(group.rows) { row in
+                                GridRow {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(row.name)
+                                        if !row.note.isEmpty {
+                                            Text(row.note).font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .help(row.note)
+                                    Text(row.current ?? "未知").frame(width: 88, alignment: .leading)
+                                    Text(row.latest ?? "—").frame(width: 88, alignment: .leading)
+                                    Text(row.statusText)
+                                        .foregroundStyle(row.status == "newer" ? Color.orange : Color.secondary)
+                                        .frame(width: 104, alignment: .leading)
+                                    actionCell(for: row).frame(width: 68, alignment: .leading)
+                                }
                             }
                         }
-                        .help(row.note)
                     }
-                    TableColumn("当前版本") { row in
-                        Text(row.current ?? "未知")
-                    }
-                    .width(min: 70, ideal: 84)
-                    TableColumn("最新版本") { row in
-                        Text(row.latest ?? "—")
-                    }
-                    .width(min: 70, ideal: 84)
-                    TableColumn("状态") { row in
-                        Text(row.statusText)
-                            .foregroundStyle(row.status == "newer" ? Color.orange : Color.secondary)
-                    }
-                    .width(min: 90, ideal: 110)
-                    TableColumn("操作") { row in
-                        actionCell(for: row)
-                    }
-                    .width(min: 64, ideal: 72)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
                 }
                 .frame(maxHeight: 500)
             }

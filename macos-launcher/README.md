@@ -20,7 +20,7 @@ node macos-launcher/build.mjs
 
 “完整访问权限”只设置本次 DSH 进程的 `DSH_PERMISSION_MODE=danger-full-access`，不修改用户的 DSH 配置；关闭时使用 `workspace-write`。DSH 已保存的会话或 General settings 权限仍按 DSH 自身规则生效。权限更改需重启导航服务和相应引擎。
 
-管理窗口和菜单栏的“插件管理…”会打开独立的插件管理窗口，逐行显示每个插件的名称、来源、当前版本、最新版本和检查结果；数据来自当前 `$DSH_HOME/profiles/web/package.json` 中的直接依赖和启用的 Bundle、应用打包时的 `project-plugins.json`/锁定清单，以及三个内置自研插件。可比较的 npm 公共 registry 包会查询 `latest` 标记；本地/Git 依赖、自研打包插件及与 DSH 版本绑定的内置 Bundle 会分别标明来源，不把它们误报为可独立升级。项目侧清单是构建时快照，不代表安装在这个 macOS App 里的插件。检查只读，不安装、不修改锁文件、不热替换插件，也不重启运行中的 DSH；`latest` 更不代表与当前 DSH 兼容。私有 registry 和网络故障会显示为无法确认。
+管理窗口和菜单栏的“插件管理…”会打开独立的插件管理窗口，按来源分组显示全部插件的名称、当前版本、最新版本和检查结果（npm 安装的 profile 插件、Profile Bundle、项目打包快照、DSH 内置 Bundle、版本绑定插件、自研插件等各组都完整列出，不只显示有新版本的）；数据来自当前 `$DSH_HOME/profiles/web/package.json` 中的直接依赖和启用的 Bundle、应用打包时的 `project-plugins.json`/锁定清单，以及三个内置自研插件。可比较的 npm 公共 registry 包会查询 `latest` 标记；本地/Git 依赖、自研打包插件及与 DSH 版本绑定的内置 Bundle 会分别标明来源，不把它们误报为可独立升级。项目侧清单是构建时快照，不代表安装在这个 macOS App 里的插件。检查只读，不安装、不修改锁文件、不热替换插件，也不重启运行中的 DSH；`latest` 更不代表与当前 DSH 兼容。私有 registry 和网络故障会显示为无法确认。
 
 在同一局域网或私有 VPN 的设备上打开管理窗口显示的 `http://<Mac 的内网 IPv4>:33080/`，输入密码后可查看 Catalog 列表。新建 Catalog 会在 `~/Library/Application Support/DSH Workflow/catalogs/<UUID>/` 创建独立目录；也可以把已有 Catalog 目录按原路径加入列表，以保留 Owner Registry 的既有绑定。列表持久化在同目录的 `catalogs.json`，不会自动迁移、合并或删除既有运行数据。点击“打开”才启动该 Catalog 的 DSH；两个 Catalog 可以同时运行，互不共用 catalog 工作目录。点击“关闭引擎”只停止对应实例，不删除目录或历史。
 
