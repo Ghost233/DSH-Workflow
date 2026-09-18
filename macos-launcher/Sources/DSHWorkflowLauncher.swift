@@ -67,6 +67,10 @@ private struct UpdatedPlugin: Decodable {
     let to: String
 }
 
+private struct DshRuntimeInfo: Decodable {
+    let version: String
+}
+
 struct PluginVersionRow: Decodable, Identifiable {
     let source: String
     let name: String
@@ -117,6 +121,7 @@ final class LauncherModel: ObservableObject {
     @Published private(set) var updatingPackages: Set<String> = []
     @Published private(set) var pluginRestartAvailable = false
     @Published var showPluginRestartPrompt = false
+    private(set) var appVersionText = ""
 
     private var child: Process?
     private var output: Pipe?
@@ -132,6 +137,12 @@ final class LauncherModel: ObservableObject {
         fullAccess = defaults.object(forKey: "fullAccess") as? Bool ?? true
         hasLanPassword = LanPasswordStore.load()?.isEmpty == false
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        let app = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
+        appVersionText = app
+        if let url = Bundle.main.resourceURL?.appendingPathComponent("workflow/dsh-runtime.json"),
+           let info = try? JSONDecoder().decode(DshRuntimeInfo.self, from: Data(contentsOf: url)) {
+            appVersionText += "（DSH \(info.version)）"
+        }
     }
 
     func start() {
@@ -482,6 +493,7 @@ private struct ManagementView: View {
     var body: some View {
         Form {
             LabeledContent("服务状态") { Text(model.status) }
+            LabeledContent("应用版本") { Text(model.appVersionText).textSelection(.enabled) }
             HStack {
                 Button("在浏览器中打开") { model.openBrowser() }.disabled(!model.isReady)
                 Button("启动") { model.start() }.disabled(model.isActive)
@@ -581,6 +593,7 @@ private struct PluginManageView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(model.pluginCheckStatus).font(.caption)
                     Text(model.pluginUpdateStatus).font(.caption).foregroundStyle(.secondary)
+                    Text("应用版本 \(model.appVersionText)").font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("重新检查") { model.checkPluginVersions() }.disabled(busy)
