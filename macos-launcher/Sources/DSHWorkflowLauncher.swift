@@ -575,42 +575,39 @@ private struct PluginManageView: View {
                 }
                 Spacer()
             } else {
-                ScrollView {
-                    VStack(spacing: 12) {
-                        ForEach(model.pluginRows) { row in
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack(alignment: .firstTextBaseline) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(row.name).font(.body.weight(.medium))
-                                        Text(row.source).font(.caption2).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text("当前 \(row.current ?? "未知")")
-                                        Text("最新 \(row.latest ?? "—")")
-                                    }
-                                    .font(.caption)
-                                    Text(row.statusText).font(.caption)
-                                        .foregroundStyle(row.status == "newer" ? Color.orange : Color.secondary)
-                                        .frame(width: 130, alignment: .leading)
-                                    if model.updatingPackages.contains(row.name) {
-                                        Text("更新中…").font(.caption).foregroundStyle(.secondary)
-                                    } else if row.isUpdatable {
-                                        Button("更新") { model.updatePlugins([row.name]) }.disabled(busy)
-                                    }
-                                }
+                Table(model.pluginRows) {
+                    TableColumn("插件") { row in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.name).font(.body.weight(.medium))
+                            Text(row.source).font(.caption2).foregroundStyle(.secondary)
+                            if !row.note.isEmpty {
                                 Text(row.note).font(.caption2).foregroundStyle(.secondary)
                             }
-                            .padding(10)
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .cornerRadius(8)
                         }
+                        .help(row.note)
                     }
-                    .padding(14)
+                    TableColumn("当前版本") { row in
+                        Text(row.current ?? "未知")
+                    }
+                    .width(min: 70, ideal: 84)
+                    TableColumn("最新版本") { row in
+                        Text(row.latest ?? "—")
+                    }
+                    .width(min: 70, ideal: 84)
+                    TableColumn("状态") { row in
+                        Text(row.statusText)
+                            .foregroundStyle(row.status == "newer" ? Color.orange : Color.secondary)
+                    }
+                    .width(min: 90, ideal: 110)
+                    TableColumn("操作") { row in
+                        actionCell(for: row)
+                    }
+                    .width(min: 64, ideal: 72)
                 }
+                .frame(maxHeight: 500)
             }
         }
-        .frame(minWidth: 720, minHeight: 480)
+        .frame(minWidth: 500, maxWidth: 800)
         .alert("插件已更新", isPresented: $model.showPluginRestartPrompt) {
             Button("重启服务") { model.restartAfterPluginUpdate() }
             Button("稍后") { model.postponePluginRestart() }
@@ -618,6 +615,15 @@ private struct PluginManageView: View {
             Text("\(model.pluginUpdateStatus) 重启会关闭当前所有 Catalog 引擎，再按需启动；选择稍后时，运行中的引擎继续使用旧版本。")
         }
         .task { if model.pluginRows.isEmpty { model.checkPluginVersions() } }
+    }
+
+    @ViewBuilder
+    private func actionCell(for row: PluginVersionRow) -> some View {
+        if model.updatingPackages.contains(row.name) {
+            Text("更新中…").foregroundStyle(.secondary)
+        } else if row.isUpdatable {
+            Button("更新") { model.updatePlugins([row.name]) }.disabled(busy)
+        }
     }
 }
 
@@ -655,13 +661,15 @@ private final class PluginWindow {
 
     private init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "插件管理"
         window.contentViewController = NSHostingController(rootView: PluginManageView(model: LauncherModel.shared))
+        window.contentMinSize = NSSize(width: 500, height: 380)
+        window.contentMaxSize = NSSize(width: 800, height: 2000)
         window.isReleasedWhenClosed = false
         window.center()
         self.window = window
