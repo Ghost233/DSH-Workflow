@@ -56,6 +56,7 @@ private struct ReadyEvent: Decodable {
     let url: URL
     let logPath: String?
     let lanUrls: [URL]?
+    let localUrl: URL?
 }
 
 private struct PluginVersionReport: Decodable {
@@ -159,6 +160,7 @@ final class LauncherModel: ObservableObject {
     @Published private(set) var lastError = ""
     @Published private(set) var browserURL: URL?
     @Published private(set) var lanURLs: [URL] = []
+    @Published private(set) var localURL: URL?
     @Published private(set) var logPath: String?
     @Published private(set) var launchAtLogin = false
     @Published private(set) var updateStatus = "尚未检查更新"
@@ -255,6 +257,7 @@ final class LauncherModel: ObservableObject {
         }
         browserURL = nil
         lanURLs = []
+        localURL = nil
         logPath = nil
         lastError = ""
         status = "正在启动"
@@ -565,6 +568,7 @@ final class LauncherModel: ObservableObject {
                let ready = try? JSONDecoder().decode(ReadyEvent.self, from: payload) {
                 browserURL = ready.url
                 lanURLs = ready.lanUrls ?? []
+                localURL = ready.localUrl
                 logPath = ready.logPath
                 status = "导航页运行中 · 端口 \(ready.port)；DSH 按需启动"
                 refreshCatalogs()
@@ -598,6 +602,7 @@ final class LauncherModel: ObservableObject {
         child = nil
         browserURL = nil
         lanURLs = []
+        localURL = nil
         logPath = nil
         if restartPending {
             restartPending = false
@@ -711,6 +716,14 @@ private struct ManagementView: View {
                             set: { model.enginePortMax = Int($0.filter("0123456789".contains)) ?? 0 }))
                             .labelsHidden()
                             .frame(maxWidth: 64)
+                    }
+                }
+                if let local = model.localURL {
+                    LabeledContent("本机入口") {
+                        VStack(alignment: .trailing) {
+                            Text(local.absoluteString).textSelection(.enabled)
+                            Text("模型和 API Key 等主机设置仅在本机入口可用").font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 if !model.lanURLs.isEmpty {

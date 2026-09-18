@@ -166,17 +166,33 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
     response.end(page(content))
   }
   const redirect = (response, location) => { response.writeHead(303, { ...headers, location }); response.end() }
-  const progressOf = async item => {
+  const hostNameOf = request => {
+    try { return new URL(`http://${request.headers.host}`).hostname } catch { return host }
+  }
+  /** Engine entries share one port across the chosen interface and loopback; serve the visitor's own host. */
+  const entryOn = (engine, hostname) => {
+    if (!engine?.url) return engine?.url ?? null
+    try { const url = new URL(engine.url); url.hostname = hostname; return url.toString() } catch { return engine.url }
+  }
+  const progressOf = async (item, hostname) => {
     const engine = engines.get(item.id)
     const lines = engine?.logPath ? await tailLines(engine.logPath) : []
     return { state: engine?.ready ? 'running' : engine ? 'starting' : 'stopped',
-      error: lastErrors.get(item.id) ?? '', url: engine?.url ?? null,
+      error: lastErrors.get(item.id) ?? '', url: entryOn(engine, hostname),
       notes: engine?.notes ?? [], lines }
   }
   /** The page only verifies the password and jumps to an engine; management lives in the macOS app. */
-  const renderList = response => {
-    const entries = catalogList.map(item =>
-      `<article><h2>${escapeHtml(item.name)}</h2><form method="post" action="/catalog/open/${encodeURIComponent(item.id)}"><button>打开</button></form></article>`).join('')
+  const renderList = (response, pageHost) => {
+    const entries = catalogList.map(item => {
+      const engine = engines.get(item.id)
+      let localEntry = ''
+      if (engine?.ready && pageHost !== '127.0.0.1' && pageHost !== 'localhost') {
+        // DSH 只在回环页面开放主机设置（模型、API key），局域网访问时提供本机配置入口。
+        const local = entryOn(engine, '127.0.0.1')
+        if (local) localEntry = `<p><small>本机配置入口（可管理模型）：<a href="${escapeHtml(local)}">http://127.0.0.1:${engine.gatePort}/</a></small></p>`
+      }
+      return `<article><h2>${escapeHtml(item.name)}</h2><form method="post" action="/catalog/open/${encodeURIComponent(item.id)}"><button>打开</button></form>${localEntry}</article>`
+    }).join('')
     render(response, 200, entries || '<p>还没有 Catalog；请在 macOS App 的管理窗口中选择目录加入。</p>')
   }
 
@@ -203,15 +219,20 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
     let completeReady, failReady
     engine.readyPromise = new Promise((resolveReady, rejectReady) => { completeReady = resolveReady; failReady = rejectReady })
     engine.readyPromise.catch(() => {})
-    const reservePort = async (bindHost, useRange) => {
+    const reservePort = async (bindHosts, useRange) => {
+      const bindEvery = async candidate => {
+        for (const bindHost of bindHosts) if (!await canBind(bindHost, candidate)) return false
+        return true
+      }
       for (let attempt = 0; attempt < 60; attempt++) {
         let candidate
         if (useRange && portRange) {
           candidate = portRange.min + Math.floor(Math.random() * (portRange.max - portRange.min + 1))
-          if (candidate === actualPort || reservedPorts.has(candidate) || !await canBind(bindHost, candidate)) continue
+          if (candidate === actualPort || reservedPorts.has(candidate) || !await bindEvery(candidate)) continue
         } else {
-          candidate = await availablePort(bindHost)
+          candidate = await availablePort(bindHosts[0])
           if (candidate === actualPort || reservedPorts.has(candidate)) continue
+          if (bindHosts.length > 1 && !await bindEvery(candidate)) continue
         }
         reservedPorts.add(candidate)
         return candidate
@@ -221,8 +242,8 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
     engine.task = (async () => {
       let webPort, gatePort
       try {
-        webPort = await reservePort('127.0.0.1', false)
-        gatePort = await reservePort(host, true)
+        webPort = await reservePort(['127.0.0.1'], false)
+        gatePort = await reservePort(host === '127.0.0.1' ? ['127.0.0.1'] : [host, '127.0.0.1'], true)
         engine.webPort = webPort
         engine.gatePort = gatePort
         note(`对外端口已分配：${gatePort}`)
@@ -261,7 +282,7 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
     emitState()
   }
 
-  const server = http.createServer((request, response) => {
+  const onRequest = (request, response) => {
     void (async () => {
       const reason = untrustedReason(request)
       if (reason !== undefined) {
@@ -269,7 +290,7 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
         return
       }
       if (request.method === 'GET' && request.url === '/') {
-        if (authorized(request)) renderList(response)
+        if (authorized(request)) renderList(response, hostNameOf(request))
         else render(response, 200, '<p>输入在 macOS App 中设置的内网密码。</p><form method="post" action="/login"><input type="password" name="password" aria-label="密码" required><button>登录</button></form>')
         return
       }
@@ -285,14 +306,14 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
           const item = catalogList.find(row => row.id === progress[1])
           if (!item) { response.writeHead(404, { ...headers, 'content-type': 'application/json' }); response.end('{"error":"not found"}'); return }
           response.writeHead(200, { ...headers, 'content-type': 'application/json' })
-          response.end(JSON.stringify(await progressOf(item)))
+          response.end(JSON.stringify(await progressOf(item, hostNameOf(request))))
           return
         }
         const wait = /^\/catalog\/wait\/([a-f0-9-]+)$/.exec(request.url ?? '')
         const item = catalogList.find(row => row.id === wait?.[1])
         if (!item) { render(response, 404, '<p>页面不存在。</p>'); return }
         const engine = engines.get(item.id)
-        if (engine?.ready) { redirect(response, engine.url); return }
+        if (engine?.ready) { redirect(response, entryOn(engine, hostNameOf(request))); return }
         if (!engine) {
           const error = lastErrors.get(item.id)
           render(response, 200, `<article><h2>${escapeHtml(item.name)}</h2>${
@@ -336,21 +357,34 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
       const engine = engines.get(item.id)
       // Reply instantly and start the engine in the background: cold starts can take minutes,
       // and a blocking form POST just looks dead on a phone.
-      if (engine?.ready) { redirect(response, engine.url); return }
+      if (engine?.ready) { redirect(response, entryOn(engine, hostNameOf(request))); return }
       void startEngine(item).catch(() => {})
       redirect(response, `/catalog/wait/${encodeURIComponent(item.id)}`)
     })().catch(error => {
       if (!response.headersSent) render(response, 500, `<p class="error">操作失败：${escapeHtml(error.message)}</p>`)
       else response.destroy()
     })
+  }
+  const listenOnce = (instance, bindHost, bindPort) => new Promise((resolveListen, reject) => {
+    instance.once('error', reject)
+    instance.listen(bindPort, bindHost, () => { instance.off('error', reject); resolveListen() })
   })
-  await new Promise((resolveListen, reject) => {
-    server.once('error', reject)
-    server.listen(port, host, () => { server.off('error', reject); resolveListen() })
-  })
-  actualPort = server.address().port
+  const servers = [http.createServer(onRequest)]
+  await listenOnce(servers[0], host, port)
+  actualPort = servers[0].address().port
+  if (host !== '127.0.0.1') {
+    const loopback = http.createServer(onRequest)
+    try {
+      await listenOnce(loopback, '127.0.0.1', actualPort)
+      servers.push(loopback)
+    } catch (error) {
+      await new Promise(resolveClose => { servers[0].closeAllConnections(); servers[0].close(resolveClose) })
+      throw error
+    }
+  }
   return {
     url: `http://${host}:${actualPort}/`, port: actualPort,
+    localUrl: `http://127.0.0.1:${actualPort}/`,
     lanUrls: host === '127.0.0.1' ? [] : [`http://${host}:${actualPort}/`],
     setPassword(next) {
       if (typeof next !== 'string' || !next) throw new Error('Password must not be empty')
@@ -398,8 +432,13 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
     async close() {
       stopping = true
       await Promise.all([...engines.keys()].map(stopEngine))
-      server.closeAllConnections()
-      await new Promise(resolveClose => server.close(resolveClose))
+      await new Promise(resolveClose => {
+        let pending = servers.length
+        for (const instance of servers) {
+          instance.closeAllConnections()
+          instance.close(() => { if (--pending === 0) resolveClose() })
+        }
+      })
     },
   }
 }
@@ -424,7 +463,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     supervisor = await startCatalogSupervisor({ resourcesRoot, catalogBase, password: process.env.DSH_LAUNCH_PASSWORD,
       host: process.env.DSH_BIND_IP || undefined, portRange })
     const writeLine = (label, payload) => process.stdout.write(`${label}\t${JSON.stringify(payload)}\n`)
-    writeLine('DSH_WORKFLOW_READY', { port: supervisor.port, url: supervisor.url, lanUrls: supervisor.lanUrls })
+    writeLine('DSH_WORKFLOW_READY', { port: supervisor.port, url: supervisor.url, localUrl: supervisor.localUrl, lanUrls: supervisor.lanUrls })
     writeLine('DSH_WORKFLOW_STATE', { catalogs: supervisor.catalogs() })
     supervisor.onState(catalogs => writeLine('DSH_WORKFLOW_STATE', { catalogs }))
     const handleCommand = async command => {

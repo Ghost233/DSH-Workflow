@@ -4,6 +4,10 @@ import http from 'node:http'
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { NAVIGATION_PORT, startCatalogSupervisor } from './catalog-supervisor.mjs'
+import { isPrivateIPv4, localAddresses } from './lan-gateway.mjs'
+
+const privateLanHost = () => [...localAddresses()].find(address =>
+  address !== '127.0.0.1' && address !== 'localhost' && isPrivateIPv4(address))
 
 test('navigation uses the configured fixed port', () => {
   assert.equal(NAVIGATION_PORT, 33080)
@@ -191,6 +195,48 @@ test('engine ports stay inside the configured range and foreign bind addresses a
     host: '203.0.113.5', port: 0, password: 'secret' }), /不在本机网卡上/u)
   await assert.rejects(startCatalogSupervisor({ resourcesRoot: base, catalogBase: join(base, 'data-other'),
     host: '127.0.0.1', port: 0, portRange: { min: 80, max: 90 }, password: 'secret' }), /端口范围无效/u)
+})
+
+test('navigation dual-binds loopback and redirects engines to the visitor host', { skip: privateLanHost() === undefined }, async t => {
+  const lanHost = privateLanHost()
+  const base = await mkdtemp('/private/tmp/dsh-catalog-loop-')
+  t.after(() => rm(base, { recursive: true, force: true }))
+  const supervisor = await startCatalogSupervisor({ resourcesRoot: base, catalogBase: join(base, 'data'),
+    host: lanHost, port: 0, password: 'secret',
+    launchInstance: ({ onReady, signal }) => {
+      onReady({ url: `http://${lanHost}:45678/?token=loop` })
+      return new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }))
+    } })
+  t.after(() => supervisor.close())
+  assert.equal(supervisor.localUrl, `http://127.0.0.1:${supervisor.port}/`)
+  // The same navigation port answers on loopback.
+  const login = await fetch(`http://127.0.0.1:${supervisor.port}/login`, { method: 'POST', redirect: 'manual',
+    body: new URLSearchParams({ password: 'secret' }) })
+  assert.equal(login.status, 303)
+  const cookie = login.headers.get('set-cookie')?.split(';', 1)[0]
+  assert.ok(cookie)
+  await supervisor.createCatalog('alpha')
+  const id = supervisor.catalogs()[0].id
+  await supervisor.openCatalog(id)
+  // A LAN page offers the loopback entry for host settings; a loopback page does not.
+  const lanHtml = await (await fetch(supervisor.url, { headers: { cookie } })).text()
+  assert.match(lanHtml, /本机配置入口/u)
+  assert.match(lanHtml, /http:\/\/127\.0\.0\.1:45678\/\?token=loop/u)
+  const localHtml = await (await fetch(supervisor.localUrl, { headers: { cookie } })).text()
+  assert.doesNotMatch(localHtml, /本机配置入口/u)
+  // Opens and progress answers carry the requesting host so DSH settings stay loopback-only.
+  const localOpen = await fetch(`http://127.0.0.1:${supervisor.port}/catalog/open/${id}`, { method: 'POST', redirect: 'manual',
+    headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' } })
+  assert.equal(localOpen.status, 303)
+  assert.equal(localOpen.headers.get('location'), 'http://127.0.0.1:45678/?token=loop')
+  const lanOpen = await fetch(`${supervisor.url}catalog/open/${id}`, { method: 'POST', redirect: 'manual',
+    headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' } })
+  assert.equal(lanOpen.status, 303)
+  assert.equal(lanOpen.headers.get('location'), `http://${lanHost}:45678/?token=loop`)
+  const progress = await (await fetch(`http://127.0.0.1:${supervisor.port}/catalog/progress/${id}`, { headers: { cookie } })).json()
+  assert.equal(progress.url, 'http://127.0.0.1:45678/?token=loop')
+  const lanProgress = await (await fetch(`${supervisor.url}catalog/progress/${id}`, { headers: { cookie } })).json()
+  assert.equal(lanProgress.url, `http://${lanHost}:45678/?token=loop`)
 })
 
 test('navigation accepts opaque-origin browsers and explains rejected request sources', async t => {

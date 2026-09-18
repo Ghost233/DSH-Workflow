@@ -18,7 +18,7 @@ export function localAddresses() {
   return addresses
 }
 
-function isPrivateIPv4(address) {
+export function isPrivateIPv4(address) {
   const [a, b] = address.split('.').map(Number)
   return a === 10 || a === 192 && b === 168 || a === 172 && b >= 16 && b <= 31
     || a === 100 && b >= 64 && b <= 127 || a === 169 && b === 254
@@ -92,7 +92,9 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
   const sessions = sharedSessions ?? new Map()
   const failures = new Map()
   const upgradedSockets = new Map()
-  const acceptedHosts = new Set([host])
+  // The same port also answers on loopback: DSH only serves its host Settings
+  // (Models page, API keys) to loopback pages, so the Mac needs a 127.0.0.1 entry.
+  const acceptedHosts = new Set([host, '127.0.0.1', 'localhost'])
   let listeningPort = port
 
   const validHost = request => {
@@ -133,7 +135,7 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
     request.pipe(target)
   }
 
-  const server = http.createServer(async (request, response) => {
+  const onRequest = async (request, response) => {
     if (!validHost(request) || !sameOrigin(request)) { reject(response, 403); return }
     if (request.method === 'POST' && request.url === '/login') {
       const address = request.socket.remoteAddress ?? 'unknown'
@@ -175,9 +177,9 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
       return
     }
     proxy(request, response)
-  })
+  }
 
-  server.on('upgrade', (request, socket, head) => {
+  const onUpgrade = (request, socket, head) => {
     if (!validHost(request) || !sameOrigin(request) || !authenticated(request)) {
       socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
       return
@@ -200,15 +202,30 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
     target.on('response', () => socket.destroy())
     target.on('error', () => socket.destroy())
     target.end()
-  })
+  }
 
-  await new Promise((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(port, host, () => { server.off('error', reject); resolve() })
+  const listenOnce = (instance, bindHost, bindPort) => new Promise((resolve, reject) => {
+    instance.once('error', reject)
+    instance.listen(bindPort, bindHost, () => { instance.off('error', reject); resolve() })
   })
-  listeningPort = server.address().port
+  const servers = [http.createServer(onRequest)]
+  servers[0].on('upgrade', onUpgrade)
+  await listenOnce(servers[0], host, port)
+  listeningPort = servers[0].address().port
+  if (host !== '127.0.0.1') {
+    const loopback = http.createServer(onRequest)
+    loopback.on('upgrade', onUpgrade)
+    try {
+      await listenOnce(loopback, '127.0.0.1', listeningPort)
+      servers.push(loopback)
+    } catch (error) {
+      await new Promise(resolve => { servers[0].closeAllConnections(); servers[0].close(resolve) })
+      throw error
+    }
+  }
   return {
     port: listeningPort,
+    localUrl: `http://127.0.0.1:${listeningPort}/`,
     lanUrls: host === '127.0.0.1' ? [] : [`http://${host}:${listeningPort}/`],
     setPassword(next) {
       if (typeof next !== 'string' || next.length === 0) throw new Error('Password must not be empty')
@@ -219,8 +236,11 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
     },
     close: () => new Promise(resolve => {
       for (const [socket, upstream] of upgradedSockets) { socket.destroy(); upstream.destroy() }
-      server.closeAllConnections()
-      server.close(() => resolve())
+      let pending = servers.length
+      for (const instance of servers) {
+        instance.closeAllConnections()
+        instance.close(() => { if (--pending === 0) resolve() })
+      }
     }),
   }
 }

@@ -2,7 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import net from 'node:net'
-import { startLanGateway } from './lan-gateway.mjs'
+import { isPrivateIPv4, localAddresses, startLanGateway } from './lan-gateway.mjs'
+
+const privateLanHost = () => [...localAddresses()].find(address =>
+  address !== '127.0.0.1' && address !== 'localhost' && isPrivateIPv4(address))
 
 async function server(handler) {
   const instance = http.createServer(handler)
@@ -122,4 +125,40 @@ test('LAN gate rejects unauthenticated upgrades and forwards authenticated WebSo
   const closed = new Promise(resolve => admitted.socket.once('close', resolve))
   gate.setPassword('changed')
   await closed
+})
+
+test('a LAN-bound gate answers the same port on loopback', { skip: privateLanHost() === undefined }, async t => {
+  const lanHost = privateLanHost()
+  const upstream = await server((request, response) => {
+    if (request.url === '/?token=process-token') {
+      response.writeHead(303, { location: '/', 'set-cookie': 'dsh-auth=local; HttpOnly; Path=/' })
+      response.end()
+    } else if (request.url === '/api/test') {
+      response.end(request.headers.cookie ?? '')
+    } else response.end('DSH page')
+  })
+  t.after(() => upstream.close())
+  const gate = await startLanGateway({ port: 0, host: lanHost, upstreamPort: upstream.port,
+    password: 'secret', authenticatedUrl: () => `http://127.0.0.1:${upstream.port}/?token=process-token` })
+  t.after(() => gate.close())
+  assert.equal(gate.localUrl, `http://127.0.0.1:${gate.port}/`)
+  assert.deepEqual(gate.lanUrls, [`http://${lanHost}:${gate.port}/`])
+  assert.equal((await fetch(`http://${lanHost}:${gate.port}/`)).status, 200, 'the LAN address still serves the login page')
+  // Loopback shares the port; the login exchange keeps the requesting host.
+  const login = await fetch(`http://127.0.0.1:${gate.port}/login`, { method: 'POST', body: 'password=secret', redirect: 'manual',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' } })
+  assert.equal(login.status, 303)
+  assert.equal(login.headers.get('location'), `http://127.0.0.1:${gate.port}/?token=process-token`)
+  const gateCookie = login.headers.get('set-cookie')?.split(';', 1)[0]
+  assert.ok(gateCookie)
+  const exchange = await fetch(login.headers.get('location'), { redirect: 'manual', headers: { cookie: gateCookie } })
+  assert.equal(exchange.status, 303)
+  const dshCookie = exchange.headers.get('set-cookie')?.split(';', 1)[0]
+  assert.ok(dshCookie)
+  const api = await fetch(`http://127.0.0.1:${gate.port}/api/test`, { headers: { cookie: `${gateCookie}; ${dshCookie}` } })
+  assert.equal(api.status, 200)
+  assert.equal(await api.text(), 'dsh-auth=local')
+  // localhost is accepted as a loopback authority; forged hosts still are not.
+  assert.equal(await requestStatus(gate.port, { host: `localhost:${gate.port}` }), 200)
+  assert.equal(await requestStatus(gate.port, { host: `evil.example:${gate.port}` }), 403)
 })
