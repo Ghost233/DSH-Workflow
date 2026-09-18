@@ -10,12 +10,16 @@ private enum LanPasswordStore {
 
     static func load() -> String? {
         var item: CFTypeRef?
+        // Skip the approval UI: a freshly installed ad-hoc build is a new code identity, and a
+        // blocking dialog here freezes the app at launch. The management window asks the user
+        // to set the password again, and approving the save dialog re-authorizes the build.
         let status = SecItemCopyMatching([
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: account,
             kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne
+            kSecMatchLimit: kSecMatchLimitOne,
+            kSecUseAuthenticationUI: kSecUseAuthenticationUISkip,
         ] as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
