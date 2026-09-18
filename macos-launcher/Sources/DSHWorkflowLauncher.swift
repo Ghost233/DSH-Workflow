@@ -5,45 +5,49 @@ import Darwin
 import Security
 
 private enum LanPasswordStore {
-    static let service = "com.ghostagent.dsh-workflow-launcher"
-    static let account = "lan-password"
+    // Stored as a 0600 file in the app-support directory instead of the keychain: every
+    // re-signed build is a new keychain identity, so updates would lock the password away
+    // and force re-entry after each upgrade. The keychain remains a read-only fallback
+    // that migrates passwords saved by older builds.
+    static var fileURL: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("DSH Workflow", isDirectory: true)
+            .appendingPathComponent("lan-password")
+    }
 
     static func load() -> String? {
+        if let url = fileURL, let data = try? Data(contentsOf: url),
+           let password = String(data: data, encoding: .utf8), !password.isEmpty { return password }
         var item: CFTypeRef?
-        // Skip the approval UI: a freshly installed ad-hoc build is a new code identity, and a
-        // blocking dialog here freezes the app at launch. The management window asks the user
-        // to set the password again, and approving the save dialog re-authorizes the build.
+        // Skip the approval UI: a fresh ad-hoc build is a new code identity, and a blocking
+        // dialog here would freeze the app at launch.
         let status = SecItemCopyMatching([
             kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
+            kSecAttrService: "com.ghostagent.dsh-workflow-launcher",
+            kSecAttrAccount: "lan-password",
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne,
             kSecUseAuthenticationUI: kSecUseAuthenticationUISkip,
         ] as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        guard status == errSecSuccess, let data = item as? Data,
+              let password = String(data: data, encoding: .utf8), !password.isEmpty else { return nil }
+        try? persist(password)
+        return password
     }
 
     static func save(_ password: String) throws {
-        let query = [kSecClass: kSecClassGenericPassword,
-                     kSecAttrService: service,
-                     kSecAttrAccount: account] as CFDictionary
-        let bytes = Data(password.utf8)
-        let status = SecItemUpdate(query, [kSecValueData: bytes] as CFDictionary)
-        if status == errSecSuccess { return }
-        guard status == errSecItemNotFound else { throw error(status) }
-        let add = [kSecClass: kSecClassGenericPassword,
-                   kSecAttrService: service,
-                   kSecAttrAccount: account,
-                   kSecValueData: bytes] as CFDictionary
-        let added = SecItemAdd(add, nil)
-        guard added == errSecSuccess else { throw error(added) }
+        try persist(password)
     }
 
-    private static func error(_ status: OSStatus) -> NSError {
-        NSError(domain: NSOSStatusErrorDomain, code: Int(status),
-                userInfo: [NSLocalizedDescriptionKey: "钥匙串保存失败（\(status)）"])
+    private static func persist(_ password: String) throws {
+        guard let url = fileURL else {
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteInvalidFileNameError,
+                          userInfo: [NSLocalizedDescriptionKey: "无法定位应用数据目录。"])
+        }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data(password.utf8).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 }
 
@@ -136,7 +140,9 @@ struct PluginVersionRow: Decodable, Identifiable {
 final class LauncherModel: ObservableObject {
     static let shared = LauncherModel()
 
-    @Published var fullAccess: Bool
+    @Published var fullAccess: Bool {
+        didSet { UserDefaults.standard.set(fullAccess, forKey: "fullAccess") }
+    }
     @Published var passwordDraft = ""
     @Published private(set) var hasLanPassword = false
     @Published private(set) var status = "已停止"
@@ -157,7 +163,6 @@ final class LauncherModel: ObservableObject {
     @Published private(set) var pluginRestartAvailable = false
     @Published var showPluginRestartPrompt = false
     @Published private(set) var catalogs: [CatalogState] = []
-    @Published var newCatalogName = ""
     @Published var attachCatalogName = ""
     @Published var attachCatalogPath = ""
     private(set) var appVersionText = ""
@@ -206,7 +211,6 @@ final class LauncherModel: ObservableObject {
             lastError = "包内 DSH 运行时不完整，请重新构建应用。"
             return
         }
-        UserDefaults.standard.set(fullAccess, forKey: "fullAccess")
         browserURL = nil
         lanURLs = []
         logPath = nil
@@ -320,13 +324,6 @@ final class LauncherModel: ObservableObject {
 
     func refreshCatalogs() {
         sendControl(["type": "list"])
-    }
-
-    func createCatalog() {
-        let name = newCatalogName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        newCatalogName = ""
-        sendControl(["type": "create", "name": name])
     }
 
     func attachCatalog() {
@@ -611,17 +608,11 @@ private struct ManagementView: View {
 
             Section {
                 if model.catalogs.isEmpty {
-                    Text(model.isActive ? "还没有 Catalog；新建或加入后，可在导航页或这里打开。" : "启动服务后在这里管理 Catalog。")
+                    Text(model.isActive ? "还没有 Catalog；选择目录加入后，可在导航页或这里打开。" : "启动服务后在这里管理 Catalog。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(model.catalogs) { catalog in
                     catalogRow(catalog)
-                }
-                HStack {
-                    TextField("新 Catalog 名称", text: $model.newCatalogName, prompt: Text("新 Catalog 名称"))
-                        .labelsHidden()
-                    Button("新建") { model.createCatalog() }
-                        .disabled(model.newCatalogName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.isActive)
                 }
                 HStack {
                     TextField("名称", text: $model.attachCatalogName, prompt: Text("名称"))
@@ -629,6 +620,7 @@ private struct ManagementView: View {
                         .frame(maxWidth: 160)
                     TextField("目录绝对路径", text: $model.attachCatalogPath, prompt: Text("目录绝对路径"))
                         .labelsHidden()
+                    Button("选择目录…") { chooseAttachDirectory() }
                     Button("加入") { model.attachCatalog() }
                         .disabled(model.attachCatalogName.isEmpty || model.attachCatalogPath.isEmpty || !model.isActive)
                 }
@@ -641,7 +633,7 @@ private struct ManagementView: View {
                         .controlSize(.small)
                 }
             } footer: {
-                Text("新建会创建独立目录；加入已有目录可保留 Registry 绑定，两个 Catalog 可同时运行。导航页只保留密码验证和打开入口。")
+                Text("Catalog 选择已有目录加入即可，不新建目录；两个 Catalog 可同时运行。导航页只保留密码验证和打开入口。")
             }
 
             Section {
@@ -666,7 +658,7 @@ private struct ManagementView: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("完整访问权限在下次启动或重启时生效。")
-                    Text(model.hasLanPassword ? "密码保存在 macOS 钥匙串，修改后立即撤销旧的内网登录。" : "设置密码后才能开启内网入口。")
+                    Text(model.hasLanPassword ? "密码保存在本机应用数据目录，修改后立即撤销旧的内网登录。" : "设置密码后才能开启内网入口。")
                 }
             }
 
@@ -743,6 +735,29 @@ private struct ManagementView: View {
                 .lineLimit(1).truncationMode(.middle).help(catalog.path)
             if !catalog.error.isEmpty {
                 Text(catalog.error).font(.caption2).foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func chooseAttachDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.message = "选择要加入的 Catalog 目录"
+        if !model.attachCatalogPath.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: model.attachCatalogPath)
+        }
+        panel.beginSheetModal(for: ManagementWindow.shared.window) { response in
+            guard response == .OK, let url = panel.url else { return }
+            let path = url.path
+            let name = url.lastPathComponent
+            Task { @MainActor in
+                model.attachCatalogPath = path
+                if model.attachCatalogName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    model.attachCatalogName = name
+                }
             }
         }
     }
@@ -875,7 +890,7 @@ private struct PluginManageView: View {
 private final class ManagementWindow {
     static let shared = ManagementWindow()
 
-    private let window: NSWindow
+    fileprivate let window: NSWindow
 
     private init() {
         let window = NSWindow(

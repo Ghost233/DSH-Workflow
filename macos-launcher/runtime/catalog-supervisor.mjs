@@ -112,7 +112,7 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
   const renderList = response => {
     const entries = catalogList.map(item =>
       `<article><h2>${escapeHtml(item.name)}</h2><form method="post" action="/catalog/open/${encodeURIComponent(item.id)}"><button>打开</button></form></article>`).join('')
-    render(response, 200, entries || '<p>还没有 Catalog；请在 macOS App 的管理窗口中新建或加入。</p>')
+    render(response, 200, entries || '<p>还没有 Catalog；请在 macOS App 的管理窗口中选择目录加入。</p>')
   }
 
   const stateOf = item => {
