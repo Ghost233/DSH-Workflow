@@ -290,6 +290,68 @@ test('owned scope preserves the external lock and excludes configured third-part
   await releaseLock(pluginDirectory(f.root), process.pid)
 })
 
+test('startup scope installs only marked third-party plugins from the lock', async t => {
+  const f = await fixture(t)
+  const first = await prepare(f.root, f.anchor, process.pid, f)
+  await releaseLock(first.directory, process.pid)
+  const lock = await readFile(join(f.root, 'project-plugins.lock.json'), 'utf8')
+  await rm(first.directory, { recursive: true, force: true })
+  const previousCalls = f.calls.length
+  const state = await prepare(f.root, f.anchor, process.pid, { ...f, update: false, scope: 'startup',
+    resolvePackage: async () => { throw new Error('Must use pinned startup version') },
+  })
+  const selected = f.list.plugins.filter(item => item.startup === true)
+  assert.deepEqual(f.calls.slice(previousCalls), selected.map(item => `${item.package}@1.0.0`))
+  assert.deepEqual(state.installed.map(item => item.package), [...selected.map(item => item.package), 'dsh-owner-workflow', 'dsh-sol-efficiency'])
+  assert.equal(await readFile(join(f.root, 'project-plugins.lock.json'), 'utf8'), lock)
+  const patch = JSON.parse(await readFile(state.patch, 'utf8'))
+  assert.deepEqual(patch.flatMap(item => item.insert?.map(row => row.name) ?? []), selected.map(item => item.package))
+  assert.ok(patch.some(row => row.id === 'dsh-context' && row.disabled === true))
+  await releaseLock(state.directory, process.pid)
+})
+
+test('startup scope skips one failed third-party install and keeps the other plugins', async t => {
+  const f = await fixture(t)
+  const first = await prepare(f.root, f.anchor, process.pid, f)
+  await releaseLock(first.directory, process.pid)
+  await rm(first.directory, { recursive: true, force: true })
+  const state = await prepare(f.root, f.anchor, process.pid, { ...f, update: false, scope: 'startup',
+    run: async (...args) => {
+      if (args[1][1].startsWith('dsh-cost-meter@')) throw new Error('cost meter unavailable')
+      return f.run(...args)
+    },
+  })
+  assert.deepEqual(state.skipped, [{ package: 'dsh-cost-meter', reason: 'cost meter unavailable' }])
+  assert.deepEqual(state.installed.map(item => item.package),
+    ['dsh-context', '@nagi-ovo/dsh-visualize', 'dsh-mattpocock-skills-deck', 'dsh-owner-workflow', 'dsh-sol-efficiency'])
+  const patch = JSON.parse(await readFile(state.patch, 'utf8'))
+  assert.equal(patch.flatMap(item => item.insert?.map(row => row.name) ?? []).includes('dsh-cost-meter'), false)
+  await releaseLock(state.directory, process.pid)
+})
+
+test('startup scope skips a third-party plugin with an incompatible host peer', async t => {
+  const f = await fixture(t)
+  const first = await prepare(f.root, f.anchor, process.pid, f)
+  await releaseLock(first.directory, process.pid)
+  await rm(first.directory, { recursive: true, force: true })
+  const state = await prepare(f.root, f.anchor, process.pid, { ...f, update: false, scope: 'startup',
+    run: async (...args) => {
+      await f.run(...args)
+      if (!args[1][1].startsWith('dsh-cost-meter@')) return
+      const path = join(pluginDirectory(f.root), 'node_modules', 'dsh-cost-meter', 'package.json')
+      const manifest = JSON.parse(await readFile(path, 'utf8'))
+      manifest.peerDependencies = { '@deepseek-ai/missing-host-service': '^1.0.0' }
+      await writeJson(path, manifest)
+    },
+  })
+  assert.deepEqual(state.skipped.map(item => item.package), ['dsh-cost-meter'])
+  assert.match(state.skipped[0].reason, /missing-host-service/)
+  assert.ok(state.installed.some(item => item.package === 'dsh-mattpocock-skills-deck'))
+  assert.ok(state.installed.some(item => item.package === 'dsh-owner-workflow'))
+  assert.ok(state.installed.some(item => item.package === 'dsh-sol-efficiency'))
+  await releaseLock(state.directory, process.pid)
+})
+
 test('owned scope ignores unrelated third-party resolution settings while excluding their profile rows', async t => {
   const f = await fixture(t)
   f.list.registry = 'not-a-registry'

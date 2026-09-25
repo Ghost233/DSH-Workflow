@@ -2,8 +2,13 @@
 window.__ModuleLoader__.load({ id: 'dsh-sol-efficiency', factory(require) {
   const { createElement: h, useState, useSyncExternalStore } = require('react')
 
-  function Card({ scope }) {
-    const state = useSyncExternalStore(listener => scope.subscribe(listener), () => scope.getSnapshot())
+  function Card({ scopes }) {
+    const active = () => scopes.find(scope => scope.getSnapshot().status === 'ready') || scopes[0]
+    const state = useSyncExternalStore(listener => {
+      const disposers = scopes.map(scope => scope.subscribe(listener))
+      return () => disposers.forEach(dispose => dispose())
+    }, () => active().getSnapshot())
+    const scope = active()
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
     const ready = state.status === 'ready' && state.writable && !saving
@@ -36,12 +41,12 @@ window.__ModuleLoader__.load({ id: 'dsh-sol-efficiency', factory(require) {
     error && h('p', { role: 'alert' }, error))
   }
 
-  const inject = ['slots', 'settingsScope']
+  const inject = ['slots', 'configForms']
   const apply = ctx => {
-    const scope = ctx.settingsScope.bind({ namespace: 'sol-efficiency' })
-    const render = () => h(Card, { scope })
-    ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-      name: 'settings.plugin.item', key: 'sol-efficiency',
+    const scopes = [ctx.configForms.get('kernel-sol'), ctx.configForms.get('sol-efficiency')]
+    const render = () => h(Card, { scopes })
+    ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+      name: 'settings.plugins.tab', id: 'sol-efficiency', label: 'SoL Efficiency',
     }, render))
   }
   return { inject, apply }

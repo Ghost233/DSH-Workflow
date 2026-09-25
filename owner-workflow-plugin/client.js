@@ -116,11 +116,11 @@
           ? question : null
       }
 
-      function OwnerQuestionSide({ useTabInfo, pendingInteractions }) {
+      function OwnerQuestionSide({ useTabInfo, sessionStatus }) {
         const { tab } = useTabInfo()
         const sessionId = tab.navigation.params?.sessionId
-        const pending = useSyncExternalStore(pendingInteractions.subscribe,
-          () => pendingInteractions.getSnapshot().get(sessionId))
+        const pending = useSyncExternalStore(sessionStatus.subscribe,
+          () => sessionStatus.getSnapshot().get(sessionId)?.pendingInteraction)
         const question = ownerPendingQuestion(pending)
         const [busy, setBusy] = useState(false)
         useEffect(() => { setBusy(false) }, [pending?.key])
@@ -141,8 +141,8 @@
         )
       }
 
-      function OwnerQuestionHeaderAction({ sessionId, useSessionPendingInteraction, openQuestion }) {
-        const pending = useSessionPendingInteraction(value => value.get(sessionId))
+      function OwnerQuestionHeaderAction({ sessionId, useSessionStatus, openQuestion }) {
+        const pending = useSessionStatus(value => value.get(sessionId)?.pendingInteraction)
         if (!ownerPendingQuestion(pending)) return null
         return h('button', { type: 'button', className: 'dsh-owner-question-open',
           onClick: () => openQuestion(sessionId) }, '右侧查看决定')
@@ -507,13 +507,15 @@
         return parts.length > 0 ? parts.join(' · ') : waits.length > 0 ? `待处理 ${waits.length}` : '当前没有等待事项'
       }
 
-      function nativeInteractionWaits(sessions, pendingInteractions) {
+      function nativeInteractionWaits(sessions, sessionStatuses) {
         const labels = {
           approval: { state: 'waiting_user_approval', goal: '等待权限批准', waitingFor: '用户授权' },
           question: { state: 'waiting_user_input', goal: '等待补充信息', waitingFor: '用户回答' },
           'plan-review': { state: 'waiting_workflow_decision', goal: '等待计划审查', waitingFor: '用户审查' },
         }
-        return Array.from(pendingInteractions.values()).flatMap(interaction => {
+        return Array.from(sessionStatuses.values()).flatMap(status => {
+          const interaction = status.pendingInteraction
+          if (!interaction) return []
           const session = knownSession(sessions, interaction.sessionId)
           const selected = labels[interaction.kind]
           if (session === undefined || selected === undefined) return []
@@ -564,10 +566,10 @@
         return summary
       }
 
-      function mergeActionWaits(snapshot, sessions, pendingInteractions) {
+      function mergeActionWaits(snapshot, sessions, sessionStatuses) {
         const merged = [...snapshot.waits]
         const seen = new Set(merged.map(item => `${item.sessionId}:${item.state}`))
-        for (const item of nativeInteractionWaits(sessions, pendingInteractions)) {
+        for (const item of nativeInteractionWaits(sessions, sessionStatuses)) {
           const key = `${item.sessionId}:${item.state}`
           if (!seen.has(key)) merged.push(item)
         }
@@ -755,11 +757,11 @@
         )
       }
 
-      function HeaderWaitAction({ sessionId, useSessions, useSessionPendingInteraction, openSession }) {
+      function HeaderWaitAction({ sessionId, useSessions, useSessionStatus, openSession }) {
         const snapshot = useWaitSnapshot()
         const sessions = useSessions(value => value)
-        const pendingInteractions = useSessionPendingInteraction(value => value)
-        const actionWaits = useMemo(() => mergeActionWaits(snapshot, sessions, pendingInteractions), [snapshot, sessions, pendingInteractions])
+        const sessionStatuses = useSessionStatus(value => value)
+        const actionWaits = useMemo(() => mergeActionWaits(snapshot, sessions, sessionStatuses), [snapshot, sessions, sessionStatuses])
         const waits = useMemo(
           () => actionWaits.filter(item => sessionDescendsFrom(item.sessionId, sessionId, sessions)),
           [actionWaits, sessionId, sessions],
@@ -1123,13 +1125,13 @@
         )
       }
 
-      function SidebarWaitAction({ wide, useSessions, useWorkspaces, useSessionPendingInteraction, openSession }) {
+      function SidebarWaitAction({ wide, useSessions, useWorkspaces, useSessionStatus, openSession }) {
         const snapshot = useWaitSnapshot()
         const sessions = useSessions(value => value)
-        const pendingInteractions = useSessionPendingInteraction(value => value)
+        const sessionStatuses = useSessionStatus(value => value)
         const workspaces = useWorkspaces(value => value)
         const context = useMemo(() => currentSessionContext(sessions, workspaces), [sessions, workspaces])
-        const mergedWaits = useMemo(() => mergeActionWaits(snapshot, sessions, pendingInteractions), [snapshot, sessions, pendingInteractions])
+        const mergedWaits = useMemo(() => mergeActionWaits(snapshot, sessions, sessionStatuses), [snapshot, sessions, sessionStatuses])
         const actionWaits = useMemo(
           () => mergedWaits.filter(item => waitBelongsToCurrentContext(
             item,
@@ -1224,13 +1226,13 @@
         )
       }
 
-      function FloatingActionInbox({ useSessions, useWorkspaces, useSessionPendingInteraction, openSession }) {
+      function FloatingActionInbox({ useSessions, useWorkspaces, useSessionStatus, openSession }) {
         const snapshot = useWaitSnapshot()
         const sessions = useSessions(value => value)
-        const pendingInteractions = useSessionPendingInteraction(value => value)
+        const sessionStatuses = useSessionStatus(value => value)
         const workspaces = useWorkspaces(value => value)
         const context = useMemo(() => currentSessionContext(sessions, workspaces), [sessions, workspaces])
-        const mergedWaits = useMemo(() => mergeActionWaits(snapshot, sessions, pendingInteractions), [snapshot, sessions, pendingInteractions])
+        const mergedWaits = useMemo(() => mergeActionWaits(snapshot, sessions, sessionStatuses), [snapshot, sessions, sessionStatuses])
         const waits = useMemo(
           () => mergedWaits.filter(item => waitBelongsToCurrentContext(
             item,
@@ -1335,17 +1337,18 @@
         ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
           name: 'sidebar.right.pane.tab', key: 'dsh-owner-workflow/exec-approval',
         }, ExecApprovalSide))
-        const pendingInteractions = ctx.uiSession.pendingInteractions
+        const sessionStatus = ctx.uiSession.sessionStatus
+        const activeSession = ctx.uiSession.adapter.current
         ctx.sidebarRightTabs.register({ id: 'dsh-owner-workflow/question-detail', kind: OWNER_QUESTION_TAB,
           title: () => '工作流决定' })
         ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
           name: 'sidebar.right.pane.tab', key: 'dsh-owner-workflow/question-detail',
-        }, props => h(OwnerQuestionSide, { ...props, pendingInteractions })))
+        }, props => h(OwnerQuestionSide, { ...props, sessionStatus })))
         ctx.effect(() => {
           const opened = new Map()
           const sync = () => {
-            const sessionId = ctx.sessions.list.getSnapshot().current
-            const pending = pendingInteractions.getSnapshot().get(sessionId)
+            const sessionId = activeSession.value.key
+            const pending = sessionStatus.getSnapshot().get(sessionId)?.pendingInteraction
             if (!ownerPendingQuestion(pending)) return
             if (opened.get(sessionId) === pending.key) return
             try {
@@ -1353,8 +1356,8 @@
               opened.set(sessionId, pending.key)
             } catch { /* The bottom native question remains answerable without the Sidebar. */ }
           }
-          const stopQuestions = pendingInteractions.subscribe(sync)
-          const stopSessions = ctx.sessions.list.subscribe(sync)
+          const stopQuestions = sessionStatus.subscribe(sync)
+          const stopSessions = activeSession.subscribe(sync)
           sync()
           return () => { stopQuestions(); stopSessions() }
         }, 'owner workflow question detail sidebar')

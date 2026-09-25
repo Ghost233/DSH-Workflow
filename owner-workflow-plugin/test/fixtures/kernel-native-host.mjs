@@ -44,10 +44,14 @@ export async function kernelNativeHost(root, { model, executable = false, filesy
         await ctx.plugin(module.default ?? module)
       }
     }
-    const [loader, include, group, presets] = await Promise.all([load('vendor/loader'), load('vendor/include'), load('vendor/group'), load('packages/preset/agent-presets')])
+    const [loader, include, group, presets, preset, boot] = await Promise.all([load('vendor/loader'), load('vendor/include'), load('vendor/group'),
+      load('packages/preset/agent-preset-registry'), load('packages/preset/agent-preset'), load('packages/boot/app-boot')])
     ctx.baseUrl = new URL('../../../deepseek-harness/apps/cli/', import.meta.url).href
     await ctx.plugin(loader.default); ctx.loader.builtins.include = include.default; ctx.loader.builtins.group = group.default
-    await ctx.plugin(presets.default, { default: presetId, roots: [{ path: presetDirectory, trust: 'system' }], includeShippedRoot: false, includeUserRoot: false })
+    await ctx.plugin(presets.default, { default: presetId })
+    const plugins = boot.loadOverlayPatches('dsh-test', join(presetDirectory, presetId, 'agent.cordis.yml'))
+    for (const row of plugins) if (row.name?.startsWith('./')) row.name = join(presetDirectory, presetId, row.name)
+    await ctx.plugin(preset.default, { id: presetId, plugins })
   }
   const adapter = new Adapter(); ctx.llm.registerAdapter(['kernel-test'], adapter)
   const parent = await ctx.agents.create({ sessionId: 'kernel-main', meta: { cwd: root }, agentOptions: { provider: 'kernel-test', model: 'deterministic' }, ...(presetDirectory ? { setup: async child => { await ctx.agentPresets.mount(child, presetId) } } : {}) })

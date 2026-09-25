@@ -39,7 +39,7 @@ export class NativeNotificationEffects {
         if (!received(sessionEvents(agent), action.id) && !queued) {
           agent.followup({ id: action.id, role: 'user', content: [{ type: 'text', text: JSON.stringify({
             contract: 'DSH_WORKFLOW_NOTICE_V1', workflowId: workflow.id, reason: action.input.reason, detail: action.input.detail,
-          }) }], source: { kind: 'plugin', plugin: 'dsh-owner-workflow', form: 'notice', summary: 'Owner Workflow 状态报告' } })
+          }) }], source: { kind: 'plugin:dsh-owner-workflow', form: 'notice', summary: 'Owner Workflow 状态报告' } })
         }
         if (await this.ctx.sessions.flush(agent.session) !== true) return { pending: true, fact: 'running' }
       } catch (error) {

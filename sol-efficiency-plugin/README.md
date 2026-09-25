@@ -6,7 +6,7 @@
 
 安装一次，之后在 DSH 内勾选启停。启动脚本不临时注入插件，也不提供 SoL 专用环境变量。
 
-当前适配 Harness `0.1.6-alpha.1`；完整基线见 [upstream.json](upstream.json)。需要宿主已加载 `tools`；Action Fusion 还需要 `fs` 和原生 `edit`、`write`、`bash` 工具；EPR 需要 `llm`、`fs`、`spillStore`。标准 Web profile 已提供这些能力。安装时 npm peer dependencies 由宿主提供，不能在 Pi 中加载此包。
+当前适配 Harness `0.1.7-rc.2`；完整基线见 [upstream.json](upstream.json)。需要宿主已加载 `tools`；Action Fusion 还需要 `fs` 和原生 `edit`、`write`、`bash` 工具；EPR 需要 `llm`、`fs`、`spillStore`。标准 Web profile 已提供这些能力。安装时 npm peer dependencies 由宿主提供，不能在 Pi 中加载此包。
 
 ```bash
 dsh plugin --profile web add file:/Volumes/LargeStorage/code/DSH-Workflow/sol-efficiency-plugin

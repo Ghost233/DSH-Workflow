@@ -8,3 +8,6 @@
 [submodule "vendor/SoL-Pi"]
 	path = vendor/SoL-Pi
 	url = https://github.com/NVlabs/SoL-Pi.git
+[submodule "vendor/ZCode"]
+	path = vendor/ZCode
+	url = https://github.com/zai-org/ZCode.git

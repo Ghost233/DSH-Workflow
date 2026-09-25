@@ -41,7 +41,7 @@ async function copyOwned(workflow) {
   for (const name of ['project-plugins.json', 'project-plugins.lock.json']) {
     if (existsSync(join(root, name))) await cp(join(root, name), join(workflow, name))
   }
-  for (const name of ['owner-workflow-plugin', 'sol-efficiency-plugin', 'approve-for-me-workflow-plugin']) {
+  for (const name of ['owner-workflow-plugin', 'sol-efficiency-plugin']) {
     await cp(join(root, name), join(workflow, name), { recursive: true, filter: path => {
       const relative = path.slice(join(root, name).length).replaceAll('\\', '/')
       if (!relative) return true
@@ -51,7 +51,7 @@ async function copyOwned(workflow) {
   }
   await cp(join(root, 'owner-workflow-plugin/node_modules/fs-ext'), join(workflow, 'owner-workflow-plugin/node_modules/fs-ext'), { recursive: true })
   for (const name of ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-runtime.mjs',
-    'kernel-launch-composition.mjs', 'web-host-lifecycle.mjs']) {
+    'kernel-launch-composition.mjs', 'sol-profile-entry.mjs', 'web-host-lifecycle.mjs']) {
     await cp(join(root, 'scripts', name), join(workflow, 'scripts', name))
   }
   await cp(join(root, 'macos-launcher/runtime/web-launch.mjs'), join(workflow, 'macos-launcher/runtime/web-launch.mjs'))

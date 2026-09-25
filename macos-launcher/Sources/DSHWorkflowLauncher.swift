@@ -101,12 +101,14 @@ struct CatalogState: Decodable, Identifiable {
 
 private struct CatalogsEvent: Decodable {
     let catalogs: [CatalogState]
+    let global: CatalogState
 }
 
 private struct ControlReply: Decodable {
     let requestId: Int
     let ok: Bool
     let catalogs: [CatalogState]?
+    let global: CatalogState?
     let url: String?
     let error: String?
 }
@@ -116,6 +118,8 @@ struct PluginVersionRow: Decodable, Identifiable {
     let name: String
     let current: String?
     let latest: String?
+    let supportedDsh: String?
+    let latestSupportedDsh: String?
     let status: String
     let note: String
     let updatable: Bool?
@@ -156,6 +160,7 @@ final class LauncherModel: ObservableObject {
     let networkInterfaces: [(name: String, address: String)]
     @Published var passwordDraft = ""
     @Published private(set) var hasLanPassword = false
+    @Published var showPasswordSetupPrompt = false
     @Published private(set) var status = "已停止"
     @Published private(set) var lastError = ""
     @Published private(set) var browserURL: URL?
@@ -175,6 +180,7 @@ final class LauncherModel: ObservableObject {
     @Published private(set) var pluginRestartAvailable = false
     @Published var showPluginRestartPrompt = false
     @Published private(set) var catalogs: [CatalogState] = []
+    @Published private(set) var globalEngine: CatalogState?
     @Published var attachCatalogName = ""
     @Published var attachCatalogPath = ""
     private(set) var appVersionText = ""
@@ -232,6 +238,7 @@ final class LauncherModel: ObservableObject {
         guard child == nil else { return }
         guard let lanPassword = LanPasswordStore.load(), !lanPassword.isEmpty else {
             lastError = "请先在管理窗口设置内网访问密码。"
+            showPasswordSetupPrompt = true
             return
         }
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
@@ -397,6 +404,14 @@ final class LauncherModel: ObservableObject {
         sendControl(["type": "stop", "id": id])
     }
 
+    func openGlobal() {
+        sendControl(["type": "open-global"])
+    }
+
+    func stopGlobal() {
+        sendControl(["type": "stop-global"])
+    }
+
     func checkForUpdates() {
         guard !isCheckingUpdates else { return }
         isCheckingUpdates = true
@@ -526,12 +541,14 @@ final class LauncherModel: ObservableObject {
             pluginRows = pluginRows.map { row in
                 guard let version = versions[row.name], row.source == "DSH Web profile" else { return row }
                 return PluginVersionRow(source: row.source, name: row.name, current: version,
-                                        latest: version, status: "current", note: "已更新；重启后运行中的引擎才会加载", updatable: false)
+                                        latest: version, supportedDsh: nil, latestSupportedDsh: nil, status: "current",
+                                        note: "已更新；重启后运行中的引擎才会加载", updatable: false)
             }
             pluginUpdateStatus = report.error.map { "已更新 \(report.updated.count) 个插件，但其余更新失败：\($0)" }
                 ?? "已更新 \(report.updated.count) 个 Web profile 插件；运行中的 DSH 尚未切换版本。"
             pluginRestartAvailable = isActive
             showPluginRestartPrompt = isActive
+            checkPluginVersions()
         }
     }
 
@@ -576,10 +593,12 @@ final class LauncherModel: ObservableObject {
                let payload = line.split(separator: "\t", maxSplits: 1).last?.data(using: .utf8),
                let event = try? JSONDecoder().decode(CatalogsEvent.self, from: payload) {
                 catalogs = event.catalogs
+                globalEngine = event.global
             } else if line.hasPrefix("DSH_WORKFLOW_REPLY\t"),
                let payload = line.split(separator: "\t", maxSplits: 1).last?.data(using: .utf8),
                let reply = try? JSONDecoder().decode(ControlReply.self, from: payload) {
                 if let list = reply.catalogs { catalogs = list }
+                if let global = reply.global { globalEngine = global }
                 if !reply.ok {
                     lastError = reply.error ?? "管理指令失败。"
                 } else if let url = reply.url, let target = URL(string: url) {
@@ -604,6 +623,7 @@ final class LauncherModel: ObservableObject {
         lanURLs = []
         localURL = nil
         logPath = nil
+        globalEngine = nil
         if restartPending {
             restartPending = false
             start()
@@ -660,12 +680,25 @@ private struct ManagementView: View {
             }
 
             Section {
+                if let global = model.globalEngine {
+                    engineRow(global, isGlobal: true)
+                } else {
+                    Text("启动导航服务后可运行全局引擎。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("全局引擎")
+            } footer: {
+                Text("单个引擎中选择不同项目目录；运行数据保存在独立的全局目录，不合并现有 Catalog 历史。")
+            }
+
+            Section {
                 if model.catalogs.isEmpty {
                     Text(model.isActive ? "还没有 Catalog；选择目录加入后，可在导航页或这里打开。" : "启动服务后在这里管理 Catalog。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(model.catalogs) { catalog in
-                    catalogRow(catalog)
+                    engineRow(catalog, isGlobal: false)
                 }
                 HStack {
                     TextField("名称", text: $model.attachCatalogName, prompt: Text("名称"))
@@ -787,10 +820,15 @@ private struct ManagementView: View {
         }
         .formStyle(.grouped)
         .frame(minWidth: 560, maxWidth: 620, minHeight: 480)
+        .alert("启动前需要设置密码", isPresented: $model.showPasswordSetupPrompt) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text("请在管理窗口的“访问”区域设置内网访问密码，然后再点击“启动”。")
+        }
     }
 
     @ViewBuilder
-    private func catalogRow(_ catalog: CatalogState) -> some View {
+    private func engineRow(_ catalog: CatalogState, isGlobal: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Circle()
@@ -806,10 +844,14 @@ private struct ManagementView: View {
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
-                Button(catalog.state == "stopped" ? "启动" : "打开") { model.openCatalog(catalog.id) }
+                Button(catalog.state == "stopped" ? "启动" : "打开") {
+                    if isGlobal { model.openGlobal() } else { model.openCatalog(catalog.id) }
+                }
                     .disabled(catalog.state == "starting")
                 if catalog.state != "stopped" {
-                    Button("关闭") { model.stopCatalog(catalog.id) }
+                    Button("关闭") {
+                        if isGlobal { model.stopGlobal() } else { model.stopCatalog(catalog.id) }
+                    }
                         .disabled(catalog.state == "starting")
                 }
             }
@@ -912,6 +954,8 @@ private struct PluginManageView: View {
                                 .frame(width: 88, alignment: .leading)
                             Text("最新版本").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                 .frame(width: 88, alignment: .leading)
+                            Text("最新支持 DSH").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                .frame(width: 190, alignment: .leading)
                             Text("状态").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                 .frame(width: 104, alignment: .leading)
                             Text("操作").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -922,12 +966,16 @@ private struct PluginManageView: View {
                                 Text("\(group.title)（\(group.rows.count)）")
                                     .font(.callout.weight(.semibold))
                                     .padding(.top, 8)
-                                    .gridCellColumns(5)
+                                    .gridCellColumns(6)
                             }
                             ForEach(group.rows) { row in
                                 GridRow {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(row.name)
+                                        if let supportedDsh = row.supportedDsh {
+                                            Text("DSH 兼容声明：\(supportedDsh)")
+                                                .font(.caption2).foregroundStyle(.secondary)
+                                        }
                                         if !row.note.isEmpty {
                                             Text(row.note).font(.caption2).foregroundStyle(.secondary)
                                         }
@@ -935,6 +983,10 @@ private struct PluginManageView: View {
                                     .help(row.note)
                                     Text(row.current ?? "未知").frame(width: 88, alignment: .leading)
                                     Text(row.latest ?? "—").frame(width: 88, alignment: .leading)
+                                    Text(row.latestSupportedDsh ?? "—")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                        .frame(width: 190, alignment: .leading)
+                                        .help(row.latestSupportedDsh ?? "")
                                     Text(row.statusText)
                                         .foregroundStyle(row.status == "newer" ? Color.orange : Color.secondary)
                                         .frame(width: 104, alignment: .leading)
@@ -948,7 +1000,7 @@ private struct PluginManageView: View {
                 .frame(maxHeight: 500)
             }
         }
-        .frame(minWidth: 500, maxWidth: 800, minHeight: 420)
+        .frame(minWidth: 820, maxWidth: 1080, minHeight: 420)
         .alert("插件已更新", isPresented: $model.showPluginRestartPrompt) {
             Button("重启服务") { model.restartAfterPluginUpdate() }
             Button("稍后") { model.postponePluginRestart() }
@@ -1007,7 +1059,7 @@ private final class PluginWindow {
 
     private init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 950, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -1016,9 +1068,9 @@ private final class PluginWindow {
         window.contentViewController = NSHostingController(rootView: PluginManageView(model: LauncherModel.shared))
         // NSHostingController shrinks the window to the view's fitting size; the table's
         // ideal height collapses without this, leaving no room for the rows.
-        window.setContentSize(NSSize(width: 720, height: 560))
-        window.contentMinSize = NSSize(width: 500, height: 380)
-        window.contentMaxSize = NSSize(width: 800, height: 2000)
+        window.setContentSize(NSSize(width: 950, height: 560))
+        window.contentMinSize = NSSize(width: 820, height: 380)
+        window.contentMaxSize = NSSize(width: 1100, height: 2000)
         window.isReleasedWhenClosed = false
         window.center()
         self.window = window

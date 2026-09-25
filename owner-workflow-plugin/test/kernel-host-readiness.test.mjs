@@ -1,32 +1,23 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { Context, Service } from '../../deepseek-harness/vendor/cordis/lib/index.js'
-import { fixture } from '../../approve-for-me-workflow-plugin/test/helpers.mjs'
-import * as sol from '../../sol-efficiency-plugin/index.js'
-import { applyKernel } from '../src/kernel-plugin.mjs'
+import { Context } from '../../deepseek-harness/vendor/cordis/lib/index.js'
 import { hostReadiness } from '../src/kernel-host-readiness.mjs'
 
-test('native plugin scopes and the bundled approval adapter share load health only within their host', async t => {
-  const f = await fixture(t)
+test('host readiness requires Owner and SoL in the same running instance', async t => {
+  const host = new Context(), other = new Context()
+  t.after(async () => { await host.fiber.dispose(); await other.fiber.dispose() })
   const instance = randomUUID()
-  assert.equal(hostReadiness(f.ctx.root, instance).components.approval, 'ready')
-  assert.equal(hostReadiness(f.ctx.root, instance).ready, false)
-  await f.ctx.plugin(class extends Service {
-    constructor(ctx) { super(ctx, 'webServer') }
-    register() { return () => {} }
-  })
-  const owner = await f.ctx.plugin({ name: 'owner-health-fixture', apply: ctx => applyKernel(ctx, { surfaceOnly: true }) })
-  const efficiency = await f.ctx.plugin(sol)
-  assert.equal(hostReadiness(f.ctx.root, instance).ready, true)
-  assert.equal(hostReadiness(f.ctx.root).ready, false, 'an unowned host is never startup-ready')
-  const other = new Context()
-  t.after(() => other.fiber.dispose())
-  assert.deepEqual(Object.values(hostReadiness(other, instance).components), ['offline', 'offline', 'offline'])
-  await efficiency.dispose()
-  assert.deepEqual(hostReadiness(f.ctx.root, instance).components, { owner: 'ready', sol: 'offline', approval: 'ready' })
-  await f.adapter.dispose()
-  assert.equal(hostReadiness(f.ctx.root, instance).components.approval, 'offline')
+  assert.equal(hostReadiness(host, instance).ready, false)
+  const owner = await host.plugin({ apply: ctx => ctx.provide('workflowComponent:owner', { ready: true }) })
+  assert.equal(hostReadiness(host, instance).ready, false)
+  const sol = await host.plugin({ apply: ctx => ctx.provide('workflowComponent:sol', { ready: true }) })
+  assert.deepEqual(hostReadiness(host, instance).components, { owner: 'ready', sol: 'ready' })
+  assert.equal(hostReadiness(host, instance).ready, true)
+  assert.equal(hostReadiness(other, instance).ready, false)
+  assert.equal(hostReadiness(host).ready, false)
+  await sol.dispose()
+  assert.deepEqual(hostReadiness(host, instance).components, { owner: 'ready', sol: 'offline' })
   await owner.dispose()
-  assert.deepEqual(Object.values(hostReadiness(f.ctx.root, instance).components), ['offline', 'offline', 'offline'])
+  assert.deepEqual(hostReadiness(host, instance).components, { owner: 'offline', sol: 'offline' })
 })

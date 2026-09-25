@@ -11,7 +11,6 @@ const directory = dirname(regression.reportPath)
 const checks = []
 for (const [name, args] of [
   ['owner_client_build', ['owner-workflow-plugin/scripts/build-client.mjs', '--check']],
-  ['approval_build', ['approve-for-me-workflow-plugin/scripts/build.mjs', '--check']],
 ]) {
   const result = await runAcceptanceProcess({ argv: [process.execPath, ...args], cwd: root, timeoutMs: 30_000 })
   const log = join(directory, `${name}.log`)

@@ -13,6 +13,55 @@ test('navigation uses the configured fixed port', () => {
   assert.equal(NAVIGATION_PORT, 33080)
 })
 
+test('global engine has independent state and leaves catalog storage untouched', async t => {
+  const base = await mkdtemp('/private/tmp/dsh-global-test-')
+  t.after(() => rm(base, { recursive: true, force: true }))
+  const data = join(base, 'data')
+  const project = join(base, 'project')
+  await mkdir(project)
+  const started = [], stopped = []
+  const supervisor = await startCatalogSupervisor({ resourcesRoot: base, catalogBase: data,
+    host: '127.0.0.1', port: 0, password: 'secret', launchInstance: ({ workspace, signal, onReady }) => {
+      started.push(workspace)
+      onReady({ url: `http://127.0.0.1:40123/?token=${started.length}` })
+      return new Promise(resolve => signal.addEventListener('abort', () => { stopped.push(workspace); resolve() }, { once: true }))
+    } })
+  t.after(() => supervisor.close())
+  await supervisor.attachCatalog('project', project)
+  const catalog = supervisor.catalogs()[0]
+  assert.equal(supervisor.global().state, 'stopped')
+  assert.equal(supervisor.catalogs().length, 1)
+  await assert.rejects(supervisor.attachCatalog('overlap', data), /overlaps the global engine/u)
+  const globalUrl = await supervisor.openGlobal()
+  assert.match(globalUrl, /token=1/u)
+  assert.deepEqual(started, [join(data, 'global')])
+  assert.equal(supervisor.global().state, 'running')
+  assert.equal(supervisor.catalogs()[0].state, 'stopped')
+  assert.deepEqual(JSON.parse(await readFile(join(data, 'catalogs.json'), 'utf8')), [
+    { id: catalog.id, name: 'project', path: project },
+  ])
+  const catalogUrl = await supervisor.openCatalog(catalog.id)
+  assert.match(catalogUrl, /token=2/u)
+  await supervisor.stopGlobal()
+  assert.deepEqual(stopped, [join(data, 'global')])
+  assert.equal(supervisor.catalogs()[0].state, 'running')
+  const login = await fetch(`${supervisor.url}login`, { method: 'POST', redirect: 'manual',
+    body: new URLSearchParams({ password: 'secret' }) })
+  const cookie = login.headers.get('set-cookie')?.split(';', 1)[0]
+  const page = await (await fetch(supervisor.url, { headers: { cookie } })).text()
+  assert.match(page, /全局引擎/u)
+  assert.match(page, /project/u)
+  const reopen = await fetch(new URL(`catalog/open/${supervisor.global().id}`, supervisor.url), {
+    method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+  })
+  assert.equal(reopen.status, 303)
+  assert.match(reopen.headers.get('location') ?? '', /catalog\/wait\//u)
+  assert.equal(supervisor.catalogs()[0].state, 'running')
+  await supervisor.openGlobal()
+  assert.equal(started.filter(path => path === join(data, 'global')).length, 2)
+  await supervisor.stopCatalog(catalog.id)
+})
+
 function rawPost(port, path, headers, body = '') {
   return new Promise((resolve, reject) => {
     const request = http.request({ hostname: '127.0.0.1', port, path, method: 'POST', headers }, response => {

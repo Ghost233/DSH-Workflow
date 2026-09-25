@@ -7,14 +7,21 @@ import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import { composeKernelLaunch } from '../../scripts/kernel-launch-composition.mjs'
-import { composeApprovalPatches } from '../../approve-for-me-workflow-plugin/compose-patch.mjs'
+import { ensureSolProfileEntry } from '../../scripts/sol-profile-entry.mjs'
 import { hostPackageMap } from '../../scripts/project-plugins.mjs'
 import { installProjectResolver } from '../../scripts/project-plugin-resolver.mjs'
 import { launchWebHost, assertWebPortAvailable } from '../../scripts/web-host-lifecycle.mjs'
 import { privateBindAddress, startLanGateway } from './lan-gateway.mjs'
+import { ensureStartupPlugins } from './plugin-update.mjs'
 
 const workflowRoot = fileURLToPath(new URL('../../', import.meta.url))
 const flattened = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flattened(row.config) : [])])
+let profileSetupQueue = Promise.resolve()
+function prepareProfilePlugins(options) {
+  const task = profileSetupQueue.then(() => ensureStartupPlugins(options))
+  profileSetupQueue = task.catch(() => {})
+  return task
+}
 
 export function portPatch(entries, port) {
   if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error('Port must be 1–65535')
@@ -47,7 +54,8 @@ async function waitForAuthenticatedUrl(logPath, signal) {
 /** Boot the upstream Web profile with only the project's immutable owned overlay. */
 export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal, onReady = () => {},
   gatewayHost = privateBindAddress(), gatewayPort = 3081, gatewaySessions, controlStream = process.stdin,
-  onGateway = () => {}, onLog = () => {}, password = process.env.DSH_LAUNCH_PASSWORD }) {
+  onGateway = () => {}, onLog = () => {}, password = process.env.DSH_LAUNCH_PASSWORD,
+  ensurePlugins = prepareProfilePlugins }) {
   signal?.throwIfAborted()
   if (port === gatewayPort) throw new Error('DSH Web port must differ from the LAN gateway port')
   await assertWebPortAvailable(port)
@@ -66,7 +74,6 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
   const packages = {
     'dsh-owner-workflow': workflow,
     'dsh-sol-efficiency': join(workflow, 'sol-efficiency-plugin'),
-    'dsh-approve-for-me-workflow': join(workflow, 'approve-for-me-workflow-plugin'),
   }
   for (const [name, root] of Object.entries(packages)) {
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -79,14 +86,24 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
   try {
     const boot = createRequire(anchor)('@deepseek-ai/dsh-app-boot')
     const home = process.env.DSH_HOME || join(process.env.HOME, '.dsh')
+    try {
+      const prepared = await ensurePlugins({ resourcesRoot: resources, home })
+      for (const item of prepared.added ?? []) process.stderr.write(`[project-plugins] Web profile 已启用 ${item.name}@${item.version}\n`)
+      for (const item of prepared.skipped ?? []) process.stderr.write(`[project-plugins] 跳过 ${item.name}：${item.reason}\n`)
+    } catch (error) {
+      process.stderr.write(`[project-plugins] Web profile 插件准备失败：${String(error.message ?? error)}\n`)
+    }
+    await ensureSolProfileEntry({ anchor, home })
     const profile = boot.loadProfile('dsh', 'web', anchor, home)
     const homePatch = join(home, 'cordis.patch.yml')
     const layers = [...profile.layers.map(layer => layer.patches), profile.patches,
       existsSync(homePatch) ? boot.loadOverlayPatches('dsh', homePatch) : []]
     const entries = boot.composeEntries(layers)
+    const hmr = flattened(entries).filter(row => row.name === '@deepseek-ai/dsh-hmr' && row.disabled !== true)
     const patches = [
-      ...composeApprovalPatches(entries),
-      ...composeKernelLaunch(entries, { projectRoot: workflow, catalogRoot: catalog }),
+      ...hmr.map(row => ({ id: row.id, disabled: true })),
+      ...composeKernelLaunch(entries, { projectRoot: workflow, catalogRoot: catalog,
+        presetPlugins: boot.loadOverlayPatches('dsh', join(workflow, 'owner-workflow-plugin/kernel-presets/owner-workflow/agent.cordis.yml')) }),
       browserUrlPatch(entries),
       portPatch(entries, port),
     ]

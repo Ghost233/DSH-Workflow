@@ -11,10 +11,9 @@ test('readiness follows the existing numeric port and never evaluates or replace
   assert.throws(() => configuredWebPort(entries(0)), /configured Web port/)
 })
 
-test('kernel composition preserves user policies and custom roots while replacing only project runtime rows', () => {
+test('kernel composition registers the Owner declaration without changing other Web profile rows', () => {
   const entries = [
-    { id: 'preset-host', name: '@deepseek-ai/dsh-agent-presets', config: { default: 'standard', includeUserRoot: true,
-      roots: [{ path: '/project/owner-workflow-plugin/agent-presets', trust: 'system' }, { path: '/custom-presets', trust: 'user' }] } },
+    { id: 'preset-host', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'standard' } },
     { id: 'permission', name: '@deepseek-ai/dsh-permission-presets', config: { defaultPreset: 'review-only' } },
     { id: 'settings', name: 'settings', config: { path: '/user/settings.yaml' } },
     { id: 'owner-old', name: 'dsh-owner-workflow', config: { surfaceOnly: true } },
@@ -23,14 +22,23 @@ test('kernel composition preserves user policies and custom roots while replacin
     { id: 'synapse-old', name: 'dsh-synapse-workflow', config: { dataFile: '/user/existing-workspaces.json', autoProjection: true } },
     { id: 'third-party', name: 'some-external-plugin' },
   ]
+  const presetPlugins = [{ id: 'owner-workflow', name: './plugin.mjs', config: {} },
+    { id: 'persona', name: '@deepseek-ai/dsh-persona' }]
   const before = structuredClone(entries)
-  const patches = composeKernelLaunch(entries, { projectRoot: '/project', catalogRoot: '/catalog' })
+  const patches = composeKernelLaunch(entries, { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins })
   assert.deepEqual(entries, before)
-  assert.deepEqual(patches.filter(row => row.disabled).map(row => row.id), ['owner-old', 'dashboard-old', 'sol-old', 'synapse-old'])
+  assert.deepEqual(patches.filter(row => row.disabled).map(row => row.id), ['owner-old', 'dashboard-old', 'synapse-old'])
   assert.equal(patches.some(row => ['permission', 'settings', 'third-party'].includes(row.id)), false)
-  assert.deepEqual(patches[0].config.roots, [{ path: '/project/owner-workflow-plugin/kernel-presets', trust: 'system' }, { path: '/custom-presets', trust: 'user' }])
+  assert.equal(patches[0].config.default, 'owner-workflow')
   const rows = patches.at(-1).insert
+  const owner = rows.find(row => row.id === 'preset-owner-workflow')
+  assert.equal(owner.config.plugins[0].name, '/project/owner-workflow-plugin/kernel-presets/owner-workflow/plugin.mjs')
+  assert.equal(owner.config.plugins[0].config.catalogRoot, '/catalog')
+  assert.equal(presetPlugins[0].name, './plugin.mjs')
   assert.equal(rows.some(row => /synapse/i.test(row.name)), false, 'retired Synapse must not be reinserted')
-  assert.equal(rows.find(row => row.id === 'kernel-sol').config.actionFusion.enabled, false)
-  assert.throws(() => composeKernelLaunch([...entries, { id: 'other-sol', name: 'dsh-sol-efficiency' }], { projectRoot: '/project', catalogRoot: '/catalog' }), /duplicate active sol/)
+  assert.equal(rows.some(row => row.id === 'kernel-sol'), false, 'profile-owned SoL remains writable')
+  assert.equal(patches.some(row => row.id === 'sol-old'), false)
+  const fallback = composeKernelLaunch(entries.filter(row => row.id !== 'sol-old'), { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins })
+  assert.equal(fallback.at(-1).insert.find(row => row.id === 'kernel-sol').name, 'dsh-sol-efficiency')
+  assert.throws(() => composeKernelLaunch([...entries, { id: 'other-sol', name: 'dsh-sol-efficiency' }], { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins }), /duplicate active sol/)
 })

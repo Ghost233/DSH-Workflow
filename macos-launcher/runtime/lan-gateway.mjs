@@ -170,7 +170,7 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
       return
     }
     if (!authenticated(request)) {
-      if (request.method === 'GET' && request.url === '/') {
+      if (request.method === 'GET' && request.url?.split('?', 1)[0] === '/') {
         response.writeHead(200, secureHeaders())
         response.end(loginPage())
       } else reject(response, 401)

@@ -1,6 +1,6 @@
 // Test-only resolver: exercise the sibling Harness's built package exports without installing peers.
 import { registerHooks } from 'node:module'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -40,6 +40,6 @@ registerHooks({
     if (!existsSync(path)) throw new Error(`Harness artifact missing: ${path}. Build the pinned Harness before integration tests.`)
     // A resolved URL is already authoritative. Passing it back through the
     // CJS require resolver (or tsx's require hook) treats file: as a package.
-    return { url: pathToFileURL(path).href, shortCircuit: true }
+    return { url: pathToFileURL(realpathSync(path)).href, shortCircuit: true }
   },
 })

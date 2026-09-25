@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { checkLaunchReady } from './harness-runtime.mjs'
 import { prepare, releaseLock, pluginDirectory } from './project-plugins.mjs'
 import { composeKernelLaunch } from './kernel-launch-composition.mjs'
+import { ensureSolProfileEntry } from './sol-profile-entry.mjs'
 import { launchWebHost, assertWebPortAvailable } from './web-host-lifecycle.mjs'
 import { ensureAgentTeamProfile } from './agent-team-profile.mjs'
 
@@ -45,16 +46,18 @@ export async function launchKernelWeb({ projectRoot = repository, catalogRoot, s
   // Refuse an occupied port before project preparation mutates its launch metadata.
   await assertWebPortAvailable(port)
   await ensureAgentTeamProfile({ harness, home, signal })
+  await ensureSolProfileEntry({ anchor, home })
   const layers = profileLayers()
   if (configuredWebPort(boot.composeEntries(layers)) !== port) throw new Error('Agent Teams activation unexpectedly changed the Web port')
   let launchDirectory, prepared = false
   try {
-    const state = await prepare(project, anchor, process.pid, { scope: 'all' }); prepared = true
+    const state = await prepare(project, anchor, process.pid, { scope: 'startup' }); prepared = true
     const entries = boot.composeEntries([...layers, boot.loadOverlayPatches('dsh', state.patch)])
     if (configuredWebPort(entries) !== port) throw new Error('Project plugin composition unexpectedly changed the Web port')
     launchDirectory = await mkdtemp(join(pluginDirectory(project), 'kernel-launch-'))
     const patch = join(launchDirectory, 'composition.patch.yml')
-    await writeFile(patch, JSON.stringify(composeKernelLaunch(entries, { projectRoot: project, catalogRoot: catalog }), null, 2) + '\n', { mode: 0o600 })
+    const presetPlugins = boot.loadOverlayPatches('dsh', join(project, 'owner-workflow-plugin/kernel-presets/owner-workflow/agent.cordis.yml'))
+    await writeFile(patch, JSON.stringify(composeKernelLaunch(entries, { projectRoot: project, catalogRoot: catalog, presetPlugins }), null, 2) + '\n', { mode: 0o600 })
     return await launchWebHost({ argv: [process.execPath, join(project, 'scripts/project-plugins.mjs'), 'run', project, 'web', '--patch', patch, '--no-open'],
       cwd: catalog, port, logRoot: join(catalog, '.dsh-workflow/web-host/logs'), signal,
       environment: { ...process.env, DSH_OWNER_WORKFLOW_CATALOG_ROOT: catalog },

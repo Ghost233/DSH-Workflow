@@ -11,7 +11,6 @@ const workflow = join(resources, 'workflow')
 const packages = {
   'dsh-owner-workflow': workflow,
   'dsh-sol-efficiency': join(workflow, 'sol-efficiency-plugin'),
-  'dsh-approve-for-me-workflow': join(workflow, 'approve-for-me-workflow-plugin'),
 }
 const manifest = JSON.parse(readFileSync(anchor, 'utf8'))
 if (manifest.name !== '@deepseek-ai/dsh') throw new Error('Packaged DSH identity mismatch')

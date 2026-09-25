@@ -14,9 +14,8 @@ const names = ['workflow-engine', 'workflow-diagnostics', 'workflow-store', 'wor
   'public-owner-change', 'public-owner-adapter', 'public-owner-plan', 'convergence', 'repair-prompt-context']
 const files = [...names.map(name => `owner-workflow-plugin/test/${name}.test.mjs`),
   'owner-workflow-plugin/test/kernel-host-readiness.test.mjs', 'owner-workflow-plugin/test/kernel-plan-contract.test.mjs', 'owner-workflow-plugin/test/production-entry.test.mjs',
-  'scripts/daily-workflow-launch.test.mjs', 'scripts/web-host-lifecycle.test.mjs', 'scripts/kernel-launch-composition.test.mjs', 'scripts/kernel-web-host.test.mjs', 'scripts/kernel-web-launch.test.mjs', 'scripts/run-workflow-tests.test.mjs', 'scripts/project-plugins.test.mjs', 'scripts/project-plugins-native.test.mjs',
-  'sol-efficiency-plugin/test/integration.test.mjs',
-  'approve-for-me-workflow-plugin/test/host.test.mjs']
+  'scripts/daily-workflow-launch.test.mjs', 'scripts/web-host-lifecycle.test.mjs', 'scripts/kernel-launch-composition.test.mjs', 'scripts/kernel-web-host.test.mjs', 'scripts/kernel-web-launch.test.mjs', 'scripts/run-workflow-tests.test.mjs', 'scripts/project-plugins.test.mjs',
+  'sol-efficiency-plugin/test/integration.test.mjs']
 const hash = value => createHash('sha256').update(value).digest('hex')
 export async function kernelCandidate() {
   const entries = []
@@ -29,7 +28,7 @@ export async function kernelCandidate() {
       else throw new Error(`Candidate contains a non-regular source: ${path}`)
     }
   }
-  for (const directory of ['owner-workflow-plugin', 'sol-efficiency-plugin', 'approve-for-me-workflow-plugin', 'scripts']) await walk(directory)
+  for (const directory of ['owner-workflow-plugin', 'sol-efficiency-plugin', 'scripts']) await walk(directory)
   for (const file of ['package.json', 'project-plugins.lock.json', 'dsh-runtime.json',
     'start-owner-workflow.sh',
     'docs/specs/main-thread-owner-workflow/unified-kernel-replacement-plan.md',

@@ -1,5 +1,4 @@
-# 本地开发与已安装 bundle 互斥；本地 preset 由显式安装命令复制到 user root。
-- id: agent-presets
+# 本地开发与已安装 bundle 互斥；Owner preset 由项目启动装配声明。
+- id: agent-preset-registry
   config:
     default: standard
-    includeUserRoot: true

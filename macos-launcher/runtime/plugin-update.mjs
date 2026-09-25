@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -8,7 +9,7 @@ import { checkPluginVersions } from './plugin-versions.mjs'
 
 const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const packageNamePattern = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i
-const owned = new Set(['dsh-owner-workflow', 'dsh-sol-efficiency', 'dsh-approve-for-me-workflow'])
+const owned = new Set(['dsh-owner-workflow', 'dsh-sol-efficiency'])
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'))
 
@@ -29,7 +30,7 @@ async function installedVersion(profile, name) {
   }
 }
 
-async function runProfileUpdate({ resources, home, candidates }) {
+async function runProfileUpdate({ resources, home, candidates, registry }) {
   const cli = join(resources, 'node_modules/@deepseek-ai/dsh/lib/bin.js')
   const pnpm = join(resources, 'node_modules/pnpm/bin/pnpm.mjs')
   const shim = join(resources, 'bin/pnpm')
@@ -46,8 +47,55 @@ async function runProfileUpdate({ resources, home, candidates }) {
     child.once('close', (code, signal) => code === 0 ? accept()
       : reject(new Error(`DSH 插件更新失败（${signal ?? code}）：${diagnostics.slice(-1000)}`)))
   })
-  await execute([cli, 'plugin', '--profile', 'web', 'add', ...candidates.map(row => `${row.name}@${row.latest}`), '--save-exact'])
+  await execute([cli, 'plugin', '--profile', 'web', 'add', ...candidates.map(row => `${row.name}@${row.latest}`), '--save-exact',
+    ...(registry ? ['--registry', registry] : [])])
   await execute([cli, '--profile', 'web', '--dump-config'])
+}
+
+/** Add marked project plugins to the Web profile before its DSH engine starts. */
+export async function ensureStartupPlugins({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
+  run = runProfileUpdate } = {}) {
+  const resources = resolve(resourcesRoot)
+  const workflow = join(resources, 'workflow')
+  const listBytes = await readFile(join(workflow, 'project-plugins.json'))
+  const list = JSON.parse(listBytes)
+  const lock = await readJson(join(workflow, 'project-plugins.lock.json'))
+  const runtime = await readJson(join(workflow, 'dsh-runtime.json'))
+  if (lock.schema !== 1 || lock.harnessVersion !== runtime.version || lock.registry !== list.registry
+    || new URL(list.registry).protocol !== 'https:' || !Array.isArray(lock.plugins)
+    || lock.plugins.length !== list.plugins.length
+    || lock.manifestSha256 !== createHash('sha256').update(listBytes).digest('hex')) {
+    throw new Error('Project plugin lock does not match the packaged manifest')
+  }
+  const profile = join(home, 'profiles/web')
+  const result = { added: [], already: [], skipped: [] }
+  for (const item of list.plugins.filter(row => row.startup === true)) {
+    try {
+      const pinned = lock.plugins.find(row => row.package === item.package)
+      if (!packageNamePattern.test(item.package) || !pinned || !versionPattern.test(pinned.version)
+        || pinned.metadata?.name !== item.package || pinned.metadata?.version !== pinned.version) {
+        throw new Error('Missing or invalid published package pin')
+      }
+      const before = await readJson(join(profile, 'package.json')).catch(error => {
+        if (error.code === 'ENOENT') return undefined
+        throw error
+      })
+      const current = await installedVersion(profile, item.package)
+      if (current && before?.dsh?.profile?.bundles?.includes(item.package)) {
+        result.already.push({ name: item.package, version: current })
+        continue
+      }
+      const target = current && versionPattern.test(current) ? current : pinned.version
+      await run({ resources, home, candidates: [{ name: item.package, latest: target }], registry: list.registry })
+      const after = await readJson(join(profile, 'package.json'))
+      if (await installedVersion(profile, item.package) !== target
+        || !after.dsh?.profile?.bundles?.includes(item.package)) throw new Error('DSH did not enable the selected plugin')
+      result.added.push({ name: item.package, version: target })
+    } catch (error) {
+      result.skipped.push({ name: item.package, reason: String(error.message ?? error).slice(0, 500) })
+    }
+  }
+  return result
 }
 
 /** Update eligible profile packages on disk. Never restart or alter packaged plugins. */

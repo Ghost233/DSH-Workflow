@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { updateCandidates, updateProfilePlugins } from './plugin-update.mjs'
+import { ensureStartupPlugins, updateCandidates, updateProfilePlugins } from './plugin-update.mjs'
 
 const external = { source: 'DSH Web profile', name: 'dsh-context', current: '1.0.0', latest: '1.1.0', status: 'newer' }
 const team = { source: 'DSH Web profile', name: '@deepseek-ai/dsh-experimental-agent-team-profile', current: '0.1.6-alpha.1', latest: '0.2.0', status: 'newer' }
@@ -14,6 +15,47 @@ test('only independent npm Web-profile plugins are update candidates', () => {
     { ...external, name: 'dsh-owner-workflow' },
     { ...external, name: 'local-plugin', status: 'local' },
   ] }), [external])
+})
+
+test('marked project plugins join Web profile without downgrading existing versions', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-plugin-startup-'))
+  try {
+    const resources = join(root, 'resources'), workflow = join(resources, 'workflow')
+    const home = join(root, 'home'), profile = join(home, 'profiles/web')
+    await mkdir(workflow, { recursive: true })
+    await mkdir(join(profile, 'node_modules/dsh-context'), { recursive: true })
+    const plugins = [
+      { package: 'dsh-context', version: '0.56.2', startup: true },
+      { package: 'dsh-cost-meter', version: '1.7.37', startup: true },
+      { package: 'dsh-mattpocock-skills-deck', version: '1.7.30', startup: true },
+    ]
+    const manifest = JSON.stringify({ registry: 'https://registry.npmjs.org/', plugins: plugins.map(({ package: name, startup }) => ({ package: name, startup })) })
+    await writeFile(join(workflow, 'project-plugins.json'), manifest)
+    await writeFile(join(workflow, 'dsh-runtime.json'), JSON.stringify({ version: '0.1.7-rc.2' }))
+    await writeFile(join(workflow, 'project-plugins.lock.json'), JSON.stringify({ schema: 1, harnessVersion: '0.1.7-rc.2',
+      registry: 'https://registry.npmjs.org/', manifestSha256: createHash('sha256').update(manifest).digest('hex'),
+      plugins: plugins.map(({ package: name, version }) => ({ package: name, version, metadata: { name, version } })) }))
+    await writeFile(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'dsh-context': '0.60.0' },
+      dsh: { profile: { bundles: ['dsh-context'] } } }))
+    await writeFile(join(profile, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '0.60.0' }))
+    const calls = []
+    const result = await ensureStartupPlugins({ resourcesRoot: resources, home, run: async ({ candidates, registry }) => {
+      const { name, latest } = candidates[0]
+      calls.push({ name, latest, registry })
+      if (name === 'dsh-cost-meter') throw new Error('install unavailable')
+      await mkdir(join(profile, 'node_modules', name), { recursive: true })
+      await writeFile(join(profile, 'node_modules', name, 'package.json'), JSON.stringify({ name, version: latest }))
+      const data = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+      data.dependencies[name] = latest
+      data.dsh.profile.bundles.push(name)
+      await writeFile(join(profile, 'package.json'), JSON.stringify(data))
+    } })
+    assert.deepEqual(result.already, [{ name: 'dsh-context', version: '0.60.0' }])
+    assert.deepEqual(result.added, [{ name: 'dsh-mattpocock-skills-deck', version: '1.7.30' }])
+    assert.deepEqual(result.skipped, [{ name: 'dsh-cost-meter', reason: 'install unavailable' }])
+    assert.deepEqual(calls.map(({ name, latest }) => `${name}@${latest}`), ['dsh-cost-meter@1.7.37', 'dsh-mattpocock-skills-deck@1.7.30'])
+    assert.ok(calls.every(row => row.registry === 'https://registry.npmjs.org/'))
+  } finally { await rm(root, { recursive: true, force: true }) }
 })
 
 test('plugin update changes only the selected profile package and returns a restart receipt', async () => {

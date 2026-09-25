@@ -7,7 +7,6 @@ on:
       - macos-launcher/**
       - owner-workflow-plugin/**
       - sol-efficiency-plugin/**
-      - approve-for-me-workflow-plugin/**
       - scripts/project-plugins.mjs
       - scripts/project-plugin-resolver.mjs
       - scripts/harness-runtime.mjs
@@ -27,7 +26,6 @@ on:
       - macos-launcher/**
       - owner-workflow-plugin/**
       - sol-efficiency-plugin/**
-      - approve-for-me-workflow-plugin/**
       - scripts/project-plugins.mjs
       - scripts/project-plugin-resolver.mjs
       - scripts/harness-runtime.mjs

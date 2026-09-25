@@ -6,16 +6,19 @@ import { SettingsSchema } from './src/settings.mjs'
 
 export const name = 'sol-efficiency'
 export const inject = ['tools']
+export const Config = SettingsSchema
 
 /** Install independently opt-in features; disabled features acquire no services. */
 export async function apply(ctx, config = {}) {
-  const entry = resolveConfig(config)
-  let source = () => entry
+  const current = () => resolveConfig({
+    actionFusion: config.actionFusion?.get?.() ?? config.actionFusion,
+    evidenceReducer: config.evidenceReducer?.get?.() ?? config.evidenceReducer,
+  })
   let runtime, previous, stopped = false
   let tail = Promise.resolve()
   // Serialize replacement so toggling cannot leave duplicate tools or reducers behind.
   const reconcile = () => {
-    const resolved = resolveConfig(source())
+    const resolved = current()
     tail = tail.catch(() => {}).then(async () => {
       const key = JSON.stringify(resolved)
       if (stopped || key === previous) return
@@ -38,10 +41,6 @@ export async function apply(ctx, config = {}) {
   }
   ctx.effect(() => async () => { stopped = true; await tail; await runtime?.dispose() })
   await reconcile()
-  ctx.inject(['settings'], settingsCtx => settingsCtx.settings.installSection(ctx, 'sol-efficiency', SettingsSchema, entry, {
-    validate: resolveConfig,
-    setSource: current => { source = current },
-    onChange: () => { void reconcile().catch(error => ctx.logger.error(error)) },
-  }))
+  ctx.on('loader/volatile-update', () => { void reconcile().catch(error => ctx.logger.error(error)) })
   ctx.provide('workflowComponent:sol', Object.freeze({ ready: true }))
 }

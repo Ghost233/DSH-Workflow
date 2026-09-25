@@ -71,7 +71,7 @@ test('nested additional context and turn conclusion reach the outer result', asy
     async execute(_args, exec) {
       exec.concludeTurn()
       exec.deferContext(createUserMessage({ content: [{ type: 'text', text: 'stop after write' }],
-        source: { kind: 'plugin', plugin: 'fixture' } }))
+        source: { kind: 'plugin:fixture' } }))
       return 'done'
     },
   }))

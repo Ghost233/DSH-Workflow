@@ -15,7 +15,7 @@ test('daily shell uses the real CLI, discovers every project plugin and drains i
   let child, running, result, output = ''
   try {
     await mkdir(project); await mkdir(catalog)
-    for (const name of ['scripts', 'owner-workflow-plugin', 'sol-efficiency-plugin', 'approve-for-me-workflow-plugin']) {
+    for (const name of ['scripts', 'owner-workflow-plugin', 'sol-efficiency-plugin']) {
       await cp(join(source, name), join(project, name), { recursive: true, filter: path => !['node_modules', 'vendor', '.git'].includes(basename(path)) })
     }
     for (const name of ['start-owner-workflow.sh', 'package.json', 'project-plugins.json', 'project-plugins.lock.json', 'dsh-runtime.json']) await cp(join(source, name), join(project, name))
@@ -24,10 +24,10 @@ test('daily shell uses the real CLI, discovers every project plugin and drains i
     await symlink(join(source, 'deepseek-harness/node_modules/.pnpm/semver@7.8.5/node_modules/semver'), join(modules, 'semver'))
     const { initProfile } = createRequire(join(source, 'deepseek-harness/apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
     initProfile(profileDir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app',
-      '@deepseek-ai/dsh-experimental-agent-team-profile', '@deepseek-ai/dsh-experimental-agent-team-web-profile'], 'startup')
+      '@deepseek-ai/dsh-experimental-agent-team-profile'], 'startup')
     const scope = join(profileDir, 'node_modules/@deepseek-ai')
     await mkdir(scope, { recursive: true })
-    for (const directory of ['agent-team-profile', 'agent-team-web-profile']) {
+    for (const directory of ['agent-team-profile']) {
       await symlink(join(source, 'deepseek-harness/packages/experimental', directory),
         join(scope, `dsh-experimental-${directory}`))
     }
@@ -59,7 +59,7 @@ test('daily shell uses the real CLI, discovers every project plugin and drains i
     }
     assert.equal(health?.ready, true, `actual daily CLI host must become ready: ${output}`)
     assert.ok(output.includes(health.instanceId), 'supervisor must announce the actual host instance')
-    assert.deepEqual(health.components, { owner: 'ready', sol: 'ready', approval: 'ready' })
+    assert.deepEqual(health.components, { owner: 'ready', sol: 'ready' })
     child.kill('SIGTERM'); await running
     assert.deepEqual(result, { code: 0, signal: null }, output)
     assert.equal(await readFile(profilePath, 'utf8'), original)

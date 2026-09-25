@@ -10,12 +10,11 @@ import { hostPackageMap } from './project-plugins.mjs'
 import { installProjectResolver } from './project-plugin-resolver.mjs'
 import { composeKernelLaunch } from './kernel-launch-composition.mjs'
 import { configuredWebPort, launchCatalogRoot } from './kernel-web-launch.mjs'
-import { composeApprovalPatches } from '../approve-for-me-workflow-plugin/compose-patch.mjs'
 
 const project = resolve('.')
 const anchor = join(project, 'deepseek-harness/apps/cli/package.json')
 const req = createRequire(anchor)
-const { boot, initProfile, loadProfile, composeEntries, healProfilesModuleFallback } = req('@deepseek-ai/dsh-app-boot')
+const { boot, initProfile, loadProfile, composeEntries } = req('@deepseek-ai/dsh-app-boot')
 const { provideCmdline } = req('@deepseek-ai/dsh-cmdline')
 
 test('source launcher chooses its catalog from the checkout, independent of the caller cwd', () => {
@@ -23,7 +22,7 @@ test('source launcher chooses its catalog from the checkout, independent of the 
   assert.equal(launchCatalogRoot(join(project, 'fixtures', 'checkout')), join(project, 'fixtures'))
 })
 
-test('actual Web composition loads all three project components and the root preset without rewriting its fixture profile', { timeout: 30_000 }, async () => {
+test('actual Web composition loads Owner and SoL with the root preset without rewriting its fixture profile', { timeout: 30_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'ukr-web-composition-'))
   const home = join(root, 'home'), profileDir = join(home, 'profiles/web')
   const instanceId = randomUUID()
@@ -45,28 +44,33 @@ test('actual Web composition loads all three project components and the root pre
     const original = await readFile(join(profileDir, 'cordis.patch.yml'), 'utf8')
     hooks = installProjectResolver({ directory: root, anchor, hostPackages: hostPackageMap(anchor), packages: {
       'dsh-owner-workflow': project, 'dsh-sol-efficiency': join(project, 'sol-efficiency-plugin'),
-      'dsh-approve-for-me-workflow': join(project, 'approve-for-me-workflow-plugin'),
     } })
-    await healProfilesModuleFallback({ installAnchor: anchor, home })
     const profile = loadProfile('dsh', 'web', anchor, home)
     const layers = [...profile.layers.map(layer => layer.patches), profile.patches]
     assert.equal(configuredWebPort(composeEntries(profile.layers.map(layer => layer.patches))), 3080)
     const entries = composeEntries(layers)
-    const patches = [...layers.flat(), ...composeApprovalPatches(entries), ...composeKernelLaunch(entries, { projectRoot: project, catalogRoot: root })]
+    const presetPlugins = req('@deepseek-ai/dsh-app-boot').loadOverlayPatches('dsh', join(project, 'owner-workflow-plugin/kernel-presets/owner-workflow/agent.cordis.yml'))
+    const projectPatches = composeKernelLaunch(entries, { projectRoot: project, catalogRoot: root, presetPlugins })
+    const patches = [...layers.flat(), ...projectPatches]
     const base = join(profileDir, 'cordis.yml'); await writeFile(base, '[]\n')
-    ctx = await boot('ukr-native-web', base, patches, context => provideCmdline(context, { args: [], exit: () => {} }))
+    ctx = await boot('ukr-native-web', base, patches, context => {
+      context.provide('profileContext', { name: 'web', dir: profile.dir, patchPath: profile.patchPath,
+        installAnchor: anchor, cwd: root, home, startedBundles: profile.layers.map(layer => layer.packageName),
+        overlays: projectPatches, telemetryDisabledEnv: undefined })
+      provideCmdline(context, { args: [], exit: () => {} })
+    })
     const response = await fetch(`http://127.0.0.1:${ctx.webServer.port}/owner-workflow/api/health`)
     const health = await response.json()
     assert.equal(response.status, 200, JSON.stringify(health))
     assert.equal(health.instanceId, instanceId)
-    assert.deepEqual(health.components, { owner: 'ready', sol: 'ready', approval: 'ready' })
+    assert.deepEqual(health.components, { owner: 'ready', sol: 'ready' })
     handle = await ctx.agents.create({ sessionId: 'web-kernel-root', meta: { cwd: root }, setup: async child => { await ctx.agentPresets.mount(child, 'owner-workflow') } })
     assert.ok(ctx.tools.get('workflow_start', handle.agent))
     assert.equal(ctx.permissionPresets.current(handle.agent.session), 'review-only')
     assert.equal(await readFile(join(profileDir, 'cordis.patch.yml'), 'utf8'), original)
     const graph = ctx.clientModules.graph()
     assert.equal(graph.entries.some(entry => /synapse/i.test(entry.id)), false)
-    for (const id of ['dsh-owner-workflow', 'dsh-sol-efficiency', 'dsh-approve-for-me-workflow']) {
+    for (const id of ['dsh-owner-workflow', 'dsh-sol-efficiency']) {
       assert.ok(graph.entries.some(entry => entry.id === id), `Missing actual browser client: ${id}`)
     }
   } finally {

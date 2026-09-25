@@ -29,10 +29,15 @@ async function loadCard(scope) {
     assert.equal(name, 'react')
     return React
   }).apply({
-    settingsScope: { bind({ namespace }) { assert.equal(namespace, 'sol-efficiency'); return scope } },
+    configForms: { get(namespace) {
+      assert.ok(['kernel-sol', 'sol-efficiency'].includes(namespace))
+      return namespace === 'sol-efficiency' ? scope : {
+        getSnapshot: () => ({ status: 'unavailable' }), subscribe: () => () => {},
+      }
+    } },
     slots: {
-      inject(name, factory) { assert.equal(name, 'settings.plugin.item'); factory() },
-      register(entry, component) { assert.equal(entry.key, 'sol-efficiency'); render = component },
+      inject(name, factory) { assert.equal(name, 'settings.plugins.tab'); factory() },
+      register(entry, component) { assert.equal(entry.id, 'sol-efficiency'); render = component },
     },
   })
   return () => { cursor = 0; return render() }

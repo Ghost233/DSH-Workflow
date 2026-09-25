@@ -64,11 +64,12 @@ function ownerTurnFailure(events, reason) {
     .map(event => [event.data.callId, event.data.name]))
   for (const event of events.toReversed()) {
     if (event.type !== 'tool/result') continue
-    const result = event.data.message?.content?.find(block => block.type === 'tool-result')
-    if (result?.isError !== true) continue
-    const callId = event.data.message.source?.callId ?? result.toolCallId
+    const message = event.data.message
+    const result = message?.content?.find(block => block.type === 'tool-result')
+    if (message?.isError !== true && result?.isError !== true) continue
+    const callId = message.source?.callId ?? message.toolCallId ?? result?.toolCallId
     const name = calls.get(callId) ?? 'owner_tool'
-    const detail = result.content?.filter(block => block.type === 'text').map(block => block.text).join('\n')
+    const detail = (result?.content ?? message.content)?.filter(block => block.type === 'text').map(block => block.text).join('\n')
     const summary = diagnosticText(detail, { maximum: 2_000, paths: true })
     return `owner_tool_failed: ${name}${summary ? `: ${summary}` : ''}`
   }

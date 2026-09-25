@@ -43,7 +43,7 @@ test('native Web user provenance accepts RPC metadata but rejects other source s
     { kind: 'user', rpcId: 'web-request', clientTimeZone: 'Asia/Shanghai' }]) {
     assert.equal(receiptFor(source).messageId, 'web-user-message')
   }
-  for (const source of [{ kind: 'plugin', rpcId: 'web-request' }, { kind: 'user', plugin: 'notice' },
+  for (const source of [{ kind: 'plugin:fixture', rpcId: 'web-request' }, { kind: 'user', plugin: 'notice' },
     { kind: 'user', rpcId: 123 }, { kind: 'user', rpcId: '' },
     { kind: 'user', clientTimeZone: 'Asia/Shanghai' },
     { kind: 'user', rpcId: 'web-request', clientTimeZone: 123 },

@@ -17,7 +17,7 @@ Owner Workflow 把主线程中的需求讨论、文档授权、长期 Owner 分�
 - 核验项目固定的官方 DSH 构建。
 - 读取现有 Web profile 和用户已有 patch。
 - 在调用项目的 `.dsh-workflow/` 生成临时组合与日志目录。
-- 在一个 Cordis 宿主中加载 Owner surface、Dashboard、SoL 和自研审批适配层。
+- 在一个 Cordis 宿主中加载 Owner surface、Dashboard 和 SoL。
 - 自动启动宿主内 Runner，并在宿主退出时等待其有序停止。
 - 发现目标端口已被占用时在准备项目组合之前失败。
 

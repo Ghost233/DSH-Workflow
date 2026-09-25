@@ -42,6 +42,9 @@ test('LAN gate requires password, proxies the process URL and revokes sessions o
   const base = `http://127.0.0.1:${gate.port}`
   const before = await fetch(`${base}/api/test`)
   assert.equal(before.status, 401)
+  const direct = await fetch(`${base}/?token=process-token`, { redirect: 'manual' })
+  assert.equal(direct.status, 200, 'a direct engine link must first show the password login')
+  assert.doesNotMatch(await direct.text(), /process-token|first-secret/u)
   assert.equal(await requestStatus(gate.port, { host: `evil.example:${gate.port}` }), 403)
   assert.equal((await fetch(base, { headers: { origin: 'http://evil.example' } })).status, 403)
   const page = await fetch(base)

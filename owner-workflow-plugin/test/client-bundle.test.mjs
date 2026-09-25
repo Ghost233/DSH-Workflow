@@ -111,7 +111,8 @@ test('运行状态和 Owner 输入限制只登记官方 Slot', async () => {
   const slotNames = []
   const context = {
     sessions: { open() {}, list: { getSnapshot: () => ({ current: undefined }), subscribe: () => () => {} } },
-    uiSession: { pendingInteractions: { getSnapshot: () => new Map(), subscribe: () => () => {} } },
+    uiSession: { sessionStatus: { getSnapshot: () => new Map(), subscribe: () => () => {} },
+      adapter: { current: { value: { key: undefined }, subscribe: () => () => {} } } },
     sidebarRightTabs: { register() { return () => {} } },
     sidebarRight: { openTab() {} },
     effect(callback) { callback() },
@@ -162,7 +163,8 @@ test('Exec 授权只接管自己的审批并在右侧展示完整内容', async 
   const types = []
   client.apply({
     sessions: { open() {}, list: { getSnapshot: () => ({ current: undefined }), subscribe: () => () => {} } },
-    uiSession: { pendingInteractions: { getSnapshot: () => new Map(), subscribe: () => () => {} } },
+    uiSession: { sessionStatus: { getSnapshot: () => new Map(), subscribe: () => () => {} },
+      adapter: { current: { value: { key: undefined }, subscribe: () => () => {} } } },
     sidebarRightTabs: { register(definition) { types.push(definition); return () => {} } },
     sidebarRight: { openTab(...args) { opened.push(args) } },
     effect(callback) { callback() },
@@ -208,7 +210,9 @@ test('Owner 问询保留底部原生卡，并可在 DSH 右侧查看和回答同
   let current = new Map([['main', question]])
   client.apply({
     sessions: { open() {}, list: { getSnapshot: () => ({ current: 'main' }), subscribe: () => () => {} } },
-    uiSession: { pendingInteractions: { getSnapshot: () => current, subscribe(listener) { notify = listener; return () => {} } } },
+    uiSession: { sessionStatus: { getSnapshot: () => new Map([...current].map(([id, pendingInteraction]) => [id, { pendingInteraction }])),
+      subscribe(listener) { notify = listener; return () => {} } },
+    adapter: { current: { value: { key: 'main' }, subscribe: () => () => {} } } },
     sidebarRightTabs: { register() { return () => {} } },
     sidebarRight: { openTab(...args) { opened.push(args) } },
     effect(callback) { callback() },
@@ -231,7 +235,8 @@ test('Owner 问询保留底部原生卡，并可在 DSH 右侧查看和回答同
   assert.equal(slots.filter(item => item.definition.name === 'conversation.composer').length, 2,
     'Owner questions must continue to use the DSH native composer')
   const opener = slots.find(item => item.definition.id === 'owner-workflow-question-detail')
-  const header = opener.component({ sessionId: 'main', useSessionPendingInteraction: select => select(current) })
+  const header = opener.component({ sessionId: 'main',
+    useSessionStatus: select => select(new Map([...current].map(([id, pendingInteraction]) => [id, { pendingInteraction }]))) })
   const button = header.tag(header.props)
   button.props.onClick()
   assert.equal(opened.length, 2, 'the conversation header must reopen a closed side detail')

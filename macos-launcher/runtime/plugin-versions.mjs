@@ -9,11 +9,9 @@ const registry = 'https://registry.npmjs.org/'
 const owned = [
   ['dsh-owner-workflow', 'owner-workflow-plugin'],
   ['dsh-sol-efficiency', 'sol-efficiency-plugin'],
-  ['dsh-approve-for-me-workflow', 'approve-for-me-workflow-plugin'],
 ]
 const agentTeams = [
   '@deepseek-ai/dsh-experimental-agent-team-profile',
-  '@deepseek-ai/dsh-experimental-agent-team-web-profile',
 ]
 const packageName = value => /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(value)
 const exactVersion = value => /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value)
@@ -52,9 +50,35 @@ export function compareVersions(current, latest) {
   return 0
 }
 
-async function installedVersion(profile, name) {
+function compatibleDshReleases(compatibility) {
+  return Object.entries(compatibility?.dshReleases ?? {})
+    .filter(([version, status]) => status === 'compatible' && exactVersion(version))
+    .map(([version]) => version)
+    .sort((a, b) => compareVersions(a, b) ?? 0)
+}
+
+export function declaredDshVersions(manifest) {
+  if (!manifest) return '无法读取'
+  const compatibility = manifest.dsh?.compatibility
+  const range = compatibility?.dsh
+  if (typeof range === 'string' && range.trim()) return range.trim()
+  const releases = compatibleDshReleases(compatibility)
+  return releases.length ? `${releases.join('、')}（明确标注）` : '未声明'
+}
+
+export function latestDeclaredDsh(manifest) {
+  if (!manifest) return '无法读取'
+  const compatibility = manifest.dsh?.compatibility
+  const latest = compatibleDshReleases(compatibility).at(-1)
+  if (typeof compatibility?.dsh === 'string' && compatibility.dsh.trim()) {
+    return latest ? `未给精确最高版；逐版标注至 ${latest}` : '未给精确最高版'
+  }
+  return latest ? `${latest}（逐版标注）` : '未声明'
+}
+
+async function installedPackage(profile, name) {
   const manifest = await jsonFile(join(profile, 'node_modules', ...name.split('/'), 'package.json'))
-  return manifest?.name === name && typeof manifest.version === 'string' ? manifest.version : undefined
+  return manifest?.name === name && typeof manifest.version === 'string' ? manifest : undefined
 }
 
 export async function checkPluginVersions({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
@@ -76,10 +100,13 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
   const profileManifest = await jsonFile(join(profile, 'package.json'))
   for (const [name, spec] of Object.entries(profileManifest?.dependencies ?? {})) {
     if (!packageName(name) || typeof spec !== 'string') continue
-    const current = await installedVersion(profile, name)
+    const installed = await installedPackage(profile, name)
+    const current = installed?.version
     const local = /^(?:file:|link:|workspace:|git\+|https?:|\.\.?\/|\/)/.test(spec)
     rows.push({ source: 'DSH Web profile', name, current: current ?? (exactVersion(spec) ? spec : null),
       latest: null, status: local ? 'local' : 'pending',
+      supportedDsh: declaredDshVersions(installed),
+      latestSupportedDsh: latestDeclaredDsh(installed),
       note: local ? '本地或 Git 依赖；不按 npm latest 判断' : current ? '当前已安装版本' : '未找到已安装包；仅显示声明版本' })
   }
   for (const name of profileManifest?.dsh?.profile?.bundles ?? []) {
@@ -90,10 +117,12 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
       continue
     }
     const bundled = name.startsWith('@deepseek-ai/dsh-')
-    const manifest = bundled ? await jsonFile(join(resources, 'node_modules', ...name.split('/'), 'package.json')) : undefined
-    const current = manifest?.name === name ? manifest.version : await installedVersion(profile, name)
+    const manifest = bundled ? await jsonFile(join(resources, 'node_modules', ...name.split('/'), 'package.json'))
+      : await installedPackage(profile, name)
+    const current = manifest?.name === name ? manifest.version : undefined
     rows.push({ source: bundled ? 'DSH 内置 Bundle' : 'DSH Web profile Bundle', name,
       current: current ?? null, latest: null, status: bundled ? 'coupled' : 'pending',
+      ...(bundled ? {} : { supportedDsh: declaredDshVersions(manifest), latestSupportedDsh: latestDeclaredDsh(manifest) }),
       note: bundled ? '随打包的 DSH 更新，不能单独升级' : 'profile Bundle；未在 dependencies 声明' })
   }
 
@@ -104,9 +133,11 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
   const lockMatches = projectManifestBytes && projectLock?.manifestSha256 === createHash('sha256').update(projectManifestBytes).digest('hex')
   for (const item of projectManifest?.plugins ?? []) {
     if (!packageName(item.package)) continue
-    const pinned = projectLock?.plugins?.find(row => row.package === item.package)?.version
+    const pinned = projectLock?.plugins?.find(row => row.package === item.package)
     rows.push({ source: '项目插件锁定清单（打包快照）', name: item.package,
-      current: typeof pinned === 'string' ? pinned : null, latest: null,
+      current: typeof pinned?.version === 'string' ? pinned.version : null, latest: null,
+      supportedDsh: declaredDshVersions(pinned?.metadata),
+      latestSupportedDsh: latestDeclaredDsh(pinned?.metadata),
       status: projectManifest.registry === registry ? 'pending' : 'unsupported',
       note: projectManifest.registry !== registry ? '非 npm 公共 registry，未查询'
         : lockMatches ? '与打包时清单一致' : '锁定清单缺失或与打包时配置不一致' })

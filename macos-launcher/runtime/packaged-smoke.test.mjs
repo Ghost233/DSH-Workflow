@@ -29,6 +29,7 @@ test('packaged DSH authenticates through the LAN gateway', { timeout: 60_000,
   try {
     const { launchPackagedWeb } = await packagedModule('web-launch.mjs')
     await launchPackagedWeb({ resourcesRoot: process.env.DSH_MACOS_RESOURCES, workspace: root, port,
+      ensurePlugins: async () => ({ added: [], skipped: [] }),
       gatewayHost: '127.0.0.1', gatewayPort: 0, signal: controller.signal, onReady: async state => {
         try {
           const direct = await fetch(`http://127.0.0.1:${port}/`, { redirect: 'manual' })
@@ -73,8 +74,10 @@ test('packaged navigation lazily starts and stops a catalog DSH', { timeout: 90_
   let supervisor
   try {
     const { startCatalogSupervisor } = await packagedModule('catalog-supervisor.mjs')
+    const { launchPackagedWeb } = await packagedModule('web-launch.mjs')
     supervisor = await startCatalogSupervisor({ resourcesRoot: process.env.DSH_MACOS_RESOURCES,
-      catalogBase: join(root, 'data'), host: '127.0.0.1', port: 0, password })
+      catalogBase: join(root, 'data'), host: '127.0.0.1', port: 0, password,
+      launchInstance: options => launchPackagedWeb({ ...options, ensurePlugins: async () => ({ added: [], skipped: [] }) }) })
     const login = await fetch(new URL('login', supervisor.url), { method: 'POST', redirect: 'manual',
       body: new URLSearchParams({ password }) })
     assert.equal(login.status, 303)
@@ -85,6 +88,11 @@ test('packaged navigation lazily starts and stops a catalog DSH', { timeout: 90_
     assert.equal(supervisor.catalogs()[0].state, 'stopped')
     const opened = await supervisor.openCatalog(list[0].id)
     assert.match(opened, /token=/u)
+    assert.equal(supervisor.catalogs()[0].state, 'running')
+    const global = await supervisor.openGlobal()
+    assert.notEqual(new URL(global).port, new URL(opened).port)
+    assert.equal(supervisor.global().state, 'running')
+    await supervisor.stopGlobal()
     assert.equal(supervisor.catalogs()[0].state, 'running')
     const exchange = await fetch(opened, { headers: { cookie }, redirect: 'manual' })
     assert.equal(exchange.status, 303)

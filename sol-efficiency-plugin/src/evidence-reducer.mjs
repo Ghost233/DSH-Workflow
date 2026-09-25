@@ -95,7 +95,7 @@ export function installEvidenceReducer(ctx, config, fusionCalls, lifetime) {
           ...prepared.config, purpose: 'compaction', sessionId: exec.agent.session.header.id,
           system: reducerInstructions(),
           messages: [createUserMessage({ content: [{ type: 'text', text: reducerInput(exec.arguments.command, body, failed) }],
-            source: { kind: 'plugin', plugin: 'sol-efficiency' } })],
+            source: { kind: 'plugin:sol-efficiency' } })],
         }
         const response = await callReducer(prepared, { ...request, signal }, config)
         const validated = validateReceipt(response.raw, body, failed)

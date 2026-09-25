@@ -8,6 +8,6 @@ const fields = Object.fromEntries(Object.entries(defaults.evidenceReducer).map((
 
 // Advanced deployment limits remain supported, but the DSH card only needs two checkboxes.
 export const SettingsSchema = z.object({
-  actionFusion: z.object({ enabled: z.boolean().default(false) }),
-  evidenceReducer: z.object(fields),
+  actionFusion: z.object({ enabled: z.boolean().default(false) }).volatile(),
+  evidenceReducer: z.object(fields).volatile(),
 })

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { kernelNativeHost } from './fixtures/kernel-native-host.mjs'
 import { KernelRuntime } from '../src/kernel-runtime.mjs'
 import { normalizePlanV2 } from '../src/model.mjs'
@@ -206,6 +207,12 @@ test('root public request survives a native contract source revision before inde
   let publicActionInput
   const host = await kernelNativeHost(value.root, { executable: true, filesystem: true, persistenceRoot: join(catalog, 'sessions'), model: async function *(options) {
     const prompt = JSON.stringify(options)
+    if (prompt.includes('Initialize the root session surface.')) {
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'Root session ready.' } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
     const names = new Set(options.tools?.map(tool => tool.name))
     if (names.has('owner_submit')) {
       assert.match(prompt, /foundation/u)
@@ -228,6 +235,10 @@ test('root public request survives a native contract source revision before inde
       migrationOrder: [], alternative: null, unknowns: [], businessChange: null,
     } } })
   } })
+  // Let the native AgentLoop establish V4's protected system head before
+  // the fixture appends a later root-user source revision.
+  host.parent.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Initialize the root session surface.' }], source: { kind: 'user' } }))
+  await host.parent.agent.whenIdle()
   const runtime = new KernelRuntime(host.ctx, { catalogRoot: catalog, registryVerifier: async () => {} }); await runtime.ready
   assert.equal(snapshot.source.source.agentId, host.parent.agent.id)
   assert.equal(snapshot.source.source.sessionId, host.parent.agent.id)
