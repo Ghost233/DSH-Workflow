@@ -40,6 +40,9 @@ test('one check covers profile, project lock and bundled plugins without writing
   await mkdir(join(profile, 'node_modules', 'disabled-plugin'), { recursive: true })
   await mkdir(join(resources, 'node_modules', '@deepseek-ai', 'dsh-base'), { recursive: true })
   await mkdir(join(workflow, 'owner-workflow-plugin'), { recursive: true })
+  const mattZh = join(workflow, 'vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh/.codex-plugin')
+  await mkdir(mattZh, { recursive: true })
+  await writeFile(join(mattZh, 'plugin.json'), JSON.stringify({ name: 'mattpocock-skills-zh', version: '0.1.4' }))
   await writeFile(join(profile, 'package.json'), JSON.stringify({ dependencies: {
     'external-plugin': '1.0.0', 'local-plugin': 'link:/local/plugin', 'disabled-plugin': '1.0.0',
   }, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'bundle-only', 'external-plugin'] } } }))
@@ -83,6 +86,9 @@ test('one check covers profile, project lock and bundled plugins without writing
   assert.equal(byName['disabled-plugin'].status, 'newer')
   assert.equal(byName['@deepseek-ai/dsh-base'].status, 'coupled')
   assert.equal(byName['dsh-owner-workflow'].status, 'bundled')
+  assert.equal(byName['mattpocock-skills-zh'].status, 'bundled')
+  assert.equal(byName['mattpocock-skills-zh'].current, '0.1.4')
+  assert.equal(byName['mattpocock-skills-zh'].updatable, false)
   assert.equal(byName['external-plugin'].updatable, true)
   assert.equal(byName['disabled-plugin'].updatable, false, 'a dependency outside the enabled bundles is not updatable')
   assert.equal(byName['bundle-only'].updatable, false, 'bundle-only plugins are not npm-managed dependencies')

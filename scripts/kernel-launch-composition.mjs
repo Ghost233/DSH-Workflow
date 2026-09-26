@@ -34,10 +34,14 @@ export function composeKernelLaunch(entries, { projectRoot, catalogRoot, presetP
     return structuredClone(matches[0]?.config ?? {})
   }
   const solConfig = previous('sol')
+  const mattZhSkills = join(root, 'vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh/skills')
   const owned = [
     { id: 'preset-owner-workflow', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'owner-workflow', order: 0, plugins } },
     { id: 'kernel-owner-surface', name: join(root, 'owner-workflow-plugin/src/kernel-entry.mjs'), config: { surfaceOnly: true } },
     { id: 'kernel-owner-dashboard', name: join(root, 'owner-workflow-plugin/src/kernel-dashboard-host.mjs'), config: { catalogRoot: catalog } },
+    { id: 'mattpocock-skills-zh', name: '@deepseek-ai/dsh-skill-filesystem', config: {
+      providerName: 'mattpocock-skills-zh', includeDefaultRoots: false, customSkillDirs: [mattZhSkills],
+    } },
     ...(existing.some(row => identities.get(row.name) === 'sol' && row.disabled !== true)
       ? [] : [{ id: 'kernel-sol', name: 'dsh-sol-efficiency', config: solConfig }]),
   ]

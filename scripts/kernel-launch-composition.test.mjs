@@ -37,6 +37,10 @@ test('kernel composition registers the Owner declaration without changing other 
   assert.equal(presetPlugins[0].name, './plugin.mjs')
   assert.equal(rows.some(row => /synapse/i.test(row.name)), false, 'retired Synapse must not be reinserted')
   assert.equal(rows.some(row => row.id === 'kernel-sol'), false, 'profile-owned SoL remains writable')
+  assert.deepEqual(rows.find(row => row.id === 'mattpocock-skills-zh').config, {
+    providerName: 'mattpocock-skills-zh', includeDefaultRoots: false,
+    customSkillDirs: ['/project/vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh/skills'],
+  })
   assert.equal(patches.some(row => row.id === 'sol-old'), false)
   const fallback = composeKernelLaunch(entries.filter(row => row.id !== 'sol-old'), { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins })
   assert.equal(fallback.at(-1).insert.find(row => row.id === 'kernel-sol').name, 'dsh-sol-efficiency')

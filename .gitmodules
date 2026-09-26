@@ -11,3 +11,6 @@
 [submodule "vendor/ZCode"]
 	path = vendor/ZCode
 	url = https://github.com/zai-org/ZCode.git
+[submodule "vendor/ghost-agent-market"]
+	path = vendor/ghost-agent-market
+	url = https://github.com/Ghost233/ghost-agent-market.git

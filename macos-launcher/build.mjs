@@ -49,6 +49,9 @@ async function copyOwned(workflow) {
       return !['test', 'tests', '.git', 'node_modules'].includes(top)
     } })
   }
+  const mattZh = 'vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh'
+  await mkdir(join(workflow, 'vendor/ghost-agent-market/codex-market/plugins'), { recursive: true })
+  await cp(join(root, mattZh), join(workflow, mattZh), { recursive: true })
   await cp(join(root, 'owner-workflow-plugin/node_modules/fs-ext'), join(workflow, 'owner-workflow-plugin/node_modules/fs-ext'), { recursive: true })
   for (const name of ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-runtime.mjs',
     'kernel-launch-composition.mjs', 'sol-profile-entry.mjs', 'web-host-lifecycle.mjs']) {
