@@ -25,17 +25,19 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.1-source.app" no
 
 日常入口仍为无参数 `./start-owner-workflow.sh`。在 macOS 上，它通过 `dsh-workflow://open-global` 唤起已构建的启动器并打开全局实例；重复运行复用启动器和官方 Desktop 的单实例机制。在其他平台保留原来的源码 Web 启动路径。
 
-首次打开管理窗口需要设置访问密码。唯一主入口“打开 DSH”会准备 Desktop profile、打开官方桌面端并连接它的后端，不会额外打开浏览器标签。远程 Web 使用 `33080` 导航入口和同一个全局后端；导航页打开 DSH 时也会通知本机启动器打开 Desktop。Web 代理使用系统分配的端口或指定端口范围。每个工程在 DSH 内选择工作目录。
+首次打开管理窗口需要设置访问密码。启动器将 Web 连接到正在运行的 Desktop Host；后端未运行时才打开官方桌面端。唯一主入口“打开 DSH”激活已有桌面应用，不会额外打开浏览器标签。每个工程在 DSH 内选择工作目录。
 
-访问设置中的“停止 Web 服务”或退出启动器只关闭导航和代理，不终止官方桌面端的 Host。“重连 Web”重新启动 Web 入口；之后打开 DSH 连接现有 Host。关闭 Desktop 窗口的行为沿用官方设计；完全退出 Desktop 才会结束它的后端。Desktop 重新启动后，在启动器点“打开 DSH”即可连接新的 Host。
+Web 只有一个端口 `33080`，监听 `0.0.0.0`。本机访问 `http://127.0.0.1:33080/`，局域网使用 Mac 当前的内网 IP 和同一个端口。没有有效登录 cookie 时显示密码页；密码正确后，代理在服务器内部通过桌面后端的私有 token 取得后端认证 cookie，并把它保存在当前 Web 会话中。浏览器只持有代理登录 cookie，登录后回到同一端口的 `/`，随后直接访问 DSH。HTTP 和 WebSocket 使用同一认证会话，不再经过导航页或跨端口跳转。
 
-启动器使用 `global-supervisor.mjs`，只保存一个全局连接状态；HTTP 接口固定为 `/global/open`、`/global/wait` 与 `/global/progress`，不接受目录参数或实例 ID，也没有实例列表、新建、绑定目录接口。原 `catalogs.json` 和目录实例历史数据保留但不再读取。全局工作流数据仍位于 `~/Library/Application Support/DSH Workflow/global`。Desktop profile 初次缺失时复制已有 Web profile 配置和插件，后续保留 Desktop 用户配置。
+访问设置中的“停止 Web 服务”或退出启动器只关闭代理，不终止官方桌面端的 Host。“重连 Web”重新启动同一端口的 Web 入口并连接现有 Host。关闭 Desktop 窗口的行为沿用官方设计；完全退出 Desktop 才会结束它的后端。Desktop 重新启动后，在启动器点“打开 DSH”即可连接新的 Host。
+
+启动器使用 `global-supervisor.mjs`，只保存一个全局连接状态；管理指令通过启动器私有控制管道传递，没有 `/global/open`、等待页、导航登录或目录实例 HTTP 接口。原 `catalogs.json` 和目录实例历史数据保留但不再读取。全局工作流数据仍位于 `~/Library/Application Support/DSH Workflow/global`。Desktop profile 初次缺失时复制已有 Web profile 配置和插件，后续保留 Desktop 用户配置。
 
 ## 权限、网络和插件
 
 “完整访问权限”在项目 Desktop Bundle 中配置 DSH 的 `danger-full-access`；关闭时使用 `workspace-write`。权限处理沿用 DSH，已有会话设置也遵循其原生规则。改变后端权限或更新 Host 插件需要完全退出并重新打开 Desktop，仅断开 Web 不会重启 Host。
 
-本机入口用于管理模型和 API Key。局域网设置写入默认关闭；打开“允许局域网修改 DSH 设置”后，密码认证的 Web 代理为客户端提供该能力，DSH 源码和桌面端资源保持不变。变更代理设置后重启启动器服务并重新登录 Web。绑定地址可选择 Wi-Fi、以太网或私有 VPN。代理仍验证密码、会话、Host 和 Origin。
+本机入口用于管理模型和 API Key。局域网设置写入默认关闭；打开“允许局域网修改 DSH 设置”后，密码认证的 Web 代理为客户端提供该能力，DSH 源码和桌面端资源保持不变。变更该设置后重连 Web 并重新登录。代理验证密码、有效会话、Host 和 Origin；修改密码会立即撤销旧会话并关闭其 WebSocket。监听所有 IPv4 网卡后，切换网络无需重绑代理，Host 校验和启动器展示的内网地址使用当前网卡 IP，不把 `0.0.0.0` 当作访问地址。
 
 插件管理表格读取实际使用的 `$DSH_HOME/profiles/desktop`，包括 npm 依赖、Bundle、自研插件、中文技能和项目锁定快照。表格中的兼容版本及最新支持 DSH 版本取作者发布元数据；未声明时如实显示。与 DSH 绑定的官方包和项目打包插件随应用构建更新。
 

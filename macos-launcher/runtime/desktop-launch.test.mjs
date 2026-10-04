@@ -12,7 +12,10 @@ test('the remote gate reuses the Desktop server and closing it leaves Desktop al
   const directory = join(globalRoot, '.dsh-workflow/desktop')
   await mkdir(directory, { recursive: true })
   let requests = 0
-  const server = http.createServer((_req, res) => { requests++; res.end('same Desktop Host') })
+  const server = http.createServer((req, res) => {
+    if (req.url === '/?token=fixture') { res.writeHead(303, { location: '/', 'set-cookie': 'dsh-auth=fixture; HttpOnly; Path=/' }); res.end(); return }
+    requests++; res.end('same Desktop Host')
+  })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => new Promise(resolve => server.close(resolve)))
   const port = server.address().port

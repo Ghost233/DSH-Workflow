@@ -19,7 +19,7 @@ export async function readDesktopHost(directory) {
 }
 
 /** Attach the remote gate to Electron's existing Host; this function never starts a DSH process. */
-export async function launchDesktopWeb({ globalRoot, gatewayHost, gatewayPort, gatewaySessions, password,
+export async function launchDesktopWeb({ globalRoot, gatewayHost, gatewayPort, password,
   signal, allowLanSettings = false, onGateway = () => {}, onReady = () => {} }) {
   const directory = join(globalRoot, '.dsh-workflow', 'desktop')
   let host
@@ -32,11 +32,11 @@ export async function launchDesktopWeb({ globalRoot, gatewayHost, gatewayPort, g
     }
   }
   const gate = await startLanGateway({ host: gatewayHost, port: gatewayPort, upstreamPort: host.port,
-    password, sessions: gatewaySessions, allowLanSettings, authenticatedUrl: () => host.url })
+    password, allowLanSettings, authenticatedUrl: () => host.url })
   try {
     onGateway(gate)
     onReady({ port: host.port, desktopPid: host.pid, runtimeVersion: host.runtimeVersion },
-      gate.lanUrls[0] ?? gate.localUrl)
+      gate.localUrl)
     while (!signal?.aborted) {
       await delay(500, undefined, { signal })
       const current = await readDesktopHost(directory)

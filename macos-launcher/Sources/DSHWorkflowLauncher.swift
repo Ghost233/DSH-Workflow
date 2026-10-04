@@ -146,16 +146,6 @@ final class LauncherModel: ObservableObject {
     @Published var allowLanSettings: Bool {
         didSet { UserDefaults.standard.set(allowLanSettings, forKey: "allowLanSettings") }
     }
-    @Published var bindAddress: String {
-        didSet { UserDefaults.standard.set(bindAddress, forKey: "bindAddress") }
-    }
-    @Published var enginePortMin: Int {
-        didSet { UserDefaults.standard.set(enginePortMin, forKey: "enginePortMin") }
-    }
-    @Published var enginePortMax: Int {
-        didSet { UserDefaults.standard.set(enginePortMax, forKey: "enginePortMax") }
-    }
-    let networkInterfaces: [(name: String, address: String)]
     @Published var passwordDraft = ""
     @Published private(set) var hasLanPassword = false
     @Published var showPasswordSetupPrompt = false
@@ -189,37 +179,10 @@ final class LauncherModel: ObservableObject {
     var isActive: Bool { child != nil }
     var isReady: Bool { browserURL != nil && child?.isRunning == true }
 
-    private static func localIPv4Interfaces() -> [(name: String, address: String)] {
-        var result: [(name: String, address: String)] = []
-        var addresses: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&addresses) == 0, let first = addresses else { return result }
-        defer { freeifaddrs(first) }
-        var cursor: UnsafeMutablePointer<ifaddrs>? = first
-        while let current = cursor {
-            defer { cursor = current.pointee.ifa_next }
-            guard let sockaddr = current.pointee.ifa_addr,
-                  sockaddr.pointee.sa_family == UInt8(AF_INET) else { continue }
-            var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            guard getnameinfo(sockaddr, socklen_t(sockaddr.pointee.sa_len), &buffer, socklen_t(buffer.count),
-                              nil, 0, NI_NUMERICHOST) == 0 else { continue }
-            let address = String(cString: buffer)
-            if address.hasPrefix("127.") || address.hasPrefix("169.254.") { continue }
-            let name = String(cString: current.pointee.ifa_name)
-            if !result.contains(where: { $0.name == name && $0.address == address }) {
-                result.append((name, address))
-            }
-        }
-        return result.sorted { "\($0.name) \($0.address)" < "\($1.name) \($1.address)" }
-    }
-
     private init() {
         let defaults = UserDefaults.standard
         fullAccess = defaults.object(forKey: "fullAccess") as? Bool ?? true
         allowLanSettings = defaults.object(forKey: "allowLanSettings") as? Bool ?? false
-        bindAddress = defaults.string(forKey: "bindAddress") ?? ""
-        enginePortMin = defaults.object(forKey: "enginePortMin") as? Int ?? 0
-        enginePortMax = defaults.object(forKey: "enginePortMax") as? Int ?? 0
-        networkInterfaces = Self.localIPv4Interfaces()
         hasLanPassword = LanPasswordStore.load()?.isEmpty == false
         launchAtLogin = SMAppService.mainApp.status == .enabled
         let app = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
@@ -253,11 +216,6 @@ final class LauncherModel: ObservableObject {
             lastError = "包内 DSH 运行时不完整，请重新构建应用。"
             return
         }
-        if enginePortMin != 0 || enginePortMax != 0,
-           enginePortMin < 1024 || enginePortMax > 65535 || enginePortMin > enginePortMax {
-            lastError = "引擎端口范围无效：需要 1024–65535，且起始端口不大于结束端口。"
-            return
-        }
         browserURL = nil
         lanURLs = []
         localURL = nil
@@ -274,12 +232,6 @@ final class LauncherModel: ObservableObject {
         environment["DSH_PERMISSION_MODE"] = fullAccess ? "danger-full-access" : "workspace-write"
         environment["DSH_ALLOW_LAN_SETTINGS"] = allowLanSettings ? "1" : "0"
         environment["DSH_LAUNCH_PASSWORD"] = lanPassword
-        let chosenAddress = bindAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !chosenAddress.isEmpty { environment["DSH_BIND_IP"] = chosenAddress }
-        if enginePortMin != 0 && enginePortMax != 0 {
-            environment["DSH_PORT_MIN"] = String(enginePortMin)
-            environment["DSH_PORT_MAX"] = String(enginePortMax)
-        }
         process.environment = environment
         let pipe = Pipe()
         let controlPipe = Pipe()
@@ -400,6 +352,12 @@ final class LauncherModel: ObservableObject {
               let info = NSDictionary(contentsOf: desktop.appendingPathComponent("Contents/Info.plist")),
               let executable = info["CFBundleExecutable"] as? String else {
             lastError = "官方桌面端资源不完整。"
+            return
+        }
+        if let bundleID = info["CFBundleIdentifier"] as? String,
+           let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first(where: { !$0.isTerminated }) {
+            running.activate(options: [.activateAllWindows])
+            if connectWeb { sendControl(["type": "open-global"]) }
             return
         }
         let globalRoot = support.appendingPathComponent("DSH Workflow/global").path
@@ -764,32 +722,13 @@ private struct ManagementView: View {
                     Button(model.hasLanPassword ? "修改密码" : "设置密码") { model.saveLanPassword() }
                         .disabled(model.passwordDraft.isEmpty)
                 }
-                Picker("网络接口", selection: $model.bindAddress) {
-                    Text("自动选择").tag("")
-                    ForEach(model.networkInterfaces, id: \.address) { item in
-                        Text("\(item.name) — \(item.address)").tag(item.address)
-                    }
-                }
-                LabeledContent("Web 代理端口范围") {
-                    HStack(spacing: 6) {
-                        TextField("自动", text: Binding(
-                            get: { model.enginePortMin == 0 ? "" : String(model.enginePortMin) },
-                            set: { model.enginePortMin = Int($0.filter("0123456789".contains)) ?? 0 }))
-                            .labelsHidden()
-                            .frame(maxWidth: 64)
-                        Text("–")
-                        TextField("自动", text: Binding(
-                            get: { model.enginePortMax == 0 ? "" : String(model.enginePortMax) },
-                            set: { model.enginePortMax = Int($0.filter("0123456789".contains)) ?? 0 }))
-                            .labelsHidden()
-                            .frame(maxWidth: 64)
-                    }
-                }
+                LabeledContent("监听地址") { Text("0.0.0.0（所有 IPv4 网卡）") }
+                LabeledContent("Web 端口") { Text("33080") }
                 if let local = model.localURL {
                     LabeledContent("本机入口") {
                         VStack(alignment: .trailing) {
                             Text(local.absoluteString).textSelection(.enabled)
-                            Text("模型和 API Key 等主机设置仅在本机入口可用").font(.caption2).foregroundStyle(.secondary)
+                            Text(model.allowLanSettings ? "已允许登录后的局域网客户端修改设置" : "模型和 API Key 等主机设置默认仅在本机入口可用").font(.caption2).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -806,7 +745,7 @@ private struct ManagementView: View {
                 Text("访问")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("网络接口决定 Web 入口绑定的地址（如 Wi-Fi、Tailscale、EasyTier）；端口范围留空表示系统自动分配。网络设置在重连 Web 后生效，完整访问权限需退出并重新打开桌面版。")
+                    Text("本机与局域网共用一个 Web 端口。网络地址变化无需重启，内网地址会自动更新。完整访问权限变更仍需退出并重新打开桌面版。")
                     Text(model.hasLanPassword ? "密码保存在本机应用数据目录，修改后立即撤销旧的内网登录。" : "设置密码后才能开启内网入口。")
                 }
             }
