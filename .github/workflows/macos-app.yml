@@ -75,7 +75,7 @@ jobs:
             test "$RELEASE_TAG" = "macos-v$(node -p "require('./macos-launcher/package.json').version")"
           fi
 
-      - name: Build native fs-ext for this runner
+      - name: Install Owner native addon for this runner
         run: npm ci --prefix owner-workflow-plugin --no-audit --no-fund
 
       - name: Test update selection and launch contract
@@ -84,7 +84,11 @@ jobs:
           set -euo pipefail
           swiftc -parse-as-library macos-launcher/Sources/UpdatePolicy.swift macos-launcher/Tests/UpdatePolicyTests.swift -o "$RUNNER_TEMP/update-policy-tests"
           "$RUNNER_TEMP/update-policy-tests"
-          node --test macos-launcher/runtime/web-launch.test.mjs
+          node --test macos-launcher/runtime/web-launch.test.mjs \
+            macos-launcher/runtime/global-supervisor.test.mjs \
+            macos-launcher/runtime/single-port-entry.test.mjs \
+            macos-launcher/runtime/lan-gateway.test.mjs \
+            macos-launcher/runtime/desktop-launch.test.mjs
 
       - name: Build macOS application
         run: node macos-launcher/build.mjs
