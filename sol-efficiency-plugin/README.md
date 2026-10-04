@@ -6,7 +6,7 @@
 
 安装一次，之后在 DSH 内勾选启停。启动脚本不临时注入插件，也不提供 SoL 专用环境变量。
 
-当前适配 Harness `0.1.7-rc.2`；完整基线见 [upstream.json](upstream.json)。需要宿主已加载 `tools`；Action Fusion 还需要 `fs` 和原生 `edit`、`write`、`bash` 工具；EPR 需要 `llm`、`fs`、`spillStore`。标准 Web profile 已提供这些能力。安装时 npm peer dependencies 由宿主提供，不能在 Pi 中加载此包。
+当前适配 Harness `0.2.1-alpha.1`；完整基线见 [upstream.json](upstream.json)。需要宿主已加载 `tools`；Action Fusion 还需要 `fs` 和原生 `edit`、`write`、`bash` 工具；EPR 需要 `llm`、`fs`、`spillStore`。标准 Web profile 已提供这些能力。安装时 npm peer dependencies 由宿主提供，不能在 Pi 中加载此包。
 
 ```bash
 dsh plugin --profile web add file:/Volumes/LargeStorage/code/DSH-Workflow/sol-efficiency-plugin
@@ -81,7 +81,7 @@ reducer 的凭据、base URL 和供应商连接由 Harness 管理，插件不接
 
 ## 上游版本追踪
 
-SoL-Pi 位于仓库级 Git submodule `vendor/SoL-Pi`，当前固定为 `22277b7e0c3c46ba1259a6687f31fe39ade421a5`。插件运行和 npm 包不依赖该目录；它用于源码对照和升级审查。MIT 归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+SoL-Pi 位于仓库级 Git submodule `vendor/SoL-Pi`，当前固定为 `e1a586af0ad8956f42ae5b26bba20e48fbf30e00`。插件运行和 npm 包不依赖该目录；它用于源码对照和升级审查。MIT 归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ```bash
 # 在 DSH-Workflow 根目录初始化已固定的上游

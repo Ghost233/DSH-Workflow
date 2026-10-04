@@ -1,8 +1,10 @@
 import http from 'node:http'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
+import { allowAuthenticatedLanSettings } from './lan-settings-client.mjs'
 
 const COOKIE_NAME = 'dsh-workflow-gate'
+const SETTINGS_COOKIE_NAME = 'dsh-workflow-settings-access'
 const MAX_BODY_BYTES = 16 * 1024
 const SESSION_MS = 12 * 60 * 60 * 1000
 const LOCKOUT_MS = 60 * 1000
@@ -71,7 +73,8 @@ function upstreamHeaders(request, upstreamPort) {
   const headers = { ...request.headers, host: `127.0.0.1:${upstreamPort}` }
   if (headers.origin !== undefined) headers.origin = `http://127.0.0.1:${upstreamPort}`
   if (headers.cookie !== undefined) {
-    headers.cookie = headers.cookie.split(';').filter(part => !part.trim().startsWith(`${COOKIE_NAME}=`)).join('; ')
+    headers.cookie = headers.cookie.split(';').filter(part => ![COOKIE_NAME, SETTINGS_COOKIE_NAME]
+      .some(name => part.trim().startsWith(`${name}=`))).join('; ')
   }
   delete headers['x-forwarded-for']
   delete headers['x-forwarded-host']
@@ -80,7 +83,8 @@ function upstreamHeaders(request, upstreamPort) {
 }
 
 /** Password-authenticated HTTP/WebSocket bridge; DSH itself remains loopback-only. */
-export async function startLanGateway({ port = 3081, host, upstreamPort, password, authenticatedUrl, sessions: sharedSessions }) {
+export async function startLanGateway({ port = 3081, host, upstreamPort, password, authenticatedUrl, sessions: sharedSessions,
+  allowLanSettings = false }) {
   host ??= privateBindAddress()
   if (!localAddresses().has(host) || host !== '127.0.0.1' && !isPrivateIPv4(host)) {
     throw new Error('LAN gateway must bind an owned private IPv4 address')
@@ -92,8 +96,7 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
   const sessions = sharedSessions ?? new Map()
   const failures = new Map()
   const upgradedSockets = new Map()
-  // The same port also answers on loopback: DSH only serves its host Settings
-  // (Models page, API keys) to loopback pages, so the Mac needs a 127.0.0.1 entry.
+  // The same port also answers on loopback so the Mac can open host Settings locally.
   const acceptedHosts = new Set([host, '127.0.0.1', 'localhost'])
   let listeningPort = port
 
@@ -124,8 +127,31 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
   }
 
   const proxy = (request, response) => {
+    const clientAsset = allowLanSettings && request.method === 'GET' && request.url?.startsWith('/plugins/')
+    const proxyHeaders = upstreamHeaders(request, upstreamPort)
+    if (clientAsset) proxyHeaders['accept-encoding'] = 'identity'
     const target = http.request({ hostname: '127.0.0.1', port: upstreamPort, method: request.method,
-      path: request.url, headers: upstreamHeaders(request, upstreamPort) }, upstream => {
+      path: request.url, headers: proxyHeaders }, upstream => {
+      if (clientAsset && upstream.statusCode === 200 && !upstream.headers['content-encoding']
+        && /javascript/.test(upstream.headers['content-type'] ?? '')) {
+        const chunks = []
+        upstream.on('data', chunk => chunks.push(chunk))
+        upstream.on('error', () => response.destroy())
+        upstream.on('end', () => {
+          let body = Buffer.concat(chunks)
+          const source = body.toString('utf8')
+          if (source.includes('"@deepseek-ai/dsh-client-ui-settings"')
+            && source.includes('const persistence = ctx.remote.$host.isLoopback ? "host" : "memory";')) {
+            body = Buffer.from(allowAuthenticatedLanSettings(source))
+          }
+          const resultHeaders = { ...upstream.headers, 'content-length': body.length, 'cache-control': 'no-store' }
+          delete resultHeaders['transfer-encoding']
+          delete resultHeaders.etag
+          response.writeHead(200, resultHeaders)
+          response.end(body)
+        })
+        return
+      }
       response.writeHead(upstream.statusCode ?? 502, upstream.headers)
       upstream.pipe(response)
     })
@@ -164,7 +190,10 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
       const session = randomBytes(32).toString('base64url')
       sessions.set(session, Date.now() + SESSION_MS)
       response.writeHead(303, { ...secureHeaders('text/plain; charset=utf-8'),
-        'set-cookie': `${COOKIE_NAME}=${session}; Max-Age=${SESSION_MS / 1000}; HttpOnly; SameSite=Strict; Path=/`,
+        'set-cookie': [
+          `${COOKIE_NAME}=${session}; Max-Age=${SESSION_MS / 1000}; HttpOnly; SameSite=Strict; Path=/`,
+          `${SETTINGS_COOKIE_NAME}=${allowLanSettings ? '1' : ''}; Max-Age=${allowLanSettings ? SESSION_MS / 1000 : 0}; SameSite=Strict; Path=/`,
+        ],
         location: destination })
       response.end('redirecting\n')
       return

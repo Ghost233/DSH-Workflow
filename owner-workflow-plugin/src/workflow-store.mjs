@@ -1,5 +1,5 @@
 import { constants } from 'node:fs'
-import fsExt from 'fs-ext'
+import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock'
 import { setTimeout as delay } from 'node:timers/promises'
 import { open, mkdir, readFile, rename, lstat, realpath, unlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -45,7 +45,7 @@ export async function withControlLock(path, callback, { signal, timeoutMs = 10_0
     if (!info.isFile() || info.nlink !== 1) throw new Error('Unsafe OS lock file')
     while (!held) {
       signal?.throwIfAborted()
-      try { fsExt.flockSync(file.fd, 'exnb'); held = true }
+      try { await tryLockExclusive(file.fd); held = true }
       catch (error) {
         if (!['EAGAIN', 'EWOULDBLOCK'].includes(error.code)) throw error
         if (performance.now() >= until) throw Object.assign(new Error('Control lock acquisition timed out'), { code: 'CONTROL_LOCK_BUSY' })

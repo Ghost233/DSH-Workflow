@@ -88,6 +88,31 @@ test('an empty new profile needs no package-manager invocation', async () => {
   assert.deepEqual(result.updated, [])
 })
 
+test('a shared Desktop build updates Desktop packages while preserving the legacy Web profile', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'desktop-plugin-update-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  await mkdir(join(root, 'desktop/DeepSeek Harness.app'), { recursive: true })
+  const desktop = join(root, 'profiles/desktop'), web = join(root, 'profiles/web')
+  await mkdir(join(desktop, 'node_modules/dsh-context'), { recursive: true })
+  await mkdir(web, { recursive: true })
+  const manifest = { dependencies: { 'dsh-context': '1.0.0' }, dsh: { profile: { bundles: ['dsh-context'] } } }
+  await writeFile(join(desktop, 'package.json'), JSON.stringify(manifest))
+  await writeFile(join(web, 'package.json'), JSON.stringify(manifest))
+  await writeFile(join(desktop, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.0.0' }))
+  const result = await updateProfilePlugins({ resourcesRoot: root, home: root,
+    check: async ({ profileName }) => {
+      assert.equal(profileName, 'desktop')
+      return { checkedAt: 'fixture', rows: [{ ...external, source: 'DSH Desktop profile' }] }
+    }, run: async ({ profileName }) => {
+      assert.equal(profileName, 'desktop')
+      manifest.dependencies['dsh-context'] = '1.1.0'
+      await writeFile(join(desktop, 'package.json'), JSON.stringify(manifest))
+      await writeFile(join(desktop, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.1.0' }))
+    } })
+  assert.equal(result.updated[0].to, '1.1.0')
+  assert.equal(JSON.parse(await readFile(join(web, 'package.json'), 'utf8')).dependencies['dsh-context'], '1.0.0')
+})
+
 test('a selected subset updates only the chosen plugin', async t => {
   const home = await mkdtemp(join(tmpdir(), 'dsh-plugin-only-'))
   const profile = join(home, 'profiles/web')

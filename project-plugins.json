@@ -1,9 +1,8 @@
 {
   "registry": "https://registry.npmjs.org/",
   "plugins": [
-    { "package": "dsh-context", "version": "latest", "entryId": "dsh-context", "repository": "https://github.com/bowenliang123/dsh-context", "startup": true },
-    { "package": "dsh-cost-meter", "version": "latest", "entryId": "cost-meter", "repository": "https://github.com/Han-1413141/dsh-cost-meter", "startup": true },
-    { "package": "@nagi-ovo/dsh-visualize", "version": "latest", "entryId": "dsh-visualize", "repository": "https://github.com/Nagi-ovo/dsh-visualize", "startup": true },
-    { "package": "dsh-mattpocock-skills-deck", "version": "latest", "entryId": "dsh-mattpocock-skills-deck", "repository": "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck", "startup": true }
+    { "package": "dsh-context", "version": "0.63.0", "entryId": "dsh-context", "repository": "https://github.com/bowenliang123/dsh-context", "startup": true },
+    { "package": "dsh-cost-meter", "version": "1.8.10", "entryId": "cost-meter", "repository": "https://github.com/Han-1413141/dsh-cost-meter", "startup": true },
+    { "package": "@nagi-ovo/dsh-visualize", "version": "0.1.4", "entryId": "dsh-visualize", "repository": "https://github.com/Nagi-ovo/dsh-visualize", "startup": true }
   ]
 }

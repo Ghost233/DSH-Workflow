@@ -1,9 +1,10 @@
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile, chmod, stat } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile, chmod } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
 
 const exec = promisify(execFile)
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -14,6 +15,7 @@ const target = JSON.parse(await readFile(join(root, 'dsh-runtime.json'), 'utf8')
 const appPackage = JSON.parse(await readFile(join(root, 'macos-launcher/package.json'), 'utf8'))
 const appVersion = appPackage.version
 const arch = process.arch
+const desktopApp = process.env.DSH_MACOS_DESKTOP_APP
 
 async function run(command, args, cwd = root) {
   await new Promise((accept, reject) => {
@@ -31,8 +33,15 @@ async function verifyInputs() {
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(appVersion)) throw new Error('Invalid macOS app release version')
   if (appPackage.dependencies?.['@deepseek-ai/dsh'] !== version) throw new Error('macOS runtime package does not match pinned DSH')
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Node 22+ is required')
-  if (!existsSync(join(root, 'owner-workflow-plugin/node_modules/fs-ext/build/Release/fs_ext.node'))) {
-    throw new Error('Build owner-workflow-plugin/fs-ext for the selected Node first')
+  if (!desktopApp || !existsSync(join(desktopApp, 'Contents/Info.plist'))) {
+    throw new Error('Set DSH_MACOS_DESKTOP_APP to the official Desktop source-build application')
+  }
+  const deck = join(root, 'vendor/dsh-mattpocock-skills-deck/package')
+  if (!existsSync(join(deck, 'lib/index.js')) || !existsSync(join(deck, 'lib/client.js'))
+    || !existsSync(join(deck, 'lib/bootstrap.js'))
+    || existsSync(join(deck, 'bundled-skills'))
+    || (await readFile(join(deck, 'lib/bootstrap.js'), 'utf8')).includes('registerProvider')) {
+    throw new Error('Local MattSkillsDeck must be built as a panel-only package before packaging the app')
   }
 }
 
@@ -52,14 +61,20 @@ async function copyOwned(workflow) {
   const mattZh = 'vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh'
   await mkdir(join(workflow, 'vendor/ghost-agent-market/codex-market/plugins'), { recursive: true })
   await cp(join(root, mattZh), join(workflow, mattZh), { recursive: true })
-  await cp(join(root, 'owner-workflow-plugin/node_modules/fs-ext'), join(workflow, 'owner-workflow-plugin/node_modules/fs-ext'), { recursive: true })
+  const mattDeck = 'vendor/dsh-mattpocock-skills-deck/package'
+  await mkdir(join(workflow, 'vendor/dsh-mattpocock-skills-deck'), { recursive: true })
+  await cp(join(root, mattDeck), join(workflow, mattDeck), { recursive: true })
   for (const name of ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-runtime.mjs',
     'kernel-launch-composition.mjs', 'sol-profile-entry.mjs', 'web-host-lifecycle.mjs']) {
     await cp(join(root, 'scripts', name), join(workflow, 'scripts', name))
   }
   await cp(join(root, 'macos-launcher/runtime/web-launch.mjs'), join(workflow, 'macos-launcher/runtime/web-launch.mjs'))
   await cp(join(root, 'macos-launcher/runtime/lan-gateway.mjs'), join(workflow, 'macos-launcher/runtime/lan-gateway.mjs'))
-  await cp(join(root, 'macos-launcher/runtime/catalog-supervisor.mjs'), join(workflow, 'macos-launcher/runtime/catalog-supervisor.mjs'))
+  await cp(join(root, 'macos-launcher/runtime/lan-settings-client.mjs'), join(workflow, 'macos-launcher/runtime/lan-settings-client.mjs'))
+  await cp(join(root, 'macos-launcher/runtime/global-supervisor.mjs'), join(workflow, 'macos-launcher/runtime/global-supervisor.mjs'))
+  for (const file of ['desktop-bridge.mjs', 'desktop-launch.mjs', 'desktop-profile.mjs', 'prepare-desktop.mjs']) {
+    await cp(join(root, 'macos-launcher/runtime', file), join(workflow, 'macos-launcher/runtime', file))
+  }
   await cp(join(root, 'macos-launcher/runtime/plugin-versions.mjs'), join(workflow, 'macos-launcher/runtime/plugin-versions.mjs'))
   await cp(join(root, 'macos-launcher/runtime/plugin-update.mjs'), join(workflow, 'macos-launcher/runtime/plugin-update.mjs'))
   await cp(join(root, 'macos-launcher/runtime/run-dsh.mjs'), join(workflow, 'macos-launcher/runtime/run-dsh.mjs'))
@@ -78,6 +93,7 @@ function plist() {
 <key>CFBundleVersion</key><string>${appVersion}</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>DSH Workflow</string><key>CFBundleURLSchemes</key><array><string>dsh-workflow</string></array></dict></array>
 </dict></plist>
 `
 }
@@ -105,10 +121,14 @@ try {
     join(root, 'macos-launcher/Sources/UpdatePolicy.swift'),
     '-o', join(contents, 'MacOS', 'DSHWorkflowLauncher')])
   await copyOwned(join(resources, 'workflow'))
+  await mkdir(join(resources, 'desktop'), { recursive: true })
+  await run('/usr/bin/ditto', [desktopApp, join(resources, 'desktop/DeepSeek Harness.app')])
   await cp(join(root, 'macos-launcher/package.json'), join(resources, 'package.json'))
   await cp(join(root, 'macos-launcher/package-lock.json'), join(resources, 'package-lock.json'))
   await run('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund',
     '--cache', join(buildRoot, 'npm-cache')], resources)
+  const settingsClient = join(resources, 'node_modules/@deepseek-ai/dsh-client-ui-settings/lib/client.js')
+  await writeFile(settingsClient, allowAuthenticatedLanSettings(await readFile(settingsClient, 'utf8')))
   await mkdir(join(resources, 'bin'), { recursive: true })
   const pnpmShim = join(resources, 'bin', 'pnpm')
   await writeFile(pnpmShim, '#!/bin/sh\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexec "$ROOT/node" "$ROOT/node_modules/pnpm/bin/pnpm.mjs" "$@"\n')
@@ -121,11 +141,7 @@ try {
     throw new Error('DSH production runtime is incomplete')
   }
   await run(join(resources, 'node'), [join(dsh, 'lib/bin.js'), '--version'], resources)
-  await run(join(resources, 'node'), ['-e', "require(process.argv[1])", join(resources, 'workflow/owner-workflow-plugin/node_modules/fs-ext')], resources)
-  const native = await stat(join(resources, 'workflow/owner-workflow-plugin/node_modules/fs-ext/build/Release/fs_ext.node'))
-  if (!native.isFile()) throw new Error('Packaged fs-ext binary is missing')
   await run('codesign', ['--force', '--sign', '-', join(resources, 'node')])
-  await run('codesign', ['--force', '--sign', '-', join(resources, 'workflow/owner-workflow-plugin/node_modules/fs-ext/build/Release/fs_ext.node')])
   await run('codesign', ['--deep', '--force', '--sign', '-', app])
   await rename(app, destination)
   process.stdout.write(`${destination}\n`)

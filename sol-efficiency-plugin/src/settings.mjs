@@ -3,7 +3,7 @@ import { resolveConfig } from './config.mjs'
 
 const defaults = resolveConfig({})
 const fields = Object.fromEntries(Object.entries(defaults.evidenceReducer).map(([key, value]) => [
-  key, (typeof value === 'boolean' ? z.boolean() : typeof value === 'number' ? z.number() : z.string()).default(value),
+  key, (typeof value === 'boolean' ? z.boolean() : typeof value === 'number' ? z.number().min(1).step(1) : z.string()).default(value),
 ]))
 
 // Advanced deployment limits remain supported, but the DSH card only needs two checkboxes.

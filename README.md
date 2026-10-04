@@ -2,15 +2,17 @@
 
 Owner 工作流运行在官方 DeepSeek Harness 上。项目维护 `owner-workflow-plugin/` 和 `sol-efficiency-plugin/`，以及项目侧启动与验收代码。DSH 和第三方子模块保持上游源码原样。
 
+文档入口见 [文档导航](docs/README.md)、[插件清单](docs/plugins.md) 和 [历史报告归档](docs/archive/README.md)。
+
 ## 启动
 
 ```sh
 ./start-owner-workflow.sh
 ```
 
-这是唯一日常启动入口，不需要参数或插件范围环境变量。脚本调用统一 Web 宿主，校验 `dsh-runtime.json` 固定的官方 DSH 构建，并在同一宿主加载 Owner 和 SoL。启动成功后终端报告实际地址、实例 ID 和项目内日志路径；不会自动打开浏览器标签。
+这是唯一日常启动入口，不需要参数或插件范围环境变量。macOS 上，脚本唤起启动器的“打开 DSH”，打开官方桌面版并将 Web 连接到同一个全局后端；重复打开复用已有实例，不按工程目录创建后端。Owner、SoL、中文 Matt 技能和本地面板通过 Desktop profile 加载。项目目录在 DSH 内选择。详见 [macOS 启动器说明](macos-launcher/README.md)。其他平台使用源码 Web 宿主。
 
-启动使用现有 DSH Web profile。端口检查通过后，脚本会通过 DSH 原生插件管理命令启用当前版本的 Agent Teams 组合包，并移除已废弃的独立 Web 层；已启用的版本不会重复安装。首次启用需要 pnpm 和 npm registry，除 Agent Teams 迁移外不改动其他 profile 设置、凭据或用户 preset。项目侧临时装配文件与日志位于 `.dsh-workflow/`。端口被占用或构建身份不符时明确失败。退出启动进程会回收该次启动的宿主，不保留脱离宿主运行的旧 daemon。
+macOS 全局工作流数据保留在 `~/Library/Application Support/DSH Workflow/global`。停止 Web 服务或退出启动器只关闭访问代理，桌面版继续持有后端；完全退出桌面版才结束后端。其他平台的源码 Web 启动使用现有 Web profile，装配当前 Agent Teams 组合包，临时装配文件和日志位于 `.dsh-workflow/`，退出启动进程会回收该次 Web 宿主。
 
 第三方清单保留在 `project-plugins.json` 与 `project-plugins.lock.json`。日常入口装配自研插件，并按锁定版本逐个尝试加载清单里标记为 `startup: true` 的第三方插件，包括 MattSkillsDeck。单个第三方插件安装或装配失败时记录原因、跳过该项并继续启动其余插件和 Owner、SoL。用户已有 profile 插件仍由 DSH 按原配置处理；不改动第三方源码。
 

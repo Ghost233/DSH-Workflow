@@ -26,6 +26,7 @@ async function fixture(t) {
   await writeJson(join(root, 'project-plugins.json'), list)
   await pkg(root, { name: 'dsh-owner-workflow', version: '1.0.0', dsh: { client: { platform: 'web' } } })
   await pkg(join(root, 'sol-efficiency-plugin'), { name: 'dsh-sol-efficiency', version: '1.0.0', dsh: { client: { platform: 'web' } } })
+  await pkg(join(root, 'vendor/dsh-mattpocock-skills-deck/package'), { name: 'dsh-mattpocock-skills-deck', version: '1.0.0', dsh: { client: { platform: 'web' } } })
   const harness = join(root, 'harness')
   await pkg(harness, { name: '@deepseek-ai/dsh', version: harnessTarget.version, dependencies: { '@deepseek-ai/dsh-app-boot': '1.0.0' } })
   const anchor = join(harness, 'package.json')
@@ -282,7 +283,7 @@ test('owned scope preserves the external lock and excludes configured third-part
     readMetadata: async () => { throw new Error('unexpected metadata fetch') },
     resolvePackage: async () => { throw new Error('unexpected package resolution') },
   })
-  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-owner-workflow', 'dsh-sol-efficiency'])
+  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-mattpocock-skills-deck', 'dsh-owner-workflow', 'dsh-sol-efficiency'])
   assert.equal(await readFile(join(f.root, 'project-plugins.lock.json'), 'utf8'), lock)
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.ok(patch.some(row => row.id === 'dsh-context' && row.disabled === true))
@@ -302,7 +303,7 @@ test('startup scope installs only marked third-party plugins from the lock', asy
   })
   const selected = f.list.plugins.filter(item => item.startup === true)
   assert.deepEqual(f.calls.slice(previousCalls), selected.map(item => `${item.package}@1.0.0`))
-  assert.deepEqual(state.installed.map(item => item.package), [...selected.map(item => item.package), 'dsh-owner-workflow', 'dsh-sol-efficiency'])
+  assert.deepEqual(state.installed.map(item => item.package), [...selected.map(item => item.package), 'dsh-owner-workflow', 'dsh-sol-efficiency', 'dsh-mattpocock-skills-deck'])
   assert.equal(await readFile(join(f.root, 'project-plugins.lock.json'), 'utf8'), lock)
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.deepEqual(patch.flatMap(item => item.insert?.map(row => row.name) ?? []), selected.map(item => item.package))
@@ -323,7 +324,7 @@ test('startup scope skips one failed third-party install and keeps the other plu
   })
   assert.deepEqual(state.skipped, [{ package: 'dsh-cost-meter', reason: 'cost meter unavailable' }])
   assert.deepEqual(state.installed.map(item => item.package),
-    ['dsh-context', '@nagi-ovo/dsh-visualize', 'dsh-mattpocock-skills-deck', 'dsh-owner-workflow', 'dsh-sol-efficiency'])
+    ['dsh-context', '@nagi-ovo/dsh-visualize', 'dsh-owner-workflow', 'dsh-sol-efficiency', 'dsh-mattpocock-skills-deck'])
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.equal(patch.flatMap(item => item.insert?.map(row => row.name) ?? []).includes('dsh-cost-meter'), false)
   await releaseLock(state.directory, process.pid)
@@ -361,7 +362,7 @@ test('owned scope ignores unrelated third-party resolution settings while exclud
   await assert.rejects(prepare(f.root, f.anchor, process.pid, f), /Invalid or duplicate plugin list entry/)
   const state = await prepare(f.root, f.anchor, process.pid, { ...f, scope: 'owned', update: false,
     run: async () => { throw new Error('unexpected installation') } })
-  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-owner-workflow', 'dsh-sol-efficiency'])
+  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-mattpocock-skills-deck', 'dsh-owner-workflow', 'dsh-sol-efficiency'])
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.ok(patch.some(row => row.id === 'dsh-context' && row.disabled === true))
   await releaseLock(pluginDirectory(f.root), process.pid)

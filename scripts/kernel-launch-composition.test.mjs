@@ -19,6 +19,7 @@ test('kernel composition registers the Owner declaration without changing other 
     { id: 'owner-old', name: 'dsh-owner-workflow', config: { surfaceOnly: true } },
     { id: 'dashboard-old', name: 'dsh-owner-workflow/dashboard' },
     { id: 'sol-old', name: 'dsh-sol-efficiency', config: { actionFusion: { enabled: false } } },
+    { id: 'deck-old', name: 'dsh-mattpocock-skills-deck', config: {} },
     { id: 'synapse-old', name: 'dsh-synapse-workflow', config: { dataFile: '/user/existing-workspaces.json', autoProjection: true } },
     { id: 'third-party', name: 'some-external-plugin' },
   ]
@@ -27,9 +28,9 @@ test('kernel composition registers the Owner declaration without changing other 
   const before = structuredClone(entries)
   const patches = composeKernelLaunch(entries, { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins })
   assert.deepEqual(entries, before)
-  assert.deepEqual(patches.filter(row => row.disabled).map(row => row.id), ['owner-old', 'dashboard-old', 'synapse-old'])
+  assert.deepEqual(patches.filter(row => row.disabled).map(row => row.id), ['owner-old', 'dashboard-old', 'deck-old', 'synapse-old'])
   assert.equal(patches.some(row => ['permission', 'settings', 'third-party'].includes(row.id)), false)
-  assert.equal(patches[0].config.default, 'owner-workflow')
+  assert.equal(patches.some(row => row.id === 'preset-host'), false, 'preset defaults remain editable in the Web profile')
   const rows = patches.at(-1).insert
   const owner = rows.find(row => row.id === 'preset-owner-workflow')
   assert.equal(owner.config.plugins[0].name, '/project/owner-workflow-plugin/kernel-presets/owner-workflow/plugin.mjs')
@@ -41,6 +42,7 @@ test('kernel composition registers the Owner declaration without changing other 
     providerName: 'mattpocock-skills-zh', includeDefaultRoots: false,
     customSkillDirs: ['/project/vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh/skills'],
   })
+  assert.equal(rows.find(row => row.id === 'matt-skills-board').name, 'dsh-mattpocock-skills-deck')
   assert.equal(patches.some(row => row.id === 'sol-old'), false)
   const fallback = composeKernelLaunch(entries.filter(row => row.id !== 'sol-old'), { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins })
   assert.equal(fallback.at(-1).insert.find(row => row.id === 'kernel-sol').name, 'dsh-sol-efficiency')

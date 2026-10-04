@@ -3,7 +3,7 @@
 ## dsh-approve-for-me
 
 - 上游地址：<https://github.com/timeance/dsh-approve-for-me>
-- 固定版本：`a72c8d24dd64f59644b2b0bdb5985edc9bf3c66b`
+- 固定版本：`b6da50375b93a8422d3459edd8b421e8b939fc5a`（插件版本 `0.3.1`）
 - 许可证：MIT，原文位于 `vendor/dsh-approve-for-me/LICENSE`
 - 当前用途：保留固定的第三方子模块；项目自研插件不加载或打包其代码。
 

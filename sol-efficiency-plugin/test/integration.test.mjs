@@ -298,6 +298,7 @@ test('Code Mode reaches fusion through native nested dispatch; ordinary bash ski
 test('default-off configuration removes both features through Loader reload', async t => {
   const { tree, ctx, execute } = await boot(t)
   await tree.update('sol-efficiency', { config: {} })
+  await new Promise(resolve => setTimeout(resolve, 0))
   assert.equal(ctx.tools.get('write_then_run'), undefined)
   const before = requests.length
   await execute('bash', { command: logCommand(), description: 'Verify disabled reducer has no calls' })

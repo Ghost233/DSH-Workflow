@@ -9,13 +9,13 @@ import { checkPluginVersions } from './plugin-versions.mjs'
 
 const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const packageNamePattern = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i
-const owned = new Set(['dsh-owner-workflow', 'dsh-sol-efficiency'])
+const owned = new Set(['dsh-owner-workflow', 'dsh-sol-efficiency', 'dsh-mattpocock-skills-deck'])
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'))
 
 /** Only npm-hosted Web-profile plugins may change independently of the packaged DSH/App. */
 export function updateCandidates(report) {
-  return report.rows.filter(row => row.source === 'DSH Web profile' && row.status === 'newer'
+  return report.rows.filter(row => ['DSH Web profile', 'DSH Desktop profile'].includes(row.source) && row.status === 'newer'
     && !row.name.startsWith('@deepseek-ai/') && !owned.has(row.name)
     && typeof row.latest === 'string' && versionPattern.test(row.latest))
 }
@@ -30,7 +30,7 @@ async function installedVersion(profile, name) {
   }
 }
 
-async function runProfileUpdate({ resources, home, candidates, registry }) {
+async function runProfileUpdate({ resources, home, candidates, registry, profileName = 'web' }) {
   const cli = join(resources, 'node_modules/@deepseek-ai/dsh/lib/bin.js')
   const pnpm = join(resources, 'node_modules/pnpm/bin/pnpm.mjs')
   const shim = join(resources, 'bin/pnpm')
@@ -47,9 +47,9 @@ async function runProfileUpdate({ resources, home, candidates, registry }) {
     child.once('close', (code, signal) => code === 0 ? accept()
       : reject(new Error(`DSH 插件更新失败（${signal ?? code}）：${diagnostics.slice(-1000)}`)))
   })
-  await execute([cli, 'plugin', '--profile', 'web', 'add', ...candidates.map(row => `${row.name}@${row.latest}`), '--save-exact',
+  await execute([cli, 'plugin', '--profile', profileName, 'add', ...candidates.map(row => `${row.name}@${row.latest}`), '--save-exact',
     ...(registry ? ['--registry', registry] : [])])
-  await execute([cli, '--profile', 'web', '--dump-config'])
+  if (profileName !== 'desktop') await execute([cli, '--profile', profileName, '--dump-config'])
 }
 
 /** Add marked project plugins to the Web profile before its DSH engine starts. */
@@ -100,14 +100,15 @@ export async function ensureStartupPlugins({ resourcesRoot, home = process.env.D
 
 /** Update eligible profile packages on disk. Never restart or alter packaged plugins. */
 export async function updateProfilePlugins({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
+  profileName = existsSync(join(resourcesRoot, 'desktop/DeepSeek Harness.app')) ? 'desktop' : 'web',
   only, check = checkPluginVersions, run = runProfileUpdate } = {}) {
   const selection = only === undefined ? undefined : new Set(only)
   if (selection !== undefined && (selection.size === 0 || [...selection].some(name => !packageNamePattern.test(name)))) {
     throw new Error('Invalid plugin selection')
   }
   const resources = resolve(resourcesRoot)
-  const profile = join(home, 'profiles/web')
-  const report = await check({ resourcesRoot: resources, home })
+  const profile = join(home, 'profiles', profileName)
+  const report = await check({ resourcesRoot: resources, home, profileName })
   const available = updateCandidates(report).filter(row => selection === undefined || selection.has(row.name))
   if (available.length === 0) return { checkedAt: report.checkedAt, updated: [], failedChecks: report.rows.filter(row => row.status === 'error').length }
   const profileManifest = await readJson(join(profile, 'package.json'))
@@ -116,7 +117,7 @@ export async function updateProfilePlugins({ resourcesRoot, home = process.env.D
   if (candidates.length === 0) return { checkedAt: report.checkedAt, updated: [], failedChecks: report.rows.filter(row => row.status === 'error').length }
   const before = new Map(await Promise.all(candidates.map(async row => [row.name, await installedVersion(profile, row.name)])))
   let failure
-  try { await run({ resources, home, candidates }) }
+  try { await run({ resources, home, candidates, profileName }) }
   catch (error) { failure = String(error.message ?? error).slice(-1000) }
   const manifest = await readJson(join(profile, 'package.json'))
   const updated = []

@@ -14,3 +14,6 @@
 [submodule "vendor/ghost-agent-market"]
 	path = vendor/ghost-agent-market
 	url = https://github.com/Ghost233/ghost-agent-market.git
+[submodule "vendor/dsh-mattpocock-skills-deck"]
+	path = vendor/dsh-mattpocock-skills-deck
+	url = https://github.com/FeatherHunter/dsh-mattpocock-skills-deck.git

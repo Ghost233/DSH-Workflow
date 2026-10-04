@@ -17,12 +17,13 @@ export function composeKernelLaunch(entries, { projectRoot, catalogRoot, presetP
   const plugins = structuredClone(presetPlugins)
   plugins[0].name = join(root, 'owner-workflow-plugin/kernel-presets/owner-workflow/plugin.mjs')
   plugins[0].config = { ...plugins[0].config, catalogRoot: catalog }
-  const patches = [{ id: registries[0].id, config: { ...structuredClone(registries[0].config ?? {}), default: 'owner-workflow' } }]
+  const patches = []
   const identities = new Map([
     ['dsh-owner-workflow', 'owner'], ['dsh-owner-workflow/dashboard', 'dashboard'],
     [join(root, 'owner-workflow-plugin/index.js'), 'owner'], [join(root, 'owner-workflow-plugin/dashboard-host.mjs'), 'dashboard'],
     [join(root, 'owner-workflow-plugin/src/kernel-entry.mjs'), 'owner'], [join(root, 'owner-workflow-plugin/src/kernel-dashboard-host.mjs'), 'dashboard'],
     ['dsh-sol-efficiency', 'sol'], [join(root, 'sol-efficiency-plugin/index.js'), 'sol'],
+    ['dsh-mattpocock-skills-deck', 'matt-deck'],
     // Retired entries are disabled in the project overlay without editing user profiles.
     ['dsh-synapse-workflow', 'synapse'], [join(root, 'synapse-workflow-plugin/index.js'), 'synapse'],
   ])
@@ -34,6 +35,7 @@ export function composeKernelLaunch(entries, { projectRoot, catalogRoot, presetP
     return structuredClone(matches[0]?.config ?? {})
   }
   const solConfig = previous('sol')
+  const mattDeckConfig = previous('matt-deck')
   const mattZhSkills = join(root, 'vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh/skills')
   const owned = [
     { id: 'preset-owner-workflow', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'owner-workflow', order: 0, plugins } },
@@ -42,6 +44,7 @@ export function composeKernelLaunch(entries, { projectRoot, catalogRoot, presetP
     { id: 'mattpocock-skills-zh', name: '@deepseek-ai/dsh-skill-filesystem', config: {
       providerName: 'mattpocock-skills-zh', includeDefaultRoots: false, customSkillDirs: [mattZhSkills],
     } },
+    { id: 'matt-skills-board', name: 'dsh-mattpocock-skills-deck', config: mattDeckConfig },
     ...(existing.some(row => identities.get(row.name) === 'sol' && row.disabled !== true)
       ? [] : [{ id: 'kernel-sol', name: 'dsh-sol-efficiency', config: solConfig }]),
   ]

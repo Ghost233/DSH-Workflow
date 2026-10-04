@@ -1,15 +1,13 @@
 import http from 'node:http'
 import net from 'node:net'
-import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { lstat, mkdir, open, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
+import { lstat, mkdir, open } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { localAddresses, privateBindAddress } from './lan-gateway.mjs'
-import { launchPackagedWeb } from './web-launch.mjs'
+import { launchDesktopWeb } from './desktop-launch.mjs'
 
 const COOKIE = 'dsh-workflow-gate'
-const GLOBAL_ID = '00000000-0000-4000-8000-000000000000'
 export const NAVIGATION_PORT = 33080
 const SESSION_MS = 12 * 60 * 60 * 1000
 const MAX_BODY = 16 * 1024
@@ -25,12 +23,11 @@ const waitScript = `// Poll the supervisor for startup progress and mirror it in
   if (meta) meta.remove()
   const log = document.getElementById('log')
   if (!log) return
-  const id = log.dataset.id
   const elapsed = document.getElementById('elapsed')
   const startedAt = Date.now()
   async function tick() {
     try {
-      const response = await fetch('/catalog/progress/' + id, { cache: 'no-store' })
+      const response = await fetch('/global/progress', { cache: 'no-store' })
       if (response.ok) {
         const progress = await response.json()
         log.textContent = [...progress.notes, ...progress.lines].join('\\n') || '…'
@@ -60,7 +57,7 @@ async function bodyOf(request) {
 function page(content) {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DSH Workflow</title><style>
 body{font:16px -apple-system,BlinkMacSystemFont,sans-serif;max-width:850px;margin:36px auto;padding:0 20px;background:#f5f6f8;color:#202124}main,article{background:white;border-radius:14px;padding:22px;margin:16px 0;box-shadow:0 5px 20px #0001}h1{font-size:24px}h2{font-size:19px}input,button{font:inherit;padding:9px;margin:5px;border-radius:7px}input{border:1px solid #aaa;max-width:95%}button{border:0;background:#2563eb;color:white;cursor:pointer}.stop{background:#555}form{display:inline-block}small{color:#555;overflow-wrap:anywhere}.error{color:#b42318}.term{background:#14161a;color:#cfd6dd;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:12px 14px;border-radius:10px;max-height:340px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0}
-</style></head><body><main><h1>DSH Workflow · Catalog 导航</h1>${content}</main></body></html>`
+</style></head><body><main><h1>DSH Workflow · 全局实例</h1>${content}</main></body></html>`
 }
 
 async function availablePort(host = '127.0.0.1') {
@@ -91,55 +88,30 @@ async function tailLines(path, limit = 40) {
   } catch { return [] }
 }
 
-/** One navigation service owns the catalog list; engines are lazy, independent children. */
-export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host = privateBindAddress(), port = NAVIGATION_PORT,
-  portRange, password, launchInstance = launchPackagedWeb }) {
+/** One navigation service owns exactly one global engine. */
+export async function startGlobalSupervisor({ dataRoot, host = privateBindAddress(), port = NAVIGATION_PORT,
+  portRange, password, allowLanSettings = false, attachDesktop = launchDesktopWeb, onDesktopNeeded = () => {} }) {
   if (typeof password !== 'string' || !password || !Number.isSafeInteger(port) || port < 0 || port > 65535) {
-    throw new Error('Invalid catalog navigation configuration')
+    throw new Error('Invalid global navigation configuration')
   }
   if (portRange !== undefined && (portRange !== null && typeof portRange !== 'object'
     || !Number.isSafeInteger(portRange.min) || !Number.isSafeInteger(portRange.max)
     || portRange.min < 1024 || portRange.max > 65535 || portRange.min > portRange.max)) {
-    throw new Error('引擎端口范围无效（需要 1024–65535 且起始不大于结束）。')
+    throw new Error('Web 代理端口范围无效（需要 1024–65535 且起始不大于结束）。')
   }
   if (!localAddresses().has(host)) throw new Error(`绑定的地址 ${host} 不在本机网卡上`)
-  const root = resolve(catalogBase)
+  const root = resolve(dataRoot)
   await mkdir(root, { recursive: true, mode: 0o700 })
-  const globalItem = { id: GLOBAL_ID, name: '全局引擎', path: join(root, 'global') }
-  const listPath = join(root, 'catalogs.json')
-  let catalogList = []
-  if (existsSync(listPath)) {
-    const saved = JSON.parse(await readFile(listPath, 'utf8'))
-    if (!Array.isArray(saved) || saved.some(item => !item || typeof item.id !== 'string'
-      || typeof item.name !== 'string' || typeof item.path !== 'string')) throw new Error('Invalid catalog list')
-    catalogList = saved
-  }
+  const globalRoot = join(root, 'global')
   const sessions = new Map()
   const failures = new Map()
-  const engines = new Map()
-  const lastErrors = new Map()
-  const reservedPorts = new Set()
+  let activeEngine
+  let lastError = ''
   const listeners = new Set()
-  let mutation = Promise.resolve()
   let currentPassword = password
   let actualPort = port
   let stopping = false
 
-  const addCatalog = item => {
-    const action = mutation.then(async () => {
-      if (item.path === globalItem.path || item.path.startsWith(globalItem.path + sep)
-        || globalItem.path.startsWith(item.path + sep)) throw new Error('Catalog directory overlaps the global engine')
-      if (catalogList.some(row => row.path === item.path || row.path.startsWith(item.path + sep)
-        || item.path.startsWith(row.path + sep))) throw new Error('Catalog directory overlaps an existing catalog')
-      const next = [...catalogList, item]
-      const temporary = join(root, `.catalogs-${randomUUID()}.tmp`)
-      await writeFile(temporary, JSON.stringify(next, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
-      await rename(temporary, listPath)
-      catalogList = next
-    })
-    mutation = action.catch(() => {})
-    return action
-  }
   const authorized = request => {
     const cookie = (request.headers.cookie ?? '').split(';').map(item => item.trim()).find(item => item.startsWith(`${COOKIE}=`))
     const token = cookie?.slice(COOKIE.length + 1)
@@ -178,119 +150,102 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
     if (!engine?.url) return engine?.url ?? null
     try { const url = new URL(engine.url); url.hostname = hostname; return url.toString() } catch { return engine.url }
   }
-  const progressOf = async (item, hostname) => {
-    const engine = engines.get(item.id)
+  const progressOf = async hostname => {
+    const engine = activeEngine
     const lines = engine?.logPath ? await tailLines(engine.logPath) : []
     return { state: engine?.ready ? 'running' : engine ? 'starting' : 'stopped',
-      error: lastErrors.get(item.id) ?? '', url: entryOn(engine, hostname),
+      error: lastError, url: entryOn(engine, hostname),
       notes: engine?.notes ?? [], lines }
   }
   /** The page only verifies the password and jumps to an engine; management lives in the macOS app. */
-  const renderList = (response, pageHost) => {
-    const entries = [globalItem, ...catalogList].map(item => {
-      const engine = engines.get(item.id)
-      let localEntry = ''
-      if (engine?.ready && pageHost !== '127.0.0.1' && pageHost !== 'localhost') {
-        // DSH 只在回环页面开放主机设置（模型、API key），局域网访问时提供本机配置入口。
-        const local = entryOn(engine, '127.0.0.1')
-        if (local) localEntry = `<p><small>本机配置入口（可管理模型）：<a href="${escapeHtml(local)}">http://127.0.0.1:${engine.gatePort}/</a></small></p>`
-      }
-      return `<article><h2>${escapeHtml(item.name)}</h2><form method="post" action="/catalog/open/${encodeURIComponent(item.id)}"><button>打开</button></form>${localEntry}</article>`
-    }).join('')
-    render(response, 200, entries || '<p>还没有 Catalog；请在 macOS App 的管理窗口中选择目录加入。</p>')
+  const renderEntry = (response, pageHost) => {
+    const engine = activeEngine
+    let localEntry = ''
+    if (engine?.ready && pageHost !== '127.0.0.1' && pageHost !== 'localhost') {
+      const local = entryOn(engine, '127.0.0.1')
+      if (local) localEntry = `<p><small>本机配置入口（可管理模型）：<a href="${escapeHtml(local)}">http://127.0.0.1:${engine.gatePort}/</a></small></p>`
+    }
+    render(response, 200, `<p>连接官方桌面版的全局后端。</p><form method="post" action="/global/open"><button>打开 DSH</button></form>${localEntry}`)
   }
 
-  const stateOf = item => {
-    const engine = engines.get(item.id)
-    return { id: item.id, name: item.name, path: item.path,
+  const stateOf = () => {
+    const engine = activeEngine
+    return {
       state: engine?.ready ? 'running' : engine ? 'starting' : 'stopped',
-      error: engine?.error || '', webPort: engine?.webPort ?? null, gatePort: engine?.gatePort ?? null,
+      error: lastError, webPort: engine?.webPort ?? null, gatePort: engine?.gatePort ?? null,
       url: engine?.url ?? null }
   }
-  const emitState = () => { for (const notify of listeners) notify(catalogList.map(stateOf), stateOf(globalItem)) }
+  const emitState = () => { for (const notify of listeners) notify(stateOf()) }
 
-  const startEngine = async item => {
-    if (item.id === GLOBAL_ID && catalogList.some(row => row.path === globalItem.path
-      || row.path.startsWith(globalItem.path + sep) || globalItem.path.startsWith(row.path + sep))) {
-      throw new Error('An existing Catalog directory overlaps the global engine')
-    }
-    let engine = engines.get(item.id)
+  const startEngine = async () => {
+    let engine = activeEngine
     if (engine) return await engine.readyPromise
     const controller = new AbortController()
     engine = { controller, ready: false, error: '', notes: [], logPath: null, startedAt: Date.now() }
-    engines.set(item.id, engine)
     const note = text => {
       engine.notes.push(`[+${((Date.now() - engine.startedAt) / 1000).toFixed(1)}s] ${text}`)
       emitState()
     }
-    note(`准备启动「${item.name}」的 DSH 引擎`)
     let completeReady, failReady
     engine.readyPromise = new Promise((resolveReady, rejectReady) => { completeReady = resolveReady; failReady = rejectReady })
     engine.readyPromise.catch(() => {})
-    const reservePort = async (bindHosts, useRange) => {
+    activeEngine = engine
+    note('准备启动官方桌面版的全局后端')
+    const reservePort = async bindHosts => {
       const bindEvery = async candidate => {
         for (const bindHost of bindHosts) if (!await canBind(bindHost, candidate)) return false
         return true
       }
       for (let attempt = 0; attempt < 60; attempt++) {
         let candidate
-        if (useRange && portRange) {
+        if (portRange) {
           candidate = portRange.min + Math.floor(Math.random() * (portRange.max - portRange.min + 1))
-          if (candidate === actualPort || reservedPorts.has(candidate) || !await bindEvery(candidate)) continue
+          if (candidate === actualPort || !await bindEvery(candidate)) continue
         } else {
           candidate = await availablePort(bindHosts[0])
-          if (candidate === actualPort || reservedPorts.has(candidate)) continue
+          if (candidate === actualPort) continue
           if (bindHosts.length > 1 && !await bindEvery(candidate)) continue
         }
-        reservedPorts.add(candidate)
         return candidate
       }
-      throw new Error(useRange && portRange ? '引擎端口范围内没有可用端口' : 'Could not allocate a distinct DSH port')
+      throw new Error(portRange ? 'Web 代理端口范围内没有可用端口' : 'Could not allocate a Web port')
     }
     engine.task = (async () => {
-      let webPort, gatePort
-      try {
-        webPort = await reservePort(['127.0.0.1'], false)
-        gatePort = await reservePort(host === '127.0.0.1' ? ['127.0.0.1'] : [host, '127.0.0.1'], true)
-        engine.webPort = webPort
-        engine.gatePort = gatePort
-        note(`对外端口已分配：${gatePort}`)
-        if (controller.signal.aborted || stopping) throw new Error('Engine startup cancelled')
-        note('正在拉起 DSH 进程…')
-        if (item.id === GLOBAL_ID) {
-          await mkdir(globalItem.path, { recursive: true, mode: 0o700 })
-          if (!(await lstat(globalItem.path)).isDirectory()) throw new Error('Global engine directory is not a directory')
-        }
-        await launchInstance({ resourcesRoot, workspace: item.path, port: webPort, gatewayHost: host,
-          gatewayPort: gatePort, gatewaySessions: sessions, signal: controller.signal, controlStream: null,
-          password: currentPassword,
-          onLog: logPath => { engine.logPath = logPath },
-          onGateway: gateway => { engine.gateway = gateway; note('内网代理已就绪，等待 DSH 完成启动…') },
-          onReady: (state, entryUrl) => {
-            engine.ready = true
-            engine.url = entryUrl ?? state.url
-            lastErrors.delete(item.id)
-            completeReady(engine.url)
-            emitState()
-          } })
-      } finally {
-        if (webPort) reservedPorts.delete(webPort)
-        if (gatePort) reservedPorts.delete(gatePort)
-      }
-    })().catch(error => { engine.error = error.message; lastErrors.set(item.id, error.message); failReady(error) }).finally(() => {
+      const gatePort = await reservePort(host === '127.0.0.1' ? ['127.0.0.1'] : [host, '127.0.0.1'])
+      engine.gatePort = gatePort
+      note(`对外端口已分配：${gatePort}`)
+      if (controller.signal.aborted || stopping) throw new Error('Engine startup cancelled')
+      note('等待官方桌面端的全局后端…')
+      onDesktopNeeded()
+      await mkdir(globalRoot, { recursive: true, mode: 0o700 })
+      if (!(await lstat(globalRoot)).isDirectory()) throw new Error('Global data directory is not a directory')
+      await attachDesktop({ globalRoot, gatewayHost: host,
+        gatewayPort: gatePort, gatewaySessions: sessions, signal: controller.signal,
+        password: currentPassword, allowLanSettings,
+        onLog: logPath => { engine.logPath = logPath },
+        onGateway: gateway => { engine.gateway = gateway; note('内网代理已就绪，等待 DSH 完成启动…') },
+        onReady: (state, entryUrl) => {
+          if (Number.isSafeInteger(state.port)) engine.webPort = state.port
+          engine.ready = true
+          engine.url = entryUrl ?? state.url
+          lastError = ''
+          completeReady(engine.url)
+          emitState()
+        } })
+    })().catch(error => { engine.error = error.message; lastError = error.message; failReady(error) }).finally(() => {
       if (!engine.ready) failReady(new Error(engine.error || 'Engine stopped before it became ready'))
-      if (engines.get(item.id) === engine) engines.delete(item.id)
+      if (activeEngine === engine) activeEngine = undefined
       emitState()
     })
     return await engine.readyPromise
   }
-  const stopEngine = async id => {
-    const engine = engines.get(id)
+  const stopEngine = async () => {
+    const engine = activeEngine
     if (!engine) return
     engine.controller.abort()
     await engine.task
-    if (engines.get(id) === engine) engines.delete(id)
-    lastErrors.delete(id)
+    if (activeEngine === engine) activeEngine = undefined
+    lastError = ''
     emitState()
   }
 
@@ -302,44 +257,39 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
         return
       }
       if (request.method === 'GET' && request.url === '/') {
-        if (authorized(request)) renderList(response, hostNameOf(request))
+        if (authorized(request)) renderEntry(response, hostNameOf(request))
         else render(response, 200, '<p>输入在 macOS App 中设置的内网密码。</p><form method="post" action="/login"><input type="password" name="password" aria-label="密码" required><button>登录</button></form>')
         return
       }
       if (request.method === 'GET') {
-        if (request.url === '/catalog/wait.js') {
+        if (request.url === '/global/wait.js') {
           response.writeHead(200, { ...headers, 'content-type': 'text/javascript; charset=utf-8' })
           response.end(waitScript)
           return
         }
         if (!authorized(request)) { render(response, 401, '<p>请先登录。</p>'); return }
-        const progress = /^\/catalog\/progress\/([a-f0-9-]+)$/.exec(request.url ?? '')
-        if (progress) {
-          const item = progress[1] === GLOBAL_ID ? globalItem : catalogList.find(row => row.id === progress[1])
-          if (!item) { response.writeHead(404, { ...headers, 'content-type': 'application/json' }); response.end('{"error":"not found"}'); return }
+        if (request.url === '/global/progress') {
           response.writeHead(200, { ...headers, 'content-type': 'application/json' })
-          response.end(JSON.stringify(await progressOf(item, hostNameOf(request))))
+          response.end(JSON.stringify(await progressOf(hostNameOf(request))))
           return
         }
-        const wait = /^\/catalog\/wait\/([a-f0-9-]+)$/.exec(request.url ?? '')
-        const item = wait?.[1] === GLOBAL_ID ? globalItem : catalogList.find(row => row.id === wait?.[1])
-        if (!item) { render(response, 404, '<p>页面不存在。</p>'); return }
-        const engine = engines.get(item.id)
+        if (request.url !== '/global/wait') { render(response, 404, '<p>页面不存在。</p>'); return }
+        const engine = activeEngine
         if (engine?.ready) { redirect(response, entryOn(engine, hostNameOf(request))); return }
         if (!engine) {
-          const error = lastErrors.get(item.id)
-          render(response, 200, `<article><h2>${escapeHtml(item.name)}</h2>${
+          const error = lastError
+          render(response, 200, `<article><h2>全局实例</h2>${
             error ? `<p class="error">启动失败：${escapeHtml(error)}</p>` : '<p>引擎未在运行。</p>'
-          }<form method="post" action="/catalog/open/${encodeURIComponent(item.id)}"><button>重试</button></form> <a href="/">返回列表</a></article>`)
+          }<form method="post" action="/global/open"><button>重试</button></form> <a href="/">返回入口</a></article>`)
           return
         }
         const view = [...engine.notes, ...(await tailLines(engine.logPath ?? ''))]
-        renderStream(response, 200, `<article><h2>正在启动 ${escapeHtml(item.name)}…</h2>`
-          + `<pre id="log" class="term" data-id="${escapeHtml(item.id)}">${escapeHtml(view.join('\n')) || '…'}</pre>`
+        renderStream(response, 200, `<article><h2>正在启动 全局实例…</h2>`
+          + `<pre id="log" class="term">${escapeHtml(view.join('\n')) || '…'}</pre>`
           + '<p><small>启动日志实时刷新；就绪后会自动进入 DSH。首次启动安装插件可能需要几分钟。</small></p>'
           + '<p><small id="elapsed"></small></p>'
-          + `<p><a href="/">返回列表</a></p></article>`
-          + '<script src="/catalog/wait.js" defer></script>')
+          + `<p><a href="/">返回入口</a></p></article>`
+          + '<script src="/global/wait.js" defer></script>')
         return
       }
       if (request.method !== 'POST' || !request.headers['content-type']?.startsWith('application/x-www-form-urlencoded')) {
@@ -363,15 +313,13 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
         response.end(); return
       }
       if (!authorized(request)) { render(response, 401, '<p>请先登录。</p>'); return }
-      const match = /^\/catalog\/open\/([a-f0-9-]+)$/.exec(request.url ?? '')
-      const item = match?.[1] === GLOBAL_ID ? globalItem : catalogList.find(row => row.id === match?.[1])
-      if (!item) { render(response, 404, '<p>页面不存在。</p>'); return }
-      const engine = engines.get(item.id)
+      if (request.url !== '/global/open') { render(response, 404, '<p>页面不存在。</p>'); return }
+      const engine = activeEngine
       // Reply instantly and start the engine in the background: cold starts can take minutes,
       // and a blocking form POST just looks dead on a phone.
       if (engine?.ready) { redirect(response, entryOn(engine, hostNameOf(request))); return }
-      void startEngine(item).catch(() => {})
-      redirect(response, `/catalog/wait/${encodeURIComponent(item.id)}`)
+      void startEngine().catch(() => {})
+      redirect(response, `/global/wait`)
     })().catch(error => {
       if (!response.headersSent) render(response, 500, `<p class="error">操作失败：${escapeHtml(error.message)}</p>`)
       else response.destroy()
@@ -403,50 +351,18 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
       currentPassword = next
       sessions.clear()
       failures.clear()
-      for (const engine of engines.values()) engine.gateway?.setPassword(next)
+      activeEngine?.gateway?.setPassword(next)
     },
-    catalogs: () => catalogList.map(stateOf),
-    global: () => stateOf(globalItem),
+    global: () => stateOf(),
     onState(notify) {
       listeners.add(notify)
       return () => listeners.delete(notify)
     },
-    async createCatalog(name) {
-      const clean = typeof name === 'string' ? name.trim() : ''
-      if (!clean || clean.length > 80) throw new Error('名称不能为空且不能超过 80 字符。')
-      const id = randomUUID(), path = join(root, 'catalogs', id)
-      await mkdir(path, { recursive: true, mode: 0o700 })
-      await addCatalog({ id, name: clean, path })
-      emitState()
-    },
-    async attachCatalog(name, inputPath) {
-      const clean = typeof name === 'string' ? name.trim() : ''
-      const target = typeof inputPath === 'string' ? inputPath.trim() : ''
-      if (!clean || clean.length > 80 || !target.startsWith('/')) throw new Error('请输入名称和已有目录的绝对路径。')
-      const path = await realpath(target)
-      if (path === '/' || catalogList.some(item => item.path === path)
-        || catalogList.some(item => path.startsWith(item.path + sep) || item.path.startsWith(path + sep))) {
-        throw new Error('目录与已有 Catalog 重复或重叠。')
-      }
-      if (!(await stat(path)).isDirectory()) throw new Error('这不是目录。')
-      await addCatalog({ id: randomUUID(), name: clean, path })
-      emitState()
-    },
-    async openCatalog(id) {
-      const item = catalogList.find(row => row.id === id)
-      if (!item) throw new Error('Catalog 不存在。')
-      return await startEngine(item)
-    },
-    async openGlobal() { return await startEngine(globalItem) },
-    async stopGlobal() { await stopEngine(GLOBAL_ID) },
-    async stopCatalog(id) {
-      if (!catalogList.some(row => row.id === id)) throw new Error('Catalog 不存在。')
-      await stopEngine(id)
-      emitState()
-    },
+    async openGlobal() { return await startEngine() },
+    async stopGlobal() { await stopEngine() },
     async close() {
       stopping = true
-      await Promise.all([...engines.keys()].map(stopEngine))
+      await stopEngine()
       await new Promise(resolveClose => {
         let pending = servers.length
         for (const instance of servers) {
@@ -459,7 +375,7 @@ export async function startCatalogSupervisor({ resourcesRoot, catalogBase, host 
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [resourcesRoot, catalogBase] = process.argv.slice(2)
+  const [dataRoot] = process.argv.slice(2)
   let supervisor
   const controller = new AbortController()
   process.once('SIGINT', () => controller.abort())
@@ -468,42 +384,34 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const watch = setInterval(() => { if (process.ppid !== parent) controller.abort() }, 1000)
   watch.unref()
   try {
-    if (!resourcesRoot || !catalogBase) throw new Error('Usage: catalog-supervisor.mjs RESOURCES CATALOG_BASE')
+    if (!dataRoot) throw new Error('Usage: global-supervisor.mjs DATA_ROOT')
     let portRange
     if (process.env.DSH_PORT_MIN || process.env.DSH_PORT_MAX) {
       const min = Number(process.env.DSH_PORT_MIN), max = Number(process.env.DSH_PORT_MAX)
-      if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max)) throw new Error('引擎端口范围必须是整数')
+      if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max)) throw new Error('Web 代理端口范围必须是整数')
       portRange = { min, max }
     }
-    supervisor = await startCatalogSupervisor({ resourcesRoot, catalogBase, password: process.env.DSH_LAUNCH_PASSWORD,
-      host: process.env.DSH_BIND_IP || undefined, portRange })
+    supervisor = await startGlobalSupervisor({ dataRoot, password: process.env.DSH_LAUNCH_PASSWORD,
+      host: process.env.DSH_BIND_IP || undefined, portRange,
+      allowLanSettings: process.env.DSH_ALLOW_LAN_SETTINGS === '1',
+      onDesktopNeeded: () => process.stdout.write('DSH_WORKFLOW_DESKTOP_NEEDED\t{}\n') })
     const writeLine = (label, payload) => process.stdout.write(`${label}\t${JSON.stringify(payload)}\n`)
     writeLine('DSH_WORKFLOW_READY', { port: supervisor.port, url: supervisor.url, localUrl: supervisor.localUrl, lanUrls: supervisor.lanUrls })
-    writeLine('DSH_WORKFLOW_STATE', { catalogs: supervisor.catalogs(), global: supervisor.global() })
-    supervisor.onState((catalogs, global) => writeLine('DSH_WORKFLOW_STATE', { catalogs, global }))
+    writeLine('DSH_WORKFLOW_STATE', { global: supervisor.global() })
+    supervisor.onState(global => writeLine('DSH_WORKFLOW_STATE', { global }))
     const handleCommand = async command => {
       if (command?.type === 'set-password') { supervisor.setPassword(command.password); return }
       const requestId = command?.requestId
       if (typeof requestId !== 'number' || !Number.isInteger(requestId)) return
       let reply
       try {
-        if (command.type === 'list') reply = { requestId, ok: true, catalogs: supervisor.catalogs(), global: supervisor.global() }
+        if (command.type === 'status') reply = { requestId, ok: true, global: supervisor.global() }
         else if (command.type === 'open-global') reply = { requestId, ok: true, url: await supervisor.openGlobal() }
-        else if (command.type === 'stop-global') {
+        else if (command.type === 'disconnect-global') {
           await supervisor.stopGlobal()
           reply = { requestId, ok: true, global: supervisor.global() }
         }
-        else if (command.type === 'create') {
-          await supervisor.createCatalog(command.name)
-          reply = { requestId, ok: true, catalogs: supervisor.catalogs() }
-        } else if (command.type === 'attach') {
-          await supervisor.attachCatalog(command.name, command.path)
-          reply = { requestId, ok: true, catalogs: supervisor.catalogs() }
-        } else if (command.type === 'open') reply = { requestId, ok: true, url: await supervisor.openCatalog(command.id) }
-        else if (command.type === 'stop') {
-          await supervisor.stopCatalog(command.id)
-          reply = { requestId, ok: true, catalogs: supervisor.catalogs() }
-        } else reply = { requestId, ok: false, error: `未知指令：${command.type}` }
+        else reply = { requestId, ok: false, error: `未知指令：${command.type}` }
       } catch (error) {
         reply = { requestId, ok: false, error: String(error?.message ?? error).slice(0, 300) }
       }

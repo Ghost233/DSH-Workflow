@@ -23,6 +23,7 @@ export const pluginDirectory = root => join(root, '.dsh-workflow', 'plugins')
 const projectPackages = root => [
   { package: 'dsh-owner-workflow', directory: '.' },
   { package: 'dsh-sol-efficiency', directory: 'sol-efficiency-plugin' },
+  { package: 'dsh-mattpocock-skills-deck', directory: 'vendor/dsh-mattpocock-skills-deck/package' },
 ]
 
 /** Resolve the requested repository, never a potentially unrelated same-name npm package. */

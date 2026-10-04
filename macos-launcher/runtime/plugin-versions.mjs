@@ -82,6 +82,7 @@ async function installedPackage(profile, name) {
 }
 
 export async function checkPluginVersions({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
+  profileName = existsSync(join(resourcesRoot, 'desktop/DeepSeek Harness.app')) ? 'desktop' : 'web',
   fetchLatest = async name => {
     const response = await fetch(new URL(encodeURIComponent(name), registry), {
       headers: { accept: 'application/vnd.npm.install-v1+json' }, signal: AbortSignal.timeout(7000),
@@ -96,14 +97,15 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
   const resources = resolve(resourcesRoot)
   const workflow = join(resources, 'workflow')
   const rows = []
-  const profile = join(home, 'profiles', 'web')
+  const profile = join(home, 'profiles', profileName)
+  const profileSource = profileName === 'desktop' ? 'DSH Desktop profile' : 'DSH Web profile'
   const profileManifest = await jsonFile(join(profile, 'package.json'))
   for (const [name, spec] of Object.entries(profileManifest?.dependencies ?? {})) {
     if (!packageName(name) || typeof spec !== 'string') continue
     const installed = await installedPackage(profile, name)
     const current = installed?.version
     const local = /^(?:file:|link:|workspace:|git\+|https?:|\.\.?\/|\/)/.test(spec)
-    rows.push({ source: 'DSH Web profile', name, current: current ?? (exactVersion(spec) ? spec : null),
+    rows.push({ source: profileSource, name, current: current ?? (exactVersion(spec) ? spec : null),
       latest: null, status: local ? 'local' : 'pending',
       supportedDsh: declaredDshVersions(installed),
       latestSupportedDsh: latestDeclaredDsh(installed),
@@ -112,7 +114,7 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
   for (const name of profileManifest?.dsh?.profile?.bundles ?? []) {
     if (typeof name !== 'string' || rows.some(row => row.name === name)) continue
     if (!packageName(name)) {
-      rows.push({ source: 'DSH Web profile Bundle', name, current: null, latest: null,
+      rows.push({ source: `${profileSource} Bundle`, name, current: null, latest: null,
         status: 'local', note: '路径型 Bundle；不按 npm latest 判断' })
       continue
     }
@@ -120,7 +122,7 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
     const manifest = bundled ? await jsonFile(join(resources, 'node_modules', ...name.split('/'), 'package.json'))
       : await installedPackage(profile, name)
     const current = manifest?.name === name ? manifest.version : undefined
-    rows.push({ source: bundled ? 'DSH 内置 Bundle' : 'DSH Web profile Bundle', name,
+    rows.push({ source: bundled ? 'DSH 内置 Bundle' : `${profileSource} Bundle`, name,
       current: current ?? null, latest: null, status: bundled ? 'coupled' : 'pending',
       ...(bundled ? {} : { supportedDsh: declaredDshVersions(manifest), latestSupportedDsh: latestDeclaredDsh(manifest) }),
       note: bundled ? '随打包的 DSH 更新，不能单独升级' : 'profile Bundle；未在 dependencies 声明' })
@@ -173,7 +175,7 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
   const enabledBundles = new Set(profileManifest?.dsh?.profile?.bundles ?? [])
   const ownedNames = new Set(owned.map(([name]) => name))
   for (const row of rows) {
-    row.updatable = row.source === 'DSH Web profile' && row.status === 'newer' && typeof row.latest === 'string'
+    row.updatable = ['DSH Web profile', 'DSH Desktop profile'].includes(row.source) && row.status === 'newer' && typeof row.latest === 'string'
       && exactVersion(row.latest) && enabledBundles.has(row.name)
       && !row.name.startsWith('@deepseek-ai/') && !ownedNames.has(row.name)
   }

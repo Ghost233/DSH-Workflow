@@ -1,10 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 单一 Web / Owner Team 宿主；启动器幂等启用 DSH 官方 Agent Teams 组合包。
+# macOS 复用官方桌面端的全局后端；其他平台保留源码 Web 入口。
 SCRIPT_DIRECTORY="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 if (( $# != 0 )); then
   printf '用法：./start-owner-workflow.sh（无需参数）\n' >&2
   exit 1
+fi
+if [[ "$(uname -s)" == Darwin ]]; then
+  launcher=""
+  for candidate in "${SCRIPT_DIRECTORY}"/.build/*.app "/Applications/DSH Workflow.app"; do
+    if [[ -f "${candidate}/Contents/Resources/workflow/macos-launcher/runtime/global-supervisor.mjs" &&
+          -f "${candidate}/Contents/Resources/workflow/macos-launcher/runtime/prepare-desktop.mjs" &&
+          -d "${candidate}/Contents/Resources/desktop/DeepSeek Harness.app" ]]; then
+      if [[ -z "$launcher" || "$candidate" -nt "$launcher" ]]; then launcher="$candidate"; fi
+    fi
+  done
+  if [[ -z "$launcher" ]]; then
+    printf '请先构建包含官方桌面端的 DSH Workflow 启动器。\n' >&2
+    exit 1
+  fi
+  exec /usr/bin/open -a "$launcher" 'dsh-workflow://open-global'
 fi
 exec node "${SCRIPT_DIRECTORY}/scripts/kernel-web-launch.mjs"

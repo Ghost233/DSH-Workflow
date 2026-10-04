@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
 import { boot, logCommand } from './helpers.mjs'
 import { requests } from './fixtures/reducer-model.mjs'
 
@@ -12,21 +12,18 @@ async function until(condition) {
   assert.fail('settings change did not take effect')
 }
 
-test('DSH file settings persist checkbox changes and hot-toggle tools without duplicates', async t => {
-  const { ctx, tree, cwd } = await boot(t)
-  const path = join(cwd, 'settings.yaml')
-  await ctx.loader.create({ name: '@deepseek-ai/dsh-settings-file', config: { path, watch: false } })
-  await ctx.loader.await()
+test('DSH profile settings persist checkbox changes and hot-toggle tools without duplicates', async t => {
+  const { ctx, settingsPath } = await boot(t, { settings: true })
   assert.ok(ctx.settings.describe().some(row => row.ns === ns))
   await ctx.settings.mutate(ns, [{ op: 'set', path: ['actionFusion', 'enabled'], value: false }])
   await until(() => !ctx.tools.get('write_then_run'))
-  assert.match(await readFile(path, 'utf8'), /enabled: false/)
+  assert.match(await readFile(settingsPath, 'utf8'), /enabled: false/)
   await ctx.settings.mutate(ns, [{ op: 'set', path: ['actionFusion', 'enabled'], value: true }])
   await until(() => Boolean(ctx.tools.get('write_then_run')))
   await ctx.settings.mutate(ns, [{ op: 'set', path: ['actionFusion', 'enabled'], value: false }])
   await until(() => !ctx.tools.get('write_then_run'))
-  // Reload the actual plugin: stored settings must win over composition defaults.
-  await tree.update('sol-efficiency', { config: { actionFusion: { enabled: true } } })
+  // Re-read the persisted profile: stored settings must win over bundle defaults.
+  await reconcileProfilePatches(ctx, readProfilePatches('sol-test', ctx.profileContext), 'sol-test')
   await ctx.loader.await()
   await until(() => !ctx.tools.get('write_then_run'))
   assert.equal(ctx.settings.describe().find(row => row.ns === ns).value.actionFusion.enabled, false)
@@ -34,10 +31,9 @@ test('DSH file settings persist checkbox changes and hot-toggle tools without du
 })
 
 test('EPR checkbox follows the session model and disabling removes reduction', async t => {
-  const { ctx, tree, agent, cwd, execute } = await boot(t)
-  await tree.update('sol-efficiency', { config: {} })
-  await ctx.loader.create({ name: '@deepseek-ai/dsh-settings-file', config: { path: join(cwd, 'settings.yaml'), watch: false } })
-  await ctx.loader.await()
+  const { ctx, execute } = await boot(t, { settings: true })
+  await ctx.settings.mutate(ns, [{ op: 'set', path: ['evidenceReducer', 'provider'], value: '' },
+    { op: 'set', path: ['evidenceReducer', 'model'], value: '' }])
   await ctx.settings.mutate(ns, [{ op: 'set', path: ['evidenceReducer', 'enabled'], value: true }])
   await delay(20)
   const before = requests.length

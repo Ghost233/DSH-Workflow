@@ -1,43 +1,42 @@
 # DSH Workflow macOS 启动器
 
-这个应用仅管理 DSH Web 进程。菜单栏和管理窗口由 SwiftUI 绘制；DSH 的界面始终在系统浏览器中打开，没有 WebView。应用资源包含固定版本的 DSH、Node 和两个自研插件。首次启动 DSH 引擎前，应用把项目清单中标记 `startup: true`、尚未在 Web profile 启用的第三方插件按锁定版本逐项加入 `$DSH_HOME/profiles/web`；已有且已启用的版本保持原样，单项失败会记录原因并继续。应用检查 profile 插件的新版本，由用户在插件管理窗口选择更新及是否重启服务。
+启动器只管理一个全局实例。官方 Electron 桌面端启动并持有 DSH Host；Web 入口通过带密码的代理连接这个 Host，不再启动第二个 Web 后端。桌面端和浏览器共享模型配置、会话、工作区及插件。
 
-## 构建
+DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-workflow-desktop` Bundle 加载 Owner、SoL、中文 Matt 技能和本地任务面板，并发布权限为 `0600` 的后端就绪记录。英文 npm Matt deck 的技能提供器不在运行配置中启用；本地面板不包含其 bundled skills。
 
-在本仓库根目录运行：
+Matt 面板的子模块引用指向上游提交；面板专用改动按用户选择仅保留在本机，未推送到子模块远端。新克隆不会包含这些改动，当前打包流程需要使用已准备好的本地面板目录。
+
+## 当前本地构建
+
+目前已验证 macOS arm64 的源码开发构建，DSH 版本为 `dsh-runtime.json` 固定的版本。桌面应用仍依赖本机源码目录及其中的编译产物和官方 Python／Office runtime；它不是可移到其他电脑的发行安装包。
+
+先在 `deepseek-harness` 完成上游依赖初始化、原生系统模块、库、Desktop 和 Web 构建，然后在项目根目录运行：
 
 ```sh
-node macos-launcher/build.mjs
+node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/build-desktop.mjs
+DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.1-source.app" node macos-launcher/build.mjs
 ```
 
-要求 macOS、Xcode 命令行工具、固定 commit 的 DSH submodule、npm，以及与当前 Node 架构和版本对应的 `owner-workflow-plugin/node_modules/fs-ext`。不需要先构建 DSH 源码；构建脚本从上游 npm 发行版按 `package-lock.json` 安装固定版本的生产运行时到 `.build/`，不运行 DSH 的 Git hooks 安装脚本，也不改动上游源码。产物是 `.build/DSH Workflow-<应用版本>-dsh<DSH 版本>-<架构>.app`；本地构建使用 ad-hoc 签名。向其他 Mac 分发时需另行使用自己的 Developer ID 签名并公证。
+`build-desktop.mjs` 使用上游开发运行时装配流程、固定依赖的 Electron 和官方 primary runtime，不修改 DSH 源文件。源码应用输出为 `.build/DeepSeek Harness-<DSH版本>-source.app`；启动器将它放入 `Contents/Resources/desktop/`。已有产物不会被覆盖；重新构建前应明确处理旧产物。两个应用均使用本地 ad-hoc 签名。
 
-运行时不会查找 Git 仓库、系统 Node、系统 pnpm 或源码构建标记；更新插件使用应用内附带的 pnpm。修改自研插件后重新构建应用。用户凭据、会话、工作目录、第三方插件和 DSH profile 都保留在应用包之外，应用升级不会清空它们。
+`build.mjs` 必须提供已构建的 Desktop 应用。现有 GitHub 双架构 DMG 流程尚未接入可分发的 Desktop 生产运行时，不能直接用这个依赖本机源码的开发应用发布新版 Release。
 
-## 使用
+## 启动和关闭
 
-启动应用后，在“管理…”中设置内网访问密码并启动导航服务；未设置密码就启动时会立即弹出提示。Catalog 的加入（选择目录）、启动、关闭和状态/端口显示也在“管理…”的 Catalog 管理区完成，导航页本身只保留密码验证和打开入口。密码保存在本机应用数据目录（`lan-password` 文件，仅当前用户可读），应用升级或重装后依然保留；旧版本存在钥匙串里的密码会在首次读取时自动迁移到文件。密码修改立即生效，旧的导航及引擎代理登录会话、WebSocket 会被撤销。导航服务固定使用 33080；此时不会启动任何 DSH 引擎。关闭管理窗口不停止服务；退出启动器会停止它管理的所有引擎。可选择登录后自动启动应用；启用前先将 `.app` 放到固定位置（如 `/Applications`），避免之后移动应用导致登录项失效。
+日常入口仍为无参数 `./start-owner-workflow.sh`。在 macOS 上，它通过 `dsh-workflow://open-global` 唤起已构建的启动器并打开全局实例；重复运行复用启动器和官方 Desktop 的单实例机制。在其他平台保留原来的源码 Web 启动路径。
 
-管理窗口新增“全局引擎”：点击“启动”后只运行一个 DSH 实例，在 DSH 中选择不同项目目录；导航页也可打开该引擎。它的默认工作目录和工作流状态固定在应用数据目录的 `global/`，独立于 `catalogs.json` 和各 Catalog 目录。全局引擎与原有逐目录引擎可分别启动、关闭，也可同时运行；旧 Catalog 的会话和工作流历史不会自动合并到全局引擎。登录后自动启动应用只启动导航服务，进入全局引擎仍需点击“启动”或从导航页打开。
+首次打开管理窗口需要设置访问密码。唯一主入口“打开 DSH”会准备 Desktop profile、打开官方桌面端并连接它的后端，不会额外打开浏览器标签。远程 Web 使用 `33080` 导航入口和同一个全局后端；导航页打开 DSH 时也会通知本机启动器打开 Desktop。Web 代理使用系统分配的端口或指定端口范围。每个工程在 DSH 内选择工作目录。
 
-“完整访问权限”只设置本次 DSH 进程的 `DSH_PERMISSION_MODE=danger-full-access`，不修改用户的 DSH 配置；关闭时使用 `workspace-write`。DSH 已保存的会话或 General settings 权限仍按 DSH 自身规则生效。权限更改需重启导航服务和相应引擎。
+访问设置中的“停止 Web 服务”或退出启动器只关闭导航和代理，不终止官方桌面端的 Host。“重连 Web”重新启动 Web 入口；之后打开 DSH 连接现有 Host。关闭 Desktop 窗口的行为沿用官方设计；完全退出 Desktop 才会结束它的后端。Desktop 重新启动后，在启动器点“打开 DSH”即可连接新的 Host。
 
-管理窗口和菜单栏的“插件管理…”会打开独立的插件管理窗口，按来源分组显示全部插件的名称、当前版本、最新版本、DSH 兼容声明、最新 DSH 支持声明和检查结果（npm 安装的 profile 插件、Profile Bundle、项目打包快照、DSH 内置 Bundle、版本绑定插件、自研插件等各组都完整列出，不只显示有新版本的）；数据来自当前 `$DSH_HOME/profiles/web/package.json` 中的直接依赖和启用的 Bundle、应用打包时的 `project-plugins.json`/锁定清单，以及两个内置自研插件。兼容声明只取已安装包或项目锁文件中的发布元数据：有范围就显示范围，否则列出包明确标注兼容的 DSH 版本，缺少声明则显示“未声明”。“最新支持 DSH”是表格独立列，取作者逐版标注中的最高兼容版本；若同时声明范围，说明没有精确最高版并列出最高逐版标注。两者都不代表本机实测通过。可比较的 npm 公共 registry 包会查询 `latest` 标记；本地/Git 依赖、自研打包插件及与 DSH 版本绑定的内置 Bundle 会分别标明来源，不把它们误报为可独立升级。项目侧清单是构建时快照；真正启用的插件会另列在 Web profile 组。检查只读，不安装、不修改锁文件、不热替换插件，也不重启运行中的 DSH；`latest` 更不代表与当前 DSH 兼容。私有 registry 和网络故障会显示为无法确认。
+启动器使用 `global-supervisor.mjs`，只保存一个全局连接状态；HTTP 接口固定为 `/global/open`、`/global/wait` 与 `/global/progress`，不接受目录参数或实例 ID，也没有实例列表、新建、绑定目录接口。原 `catalogs.json` 和目录实例历史数据保留但不再读取。全局工作流数据仍位于 `~/Library/Application Support/DSH Workflow/global`。Desktop profile 初次缺失时复制已有 Web profile 配置和插件，后续保留 Desktop 用户配置。
 
-在同一局域网或私有 VPN 的设备上打开管理窗口显示的 `http://<Mac 的内网 IPv4>:33080/`，输入密码后可看到 Catalog 列表。导航页只做两件事：验证密码和打开（跳转到对应实例的独立端口，未启动的会按需启动）。点「打开」会立即进入终端风格的启动日志页：像终端一样实时滚动显示启动里程碑（端口分配、拉起 DSH）和 DSH 自身的输出，就绪后自动跳转进入引擎；首次启动需要安装插件并拉起 DSH，可能需要几分钟，启动失败会在页面上显示原因并提供重试。加入目录、关闭引擎以及实例状态和端口显示都在 Mac 管理窗口的「Catalog」区完成，加入时用「选择目录…」选取目录即可，名称留空会自动填入目录名。不提供新建 Catalog 功能；加入的目录按原路径进入列表，以保留 Owner Registry 的既有绑定。列表持久化在同目录的 `catalogs.json`，不会自动迁移、合并或删除既有运行数据。两个 Catalog 可以同时运行，互不共用 catalog 工作目录；关闭引擎只停止对应实例，不删除目录或历史。
+## 权限、网络和插件
 
-每个引擎对外只暴露一个端口——带密码的内网代理端口；导航页跳转到该引擎独立的 `http://<绑定地址>:<端口>/` 认证 URL。首次直接打开引擎链接时，代理会先显示密码登录页，登录后再跳到 DSH；链接中的 DSH token 不能代替代理的密码会话。这样浏览器页面、API、WebSocket 都保持原生根路径，避免不同实例互相串路由。Mac 防火墙除了 33080，只需再放行这些对外端口（可用端口范围设置固定下来）。DSH 本体始终只监听 `127.0.0.1` 的内部端口：该端口不对外、无需防火墙规则，由系统自动分配且不在界面显示。绑定非回环地址时，导航页和每个引擎会在 `127.0.0.1` 上以同一端口号额外监听：DSH 出于安全只在回环页面开放主机设置（模型列表、API Key），因此「本机入口」用于在 Mac 上管理模型配置（全局共享，配置一次对所有 Catalog 生效），「内网入口」供手机和其他设备使用，导航页在局域网访问时也会为运行中的引擎显示本机配置入口；管理窗口「访问」区同时显示两个入口。管理窗口「访问」区可选择导航服务和引擎绑定的网络接口（列出本机所有 IPv4 地址，如 Wi-Fi、以太网、Tailscale、EasyTier 等），默认自动选择一个私有地址（RFC1918、CGNAT 或链路本地）；也可以为引擎的对外端口设定固定范围（1024–65535），留空则由系统自动分配。绑定地址、端口范围与完整访问权限一样，都在重启服务后生效；绑定的地址被摘除或端口范围耗尽时启动会失败并显示原因。
+“完整访问权限”在项目 Desktop Bundle 中配置 DSH 的 `danger-full-access`；关闭时使用 `workspace-write`。权限处理沿用 DSH，已有会话设置也遵循其原生规则。改变后端权限或更新 Host 插件需要完全退出并重新打开 Desktop，仅断开 Web 不会重启 Host。
 
-此入口使用明文 HTTP。内网中的旁路监听者可能看到密码和会话，故只应在可信网络或加密的私有 VPN 使用；对不可信网络应另加 HTTPS，不要把 33080 直接映射到公网。DSH 原生日志保留在工作目录下的 `.dsh-workflow/web-host/logs/`，文件权限为 `0600`，其中可能包含本次启动的 token。直接在 Mac 上访问 DSH 的本机端口仍受 DSH 自身认证保护，不经过导航密码页。
+本机入口用于管理模型和 API Key。局域网设置写入默认关闭；打开“允许局域网修改 DSH 设置”后，密码认证的 Web 代理为客户端提供该能力，DSH 源码和桌面端资源保持不变。变更代理设置后重启启动器服务并重新登录 Web。绑定地址可选择 Wi-Fi、以太网或私有 VPN。代理仍验证密码、会话、Host 和 Origin。
 
-启动器只控制自己创建的进程；若端口已被其他 DSH 实例占用，会显示启动失败，不会接管或关闭现有实例。
+插件管理表格读取实际使用的 `$DSH_HOME/profiles/desktop`，包括 npm 依赖、Bundle、自研插件、中文技能和项目锁定快照。表格中的兼容版本及最新支持 DSH 版本取作者发布元数据；未声明时如实显示。与 DSH 绑定的官方包和项目打包插件随应用构建更新。
 
-## GitHub 构建与更新
-
-`.github/workflows/macos-app.yml` 在相关 PR、`main` 推送、手动触发和 `macos-v<版本>` 标签推送时编译 Apple Silicon 与 Intel 两种应用。每次构建都会上传 DMG 作为 Actions artifact；标签构建全部通过后，自动把两个 DMG 附到同名 GitHub Release。打开 DMG 后可将应用拖入“应用程序”文件夹。发布前把 `macos-launcher/package.json` 和 `package-lock.json` 的版本一起更新，再创建与该版本完全一致的标签，例如 `macos-v0.1.0`。标签版本不匹配时构建会失败，不会发布。
-
-应用启动时会检查一次 [GitHub Releases](https://github.com/Ghost233/DSH-Workflow/releases)，也可以从菜单或管理窗口手动检查。只认 `macos-v<主版本>.<次版本>.<修订版本>`、非草稿且非预发布的版本。发现更新后显示“查看新版本”；只有点击它才会用系统浏览器打开对应 Release 页面。应用不会自动下载或替换自身，网络错误也不影响 DSH 运行。
-
-启动器启动时会检查 Web profile 中通过 npm 安装的第三方插件是否有新版本，并在插件管理窗口逐行标出。缺失的项目启动插件在引擎首次启动前按锁定版本加入 profile；已安装插件的版本更新完全由用户手动触发：对单个插件点“更新”，或点“全部更新”，所选插件会安装到确定的 `latest` 版本。它不会更新 DSH 本体、Agent Teams 等与 DSH 版本绑定的官方包、本地链接的自研插件或应用包内的项目插件快照。更新成功后插件管理窗口提供“重启服务”与“稍后”；只有用户选择重启，运行中的 Catalog 引擎才会重新加载插件。检查或更新失败会显示错误，不自动重启。
-
-Actions 的 DMG 内含 ad-hoc 签名、未经 Apple 公证的应用；准备给其他 Mac 正式分发时，还需要配置 Developer ID 签名和公证流程。
+独立 npm 插件可逐项更新。更新 Desktop profile 前应完全退出官方 Desktop，沿用官方 profile 管理约束；更新后重新启动 Desktop 加载新版本。插件管理不会终止正在运行的 Desktop 任务。项目清单中的 `startup: true` 插件沿用既有 Web profile 安装结果，首次 Desktop 初始化时一并复制；单项安装失败仍应报告真实原因。

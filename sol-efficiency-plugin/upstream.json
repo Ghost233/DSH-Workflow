@@ -1,8 +1,8 @@
 {
   "repository": "https://github.com/NVlabs/SoL-Pi.git",
   "submodule": "../vendor/SoL-Pi",
-  "commit": "22277b7e0c3c46ba1259a6687f31fe39ade421a5",
-  "harnessCommit": "477b4f420553e8a52c2fbccc464d7561b239c443",
+  "commit": "e1a586af0ad8956f42ae5b26bba20e48fbf30e00",
+  "harnessCommit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
   "ported": ["action-fusion", "evidence-preserving-reducer"],
   "sources": [
     "src/sol-pi/extensions/action-fusion/then-run.ts",

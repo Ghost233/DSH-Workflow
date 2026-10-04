@@ -1,6 +1,6 @@
 {
   "name": "dsh-owner-workflow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "面向 DeepSeek Harness 的 Owner 工作流编排插件",
   "type": "module",
   "main": "index.js",
@@ -45,7 +45,7 @@
     "test": "node ../scripts/run-workflow-tests.mjs",
     "test:dashboard": "node --test test/dashboard.test.mjs"
   },
-  "dependencies": {
-    "fs-ext": "2.1.1"
+  "peerDependencies": {
+    "@deepseek-ai/node-addon-system": "^0.1.2"
   }
 }

@@ -55,7 +55,7 @@ async function waitForAuthenticatedUrl(logPath, signal) {
 export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal, onReady = () => {},
   gatewayHost = privateBindAddress(), gatewayPort = 3081, gatewaySessions, controlStream = process.stdin,
   onGateway = () => {}, onLog = () => {}, password = process.env.DSH_LAUNCH_PASSWORD,
-  ensurePlugins = prepareProfilePlugins }) {
+  allowLanSettings = false, ensurePlugins = prepareProfilePlugins }) {
   signal?.throwIfAborted()
   if (port === gatewayPort) throw new Error('DSH Web port must differ from the LAN gateway port')
   await assertWebPortAvailable(port)
@@ -74,6 +74,7 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
   const packages = {
     'dsh-owner-workflow': workflow,
     'dsh-sol-efficiency': join(workflow, 'sol-efficiency-plugin'),
+    'dsh-mattpocock-skills-deck': join(workflow, 'vendor/dsh-mattpocock-skills-deck/package'),
   }
   for (const [name, root] of Object.entries(packages)) {
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -109,7 +110,7 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
     ]
     signal?.throwIfAborted()
     gateway = await startLanGateway({ port: gatewayPort, host: gatewayHost, upstreamPort: port,
-      password, authenticatedUrl: () => currentUrl, sessions: gatewaySessions })
+      password, allowLanSettings, authenticatedUrl: () => currentUrl, sessions: gatewaySessions })
     onGateway(gateway)
     let controlBuffer = ''
     onControl = chunk => {
