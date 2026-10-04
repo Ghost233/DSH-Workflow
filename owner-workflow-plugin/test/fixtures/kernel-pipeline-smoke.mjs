@@ -111,7 +111,7 @@ try {
     const workflow = (await runtime.store.read()).workflows.wf
     const events = (await readSessionEvents(host.ctx.sessionPersistence, workflow.attempts[workflow.tasks.alpha.attemptId].sessionId)).events
     const denied = events.find(event => event.type === 'tool/result' && event.data.message.source.callId === 'denied-sibling-write')
-    assert.equal(denied?.data.message.content[0].isError, true)
+    assert.equal(denied?.data.message.isError, true)
     assert.match(JSON.stringify(denied), /exceeds task scope/)
     const consumer = workflow.attempts[workflow.tasks.gamma.attemptId]
     for (const dependency of ['alpha', 'beta']) assert.equal(consumer.inputs[dependency].commitSha, workflow.attempts[workflow.tasks[dependency].attemptId].integration.commitSha)

@@ -405,8 +405,7 @@ try {
     const control = await runtime.store.read()
     const review = Object.values(control.actions).find(action => action.kind === 'review_plan')
     const reviewEvents = (await readSessionEvents(host.ctx.sessionPersistence, review.result.sessionId)).events
-    const submitResults = reviewEvents.filter(event => event.type === 'tool/result').map(event => event.data.message.content
-      .find(block => block.type === 'tool-result')).filter(Boolean)
+    const submitResults = reviewEvents.filter(event => event.type === 'tool/result').map(event => event.data.message).filter(Boolean)
     assert.equal(submitResults.length, 2)
     assert.equal(submitResults[0].isError, true)
     assert.match(JSON.stringify(submitResults[0]), /review\.issues\[\]\.obligationId.*letters.*digits/u)
