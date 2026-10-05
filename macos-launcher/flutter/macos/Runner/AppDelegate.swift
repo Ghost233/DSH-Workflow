@@ -9,6 +9,7 @@ class AppDelegate: FlutterAppDelegate {
   private var statusItem: NSStatusItem?
   private var channel: FlutterMethodChannel?
   private var instanceLock: Int32 = -1
+  private var instanceClaimed = false
   private var quitApproved = false
   private var quitRequested = false
   private var reopenObserver: NSObjectProtocol?
@@ -32,17 +33,27 @@ class AppDelegate: FlutterAppDelegate {
       .appendingPathComponent("DSH Workflow", isDirectory: true)
   }
 
-  override func applicationDidFinishLaunching(_ notification: Notification) {
-    NSApp.setActivationPolicy(.accessory)
+  // Called by MainFlutterWindow before creating the engine, so a duplicate
+  // never starts Dart, SDK connection or password-triggered business work.
+  func claimInstance() -> Bool {
+    if instanceClaimed { return true }
+    if quitApproved { return false }
     do { try FileManager.default.createDirectory(at: dataRoot, withIntermediateDirectories: true) }
-    catch { NSApp.terminate(nil); return }
+    catch { quitApproved = true; NSApp.terminate(nil); return false }
     instanceLock = open(dataRoot.appendingPathComponent("launcher-instance.lock").path, O_CREAT | O_RDWR, 0o600)
     guard instanceLock >= 0, flock(instanceLock, LOCK_EX | LOCK_NB) == 0 else {
       DistributedNotificationCenter.default().postNotificationName(reopen, object: dataRoot.path, userInfo: nil, deliverImmediately: true)
       quitApproved = true
       NSApp.terminate(nil)
-      return
+      return false
     }
+    instanceClaimed = true
+    return true
+  }
+
+  override func applicationDidFinishLaunching(_ notification: Notification) {
+    NSApp.setActivationPolicy(.accessory)
+    guard claimInstance() else { return }
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     statusItem?.button?.image = NSImage(systemSymbolName: "bolt.circle", accessibilityDescription: "DSH Workflow")
     let menu = NSMenu()

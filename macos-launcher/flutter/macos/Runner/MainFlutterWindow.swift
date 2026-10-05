@@ -3,6 +3,10 @@ import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
+    guard let delegate = NSApp.delegate as? AppDelegate, delegate.claimInstance() else {
+      super.awakeFromNib()
+      return
+    }
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController

@@ -21,11 +21,59 @@ void require(bool condition, String description) {
 }
 
 Future<void> main(List<String> arguments) async {
-  if (arguments.length != 1) {
-    throw ArgumentError('Pass the debug Flutter application executable');
+  final instanceStartup =
+      arguments.length == 3 && arguments[1] == '--instance-startup';
+  if (arguments.length != 1 && !instanceStartup) {
+    throw ArgumentError(
+      'Pass the debug executable, optionally --instance-startup and an independent Node executable',
+    );
   }
-  final executable = File(arguments.single).absolute;
-  final app = executable.parent.parent.parent;
+  final sourceExecutable = File(arguments.first).absolute;
+  final sourceApp = sourceExecutable.parent.parent.parent;
+  final info = File('${sourceApp.path}/Contents/Info.plist');
+  final kernel = File(
+    '${sourceApp.path}/Contents/Frameworks/App.framework/Resources/flutter_assets/kernel_blob.bin',
+  );
+  if (!await info.exists() || !await kernel.exists()) {
+    throw ArgumentError(
+      'Only this project Debug candidate with kernel_blob.bin is accepted; Release/unknown apps are never launched or changed',
+    );
+  }
+  final metadata = await Process.run('/usr/bin/plutil', [
+    '-convert',
+    'json',
+    '-o',
+    '-',
+    info.path,
+  ]);
+  final values = jsonDecode(metadata.stdout.toString()) as Map;
+  final debugLibrary = File('${sourceExecutable.path}.debug.dylib');
+  // Xcode may place the Runner implementation in the adjacent Debug dylib.
+  final nativeBinary = latin1.decode([
+    ...await sourceExecutable.readAsBytes(),
+    if (await debugLibrary.exists()) ...await debugLibrary.readAsBytes(),
+  ]);
+  final dartKernel = latin1.decode(await kernel.readAsBytes());
+  if (values['CFBundleIdentifier'] != 'com.ghostagent.dsh-workflow-launcher' ||
+      !nativeBinary.contains('DSHLauncherTestRoot') ||
+      !nativeBinary.contains('test-preferences.plist') ||
+      !nativeBinary.contains('debugWindow') ||
+      !dartKernel.contains('ext.dshlauncher.application')) {
+    throw ArgumentError(
+      'Unknown or non-isolated Debug candidate; it is never launched or changed',
+    );
+  }
+  require(
+    true,
+    'read-only candidate preflight confirms this project Debug isolation bridge and driver',
+  );
+  final root = await Directory('/private/tmp').createTemp('dsh-t01-');
+  final app = Directory('${root.path}/candidate.app');
+  final copy = await Process.run('/usr/bin/ditto', [sourceApp.path, app.path]);
+  require(copy.exitCode == 0, 'probe owns a private Debug application copy');
+  final executable = File(
+    '${app.path}/Contents/MacOS/${sourceExecutable.uri.pathSegments.last}',
+  );
   final manifestPath = '${app.path}/Contents/Resources/maclauncher.json';
   final manifest = await ProjectManifest.read(manifestPath);
   require(
@@ -45,7 +93,6 @@ Future<void> main(List<String> arguments) async {
         await app.resolveSymbolicLinks(),
     'packaged relative association resolves to this candidate app',
   );
-  final root = await Directory('/private/tmp').createTemp('dsh-t01-');
   stdout.writeln('ISOLATED_ROOT=${root.path}');
   final layout = EndpointLayout(directory: '${root.path}/manager');
   final environment = {
@@ -57,6 +104,25 @@ Future<void> main(List<String> arguments) async {
     'DSH_HOME': '${root.path}/home',
   };
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
+  final starts = File('${root.path}/resource-starts.log');
+  if (instanceStartup) {
+    final runtime = Directory(
+      '${root.path}/missing-runtime/workflow/macos-launcher/runtime',
+    );
+    await runtime.create(recursive: true);
+    await Directory('${root.path}/data').create();
+    await File('${root.path}/data/lan-password')
+        .writeAsString('isolated-startup-probe-password');
+    await Link('${root.path}/missing-runtime/node')
+        .create(File(arguments[2]).absolute.path);
+    final trace = jsonEncode(starts.path);
+    await File('${runtime.path}/global-supervisor.mjs').writeAsString(
+      "import { appendFileSync } from 'node:fs'; appendFileSync($trace, 'web-start\\n'); process.exit(17);\n",
+    );
+    await File('${runtime.path}/plugin-versions.mjs').writeAsString(
+      "import { appendFileSync } from 'node:fs'; appendFileSync($trace, 'plugin-check\\n'); console.log(JSON.stringify({rows:[]}));\n",
+    );
+  }
   // LaunchServices does not inherit the process environment. The private
   // Debug candidate carries the same isolation root for associated reopens.
   final configure = await Process.run('/usr/bin/plutil', [
@@ -169,6 +235,80 @@ Future<void> main(List<String> arguments) async {
       );
     }
 
+    if (instanceStartup) {
+      final bindings = await BindingStore.load('${root.path}/bindings.json');
+      await bindings.associate(manifestPath);
+      server = await LauncherServer.start(layout: layout, bindings: bindings);
+      await waitFor(
+        'controlled first application startup',
+        () async =>
+            await starts.exists() &&
+            (await starts.readAsString()).contains('web-start') &&
+            (await starts.readAsString()).contains('plugin-check') &&
+            server!.registry.byProject('dsh-workflow') != null,
+      );
+      require(
+        native(await state())['isolated'] == true,
+        'preseeded-password scenario uses the real isolated application',
+      );
+      final firstSession = server.registry
+          .byProject('dsh-workflow')!
+          .appSessionId;
+      final firstStarts = await starts.readAsString();
+      await state({'action': 'close'});
+      final second = await Process.start(
+        executable.path,
+        [],
+        environment: environment,
+      );
+      final secondOutput = Future.wait([
+        second.stdout.transform(utf8.decoder).join(),
+        second.stderr.transform(utf8.decoder).join(),
+      ]);
+      final secondExit = await second.exitCode.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          second.kill(ProcessSignal.sigkill);
+          throw TimeoutException('Second preseeded application stayed alive');
+        },
+      );
+      final output = (await secondOutput).join('\n');
+      await File('${root.path}/second-app.log').writeAsString(output);
+      stdout.writeln('SECOND_APP_EXIT=$secondExit');
+      require(
+        secondExit == 0 && !exited,
+        'preseeded second application is rejected while the first remains alive',
+      );
+      require(
+        !output.contains('The Dart VM service is listening') &&
+            !output.contains('Using the Impeller rendering backend'),
+        'second instance is rejected before Flutter engine and Dart startup',
+      );
+      require(
+        await starts.readAsString() == firstStarts &&
+            server.registry.byProject('dsh-workflow')!.appSessionId ==
+                firstSession,
+        'second instance starts no controlled runtime and creates no new accepted SDK session',
+      );
+      await waitFor(
+        'preseeded first window activation',
+        () async =>
+            native(await state())['windowVisible'] == true &&
+            native(await state())['windowKey'] == true,
+      );
+      require(
+        native(await state())['pid'] == process.pid,
+        'preseeded duplicate reopens the existing native process',
+      );
+      await state({'action': 'quit'});
+      require(
+        await process.exitCode.timeout(const Duration(seconds: 10)) == 0,
+        'preseeded application quits normally',
+      );
+      stdout.writeln('T01 INSTANCE STARTUP PROBE PASSED');
+      return;
+    }
+
     await waitFor('management UI', () async => text(await state(), '启动 Web'));
     var snapshot = await state();
     require(
@@ -196,6 +336,10 @@ Future<void> main(List<String> arguments) async {
       'actual native window reaches the supported 780 × 560 minimum frame',
     );
     await tap('启动 Web');
+    await waitFor(
+      'management operation error rendered',
+      () async => text(await state(), '请先设置内网访问密码'),
+    );
     snapshot = await state();
     require(
       text(snapshot, '请先设置内网访问密码'),
@@ -297,8 +441,8 @@ Future<void> main(List<String> arguments) async {
       environment: environment,
     );
     final streams = Future.wait([
-      second.stdout.drain<void>(),
-      second.stderr.drain<void>(),
+      second.stdout.transform(utf8.decoder).join(),
+      second.stderr.transform(utf8.decoder).join(),
     ]);
     final secondExit = await second.exitCode.timeout(
       const Duration(seconds: 10),
@@ -307,11 +451,14 @@ Future<void> main(List<String> arguments) async {
         throw TimeoutException('Second application stayed alive');
       },
     );
-    await streams;
+    await File('${root.path}/second-app.log')
+        .writeAsString((await streams).join('\n'));
     stdout.writeln('SECOND_APP_EXIT=$secondExit');
     await waitFor(
       'existing window activated on second open',
-      () async => native(await state())['windowVisible'] == true,
+      () async =>
+          native(await state())['windowVisible'] == true &&
+          native(await state())['windowKey'] == true,
     );
     require(
       secondExit == 0 &&

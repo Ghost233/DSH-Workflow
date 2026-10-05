@@ -19,8 +19,9 @@ void registerApplicationProbe(NativeBridge native) {
   };
   developer.registerExtension('ext.dshlauncher.application', (_, params) async {
     try {
-      final view = WidgetsBinding.instance.renderViews.single;
-      final owner = view.owner?.semanticsOwner;
+      final views = WidgetsBinding.instance.renderViews;
+      final view = views.isEmpty ? null : views.single;
+      final owner = view?.owner?.semanticsOwner;
       final nodes = <Map<String, Object?>>[];
       void visit(SemanticsNode node) {
         final data = node.getSemanticsData();
@@ -51,12 +52,15 @@ void registerApplicationProbe(NativeBridge native) {
         }
         WidgetsBinding.instance.performSemanticsAction(
           SemanticsActionEvent(
-            viewId: view.flutterView.viewId,
+            viewId: view!.flutterView.viewId,
             nodeId: node['id']! as int,
             type: action == 'tap'
                 ? SemanticsAction.tap
                 : SemanticsAction.scrollDown,
           ),
+        );
+        await WidgetsBinding.instance.endOfFrame.timeout(
+          const Duration(seconds: 5),
         );
       } else if (action == 'close' ||
           action == 'ownEntry' ||
@@ -67,15 +71,17 @@ void registerApplicationProbe(NativeBridge native) {
       } else if (action != null) {
         throw ArgumentError('Unknown application probe action: $action');
       }
-      final flutterView = view.flutterView;
+      final flutterView = view?.flutterView;
       return developer.ServiceExtensionResponse.result(
         jsonEncode({
           'nodes': nodes,
           'errors': errors,
-          'contentWidth':
-              flutterView.physicalSize.width / flutterView.devicePixelRatio,
-          'contentHeight':
-              flutterView.physicalSize.height / flutterView.devicePixelRatio,
+          'contentWidth': flutterView == null
+              ? null
+              : flutterView.physicalSize.width / flutterView.devicePixelRatio,
+          'contentHeight': flutterView == null
+              ? null
+              : flutterView.physicalSize.height / flutterView.devicePixelRatio,
           'native': await native.channel.invokeMapMethod<String, Object?>(
             'debugState',
           ),
