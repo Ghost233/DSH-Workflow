@@ -448,9 +448,20 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     notifyListeners();
   }
 
-  Future<void> setLoginEnabled(bool enabled) async {
-    loginStatus = await native.setLoginEnabled(enabled);
+  Future<void> refreshLoginStatus() async {
+    loginStatus = await native.getLoginStatus();
     notifyListeners();
+  }
+
+  Future<void> setLoginEnabled(bool enabled) async {
+    try {
+      loginStatus = await native.setLoginEnabled(enabled);
+    } catch (_) {
+      loginStatus = await native.getLoginStatus();
+      rethrow;
+    } finally {
+      notifyListeners();
+    }
   }
 
   Future<void> checkUpdates() async {

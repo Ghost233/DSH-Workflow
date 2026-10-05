@@ -271,12 +271,22 @@ class _LauncherPageState extends State<LauncherPage> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('登录后启动应用'),
-          value: model.loginStatus == 'enabled',
+          subtitle: Text(switch (model.loginStatus) {
+            'notRegistered' => '登录启动：未注册',
+            'enabled' => '登录启动：已启用',
+            'requiresApproval' => '登录启动：需要系统批准。请在系统设置的登录项中允许启动。',
+            'notFound' => '登录启动：系统未找到此应用',
+            'unsupported' => '登录启动：系统不支持（需要 macOS 13 或更新版本）',
+            'unavailableInTest' => '登录启动：测试环境不访问系统登录项',
+            _ => '登录启动：无法确认系统状态',
+          }),
+          value:
+              model.loginStatus == 'enabled' ||
+              model.loginStatus == 'requiresApproval',
           onChanged: (value) =>
               unawaited(_act(() => model.setLoginEnabled(value))),
         ),
-        if (model.loginStatus == 'requiresApproval')
-          const Text('请在系统设置的登录项中允许启动。'),
+        _button('刷新登录项状态', model.refreshLoginStatus),
         Text(model.updateMessage),
         Wrap(
           spacing: 8,

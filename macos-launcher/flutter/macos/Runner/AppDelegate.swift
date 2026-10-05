@@ -161,6 +161,7 @@ class AppDelegate: FlutterAppDelegate {
             throw self.failure("密码须为 1–1024 字节")
           }
           try self.persistPassword(password); result(nil)
+        case "getLoginStatus": result(self.loginStatus())
         case "setLoginEnabled":
           if self.testRoot != nil && !self.systemBoundaryTest { throw self.failure("测试环境不更改系统登录项") }
           guard let enabled = call.arguments as? Bool else { throw self.failure("无效登录启动设置") }
