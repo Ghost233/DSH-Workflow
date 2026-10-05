@@ -266,14 +266,14 @@ Future<void> runWebApplicationScenario({
 
     await File('${root.path}/initial-web-ui.json')
         .writeAsString(jsonEncode(await state()));
-    final field = await control('内网访问密码', 'setText', 'scrollDown');
+    final field = await control('内网访问密码', 'setText', 'scrollUp');
     await state({
       'action': 'setText',
       'id': '${field['id']}',
       'text': password,
     });
     await tap('设置密码');
-    await control('启动 Web', 'tap', 'scrollUp');
+    await control('启动 Web', 'tap', 'scrollDown');
     await tap('启动 Web');
     if (!await receipt.exists()) {
       require(
