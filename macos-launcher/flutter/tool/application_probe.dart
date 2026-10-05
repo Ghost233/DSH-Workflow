@@ -286,6 +286,7 @@ Future<void> main(List<String> arguments) async {
         port: webPort!,
         state: state,
         tap: tap,
+        capture: capture,
       );
       await state({'action': 'quit'});
       require(

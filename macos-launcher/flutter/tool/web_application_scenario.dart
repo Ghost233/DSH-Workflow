@@ -71,6 +71,7 @@ Future<void> runWebApplicationScenario({
   required int port,
   required ApplicationState state,
   required Future<void> Function(String) tap,
+  required Future<void> Function(String) capture,
 }) async {
   final data = '${root.path}/data';
   final home = '${root.path}/home';
@@ -390,6 +391,8 @@ Future<void> runWebApplicationScenario({
             await Directory('$data/desktop-user-data').exists(),
         'official Desktop uses the private DSH profile and Electron browser data',
       );
+      await ui();
+      await capture('web-shared-desktop');
     }
     await sdk('start');
     await sdk('start');
@@ -438,6 +441,14 @@ Future<void> runWebApplicationScenario({
     stderr.writeln('WEB_SCENARIO_ERROR: $message\n$stack');
     Error.throwWithStackTrace(StateError(message), stack);
   } finally {
+    if (options.backend == 'desktop') {
+      try {
+        await ui();
+        await capture('web-final');
+      } catch (error) {
+        stderr.writeln('WEB_FINAL_CAPTURE_ERROR: $error');
+      }
+    }
     await server?.close();
     if (host != null && !hostExited) {
       host.stdin.writeln('shutdown');
@@ -447,7 +458,21 @@ Future<void> runWebApplicationScenario({
         'owned official Host shuts down normally through its real IPC',
       );
     }
-    if (options.backend == 'desktop') await state({'action': 'quitDesktop'});
+    if (options.backend == 'desktop') {
+      final desktopPid = ((await state())['native'] as Map)['openedDesktopPid'];
+      await state({'action': 'quitDesktop'});
+      if (desktopPid is int) {
+        await waitFor('owned official Desktop exits', () async {
+          final check = await Process.run('/bin/kill', ['-0', '$desktopPid']);
+          return check.exitCode != 0 &&
+              check.stderr.toString().contains('No such process');
+        });
+        require(
+          true,
+          'owned official Desktop PID exited after normal native termination',
+        );
+      }
+    }
     if (await receipt.exists()) {
       await waitFor(
         'owned backend receipt cleanup',
