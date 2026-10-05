@@ -109,7 +109,7 @@ jobs:
           DSH_DESKTOP_TARGET_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          TARGET="apps/desktop/.desktop-build/targets/mac-${DSH_DESKTOP_TARGET_ARCH}"
+          TARGET="$PWD/apps/desktop/.desktop-build/targets/mac-${DSH_DESKTOP_TARGET_ARCH}"
           pnpm run build:official
           pnpm run release:pack --family dsh --out "$TARGET/packed/dsh" --concurrency 4
           pnpm --dir apps/desktop-host pack --pack-destination "$TARGET/packed/dsh"
