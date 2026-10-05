@@ -102,7 +102,14 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
   const profileManifest = await jsonFile(join(profile, 'package.json'))
   for (const [name, spec] of Object.entries(profileManifest?.dependencies ?? {})) {
     if (!packageName(name) || typeof spec !== 'string') continue
-    const installed = await installedPackage(profile, name)
+    let installed
+    try { installed = await installedPackage(profile, name) }
+    catch (error) {
+      rows.push({ source: profileSource, name, current: null, latest: null, status: 'error',
+        supportedDsh: '无法读取', latestSupportedDsh: '无法读取',
+        note: `无法读取已安装插件：${String(error.message).slice(0, 180)}` })
+      continue
+    }
     const current = installed?.version
     const local = /^(?:file:|link:|workspace:|git\+|https?:|\.\.?\/|\/)/.test(spec)
     rows.push({ source: profileSource, name, current: current ?? (exactVersion(spec) ? spec : null),
