@@ -2,9 +2,9 @@
 
 启动器只管理一个全局实例。官方 Electron 桌面端启动并持有 DSH Host；Web 入口通过带密码的代理连接这个 Host，不再启动第二个 Web 后端。桌面端和浏览器共享模型配置、会话、工作区及插件。
 
-DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-workflow-desktop` Bundle 加载 Owner、SoL、中文 Matt 技能和本地任务面板，并发布权限为 `0600` 的后端就绪记录。英文 npm Matt deck 的技能提供器不在运行配置中启用；本地面板不包含其 bundled skills。
+DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-workflow-desktop` Bundle 加载 Owner、中文 Matt 技能和 `dsh-workflow-matt-panel` 本地派生面板，并发布权限为 `0600` 的后端就绪记录。本地面板不包含 bundled skills，原版 Deck 的宿主和工具条目在项目装配中停用。
 
-Matt 面板的子模块引用指向上游提交；面板专用改动按用户选择仅保留在本机，未推送到子模块远端。新克隆不会包含这些改动，当前打包流程需要使用已准备好的本地面板目录。
+面板源码位于主仓库普通目录 `matt-skills-panel-plugin/`，按主项目正常提交即可被 CI 获取；`vendor/dsh-mattpocock-skills-deck` 只用于追踪上游。打包前运行 `npm ci --prefix matt-skills-panel-plugin --ignore-scripts`、`npm run build --prefix matt-skills-panel-plugin`。构建不写入运行中的 profile，也不重启服务；升级对照见派生版 README。
 
 ## 当前本地构建
 

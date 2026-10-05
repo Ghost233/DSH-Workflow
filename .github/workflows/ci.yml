@@ -5,6 +5,19 @@ on:
   pull_request:
 
 jobs:
+  matt-panel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
+      - name: Build and verify project-maintained Matt panel
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
+          npm test --prefix matt-skills-panel-plugin
+
   verify:
     runs-on: ubuntu-latest
     steps:

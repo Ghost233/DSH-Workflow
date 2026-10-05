@@ -17,7 +17,7 @@ Owner Workflow 是本项目的主线程编排内核。主线程负责和用户�
 ./start-owner-workflow.sh
 ```
 
-脚本不接受参数。它使用现有 DSH Web profile，生成项目内的临时组合并在同一宿主加载 Owner、Dashboard 和 SoL。启动前检查固定的官方 DSH 构建和端口占用；不会重置用户 profile、改写凭据、模型、审批策略、沙箱或 Git 身份，也不会自动打开浏览器。
+脚本不接受参数。它使用现有 DSH Web profile，生成项目内的临时组合并在同一宿主加载 Owner 和 Dashboard。启动前检查固定的官方 DSH 构建和端口占用；不会重置用户 profile、改写凭据、模型、审批策略、沙箱或 Git 身份，也不会自动打开浏览器。
 
 临时组合、控制状态和日志位于调用项目的 `.dsh-workflow/`。正式 Owner 定义与长期知识仍由项目内受 Git 管理的 Registry 和 Owner 目录承载。
 

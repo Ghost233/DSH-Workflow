@@ -36,12 +36,12 @@ async function verifyInputs() {
   if (!desktopApp || !existsSync(join(desktopApp, 'Contents/Info.plist'))) {
     throw new Error('Set DSH_MACOS_DESKTOP_APP to the official Desktop source-build application')
   }
-  const deck = join(root, 'vendor/dsh-mattpocock-skills-deck/package')
+  const deck = join(root, 'matt-skills-panel-plugin/package')
   if (!existsSync(join(deck, 'lib/index.js')) || !existsSync(join(deck, 'lib/client.js'))
     || !existsSync(join(deck, 'lib/bootstrap.js'))
     || existsSync(join(deck, 'bundled-skills'))
     || (await readFile(join(deck, 'lib/bootstrap.js'), 'utf8')).includes('registerProvider')) {
-    throw new Error('Local MattSkillsDeck must be built as a panel-only package before packaging the app')
+    throw new Error('Build matt-skills-panel-plugin before packaging the app')
   }
 }
 
@@ -50,7 +50,7 @@ async function copyOwned(workflow) {
   for (const name of ['project-plugins.json', 'project-plugins.lock.json']) {
     if (existsSync(join(root, name))) await cp(join(root, name), join(workflow, name))
   }
-  for (const name of ['owner-workflow-plugin', 'sol-efficiency-plugin']) {
+  for (const name of ['owner-workflow-plugin']) {
     await cp(join(root, name), join(workflow, name), { recursive: true, filter: path => {
       const relative = path.slice(join(root, name).length).replaceAll('\\', '/')
       if (!relative) return true
@@ -58,14 +58,18 @@ async function copyOwned(workflow) {
       return !['test', 'tests', '.git', 'node_modules'].includes(top)
     } })
   }
-  const mattZh = 'vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh'
-  await mkdir(join(workflow, 'vendor/ghost-agent-market/codex-market/plugins'), { recursive: true })
+  const mattZh = 'vendor/mattpocock-skills-zh'
+  await mkdir(join(workflow, 'vendor'), { recursive: true })
   await cp(join(root, mattZh), join(workflow, mattZh), { recursive: true })
-  const mattDeck = 'vendor/dsh-mattpocock-skills-deck/package'
-  await mkdir(join(workflow, 'vendor/dsh-mattpocock-skills-deck'), { recursive: true })
-  await cp(join(root, mattDeck), join(workflow, mattDeck), { recursive: true })
+  await cp(join(root, 'vendor/mattpocock-skills-zh.upstream.json'), join(workflow, 'vendor/mattpocock-skills-zh.upstream.json'))
+  const mattPanel = 'matt-skills-panel-plugin'
+  await mkdir(join(workflow, mattPanel), { recursive: true })
+  await cp(join(root, mattPanel, 'package'), join(workflow, mattPanel, 'package'), { recursive: true })
+  await cp(join(root, mattPanel, 'upstream.json'), join(workflow, mattPanel, 'upstream.json'))
+  await cp(join(root, mattPanel, 'LICENSE'), join(workflow, mattPanel, 'package/LICENSE'))
+  await cp(join(root, mattPanel, 'THIRD_PARTY_NOTICES.md'), join(workflow, mattPanel, 'package/THIRD_PARTY_NOTICES.md'))
   for (const name of ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-runtime.mjs',
-    'kernel-launch-composition.mjs', 'sol-profile-entry.mjs', 'web-host-lifecycle.mjs']) {
+    'kernel-launch-composition.mjs', 'web-host-lifecycle.mjs']) {
     await cp(join(root, 'scripts', name), join(workflow, 'scripts', name))
   }
   await cp(join(root, 'macos-launcher/runtime/web-launch.mjs'), join(workflow, 'macos-launcher/runtime/web-launch.mjs'))

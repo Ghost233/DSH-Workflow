@@ -1,0 +1,775 @@
+/**
+ * scripts/build.mjs — T0 阶段 0 构建管线（先把内置 TypeScript 核逐个转译，再 esbuild 双 entry）
+ *
+ * 第 0 步（#629）：把仓库根 label-color-core/ 里的内置 TypeScript 逐文件转译进
+ *   src/shared/label-color/，并跑一次类型检查。这一步由本文件在派生步骤之前调用，
+ *   为的是让「改一行代码到看见效果」仍然只有一条命令 node scripts/build.mjs。
+ *
+ * 规范方言 = 动态版方言（src/client/index.js / src/host/index.js，host/styles/React/timer 为自由变量）。
+ * 一源出两物：
+ *   _dev → 根 client.js / host.js（cordis_define 函数体形态，须过 precheckCode）
+ *   _pkg → package/lib/client.js / package/lib/index.js（ModuleLoader / ESM 形态，pkg entry 提供 shim）
+ *
+ * seam（src/seam/*）：B1 runtime / B2 style / B3 rpc / B4 timer / B5 editor + G 门禁。
+ * pkg 产物 = 规范源函数体（逐字保留）+ 工厂壳 + seam shim 词法绑定 —— 文本组合而非 esbuild 重写，
+ * 因此 verify-* 的文本特征断言（zIndex: 2147483000、单引号、const L = { 等）保持不变。
+ *
+ * 门禁（G）：
+ *   - dev 产物：precheckCode 包装编译（等价宿主 (async () => {code})() 校验）
+ *   - pkg 产物：vm 编译 + __ModuleLoader__ 特征 + 单组件单声明
+ *   - DSW_VERSION：从 package/package.json 注入（__DSW_VERSION__ 占位符替换）
+ *
+ * 用法：node scripts/build.mjs [--dev-only|--pkg-only] [--out-dir DIR]
+ */
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, rmSync, cpSync, utimesSync } from 'node:fs'
+import { dirname, resolve, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import vm from 'node:vm'
+import { spawnSync } from 'node:child_process'
+import { deriveHost, deriveClient } from './derive-log-from-package.mjs'
+import { deriveClient as deriveUpdateClient } from './derive-update-from-package.mjs'
+
+// #629 配色核心（label-color-core/）：转译与类型检查都写在它自己的 build.mjs 里，
+// 这里只负责在一条命令里把它带上。为什么要写成「先试着加载、加载不到只打印一行提示」，
+// 而不是文件头的静态 import：那棵源码树不进 npm 包（package/package.json 的 files
+// 白名单里没有它），在只有 scripts/ 与 shared/ 的子树里跑构建时，静态 import 会在加载
+// 阶段直接抛错，把整个构建打断，连一行提示都打不出来。这里要的是「这一步跳过、其余照跑」。
+let buildLabelColorCore = null
+try {
+  buildLabelColorCore = (await import('../label-color-core/build.mjs')).buildAll
+} catch (e) {
+  console.log('[build] 没能加载 label-color-core/build.mjs（' + ((e && e.message) || e) + '），本次构建跳过内置 TypeScript 核的转译与类型检查。')
+}
+
+// #720 刷新核心（refresh-core/）：形态与上面的配色核心一致，转译与类型检查都写在它自己的 build.mjs 里。
+// 差别是这里要拿到两个函数（runTypeCheck 与 buildAll），所以存的是整个模块对象，不是单个函数。
+// 同样写成「先试着加载、加载不到只打印一行提示」而不是文件头静态 import：那棵源码树不进 npm 包
+// （package/package.json 的 files 白名单里没有它），在只有 scripts/ 与 shared/ 的子树里跑构建时，
+// 静态 import 会在加载阶段直接抛错，把整个构建打断，连一行提示都打不出来。这里要的是「这一步跳过、其余照跑」。
+let buildRefreshCore = null
+try {
+  buildRefreshCore = await import('../refresh-core/build.mjs')
+} catch (e) {
+  console.log('[build] 没能加载 refresh-core/build.mjs（' + ((e && e.message) || e) + '），本次构建跳过刷新核心的转译与类型检查。')
+}
+
+// #816 版本控制核心（version-control-core/）：形态与上面的刷新核心一致，转译与类型检查都写在
+// 它自己的 build.mjs 里（UNITS 清单由它导出，新鲜度门禁直接读，不手抄）。同样先试加载、
+// 加载不到只打印提示：那棵源码树不进 npm 包，子树构建时跳过、其余照跑。
+let buildVersionControlCore = null
+try {
+  buildVersionControlCore = await import('../version-control-core/build.mjs')
+} catch (e) {
+  console.log('[build] 没能加载 version-control-core/build.mjs（' + ((e && e.message) || e) + '），本次构建跳过版本控制核心的转译与类型检查。')
+}
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+// ---------- 工具 ----------
+const read = (p) => readFileSync(resolve(ROOT, p), 'utf8')
+const write = (p, content) => {
+  const abs = resolve(ROOT, p)
+  mkdirSync(dirname(abs), { recursive: true })
+  writeFileSync(abs, content, 'utf8')
+}
+
+/** 已安装更新包的版本号（#800：面板派生唯一数据源；读不到就报未知，不阻断构建，派生步骤会再报错）。 */
+function deriveUpdateClientVersionForLog() {
+  try {
+    return JSON.parse(read('node_modules/dsh-plugin-update/package.json')).version || '未知'
+  } catch {
+    return '未知'
+  }
+}
+
+/** 从规范源模块提取插件对象函数体（export default { ... } 的 `{ ... }` 部分，含 apply 方法）。
+ *  插件对象 = export default 之后到文件末尾的内容（规范源约定：对象闭合是文件最后一个 `}`）。 */
+function extractPluginBody(srcPath) {
+  const src = read(srcPath)
+  const marker = 'export default {'
+  const idx = src.indexOf(marker)
+  if (idx < 0) throw new Error(`${srcPath}: 找不到 export default {`)
+  const start = idx + marker.length - 1 // 指向 {
+  const end = src.lastIndexOf('}') // 对象闭合 = 文件末尾的 }
+  if (end < start) throw new Error(`${srcPath}: 找不到对象闭合`)
+  return {
+    header: src.slice(0, idx).replace(/\s+$/, ''), // 头注释
+    body: src.slice(start, end + 1), // { apply(ctx) {...} }
+  }
+}
+
+// ---------- seam shim 文本（pkg 方言绑定） ----------
+/** B3 rpc + B2 style + B4 timer 的 pkg 方言 shim（工厂壳内词法绑定，源函数体的自由变量解析到它们）。 */
+const PKG_CLIENT_SHIMS = `    // ===================== seam shims（pkg 方言绑定 · B3 rpc / B2 style / B4 timer） =====================
+    const React = require('react')
+    let __DSW_CTX__ = null
+    // #596：DSH 的 connection.rpc.call 按 channel/endpoint 拼请求路径。走公开的 /api 载体时，
+    // 拼出的是 /api/dsws——与宿主 connection.fetch.register 注册的精确路径同源；
+    // 真正的端点名与入参装进请求体（{method, payload}，与 dsh-im-companion 同构）。
+    // 旧写法 channel='/dsws' 拼出 /dsws/<端点>，要落到那条需要 webServer 注入的前缀路由上，注册期必抛。
+    const CARRIER_CHANNEL = '/api'
+    const CARRIER_ENDPOINT = 'dsws'
+    const __rpcCall = async function (endpoint, args) {
+      const ctx = __DSW_CTX__
+      const conn = ctx && ctx.get ? ctx.get('connection') : undefined
+      if (conn === undefined || conn.rpc === undefined) throw new Error('connection 服务不可用')
+      const res = await conn.rpc.call(CARRIER_CHANNEL, CARRIER_ENDPOINT, { method: endpoint, payload: args })
+      if (res && res.ok) return res.value
+      throw new Error((res && res.error && res.error.message) || ('RPC 失败：' + endpoint))
+    }
+    const host = {
+      call: (method, args) => __rpcCall(method.replace(/^wf\\./, ''), args)
+    }
+    const styles = {
+      insert: (css) => {
+        const ctx = __DSW_CTX__
+        const styleEl = document.createElement('style')
+        styleEl.setAttribute('data-plugin', 'dsh-mattpocock-skills-deck')
+        styleEl.textContent = typeof css === 'string' ? css : Array.isArray(css) ? css.join('') : String(css)
+        document.head.appendChild(styleEl)
+        if (ctx && typeof ctx.effect === 'function') {
+          ctx.effect(() => () => {
+            try { if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl) } catch (e) { /* 忽略 */ }
+          }, 'dsh-mattpocock-skills-deck: styles')
+        }
+        return () => {
+          try { if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl) } catch (e) { /* 忽略 */ }
+        }
+      }
+    }
+    const timer = {
+      schedule: (fn, ms) => {
+        const ctx = __DSW_CTX__
+        const timerSvc = ctx && ctx.get ? ctx.get('timer') : undefined
+        if (timerSvc !== undefined && timerSvc.timeout) return timerSvc.timeout(fn, ms)
+        return setTimeout(fn, ms)
+      }
+    }`
+/** 宿主侧 pkg shim：harness.handle('wf.x', fn) → dispatch 表（对外分发见 src/host/rpcChannel.js）。
+ *  #172 方案 C 原样复制已不再使用此拼接，保留常量仅作历史参照（零打包不变量）。
+ *  #596：分发通道由 connection.rpc.handle 换成 DSH 公开的精确路由 connection.fetch.register，
+ *  注册路径 /api/dsws（单条精确路由，端点名走请求体）。 */
+const PKG_HOST_PREAMBLE = `// ===================== seam shims（pkg 方言绑定 · B3 rpc host 侧） =====================
+const __DSW_HANDLERS__ = new Map()
+const harness = {
+  handle: (method, fn) => {
+    const endpoint = method.replace(/^wf\\./, '')
+    __DSW_HANDLERS__.set(endpoint, fn)
+  }
+}
+`
+
+// ---------- 版本注入 ----------
+function dswVersion() {
+  const pkg = JSON.parse(read('package/package.json'))
+  return 'v' + pkg.version
+}
+
+/** 仓库主页 URL（#repo-link）：package/package.json 的 repository 字段（string 或 {url}），
+ *  去 git+ 前缀与 .git 后缀。版本号可点跳转的单一真源；客户端源码只有 __DSW_REPO_URL__ 占位符，
+ *  无 URL 字面量（过硬编码门禁 F2），产物中的字面量已在门禁 RE_LICENSED 登记。 */
+function dswRepoUrl() {
+  const pkg = JSON.parse(read('package/package.json'))
+  const r = pkg.repository
+  const raw = typeof r === 'string' ? r : (r && r.url) || ''
+  const url = String(raw).replace(/^git\+/, '').replace(/\.git$/, '')
+  if (!url) throw new Error('[build] package/package.json 缺 repository 字段，__DSW_REPO_URL__ 注入无源')
+  return url
+}
+
+function injectVersion(body, version, repoUrl) {
+  return body.split('__DSW_VERSION__').join(`'${version}'`).split('__DSW_REPO_URL__').join(`'${repoUrl}'`)
+}
+
+// ---------- 说明同步（单说明源头 · #479 最简收口） ----------
+/** 根 README.md 为唯一源头；package/README.md 为构建生成物（npm 页面展示用），禁止手改。
+ *  生成时只做四类机械替换（正文一字不动）：相对图片转仓库绝对地址（npm 包内无
+ *  assets 目录）、相对文档链接转仓库绝对地址、版本 pin 跟随当前版本。
+ *  注意：'1.7.14' 字面在此充当版本槽位（源头里所有出现处均为现行版本引用）；
+ *  若未来正文出现历史版本号行，请改写措辞避开该字面。
+ *  tests/verify-readme-sync.js 按同口径断言，手改生成物即红。 */
+const readmeAutogenBanner = (version) => `<!-- AUTO-GENERATED by scripts/build.mjs — DO NOT EDIT. Source: ../README.md @ ${version} -->\n\n`
+function readmeForNpm(rootMd, version, repoUrl) {
+  const verNum = String(version).replace(/^v/, '')
+  const base = String(repoUrl).replace(/\/$/, '')
+  const rawBase = base + '/raw/main/'
+  const blobBase = base + '/blob/main/'
+  return rootMd
+    .split('src="assets/').join(`src="${rawBase}assets/`)
+    .split('](assets/').join(`](${rawBase}assets/`)
+    .split('](docs/').join(`](${blobBase}docs/`)
+    .split('(docs/').join(`(${blobBase}docs/`)
+    .split('1.7.14').join(verNum)
+}
+function syncReadme(version, repoUrl) {
+  const out = readmeAutogenBanner(version) + readmeForNpm(read('README.md'), version, repoUrl)
+  write('package/README.md', out)
+  console.log(`[build] README 已同步 package/README.md（${out.length} bytes，源头 README.md）`)
+}
+
+// ---------- 门禁（G） ----------
+function gatePrecheck(code, label) {
+  try {
+    new vm.Script(`(async () => {\n${code}\n})()`, { filename: `cordis-dyn-${label}.js` })
+  } catch (e) {
+    if (process.env.DSH_PRECHECK_LOC) console.error('LOC '+label+' :: '+(e.stack||'').split('\n').slice(1,3).join(' | '))
+    throw new Error(`[G门禁] ${label} precheckCode 失败：${e.message}`)
+  }
+}
+function gateSyntax(code, label) {
+  // ESM（export）用 node --check 校验（.mjs 按模块解析）；其余用 vm.Script。
+  // 不用 esbuild：它的异步与同步校验都要经后台服务落临时文件，本机删临时文件被拦截
+  // （Access is denied，换目录重跑三次同一位置失败，2026-09-29 实测）。node --check 的
+  // 校验语义等价（只解析不执行），临时文件落在仓库 .tmp 内（已忽略），删不掉也不碍事。
+  if (/\bexport\b/.test(code)) {
+    try {
+      const tmpFile = resolve(ROOT, '.tmp/gate-syntax-check.mjs')
+      mkdirSync(dirname(tmpFile), { recursive: true })
+      writeFileSync(tmpFile, code, 'utf8')
+      const r = spawnSync(process.execPath, ['--check', tmpFile], { encoding: 'utf8' })
+      try { rmSync(tmpFile, { force: true }) } catch { /* 删不掉就留着，.tmp 不入库 */ }
+      if (r.status !== 0) throw new Error((r.stderr || r.stdout || 'node --check 非 0').split('\n').slice(0, 3).join(' | '))
+    } catch (e) {
+      if (e && e.message && e.message.startsWith('[G门禁]')) throw e
+      throw new Error(`[G门禁] ${label} 语法编译失败：${e.message}`)
+    }
+    return true
+  }
+  try {
+    new vm.Script(code, { filename: `gate-${label}.js` })
+  } catch (e) {
+    throw new Error(`[G门禁] ${label} 语法编译失败：${e.message}`)
+  }
+  return true
+}
+function gateModuleLoader(code, label) {
+  if (!code.includes('window.__ModuleLoader__.load')) {
+    throw new Error(`[G门禁] ${label} 缺 __ModuleLoader__ 特征`)
+  }
+}
+function gateSingleDeclaration(code, label, names) {
+  for (const name of names) {
+    const re = new RegExp(`(?:const|function|var)\\s+${name}\\s*[=(]`, 'g')
+    const hits = code.match(re) || []
+    if (hits.length > 1) throw new Error(`[G门禁] ${label} ${name} 声明 ${hits.length} 次（应恰好 1 次）`)
+  }
+}
+
+// ---------- Ctx 模块组合（阶段 2 步骤 1 · #95） ----------
+/** 从 src/client/kernel/ctx.js 提取声明体（去每行行首 export 关键字）。
+ *  注入 client 插件对象 apply 闭包顶部 —— 双产物同构，一源两物（与 seam shims 同模式）。 */
+function extractCtxBlock() {
+  return read('src/client/kernel/ctx.js')
+    .split('\n')
+    .map((l) => l.replace(/^export\s+/, ''))
+    .join('\n')
+    .trim()
+}
+function wireCtx(body) {
+  const marker = 'apply(ctx) {'
+  const idx = body.indexOf(marker)
+  if (idx < 0) throw new Error('src/client/index.js 找不到 apply(ctx) { 注入点（Ctx 接线失败）')
+  return body.slice(0, idx + marker.length) + '\n' + extractCtxBlock() + '\n' + body.slice(idx + marker.length)
+}
+
+// ---------- Kernel 模块组合（阶段 2 内核迁移 · #96 T3）----------
+/** 内核模块清单（docs/architecture/kernel-contract.md · G3 冻结 · 迁移完成即全活跃）。
+ *  index.js 中每模块原位置留标记 `// ==== kernel:<name> (spliced by build) ====`，
+ *  构建时把模块文件声明体（去行首 export）拼回标记处 —— 闭包内原位，行为零变化。 */
+const KERNEL_MODULES = [
+  { name: 'backendList', file: 'src/client/kernel/builtin-backends.js' },
+  { name: 'link', file: 'src/client/kernel/link.js' },
+  { name: 'styles', file: 'src/client/kernel/styles.js' },
+  { name: 'portal', file: 'src/client/kernel/portal.js' },
+  { name: 'localePanel', file: 'src/client/kernel/locale-panel.js' },
+  { name: 'localeFlow', file: 'src/client/kernel/locale-flow.js' },
+  { name: 'localeWord', file: 'src/client/kernel/locale-word.js' },
+  // #621 标签配色弹窗的中英词条：单独一份片段，由 locale.js 的合并器一起并进 L
+  { name: 'localeLabels', file: 'src/client/kernel/locale-labels.js' },
+  // #690 历史票按需翻页的五条文案：locale-flow.js 已贴 350 行上限，照 #621 的做法自成一个片段
+  { name: 'localePages', file: 'src/client/kernel/locale-pages.js' },
+  { name: 'locale', file: 'src/client/kernel/locale.js' },
+  { name: 'icons', file: 'src/client/kernel/icons.js' },
+  // #685：「体检」按钮的件数派生与开新会话注入（游离票口径见 #678、按钮形态见 #681）；
+  //   它写的那条常驻日志必须落在内核文件里（渲染目录写日志是一张点名白名单），所以单独一片。
+  { name: 'healthCheck', file: 'src/client/kernel/health-check.js' },
+  { name: 'prompts', file: 'src/client/kernel/prompts.js' },
+  // #698：初始化那段文案「该不该注入 / 先问还是先给」的决策（layoutCardShouldOpen / injectSetupDecision）
+  { name: 'promptsSetup', file: 'src/client/kernel/prompts-setup.js' },
+  // #698：弹窗表单字段那一串渲染（slotRenderer-modal-view.js 那时到了 404 行）
+  { name: 'modalFields', file: 'src/client/kernel/modal-fields.js' },
+  { name: 'config', file: 'src/client/kernel/config.js' },
+  // #586 切更新包：面板要用的电话名与轮询间隔由更新包派生（改名或改间隔只改包，不在这里写死）
+  { name: 'updateClient', file: 'scripts/generated/updateClient.derived.js' },
+  { name: 'log', file: 'scripts/generated/logKernel.derived.js' },
+  // 构建内核清单含日志模块（旧真源 src/client/kernel/log.js 原地只读留存，运行时拼入上面的派生文件，#564 留而不搬）
+  { name: 'storePrefs', file: 'src/client/kernel/store-prefs.js' },
+  { name: 'storeSwitch', file: 'src/client/kernel/store-switch.js' },
+  { name: 'storeSnapshot', file: 'src/client/kernel/store-snapshot.js' },
+  { name: 'storeDerived', file: 'src/client/kernel/store-derived.js' },
+  { name: 'apiNaming', file: 'src/client/kernel/api-naming.js' },
+  { name: 'apiPresetGuard', file: 'src/client/kernel/api-preset-guard.js' },
+  { name: 'apiWorkspace', file: 'src/client/kernel/api-workspace.js' },
+  { name: 'apiNewSession', file: 'src/client/kernel/api-new-session.js' },
+  { name: 'apiIo', file: 'src/client/kernel/api-io.js' },
+  // #690：历史票的页数据（已关闭票按需翻页）—— 按工作区/后端/仓库/视图/筛选分桶、按身份去重、
+  //   静默刷新不清空、内存最多留 10 页；单独一片是因为 storeSnapshot 已贴 350 行上限，塞不进去。
+  { name: 'issuePages', file: 'src/client/kernel/issue-pages.js' },
+  { name: 'actions', file: 'src/client/kernel/actions.js' },
+  { name: 'slots', file: 'src/client/kernel/slots.js' },
+  { name: 'slotRendererQueue', file: 'src/client/kernel/slotRenderer-queue.js' },
+  { name: 'slotRendererRepoSync', file: 'src/client/kernel/slotRenderer-repo-sync.js' },
+  { name: 'slotRendererModalView', file: 'src/client/kernel/slotRenderer-modal-view.js' },
+  { name: 'probeChain', file: 'src/client/kernel/probe-chain.js' },
+  { name: 'probeStale', file: 'src/client/kernel/probe-stale.js' },
+  { name: 'probeSnapshot', file: 'src/client/kernel/probe-snapshot.js' },
+  // #727：「这个工作区用哪个后端」这条事实的两条专用轨迹（进工作区补问一次 wf.selection；
+  //   那次快照超时之后、回包迟到时怎么落地那一小块）。理由与上一行的 #707 同一条：
+  //   probe-snapshot.js 一直贴着 350 行上限，塞不进去。
+  { name: 'probeSelect', file: 'src/client/kernel/probe-select.js' },
+  // #707：probe-snapshot.js 拆到这里之前 349 行（门禁上限 350），已无下脚的地方，故把颜色小函数、
+  //   数据层增量差异、高亮清除这三样与「下载快照」无关的东西搬成单独一片。
+  { name: 'probeSnapshotHelpers', file: 'src/client/kernel/probe-snapshot-helpers.js' },
+  { name: 'probeAuto', file: 'src/client/kernel/probe-auto.js' },
+  // #707：视野模型的客户端半边 —— 窗口标识（sessionStorage，不能放 localStorage）、焦点与可见性监听、
+  //   面板可见时每 20 秒一次的本地心跳（零配额、不出网）、以及「只服务活跃工作区」那条探测节拍。
+  { name: 'attentionHeartbeat', file: 'src/client/kernel/attention-heartbeat.js' },
+  { name: 'router', file: 'src/client/kernel/router.js' },
+]
+
+// ---------- 共享核心拼装（一源两物 · #265）----------
+/** 共享纯函数模块（src/shared/*）：host 半运行时 import()；client 半按与 kernel 同模式的
+ *  标记拼回闭包 —— 原文零复制（去行首 export），两半共用同一份实现文本，无第二处命名真源。
+ *  shared-0（#443）接线结论：下面各项与 src/client/index.js 里拼接标记一一对应，已经对齐；
+ *  chain 系与 check-catalog 系只被 host 半在运行时引用，client 半没有运行时引用，
+ *  所以不进拼接清单，S1/S3 拆分时不新设拼接标记；naming-guardian.js（498 行）两半都要用，
+ *  S2（#452）已拆成标题、跟踪、归属 3 个文件，此处记 3 个拼接项与 3 个标记位（做法见 #443 票内接线图）。
+ *  跟踪与归属文件内复刻的标题小函数改了名前缀，拼回同一个界面闭包时不与标题文件重名。 */
+const SHARED_SPLICE = [
+  // effort 维度（2026-09-09）：票身份算法（effortOf / idOf / idOfParts）与常量同住 constants.js，
+  // 面板侧要按 (effort, 编号) 定位，故把这份零依赖叶子一并拼进界面闭包（host 半走 import，同源同文本）。
+  { marker: '// ==== shared:trackerConstants (spliced by build) ====', file: 'src/shared/tracker/constants.js' },
+  // #668：首开引导链的步骤清单是「一份顺序、三处读它」里的那一份真源（规格见 #662「定版一」）。
+  // 宿主按它给链快照排序（src/host/detectChain.js）；状态栏横幅与注入决策（#663 / #664）也要读它，
+  // 所以这份零依赖清单必须拼进界面闭包 —— 客户端半边今天没有任何对 src/shared 的运行时 import。
+  { marker: '// ==== shared:guideSteps (spliced by build) ====', file: 'src/shared/tracker/guide-steps.js' },
+  { marker: '// ==== shared:namingTitles (spliced by build) ====', file: 'src/shared/naming-titles.js' },
+  { marker: '// ==== shared:namingTracking (spliced by build) ====', file: 'src/shared/naming-tracking.js' },
+  { marker: '// ==== shared:namingAttribution (spliced by build) ====', file: 'src/shared/naming-attribution.js' },
+  { marker: '// ==== shared:trackerSync (spliced by build) ====', file: 'src/shared/tracker/sync.js' },
+  { marker: '// ==== shared:slots (spliced by build) ====', file: 'src/shared/ui/slots.js' },
+  { marker: '// ==== shared:mattSkills (spliced by build) ====', file: 'src/shared/matt-skills.js' },
+  { marker: '// ==== shared:workspaceKey (spliced by build) ====', file: 'src/shared/workspaceKey.js' },
+  // #629 配色核心的两个产物：宿主半走普通相对 import，客户端半要按同一份口径判断
+  // 用户填的颜色能不能用、颜色有没有变，所以把这两份零依赖产物一并拼进界面闭包。
+  // 它们的顶层名字由 tests/verify-generated-no-shadow.js 与既有的派生文件一起比对，
+  // 产物里不许出现 __DSW_VERSION__ 与 __DSW_REPO_URL__（拼接发生在版本注入之后）。
+  { marker: '// ==== shared:labelColors (spliced by build) ====', file: 'src/shared/label-color/colors.js' },
+  { marker: '// ==== shared:labelColorPrompt (spliced by build) ====', file: 'src/shared/label-color/prompt.js' },
+  // #715 诚实显示：新鲜度阈值（5 分钟黄 / 30 分钟红）、合并窗口（10 秒）、降档的延迟承诺，
+  // 全部只有一份真源 refresh-core/src/budget.ts，产物由本文件上面的 refresh-core 构建步骤生成。
+  // 界面那一半不能运行时 import（客户端半边今天没有任何对 src/shared 的运行时 import），
+  // 所以按同一套拼接做法把这一份拼进界面闭包 —— 界面只许消费这些名字，不许再写一份数字。
+  { marker: '// ==== shared:refreshBudget (spliced by build) ====', file: 'src/shared/refresh/budget.js' },
+]
+
+// ---------- 叶子模块组合（阶段 2 叶子迁移 · #97 T4）----------
+/** 叶子组件模块清单（G3 共享 → views/shared/ · G4 严格一文件 ≤350 行）。
+ *  与 kernel 同模式：index.js 中原位置留标记 `// ==== leaf:<id> (spliced by build) ====`，
+ *  构建时把叶子文件声明体（去行首 export）拼回标记处 —— 闭包内原位，行为零变化；
+ *  组件经 React.useContext(DswsCtx) 消费 cx（ARCHITECTURE-CTX.md §2）。 */
+const LEAF_MODULES = [
+  { id: 'chips', file: 'src/client/views/shared/chips.js' },
+  { id: 'hoverTip', file: 'src/client/views/primitives/HoverTip.js' },
+  { id: 'tip', file: 'src/client/views/primitives/Tip.js' },
+  { id: 'backendSelector', file: 'src/client/views/shared/BackendSelector.js' },
+  { id: 'switchConfirmModal', file: 'src/client/views/shared/SwitchConfirmModal.js' },
+  // #621 标签配色的七个叶子（纯函数三份 + 状态机一份 + 界面三份；按拼接次序登记，次序即依赖次序）
+  { id: 'labelColorErrors', file: 'src/client/views/labels/labelColorErrors.js' },
+  { id: 'labelColorPatch', file: 'src/client/views/labels/labelColorPatch.js' }, // #635 新增：保存成功后把后端确认的颜色写进面板那份快照（面板当场按新色显示，不等那次全量重拉）
+  { id: 'labelColorPalette', file: 'src/client/views/labels/labelColorPalette.js' }, // #637 新增：入口图标的颜色（四个 wayfinder 标签的真实颜色加默认兜底，纯函数）
+  { id: 'useLabelColors', file: 'src/client/views/labels/useLabelColors.js' },
+  { id: 'labelColorRow', file: 'src/client/views/labels/LabelColorRow.js' },
+  { id: 'labelColorDialog', file: 'src/client/views/labels/LabelColorDialog.js' },
+  { id: 'labelColorEntry', file: 'src/client/views/labels/LabelColorEntry.js' },
+  { id: 'subworkspaceMark', file: 'src/client/views/SubworkspaceMark.js' }, // #653 新增：面板头部「当前目录属于工作区 X」那一枚标志（形态由 #650 定稿）
+  { id: 'md', file: 'src/client/views/shared/md.js' },
+  { id: 'ticket', file: 'src/client/views/shared/ticket.js' },
+  { id: 'stateKind', file: 'src/client/views/shared/stateKind.js' }, // #599 新增：票的状态判据（打开/已关闭/已合并）单源，拉取请求页与单票详情页共用一个函数
+  { id: 'tagsFit', file: 'src/client/views/shared/tagsFit.js' },
+  // #818 版本管理页签（规格单 #821）：纯文字规则 → 折叠阶梯 → 块模型 → 显隐谓词 → 数据层 → 入口组件。
+  //   按依赖次序登记，六项都排在 tabs 之前（Tabs.js 按 vcTabVisible 决定这个页签显不显示）。
+  { id: 'vcText', file: 'src/client/views/versionControl/vcText.js' },
+  { id: 'vcFold', file: 'src/client/views/versionControl/vcFold.js' },
+  { id: 'vcCommit', file: 'src/client/views/versionControl/vcCommit.js' }, // 规格故事 32：「这笔提交改了什么」那一层（排在 vcBlocks 之前，行是 vcBlocks 现传进去的同一份）
+  { id: 'vcBlocks', file: 'src/client/views/versionControl/vcBlocks.js' },
+  { id: 'vcTabVisible', file: 'src/client/views/versionControl/vcTabVisible.js' },
+  { id: 'vcData', file: 'src/client/views/versionControl/vcData.js' },
+  { id: 'versionControlTab', file: 'src/client/views/versionControl/VersionControlTab.js' },
+  { id: 'tabs', file: 'src/client/views/shared/Tabs.js' },
+  { id: 'truthLines', file: 'src/client/views/shared/truthLines.js' }, // #715 新增：面板头部那几句「上次更新 / 刷新失败 / 现在是不是降级」的判据（纯函数，画在 ListTab 最上面那一行；行上的「更新中」标记也问它）
+  { id: 'restFallbackBanner', file: 'src/client/views/shared/RestFallbackBanner.js' }, // 2026-09-24 由 ListTab.js 拆出：那条降级横幅的「画」这一段（判据仍是上面 truthLines 的 restFallbackView；ListTab 贴着 350 行上限）
+  { id: 'sessionChainView', file: 'src/client/views/shared/sessionChainView.js' }, // #721 新增：面板顶部那一条「每个会话在处理哪些票」（判据加画法；只读宿主写下的那一个快照字段，读不到就说读不到）
+  { id: 'ticketRow', file: 'src/client/views/TicketRow.js' },
+  { id: 'mapDetailHead', file: 'src/client/views/MapDetailHead.js' }, // #691 由 MapDetail.js 拆出：编号/标题/「本图 N 张子票」那一行（MapDetail 贴着 350 行上限）
+  { id: 'mapDetailTop', file: 'src/client/views/MapDetailTop.js' }, // #807 由 MapDetail.js 拆出：顶部操作行（不换行/逐字折叠/新会话实心/补图标，MapDetail 贴着 350 行上限）
+  { id: 'mapDetail', file: 'src/client/views/MapDetail.js' },
+  { id: 'IssueDetailComments', file: 'src/client/views/IssueDetailComments.js' },
+  { id: 'issueDetailFold', file: 'src/client/views/issueDetailFold.js' }, // #763 新增：详情页顶栏逐字折叠阶梯（纯函数，返回优先收到图标）
+  { id: 'useIssueDetailFold', file: 'src/client/views/useIssueDetailFold.js' }, // #763 新增：同一处的折叠机（读写顶栏 DOM；判据在上一项）
+  { id: 'IssueDetail', file: 'src/client/views/IssueDetail.js' },
+  { id: 'noRepoCard', file: 'src/client/views/NoRepoCard.js' },
+  { id: 'setupCard', file: 'src/client/views/SetupCard.js' }, // #698 新增：盖住整个应用的「域文档布局」小卡（原先只渲染在黄条下面，工作区一初始化就没有地方可画）
+  { id: 'ListTabClosed', file: 'src/client/views/ListTabClosed.js' }, // #690 新增：折叠行展开、滚到底这两个触发点，与「已加载 x / 共 N」那一行（排在 ListTab 之前，ListTab 调它们）
+  { id: 'ListTabRow', file: 'src/client/views/ListTabRow.js' },
+  { id: 'listTab', file: 'src/client/views/ListTab.js' },
+  { id: 'prTab', file: 'src/client/views/PrTab.js' },
+  { id: 'ringSkills', file: 'src/client/views/RingSkills.js' },
+  { id: 'skillsTab', file: 'src/client/views/SkillsTab.js' },
+  { id: 'checksTab', file: 'src/client/views/ChecksTab.js' },
+  { id: 'SettingsWorkspaces', file: 'src/client/views/SettingsWorkspaces.js' },
+  { id: 'debugSwitchFailHint', file: 'src/client/views/shared/DebugSwitchFailHint.js' }, // #597 由 SettingsPage.js 拆出：写开关失败的机器码挑提示词条（无组件，纯函数）
+  { id: 'updateDialog', file: 'src/client/views/UpdateDialog.js' }, // #587 由 SettingsPage.js 拆出：检查更新的浮层弹窗（组件）
+  { id: 'updateRestartBanner', file: 'src/client/views/UpdateRestartBanner.js' }, // #587 新增：装完待重启的常驻提示行（组件）
+  { id: 'useUpdatePanel', file: 'src/client/views/useUpdatePanel.js' }, // #587 由 SettingsPage.js 拆出：检查更新的状态与电话调用（钩子，无组件）
+  { id: 'settingsPage', file: 'src/client/views/SettingsPage.js' },
+  { id: 'runPanel', file: 'src/client/views/RunPanel.js' },
+  { id: 'DockSync', file: 'src/client/panel/DockSync.js' },
+  { id: 'headFold', file: 'src/client/panel/headFold.js' }, // #667 新增：面板头部第一行的逐字折叠阶梯（纯函数，无组件）
+  { id: 'repoChipSkeleton', file: 'src/client/panel/RepoChipSkeleton.js' }, // 2026-09-24 由 Dock.js 拆出：快照还没回来时那条灰色占位骨架（组件，Dock 贴着 350 行上限）
+  { id: 'dock', file: 'src/client/panel/Dock.js' },
+  { id: 'namingFailBanner', file: 'src/client/panel/NamingFailBanner.js' },
+  { id: 'OverlayGate', file: 'src/client/panel/OverlayGate.js' },
+  { id: 'seg', file: 'src/client/statusbar/Seg.js' },
+  { id: 'checksums', file: 'src/client/statusbar/checksums.js' },
+  { id: 'StatusMenus', file: 'src/client/statusbar/StatusMenus.js' },
+  { id: 'StatusBackend', file: 'src/client/statusbar/StatusBackend.js' },
+  { id: 'capFold', file: 'src/client/statusbar/capFold.js' }, // #725 新增：状态栏胶囊那条横条的逐字折叠阶梯（纯函数，无组件）
+  { id: 'capFoldMachine', file: 'src/client/statusbar/capFoldMachine.js' }, // #725 新增：同一处的阶梯机（读写胶囊那一段 DOM；判据在上一项，接线在 statusBar）
+  { id: 'bannerChain', file: 'src/client/statusbar/bannerChain.js' }, // #663 新增：状态栏那条横幅按引导链清单决定出哪一条、那颗按钮点了做什么
+  { id: 'StatusLogMenu', file: 'src/client/statusbar/StatusLogMenu.js' },
+  { id: 'statusBar', file: 'src/client/statusbar/StatusBar.js' },
+  { id: 'sessionChainCapsule', file: 'src/client/statusbar/SessionChainCapsule.js' }, // 胶囊里「这个会话在办哪张票」那一段（只读链读数里当前会话那一格，不进折叠阶梯）
+  { id: 'chainRenderer', file: 'src/client/views/shared/ChainRenderer.js' },
+  { id: 'skillFloatList', file: 'src/client/floating/SkillFloatList.js' },
+  { id: 'pop', file: 'src/client/floating/Pop.js' },
+  { id: 'hostShim', file: 'src/client/hostShim.js' }, // #459 由 index.js 拆出：宿主适配垫片（timer 兜底加旧标签迁移）
+  { id: 'panelAssembly', file: 'src/client/panelAssembly.js' }, // #459 由 index.js 拆出：面板装配（Ctx 装配加插槽注册加启动收尾）
+]
+function extractModuleBlock(file) {
+  return read(file).split('\n').map((l) => l.replace(/^(\s*)export\s+/, '$1')).join('\n').trim()
+}
+function wireModules(body) {
+  let out = body
+  for (const m of KERNEL_MODULES) {
+    const marker = `// ==== kernel:${m.name} (spliced by build) ====`
+    if (out.indexOf(marker) < 0) throw new Error(`[build] 缺 marker ${marker} 对应 ${m.file} — 请在 src/client/index.js 加标记并在 KERNEL_MODULES 注册`)
+    out = out.replace(marker, extractModuleBlock(m.file))
+  }
+  for (const m of LEAF_MODULES) {
+    const marker = `// ==== leaf:${m.id} (spliced by build) ====`
+    if (out.indexOf(marker) < 0) throw new Error(`[build] 缺 marker ${marker} 对应 ${m.file} — 请在 src/client/index.js 加标记并在 LEAF_MODULES 注册`)
+    out = out.replace(marker, extractModuleBlock(m.file))
+  }
+  for (const m of SHARED_SPLICE) {
+    const marker = m.marker
+    if (out.indexOf(marker) < 0) throw new Error(`[build] 缺 marker ${marker} 对应 ${m.file} — 请在 src/client/index.js 加标记并在 SHARED_SPLICE 注册`)
+    out = out.replace(marker, extractModuleBlock(m.file))
+  }
+  // 反向检查：src 下有叶子文件却未在 LEAF_MODULES 登记（比“忘贴纸条”更隐蔽）
+  try {
+    const leafFiles = []
+    const walk = (dir) => {
+      const abs = resolve(ROOT, dir)
+      if (!existsSync(abs)) return
+      for (const ent of readdirSync(abs, { withFileTypes: true })) {
+        const rel = dir + '/' + ent.name
+        const absEnt = resolve(ROOT, rel)
+        if (ent.isDirectory()) walk(rel)
+        else if (ent.isFile() && rel.endsWith('.js')) leafFiles.push(rel)
+      }
+    }
+    walk('src/client/views'); walk('src/client/panel'); walk('src/client/statusbar'); walk('src/client/floating')
+    const registered = new Set(LEAF_MODULES.map(m => m.file))
+    for (const f of leafFiles) {
+      if (!registered.has(f)) throw new Error(`[build] ${f} 未在 LEAF_MODULES 登记 — 新加叶子需在 LEAF_MODULES 加一项并在 src/client/index.js 加 // ==== leaf:<id> ==== 标记`)
+    }
+  } catch (e) {
+    if (e && e.message && e.message.startsWith('[build]')) throw e
+  }
+  return out
+}
+
+// ---------- 构建 client ----------
+async function buildClient({ version, repoUrl }) {
+  const { header, body } = extractPluginBody('src/client/index.js')
+  const bodyW = wireCtx(wireModules(injectVersion(body, version, repoUrl)))
+  // 根产物降级声明（G1 · T5 #98）：client.js/host.js 为构建产物，人手不碰
+  const devBanner = `// AUTO-GENERATED by scripts/build.mjs — DO NOT EDIT. Source: src/client/index.js + kernel/* + leaves/* (${version})\n// 产物 gitignore，一源两物；改 src/ 后运行 node scripts/build.mjs 重新生成。\n`
+
+  // ---- _dev：cordis_define 函数体形态 ----
+  const devCode = `${devBanner}${header}\n\nreturn ${bodyW}\n`
+  gatePrecheck(devCode, 'client-dev')
+  write('client.js', devCode)
+
+  // ---- _pkg：ModuleLoader 工厂壳 + seam shims ----
+  const pkgCode = `${header}
+
+window.__ModuleLoader__.load({
+  id: 'dsh-workflow-matt-panel',
+  factory: (require) => {
+    var module = { exports: {} }
+    var exports = module.exports
+    Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
+${PKG_CLIENT_SHIMS}
+    const __plugin = ${bodyW}
+    exports.inject = ['connection', 'slots', 'locale', 'workspaces', 'sessions']
+    exports.apply = function (ctx) { __DSW_CTX__ = ctx; return __plugin.apply(ctx) }
+    return module.exports
+  }
+})
+`
+  await gateSyntax(pkgCode, 'client-pkg')
+  gateModuleLoader(pkgCode, 'client-pkg')
+  gateSingleDeclaration(pkgCode, 'client-pkg', ['StatusBar', 'DetailsDock', 'SettingsPage', 'RunPanel', 'IssueDetail'])
+  write('package/lib/client.js', pkgCode)
+  return { devCode, pkgCode }
+}
+
+// ---------- 构建 host（方案 C 原样复制 · #136/#172） ----------
+async function buildHost({ version }) {
+  const { header, body } = extractPluginBody('src/host/index.js')
+  const hostDevBanner = `// AUTO-GENERATED by scripts/build.mjs — DO NOT EDIT. Source: src/host/index.js (${version})\n// 产物 gitignore，一源两物；改 src/ 后运行 node scripts/build.mjs 重新生成。\n`
+
+  // ---- _dev：cordis_define 函数体形态（保留，host.js 不在发布包，#172 不碰其函数体）----
+  const devCode = `${hostDevBanner}${header}\n\nreturn ${body}\n`
+  gatePrecheck(devCode, 'host-dev')
+  write('host.js', devCode)
+
+  // ---- _pkg：原样复制（零打包）—— src/host 整树 → package/lib, src/shared → package/shared ----
+  // 幂等清理：先清旧产物再复制，确保双向差集 0；lib/client.js 工厂壳由 buildClient 负责，不在此删
+  const pkgLib = resolve(ROOT, 'package/lib')
+  const pkgShared = resolve(ROOT, 'package/shared')
+  // 清理 package/lib 下的 host 树（保留 lib/client.js）
+  const toRemove = [
+    join(pkgLib, 'index.js'),
+    join(pkgLib, 'platform'),
+    join(pkgLib, 'tracker'),
+  ]
+  for (const p of toRemove) {
+    try { rmSync(p, { recursive: true, force: true }) } catch {}
+  }
+  try { rmSync(pkgShared, { recursive: true, force: true }) } catch {}
+  mkdirSync(pkgLib, { recursive: true })
+  mkdirSync(pkgShared, { recursive: true })
+  // 复制 src/host → package/lib（逐文件 sha256 一致）
+  const srcHost = resolve(ROOT, 'src/host')
+  // Node 16.7+ cpSync 原生支持；fall back 手写
+  const copyOpts = { recursive: true, force: true }
+  try {
+    if (typeof cpSync === 'function') {
+      // 复制 src/host/* 到 package/lib/*
+      const entries = readdirSync(srcHost, { withFileTypes: true })
+      for (const ent of entries) {
+        const s = join(srcHost, ent.name)
+        const d = join(pkgLib, ent.name)
+        cpSync(s, d, copyOpts)
+      }
+      cpSync(resolve(ROOT, 'src/shared'), pkgShared, copyOpts)
+    } else {
+      throw new Error('cpSync unavailable')
+    }
+  } catch (e) {
+    // fallback 手写递归
+    function cpRecur(src, dst) {
+      const st = statSync(src)
+      if (st.isDirectory()) {
+        mkdirSync(dst, { recursive: true })
+        for (const ent of readdirSync(src)) cpRecur(join(src, ent), join(dst, ent))
+      } else {
+        mkdirSync(dirname(dst), { recursive: true })
+        writeFileSync(dst, readFileSync(src))
+      }
+    }
+    const entries = readdirSync(srcHost, { withFileTypes: true })
+    for (const ent of entries) cpRecur(join(srcHost, ent.name), join(pkgLib, ent.name))
+    cpRecur(resolve(ROOT, 'src/shared'), pkgShared)
+  }
+  // 校验：package/lib/index.js 必须与 src/host/index.js 逐字节一致（零打包不变量）
+  try {
+    const a = readFileSync(resolve(ROOT, 'src/host/index.js'), 'utf8')
+    const b = readFileSync(join(pkgLib, 'index.js'), 'utf8')
+    if (a !== b) throw new Error('package/lib/index.js 与 src/host/index.js 不一致（原样复制失败）')
+  } catch (e) {
+    throw new Error(`[build] 原样复制校验失败：${e.message}`)
+  }
+  // #586 更新包派生副本：src/host/updatePkg/* → package/lib/updatePkg/*（逐文件原样，包内相对引用保持有效）
+  {
+    const srcUpdatePkg = resolve(ROOT, 'src/host/updatePkg')
+    const dstUpdatePkg = join(pkgLib, 'updatePkg')
+    try { rmSync(dstUpdatePkg, { recursive: true, force: true }) } catch {}
+    mkdirSync(dstUpdatePkg, { recursive: true })
+    const names = readdirSync(srcUpdatePkg)
+    for (const name of names) {
+      const from = join(srcUpdatePkg, name)
+      const to = join(dstUpdatePkg, name)
+      writeFileSync(to, readFileSync(from))
+      const a = readFileSync(from, 'utf8')
+      const b = readFileSync(to, 'utf8')
+      if (a !== b) throw new Error(`[build] updatePkg/${name} 原样复制不一致`)
+    }
+    console.log(`[build] 更新包派生副本已随包 → package/lib/updatePkg（${names.length} 个文件）`)
+  }
+  // 分发 scripts/：消费者工作区调用的两条脚本随包发布（#588 总指挥裁定：只收两条消费者脚本，
+  // 构建/调试脚本（build.mjs、ui-*、wizard-*、generate-*、matrix-*、sync-* 等）不许进发布包；
+  // 清单写死在这里并注释原因，不另维护第二份——门禁从这份清单机械求值发布包脚本集合）。
+  const SHIPPED_SCRIPTS = ['fix-issue-body.mjs', 'wire-subissues.mjs']
+  const pkgScripts = resolve(ROOT, 'package/scripts')
+  try { rmSync(pkgScripts, { recursive: true, force: true }) } catch {}
+  mkdirSync(pkgScripts, { recursive: true })
+  for (const name of SHIPPED_SCRIPTS) {
+    writeFileSync(join(pkgScripts, name), readFileSync(join(resolve(ROOT, 'scripts'), name)))
+  }
+  console.log(`[build] scripts 已随包分发 → package/scripts（${SHIPPED_SCRIPTS.length} 个文件：${SHIPPED_SCRIPTS.join('、')}）`)
+  // 触新 mtime：确保产物新鲜度门禁（verify-parse-leaf 检查产物 mtime > 源 mtime），原样复制需显式 touch
+  try {
+    const now = new Date()
+    const touch = (dir) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, ent.name)
+        if (ent.isDirectory()) touch(p)
+        else try { utimesSync(p, now, now) } catch {}
+      }
+    }
+    touch(pkgLib)
+    touch(pkgShared)
+    touch(pkgScripts)
+  } catch {}
+
+  // L1 冒烟：构建内 await import('package/lib/index.js') 入口 + node --check 全树
+  // --check 全树
+  function collectJs(dir) {
+    const out = []
+    const walk = (d) => {
+      for (const ent of readdirSync(d, { withFileTypes: true })) {
+        const p = join(d, ent.name)
+        if (ent.isDirectory()) walk(p)
+        else if (p.endsWith('.js')) out.push(p)
+      }
+    }
+    if (existsSync(dir)) walk(dir)
+    return out
+  }
+  const allHostJs = collectJs(pkgLib).concat(collectJs(pkgShared))
+  for (const f of allHostJs) {
+    const r = spawnSync(process.execPath, ['--check', f], { encoding: 'utf8' })
+    if (r.status !== 0) throw new Error(`[L1] node --check 失败 ${f}: ${r.stderr || r.stdout}`)
+  }
+  // 入口 import 冒烟（显式 .js 已在 src 侧保证，此处验证 runtime 解析）
+  const entryUrl = pathToFileURL(join(pkgLib, 'index.js')).href
+  let mod
+  try {
+    mod = await import(entryUrl)
+  } catch (e) {
+    throw new Error(`[L1] import(package/lib/index.js) 失败：${e.message}`)
+  }
+  // 方案 C：src/host/index.js 为 export default { apply } 默认导出，非命名导出；兼容两种形态
+  const hasApply = typeof mod.apply === 'function' || typeof mod.default?.apply === 'function'
+  const hasName = typeof mod.name === 'string' || typeof mod.default?.name === 'string'
+  if (!mod || !hasApply) {
+    throw new Error(`[L1] 入口导出校验失败：hasApply=${hasApply} name=${mod?.name ?? mod?.default?.name} apply=${typeof (mod?.apply ?? mod?.default?.apply)} keys=${Object.keys(mod)}`)
+  }
+  const dispName = mod.name ?? mod.default?.name ?? '(default)'
+  const dispInject = Array.isArray(mod.inject) ? mod.inject.join(',') : Array.isArray(mod.default?.inject) ? mod.default.inject.join(',') : '(default.apply)'
+  console.log(`[L1] host pkg 入口冒烟通过：name=${dispName} inject=${dispInject} apply=function`)
+
+  const pkgCode = readFileSync(join(pkgLib, 'index.js'), 'utf8')
+  return { devCode, pkgCode }
+}
+
+// ---------- 产物自检（风险A） ----------
+function gateBuildArtifacts() {
+  for (const p of ['client.js', 'host.js']) {
+    if (existsSync(resolve(ROOT, p))) {
+      const txt = read(p)
+      if (!txt.startsWith('// AUTO-GENERATED')) {
+        console.warn(`[warn] ${p} 缺 AUTO-GENERATED 横幅 — 可能为手改产物，下次 build 将被覆盖`)
+      }
+    }
+  }
+}
+
+// ---------- 捆绑技能存在性检查（#388 T1 · G2 定版：目录直铺 25，空目录期跳过校验） ----------
+// ---------- main ----------
+
+const args = process.argv.slice(2)
+const devOnly = args.includes('--dev-only')
+const pkgOnly = args.includes('--pkg-only')
+const version = dswVersion()
+const repoUrl = dswRepoUrl()
+console.log(`[build] DSW_VERSION=${version} (package/package.json)`)
+console.log(`[build] DSW_REPO_URL=${repoUrl} (package/package.json repository)`)
+
+// A 自检（build 前）：若产物存在但无横幅，给 warn（不阻断，防旧产物）
+gateBuildArtifacts()
+if (existsSync(resolve(ROOT, 'package/bundled-skills'))) throw new Error('The derived panel must use external Chinese skills')
+syncReadme(version, repoUrl)
+for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'upstream.json']) cpSync(resolve(ROOT, file), resolve(ROOT, 'package', file))
+
+// #629 内置 TypeScript 核（配色核心）：先转译再跑类型检查，产物落进 src/shared/label-color/。
+// 它自己会判源码目录在不在（发布包与 package/ 子树里没有这棵源码树），不在就跳过并打印提示。
+// 放在两段派生之前：产物是客户端闭包的输入，必须比闭包先就位。
+if (buildLabelColorCore) buildLabelColorCore()
+
+// #720 内置 TypeScript 核（刷新核心）：类型检查与转译各调用一次，产物落进 src/shared/refresh/。
+// 两步分开调是因为 refresh-core/build.mjs 把它们拆成了两个函数（它的 buildAll 只管转译）；
+// 它自己会判源码目录在不在（发布包与 package/ 子树里没有这棵源码树），不在就跳过并打印一行提示。
+// 与配色核心一样放在两段派生之前：产物是宿主与界面要用的纯逻辑，必须比闭包先就位。
+if (buildRefreshCore) {
+  buildRefreshCore.runTypeCheck()
+  buildRefreshCore.buildAll()
+}
+
+// #816 版本控制核心：类型检查与转译各调用一次，产物落进 src/shared/version-control/。
+// 与刷新核心一样放在两段派生之前：产物是宿主与界面要用的纯逻辑，必须比闭包先就位。
+if (buildVersionControlCore) {
+  buildVersionControlCore.runTypeCheck()
+  buildVersionControlCore.buildAll()
+}
+
+// #564 日志系统派生：先把日志包产物派生为运行时文件（旧文件不动），再拼装。
+// #586 更新系统派生：同样先把更新包产物派生为运行时文件（旧文件不动）。
+// #800 面板派生已切到官方工具：取值唯一来源是已安装的更新包（node_modules/dsh-plugin-update@0.2.x），
+//   本构建只做“派生→构建”两步；“升到 0.2.x 最新并提交锁文件”这一步在构建前由人或发版流程执行，
+//   构建时不自动联网升级（顺序：最新 0.2.x → 派生 → 构建）。
+// 两个包 dist 缺失时会报错并提示先跑各自的 build。
+try {
+  deriveHost()
+  deriveClient()
+} catch (e) {
+  throw new Error('[build] 日志派生失败（先跑 node packages/dsh-log/build.mjs 再重跑本构建）：' + ((e && e.message) || e))
+}
+try {
+  const updVersion = deriveUpdateClientVersionForLog()
+  console.log(`[build] 更新包面板取值来源：已安装 dsh-plugin-update@${updVersion}（面板派生唯一数据源；打包前应已先升到 0.2.x 最新并提交锁文件）`)
+  deriveUpdateClient()
+} catch (e) {
+  throw new Error('[build] 更新派生失败（面板取值来源是已安装的更新包：先确认 pnpm install 已装好 dsh-plugin-update@^0.2.0，再重跑本构建）：' + ((e && e.message) || e))
+}
+
+const out = {}
+if (!pkgOnly) out.clientDev = (await buildClient({ version, repoUrl })).devCode
+if (!devOnly) out.clientPkg = (await buildClient({ version, repoUrl })).pkgCode
+if (!pkgOnly) out.hostDev = (await buildHost({ version })).devCode
+if (!devOnly) out.hostPkg = (await buildHost({ version })).pkgCode
+
+console.log('[build] OK')
+console.log(`  client.js (dev)      ${out.clientDev ? read('client.js').length + ' bytes' : 'skipped'}`)
+console.log(`  host.js (dev)        ${out.hostDev ? read('host.js').length + ' bytes' : 'skipped'}`)
+console.log(`  package/lib/client.js (pkg) ${out.clientPkg ? read('package/lib/client.js').length + ' bytes' : 'skipped'}`)
+console.log(`  package/lib/index.js (pkg)  ${out.hostPkg ? read('package/lib/index.js').length + ' bytes' : 'skipped'}`)
+
+// A 自检（build 后）：产物必须带横幅
+gateBuildArtifacts()
+
+// Derived builds write only to this plugin directory.

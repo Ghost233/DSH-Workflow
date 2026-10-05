@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck",
+  "submodulePath": "vendor/dsh-mattpocock-skills-deck",
+  "commit": "11c8d88bacfbfd1302aa0eb04095a9bd1e31950e",
+  "version": "1.7.39",
+  "sourcePaths": [
+    "src",
+    "label-color-core",
+    "refresh-core",
+    "version-control-core",
+    "packages/dsh-log",
+    "LICENSE",
+    "scripts/build.mjs",
+    "scripts/derive-log-from-package.mjs",
+    "scripts/derive-update-from-package.mjs",
+    "scripts/generated",
+    "package/package.json",
+    "package/cordis.patch.yml",
+    "scripts/fix-issue-body.mjs",
+    "scripts/wire-subissues.mjs"
+  ]
+}

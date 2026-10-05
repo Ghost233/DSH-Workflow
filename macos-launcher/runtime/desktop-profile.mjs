@@ -17,7 +17,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const profile = join(home, 'profiles/desktop')
   const directory = join(globalRoot, '.dsh-workflow/desktop-bundle')
   const stampPath = join(directory, 'integration.json')
-  const identity = { workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM }
+  const identity = { workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', components: ['owner'], hostInstance: 'desktop-bridge', creatorJevGuidance: true }
   await mkdir(profile, { recursive: true })
   const manifestPath = join(profile, 'package.json')
   if (existsSync(manifestPath) && existsSync(stampPath)) {
@@ -57,16 +57,8 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const entries = boot.composeEntries([...layers, resolved.patches])
   const patches = composeKernelLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot,
     presetPlugins: boot.loadOverlayPatches('dsh', join(workflow, 'owner-workflow-plugin/kernel-presets/owner-workflow/agent.cordis.yml')) })
-  const ownedPaths = {
-    'dsh-sol-efficiency': join(workflow, 'sol-efficiency-plugin/index.js'),
-    'dsh-mattpocock-skills-deck': join(workflow, 'vendor/dsh-mattpocock-skills-deck/package/lib/index.js'),
-  }
-  for (const patch of patches) for (const row of patch.insert ?? []) row.name = ownedPaths[row.name] ?? row.name
   const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
   for (const row of flatten(entries)) {
-    if (row.name === 'dsh-sol-efficiency' && row.disabled !== true) {
-      patches.push({ id: row.id, name: ownedPaths['dsh-sol-efficiency'] })
-    }
     if (permissionMode && row.name === '@deepseek-ai/dsh-sandbox-policy' && row.disabled !== true) {
       patches.push({ id: row.id, config: { mode: permissionMode } })
     }

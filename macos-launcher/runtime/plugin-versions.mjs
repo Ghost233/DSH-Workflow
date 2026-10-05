@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 const registry = 'https://registry.npmjs.org/'
 const owned = [
   ['dsh-owner-workflow', 'owner-workflow-plugin'],
-  ['dsh-sol-efficiency', 'sol-efficiency-plugin'],
+  ['dsh-workflow-matt-panel', 'matt-skills-panel-plugin/package'],
 ]
 const agentTeams = [
   '@deepseek-ai/dsh-experimental-agent-team-profile',
@@ -147,10 +147,14 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
 
   for (const [name, directory] of owned) {
     const manifest = await jsonFile(join(workflow, directory, 'package.json'))
-    if (manifest?.name === name) rows.push({ source: 'App 内置自研插件', name, current: manifest.version,
-      latest: null, status: 'bundled', note: '随 App 构建更新，不在运行中替换' })
+    if (manifest?.name === name) {
+      const panel = name === 'dsh-workflow-matt-panel'
+      const upstream = panel ? await jsonFile(join(workflow, 'matt-skills-panel-plugin/upstream.json')) : undefined
+      rows.push({ source: panel ? 'App 内置派生插件' : 'App 内置自研插件', name, current: manifest.version,
+        latest: null, status: 'bundled', note: panel ? `上游基准 ${upstream?.version ?? '未知'}；随 App 构建更新` : '随 App 构建更新，不在运行中替换' })
+    }
   }
-  const mattZh = await jsonFile(join(workflow, 'vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh/.codex-plugin/plugin.json'))
+  const mattZh = await jsonFile(join(workflow, 'vendor/mattpocock-skills-zh/.codex-plugin/plugin.json'))
   if (mattZh?.name === 'mattpocock-skills-zh') rows.push({ source: 'App 内置中文技能', name: mattZh.name,
     current: mattZh.version, latest: null, status: 'bundled', supportedDsh: '未声明', latestSupportedDsh: '未声明',
     note: '启动时由 DSH 技能文件提供器加载；随 App 构建更新' })
@@ -173,7 +177,7 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
     } catch (error) { row.status = 'error'; row.note = String(error.message).slice(0, 180) }
   }))
   const enabledBundles = new Set(profileManifest?.dsh?.profile?.bundles ?? [])
-  const ownedNames = new Set(owned.map(([name]) => name))
+  const ownedNames = new Set([...owned.map(([name]) => name), 'dsh-mattpocock-skills-deck'])
   for (const row of rows) {
     row.updatable = ['DSH Web profile', 'DSH Desktop profile'].includes(row.source) && row.status === 'newer' && typeof row.latest === 'string'
       && exactVersion(row.latest) && enabledBundles.has(row.name)

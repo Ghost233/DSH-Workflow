@@ -18,15 +18,25 @@ export function composeKernelLaunch(entries, { projectRoot, catalogRoot, presetP
   plugins[0].name = join(root, 'owner-workflow-plugin/kernel-presets/owner-workflow/plugin.mjs')
   plugins[0].config = { ...plugins[0].config, catalogRoot: catalog }
   const patches = []
+  const creator = all.find(row => row.name === '@deepseek-ai/dsh-agent-preset' && row.disabled !== true && row.config?.id === 'cordis')
+  if (creator) {
+    const creatorPlugins = structuredClone(creator.config.plugins)
+    creatorPlugins.push({ id: 'workflow-creator-jev-guidance', name: join(root, 'owner-workflow-plugin/src/creator-jev-guidance.mjs') })
+    patches.push({ id: creator.id, name: creator.name, config: { ...structuredClone(creator.config), plugins: creatorPlugins } })
+  }
   const identities = new Map([
     ['dsh-owner-workflow', 'owner'], ['dsh-owner-workflow/dashboard', 'dashboard'],
     [join(root, 'owner-workflow-plugin/index.js'), 'owner'], [join(root, 'owner-workflow-plugin/dashboard-host.mjs'), 'dashboard'],
     [join(root, 'owner-workflow-plugin/src/kernel-entry.mjs'), 'owner'], [join(root, 'owner-workflow-plugin/src/kernel-dashboard-host.mjs'), 'dashboard'],
     ['dsh-sol-efficiency', 'sol'], [join(root, 'sol-efficiency-plugin/index.js'), 'sol'],
-    ['dsh-mattpocock-skills-deck', 'matt-deck'],
+    ['dsh-mattpocock-skills-deck', 'matt-deck'], ['dsh-workflow-matt-panel', 'matt-deck'],
+    ['dsh-mattpocock-skills-deck/tools', 'matt-tools'], ['dsh-workflow-matt-panel/tools', 'matt-tools'],
     // Retired entries are disabled in the project overlay without editing user profiles.
     ['dsh-synapse-workflow', 'synapse'], [join(root, 'synapse-workflow-plugin/index.js'), 'synapse'],
   ])
+  for (const row of all) {
+    if (typeof row.name === 'string' && row.name.endsWith('/sol-efficiency-plugin/index.js')) identities.set(row.name, 'sol')
+  }
   const existing = all.filter(row => identities.has(row.name))
   if (existing.some(row => !row.id)) throw new Error('Kernel launch cannot replace an unnamed project plugin')
   const previous = kind => {
@@ -34,9 +44,8 @@ export function composeKernelLaunch(entries, { projectRoot, catalogRoot, presetP
     if (matches.length > 1) throw new Error(`Resolve duplicate active ${kind} project plugins before kernel composition`)
     return structuredClone(matches[0]?.config ?? {})
   }
-  const solConfig = previous('sol')
   const mattDeckConfig = previous('matt-deck')
-  const mattZhSkills = join(root, 'vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh/skills')
+  const mattZhSkills = join(root, 'vendor/mattpocock-skills-zh/skills')
   const owned = [
     { id: 'preset-owner-workflow', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'owner-workflow', order: 0, plugins } },
     { id: 'kernel-owner-surface', name: join(root, 'owner-workflow-plugin/src/kernel-entry.mjs'), config: { surfaceOnly: true } },
@@ -44,16 +53,14 @@ export function composeKernelLaunch(entries, { projectRoot, catalogRoot, presetP
     { id: 'mattpocock-skills-zh', name: '@deepseek-ai/dsh-skill-filesystem', config: {
       providerName: 'mattpocock-skills-zh', includeDefaultRoots: false, customSkillDirs: [mattZhSkills],
     } },
-    { id: 'matt-skills-board', name: 'dsh-mattpocock-skills-deck', config: mattDeckConfig },
-    ...(existing.some(row => identities.get(row.name) === 'sol' && row.disabled !== true)
-      ? [] : [{ id: 'kernel-sol', name: 'dsh-sol-efficiency', config: solConfig }]),
+    { id: 'matt-skills-board', name: join(root, 'matt-skills-panel-plugin/package/lib/index.js'), config: mattDeckConfig },
+    { id: 'matt-panel-tools', name: join(root, 'matt-skills-panel-plugin/package/lib/platform/deckToolsRow.js'), config: previous('matt-tools') },
   ]
   for (const row of owned) {
     const collision = all.find(item => item.id === row.id)
     if (collision) throw new Error(`Kernel launch identity already exists: ${row.id}`)
   }
   for (const row of existing) {
-    if (identities.get(row.name) === 'sol' && row.disabled !== true) continue
     patches.push({ id: row.id, disabled: true })
   }
   patches.push({ insert: owned })

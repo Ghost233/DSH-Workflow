@@ -25,8 +25,7 @@ async function fixture(t) {
   const list = JSON.parse(await readFile(new URL('../project-plugins.json', import.meta.url), 'utf8'))
   await writeJson(join(root, 'project-plugins.json'), list)
   await pkg(root, { name: 'dsh-owner-workflow', version: '1.0.0', dsh: { client: { platform: 'web' } } })
-  await pkg(join(root, 'sol-efficiency-plugin'), { name: 'dsh-sol-efficiency', version: '1.0.0', dsh: { client: { platform: 'web' } } })
-  await pkg(join(root, 'vendor/dsh-mattpocock-skills-deck/package'), { name: 'dsh-mattpocock-skills-deck', version: '1.0.0', dsh: { client: { platform: 'web' } } })
+  await pkg(join(root, 'matt-skills-panel-plugin/package'), { name: 'dsh-workflow-matt-panel', version: '1.0.0', dsh: { client: { platform: 'web' } } })
   const harness = join(root, 'harness')
   await pkg(harness, { name: '@deepseek-ai/dsh', version: harnessTarget.version, dependencies: { '@deepseek-ai/dsh-app-boot': '1.0.0' } })
   const anchor = join(harness, 'package.json')
@@ -89,6 +88,25 @@ test('ordered latest resolution, project-local install, patch publication and pr
   const next = await prepare(f.root, f.anchor, process.pid, { ...f, resolvePackage: async item => item.source === 'git' ? { commit: 'b'.repeat(40) } : { version: '1.0.1' } })
   assert.ok(next.installed.filter(p => p.source !== 'project').every(p => p.source === 'git' ? p.commit === 'b'.repeat(40) : p.version === '1.0.1'))
   assert.match(await readFile(join(state.directory, 'pnpm-workspace.yaml'), 'utf8'), /explicit user approvals must survive/)
+  await releaseLock(state.directory, process.pid)
+})
+
+test('bundle configuration overrides follow the inserted project plugin unchanged', async t => {
+  const f = await fixture(t)
+  const item = f.list.plugins[0]
+  const override = { id: 'fixture-feature', config: { enabled: false } }
+  const state = await prepare(f.root, f.anchor, process.pid, { ...f, run: async (...args) => {
+    await f.run(...args)
+    if (args[1][1].startsWith(`${item.package}@`)) {
+      await writeJson(join(pluginDirectory(f.root), 'node_modules', item.package, 'cordis.patch.yml'), [
+        { insert: [{ id: item.entryId, name: item.package }] }, override,
+      ])
+    }
+  } })
+  const patch = JSON.parse(await readFile(state.patch, 'utf8'))
+  const insertion = patch.findIndex(row => row.insert?.[0]?.name === item.package)
+  assert.ok(insertion >= 0)
+  assert.deepEqual(patch[insertion + 1], override)
   await releaseLock(state.directory, process.pid)
 })
 
@@ -283,7 +301,7 @@ test('owned scope preserves the external lock and excludes configured third-part
     readMetadata: async () => { throw new Error('unexpected metadata fetch') },
     resolvePackage: async () => { throw new Error('unexpected package resolution') },
   })
-  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-mattpocock-skills-deck', 'dsh-owner-workflow', 'dsh-sol-efficiency'])
+  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-owner-workflow', 'dsh-workflow-matt-panel'])
   assert.equal(await readFile(join(f.root, 'project-plugins.lock.json'), 'utf8'), lock)
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.ok(patch.some(row => row.id === 'dsh-context' && row.disabled === true))
@@ -303,7 +321,7 @@ test('startup scope installs only marked third-party plugins from the lock', asy
   })
   const selected = f.list.plugins.filter(item => item.startup === true)
   assert.deepEqual(f.calls.slice(previousCalls), selected.map(item => `${item.package}@1.0.0`))
-  assert.deepEqual(state.installed.map(item => item.package), [...selected.map(item => item.package), 'dsh-owner-workflow', 'dsh-sol-efficiency', 'dsh-mattpocock-skills-deck'])
+  assert.deepEqual(state.installed.map(item => item.package), [...selected.map(item => item.package), 'dsh-owner-workflow', 'dsh-workflow-matt-panel'])
   assert.equal(await readFile(join(f.root, 'project-plugins.lock.json'), 'utf8'), lock)
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.deepEqual(patch.flatMap(item => item.insert?.map(row => row.name) ?? []), selected.map(item => item.package))
@@ -324,7 +342,8 @@ test('startup scope skips one failed third-party install and keeps the other plu
   })
   assert.deepEqual(state.skipped, [{ package: 'dsh-cost-meter', reason: 'cost meter unavailable' }])
   assert.deepEqual(state.installed.map(item => item.package),
-    ['dsh-context', '@nagi-ovo/dsh-visualize', 'dsh-owner-workflow', 'dsh-sol-efficiency', 'dsh-mattpocock-skills-deck'])
+    [...f.list.plugins.filter(item => item.startup === true && item.package !== 'dsh-cost-meter').map(item => item.package),
+      'dsh-owner-workflow', 'dsh-workflow-matt-panel'])
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.equal(patch.flatMap(item => item.insert?.map(row => row.name) ?? []).includes('dsh-cost-meter'), false)
   await releaseLock(state.directory, process.pid)
@@ -347,9 +366,9 @@ test('startup scope skips a third-party plugin with an incompatible host peer', 
   })
   assert.deepEqual(state.skipped.map(item => item.package), ['dsh-cost-meter'])
   assert.match(state.skipped[0].reason, /missing-host-service/)
-  assert.ok(state.installed.some(item => item.package === 'dsh-mattpocock-skills-deck'))
+  assert.ok(state.installed.some(item => item.package === 'dsh-workflow-matt-panel'))
   assert.ok(state.installed.some(item => item.package === 'dsh-owner-workflow'))
-  assert.ok(state.installed.some(item => item.package === 'dsh-sol-efficiency'))
+  assert.equal(state.installed.some(item => item.package === 'dsh-sol-efficiency'), false)
   await releaseLock(state.directory, process.pid)
 })
 
@@ -362,7 +381,7 @@ test('owned scope ignores unrelated third-party resolution settings while exclud
   await assert.rejects(prepare(f.root, f.anchor, process.pid, f), /Invalid or duplicate plugin list entry/)
   const state = await prepare(f.root, f.anchor, process.pid, { ...f, scope: 'owned', update: false,
     run: async () => { throw new Error('unexpected installation') } })
-  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-mattpocock-skills-deck', 'dsh-owner-workflow', 'dsh-sol-efficiency'])
+  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-owner-workflow', 'dsh-workflow-matt-panel'])
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.ok(patch.some(row => row.id === 'dsh-context' && row.disabled === true))
   await releaseLock(pluginDirectory(f.root), process.pid)

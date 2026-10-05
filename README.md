@@ -1,6 +1,6 @@
 # DSH-Workflow
 
-Owner 工作流运行在官方 DeepSeek Harness 上。项目维护 `owner-workflow-plugin/` 和 `sol-efficiency-plugin/`，以及项目侧启动与验收代码。DSH 和第三方子模块保持上游源码原样。
+Owner 工作流运行在官方 DeepSeek Harness 上。项目维护 `owner-workflow-plugin/`、[本地 Matt 面板派生版](matt-skills-panel-plugin/README.md)，以及项目侧启动与验收代码。DSH 和第三方子模块保持上游源码原样。
 
 文档入口见 [文档导航](docs/README.md)、[插件清单](docs/plugins.md) 和 [历史报告归档](docs/archive/README.md)。
 
@@ -10,11 +10,11 @@ Owner 工作流运行在官方 DeepSeek Harness 上。项目维护 `owner-workfl
 ./start-owner-workflow.sh
 ```
 
-这是唯一日常启动入口，不需要参数或插件范围环境变量。macOS 上，脚本唤起启动器的“打开 DSH”，打开官方桌面版并将 Web 连接到同一个全局后端；重复打开复用已有实例，不按工程目录创建后端。Owner、SoL、中文 Matt 技能和本地面板通过 Desktop profile 加载。项目目录在 DSH 内选择。详见 [macOS 启动器说明](macos-launcher/README.md)。其他平台使用源码 Web 宿主。
+这是唯一日常启动入口，不需要参数或插件范围环境变量。macOS 上，脚本唤起启动器的“打开 DSH”，打开官方桌面版并将 Web 连接到同一个全局后端；重复打开复用已有实例，不按工程目录创建后端。Owner、中文 Matt 技能和本地面板通过 Desktop profile 加载。项目目录在 DSH 内选择。详见 [macOS 启动器说明](macos-launcher/README.md)。其他平台使用源码 Web 宿主。
 
 macOS 全局工作流数据保留在 `~/Library/Application Support/DSH Workflow/global`。停止 Web 服务或退出启动器只关闭访问代理，桌面版继续持有后端；完全退出桌面版才结束后端。其他平台的源码 Web 启动使用现有 Web profile，装配当前 Agent Teams 组合包，临时装配文件和日志位于 `.dsh-workflow/`，退出启动进程会回收该次 Web 宿主。
 
-第三方清单保留在 `project-plugins.json` 与 `project-plugins.lock.json`。日常入口装配自研插件，并按锁定版本逐个尝试加载清单里标记为 `startup: true` 的第三方插件，包括 MattSkillsDeck。单个第三方插件安装或装配失败时记录原因、跳过该项并继续启动其余插件和 Owner、SoL。用户已有 profile 插件仍由 DSH 按原配置处理；不改动第三方源码。
+第三方清单保留在 `project-plugins.json` 与 `project-plugins.lock.json`。日常入口装配自研插件，并按锁定版本逐个尝试加载清单里标记为 `startup: true` 的第三方插件，包括 MattSkillsDeck。单个第三方插件安装或装配失败时记录原因、跳过该项并继续启动其余插件和 Owner。用户已有 profile 插件仍由 DSH 按原配置处理；不改动第三方源码。
 
 ## 使用流程
 
@@ -32,4 +32,4 @@ Runner 按依赖、容量和文件所有权调度 Owner Team。Owner 使用独�
 node scripts/run-kernel-regression.mjs
 ```
 
-回归包含正式启动脚本的真实 CLI 宿主测试、Owner 与 SoL 就绪检查、宿主退出与配置保留，以及内核、Owner、规划和交付的确定性测试。真实业务验收沿用同一个无参数启动入口，在已打开的浏览器标签操作，并检查主线程和每个 Owner teammate 的记录。
+回归包含正式启动脚本的真实 CLI 宿主测试、Owner 就绪检查、宿主退出与配置保留，以及内核、Owner、规划和交付的确定性测试。真实业务验收沿用同一个无参数启动入口，在已打开的浏览器标签操作，并检查主线程和每个 Owner teammate 的记录。

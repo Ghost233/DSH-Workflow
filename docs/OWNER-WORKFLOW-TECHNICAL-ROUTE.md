@@ -14,7 +14,7 @@
 
 1. 读取并保留现有 Web profile 与用户 patch。
 2. 将 `owner-workflow-plugin/kernel-presets/` 作为系统可信 preset 根并选择 `owner-workflow`。
-3. 只装配当前 Owner surface、Kernel Dashboard、SoL 和自研审批流程。
+3. 只装配当前 Owner surface、Kernel Dashboard 和自研审批流程。
 4. 对项目旧条目做组合期禁用，不写回用户 profile。
 5. 通过项目 plugin manager 启动官方 Web 宿主，不自动打开浏览器。
 
@@ -153,7 +153,7 @@ SSE 连接按固定刷新周期比较快照并发送变化。页面是否刷新�
 
 ## 10. 配置与维护边界
 
-启动组合保留用户已有 profile、patch、credentials、provider/model、approval policy、sandbox 和 Git 身份。项目自研兼容修改只落在 Owner、SoL、Approve for Me 插件或项目集成层；DSH 和第三方上游保持原样。
+启动组合保留用户已有 profile、patch、credentials、provider/model、approval policy、sandbox 和 Git 身份。项目自研兼容修改只落在 Owner、Approve for Me 插件或项目集成层；DSH 和第三方上游保持原样。
 
 `.dsh-workflow/` 是项目运行数据，不是长期 Owner Registry。正式 Registry、Spec/Ticket、Owner 知识和需要审查的交付内容必须位于项目 Git 边界内。
 

@@ -1,0 +1,61 @@
+{
+  "name": "dsh-workflow-matt-panel",
+  "version": "1.7.39-workflow.2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ghost233/DSH-Workflow.git",
+    "directory": "matt-skills-panel-plugin"
+  },
+  "description": "DSH Workflow 本地维护的 Matt 任务面板；技能由独立中文提供器加载。",
+  "engines": {
+    "dsh": ">=0.2.0-rc.2"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "node ../scripts/build.mjs --pkg-only"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./tools": "./lib/platform/deckToolsRow.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {},
+  "files": [
+    "lib",
+    "shared",
+    "cordis.patch.yml",
+    "scripts/",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "upstream.json"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "plugin",
+    "mattpocock",
+    "skills",
+    "wayfinder",
+    "triage",
+    "grilling",
+    "handoff",
+    "issue-tracker",
+    "deck"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  },
+  "homepage": "https://github.com/Ghost233/DSH-Workflow/tree/main/matt-skills-panel-plugin",
+  "license": "MIT"
+}

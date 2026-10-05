@@ -8,6 +8,7 @@ export const inject = ['connection', 'webServer', 'appReady']
 /** Publish private readiness facts; Electron remains the sole owner of its Host. */
 export function apply(ctx, { directory, runtimeVersion }) {
   const lease = randomUUID()
+  ctx.provide('workflowHostInstance', { instanceId: lease })
   const path = join(directory, 'desktop-host.json')
   let closed = false
   let published = Promise.resolve()

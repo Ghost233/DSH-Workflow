@@ -1,8 +1,0 @@
-- insert:
-    - id: sol-efficiency
-      name: dsh-sol-efficiency
-      config:
-        actionFusion:
-          enabled: false
-        evidenceReducer:
-          enabled: false

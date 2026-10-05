@@ -9,8 +9,10 @@ test('desktop readiness keeps its token private and disposal cannot remove a new
   const directory = await mkdtemp(join(tmpdir(), 'dsh-desktop-bridge-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   let ready, dispose
+  const services = new Map()
   apply({ connection: { authenticatedUrl: url => `${url}/?token=fixture` }, webServer: { port: 40321 },
     appReady: { onReady(fn) { ready = fn; return () => {} } },
+    provide(name, value) { services.set(name, value) },
     effect(fn) { dispose = fn() }, logger: { error(error) { throw error } } },
   { directory, runtimeVersion: '0.2.1-alpha.1' })
   ready()
@@ -22,6 +24,7 @@ test('desktop readiness keeps its token private and disposal cannot remove a new
   }
   assert.equal(receipt.pid, process.pid)
   assert.equal(receipt.runtimeVersion, '0.2.1-alpha.1')
+  assert.equal(services.get('workflowHostInstance')?.instanceId, receipt.lease)
   assert.equal((await stat(path)).mode & 0o777, 0o600)
   await writeFile(path, JSON.stringify({ ...receipt, lease: 'newer-host' }))
   await dispose()

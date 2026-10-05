@@ -1,4 +1,4 @@
-import '../sol-efficiency-plugin/test/workspace-loader.mjs'
+import './harness-test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm, cp, symlink, readdir } from 'node:fs/promises'
@@ -15,7 +15,7 @@ test('daily shell uses the real CLI, discovers every project plugin and drains i
   let child, running, result, output = ''
   try {
     await mkdir(project); await mkdir(catalog)
-    for (const name of ['scripts', 'owner-workflow-plugin', 'sol-efficiency-plugin']) {
+    for (const name of ['scripts', 'owner-workflow-plugin']) {
       await cp(join(source, name), join(project, name), { recursive: true, filter: path => !['node_modules', 'vendor', '.git'].includes(basename(path)) })
     }
     for (const name of ['start-owner-workflow.sh', 'package.json', 'project-plugins.json', 'project-plugins.lock.json', 'dsh-runtime.json']) await cp(join(source, name), join(project, name))
@@ -59,7 +59,7 @@ test('daily shell uses the real CLI, discovers every project plugin and drains i
     }
     assert.equal(health?.ready, true, `actual daily CLI host must become ready: ${output}`)
     assert.ok(output.includes(health.instanceId), 'supervisor must announce the actual host instance')
-    assert.deepEqual(health.components, { owner: 'ready', sol: 'ready' })
+    assert.deepEqual(health.components, { owner: 'ready' })
     child.kill('SIGTERM'); await running
     assert.deepEqual(result, { code: 0, signal: null }, output)
     assert.equal(await readFile(profilePath, 'utf8'), original)

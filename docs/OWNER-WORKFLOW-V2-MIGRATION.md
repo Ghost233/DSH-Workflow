@@ -10,7 +10,7 @@
 - `owner-workflow-plugin/kernel-presets/` 是唯一当前 preset 目录。
 - Owner 工具、Dashboard、Store、Engine、effects 和 Runner 在同一 Cordis 宿主组合中工作。
 - Runner 随宿主自动启动和关闭，不需要调用者维护另一个进程。
-- 项目启动组合自动加载 Owner、SoL 和自研审批适配层。
+- 项目启动组合自动加载 Owner 和自研审批适配层。
 - 用户 profile、凭据、模型、审批、沙箱、Git 身份和缓存保持原样。
 
 ## 操作者迁移

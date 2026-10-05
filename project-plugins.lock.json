@@ -2,7 +2,7 @@
   "schema": 1,
   "harnessVersion": "0.2.1-alpha.1",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "1ef934fd6dd8539c7239bed713c0ed54a588d48d78a082d67967d833202c76a9",
+  "manifestSha256": "7633f702fe0495cf3c6115546f6e0500101c432b4048f91b28df0fd552ead937",
   "plugins": [
     {
       "package": "dsh-context",
@@ -115,6 +115,24 @@
           "@deepseek-ai/schemastery": "^3.18.1",
           "@deepseek-ai/dsh-sandbox-policy": "^0.1.0-rc.6 || ^0.2.0-rc.1"
         },
+        "peerDependenciesMeta": {}
+      }
+    },
+    {
+      "package": "billion-context",
+      "version": "0.1.184",
+      "metadata": {
+        "name": "billion-context",
+        "version": "0.1.184",
+        "dsh": {
+          "bundle": {
+            "patch": "./dsh.bundle.patch.yml"
+          },
+          "client": {
+            "platform": "web"
+          }
+        },
+        "peerDependencies": {},
         "peerDependenciesMeta": {}
       }
     }

@@ -20,6 +20,7 @@ test('kernel composition registers the Owner declaration without changing other 
     { id: 'dashboard-old', name: 'dsh-owner-workflow/dashboard' },
     { id: 'sol-old', name: 'dsh-sol-efficiency', config: { actionFusion: { enabled: false } } },
     { id: 'deck-old', name: 'dsh-mattpocock-skills-deck', config: {} },
+    { id: 'deck-tools-old', name: 'dsh-mattpocock-skills-deck/tools', config: { enabled: true } },
     { id: 'synapse-old', name: 'dsh-synapse-workflow', config: { dataFile: '/user/existing-workspaces.json', autoProjection: true } },
     { id: 'third-party', name: 'some-external-plugin' },
   ]
@@ -28,7 +29,7 @@ test('kernel composition registers the Owner declaration without changing other 
   const before = structuredClone(entries)
   const patches = composeKernelLaunch(entries, { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins })
   assert.deepEqual(entries, before)
-  assert.deepEqual(patches.filter(row => row.disabled).map(row => row.id), ['owner-old', 'dashboard-old', 'deck-old', 'synapse-old'])
+  assert.deepEqual(patches.filter(row => row.disabled).map(row => row.id), ['owner-old', 'dashboard-old', 'sol-old', 'deck-old', 'deck-tools-old', 'synapse-old'])
   assert.equal(patches.some(row => ['permission', 'settings', 'third-party'].includes(row.id)), false)
   assert.equal(patches.some(row => row.id === 'preset-host'), false, 'preset defaults remain editable in the Web profile')
   const rows = patches.at(-1).insert
@@ -37,14 +38,39 @@ test('kernel composition registers the Owner declaration without changing other 
   assert.equal(owner.config.plugins[0].config.catalogRoot, '/catalog')
   assert.equal(presetPlugins[0].name, './plugin.mjs')
   assert.equal(rows.some(row => /synapse/i.test(row.name)), false, 'retired Synapse must not be reinserted')
-  assert.equal(rows.some(row => row.id === 'kernel-sol'), false, 'profile-owned SoL remains writable')
+  assert.equal(rows.some(row => row.id === 'kernel-sol'), false, 'removed SoL must not be reinserted')
   assert.deepEqual(rows.find(row => row.id === 'mattpocock-skills-zh').config, {
     providerName: 'mattpocock-skills-zh', includeDefaultRoots: false,
-    customSkillDirs: ['/project/vendor/ghost-agent-market/codex-market/plugins/mattpocock-skills-zh/skills'],
+    customSkillDirs: ['/project/vendor/mattpocock-skills-zh/skills'],
   })
-  assert.equal(rows.find(row => row.id === 'matt-skills-board').name, 'dsh-mattpocock-skills-deck')
-  assert.equal(patches.some(row => row.id === 'sol-old'), false)
+  assert.equal(rows.find(row => row.id === 'matt-skills-board').name, '/project/matt-skills-panel-plugin/package/lib/index.js')
+  assert.equal(rows.find(row => row.id === 'matt-panel-tools').name, '/project/matt-skills-panel-plugin/package/lib/platform/deckToolsRow.js')
+  assert.deepEqual(rows.find(row => row.id === 'matt-panel-tools').config, { enabled: true })
+  assert.ok(patches.some(row => row.id === 'sol-old' && row.disabled === true))
   const fallback = composeKernelLaunch(entries.filter(row => row.id !== 'sol-old'), { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins })
-  assert.equal(fallback.at(-1).insert.find(row => row.id === 'kernel-sol').name, 'dsh-sol-efficiency')
-  assert.throws(() => composeKernelLaunch([...entries, { id: 'other-sol', name: 'dsh-sol-efficiency' }], { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins }), /duplicate active sol/)
+  assert.equal(fallback.at(-1).insert.some(row => row.id === 'kernel-sol'), false)
+  const legacy = composeKernelLaunch([...entries, { id: 'other-sol', name: '/previous/app/sol-efficiency-plugin/index.js' }], { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins })
+  assert.ok(legacy.some(row => row.id === 'other-sol' && row.disabled === true))
+})
+
+test('Creator guidance preserves the selected Creator composition and its unevaluated expressions', () => {
+  const creatorPlugins = [
+    { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { prefix: 'User Creator instructions' } },
+    { id: 'custom-skill', name: '@deepseek-ai/dsh-skill-filesystem', config: { customSkillDirs: [{ __jsExpr: 'resolveCreatorSkills(baseUrl)' }] } },
+    { id: 'custom-tool', name: 'user-creator-tool', disabled: { __jsExpr: 'creatorToolDisabled()' } },
+  ]
+  const entries = [
+    { id: 'presets', name: '@deepseek-ai/dsh-agent-preset-registry' },
+    { id: 'user-creator', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'cordis', plugins: creatorPlugins } },
+    { id: 'user-standard', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'standard', plugins: [] } },
+  ]
+  const before = structuredClone(entries)
+  const patches = composeKernelLaunch(entries, { projectRoot: '/project', catalogRoot: '/catalog',
+    presetPlugins: [{ id: 'owner-workflow', name: './plugin.mjs' }] })
+  const creator = patches.find(row => row.id === 'user-creator')
+  assert.deepEqual(entries, before)
+  assert.equal(creator.config.id, 'cordis')
+  assert.deepEqual(creator.config.plugins.slice(0, -1), creatorPlugins)
+  assert.equal(creator.config.plugins.at(-1).name, '/project/owner-workflow-plugin/src/creator-jev-guidance.mjs')
+  assert.equal(patches.some(row => row.id === 'user-standard'), false)
 })

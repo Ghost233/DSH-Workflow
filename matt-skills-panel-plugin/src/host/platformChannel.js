@@ -1,0 +1,285 @@
+// src/host/platformChannel.js —— 平台与探测通道（H1 #445 从 host/index.js 259–491 搬出，纯结构、行为零变化）
+// 以后谁改它：改平台抽象、后端注册表或探测级联的人。预估约 280 行，超 350 打回。
+// 接线：由 index.js 动态 import 动态加载；STATUS_CACHE_MS 随本文件搬入（无外部引用）；getMattSkillProbeNames/probeSkill 显式注入；本文件不引用其他新文件。
+export function createPlatformChannel(deps) {
+  const { ctx, subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, getMattSkillProbeNames, probeSkill, logCtx, gate } = deps
+  // #494 O1：旧文本通道退役——backend.diagnostic 不再产生（github 房内零调用；残留 ctx.log.* 调用自动静默，gitlab 房由本房 O 票另行结构化）。房内埋点只走 logEvent/isEnabled。
+  const backendLogCtx = (logCtx && typeof logCtx.fire === 'function') ? logCtx : null
+  function backendLogEvent(level, event, fields) { try { if (backendLogCtx) backendLogCtx.fire(level, event, fields) } catch (e) {} }
+  function backendLogEnabled(level) { try { return backendLogCtx ? backendLogCtx.isEnabled(level) : (level === 'error' || level === 'warn') } catch (e) { return level === 'error' || level === 'warn' } }
+  const backendCtxForRooms = { logEvent: backendLogEvent, isEnabled: backendLogEnabled }
+  // #606 房外埋点 helper：工作区只记短指纹，不记原始路径。
+  function hash8(s) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch { return '00000000' } }
+  // #606 命令名只留程序名：调用方通常给的是 'gh' / 'git' 这种裸名字，但若给了带目录的完整路径，
+  //   这里也把目录部分去掉，保证日志里永远不会出现一条文件系统路径。
+  function progName(cmd) { try { return String(cmd || '').split(/[\\/]/).pop() || '' } catch { return '' } }
+  const STATUS_CACHE_MS = 30000  // workspaceStore 探测级联 TTL（#344 沿革 · #284 保留；原 index.js 234 行）
+    // ============ Tracker Registry（#155 · 后端选择 UI）============
+    let _trackerRegistry = null
+    let _trackerRegistryInit = null
+    async function getTrackerRegistry() {
+      if (_trackerRegistry) return _trackerRegistry
+      if (_trackerRegistryInit) return _trackerRegistryInit
+      _trackerRegistryInit = (async () => {
+        try {
+          const injected = ctx.get('trackerRegistry')
+          if (injected && typeof injected.select === 'function') { _trackerRegistry = injected; return _trackerRegistry }
+        } catch {}
+        try {
+          const regMod = await import('./tracker/registryCore.js') // V1 #461：registry.js 已拆为三块，装配入口为 registryCore.js
+          const createRegistry = regMod.createRegistry || regMod.default
+          const reg = createRegistry(backendCtxForRooms, { matchesTimeout: 3000 })
+          // 注册内置后端（github/markdown/gitlab），失败忽略（保持可用）
+          try {
+            const ghMod = await import('./tracker/backends/github/index.js')
+            const m = ghMod.githubModule || ghMod.defaultModule || ghMod.default
+            if (m && m.id) try { reg.register(m) } catch {}
+          } catch {}
+          try {
+            const mdMod = await import('./tracker/backends/markdown/index.js')
+            // #230（D10）修复 2026-08-28：必须注册【完整模块】——markdownModule 携带 setupPrompt 键表（locale 键名），
+            //   wf.registry 原样转发到 st.backendModules，setupRunPrompt 按它取 markdown 模板文案（"本地 Markdown 模板…"）。
+            //   此前 host 重新拼装只保留 id/label/presentation/create/matches，setupPrompt 丢失 → 弹窗选 markdown 后
+            //   注入的 setup 提示词落入缺省键组（GitHub 模板，谎称"已按默认 GitHub 初始化"），导致错误地生成 GitHub 主锚。
+            const fullMdModule = mdMod.markdownModule || null
+            let mdModule = fullMdModule
+            if (!mdModule) {
+              const mkCreate = mdMod.createMarkdownBackend || mdMod.createBackend || mdMod.default
+              const mkMatches = mdMod.matches
+              const mdPresentation = mdMod.markdownModule?.presentation || mdMod.presentation
+              mdModule = mkCreate ? { id: 'markdown', label: 'Markdown', presentation: mdPresentation || { color: '#1a7f37' }, create: mkCreate, matches: mkMatches || (async()=>false) } : null
+            }
+            if (mdModule) try { reg.register(mdModule) } catch {}
+          } catch {}
+          try {
+            const glMod = await import('./tracker/backends/gitlab/index.js')
+            const m2 = glMod.gitlabBackend || glMod.default
+            if (m2 && m2.id) try { reg.register(m2) } catch {}
+          } catch {}
+          _trackerRegistry = reg
+          try { ctx.set && ctx.set('trackerRegistry', reg) } catch {}
+          return reg
+        } catch (e) {
+          // 回落：空 registry（仅 explicit 能力）
+          try {
+            const regMod2 = await import('./tracker/registryCore.js') // V1 #461：同上（回落分支）
+            const cr = regMod2.createRegistry || regMod2.default
+            _trackerRegistry = cr(backendCtxForRooms, { matchesTimeout: 3000 })
+            return _trackerRegistry
+          } catch { return null }
+        }
+      })()
+      _trackerRegistry = await _trackerRegistryInit
+      return _trackerRegistry
+    }
+    // 触发预热（不阻塞主流程）
+    try { getTrackerRegistry().catch(()=>{}) } catch {}
+    // ============ 平台抽象（#171 · createPlatform 惰性单例）============
+    // 第一性原理：平台单点 + 零手拼 + 双闸不变量；经 ctx.get('platform') 或内联 fallback（零 import 语法，避 D7 dev host vm.Script 阻塞）
+    let _platform = null
+    let _platformInit = null
+    let lastPlatformOk = null
+    async function getPlatform() {
+      const platT0 = Date.now()
+      if (_platform) return _platform
+      if (_platformInit) return _platformInit
+      _platformInit = (async () => {
+        const injected = ctx.get('platform')
+        if (injected && typeof injected.getHome === 'function' && injected.path) return injected
+        try {
+          const platMod = await import('./platform/index.js')
+          const createPlatform = platMod.createPlatform || platMod.default
+          if (typeof createPlatform === 'function') return createPlatform(ctx)
+        } catch {}
+        let nodePath = null
+        let nodeOs = null
+        try { const m = await import('node:path'); nodePath = m.default || m } catch {}
+        try { const m2 = await import('node:os'); nodeOs = m2.default || m2 } catch {}
+        if (!nodePath || !nodeOs) {
+          const sepWin = String.fromCharCode(92)
+          nodePath = { posix: { join: (...a) => a.join('/').replace(/\/\//g,'/'), sep: '/', dirname: (p)=>p.slice(0,p.lastIndexOf('/')), basename: (p)=>p.split('/').pop(), resolve: (...a)=>a.join('/'), normalize: (p)=>p, isAbsolute: (p)=>p.startsWith('/'), relative: (a,b)=>b }, win32: { join: (...a) => a.join(sepWin).replace(/\//g,sepWin), sep: sepWin, dirname: (p)=>p.slice(0,p.lastIndexOf(sepWin)), basename: (p)=>p.split(sepWin).pop(), resolve: (...a)=>a.join(sepWin), normalize: (p)=>p, isAbsolute: (p)=>/^[A-Za-z]:/.test(p), relative: (a,b)=>b } }
+          nodeOs = { homedir: () => (typeof process !== 'undefined' && process.env && (process.env.USERPROFILE || process.env.HOME)) || '', platform: () => { try { return (typeof process !== 'undefined' && process['platform']) || 'win32' } catch { return 'win32' } } }
+        }
+        const osName = (nodeOs.platform ? nodeOs.platform() : 'win32')
+        const pathImpl = osName === 'win32' ? nodePath.win32 : nodePath.posix
+        const envSrc = (typeof process !== 'undefined' && process.env) ? process.env : {}
+        const homedirFn = () => { try { return nodeOs.homedir() } catch { return '' } }
+        const WIN32_GUARD_RE = /^[A-Za-z]:/
+        let cachedHome
+        const getHomeInner = async () => {
+          if (cachedHome !== undefined) return cachedHome
+          let primary = ''
+          try { const v = homedirFn(); primary = v == null ? '' : String(v) } catch { primary = '' }
+          if (osName === 'win32') {
+            if (primary && WIN32_GUARD_RE.test(primary)) { cachedHome = primary; return cachedHome }
+            const up = envSrc.USERPROFILE
+            if (up) { cachedHome = up; return cachedHome }
+            const combined = (envSrc.HOMEDRIVE || '') + (envSrc.HOMEPATH || '')
+            if (combined) { cachedHome = combined; return cachedHome }
+            cachedHome = null; return cachedHome
+          } else {
+            try { const v = homedirFn(); cachedHome = v || null; return cachedHome } catch { cachedHome = null; return cachedHome }
+          }
+        }
+        const pathObj = Object.freeze({
+          join: pathImpl.join.bind(pathImpl),
+          sep: pathImpl.sep,
+          dirname: pathImpl.dirname.bind(pathImpl),
+          basename: pathImpl.basename.bind(pathImpl),
+          resolve: pathImpl.resolve.bind(pathImpl),
+          normalize: pathImpl.normalize.bind(pathImpl),
+          isAbsolute: pathImpl.isAbsolute.bind(pathImpl),
+          relative: pathImpl.relative.bind(pathImpl),
+          async joinHome(...segs) { const h = await getHomeInner(); return pathImpl.join(h, ...segs) },
+        })
+        async function resolveExec(name) {
+          const mapped = osName === 'win32' && name === 'cmd' ? 'cmd.exe' : name
+          const subprocessSvc = ctx.get('subprocess')
+          try { return await subprocessSvc.resolveExecutable(mapped) } catch (e) {
+            if (name === 'gh') {
+              const fb = envSrc.DSH_GH_PATH || ''
+              if (!fb) throw e
+              const fss = ctx.get('fs')
+              if (!fss || typeof fss.lstat !== 'function') throw e
+              try { const info = await fss.lstat(fb); if (info) return fb } catch {}
+            }
+            throw e
+          }
+        }
+        const resolveExecutable = async (name) => { try { return await resolveExec(name) } catch { return null } }
+        const fss = ctx.get('fs')
+        const envView = Object.freeze({ get(k){ return envSrc[k] }, has(k){ return k in envSrc } })
+        return Object.freeze({ os: osName, getHome: getHomeInner, path: pathObj, resolveExecutable, fs: fss, env: envView })
+      })()
+      _platform = await _platformInit
+      try { const okNow = !!_platform; if (logCtx && logCtx.isEnabled('debug') && okNow !== lastPlatformOk) { lastPlatformOk = okNow; logCtx.fire('debug', 'platform.resolve', function () { return { name: 'platform', ok: okNow, latencyMs: Date.now() - platT0 } }) } } catch (eL) {}
+      return _platform
+    }
+    // ============ 探测级联 · workspaceStore + detectionService（#152 · #150 Q1-Q7）============
+    // 四层严格 + 轻量化二联骨架 + per-workspace 内存 Map<handleKey→Selection> 不落盘 + pending 不缓存 + wf.bind 薄兼容
+    let _workspaceStore = null
+    let _detectionService = null
+    async function getWorkspaceStore() {
+      if (_workspaceStore) return _workspaceStore
+      try {
+        const mod = await import('./tracker/detection/workspaceStore.js')
+        const create = mod.createWorkspaceStore || mod.default
+        _workspaceStore = create({ ttl: STATUS_CACHE_MS, logCtx: logCtx })
+        // registry stale 清理（#150 Q3 unregister stale → emit bind）
+        try {
+          const reg = await getTrackerRegistry()
+          if (reg && typeof reg.on === 'function') reg.on('bind', (evt) => { if (evt && evt.stale) { try { _workspaceStore.onRegistryBindStale(evt.handle) } catch {} } })
+        } catch {}
+      } catch { _workspaceStore = { get: () => null, set: () => {}, has: () => false, clear: () => {}, invalidate: () => {}, keys: () => [], onRegistryBindStale: () => {} } }
+      return _workspaceStore
+    }
+    // #幽灵修复：BackendContext.exec（contract.js §BackendContext）——preflight 经 ghClient/glab 执行 gh/glab。
+    // 契约形状 {stdout,stderr,code}；exit code≠0 不抛（调用方判）；超时 terminate；opts.timeout/signal 透传。
+    // #606 补测点：这条路此前一条日志都不留（唯一的记录点在 github 房的 client.js，它要调用上下文自带记录器，
+    //   而各操作上下文都没带），于是面板列表的主取数路、每次探测的预检、取当前登录用户与所有写操作
+    //   起了多少次外部命令全都看不见。这里补 exec.run（按需）：一次调用落一行，只记命令名、工作区短指纹、
+    //   耗时、退出码与发起链名；不记完整参数、不记令牌、不记原始路径。调试开关关着时只读一次开关就返回。
+    // 第四个参数 via 是「这条命令由哪条链起的」：造操作上下文的调用方把链名传进来，日志只记这个固定名字。
+    async function detectionExec(cmd, args, opts, via) {
+      const argv = [String(cmd)].concat(args || [])
+      const c = (opts && opts.cwd) || ''
+      // 起始时刻只在开关打开时才取：关着时这一行读一个布尔就结束，连时钟都不读，后面那行自然也不落。
+      const execT0 = (logCtx && logCtx.isEnabled('debug')) ? Date.now() : 0
+      // #723（T19）：这一笔真实出站先报给闸（I1）。这条通道是操作上下文交给后端的那种 exec 出口
+      // （tracker 三个房间与快照那几路都走它），起的是 gh / glab / git 三条命令；gh 与 glab 是真出站，
+      // git 只读远端地址，但都是「起了一个进程」，一起报才能保证账上的条数与真起的命令数一一对应。
+      try {
+        if (gate && typeof gate.noteOutbound === 'function') {
+          const a0 = String((args && args[0]) || '')
+          const isGraphql = a0.indexOf('graphql') >= 0
+          gate.noteOutbound({ requests: 1, points: isGraphql ? 1 : 0 })
+        }
+      } catch (eR) { /* 报账失败不许影响已经起来的这一条命令 */ }
+      let handle
+      try {
+        handle = subprocess.spawn({
+          argv: argv,
+          cwd: c || DEFAULT_CWD,
+          stdio: { stdin: 'ignore', stdout: { maxBytes: 4 * 1024 * 1024 }, stderr: { maxBytes: 256 * 1024 } },
+          graceMs: 2000,
+        })
+      } catch (e) {
+        throw new Error('exec spawn failed: ' + String((e && e.message) || e))
+      }
+      const timeoutMs = (opts && opts.timeout != null) ? opts.timeout : TIMEOUT_MS
+      let outcome
+      try {
+        outcome = await Promise.race([
+          handle.done,
+          timer.timeout(timeoutMs).then(function () { try { handle.terminate() } catch (e2) {} return { exitCode: -1, signal: 'timeout' } }),
+        ])
+      } catch (e) {
+        outcome = { exitCode: -1, signal: 'error' }
+      }
+      const out = (handle.collected && handle.collected.stdout) ? handle.collected.stdout.readFrom(0) : { text: '' }
+      const err = (handle.collected && handle.collected.stderr) ? handle.collected.stderr.readFrom(0) : { text: '' }
+      try { if (execT0 && logCtx.isEnabled('debug')) logCtx.fire('debug', 'exec.run', { argv0: progName(argv[0]), cwdHash: hash8(c || DEFAULT_CWD), latencyMs: Date.now() - execT0, exitCode: (outcome && typeof outcome.exitCode === 'number') ? outcome.exitCode : -1, via: String(via || 'unspecified') }) } catch (eL) {}
+      return { stdout: out.text || '', stderr: err.text || '', code: outcome.exitCode }
+    }
+    async function getDetectionService() {
+      if (_detectionService) return _detectionService
+      const registry = await getTrackerRegistry()
+      const platform = await getPlatform()
+      const ws = await getWorkspaceStore()
+      const fsSvc = ctx.get('fs')
+      try {
+        const mod = await import('./tracker/detection/detectionService.js')
+        const create = mod.createDetectionService || mod.default
+        // skillProbe 内联（复用 probeSkill 双源逻辑；列表 = shared/matt-skills.js 单源，25 项）
+        // #280/#fix-banner：旧版硬编码 10 名，遗漏 grill-with-docs / wizard / grill-me / to-questionnaire / wait-what / writing-for-agents 等导致横幅永远报警
+        const skillProbe = async ({ cwd }) => {
+          // probeNames ≈ shared/matt-skills.js:MATT_SKILL_PROBE_NAMES（单源）；改探测集只改 shared 一处即可
+          const probeNames = await getMattSkillProbeNames()
+          const probes = {}
+          let missing = []
+          let hasPending = false
+          let pendingError = null
+          for (let i = 0; i < probeNames.length; i++) {
+            const name = probeNames[i]
+            try {
+              const r = await probeSkill(name, 'zh', cwd)
+              probes[name] = r
+              if (r.level === 'pending') { hasPending = true; if (!pendingError && r.error) pendingError = r.error }
+              else if (r.level !== 'ok') missing.push(name)
+            } catch (e) { const err = String((e && e.message) || e); probes[name] = { ok: false, level: 'bad', detail: err, hint: 'prompt:installSkills', error: err }; missing.push(name) }
+          }
+          const ok = missing.length === 0 && !hasPending
+          return { ok, missing, probes, hasPending, pendingError, pending: hasPending }
+        }
+        // #683（F1）：判定链要读宿主侧那份记忆（用户选的后端按工作区记着），实例由 index.js 单点持有 ——
+        //   那条读-改-写队列必须全进程只有一条，不能在这里另建一份。
+        _detectionService = create({ registry, getPlatform, getFs: () => fsSvc, getTimers: () => ({ setTimeout: (fn, ms) => timer.timeout(fn, ms), clearTimeout: (id) => { try { clearTimeout(id) } catch {} } }), workspaceStore: ws, skillProbe, resolveRepoHandle: async (h) => ({ cwd: h.cwd || '', refId: h.refId || '' }), exec: detectionExec, getChoiceStore: getChoiceStore, logCtx: logCtx })
+      } catch (e) {
+        // 兜底：最小二联（explicit → matches）不含 preflight/skill
+        _detectionService = {
+          detect: async (handle, opts) => {
+            const plat = await getPlatform()
+            const expMod = await import('./tracker/detection/explicitDetector.js')
+            const expFn = expMod.detectExplicit || expMod.default
+            const exp = await expFn(handle, { platform: plat, cwd: handle.cwd, fs: fsSvc }, registry)
+            let sel = exp.selection
+            if (!sel) { const ctx2 = { cwd: handle.cwd, platform: plat, fs: fsSvc, caller: 'detect', timers: { setTimeout: (fn, ms) => timer.timeout(fn, ms), clearTimeout: (id) => { try { clearTimeout(id) } catch {} } } }; sel = await registry.select(handle, ctx2) }
+            return { handle, selection: sel, repoHandle: { cwd: handle.cwd || '', refId: (sel && sel.ref && sel.ref.refId) || '' }, explicit: { raw: exp.raw, parsed: exp.parsed }, preflight: null, skillProbes: null, at: Date.now() }
+          }
+        }
+      }
+      return _detectionService
+    }
+  function clearWorkspaceStore() { try { if (_workspaceStore && typeof _workspaceStore.clear === 'function') _workspaceStore.clear() } catch {} }
+  // #683（F1）：宿主侧那份记忆（H）的单例就在这里建 —— 读它的是两处（绑定写入、判定读取），而它内部
+  //   那条读-改-写队列必须全进程只有一条（两个窗口同时写才排得成队）。规则与字段见 src/host/choiceStore.js 文件头。
+  let _choiceStoreP = null
+  function getChoiceStore() {
+    if (!_choiceStoreP) _choiceStoreP = (async function () {
+      const mod = await import('./choiceStore.js')
+      return mod.createChoiceStoreForHost({ getHome: async function () { const p = await getPlatform(); return p.getHome() }, getTrackerRegistry: function () { return getTrackerRegistry.apply(null, arguments) }, logCtx: logCtx })
+    })().catch(function () { return null })
+    return _choiceStoreP
+  }
+  return { getTrackerRegistry, getPlatform, getWorkspaceStore, detectionExec, getDetectionService, getChoiceStore, clearWorkspaceStore }
+}

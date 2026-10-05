@@ -23,7 +23,7 @@ const server=http.createServer((req,res)=>{
   if (req.url!=='/owner-workflow/api/health') {res.writeHead(404);res.end();return;}
   res.setHeader('content-type','application/json');
   res.end(JSON.stringify({contract:'DSH_WEB_HOST_READY_V1',instanceId:mode==='wrong-instance'?'different':process.env.DSH_OWNER_WORKFLOW_HOST_INSTANCE,
-    components:{owner:'ready',sol:mode==='missing-plugin'?'offline':'ready'}}));
+    components:{owner:mode==='missing-plugin'?'offline':'ready'}}));
 });
 server.listen(Number(process.argv[2]),'127.0.0.1',()=>console.log('fixture-listening'));
 process.on('SIGTERM',()=>server.close(()=>process.exit(0)));

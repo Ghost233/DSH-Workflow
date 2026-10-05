@@ -22,8 +22,7 @@ export const pluginDirectory = root => join(root, '.dsh-workflow', 'plugins')
  */
 const projectPackages = root => [
   { package: 'dsh-owner-workflow', directory: '.' },
-  { package: 'dsh-sol-efficiency', directory: 'sol-efficiency-plugin' },
-  { package: 'dsh-mattpocock-skills-deck', directory: 'vendor/dsh-mattpocock-skills-deck/package' },
+  { package: 'dsh-workflow-matt-panel', directory: 'matt-skills-panel-plugin/package' },
 ]
 
 /** Resolve the requested repository, never a potentially unrelated same-name npm package. */
@@ -363,13 +362,16 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
             ? boot.loadOverlayPatches('dsh', join(packages[item.package], pkg.dsh.bundle.patch))
             : [{ insert: [{ id: item.entryId, name: item.package }] }]
           // Carry forward current upstream bundle semantics; fail loudly on a new layout requiring review.
-          if (bundle.length !== 1 || bundle[0].insert?.length !== 1 || bundle[0].insert[0].id !== item.entryId || bundle[0].insert[0].name !== item.package) throw new Error(`Unsupported bundle layout: ${item.package}`)
+          const [insertion, ...overrides] = bundle
+          if (insertion?.insert?.length !== 1 || insertion.insert[0].id !== item.entryId || insertion.insert[0].name !== item.package
+            || overrides.some(row => typeof row.id !== 'string' || !row.config || typeof row.config !== 'object' || Array.isArray(row.config)
+              || Object.keys(row).some(key => !['id', 'config'].includes(key)))) throw new Error(`Unsupported bundle layout: ${item.package}`)
           const original = existing.filter(row => row.name === item.package)
           if (original.some(row => !row.id)) throw new Error(`Cannot deduplicate unnamed entry: ${item.package}`)
           for (const row of original) patches.push({ id: row.id, disabled: true })
-          const row = { ...bundle[0].insert[0], ...original[0]?.config ? { config: original[0].config } : {}, id: `project-${item.entryId}` }
+          const row = { ...insertion.insert[0], ...original[0]?.config ? { config: original[0].config } : {}, id: `project-${item.entryId}` }
           if (original.some(entry => entry.disabled === true)) row.disabled = true
-          patches.push({ insert: [row] })
+          patches.push({ insert: [row] }, ...overrides)
         } catch (error) {
           if (scope !== 'startup') throw error
           drop(item, error)

@@ -841,6 +841,7 @@ private struct PluginManageView: View {
         ("DSH 内置 Bundle", "DSH 内置 Bundle（随 DSH 更新）"),
         ("DSH 版本绑定插件", "DSH 版本绑定插件"),
         ("App 内置自研插件", "自研插件（随 App 更新）"),
+        ("App 内置派生插件", "本地派生插件（随 App 更新）"),
     ]
 
     private var pluginGroups: [PluginGroup] {

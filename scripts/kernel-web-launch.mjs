@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url'
 import { checkLaunchReady } from './harness-runtime.mjs'
 import { prepare, releaseLock, pluginDirectory } from './project-plugins.mjs'
 import { composeKernelLaunch } from './kernel-launch-composition.mjs'
-import { ensureSolProfileEntry } from './sol-profile-entry.mjs'
 import { launchWebHost, assertWebPortAvailable } from './web-host-lifecycle.mjs'
 import { ensureAgentTeamProfile } from './agent-team-profile.mjs'
 
@@ -46,7 +45,6 @@ export async function launchKernelWeb({ projectRoot = repository, catalogRoot, s
   // Refuse an occupied port before project preparation mutates its launch metadata.
   await assertWebPortAvailable(port)
   await ensureAgentTeamProfile({ harness, home, signal })
-  await ensureSolProfileEntry({ anchor, home })
   const layers = profileLayers()
   if (configuredWebPort(boot.composeEntries(layers)) !== port) throw new Error('Agent Teams activation unexpectedly changed the Web port')
   let launchDirectory, prepared = false

@@ -1,8 +1,0 @@
-{
-  "calls": ["write_then_run"],
-  "nested": ["write", "bash"],
-  "mutationApplied": true,
-  "receiptPresent": true,
-  "verificationEvidencePresent": true,
-  "assistant": "File written and verification passed. Exact evidence is archived."
-}

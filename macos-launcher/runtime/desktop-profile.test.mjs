@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { prepareDesktopProfile } from './desktop-profile.mjs'
 
-test('Desktop retains the user profile and loads one local board and the editable SoL entry', async t => {
+test('Desktop retains the user profile and loads one local board while retiring SoL', async t => {
   const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
   const boot = createRequire(join(source, 'apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
   const root = await mkdtemp(join(tmpdir(), 'desktop-profile-'))
@@ -29,11 +29,23 @@ test('Desktop retains the user profile and loads one local board and the editabl
   assert.ok(JSON.parse(manifestBefore).dsh.profile.bundles.includes('@deepseek-ai/dsh-experimental-agent-team-profile'))
   assert.equal(await readFile(join(first.profile, 'cordis.patch.yml'), 'utf8'), JSON.stringify(userPatch))
   const patches = JSON.parse(await readFile(join(first.bundle, 'cordis.patch.yml'), 'utf8'))
-  assert.ok(patches.some(p => p.id === 'sol-efficiency' && p.name.endsWith('/sol-efficiency-plugin/index.js')))
+  assert.ok(patches.some(p => p.id === 'sol-efficiency' && p.disabled === true))
   const inserts = patches.flatMap(p => p.insert ?? [])
+  assert.ok(patches.find(p => p.id === 'preset-cordis').config.plugins.some(row => row.id === 'workflow-creator-jev-guidance'))
   assert.equal(inserts.filter(p => p.id === 'matt-skills-board').length, 1)
-  assert.ok(inserts.find(p => p.id === 'matt-skills-board').name.includes('/vendor/dsh-mattpocock-skills-deck/package/lib/index.js'))
+  assert.ok(inserts.find(p => p.id === 'matt-skills-board').name.includes('/matt-skills-panel-plugin/package/lib/index.js'))
   assert.equal(inserts.filter(p => p.id === 'kernel-sol').length, 0)
   await prepareDesktopProfile(args)
+  assert.equal(await readFile(join(first.profile, 'package.json'), 'utf8'), manifestBefore)
+  const stampPath = join(first.bundle, 'integration.json')
+  const oldIdentity = JSON.parse(await readFile(stampPath, 'utf8'))
+  delete oldIdentity.hostInstance
+  delete oldIdentity.creatorJevGuidance
+  await writeFile(stampPath, JSON.stringify(oldIdentity))
+  await writeFile(join(first.bundle, 'cordis.patch.yml'), JSON.stringify([{ insert: [{ id: 'workflow-desktop-health-instance', name: '/old-health-adapter.mjs' }] }]))
+  await prepareDesktopProfile(args)
+  const refreshed = JSON.parse(await readFile(join(first.bundle, 'cordis.patch.yml'), 'utf8'))
+  assert.ok(refreshed.find(p => p.id === 'preset-cordis').config.plugins.some(row => row.id === 'workflow-creator-jev-guidance'))
+  assert.equal(refreshed.flatMap(p => p.insert ?? []).some(row => row.id === 'workflow-desktop-health-instance'), false)
   assert.equal(await readFile(join(first.profile, 'package.json'), 'utf8'), manifestBefore)
 })

@@ -1,0 +1,15 @@
+node_modules/
+package/lib/
+package/scripts/
+package/shared/
+package/README.md
+packages/dsh-log/dist/
+.tmp/
+client.js
+host.js
+.DS_Store
+
+.upstream-review/
+package/LICENSE
+package/THIRD_PARTY_NOTICES.md
+package/upstream.json

@@ -7,7 +7,6 @@ import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import { composeKernelLaunch } from '../../scripts/kernel-launch-composition.mjs'
-import { ensureSolProfileEntry } from '../../scripts/sol-profile-entry.mjs'
 import { hostPackageMap } from '../../scripts/project-plugins.mjs'
 import { installProjectResolver } from '../../scripts/project-plugin-resolver.mjs'
 import { launchWebHost, assertWebPortAvailable } from '../../scripts/web-host-lifecycle.mjs'
@@ -73,8 +72,7 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
   if (manifest.version !== installed.version) throw new Error('Packaged DSH version mismatch')
   const packages = {
     'dsh-owner-workflow': workflow,
-    'dsh-sol-efficiency': join(workflow, 'sol-efficiency-plugin'),
-    'dsh-mattpocock-skills-deck': join(workflow, 'vendor/dsh-mattpocock-skills-deck/package'),
+    'dsh-workflow-matt-panel': join(workflow, 'matt-skills-panel-plugin/package'),
   }
   for (const [name, root] of Object.entries(packages)) {
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -94,7 +92,6 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
     } catch (error) {
       process.stderr.write(`[project-plugins] Web profile 插件准备失败：${String(error.message ?? error)}\n`)
     }
-    await ensureSolProfileEntry({ anchor, home })
     const profile = boot.loadProfile('dsh', 'web', anchor, home)
     const homePatch = join(home, 'cordis.patch.yml')
     const layers = [...profile.layers.map(layer => layer.patches), profile.patches,

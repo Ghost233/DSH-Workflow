@@ -1,4 +1,4 @@
-import '../sol-efficiency-plugin/test/workspace-loader.mjs'
+import './harness-test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
@@ -16,18 +16,19 @@ const anchor = join(project, 'deepseek-harness/apps/cli/package.json')
 const req = createRequire(anchor)
 const { boot, initProfile, loadProfile, composeEntries } = req('@deepseek-ai/dsh-app-boot')
 const { provideCmdline } = req('@deepseek-ai/dsh-cmdline')
+const { assembleContextFor } = req('@deepseek-ai/dsh-agent')
 
 test('source launcher chooses its catalog from the checkout, independent of the caller cwd', () => {
   assert.equal(launchCatalogRoot(project), resolve(project, '..'))
   assert.equal(launchCatalogRoot(join(project, 'fixtures', 'checkout')), join(project, 'fixtures'))
 })
 
-test('actual Web composition loads Owner and SoL with the root preset without rewriting its fixture profile', { timeout: 30_000 }, async () => {
+test('actual Web composition loads Owner with the root preset without rewriting its fixture profile', { timeout: 30_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'ukr-web-composition-'))
   const home = join(root, 'home'), profileDir = join(home, 'profiles/web')
   const instanceId = randomUUID()
   const saved = Object.fromEntries(['DSH_HOME', 'DSH_PROFILE', 'DSH_OWNER_WORKFLOW_CATALOG_ROOT', 'DSH_OWNER_WORKFLOW_HOST_INSTANCE'].map(key => [key, process.env[key]]))
-  let ctx, handle, hooks
+  let ctx, handle, creator, standard, hooks
   try {
     // These variables belong only to this node:test child and its disposable profile.
     Object.assign(process.env, { DSH_HOME: home, DSH_PROFILE: 'web', DSH_OWNER_WORKFLOW_CATALOG_ROOT: root, DSH_OWNER_WORKFLOW_HOST_INSTANCE: instanceId })
@@ -43,7 +44,7 @@ test('actual Web composition loads Owner and SoL with the root preset without re
     await writeFile(join(profileDir, 'cordis.patch.yml'), JSON.stringify(custom))
     const original = await readFile(join(profileDir, 'cordis.patch.yml'), 'utf8')
     hooks = installProjectResolver({ directory: root, anchor, hostPackages: hostPackageMap(anchor), packages: {
-      'dsh-owner-workflow': project, 'dsh-sol-efficiency': join(project, 'sol-efficiency-plugin'),
+      'dsh-owner-workflow': project,
     } })
     const profile = loadProfile('dsh', 'web', anchor, home)
     const layers = [...profile.layers.map(layer => layer.patches), profile.patches]
@@ -63,18 +64,29 @@ test('actual Web composition loads Owner and SoL with the root preset without re
     const health = await response.json()
     assert.equal(response.status, 200, JSON.stringify(health))
     assert.equal(health.instanceId, instanceId)
-    assert.deepEqual(health.components, { owner: 'ready', sol: 'ready' })
+    assert.deepEqual(health.components, { owner: 'ready' })
     handle = await ctx.agents.create({ sessionId: 'web-kernel-root', meta: { cwd: root }, setup: async child => { await ctx.agentPresets.mount(child, 'owner-workflow') } })
     assert.ok(ctx.tools.get('workflow_start', handle.agent))
     assert.equal(ctx.permissionPresets.current(handle.agent.session), 'review-only')
+    creator = await ctx.agents.create({ sessionId: 'web-creator', meta: { cwd: root },
+      setup: async child => { await ctx.agentPresets.mount(child, 'cordis') } })
+    standard = await ctx.agents.create({ sessionId: 'web-standard', meta: { cwd: root },
+      setup: async child => { await ctx.agentPresets.mount(child, 'standard') } })
+    assert.ok(ctx.tools.get('cordis_inspect_list', creator.agent), 'Creator retains its native tools')
+    const creatorPrompt = await ctx.systemPrompt.assemble(assembleContextFor(creator.agent))
+    assert.ok(creatorPrompt.sections.some(section => section.name === 'workflow:creator-jev-design'))
+    for (const agent of [handle.agent, standard.agent]) {
+      const prompt = await ctx.systemPrompt.assemble(assembleContextFor(agent))
+      assert.equal(prompt.sections.some(section => section.name === 'workflow:creator-jev-design'), false)
+    }
     assert.equal(await readFile(join(profileDir, 'cordis.patch.yml'), 'utf8'), original)
     const graph = ctx.clientModules.graph()
     assert.equal(graph.entries.some(entry => /synapse/i.test(entry.id)), false)
-    for (const id of ['dsh-owner-workflow', 'dsh-sol-efficiency']) {
+    for (const id of ['dsh-owner-workflow']) {
       assert.ok(graph.entries.some(entry => entry.id === id), `Missing actual browser client: ${id}`)
     }
   } finally {
-    await handle?.dispose(); await ctx?.fiber.dispose(); hooks?.deregister()
+    await standard?.dispose(); await creator?.dispose(); await handle?.dispose(); await ctx?.fiber.dispose(); hooks?.deregister()
     for (const [key, value] of Object.entries(saved)) value === undefined ? delete process.env[key] : process.env[key] = value
     await rm(root, { recursive: true, force: true })
   }
