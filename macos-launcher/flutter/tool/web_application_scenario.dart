@@ -16,6 +16,11 @@ typedef WebSdkRequest = Future<Map<String, Object?>> Function(
   Map<String, Object?>? params,
 });
 
+typedef WebAppRequest = Future<Map<String, Object?>> Function(
+  String method, {
+  Map<String, Object?>? params,
+});
+
 class WebObservation {
   WebObservation({
     required this.root,
@@ -28,6 +33,9 @@ class WebObservation {
     required this.tap,
     required this.capture,
     required this.reconnectManager,
+    required this.appRequest,
+    required this.disconnectManager,
+    required this.authenticatedWebHealth,
   });
   final Directory root;
   final int port;
@@ -40,6 +48,9 @@ class WebObservation {
       File('${root.path}/data/global/.dsh-workflow/desktop/desktop-host.json');
   final Future<void> Function(String) tap, capture;
   final Future<void> Function() reconnectManager;
+  final WebAppRequest appRequest;
+  final Future<void> Function({bool sessionOnly}) disconnectManager;
+  final Future<Map<String, Object?>> Function() authenticatedWebHealth;
 }
 
 class WebProbeOptions {
@@ -426,6 +437,22 @@ Future<void> runWebApplicationScenario({
       'official SDK observes this same backend lease',
     );
     if (onConnected != null) {
+      Future<void> disconnectManager({bool sessionOnly = false}) async {
+        if (sessionOnly) {
+          await server!.sessionFor('dsh-workflow')!.close();
+          return;
+        }
+        await server!.close();
+        server = null;
+        await waitFor(
+          'application observes manager disconnect',
+          () async => ((await state())['nodes'] as List).any(
+            (node) =>
+                (node as Map)['label'].toString().contains('disconnected'),
+          ),
+        );
+      }
+
       await onConnected(
         WebObservation(
           root: root,
@@ -437,16 +464,17 @@ Future<void> runWebApplicationScenario({
           backendHealth: () => health(backendUrl, backendLogin.cookies),
           tap: tapUi,
           capture: capture,
-          reconnectManager: () async {
-            await server!.close();
-            server = null;
-            await waitFor(
-              'application observes manager disconnect',
-              () async => ((await ui())['nodes'] as List).any(
-                (node) =>
-                    (node as Map)['label'].toString().contains('disconnected'),
+          appRequest: (method, {params}) => server!
+              .sessionFor('dsh-workflow')!
+              .sendRequest(
+                method,
+                params: params,
+                timeout: const Duration(seconds: 5),
               ),
-            );
+          disconnectManager: disconnectManager,
+          authenticatedWebHealth: () => health(url, webCookies),
+          reconnectManager: () async {
+            if (server != null) await disconnectManager();
             server = await LauncherServer.start(
               layout: layout,
               bindings: bindings,

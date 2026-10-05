@@ -10,6 +10,7 @@ import 'package:vm_service/vm_service_io.dart';
 import 'web_application_scenario.dart';
 import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
+import 'entry_application_scenario.dart';
 
 Future<void> waitFor(String description, Future<bool> Function() check) async {
   for (var attempt = 0; attempt < 150; attempt++) {
@@ -29,7 +30,9 @@ Future<void> main(List<String> arguments) async {
       arguments.length == 3 && arguments[1] == '--instance-startup';
   final logsScenario =
       arguments.length == 3 && arguments[1] == '--logs-runtime';
-  final webScenario = logsScenario
+  final entryScenario =
+      arguments.length == 3 && arguments[1] == '--entry-runtime';
+  final webScenario = logsScenario || entryScenario
       ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
       : WebProbeOptions.parse(arguments);
   final systemCi =
@@ -95,7 +98,7 @@ Future<void> main(List<String> arguments) async {
     'read-only candidate preflight confirms this project Debug isolation bridge and driver',
   );
   final root = await Directory(systemCi ? runnerTemp! : '/private/tmp')
-      .createTemp(updates ? 'dsh-t07-' : 'dsh-t01-');
+      .createTemp(updates ? 'dsh-t07-' : (entryScenario ? 'dsh-t06-' : 'dsh-t01-'));
   final releaseFixture = updates ? await ReleaseFixture.start() : null;
   final app = Directory('${root.path}/candidate.app');
   final copy = await Process.run('/usr/bin/ditto', [sourceApp.path, app.path]);
@@ -292,7 +295,9 @@ Future<void> main(List<String> arguments) async {
         state: state,
         tap: tap,
         capture: capture,
-        onConnected: logsScenario ? runLogApplicationScenario : null,
+        onConnected: entryScenario
+            ? runEntryApplicationScenario
+            : (logsScenario ? runLogApplicationScenario : null),
       );
       await state({'action': 'quit'});
       require(
