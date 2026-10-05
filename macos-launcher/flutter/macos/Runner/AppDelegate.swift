@@ -12,14 +12,22 @@ class AppDelegate: FlutterAppDelegate {
   private var quitApproved = false
   private var quitRequested = false
   private var reopenObserver: NSObjectProtocol?
-  private let reopen = Notification.Name("com.ghostagent.dsh-workflow-launcher.reopen")
+  private var reopen: Notification.Name {
+    let base = "com.ghostagent.dsh-workflow-launcher.reopen"
+    return Notification.Name(testRoot == nil ? base : base + ".test." + dataRoot.path)
+  }
 
-  private var dataRoot: URL {
+  private var testRoot: URL? {
     #if DEBUG
-    if let root = ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_ROOT"] {
+    if let root = ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_ROOT"] ?? Bundle.main.object(forInfoDictionaryKey: "DSHLauncherTestRoot") as? String {
       return URL(fileURLWithPath: root, isDirectory: true)
     }
     #endif
+    return nil
+  }
+
+  private var dataRoot: URL {
+    if let root = testRoot { return root }
     return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
       .appendingPathComponent("DSH Workflow", isDirectory: true)
   }
@@ -30,7 +38,7 @@ class AppDelegate: FlutterAppDelegate {
     catch { NSApp.terminate(nil); return }
     instanceLock = open(dataRoot.appendingPathComponent("launcher-instance.lock").path, O_CREAT | O_RDWR, 0o600)
     guard instanceLock >= 0, flock(instanceLock, LOCK_EX | LOCK_NB) == 0 else {
-      DistributedNotificationCenter.default().post(name: reopen, object: nil)
+      DistributedNotificationCenter.default().postNotificationName(reopen, object: dataRoot.path, userInfo: nil, deliverImmediately: true)
       quitApproved = true
       NSApp.terminate(nil)
       return
@@ -44,7 +52,7 @@ class AppDelegate: FlutterAppDelegate {
     menu.addItem(NSMenuItem(title: "退出启动器", action: #selector(requestQuit), keyEquivalent: "q"))
     for item in menu.items { item.target = self }
     statusItem?.menu = menu
-    reopenObserver = DistributedNotificationCenter.default().addObserver(forName: reopen, object: nil, queue: .main) { [weak self] _ in
+    reopenObserver = DistributedNotificationCenter.default().addObserver(forName: reopen, object: dataRoot.path, queue: .main) { [weak self] _ in
       self?.showWindow()
     }
     showWindow()
@@ -60,19 +68,44 @@ class AppDelegate: FlutterAppDelegate {
         switch call.method {
         case "environment":
           guard let resources = Bundle.main.resourceURL else { throw self.failure("应用资源目录不可用") }
-          let defaults = UserDefaults.standard
+          let preferences = self.loadPreferences()
           result([
-            "resources": resources.path, "dataRoot": self.dataRoot.path,
-            "home": ProcessInfo.processInfo.environment["DSH_HOME"] ?? NSHomeDirectory() + "/.dsh",
+            "resources": self.testRoot == nil ? resources.path :
+              ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_RESOURCES"] ?? self.dataRoot.deletingLastPathComponent().appendingPathComponent("missing-runtime").path,
+            "dataRoot": self.dataRoot.path,
+            "testSocket": self.testRoot == nil ? NSNull() :
+              (ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_SOCKET"] ?? self.dataRoot.deletingLastPathComponent().appendingPathComponent("manager/sdk-v1.sock").path) as Any,
+            "home": self.testRoot == nil ?
+              ProcessInfo.processInfo.environment["DSH_HOME"] ?? NSHomeDirectory() + "/.dsh" :
+              ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_HOME"] ?? self.dataRoot.appendingPathComponent(".dsh").path,
             "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知",
-            "fullAccess": defaults.object(forKey: "fullAccess") as? Bool ?? true,
-            "allowLanSettings": defaults.object(forKey: "allowLanSettings") as? Bool ?? false,
+            "fullAccess": preferences["fullAccess"] as? Bool ?? true,
+            "allowLanSettings": preferences["allowLanSettings"] as? Bool ?? false,
             "password": self.loadPassword() as Any, "loginStatus": self.loginStatus(),
           ])
         case "showWindow": self.showWindow(); result(nil)
         #if DEBUG
         case "debugState": result(["entryVisible": self.statusItem?.isVisible ?? false,
-          "windowVisible": self.mainFlutterWindow?.isVisible ?? false, "dataRoot": self.dataRoot.path])
+          "windowVisible": self.mainFlutterWindow?.isVisible ?? false,
+          "windowKey": self.mainFlutterWindow?.isKeyWindow ?? false,
+          "windowNumber": self.mainFlutterWindow?.windowNumber ?? 0,
+          "windowWidth": self.mainFlutterWindow?.frame.width ?? 0,
+          "windowHeight": self.mainFlutterWindow?.frame.height ?? 0,
+          "pid": ProcessInfo.processInfo.processIdentifier,
+          "isolated": self.testRoot != nil, "dataRoot": self.dataRoot.path])
+        case "debugWindow":
+          guard self.testRoot != nil, let action = call.arguments as? String else { throw self.failure("需要隔离测试环境") }
+          switch action {
+          case "close": self.mainFlutterWindow?.performClose(nil)
+          case "ownEntry":
+            guard let item = self.statusItem?.menu?.item(withTitle: "管理…"), let action = item.action else { throw self.failure("管理菜单入口不可用") }
+            NSApp.sendAction(action, to: item.target, from: item)
+          case "quit": NSApp.terminate(nil)
+          case "minimum":
+            if let window = self.mainFlutterWindow { window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: true) }
+          default: throw self.failure("无效窗口测试动作")
+          }
+          result(nil)
         #endif
         case "setEntryManaged":
           guard let managed = call.arguments as? Bool, let item = self.statusItem else { throw self.failure("菜单入口尚未就绪") }
@@ -81,8 +114,7 @@ class AppDelegate: FlutterAppDelegate {
         case "savePreferences":
           guard let values = call.arguments as? [String: Any], let access = values["fullAccess"] as? Bool,
                 let lan = values["allowLanSettings"] as? Bool else { throw self.failure("无效设置") }
-          UserDefaults.standard.set(access, forKey: "fullAccess")
-          UserDefaults.standard.set(lan, forKey: "allowLanSettings")
+          try self.savePreferences(["fullAccess": access, "allowLanSettings": lan])
           result(nil)
         case "savePassword":
           guard let password = call.arguments as? String, !password.isEmpty, password.utf8.count <= 1024 else {
@@ -90,6 +122,7 @@ class AppDelegate: FlutterAppDelegate {
           }
           try self.persistPassword(password); result(nil)
         case "setLoginEnabled":
+          if self.testRoot != nil { throw self.failure("测试环境不更改系统登录项") }
           guard let enabled = call.arguments as? Bool else { throw self.failure("无效登录启动设置") }
           if #available(macOS 13, *) {
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -119,7 +152,24 @@ class AppDelegate: FlutterAppDelegate {
   private func failure(_ text: String) -> NSError {
     NSError(domain: "DSH Workflow", code: 1, userInfo: [NSLocalizedDescriptionKey: text])
   }
+  private func loadPreferences() -> [String: Any] {
+    if let root = testRoot {
+      return NSDictionary(contentsOf: root.appendingPathComponent("test-preferences.plist")) as? [String: Any] ?? [:]
+    }
+    let defaults = UserDefaults.standard
+    return ["fullAccess": defaults.object(forKey: "fullAccess") ?? true,
+            "allowLanSettings": defaults.object(forKey: "allowLanSettings") ?? false]
+  }
+  private func savePreferences(_ values: [String: Any]) throws {
+    if let root = testRoot {
+      let data = try PropertyListSerialization.data(fromPropertyList: values, format: .xml, options: 0)
+      try data.write(to: root.appendingPathComponent("test-preferences.plist"), options: .atomic)
+      return
+    }
+    for (key, value) in values { UserDefaults.standard.set(value, forKey: key) }
+  }
   private func loginStatus() -> String {
+    if testRoot != nil { return "unavailableInTest" }
     if #available(macOS 13, *) {
       switch SMAppService.mainApp.status {
       case .enabled: return "enabled"
@@ -139,6 +189,7 @@ class AppDelegate: FlutterAppDelegate {
   private func loadPassword() -> String? {
     if let data = try? Data(contentsOf: dataRoot.appendingPathComponent("lan-password")),
        let text = String(data: data, encoding: .utf8), !text.isEmpty { return text }
+    if testRoot != nil { return nil }
     var value: CFTypeRef?
     let status = SecItemCopyMatching([
       kSecClass: kSecClassGenericPassword, kSecAttrService: "com.ghostagent.dsh-workflow-launcher",
@@ -170,6 +221,10 @@ class AppDelegate: FlutterAppDelegate {
     if let observer = reopenObserver { DistributedNotificationCenter.default().removeObserver(observer) }
     if instanceLock >= 0 { close(instanceLock); instanceLock = -1 }
     super.applicationWillTerminate(notification)
+  }
+  override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    showWindow()
+    return false
   }
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }

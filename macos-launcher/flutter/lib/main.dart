@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:developer' as developer;
 import 'dart:convert';
 
@@ -8,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 
+import 'application_probe.dart';
 import 'launcher_controller.dart';
 import 'maclauncher_integration.dart';
 import 'native_bridge.dart';
@@ -19,9 +19,7 @@ Future<void> main() async {
   await model.initialize();
   final integration = MacLauncherIntegration(
     model,
-    socketPath: kDebugMode
-        ? Platform.environment['DSH_LAUNCHER_TEST_SOCKET']
-        : null,
+    socketPath: kDebugMode ? model.environment.testSocket : null,
   );
   if (kDebugMode) {
     developer.registerExtension('ext.dshlauncher.nativeState', (_, _) async {
@@ -47,6 +45,9 @@ Future<void> main() async {
         await model.startWeb();
     }
   });
+  if (kDebugMode && model.environment.testSocket != null) {
+    registerApplicationProbe(native);
+  }
   runApp(LauncherApp(controller: model));
   if (model.hasPassword) {
     unawaited(model.startWeb().catchError(model.reportError));
