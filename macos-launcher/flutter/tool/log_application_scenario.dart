@@ -23,6 +23,10 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
   final supervisorPid = int.parse(children.stdout.toString().trim());
   final hostPid = app.backend['pid'] as int;
   final lease = app.backend['lease'];
+  final secret = await File('${app.root.path}/data/lan-password')
+      .readAsString();
+  final backendToken = Uri.parse(app.backend['url'] as String)
+      .queryParameters['token']!;
   require(
     first['state'] == 'running' && first['ready'] == true && instance is String,
     'logs scenario begins with a real ready Web connection',
@@ -75,6 +79,15 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
     await app.tap('日志');
     await app.ui();
     await app.capture('logs-fault-observed');
+    final exposed = jsonEncode({
+      'declaration': app.capabilities,
+      'status': status,
+      'logs': batch,
+    });
+    require(
+      !exposed.contains(secret) && !exposed.contains(backendToken),
+      'actual declaration/status/log responses disclose neither private access credential',
+    );
     final entries = (batch['entries'] as List).cast<Map>();
     require(
       entries.any((entry) => entry['text'] == 'Unsafe Desktop Host receipt'),
@@ -168,6 +181,18 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
         (thirdLogs['entries'] as List).isEmpty &&
         thirdLogs['instanceId'] == third['instanceId'],
     'real supervisor restart begins a clean new access log scope',
+  );
+  await File('${app.root.path}/log-final-state.json').writeAsString(
+    jsonEncode({
+      'firstInstance': instance,
+      'secondInstance': second['instanceId'],
+      'third': third,
+      'thirdLogs': thirdLogs,
+      'declaration': app.capabilities,
+      'hostPid': hostPid,
+      'hostLease': lease,
+      'credentialLeakCheck': 'neither value present',
+    }),
   );
   await app.sdk('recycle');
   stdout.writeln('T03 REAL LOG SCENARIO PASSED');
