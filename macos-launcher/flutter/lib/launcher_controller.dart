@@ -292,10 +292,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     final state = ServiceState.fromJson(value['state'] as String? ?? 'unknown');
     final instance = value['instanceId'] as String?;
     if (instance != null && instance != _logInstanceId) {
-      if (_logInstanceId != null) {
-        logs.clear();
-        _logsDropped = false;
-      }
+      logs.clear();
+      _logsDropped = false;
       _logInstanceId = instance;
     }
     if (state == ServiceState.running && value['url'] is String) {

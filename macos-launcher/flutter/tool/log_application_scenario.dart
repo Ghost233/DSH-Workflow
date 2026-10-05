@@ -175,8 +175,10 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
 
 const _controlledProducer = r'''
 import { createServer } from 'node:net';
+import { writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 const root = process.argv[2];
+writeFileSync(root + '/controlled-node.pid', String(process.pid));
 let instanceId = null, state = 'starting';
 const write = (name, value) => process.stdout.write(name + '\t' + JSON.stringify(value) + '\n');
 const snapshot = () => ({ state, instanceId, url: 'http://127.0.0.1:1/' });
@@ -185,11 +187,22 @@ write('DSH_WORKFLOW_STATE', { global: snapshot() });
 log(null, 'controlled unknown before first connection');
 const socket = createServer(client => {
   createInterface({ input: client }).on('line', command => {
-    if (command !== 'known') { client.end('invalid command\n'); return; }
-    instanceId = 'controlled-scope-A'; state = 'running';
-    write('DSH_WORKFLOW_STATE', { global: snapshot() });
-    write('DSH_WORKFLOW_READY', { url: snapshot().url, lanUrls: [] });
-    log(instanceId, 'controlled known A');
+    if (command === 'known') {
+      instanceId = 'controlled-scope-A'; state = 'running';
+      write('DSH_WORKFLOW_STATE', { global: snapshot() });
+      write('DSH_WORKFLOW_READY', { url: snapshot().url, lanUrls: [] });
+      log(instanceId, 'controlled known A');
+    } else if (command === 'three') {
+      log(instanceId, 'controlled A two'); log(instanceId, 'controlled A three');
+    } else if (command === 'many') {
+      instanceId = 'controlled-scope-B';
+      write('DSH_WORKFLOW_STATE', { global: snapshot() });
+      for (let i=0; i<500; i++) log(instanceId, 'controlled B ' + i);
+    } else if (command === 'overflow') {
+      log(instanceId, 'controlled B 500');
+    } else if (command === 'late') {
+      log('controlled-scope-A', 'controlled LATE A');
+    } else { client.end('invalid command\n'); return; }
     client.end('done\n');
   });
 });
@@ -274,17 +287,21 @@ Future<void> runControlledLogs(
           (unknown['entries'] as List).single['stream'] == 'unknown',
       'controlled transport preserves unknown scope and source metadata',
     );
-    final socket = await Socket.connect(
-      InternetAddress(
-        '${root.path}/data/log-fixture.sock',
-        type: InternetAddressType.unix,
-      ),
-      0,
-    );
-    socket.writeln('known');
-    await socket.flush();
-    await socket.transform(utf8.decoder).join();
-    await socket.close();
+    Future<void> produce(String command) async {
+      final socket = await Socket.connect(
+        InternetAddress(
+          '${root.path}/data/log-fixture.sock',
+          type: InternetAddressType.unix,
+        ),
+        0,
+      );
+      socket.writeln(command);
+      await socket.flush();
+      await socket.cast<List<int>>().transform(utf8.decoder).join();
+      await socket.close();
+    }
+
+    await produce('known');
     await waitFor(
       'controlled first connection ready',
       () async => (await sdk('status'))['ready'] == true,
@@ -301,6 +318,86 @@ Future<void> runControlledLogs(
           (known['entries'] as List).length == 1 &&
           (known['entries'] as List).single['text'] == 'controlled known A',
       'unknown origin log is never relabelled as the first known instance',
+    );
+    await produce('three');
+    await waitFor(
+      'three controlled entries delivered',
+      () async => ((await sdk('logs'))['entries'] as List).length == 3,
+    );
+    final complete = await sdk('logs', params: {'limit': 3});
+    final limited = await sdk('logs', params: {'limit': 2});
+    require(
+      complete['truncated'] == false &&
+          (complete['entries'] as List).length == 3,
+      'exact read limit with no loss is not truncated',
+    );
+    require(
+      limited['truncated'] == true &&
+          (limited['entries'] as List).first['text'] == 'controlled A two',
+      'smaller readable range truthfully reports truncation',
+    );
+    await produce('many');
+    await waitFor(
+      'controlled 500-entry cache complete',
+      () async =>
+          ((await sdk('logs', params: {'limit': 500}))['entries'] as List)
+              .length ==
+          500,
+    );
+    final exact = await sdk('logs', params: {'limit': 500});
+    require(
+      exact['instanceId'] == 'controlled-scope-B' &&
+          exact['truncated'] == false &&
+          (exact['entries'] as List).first['text'] == 'controlled B 0',
+      '500 source entries fit the cache and do not falsely signal loss',
+    );
+    await produce('overflow');
+    await waitFor(
+      'actual controlled cache eviction',
+      () async =>
+          (await sdk('logs', params: {'limit': 500}))['truncated'] == true,
+    );
+    final evicted = await sdk('logs', params: {'limit': 500});
+    require(
+      (evicted['entries'] as List).length == 500 &&
+          (evicted['entries'] as List).first['text'] == 'controlled B 1' &&
+          (evicted['entries'] as List).last['text'] == 'controlled B 500',
+      '501 source entries really discard one and retain the latest 500',
+    );
+    await produce('late');
+    await sdk('status'); // Its pipe reply follows the injected old record.
+    final late = await sdk('logs', params: {'limit': 500});
+    require(
+      late['instanceId'] == 'controlled-scope-B' &&
+          !(late['entries'] as List).any(
+            (entry) => entry['text'] == 'controlled LATE A',
+          ),
+      'late old-scope record is not assigned to the current cache',
+    );
+    await state({'action': 'ownEntry'});
+    await state({'action': 'minimum'});
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    final displayed = await state();
+    require(
+      (displayed['nodes'] as List).any(
+        (node) => (node as Map)['label'].toString().contains('更早的日志已丢弃'),
+      ),
+      'actual log page reports controlled cache loss',
+    );
+    await capture('controlled-truncated');
+    final fixturePid = int.parse(
+      await File('${root.path}/data/controlled-node.pid').readAsString(),
+    );
+    await File('${root.path}/controlled-limits.json').writeAsString(
+      jsonEncode({
+        'source': 'controlled transport, no real backend',
+        'fixturePid': fixturePid,
+        'complete': complete,
+        'limited': limited,
+        'exact500': exact,
+        'evicted501': evicted,
+        'late': late,
+      }),
     );
     await sdk('recycle');
     stdout.writeln(
