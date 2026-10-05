@@ -169,7 +169,7 @@ jobs:
         env:
           TARGET_ARCH: ${{ matrix.arch }}
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           APP_VERSION="$(node -p "require('./macos-launcher/package.json').version")"
           DSH_VERSION="$(node -p "require('./dsh-runtime.json').version")"
           APP=".build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-${TARGET_ARCH}.app"
@@ -179,8 +179,8 @@ jobs:
           mkdir -p "$STAGING"
           ditto "$APP" "$STAGING/DSH Workflow.app"
           ln -s /Applications "$STAGING/Applications"
-          hdiutil create -quiet -ov -format UDZO -volname "DSH Workflow" -srcfolder "$STAGING" "$DMG"
-          hdiutil verify -quiet "$DMG"
+          hdiutil create -ov -format UDZO -volname "DSH Workflow" -srcfolder "$STAGING" "$DMG"
+          hdiutil verify "$DMG"
           test -s "$DMG"
           echo "dmg=$DMG" >> "$GITHUB_OUTPUT"
 
