@@ -229,23 +229,29 @@ Future<void> runUpdateScenarios({
       native(snapshot)['systemBoundaryTest'] == true,
       'native system boundary independently confirms disposable CI isolation',
     );
+    final initial = native(snapshot)['loginStatus'];
+    stdout.writeln('SYSTEM_LOGIN_INITIAL=$initial');
+    await captureGeneral('login-initial');
     require(
-      native(snapshot)['loginStatus'] == 'notRegistered',
-      'disposable runner begins with this app unregistered',
+      initial == 'notRegistered' || initial == 'notFound',
+      'disposable runner begins without an enabled or pending login registration',
     );
     require(
-      text(snapshot, '登录启动：未注册'),
-      'UI renders the actual unregistered system state',
+      text(snapshot, initial == 'notRegistered' ? '登录启动：未注册' : '登录启动：系统未找到此应用'),
+      'UI renders the actual initial system login state',
     );
     await tap('登录后启动应用');
     await waitFor('actual system registration result', () async {
       final current = await state();
-      return native(current)['loginStatus'] != 'notRegistered' ||
+      final actual = native(current)['loginStatus'];
+      return actual == 'enabled' ||
+          actual == 'requiresApproval' ||
           text(current, 'native-error');
     });
     snapshot = await state();
     await captureGeneral('login-registration');
     final registered = native(snapshot)['loginStatus'];
+    stdout.writeln('SYSTEM_LOGIN_REGISTER_RESULT=$registered');
     require(
       registered == 'enabled' || registered == 'requiresApproval',
       'SMAppService actually registered this CI app',
