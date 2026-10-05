@@ -266,7 +266,7 @@ Future<void> main(List<String> arguments) async {
       ]);
       require(
         result.exitCode == 0 && await File(path).exists(),
-        'actual minimum window screenshot: $path',
+        'actual native window screenshot: $path',
       );
     }
 

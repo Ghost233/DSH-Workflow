@@ -440,6 +440,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void> checkUpdates() async {
     if (checkingUpdates) return;
     checkingUpdates = true;
+    update = null;
     updateMessage = '正在检查更新…';
     notifyListeners();
     final http = HttpClient()..connectionTimeout = const Duration(seconds: 10);
