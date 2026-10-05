@@ -1,6 +1,7 @@
 // Headless supplemental evidence uses the unchanged packaged Desktop Host.
 // It does not cover NSWorkspace, Electron windows, or native Desktop startup.
 import { fork } from 'node:child_process'
+import { createInterface } from 'node:readline'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -19,8 +20,8 @@ const child = fork(join(runtime, 'node_modules/@deepseek-ai/dsh-desktop-host/lib
   stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
 console.log(`HOST_PID=${child.pid}`)
 const redact = chunk => chunk.toString().replace(/token=[^&\s]+/g, 'token=<REDACTED>')
-child.stdout.on('data', chunk => process.stdout.write(redact(chunk)))
-child.stderr.on('data', chunk => process.stderr.write(redact(chunk)))
+createInterface({ input: child.stdout }).on('line', line => process.stdout.write(redact(line) + '\n'))
+createInterface({ input: child.stderr }).on('line', line => process.stderr.write(redact(line) + '\n'))
 child.on('message', message => {
   if (message.type === 'ready') console.log('HOST_READY')
   if (message.type === 'fatal') console.error(`HOST_FATAL: ${redact(message.message)}`)
