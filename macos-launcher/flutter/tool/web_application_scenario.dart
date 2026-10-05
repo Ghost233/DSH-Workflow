@@ -182,6 +182,10 @@ Future<void> runWebApplicationScenario({
   }
 
   try {
+    await waitFor('native entry ready before menu actions', () async {
+      final native = (await state())['native'] as Map;
+      return native['entryVisible'] == true && native['windowVisible'] == true;
+    });
     await waitFor(
       'real management UI',
       () async => ((await ui())['nodes'] as List).any(

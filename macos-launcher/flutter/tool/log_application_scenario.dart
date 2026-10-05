@@ -68,16 +68,24 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
         'privatePort': app.port,
       }),
     );
+    await app.tap('日志');
+    await app.ui();
+    await app.capture('logs-fault-observed');
     final entries = (batch['entries'] as List).cast<Map>();
     require(
       entries.any((entry) => entry['text'] == 'Unsafe Desktop Host receipt'),
       'official SDK exposes the real Web connection error as original log text',
     );
     require(
+      entries.single['timestamp'] == null &&
+          entries.single['stream'] == 'unknown' &&
+          batch['observedAt'] is String,
+      'source does not provide write time or stream; stdout carrier supplies neither',
+    );
+    require(
       batch['instanceId'] == instance,
       'real connection error retains the actual failed Web instance scope',
     );
-    await app.tap('日志');
     await waitFor(
       'real connection error visible in log page',
       () async => ((await app.ui())['nodes'] as List).any(

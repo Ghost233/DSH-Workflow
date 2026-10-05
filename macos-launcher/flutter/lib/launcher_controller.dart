@@ -250,6 +250,13 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
             );
           } else if (name == 'DSH_WORKFLOW_STATE') {
             _setSnapshot(objectValue(payload['global']));
+          } else if (name == 'DSH_WORKFLOW_LOG') {
+            if (payload['instanceId'] != _logInstanceId) continue;
+            logs.add(LogEntry.fromJson(objectValue(payload['entry'])));
+            if (logs.length > 500) {
+              logs.removeAt(0);
+              _logsDropped = true;
+            }
           } else if (name == 'DSH_WORKFLOW_REPLY') {
             if (payload['global'] != null) {
               _setSnapshot(objectValue(payload['global']));
