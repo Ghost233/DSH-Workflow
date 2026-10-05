@@ -165,6 +165,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       _child = child;
       _web = ServiceStatus(
         state: ServiceState.starting,
+        ready: false,
         observedAt: DateTime.now().toUtc(),
       );
       notifyListeners();
@@ -197,6 +198,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         }),
       );
       _observer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (!ready.isCompleted) return;
         unawaited(
           _query({'type': 'status'}).catchError((Object failure) {
             reportError(failure);
@@ -389,7 +391,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   @override
   Future<ServiceStatus> webStatus() async {
-    if (_child != null) {
+    if (_child != null && _ready?.isCompleted == true) {
       await _query({'type': 'status'});
     }
     return _child == null

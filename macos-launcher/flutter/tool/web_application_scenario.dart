@@ -211,11 +211,26 @@ Future<void> runWebApplicationScenario({
       String method, {
       String service = 'web',
     }) async {
+      final elapsed = Stopwatch()..start();
       final response = await session.sendRequest(
         method,
         serviceId: service,
         timeout: const Duration(seconds: 30),
       );
+      if (response['error'] != null) {
+        final evidence =
+            jsonEncode({
+                  'service': service,
+                  'method': method,
+                  'elapsedMs': elapsed.elapsedMilliseconds,
+                  'reply': response,
+                })
+                .replaceAll(RegExp(r'token=[^&\s]+'), 'token=<REDACTED>')
+                .replaceAll(password, '<REDACTED>');
+        await File('${root.path}/sdk-errors.log')
+            .writeAsString('$evidence\n', mode: FileMode.append);
+        stderr.writeln('SDK_ERROR: $evidence');
+      }
       require(
         response['error'] == null,
         'official SDK $service $method succeeds',
