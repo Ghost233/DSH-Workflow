@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "project": { "id": "dsh-workflow", "name": "DSH Workflow" },
+  "services": [
+    { "id": "web", "name": "Web 访问" },
+    { "id": "desktop", "name": "DSH Desktop 后端" }
+  ],
+  "integration": { "type": "sdk" },
+  "entry": { "kind": "app", "path": "/Applications/DSH Workflow.app" }
+}

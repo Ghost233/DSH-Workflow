@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { randomUUID } from 'node:crypto'
 import { launchDesktopWeb, readDesktopHost } from './desktop-launch.mjs'
 
 export const WEB_PORT = 33080
@@ -17,6 +18,7 @@ export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port =
   let currentPassword = password, closing = false
   const listeners = new Set()
   const state = () => ({ state: active?.ready ? 'running' : active ? 'starting' : 'stopped',
+    instanceId: active?.instanceId ?? null, observedAt: new Date().toISOString(),
     error: lastError, webPort: backendPort, gatePort: boundPort, url: `http://127.0.0.1:${boundPort}/` })
   const emit = () => { for (const notify of listeners) notify(state()) }
   const start = async () => {
@@ -27,7 +29,7 @@ export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port =
     const abort = () => controller.abort()
     signal?.addEventListener('abort', abort, { once: true })
     const ready = Promise.withResolvers()
-    const connection = { controller, ready: false, readyPromise: ready.promise }
+    const connection = { controller, instanceId: randomUUID(), ready: false, readyPromise: ready.promise }
     active = connection
     ready.promise.catch(() => {})
     emit()

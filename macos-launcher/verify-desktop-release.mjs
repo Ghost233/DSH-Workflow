@@ -8,6 +8,7 @@ import { verifyDesktopRuntime } from '../deepseek-harness/apps/desktop/src/runti
 import { smokePreparedRuntime } from '../deepseek-harness/apps/desktop/scripts/smoke-prepared-runtime.ts'
 import { DesktopHostProcess } from '../deepseek-harness/apps/desktop/src/host-process.ts'
 import { prepareDesktopProfile } from './runtime/desktop-profile.mjs'
+import { desktopStatus } from './runtime/desktop-status.mjs'
 
 const [application] = process.argv.slice(2)
 if (!application) throw new Error('Pass the production Desktop application path')
@@ -46,6 +47,10 @@ try {
       const health = await response.json()
       if (!response.ok || health.ready !== true || health.components?.owner !== 'ready') {
         throw new Error(`Packaged Owner Host is not ready: ${JSON.stringify(health)}`)
+      }
+      const backend = await desktopStatus(globalRoot)
+      if (backend.state !== 'running' || backend.ready !== true || !backend.instanceId) {
+        throw new Error(`Packaged Desktop observation failed: ${JSON.stringify(backend)}`)
       }
       process.stdout.write('Relocated launcher: Desktop profile, Owner readiness and Matt panel composition passed\n')
     } finally { clearTimeout(timer); await host.stop() }

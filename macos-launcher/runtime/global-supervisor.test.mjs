@@ -35,10 +35,14 @@ test('repeated opens share one Desktop connection and leave directory history un
   assert.equal(started, 1)
   assert.equal(needed, 1)
   assert.equal(supervisor.global().gatePort, supervisor.port)
+  const firstInstance = supervisor.global().instanceId
+  assert.match(firstInstance, /^[a-f0-9-]{36}$/)
+  assert.ok(Number.isFinite(Date.parse(supervisor.global().observedAt)))
   for (const name of ['catalogs', 'createCatalog', 'attachCatalog', 'openCatalog']) assert.equal(supervisor[name], undefined)
   supervisor.setPassword('changed'); assert.equal(rotated, 'changed')
   await supervisor.stopGlobal()
   assert.equal(supervisor.global().state, 'stopped')
+  assert.equal(supervisor.global().instanceId, null)
   assert.equal(await readFile(join(root, 'catalogs.json'), 'utf8'), history)
 })
 
@@ -54,10 +58,12 @@ test('a stopped Web connection reconnects without allocating a second exposed po
       return new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }))
     } })
   t.after(() => supervisor.close())
+  const firstInstance = supervisor.global().instanceId
   await supervisor.stopGlobal()
   await Promise.all([supervisor.openGlobal(), supervisor.openGlobal()])
   assert.equal(attempts, 2)
   assert.equal(supervisor.global().state, 'running')
+  assert.notEqual(supervisor.global().instanceId, firstInstance)
 })
 
 test('cancelling while Desktop is starting closes the pending Web startup', async t => {

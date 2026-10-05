@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/macos-app.yml
       - macos-launcher/**
+      - maclauncher.json
       - owner-workflow-plugin/**
       - matt-skills-panel-plugin/**
       - scripts/project-plugins.mjs
@@ -24,6 +25,7 @@ on:
     paths:
       - .github/workflows/macos-app.yml
       - macos-launcher/**
+      - maclauncher.json
       - owner-workflow-plugin/**
       - matt-skills-panel-plugin/**
       - scripts/project-plugins.mjs
@@ -62,6 +64,22 @@ jobs:
         with:
           node-version: 24.12.0
 
+      - name: Set up the shared Flutter toolchain
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+
+      - name: Verify Flutter launcher and official SDK integration
+        working-directory: macos-launcher/flutter
+        run: |
+          flutter pub get --enforce-lockfile
+          dart format --output=none --set-exit-if-changed lib test tool
+          flutter analyze --no-pub
+          flutter test --no-pub
+          flutter build macos --debug --no-pub
+          dart run tool/native_probe.dart "build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow"
+
       - name: Initialize fixed DSH build dependencies
         working-directory: deepseek-harness
         run: |
@@ -90,17 +108,16 @@ jobs:
           npm run build --prefix matt-skills-panel-plugin
           npm test --prefix matt-skills-panel-plugin
 
-      - name: Test update selection and launch contract
+      - name: Test Web and Desktop launch contract
         shell: bash
         run: |
           set -euo pipefail
-          swiftc -parse-as-library macos-launcher/Sources/UpdatePolicy.swift macos-launcher/Tests/UpdatePolicyTests.swift -o "$RUNNER_TEMP/update-policy-tests"
-          "$RUNNER_TEMP/update-policy-tests"
           node --test macos-launcher/runtime/web-launch.test.mjs \
             macos-launcher/runtime/global-supervisor.test.mjs \
             macos-launcher/runtime/single-port-entry.test.mjs \
             macos-launcher/runtime/lan-gateway.test.mjs \
-            macos-launcher/runtime/desktop-launch.test.mjs
+            macos-launcher/runtime/desktop-launch.test.mjs \
+            macos-launcher/runtime/desktop-status.test.mjs
 
       - name: Build fixed DSH production packages
         working-directory: deepseek-harness

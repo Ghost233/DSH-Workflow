@@ -1,0 +1,180 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:dsh_workflow_launcher/launcher_controller.dart';
+import 'package:dsh_workflow_launcher/native_bridge.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:maclauncher_sdk/maclauncher_sdk.dart';
+
+class FixtureNative extends NativeBridge {
+  FixtureNative(this.root);
+  final String root;
+  @override
+  Future<LauncherEnvironment> load() async => LauncherEnvironment({
+    'resources': root,
+    'dataRoot': root,
+    'home': root,
+    'appVersion': '0.2.3',
+    'loginStatus': 'disabled',
+    'password': 'fixture-only',
+  });
+}
+
+// A real Node control process: Desktop loss leaves the supervisor alive, and
+// reconnect creates a new Web instance. No production ports or profiles are used.
+const supervisor = r'''
+import { randomUUID } from 'node:crypto';
+import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { createInterface } from 'node:readline';
+const root = process.argv[2];
+writeFileSync(root + '/pid', String(process.pid));
+let instanceId, state = 'stopped';
+const write = (name, payload) => console.log(name + '\t' + JSON.stringify(payload));
+const snapshot = () => ({ state, instanceId: state === 'stopped' ? null : instanceId,
+  url: 'http://127.0.0.1:41998/', observedAt: new Date().toISOString() });
+const start = () => {
+  instanceId = randomUUID(); state = 'starting';
+  write('DSH_WORKFLOW_STATE', { global: snapshot() });
+  console.log('output for ' + instanceId);
+  state = 'running';
+  write('DSH_WORKFLOW_READY', { url: snapshot().url, lanUrls: [] });
+  write('DSH_WORKFLOW_STATE', { global: snapshot() });
+};
+start();
+createInterface({ input: process.stdin }).on('line', line => {
+  const input = JSON.parse(line);
+  if (existsSync(root + '/disconnect')) state = 'stopped';
+  if (input.type === 'open-global') {
+    if (existsSync(root + '/disconnect')) unlinkSync(root + '/disconnect');
+    start();
+  }
+  write('DSH_WORKFLOW_REPLY', { requestId: input.requestId, ok: true, global: snapshot() });
+});
+''';
+
+Future<({LauncherController model, Directory root})> fixture({
+  ProcessStarter? startProcess,
+}) async {
+  final root = await Directory.systemTemp.createTemp('dsh-controller-');
+  final node = Process.runSync('/usr/bin/which', ['node']);
+  expect(node.exitCode, 0, reason: 'A Node toolchain must be initialized');
+  await Link('${root.path}/node').create(node.stdout.toString().trim());
+  final scripts = await Directory(
+    '${root.path}/workflow/macos-launcher/runtime',
+  ).create(recursive: true);
+  await File('${scripts.path}/global-supervisor.mjs').writeAsString(supervisor);
+  final model = LauncherController(
+    FixtureNative(root.path),
+    startProcess: startProcess,
+  );
+  await model.initialize();
+  addTearDown(() async {
+    await model.close();
+    model.dispose();
+    await root.delete(recursive: true);
+  });
+  return (model: model, root: root);
+}
+
+void main() {
+  test(
+    'UI startup and SDK recycle share the mutation gate before spawn completes',
+    () async {
+      final spawned = Completer<void>(), release = Completer<void>();
+      final f = await fixture(
+        startProcess:
+            (executable, arguments, {workingDirectory, environment}) async {
+              spawned.complete();
+              await release.future;
+              return Process.start(
+                executable,
+                arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+              );
+            },
+      );
+      final start = f.model.startWeb();
+      await spawned.future;
+      try {
+        await expectLater(
+          f.model.stopWeb(),
+          throwsA(isA<ProtocolError>().having((e) => e.code, 'code', 'busy')),
+        );
+      } finally {
+        release.complete();
+      }
+      await start;
+      expect((await f.model.webStatus()).state, ServiceState.running);
+      await f.model.stopWeb();
+      expect((await f.model.webStatus()).state, ServiceState.stopped);
+    },
+  );
+
+  test(
+    'start reconnects a living supervisor and logs retain the actual run scope',
+    () async {
+      final f = await fixture();
+      await f.model.startWeb();
+      final first = (await f.model.webStatus()).instanceId;
+      final firstLogs = await f.model.recentLogs(LogQuery(limit: 1));
+      expect(firstLogs.instanceId, first);
+      expect(firstLogs.entries.single.text, 'output for $first');
+      expect(firstLogs.truncated, isFalse);
+      await File('${f.root.path}/disconnect').writeAsString('Desktop lost');
+      expect((await f.model.webStatus()).state, ServiceState.stopped);
+      await f.model.startWeb();
+      final second = (await f.model.webStatus()).instanceId;
+      expect(second, isNot(first));
+      final secondLogs = await f.model.recentLogs(LogQuery(limit: 1));
+      expect(secondLogs.instanceId, second);
+      expect(secondLogs.entries.single.text, 'output for $second');
+      expect(secondLogs.entries.single.timestamp, isNull);
+      expect(secondLogs.truncated, isFalse);
+      await f.model.restartWeb();
+      final third = (await f.model.webStatus()).instanceId;
+      expect(third, isNot(second));
+      expect(
+        (await f.model.recentLogs(LogQuery(limit: 1))).entries.single.text,
+        'output for $third',
+      );
+    },
+  );
+
+  test('repeated close waits for a suspended child to be killed', () async {
+    final f = await fixture();
+    await f.model.startWeb();
+    final pid = int.parse(await File('${f.root.path}/pid').readAsString());
+    expect(Process.killPid(pid, ProcessSignal.sigstop), isTrue);
+    final first = f.model.close();
+    final second = f.model.close();
+    expect(identical(first, second), isTrue);
+    await second.timeout(const Duration(seconds: 5));
+    expect((await Process.run('/bin/kill', ['-0', '$pid'])).exitCode, isNot(0));
+    expect(f.model.isActive, isFalse);
+  });
+
+  test('close also waits for a pending spawn and leaves no child', () async {
+    final spawned = Completer<void>(), release = Completer<void>();
+    final f = await fixture(
+      startProcess:
+          (executable, arguments, {workingDirectory, environment}) async {
+            spawned.complete();
+            await release.future;
+            return Process.start(
+              executable,
+              arguments,
+              workingDirectory: workingDirectory,
+              environment: environment,
+            );
+          },
+    );
+    final failure = expectLater(f.model.startWeb(), throwsStateError);
+    await spawned.future;
+    final close = f.model.close();
+    release.complete();
+    await close.timeout(const Duration(seconds: 5));
+    await failure;
+    expect(f.model.isActive, isFalse);
+  });
+}

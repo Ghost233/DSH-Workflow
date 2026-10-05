@@ -1,5 +1,7 @@
 # DSH Workflow macOS 启动器
 
+启动器界面、应用侧业务控制与 SDK 接入采用 Flutter/Dart，与 MacLauncher 使用同一技术体系并保持独立仓库。Swift 仅保留 macOS 原生接口。接入和统一检查流程见 [Flutter 启动器说明](flutter/README.md)。
+
 启动器只管理一个全局实例。官方 Electron 桌面端启动并持有 DSH Host；Web 入口通过带密码的代理连接这个 Host，不再启动第二个 Web 后端。桌面端和浏览器共享模型配置、会话、工作区及插件。
 
 DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-workflow-desktop` Bundle 加载 Owner、中文 Matt 技能和 `dsh-workflow-matt-panel` 本地派生面板，并发布权限为 `0600` 的后端就绪记录。本地面板不包含 bundled skills，原版 Deck 的宿主和工具条目在项目装配中停用。
@@ -19,11 +21,13 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.1-source.app" no
 
 `build-desktop.mjs` 使用上游开发运行时装配流程、固定依赖的 Electron 和官方 primary runtime，不修改 DSH 源文件。源码应用输出为 `.build/DeepSeek Harness-<DSH版本>-source.app`；启动器将它放入 `Contents/Resources/desktop/`。已有产物不会被覆盖；重新构建前应明确处理旧产物。两个应用均使用本地 ad-hoc 签名。
 
-`build.mjs` 必须提供已构建的 Desktop 应用。上述源码开发应用用于本机调试；分发使用下面的生产构建流程。
+`build.mjs` 必须提供已构建的 Desktop 应用，并提前在 `macos-launcher/flutter` 完成固定 Flutter 依赖解析。打包使用独立 Node 发行版；共享库版 Node 不能直接复制到应用包。上述源码开发应用用于本机调试；分发使用下面的生产构建流程。
 
 ## GitHub 双架构生产构建
 
 `.github/workflows/macos-app.yml` 在 arm64 和 x64 原生 runner 上初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。上游源码保持原样。
+
+CI 同时准备固定 Flutter 3.47.6，检查 lockfile、Dart 格式、静态分析与真实 SDK socket 测试，再将对应架构的 Flutter Release 应用与既有运行时装配为启动器。maclauncher.json 声明 Web 访问服务的启动/回收/状态/日志与 Desktop 后端的只读状态；入口托管、窗口激活和失联恢复由应用负责。
 
 `build-desktop-release.mjs` 使用上游生产包集合、工程元数据和运行时校验接口，按 Electron 的 Node 版本安装生产依赖，生成包含完整资源的 Desktop 应用。应用资源不使用源码目录或开发运行时链接；本项目使用 ad-hoc 签名，不调用上游要求 Developer ID 与公证凭据的发行入口。
 

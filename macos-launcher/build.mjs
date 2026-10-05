@@ -16,6 +16,7 @@ const appPackage = JSON.parse(await readFile(join(root, 'macos-launcher/package.
 const appVersion = appPackage.version
 const arch = process.arch
 const desktopApp = process.env.DSH_MACOS_DESKTOP_APP
+const flutterRoot = join(root, 'macos-launcher/flutter')
 
 async function run(command, args, cwd = root) {
   await new Promise((accept, reject) => {
@@ -76,7 +77,7 @@ async function copyOwned(workflow) {
   await cp(join(root, 'macos-launcher/runtime/lan-gateway.mjs'), join(workflow, 'macos-launcher/runtime/lan-gateway.mjs'))
   await cp(join(root, 'macos-launcher/runtime/lan-settings-client.mjs'), join(workflow, 'macos-launcher/runtime/lan-settings-client.mjs'))
   await cp(join(root, 'macos-launcher/runtime/global-supervisor.mjs'), join(workflow, 'macos-launcher/runtime/global-supervisor.mjs'))
-  for (const file of ['desktop-bridge.mjs', 'desktop-launch.mjs', 'desktop-profile.mjs', 'prepare-desktop.mjs']) {
+  for (const file of ['desktop-bridge.mjs', 'desktop-launch.mjs', 'desktop-profile.mjs', 'prepare-desktop.mjs', 'desktop-status.mjs']) {
     await cp(join(root, 'macos-launcher/runtime', file), join(workflow, 'macos-launcher/runtime', file))
   }
   await cp(join(root, 'macos-launcher/runtime/plugin-versions.mjs'), join(workflow, 'macos-launcher/runtime/plugin-versions.mjs'))
@@ -84,49 +85,33 @@ async function copyOwned(workflow) {
   await cp(join(root, 'macos-launcher/runtime/run-dsh.mjs'), join(workflow, 'macos-launcher/runtime/run-dsh.mjs'))
 }
 
-function plist() {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.ghostagent.dsh-workflow-launcher</string>
-<key>CFBundleName</key><string>DSH Workflow</string>
-<key>CFBundleDisplayName</key><string>DSH Workflow</string>
-<key>CFBundleExecutable</key><string>DSHWorkflowLauncher</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>${appVersion}</string>
-<key>CFBundleVersion</key><string>${appVersion}</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
-<key>LSUIElement</key><true/>
-<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>DSH Workflow</string><key>CFBundleURLSchemes</key><array><string>dsh-workflow</string></array></dict></array>
-</dict></plist>
-`
-}
-
 await verifyInputs()
-await mkdir(buildRoot, { recursive: true })
 const buildLabel = process.env.DSH_MACOS_BUILD_LABEL
 if (buildLabel !== undefined && !/^[A-Za-z0-9-]{1,32}$/.test(buildLabel)) throw new Error('Invalid DSH_MACOS_BUILD_LABEL')
 const destination = join(buildRoot, `DSH Workflow-${appVersion}-dsh${version}-${arch}${buildLabel ? `-${buildLabel}` : ''}.app`)
 if (existsSync(destination)) throw new Error(`Build output exists: ${destination}`)
+await mkdir(buildRoot, { recursive: true })
+await mkdir(join(flutterRoot, 'macos/Flutter/ephemeral'), { recursive: true })
+await writeFile(join(flutterRoot, 'macos/Flutter/ephemeral/DSHArchitecture.xcconfig'),
+  `EXCLUDED_ARCHS = ${arch === 'arm64' ? 'x86_64' : 'arm64'}\n`)
+await run(process.env.FLUTTER_BIN || 'flutter', ['build', 'macos', '--release', '--no-pub',
+  `--build-name=${appVersion}`, `--build-number=${appVersion}`], flutterRoot)
 const staging = await mkdtemp(join(buildRoot, 'launcher-stage-'))
 const app = join(staging, 'DSH Workflow.app')
 const contents = join(app, 'Contents')
 const resources = join(contents, 'Resources')
 try {
-  await mkdir(join(contents, 'MacOS'), { recursive: true })
+  await run('/usr/bin/ditto', [join(flutterRoot, 'build/macos/Build/Products/Release/DSH Workflow.app'), app])
   await mkdir(join(resources, 'workflow', 'scripts'), { recursive: true })
   await mkdir(join(resources, 'workflow', 'macos-launcher', 'runtime'), { recursive: true })
-  await writeFile(join(contents, 'Info.plist'), plist())
   await cp(process.execPath, join(resources, 'node'))
   await chmod(join(resources, 'node'), 0o755)
-  await run('swiftc', ['-O', '-parse-as-library', '-target', `${arch === 'x64' ? 'x86_64' : 'arm64'}-apple-macosx14.0`,
-    '-module-cache-path', join(buildRoot, 'swift-module-cache'),
-    join(root, 'macos-launcher/Sources/DSHWorkflowLauncher.swift'),
-    join(root, 'macos-launcher/Sources/UpdatePolicy.swift'),
-    '-o', join(contents, 'MacOS', 'DSHWorkflowLauncher')])
   await copyOwned(join(resources, 'workflow'))
   await mkdir(join(resources, 'desktop'), { recursive: true })
   await run('/usr/bin/ditto', [desktopApp, join(resources, 'desktop/DeepSeek Harness.app')])
+  const association = JSON.parse(await readFile(join(root, 'maclauncher.json'), 'utf8'))
+  association.entry.path = '../..'
+  await writeFile(join(resources, 'maclauncher.json'), JSON.stringify(association, null, 2) + '\n')
   await cp(join(root, 'macos-launcher/package.json'), join(resources, 'package.json'))
   await cp(join(root, 'macos-launcher/package-lock.json'), join(resources, 'package-lock.json'))
   await run('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund',

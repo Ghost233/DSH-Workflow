@@ -1,0 +1,132 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:maclauncher_sdk/maclauncher_sdk.dart';
+import 'package:vm_service/vm_service_io.dart';
+
+Future<void> main(List<String> arguments) async {
+  if (arguments.length != 1) {
+    throw ArgumentError('Pass the debug Flutter executable');
+  }
+  final root = await Directory.systemTemp.createTemp('dsh-native-probe-');
+  final socketPath = '${root.path}/sdk.sock';
+  final server = await ServerSocket.bind(
+    InternetAddress(socketPath, type: InternetAddressType.unix),
+    0,
+  );
+  final accepted = server.first;
+  final process = await Process.start(
+    arguments.single,
+    ['--vm-service-port=0'],
+    environment: {
+      ...Platform.environment,
+      'DSH_LAUNCHER_TEST_ROOT': '${root.path}/data',
+      'DSH_LAUNCHER_TEST_SOCKET': socketPath,
+    },
+  );
+  final serviceUri = Completer<String>();
+  void output(String line) {
+    final uri = RegExp(r'http://127\.0\.0\.1:\d+/[^\s]+/')
+        .firstMatch(line)
+        ?.group(0);
+    if (uri != null && !serviceUri.isCompleted) serviceUri.complete(uri);
+  }
+
+  final stdoutSubscription = process.stdout
+      .transform(utf8.decoder)
+      .transform(const LineSplitter())
+      .listen(output);
+  final stderrSubscription = process.stderr
+      .transform(utf8.decoder)
+      .transform(const LineSplitter())
+      .listen(output);
+  Socket? socket;
+  try {
+    socket = await accepted.timeout(const Duration(seconds: 30));
+    final replies = <String, Completer<Map<String, Object?>>>{};
+    final hello = Completer<void>();
+    final subscription = decodeMessages(socket).listen((message) {
+      if (message['type'] == 'hello' && !hello.isCompleted) hello.complete();
+      if (message['type'] == 'response') {
+        replies.remove(message['id'])?.complete(message);
+      }
+      if (message['type'] == 'ping') writeMessage(socket!, {'type': 'pong'});
+    });
+    await hello.future;
+    writeMessage(socket, {
+      'type': 'welcome',
+      'accepted': true,
+      'launcherSessionId': 'native-probe',
+    });
+    final http = await serviceUri.future.timeout(const Duration(seconds: 20));
+    final vm = await vmServiceConnectUri(
+      '${http.replaceFirst('http:', 'ws:')}ws',
+    );
+    try {
+      final isolate = (await vm.getVM()).isolates!.single.id!;
+      Future<Map<String, Object?>> nativeState() async =>
+          (await vm.callServiceExtension(
+            'ext.dshlauncher.nativeState',
+            isolateId: isolate,
+          )).json!;
+      Future<void> request(
+        String id,
+        String method, [
+        Map<String, Object?>? params,
+      ]) async {
+        final response = Completer<Map<String, Object?>>();
+        replies[id] = response;
+        writeMessage(socket!, {
+          'type': 'request',
+          'id': id,
+          'method': method,
+          'params': ?params,
+        });
+        final result = await response.future.timeout(
+          const Duration(seconds: 5),
+        );
+        if (result['error'] != null) {
+          throw StateError(result['error'].toString());
+        }
+      }
+
+      await request('open', 'openWindow');
+      final visible = await nativeState();
+      if (visible['windowVisible'] != true || visible['entryVisible'] != true) {
+        throw StateError('Initial native UI unavailable: $visible');
+      }
+      await request('managed', 'setEntryManaged', {'managed': true});
+      if ((await nativeState())['entryVisible'] != false) {
+        throw StateError('Managed entry stayed visible');
+      }
+      socket.destroy();
+      var restored = false;
+      for (var attempt = 0; attempt < 60; attempt++) {
+        restored = (await nativeState())['entryVisible'] == true;
+        if (restored) break;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      if (!restored) throw StateError('Native entry was not restored');
+      stdout.writeln(
+        'Native window, menu handoff and disconnect restoration passed',
+      );
+    } finally {
+      await vm.dispose();
+      await subscription.cancel();
+    }
+  } finally {
+    socket?.destroy();
+    process.kill(ProcessSignal.sigterm);
+    try {
+      await process.exitCode.timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      process.kill(ProcessSignal.sigkill);
+      await process.exitCode;
+    }
+    await stdoutSubscription.cancel();
+    await stderrSubscription.cancel();
+    await server.close();
+    await root.delete(recursive: true);
+  }
+}

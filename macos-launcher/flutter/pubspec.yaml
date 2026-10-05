@@ -1,0 +1,25 @@
+name: dsh_workflow_launcher
+description: Flutter launcher and MacLauncher SDK peer for DSH Workflow.
+publish_to: none
+version: 0.2.3+3
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  maclauncher_sdk:
+    git:
+      url: https://github.com/Ghost233/MacLauncher.git
+      path: packages/maclauncher_sdk
+      ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  vm_service: ^15.3.0
+
+flutter:
+  uses-material-design: true
