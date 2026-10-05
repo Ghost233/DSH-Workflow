@@ -22,3 +22,17 @@ SoL 和 Synapse 已移除；历史文档中的接入和验收要求不再适用�
 - 多个 worktree 如何共享工具链、依赖和构建缓存，由工程初始化流程自行决定。Workflow 只消费 Spec/Ticket 中固定的验证命令及其退出证据。
 - 工程环境缺失时记录真实的验证执行失败并反馈主线程；不得通过 Workflow 内部下载、安装、改写配置或延长超时来掩盖初始化问题。
 - Owner 写入隔离、候选封存和验证结果绑定仍由 Workflow 负责，但这些边界不能推导出任何 Node.js、npm、pnpm、yarn 或其他语言生态的特殊处理。
+
+## Agent skills
+
+### Issue 跟踪器
+
+使用工程类 skills 读取、发布或推进 issue 时，先读 `docs/agents/issue-tracker.md`；本项目使用 GitHub Issues。
+
+### 分类标签
+
+对 issue 分类时，使用 `docs/agents/triage-labels.md` 中的角色与标签映射。
+
+### 领域文档
+
+编写规格或开展设计、诊断、审查前，按 `docs/agents/domain.md` 读取单上下文的术语表与相关 ADR。
