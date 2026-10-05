@@ -34,7 +34,7 @@ async function verifyInputs() {
   if (appPackage.dependencies?.['@deepseek-ai/dsh'] !== version) throw new Error('macOS runtime package does not match pinned DSH')
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Node 22+ is required')
   if (!desktopApp || !existsSync(join(desktopApp, 'Contents/Info.plist'))) {
-    throw new Error('Set DSH_MACOS_DESKTOP_APP to the official Desktop source-build application')
+    throw new Error('Set DSH_MACOS_DESKTOP_APP to the prepared official Desktop application')
   }
   const deck = join(root, 'matt-skills-panel-plugin/package')
   if (!existsSync(join(deck, 'lib/index.js')) || !existsSync(join(deck, 'lib/client.js'))

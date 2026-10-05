@@ -19,7 +19,15 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.1-source.app" no
 
 `build-desktop.mjs` 使用上游开发运行时装配流程、固定依赖的 Electron 和官方 primary runtime，不修改 DSH 源文件。源码应用输出为 `.build/DeepSeek Harness-<DSH版本>-source.app`；启动器将它放入 `Contents/Resources/desktop/`。已有产物不会被覆盖；重新构建前应明确处理旧产物。两个应用均使用本地 ad-hoc 签名。
 
-`build.mjs` 必须提供已构建的 Desktop 应用。现有 GitHub 双架构 DMG 流程尚未接入可分发的 Desktop 生产运行时，不能直接用这个依赖本机源码的开发应用发布新版 Release。
+`build.mjs` 必须提供已构建的 Desktop 应用。上述源码开发应用用于本机调试；分发使用下面的生产构建流程。
+
+## GitHub 双架构生产构建
+
+`.github/workflows/macos-app.yml` 在 arm64 和 x64 原生 runner 上初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。上游源码保持原样。
+
+`build-desktop-release.mjs` 使用上游生产包集合、工程元数据和运行时校验接口，按 Electron 的 Node 版本安装生产依赖，生成包含完整资源的 Desktop 应用。应用资源不使用源码目录或开发运行时链接；本项目使用 ad-hoc 签名，不调用上游要求 Developer ID 与公证凭据的发行入口。
+
+`verify-desktop-release.mjs` 将应用复制到独立临时目录，核对签名和运行时文件完整性，并运行上游真实 Host、前端、插件及 DOCX／XLSX／PPTX 转 PDF 验收。通过后，CI 将该 Desktop 应用传给启动器打包，再验收实际包中的 Desktop、Owner 就绪状态及 Matt 面板装配，最后校验两种架构的 DMG。验收使用临时 profile，不修改用户运行配置。main 构建生成 Actions artifacts；正式发布仍由 `macos-v<版本>` 标签触发。
 
 ## 启动和关闭
 

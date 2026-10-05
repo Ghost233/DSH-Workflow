@@ -62,6 +62,12 @@ jobs:
         with:
           node-version: 24.12.0
 
+      - name: Initialize fixed DSH build dependencies
+        working-directory: deepseek-harness
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
       - name: Verify architecture and release version
         shell: bash
         env:
@@ -96,8 +102,49 @@ jobs:
             macos-launcher/runtime/lan-gateway.test.mjs \
             macos-launcher/runtime/desktop-launch.test.mjs
 
+      - name: Build fixed DSH production packages
+        working-directory: deepseek-harness
+        env:
+          DSH_DESKTOP_TARGET_PLATFORM: darwin
+          DSH_DESKTOP_TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          TARGET="apps/desktop/.desktop-build/targets/mac-${DSH_DESKTOP_TARGET_ARCH}"
+          pnpm run build:official
+          pnpm run release:pack --family dsh --out "$TARGET/packed/dsh" --concurrency 4
+          pnpm --dir apps/desktop-host pack --pack-destination "$TARGET/packed/dsh"
+          pnpm run release:pack --family vendor --out "$TARGET/packed/vendor" --concurrency 4
+          pnpm --dir native/system run build:ts
+          mkdir -p "$TARGET/packed/landlock"
+          pnpm --dir native/system/packages/entry pack --pack-destination "$TARGET/packed/landlock"
+          pnpm --dir apps/desktop run prepare:runtime
+          pnpm --dir apps/desktop run prepare:packages
+
+      - name: Build and verify relocatable Desktop application
+        id: desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/build-desktop-release.mjs
+          DIRECTORY=mac
+          if [[ "${{ matrix.arch }}" == arm64 ]]; then DIRECTORY=mac-arm64; fi
+          APP="$PWD/.build/desktop-${{ matrix.arch }}/$DIRECTORY/DeepSeek Harness.app"
+          node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs "$APP"
+          echo "app=$APP" >> "$GITHUB_OUTPUT"
+
       - name: Build macOS application
+        env:
+          DSH_MACOS_DESKTOP_APP: ${{ steps.desktop.outputs.app }}
         run: node macos-launcher/build.mjs
+
+      - name: Verify packaged Desktop and Owner integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(node -p "require('./macos-launcher/package.json').version")"
+          DSH_VERSION="$(node -p "require('./dsh-runtime.json').version")"
+          node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs \
+            ".build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-${{ matrix.arch }}.app"
 
       - name: Package and verify DMG
         id: package
