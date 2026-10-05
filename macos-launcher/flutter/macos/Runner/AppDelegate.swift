@@ -13,6 +13,7 @@ class AppDelegate: FlutterAppDelegate {
   private var quitApproved = false
   private var quitRequested = false
   private var reopenObserver: NSObjectProtocol?
+  private var openedDesktopPid: pid_t?
   private var reopen: Notification.Name {
     let base = "com.ghostagent.dsh-workflow-launcher.reopen"
     return Notification.Name(testRoot == nil ? base : base + ".test." + dataRoot.path)
@@ -103,7 +104,8 @@ class AppDelegate: FlutterAppDelegate {
           "windowWidth": self.mainFlutterWindow?.frame.width ?? 0,
           "windowHeight": self.mainFlutterWindow?.frame.height ?? 0,
           "pid": ProcessInfo.processInfo.processIdentifier,
-          "isolated": self.testRoot != nil, "dataRoot": self.dataRoot.path])
+          "isolated": self.testRoot != nil, "dataRoot": self.dataRoot.path,
+          "openedDesktopPid": self.openedDesktopPid as Any])
         case "debugWindow":
           guard self.testRoot != nil, let action = call.arguments as? String else { throw self.failure("需要隔离测试环境") }
           switch action {
@@ -112,6 +114,10 @@ class AppDelegate: FlutterAppDelegate {
             guard let item = self.statusItem?.menu?.item(withTitle: "管理…"), let action = item.action else { throw self.failure("管理菜单入口不可用") }
             NSApp.sendAction(action, to: item.target, from: item)
           case "quit": NSApp.terminate(nil)
+          case "quitDesktop":
+            if let pid = self.openedDesktopPid, let desktop = NSRunningApplication(processIdentifier: pid) {
+              guard desktop.terminate() else { throw self.failure("测试 Desktop 无法退出") }
+            }
           case "minimum":
             if let window = self.mainFlutterWindow { window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: true) }
           default: throw self.failure("无效窗口测试动作")
@@ -145,12 +151,24 @@ class AppDelegate: FlutterAppDelegate {
           }
           NSWorkspace.shared.open(url); result(nil)
         case "openDesktop":
-          guard let path = call.arguments as? String else { throw self.failure("无效 Desktop 路径") }
+          guard let values = call.arguments as? [String: Any], let path = values["path"] as? String,
+                let environment = values["environment"] as? [String: String] else { throw self.failure("无效 Desktop 路径") }
           let app = URL(fileURLWithPath: path)
-          NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+          let configuration = NSWorkspace.OpenConfiguration()
+          configuration.environment = environment
+          #if DEBUG
+          if self.testRoot != nil {
+            configuration.createsNewApplicationInstance = true
+            configuration.allowsRunningApplicationSubstitution = false
+            configuration.arguments = ["--user-data-dir=" + self.dataRoot.appendingPathComponent("desktop-user-data").path]
+            configuration.environment["DSH_DESKTOP_UPDATE_JOURNAL_DIR"] = self.dataRoot.appendingPathComponent("desktop-update").path
+            configuration.environment["DSH_DESKTOP_DIAGNOSTIC_FILE"] = self.dataRoot.appendingPathComponent("desktop-diagnostic.json").path
+          }
+          #endif
+          NSWorkspace.shared.openApplication(at: app, configuration: configuration) { application, error in
             DispatchQueue.main.async {
               if let error { result(FlutterError(code: "open-failed", message: error.localizedDescription, details: nil)) }
-              else { result(nil) }
+              else { self.openedDesktopPid = application?.processIdentifier; result(nil) }
             }
           }
         case "finishQuit": self.quitApproved = true; result(nil); NSApp.terminate(nil)

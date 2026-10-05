@@ -1,0 +1,391 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:launcher_core/launcher_core.dart';
+
+import 'application_probe.dart' show require, waitFor;
+
+typedef ApplicationState = Future<Map<String, Object?>> Function([
+  Map<String, String>? parameters,
+]);
+
+class WebProbeOptions {
+  WebProbeOptions(this.sourceResources, this.backend, this.port);
+  final String sourceResources, backend;
+  final int port;
+  static WebProbeOptions? parse(List<String> args) {
+    if (args.length != 7 || args[1] != '--web-runtime') return null;
+    if (args[3] != '--web-backend' ||
+        !{'headless', 'desktop'}.contains(args[4]) ||
+        args[5] != '--web-port') {
+      throw ArgumentError(
+        'Use --web-runtime RESOURCES --web-backend headless|desktop --web-port PORT',
+      );
+    }
+    final port = int.parse(args[6]);
+    if (port < 0 || port > 65535) throw ArgumentError('Invalid Web probe port');
+    if (args[4] == 'desktop' &&
+        Platform.environment['GITHUB_ACTIONS'] != 'true') {
+      throw StateError(
+        'Official Desktop GUI probe requires the clean GitHub macOS CI session',
+      );
+    }
+    return WebProbeOptions(Directory(args[2]).absolute.path, args[4], port);
+  }
+
+  Future<int> stage(Directory root) async {
+    final check = await ServerSocket.bind(InternetAddress.loopbackIPv4, port);
+    final selected = check.port;
+    await check.close();
+    final resources = '${root.path}/missing-runtime';
+    final copied = await Process.run('/usr/bin/ditto', [
+      '$sourceResources/workflow',
+      '$resources/workflow',
+    ]);
+    require(
+      copied.exitCode == 0,
+      'private resource stage contains the packaged project integration',
+    );
+    for (final name in ['node', 'desktop', 'node_modules', 'bin']) {
+      await Link('$resources/$name').create('$sourceResources/$name');
+    }
+    final runtime = File.fromUri(Platform.script.resolve('../../runtime')).path;
+    final updated = await Process.run('/usr/bin/ditto', [
+      runtime,
+      '$resources/workflow/macos-launcher/runtime',
+    ]);
+    require(
+      updated.exitCode == 0,
+      'private stage uses this candidate runtime scripts and unchanged packaged backend',
+    );
+    return selected;
+  }
+}
+
+Future<void> runWebApplicationScenario({
+  required WebProbeOptions options,
+  required Directory root,
+  required EndpointLayout layout,
+  required String manifestPath,
+  required int port,
+  required ApplicationState state,
+  required Future<void> Function(String) tap,
+}) async {
+  final data = '${root.path}/data';
+  final home = '${root.path}/home';
+  final resources = '${root.path}/missing-runtime';
+  final receipt = File('$data/global/.dsh-workflow/desktop/desktop-host.json');
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+  final password = 'isolated-web-probe-password';
+  Process? host;
+  LauncherServer? server;
+  IOSink? hostLog;
+  var hostExited = false;
+  Future<Map<String, Object?>> readReceipt() async =>
+      (jsonDecode(await receipt.readAsString()) as Map).cast<String, Object?>();
+  Future<({int code, String body, List<Cookie> cookies})> request(
+    Uri uri, {
+    String method = 'GET',
+    String? body,
+    List<Cookie> cookies = const [],
+  }) async {
+    final request = await client.openUrl(method, uri);
+    request.followRedirects = false;
+    request.cookies.addAll(cookies);
+    if (body != null) {
+      request.headers.contentType = ContentType(
+        'application',
+        'x-www-form-urlencoded',
+      );
+      request.write(body);
+    }
+    final response = await request.close().timeout(const Duration(seconds: 10));
+    return (
+      code: response.statusCode,
+      body: await utf8.decoder.bind(response).join(),
+      cookies: response.cookies,
+    );
+  }
+
+  Future<Map<String, Object?>> health(Uri uri, List<Cookie> cookies) async {
+    final response = await request(
+      uri.resolve('/owner-workflow/api/health'),
+      cookies: cookies,
+    );
+    require(
+      response.code == 200,
+      'real backend Owner health is reachable through this authenticated entry',
+    );
+    return (jsonDecode(response.body) as Map).cast<String, Object?>();
+  }
+
+  Future<void> portReleased() async {
+    await waitFor('Web-owned access port released', () async {
+      try {
+        final check = await ServerSocket.bind(
+          InternetAddress.loopbackIPv4,
+          port,
+        );
+        await check.close();
+        return true;
+      } on SocketException {
+        return false;
+      }
+    });
+    require(true, 'Web recycle releases its actual listening port');
+  }
+
+  try {
+    await waitFor(
+      'real management UI',
+      () async => ((await state())['nodes'] as List).any(
+        (node) => (node as Map)['label'].toString().contains('启动 Web'),
+      ),
+    );
+    if (options.backend == 'headless') {
+      host = await Process.start(
+        '$resources/node',
+        [
+          File.fromUri(Platform.script.resolve('desktop_host_probe.mjs')).path,
+          resources,
+          data,
+          home,
+        ],
+        environment: {...Platform.environment, 'DSH_HOME': home},
+      );
+      hostLog = File('${root.path}/host.log').openWrite();
+      host.stdout.listen(hostLog.add);
+      host.stderr.listen(hostLog.add);
+      unawaited(
+        host.exitCode.then((code) {
+          hostExited = true;
+          stdout.writeln('HOST_HARNESS_EXIT=$code');
+        }),
+      );
+      await waitFor(
+        'unchanged official packaged Host receipt',
+        () async => await receipt.exists(),
+      );
+      require(
+        !hostExited,
+        'official packaged Host is running in the private profile',
+      );
+    } else {
+      require(
+        !await receipt.exists(),
+        'Desktop-open scenario begins without a backend receipt',
+      );
+    }
+    final bindings = await BindingStore.load('${root.path}/bindings.json');
+    await bindings.associate(manifestPath);
+    server = await LauncherServer.start(layout: layout, bindings: bindings);
+    await waitFor(
+      'official manager connection',
+      () async => server!.sessionFor('dsh-workflow') != null,
+    );
+    final session = server.sessionFor('dsh-workflow')!;
+    Future<Map<String, Object?>> sdk(
+      String method, {
+      String service = 'web',
+    }) async {
+      final response = await session.sendRequest(
+        method,
+        serviceId: service,
+        timeout: const Duration(seconds: 30),
+      );
+      require(
+        response['error'] == null,
+        'official SDK $service $method succeeds',
+      );
+      return (response['result'] as Map).cast<String, Object?>();
+    }
+
+    final services = server.registry
+        .byProject('dsh-workflow')!
+        .capabilities
+        .services;
+    require(
+      services.singleWhere((s) => s.id == 'web').methods.toSet().containsAll({
+            'start',
+            'recycle',
+            'status',
+            'logs',
+          }) &&
+          services.singleWhere((s) => s.id == 'desktop').methods.join(',') ==
+              'status',
+      'official SDK capabilities match Web ownership and Desktop observation',
+    );
+    for (final method in ['start', 'recycle', 'logs']) {
+      final denied = await session.sendRequest(
+        method,
+        serviceId: 'desktop',
+        timeout: const Duration(seconds: 5),
+      );
+      require(
+        (denied['error'] as Map)['code'] == 'unsupported',
+        'Desktop $method explicitly returns unsupported',
+      );
+    }
+    require(
+      (await sdk('status'))['ready'] != true,
+      'Web is not ready before any real access service exists',
+    );
+    final snapshot = await state();
+    final field = ((snapshot['nodes'] as List).cast<Map>()).singleWhere(
+      (node) =>
+          node['label'].toString().contains('内网访问密码') &&
+          (node['actions'] as List).contains('setText'),
+    );
+    await state({
+      'action': 'setText',
+      'id': '${field['id']}',
+      'text': password,
+    });
+    await tap('设置密码');
+    await tap('启动 Web');
+    if (!await receipt.exists()) {
+      require(
+        (await sdk('status'))['ready'] != true,
+        'missing-backend startup does not report ready before the actual Desktop receipt',
+      );
+    }
+    await waitFor(
+      'real Web readiness after management action',
+      () async => (await sdk('status'))['ready'] == true,
+    );
+    final first = await sdk('status');
+    final backend = await readReceipt();
+    final lease = backend['lease'];
+    final backendPid = backend['pid'] as int;
+    final url = Uri.parse('http://127.0.0.1:$port/');
+    require(
+      (await request(url.resolve('owner-workflow/api/health'))).code == 401,
+      'unauthenticated clients cannot access the real backend',
+    );
+    Future<List<Cookie>> authenticate() async {
+      final rejected = await request(
+        url.resolve('login'),
+        method: 'POST',
+        body: 'password=wrong',
+      );
+      require(rejected.code == 401, 'incorrect Web password is rejected');
+      final login = await request(
+        url.resolve('login'),
+        method: 'POST',
+        body: 'password=$password',
+      );
+      require(
+        login.code == 303 && login.cookies.isNotEmpty,
+        'isolated Web password authenticates against the actual backend',
+      );
+      return login.cookies;
+    }
+
+    final webCookies = await authenticate();
+    final webPage = await request(url, cookies: webCookies);
+    require(
+      webPage.code == 200 && webPage.body.contains('<html'),
+      'authenticated Web entry serves the actual packaged DSH frontend',
+    );
+    final webHealth = await health(url, webCookies);
+    final backendUrl = Uri.parse(backend['url'] as String);
+    final backendLogin = await request(backendUrl);
+    final desktopPage = await request(
+      backendUrl.resolve('/'),
+      cookies: backendLogin.cookies,
+    );
+    require(
+      desktopPage.code == 200 && desktopPage.body.contains('<html'),
+      'direct Desktop Host serves its actual packaged frontend',
+    );
+    final directHealth = await health(backendUrl, backendLogin.cookies);
+    require(
+      webHealth['instanceId'] == lease &&
+          directHealth['instanceId'] == lease &&
+          webHealth['ready'] == true,
+      'browser entry and direct Desktop Host expose the same real ready Owner instance',
+    );
+    require(
+      (await sdk('status', service: 'desktop'))['instanceId'] == lease,
+      'official SDK observes this same backend lease',
+    );
+    if (options.backend == 'desktop') {
+      final native = (await state())['native'] as Map;
+      final desktopPid = native['openedDesktopPid'] as int;
+      final parent = await Process.run('/bin/ps', [
+        '-o',
+        'ppid=',
+        '-p',
+        '$backendPid',
+      ]);
+      require(
+        int.parse(parent.stdout.toString().trim()) == desktopPid,
+        'receipt Host is the child of the actual NSWorkspace-opened official Desktop',
+      );
+      require(
+        await Directory('$home/profiles/desktop').exists() &&
+            await Directory('$data/desktop-user-data').exists(),
+        'official Desktop uses the private DSH profile and Electron browser data',
+      );
+    }
+    await sdk('start');
+    await sdk('start');
+    require(
+      (await sdk('status'))['instanceId'] == first['instanceId'] &&
+          (await readReceipt())['lease'] == lease,
+      'sequential SDK starts reuse the running access resource and backend',
+    );
+    await sdk('logs');
+    await sdk('recycle');
+    await portReleased();
+    final alive = await Process.run('/bin/kill', ['-0', '$backendPid']);
+    require(
+      alive.exitCode == 0 && (await readReceipt())['lease'] == lease,
+      'SDK recycle preserves the independent backend and receipt',
+    );
+    await health(backendUrl, backendLogin.cookies);
+    await sdk('start');
+    await health(url, await authenticate());
+    await tap('停止 Web');
+    await portReleased();
+    require(
+      (await sdk('status'))['state'] == 'stopped' &&
+          (await readReceipt())['lease'] == lease,
+      'management recycle preserves the backend while SDK remains usable',
+    );
+    await health(backendUrl, backendLogin.cookies);
+    await File('${root.path}/web-evidence.json').writeAsString(
+      jsonEncode({
+        'backend': options.backend,
+        'port': port,
+        'hostPid': backendPid,
+        'hostLease': lease,
+        'firstWebInstance': first['instanceId'],
+        'uiAndSdkStartRecycle': true,
+      }),
+    );
+    stdout.writeln(
+      'T02 WEB APPLICATION SCENARIO PASSED (${options.backend}, port $port)',
+    );
+  } finally {
+    await server?.close();
+    if (host != null && !hostExited) {
+      host.stdin.writeln('shutdown');
+      await host.stdin.flush();
+      require(
+        await host.exitCode.timeout(const Duration(seconds: 30)) == 0,
+        'owned official Host shuts down normally through its real IPC',
+      );
+    }
+    if (options.backend == 'desktop') await state({'action': 'quitDesktop'});
+    if (await receipt.exists()) {
+      await waitFor(
+        'owned backend receipt cleanup',
+        () async => !await receipt.exists(),
+      );
+    }
+    await hostLog?.close();
+    client.close(force: true);
+  }
+}

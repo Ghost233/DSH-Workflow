@@ -28,7 +28,7 @@ void registerApplicationProbe(NativeBridge native) {
         nodes.add({
           'id': node.id,
           'label': data.label,
-          'value': data.value,
+          'value': data.flagsCollection.isObscured ? '<obscured>' : data.value,
           'actions': [
             for (final action in SemanticsAction.values)
               if (data.hasAction(action)) action.name,
@@ -43,7 +43,7 @@ void registerApplicationProbe(NativeBridge native) {
       final root = owner?.rootSemanticsNode;
       if (root != null) visit(root);
       final action = params['action'];
-      if (action == 'tap' || action == 'scrollDown') {
+      if (action == 'tap' || action == 'scrollDown' || action == 'setText') {
         final node = nodes.singleWhere(
           (node) => node['id'].toString() == params['id'],
         );
@@ -56,13 +56,17 @@ void registerApplicationProbe(NativeBridge native) {
             nodeId: node['id']! as int,
             type: action == 'tap'
                 ? SemanticsAction.tap
+                : action == 'setText'
+                ? SemanticsAction.setText
                 : SemanticsAction.scrollDown,
+            arguments: action == 'setText' ? params['text'] : null,
           ),
         );
         await WidgetsBinding.instance.endOfFrame.timeout(
           const Duration(seconds: 5),
         );
       } else if (action == 'close' ||
+          action == 'quitDesktop' ||
           action == 'ownEntry' ||
           action == 'minimum' ||
           action == 'quit') {

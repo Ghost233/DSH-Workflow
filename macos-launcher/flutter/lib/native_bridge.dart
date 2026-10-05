@@ -41,8 +41,13 @@ class NativeBridge {
   }
 
   Future<void> showWindow() => channel.invokeMethod<void>('showWindow');
-  Future<void> openDesktop(String path) =>
-      channel.invokeMethod<void>('openDesktop', path);
+  Future<void> openDesktop(
+    String path, {
+    required Map<String, String> environment,
+  }) => channel.invokeMethod<void>('openDesktop', {
+    'path': path,
+    'environment': environment,
+  });
   Future<void> openUrl(String url) =>
       channel.invokeMethod<void>('openUrl', url);
   Future<bool> setEntryManaged(bool managed) async =>

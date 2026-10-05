@@ -7,6 +7,8 @@ import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 import 'package:vm_service/vm_service.dart';
 import 'package:vm_service/vm_service_io.dart';
 
+import 'web_application_scenario.dart';
+
 Future<void> waitFor(String description, Future<bool> Function() check) async {
   for (var attempt = 0; attempt < 150; attempt++) {
     if (await check()) return;
@@ -23,7 +25,8 @@ void require(bool condition, String description) {
 Future<void> main(List<String> arguments) async {
   final instanceStartup =
       arguments.length == 3 && arguments[1] == '--instance-startup';
-  if (arguments.length != 1 && !instanceStartup) {
+  final webScenario = WebProbeOptions.parse(arguments);
+  if (arguments.length != 1 && !instanceStartup && webScenario == null) {
     throw ArgumentError(
       'Pass the debug executable, optionally --instance-startup and an independent Node executable',
     );
@@ -104,6 +107,8 @@ Future<void> main(List<String> arguments) async {
     'DSH_HOME': '${root.path}/home',
   };
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
+  final webPort = await webScenario?.stage(root);
+  if (webPort != null) environment['DSH_LAUNCHER_TEST_PORT'] = '$webPort';
   final starts = File('${root.path}/resource-starts.log');
   if (instanceStartup) {
     final runtime = Directory(
@@ -233,6 +238,24 @@ Future<void> main(List<String> arguments) async {
         result.exitCode == 0 && await File(path).exists(),
         'actual minimum window screenshot: $path',
       );
+    }
+
+    if (webScenario != null) {
+      await runWebApplicationScenario(
+        options: webScenario,
+        root: root,
+        layout: layout,
+        manifestPath: manifestPath,
+        port: webPort!,
+        state: state,
+        tap: tap,
+      );
+      await state({'action': 'quit'});
+      require(
+        await process.exitCode.timeout(const Duration(seconds: 10)) == 0,
+        'real launcher remains manageable and quits after Web resources are released',
+      );
+      return;
     }
 
     if (instanceStartup) {

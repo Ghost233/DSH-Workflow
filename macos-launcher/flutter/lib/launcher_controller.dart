@@ -84,6 +84,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   Map<String, String> get processEnvironment => {
     ...Platform.environment,
+    'DSH_HOME': environment.home,
     'DSH_PERMISSION_MODE': fullAccess
         ? 'danger-full-access'
         : 'workspace-write',
@@ -143,7 +144,16 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     try {
       final child = await _startProcess(
         node,
-        [script('global-supervisor.mjs'), environment.dataRoot],
+        [
+          script('global-supervisor.mjs'),
+          environment.dataRoot,
+          if (kDebugMode &&
+              environment.testSocket != null &&
+              Platform.environment['DSH_LAUNCHER_TEST_PORT'] != null) ...[
+            '--port',
+            Platform.environment['DSH_LAUNCHER_TEST_PORT']!,
+          ],
+        ],
         workingDirectory: environment.resources,
         environment: processEnvironment,
       );
@@ -368,7 +378,13 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     if (result.exitCode != 0) {
       throw StateError('插件装配失败（${result.exitCode}）：${result.stderr}');
     }
-    await native.openDesktop(desktop);
+    await native.openDesktop(
+      desktop,
+      environment: {
+        'DSH_HOME': environment.home,
+        'DSH_PERMISSION_MODE': processEnvironment['DSH_PERMISSION_MODE']!,
+      },
+    );
   }
 
   @override

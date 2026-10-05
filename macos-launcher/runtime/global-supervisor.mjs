@@ -88,7 +88,7 @@ export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port =
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [dataRoot] = process.argv.slice(2)
+  const [dataRoot, portFlag, portValue] = process.argv.slice(2)
   let supervisor, addressWatch
   const controller = new AbortController()
   process.once('SIGINT', () => controller.abort())
@@ -99,7 +99,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const write = (label, payload) => process.stdout.write(`${label}\t${JSON.stringify(payload)}\n`)
   try {
     if (!dataRoot) throw new Error('Usage: global-supervisor.mjs DATA_ROOT')
+    if (portFlag !== undefined && (portFlag !== '--port' || !/^\d+$/.test(portValue ?? '') || process.argv.length !== 5)) {
+      throw new Error('Usage: global-supervisor.mjs DATA_ROOT [--port PORT]')
+    }
     supervisor = await startGlobalSupervisor({ dataRoot, password: process.env.DSH_LAUNCH_PASSWORD,
+      port: portFlag === undefined ? WEB_PORT : Number(portValue),
       allowLanSettings: process.env.DSH_ALLOW_LAN_SETTINGS === '1', signal: controller.signal,
       onDesktopNeeded: () => write('DSH_WORKFLOW_DESKTOP_NEEDED', {}) })
     const readyEvent = () => ({ port: supervisor.port, url: supervisor.url, localUrl: supervisor.localUrl, lanUrls: supervisor.lanUrls })
