@@ -14,7 +14,7 @@ if (!application) throw new Error('Pass the production Desktop application path'
 const relocated = await mkdtemp(join(tmpdir(), 'workflow-desktop-relocated-'))
 try {
   const container = join(relocated, 'Application.app')
-  await cp(application, container, { recursive: true })
+  await cp(application, container, { recursive: true, verbatimSymlinks: true })
   const workflowResources = existsSync(join(container, 'Contents/Resources/desktop/DeepSeek Harness.app'))
     ? join(container, 'Contents/Resources') : undefined
   const app = workflowResources ? join(workflowResources, 'desktop/DeepSeek Harness.app') : container
