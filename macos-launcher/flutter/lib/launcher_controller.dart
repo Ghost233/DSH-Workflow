@@ -567,6 +567,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   Future<void> _close() async {
     _closed = true;
+    if (kDebugMode && environment.testSocket != null &&
+        Platform.environment['DSH_LAUNCHER_TEST_START_GATE'] != null) {
+      await File('${environment.dataRoot}/lifecycle-close-started').writeAsString('close-started');
+    }
     _observer?.cancel();
     final pending = _mutation;
     await _stopWeb();

@@ -10,6 +10,7 @@ import 'package:vm_service/vm_service_io.dart';
 import 'web_application_scenario.dart';
 import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
+import 'lifecycle_application_scenario.dart';
 
 Future<void> waitFor(String description, Future<bool> Function() check) async {
   for (var attempt = 0; attempt < 150; attempt++) {
@@ -29,9 +30,10 @@ Future<void> main(List<String> arguments) async {
       arguments.length == 3 && arguments[1] == '--instance-startup';
   final logsScenario =
       arguments.length == 3 && arguments[1] == '--logs-runtime';
+  final lifecycle = LifecycleProbeOptions.parse(arguments);
   final webScenario = logsScenario
       ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
-      : WebProbeOptions.parse(arguments);
+      : WebProbeOptions.parse(arguments) ?? lifecycle?.web;
   final systemCi =
       arguments.length == 3 &&
       arguments[1] == '--updates' &&
@@ -131,6 +133,8 @@ Future<void> main(List<String> arguments) async {
     'DSH_LAUNCHER_TEST_RESOURCES': '${root.path}/missing-runtime',
     'DSH_LAUNCHER_TEST_SOCKET': layout.socketPath,
     'DSH_HOME': '${root.path}/home',
+    if (lifecycle != null)
+      'DSH_LAUNCHER_TEST_START_GATE': '${root.path}/data/start-gate.sock',
     if (systemCi) 'DSH_LAUNCHER_SYSTEM_BOUNDARY_CI': '1',
     if (releaseFixture != null)
       'DSH_LAUNCHER_TEST_RELEASE_ENDPOINT': releaseFixture.endpoint,
@@ -292,9 +296,11 @@ Future<void> main(List<String> arguments) async {
         state: state,
         tap: tap,
         capture: capture,
-        onConnected: logsScenario ? runLogApplicationScenario : null,
+        onConnected: lifecycle != null
+            ? (actual) => runLifecycleScenario(actual, process)
+            : logsScenario ? runLogApplicationScenario : null,
       );
-      await state({'action': 'quit'});
+      if (lifecycle == null) await state({'action': 'quit'});
       require(
         await process.exitCode.timeout(const Duration(seconds: 10)) == 0,
         'real launcher remains manageable and quits after Web resources are released',
