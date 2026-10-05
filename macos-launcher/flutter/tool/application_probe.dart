@@ -7,6 +7,8 @@ import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 import 'package:vm_service/vm_service.dart';
 import 'package:vm_service/vm_service_io.dart';
 
+import 'update_application_scenarios.dart';
+
 Future<void> waitFor(String description, Future<bool> Function() check) async {
   for (var attempt = 0; attempt < 150; attempt++) {
     if (await check()) return;
@@ -23,7 +25,22 @@ void require(bool condition, String description) {
 Future<void> main(List<String> arguments) async {
   final instanceStartup =
       arguments.length == 3 && arguments[1] == '--instance-startup';
-  if (arguments.length != 1 && !instanceStartup) {
+  final systemCi =
+      arguments.length == 3 &&
+      arguments[1] == '--updates' &&
+      arguments[2] == '--system-ci';
+  final updates =
+      systemCi || (arguments.length == 2 && arguments[1] == '--updates');
+  final runnerTemp = Platform.environment['RUNNER_TEMP'];
+  if (systemCi &&
+      (Platform.environment['GITHUB_ACTIONS'] != 'true' ||
+          runnerTemp == null ||
+          !runnerTemp.startsWith('/'))) {
+    throw ArgumentError(
+      'System login and browser boundaries run only in a disposable GitHub macOS runner',
+    );
+  }
+  if (arguments.length != 1 && !instanceStartup && !updates) {
     throw ArgumentError(
       'Pass the debug executable, optionally --instance-startup and an independent Node executable',
     );
@@ -67,7 +84,9 @@ Future<void> main(List<String> arguments) async {
     true,
     'read-only candidate preflight confirms this project Debug isolation bridge and driver',
   );
-  final root = await Directory('/private/tmp').createTemp('dsh-t01-');
+  final root = await Directory(systemCi ? runnerTemp! : '/private/tmp')
+      .createTemp(updates ? 'dsh-t07-' : 'dsh-t01-');
+  final releaseFixture = updates ? await ReleaseFixture.start() : null;
   final app = Directory('${root.path}/candidate.app');
   final copy = await Process.run('/usr/bin/ditto', [sourceApp.path, app.path]);
   require(copy.exitCode == 0, 'probe owns a private Debug application copy');
@@ -102,6 +121,9 @@ Future<void> main(List<String> arguments) async {
     'DSH_LAUNCHER_TEST_RESOURCES': '${root.path}/missing-runtime',
     'DSH_LAUNCHER_TEST_SOCKET': layout.socketPath,
     'DSH_HOME': '${root.path}/home',
+    if (systemCi) 'DSH_LAUNCHER_SYSTEM_BOUNDARY_CI': '1',
+    if (releaseFixture != null)
+      'DSH_LAUNCHER_TEST_RELEASE_ENDPOINT': releaseFixture.endpoint,
   };
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
   final starts = File('${root.path}/resource-starts.log');
@@ -136,6 +158,19 @@ Future<void> main(List<String> arguments) async {
     configure.exitCode == 0,
     'private Debug candidate has LaunchServices isolation',
   );
+  if (updates) {
+    final version = await Process.run('/usr/bin/plutil', [
+      '-replace',
+      'CFBundleShortVersionString',
+      '-string',
+      '1.9.0',
+      '${app.path}/Contents/Info.plist',
+    ]);
+    require(
+      version.exitCode == 0,
+      'private update candidate freezes installed version 1.9.0',
+    );
+  }
   final sign = await Process.run('/usr/bin/codesign', [
     '--force',
     '--deep',
@@ -233,6 +268,25 @@ Future<void> main(List<String> arguments) async {
         result.exitCode == 0 && await File(path).exists(),
         'actual minimum window screenshot: $path',
       );
+    }
+
+    if (updates) {
+      await runUpdateScenarios(
+        fixture: releaseFixture!,
+        systemCi: systemCi,
+        state: state,
+        text: text,
+        tap: tap,
+        capture: capture,
+        waitFor: waitFor,
+        require: require,
+      );
+      await state({'action': 'quit'});
+      require(
+        await process.exitCode.timeout(const Duration(seconds: 10)) == 0,
+        'update scenario application quits normally',
+      );
+      return;
     }
 
     if (instanceStartup) {
@@ -505,6 +559,7 @@ Future<void> main(List<String> arguments) async {
     stdout.writeln('T01 APPLICATION PROBE PASSED');
   } finally {
     await server?.close();
+    await releaseFixture?.close();
     await vm?.dispose();
     if (!exited) {
       process.kill(ProcessSignal.sigterm);

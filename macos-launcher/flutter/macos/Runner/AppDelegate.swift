@@ -8,6 +8,9 @@ import Darwin
 class AppDelegate: FlutterAppDelegate {
   private var statusItem: NSStatusItem?
   private var channel: FlutterMethodChannel?
+  #if DEBUG
+  private var lastOpenedUrl: String?
+  #endif
   private var instanceLock: Int32 = -1
   private var instanceClaimed = false
   private var quitApproved = false
@@ -25,6 +28,19 @@ class AppDelegate: FlutterAppDelegate {
     }
     #endif
     return nil
+  }
+
+  // Real system mutations are restricted to a disposable GitHub macOS runner.
+  // The ordinary isolated Debug profile never reads or changes login items.
+  private var systemBoundaryTest: Bool {
+    #if DEBUG
+    let environment = ProcessInfo.processInfo.environment
+    if environment["GITHUB_ACTIONS"] == "true", environment["DSH_LAUNCHER_SYSTEM_BOUNDARY_CI"] == "1",
+       let runner = environment["RUNNER_TEMP"], let root = testRoot {
+      return root.standardizedFileURL.path.hasPrefix(URL(fileURLWithPath: runner, isDirectory: true).standardizedFileURL.path + "/")
+    }
+    #endif
+    return false
   }
 
   private var dataRoot: URL {
@@ -89,6 +105,8 @@ class AppDelegate: FlutterAppDelegate {
             "home": self.testRoot == nil ?
               ProcessInfo.processInfo.environment["DSH_HOME"] ?? NSHomeDirectory() + "/.dsh" :
               ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_HOME"] ?? self.dataRoot.appendingPathComponent(".dsh").path,
+            "testReleaseEndpoint": self.testRoot == nil ? NSNull() :
+              ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_RELEASE_ENDPOINT"] as Any,
             "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知",
             "fullAccess": preferences["fullAccess"] as? Bool ?? true,
             "allowLanSettings": preferences["allowLanSettings"] as? Bool ?? false,
@@ -103,7 +121,10 @@ class AppDelegate: FlutterAppDelegate {
           "windowWidth": self.mainFlutterWindow?.frame.width ?? 0,
           "windowHeight": self.mainFlutterWindow?.frame.height ?? 0,
           "pid": ProcessInfo.processInfo.processIdentifier,
-          "isolated": self.testRoot != nil, "dataRoot": self.dataRoot.path])
+          "isolated": self.testRoot != nil, "dataRoot": self.dataRoot.path,
+          "lastOpenedUrl": self.lastOpenedUrl as Any,
+          "urlOpenMode": self.systemBoundaryTest ? "NSWorkspace" : "guarded",
+          "systemBoundaryTest": self.systemBoundaryTest, "loginStatus": self.loginStatus()])
         case "debugWindow":
           guard self.testRoot != nil, let action = call.arguments as? String else { throw self.failure("需要隔离测试环境") }
           switch action {
@@ -133,7 +154,7 @@ class AppDelegate: FlutterAppDelegate {
           }
           try self.persistPassword(password); result(nil)
         case "setLoginEnabled":
-          if self.testRoot != nil { throw self.failure("测试环境不更改系统登录项") }
+          if self.testRoot != nil && !self.systemBoundaryTest { throw self.failure("测试环境不更改系统登录项") }
           guard let enabled = call.arguments as? Bool else { throw self.failure("无效登录启动设置") }
           if #available(macOS 13, *) {
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -143,7 +164,18 @@ class AppDelegate: FlutterAppDelegate {
           guard let text = call.arguments as? String, let url = URL(string: text), ["http", "https"].contains(url.scheme ?? "") else {
             throw self.failure("无效网页地址")
           }
-          NSWorkspace.shared.open(url); result(nil)
+          #if DEBUG
+          if self.testRoot != nil && !self.systemBoundaryTest {
+            self.lastOpenedUrl = text
+            result(nil)
+            return
+          }
+          #endif
+          guard NSWorkspace.shared.open(url) else { throw self.failure("系统未能打开网页") }
+          #if DEBUG
+          self.lastOpenedUrl = text
+          #endif
+          result(nil)
         case "openDesktop":
           guard let path = call.arguments as? String else { throw self.failure("无效 Desktop 路径") }
           let app = URL(fileURLWithPath: path)
@@ -180,7 +212,7 @@ class AppDelegate: FlutterAppDelegate {
     for (key, value) in values { UserDefaults.standard.set(value, forKey: key) }
   }
   private func loginStatus() -> String {
-    if testRoot != nil { return "unavailableInTest" }
+    if testRoot != nil && !systemBoundaryTest { return "unavailableInTest" }
     if #available(macOS 13, *) {
       switch SMAppService.mainApp.status {
       case .enabled: return "enabled"

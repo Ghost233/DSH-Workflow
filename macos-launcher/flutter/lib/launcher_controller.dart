@@ -446,7 +446,9 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     try {
       final request = await http.getUrl(
         Uri.parse(
-          'https://api.github.com/repos/Ghost233/DSH-Workflow/releases?per_page=100',
+          kDebugMode && environment.testSocket != null
+              ? environment.testReleaseEndpoint ?? 'https://api.github.com/repos/Ghost233/DSH-Workflow/releases?per_page=100'
+              : 'https://api.github.com/repos/Ghost233/DSH-Workflow/releases?per_page=100',
         ),
       );
       request.headers.set('Accept', 'application/vnd.github+json');
