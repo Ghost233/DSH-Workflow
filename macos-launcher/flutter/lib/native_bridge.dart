@@ -55,6 +55,8 @@ class NativeBridge {
       });
   Future<void> savePassword(String password) =>
       channel.invokeMethod<void>('savePassword', password);
+  Future<String> getLoginStatus() async =>
+      await channel.invokeMethod<String>('getLoginStatus') ?? 'unknown';
   Future<String> setLoginEnabled(bool enabled) async =>
       await channel.invokeMethod<String>('setLoginEnabled', enabled) ??
       'unknown';
