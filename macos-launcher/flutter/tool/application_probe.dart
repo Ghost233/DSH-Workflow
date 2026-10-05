@@ -10,6 +10,7 @@ import 'package:vm_service/vm_service_io.dart';
 import 'web_application_scenario.dart';
 import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
+import 'plugin_application_scenario.dart';
 
 Future<void> waitFor(String description, Future<bool> Function() check) async {
   for (var attempt = 0; attempt < 150; attempt++) {
@@ -29,7 +30,9 @@ Future<void> main(List<String> arguments) async {
       arguments.length == 3 && arguments[1] == '--instance-startup';
   final logsScenario =
       arguments.length == 3 && arguments[1] == '--logs-runtime';
-  final webScenario = logsScenario
+  final pluginsScenario =
+      arguments.length == 3 && arguments[1] == '--plugins-runtime';
+  final webScenario = logsScenario || pluginsScenario
       ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
       : WebProbeOptions.parse(arguments);
   final systemCi =
@@ -292,7 +295,11 @@ Future<void> main(List<String> arguments) async {
         state: state,
         tap: tap,
         capture: capture,
-        onConnected: logsScenario ? runLogApplicationScenario : null,
+        onConnected: logsScenario
+            ? runLogApplicationScenario
+            : pluginsScenario
+            ? runPluginApplicationScenario
+            : null,
       );
       await state({'action': 'quit'});
       require(
