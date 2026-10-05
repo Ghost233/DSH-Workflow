@@ -155,7 +155,16 @@ Future<void> runWebApplicationScenario({
         environment: {...Platform.environment, 'DSH_HOME': home},
       );
       hostLog = File('${root.path}/host.log').openWrite();
-      host.stdout.listen(hostLog.add);
+      final hostReady = Completer<void>();
+      host.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+            hostLog!.writeln(line);
+            if (line == 'HOST_READY' && !hostReady.isCompleted) {
+              hostReady.complete();
+            }
+          });
       host.stderr.listen(hostLog.add);
       unawaited(
         host.exitCode.then((code) {
@@ -167,6 +176,7 @@ Future<void> runWebApplicationScenario({
         'unchanged official packaged Host receipt',
         () async => await receipt.exists(),
       );
+      await hostReady.future.timeout(const Duration(seconds: 15));
       require(
         !hostExited,
         'official packaged Host is running in the private profile',
@@ -231,18 +241,39 @@ Future<void> runWebApplicationScenario({
       (await sdk('status'))['ready'] != true,
       'Web is not ready before any real access service exists',
     );
-    final snapshot = await state();
-    final field = ((snapshot['nodes'] as List).cast<Map>()).singleWhere(
-      (node) =>
-          node['label'].toString().contains('内网访问密码') &&
-          (node['actions'] as List).contains('setText'),
-    );
+    Future<Map> control(String label, String action, String direction) async {
+      for (var scroll = 0; scroll < 6; scroll++) {
+        final snapshot = await state();
+        final nodes = (snapshot['nodes'] as List).cast<Map>().toList();
+        final matches = nodes
+            .where(
+              (node) =>
+                  node['label'].toString().contains(label) &&
+                  (node['actions'] as List).contains(action),
+            )
+            .toList();
+        if (matches.isNotEmpty) return matches.single;
+        final scroller = nodes.singleWhere(
+          (node) => (node['actions'] as List).contains(direction),
+        );
+        await state({'action': direction, 'id': '${scroller['id']}'});
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+      throw StateError(
+        'Actual UI control unavailable after bounded scrolling: $label',
+      );
+    }
+
+    await File('${root.path}/initial-web-ui.json')
+        .writeAsString(jsonEncode(await state()));
+    final field = await control('内网访问密码', 'setText', 'scrollDown');
     await state({
       'action': 'setText',
       'id': '${field['id']}',
       'text': password,
     });
     await tap('设置密码');
+    await control('启动 Web', 'tap', 'scrollUp');
     await tap('启动 Web');
     if (!await receipt.exists()) {
       require(
@@ -368,6 +399,9 @@ Future<void> runWebApplicationScenario({
     stdout.writeln(
       'T02 WEB APPLICATION SCENARIO PASSED (${options.backend}, port $port)',
     );
+  } catch (error, stack) {
+    stderr.writeln('WEB_SCENARIO_ERROR: $error\n$stack');
+    rethrow;
   } finally {
     await server?.close();
     if (host != null && !hostExited) {

@@ -43,7 +43,10 @@ void registerApplicationProbe(NativeBridge native) {
       final root = owner?.rootSemanticsNode;
       if (root != null) visit(root);
       final action = params['action'];
-      if (action == 'tap' || action == 'scrollDown' || action == 'setText') {
+      if (action == 'tap' ||
+          action == 'scrollDown' ||
+          action == 'scrollUp' ||
+          action == 'setText') {
         final node = nodes.singleWhere(
           (node) => node['id'].toString() == params['id'],
         );
@@ -58,6 +61,8 @@ void registerApplicationProbe(NativeBridge native) {
                 ? SemanticsAction.tap
                 : action == 'setText'
                 ? SemanticsAction.setText
+                : action == 'scrollUp'
+                ? SemanticsAction.scrollUp
                 : SemanticsAction.scrollDown,
             arguments: action == 'setText' ? params['text'] : null,
           ),

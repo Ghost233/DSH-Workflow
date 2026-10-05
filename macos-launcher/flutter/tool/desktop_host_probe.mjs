@@ -38,4 +38,9 @@ process.stdin.on('data', stop)
 process.stdin.on('end', stop)
 process.on('SIGTERM', stop)
 process.on('SIGINT', stop)
-child.on('exit', code => { clearTimeout(forceStop); process.exitCode = code ?? 1; process.stdin.destroy() })
+child.on('exit', (code, signal) => {
+  clearTimeout(forceStop)
+  console.log(`HOST_EXIT=${code} HOST_SIGNAL=${signal}`)
+  process.exitCode = code ?? 1
+  process.stdin.destroy()
+})
