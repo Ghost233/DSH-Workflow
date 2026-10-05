@@ -82,6 +82,17 @@ Future<void> runWebApplicationScenario({
   LauncherServer? server;
   IOSink? hostLog;
   var hostExited = false;
+  Future<Map<String, Object?>> ui() async {
+    await state({'action': 'ownEntry'});
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    return state();
+  }
+
+  Future<void> tapUi(String label) async {
+    await ui();
+    await tap(label);
+  }
+
   Future<Map<String, Object?>> readReceipt() async =>
       (jsonDecode(await receipt.readAsString()) as Map).cast<String, Object?>();
   Future<({int code, String body, List<Cookie> cookies})> request(
@@ -139,7 +150,7 @@ Future<void> runWebApplicationScenario({
   try {
     await waitFor(
       'real management UI',
-      () async => ((await state())['nodes'] as List).any(
+      () async => ((await ui())['nodes'] as List).any(
         (node) => (node as Map)['label'].toString().contains('启动 Web'),
       ),
     );
@@ -243,7 +254,7 @@ Future<void> runWebApplicationScenario({
     );
     Future<Map> control(String label, String action, String direction) async {
       for (var scroll = 0; scroll < 6; scroll++) {
-        final snapshot = await state();
+        final snapshot = await ui();
         final nodes = (snapshot['nodes'] as List).cast<Map>().toList();
         final matches = nodes
             .where(
@@ -272,15 +283,15 @@ Future<void> runWebApplicationScenario({
       'id': '${field['id']}',
       'text': password,
     });
-    await tap('设置密码');
+    await tapUi('设置密码');
     await waitFor(
       'password saved by the actual management UI',
-      () async => ((await state())['nodes'] as List).cast<Map>().any(
+      () async => ((await ui())['nodes'] as List).cast<Map>().any(
         (node) => node['label'].toString().contains('修改密码'),
       ),
     );
     await control('启动 Web', 'tap', 'scrollDown');
-    await tap('启动 Web');
+    await tapUi('启动 Web');
     if (!await receipt.exists()) {
       require(
         (await sdk('status'))['ready'] != true,
@@ -384,7 +395,7 @@ Future<void> runWebApplicationScenario({
     await health(backendUrl, backendLogin.cookies);
     await sdk('start');
     await health(url, await authenticate());
-    await tap('停止 Web');
+    await tapUi('停止 Web');
     await portReleased();
     require(
       (await sdk('status'))['state'] == 'stopped' &&
