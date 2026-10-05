@@ -10,6 +10,38 @@ typedef ApplicationState = Future<Map<String, Object?>> Function([
   Map<String, String>? parameters,
 ]);
 
+typedef WebSdkRequest = Future<Map<String, Object?>> Function(
+  String method, {
+  String service,
+  Map<String, Object?>? params,
+});
+
+class WebObservation {
+  WebObservation({
+    required this.root,
+    required this.port,
+    required this.backend,
+    required this.sdk,
+    required this.ui,
+    required this.state,
+    required this.backendHealth,
+    required this.tap,
+    required this.capture,
+    required this.reconnectManager,
+  });
+  final Directory root;
+  final int port;
+  final Map<String, Object?> backend;
+  final WebSdkRequest sdk;
+  final Future<Map<String, Object?>> Function() ui, backendHealth;
+  final ApplicationState state;
+  String get resources => '${root.path}/missing-runtime';
+  File get receipt =>
+      File('${root.path}/data/global/.dsh-workflow/desktop/desktop-host.json');
+  final Future<void> Function(String) tap, capture;
+  final Future<void> Function() reconnectManager;
+}
+
 class WebProbeOptions {
   WebProbeOptions(this.sourceResources, this.backend, this.port);
   final String sourceResources, backend;
@@ -72,6 +104,7 @@ Future<void> runWebApplicationScenario({
   required ApplicationState state,
   required Future<void> Function(String) tap,
   required Future<void> Function(String) capture,
+  Future<void> Function(WebObservation)? onConnected,
 }) async {
   final data = '${root.path}/data';
   final home = '${root.path}/home';
@@ -210,13 +243,17 @@ Future<void> runWebApplicationScenario({
     Future<Map<String, Object?>> sdk(
       String method, {
       String service = 'web',
+      Map<String, Object?>? params,
     }) async {
       final elapsed = Stopwatch()..start();
-      final response = await session.sendRequest(
-        method,
-        serviceId: service,
-        timeout: const Duration(seconds: 30),
-      );
+      final response = await server!
+          .sessionFor('dsh-workflow')!
+          .sendRequest(
+            method,
+            serviceId: service,
+            params: params,
+            timeout: const Duration(seconds: 30),
+          );
       if (response['error'] != null) {
         final evidence =
             jsonEncode({
@@ -388,6 +425,41 @@ Future<void> runWebApplicationScenario({
       (await sdk('status', service: 'desktop'))['instanceId'] == lease,
       'official SDK observes this same backend lease',
     );
+    if (onConnected != null) {
+      await onConnected(
+        WebObservation(
+          root: root,
+          port: port,
+          backend: backend,
+          sdk: sdk,
+          ui: ui,
+          state: state,
+          backendHealth: () => health(backendUrl, backendLogin.cookies),
+          tap: tapUi,
+          capture: capture,
+          reconnectManager: () async {
+            await server!.close();
+            server = null;
+            await waitFor(
+              'application observes manager disconnect',
+              () async => ((await ui())['nodes'] as List).any(
+                (node) =>
+                    (node as Map)['label'].toString().contains('disconnected'),
+              ),
+            );
+            server = await LauncherServer.start(
+              layout: layout,
+              bindings: bindings,
+            );
+            await waitFor(
+              'official manager reconnects application',
+              () async => server!.sessionFor('dsh-workflow') != null,
+            );
+          },
+        ),
+      );
+      return;
+    }
     if (options.backend == 'desktop') {
       final native = (await state())['native'] as Map;
       final desktopPid = native['openedDesktopPid'] as int;
