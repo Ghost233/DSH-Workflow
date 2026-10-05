@@ -277,7 +277,21 @@ Future<void> runWebApplicationScenario({
 
     await File('${root.path}/initial-web-ui.json')
         .writeAsString(jsonEncode(await state()));
-    final field = await control('内网访问密码', 'setText', 'scrollUp');
+    final input = await control('内网访问密码', 'tap', 'scrollUp');
+    await state({'action': 'tap', 'id': '${input['id']}'});
+    await waitFor(
+      'actual password input exposes editing after focus',
+      () async => ((await ui())['nodes'] as List).cast<Map>().any(
+        (node) =>
+            node['label'].toString().contains('内网访问密码') &&
+            (node['actions'] as List).contains('setText'),
+      ),
+    );
+    final field = ((await ui())['nodes'] as List).cast<Map>().singleWhere(
+      (node) =>
+          node['label'].toString().contains('内网访问密码') &&
+          (node['actions'] as List).contains('setText'),
+    );
     await state({
       'action': 'setText',
       'id': '${field['id']}',
