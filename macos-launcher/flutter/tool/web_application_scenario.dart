@@ -273,6 +273,12 @@ Future<void> runWebApplicationScenario({
       'text': password,
     });
     await tap('设置密码');
+    await waitFor(
+      'password saved by the actual management UI',
+      () async => ((await state())['nodes'] as List).cast<Map>().any(
+        (node) => node['label'].toString().contains('修改密码'),
+      ),
+    );
     await control('启动 Web', 'tap', 'scrollDown');
     await tap('启动 Web');
     if (!await receipt.exists()) {
@@ -400,8 +406,12 @@ Future<void> runWebApplicationScenario({
       'T02 WEB APPLICATION SCENARIO PASSED (${options.backend}, port $port)',
     );
   } catch (error, stack) {
-    stderr.writeln('WEB_SCENARIO_ERROR: $error\n$stack');
-    rethrow;
+    final message = error
+        .toString()
+        .replaceAll(RegExp(r'token=[^&\s]+'), 'token=<REDACTED>')
+        .replaceAll(password, '<REDACTED>');
+    stderr.writeln('WEB_SCENARIO_ERROR: $message\n$stack');
+    Error.throwWithStackTrace(StateError(message), stack);
   } finally {
     await server?.close();
     if (host != null && !hostExited) {
