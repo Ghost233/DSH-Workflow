@@ -27,6 +27,7 @@ void require(bool condition, String description) {
 Future<void> main(List<String> arguments) async {
   final instanceStartup =
       arguments.length == 3 && arguments[1] == '--instance-startup';
+  final logFixture = arguments.length == 3 && arguments[1] == '--logs-fixture';
   final logsScenario =
       arguments.length == 3 && arguments[1] == '--logs-runtime';
   final webScenario = logsScenario
@@ -50,7 +51,8 @@ Future<void> main(List<String> arguments) async {
   if (arguments.length != 1 &&
       !instanceStartup &&
       !updates &&
-      webScenario == null) {
+      webScenario == null &&
+      !logFixture) {
     throw ArgumentError(
       'Pass the debug executable, optionally --instance-startup and an independent Node executable',
     );
@@ -138,6 +140,7 @@ Future<void> main(List<String> arguments) async {
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
   final webPort = await webScenario?.stage(root);
   if (webPort != null) environment['DSH_LAUNCHER_TEST_PORT'] = '$webPort';
+  if (logFixture) await stageControlledLogs(root, arguments[2]);
   final starts = File('${root.path}/resource-starts.log');
   if (instanceStartup) {
     final runtime = Directory(
@@ -280,6 +283,16 @@ Future<void> main(List<String> arguments) async {
         result.exitCode == 0 && await File(path).exists(),
         'actual native window screenshot: $path',
       );
+    }
+
+    if (logFixture) {
+      await runControlledLogs(root, layout, manifestPath, state, tap, capture);
+      await state({'action': 'quit'});
+      require(
+        await process.exitCode.timeout(const Duration(seconds: 10)) == 0,
+        'controlled log transport app quits normally',
+      );
+      return;
     }
 
     if (webScenario != null) {
