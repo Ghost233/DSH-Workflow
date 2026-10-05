@@ -95,6 +95,12 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
       ),
     );
     await app.capture('logs-fault');
+    require(
+      ((await app.ui())['nodes'] as List).any(
+        (node) => (node as Map)['label'].toString().contains('日志实例：$instance'),
+      ),
+      'actual log page identifies the retained real connection scope',
+    );
   } finally {
     final restore = await Process.run('/bin/chmod', ['0600', receipt]);
     require(restore.exitCode == 0, 'owned receipt permissions restored');
