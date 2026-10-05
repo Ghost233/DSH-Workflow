@@ -21,8 +21,13 @@ export function apply(ctx, { directory, runtimeVersion }) {
       if (parsed.hostname !== '127.0.0.1' || parsed.protocol !== 'http:' || !parsed.searchParams.get('token')) {
         throw new Error('Desktop Host did not provide an authenticated loopback address')
       }
+      let permissionMode = 'unknown'
+      try {
+        const actual = ctx.get?.('sandboxPolicy')?.resolve().mode
+        if (['read-only', 'workspace-write', 'danger-full-access'].includes(actual)) permissionMode = actual
+      } catch { /* A missing policy observation must not prevent Host readiness. */ }
       const temporary = join(directory, `.desktop-host-${lease}.tmp`)
-      await writeFile(temporary, JSON.stringify({ schema: 1, lease, pid: process.pid, url, runtimeVersion }) + '\n',
+      await writeFile(temporary, JSON.stringify({ schema: 1, lease, pid: process.pid, url, runtimeVersion, permissionMode }) + '\n',
         { mode: 0o600, flag: 'wx' })
       await rename(temporary, path)
     })()
