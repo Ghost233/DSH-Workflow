@@ -298,14 +298,30 @@ jobs:
               port = socket.socket()
               try:
                   port.bind(('127.0.0.1', 33080))
-                  port_released = True
-              except OSError:
-                  port_released = False
+                  raw_bind = {'available': True}
+              except OSError as error:
+                  raw_bind = {'available': False, 'errno': error.errno, 'error': str(error)}
               finally:
                   port.close()
+              port = socket.socket()
+              port.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+              try:
+                  port.bind(('0.0.0.0', 33080))
+                  port.listen(1)
+                  service_listen = {'available': True}
+              except OSError as error:
+                  service_listen = {'available': False, 'errno': error.errno, 'error': str(error)}
+              finally:
+                  port.close()
+              listener = subprocess.run(['/usr/sbin/lsof', '-nP', '-iTCP:33080', '-sTCP:LISTEN', '-Fpn'],
+                                        capture_output=True, text=True)
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes,
                               'receiptRemoved': not (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').exists(),
-                              'webPortReleased': port_released})
+                              'rawNoReuseLoopbackBind': raw_bind,
+                              'reuseAddrServiceBindListen': service_listen,
+                              'listenObservation': {'exit': listener.returncode, 'stdout': listener.stdout,
+                                                    'stderr': listener.stderr},
+                              'webPortReleased': service_listen['available']})
           (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
           PY
 
