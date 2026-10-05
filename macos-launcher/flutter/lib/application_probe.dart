@@ -29,6 +29,9 @@ void registerApplicationProbe(NativeBridge native) {
           'id': node.id,
           'label': data.label,
           'value': data.flagsCollection.isObscured ? '<obscured>' : data.value,
+          'scrollPosition': data.scrollPosition,
+          'scrollExtentMin': data.scrollExtentMin,
+          'scrollExtentMax': data.scrollExtentMax,
           'actions': [
             for (final action in SemanticsAction.values)
               if (data.hasAction(action)) action.name,
@@ -57,19 +60,17 @@ void registerApplicationProbe(NativeBridge native) {
           SemanticsActionEvent(
             viewId: view!.flutterView.viewId,
             nodeId: node['id']! as int,
-            type: action == 'tap'
-                ? SemanticsAction.tap
-                : action == 'setText'
-                ? SemanticsAction.setText
-                : action == 'scrollUp'
-                ? SemanticsAction.scrollUp
-                : SemanticsAction.scrollDown,
+            type: switch (action) {
+              'tap' => SemanticsAction.tap,
+              'scrollUp' => SemanticsAction.scrollUp,
+              'setText' => SemanticsAction.setText,
+              _ => SemanticsAction.scrollDown,
+            },
             arguments: action == 'setText' ? params['text'] : null,
           ),
         );
-        await WidgetsBinding.instance.endOfFrame.timeout(
-          const Duration(seconds: 5),
-        );
+        // The external driver waits for actual UI/HTTP/SDK outcomes.
+        // Holding this VM RPC until endOfFrame can stall accessibility actions.
       } else if (action == 'close' ||
           action == 'quitDesktop' ||
           action == 'ownEntry' ||
@@ -85,6 +86,8 @@ void registerApplicationProbe(NativeBridge native) {
         jsonEncode({
           'nodes': nodes,
           'errors': errors,
+          'framesEnabled': WidgetsBinding.instance.framesEnabled,
+          'lifecycleState': WidgetsBinding.instance.lifecycleState?.name,
           'contentWidth': flutterView == null
               ? null
               : flutterView.physicalSize.width / flutterView.devicePixelRatio,

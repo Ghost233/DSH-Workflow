@@ -10,6 +10,7 @@ class LauncherEnvironment {
       allowLanSettings = values['allowLanSettings'] as bool? ?? false,
       password = values['password'] as String?,
       testSocket = values['testSocket'] as String?,
+      testReleaseEndpoint = values['testReleaseEndpoint'] as String?,
       loginStatus = _string(values, 'loginStatus');
 
   static String _string(Map<Object?, Object?> values, String key) {
@@ -22,7 +23,7 @@ class LauncherEnvironment {
 
   final String resources, dataRoot, home, appVersion, loginStatus;
   final bool fullAccess, allowLanSettings;
-  final String? password, testSocket;
+  final String? password, testSocket, testReleaseEndpoint;
 }
 
 class NativeBridge {

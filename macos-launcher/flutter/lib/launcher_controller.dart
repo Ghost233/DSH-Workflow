@@ -456,25 +456,28 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void> checkUpdates() async {
     if (checkingUpdates) return;
     checkingUpdates = true;
+    update = null;
     updateMessage = '正在检查更新…';
     notifyListeners();
     final http = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
-      final request = await http.getUrl(
-        Uri.parse(
-          'https://api.github.com/repos/Ghost233/DSH-Workflow/releases?per_page=100',
-        ),
-      );
-      request.headers.set('Accept', 'application/vnd.github+json');
-      request.headers.set('User-Agent', 'DSH-Workflow-macOS');
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        throw HttpException('GitHub 发布接口 ${response.statusCode}');
-      }
-      update = newerRelease(
-        await response.transform(utf8.decoder).join(),
-        environment.appVersion,
-      );
+      final body = await (() async {
+        final request = await http.getUrl(
+          Uri.parse(
+            kDebugMode && environment.testSocket != null
+                ? environment.testReleaseEndpoint ?? 'https://api.github.com/repos/Ghost233/DSH-Workflow/releases?per_page=100'
+                : 'https://api.github.com/repos/Ghost233/DSH-Workflow/releases?per_page=100',
+          ),
+        );
+        request.headers.set('Accept', 'application/vnd.github+json');
+        request.headers.set('User-Agent', 'DSH-Workflow-macOS');
+        final response = await request.close();
+        if (response.statusCode != 200) {
+          throw HttpException('GitHub 发布接口 ${response.statusCode}');
+        }
+        return response.transform(utf8.decoder).join();
+      })().timeout(const Duration(seconds: 10));
+      update = newerRelease(body, environment.appVersion);
       updateMessage = update == null ? '暂无新版本' : '发现新版本 ${update!.version}';
     } catch (failure) {
       updateMessage = '检查更新失败：$failure';
