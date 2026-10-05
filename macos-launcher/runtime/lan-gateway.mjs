@@ -5,6 +5,8 @@ import { allowAuthenticatedLanSettings } from './lan-settings-client.mjs'
 
 const COOKIE_NAME = 'dsh-workflow-gate'
 const SETTINGS_COOKIE_NAME = 'dsh-workflow-settings-access'
+const SETTINGS_WRITES = new Set(['/api/settings/update', '/api/settings/replace', '/api/settings/mutate',
+  '/api/credentials/set', '/api/credentials/unset'])
 const MAX_BODY_BYTES = 16 * 1024
 const SESSION_MS = 12 * 60 * 60 * 1000
 const LOCKOUT_MS = 60 * 1000
@@ -223,6 +225,12 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
         response.end(loginPage())
       } else reject(response, 401)
       return
+    }
+    const address = request.socket.remoteAddress ?? ''
+    const loopback = address === '::1' || address.startsWith('127.') || address.startsWith('::ffff:127.')
+    const path = new URL(request.url ?? '/', 'http://gateway.invalid').pathname
+    if (!allowLanSettings && !loopback && request.method === 'POST' && SETTINGS_WRITES.has(path)) {
+      reject(response, 403); return
     }
     proxy(request, response)
   }
