@@ -65,6 +65,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void>? _mutation, _closeFuture;
   Future<void>? _desktopOpen;
   ServiceStatus get snapshot => _web;
+  String? get logInstanceId => _logInstanceId;
+  bool get logsTruncated => _logsDropped;
   bool get isActive => _child != null || _mutation != null;
   bool get hasPassword => _password?.isNotEmpty == true;
   String get node => '${environment.resources}/node';

@@ -106,6 +106,65 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
     require(restore.exitCode == 0, 'owned receipt permissions restored');
   }
   await app.sdk('start');
+  final second = await app.sdk('status');
+  require(
+    second['instanceId'] != instance && second['ready'] == true,
+    'real reconnect creates a new access connection',
+  );
+  final secondLogs = await app.sdk('logs', params: {'limit': 500});
+  require(
+    (secondLogs['entries'] as List).isEmpty &&
+        secondLogs['instanceId'] == second['instanceId'],
+    'new real connection contains no previous connection log',
+  );
+  await app.reconnectManager();
+  require(
+    (await app.sdk('status'))['instanceId'] == second['instanceId'],
+    'official SDK session replacement preserves the actual access instance',
+  );
+  final pause = await Process.run('/bin/kill', ['-STOP', '$hostPid']);
+  require(pause.exitCode == 0, 'only the exact owned Host PID was paused');
+  Map<String, Object?>? unavailable;
+  try {
+    unavailable = await app.sdk('status', service: 'desktop');
+    require(
+      unavailable['state'] == 'running' &&
+          unavailable['instanceId'] == lease &&
+          unavailable['ready'] == null,
+      'live trusted Host with unavailable health preserves running and unknown readiness',
+    );
+  } finally {
+    final resume = await Process.run('/bin/kill', ['-CONT', '$hostPid']);
+    require(resume.exitCode == 0, 'owned Host resumed before cleanup');
+  }
+  require(
+    (await app.sdk('status', service: 'desktop'))['ready'] == true,
+    'real Host health recovers after resume',
+  );
+  await File('${app.root.path}/log-state-observations.json').writeAsString(
+    jsonEncode({
+      'firstInstance': instance,
+      'second': second,
+      'afterReconnect': await app.sdk('status'),
+      'desktopUnavailable': unavailable,
+      'hostPid': hostPid,
+      'hostLease': lease,
+    }),
+  );
+  await app.tap('管理');
+  await app.tap('重连 Web');
+  await waitFor(
+    'actual restarted connection ready',
+    () async => (await app.sdk('status'))['ready'] == true,
+  );
+  final third = await app.sdk('status');
+  final thirdLogs = await app.sdk('logs', params: {'limit': 500});
+  require(
+    third['instanceId'] != second['instanceId'] &&
+        (thirdLogs['entries'] as List).isEmpty &&
+        thirdLogs['instanceId'] == third['instanceId'],
+    'real supervisor restart begins a clean new access log scope',
+  );
   await app.sdk('recycle');
   stdout.writeln('T03 REAL LOG SCENARIO PASSED');
 }
