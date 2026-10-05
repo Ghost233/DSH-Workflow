@@ -29,6 +29,9 @@ void registerApplicationProbe(NativeBridge native) {
           'id': node.id,
           'label': data.label,
           'value': data.value,
+          'scrollPosition': data.scrollPosition,
+          'scrollExtentMin': data.scrollExtentMin,
+          'scrollExtentMax': data.scrollExtentMax,
           'actions': [
             for (final action in SemanticsAction.values)
               if (data.hasAction(action)) action.name,
@@ -43,7 +46,7 @@ void registerApplicationProbe(NativeBridge native) {
       final root = owner?.rootSemanticsNode;
       if (root != null) visit(root);
       final action = params['action'];
-      if (action == 'tap' || action == 'scrollDown') {
+      if (action == 'tap' || action == 'scrollDown' || action == 'scrollUp') {
         final node = nodes.singleWhere(
           (node) => node['id'].toString() == params['id'],
         );
@@ -54,14 +57,15 @@ void registerApplicationProbe(NativeBridge native) {
           SemanticsActionEvent(
             viewId: view!.flutterView.viewId,
             nodeId: node['id']! as int,
-            type: action == 'tap'
-                ? SemanticsAction.tap
-                : SemanticsAction.scrollDown,
+            type: switch (action) {
+              'tap' => SemanticsAction.tap,
+              'scrollUp' => SemanticsAction.scrollUp,
+              _ => SemanticsAction.scrollDown,
+            },
           ),
         );
-        await WidgetsBinding.instance.endOfFrame.timeout(
-          const Duration(seconds: 5),
-        );
+        // The external driver waits for actual UI/HTTP/SDK outcomes.
+        // Holding this VM RPC until endOfFrame can stall accessibility actions.
       } else if (action == 'close' ||
           action == 'ownEntry' ||
           action == 'minimum' ||
@@ -76,6 +80,8 @@ void registerApplicationProbe(NativeBridge native) {
         jsonEncode({
           'nodes': nodes,
           'errors': errors,
+          'framesEnabled': WidgetsBinding.instance.framesEnabled,
+          'lifecycleState': WidgetsBinding.instance.lifecycleState?.name,
           'contentWidth': flutterView == null
               ? null
               : flutterView.physicalSize.width / flutterView.devicePixelRatio,

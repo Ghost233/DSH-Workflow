@@ -117,6 +117,8 @@ class AppDelegate: FlutterAppDelegate {
         case "debugState": result(["entryVisible": self.statusItem?.isVisible ?? false,
           "windowVisible": self.mainFlutterWindow?.isVisible ?? false,
           "windowKey": self.mainFlutterWindow?.isKeyWindow ?? false,
+          "appActive": NSApp.isActive,
+          "windowOcclusionVisible": self.mainFlutterWindow?.occlusionState.contains(.visible) ?? false,
           "windowNumber": self.mainFlutterWindow?.windowNumber ?? 0,
           "windowWidth": self.mainFlutterWindow?.frame.width ?? 0,
           "windowHeight": self.mainFlutterWindow?.frame.height ?? 0,

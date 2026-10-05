@@ -78,6 +78,15 @@ Future<void> runUpdateScenarios({
   required Future<void> Function(String, Future<bool> Function()) waitFor,
   required void Function(bool, String) require,
 }) async {
+  final rawState = state;
+  state = ([params]) async {
+    if (params == null) {
+      // Keep the actual tested window in front while observing visible UI.
+      await rawState({'action': 'ownEntry'});
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    return rawState(params);
+  };
   await waitFor('management UI', () async => text(await state(), '启动 Web'));
   final initialNative = (await state())['native']! as Map;
   require(
@@ -85,16 +94,38 @@ Future<void> runUpdateScenarios({
         initialNative['systemBoundaryTest'] == systemCi,
     'real native application confirms the requested isolated boundary',
   );
-  // Scroll the real management ListView to the general settings section.
-  for (var attempt = 0; attempt < 6; attempt++) {
-    final snapshot = await state();
-    if (text(snapshot, '检查更新')) break;
-    final scroll = (snapshot['nodes']! as List).cast<Map>().firstWhere(
-      (node) => (node['actions']! as List).contains('scrollDown'),
-    );
-    await state({'action': 'scrollDown', 'id': '${scroll['id']}'});
-    await Future<void>.delayed(const Duration(milliseconds: 200));
+  Future<void> revealGeneral() async {
+    // For this axis-down ListView, the official scrollUp action moves content
+    // up to reveal later settings. Observe the real semantic scroll extent.
+    for (var attempt = 0; attempt < 6; attempt++) {
+      final snapshot = await state();
+      final scroll = (snapshot['nodes']! as List).cast<Map>().singleWhere(
+        (node) => node['scrollPosition'] is num,
+      );
+      final position = scroll['scrollPosition'] as num;
+      final maximum = scroll['scrollExtentMax'] as num;
+      if (position >= maximum - 1) return;
+      require(
+        (scroll['actions']! as List).contains('scrollUp'),
+        'real ListView offers its forward accessibility scroll action',
+      );
+      await state({'action': 'scrollUp', 'id': '${scroll['id']}'});
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    throw StateError('Management ListView did not reach its actual end');
   }
+
+  Future<void> captureGeneral(String page) async {
+    await state({'action': 'ownEntry'});
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    await revealGeneral();
+    await capture(page);
+  }
+
+  await state({'action': 'ownEntry'});
+  await state({'action': 'minimum'});
+  await Future<void>.delayed(const Duration(milliseconds: 500));
+  await revealGeneral();
   await waitFor(
     'numeric minor update',
     () async => text(await state(), '发现新版本 1.10.0'),
@@ -103,7 +134,7 @@ Future<void> runUpdateScenarios({
     true,
     'actual management UI selects numeric minor 1.10.0 and excludes draft, prerelease, invalid and unmatched tags',
   );
-  await capture('update-minor');
+  await captureGeneral('update-minor');
 
   fixture.status = 500;
   await tap('检查更新');
@@ -111,7 +142,7 @@ Future<void> runUpdateScenarios({
     'failed release request visible',
     () async => text(await state(), '检查更新失败'),
   );
-  await capture('update-failed');
+  await captureGeneral('update-failed');
   require(
     !text(await state(), '查看新版本'),
     'failed refresh removes the stale release action',
@@ -140,7 +171,7 @@ Future<void> runUpdateScenarios({
     nativeOpen['urlOpenMode'] == (systemCi ? 'NSWorkspace' : 'guarded'),
     'native URL observation identifies the exercised boundary',
   );
-  await capture('update-major');
+  await captureGeneral('update-major');
 
   fixture.releases([
     {'tag_name': 'macos-v1.9.0', 'draft': false, 'prerelease': false},
@@ -152,7 +183,7 @@ Future<void> runUpdateScenarios({
     !text(await state(), '查看新版本'),
     'equal and older releases expose no update action',
   );
-  await capture('update-none');
+  await captureGeneral('update-none');
 
   fixture.releases([]);
   await tap('检查更新');
@@ -175,14 +206,14 @@ Future<void> runUpdateScenarios({
       () async => text(await state(), '检查更新失败'),
     );
   } catch (_) {
-    await capture('update-timeout-red');
+    await captureGeneral('update-timeout-red');
     rethrow;
   }
   require(
     text(await state(), 'TimeoutException'),
     'response stall ends with an honest timeout result',
   );
-  await capture('update-timeout');
+  await captureGeneral('update-timeout');
   fixture.releases([]);
   await tap('检查更新');
   await waitFor(
@@ -213,7 +244,7 @@ Future<void> runUpdateScenarios({
           text(current, 'native-error');
     });
     snapshot = await state();
-    await capture('login-registration');
+    await captureGeneral('login-registration');
     final registered = native(snapshot)['loginStatus'];
     require(
       registered == 'enabled' || registered == 'requiresApproval',
@@ -237,10 +268,10 @@ Future<void> runUpdateScenarios({
       text(await state(), '登录启动：未注册'),
       'UI unregister action agrees with the actual macOS system status',
     );
-    await capture('login-unregistered');
+    await captureGeneral('login-unregistered');
     stdout.writeln('T07 DISPOSABLE CI APPLICATION SCENARIOS PASSED');
   } else {
-    await capture('login-before');
+    await captureGeneral('login-before');
     require(
       text(await state(), '登录启动：测试环境不访问系统登录项'),
       'management UI clearly identifies the guarded system login boundary',
@@ -254,7 +285,7 @@ Future<void> runUpdateScenarios({
       text(await state(), '登录启动：测试环境不访问系统登录项'),
       'guarded registration rejection remains visible and never claims enabled',
     );
-    await capture('login-guarded');
+    await captureGeneral('login-guarded');
     stdout.writeln(
       'T07 LOCAL APPLICATION SCENARIOS PASSED; SYSTEM REGISTRATION NOT EXERCISED',
     );
