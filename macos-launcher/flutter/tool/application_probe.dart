@@ -481,7 +481,8 @@ Future<void> main(List<String> arguments) async {
         prestartedHost: settings?.host,
         prestartedHostLog: settings?.hostLog,
         passwordPreloaded: settingsScenario,
-        settingsOwnedWebCleanup: settingsScenario,
+        settingsOwnedWebCleanup:
+            settingsScenario && webScenario.backend == 'desktop',
         diagnose: diagnostics?.record,
       );
       if (lifecycle == null) await state({'action': 'quit'});
