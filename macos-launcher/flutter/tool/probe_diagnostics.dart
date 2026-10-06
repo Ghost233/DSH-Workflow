@@ -44,7 +44,6 @@ class ProbeDiagnostics {
     _sink.writeln(jsonEncode(value));
     if (publishPhases) {
       stdout.writeln('T05_PHASE=${jsonEncode(publicProbePhase(value))}');
-      unawaited(stdout.flush());
     }
   }
 

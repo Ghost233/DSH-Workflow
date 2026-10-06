@@ -164,7 +164,6 @@ Future<void> main(List<String> arguments) async {
     stdout.writeln(
       'T05_PHASE=${jsonEncode({'event': event, 'at': DateTime.now().toUtc().toIso8601String()})}',
     );
-    unawaited(stdout.flush());
   }
 
   settingsPhase('candidate-copy-start');
