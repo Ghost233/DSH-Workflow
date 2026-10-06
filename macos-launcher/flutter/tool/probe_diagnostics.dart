@@ -161,10 +161,11 @@ class ProbeDiagnostics {
     }
   }
 
-  Future<void> start(int pid, String executable) async {
-    _appPid = pid;
+  Future<void> start(int applicationPid, String executable) async {
+    _appPid = applicationPid;
     final facts = {
-      'pid': pid,
+      'pid': applicationPid,
+      if (publishPhases) 'parentPid': pid,
       'executable': executable,
       'startedAt': DateTime.now().toUtc().toIso8601String(),
     };
@@ -173,6 +174,31 @@ class ProbeDiagnostics {
     record('application-started', facts);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       _snapshots = _snapshots.then((_) => _receipt());
+    });
+  }
+
+  Future<void> samplePendingStatus(int requestCount) async {
+    final pid = _appPid;
+    if (!publishPhases || pid == null) return;
+    final result = await Process.run('/usr/bin/python3', [
+      File.fromUri(
+        Platform.script.resolve(
+          '../../../.github/scripts/settings_startup_cycle.py',
+        ),
+      ).path,
+      '--sample-owned-application',
+      root.path,
+      '$pid',
+      '$requestCount',
+    ]);
+    final value = result.exitCode == 0
+        ? (jsonDecode(result.stdout.toString()) as Map)
+        : const <String, Object?>{};
+    record('owned-app-sample', {
+      'pid': pid,
+      'requestCount': requestCount,
+      'present': value['state'] == 'observed',
+      'rawExit': result.exitCode,
     });
   }
 

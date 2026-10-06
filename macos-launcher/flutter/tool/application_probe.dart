@@ -501,6 +501,9 @@ Future<void> main(List<String> arguments) async {
         prestartedHostLog: settings?.hostLog,
         passwordPreloaded: settingsScenario,
         debugStopOwnedWebBeforeQuit: settingsTraceReplay,
+        samplePendingStatus: settingsTraceReplay
+            ? diagnostics?.samplePendingStatus
+            : null,
         traceApplicationPid: settingsScenario ? process.pid : null,
         diagnose: diagnostics?.record,
       );

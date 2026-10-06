@@ -11,6 +11,114 @@ import '../tool/web_application_scenario.dart'
 
 void main() {
   test(
+    'passive sample selects one pending public status and preserves replies',
+    () async {
+      final root = await Directory('/private/tmp')
+          .createTemp('dsh-t05-sample-hook-');
+      final actor = await Process.start('/bin/sh', [
+        '-c',
+        'read -r release; exit 23',
+      ]);
+      final server = await LauncherServer.start(
+        layout: EndpointLayout(directory: '${root.path}/manager'),
+        bindings: InMemoryBindingLookup({'dsh-workflow'}),
+      );
+      final samples = <int>[];
+      final events = <String>[];
+      final sampled = Completer<void>();
+      final trace = T05SdkTrace(
+        server,
+        applicationPid: actor.pid,
+        applicationExit: actor.exitCode,
+        record: (event, _) => events.add(event),
+        samplePendingStatus: (count) async {
+          samples.add(count);
+          sampled.complete();
+        },
+      );
+      final releaseSecond = Completer<void>(), releaseThird = Completer<void>();
+      final enteredSecond = Completer<void>(), enteredThird = Completer<void>();
+      final releaseFourth = Completer<void>(),
+          enteredFourth = Completer<void>();
+      var calls = 0;
+      final sdk = MacLauncherSdk.connect(
+        projectId: 'dsh-workflow',
+        socketPath: server.layout.socketPath,
+        services: {
+          'web': ServiceCallbacks(
+            name: 'Web',
+            onStatus: () async {
+              calls++;
+              if (calls == 2) {
+                enteredSecond.complete();
+                await releaseSecond.future;
+              }
+              if (calls == 3) {
+                enteredThird.complete();
+                await releaseThird.future;
+              }
+              if (calls == 4) {
+                enteredFourth.complete();
+                await releaseFourth.future;
+              }
+              return ServiceStatus(state: ServiceState.starting, ready: false);
+            },
+          ),
+        },
+      );
+      try {
+        final session = await currentSdkSession(server);
+        final fast = await trace.sendRequest(session, 'status');
+        expect((fast['result'] as Map)['ready'], false);
+        await Future<void>.delayed(const Duration(milliseconds: 2100));
+        expect(samples, isEmpty);
+        final second = trace.sendRequest(session, 'status');
+        await enteredSecond.future;
+        await sampled.future;
+        expect(samples, [2]);
+        releaseSecond.complete();
+        expect((await second)['result'], fast['result']);
+        final third = trace.sendRequest(session, 'status');
+        await enteredThird.future;
+        await Future<void>.delayed(const Duration(milliseconds: 2100));
+        expect(samples, [2]);
+        releaseThird.complete();
+        expect((await third)['result'], fast['result']);
+        final fourth = trace.sendRequest(session, 'status');
+        final lost = expectLater(
+          fourth,
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'original error',
+              'connection lost',
+            ),
+          ),
+        );
+        await enteredFourth.future;
+        await trace.close();
+        final closedEvents = events.length;
+        await sdk.dispose();
+        await lost;
+        releaseFourth.complete();
+        await Future<void>.delayed(Duration.zero);
+        expect(events.length, closedEvents);
+        expect(samples, [2]);
+      } finally {
+        if (!releaseSecond.isCompleted) releaseSecond.complete();
+        if (!releaseThird.isCompleted) releaseThird.complete();
+        if (!releaseFourth.isCompleted) releaseFourth.complete();
+        await trace.close();
+        await sdk.dispose();
+        await server.close();
+        actor.stdin.writeln('release');
+        await actor.stdin.close();
+        expect(await actor.exitCode, 23);
+        await root.delete(recursive: true);
+      }
+    },
+  );
+  test(
     'real pending transport failure is traced without retry or invented exit',
     () async {
       final root = await Directory('/private/tmp').createTemp('dsh-t05-trace-');

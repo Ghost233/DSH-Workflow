@@ -46,6 +46,7 @@ class T05SdkTrace {
     required this.applicationPid,
     required Future<int> applicationExit,
     required this.record,
+    this.samplePendingStatus,
   }) {
     _registry = server.registry.changes.listen((project) {
       if (project == null || project.projectId == 'dsh-workflow') {
@@ -63,11 +64,14 @@ class T05SdkTrace {
   final LauncherServer server;
   final int applicationPid;
   final void Function(String, Map<String, Object?>) record;
+  final Future<void> Function(int)? samplePendingStatus;
   late final StreamSubscription<ConnectedProject?> _registry;
   final _watched = <String>{};
   String? _selected;
   int? _appExit;
   var _count = 0, _closed = false;
+  var _sampled = false;
+  Future<void>? _sampleOperation;
   String _relation(String? value) => value == null
       ? 'null'
       : value == _selected
@@ -116,6 +120,25 @@ class T05SdkTrace {
       'launcherSessionId': active.launcherSessionId,
     };
     _emit('sdk-request-start', facts);
+    Timer? sampleTrigger;
+    if (method == 'status' &&
+        service == 'web' &&
+        !_sampled &&
+        samplePendingStatus != null) {
+      // TEMP one-shot observation selector, never a request deadline or poll.
+      sampleTrigger = Timer(const Duration(seconds: 2), () {
+        if (_closed || _sampled || _appExit != null) return;
+        _sampled = true;
+        _emit('owned-app-sample-trigger', facts);
+        _sampleOperation = samplePendingStatus!(count)
+            .catchError((Object error) {
+              _emit('owned-app-sample-unknown', {
+                ...facts,
+                'errorType': error.runtimeType.toString(),
+              });
+            });
+      });
+    }
     try {
       final response = await active.sendRequest(
         method,
@@ -140,12 +163,15 @@ class T05SdkTrace {
             : 'other',
       });
       rethrow;
+    } finally {
+      sampleTrigger?.cancel();
     }
   }
 
   Future<void> close() async {
     _closed = true;
     await _registry.cancel();
+    await _sampleOperation;
   }
 }
 
@@ -276,6 +302,7 @@ Future<void> runWebApplicationScenario({
   IOSink? prestartedHostLog,
   bool passwordPreloaded = false,
   bool debugStopOwnedWebBeforeQuit = false,
+  Future<void> Function(int)? samplePendingStatus,
   int? traceApplicationPid,
   void Function(String, Map<String, Object?>)? diagnose,
 }) async {
@@ -447,6 +474,7 @@ Future<void> runWebApplicationScenario({
         applicationPid: traceApplicationPid,
         applicationExit: applicationExit,
         record: diagnose,
+        samplePendingStatus: samplePendingStatus,
       );
     }
     await waitFor(
