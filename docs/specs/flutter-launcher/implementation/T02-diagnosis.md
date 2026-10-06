@@ -101,3 +101,15 @@ Root 均为 `/Users/runner/work/_temp/<后缀>`，各 Launcher executable 为其
 独立后置 Swift 仍只执行一轮：PID 10398，native open succeeded / 156 ms，normal terminate requested=true；60 次观察中首末 raw kill exit 0，fresh 原生对象同 bundle/executable/launchDate 且未退出，原 15 秒后 tool exit 2 / wall 15.521 秒。该 private root 没有 Host receipt，实际 detach exit 16 / Resource busy；它是外部早期正常退出不完成，不是 Corrupt 红、不是 parent 场景失败，也不是 cached-only 猜测。固定 DMG 与三项 runtime payload 前后摘要一致。
 
 本 run 仍使用当时旧 Web readiness 等待标准，三例没有该 deadline 失败。用户随后仅为真实 Web startup 调用授权等待实际 ready、可信失败立即退出；未来执行遵新约束，公共其它等待/Native 15 秒/ownership 不变，不从旧纯迟就绪 deadline 推断性能原因。证据：`/private/tmp/dsh-flutter-implementation/T02/CI-37424611318/diagnosis.md`；raw/ZIP/job logs 私有保留，分享仅用 downloads/sanitized 和 logs/job.sanitized.log。
+
+## 新用户等待标准的完整 T02 验证
+
+[Native run 37428158902，T02 job 112152486026](https://github.com/Ghost233/DSH-Workflow/actions/runs/37428158902/job/112152486026) 的 source 为 `7633f7d78884a6ae55af48c54fa103c75c6aed53`，T02 job SUCCESS；整体 run failure 来自其他作业，不归类为 T02 失败。artifact 11396261299，下载 SHA-256 `ef173bffa2a6cb326b2de40588beb33a6c5383fc39d3eff245eb2de9d6558893` 与 GitHub digest 一致。
+
+check/build/application exit 均 0。实际 UI+SDK Web start/recycle、重复 start 复用、错误密码拒绝、正确隔离认证、同一 Desktop 后端/工作区/配置、Owner health、回收后后端保留和启动器继续可管理均通过；UI final 没有 open-failed/corrupt，也没有新可信错误/进程退出提前失败。此结果遵用户授权的新 Web readiness 标准，不把普通 starting 或迟到 receipt 当性能缺陷。
+
+隔离 root `/Users/runner/work/_temp/dsh-t01-dJATal`；Launcher PID 12520、executable `candidate.app/Contents/MacOS/DSH Workflow`、start `2026-10-06T07:16:29.693312Z`。Desktop PID 12595、launchDateUnix 1791271000.5998、executable `/Users/runner/work/_temp/t02-runtime-mount/DSH Workflow.app/Contents/Resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness`，其 probeStartedAt 与 Launcher 一致。实际 Host receipt PID 12908、lease `48a9a0f1-063d-449d-8a09-ae1b3b38ed0c`，首 receipt 23.019 秒、10 次 present；Host executable/process start 未由本完整场景 collector 保存，保持未知，不借另一 source/另一 PID 的 c1 证明补填。Launcher 最终 normal exit 0 / 33.644 秒。
+
+owned Desktop helper capture/cleanup 两次实际 exit 0、observed already-exited=true；清理 collector 报告三个 PID exists=false，stderr 各明确 `kill: <12520|12595|12908>: No such process`。该 collector 没有保存每个 kill 的数值 exit/stdout，不虚填这些字段。receiptRemoved=true，lsof exit 1 / stdout+stderr empty，reuseAddr bind+listen 可用；raw no-reuse bind 实际 false/errno48，不描述为通过。实际 runtime detach exit 0。固定 DMG SHA 为 `f02b23ca5d2888bf5b0317a5b57736d114855eb4eef9f56fb90f95c15b5ed5af`。
+
+当前新标准完整 T02 为真实绿色验证；旧 Corrupt 未在这些新样本复现，原因仍未知，不据绿色样本声称因果修复或补造高复现红循环。原始 ZIP/job logs 私有保留，脱敏证据在 `/private/tmp/dsh-flutter-implementation/T02/CI-37428158902/`；本阶段仅核对与记录事实，未改 shared wait/common code/product，也没有新 CI/build/GUI/push/issue 操作。
