@@ -73,6 +73,10 @@ void main() {
       isNot(contains('private-vm')),
     );
   });
+  test('IPv6 loopback VM capability is redacted by the new output entry', () {
+    const capability = 'ws://[::1]:1234/kGEdxJOiq_Y=/ws';
+    expect(safeInspectorOutput(capability), '<REDACTED_VM_URI>');
+  });
   test(
     'unowned roots and symlink outputs never persist lower observation',
     () async {

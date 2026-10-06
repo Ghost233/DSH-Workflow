@@ -36,7 +36,9 @@ String safeInspectorOutput(Object? value) {
         '<REDACTED>',
       )
       .replaceAll(
-        RegExp(r'(?:https?|wss?)://(?:127\.0\.0\.1|localhost):\d+/[^\s]+'),
+        RegExp(
+          r'(?:https?|wss?)://(?:127\.0\.0\.1|localhost|\[::1\]):\d+/[^\s]+',
+        ),
         '<REDACTED_VM_URI>',
       );
   final output = StringBuffer();
