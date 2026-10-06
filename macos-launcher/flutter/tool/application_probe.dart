@@ -58,8 +58,13 @@ Future<void> main(List<String> arguments) async {
   final lifecycle = LifecycleProbeOptions.parse(arguments);
   final settingsStartupScenario =
       arguments.length >= 2 && arguments[1] == '--settings-startup-runtime';
+  // TEMP fixed T05 prefix trace; removed after the diagnostic run.
+  final settingsTraceReplay =
+      arguments.length >= 2 &&
+      arguments[1] == '--settings-sdk-ui-trace-runtime';
   final settingsScenario =
       settingsStartupScenario ||
+      settingsTraceReplay ||
       (arguments.length >= 2 && arguments[1] == '--settings-runtime');
   final keychainCi =
       settingsScenario && arguments.last == '--legacy-keychain-ci';
@@ -96,6 +101,14 @@ Future<void> main(List<String> arguments) async {
           pluginDesktopScenario ? 33080 : 0,
         )
       : WebProbeOptions.parse(webArgs) ?? lifecycle?.web;
+  if (settingsTraceReplay &&
+      (!Platform.isMacOS ||
+          Platform.environment['GITHUB_ACTIONS'] != 'true' ||
+          !keychainCi ||
+          webScenario?.backend != 'desktop' ||
+          webScenario?.port != 33080)) {
+    throw ArgumentError('TEMP SDK/UI trace requires clean macOS CI Desktop');
+  }
   final systemCi =
       arguments.length == 3 &&
       arguments[1] == '--updates' &&
@@ -365,16 +378,19 @@ Future<void> main(List<String> arguments) async {
               .contains('ext.dshlauncher.application'),
     );
     Future<Map<String, Object?>> state([Map<String, String>? params]) async {
-      diagnostics?.uiRequest(params);
+      final request = diagnostics?.uiRequest(params);
       try {
         final result = (await vm!.callServiceExtension(
           'ext.dshlauncher.application',
           isolateId: isolate,
           args: params,
         )).json!.cast<String, Object?>();
+        diagnostics?.vmResponse(request);
         await diagnostics?.uiResponse(result);
+        diagnostics?.vmComplete(request);
         return result;
       } catch (error) {
+        diagnostics?.vmComplete(request, error: error);
         diagnostics?.record('ui-error', {
           'errorType': error.runtimeType.toString(),
         });
@@ -463,7 +479,10 @@ Future<void> main(List<String> arguments) async {
             : entryScenario
             ? runEntryApplicationScenario
             : settingsScenario
-            ? runSettingsApplicationScenario
+            ? (actual) => runSettingsApplicationScenario(
+                actual,
+                traceStopAfterLan: settingsTraceReplay,
+              )
             : lifecycle != null
             ? (actual) =>
                   runLifecycleScenario(actual, process, lifecycle.scenario)
@@ -481,6 +500,7 @@ Future<void> main(List<String> arguments) async {
         prestartedHost: settings?.host,
         prestartedHostLog: settings?.hostLog,
         passwordPreloaded: settingsScenario,
+        traceApplicationPid: settingsScenario ? process.pid : null,
         diagnose: diagnostics?.record,
       );
       if (lifecycle == null) await state({'action': 'quit'});

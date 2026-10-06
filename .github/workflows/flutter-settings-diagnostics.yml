@@ -21,6 +21,8 @@ permissions:
 
 jobs:
   startup:
+    # TEMP: one Native T05 trace, with no competing warm/full run.
+    if: false
     runs-on: macos-15-intel
     timeout-minutes: 35
     concurrency:

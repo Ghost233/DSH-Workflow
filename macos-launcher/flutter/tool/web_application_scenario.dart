@@ -17,6 +17,116 @@ Future<ServerSession> currentSdkSession(LauncherServer server) async {
       (throw StateError('Current official SDK session unavailable'));
 }
 
+/// Fixed T05 evidence only; requests and errors pass through unchanged.
+class T05SdkTrace {
+  T05SdkTrace(
+    this.server, {
+    required this.applicationPid,
+    required Future<int> applicationExit,
+    required this.record,
+  }) {
+    _registry = server.registry.changes.listen((project) {
+      if (project == null || project.projectId == 'dsh-workflow') {
+        _emit('sdk-registry-change', {'present': project != null});
+      }
+    });
+    unawaited(
+      applicationExit.then((code) {
+        if (_closed) return;
+        _appExit = code;
+        _emit('sdk-observed-app-exit', const {});
+      }),
+    );
+  }
+  final LauncherServer server;
+  final int applicationPid;
+  final void Function(String, Map<String, Object?>) record;
+  late final StreamSubscription<ConnectedProject?> _registry;
+  final _watched = <String>{};
+  String? _selected;
+  int? _appExit;
+  var _count = 0, _closed = false;
+  String _relation(String? value) => value == null
+      ? 'null'
+      : value == _selected
+      ? 'same'
+      : 'new';
+  void _emit(String event, Map<String, Object?> facts) {
+    if (_closed) return;
+    record(event, {
+      'pid': applicationPid,
+      'requestCount': _count,
+      'appExitKnown': _appExit != null,
+      'appExit': _appExit,
+      'sessionRelation': _relation(
+        server.sessionFor('dsh-workflow')?.launcherSessionId,
+      ),
+      'registryRelation': _relation(
+        server.registry.byProject('dsh-workflow')?.launcherSessionId,
+      ),
+      ...facts,
+    });
+  }
+
+  Future<Map<String, Object?>> sendRequest(
+    ServerSession active,
+    String method, {
+    String service = 'web',
+    Map<String, Object?>? params,
+  }) async {
+    final count = ++_count;
+    _selected = active.launcherSessionId;
+    if (_watched.add(active.launcherSessionId)) {
+      unawaited(
+        active.done.then(
+          (_) => _emit('sdk-session-done', {
+            'launcherSessionId': active.launcherSessionId,
+            'closeReasonKnown': false,
+          }),
+        ),
+      );
+    }
+    final clock = Stopwatch()..start();
+    final facts = {
+      'method': method,
+      'service': service,
+      'requestCount': count,
+      'launcherSessionId': active.launcherSessionId,
+    };
+    _emit('sdk-request-start', facts);
+    try {
+      final response = await active.sendRequest(
+        method,
+        serviceId: service,
+        params: params,
+        timeout: const Duration(seconds: 30),
+      );
+      _emit('sdk-request-end', {
+        ...facts,
+        'requestElapsedMs': clock.elapsedMilliseconds,
+        'hasError': response['error'] != null,
+      });
+      return response;
+    } catch (error) {
+      _emit('sdk-request-error', {
+        ...facts,
+        'requestElapsedMs': clock.elapsedMilliseconds,
+        'errorType': error.runtimeType.toString(),
+        'connectionCategory':
+            error is StateError && error.message == 'connection lost'
+            ? 'connection-lost'
+            : 'other',
+      });
+      rethrow;
+    }
+  }
+
+  Future<void> close() async {
+    _closed = true;
+    await _registry.cancel();
+  }
+}
+
 typedef ApplicationState = Future<Map<String, Object?>> Function([
   Map<String, String>? parameters,
 ]);
@@ -143,6 +253,7 @@ Future<void> runWebApplicationScenario({
   Process? prestartedHost,
   IOSink? prestartedHostLog,
   bool passwordPreloaded = false,
+  int? traceApplicationPid,
   void Function(String, Map<String, Object?>)? diagnose,
 }) async {
   final data = '${root.path}/data';
@@ -153,6 +264,7 @@ Future<void> runWebApplicationScenario({
   final password = 'isolated-web-probe-password';
   Process? host = prestartedHost;
   LauncherServer? server;
+  T05SdkTrace? sdkTrace;
   IOSink? hostLog = prestartedHostLog;
   var hostExited = false;
   Future<Map<String, Object?>> ui() async {
@@ -306,6 +418,14 @@ Future<void> runWebApplicationScenario({
     final bindings = await BindingStore.load('${root.path}/bindings.json');
     await bindings.associate(manifestPath);
     server = await LauncherServer.start(layout: layout, bindings: bindings);
+    if (traceApplicationPid != null && diagnose != null) {
+      sdkTrace = T05SdkTrace(
+        server,
+        applicationPid: traceApplicationPid,
+        applicationExit: applicationExit,
+        record: diagnose,
+      );
+    }
     await waitFor(
       'official manager connection',
       () async => server!.sessionFor('dsh-workflow') != null,
@@ -328,12 +448,19 @@ Future<void> runWebApplicationScenario({
         'method': method,
         'launcherSessionId': active.launcherSessionId,
       });
-      final response = await active.sendRequest(
-        method,
-        serviceId: service,
-        params: params,
-        timeout: const Duration(seconds: 30),
-      );
+      final response = sdkTrace == null
+          ? await active.sendRequest(
+              method,
+              serviceId: service,
+              params: params,
+              timeout: const Duration(seconds: 30),
+            )
+          : await sdkTrace.sendRequest(
+              active,
+              method,
+              service: service,
+              params: params,
+            );
       final result = response['result'] as Map?;
       diagnose?.call('sdk-response', {
         'service': service,
@@ -695,6 +822,7 @@ Future<void> runWebApplicationScenario({
         stderr.writeln('WEB_FINAL_CAPTURE_ERROR: $error');
       }
     }
+    await sdkTrace?.close();
     await server?.close();
     final remainingHost = host;
     if (remainingHost != null && !hostExited) {

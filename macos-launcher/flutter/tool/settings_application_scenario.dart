@@ -157,7 +157,10 @@ class SettingsFixture {
   }
 }
 
-Future<void> runSettingsApplicationScenario(WebObservation o) async {
+Future<void> runSettingsApplicationScenario(
+  WebObservation o, {
+  bool traceStopAfterLan = false,
+}) async {
   final data = '${o.root.path}/data';
   final passwordFile = File('$data/lan-password');
   final preferences = File('$data/test-preferences.plist');
@@ -499,6 +502,12 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
       restored.result?['result']['ok'] == true,
       'authenticated loopback settings remains usable',
     );
+    if (traceStopAfterLan) {
+      stdout.writeln(
+        'T05 TEMP SDK/UI PREFIX TRACE FINISHED (not full acceptance)',
+      );
+      return;
+    }
     await switchTo('DSH 工具使用完整访问权限', true);
     require(
       visible(await o.ui(), '完全退出并重新打开 Desktop'),
