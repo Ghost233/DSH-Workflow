@@ -333,7 +333,7 @@ Future<void> main(List<String> arguments) async {
           isolateId: isolate,
           args: params,
         )).json!.cast<String, Object?>();
-        diagnostics?.uiResponse(result);
+        await diagnostics?.uiResponse(result);
         return result;
       } catch (error) {
         diagnostics?.record('ui-error', {
