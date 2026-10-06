@@ -459,6 +459,35 @@ Future<void> runWebApplicationScenario({
       'official SDK observes this same backend lease',
     );
     if (onConnected != null) {
+      Future<Map<String, Object?>> appRequest(
+        String method, {
+        Map<String, Object?>? params,
+      }) async {
+        final session = server!.sessionFor('dsh-workflow')!;
+        final trace = File('${root.path}/manager-app-requests.jsonl');
+        Future<void> record(Map<String, Object?> detail) => trace.writeAsString(
+          '${jsonEncode({'method': method, 'managed': params?['managed'], 'launcherSessionId': session.launcherSessionId, ...detail})}\n',
+          mode: FileMode.append,
+        );
+        await record({'phase': 'request'});
+        try {
+          final reply = await session.sendRequest(
+            method,
+            params: params,
+            timeout: const Duration(seconds: 5),
+          );
+          await record({'phase': 'response', 'reply': reply});
+          return reply;
+        } catch (error) {
+          await record({
+            'phase': 'transport-error',
+            'errorType': error.runtimeType.toString(),
+            'error': error.toString(),
+          });
+          rethrow;
+        }
+      }
+
       Future<void> disconnectManager({bool sessionOnly = false}) async {
         if (sessionOnly) {
           await server!.sessionFor('dsh-workflow')!.close();
@@ -480,7 +509,7 @@ Future<void> runWebApplicationScenario({
           root: root,
           port: port,
           backend: backend,
-          capabilities: server.registry
+          capabilities: server!.registry
               .byProject('dsh-workflow')!
               .capabilities
               .toJson(),
@@ -490,13 +519,7 @@ Future<void> runWebApplicationScenario({
           backendHealth: () => health(backendUrl, backendLogin.cookies),
           tap: tapUi,
           capture: capture,
-          appRequest: (method, {params}) => server!
-              .sessionFor('dsh-workflow')!
-              .sendRequest(
-                method,
-                params: params,
-                timeout: const Duration(seconds: 5),
-              ),
+          appRequest: appRequest,
           disconnectManager: disconnectManager,
           authenticatedWebHealth: () => health(url, webCookies),
           reconnectManager: () async {

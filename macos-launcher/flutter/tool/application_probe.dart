@@ -104,6 +104,7 @@ Future<void> main(List<String> arguments) async {
       !nativeBinary.contains('DSHLauncherTestRoot') ||
       !nativeBinary.contains('test-preferences.plist') ||
       !nativeBinary.contains('debugWindow') ||
+      (entryScenario && !nativeBinary.contains('entry-probe-owner')) ||
       !dartKernel.contains('ext.dshlauncher.application')) {
     throw ArgumentError(
       'Unknown or non-isolated Debug candidate; it is never launched or changed',

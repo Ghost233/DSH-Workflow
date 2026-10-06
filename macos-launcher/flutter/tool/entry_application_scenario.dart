@@ -177,6 +177,165 @@ Future<void> runEntryApplicationScenario(WebObservation app) async {
   await checkpoint('second-return');
   await app.capture('entry-returned-window');
 
+  final gateRoot = Directory('${app.root.path}/data');
+  await File('${gateRoot.path}/entry-probe-owner')
+      .writeAsString('$launcherPid');
+  final gateTrace = File('${gateRoot.path}/entry-native.jsonl');
+  Future<List<Map>> trace(String token) async {
+    if (!await gateTrace.exists()) return [];
+    return (await gateTrace.readAsLines())
+        .where((line) => line.isNotEmpty)
+        .map((line) => jsonDecode(line) as Map)
+        .where((line) => line['token'] == token)
+        .toList();
+  }
+
+  Future<void> hold(String token) async {
+    await File('${gateRoot.path}/entry-hold').writeAsString(token);
+  }
+
+  Future<Map<String, Object?>> outcome() async {
+    try {
+      return await app.appRequest(
+        kMethodSetEntryManaged,
+        params: {'managed': true},
+      );
+    } catch (error) {
+      // Retain the real transport exception distinctly from a protocol reply.
+      return {
+        'transportError': error.toString(),
+        'transportErrorType': error.runtimeType.toString(),
+      };
+    }
+  }
+
+  Future<void> held(String token) async {
+    await waitFor(
+      'actual native entry action held',
+      () async => (await trace(token)).any((line) => line['phase'] == 'held'),
+    );
+    require(
+      (await native())['entryVisible'] == true,
+      '$token leaves the real entry available before native action completion',
+    );
+  }
+
+  Future<void> clearGate() async {
+    for (final name in ['entry-hold', 'entry-release', 'entry-cancel']) {
+      final file = File('${gateRoot.path}/$name');
+      if (await file.exists()) await file.delete();
+    }
+  }
+
+  Future<void> fault(String token, {bool cancel = false}) async {
+    await hold(token);
+    final pending = outcome();
+    await held(token);
+    if (cancel) {
+      await File('${gateRoot.path}/entry-cancel').writeAsString(token);
+    }
+    final reply = await pending;
+    final actual = await native();
+    await File('${app.root.path}/entry-$token.json').writeAsString(
+      jsonEncode({
+        'condition': cancel
+            ? 'owned native action cancellation'
+            : 'owned native I/O release timeout',
+        'reply': reply,
+        'native': actual,
+        'trace': await trace(token),
+      }),
+    );
+    require(
+      reply['error'] is Map &&
+          (reply['error'] as Map)['code'] == 'failed' &&
+          (reply['error'] as Map)['message'].toString().contains(
+            cancel ? 'entry_gate_cancelled' : 'entry_gate_timeout',
+          ) &&
+          reply['result'] == null &&
+          actual['entryVisible'] == true,
+      '$token reports a real native failure without claiming takeover or hiding the entry',
+    );
+    await clearGate();
+    await openWindow('$token-sdk-open');
+    await checkpoint(token);
+  }
+
+  await fault('cancelled-takeover', cancel: true);
+  await fault('timeout-takeover');
+
+  Future<void> late(String token, {bool reconnectBeforeRelease = false}) async {
+    await hold(token);
+    final pending = outcome();
+    await held(token);
+    await checkpoint('$token-held');
+    await app.disconnectManager();
+    require(
+      (await native())['entryVisible'] == true,
+      '$token retains the actual entry while the takeover is still incomplete',
+    );
+    await checkpoint('$token-disconnected', connected: false);
+    if (reconnectBeforeRelease) {
+      await app.reconnectManager();
+      await openWindow('$token-current-session-open');
+      await checkpoint('$token-reconnected-before-release');
+    }
+    await File('${gateRoot.path}/entry-release').writeAsString(token);
+    await waitFor('actual delayed entry action and restoration', () async {
+      final actions = await trace(token);
+      return actions.any(
+            (line) =>
+                line['phase'] == 'released-applied' &&
+                line['managed'] == true &&
+                line['entryVisible'] == false,
+          ) &&
+          actions.any(
+            (line) =>
+                line['phase'] == 'applied' &&
+                line['managed'] == false &&
+                line['entryVisible'] == true,
+          ) &&
+          (await native())['entryVisible'] == true;
+    });
+    final reply = await pending;
+    final actions = await trace(token);
+    final hidden = actions.firstWhere(
+      (line) => line['phase'] == 'released-applied',
+    );
+    final returned = actions.firstWhere(
+      (line) =>
+          line['phase'] == 'applied' &&
+          line['managed'] == false &&
+          line['entryVisible'] == true,
+    );
+    require(
+      reply['transportErrorType'] == 'StateError' &&
+          reply['transportError'].toString().contains('connection lost') &&
+          (hidden['uptime'] as num) <= (returned['uptime'] as num),
+      '$token completes the actual delayed hide then restore without acknowledging the dead session',
+    );
+    await File('${app.root.path}/entry-$token.json').writeAsString(
+      jsonEncode({
+        'condition': 'owned native action released after manager disconnect',
+        'reconnectedBeforeRelease': reconnectBeforeRelease,
+        'oldRequestOutcome': reply,
+        'trace': actions,
+        'native': await native(),
+      }),
+    );
+    await clearGate();
+    if (!reconnectBeforeRelease) await app.reconnectManager();
+    await checkpoint('$token-restored');
+    await managed(true, '$token-new-takeover');
+    await openWindow('$token-new-sdk-open');
+    await managed(false, '$token-new-return');
+    await checkpoint('$token-new-return');
+  }
+
+  await late('late-disconnected');
+  await late('late-reconnected', reconnectBeforeRelease: true);
+  await app.capture('entry-after-late-window');
+
   // Recycle is an explicit, separate service operation after continuity has
   // been proved. Manager shutdown and entry return never request this action.
   await app.sdk('recycle');
@@ -187,8 +346,11 @@ Future<void> runEntryApplicationScenario(WebObservation app) async {
         (await native())['entryVisible'] == true,
     'separate Web recycle retains the independent Host and native entry',
   );
-  final listener = await ServerSocket.bind(InternetAddress.loopbackIPv4, app.port);
+  final listener = await ServerSocket.bind(
+    InternetAddress.loopbackIPv4,
+    app.port,
+  );
   await listener.close();
   require(true, 'explicit service recycle releases the private Web port');
-  stdout.writeln('T06 ENTRY CORE SCENARIO PASSED');
+  stdout.writeln('T06 ENTRY APPLICATION SCENARIO PASSED');
 }
