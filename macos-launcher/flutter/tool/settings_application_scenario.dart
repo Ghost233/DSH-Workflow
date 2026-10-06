@@ -157,7 +157,10 @@ class SettingsFixture {
   }
 }
 
-Future<void> runSettingsApplicationScenario(WebObservation o) async {
+Future<void> runSettingsApplicationScenario(
+  WebObservation o, {
+  bool debugWriteFailureReplay = false,
+}) async {
   final data = '${o.root.path}/data';
   final passwordFile = File('$data/lan-password');
   final preferences = File('$data/test-preferences.plist');
@@ -214,7 +217,7 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
     );
   }
 
-  Future<void> setPassword(String password) async {
+  Future<void> setPassword(String password, {bool debugReplay = false}) async {
     final input = await control('内网访问密码', 'tap');
     await o.state({'action': 'tap', 'id': '${input['id']}'});
     await waitFor(
@@ -226,11 +229,25 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
       ),
     );
     final field = await control('内网访问密码', 'setText');
-    await o.state({
-      'action': 'setText',
-      'id': '${field['id']}',
-      'text': password,
-    });
+    // TEMP DEBUG stays on the original actual state/control call.
+    for (var replay = 0; replay < (debugReplay ? 3 : 1); replay++) {
+      if (debugReplay) {
+        stdout.writeln(
+          'T05_DEBUG_REPLAY_REQUEST=${jsonEncode({'index': replay + 1, 'pid': pid, 'textUtf8Bytes': utf8.encode(password).length, 'at': DateTime.now().toUtc().toIso8601String()})}',
+        );
+      }
+      await o.state({
+        'action': 'setText',
+        'id': '${field['id']}',
+        'text': password,
+      });
+      if (debugReplay) {
+        stdout.writeln(
+          'T05_DEBUG_REPLAY_RESPONSE=${jsonEncode({'index': replay + 1, 'pid': pid, 'at': DateTime.now().toUtc().toIso8601String()})}',
+        );
+      }
+    }
+    if (debugReplay) return;
     await control('修改密码', 'tap');
     await o.tap('修改密码');
   }
@@ -396,7 +413,16 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
     await passwordFile.rename(backup.path);
     await Directory(passwordFile.path).create();
     try {
-      await setPassword('isolated-settings-save-failure');
+      await setPassword(
+        'isolated-settings-save-failure',
+        debugReplay: debugWriteFailureReplay,
+      );
+      if (debugWriteFailureReplay) {
+        stdout.writeln(
+          'T05_DEBUG_WRITE_FAILURE_REPLAY_FINISHED responses=3 (not full acceptance)',
+        );
+        return;
+      }
       await waitFor(
         'real password write failure visible',
         () async => visible(await o.ui(), 'PlatformException'),

@@ -6,11 +6,15 @@ import time
 from contextlib import redirect_stdout
 from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+if os.environ.get("GITHUB_ACTIONS") == "true":
+    tempfile.tempdir = os.environ["RUNNER_TEMP"]
 
 spec = importlib.util.spec_from_file_location('cycle', Path(__file__).with_name('settings_startup_cycle.py'))
 cycle = importlib.util.module_from_spec(spec)
@@ -62,6 +66,49 @@ class CollectorDurabilityTest(unittest.TestCase):
 
 
 class LiveCommandTest(unittest.TestCase):
+    def test_original_exit_is_durable_while_descendant_holds_stdout(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            release = root / 'release'; pids = root / 'pids.json'
+            descendant = 'import pathlib,sys,time; p=pathlib.Path(sys.argv[1]); end=time.monotonic()+4; print("DESC_PHASE password=synthetic-inherited-secret",flush=True);\nwhile not p.exists() and time.monotonic()<end: time.sleep(.01)'
+            script = 'import subprocess,sys,json,pathlib,os; p=subprocess.Popen([sys.executable,"-c",sys.argv[1],sys.argv[2]]); pathlib.Path(sys.argv[3]).write_text(json.dumps({"parent":os.getpid(),"descendant":p.pid})); print("PARENT_LAST_PHASE",flush=True); sys.exit(37)'
+            output = io.StringIO()
+            with redirect_stdout(output), ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(cycle.run_streamed_command, [sys.executable, '-c', script, descendant, str(release), str(pids)], root)
+                try:
+                    for _ in range(100):
+                        if pids.exists(): break
+                        time.sleep(.01)
+                    self.assertTrue(pids.exists())
+                    for _ in range(100):
+                        if (root / 'application.exit').exists(): break
+                        time.sleep(.01)
+                    self.assertTrue((root / 'application.exit').exists(), 'original exit is blocked behind inherited stdout EOF')
+                    self.assertEqual((root / 'application.exit').read_text(), '37\n')
+                    self.assertEqual(future.result(timeout=2), 37)
+                    self.assertFalse(release.exists())
+                    state = json.loads((root / 'command-state.json').read_text())
+                    self.assertTrue(state['exitKnown']); self.assertFalse(state['streamComplete'])
+                    ledger = json.loads((root / 'command-process.json').read_text())
+                    self.assertEqual(ledger['pid'], json.loads(pids.read_text())['parent'])
+                    self.assertEqual(ledger['executable'], str(Path(sys.executable).resolve()))
+                    self.assertEqual(ledger['executableKind'], 'configured-entry')
+                    self.assertNotIn('synthetic-inherited-secret', json.dumps(ledger))
+                    self.assertNotIn('synthetic-inherited-secret', output.getvalue())
+                    cycle.snapshot_completed_command(root, root.parent)
+                    copied = json.loads((root / 'completed-command/command-process.json').read_text())
+                    self.assertEqual(copied, ledger)
+                finally:
+                    release.touch()
+                    self.assertEqual(future.result(timeout=5), 37)
+            owned = json.loads(pids.read_text())['descendant']
+            for _ in range(200):
+                try: os.kill(owned, 0)
+                except ProcessLookupError: break
+                time.sleep(.01)
+            else: self.fail('controlled descriptor holder did not exit')
+
     def test_safe_first_output_is_published_before_the_original_child_exits(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); release = root / 'release'
@@ -231,6 +278,67 @@ class QueryBoundaryTest(unittest.TestCase):
         self.assertEqual(observations[0]['exit'], 124)
         self.assertEqual(observations[1]['exit'], 0)
         self.assertIn('later owned fact', observations[1]['stdout'])
+
+
+class PartialCollectorTest(unittest.TestCase):
+    def test_missing_finally_collects_real_known_pids_but_never_allows_repeat(self):
+        import datetime
+        import os
+        import shutil
+        import socket
+        with tempfile.TemporaryDirectory() as temporary:
+            runner = Path(temporary).resolve()
+            root = runner / 'dsh-t05-partial'; root.mkdir()
+            launcher = root / 'candidate.app/Contents/MacOS/DSH Workflow'
+            bundle = root / 'missing-runtime/desktop/DeepSeek Harness.app'
+            desktop_exe = bundle / 'Contents/MacOS/DeepSeek Harness'
+            host_exe = root / 'missing-runtime/node'
+            launcher.parent.mkdir(parents=True); desktop_exe.parent.mkdir(parents=True)
+            source = runner / 'finite.c'
+            source.write_text('#include <unistd.h>\n#include <stdio.h>\n#include <sys/wait.h>\nint main(int n,char **v){int p=0;if(n>1){p=fork();if(!p){execl(v[1],v[1],NULL);_exit(2);}printf("%d\\n",p);fflush(stdout);}sleep(3);if(p)waitpid(p,0,0);return 0;}\n')
+            subprocess.run(['cc', str(source), '-o', str(launcher)], check=True, capture_output=True)
+            shutil.copy2(launcher, desktop_exe); shutil.copy2(launcher, host_exe)
+            started = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            parent = subprocess.Popen([str(launcher)])
+            desktop = subprocess.Popen([str(desktop_exe), str(host_exe)], stdout=subprocess.PIPE, text=True)
+            try:
+                host = int(desktop.stdout.readline().strip())
+                probe = {'pid': parent.pid, 'executable': str(launcher), 'startedAt': started}
+                capture = {'event': 'captured', 'pid': desktop.pid, 'bundlePath': str(bundle), 'executablePath': str(desktop_exe), 'probeStartedAt': started, 'launchDateUnix': time.time()}
+                receipt = {'pid': host, 'lease': 'controlled-live-lease'}
+                inspection = cycle.inspect_host(host)
+                binding = cycle.bind_host_identity(inspection, root, receipt, capture, probe, {str(host_exe)})
+                self.assertTrue(binding['ownershipKnown'], inspection)
+                (root / 'probe-process.json').write_text(json.dumps(probe))
+                (root / 'owned-desktop-process.json').write_text(json.dumps(capture))
+                (root / 'owned-desktop-cleanup.log').write_text(json.dumps(capture)+'\nHELPER_EXIT=0\n')
+                timeline = [dict(probe, event='application-started'), {'event': 'ui-response', 'pid': parent.pid, 'openedDesktopPid': desktop.pid}, dict(receipt, event='receipt-snapshot', present=True)]
+                (root / 'probe-timeline.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in timeline))
+                (root / 'host-ownership.jsonl').write_text(json.dumps(binding)+'\n')
+                (root / 'data/global/.dsh-workflow/desktop').mkdir(parents=True)
+                log = runner / 'command.log'; log.write_text('ISOLATED_ROOT='+str(root)+'\n')
+                live = cycle.collect_owned_processes(log, runner)
+                self.assertEqual({row['pid'] for row in live['processes'].values()}, {parent.pid, desktop.pid, host})
+                self.assertTrue(all(row['state']=='alive' for row in live['processes'].values()))
+                self.assertFalse(live['finallyComplete']); self.assertFalse(live['complete'])
+                with self.assertRaisesRegex(ValueError, 'Incomplete application finally'):
+                    cycle.ownership(log, runner)
+                parent.wait(timeout=5); desktop.wait(timeout=5)
+                gone = cycle.collect_owned_processes(log, runner)
+                self.assertTrue(all(row['state']=='gone' and row['rawErrno']==__import__('errno').ESRCH for row in gone['processes'].values()))
+                self.assertFalse(gone['complete'])
+                with socket.socket() as owned_port:
+                    owned_port.bind(('127.0.0.1', 0)); owned_port.listen(1)
+                    bind = {'available': True}
+                gate = {'ownership': gone['ownership'], 'processes': list(gone['processes'].values()), 'finallyComplete': gone['finallyComplete'], 'receipt': gone['receiptLookup'], 'listener': {'exit': 1, 'stdout': '', 'stderr': ''}, 'bindListen': bind}
+                self.assertFalse(cycle.can_repeat(gate))
+                (root / 'host-ownership.jsonl').write_text('')
+                unknown = cycle.collect_owned_processes(log, runner)
+                self.assertEqual(unknown['processes']['host:'+str(host)]['state'], 'unknown')
+                self.assertFalse(unknown['hostBindingKnown']); self.assertFalse(unknown['complete'])
+            finally:
+                parent.wait(timeout=5); desktop.wait(timeout=5)
+                desktop.stdout.close()
 
 
 class HostIdentityTest(unittest.TestCase):

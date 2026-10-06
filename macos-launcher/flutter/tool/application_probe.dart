@@ -58,8 +58,13 @@ Future<void> main(List<String> arguments) async {
   final lifecycle = LifecycleProbeOptions.parse(arguments);
   final settingsStartupScenario =
       arguments.length >= 2 && arguments[1] == '--settings-startup-runtime';
+  // TEMP DEBUG: exact clean-CI persistence-failure caller replay.
+  final settingsWriteFailureReplay =
+      arguments.length >= 2 &&
+      arguments[1] == '--settings-write-failure-replay-runtime';
   final settingsScenario =
       settingsStartupScenario ||
+      settingsWriteFailureReplay ||
       (arguments.length >= 2 && arguments[1] == '--settings-runtime');
   final keychainCi =
       settingsScenario && arguments.last == '--legacy-keychain-ci';
@@ -96,6 +101,16 @@ Future<void> main(List<String> arguments) async {
           pluginDesktopScenario ? 33080 : 0,
         )
       : WebProbeOptions.parse(webArgs) ?? lifecycle?.web;
+  if (settingsWriteFailureReplay &&
+      (!Platform.isMacOS ||
+          Platform.environment['GITHUB_ACTIONS'] != 'true' ||
+          !keychainCi ||
+          webScenario?.backend != 'desktop' ||
+          webScenario?.port != 33080)) {
+    throw ArgumentError(
+      'TEMP write-failure replay requires clean macOS CI Desktop',
+    );
+  }
   final systemCi =
       arguments.length == 3 &&
       arguments[1] == '--updates' &&
@@ -176,6 +191,18 @@ Future<void> main(List<String> arguments) async {
         ? 'dsh-t06-'
         : 'dsh-t01-',
   );
+  if (settingsWriteFailureReplay) {
+    final caller = {
+      'schema': 1,
+      'pid': pid,
+      'resolvedExecutable': Platform.resolvedExecutable,
+      'root': root.path,
+      'role': 'TEMP-write-failure-replay',
+    };
+    await File('${root.path}/probe-caller-process.json')
+        .writeAsString('${jsonEncode(caller)}\n');
+    stdout.writeln('T05_DEBUG_CALLER=${jsonEncode(caller)}');
+  }
   final releaseFixture = updates ? await ReleaseFixture.start() : null;
   final app = Directory('${root.path}/candidate.app');
   final copy = await Process.run('/usr/bin/ditto', [sourceApp.path, app.path]);
@@ -463,7 +490,10 @@ Future<void> main(List<String> arguments) async {
             : entryScenario
             ? runEntryApplicationScenario
             : settingsScenario
-            ? runSettingsApplicationScenario
+            ? (actual) => runSettingsApplicationScenario(
+                actual,
+                debugWriteFailureReplay: settingsWriteFailureReplay,
+              )
             : lifecycle != null
             ? (actual) =>
                   runLifecycleScenario(actual, process, lifecycle.scenario)

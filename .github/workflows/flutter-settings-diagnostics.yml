@@ -262,11 +262,11 @@ jobs:
               finally:
                   port.close()
               listener = observe_os_query(['/usr/sbin/lsof', '-nP', '-iTCP:33080', '-sTCP:LISTEN', '-Fpn'])
-              physical_complete = owned['hostBindingKnown'] and can_repeat({'ownership': owned['ownership'], 'processes': list(processes.values()), 'receipt': owned['receiptLookup'], 'listener': {key: listener[key] for key in ('exit', 'stdout', 'stderr')}, 'bindListen': service_listen})
+              physical_complete = owned['hostBindingKnown'] and can_repeat({'ownership': owned['ownership'], 'processes': list(processes.values()), 'finallyComplete': owned['finallyComplete'], 'receipt': owned['receiptLookup'], 'listener': {key: listener[key] for key in ('exit', 'stdout', 'stderr')}, 'bindListen': service_listen})
               diagnostic_failed = not physical_complete or listener['timedOut'] or diagnostic_failed
               print('T05_COLLECTOR_PHASE=port-observation-end ROOT=' + root.name, flush=True)
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes, 'ownership': owned['ownership'], 'hostBindingKnown': owned['hostBindingKnown'],
-                              'allOwnedProcessesGone': physical_complete, 'receiptLookup': owned['receiptLookup'],
+                              'allOwnedProcessesGone': physical_complete, 'finallyComplete': owned['finallyComplete'], 'receiptLookup': owned['receiptLookup'],
                               'receiptRemoved': not (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').exists(),
                               'rawNoReuseLoopbackBind': raw_bind,
                               'reuseAddrServiceBindListen': service_listen,

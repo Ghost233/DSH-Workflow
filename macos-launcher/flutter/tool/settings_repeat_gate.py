@@ -23,7 +23,7 @@ def valid_pid(pid):
     return type(pid) is int and pid > 1
 
 
-def ownership(log, runner):
+def ownership(log, runner, *, require_finally=True):
     names = re.findall(r'^ISOLATED_ROOT=(.+)$', Path(log).read_text(), re.M)
     if len(names) != 1:
         raise ValueError('Missing or ambiguous isolated root')
@@ -45,7 +45,7 @@ def ownership(log, runner):
         raise ValueError('Missing or mismatched application start facts')
     if any(row.get('event') == 'receipt-snapshot' and row.get('errorType') for row in timeline):
         raise ValueError('Incomplete Host lookup facts')
-    if not any(row.get('event') == 'application-exit' for row in timeline) or not any(row.get('event') == 'diagnostics-close' for row in timeline):
+    if require_finally and (not any(row.get('event') == 'application-exit' for row in timeline) or not any(row.get('event') == 'diagnostics-close' for row in timeline)):
         raise ValueError('Incomplete application finally')
     if any(row.get('event') in ('application-started', 'ui-response') and row.get('pid') != launcher for row in timeline):
         raise ValueError('Application identity differs')
@@ -83,6 +83,8 @@ def ownership(log, runner):
 
 
 def can_repeat(facts):
+    if facts.get('finallyComplete') is False:
+        return False
     roles = facts.get('ownership', {})
     if set(roles) != {'launcher', 'desktop', 'host'}:
         return False

@@ -4,6 +4,8 @@ import json
 import datetime
 import errno
 import signal
+import selectors
+import time
 import os
 import re
 import shutil
@@ -20,6 +22,7 @@ from settings_repeat_gate import validate_root, ownership, can_repeat
 
 SAFE_EVIDENCE = {
     'probe-process.json': 'json',
+    'probe-caller-process.json': 'json',
     'host-ownership.jsonl': 'jsonl',
     'host-inspection-results.jsonl': 'jsonl',
     'owned-desktop-process.json': 'json',
@@ -76,8 +79,54 @@ def run_streamed_command(command, evidence):
             print(text, end='', flush=True)
         publish('T05_APPLICATION_PHASE=command-start EXIT=UNKNOWN\n')
         try:
+            actual_root = Path(evidence).resolve(strict=True)
+            target = actual_root / 'command-process.json'
+            if (actual_root.stat().st_uid != os.getuid() or target.is_symlink()
+                or (os.environ.get('GITHUB_ACTIONS') == 'true' and
+                    not actual_root.is_relative_to(Path(os.environ['RUNNER_TEMP']).resolve(strict=True)))):
+                raise ValueError('Unowned command process evidence')
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            for raw in process.stdout:
+            executable = str(Path(shutil.which(command[0]) or command[0]).resolve())
+            known = (len(command) == 11 and command[1:5] == ['run', 'tool/application_probe.dart',
+                     'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow', command[4]]
+                     and command[4] in ('--settings-runtime', '--settings-write-failure-replay-runtime')
+                     and command[6:] == ['--web-backend', 'desktop', '--web-port', '33080', '--legacy-keychain-ci'])
+            argv = [Path(executable).name, *command[1:5], '<FROZEN_RUNTIME_RESOURCES>', *command[6:]] if known else ['<UNRECORDED_ARGUMENTS>']
+            target.write_text(json.dumps(sanitize_json({'schema': 1, 'pid': process.pid, 'executable': executable, 'executableKind': 'configured-entry',
+                              'root': str(actual_root), 'startedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                              'normalizedArgv': argv})) + '\n')
+            pipe_complete = True
+            def raw_lines():
+                nonlocal result, complete, pipe_complete
+                buffered = b''
+                drain_deadline = None
+                with selectors.DefaultSelector() as selector:
+                    selector.register(process.stdout, selectors.EVENT_READ)
+                    while True:
+                        if result is None:
+                            result = process.poll()
+                            if result is not None:
+                                (evidence / 'application.exit').write_text(str(result) + '\n')
+                                state.update(exitKnown=True, commandExit=result, phase='command-exit')
+                                state_file.write_text(json.dumps(state) + '\n')
+                                publish('T05_APPLICATION_PHASE=command-exit COMMAND_EXIT=' + str(result) + '\n')
+                                drain_deadline = time.monotonic() + 1
+                        if drain_deadline is not None and time.monotonic() >= drain_deadline:
+                            complete, pipe_complete = False, False
+                            publish('T05_STREAM_PHASE=UNKNOWN INHERITED_STDOUT\n')
+                            return
+                        if not selector.select(timeout=.05):
+                            continue
+                        chunk = os.read(process.stdout.fileno(), 65536)
+                        if not chunk:
+                            if buffered:
+                                yield buffered
+                            return
+                        buffered += chunk
+                        while b'\n' in buffered:
+                            raw, buffered = buffered.split(b'\n', 1)
+                            yield raw + b'\n'
+            for raw in raw_lines():
                 saw_output = True
                 if credential_continuation:
                     continue
@@ -112,7 +161,8 @@ def run_streamed_command(command, evidence):
             if pending or not saw_output:
                 complete = False
                 publish('T05_STREAM_PHASE=UNKNOWN INCOMPLETE_OUTPUT\n')
-            publish('T05_STREAM_PHASE=stdout-eof EXIT=UNKNOWN\n')
+            if pipe_complete:
+                publish('T05_STREAM_PHASE=stdout-eof EXIT=UNKNOWN\n')
             result = process.wait()
             process.stdout.close()
         except (OSError, ValueError) as error:
@@ -129,7 +179,7 @@ def run_streamed_command(command, evidence):
     return result if result not in (None, 0) else (0 if complete and result is not None else 1)
 
 
-def full_command():
+def full_command(*, debug_replay=False):
     if os.environ.get('GITHUB_ACTIONS') != 'true':
         raise ValueError('Clean CI full command is required')
     runner = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
@@ -140,6 +190,8 @@ def full_command():
                'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow',
                '--settings-runtime', os.environ['T05_RUNTIME_RESOURCES'],
                '--web-backend', 'desktop', '--web-port', '33080', '--legacy-keychain-ci']
+    if debug_replay:
+        command[4] = '--settings-write-failure-replay-runtime'
     return run_streamed_command(command, evidence)
 
 
@@ -162,6 +214,17 @@ def snapshot_completed_command(evidence, runner):
     (target / 'application.log').write_text(sanitize_text(log.read_text()))
     state_file = evidence / 'command-state.json'
     state = parse_json(state_file.read_text()) if state_file.is_file() and not state_file.is_symlink() else {}
+    process_file = evidence / 'command-process.json'
+    if process_file.exists():
+        if not process_file.is_file() or process_file.is_symlink() or process_file.stat().st_size > 16384:
+            raise ValueError('Unowned or oversized command process evidence')
+        process_facts = parse_json(process_file.read_text())
+        allowed = {'schema', 'pid', 'executable', 'executableKind', 'root', 'startedAt', 'normalizedArgv'}
+        if (not isinstance(process_facts, dict) or set(process_facts) != allowed
+            or process_facts['schema'] != 1 or type(process_facts['pid']) is not int
+            or process_facts['pid'] <= 1 or process_facts['root'] != str(evidence)):
+            raise ValueError('Invalid command process identity evidence')
+        (target / 'command-process.json').write_text(json.dumps(sanitize_json(process_facts)) + '\n')
     state['exitKnown'] = raw_exit is not None
     (target / 'command-state.json').write_text(json.dumps(sanitize_json(state)) + '\n')
     if raw_exit is not None:
@@ -278,7 +341,7 @@ def process_exit_fact(pid):
 
 
 def collect_owned_processes(log, runner):
-    root, roles = ownership(log, runner)
+    root, roles = ownership(log, runner, require_finally=False)
     probe = parse_json((root / 'probe-process.json').read_text())
     captures = [parse_json(line) for line in (root / 'owned-desktop-cleanup.log').read_text().splitlines() if line.startswith('{')]
     captures = {row['pid']: row for row in captures if row.get('event') == 'captured'}
@@ -302,7 +365,9 @@ def collect_owned_processes(log, runner):
                 processes[f'{role}:{pid}'] = {'pid': pid, 'state': 'unknown', 'reason': 'Missing physical Host binding'}
             else:
                 processes[f'{role}:{pid}'] = process_exit_fact(pid)
-    pairs = {(row['pid'], row['lease']) for row in (parse_json(line) for line in (root / 'probe-timeline.jsonl').read_text().splitlines()) if row.get('event') == 'receipt-snapshot' and row.get('present')}
+    timeline = [parse_json(line) for line in (root / 'probe-timeline.jsonl').read_text().splitlines()]
+    finally_complete = all(any(row.get('event') == event for row in timeline) for event in ('application-exit', 'diagnostics-close'))
+    pairs = {(row['pid'], row['lease']) for row in timeline if row.get('event') == 'receipt-snapshot' and row.get('present')}
     all_bound = bound == set(roles['host']) and pairs <= bound_pairs
     complete = (all_bound and all(row.get('state') == 'gone' and row.get('errno') == errno.ESRCH and row.get('rawErrno') == errno.ESRCH for row in processes.values()))
     receipt_file = root / 'data/global/.dsh-workflow/desktop/desktop-host.json'
@@ -312,7 +377,8 @@ def collect_owned_processes(log, runner):
     except OSError as error:
         receipt.update(state='absent' if error.errno == errno.ENOENT else 'unknown', errno=error.errno)
     return {'ownership': roles, 'hostBindingKnown': all_bound, 'processes': processes,
-            'receiptLookup': receipt, 'complete': complete and receipt.get('errno') == errno.ENOENT}
+            'finallyComplete': finally_complete, 'receiptLookup': receipt,
+            'complete': finally_complete and complete and receipt.get('errno') == errno.ENOENT}
 
 
 def check_owned_pid(root, runner, pid):
@@ -432,6 +498,8 @@ if __name__ == '__main__':
             raise ValueError('Host capture requires clean CI')
         print(json.dumps(capture_owned_host(Path(sys.argv[2]), Path(os.environ['RUNNER_TEMP']), int(sys.argv[3]))))
         sys.exit(0)
+    if sys.argv[1] == '--debug-write-failure-replay':
+        sys.exit(full_command(debug_replay=True))
     if sys.argv[1] == '--full':
         sys.exit(full_command())
     elif sys.argv[1] == '--completed-full':
