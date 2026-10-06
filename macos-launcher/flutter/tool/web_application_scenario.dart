@@ -21,6 +21,7 @@ class WebObservation {
     required this.root,
     required this.port,
     required this.backend,
+    required this.capabilities,
     required this.sdk,
     required this.ui,
     required this.state,
@@ -31,7 +32,7 @@ class WebObservation {
   });
   final Directory root;
   final int port;
-  final Map<String, Object?> backend;
+  final Map<String, Object?> backend, capabilities;
   final WebSdkRequest sdk;
   final Future<Map<String, Object?>> Function() ui, backendHealth;
   final ApplicationState state;
@@ -182,6 +183,10 @@ Future<void> runWebApplicationScenario({
   }
 
   try {
+    await waitFor('native entry ready before menu actions', () async {
+      final native = (await state())['native'] as Map;
+      return native['entryVisible'] == true && native['windowVisible'] == true;
+    });
     await waitFor(
       'real management UI',
       () async => ((await ui())['nodes'] as List).any(
@@ -431,6 +436,10 @@ Future<void> runWebApplicationScenario({
           root: root,
           port: port,
           backend: backend,
+          capabilities: server.registry
+              .byProject('dsh-workflow')!
+              .capabilities
+              .toJson(),
           sdk: sdk,
           ui: ui,
           state: state,
