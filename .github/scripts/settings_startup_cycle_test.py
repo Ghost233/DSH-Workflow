@@ -1,4 +1,6 @@
+import ast
 import importlib.util
+import sys
 import json
 import subprocess
 import tempfile
@@ -53,6 +55,52 @@ class CollectorDurabilityTest(unittest.TestCase):
             self.assertEqual((target / 'diagnostic-collector.exit').read_text(), '124\n')
             self.assertIn('owned diagnostic started', (target / 'diagnostic-collector.log').read_text())
             self.assertIn('deadline exceeded', (target / 'diagnostic-collector.log').read_text())
+
+
+class QueryBoundaryTest(unittest.TestCase):
+    def test_all_four_workflow_queries_record_timeout_as_unknown(self):
+        actual_run = subprocess.run
+        def short_owned_query(command, **options):
+            options['timeout'] = .1 if options.get('timeout') == 10 else None
+            script = 'import time; print("password=private-query-secret", flush=True); time.sleep(.3)'
+            return actual_run([sys.executable, '-c', script], **options)
+        repo = Path(__file__).resolve().parents[2]
+        queries = []
+        for workflow in ('flutter-launcher-acceptance.yml', 'flutter-settings-diagnostics.yml'):
+            text = (repo / '.github/workflows' / workflow).read_text()
+            section = text.split('      - name: Collect T05 observed application and process evidence', 1)[1].split('      - name: Detach', 1)[0]
+            source = section.split("python3 - <<'PY'\n", 1)[1].split('          PY', 1)[0]
+            tree = ast.parse('\n'.join(line[10:] for line in source.splitlines()))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.List):
+                    first = node.args[0].elts[0]
+                    if isinstance(first, ast.Constant) and first.value in ('/bin/kill', '/usr/sbin/lsof'):
+                        queries.append((workflow, node))
+        self.assertEqual(len(queries), 4)
+        for workflow, node in queries:
+            with self.subTest(workflow=workflow, query=node.args[0].elts[0].value), patch.object(cycle.subprocess, 'run', side_effect=short_owned_query):
+                namespace = {'subprocess': cycle.subprocess, 'observe_os_query': getattr(cycle, 'observe_os_query', None), 'pid': 37}
+                result = eval(compile(ast.Expression(node), '<owned collector query>', 'eval'), namespace)
+                if isinstance(result, subprocess.CompletedProcess):
+                    result = {'exit': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr, 'state': 'observed'}
+                self.assertEqual(result['exit'], 124)
+                self.assertEqual(result['state'], 'unknown')
+                self.assertTrue(result['timedOut'])
+                self.assertNotIn('private-query-secret', result['stdout'])
+                self.assertIn('<REDACTED>', result['stdout'])
+
+    def test_timeout_does_not_skip_the_next_owned_query(self):
+        actual_run = subprocess.run
+        def short_owned_query(command, **options):
+            options['timeout'] = .1
+            script = 'import time; print("partial", flush=True); time.sleep(.3)' if command[0] == 'first' else 'print("later owned fact")'
+            return actual_run([sys.executable, '-c', script], **options)
+        with patch.object(cycle.subprocess, 'run', side_effect=short_owned_query):
+            observations = [cycle.observe_os_query(command) for command in (['first'], ['later'])]
+        self.assertEqual(observations[0]['state'], 'unknown')
+        self.assertEqual(observations[0]['exit'], 124)
+        self.assertEqual(observations[1]['exit'], 0)
+        self.assertIn('later owned fact', observations[1]['stdout'])
 
 
 class PrivacyTest(unittest.TestCase):

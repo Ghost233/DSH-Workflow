@@ -525,7 +525,7 @@ jobs:
           from pathlib import Path
           import sys
           sys.path.insert(0, '.github/scripts')
-          from settings_startup_cycle import copy_safe_evidence, run_diagnostics, validate_root
+          from settings_startup_cycle import copy_safe_evidence, observe_os_query, run_diagnostics, validate_root
           evidence = Path(os.environ['EVIDENCE_DIR'])
           log = evidence / 'application.log'
           roots = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M) if log.exists() else []
@@ -564,13 +564,17 @@ jobs:
               processes = {}
               for key, pid in pids.items():
                   if isinstance(pid, int) and pid > 1:
-                      check = subprocess.run(['/bin/kill', '-0', str(pid)], capture_output=True, text=True)
-                      fact = {'pid': pid, 'rawExit': check.returncode, 'rawStderr': check.stderr.strip()}
-                      try:
-                          os.kill(pid, 0)
-                          fact.update(state='alive', errno=None)
-                      except OSError as error:
-                          fact.update(state='gone' if error.errno == errno.ESRCH else 'unknown', errno=error.errno, stderr=str(error))
+                      check = observe_os_query(['/bin/kill', '-0', str(pid)])
+                      fact = {'pid': pid, 'rawExit': check['exit'], 'rawStdout': check['stdout'],
+                              'rawStderr': check['stderr'], 'state': 'unknown', 'errno': None}
+                      if check['timedOut']:
+                          diagnostic_failed = True
+                      else:
+                          try:
+                              os.kill(pid, 0)
+                              fact.update(state='alive', errno=None)
+                          except OSError as error:
+                              fact.update(state='gone' if error.errno == errno.ESRCH else 'unknown', errno=error.errno, stderr=str(error))
                       processes[key] = fact
               print('T05_COLLECTOR_PHASE=process-observation-end ROOT=' + root.name, flush=True)
               print('T05_COLLECTOR_PHASE=port-observation-start ROOT=' + root.name, flush=True)
@@ -592,20 +596,19 @@ jobs:
                   service_listen = {'available': False, 'errno': error.errno, 'error': str(error)}
               finally:
                   port.close()
-              listener = subprocess.run(['/usr/sbin/lsof', '-nP', '-iTCP:33080', '-sTCP:LISTEN', '-Fpn'],
-                                        capture_output=True, text=True)
+              listener = observe_os_query(['/usr/sbin/lsof', '-nP', '-iTCP:33080', '-sTCP:LISTEN', '-Fpn'])
+              diagnostic_failed = listener['timedOut'] or diagnostic_failed
               print('T05_COLLECTOR_PHASE=port-observation-end ROOT=' + root.name, flush=True)
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes,
                               'receiptRemoved': not (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').exists(),
                               'rawNoReuseLoopbackBind': raw_bind,
                               'reuseAddrServiceBindListen': service_listen,
-                              'listenObservation': {'exit': listener.returncode, 'stdout': listener.stdout,
-                                                    'stderr': listener.stderr},
-                              'webPortReleased': service_listen['available']})
+                              'listenObservation': listener,
+                              'webPortReleased': service_listen['available'] and not listener['timedOut']})
           (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
           print('T05_COLLECTOR_PHASE=complete', flush=True)
           if diagnostic_failed:
-              raise RuntimeError('Owned diagnostic collector failed; cleanup observations preserved')
+              raise RuntimeError('Owned collector query or diagnostic failed; cleanup observations preserved')
           PY
 
       - name: Detach the read-only runtime even on failure
