@@ -2,6 +2,24 @@ name: Owner Workflow CI
 
 on:
   push:
+    paths:
+      - .github/workflows/ci.yml
+      - owner-workflow-plugin/**
+      - matt-skills-panel-plugin/**
+      - dynamic-workflow-plugin/**
+      - scripts/**
+      - vendor/**
+      - deepseek-harness
+      - .gitmodules
+      - package.json
+      - package-lock.json
+      - pnpm-lock.yaml
+      - dsh-runtime.json
+      - project-plugins.json
+      - project-plugins.lock.json
+      - maclauncher.json
+      - start-owner-workflow.sh
+      - '!**/*.md'
   pull_request:
 
 jobs:
