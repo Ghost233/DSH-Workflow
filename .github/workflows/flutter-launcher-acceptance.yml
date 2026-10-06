@@ -503,9 +503,9 @@ jobs:
           (evidence / 'input-app.txt').write_text(str(app) + '\n')
           PY
 
-      - name: TEMP T05 persistence-failure caller replay (not full acceptance)
+      - name: Exercise actual settings, owned legacy keychain and official Desktop permission reopen
         working-directory: macos-launcher/flutter
-        run: python3 ../../.github/scripts/settings_startup_cycle.py --debug-write-failure-replay
+        run: python3 ../../.github/scripts/settings_startup_cycle.py --full
 
       - name: Preserve completed T05 command before diagnostics
         id: completed_t05_command
