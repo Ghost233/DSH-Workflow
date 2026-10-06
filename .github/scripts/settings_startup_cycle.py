@@ -87,8 +87,7 @@ def run_streamed_command(command, evidence):
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             executable = str(Path(shutil.which(command[0]) or command[0]).resolve())
             known = (len(command) == 11 and command[1:5] == ['run', 'tool/application_probe.dart',
-                     'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow', command[4]]
-                     and command[4] in ('--settings-runtime', '--settings-lan-save-replay-runtime')
+                     'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow', '--settings-runtime']
                      and command[6:] == ['--web-backend', 'desktop', '--web-port', '33080', '--legacy-keychain-ci'])
             argv = [Path(executable).name, *command[1:5], '<FROZEN_RUNTIME_RESOURCES>', *command[6:]] if known else ['<UNRECORDED_ARGUMENTS>']
             target.write_text(json.dumps(sanitize_json({'schema': 1, 'pid': process.pid, 'executable': executable, 'executableKind': 'configured-entry',
@@ -178,7 +177,7 @@ def run_streamed_command(command, evidence):
     return result if result not in (None, 0) else (0 if complete and result is not None else 1)
 
 
-def full_command(*, debug_lan_replay=False):
+def full_command():
     if os.environ.get('GITHUB_ACTIONS') != 'true':
         raise ValueError('Clean CI full command is required')
     runner = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
@@ -189,8 +188,6 @@ def full_command(*, debug_lan_replay=False):
                'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow',
                '--settings-runtime', os.environ['T05_RUNTIME_RESOURCES'],
                '--web-backend', 'desktop', '--web-port', '33080', '--legacy-keychain-ci']
-    if debug_lan_replay:
-        command[4] = '--settings-lan-save-replay-runtime'
     return run_streamed_command(command, evidence)
 
 
@@ -497,8 +494,6 @@ if __name__ == '__main__':
             raise ValueError('Host capture requires clean CI')
         print(json.dumps(capture_owned_host(Path(sys.argv[2]), Path(os.environ['RUNNER_TEMP']), int(sys.argv[3]))))
         sys.exit(0)
-    if sys.argv[1] == '--debug-lan-save-replay':
-        sys.exit(full_command(debug_lan_replay=True))
     if sys.argv[1] == '--full':
         sys.exit(full_command())
     elif sys.argv[1] == '--completed-full':

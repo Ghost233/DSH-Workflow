@@ -151,7 +151,12 @@ def restore(args):
                     raise ValueError('Unsafe artifact member')
                 if member.issym() and not (target / member.name).parent.joinpath(member.linkname).resolve().is_relative_to((target / APP).resolve()):
                     raise ValueError('Unsafe artifact symlink')
-            tar.extractall(target)
+            # Only this sealed tar, after every path/type/link was prevalidated.
+            # Preserve legitimate producer modes; strict payload comparison follows.
+            if hasattr(tarfile, 'fully_trusted_filter'):
+                tar.extractall(target, filter='fully_trusted')
+            else:  # Older Python already preserves modes and has no filter API.
+                tar.extractall(target)
         app = target / APP
         if payload(app) != manifest['payload']:
             raise ValueError('Extracted app bytes do not match producer payload')

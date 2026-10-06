@@ -117,6 +117,46 @@ class DebugArtifactTest(unittest.TestCase):
         self.run_cli('restore', '--inputs', self.inputs, '--bundle', missing, '--destination', self.root / 'missing.app', '--receipt', self.root / 'missing.json', success=False)
         self.assertFalse((self.root / 'missing.app').exists())
 
+    def test_valid_group_writable_font_mode_is_preserved_by_strict_restore(self):
+        import stat
+        font = self.app / 'Contents/Frameworks/App.framework/Resources/flutter_assets/fonts/MaterialIcons-Regular.otf'
+        font.parent.mkdir(); font.write_bytes(b'actual-font-file-bytes'); font.chmod(0o664)
+        self.pack()
+        destination = self.root / 'mode-consumer/DSH Workflow.app'
+        self.run_cli('restore', '--inputs', self.inputs, '--bundle', self.bundle,
+                     '--destination', destination, '--receipt', self.root / 'mode-receipt.json')
+        restored = destination / font.relative_to(self.app)
+        self.assertEqual(stat.S_IMODE(restored.stat().st_mode), 0o664)
+        self.assertEqual(restored.read_bytes(), font.read_bytes())
+        self.assertTrue((destination / 'Contents/Frameworks/App.framework/Current').is_symlink())
+
+    def test_mode_preserving_restore_still_rejects_unsafe_tar_members(self):
+        import hashlib
+        import io
+        import tarfile
+        self.pack()
+        archive = self.bundle / 'app.tar.gz'; original = archive.read_bytes()
+        manifest_file = self.bundle / 'manifest.json'; manifest = json.loads(manifest_file.read_text())
+        cases = [('absolute', '/outside', tarfile.REGTYPE, ''),
+                 ('parent', 'DSH Workflow.app/../outside', tarfile.REGTYPE, ''),
+                 ('symlink', 'DSH Workflow.app/Contents/escape', tarfile.SYMTYPE, '../../../outside'),
+                 ('device', 'DSH Workflow.app/Contents/device', tarfile.CHRTYPE, '')]
+        for label, name, kind, target in cases:
+            with self.subTest(member=label):
+                with tarfile.open(fileobj=io.BytesIO(original)) as source, tarfile.open(archive, 'w:gz') as changed:
+                    for member in source.getmembers():
+                        changed.addfile(member, source.extractfile(member) if member.isfile() else None)
+                    invalid = tarfile.TarInfo(name); invalid.type = kind; invalid.linkname = target
+                    changed.addfile(invalid)
+                manifest['archiveSha256'] = hashlib.sha256(archive.read_bytes()).hexdigest()
+                manifest_file.write_text(json.dumps(manifest))
+                destination = self.root / label / 'DSH Workflow.app'
+                result = self.run_cli('restore', '--inputs', self.inputs, '--bundle', self.bundle,
+                                      '--destination', destination, '--receipt', self.root / 'unsafe-receipt.json', success=False)
+                self.assertIn('Unsafe artifact', result.stderr)
+                self.assertFalse(destination.exists())
+                self.assertFalse((self.root / 'outside').exists())
+
     def test_incomplete_toolchain_cannot_produce_reuse_key(self):
         self.toolchain.write_text(json.dumps({'arch': 'x86_64'}))
         self.run_cli('inputs', '--root', self.root, '--toolchain', self.toolchain, '--output', self.inputs, success=False)
