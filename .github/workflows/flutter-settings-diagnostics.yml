@@ -10,6 +10,7 @@ on:
       - macos-launcher/flutter/tool/web_application_scenario.dart
       - macos-launcher/flutter/tool/probe_diagnostics.dart
       - macos-launcher/flutter/tool/owned_desktop_cleanup.swift
+      - macos-launcher/flutter/tool/settings_repeat_gate.py
 
 permissions:
   contents: read
@@ -128,10 +129,12 @@ jobs:
           PY
 
       - name: Repeat the warm isolated preloaded startup prefix
+        id: startup_loop
         working-directory: macos-launcher/flutter
         run: |
           set +e
           failed=0
+          safe_to_repeat=true
           for attempt in 1 2 3; do
             dart run tool/application_probe.dart \
               'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
@@ -141,12 +144,23 @@ jobs:
             printf '%s\n' "$result" > "$EVIDENCE_DIR/startup-$attempt.exit"
             cat "$EVIDENCE_DIR/startup-$attempt.log"
             if [ "$result" -ne 0 ]; then failed=1; fi
+            python3 tool/settings_repeat_gate.py "$EVIDENCE_DIR/startup-$attempt.log" \
+              > "$EVIDENCE_DIR/startup-$attempt-gate.json" 2> "$EVIDENCE_DIR/startup-$attempt-gate.stderr"
+            gate_result=$?
+            printf '%s\n' "$gate_result" > "$EVIDENCE_DIR/startup-$attempt-gate.exit"
+            cat "$EVIDENCE_DIR/startup-$attempt-gate.json"
+            if [ "$gate_result" -ne 0 ]; then
+              safe_to_repeat=false
+              failed=1
+              break
+            fi
           done
+          printf 'safe_to_repeat=%s\n' "$safe_to_repeat" >> "$GITHUB_OUTPUT"
           set -e
           exit "$failed"
 
       - name: Exercise actual settings, owned legacy keychain and official Desktop permission reopen
-        if: always()
+        if: ${{ always() && steps.startup_loop.outputs.safe_to_repeat == 'true' }}
         working-directory: macos-launcher/flutter
         run: |
           set +e
@@ -164,7 +178,9 @@ jobs:
         if: always()
         run: |
           python3 - <<'PY'
-          import hashlib, json, os, re, shutil, socket, subprocess
+          import errno, hashlib, json, os, re, shutil, socket, subprocess, sys
+          sys.path.insert(0, "macos-launcher/flutter/tool")
+          from settings_repeat_gate import validate_root
           from pathlib import Path
           evidence = Path(os.environ['EVIDENCE_DIR'])
           logs = [evidence / 'application.log', *sorted(evidence.glob('startup-*.log'))]
@@ -172,9 +188,7 @@ jobs:
                    for name in re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M)]
           results = []
           for name in dict.fromkeys(roots):
-              root = Path(name)
-              if not root.is_relative_to(Path(os.environ['RUNNER_TEMP'])) or not root.name.startswith('dsh-t05-') or not root.is_dir():
-                  raise RuntimeError('Unexpected isolated probe root')
+              root = validate_root(name, Path(os.environ['RUNNER_TEMP']))
               target = evidence / root.name
               target.mkdir(exist_ok=True)
               for file in root.iterdir():
@@ -207,7 +221,13 @@ jobs:
               for key, pid in pids.items():
                   if isinstance(pid, int) and pid > 1:
                       check = subprocess.run(['/bin/kill', '-0', str(pid)], capture_output=True, text=True)
-                      processes[key] = {'pid': pid, 'exists': check.returncode == 0, 'stderr': check.stderr.strip()}
+                      fact = {'pid': pid, 'rawExit': check.returncode, 'rawStderr': check.stderr.strip()}
+                      try:
+                          os.kill(pid, 0)
+                          fact.update(state='alive', errno=None)
+                      except OSError as error:
+                          fact.update(state='gone' if error.errno == errno.ESRCH else 'unknown', errno=error.errno, stderr=str(error))
+                      processes[key] = fact
               port = socket.socket()
               try:
                   port.bind(('127.0.0.1', 33080))
@@ -258,4 +278,3 @@ jobs:
           name: flutter-settings-startup-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/flutter-settings-startup/T05
           if-no-files-found: error
-
