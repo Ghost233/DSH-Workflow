@@ -29,6 +29,7 @@ void registerApplicationProbe(NativeBridge native) {
           'id': node.id,
           'label': data.label,
           'value': data.flagsCollection.isObscured ? '<obscured>' : data.value,
+          'toggled': data.flagsCollection.isToggled.toBoolOrNull(),
           'scrollPosition': data.scrollPosition,
           'scrollExtentMin': data.scrollExtentMin,
           'scrollExtentMax': data.scrollExtentMax,

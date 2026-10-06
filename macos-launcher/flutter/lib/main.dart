@@ -400,6 +400,8 @@ class _LauncherPageState extends State<LauncherPage> {
     children: [
       Text('Web 业务进程日志', style: Theme.of(context).textTheme.titleLarge),
       const Text('显示原始输出；来源未提供原始时间时不生成时间戳。'),
+      Text('日志实例：${model.logInstanceId ?? '未提供'}'),
+      Text(model.logsTruncated ? '更早的日志已丢弃' : '已显示当前缓存的全部日志'),
       const SizedBox(height: 12),
       Expanded(
         child: SelectionArea(

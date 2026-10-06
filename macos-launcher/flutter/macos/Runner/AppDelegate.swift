@@ -253,13 +253,34 @@ class AppDelegate: FlutterAppDelegate {
   private func loadPassword() -> String? {
     if let data = try? Data(contentsOf: dataRoot.appendingPathComponent("lan-password")),
        let text = String(data: data, encoding: .utf8), !text.isEmpty { return text }
-    if testRoot != nil { return nil }
+    var query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.ghostagent.dsh-workflow-launcher",
+      kSecAttrAccount as String: "lan-password", kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
+      kSecUseAuthenticationUI as String: kSecUseAuthenticationUISkip,
+    ]
+    if testRoot != nil {
+      // Ordinary Debug profiles never search the current user's keychains.
+      // CI migration reads only the explicitly owned temporary keychain.
+      #if DEBUG
+      let environment = ProcessInfo.processInfo.environment
+      guard environment["GITHUB_ACTIONS"] == "true", environment["DSH_LAUNCHER_LEGACY_KEYCHAIN_CI"] == "1",
+            let runner = environment["RUNNER_TEMP"], let root = testRoot,
+            root.standardizedFileURL.path.hasPrefix(URL(fileURLWithPath: runner).standardizedFileURL.path + "/"),
+            let path = environment["DSH_LAUNCHER_TEST_LEGACY_KEYCHAIN"] else { return nil }
+      let keychainURL = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL
+      let ownedRoot = root.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+      guard keychainURL.path.hasPrefix(ownedRoot.path + "/"), keychainURL.lastPathComponent == "legacy.keychain-db",
+            let attributes = try? FileManager.default.attributesOfItem(atPath: keychainURL.path),
+            (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid() else { return nil }
+      var keychain: SecKeychain?
+      guard SecKeychainOpen(keychainURL.path, &keychain) == errSecSuccess, let keychain else { return nil }
+      query[kSecMatchSearchList as String] = [keychain]
+      #else
+      return nil
+      #endif
+    }
     var value: CFTypeRef?
-    let status = SecItemCopyMatching([
-      kSecClass: kSecClassGenericPassword, kSecAttrService: "com.ghostagent.dsh-workflow-launcher",
-      kSecAttrAccount: "lan-password", kSecReturnData: true, kSecMatchLimit: kSecMatchLimitOne,
-      kSecUseAuthenticationUI: kSecUseAuthenticationUISkip,
-    ] as CFDictionary, &value)
+    let status = SecItemCopyMatching(query as CFDictionary, &value)
     guard status == errSecSuccess, let data = value as? Data,
           let text = String(data: data, encoding: .utf8), !text.isEmpty else { return nil }
     try? persistPassword(text)

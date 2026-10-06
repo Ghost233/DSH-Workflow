@@ -65,6 +65,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void>? _mutation, _closeFuture;
   Future<void>? _desktopOpen;
   ServiceStatus get snapshot => _web;
+  String? get logInstanceId => _logInstanceId;
+  bool get logsTruncated => _logsDropped;
   bool get isActive => _child != null || _mutation != null;
   bool get hasPassword => _password?.isNotEmpty == true;
   String get node => '${environment.resources}/node';
@@ -250,6 +252,13 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
             );
           } else if (name == 'DSH_WORKFLOW_STATE') {
             _setSnapshot(objectValue(payload['global']));
+          } else if (name == 'DSH_WORKFLOW_LOG') {
+            if (payload['instanceId'] != _logInstanceId) continue;
+            logs.add(LogEntry.fromJson(objectValue(payload['entry'])));
+            if (logs.length > 500) {
+              logs.removeAt(0);
+              _logsDropped = true;
+            }
           } else if (name == 'DSH_WORKFLOW_REPLY') {
             if (payload['global'] != null) {
               _setSnapshot(objectValue(payload['global']));
@@ -283,10 +292,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     final state = ServiceState.fromJson(value['state'] as String? ?? 'unknown');
     final instance = value['instanceId'] as String?;
     if (instance != null && instance != _logInstanceId) {
-      if (_logInstanceId != null) {
-        logs.clear();
-        _logsDropped = false;
-      }
+      logs.clear();
+      _logsDropped = false;
       _logInstanceId = instance;
     }
     if (state == ServiceState.running && value['url'] is String) {

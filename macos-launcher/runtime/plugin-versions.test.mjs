@@ -107,3 +107,41 @@ test('one check covers profile, project lock and bundled plugins without writing
   assert.equal(byName['dsh-owner-workflow'].updatable, false)
   assert.deepEqual(await readFile(join(workflow, 'project-plugins.lock.json')), before)
 })
+
+
+test('a malformed self-owned plugin remains a failed row without discarding completed plugin checks', async t => {
+  const root = await mkdtemp('/private/tmp/dsh-t08-plugin-check-')
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const resources = join(root, 'resources'), home = join(root, 'home')
+  const profile = join(home, 'profiles/desktop')
+  const healthy = 'dsh-t08-healthy', damaged = 'dsh-t08-damaged'
+  await mkdir(join(resources, 'workflow'), { recursive: true })
+  await mkdir(join(profile, 'node_modules', healthy), { recursive: true })
+  await mkdir(join(profile, 'node_modules', damaged), { recursive: true })
+  await writeFile(join(profile, 'package.json'), JSON.stringify({
+    dependencies: { [healthy]: '1.0.0', [damaged]: '1.0.0' },
+    dsh: { profile: { bundles: [healthy, damaged] } },
+  }))
+  await writeFile(join(profile, 'node_modules', healthy, 'package.json'),
+    JSON.stringify({ name: healthy, version: '1.0.0' }))
+  const damagedManifest = join(profile, 'node_modules', damaged, 'package.json')
+  await writeFile(damagedManifest, '{"name":"dsh-t08-damaged", invalid')
+  const original = await readFile(damagedManifest)
+  const report = await checkPluginVersions({ resourcesRoot: resources, home, profileName: 'desktop',
+    fetchLatest: async name => {
+      assert.equal(name, healthy, 'the unreadable plugin is not advertised as checked')
+      return '1.1.0'
+    },
+  })
+  const byName = Object.fromEntries(report.rows.map(row => [row.name, row]))
+  assert.equal(byName[healthy].status, 'newer')
+  assert.equal(byName[healthy].current, '1.0.0')
+  assert.equal(byName[healthy].latest, '1.1.0')
+  assert.equal(byName[damaged].status, 'error')
+  assert.equal(byName[damaged].current, null)
+  assert.equal(byName[damaged].latest, null)
+  assert.equal(byName[damaged].updatable, false)
+  assert.match(byName[damaged].note, /无法读取已安装插件/u)
+  assert.equal(byName[damaged].supportedDsh, '无法读取')
+  assert.deepEqual(await readFile(damagedManifest), original, 'checking does not repair package sources')
+})
