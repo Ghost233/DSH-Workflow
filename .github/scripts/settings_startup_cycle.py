@@ -367,7 +367,7 @@ def collect_owned_processes(log, runner):
     timeline = [parse_json(line) for line in (root / 'probe-timeline.jsonl').read_text().splitlines()]
     finally_complete = all(any(row.get('event') == event for row in timeline) for event in ('application-exit', 'diagnostics-close'))
     pairs = {(row['pid'], row['lease']) for row in timeline if row.get('event') == 'receipt-snapshot' and row.get('present')}
-    all_bound = bound == set(roles['host']) and pairs <= bound_pairs
+    all_bound = bool(roles['host']) and bound == set(roles['host']) and pairs <= bound_pairs
     complete = (all_bound and all(row.get('state') == 'gone' and row.get('errno') == errno.ESRCH and row.get('rawErrno') == errno.ESRCH for row in processes.values()))
     receipt_file = root / 'data/global/.dsh-workflow/desktop/desktop-host.json'
     receipt = {'state': 'unknown'}

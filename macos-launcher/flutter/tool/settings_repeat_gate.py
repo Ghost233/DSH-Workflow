@@ -71,7 +71,7 @@ def ownership(log, runner, *, require_finally=True):
     if not observed or observed != desktops:
         raise ValueError('Unknown or unregistered Desktop PID')
     receipts = [row for row in timeline if row.get('event') == 'receipt-snapshot' and row.get('present')]
-    if not receipts or any(not valid_pid(row.get('pid')) or not row.get('lease') for row in receipts):
+    if (require_finally and not receipts) or any(not valid_pid(row.get('pid')) or not row.get('lease') for row in receipts):
         raise ValueError('Missing Host receipt ownership')
     hosts = {row['pid'] for row in receipts}
     facts = root / 'settings-evidence.json'

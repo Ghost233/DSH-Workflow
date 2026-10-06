@@ -336,6 +336,27 @@ class PartialCollectorTest(unittest.TestCase):
                 unknown = cycle.collect_owned_processes(log, runner)
                 self.assertEqual(unknown['processes']['host:'+str(host)]['state'], 'unknown')
                 self.assertFalse(unknown['hostBindingKnown']); self.assertFalse(unknown['complete'])
+                # An early failure may never produce a Host receipt. The real,
+                # already reaped Launcher/Desktop observations still matter.
+                missing_host = [row for row in timeline if row.get('event') != 'receipt-snapshot']
+                missing_host += [{'event': 'application-exit', 'code': parent.returncode},
+                                 {'event': 'diagnostics-close'}]
+                (root / 'probe-timeline.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in missing_host))
+                partial = cycle.collect_owned_processes(log, runner)
+                self.assertEqual(partial['ownership']['host'], [])
+                self.assertEqual({row['pid'] for row in partial['processes'].values()}, {parent.pid, desktop.pid})
+                self.assertTrue(all(row['state']=='gone' and row['rawErrno']==__import__('errno').ESRCH for row in partial['processes'].values()))
+                self.assertTrue(partial['finallyComplete'])
+                self.assertFalse(partial['hostBindingKnown']); self.assertFalse(partial['complete'])
+                with self.assertRaisesRegex(ValueError, 'Missing Host receipt ownership'):
+                    cycle.ownership(log, runner)
+                gate.update(ownership=partial['ownership'], processes=list(partial['processes'].values()), finallyComplete=True)
+                self.assertFalse(cycle.can_repeat(gate))
+                for bad in ({'pid': 1, 'lease': 'invalid-pid'}, {'pid': host, 'lease': ''}):
+                    invalid = missing_host + [dict(bad, event='receipt-snapshot', present=True)]
+                    (root / 'probe-timeline.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in invalid))
+                    with self.assertRaisesRegex(ValueError, 'Missing Host receipt ownership'):
+                        cycle.collect_owned_processes(log, runner)
             finally:
                 parent.wait(timeout=5); desktop.wait(timeout=5)
                 desktop.stdout.close()
