@@ -11,6 +11,7 @@ import 'native_bridge.dart';
 /// controller methods or replacement business/native implementations.
 void registerApplicationProbe(NativeBridge native) {
   final semantics = WidgetsBinding.instance.ensureSemantics();
+  var semanticsReleased = false;
   final errors = <String>[];
   final previousErrorHandler = FlutterError.onError;
   FlutterError.onError = (details) {
@@ -30,6 +31,7 @@ void registerApplicationProbe(NativeBridge native) {
           'label': data.label,
           'tooltip': data.tooltip,
           'value': data.flagsCollection.isObscured ? '<obscured>' : data.value,
+          'toggled': data.flagsCollection.isToggled.toBoolOrNull(),
           'scrollPosition': data.scrollPosition,
           'scrollExtentMin': data.scrollExtentMin,
           'scrollExtentMax': data.scrollExtentMax,
@@ -81,7 +83,10 @@ void registerApplicationProbe(NativeBridge native) {
           action == 'ownEntry' ||
           action == 'minimum' ||
           action == 'quit') {
-        if (action == 'quit') semantics.dispose();
+        if (action == 'quit' && !semanticsReleased) {
+          semantics.dispose();
+          semanticsReleased = true;
+        }
         await native.channel.invokeMethod<void>('debugWindow', action);
       } else if (action != null) {
         throw ArgumentError('Unknown application probe action: $action');

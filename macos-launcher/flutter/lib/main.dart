@@ -9,13 +9,28 @@ import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 
 import 'application_probe.dart';
 import 'launcher_controller.dart';
+import 'lifecycle_probe_process.dart';
 import 'maclauncher_integration.dart';
 import 'native_bridge.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final native = NativeBridge();
-  final model = LauncherController(native);
+  late final LauncherController model;
+  model = LauncherController(
+    native,
+    startProcess: kDebugMode
+        ? (executable, arguments, {workingDirectory, environment}) =>
+              startLifecycleProbeProcess(
+                executable,
+                arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+                isolated: model.environment.testSocket != null,
+                dataRoot: model.environment.dataRoot,
+              )
+        : null,
+  );
   await model.initialize();
   final integration = MacLauncherIntegration(
     model,

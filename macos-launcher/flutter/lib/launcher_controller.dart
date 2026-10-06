@@ -160,8 +160,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         environment: processEnvironment,
       );
       if (_closed) {
-        child.kill();
-        await child.exitCode;
+        final drained = Future.wait([
+          child.stdout.drain<void>(),
+          child.stderr.drain<void>(),
+        ]);
+        await _terminateChild(child);
+        await drained;
         throw StateError('启动器正在退出');
       }
       _child = child;
@@ -346,6 +350,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     final child = _child;
     if (child == null) return;
     _stopping = true;
+    await _terminateChild(child);
+  }
+
+  Future<void> _terminateChild(Process child) async {
     child.kill(ProcessSignal.sigterm);
     try {
       await child.exitCode.timeout(const Duration(seconds: 3));
@@ -574,6 +582,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   Future<void> _close() async {
     _closed = true;
+    if (kDebugMode &&
+        environment.testSocket != null &&
+        Platform.environment['DSH_LAUNCHER_TEST_START_GATE'] != null) {
+      await File('${environment.dataRoot}/lifecycle-close-started')
+          .writeAsString('close-started');
+    }
     _observer?.cancel();
     final pending = _mutation;
     await _stopWeb();

@@ -346,6 +346,221 @@ jobs:
           path: ${{ runner.temp }}/flutter-launcher-acceptance/T02
           if-no-files-found: error
 
+  t05:
+    runs-on: macos-15-intel
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Prepare T05 runner evidence
+        run: |
+          acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T05"
+          mkdir -p "$acceptance_evidence"
+          printf 'EVIDENCE_DIR=%s\n' "$acceptance_evidence" >> "$GITHUB_ENV"
+          printf 'T05_RUNTIME_MOUNT=%s\n' "$RUNNER_TEMP/t05-runtime-mount" >> "$GITHUB_ENV"
+          sw_vers > "$acceptance_evidence/macos-version.log"
+          uname -m > "$acceptance_evidence/architecture.log"
+
+      - name: Checkout current launcher without upstream initialization
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+
+      - name: Bind current source and fixed runtime artifact
+        run: |
+          git rev-parse HEAD > "$EVIDENCE_DIR/source-commit.txt"
+          printf '{"repository":"%s","runId":37325723931,"artifactName":"dsh-workflow-x64"}\n' \
+            "$GITHUB_REPOSITORY" > "$EVIDENCE_DIR/runtime-artifact-source.json"
+
+      - name: Download the successful frozen x64 runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: dsh-workflow-x64
+          run-id: 37325723931
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/t05-runtime-artifact
+
+      - name: Mount the frozen DMG read-only
+        run: |
+          shopt -s nullglob
+          t05_dmgs=("$RUNNER_TEMP/t05-runtime-artifact/"*.dmg)
+          test "${#t05_dmgs[@]}" -eq 1
+          runtime_dmg="${t05_dmgs[0]}"
+          shasum -a 256 "$runtime_dmg" > "$EVIDENCE_DIR/runtime-dmg.sha256"
+          hdiutil verify "$runtime_dmg" > "$EVIDENCE_DIR/runtime-dmg-verify.log" 2>&1
+          mkdir -p "$T05_RUNTIME_MOUNT"
+          set +e
+          hdiutil attach -readonly -nobrowse -mountpoint "$T05_RUNTIME_MOUNT" "$runtime_dmg" \
+            > "$EVIDENCE_DIR/runtime-mount.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/runtime-mount.exit"
+          cat "$EVIDENCE_DIR/runtime-mount.log"
+          test "$result" -eq 0
+          runtime_resources="$T05_RUNTIME_MOUNT/DSH Workflow.app/Contents/Resources"
+          test -x "$runtime_resources/node"
+          test -d "$runtime_resources/desktop/DeepSeek Harness.app"
+          test "$("$runtime_resources/node" -p 'process.arch')" = x64
+          printf 'T05_RUNTIME_RESOURCES=%s\n' "$runtime_resources" >> "$GITHUB_ENV"
+          shasum -a 256 "$runtime_resources/node" \
+            "$runtime_resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+            "$runtime_resources/desktop/DeepSeek Harness.app/Contents/Resources/app/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js" \
+            > "$EVIDENCE_DIR/runtime-payload.sha256"
+
+      - name: Set up the fixed current Flutter toolchain
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+
+      - name: Check current launcher engineering
+        working-directory: macos-launcher/flutter
+        run: |
+          flutter --version --machine > "$EVIDENCE_DIR/flutter-version.json"
+          dart --version > "$EVIDENCE_DIR/dart-version.log" 2>&1
+          set +e
+          bash check.sh > "$EVIDENCE_DIR/check.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/check.exit"
+          cat "$EVIDENCE_DIR/check.log"
+          exit "$result"
+
+      - name: Build the current Debug launcher
+        working-directory: macos-launcher/flutter
+        run: |
+          set +e
+          flutter build macos --debug --no-pub > "$EVIDENCE_DIR/build.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/build.exit"
+          cat "$EVIDENCE_DIR/build.log"
+          exit "$result"
+
+      - name: Stage the current relative application association
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['GITHUB_WORKSPACE'])
+          app = root / 'macos-launcher/flutter/build/macos/Build/Products/Debug/DSH Workflow.app'
+          manifest = json.loads((root / 'maclauncher.json').read_text())
+          manifest['entry']['path'] = '../..'
+          target = app / 'Contents/Resources/maclauncher.json'
+          target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          (evidence / 'input-association.json').write_text(target.read_text())
+          (evidence / 'input-app.txt').write_text(str(app) + '\n')
+          PY
+
+      - name: Exercise actual settings, owned legacy keychain and official Desktop permission reopen
+        working-directory: macos-launcher/flutter
+        run: |
+          set +e
+          dart run tool/application_probe.dart \
+            'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
+            --settings-runtime "$T05_RUNTIME_RESOURCES" --web-backend desktop --web-port 33080 --legacy-keychain-ci \
+            > "$EVIDENCE_DIR/application.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/application.exit"
+          cat "$EVIDENCE_DIR/application.log"
+          exit "$result"
+
+      - name: Collect T05 observed application and process evidence
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, re, shutil, socket, subprocess
+          from pathlib import Path
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          log = evidence / 'application.log'
+          roots = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M) if log.exists() else []
+          results = []
+          for name in roots:
+              root = Path(name)
+              if not root.is_relative_to(Path(os.environ['RUNNER_TEMP'])) or not root.name.startswith('dsh-t05-') or not root.is_dir():
+                  raise RuntimeError('Unexpected isolated probe root')
+              target = evidence / root.name
+              target.mkdir(exist_ok=True)
+              for file in root.iterdir():
+                  if file.is_file() and file.suffix in ('.log', '.json', '.png'):
+                      shutil.copy2(file, target / file.name)
+              hashes = {}
+              for relative in ('Contents/MacOS/DSH Workflow', 'Contents/MacOS/DSH Workflow.debug.dylib',
+                               'Contents/Frameworks/App.framework/Resources/flutter_assets/kernel_blob.bin',
+                               'Contents/Info.plist', 'Contents/Resources/maclauncher.json'):
+                  file = root / 'candidate.app' / relative
+                  hashes[relative] = hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else None
+              native = {}
+              for file in (root / 'web-final.json', root / 'settings-current.json', root / 'initial-web-ui.json'):
+                  if file.exists():
+                      native = json.loads(file.read_text()).get('native', {})
+                      break
+              facts = json.loads((root / 'settings-evidence.json').read_text()) if (root / 'settings-evidence.json').exists() else {}
+              pids = {key: native.get(key) for key in ('pid', 'openedDesktopPid')}
+              pids['hostPid'] = facts.get('hostPid')
+              pids['oldHostPid'] = facts.get('oldHostPid')
+              processes = {}
+              for key, pid in pids.items():
+                  if isinstance(pid, int) and pid > 1:
+                      check = subprocess.run(['/bin/kill', '-0', str(pid)], capture_output=True, text=True)
+                      processes[key] = {'pid': pid, 'exists': check.returncode == 0, 'stderr': check.stderr.strip()}
+              port = socket.socket()
+              try:
+                  port.bind(('127.0.0.1', 33080))
+                  raw_bind = {'available': True}
+              except OSError as error:
+                  raw_bind = {'available': False, 'errno': error.errno, 'error': str(error)}
+              finally:
+                  port.close()
+              port = socket.socket()
+              port.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+              try:
+                  port.bind(('0.0.0.0', 33080))
+                  port.listen(1)
+                  service_listen = {'available': True}
+              except OSError as error:
+                  service_listen = {'available': False, 'errno': error.errno, 'error': str(error)}
+              finally:
+                  port.close()
+              listener = subprocess.run(['/usr/sbin/lsof', '-nP', '-iTCP:33080', '-sTCP:LISTEN', '-Fpn'],
+                                        capture_output=True, text=True)
+              results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes,
+                              'receiptRemoved': not (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').exists(),
+                              'rawNoReuseLoopbackBind': raw_bind,
+                              'reuseAddrServiceBindListen': service_listen,
+                              'listenObservation': {'exit': listener.returncode, 'stdout': listener.stdout,
+                                                    'stderr': listener.stderr},
+                              'webPortReleased': service_listen['available']})
+          (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
+          PY
+
+      - name: Detach the read-only runtime even on failure
+        if: always()
+        run: |
+          if mount | grep -Fq " on $T05_RUNTIME_MOUNT "; then
+            set +e
+            hdiutil detach "$T05_RUNTIME_MOUNT" > "$EVIDENCE_DIR/runtime-detach.log" 2>&1
+            result=$?
+            set -e
+            printf '%s\n' "$result" > "$EVIDENCE_DIR/runtime-detach.exit"
+            cat "$EVIDENCE_DIR/runtime-detach.log"
+            exit "$result"
+          fi
+
+      - name: Upload T05 evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-launcher-t05-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/flutter-launcher-acceptance/T05
+          if-no-files-found: error
+
   t08:
     runs-on: macos-15
     timeout-minutes: 35
