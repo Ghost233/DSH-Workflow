@@ -5,6 +5,8 @@ on:
     branches: [codex/flutter-launcher-spec]
     paths:
       - .github/workflows/flutter-settings-diagnostics.yml
+      - .github/actions/flutter-debug-app/action.yml
+      - .github/scripts/flutter_debug_artifact.py
       - macos-launcher/flutter/tool/application_probe.dart
       - macos-launcher/flutter/tool/settings_application_scenario.dart
       - macos-launcher/flutter/tool/web_application_scenario.dart
@@ -21,6 +23,9 @@ jobs:
   startup:
     runs-on: macos-15-intel
     timeout-minutes: 35
+    concurrency:
+      group: flutter-t05-debug-x64-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: read
       actions: read
@@ -88,6 +93,8 @@ jobs:
         with:
           channel: stable
           flutter-version: 3.47.6
+          cache: true
+          pub-cache-key: flutter-pub-:os:-:version:-:arch:-${{ hashFiles('macos-launcher/flutter/pubspec.lock') }}
 
       - name: Check current launcher engineering
         working-directory: macos-launcher/flutter
@@ -102,16 +109,8 @@ jobs:
           cat "$EVIDENCE_DIR/check.log"
           exit "$result"
 
-      - name: Build the current Debug launcher
-        working-directory: macos-launcher/flutter
-        run: |
-          set +e
-          flutter build macos --debug --no-pub > "$EVIDENCE_DIR/build.log" 2>&1
-          result=$?
-          set -e
-          printf '%s\n' "$result" > "$EVIDENCE_DIR/build.exit"
-          cat "$EVIDENCE_DIR/build.log"
-          exit "$result"
+      - name: Prepare exact current Debug application bytes
+        uses: ./.github/actions/flutter-debug-app
 
       - name: Stage the current relative application association
         run: |
