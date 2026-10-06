@@ -419,6 +419,7 @@ Future<void> main(List<String> arguments) async {
         manifestPath: manifestPath,
         port: webPort!,
         state: state,
+        applicationExit: process.exitCode,
         tap: tap,
         capture: capture,
         onConnected: settingsStartupScenario

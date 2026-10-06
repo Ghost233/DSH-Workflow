@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:launcher_core/launcher_core.dart';
 
 import 'application_probe.dart' show require, waitFor;
+import 'web_startup_wait.dart';
 
 typedef ApplicationState = Future<Map<String, Object?>> Function([
   Map<String, String>? parameters,
@@ -117,6 +118,7 @@ Future<void> runWebApplicationScenario({
   required String manifestPath,
   required int port,
   required ApplicationState state,
+  required Future<int> applicationExit,
   required Future<void> Function(String) tap,
   required Future<void> Function(String) capture,
   Future<void> Function(WebObservation)? onConnected,
@@ -437,9 +439,10 @@ Future<void> runWebApplicationScenario({
         'missing-backend startup does not report ready before the actual Desktop receipt',
       );
     }
-    await waitFor(
-      'real Web readiness after management action',
-      () async => (await sdk('status'))['ready'] == true,
+    await waitForActualWebStartup(
+      status: () => sdk('status'),
+      ui: () => state(),
+      applicationExit: applicationExit,
     );
     final first = await sdk('status');
     final backend = await readReceipt();
