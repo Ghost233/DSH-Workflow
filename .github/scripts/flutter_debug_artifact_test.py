@@ -83,6 +83,40 @@ class DebugArtifactTest(unittest.TestCase):
         self.assertEqual(result['consumer']['sourceCommit'], consumer_sha)
         self.assertTrue((destination / 'Contents/Frameworks/App.framework/Current').is_symlink())
 
+    def test_same_run_arm_consumers_restore_real_bytes_and_reject_other_toolchains(self):
+        # Public CLI/file contract, not a physical Flutter ARM build or App acceptance.
+        facts = json.loads(self.toolchain.read_text()); facts['arch'] = 'arm64'
+        self.toolchain.write_text(json.dumps(facts))
+        self.env.update(GITHUB_JOB='t07', GITHUB_WORKFLOW='Flutter Launcher Acceptance')
+        self.pack()
+        (self.project / 'tool/collector.py').write_text('print("consumer only")\n')
+        subprocess.run(['git', '-C', str(self.root), '-c', 'user.name=Artifact Test', '-c', 'user.email=artifact@example.invalid', 'commit', '-qam', 'external consumer source'], check=True)
+        consumer_sha = subprocess.check_output(['git', '-C', str(self.root), 'rev-parse', 'HEAD'], text=True).strip()
+        self.key()
+        for job in ('t02', 't06', 't08'):
+            with self.subTest(consumer=job):
+                self.env['GITHUB_JOB'] = job
+                destination = self.root / job / 'DSH Workflow.app'; receipt = self.root / (job+'.json')
+                self.run_cli('restore', '--inputs', self.inputs, '--bundle', self.bundle, '--destination', destination, '--receipt', receipt)
+                value = json.loads(receipt.read_text())
+                self.assertEqual(value['producer']['job'], 't07')
+                self.assertEqual(value['producer']['sourceCommit'], self.producer_sha)
+                self.assertEqual(value['consumer']['job'], job)
+                self.assertEqual(value['consumer']['sourceCommit'], consumer_sha)
+                self.assertEqual(value['producer']['runId'], value['consumer']['runId'])
+                self.assertEqual(subprocess.check_output([str(destination / 'Contents/MacOS/DSH Workflow')], text=True), 'actual-app-byte\n')
+        for field, value in [('arch', 'x86_64'), ('xcode', 'different actual Xcode'), ('sdkVersion', '99.0'), ('sdkBuild', 'different actual SDK')]:
+            with self.subTest(mismatch=field):
+                self.toolchain.write_text(json.dumps(dict(facts, **{field: value})))
+                self.key(); destination = self.root / ('rejected-'+field) / 'DSH Workflow.app'
+                result = self.run_cli('restore', '--inputs', self.inputs, '--bundle', self.bundle, '--destination', destination, '--receipt', self.root / 'rejected.json', success=False)
+                self.assertIn('Artifact build inputs do not match', result.stderr)
+                self.assertFalse(destination.exists())
+        self.toolchain.write_text(json.dumps(facts)); self.key()
+        missing = self.root / 'missing-producer'; missing.mkdir()
+        self.run_cli('restore', '--inputs', self.inputs, '--bundle', missing, '--destination', self.root / 'missing.app', '--receipt', self.root / 'missing.json', success=False)
+        self.assertFalse((self.root / 'missing.app').exists())
+
     def test_incomplete_toolchain_cannot_produce_reuse_key(self):
         self.toolchain.write_text(json.dumps({'arch': 'x86_64'}))
         self.run_cli('inputs', '--root', self.root, '--toolchain', self.toolchain, '--output', self.inputs, success=False)

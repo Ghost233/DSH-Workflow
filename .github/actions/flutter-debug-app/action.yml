@@ -1,5 +1,10 @@
 name: Reuse actual Flutter Debug app
 description: Restore exact build bytes or produce them once before isolated acceptance.
+inputs:
+  producer-artifact:
+    description: Exact Debug app artifact from the producer in this same run; mismatches fail.
+    required: false
+    default: ''
 runs:
   using: composite
   steps:
@@ -12,15 +17,23 @@ runs:
         printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
         printf 'bundle=%s\n' "$RUNNER_TEMP/flutter-debug-app-artifact" >> "$GITHUB_OUTPUT"
 
+    - name: Download exact same-run producer bytes
+      if: inputs.producer-artifact != ''
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.producer-artifact }}
+        path: ${{ steps.inputs.outputs.bundle }}
+
     - name: Restore exact Debug app artifact
       id: cache
+      if: inputs.producer-artifact == ''
       uses: actions/cache/restore@v4
       with:
         key: ${{ steps.inputs.outputs.key }}
         path: ${{ steps.inputs.outputs.bundle }}
 
     - name: Validate and restore actual cached application bytes
-      if: steps.cache.outputs.cache-hit == 'true'
+      if: inputs.producer-artifact != '' || steps.cache.outputs.cache-hit == 'true'
       shell: bash
       env:
         DEBUG_APP_BUNDLE: ${{ steps.inputs.outputs.bundle }}
@@ -37,7 +50,7 @@ runs:
         exit "$result"
 
     - name: Produce actual Debug application on cache miss
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: inputs.producer-artifact == '' && steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
         python3 .github/scripts/flutter_debug_artifact.py build \
@@ -45,7 +58,7 @@ runs:
           --evidence "$EVIDENCE_DIR"
 
     - name: Seal complete app bytes with actual producer provenance
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: inputs.producer-artifact == '' && steps.cache.outputs.cache-hit != 'true'
       shell: bash
       env:
         DEBUG_APP_BUNDLE: ${{ steps.inputs.outputs.bundle }}
@@ -59,7 +72,7 @@ runs:
           --receipt "$EVIDENCE_DIR/debug-app-decision.json" --build-exit "$EVIDENCE_DIR/build.exit"
 
     - name: Save Debug bytes before business acceptance
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: inputs.producer-artifact == '' && steps.cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v4
       with:
         key: ${{ steps.inputs.outputs.key }}
@@ -72,6 +85,7 @@ runs:
       run: cp "$DEBUG_APP_BUNDLE/manifest.json" "$EVIDENCE_DIR/debug-app-manifest.json"
 
     - name: Upload complete Debug bytes before business acceptance
+      if: inputs.producer-artifact == ''
       uses: actions/upload-artifact@v4
       with:
         name: flutter-debug-app-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}

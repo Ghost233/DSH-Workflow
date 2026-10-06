@@ -77,17 +77,8 @@ jobs:
           cat "$EVIDENCE_DIR/check.log"
           exit "$result"
 
-      - name: Build actual Debug application
-        working-directory: macos-launcher/flutter
-        run: |
-          set +e
-          flutter build macos --debug --no-pub > "$EVIDENCE_DIR/build.log" 2>&1
-          result=$?
-          set -e
-          printf '%s\n' "$result" > "$EVIDENCE_DIR/build.exit"
-          cat "$EVIDENCE_DIR/build.log"
-          exit "$result"
-
+      - name: Prepare exact current ARM Debug producer bytes
+        uses: ./.github/actions/flutter-debug-app
       - name: Stage the relative application association
         run: |
           python3 - <<'PY'
@@ -158,6 +149,8 @@ jobs:
           if-no-files-found: error
 
   t02:
+    needs: t07
+    if: always()
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -241,17 +234,10 @@ jobs:
           cat "$EVIDENCE_DIR/check.log"
           exit "$result"
 
-      - name: Build the current Debug launcher
-        working-directory: macos-launcher/flutter
-        run: |
-          set +e
-          flutter build macos --debug --no-pub > "$EVIDENCE_DIR/build.log" 2>&1
-          result=$?
-          set -e
-          printf '%s\n' "$result" > "$EVIDENCE_DIR/build.exit"
-          cat "$EVIDENCE_DIR/build.log"
-          exit "$result"
-
+      - name: Restore exact same-run ARM Debug application bytes
+        uses: ./.github/actions/flutter-debug-app
+        with:
+          producer-artifact: flutter-debug-app-t07-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Stage the current relative application association
         run: |
           python3 - <<'PY'
@@ -503,9 +489,9 @@ jobs:
           (evidence / 'input-app.txt').write_text(str(app) + '\n')
           PY
 
-      - name: Exercise actual settings, owned legacy keychain and official Desktop permission reopen
+      - name: TEMP T05 LAN-save caller replay (not full acceptance)
         working-directory: macos-launcher/flutter
-        run: python3 ../../.github/scripts/settings_startup_cycle.py --full
+        run: python3 ../../.github/scripts/settings_startup_cycle.py --debug-lan-save-replay
 
       - name: Preserve completed T05 command before diagnostics
         id: completed_t05_command
@@ -614,6 +600,8 @@ jobs:
           if-no-files-found: error
 
   t06:
+    needs: t07
+    if: always()
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -699,17 +687,10 @@ jobs:
           cat "$EVIDENCE_DIR/check.log"
           exit "$result"
 
-      - name: Build the current Debug launcher
-        working-directory: macos-launcher/flutter
-        run: |
-          set +e
-          flutter build macos --debug --no-pub > "$EVIDENCE_DIR/build.log" 2>&1
-          result=$?
-          set -e
-          printf '%s\n' "$result" > "$EVIDENCE_DIR/build.exit"
-          cat "$EVIDENCE_DIR/build.log"
-          exit "$result"
-
+      - name: Restore exact same-run ARM Debug application bytes
+        uses: ./.github/actions/flutter-debug-app
+        with:
+          producer-artifact: flutter-debug-app-t07-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Stage the current relative application association
         run: |
           python3 - <<'PY'
@@ -849,6 +830,8 @@ jobs:
           path: ${{ runner.temp }}/flutter-launcher-acceptance/T06
           if-no-files-found: error
   t08:
+    needs: t07
+    if: always()
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -932,17 +915,10 @@ jobs:
           cat "$EVIDENCE_DIR/check.log"
           exit "$result"
 
-      - name: Build the current Debug launcher
-        working-directory: macos-launcher/flutter
-        run: |
-          set +e
-          flutter build macos --debug --no-pub > "$EVIDENCE_DIR/build.log" 2>&1
-          result=$?
-          set -e
-          printf '%s\n' "$result" > "$EVIDENCE_DIR/build.exit"
-          cat "$EVIDENCE_DIR/build.log"
-          exit "$result"
-
+      - name: Restore exact same-run ARM Debug application bytes
+        uses: ./.github/actions/flutter-debug-app
+        with:
+          producer-artifact: flutter-debug-app-t07-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Stage the current relative application association
         run: |
           python3 - <<'PY'

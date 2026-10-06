@@ -157,7 +157,10 @@ class SettingsFixture {
   }
 }
 
-Future<void> runSettingsApplicationScenario(WebObservation o) async {
+Future<void> runSettingsApplicationScenario(
+  WebObservation o, {
+  bool debugLanSaveReplay = false,
+}) async {
   final data = '${o.root.path}/data';
   final passwordFile = File('$data/lan-password');
   final preferences = File('$data/test-preferences.plist');
@@ -460,6 +463,23 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
       denied.code == 403 && await hostSetting(localCookies) == before,
       'disabled LAN setting rejects real authenticated Host mutation without changing configuration',
     );
+    // TEMP DEBUG only: original control routine and private prefix, no fake state.
+    if (debugLanSaveReplay) {
+      var replay = 0;
+      for (final chosen in const [true, false, true]) {
+        stdout.writeln(
+          'T05_DEBUG_LAN_REQUEST=${jsonEncode({'index': ++replay, 'pid': pid, 'action': 'switchTo', 'chosen': chosen, 'at': DateTime.now().toUtc().toIso8601String()})}',
+        );
+        await switchTo('允许局域网修改 DSH 设置', chosen);
+        stdout.writeln(
+          'T05_DEBUG_LAN_RESPONSE=${jsonEncode({'index': replay, 'pid': pid, 'action': 'switchTo', 'chosen': chosen, 'at': DateTime.now().toUtc().toIso8601String()})}',
+        );
+      }
+      stdout.writeln(
+        'T05_DEBUG_LAN_SAVE_REPLAY_FINISHED responses=3 (not full acceptance)',
+      );
+      return;
+    }
     await switchTo('允许局域网修改 DSH 设置', true);
     require(
       visible(await o.ui(), '重连 Web 后生效'),

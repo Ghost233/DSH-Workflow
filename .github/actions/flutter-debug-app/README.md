@@ -1,4 +1,4 @@
-# T05 Debug app reuse
+# Debug app reuse
 
 The two x64 T05 jobs share a concurrency group, so the first cache miss produces the app before the next job restores it. Flutter stays fixed at 3.47.6; its SDK and locked pub dependencies use the Flutter action's engineering cache. Each job still runs `check.sh` against its own checkout. SDK and pub caches are explicitly saved after those checks, before business acceptance, using the action's exact output keys/paths (including its pub lock-hash suffix); they survive later business failures.
 
@@ -8,6 +8,10 @@ A producer saves `app.tar.gz` and its manifest before business acceptance, then 
 
 `debug-app-decision.json` distinguishes production from reuse and records the actual producer and consumer checkout commits, workflow/run/attempt/job/repository, key, and archive hash. On a hit there is no current `build.exit`: the cached producer's build exit belongs to the producer manifest. Artifact uploads retain that original producer manifest even when business acceptance later fails.
 
-Each scenario still stages the current association, uses the separately recorded frozen runtime source, and creates fresh isolated data and processes. No profile, receipt, runtime process, port, Keychain, or acceptance result is cached. This Debug artifact is not a T09 current Release candidate. The other four native acceptance jobs are unchanged.
+Each scenario still stages the current association, uses the separately recorded frozen runtime source, and creates fresh isolated data and processes. No profile, receipt, runtime process, port, Keychain, or acceptance result is cached. This Debug artifact is not a T09 current Release candidate. The four ARM jobs keep their original business commands and gates; only their Debug build preparation is shared.
 
 Public artifact-boundary checks: `python3 .github/scripts/flutter_debug_artifact_test.py`.
+
+The ARM preparation uses existing `t07` as the producer. `t02`, `t06`, and `t08` depend on it with `if: always()`, so a producer business failure does not suppress a consumer whose app artifact was already uploaded. They pass `producer-artifact: flutter-debug-app-t07-${{ github.run_id }}-${{ github.run_attempt }}`. The single-artifact download is restricted to the current workflow run, as documented by [download-artifact v4](https://github.com/actions/download-artifact/blob/v4/README.md). Each consumer computes its own actual toolchain/build inputs, then runs the existing strict restore. Missing artifacts or different inputs/hash/payload/provenance fail; no x64 hash or macos-15 label substitutes for ARM bytes. Consumers do not build or re-upload the shared full archive.
+
+No sealed ARM bytes or actual cross-runner toolchain equality were available during implementation. The first real CI must establish the ARM producer archive and each strict consumer restore; until then physical ARM production/reuse remain UNKNOWN. Cache metadata and public file-contract tests are not App acceptance evidence.
