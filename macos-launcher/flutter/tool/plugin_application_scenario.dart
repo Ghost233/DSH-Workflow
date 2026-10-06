@@ -511,18 +511,45 @@ Future<void> runPluginUpdateApplicationScenario(
       );
       final before = (jsonDecode(await app.receipt.readAsString()) as Map)
           .cast<String, Object?>();
+      final oldDesktopPid =
+          ((await app.state())['native'] as Map)['openedDesktopPid'];
+      require(
+        oldDesktopPid is int && oldDesktopPid > 1,
+        'native reopen starts from the actual tracked official Desktop PID',
+      );
+      final termination = <Map<String, Object?>>[];
       await app.state({'action': 'quitDesktop'});
       await waitFor(
-        'owned official Desktop fully exits',
-        () async => !await app.receipt.exists(),
+        'tracked official Desktop and Host have actually exited',
+        () async {
+          final present = await app.receipt.exists();
+          final checks = await Future.wait([
+            for (final pid in [oldDesktopPid, before['pid']])
+              Process.run('/bin/kill', ['-0', '$pid']),
+          ]);
+          termination.add({
+            'observedAt': DateTime.now().toUtc().toIso8601String(),
+            'receiptPresent': present,
+            'desktopPid': oldDesktopPid,
+            'hostPid': before['pid'],
+            'processChecks': [
+              for (final check in checks)
+                {'exit': check.exitCode, 'stderr': check.stderr.toString()},
+            ],
+          });
+          await File('${app.root.path}/plugin-native-termination.json')
+              .writeAsString(jsonEncode(termination));
+          return !present &&
+              checks.every(
+                (check) =>
+                    check.exitCode != 0 &&
+                    check.stderr.toString().contains('No such process'),
+              );
+        },
       );
-      final oldHost = await Process.run('/bin/kill', [
-        '-0',
-        '${before['pid']}',
-      ]);
       require(
-        oldHost.exitCode != 0,
-        'normal Desktop termination actually releases the old Host',
+        true,
+        'normal Desktop termination actually releases both tracked Desktop and old Host before reopening',
       );
       await app.tap('管理');
       await app.tap('打开 DSH');

@@ -17,7 +17,10 @@ const exec = promisify(execFile)
 export const pluginNames = ['dsh-t08-owned-plugin', 'dsh-t08-other-plugin']
 
 export async function startPluginRegistry(root, runtimeVersion) {
-  assert.ok(root.startsWith('/private/tmp/dsh-'), 'only a private probe root is accepted')
+  const ciRoot = process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_TEMP
+    ? resolve(process.env.RUNNER_TEMP) : undefined
+  assert.ok(resolve(root).startsWith('/private/tmp/dsh-')
+    || ciRoot && resolve(root).startsWith(`${ciRoot}/dsh-`), 'only a private owned probe root is accepted')
   const directory = join(root, 'plugin-registry')
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const ca = join(directory, 'ca.pem'), key = join(directory, 'registry.key'), certificate = join(directory, 'registry.pem')

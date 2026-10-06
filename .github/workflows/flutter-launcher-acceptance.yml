@@ -268,9 +268,10 @@ jobs:
           roots = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M) if log.exists() else []
           results = []
           for name in roots:
-              root = Path(name)
-              if not name.startswith('/private/tmp/dsh-t01-') or not root.is_dir():
-                  raise RuntimeError('Unexpected isolated probe root')
+              root = Path(name).resolve()
+              runner_root = Path(os.environ['RUNNER_TEMP']).resolve()
+              if root.parent != runner_root or not root.name.startswith('dsh-t01-') or not root.is_dir():
+                  raise RuntimeError('Unexpected isolated native probe root')
               target = evidence / root.name
               target.mkdir(exist_ok=True)
               for file in root.iterdir():
@@ -948,11 +949,17 @@ jobs:
           roots = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M) if log.exists() else []
           results = []
           for name in roots:
-              root = Path(name)
-              if not name.startswith('/private/tmp/dsh-t01-') or not root.is_dir():
-                  raise RuntimeError('Unexpected isolated plugin root')
+              root = Path(name).resolve()
+              runner_root = Path(os.environ['RUNNER_TEMP']).resolve()
+              if root.parent != runner_root or not root.name.startswith('dsh-t01-') or not root.is_dir():
+                  raise RuntimeError('Unexpected isolated native plugin root')
               target = evidence / root.name
               target.mkdir(exist_ok=True)
+              diagnostic_command = ['python3', 'macos-launcher/flutter/tool/collect_probe_diagnostics.py',
+                                    str(root), str(target / 'owned-diagnostics'), '--crashes']
+              diagnostic = subprocess.run(diagnostic_command, capture_output=True, text=True)
+              (target / 'diagnostic-collector.log').write_text(diagnostic.stdout + diagnostic.stderr)
+              (target / 'diagnostic-collector.exit').write_text(str(diagnostic.returncode) + '\n')
               pids = set()
               for file in root.iterdir():
                   if file.is_file() and file.suffix in ('.log', '.json', '.jsonl', '.png'):
