@@ -32,6 +32,42 @@ Object? sanitizeJson(Object? value) {
   return value is String ? sanitize(value) : value;
 }
 
+bool processProvedGone(Object? lookup) {
+  if (lookup is! Map ||
+      lookup['pid'] is! int ||
+      (lookup['pid'] as int) <= 1 ||
+      lookup['exit'] != 1 ||
+      lookup['stdout'] != '' ||
+      lookup['stderr'] is! String) {
+    return false;
+  }
+  final stderr = (lookup['stderr'] as String).trim();
+  return !stderr.contains('\n') &&
+      stderr.contains('${lookup['pid']}') &&
+      stderr.endsWith('No such process');
+}
+
+int cleanupGateExit(Map<String, Object?> cleanup) {
+  final receipt = cleanup['receiptLookup'];
+  final listener = cleanup['listenerLookup'];
+  final complete =
+      cleanup['root'] is String &&
+      (cleanup['root'] as String).isNotEmpty &&
+      cleanup['rootOwnershipKnown'] == true &&
+      cleanup['launcherOwnershipKnown'] == true &&
+      cleanup['desktopOwnershipKnown'] == true &&
+      processProvedGone(cleanup['launcherLookup']) &&
+      processProvedGone(cleanup['desktopLookup']) &&
+      receipt is Map &&
+      receipt['state'] == 'absent' &&
+      receipt['osErrorCode'] == 2 &&
+      listener is Map &&
+      listener['exit'] == 1 &&
+      listener['stdout'] == '' &&
+      listener['stderr'] == '';
+  return complete ? 0 : 2;
+}
+
 Future<void> main(List<String> args) async {
   if (args.length != 3 ||
       !Platform.isMacOS ||
@@ -48,10 +84,12 @@ Future<void> main(List<String> args) async {
     throw ArgumentError('Evidence must remain under RUNNER_TEMP');
   }
   var failures = 0;
+  var cleanupStopped = false;
   final results = <Map<String, Object?>>[];
   for (var iteration = 1; iteration <= 3; iteration++) {
     final evidence = Directory('${output.path}/launcher-$iteration');
     await evidence.create();
+    final iterationStartedAt = DateTime.now().toUtc();
     final clock = Stopwatch()..start();
     final probe = await Process.start(Platform.resolvedExecutable, [
       'run',
@@ -203,10 +241,21 @@ Future<void> main(List<String> args) async {
     await File('${evidence.path}/application.exit')
         .writeAsString('$commandExit\n');
     final path = rootPath;
-    final cleanup = <String, Object?>{};
-    if (path != null &&
-        Directory(path).parent.path == runner &&
-        Directory(path).uri.pathSegments.any((s) => s.startsWith('dsh-t01-'))) {
+    final cleanup = <String, Object?>{
+      'rootOwnershipKnown': false,
+      'launcherOwnershipKnown': false,
+      'desktopOwnershipKnown': false,
+    };
+    try {
+      if (path == null) throw StateError('Isolated root was not observed');
+      final root = await Directory(path).resolveSymbolicLinks();
+      if (Directory(root).parent.path != runner ||
+          !Directory(root).uri.pathSegments
+              .any((s) => s.startsWith('dsh-t01-'))) {
+        throw StateError('Isolated root is not owned by this runner');
+      }
+      cleanup['rootOwnershipKnown'] = true;
+      cleanup['root'] = root;
       const observedFiles = {
         'probe-process.json',
         'probe-timeline.jsonl',
@@ -217,7 +266,7 @@ Future<void> main(List<String> args) async {
         'initial-web-ui.json',
         'app.log',
       };
-      await for (final entity in Directory(path).list()) {
+      await for (final entity in Directory(root).list()) {
         if (entity is File &&
             observedFiles.contains(entity.uri.pathSegments.last)) {
           final raw = await entity.readAsString();
@@ -228,27 +277,129 @@ Future<void> main(List<String> args) async {
               .writeAsString(content);
         }
       }
-      cleanup['receiptPresentAfterCleanup'] = await File(
-        '$path/data/global/.dsh-workflow/desktop/desktop-host.json',
-      ).exists();
+      final ledger = jsonDecode(
+        await File('$root/probe-process.json').readAsString(),
+      ) as Map;
+      final started = DateTime.tryParse(ledger['startedAt']?.toString() ?? '');
+      final pid = ledger['pid'];
+      final executable = ledger['executable'];
+      if (pid is! int ||
+          pid <= 1 ||
+          started == null ||
+          started.isBefore(
+            iterationStartedAt.subtract(const Duration(seconds: 5)),
+          ) ||
+          started.isAfter(
+            DateTime.now().toUtc().add(const Duration(seconds: 1)),
+          ) ||
+          executable is! String ||
+          await File(executable).resolveSymbolicLinks() !=
+              '$root/candidate.app/Contents/MacOS/DSH Workflow' ||
+          (launcherPid != null && launcherPid != pid)) {
+        throw StateError(
+          'Launcher ownership ledger is incomplete or mismatched',
+        );
+      }
+      launcherPid = pid;
+      cleanup['launcherOwnershipKnown'] = true;
+      final desktopFile = File('$root/owned-desktop-process.json');
+      if (await desktopFile.exists()) {
+        final desktop = jsonDecode(await desktopFile.readAsString()) as Map;
+        final bundle = await Directory(
+          '$root/missing-runtime/desktop/DeepSeek Harness.app',
+        ).resolveSymbolicLinks();
+        final expected = await Directory(
+          '${args[1]}/desktop/DeepSeek Harness.app',
+        ).resolveSymbolicLinks();
+        final launched = desktop['launchDateUnix'];
+        final desktopLedgerPid = desktop['pid'];
+        final desktopExecutable = desktop['executablePath'];
+        if (bundle == expected &&
+            bundle.startsWith('$runner/') &&
+            desktop['bundlePath'] == bundle &&
+            desktopExecutable is String &&
+            desktopExecutable.startsWith('$bundle/Contents/MacOS/') &&
+            await File(desktopExecutable).resolveSymbolicLinks() ==
+                desktopExecutable &&
+            desktopLedgerPid is int &&
+            desktopLedgerPid > 1 &&
+            (desktopPid == null || desktopPid == desktopLedgerPid) &&
+            desktop['probeStartedAt'] == ledger['startedAt'] &&
+            launched is num &&
+            launched.isFinite &&
+            launched * 1000 >= started.millisecondsSinceEpoch - 5000 &&
+            launched * 1000 <=
+                DateTime.now().toUtc().millisecondsSinceEpoch + 1000) {
+          desktopPid = desktopLedgerPid;
+          cleanup['desktopOwnershipKnown'] = true;
+        }
+      }
+      // An open-failed message with no Desktop ledger is not proof of native absence.
+      cleanup['desktopAbsentWithoutPidProved'] = false;
       for (final entry in {
         'launcher': launcherPid,
         'desktop': desktopPid,
       }.entries) {
-        final pid = entry.value;
-        if (pid != null && pid > 1) {
-          final check = await Process.run('/bin/kill', ['-0', '$pid']);
-          cleanup['${entry.key}PidStillExists'] = check.exitCode == 0;
-        }
+        if (cleanup['${entry.key}OwnershipKnown'] != true) continue;
+        final check = await Process.run(
+          '/bin/kill',
+          ['-0', '${entry.value}'],
+          environment: {'LC_ALL': 'C'},
+        );
+        final lookup = <String, Object?>{
+          'pid': entry.value,
+          'exit': check.exitCode,
+          'stdout': sanitize(check.stdout.toString()),
+          'stderr': sanitize(check.stderr.toString()),
+        };
+        lookup['state'] = check.exitCode == 0
+            ? 'exists'
+            : processProvedGone(lookup)
+            ? 'gone-ESRCH'
+            : 'unknown';
+        cleanup['${entry.key}Lookup'] = lookup;
       }
-      final listener = await Process.run('/usr/sbin/lsof', [
-        '-nP',
-        '-iTCP:33080',
-        '-sTCP:LISTEN',
-      ]);
-      cleanup['listenerObservationExit'] = listener.exitCode;
-      cleanup['listenerObservation'] = sanitize(listener.stdout.toString());
+      try {
+        final receipt = await File(
+          '$root/data/global/.dsh-workflow/desktop/desktop-host.json',
+        ).open();
+        await receipt.close();
+        cleanup['receiptLookup'] = {'state': 'present'};
+      } on FileSystemException catch (error) {
+        cleanup['receiptLookup'] = {
+          'state': error.osError?.errorCode == 2 ? 'absent' : 'unknown',
+          'osErrorCode': error.osError?.errorCode,
+          'error': sanitize(error.toString()),
+        };
+      }
+      final listener = await Process.run(
+        '/usr/sbin/lsof',
+        ['-nP', '-iTCP:33080', '-sTCP:LISTEN'],
+        environment: {'LC_ALL': 'C'},
+      );
+      cleanup['listenerLookup'] = {
+        'exit': listener.exitCode,
+        'stdout': sanitize(listener.stdout.toString()),
+        'stderr': sanitize(listener.stderr.toString()),
+        'state': listener.exitCode == 0
+            ? 'listener-present'
+            : listener.exitCode == 1 &&
+                  listener.stdout.toString().isEmpty &&
+                  listener.stderr.toString().isEmpty
+            ? 'no-listener'
+            : 'unknown',
+      };
+    } catch (error) {
+      cleanup['collectionErrorType'] = error.runtimeType.toString();
+      cleanup['collectionError'] = sanitize(error.toString());
     }
+    cleanup['ownershipKnown'] =
+        cleanup['rootOwnershipKnown'] == true &&
+        cleanup['launcherOwnershipKnown'] == true &&
+        cleanup['desktopOwnershipKnown'] == true;
+    final cleanupExit = cleanupGateExit(cleanup);
+    cleanup['cleanupComplete'] = cleanupExit == 0;
+    cleanup['gateExit'] = cleanupExit;
     final result = <String, Object?>{
       'iteration': iteration,
       'boundary': 'actual-Launcher-read-only-observer',
@@ -271,12 +422,9 @@ Future<void> main(List<String> args) async {
         .writeAsString(jsonEncode(result));
     stdout.writeln(jsonEncode(result));
     if (commandExit != 0) failures++;
-    if (cleanup['receiptPresentAfterCleanup'] == true ||
-        cleanup['launcherPidStillExists'] == true ||
-        cleanup['desktopPidStillExists'] == true ||
-        cleanup['listenerObservationExit'] == 0) {
-      failures++;
-      break; // Preserve failed cleanup; never kill or start a new instance over it.
+    if (cleanupExit == 2) {
+      cleanupStopped = true;
+      break; // Unknown ownership or cleanup always blocks the next actual launch.
     }
   }
   await File('${output.path}/launcher-summary.json').writeAsString(
@@ -285,6 +433,7 @@ Future<void> main(List<String> args) async {
       'completedIterations': results.length,
       'iterations': results,
       'failedIterations': failures,
+      'stoppedForIncompleteCleanup': cleanupStopped,
       'preciseCorruptFailureIterations': results
           .where((r) => r['preciseCorruptFailureObserved'] == true)
           .length,
@@ -292,5 +441,9 @@ Future<void> main(List<String> args) async {
       'note': 'Actual CI evidence must establish reproduction rate and per-iteration time before minimization',
     }),
   );
-  exitCode = failures == 0 ? 0 : 1;
+  exitCode = cleanupStopped
+      ? 2
+      : failures == 0
+      ? 0
+      : 1;
 }
