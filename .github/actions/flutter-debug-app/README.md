@@ -1,6 +1,6 @@
 # T05 Debug app reuse
 
-The two x64 T05 jobs share a concurrency group, so the first cache miss produces the app before the next job restores it. Flutter stays fixed at 3.47.6; its SDK and locked pub dependencies use the Flutter action's engineering cache. Each job still runs `check.sh` against its own checkout.
+The two x64 T05 jobs share a concurrency group, so the first cache miss produces the app before the next job restores it. Flutter stays fixed at 3.47.6; its SDK and locked pub dependencies use the Flutter action's engineering cache. Each job still runs `check.sh` against its own checkout. SDK and pub caches are explicitly saved after those checks, before business acceptance, using the action's exact output keys/paths (including its pub lock-hash suffix); they survive later business failures.
 
 The artifact key binds the Debug command, architecture, Flutter/engine/Dart revisions, Xcode build, macOS SDK version/build, macOS version, and actual tracked launcher build source/configuration bytes, including `pubspec.yaml` and `pubspec.lock` with the official SDK revision. External `tool/`, `test/`, collector, CI, and documentation changes do not invalidate the app. Build inputs are checked again after compilation.
 

@@ -89,6 +89,7 @@ jobs:
             > "$EVIDENCE_DIR/runtime-payload.sha256"
 
       - name: Set up the fixed current Flutter toolchain
+        id: flutter_toolchain
         uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -108,6 +109,20 @@ jobs:
           printf '%s\n' "$result" > "$EVIDENCE_DIR/check.exit"
           cat "$EVIDENCE_DIR/check.log"
           exit "$result"
+
+      - name: Save fixed Flutter SDK before business acceptance
+        if: steps.flutter_toolchain.outputs.CACHE-HIT != 'true'
+        uses: actions/cache/save@v5
+        with:
+          key: ${{ steps.flutter_toolchain.outputs.CACHE-KEY }}
+          path: ${{ steps.flutter_toolchain.outputs.CACHE-PATH }}
+
+      - name: Save locked pub dependencies before business acceptance
+        if: steps.flutter_toolchain.outputs.PUB-CACHE-HIT != 'true'
+        uses: actions/cache/save@v5
+        with:
+          key: ${{ steps.flutter_toolchain.outputs.PUB-CACHE-KEY }}-${{ hashFiles('**/pubspec.lock') }}
+          path: ${{ steps.flutter_toolchain.outputs.PUB-CACHE-PATH }}
 
       - name: Prepare exact current Debug application bytes
         uses: ./.github/actions/flutter-debug-app
