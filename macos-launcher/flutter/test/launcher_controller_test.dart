@@ -177,4 +177,59 @@ void main() {
     await failure;
     expect(f.model.isActive, isFalse);
   });
+
+  test(
+    'close settles a paused real child whose start handle arrives late',
+    () async {
+      final spawned = Completer<Process>(), release = Completer<void>();
+      final f = await fixture(
+        startProcess:
+            (executable, arguments, {workingDirectory, environment}) async {
+              final child = await Process.start(
+                executable,
+                arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+              );
+              spawned.complete(child);
+              await release.future;
+              return child;
+            },
+      );
+      final failure = expectLater(f.model.startWeb(), throwsStateError);
+      final child = await spawned.future;
+      await (() async {
+        while (!await File('${f.root.path}/pid').exists()) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      })().timeout(const Duration(seconds: 2));
+      expect(child.kill(ProcessSignal.sigstop), isTrue);
+      await (() async {
+        while (!(await Process.run('/bin/ps', [
+          '-o',
+          'stat=',
+          '-p',
+          '${child.pid}',
+        ])).stdout.toString().trim().startsWith('T')) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      })().timeout(const Duration(seconds: 2));
+      final close = f.model.close();
+      expect(identical(close, f.model.close()), isTrue);
+      release.complete();
+      try {
+        await close.timeout(const Duration(seconds: 5));
+        expect(
+          (await Process.run('/bin/kill', ['-0', '${child.pid}'])).exitCode,
+          isNot(0),
+        );
+        expect(f.model.isActive, isFalse);
+      } finally {
+        child.kill(ProcessSignal.sigcont);
+        child.kill(ProcessSignal.sigkill);
+        await child.exitCode;
+      }
+      await failure;
+    },
+  );
 }
