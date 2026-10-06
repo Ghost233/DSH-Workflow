@@ -1,0 +1,200 @@
+name: Flutter launcher native diagnostics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/flutter-launcher-spec]
+    paths:
+      - .github/workflows/flutter-launcher-diagnostics.yml
+      - macos-launcher/flutter/tool/desktop_launch_diagnostics.swift
+      - macos-launcher/flutter/tool/desktop_launch_observer.dart
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  desktop-launch-loop:
+    runs-on: macos-15
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Prepare disposable diagnostic evidence
+        run: |
+          evidence="$RUNNER_TEMP/dsh-native-diagnostics"
+          mkdir -p "$evidence"
+          printf 'DIAGNOSTIC_ROOT=%s\n' "$evidence" >> "$GITHUB_ENV"
+          printf 'RUNTIME_MOUNT=%s\n' "$RUNNER_TEMP/dsh-native-runtime-mount" >> "$GITHUB_ENV"
+          sw_vers > "$evidence/macos-version.log"
+          uname -m > "$evidence/architecture.log"
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: false
+
+      - name: Bind current source and frozen runtime identity
+        run: |
+          git rev-parse HEAD > "$DIAGNOSTIC_ROOT/source-commit.txt"
+          printf '{"runId":37325723931,"artifactId":11353327247,"artifactName":"dsh-workflow-arm64"}\n' \
+            > "$DIAGNOSTIC_ROOT/runtime-artifact-source.json"
+
+      - name: Download the same frozen arm64 runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: dsh-workflow-arm64
+          run-id: 37325723931
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/dsh-native-runtime-artifact
+
+      - name: Mount and stage the unchanged runtime
+        id: runtime
+        run: |
+          shopt -s nullglob
+          dmgs=("$RUNNER_TEMP/dsh-native-runtime-artifact/"*.dmg)
+          test "${#dmgs[@]}" -eq 1
+          runtime_dmg="${dmgs[0]}"
+          shasum -a 256 "$runtime_dmg" > "$DIAGNOSTIC_ROOT/runtime-dmg.sha256"
+          test "$(shasum -a 256 "$runtime_dmg" | cut -d ' ' -f 1)" = \
+            f02b23ca5d2888bf5b0317a5b57736d114855eb4eef9f56fb90f95c15b5ed5af
+          hdiutil verify "$runtime_dmg" > "$DIAGNOSTIC_ROOT/runtime-dmg-verify.log" 2>&1
+          mkdir -p "$RUNTIME_MOUNT"
+          hdiutil attach -readonly -nobrowse -mountpoint "$RUNTIME_MOUNT" "$runtime_dmg" \
+            > "$DIAGNOSTIC_ROOT/runtime-mount.log" 2>&1
+          resources="$RUNTIME_MOUNT/DSH Workflow.app/Contents/Resources"
+          test "$("$resources/node" -p process.arch)" = arm64
+          printf 'RUNTIME_RESOURCES=%s\n' "$resources" >> "$GITHUB_ENV"
+          shasum -a 256 "$resources/node" \
+            "$resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+            "$resources/desktop/DeepSeek Harness.app/Contents/Resources/app/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js" \
+            > "$DIAGNOSTIC_ROOT/runtime-payload.sha256"
+          stage="$RUNNER_TEMP/dsh-native-stage"
+          mkdir -p "$stage"
+          ditto "$resources/workflow" "$stage/workflow"
+          ditto macos-launcher/runtime "$stage/workflow/macos-launcher/runtime"
+          for name in node desktop node_modules bin; do
+            ln -s "$resources/$name" "$stage/$name"
+          done
+          printf 'STAGED_RESOURCES=%s\n' "$stage" >> "$GITHUB_ENV"
+          desktop="$resources/desktop/DeepSeek Harness.app"
+          set +e
+          codesign -d --verbose=4 "$desktop" > "$DIAGNOSTIC_ROOT/desktop-signature.log" 2>&1
+          printf '%s\n' "$?" > "$DIAGNOSTIC_ROOT/desktop-signature.exit"
+          codesign --verify --deep --strict --verbose=4 "$desktop" \
+            > "$DIAGNOSTIC_ROOT/desktop-signature-verify.log" 2>&1
+          printf '%s\n' "$?" > "$DIAGNOSTIC_ROOT/desktop-signature-verify.exit"
+          xattr -lr "$desktop" > "$DIAGNOSTIC_ROOT/desktop-xattrs.log" 2>&1
+          printf '%s\n' "$?" > "$DIAGNOSTIC_ROOT/desktop-xattrs.exit"
+
+      - name: Compile the external native boundary probe
+        id: native_compile
+        run: |
+          swiftc macos-launcher/flutter/tool/desktop_launch_diagnostics.swift \
+            -o "$DIAGNOSTIC_ROOT/desktop-launch-diagnostics"
+
+      - name: Repeat the exact native configuration five times
+        id: native_loop
+        if: steps.runtime.outcome == 'success' && steps.native_compile.outcome == 'success'
+        run: |
+          set +e
+          "$DIAGNOSTIC_ROOT/desktop-launch-diagnostics" "$STAGED_RESOURCES" \
+            "$DIAGNOSTIC_ROOT" "$STAGED_RESOURCES/workflow/macos-launcher/runtime/prepare-desktop.mjs" \
+            > "$DIAGNOSTIC_ROOT/direct-loop.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$DIAGNOSTIC_ROOT/direct-loop.exit"
+          cat "$DIAGNOSTIC_ROOT/direct-loop.log"
+          if test "$result" -eq 2; then
+            printf 'safe_to_repeat=false\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'safe_to_repeat=true\n' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up the fixed Flutter toolchain for the parent-context loop
+        if: always() && steps.runtime.outcome == 'success' && steps.native_loop.outputs.safe_to_repeat == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+
+      - name: Prepare the locked current Debug candidate once
+        id: candidate
+        if: always() && steps.runtime.outcome == 'success' && steps.native_loop.outputs.safe_to_repeat == 'true'
+        working-directory: macos-launcher/flutter
+        run: |
+          flutter --version --machine > "$DIAGNOSTIC_ROOT/flutter-version.json"
+          dart --version > "$DIAGNOSTIC_ROOT/dart-version.log" 2>&1
+          flutter pub get --enforce-lockfile > "$DIAGNOSTIC_ROOT/locked-metadata.log" 2>&1
+          dart format --output=none --set-exit-if-changed tool/desktop_launch_observer.dart
+          dart analyze tool/desktop_launch_observer.dart
+          flutter build macos --debug --no-pub > "$DIAGNOSTIC_ROOT/build.log" 2>&1
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          app = Path('build/macos/Build/Products/Debug/DSH Workflow.app')
+          manifest = json.loads(Path('../../maclauncher.json').read_text())
+          manifest['entry']['path'] = '../..'
+          target = app / 'Contents/Resources/maclauncher.json'
+          target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+          evidence = Path(os.environ['DIAGNOSTIC_ROOT'])
+          (evidence / 'input-association.json').write_text(target.read_text())
+          (evidence / 'input-app.txt').write_text(str(app.resolve()) + '\n')
+          for name, command in [
+              ('candidate-signature', ['codesign', '-d', '--verbose=4', str(app)]),
+              ('candidate-signature-verify', ['codesign', '--verify', '--deep', '--strict', '--verbose=4', str(app)]),
+              ('candidate-xattrs', ['xattr', '-lr', str(app)]),
+          ]:
+              result = subprocess.run(command, capture_output=True, text=True)
+              (evidence / f'{name}.log').write_text(result.stdout + result.stderr)
+              (evidence / f'{name}.exit').write_text(str(result.returncode) + '\n')
+          PY
+
+      - name: Repeat the unmodified actual Launcher command with a read-only observer
+        if: always() && steps.candidate.outcome == 'success'
+        working-directory: macos-launcher/flutter
+        run: |
+          set +e
+          dart run tool/desktop_launch_observer.dart \
+            'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
+            "$RUNTIME_RESOURCES" "$DIAGNOSTIC_ROOT" \
+            > "$DIAGNOSTIC_ROOT/launcher-loop.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$DIAGNOSTIC_ROOT/launcher-loop.exit"
+          cat "$DIAGNOSTIC_ROOT/launcher-loop.log"
+
+      - name: Record final unchanged payload and listener facts
+        if: always() && steps.runtime.outcome == 'success'
+        run: |
+          shasum -a 256 "$RUNTIME_RESOURCES/node" \
+            "$RUNTIME_RESOURCES/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+            "$RUNTIME_RESOURCES/desktop/DeepSeek Harness.app/Contents/Resources/app/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js" \
+            > "$DIAGNOSTIC_ROOT/runtime-payload-after.sha256"
+          cmp "$DIAGNOSTIC_ROOT/runtime-payload.sha256" "$DIAGNOSTIC_ROOT/runtime-payload-after.sha256"
+          set +e
+          lsof -nP -iTCP:33080 -sTCP:LISTEN > "$DIAGNOSTIC_ROOT/final-listener.log" 2>&1
+          printf '%s\n' "$?" > "$DIAGNOSTIC_ROOT/final-listener.exit"
+
+      - name: Detach the read-only runtime
+        if: always()
+        run: |
+          set +e
+          hdiutil detach "$RUNTIME_MOUNT" > "$DIAGNOSTIC_ROOT/runtime-detach.log" 2>&1
+          printf '%s\n' "$?" > "$DIAGNOSTIC_ROOT/runtime-detach.exit"
+
+      - name: Upload isolated diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-launcher-native-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dsh-native-diagnostics
+          if-no-files-found: error
+
+      - name: Preserve the actual loop exit evidence
+        if: always()
+        run: |
+          test -f "$DIAGNOSTIC_ROOT/direct-loop.exit"
+          test -f "$DIAGNOSTIC_ROOT/launcher-loop.exit"
+          test "$(cat "$DIAGNOSTIC_ROOT/direct-loop.exit")" -eq 0
+          test "$(cat "$DIAGNOSTIC_ROOT/launcher-loop.exit")" -eq 0
