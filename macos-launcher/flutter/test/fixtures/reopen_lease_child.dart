@@ -16,9 +16,11 @@ Future<void> main(List<String> arguments) async {
   ) {
     await Future<void>.delayed(const Duration(milliseconds: 5));
   }
-  await file.writeAsString(
+  final pending = File('${root.path}/lease.json.tmp');
+  await pending.writeAsString(
     jsonEncode({'lease': 'new', 'pid': pid, 'root': root.path}),
   );
+  await pending.rename(file.path);
   for (var i = 0; i < 400 && !await File('${root.path}/stop').exists(); i++) {
     await Future<void>.delayed(const Duration(milliseconds: 5));
   }
