@@ -11,6 +11,7 @@ on:
       - macos-launcher/flutter/tool/probe_diagnostics.dart
       - macos-launcher/flutter/tool/owned_desktop_cleanup.swift
       - macos-launcher/flutter/tool/settings_repeat_gate.py
+      - .github/scripts/settings_startup_cycle.py
 
 permissions:
   contents: read
@@ -128,49 +129,63 @@ jobs:
           (evidence / 'input-app.txt').write_text(str(app) + '\n')
           PY
 
-      - name: Repeat the warm isolated preloaded startup prefix
-        id: startup_loop
+      - name: Warm isolated preloaded startup prefix 1
+        id: startup_1
         working-directory: macos-launcher/flutter
-        run: |
-          set +e
-          failed=0
-          safe_to_repeat=true
-          for attempt in 1 2 3; do
-            dart run tool/application_probe.dart \
-              'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
-              --settings-startup-runtime "$T05_RUNTIME_RESOURCES" --web-backend desktop --web-port 33080 --legacy-keychain-ci \
-              > "$EVIDENCE_DIR/startup-$attempt.log" 2>&1
-            result=$?
-            printf '%s\n' "$result" > "$EVIDENCE_DIR/startup-$attempt.exit"
-            cat "$EVIDENCE_DIR/startup-$attempt.log"
-            if [ "$result" -ne 0 ]; then failed=1; fi
-            python3 tool/settings_repeat_gate.py "$EVIDENCE_DIR/startup-$attempt.log" \
-              > "$EVIDENCE_DIR/startup-$attempt-gate.json" 2> "$EVIDENCE_DIR/startup-$attempt-gate.stderr"
-            gate_result=$?
-            printf '%s\n' "$gate_result" > "$EVIDENCE_DIR/startup-$attempt-gate.exit"
-            cat "$EVIDENCE_DIR/startup-$attempt-gate.json"
-            if [ "$gate_result" -ne 0 ]; then
-              safe_to_repeat=false
-              failed=1
-              break
-            fi
-          done
-          printf 'safe_to_repeat=%s\n' "$safe_to_repeat" >> "$GITHUB_OUTPUT"
-          set -e
-          exit "$failed"
+        run: python3 ../../.github/scripts/settings_startup_cycle.py 1
+
+      - name: Upload startup prefix 1 before another application
+        id: startup_upload_1
+        if: ${{ always() && steps.startup_1.outputs.cycle_started == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-settings-startup-${{ github.run_id }}-${{ github.run_attempt }}-cycle-1
+          path: ${{ runner.temp }}/flutter-settings-startup/T05/startup-1
+          if-no-files-found: error
+
+      - name: Warm isolated preloaded startup prefix 2
+        id: startup_2
+        if: ${{ always() && steps.startup_1.outputs.safe_to_repeat == 'true' && steps.startup_upload_1.outcome == 'success' }}
+        working-directory: macos-launcher/flutter
+        run: python3 ../../.github/scripts/settings_startup_cycle.py 2
+
+      - name: Upload startup prefix 2 before another application
+        id: startup_upload_2
+        if: ${{ always() && steps.startup_2.outputs.cycle_started == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-settings-startup-${{ github.run_id }}-${{ github.run_attempt }}-cycle-2
+          path: ${{ runner.temp }}/flutter-settings-startup/T05/startup-2
+          if-no-files-found: error
+
+      - name: Warm isolated preloaded startup prefix 3
+        id: startup_3
+        if: ${{ always() && steps.startup_2.outputs.safe_to_repeat == 'true' && steps.startup_upload_2.outcome == 'success' }}
+        working-directory: macos-launcher/flutter
+        run: python3 ../../.github/scripts/settings_startup_cycle.py 3
+
+      - name: Upload startup prefix 3 before another application
+        id: startup_upload_3
+        if: ${{ always() && steps.startup_3.outputs.cycle_started == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-settings-startup-${{ github.run_id }}-${{ github.run_attempt }}-cycle-3
+          path: ${{ runner.temp }}/flutter-settings-startup/T05/startup-3
+          if-no-files-found: error
 
       - name: Exercise actual settings, owned legacy keychain and official Desktop permission reopen
-        if: ${{ always() && steps.startup_loop.outputs.safe_to_repeat == 'true' }}
+        if: ${{ always() && steps.startup_3.outputs.safe_to_repeat == 'true' && steps.startup_upload_3.outcome == 'success' }}
         working-directory: macos-launcher/flutter
         run: |
           set +e
           dart run tool/application_probe.dart \
             'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
             --settings-runtime "$T05_RUNTIME_RESOURCES" --web-backend desktop --web-port 33080 --legacy-keychain-ci \
-            > "$EVIDENCE_DIR/application.log" 2>&1
-          result=$?
+            2>&1 | tee "$EVIDENCE_DIR/application.log"
+          result=${PIPESTATUS[0]}
           set -e
           printf '%s\n' "$result" > "$EVIDENCE_DIR/application.exit"
+          printf 'T05_FULL_COMMAND_EXIT=%s\n' "$result"
           cat "$EVIDENCE_DIR/application.log"
           exit "$result"
 
@@ -183,7 +198,7 @@ jobs:
           from settings_repeat_gate import validate_root
           from pathlib import Path
           evidence = Path(os.environ['EVIDENCE_DIR'])
-          logs = [evidence / 'application.log', *sorted(evidence.glob('startup-*.log'))]
+          logs = [evidence / 'application.log', *sorted(evidence.glob('startup-*/command.log'))]
           roots = [name for log in logs if log.exists()
                    for name in re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M)]
           results = []
