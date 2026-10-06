@@ -56,8 +56,11 @@ Future<void> main(List<String> arguments) async {
   final entryScenario =
       arguments.length == 3 && arguments[1] == '--entry-runtime';
   final lifecycle = LifecycleProbeOptions.parse(arguments);
+  final settingsStartupScenario =
+      arguments.length >= 2 && arguments[1] == '--settings-startup-runtime';
   final settingsScenario =
-      arguments.length >= 2 && arguments[1] == '--settings-runtime';
+      settingsStartupScenario ||
+      (arguments.length >= 2 && arguments[1] == '--settings-runtime');
   final keychainCi =
       settingsScenario && arguments.last == '--legacy-keychain-ci';
   final webArgs = settingsScenario
@@ -418,7 +421,22 @@ Future<void> main(List<String> arguments) async {
         state: state,
         tap: tap,
         capture: capture,
-        onConnected: entryScenario
+        onConnected: settingsStartupScenario
+            ? (actual) async {
+                final receipt =
+                    jsonDecode(await actual.receipt.readAsString()) as Map;
+                await File('${root.path}/settings-evidence.json').writeAsString(
+                  jsonEncode({
+                    'startupOnly': true,
+                    'hostPid': receipt['pid'],
+                    'backendLease': receipt['lease'],
+                    'permissionMode': receipt['permissionMode'],
+                  }),
+                );
+                await actual.capture('settings-startup-ready');
+                stdout.writeln('T05 STARTUP PREFIX PASSED');
+              }
+            : entryScenario
             ? runEntryApplicationScenario
             : settingsScenario
             ? runSettingsApplicationScenario
