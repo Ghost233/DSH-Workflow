@@ -112,16 +112,30 @@ Future<void> runEntryApplicationScenario(WebObservation app) async {
   Future<void> openWindow(String name) async {
     final reply = await app.appRequest(kMethodOpenWindow);
     await requests.writeAsString(
-      '${jsonEncode({'operation': name, 'reply': reply})}\n',
+      '${jsonEncode({'operation': name, 'reply': reply, 'native': await native()})}\n',
       mode: FileMode.append,
     );
     require(reply['error'] == null, '$name succeeds through the official SDK');
-    await waitFor('actual SDK window activation', () async {
+    try {
+      await waitFor('actual SDK window activation', () async {
+        final actual = await native();
+        await File('${app.root.path}/entry-window-$name.jsonl').writeAsString(
+          '${jsonEncode({'observedAt': DateTime.now().toUtc().toIso8601String(), 'native': actual})}\n',
+          mode: FileMode.append,
+        );
+        return actual['windowVisible'] == true &&
+            actual['windowKey'] == true &&
+            actual['appActive'] == true;
+      });
+    } catch (_) {
       final actual = await native();
-      return actual['windowVisible'] == true &&
-          actual['windowKey'] == true &&
-          actual['appActive'] == true;
-    });
+      await File('${app.root.path}/entry-window-$name-failure.json')
+          .writeAsString(jsonEncode(actual));
+      if (actual['windowVisible'] == true) {
+        await app.capture('entry-window-$name-failure');
+      }
+      rethrow;
+    }
   }
 
   Future<void> closeWindow(String name) async {
