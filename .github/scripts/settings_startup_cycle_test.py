@@ -117,6 +117,54 @@ class LiveCommandTest(unittest.TestCase):
             self.assertNotIn('private-eof-vm', output.getvalue())
             self.assertFalse(json.loads((root / 'command-state.json').read_text())['streamComplete'])
 
+    def test_plain_password_continuation_at_eof_is_never_published(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); output = io.StringIO()
+            script = 'import sys; sys.stdout.write("password=\\nsynthetic-cross-line-password")'
+            with redirect_stdout(output): result = cycle.run_streamed_command([sys.executable, '-c', script], root)
+            self.assertEqual((root / 'application.exit').read_text(), '0\n')
+            self.assertEqual(result, 1)
+            self.assertFalse(json.loads((root / 'command-state.json').read_text())['streamComplete'])
+            for content in (output.getvalue(), (root / 'application.log').read_text()):
+                self.assertNotIn('synthetic-cross-line-password', content)
+
+    def test_plain_access_token_continuation_with_newline_is_never_published(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); output = io.StringIO()
+            script = 'import sys; sys.stdout.write("access_token: \\nsynthetic-cross-line-token\\n")'
+            with redirect_stdout(output): result = cycle.run_streamed_command([sys.executable, '-c', script], root)
+            self.assertEqual((root / 'application.exit').read_text(), '0\n')
+            self.assertEqual(result, 1)
+            self.assertFalse(json.loads((root / 'command-state.json').read_text())['streamComplete'])
+            for content in (output.getvalue(), (root / 'application.log').read_text()):
+                self.assertNotIn('synthetic-cross-line-token', content)
+                self.assertIn('UNKNOWN', content)
+
+    def test_authorization_bearer_continuation_at_eof_is_never_published(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); output = io.StringIO()
+            script = 'import sys; sys.stdout.write("Authorization: Bearer\\nsynthetic-cross-line-bearer")'
+            with redirect_stdout(output): result = cycle.run_streamed_command([sys.executable, '-c', script], root)
+            self.assertEqual((root / 'application.exit').read_text(), '0\n')
+            self.assertEqual(result, 1)
+            self.assertFalse(json.loads((root / 'command-state.json').read_text())['streamComplete'])
+            for content in (output.getvalue(), (root / 'application.log').read_text()):
+                self.assertNotIn('synthetic-cross-line-bearer', content)
+                self.assertIn('UNKNOWN', content)
+
+    def test_ambiguous_quoted_api_key_continuation_is_dropped_through_eof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); output = io.StringIO()
+            payload = "api_key='\nsynthetic-cross-line-api-one\nsynthetic-cross-line-api-two'\n"
+            script = 'import sys; sys.stdout.write(' + repr(payload) + ')'
+            with redirect_stdout(output): result = cycle.run_streamed_command([sys.executable, '-c', script], root)
+            self.assertEqual((root / 'application.exit').read_text(), '0\n')
+            self.assertEqual(result, 1)
+            self.assertFalse(json.loads((root / 'command-state.json').read_text())['streamComplete'])
+            for content in (output.getvalue(), (root / 'application.log').read_text()):
+                self.assertNotIn('synthetic-cross-line-api-', content)
+                self.assertIn('UNKNOWN', content)
+
     def test_spawn_failure_remains_unknown_without_a_command_exit(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); output = io.StringIO()

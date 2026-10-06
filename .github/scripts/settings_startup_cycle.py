@@ -63,6 +63,7 @@ def run_streamed_command(command, evidence):
     state_file.write_text(json.dumps(state) + '\n')
     result, complete, saw_output = None, True, False
     pending, prefix = '', ''
+    credential_continuation = False
     with (evidence / 'application.log').open('w') as output:
         def publish(text):
             output.write(text)
@@ -73,6 +74,8 @@ def run_streamed_command(command, evidence):
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             for raw in process.stdout:
                 saw_output = True
+                if credential_continuation:
+                    continue
                 if not raw.endswith(b'\n'):
                     complete = False
                     publish('T05_STREAM_PHASE=UNKNOWN INCOMPLETE_LINE\n')
@@ -85,7 +88,12 @@ def run_streamed_command(command, evidence):
                 if not pending:
                     match = re.search(r'[{]|\[(?=\s*(?:["{\[0-9\]\-]|true|false|null|$))', line)
                     if not match:
-                        publish(sanitize_text(line))
+                        if re.search(r"""(?i)(?:["']?(?:authorization|proxy-authorization|auth|cookie|set-cookie|password|(?:(?:access|auth)[_-]?)?token|api[_-]?key)["']?[ \t]*[:=][ \t]*(?:(?:Bearer|Basic)[ \t]*)?["']?[ \t]*|\b(?:Bearer|Basic)[ \t]*)\r?\n?$""", line):
+                            complete = False
+                            credential_continuation = True
+                            publish('T05_STREAM_PHASE=UNKNOWN CREDENTIAL_CONTINUATION <REDACTED>\n')
+                        else:
+                            publish(sanitize_text(line))
                         continue
                     prefix, pending = line[:match.start()], line[match.start():]
                 else:
