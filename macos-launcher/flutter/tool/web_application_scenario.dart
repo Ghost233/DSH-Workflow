@@ -26,21 +26,26 @@ class WebObservation {
     required this.ui,
     required this.state,
     required this.backendHealth,
+    required this.webHealth,
     required this.tap,
     required this.capture,
     required this.reconnectManager,
+    required this.stopOwnedHost,
+    required this.replaceOwnedHost,
   });
   final Directory root;
   final int port;
   final Map<String, Object?> backend, capabilities;
   final WebSdkRequest sdk;
-  final Future<Map<String, Object?>> Function() ui, backendHealth;
+  final Future<Map<String, Object?>> Function() ui, backendHealth, webHealth;
   final ApplicationState state;
   String get resources => '${root.path}/missing-runtime';
   File get receipt =>
       File('${root.path}/data/global/.dsh-workflow/desktop/desktop-host.json');
   final Future<void> Function(String) tap, capture;
   final Future<void> Function() reconnectManager;
+  final Future<void> Function() stopOwnedHost;
+  final Future<Map<String, Object?>> Function() replaceOwnedHost;
 }
 
 class WebProbeOptions {
@@ -185,6 +190,67 @@ Future<void> runWebApplicationScenario({
     require(true, 'Web recycle releases its actual listening port');
   }
 
+  Future<void> startOwnedHost() async {
+    require(
+      options.backend == 'headless',
+      'owned Host helper is headless only',
+    );
+    hostExited = false;
+    host = await Process.start(
+      '$resources/node',
+      [
+        File.fromUri(Platform.script.resolve('desktop_host_probe.mjs')).path,
+        resources,
+        data,
+        home,
+      ],
+      environment: {...Platform.environment, 'DSH_HOME': home},
+    );
+    hostLog ??= File('${root.path}/host.log').openWrite();
+    final hostReady = Completer<void>();
+    host!.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(
+      (line) {
+        hostLog!.writeln(line);
+        if (line == 'HOST_READY' && !hostReady.isCompleted) {
+          hostReady.complete();
+        }
+      },
+    );
+    host!.stderr.listen(hostLog!.add);
+    unawaited(
+      host!.exitCode.then((code) {
+        hostExited = true;
+        stdout.writeln('HOST_HARNESS_EXIT=$code');
+      }),
+    );
+    await waitFor(
+      'unchanged official packaged Host receipt',
+      () async => await receipt.exists(),
+    );
+    await hostReady.future.timeout(const Duration(seconds: 15));
+    require(!hostExited, 'official packaged Host runs in the private profile');
+  }
+
+  Future<void> stopOwnedHost() async {
+    require(
+      options.backend == 'headless' && host != null && !hostExited,
+      'only this probe owned headless Host is shut down',
+    );
+    final pid = (await readReceipt())['pid'] as int;
+    host!.stdin.writeln('shutdown');
+    await host!.stdin.flush();
+    require(
+      await host!.exitCode.timeout(const Duration(seconds: 30)) == 0,
+      'owned official Host shuts down through its actual IPC',
+    );
+    await waitFor(
+      'owned Host PID and receipt released',
+      () async =>
+          !await receipt.exists() &&
+          (await Process.run('/bin/kill', ['-0', '$pid'])).exitCode != 0,
+    );
+  }
+
   try {
     await waitFor('native entry ready before menu actions', () async {
       final native = (await state())['native'] as Map;
@@ -200,43 +266,7 @@ Future<void> runWebApplicationScenario({
       require(await receipt.exists(), 'private prestarted Host receipt exists');
       unawaited(prestartedHost.exitCode.then((_) => hostExited = true));
     } else if (options.backend == 'headless') {
-      host = await Process.start(
-        '$resources/node',
-        [
-          File.fromUri(Platform.script.resolve('desktop_host_probe.mjs')).path,
-          resources,
-          data,
-          home,
-        ],
-        environment: {...Platform.environment, 'DSH_HOME': home},
-      );
-      hostLog = File('${root.path}/host.log').openWrite();
-      final hostReady = Completer<void>();
-      host.stdout
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .listen((line) {
-            hostLog!.writeln(line);
-            if (line == 'HOST_READY' && !hostReady.isCompleted) {
-              hostReady.complete();
-            }
-          });
-      host.stderr.listen(hostLog.add);
-      unawaited(
-        host.exitCode.then((code) {
-          hostExited = true;
-          stdout.writeln('HOST_HARNESS_EXIT=$code');
-        }),
-      );
-      await waitFor(
-        'unchanged official packaged Host receipt',
-        () async => await receipt.exists(),
-      );
-      await hostReady.future.timeout(const Duration(seconds: 15));
-      require(
-        !hostExited,
-        'official packaged Host is running in the private profile',
-      );
+      await startOwnedHost();
     } else if (!passwordPreloaded) {
       require(
         !await receipt.exists(),
@@ -426,8 +456,8 @@ Future<void> runWebApplicationScenario({
       'authenticated Web entry serves the actual packaged DSH frontend',
     );
     final webHealth = await health(url, webCookies);
-    final backendUrl = Uri.parse(backend['url'] as String);
-    final backendLogin = await request(backendUrl);
+    var backendUrl = Uri.parse(backend['url'] as String);
+    var backendLogin = await request(backendUrl);
     final desktopPage = await request(
       backendUrl.resolve('/'),
       cookies: backendLogin.cookies,
@@ -461,6 +491,7 @@ Future<void> runWebApplicationScenario({
           ui: ui,
           state: state,
           backendHealth: () => health(backendUrl, backendLogin.cookies),
+          webHealth: () async => health(url, await authenticate()),
           tap: tapUi,
           capture: capture,
           reconnectManager: () async {
@@ -481,6 +512,16 @@ Future<void> runWebApplicationScenario({
               'official manager reconnects application',
               () async => server!.sessionFor('dsh-workflow') != null,
             );
+          },
+          stopOwnedHost: stopOwnedHost,
+          replaceOwnedHost: () async {
+            require(hostExited, 'previous owned Host has actually exited');
+            await startOwnedHost();
+            final replacement = await readReceipt();
+            backendUrl = Uri.parse(replacement['url'] as String);
+            backendLogin = await request(backendUrl);
+            await health(backendUrl, backendLogin.cookies);
+            return replacement;
           },
         ),
       );
@@ -563,11 +604,12 @@ Future<void> runWebApplicationScenario({
       }
     }
     await server?.close();
-    if (host != null && !hostExited) {
-      host.stdin.writeln('shutdown');
-      await host.stdin.flush();
+    final remainingHost = host;
+    if (remainingHost != null && !hostExited) {
+      remainingHost.stdin.writeln('shutdown');
+      await remainingHost.stdin.flush();
       require(
-        await host.exitCode.timeout(const Duration(seconds: 30)) == 0,
+        await remainingHost.exitCode.timeout(const Duration(seconds: 30)) == 0,
         'owned official Host shuts down normally through its real IPC',
       );
     }
