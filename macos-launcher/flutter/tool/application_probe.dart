@@ -31,10 +31,18 @@ Future<void> main(List<String> arguments) async {
   final logFixture = arguments.length == 3 && arguments[1] == '--logs-fixture';
   final logsScenario =
       arguments.length == 3 && arguments[1] == '--logs-runtime';
-  final settingsScenario = arguments.length >= 2 && arguments[1] == '--settings-runtime';
-  final keychainCi = settingsScenario && arguments.last == '--legacy-keychain-ci';
+  final settingsScenario =
+      arguments.length >= 2 && arguments[1] == '--settings-runtime';
+  final keychainCi =
+      settingsScenario && arguments.last == '--legacy-keychain-ci';
   final webArgs = settingsScenario
-      ? [arguments.first, '--web-runtime', ...arguments.skip(2).take(arguments.length - 2 - (keychainCi ? 1 : 0))]
+      ? [
+          arguments.first,
+          '--web-runtime',
+          ...arguments
+              .skip(2)
+              .take(arguments.length - 2 - (keychainCi ? 1 : 0)),
+        ]
       : arguments;
   final webScenario = logsScenario
       ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
@@ -102,8 +110,15 @@ Future<void> main(List<String> arguments) async {
     true,
     'read-only candidate preflight confirms this project Debug isolation bridge and driver',
   );
-  final root = await Directory(systemCi || keychainCi ? runnerTemp! : '/private/tmp')
-      .createTemp(settingsScenario ? 'dsh-t05-' : updates ? 'dsh-t07-' : 'dsh-t01-');
+  final root =
+      await Directory(systemCi || keychainCi ? runnerTemp! : '/private/tmp')
+          .createTemp(
+            settingsScenario
+                ? 'dsh-t05-'
+                : updates
+                ? 'dsh-t07-'
+                : 'dsh-t01-',
+          );
   final releaseFixture = updates ? await ReleaseFixture.start() : null;
   final app = Directory('${root.path}/candidate.app');
   final copy = await Process.run('/usr/bin/ditto', [sourceApp.path, app.path]);
@@ -146,7 +161,9 @@ Future<void> main(List<String> arguments) async {
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
   final webPort = await webScenario?.stage(root);
   if (webPort != null) environment['DSH_LAUNCHER_TEST_PORT'] = '$webPort';
-  final settings = settingsScenario ? SettingsFixture(root, webScenario!, keychainCi) : null;
+  final settings = settingsScenario
+      ? SettingsFixture(root, webScenario!, keychainCi)
+      : null;
   await settings?.prepare();
   if (keychainCi) {
     environment['DSH_LAUNCHER_LEGACY_KEYCHAIN_CI'] = '1';
@@ -213,10 +230,12 @@ Future<void> main(List<String> arguments) async {
   try {
     await settings?.prepareKeychain(executable.path);
     await settings?.startHeadless();
-    process = await Process.start(executable.path, ['--vm-service-port=0'], environment: environment);
-  } catch (error, stack) {
+    process = await Process.start(executable.path, [
+      '--vm-service-port=0',
+    ], environment: environment);
+  } catch (_) {
     await settings?.close();
-    Error.throwWithStackTrace(error, stack);
+    rethrow;
   }
   var exited = false;
   unawaited(
@@ -323,7 +342,11 @@ Future<void> main(List<String> arguments) async {
         state: state,
         tap: tap,
         capture: capture,
-        onConnected: settingsScenario ? runSettingsApplicationScenario : logsScenario ? runLogApplicationScenario : null,
+        onConnected: settingsScenario
+            ? runSettingsApplicationScenario
+            : logsScenario
+            ? runLogApplicationScenario
+            : null,
         prestartedHost: settings?.host,
         prestartedHostLog: settings?.hostLog,
         passwordPreloaded: settingsScenario,
