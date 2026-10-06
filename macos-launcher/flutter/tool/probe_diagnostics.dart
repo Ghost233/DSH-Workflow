@@ -16,16 +16,7 @@ Map<String, Object?> publicProbePhase(Map<String, Object?> value) => {
     'present',
     'permissionMode',
     'textUtf8Bytes',
-    'requestCount',
     'requestElapsedMs',
-    'appExitKnown',
-    'appExit',
-    'sessionRelation',
-    'registryRelation',
-    'connectionCategory',
-    'closeReasonKnown',
-    'sdkState',
-    'reasonPresent',
     'errorType',
     'expectedPid',
     'lookupFound',
@@ -139,16 +130,10 @@ class ProbeDiagnostics {
   final Stopwatch _clock = Stopwatch();
   Timer? _timer;
   Future<void> _snapshots = Future<void>.value();
-  int? _desktopPid;
-  int? _appPid, _appExit;
-  var _uiCount = 0;
-  final _uiRequests = <int, int>{};
+  int? _desktopPid, _appPid;
   final Map<String, Map<String, Object?>> _hosts = {};
 
   void record(String event, [Map<String, Object?> facts = const {}]) {
-    if (event == 'application-exit' && facts['code'] is int) {
-      _appExit = facts['code'] as int;
-    }
     final value = <String, Object?>{
       'at': DateTime.now().toUtc().toIso8601String(),
       'elapsedMs': _clock.elapsedMilliseconds,
@@ -161,11 +146,10 @@ class ProbeDiagnostics {
     }
   }
 
-  Future<void> start(int applicationPid, String executable) async {
-    _appPid = applicationPid;
+  Future<void> start(int pid, String executable) async {
+    _appPid = pid;
     final facts = {
-      'pid': applicationPid,
-      if (publishPhases) 'parentPid': pid,
+      'pid': pid,
       'executable': executable,
       'startedAt': DateTime.now().toUtc().toIso8601String(),
     };
@@ -174,31 +158,6 @@ class ProbeDiagnostics {
     record('application-started', facts);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       _snapshots = _snapshots.then((_) => _receipt());
-    });
-  }
-
-  Future<void> samplePendingStatus(int requestCount) async {
-    final pid = _appPid;
-    if (!publishPhases || pid == null) return;
-    final result = await Process.run('/usr/bin/python3', [
-      File.fromUri(
-        Platform.script.resolve(
-          '../../../.github/scripts/settings_startup_cycle.py',
-        ),
-      ).path,
-      '--sample-owned-application',
-      root.path,
-      '$pid',
-      '$requestCount',
-    ]);
-    final value = result.exitCode == 0
-        ? (jsonDecode(result.stdout.toString()) as Map)
-        : const <String, Object?>{};
-    record('owned-app-sample', {
-      'pid': pid,
-      'requestCount': requestCount,
-      'present': value['state'] == 'observed',
-      'rawExit': result.exitCode,
     });
   }
 
@@ -313,77 +272,16 @@ class ProbeDiagnostics {
     return null;
   }
 
-  int uiRequest(Map<String, String>? params) {
-    final count = ++_uiCount;
-    if (publishPhases) _uiRequests[count] = _clock.elapsedMilliseconds;
+  void uiRequest(Map<String, String>? params) {
     record('ui-request', {
       'action': params?['action'] ?? 'observe',
-      if (publishPhases) ...{
-        'method': 'ext.dshlauncher.application',
-        'requestCount': count,
-        'pid': _appPid,
-        'appExitKnown': _appExit != null,
-        'appExit': _appExit,
-      },
       'nodeId': params?['id'],
       if (params?['text'] case final String text)
         'textUtf8Bytes': utf8.encode(text).length,
     });
-    return count;
-  }
-
-  void vmResponse(int? request) {
-    if (!publishPhases || request == null) return;
-    record('vm-request-response', {
-      'method': 'ext.dshlauncher.application',
-      'requestCount': request,
-      'pid': _appPid,
-      'appExitKnown': _appExit != null,
-      'appExit': _appExit,
-    });
-  }
-
-  void vmComplete(int? request, {Object? error}) {
-    if (!publishPhases || request == null) return;
-    final started = _uiRequests.remove(request);
-    record(error == null ? 'vm-request-end' : 'vm-request-error', {
-      'method': 'ext.dshlauncher.application',
-      'requestCount': request,
-      'pid': _appPid,
-      'appExitKnown': _appExit != null,
-      'appExit': _appExit,
-      if (started != null)
-        'requestElapsedMs': _clock.elapsedMilliseconds - started,
-      if (error != null) 'errorType': error.runtimeType.toString(),
-    });
   }
 
   Future<void> uiResponse(Map<String, Object?> state) async {
-    if (publishPhases) {
-      final labels = (state['nodes'] as List? ?? const []).cast<Map>().map(
-        (node) => node['label']?.toString() ?? '',
-      );
-      final found = labels.where((label) => label.startsWith('MacLauncher：'));
-      final text = found.isEmpty
-          ? ''
-          : found.first.substring('MacLauncher：'.length);
-      final category = text.split('：').first;
-      record('sdk-app-state', {
-        'pid': _appPid,
-        'sdkState':
-            const [
-              'connected',
-              'connecting',
-              'disconnected',
-              'rejected',
-            ].contains(category)
-            ? category
-            : 'unknown',
-        'reasonPresent': text.contains('：'),
-        'appExitKnown': _appExit != null,
-        'appExit': _appExit,
-      });
-    }
     final native = state['native'] as Map? ?? {};
     record('ui-response', {
       for (final key in [

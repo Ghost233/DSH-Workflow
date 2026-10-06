@@ -24,7 +24,6 @@ SAFE_EVIDENCE = {
     'probe-process.json': 'json',
     'host-ownership.jsonl': 'jsonl',
     'host-inspection-results.jsonl': 'jsonl',
-    'owned-app-sample.json': 'json',
     'owned-desktop-process.json': 'json',
     'settings-evidence.json': 'json',
     'settings-current.json': 'json',
@@ -88,8 +87,7 @@ def run_streamed_command(command, evidence):
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             executable = str(Path(shutil.which(command[0]) or command[0]).resolve())
             known = (len(command) == 11 and command[1:5] == ['run', 'tool/application_probe.dart',
-                     'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow', command[4]]
-                     and command[4] in ('--settings-runtime', '--settings-sdk-ui-trace-runtime')
+                     'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow', '--settings-runtime']
                      and command[6:] == ['--web-backend', 'desktop', '--web-port', '33080', '--legacy-keychain-ci'])
             argv = [Path(executable).name, *command[1:5], '<FROZEN_RUNTIME_RESOURCES>', *command[6:]] if known else ['<UNRECORDED_ARGUMENTS>']
             target.write_text(json.dumps(sanitize_json({'schema': 1, 'pid': process.pid, 'executable': executable, 'executableKind': 'configured-entry',
@@ -179,7 +177,7 @@ def run_streamed_command(command, evidence):
     return result if result not in (None, 0) else (0 if complete and result is not None else 1)
 
 
-def full_command(*, trace_replay=False):
+def full_command():
     if os.environ.get('GITHUB_ACTIONS') != 'true':
         raise ValueError('Clean CI full command is required')
     runner = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
@@ -190,8 +188,6 @@ def full_command(*, trace_replay=False):
                'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow',
                '--settings-runtime', os.environ['T05_RUNTIME_RESOURCES'],
                '--web-backend', 'desktop', '--web-port', '33080', '--legacy-keychain-ci']
-    if trace_replay:
-        command[4] = '--settings-sdk-ui-trace-runtime'
     return run_streamed_command(command, evidence)
 
 
@@ -262,12 +258,12 @@ def observe_os_query(command):
 
 
 
-def run_inspection(command, *, timeout=10):
+def run_inspection(command):
     child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                              start_new_session=True, env={**os.environ, 'LC_ALL': 'C', 'TZ': 'UTC'})
     timed_out = False
     try:
-        stdout, stderr = child.communicate(timeout=timeout)
+        stdout, stderr = child.communicate(timeout=10)
     except subprocess.TimeoutExpired:
         timed_out = True
         os.killpg(child.pid, signal.SIGKILL)  # Only this owned readonly query group.
@@ -276,7 +272,7 @@ def run_inspection(command, *, timeout=10):
             'waited': True, 'timedOut': timed_out, 'stdout': sanitize_text(stdout), 'stderr': sanitize_text(stderr)}
 
 
-def inspect_host(pid, *, timeout=10):
+def inspect_host(pid):
     source = (TOOLS / 'desktop_launch_observer.dart').read_text()
     delimiter = chr(39) * 3
     script = source.split("const hostInspectionScript = r" + delimiter, 1)[1].split(delimiter, 1)[0]
@@ -284,76 +280,9 @@ def inspect_host(pid, *, timeout=10):
     script = script.replace('capture_output=True, text=True)', 'capture_output=True, text=True, timeout=10)')
     script = script.replace("facts['parentPid'] = int(commands['parent']['stdout'].strip())",
         "facts['parentPid'] = int(commands['parent']['stdout'].strip())\n        facts['uid'] = int(commands['uid']['stdout'].strip())\n        facts['probeUid'] = os.getuid()\n        parent_uid = subprocess.run(['/bin/ps', '-p', str(facts['parentPid']), '-o', 'uid='], capture_output=True, text=True, timeout=10)\n        facts['parentUid'] = int(parent_uid.stdout.strip()) if parent_uid.returncode == 0 and not parent_uid.stderr else None")
-    query = run_inspection([sys.executable, '-c', script, str(pid)], timeout=timeout)
+    query = run_inspection([sys.executable, '-c', script, str(pid)])
     facts = parse_json(query['stdout']) if query['exit'] == 0 else {'pid': pid, 'lookupOk': False}
     return dict(facts, query=query)
-
-
-def sample_stack_text(raw):
-    # Persist only counted symbolic frames, never process headers, argv, image
-    # paths, thread names, registers, or the original sample output.
-    frames = []
-    for line in sanitize_text(raw).splitlines():
-        if re.search(r'(?i)password|token|secret|credential|cookie|authorization|https?:|wss?:', line):
-            continue
-        thread = re.match(r'^\s*[+!:| ]*(\d+)\s+(Thread_\d+)\b', line)
-        if thread:
-            frames.append(thread.group(2) + ' samples=' + thread.group(1))
-        frame = re.match(r'^\s*[+!:| ]*(\d+)\s+([A-Za-z_$][A-Za-z0-9_$.:<>~\[\]()+ -]{0,180}?)\s+\(in ([A-Za-z0-9_.+ -]{1,80})\)', line)
-        if frame:
-            frames.append(frame.group(1) + ' ' + frame.group(2).strip() + ' (in ' + frame.group(3).strip() + ')')
-    safe = '\n'.join(frames).encode()
-    return safe[:16384].decode(errors='ignore'), len(safe) > 16384
-
-
-def sample_owned_application(root, runner, pid, request_count):
-    deadline = time.monotonic() + 10
-    root = validate_root(str(root), runner)
-    probe_file, target = root / 'probe-process.json', root / 'owned-app-sample.json'
-    if probe_file.is_symlink() or target.exists() or target.is_symlink():
-        raise ValueError('Unowned or repeated application sample')
-    probe = parse_json(probe_file.read_text())
-    executable = (root / 'candidate.app/Contents/MacOS/DSH Workflow').resolve(strict=True)
-    if (type(pid) is not int or pid <= 1 or probe.get('pid') != pid
-        or type(probe.get('parentPid')) is not int or probe['parentPid'] <= 1
-        or type(request_count) is not int or request_count <= 0
-        or Path(probe['executable']).resolve(strict=True) != executable or not executable.is_relative_to(root)):
-        raise ValueError('Unowned application PID or executable')
-    started = datetime.datetime.fromisoformat(probe['startedAt'].replace('Z', '+00:00')).timestamp()
-    def inspect():
-        remaining = deadline - time.monotonic()
-        return inspect_host(pid, timeout=remaining) if remaining > 0 else {'lookupOk': False}
-    def bound(facts):
-        return (facts.get('lookupOk') is True and facts.get('pid') == pid
-                and facts.get('executable') == str(executable) and facts.get('parentPid') == probe['parentPid']
-                and facts.get('uid') == facts.get('probeUid') == facts.get('parentUid') == os.getuid()
-                and isinstance(facts.get('startUnixSeconds'), (int, float))
-                and started - 1 <= facts['startUnixSeconds'] <= started + 5)
-    before = inspect()
-    result = {'schema': 1, 'state': 'unknown', 'pid': pid, 'requestCount': request_count,
-              'root': str(root), 'parentPid': probe['parentPid'], 'at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              'executable': str(executable), 'uid': before.get('uid'), 'startUnixSeconds': before.get('startUnixSeconds'),
-              'bindingKnown': False, 'safeStack': '', 'outputByteCap': 16384}
-    remaining = deadline - time.monotonic()
-    if bound(before) and remaining > 0:
-        query = run_inspection(['/usr/bin/sample', str(pid), '1', '1', '-mayDie', '-file', '/dev/stdout'], timeout=remaining)
-        text, truncated = sample_stack_text(query['stdout'])
-        after = inspect()
-        result.update(bindingKnown=bound(after) and after.get('startUnixSeconds') == before.get('startUnixSeconds'),
-                      sampleQuery={key: query[key] for key in ('exit', 'childPid', 'childExit', 'waited', 'timedOut')},
-                      safeStack=text, stackTruncated=truncated)
-        if result['bindingKnown'] and query['exit'] == 0 and text:
-            result['state'] = 'observed'
-    result['elapsedMs'] = round((time.monotonic() - (deadline - 10)) * 1000)
-    encoded = (json.dumps(result) + '\n').encode()
-    if len(encoded) > 16384:
-        result['stackTruncated'] = True
-        result['safeStack'] = result['safeStack'][:max(0, len(result['safeStack']) - (len(encoded) - 16384) - 32)]
-        encoded = (json.dumps(result) + '\n').encode()
-    if len(encoded) > 16384:
-        raise ValueError('Oversized fixed application sample facts')
-    target.write_bytes(encoded)
-    return result
 
 
 def bind_host_identity(inspection, root, receipt, desktop, probe, allowed):
@@ -467,10 +396,7 @@ def copy_safe_evidence(root, destination):
         if kind == 'png':
             shutil.copy2(file, output)
         elif kind == 'json':
-            text = json.dumps(sanitize_json(parse_json(file.read_text())), indent=None if name == 'owned-app-sample.json' else 2) + '\n'
-            if name == 'owned-app-sample.json' and len(text.encode()) > 16384:
-                raise ValueError('Oversized safe application sample')
-            output.write_text(text)
+            output.write_text(json.dumps(sanitize_json(parse_json(file.read_text())), indent=2) + '\n')
         elif kind == 'jsonl':
             lines = file.read_text().splitlines()
             if not lines:
@@ -558,11 +484,6 @@ def main(attempt):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) == 5 and sys.argv[1] == '--sample-owned-application':
-        if os.environ.get('GITHUB_ACTIONS') != 'true':
-            raise ValueError('Application sample requires clean CI')
-        print(json.dumps(sample_owned_application(Path(sys.argv[2]), Path(os.environ['RUNNER_TEMP']), int(sys.argv[3]), int(sys.argv[4]))))
-        sys.exit(0)
     if len(sys.argv) == 4 and sys.argv[1] == '--check-owned-pid':
         if os.environ.get('GITHUB_ACTIONS') != 'true':
             raise ValueError('Liveness requires clean CI')
@@ -573,8 +494,6 @@ if __name__ == '__main__':
             raise ValueError('Host capture requires clean CI')
         print(json.dumps(capture_owned_host(Path(sys.argv[2]), Path(os.environ['RUNNER_TEMP']), int(sys.argv[3]))))
         sys.exit(0)
-    if sys.argv[1] == '--debug-sdk-ui-trace-replay':
-        sys.exit(full_command(trace_replay=True))
     if sys.argv[1] == '--full':
         sys.exit(full_command())
     elif sys.argv[1] == '--completed-full':

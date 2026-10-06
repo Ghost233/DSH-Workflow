@@ -36,8 +36,6 @@ permissions:
 
 jobs:
   t07:
-    # TEMP: already verified ARM cases are unrelated to the T05 trace.
-    if: false
     runs-on: macos-15
     timeout-minutes: 20
     defaults:
@@ -152,8 +150,7 @@ jobs:
 
   t02:
     needs: t07
-    # TEMP: restore this original always() after the fixed T05 trace.
-    if: false
+    if: always()
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -492,9 +489,9 @@ jobs:
           (evidence / 'input-app.txt').write_text(str(app) + '\n')
           PY
 
-      - name: TEMP T05 SDK and UI prefix trace (not full acceptance)
+      - name: Exercise actual settings, owned legacy keychain and official Desktop permission reopen
         working-directory: macos-launcher/flutter
-        run: python3 ../../.github/scripts/settings_startup_cycle.py --debug-sdk-ui-trace-replay
+        run: python3 ../../.github/scripts/settings_startup_cycle.py --full
 
       - name: Preserve completed T05 command before diagnostics
         id: completed_t05_command
@@ -604,8 +601,7 @@ jobs:
 
   t06:
     needs: t07
-    # TEMP: restore this original always() after the fixed T05 trace.
-    if: false
+    if: always()
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -835,8 +831,7 @@ jobs:
           if-no-files-found: error
   t08:
     needs: t07
-    # TEMP: restore this original always() after the fixed T05 trace.
-    if: false
+    if: always()
     runs-on: macos-15
     timeout-minutes: 35
     permissions:

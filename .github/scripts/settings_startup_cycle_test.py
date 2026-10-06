@@ -362,59 +362,6 @@ class PartialCollectorTest(unittest.TestCase):
                 desktop.stdout.close()
 
 
-class OwnedAppSampleTest(unittest.TestCase):
-    def test_real_private_owned_process_sample_and_unsafe_pid_rejection(self):
-        import datetime
-        import os
-        import shutil
-        with tempfile.TemporaryDirectory() as temporary:
-            runner = Path(temporary).resolve()
-            root = runner / 'dsh-t05-sample'; root.mkdir()
-            executable = root / 'candidate.app/Contents/MacOS/DSH Workflow'
-            executable.parent.mkdir(parents=True)
-            source = runner / 'finite.c'
-            source.write_text('#include <unistd.h>\nint main(void){sleep(20);return 0;}\n')
-            subprocess.run(['cc', str(source), '-o', str(executable)], check=True, capture_output=True)
-            started = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            child = subprocess.Popen([str(executable)])
-            try:
-                probe = {'pid': child.pid, 'parentPid': os.getpid(), 'executable': str(executable), 'startedAt': started}
-                (root / 'probe-process.json').write_text(json.dumps(probe))
-                with self.assertRaises(ValueError):
-                    cycle.sample_owned_application(root, runner, 1, 15)
-                self.assertFalse((root / 'owned-app-sample.json').exists())
-                (root / 'probe-process.json').write_text(json.dumps({key: value for key, value in probe.items() if key != 'parentPid'}))
-                with self.assertRaises(ValueError):
-                    cycle.sample_owned_application(root, runner, child.pid, 15)
-                (root / 'probe-process.json').write_text(json.dumps(probe))
-                facts = cycle.sample_owned_application(root, runner, child.pid, 15)
-                self.assertEqual(facts['state'], 'observed', facts)
-                self.assertEqual(facts['pid'], child.pid)
-                self.assertEqual(facts['parentPid'], os.getpid())
-                self.assertEqual(facts['sampleQuery']['exit'], 0)
-                self.assertTrue(facts['sampleQuery']['waited'])
-                self.assertTrue(facts['safeStack'])
-                self.assertLessEqual(len(facts['safeStack'].encode()), 16384)
-                self.assertEqual(json.loads((root / 'owned-app-sample.json').read_text()), facts)
-                self.assertLessEqual((root / 'owned-app-sample.json').stat().st_size, 16384)
-                with self.assertRaises(ValueError):
-                    cycle.sample_owned_application(root, runner, child.pid, 16)
-                self.assertIsNone(child.poll())
-            finally:
-                child.terminate(); child.wait(timeout=5)
-
-    def test_safe_stack_cap_and_real_timed_out_query_reaping(self):
-        raw = 'Thread: password=synthetic-private-value\n' + ('  + 1 safe_frame (in libsystem_kernel.dylib) + 12\n' * 1000)
-        raw += '  + 1 ws://[::1]:1234/kGEdxJOiq_Y=/ws (in libprivate)\n'
-        text, truncated = cycle.sample_stack_text(raw)
-        self.assertNotIn('synthetic-private-value', text)
-        self.assertNotIn('kGEdxJOiq_Y', text)
-        self.assertTrue(truncated); self.assertLessEqual(len(text.encode()), 16384)
-        query = cycle.run_inspection([sys.executable, '-c', 'import time; time.sleep(5)'], timeout=.1)
-        self.assertEqual(query['exit'], 124); self.assertTrue(query['timedOut']); self.assertTrue(query['waited'])
-        self.assertEqual(query['childExit'], -9)
-
-
 class HostIdentityTest(unittest.TestCase):
     def test_all_old_and_new_pid_facts_are_required_by_the_existing_gate(self):
         import errno
