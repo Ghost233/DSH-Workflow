@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-/// External, read-only observations for the owned application/Host boundaries.
+/// External observations and clean-CI normal cleanup for exact owned processes.
 class ProbeDiagnostics {
   ProbeDiagnostics(this.root)
     : _sink = File('${root.path}/probe-timeline.jsonl').openWrite() {
@@ -13,6 +13,7 @@ class ProbeDiagnostics {
   final Stopwatch _clock = Stopwatch();
   Timer? _timer;
   Future<void> _snapshots = Future<void>.value();
+  int? _desktopPid;
 
   void record(String event, [Map<String, Object?> facts = const {}]) {
     _sink.writeln(
@@ -74,7 +75,7 @@ class ProbeDiagnostics {
     });
   }
 
-  void uiResponse(Map<String, Object?> state) {
+  Future<void> uiResponse(Map<String, Object?> state) async {
     final native = state['native'] as Map? ?? {};
     record('ui-response', {
       for (final key in [
@@ -89,13 +90,47 @@ class ProbeDiagnostics {
       'framesEnabled': state['framesEnabled'],
       'lifecycleState': state['lifecycleState'],
     });
+    final pid = native['openedDesktopPid'];
+    if (Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+        pid is int &&
+        pid != _desktopPid) {
+      await _desktopCommand('capture', [
+        '${root.path}/missing-runtime/desktop/DeepSeek Harness.app',
+        '$pid',
+      ]);
+      _desktopPid = pid;
+    }
+  }
+
+  Future<void> _desktopCommand(
+    String mode, [
+    List<String> arguments = const [],
+  ]) async {
+    final result = await Process.run('/usr/bin/swift', [
+      File.fromUri(Platform.script.resolve('owned_desktop_cleanup.swift')).path,
+      root.path,
+      mode,
+      ...arguments,
+    ]);
+    await File('${root.path}/owned-desktop-cleanup.log').writeAsString(
+      '${result.stdout}${result.stderr}HELPER_EXIT=${result.exitCode}\n',
+      mode: FileMode.append,
+    );
+    record('owned-desktop-helper', {'mode': mode, 'exit': result.exitCode});
+    if (result.exitCode != 0) {
+      throw StateError('Owned Desktop $mode failed: ${result.exitCode}');
+    }
   }
 
   Future<void> close() async {
     _timer?.cancel();
     await _snapshots;
     await _receipt();
-    record('diagnostics-close');
-    await _sink.close();
+    try {
+      if (_desktopPid != null) await _desktopCommand('terminate');
+      record('diagnostics-close');
+    } finally {
+      await _sink.close();
+    }
   }
 }

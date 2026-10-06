@@ -309,7 +309,7 @@ Future<void> runWebApplicationScenario({
       diagnose?.call('sdk-response', {
         'service': service,
         'method': method,
-        'elapsedMs': elapsed.elapsedMilliseconds,
+        'requestElapsedMs': elapsed.elapsedMilliseconds,
         'state': result?['state'],
         'ready': result?['ready'],
         'instanceId': result?['instanceId'],

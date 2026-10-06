@@ -29,6 +29,24 @@ void require(bool condition, String description) {
   stdout.writeln('PASS: $description');
 }
 
+String applicationProbeRootParent({
+  required bool systemCi,
+  required bool keychainCi,
+  required WebProbeOptions? webScenario,
+  required bool githubActions,
+  required String? runnerTemp,
+}) {
+  if (systemCi || keychainCi || webScenario?.backend == 'desktop') {
+    if (!githubActions || runnerTemp == null || !runnerTemp.startsWith('/')) {
+      throw ArgumentError(
+        'System login and browser boundaries run only in a disposable GitHub macOS runner',
+      );
+    }
+    return runnerTemp;
+  }
+  return '/private/tmp';
+}
+
 Future<void> main(List<String> arguments) async {
   final instanceStartup =
       arguments.length == 3 && arguments[1] == '--instance-startup';
@@ -82,14 +100,13 @@ Future<void> main(List<String> arguments) async {
   final updates =
       systemCi || (arguments.length == 2 && arguments[1] == '--updates');
   final runnerTemp = Platform.environment['RUNNER_TEMP'];
-  if ((systemCi || keychainCi) &&
-      (Platform.environment['GITHUB_ACTIONS'] != 'true' ||
-          runnerTemp == null ||
-          !runnerTemp.startsWith('/'))) {
-    throw ArgumentError(
-      'System login and browser boundaries run only in a disposable GitHub macOS runner',
-    );
-  }
+  final rootParent = applicationProbeRootParent(
+    systemCi: systemCi,
+    keychainCi: keychainCi,
+    webScenario: webScenario,
+    githubActions: Platform.environment['GITHUB_ACTIONS'] == 'true',
+    runnerTemp: runnerTemp,
+  );
   if (arguments.length != 1 &&
       !instanceStartup &&
       !updates &&
@@ -139,17 +156,15 @@ Future<void> main(List<String> arguments) async {
     true,
     'read-only candidate preflight confirms this project Debug isolation bridge and driver',
   );
-  final root =
-      await Directory(systemCi || keychainCi ? runnerTemp! : '/private/tmp')
-          .createTemp(
-            settingsScenario
-                ? 'dsh-t05-'
-                : updates
-                ? 'dsh-t07-'
-                : entryScenario
-                ? 'dsh-t06-'
-                : 'dsh-t01-',
-          );
+  final root = await Directory(rootParent).createTemp(
+    settingsScenario
+        ? 'dsh-t05-'
+        : updates
+        ? 'dsh-t07-'
+        : entryScenario
+        ? 'dsh-t06-'
+        : 'dsh-t01-',
+  );
   final releaseFixture = updates ? await ReleaseFixture.start() : null;
   final app = Directory('${root.path}/candidate.app');
   final copy = await Process.run('/usr/bin/ditto', [sourceApp.path, app.path]);
@@ -333,7 +348,7 @@ Future<void> main(List<String> arguments) async {
           isolateId: isolate,
           args: params,
         )).json!.cast<String, Object?>();
-        diagnostics?.uiResponse(result);
+        await diagnostics?.uiResponse(result);
         return result;
       } catch (error) {
         diagnostics?.record('ui-error', {
