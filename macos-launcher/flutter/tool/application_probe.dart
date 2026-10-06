@@ -11,6 +11,7 @@ import 'web_application_scenario.dart';
 import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
 import 'entry_application_scenario.dart';
+import 'lifecycle_application_scenario.dart';
 import 'settings_application_scenario.dart';
 
 Future<void> waitFor(String description, Future<bool> Function() check) async {
@@ -34,6 +35,7 @@ Future<void> main(List<String> arguments) async {
       arguments.length == 3 && arguments[1] == '--logs-runtime';
   final entryScenario =
       arguments.length == 3 && arguments[1] == '--entry-runtime';
+  final lifecycle = LifecycleProbeOptions.parse(arguments);
   final settingsScenario =
       arguments.length >= 2 && arguments[1] == '--settings-runtime';
   final keychainCi =
@@ -49,7 +51,7 @@ Future<void> main(List<String> arguments) async {
       : arguments;
   final webScenario = logsScenario || entryScenario
       ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
-      : WebProbeOptions.parse(webArgs);
+      : WebProbeOptions.parse(webArgs) ?? lifecycle?.web;
   final systemCi =
       arguments.length == 3 &&
       arguments[1] == '--updates' &&
@@ -160,6 +162,8 @@ Future<void> main(List<String> arguments) async {
     'DSH_LAUNCHER_TEST_RESOURCES': '${root.path}/missing-runtime',
     'DSH_LAUNCHER_TEST_SOCKET': layout.socketPath,
     'DSH_HOME': '${root.path}/home',
+    if (lifecycle != null)
+      'DSH_LAUNCHER_TEST_START_GATE': '${root.path}/data/start-gate.sock',
     if (systemCi) 'DSH_LAUNCHER_SYSTEM_BOUNDARY_CI': '1',
     if (releaseFixture != null)
       'DSH_LAUNCHER_TEST_RELEASE_ENDPOINT': releaseFixture.endpoint,
@@ -352,6 +356,9 @@ Future<void> main(List<String> arguments) async {
             ? runEntryApplicationScenario
             : settingsScenario
             ? runSettingsApplicationScenario
+            : lifecycle != null
+            ? (actual) =>
+                  runLifecycleScenario(actual, process, lifecycle.scenario)
             : logsScenario
             ? runLogApplicationScenario
             : null,
@@ -359,7 +366,7 @@ Future<void> main(List<String> arguments) async {
         prestartedHostLog: settings?.hostLog,
         passwordPreloaded: settingsScenario,
       );
-      await state({'action': 'quit'});
+      if (lifecycle == null) await state({'action': 'quit'});
       require(
         await process.exitCode.timeout(const Duration(seconds: 10)) == 0,
         'real launcher remains manageable and quits after Web resources are released',

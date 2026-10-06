@@ -42,7 +42,7 @@ Future<void> runEntryApplicationScenario(WebObservation app) async {
     final actual = (snapshot['native'] as Map).cast<String, Object?>();
     final receipt = (jsonDecode(await app.receipt.readAsString()) as Map)
         .cast<String, Object?>();
-    final webHealth = await app.authenticatedWebHealth();
+    final webHealth = await app.webHealth();
     final backendHealth = await app.backendHealth();
     final status = connected ? await app.sdk('status') : null;
     final pids = await Future.wait([
