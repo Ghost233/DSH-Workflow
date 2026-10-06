@@ -11,6 +11,50 @@ cycle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cycle)
 
 
+class CollectorDurabilityTest(unittest.TestCase):
+    def test_completed_command_snapshot_masks_log_and_keeps_original_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            evidence = base / 'evidence'; evidence.mkdir()
+            (evidence / 'application.log').write_text('failure assertion\nhttp://127.0.0.1:1234/private-vm=/\npassword=private-pw\n')
+            (evidence / 'application.exit').write_text('255\n')
+            (evidence / 'unknown.json').write_text('private-userdata')
+            cycle.snapshot_completed_command(evidence, base)
+            target = evidence / 'completed-command'
+            self.assertEqual((target / 'application.exit').read_text(), '255\n')
+            self.assertEqual({file.name for file in target.iterdir()}, {'application.exit', 'application.log', 'command-state.json'})
+            self.assertIn('failure assertion', (target / 'application.log').read_text())
+            self.assertNotIn('private-', (target / 'application.log').read_text())
+
+    def test_cancelled_command_log_is_preserved_without_inventing_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); evidence = base / 'evidence'; evidence.mkdir()
+            (evidence / 'application.log').write_text('last real phase\npassword=private-pw\n')
+            cycle.snapshot_completed_command(evidence, base)
+            target = evidence / 'completed-command'
+            self.assertFalse((target / 'application.exit').exists())
+            self.assertFalse(json.loads((target / 'command-state.json').read_text())['exitKnown'])
+            self.assertIn('last real phase', (target / 'application.log').read_text())
+            self.assertNotIn('private-pw', (target / 'application.log').read_text())
+
+    def test_diagnostic_timeout_is_persisted_as_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            tools = base / 'tools'; tools.mkdir()
+            (tools / 'collect_probe_diagnostics.py').write_text('import time; print("owned diagnostic started", flush=True); time.sleep(5)')
+            target = base / 'evidence'; target.mkdir()
+            actual_run = subprocess.run
+            def fast_actual_run(command, **options):
+                options['timeout'] = .05
+                return actual_run(command, **options)
+            with patch.object(cycle, 'TOOLS', tools), patch.object(cycle.subprocess, 'run', side_effect=fast_actual_run):
+                result = cycle.run_diagnostics(base, target)
+            self.assertEqual(result, 124)
+            self.assertEqual((target / 'diagnostic-collector.exit').read_text(), '124\n')
+            self.assertIn('owned diagnostic started', (target / 'diagnostic-collector.log').read_text())
+            self.assertIn('deadline exceeded', (target / 'diagnostic-collector.log').read_text())
+
+
 class PrivacyTest(unittest.TestCase):
     def fixture(self, base):
         root = base / 'dsh-t05-owned'; root.mkdir()

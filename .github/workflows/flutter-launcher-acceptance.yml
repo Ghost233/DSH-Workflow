@@ -503,36 +503,51 @@ jobs:
           cat "$EVIDENCE_DIR/application.log"
           exit "$result"
 
+      - name: Preserve completed T05 command before diagnostics
+        id: completed_t05_command
+        if: always()
+        run: python3 .github/scripts/settings_startup_cycle.py --completed-full
+
+      - name: Upload completed T05 command before diagnostics
+        if: ${{ always() && steps.completed_t05_command.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-launcher-t05-command-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/flutter-launcher-acceptance/T05/completed-command
+          if-no-files-found: error
+
       - name: Collect T05 observed application and process evidence
         if: always()
+        timeout-minutes: 2
         run: |
           python3 - <<'PY'
-          import hashlib, json, os, re, shutil, socket, subprocess
+          import errno, hashlib, json, os, re, socket, subprocess
           from pathlib import Path
+          import sys
+          sys.path.insert(0, '.github/scripts')
+          from settings_startup_cycle import copy_safe_evidence, run_diagnostics, validate_root
           evidence = Path(os.environ['EVIDENCE_DIR'])
           log = evidence / 'application.log'
           roots = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M) if log.exists() else []
           results = []
+          diagnostic_failed = False
+          print('T05_COLLECTOR_PHASE=root-validation-start', flush=True)
           for name in roots:
-              root = Path(name)
-              if not root.is_relative_to(Path(os.environ['RUNNER_TEMP'])) or not root.name.startswith('dsh-t05-') or not root.is_dir():
-                  raise RuntimeError('Unexpected isolated probe root')
+              root = validate_root(name, Path(os.environ['RUNNER_TEMP']))
               target = evidence / root.name
               target.mkdir(exist_ok=True)
-              for file in root.iterdir():
-                  if file.is_file() and file.suffix in ('.log', '.json', '.jsonl', '.png'):
-                      shutil.copy2(file, target / file.name)
-              diagnostic_command = ['python3', 'macos-launcher/flutter/tool/collect_probe_diagnostics.py',
-                                    str(root), str(target)] + ['--crashes']
-              diagnostic = subprocess.run(diagnostic_command, capture_output=True, text=True)
-              (target / 'diagnostic-collector.log').write_text(diagnostic.stdout + diagnostic.stderr)
-              (target / 'diagnostic-collector.exit').write_text(str(diagnostic.returncode) + '\n')
+              print('T05_COLLECTOR_PHASE=copy-start ROOT=' + root.name, flush=True)
+              copy_safe_evidence(root, target)
+              print('T05_COLLECTOR_PHASE=copy-end ROOT=' + root.name, flush=True)
+              diagnostic_failed = run_diagnostics(root, target) != 0 or diagnostic_failed
+              print('T05_COLLECTOR_PHASE=hash-start ROOT=' + root.name, flush=True)
               hashes = {}
               for relative in ('Contents/MacOS/DSH Workflow', 'Contents/MacOS/DSH Workflow.debug.dylib',
                                'Contents/Frameworks/App.framework/Resources/flutter_assets/kernel_blob.bin',
                                'Contents/Info.plist', 'Contents/Resources/maclauncher.json'):
                   file = root / 'candidate.app' / relative
                   hashes[relative] = hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else None
+              print('T05_COLLECTOR_PHASE=hash-end ROOT=' + root.name, flush=True)
               native = {}
               for file in (root / 'web-final.json', root / 'settings-current.json', root / 'initial-web-ui.json'):
                   if file.exists():
@@ -545,11 +560,20 @@ jobs:
                   pids['pid'] = json.loads(process_ledger.read_text()).get('pid')
               pids['hostPid'] = facts.get('hostPid')
               pids['oldHostPid'] = facts.get('oldHostPid')
+              print('T05_COLLECTOR_PHASE=process-observation-start ROOT=' + root.name, flush=True)
               processes = {}
               for key, pid in pids.items():
                   if isinstance(pid, int) and pid > 1:
                       check = subprocess.run(['/bin/kill', '-0', str(pid)], capture_output=True, text=True)
-                      processes[key] = {'pid': pid, 'exists': check.returncode == 0, 'stderr': check.stderr.strip()}
+                      fact = {'pid': pid, 'rawExit': check.returncode, 'rawStderr': check.stderr.strip()}
+                      try:
+                          os.kill(pid, 0)
+                          fact.update(state='alive', errno=None)
+                      except OSError as error:
+                          fact.update(state='gone' if error.errno == errno.ESRCH else 'unknown', errno=error.errno, stderr=str(error))
+                      processes[key] = fact
+              print('T05_COLLECTOR_PHASE=process-observation-end ROOT=' + root.name, flush=True)
+              print('T05_COLLECTOR_PHASE=port-observation-start ROOT=' + root.name, flush=True)
               port = socket.socket()
               try:
                   port.bind(('127.0.0.1', 33080))
@@ -570,6 +594,7 @@ jobs:
                   port.close()
               listener = subprocess.run(['/usr/sbin/lsof', '-nP', '-iTCP:33080', '-sTCP:LISTEN', '-Fpn'],
                                         capture_output=True, text=True)
+              print('T05_COLLECTOR_PHASE=port-observation-end ROOT=' + root.name, flush=True)
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes,
                               'receiptRemoved': not (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').exists(),
                               'rawNoReuseLoopbackBind': raw_bind,
@@ -578,6 +603,9 @@ jobs:
                                                     'stderr': listener.stderr},
                               'webPortReleased': service_listen['available']})
           (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
+          print('T05_COLLECTOR_PHASE=complete', flush=True)
+          if diagnostic_failed:
+              raise RuntimeError('Owned diagnostic collector failed; cleanup observations preserved')
           PY
 
       - name: Detach the read-only runtime even on failure

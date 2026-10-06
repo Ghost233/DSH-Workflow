@@ -19,6 +19,8 @@ SAFE_EVIDENCE = {
     'probe-process.json': 'json',
     'owned-desktop-process.json': 'json',
     'settings-evidence.json': 'json',
+    'settings-current.json': 'json',
+    'settings-current.png': 'png',
     'initial-web-ui.json': 'json',
     'settings-startup-ready.json': 'json',
     'web-final.json': 'json',
@@ -55,17 +57,47 @@ def parse_json(text):
     return json.loads(text, parse_constant=reject_constant)
 
 
-def collect(log, target, runner):
-    names = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M)
-    if len(names) != 1:
-        raise ValueError('Missing or ambiguous cycle root')
-    root = validate_root(names[0], runner)
-    destination = target / root.name
-    destination.mkdir()
-    required = {'probe-process.json', 'probe-timeline.jsonl', 'owned-desktop-process.json', 'owned-desktop-cleanup.log'}
-    for name in required:
-        if not (root / name).is_file():
-            raise ValueError('Missing required cycle evidence: ' + name)
+def snapshot_completed_command(evidence, runner):
+    evidence = evidence.resolve(strict=True)
+    if not evidence.is_relative_to(runner.resolve(strict=True)):
+        raise ValueError('Unowned command evidence directory')
+    log, exit_file = evidence / 'application.log', evidence / 'application.exit'
+    if not log.is_file() or log.is_symlink():
+        raise ValueError('Command log evidence is missing')
+    raw_exit = None
+    if exit_file.exists():
+        if not exit_file.is_file() or exit_file.is_symlink():
+            raise ValueError('Unowned command exit evidence')
+        raw_exit = exit_file.read_text()
+        if not re.fullmatch(r'-?\d+\n?', raw_exit):
+            raise ValueError('Invalid command exit evidence')
+    target = evidence / 'completed-command'
+    target.mkdir()
+    (target / 'application.log').write_text(sanitize_text(log.read_text()))
+    (target / 'command-state.json').write_text(json.dumps({'exitKnown': raw_exit is not None}) + '\n')
+    if raw_exit is not None:
+        (target / 'application.exit').write_text(raw_exit)
+    print('T05_FULL_COMMAND_EXIT=' + (raw_exit.strip() if raw_exit is not None else 'UNKNOWN'), flush=True)
+
+
+def run_diagnostics(root, target):
+    command = [sys.executable, str(TOOLS / 'collect_probe_diagnostics.py'), str(root), str(target), '--crashes']
+    print('T05_COLLECTOR_PHASE=diagnostic-start ROOT=' + root.name, flush=True)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=45)
+        code, output = result.returncode, result.stdout + result.stderr
+    except subprocess.TimeoutExpired as error:
+        code = 124
+        def text(value):
+            return value.decode(errors='replace') if isinstance(value, bytes) else (value or '')
+        output = text(error.stdout) + text(error.stderr) + '\nDiagnostic collector deadline exceeded (45s)\n'
+    (target / 'diagnostic-collector.log').write_text(sanitize_text(output))
+    (target / 'diagnostic-collector.exit').write_text(str(code) + '\n')
+    print(f'T05_COLLECTOR_PHASE=diagnostic-end ROOT={root.name} EXIT={code}', flush=True)
+    return code
+
+
+def copy_safe_evidence(root, destination):
     for name, kind in SAFE_EVIDENCE.items():
         file = root / name
         if not file.exists():
@@ -85,11 +117,24 @@ def collect(log, target, runner):
             output.write_text('\n'.join(sanitized) + '\n')
         else:
             output.write_text(sanitize_text(file.read_text()))
-    command = [sys.executable, str(TOOLS / 'collect_probe_diagnostics.py'), str(root), str(destination), '--crashes']
-    result = subprocess.run(command, capture_output=True, text=True)
-    (target / 'collector.log').write_text(sanitize_text(result.stdout + result.stderr))
-    (target / 'collector.exit').write_text(str(result.returncode) + '\n')
-    if result.returncode != 0:
+
+
+def collect(log, target, runner):
+    names = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M)
+    if len(names) != 1:
+        raise ValueError('Missing or ambiguous cycle root')
+    root = validate_root(names[0], runner)
+    destination = target / root.name
+    destination.mkdir()
+    required = {'probe-process.json', 'probe-timeline.jsonl', 'owned-desktop-process.json', 'owned-desktop-cleanup.log'}
+    for name in required:
+        if not (root / name).is_file():
+            raise ValueError('Missing required cycle evidence: ' + name)
+    copy_safe_evidence(root, destination)
+    result = run_diagnostics(root, destination)
+    shutil.copy2(destination / 'diagnostic-collector.log', target / 'collector.log')
+    (target / 'collector.exit').write_text(str(result) + '\n')
+    if result != 0:
         raise ValueError('Cycle diagnostic collector failed')
 
 
@@ -151,4 +196,9 @@ def main(attempt):
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1]))
+    if sys.argv[1] == '--completed-full':
+        if os.environ.get('GITHUB_ACTIONS') != 'true':
+            raise ValueError('Clean CI command snapshot is required')
+        snapshot_completed_command(Path(os.environ['EVIDENCE_DIR']), Path(os.environ['RUNNER_TEMP']))
+    else:
+        sys.exit(main(sys.argv[1]))
