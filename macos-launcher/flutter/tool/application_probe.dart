@@ -171,6 +171,11 @@ Future<void> main(List<String> arguments) async {
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
   final webPort = await webScenario?.stage(root);
   if (webPort != null) environment['DSH_LAUNCHER_TEST_PORT'] = '$webPort';
+  if (entryScenario) {
+    await File(
+      '${root.path}/entry-stage.json',
+    ).writeAsString(jsonEncode({'port': webPort, 'inputApp': sourceApp.path}));
+  }
   final settings = settingsScenario
       ? SettingsFixture(root, webScenario!, keychainCi)
       : null;

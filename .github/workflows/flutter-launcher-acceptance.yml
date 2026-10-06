@@ -560,3 +560,239 @@ jobs:
           name: flutter-launcher-t05-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/flutter-launcher-acceptance/T05
           if-no-files-found: error
+
+  t06:
+    runs-on: macos-15
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Prepare T06 runner evidence
+        run: |
+          acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T06"
+          mkdir -p "$acceptance_evidence"
+          printf 'EVIDENCE_DIR=%s\n' "$acceptance_evidence" >> "$GITHUB_ENV"
+          printf 'T06_RUNTIME_MOUNT=%s\n' "$RUNNER_TEMP/t06-runtime-mount" >> "$GITHUB_ENV"
+          sw_vers > "$acceptance_evidence/macos-version.log"
+          uname -m > "$acceptance_evidence/architecture.log"
+          /usr/sbin/ioreg -n Root -d 1 | python3 -c 'import sys; print("".join(line for line in sys.stdin if "IOConsoleUsers" in line))' \
+            > "$acceptance_evidence/console-before.log"
+
+      - name: Checkout current launcher without upstream initialization
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+
+      - name: Bind current source and fixed runtime artifact
+        run: |
+          git rev-parse HEAD > "$EVIDENCE_DIR/source-commit.txt"
+          printf '{"repository":"%s","runId":37325723931,"artifactName":"dsh-workflow-arm64"}\n' \
+            "$GITHUB_REPOSITORY" > "$EVIDENCE_DIR/runtime-artifact-source.json"
+
+      - name: Download the successful frozen arm64 runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: dsh-workflow-arm64
+          run-id: 37325723931
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/t06-runtime-artifact
+
+      - name: Mount the frozen DMG read-only
+        run: |
+          shopt -s nullglob
+          t06_dmgs=("$RUNNER_TEMP/t06-runtime-artifact/"*.dmg)
+          test "${#t06_dmgs[@]}" -eq 1
+          runtime_dmg="${t06_dmgs[0]}"
+          shasum -a 256 "$runtime_dmg" > "$EVIDENCE_DIR/runtime-dmg.sha256"
+          hdiutil verify "$runtime_dmg" > "$EVIDENCE_DIR/runtime-dmg-verify.log" 2>&1
+          mkdir -p "$T06_RUNTIME_MOUNT"
+          set +e
+          hdiutil attach -readonly -nobrowse -mountpoint "$T06_RUNTIME_MOUNT" "$runtime_dmg" \
+            > "$EVIDENCE_DIR/runtime-mount.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/runtime-mount.exit"
+          cat "$EVIDENCE_DIR/runtime-mount.log"
+          test "$result" -eq 0
+          runtime_resources="$T06_RUNTIME_MOUNT/DSH Workflow.app/Contents/Resources"
+          test -x "$runtime_resources/node"
+          test -d "$runtime_resources/desktop/DeepSeek Harness.app"
+          test "$("$runtime_resources/node" -p 'process.arch')" = arm64
+          printf 'T06_RUNTIME_RESOURCES=%s\n' "$runtime_resources" >> "$GITHUB_ENV"
+          shasum -a 256 "$runtime_resources/node" \
+            "$runtime_resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+            "$runtime_resources/desktop/DeepSeek Harness.app/Contents/Resources/app/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js" \
+            > "$EVIDENCE_DIR/runtime-payload.sha256"
+
+      - name: Set up the fixed current Flutter toolchain
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+
+      - name: Check current launcher engineering
+        working-directory: macos-launcher/flutter
+        run: |
+          flutter --version --machine > "$EVIDENCE_DIR/flutter-version.json"
+          dart --version > "$EVIDENCE_DIR/dart-version.log" 2>&1
+          set +e
+          bash check.sh > "$EVIDENCE_DIR/check.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/check.exit"
+          cat "$EVIDENCE_DIR/check.log"
+          exit "$result"
+
+      - name: Build the current Debug launcher
+        working-directory: macos-launcher/flutter
+        run: |
+          set +e
+          flutter build macos --debug --no-pub > "$EVIDENCE_DIR/build.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/build.exit"
+          cat "$EVIDENCE_DIR/build.log"
+          exit "$result"
+
+      - name: Stage the current relative application association
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ['GITHUB_WORKSPACE'])
+          app = root / 'macos-launcher/flutter/build/macos/Build/Products/Debug/DSH Workflow.app'
+          manifest = json.loads((root / 'maclauncher.json').read_text())
+          manifest['entry']['path'] = '../..'
+          target = app / 'Contents/Resources/maclauncher.json'
+          target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          (evidence / 'input-association.json').write_text(target.read_text())
+          (evidence / 'input-app.txt').write_text(str(app) + '\n')
+          paths = ('Contents/MacOS/DSH Workflow', 'Contents/MacOS/DSH Workflow.debug.dylib',
+                   'Contents/Frameworks/App.framework/Resources/flutter_assets/kernel_blob.bin',
+                   'Contents/Info.plist', 'Contents/Resources/maclauncher.json')
+          hashes = {path: hashlib.sha256((app / path).read_bytes()).hexdigest() for path in paths}
+          (evidence / 'input-candidate-sha256.json').write_text(json.dumps(hashes, indent=2) + '\n')
+          PY
+
+      - name: Exercise actual entry handoff, late actions and window activation
+        working-directory: macos-launcher/flutter
+        run: |
+          set +e
+          dart run tool/application_probe.dart \
+            'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
+            --entry-runtime "$T06_RUNTIME_RESOURCES" \
+            > "$EVIDENCE_DIR/application.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/application.exit"
+          cat "$EVIDENCE_DIR/application.log"
+          exit "$result"
+
+      - name: Collect T06 native timeline, application and exact cleanup evidence
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, re, shutil, socket, subprocess
+          from pathlib import Path
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          console = subprocess.run(['/usr/sbin/ioreg', '-n', 'Root', '-d', '1'], capture_output=True, text=True)
+          raw_console = '\n'.join(line for line in console.stdout.splitlines() if 'IOConsoleUsers' in line)
+          (evidence / 'console-after.log').write_text(raw_console + '\n')
+          (evidence / 'console-after.exit').write_text(str(console.returncode) + '\n')
+          log = evidence / 'application.log'
+          roots = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M) if log.exists() else []
+          processes = subprocess.check_output(['/bin/ps', '-axo', 'pid=,ppid=,args='], text=True)
+          results = []
+          for name in roots:
+              root = Path(name)
+              if root.parent != Path('/private/tmp') or not root.name.startswith('dsh-t06-') or not root.is_dir():
+                  raise RuntimeError('Unexpected isolated entry probe root')
+              target = evidence / root.name
+              target.mkdir(exist_ok=True)
+              for file in root.iterdir():
+                  if file.is_file() and file.suffix in ('.log', '.json', '.jsonl', '.png'):
+                      shutil.copy2(file, target / file.name)
+              trace = root / 'data/entry-native.jsonl'
+              if trace.exists():
+                  shutil.copy2(trace, target / trace.name)
+              hashes = {}
+              for relative in ('Contents/MacOS/DSH Workflow', 'Contents/MacOS/DSH Workflow.debug.dylib',
+                               'Contents/Frameworks/App.framework/Resources/flutter_assets/kernel_blob.bin',
+                               'Contents/Info.plist', 'Contents/Resources/maclauncher.json'):
+                  file = root / 'candidate.app' / relative
+                  hashes[relative] = hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else None
+              facts_file = root / 'entry-before-takeover.json'
+              facts = json.loads(facts_file.read_text()) if facts_file.exists() else {}
+              stage = json.loads((root / 'entry-stage.json').read_text()) if (root / 'entry-stage.json').exists() else {}
+              initial = root / 'initial-web-ui.json'
+              native = facts.get('native', {})
+              if not native and initial.exists():
+                  native = json.loads(initial.read_text()).get('native', {})
+              pids = {'launcher': native.get('pid'), 'supervisor': facts.get('supervisorPid'), 'host': facts.get('hostPid')}
+              if pids['host'] is None and (root / 'host.log').exists():
+                  match = re.search(r'^HOST_PID=(\d+)$', (root / 'host.log').read_text(), re.M)
+                  if match:
+                      pids['host'] = int(match[1])
+              tracked = {}
+              for key, pid in pids.items():
+                  if isinstance(pid, int) and pid > 1:
+                      check = subprocess.run(['/bin/kill', '-0', str(pid)], capture_output=True, text=True)
+                      tracked[key] = {'pid': pid, 'exists': check.returncode == 0, 'exit': check.returncode,
+                                      'stderr': check.stderr.strip()}
+              remaining = [line for line in processes.splitlines() if name in line and int(line.split()[0]) != os.getpid()]
+              port = facts.get('webPort', stage.get('port'))
+              observations = {}
+              if isinstance(port, int):
+                  for label, host, reuse in [('rawNoReuseLoopback', '127.0.0.1', False), ('serviceLikeListen', '0.0.0.0', True)]:
+                      listener = socket.socket()
+                      if reuse:
+                          listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                      try:
+                          listener.bind((host, port))
+                          listener.listen(1)
+                          observations[label] = {'available': True}
+                      except OSError as error:
+                          observations[label] = {'available': False, 'errno': error.errno, 'error': str(error)}
+                      finally:
+                          listener.close()
+                  listener = subprocess.run(['/usr/sbin/lsof', '-nP', f'-iTCP:{port}', '-sTCP:LISTEN', '-Fpn'], capture_output=True, text=True)
+                  observations['lsof'] = {'exit': listener.returncode, 'stdout': listener.stdout, 'stderr': listener.stderr}
+              results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': tracked,
+                              'collectorPid': os.getpid(), 'remainingPrivateRootProcesses': remaining, 'port': port,
+                              'portObservations': observations,
+                              'receiptRemoved': not (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').exists(),
+                              'managerSocketRemoved': not (root / 'manager/sdk-v1.sock').exists(),
+                              'managerEndpointFiles': [file.name for file in (root / 'manager').glob('*')]})
+          (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
+          if any(any(pid['exists'] for pid in result['trackedProcesses'].values()) or
+                 result['remainingPrivateRootProcesses'] or not result['receiptRemoved'] or
+                 not result['managerSocketRemoved'] or
+                 not result['portObservations'].get('serviceLikeListen', {}).get('available', False) for result in results):
+              raise RuntimeError('Owned entry scenario resources are not all released; raw evidence retained')
+          PY
+
+      - name: Detach the read-only runtime even on failure
+        if: always()
+        run: |
+          if mount | grep -Fq " on $T06_RUNTIME_MOUNT "; then
+            set +e
+            hdiutil detach "$T06_RUNTIME_MOUNT" > "$EVIDENCE_DIR/runtime-detach.log" 2>&1
+            result=$?
+            set -e
+            printf '%s\n' "$result" > "$EVIDENCE_DIR/runtime-detach.exit"
+            cat "$EVIDENCE_DIR/runtime-detach.log"
+            exit "$result"
+          fi
+
+      - name: Upload T06 evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-launcher-t06-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/flutter-launcher-acceptance/T06
+          if-no-files-found: error
