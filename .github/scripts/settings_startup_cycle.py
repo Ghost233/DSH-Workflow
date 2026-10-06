@@ -97,6 +97,18 @@ def run_diagnostics(root, target):
     return code
 
 
+def observe_os_query(command):
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        return {'exit': result.returncode, 'stdout': sanitize_text(result.stdout),
+                'stderr': sanitize_text(result.stderr), 'state': 'observed', 'timedOut': False}
+    except subprocess.TimeoutExpired as error:
+        def text(value):
+            return value.decode(errors='replace') if isinstance(value, bytes) else (value or '')
+        return {'exit': 124, 'stdout': sanitize_text(text(error.stdout)),
+                'stderr': sanitize_text(text(error.stderr)), 'state': 'unknown', 'timedOut': True}
+
+
 def copy_safe_evidence(root, destination):
     for name, kind in SAFE_EVIDENCE.items():
         file = root / name
