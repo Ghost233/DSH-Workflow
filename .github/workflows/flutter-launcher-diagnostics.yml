@@ -93,26 +93,8 @@ jobs:
           swiftc macos-launcher/flutter/tool/desktop_launch_diagnostics.swift \
             -o "$DIAGNOSTIC_ROOT/desktop-launch-diagnostics"
 
-      - name: Repeat the exact native configuration five times
-        id: native_loop
-        if: steps.runtime.outcome == 'success' && steps.native_compile.outcome == 'success'
-        run: |
-          set +e
-          "$DIAGNOSTIC_ROOT/desktop-launch-diagnostics" "$STAGED_RESOURCES" \
-            "$DIAGNOSTIC_ROOT" "$STAGED_RESOURCES/workflow/macos-launcher/runtime/prepare-desktop.mjs" \
-            > "$DIAGNOSTIC_ROOT/direct-loop.log" 2>&1
-          result=$?
-          set -e
-          printf '%s\n' "$result" > "$DIAGNOSTIC_ROOT/direct-loop.exit"
-          cat "$DIAGNOSTIC_ROOT/direct-loop.log"
-          if test "$result" -eq 2; then
-            printf 'safe_to_repeat=false\n' >> "$GITHUB_OUTPUT"
-          else
-            printf 'safe_to_repeat=true\n' >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Set up the fixed Flutter toolchain for the parent-context loop
-        if: always() && steps.runtime.outcome == 'success' && steps.native_loop.outputs.safe_to_repeat == 'true'
+        if: always() && steps.runtime.outcome == 'success'
         uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -120,7 +102,7 @@ jobs:
 
       - name: Prepare the locked current Debug candidate once
         id: candidate
-        if: always() && steps.runtime.outcome == 'success' && steps.native_loop.outputs.safe_to_repeat == 'true'
+        if: always() && steps.runtime.outcome == 'success'
         working-directory: macos-launcher/flutter
         run: |
           flutter --version --machine > "$DIAGNOSTIC_ROOT/flutter-version.json"
@@ -151,6 +133,7 @@ jobs:
           PY
 
       - name: Repeat the unmodified actual Launcher command with a read-only observer
+        id: parent_loop
         if: always() && steps.candidate.outcome == 'success'
         working-directory: macos-launcher/flutter
         run: |
@@ -163,6 +146,41 @@ jobs:
           set -e
           printf '%s\n' "$result" > "$DIAGNOSTIC_ROOT/launcher-loop.exit"
           cat "$DIAGNOSTIC_ROOT/launcher-loop.log"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          summary = Path(os.environ['DIAGNOSTIC_ROOT']) / 'launcher-summary.json'
+          safe = False
+          if summary.is_file():
+              data = json.loads(summary.read_text())
+              iterations = data.get('iterations', [])
+              safe = (data.get('requestedIterations') == 3 and data.get('completedIterations') == 3
+                      and len(iterations) == 3 and data.get('stoppedForIncompleteCleanup') is False
+                      and all(item.get('cleanup', {}).get('ownershipKnown') is True
+                              and item.get('cleanup', {}).get('cleanupComplete') is True
+                              and type(item.get('cleanup', {}).get('gateExit')) is int
+                              and item.get('cleanup', {}).get('gateExit') == 0 for item in iterations))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'safe_to_compare={str(safe).lower()}\n')
+          PY
+
+      - name: Repeat the exact native configuration five times
+        id: native_loop
+        if: always() && steps.runtime.outcome == 'success' && steps.native_compile.outcome == 'success' && steps.parent_loop.outputs.safe_to_compare == 'true'
+        run: |
+          set +e
+          "$DIAGNOSTIC_ROOT/desktop-launch-diagnostics" "$STAGED_RESOURCES" \
+            "$DIAGNOSTIC_ROOT" "$STAGED_RESOURCES/workflow/macos-launcher/runtime/prepare-desktop.mjs" \
+            > "$DIAGNOSTIC_ROOT/direct-loop.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$DIAGNOSTIC_ROOT/direct-loop.exit"
+          cat "$DIAGNOSTIC_ROOT/direct-loop.log"
+          if test "$result" -eq 2; then
+            printf 'safe_to_repeat=false\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'safe_to_repeat=true\n' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Record final unchanged payload and listener facts
         if: always() && steps.runtime.outcome == 'success'

@@ -23,6 +23,31 @@ func reject(_ message: String) -> NSError {
           userInfo: [NSLocalizedDescriptionKey: message])
 }
 
+func readOnlyCommand(_ executable: String, _ arguments: [String]) throws -> [String: Any] {
+  let process = Process(), output = Pipe(), errors = Pipe()
+  process.executableURL = URL(fileURLWithPath: executable)
+  process.arguments = arguments
+  process.environment = ProcessInfo.processInfo.environment.merging(["LC_ALL": "C"], uniquingKeysWith: { _, new in new })
+  process.standardOutput = output; process.standardError = errors
+  try process.run()
+  process.waitUntilExit()
+  return ["command": [executable] + arguments, "exit": process.terminationStatus,
+    "terminationReason": process.terminationReason == .exit ? "exit" : "signal",
+    "stdout": String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
+    "stderr": String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)]
+}
+func esrch(_ lookup: [String: Any], _ pid: pid_t) -> Bool {
+  let message = (lookup["stderr"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+  return lookup["terminationReason"] as? String == "exit" &&
+    lookup["exit"] as? Int32 == 1 && lookup["stdout"] as? String == "" &&
+    !message.contains("\n") && message.contains(String(pid)) && message.hasSuffix("No such process")
+}
+func sameIdentity(_ app: NSRunningApplication, _ bundle: String, _ executable: String, _ launched: Date) -> Bool {
+  guard let actual = app.bundleURL, let binary = app.executableURL, let date = app.launchDate else { return false }
+  return canonical(actual.path) == bundle && canonical(binary.path) == executable &&
+    abs(date.timeIntervalSince1970 - launched.timeIntervalSince1970) < 0.001
+}
+
 do {
   let args = CommandLine.arguments
   let env = ProcessInfo.processInfo.environment
@@ -123,15 +148,54 @@ do {
       // NSWorkspace launches are not children: no exit status can be reaped here.
       facts["actualExitStatus"] = NSNull()
       facts["exitStatusAvailability"] = "not-a-child-process"
-      let requested = app.isTerminated || app.terminate()
+      try emit(facts, to: root.appendingPathComponent("launch-observation.json"))
+      let pid = app.processIdentifier, binary = canonical(actualExecutable.path)
+      let current = NSRunningApplication(processIdentifier: pid)
+      let ownershipKnown = current.map { sameIdentity($0, bundle, binary, launched) } ?? true
+      let requested = ownershipKnown && (current?.terminate() ?? false)
       facts["normalTerminationRequested"] = requested
+      facts["nativeLookupMissingBeforeRequest"] = current == nil
       let deadline = Date().addingTimeInterval(15)
-      while !app.isTerminated && Date() < deadline {
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-      }
-      facts["observedExited"] = app.isTerminated
-      if !requested || !app.isTerminated {
-        facts["cleanupFailure"] = "normal-termination-not-observed"
+      var exited = false, samples = 0
+      if ownershipKnown {
+        repeat {
+          let lookup = try readOnlyCommand("/bin/kill", ["-0", String(pid)])
+          let fresh = NSRunningApplication(processIdentifier: pid)
+          let matches = fresh.map { sameIdentity($0, bundle, binary, launched) } ?? false
+          let absent = esrch(lookup, pid)
+          samples += 1
+          facts["lastPidLookup"] = lookup
+          facts["pidLookupState"] = absent ? "gone-ESRCH" : lookup["exit"] as? Int32 == 0 ? "exists" : "unknown"
+          facts["freshApplicationObservation"] = ["pid": pid, "present": fresh != nil,
+            "sameBundleExecutableLaunchDate": matches, "isTerminated": fresh?.isTerminated as Any? ?? NSNull(),
+            "bundlePath": fresh?.bundleURL.map { canonical($0.path) } as Any? ?? NSNull(),
+            "executablePath": fresh?.executableURL.map { canonical($0.path) } as Any? ?? NSNull(),
+            "launchDateUnix": fresh?.launchDate?.timeIntervalSince1970 as Any? ?? NSNull()]
+          if samples == 1 {
+            facts["firstPidLookup"] = lookup
+            facts["firstFreshApplicationObservation"] = facts["freshApplicationObservation"]
+          }
+          if fresh != nil && !matches {
+            facts["cleanupFailure"] = "native-pid-identity-changed"
+            break
+          }
+          if absent && (fresh == nil || fresh?.isTerminated == true) { exited = true; break }
+          if !absent && lookup["exit"] as? Int32 != 0 {
+            facts["cleanupFailure"] = "pid-lookup-unknown"
+            break
+          }
+          RunLoop.current.run(until: min(deadline, Date().addingTimeInterval(0.05)))
+        } while Date() < deadline
+      } else { facts["cleanupFailure"] = "native-pid-identity-changed" }
+      facts["exitObservationSamples"] = samples
+      facts["observedExited"] = exited
+      facts["privateRootResiduals"] = ["root": root.path,
+        "receiptStat": try readOnlyCommand("/usr/bin/stat", ["-f", "%HT %z", data + "/global/.dsh-workflow/desktop/desktop-host.json"]),
+        "userDataDirectoryExistsReported": manager.fileExists(atPath: data + "/desktop-user-data"),
+        "updateJournalDirectoryExistsReported": manager.fileExists(atPath: data + "/desktop-update"),
+        "diagnosticFileExistsReported": manager.fileExists(atPath: data + "/desktop-diagnostic.json")]
+      if !exited {
+        if facts["cleanupFailure"] == nil { facts["cleanupFailure"] = "normal-termination-not-observed" }
         failed += 1
       }
     } else {
