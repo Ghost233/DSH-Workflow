@@ -500,6 +500,7 @@ Future<void> main(List<String> arguments) async {
         prestartedHost: settings?.host,
         prestartedHostLog: settings?.hostLog,
         passwordPreloaded: settingsScenario,
+        debugStopOwnedWebBeforeQuit: settingsTraceReplay,
         traceApplicationPid: settingsScenario ? process.pid : null,
         diagnose: diagnostics?.record,
       );

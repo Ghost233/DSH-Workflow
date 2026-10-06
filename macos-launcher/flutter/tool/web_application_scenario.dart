@@ -275,6 +275,7 @@ Future<void> runWebApplicationScenario({
   Process? prestartedHost,
   IOSink? prestartedHostLog,
   bool passwordPreloaded = false,
+  bool debugStopOwnedWebBeforeQuit = false,
   int? traceApplicationPid,
   void Function(String, Map<String, Object?>)? diagnose,
 }) async {
@@ -766,6 +767,49 @@ Future<void> runWebApplicationScenario({
           },
         ),
       );
+      // TEMP single-variable cleanup diagnosis; the original prefix is unchanged.
+      if (debugStopOwnedWebBeforeQuit) {
+        final owned = await readReceipt();
+        final desktopPid =
+            ((await state())['native'] as Map)['openedDesktopPid'];
+        require(
+          options.backend == 'desktop' &&
+              desktopPid is int &&
+              desktopPid > 1 &&
+              owned['pid'] == backendPid &&
+              owned['lease'] == lease &&
+              await ownsHostReceipt(owned),
+          'TEMP cleanup stops only this case owned Web with a bound Desktop Host',
+        );
+        diagnose?.call('cleanup-web-stop-start', {
+          'pid': backendPid,
+          'expectedPid': desktopPid,
+        });
+        await tapUi('停止 Web');
+        await portReleased();
+        final preserved = await readReceipt();
+        final hostAlive = await Process.run('/bin/kill', ['-0', '$backendPid']);
+        final desktopAlive = await Process.run('/bin/kill', [
+          '-0',
+          '$desktopPid',
+        ]);
+        require(
+          preserved['pid'] == backendPid &&
+              preserved['lease'] == lease &&
+              await ownsHostReceipt(preserved) &&
+              ((await state())['native'] as Map)['openedDesktopPid'] ==
+                  desktopPid &&
+              hostAlive.exitCode == 0 &&
+              desktopAlive.exitCode == 0,
+          'TEMP Web stop releases its port while the same bound Desktop and Host remain alive',
+        );
+        await health(backendUrl, backendLogin.cookies);
+        diagnose?.call('cleanup-web-stop-end', {
+          'pid': backendPid,
+          'expectedPid': desktopPid,
+          'present': true,
+        });
+      }
       return;
     }
     if (options.backend == 'desktop') {
