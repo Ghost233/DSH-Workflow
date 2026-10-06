@@ -10,6 +10,7 @@ class AppDelegate: FlutterAppDelegate {
   private var channel: FlutterMethodChannel?
   #if DEBUG
   private var lastOpenedUrl: String?
+  private var entryGateToken: String?
   #endif
   private var instanceLock: Int32 = -1
   private var instanceClaimed = false
@@ -30,6 +31,55 @@ class AppDelegate: FlutterAppDelegate {
     #endif
     return nil
   }
+
+  #if DEBUG
+  // Only the external T06 driver can hold this private candidate's real entry
+  // action. Release performs the actual AppKit mutation; timeout/cancel fail.
+  private var entryProbeRoot: URL? {
+    guard let root = testRoot, root.lastPathComponent == "data",
+          root.deletingLastPathComponent().lastPathComponent.hasPrefix("dsh-t06-"),
+          root.deletingLastPathComponent().deletingLastPathComponent().path == "/private/tmp",
+          (try? String(contentsOf: root.appendingPathComponent("entry-probe-owner"), encoding: .utf8)) ==
+            String(ProcessInfo.processInfo.processIdentifier) else { return nil }
+    return root
+  }
+
+  private func traceEntry(_ phase: String, item: NSStatusItem, managed: Bool) {
+    guard let root = entryProbeRoot else { return }
+    let path = root.appendingPathComponent("entry-native.jsonl")
+    guard let data = try? JSONSerialization.data(withJSONObject: [
+      "phase": phase, "token": entryGateToken as Any? ?? NSNull(),
+      "managed": managed, "entryVisible": item.isVisible,
+      "uptime": ProcessInfo.processInfo.systemUptime,
+      "pid": ProcessInfo.processInfo.processIdentifier
+    ]) else { return }
+    if !FileManager.default.fileExists(atPath: path.path) {
+      _ = FileManager.default.createFile(atPath: path.path, contents: nil, attributes: [.posixPermissions: 0o600])
+    }
+    guard let file = try? FileHandle(forWritingTo: path) else { return }
+    defer { try? file.close() }
+    do { try file.seekToEnd(); try file.write(contentsOf: data + Data([10])) } catch {}
+  }
+
+  private func awaitEntryRelease(_ item: NSStatusItem, root: URL, token: String,
+                                 deadline: TimeInterval, result: @escaping FlutterResult) {
+    if (try? String(contentsOf: root.appendingPathComponent("entry-release"), encoding: .utf8)) == token {
+      item.isVisible = false
+      traceEntry("released-applied", item: item, managed: true)
+      result(!item.isVisible)
+    } else if (try? String(contentsOf: root.appendingPathComponent("entry-cancel"), encoding: .utf8)) == token {
+      traceEntry("cancelled", item: item, managed: true)
+      result(FlutterError(code: "entry_gate_cancelled", message: "Owned entry action cancelled", details: nil))
+    } else if ProcessInfo.processInfo.systemUptime >= deadline {
+      traceEntry("timeout", item: item, managed: true)
+      result(FlutterError(code: "entry_gate_timeout", message: "Owned entry action release timed out", details: nil))
+    } else {
+      DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { [weak self] in
+        self?.awaitEntryRelease(item, root: root, token: token, deadline: deadline, result: result)
+      }
+    }
+  }
+  #endif
 
   // Real system mutations are restricted to a disposable GitHub macOS runner.
   // The ordinary isolated Debug profile never reads or changes login items.
@@ -149,7 +199,21 @@ class AppDelegate: FlutterAppDelegate {
         #endif
         case "setEntryManaged":
           guard let managed = call.arguments as? Bool, let item = self.statusItem else { throw self.failure("菜单入口尚未就绪") }
+          #if DEBUG
+          if managed, let root = self.entryProbeRoot,
+             let token = try? String(contentsOf: root.appendingPathComponent("entry-hold"), encoding: .utf8),
+             !token.isEmpty, token.count <= 80 {
+            self.entryGateToken = token
+            self.traceEntry("held", item: item, managed: true)
+            self.awaitEntryRelease(item, root: root, token: token,
+              deadline: ProcessInfo.processInfo.systemUptime + (token.hasPrefix("timeout-") ? 3 : 12), result: result)
+            return
+          }
+          #endif
           item.isVisible = !managed
+          #if DEBUG
+          self.traceEntry("applied", item: item, managed: managed)
+          #endif
           result(item.isVisible == !managed)
         case "savePreferences":
           guard let values = call.arguments as? [String: Any], let access = values["fullAccess"] as? Bool,

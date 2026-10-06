@@ -10,6 +10,7 @@ import 'package:vm_service/vm_service_io.dart';
 import 'web_application_scenario.dart';
 import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
+import 'entry_application_scenario.dart';
 import 'lifecycle_application_scenario.dart';
 import 'settings_application_scenario.dart';
 import 'probe_diagnostics.dart';
@@ -33,6 +34,8 @@ Future<void> main(List<String> arguments) async {
   final logFixture = arguments.length == 3 && arguments[1] == '--logs-fixture';
   final logsScenario =
       arguments.length == 3 && arguments[1] == '--logs-runtime';
+  final entryScenario =
+      arguments.length == 3 && arguments[1] == '--entry-runtime';
   final lifecycle = LifecycleProbeOptions.parse(arguments);
   final settingsScenario =
       arguments.length >= 2 && arguments[1] == '--settings-runtime';
@@ -47,7 +50,7 @@ Future<void> main(List<String> arguments) async {
               .take(arguments.length - 2 - (keychainCi ? 1 : 0)),
         ]
       : arguments;
-  final webScenario = logsScenario
+  final webScenario = logsScenario || entryScenario
       ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
       : WebProbeOptions.parse(webArgs) ?? lifecycle?.web;
   final systemCi =
@@ -104,6 +107,7 @@ Future<void> main(List<String> arguments) async {
       !nativeBinary.contains('DSHLauncherTestRoot') ||
       !nativeBinary.contains('test-preferences.plist') ||
       !nativeBinary.contains('debugWindow') ||
+      (entryScenario && !nativeBinary.contains('entry-probe-owner')) ||
       !dartKernel.contains('ext.dshlauncher.application')) {
     throw ArgumentError(
       'Unknown or non-isolated Debug candidate; it is never launched or changed',
@@ -120,6 +124,8 @@ Future<void> main(List<String> arguments) async {
                 ? 'dsh-t05-'
                 : updates
                 ? 'dsh-t07-'
+                : entryScenario
+                ? 'dsh-t06-'
                 : 'dsh-t01-',
           );
   final releaseFixture = updates ? await ReleaseFixture.start() : null;
@@ -166,6 +172,11 @@ Future<void> main(List<String> arguments) async {
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
   final webPort = await webScenario?.stage(root);
   if (webPort != null) environment['DSH_LAUNCHER_TEST_PORT'] = '$webPort';
+  if (entryScenario) {
+    await File(
+      '${root.path}/entry-stage.json',
+    ).writeAsString(jsonEncode({'port': webPort, 'inputApp': sourceApp.path}));
+  }
   final settings = settingsScenario
       ? SettingsFixture(root, webScenario!, keychainCi)
       : null;
@@ -362,7 +373,9 @@ Future<void> main(List<String> arguments) async {
         state: state,
         tap: tap,
         capture: capture,
-        onConnected: settingsScenario
+        onConnected: entryScenario
+            ? runEntryApplicationScenario
+            : settingsScenario
             ? runSettingsApplicationScenario
             : lifecycle != null
             ? (actual) =>

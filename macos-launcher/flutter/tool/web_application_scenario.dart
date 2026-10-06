@@ -16,6 +16,11 @@ typedef WebSdkRequest = Future<Map<String, Object?>> Function(
   Map<String, Object?>? params,
 });
 
+typedef WebAppRequest = Future<Map<String, Object?>> Function(
+  String method, {
+  Map<String, Object?>? params,
+});
+
 class WebObservation {
   WebObservation({
     required this.root,
@@ -30,6 +35,8 @@ class WebObservation {
     required this.tap,
     required this.capture,
     required this.reconnectManager,
+    required this.appRequest,
+    required this.disconnectManager,
     required this.stopOwnedHost,
     required this.replaceOwnedHost,
   });
@@ -44,6 +51,8 @@ class WebObservation {
       File('${root.path}/data/global/.dsh-workflow/desktop/desktop-host.json');
   final Future<void> Function(String) tap, capture;
   final Future<void> Function() reconnectManager;
+  final WebAppRequest appRequest;
+  final Future<void> Function({bool sessionOnly}) disconnectManager;
   final Future<void> Function() stopOwnedHost;
   final Future<Map<String, Object?>> Function() replaceOwnedHost;
 }
@@ -489,12 +498,57 @@ Future<void> runWebApplicationScenario({
       'official SDK observes this same backend lease',
     );
     if (onConnected != null) {
+      Future<Map<String, Object?>> appRequest(
+        String method, {
+        Map<String, Object?>? params,
+      }) async {
+        final session = server!.sessionFor('dsh-workflow')!;
+        final trace = File('${root.path}/manager-app-requests.jsonl');
+        Future<void> record(Map<String, Object?> detail) => trace.writeAsString(
+          '${jsonEncode({'method': method, 'managed': params?['managed'], 'launcherSessionId': session.launcherSessionId, ...detail})}\n',
+          mode: FileMode.append,
+        );
+        await record({'phase': 'request'});
+        try {
+          final reply = await session.sendRequest(
+            method,
+            params: params,
+            timeout: const Duration(seconds: 5),
+          );
+          await record({'phase': 'response', 'reply': reply});
+          return reply;
+        } catch (error) {
+          await record({
+            'phase': 'transport-error',
+            'errorType': error.runtimeType.toString(),
+            'error': error.toString(),
+          });
+          rethrow;
+        }
+      }
+
+      Future<void> disconnectManager({bool sessionOnly = false}) async {
+        if (sessionOnly) {
+          await server!.sessionFor('dsh-workflow')!.close();
+          return;
+        }
+        await server!.close();
+        server = null;
+        await waitFor(
+          'application observes manager disconnect',
+          () async => ((await state())['nodes'] as List).any(
+            (node) =>
+                (node as Map)['label'].toString().contains('disconnected'),
+          ),
+        );
+      }
+
       await onConnected(
         WebObservation(
           root: root,
           port: port,
           backend: backend,
-          capabilities: server.registry
+          capabilities: server!.registry
               .byProject('dsh-workflow')!
               .capabilities
               .toJson(),
@@ -505,16 +559,10 @@ Future<void> runWebApplicationScenario({
           webHealth: () async => health(url, await authenticate()),
           tap: tapUi,
           capture: capture,
+          appRequest: appRequest,
+          disconnectManager: disconnectManager,
           reconnectManager: () async {
-            await server!.close();
-            server = null;
-            await waitFor(
-              'application observes manager disconnect',
-              () async => ((await ui())['nodes'] as List).any(
-                (node) =>
-                    (node as Map)['label'].toString().contains('disconnected'),
-              ),
-            );
+            if (server != null) await disconnectManager();
             server = await LauncherServer.start(
               layout: layout,
               bindings: bindings,
