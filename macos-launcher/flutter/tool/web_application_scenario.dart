@@ -7,6 +7,16 @@ import 'package:launcher_core/launcher_core.dart';
 import 'application_probe.dart' show require, waitFor;
 import 'web_startup_wait.dart';
 
+Future<ServerSession> currentSdkSession(LauncherServer server) async {
+  ServerSession? current;
+  await waitFor('current official SDK connection', () async {
+    current = server.sessionFor('dsh-workflow');
+    return current != null;
+  });
+  return current ??
+      (throw StateError('Current official SDK session unavailable'));
+}
+
 typedef ApplicationState = Future<Map<String, Object?>> Function([
   Map<String, String>? parameters,
 ]);
@@ -299,14 +309,23 @@ Future<void> runWebApplicationScenario({
       Map<String, Object?>? params,
     }) async {
       final elapsed = Stopwatch()..start();
-      final response = await server!
-          .sessionFor('dsh-workflow')!
-          .sendRequest(
-            method,
-            serviceId: service,
-            params: params,
-            timeout: const Duration(seconds: 30),
-          );
+      diagnose?.call('sdk-session-lookup', {
+        'service': service,
+        'method': method,
+        'available': server!.sessionFor('dsh-workflow') != null,
+      });
+      final active = await currentSdkSession(server!);
+      diagnose?.call('sdk-session-current', {
+        'service': service,
+        'method': method,
+        'launcherSessionId': active.launcherSessionId,
+      });
+      final response = await active.sendRequest(
+        method,
+        serviceId: service,
+        params: params,
+        timeout: const Duration(seconds: 30),
+      );
       final result = response['result'] as Map?;
       diagnose?.call('sdk-response', {
         'service': service,
