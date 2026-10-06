@@ -22,7 +22,8 @@ Future<void> main() async {
     startProcess: kDebugMode
         ? (executable, arguments, {workingDirectory, environment}) =>
               startLifecycleProbeProcess(
-                executable, arguments,
+                executable,
+                arguments,
                 workingDirectory: workingDirectory,
                 environment: environment,
                 isolated: model.environment.testSocket != null,

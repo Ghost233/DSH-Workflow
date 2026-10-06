@@ -19,19 +19,21 @@ Future<Process> startLifecycleProbeProcess(
     environment: environment,
   );
   if (!isolated || gatePath == null) return child;
-  await File('$dataRoot/owned-web-child.json').writeAsString(
-    jsonEncode({'pid': child.pid}) + '\n',
-  );
+  await File('$dataRoot/owned-web-child.json')
+      .writeAsString('${jsonEncode({'pid': child.pid})}\n');
   if (!await File('$gatePath.arm').exists()) return child;
   Socket? gate;
   try {
     gate = await Socket.connect(
-      InternetAddress(gatePath, type: InternetAddressType.unix), 0,
+      InternetAddress(gatePath, type: InternetAddressType.unix),
+      0,
     );
     gate.writeln(jsonEncode({'pid': child.pid}));
     await gate.flush();
-    final release = await utf8.decoder.bind(gate)
-        .transform(const LineSplitter()).first;
+    final release = await utf8.decoder
+        .bind(gate)
+        .transform(const LineSplitter())
+        .first;
     if (release != 'release') throw StateError('Invalid process gate release');
     return child;
   } catch (_) {

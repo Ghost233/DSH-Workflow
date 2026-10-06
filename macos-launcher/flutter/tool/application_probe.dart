@@ -311,7 +311,9 @@ Future<void> main(List<String> arguments) async {
         capture: capture,
         onConnected: lifecycle != null
             ? (actual) => runLifecycleScenario(actual, process)
-            : logsScenario ? runLogApplicationScenario : null,
+            : logsScenario
+            ? runLogApplicationScenario
+            : null,
       );
       if (lifecycle == null) await state({'action': 'quit'});
       require(

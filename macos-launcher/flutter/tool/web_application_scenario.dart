@@ -187,7 +187,10 @@ Future<void> runWebApplicationScenario({
   }
 
   Future<void> startOwnedHost() async {
-    require(options.backend == 'headless', 'owned Host helper is headless only');
+    require(
+      options.backend == 'headless',
+      'owned Host helper is headless only',
+    );
     hostExited = false;
     host = await Process.start(
       '$resources/node',
@@ -201,15 +204,14 @@ Future<void> runWebApplicationScenario({
     );
     hostLog ??= File('${root.path}/host.log').openWrite();
     final hostReady = Completer<void>();
-    host!.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-          hostLog!.writeln(line);
-          if (line == 'HOST_READY' && !hostReady.isCompleted) {
-            hostReady.complete();
-          }
-        });
+    host!.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(
+      (line) {
+        hostLog!.writeln(line);
+        if (line == 'HOST_READY' && !hostReady.isCompleted) {
+          hostReady.complete();
+        }
+      },
+    );
     host!.stderr.listen(hostLog!.add);
     unawaited(
       host!.exitCode.then((code) {
@@ -226,16 +228,23 @@ Future<void> runWebApplicationScenario({
   }
 
   Future<void> stopOwnedHost() async {
-    require(options.backend == 'headless' && host != null && !hostExited,
-      'only this probe owned headless Host is shut down');
+    require(
+      options.backend == 'headless' && host != null && !hostExited,
+      'only this probe owned headless Host is shut down',
+    );
     final pid = (await readReceipt())['pid'] as int;
     host!.stdin.writeln('shutdown');
     await host!.stdin.flush();
-    require(await host!.exitCode.timeout(const Duration(seconds: 30)) == 0,
-      'owned official Host shuts down through its actual IPC');
-    await waitFor('owned Host PID and receipt released', () async =>
-      !await receipt.exists() &&
-      (await Process.run('/bin/kill', ['-0', '$pid'])).exitCode != 0);
+    require(
+      await host!.exitCode.timeout(const Duration(seconds: 30)) == 0,
+      'owned official Host shuts down through its actual IPC',
+    );
+    await waitFor(
+      'owned Host PID and receipt released',
+      () async =>
+          !await receipt.exists() &&
+          (await Process.run('/bin/kill', ['-0', '$pid'])).exitCode != 0,
+    );
   }
 
   try {
@@ -576,11 +585,12 @@ Future<void> runWebApplicationScenario({
       }
     }
     await server?.close();
-    if (host != null && !hostExited) {
-      host.stdin.writeln('shutdown');
-      await host.stdin.flush();
+    final remainingHost = host;
+    if (remainingHost != null && !hostExited) {
+      remainingHost.stdin.writeln('shutdown');
+      await remainingHost.stdin.flush();
       require(
-        await host.exitCode.timeout(const Duration(seconds: 30)) == 0,
+        await remainingHost.exitCode.timeout(const Duration(seconds: 30)) == 0,
         'owned official Host shuts down normally through its real IPC',
       );
     }
