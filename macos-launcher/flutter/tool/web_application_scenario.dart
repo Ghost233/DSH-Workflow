@@ -167,6 +167,7 @@ Future<void> runWebApplicationScenario({
   bool passwordPreloaded = false,
   bool settingsOwnedWebCleanup = false,
   void Function(String, Map<String, Object?>)? diagnose,
+  Future<void> Function(int, Map<String, Object?>)? requestDesktopTermination,
 }) async {
   final data = '${root.path}/data';
   final home = '${root.path}/home';
@@ -790,7 +791,18 @@ Future<void> runWebApplicationScenario({
     }
     if (options.backend == 'desktop') {
       final desktopPid = ((await state())['native'] as Map)['openedDesktopPid'];
-      await state({'action': 'quitDesktop'});
+      if (settingsOwnedWebCleanup) {
+        require(
+          desktopPid is int && requestDesktopTermination != null,
+          'current settings Desktop has an external normal termination requester',
+        );
+        await requestDesktopTermination!(
+          desktopPid as int,
+          await readReceipt(),
+        );
+      } else {
+        await state({'action': 'quitDesktop'});
+      }
       if (desktopPid is int) {
         await waitFor(
           'owned official Desktop exits',

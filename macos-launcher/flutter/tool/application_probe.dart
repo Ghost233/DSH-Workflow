@@ -355,6 +355,9 @@ Future<void> main(List<String> arguments) async {
   VmService? vm;
   LauncherServer? server;
   try {
+    if (settingsScenario && webScenario?.backend == 'desktop') {
+      await diagnostics!.prepareDesktopTermination();
+    }
     final http = await vmUri.future.timeout(const Duration(seconds: 30));
     vm = await vmServiceConnectUri('${http.replaceFirst('http:', 'ws:')}ws');
     final isolate = (await vm.getVM()).isolates!.single.id!;
@@ -484,6 +487,10 @@ Future<void> main(List<String> arguments) async {
         settingsOwnedWebCleanup:
             settingsScenario && webScenario.backend == 'desktop',
         diagnose: diagnostics?.record,
+        requestDesktopTermination:
+            settingsScenario && webScenario.backend == 'desktop'
+            ? diagnostics!.requestDesktopTermination
+            : null,
       );
       if (lifecycle == null) await state({'action': 'quit'});
       require(

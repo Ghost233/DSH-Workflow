@@ -44,14 +44,18 @@ do {
                               "launchDateUnix": launched.timeIntervalSince1970, "probeStartedAt": probe["startedAt"]!]
     try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]).write(to: ledger, options: .atomic)
     try emit(facts.merging(["event": "captured"], uniquingKeysWith: { _, new in new }))
-  } else if mode == "terminate" {
-    guard arguments.count == 3 else { throw fail("Invalid cleanup arguments") }
+  } else if mode == "terminate" || mode == "request-only" {
+    guard arguments.count == (mode == "request-only" ? 4 : 3) else { throw fail("Invalid cleanup arguments") }
     let facts = try JSONSerialization.jsonObject(with: Data(contentsOf: ledger)) as! [String: Any]
     guard let pid = facts["pid"] as? Int32, pid > 1, let expected = facts["bundlePath"] as? String,
           expected.hasPrefix(runnerRoot + "/"), let launched = facts["launchDateUnix"] as? Double,
           let executable = facts["executablePath"] as? String else { throw fail("Invalid owned Desktop ledger") }
+    if mode == "request-only" {
+      guard let expectedPid = Int32(arguments[3]), expectedPid == pid else { throw fail("Desktop ledger differs from current PID") }
+    }
     guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated else {
-      try emit(["event": "already-exited", "pid": pid, "observedExited": true])
+      try emit(["event": "already-exited", "mode": mode, "requests": 0, "pid": pid, "observedExited": true])
+      if mode == "request-only" { throw fail("Current Desktop request liveness is unknown") }
       exit(0)
     }
     guard let bundle = app.bundleURL, canonical(bundle.path) == expected,
@@ -59,9 +63,41 @@ do {
           let actualLaunch = app.launchDate, abs(actualLaunch.timeIntervalSince1970 - launched) < 0.001 else {
       throw fail("Desktop PID identity changed")
     }
+    if mode == "request-only" {
+      let binding = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: root).appendingPathComponent("owned-desktop-request.json"))) as! [String: Any]
+      let probe = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: root).appendingPathComponent("probe-process.json"))) as! [String: Any]
+      guard let launcher = binding["launcher"] as? [String: Any], let driver = binding["driver"] as? [String: Any],
+            let launcherPid = launcher["pid"] as? Int32, launcherPid == probe["pid"] as? Int32,
+            let driverPid = driver["pid"] as? Int32, driverPid == getppid(),
+            launcher["parentPid"] as? Int32 == driverPid,
+            launcher["uid"] as? UInt32 == getuid(), driver["uid"] as? UInt32 == getuid(),
+            let launcherExecutable = launcher["executable"] as? String, launcherExecutable == probe["executable"] as? String,
+            let launcherStart = launcher["startUnixSeconds"] as? Double,
+            let launcherApp = NSRunningApplication(processIdentifier: launcherPid), !launcherApp.isTerminated,
+            let launcherURL = launcherApp.executableURL, canonical(launcherURL.path) == launcherExecutable,
+            let launcherDate = launcherApp.launchDate, abs(launcherDate.timeIntervalSince1970 - launcherStart) <= 1,
+            binding["root"] as? String == root, binding["desktopPid"] as? Int32 == pid,
+            let hostPid = binding["hostPid"] as? Int32, hostPid > 1, kill(hostPid, 0) == 0 else {
+        throw fail("Live Launcher/driver/Desktop/Host request binding changed")
+      }
+      let receipt = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: root).appendingPathComponent("data/global/.dsh-workflow/desktop/desktop-host.json"))) as! [String: Any]
+      guard receipt["pid"] as? Int32 == hostPid, receipt["lease"] as? String == binding["hostLease"] as? String else {
+        throw fail("Current Host receipt changed before Desktop request")
+      }
+      try emit(["event": "request-live-binding", "mode": mode, "pid": pid,
+                "launcherPid": launcherPid, "driverPid": driverPid, "hostPid": hostPid,
+                "launcherLive": true, "driverLive": true])
+    }
     let requested = app.terminate()
-    try emit(["event": "normal-termination-request", "pid": pid, "requested": requested])
+    if mode == "request-only" {
+      try emit(["event": "normal-termination-request", "mode": mode, "requests": 1,
+                "pid": pid, "expectedPid": pid, "lookupFound": true,
+                "accepted": requested, "hasTerminated": app.isTerminated])
+    } else {
+      try emit(["event": "normal-termination-request", "mode": mode, "requests": 1, "pid": pid, "requested": requested])
+    }
     guard requested else { throw fail("Desktop declined normal termination") }
+    if mode == "request-only" { exit(0) }
     let deadline = Date().addingTimeInterval(15)
     while !app.isTerminated && Date() < deadline {
       RunLoop.current.run(until: Date().addingTimeInterval(0.1))

@@ -118,6 +118,74 @@ Future<void> preserveHostInspectionFailure(
   );
 }
 
+const desktopRequestIdentityScript = r'''
+import importlib.util, json, os, sys
+from pathlib import Path
+if os.environ.get('GITHUB_ACTIONS') != 'true':
+    raise ValueError('Desktop request identity requires clean CI')
+source, root_name, mode, driver_pid, driver_executable = sys.argv[1:]
+spec = importlib.util.spec_from_file_location('settings_startup_cycle', source)
+cycle = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(cycle)
+runner = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+root = cycle.validate_root(root_name, runner)
+if root.parent != runner or not root.name.startswith('dsh-t05-'):
+    raise ValueError('Unowned settings Desktop request root')
+probe_file = root / 'probe-process.json'
+probe = cycle.parse_json(probe_file.read_text())
+driver_pid = int(driver_pid)
+expected_app = Path(probe['executable']).resolve(strict=True)
+if expected_app.parent.parent.parent != root / 'candidate.app':
+    raise ValueError('Launcher executable is outside the owned candidate')
+def identity(pid, executable):
+    allowed = {str(executable)}
+    # Dart can report its SDK launcher while libproc observes the actual dartvm.
+    sibling = executable.with_name('dartvm')
+    if pid == driver_pid and executable.name == 'dart' and sibling.is_file():
+        allowed.add(str(sibling.resolve(strict=True)))
+    value = cycle.inspect_host(pid)
+    if (value.get('lookupOk') is not True or value.get('pid') != pid
+        or value.get('executable') not in allowed or value.get('uid') != os.getuid()
+        or value.get('query', {}).get('exit') != 0 or not isinstance(value.get('startUnixSeconds'), (int, float))):
+        raise ValueError('Live process identity is unknown')
+    return {key:value[key] for key in ['pid', 'executable', 'parentPid', 'startUnixSeconds', 'uid']}
+launcher = identity(probe['pid'], expected_app)
+driver = identity(driver_pid, Path(driver_executable).resolve(strict=True))
+if launcher['parentPid'] != driver_pid:
+    raise ValueError('Launcher parent differs from the live Dart driver')
+if mode == 'prepare':
+    started = cycle.datetime.datetime.fromisoformat(probe['startedAt'].replace('Z', '+00:00')).timestamp()
+    if launcher['startUnixSeconds'] < started - 5:
+        raise ValueError('Launcher predates this probe')
+    probe['liveProcesses'] = {'launcher':launcher, 'driver':driver}
+    temporary = probe_file.with_suffix('.json.tmp')
+    temporary.write_text(json.dumps(probe)+'\n')
+    temporary.replace(probe_file)
+    print(json.dumps({'launcher':launcher, 'driver':driver}))
+elif mode == 'request':
+    if probe.get('liveProcesses') != {'launcher':launcher, 'driver':driver}:
+        raise ValueError('Launcher or Dart driver identity changed')
+    expected = json.loads(sys.stdin.read())
+    desktop = cycle.parse_json((root/'owned-desktop-process.json').read_text())
+    if desktop.get('pid') != expected['desktopPid'] or desktop.get('probeStartedAt') != probe['startedAt']:
+        raise ValueError('Desktop ledger differs from the current PID')
+    desktop_identity = identity(desktop['pid'], Path(desktop['executablePath']).resolve(strict=True))
+    if abs(desktop_identity['startUnixSeconds']-desktop['launchDateUnix']) > 1:
+        raise ValueError('Desktop process start differs from captured launch')
+    bound = cycle.capture_owned_host(root, runner, expected['hostPid'])
+    if (bound.get('ownershipKnown') is not True or bound.get('pid') != expected['hostPid']
+        or bound.get('lease') != expected['hostLease'] or bound.get('desktopPid') != expected['desktopPid']
+        or bound.get('root') != str(root) or bound.get('probeStartedAt') != probe['startedAt']):
+        raise ValueError('Current Host/Desktop binding is unknown or changed')
+    facts = {'root':str(root), 'launcher':launcher, 'driver':driver, 'desktop':desktop_identity,
+             'hostPid':bound['pid'], 'hostLease':bound['lease'], 'desktopPid':bound['desktopPid'],
+             'hostInspection':{key:bound['inspection'][key] for key in ['executable','parentPid','startUnixSeconds','uid']}}
+    (root/'owned-desktop-request.json').write_text(json.dumps(facts)+'\n')
+    print(json.dumps(facts))
+else:
+    raise ValueError('Unknown fixed Desktop request identity operation')
+''';
+
 /// External observations and clean-CI normal cleanup for exact owned processes.
 class ProbeDiagnostics {
   ProbeDiagnostics(this.root, {this.publishPhases = false})
@@ -317,16 +385,92 @@ class ProbeDiagnostics {
     }
   }
 
+  Future<Map<String, Object?>> _desktopRequestIdentity(
+    String mode, [
+    Map<String, Object?>? expected,
+  ]) async {
+    final child = await Process.start('/usr/bin/python3', [
+      '-c',
+      desktopRequestIdentityScript,
+      File.fromUri(
+        Platform.script.resolve(
+          '../../../.github/scripts/settings_startup_cycle.py',
+        ),
+      ).path,
+      root.path,
+      mode,
+      '$pid',
+      Platform.resolvedExecutable,
+    ]);
+    final output = child.stdout.transform(utf8.decoder).join();
+    final errors = child.stderr.transform(utf8.decoder).join();
+    if (expected != null) child.stdin.write(jsonEncode(expected));
+    await child.stdin.close();
+    final code = await child.exitCode;
+    final text = await output;
+    final errorText = await errors;
+    record('desktop-request-identity', {'mode': mode, 'code': code});
+    if (code != 0) {
+      throw StateError(
+        'Owned Desktop request identity failed: $code ${safeInspectorOutput(errorText)}',
+      );
+    }
+    final facts = (jsonDecode(text) as Map).cast<String, Object?>();
+    record('desktop-request-live-binding', facts);
+    return facts;
+  }
+
+  Future<void> prepareDesktopTermination() async {
+    await _desktopRequestIdentity('prepare');
+    final result = await Process.run('/usr/bin/swiftc', [
+      File.fromUri(Platform.script.resolve('owned_desktop_cleanup.swift')).path,
+      '-o',
+      '${root.path}/owned-desktop-request',
+    ]);
+    record('desktop-request-helper-compiled', {'code': result.exitCode});
+    if (result.exitCode != 0) {
+      throw StateError(
+        'Owned Desktop request helper compilation failed: ${result.exitCode}',
+      );
+    }
+  }
+
+  Future<void> requestDesktopTermination(
+    int expectedPid,
+    Map<String, Object?> receipt,
+  ) async {
+    await _snapshots;
+    if (_desktopPid != expectedPid ||
+        receipt['pid'] is! int ||
+        receipt['lease'] is! String ||
+        (receipt['lease'] as String).isEmpty) {
+      throw StateError('Current Desktop/Host request identity is unknown');
+    }
+    await _desktopRequestIdentity('request', {
+      'desktopPid': expectedPid,
+      'hostPid': receipt['pid'],
+      'hostLease': receipt['lease'],
+    });
+    await _desktopCommand('request-only', ['$expectedPid']);
+  }
+
   Future<void> _desktopCommand(
     String mode, [
     List<String> arguments = const [],
   ]) async {
-    final result = await Process.run('/usr/bin/swift', [
-      File.fromUri(Platform.script.resolve('owned_desktop_cleanup.swift')).path,
-      root.path,
-      mode,
-      ...arguments,
-    ]);
+    final result = mode == 'request-only'
+        ? await Process.run('${root.path}/owned-desktop-request', [
+            root.path,
+            mode,
+            ...arguments,
+          ])
+        : await Process.run('/usr/bin/swift', [
+            File.fromUri(Platform.script.resolve('owned_desktop_cleanup.swift'))
+                .path,
+            root.path,
+            mode,
+            ...arguments,
+          ]);
     await File('${root.path}/owned-desktop-cleanup.log').writeAsString(
       '${result.stdout}${result.stderr}HELPER_EXIT=${result.exitCode}\n',
       mode: FileMode.append,
@@ -334,6 +478,15 @@ class ProbeDiagnostics {
     record('owned-desktop-helper', {'mode': mode, 'exit': result.exitCode});
     if (result.exitCode != 0) {
       throw StateError('Owned Desktop $mode failed: ${result.exitCode}');
+    }
+    if (mode == 'request-only') {
+      record('desktop-quit-observation', {
+        'pid': _appPid,
+        'mode': mode,
+        ...desktopQuitFacts(
+          jsonDecode(result.stdout.toString().trim().split('\n').last),
+        ),
+      });
     }
   }
 
