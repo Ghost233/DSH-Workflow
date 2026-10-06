@@ -1,6 +1,6 @@
 # T02 — 官方 Desktop 打开失败诊断循环
 
-状态：首次 live diagnostics 未复现目标症状；原 Launcher 主路径尚未执行。新源码改为先运行真实 parent loop，待下一轮 CI，阶段 1–2 未完成。
+状态：当前真实 parent 三次业务绿色、只读 RPC 与 Launcher/Desktop/Host 清理证据完整；Corrupt 未复现，原因未知。针对旧 Corrupt 的诊断阶段 1–2 仍未完成。
 
 正式验收仍以 [T02 issue #3](https://github.com/Ghost233/DSH-Workflow/issues/3) 与原 native acceptance workflow 为准。本文件记录后续失败的诊断，不改变产品合同。
 
@@ -81,3 +81,23 @@ Root 均为 `/Users/runner/work/_temp/<后缀>`。各 Launcher executable 为其
 后置 Swift 只执行一次：native open 81 ms / PID 15857，normal terminate requested=true；61 次观察中首末 raw kill 均 exit 0、stderr/stdout empty，fresh 原生对象同 bundle/executable/launchDate 且 isTerminated=false，原 15 秒后仍活，probe exit 2 / wall 15.481 秒。实际 detach 16 / Resource busy，未观察 Corrupt NSError；这是独立早期退出不完成，不能称 cached-only 或代替原症状。新只读契约与 Host 门禁尚待窄 CI 实测；阶段 1–2 仍未完成。
 
 本轮证据指针：`/private/tmp/dsh-flutter-implementation/T02/CI-37420441555/diagnosis.md`，原始与脱敏文件在同目录 downloads/raw、downloads/sanitized 和 logs。
+
+## 当前真实读取与三 PID 完整清理验证
+
+[窄诊断 run 37424611318，job 112141320925](https://github.com/Ghost233/DSH-Workflow/actions/runs/37424611318/job/112141320925) 实际 source `c1afe10924e08b42579c113074e81cb4eba2b82a`，artifact 11394986556，下载 SHA-256 `2abd52eafff6dd78e68ee7b7edd2ff83196ae64a69e71fee40530af6527ef92b` 与 GitHub digest 一致。
+
+仅第一 parent、已注册 extension 的 legacy 请求 `args={action:observe}` 实际返回 `code=-32000 / message=Server error / data.details=Invalid argument(s): Unknown application probe action: observe`，只执行一次。实际 `args=null` 正确读取三轮分别成功 336 / 191 / 185 次，并取得首响应、候选只读签名/属性和 Host 归属记录。各轮首次 null 请求曾返回 -32601 Method not found，之后均有上述实际成功响应；该请求/响应在脱敏 artifact 中完整保存。contract negative 不计作 Corrupt 业务红，旧 source319 缺失的 code/body/Host 证明没有回填。
+
+| 轮次 | Root 后缀 | Launcher PID / start UTC | Desktop PID / launchDateUnix | Host PID / PPID / startUnixSeconds | 命令 exit / wall ms | 正确读取数 |
+|---|---|---|---|---|---|---|
+| 1 | dsh-t01-WxDidc | 6600 / 2026-10-06T06:40:06.070377Z | 6902 / 1791268817.2867289 | 7043 / 6902 / 1791268823.0 | 0 / 57618 | 336 |
+| 2 | dsh-t01-c7Q2LM | 8567 / 2026-10-06T06:41:04.168272Z | 8954 / 1791268872.906608 | 9062 / 8954 / 1791268874.0 | 0 / 32201 | 191 |
+| 3 | dsh-t01-pXJcPh | 9676 / 2026-10-06T06:41:35.923642Z | 9956 / 1791268903.6453598 | 9979 / 9956 / 1791268905.0 | 0 / 29300 | 185 |
+
+Root 均为 `/Users/runner/work/_temp/<后缀>`，各 Launcher executable 为其 `candidate.app/Contents/MacOS/DSH Workflow`。Desktop 与实际 Host executable 均为 `/Users/runner/work/_temp/dsh-native-runtime-mount/DSH Workflow.app/Contents/Resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness`。每 Host 的 live proc_pidpath 返回 146 bytes / errno 0；PS PPID 与本轮 Desktop PID 相等，lstart 查询 exit 0 / stderr empty，start 一秒精度。各 ledger 的 root/probeStartedAt 与 Launcher 完全一致；lease 分别 `d7f5f9f3-63ae-4263-9f00-3847415289f2`、`bc086ad5-0002-424d-b866-d3317fb6e1c0`、`bfdbf050-59d1-4cae-8dc1-ad84fa3b9d6d`，与本轮真实 receipt/Web 证据匹配。
+
+逐轮 Launcher、Desktop、Host 共 9 个 PID 的原始 kill 查询都是 exit 1 / stdout empty / stderr `kill: <该PID>: No such process`，state=gone-ESRCH；逐轮 receipt read-open ENOENT=2，lsof exit 1 / stdout+stderr empty，四项 ownershipKnown/cleanupComplete=true，gateExit=0，stoppedForIncompleteCleanup=false。三个原完整 parent 场景 command exit 都为 0，当前稳定业务和清理验证已取得。Corrupt 仍为 0/3，原因未知；这是稳定观察，尚未建立能针对旧 Corrupt 变红的高复现/最小循环，diagnosing-bugs 阶段 1–2 未完成，不提出修复原因或假设。
+
+独立后置 Swift 仍只执行一轮：PID 10398，native open succeeded / 156 ms，normal terminate requested=true；60 次观察中首末 raw kill exit 0，fresh 原生对象同 bundle/executable/launchDate 且未退出，原 15 秒后 tool exit 2 / wall 15.521 秒。该 private root 没有 Host receipt，实际 detach exit 16 / Resource busy；它是外部早期正常退出不完成，不是 Corrupt 红、不是 parent 场景失败，也不是 cached-only 猜测。固定 DMG 与三项 runtime payload 前后摘要一致。
+
+本 run 仍使用当时旧 Web readiness 等待标准，三例没有该 deadline 失败。用户随后仅为真实 Web startup 调用授权等待实际 ready、可信失败立即退出；未来执行遵新约束，公共其它等待/Native 15 秒/ownership 不变，不从旧纯迟就绪 deadline 推断性能原因。证据：`/private/tmp/dsh-flutter-implementation/T02/CI-37424611318/diagnosis.md`；raw/ZIP/job logs 私有保留，分享仅用 downloads/sanitized 和 logs/job.sanitized.log。
