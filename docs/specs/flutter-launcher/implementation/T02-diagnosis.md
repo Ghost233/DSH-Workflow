@@ -61,3 +61,23 @@ dart run tool/application_probe.dart \
 当前 canonical 原完整 T02 的 [Native run 37418181101，job 112121385724](https://github.com/Ghost233/DSH-Workflow/actions/runs/37418181101/job/112121385724) 也已核对实际产物：source `0d35785a289f35deba9b5848ba2ea4682aa845a2`，artifact 11391494641，SHA-256 `0df71f9d525224d9c58d6406faa1520b108c4394a37ef2d1dadf3143f4ec5d25`。原全场景 application exit 0 / UI+SDK start-recycle=true；Launcher 6419、Desktop 6703、Host 6841，lease `41ca2c12-0d81-4deb-b14c-ea2e7eeef40d`，首 receipt 18.012 秒，14 次 present，Launcher normal exit 0 / 32.711 秒。owned helper capture/cleanup 均 0，三 PID 查验都是明确 No such process，receipt removed；lsof exit 1 / empty、reuseAddr bind+listen 可用，raw no-reuse bind 则实际 errno 48，不把这项描述为通过；实际 runtime detach exit 0。它是一次完整真实绿色证据，仍不能替代 Corrupt 的红循环或证明原因。脱敏产物在上述 CI 临时目录的 `downloads/full-green-sanitized/`。
 
 新 source 改为 parent first，并补 Swift 精确 OS/native 退出观测；当前仍待新的 live CI。源码及纯门禁检查仅用于检查诊断器，不能代替业务红循环。已普通 merge 同步 canonical `0d35785a289f35deba9b5848ba2ea4682aa845a2`；主线程负责集成/push。未改 product、第三方、Gatekeeper 或 timeout，也未运行本机 GUI。原绿色验收不能覆盖最新失败，诊断 workflow 不能替代正式 native acceptance。
+
+## Parent-first 实际运行与只读契约修正
+
+[诊断 run 37420441555，job 112128371896](https://github.com/Ghost233/DSH-Workflow/actions/runs/37420441555/job/112128371896) 的实际 source 为 `31912475ed7cd24edec101549e2e05b136ff285e`，artifact 11392788006，下载 SHA-256 `2e439c0833abdf02839569639899091817d6978547bcb6cc95145d22d77ded6f` 与 GitHub 元数据一致。原 parent 应用命令三次均退出 0，wall 34.085 / 24.644 / 23.593 秒，UI/SDK 场景通过，未复现 Corrupt。
+
+| 轮次 | Root 后缀 | Launcher PID / start UTC | Desktop PID / launchDateUnix | Host PID / lease |
+|---|---|---|---|---|
+| 1 | dsh-t01-xcBlvb | 12463 / 05:52:31.108621 | 12658 / 1791265960.554256 | 12849 / cfd9bc8e-a88d-4e3b-aaec-d9e2718151b4 |
+| 2 | dsh-t01-782MDa | 13323 / 05:53:04.997290 | 13675 / 1791265992.1682181 | 13701 / 6a8fc2a9-dd74-4543-a10b-2bd1503d2379 |
+| 3 | dsh-t01-KmOrvp | 14636 / 05:53:29.635932 | 15298 / 1791266016.759393 | 15325 / ddd079e6-d376-42d1-b665-9e2d7d02efd3 |
+
+Root 均为 `/Users/runner/work/_temp/<后缀>`。各 Launcher executable 为其 `candidate.app/Contents/MacOS/DSH Workflow`；各 Desktop executable 均为 `/Users/runner/work/_temp/dsh-native-runtime-mount/DSH Workflow.app/Contents/Resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness`，其 ledger 的 probeStartedAt 与对应 Launcher start 完全一致。逐轮 Launcher/Desktop 的原始 kill 查询均 exit 1，stdout empty，stderr 分别明确 `kill: <表内PID>: No such process`；receipt read-open ENOENT=2、lsof exit 1 / stdout+stderr empty。旧 gate 据这些事实返回 0，但没有保存 Host executable/start/raw ESRCH；Host 首 receipt 观测分别为 17.052 / 12.025 / 11.123 秒，这不是进程 start。Host 归属和退出证据仍未知，不能由 receipt 消失补造。
+
+只读 observer 三轮均记录 RPCError，且 successful metadata 未取得。实际旧 response 只有 errorType 被保存，code/message/data 没有保存。契约核对确认：`lib/application_probe.dart` 对非 null 未声明 action 返回 extensionError，`observe` 不在声明中；正式 `tool/application_probe.dart` 读取传 args=null。新 observer 删除错误 action，与正式读取一致；仅第一 parent、extension 已注册后有界一次无效 legacy 只读请求，用标签保存实际脱敏 RPC 响应，再保存无 action 的首次实际读取响应。未知 action 分支仅抛 ArgumentError 后返回 extensionError，不执行 semantic/native action。这个 contract negative 不属于 Corrupt 业务红。
+
+新门禁还要求从本轮实际 receipt 和 live 只读 PID 查询取得 Host executable、PPID、start，绑定固定 Node/Desktop 精确 executable、同轮 Desktop 与 lease，再于清理后取得 Host raw ESRCH；未捕获、不匹配或查询错误均退出 2。没有修改原共享 driver、产品、业务等待期限、Swift 15 秒或系统设置，也没有回填旧 Host 证明。
+
+后置 Swift 只执行一次：native open 81 ms / PID 15857，normal terminate requested=true；61 次观察中首末 raw kill 均 exit 0、stderr/stdout empty，fresh 原生对象同 bundle/executable/launchDate 且 isTerminated=false，原 15 秒后仍活，probe exit 2 / wall 15.481 秒。实际 detach 16 / Resource busy，未观察 Corrupt NSError；这是独立早期退出不完成，不能称 cached-only 或代替原症状。新只读契约与 Host 门禁尚待窄 CI 实测；阶段 1–2 仍未完成。
+
+本轮证据指针：`/private/tmp/dsh-flutter-implementation/T02/CI-37420441555/diagnosis.md`，原始与脱敏文件在同目录 downloads/raw、downloads/sanitized 和 logs。
