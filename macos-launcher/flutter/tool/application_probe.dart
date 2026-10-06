@@ -12,6 +12,7 @@ import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
 import 'lifecycle_application_scenario.dart';
 import 'settings_application_scenario.dart';
+import 'probe_diagnostics.dart';
 
 Future<void> waitFor(String description, Future<bool> Function() check) async {
   for (var attempt = 0; attempt < 150; attempt++) {
@@ -241,10 +242,13 @@ Future<void> main(List<String> arguments) async {
     await settings?.close();
     rethrow;
   }
+  final diagnostics = webScenario == null ? null : ProbeDiagnostics(root);
+  await diagnostics?.start(process.pid, executable.path);
   var exited = false;
   unawaited(
     process.exitCode.then((code) {
       exited = true;
+      diagnostics?.record('application-exit', {'code': code});
       stdout.writeln('APP_EXIT=$code');
     }),
   );
@@ -280,12 +284,24 @@ Future<void> main(List<String> arguments) async {
           (await vm!.getIsolate(isolate)).extensionRPCs!
               .contains('ext.dshlauncher.application'),
     );
-    Future<Map<String, Object?>> state([Map<String, String>? params]) async =>
-        (await vm!.callServiceExtension(
+    Future<Map<String, Object?>> state([Map<String, String>? params]) async {
+      diagnostics?.uiRequest(params);
+      try {
+        final result = (await vm!.callServiceExtension(
           'ext.dshlauncher.application',
           isolateId: isolate,
           args: params,
         )).json!.cast<String, Object?>();
+        diagnostics?.uiResponse(result);
+        return result;
+      } catch (error) {
+        diagnostics?.record('ui-error', {
+          'errorType': error.runtimeType.toString(),
+        });
+        rethrow;
+      }
+    }
+
     Map<String, Object?> native(Map<String, Object?> snapshot) =>
         (snapshot['native']! as Map).cast<String, Object?>();
     List<Map<String, Object?>> nodes(Map<String, Object?> snapshot) =>
@@ -357,6 +373,7 @@ Future<void> main(List<String> arguments) async {
         prestartedHost: settings?.host,
         prestartedHostLog: settings?.hostLog,
         passwordPreloaded: settingsScenario,
+        diagnose: diagnostics?.record,
       );
       if (lifecycle == null) await state({'action': 'quit'});
       require(
@@ -671,6 +688,7 @@ Future<void> main(List<String> arguments) async {
       await subscription.cancel();
     }
     await outputFile.close();
+    await diagnostics?.close();
     stdout.writeln('APP_LOG=${root.path}/app.log');
   }
 }

@@ -114,6 +114,7 @@ Future<void> runWebApplicationScenario({
   Process? prestartedHost,
   IOSink? prestartedHostLog,
   bool passwordPreloaded = false,
+  void Function(String, Map<String, Object?>)? diagnose,
 }) async {
   final data = '${root.path}/data';
   final home = '${root.path}/home';
@@ -295,6 +296,16 @@ Future<void> runWebApplicationScenario({
             params: params,
             timeout: const Duration(seconds: 30),
           );
+      final result = response['result'] as Map?;
+      diagnose?.call('sdk-response', {
+        'service': service,
+        'method': method,
+        'elapsedMs': elapsed.elapsedMilliseconds,
+        'state': result?['state'],
+        'ready': result?['ready'],
+        'instanceId': result?['instanceId'],
+        'hasError': response['error'] != null,
+      });
       if (response['error'] != null) {
         final evidence =
             jsonEncode({

@@ -276,6 +276,11 @@ jobs:
               for file in root.iterdir():
                   if file.is_file() and file.suffix in ('.log', '.json', '.png'):
                       shutil.copy2(file, target / file.name)
+              diagnostic_command = ['python3', 'macos-launcher/flutter/tool/collect_probe_diagnostics.py',
+                                    str(root), str(target)]
+              diagnostic = subprocess.run(diagnostic_command, capture_output=True, text=True)
+              (target / 'diagnostic-collector.log').write_text(diagnostic.stdout + diagnostic.stderr)
+              (target / 'diagnostic-collector.exit').write_text(str(diagnostic.returncode) + '\n')
               hashes = {}
               for relative in ('Contents/MacOS/DSH Workflow', 'Contents/MacOS/DSH Workflow.debug.dylib',
                                'Contents/Frameworks/App.framework/Resources/flutter_assets/kernel_blob.bin',
@@ -289,6 +294,9 @@ jobs:
                       break
               facts = json.loads((root / 'web-evidence.json').read_text()) if (root / 'web-evidence.json').exists() else {}
               pids = {key: native.get(key) for key in ('pid', 'openedDesktopPid')}
+              process_ledger = root / 'probe-process.json'
+              if process_ledger.is_file():
+                  pids['pid'] = json.loads(process_ledger.read_text()).get('pid')
               pids['hostPid'] = facts.get('hostPid')
               processes = {}
               for key, pid in pids.items():
@@ -490,6 +498,11 @@ jobs:
               for file in root.iterdir():
                   if file.is_file() and file.suffix in ('.log', '.json', '.png'):
                       shutil.copy2(file, target / file.name)
+              diagnostic_command = ['python3', 'macos-launcher/flutter/tool/collect_probe_diagnostics.py',
+                                    str(root), str(target)] + ['--crashes']
+              diagnostic = subprocess.run(diagnostic_command, capture_output=True, text=True)
+              (target / 'diagnostic-collector.log').write_text(diagnostic.stdout + diagnostic.stderr)
+              (target / 'diagnostic-collector.exit').write_text(str(diagnostic.returncode) + '\n')
               hashes = {}
               for relative in ('Contents/MacOS/DSH Workflow', 'Contents/MacOS/DSH Workflow.debug.dylib',
                                'Contents/Frameworks/App.framework/Resources/flutter_assets/kernel_blob.bin',
@@ -503,6 +516,9 @@ jobs:
                       break
               facts = json.loads((root / 'settings-evidence.json').read_text()) if (root / 'settings-evidence.json').exists() else {}
               pids = {key: native.get(key) for key in ('pid', 'openedDesktopPid')}
+              process_ledger = root / 'probe-process.json'
+              if process_ledger.is_file():
+                  pids['pid'] = json.loads(process_ledger.read_text()).get('pid')
               pids['hostPid'] = facts.get('hostPid')
               pids['oldHostPid'] = facts.get('oldHostPid')
               processes = {}

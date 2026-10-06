@@ -1,0 +1,43 @@
+import importlib.util
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location('diagnostics', Path(__file__).with_name('collect_probe_diagnostics.py'))
+diagnostics = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(diagnostics)
+
+
+class OwnedDiagnosticsTest(unittest.TestCase):
+    def test_only_owned_process_report_is_exported_and_credentials_are_redacted(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root, target, reports = base / 'probe', base / 'evidence', base / 'reports'
+            (root / 'data').mkdir(parents=True)
+            reports.mkdir()
+            executable = str(root / 'candidate.app/Contents/MacOS/DSH Workflow')
+            (root / 'probe-process.json').write_text(json.dumps({
+                'pid': 12345, 'executable': executable, 'startedAt': '2020-01-01T00:00:00+00:00'}))
+            (root / 'data/desktop-diagnostic.json').write_text('host-failed stack token=abcdef isolated-web-probe-password')
+            (root / 'data/global/.dsh-workflow/desktop').mkdir(parents=True)
+            (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').write_text(json.dumps({
+                'pid': 54321, 'lease': 'actual-lease', 'url': 'http://127.0.0.1:1234/?token=do-not-export'}))
+            owned = {'pid': 12345, 'procPath': executable, 'exception': {'signal': 'SIGSEGV'},
+                     'applicationSpecificInformation': 'isolated-settings-changed-password'}
+            (reports / 'DSH Workflow-owned.ips').write_text('{}\n' + json.dumps(owned))
+            (reports / 'DSH Workflow-other.ips').write_text(json.dumps({**owned, 'pid': 99999}))
+            result = diagnostics.collect(root, target, [reports])
+            self.assertEqual([row['file'] for row in result], ['DSH Workflow-owned.ips'])
+            self.assertFalse((target / 'DSH Workflow-other.ips').exists())
+            exported = '\n'.join(file.read_text() for file in target.iterdir())
+            self.assertNotIn('do-not-export', exported)
+            self.assertNotIn('abcdef', exported)
+            self.assertNotIn('isolated-web-probe-password', exported)
+            self.assertNotIn('isolated-settings-changed-password', exported)
+            self.assertIn('SIGSEGV', exported)
+            self.assertIn('host-failed', exported)
+
+
+if __name__ == '__main__':
+    unittest.main()
