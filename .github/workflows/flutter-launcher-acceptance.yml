@@ -4,6 +4,29 @@ on:
   push:
     branches:
       - codex/flutter-launcher-spec
+    paths:
+      - .github/workflows/flutter-launcher-acceptance.yml
+      - macos-launcher/**
+      - owner-workflow-plugin/**
+      - matt-skills-panel-plugin/**
+      - dynamic-workflow-plugin/**
+      - scripts/**
+      - vendor/**
+      - deepseek-harness
+      - .gitmodules
+      - package.json
+      - package-lock.json
+      - pnpm-lock.yaml
+      - dsh-runtime.json
+      - project-plugins.json
+      - project-plugins.lock.json
+      - maclauncher.json
+      - start-owner-workflow.sh
+      - '!**/*.md'
+      - '!macos-launcher/flutter/tool/desktop_launch_diagnostics.swift'
+      - '!macos-launcher/flutter/tool/desktop_launch_observer.dart'
+      - '!macos-launcher/flutter/tool/settings_repeat_gate.py'
+      - '!macos-launcher/flutter/tool/settings_repeat_gate_test.py'
   workflow_dispatch:
 
 permissions:
