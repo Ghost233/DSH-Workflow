@@ -28,6 +28,7 @@ void registerApplicationProbe(NativeBridge native) {
         nodes.add({
           'id': node.id,
           'label': data.label,
+          'tooltip': data.tooltip,
           'value': data.flagsCollection.isObscured ? '<obscured>' : data.value,
           'scrollPosition': data.scrollPosition,
           'scrollExtentMin': data.scrollExtentMin,

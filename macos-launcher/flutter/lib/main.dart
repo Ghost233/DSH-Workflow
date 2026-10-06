@@ -330,7 +330,13 @@ class _LauncherPageState extends State<LauncherPage> {
       ),
       const SizedBox(height: 12),
       Text(model.pluginMessage),
-      if (model.pluginUpdateMessage.isNotEmpty) Text(model.pluginUpdateMessage),
+      if (model.pluginUpdateMessage.isNotEmpty)
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 120),
+          child: SingleChildScrollView(
+            child: SelectionArea(child: Text(model.pluginUpdateMessage)),
+          ),
+        ),
       if (model.pluginsNeedReload)
         const Text('插件已更新。完全退出并重新打开 Desktop 后加载新版本。'),
       const SizedBox(height: 12),

@@ -33,8 +33,26 @@ Future<void> main(List<String> arguments) async {
       arguments.length == 3 && arguments[1] == '--logs-runtime';
   final pluginsScenario =
       arguments.length == 3 && arguments[1] == '--plugins-runtime';
-  final webScenario = logsScenario || pluginsScenario
-      ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
+  final pluginUpdateScenario =
+      arguments.length == 3 &&
+      {
+        '--plugins-update-runtime',
+        '--plugins-desktop-runtime',
+      }.contains(arguments[1]);
+  final pluginDesktopScenario =
+      pluginUpdateScenario && arguments[1] == '--plugins-desktop-runtime';
+  if (pluginDesktopScenario &&
+      Platform.environment['GITHUB_ACTIONS'] != 'true') {
+    throw ArgumentError(
+      'Official Desktop plugin reload runs only in disposable GitHub macOS CI',
+    );
+  }
+  final webScenario = logsScenario || pluginsScenario || pluginUpdateScenario
+      ? WebProbeOptions(
+          Directory(arguments[2]).absolute.path,
+          pluginDesktopScenario ? 'desktop' : 'headless',
+          pluginDesktopScenario ? 33080 : 0,
+        )
       : WebProbeOptions.parse(arguments);
   final systemCi =
       arguments.length == 3 &&
@@ -200,6 +218,13 @@ Future<void> main(List<String> arguments) async {
     sign.exitCode == 0,
     'private Debug candidate is signed after isolation metadata',
   );
+  final pluginRegistry = pluginUpdateScenario
+      ? await PluginRegistryFixture.prepare(
+          root,
+          environment['DSH_LAUNCHER_TEST_RESOURCES']!,
+        )
+      : null;
+  if (pluginRegistry != null) environment.addAll(pluginRegistry.environment);
   final process = await Process.start(executable.path, [
     '--vm-service-port=0',
   ], environment: environment);
@@ -312,6 +337,12 @@ Future<void> main(List<String> arguments) async {
             ? runLogApplicationScenario
             : pluginsScenario
             ? runPluginApplicationScenario
+            : pluginUpdateScenario
+            ? (app) => runPluginUpdateApplicationScenario(
+                app,
+                pluginRegistry!,
+                desktop: pluginDesktopScenario,
+              )
             : null,
       );
       await state({'action': 'quit'});
@@ -612,6 +643,15 @@ Future<void> main(List<String> arguments) async {
   } finally {
     await server?.close();
     await releaseFixture?.close();
+    Object? registryCleanupFailure;
+    StackTrace? registryCleanupStack;
+    try {
+      await pluginRegistry?.close();
+    } catch (failure, stack) {
+      registryCleanupFailure = failure;
+      registryCleanupStack = stack;
+      stderr.writeln('PLUGIN_REGISTRY_CLEANUP_FAILURE: $failure');
+    }
     await vm?.dispose();
     if (!exited) {
       process.kill(ProcessSignal.sigterm);
@@ -627,5 +667,8 @@ Future<void> main(List<String> arguments) async {
     }
     await outputFile.close();
     stdout.writeln('APP_LOG=${root.path}/app.log');
+    if (registryCleanupFailure != null) {
+      await Future<void>.error(registryCleanupFailure, registryCleanupStack);
+    }
   }
 }

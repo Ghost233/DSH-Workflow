@@ -558,7 +558,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       if (updated is! List) {
         throw const FormatException('Missing update results');
       }
-      pluginsNeedReload = updated.isNotEmpty;
+      pluginsNeedReload = pluginsNeedReload || updated.isNotEmpty;
       pluginUpdateMessage =
           '已更新 ${updated.length} 个插件${report['error'] == null ? '' : '；${report['error']}'}';
     } catch (failure) {
