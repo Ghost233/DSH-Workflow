@@ -20,6 +20,85 @@ Map<String, Object?> publicProbePhase(Map<String, Object?> value) => {
     if (value.containsKey(key)) key: value[key],
 };
 
+String safeInspectorOutput(Object? value) {
+  var text = value?.toString() ?? '';
+  text = text.replaceAll(RegExp(r'\x1b\[[0-?]*[ -/]*[@-~]'), '');
+  final sensitive = RegExp(
+    r"""["']?(?:authorization|proxy-authorization|password|secret|credential|cookie|set-cookie|auth|(?:(?:access|auth)[_-]?)?token|api[_-]?key)["']?\s*[:=]""",
+    caseSensitive: false,
+  ).firstMatch(text);
+  if (sensitive != null) {
+    text = '${text.substring(0, sensitive.start)}<REDACTED>';
+  }
+  text = text
+      .replaceAll(
+        RegExp(r'gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+'),
+        '<REDACTED>',
+      )
+      .replaceAll(
+        RegExp(r'(?:https?|wss?)://(?:127\.0\.0\.1|localhost):\d+/[^\s]+'),
+        '<REDACTED_VM_URI>',
+      );
+  final output = StringBuffer();
+  var bytes = 0;
+  for (final rune in text.runes) {
+    final character = String.fromCharCode(rune);
+    final size = utf8.encode(character).length;
+    if (bytes + size > 16384) break;
+    output.write(character);
+    bytes += size;
+  }
+  return output.toString();
+}
+
+Future<void> preserveHostInspectionFailure(
+  Directory root,
+  int pid,
+  String script,
+  ProcessResult result,
+) async {
+  final runnerPath = Platform.environment['RUNNER_TEMP'];
+  if (Platform.environment['GITHUB_ACTIONS'] != 'true' || runnerPath == null) {
+    throw StateError('Lower observation requires clean CI root');
+  }
+  final runner = await Directory(runnerPath).resolveSymbolicLinks();
+  final actual = await root.resolveSymbolicLinks();
+  if (root.absolute.path != actual ||
+      Directory(actual).parent.path != runner ||
+      !root.uri.pathSegments
+          .where((part) => part.isNotEmpty)
+          .last
+          .startsWith('dsh-t05-')) {
+    throw StateError('Unowned lower observation root');
+  }
+  final target = File('$actual/host-inspection-results.jsonl');
+  if (await Link(target.path).exists()) {
+    throw StateError('Symlink lower observation');
+  }
+  final stdoutText = result.stdout.toString();
+  final stderrText = result.stderr.toString();
+  final value = {
+    'schema': 1,
+    'state': 'unknown',
+    'root': actual,
+    'pid': pid,
+    'interpreter': '/usr/bin/python3',
+    'script': script,
+    'operation': '--capture-host',
+    'exit': result.exitCode,
+    'stdout': safeInspectorOutput(stdoutText),
+    'stderr': safeInspectorOutput(stderrText),
+    'outputByteCap': 16384,
+    'stdoutTruncated': utf8.encode(stdoutText).length > 16384,
+    'stderrTruncated': utf8.encode(stderrText).length > 16384,
+  };
+  await target.writeAsString(
+    '${jsonEncode(value)}\n',
+    mode: FileMode.append,
+    flush: true,
+  );
+}
+
 /// External observations and clean-CI normal cleanup for exact owned processes.
 class ProbeDiagnostics {
   ProbeDiagnostics(this.root, {this.publishPhases = false})
@@ -101,6 +180,16 @@ class ProbeDiagnostics {
             '${value['pid']}',
           ]);
           if (result.exitCode != 0) {
+            await preserveHostInspectionFailure(
+              root,
+              value['pid'] as int,
+              File.fromUri(
+                Platform.script.resolve(
+                  '../../../.github/scripts/settings_startup_cycle.py',
+                ),
+              ).path,
+              result,
+            );
             _hosts[key] = {
               'pid': value['pid'],
               'lease': value['lease'],

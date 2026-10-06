@@ -21,6 +21,7 @@ from settings_repeat_gate import validate_root, ownership, can_repeat
 SAFE_EVIDENCE = {
     'probe-process.json': 'json',
     'host-ownership.jsonl': 'jsonl',
+    'host-inspection-results.jsonl': 'jsonl',
     'owned-desktop-process.json': 'json',
     'settings-evidence.json': 'json',
     'settings-current.json': 'json',
