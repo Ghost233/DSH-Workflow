@@ -6,6 +6,28 @@ import 'package:launcher_core/launcher_core.dart';
 
 import 'application_probe.dart' show require, waitFor;
 import 'web_startup_wait.dart';
+import 'probe_diagnostics.dart' show safeInspectorOutput;
+
+/// Observe the original predicate without treating rejected queries as gone.
+Future<bool> desktopExitObserved(
+  int pid, {
+  void Function(Map<String, Object?>)? observe,
+}) async {
+  final clock = Stopwatch()..start();
+  final check = await Process.run('/bin/kill', ['-0', '$pid']);
+  final gone =
+      check.exitCode != 0 &&
+      check.stderr.toString().contains('No such process');
+  observe?.call({
+    'pid': pid,
+    'rawExit': check.exitCode,
+    'rawStdout': safeInspectorOutput(check.stdout),
+    'rawStderr': safeInspectorOutput(check.stderr),
+    'predicateGone': gone,
+    'requestElapsedMs': clock.elapsedMilliseconds,
+  });
+  return gone;
+}
 
 Future<ServerSession> currentSdkSession(LauncherServer server) async {
   ServerSession? current;
@@ -837,11 +859,15 @@ Future<void> runWebApplicationScenario({
       final desktopPid = ((await state())['native'] as Map)['openedDesktopPid'];
       await state({'action': 'quitDesktop'});
       if (desktopPid is int) {
-        await waitFor('owned official Desktop exits', () async {
-          final check = await Process.run('/bin/kill', ['-0', '$desktopPid']);
-          return check.exitCode != 0 &&
-              check.stderr.toString().contains('No such process');
-        });
+        await waitFor(
+          'owned official Desktop exits',
+          () => desktopExitObserved(
+            desktopPid,
+            observe: traceApplicationPid == null
+                ? null
+                : (facts) => diagnose?.call('desktop-exit-query', facts),
+          ),
+        );
         require(
           true,
           'owned official Desktop PID exited after normal native termination',

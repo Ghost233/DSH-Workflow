@@ -27,9 +27,24 @@ Map<String, Object?> publicProbePhase(Map<String, Object?> value) => {
     'sdkState',
     'reasonPresent',
     'errorType',
+    'expectedPid',
+    'lookupFound',
+    'accepted',
+    'hasTerminated',
+    'predicateGone',
+    'rawExit',
   ])
     if (value.containsKey(key)) key: value[key],
 };
+
+Map<String, Object?> desktopQuitFacts(Object? value) {
+  final facts = value is Map ? value : const {};
+  return {
+    'expectedPid': facts['expectedPid'] is int ? facts['expectedPid'] : null,
+    for (final key in ['lookupFound', 'accepted', 'hasTerminated'])
+      key: facts[key] is bool ? facts[key] : null,
+  };
+}
 
 String safeInspectorOutput(Object? value) {
   var text = value?.toString() ?? '';
@@ -357,6 +372,15 @@ class ProbeDiagnostics {
       'framesEnabled': state['framesEnabled'],
       'lifecycleState': state['lifecycleState'],
     });
+    if (publishPhases && native['desktopQuitObservation'] is Map) {
+      final value = native['desktopQuitObservation'] as Map;
+      if (value.isNotEmpty) {
+        record('desktop-quit-observation', {
+          'pid': _appPid,
+          ...desktopQuitFacts(value),
+        });
+      }
+    }
     final pid = native['openedDesktopPid'];
     if (Platform.environment['GITHUB_ACTIONS'] == 'true' &&
         pid is int &&

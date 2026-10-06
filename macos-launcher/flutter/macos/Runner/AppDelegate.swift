@@ -11,6 +11,8 @@ class AppDelegate: FlutterAppDelegate {
   #if DEBUG
   private var lastOpenedUrl: String?
   private var entryGateToken: String?
+  // TEMP cleanup diagnosis, exposed only in DEBUG state.
+  private var desktopQuitObservation: [String: Any] = [:]
   #endif
   private var instanceLock: Int32 = -1
   private var instanceClaimed = false
@@ -176,6 +178,7 @@ class AppDelegate: FlutterAppDelegate {
           "pid": ProcessInfo.processInfo.processIdentifier,
           "isolated": self.testRoot != nil, "dataRoot": self.dataRoot.path,
           "openedDesktopPid": self.openedDesktopPid as Any,
+          "desktopQuitObservation": self.desktopQuitObservation,
           "lastOpenedUrl": self.lastOpenedUrl as Any,
           "urlOpenMode": self.systemBoundaryTest ? "NSWorkspace" : "guarded",
           "systemBoundaryTest": self.systemBoundaryTest, "loginStatus": self.loginStatus()])
@@ -188,9 +191,20 @@ class AppDelegate: FlutterAppDelegate {
             NSApp.sendAction(action, to: item.target, from: item)
           case "quit": NSApp.terminate(nil)
           case "quitDesktop":
-            if let pid = self.openedDesktopPid, let desktop = NSRunningApplication(processIdentifier: pid) {
-              guard desktop.terminate() else { throw self.failure("测试 Desktop 无法退出") }
+            var facts: [String: Any] = ["expectedPid": NSNull(), "lookupFound": false,
+                                      "accepted": NSNull(), "hasTerminated": NSNull()]
+            if let pid = self.openedDesktopPid {
+              facts["expectedPid"] = Int(pid)
+              if let desktop = NSRunningApplication(processIdentifier: pid) {
+                facts["lookupFound"] = true
+                let accepted = desktop.terminate()
+                facts["accepted"] = accepted
+                facts["hasTerminated"] = desktop.isTerminated
+                self.desktopQuitObservation = facts
+                guard accepted else { throw self.failure("测试 Desktop 无法退出") }
+              }
             }
+            self.desktopQuitObservation = facts
           case "minimum":
             if let window = self.mainFlutterWindow { window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: true) }
           default: throw self.failure("无效窗口测试动作")
