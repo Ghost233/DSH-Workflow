@@ -187,7 +187,7 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
       final matches = nodes(snapshot)
           .where(
             (node) =>
-                node['label'].toString().contains(label) &&
+                node['label'].toString().split('\n').first == label &&
                 (node['actions'] as List).contains(action),
           )
           .toList();
