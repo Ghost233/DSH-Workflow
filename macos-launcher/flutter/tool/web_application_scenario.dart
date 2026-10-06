@@ -111,6 +111,9 @@ Future<void> runWebApplicationScenario({
   required Future<void> Function(String) tap,
   required Future<void> Function(String) capture,
   Future<void> Function(WebObservation)? onConnected,
+  Process? prestartedHost,
+  IOSink? prestartedHostLog,
+  bool passwordPreloaded = false,
 }) async {
   final data = '${root.path}/data';
   final home = '${root.path}/home';
@@ -118,9 +121,9 @@ Future<void> runWebApplicationScenario({
   final receipt = File('$data/global/.dsh-workflow/desktop/desktop-host.json');
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
   final password = 'isolated-web-probe-password';
-  Process? host;
+  Process? host = prestartedHost;
   LauncherServer? server;
-  IOSink? hostLog;
+  IOSink? hostLog = prestartedHostLog;
   var hostExited = false;
   Future<Map<String, Object?>> ui() async {
     await state({'action': 'ownEntry'});
@@ -259,9 +262,12 @@ Future<void> runWebApplicationScenario({
         (node) => (node as Map)['label'].toString().contains('启动 Web'),
       ),
     );
-    if (options.backend == 'headless') {
+    if (prestartedHost != null) {
+      require(await receipt.exists(), 'private prestarted Host receipt exists');
+      unawaited(prestartedHost.exitCode.then((_) => hostExited = true));
+    } else if (options.backend == 'headless') {
       await startOwnedHost();
-    } else {
+    } else if (!passwordPreloaded) {
       require(
         !await receipt.exists(),
         'Desktop-open scenario begins without a backend receipt',
@@ -336,10 +342,12 @@ Future<void> runWebApplicationScenario({
         'Desktop $method explicitly returns unsupported',
       );
     }
-    require(
-      (await sdk('status'))['ready'] != true,
-      'Web is not ready before any real access service exists',
-    );
+    if (!passwordPreloaded) {
+      require(
+        (await sdk('status'))['ready'] != true,
+        'Web is not ready before any real access service exists',
+      );
+    }
     Future<Map> control(String label, String action, String direction) async {
       for (var scroll = 0; scroll < 6; scroll++) {
         final snapshot = await ui();
@@ -365,35 +373,44 @@ Future<void> runWebApplicationScenario({
 
     await File('${root.path}/initial-web-ui.json')
         .writeAsString(jsonEncode(await state()));
-    final input = await control('内网访问密码', 'tap', 'scrollUp');
-    await state({'action': 'tap', 'id': '${input['id']}'});
-    await waitFor(
-      'actual password input exposes editing after focus',
-      () async => ((await ui())['nodes'] as List).cast<Map>().any(
+    if (!passwordPreloaded) {
+      final input = await control('内网访问密码', 'tap', 'scrollUp');
+      await state({'action': 'tap', 'id': '${input['id']}'});
+      await waitFor(
+        'actual password input exposes editing after focus',
+        () async => ((await ui())['nodes'] as List).cast<Map>().any(
+          (node) =>
+              node['label'].toString().contains('内网访问密码') &&
+              (node['actions'] as List).contains('setText'),
+        ),
+      );
+      final field = ((await ui())['nodes'] as List).cast<Map>().singleWhere(
         (node) =>
             node['label'].toString().contains('内网访问密码') &&
             (node['actions'] as List).contains('setText'),
-      ),
-    );
-    final field = ((await ui())['nodes'] as List).cast<Map>().singleWhere(
-      (node) =>
-          node['label'].toString().contains('内网访问密码') &&
-          (node['actions'] as List).contains('setText'),
-    );
-    await state({
-      'action': 'setText',
-      'id': '${field['id']}',
-      'text': password,
-    });
-    await tapUi('设置密码');
-    await waitFor(
-      'password saved by the actual management UI',
-      () async => ((await ui())['nodes'] as List).cast<Map>().any(
-        (node) => node['label'].toString().contains('修改密码'),
-      ),
-    );
-    await control('启动 Web', 'tap', 'scrollDown');
-    await tapUi('启动 Web');
+      );
+      await state({
+        'action': 'setText',
+        'id': '${field['id']}',
+        'text': password,
+      });
+      await tapUi('设置密码');
+      await waitFor(
+        'password saved by the actual management UI',
+        () async => ((await ui())['nodes'] as List).cast<Map>().any(
+          (node) => node['label'].toString().contains('修改密码'),
+        ),
+      );
+      await control('启动 Web', 'tap', 'scrollDown');
+      await tapUi('启动 Web');
+    } else {
+      require(
+        ((await ui())['nodes'] as List).cast<Map>().any(
+          (node) => node['label'].toString().contains('修改密码'),
+        ),
+        'application reads the preexisting credential through its real native boundary',
+      );
+    }
     if (!await receipt.exists()) {
       require(
         (await sdk('status'))['ready'] != true,

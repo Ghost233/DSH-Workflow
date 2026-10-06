@@ -11,6 +11,7 @@ import 'web_application_scenario.dart';
 import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
 import 'lifecycle_application_scenario.dart';
+import 'settings_application_scenario.dart';
 
 Future<void> waitFor(String description, Future<bool> Function() check) async {
   for (var attempt = 0; attempt < 150; attempt++) {
@@ -32,9 +33,22 @@ Future<void> main(List<String> arguments) async {
   final logsScenario =
       arguments.length == 3 && arguments[1] == '--logs-runtime';
   final lifecycle = LifecycleProbeOptions.parse(arguments);
+  final settingsScenario =
+      arguments.length >= 2 && arguments[1] == '--settings-runtime';
+  final keychainCi =
+      settingsScenario && arguments.last == '--legacy-keychain-ci';
+  final webArgs = settingsScenario
+      ? [
+          arguments.first,
+          '--web-runtime',
+          ...arguments
+              .skip(2)
+              .take(arguments.length - 2 - (keychainCi ? 1 : 0)),
+        ]
+      : arguments;
   final webScenario = logsScenario
       ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
-      : WebProbeOptions.parse(arguments) ?? lifecycle?.web;
+      : WebProbeOptions.parse(webArgs) ?? lifecycle?.web;
   final systemCi =
       arguments.length == 3 &&
       arguments[1] == '--updates' &&
@@ -42,7 +56,7 @@ Future<void> main(List<String> arguments) async {
   final updates =
       systemCi || (arguments.length == 2 && arguments[1] == '--updates');
   final runnerTemp = Platform.environment['RUNNER_TEMP'];
-  if (systemCi &&
+  if ((systemCi || keychainCi) &&
       (Platform.environment['GITHUB_ACTIONS'] != 'true' ||
           runnerTemp == null ||
           !runnerTemp.startsWith('/'))) {
@@ -98,8 +112,15 @@ Future<void> main(List<String> arguments) async {
     true,
     'read-only candidate preflight confirms this project Debug isolation bridge and driver',
   );
-  final root = await Directory(systemCi ? runnerTemp! : '/private/tmp')
-      .createTemp(updates ? 'dsh-t07-' : 'dsh-t01-');
+  final root =
+      await Directory(systemCi || keychainCi ? runnerTemp! : '/private/tmp')
+          .createTemp(
+            settingsScenario
+                ? 'dsh-t05-'
+                : updates
+                ? 'dsh-t07-'
+                : 'dsh-t01-',
+          );
   final releaseFixture = updates ? await ReleaseFixture.start() : null;
   final app = Directory('${root.path}/candidate.app');
   final copy = await Process.run('/usr/bin/ditto', [sourceApp.path, app.path]);
@@ -144,6 +165,14 @@ Future<void> main(List<String> arguments) async {
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
   final webPort = await webScenario?.stage(root);
   if (webPort != null) environment['DSH_LAUNCHER_TEST_PORT'] = '$webPort';
+  final settings = settingsScenario
+      ? SettingsFixture(root, webScenario!, keychainCi)
+      : null;
+  await settings?.prepare();
+  if (keychainCi) {
+    environment['DSH_LAUNCHER_LEGACY_KEYCHAIN_CI'] = '1';
+    environment['DSH_LAUNCHER_TEST_LEGACY_KEYCHAIN'] = settings!.keychain;
+  }
   if (logFixture) await stageControlledLogs(root, arguments[2]);
   final starts = File('${root.path}/resource-starts.log');
   if (instanceStartup) {
@@ -201,9 +230,17 @@ Future<void> main(List<String> arguments) async {
     sign.exitCode == 0,
     'private Debug candidate is signed after isolation metadata',
   );
-  final process = await Process.start(executable.path, [
-    '--vm-service-port=0',
-  ], environment: environment);
+  late final Process process;
+  try {
+    await settings?.prepareKeychain(executable.path);
+    await settings?.startHeadless();
+    process = await Process.start(executable.path, [
+      '--vm-service-port=0',
+    ], environment: environment);
+  } catch (_) {
+    await settings?.close();
+    rethrow;
+  }
   var exited = false;
   unawaited(
     process.exitCode.then((code) {
@@ -309,12 +346,17 @@ Future<void> main(List<String> arguments) async {
         state: state,
         tap: tap,
         capture: capture,
-        onConnected: lifecycle != null
+        onConnected: settingsScenario
+            ? runSettingsApplicationScenario
+            : lifecycle != null
             ? (actual) =>
                   runLifecycleScenario(actual, process, lifecycle.scenario)
             : logsScenario
             ? runLogApplicationScenario
             : null,
+        prestartedHost: settings?.host,
+        prestartedHostLog: settings?.hostLog,
+        passwordPreloaded: settingsScenario,
       );
       if (lifecycle == null) await state({'action': 'quit'});
       require(
@@ -614,6 +656,7 @@ Future<void> main(List<String> arguments) async {
   } finally {
     await server?.close();
     await releaseFixture?.close();
+    await settings?.close();
     await vm?.dispose();
     if (!exited) {
       process.kill(ProcessSignal.sigterm);
