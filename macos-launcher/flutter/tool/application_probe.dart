@@ -310,7 +310,8 @@ Future<void> main(List<String> arguments) async {
         tap: tap,
         capture: capture,
         onConnected: lifecycle != null
-            ? (actual) => runLifecycleScenario(actual, process)
+            ? (actual) =>
+                  runLifecycleScenario(actual, process, lifecycle.scenario)
             : logsScenario
             ? runLogApplicationScenario
             : null,

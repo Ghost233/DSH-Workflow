@@ -26,6 +26,7 @@ class WebObservation {
     required this.ui,
     required this.state,
     required this.backendHealth,
+    required this.webHealth,
     required this.tap,
     required this.capture,
     required this.reconnectManager,
@@ -36,7 +37,7 @@ class WebObservation {
   final int port;
   final Map<String, Object?> backend, capabilities;
   final WebSdkRequest sdk;
-  final Future<Map<String, Object?>> Function() ui, backendHealth;
+  final Future<Map<String, Object?>> Function() ui, backendHealth, webHealth;
   final ApplicationState state;
   String get resources => '${root.path}/missing-runtime';
   File get receipt =>
@@ -473,6 +474,7 @@ Future<void> runWebApplicationScenario({
           ui: ui,
           state: state,
           backendHealth: () => health(backendUrl, backendLogin.cookies),
+          webHealth: () async => health(url, await authenticate()),
           tap: tapUi,
           capture: capture,
           reconnectManager: () async {
