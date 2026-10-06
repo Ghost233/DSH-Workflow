@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Run one existing startup prefix, gate cleanup, then preserve its evidence."""
 import json
+import datetime
+import errno
+import signal
 import os
 import re
 import shutil
@@ -12,11 +15,12 @@ TOOLS = Path(__file__).resolve().parents[2] / 'macos-launcher/flutter/tool'
 sys.path.insert(0, str(TOOLS))
 
 from collect_probe_diagnostics import scrub
-from settings_repeat_gate import validate_root
+from settings_repeat_gate import validate_root, ownership, can_repeat
 
 
 SAFE_EVIDENCE = {
     'probe-process.json': 'json',
+    'host-ownership.jsonl': 'jsonl',
     'owned-desktop-process.json': 'json',
     'settings-evidence.json': 'json',
     'settings-current.json': 'json',
@@ -193,6 +197,131 @@ def observe_os_query(command):
                 'stderr': sanitize_text(text(error.stderr)), 'state': 'unknown', 'timedOut': True}
 
 
+
+def run_inspection(command):
+    child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             start_new_session=True, env={**os.environ, 'LC_ALL': 'C', 'TZ': 'UTC'})
+    timed_out = False
+    try:
+        stdout, stderr = child.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        os.killpg(child.pid, signal.SIGKILL)  # Only this owned readonly query group.
+        stdout, stderr = child.communicate()
+    return {'exit': 124 if timed_out else child.returncode, 'childPid': child.pid, 'childExit': child.returncode,
+            'waited': True, 'timedOut': timed_out, 'stdout': sanitize_text(stdout), 'stderr': sanitize_text(stderr)}
+
+
+def inspect_host(pid):
+    source = (TOOLS / 'desktop_launch_observer.dart').read_text()
+    delimiter = chr(39) * 3
+    script = source.split("const hostInspectionScript = r" + delimiter, 1)[1].split(delimiter, 1)[0]
+    script = script.replace("('start', 'lstart=')", "('start', 'lstart='), ('uid', 'uid=')")
+    script = script.replace('capture_output=True, text=True)', 'capture_output=True, text=True, timeout=10)')
+    script = script.replace("facts['parentPid'] = int(commands['parent']['stdout'].strip())",
+        "facts['parentPid'] = int(commands['parent']['stdout'].strip())\n        facts['uid'] = int(commands['uid']['stdout'].strip())\n        facts['probeUid'] = os.getuid()\n        parent_uid = subprocess.run(['/bin/ps', '-p', str(facts['parentPid']), '-o', 'uid='], capture_output=True, text=True, timeout=10)\n        facts['parentUid'] = int(parent_uid.stdout.strip()) if parent_uid.returncode == 0 and not parent_uid.stderr else None")
+    query = run_inspection([sys.executable, '-c', script, str(pid)])
+    facts = parse_json(query['stdout']) if query['exit'] == 0 else {'pid': pid, 'lookupOk': False}
+    return dict(facts, query=query)
+
+
+def bind_host_identity(inspection, root, receipt, desktop, probe, allowed):
+    started = datetime.datetime.fromisoformat(probe['startedAt'].replace('Z', '+00:00')).timestamp()
+    known = (inspection.get('lookupOk') is True and inspection.get('pid') == receipt.get('pid')
+             and type(receipt.get('pid')) is int and receipt['pid'] > 1 and isinstance(receipt.get('lease'), str) and bool(receipt['lease'])
+             and inspection.get('parentPid') == desktop.get('pid') and desktop.get('probeStartedAt') == probe.get('startedAt')
+             and type(inspection.get('uid')) is int and inspection.get('uid') == inspection.get('probeUid') == inspection.get('parentUid')
+             and inspection.get('executable') in allowed and isinstance(inspection.get('startUnixSeconds'), (int, float))
+             and inspection['startUnixSeconds'] >= max(started, desktop['launchDateUnix']) - 1
+             and inspection.get('query', {}).get('exit') == 0)
+    return {'root': str(root.resolve()), 'pid': receipt.get('pid'), 'lease': receipt.get('lease'),
+            'desktopPid': desktop.get('pid'), 'desktopLaunchDateUnix': desktop.get('launchDateUnix'),
+            'probeStartedAt': probe['startedAt'], 'ownershipKnown': known, 'inspection': inspection}
+
+
+def capture_owned_host(root, runner, pid):
+    root = validate_root(str(root), runner)
+    receipt = parse_json((root / 'data/global/.dsh-workflow/desktop/desktop-host.json').read_text())
+    if receipt.get('pid') != pid:
+        raise ValueError('Host receipt changed before identity inspection')
+    probe = parse_json((root / 'probe-process.json').read_text())
+    inspection = inspect_host(pid)
+    captures = [parse_json(line) for line in (root / 'owned-desktop-cleanup.log').read_text().splitlines() if line.startswith('{')]
+    desktop = next((row for row in reversed(captures) if row.get('event') == 'captured' and row.get('pid') == inspection.get('parentPid')), None)
+    if desktop is None:
+        return {'pid': pid, 'lease': receipt.get('lease'), 'ownershipKnown': False, 'pendingDesktopCapture': inspection.get('lookupOk') is True, 'inspection': inspection}
+    bundle = (root / 'missing-runtime/desktop/DeepSeek Harness.app').resolve(strict=True)
+    if Path(desktop['bundlePath']).resolve(strict=True) != bundle or Path(desktop['executablePath']).resolve(strict=True) != bundle / 'Contents/MacOS/DeepSeek Harness':
+        raise ValueError('Desktop capture path differs from owned runtime')
+    allowed = {str((root / 'missing-runtime/node').resolve(strict=True)), str(bundle / 'Contents/MacOS/DeepSeek Harness')}
+    bound = bind_host_identity(inspection, root, receipt, desktop, probe, allowed)
+    with (root / 'host-ownership.jsonl').open('a') as output:
+        output.write(json.dumps(sanitize_json(bound)) + '\n')
+    return bound
+
+
+
+def process_exit_fact(pid):
+    query = observe_os_query(['/bin/kill', '-0', str(pid)])
+    fact = {'pid': pid, 'rawExit': query['exit'], 'rawStdout': query['stdout'], 'rawStderr': query['stderr'],
+            'rawErrno': errno.ESRCH if query['exit'] not in (0, 124) and os.strerror(errno.ESRCH) in query['stderr'] else None,
+            'state': 'unknown', 'errno': None}
+    if query['timedOut']:
+        return fact
+    try:
+        os.kill(pid, 0)
+        fact['state'] = 'alive'
+    except OSError as error:
+        fact.update(state='gone' if error.errno == errno.ESRCH and fact['rawErrno'] == errno.ESRCH else 'unknown', errno=error.errno)
+    return fact
+
+
+def collect_owned_processes(log, runner):
+    root, roles = ownership(log, runner)
+    probe = parse_json((root / 'probe-process.json').read_text())
+    captures = [parse_json(line) for line in (root / 'owned-desktop-cleanup.log').read_text().splitlines() if line.startswith('{')]
+    captures = {row['pid']: row for row in captures if row.get('event') == 'captured'}
+    ledger = root / 'host-ownership.jsonl'
+    bindings = [parse_json(line) for line in ledger.read_text().splitlines()] if ledger.is_file() and not ledger.is_symlink() else []
+    bundle = (root / 'missing-runtime/desktop/DeepSeek Harness.app').resolve(strict=True)
+    allowed = {str((root / 'missing-runtime/node').resolve(strict=True)), str(bundle / 'Contents/MacOS/DeepSeek Harness')}
+    bound = set()
+    bound_pairs = set()
+    for row in bindings:
+        desktop = captures.get(row.get('desktopPid'))
+        if desktop and row.get('root') == str(root) and row.get('probeStartedAt') == probe['startedAt']:
+            checked = bind_host_identity(row.get('inspection', {}), root, row, desktop, probe, allowed)
+            if checked['ownershipKnown']:
+                bound.add(row['pid'])
+                bound_pairs.add((row['pid'], row['lease']))
+    processes = {}
+    for role, pids in roles.items():
+        for pid in pids:
+            if role == 'host' and pid not in bound:
+                processes[f'{role}:{pid}'] = {'pid': pid, 'state': 'unknown', 'reason': 'Missing physical Host binding'}
+            else:
+                processes[f'{role}:{pid}'] = process_exit_fact(pid)
+    pairs = {(row['pid'], row['lease']) for row in (parse_json(line) for line in (root / 'probe-timeline.jsonl').read_text().splitlines()) if row.get('event') == 'receipt-snapshot' and row.get('present')}
+    all_bound = bound == set(roles['host']) and pairs <= bound_pairs
+    complete = (all_bound and all(row.get('state') == 'gone' and row.get('errno') == errno.ESRCH and row.get('rawErrno') == errno.ESRCH for row in processes.values()))
+    receipt_file = root / 'data/global/.dsh-workflow/desktop/desktop-host.json'
+    receipt = {'state': 'unknown'}
+    try:
+        receipt_file.lstat(); receipt['state'] = 'present'
+    except OSError as error:
+        receipt.update(state='absent' if error.errno == errno.ENOENT else 'unknown', errno=error.errno)
+    return {'ownership': roles, 'hostBindingKnown': all_bound, 'processes': processes,
+            'receiptLookup': receipt, 'complete': complete and receipt.get('errno') == errno.ENOENT}
+
+
+def check_owned_pid(root, runner, pid):
+    root = validate_root(str(root), runner)
+    captures = [parse_json(line) for line in (root / 'owned-desktop-cleanup.log').read_text().splitlines() if line.startswith('{')]
+    if not any(row.get('event') == 'captured' and row.get('pid') == pid for row in captures):
+        raise ValueError('PID has no owned Desktop capture')
+    return process_exit_fact(pid)
+
+
 def copy_safe_evidence(root, destination):
     for name, kind in SAFE_EVIDENCE.items():
         file = root / name
@@ -292,6 +421,16 @@ def main(attempt):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 4 and sys.argv[1] == '--check-owned-pid':
+        if os.environ.get('GITHUB_ACTIONS') != 'true':
+            raise ValueError('Liveness requires clean CI')
+        print(json.dumps(check_owned_pid(Path(sys.argv[2]), Path(os.environ['RUNNER_TEMP']), int(sys.argv[3]))))
+        sys.exit(0)
+    if len(sys.argv) == 4 and sys.argv[1] == '--capture-host':
+        if os.environ.get('GITHUB_ACTIONS') != 'true':
+            raise ValueError('Host capture requires clean CI')
+        print(json.dumps(capture_owned_host(Path(sys.argv[2]), Path(os.environ['RUNNER_TEMP']), int(sys.argv[3]))))
+        sys.exit(0)
     if sys.argv[1] == '--full':
         sys.exit(full_command())
     elif sys.argv[1] == '--completed-full':

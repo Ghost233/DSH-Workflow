@@ -177,7 +177,7 @@ class LiveCommandTest(unittest.TestCase):
 
 
 class QueryBoundaryTest(unittest.TestCase):
-    def test_all_four_workflow_queries_record_timeout_as_unknown(self):
+    def test_both_collector_listener_queries_record_timeout_as_unknown(self):
         actual_run = subprocess.run
         def short_owned_query(command, **options):
             options['timeout'] = .1 if options.get('timeout') == 10 else None
@@ -193,9 +193,9 @@ class QueryBoundaryTest(unittest.TestCase):
             for node in ast.walk(tree):
                 if isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.List):
                     first = node.args[0].elts[0]
-                    if isinstance(first, ast.Constant) and first.value in ('/bin/kill', '/usr/sbin/lsof'):
+                    if isinstance(first, ast.Constant) and first.value == '/usr/sbin/lsof':
                         queries.append((workflow, node))
-        self.assertEqual(len(queries), 4)
+        self.assertEqual(len(queries), 2)
         for workflow, node in queries:
             with self.subTest(workflow=workflow, query=node.args[0].elts[0].value), patch.object(cycle.subprocess, 'run', side_effect=short_owned_query):
                 namespace = {'subprocess': cycle.subprocess, 'observe_os_query': getattr(cycle, 'observe_os_query', None), 'pid': 37}
@@ -207,6 +207,17 @@ class QueryBoundaryTest(unittest.TestCase):
                 self.assertTrue(result['timedOut'])
                 self.assertNotIn('private-query-secret', result['stdout'])
                 self.assertIn('<REDACTED>', result['stdout'])
+
+    def test_shared_pid_query_timeout_remains_unknown_and_is_not_gone(self):
+        actual_run = subprocess.run
+        def short_owned_query(command, **options):
+            options['timeout'] = .05
+            return actual_run([sys.executable, '-c', 'import time; time.sleep(.2)'], **options)
+        with patch.object(cycle.subprocess, 'run', side_effect=short_owned_query):
+            value = cycle.process_exit_fact(37)
+        self.assertEqual(value['rawExit'], 124)
+        self.assertEqual(value['state'], 'unknown')
+        self.assertIsNone(value['errno'])
 
     def test_timeout_does_not_skip_the_next_owned_query(self):
         actual_run = subprocess.run
@@ -220,6 +231,53 @@ class QueryBoundaryTest(unittest.TestCase):
         self.assertEqual(observations[0]['exit'], 124)
         self.assertEqual(observations[1]['exit'], 0)
         self.assertIn('later owned fact', observations[1]['stdout'])
+
+
+class HostIdentityTest(unittest.TestCase):
+    def test_all_old_and_new_pid_facts_are_required_by_the_existing_gate(self):
+        import errno
+        import copy
+        good = {'ownership': {'launcher': [11], 'desktop': [12, 14], 'host': [13, 15]},
+                'processes': [{'pid': pid, 'state': 'gone', 'errno': errno.ESRCH, 'rawExit': 1, 'rawErrno': errno.ESRCH} for pid in (11, 12, 13, 14, 15)],
+                'receipt': {'errno': errno.ENOENT}, 'listener': {'exit': 1, 'stdout': '', 'stderr': ''}, 'bindListen': {'available': True}}
+        self.assertTrue(cycle.can_repeat(good))
+        missing = copy.deepcopy(good); missing['processes'].pop()
+        self.assertFalse(cycle.can_repeat(missing))
+        unknown = copy.deepcopy(good); unknown['processes'][-1].update(state='unknown', errno=None, rawExit=124, rawErrno=None)
+        self.assertFalse(cycle.can_repeat(unknown))
+
+    def test_real_owned_child_identity_binds_and_mismatches_remain_unknown(self):
+        import os
+        import time
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            actual_python = cycle.inspect_host(os.getpid())['executable']
+            started = time.time()
+            child = subprocess.Popen([actual_python, '-c', 'import time; time.sleep(5)'])
+            try:
+                inspection = cycle.inspect_host(child.pid)
+                receipt = {'pid': child.pid, 'lease': 'owned-fixture-lease'}
+                probe = {'startedAt': __import__('datetime').datetime.fromtimestamp(started, __import__('datetime').timezone.utc).isoformat()}
+                desktop = {'pid': os.getpid(), 'launchDateUnix': started - 1, 'probeStartedAt': probe['startedAt']}
+                allowed = {actual_python}
+                bound = cycle.bind_host_identity(inspection, root, receipt, desktop, probe, allowed)
+                self.assertTrue(bound['ownershipKnown'], inspection)
+                for field, value in (('parentPid', child.pid), ('uid', -1), ('executable', '/not-the-owned-child'), ('lookupOk', False)):
+                    with self.subTest(field=field):
+                        bad = dict(inspection, **{field: value})
+                        self.assertFalse(cycle.bind_host_identity(bad, root, receipt, desktop, probe, allowed)['ownershipKnown'])
+            finally:
+                child.terminate(); child.wait(timeout=2)
+
+
+    def test_outer_query_timeout_reaps_the_owned_readonly_probe(self):
+        import os
+        result = cycle.run_inspection([sys.executable, '-c', 'import time; print("probe-started", flush=True); time.sleep(20)'])
+        self.assertEqual(result['exit'], 124)
+        self.assertTrue(result['timedOut']); self.assertTrue(result['waited'])
+        self.assertNotEqual(result['childExit'], 0)
+        self.assertIn('probe-started', result['stdout'])
+        with self.assertRaises(ProcessLookupError): os.kill(result['childPid'], 0)
 
 
 class PrivacyTest(unittest.TestCase):

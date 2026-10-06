@@ -214,7 +214,7 @@ jobs:
           sys.path.insert(0, "macos-launcher/flutter/tool")
           from pathlib import Path
           sys.path.insert(0, '.github/scripts')
-          from settings_startup_cycle import copy_safe_evidence, observe_os_query, run_diagnostics, validate_root
+          from settings_startup_cycle import can_repeat, collect_owned_processes, copy_safe_evidence, observe_os_query, run_diagnostics, validate_root
           evidence = Path(os.environ['EVIDENCE_DIR'])
           logs = [evidence / 'application.log', *sorted(evidence.glob('startup-*/command.log'))]
           roots = [name for log in logs if log.exists()
@@ -238,35 +238,10 @@ jobs:
                   file = root / 'candidate.app' / relative
                   hashes[relative] = hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else None
               print('T05_COLLECTOR_PHASE=hash-end ROOT=' + root.name, flush=True)
-              native = {}
-              for file in (root / 'web-final.json', root / 'settings-current.json', root / 'initial-web-ui.json'):
-                  if file.exists():
-                      native = json.loads(file.read_text()).get('native', {})
-                      break
-              facts = json.loads((root / 'settings-evidence.json').read_text()) if (root / 'settings-evidence.json').exists() else {}
-              pids = {key: native.get(key) for key in ('pid', 'openedDesktopPid')}
-              process_ledger = root / 'probe-process.json'
-              if process_ledger.is_file():
-                  pids['pid'] = json.loads(process_ledger.read_text()).get('pid')
-              pids['hostPid'] = facts.get('hostPid')
-              pids['oldHostPid'] = facts.get('oldHostPid')
-              print('T05_COLLECTOR_PHASE=process-observation-start ROOT=' + root.name, flush=True)
-              processes = {}
-              for key, pid in pids.items():
-                  if isinstance(pid, int) and pid > 1:
-                      check = observe_os_query(['/bin/kill', '-0', str(pid)])
-                      fact = {'pid': pid, 'rawExit': check['exit'], 'rawStdout': check['stdout'],
-                              'rawStderr': check['stderr'], 'state': 'unknown', 'errno': None}
-                      if check['timedOut']:
-                          diagnostic_failed = True
-                      else:
-                          try:
-                              os.kill(pid, 0)
-                              fact.update(state='alive', errno=None)
-                          except OSError as error:
-                              fact.update(state='gone' if error.errno == errno.ESRCH else 'unknown', errno=error.errno, stderr=str(error))
-                      processes[key] = fact
-              print('T05_COLLECTOR_PHASE=process-observation-end ROOT=' + root.name, flush=True)
+              owned_log = next(log for log in logs if log.exists() and ('ISOLATED_ROOT=' + name) in log.read_text())
+              owned = collect_owned_processes(owned_log, Path(os.environ['RUNNER_TEMP']))
+              processes = owned['processes']
+              diagnostic_failed = not owned['complete'] or diagnostic_failed
               print('T05_COLLECTOR_PHASE=port-observation-start ROOT=' + root.name, flush=True)
               port = socket.socket()
               try:
@@ -287,9 +262,11 @@ jobs:
               finally:
                   port.close()
               listener = observe_os_query(['/usr/sbin/lsof', '-nP', '-iTCP:33080', '-sTCP:LISTEN', '-Fpn'])
-              diagnostic_failed = listener['timedOut'] or diagnostic_failed
+              physical_complete = owned['hostBindingKnown'] and can_repeat({'ownership': owned['ownership'], 'processes': list(processes.values()), 'receipt': owned['receiptLookup'], 'listener': {key: listener[key] for key in ('exit', 'stdout', 'stderr')}, 'bindListen': service_listen})
+              diagnostic_failed = not physical_complete or listener['timedOut'] or diagnostic_failed
               print('T05_COLLECTOR_PHASE=port-observation-end ROOT=' + root.name, flush=True)
-              results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes,
+              results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes, 'ownership': owned['ownership'], 'hostBindingKnown': owned['hostBindingKnown'],
+                              'allOwnedProcessesGone': physical_complete, 'receiptLookup': owned['receiptLookup'],
                               'receiptRemoved': not (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').exists(),
                               'rawNoReuseLoopbackBind': raw_bind,
                               'reuseAddrServiceBindListen': service_listen,

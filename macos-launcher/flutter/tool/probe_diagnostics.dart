@@ -33,6 +33,7 @@ class ProbeDiagnostics {
   Timer? _timer;
   Future<void> _snapshots = Future<void>.value();
   int? _desktopPid;
+  final Map<String, Map<String, Object?>> _hosts = {};
 
   void record(String event, [Map<String, Object?> facts = const {}]) {
     final value = <String, Object?>{
@@ -82,9 +83,84 @@ class ProbeDiagnostics {
         ])
           key: value[key],
       });
+      if (publishPhases &&
+          Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+          value['pid'] is int &&
+          value['lease'] is String &&
+          await File('${root.path}/owned-desktop-cleanup.log').exists()) {
+        final key = '${value['pid']}:${value['lease']}';
+        if (_hosts[key]?['ownershipKnown'] != true) {
+          final result = await Process.run('/usr/bin/python3', [
+            File.fromUri(
+              Platform.script.resolve(
+                '../../../.github/scripts/settings_startup_cycle.py',
+              ),
+            ).path,
+            '--capture-host',
+            root.path,
+            '${value['pid']}',
+          ]);
+          if (result.exitCode != 0) {
+            _hosts[key] = {
+              'pid': value['pid'],
+              'lease': value['lease'],
+              'ownershipKnown': false,
+              'observationError': true,
+            };
+            record('host-inspection-error', {
+              'pid': value['pid'],
+              'code': result.exitCode,
+            });
+          } else {
+            _hosts[key] = (jsonDecode(result.stdout.toString()) as Map)
+                .cast<String, Object?>();
+            record('host-inspection', {
+              'pid': value['pid'],
+              'present': _hosts[key]!['ownershipKnown'],
+            });
+          }
+        }
+      }
     } catch (error) {
       record('receipt-snapshot', {'errorType': error.runtimeType.toString()});
     }
+  }
+
+  Future<bool> ownsHostReceipt(Map<String, Object?> value) async =>
+      _hosts['${value['pid']}:${value['lease']}']?['ownershipKnown'] == true;
+
+  Future<String?> startupFailure(int oldDesktop) async {
+    for (final row in _hosts.values) {
+      if (row['desktopPid'] == oldDesktop ||
+          row['pendingDesktopCapture'] == true) {
+        continue;
+      }
+      if (row['ownershipKnown'] != true) {
+        return 'Host startup ownership observation is unknown';
+      }
+    }
+    final pid = _desktopPid;
+    if (pid != null && pid != oldDesktop) {
+      final result = await Process.run('/usr/bin/python3', [
+        File.fromUri(
+          Platform.script.resolve(
+            '../../../.github/scripts/settings_startup_cycle.py',
+          ),
+        ).path,
+        '--check-owned-pid',
+        root.path,
+        '$pid',
+      ]);
+      if (result.exitCode != 0) {
+        return 'Owned Desktop liveness observation failed';
+      }
+      final check = jsonDecode(result.stdout.toString()) as Map;
+      if (check['state'] == 'gone') {
+        return 'Owned Desktop exited before fresh lease readiness';
+      }
+      if (check['state'] != 'alive') return 'Owned Desktop liveness is unknown';
+    }
+    return null;
   }
 
   void uiRequest(Map<String, String>? params) {

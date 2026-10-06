@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'application_probe.dart' show require, waitFor;
 import 'web_application_scenario.dart';
+import 'web_startup_wait.dart';
 
 const settingsInitialPassword = 'isolated-web-probe-password';
 
@@ -549,13 +550,14 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
       );
       await control('打开 DSH', 'tap', 'scrollDown');
       await o.tap('打开 DSH');
-      await waitFor(
-        'reopened official Desktop publishes a new real lease',
-        () async =>
-            await o.receipt.exists() &&
-            (await receipt())['lease'] != firstBackend['lease'],
+      final reopened = await waitForActualDesktopLease(
+        oldLease: firstBackend['lease'] as String,
+        receipt: () async => await o.receipt.exists() ? await receipt() : null,
+        isOwned: o.ownsHostReceipt,
+        ui: () => o.state(),
+        applicationExit: o.applicationExit,
+        dependencyFailure: () => o.startupFailure(oldDesktop),
       );
-      final reopened = await receipt();
       require(
         reopened['permissionMode'] == 'danger-full-access',
         'fully reopened official Desktop adopts the saved full-access policy',

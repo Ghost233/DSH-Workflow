@@ -441,6 +441,8 @@ Future<void> main(List<String> arguments) async {
         port: webPort!,
         state: state,
         applicationExit: process.exitCode,
+        ownsHostReceipt: (value) => diagnostics!.ownsHostReceipt(value),
+        startupFailure: (oldDesktop) => diagnostics!.startupFailure(oldDesktop),
         tap: tap,
         capture: capture,
         onConnected: settingsStartupScenario

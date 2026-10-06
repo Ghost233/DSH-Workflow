@@ -64,3 +64,49 @@ Future<void> waitForActualWebStartup({
     done = true;
   }
 }
+
+/// The second Desktop launch waits for a fresh, physically bound Host lease.
+Future<Map<String, Object?>> waitForActualDesktopLease({
+  required String oldLease,
+  required Future<Map<String, Object?>?> Function() receipt,
+  required Future<bool> Function(Map<String, Object?>) isOwned,
+  required Future<Map<String, Object?>> Function() ui,
+  required Future<int> applicationExit,
+  required Future<String?> Function() dependencyFailure,
+}) async {
+  var done = false;
+  Future<Map<String, Object?>> ready() async {
+    while (!done) {
+      final snapshot = await ui();
+      if (done) break;
+      final failure = webStartupFailure(const {}, snapshot, sawStarting: false);
+      if (failure != null) throw StateError(failure);
+      final exited = await dependencyFailure();
+      if (done) break;
+      if (exited != null) throw StateError(exited);
+      final value = await receipt();
+      if (done) break;
+      if (value != null &&
+          value['lease'] is String &&
+          value['lease'] != oldLease &&
+          await isOwned(value)) {
+        if (!done) return value;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    throw StateError('Desktop startup observation was cancelled');
+  }
+
+  try {
+    return await Future.any<Map<String, Object?>>([
+      ready(),
+      applicationExit.then<Map<String, Object?>>(
+        (code) => throw StateError(
+          'Application exited ($code) before fresh Desktop lease',
+        ),
+      ),
+    ]);
+  } finally {
+    done = true;
+  }
+}
