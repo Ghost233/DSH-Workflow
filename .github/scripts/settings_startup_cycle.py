@@ -34,7 +34,7 @@ SAFE_EVIDENCE = {
 
 def sanitize_text(text):
     text = scrub(text)
-    text = re.sub(r'((?:https?|wss?)://(?:127\.0\.0\.1|localhost|\[::1\]):\d+/)[^/\s]+/', r'\1<REDACTED>/', text)
+    text = re.sub(r'((?:https?|wss?)://(?:127\.0\.0\.1|localhost|\[::1\]):\d+/)[^/\s]+/?', r'\1<REDACTED>/', text)
     text = re.sub(r"(?im)([\"']?(?:authorization|proxy-authorization|auth|cookie|set-cookie)[\"']?\s*[:=]\s*)[^\r\n]+", r'\1<REDACTED>', text)
     text = re.sub(r"(?i)([\"']?(?:password|(?:(?:access|auth)[_-]?)?token|api[_-]?key)[\"']?\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)", r'\1<REDACTED>', text)
     text = re.sub(r'(?i)(\b(?:Bearer|Basic)\s+)[A-Za-z0-9+/=_.-]+', r'\1<REDACTED>', text)
@@ -57,6 +57,79 @@ def parse_json(text):
     return json.loads(text, parse_constant=reject_constant)
 
 
+def run_streamed_command(command, evidence):
+    state_file = evidence / 'command-state.json'
+    state = {'exitKnown': False, 'streamComplete': False, 'phase': 'command-start'}
+    state_file.write_text(json.dumps(state) + '\n')
+    result, complete, saw_output = None, True, False
+    pending, prefix = '', ''
+    with (evidence / 'application.log').open('w') as output:
+        def publish(text):
+            output.write(text)
+            output.flush()
+            print(text, end='', flush=True)
+        publish('T05_APPLICATION_PHASE=command-start EXIT=UNKNOWN\n')
+        try:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            for raw in process.stdout:
+                saw_output = True
+                if not raw.endswith(b'\n'):
+                    complete = False
+                    publish('T05_STREAM_PHASE=UNKNOWN INCOMPLETE_LINE\n')
+                try:
+                    line = raw.decode('utf-8')
+                except UnicodeDecodeError:
+                    complete = False
+                    publish('T05_STREAM_PHASE=UNKNOWN INVALID_UTF8\n')
+                    continue
+                if not pending:
+                    match = re.search(r'[{]|\[(?=\s*(?:["{\[0-9\]\-]|true|false|null|$))', line)
+                    if not match:
+                        publish(sanitize_text(line))
+                        continue
+                    prefix, pending = line[:match.start()], line[match.start():]
+                else:
+                    pending += line
+                try:
+                    value = parse_json(pending)
+                except ValueError:
+                    continue
+                publish(sanitize_text(prefix) + json.dumps(sanitize_json(value)) + '\n')
+                pending, prefix = '', ''
+            if pending or not saw_output:
+                complete = False
+                publish('T05_STREAM_PHASE=UNKNOWN INCOMPLETE_OUTPUT\n')
+            publish('T05_STREAM_PHASE=stdout-eof EXIT=UNKNOWN\n')
+            result = process.wait()
+            process.stdout.close()
+        except (OSError, ValueError) as error:
+            complete = False
+            publish('T05_STREAM_PHASE=UNKNOWN ERROR_TYPE=' + type(error).__name__ + '\n')
+        if result is not None:
+            (evidence / 'application.exit').write_text(str(result) + '\n')
+        state.update(exitKnown=result is not None, streamComplete=complete,
+                     phase='command-end' if result is not None else 'unknown', commandExit=result)
+        state_file.write_text(json.dumps(state) + '\n')
+        (evidence / 'streaming.exit').write_text(('0' if complete and result is not None else '1') + '\n')
+        publish('T05_APPLICATION_PHASE=' + state['phase'] + ' COMMAND_EXIT=' +
+                (str(result) if result is not None else 'UNKNOWN') + '\n')
+    return result if result not in (None, 0) else (0 if complete and result is not None else 1)
+
+
+def full_command():
+    if os.environ.get('GITHUB_ACTIONS') != 'true':
+        raise ValueError('Clean CI full command is required')
+    runner = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+    evidence = Path(os.environ['EVIDENCE_DIR']).resolve(strict=True)
+    if not evidence.is_relative_to(runner):
+        raise ValueError('Unowned full command evidence directory')
+    command = ['dart', 'run', 'tool/application_probe.dart',
+               'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow',
+               '--settings-runtime', os.environ['T05_RUNTIME_RESOURCES'],
+               '--web-backend', 'desktop', '--web-port', '33080', '--legacy-keychain-ci']
+    return run_streamed_command(command, evidence)
+
+
 def snapshot_completed_command(evidence, runner):
     evidence = evidence.resolve(strict=True)
     if not evidence.is_relative_to(runner.resolve(strict=True)):
@@ -74,7 +147,10 @@ def snapshot_completed_command(evidence, runner):
     target = evidence / 'completed-command'
     target.mkdir()
     (target / 'application.log').write_text(sanitize_text(log.read_text()))
-    (target / 'command-state.json').write_text(json.dumps({'exitKnown': raw_exit is not None}) + '\n')
+    state_file = evidence / 'command-state.json'
+    state = parse_json(state_file.read_text()) if state_file.is_file() and not state_file.is_symlink() else {}
+    state['exitKnown'] = raw_exit is not None
+    (target / 'command-state.json').write_text(json.dumps(sanitize_json(state)) + '\n')
     if raw_exit is not None:
         (target / 'application.exit').write_text(raw_exit)
     print('T05_FULL_COMMAND_EXIT=' + (raw_exit.strip() if raw_exit is not None else 'UNKNOWN'), flush=True)
@@ -208,7 +284,9 @@ def main(attempt):
 
 
 if __name__ == '__main__':
-    if sys.argv[1] == '--completed-full':
+    if sys.argv[1] == '--full':
+        sys.exit(full_command())
+    elif sys.argv[1] == '--completed-full':
         if os.environ.get('GITHUB_ACTIONS') != 'true':
             raise ValueError('Clean CI command snapshot is required')
         snapshot_completed_command(Path(os.environ['EVIDENCE_DIR']), Path(os.environ['RUNNER_TEMP']))

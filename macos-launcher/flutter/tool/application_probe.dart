@@ -159,6 +159,15 @@ Future<void> main(List<String> arguments) async {
     true,
     'read-only candidate preflight confirms this project Debug isolation bridge and driver',
   );
+  void settingsPhase(String event) {
+    if (!settingsScenario) return;
+    stdout.writeln(
+      'T05_PHASE=${jsonEncode({'event': event, 'at': DateTime.now().toUtc().toIso8601String()})}',
+    );
+    unawaited(stdout.flush());
+  }
+
+  settingsPhase('candidate-copy-start');
   final root = await Directory(rootParent).createTemp(
     settingsScenario
         ? 'dsh-t05-'
@@ -172,6 +181,7 @@ Future<void> main(List<String> arguments) async {
   final app = Directory('${root.path}/candidate.app');
   final copy = await Process.run('/usr/bin/ditto', [sourceApp.path, app.path]);
   require(copy.exitCode == 0, 'probe owns a private Debug application copy');
+  settingsPhase('candidate-copy-end');
   final executable = File(
     '${app.path}/Contents/MacOS/${sourceExecutable.uri.pathSegments.last}',
   );
@@ -210,7 +220,9 @@ Future<void> main(List<String> arguments) async {
       'DSH_LAUNCHER_TEST_RELEASE_ENDPOINT': releaseFixture.endpoint,
   };
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
+  settingsPhase('resources-stage-start');
   final webPort = await webScenario?.stage(root);
+  settingsPhase('resources-stage-end');
   if (webPort != null) environment['DSH_LAUNCHER_TEST_PORT'] = '$webPort';
   if (entryScenario) {
     await File(
@@ -220,7 +232,9 @@ Future<void> main(List<String> arguments) async {
   final settings = settingsScenario
       ? SettingsFixture(root, webScenario!, keychainCi)
       : null;
+  settingsPhase('settings-fixture-start');
   await settings?.prepare();
+  settingsPhase('settings-fixture-end');
   if (keychainCi) {
     environment['DSH_LAUNCHER_LEGACY_KEYCHAIN_CI'] = '1';
     environment['DSH_LAUNCHER_TEST_LEGACY_KEYCHAIN'] = settings!.keychain;
@@ -291,17 +305,25 @@ Future<void> main(List<String> arguments) async {
   if (pluginRegistry != null) environment.addAll(pluginRegistry.environment);
   late final Process process;
   try {
+    settingsPhase('keychain-fixture-start');
     await settings?.prepareKeychain(executable.path);
+    settingsPhase('keychain-fixture-end');
+    settingsPhase('host-fixture-start');
     await settings?.startHeadless();
+    settingsPhase('host-fixture-end');
+    settingsPhase('application-launch-start');
     process = await Process.start(executable.path, [
       '--vm-service-port=0',
     ], environment: environment);
+    settingsPhase('application-launch-end');
   } catch (_) {
     await settings?.close();
     await pluginRegistry?.close();
     rethrow;
   }
-  final diagnostics = webScenario == null ? null : ProbeDiagnostics(root);
+  final diagnostics = webScenario == null
+      ? null
+      : ProbeDiagnostics(root, publishPhases: settingsScenario);
   await diagnostics?.start(process.pid, executable.path);
   var exited = false;
   unawaited(
@@ -756,9 +778,13 @@ Future<void> main(List<String> arguments) async {
     );
     stdout.writeln('T01 APPLICATION PROBE PASSED');
   } finally {
+    settingsPhase('manager-close-start');
     await server?.close();
+    settingsPhase('manager-close-end');
     await releaseFixture?.close();
+    settingsPhase('settings-close-start');
     await settings?.close();
+    settingsPhase('settings-close-end');
     Object? registryCleanupFailure;
     StackTrace? registryCleanupStack;
     try {
@@ -768,7 +794,10 @@ Future<void> main(List<String> arguments) async {
       registryCleanupStack = stack;
       stderr.writeln('PLUGIN_REGISTRY_CLEANUP_FAILURE: $failure');
     }
+    settingsPhase('vm-close-start');
     await vm?.dispose();
+    settingsPhase('vm-close-end');
+    settingsPhase('application-cleanup-start');
     if (!exited) {
       process.kill(ProcessSignal.sigterm);
       try {
@@ -778,11 +807,14 @@ Future<void> main(List<String> arguments) async {
         await process.exitCode;
       }
     }
+    settingsPhase('application-cleanup-end');
     for (final subscription in subscriptions) {
       await subscription.cancel();
     }
     await outputFile.close();
+    settingsPhase('diagnostics-close-start');
     await diagnostics?.close();
+    settingsPhase('diagnostics-close-end');
     stdout.writeln('APP_LOG=${root.path}/app.log');
     if (registryCleanupFailure != null) {
       await Future<void>.error(registryCleanupFailure, registryCleanupStack);

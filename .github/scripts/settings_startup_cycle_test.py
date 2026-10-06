@@ -1,6 +1,10 @@
 import ast
 import importlib.util
 import sys
+import io
+import time
+from contextlib import redirect_stdout
+from concurrent.futures import ThreadPoolExecutor
 import json
 import subprocess
 import tempfile
@@ -55,6 +59,73 @@ class CollectorDurabilityTest(unittest.TestCase):
             self.assertEqual((target / 'diagnostic-collector.exit').read_text(), '124\n')
             self.assertIn('owned diagnostic started', (target / 'diagnostic-collector.log').read_text())
             self.assertIn('deadline exceeded', (target / 'diagnostic-collector.log').read_text())
+
+
+class LiveCommandTest(unittest.TestCase):
+    def test_safe_first_output_is_published_before_the_original_child_exits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); release = root / 'release'
+            script = 'import pathlib,time,sys; print("FIRST_PHASE password=private-pw",flush=True); p=pathlib.Path(sys.argv[1]);\nwhile not p.exists(): time.sleep(.01)\nsys.exit(37)'
+            output = io.StringIO()
+            with redirect_stdout(output), ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(cycle.run_streamed_command, [sys.executable, '-c', script, str(release)], root)
+                try:
+                    for _ in range(100):
+                        if 'FIRST_PHASE' in output.getvalue(): break
+                        if future.done(): future.result()
+                        time.sleep(.01)
+                    self.assertIn('FIRST_PHASE', output.getvalue())
+                    self.assertFalse(future.done())
+                    self.assertNotIn('private-pw', output.getvalue())
+                finally: release.touch()
+                self.assertEqual(future.result(timeout=2), 37)
+            self.assertEqual((root / 'application.exit').read_text(), '37\n')
+            state = json.loads((root / 'command-state.json').read_text())
+            self.assertTrue(state['exitKnown']); self.assertTrue(state['streamComplete'])
+
+    def test_split_vm_uri_and_multiline_structured_credentials_are_masked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = 'import os,time; os.write(1,b"VM http://127.0.0.1:1234/private-"); time.sleep(.02); os.write(1,b"vm=/\\nSTATUS={\\n  \\"nested\\": {\\n    \\"authorization\\":\\n      \\"private-json-auth\\",\\n    \\"apiKey\\": \\"private-json-api\\"\\n  }\\n}\\nEND_PHASE\\n")'
+            output = io.StringIO()
+            with redirect_stdout(output): result = cycle.run_streamed_command([sys.executable, '-c', script], root)
+            self.assertEqual(result, 0)
+            for content in (output.getvalue(), (root / 'application.log').read_text()):
+                self.assertNotIn('private-', content)
+                self.assertIn('<REDACTED>', content)
+                self.assertIn('END_PHASE', content)
+
+    def test_incomplete_json_is_unknown_and_does_not_forge_command_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); output = io.StringIO()
+            script = 'print(\'STATUS={"password":\'); print(\'"private-unfinished"\')'
+            with redirect_stdout(output): result = cycle.run_streamed_command([sys.executable, '-c', script], root)
+            self.assertEqual(result, 1)
+            self.assertEqual((root / 'application.exit').read_text(), '0\n')
+            state = json.loads((root / 'command-state.json').read_text())
+            self.assertTrue(state['exitKnown']); self.assertFalse(state['streamComplete'])
+            self.assertNotIn('private-unfinished', output.getvalue())
+            self.assertIn('UNKNOWN', output.getvalue())
+
+    def test_incomplete_vm_line_at_eof_is_masked_and_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); output = io.StringIO()
+            script = 'import sys; sys.stdout.write("VM http://127.0.0.1:1234/private-eof-vm")'
+            with redirect_stdout(output): result = cycle.run_streamed_command([sys.executable, '-c', script], root)
+            self.assertEqual(result, 1)
+            self.assertEqual((root / 'application.exit').read_text(), '0\n')
+            self.assertNotIn('private-eof-vm', output.getvalue())
+            self.assertFalse(json.loads((root / 'command-state.json').read_text())['streamComplete'])
+
+    def test_spawn_failure_remains_unknown_without_a_command_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); output = io.StringIO()
+            with redirect_stdout(output): result = cycle.run_streamed_command([str(root / 'not-an-executable')], root)
+            self.assertEqual(result, 1)
+            self.assertFalse((root / 'application.exit').exists())
+            state = json.loads((root / 'command-state.json').read_text())
+            self.assertFalse(state['exitKnown']); self.assertFalse(state['streamComplete'])
+            self.assertIn('UNKNOWN', output.getvalue())
 
 
 class QueryBoundaryTest(unittest.TestCase):

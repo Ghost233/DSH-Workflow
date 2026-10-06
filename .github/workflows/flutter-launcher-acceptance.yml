@@ -505,17 +505,7 @@ jobs:
 
       - name: Exercise actual settings, owned legacy keychain and official Desktop permission reopen
         working-directory: macos-launcher/flutter
-        run: |
-          set +e
-          dart run tool/application_probe.dart \
-            'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
-            --settings-runtime "$T05_RUNTIME_RESOURCES" --web-backend desktop --web-port 33080 --legacy-keychain-ci \
-            > "$EVIDENCE_DIR/application.log" 2>&1
-          result=$?
-          set -e
-          printf '%s\n' "$result" > "$EVIDENCE_DIR/application.exit"
-          cat "$EVIDENCE_DIR/application.log"
-          exit "$result"
+        run: python3 ../../.github/scripts/settings_startup_cycle.py --full
 
       - name: Preserve completed T05 command before diagnostics
         id: completed_t05_command

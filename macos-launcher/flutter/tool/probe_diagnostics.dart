@@ -2,13 +2,32 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+Map<String, Object?> publicProbePhase(Map<String, Object?> value) => {
+  for (final key in const [
+    'at',
+    'elapsedMs',
+    'event',
+    'service',
+    'method',
+    'action',
+    'mode',
+    'pid',
+    'code',
+    'present',
+    'permissionMode',
+    'textUtf8Bytes',
+  ])
+    if (value.containsKey(key)) key: value[key],
+};
+
 /// External observations and clean-CI normal cleanup for exact owned processes.
 class ProbeDiagnostics {
-  ProbeDiagnostics(this.root)
+  ProbeDiagnostics(this.root, {this.publishPhases = false})
     : _sink = File('${root.path}/probe-timeline.jsonl').openWrite() {
     _clock.start();
   }
   final Directory root;
+  final bool publishPhases;
   final IOSink _sink;
   final Stopwatch _clock = Stopwatch();
   Timer? _timer;
@@ -16,14 +35,17 @@ class ProbeDiagnostics {
   int? _desktopPid;
 
   void record(String event, [Map<String, Object?> facts = const {}]) {
-    _sink.writeln(
-      jsonEncode({
-        'at': DateTime.now().toUtc().toIso8601String(),
-        'elapsedMs': _clock.elapsedMilliseconds,
-        'event': event,
-        ...facts,
-      }),
-    );
+    final value = <String, Object?>{
+      'at': DateTime.now().toUtc().toIso8601String(),
+      'elapsedMs': _clock.elapsedMilliseconds,
+      'event': event,
+      ...facts,
+    };
+    _sink.writeln(jsonEncode(value));
+    if (publishPhases) {
+      stdout.writeln('T05_PHASE=${jsonEncode(publicProbePhase(value))}');
+      unawaited(stdout.flush());
+    }
   }
 
   Future<void> start(int pid, String executable) async {
