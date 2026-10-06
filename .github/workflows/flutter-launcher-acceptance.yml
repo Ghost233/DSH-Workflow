@@ -30,12 +30,6 @@ on:
       - '!macos-launcher/flutter/tool/settings_repeat_gate.py'
       - '!macos-launcher/flutter/tool/settings_repeat_gate_test.py'
   workflow_dispatch:
-    inputs:
-      debug_write_failure_replay:
-        description: TEMP fixed T05 write-failure caller replay (not full acceptance)
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read
@@ -509,16 +503,9 @@ jobs:
           (evidence / 'input-app.txt').write_text(str(app) + '\n')
           PY
 
-      - name: Exercise actual settings, owned legacy keychain and official Desktop permission reopen
+      - name: TEMP T05 persistence-failure caller replay (not full acceptance)
         working-directory: macos-launcher/flutter
-        env:
-          T05_DEBUG_WRITE_FAILURE_REPLAY: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_write_failure_replay }}
-        run: |
-          if [[ "$T05_DEBUG_WRITE_FAILURE_REPLAY" == "true" ]]; then
-            python3 ../../.github/scripts/settings_startup_cycle.py --debug-write-failure-replay
-          else
-            python3 ../../.github/scripts/settings_startup_cycle.py --full
-          fi
+        run: python3 ../../.github/scripts/settings_startup_cycle.py --debug-write-failure-replay
 
       - name: Preserve completed T05 command before diagnostics
         id: completed_t05_command
