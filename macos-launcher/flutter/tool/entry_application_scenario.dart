@@ -110,9 +110,10 @@ Future<void> runEntryApplicationScenario(WebObservation app) async {
   }
 
   Future<void> openWindow(String name) async {
+    final elapsed = Stopwatch()..start();
     final reply = await app.appRequest(kMethodOpenWindow);
     await requests.writeAsString(
-      '${jsonEncode({'operation': name, 'reply': reply, 'native': await native()})}\n',
+      '${jsonEncode({'operation': name, 'reply': reply, 'elapsedMs': elapsed.elapsedMilliseconds, 'native': await native()})}\n',
       mode: FileMode.append,
     );
     require(reply['error'] == null, '$name succeeds through the official SDK');
@@ -120,7 +121,7 @@ Future<void> runEntryApplicationScenario(WebObservation app) async {
       await waitFor('actual SDK window activation', () async {
         final actual = await native();
         await File('${app.root.path}/entry-window-$name.jsonl').writeAsString(
-          '${jsonEncode({'observedAt': DateTime.now().toUtc().toIso8601String(), 'native': actual})}\n',
+          '${jsonEncode({'observedAt': DateTime.now().toUtc().toIso8601String(), 'elapsedMs': elapsed.elapsedMilliseconds, 'native': actual})}\n',
           mode: FileMode.append,
         );
         return actual['windowVisible'] == true &&
