@@ -11,6 +11,7 @@ import 'web_application_scenario.dart';
 import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
 import 'entry_application_scenario.dart';
+import 'plugin_application_scenario.dart';
 import 'lifecycle_application_scenario.dart';
 import 'settings_application_scenario.dart';
 import 'probe_diagnostics.dart';
@@ -50,8 +51,29 @@ Future<void> main(List<String> arguments) async {
               .take(arguments.length - 2 - (keychainCi ? 1 : 0)),
         ]
       : arguments;
-  final webScenario = logsScenario || entryScenario
-      ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
+  final pluginsScenario =
+      arguments.length == 3 && arguments[1] == '--plugins-runtime';
+  final pluginUpdateScenario =
+      arguments.length == 3 &&
+      {
+        '--plugins-update-runtime',
+        '--plugins-desktop-runtime',
+      }.contains(arguments[1]);
+  final pluginDesktopScenario =
+      pluginUpdateScenario && arguments[1] == '--plugins-desktop-runtime';
+  if (pluginDesktopScenario &&
+      Platform.environment['GITHUB_ACTIONS'] != 'true') {
+    throw ArgumentError(
+      'Official Desktop plugin reload runs only in disposable GitHub macOS CI',
+    );
+  }
+  final webScenario =
+      logsScenario || entryScenario || pluginsScenario || pluginUpdateScenario
+      ? WebProbeOptions(
+          Directory(arguments[2]).absolute.path,
+          pluginDesktopScenario ? 'desktop' : 'headless',
+          pluginDesktopScenario ? 33080 : 0,
+        )
       : WebProbeOptions.parse(webArgs) ?? lifecycle?.web;
   final systemCi =
       arguments.length == 3 &&
@@ -242,6 +264,13 @@ Future<void> main(List<String> arguments) async {
     sign.exitCode == 0,
     'private Debug candidate is signed after isolation metadata',
   );
+  final pluginRegistry = pluginUpdateScenario
+      ? await PluginRegistryFixture.prepare(
+          root,
+          environment['DSH_LAUNCHER_TEST_RESOURCES']!,
+        )
+      : null;
+  if (pluginRegistry != null) environment.addAll(pluginRegistry.environment);
   late final Process process;
   try {
     await settings?.prepareKeychain(executable.path);
@@ -251,6 +280,7 @@ Future<void> main(List<String> arguments) async {
     ], environment: environment);
   } catch (_) {
     await settings?.close();
+    await pluginRegistry?.close();
     rethrow;
   }
   final diagnostics = webScenario == null ? null : ProbeDiagnostics(root);
@@ -382,6 +412,14 @@ Future<void> main(List<String> arguments) async {
                   runLifecycleScenario(actual, process, lifecycle.scenario)
             : logsScenario
             ? runLogApplicationScenario
+            : pluginsScenario
+            ? runPluginApplicationScenario
+            : pluginUpdateScenario
+            ? (app) => runPluginUpdateApplicationScenario(
+                app,
+                pluginRegistry!,
+                desktop: pluginDesktopScenario,
+              )
             : null,
         prestartedHost: settings?.host,
         prestartedHostLog: settings?.hostLog,
@@ -687,6 +725,15 @@ Future<void> main(List<String> arguments) async {
     await server?.close();
     await releaseFixture?.close();
     await settings?.close();
+    Object? registryCleanupFailure;
+    StackTrace? registryCleanupStack;
+    try {
+      await pluginRegistry?.close();
+    } catch (failure, stack) {
+      registryCleanupFailure = failure;
+      registryCleanupStack = stack;
+      stderr.writeln('PLUGIN_REGISTRY_CLEANUP_FAILURE: $failure');
+    }
     await vm?.dispose();
     if (!exited) {
       process.kill(ProcessSignal.sigterm);
@@ -703,5 +750,8 @@ Future<void> main(List<String> arguments) async {
     await outputFile.close();
     await diagnostics?.close();
     stdout.writeln('APP_LOG=${root.path}/app.log');
+    if (registryCleanupFailure != null) {
+      await Future<void>.error(registryCleanupFailure, registryCleanupStack);
+    }
   }
 }

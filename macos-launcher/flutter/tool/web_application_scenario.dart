@@ -669,7 +669,7 @@ Future<void> runWebApplicationScenario({
       await remainingHost.stdin.flush();
       require(
         await remainingHost.exitCode.timeout(const Duration(seconds: 30)) == 0,
-        'owned official Host shuts down normally through its real IPC',
+        'owned official Host acknowledges disposal and is reaped through the fixed official owner contract',
       );
     }
     if (options.backend == 'desktop') {

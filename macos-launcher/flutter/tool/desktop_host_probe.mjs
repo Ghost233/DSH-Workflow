@@ -24,24 +24,38 @@ createInterface({ input: child.stdout }).on('line', line => process.stdout.write
 createInterface({ input: child.stderr }).on('line', line => process.stderr.write(redact(line) + '\n'))
 child.on('message', message => {
   if (message.type === 'ready') console.log('HOST_READY')
+  if (message.type === 'shutdown-complete') { shutdownComplete = true; console.log('HOST_SHUTDOWN_COMPLETE') }
   if (message.type === 'fatal') console.error(`HOST_FATAL: ${redact(message.message)}`)
 })
-let stopping = false
-let forceStop
+child.on('disconnect', () => console.log('HOST_IPC_DISCONNECT'))
+let stopping = false, shutdownComplete = false, forced = false
+let terminateHost, killHost
 function stop() {
   if (stopping) return
   stopping = true
   if (child.connected) child.send({ type: 'shutdown' })
-  forceStop = setTimeout(() => child.kill('SIGKILL'), 10000)
-  forceStop.unref()
+  // Mirror the official Desktop owner stop(false) contract: disposal ACK is
+  // distinct from natural exit; the owner reaps only this forked Host PID.
+  terminateHost = setTimeout(() => {
+    forced = true
+    console.log('HOST_OWNER_SIGNAL=SIGTERM')
+    child.kill('SIGTERM')
+    killHost = setTimeout(() => { console.log('HOST_OWNER_SIGNAL=SIGKILL'); child.kill('SIGKILL') }, 5000)
+    killHost.unref()
+  }, 10000)
+  terminateHost.unref()
 }
 process.stdin.on('data', stop)
 process.stdin.on('end', stop)
 process.on('SIGTERM', stop)
 process.on('SIGINT', stop)
 child.on('exit', (code, signal) => {
-  clearTimeout(forceStop)
+  clearTimeout(terminateHost)
+  clearTimeout(killHost)
   console.log(`HOST_EXIT=${code} HOST_SIGNAL=${signal}`)
-  process.exitCode = code ?? 1
+  console.log(`HOST_OWNER_REAPED=true HOST_SHUTDOWN_ACK=${shutdownComplete} HOST_FORCED=${forced}`)
+  // ChildProcess exit is the actual reaped-PID observation. Never rewrite its
+  // raw code/signal; success belongs to acknowledged disposal + owner reclaim.
+  process.exitCode = shutdownComplete ? 0 : code || 1
   process.stdin.destroy()
 })

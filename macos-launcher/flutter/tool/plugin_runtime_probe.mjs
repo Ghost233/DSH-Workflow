@@ -3,15 +3,123 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { copyFile, mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
+import { copyFile, cp, mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { createInterface } from 'node:readline'
+import { setTimeout as delay } from 'node:timers/promises'
 import { checkPluginVersions } from '../../runtime/plugin-versions.mjs'
 import { updateProfilePlugins } from '../../runtime/plugin-update.mjs'
+import { startPluginRegistry, seedPluginProfile, pluginNames } from './plugin_registry_fixture.mjs'
 
 const exec = promisify(execFile)
+async function verifyLoadedPluginVersions(root, resources) {
+  const helper = fileURLToPath(new URL('desktop_host_probe.mjs', import.meta.url))
+  const child = spawn(`${resources}/node`, [helper, resources, `${root}/data`, `${root}/home`], {
+    env: { ...process.env, DSH_HOME: `${root}/home` }, stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  let hostPid, output = ''
+  const exited = new Promise(done => child.once('exit', done))
+  const ready = new Promise((done, fail) => {
+    createInterface({ input: child.stdout }).on('line', line => {
+      output += line + '\n'
+      const pid = /^HOST_PID=(\d+)$/.exec(line)
+      if (pid) hostPid = Number(pid[1])
+      if (line === 'HOST_READY') done()
+    })
+    createInterface({ input: child.stderr }).on('line', line => { output += line + '\n' })
+    child.once('exit', code => fail(new Error(`Host before readiness exited ${code}`)))
+  })
+  try {
+    await ready
+    let receipt
+    for (let attempt = 0; attempt < 150; attempt++) {
+      try {
+        const current = JSON.parse(await readFile(`${root}/data/global/.dsh-workflow/desktop/desktop-host.json`, 'utf8'))
+        if (current.pid === hostPid) { receipt = current; break }
+      } catch (error) { if (error.code !== 'ENOENT') throw error }
+      await delay(100)
+    }
+    assert.ok(receipt, 'official Host publishes its actual ready receipt after IPC readiness')
+    const login = await fetch(receipt.url, { redirect: 'manual', headers: { connection: 'close' } })
+    const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
+    await login.arrayBuffer()
+    const versions = []
+    for (const [name, expected] of [[pluginNames[0], '1.2.0'], [pluginNames[1], '1.1.0']]) {
+      const response = await fetch(new URL(`/t08-plugin/${name}`, receipt.url), { headers: { cookie, connection: 'close' } })
+      const body = await response.text()
+      assert.equal(response.status, 200, 'actual Host serves the self-owned endpoint')
+      const value = JSON.parse(body)
+      assert.equal(value.version, expected)
+      assert.equal(value.hostPid, receipt.pid)
+      versions.push(value)
+    }
+    await writeFile(`${root}/loaded-cold-profile.json`, JSON.stringify({ hostPid, hostLease: receipt.lease, versions }, null, 2))
+  } finally {
+    child.stdin.write('shutdown\n')
+    const code = await exited
+    await writeFile(`${root}/cold-host.log`, output + `HOST_HELPER_EXIT=${code}\n`)
+    assert.equal(code, 0, 'owned Host acknowledges actual disposal and is reclaimed by its bounded owner contract')
+  }
+}
+
+async function httpsProtocolProbe(source) {
+  const root = await mkdtemp('/private/tmp/dsh-t08-protocol-')
+  console.log(`ISOLATED_ROOT=${root}`)
+  const resources = join(root, 'resources'), home = join(root, 'home')
+  await mkdir(resources)
+  for (const entry of ['node_modules', 'bin', 'node', 'desktop']) await symlink(join(source, entry), join(resources, entry))
+  await cp(join(source, 'workflow'), join(resources, 'workflow'), { recursive: true })
+  const ownRuntime = fileURLToPath(new URL('../../runtime/', import.meta.url))
+  await cp(ownRuntime, join(resources, 'workflow/macos-launcher/runtime'), { recursive: true })
+  const runtime = JSON.parse(await readFile(join(source, 'node_modules/@deepseek-ai/dsh/package.json'), 'utf8'))
+  const fixture = await startPluginRegistry(root, runtime.version)
+  const env = { ...process.env, ...fixture.environment, DSH_HOME: home }
+  const invoke = async (label, file, args = []) => {
+    const result = await exec(join(resources, 'node'), [join(resources, 'workflow/macos-launcher/runtime', file), resources, ...args], { env, maxBuffer: 1024 * 1024 })
+    await writeFile(join(root, `${label}.stdout`), result.stdout)
+    await writeFile(join(root, `${label}.stderr`), result.stderr)
+    await writeFile(join(root, `${label}.exit`), '0\n')
+    return JSON.parse(result.stdout)
+  }
+  try {
+    await seedPluginProfile({ root, resources, fixture })
+    const checked = await invoke('check-initial', 'plugin-versions.mjs')
+    const byName = Object.fromEntries(checked.rows.map(row => [row.name, row]))
+    for (const name of pluginNames) {
+      assert.equal(byName[name].current, '1.0.0')
+      assert.equal(byName[name].latest, '1.1.0')
+      assert.equal(byName[name].status, 'newer')
+    }
+    assert.ok(checked.rows.some(row => row.status === 'error'), 'unserved third-party registry queries remain visible failures')
+    const selected = await invoke('selected', 'plugin-update.mjs', ['--only', pluginNames[0]])
+    assert.deepEqual(selected.updated, [{ name: pluginNames[0], from: '1.0.0', to: '1.1.0' }])
+    assert.equal(selected.error, undefined)
+    assert.ok(selected.failedChecks > 0)
+    await fixture.control({ latest: { [pluginNames[0]]: '1.2.0' } })
+    const batch = await invoke('batch', 'plugin-update.mjs')
+    assert.deepEqual(Object.fromEntries(batch.updated.map(row => [row.name, row.to])), { [pluginNames[0]]: '1.2.0', [pluginNames[1]]: '1.1.0' })
+    assert.equal(batch.error, undefined)
+    const observed = await invoke('check-after', 'plugin-versions.mjs')
+    for (const [name, expected] of [[pluginNames[0], '1.2.0'], [pluginNames[1], '1.1.0']]) {
+      assert.equal(observed.rows.find(row => row.name === name).current, expected)
+    }
+    assert.ok(fixture.facts.connects.includes('registry.npmjs.org:443'))
+    assert.ok(fixture.facts.requests.some(request => request.path.includes('/-/1.2.0.tgz')))
+    await verifyLoadedPluginVersions(root, resources)
+    console.log(`PROTOCOL_RESULT=${JSON.stringify({ selected, batch, standardNetworkEnvironment: fixture.environment, facts: fixture.facts })}`)
+    console.log('T08 PRODUCTION CLI HTTPS/PRIVATE CA/REAL TARBALL PROTOCOL PASSED; COLD HOST LOADED VERSIONS VERIFIED; GUI/NATIVE RELOAD NOT EXERCISED')
+  } finally { await fixture.close() }
+}
+
+if (process.argv[2] === '--https') {
+  if (!process.argv[3]) throw new Error('Pass --https immutable packaged resources')
+  await httpsProtocolProbe(resolve(process.argv[3]))
+  process.exit(0)
+}
+
 const [sourceResources] = process.argv.slice(2)
 if (!sourceResources) throw new Error('Pass immutable packaged application resources')
 const source = resolve(sourceResources)

@@ -29,6 +29,7 @@ void registerApplicationProbe(NativeBridge native) {
         nodes.add({
           'id': node.id,
           'label': data.label,
+          'tooltip': data.tooltip,
           'value': data.flagsCollection.isObscured ? '<obscured>' : data.value,
           'toggled': data.flagsCollection.isToggled.toBoolOrNull(),
           'scrollPosition': data.scrollPosition,
@@ -51,6 +52,8 @@ void registerApplicationProbe(NativeBridge native) {
       if (action == 'tap' ||
           action == 'scrollDown' ||
           action == 'scrollUp' ||
+          action == 'scrollLeft' ||
+          action == 'scrollRight' ||
           action == 'setText') {
         final node = nodes.singleWhere(
           (node) => node['id'].toString() == params['id'],
@@ -65,6 +68,8 @@ void registerApplicationProbe(NativeBridge native) {
             type: switch (action) {
               'tap' => SemanticsAction.tap,
               'scrollUp' => SemanticsAction.scrollUp,
+              'scrollLeft' => SemanticsAction.scrollLeft,
+              'scrollRight' => SemanticsAction.scrollRight,
               'setText' => SemanticsAction.setText,
               _ => SemanticsAction.scrollDown,
             },
