@@ -185,17 +185,23 @@ import importlib.util, json, os, sys
 from pathlib import Path
 if os.environ.get('GITHUB_ACTIONS') != 'true':
     raise ValueError('Desktop observation requires clean CI')
-source, root_name, mode, pid = sys.argv[1:]
+source, root_name, mode, pid = sys.argv[1:5]
 spec = importlib.util.spec_from_file_location('settings_startup_cycle', source)
 cycle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cycle)
 root = cycle.validate_observation_root(root_name, Path(os.environ['RUNNER_TEMP']))
 pid = int(pid)
-if mode == 'observe':
+if mode in ('observe', 'host-observe'):
     desktop = cycle.parse_json((root/'owned-desktop-process.json').read_text())
-    if desktop.get('pid') != pid:
+    if mode == 'host-observe':
+        host = cycle.parse_json(sys.argv[5])
+        if (host.get('ownershipKnown') is not True or host.get('root') != str(root)
+            or host.get('pid') != pid or host.get('desktopPid') != desktop.get('pid')
+            or host.get('inspection', {}).get('pid') != pid):
+            raise ValueError('Host observation differs from captured trusted binding')
+    elif desktop.get('pid') != pid:
         raise ValueError('Desktop observation differs from captured PID')
-print(json.dumps(cycle.inspect_host(pid, include_bsd_status=mode == 'observe')))
+print(json.dumps(cycle.inspect_host(pid, include_bsd_status=mode != 'capture')))
 ''';
 
 /// External observations and clean-CI normal cleanup for exact owned processes.
@@ -407,6 +413,7 @@ class ProbeDiagnostics {
   Future<Map<String, Object?>> _desktopKernelInspection(
     int targetPid, {
     bool includeBsdStatus = false,
+    Map<String, Object?>? capturedHost,
   }) async {
     try {
       final result = await Process.run('/usr/bin/python3', [
@@ -418,8 +425,13 @@ class ProbeDiagnostics {
           ),
         ).path,
         root.path,
-        includeBsdStatus ? 'observe' : 'capture',
+        capturedHost != null
+            ? 'host-observe'
+            : includeBsdStatus
+            ? 'observe'
+            : 'capture',
         '$targetPid',
+        if (capturedHost != null) jsonEncode(capturedHost),
       ]);
       final inspection = result.exitCode == 0
           ? jsonDecode(result.stdout.toString()) as Map
@@ -447,6 +459,28 @@ class ProbeDiagnostics {
       facts['captured'] = jsonDecode(
         await File('${root.path}/owned-desktop-process.json').readAsString(),
       );
+      final hosts = _hosts.values
+          .where(
+            (host) =>
+                host['ownershipKnown'] == true &&
+                host['desktopPid'] == expectedPid &&
+                host['root'] == root.path &&
+                host['pid'] is int &&
+                (host['pid'] as int) > 1 &&
+                host['lease'] is String &&
+                (host['lease'] as String).isNotEmpty,
+          )
+          .toList();
+      facts['host'] = hosts.length == 1
+          ? {
+              'captured': hosts.single,
+              'kernel': await _desktopKernelInspection(
+                hosts.single['pid'] as int,
+                includeBsdStatus: true,
+                capturedHost: hosts.single,
+              ),
+            }
+          : {'state': 'unknown', 'trustedBindings': hosts.length};
       facts['kernel'] = await _desktopKernelInspection(
         expectedPid,
         includeBsdStatus: true,
