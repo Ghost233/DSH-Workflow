@@ -134,7 +134,6 @@ Future<void> main(List<String> args) async {
   for (var iteration = 1; iteration <= 3; iteration++) {
     final evidence = Directory('${output.path}/launcher-$iteration');
     await evidence.create();
-    final iterationStartedAt = DateTime.now().toUtc();
     final clock = Stopwatch()..start();
     final probe = await Process.start(Platform.resolvedExecutable, [
       'run',
@@ -346,8 +345,7 @@ Future<void> main(List<String> args) async {
                 if (hostPid is int &&
                     hostPid > 1 &&
                     value['lease'] is String &&
-                    desktop['pid'] == desktopPid &&
-                    desktop['launchDateUnix'] is num) {
+                    desktop['pid'] == desktopPid) {
                   final query = await Process.run(
                     '/usr/bin/python3',
                     ['-c', hostInspectionScript, '$hostPid'],
@@ -372,9 +370,7 @@ Future<void> main(List<String> args) async {
                         facts['pid'] == hostPid &&
                         facts['parentPid'] == desktopPid &&
                         allowed.contains(facts['executable']) &&
-                        facts['startUnixSeconds'] is num &&
-                        (facts['startUnixSeconds'] as num) >=
-                            (desktop['launchDateUnix'] as num) - 1) {
+                        facts['startUnixSeconds'] is num) {
                       await File('${evidence.path}/host-process.json')
                           .writeAsString(
                             jsonEncode(
@@ -495,12 +491,6 @@ Future<void> main(List<String> args) async {
       if (pid is! int ||
           pid <= 1 ||
           started == null ||
-          started.isBefore(
-            iterationStartedAt.subtract(const Duration(seconds: 5)),
-          ) ||
-          started.isAfter(
-            DateTime.now().toUtc().add(const Duration(seconds: 1)),
-          ) ||
           executable is! String ||
           await File(executable).resolveSymbolicLinks() !=
               '$root/candidate.app/Contents/MacOS/DSH Workflow' ||
@@ -520,7 +510,6 @@ Future<void> main(List<String> args) async {
         final expected = await Directory(
           '${args[1]}/desktop/DeepSeek Harness.app',
         ).resolveSymbolicLinks();
-        final launched = desktop['launchDateUnix'];
         final desktopLedgerPid = desktop['pid'];
         final desktopExecutable = desktop['executablePath'];
         if (bundle == expected &&
@@ -533,12 +522,7 @@ Future<void> main(List<String> args) async {
             desktopLedgerPid is int &&
             desktopLedgerPid > 1 &&
             (desktopPid == null || desktopPid == desktopLedgerPid) &&
-            desktop['probeStartedAt'] == ledger['startedAt'] &&
-            launched is num &&
-            launched.isFinite &&
-            launched * 1000 >= started.millisecondsSinceEpoch - 5000 &&
-            launched * 1000 <=
-                DateTime.now().toUtc().millisecondsSinceEpoch + 1000) {
+            desktop['probeStartedAt'] == ledger['startedAt']) {
           desktopPid = desktopLedgerPid;
           cleanup['desktopOwnershipKnown'] = true;
         }

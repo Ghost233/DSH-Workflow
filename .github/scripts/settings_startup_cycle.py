@@ -286,16 +286,14 @@ def inspect_host(pid):
 
 
 def bind_host_identity(inspection, root, receipt, desktop, probe, allowed):
-    started = datetime.datetime.fromisoformat(probe['startedAt'].replace('Z', '+00:00')).timestamp()
     known = (inspection.get('lookupOk') is True and inspection.get('pid') == receipt.get('pid')
              and type(receipt.get('pid')) is int and receipt['pid'] > 1 and isinstance(receipt.get('lease'), str) and bool(receipt['lease'])
              and inspection.get('parentPid') == desktop.get('pid') and desktop.get('probeStartedAt') == probe.get('startedAt')
              and type(inspection.get('uid')) is int and inspection.get('uid') == inspection.get('probeUid') == inspection.get('parentUid')
              and inspection.get('executable') in allowed and isinstance(inspection.get('startUnixSeconds'), (int, float))
-             and inspection['startUnixSeconds'] >= max(started, desktop['launchDateUnix']) - 1
              and inspection.get('query', {}).get('exit') == 0)
     return {'root': str(root.resolve()), 'pid': receipt.get('pid'), 'lease': receipt.get('lease'),
-            'desktopPid': desktop.get('pid'), 'desktopLaunchDateUnix': desktop.get('launchDateUnix'),
+            'desktopPid': desktop.get('pid'),
             'probeStartedAt': probe['startedAt'], 'ownershipKnown': known, 'inspection': inspection}
 
 

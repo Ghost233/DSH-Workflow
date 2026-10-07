@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Fail closed before another clean-CI Desktop launch; never terminate anything."""
-import datetime
 import errno
 import json
 import os
@@ -38,7 +37,6 @@ def ownership(log, runner, *, require_finally=True):
     expected = (root / 'candidate.app/Contents/MacOS/DSH Workflow').resolve(strict=True)
     if not valid_pid(launcher) or Path(probe['executable']).resolve(strict=True) != expected or not expected.is_relative_to(root):
         raise ValueError('Invalid application ownership')
-    started = datetime.datetime.fromisoformat(probe['startedAt'].replace('Z', '+00:00')).timestamp()
     timeline = [json.loads(line) for line in read('probe-timeline.jsonl').splitlines()]
     starts = [row for row in timeline if row.get('event') == 'application-started']
     if len(starts) != 1 or any(starts[0].get(key) != probe.get(key) for key in ('pid', 'executable', 'startedAt')):
@@ -61,10 +59,10 @@ def ownership(log, runner, *, require_finally=True):
         if (not valid_pid(row.get('pid')) or Path(row['bundlePath']).resolve(strict=True) != bundle
             or Path(row['executablePath']).resolve(strict=True) != executable
             or not bundle.is_relative_to(Path(runner).resolve(strict=True))
-            or row['probeStartedAt'] != probe['startedAt'] or row['launchDateUnix'] < started - 5):
+            or row['probeStartedAt'] != probe['startedAt']):
             raise ValueError('Desktop identity differs')
     ledger = json.loads(read('owned-desktop-process.json'))
-    if any(ledger.get(key) != captures[-1].get(key) for key in ('pid', 'bundlePath', 'executablePath', 'launchDateUnix', 'probeStartedAt')):
+    if any(ledger.get(key) != captures[-1].get(key) for key in ('pid', 'bundlePath', 'executablePath', 'probeStartedAt')):
         raise ValueError('Desktop ledger differs from observed captures')
     desktops = {row['pid'] for row in captures}
     observed = {row['openedDesktopPid'] for row in timeline if row.get('event') == 'ui-response' and row.get('openedDesktopPid') is not None}

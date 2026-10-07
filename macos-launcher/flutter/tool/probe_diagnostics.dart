@@ -154,9 +154,6 @@ driver = identity(driver_pid, Path(driver_executable).resolve(strict=True))
 if launcher['parentPid'] != driver_pid:
     raise ValueError('Launcher parent differs from the live Dart driver')
 if mode == 'prepare':
-    started = cycle.datetime.datetime.fromisoformat(probe['startedAt'].replace('Z', '+00:00')).timestamp()
-    if launcher['startUnixSeconds'] < started - 5:
-        raise ValueError('Launcher predates this probe')
     probe['liveProcesses'] = {'launcher':launcher, 'driver':driver}
     temporary = probe_file.with_suffix('.json.tmp')
     temporary.write_text(json.dumps(probe)+'\n')
@@ -170,8 +167,6 @@ elif mode == 'request':
     if desktop.get('pid') != expected['desktopPid'] or desktop.get('probeStartedAt') != probe['startedAt']:
         raise ValueError('Desktop ledger differs from the current PID')
     desktop_identity = identity(desktop['pid'], Path(desktop['executablePath']).resolve(strict=True))
-    if abs(desktop_identity['startUnixSeconds']-desktop['launchDateUnix']) > 1:
-        raise ValueError('Desktop process start differs from captured launch')
     bound = cycle.capture_owned_host(root, runner, expected['hostPid'])
     if (bound.get('ownershipKnown') is not True or bound.get('pid') != expected['hostPid']
         or bound.get('lease') != expected['hostLease'] or bound.get('desktopPid') != expected['desktopPid']

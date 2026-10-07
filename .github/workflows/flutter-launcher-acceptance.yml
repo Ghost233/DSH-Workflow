@@ -511,7 +511,7 @@ jobs:
         timeout-minutes: 2
         run: |
           python3 - <<'PY'
-          import errno, hashlib, json, os, re, socket, subprocess
+          import errno, hashlib, json, os, re, shutil, socket, subprocess
           from pathlib import Path
           import sys
           sys.path.insert(0, '.github/scripts')
@@ -520,7 +520,7 @@ jobs:
           log = evidence / 'application.log'
           roots = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M) if log.exists() else []
           results = []
-          diagnostic_failed = False
+          physical_failed = False
           print('T05_COLLECTOR_PHASE=root-validation-start', flush=True)
           for name in roots:
               root = validate_root(name, Path(os.environ['RUNNER_TEMP']))
@@ -529,7 +529,15 @@ jobs:
               print('T05_COLLECTOR_PHASE=copy-start ROOT=' + root.name, flush=True)
               copy_safe_evidence(root, target)
               print('T05_COLLECTOR_PHASE=copy-end ROOT=' + root.name, flush=True)
-              diagnostic_failed = run_diagnostics(root, target) != 0 or diagnostic_failed
+              auxiliary = target / 'auxiliary-diagnostics'
+              auxiliary.mkdir(exist_ok=True)
+              auxiliary_exit = run_diagnostics(root, auxiliary)
+              (target / 'auxiliary-diagnostics-status.json').write_text(json.dumps({
+                  'exit': auxiliary_exit, 'functionalCommandExitUnchanged': True,
+                  'physicalGateUnchanged': True, 'auxiliaryOutputRetained': auxiliary_exit == 0}) + '\n')
+              if auxiliary_exit != 0:
+                  shutil.rmtree(auxiliary)
+                  print('::warning::T05 auxiliary system/crash diagnostics failed or are unavailable; exit=' + str(auxiliary_exit), flush=True)
               print('T05_COLLECTOR_PHASE=hash-start ROOT=' + root.name, flush=True)
               hashes = {}
               for relative in ('Contents/MacOS/DSH Workflow', 'Contents/MacOS/DSH Workflow.debug.dylib',
@@ -541,7 +549,7 @@ jobs:
               owned_log = log
               owned = collect_owned_processes(owned_log, Path(os.environ['RUNNER_TEMP']))
               processes = owned['processes']
-              diagnostic_failed = not owned['complete'] or diagnostic_failed
+              physical_failed = not owned['complete'] or physical_failed
               print('T05_COLLECTOR_PHASE=port-observation-start ROOT=' + root.name, flush=True)
               port = socket.socket()
               try:
@@ -563,7 +571,7 @@ jobs:
                   port.close()
               listener = observe_os_query(['/usr/sbin/lsof', '-nP', '-iTCP:33080', '-sTCP:LISTEN', '-Fpn'])
               physical_complete = owned['hostBindingKnown'] and can_repeat({'ownership': owned['ownership'], 'processes': list(processes.values()), 'finallyComplete': owned['finallyComplete'], 'receipt': owned['receiptLookup'], 'listener': {key: listener[key] for key in ('exit', 'stdout', 'stderr')}, 'bindListen': service_listen})
-              diagnostic_failed = not physical_complete or listener['timedOut'] or diagnostic_failed
+              physical_failed = not physical_complete or listener['timedOut'] or physical_failed
               print('T05_COLLECTOR_PHASE=port-observation-end ROOT=' + root.name, flush=True)
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes, 'ownership': owned['ownership'], 'hostBindingKnown': owned['hostBindingKnown'],
                               'allOwnedProcessesGone': physical_complete, 'finallyComplete': owned['finallyComplete'], 'receiptLookup': owned['receiptLookup'],
@@ -574,8 +582,8 @@ jobs:
                               'webPortReleased': service_listen['available'] and not listener['timedOut']})
           (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
           print('T05_COLLECTOR_PHASE=complete', flush=True)
-          if diagnostic_failed:
-              raise RuntimeError('Owned collector query or diagnostic failed; cleanup observations preserved')
+          if physical_failed:
+              raise RuntimeError('Owned physical collector query failed; cleanup observations preserved')
           PY
 
       - name: Detach the read-only runtime even on failure

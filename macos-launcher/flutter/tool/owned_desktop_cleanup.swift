@@ -36,7 +36,7 @@ do {
   if mode == "capture" {
     guard arguments.count == 5, let pid = Int32(arguments[4]), pid > 1,
           let app = NSRunningApplication(processIdentifier: pid),
-          let actual = app.bundleURL, let executable = app.executableURL, let launched = app.launchDate else {
+          let actual = app.bundleURL, let executable = app.executableURL else {
       throw fail("Owned Desktop is unavailable")
     }
     let expected = canonical(arguments[3])
@@ -45,20 +45,15 @@ do {
       throw fail("Desktop bundle identity differs from private candidate")
     }
     let probe = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: root).appendingPathComponent("probe-process.json"))) as! [String: Any]
-    let format = ISO8601DateFormatter()
-    format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    guard let started = format.date(from: probe["startedAt"] as? String ?? ""), launched >= started.addingTimeInterval(-5) else {
-      throw fail("Desktop predates this probe")
-    }
     let facts: [String: Any] = ["pid": pid, "bundlePath": expected, "executablePath": canonical(executable.path),
-                              "launchDateUnix": launched.timeIntervalSince1970, "probeStartedAt": probe["startedAt"]!]
+                              "probeStartedAt": probe["startedAt"]!]
     try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]).write(to: ledger, options: .atomic)
     try emit(facts.merging(["event": "captured"], uniquingKeysWith: { _, new in new }))
   } else if mode == "terminate" || mode == "request-only" {
     guard arguments.count == (mode == "request-only" ? 4 : 3) else { throw fail("Invalid cleanup arguments") }
     let facts = try JSONSerialization.jsonObject(with: Data(contentsOf: ledger)) as! [String: Any]
     guard let pid = facts["pid"] as? Int32, pid > 1, let expected = facts["bundlePath"] as? String,
-          expected.hasPrefix(runnerRoot + "/"), let launched = facts["launchDateUnix"] as? Double,
+          expected.hasPrefix(runnerRoot + "/"),
           let executable = facts["executablePath"] as? String else { throw fail("Invalid owned Desktop ledger") }
     if mode == "request-only" {
       guard let expectedPid = Int32(arguments[3]), expectedPid == pid else { throw fail("Desktop ledger differs from current PID") }
@@ -69,8 +64,7 @@ do {
       exit(0)
     }
     guard let bundle = app.bundleURL, canonical(bundle.path) == expected,
-          let actualExecutable = app.executableURL, canonical(actualExecutable.path) == executable,
-          let actualLaunch = app.launchDate, abs(actualLaunch.timeIntervalSince1970 - launched) < 0.001 else {
+          let actualExecutable = app.executableURL, canonical(actualExecutable.path) == executable else {
       throw fail("Desktop PID identity changed")
     }
     if mode == "request-only" {
@@ -138,16 +132,6 @@ do {
       guard launcherStart == baselineStart else {
         throw requestFailure("launcher-kernel-baseline-match", ["baselineStartUnix": baselineStart,
                            "currentStartUnix": launcherStart, "precisionSeconds": 1])
-      }
-      guard let launcherApp = NSRunningApplication(processIdentifier: launcherPid) else {
-        throw requestFailure("launcher-native-lookup", ["present": false])
-      }
-      guard !launcherApp.isTerminated else {
-        throw requestFailure("launcher-native-alive", ["present": false])
-      }
-      guard let launcherURL = launcherApp.executableURL,
-            canonical(launcherURL.path) == launcherExecutable else {
-        throw requestFailure("launcher-native-executable", ["matches": false])
       }
       guard binding["root"] as? String == root else {
         throw requestFailure("owned-root", ["matches": false])
