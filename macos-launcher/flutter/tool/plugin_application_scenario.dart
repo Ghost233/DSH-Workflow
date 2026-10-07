@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'application_probe.dart' show require, waitFor;
 import 'web_application_scenario.dart';
+import 'web_startup_wait.dart';
 
 /// This first application slice checks real on-disk plugin reports and preserves
 /// the connected official Host. It does not claim update or Desktop reload proof.
@@ -553,12 +554,17 @@ Future<void> runPluginUpdateApplicationScenario(
       );
       await app.tap('管理');
       await app.tap('打开 DSH');
-      await waitFor(
-        'official Desktop publishes its reopened Host',
-        () async => await app.receipt.exists(),
+      final after = await waitForActualDesktopLease(
+        oldLease: before['lease'] as String,
+        receipt: () async => await app.receipt.exists()
+            ? (jsonDecode(await app.receipt.readAsString()) as Map)
+                  .cast<String, Object?>()
+            : null,
+        isOwned: app.ownsHostReceipt,
+        ui: () => app.state(),
+        applicationExit: app.applicationExit,
+        dependencyFailure: () => app.startupFailure(oldDesktopPid as int),
       );
-      final after = (jsonDecode(await app.receipt.readAsString()) as Map)
-          .cast<String, Object?>();
       require(
         after['lease'] != before['lease'] && after['pid'] != before['pid'],
         'normal user reopen creates a new real Desktop Host identity',
