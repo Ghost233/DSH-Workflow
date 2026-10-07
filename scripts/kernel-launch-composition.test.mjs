@@ -44,7 +44,7 @@ test('kernel composition registers the Owner declaration without changing other 
     customSkillDirs: ['/project/vendor/mattpocock-skills-zh/skills'],
   })
   assert.equal(rows.find(row => row.id === 'matt-skills-board').name, '/project/matt-skills-panel-plugin/package/lib/index.js')
-  assert.equal(rows.find(row => row.id === 'matt-panel-tools').name, '/project/matt-skills-panel-plugin/package/lib/platform/deckToolsRow.js')
+  assert.equal(rows.find(row => row.id === 'matt-panel-tools').name, 'dsh-workflow-matt-panel/tools')
   assert.deepEqual(rows.find(row => row.id === 'matt-panel-tools').config, { enabled: true })
   assert.ok(patches.some(row => row.id === 'sol-old' && row.disabled === true))
   const fallback = composeKernelLaunch(entries.filter(row => row.id !== 'sol-old'), { projectRoot: '/project', catalogRoot: '/catalog', presetPlugins })
@@ -73,4 +73,16 @@ test('Creator guidance preserves the selected Creator composition and its uneval
   assert.deepEqual(creator.config.plugins.slice(0, -1), creatorPlugins)
   assert.equal(creator.config.plugins.at(-1).name, '/project/owner-workflow-plugin/src/creator-jev-guidance.mjs')
   assert.equal(patches.some(row => row.id === 'user-standard'), false)
+})
+
+test('daily composition mounts the named JEV center and monitor independently of the Agent presets', () => {
+  const patches = composeKernelLaunch([{ id: 'presets', name: '@deepseek-ai/dsh-agent-preset-registry' }], {
+    projectRoot: '/project', catalogRoot: '/catalog', presetPlugins: [{ id: 'owner-workflow', name: './plugin.mjs' }],
+  })
+  const monitor = patches.at(-1).insert.find(row => row.id === 'workflow-agent-monitor')
+  const center = patches.at(-1).insert.find(row => row.id === 'workflow-jev-center')
+  assert.equal(center?.name, 'dsh-owner-workflow/jev-center')
+  assert.deepEqual(center.config, {})
+  assert.equal(monitor.name, 'dsh-owner-workflow/agent-monitor')
+  assert.deepEqual(monitor.config, { directory: '/catalog/.dsh-workflow/agent-monitor' })
 })

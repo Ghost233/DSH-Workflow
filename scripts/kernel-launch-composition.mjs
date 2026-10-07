@@ -1,4 +1,5 @@
 import { resolve, join } from 'node:path'
+import { missingObservationEntries } from './observation-profile.mjs'
 
 const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
 
@@ -47,14 +48,15 @@ export function composeKernelLaunch(entries, { projectRoot, catalogRoot, presetP
   const mattDeckConfig = previous('matt-deck')
   const mattZhSkills = join(root, 'vendor/mattpocock-skills-zh/skills')
   const owned = [
+    ...missingObservationEntries(all, catalog),
     { id: 'preset-owner-workflow', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'owner-workflow', order: 0, plugins } },
     { id: 'kernel-owner-surface', name: join(root, 'owner-workflow-plugin/src/kernel-entry.mjs'), config: { surfaceOnly: true } },
-    { id: 'kernel-owner-dashboard', name: join(root, 'owner-workflow-plugin/src/kernel-dashboard-host.mjs'), config: { catalogRoot: catalog } },
+    { id: 'kernel-owner-dashboard', name: 'dsh-owner-workflow/kernel-dashboard', config: { catalogRoot: catalog } },
     { id: 'mattpocock-skills-zh', name: '@deepseek-ai/dsh-skill-filesystem', config: {
       providerName: 'mattpocock-skills-zh', includeDefaultRoots: false, customSkillDirs: [mattZhSkills],
     } },
     { id: 'matt-skills-board', name: join(root, 'matt-skills-panel-plugin/package/lib/index.js'), config: mattDeckConfig },
-    { id: 'matt-panel-tools', name: join(root, 'matt-skills-panel-plugin/package/lib/platform/deckToolsRow.js'), config: previous('matt-tools') },
+    { id: 'matt-panel-tools', name: 'dsh-workflow-matt-panel/tools', config: previous('matt-tools') },
   ]
   for (const row of owned) {
     const collision = all.find(item => item.id === row.id)

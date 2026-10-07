@@ -31,6 +31,8 @@ test('Desktop retains the user profile and loads one local board while retiring 
   const patches = JSON.parse(await readFile(join(first.bundle, 'cordis.patch.yml'), 'utf8'))
   assert.ok(patches.some(p => p.id === 'sol-efficiency' && p.disabled === true))
   const inserts = patches.flatMap(p => p.insert ?? [])
+  assert.equal(inserts.filter(p => p.id === 'workflow-jev-center' && p.name === 'dsh-owner-workflow/jev-center').length, 1)
+  assert.equal(inserts.filter(p => p.id === 'workflow-agent-monitor' && p.name === 'dsh-owner-workflow/agent-monitor').length, 1)
   assert.ok(patches.find(p => p.id === 'preset-cordis').config.plugins.some(row => row.id === 'workflow-creator-jev-guidance'))
   assert.equal(inserts.filter(p => p.id === 'matt-skills-board').length, 1)
   assert.ok(inserts.find(p => p.id === 'matt-skills-board').name.includes('/matt-skills-panel-plugin/package/lib/index.js'))

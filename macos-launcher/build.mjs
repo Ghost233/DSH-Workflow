@@ -70,7 +70,7 @@ async function copyOwned(workflow) {
   await cp(join(root, mattPanel, 'LICENSE'), join(workflow, mattPanel, 'package/LICENSE'))
   await cp(join(root, mattPanel, 'THIRD_PARTY_NOTICES.md'), join(workflow, mattPanel, 'package/THIRD_PARTY_NOTICES.md'))
   for (const name of ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-runtime.mjs',
-    'kernel-launch-composition.mjs', 'web-host-lifecycle.mjs']) {
+    'kernel-launch-composition.mjs', 'observation-profile.mjs', 'web-host-lifecycle.mjs']) {
     await cp(join(root, 'scripts', name), join(workflow, 'scripts', name))
   }
   await cp(join(root, 'macos-launcher/runtime/web-launch.mjs'), join(workflow, 'macos-launcher/runtime/web-launch.mjs'))

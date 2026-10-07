@@ -116,6 +116,7 @@ test('运行状态和 Owner 输入限制只登记官方 Slot', async () => {
     sidebarRightTabs: { register() { return () => {} } },
     sidebarRight: { openTab() {} },
     effect(callback) { callback() },
+    inject() {},
     slots: {
       inject(name, factory) {
         slotNames.push(name)
@@ -168,6 +169,7 @@ test('Exec 授权只接管自己的审批并在右侧展示完整内容', async 
     sidebarRightTabs: { register(definition) { types.push(definition); return () => {} } },
     sidebarRight: { openTab(...args) { opened.push(args) } },
     effect(callback) { callback() },
+    inject() {},
     slots: { inject(_name, callback) { callback() }, register(definition, component) { slots.push({ definition, component }); return () => {} } },
   })
   assert.equal(types[0].kind, 'owner-exec-approval')
@@ -216,6 +218,7 @@ test('Owner 问询保留底部原生卡，并可在 DSH 右侧查看和回答同
     sidebarRightTabs: { register() { return () => {} } },
     sidebarRight: { openTab(...args) { opened.push(args) } },
     effect(callback) { callback() },
+    inject() {},
     slots: { inject(_name, callback) { callback() }, register(definition, component) {
       slots.push({ definition, component }); return () => {}
     } },
