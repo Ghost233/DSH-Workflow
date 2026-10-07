@@ -13,3 +13,13 @@ module.exports = function createJevCenterRemoteDescriptor() {
     result: { mode: 'src-json' },
   }
 }
+
+module.exports.assertUniqueModelNames = function assertUniqueModelNames(engines) {
+  const names = new Set()
+  for (const engine of engines) {
+    if (engine.enabled === false) continue
+    const modelName = engine.modelName || engine.upstreamModel
+    if (names.has(modelName)) throw new Error('已启用的调用模型名重复，请改名后保存')
+    names.add(modelName)
+  }
+}
