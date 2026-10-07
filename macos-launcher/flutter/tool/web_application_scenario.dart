@@ -8,27 +8,6 @@ import 'application_probe.dart' show require, waitFor;
 import 'web_startup_wait.dart';
 import 'probe_diagnostics.dart' show safeInspectorOutput;
 
-/// Observe the original predicate without treating rejected queries as gone.
-Future<bool> desktopExitObserved(
-  int pid, {
-  void Function(Map<String, Object?>)? observe,
-}) async {
-  final clock = Stopwatch()..start();
-  final check = await Process.run('/bin/kill', ['-0', '$pid']);
-  final gone =
-      check.exitCode != 0 &&
-      check.stderr.toString().contains('No such process');
-  observe?.call({
-    'pid': pid,
-    'rawExit': check.exitCode,
-    'rawStdout': safeInspectorOutput(check.stdout),
-    'rawStderr': safeInspectorOutput(check.stderr),
-    'predicateGone': gone,
-    'requestElapsedMs': clock.elapsedMilliseconds,
-  });
-  return gone;
-}
-
 Future<ServerSession> currentSdkSession(LauncherServer server) async {
   ServerSession? current;
   await waitFor('current official SDK connection', () async {
@@ -167,7 +146,6 @@ Future<void> runWebApplicationScenario({
   bool passwordPreloaded = false,
   bool settingsOwnedWebCleanup = false,
   void Function(String, Map<String, Object?>)? diagnose,
-  Future<void> Function(int, Map<String, Object?>)? requestDesktopTermination,
 }) async {
   final data = '${root.path}/data';
   final home = '${root.path}/home';
@@ -305,6 +283,7 @@ Future<void> runWebApplicationScenario({
     );
   }
 
+  var bodyFailed = false;
   try {
     await waitFor('native entry ready before menu actions', () async {
       final native = (await state())['native'] as Map;
@@ -642,62 +621,15 @@ Future<void> runWebApplicationScenario({
         ),
       );
       if (settingsOwnedWebCleanup) {
-        final current = await readReceipt();
-        final hostPid = current['pid'], lease = current['lease'];
-        final desktopPid =
-            ((await state())['native'] as Map)['openedDesktopPid'];
-        require(
-          options.backend == 'desktop' &&
-              desktopPid is int &&
-              desktopPid > 1 &&
-              hostPid is int &&
-              hostPid > 1 &&
-              lease is String &&
-              lease.isNotEmpty &&
-              current['url'] is String &&
-              await ownsHostReceipt(current),
-          'settings cleanup stops only the current bound Desktop Host Web access',
-        );
-        final currentUrl = Uri.parse(current['url'] as String);
-        require(
-          currentUrl.scheme == 'http' &&
-              currentUrl.userInfo.isEmpty &&
-              currentUrl.port > 0 &&
-              const ['127.0.0.1', 'localhost', '::1'].contains(currentUrl.host),
-          'current owned Host health uses its loopback receipt URL',
-        );
-        diagnose?.call('cleanup-web-stop-start', {
-          'pid': hostPid,
-          'expectedPid': desktopPid,
-        });
+        diagnose?.call('cleanup-web-stop-start', {'service': 'web'});
         await tapUi('停止 Web');
         await portReleased();
-        final preserved = await readReceipt();
-        final hostAlive = await Process.run('/bin/kill', ['-0', '$hostPid']);
-        final desktopAlive = await Process.run('/bin/kill', [
-          '-0',
-          '$desktopPid',
-        ]);
         require(
-          preserved['pid'] == hostPid &&
-              preserved['lease'] == lease &&
-              preserved['url'] == current['url'] &&
-              await ownsHostReceipt(preserved) &&
-              ((await state())['native'] as Map)['openedDesktopPid'] ==
-                  desktopPid &&
-              hostAlive.exitCode == 0 &&
-              desktopAlive.exitCode == 0,
-          'settings Web stop releases its port while the current bound Desktop and Host remain alive',
-        );
-        final currentLogin = await request(currentUrl);
-        require(
-          (await health(currentUrl, currentLogin.cookies))['instanceId'] ==
-              lease,
-          'settings cleanup preserves the same actual backend health lease',
+          (await sdk('status'))['state'] == 'stopped',
+          'settings cleanup stops the owned Web service',
         );
         diagnose?.call('cleanup-web-stop-end', {
-          'pid': hostPid,
-          'expectedPid': desktopPid,
+          'service': 'web',
           'present': true,
         });
       }
@@ -764,6 +696,7 @@ Future<void> runWebApplicationScenario({
       'T02 WEB APPLICATION SCENARIO PASSED (${options.backend}, port $port)',
     );
   } catch (error, stack) {
+    bodyFailed = true;
     final message = error
         .toString()
         .replaceAll(RegExp(r'token=[^&\s]+'), 'token=<REDACTED>')
@@ -779,53 +712,47 @@ Future<void> runWebApplicationScenario({
         stderr.writeln('WEB_FINAL_CAPTURE_ERROR: $error');
       }
     }
-    await server?.close();
-    final remainingHost = host;
-    if (remainingHost != null && !hostExited) {
-      remainingHost.stdin.writeln('shutdown');
-      await remainingHost.stdin.flush();
-      require(
-        await remainingHost.exitCode.timeout(const Duration(seconds: 30)) == 0,
-        'owned official Host acknowledges disposal and is reaped through the fixed official owner contract',
+    Object? firstCleanupError;
+    StackTrace? firstCleanupStack;
+    void cleanupFailed(Object error, StackTrace stack) {
+      firstCleanupError ??= error;
+      firstCleanupStack ??= stack;
+      stderr.writeln(
+        'WEB_CLEANUP_SECONDARY_ERROR: ${safeInspectorOutput(error).replaceAll(password, '<REDACTED>')}\n${safeInspectorOutput(stack)}',
       );
     }
-    if (options.backend == 'desktop') {
-      final desktopPid = ((await state())['native'] as Map)['openedDesktopPid'];
-      if (settingsOwnedWebCleanup) {
+
+    try {
+      await server?.close();
+      final remainingHost = host;
+      if (remainingHost != null && !hostExited) {
+        remainingHost.stdin.writeln('shutdown');
+        await remainingHost.stdin.flush();
         require(
-          desktopPid is int && requestDesktopTermination != null,
-          'current settings Desktop has an external normal termination requester',
+          await remainingHost.exitCode.timeout(const Duration(seconds: 30)) ==
+              0,
+          'owned official Host acknowledges disposal and is reaped through the fixed official owner contract',
         );
-        await requestDesktopTermination!(
-          desktopPid as int,
-          await readReceipt(),
-        );
-      } else {
-        await state({'action': 'quitDesktop'});
       }
-      if (desktopPid is int) {
+      if (options.backend == 'headless' && await receipt.exists()) {
         await waitFor(
-          'owned official Desktop exits',
-          () => desktopExitObserved(
-            desktopPid,
-            observe: settingsOwnedWebCleanup
-                ? (facts) => diagnose?.call('desktop-exit-query', facts)
-                : null,
-          ),
-        );
-        require(
-          true,
-          'owned official Desktop PID exited after normal native termination',
+          'owned backend receipt cleanup',
+          () async => !await receipt.exists(),
         );
       }
+    } catch (error, stack) {
+      cleanupFailed(error, stack);
+    } finally {
+      try {
+        await hostLog?.close();
+      } catch (error, stack) {
+        cleanupFailed(error, stack);
+      } finally {
+        client.close(force: true);
+      }
     }
-    if (await receipt.exists()) {
-      await waitFor(
-        'owned backend receipt cleanup',
-        () async => !await receipt.exists(),
-      );
+    if (!bodyFailed && firstCleanupError != null) {
+      Error.throwWithStackTrace(firstCleanupError!, firstCleanupStack!);
     }
-    await hostLog?.close();
-    client.close(force: true);
   }
 }

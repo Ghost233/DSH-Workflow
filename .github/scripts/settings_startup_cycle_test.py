@@ -324,6 +324,19 @@ class PartialCollectorTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Incomplete application finally'):
                     cycle.ownership(log, runner)
                 parent.wait(timeout=5); desktop.wait(timeout=5)
+                completed = timeline + [{'event': 'application-exit', 'code': parent.returncode}, {'event': 'diagnostics-close'}]
+                (root / 'probe-timeline.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in completed))
+                (root / 'owned-desktop-cleanup.log').write_text(json.dumps(capture)+'\nHELPER_EXIT=0\nHELPER_EXIT=1\n')
+                separate = cycle.collect_owned_processes(log, runner)
+                self.assertEqual(separate['processes']['launcher:'+str(parent.pid)]['state'], 'gone')
+                self.assertEqual(separate['processes']['desktop:'+str(desktop.pid)]['state'], 'unknown')
+                self.assertEqual(separate['isolatedCleanup']['state'], 'unknown')
+                listener = {'state': 'observed', 'exit': 1, 'stdout': '', 'stderr': '', 'timedOut': False}
+                self.assertTrue(cycle.launcher_web_released(separate, listener, {'available': True}))
+                with self.assertRaisesRegex(ValueError, 'Missing or failed Desktop ownership'):
+                    cycle.ownership(log, runner)
+                (root / 'owned-desktop-cleanup.log').write_text(json.dumps(capture)+'\nHELPER_EXIT=0\n')
+                (root / 'probe-timeline.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in timeline))
                 gone = cycle.collect_owned_processes(log, runner)
                 self.assertTrue(all(row['state']=='gone' and row['rawErrno']==__import__('errno').ESRCH for row in gone['processes'].values()))
                 self.assertFalse(gone['complete'])
@@ -355,14 +368,40 @@ class PartialCollectorTest(unittest.TestCase):
                 for bad in ({'pid': 1, 'lease': 'invalid-pid'}, {'pid': host, 'lease': ''}):
                     invalid = missing_host + [dict(bad, event='receipt-snapshot', present=True)]
                     (root / 'probe-timeline.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in invalid))
+                    independent_unknown = cycle.collect_owned_processes(log, runner)
+                    self.assertEqual(independent_unknown['isolatedCleanup']['state'], 'unknown')
+                    self.assertEqual(independent_unknown['processes']['launcher:'+str(parent.pid)]['state'], 'gone')
+                    self.assertTrue(cycle.launcher_web_released(independent_unknown, listener, {'available': True}))
                     with self.assertRaisesRegex(ValueError, 'Missing Host receipt ownership'):
-                        cycle.collect_owned_processes(log, runner)
+                        cycle.ownership(log, runner)
             finally:
                 parent.wait(timeout=5); desktop.wait(timeout=5)
                 desktop.stdout.close()
 
 
 class HostIdentityTest(unittest.TestCase):
+    def test_launcher_web_release_does_not_require_independent_desktop_cleanup(self):
+        import copy
+        import errno
+        owned = {'ownership': {'launcher': [11], 'desktop': [12], 'host': [13]},
+                 'processes': {'launcher:11': {'pid': 11, 'state': 'gone', 'errno': errno.ESRCH, 'rawExit': 1, 'rawErrno': errno.ESRCH},
+                               'desktop:12': {'pid': 12, 'state': 'alive'}, 'host:13': {'pid': 13, 'state': 'unknown'}},
+                 'finallyComplete': True, 'receiptLookup': {'state': 'present'}}
+        listener = {'state': 'observed', 'exit': 1, 'stdout': '', 'stderr': '', 'timedOut': False}
+        bind = {'available': True}
+        self.assertTrue(cycle.launcher_web_released(owned, listener, bind))
+        self.assertFalse(cycle.can_repeat({'ownership': owned['ownership'], 'processes': list(owned['processes'].values()),
+                                         'finallyComplete': True, 'receipt': owned['receiptLookup'], 'listener': {key: listener[key] for key in ('exit', 'stdout', 'stderr')}, 'bindListen': bind}))
+        for mutation in ('missing-launcher', 'unknown-launcher', 'missing-finally'):
+            bad = copy.deepcopy(owned)
+            if mutation == 'missing-launcher': bad['processes'].pop('launcher:11')
+            elif mutation == 'unknown-launcher': bad['processes']['launcher:11']['state'] = 'unknown'
+            else: bad['finallyComplete'] = False
+            self.assertFalse(cycle.launcher_web_released(bad, listener, bind), mutation)
+        self.assertFalse(cycle.launcher_web_released(owned, listener, {'available': False}))
+        for changes in ({'state': 'unknown'}, {'exit': 124, 'timedOut': True}, {'stderr': 'query rejected'}, {'exit': 0, 'stdout': 'p123\n'}):
+            self.assertFalse(cycle.launcher_web_released(owned, dict(listener, **changes), bind), changes)
+
     def test_t08_host_capture_binds_real_owned_child_and_keeps_root_guards(self):
         with tempfile.TemporaryDirectory() as temporary:
             runner = Path(temporary).resolve()
@@ -495,6 +534,19 @@ class PrivacyTest(unittest.TestCase):
                 self.assertNotIn(secret, exported)
             self.assertTrue(json.loads((out / 'probe-timeline.jsonl').read_text())['ready'])
             self.assertEqual(json.loads((out / 'probe-process.json').read_text())['pid'], 37)
+
+    def test_observational_copy_refuses_unknown_independent_evidence_without_weakening_own_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); root, target, _ = self.fixture(base)
+            (root / 'settings-evidence.json').write_text(json.dumps({'fullAccessSaved': True}))
+            (root / 'owned-desktop-process.json').write_text('{invalid')
+            errors = cycle.copy_safe_evidence(root.resolve(), target, allow_independent_unknown=True)
+            self.assertTrue(any(row['file'] == 'owned-desktop-process.json' and row['state'] == 'unknown' for row in errors))
+            self.assertFalse((target / 'owned-desktop-process.json').exists())
+            self.assertNotIn('private-password', (target / 'probe-process.json').read_text())
+            (root / 'probe-process.json').write_text('{invalid-own')
+            with self.assertRaises(ValueError):
+                cycle.copy_safe_evidence(root.resolve(), target, allow_independent_unknown=True)
 
     def test_malformed_safe_json_and_jsonl_fail_collection(self):
         for name in ('probe-process.json', 'probe-timeline.jsonl'):

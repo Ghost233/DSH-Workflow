@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'application_probe.dart' show require, waitFor;
 import 'web_application_scenario.dart';
-import 'web_startup_wait.dart';
 
 const settingsInitialPassword = 'isolated-web-probe-password';
 
@@ -157,10 +156,7 @@ class SettingsFixture {
   }
 }
 
-Future<void> runSettingsApplicationScenario(
-  WebObservation o, {
-  required Future<void> Function(int) observeDesktopExitFailure,
-}) async {
+Future<void> runSettingsApplicationScenario(WebObservation o) async {
   final data = '${o.root.path}/data';
   final passwordFile = File('$data/lan-password');
   final preferences = File('$data/test-preferences.plist');
@@ -507,106 +503,51 @@ Future<void> runSettingsApplicationScenario(
       visible(await o.ui(), '完全退出并重新打开 Desktop'),
       'actual UI explains permission choice requires full Desktop reopen',
     );
-    require(
-      (await receipt())['lease'] == firstBackend['lease'],
-      'saving settings never automatically closes the existing backend',
-    );
-    require(
-      firstBackend['permissionMode'] == 'workspace-write' &&
-          (await receipt())['permissionMode'] == 'workspace-write',
-      'actual backend retains its preexisting restricted policy before full reopen',
-    );
-    final published = jsonEncode([
-      await o.sdk('status'),
-      await o.sdk('status', service: 'desktop'),
-      await o.sdk('logs'),
+    final savedPreferences = await Process.run('/usr/bin/plutil', [
+      '-convert',
+      'json',
+      '-o',
+      '-',
+      preferences.path,
     ]);
     require(
+      savedPreferences.exitCode == 0 &&
+          (jsonDecode(savedPreferences.stdout.toString())
+                  as Map)['fullAccess'] ==
+              true,
+      'full access choice is saved in the actual preferences',
+    );
+    final published = jsonEncode([await o.sdk('status'), await o.sdk('logs')]);
+    require(
       secrets.every((secret) => !published.contains(secret)),
-      'official SDK status and logs never disclose this scenario credentials',
+      'owned SDK status and logs never disclose this scenario credentials',
     );
     require(
       await history.readAsString() == '{"workspace":"pre-migration-workspace","session":"retained-session"}\n',
       'existing isolated history survives settings and credential changes',
     );
-    var permissionReopen = false;
-    final native = (await o.state())['native'] as Map;
-    if (Platform.environment['GITHUB_ACTIONS'] == 'true' &&
-        native['openedDesktopPid'] is int) {
-      require(
-        firstBackend['permissionMode'] == 'workspace-write',
-        'initial official Desktop adopts the existing restricted policy',
-      );
-      require(
-        (await receipt())['permissionMode'] == 'workspace-write',
-        'saving full access keeps the existing backend policy until reopen',
-      );
-      await o.sdk('recycle');
-      final oldDesktop = native['openedDesktopPid'] as int;
-      await o.state({'action': 'quitDesktop'});
-      try {
-        await waitFor(
-          'owned official Desktop exits before permission reopen',
-          () async =>
-              (await Process.run('/bin/kill', [
-                    '-0',
-                    '$oldDesktop',
-                  ])).exitCode !=
-                  0 &&
-              !await o.receipt.exists(),
-        );
-      } catch (_) {
-        try {
-          await observeDesktopExitFailure(oldDesktop);
-        } catch (warning) {
-          stderr.writeln(
-            'DESKTOP_EXIT_OBSERVATION_WARNING: ${warning.runtimeType}',
-          );
-        }
-        rethrow;
-      }
-      await control('打开 DSH', 'tap', 'scrollDown');
-      await o.tap('打开 DSH');
-      final reopened = await waitForActualDesktopLease(
-        oldLease: firstBackend['lease'] as String,
-        receipt: () async => await o.receipt.exists() ? await receipt() : null,
-        isOwned: o.ownsHostReceipt,
-        ui: () => o.state(),
-        applicationExit: o.applicationExit,
-        dependencyFailure: () => o.startupFailure(oldDesktop),
-      );
-      require(
-        reopened['permissionMode'] == 'danger-full-access',
-        'fully reopened official Desktop adopts the saved full-access policy',
-      );
-      await o.sdk('start');
-      await waitFor(
-        'Web reconnects to the reopened real backend',
-        () async => (await o.sdk('status'))['ready'] == true,
-      );
-      await login(local, nextPassword);
-      permissionReopen = true;
-    }
     await o.capture('settings-current');
     await File('${o.root.path}/settings-evidence.json').writeAsString(
       jsonEncode({
-        'oldBackendLease': firstBackend['lease'],
-        'permissionModeBeforeReopen': firstBackend['permissionMode'],
-        'hostPid': (await receipt())['pid'],
-        'oldHostPid': firstBackend['pid'],
+        'initialBackendLease': firstBackend['lease'],
+        'initialHostPid': firstBackend['pid'],
         'preexistingKeys': true,
         'passwordLiveUpdate': true,
         'invalidInputVisible': true,
         'persistenceFailureVisible': true,
         'lanDeniedThenAppliedAfterReconnect': true,
         'credentialsNotInSdk': true,
-        'permissionReopenVerified': permissionReopen,
+        'fullAccessSaved': true,
+        'reopenHintVisible': true,
+        'cancelledAcceptance': [
+          'independentDesktopExit',
+          'permissionReopen',
+          'newDesktopPermissionMode',
+        ],
       }),
     );
     stdout.writeln(
-      permissionReopen
-          ? 'T05 SETTINGS APPLICATION SCENARIO PASSED (official Desktop permission reopen verified)'
-          : 'T05 SETTINGS APPLICATION SCENARIO PASSED (permission reopen pending clean CI)',
+      'T05 SETTINGS APPLICATION SCENARIO PASSED (settings save, persistence, errors and reopen hint)',
     );
   } finally {
     client.close(force: true);

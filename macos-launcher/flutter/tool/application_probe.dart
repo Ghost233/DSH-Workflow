@@ -325,7 +325,8 @@ Future<void> main(List<String> arguments) async {
       : ProbeDiagnostics(
           root,
           publishPhases: settingsScenario,
-          observeHostOwnership: settingsScenario || pluginDesktopScenario,
+          observeHostOwnership: pluginDesktopScenario,
+          captureCIHostOnce: settingsScenario,
         );
   await diagnostics?.start(process.pid, executable.path);
   var exited = false;
@@ -360,7 +361,7 @@ Future<void> main(List<String> arguments) async {
   LauncherServer? server;
   try {
     if (settingsScenario && webScenario?.backend == 'desktop') {
-      await diagnostics!.prepareDesktopTermination();
+      await diagnostics!.prepareOwnProcesses();
     }
     final http = await vmUri.future.timeout(const Duration(seconds: 30));
     vm = await vmServiceConnectUri('${http.replaceFirst('http:', 'ws:')}ws');
@@ -470,11 +471,7 @@ Future<void> main(List<String> arguments) async {
             : entryScenario
             ? runEntryApplicationScenario
             : settingsScenario
-            ? (actual) => runSettingsApplicationScenario(
-                actual,
-                observeDesktopExitFailure:
-                    diagnostics!.observeDesktopExitFailure,
-              )
+            ? runSettingsApplicationScenario
             : lifecycle != null
             ? (actual) =>
                   runLifecycleScenario(actual, process, lifecycle.scenario)
@@ -495,14 +492,17 @@ Future<void> main(List<String> arguments) async {
         settingsOwnedWebCleanup:
             settingsScenario && webScenario.backend == 'desktop',
         diagnose: diagnostics?.record,
-        requestDesktopTermination:
-            settingsScenario && webScenario.backend == 'desktop'
-            ? diagnostics!.requestDesktopTermination
-            : null,
       );
       if (lifecycle == null) await state({'action': 'quit'});
+      final normalExit = await process.exitCode.timeout(
+        const Duration(seconds: 10),
+      );
+      diagnostics?.record('application-normal-exit-stage', {
+        'pid': process.pid,
+        'code': normalExit,
+      });
       require(
-        await process.exitCode.timeout(const Duration(seconds: 10)) == 0,
+        normalExit == 0,
         'real launcher remains manageable and quits after Web resources are released',
       );
       return;

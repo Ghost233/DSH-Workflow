@@ -22,7 +22,7 @@ def valid_pid(pid):
     return type(pid) is int and pid > 1
 
 
-def ownership(log, runner, *, require_finally=True):
+def launcher_ownership(log, runner, *, require_finally=True):
     names = re.findall(r'^ISOLATED_ROOT=(.+)$', Path(log).read_text(), re.M)
     if len(names) != 1:
         raise ValueError('Missing or ambiguous isolated root')
@@ -41,17 +41,28 @@ def ownership(log, runner, *, require_finally=True):
     starts = [row for row in timeline if row.get('event') == 'application-started']
     if len(starts) != 1 or any(starts[0].get(key) != probe.get(key) for key in ('pid', 'executable', 'startedAt')):
         raise ValueError('Missing or mismatched application start facts')
-    if any(row.get('event') == 'receipt-snapshot' and row.get('errorType') for row in timeline):
-        raise ValueError('Incomplete Host lookup facts')
     if require_finally and (not any(row.get('event') == 'application-exit' for row in timeline) or not any(row.get('event') == 'diagnostics-close' for row in timeline)):
         raise ValueError('Incomplete application finally')
     if any(row.get('event') in ('application-started', 'ui-response') and row.get('pid') != launcher for row in timeline):
         raise ValueError('Application identity differs')
+    return root, probe, timeline
+
+
+def ownership(log, runner, *, require_finally=True, require_cleanup_success=True):
+    root, probe, timeline = launcher_ownership(log, runner, require_finally=require_finally)
+    launcher = probe['pid']
+    def read(name):
+        file = root / name
+        if not file.resolve(strict=True).is_relative_to(root) or file.is_symlink():
+            raise ValueError('Unowned evidence path')
+        return file.read_text()
+    if any(row.get('event') == 'receipt-snapshot' and row.get('errorType') for row in timeline):
+        raise ValueError('Incomplete Host lookup facts')
     desktop_log = read('owned-desktop-cleanup.log').splitlines()
     exits = [line for line in desktop_log if line.startswith('HELPER_EXIT=')]
     captures = [json.loads(line) for line in desktop_log if line.startswith('{')]
     captures = [row for row in captures if row.get('event') == 'captured']
-    if not exits or any(line != 'HELPER_EXIT=0' for line in exits) or not captures:
+    if not captures or (require_cleanup_success and (not exits or any(line != 'HELPER_EXIT=0' for line in exits))):
         raise ValueError('Missing or failed Desktop ownership')
     bundle = (root / 'missing-runtime/desktop/DeepSeek Harness.app').resolve(strict=True)
     executable = bundle / 'Contents/MacOS/DeepSeek Harness'

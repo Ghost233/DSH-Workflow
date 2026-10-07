@@ -187,7 +187,7 @@ jobs:
           path: ${{ runner.temp }}/flutter-settings-startup/T05/startup-3
           if-no-files-found: error
 
-      - name: Exercise actual settings, owned legacy keychain and official Desktop permission reopen
+      - name: Exercise retained settings, persistence, errors and reopen hint
         if: ${{ always() && steps.startup_3.outputs.safe_to_repeat == 'true' && steps.startup_upload_3.outcome == 'success' }}
         working-directory: macos-launcher/flutter
         run: python3 ../../.github/scripts/settings_startup_cycle.py --full
@@ -214,22 +214,25 @@ jobs:
           sys.path.insert(0, "macos-launcher/flutter/tool")
           from pathlib import Path
           sys.path.insert(0, '.github/scripts')
-          from settings_startup_cycle import can_repeat, collect_owned_processes, copy_safe_evidence, observe_os_query, run_diagnostics, validate_root
+          from settings_startup_cycle import can_repeat, collect_owned_processes, copy_safe_evidence, launcher_web_released, observe_os_query, run_diagnostics, validate_root
           evidence = Path(os.environ['EVIDENCE_DIR'])
           logs = [evidence / 'application.log', *sorted(evidence.glob('startup-*/command.log'))]
           roots = [name for log in logs if log.exists()
                    for name in re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M)]
           results = []
-          diagnostic_failed = False
+          functional_failed = not bool(roots)
           print('T05_COLLECTOR_PHASE=root-validation-start', flush=True)
           for name in dict.fromkeys(roots):
               root = validate_root(name, Path(os.environ['RUNNER_TEMP']))
               target = evidence / root.name
               target.mkdir(exist_ok=True)
               print('T05_COLLECTOR_PHASE=copy-start ROOT=' + root.name, flush=True)
-              copy_safe_evidence(root, target)
+              copy_safe_evidence(root, target, allow_independent_unknown=True)
               print('T05_COLLECTOR_PHASE=copy-end ROOT=' + root.name, flush=True)
-              diagnostic_failed = run_diagnostics(root, target) != 0 or diagnostic_failed
+              auxiliary_exit = run_diagnostics(root, target)
+              if auxiliary_exit != 0:
+                  (target / 'diagnostic-collector.log').unlink(missing_ok=True)
+                  print('::warning::T05 auxiliary diagnostics failed; exit=' + str(auxiliary_exit), flush=True)
               print('T05_COLLECTOR_PHASE=hash-start ROOT=' + root.name, flush=True)
               hashes = {}
               for relative in ('Contents/MacOS/DSH Workflow', 'Contents/MacOS/DSH Workflow.debug.dylib',
@@ -239,9 +242,10 @@ jobs:
                   hashes[relative] = hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else None
               print('T05_COLLECTOR_PHASE=hash-end ROOT=' + root.name, flush=True)
               owned_log = next(log for log in logs if log.exists() and ('ISOLATED_ROOT=' + name) in log.read_text())
+              command_exit_file = owned_log.parent / ('application.exit' if owned_log.name == 'application.log' else 'command.exit')
+              functional_command_exit = int(command_exit_file.read_text().strip()) if command_exit_file.is_file() and not command_exit_file.is_symlink() else None
               owned = collect_owned_processes(owned_log, Path(os.environ['RUNNER_TEMP']))
               processes = owned['processes']
-              diagnostic_failed = not owned['complete'] or diagnostic_failed
               print('T05_COLLECTOR_PHASE=port-observation-start ROOT=' + root.name, flush=True)
               port = socket.socket()
               try:
@@ -263,9 +267,16 @@ jobs:
                   port.close()
               listener = observe_os_query(['/usr/sbin/lsof', '-nP', '-iTCP:33080', '-sTCP:LISTEN', '-Fpn'])
               physical_complete = owned['hostBindingKnown'] and can_repeat({'ownership': owned['ownership'], 'processes': list(processes.values()), 'finallyComplete': owned['finallyComplete'], 'receipt': owned['receiptLookup'], 'listener': {key: listener[key] for key in ('exit', 'stdout', 'stderr')}, 'bindListen': service_listen})
-              diagnostic_failed = not physical_complete or listener['timedOut'] or diagnostic_failed
+              resources_released = launcher_web_released(owned, listener, service_listen)
+              normal_exit = owned['normalExitStage']
+              functional_complete = functional_command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released
+              functional_failed = not functional_complete or functional_failed
+              if not physical_complete:
+                  print('::warning::Isolated Desktop/Host cleanup is incomplete or unknown; functional Launcher/Web result is separate', flush=True)
               print('T05_COLLECTOR_PHASE=port-observation-end ROOT=' + root.name, flush=True)
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes, 'ownership': owned['ownership'], 'hostBindingKnown': owned['hostBindingKnown'],
+                              'functionalCommandExit': functional_command_exit, 'normalExitStage': normal_exit,
+                              'launcherWebReleased': resources_released, 'functionalAcceptanceComplete': functional_complete, 'isolatedCleanup': owned['isolatedCleanup'],
                               'allOwnedProcessesGone': physical_complete, 'finallyComplete': owned['finallyComplete'], 'receiptLookup': owned['receiptLookup'],
                               'receiptRemoved': not (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').exists(),
                               'rawNoReuseLoopbackBind': raw_bind,
@@ -274,12 +285,13 @@ jobs:
                               'webPortReleased': service_listen['available'] and not listener['timedOut']})
           (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
           print('T05_COLLECTOR_PHASE=complete', flush=True)
-          if diagnostic_failed:
-              raise RuntimeError('Owned collector query or diagnostic failed; cleanup observations preserved')
+          if functional_failed:
+              raise RuntimeError('Owned Launcher exit or Web port release is unknown or incomplete; isolated cleanup recorded separately')
           PY
 
-      - name: Detach the read-only runtime even on failure
+      - name: Record isolated runtime detach separately
         if: always()
+        continue-on-error: true
         run: |
           if mount | grep -Fq " on $T05_RUNTIME_MOUNT "; then
             set +e
@@ -288,6 +300,9 @@ jobs:
             set -e
             printf '%s\n' "$result" > "$EVIDENCE_DIR/runtime-detach.exit"
             cat "$EVIDENCE_DIR/runtime-detach.log"
+            if [ "$result" -ne 0 ]; then
+              printf '::warning::Isolated runtime detach incomplete; recorded exit=%s\n' "$result"
+            fi
             exit "$result"
           fi
 

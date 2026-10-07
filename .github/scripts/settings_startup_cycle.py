@@ -17,7 +17,7 @@ TOOLS = Path(__file__).resolve().parents[2] / 'macos-launcher/flutter/tool'
 sys.path.insert(0, str(TOOLS))
 
 from collect_probe_diagnostics import scrub
-from settings_repeat_gate import validate_root, ownership, can_repeat
+from settings_repeat_gate import validate_root, launcher_ownership, ownership, can_repeat
 
 
 SAFE_EVIDENCE = {
@@ -347,44 +347,76 @@ def process_exit_fact(pid):
 
 
 def collect_owned_processes(log, runner):
-    root, roles = ownership(log, runner, require_finally=False)
-    probe = parse_json((root / 'probe-process.json').read_text())
-    captures = [parse_json(line) for line in (root / 'owned-desktop-cleanup.log').read_text().splitlines() if line.startswith('{')]
-    captures = {row['pid']: row for row in captures if row.get('event') == 'captured'}
-    ledger = root / 'host-ownership.jsonl'
-    bindings = [parse_json(line) for line in ledger.read_text().splitlines()] if ledger.is_file() and not ledger.is_symlink() else []
-    bundle = (root / 'missing-runtime/desktop/DeepSeek Harness.app').resolve(strict=True)
-    allowed = {str((root / 'missing-runtime/node').resolve(strict=True)), str(bundle / 'Contents/MacOS/DeepSeek Harness')}
-    bound = set()
-    bound_pairs = set()
-    for row in bindings:
-        desktop = captures.get(row.get('desktopPid'))
-        if desktop and row.get('root') == str(root) and row.get('probeStartedAt') == probe['startedAt']:
-            checked = bind_host_identity(row.get('inspection', {}), root, row, desktop, probe, allowed)
-            if checked['ownershipKnown']:
-                bound.add(row['pid'])
-                bound_pairs.add((row['pid'], row['lease']))
-    processes = {}
-    for role, pids in roles.items():
-        for pid in pids:
-            if role == 'host' and pid not in bound:
-                processes[f'{role}:{pid}'] = {'pid': pid, 'state': 'unknown', 'reason': 'Missing physical Host binding'}
-            else:
-                processes[f'{role}:{pid}'] = process_exit_fact(pid)
-    timeline = [parse_json(line) for line in (root / 'probe-timeline.jsonl').read_text().splitlines()]
-    finally_complete = all(any(row.get('event') == event for row in timeline) for event in ('application-exit', 'diagnostics-close'))
-    pairs = {(row['pid'], row['lease']) for row in timeline if row.get('event') == 'receipt-snapshot' and row.get('present')}
-    all_bound = bool(roles['host']) and bound == set(roles['host']) and pairs <= bound_pairs
-    complete = (all_bound and all(row.get('state') == 'gone' and row.get('errno') == errno.ESRCH and row.get('rawErrno') == errno.ESRCH for row in processes.values()))
-    receipt_file = root / 'data/global/.dsh-workflow/desktop/desktop-host.json'
+    root, probe, timeline = launcher_ownership(log, runner, require_finally=False)
+    roles = {'launcher': [probe['pid']], 'desktop': [], 'host': []}
+    processes = {'launcher:' + str(probe['pid']): process_exit_fact(probe['pid'])}
+    isolated = {'state': 'unknown'}
+    all_bound = False
     receipt = {'state': 'unknown'}
     try:
-        receipt_file.lstat(); receipt['state'] = 'present'
-    except OSError as error:
-        receipt.update(state='absent' if error.errno == errno.ENOENT else 'unknown', errno=error.errno)
+        _, roles = ownership(log, runner, require_finally=False, require_cleanup_success=False)
+        desktop_log = (root / 'owned-desktop-cleanup.log').read_text().splitlines()
+        captures = {row['pid']: row for row in (parse_json(line) for line in desktop_log if line.startswith('{')) if row.get('event') == 'captured'}
+        exits = [line for line in desktop_log if line.startswith('HELPER_EXIT=')]
+        if not exits or any(line != 'HELPER_EXIT=0' for line in exits):
+            raise ValueError('Independent cleanup helper failed; current identity is unknown')
+        ledger = root / 'host-ownership.jsonl'
+        if ledger.is_symlink():
+            raise ValueError('Unowned Host binding evidence')
+        bindings = [parse_json(line) for line in ledger.read_text().splitlines()] if ledger.is_file() else []
+        bundle = (root / 'missing-runtime/desktop/DeepSeek Harness.app').resolve(strict=True)
+        allowed = {str((root / 'missing-runtime/node').resolve(strict=True)), str(bundle / 'Contents/MacOS/DeepSeek Harness')}
+        bound = set()
+        bound_pairs = set()
+        for row in bindings:
+            desktop = captures.get(row.get('desktopPid'))
+            if desktop and row.get('root') == str(root) and row.get('probeStartedAt') == probe['startedAt']:
+                checked = bind_host_identity(row.get('inspection', {}), root, row, desktop, probe, allowed)
+                if checked['ownershipKnown']:
+                    bound.add(row['pid'])
+                    bound_pairs.add((row['pid'], row['lease']))
+        for role in ('desktop', 'host'):
+            for pid in roles[role]:
+                if role == 'host' and pid not in bound:
+                    processes[f'{role}:{pid}'] = {'pid': pid, 'state': 'unknown', 'reason': 'Missing physical Host binding'}
+                else:
+                    processes[f'{role}:{pid}'] = process_exit_fact(pid)
+        pairs = {(row['pid'], row['lease']) for row in timeline if row.get('event') == 'receipt-snapshot' and row.get('present')}
+        all_bound = bool(roles['host']) and bound == set(roles['host']) and pairs <= bound_pairs
+        receipt_file = root / 'data/global/.dsh-workflow/desktop/desktop-host.json'
+        if not receipt_file.parent.resolve().is_relative_to(root):
+            raise ValueError('Unowned receipt lookup path')
+        try:
+            receipt_file.lstat(); receipt['state'] = 'present'
+        except OSError as error:
+            receipt.update(state='absent' if error.errno == errno.ENOENT else 'unknown', errno=error.errno)
+        isolated['state'] = 'observed'
+    except Exception as error:
+        isolated.update(errorType=type(error).__name__, reason=sanitize_text(str(error)))
+        for role in ('desktop', 'host'):
+            for pid in roles[role]:
+                processes[f'{role}:{pid}'] = {'pid': pid, 'state': 'unknown', 'reason': 'Independent identity or cleanup is unknown'}
+    finally_complete = all(any(row.get('event') == event for row in timeline) for event in ('application-exit', 'diagnostics-close'))
+    complete = (isolated['state'] == 'observed' and all_bound and finally_complete
+                and all(row.get('state') == 'gone' and row.get('errno') == errno.ESRCH and row.get('rawErrno') == errno.ESRCH for row in processes.values())
+                and receipt.get('errno') == errno.ENOENT)
+    normal_exit = next((row for row in reversed(timeline) if row.get('event') == 'application-normal-exit-stage' and row.get('pid') == probe['pid']), None)
     return {'ownership': roles, 'hostBindingKnown': all_bound, 'processes': processes,
+            'normalExitStage': normal_exit,
             'finallyComplete': finally_complete, 'receiptLookup': receipt,
-            'complete': finally_complete and complete and receipt.get('errno') == errno.ENOENT}
+            'isolatedCleanup': isolated, 'complete': complete}
+
+
+def launcher_web_released(owned, listener, bind_listen):
+    launchers = owned.get('ownership', {}).get('launcher', [])
+    rows = owned.get('processes', {})
+    return (bool(launchers) and owned.get('finallyComplete') is True
+            and all((row := rows.get('launcher:' + str(pid))) is not None and row.get('pid') == pid
+                    and row.get('state') == 'gone' and row.get('errno') == errno.ESRCH
+                    and row.get('rawExit') not in (None, 0) and row.get('rawErrno') == errno.ESRCH for pid in launchers)
+            and listener.get('state') == 'observed' and listener.get('timedOut') is False
+            and {key: listener.get(key) for key in ('exit', 'stdout', 'stderr')} == {'exit': 1, 'stdout': '', 'stderr': ''}
+            and bind_listen.get('available') is True)
 
 
 def check_owned_pid(root, runner, pid):
@@ -395,26 +427,41 @@ def check_owned_pid(root, runner, pid):
     return process_exit_fact(pid)
 
 
-def copy_safe_evidence(root, destination):
+def copy_safe_evidence(root, destination, *, allow_independent_unknown=False):
+    independent = {'owned-desktop-process.json', 'owned-desktop-cleanup.log', 'host-ownership.jsonl', 'host-inspection-results.jsonl'}
+    errors = []
     for name, kind in SAFE_EVIDENCE.items():
-        file = root / name
-        if not file.exists():
-            continue
-        if not file.is_file() or file.is_symlink() or file.resolve().parent != root:
-            raise ValueError('Unowned cycle evidence file')
-        output = destination / name
-        if kind == 'png':
-            shutil.copy2(file, output)
-        elif kind == 'json':
-            output.write_text(json.dumps(sanitize_json(parse_json(file.read_text())), indent=2) + '\n')
-        elif kind == 'jsonl':
-            lines = file.read_text().splitlines()
-            if not lines:
-                raise ValueError('Empty JSONL evidence')
-            sanitized = [json.dumps(sanitize_json(parse_json(line))) for line in lines]
-            output.write_text('\n'.join(sanitized) + '\n')
-        else:
-            output.write_text(sanitize_text(file.read_text()))
+        try:
+            file = root / name
+            if not file.exists():
+                if allow_independent_unknown and name in {'probe-process.json', 'probe-timeline.jsonl', 'settings-evidence.json'}:
+                    raise ValueError('Missing own functional evidence: ' + name)
+                if allow_independent_unknown and name in independent:
+                    raise ValueError('Independent evidence is absent or unsafe')
+                continue
+            if not file.is_file() or file.is_symlink() or file.resolve().parent != root:
+                raise ValueError('Unowned cycle evidence file')
+            output = destination / name
+            if kind == 'png':
+                shutil.copy2(file, output)
+            elif kind == 'json':
+                output.write_text(json.dumps(sanitize_json(parse_json(file.read_text())), indent=2) + '\n')
+            elif kind == 'jsonl':
+                lines = file.read_text().splitlines()
+                if not lines:
+                    raise ValueError('Empty JSONL evidence')
+                sanitized = [json.dumps(sanitize_json(parse_json(line))) for line in lines]
+                output.write_text('\n'.join(sanitized) + '\n')
+            else:
+                output.write_text(sanitize_text(file.read_text()))
+        except Exception as error:
+            if not allow_independent_unknown or name not in independent:
+                raise
+            errors.append({'file': name, 'state': 'unknown', 'errorType': type(error).__name__})
+            print('::warning::Independent CI evidence is unavailable or unsafe; file=' + name + ', errorType=' + type(error).__name__, flush=True)
+    if allow_independent_unknown:
+        (destination / 'isolated-evidence-status.json').write_text(json.dumps(errors) + '\n')
+    return errors
 
 
 def collect(log, target, runner):
@@ -503,7 +550,9 @@ def main(attempt):
         (target / 'collection-error.json').write_text(json.dumps({'errorType': type(error).__name__, 'reason': sanitize_text(str(error))}) + '\n')
     safe = gate.returncode == 0 and gate_valid and collected
     emit('safe_to_repeat', str(safe).lower())
-    return result if result != 0 else (0 if safe else 1)
+    if result == 0 and not safe:
+        print('::warning::Isolated CI cleanup is incomplete; safe repeat refused without changing the startup command exit', flush=True)
+    return result
 
 
 if __name__ == '__main__':
