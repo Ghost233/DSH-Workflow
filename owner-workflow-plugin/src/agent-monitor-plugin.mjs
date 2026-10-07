@@ -93,18 +93,21 @@ export async function apply(ctx, config = {}, deps = {}) {
         }
       } catch { record = { ...record, debugEvidence: undefined, debugOmitted: '无法完成凭据脱敏' } }
     }
-    const scrub = value => {
+    const scrub = (value, materials = secrets) => {
       if (typeof value === 'string') {
-        for (const secret of secrets) value = value.split(secret).join('[REDACTED]')
+        for (const secret of materials) value = value.split(secret).join('[REDACTED]')
         return value.replace(/(?:proxy-authorization|authorization)["']?\s*[:=][^\r\n]*/gi, '[REDACTED]')
           .replace(/(?:api[_-]?key|access[_-]?token|secret|password)["']?\s*[:=]\s*["']?[^\s"',;\r\n]+/gi, '[REDACTED]')
           .replace(/\bBearer\s+[^\s"'\r\n]+/gi, '[REDACTED]')
       }
-      if (Array.isArray(value)) return value.map(scrub)
-      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, scrub(child)]))
+      if (Array.isArray(value)) return value.map(child => scrub(child, materials))
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, scrub(child, materials)]))
       return value
     }
-    return scrub(record)
+    const sanitized = scrub(record)
+    // Standard credentials can resolve any env-only ref; conservatively protect fragments, not request metadata.
+    if (sanitized.debugEvidence) sanitized.debugEvidence = scrub(sanitized.debugEvidence, Object.values(process.env).filter(Boolean))
+    return sanitized
   }
   let writes = Promise.resolve(), notices = Promise.resolve()
   const judge = async (evidence, signal) => {

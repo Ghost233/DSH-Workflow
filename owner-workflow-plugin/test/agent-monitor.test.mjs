@@ -34,6 +34,7 @@ async function configuredHost(t, options = {}) {
   initProfile(dir, ['monitor-test-bundle'])
   const patchPath = join(dir, 'cordis.patch.yml'), base = join(dir, 'cordis.yml')
   await writeFile(patchPath, '[]\n'); await writeFile(base, '[]\n')
+  const modelCredentialRef = options.modelCredentialRef
   let time = 0, release, request, respond = options.respond
   const notices = [], requests = [], streams = new Map()
   const upstream = createServer(async (req, res) => {
@@ -78,6 +79,12 @@ async function configuredHost(t, options = {}) {
         stream.complete = true; stream.next?.()
       }
       try {
+        if (modelCredentialRef) {
+          const credential = await ctx.credentials.resolve(modelCredentialRef)
+          stream.credentialSource = credential?.source
+          stream.chunks.push({ type: 'reasoning-delta', index: 0,
+            text: `safe isolated model analysis\n${credential?.value}\nstill making observations` })
+        }
         while (!stream.complete || stream.chunks.length) {
           if (!stream.chunks.length && !stream.complete) await new Promise(resolve => { stream.next = resolve })
           for (const chunk of stream.chunks.splice(0)) { yield chunk; stream.delivered++ }
@@ -520,6 +527,48 @@ test('debug judgments redact unlabeled managed credentials unrelated to JEV whil
   for (const secret of allSecrets) assert.equal(publicStatus.includes(secret), false)
   assert.equal(f.streams.get('model').request.signal.aborted, false)
   await f.finish()
+})
+
+test('debug judgments redact env-only standard model credentials without changing request metadata', async t => {
+  const suffix = randomUUID().replaceAll('-', '').toUpperCase()
+  const ref = `JEV_FAKE_THIRD_MODEL_SLOT_${suffix}`
+  const secret = `opaque-env-only-${randomUUID()}`
+  const environment = {
+    [ref]: secret,
+    [`JEV_FAKE_AGENT_SLOT_${suffix}`]: 'settings-agent',
+    [`JEV_FAKE_ATTEMPT_SLOT_${suffix}`]: 'settings-agent:1',
+    [`JEV_FAKE_TIME_SLOT_${suffix}`]: '1000',
+  }
+  for (const [name, value] of Object.entries(environment)) process.env[name] = value
+  t.after(() => { for (const name of Object.keys(environment)) delete process.env[name] })
+  const f = await configuredHost(t, { modelCredentialRef: ref })
+  await f.saveEngine()
+  const { parseCredentialsDocument } = req('@deepseek-ai/dsh-credentials-local')
+  const filename = join(f.home, '.credentials.yaml')
+  const document = parseCredentialsDocument(await readFile(filename, 'utf8'), filename)
+  assert.equal(document.refs.has(ref), false, 'the model credential has no managed file entry')
+  await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 100,
+    noOutputThreshold: 100, checkIntervalMs: 1000, debugEvidence: true })
+  await f.start()
+  await until(() => f.streams.get('model')?.delivered === 1)
+  assert.equal(f.streams.get('model').credentialSource, 'env', 'the native Adapter consumes the standard env credential')
+  await f.at(1000)
+  assert.equal(f.requests[0].body.state.reasoning.includes('safe isolated model analysis'), true)
+  assert.equal(f.requests[0].body.state.reasoning.includes('still making observations'), true)
+  const records = await f.ctx.get('agentMonitor').journal()
+  const judgment = records.find(record => record.recordType === 'judgment')
+  assert.ok(judgment)
+  assert.equal(JSON.stringify(records).includes(secret), false, 'the env-only credential must not persist')
+  assert.equal(judgment.debugEvidence.reasoning.includes('safe isolated model analysis'), true)
+  assert.equal(judgment.debugEvidence.reasoning.includes('still making observations'), true)
+  assert.equal(judgment.agentId, 'settings-agent')
+  assert.equal(judgment.attemptId, 'settings-agent:1')
+  assert.equal(judgment.at, 1000)
+  assert.equal(JSON.stringify(f.ctx.get('agentMonitor').snapshot()).includes(secret), false)
+  assert.equal(f.streams.get('model').request.signal.aborted, false)
+  await f.finish()
+  const completeRecords = await f.ctx.get('agentMonitor').journal()
+  assert.ok(completeRecords.every(record => record.agentId === 'settings-agent' && record.attemptId === 'settings-agent:1' && record.at === 1000))
 })
 
 test('debug evidence fails closed when the standard credential provider, document read or parse is unavailable', async t => {
