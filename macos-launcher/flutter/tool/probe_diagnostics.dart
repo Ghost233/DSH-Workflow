@@ -195,8 +195,7 @@ class ProbeDiagnostics {
   Future<void> _snapshots = Future<void>.value();
   int? _desktopPid, _appPid;
   bool _requestFailurePending = false;
-  Process? _desktopRequest;
-  Future<int>? _desktopRequestDone;
+  Future<void> Function()? _closeDesktopRequest;
   final Map<String, Map<String, Object?>> _hosts = {};
 
   void record(String event, [Map<String, Object?> facts = const {}]) {
@@ -471,41 +470,95 @@ class ProbeDiagnostics {
         mode,
         ...arguments,
       ]);
-      _desktopRequest = child;
       final requested = Completer<void>();
+      Object? firstFailure;
+      StackTrace? firstFailureStack;
+      void requestFailed(Object error, StackTrace stack) {
+        firstFailure ??= error;
+        firstFailureStack ??= stack;
+        if (!requested.isCompleted) {
+          requested.completeError(firstFailure!, firstFailureStack!);
+        }
+      }
+
       final output = StringBuffer();
-      final stdoutDone = child.stdout
+      final stdoutDone = Completer<void>();
+      child.stdout
           .transform(utf8.decoder)
           .transform(const LineSplitter())
-          .forEach((line) {
-            output.writeln(line);
-            final facts = jsonDecode(line) as Map;
-            if (facts['event'] == 'normal-termination-request') {
-              record('desktop-quit-observation', {
-                'pid': _appPid,
-                'mode': mode,
-                ...desktopQuitFacts(facts),
-              });
-              if (facts['accepted'] == true) requested.complete();
-            }
-          });
-      final stderrDone = child.stderr.transform(utf8.decoder).join();
-      _desktopRequestDone = () async {
+          .listen(
+            (line) {
+              output.writeln(line);
+              try {
+                final facts = jsonDecode(line) as Map;
+                if (facts['event'] == 'normal-termination-request') {
+                  record('desktop-quit-observation', {
+                    'pid': _appPid,
+                    'mode': mode,
+                    ...desktopQuitFacts(facts),
+                  });
+                  if (facts['accepted'] == true && !requested.isCompleted) {
+                    requested.complete();
+                  }
+                }
+              } catch (error, stack) {
+                requestFailed(error, stack);
+              }
+            },
+            onError: requestFailed,
+            onDone: stdoutDone.complete,
+            cancelOnError: false,
+          );
+      final errors = StringBuffer();
+      final stderrDone = Completer<void>();
+      child.stderr
+          .transform(utf8.decoder)
+          .listen(
+            errors.write,
+            onError: requestFailed,
+            onDone: stderrDone.complete,
+            cancelOnError: false,
+          );
+      final done = () async {
         final code = await child.exitCode;
-        await stdoutDone;
-        final errors = await stderrDone;
+        await Future.wait([stdoutDone.future, stderrDone.future]);
+        if (!requested.isCompleted) {
+          requestFailed(
+            StateError('Owned Desktop $mode failed: $code'),
+            StackTrace.current,
+          );
+        }
         await File('${root.path}/owned-desktop-cleanup.log').writeAsString(
           '$output${errors}HELPER_EXIT=$code\n',
           mode: FileMode.append,
         );
         record('owned-desktop-helper', {'mode': mode, 'exit': code});
-        if (!requested.isCompleted) {
-          requested.completeError(
-            StateError('Owned Desktop $mode failed: $code'),
-          );
-        }
         return code;
       }();
+      unawaited(done.then<void>((_) {}, onError: requestFailed));
+      _closeDesktopRequest = () async {
+        try {
+          await child.stdin.close();
+        } catch (error, stack) {
+          requestFailed(error, stack);
+        }
+        try {
+          final code = await done;
+          if (code != 0) {
+            requestFailed(
+              StateError('Owned Desktop $mode failed: $code'),
+              StackTrace.current,
+            );
+          }
+        } catch (error, stack) {
+          requestFailed(error, stack);
+        } finally {
+          await Future.wait([stdoutDone.future, stderrDone.future]);
+        }
+        if (firstFailure != null) {
+          Error.throwWithStackTrace(firstFailure!, firstFailureStack!);
+        }
+      };
       await requested.future;
       return;
     }
@@ -530,14 +583,7 @@ class ProbeDiagnostics {
     await _snapshots;
     await _receipt();
     try {
-      final request = _desktopRequest;
-      if (request != null) {
-        await request.stdin.close();
-        final code = await _desktopRequestDone!;
-        if (code != 0) {
-          throw StateError('Owned Desktop request-only failed: $code');
-        }
-      }
+      await _closeDesktopRequest?.call();
       if (_desktopPid != null) await _desktopCommand('terminate');
       record('diagnostics-close');
     } catch (error) {
