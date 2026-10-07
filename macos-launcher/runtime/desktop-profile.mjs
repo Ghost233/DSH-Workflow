@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
-import { cp, mkdir, readFile, writeFile, symlink, lstat } from 'node:fs/promises'
+import { cp, mkdir, readFile, writeFile, symlink, lstat, readlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 import { composeKernelLaunch } from '../../scripts/kernel-launch-composition.mjs'
 
 const BUNDLE = 'dsh-workflow-desktop'
@@ -17,7 +17,9 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const profile = join(home, 'profiles/desktop')
   const directory = join(globalRoot, '.dsh-workflow/desktop-bundle')
   const stampPath = join(directory, 'integration.json')
-  const identity = { workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', components: ['owner'], hostInstance: 'desktop-bridge', creatorJevGuidance: true, agentMonitor: 2, jevCenter: 1 }
+  const localPackages = { 'dsh-owner-workflow': join(workflow, 'owner-workflow-plugin'),
+    'dsh-workflow-matt-panel': join(workflow, 'matt-skills-panel-plugin/package') }
+  const identity = { workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', components: ['owner'], hostInstance: 'desktop-bridge', creatorJevGuidance: true, agentMonitor: 2, jevCenter: 1, localPackages }
   await mkdir(profile, { recursive: true })
   const manifestPath = join(profile, 'package.json')
   if (existsSync(manifestPath) && existsSync(stampPath)) {
@@ -74,7 +76,17 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const installed = await lstat(installedBundle).catch(error => { if (error.code !== 'ENOENT') throw error })
   if (!installed) await symlink(directory, installedBundle, 'dir')
   else if (!installed.isSymbolicLink()) throw new Error('Desktop integration bundle is already owned by another installation')
-  manifest.dependencies = { ...manifest.dependencies, [BUNDLE]: `file:${directory}` }
+  // Named imports are active-profile dependencies, resolved through DSH's native package map.
+  for (const [name, target] of Object.entries(localPackages)) {
+    const link = join(profile, 'node_modules', name)
+    const existing = await lstat(link).catch(error => { if (error.code !== 'ENOENT') throw error })
+    if (!existing) await symlink(target, link, 'dir')
+    else if (!existing.isSymbolicLink() || resolve(dirname(link), await readlink(link)) !== resolve(target)) {
+      throw new Error(`Desktop package ${name} is already owned by another installation`)
+    }
+  }
+  manifest.dependencies = { ...manifest.dependencies,
+    ...Object.fromEntries(Object.entries(localPackages).map(([name, path]) => [name, `file:${path}`])), [BUNDLE]: `file:${directory}` }
   manifest.dsh.profile.bundles = [...bundles, BUNDLE]
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 })
   await writeFile(stampPath, JSON.stringify(identity) + '\n', { mode: 0o600 })

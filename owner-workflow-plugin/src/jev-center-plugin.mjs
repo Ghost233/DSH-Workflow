@@ -41,17 +41,21 @@ function parseJudgment(body, questions) {
 const page = `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JEV 中心</title>
 <style>body{font:16px system-ui;max-width:760px;margin:32px auto;padding:0 20px}label{display:block;margin:14px 0}input:not([type=checkbox]),select{display:block;width:100%;padding:8px;box-sizing:border-box}button{padding:8px 16px;margin:4px}pre{white-space:pre-wrap}small{color:#555}</style>
 <h1>JEV 中心</h1><p>在 DSH 标准设置和凭据管理中保存引擎，按调用模型名请求判断。</p>
+<label>JEV 引擎配置列表<select id="engines"></select></label><button id="add" type="button">新增配置</button><button id="delete" type="button">删除配置</button>
 <form id="config"><label>服务 URL<input name="url" required></label><label>上游模型名<input name="upstreamModel" required></label><label>调用模型名<input name="modelName" placeholder="留空沿用上游模型名"></label><label>凭据引用<input name="credentialRef" required></label><label>请求超时（毫秒）<input name="timeoutMs" type="number" min="1" required></label><label><input name="enabled" type="checkbox">启用</label><button>保存配置</button></form>
 <form id="credential"><label>密钥<input name="key" type="password" autocomplete="new-password" required></label><button>保存到 DSH 凭据管理</button><small id="credential-status"></small></form>
 <button id="test" type="button">测试连接</button><pre id="result" role="status"></pre>
 <script>
-const form=document.querySelector('#config'),keyForm=document.querySelector('#credential'),result=document.querySelector('#result');let revision,engines=[];
+const form=document.querySelector('#config'),keyForm=document.querySelector('#credential'),result=document.querySelector('#result'),selector=document.querySelector('#engines');let revision,engines=[],credentials=[],selected=0;
 async function request(path,method,body){const response=await fetch('/jev-center/api/'+path,{method,headers:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const value=await response.json();if(!response.ok)throw Error(value.error?.message||'操作失败');return value}
 function show(value){result.textContent=typeof value==='string'?value:JSON.stringify(value,null,2)}
-async function load(){const value=await request('config','GET');revision=value.revision;engines=value.engines;const engine=engines[0]||{url:'https://api.typesafe.ai',upstreamModel:'jev-latest',modelName:'',credentialRef:'TYPESAFE_API_KEY',timeoutMs:5000,enabled:true};for(const [name,v]of Object.entries(engine)){const input=form.elements.namedItem(name);if(input)input.type==='checkbox'?input.checked=v:input.value=v}document.querySelector('#credential-status').textContent=value.credentials[0]?.configured?'已配置凭据':'未配置凭据'}
-form.onsubmit=async event=>{event.preventDefault();try{const data=new FormData(form),engine=Object.fromEntries(data);engine.enabled=form.elements.enabled.checked;engine.timeoutMs=Number(engine.timeoutMs);await request('config','PUT',{engines:[engine],revision});await load();show('配置已保存，未调用模型')}catch(error){show(error.message)}};
-keyForm.onsubmit=async event=>{event.preventDefault();try{await request('credential','PUT',{ref:form.elements.credentialRef.value,value:keyForm.elements.key.value});keyForm.reset();await load();show('凭据已保存')}catch(error){show(error.message)}};
-document.querySelector('#test').onclick=async()=>{try{const engine=engines[0];if(!engine)throw Error('请先保存配置');show('正在测试连接…');show(await request('test','POST',{modelName:engine.modelName||engine.upstreamModel}))}catch(error){show(error.message)}};load().catch(error=>show(error.message));
+function fill(){const engine=engines[selected]||{url:'https://api.typesafe.ai',upstreamModel:'jev-latest',modelName:'',credentialRef:'TYPESAFE_API_KEY',timeoutMs:5000,enabled:true};for(const [name,v]of Object.entries(engine)){const input=form.elements.namedItem(name);if(input)input.type==='checkbox'?input.checked=v:input.value=v}selector.replaceChildren();engines.forEach((engine,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=(index+1)+'. '+(engine.modelName||engine.upstreamModel)+(engine.enabled?'':'（停用）');selector.appendChild(option)});if(!engines[selected]){const option=document.createElement('option');option.value='-1';option.textContent='新配置（未保存）';selector.appendChild(option)}selector.value=engines[selected]?String(selected):'-1';document.querySelector('#delete').disabled=!engines[selected];document.querySelector('#credential-status').textContent=credentials[selected]?.configured?'已配置凭据':'未配置凭据'}
+async function load(){const value=await request('config','GET');revision=value.revision;engines=value.engines;credentials=value.credentials;fill()}
+selector.onchange=()=>{selected=Number(selector.value);keyForm.reset();fill();show('')};document.querySelector('#add').onclick=()=>{selected=-1;keyForm.reset();fill();show('')};
+form.onsubmit=async event=>{event.preventDefault();try{const data=new FormData(form),engine=Object.fromEntries(data);engine.enabled=form.elements.enabled.checked;engine.timeoutMs=Number(engine.timeoutMs);const next=engines.slice();if(engines[selected])next[selected]=engine;else{selected=next.length;next.push(engine)}await request('config','PUT',{engines:next,revision});await load();show('配置已保存，未调用模型')}catch(error){show(error.message)}};
+document.querySelector('#delete').onclick=async()=>{try{if(!engines[selected])throw Error('请先选择已保存的配置');const next=engines.filter((_,index)=>index!==selected);await request('config','PUT',{engines:next,revision});selected=Math.max(0,Math.min(selected,next.length-1));await load();show('配置已删除，凭据已保留')}catch(error){show(error.message)}};
+keyForm.onsubmit=async event=>{event.preventDefault();try{await request('credential','PUT',{ref:form.elements.credentialRef.value,value:keyForm.elements.key.value});keyForm.reset();document.querySelector('#credential-status').textContent='凭据已保存';show('凭据已保存')}catch(error){show(error.message)}};
+document.querySelector('#test').onclick=async()=>{try{const engine=engines[selected];if(!engine)throw Error('请先保存配置');show('正在测试连接…');show(await request('test','POST',{modelName:engine.modelName||engine.upstreamModel}))}catch(error){show(error.message)}};load().catch(error=>show(error.message));
 </script></html>`
 
 export const name = 'dsh-workflow-jev-center'
@@ -67,12 +71,22 @@ export const Config = z.object({
   })).default([]).volatile().description('JEV 引擎配置'),
 })
 
+// Standard Schema validation guards Host writes without putting executable callbacks in the wire form schema.
+const standardSchema = Config['~standard']
+Object.defineProperty(Config, '~standard', { value: { ...standardSchema, validate(input) {
+  const result = standardSchema.validate(input)
+  if (result.issues) return result
+  try { createJevCenterRemoteDescriptor.assertUniqueModelNames(result.value.engines.get()); return result }
+  catch { return { issues: [{ message: '已启用的调用模型名重复，请改名后保存' }] } }
+} } })
+
 export function apply(ctx, config) {
   const engines = () => config.engines.get().map(engine => ({ ...engine, modelName: engine.modelName || engine.upstreamModel }))
   const evaluate = async (modelName, request, { signal } = {}) => {
     const started = performance.now()
     const failure = (code, message) => ({ ok: false, error: { code, message }, elapsedMs: performance.now() - started })
-    const engine = engines().find(engine => engine.modelName === modelName)
+    const matches = engines().filter(engine => engine.modelName === modelName)
+    const engine = matches.find(engine => engine.enabled) ?? matches[0]
     if (!engine) return failure('ENGINE_MISSING', 'JEV 引擎缺失')
     if (!engine.enabled) return failure('ENGINE_DISABLED', 'JEV 引擎已停用')
     if (signal?.aborted) return failure('CANCELLED', 'JEV 请求已取消')
@@ -148,7 +162,11 @@ export function apply(ctx, config) {
         }
         if (req.method === 'POST' && path === '/jev-center/api/test') { send(200, await center.testConnection(body.modelName)); return }
         send(404, { error: { code: 'NOT_FOUND', message: '操作不存在' } })
-      } catch { send(400, { error: { code: 'CONFIGURATION_ERROR', message: '配置或凭据操作失败，请检查设置' } }) }
+      } catch (error) {
+        const conflict = error.message?.includes('调用模型名重复')
+        send(400, { error: { code: conflict ? 'MODEL_NAME_CONFLICT' : 'CONFIGURATION_ERROR',
+          message: conflict ? '已启用的调用模型名重复，请改名后保存' : '配置或凭据操作失败，请检查设置' } })
+      }
     } }))
   })
 }

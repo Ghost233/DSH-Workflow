@@ -38,6 +38,7 @@ async function fixture(t, config = {}) {
           if (!stream.chunks.length) await new Promise(resolve => { stream.next = resolve })
           for (const chunk of stream.chunks.splice(0)) { yield chunk; stream.delivered++ }
         }
+        if (stream.failure) throw stream.failure
       } finally { options.signal.removeEventListener('abort', aborted) }
     }
   }
@@ -57,6 +58,7 @@ async function fixture(t, config = {}) {
     ctx, monitor, notices, streams, directory,
     setTime(value) { time = value },
     heartbeat(id) { streams.get(id).next?.() },
+    end(id, failure) { const stream = streams.get(id); stream.failure = failure; stream.complete = true; stream.next?.() },
     async create(id, options = {}) {
       const handle = await ctx.agents.create({ sessionId: id,
         agentOptions: { provider: 'third-party-fixture', model: id }, ...options })
@@ -277,4 +279,95 @@ test('a slightly late check does not drop the next minute and repeated calls wit
   assert.deepEqual(f.notices.map(alert => alert.at), [300_000, 360_000])
   assert.equal(handle.agent.status, 'running')
   assert.equal(f.streams.get('timer-jitter').request.signal.aborted, false)
+})
+
+test('a normal finish with no model content records an empty result without changing its native terminal state', async t => {
+  const f = await fixture(t), handle = await f.create('empty-normal-marker')
+  await f.send('empty-normal-marker', { type: 'finish', reason: { kind: 'stop' } })
+  f.end('empty-normal-marker')
+  await handle.agent.whenIdle(); await f.monitor.flush()
+  assert.deepEqual(f.notices.map(alert => alert.kind), ['empty-output'])
+  const alert = f.monitor.snapshot().alerts[0]
+  assert.equal(alert.attemptId, 'empty-normal-marker:1')
+  assert.equal(handle.agent.status, 'idle')
+  assert.ok(handle.agent.session.snapshotEvents().some(event => event.type === 'assistant/message'))
+  assert.equal((await f.monitor.journal())[0].kind, 'empty-output')
+  await f.at(600_000)
+  assert.equal(f.notices.length, 1)
+})
+
+test('real upstream errors preserve safe public status facts and omit credential-bearing error text and headers', async t => {
+  const { LlmError } = req('@deepseek-ai/dsh-llm')
+  const f = await fixture(t), handle = await f.create('unsafe-error')
+  f.end('unsafe-error', new LlmError('Authorization: Bearer T04_private_key', 'Authorization: Bearer T04_private_key',
+    { status: 503, requestId: 'Authorization: Bearer T04_private_key' }))
+  await handle.agent.whenIdle(); await f.monitor.flush()
+  assert.equal(f.notices.length, 1)
+  assert.equal(f.notices[0].kind, 'model-error')
+  assert.equal(f.notices[0].evidence.code, 'UNKNOWN')
+  assert.equal(f.notices[0].evidence.status, 503)
+  assert.doesNotMatch(JSON.stringify(f.monitor.snapshot()), /T04_private_key|Authorization|Bearer/)
+  assert.doesNotMatch(JSON.stringify(await f.monitor.journal()), /T04_private_key|Authorization|Bearer/)
+  assert.equal(handle.agent.status, 'idle')
+})
+
+test('public stream evidence distinguishes empty EOF, unmarked partial EOF and output limits, with one terminal alert per request', async t => {
+  const cases = [
+    { id: 'empty-eof', chunks: [], kind: 'unmarked-end', empty: true },
+    { id: 'partial-eof', chunks: [{ type: 'text-delta', index: 0, text: 'unfinished response' }], kind: 'unmarked-end', empty: false },
+    { id: 'limit', chunks: [{ type: 'text-delta', index: 0, text: 'partial response' }, { type: 'finish', reason: { kind: 'max-tokens' } }], kind: 'output-limit' },
+  ]
+  const f = await fixture(t)
+  for (const item of cases) {
+    const handle = await f.create(item.id)
+    let frame
+    f.ctx.on('agent/assistant-stream', payload => { if (payload.agent.id === item.id) frame = payload.frame })
+    if (item.chunks.length) await f.send(item.id, ...item.chunks)
+    f.end(item.id)
+    await handle.agent.whenIdle(); await f.monitor.flush()
+    const alert = f.notices.find(alert => alert.agentId === item.id)
+    assert.equal(alert.kind, item.kind)
+    if (item.empty !== undefined) assert.equal(alert.evidence.empty, item.empty)
+    f.ctx.emit('agent/assistant-stream', { agent: handle.agent, frame })
+    f.ctx.emit('agent/error', { agent: handle.agent, error: new Error('duplicate terminal notification') })
+    await f.monitor.flush()
+    assert.equal(f.notices.filter(alert => alert.agentId === item.id).length, 1)
+  }
+  await f.at(1_200_000)
+  assert.equal(f.notices.length, 3)
+})
+
+test('a failed native request can be followed by a normal partial-looking answer without inherited terminal warnings or recovery actions', async t => {
+  const { LlmError } = req('@deepseek-ai/dsh-llm')
+  const f = await fixture(t), handle = await f.create('after-error')
+  const first = f.streams.get('after-error')
+  f.end('after-error', new LlmError('connection closed', 'UPSTREAM_UNAVAILABLE', { status: 503 }))
+  await handle.agent.whenIdle(); await f.monitor.flush()
+  assert.equal(f.notices[0].evidence.code, 'UPSTREAM_UNAVAILABLE')
+  handle.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'try a fresh request' }] }))
+  await until(() => f.streams.get('after-error') !== first)
+  await f.send('after-error', { type: 'block-end', index: 0, block: { type: 'text', text: 'Perhaps a partial-looking answer' } },
+    { type: 'finish', reason: { kind: 'stop' } })
+  f.end('after-error')
+  await handle.agent.whenIdle(); await f.monitor.flush()
+  assert.equal(f.notices.length, 1)
+  assert.equal(f.notices[0].attemptId, 'after-error:1')
+  assert.equal(f.monitor.snapshot().agents[0].attemptId, 'after-error:2')
+  assert.equal(f.monitor.snapshot().agents[0].terminalAlerted, false)
+})
+
+test('a native spawned child error is associated with its own request and main Agent without changing the parent run', async t => {
+  const { LlmError } = req('@deepseek-ai/dsh-llm')
+  const f = await fixture(t), parent = await f.create('error-parent')
+  await f.ctx.plugin(req('@deepseek-ai/dsh-subagent').default)
+  await f.ctx.plugin(req('@deepseek-ai/dsh-subagent-spawn-in-process'))
+  const run = await f.ctx.subagents.start('spawn', { parent: parent.agent, signal: new AbortController().signal,
+    prompt: [{ type: 'text', text: 'child task' }], agentOptions: { provider: 'third-party-fixture', model: 'error-child' } })
+  await until(() => f.streams.has('error-child'))
+  f.end('error-child', new LlmError('upstream unavailable', 'UPSTREAM_UNAVAILABLE', { status: 503 }))
+  await run.result; await f.monitor.flush()
+  assert.deepEqual(f.notices.map(alert => [alert.agentId, alert.role, alert.parentId, alert.kind]),
+    [[run.id, 'child', 'error-parent', 'model-error']])
+  assert.equal(parent.agent.status, 'running')
+  await run.dispose()
 })

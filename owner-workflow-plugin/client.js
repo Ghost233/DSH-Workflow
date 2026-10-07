@@ -21,12 +21,34 @@
         }
       }
 
+      module.exports.assertUniqueModelNames = function assertUniqueModelNames(engines) {
+        const names = new Set()
+        for (const engine of engines) {
+          if (engine.enabled === false) continue
+          const modelName = engine.modelName || engine.upstreamModel
+          if (names.has(modelName)) throw new Error('已启用的调用模型名重复，请改名后保存')
+          names.add(modelName)
+        }
+      }
+
       })(jevRemote)
+      const monitorRemote = { exports: {} }
+      ;(function(module) {
+      module.exports = function createAgentMonitorRemoteDescriptor() {
+        return {
+          id: 'dsh-owner-workflow#agentMonitor/snapshot',
+          service: 'agentMonitor', namespace: 'agentMonitor', method: 'snapshot',
+          invocation: { kind: 'direct' }, parameters: [], result: { mode: 'src-json' },
+        }
+      }
+
+      })(monitorRemote)
       const hostRequire = require
-      require = name => name === './jev-center-remote.cjs' ? jevRemote.exports : hostRequire(name)
+      require = name => name === './jev-center-remote.cjs' ? jevRemote.exports : name === './agent-monitor-remote.cjs' ? monitorRemote.exports : hostRequire(name)
       const React = require('react')
       const { MarkdownText } = require('@deepseek-ai/dsh-client-ui-primitives')
       const createJevCenterRemoteDescriptor = require('./jev-center-remote.cjs')
+      const createAgentMonitorRemoteDescriptor = require('./agent-monitor-remote.cjs')
       const {
         createElement: h,
         useEffect,
@@ -1335,27 +1357,53 @@
       .dsh-owner-question-side{box-sizing:border-box;height:100%;min-height:0;display:flex;flex-direction:column;gap:12px;padding:16px;color:var(--dsw-alias-label-primary)}.dsh-owner-question-side-heading{font-size:12px;font-weight:650;color:var(--dsw-alias-state-warn-label)}.dsh-owner-question-side h2{font-size:16px;line-height:1.45;margin:0}.dsh-owner-question-side-detail{flex:1;min-height:0;overflow:auto;overflow-wrap:anywhere;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}.dsh-owner-question-side-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}.dsh-owner-question-side-actions button{cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsh-owner-question-side-actions button:disabled{opacity:.55;cursor:default}.dsh-owner-question-side-actions button:last-child{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-inverted);border-color:transparent}.dsh-owner-question-side-hint{font-size:11px;color:var(--dsw-alias-label-tertiary);margin:0}
       .dsh-owner-question-open{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:5px 9px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:12px;cursor:pointer}
       .dsh-jev-native-settings{max-width:720px;padding:16px;color:var(--dsw-alias-label-primary)}.dsh-jev-native-settings form{display:flex;flex-direction:column;gap:14px;margin-bottom:20px}.dsh-jev-native-settings label{display:flex;flex-direction:column;gap:6px;font-size:13px}.dsh-jev-native-settings input{box-sizing:border-box;width:100%;padding:9px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;color:inherit;background:var(--dsw-alias-bg-layer-2)}.dsh-jev-native-settings input[type=checkbox]{width:18px;height:18px}.dsh-jev-native-settings button{align-self:flex-start;padding:8px 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;cursor:pointer;color:inherit;background:var(--dsw-alias-bg-layer-2)}.dsh-jev-native-settings button:disabled,.dsh-jev-native-settings input:disabled{opacity:.55;cursor:default}.dsh-jev-native-settings p{font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+      .dsh-jev-native-settings select{box-sizing:border-box;width:100%;padding:9px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;color:inherit;background:var(--dsw-alias-bg-layer-2)}.dsh-monitor-engine-unavailable{color:var(--dsw-alias-state-error-primary)}.dsh-jev-native-settings article{border-top:1px solid var(--dsw-alias-border-l2);padding:12px 0}
       @media (max-width:520px){span[title="主线程维护需求、Spec 和 Ticket；统一 Runner 按模块 Owner 执行、验证和交付。"]{max-width:18px!important;padding-right:0!important;font-size:0!important}}
       @media (max-width:720px){.dsh-owner-wait-menu-header{right:0;left:auto}.dsh-owner-wait-menu-sidebar{width:min(430px,calc(100vw - 24px));max-width:none}.dsh-owner-team-composer{align-items:flex-start;flex-direction:column}}
         `.trim()
         document.head.appendChild(style)
       }
 
-      function NativeJevSettings({ scope, kind, view, saveCredential, testConnection }) {
+      function NativeJevSettings({ scope, kind, view, saveCredential, testConnection, monitor }) {
         const snapshot = useSyncExternalStore(listener => scope.subscribe(listener), () => scope.getSnapshot(), () => scope.getSnapshot())
         const [draft, setDraft] = useState(null)
         const [message, setMessage] = useState('')
         const [busy, setBusy] = useState(false)
         const [key, setKey] = useState('')
+        const [selected, setSelected] = useState(0)
+        const [monitorState, setMonitorState] = useState({ loading: true, value: null })
+        const refreshMonitor = useRef(() => {})
         const isCenter = kind === 'center'
-        const value = draft ?? (isCenter ? snapshot.value?.engines?.[0] ?? {
+        const engines = snapshot.value?.engines ?? []
+        const isNew = selected < 0 || !engines[selected]
+        const value = draft ?? (isCenter ? engines[selected] ?? {
           url: 'https://api.typesafe.ai', upstreamModel: 'jev-latest', modelName: '', credentialRef: 'TYPESAFE_API_KEY', enabled: true, timeoutMs: 5000,
         } : snapshot.value) ?? {}
         const fields = isCenter ? [
           ['url', '服务 URL', 'text'], ['upstreamModel', '上游模型名', 'text'],
           ['modelName', '调用模型名（留空沿用上游模型名）', 'text'], ['credentialRef', '凭据引用', 'text'],
           ['timeoutMs', '请求超时（毫秒）', 'number'], ['enabled', '启用', 'checkbox'],
-        ] : [['checkIntervalMs', '检查间隔（毫秒）', 'number'], ['noOutputThreshold', '连续无输出告警次数', 'number']]
+        ] : [['checkIntervalMs', '检查间隔（毫秒）', 'number'], ['noOutputThreshold', '连续无输出告警次数', 'number'],
+          ['jevModelName', 'JEV 调用模型名', 'select'], ['semanticWaitMs', '语义检测起始等待（毫秒）', 'number'],
+          ['semanticThreshold', '连续明确语义异常告警次数', 'number'], ['debugEvidence', '记录调试会话片段', 'checkbox']]
+        useEffect(() => {
+          if (isCenter || view === 'summary') return
+          let active = true, generation = 0
+          const refresh = async () => {
+            const current = ++generation
+            try {
+              const response = await monitor.read()
+              if (active && current === generation) setMonitorState({ loading: false, value: response.ok ? response.value : null })
+            } catch { if (active && current === generation) setMonitorState({ loading: false, value: null }) }
+          }
+          const stop = monitor.subscribe(() => { setMonitorState({ loading: false, value: null }); void refresh() })
+          refreshMonitor.current = refresh
+          void refresh()
+          const timer = setInterval(() => { void refresh() }, 3000)
+          return () => { active = false; clearInterval(timer); stop(); refreshMonitor.current = () => {} }
+        }, [isCenter, view, monitor, snapshot.revision])
+        const models = monitorState.value?.availableModels ?? []
+        const modelChoices = value.jevModelName && !models.includes(value.jevModelName) ? [...models, value.jevModelName] : models
         const save = async event => {
           event.preventDefault()
           const converted = { ...value }
@@ -1364,13 +1412,34 @@
             converted[name] = Number(value[name])
             if (!Number.isSafeInteger(converted[name]) || converted[name] <= 0) { setMessage('请输入正整数'); return }
           }
-          const ops = isCenter ? [{ op: 'set', path: ['engines'], value: [converted, ...(snapshot.value?.engines?.slice(1) ?? [])] }]
-            : fields.map(([name]) => ({ op: 'set', path: [name], value: converted[name] }))
+          const nextEngines = isNew ? [...engines, converted] : engines.map((engine, index) => index === selected ? converted : engine)
+          if (isCenter) {
+            try { createJevCenterRemoteDescriptor.assertUniqueModelNames(nextEngines) }
+            catch { setMessage('已启用的调用模型名重复，请改名后保存'); return }
+          }
+          const ops = isCenter ? [{ op: 'set', path: ['engines'], value: nextEngines }]
+            : fields.filter(([name]) => converted[name] !== snapshot.value?.[name]).map(([name]) => ({ op: 'set', path: [name], value: converted[name] }))
           setBusy(true)
+          setMessage('正在保存…')
           try {
-            if (await scope.mutate(ops, snapshot.revision)) { setDraft(null); setMessage('配置已保存') }
+            if (await scope.mutate(ops, snapshot.revision)) {
+              if (isCenter && isNew) setSelected(nextEngines.length - 1)
+              setDraft(null); setMessage('配置已保存')
+            }
             else setMessage('保存失败，配置未被接受')
           } catch { setMessage('保存失败，请检查配置与连接') }
+          finally { setBusy(false) }
+        }
+        const selectEngine = index => { setSelected(index); setDraft(null); setKey(''); setMessage('') }
+        const deleteEngine = async () => {
+          const remaining = engines.filter((_, index) => index !== selected)
+          setBusy(true)
+          try {
+            if (await scope.mutate([{ op: 'set', path: ['engines'], value: remaining }], snapshot.revision)) {
+              selectEngine(Math.max(0, Math.min(selected, remaining.length - 1)))
+              setMessage('配置已删除，凭据已保留')
+            } else setMessage('删除失败，配置未被接受')
+          } catch { setMessage('删除失败，请检查连接') }
           finally { setBusy(false) }
         }
         const storeCredential = async event => {
@@ -1384,7 +1453,7 @@
           finally { setBusy(false) }
         }
         const checkConnection = async () => {
-          const engine = snapshot.value?.engines?.[0]
+          const engine = engines[selected]
           if (!engine) { setMessage('请先保存引擎配置'); return }
           setBusy(true)
           setMessage('正在测试连接…')
@@ -1400,8 +1469,21 @@
         return h('section', { className: 'dsh-jev-native-settings' },
           h('h2', null, isCenter ? 'JEV 中心' : '代理监控'),
           snapshot.writable ? null : h('p', { role: 'note' }, '当前连接不允许修改设置。'),
+          isCenter ? h('div', null,
+            h('label', null, 'JEV 引擎配置列表', h('select', { value: isNew ? 'new' : String(selected), disabled: !snapshot.writable || busy,
+              onChange: event => selectEngine(event.target.value === 'new' ? -1 : Number(event.target.value)) },
+              ...engines.map((engine, index) => h('option', { key: index, value: String(index) },
+                `${index + 1}. ${engine.modelName || engine.upstreamModel}${engine.enabled ? '' : '（停用）'}`)),
+              isNew ? h('option', { value: 'new' }, '新配置（未保存）') : null)),
+            h('button', { type: 'button', disabled: !snapshot.writable || busy, onClick: () => selectEngine(-1) }, '新增配置'),
+            h('button', { type: 'button', disabled: !snapshot.writable || busy || isNew, onClick: deleteEngine }, '删除配置'),
+          ) : null,
           h('form', { 'aria-label': isCenter ? 'JEV 引擎配置' : '代理监控设置', onSubmit: save },
-            ...fields.map(([name, label, type]) => h('label', { key: name }, label, h('input', {
+            ...fields.map(([name, label, type]) => h('label', { key: name }, label, type === 'select' ? h('select', {
+              name, value: value[name] ?? '', disabled: !snapshot.writable || busy,
+              onChange: event => setDraft({ ...value, [name]: event.target.value }),
+            }, h('option', { value: '' }, '未选择模型'), ...modelChoices.map(modelName => h('option', { key: modelName, value: modelName },
+              modelName + (models.includes(modelName) ? '' : '（不可用）')))) : h('input', {
               name, type, disabled: !snapshot.writable || busy, required: type !== 'checkbox' && name !== 'modelName',
               ...(type === 'number' ? { min: 1, step: 1 } : {}),
               ...(type === 'checkbox' ? { checked: Boolean(value[name]) } : { value: value[name] ?? '' }),
@@ -1416,16 +1498,46 @@
           ) : null,
           isCenter ? h('button', { type: 'button', disabled: !snapshot.writable || busy, onClick: checkConnection }, '测试连接') : null,
           h('p', { role: 'status' }, message),
+          !isCenter ? h('section', { 'aria-label': '代理监控状态' },
+            h('button', { type: 'button', onClick: () => { void refreshMonitor.current() } }, '刷新监控状态'),
+            monitorState.loading ? h('p', null, '正在读取代理监控状态…') : !monitorState.value ? h('p', { role: 'alert',
+              className: 'dsh-monitor-engine-unavailable' }, '代理监控状态暂不可用，请检查监控服务与连接。') :
+              h('p', { role: monitorState.value.engineAvailability?.available ? undefined : 'alert',
+                className: monitorState.value.engineAvailability?.available ? undefined : 'dsh-monitor-engine-unavailable' },
+              monitorState.value.engineAvailability?.available ? 'JEV 引擎可用' :
+                'JEV 引擎不可用：' + (monitorState.value.engineAvailability?.reason ?? '判断状态未知')),
+            h('h3', null, '监控告警'),
+            h('div', { role: 'log', 'aria-label': '监控告警', 'aria-live': 'off' },
+              ...(monitorState.value?.alerts ?? []).slice().reverse().map((alert, index) => h('article', { key: index },
+                h('strong', null, `${alert.role === 'child' ? '子代理' : '主代理'} ${alert.agentId} [${alert.kind}]`),
+                h('p', null, `请求：${alert.attemptId ?? `${alert.turn ?? '?'}:${alert.step ?? '?'}`} · ${new Date(alert.at).toLocaleString()}`),
+                h('p', null, alert.reason),
+                alert.recoveredAt ? h('p', null, `恢复：${new Date(alert.recoveredAt).toLocaleString()}`) : null,
+              )),
+              monitorState.value?.alerts?.length ? null : h('p', null, '暂无告警'),
+            ),
+          ) : null,
         )
       }
 
       function registerNativeJevSettings(ctx) {
-        let credentialAction, connectionAction
+        let credentialAction, connectionAction, monitorAction
+        const monitorListeners = new Set()
+        const monitor = { read: () => monitorAction?.() ?? Promise.resolve({ ok: false }),
+          subscribe: listener => { monitorListeners.add(listener); return () => monitorListeners.delete(listener) } }
         ctx.inject(['remote', 'typert'], child => {
-          child.effect(() => child.remote.$mount({ package: 'dsh-owner-workflow', descriptors: [createJevCenterRemoteDescriptor()] }), 'JEV connection-test Remote descriptor')
+          child.effect(() => child.remote.$mount({ package: 'dsh-owner-workflow', descriptors: [createJevCenterRemoteDescriptor(), createAgentMonitorRemoteDescriptor()] }), 'JEV and monitor Remote descriptors')
           child.inject(['remote.jevCenter'], remote => {
             connectionAction = modelName => remote.remote.jevCenter.testConnection(modelName)
             remote.effect(() => () => { connectionAction = undefined }, 'JEV connection-test caller lifetime')
+          })
+          child.inject(['remote.agentMonitor'], remote => {
+            monitorAction = () => remote.remote.agentMonitor.snapshot()
+            for (const listener of monitorListeners) listener()
+            remote.effect(() => () => {
+              monitorAction = undefined
+              for (const listener of monitorListeners) listener()
+            }, 'Agent monitor read-only caller lifetime')
           })
         })
         ctx.inject(['remote', 'remote.credentials'], child => {
@@ -1439,7 +1551,7 @@
           ]) {
             child.effect(() => child.configForms.whileServed([ns], () => {
               const disposers = ['settings.section', 'plugins.item'].map(name => child.slots.inject(name, () => child.slots.register({
-                name, id, label, order, inject: () => ({ scope: child.configForms.get(ns), kind,
+                name, id, label, order, inject: () => ({ scope: child.configForms.get(ns), kind, monitor,
                   saveCredential: (ref, key) => credentialAction?.(ref, key) ?? Promise.resolve({ ok: false }),
                   testConnection: modelName => connectionAction?.(modelName) ?? Promise.resolve({ ok: false }),
                 }),
