@@ -199,6 +199,7 @@ class ProbeDiagnostics {
   Timer? _timer;
   Future<void> _snapshots = Future<void>.value();
   int? _desktopPid, _appPid;
+  bool _requestFailurePending = false;
   final Map<String, Map<String, Object?>> _hosts = {};
 
   void record(String event, [Map<String, Object?> facts = const {}]) {
@@ -439,19 +440,28 @@ class ProbeDiagnostics {
     int expectedPid,
     Map<String, Object?> receipt,
   ) async {
-    await _snapshots;
-    if (_desktopPid != expectedPid ||
-        receipt['pid'] is! int ||
-        receipt['lease'] is! String ||
-        (receipt['lease'] as String).isEmpty) {
-      throw StateError('Current Desktop/Host request identity is unknown');
+    try {
+      await _snapshots;
+      if (_desktopPid != expectedPid ||
+          receipt['pid'] is! int ||
+          receipt['lease'] is! String ||
+          (receipt['lease'] as String).isEmpty) {
+        throw StateError('Current Desktop/Host request identity is unknown');
+      }
+      await _desktopRequestIdentity('request', {
+        'desktopPid': expectedPid,
+        'hostPid': receipt['pid'],
+        'hostLease': receipt['lease'],
+      });
+      await _desktopCommand('request-only', ['$expectedPid']);
+    } catch (error) {
+      _requestFailurePending = true;
+      record('desktop-request-primary-error', {
+        'mode': 'request-only',
+        'errorType': error.runtimeType.toString(),
+      });
+      rethrow;
     }
-    await _desktopRequestIdentity('request', {
-      'desktopPid': expectedPid,
-      'hostPid': receipt['pid'],
-      'hostLease': receipt['lease'],
-    });
-    await _desktopCommand('request-only', ['$expectedPid']);
   }
 
   Future<void> _desktopCommand(
@@ -497,6 +507,15 @@ class ProbeDiagnostics {
     try {
       if (_desktopPid != null) await _desktopCommand('terminate');
       record('diagnostics-close');
+    } catch (error) {
+      if (!_requestFailurePending) rethrow;
+      record('desktop-cleanup-secondary-error', {
+        'mode': 'terminate',
+        'errorType': error.runtimeType.toString(),
+      });
+      stderr.writeln(
+        'DESKTOP_CLEANUP_SECONDARY_ERROR: ${safeInspectorOutput(error)}',
+      );
     } finally {
       await _sink.close();
     }
