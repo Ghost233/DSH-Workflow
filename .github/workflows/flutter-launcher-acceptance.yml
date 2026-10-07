@@ -491,7 +491,7 @@ jobs:
           (evidence / 'input-app.txt').write_text(str(app) + '\n')
           PY
 
-      - name: Exercise retained settings, persistence, errors and reopen hint
+      - name: Exercise settings and normal Desktop permission reopen
         working-directory: macos-launcher/flutter
         run: python3 ../../.github/scripts/settings_startup_cycle.py --full
 
@@ -576,13 +576,33 @@ jobs:
               physical_complete = owned['hostBindingKnown'] and can_repeat({'ownership': owned['ownership'], 'processes': list(processes.values()), 'finallyComplete': owned['finallyComplete'], 'receipt': owned['receiptLookup'], 'listener': {key: listener[key] for key in ('exit', 'stdout', 'stderr')}, 'bindListen': service_listen})
               resources_released = launcher_web_released(owned, listener, service_listen)
               normal_exit = owned['normalExitStage']
-              functional_complete = functional_command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released
+              settings_body = json.loads((target / 'settings-evidence.json').read_text())
+              request = settings_body.get('permissionNormalRequest') or {}
+              permission_verified = (settings_body.get('fullAccessSaved') is True
+                  and settings_body.get('permissionReopenVerified') is True
+                  and settings_body.get('permissionOriginalExitObserved') is True
+                  and settings_body.get('permissionModeBeforeReopen') == 'workspace-write'
+                  and settings_body.get('permissionModeAfterReopen') == 'danger-full-access'
+                  and request.get('lookupFound') is True and request.get('accepted') is True
+                  and isinstance(settings_body.get('oldDesktopPid'), int) and settings_body['oldDesktopPid'] > 1
+                  and isinstance(settings_body.get('newDesktopPid'), int) and settings_body['newDesktopPid'] > 1
+                  and request.get('expectedPid') == settings_body['oldDesktopPid']
+                  and settings_body['newDesktopPid'] != settings_body['oldDesktopPid']
+                  and isinstance(settings_body.get('oldHostPid'), int) and settings_body['oldHostPid'] > 1
+                  and isinstance(settings_body.get('hostPid'), int) and settings_body['hostPid'] > 1
+                  and settings_body['hostPid'] != settings_body['oldHostPid']
+                  and isinstance(settings_body.get('initialBackendLease'), str)
+                  and isinstance(settings_body.get('reopenedBackendLease'), str)
+                  and bool(settings_body['reopenedBackendLease'])
+                  and settings_body['reopenedBackendLease'] != settings_body['initialBackendLease'])
+              functional_complete = functional_command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released and permission_verified
               functional_failed = not functional_complete or functional_failed
               if not physical_complete:
                   print('::warning::Isolated Desktop/Host cleanup is incomplete or unknown; functional Launcher/Web result is separate', flush=True)
               print('T05_COLLECTOR_PHASE=port-observation-end ROOT=' + root.name, flush=True)
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes, 'ownership': owned['ownership'], 'hostBindingKnown': owned['hostBindingKnown'],
                               'functionalCommandExit': functional_command_exit, 'normalExitStage': normal_exit,
+                              'permissionReopenVerified': permission_verified, 'settingsBusinessEvidence': settings_body,
                               'launcherWebReleased': resources_released, 'functionalAcceptanceComplete': functional_complete, 'isolatedCleanup': owned['isolatedCleanup'],
                               'allOwnedProcessesGone': physical_complete, 'finallyComplete': owned['finallyComplete'], 'receiptLookup': owned['receiptLookup'],
                               'receiptRemoved': True if owned['receiptLookup'].get('state') == 'absent' and owned['receiptLookup'].get('errno') == errno.ENOENT else (False if owned['receiptLookup'].get('state') == 'present' else None),
@@ -593,7 +613,7 @@ jobs:
           (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
           print('T05_COLLECTOR_PHASE=complete', flush=True)
           if functional_failed:
-              raise RuntimeError('Owned Launcher exit or Web port release is unknown or incomplete; isolated cleanup recorded separately')
+              raise RuntimeError('Required permission reopen, Launcher normal exit or Web release is unknown or incomplete; isolated cleanup recorded separately')
           PY
 
       - name: Record isolated runtime detach separately
@@ -957,13 +977,13 @@ jobs:
           (evidence / 'input-app.txt').write_text(str(app) + '\n')
           PY
 
-      - name: Exercise plugin UI and isolated real package installations
+      - name: Exercise plugin UI, isolated installation and normal Desktop reload
         working-directory: macos-launcher/flutter
         run: |
           set +e
           dart run tool/application_probe.dart \
             'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
-            --plugins-update-runtime "$T08_RUNTIME_RESOURCES" \
+            --plugins-desktop-runtime "$T08_RUNTIME_RESOURCES" \
             > "$EVIDENCE_DIR/application.log" 2>&1
           result=$?
           set -e
@@ -998,7 +1018,7 @@ jobs:
               (target / 'diagnostic-collector.exit').write_text(str(diagnostic.returncode) + '\n')
               pids = set()
               for file in root.iterdir():
-                  if file.is_file() and file.suffix in ('.log', '.json', '.jsonl', '.png'):
+                  if not file.is_symlink() and file.is_file() and file.resolve().parent == root and file.suffix in ('.log', '.json', '.jsonl', '.png'):
                       shutil.copy2(file, target / file.name)
                       if file.suffix == '.json':
                           value = json.loads(file.read_text())
@@ -1013,10 +1033,12 @@ jobs:
                   for file in registry.iterdir():
                       if file.is_file() and file.name in ('evidence.json', 'seed.log', 'ca.pem'):
                           shutil.copy2(file, out / file.name)
-              case = json.loads((root / 'plugin-case.json').read_text()) if (root / 'plugin-case.json').exists() else {}
-              for key in ('launcherPid', 'registryPid', 'ownedHostPid'):
+              case = json.loads((target / 'plugin-case.json').read_text()) if (target / 'plugin-case.json').exists() else {}
+              for key in ('launcherPid', 'registryPid') + (() if case.get('desktop') is True else ('ownedHostPid',)):
                   if isinstance(case.get(key), int): pids.add(case[key])
-              installed = json.loads((root / 'plugin-installed-versions.json').read_text()) if (root / 'plugin-installed-versions.json').exists() else []
+              installed = json.loads((target / 'plugin-installed-versions.json').read_text()) if (target / 'plugin-installed-versions.json').exists() else []
+              loaded = json.loads((target / 'plugin-loaded-versions.json').read_text()) if (target / 'plugin-loaded-versions.json').is_file() and not (target / 'plugin-loaded-versions.json').is_symlink() else []
+              termination = json.loads((target / 'plugin-native-termination.json').read_text()) if (target / 'plugin-native-termination.json').is_file() and not (target / 'plugin-native-termination.json').is_symlink() else []
               processes = []
               for pid in sorted(pids):
                   check = subprocess.run(['/bin/kill', '-0', str(pid)], capture_output=True, text=True)
@@ -1038,20 +1060,48 @@ jobs:
                   hashes[relative] = hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else None
               timeline = [json.loads(line) for line in (root / 'probe-timeline.jsonl').read_text().splitlines()]
               normal_exit = next((row for row in reversed(timeline) if row.get('event') == 'application-normal-exit-stage' and row.get('pid') == case.get('launcherPid')), None)
-              own_ids_known = all(isinstance(case.get(key), int) and case[key] > 1 for key in ('launcherPid', 'registryPid', 'ownedHostPid'))
+              own_ids_known = all(isinstance(case.get(key), int) and case[key] > 1 for key in ('launcherPid', 'registryPid') + (() if case.get('desktop') is True else ('ownedHostPid',)))
               resources_released = own_ids_known and bool(processes) and all(row['exit'] != 0 and 'No such process' in row['stderr'] for row in processes) and web_port_released
               final_packages = installed[-1] if installed else {}
               installed_versions_known = final_packages.get('owned', {}).get('version') == '1.2.0' and final_packages.get('other', {}).get('version') == '1.1.0'
-              functional_complete = command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released and installed_versions_known
+              original_exit = termination[-1] if termination else {}
+              request = original_exit.get('normalRequest') or {}
+              checks = original_exit.get('processChecks', [])
+              before_load = loaded[0] if loaded else {}
+              after_load = loaded[-1] if loaded else {}
+              old_host, new_host = before_load.get('owned', {}), after_load.get('owned', {})
+              loaded_versions_known = (case.get('desktop') is True
+                  and len(loaded) == 6 and before_load.get('stage') == 'before-update'
+                  and after_load.get('stage') == 'after-native-Desktop-reopen'
+                  and all(row.get('owned', {}).get('version') == '1.0.0' and row.get('other', {}).get('version') == '1.0.0' for row in loaded[:-1])
+                  and after_load.get('owned', {}).get('version') == '1.2.0' and after_load.get('other', {}).get('version') == '1.1.0'
+                  and isinstance(old_host.get('hostPid'), int) and old_host['hostPid'] == case.get('hostPid')
+                  and isinstance(new_host.get('hostPid'), int) and new_host['hostPid'] != old_host['hostPid']
+                  and old_host.get('hostLease') == case.get('hostLease')
+                  and isinstance(new_host.get('hostLease'), str) and bool(new_host['hostLease']) and new_host['hostLease'] != old_host.get('hostLease')
+                  and after_load.get('other', {}).get('hostPid') == new_host['hostPid']
+                  and after_load.get('other', {}).get('hostLease') == new_host['hostLease']
+                  and after_load.get('desktop', {}).get('instanceId') == new_host['hostLease'])
+              original_termination_known = (bool(termination) and request.get('lookupFound') is True and request.get('accepted') is True
+                  and request.get('expectedPid') == original_exit.get('desktopPid')
+                  and original_exit.get('hostPid') == case.get('hostPid') and original_exit.get('receiptAbsent') is True
+                  and len(checks) == 2 and {row.get('pid') for row in checks} == {original_exit.get('desktopPid'), case.get('hostPid')}
+                  and all(row.get('predicateGone') is True and row.get('rawExit') not in (None, 0) and 'No such process' in row.get('rawStderr', '') for row in checks))
+              cleanup_events = [row for row in timeline if row.get('event', '').startswith('ci-desktop-cleanup')]
+              if cleanup_events:
+                  print('::warning::Independent CI Desktop cleanup is incomplete or unknown; original reload verdict remains separate', flush=True)
+              functional_complete = command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released and installed_versions_known and loaded_versions_known and original_termination_known
               functional_failed = not functional_complete or functional_failed
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes,
-                              'installedVersions': installed, 'webPortReleased': web_port_released,
+                              'installedVersions': installed, 'loadedVersions': loaded, 'originalDesktopTermination': termination,
+                              'loadedVersionsVerified': loaded_versions_known, 'originalDesktopTerminationVerified': original_termination_known,
+                              'isolatedCleanupEvents': cleanup_events, 'webPortReleased': web_port_released,
                               'functionalCommandExit': command_exit, 'normalExitStage': normal_exit,
                               'ownResourcesReleased': resources_released, 'functionalAcceptanceComplete': functional_complete,
-                              'scope': case.get('scope'), 'cancelledAcceptance': case.get('cancelledAcceptance')})
+                              'scope': case.get('scope')})
           (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
           if functional_failed:
-              raise RuntimeError('Retained plugin installation or owned Launcher/Web resource evidence is unknown or incomplete')
+              raise RuntimeError('Required plugin install, original Desktop reload/load or own Launcher/Web resource evidence is unknown or incomplete')
           PY
 
       - name: Detach the read-only runtime even on failure

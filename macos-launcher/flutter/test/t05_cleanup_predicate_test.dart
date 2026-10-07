@@ -4,10 +4,53 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:launcher_core/launcher_core.dart';
 
 import '../tool/web_application_scenario.dart'
-    show runWebApplicationScenario, WebProbeOptions;
+    show runWebApplicationScenario, WebProbeOptions, ownedReceiptAbsent;
 import '../tool/probe_diagnostics.dart' show desktopQuitFacts;
 
 void main() {
+  test(
+    'owned receipt absence requires ENOENT and exact private paths',
+    () async {
+      final temporary = await Directory.systemTemp.createTemp(
+        'dsh-receipt-absence-',
+      );
+      final root = Directory(await temporary.resolveSymbolicLinks());
+      final parent = await Directory('${root.path}/desktop').create();
+      final receipt = File('${parent.path}/desktop-host.json');
+      final sibling = await Directory('${root.path}/other').create();
+      final target = await File('${sibling.path}/receipt.json')
+          .writeAsString('private-canary');
+      try {
+        expect(await ownedReceiptAbsent(receipt), true);
+        await receipt.writeAsString('{}');
+        expect(await ownedReceiptAbsent(receipt), false);
+        await receipt.delete();
+        final leaf = await Link(receipt.path).create(target.path);
+        await expectLater(ownedReceiptAbsent(receipt), throwsStateError);
+        await leaf.delete();
+        final dangling = await Link(receipt.path)
+            .create('${sibling.path}/missing.json');
+        await expectLater(ownedReceiptAbsent(receipt), throwsStateError);
+        await dangling.delete();
+        await parent.delete();
+        final parentLink = await Link(parent.path).create(sibling.path);
+        await expectLater(ownedReceiptAbsent(receipt), throwsStateError);
+        await parentLink.delete();
+        await expectLater(
+          ownedReceiptAbsent(receipt),
+          throwsA(isA<FileSystemException>()),
+        );
+        await parent.create();
+        await Directory(receipt.path).create();
+        await expectLater(
+          ownedReceiptAbsent(receipt),
+          throwsA(isA<FileSystemException>()),
+        );
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+  );
   test(
     'body failure survives owned cleanup error and closes resources',
     () async {
@@ -39,6 +82,8 @@ void main() {
                 return {'native': <String, Object?>{}};
               },
               applicationExit: Future.value(0),
+              ownsHostReceipt: (_) async => false,
+              startupFailure: (_) async => null,
               tap: (_) async {},
               capture: (_) async {},
               settingsOwnedWebCleanup: true,

@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'application_probe.dart' show require, waitFor;
 import 'web_application_scenario.dart';
+import 'web_startup_wait.dart';
+import 'probe_diagnostics.dart' show desktopQuitFacts;
 
 /// This first application slice checks real on-disk plugin reports and preserves
 /// the connected official Host. It does not claim update or Desktop reload proof.
@@ -263,8 +265,9 @@ class PluginRegistryFixture {
 
 Future<void> runPluginUpdateApplicationScenario(
   WebObservation app,
-  PluginRegistryFixture fixture,
-) async {
+  PluginRegistryFixture fixture, {
+  required bool desktop,
+}) async {
   const owned = 'dsh-t08-owned-plugin', other = 'dsh-t08-other-plugin';
   final runner = Platform.environment['RUNNER_TEMP'];
   require(
@@ -288,17 +291,18 @@ Future<void> runPluginUpdateApplicationScenario(
       'webPort': app.port,
       'launcherPid': ((await app.ui())['native'] as Map)['pid'],
       'registryPid': fixture.process.pid,
-      'ownedHostPid': app.backend['pid'],
-      'scope': 'plugin-ui-isolated-install',
-      'cancelledAcceptance': [
-        'DesktopNormalExit',
-        'DesktopReopen',
-        'newHostOrLease',
-        'reopenedLoadedVersions',
-      ],
+      'ownedHostPid': desktop ? null : app.backend['pid'],
+      'hostPid': app.backend['pid'],
+      'hostLease': app.backend['lease'],
+      'desktop': desktop,
+      'scope': desktop
+          ? 'plugin-ui-isolated-install-and-desktop-reload'
+          : 'plugin-ui-isolated-install',
     }),
   );
   final observations = <Map<String, Object?>>[];
+  final loadedObservations = <Map<String, Object?>>[];
+  final http = HttpClient()..connectionTimeout = const Duration(seconds: 5);
   bool text(Map<String, Object?> state, String value) =>
       (state['nodes'] as List).cast<Map>().any(
         (node) => node['label'].toString().contains(value),
@@ -377,139 +381,294 @@ Future<void> runPluginUpdateApplicationScenario(
         .writeAsString(jsonEncode(observations));
   }
 
-  await observe('before-update', '1.0.0', '1.0.0');
-  await app.state({'action': 'minimum'});
-  await app.tap('插件');
-  await settled();
-  await updateOne(owned);
-  await observe('after-selected-install', '1.1.0', '1.0.0');
-  await scroll('scrollRight');
-  require(
-    text(await app.ui(), '1.1.0 / 1.1.0'),
-    'the real page shows the actual selected package version after installation',
-  );
-  await app.capture('plugins-selected-versions');
-  await scroll('scrollLeft');
-  await app.capture('plugins-selected');
-  var snapshot = await app.ui();
-  require(text(snapshot, '已更新 1 个插件'), 'real single update result is visible');
-  final failedRows = (snapshot['nodes'] as List)
-      .cast<Map>()
-      .where(
-        (node) =>
-            node['label'] == '检查失败' &&
-            node['tooltip'].toString().contains('npm registry HTTP 404'),
-      )
-      .toList();
-  require(
-    failedRows.length == 4,
-    'the real page retains four failed checks with their accessible actual HTTP causes alongside the completed selected update',
-  );
-  await scroll('scrollUp');
-  await app.capture('plugins-selected-failed-rows');
-  await scroll('scrollDown');
-  require(
-    text(snapshot, '完全退出并重新打开 Desktop'),
-    'completed update presents the real Desktop reload instruction',
-  );
+  Future<Map<String, Object?>> loadedVersion(String name) async {
+    final receipt = (jsonDecode(await app.receipt.readAsString()) as Map)
+        .cast<String, Object?>();
+    require(
+      await app.ownsHostReceipt(receipt),
+      'loaded endpoint belongs to the current physically bound private Host',
+    );
+    final uri = Uri.parse(receipt['url'] as String);
+    final authentication = await http.getUrl(uri);
+    authentication.followRedirects = false;
+    final login = await authentication.close();
+    final cookies = login.cookies;
+    await login.drain<void>();
+    final request = await http.getUrl(uri.resolve('/t08-plugin/$name'));
+    request.cookies.addAll(cookies);
+    final response = await request.close();
+    final body = await utf8.decoder.bind(response).join();
+    require(
+      response.statusCode == 200,
+      'actual official Host serves the self-owned plugin version endpoint',
+    );
+    final value = (jsonDecode(body) as Map).cast<String, Object?>();
+    require(
+      value['name'] == name && value['hostPid'] == receipt['pid'],
+      'version response comes from the actual receipt Host process',
+    );
+    return {...value, 'hostLease': receipt['lease']};
+  }
 
-  await fixture.control({
-    'latest': {owned: '1.2.0'},
-  });
-  await app.tap('检查插件版本');
-  await settled();
-  await app.tap('更新全部可更新插件');
-  await settled();
-  await observe('after-batch-install', '1.2.0', '1.1.0');
-  await scroll('scrollRight');
-  snapshot = await app.ui();
-  require(
-    text(snapshot, '1.2.0 / 1.2.0') && text(snapshot, '1.1.0 / 1.1.0'),
-    'actual current versions after batch match both installed self-owned tarballs',
-  );
-  await app.capture('plugins-batch-versions');
-  await scroll('scrollLeft');
-  await app.capture('plugins-batch');
-  require(
-    text(await app.ui(), '已更新 2 个插件'),
-    'real batch update returns the two completed self-owned package versions',
-  );
+  Future<void> observeLoaded(
+    String stage,
+    String expectedOwned,
+    String expectedOther,
+  ) async {
+    final currentOwned = await loadedVersion(owned),
+        currentOther = await loadedVersion(other);
+    final status = await app.sdk('status', service: 'desktop');
+    require(
+      currentOwned['version'] == expectedOwned &&
+          currentOther['version'] == expectedOther &&
+          status['instanceId'] == currentOwned['hostLease'],
+      'actual loaded plugin versions and official SDK agree at $stage',
+    );
+    loadedObservations.add({
+      'stage': stage,
+      'owned': currentOwned,
+      'other': currentOther,
+      'desktop': status,
+    });
+    await File('${app.root.path}/plugin-loaded-versions.json')
+        .writeAsString(jsonEncode(loadedObservations));
+  }
 
-  // A registry changed between check and user click: the actual updater
-  // rechecks and legitimately returns no newly changed package.
-  await fixture.control({
-    'latest': {owned: '1.3.0'},
-  });
-  await app.tap('检查插件版本');
-  await settled();
-  await fixture.control({
-    'latest': {owned: '1.2.0'},
-  });
-  await updateOne(owned);
-  await observe('after-noop', '1.2.0', '1.1.0');
-  await app.capture('plugins-noop-after-update');
-  require(
-    text(await app.ui(), '完全退出并重新打开 Desktop'),
-    'a real no-op after earlier updates preserves the pending Desktop reload instruction',
-  );
+  try {
+    await observe('before-update', '1.0.0', '1.0.0');
+    if (desktop) {
+      await observeLoaded('before-update', '1.0.0', '1.0.0');
+    }
+    await app.state({'action': 'minimum'});
+    await app.tap('插件');
+    await settled();
+    await updateOne(owned);
+    await observe('after-selected-install', '1.1.0', '1.0.0');
+    if (desktop) {
+      await observeLoaded(
+        'after-selected-update-before-reload',
+        '1.0.0',
+        '1.0.0',
+      );
+    }
+    await scroll('scrollRight');
+    require(
+      text(await app.ui(), '1.1.0 / 1.1.0'),
+      'the real page shows the actual selected package version after installation',
+    );
+    await app.capture('plugins-selected-versions');
+    await scroll('scrollLeft');
+    await app.capture('plugins-selected');
+    var snapshot = await app.ui();
+    require(
+      text(snapshot, '已更新 1 个插件'),
+      'real single update result is visible',
+    );
+    final failedRows = (snapshot['nodes'] as List)
+        .cast<Map>()
+        .where(
+          (node) =>
+              node['label'] == '检查失败' &&
+              node['tooltip'].toString().contains('npm registry HTTP 404'),
+        )
+        .toList();
+    require(
+      failedRows.length == 4,
+      'the real page retains four failed checks with their accessible actual HTTP causes alongside the completed selected update',
+    );
+    await scroll('scrollUp');
+    await app.capture('plugins-selected-failed-rows');
+    await scroll('scrollDown');
+    require(
+      text(snapshot, '完全退出并重新打开 Desktop'),
+      'completed update presents the real Desktop reload instruction',
+    );
 
-  await fixture.control({
-    'latest': {owned: '1.3.0'},
-    'unavailable': ['$owned@1.3.0'],
-  });
-  await app.tap('检查插件版本');
-  await settled();
-  await updateOne(owned);
-  await app.capture('plugins-install-failure');
-  snapshot = await app.ui();
-  require(
-    text(snapshot, 'No matching version') ||
-        text(snapshot, 'NO_MATCHING_VERSION'),
-    'actual DSH/pnpm update failure is visible with its original cause',
-  );
-  require(
-    text(snapshot, '已更新 0 个插件'),
-    'failed installation never claims completed self-owned updates',
-  );
-  require(
-    text(snapshot, '完全退出并重新打开 Desktop'),
-    'failed later update preserves the earlier pending reload instruction',
-  );
-  require(
-    (snapshot['errors'] as List).isEmpty,
-    'minimum-size plugin page remains usable while real update failure diagnostics are visible',
-  );
-  final diagnostic = (snapshot['nodes'] as List).cast<Map>().firstWhere(
-    (node) =>
-        node['scrollPosition'] is num &&
-        (node['actions'] as List).contains('scrollUp'),
-  );
-  final beforeScroll = diagnostic['scrollPosition'] as num;
-  await app.state({'action': 'scrollUp', 'id': '${diagnostic['id']}'});
-  await Future<void>.delayed(const Duration(milliseconds: 250));
-  snapshot = await app.ui();
-  final afterScroll =
-      (snapshot['nodes'] as List).cast<Map>().singleWhere(
-            (node) => node['id'] == diagnostic['id'],
-          )['scrollPosition']
-          as num;
-  require(
-    afterScroll > beforeScroll,
-    'the actual failure diagnostic region scrolls so its complete original text remains readable',
-  );
-  require(
-    text(snapshot, '更新') && text(snapshot, '完全退出并重新打开 Desktop'),
-    'the real plugin table operations and reload instruction remain available beside long failure diagnostics',
-  );
-  await app.capture('plugins-install-failure-scrolled');
-  await observe('after-failed-update', '1.2.0', '1.1.0');
-  await fixture.control({
-    'latest': {owned: '1.2.0'},
-    'unavailable': <String>[],
-  });
+    await fixture.control({
+      'latest': {owned: '1.2.0'},
+    });
+    await app.tap('检查插件版本');
+    await settled();
+    await app.tap('更新全部可更新插件');
+    await settled();
+    await observe('after-batch-install', '1.2.0', '1.1.0');
+    if (desktop) {
+      await observeLoaded('after-batch-before-reload', '1.0.0', '1.0.0');
+    }
+    await scroll('scrollRight');
+    snapshot = await app.ui();
+    require(
+      text(snapshot, '1.2.0 / 1.2.0') && text(snapshot, '1.1.0 / 1.1.0'),
+      'actual current versions after batch match both installed self-owned tarballs',
+    );
+    await app.capture('plugins-batch-versions');
+    await scroll('scrollLeft');
+    await app.capture('plugins-batch');
+    require(
+      text(await app.ui(), '已更新 2 个插件'),
+      'real batch update returns the two completed self-owned package versions',
+    );
 
-  stdout.writeln(
-    'T08 PLUGIN UI AND ISOLATED INSTALL APPLICATION SCENARIO PASSED; DESKTOP REOPEN/LOADING CANCELLED BY USER SCOPE',
-  );
-  await app.sdk('recycle');
+    // A registry changed between check and user click: the actual updater
+    // rechecks and legitimately returns no newly changed package.
+    await fixture.control({
+      'latest': {owned: '1.3.0'},
+    });
+    await app.tap('检查插件版本');
+    await settled();
+    await fixture.control({
+      'latest': {owned: '1.2.0'},
+    });
+    await updateOne(owned);
+    await observe('after-noop', '1.2.0', '1.1.0');
+    if (desktop) {
+      await observeLoaded('after-noop-before-reload', '1.0.0', '1.0.0');
+    }
+    await app.capture('plugins-noop-after-update');
+    require(
+      text(await app.ui(), '完全退出并重新打开 Desktop'),
+      'a real no-op after earlier updates preserves the pending Desktop reload instruction',
+    );
+
+    await fixture.control({
+      'latest': {owned: '1.3.0'},
+      'unavailable': ['$owned@1.3.0'],
+    });
+    await app.tap('检查插件版本');
+    await settled();
+    await updateOne(owned);
+    await app.capture('plugins-install-failure');
+    snapshot = await app.ui();
+    require(
+      text(snapshot, 'No matching version') ||
+          text(snapshot, 'NO_MATCHING_VERSION'),
+      'actual DSH/pnpm update failure is visible with its original cause',
+    );
+    require(
+      text(snapshot, '已更新 0 个插件'),
+      'failed installation never claims completed self-owned updates',
+    );
+    require(
+      text(snapshot, '完全退出并重新打开 Desktop'),
+      'failed later update preserves the earlier pending reload instruction',
+    );
+    require(
+      (snapshot['errors'] as List).isEmpty,
+      'minimum-size plugin page remains usable while real update failure diagnostics are visible',
+    );
+    final diagnostic = (snapshot['nodes'] as List).cast<Map>().firstWhere(
+      (node) =>
+          node['scrollPosition'] is num &&
+          (node['actions'] as List).contains('scrollUp'),
+    );
+    final beforeScroll = diagnostic['scrollPosition'] as num;
+    await app.state({'action': 'scrollUp', 'id': '${diagnostic['id']}'});
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    snapshot = await app.ui();
+    final afterScroll =
+        (snapshot['nodes'] as List).cast<Map>().singleWhere(
+              (node) => node['id'] == diagnostic['id'],
+            )['scrollPosition']
+            as num;
+    require(
+      afterScroll > beforeScroll,
+      'the actual failure diagnostic region scrolls so its complete original text remains readable',
+    );
+    require(
+      text(snapshot, '更新') && text(snapshot, '完全退出并重新打开 Desktop'),
+      'the real plugin table operations and reload instruction remain available beside long failure diagnostics',
+    );
+    await app.capture('plugins-install-failure-scrolled');
+    await observe('after-failed-update', '1.2.0', '1.1.0');
+    if (desktop) {
+      await observeLoaded(
+        'after-failed-update-before-reload',
+        '1.0.0',
+        '1.0.0',
+      );
+    }
+    await fixture.control({
+      'latest': {owned: '1.2.0'},
+      'unavailable': <String>[],
+    });
+
+    if (desktop) {
+      final before = (jsonDecode(await app.receipt.readAsString()) as Map)
+          .cast<String, Object?>();
+      final oldDesktopPid =
+          ((await app.state())['native'] as Map)['openedDesktopPid'];
+      require(
+        oldDesktopPid is int &&
+            oldDesktopPid > 1 &&
+            await app.ownsHostReceipt(before),
+        'native reload starts from the exact physically bound private Desktop and Host',
+      );
+      final termination = <Map<String, Object?>>[];
+      final quitting =
+          (await app.state({'action': 'quitDesktop'}))['native'] as Map;
+      final request = desktopQuitFacts(quitting['desktopQuitObservation']);
+      require(
+        request['expectedPid'] == oldDesktopPid &&
+            request['lookupFound'] == true &&
+            request['accepted'] == true,
+        'the tracked official Desktop accepts one normal reload request',
+      );
+      await waitFor(
+        'tracked official Desktop and Host have actually exited',
+        () async {
+          final checks = <Map<String, Object?>>[];
+          final gone = await Future.wait([
+            for (final pid in [oldDesktopPid, before['pid']])
+              desktopExitObserved(pid as int, observe: checks.add),
+          ]);
+          final absent = await ownedReceiptAbsent(app.receipt);
+          termination.add({
+            'observedAt': DateTime.now().toUtc().toIso8601String(),
+            'normalRequest': request,
+            'receiptAbsent': absent,
+            'desktopPid': oldDesktopPid,
+            'hostPid': before['pid'],
+            'processChecks': checks,
+          });
+          await File('${app.root.path}/plugin-native-termination.json')
+              .writeAsString(jsonEncode(termination));
+          return absent && gone.every((value) => value);
+        },
+      );
+      await app.tap('管理');
+      await app.tap('打开 DSH');
+      final after = await waitForActualDesktopLease(
+        oldLease: before['lease'] as String,
+        receipt: () async => await ownedReceiptAbsent(app.receipt)
+            ? null
+            : (jsonDecode(await app.receipt.readAsString()) as Map)
+                  .cast<String, Object?>(),
+        isOwned: app.ownsHostReceipt,
+        ui: () => app.state(),
+        applicationExit: app.applicationExit,
+        dependencyFailure: () => app.startupFailure(oldDesktopPid as int),
+      );
+      final newDesktopPid =
+          ((await app.state())['native'] as Map)['openedDesktopPid'];
+      require(
+        newDesktopPid is int &&
+            newDesktopPid != oldDesktopPid &&
+            after['lease'] != before['lease'] &&
+            after['pid'] != before['pid'],
+        'normal reopen creates a new physically bound Desktop Host identity',
+      );
+      await observeLoaded('after-native-Desktop-reopen', '1.2.0', '1.1.0');
+      await app.capture('plugins-native-reloaded');
+      stdout.writeln(
+        'T08 FULL NATIVE DESKTOP PLUGIN RELOAD APPLICATION SCENARIO PASSED',
+      );
+    } else {
+      stdout.writeln(
+        'T08 PLUGIN UI AND ISOLATED INSTALL APPLICATION SCENARIO PASSED; NATIVE DESKTOP RELOAD NOT EXERCISED',
+      );
+    }
+    await app.sdk('recycle');
+  } finally {
+    http.close(force: true);
+  }
 }

@@ -27,8 +27,13 @@ void main() {
     runnerTemp: temporary,
   );
 
-  test('T02 official Desktop mode owns its clean CI runner root', () {
+  test('T02 and restored T08 Desktop modes own their clean CI runner root', () {
     expect(parent(backend: 'desktop'), runner);
+    expect(parent(plugin: true, backend: 'desktop'), runner);
+    expect(
+      () => parent(plugin: true, backend: 'desktop', ci: false),
+      throwsArgumentError,
+    );
   });
   test(
     'T05 legacy Keychain and system-boundary modes keep their runner root',

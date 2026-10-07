@@ -187,7 +187,7 @@ jobs:
           path: ${{ runner.temp }}/flutter-settings-startup/T05/startup-3
           if-no-files-found: error
 
-      - name: Exercise retained settings, persistence, errors and reopen hint
+      - name: Exercise settings and normal Desktop permission reopen
         if: ${{ always() && steps.startup_3.outputs.safe_to_repeat == 'true' && steps.startup_upload_3.outcome == 'success' }}
         working-directory: macos-launcher/flutter
         run: python3 ../../.github/scripts/settings_startup_cycle.py --full
@@ -269,13 +269,33 @@ jobs:
               physical_complete = owned['hostBindingKnown'] and can_repeat({'ownership': owned['ownership'], 'processes': list(processes.values()), 'finallyComplete': owned['finallyComplete'], 'receipt': owned['receiptLookup'], 'listener': {key: listener[key] for key in ('exit', 'stdout', 'stderr')}, 'bindListen': service_listen})
               resources_released = launcher_web_released(owned, listener, service_listen)
               normal_exit = owned['normalExitStage']
-              functional_complete = functional_command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released
+              settings_body = json.loads((target / 'settings-evidence.json').read_text())
+              request = settings_body.get('permissionNormalRequest') or {}
+              permission_verified = (settings_body.get('fullAccessSaved') is True
+                  and settings_body.get('permissionReopenVerified') is True
+                  and settings_body.get('permissionOriginalExitObserved') is True
+                  and settings_body.get('permissionModeBeforeReopen') == 'workspace-write'
+                  and settings_body.get('permissionModeAfterReopen') == 'danger-full-access'
+                  and request.get('lookupFound') is True and request.get('accepted') is True
+                  and isinstance(settings_body.get('oldDesktopPid'), int) and settings_body['oldDesktopPid'] > 1
+                  and isinstance(settings_body.get('newDesktopPid'), int) and settings_body['newDesktopPid'] > 1
+                  and request.get('expectedPid') == settings_body['oldDesktopPid']
+                  and settings_body['newDesktopPid'] != settings_body['oldDesktopPid']
+                  and isinstance(settings_body.get('oldHostPid'), int) and settings_body['oldHostPid'] > 1
+                  and isinstance(settings_body.get('hostPid'), int) and settings_body['hostPid'] > 1
+                  and settings_body['hostPid'] != settings_body['oldHostPid']
+                  and isinstance(settings_body.get('initialBackendLease'), str)
+                  and isinstance(settings_body.get('reopenedBackendLease'), str)
+                  and bool(settings_body['reopenedBackendLease'])
+                  and settings_body['reopenedBackendLease'] != settings_body['initialBackendLease'])
+              functional_complete = functional_command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released and permission_verified
               functional_failed = not functional_complete or functional_failed
               if not physical_complete:
                   print('::warning::Isolated Desktop/Host cleanup is incomplete or unknown; functional Launcher/Web result is separate', flush=True)
               print('T05_COLLECTOR_PHASE=port-observation-end ROOT=' + root.name, flush=True)
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes, 'ownership': owned['ownership'], 'hostBindingKnown': owned['hostBindingKnown'],
                               'functionalCommandExit': functional_command_exit, 'normalExitStage': normal_exit,
+                              'permissionReopenVerified': permission_verified, 'settingsBusinessEvidence': settings_body,
                               'launcherWebReleased': resources_released, 'functionalAcceptanceComplete': functional_complete, 'isolatedCleanup': owned['isolatedCleanup'],
                               'allOwnedProcessesGone': physical_complete, 'finallyComplete': owned['finallyComplete'], 'receiptLookup': owned['receiptLookup'],
                               'receiptRemoved': True if owned['receiptLookup'].get('state') == 'absent' and owned['receiptLookup'].get('errno') == errno.ENOENT else (False if owned['receiptLookup'].get('state') == 'present' else None),
@@ -286,7 +306,7 @@ jobs:
           (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
           print('T05_COLLECTOR_PHASE=complete', flush=True)
           if functional_failed:
-              raise RuntimeError('Owned Launcher exit or Web port release is unknown or incomplete; isolated cleanup recorded separately')
+              raise RuntimeError('Required permission reopen, Launcher normal exit or Web release is unknown or incomplete; isolated cleanup recorded separately')
           PY
 
       - name: Record isolated runtime detach separately

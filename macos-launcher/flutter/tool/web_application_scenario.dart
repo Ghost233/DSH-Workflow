@@ -8,6 +8,43 @@ import 'application_probe.dart' show require, waitFor;
 import 'web_startup_wait.dart';
 import 'probe_diagnostics.dart' show safeInspectorOutput;
 
+Future<bool> desktopExitObserved(
+  int pid, {
+  void Function(Map<String, Object?>)? observe,
+}) async {
+  final check = await Process.run('/bin/kill', ['-0', '$pid']);
+  final gone =
+      check.exitCode != 0 &&
+      check.stderr.toString().contains('No such process');
+  observe?.call({
+    'pid': pid,
+    'rawExit': check.exitCode,
+    'rawStdout': safeInspectorOutput(check.stdout),
+    'rawStderr': safeInspectorOutput(check.stderr),
+    'predicateGone': gone,
+  });
+  return gone;
+}
+
+Future<bool> ownedReceiptAbsent(File receipt) async {
+  final parent = await receipt.parent.resolveSymbolicLinks();
+  if (parent != receipt.parent.absolute.path ||
+      await FileSystemEntity.isLink(receipt.path)) {
+    throw StateError('Owned receipt path identity is unknown');
+  }
+  try {
+    final actual = await receipt.resolveSymbolicLinks();
+    if (actual != receipt.absolute.path) {
+      throw StateError('Owned receipt path identity changed');
+    }
+    await receipt.length();
+    return false;
+  } on FileSystemException catch (error) {
+    if (error.osError?.errorCode == 2) return true;
+    rethrow;
+  }
+}
+
 Future<ServerSession> currentSdkSession(LauncherServer server) async {
   ServerSession? current;
   await waitFor('current official SDK connection', () async {
@@ -51,7 +88,13 @@ class WebObservation {
     required this.disconnectManager,
     required this.stopOwnedHost,
     required this.replaceOwnedHost,
+    required this.applicationExit,
+    required this.ownsHostReceipt,
+    required this.startupFailure,
   });
+  final Future<int> applicationExit;
+  final Future<bool> Function(Map<String, Object?>) ownsHostReceipt;
+  final Future<String?> Function(int) startupFailure;
   final Directory root;
   final int port;
   final Map<String, Object?> backend, capabilities;
@@ -130,6 +173,8 @@ Future<void> runWebApplicationScenario({
   required int port,
   required ApplicationState state,
   required Future<int> applicationExit,
+  required Future<bool> Function(Map<String, Object?>) ownsHostReceipt,
+  required Future<String?> Function(int) startupFailure,
   required Future<void> Function(String) tap,
   required Future<void> Function(String) capture,
   Future<void> Function(WebObservation)? onConnected,
@@ -571,6 +616,9 @@ Future<void> runWebApplicationScenario({
       await onConnected(
         WebObservation(
           root: root,
+          applicationExit: applicationExit,
+          ownsHostReceipt: ownsHostReceipt,
+          startupFailure: startupFailure,
           port: port,
           backend: backend,
           capabilities: server!.registry

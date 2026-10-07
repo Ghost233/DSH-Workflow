@@ -78,15 +78,19 @@ Future<void> main(List<String> arguments) async {
       : arguments;
   final pluginsScenario =
       arguments.length == 3 && arguments[1] == '--plugins-runtime';
-  if (arguments.length > 1 && arguments[1] == '--plugins-desktop-runtime') {
-    throw ArgumentError(
-      'Desktop reopen acceptance was cancelled; use --plugins-update-runtime only in isolated CI',
-    );
-  }
   final pluginUpdateScenario =
-      arguments.length == 3 && arguments[1] == '--plugins-update-runtime';
+      arguments.length == 3 &&
+      {
+        '--plugins-update-runtime',
+        '--plugins-desktop-runtime',
+      }.contains(arguments[1]);
+  final pluginDesktopScenario =
+      pluginUpdateScenario && arguments[1] == '--plugins-desktop-runtime';
   if (arguments.length > 1 &&
-      arguments[1] == '--plugins-update-runtime' &&
+      {
+        '--plugins-update-runtime',
+        '--plugins-desktop-runtime',
+      }.contains(arguments[1]) &&
       (!pluginUpdateScenario ||
           Platform.environment['GITHUB_ACTIONS'] != 'true')) {
     throw ArgumentError(
@@ -97,7 +101,7 @@ Future<void> main(List<String> arguments) async {
       logsScenario || entryScenario || pluginsScenario || pluginUpdateScenario
       ? WebProbeOptions(
           Directory(arguments[2]).absolute.path,
-          'headless',
+          pluginDesktopScenario ? 'desktop' : 'headless',
           pluginUpdateScenario ? 33080 : 0,
         )
       : WebProbeOptions.parse(webArgs) ?? lifecycle?.web;
@@ -331,6 +335,7 @@ Future<void> main(List<String> arguments) async {
       : ProbeDiagnostics(
           root,
           publishPhases: settingsScenario,
+          observeHostOwnership: settingsScenario || pluginDesktopScenario,
           captureCIHostOnce: settingsScenario,
         );
   await diagnostics?.start(process.pid, executable.path);
@@ -454,6 +459,8 @@ Future<void> main(List<String> arguments) async {
         port: webPort!,
         state: state,
         applicationExit: process.exitCode,
+        ownsHostReceipt: (value) => diagnostics!.ownsHostReceipt(value),
+        startupFailure: (oldDesktop) => diagnostics!.startupFailure(oldDesktop),
         tap: tap,
         capture: capture,
         onConnected: settingsStartupScenario
@@ -483,7 +490,11 @@ Future<void> main(List<String> arguments) async {
             : pluginsScenario
             ? runPluginApplicationScenario
             : pluginUpdateScenario
-            ? (app) => runPluginUpdateApplicationScenario(app, pluginRegistry!)
+            ? (app) => runPluginUpdateApplicationScenario(
+                app,
+                pluginRegistry!,
+                desktop: pluginDesktopScenario,
+              )
             : null,
         prestartedHost: settings?.host,
         prestartedHostLog: settings?.hostLog,
