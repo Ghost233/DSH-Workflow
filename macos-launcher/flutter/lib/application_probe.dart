@@ -110,9 +110,49 @@ void registerApplicationProbe(NativeBridge native) {
         }),
       );
     } catch (error) {
+      var message = error.toString();
+      if (error is JsonUnsupportedObjectError) {
+        const semanticKeys = [
+          'id',
+          'label',
+          'tooltip',
+          'value',
+          'toggled',
+          'scrollPosition',
+          'scrollExtentMin',
+          'scrollExtentMax',
+          'actions',
+        ];
+        const scrollKeys = [
+          'scrollPosition',
+          'scrollExtentMin',
+          'scrollExtentMax',
+        ];
+        final unsupported = error.unsupportedObject;
+        final fields = unsupported is Map ? unsupported : null;
+        final metadata = {
+          'unsupportedType': unsupported.runtimeType.toString(),
+          'unsupportedKeyCount': fields?.length,
+          'keyTypeNames': fields?.keys
+              .map((key) => key.runtimeType.toString())
+              .toSet()
+              .toList(),
+          'semanticFieldTypes': {
+            for (final key in semanticKeys)
+              if (fields?.containsKey(key) == true)
+                key: fields![key].runtimeType.toString(),
+          },
+          'nonFiniteFieldNames': [
+            for (final key in scrollKeys)
+              if (fields?[key] is num && !(fields![key] as num).isFinite) key,
+          ],
+          'causeType': error.cause.runtimeType.toString(),
+        };
+        message += ' JSON_ENCODER_METADATA=${jsonEncode(metadata)}';
+      }
       return developer.ServiceExtensionResponse.error(
         developer.ServiceExtensionResponse.extensionError,
-        error.toString(),
+        message,
       );
     }
   });
