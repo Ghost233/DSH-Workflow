@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -52,9 +53,39 @@ Future<void> main() async {
   native.channel.setMethodCallHandler((call) async {
     switch (call.method) {
       case 'quitRequested':
-        await integration.close();
-        await model.close();
-        await native.finishQuit();
+        final traceEnabled =
+            kDebugMode &&
+            Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+            model.environment.testSocket != null &&
+            call.arguments is Map &&
+            (call.arguments as Map)['ownQuitTraceEnabled'] == true;
+        if (traceEnabled) {
+          stderr.writeln('OWN_QUIT_TRACE phase=dart-received');
+        }
+        var stage = 'integration-close';
+        try {
+          await integration.close();
+          if (traceEnabled) {
+            stderr.writeln('OWN_QUIT_TRACE phase=integration-done');
+          }
+          stage = 'model-close';
+          await model.close();
+          if (traceEnabled) {
+            stderr.writeln('OWN_QUIT_TRACE phase=model-done');
+          }
+          stage = 'finish-quit';
+          if (traceEnabled) {
+            stderr.writeln('OWN_QUIT_TRACE phase=finish-called');
+          }
+          await native.finishQuit();
+        } catch (error) {
+          if (traceEnabled) {
+            stderr.writeln(
+              'OWN_QUIT_ERROR stage=$stage errorType=${error.runtimeType}',
+            );
+          }
+          rethrow;
+        }
       case 'openGlobal':
         await model.openDsh();
         await model.startWeb();

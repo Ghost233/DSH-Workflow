@@ -96,6 +96,24 @@ class AppDelegate: FlutterAppDelegate {
     return false
   }
 
+  private var ownQuitTraceEnabled: Bool {
+    #if DEBUG
+    let environment = ProcessInfo.processInfo.environment
+    guard environment["GITHUB_ACTIONS"] == "true", let runner = environment["RUNNER_TEMP"],
+          let root = testRoot, root.lastPathComponent == "data" else { return false }
+    let candidate = root.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+    let runnerRoot = URL(fileURLWithPath: runner, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
+    let socket = URL(fileURLWithPath: environment["DSH_LAUNCHER_TEST_SOCKET"] ??
+      candidate.appendingPathComponent("manager/sdk-v1.sock").path).resolvingSymlinksInPath().standardizedFileURL
+    return root.standardizedFileURL.path == candidate.appendingPathComponent("data").path &&
+      candidate.lastPathComponent.hasPrefix("dsh-") &&
+      candidate.deletingLastPathComponent().path == runnerRoot.path &&
+      socket.path == candidate.appendingPathComponent("manager/sdk-v1.sock").path
+    #else
+    return false
+    #endif
+  }
+
   private var dataRoot: URL {
     if let root = testRoot { return root }
     return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -177,6 +195,7 @@ class AppDelegate: FlutterAppDelegate {
           "windowHeight": self.mainFlutterWindow?.frame.height ?? 0,
           "pid": ProcessInfo.processInfo.processIdentifier,
           "isolated": self.testRoot != nil, "dataRoot": self.dataRoot.path,
+          "ownQuitTraceEnabled": self.ownQuitTraceEnabled,
           "openedDesktopPid": self.openedDesktopPid as Any,
           "desktopQuitObservation": self.desktopQuitObservation,
           "lastOpenedUrl": self.lastOpenedUrl as Any,
@@ -284,7 +303,11 @@ class AppDelegate: FlutterAppDelegate {
               else { self.openedDesktopPid = application?.processIdentifier; result(nil) }
             }
           }
-        case "finishQuit": self.quitApproved = true; result(nil); NSApp.terminate(nil)
+        case "finishQuit":
+          if self.ownQuitTraceEnabled {
+            FileHandle.standardError.write(Data("OWN_QUIT_TRACE phase=native-finish-received\n".utf8))
+          }
+          self.quitApproved = true; result(nil); NSApp.terminate(nil)
         default: result(FlutterMethodNotImplemented)
         }
       } catch { result(FlutterError(code: "native-error", message: error.localizedDescription, details: nil)) }
@@ -376,7 +399,11 @@ class AppDelegate: FlutterAppDelegate {
     if quitApproved || channel == nil { return .terminateNow }
     if !quitRequested {
       quitRequested = true
-      channel?.invokeMethod("quitRequested", arguments: nil)
+      let traceEnabled = ownQuitTraceEnabled
+      if traceEnabled {
+        FileHandle.standardError.write(Data("OWN_QUIT_TRACE phase=native-first-dispatch\n".utf8))
+      }
+      channel?.invokeMethod("quitRequested", arguments: traceEnabled ? ["ownQuitTraceEnabled": true] : nil)
     }
     return .terminateCancel
   }
