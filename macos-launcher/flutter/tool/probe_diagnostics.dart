@@ -299,43 +299,6 @@ class ProbeDiagnostics {
     }
   }
 
-  Future<bool> ownsHostReceipt(Map<String, Object?> value) async =>
-      _hosts['${value['pid']}:${value['lease']}']?['ownershipKnown'] == true;
-
-  Future<String?> startupFailure(int oldDesktop) async {
-    for (final row in _hosts.values) {
-      if (row['desktopPid'] == oldDesktop ||
-          row['pendingDesktopCapture'] == true) {
-        continue;
-      }
-      if (row['ownershipKnown'] != true) {
-        return 'Host startup ownership observation is unknown';
-      }
-    }
-    final pid = _desktopPid;
-    if (pid != null && pid != oldDesktop) {
-      final result = await Process.run('/usr/bin/python3', [
-        File.fromUri(
-          Platform.script.resolve(
-            '../../../.github/scripts/settings_startup_cycle.py',
-          ),
-        ).path,
-        '--check-owned-pid',
-        root.path,
-        '$pid',
-      ]);
-      if (result.exitCode != 0) {
-        return 'Owned Desktop liveness observation failed';
-      }
-      final check = jsonDecode(result.stdout.toString()) as Map;
-      if (check['state'] == 'gone') {
-        return 'Owned Desktop exited before fresh lease readiness';
-      }
-      if (check['state'] != 'alive') return 'Owned Desktop liveness is unknown';
-    }
-    return null;
-  }
-
   void uiRequest(Map<String, String>? params) {
     record('ui-request', {
       'action': params?['action'] ?? 'observe',

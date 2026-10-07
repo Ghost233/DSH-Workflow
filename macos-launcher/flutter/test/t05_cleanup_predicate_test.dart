@@ -39,8 +39,6 @@ void main() {
                 return {'native': <String, Object?>{}};
               },
               applicationExit: Future.value(0),
-              ownsHostReceipt: (_) async => false,
-              startupFailure: (_) async => null,
               tap: (_) async {},
               capture: (_) async {},
               settingsOwnedWebCleanup: true,

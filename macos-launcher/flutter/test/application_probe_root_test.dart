@@ -8,12 +8,14 @@ void main() {
   String parent({
     bool system = false,
     bool keychain = false,
+    bool plugin = false,
     String? backend,
     bool ci = true,
     String? temporary = runner,
   }) => applicationProbeRootParent(
     systemCi: system,
     keychainCi: keychain,
+    pluginUpdateCi: plugin,
     webScenario: backend == null
         ? null
         : WebProbeOptions(
@@ -25,8 +27,7 @@ void main() {
     runnerTemp: temporary,
   );
 
-  test('T02 and T08 official Desktop modes own their clean CI runner root', () {
-    // Both actual entry modes select WebProbeOptions backend=desktop.
+  test('T02 official Desktop mode owns its clean CI runner root', () {
     expect(parent(backend: 'desktop'), runner);
   });
   test(
@@ -36,6 +37,21 @@ void main() {
       expect(parent(system: true), runner);
     },
   );
+  test('T08 headless plugin updates require an isolated CI runner root', () {
+    expect(parent(plugin: true, backend: 'headless'), runner);
+    expect(
+      () => parent(plugin: true, backend: 'headless', ci: false),
+      throwsArgumentError,
+    );
+    expect(
+      () => parent(plugin: true, backend: 'headless', temporary: null),
+      throwsArgumentError,
+    );
+    expect(
+      () => parent(plugin: true, backend: 'headless', temporary: 'relative'),
+      throwsArgumentError,
+    );
+  });
   test('headless T06 gate and ordinary profiles keep private/tmp', () {
     expect(parent(backend: 'headless'), '/private/tmp');
     expect(parent(ci: false), '/private/tmp');

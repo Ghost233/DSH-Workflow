@@ -32,11 +32,15 @@ void require(bool condition, String description) {
 String applicationProbeRootParent({
   required bool systemCi,
   required bool keychainCi,
+  bool pluginUpdateCi = false,
   required WebProbeOptions? webScenario,
   required bool githubActions,
   required String? runnerTemp,
 }) {
-  if (systemCi || keychainCi || webScenario?.backend == 'desktop') {
+  if (systemCi ||
+      keychainCi ||
+      pluginUpdateCi ||
+      webScenario?.backend == 'desktop') {
     if (!githubActions || runnerTemp == null || !runnerTemp.startsWith('/')) {
       throw ArgumentError(
         'System login and browser boundaries run only in a disposable GitHub macOS runner',
@@ -74,26 +78,27 @@ Future<void> main(List<String> arguments) async {
       : arguments;
   final pluginsScenario =
       arguments.length == 3 && arguments[1] == '--plugins-runtime';
-  final pluginUpdateScenario =
-      arguments.length == 3 &&
-      {
-        '--plugins-update-runtime',
-        '--plugins-desktop-runtime',
-      }.contains(arguments[1]);
-  final pluginDesktopScenario =
-      pluginUpdateScenario && arguments[1] == '--plugins-desktop-runtime';
-  if (pluginDesktopScenario &&
-      Platform.environment['GITHUB_ACTIONS'] != 'true') {
+  if (arguments.length > 1 && arguments[1] == '--plugins-desktop-runtime') {
     throw ArgumentError(
-      'Official Desktop plugin reload runs only in disposable GitHub macOS CI',
+      'Desktop reopen acceptance was cancelled; use --plugins-update-runtime only in isolated CI',
+    );
+  }
+  final pluginUpdateScenario =
+      arguments.length == 3 && arguments[1] == '--plugins-update-runtime';
+  if (arguments.length > 1 &&
+      arguments[1] == '--plugins-update-runtime' &&
+      (!pluginUpdateScenario ||
+          Platform.environment['GITHUB_ACTIONS'] != 'true')) {
+    throw ArgumentError(
+      'Plugin update acceptance runs only in isolated GitHub CI',
     );
   }
   final webScenario =
       logsScenario || entryScenario || pluginsScenario || pluginUpdateScenario
       ? WebProbeOptions(
           Directory(arguments[2]).absolute.path,
-          pluginDesktopScenario ? 'desktop' : 'headless',
-          pluginDesktopScenario ? 33080 : 0,
+          'headless',
+          pluginUpdateScenario ? 33080 : 0,
         )
       : WebProbeOptions.parse(webArgs) ?? lifecycle?.web;
   final systemCi =
@@ -106,6 +111,7 @@ Future<void> main(List<String> arguments) async {
   final rootParent = applicationProbeRootParent(
     systemCi: systemCi,
     keychainCi: keychainCi,
+    pluginUpdateCi: pluginUpdateScenario,
     webScenario: webScenario,
     githubActions: Platform.environment['GITHUB_ACTIONS'] == 'true',
     runnerTemp: runnerTemp,
@@ -325,7 +331,6 @@ Future<void> main(List<String> arguments) async {
       : ProbeDiagnostics(
           root,
           publishPhases: settingsScenario,
-          observeHostOwnership: pluginDesktopScenario,
           captureCIHostOnce: settingsScenario,
         );
   await diagnostics?.start(process.pid, executable.path);
@@ -449,8 +454,6 @@ Future<void> main(List<String> arguments) async {
         port: webPort!,
         state: state,
         applicationExit: process.exitCode,
-        ownsHostReceipt: (value) => diagnostics!.ownsHostReceipt(value),
-        startupFailure: (oldDesktop) => diagnostics!.startupFailure(oldDesktop),
         tap: tap,
         capture: capture,
         onConnected: settingsStartupScenario
@@ -480,11 +483,7 @@ Future<void> main(List<String> arguments) async {
             : pluginsScenario
             ? runPluginApplicationScenario
             : pluginUpdateScenario
-            ? (app) => runPluginUpdateApplicationScenario(
-                app,
-                pluginRegistry!,
-                desktop: pluginDesktopScenario,
-              )
+            ? (app) => runPluginUpdateApplicationScenario(app, pluginRegistry!)
             : null,
         prestartedHost: settings?.host,
         prestartedHostLog: settings?.hostLog,

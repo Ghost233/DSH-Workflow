@@ -51,13 +51,7 @@ class WebObservation {
     required this.disconnectManager,
     required this.stopOwnedHost,
     required this.replaceOwnedHost,
-    required this.applicationExit,
-    required this.ownsHostReceipt,
-    required this.startupFailure,
   });
-  final Future<int> applicationExit;
-  final Future<bool> Function(Map<String, Object?>) ownsHostReceipt;
-  final Future<String?> Function(int) startupFailure;
   final Directory root;
   final int port;
   final Map<String, Object?> backend, capabilities;
@@ -136,8 +130,6 @@ Future<void> runWebApplicationScenario({
   required int port,
   required ApplicationState state,
   required Future<int> applicationExit,
-  required Future<bool> Function(Map<String, Object?>) ownsHostReceipt,
-  required Future<String?> Function(int) startupFailure,
   required Future<void> Function(String) tap,
   required Future<void> Function(String) capture,
   Future<void> Function(WebObservation)? onConnected,
@@ -579,9 +571,6 @@ Future<void> runWebApplicationScenario({
       await onConnected(
         WebObservation(
           root: root,
-          applicationExit: applicationExit,
-          ownsHostReceipt: ownsHostReceipt,
-          startupFailure: startupFailure,
           port: port,
           backend: backend,
           capabilities: server!.registry

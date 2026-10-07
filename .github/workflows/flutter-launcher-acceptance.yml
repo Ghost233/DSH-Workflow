@@ -957,13 +957,13 @@ jobs:
           (evidence / 'input-app.txt').write_text(str(app) + '\n')
           PY
 
-      - name: Exercise real plugin updates and normal official Desktop reopen
+      - name: Exercise plugin UI and isolated real package installations
         working-directory: macos-launcher/flutter
         run: |
           set +e
           dart run tool/application_probe.dart \
             'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
-            --plugins-desktop-runtime "$T08_RUNTIME_RESOURCES" \
+            --plugins-update-runtime "$T08_RUNTIME_RESOURCES" \
             > "$EVIDENCE_DIR/application.log" 2>&1
           result=$?
           set -e
@@ -981,6 +981,9 @@ jobs:
           log = evidence / 'application.log'
           roots = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M) if log.exists() else []
           results = []
+          functional_failed = not bool(roots)
+          command_exit_file = evidence / 'application.exit'
+          command_exit = int(command_exit_file.read_text().strip()) if command_exit_file.is_file() and not command_exit_file.is_symlink() else None
           for name in roots:
               root = Path(name).resolve()
               runner_root = Path(os.environ['RUNNER_TEMP']).resolve()
@@ -1001,7 +1004,7 @@ jobs:
                           value = json.loads(file.read_text())
                           if isinstance(value, dict):
                               native = value.get('native', {})
-                              for pid in (native.get('pid'), native.get('openedDesktopPid')):
+                              for pid in (native.get('pid'),):
                                   if isinstance(pid, int): pids.add(pid)
               registry = root / 'plugin-registry'
               if registry.is_dir():
@@ -1011,12 +1014,9 @@ jobs:
                       if file.is_file() and file.name in ('evidence.json', 'seed.log', 'ca.pem'):
                           shutil.copy2(file, out / file.name)
               case = json.loads((root / 'plugin-case.json').read_text()) if (root / 'plugin-case.json').exists() else {}
-              for key in ('launcherPid', 'registryPid', 'hostPid'):
+              for key in ('launcherPid', 'registryPid', 'ownedHostPid'):
                   if isinstance(case.get(key), int): pids.add(case[key])
-              loaded = json.loads((root / 'plugin-loaded-versions.json').read_text()) if (root / 'plugin-loaded-versions.json').exists() else []
-              for observation in loaded:
-                  for key in ('owned', 'other'):
-                      if isinstance(observation.get(key, {}).get('hostPid'), int): pids.add(observation[key]['hostPid'])
+              installed = json.loads((root / 'plugin-installed-versions.json').read_text()) if (root / 'plugin-installed-versions.json').exists() else []
               processes = []
               for pid in sorted(pids):
                   check = subprocess.run(['/bin/kill', '-0', str(pid)], capture_output=True, text=True)
@@ -1036,10 +1036,22 @@ jobs:
                                'Contents/Info.plist', 'Contents/Resources/maclauncher.json'):
                   file = root / 'candidate.app' / relative
                   hashes[relative] = hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else None
+              timeline = [json.loads(line) for line in (root / 'probe-timeline.jsonl').read_text().splitlines()]
+              normal_exit = next((row for row in reversed(timeline) if row.get('event') == 'application-normal-exit-stage' and row.get('pid') == case.get('launcherPid')), None)
+              own_ids_known = all(isinstance(case.get(key), int) and case[key] > 1 for key in ('launcherPid', 'registryPid', 'ownedHostPid'))
+              resources_released = own_ids_known and bool(processes) and all(row['exit'] != 0 and 'No such process' in row['stderr'] for row in processes) and web_port_released
+              final_packages = installed[-1] if installed else {}
+              installed_versions_known = final_packages.get('owned', {}).get('version') == '1.2.0' and final_packages.get('other', {}).get('version') == '1.1.0'
+              functional_complete = command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released and installed_versions_known
+              functional_failed = not functional_complete or functional_failed
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes,
-                              'loadedVersions': loaded, 'webPortReleased': web_port_released,
-                              'receiptRemoved': not (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').exists()})
+                              'installedVersions': installed, 'webPortReleased': web_port_released,
+                              'functionalCommandExit': command_exit, 'normalExitStage': normal_exit,
+                              'ownResourcesReleased': resources_released, 'functionalAcceptanceComplete': functional_complete,
+                              'scope': case.get('scope'), 'cancelledAcceptance': case.get('cancelledAcceptance')})
           (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
+          if functional_failed:
+              raise RuntimeError('Retained plugin installation or owned Launcher/Web resource evidence is unknown or incomplete')
           PY
 
       - name: Detach the read-only runtime even on failure
