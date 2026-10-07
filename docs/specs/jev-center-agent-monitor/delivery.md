@@ -12,7 +12,7 @@
 | 阶段 | 工单 | 前置条件 | 状态 | 审查固定点 | PR |
 | --- | --- | --- | --- | --- | --- |
 | 1 | #13 单套中心、#15 无输出监控 | 无工单阻塞 | 双轴复审 0 P0/P1/P2，已集成；#13、#15 已关闭 | 初始固定基线 | [#19](https://github.com/Ghost233/DSH-Workflow/pull/19)，已合并 |
-| 2 | #14 多配置、#16 异常结束、#17 语义检测 | 阶段 1 审查并集成 | 在 codex/jev-stage-2 实施 | e4692d73a9030a70d0890652bc655933591e52c4 | 待创建 |
+| 2 | #14 多配置、#16 异常结束、#17 语义检测 | 阶段 1 审查并集成 | 完整本地门禁通过、首审 P1 已修复、复盘完成；最终双轴复审待运行 | e4692d73a9030a70d0890652bc655933591e52c4 | 待创建 |
 | 3 | #18 配置变化下的监控 | #14、#16、#17 完成且阶段 2 集成 | 待开始 | 待固定 | 待创建 |
 
 每阶段依次经过 Standards/Spec 双轴审查、P0/P1/P2 修复、复盘及范围内修复、再次双轴审查。所有必需检查通过后才合并阶段 PR。最终核对整份规格、跨插件行为及完整总 diff，再进行总审查。
@@ -21,7 +21,7 @@
 
 ## 未完成项
 
-- 阶段 2、3 四张工单的实现与验收。
+- 阶段 2 最终复审与集成；阶段 3 的 #18 实现与验收。
 - 后续阶段及最终审查、复盘与修复。
 - 后续阶段 PR、集成验证和最终 ready PR。
 - macOS 实际通知送达（用户明确暂缓本轮）；最终阶段的完整浏览器复验尚待完成。
@@ -67,3 +67,13 @@
 - 真实浏览器复验通过监控参数保存、停用/缺失红色原因与保留引用；公开 LlmAdapter 模拟的实际原生请求逐轮告警进入同页列表，输出后记录恢复时间，原请求未被取消，没有恢复系统通知。默认持久日志没有输入、输出片段或凭据；临时 Host 已正常退出并清理。截图 /private/tmp/jev-browser-monitor-recovered.jpg，操作记录 /private/tmp/jev-stage2-browser-notes.md；未把它称为 macOS 实际送达证明。
 - 后续 CI 预检确认 PR #19 和总草稿 #20 的 Owner/Matt 检查成功，macOS 两架构均在打包后读取 Owner health JSON 时失败。#20 当前仍只含阶段 1 集成提交 e4692d7；固定基线 main 的同一步骤双架构成功。尚未证实具体根因，已安排按公开健康检查与封装解析接缝建立本地复现；不归为既有第三方故障，不降低原验收。完整原始步骤证据见 /private/tmp/jev-stage2-ci-preflight.md。
 - 封装 Host 紧凑反馈连续两次复现 health 404/空体。只补 Owner 本地包名映射即变为 200 JSON；正常登录303/cookie及原生RPC200排除认证原因，Owner component原已ready，实际exports存在。修复落在项目 Desktop profile 的 Owner/Matt 本地依赖和链接及迁移标记，旧用户deps/patch/meta保留、重复准备字节幂等。定点 Host 验证健康及两观察服务/Matt工具真实提供；这项 SDK/资源装配验收不等于完整.app或DMG构建成功。
+
+## 阶段 2 候选、首审修复与复盘
+
+- 初始阶段候选提交 `269b513ef8d046c3ba132c8e7610efc7b74aafcb`，tree `d88d77eca65073336010dfb81ac86b63e982d89e`；Owner 708/708、相关集成 12/12、客户端与固定 Harness 检查退出 0。首轮审查从 e469 固定点覆盖完整阶段 diff：Standards 0 项，Spec 1 项 P1。
+- 首轮 P1 用隔离真实 Host 证实：开启 debug 时，其他标准凭据的无标签密钥能落入 journal；公开状态不含该值。复现仅使用虚拟凭据，无用户密钥读取或付费调用。不能用初始绿测替代该隐私验收。
+- 修复通过标准 LocalCredentialProvider 的公开配置、官方 document parser 与 resolver 收集全部已管理 refs/record key/env/grant 材料；文件值 A 与同名环境覆盖值 B、Bearer 裸重复都脱敏，安全文字仍保留。读取/解析/提供者缺席或未知只舍弃片段，元数据和正常观察流程保留。
+- 中间修复 tree `b5697a39cbe1206e89925a558d300a3e13ce0f92` 在正式门禁实际 711/713、退出 1。正式 loader 的 SDK ESM/CJS 构造器身份不同，使标准提供者被误拒绝。修复保留两个 canonical SDK exports 的真实 instanceof 品牌；伪同名、同 config 的未知提供者仍失败关闭。正式与普通 Node 模块均 38/38；未改运行器或降低断言。
+- 最终代码提交 `58d2702bf0aaf038d46e7ad55e850c8d9e9307b5`，tree `4331d1a2b4a53afee8d0678867ecee42bd098264`；4068 个 tracked blob 逐项核对，用户原有 MCP hunks 未进入候选，工作文件字节保留。
+- Node v26.9.0；`npm test`：714/714，退出 0，无取消或跳过。日志 `/private/tmp/jev-stage2-final2-owner-full.log`。相关 Web/Desktop、profile 迁移和资源 Host health 的六文件集成门禁：12/12，退出 0；日志 `/private/tmp/jev-stage2-final2-integration.log`。客户端产物、固定 Harness 构建证明、SDK/上游源码干净核对与 diff 检查均退出 0。
+- [阶段 2 复盘](stage2-retro.md) 没有新增未关闭的范围内整改项；随后最终两轴复审仍覆盖 e469 固定点到最新 HEAD。Browser 的真实 Settings、公开 RPC 和原生请求告警/恢复证据已保存于本次任务；实际 OS 显示仍按用户授权暂缓。完整 `.app`、codesign、DMG 双架构不在本地 SDK health 绿态的证明范围，旧 CI 失败与后续自动 CI 分别保留。
