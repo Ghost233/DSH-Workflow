@@ -22,7 +22,9 @@
 
 - [ ] 原 28 故事矩阵中纳入 Desktop 四行为与默认 false 持久化偏好的受影响子项，分别记录本地 ARM 与最终 Intel/干净 runner/双架构分发的实际来源。
 - [ ] 真实窗口观测区分后端启动、Host 就绪与窗口首次显示；冷启动隐藏与 Web UI 可用、显示/聚焦、运行中隐藏/显示同 Host、保存后重启、自动启动不隐藏已有窗口、显式打开找回均有原始证据。
-- [ ] 如实记录闪窗、晚弹或抢焦点；不以 OpenConfiguration 或 SDK 成功返回概括为通过，不使用 hidesOthers，不改 DSH 上游或增加 server 架构。
+- [ ] 按用户确认的最终状态与焦点恢复条件验收后台冷启动：最终同一物理 Desktop hidden=true、onscreen=0，真实 Host/Web/SDK ready，并恢复原焦点；如实记录首次 window.show 的短暂显示与 activation。约 155 ms 的窗口观测采样跨度不等于精确持续时间，不承诺整个启动绝对零激活或未来不闪。不以 OpenConfiguration 或 SDK 成功返回概括为通过，不使用 hidesOthers，不改 DSH 上游或增加 server 架构。
+
+用户明确接受上述记录限制，验收最终状态与焦点恢复。历史冷启动 FvWnnn/source `1fcc` 按当时严格焦点条件实际 CLI 255，结果原样保留。更新后的条件须由同一 writer 在后续实机重验取得原始 CLI 0；本次需求同步不将旧 run 或当前 `4d2` 候选改算通过。
 
 新的 SDK/窗口/入口 seam 按新最终候选执行；修改前 cf285 的 Full T05/T08 成功范围保留，不能替代新窗口功能验收。Command+Q/退出快捷键暂不扩展本次需求。
 

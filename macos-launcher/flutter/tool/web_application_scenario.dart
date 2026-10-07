@@ -191,8 +191,11 @@ Future<void> runWebApplicationScenario({
   required Future<void> Function(String) tap,
   required Future<void> Function(String) capture,
   Future<void> Function(WebObservation)? onConnected,
+  Future<void> Function(ApplicationState, Future<void> Function(String))?
+  beforeWebStart,
   Process? prestartedHost,
   IOSink? prestartedHostLog,
+  String? bindingsPath,
   bool passwordPreloaded = false,
   bool settingsOwnedWebCleanup = false,
   void Function(String, Map<String, Object?>)? diagnose,
@@ -213,9 +216,54 @@ Future<void> runWebApplicationScenario({
     return state();
   }
 
+  Future<Map> control(String label, String action, String direction) async {
+    for (var scroll = 0; scroll < 6; scroll++) {
+      final snapshot = await ui();
+      final nodes = (snapshot['nodes'] as List).cast<Map>().toList();
+      final matches = nodes
+          .where(
+            (node) =>
+                (beforeWebStart != null &&
+                        const [
+                          '后台启动',
+                          '启动后显示',
+                          '隐藏窗口',
+                          '仅显示已运行窗口',
+                          '打开 DSH',
+                        ].contains(label)
+                    ? node['label'].toString().split('\n').first == label
+                    : node['label'].toString().contains(label)) &&
+                (beforeWebStart == null ||
+                    label != '启动时隐藏窗口' ||
+                    node['toggled'] is bool) &&
+                (node['actions'] as List).contains(action),
+          )
+          .toList();
+      if (matches.isNotEmpty) return matches.single;
+      final scroller = nodes.singleWhere(
+        (node) => (node['actions'] as List).contains(direction),
+      );
+      await state({'action': direction, 'id': '${scroller['id']}'});
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    throw StateError(
+      'Actual UI control unavailable after bounded scrolling: $label',
+    );
+  }
+
   Future<void> tapUi(String label) async {
     await ui();
-    await tap(label);
+    if (beforeWebStart != null) {
+      final node = await control(
+        label,
+        'tap',
+        label == '设置密码' || label == '启动时隐藏窗口' ? 'scrollDown' : 'scrollUp',
+      );
+      await state({'action': 'tap', 'id': '${node['id']}'});
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    } else {
+      await tap(label);
+    }
   }
 
   Future<Map<String, Object?>> readReceipt() async =>
@@ -356,7 +404,9 @@ Future<void> runWebApplicationScenario({
         'Desktop-open scenario begins without a backend receipt',
       );
     }
-    final bindings = await BindingStore.load('${root.path}/bindings.json');
+    final bindings = await BindingStore.load(
+      bindingsPath ?? '${root.path}/bindings.json',
+    );
     await bindings.associate(manifestPath);
     server = await LauncherServer.start(layout: layout, bindings: bindings);
     await waitFor(
@@ -450,29 +500,6 @@ Future<void> runWebApplicationScenario({
         'Web is not ready before any real access service exists',
       );
     }
-    Future<Map> control(String label, String action, String direction) async {
-      for (var scroll = 0; scroll < 6; scroll++) {
-        final snapshot = await ui();
-        final nodes = (snapshot['nodes'] as List).cast<Map>().toList();
-        final matches = nodes
-            .where(
-              (node) =>
-                  node['label'].toString().contains(label) &&
-                  (node['actions'] as List).contains(action),
-            )
-            .toList();
-        if (matches.isNotEmpty) return matches.single;
-        final scroller = nodes.singleWhere(
-          (node) => (node['actions'] as List).contains(direction),
-        );
-        await state({'action': direction, 'id': '${scroller['id']}'});
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-      }
-      throw StateError(
-        'Actual UI control unavailable after bounded scrolling: $label',
-      );
-    }
-
     await File('${root.path}/initial-web-ui.json')
         .writeAsString(jsonEncode(await state()));
     if (!passwordPreloaded) {
@@ -503,6 +530,7 @@ Future<void> runWebApplicationScenario({
           (node) => node['label'].toString().contains('修改密码'),
         ),
       );
+      await beforeWebStart?.call(state, tapUi);
       await control('启动 Web', 'tap', 'scrollDown');
       await tapUi('启动 Web');
     } else {

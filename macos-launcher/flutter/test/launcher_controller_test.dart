@@ -9,6 +9,43 @@ import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 class FixtureNative extends NativeBridge {
   FixtureNative(this.root);
   final String root;
+  bool? savedHideWindowOnStart;
+  bool failPreferences = false;
+  bool desktopIsRunning = false, desktopIsHidden = false;
+  @override
+  Future<bool> desktopRunning(String path) async => desktopIsRunning;
+  @override
+  Future<void> hideDesktop(String path) async {
+    if (!desktopIsRunning) throw StateError('Desktop 未运行');
+    desktopIsHidden = true;
+  }
+
+  @override
+  Future<void> showDesktop(String path) async {
+    if (!desktopIsRunning) throw StateError('Desktop 未运行');
+    desktopIsHidden = false;
+  }
+
+  @override
+  Future<void> openDesktop(
+    String path, {
+    required Map<String, String> environment,
+    bool hidden = false,
+  }) async {
+    desktopIsRunning = true;
+    desktopIsHidden = hidden;
+  }
+
+  @override
+  Future<void> savePreferences(
+    bool fullAccess,
+    bool allowLanSettings, {
+    required bool hideWindowOnStart,
+  }) async {
+    if (failPreferences) throw StateError('Preference storage refused');
+    savedHideWindowOnStart = hideWindowOnStart;
+  }
+
   @override
   Future<LauncherEnvironment> load() async => LauncherEnvironment({
     'resources': root,
@@ -16,6 +53,8 @@ class FixtureNative extends NativeBridge {
     'home': root,
     'appVersion': '0.2.3',
     'loginStatus': 'disabled',
+    if (savedHideWindowOnStart != null)
+      'hideWindowOnStart': savedHideWindowOnStart,
     'password': 'fixture-only',
   });
 }
@@ -77,6 +116,59 @@ Future<({LauncherController model, Directory root})> fixture({
 }
 
 void main() {
+  test('window-only actions never start a missing Desktop and preserve a running backend', () async {
+    final f = await fixture();
+    final native = f.model.native as FixtureNative;
+    await expectLater(f.model.showExistingDesktop(), throwsStateError);
+    await expectLater(f.model.hideDesktop(), throwsStateError);
+    expect(native.desktopIsRunning, isFalse);
+    native.desktopIsRunning = true;
+    await f.model.hideDesktop();
+    expect(native.desktopIsRunning, isTrue);
+    expect(native.desktopIsHidden, isTrue);
+    await f.model.showExistingDesktop();
+    expect(native.desktopIsRunning, isTrue);
+    expect(native.desktopIsHidden, isFalse);
+  });
+  test('explicit open shows an existing hidden Desktop despite the startup preference', () async {
+    final f = await fixture();
+    final native = f.model.native as FixtureNative;
+    native.desktopIsRunning = true;
+    native.desktopIsHidden = true;
+    await f.model.savePreferences(true, false, hideWindowOnStart: true);
+    await f.model.openDsh();
+    expect(native.desktopIsRunning, isTrue);
+    expect(native.desktopIsHidden, isFalse);
+  });
+  test(
+    'background and automatic startup preserve a running visible Desktop',
+    () async {
+      final f = await fixture();
+      final native = f.model.native as FixtureNative;
+      native.desktopIsRunning = true;
+      await f.model.savePreferences(true, false, hideWindowOnStart: true);
+      await f.model.startDesktopInBackground();
+      await f.model.startDesktop();
+      expect(native.desktopIsRunning, isTrue);
+      expect(native.desktopIsHidden, isFalse);
+    },
+  );
+  test('startup window preference migrates missing values and preserves storage failures', () async {
+    final f = await fixture();
+    final native = f.model.native as FixtureNative;
+    expect(f.model.hideWindowOnStart, isFalse);
+    await f.model.savePreferences(true, false, hideWindowOnStart: true);
+    await f.model.initialize();
+    expect(f.model.hideWindowOnStart, isTrue);
+    native.failPreferences = true;
+    await expectLater(
+      f.model.savePreferences(true, false, hideWindowOnStart: false),
+      throwsStateError,
+    );
+    expect(f.model.hideWindowOnStart, isTrue);
+    await f.model.initialize();
+    expect(f.model.hideWindowOnStart, isTrue);
+  });
   test(
     'UI startup and SDK recycle share the mutation gate before spawn completes',
     () async {
