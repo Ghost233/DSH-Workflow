@@ -230,8 +230,9 @@ test('native termination covers a helper that outlives the command leader', { ti
   const { root, commands } = await fixture(t)
   const cwd = join(root, 'candidate'); await mkdir(cwd)
   const helper = "const fs=require('node:fs'); fs.appendFileSync('ticks','x'); setInterval(()=>fs.appendFileSync('ticks','x'),20)"
-  const leader = `require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(helper)}],{stdio:'ignore'}).unref(); setTimeout(()=>process.exit(0),150)`
+  const leader = `const fs=require('node:fs'); require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(helper)}],{stdio:'ignore'}).unref(); const ready=setInterval(()=>{if(fs.existsSync('ticks')&&fs.statSync('ticks').size>0){clearInterval(ready); process.stdout.write('helper-first-tick\\n',()=>process.exit(0))}},10)`
   const result = await commands.execute({ action: { id: 'helpers', attemptId: 'try', input: {} }, verificationId: 'helper', cwd, argv: [process.execPath, '-e', leader] })
+  assert.match(result.stdout, /helper-first-tick/, 'the leader must acknowledge a real helper tick before exiting')
   assert.equal(result.managedRangeStopped, true)
   const before = await readFile(join(cwd, 'ticks'), 'utf8'); assert.ok(before.length > 0)
   await new Promise(resolve => setTimeout(resolve, 200))

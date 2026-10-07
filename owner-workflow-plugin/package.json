@@ -9,6 +9,9 @@
     "./acceptance-runner": "./src/acceptance-runner.mjs",
     "./client": "./client.js",
     "./dashboard": "./dashboard-host.mjs",
+    "./kernel-dashboard": "./src/kernel-dashboard-host.mjs",
+    "./jev-center": "./src/jev-center-plugin.mjs",
+    "./agent-monitor": "./src/agent-monitor-plugin.mjs",
     "./package.json": "./package.json"
   },
   "license": "MIT",

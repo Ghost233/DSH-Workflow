@@ -8,7 +8,7 @@ import { createRequire } from 'node:module'
 import net from 'node:net'
 import { spawn } from 'node:child_process'
 
-test('daily shell uses the real CLI, discovers every project plugin and drains its own host with the profile intact', { timeout: 45_000 }, async () => {
+test('the no-argument source Web entry starts the real CLI and preserves user profile values', { timeout: 45_000 }, async () => {
   const source = resolve('.'), root = await mkdtemp(join(tmpdir(), 'ukr-cli-launch-'))
   const project = join(root, 'distribution'), catalog = join(root, 'catalog'), home = join(root, 'home')
   const profileDir = join(home, 'profiles/web')
@@ -18,11 +18,15 @@ test('daily shell uses the real CLI, discovers every project plugin and drains i
     for (const name of ['scripts', 'owner-workflow-plugin']) {
       await cp(join(source, name), join(project, name), { recursive: true, filter: path => !['node_modules', 'vendor', '.git'].includes(basename(path)) })
     }
+    await mkdir(join(project, 'matt-skills-panel-plugin'), { recursive: true })
+    await cp(join(source, 'matt-skills-panel-plugin/package'), join(project, 'matt-skills-panel-plugin/package'), { recursive: true })
+    await mkdir(join(project, 'vendor'), { recursive: true })
+    await cp(join(source, 'vendor/mattpocock-skills-zh'), join(project, 'vendor/mattpocock-skills-zh'), { recursive: true })
     for (const name of ['start-owner-workflow.sh', 'package.json', 'project-plugins.json', 'project-plugins.lock.json', 'dsh-runtime.json']) await cp(join(source, name), join(project, name))
     for (const name of ['deepseek-harness', 'owner-workflow-plugin/vendor', 'owner-workflow-plugin/node_modules']) await symlink(join(source, name), join(project, name))
     const modules = join(project, '.dsh-workflow/plugins/node_modules'); await mkdir(modules, { recursive: true })
     await symlink(join(source, 'deepseek-harness/node_modules/.pnpm/semver@7.8.5/node_modules/semver'), join(modules, 'semver'))
-    const { initProfile } = createRequire(join(source, 'deepseek-harness/apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
+    const { initProfile, loadOverlayPatches, composeEntries } = createRequire(join(source, 'deepseek-harness/apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
     initProfile(profileDir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app',
       '@deepseek-ai/dsh-experimental-agent-team-profile'], 'startup')
     const scope = join(profileDir, 'node_modules/@deepseek-ai')
@@ -42,9 +46,12 @@ test('daily shell uses the real CLI, discovers every project plugin and drains i
       { id: 'session-persistence-jsonl', config: { root: join(root, 'sessions') } },
     ]
     const profilePath = join(profileDir, 'cordis.patch.yml')
-    await writeFile(profilePath, JSON.stringify(custom)); const original = await readFile(profilePath, 'utf8')
+    await writeFile(profilePath, JSON.stringify(custom))
+    const platformBin = join(root, 'platform-bin')
+    await mkdir(platformBin)
+    await writeFile(join(platformBin, 'uname'), '#!/bin/sh\nprintf "Linux\\n"\n', { mode: 0o755 })
     child = spawn(join(project, 'start-owner-workflow.sh'), [], { cwd: catalog,
-      env: { ...process.env, DSH_HOME: home, DSH_PROFILE: 'web' }, stdio: ['ignore', 'pipe', 'pipe'] })
+      env: { ...process.env, PATH: `${platformBin}:${process.env.PATH}`, DSH_HOME: home, DSH_PROFILE: 'web' }, stdio: ['ignore', 'pipe', 'pipe'] })
     child.stdout.on('data', chunk => { output += chunk }); child.stderr.on('data', chunk => { output += chunk })
     running = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', (code, signal) => { result = { code, signal }; resolve(result) }) })
     const deadline = Date.now() + 30_000
@@ -62,7 +69,10 @@ test('daily shell uses the real CLI, discovers every project plugin and drains i
     assert.deepEqual(health.components, { owner: 'ready' })
     child.kill('SIGTERM'); await running
     assert.deepEqual(result, { code: 0, signal: null }, output)
-    assert.equal(await readFile(profilePath, 'utf8'), original)
+    const profilePatches = loadOverlayPatches('dsh', profilePath)
+    assert.deepEqual(profilePatches.filter(row => custom.some(original => original.id === row.id)), custom)
+    const registered = composeEntries([profilePatches])
+    for (const id of ['workflow-jev-center', 'workflow-agent-monitor']) assert.equal(registered.filter(row => row.id === id).length, 1)
     assert.equal((await readdir(join(project, '.dsh-workflow/plugins'))).some(name => name.startsWith('kernel-launch-')), false)
     await assert.rejects(fetch(`http://127.0.0.1:${port}/owner-workflow/api/health`, { signal: AbortSignal.timeout(300) }))
   } finally {

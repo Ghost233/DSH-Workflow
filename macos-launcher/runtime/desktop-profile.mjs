@@ -17,7 +17,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const profile = join(home, 'profiles/desktop')
   const directory = join(globalRoot, '.dsh-workflow/desktop-bundle')
   const stampPath = join(directory, 'integration.json')
-  const identity = { workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', components: ['owner'], hostInstance: 'desktop-bridge', creatorJevGuidance: true }
+  const identity = { workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', components: ['owner'], hostInstance: 'desktop-bridge', creatorJevGuidance: true, agentMonitor: 2, jevCenter: 1 }
   await mkdir(profile, { recursive: true })
   const manifestPath = join(profile, 'package.json')
   if (existsSync(manifestPath) && existsSync(stampPath)) {
