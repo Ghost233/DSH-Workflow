@@ -417,11 +417,24 @@ def collect(log, target, runner):
         if not (root / name).is_file():
             raise ValueError('Missing required cycle evidence: ' + name)
     copy_safe_evidence(root, destination)
-    result = run_diagnostics(root, destination)
-    shutil.copy2(destination / 'diagnostic-collector.log', target / 'collector.log')
-    (target / 'collector.exit').write_text(str(result) + '\n')
-    if result != 0:
-        raise ValueError('Cycle diagnostic collector failed')
+    auxiliary = root / 'auxiliary-cycle-diagnostics'
+    result, auxiliary_error = None, None
+    try:
+        auxiliary.mkdir()
+        result = run_diagnostics(root, auxiliary)
+        if result == 0:
+            shutil.copy2(auxiliary / 'diagnostic-collector.log', target / 'collector.log')
+            auxiliary.rename(destination / 'auxiliary-diagnostics')
+    except Exception as error:
+        auxiliary_error = type(error).__name__
+    retained = result == 0 and auxiliary_error is None
+    if not retained:
+        shutil.rmtree(auxiliary, ignore_errors=True)  # Outside the upload target and safe-evidence allowlist.
+        print('::warning::Auxiliary cycle diagnostics failed or are unavailable; exit=' + str(result)
+              + ', errorType=' + str(auxiliary_error), flush=True)
+    (target / 'collector.exit').write_text((str(result) if result is not None else 'UNKNOWN') + '\n')
+    (target / 'auxiliary-diagnostics-status.json').write_text(json.dumps({
+        'exit': result, 'errorType': auxiliary_error, 'auxiliaryOutputRetained': retained}) + '\n')
 
 
 def emit(key, value):
