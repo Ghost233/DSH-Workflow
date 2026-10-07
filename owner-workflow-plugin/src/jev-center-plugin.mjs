@@ -1,4 +1,6 @@
 import z from '@deepseek-ai/schemastery'
+import { bindTypertRemote } from '@deepseek-ai/dsh-typert-protocol'
+import createJevCenterRemoteDescriptor from './jev-center-remote.cjs'
 
 const connectionQuestion = { state: 'The light is on.', questions: { connectivity: { type: 'noul', instructions: 'Is the light on?' } } }
 const probability = value => Number.isFinite(value) && value >= 0 && value <= 1
@@ -112,7 +114,15 @@ export function apply(ctx, config) {
     } finally { clearTimeout(timeout); signal?.removeEventListener('abort', cancel) }
   }
   const center = { evaluate, describe: engines, testConnection: modelName => evaluate(modelName, connectionQuestion) }
+  center.typertRemote = bindTypertRemote(center, 'jevCenter')
   ctx.provide('jevCenter', center)
+  ctx.inject(['typert'], child => {
+    child.effect(() => child.typert.register({
+      package: 'dsh-owner-workflow', face: 'host', schemas: [],
+      model: { services: [], events: [], objects: [] },
+      invocations: [createJevCenterRemoteDescriptor()],
+    }))
+  })
   ctx.inject(['webServer', 'settings'], child => {
     child.effect(() => child.settings.configure({ auto: false }, ctx.fiber))
     const ns = ctx.fiber.entry?.options.id

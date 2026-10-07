@@ -8,6 +8,14 @@ export const observationEntries = catalogRoot => [
     config: { directory: join(catalogRoot, '.dsh-workflow/agent-monitor') } },
 ]
 
+export const missingObservationEntries = (entries, catalogRoot) => observationEntries(catalogRoot).filter(definition => {
+  const matches = entries.filter(row => row.id === definition.id)
+  if (matches.length > 1 || matches.some(row => row.name !== definition.name || row.group)) {
+    throw new Error(`Observation plugin entry conflicts with profile: ${definition.id}`)
+  }
+  return matches.length === 0
+})
+
 /** Register configurable entries before profile overrides, so native Settings owns their values. */
 export async function ensureObservationProfile({ profile, anchor, catalogRoot }) {
   const require = createRequire(anchor)
@@ -20,13 +28,7 @@ export async function ensureObservationProfile({ profile, anchor, catalogRoot })
   return withFileLock(join(profile.dir, 'package.json'), async () => {
     const loaded = boot.loadProfileDirectory('dsh', profile.dir, anchor)
     const entries = flatten(boot.composeEntries([...loaded.layers.map(layer => layer.patches), loaded.patches]))
-    const missing = observationEntries(catalogRoot).filter(definition => {
-      const matches = entries.filter(row => row.id === definition.id)
-      if (matches.length > 1 || matches.some(row => row.name !== definition.name || row.group)) {
-        throw new Error(`Observation plugin entry conflicts with profile: ${definition.id}`)
-      }
-      return matches.length === 0
-    })
+    const missing = missingObservationEntries(entries, catalogRoot)
     if (!missing.length) return false
     const before = await readFile(profile.patchPath, 'utf8').catch(error => {
       if (error.code !== 'ENOENT') throw error

@@ -93,7 +93,9 @@ export function createAgentMonitor(config = {}, { now = Date.now, onAlert = () =
       const timestamp = now(), interval = value('checkIntervalMs', 60_000), threshold = value('noOutputThreshold', 5)
       for (const row of agents.values()) {
         if (!row.active || row.signal?.aborted || timestamp - row.lastCheckAt < interval) continue
-        row.lastCheckAt = timestamp
+        // Advance the scheduled round, rather than shifting it to a late callback.
+        // A delayed callback counts once and consumes its current round, so duplicates cannot catch up missed checks.
+        row.lastCheckAt += Math.floor((timestamp - row.lastCheckAt) / interval) * interval
         row.noOutputCount++
         if (row.noOutputCount >= threshold) {
           report(row, 'no-output', '模型请求连续检查没有可见输出；尚未确认上游原因',

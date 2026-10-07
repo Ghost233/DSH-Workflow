@@ -262,3 +262,19 @@ test('an Agent Team teammate uses the same native monitor path and remains runni
   assert.equal(alert.kind, 'no-output')
   assert.equal(f.ctx.agents.get(member.id).status, 'running')
 })
+
+test('a slightly late check does not drop the next minute and repeated calls within one round remain deduplicated', async t => {
+  const f = await fixture(t)
+  const handle = await f.create('timer-jitter')
+  const counts = []
+  for (const time of [60_001, 120_000, 180_000, 240_000, 300_000, 360_000]) {
+    await f.at(time)
+    counts.push(f.monitor.snapshot().agents[0].noOutputCount)
+    await f.at(time + 1)
+    assert.equal(f.monitor.snapshot().agents[0].noOutputCount, counts.at(-1))
+  }
+  assert.deepEqual(counts, [1, 2, 3, 4, 5, 6])
+  assert.deepEqual(f.notices.map(alert => alert.at), [300_000, 360_000])
+  assert.equal(handle.agent.status, 'running')
+  assert.equal(f.streams.get('timer-jitter').request.signal.aborted, false)
+})

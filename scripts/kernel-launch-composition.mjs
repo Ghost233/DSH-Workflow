@@ -1,5 +1,5 @@
 import { resolve, join } from 'node:path'
-import { observationEntries } from './observation-profile.mjs'
+import { missingObservationEntries } from './observation-profile.mjs'
 
 const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
 
@@ -48,13 +48,7 @@ export function composeKernelLaunch(entries, { projectRoot, catalogRoot, presetP
   const mattDeckConfig = previous('matt-deck')
   const mattZhSkills = join(root, 'vendor/mattpocock-skills-zh/skills')
   const owned = [
-    ...observationEntries(catalog).filter(definition => {
-      const matches = all.filter(row => row.id === definition.id)
-      if (matches.length > 1 || matches.some(row => row.name !== definition.name || row.group)) {
-        throw new Error(`Observation plugin entry conflicts with profile: ${definition.id}`)
-      }
-      return matches.length === 0
-    }),
+    ...missingObservationEntries(all, catalog),
     { id: 'preset-owner-workflow', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'owner-workflow', order: 0, plugins } },
     { id: 'kernel-owner-surface', name: join(root, 'owner-workflow-plugin/src/kernel-entry.mjs'), config: { surfaceOnly: true } },
     { id: 'kernel-owner-dashboard', name: 'dsh-owner-workflow/kernel-dashboard', config: { catalogRoot: catalog } },

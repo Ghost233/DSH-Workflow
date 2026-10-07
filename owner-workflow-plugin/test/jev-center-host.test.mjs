@@ -14,6 +14,8 @@ const ConfigEditor = req('@deepseek-ai/dsh-config-editor').default
 const Settings = req('@deepseek-ai/dsh-settings').default
 const Credentials = req('@deepseek-ai/dsh-credentials-local').default
 const WebServer = req('@deepseek-ai/dsh-host-webserver').default
+const TypertRegistry = req('@deepseek-ai/dsh-typert-registry').default
+const TypertGateway = req('@deepseek-ai/dsh-api-gateway').default
 
 async function fixture(t, respond = (_, res) => {
   res.end(JSON.stringify({ model: 'jev-resolved-version', answers: { urgent: { type: 'noul', noul: 0.9 } }, usage: { input_tokens: 20, output_tokens: 1 } }))
@@ -53,6 +55,26 @@ async function fixture(t, respond = (_, res) => {
 }
 
 const question = { state: 'Please fix this today.', questions: { urgent: { type: 'noul', instructions: 'Is this urgent?' } } }
+
+test('native Remote connection test uses the same fixed judgment without an HTTP-only UI route', async t => {
+  const f = await fixture(t, (_, response) => response.end(JSON.stringify({
+    model: 'jev-remote-version', answers: { connectivity: { type: 'noul', noul: 1 } },
+    usage: { input_tokens: 5, output_tokens: 1 },
+  })))
+  await f.save({ modelName: 'quick' })
+  await f.ctx.credentials.set('JEV_CENTER_TEST_KEY', 'remote-fixture-key')
+  await f.ctx.plugin(TypertRegistry)
+  await f.ctx.plugin(TypertGateway)
+  const result = await f.ctx.typertGateway.invoke({ namespace: 'jevCenter', method: 'testConnection', args: { modelName: 'quick' } })
+  assert.equal(result.ok, true)
+  assert.equal(result.model, 'jev-remote-version')
+  assert.equal(typeof result.elapsedMs, 'number')
+  assert.equal(f.requests.length, 1)
+  assert.deepEqual(f.requests[0].body, { model: 'jev-latest', state: 'The light is on.',
+    questions: { connectivity: { type: 'noul', instructions: 'Is the light on?' } } })
+  await assert.rejects(f.ctx.typertGateway.invoke({ namespace: 'jevCenter', method: 'testConnection', args: { modelName: 42 } }))
+  assert.equal(f.requests.length, 1)
+})
 
 test('standard Settings and credentials save an engine without a model call, then a named consumer receives its typed judgment', async t => {
   const f = await fixture(t)
