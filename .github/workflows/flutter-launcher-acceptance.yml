@@ -8,6 +8,8 @@ on:
       - .github/workflows/flutter-launcher-acceptance.yml
       - .github/actions/flutter-debug-app/action.yml
       - .github/scripts/flutter_debug_artifact.py
+      - .github/scripts/settings_startup_cycle.py
+      - .github/scripts/settings_startup_cycle_test.py
       - macos-launcher/**
       - owner-workflow-plugin/**
       - matt-skills-panel-plugin/**

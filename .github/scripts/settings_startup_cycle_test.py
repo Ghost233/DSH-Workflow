@@ -363,6 +363,26 @@ class PartialCollectorTest(unittest.TestCase):
 
 
 class HostIdentityTest(unittest.TestCase):
+    def test_owned_t08_pid_liveness_keeps_root_and_capture_guards(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runner = Path(temporary).resolve()
+            root = runner / 'dsh-t01-liveness'; root.mkdir()
+            pid = os.getpid()
+            captured = json.dumps({'event': 'captured', 'pid': pid}) + '\n'
+            (root / 'owned-desktop-cleanup.log').write_text(captured)
+            value = cycle.check_owned_pid(root, runner, pid)
+            self.assertEqual(value['pid'], pid)
+            self.assertEqual(value['state'], 'alive')
+            self.assertEqual(value['rawExit'], 0)
+            wrong = runner / 'unowned-liveness'; wrong.mkdir()
+            (wrong / 'owned-desktop-cleanup.log').write_text(captured)
+            with self.assertRaisesRegex(ValueError, 'Unowned or non-direct probe root'):
+                cycle.check_owned_pid(wrong, runner, pid)
+            with self.assertRaisesRegex(ValueError, 'PID has no owned Desktop capture'):
+                cycle.check_owned_pid(root, runner, 1)
+            with self.assertRaisesRegex(ValueError, 'Unowned or non-direct probe root'):
+                cycle.validate_root(str(root), runner)
+
     def test_all_old_and_new_pid_facts_are_required_by_the_existing_gate(self):
         import errno
         import copy

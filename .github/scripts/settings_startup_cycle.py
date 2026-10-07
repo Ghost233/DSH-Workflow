@@ -376,7 +376,11 @@ def collect_owned_processes(log, runner):
 
 
 def check_owned_pid(root, runner, pid):
-    root = validate_root(str(root), runner)
+    # Liveness is shared by general application and settings probes.
+    original = Path(root)
+    root, runner = original.resolve(strict=True), Path(runner).resolve(strict=True)
+    if original.is_symlink() or root.parent != runner or not root.name.startswith(('dsh-t01-', 'dsh-t05-')) or root.stat().st_uid != os.getuid():
+        raise ValueError('Unowned or non-direct probe root')
     captures = [parse_json(line) for line in (root / 'owned-desktop-cleanup.log').read_text().splitlines() if line.startswith('{')]
     if not any(row.get('event') == 'captured' and row.get('pid') == pid for row in captures):
         raise ValueError('PID has no owned Desktop capture')
