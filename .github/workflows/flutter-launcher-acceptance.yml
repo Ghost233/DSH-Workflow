@@ -585,7 +585,7 @@ jobs:
                               'functionalCommandExit': functional_command_exit, 'normalExitStage': normal_exit,
                               'launcherWebReleased': resources_released, 'functionalAcceptanceComplete': functional_complete, 'isolatedCleanup': owned['isolatedCleanup'],
                               'allOwnedProcessesGone': physical_complete, 'finallyComplete': owned['finallyComplete'], 'receiptLookup': owned['receiptLookup'],
-                              'receiptRemoved': not (root / 'data/global/.dsh-workflow/desktop/desktop-host.json').exists(),
+                              'receiptRemoved': True if owned['receiptLookup'].get('state') == 'absent' and owned['receiptLookup'].get('errno') == errno.ENOENT else (False if owned['receiptLookup'].get('state') == 'present' else None),
                               'rawNoReuseLoopbackBind': raw_bind,
                               'reuseAddrServiceBindListen': service_listen,
                               'listenObservation': listener,

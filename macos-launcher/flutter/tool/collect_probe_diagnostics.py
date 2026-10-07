@@ -28,15 +28,28 @@ def scrub(value):
 def collect(root, target, reports=None):
     root, target = root.resolve(), target.resolve()
     target.mkdir(parents=True, exist_ok=True)
+    observations = []
     for name in ('desktop-diagnostic.json', 'global/.dsh-workflow/desktop/desktop-host.json'):
         source = root / 'data' / name
-        if source.is_file():
+        try:
+            current = root
+            for part in source.relative_to(root).parts:
+                current = current / part
+                if current.is_symlink():
+                    raise ValueError('Independent input contains a symlink component')
+            if not source.resolve(strict=True).is_relative_to(root) or not source.is_file():
+                raise ValueError('Independent input is outside the private root or not a file')
             text = source.read_text(errors='replace')
             try:
                 value = json.loads(text)
             except ValueError:
                 value = {'format': 'text', 'diagnostic': text}
             (target / ('owned-' + source.name)).write_text(json.dumps(scrub(value), indent=2) + '\n')
+            observations.append({'source': name, 'state': 'observed'})
+        except (OSError, ValueError) as error:
+            observations.append({'source': name, 'state': 'unknown', 'errorType': type(error).__name__})
+            print('::warning::Independent auxiliary input refused or unavailable; source=' + name + ', errorType=' + type(error).__name__, flush=True)
+    (target / 'independent-input-observations.json').write_text(json.dumps(observations, indent=2) + '\n')
     ledger = root / 'probe-process.json'
     if reports is None or not ledger.is_file():
         return []
