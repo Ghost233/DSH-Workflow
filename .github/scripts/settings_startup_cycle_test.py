@@ -363,6 +363,47 @@ class PartialCollectorTest(unittest.TestCase):
 
 
 class HostIdentityTest(unittest.TestCase):
+    def test_t08_host_capture_binds_real_owned_child_and_keeps_root_guards(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runner = Path(temporary).resolve()
+            root = runner / 'dsh-t01-host-capture'; root.mkdir()
+            runtime = root / 'missing-runtime'; runtime.mkdir()
+            executable = cycle.inspect_host(os.getpid())['executable']
+            (runtime / 'node').symlink_to(executable)
+            bundle = runtime / 'desktop/DeepSeek Harness.app'
+            desktop_executable = bundle / 'Contents/MacOS/DeepSeek Harness'
+            desktop_executable.parent.mkdir(parents=True); desktop_executable.touch()
+            captured = {'event': 'captured', 'pid': os.getpid(), 'bundlePath': str(bundle),
+                        'executablePath': str(desktop_executable), 'probeStartedAt': 'owned-fixture-start'}
+            (root / 'owned-desktop-cleanup.log').write_text(json.dumps(captured) + '\n')
+            (root / 'probe-process.json').write_text(json.dumps({'startedAt': 'owned-fixture-start'}))
+            receipt = root / 'data/global/.dsh-workflow/desktop/desktop-host.json'
+            receipt.parent.mkdir(parents=True)
+            child = subprocess.Popen([str(runtime / 'node'), '-c', 'import sys; sys.stdin.buffer.read()'], stdin=subprocess.PIPE)
+            try:
+                receipt.write_text(json.dumps({'pid': child.pid, 'lease': 'owned-t08-fixture-lease'}))
+                value = cycle.capture_owned_host(root, runner, child.pid)
+                self.assertTrue(value['ownershipKnown'], value)
+                self.assertEqual(value['desktopPid'], os.getpid())
+                self.assertEqual(value['lease'], 'owned-t08-fixture-lease')
+                inspection = cycle.inspect_host(child.pid, include_bsd_status=True)
+                self.assertTrue(inspection['lookupOk'], inspection)
+                self.assertEqual(inspection['bsdStatus']['exit'], 0)
+                self.assertTrue(inspection['bsdStatus']['stdout'].strip())
+                self.assertEqual(inspection['bsdStatus']['stderr'], '')
+                wrong = runner / 'unowned-host-capture'; wrong.mkdir()
+                with self.assertRaisesRegex(ValueError, 'Unowned or non-direct probe root'):
+                    cycle.capture_owned_host(wrong, runner, child.pid)
+                alias = runner / 'dsh-t01-alias'; alias.symlink_to(root)
+                with self.assertRaisesRegex(ValueError, 'Unowned or non-direct probe root'):
+                    cycle.capture_owned_host(alias, runner, child.pid)
+                with self.assertRaisesRegex(ValueError, 'Host receipt changed'):
+                    cycle.capture_owned_host(root, runner, os.getpid())
+                with self.assertRaisesRegex(ValueError, 'Unowned or non-direct probe root'):
+                    cycle.validate_root(str(root), runner)
+            finally:
+                child.stdin.close(); child.wait(timeout=2)
+
     def test_owned_t08_pid_liveness_keeps_root_and_capture_guards(self):
         with tempfile.TemporaryDirectory() as temporary:
             runner = Path(temporary).resolve()

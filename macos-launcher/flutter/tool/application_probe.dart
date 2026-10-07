@@ -322,7 +322,11 @@ Future<void> main(List<String> arguments) async {
   }
   final diagnostics = webScenario == null
       ? null
-      : ProbeDiagnostics(root, publishPhases: settingsScenario);
+      : ProbeDiagnostics(
+          root,
+          publishPhases: settingsScenario,
+          observeHostOwnership: settingsScenario || pluginDesktopScenario,
+        );
   await diagnostics?.start(process.pid, executable.path);
   var exited = false;
   unawaited(
@@ -466,7 +470,11 @@ Future<void> main(List<String> arguments) async {
             : entryScenario
             ? runEntryApplicationScenario
             : settingsScenario
-            ? runSettingsApplicationScenario
+            ? (actual) => runSettingsApplicationScenario(
+                actual,
+                observeDesktopExitFailure:
+                    diagnostics!.observeDesktopExitFailure,
+              )
             : lifecycle != null
             ? (actual) =>
                   runLifecycleScenario(actual, process, lifecycle.scenario)

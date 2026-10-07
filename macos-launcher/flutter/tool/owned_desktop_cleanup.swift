@@ -34,7 +34,7 @@ do {
   let ledger = URL(fileURLWithPath: root).appendingPathComponent("owned-desktop-process.json")
   let mode = arguments[2]
   if mode == "capture" {
-    guard arguments.count == 5, let pid = Int32(arguments[4]), pid > 1,
+    guard (arguments.count == 5 || arguments.count == 6), let pid = Int32(arguments[4]), pid > 1,
           let app = NSRunningApplication(processIdentifier: pid),
           let actual = app.bundleURL, let executable = app.executableURL else {
       throw fail("Owned Desktop is unavailable")
@@ -45,10 +45,32 @@ do {
       throw fail("Desktop bundle identity differs from private candidate")
     }
     let probe = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: root).appendingPathComponent("probe-process.json"))) as! [String: Any]
-    let facts: [String: Any] = ["pid": pid, "bundlePath": expected, "executablePath": canonical(executable.path),
+    var facts: [String: Any] = ["pid": pid, "bundlePath": expected, "executablePath": canonical(executable.path),
                               "probeStartedAt": probe["startedAt"]!]
+    if arguments.count == 6 {
+      facts["kernelIdentity"] = try? JSONSerialization.jsonObject(with: Data(arguments[5].utf8))
+    }
     try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]).write(to: ledger, options: .atomic)
     try emit(facts.merging(["event": "captured"], uniquingKeysWith: { _, new in new }))
+  } else if mode == "observe" {
+    guard arguments.count == 4, let expectedPid = Int32(arguments[3]) else { throw fail("Invalid observation arguments") }
+    let facts = try JSONSerialization.jsonObject(with: Data(contentsOf: ledger)) as! [String: Any]
+    guard let pid = facts["pid"] as? Int32, pid > 1, pid == expectedPid,
+          let expected = facts["bundlePath"] as? String, expected.hasPrefix(runnerRoot + "/"),
+          let executable = facts["executablePath"] as? String else { throw fail("Invalid owned Desktop observation ledger") }
+    var observation: [String: Any] = ["event": "desktop-exit-boundary-appkit", "mode": mode,
+                                    "requests": 0, "pid": pid, "lookupFound": false,
+                                    "hasTerminated": NSNull(), "identityMatches": NSNull()]
+    if let app = NSRunningApplication(processIdentifier: pid) {
+      observation["lookupFound"] = true
+      observation["hasTerminated"] = app.isTerminated
+      let bundle = app.bundleURL.map { canonical($0.path) }
+      let actualExecutable = app.executableURL.map { canonical($0.path) }
+      observation["bundlePath"] = bundle
+      observation["executablePath"] = actualExecutable
+      observation["identityMatches"] = bundle == expected && actualExecutable == executable
+    }
+    try emit(observation)
   } else if mode == "terminate" || mode == "request-only" {
     guard arguments.count == (mode == "request-only" ? 4 : 3) else { throw fail("Invalid cleanup arguments") }
     let facts = try JSONSerialization.jsonObject(with: Data(contentsOf: ledger)) as! [String: Any]

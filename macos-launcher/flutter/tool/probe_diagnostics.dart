@@ -84,10 +84,9 @@ Future<void> preserveHostInspectionFailure(
   final actual = await root.resolveSymbolicLinks();
   if (root.absolute.path != actual ||
       Directory(actual).parent.path != runner ||
-      !root.uri.pathSegments
-          .where((part) => part.isNotEmpty)
-          .last
-          .startsWith('dsh-t05-')) {
+      !RegExp(
+        r'^dsh-t(?:01|05)-',
+      ).hasMatch(root.uri.pathSegments.where((part) => part.isNotEmpty).last)) {
     throw StateError('Unowned lower observation root');
   }
   final target = File('$actual/host-inspection-results.jsonl');
@@ -181,14 +180,35 @@ else:
     raise ValueError('Unknown fixed Desktop request identity operation')
 ''';
 
+const desktopKernelInspectionScript = r'''
+import importlib.util, json, os, sys
+from pathlib import Path
+if os.environ.get('GITHUB_ACTIONS') != 'true':
+    raise ValueError('Desktop observation requires clean CI')
+source, root_name, mode, pid = sys.argv[1:]
+spec = importlib.util.spec_from_file_location('settings_startup_cycle', source)
+cycle = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(cycle)
+root = cycle.validate_observation_root(root_name, Path(os.environ['RUNNER_TEMP']))
+pid = int(pid)
+if mode == 'observe':
+    desktop = cycle.parse_json((root/'owned-desktop-process.json').read_text())
+    if desktop.get('pid') != pid:
+        raise ValueError('Desktop observation differs from captured PID')
+print(json.dumps(cycle.inspect_host(pid, include_bsd_status=mode == 'observe')))
+''';
+
 /// External observations and clean-CI normal cleanup for exact owned processes.
 class ProbeDiagnostics {
-  ProbeDiagnostics(this.root, {this.publishPhases = false})
-    : _sink = File('${root.path}/probe-timeline.jsonl').openWrite() {
+  ProbeDiagnostics(
+    this.root, {
+    this.publishPhases = false,
+    this.observeHostOwnership = false,
+  }) : _sink = File('${root.path}/probe-timeline.jsonl').openWrite() {
     _clock.start();
   }
   final Directory root;
-  final bool publishPhases;
+  final bool publishPhases, observeHostOwnership;
   final IOSink _sink;
   final Stopwatch _clock = Stopwatch();
   Timer? _timer;
@@ -247,7 +267,7 @@ class ProbeDiagnostics {
         ])
           key: value[key],
       });
-      if (publishPhases &&
+      if (observeHostOwnership &&
           Platform.environment['GITHUB_ACTIONS'] == 'true' &&
           value['pid'] is int &&
           value['lease'] is String &&
@@ -377,9 +397,86 @@ class ProbeDiagnostics {
       await _desktopCommand('capture', [
         '${root.path}/missing-runtime/desktop/DeepSeek Harness.app',
         '$pid',
+        if (observeHostOwnership)
+          jsonEncode(await _desktopKernelInspection(pid)),
       ]);
       _desktopPid = pid;
     }
+  }
+
+  Future<Map<String, Object?>> _desktopKernelInspection(
+    int targetPid, {
+    bool includeBsdStatus = false,
+  }) async {
+    try {
+      final result = await Process.run('/usr/bin/python3', [
+        '-c',
+        desktopKernelInspectionScript,
+        File.fromUri(
+          Platform.script.resolve(
+            '../../../.github/scripts/settings_startup_cycle.py',
+          ),
+        ).path,
+        root.path,
+        includeBsdStatus ? 'observe' : 'capture',
+        '$targetPid',
+      ]);
+      final inspection = result.exitCode == 0
+          ? jsonDecode(result.stdout.toString()) as Map
+          : null;
+      return {
+        'state': inspection?['lookupOk'] == true ? 'observed' : 'unknown',
+        'exit': result.exitCode,
+        'stdout': safeInspectorOutput(result.stdout),
+        'stderr': safeInspectorOutput(result.stderr),
+        'inspection': inspection,
+      };
+    } catch (error) {
+      return {'state': 'unknown', 'warning': safeInspectorOutput(error)};
+    }
+  }
+
+  Future<void> observeDesktopExitFailure(int expectedPid) async {
+    final facts = <String, Object?>{
+      'pid': expectedPid,
+      'state': 'observation-only',
+      'primaryFailureUnchanged': true,
+      'startedAt': DateTime.now().toUtc().toIso8601String(),
+    };
+    try {
+      facts['captured'] = jsonDecode(
+        await File('${root.path}/owned-desktop-process.json').readAsString(),
+      );
+      facts['kernel'] = await _desktopKernelInspection(
+        expectedPid,
+        includeBsdStatus: true,
+      );
+      final result = await Process.run('/usr/bin/swift', [
+        File.fromUri(Platform.script.resolve('owned_desktop_cleanup.swift'))
+            .path,
+        root.path,
+        'observe',
+        '$expectedPid',
+      ]);
+      final observation = result.exitCode == 0
+          ? jsonDecode(result.stdout.toString()) as Map
+          : null;
+      facts['appKit'] = {
+        'state': observation?['identityMatches'] == true
+            ? 'observed'
+            : 'unknown',
+        'exit': result.exitCode,
+        'stdout': safeInspectorOutput(result.stdout),
+        'stderr': safeInspectorOutput(result.stderr),
+        'observation': observation,
+      };
+    } catch (error) {
+      facts['state'] = 'unknown';
+      facts['warning'] = safeInspectorOutput(error);
+    }
+    facts['finishedAt'] = DateTime.now().toUtc().toIso8601String();
+    record('desktop-exit-failure-snapshot', facts);
+    await _sink.flush();
   }
 
   Future<Map<String, Object?>> _desktopRequestIdentity(

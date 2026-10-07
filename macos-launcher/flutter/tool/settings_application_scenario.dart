@@ -157,7 +157,10 @@ class SettingsFixture {
   }
 }
 
-Future<void> runSettingsApplicationScenario(WebObservation o) async {
+Future<void> runSettingsApplicationScenario(
+  WebObservation o, {
+  required Future<void> Function(int) observeDesktopExitFailure,
+}) async {
   final data = '${o.root.path}/data';
   final passwordFile = File('$data/lan-password');
   final preferences = File('$data/test-preferences.plist');
@@ -541,13 +544,27 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
       await o.sdk('recycle');
       final oldDesktop = native['openedDesktopPid'] as int;
       await o.state({'action': 'quitDesktop'});
-      await waitFor(
-        'owned official Desktop exits before permission reopen',
-        () async =>
-            (await Process.run('/bin/kill', ['-0', '$oldDesktop'])).exitCode !=
-                0 &&
-            !await o.receipt.exists(),
-      );
+      try {
+        await waitFor(
+          'owned official Desktop exits before permission reopen',
+          () async =>
+              (await Process.run('/bin/kill', [
+                    '-0',
+                    '$oldDesktop',
+                  ])).exitCode !=
+                  0 &&
+              !await o.receipt.exists(),
+        );
+      } catch (_) {
+        try {
+          await observeDesktopExitFailure(oldDesktop);
+        } catch (warning) {
+          stderr.writeln(
+            'DESKTOP_EXIT_OBSERVATION_WARNING: ${warning.runtimeType}',
+          );
+        }
+        rethrow;
+      }
       await control('打开 DSH', 'tap', 'scrollDown');
       await o.tap('打开 DSH');
       final reopened = await waitForActualDesktopLease(

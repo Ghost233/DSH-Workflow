@@ -272,7 +272,7 @@ def run_inspection(command):
             'waited': True, 'timedOut': timed_out, 'stdout': sanitize_text(stdout), 'stderr': sanitize_text(stderr)}
 
 
-def inspect_host(pid):
+def inspect_host(pid, *, include_bsd_status=False):
     source = (TOOLS / 'desktop_launch_observer.dart').read_text()
     delimiter = chr(39) * 3
     script = source.split("const hostInspectionScript = r" + delimiter, 1)[1].split(delimiter, 1)[0]
@@ -282,6 +282,9 @@ def inspect_host(pid):
         "facts['parentPid'] = int(commands['parent']['stdout'].strip())\n        facts['uid'] = int(commands['uid']['stdout'].strip())\n        facts['probeUid'] = os.getuid()\n        parent_uid = subprocess.run(['/bin/ps', '-p', str(facts['parentPid']), '-o', 'uid='], capture_output=True, text=True, timeout=10)\n        facts['parentUid'] = int(parent_uid.stdout.strip()) if parent_uid.returncode == 0 and not parent_uid.stderr else None")
     query = run_inspection([sys.executable, '-c', script, str(pid)])
     facts = parse_json(query['stdout']) if query['exit'] == 0 else {'pid': pid, 'lookupOk': False}
+    if include_bsd_status:
+        command = ['/bin/ps', '-p', str(pid), '-o', 'stat=']
+        facts['bsdStatus'] = dict(run_inspection(command), command=command)
     return dict(facts, query=query)
 
 
@@ -297,8 +300,17 @@ def bind_host_identity(inspection, root, receipt, desktop, probe, allowed):
             'probeStartedAt': probe['startedAt'], 'ownershipKnown': known, 'inspection': inspection}
 
 
+def validate_observation_root(root, runner):
+    # Host identity and liveness are shared by general application and settings probes.
+    original = Path(root)
+    root, runner = original.resolve(strict=True), Path(runner).resolve(strict=True)
+    if original.is_symlink() or root.parent != runner or not root.name.startswith(('dsh-t01-', 'dsh-t05-')) or root.stat().st_uid != os.getuid():
+        raise ValueError('Unowned or non-direct probe root')
+    return root
+
+
 def capture_owned_host(root, runner, pid):
-    root = validate_root(str(root), runner)
+    root = validate_observation_root(root, runner)
     receipt = parse_json((root / 'data/global/.dsh-workflow/desktop/desktop-host.json').read_text())
     if receipt.get('pid') != pid:
         raise ValueError('Host receipt changed before identity inspection')
@@ -376,11 +388,7 @@ def collect_owned_processes(log, runner):
 
 
 def check_owned_pid(root, runner, pid):
-    # Liveness is shared by general application and settings probes.
-    original = Path(root)
-    root, runner = original.resolve(strict=True), Path(runner).resolve(strict=True)
-    if original.is_symlink() or root.parent != runner or not root.name.startswith(('dsh-t01-', 'dsh-t05-')) or root.stat().st_uid != os.getuid():
-        raise ValueError('Unowned or non-direct probe root')
+    root = validate_observation_root(root, runner)
     captures = [parse_json(line) for line in (root / 'owned-desktop-cleanup.log').read_text().splitlines() if line.startswith('{')]
     if not any(row.get('event') == 'captured' and row.get('pid') == pid for row in captures):
         raise ValueError('PID has no owned Desktop capture')
