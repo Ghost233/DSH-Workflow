@@ -96,6 +96,25 @@ MacLauncher 管理端可以管理 Web 访问服务、观察 Desktop 后端、打
 - Launcher 自身原始正常退出以及 owned Web、SDK、客户端和日志释放继续严格验证。晚到或强制清理不代替业务阶段正常成功，独立 CI 清理另外记录。
 - 优先隔离 CI。必要正常关闭和重开已获授权，不删除用户数据、不修改无关工程、不无依据强制终止其他进程；保留私有路径、身份、隐私和首错保护，不恢复日期、相对时钟或固定启动性能硬门槛。恢复范围的当前候选真实验收仍待完成。
 
+## Desktop 窗口与启动可见性（2026-10-07 新增）
+
+用户已明确要求以下四个独立行为，沿用现有启动器和原生桥，不扩展 server 架构或修改 DSH 上游：
+
+1. **后台启动：** Desktop 未运行时启动后端并隐藏其窗口；已经运行时复用同一实例，不能自动隐藏使用者正在使用的窗口。
+2. **启动后显示：** 未运行时启动并显示、激活；已运行时显示、聚焦同一 Desktop。
+3. **隐藏窗口：** 只隐藏正在运行的 Desktop 窗口，Desktop、Host、Web 及业务继续运行。
+4. **仅显示已运行窗口：** 只显示、聚焦现有 Desktop；未运行时明确反馈状态或提示，不隐式启动。
+
+持久化“启动时隐藏窗口”，默认 false 以兼容现状。常规与登录启动遵循该项；已有 Desktop 仍保留其窗口当前状态。显式“启动后显示”或使用者主动“打开 DSH”始终显示，不受后台启动偏好覆盖。
+
+现有 28 条故事继续保留，本新增子项映射故事 5、9、10、11、20、23、26、28，由 T02、T05、T07、T09 承接。Desktop 的 SDK 服务能力仍为状态观察；窗口操作通过现有项目原生桥完成。Command+Q/退出快捷键问题暂不纳入此次新增功能，不改写已取得的正常退出结果。
+
+实际验收先在本机 ARM 私有配置、数据和插件目录执行：冷启动隐藏且 Web UI 可用；冷启动显示；运行中隐藏/显示保持同 Host 与 Web；设置保存和重启后生效；自动启动不隐藏已有窗口；显式打开 DSH 找回窗口。分别记录 Host 就绪、原生窗口首次出现与隐藏/激活观测，晚到 window.show、闪窗或抢焦点如实记录。仅设置 OpenConfiguration.hides/activates 或 SDK 返回成功不算窗口验收通过，不使用影响其它 app 的 hidesOthers。
+
+本地完整通过后才提交一次稳定候选作远程确认；Intel、干净 runner、双架构签名/DMG和新的 main CI保留远程。已有 cf285 本地 Full T05/T08 的原始正常退出、权限和插件重载成功保留为新增窗口功能之前的证据，后续只重验实际受影响项，不将其视为新功能已通过。
+
+Apple API 的语义见 [activates](https://developer.apple.com/documentation/appkit/nsworkspace/openconfiguration/activates)、[hides](https://developer.apple.com/documentation/appkit/nsworkspace/openconfiguration/hides)、[hide](https://developer.apple.com/documentation/appkit/nsrunningapplication/hide()) 和 [unhide](https://developer.apple.com/documentation/appkit/nsrunningapplication/unhide())；这些 API 文档不证明官方 Desktop 晚到的窗口行为，必须实机验证。
+
 ## 范围之外
 
 - 将 Owner 工作流、DSH 后端或第三方插件改写为 Dart，或恢复已取消的第三方修补计划。
