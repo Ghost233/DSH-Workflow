@@ -195,6 +195,8 @@ class ProbeDiagnostics {
   Future<void> _snapshots = Future<void>.value();
   int? _desktopPid, _appPid;
   bool _requestFailurePending = false;
+  Process? _desktopRequest;
+  Future<int>? _desktopRequestDone;
   final Map<String, Map<String, Object?>> _hosts = {};
 
   void record(String event, [Map<String, Object?> facts = const {}]) {
@@ -463,19 +465,56 @@ class ProbeDiagnostics {
     String mode, [
     List<String> arguments = const [],
   ]) async {
-    final result = mode == 'request-only'
-        ? await Process.run('${root.path}/owned-desktop-request', [
-            root.path,
-            mode,
-            ...arguments,
-          ])
-        : await Process.run('/usr/bin/swift', [
-            File.fromUri(Platform.script.resolve('owned_desktop_cleanup.swift'))
-                .path,
-            root.path,
-            mode,
-            ...arguments,
-          ]);
+    if (mode == 'request-only') {
+      final child = await Process.start('${root.path}/owned-desktop-request', [
+        root.path,
+        mode,
+        ...arguments,
+      ]);
+      _desktopRequest = child;
+      final requested = Completer<void>();
+      final output = StringBuffer();
+      final stdoutDone = child.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .forEach((line) {
+            output.writeln(line);
+            final facts = jsonDecode(line) as Map;
+            if (facts['event'] == 'normal-termination-request') {
+              record('desktop-quit-observation', {
+                'pid': _appPid,
+                'mode': mode,
+                ...desktopQuitFacts(facts),
+              });
+              if (facts['accepted'] == true) requested.complete();
+            }
+          });
+      final stderrDone = child.stderr.transform(utf8.decoder).join();
+      _desktopRequestDone = () async {
+        final code = await child.exitCode;
+        await stdoutDone;
+        final errors = await stderrDone;
+        await File('${root.path}/owned-desktop-cleanup.log').writeAsString(
+          '$output${errors}HELPER_EXIT=$code\n',
+          mode: FileMode.append,
+        );
+        record('owned-desktop-helper', {'mode': mode, 'exit': code});
+        if (!requested.isCompleted) {
+          requested.completeError(
+            StateError('Owned Desktop $mode failed: $code'),
+          );
+        }
+        return code;
+      }();
+      await requested.future;
+      return;
+    }
+    final result = await Process.run('/usr/bin/swift', [
+      File.fromUri(Platform.script.resolve('owned_desktop_cleanup.swift')).path,
+      root.path,
+      mode,
+      ...arguments,
+    ]);
     await File('${root.path}/owned-desktop-cleanup.log').writeAsString(
       '${result.stdout}${result.stderr}HELPER_EXIT=${result.exitCode}\n',
       mode: FileMode.append,
@@ -484,15 +523,6 @@ class ProbeDiagnostics {
     if (result.exitCode != 0) {
       throw StateError('Owned Desktop $mode failed: ${result.exitCode}');
     }
-    if (mode == 'request-only') {
-      record('desktop-quit-observation', {
-        'pid': _appPid,
-        'mode': mode,
-        ...desktopQuitFacts(
-          jsonDecode(result.stdout.toString().trim().split('\n').last),
-        ),
-      });
-    }
   }
 
   Future<void> close() async {
@@ -500,6 +530,14 @@ class ProbeDiagnostics {
     await _snapshots;
     await _receipt();
     try {
+      final request = _desktopRequest;
+      if (request != null) {
+        await request.stdin.close();
+        final code = await _desktopRequestDone!;
+        if (code != 0) {
+          throw StateError('Owned Desktop request-only failed: $code');
+        }
+      }
       if (_desktopPid != null) await _desktopCommand('terminate');
       record('diagnostics-close');
     } catch (error) {

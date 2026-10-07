@@ -162,7 +162,16 @@ do {
       try emit(["event": "normal-termination-request", "mode": mode, "requests": 1, "pid": pid, "requested": requested])
     }
     guard requested else { throw fail("Desktop declined normal termination") }
-    if mode == "request-only" { exit(0) }
+    if mode == "request-only" {
+      // The driver releases this sender after its original Desktop-exit wait.
+      RunLoop.current.add(NSMachPort(), forMode: .default)
+      DispatchQueue.global().async {
+        _ = FileHandle.standardInput.readDataToEndOfFile()
+        exit(0)
+      }
+      RunLoop.current.run()
+      exit(0)
+    }
     let deadline = Date().addingTimeInterval(15)
     while !app.isTerminated && Date() < deadline {
       RunLoop.current.run(until: Date().addingTimeInterval(0.1))
