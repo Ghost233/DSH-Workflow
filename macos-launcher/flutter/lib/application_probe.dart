@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
@@ -24,7 +25,9 @@ void registerApplicationProbe(NativeBridge native) {
       final view = views.isEmpty ? null : views.single;
       final owner = view?.owner?.semanticsOwner;
       final nodes = <Map<String, Object?>>[];
+      final liveNodes = <int, SemanticsNode>{};
       void visit(SemanticsNode node) {
+        liveNodes[node.id] = node;
         final data = node.getSemanticsData();
         nodes.add({
           'id': node.id,
@@ -61,9 +64,35 @@ void registerApplicationProbe(NativeBridge native) {
         if (!(node['actions']! as List).contains(action)) {
           throw StateError('Semantic action unavailable: $action on $node');
         }
+        final live = liveNodes[node['id']];
+        final classification =
+            action == 'tap' && const ['修改密码', '设置密码'].contains(node['label'])
+            ? 'savePassword'
+            : action == 'setText' && node['label'] == '内网访问密码'
+            ? 'passwordInput'
+            : 'other';
+        final actionFacts = {
+          'action': action,
+          'nodeId': node['id'],
+          'viewId': view!.flutterView.viewId,
+          'viewRegistered': WidgetsBinding.instance.renderViews.any(
+            (candidate) =>
+                candidate.flutterView.viewId == view.flutterView.viewId,
+          ),
+          'ownerMatches': identical(live?.owner, owner),
+          'nodeOwnerPresent': live?.owner != null,
+          'userActionsBlocked': live?.areUserActionsBlocked,
+          'partOfNodeMerging': live?.isPartOfNodeMerging,
+          'availableActionTypes': node['actions'],
+          'controlClassification': classification,
+          'callbackEntryObserved': false,
+        };
+        stderr.writeln(
+          'SEMANTIC_ACTION_METADATA=${jsonEncode({...actionFacts, 'stage': 'dispatch-before'})}',
+        );
         WidgetsBinding.instance.performSemanticsAction(
           SemanticsActionEvent(
-            viewId: view!.flutterView.viewId,
+            viewId: view.flutterView.viewId,
             nodeId: node['id']! as int,
             type: switch (action) {
               'tap' => SemanticsAction.tap,
@@ -76,6 +105,10 @@ void registerApplicationProbe(NativeBridge native) {
             arguments: action == 'setText' ? params['text'] : null,
           ),
         );
+        stderr.writeln(
+          'SEMANTIC_ACTION_METADATA=${jsonEncode({...actionFacts, 'stage': 'dispatch-returned'})}',
+        );
+        // Framework handlers are private; return does not prove onPressed entry.
         // The external driver waits for actual UI/HTTP/SDK outcomes.
         // Holding this VM RPC until endOfFrame can stall accessibility actions.
       } else if (action == 'close' ||

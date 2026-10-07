@@ -128,9 +128,10 @@ class WebProbeOptions {
     final port = int.parse(args[6]);
     if (port < 0 || port > 65535) throw ArgumentError('Invalid Web probe port');
     if (args[4] == 'desktop' &&
-        Platform.environment['GITHUB_ACTIONS'] != 'true') {
+        Platform.environment['GITHUB_ACTIONS'] != 'true' &&
+        Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] == null) {
       throw StateError(
-        'Official Desktop GUI probe requires the clean GitHub macOS CI session',
+        'Official Desktop GUI probe requires CI or explicit private local acceptance',
       );
     }
     return WebProbeOptions(Directory(args[2]).absolute.path, args[4], port);
@@ -150,7 +151,19 @@ class WebProbeOptions {
       'private resource stage contains the packaged project integration',
     );
     for (final name in ['node', 'desktop', 'node_modules', 'bin']) {
-      await Link('$resources/$name').create('$sourceResources/$name');
+      if (name == 'desktop' &&
+          Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] != null) {
+        final desktopCopy = await Process.run('/usr/bin/ditto', [
+          '$sourceResources/$name',
+          '$resources/$name',
+        ]);
+        require(
+          desktopCopy.exitCode == 0,
+          'local acceptance owns a private Desktop bundle copy',
+        );
+      } else {
+        await Link('$resources/$name').create('$sourceResources/$name');
+      }
     }
     final runtime = File.fromUri(Platform.script.resolve('../../runtime')).path;
     final updated = await Process.run('/usr/bin/ditto', [

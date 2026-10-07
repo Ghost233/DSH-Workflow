@@ -76,8 +76,12 @@ Future<void> preserveHostInspectionFailure(
   String script,
   ProcessResult result,
 ) async {
-  final runnerPath = Platform.environment['RUNNER_TEMP'];
-  if (Platform.environment['GITHUB_ACTIONS'] != 'true' || runnerPath == null) {
+  final runnerPath =
+      Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] ??
+      Platform.environment['RUNNER_TEMP'];
+  if ((Platform.environment['GITHUB_ACTIONS'] != 'true' &&
+          Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] == null) ||
+      runnerPath == null) {
     throw StateError('Lower observation requires clean CI root');
   }
   final runner = await Directory(runnerPath).resolveSymbolicLinks();
@@ -120,13 +124,11 @@ Future<void> preserveHostInspectionFailure(
 const ownProcessIdentityScript = r'''
 import importlib.util, json, os, sys
 from pathlib import Path
-if os.environ.get('GITHUB_ACTIONS') != 'true':
-    raise ValueError('Own process identity requires clean CI')
 source, root_name, driver_pid, driver_executable = sys.argv[1:]
 spec = importlib.util.spec_from_file_location('settings_startup_cycle', source)
 cycle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cycle)
-runner = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+runner = cycle.observation_runner()
 root = cycle.validate_root(root_name, runner)
 if root.parent != runner or not root.name.startswith('dsh-t05-'):
     raise ValueError('Unowned settings probe root')
@@ -162,13 +164,11 @@ print(json.dumps({'launcher':launcher, 'driver':driver}))
 const desktopKernelInspectionScript = r'''
 import importlib.util, json, os, sys
 from pathlib import Path
-if os.environ.get('GITHUB_ACTIONS') != 'true':
-    raise ValueError('CI identity observation requires clean CI')
 source, root_name, pid = sys.argv[1:]
 spec = importlib.util.spec_from_file_location('settings_startup_cycle', source)
 cycle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cycle)
-cycle.validate_observation_root(root_name, Path(os.environ['RUNNER_TEMP']))
+cycle.validate_observation_root(root_name, cycle.observation_runner())
 print(json.dumps(cycle.inspect_host(int(pid))))
 ''';
 
@@ -246,7 +246,9 @@ class ProbeDiagnostics {
               (captureCIHostOnce &&
                   _desktopCaptured &&
                   !_ciHostCaptureAttempted)) &&
-          Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+          (Platform.environment['GITHUB_ACTIONS'] == 'true' ||
+              Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
+                  null) &&
           value['pid'] is int &&
           value['lease'] is String &&
           await File('${root.path}/owned-desktop-cleanup.log').exists()) {
@@ -300,7 +302,12 @@ class ProbeDiagnostics {
   }
 
   Future<bool> ownsHostReceipt(Map<String, Object?> value) async {
-    final bound = _hosts['${value['pid']}:${value['lease']}'];
+    await _snapshots;
+    final key = '${value['pid']}:${value['lease']}';
+    if (_hosts[key]?['ownershipKnown'] != true) {
+      await _receipt();
+    }
+    final bound = _hosts[key];
     return _desktopCaptured &&
         bound?['ownershipKnown'] == true &&
         bound?['pid'] == value['pid'] &&
@@ -378,7 +385,9 @@ class ProbeDiagnostics {
       }
     }
     final pid = native['openedDesktopPid'];
-    if (Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+    if ((Platform.environment['GITHUB_ACTIONS'] == 'true' ||
+            Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
+                null) &&
         pid is int &&
         pid != _desktopPid) {
       try {

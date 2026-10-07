@@ -269,10 +269,15 @@ Future<void> runPluginUpdateApplicationScenario(
   required bool desktop,
 }) async {
   const owned = 'dsh-t08-owned-plugin', other = 'dsh-t08-other-plugin';
-  final runner = Platform.environment['RUNNER_TEMP'];
+  final runner =
+      Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] ??
+      Platform.environment['RUNNER_TEMP'];
   require(
-    Platform.environment['GITHUB_ACTIONS'] == 'true' && runner != null,
-    'plugin installation acceptance uses only an isolated CI profile',
+    (Platform.environment['GITHUB_ACTIONS'] == 'true' ||
+            Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
+                null) &&
+        runner != null,
+    'plugin installation acceptance uses only its explicit isolated profile',
   );
   final actualRoot = await app.root.resolveSymbolicLinks();
   require(

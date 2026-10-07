@@ -33,10 +33,23 @@ String applicationProbeRootParent({
   required bool systemCi,
   required bool keychainCi,
   bool pluginUpdateCi = false,
+  String? localAcceptanceRoot,
   required WebProbeOptions? webScenario,
   required bool githubActions,
   required String? runnerTemp,
 }) {
+  if (localAcceptanceRoot != null) {
+    if (githubActions ||
+        systemCi ||
+        keychainCi ||
+        !RegExp(r'^/private/tmp/dsh-launcher-local-[0-9]+$')
+            .hasMatch(localAcceptanceRoot)) {
+      throw ArgumentError(
+        'Explicit local acceptance requires its own UID temporary namespace',
+      );
+    }
+    return localAcceptanceRoot;
+  }
   if (systemCi ||
       keychainCi ||
       pluginUpdateCi ||
@@ -52,6 +65,8 @@ String applicationProbeRootParent({
 }
 
 Future<void> main(List<String> arguments) async {
+  final localAcceptanceRoot =
+      Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'];
   final instanceStartup =
       arguments.length == 3 && arguments[1] == '--instance-startup';
   final logFixture = arguments.length == 3 && arguments[1] == '--logs-fixture';
@@ -62,8 +77,11 @@ Future<void> main(List<String> arguments) async {
   final lifecycle = LifecycleProbeOptions.parse(arguments);
   final settingsStartupScenario =
       arguments.length >= 2 && arguments[1] == '--settings-startup-runtime';
+  final settingsFirstUiScenario =
+      arguments.length >= 2 && arguments[1] == '--settings-first-ui-runtime';
   final settingsScenario =
       settingsStartupScenario ||
+      settingsFirstUiScenario ||
       (arguments.length >= 2 && arguments[1] == '--settings-runtime');
   final keychainCi =
       settingsScenario && arguments.last == '--legacy-keychain-ci';
@@ -92,9 +110,10 @@ Future<void> main(List<String> arguments) async {
         '--plugins-desktop-runtime',
       }.contains(arguments[1]) &&
       (!pluginUpdateScenario ||
-          Platform.environment['GITHUB_ACTIONS'] != 'true')) {
+          (Platform.environment['GITHUB_ACTIONS'] != 'true' &&
+              localAcceptanceRoot == null))) {
     throw ArgumentError(
-      'Plugin update acceptance runs only in isolated GitHub CI',
+      'Plugin update acceptance requires isolated CI or explicit private local acceptance',
     );
   }
   final webScenario =
@@ -116,10 +135,27 @@ Future<void> main(List<String> arguments) async {
     systemCi: systemCi,
     keychainCi: keychainCi,
     pluginUpdateCi: pluginUpdateScenario,
+    localAcceptanceRoot: localAcceptanceRoot,
     webScenario: webScenario,
     githubActions: Platform.environment['GITHUB_ACTIONS'] == 'true',
     runnerTemp: runnerTemp,
   );
+  if (localAcceptanceRoot != null) {
+    final validation = await Process.run('/usr/bin/python3', [
+      '-c',
+      'import sys; sys.path.insert(0, sys.argv[1]); from settings_startup_cycle import observation_runner; print(observation_runner())',
+      File.fromUri(
+        Platform.script.resolve(
+          '../../../.github/scripts/settings_startup_cycle.py',
+        ),
+      ).parent.path,
+    ]);
+    require(
+      validation.exitCode == 0 &&
+          validation.stdout.toString().trim() == rootParent,
+      'explicit local acceptance base is canonical, UID owned and mode 0700',
+    );
+  }
   if (arguments.length != 1 &&
       !instanceStartup &&
       !updates &&
@@ -481,7 +517,10 @@ Future<void> main(List<String> arguments) async {
             : entryScenario
             ? runEntryApplicationScenario
             : settingsScenario
-            ? runSettingsApplicationScenario
+            ? (actual) => runSettingsApplicationScenario(
+                actual,
+                firstUiOnly: settingsFirstUiScenario,
+              )
             : lifecycle != null
             ? (actual) =>
                   runLifecycleScenario(actual, process, lifecycle.scenario)

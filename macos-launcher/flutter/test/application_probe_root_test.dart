@@ -9,6 +9,7 @@ void main() {
     bool system = false,
     bool keychain = false,
     bool plugin = false,
+    String? local,
     String? backend,
     bool ci = true,
     String? temporary = runner,
@@ -16,6 +17,7 @@ void main() {
     systemCi: system,
     keychainCi: keychain,
     pluginUpdateCi: plugin,
+    localAcceptanceRoot: local,
     webScenario: backend == null
         ? null
         : WebProbeOptions(
@@ -54,6 +56,27 @@ void main() {
     );
     expect(
       () => parent(plugin: true, backend: 'headless', temporary: 'relative'),
+      throwsArgumentError,
+    );
+  });
+  test('explicit local Desktop and plugin entry selects only its temporary namespace', () {
+    const local = '/private/tmp/dsh-launcher-local-501';
+    expect(parent(backend: 'desktop', ci: false, local: local), local);
+    expect(
+      parent(plugin: true, backend: 'desktop', ci: false, local: local),
+      local,
+    );
+    expect(() => parent(backend: 'desktop', local: local), throwsArgumentError);
+    expect(
+      () => parent(ci: false, local: '/private/tmp/unowned'),
+      throwsArgumentError,
+    );
+    expect(
+      () => parent(ci: false, local: '/Users/example/.dsh'),
+      throwsArgumentError,
+    );
+    expect(
+      () => parent(system: true, ci: false, local: local),
       throwsArgumentError,
     );
   });

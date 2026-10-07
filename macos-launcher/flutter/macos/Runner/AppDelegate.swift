@@ -99,16 +99,41 @@ class AppDelegate: FlutterAppDelegate {
   private var ownQuitTraceEnabled: Bool {
     #if DEBUG
     let environment = ProcessInfo.processInfo.environment
-    guard environment["GITHUB_ACTIONS"] == "true", let runner = environment["RUNNER_TEMP"],
-          let root = testRoot, root.lastPathComponent == "data" else { return false }
-    let candidate = root.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
-    let runnerRoot = URL(fileURLWithPath: runner, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
-    let socket = URL(fileURLWithPath: environment["DSH_LAUNCHER_TEST_SOCKET"] ??
-      candidate.appendingPathComponent("manager/sdk-v1.sock").path).resolvingSymlinksInPath().standardizedFileURL
-    return root.standardizedFileURL.path == candidate.appendingPathComponent("data").path &&
-      candidate.lastPathComponent.hasPrefix("dsh-") &&
-      candidate.deletingLastPathComponent().path == runnerRoot.path &&
-      socket.path == candidate.appendingPathComponent("manager/sdk-v1.sock").path
+    guard let root = testRoot, root.lastPathComponent == "data" else { return false }
+    let requestedCandidate = root.deletingLastPathComponent()
+    let requestedSocket = URL(fileURLWithPath: environment["DSH_LAUNCHER_TEST_SOCKET"] ??
+      requestedCandidate.appendingPathComponent("manager/sdk-v1.sock").path)
+    if environment["GITHUB_ACTIONS"] == "true", environment["DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT"] == nil,
+       let runner = environment["RUNNER_TEMP"] {
+      let candidate = requestedCandidate.resolvingSymlinksInPath().standardizedFileURL
+      let runnerRoot = URL(fileURLWithPath: runner, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
+      let socket = requestedSocket.resolvingSymlinksInPath().standardizedFileURL
+      return root.standardizedFileURL.path == candidate.appendingPathComponent("data").path &&
+        candidate.lastPathComponent.hasPrefix("dsh-") &&
+        candidate.deletingLastPathComponent().path == runnerRoot.path &&
+        socket.path == candidate.appendingPathComponent("manager/sdk-v1.sock").path
+    }
+    guard environment["GITHUB_ACTIONS"] != "true",
+          let local = environment["DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT"],
+          local == "/private/tmp/dsh-launcher-local-" + String(getuid()),
+          let localPhysical = realpath(local, nil),
+          let candidatePhysical = realpath(requestedCandidate.path, nil),
+          let socketPhysical = realpath(requestedSocket.deletingLastPathComponent().path, nil) else { return false }
+    defer { free(localPhysical); free(candidatePhysical); free(socketPhysical) }
+    guard String(cString: localPhysical) == local,
+          String(cString: candidatePhysical) == requestedCandidate.path,
+          String(cString: socketPhysical) == requestedSocket.deletingLastPathComponent().path,
+          (try? FileManager.default.destinationOfSymbolicLink(atPath: requestedSocket.path)) == nil,
+          let attributes = try? FileManager.default.attributesOfItem(atPath: local),
+          (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
+          (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700,
+          let candidateAttributes = try? FileManager.default.attributesOfItem(atPath: requestedCandidate.path),
+          (candidateAttributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
+          (candidateAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700 else { return false }
+    return root.path == requestedCandidate.appendingPathComponent("data").path &&
+      requestedCandidate.lastPathComponent.hasPrefix("dsh-") &&
+      requestedCandidate.deletingLastPathComponent().path == local &&
+      requestedSocket.path == requestedCandidate.appendingPathComponent("manager/sdk-v1.sock").path
     #else
     return false
     #endif

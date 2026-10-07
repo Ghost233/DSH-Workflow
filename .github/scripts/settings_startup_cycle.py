@@ -300,6 +300,22 @@ def bind_host_identity(inspection, root, receipt, desktop, probe, allowed):
             'probeStartedAt': probe['startedAt'], 'ownershipKnown': known, 'inspection': inspection}
 
 
+def observation_runner():
+    local = os.environ.get('DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT')
+    if os.environ.get('GITHUB_ACTIONS') == 'true':
+        if local:
+            raise ValueError('Mixed CI and local acceptance contexts')
+        return Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+    expected = Path('/private/tmp') / ('dsh-launcher-local-' + str(os.getuid()))
+    if local != str(expected) or expected.is_symlink():
+        raise ValueError('Explicit local acceptance root differs from current UID namespace')
+    attributes = expected.lstat()
+    if (expected.resolve(strict=True) != expected or not expected.is_dir()
+        or attributes.st_uid != os.getuid() or attributes.st_mode & 0o777 != 0o700):
+        raise ValueError('Local acceptance root must be canonical, owned and private')
+    return expected
+
+
 def validate_observation_root(root, runner):
     # Host identity and liveness are shared by general application and settings probes.
     original = Path(root)
@@ -557,14 +573,10 @@ def main(attempt):
 
 if __name__ == '__main__':
     if len(sys.argv) == 4 and sys.argv[1] == '--check-owned-pid':
-        if os.environ.get('GITHUB_ACTIONS') != 'true':
-            raise ValueError('Liveness requires clean CI')
-        print(json.dumps(check_owned_pid(Path(sys.argv[2]), Path(os.environ['RUNNER_TEMP']), int(sys.argv[3]))))
+        print(json.dumps(check_owned_pid(Path(sys.argv[2]), observation_runner(), int(sys.argv[3]))))
         sys.exit(0)
     if len(sys.argv) == 4 and sys.argv[1] == '--capture-host':
-        if os.environ.get('GITHUB_ACTIONS') != 'true':
-            raise ValueError('Host capture requires clean CI')
-        print(json.dumps(capture_owned_host(Path(sys.argv[2]), Path(os.environ['RUNNER_TEMP']), int(sys.argv[3]))))
+        print(json.dumps(capture_owned_host(Path(sys.argv[2]), observation_runner(), int(sys.argv[3]))))
         sys.exit(0)
     if sys.argv[1] == '--full':
         sys.exit(full_command())

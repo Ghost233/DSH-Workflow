@@ -55,7 +55,9 @@ Future<void> main() async {
       case 'quitRequested':
         final traceEnabled =
             kDebugMode &&
-            Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+            (Platform.environment['GITHUB_ACTIONS'] == 'true' ||
+                Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
+                    null) &&
             model.environment.testSocket != null &&
             call.arguments is Map &&
             (call.arguments as Map)['ownQuitTraceEnabled'] == true;

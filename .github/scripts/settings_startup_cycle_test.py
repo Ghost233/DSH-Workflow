@@ -509,6 +509,38 @@ class HostIdentityTest(unittest.TestCase):
         with self.assertRaises(ProcessLookupError): os.kill(result['childPid'], 0)
 
 
+class LocalObservationRootTest(unittest.TestCase):
+    def test_explicit_local_runner_requires_current_uid_private_physical_root(self):
+        base = Path('/private/tmp') / ('dsh-launcher-local-' + str(os.getuid()))
+        created = not base.exists()
+        if created:
+            base.mkdir(mode=0o700)
+        with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false', 'DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT': str(base)}):
+            self.assertEqual(cycle.observation_runner(), base)
+            with patch.dict(os.environ, {'DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT': str(base) + '-alias'}):
+                with self.assertRaisesRegex(ValueError, 'UID namespace'):
+                    cycle.observation_runner()
+            with patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}):
+                with self.assertRaisesRegex(ValueError, 'Mixed CI and local'):
+                    cycle.observation_runner()
+            if created:
+                try:
+                    base.chmod(0o755)
+                    with self.assertRaisesRegex(ValueError, 'owned and private'):
+                        cycle.observation_runner()
+                finally:
+                    base.chmod(0o700)
+                base.rmdir()
+                with tempfile.TemporaryDirectory(prefix='dsh-local-policy-target-', dir='/private/tmp') as target:
+                    base.symlink_to(target, target_is_directory=True)
+                    try:
+                        with self.assertRaisesRegex(ValueError, 'UID namespace'):
+                            cycle.observation_runner()
+                    finally:
+                        base.unlink()
+                base.mkdir(mode=0o700)
+
+
 class PrivacyTest(unittest.TestCase):
     def fixture(self, base):
         root = base / 'dsh-t05-owned'; root.mkdir()
