@@ -24,7 +24,11 @@ Future<void> main(List<String> arguments) async {
   await File('${root.path}/data/global/.dsh-workflow/desktop/desktop-host.json')
       .writeAsString(jsonEncode({'pid': pid, 'lease': 'fixture-owned-lease'}));
   await File('${root.path}/owned-desktop-cleanup.log').writeAsString('{}\n');
-  final diagnostics = ProbeDiagnostics(root, publishPhases: true);
+  final diagnostics = ProbeDiagnostics(
+    root,
+    publishPhases: true,
+    observeHostOwnership: true,
+  );
   await diagnostics.start(pid, Platform.resolvedExecutable);
   await Future<void>.delayed(const Duration(milliseconds: 1200));
   await diagnostics.close();
