@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
 const { default: monitorPlugin, apply } = await import('../src/agent-monitor-plugin.mjs')
 const { default: JevCenter } = await import('../src/jev-center-plugin.mjs')
 
@@ -475,4 +476,86 @@ test('the monitor web page saves semantic settings through standard Settings and
   assert.equal(status.engineAvailability.color, 'red')
   assert.match(page, /unavailable/)
   assert.equal(f.requests.length, 0)
+})
+
+test('debug judgments redact unlabeled managed credentials unrelated to JEV while preserving safe reasoning', async t => {
+  const f = await configuredHost(t)
+  await f.saveEngine()
+  const secrets = [`managed-alpha-${randomUUID()}`, `managed-beta-${randomUUID()}`]
+  const refs = ['OTHER_MODEL_AUTH_SLOT', 'NONJEV_PROVIDER_VALUE']
+  for (let index = 0; index < refs.length; index++) {
+    await f.ctx.credentials.set(refs[index], secrets[index])
+    assert.equal((await f.ctx.credentials.resolve(refs[index])).source, 'file')
+  }
+  const { credentialKey } = req('@deepseek-ai/dsh-credentials')
+  const grantSecret = `opaque-grant-${randomUUID()}`, recordKey = `opaque-record-${randomUUID()}`
+  const recordEnv = `opaque-record-env-${randomUUID()}`, environmentKey = `opaque-env-${randomUUID()}`
+  const headerToken = `opaque-header-${randomUUID()}`
+  const shadowedSecret = `opaque-effective-${randomUUID()}`, previousShadow = process.env[refs[0]]
+  process.env[refs[0]] = shadowedSecret
+  t.after(() => { previousShadow === undefined ? delete process.env[refs[0]] : process.env[refs[0]] = previousShadow })
+  assert.equal((await f.ctx.credentials.resolve(refs[0])).source, 'env')
+  await f.ctx.credentials.modifyRecord(credentialKey('other-provider', 'grant'), () => ({ kind: 'grant',
+    payload: { nested: [{ value: grantSecret }], attempts: 2 } }))
+  await f.ctx.credentials.modifyRecord(credentialKey('other-provider', 'api'), () => ({ kind: 'api-key',
+    key: recordKey, env: { MODEL_AUTH: recordEnv } }))
+  const previous = process.env.JEV_MONITOR_PRIVACY_ENV_API_KEY
+  process.env.JEV_MONITOR_PRIVACY_ENV_API_KEY = environmentKey
+  t.after(() => { previous === undefined ? delete process.env.JEV_MONITOR_PRIVACY_ENV_API_KEY : process.env.JEV_MONITOR_PRIVACY_ENV_API_KEY = previous })
+  await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 100,
+    noOutputThreshold: 100, checkIntervalMs: 1000, debugEvidence: true })
+  await f.start()
+  const allSecrets = [...secrets, grantSecret, recordKey, recordEnv, environmentKey, headerToken, 'semantic-secret-key', shadowedSecret]
+  await f.send({ type: 'reasoning-delta', index: 0, text: `safe isolated analysis\n${allSecrets.join('\n')}\nAuthorization: Bearer ${headerToken}\nstill making observations` })
+  await f.at(1000)
+  const records = await f.ctx.get('agentMonitor').journal()
+  assert.equal(records.filter(record => record.recordType === 'judgment').length, 1)
+  const persisted = JSON.stringify(records)
+  for (const [index, secret] of allSecrets.entries()) assert.equal(persisted.includes(secret), false, `credential material ${index} must not persist`)
+  assert.equal(persisted.includes('Authorization'), false)
+  assert.equal(persisted.includes('Bearer'), false)
+  assert.equal(persisted.includes('safe isolated analysis'), true, 'debug mode retains safe evidence')
+  assert.equal(persisted.includes('still making observations'), true)
+  const publicStatus = JSON.stringify(f.ctx.get('agentMonitor').snapshot())
+  for (const secret of allSecrets) assert.equal(publicStatus.includes(secret), false)
+  assert.equal(f.streams.get('model').request.signal.aborted, false)
+  await f.finish()
+})
+
+test('debug evidence fails closed when the standard credential provider, document read or parse is unavailable', async t => {
+  for (const failure of ['read', 'parse', 'provider', 'unknown-provider']) await t.test(failure, async t => {
+    const f = await configuredHost(t)
+    await f.saveEngine()
+    const secret = `unavailable-catalog-${randomUUID()}`
+    await f.ctx.credentials.set('UNRELATED_VALUE', secret)
+    await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 100,
+      noOutputThreshold: 100, checkIntervalMs: 1000, debugEvidence: true })
+    await f.start(); await f.send({ type: 'reasoning-delta', index: 0, text: `drop-the-entire-debug-fragment\n${secret}` })
+    const filename = join(f.home, '.credentials.yaml')
+    if (failure === 'read') await rm(filename)
+    else if (failure === 'parse') await writeFile(filename, 'version: 1\nrefs: [invalid-shape]\n')
+    else {
+      await f.ctx.configEditor.entries().find(entry => entry.options.id === 'credentials').fiber.dispose()
+      if (failure === 'unknown-provider') {
+        const { CredentialProvider } = req('@deepseek-ai/dsh-credentials')
+        const SameNameProvider = class LocalCredentialProvider extends CredentialProvider {
+          constructor(ctx) { super(ctx); this.config = { path: filename } }
+          resolve() { return Promise.resolve({ value: 'semantic-secret-key', source: 'fixture' }) }
+        }
+        await f.ctx.plugin(SameNameProvider)
+      }
+    }
+    await f.at(1000)
+    const records = await f.ctx.get('agentMonitor').journal()
+    const judgment = records.find(record => record.recordType === 'judgment')
+    assert.ok(judgment, 'metadata still persists')
+    assert.equal(judgment.debugEvidence, undefined)
+    assert.equal(judgment.debugOmitted, '无法完成凭据脱敏')
+    const serialized = JSON.stringify(records)
+    assert.equal(serialized.includes(secret), false)
+    assert.equal(serialized.includes('drop-the-entire-debug-fragment'), false)
+    assert.equal(serialized.includes('invalid-shape'), false)
+    assert.equal(f.streams.get('model').request.signal.aborted, false)
+    await f.finish()
+  })
 })

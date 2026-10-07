@@ -1,10 +1,15 @@
 import { mkdir, appendFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
+import { createRequire } from 'node:module'
 import z from '@deepseek-ai/schemastery'
 import { bindTypertRemote } from '@deepseek-ai/dsh-typert-protocol'
+import { LocalCredentialProvider, parseCredentialsDocument, resolveSpec } from '@deepseek-ai/dsh-credentials-local'
 import { createAgentMonitor } from './agent-monitor.mjs'
 import createAgentMonitorRemoteDescriptor from './agent-monitor-remote.cjs'
+
+// Native loaders may expose separate ESM and CommonJS instances of the same SDK package.
+const CommonJsLocalCredentialProvider = createRequire(import.meta.url)('@deepseek-ai/dsh-credentials-local').LocalCredentialProvider
 
 export const name = 'dsh-workflow-agent-monitor'
 export const inject = ['agents']
@@ -62,8 +67,26 @@ export async function apply(ctx, config = {}, deps = {}) {
   const sanitizeRecord = async record => {
     const secrets = Object.entries(process.env).filter(([name, value]) => value && /(?:API_KEY|ACCESS_TOKEN|AUTH_TOKEN|SECRET_KEY|PASSWORD)$/i.test(name)).map(([, value]) => value)
     if (record.debugEvidence) {
+      for (const snippet of Object.values(record.debugEvidence)) {
+        if (typeof snippet !== 'string') continue
+        for (const match of snippet.matchAll(/\bBearer\s+([^\s"'\r\n]+)/gi)) secrets.push(match[1])
+      }
       try {
-        const refs = new Set((ctx.get('jevCenter')?.describe() ?? []).map(engine => engine.credentialRef))
+        const provider = ctx.get('credentials')
+        if (!(provider instanceof LocalCredentialProvider || provider instanceof CommonJsLocalCredentialProvider)
+          || !provider.config) throw new Error('Credential catalog unavailable')
+        const filename = resolveSpec(provider.config).filename
+        const document = parseCredentialsDocument(await readFile(filename, 'utf8'), filename)
+        const collect = value => {
+          if (typeof value === 'string' && value.length) secrets.push(value)
+          else if (value && typeof value === 'object') for (const child of Object.values(value)) collect(child)
+        }
+        for (const secret of document.refs.values()) collect(secret)
+        for (const stored of document.records.values()) {
+          if (stored.kind === 'grant') collect(stored.payload)
+          else { collect(stored.key); collect(stored.env) }
+        }
+        const refs = new Set([...document.refs.keys(), ...(ctx.get('jevCenter')?.describe() ?? []).map(engine => engine.credentialRef)])
         for (const ref of refs) {
           const credential = await ctx.get('credentials')?.resolve(ref)
           if (credential?.value) secrets.push(credential.value)
