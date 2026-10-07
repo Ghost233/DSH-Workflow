@@ -15,6 +15,8 @@
 
 - 已阅读既有 CI 和检查入口。Owner 全量自动发现新增公开回归；本阶段相关装配门禁包含新的紧凑资源 Host 回归。原始完整 macOS verifier 保留，没有降低健康要求或延长截止。
 - 隐私模块直接 Node 37/37 后，正式完整门禁仍为 711/713、退出 1：SDK 的 ESM/CJS 公开入口在正式 loader 下有不同构造器身份，真实标准提供者被误拒绝。通过公开品牌 Probe 确认后，兼容两种 canonical exports 的真实 instanceof；同名/同 config 的非标准提供者仍失败关闭。正式和普通 Node 模块均 38/38，原失败与新候选分开保存，没有放宽断言或改运行器。
+- 后续 Spec 复审仍证实同类 P1：SDK 可从环境直接解析未在 managed 文档列出的合法模型凭据引用。修复仅对 debugEvidence 子树保守替换当前非空环境值，普通元数据继续按已知凭据材料脱敏；真实 Adapter 的标准 resolve、无文档条目、journal 脱敏、安全文字与代理/请求/时间完整断言先红后绿。正式和普通 Node 模块均 39/39，没有包装 provider 方法或改上游。
+- 最新首次完整门禁为 714/715、退出 1，失败在固定安全尾句：中心实际收到首尾完整，npm 默认环境材料与尾句子串碰撞。产品按保守策略正确脱敏；仅更换隔离 fixture 的安全尾句并加入中心交付断言，保留原业务断言与期限。npm 文件 23/23、模块 39/39 后，重新封候选跑完整门禁；没有将准备问题当产品修复或放宽安全要求。
 - 原完整 macOS CI 的失败是真实自研装配回归；固定基线同一步骤双架构成功。SDK/资源接缝让原因可在秒级健康响应处确认，但不替代完整 `.app`、codesign、DMG 或双架构构建，后者由新 CI 另行记录。
 - 语义监控中曾把 TypeSafe 的“text only”误读为 string-only。对照一手契约后撤回限制及错误断言，保留既有结构化 state；误设的红态不算产品修复证据。
 - 隐私核对中也曾误把 ApiKeyRecord.env 的实际材料值当作变量名；SDK 原文纠正后，回归收敛到 LocalCredentialProvider.resolve(ref) 的同名 process.env 优先规则。仅确证的 A/B 泄漏红态作为产品证据，没有猜测 env spec 或穷举无关变量。
@@ -26,3 +28,5 @@
 没有新增全局代理规则或泛化工程依赖处理。上述缺口已在本次范围内由行为回归关闭；新的审查整改项如有，须在最终复审前关闭。操作系统实际通知显示仍按用户明确授权暂缓，通知提交与送达分开记录。
 
 来源：`/private/tmp/jev-stage2-t02-notes.md`、`jev-stage2-t04-notes.md`、`jev-stage2-t05-notes.md`、`jev-stage2-t05-client-notes.md`、`jev-stage2-browser-notes.md`、`jev-stage2-ci-preflight.md`、`jev-stage2-packaged-health-fix.md`、`jev-stage2-privacy-fix.md`。原始候选 tree `d88d77eca65073336010dfb81ac86b63e982d89e`，提交 `269b513ef8d046c3ba132c8e7610efc7b74aafcb`，Owner 708/708、相关集成 12/12 的真实绿态不作为隐私修复后的证据。中间候选 `b5697a39cbe1206e89925a558d300a3e13ce0f92` 的失败保留；最终修复候选 tree `4331d1a2b4a53afee8d0678867ecee42bd098264`，新门禁在交付记录单独绑定。
+
+环境独立凭据闭环的最新提交 `015f3380df95e985b94b07599c8a9aeff47ab990`，精确 tree `38b149341ab6f6babb7ad570f59f12ae2f63d54d`，4069 个 tracked blob 核对；Owner 715/715、相关集成 12/12、客户端、固定 Harness、上游与 diff 检查均退出 0，无取消或跳过。后续仅更新交付和复盘文档，仍须从 e469 固定点复审最新 HEAD。

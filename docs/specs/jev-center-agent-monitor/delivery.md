@@ -77,3 +77,11 @@
 - 最终代码提交 `58d2702bf0aaf038d46e7ad55e850c8d9e9307b5`，tree `4331d1a2b4a53afee8d0678867ecee42bd098264`；4068 个 tracked blob 逐项核对，用户原有 MCP hunks 未进入候选，工作文件字节保留。
 - Node v26.9.0；`npm test`：714/714，退出 0，无取消或跳过。日志 `/private/tmp/jev-stage2-final2-owner-full.log`。相关 Web/Desktop、profile 迁移和资源 Host health 的六文件集成门禁：12/12，退出 0；日志 `/private/tmp/jev-stage2-final2-integration.log`。客户端产物、固定 Harness 构建证明、SDK/上游源码干净核对与 diff 检查均退出 0。
 - [阶段 2 复盘](stage2-retro.md) 没有新增未关闭的范围内整改项；随后最终两轴复审仍覆盖 e469 固定点到最新 HEAD。Browser 的真实 Settings、公开 RPC 和原生请求告警/恢复证据已保存于本次任务；实际 OS 显示仍按用户授权暂缓。完整 `.app`、codesign、DMG 双架构不在本地 SDK health 绿态的证明范围，旧 CI 失败与后续自动 CI 分别保留。
+
+## 阶段 2 环境独立凭据闭环
+
+- 在 `78ff7ed72890edd1da49b06c68efeb9d82903a8b` 上，Standards 复审 0 项，Spec 仍证实同类 P1：标准提供者可解析仅存在于环境的合法引用，managed 文档没有条目；隔离 Native Adapter 经标准 resolve 消费测试模型 key 后，该裸值进入 journal。公开状态无值、无付费调用，没有额外声称网络认证头验签。
+- 最小修复仅在调试片段子树保守替换当前非空环境值，不把环境名称或值写入记录；普通元数据仍按已知凭据材料脱敏。catalog、有效 A/B、grant、header 与未知提供者失败关闭保持。正式与普通 Node 模块均 39/39、退出 0。
+- 中间 tree `da0dc5804db106df3b32945eb66c19a6d78cbb0a` 的完整门禁为 714/715、退出 1：npm 环境材料与 fixture 安全尾句碰撞。真实中心首尾交付已确认；只调整 fixture 安全文案、增加交付断言，未改产品、期限或安全断言。
+- 最新代码提交 `015f3380df95e985b94b07599c8a9aeff47ab990`，tree `38b149341ab6f6babb7ad570f59f12ae2f63d54d`；4069 个 tracked blob 核对，用户原有工作文件与 foreign hunks 保留。`npm test` 715/715、相关六文件集成 12/12、客户端产物、固定 Harness、SDK/上游与 diff 检查均退出 0，无取消或跳过。日志 `/private/tmp/jev-stage2-final4-owner-full.log`、`/private/tmp/jev-stage2-final4-integration.log`。714 旧绿态不作为此次证明。
+- 复盘已更新；最新全阶段双轴审查仍从固定 e469 到最新 HEAD。#18 尚未提前实施，总 PR #20 保持草稿，完整 `.app`/codesign/DMG 双架构结果与本地 SDK health 证明继续分开记录。
