@@ -217,10 +217,12 @@ jobs:
           from settings_startup_cycle import can_repeat, collect_owned_processes, copy_safe_evidence, launcher_web_released, observe_os_query, run_diagnostics, validate_root
           evidence = Path(os.environ['EVIDENCE_DIR'])
           logs = [evidence / 'application.log', *sorted(evidence.glob('startup-*/command.log'))]
-          roots = [name for log in logs if log.exists()
+          roots = [name for log in logs if log.is_file() and not log.is_symlink()
                    for name in re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M)]
+          full_roots = {name for log in logs if log.name == 'application.log' and log.is_file() and not log.is_symlink()
+                        for name in re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M)}
           results = []
-          functional_failed = not bool(roots)
+          functional_failed = not bool(full_roots)
           print('T05_COLLECTOR_PHASE=root-validation-start', flush=True)
           for name in dict.fromkeys(roots):
               root = validate_root(name, Path(os.environ['RUNNER_TEMP']))
@@ -270,32 +272,35 @@ jobs:
               resources_released = launcher_web_released(owned, listener, service_listen)
               normal_exit = owned['normalExitStage']
               settings_body = json.loads((target / 'settings-evidence.json').read_text())
-              request = settings_body.get('permissionNormalRequest') or {}
-              permission_verified = (settings_body.get('fullAccessSaved') is True
-                  and settings_body.get('permissionReopenVerified') is True
-                  and settings_body.get('permissionOriginalExitObserved') is True
-                  and settings_body.get('permissionModeBeforeReopen') == 'workspace-write'
-                  and settings_body.get('permissionModeAfterReopen') == 'danger-full-access'
-                  and request.get('lookupFound') is True and request.get('accepted') is True
-                  and isinstance(settings_body.get('oldDesktopPid'), int) and settings_body['oldDesktopPid'] > 1
-                  and isinstance(settings_body.get('newDesktopPid'), int) and settings_body['newDesktopPid'] > 1
-                  and request.get('expectedPid') == settings_body['oldDesktopPid']
-                  and settings_body['newDesktopPid'] != settings_body['oldDesktopPid']
-                  and isinstance(settings_body.get('oldHostPid'), int) and settings_body['oldHostPid'] > 1
-                  and isinstance(settings_body.get('hostPid'), int) and settings_body['hostPid'] > 1
-                  and settings_body['hostPid'] != settings_body['oldHostPid']
-                  and isinstance(settings_body.get('initialBackendLease'), str)
-                  and isinstance(settings_body.get('reopenedBackendLease'), str)
-                  and bool(settings_body['reopenedBackendLease'])
-                  and settings_body['reopenedBackendLease'] != settings_body['initialBackendLease'])
-              functional_complete = functional_command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released and permission_verified
+              permission_applicable = name in full_roots
+              permission_verified = None
+              if permission_applicable:
+                  request = settings_body.get('permissionNormalRequest') or {}
+                  permission_verified = (settings_body.get('fullAccessSaved') is True
+                      and settings_body.get('permissionReopenVerified') is True
+                      and settings_body.get('permissionOriginalExitObserved') is True
+                      and settings_body.get('permissionModeBeforeReopen') == 'workspace-write'
+                      and settings_body.get('permissionModeAfterReopen') == 'danger-full-access'
+                      and request.get('lookupFound') is True and request.get('accepted') is True
+                      and isinstance(settings_body.get('oldDesktopPid'), int) and settings_body['oldDesktopPid'] > 1
+                      and isinstance(settings_body.get('newDesktopPid'), int) and settings_body['newDesktopPid'] > 1
+                      and request.get('expectedPid') == settings_body['oldDesktopPid']
+                      and settings_body['newDesktopPid'] != settings_body['oldDesktopPid']
+                      and isinstance(settings_body.get('oldHostPid'), int) and settings_body['oldHostPid'] > 1
+                      and isinstance(settings_body.get('hostPid'), int) and settings_body['hostPid'] > 1
+                      and settings_body['hostPid'] != settings_body['oldHostPid']
+                      and isinstance(settings_body.get('initialBackendLease'), str)
+                      and isinstance(settings_body.get('reopenedBackendLease'), str)
+                      and bool(settings_body['reopenedBackendLease'])
+                      and settings_body['reopenedBackendLease'] != settings_body['initialBackendLease'])
+              functional_complete = functional_command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released and (not permission_applicable or permission_verified is True)
               functional_failed = not functional_complete or functional_failed
               if not physical_complete:
                   print('::warning::Isolated Desktop/Host cleanup is incomplete or unknown; functional Launcher/Web result is separate', flush=True)
               print('T05_COLLECTOR_PHASE=port-observation-end ROOT=' + root.name, flush=True)
               results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes, 'ownership': owned['ownership'], 'hostBindingKnown': owned['hostBindingKnown'],
                               'functionalCommandExit': functional_command_exit, 'normalExitStage': normal_exit,
-                              'permissionReopenVerified': permission_verified, 'settingsBusinessEvidence': settings_body,
+                              'permissionProofApplicable': permission_applicable, 'permissionReopenVerified': permission_verified, 'settingsBusinessEvidence': settings_body,
                               'launcherWebReleased': resources_released, 'functionalAcceptanceComplete': functional_complete, 'isolatedCleanup': owned['isolatedCleanup'],
                               'allOwnedProcessesGone': physical_complete, 'finallyComplete': owned['finallyComplete'], 'receiptLookup': owned['receiptLookup'],
                               'receiptRemoved': True if owned['receiptLookup'].get('state') == 'absent' and owned['receiptLookup'].get('errno') == errno.ENOENT else (False if owned['receiptLookup'].get('state') == 'present' else None),

@@ -22,6 +22,7 @@ from settings_repeat_gate import validate_root, launcher_ownership, ownership, c
 
 SAFE_EVIDENCE = {
     'probe-process.json': 'json',
+    'app.log': 'text',
     'host-ownership.jsonl': 'jsonl',
     'host-inspection-results.jsonl': 'jsonl',
     'owned-desktop-process.json': 'json',
@@ -33,7 +34,6 @@ SAFE_EVIDENCE = {
     'web-final.json': 'json',
     'probe-timeline.jsonl': 'jsonl',
     'owned-desktop-cleanup.log': 'text',
-    'app.log': 'text',
     'settings-startup-ready.png': 'png',
     'web-final.png': 'png',
 }

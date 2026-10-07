@@ -548,6 +548,76 @@ class PrivacyTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 cycle.copy_safe_evidence(root.resolve(), target, allow_independent_unknown=True)
 
+    def test_missing_business_evidence_still_preserves_safe_app_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve(); root, target, _ = self.fixture(base)
+            (root / 'app.log').write_text('first failure phase\npassword=private-app-secret\n')
+            with self.assertRaisesRegex(ValueError, 'Missing own functional evidence: settings-evidence.json'):
+                cycle.copy_safe_evidence(root, target, allow_independent_unknown=True)
+            self.assertTrue((target / 'app.log').is_file())
+            self.assertIn('first failure phase', (target / 'app.log').read_text())
+            self.assertNotIn('private-app-secret', (target / 'app.log').read_text())
+
+    def test_app_log_copy_refuses_leaf_and_parent_symlink_without_read(self):
+        actual_read = Path.read_text
+        for link_parent in (False, True):
+            with self.subTest(link_parent=link_parent), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory).resolve(); root, target, _ = self.fixture(base)
+                external = base / 'external.log'; external.write_text('external-private-sentinel')
+                (root / 'app.log').symlink_to(external)
+                if link_parent:
+                    alias = base / 'dsh-t05-alias'; alias.symlink_to(root, target_is_directory=True)
+                    source = alias
+                else:
+                    source = root
+                read_paths = []
+                def tracked_read(file, *args, **kwargs):
+                    read_paths.append(file)
+                    return actual_read(file, *args, **kwargs)
+                with patch.object(Path, 'read_text', new=tracked_read), self.assertRaises(ValueError):
+                    cycle.copy_safe_evidence(source, target, allow_independent_unknown=True)
+                self.assertNotIn(source / 'app.log', read_paths)
+                self.assertNotIn(external, read_paths)
+                self.assertFalse((target / 'app.log').exists())
+
+    def test_diagnostics_permission_body_gate_excludes_prefix_and_requires_full(self):
+        import re
+        repo = Path(__file__).resolve().parents[2]
+        workflow = (repo / '.github/workflows/flutter-settings-diagnostics.yml').read_text()
+        section = workflow.split('      - name: Collect T05 observed application and process evidence', 1)[1]
+        source = section.split("python3 - <<'PY'\n", 1)[1].split('          PY', 1)[0]
+        tree = ast.parse('\n'.join(line[10:] for line in source.splitlines()))
+        def selects(node, names):
+            return isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id in names for target in node.targets)
+        header = [node for node in tree.body if selects(node, {'logs', 'roots', 'full_roots', 'functional_failed'})]
+        loop = next(node for node in tree.body if isinstance(node, ast.For))
+        verdict = [node for node in loop.body if selects(node, {'permission_applicable', 'permission_verified', 'functional_complete', 'functional_failed'})
+                   or isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == 'permission_applicable']
+        for full_present in (False, True):
+            with self.subTest(full_present=full_present), tempfile.TemporaryDirectory() as directory:
+                evidence = Path(directory).resolve()
+                startup = evidence / 'startup-1'; startup.mkdir()
+                prefix_root, full_root = str(evidence / 'dsh-t05-prefix'), str(evidence / 'dsh-t05-full')
+                (startup / 'command.log').write_text('ISOLATED_ROOT=' + prefix_root + '\n')
+                if full_present:
+                    (evidence / 'application.log').write_text('ISOLATED_ROOT=' + full_root + '\n')
+                namespace = {'evidence': evidence, 're': re}
+                exec(compile(ast.Module(body=header, type_ignores=[]), '<actual diagnostic root header>', 'exec'), namespace)
+                namespace.update(name=prefix_root, settings_body={'startupOnly': True}, request={},
+                                 functional_command_exit=0, normal_exit={'code': 0}, resources_released=True)
+                exec(compile(ast.Module(body=verdict, type_ignores=[]), '<actual diagnostic permission verdict>', 'exec'), namespace)
+                self.assertTrue(namespace['functional_complete'])
+                self.assertFalse(namespace['permission_applicable'])
+                self.assertIsNone(namespace['permission_verified'])
+                self.assertEqual(namespace['functional_failed'], not full_present)
+                if full_present:
+                    namespace.update(name=full_root, settings_body={'startupOnly': True}, request={})
+                    exec(compile(ast.Module(body=verdict, type_ignores=[]), '<actual full missing body verdict>', 'exec'), namespace)
+                    self.assertFalse(namespace['functional_complete'])
+                    self.assertTrue(namespace['permission_applicable'])
+                    self.assertFalse(namespace['permission_verified'])
+                    self.assertTrue(namespace['functional_failed'])
+
     def test_malformed_safe_json_and_jsonl_fail_collection(self):
         for name in ('probe-process.json', 'probe-timeline.jsonl'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
