@@ -43,7 +43,37 @@ permissions:
   contents: read
 
 jobs:
+  validation-inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      helper_only: ${{ steps.proof.outputs.helper_only }}
+      native_reuse: ${{ steps.proof.outputs.native_reuse }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - id: proof
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 .github/scripts/actor_validation_inputs.py --base 260fdbbb8a3697899e1133e3293e255df604e0d4 --output validation-inputs.json
+          python3 - <<'PY'
+          import json, os
+          value = json.load(open('validation-inputs.json'))
+          helper = value['helperOnly'] and value['materialInputsEqual'] and os.environ['EVENT_NAME'] != 'workflow_dispatch'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('helper_only=' + str(helper).lower() + '\n')
+              output.write('native_reuse=' + str(helper and value['base'] == '260fdbbb8a3697899e1133e3293e255df604e0d4').lower() + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validation-material-inputs-${{ github.workflow }}
+          path: validation-inputs.json
   build:
+    needs: validation-inputs
+    if: always() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/macos-v') || needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.helper_only != 'true')
     runs-on: macos-15
     steps:
       - name: Checkout fixed DSH submodule

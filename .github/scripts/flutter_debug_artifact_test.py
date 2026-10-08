@@ -368,5 +368,61 @@ class ReleaseActorCollectorTest(unittest.TestCase):
                 self.assertEqual(outside.read_bytes(), b'untouched outside bytes')
                 invalid.unlink()
 
+
+class ActorRoutingWiringTest(unittest.TestCase):
+    def test_reuse_requires_successful_classifier_even_when_outputs_survive_failure(self):
+        from actor_validation_inputs import parsed
+        repo = Path(__file__).resolve().parents[2]
+        acceptance = parsed((repo / '.github/workflows/flutter-launcher-acceptance.yml').read_text())
+        producer = parsed((repo / '.github/workflows/macos-app.yml').read_text())
+        conditions = [('build', producer['jobs']['build']['if'], 'helper_only')]
+        conditions += [(name, acceptance['jobs'][name]['if'], 'native_reuse') for name in ['t07', 't02', 't05', 't06', 't08']]
+
+        def evaluate(condition, status, output, event='push', ref='refs/heads/main', actor_only=False):
+            values = {
+                'needs.validation-inputs.result': status,
+                'needs.validation-inputs.outputs.helper_only': output or '',
+                'needs.validation-inputs.outputs.native_reuse': output or '',
+                'github.event_name': event, 'github.ref': ref,
+                'inputs.actor_only': actor_only, 'inputs.release_run_id': '',
+            }
+            for token, value in values.items():
+                condition = condition.replace(token, repr(value))
+            condition = re.sub(r'!(?!=)', ' not ', condition).replace('&&', ' and ').replace('||', ' or ')
+            return eval(condition, {'__builtins__': {}}, {'always': lambda: True, 'startsWith': lambda value, prefix: value.startswith(prefix)})
+
+        for name, condition, output_name in conditions:
+            for status in ['success', 'failure', 'cancelled', 'skipped']:
+                for output in ['true', 'false', None]:
+                    with self.subTest(job=name, result=status, output_name=output_name, output=output):
+                        self.assertEqual(evaluate(condition, status, output), status != 'success' or output != 'true')
+                if name == 'build':
+                    self.assertTrue(evaluate(condition, status, 'true', event='workflow_dispatch'))
+                    self.assertTrue(evaluate(condition, status, 'true', ref='refs/tags/macos-v1.0.0'))
+                else:
+                    self.assertFalse(evaluate(condition, status, 'true', event='workflow_dispatch', actor_only=True))
+
+    def test_actual_workflow_actor_dispatch_and_current_signed_arm_gate(self):
+        from actor_validation_inputs import parsed
+        repo = Path(__file__).resolve().parents[2]
+        document = parsed((repo / '.github/workflows/flutter-launcher-acceptance.yml').read_text())
+        actor = document['jobs']['actor-only']
+        steps = actor['steps']
+        self.assertTrue(any('actor_smoke.py --xctestrun' in step.get('run', '') for step in steps))
+        self.assertFalse(any('download-artifact' in step.get('uses', '') for step in steps))
+        build = next(step['run'] for step in steps if step.get('name') == 'Build sanctioned public-close UI actor without an AUT dependency')
+        self.assertIn('actor_signature(entitlements, architectures)', build)
+        self.assertIn("codesign', '-d', '--entitlements'", build)
+        self.assertIn("lipo', '-archs'", build)
+        self.assertTrue(all('needs.validation-inputs.outputs.native_reuse' in document['jobs'][name]['if'] for name in ['t07', 't02', 't05', 't06', 't08']))
+        inputs = (document.get('on') or document['true'])['workflow_dispatch']['inputs']
+        self.assertEqual(inputs['actor_only']['type'], 'boolean')
+        self.assertEqual(inputs['product_source_sha']['type'], 'string')
+        release = document['jobs']['t09-release']
+        self.assertTrue(any('product-material-reuse.json' in step.get('run', '') for step in release['steps']))
+        producer = parsed((repo / '.github/workflows/macos-app.yml').read_text())['jobs']['build']
+        self.assertTrue(producer['if'].startswith('always()'))
+        self.assertEqual(producer['needs'], 'validation-inputs')
+
 if __name__ == '__main__':
     unittest.main()
