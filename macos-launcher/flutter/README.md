@@ -14,7 +14,12 @@ project.id 为 dsh-workflow；web 服务提供启动、回收、状态和日志�
 
 ## 检查与构建
 
+工程检查使用 Node.js 24.12.0。先在仓库根目录准备当前维护版 Matt 面板；真实项目装配测试需要它的构建产物，再进入 Flutter 目录运行检查：
+
 ```sh
+npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+npm run build --prefix matt-skills-panel-plugin
+cd macos-launcher/flutter
 FLUTTER_BIN="$HOME/flutter/bin/flutter" DART_BIN="$HOME/flutter/bin/dart" bash check.sh
 ```
 

@@ -39,11 +39,12 @@ void main() {
               .transform(utf8.decoder)
               .transform(const LineSplitter())
               .listen((line) {
-                final match = RegExp(r'http://127\.0\.0\.1:[0-9]+/[^ ]*')
-                    .firstMatch(line);
+                final match = RegExp(
+                  r'^COLD_STATE_READY (http://127\.0\.0\.1:[0-9]+/[^ ]*)$',
+                ).firstMatch(line);
                 if (match != null && !uri.isCompleted) {
                   uri.complete(
-                    Uri.parse('${match[0]}ws').replace(scheme: 'ws'),
+                    Uri.parse('${match[1]}ws').replace(scheme: 'ws'),
                   );
                 }
               }, onDone: outputDone.complete);

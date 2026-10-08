@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
-void main() {
+Future<void> main() async {
   registerExtension('ext.cold.nativeState', (_, _) async {
     return ServiceExtensionResponse.result(
       jsonEncode({
@@ -12,5 +12,6 @@ void main() {
       }),
     );
   });
+  stdout.writeln('COLD_STATE_READY ${(await Service.getInfo()).serverUri}');
   stdin.listen((_) {}, onDone: () => exit(0));
 }

@@ -70,6 +70,12 @@ jobs:
           channel: stable
           flutter-version: 3.47.6
 
+      - name: Build project-maintained Matt panel
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
+          npm test --prefix matt-skills-panel-plugin
+
       - name: Verify Flutter launcher and official SDK integration
         working-directory: macos-launcher/flutter
         run: |
@@ -98,12 +104,6 @@ jobs:
           if [[ "$IS_RELEASE" == true ]]; then
             test "$RELEASE_TAG" = "macos-v$(node -p "require('./macos-launcher/package.json').version")"
           fi
-
-      - name: Build project-maintained Matt panel
-        run: |
-          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
-          npm run build --prefix matt-skills-panel-plugin
-          npm test --prefix matt-skills-panel-plugin
 
       - name: Test Web and Desktop launch contract
         shell: bash

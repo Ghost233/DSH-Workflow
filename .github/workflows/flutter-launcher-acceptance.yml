@@ -73,6 +73,16 @@ jobs:
           channel: stable
           flutter-version: 3.47.6
 
+      - name: Set up fixed project Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
+
       - name: Verify locked launcher engineering checks
         working-directory: macos-launcher/flutter
         run: |
@@ -229,6 +239,16 @@ jobs:
         with:
           channel: stable
           flutter-version: 3.47.6
+
+      - name: Set up fixed project Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
 
       - name: Check current launcher engineering
         working-directory: macos-launcher/flutter
@@ -497,6 +517,16 @@ jobs:
           flutter-version: 3.47.6
           cache: true
           pub-cache-key: flutter-pub-:os:-:version:-:arch:-${{ hashFiles('macos-launcher/flutter/pubspec.lock') }}
+
+      - name: Set up fixed project Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
 
       - name: Check current launcher engineering
         working-directory: macos-launcher/flutter
@@ -771,6 +801,16 @@ jobs:
           channel: stable
           flutter-version: 3.47.6
 
+      - name: Set up fixed project Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
+
       - name: Check current launcher engineering
         working-directory: macos-launcher/flutter
         run: |
@@ -998,6 +1038,16 @@ jobs:
         with:
           channel: stable
           flutter-version: 3.47.6
+
+      - name: Set up fixed project Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
 
       - name: Check current launcher engineering
         working-directory: macos-launcher/flutter

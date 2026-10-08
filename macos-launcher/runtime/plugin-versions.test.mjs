@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { checkPluginVersions, compareVersions, declaredDshVersions, latestDeclaredDsh } from './plugin-versions.mjs'
 
 test('version report compares SemVer without treating a prerelease as newer than stable', () => {
@@ -31,7 +32,7 @@ test('DSH support text uses only compatibility declared by the package', () => {
 })
 
 test('one check covers profile, project lock and bundled plugins without writing or installing', async t => {
-  const root = await mkdtemp('/private/tmp/dsh-plugin-versions-test-')
+  const root = await mkdtemp(join(tmpdir(), 'dsh-plugin-versions-test-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const resources = join(root, 'resources'), workflow = join(resources, 'workflow'), home = join(root, 'home')
   const profile = join(home, 'profiles', 'web')
@@ -110,7 +111,7 @@ test('one check covers profile, project lock and bundled plugins without writing
 
 
 test('a malformed self-owned plugin remains a failed row without discarding completed plugin checks', async t => {
-  const root = await mkdtemp('/private/tmp/dsh-t08-plugin-check-')
+  const root = await mkdtemp(join(tmpdir(), 'dsh-t08-plugin-check-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const resources = join(root, 'resources'), home = join(root, 'home')
   const profile = join(home, 'profiles/desktop')

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -247,6 +248,38 @@ class DebugArtifactTest(unittest.TestCase):
                 self.run_cli('pack', '--inputs', self.inputs, '--app', self.app, '--bundle', self.bundle,
                              '--build-exit', self.build_exit, success=False)
                 self.assertFalse((self.bundle / 'manifest.json').exists())
+
+
+class EngineeringPrerequisitesTest(unittest.TestCase):
+    def test_engineering_checks_prepare_fixed_node_and_current_matt_package(self):
+        repo = Path(__file__).resolve().parents[2]
+        workflows = {
+            'flutter-launcher-acceptance.yml': {'t07', 't02', 't05', 't06', 't08'},
+            'flutter-settings-diagnostics.yml': {'startup'},
+            'macos-app.yml': {'build'},
+            'ci.yml': {'verify'},
+        }
+        for workflow, expected_jobs in workflows.items():
+            jobs = re.split(r'^  ([\w-]+):\n', (repo / '.github/workflows' / workflow).read_text().split('\njobs:\n', 1)[1], flags=re.MULTILINE)
+            checked_jobs = set()
+            for job, body in zip(jobs[1::2], jobs[2::2]):
+                steps = re.split(r'\n(?=      - )', body)
+                for gate, step in enumerate(steps):
+                    if 'bash check.sh' not in step and 'flutter test --no-pub' not in step and not re.search(r'^        run: npm test$', step, flags=re.MULTILINE):
+                        continue
+                    checked_jobs.add(job)
+                    with self.subTest(workflow=workflow, job=job):
+                        node = next((i for i, value in enumerate(steps[:gate]) if 'uses: actions/setup-node@' in value and 'node-version: 24.12.0' in value), None)
+                        prep = next((i for i, value in enumerate(steps[:gate]) if 'npm ci --prefix matt-skills-panel-plugin --ignore-scripts' in value and 'npm run build --prefix matt-skills-panel-plugin' in value), None)
+                        self.assertIsNotNone(node, 'Engineering checks require the fixed project Node version')
+                        self.assertIsNotNone(prep, 'Clean-checkout engineering checks require the current maintained Matt package')
+                        self.assertLess(node, prep)
+                        self.assertLess(steps[prep].index('npm ci '), steps[prep].index('npm run build '))
+                        if workflow == 'ci.yml':
+                            ready = next((value for value in steps[:gate] if 'node scripts/harness-runtime.mjs ensure deepseek-harness' in value and 'node scripts/harness-runtime.mjs check deepseek-harness' in value), None)
+                            self.assertIsNotNone(ready, 'The project test job must publish and verify the actual public Harness build stamp')
+                            self.assertLess(ready.index('harness-runtime.mjs ensure '), ready.index('harness-runtime.mjs check '))
+            self.assertEqual(checked_jobs, expected_jobs)
 
 
 if __name__ == '__main__':

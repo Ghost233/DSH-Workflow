@@ -59,20 +59,18 @@ jobs:
           test "$(git rev-parse HEAD:deepseek-harness)" = "$(git -C deepseek-harness rev-parse HEAD)"
           test -z "$(git -C deepseek-harness status --porcelain --untracked-files=all)"
 
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
+
       - name: 核对 JEV/监控客户端产物
         run: npm run check:client
 
-      - name: 安装固定 DSH 开发依赖
-        working-directory: deepseek-harness
-        run: pnpm install --frozen-lockfile
-
-      - name: 构建固定 DSH 库
-        working-directory: deepseek-harness
-        run: pnpm run build:lib
-
-      - name: 构建当前平台 DSH 原生模块
-        working-directory: deepseek-harness
-        run: pnpm run build:native-system
+      - name: Prepare and verify the fixed DSH engineering build
+        run: |
+          node scripts/harness-runtime.mjs ensure deepseek-harness
+          node scripts/harness-runtime.mjs check deepseek-harness
 
       - name: 准备 DSH CI 沙箱
         working-directory: deepseek-harness
