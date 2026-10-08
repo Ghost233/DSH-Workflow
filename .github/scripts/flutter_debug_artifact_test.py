@@ -31,7 +31,7 @@ class DebugArtifactTest(unittest.TestCase):
         self.producer_sha = subprocess.check_output(['git', '-C', str(self.root), 'rev-parse', 'HEAD'], text=True).strip()
         self.toolchain = self.root / 'toolchain.json'
         self.toolchain.write_text(json.dumps({
-            'arch': 'x86_64', 'flutter': {'frameworkRevision': 'fixed-flutter', 'engineRevision': 'fixed-engine', 'dartSdkVersion': '3.13.0'},
+            'arch': 'arm64', 'flutter': {'frameworkRevision': 'fixed-flutter', 'engineRevision': 'fixed-engine', 'dartSdkVersion': '3.13.0'},
             'xcode': 'Xcode 26.0\nBuild version 17A1', 'sdkVersion': '26.0', 'sdkBuild': '25A1', 'macos': '15.6',
         }))
         self.inputs = self.root / 'inputs.json'
@@ -105,7 +105,7 @@ class DebugArtifactTest(unittest.TestCase):
                 self.assertEqual(value['consumer']['sourceCommit'], consumer_sha)
                 self.assertEqual(value['producer']['runId'], value['consumer']['runId'])
                 self.assertEqual(subprocess.check_output([str(destination / 'Contents/MacOS/DSH Workflow')], text=True), 'actual-app-byte\n')
-        for field, value in [('arch', 'x86_64'), ('xcode', 'different actual Xcode'), ('sdkVersion', '99.0'), ('sdkBuild', 'different actual SDK')]:
+        for field, value in [('xcode', 'different actual Xcode'), ('sdkVersion', '99.0'), ('sdkBuild', 'different actual SDK')]:
             with self.subTest(mismatch=field):
                 self.toolchain.write_text(json.dumps(dict(facts, **{field: value})))
                 self.key(); destination = self.root / ('rejected-'+field) / 'DSH Workflow.app'
@@ -157,8 +157,16 @@ class DebugArtifactTest(unittest.TestCase):
                 self.assertFalse(destination.exists())
                 self.assertFalse((self.root / 'outside').exists())
 
+    def test_non_arm_toolchain_cannot_produce_launcher_artifact(self):
+        facts = json.loads(self.toolchain.read_text())
+        facts['arch'] = 'unsupported-architecture'
+        self.toolchain.write_text(json.dumps(facts))
+        result = self.run_cli('inputs', '--root', self.root, '--toolchain', self.toolchain, '--output', self.inputs, success=False)
+        self.assertIn('ARM64-only', result.stderr)
+        self.assertFalse(self.inputs.exists())
+
     def test_incomplete_toolchain_cannot_produce_reuse_key(self):
-        self.toolchain.write_text(json.dumps({'arch': 'x86_64'}))
+        self.toolchain.write_text(json.dumps({'arch': 'arm64'}))
         self.run_cli('inputs', '--root', self.root, '--toolchain', self.toolchain, '--output', self.inputs, success=False)
         self.assertFalse(self.inputs.exists())
 
@@ -183,7 +191,7 @@ class DebugArtifactTest(unittest.TestCase):
     def test_arch_flutter_xcode_and_sdk_changes_cannot_consume_old_app(self):
         self.pack()
         original = json.loads(self.toolchain.read_text())
-        for field in ('arch', 'flutter', 'xcode', 'sdkVersion', 'sdkBuild'):
+        for field in ('flutter', 'xcode', 'sdkVersion', 'sdkBuild'):
             with self.subTest(toolchain=field):
                 changed = dict(original)
                 changed[field] = dict(original[field], frameworkRevision='other-revision') if field == 'flutter' else 'different'

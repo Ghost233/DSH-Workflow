@@ -11,7 +11,7 @@ on:
       - .github/scripts/settings_startup_cycle.py
       - .github/scripts/settings_startup_cycle_test.py
       - macos-launcher/**
-      - owner-workflow-plugin/**
+      - agent-observation-plugin/**
       - matt-skills-panel-plugin/**
       - dynamic-workflow-plugin/**
       - scripts/**
@@ -25,7 +25,7 @@ on:
       - project-plugins.json
       - project-plugins.lock.json
       - maclauncher.json
-      - start-owner-workflow.sh
+      - start-dsh-workflow.sh
       - '!**/*.md'
       - '!macos-launcher/flutter/tool/desktop_launch_diagnostics.swift'
       - '!macos-launcher/flutter/tool/desktop_launch_observer.dart'
@@ -422,10 +422,10 @@ jobs:
 
   t05:
     if: github.event_name != 'workflow_dispatch' || inputs.release_run_id == ''
-    runs-on: macos-15-intel
+    runs-on: macos-15
     timeout-minutes: 35
     concurrency:
-      group: flutter-t05-debug-x64-${{ github.ref }}
+      group: flutter-t05-debug-arm64-${{ github.ref }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -451,13 +451,13 @@ jobs:
       - name: Bind current source and fixed runtime artifact
         run: |
           git rev-parse HEAD > "$EVIDENCE_DIR/source-commit.txt"
-          printf '{"repository":"%s","runId":37325723931,"artifactName":"dsh-workflow-x64"}\n' \
+          printf '{"repository":"%s","runId":37325723931,"artifactName":"dsh-workflow-arm64"}\n' \
             "$GITHUB_REPOSITORY" > "$EVIDENCE_DIR/runtime-artifact-source.json"
 
-      - name: Download the successful frozen x64 runtime
+      - name: Download the successful frozen ARM64 runtime
         uses: actions/download-artifact@v4
         with:
-          name: dsh-workflow-x64
+          name: dsh-workflow-arm64
           run-id: 37325723931
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/t05-runtime-artifact
@@ -482,7 +482,7 @@ jobs:
           runtime_resources="$T05_RUNTIME_MOUNT/DSH Workflow.app/Contents/Resources"
           test -x "$runtime_resources/node"
           test -d "$runtime_resources/desktop/DeepSeek Harness.app"
-          test "$("$runtime_resources/node" -p 'process.arch')" = x64
+          test "$("$runtime_resources/node" -p 'process.arch')" = arm64
           printf 'T05_RUNTIME_RESOURCES=%s\n' "$runtime_resources" >> "$GITHUB_ENV"
           shasum -a 256 "$runtime_resources/node" \
             "$runtime_resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
@@ -1185,15 +1185,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     timeout-minutes: 20
     defaults:
       run:
@@ -1204,7 +1196,7 @@ jobs:
           submodules: false
       - name: Prepare exact source and runner evidence
         env:
-          EXPECTED_ARCH: ${{ matrix.arch }}
+          EXPECTED_ARCH: arm64
         run: |
           set -euo pipefail
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T09-$EXPECTED_ARCH"
@@ -1214,7 +1206,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           actual_arch="$(uname -m)"
           printf '%s\n' "$actual_arch" > "$acceptance_evidence/architecture.txt"
-          if [[ "$EXPECTED_ARCH" == arm64 ]]; then test "$actual_arch" = arm64; else test "$actual_arch" = x86_64; fi
+          test "$EXPECTED_ARCH" = arm64
+          test "$actual_arch" = arm64
       - name: Verify actual successful Release producer at the exact dispatched SHA
         uses: actions/github-script@v8
         env:
@@ -1233,11 +1226,11 @@ jobs:
         with:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.release_run_id }}
-          name: dsh-workflow-${{ matrix.arch }}
+          name: dsh-workflow-arm64
           path: ${{ runner.temp }}/t09-release-artifact
       - name: Verify and mount immutable DMG
         env:
-          EXPECTED_ARCH: ${{ matrix.arch }}
+          EXPECTED_ARCH: arm64
         run: |
           set -euo pipefail
           dmgs=("$RUNNER_TEMP/t09-release-artifact/"*.dmg)
@@ -1270,7 +1263,7 @@ jobs:
           evidence = pathlib.Path(os.environ['EVIDENCE_DIR'])
           derived = evidence / 'public-close-actor-build'
           arch = subprocess.check_output(['uname', '-m'], text=True).strip()
-          assert arch in ('arm64', 'x86_64')
+          assert arch == 'arm64'
           command = ['xcodebuild', '-project', 'tool/release_close_actor/Actor.xcodeproj',
                      '-scheme', 'PublicCloseActor', '-configuration', 'Debug',
                      '-destination', 'platform=macOS,arch=' + arch,
@@ -1330,6 +1323,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: flutter-launcher-T09-release-${{ matrix.arch }}
+          name: flutter-launcher-T09-release-arm64
           path: ${{ env.EVIDENCE_DIR }}
           if-no-files-found: error

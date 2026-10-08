@@ -1,3 +1,5 @@
+> 当前已撤销接口相关的历史说明已移除。其余原输入记录保持原样；当前就绪来源与模块装配变化后的验收见正式 Spec 和 Ticket，旧成功不自动成为新候选通过证据。
+
 # T02 — 官方 Desktop 打开失败诊断循环
 
 状态：当前真实 parent 三次业务绿色、只读 RPC 与 Launcher/Desktop/Host 清理证据完整；Corrupt 未复现，原因未知。针对旧 Corrupt 的诊断阶段 1–2 仍未完成。
@@ -106,7 +108,6 @@ Root 均为 `/Users/runner/work/_temp/<后缀>`，各 Launcher executable 为其
 
 [Native run 37428158902，T02 job 112152486026](https://github.com/Ghost233/DSH-Workflow/actions/runs/37428158902/job/112152486026) 的 source 为 `7633f7d78884a6ae55af48c54fa103c75c6aed53`，T02 job SUCCESS；整体 run failure 来自其他作业，不归类为 T02 失败。artifact 11396261299，下载 SHA-256 `ef173bffa2a6cb326b2de40588beb33a6c5383fc39d3eff245eb2de9d6558893` 与 GitHub digest 一致。
 
-check/build/application exit 均 0。实际 UI+SDK Web start/recycle、重复 start 复用、错误密码拒绝、正确隔离认证、同一 Desktop 后端/工作区/配置、Owner health、回收后后端保留和启动器继续可管理均通过；UI final 没有 open-failed/corrupt，也没有新可信错误/进程退出提前失败。此结果遵用户授权的新 Web readiness 标准，不把普通 starting 或迟到 receipt 当性能缺陷。
 
 隔离 root `/Users/runner/work/_temp/dsh-t01-dJATal`；Launcher PID 12520、executable `candidate.app/Contents/MacOS/DSH Workflow`、start `2026-10-06T07:16:29.693312Z`。Desktop PID 12595、launchDateUnix 1791271000.5998、executable `/Users/runner/work/_temp/t02-runtime-mount/DSH Workflow.app/Contents/Resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness`，其 probeStartedAt 与 Launcher 一致。实际 Host receipt PID 12908、lease `48a9a0f1-063d-449d-8a09-ae1b3b38ed0c`，首 receipt 23.019 秒、10 次 present；Host executable/process start 未由本完整场景 collector 保存，保持未知，不借另一 source/另一 PID 的 c1 证明补填。Launcher 最终 normal exit 0 / 33.644 秒。
 

@@ -4,7 +4,7 @@
 
 启动器只管理一个全局实例。官方 Electron 桌面端启动并持有 DSH Host；Web 入口通过带密码的代理连接这个 Host，不再启动第二个 Web 后端。桌面端和浏览器共享模型配置、会话、工作区及插件。
 
-DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-workflow-desktop` Bundle 加载 Owner、中文 Matt 技能和 `dsh-workflow-matt-panel` 本地派生面板，并发布权限为 `0600` 的后端就绪记录。本地面板不包含 bundled skills，原版 Deck 的宿主和工具条目在项目装配中停用。
+DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-workflow-desktop` Bundle 加载 JEV/监控、中文 Matt 技能和 `dsh-workflow-matt-panel` 本地派生面板，并发布权限为 `0600` 的后端就绪记录。本地面板不包含 bundled skills，原版 Deck 的宿主和工具条目在项目装配中停用。
 
 面板源码位于主仓库普通目录 `matt-skills-panel-plugin/`，按主项目正常提交即可被 CI 获取；`vendor/dsh-mattpocock-skills-deck` 只用于追踪上游。打包前运行 `npm ci --prefix matt-skills-panel-plugin --ignore-scripts`、`npm run build --prefix matt-skills-panel-plugin`。构建不写入运行中的 profile，也不重启服务；升级对照见派生版 README。
 
@@ -23,19 +23,19 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.1-source.app" no
 
 `build.mjs` 必须提供已构建的 Desktop 应用，并提前在 `macos-launcher/flutter` 完成固定 Flutter 依赖解析。打包使用独立 Node 发行版；共享库版 Node 不能直接复制到应用包。上述源码开发应用用于本机调试；分发使用下面的生产构建流程。
 
-## GitHub 双架构生产构建
+## GitHub ARM64生产构建
 
-`.github/workflows/macos-app.yml` 在 arm64 和 x64 原生 runner 上初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。上游源码保持原样。
+`.github/workflows/macos-app.yml` 在 ARM64 原生 runner 上初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。上游源码保持原样。
 
 CI 同时准备固定 Flutter 3.47.6，检查 lockfile、Dart 格式、静态分析与真实 SDK socket 测试，再将对应架构的 Flutter Release 应用与既有运行时装配为启动器。maclauncher.json 声明 Web 访问服务的启动/回收/状态/日志与 Desktop 后端的只读状态；入口托管、窗口激活和失联恢复由应用负责。
 
 `build-desktop-release.mjs` 使用上游生产包集合、工程元数据和运行时校验接口，按 Electron 的 Node 版本安装生产依赖，生成包含完整资源的 Desktop 应用。应用资源不使用源码目录或开发运行时链接；本项目使用 ad-hoc 签名，不调用上游要求 Developer ID 与公证凭据的发行入口。
 
-`verify-desktop-release.mjs` 将应用复制到独立临时目录，核对签名和运行时文件完整性，并运行上游真实 Host、前端、插件及 DOCX／XLSX／PPTX 转 PDF 验收。通过后，CI 将该 Desktop 应用传给启动器打包，再验收实际包中的 Desktop、Owner 就绪状态及 Matt 面板装配，最后校验两种架构的 DMG。验收使用临时 profile，不修改用户运行配置。main 构建生成 Actions artifacts；正式发布仍由 `macos-v<版本>` 标签触发。
+`verify-desktop-release.mjs` 将应用复制到独立临时目录，核对签名和运行时文件完整性，并运行上游真实 Host、前端、插件及 DOCX／XLSX／PPTX 转 PDF 验收。通过后，CI 将该 Desktop 应用传给启动器打包，再验收实际包中的 Desktop、官方 DSH 就绪状态及 Matt 面板装配，最后校验ARM64的 DMG。验收使用临时 profile，不修改用户运行配置。main 构建生成 Actions artifacts；正式发布仍由 `macos-v<版本>` 标签触发。
 
 ## 启动和关闭
 
-日常入口仍为无参数 `./start-owner-workflow.sh`。在 macOS 上，它通过 `dsh-workflow://open-global` 唤起已构建的启动器并打开全局实例；重复运行复用启动器和官方 Desktop 的单实例机制。在其他平台保留原来的源码 Web 启动路径。
+日常入口仍为无参数 `./start-dsh-workflow.sh`。在 macOS 上，它通过 `dsh-workflow://open-global` 唤起已构建的启动器并打开全局实例；重复运行复用启动器和官方 Desktop 的单实例机制。在其他平台保留原来的源码 Web 启动路径。
 
 首次打开管理窗口需要设置访问密码。启动器将 Web 连接到正在运行的 Desktop Host；后端未运行时才打开官方桌面端。唯一主入口“打开 DSH”激活已有桌面应用，不会额外打开浏览器标签。每个工程在 DSH 内选择工作目录。
 

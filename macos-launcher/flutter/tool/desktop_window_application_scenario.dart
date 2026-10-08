@@ -231,6 +231,7 @@ class DesktopWindowProbe {
       'SDK cold case binds exact physical Host',
     );
     Map<String, Object?>? latestInput;
+    var mismatchRecorded = false;
     Future<bool> currentInputKnown() async {
       cold =
           ((await app.state())['native'] as Map)['coldCallerObservation']
@@ -240,7 +241,8 @@ class DesktopWindowProbe {
         sdkColdEpochUnchanged(baseline, cold, latestInput!['inputCounts']),
         'fresh OS and native input epoch are known and unchanged',
       );
-      return [
+      final preserved =
+          [
             'pid',
             'uid',
             'kernelSeconds',
@@ -248,18 +250,47 @@ class DesktopWindowProbe {
             'executable',
           ].every((key) => latestInput![key] == baseline[key]) &&
           latestInput!['frontmostPid'] == baseline['pid'];
+      if (!preserved && !mismatchRecorded) {
+        mismatchRecorded = true;
+        final native = (await app.state())['native'] as Map;
+        await File('${root.path}/desktop-focus-first-mismatch.json')
+            .writeAsString(
+              jsonEncode({
+                'externalBaseline': baseline,
+                'nativeColdCapture': cold,
+                'nativeForeground': native['foregroundObservation'],
+                'freshOsInput': latestInput,
+                'physicalWindow': current,
+              }),
+            );
+      }
+      return preserved;
     }
 
-    await waitFor(
-      'same hidden Desktop preserves external foreground',
-      () async =>
-          await currentInputKnown() &&
-          current['ownershipKnown'] == true &&
-          current['hidden'] == true &&
-          current['onscreenWindowCount'] == 0 &&
-          current['active'] == false &&
-          current['frontmostPid'] == baseline['pid'],
-    );
+    try {
+      await waitFor(
+        'same hidden Desktop preserves external foreground',
+        () async =>
+            await currentInputKnown() &&
+            current['ownershipKnown'] == true &&
+            current['hidden'] == true &&
+            current['onscreenWindowCount'] == 0 &&
+            current['active'] == false &&
+            current['frontmostPid'] == baseline['pid'],
+      );
+    } catch (error, stack) {
+      await finishSdkColdFocusFailure(
+        root: root,
+        state: app.state,
+        backend: app.backend,
+        baseline: baseline,
+        cold: cold,
+        physicalWindow: current,
+        freshOsInput: latestInput,
+        firstError: error,
+        firstStack: stack,
+      );
+    }
     require(
       await currentInputKnown(),
       'final external focus uses fresh input and physical identity',
@@ -1024,17 +1055,30 @@ Future<void> runDesktopWindowRestarts(
 }
 
 Future<void> superviseSdkColdWindow(List<String> arguments) async {
+  final local = Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'];
+  final ci = Platform.environment['GITHUB_ACTIONS'] == 'true';
   require(
-    Platform.environment['GITHUB_ACTIONS'] == 'true' &&
-        Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] == null,
-    'external SDK cold scene uses only a disposable runner',
+    (ci && local == null) || (!ci && local != null),
+    'external SDK cold scene uses a disposable runner or explicit private local context',
   );
-  final base = await Directory(Platform.environment['RUNNER_TEMP']!)
-      .resolveSymbolicLinks();
-  require(
-    base == Platform.environment['RUNNER_TEMP'],
-    'runner input is physical',
-  );
+  final requested = local ?? Platform.environment['RUNNER_TEMP']!;
+  final base = await Directory(requested).resolveSymbolicLinks();
+  require(base == requested, 'external SDK cold root input is physical');
+  if (local != null) {
+    final validation = await Process.run('/usr/bin/python3', [
+      '-c',
+      'import sys; sys.path.insert(0, sys.argv[1]); from settings_startup_cycle import observation_runner; print(observation_runner())',
+      File.fromUri(
+        Platform.script.resolve(
+          '../../../.github/scripts/settings_startup_cycle.py',
+        ),
+      ).parent.path,
+    ]);
+    require(
+      validation.exitCode == 0 && validation.stdout.toString().trim() == base,
+      'external SDK cold local base is canonical, UID owned and mode 0700',
+    );
+  }
   final configuration = {
     'evidence':
         '${Platform.environment['EVIDENCE_DIR']!}/external-sdk-cold-supervision',
@@ -1069,6 +1113,48 @@ Future<void> superviseSdkColdWindow(List<String> arguments) async {
     stderr.addStream(outer.stderr),
   ]);
   exitCode = await outer.exitCode;
+}
+
+/// The cold-scene failure boundary, also when its VM or evidence path has failed.
+Future<Never> finishSdkColdFocusFailure({
+  required Directory root,
+  required ApplicationState state,
+  required Map backend,
+  required Map baseline,
+  required Map cold,
+  required Map physicalWindow,
+  required Object? freshOsInput,
+  required Object firstError,
+  required StackTrace firstStack,
+}) async {
+  Map? native;
+  await closeProbeResources([
+    (
+      'cold native diagnostics',
+      () async {
+        native = (await state())['native'] as Map;
+      },
+    ),
+    (
+      'cold failure evidence',
+      () => File('${root.path}/desktop-window-evidence.json').writeAsString(
+        jsonEncode({
+          'sdkColdTrigger': true,
+          'externalBaseline': baseline,
+          'nativeStateAvailable': native != null,
+          'nativeColdCapture': native?['coldCallerObservation'] ?? cold,
+          'nativeForeground': native?['foregroundObservation'],
+          'physicalWindow': physicalWindow,
+          'hostPid': backend['pid'],
+          'hostLease': backend['lease'],
+          'freshOsInput': freshOsInput,
+          'externalFocusVerified': false,
+          'failure': '$firstError',
+        }),
+      ),
+    ),
+  ], preserveFailure: true);
+  Error.throwWithStackTrace(firstError, firstStack);
 }
 
 bool sdkColdEpochUnchanged(Map baseline, Map cold, Object? currentInputCounts) {

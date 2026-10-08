@@ -46,7 +46,7 @@ TypeSafe 支持同一 state 下多个问题并行评估，适合批量判断；�
 
 当前 `project-plugins.json` / `project-plugins.lock.json` 未列出上述 Jev 插件。DSH 来源为 `.gitmodules` 声明的官方 `deepseek-ai/deepseek-harness`；本地子模块 HEAD 为 `5badb15009ae1756c3afe0ae0cef1faafc290ccc`。这只能说明项目清单没有装配这些插件，不能据此判断用户其他 DSH profile 是否已安装。
 
-若后续授权接入，修改范围应是项目集成层或自研插件，保持第三方源码原样。Owner 的候选封存、写入隔离和验证执行证据继续由 Workflow 与确定性代码负责，Jev 判断不代替验证命令的实际退出证据。依据：本仓库 `AGENTS.md`。
+若后续授权接入，修改范围应是项目集成层或自研插件，保持第三方源码原样。Jev 判断不代替验证命令的实际退出证据。依据：本仓库 `AGENTS.md`。
 
 ## 来源核验记录
 

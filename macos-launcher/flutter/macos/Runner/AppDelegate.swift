@@ -27,6 +27,7 @@ class AppDelegate: FlutterAppDelegate {
   private var coldDesktopObserver: NSObjectProtocol?
   private var coldFocusObserver: NSObjectProtocol?
   private var coldFocusRestoreEligible = false
+  private var coldForegroundIdentity: (pid: pid_t, seconds: UInt64, microseconds: UInt64, executable: String, bundle: String)?
   private var coldInputCounts: [UInt32] = []
   private var coldRecoveryObserver: NSKeyValueObservation?
   private var desktopLaunchObserver: NSKeyValueObservation?
@@ -237,6 +238,7 @@ class AppDelegate: FlutterAppDelegate {
           "desktopQuitObservation": self.desktopQuitObservation,
           "desktopWindowObservation": self.desktopWindowObservation,
           "coldCallerObservation": self.coldCallerObservation,
+          "foregroundObservation": self.foregroundObservation(),
           "lastOpenedUrl": self.lastOpenedUrl as Any,
           "urlOpenMode": self.systemBoundaryTest ? "NSWorkspace" : "guarded",
           "systemBoundaryTest": self.systemBoundaryTest, "loginStatus": self.loginStatus()])
@@ -360,12 +362,14 @@ class AppDelegate: FlutterAppDelegate {
           #endif
           if hidden {
             let caller = ProcessInfo.processInfo.processIdentifier
-            let foreground = NSWorkspace.shared.frontmostApplication?.processIdentifier
-            self.coldFocusRestoreEligible = NSApp.isActive && foreground == caller
+            let foreground = NSWorkspace.shared.frontmostApplication
+            self.coldForegroundIdentity = foreground.flatMap { try? self.foregroundIdentity($0) }
+            self.coldFocusRestoreEligible = self.coldForegroundIdentity != nil && foreground?.isActive == true
             self.coldInputCounts = self.userInputCounts()
             #if DEBUG
-            self.coldCallerObservation = ["callerPid": caller, "foregroundPid": foreground as Any? ?? NSNull(),
-              "captureUptime": ProcessInfo.processInfo.systemUptime, "restoreSelfEligible": self.coldFocusRestoreEligible, "inputCountsBefore": self.coldInputCounts]
+            self.coldCallerObservation = ["callerPid": caller, "foregroundPid": foreground?.processIdentifier as Any? ?? NSNull(),
+              "captureUptime": ProcessInfo.processInfo.systemUptime, "restoreSelfEligible": NSApp.isActive && foreground?.processIdentifier == caller,
+              "restoreForegroundEligible": self.coldFocusRestoreEligible, "inputCountsBefore": self.coldInputCounts]
             #endif
             FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-caller-captured pid=\(caller) eligible=\(self.coldFocusRestoreEligible) uptime=\(ProcessInfo.processInfo.systemUptime)\n".utf8))
             self.coldFocusObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -411,9 +415,19 @@ class AppDelegate: FlutterAppDelegate {
                             self.coldCallerObservation["hiddenRecoveryUptime"] = ProcessInfo.processInfo.systemUptime
                             #endif
                             if self.coldFocusRestoreEligible && unchanged {
-                              if self.mainFlutterWindow?.isVisible == true { self.mainFlutterWindow?.makeKeyAndOrderFront(nil) }
-                              NSApp.activate(ignoringOtherApps: true)
-                              FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-caller-restore-requested pid=\(ProcessInfo.processInfo.processIdentifier) inputUnchanged=true uptime=\(ProcessInfo.processInfo.systemUptime)\n".utf8))
+                              guard let captured = self.coldForegroundIdentity,
+                                    let target = NSRunningApplication(processIdentifier: captured.pid) else { throw self.failure("原前台身份未知") }
+                              let actual = try self.foregroundIdentity(target)
+                              guard actual == captured else { throw self.failure("原前台身份已改变") }
+                              if captured.pid == ProcessInfo.processInfo.processIdentifier && self.mainFlutterWindow?.isVisible == true {
+                                self.mainFlutterWindow?.makeKeyAndOrderFront(nil)
+                              }
+                              let accepted = target.activate(options: [.activateAllWindows])
+                              #if DEBUG
+                              self.coldCallerObservation["restoreForegroundPid"] = captured.pid
+                              self.coldCallerObservation["restoreForegroundAccepted"] = accepted
+                              #endif
+                              FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-caller-restore-requested pid=\(captured.pid) accepted=\(accepted) inputUnchanged=true uptime=\(ProcessInfo.processInfo.systemUptime)\n".utf8))
                             } else {
                               FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-caller-restore-skipped inputUnchanged=\(unchanged) uptime=\(ProcessInfo.processInfo.systemUptime)\n".utf8))
                             }
@@ -523,6 +537,30 @@ class AppDelegate: FlutterAppDelegate {
     return current
   }
 
+  private func foregroundIdentity(_ application: NSRunningApplication) throws -> (pid: pid_t, seconds: UInt64, microseconds: UInt64, executable: String, bundle: String) {
+    var identity = proc_bsdinfo()
+    let size = MemoryLayout<proc_bsdinfo>.stride
+    guard !application.isTerminated,
+          proc_pidinfo(application.processIdentifier, PROC_PIDTBSDINFO, 0, &identity, Int32(size)) == Int32(size),
+          identity.pbi_uid == getuid(), identity.pbi_pid == UInt32(application.processIdentifier),
+          let executable = application.executableURL?.resolvingSymlinksInPath().path,
+          let bundle = application.bundleURL?.resolvingSymlinksInPath().path else { throw failure("原前台物理身份未知") }
+    return (application.processIdentifier, identity.pbi_start_tvsec, identity.pbi_start_tvusec, executable, bundle)
+  }
+
+  #if DEBUG
+  private func foregroundObservation() -> [String: Any] {
+    let cached = NSWorkspace.shared.frontmostApplication
+    let fresh = cached.flatMap { NSRunningApplication(processIdentifier: $0.processIdentifier) }
+    return ["uptime": ProcessInfo.processInfo.systemUptime,
+      "pid": cached?.processIdentifier as Any? ?? NSNull(),
+      "cachedActive": cached?.isActive as Any? ?? NSNull(),
+      "freshActive": fresh?.isActive as Any? ?? NSNull(),
+      "freshHidden": fresh?.isHidden as Any? ?? NSNull(),
+      "inputCounts": userInputCounts()]
+  }
+  #endif
+
   private func userInputCounts() -> [UInt32] {
     [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown].map {
       CGEventSource.counterForEventType(.hidSystemState, eventType: $0)
@@ -536,7 +574,7 @@ class AppDelegate: FlutterAppDelegate {
     if let observer = coldDesktopObserver { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
     if let observer = coldFocusObserver { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
     coldRecoveryObserver?.invalidate(); coldRecoveryObserver = nil
-    coldFocusObserver = nil; coldFocusRestoreEligible = false; coldInputCounts = []
+    coldFocusObserver = nil; coldFocusRestoreEligible = false; coldForegroundIdentity = nil; coldInputCounts = []
     coldDesktopObserver = nil; coldDesktopIdentity = nil
   }
 

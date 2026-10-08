@@ -11,15 +11,14 @@ updated: 2026-09-26
 
 ## 目标与参照
 
-在 DSH Web 中交付独立的 `dynamic-workflow-plugin`。行为参照固定的 ZCode submodule `29628c9acdb81b703bbd4080c207a0e7ce5e276e`；后续上游修复经显式更新固定提交、构建和回归验证后纳入。Owner Workflow 保持自己的执行状态、授权和默认代理模式。
+在 DSH Web 中交付独立的 `dynamic-workflow-plugin`。行为参照固定的 ZCode submodule `29628c9acdb81b703bbd4080c207a0e7ce5e276e`；后续上游修复经显式更新固定提交、构建和回归验证后纳入。现有 DSH 官方代理模式保持独立。
 
 “1:1”指 ZCode Dynamic Workflow 的脚本 API、用户功能、运行状态、恢复行为，以及 DSH Web 内 workflow 专属界面的视觉结构和交互。它不包括 ZCode 的应用外壳或 CLI/TUI。
 
 ## 已确定的宿主差异
 
 - 新插件仅在独立 Dynamic Workflow 代理模式提供 ZCode 式聊天工具；该模式隐藏 DSH 官方 `workflow` 工具。其他模式和 DSH 上游源码保持原样。
-- 无参数 `./start-owner-workflow.sh` 默认加载新插件并提供独立入口，Owner 仍是默认代理模式。
-- 用户自行安排同一项目内 Owner 与 Dynamic Workflow 的并行运行；新插件不自动阻止或仲裁。
+- 恢复实施并通过验收后，才由无参数启动入口装配新插件及独立入口。
 - 子代理的文件、命令及工具调用遵守 DSH 原生沙箱和审批。聊天创建运行时保留 ZCode 的分析预览与会话许可确认；保存中枢中的运行按钮直接启动。
 - Saved Workflow 仅有项目作用域，保存于 `.ghost/workflows/*.ghostdwf.ts`，可纳入 Git。单文件的自有注释头保存名称、说明和参数声明；正文使用 ZCode 的 TypeScript 脚本 API。不读取 ZCode 的 `.dwf.ts` 文件，也不共享其存储。
 - Run journal、历史和产物存于项目内被 Git 忽略的 `.dsh-workflow/dynamic-workflow/`。
@@ -45,7 +44,7 @@ updated: 2026-09-26
 2. **运行接线**：实现 DSH driver、项目内 journal、产物存储和实时事件通道。使 actor 会话、typed ask、world 读取与命令、取消、同 Run 恢复及 Amend 的结果复用按固定源码语义工作；子代理工具仍使用 DSH 沙箱与审批。用真实中断和重启测试核对持久状态，包括用户选择保留的 `running` 节点重派行为。
 3. **用户工具与保存定义**：提供目标清单中的聊天工具和独立代理模式；实现项目内 `.ghostdwf.ts` 的单文件元数据、校验、列举、编辑和启动。验证坏定义不影响其他定义，项目外和全局目录不会被创建或读取。
 4. **Web 界面**：在 DSH Web 插槽接入独立入口、工具卡与确认、时间线、Run 列表和详情、保存中枢及产物视图。移植 ZCode workflow 专属的时间线模型与视觉元素，适配 DSH 的 React 与事件协议；写操作走 DSH 的受控通信通道。以固定脚本和运行记录逐屏核对交互及关键布局。
-5. **日常装配与验收**：只有上述功能通过后，才在无参数启动入口装配新插件和独立代理模式。验证 Owner 仍为默认模式、DSH 官方 `workflow` 在原有模式可用、同项目并行不被新插件拦截，Web/Owner/SoL 原有流程仍能启动和运行。
+5. **日常装配与验收**：只有上述功能通过后，才在无参数启动入口装配新插件和独立代理模式。验证 DSH 官方 `workflow` 在原有模式可用，Web 及保留的独立插件继续正常运行。
 
 实施仅修改自研插件及项目集成代码；`vendor/ZCode` 与 `deepseek-harness` 上游源码保持原样。任何后续上游更新均先显式移动 submodule 固定提交，再运行同一组合同测试与 Web 验收。
 

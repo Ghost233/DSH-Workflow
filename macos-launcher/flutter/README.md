@@ -29,6 +29,6 @@ dart run tool/native_probe.dart 'build/macos/Build/Products/Debug/DSH Workflow.a
 
 Debug 验收检查真实窗口、菜单显隐与断线恢复。测试配置环境和 VM 原生状态接口仅在 Debug 生效；Release 不提供它们。验收不使用当前用户 profile，不启动用户业务。
 
-生产构建从仓库根目录使用 macos-launcher/build.mjs；先准备现有官方 Desktop 与面板产物。构建将 Flutter Release 应用、现有 Node/DSH 运行时、插件和 Desktop 装配为一个独立应用。CI 在对应原生架构上设置构建架构、测试并生成两种 DMG；移动副本继续接受真实 Host、Office、Owner 与 Matt 验收。
+生产构建从仓库根目录使用 macos-launcher/build.mjs；先准备现有官方 Desktop 与面板产物。构建将 Flutter Release 应用、现有 Node/DSH 运行时、插件和 Desktop 装配为一个独立应用。CI 在对应原生架构上设置构建架构、测试并生成一份 ARM64 DMG；移动副本继续接受真实 Host、Office、JEV/监控与 Matt 验收。
 
 更新入口继续查询本仓库的 macos-v 发行版本。MacLauncher SDK 只承担已实现的生命周期与入口协作，不替代本项目的更新和插件管理。

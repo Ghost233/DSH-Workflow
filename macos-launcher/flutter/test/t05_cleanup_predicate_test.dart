@@ -1,4 +1,9 @@
 import 'dart:io';
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:vm_service/vm_service.dart';
+import 'package:vm_service/vm_service_io.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:launcher_core/launcher_core.dart';
@@ -8,9 +13,121 @@ import '../tool/web_application_scenario.dart'
 import '../tool/probe_diagnostics.dart' show desktopQuitFacts;
 import '../tool/release_distribution_probe.dart' show finishReleaseProbe;
 import '../tool/desktop_window_application_scenario.dart'
-    show sdkColdEpochUnchanged;
+    show sdkColdEpochUnchanged, finishSdkColdFocusFailure;
 
 void main() {
+  for (final readFails in [false, true]) {
+    for (final writeFails in [false, true]) {
+      test(
+        'cold failure keeps original error and stack with VM=$readFails I/O=$writeFails',
+        () async {
+          final root = await Directory.systemTemp.createTemp(
+            'cold-failure-diagnostics-',
+          );
+          final configuration = jsonDecode(
+            await File('.dart_tool/package_config.json').readAsString(),
+          ) as Map;
+          final dart = Directory.fromUri(
+            Uri.parse(configuration['flutterRoot'] as String),
+          ).uri.resolve('bin/cache/dart-sdk/bin/dart').toFilePath();
+          final process = await Process.start(dart, [
+            '--enable-vm-service=0',
+            'test/fixtures/cold_state_vm.dart',
+          ]);
+          final uri = Completer<Uri>(), outputDone = Completer<void>();
+          process.stdout
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())
+              .listen((line) {
+                final match = RegExp(r'http://127\.0\.0\.1:[0-9]+/[^ ]*')
+                    .firstMatch(line);
+                if (match != null && !uri.isCompleted) {
+                  uri.complete(
+                    Uri.parse('${match[0]}ws').replace(scheme: 'ws'),
+                  );
+                }
+              }, onDone: outputDone.complete);
+          final errors = process.stderr.transform(utf8.decoder).join();
+          VmService? vm;
+          try {
+            vm = await vmServiceConnectUri(
+              (await uri.future.timeout(const Duration(seconds: 10)))
+                  .toString(),
+            );
+            final isolate = (await vm.getVM()).isolates!.single.id!;
+            Future<Map<String, Object?>> state([Map<String, String>? _]) async {
+              return (await vm!.callServiceExtension(
+                'ext.cold.nativeState',
+                isolateId: isolate,
+              )).json!.cast<String, Object?>();
+            }
+
+            expect(
+              (await state())['native'],
+              isNotNull,
+              reason: 'the actual VM state seam is available before failure',
+            );
+            if (readFails) await vm.dispose();
+            if (writeFails) {
+              await Directory('${root.path}/desktop-window-evidence.json')
+                  .create();
+            }
+            Object? original, thrown;
+            StackTrace? originalStack, thrownStack;
+            try {
+              throw StateError('original foreground/HID failure');
+            } catch (error, stack) {
+              original = error;
+              originalStack = stack;
+              try {
+                await finishSdkColdFocusFailure(
+                  root: root,
+                  state: state,
+                  backend: {'pid': 42, 'lease': 'cold-host'},
+                  baseline: {'pid': 41},
+                  cold: {'source': 'previous-capture'},
+                  physicalWindow: {'ownershipKnown': false},
+                  freshOsInput: null,
+                  firstError: error,
+                  firstStack: stack,
+                );
+              } catch (error, stack) {
+                thrown = error;
+                thrownStack = stack;
+              }
+            }
+            expect(thrown, same(original));
+            expect(thrownStack.toString(), originalStack.toString());
+            if (!writeFails) {
+              final evidence = jsonDecode(
+                await File('${root.path}/desktop-window-evidence.json')
+                    .readAsString(),
+              ) as Map;
+              expect(
+                evidence['failure'],
+                contains('original foreground/HID failure'),
+              );
+              expect(evidence['externalFocusVerified'], false);
+              expect(
+                (evidence['nativeColdCapture'] as Map)['source'],
+                readFails ? 'previous-capture' : 'real-dart-vm',
+              );
+            }
+          } finally {
+            await vm?.dispose();
+            await process.stdin.close();
+            expect(
+              await process.exitCode.timeout(const Duration(seconds: 5)),
+              0,
+            );
+            await outputDone.future;
+            await errors;
+            await root.delete(recursive: true);
+          }
+        },
+      );
+    }
+  }
   test('SDK cold recovery requires known fresh unchanged input', () {
     final baseline = {
       'inputCounts': [1, 2, 3, 4],

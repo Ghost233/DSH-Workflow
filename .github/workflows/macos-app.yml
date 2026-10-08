@@ -6,12 +6,12 @@ on:
       - .github/workflows/macos-app.yml
       - macos-launcher/**
       - maclauncher.json
-      - owner-workflow-plugin/**
+      - agent-observation-plugin/**
       - matt-skills-panel-plugin/**
       - scripts/project-plugins.mjs
       - scripts/project-plugin-resolver.mjs
       - scripts/harness-runtime.mjs
-      - scripts/kernel-launch-composition.mjs
+      - scripts/dsh-launch-composition.mjs
       - scripts/web-host-lifecycle.mjs
       - package.json
       - dsh-runtime.json
@@ -26,12 +26,12 @@ on:
       - .github/workflows/macos-app.yml
       - macos-launcher/**
       - maclauncher.json
-      - owner-workflow-plugin/**
+      - agent-observation-plugin/**
       - matt-skills-panel-plugin/**
       - scripts/project-plugins.mjs
       - scripts/project-plugin-resolver.mjs
       - scripts/harness-runtime.mjs
-      - scripts/kernel-launch-composition.mjs
+      - scripts/dsh-launch-composition.mjs
       - scripts/web-host-lifecycle.mjs
       - package.json
       - dsh-runtime.json
@@ -44,20 +44,20 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     steps:
-      - name: Checkout fixed DSH and approval submodules
+      - name: Checkout fixed DSH submodule
         uses: actions/checkout@v6
         with:
           submodules: recursive
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify actual checkout source
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          actual_source_sha="$(git rev-parse HEAD)"
+          test "$actual_source_sha" = "$EXPECTED_SOURCE_SHA"
+          printf 'Actual checkout source: %s\n' "$actual_source_sha"
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -89,7 +89,7 @@ jobs:
       - name: Verify architecture and release version
         shell: bash
         env:
-          EXPECTED_ARCH: ${{ matrix.arch }}
+          EXPECTED_ARCH: arm64
           RELEASE_TAG: ${{ github.ref_name }}
           IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/macos-v') }}
         run: |
@@ -98,9 +98,6 @@ jobs:
           if [[ "$IS_RELEASE" == true ]]; then
             test "$RELEASE_TAG" = "macos-v$(node -p "require('./macos-launcher/package.json').version")"
           fi
-
-      - name: Install Owner native addon for this runner
-        run: npm ci --prefix owner-workflow-plugin --no-audit --no-fund
 
       - name: Build project-maintained Matt panel
         run: |
@@ -123,7 +120,7 @@ jobs:
         working-directory: deepseek-harness
         env:
           DSH_DESKTOP_TARGET_PLATFORM: darwin
-          DSH_DESKTOP_TARGET_ARCH: ${{ matrix.arch }}
+          DSH_DESKTOP_TARGET_ARCH: arm64
         run: |
           set -euo pipefail
           TARGET="$PWD/apps/desktop/.desktop-build/targets/mac-${DSH_DESKTOP_TARGET_ARCH}"
@@ -143,9 +140,8 @@ jobs:
         run: |
           set -euo pipefail
           node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/build-desktop-release.mjs
-          DIRECTORY=mac
-          if [[ "${{ matrix.arch }}" == arm64 ]]; then DIRECTORY=mac-arm64; fi
-          APP="$PWD/.build/desktop-${{ matrix.arch }}/$DIRECTORY/DeepSeek Harness.app"
+          DIRECTORY=mac-arm64
+          APP="$PWD/.build/desktop-arm64/$DIRECTORY/DeepSeek Harness.app"
           node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs "$APP"
           echo "app=$APP" >> "$GITHUB_OUTPUT"
 
@@ -154,20 +150,20 @@ jobs:
           DSH_MACOS_DESKTOP_APP: ${{ steps.desktop.outputs.app }}
         run: node macos-launcher/build.mjs
 
-      - name: Verify packaged Desktop and Owner integration
+      - name: Verify packaged Desktop and observation integration
         shell: bash
         run: |
           set -euo pipefail
           APP_VERSION="$(node -p "require('./macos-launcher/package.json').version")"
           DSH_VERSION="$(node -p "require('./dsh-runtime.json').version")"
           node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs \
-            ".build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-${{ matrix.arch }}.app"
+            ".build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
 
       - name: Package and verify DMG
         id: package
         shell: bash
         env:
-          TARGET_ARCH: ${{ matrix.arch }}
+          TARGET_ARCH: arm64
         run: |
           set -euxo pipefail
           APP_VERSION="$(node -p "require('./macos-launcher/package.json').version")"
@@ -187,7 +183,7 @@ jobs:
       - name: Upload macOS application
         uses: actions/upload-artifact@v4
         with:
-          name: dsh-workflow-${{ matrix.arch }}
+          name: dsh-workflow-arm64
           path: ${{ steps.package.outputs.dmg }}
           if-no-files-found: error
 
@@ -198,12 +194,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download both macOS builds
+      - name: Download the ARM64 macOS build
         uses: actions/download-artifact@v4
         with:
-          pattern: dsh-workflow-*
+          name: dsh-workflow-arm64
           path: release-assets
-          merge-multiple: true
 
       - name: Publish GitHub Release
         shell: bash
@@ -213,11 +208,11 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          test "$(find release-assets -maxdepth 1 -name '*.dmg' -type f | wc -l | tr -d ' ')" = 2
+          test "$(find release-assets -maxdepth 1 -name '*.dmg' -type f | wc -l | tr -d ' ')" = 1
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release-assets/*.dmg --clobber
           else
             gh release create "$RELEASE_TAG" release-assets/*.dmg --verify-tag \
               --title "DSH Workflow macOS ${RELEASE_TAG#macos-v}" \
-              --notes "Automated macOS builds for Apple Silicon and Intel. Locally ad-hoc signed; not notarized."
+              --notes "Automated macOS builds for Apple Silicon (ARM64). Locally ad-hoc signed; not notarized."
           fi

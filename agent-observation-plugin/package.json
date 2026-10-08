@@ -1,0 +1,34 @@
+{
+  "name": "dsh-workflow",
+  "version": "0.1.1",
+  "description": "DSH JEV center and native agent observation",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./jev-center": "./src/jev-center-plugin.mjs",
+    "./agent-monitor": "./src/agent-monitor-plugin.mjs",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "files": [
+    "index.mjs",
+    "client.js",
+    "src/",
+    "scripts/",
+    "README.md"
+  ],
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build:client": "node scripts/build-client.mjs",
+    "check:client": "node scripts/build-client.mjs --check"
+  }
+}

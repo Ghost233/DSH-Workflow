@@ -106,9 +106,11 @@ Future<void> main(List<String> arguments) async {
   final externalSdkCold = desktopWindowScenario && arguments[4] == 'sdk-hidden';
   if (externalSdkCold) {
     require(
-      Platform.environment['GITHUB_ACTIONS'] == 'true' &&
-          localAcceptanceRoot == null,
-      'external SDK cold validation runs only in its disposable runner',
+      (Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+              localAcceptanceRoot == null) ||
+          (Platform.environment['GITHUB_ACTIONS'] != 'true' &&
+              localAcceptanceRoot != null),
+      'external SDK cold validation has a disposable runner or explicit private local context',
     );
   }
   if (externalSdkCold &&
@@ -336,13 +338,15 @@ Future<void> main(List<String> arguments) async {
   final webPort = await webScenario?.stage(root);
   if (externalSdkCold) {
     final destination = '${root.path}/missing-runtime/desktop';
-    await Link(destination).delete();
     final source = '${webScenario!.sourceResources}/desktop';
-    final copy = await Process.run('/usr/bin/ditto', [source, destination]);
-    require(
-      copy.exitCode == 0,
-      'SDK cold case owns a private unchanged Desktop bundle copy',
-    );
+    if (localAcceptanceRoot == null) {
+      await Link(destination).delete();
+      final copy = await Process.run('/usr/bin/ditto', [source, destination]);
+      require(
+        copy.exitCode == 0,
+        'SDK cold case owns a private unchanged Desktop bundle copy',
+      );
+    }
     final proof = await Process.run('/usr/bin/python3', [
       '-c',
       'import pathlib,hashlib,json,stat,sys; a,b=map(pathlib.Path,sys.argv[1:]); '

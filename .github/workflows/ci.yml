@@ -1,10 +1,10 @@
-name: Owner Workflow CI
+name: DSH Project CI
 
 on:
   push:
     paths:
       - .github/workflows/ci.yml
-      - owner-workflow-plugin/**
+      - agent-observation-plugin/**
       - matt-skills-panel-plugin/**
       - dynamic-workflow-plugin/**
       - scripts/**
@@ -18,7 +18,7 @@ on:
       - project-plugins.json
       - project-plugins.lock.json
       - maclauncher.json
-      - start-owner-workflow.sh
+      - start-dsh-workflow.sh
       - '!**/*.md'
   pull_request:
 
@@ -47,7 +47,7 @@ jobs:
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22.19.0
+          node-version: 24.12.0
 
       - name: 启用 Corepack
         run: corepack enable
@@ -59,7 +59,7 @@ jobs:
           test "$(git rev-parse HEAD:deepseek-harness)" = "$(git -C deepseek-harness rev-parse HEAD)"
           test -z "$(git -C deepseek-harness status --porcelain --untracked-files=all)"
 
-      - name: 核对 Owner Workflow 客户端产物
+      - name: 核对 JEV/监控客户端产物
         run: npm run check:client
 
       - name: 安装固定 DSH 开发依赖
@@ -78,8 +78,5 @@ jobs:
         working-directory: deepseek-harness
         run: bash scripts/prepare-ci-bubblewrap.sh
 
-      - name: 安装 Owner 原生依赖
-        run: npm ci --prefix owner-workflow-plugin --no-audit --no-fund
-
-      - name: 运行 Owner Workflow 全量测试
+      - name: 运行 当前自研项目测试
         run: npm test

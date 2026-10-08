@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:launcher_core/launcher_core.dart';
 
@@ -142,13 +143,26 @@ class WebProbeOptions {
     final selected = check.port;
     await check.close();
     final resources = '${root.path}/missing-runtime';
-    final copied = await Process.run('/usr/bin/ditto', [
-      '$sourceResources/workflow',
+    final library = await Isolate.resolvePackageUri(
+      Uri.parse('package:dsh_workflow_launcher/main.dart'),
+    );
+    if (library == null) {
+      throw StateError('Current candidate package source is unavailable');
+    }
+    final project = await File.fromUri(library).parent.parent.parent.parent
+        .resolveSymbolicLinks();
+    final copier = '$project/macos-launcher/project-resources.mjs';
+    final prepared = Platform.environment['DSH_CANDIDATE_PROJECT_LAYER'];
+    final copied = await Process.run('$sourceResources/node', [
+      copier,
+      if (prepared == null) 'create' else 'restore',
+      project,
+      ?prepared,
       '$resources/workflow',
     ]);
     require(
       copied.exitCode == 0,
-      'private resource stage contains the packaged project integration',
+      'private project layer matches this candidate source and complete membership: ${copied.stderr}',
     );
     for (final name in ['node', 'desktop', 'node_modules', 'bin']) {
       if (name == 'desktop' &&
@@ -165,15 +179,6 @@ class WebProbeOptions {
         await Link('$resources/$name').create('$sourceResources/$name');
       }
     }
-    final runtime = File.fromUri(Platform.script.resolve('../../runtime')).path;
-    final updated = await Process.run('/usr/bin/ditto', [
-      runtime,
-      '$resources/workflow/macos-launcher/runtime',
-    ]);
-    require(
-      updated.exitCode == 0,
-      'private stage uses this candidate runtime scripts and unchanged packaged backend',
-    );
     return selected;
   }
 }
@@ -273,16 +278,15 @@ Future<void> runWebApplicationScenario({
     Uri uri, {
     String method = 'GET',
     String? body,
+    ContentType? contentType,
     List<Cookie> cookies = const [],
   }) async {
     final request = await client.openUrl(method, uri);
     request.followRedirects = false;
     request.cookies.addAll(cookies);
     if (body != null) {
-      request.headers.contentType = ContentType(
-        'application',
-        'x-www-form-urlencoded',
-      );
+      request.headers.contentType =
+          contentType ?? ContentType('application', 'x-www-form-urlencoded');
       request.write(body);
     }
     final response = await request.close().timeout(const Duration(seconds: 10));
@@ -294,15 +298,39 @@ Future<void> runWebApplicationScenario({
   }
 
   Future<Map<String, Object?>> health(Uri uri, List<Cookie> cookies) async {
+    final rpcId = 'dsh-ready-${DateTime.now().microsecondsSinceEpoch}';
     final response = await request(
-      uri.resolve('/owner-workflow/api/health'),
+      uri.resolve('/api/pluginManager/listPlugins'),
+      method: 'POST',
       cookies: cookies,
+      body: jsonEncode({
+        'type': 'client-request',
+        'rpcId': rpcId,
+        'method': 'pluginManager/listPlugins',
+        'payload': {'args': <String, Object?>{}},
+      }),
+      contentType: ContentType.json,
     );
+    final envelope = (jsonDecode(response.body) as Map).cast<String, Object?>();
+    final result = envelope['result'] as Map?;
     require(
-      response.code == 200,
-      'real backend Owner health is reachable through this authenticated entry',
+      response.code == 200 &&
+          envelope['type'] == 'server-response' &&
+          envelope['rpcId'] == rpcId &&
+          result?['ok'] == true &&
+          result?['value'] is List,
+      'authenticated official DSH plugin manager proves actual Host readiness',
     );
-    return (jsonDecode(response.body) as Map).cast<String, Object?>();
+    final bound = await readReceipt();
+    require(
+      await ownsHostReceipt(bound),
+      'ready DSH response retains the exact physical Host lease',
+    );
+    return {
+      'ready': true,
+      'instanceId': bound['lease'],
+      'plugins': result!['value'],
+    };
   }
 
   Future<void> portReleased() async {
@@ -563,7 +591,7 @@ Future<void> runWebApplicationScenario({
     final backendPid = backend['pid'] as int;
     final url = Uri.parse('http://127.0.0.1:$port/');
     require(
-      (await request(url.resolve('owner-workflow/api/health'))).code == 401,
+      (await request(url.resolve('api/pluginManager/listPlugins'))).code == 401,
       'unauthenticated clients cannot access the real backend',
     );
     Future<List<Cookie>> authenticate() async {
@@ -607,7 +635,7 @@ Future<void> runWebApplicationScenario({
       webHealth['instanceId'] == lease &&
           directHealth['instanceId'] == lease &&
           webHealth['ready'] == true,
-      'browser entry and direct Desktop Host expose the same real ready Owner instance',
+      'browser entry and direct Desktop Host expose the same real ready DSH instance',
     );
     require(
       (await sdk('status', service: 'desktop'))['instanceId'] == lease,

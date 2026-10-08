@@ -4,7 +4,10 @@ import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile, chmod } from 'node
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { copyProjectIntegration } from './project-resources.mjs'
 import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
+
+if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
 
 const exec = promisify(execFile)
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -27,7 +30,6 @@ async function run(command, args, cwd = root) {
 }
 
 async function verifyInputs() {
-  if (process.platform !== 'darwin' || !['arm64', 'x64'].includes(arch)) throw new Error('Build on the target macOS architecture')
   const { stdout: commit } = await exec('git', ['-C', harness, 'rev-parse', 'HEAD'])
   const { stdout: changes } = await exec('git', ['-C', harness, 'status', '--porcelain', '--untracked-files=no'])
   if (changes.trim() || commit.trim() !== target.commit || version !== target.version) throw new Error('DSH source does not match dsh-runtime.json')
@@ -46,44 +48,6 @@ async function verifyInputs() {
   }
 }
 
-async function copyOwned(workflow) {
-  for (const name of ['package.json', 'dsh-runtime.json']) await cp(join(root, name), join(workflow, name))
-  for (const name of ['project-plugins.json', 'project-plugins.lock.json']) {
-    if (existsSync(join(root, name))) await cp(join(root, name), join(workflow, name))
-  }
-  for (const name of ['owner-workflow-plugin']) {
-    await cp(join(root, name), join(workflow, name), { recursive: true, filter: path => {
-      const relative = path.slice(join(root, name).length).replaceAll('\\', '/')
-      if (!relative) return true
-      const top = relative.split('/')[1]
-      return !['test', 'tests', '.git', 'node_modules'].includes(top)
-    } })
-  }
-  const mattZh = 'vendor/mattpocock-skills-zh'
-  await mkdir(join(workflow, 'vendor'), { recursive: true })
-  await cp(join(root, mattZh), join(workflow, mattZh), { recursive: true })
-  await cp(join(root, 'vendor/mattpocock-skills-zh.upstream.json'), join(workflow, 'vendor/mattpocock-skills-zh.upstream.json'))
-  const mattPanel = 'matt-skills-panel-plugin'
-  await mkdir(join(workflow, mattPanel), { recursive: true })
-  await cp(join(root, mattPanel, 'package'), join(workflow, mattPanel, 'package'), { recursive: true })
-  await cp(join(root, mattPanel, 'upstream.json'), join(workflow, mattPanel, 'upstream.json'))
-  await cp(join(root, mattPanel, 'LICENSE'), join(workflow, mattPanel, 'package/LICENSE'))
-  await cp(join(root, mattPanel, 'THIRD_PARTY_NOTICES.md'), join(workflow, mattPanel, 'package/THIRD_PARTY_NOTICES.md'))
-  for (const name of ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-runtime.mjs',
-    'kernel-launch-composition.mjs', 'web-host-lifecycle.mjs']) {
-    await cp(join(root, 'scripts', name), join(workflow, 'scripts', name))
-  }
-  await cp(join(root, 'macos-launcher/runtime/web-launch.mjs'), join(workflow, 'macos-launcher/runtime/web-launch.mjs'))
-  await cp(join(root, 'macos-launcher/runtime/lan-gateway.mjs'), join(workflow, 'macos-launcher/runtime/lan-gateway.mjs'))
-  await cp(join(root, 'macos-launcher/runtime/lan-settings-client.mjs'), join(workflow, 'macos-launcher/runtime/lan-settings-client.mjs'))
-  await cp(join(root, 'macos-launcher/runtime/global-supervisor.mjs'), join(workflow, 'macos-launcher/runtime/global-supervisor.mjs'))
-  for (const file of ['desktop-bridge.mjs', 'desktop-launch.mjs', 'desktop-profile.mjs', 'prepare-desktop.mjs', 'desktop-status.mjs']) {
-    await cp(join(root, 'macos-launcher/runtime', file), join(workflow, 'macos-launcher/runtime', file))
-  }
-  await cp(join(root, 'macos-launcher/runtime/plugin-versions.mjs'), join(workflow, 'macos-launcher/runtime/plugin-versions.mjs'))
-  await cp(join(root, 'macos-launcher/runtime/plugin-update.mjs'), join(workflow, 'macos-launcher/runtime/plugin-update.mjs'))
-  await cp(join(root, 'macos-launcher/runtime/run-dsh.mjs'), join(workflow, 'macos-launcher/runtime/run-dsh.mjs'))
-}
 
 await verifyInputs()
 const buildLabel = process.env.DSH_MACOS_BUILD_LABEL
@@ -93,7 +57,7 @@ if (existsSync(destination)) throw new Error(`Build output exists: ${destination
 await mkdir(buildRoot, { recursive: true })
 await mkdir(join(flutterRoot, 'macos/Flutter/ephemeral'), { recursive: true })
 await writeFile(join(flutterRoot, 'macos/Flutter/ephemeral/DSHArchitecture.xcconfig'),
-  `EXCLUDED_ARCHS = ${arch === 'arm64' ? 'x86_64' : 'arm64'}\n`)
+  'EXCLUDED_ARCHS = x86_64\n')
 await run(process.env.FLUTTER_BIN || 'flutter', ['build', 'macos', '--release', '--no-pub',
   `--build-name=${appVersion}`, `--build-number=${appVersion}`], flutterRoot)
 const staging = await mkdtemp(join(buildRoot, 'launcher-stage-'))
@@ -102,11 +66,9 @@ const contents = join(app, 'Contents')
 const resources = join(contents, 'Resources')
 try {
   await run('/usr/bin/ditto', [join(flutterRoot, 'build/macos/Build/Products/Release/DSH Workflow.app'), app])
-  await mkdir(join(resources, 'workflow', 'scripts'), { recursive: true })
-  await mkdir(join(resources, 'workflow', 'macos-launcher', 'runtime'), { recursive: true })
   await cp(process.execPath, join(resources, 'node'))
   await chmod(join(resources, 'node'), 0o755)
-  await copyOwned(join(resources, 'workflow'))
+  await copyProjectIntegration(root, join(resources, 'workflow'))
   await mkdir(join(resources, 'desktop'), { recursive: true })
   await run('/usr/bin/ditto', [desktopApp, join(resources, 'desktop/DeepSeek Harness.app')])
   const association = JSON.parse(await readFile(join(root, 'maclauncher.json'), 'utf8'))

@@ -404,7 +404,7 @@ Future<void> runSettingsApplicationScenario(
     );
     require(
       (await request(
-            local.resolve('owner-workflow/api/health'),
+            local.resolve('api/pluginManager/listPlugins'),
             cookies: oldCookies,
           )).code ==
           401,

@@ -9,7 +9,7 @@ import { checkPluginVersions } from './plugin-versions.mjs'
 
 const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const packageNamePattern = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i
-const owned = new Set(['dsh-owner-workflow', 'dsh-mattpocock-skills-deck', 'dsh-workflow-matt-panel'])
+const owned = new Set(['dsh-workflow', 'dsh-mattpocock-skills-deck', 'dsh-workflow-matt-panel'])
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'))
 

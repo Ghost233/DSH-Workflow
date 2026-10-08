@@ -9,7 +9,7 @@ const resources = resolve(process.argv[2] ?? '')
 const anchor = join(resources, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
 const workflow = join(resources, 'workflow')
 const packages = {
-  'dsh-owner-workflow': workflow,
+  'dsh-workflow': workflow,
   'dsh-workflow-matt-panel': join(workflow, 'matt-skills-panel-plugin/package'),
 }
 const manifest = JSON.parse(readFileSync(anchor, 'utf8'))

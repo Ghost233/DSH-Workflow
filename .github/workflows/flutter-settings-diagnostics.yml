@@ -21,10 +21,10 @@ permissions:
 
 jobs:
   startup:
-    runs-on: macos-15-intel
+    runs-on: macos-15
     timeout-minutes: 35
     concurrency:
-      group: flutter-t05-debug-x64-${{ github.ref }}
+      group: flutter-t05-debug-arm64-${{ github.ref }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -50,13 +50,13 @@ jobs:
       - name: Bind current source and fixed runtime artifact
         run: |
           git rev-parse HEAD > "$EVIDENCE_DIR/source-commit.txt"
-          printf '{"repository":"%s","runId":37325723931,"artifactName":"dsh-workflow-x64"}\n' \
+          printf '{"repository":"%s","runId":37325723931,"artifactName":"dsh-workflow-arm64"}\n' \
             "$GITHUB_REPOSITORY" > "$EVIDENCE_DIR/runtime-artifact-source.json"
 
-      - name: Download the successful frozen x64 runtime
+      - name: Download the successful frozen ARM64 runtime
         uses: actions/download-artifact@v4
         with:
-          name: dsh-workflow-x64
+          name: dsh-workflow-arm64
           run-id: 37325723931
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/t05-runtime-artifact
@@ -81,7 +81,7 @@ jobs:
           runtime_resources="$T05_RUNTIME_MOUNT/DSH Workflow.app/Contents/Resources"
           test -x "$runtime_resources/node"
           test -d "$runtime_resources/desktop/DeepSeek Harness.app"
-          test "$("$runtime_resources/node" -p 'process.arch')" = x64
+          test "$("$runtime_resources/node" -p 'process.arch')" = arm64
           printf 'T05_RUNTIME_RESOURCES=%s\n' "$runtime_resources" >> "$GITHUB_ENV"
           shasum -a 256 "$runtime_resources/node" \
             "$runtime_resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
