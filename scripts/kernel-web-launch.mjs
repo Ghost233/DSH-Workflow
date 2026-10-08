@@ -8,6 +8,7 @@ import { prepare, releaseLock, pluginDirectory } from './project-plugins.mjs'
 import { composeKernelLaunch } from './kernel-launch-composition.mjs'
 import { launchWebHost, assertWebPortAvailable } from './web-host-lifecycle.mjs'
 import { ensureAgentTeamProfile } from './agent-team-profile.mjs'
+import { ensureObservationProfile } from './observation-profile.mjs'
 
 const repository = fileURLToPath(new URL('../', import.meta.url))
 const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
@@ -45,6 +46,7 @@ export async function launchKernelWeb({ projectRoot = repository, catalogRoot, s
   // Refuse an occupied port before project preparation mutates its launch metadata.
   await assertWebPortAvailable(port)
   await ensureAgentTeamProfile({ harness, home, signal })
+  await ensureObservationProfile({ profile: boot.loadProfile('dsh', 'web', anchor, home), anchor, catalogRoot: catalog })
   const layers = profileLayers()
   if (configuredWebPort(boot.composeEntries(layers)) !== port) throw new Error('Agent Teams activation unexpectedly changed the Web port')
   let launchDirectory, prepared = false

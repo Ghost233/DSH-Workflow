@@ -8,6 +8,9 @@
     ".": "./owner-workflow-plugin/index.js",
     "./client": "./owner-workflow-plugin/client.js",
     "./dashboard": "./owner-workflow-plugin/dashboard-host.mjs",
+    "./kernel-dashboard": "./owner-workflow-plugin/src/kernel-dashboard-host.mjs",
+    "./jev-center": "./owner-workflow-plugin/src/jev-center-plugin.mjs",
+    "./agent-monitor": "./owner-workflow-plugin/src/agent-monitor-plugin.mjs",
     "./package.json": "./package.json"
   },
   "license": "MIT",
@@ -33,6 +36,7 @@
     "scripts/kernel-web-launch.mjs",
     "scripts/agent-team-profile.mjs",
     "scripts/kernel-launch-composition.mjs",
+    "scripts/observation-profile.mjs",
     "scripts/web-host-lifecycle.mjs",
     "matt-skills-panel-plugin/package/",
     "matt-skills-panel-plugin/upstream.json",

@@ -18,6 +18,8 @@ Owner 的 preset、surface 和 Dashboard 是同一插件的组成部分。根目
 | `dsh-workflow-desktop` | 本地组合包 / 0.1.0 | 装配 Desktop profile 中的自研插件、技能和共享后端桥接组件 | [组合包生成代码](../macos-launcher/runtime/desktop-profile.mjs) |
 | `dsh-workflow-desktop-bridge` | 内部 Cordis 插件 / 无独立版本 | 发布 Desktop Host 的私有就绪信息，供启动器连接同一后端 | [桥接源码](../macos-launcher/runtime/desktop-bridge.mjs) |
 | `dsh-workflow-creator-jev-guidance` | 内部 Cordis 插件 / 无独立版本 | 为创造模式提供 Jev 与 LLM 分工的开发指导，强调程序直接判断、复用计划和真实收益验证 | [指导源码](../owner-workflow-plugin/src/creator-jev-guidance.mjs) |
+| `dsh-workflow-agent-monitor` | 内部 Cordis 插件 / 测试版本 | 观察主/子代理的模型无输出、异常结束及 JEV 语义停滞；只通知和记录，不恢复或干预 | [行为与验证](./agent-monitor.md) |
+| `dsh-workflow-jev-center` | 内部 Cordis 插件 / 开发中 | 使用标准 Settings/credentials 管理引擎，按调用模型名完成 System One 判断及连接测试 | [正式规格与交付](./specs/jev-center-agent-monitor/delivery.md) |
 | `dynamic-workflow-plugin` | 暂缓实施 / 无发布版本 | 目前只有领域文档，没有可加载的插件实现 | [领域文档](../dynamic-workflow-plugin/CONTEXT.md) |
 
 Jev 开发指导随项目的 Web 和 Desktop 启动层追加到已有创造模式（`cordis`），保留该模式的原有工具和提示词。它不安装 Jev、不声明已有真实服务，也不自动调用模型；作用是让创造者在设计与生成代码时考虑有界判断、批量调用和 LLM 回退。标准模式与 Owner preset 不加载这段指导。

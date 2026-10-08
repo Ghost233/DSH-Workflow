@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdtemp, mkdir, symlink, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, symlink, readFile, rm, writeFile, readlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { prepareDesktopProfile } from './desktop-profile.mjs'
@@ -31,6 +31,8 @@ test('Desktop retains the user profile and loads one local board while retiring 
   const patches = JSON.parse(await readFile(join(first.bundle, 'cordis.patch.yml'), 'utf8'))
   assert.ok(patches.some(p => p.id === 'sol-efficiency' && p.disabled === true))
   const inserts = patches.flatMap(p => p.insert ?? [])
+  assert.equal(inserts.filter(p => p.id === 'workflow-jev-center' && p.name === 'dsh-owner-workflow/jev-center').length, 1)
+  assert.equal(inserts.filter(p => p.id === 'workflow-agent-monitor' && p.name === 'dsh-owner-workflow/agent-monitor').length, 1)
   assert.ok(patches.find(p => p.id === 'preset-cordis').config.plugins.some(row => row.id === 'workflow-creator-jev-guidance'))
   assert.equal(inserts.filter(p => p.id === 'matt-skills-board').length, 1)
   assert.ok(inserts.find(p => p.id === 'matt-skills-board').name.includes('/matt-skills-panel-plugin/package/lib/index.js'))
@@ -48,4 +50,51 @@ test('Desktop retains the user profile and loads one local board while retiring 
   assert.ok(refreshed.find(p => p.id === 'preset-cordis').config.plugins.some(row => row.id === 'workflow-creator-jev-guidance'))
   assert.equal(refreshed.flatMap(p => p.insert ?? []).some(row => row.id === 'workflow-desktop-health-instance'), false)
   assert.equal(await readFile(join(first.profile, 'package.json'), 'utf8'), manifestBefore)
+})
+
+test('Desktop migrates a cached stage-one bundle-only profile without changing user dependencies, patches or metadata', async t => {
+  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
+  const boot = createRequire(join(source, 'apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
+  const root = await mkdtemp(join(tmpdir(), 'desktop-profile-migration-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const resourcesRoot = join(root, 'resources'), home = join(root, 'home'), globalRoot = join(root, 'global')
+  const desktopRuntimeRoot = join(root, 'runtime'), web = join(home, 'profiles/web')
+  await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
+  await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
+  await mkdir(resourcesRoot)
+  await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
+  boot.initProfile(web, boot.PROFILE_TEMPLATES.web.bundles)
+  const userManifest = JSON.parse(await readFile(join(web, 'package.json'), 'utf8'))
+  userManifest.dependencies['user-kept-addon'] = 'file:/user/kept-addon'
+  userManifest.userMetadata = { chosenWorkspace: 'keep-this' }
+  await writeFile(join(web, 'package.json'), JSON.stringify(userManifest))
+  const patch = '- id: user-kept-addon\n  disabled: true\n  name: user-kept-addon\n'
+  await writeFile(join(web, 'cordis.patch.yml'), patch)
+  const args = { resourcesRoot, desktopRuntimeRoot, globalRoot, home }
+  const prepared = await prepareDesktopProfile(args)
+  const packages = {
+    'dsh-owner-workflow': join(resourcesRoot, 'workflow/owner-workflow-plugin'),
+    'dsh-workflow-matt-panel': join(resourcesRoot, 'workflow/matt-skills-panel-plugin/package'),
+  }
+  const old = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
+  for (const name of Object.keys(packages)) {
+    delete old.dependencies[name]
+    await rm(join(prepared.profile, 'node_modules', name))
+  }
+  await writeFile(join(prepared.profile, 'package.json'), JSON.stringify(old))
+  const stamp = JSON.parse(await readFile(join(prepared.bundle, 'integration.json'), 'utf8'))
+  delete stamp.localPackages
+  await writeFile(join(prepared.bundle, 'integration.json'), JSON.stringify(stamp))
+  await prepareDesktopProfile(args)
+  const migrated = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
+  for (const [name, target] of Object.entries(packages)) {
+    assert.equal(migrated.dependencies[name], `file:${target}`)
+    assert.equal(await readlink(join(prepared.profile, 'node_modules', name)), target)
+  }
+  assert.equal(migrated.dependencies['user-kept-addon'], 'file:/user/kept-addon')
+  assert.deepEqual(migrated.userMetadata, { chosenWorkspace: 'keep-this' })
+  assert.equal(await readFile(join(prepared.profile, 'cordis.patch.yml'), 'utf8'), patch)
+  const stable = await readFile(join(prepared.profile, 'package.json'), 'utf8')
+  await prepareDesktopProfile(args)
+  assert.equal(await readFile(join(prepared.profile, 'package.json'), 'utf8'), stable)
 })

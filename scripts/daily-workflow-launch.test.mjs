@@ -5,12 +5,13 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-test('daily shell delegates once to the unified host, preserving caller cwd and settings', async () => {
+test('the source Web branch delegates once, preserving caller cwd and settings', async () => {
   const root = await mkdtemp(join(tmpdir(), 'daily-workflow-'))
   try {
     const distribution = join(root, 'distribution'), caller = join(root, 'caller'), bin = join(root, 'bin')
     await Promise.all([mkdir(distribution), mkdir(caller), mkdir(bin)])
     await copyFile(resolve('start-owner-workflow.sh'), join(distribution, 'start-owner-workflow.sh'))
+    await writeFile(join(bin, 'uname'), '#!/bin/sh\nprintf "Linux\\n"\n', { mode: 0o755 })
     const receipt = join(root, 'receipt.json')
     await writeFile(join(bin, 'node'), `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),home:process.env.HOME,dshHome:process.env.DSH_HOME}));\n`, { mode: 0o755 })
     const result = spawnSync('/bin/bash', [join(distribution, 'start-owner-workflow.sh')], {

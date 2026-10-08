@@ -103,7 +103,7 @@ export function createKernelDashboardHandler(catalogRoot, { health, intervalMs =
 export function renderKernelDashboardPage() {
   return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Owner Workflow</title>
 <style>body{font:15px system-ui;margin:32px auto;padding:0 20px;max-width:1100px;color:#17202a;background:#f6f7f9}article{background:white;border:1px solid #d5dbe1;border-radius:10px;padding:20px;margin:20px 0}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid #ddd}pre{white-space:pre-wrap;overflow-wrap:anywhere}.error{color:#a32424}h2{font-size:19px}small{color:#536174}</style>
-<h1>Owner Workflow</h1><p id="connection">正在读取工作流状态…</p><main id="content"></main>
+<h1>Owner Workflow</h1><nav><a href="/jev-center">JEV 中心</a> · <a href="/agent-monitor">代理监控</a></nav><p id="connection">正在读取工作流状态…</p><main id="content"></main>
 <script>
 const el=(tag,text)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;return node};
 const date=value=>value?new Date(value).toLocaleString():'无';
