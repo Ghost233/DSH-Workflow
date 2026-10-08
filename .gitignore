@@ -8,7 +8,7 @@
 # 本地依赖安装产物。
 .pnpm-store/
 node_modules/
-owner-workflow-plugin/pnpm-lock.yaml
+agent-observation-plugin/pnpm-lock.yaml
 /.build/
 /.zvec-grep/
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:launcher_core/launcher_core.dart';
 
@@ -128,9 +129,10 @@ class WebProbeOptions {
     final port = int.parse(args[6]);
     if (port < 0 || port > 65535) throw ArgumentError('Invalid Web probe port');
     if (args[4] == 'desktop' &&
-        Platform.environment['GITHUB_ACTIONS'] != 'true') {
+        Platform.environment['GITHUB_ACTIONS'] != 'true' &&
+        Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] == null) {
       throw StateError(
-        'Official Desktop GUI probe requires the clean GitHub macOS CI session',
+        'Official Desktop GUI probe requires CI or explicit private local acceptance',
       );
     }
     return WebProbeOptions(Directory(args[2]).absolute.path, args[4], port);
@@ -141,26 +143,42 @@ class WebProbeOptions {
     final selected = check.port;
     await check.close();
     final resources = '${root.path}/missing-runtime';
-    final copied = await Process.run('/usr/bin/ditto', [
-      '$sourceResources/workflow',
+    final library = await Isolate.resolvePackageUri(
+      Uri.parse('package:dsh_workflow_launcher/main.dart'),
+    );
+    if (library == null) {
+      throw StateError('Current candidate package source is unavailable');
+    }
+    final project = await File.fromUri(library).parent.parent.parent.parent
+        .resolveSymbolicLinks();
+    final copier = '$project/macos-launcher/project-resources.mjs';
+    final prepared = Platform.environment['DSH_CANDIDATE_PROJECT_LAYER'];
+    final copied = await Process.run('$sourceResources/node', [
+      copier,
+      if (prepared == null) 'create' else 'restore',
+      project,
+      ?prepared,
       '$resources/workflow',
     ]);
     require(
       copied.exitCode == 0,
-      'private resource stage contains the packaged project integration',
+      'private project layer matches this candidate source and complete membership: ${copied.stderr}',
     );
     for (final name in ['node', 'desktop', 'node_modules', 'bin']) {
-      await Link('$resources/$name').create('$sourceResources/$name');
+      if (name == 'desktop' &&
+          Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] != null) {
+        final desktopCopy = await Process.run('/usr/bin/ditto', [
+          '$sourceResources/$name',
+          '$resources/$name',
+        ]);
+        require(
+          desktopCopy.exitCode == 0,
+          'local acceptance owns a private Desktop bundle copy',
+        );
+      } else {
+        await Link('$resources/$name').create('$sourceResources/$name');
+      }
     }
-    final runtime = File.fromUri(Platform.script.resolve('../../runtime')).path;
-    final updated = await Process.run('/usr/bin/ditto', [
-      runtime,
-      '$resources/workflow/macos-launcher/runtime',
-    ]);
-    require(
-      updated.exitCode == 0,
-      'private stage uses this candidate runtime scripts and unchanged packaged backend',
-    );
     return selected;
   }
 }
@@ -178,8 +196,13 @@ Future<void> runWebApplicationScenario({
   required Future<void> Function(String) tap,
   required Future<void> Function(String) capture,
   Future<void> Function(WebObservation)? onConnected,
+  bool startWebBySdk = false,
+  Future<void> Function(ApplicationState, Future<void> Function(String))?
+  beforeWebStart,
+  Future<void> Function(int)? observeOwnedHeadlessHost,
   Process? prestartedHost,
   IOSink? prestartedHostLog,
+  String? bindingsPath,
   bool passwordPreloaded = false,
   bool settingsOwnedWebCleanup = false,
   void Function(String, Map<String, Object?>)? diagnose,
@@ -200,9 +223,54 @@ Future<void> runWebApplicationScenario({
     return state();
   }
 
+  Future<Map> control(String label, String action, String direction) async {
+    for (var scroll = 0; scroll < 6; scroll++) {
+      final snapshot = await ui();
+      final nodes = (snapshot['nodes'] as List).cast<Map>().toList();
+      final matches = nodes
+          .where(
+            (node) =>
+                (beforeWebStart != null &&
+                        const [
+                          '后台启动',
+                          '启动后显示',
+                          '隐藏窗口',
+                          '仅显示已运行窗口',
+                          '打开 DSH',
+                        ].contains(label)
+                    ? node['label'].toString().split('\n').first == label
+                    : node['label'].toString().contains(label)) &&
+                (beforeWebStart == null ||
+                    label != '启动时隐藏窗口' ||
+                    node['toggled'] is bool) &&
+                (node['actions'] as List).contains(action),
+          )
+          .toList();
+      if (matches.isNotEmpty) return matches.single;
+      final scroller = nodes.singleWhere(
+        (node) => (node['actions'] as List).contains(direction),
+      );
+      await state({'action': direction, 'id': '${scroller['id']}'});
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    throw StateError(
+      'Actual UI control unavailable after bounded scrolling: $label',
+    );
+  }
+
   Future<void> tapUi(String label) async {
     await ui();
-    await tap(label);
+    if (beforeWebStart != null || label == '设置密码') {
+      final node = await control(
+        label,
+        'tap',
+        label == '设置密码' || label == '启动时隐藏窗口' ? 'scrollDown' : 'scrollUp',
+      );
+      await state({'action': 'tap', 'id': '${node['id']}'});
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    } else {
+      await tap(label);
+    }
   }
 
   Future<Map<String, Object?>> readReceipt() async =>
@@ -211,16 +279,15 @@ Future<void> runWebApplicationScenario({
     Uri uri, {
     String method = 'GET',
     String? body,
+    ContentType? contentType,
     List<Cookie> cookies = const [],
   }) async {
     final request = await client.openUrl(method, uri);
     request.followRedirects = false;
     request.cookies.addAll(cookies);
     if (body != null) {
-      request.headers.contentType = ContentType(
-        'application',
-        'x-www-form-urlencoded',
-      );
+      request.headers.contentType =
+          contentType ?? ContentType('application', 'x-www-form-urlencoded');
       request.write(body);
     }
     final response = await request.close().timeout(const Duration(seconds: 10));
@@ -232,15 +299,39 @@ Future<void> runWebApplicationScenario({
   }
 
   Future<Map<String, Object?>> health(Uri uri, List<Cookie> cookies) async {
+    final rpcId = 'dsh-ready-${DateTime.now().microsecondsSinceEpoch}';
     final response = await request(
-      uri.resolve('/owner-workflow/api/health'),
+      uri.resolve('/api/pluginManager/listPlugins'),
+      method: 'POST',
       cookies: cookies,
+      body: jsonEncode({
+        'type': 'client-request',
+        'rpcId': rpcId,
+        'method': 'pluginManager/listPlugins',
+        'payload': {'args': <String, Object?>{}},
+      }),
+      contentType: ContentType.json,
     );
+    final envelope = (jsonDecode(response.body) as Map).cast<String, Object?>();
+    final result = envelope['result'] as Map?;
     require(
-      response.code == 200,
-      'real backend Owner health is reachable through this authenticated entry',
+      response.code == 200 &&
+          envelope['type'] == 'server-response' &&
+          envelope['rpcId'] == rpcId &&
+          result?['ok'] == true &&
+          result?['value'] is List,
+      'authenticated official DSH plugin manager proves actual Host readiness',
     );
-    return (jsonDecode(response.body) as Map).cast<String, Object?>();
+    final bound = await readReceipt();
+    require(
+      await ownsHostReceipt(bound),
+      'ready DSH response retains the exact physical Host lease',
+    );
+    return {
+      'ready': true,
+      'instanceId': bound['lease'],
+      'plugins': result!['value'],
+    };
   }
 
   Future<void> portReleased() async {
@@ -275,6 +366,7 @@ Future<void> runWebApplicationScenario({
       ],
       environment: {...Platform.environment, 'DSH_HOME': home},
     );
+    await observeOwnedHeadlessHost?.call(host!.pid);
     hostLog ??= File('${root.path}/host.log').openWrite();
     final hostReady = Completer<void>();
     host!.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(
@@ -343,7 +435,9 @@ Future<void> runWebApplicationScenario({
         'Desktop-open scenario begins without a backend receipt',
       );
     }
-    final bindings = await BindingStore.load('${root.path}/bindings.json');
+    final bindings = await BindingStore.load(
+      bindingsPath ?? '${root.path}/bindings.json',
+    );
     await bindings.associate(manifestPath);
     server = await LauncherServer.start(layout: layout, bindings: bindings);
     await waitFor(
@@ -437,29 +531,6 @@ Future<void> runWebApplicationScenario({
         'Web is not ready before any real access service exists',
       );
     }
-    Future<Map> control(String label, String action, String direction) async {
-      for (var scroll = 0; scroll < 6; scroll++) {
-        final snapshot = await ui();
-        final nodes = (snapshot['nodes'] as List).cast<Map>().toList();
-        final matches = nodes
-            .where(
-              (node) =>
-                  node['label'].toString().contains(label) &&
-                  (node['actions'] as List).contains(action),
-            )
-            .toList();
-        if (matches.isNotEmpty) return matches.single;
-        final scroller = nodes.singleWhere(
-          (node) => (node['actions'] as List).contains(direction),
-        );
-        await state({'action': direction, 'id': '${scroller['id']}'});
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-      }
-      throw StateError(
-        'Actual UI control unavailable after bounded scrolling: $label',
-      );
-    }
-
     await File('${root.path}/initial-web-ui.json')
         .writeAsString(jsonEncode(await state()));
     if (!passwordPreloaded) {
@@ -490,8 +561,13 @@ Future<void> runWebApplicationScenario({
           (node) => node['label'].toString().contains('修改密码'),
         ),
       );
-      await control('启动 Web', 'tap', 'scrollDown');
-      await tapUi('启动 Web');
+      await beforeWebStart?.call(state, tapUi);
+      if (startWebBySdk) {
+        await sdk('start');
+      } else {
+        await control('启动 Web', 'tap', 'scrollDown');
+        await tapUi('启动 Web');
+      }
     } else {
       require(
         ((await ui())['nodes'] as List).cast<Map>().any(
@@ -517,7 +593,7 @@ Future<void> runWebApplicationScenario({
     final backendPid = backend['pid'] as int;
     final url = Uri.parse('http://127.0.0.1:$port/');
     require(
-      (await request(url.resolve('owner-workflow/api/health'))).code == 401,
+      (await request(url.resolve('api/pluginManager/listPlugins'))).code == 401,
       'unauthenticated clients cannot access the real backend',
     );
     Future<List<Cookie>> authenticate() async {
@@ -561,7 +637,7 @@ Future<void> runWebApplicationScenario({
       webHealth['instanceId'] == lease &&
           directHealth['instanceId'] == lease &&
           webHealth['ready'] == true,
-      'browser entry and direct Desktop Host expose the same real ready Owner instance',
+      'browser entry and direct Desktop Host expose the same real ready DSH instance',
     );
     require(
       (await sdk('status', service: 'desktop'))['instanceId'] == lease,

@@ -1,8 +1,10 @@
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -31,7 +33,7 @@ class DebugArtifactTest(unittest.TestCase):
         self.producer_sha = subprocess.check_output(['git', '-C', str(self.root), 'rev-parse', 'HEAD'], text=True).strip()
         self.toolchain = self.root / 'toolchain.json'
         self.toolchain.write_text(json.dumps({
-            'arch': 'x86_64', 'flutter': {'frameworkRevision': 'fixed-flutter', 'engineRevision': 'fixed-engine', 'dartSdkVersion': '3.13.0'},
+            'arch': 'arm64', 'flutter': {'frameworkRevision': 'fixed-flutter', 'engineRevision': 'fixed-engine', 'dartSdkVersion': '3.13.0'},
             'xcode': 'Xcode 26.0\nBuild version 17A1', 'sdkVersion': '26.0', 'sdkBuild': '25A1', 'macos': '15.6',
         }))
         self.inputs = self.root / 'inputs.json'
@@ -105,7 +107,7 @@ class DebugArtifactTest(unittest.TestCase):
                 self.assertEqual(value['consumer']['sourceCommit'], consumer_sha)
                 self.assertEqual(value['producer']['runId'], value['consumer']['runId'])
                 self.assertEqual(subprocess.check_output([str(destination / 'Contents/MacOS/DSH Workflow')], text=True), 'actual-app-byte\n')
-        for field, value in [('arch', 'x86_64'), ('xcode', 'different actual Xcode'), ('sdkVersion', '99.0'), ('sdkBuild', 'different actual SDK')]:
+        for field, value in [('xcode', 'different actual Xcode'), ('sdkVersion', '99.0'), ('sdkBuild', 'different actual SDK')]:
             with self.subTest(mismatch=field):
                 self.toolchain.write_text(json.dumps(dict(facts, **{field: value})))
                 self.key(); destination = self.root / ('rejected-'+field) / 'DSH Workflow.app'
@@ -157,8 +159,16 @@ class DebugArtifactTest(unittest.TestCase):
                 self.assertFalse(destination.exists())
                 self.assertFalse((self.root / 'outside').exists())
 
+    def test_non_arm_toolchain_cannot_produce_launcher_artifact(self):
+        facts = json.loads(self.toolchain.read_text())
+        facts['arch'] = 'unsupported-architecture'
+        self.toolchain.write_text(json.dumps(facts))
+        result = self.run_cli('inputs', '--root', self.root, '--toolchain', self.toolchain, '--output', self.inputs, success=False)
+        self.assertIn('ARM64-only', result.stderr)
+        self.assertFalse(self.inputs.exists())
+
     def test_incomplete_toolchain_cannot_produce_reuse_key(self):
-        self.toolchain.write_text(json.dumps({'arch': 'x86_64'}))
+        self.toolchain.write_text(json.dumps({'arch': 'arm64'}))
         self.run_cli('inputs', '--root', self.root, '--toolchain', self.toolchain, '--output', self.inputs, success=False)
         self.assertFalse(self.inputs.exists())
 
@@ -183,7 +193,7 @@ class DebugArtifactTest(unittest.TestCase):
     def test_arch_flutter_xcode_and_sdk_changes_cannot_consume_old_app(self):
         self.pack()
         original = json.loads(self.toolchain.read_text())
-        for field in ('arch', 'flutter', 'xcode', 'sdkVersion', 'sdkBuild'):
+        for field in ('flutter', 'xcode', 'sdkVersion', 'sdkBuild'):
             with self.subTest(toolchain=field):
                 changed = dict(original)
                 changed[field] = dict(original[field], frameworkRevision='other-revision') if field == 'flutter' else 'different'
@@ -240,6 +250,179 @@ class DebugArtifactTest(unittest.TestCase):
                              '--build-exit', self.build_exit, success=False)
                 self.assertFalse((self.bundle / 'manifest.json').exists())
 
+
+class EngineeringPrerequisitesTest(unittest.TestCase):
+    def test_engineering_checks_prepare_fixed_node_and_current_matt_package(self):
+        repo = Path(__file__).resolve().parents[2]
+        workflows = {
+            'flutter-launcher-acceptance.yml': {'t07', 't02', 't05', 't06', 't08'},
+            'flutter-settings-diagnostics.yml': {'startup'},
+            'macos-app.yml': {'build'},
+            'ci.yml': {'verify'},
+        }
+        for workflow, expected_jobs in workflows.items():
+            jobs = re.split(r'^  ([\w-]+):\n', (repo / '.github/workflows' / workflow).read_text().split('\njobs:\n', 1)[1], flags=re.MULTILINE)
+            checked_jobs = set()
+            for job, body in zip(jobs[1::2], jobs[2::2]):
+                steps = re.split(r'\n(?=      - )', body)
+                for gate, step in enumerate(steps):
+                    if 'bash check.sh' not in step and 'flutter test --no-pub' not in step and not re.search(r'^        run: npm test$', step, flags=re.MULTILINE):
+                        continue
+                    checked_jobs.add(job)
+                    with self.subTest(workflow=workflow, job=job):
+                        node = next((i for i, value in enumerate(steps[:gate]) if 'uses: actions/setup-node@' in value and 'node-version: 24.12.0' in value), None)
+                        prep = next((i for i, value in enumerate(steps[:gate]) if 'npm ci --prefix matt-skills-panel-plugin --ignore-scripts' in value and 'npm run build --prefix matt-skills-panel-plugin' in value), None)
+                        self.assertIsNotNone(node, 'Engineering checks require the fixed project Node version')
+                        self.assertIsNotNone(prep, 'Clean-checkout engineering checks require the current maintained Matt package')
+                        self.assertLess(node, prep)
+                        self.assertLess(steps[prep].index('npm ci '), steps[prep].index('npm run build '))
+                        if workflow == 'ci.yml':
+                            ready = next((value for value in steps[:gate] if 'node scripts/harness-runtime.mjs ensure deepseek-harness' in value and 'node scripts/harness-runtime.mjs check deepseek-harness' in value), None)
+                            self.assertIsNotNone(ready, 'The project test job must publish and verify the actual public Harness build stamp')
+                            self.assertLess(ready.index('harness-runtime.mjs ensure '), ready.index('harness-runtime.mjs check '))
+            self.assertEqual(checked_jobs, expected_jobs)
+
+
+
+class ReleaseActorCollectorTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.runner = Path(self.temporary.name).resolve()
+        self.root = self.runner / 'dsh-t05-t09-owned'
+        self.root.mkdir(mode=0o700)
+        self.evidence = self.runner / 'evidence'; self.evidence.mkdir()
+        self.payloads = {
+            'release-distribution-evidence.json': b'{"defaultReleaseDiscoveryPassed":false,"publicCloseActorExit":65}',
+            'release-window-identity.json': b'{"known":false}',
+            'public-close-actor.log': b'Original XCTest actor startup failure\n',
+            'public-close-actor.xctestrun': b'<plist><string>exact rewritten runner context</string></plist>',
+            'public-close-actor-ready': b'actual fixed ready marker',
+            'public-close-request': b'actual fixed request marker',
+            'public-close-ack': b'actual fixed acknowledgement marker',
+            'public-close-driver-complete': b'actual fixed completion marker',
+        }
+        for name, data in self.payloads.items(): (self.root / name).write_bytes(data)
+        self.result = self.root / 'public-close-actor.xcresult'; self.result.mkdir()
+        (self.result / 'Data').mkdir()
+        (self.result / 'Info.plist').write_bytes(b'exact original result metadata')
+        (self.result / 'Data/data.0').write_bytes(b'\x00\x01original result payload')
+        self.products = self.evidence / 'public-close-actor-build/Build/Products'
+        self.products.mkdir(parents=True)
+        (self.products / 'Actor.xctestrun').write_bytes(b'original build-for-testing input')
+        (self.products / 'keep-compiled-binary').write_bytes(b'compiled bytes stay on disk')
+        for name in ['public-close-actor-build.log', 'public-close-actor-build.exit', 'public-close-actor-build-metadata.json']:
+            (self.evidence / name).write_bytes(b'original build evidence')
+        self.log = self.evidence / 'release-distribution.log'
+        self.log.write_text('T09_ROOT=' + str(self.root) + '\n')
+
+    def collector(self):
+        repo = Path(__file__).resolve().parents[2]
+        workflow = (repo / '.github/workflows/flutter-launcher-acceptance.yml').read_text()
+        section = workflow.split('      - name: Preserve exact owned tool evidence\n', 1)[1]
+        source = section.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON\n', 1)[0]
+        from unittest.mock import patch
+        with patch.dict(os.environ, EVIDENCE_DIR=str(self.evidence), RUNNER_TEMP=str(self.runner)):
+            exec(compile(textwrap.dedent(source), '<actual T09 inline collector>', 'exec'), {})
+        return workflow
+
+    def test_actual_collector_retains_runtime_bytes_and_small_build_input_without_deleting_build(self):
+        workflow = self.collector()
+        for name, data in self.payloads.items(): self.assertEqual((self.evidence / name).read_bytes(), data)
+        for name in ['Info.plist', 'Data/data.0']:
+            self.assertEqual((self.evidence / self.result.name / name).read_bytes(), (self.result / name).read_bytes())
+        self.assertEqual((self.evidence / 'public-close-actor-build.xctestrun').read_bytes(), b'original build-for-testing input')
+        self.assertEqual((self.products / 'keep-compiled-binary').read_bytes(), b'compiled bytes stay on disk')
+        upload = workflow.split('          name: flutter-launcher-T09-release-arm64\n', 1)[1]
+        self.assertIn('path: |\n            ${{ env.EVIDENCE_DIR }}\n            !${{ env.EVIDENCE_DIR }}/public-close-actor-build/**', upload)
+        self.assertFalse(json.loads((self.evidence / 'release-distribution-evidence.json').read_text())['defaultReleaseDiscoveryPassed'])
+
+    def test_unknown_or_unowned_root_rejected_without_any_payload_copy(self):
+        for case in ['ambiguous', 'wrong-prefix', 'public-mode', 'symlink-root']:
+            with self.subTest(case=case):
+                root = self.root
+                if case == 'ambiguous': self.log.write_text(('T09_ROOT=' + str(root) + '\n') * 2)
+                elif case == 'wrong-prefix':
+                    root = self.runner / 'unowned'; root.mkdir(mode=0o700)
+                elif case == 'public-mode': root.chmod(0o755)
+                else:
+                    root = self.runner / 'dsh-t05-t09-alias'; root.symlink_to(self.root)
+                if case != 'ambiguous': self.log.write_text('T09_ROOT=' + str(root) + '\n')
+                with self.assertRaises((AssertionError, RuntimeError, ValueError)): self.collector()
+                for name in self.payloads: self.assertFalse((self.evidence / name).exists(), name)
+                self.assertFalse((self.evidence / 'public-close-actor-build.xctestrun').exists())
+                self.root.chmod(0o700)
+
+    def test_invalid_descendant_rejected_before_any_partial_copy(self):
+        outside = self.runner / 'outside'; outside.write_bytes(b'untouched outside bytes')
+        invalid = self.result / 'Data/invalid'
+        for case in ['file-symlink', 'directory-symlink', 'unknown-file-kind']:
+            with self.subTest(case=case):
+                if case == 'file-symlink': invalid.symlink_to(outside)
+                elif case == 'directory-symlink': invalid.symlink_to(self.runner, target_is_directory=True)
+                else: os.mkfifo(invalid)
+                with self.assertRaises((AssertionError, RuntimeError, ValueError)): self.collector()
+                for name in self.payloads: self.assertFalse((self.evidence / name).exists(), name)
+                self.assertFalse((self.evidence / self.result.name).exists())
+                self.assertFalse((self.evidence / 'public-close-actor-build.xctestrun').exists())
+                self.assertEqual(outside.read_bytes(), b'untouched outside bytes')
+                invalid.unlink()
+
+
+class ActorRoutingWiringTest(unittest.TestCase):
+    def test_reuse_requires_successful_classifier_even_when_outputs_survive_failure(self):
+        from actor_validation_inputs import parsed
+        repo = Path(__file__).resolve().parents[2]
+        acceptance = parsed((repo / '.github/workflows/flutter-launcher-acceptance.yml').read_text())
+        producer = parsed((repo / '.github/workflows/macos-app.yml').read_text())
+        conditions = [('build', producer['jobs']['build']['if'], 'helper_only')]
+        conditions += [(name, acceptance['jobs'][name]['if'], 'native_reuse') for name in ['t07', 't02', 't05', 't06', 't08']]
+
+        def evaluate(condition, status, output, event='push', ref='refs/heads/main', actor_only=False):
+            values = {
+                'needs.validation-inputs.result': status,
+                'needs.validation-inputs.outputs.helper_only': output or '',
+                'needs.validation-inputs.outputs.native_reuse': output or '',
+                'github.event_name': event, 'github.ref': ref,
+                'inputs.actor_only': actor_only, 'inputs.release_run_id': '',
+            }
+            for token, value in values.items():
+                condition = condition.replace(token, repr(value))
+            condition = re.sub(r'!(?!=)', ' not ', condition).replace('&&', ' and ').replace('||', ' or ')
+            return eval(condition, {'__builtins__': {}}, {'always': lambda: True, 'startsWith': lambda value, prefix: value.startswith(prefix)})
+
+        for name, condition, output_name in conditions:
+            for status in ['success', 'failure', 'cancelled', 'skipped']:
+                for output in ['true', 'false', None]:
+                    with self.subTest(job=name, result=status, output_name=output_name, output=output):
+                        self.assertEqual(evaluate(condition, status, output), status != 'success' or output != 'true')
+                if name == 'build':
+                    self.assertTrue(evaluate(condition, status, 'true', event='workflow_dispatch'))
+                    self.assertTrue(evaluate(condition, status, 'true', ref='refs/tags/macos-v1.0.0'))
+                else:
+                    self.assertFalse(evaluate(condition, status, 'true', event='workflow_dispatch', actor_only=True))
+
+    def test_actual_workflow_actor_dispatch_and_current_signed_arm_gate(self):
+        from actor_validation_inputs import parsed
+        repo = Path(__file__).resolve().parents[2]
+        document = parsed((repo / '.github/workflows/flutter-launcher-acceptance.yml').read_text())
+        actor = document['jobs']['actor-only']
+        steps = actor['steps']
+        self.assertTrue(any('actor_smoke.py --xctestrun' in step.get('run', '') for step in steps))
+        self.assertFalse(any('download-artifact' in step.get('uses', '') for step in steps))
+        build = next(step['run'] for step in steps if step.get('name') == 'Build sanctioned public-close UI actor without an AUT dependency')
+        self.assertIn('actor_signature(entitlements, architectures)', build)
+        self.assertIn("codesign', '-d', '--entitlements'", build)
+        self.assertIn("lipo', '-archs'", build)
+        self.assertTrue(all('needs.validation-inputs.outputs.native_reuse' in document['jobs'][name]['if'] for name in ['t07', 't02', 't05', 't06', 't08']))
+        inputs = (document.get('on') or document['true'])['workflow_dispatch']['inputs']
+        self.assertEqual(inputs['actor_only']['type'], 'boolean')
+        self.assertEqual(inputs['product_source_sha']['type'], 'string')
+        release = document['jobs']['t09-release']
+        self.assertTrue(any('product-material-reuse.json' in step.get('run', '') for step in release['steps']))
+        producer = parsed((repo / '.github/workflows/macos-app.yml').read_text())['jobs']['build']
+        self.assertTrue(producer['if'].startswith('always()'))
+        self.assertEqual(producer['needs'], 'validation-inputs')
 
 if __name__ == '__main__':
     unittest.main()

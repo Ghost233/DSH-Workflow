@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'application_probe.dart' show require, waitFor;
+import 'application_probe.dart' show require, waitFor, closeProbeResources;
 import 'web_application_scenario.dart';
 import 'web_startup_wait.dart';
 import 'probe_diagnostics.dart' show desktopQuitFacts;
@@ -65,6 +65,7 @@ Future<void> runPluginApplicationScenario(WebObservation app) async {
     );
   }
 
+  var failed = false;
   try {
     await app.tap('插件');
     await waitFor(
@@ -157,10 +158,30 @@ Future<void> runPluginApplicationScenario(WebObservation app) async {
       (snapshot['errors'] as List).isEmpty,
       'the actual minimum-size plugin window has no Flutter layout errors',
     );
+  } catch (_) {
+    failed = true;
+    rethrow;
   } finally {
-    await profileManifest.writeAsBytes(original);
-    if (await healthy.exists()) await healthy.delete(recursive: true);
-    if (await damaged.exists()) await damaged.delete(recursive: true);
+    await closeProbeResources([
+      (
+        'plugin manifest',
+        () async {
+          await profileManifest.writeAsBytes(original);
+        },
+      ),
+      (
+        'healthy plugin fixture',
+        () async {
+          if (await healthy.exists()) await healthy.delete(recursive: true);
+        },
+      ),
+      (
+        'damaged plugin fixture',
+        () async {
+          if (await damaged.exists()) await damaged.delete(recursive: true);
+        },
+      ),
+    ], preserveFailure: failed);
   }
   await scrollTable('scrollRight');
   await app.tap('检查插件版本');
@@ -233,8 +254,15 @@ class PluginRegistryFixture {
         }
       }),
     );
-    await fixture._ready.future.timeout(const Duration(seconds: 45));
-    return fixture;
+    try {
+      await fixture._ready.future.timeout(const Duration(seconds: 45));
+      return fixture;
+    } catch (_) {
+      await closeProbeResources([
+        ('failed registry preparation', fixture.close),
+      ], preserveFailure: true);
+      rethrow;
+    }
   }
 
   Future<void> control(Map<String, Object?> parameters) async {
@@ -248,18 +276,51 @@ class PluginRegistryFixture {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    process.stdin.writeln(jsonEncode({'close': true}));
-    await process.stdin.flush();
-    await process.stdin.close();
-    final code = await process.exitCode.timeout(const Duration(seconds: 10));
-    for (final subscription in _subscriptions) {
-      await subscription.cancel();
+    var failed = false;
+    int? code;
+    try {
+      process.stdin.writeln(jsonEncode({'close': true}));
+      await process.stdin.flush();
+      await process.stdin.close();
+      code = await process.exitCode.timeout(const Duration(seconds: 10));
+      require(
+        code == 0,
+        'owned registry proxy shuts down normally with no CA/system trust changes',
+      );
+    } catch (_) {
+      failed = true;
+      rethrow;
+    } finally {
+      await closeProbeResources([
+        (
+          'registry process',
+          () async {
+            if (code == null) {
+              process.kill(ProcessSignal.sigterm);
+              var forced = false;
+              try {
+                code = await process.exitCode.timeout(
+                  const Duration(seconds: 3),
+                );
+              } on TimeoutException {
+                forced = true;
+                process.kill(ProcessSignal.sigkill);
+                code = await process.exitCode;
+              }
+              stdout.writeln(
+                'PLUGIN_REGISTRY_CLEANUP_EXIT=$code FORCED=$forced',
+              );
+              throw StateError(
+                'Registry required failure cleanup; actual exit $code forced=$forced',
+              );
+            }
+          },
+        ),
+        for (final subscription in _subscriptions)
+          ('registry subscription', subscription.cancel),
+        ('registry log', log.close),
+      ], preserveFailure: failed);
     }
-    await log.close();
-    require(
-      code == 0,
-      'owned registry proxy shuts down normally with no CA/system trust changes',
-    );
   }
 }
 
@@ -269,10 +330,15 @@ Future<void> runPluginUpdateApplicationScenario(
   required bool desktop,
 }) async {
   const owned = 'dsh-t08-owned-plugin', other = 'dsh-t08-other-plugin';
-  final runner = Platform.environment['RUNNER_TEMP'];
+  final runner =
+      Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] ??
+      Platform.environment['RUNNER_TEMP'];
   require(
-    Platform.environment['GITHUB_ACTIONS'] == 'true' && runner != null,
-    'plugin installation acceptance uses only an isolated CI profile',
+    (Platform.environment['GITHUB_ACTIONS'] == 'true' ||
+            Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
+                null) &&
+        runner != null,
+    'plugin installation acceptance uses only its explicit isolated profile',
   );
   final actualRoot = await app.root.resolveSymbolicLinks();
   require(

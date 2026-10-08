@@ -9,7 +9,7 @@ const exec = promisify(execFile)
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'))
 export const target = await readJson(new URL('../dsh-runtime.json', import.meta.url))
-const stampPath = root => join(root, '.dsh-build', 'owner-workflow-runtime.json')
+const stampPath = root => join(root, '.dsh-build', 'dsh-runtime.json')
 const missing = error => { if (error.code !== 'ENOENT') throw error }
 const platform = () => ({ node: process.versions.node, platform: process.platform, arch: process.arch })
 

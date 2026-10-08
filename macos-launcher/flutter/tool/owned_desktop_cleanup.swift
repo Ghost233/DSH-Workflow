@@ -6,7 +6,11 @@ func fail(_ message: String) -> NSError {
   NSError(domain: "OwnedDesktopCleanup", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
 }
 func canonical(_ path: String) -> String {
-  URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+  if let resolved = realpath(path, nil) {
+    defer { free(resolved) }
+    return String(cString: resolved)
+  }
+  return URL(fileURLWithPath: path).standardizedFileURL.path
 }
 func emit(_ facts: [String: Any]) throws {
   FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]))
@@ -15,9 +19,22 @@ func emit(_ facts: [String: Any]) throws {
 
 do {
   let arguments = CommandLine.arguments
-  guard arguments.count >= 3, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
-        let runner = ProcessInfo.processInfo.environment["RUNNER_TEMP"] else { throw fail("Requires clean CI") }
-  let root = canonical(arguments[1]), runnerRoot = canonical(runner)
+  guard arguments.count >= 3 else { throw fail("Missing owned cleanup context") }
+  let environment = ProcessInfo.processInfo.environment
+  let runnerRoot: String
+  if environment["GITHUB_ACTIONS"] == "true", environment["DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT"] == nil,
+     let runner = environment["RUNNER_TEMP"] {
+    runnerRoot = canonical(runner)
+  } else {
+    guard environment["GITHUB_ACTIONS"] != "true",
+          let local = environment["DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT"],
+          local == "/private/tmp/dsh-launcher-local-" + String(getuid()), canonical(local) == local,
+          let attributes = try? FileManager.default.attributesOfItem(atPath: local),
+          (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
+          (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700 else { throw fail("Requires explicit private local or CI context") }
+    runnerRoot = local
+  }
+  let root = canonical(arguments[1])
   guard root.hasPrefix(runnerRoot + "/"), URL(fileURLWithPath: root).lastPathComponent.hasPrefix("dsh-") else {
     throw fail("Unowned probe root")
   }

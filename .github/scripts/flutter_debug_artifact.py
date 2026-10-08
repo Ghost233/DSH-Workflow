@@ -67,6 +67,8 @@ def inputs(args):
     toolchain = json.loads(args.toolchain.read_text()) if args.toolchain else actual_toolchain()
     if any(not toolchain.get(key) for key in ('arch', 'flutter', 'xcode', 'sdkVersion', 'sdkBuild', 'macos')) or any(not toolchain['flutter'].get(key) for key in ('frameworkRevision', 'engineRevision', 'dartSdkVersion')):
         raise ValueError('Incomplete actual toolchain identity')
+    if toolchain['arch'] != 'arm64':
+        raise ValueError('Launcher artifacts are ARM64-only')
     material = {'schema': 1, 'command': COMMAND, 'toolchain': toolchain, 'files': files}
     key = 'flutter-debug-v1-' + hashlib.sha256(json.dumps(material, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     write(args.output, dict(material, key=key))

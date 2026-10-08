@@ -300,11 +300,32 @@ def bind_host_identity(inspection, root, receipt, desktop, probe, allowed):
             'probeStartedAt': probe['startedAt'], 'ownershipKnown': known, 'inspection': inspection}
 
 
-def validate_observation_root(root, runner):
+def observation_runner(*, headless=False):
+    local = os.environ.get('DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT')
+    if os.environ.get('GITHUB_ACTIONS') == 'true':
+        if local:
+            raise ValueError('Mixed CI and local acceptance contexts')
+        return Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+    if headless and not local:
+        return Path('/private/tmp').resolve(strict=True)
+    expected = Path('/private/tmp') / ('dsh-launcher-local-' + str(os.getuid()))
+    if local != str(expected) or expected.is_symlink():
+        raise ValueError('Explicit local acceptance root differs from current UID namespace')
+    attributes = expected.lstat()
+    if (expected.resolve(strict=True) != expected or not expected.is_dir()
+        or attributes.st_uid != os.getuid() or attributes.st_mode & 0o777 != 0o700):
+        raise ValueError('Local acceptance root must be canonical, owned and private')
+    return expected
+
+
+def validate_observation_root(root, runner, *, headless=False):
     # Host identity and liveness are shared by general application and settings probes.
     original = Path(root)
     root, runner = original.resolve(strict=True), Path(runner).resolve(strict=True)
-    if original.is_symlink() or root.parent != runner or not root.name.startswith(('dsh-t01-', 'dsh-t05-')) or root.stat().st_uid != os.getuid():
+    parents = {runner, Path('/private/tmp').resolve(strict=True)} if headless else {runner}
+    prefixes = ('dsh-t01-', 'dsh-t06-') if headless else ('dsh-t01-', 'dsh-t05-')
+    if (original.is_symlink() or root.parent not in parents or not root.name.startswith(prefixes)
+        or root.stat().st_uid != os.getuid() or headless and root.stat().st_mode & 0o077):
         raise ValueError('Unowned or non-direct probe root')
     return root
 
@@ -325,6 +346,42 @@ def capture_owned_host(root, runner, pid):
         raise ValueError('Desktop capture path differs from owned runtime')
     allowed = {str((root / 'missing-runtime/node').resolve(strict=True)), str(bundle / 'Contents/MacOS/DeepSeek Harness')}
     bound = bind_host_identity(inspection, root, receipt, desktop, probe, allowed)
+    with (root / 'host-ownership.jsonl').open('a') as output:
+        output.write(json.dumps(sanitize_json(bound)) + '\n')
+    return bound
+
+
+def capture_owned_headless_host(root, runner, pid, owner_pid, driver_pid):
+    root = validate_observation_root(root, runner, headless=True)
+    receipt = parse_json((root / 'data/global/.dsh-workflow/desktop/desktop-host.json').read_text())
+    if receipt.get('pid') != pid:
+        raise ValueError('Host receipt changed before identity inspection')
+    probe = parse_json((root / 'probe-process.json').read_text())
+    owner, driver = inspect_host(owner_pid), inspect_host(driver_pid)
+    executable = Path(probe['driverExecutable']).resolve(strict=True)
+    drivers = {str(executable)}
+    if executable.name == 'dart' and executable.with_name('dartvm').is_file():
+        drivers.add(str(executable.with_name('dartvm').resolve(strict=True)))
+    node = str((root / 'missing-runtime/node').resolve(strict=True))
+    known_owner = (probe.get('driverPid') == driver_pid and owner.get('pid') == owner_pid
+                   and owner.get('lookupOk') is True and owner.get('query', {}).get('exit') == 0
+                   and owner.get('parentPid') == driver_pid and owner.get('executable') == node
+                   and owner.get('uid') == owner.get('parentUid') == os.getuid()
+                   and isinstance(owner.get('startUnixSeconds'), (int, float))
+                   and driver.get('pid') == driver_pid and driver.get('lookupOk') is True
+                   and driver.get('query', {}).get('exit') == 0 and driver.get('uid') == os.getuid()
+                   and driver.get('executable') in drivers
+                   and isinstance(driver.get('startUnixSeconds'), (int, float)))
+    allowed = {node}
+    desktop = root / 'missing-runtime/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness'
+    if desktop.is_file():
+        allowed.add(str(desktop.resolve(strict=True)))
+    inspection = inspect_host(pid)
+    bound = bind_host_identity(inspection, root, receipt,
+        {'pid': owner_pid, 'probeStartedAt': probe['startedAt']}, probe, allowed)
+    bound.pop('desktopPid')
+    bound.update(ownerType='headless', ownerPid=owner_pid, ownerInspection=owner,
+                 driverInspection=driver, ownershipKnown=known_owner and bound['ownershipKnown'])
     with (root / 'host-ownership.jsonl').open('a') as output:
         output.write(json.dumps(sanitize_json(bound)) + '\n')
     return bound
@@ -481,8 +538,8 @@ def collect(log, target, runner):
     try:
         auxiliary.mkdir()
         result = run_diagnostics(root, auxiliary)
+        shutil.copy2(auxiliary / 'diagnostic-collector.log', target / 'collector.log')
         if result == 0:
-            shutil.copy2(auxiliary / 'diagnostic-collector.log', target / 'collector.log')
             auxiliary.rename(destination / 'auxiliary-diagnostics')
     except Exception as error:
         auxiliary_error = type(error).__name__
@@ -556,15 +613,14 @@ def main(attempt):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 6 and sys.argv[1] == '--capture-headless-host':
+        print(json.dumps(capture_owned_headless_host(Path(sys.argv[2]), observation_runner(headless=True), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]))))
+        sys.exit(0)
     if len(sys.argv) == 4 and sys.argv[1] == '--check-owned-pid':
-        if os.environ.get('GITHUB_ACTIONS') != 'true':
-            raise ValueError('Liveness requires clean CI')
-        print(json.dumps(check_owned_pid(Path(sys.argv[2]), Path(os.environ['RUNNER_TEMP']), int(sys.argv[3]))))
+        print(json.dumps(check_owned_pid(Path(sys.argv[2]), observation_runner(), int(sys.argv[3]))))
         sys.exit(0)
     if len(sys.argv) == 4 and sys.argv[1] == '--capture-host':
-        if os.environ.get('GITHUB_ACTIONS') != 'true':
-            raise ValueError('Host capture requires clean CI')
-        print(json.dumps(capture_owned_host(Path(sys.argv[2]), Path(os.environ['RUNNER_TEMP']), int(sys.argv[3]))))
+        print(json.dumps(capture_owned_host(Path(sys.argv[2]), observation_runner(), int(sys.argv[3]))))
         sys.exit(0)
     if sys.argv[1] == '--full':
         sys.exit(full_command())

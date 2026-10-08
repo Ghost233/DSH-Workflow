@@ -55,7 +55,9 @@ Future<void> main() async {
       case 'quitRequested':
         final traceEnabled =
             kDebugMode &&
-            Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+            (Platform.environment['GITHUB_ACTIONS'] == 'true' ||
+                Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
+                    null) &&
             model.environment.testSocket != null &&
             call.arguments is Map &&
             (call.arguments as Map)['ownQuitTraceEnabled'] == true;
@@ -260,6 +262,10 @@ class _LauncherPageState extends State<LauncherPage> {
           spacing: 8,
           runSpacing: 8,
           children: [
+            _button('后台启动', model.startDesktopInBackground),
+            _button('启动后显示', model.openDsh),
+            _button('隐藏窗口', model.hideDesktop),
+            _button('仅显示已运行窗口', model.showExistingDesktop),
             _button('启动 Web', model.startWeb, enabled: !model.isActive),
             _button('停止 Web', model.stopWeb, enabled: model.isActive),
             _button('重连 Web', model.restartWeb, enabled: model.isActive),
@@ -272,6 +278,21 @@ class _LauncherPageState extends State<LauncherPage> {
         ),
       ]),
       _section('访问与权限', [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('启动时隐藏窗口'),
+          subtitle: const Text('常规与登录启动时隐藏新启动的 Desktop；已有窗口保持当前状态。'),
+          value: model.hideWindowOnStart,
+          onChanged: (value) => unawaited(
+            _act(
+              () => model.savePreferences(
+                model.fullAccess,
+                model.allowLanSettings,
+                hideWindowOnStart: value,
+              ),
+            ),
+          ),
+        ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('DSH 工具使用完整访问权限'),

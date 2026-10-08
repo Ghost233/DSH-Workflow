@@ -5,8 +5,78 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../tool/probe_diagnostics.dart';
+import '../tool/application_probe.dart' show closeProbeResources;
 
 void main() {
+  test(
+    'probe cleanup releases later resources and preserves business failure',
+    () async {
+      final closed = <String>[];
+      final business = StateError('business first');
+      Future<void> scenario() async {
+        var failed = false;
+        try {
+          throw business;
+        } catch (_) {
+          failed = true;
+          rethrow;
+        } finally {
+          await closeProbeResources([
+            (
+              'settings',
+              () {
+                closed.add('settings');
+                throw StateError('cleanup second');
+              },
+            ),
+            (
+              'vm',
+              () {
+                closed.add('vm');
+              },
+            ),
+            (
+              'launcher',
+              () {
+                closed.add('launcher');
+              },
+            ),
+          ], preserveFailure: failed);
+        }
+      }
+
+      await expectLater(scenario(), throwsA(same(business)));
+      expect(closed, ['settings', 'vm', 'launcher']);
+    },
+  );
+
+  test(
+    'probe cleanup alone fails while still closing every resource',
+    () async {
+      final closed = <String>[];
+      final failure = StateError('cleanup first');
+      await expectLater(
+        closeProbeResources([
+          (
+            'settings',
+            () {
+              closed.add('settings');
+              throw failure;
+            },
+          ),
+          (
+            'vm',
+            () {
+              closed.add('vm');
+            },
+          ),
+        ], preserveFailure: false),
+        throwsA(same(failure)),
+      );
+      expect(closed, ['settings', 'vm']);
+    },
+  );
+
   test('published phases keep metadata and omit payloads and credentials', () {
     final phase = publicProbePhase({
       'event': 'ui-request',

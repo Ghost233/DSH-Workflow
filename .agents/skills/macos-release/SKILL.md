@@ -1,11 +1,11 @@
 ---
 name: macos-release
-description: 发布 DSH Workflow macOS 启动器新版本的唯一流程：升级版本号、提交要发布的全部改动、推送 macos-v<版本> 标签触发 GitHub Actions 构建双架构 DMG 并自动附到同名 GitHub Release。凡用户提到发布/发版/上新版 macOS 启动器或 launcher、发 DMG 到 GitHub Release、"检查更新没有新版本"想发新版等场景都使用本 skill。注意：只推 main 不是发布（仅 CI 检查）；本地打 DMG 也不是发布，均不在本 skill 内。
+description: 发布 DSH Workflow macOS 启动器新版本的唯一流程：升级版本号、提交要发布的全部改动、推送 macos-v<版本> 标签触发 GitHub Actions 构建ARM64 DMG 并自动附到同名 GitHub Release。凡用户提到发布/发版/上新版 macOS 启动器或 launcher、发 DMG 到 GitHub Release、"检查更新没有新版本"想发新版等场景都使用本 skill。注意：只推 main 不是发布（仅 CI 检查）；本地打 DMG 也不是发布，均不在本 skill 内。
 ---
 
 # DSH Workflow macOS 启动器发布（GitHub Actions 标签流程）
 
-发布由且仅由 `macos-v<版本>` 标签触发 `.github/workflows/macos-app.yml`：CI 在 macos-15（arm64）和 macos-15-intel（x64）两个 runner 上构建、测试、打 DMG，全部通过后 release job 自动把两个 DMG 附到同名 GitHub Release。推送到 main 只触发 CI 构建检查（DMG 仅作为 Actions artifact），不产生 Release、用户收不到更新提示。构建、测试、DMG 打包校验全部在 CI 内完成，不要在本地重复执行作为发布步骤。
+发布由且仅由 `macos-v<版本>` 标签触发 `.github/workflows/macos-app.yml`：CI 在 macos-15（ARM64）runner 上构建、测试、打 DMG，全部通过后 release job 自动把一份 ARM64 DMG 附到同名 GitHub Release。推送到 main 只触发 CI 构建检查（DMG 仅作为 Actions artifact），不产生 Release、用户收不到更新提示。构建、测试、DMG 打包校验全部在 CI 内完成，不要在本地重复执行作为发布步骤。
 
 ## 硬性约束
 
@@ -58,7 +58,7 @@ gh run list --workflow=macos-app.yml --limit 3
 gh run watch <run-id> --exit-status
 ```
 
-分支 push 和标签 push 会各触发一次 run，盯 tag 那次；要求 build（arm64）、build（x64）、release 三个 job 全绿。
+分支 push 和标签 push 会各触发一次 run，盯 tag 那次；要求 build、release 两个 job 全绿。
 
 ### 5. 验收 Release
 
@@ -69,7 +69,7 @@ gh release view macos-v<X.Y.Z> --repo Ghost233/DSH-Workflow
 以下全部满足才算发布完成：
 
 - Release 存在、非草稿、非预发布，tag 为 `macos-v<X.Y.Z>`；
-- 恰好两个 DMG 资产：`DSH-Workflow-macOS-<X.Y.Z>-arm64.dmg` 和 `DSH-Workflow-macOS-<X.Y.Z>-x64.dmg`；
+- 恰好一份 ARM64 DMG 资产：`DSH-Workflow-macOS-<X.Y.Z>-arm64.dmg`；
 - 向用户报告 Release 链接，说明启动器"检查更新"现在能发现该版本（已装版本需低于它）。
 
 ## 失败处理

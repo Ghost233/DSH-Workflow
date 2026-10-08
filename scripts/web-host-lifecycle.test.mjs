@@ -20,12 +20,11 @@ async function fixture(t) {
   await writeFile(script, `import http from 'node:http';
 const mode=process.argv[3];
 const server=http.createServer((req,res)=>{
-  if (req.url!=='/owner-workflow/api/health') {res.writeHead(404);res.end();return;}
-  res.setHeader('content-type','application/json');
-  res.end(JSON.stringify({contract:'DSH_WEB_HOST_READY_V1',instanceId:mode==='wrong-instance'?'different':process.env.DSH_OWNER_WORKFLOW_HOST_INSTANCE,
-    components:{owner:mode==='missing-plugin'?'offline':'ready'}}));
+  if(req.url.startsWith('/?token=')){res.writeHead(303,{'set-cookie':'auth=fixture','location':'/'});res.end();return;}
+  if(req.url!=='/api/pluginManager/listPlugins'){res.writeHead(404);res.end();return;}
+  let body='';req.on('data',part=>body+=part);req.on('end',()=>{const call=JSON.parse(body);res.setHeader('content-type','application/json');res.end(JSON.stringify({type:'server-response',rpcId:mode==='wrong-instance'?'different':call.rpcId,result:mode==='missing-plugin'?{ok:false,error:{code:'not-ready'}}:{ok:true,value:[]}}));});
 });
-server.listen(Number(process.argv[2]),'127.0.0.1',()=>console.log('fixture-listening'));
+server.listen(Number(process.argv[2]),'127.0.0.1',()=>{console.log('fixture-listening');console.log('dsh web: http://127.0.0.1:'+process.argv[2]+'/?token=fixture')});
 process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
 if(mode==='early-exit') server.close(()=>process.exit(0));
 `)

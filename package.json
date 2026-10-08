@@ -1,68 +1,53 @@
 {
-  "name": "dsh-owner-workflow",
+  "name": "dsh-workflow",
   "version": "0.1.1",
-  "description": "面向 DeepSeek Harness 的 Owner 工作流编排插件",
+  "description": "DSH launcher, JEV center and native agent observation",
   "type": "module",
-  "main": "owner-workflow-plugin/index.js",
+  "main": "agent-observation-plugin/index.mjs",
   "exports": {
-    ".": "./owner-workflow-plugin/index.js",
-    "./client": "./owner-workflow-plugin/client.js",
-    "./dashboard": "./owner-workflow-plugin/dashboard-host.mjs",
+    ".": "./agent-observation-plugin/index.mjs",
+    "./client": "./agent-observation-plugin/client.js",
+    "./jev-center": "./agent-observation-plugin/src/jev-center-plugin.mjs",
+    "./agent-monitor": "./agent-observation-plugin/src/agent-monitor-plugin.mjs",
     "./package.json": "./package.json"
   },
   "license": "MIT",
   "files": [
-    "start-owner-workflow.sh",
+    "start-dsh-workflow.sh",
     "project-plugins.json",
     "scripts/project-plugins.mjs",
     "scripts/project-plugin-resolver.mjs",
     "docs/",
-    "owner-workflow-plugin/README.md",
-    "owner-workflow-plugin/README.zh.md",
-    "owner-workflow-plugin/THIRD_PARTY_NOTICES.md",
-    "owner-workflow-plugin/cordis.patch.yml",
-    "owner-workflow-plugin/client.js",
-    "owner-workflow-plugin/dashboard-host.mjs",
-    "owner-workflow-plugin/index.js",
-    "owner-workflow-plugin/src/",
-    "owner-workflow-plugin/scripts/",
     "dsh-runtime.json",
     "project-plugins.lock.json",
     "scripts/harness-runtime.mjs",
-    "owner-workflow-plugin/kernel-presets/",
-    "scripts/kernel-web-launch.mjs",
     "scripts/agent-team-profile.mjs",
-    "scripts/kernel-launch-composition.mjs",
+    "scripts/observation-profile.mjs",
     "scripts/web-host-lifecycle.mjs",
     "matt-skills-panel-plugin/package/",
     "matt-skills-panel-plugin/upstream.json",
     "matt-skills-panel-plugin/LICENSE",
     "matt-skills-panel-plugin/THIRD_PARTY_NOTICES.md",
     "vendor/mattpocock-skills-zh/",
-    "vendor/mattpocock-skills-zh.upstream.json"
+    "vendor/mattpocock-skills-zh.upstream.json",
+    "agent-observation-plugin/",
+    "scripts/dsh-launch-composition.mjs",
+    "scripts/dsh-web-launch.mjs",
+    "scripts/dsh-readiness.mjs"
   ],
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-ui-session",
-        "@deepseek-ai/dsh-client-ui-layout",
-        "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-sidebar",
-        "@deepseek-ai/dsh-client-ui-workspace"
+        "@deepseek-ai/dsh-client-ui-layout"
       ],
       "platform": "web"
-    },
-    "bundle": {
-      "patch": "./owner-workflow-plugin/cordis.patch.yml"
     }
   },
   "scripts": {
-    "acceptance:kernel": "node scripts/run-kernel-acceptance.mjs",
-    "test:kernel": "node scripts/run-kernel-regression.mjs",
-    "build:client": "node owner-workflow-plugin/scripts/build-client.mjs",
-    "check:client": "node owner-workflow-plugin/scripts/build-client.mjs --check",
-    "test:project-plugins": "node scripts/run-workflow-tests.mjs scripts/project-plugins.test.mjs scripts/daily-workflow-launch.test.mjs scripts/agent-team-profile.test.mjs scripts/kernel-web-launch.test.mjs",
-    "test": "node scripts/run-workflow-tests.mjs"
+    "build:client": "node agent-observation-plugin/scripts/build-client.mjs",
+    "check:client": "node agent-observation-plugin/scripts/build-client.mjs --check",
+    "test:project-plugins": "node scripts/run-project-tests.mjs scripts/project-plugins.test.mjs scripts/daily-workflow-launch.test.mjs scripts/agent-team-profile.test.mjs scripts/dsh-web-launch.test.mjs",
+    "test": "node scripts/run-project-tests.mjs"
   },
   "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000",
   "peerDependencies": {

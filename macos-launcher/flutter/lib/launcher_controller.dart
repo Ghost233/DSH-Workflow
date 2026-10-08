@@ -38,8 +38,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   final NativeBridge native;
   final ProcessStarter _startProcess;
   late LauncherEnvironment environment;
-  bool initialized = false, fullAccess = true, allowLanSettings = false;
+  bool initialized = false,
+      fullAccess = true,
+      allowLanSettings = false,
+      hideWindowOnStart = false;
   String? _password;
+  bool _coldDesktopBackground = false;
   String loginStatus = 'unknown', error = '', updateMessage = '尚未检查更新';
   String pluginMessage = '尚未检查插件版本', pluginUpdateMessage = '';
   String sdkMessage = '等待 MacLauncher';
@@ -78,6 +82,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     environment = await native.load();
     fullAccess = environment.fullAccess;
     allowLanSettings = environment.allowLanSettings;
+    hideWindowOnStart = environment.hideWindowOnStart;
     _password = environment.password;
     loginStatus = environment.loginStatus;
     initialized = true;
@@ -243,8 +248,9 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
             jsonDecode(line.substring(separator + 1)),
           );
           if (name == 'DSH_WORKFLOW_DESKTOP_NEEDED') {
-            unawaited(openDsh().catchError(reportError));
+            unawaited(startDesktop().catchError(reportError));
           } else if (name == 'DSH_WORKFLOW_READY') {
+            _coldDesktopBackground = false;
             webUrl = Uri.parse(payload['url'] as String);
             lanUrls = (payload['lanUrls'] as List? ?? []).cast<String>();
             if (_ready?.isCompleted == false) _ready!.complete();
@@ -368,10 +374,32 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     await _startWeb();
   });
 
-  Future<void> openDsh() =>
-      _desktopOpen ??= _openDesktop().whenComplete(() => _desktopOpen = null);
+  Future<void> hideDesktop() => native.hideDesktop(desktop);
+  Future<void> showExistingDesktop() => native.showDesktop(desktop);
+  Future<void> startDesktop() async {
+    if (_coldDesktopBackground) {
+      if (_desktopOpen != null) {
+        await _desktopOpen;
+        return;
+      }
+      if (await native.desktopRunning(desktop)) return;
+      _coldDesktopBackground = false;
+    }
+    await _startDesktop(hidden: hideWindowOnStart);
+  }
 
-  Future<void> _openDesktop() async {
+  Future<void> startDesktopInBackground() => _startDesktop(hidden: true);
+  Future<void> openDsh() async {
+    await _startDesktop(hidden: false);
+    await native.showDesktop(desktop);
+  }
+
+  Future<void> _startDesktop({required bool hidden}) =>
+      _desktopOpen ??= _openDesktop(hidden: hidden)
+          .whenComplete(() => _desktopOpen = null);
+
+  Future<void> _openDesktop({required bool hidden}) async {
+    if (await native.desktopRunning(desktop)) return;
     final resources = '$desktop/Contents/Resources';
     final source = File('$resources/dsh-source-runtime.json');
     final runtime = await source.exists()
@@ -395,13 +423,20 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     if (result.exitCode != 0) {
       throw StateError('插件装配失败（${result.exitCode}）：${result.stderr}');
     }
-    await native.openDesktop(
-      desktop,
-      environment: {
-        'DSH_HOME': environment.home,
-        'DSH_PERMISSION_MODE': processEnvironment['DSH_PERMISSION_MODE']!,
-      },
-    );
+    _coldDesktopBackground = hidden;
+    try {
+      await native.openDesktop(
+        desktop,
+        hidden: hidden,
+        environment: {
+          'DSH_HOME': environment.home,
+          'DSH_PERMISSION_MODE': processEnvironment['DSH_PERMISSION_MODE']!,
+        },
+      );
+    } catch (_) {
+      _coldDesktopBackground = false;
+      rethrow;
+    }
   }
 
   @override
@@ -445,10 +480,16 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   @override
   Future<bool> setEntryManaged(bool managed) => native.setEntryManaged(managed);
 
-  Future<void> savePreferences(bool access, bool lan) async {
-    await native.savePreferences(access, lan);
+  Future<void> savePreferences(
+    bool access,
+    bool lan, {
+    bool? hideWindowOnStart,
+  }) async {
+    final hide = hideWindowOnStart ?? this.hideWindowOnStart;
+    await native.savePreferences(access, lan, hideWindowOnStart: hide);
     fullAccess = access;
     allowLanSettings = lan;
+    this.hideWindowOnStart = hide;
     notifyListeners();
   }
 

@@ -1,10 +1,10 @@
-name: Owner Workflow CI
+name: DSH Project CI
 
 on:
   push:
     paths:
       - .github/workflows/ci.yml
-      - owner-workflow-plugin/**
+      - agent-observation-plugin/**
       - matt-skills-panel-plugin/**
       - dynamic-workflow-plugin/**
       - scripts/**
@@ -18,7 +18,7 @@ on:
       - project-plugins.json
       - project-plugins.lock.json
       - maclauncher.json
-      - start-owner-workflow.sh
+      - start-dsh-workflow.sh
       - '!**/*.md'
   pull_request:
 
@@ -47,7 +47,7 @@ jobs:
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22.19.0
+          node-version: 24.12.0
 
       - name: 启用 Corepack
         run: corepack enable
@@ -59,27 +59,22 @@ jobs:
           test "$(git rev-parse HEAD:deepseek-harness)" = "$(git -C deepseek-harness rev-parse HEAD)"
           test -z "$(git -C deepseek-harness status --porcelain --untracked-files=all)"
 
-      - name: 核对 Owner Workflow 客户端产物
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
+
+      - name: 核对 JEV/监控客户端产物
         run: npm run check:client
 
-      - name: 安装固定 DSH 开发依赖
-        working-directory: deepseek-harness
-        run: pnpm install --frozen-lockfile
-
-      - name: 构建固定 DSH 库
-        working-directory: deepseek-harness
-        run: pnpm run build:lib
-
-      - name: 构建当前平台 DSH 原生模块
-        working-directory: deepseek-harness
-        run: pnpm run build:native-system
+      - name: Prepare and verify the fixed DSH engineering build
+        run: |
+          node scripts/harness-runtime.mjs ensure deepseek-harness
+          node scripts/harness-runtime.mjs check deepseek-harness
 
       - name: 准备 DSH CI 沙箱
         working-directory: deepseek-harness
         run: bash scripts/prepare-ci-bubblewrap.sh
 
-      - name: 安装 Owner 原生依赖
-        run: npm ci --prefix owner-workflow-plugin --no-audit --no-fund
-
-      - name: 运行 Owner Workflow 全量测试
+      - name: 运行 当前自研项目测试
         run: npm test

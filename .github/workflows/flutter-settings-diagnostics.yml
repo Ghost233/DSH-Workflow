@@ -21,10 +21,10 @@ permissions:
 
 jobs:
   startup:
-    runs-on: macos-15-intel
+    runs-on: macos-15
     timeout-minutes: 35
     concurrency:
-      group: flutter-t05-debug-x64-${{ github.ref }}
+      group: flutter-t05-debug-arm64-${{ github.ref }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -50,13 +50,13 @@ jobs:
       - name: Bind current source and fixed runtime artifact
         run: |
           git rev-parse HEAD > "$EVIDENCE_DIR/source-commit.txt"
-          printf '{"repository":"%s","runId":37325723931,"artifactName":"dsh-workflow-x64"}\n' \
+          printf '{"repository":"%s","runId":37325723931,"artifactName":"dsh-workflow-arm64"}\n' \
             "$GITHUB_REPOSITORY" > "$EVIDENCE_DIR/runtime-artifact-source.json"
 
-      - name: Download the successful frozen x64 runtime
+      - name: Download the successful frozen ARM64 runtime
         uses: actions/download-artifact@v4
         with:
-          name: dsh-workflow-x64
+          name: dsh-workflow-arm64
           run-id: 37325723931
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/t05-runtime-artifact
@@ -81,7 +81,7 @@ jobs:
           runtime_resources="$T05_RUNTIME_MOUNT/DSH Workflow.app/Contents/Resources"
           test -x "$runtime_resources/node"
           test -d "$runtime_resources/desktop/DeepSeek Harness.app"
-          test "$("$runtime_resources/node" -p 'process.arch')" = x64
+          test "$("$runtime_resources/node" -p 'process.arch')" = arm64
           printf 'T05_RUNTIME_RESOURCES=%s\n' "$runtime_resources" >> "$GITHUB_ENV"
           shasum -a 256 "$runtime_resources/node" \
             "$runtime_resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
@@ -96,6 +96,16 @@ jobs:
           flutter-version: 3.47.6
           cache: true
           pub-cache-key: flutter-pub-:os:-:version:-:arch:-${{ hashFiles('macos-launcher/flutter/pubspec.lock') }}
+
+      - name: Set up fixed project Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
 
       - name: Check current launcher engineering
         working-directory: macos-launcher/flutter
@@ -210,7 +220,7 @@ jobs:
         timeout-minutes: 2
         run: |
           python3 - <<'PY'
-          import errno, hashlib, json, os, re, socket, subprocess, sys
+          import errno, hashlib, json, os, re, shutil, socket, subprocess, sys
           sys.path.insert(0, "macos-launcher/flutter/tool")
           from pathlib import Path
           sys.path.insert(0, '.github/scripts')
@@ -231,9 +241,13 @@ jobs:
               print('T05_COLLECTOR_PHASE=copy-start ROOT=' + root.name, flush=True)
               copy_safe_evidence(root, target, allow_independent_unknown=True)
               print('T05_COLLECTOR_PHASE=copy-end ROOT=' + root.name, flush=True)
-              auxiliary_exit = run_diagnostics(root, target)
+              auxiliary = target / 'auxiliary-diagnostics'
+              auxiliary.mkdir(exist_ok=True)
+              auxiliary_exit = run_diagnostics(root, auxiliary)
+              shutil.copy2(auxiliary / 'diagnostic-collector.log', target / 'diagnostic-collector.log')
+              shutil.copy2(auxiliary / 'diagnostic-collector.exit', target / 'diagnostic-collector.exit')
               if auxiliary_exit != 0:
-                  (target / 'diagnostic-collector.log').unlink(missing_ok=True)
+                  shutil.rmtree(auxiliary)
                   print('::warning::T05 auxiliary diagnostics failed; exit=' + str(auxiliary_exit), flush=True)
               print('T05_COLLECTOR_PHASE=hash-start ROOT=' + root.name, flush=True)
               hashes = {}

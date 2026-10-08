@@ -5,7 +5,7 @@ import 'package:launcher_core/launcher_core.dart';
 
 import 'dart:io';
 
-import 'application_probe.dart' show require, waitFor;
+import 'application_probe.dart' show require, waitFor, closeProbeResources;
 import 'web_application_scenario.dart';
 
 Future<void> runLogApplicationScenario(WebObservation app) async {
@@ -35,6 +35,7 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
   // connection's receipt validator; no backend output is fabricated.
   final corrupt = await Process.run('/bin/chmod', ['0644', receipt]);
   require(corrupt.exitCode == 0, 'owned receipt permission fault was applied');
+  var failed = false;
   try {
     await waitFor(
       'actual Web resource disconnects',
@@ -118,9 +119,19 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
       ),
       'actual log page identifies the retained real connection scope',
     );
+  } catch (_) {
+    failed = true;
+    rethrow;
   } finally {
-    final restore = await Process.run('/bin/chmod', ['0600', receipt]);
-    require(restore.exitCode == 0, 'owned receipt permissions restored');
+    await closeProbeResources([
+      (
+        'owned receipt permission',
+        () async {
+          final restore = await Process.run('/bin/chmod', ['0600', receipt]);
+          require(restore.exitCode == 0, 'owned receipt permissions restored');
+        },
+      ),
+    ], preserveFailure: failed);
   }
   await app.sdk('start');
   final second = await app.sdk('status');
@@ -142,6 +153,7 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
   final pause = await Process.run('/bin/kill', ['-STOP', '$hostPid']);
   require(pause.exitCode == 0, 'only the exact owned Host PID was paused');
   Map<String, Object?>? unavailable;
+  var statusFailed = false;
   try {
     unavailable = await app.sdk('status', service: 'desktop');
     require(
@@ -150,9 +162,19 @@ Future<void> runLogApplicationScenario(WebObservation app) async {
           unavailable['ready'] == null,
       'live trusted Host with unavailable health preserves running and unknown readiness',
     );
+  } catch (_) {
+    statusFailed = true;
+    rethrow;
   } finally {
-    final resume = await Process.run('/bin/kill', ['-CONT', '$hostPid']);
-    require(resume.exitCode == 0, 'owned Host resumed before cleanup');
+    await closeProbeResources([
+      (
+        'owned Host resume',
+        () async {
+          final resume = await Process.run('/bin/kill', ['-CONT', '$hostPid']);
+          require(resume.exitCode == 0, 'owned Host resumed before cleanup');
+        },
+      ),
+    ], preserveFailure: statusFailed);
   }
   require(
     (await app.sdk('status', service: 'desktop'))['ready'] == true,

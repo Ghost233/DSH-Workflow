@@ -48,9 +48,9 @@
    交付内容：插件管理 UI、单项/批量/NOOP/失败反馈、隔离真实下载与安装版本和重开提示；恢复隔离 Desktop 正常退出/重开、新 Host/租约与实际加载新版，并保留 Launcher 自身正常退出及资源释放。
    用户故事：25、26。
 
-9. **[T09 — 交付双架构独立应用并完成用户故事验收收尾](https://github.com/Ghost233/DSH-Workflow/issues/10)**
+9. **[T09 — 交付ARM64独立应用并完成用户故事验收收尾](https://github.com/Ghost233/DSH-Workflow/issues/10)**
    被什么阻塞：[T03 — 通过 SDK 和管理窗口观察真实状态与实例日志](https://github.com/Ghost233/DSH-Workflow/issues/4)；[T04 — 在并发、断连与退出中正确结算 Web 生命周期](https://github.com/Ghost233/DSH-Workflow/issues/5)；[T05 — 保留既有配置并通过管理窗口设置访问与权限](https://github.com/Ghost233/DSH-Workflow/issues/6)；[T06 — 接管入口并在管理端断线后归还原生入口](https://github.com/Ghost233/DSH-Workflow/issues/7)；[T07 — 通过管理窗口管理登录启动与稳定版更新](https://github.com/Ghost233/DSH-Workflow/issues/8)；[T08 — 从管理窗口查看和更新插件并明确重新加载](https://github.com/Ghost233/DSH-Workflow/issues/9)。
-   交付内容：工具维护者获得可移动的 arm64/x64 应用和 DMG，并用逐故事证据确认统一维护体系与整份规格的交付范围。
+   交付内容：工具维护者获得可移动的 ARM64 应用和 DMG，并用逐故事证据确认统一维护体系与整份规格的交付范围。
    用户故事：1、2、27、28。
 
 ## 阻塞依据
@@ -72,6 +72,12 @@
 - 本阶段仅形成和发布工单；单票通过需要另行执行场景并取得证据，文档状态不替代 Runner 的执行状态。
 
 - 同日用户任务结束后恢复 T05/T08 Desktop 验收，取代上述临时取消：原始正常退出、重开及权限/插件实际采用须重新取得当前候选证据；首错、隐私、安装证据和自有资源释放修复保留。历史 FAIL/CANCELLED 不改写，CI 清理不补写正常成功，28 条矩阵按当前恢复范围核对。
+
+## 新增 Desktop 窗口范围（2026-10-07）
+
+原 9 票和 28 故事保留，四种窗口动作及持久化默认 false 的“启动时隐藏窗口”作为故事 5/9/10/11/20/23/26/28 新增子项：T02 承接后台启动、启动后显示、只隐藏、仅显示已有窗口和 Host/Web持续；T05 承接兼容默认值、保存与重启生效；T07 承接常规/登录启动及已有窗口不自动隐藏；T09 归并真实窗口晚弹、闪窗、焦点与分发证据。T02/T07 为新增功能重新打开，既有验收结果保持历史。
+
+先本机 ARM 完成所有真正受影响的真实 SDK/窗口/入口与回归，之后一个稳定候选远程确认 ARM64 干净环境和签名/DMG；新的 main CI仍必需。cf285 本地两项 Full terminal0 为新增功能之前的证据，不能当新功能通过；不扩 server、不改 DSH 上游、不处理 Command+Q问题，不使用 hidesOthers，不以配置或应答替代实际窗口结果。
 
 ## 发布核对
 

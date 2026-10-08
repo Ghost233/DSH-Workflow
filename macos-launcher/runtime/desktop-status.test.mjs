@@ -10,10 +10,10 @@ test('backend observations use its own lease and never report unavailable health
         assert.equal(options.redirect, 'manual')
         return { headers: { getSetCookie: () => ['auth=fixture; HttpOnly'] } }
       }
-      assert.equal(url.pathname, '/owner-workflow/api/health')
+      assert.equal(url.pathname, '/api/pluginManager/listPlugins')
       assert.equal(url.search, '')
       assert.equal(options.headers.cookie, 'auth=fixture')
-      return { ok: true, json: async () => ({ ready: true }) } } })
+      const body=JSON.parse(options.body); assert.equal(body.method,'pluginManager/listPlugins'); return { ok:true, json:async()=>({type:'server-response',rpcId:body.rpcId,result:{ok:true,value:[]}}) } } })
   assert.equal(health.state, 'running')
   assert.equal(health.instanceId, 'desktop-lease')
   assert.equal(health.ready, true)

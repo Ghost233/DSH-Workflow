@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { checkPluginVersions, compareVersions, declaredDshVersions, latestDeclaredDsh } from './plugin-versions.mjs'
 
 test('version report compares SemVer without treating a prerelease as newer than stable', () => {
@@ -31,7 +32,7 @@ test('DSH support text uses only compatibility declared by the package', () => {
 })
 
 test('one check covers profile, project lock and bundled plugins without writing or installing', async t => {
-  const root = await mkdtemp('/private/tmp/dsh-plugin-versions-test-')
+  const root = await mkdtemp(join(tmpdir(), 'dsh-plugin-versions-test-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const resources = join(root, 'resources'), workflow = join(resources, 'workflow'), home = join(root, 'home')
   const profile = join(home, 'profiles', 'web')
@@ -39,7 +40,7 @@ test('one check covers profile, project lock and bundled plugins without writing
   await mkdir(join(profile, 'node_modules', 'bundle-only'), { recursive: true })
   await mkdir(join(profile, 'node_modules', 'disabled-plugin'), { recursive: true })
   await mkdir(join(resources, 'node_modules', '@deepseek-ai', 'dsh-base'), { recursive: true })
-  await mkdir(join(workflow, 'owner-workflow-plugin'), { recursive: true })
+  await mkdir(join(workflow, 'agent-observation-plugin'), { recursive: true })
   const panel = join(workflow, 'matt-skills-panel-plugin')
   await mkdir(join(panel, 'package'), { recursive: true })
   await writeFile(join(panel, 'package/package.json'), JSON.stringify({ name: 'dsh-workflow-matt-panel', version: '1.7.39-workflow.1' }))
@@ -54,7 +55,7 @@ test('one check covers profile, project lock and bundled plugins without writing
   await writeFile(join(profile, 'node_modules', 'bundle-only', 'package.json'), JSON.stringify({ name: 'bundle-only', version: '1.2.0', dsh: { compatibility: { dshReleases: { '0.1.7-rc.2': 'compatible' } } } }))
   await writeFile(join(profile, 'node_modules', 'disabled-plugin', 'package.json'), JSON.stringify({ name: 'disabled-plugin', version: '1.0.0' }))
   await writeFile(join(resources, 'node_modules', '@deepseek-ai', 'dsh-base', 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-base', version: '0.1.0' }))
-  await writeFile(join(workflow, 'owner-workflow-plugin', 'package.json'), JSON.stringify({ name: 'dsh-owner-workflow', version: '0.1.0' }))
+  await writeFile(join(workflow, 'agent-observation-plugin', 'package.json'), JSON.stringify({ name: 'dsh-workflow', version: '0.1.0' }))
   const manifest = JSON.stringify({ registry: 'https://registry.npmjs.org/', plugins: [{ package: 'third-party', version: 'latest' }] })
   await writeFile(join(workflow, 'project-plugins.json'), manifest)
   await writeFile(join(workflow, 'project-plugins.lock.json'), JSON.stringify({
@@ -89,7 +90,7 @@ test('one check covers profile, project lock and bundled plugins without writing
   assert.equal(byName['bundle-only'].status, 'newer')
   assert.equal(byName['disabled-plugin'].status, 'newer')
   assert.equal(byName['@deepseek-ai/dsh-base'].status, 'coupled')
-  assert.equal(byName['dsh-owner-workflow'].status, 'bundled')
+  assert.equal(byName['dsh-workflow'].status, 'bundled')
   assert.equal(byName['dsh-workflow-matt-panel'].source, 'App 内置派生插件')
   assert.equal(byName['dsh-workflow-matt-panel'].status, 'bundled')
   assert.equal(byName['dsh-workflow-matt-panel'].updatable, false)
@@ -104,13 +105,13 @@ test('one check covers profile, project lock and bundled plugins without writing
   assert.equal(byName['third-party'].updatable, false)
   assert.equal(byName['local-plugin'].updatable, false)
   assert.equal(byName['@deepseek-ai/dsh-base'].updatable, false)
-  assert.equal(byName['dsh-owner-workflow'].updatable, false)
+  assert.equal(byName['dsh-workflow'].updatable, false)
   assert.deepEqual(await readFile(join(workflow, 'project-plugins.lock.json')), before)
 })
 
 
 test('a malformed self-owned plugin remains a failed row without discarding completed plugin checks', async t => {
-  const root = await mkdtemp('/private/tmp/dsh-t08-plugin-check-')
+  const root = await mkdtemp(join(tmpdir(), 'dsh-t08-plugin-check-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const resources = join(root, 'resources'), home = join(root, 'home')
   const profile = join(home, 'profiles/desktop')

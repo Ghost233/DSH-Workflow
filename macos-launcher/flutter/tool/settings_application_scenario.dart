@@ -158,7 +158,10 @@ class SettingsFixture {
   }
 }
 
-Future<void> runSettingsApplicationScenario(WebObservation o) async {
+Future<void> runSettingsApplicationScenario(
+  WebObservation o, {
+  bool firstUiOnly = false,
+}) async {
   final data = '${o.root.path}/data';
   final passwordFile = File('$data/lan-password');
   final preferences = File('$data/test-preferences.plist');
@@ -351,6 +354,21 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
       await passwordFile.readAsString() == settingsInitialPassword,
       'invalid empty password does not change persisted credential',
     );
+    if (firstUiOnly) {
+      await o.capture('settings-first-ui');
+      await File('${o.root.path}/settings-evidence.json').writeAsString(
+        jsonEncode({
+          'firstUiOnly': true,
+          'preexistingKeys': true,
+          'passwordBeforeChangeSnapshotAndInvalidInput': true,
+          'permissionReopenVerified': false,
+        }),
+      );
+      stdout.writeln(
+        'T05 FIRST REAL PASSWORD UI CONTEXT PASSED; FULL SETTINGS NOT EXERCISED',
+      );
+      return;
+    }
     await setPassword('x' * 1025);
     await waitFor(
       'oversized password error visible',
@@ -386,7 +404,7 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
     );
     require(
       (await request(
-            local.resolve('owner-workflow/api/health'),
+            local.resolve('api/pluginManager/listPlugins'),
             cookies: oldCookies,
           )).code ==
           401,
@@ -543,7 +561,9 @@ Future<void> runSettingsApplicationScenario(WebObservation o) async {
     int? oldDesktopPid, newDesktopPid;
     Map<String, Object?>? reopenedBackend, normalRequest;
     final native = (await o.state())['native'] as Map;
-    if (Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+    if ((Platform.environment['GITHUB_ACTIONS'] == 'true' ||
+            Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
+                null) &&
         native['openedDesktopPid'] is int) {
       oldDesktopPid = native['openedDesktopPid'] as int;
       require(

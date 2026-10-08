@@ -15,6 +15,7 @@ import 'plugin_application_scenario.dart';
 import 'lifecycle_application_scenario.dart';
 import 'settings_application_scenario.dart';
 import 'probe_diagnostics.dart';
+import 'desktop_window_application_scenario.dart';
 
 Future<void> waitFor(String description, Future<bool> Function() check) async {
   for (var attempt = 0; attempt < 150; attempt++) {
@@ -29,14 +30,47 @@ void require(bool condition, String description) {
   stdout.writeln('PASS: $description');
 }
 
+Future<void> closeProbeResources(
+  List<(String, FutureOr<void> Function())> resources, {
+  required bool preserveFailure,
+}) async {
+  Object? firstFailure;
+  StackTrace? firstStack;
+  for (final (name, close) in resources) {
+    try {
+      await Future<void>.sync(close);
+    } catch (error, stack) {
+      firstFailure ??= error;
+      firstStack ??= stack;
+      stderr.writeln('PROBE_CLEANUP_FAILURE: $name ${error.runtimeType}');
+    }
+  }
+  if (!preserveFailure && firstFailure != null) {
+    await Future<void>.error(firstFailure, firstStack);
+  }
+}
+
 String applicationProbeRootParent({
   required bool systemCi,
   required bool keychainCi,
   bool pluginUpdateCi = false,
+  String? localAcceptanceRoot,
   required WebProbeOptions? webScenario,
   required bool githubActions,
   required String? runnerTemp,
 }) {
+  if (localAcceptanceRoot != null) {
+    if (githubActions ||
+        systemCi ||
+        keychainCi ||
+        !RegExp(r'^/private/tmp/dsh-launcher-local-[0-9]+$')
+            .hasMatch(localAcceptanceRoot)) {
+      throw ArgumentError(
+        'Explicit local acceptance requires its own UID temporary namespace',
+      );
+    }
+    return localAcceptanceRoot;
+  }
   if (systemCi ||
       keychainCi ||
       pluginUpdateCi ||
@@ -52,6 +86,38 @@ String applicationProbeRootParent({
 }
 
 Future<void> main(List<String> arguments) async {
+  final localAcceptanceRoot =
+      Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'];
+  final desktopWindowRestart =
+      arguments.length == 3 && arguments[1] == '--desktop-window-restart';
+  final desktopWindowScenario =
+      arguments.length == 7 &&
+      arguments[1] == '--desktop-window-runtime' &&
+      arguments[3] == '--window-start' &&
+      {'hidden', 'show', 'sdk-hidden'}.contains(arguments[4]) &&
+      arguments[5] == '--web-port';
+  if (arguments.length > 1 &&
+      arguments[1] == '--desktop-window-runtime' &&
+      !desktopWindowScenario) {
+    throw ArgumentError(
+      'Use --desktop-window-runtime RESOURCES --window-start hidden|show|sdk-hidden --web-port PORT',
+    );
+  }
+  final externalSdkCold = desktopWindowScenario && arguments[4] == 'sdk-hidden';
+  if (externalSdkCold) {
+    require(
+      (Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+              localAcceptanceRoot == null) ||
+          (Platform.environment['GITHUB_ACTIONS'] != 'true' &&
+              localAcceptanceRoot != null),
+      'external SDK cold validation has a disposable runner or explicit private local context',
+    );
+  }
+  if (externalSdkCold &&
+      Platform.environment['DSH_EXTERNAL_SDK_COLD_DRIVER'] != '1') {
+    await superviseSdkColdWindow(arguments);
+    return;
+  }
   final instanceStartup =
       arguments.length == 3 && arguments[1] == '--instance-startup';
   final logFixture = arguments.length == 3 && arguments[1] == '--logs-fixture';
@@ -62,12 +128,25 @@ Future<void> main(List<String> arguments) async {
   final lifecycle = LifecycleProbeOptions.parse(arguments);
   final settingsStartupScenario =
       arguments.length >= 2 && arguments[1] == '--settings-startup-runtime';
+  final settingsFirstUiScenario =
+      arguments.length >= 2 && arguments[1] == '--settings-first-ui-runtime';
   final settingsScenario =
       settingsStartupScenario ||
+      settingsFirstUiScenario ||
       (arguments.length >= 2 && arguments[1] == '--settings-runtime');
   final keychainCi =
       settingsScenario && arguments.last == '--legacy-keychain-ci';
-  final webArgs = settingsScenario
+  final webArgs = desktopWindowScenario
+      ? [
+          arguments.first,
+          '--web-runtime',
+          arguments[2],
+          '--web-backend',
+          'desktop',
+          '--web-port',
+          arguments[6],
+        ]
+      : settingsScenario
       ? [
           arguments.first,
           '--web-runtime',
@@ -92,9 +171,10 @@ Future<void> main(List<String> arguments) async {
         '--plugins-desktop-runtime',
       }.contains(arguments[1]) &&
       (!pluginUpdateScenario ||
-          Platform.environment['GITHUB_ACTIONS'] != 'true')) {
+          (Platform.environment['GITHUB_ACTIONS'] != 'true' &&
+              localAcceptanceRoot == null))) {
     throw ArgumentError(
-      'Plugin update acceptance runs only in isolated GitHub CI',
+      'Plugin update acceptance requires isolated CI or explicit private local acceptance',
     );
   }
   final webScenario =
@@ -116,12 +196,30 @@ Future<void> main(List<String> arguments) async {
     systemCi: systemCi,
     keychainCi: keychainCi,
     pluginUpdateCi: pluginUpdateScenario,
+    localAcceptanceRoot: localAcceptanceRoot,
     webScenario: webScenario,
     githubActions: Platform.environment['GITHUB_ACTIONS'] == 'true',
     runnerTemp: runnerTemp,
   );
+  if (localAcceptanceRoot != null) {
+    final validation = await Process.run('/usr/bin/python3', [
+      '-c',
+      'import sys; sys.path.insert(0, sys.argv[1]); from settings_startup_cycle import observation_runner; print(observation_runner())',
+      File.fromUri(
+        Platform.script.resolve(
+          '../../../.github/scripts/settings_startup_cycle.py',
+        ),
+      ).parent.path,
+    ]);
+    require(
+      validation.exitCode == 0 &&
+          validation.stdout.toString().trim() == rootParent,
+      'explicit local acceptance base is canonical, UID owned and mode 0700',
+    );
+  }
   if (arguments.length != 1 &&
       !instanceStartup &&
+      !desktopWindowRestart &&
       !updates &&
       webScenario == null &&
       !logFixture) {
@@ -169,6 +267,13 @@ Future<void> main(List<String> arguments) async {
     true,
     'read-only candidate preflight confirms this project Debug isolation bridge and driver',
   );
+  if (desktopWindowRestart) {
+    await runDesktopWindowRestarts(
+      sourceExecutable,
+      Directory(arguments[2]).absolute,
+    );
+    return;
+  }
   void settingsPhase(String event) {
     if (!settingsScenario) return;
     stdout.writeln(
@@ -178,7 +283,7 @@ Future<void> main(List<String> arguments) async {
 
   settingsPhase('candidate-copy-start');
   final root = await Directory(rootParent).createTemp(
-    settingsScenario
+    settingsScenario || desktopWindowScenario
         ? 'dsh-t05-'
         : updates
         ? 'dsh-t07-'
@@ -231,6 +336,32 @@ Future<void> main(List<String> arguments) async {
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
   settingsPhase('resources-stage-start');
   final webPort = await webScenario?.stage(root);
+  if (externalSdkCold) {
+    final destination = '${root.path}/missing-runtime/desktop';
+    final source = '${webScenario!.sourceResources}/desktop';
+    if (localAcceptanceRoot == null) {
+      await Link(destination).delete();
+      final copy = await Process.run('/usr/bin/ditto', [source, destination]);
+      require(
+        copy.exitCode == 0,
+        'SDK cold case owns a private unchanged Desktop bundle copy',
+      );
+    }
+    final proof = await Process.run('/usr/bin/python3', [
+      '-c',
+      'import pathlib,hashlib,json,stat,sys; a,b=map(pathlib.Path,sys.argv[1:]); '
+          'snap=lambda p:{str(f.relative_to(p)):({"link":str(f.readlink())} if f.is_symlink() else {"mode":stat.S_IMODE(f.stat().st_mode),"sha256":hashlib.sha256(f.read_bytes()).hexdigest()} if f.is_file() else {"mode":stat.S_IMODE(f.stat().st_mode)}) for f in p.rglob("*")}; x,y=snap(a),snap(b); assert x==y; print(json.dumps({"source":str(a.resolve()),"destination":str(b.resolve()),"byteModeSymlinkEqual":True,"members":len(x),"aggregateSha256":hashlib.sha256(json.dumps(x,sort_keys=True).encode()).hexdigest()}))',
+      source,
+      destination,
+    ]);
+    require(
+      proof.exitCode == 0,
+      'private Desktop fixture bytes modes and symlinks match readonly source',
+    );
+    await File('${root.path}/desktop-fixture-copy-evidence.json')
+        .writeAsString(proof.stdout.toString());
+  }
+
   settingsPhase('resources-stage-end');
   if (webPort != null) environment['DSH_LAUNCHER_TEST_PORT'] = '$webPort';
   if (entryScenario) {
@@ -305,15 +436,21 @@ Future<void> main(List<String> arguments) async {
     sign.exitCode == 0,
     'private Debug candidate is signed after isolation metadata',
   );
-  final pluginRegistry = pluginUpdateScenario
-      ? await PluginRegistryFixture.prepare(
-          root,
-          environment['DSH_LAUNCHER_TEST_RESOURCES']!,
-        )
-      : null;
-  if (pluginRegistry != null) environment.addAll(pluginRegistry.environment);
+  PluginRegistryFixture? pluginRegistry;
+  DesktopWindowProbe? windowProbe;
   late final Process process;
   try {
+    pluginRegistry = pluginUpdateScenario
+        ? await PluginRegistryFixture.prepare(
+            root,
+            environment['DSH_LAUNCHER_TEST_RESOURCES']!,
+          )
+        : null;
+    if (pluginRegistry != null) environment.addAll(pluginRegistry.environment);
+    windowProbe = desktopWindowScenario
+        ? await DesktopWindowProbe.start(root)
+        : null;
+    if (externalSdkCold) await windowProbe!.prepareExternalForeground();
     settingsPhase('keychain-fixture-start');
     await settings?.prepareKeychain(executable.path);
     settingsPhase('keychain-fixture-end');
@@ -324,10 +461,37 @@ Future<void> main(List<String> arguments) async {
     process = await Process.start(executable.path, [
       '--vm-service-port=0',
     ], environment: environment);
+    if (externalSdkCold) {
+      await File('${root.path}/supervision-live.pending').writeAsString(
+        jsonEncode({
+          'pids': {'app': process.pid},
+        }),
+      );
+      await File('${root.path}/supervision-live.pending')
+          .rename('${root.path}/supervision-live.json');
+    }
     settingsPhase('application-launch-end');
   } catch (_) {
-    await settings?.close();
-    await pluginRegistry?.close();
+    await closeProbeResources([
+      (
+        'settings preparation',
+        () async {
+          await settings?.close();
+        },
+      ),
+      (
+        'registry preparation',
+        () async {
+          await pluginRegistry?.close();
+        },
+      ),
+      (
+        'window preparation',
+        () async {
+          await windowProbe?.close();
+        },
+      ),
+    ], preserveFailure: true);
     rethrow;
   }
   final diagnostics = webScenario == null
@@ -335,10 +499,9 @@ Future<void> main(List<String> arguments) async {
       : ProbeDiagnostics(
           root,
           publishPhases: settingsScenario,
-          observeHostOwnership: settingsScenario || pluginDesktopScenario,
+          observeHostOwnership: webScenario.backend == 'desktop',
           captureCIHostOnce: settingsScenario,
         );
-  await diagnostics?.start(process.pid, executable.path);
   var exited = false;
   unawaited(
     process.exitCode.then((code) {
@@ -369,8 +532,11 @@ Future<void> main(List<String> arguments) async {
   ];
   VmService? vm;
   LauncherServer? server;
+  var failed = false;
   try {
-    if (settingsScenario && webScenario?.backend == 'desktop') {
+    await diagnostics?.start(process.pid, executable.path);
+    if ((settingsScenario || desktopWindowScenario) &&
+        webScenario?.backend == 'desktop') {
       await diagnostics!.prepareOwnProcesses();
     }
     final http = await vmUri.future.timeout(const Duration(seconds: 30));
@@ -451,6 +617,9 @@ Future<void> main(List<String> arguments) async {
     }
 
     if (webScenario != null) {
+      if (externalSdkCold) {
+        await windowProbe!.bindNormalLauncher(app.path, process.pid);
+      }
       await runWebApplicationScenario(
         options: webScenario,
         root: root,
@@ -460,10 +629,27 @@ Future<void> main(List<String> arguments) async {
         state: state,
         applicationExit: process.exitCode,
         ownsHostReceipt: (value) => diagnostics!.ownsHostReceipt(value),
+        observeOwnedHeadlessHost: (ownerPid) =>
+            diagnostics!.observeOwnedHeadlessHost(ownerPid),
         startupFailure: (oldDesktop) => diagnostics!.startupFailure(oldDesktop),
         tap: tap,
         capture: capture,
-        onConnected: settingsStartupScenario
+        startWebBySdk: externalSdkCold,
+        beforeWebStart: windowProbe == null
+            ? null
+            : (ui, tap) async {
+                if (externalSdkCold) {
+                  await windowProbe!.beforeSdkColdStart(ui, tap);
+                } else {
+                  await windowProbe!.beforeStart(ui, tap);
+                  await tap(arguments[4] == 'hidden' ? '后台启动' : '启动后显示');
+                }
+              },
+        onConnected: desktopWindowScenario
+            ? (app) => externalSdkCold
+                  ? windowProbe!.runSdkColdFocus(app)
+                  : windowProbe!.run(app, coldHidden: arguments[4] == 'hidden')
+            : settingsStartupScenario
             ? (actual) async {
                 final receipt =
                     jsonDecode(await actual.receipt.readAsString()) as Map;
@@ -481,7 +667,10 @@ Future<void> main(List<String> arguments) async {
             : entryScenario
             ? runEntryApplicationScenario
             : settingsScenario
-            ? runSettingsApplicationScenario
+            ? (actual) => runSettingsApplicationScenario(
+                actual,
+                firstUiOnly: settingsFirstUiScenario,
+              )
             : lifecycle != null
             ? (actual) =>
                   runLifecycleScenario(actual, process, lifecycle.scenario)
@@ -500,7 +689,8 @@ Future<void> main(List<String> arguments) async {
         prestartedHostLog: settings?.hostLog,
         passwordPreloaded: settingsScenario,
         settingsOwnedWebCleanup:
-            settingsScenario && webScenario.backend == 'desktop',
+            (settingsScenario || desktopWindowScenario) &&
+            webScenario.backend == 'desktop',
         diagnose: diagnostics?.record,
       );
       if (lifecycle == null) await state({'action': 'quit'});
@@ -515,6 +705,7 @@ Future<void> main(List<String> arguments) async {
         normalExit == 0,
         'real launcher remains manageable and quits after Web resources are released',
       );
+      await windowProbe?.close();
       return;
     }
 
@@ -805,47 +996,91 @@ Future<void> main(List<String> arguments) async {
       'application performs normal quit cleanup',
     );
     stdout.writeln('T01 APPLICATION PROBE PASSED');
+  } catch (_) {
+    failed = true;
+    rethrow;
   } finally {
-    settingsPhase('manager-close-start');
-    await server?.close();
-    settingsPhase('manager-close-end');
-    await releaseFixture?.close();
-    settingsPhase('settings-close-start');
-    await settings?.close();
-    settingsPhase('settings-close-end');
-    Object? registryCleanupFailure;
-    StackTrace? registryCleanupStack;
-    try {
-      await pluginRegistry?.close();
-    } catch (failure, stack) {
-      registryCleanupFailure = failure;
-      registryCleanupStack = stack;
-      stderr.writeln('PLUGIN_REGISTRY_CLEANUP_FAILURE: $failure');
-    }
-    settingsPhase('vm-close-start');
-    await vm?.dispose();
-    settingsPhase('vm-close-end');
-    settingsPhase('application-cleanup-start');
-    if (!exited) {
-      process.kill(ProcessSignal.sigterm);
-      try {
-        await process.exitCode.timeout(const Duration(seconds: 3));
-      } on TimeoutException {
-        process.kill(ProcessSignal.sigkill);
-        await process.exitCode;
-      }
-    }
-    settingsPhase('application-cleanup-end');
-    for (final subscription in subscriptions) {
-      await subscription.cancel();
-    }
-    await outputFile.close();
-    settingsPhase('diagnostics-close-start');
-    await diagnostics?.close();
-    settingsPhase('diagnostics-close-end');
-    stdout.writeln('APP_LOG=${root.path}/app.log');
-    if (registryCleanupFailure != null) {
-      await Future<void>.error(registryCleanupFailure, registryCleanupStack);
-    }
+    await closeProbeResources([
+      (
+        'manager',
+        () async {
+          settingsPhase('manager-close-start');
+          await server?.close();
+          settingsPhase('manager-close-end');
+        },
+      ),
+      (
+        'release fixture',
+        () async {
+          await releaseFixture?.close();
+        },
+      ),
+      (
+        'settings',
+        () async {
+          settingsPhase('settings-close-start');
+          await settings?.close();
+          settingsPhase('settings-close-end');
+        },
+      ),
+      (
+        'registry',
+        () async {
+          await pluginRegistry?.close();
+        },
+      ),
+      (
+        'vm',
+        () async {
+          settingsPhase('vm-close-start');
+          await vm?.dispose();
+          settingsPhase('vm-close-end');
+        },
+      ),
+      (
+        'application',
+        () async {
+          settingsPhase('application-cleanup-start');
+          if (!exited) {
+            process.kill(ProcessSignal.sigterm);
+            try {
+              await process.exitCode.timeout(const Duration(seconds: 3));
+            } on TimeoutException {
+              process.kill(ProcessSignal.sigkill);
+              final code = await process.exitCode;
+              throw StateError(
+                'Application cleanup required SIGKILL; actual exit $code',
+              );
+            }
+          }
+          settingsPhase('application-cleanup-end');
+        },
+      ),
+      for (final subscription in subscriptions)
+        ('application output subscription', subscription.cancel),
+      ('application log', outputFile.close),
+      (
+        'window observer',
+        () async {
+          if (windowProbe != null && !windowProbe.closed) {
+            await windowProbe.close();
+          }
+        },
+      ),
+      (
+        'diagnostics',
+        () async {
+          settingsPhase('diagnostics-close-start');
+          await diagnostics?.close();
+          settingsPhase('diagnostics-close-end');
+        },
+      ),
+      (
+        'log location',
+        () {
+          stdout.writeln('APP_LOG=${root.path}/app.log');
+        },
+      ),
+    ], preserveFailure: failed);
   }
 }

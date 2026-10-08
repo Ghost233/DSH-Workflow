@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'application_probe.dart' show require, waitFor;
+import 'application_probe.dart' show require, waitFor, closeProbeResources;
 import 'web_application_scenario.dart';
 
 class LifecycleProbeOptions {
@@ -229,6 +229,7 @@ Future<void> _quitRunning(
   );
   var paused = false;
   var pausedStat = '';
+  var failed = false;
   try {
     if (pause) {
       require(
@@ -282,16 +283,27 @@ Future<void> _quitRunning(
       }),
     );
     stdout.writeln('T04 RUNNING WEB QUIT PASSED (pause=$pause)');
+  } catch (_) {
+    failed = true;
+    rethrow;
   } finally {
-    if (paused) {
-      Process.killPid(pid, ProcessSignal.sigcont);
-      Process.killPid(pid, ProcessSignal.sigterm);
-      await waitFor(
-        'failed probe owned paused Web cleanup',
-        () async =>
-            (await Process.run('/bin/kill', ['-0', '$pid'])).exitCode != 0,
-      );
-    }
+    await closeProbeResources([
+      (
+        'owned paused Web',
+        () async {
+          if (paused) {
+            Process.killPid(pid, ProcessSignal.sigcont);
+            Process.killPid(pid, ProcessSignal.sigterm);
+            await waitFor(
+              'failed probe owned paused Web cleanup',
+              () async =>
+                  (await Process.run('/bin/kill', ['-0', '$pid'])).exitCode !=
+                  0,
+            );
+          }
+        },
+      ),
+    ], preserveFailure: failed);
   }
 }
 
@@ -347,6 +359,7 @@ Future<void> _lateHandleQuit(WebObservation actual, Process application) async {
     );
   }
 
+  var failed = false;
   try {
     await actual.sdk('recycle');
     await listenReleased();
@@ -417,20 +430,43 @@ Future<void> _lateHandleQuit(WebObservation actual, Process application) async {
       'independent real Host remains healthy after Web and launcher quit',
     );
     stdout.writeln('T04 LATE HANDLE PAUSED QUIT PASSED');
+  } catch (_) {
+    failed = true;
+    rethrow;
   } finally {
-    final cleanupPid = heldPid;
-    if (paused && cleanupPid != null) {
-      Process.killPid(cleanupPid, ProcessSignal.sigcont);
-      Process.killPid(cleanupPid, ProcessSignal.sigterm);
-      await waitFor(
-        'failed probe owned child cleanup',
-        () async =>
-            (await Process.run('/bin/kill', ['-0', '$cleanupPid'])).exitCode !=
-            0,
-      );
-    }
-    if (await armed.exists()) await armed.delete();
-    gate?.destroy();
-    await gateServer.close();
+    await closeProbeResources([
+      (
+        'owned paused child',
+        () async {
+          final cleanupPid = heldPid;
+          if (paused && cleanupPid != null) {
+            Process.killPid(cleanupPid, ProcessSignal.sigcont);
+            Process.killPid(cleanupPid, ProcessSignal.sigterm);
+            await waitFor(
+              'failed probe owned child cleanup',
+              () async =>
+                  (await Process.run('/bin/kill', [
+                    '-0',
+                    '$cleanupPid',
+                  ])).exitCode !=
+                  0,
+            );
+          }
+        },
+      ),
+      (
+        'late handle marker',
+        () async {
+          if (await armed.exists()) await armed.delete();
+        },
+      ),
+      (
+        'late handle socket',
+        () {
+          gate?.destroy();
+        },
+      ),
+      ('late handle server', gateServer.close),
+    ], preserveFailure: failed);
   }
 }

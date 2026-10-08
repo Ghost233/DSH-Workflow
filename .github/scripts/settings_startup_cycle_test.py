@@ -509,6 +509,38 @@ class HostIdentityTest(unittest.TestCase):
         with self.assertRaises(ProcessLookupError): os.kill(result['childPid'], 0)
 
 
+class LocalObservationRootTest(unittest.TestCase):
+    def test_explicit_local_runner_requires_current_uid_private_physical_root(self):
+        base = Path('/private/tmp') / ('dsh-launcher-local-' + str(os.getuid()))
+        created = not base.exists()
+        if created:
+            base.mkdir(mode=0o700)
+        with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false', 'DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT': str(base)}):
+            self.assertEqual(cycle.observation_runner(), base)
+            with patch.dict(os.environ, {'DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT': str(base) + '-alias'}):
+                with self.assertRaisesRegex(ValueError, 'UID namespace'):
+                    cycle.observation_runner()
+            with patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}):
+                with self.assertRaisesRegex(ValueError, 'Mixed CI and local'):
+                    cycle.observation_runner()
+            if created:
+                try:
+                    base.chmod(0o755)
+                    with self.assertRaisesRegex(ValueError, 'owned and private'):
+                        cycle.observation_runner()
+                finally:
+                    base.chmod(0o700)
+                base.rmdir()
+                with tempfile.TemporaryDirectory(prefix='dsh-local-policy-target-', dir='/private/tmp') as target:
+                    base.symlink_to(target, target_is_directory=True)
+                    try:
+                        with self.assertRaisesRegex(ValueError, 'UID namespace'):
+                            cycle.observation_runner()
+                    finally:
+                        base.unlink()
+                base.mkdir(mode=0o700)
+
+
 class PrivacyTest(unittest.TestCase):
     def fixture(self, base):
         root = base / 'dsh-t05-owned'; root.mkdir()
@@ -520,6 +552,22 @@ class PrivacyTest(unittest.TestCase):
         (root / 'owned-desktop-cleanup.log').write_text('HELPER_EXIT=0\nAuthorization: Bearer private-auth\n')
         return root, evidence, log
 
+    def test_failed_auxiliary_diagnostics_keeps_only_masked_log_and_actual_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); root, target, log = self.fixture(base)
+            def failed_diagnostics(command, **options):
+                Path(command[3], 'unknown-auxiliary.log').write_text('private-userdata')
+                return subprocess.CompletedProcess(command, 124, 'last phase password=private-password\n', 'deadline exceeded\n')
+            with patch.object(cycle.subprocess, 'run', side_effect=failed_diagnostics):
+                cycle.collect(log, target, base)
+            self.assertEqual((target / 'collector.exit').read_text(), '124\n')
+            text = (target / 'collector.log').read_text()
+            self.assertIn('last phase', text)
+            self.assertIn('deadline exceeded', text)
+            self.assertNotIn('private-password', text)
+            self.assertFalse((root / 'auxiliary-cycle-diagnostics').exists())
+            self.assertFalse(any(path.name == 'unknown-auxiliary.log' for path in target.rglob('*')))
+
     def test_only_safe_evidence_is_exported_with_structured_redaction(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory); root, target, log = self.fixture(base)
@@ -529,7 +577,9 @@ class PrivacyTest(unittest.TestCase):
                 cycle.collect(log, target, base)
             out = target / root.name
             self.assertFalse(any((out / name).exists() for name in ('preferences.json', 'keychain.json', 'userdata.log', 'unknown.png')))
-            exported = '\n'.join(file.read_text() for file in out.iterdir())
+            outputs = list(out.rglob('*'))
+            self.assertFalse(any(file.is_symlink() for file in outputs))
+            exported = '\n'.join(file.read_text() for file in outputs if file.is_file())
             for secret in ('private-password', 'private-api', 'private-token', 'private-auth', 'private-userdata'):
                 self.assertNotIn(secret, exported)
             self.assertTrue(json.loads((out / 'probe-timeline.jsonl').read_text())['ready'])
@@ -633,5 +683,47 @@ class PrivacyTest(unittest.TestCase):
             self.assertNotIn(secret, masked)
         self.assertIn('<REDACTED>', masked)
 
+
+
+class HeadlessHostIdentityTest(unittest.TestCase):
+    def test_real_headless_host_chain_and_unknown_driver_path_root_rejection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runner = Path(temporary).resolve()
+            root = runner / 'dsh-t06-owned'; root.mkdir(mode=0o700)
+            runtime = root / 'missing-runtime'; runtime.mkdir()
+            python = cycle.inspect_host(os.getpid())['executable']
+            node = runtime / 'node'; node.symlink_to(python)
+            (root / 'probe-process.json').write_text(json.dumps({'startedAt': 'owned-headless-fixture', 'driverPid': os.getpid(), 'driverExecutable': python}))
+            receipt = root / 'data/global/.dsh-workflow/desktop/desktop-host.json'
+            receipt.parent.mkdir(parents=True)
+            script = 'import subprocess,sys; child=subprocess.Popen([sys.executable,"-c","import sys; sys.stdin.buffer.read()"],stdin=subprocess.PIPE); print(child.pid,flush=True); sys.stdin.buffer.read(); child.stdin.close(); child.wait(timeout=5)'
+            owner = subprocess.Popen([python, '-c', script], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            try:
+                host_pid = int(owner.stdout.readline())
+                receipt.write_text(json.dumps({'pid': host_pid, 'lease': 'real-headless-lease'}))
+                value = cycle.capture_owned_headless_host(root, runner, host_pid, owner.pid, os.getpid())
+                self.assertTrue(value['ownershipKnown'], value)
+                self.assertEqual(value['ownerType'], 'headless')
+                self.assertEqual(value['inspection']['parentPid'], owner.pid)
+                self.assertEqual(value['ownerInspection']['parentPid'], os.getpid())
+                self.assertIsInstance(value['inspection']['startUnixSeconds'], (int, float))
+                wrong_driver = cycle.capture_owned_headless_host(root, runner, host_pid, owner.pid, owner.pid)
+                self.assertFalse(wrong_driver['ownershipKnown'])
+                missing_owner = cycle.capture_owned_headless_host(root, runner, host_pid, 99999999, os.getpid())
+                self.assertFalse(missing_owner['ownershipKnown'])
+                node.unlink(); node.symlink_to('/bin/sleep')
+                wrong_path = cycle.capture_owned_headless_host(root, runner, host_pid, owner.pid, os.getpid())
+                self.assertFalse(wrong_path['ownershipKnown'])
+                node.unlink(); node.symlink_to(python)
+                with self.assertRaisesRegex(ValueError, 'Host receipt changed'):
+                    cycle.capture_owned_headless_host(root, runner, os.getpid(), owner.pid, os.getpid())
+                alias = runner / 'dsh-t06-alias'; alias.symlink_to(root)
+                with self.assertRaisesRegex(ValueError, 'Unowned or non-direct probe root'):
+                    cycle.capture_owned_headless_host(alias, runner, host_pid, owner.pid, os.getpid())
+                root.chmod(0o755)
+                with self.assertRaisesRegex(ValueError, 'Unowned or non-direct probe root'):
+                    cycle.capture_owned_headless_host(root, runner, host_pid, owner.pid, os.getpid())
+            finally:
+                owner.stdin.close(); self.assertEqual(owner.wait(timeout=5), 0); owner.stdout.close()
 
 if __name__ == '__main__': unittest.main()

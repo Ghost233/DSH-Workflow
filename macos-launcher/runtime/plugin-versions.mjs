@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const registry = 'https://registry.npmjs.org/'
 const owned = [
-  ['dsh-owner-workflow', 'owner-workflow-plugin'],
+  ['dsh-workflow', 'agent-observation-plugin'],
   ['dsh-workflow-matt-panel', 'matt-skills-panel-plugin/package'],
 ]
 const agentTeams = [

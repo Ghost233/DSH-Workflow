@@ -1,8 +1,0 @@
-{
-  "dryRun": true,
-  "persisted": false,
-  "withoutGrant": "Action recovery budget exhausted",
-  "withSimulatedGrant": "review_plan",
-  "planPreserved": true,
-  "realUsed": 13
-}

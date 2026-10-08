@@ -2,10 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { WEB_PORT, startGlobalSupervisor } from './global-supervisor.mjs'
 
 async function dataRoot(t) {
-  const root = await mkdtemp('/private/tmp/dsh-global-control-')
+  const root = await mkdtemp(join(tmpdir(), 'dsh-global-control-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   return root
 }
