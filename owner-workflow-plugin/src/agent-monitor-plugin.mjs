@@ -26,7 +26,8 @@ export const Config = z.object({
 
 function desktopNotice(alert) {
   if (process.platform !== 'darwin') return Promise.resolve()
-  const message = `${alert.role === 'child' ? '子代理' : '主代理'} ${alert.agentId}: ${alert.reason}`
+  const requestId = alert.attemptId ?? `${alert.turn}:${alert.step}`
+  const message = `${alert.role === 'child' ? '子代理' : '主代理'} ${alert.agentId}；请求 ${requestId}；类别 ${alert.kind}；观察时间 ${new Date(alert.at).toISOString()}；${alert.reason}`
   return new Promise((resolve, reject) => {
     // Notification text is an argument, never interpolated into AppleScript.
     execFile('/usr/bin/osascript', ['-e', 'on run argv', '-e', 'display notification (item 1 of argv) with title "DSH 代理监控"',

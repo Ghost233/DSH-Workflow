@@ -6,7 +6,7 @@
 - 目标分支：main；集成分支：codex/jev-center-monitor。
 - 初始固定基线：2f84551b6a0e292df82a68c4f5948c9c5f66755d。
 - 阶段 PR 合入集成分支；最终 PR 面向 main，完成后标记 ready，等待合并。
-- 总 PR：[#20](https://github.com/Ghost233/DSH-Workflow/pull/20)，当前为草稿；三个阶段已集成，总审查的三项发现已修复，新门禁和浏览器复验通过，最终复审后标为 ready，等待合并。
+- 总 PR：[#20](https://github.com/Ghost233/DSH-Workflow/pull/20)，当前为草稿；三个阶段已集成，总审查四项发现均已修复，最新754/12门禁通过，最终复审后标为 ready，等待合并。
 - 工作区原有未提交改动保留，只提交本规格范围内的内容。共享 checkout 的 Git 操作由唯一 merger 串行执行。
 
 | 阶段 | 工单 | 前置条件 | 状态 | 审查固定点 | PR |
@@ -116,3 +116,4 @@
 - 精确候选tree6d87f4231d270c340178ca28ce61b93b7c531c04，4071个tracked blob逐项核对，排除用户原有WIP。Node v26.9.0，Owner全量751/751退出0；六文件Web/Desktop集成12/12退出0，均无取消或跳过。客户端、固定Harness构建证明、上游干净和diff检查通过。Owner测试输入不引用Matt面板；集成候选首次缺少自研Matt的lib/shared产物，补齐原有构建输出后两个原失败用例2/2及完整集成12/12通过，未降低期限或修改断言。日志 `/private/tmp/jev-resume-owner-full.log`、`jev-resume-integration-final.log`。
 - 实际内置Browser在该精确候选上保存隔离参数并持续输出完整思考块，84次模拟JEV判断产生逐轮语义告警；只有正常正文进展后才显示恢复时间。虚拟凭据错误回显的公开状态与journal均无裸值，默认169条记录没有会话片段/认证头，新模型请求未取消、无恢复弹窗。截图 `/private/tmp/jev-resume-browser-recovered.png`，70个相关运行时文件字节绑定于 `/private/tmp/jev-resume-browser-product.json`；临时Host清理退出0。测试探针最初缺少cwd导致persona变量无值，已修正隔离初始化，没有产品改动或当前服务切换。
 - 本轮刷新正式tracker确认13–18均CLOSED、父12仍OPEN、main仍2f84551；远端总PR20的旧集成6f227531已经Owner/Matt和两架构Mac全部SUCCESS。这个成功状态不替代最终修复提交的后续CI；OS实际通知显示仍按用户要求暂缓。
+- 54f27b47上的完整总复审Standards0、Spec仅剩一项P2：实际osascript通知正文缺请求标识。已补attemptId（未开始流时turn:step回退）、类别和ISO观察时间，仍使用argv传入固定AppleScript；标准/调试模式、同一Agent连续请求、同轮去重和恢复无新提交由真实Host+系统exec边界mock验证。正式红后3/3绿、受影响78/78，未发真实OS测试通知。新精确treef69950e46d8982dd552314372054ec0117d2eef9，4072tracked blob核对，完整Owner754/754、集成12/12退出0，无失败/取消/跳过；日志 `/private/tmp/jev-final-owner.log`、`jev-final-integration.log`。此前751是上一修复版本，不能代替754的最终证明。新增macOS通知正文测试在本机darwin真实执行，非darwin平台显式跳过该专属用例。最后两行产品变更仅通知提交格式，不改变已复验的浏览器界面及语义/隐私逻辑；实际OS显示继续暂缓。

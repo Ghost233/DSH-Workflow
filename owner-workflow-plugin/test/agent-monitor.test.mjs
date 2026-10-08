@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire } from 'node:module'
+import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 const { default: monitorPlugin, apply } = await import('../src/agent-monitor-plugin.mjs')
@@ -63,7 +63,7 @@ async function configuredHost(t, options = {}) {
     c.provide('profileContext', profile)
     c.provide('appReady', { onReady: listener => { listener(); return () => {} } })
     Object.assign(c.loader.builtins, modules, { 'jev-center': JevCenter, monitor: { ...monitorPlugin, apply: (child, config) => apply(child, config, {
-      now: () => time, notify: alert => notices.push(alert),
+      now: () => time, ...options.desktopNotifications ? {} : { notify: alert => notices.push(alert) },
     }) } })
   })
   class Adapter extends LlmAdapter {
@@ -499,6 +499,74 @@ test('deterministic main and child monitoring continues through missing engines 
     assert.equal(records.filter(record => record.recordType === 'recovery' && record.agentId === 'settings-agent').length, 2)
     assert.equal(records.filter(record => record.recordType === 'recovery' && record.agentId === child.run.id).length, 0)
     assert.doesNotMatch(JSON.stringify(records), /continuing-fake-identity|Authorization|Bearer|main ongoing thought|child ongoing thought/)
+  })
+})
+
+test('macOS notification argv identifies native requests, category, observation time and reason without submitting recovery notices', {
+  skip: process.platform !== 'darwin',
+}, async t => {
+  for (const debugEvidence of [false, true]) await t.test(debugEvidence ? 'debug' : 'default', async t => {
+    const submissions = [], childProcess = req('node:child_process'), originalExecFile = childProcess.execFile
+    t.mock.method(childProcess, 'execFile', (command, args, ...rest) => {
+      if (command !== '/usr/bin/osascript') return originalExecFile(command, args, ...rest)
+      submissions.push({ command, args })
+      rest.find(value => typeof value === 'function')?.(null, '', '')
+    })
+    syncBuiltinESMExports()
+    let releaseRequest, pendingRequest
+    const gate = new Promise(resolve => { releaseRequest = resolve })
+    t.after(() => releaseRequest())
+    const f = await configuredHost(t, { desktopNotifications: true })
+    t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports() })
+    await f.ctx.settings.update('monitor', { checkIntervalMs: 1000, noOutputThreshold: 1, debugEvidence })
+    await f.ctx.credentials.set('UNRELATED_NOTICE_CREDENTIAL', 'notice-private-credential')
+    f.ctx.on('agent/request', async (payload, next) => {
+      pendingRequest = payload
+      await gate
+      return next()
+    })
+    f.handle.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'notice-private-task' }] }))
+    await until(() => pendingRequest)
+    await f.at(1000)
+    assert.equal(submissions.length, 1)
+    const fallbackMessage = submissions[0].args.at(-1)
+    assert.ok(fallbackMessage.includes(`请求 ${pendingRequest.turn}:${pendingRequest.step}`), 'a native request pending stream start uses its public turn and step')
+    releaseRequest()
+    await until(() => f.streams.has('model'))
+    const first = f.streams.get('model')
+    await f.at(2000)
+    await f.at(2000)
+    assert.equal(submissions.length, 2, 'duplicate checks in the same round submit one notice')
+    const firstMessage = submissions[1].args.at(-1)
+    assert.ok(firstMessage.includes('请求 settings-agent:1'))
+    await f.send({ type: 'text-delta', index: 0, text: 'notice-private-model-output' })
+    await f.ctx.get('agentMonitor').flush()
+    assert.equal(submissions.length, 2, 'recovery does not submit a system notification')
+    await f.finish()
+    f.handle.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'next native request' }] }))
+    await until(() => f.streams.get('model') !== first)
+    await f.at(3000)
+    assert.equal(submissions.length, 3)
+    const secondMessage = submissions[2].args.at(-1)
+    assert.ok(secondMessage.includes('请求 settings-agent:2'))
+    assert.notEqual(firstMessage, secondMessage, 'notices distinguish different requests of the same Agent')
+    const times = ['1970-01-01T00:00:01.000Z', '1970-01-01T00:00:02.000Z', '1970-01-01T00:00:03.000Z']
+    for (const [index, { command, args }] of submissions.entries()) {
+      assert.equal(command, '/usr/bin/osascript')
+      assert.equal(args.at(-2), '--')
+      const message = args.at(-1)
+      assert.ok(message.includes('主代理 settings-agent'))
+      assert.ok(message.includes('no-output'), 'the actual submitted body carries the alert category')
+      assert.ok(message.includes(times[index]), 'the actual submitted body carries its observation time')
+      assert.ok(message.includes('模型请求连续检查没有可见输出；尚未确认上游原因'))
+      assert.doesNotMatch(message, /notice-private-credential|notice-private-task|notice-private-model-output/)
+      assert.equal(args.slice(0, -2).join('\n').includes(message), false, 'notification content stays in argv rather than AppleScript source')
+    }
+    await f.send({ type: 'text-delta', index: 0, text: 'recovered second request' })
+    await f.finish()
+    assert.equal(submissions.length, 3, 'second-request recovery and normal finish submit no new notice')
+    assert.equal(first.request.signal.aborted, false)
+    assert.equal(f.request.signal.aborted, false)
   })
 })
 
