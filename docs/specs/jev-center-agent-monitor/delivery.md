@@ -90,7 +90,15 @@
 
 - #14、#16、#17 已逐项评论并关闭，#12 保持开放并追加阶段摘要；刷新后的 #18 仍开放且无评论。阶段 3 从 b0bdc337 固定点开始，同 Host 监控生命周期与日常启动验收按文件归属并行，Git 操作由主线程串行。
 - 内置浏览器在阶段 2 精确干净候选上再次验证原生设置、真实 Agent reasoning、中心判断和可见状态：逐轮语义告警后，401、503、200ms 超时分别显示具体原因。重新取得有效判断只改变引擎可用性，不为代理记录恢复；正文和正常 stop 后才更新恢复时间。原请求未取消、无恢复弹窗，默认 journal154条只含元数据，未含 fake 密钥或会话片段。临时 Host 退出0并清理；实际 OS 显示仍暂缓。
-- 浏览器操作、截图与完整记录见 `/private/tmp/jev-stage3-browser-notes.md`；最终恢复截图 `/private/tmp/jev-browser-final-agent-recovered.jpg`。76 个运行时文件的 SHA256 已保存，阶段 3 最终候选需核对这些产品字节一致，受改行为必须复验。
-- 最新 PR21 远端 Owner verify/Matt 已成功；双架构 macOS run37698543437 仍运行，尚不记为完整打包通过。阶段 3 完整门禁、双轴审查、复盘及集成尚未完成。
-- T06 同 Host 五组公开验收全部通过：主/子代理所选 quick 与另一个消费插件 full 并行；监控在途修改、停用、删除及原200ms截止；准确错误与引擎重新可用；未知/失败不恢复代理；故障期间无输出及真实子代理错误仍告警，主请求继续完成。正式 npm 受影响两监控文件50/50、退出0，无取消或跳过；没有产品 runtime 缺口，只补公共交叉回归。笔记 `/private/tmp/jev-stage3-t06-notes.md`。
+- 浏览器操作、截图与完整记录见 `/private/tmp/jev-stage3-browser-notes.md`；最终恢复截图 `/private/tmp/jev-browser-final-agent-recovered.jpg`。初始 76 个运行时文件的 SHA256 已保存；完整 block 修复改变 core 一项，其他 75 项未变。修复后的 Browser 已重新绑定最终 76 项清单，受改恢复路径实际复验通过。
+- 最新 PR21 远端 Owner verify/Matt 已成功；双架构 macOS run37698543437 仍运行，尚不记为完整打包通过。这是阶段 3 开始时的远端状态；完整门禁与审查的新结果见下方，完整打包结果继续独立核对。
+- T06 同 Host 五组公开验收全部通过：主/子代理所选 quick 与另一个消费插件 full 并行；监控在途修改、停用、删除及原200ms截止；准确错误与引擎重新可用；未知/失败不恢复代理；故障期间无输出及真实子代理错误仍告警，主请求继续完成。正式 npm 受影响两监控文件50/50、退出0，无取消或跳过；该批配置生命周期验收未暴露 runtime 缺口；后续完整输出形态 P2 单独闭环。笔记 `/private/tmp/jev-stage3-t06-notes.md`。
 - 真实无参数日常入口的隔离验收1/1、退出0：公开 Loader 中两观察插件实际激活，JEV/monitor HTTP均200，Owner/Web健康就绪、正常终止退出0，保留原45s/30s期限。context与cost-meter使用固定原样产物并激活；visualize明确因缺少React peer跳过；billion-context在该隔离实例故意不提供固定产物，安装禁止边界返回77，明确跳过而其余继续。未安装依赖、修改第三方或当前用户服务；这些隔离结果不能替代用户当前实例的插件状态。测试探针404与编译擦除enum的读取错误已修复，不归因于产品。笔记 `/private/tmp/jev-stage3-daily-notes.md`。
+
+## 阶段 3 输出形态闭环与最终候选
+
+- 初始提交 `f39db7363bde5d1497fe727fdb0b009c8f906743`、tree `c421a59062db21416ebaa202330475c175222f7d`：Owner 726/726、相关集成 12/12，退出均 0。首轮从固定 b0bdc337 覆盖全部五文件：Standards 0 项、Spec 1 项 P2。公开 Host probe 证实新增完整正文 block-end 未清零连续无输出次数，原先 delta 验收不足。
+- P2 先以正文、reasoning、工具参数完整块三子例复现，正式 loader 红态退出 1；最小 core 改动按当前请求 block 索引记录已见长度，完整块只有新增长度才算输出活动。delta 完成与重复 finalized 不清零，不同索引同内容是新输出；Map 不存正文或参数，也不进入公开 snapshot/journal。定点 11/11、受影响模块 61/61，退出 0。
+- 修复提交 `52063f44c9a5f1c670f39bef942553b79596baba`，精确 tree `930f30ced5565de6b7a0f5745c319ab54bdc809d`，4070 个 tracked blob 核对。Node v26.9.0；新 `npm test` 737/737、六文件 Web/Desktop 集成 12/12，均退出 0、无失败/取消/跳过。日志 `/private/tmp/jev-stage3-final-owner-full.log`、`/private/tmp/jev-stage3-final-integration.log`；客户端、固定 Harness 构建证明、SDK/上游干净与 diff 检查均退出 0。旧 726 绿态不作为本次修复证明。
+- 精确修复候选上的实际原生 Browser 设置 1000ms/2、未选择 JEV：16 条无输出告警后，模型只发完整正文 block-end 和 stop，无 text-delta。公开计数清零、16 条告警恢复、原请求未取消、没有恢复弹窗；默认 journal17 条无片段/密钥/认证头/新 Map。Host 清理退出 0。记录 `/private/tmp/jev-stage3-block-browser-notes.md`，截图 `/private/tmp/jev-browser-block-recovered.jpg`；最终 `/private/tmp/jev-stage3-browser-final-product-manifest.json` 的 76 个产品字节全部与候选匹配，core 确实改变。
+- [阶段 3 复盘](stage3-retro.md) 已落实本范围内输出形态回归，没有新增未关闭整改项；最终两轴须从 b0bdc337 覆盖最新完整阶段 diff。用户原有 MCP 与其他 WIP 保留且不入提交，总 PR #20 保持草稿，阶段 PR 合入集成后才交总审。OS 实际通知显示按用户授权暂缓；本地 SDK health 不等于完整 `.app`/codesign/DMG 双架构通过。
