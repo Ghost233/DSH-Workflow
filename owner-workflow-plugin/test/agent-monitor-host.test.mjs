@@ -146,6 +146,62 @@ test('body, reasoning and tool arguments each reset silence while heartbeats and
   assert.equal(f.notices[0].evidence.consecutiveChecks, 2)
 })
 
+test('new complete body, reasoning and tool arguments reset native request silence without exposing their content', async t => {
+  const cases = [
+    { id: 'complete-body', block: { type: 'text', text: 'private complete body' } },
+    { id: 'complete-reasoning', block: { type: 'reasoning', text: 'private complete reasoning' } },
+    { id: 'complete-arguments', block: { type: 'tool-call', id: 'call', name: 'work', arguments: '{"privateCompleteArgument":true}' } },
+  ]
+  for (const item of cases) await t.test(item.id, async t => {
+    const f = await fixture(t, { checkIntervalMs: 1000, noOutputThreshold: 2 })
+    const handle = await f.create(item.id)
+    await f.at(1000)
+    f.setTime(1500)
+    await f.send(item.id, { type: 'block-end', index: 1, block: item.block })
+    await f.at(2000)
+    const row = f.monitor.snapshot().agents[0]
+    assert.equal(f.notices.length, 0, 'new complete output prevents a false silence alert')
+    assert.equal(row.noOutputCount, 0)
+    assert.equal(row.lastOutputAt, 1500)
+    assert.equal(f.streams.get(item.id).request.signal.aborted, false)
+    assert.equal(handle.agent.status, 'running')
+    assert.doesNotMatch(JSON.stringify(f.monitor.snapshot()), /private complete|privateCompleteArgument/)
+    assert.doesNotMatch(JSON.stringify(await f.monitor.journal()), /private complete|privateCompleteArgument/)
+  })
+})
+
+test('delta completion and repeated finalized blocks cannot hide silence while a distinct complete block is new output', async t => {
+  const cases = [
+    { kind: 'body', block: { type: 'text', text: 'private finalized body' }, delta: { type: 'text-delta', text: 'private finalized body' } },
+    { kind: 'reasoning', block: { type: 'reasoning', text: 'private finalized reasoning' }, delta: { type: 'reasoning-delta', text: 'private finalized reasoning' } },
+    { kind: 'arguments', block: { type: 'tool-call', id: 'call', name: 'work', arguments: '{"privateFinalizedArguments":true}' },
+      delta: { type: 'tool-call-delta', id: 'call', name: 'work', argumentsDelta: '{"privateFinalizedArguments":true}' } },
+  ]
+  for (const origin of ['delta', 'finalized']) for (const item of cases) await t.test(`${origin}-${item.kind}`, async t => {
+    const f = await fixture(t, { checkIntervalMs: 1000, noOutputThreshold: 2 })
+    const id = `${origin}-${item.kind}`, handle = await f.create(id)
+    await f.send(id, origin === 'delta' ? { ...item.delta, index: 1 } : { type: 'block-end', index: 1, block: item.block })
+    await f.at(1000)
+    f.setTime(1500)
+    await f.send(id, { type: 'block-end', index: 1, block: item.block })
+    await f.at(2000)
+    assert.equal(f.notices.length, 1, 'an already observed completion is not new output')
+    assert.equal(f.monitor.snapshot().agents[0].noOutputCount, 2)
+    f.setTime(2500)
+    await f.send(id, { type: 'block-end', index: 2, block: item.block })
+    await f.at(3000)
+    assert.equal(f.monitor.snapshot().agents[0].noOutputCount, 0)
+    assert.equal(f.monitor.snapshot().agents[0].lastOutputAt, 2500)
+    assert.equal(f.notices.length, 1, 'recovery is recorded without a new notification')
+    const records = await f.monitor.journal()
+    assert.equal(records.filter(record => record.recordType === 'recovery' && record.kind === 'no-output').length, 1)
+    assert.doesNotMatch(JSON.stringify(records), /private finalized|privateFinalizedArguments/)
+    assert.doesNotMatch(JSON.stringify(f.monitor.snapshot()), /private finalized|privateFinalizedArguments/)
+    assert.equal(f.streams.get(id).request.signal.aborted, false)
+    assert.equal(handle.agent.status, 'running')
+  })
+})
+
 test('native spawn and fork children are visible and independent of their active main Agent', async t => {
   const f = await fixture(t, { checkIntervalMs: 1000, noOutputThreshold: 2 })
   const main = await f.create('parent')
