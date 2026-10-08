@@ -14,7 +14,7 @@ func facts(_ app: NSRunningApplication) throws -> [String: Any] {
     "kernelMicroseconds": info.pbi_start_tvusec, "executable": try physical(path), "bundle": try physical(bundle)]
 }
 do {
-  guard CommandLine.arguments.count == 3 else { throw NSError(domain: "ROOT capture|activate|restore required", code: 1) }
+  guard CommandLine.arguments.count == 3 else { throw NSError(domain: "ROOT capture|query|activate|restore required", code: 1) }
   let root = CommandLine.arguments[1], action = CommandLine.arguments[2]
   let env = ProcessInfo.processInfo.environment
   let base: String
@@ -29,7 +29,7 @@ do {
   guard try physical(root) == root, URL(fileURLWithPath: root).deletingLastPathComponent().path == base,
         URL(fileURLWithPath: root).lastPathComponent.hasPrefix("dsh-t05-"),
         (attr[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(), (attr[.posixPermissions] as? NSNumber)?.intValue == 0o700,
-        ["capture", "activate", "restore"].contains(action) else { throw NSError(domain: "exact private owned root required", code: 1) }
+        ["capture", "query", "activate", "restore"].contains(action) else { throw NSError(domain: "exact private owned root required", code: 1) }
   let original = root + "/external-foreground-original.json"
   let session = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]
   let onConsole = session["kCGSSessionOnConsoleKey"] as? Bool == true

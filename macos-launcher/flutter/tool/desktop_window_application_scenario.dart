@@ -192,7 +192,7 @@ class DesktopWindowProbe {
       await File('${root.path}/external-foreground-baseline.json')
           .readAsString(),
     ) as Map;
-    final cold =
+    var cold =
         ((await app.state())['native'] as Map)['coldCallerObservation'] as Map;
     final live = File('${root.path}/supervision-live.pending');
     await live.writeAsString(
@@ -230,9 +230,30 @@ class DesktopWindowProbe {
       await app.ownsHostReceipt(app.backend),
       'SDK cold case binds exact physical Host',
     );
+    Map<String, Object?>? latestInput;
+    Future<bool> currentInputKnown() async {
+      cold =
+          ((await app.state())['native'] as Map)['coldCallerObservation']
+              as Map;
+      latestInput = await foreground('query');
+      require(
+        sdkColdEpochUnchanged(baseline, cold, latestInput!['inputCounts']),
+        'fresh OS and native input epoch are known and unchanged',
+      );
+      return [
+            'pid',
+            'uid',
+            'kernelSeconds',
+            'kernelMicroseconds',
+            'executable',
+          ].every((key) => latestInput![key] == baseline[key]) &&
+          latestInput!['frontmostPid'] == baseline['pid'];
+    }
+
     await waitFor(
       'same hidden Desktop preserves external foreground',
       () async =>
+          await currentInputKnown() &&
           current['ownershipKnown'] == true &&
           current['hidden'] == true &&
           current['onscreenWindowCount'] == 0 &&
@@ -240,8 +261,8 @@ class DesktopWindowProbe {
           current['frontmostPid'] == baseline['pid'],
     );
     require(
-      cold['inputUnchangedAtRecovery'] != false,
-      'cold recovery was not invalidated by new user input',
+      await currentInputKnown(),
+      'final external focus uses fresh input and physical identity',
     );
     await File('${root.path}/desktop-window-evidence.json').writeAsString(
       jsonEncode({
@@ -251,6 +272,7 @@ class DesktopWindowProbe {
         'physicalWindow': current,
         'hostPid': app.backend['pid'],
         'hostLease': app.backend['lease'],
+        'freshOsInput': latestInput,
         'externalFocusVerified': true,
       }),
     );
@@ -1047,4 +1069,28 @@ Future<void> superviseSdkColdWindow(List<String> arguments) async {
     stderr.addStream(outer.stderr),
   ]);
   exitCode = await outer.exitCode;
+}
+
+bool sdkColdEpochUnchanged(Map baseline, Map cold, Object? currentInputCounts) {
+  final expected = baseline['inputCounts'];
+  bool matches(Object? value) =>
+      expected is List &&
+      expected.length == 4 &&
+      expected.every((item) => item is int && item >= 0) &&
+      value is List &&
+      value.length == 4 &&
+      value.every((item) => item is int && item >= 0) &&
+      jsonEncode(value) == jsonEncode(expected);
+  if (!matches(currentInputCounts) || !matches(cold['inputCountsBefore'])) {
+    return false;
+  }
+  final recoveryObserved = [
+    'hiddenRecoveryUptime',
+    'inputCountsAtRecovery',
+    'inputUnchangedAtRecovery',
+  ].any(cold.containsKey);
+  return !recoveryObserved ||
+      (cold['hiddenRecoveryUptime'] is num &&
+          cold['inputUnchangedAtRecovery'] == true &&
+          matches(cold['inputCountsAtRecovery']));
 }

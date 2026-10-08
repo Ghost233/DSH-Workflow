@@ -7,7 +7,7 @@ import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 import 'package:vm_service/vm_service.dart' hide Error;
 import 'package:vm_service/vm_service_io.dart';
 
-import 'application_probe.dart' show require, waitFor;
+import 'application_probe.dart' show require, waitFor, closeProbeResources;
 
 Future<ProcessResult> command(String executable, List<String> arguments) async {
   final result = await Process.run(executable, arguments);
@@ -526,78 +526,131 @@ Future<void> main(List<String> arguments) async {
     evidence['firstErrorType'] = error.runtimeType.toString();
     evidence['firstError'] = error.toString();
   } finally {
-    try {
-      await vm?.dispose();
-    } catch (error, stack) {
-      evidence['independentVmCleanupErrorType'] = error.runtimeType.toString();
-      firstError ??= error;
-      firstStack ??= stack;
-    }
-    try {
-      if (captured && !normalTerminated) {
-        evidence['cleanupTermination'] = await observe('terminate');
-      }
-    } catch (error) {
-      evidence['independentCleanupErrorType'] = error.runtimeType.toString();
-    }
-    if (actorProcess != null) {
-      await File('${root.path}/public-close-driver-complete')
-          .writeAsString('driver cleanup complete');
-      try {
-        evidence['publicCloseActorCleanupExit'] = await actorProcess.exitCode
-            .timeout(const Duration(seconds: 30));
-        await Future.wait(actorDrained.map((done) => done.future));
-      } catch (error, stack) {
-        evidence['publicCloseActorCleanupErrorType'] = error.runtimeType
-            .toString();
-        firstError ??= error;
-        firstStack ??= stack;
-      }
-      for (final subscription in actorSubscriptions) {
-        await subscription.cancel();
-      }
-      await actorLog?.close();
-    }
-    if (debugProcess != null) {
-      var exitKnown = false;
-      try {
-        if (!captured) debugProcess.kill(ProcessSignal.sigterm);
-        evidence['debugChildExit'] = await debugProcess.exitCode.timeout(
-          const Duration(seconds: 10),
-        );
-        exitKnown = true;
-      } catch (error, stack) {
-        evidence['independentDebugCleanupErrorType'] = error.runtimeType
-            .toString();
-        firstError ??= error;
-        firstStack ??= stack;
-      }
-      if (exitKnown) await Future.wait(drained.map((done) => done.future));
-      evidence['debugOutputComplete'] =
-          exitKnown && drained.every((done) => done.isCompleted);
-      for (final subscription in subscriptions) {
-        await subscription.cancel();
-      }
-      await debugLog?.close();
-    }
-    try {
-      await server?.close();
-      if (server != null) {
-        require(
-          await FileSystemEntity.type(layout.socketPath, followLinks: false) ==
-              FileSystemEntityType.notFound,
-          'only the owned SDK endpoint was released',
-        );
-        evidence['ownedEndpointReleased'] = true;
-      }
-    } catch (error, stack) {
-      firstError ??= error;
-      firstStack ??= stack;
-    }
-    await File('${root.path}/release-distribution-evidence.json')
-        .writeAsString(jsonEncode(evidence));
+    var debugExitKnown = false;
+    await finishReleaseProbe(
+      [
+        (
+          'VM',
+          () async {
+            try {
+              await vm?.dispose();
+            } catch (error) {
+              evidence['independentVmCleanupErrorType'] = error.runtimeType
+                  .toString();
+              rethrow;
+            }
+          },
+        ),
+        (
+          'owned app normal cleanup',
+          () async {
+            try {
+              if (captured && !normalTerminated) {
+                evidence['cleanupTermination'] = await observe('terminate');
+              }
+            } catch (error) {
+              evidence['independentCleanupErrorType'] = error.runtimeType
+                  .toString();
+              rethrow;
+            }
+          },
+        ),
+        if (actorProcess != null) ...[
+          (
+            'actor completion marker',
+            () async {
+              await File('${root.path}/public-close-driver-complete')
+                  .writeAsString('driver cleanup complete');
+            },
+          ),
+          (
+            'actor exit and drain',
+            () async {
+              try {
+                evidence['publicCloseActorCleanupExit'] = await actorProcess!
+                    .exitCode
+                    .timeout(const Duration(seconds: 30));
+                await Future.wait(actorDrained.map((done) => done.future));
+              } catch (error) {
+                evidence['publicCloseActorCleanupErrorType'] = error.runtimeType
+                    .toString();
+                rethrow;
+              }
+            },
+          ),
+          for (final subscription in actorSubscriptions)
+            ('actor subscription', subscription.cancel),
+          (
+            'actor log',
+            () async {
+              await actorLog?.close();
+            },
+          ),
+        ],
+        if (debugProcess != null) ...[
+          (
+            'Debug app exit',
+            () async {
+              try {
+                if (!captured) debugProcess!.kill(ProcessSignal.sigterm);
+                evidence['debugChildExit'] = await debugProcess!.exitCode
+                    .timeout(const Duration(seconds: 10));
+                debugExitKnown = true;
+              } catch (error) {
+                evidence['independentDebugCleanupErrorType'] = error.runtimeType
+                    .toString();
+                rethrow;
+              }
+            },
+          ),
+          (
+            'Debug output drain',
+            () async {
+              if (debugExitKnown) {
+                await Future.wait(drained.map((done) => done.future));
+              }
+              evidence['debugOutputComplete'] =
+                  debugExitKnown && drained.every((done) => done.isCompleted);
+            },
+          ),
+          for (final subscription in subscriptions)
+            ('Debug subscription', subscription.cancel),
+          (
+            'Debug log',
+            () async {
+              await debugLog?.close();
+            },
+          ),
+        ],
+        (
+          'owned SDK endpoint',
+          () async {
+            await server?.close();
+            if (server != null) {
+              require(
+                await FileSystemEntity.type(
+                      layout.socketPath,
+                      followLinks: false,
+                    ) ==
+                    FileSystemEntityType.notFound,
+                'only the owned SDK endpoint was released',
+              );
+              evidence['ownedEndpointReleased'] = true;
+            }
+          },
+        ),
+        (
+          'final evidence',
+          () async {
+            await File('${root.path}/release-distribution-evidence.json')
+                .writeAsString(jsonEncode(evidence));
+          },
+        ),
+      ],
+      firstError: firstError,
+      firstStack: firstStack,
+    );
   }
-  if (firstError != null) Error.throwWithStackTrace(firstError, firstStack!);
   stdout.writeln('T09 SDK WINDOW ENTRY SCENARIO PASSED (${evidence['mode']})');
 }
 
@@ -772,3 +825,12 @@ selector.close();child.stdout.close(); state['endMonotonic']=time.monotonic();pe
 state['missingRequiredIdentities']=sorted(set(config.get('requiredRoles',['driver']))-set(ids));persist()
 code=124 if state['timedOut'] or state['cancelled'] or state['forced'] else state['driverExit'] if state['driverExit'] not in (None,0) else 1 if state['missingRequiredIdentities'] or state.get('signalErrors') else state['driverExit'];sys.exit(code if code is not None and code>=0 else 1)
 ''';
+
+Future<void> finishReleaseProbe(
+  List<(String, FutureOr<void> Function())> resources, {
+  Object? firstError,
+  StackTrace? firstStack,
+}) async {
+  await closeProbeResources(resources, preserveFailure: firstError != null);
+  if (firstError != null) Error.throwWithStackTrace(firstError, firstStack!);
+}
