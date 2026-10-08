@@ -1355,17 +1355,55 @@ jobs:
           import os, re, shutil, stat
           from pathlib import Path
           evidence = Path(os.environ['EVIDENCE_DIR'])
+          runner = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          assert evidence.is_dir() and not evidence.is_symlink() and evidence.resolve() == evidence
+          assert evidence.is_relative_to(runner) and evidence.stat().st_uid == os.getuid()
+          copies = []
+          def plan_file(source, name, parent):
+              assert stat.S_ISREG(source.lstat().st_mode) and not source.is_symlink()
+              assert source.resolve(strict=True) == source and source.parent == parent
+              destination = evidence / name
+              assert not destination.is_symlink() and (not destination.exists() or destination.is_file())
+              copies.append((source, destination, False))
           log = evidence / 'release-distribution.log'
           roots = re.findall(r'^T09_ROOT=(.+)$', log.read_text(), re.M) if log.is_file() else []
+          if len(roots) > 1:
+              raise RuntimeError('Ambiguous owned T09 probe root')
           if len(roots) == 1:
-              root = Path(roots[0]); runner = Path(os.environ['RUNNER_TEMP']).resolve()
+              root = Path(roots[0])
               assert root.resolve() == root and root.parent == runner and root.name.startswith('dsh-t05-t09-')
               assert root.stat().st_uid == os.getuid() and stat.S_IMODE(root.stat().st_mode) == 0o700
-              for name in ['release-distribution-evidence.json', 'release-window-identity.json']:
+              for name in ['release-distribution-evidence.json', 'release-window-identity.json',
+                           'public-close-actor.log', 'public-close-actor.xctestrun',
+                           'public-close-actor-ready', 'public-close-request', 'public-close-ack',
+                           'public-close-driver-complete']:
                   source = root / name
-                  if source.exists():
-                      assert source.is_file() and not source.is_symlink() and source.resolve().parent == root
-                      shutil.copy2(source, evidence / name)
+                  if source.exists() or source.is_symlink():
+                      plan_file(source, name, root)
+              result = root / 'public-close-actor.xcresult'
+              if result.exists() or result.is_symlink():
+                  assert result.is_dir() and not result.is_symlink() and result.resolve() == result
+                  for child in result.rglob('*'):
+                      assert not child.is_symlink() and child.resolve(strict=True).is_relative_to(result)
+                      assert stat.S_ISREG(child.lstat().st_mode) or stat.S_ISDIR(child.lstat().st_mode)
+                  destination = evidence / result.name
+                  assert not destination.exists() and not destination.is_symlink()
+                  copies.append((result, destination, True))
+          build = evidence / 'public-close-actor-build'
+          products = build / 'Build/Products'
+          if products.exists() or products.is_symlink():
+              for directory in [build, build / 'Build', products]:
+                  assert directory.is_dir() and not directory.is_symlink() and directory.resolve() == directory
+              inputs = list(products.glob('*.xctestrun'))
+              assert len(inputs) <= 1
+              if inputs:
+                  plan_file(inputs[0], 'public-close-actor-build.xctestrun', products)
+          # Preflight all selected sources before copying any runtime payload.
+          for source, destination, directory in copies:
+              if directory:
+                  shutil.copytree(source, destination)
+              else:
+                  shutil.copy2(source, destination)
           PYTHON
       - name: Detach only the owned read-only mount
         if: always() && env.T09_RELEASE_MOUNT != ''
@@ -1374,5 +1412,7 @@ jobs:
         if: always()
         with:
           name: flutter-launcher-T09-release-arm64
-          path: ${{ env.EVIDENCE_DIR }}
+          path: |
+            ${{ env.EVIDENCE_DIR }}
+            !${{ env.EVIDENCE_DIR }}/public-close-actor-build/**
           if-no-files-found: error

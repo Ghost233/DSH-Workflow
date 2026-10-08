@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -281,6 +282,91 @@ class EngineeringPrerequisitesTest(unittest.TestCase):
                             self.assertLess(ready.index('harness-runtime.mjs ensure '), ready.index('harness-runtime.mjs check '))
             self.assertEqual(checked_jobs, expected_jobs)
 
+
+
+class ReleaseActorCollectorTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.runner = Path(self.temporary.name).resolve()
+        self.root = self.runner / 'dsh-t05-t09-owned'
+        self.root.mkdir(mode=0o700)
+        self.evidence = self.runner / 'evidence'; self.evidence.mkdir()
+        self.payloads = {
+            'release-distribution-evidence.json': b'{"defaultReleaseDiscoveryPassed":false,"publicCloseActorExit":65}',
+            'release-window-identity.json': b'{"known":false}',
+            'public-close-actor.log': b'Original XCTest actor startup failure\n',
+            'public-close-actor.xctestrun': b'<plist><string>exact rewritten runner context</string></plist>',
+            'public-close-actor-ready': b'actual fixed ready marker',
+            'public-close-request': b'actual fixed request marker',
+            'public-close-ack': b'actual fixed acknowledgement marker',
+            'public-close-driver-complete': b'actual fixed completion marker',
+        }
+        for name, data in self.payloads.items(): (self.root / name).write_bytes(data)
+        self.result = self.root / 'public-close-actor.xcresult'; self.result.mkdir()
+        (self.result / 'Data').mkdir()
+        (self.result / 'Info.plist').write_bytes(b'exact original result metadata')
+        (self.result / 'Data/data.0').write_bytes(b'\x00\x01original result payload')
+        self.products = self.evidence / 'public-close-actor-build/Build/Products'
+        self.products.mkdir(parents=True)
+        (self.products / 'Actor.xctestrun').write_bytes(b'original build-for-testing input')
+        (self.products / 'keep-compiled-binary').write_bytes(b'compiled bytes stay on disk')
+        for name in ['public-close-actor-build.log', 'public-close-actor-build.exit', 'public-close-actor-build-metadata.json']:
+            (self.evidence / name).write_bytes(b'original build evidence')
+        self.log = self.evidence / 'release-distribution.log'
+        self.log.write_text('T09_ROOT=' + str(self.root) + '\n')
+
+    def collector(self):
+        repo = Path(__file__).resolve().parents[2]
+        workflow = (repo / '.github/workflows/flutter-launcher-acceptance.yml').read_text()
+        section = workflow.split('      - name: Preserve exact owned tool evidence\n', 1)[1]
+        source = section.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON\n', 1)[0]
+        from unittest.mock import patch
+        with patch.dict(os.environ, EVIDENCE_DIR=str(self.evidence), RUNNER_TEMP=str(self.runner)):
+            exec(compile(textwrap.dedent(source), '<actual T09 inline collector>', 'exec'), {})
+        return workflow
+
+    def test_actual_collector_retains_runtime_bytes_and_small_build_input_without_deleting_build(self):
+        workflow = self.collector()
+        for name, data in self.payloads.items(): self.assertEqual((self.evidence / name).read_bytes(), data)
+        for name in ['Info.plist', 'Data/data.0']:
+            self.assertEqual((self.evidence / self.result.name / name).read_bytes(), (self.result / name).read_bytes())
+        self.assertEqual((self.evidence / 'public-close-actor-build.xctestrun').read_bytes(), b'original build-for-testing input')
+        self.assertEqual((self.products / 'keep-compiled-binary').read_bytes(), b'compiled bytes stay on disk')
+        upload = workflow.split('          name: flutter-launcher-T09-release-arm64\n', 1)[1]
+        self.assertIn('path: |\n            ${{ env.EVIDENCE_DIR }}\n            !${{ env.EVIDENCE_DIR }}/public-close-actor-build/**', upload)
+        self.assertFalse(json.loads((self.evidence / 'release-distribution-evidence.json').read_text())['defaultReleaseDiscoveryPassed'])
+
+    def test_unknown_or_unowned_root_rejected_without_any_payload_copy(self):
+        for case in ['ambiguous', 'wrong-prefix', 'public-mode', 'symlink-root']:
+            with self.subTest(case=case):
+                root = self.root
+                if case == 'ambiguous': self.log.write_text(('T09_ROOT=' + str(root) + '\n') * 2)
+                elif case == 'wrong-prefix':
+                    root = self.runner / 'unowned'; root.mkdir(mode=0o700)
+                elif case == 'public-mode': root.chmod(0o755)
+                else:
+                    root = self.runner / 'dsh-t05-t09-alias'; root.symlink_to(self.root)
+                if case != 'ambiguous': self.log.write_text('T09_ROOT=' + str(root) + '\n')
+                with self.assertRaises((AssertionError, RuntimeError, ValueError)): self.collector()
+                for name in self.payloads: self.assertFalse((self.evidence / name).exists(), name)
+                self.assertFalse((self.evidence / 'public-close-actor-build.xctestrun').exists())
+                self.root.chmod(0o700)
+
+    def test_invalid_descendant_rejected_before_any_partial_copy(self):
+        outside = self.runner / 'outside'; outside.write_bytes(b'untouched outside bytes')
+        invalid = self.result / 'Data/invalid'
+        for case in ['file-symlink', 'directory-symlink', 'unknown-file-kind']:
+            with self.subTest(case=case):
+                if case == 'file-symlink': invalid.symlink_to(outside)
+                elif case == 'directory-symlink': invalid.symlink_to(self.runner, target_is_directory=True)
+                else: os.mkfifo(invalid)
+                with self.assertRaises((AssertionError, RuntimeError, ValueError)): self.collector()
+                for name in self.payloads: self.assertFalse((self.evidence / name).exists(), name)
+                self.assertFalse((self.evidence / self.result.name).exists())
+                self.assertFalse((self.evidence / 'public-close-actor-build.xctestrun').exists())
+                self.assertEqual(outside.read_bytes(), b'untouched outside bytes')
+                invalid.unlink()
 
 if __name__ == '__main__':
     unittest.main()
