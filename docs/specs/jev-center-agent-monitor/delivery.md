@@ -6,7 +6,7 @@
 - 目标分支：main；集成分支：codex/jev-center-monitor。
 - 初始固定基线：2f84551b6a0e292df82a68c4f5948c9c5f66755d。
 - 阶段 PR 合入集成分支；最终 PR 面向 main，完成后标记 ready，等待合并。
-- 总 PR：[#20](https://github.com/Ghost233/DSH-Workflow/pull/20)，当前为草稿；三个阶段已集成，总审查四项发现均已修复，最新754/12门禁通过，最终复审后标为 ready，等待合并。
+- 总 PR：[#20](https://github.com/Ghost233/DSH-Workflow/pull/20)，三个阶段已集成，总审查四项发现均已修复，最新754/12门禁和最终总复审通过；按本轮授权标为 ready，等待合并，平台状态以该PR为准。
 - 工作区原有未提交改动保留，只提交本规格范围内的内容。共享 checkout 的 Git 操作由唯一 merger 串行执行。
 
 | 阶段 | 工单 | 前置条件 | 状态 | 审查固定点 | PR |
@@ -19,9 +19,10 @@
 
 测试接缝沿用用户确认的真实 DSH Host、标准 Settings/credentials、公开命名调用与原生 Agent 事件；模拟上游及时间，不调用付费模型。macOS 系统通知提交与实际送达分别记录证据，不用模拟提交代替送达。
 
-## 未完成项
+## 交付边界
 
-- 最终双轴审查及总 PR #20 标为 ready。
+- 最终完整总复审在c2dbb8c07ad313379a9c7abcce2e0ea07b6e7ff7覆盖50文件、17提交，Standards和Spec均0 P0/P1/P2。报告 `/private/tmp/jev-final2-standards.md`、`jev-final2-spec.md`；收尾文档仅记录这些已验证结果，产品与测试输入不变。
+- 总PR等待合并，main保持原提交；本轮没有部署或切换用户当前服务。
 - macOS 实际通知送达由用户明确暂缓，保持未验证，不作为本轮其余交付的阻塞项。
 
 三个阶段均已完成本地代码验收并集成，六工单均已结项；父规格 #12 保持开放，等待总 PR 合并。阶段 3 合并后集成分支本地与远端同为 6f227531e453f0815fedfd849c1c20b4aad2737a；阶段 3 分支同为 e88cde3d6997d9d10b6b1e285f2d97095e430fa3，阶段 2 分支同为 d83fea60e809336d054a0aca31192da434433e54，阶段 1 分支同为 067d166fd2928178fc7d7f7f37988e88ecab74fa。实施使用同一 checkout，未创建额外 worktree，也未移动或暂存用户原有工作。以下早期进度保留为历史，以最新候选、集成与总审查状态为准。
