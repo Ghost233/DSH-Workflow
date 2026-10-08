@@ -499,10 +499,7 @@ Future<void> main(List<String> arguments) async {
       : ProbeDiagnostics(
           root,
           publishPhases: settingsScenario,
-          observeHostOwnership:
-              settingsScenario ||
-              pluginDesktopScenario ||
-              desktopWindowScenario,
+          observeHostOwnership: webScenario.backend == 'desktop',
           captureCIHostOnce: settingsScenario,
         );
   var exited = false;
@@ -632,6 +629,8 @@ Future<void> main(List<String> arguments) async {
         state: state,
         applicationExit: process.exitCode,
         ownsHostReceipt: (value) => diagnostics!.ownsHostReceipt(value),
+        observeOwnedHeadlessHost: (ownerPid) =>
+            diagnostics!.observeOwnedHeadlessHost(ownerPid),
         startupFailure: (oldDesktop) => diagnostics!.startupFailure(oldDesktop),
         tap: tap,
         capture: capture,

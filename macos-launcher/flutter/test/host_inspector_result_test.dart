@@ -51,8 +51,58 @@ void main() {
       expect(rows.first['state'], 'unknown');
       expect(rows.first['stderr'], contains('open file'));
       expect(rows.first['interpreter'], '/usr/bin/python3');
+      expect(rows.first['operation'], '--capture-host');
       expect(
         utf8.encode(rows.first['stderr'] as String).length,
+        lessThanOrEqualTo(16384),
+      );
+    },
+  );
+  test(
+    'the actual failed headless inspector keeps its operation and first error',
+    () async {
+      final root = await Directory('/private/tmp')
+          .createTemp('dsh-t06-inspector-');
+      addTearDown(() => root.delete(recursive: true));
+      final script = File('../../.github/scripts/settings_startup_cycle.py')
+          .absolute
+          .path;
+      final command = [
+        script,
+        '--capture-headless-host',
+        '${root.path}/missing-password=synthetic-headless-secret',
+        '77',
+        '88',
+        '99',
+      ];
+      final failure = await Process.run('/usr/bin/python3', command);
+      expect(failure.exitCode, 1);
+      expect(failure.stderr, contains('No such file or directory'));
+      expect(failure.stderr, contains('synthetic-headless-secret'));
+      await preserveHostInspectionFailure(
+        root,
+        77,
+        script,
+        failure,
+        headless: true,
+      );
+      final observation = jsonDecode(
+        (await File(
+          '${root.path}/host-inspection-results.jsonl',
+        ).readAsLines()).single,
+      ) as Map;
+      expect(observation['operation'], command[1]);
+      expect(observation['interpreter'], '/usr/bin/python3');
+      expect(observation['exit'], failure.exitCode);
+      expect(observation['state'], 'unknown');
+      expect(observation['stderr'], contains('No such file or directory'));
+      expect(observation['stderr'], contains('<REDACTED>'));
+      expect(
+        observation['stderr'],
+        isNot(contains('synthetic-headless-secret')),
+      );
+      expect(
+        utf8.encode(observation['stderr'] as String).length,
         lessThanOrEqualTo(16384),
       );
     },

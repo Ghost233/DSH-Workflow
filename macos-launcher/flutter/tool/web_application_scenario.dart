@@ -199,6 +199,7 @@ Future<void> runWebApplicationScenario({
   bool startWebBySdk = false,
   Future<void> Function(ApplicationState, Future<void> Function(String))?
   beforeWebStart,
+  Future<void> Function(int)? observeOwnedHeadlessHost,
   Process? prestartedHost,
   IOSink? prestartedHostLog,
   String? bindingsPath,
@@ -365,6 +366,7 @@ Future<void> runWebApplicationScenario({
       ],
       environment: {...Platform.environment, 'DSH_HOME': home},
     );
+    await observeOwnedHeadlessHost?.call(host!.pid);
     hostLog ??= File('${root.path}/host.log').openWrite();
     final hostReady = Completer<void>();
     host!.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(
