@@ -109,9 +109,13 @@ export function createAgentMonitor(config = {}, { now = Date.now, onAlert = () =
           if (chunk.type === 'block-end' && (chunk.block?.text?.length || chunk.block?.type === 'tool-call')) {
             row.seenContent = true
             const length = (chunk.block.type === 'tool-call' ? chunk.block.arguments : chunk.block.text)?.length ?? 0
+            const previousLength = row.outputLengths.get(chunk.index) ?? 0
             const added = output(row, chunk.index, length)
             if (added && (chunk.block.type === 'text' || chunk.block.type === 'tool-call')) progress(row)
-            else if (chunk.block.type === 'reasoning') { row.check?.abort(); row.thinkingAt = undefined }
+            else if (added && chunk.block.type === 'reasoning') {
+              row.thinkingAt ??= now()
+              row.reasoning = (row.reasoning + chunk.block.text.slice(previousLength)).slice(-6000)
+            }
           }
           if (chunk.type === 'finish') {
             row.seenFinish = true

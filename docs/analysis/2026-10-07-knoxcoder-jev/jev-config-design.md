@@ -39,7 +39,7 @@
 
 ## 已核实的本地事实
 
-DSH 的插件 Config/volatile 字段由 Settings 自动生成和保存表单；普通配置保存密钥引用，实际 key 由 credentials 的 resolve/describe/set/unset 管理。标准 credentials-local 使用权限受限的文件，并非操作系统钥匙串。现成的聊天模型 provider 协议表没有 System One，JEV 配置不能仅当作普通聊天模型新增。
+DSH 的插件 Config/volatile 字段由 Settings 提供配置 schema、读写与持久化，表单由客户端插件实现；`autoGenerate` 是供客户端生成页面的标志，当前 SDK 没有提供自动生成这些页面的已发布客户端。本插件通过原生 Settings/Plugins Slot 实现表单，并使用 `configure({ auto: false }, ctx.fiber)`。普通配置保存密钥引用，实际 key 由 credentials 的 resolve/describe/set/unset 管理。标准 credentials-local 使用权限受限的文件，并非操作系统钥匙串。现成的聊天模型 provider 协议表没有 System One，JEV 配置不能仅当作普通聊天模型新增。
 
 [Settings](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/settings/settings/src/index.ts:302)、[密钥引用示例](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/llm/llm-deepseek-api-key/src/config.ts:14)、[credentials](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/credentials/credentials/src/index.ts:175)、[本地凭据](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/credentials/credentials-local/src/index.ts:609)、[现有 provider 协议表](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/llm/llm-pi-ai/src/provider.ts:47)
 

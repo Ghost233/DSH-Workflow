@@ -1,4 +1,5 @@
 import { mkdir, appendFile, readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -64,50 +65,67 @@ export async function apply(ctx, config = {}, deps = {}) {
   const directory = config.directory ?? join(process.env.DSH_HOME ?? join(process.env.HOME, '.dsh'), 'storages', 'dsh-agent-monitor')
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const journalPath = join(directory, 'alerts.jsonl'), notify = deps.notify ?? desktopNotice
-  const sanitizeRecord = async record => {
+  const credentialCatalog = () => {
     const secrets = Object.entries(process.env).filter(([name, value]) => value && /(?:API_KEY|ACCESS_TOKEN|AUTH_TOKEN|SECRET_KEY|PASSWORD)$/i.test(name)).map(([, value]) => value)
-    if (record.debugEvidence) {
-      for (const snippet of Object.values(record.debugEvidence)) {
-        if (typeof snippet !== 'string') continue
-        for (const match of snippet.matchAll(/\bBearer\s+([^\s"'\r\n]+)/gi)) secrets.push(match[1])
+    try {
+      const provider = ctx.get('credentials')
+      if (!(provider instanceof LocalCredentialProvider || provider instanceof CommonJsLocalCredentialProvider)
+        || !provider.config) throw new Error('Credential catalog unavailable')
+      const filename = resolveSpec(provider.config).filename
+      const document = parseCredentialsDocument(readFileSync(filename, 'utf8'), filename)
+      const collect = value => {
+        if (typeof value === 'string' && value.length) secrets.push(value)
+        else if (value && typeof value === 'object') for (const child of Object.values(value)) collect(child)
       }
-      try {
-        const provider = ctx.get('credentials')
-        if (!(provider instanceof LocalCredentialProvider || provider instanceof CommonJsLocalCredentialProvider)
-          || !provider.config) throw new Error('Credential catalog unavailable')
-        const filename = resolveSpec(provider.config).filename
-        const document = parseCredentialsDocument(await readFile(filename, 'utf8'), filename)
-        const collect = value => {
-          if (typeof value === 'string' && value.length) secrets.push(value)
-          else if (value && typeof value === 'object') for (const child of Object.values(value)) collect(child)
-        }
-        for (const secret of document.refs.values()) collect(secret)
-        for (const stored of document.records.values()) {
-          if (stored.kind === 'grant') collect(stored.payload)
-          else { collect(stored.key); collect(stored.env) }
-        }
-        const refs = new Set([...document.refs.keys(), ...(ctx.get('jevCenter')?.describe() ?? []).map(engine => engine.credentialRef)])
-        for (const ref of refs) {
-          const credential = await ctx.get('credentials')?.resolve(ref)
-          if (credential?.value) secrets.push(credential.value)
-        }
-      } catch { record = { ...record, debugEvidence: undefined, debugOmitted: '无法完成凭据脱敏' } }
+      for (const secret of document.refs.values()) collect(secret)
+      for (const stored of document.records.values()) {
+        if (stored.kind === 'grant') collect(stored.payload)
+        else { collect(stored.key); collect(stored.env) }
+      }
+      const refs = new Set([...document.refs.keys(), ...(ctx.get('jevCenter')?.describe() ?? []).map(engine => engine.credentialRef)])
+      for (const ref of refs) collect(process.env[ref])
+      return { secrets, refs, provider, available: true }
+    } catch { return { secrets, available: false } }
+  }
+  const sanitize = (record, catalog) => {
+    const { secrets, available } = catalog
+    if (record.debugEvidence && !available) record = { ...record, debugEvidence: undefined, debugOmitted: '无法完成凭据脱敏' }
+    for (const snippet of Object.values(record.debugEvidence ?? {})) {
+      if (typeof snippet !== 'string') continue
+      for (const match of snippet.matchAll(/\bBearer\s+([^\s"'\r\n]+)/gi)) secrets.push(match[1])
     }
-    const scrub = (value, materials = secrets) => {
+    const scrub = (value, materials = secrets, key, nativeFailure = false) => {
       if (typeof value === 'string') {
+        if (key === 'code') {
+          value = scrub(value, Object.values(process.env).filter(Boolean))
+          if (!available && nativeFailure) return 'UNKNOWN'
+        }
         for (const secret of materials) value = value.split(secret).join('[REDACTED]')
         return value.replace(/(?:proxy-authorization|authorization)["']?\s*[:=][^\r\n]*/gi, '[REDACTED]')
           .replace(/(?:api[_-]?key|access[_-]?token|secret|password)["']?\s*[:=]\s*["']?[^\s"',;\r\n]+/gi, '[REDACTED]')
           .replace(/\bBearer\s+[^\s"'\r\n]+/gi, '[REDACTED]')
       }
-      if (Array.isArray(value)) return value.map(child => scrub(child, materials))
-      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, scrub(child, materials)]))
+      if (Array.isArray(value)) return value.map(child => scrub(child, materials, undefined, nativeFailure))
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) =>
+        [key, scrub(child, materials, key, nativeFailure || value.kind === 'model-error' && key === 'evidence')]))
       return value
     }
     const sanitized = scrub(record)
     // Standard credentials can resolve any env-only ref; conservatively protect fragments, not request metadata.
     if (sanitized.debugEvidence) sanitized.debugEvidence = scrub(sanitized.debugEvidence, Object.values(process.env).filter(Boolean))
     return sanitized
+  }
+  const sanitizeRecord = async record => {
+    const catalog = credentialCatalog()
+    if (catalog.available) {
+      try {
+        for (const ref of catalog.refs) {
+          const credential = await catalog.provider.resolve(ref)
+          if (credential?.value) catalog.secrets.push(credential.value)
+        }
+      } catch { catalog.available = false }
+    }
+    return sanitize(record, catalog)
   }
   let writes = Promise.resolve(), notices = Promise.resolve()
   const judge = async (evidence, signal) => {
@@ -134,8 +152,11 @@ export async function apply(ctx, config = {}, deps = {}) {
     writes = writes.then(async () => appendFile(journalPath, JSON.stringify(await sanitizeRecord(record)) + '\n', { mode: 0o600 }))
       .catch(() => { ctx.logger.warn('Agent monitor log write failed') })
   }, onAlert: alert => {
-    ctx.logger.warn(`[agent-monitor] ${alert.agentId} ${alert.kind}: ${alert.reason}`)
-    notices = notices.then(() => notify(alert)).catch(() => { ctx.logger.warn('Agent monitor notification submission failed') })
+    notices = notices.then(async () => {
+      const sanitized = await sanitizeRecord(alert)
+      ctx.logger.warn(`[agent-monitor] ${sanitized.agentId} ${sanitized.kind}: ${sanitized.reason}`)
+      await notify(sanitized)
+    }).catch(() => { ctx.logger.warn('Agent monitor notification submission failed') })
   } })
   function availability(state) {
     const modelName = value('jevModelName', ''), center = ctx.get('jevCenter')
@@ -154,13 +175,13 @@ export async function apply(ctx, config = {}, deps = {}) {
   const service = { ...monitor,
     snapshot: () => {
       const state = monitor.snapshot(), engineAvailability = availability(state)
-      return { ...state, semanticAvailable: engineAvailability.available, engineAvailability,
-        availableModels: (ctx.get('jevCenter')?.describe() ?? []).filter(engine => engine.enabled).map(engine => engine.modelName) }
+      return sanitize({ ...state, semanticAvailable: engineAvailability.available, engineAvailability,
+        availableModels: (ctx.get('jevCenter')?.describe() ?? []).filter(engine => engine.enabled).map(engine => engine.modelName) }, credentialCatalog())
     },
     flush: async () => { await Promise.resolve(); await Promise.all([writes, notices]) },
     journal: async () => {
       await service.flush()
-      try { return (await readFile(journalPath, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) }
+      try { return await Promise.all((await readFile(journalPath, 'utf8')).trim().split('\n').filter(Boolean).map(line => sanitizeRecord(JSON.parse(line)))) }
       catch (error) { if (error.code === 'ENOENT') return []; throw error }
     },
   }

@@ -6,7 +6,7 @@
 - 目标分支：main；集成分支：codex/jev-center-monitor。
 - 初始固定基线：2f84551b6a0e292df82a68c4f5948c9c5f66755d。
 - 阶段 PR 合入集成分支；最终 PR 面向 main，完成后标记 ready，等待合并。
-- 总 PR：[#20](https://github.com/Ghost233/DSH-Workflow/pull/20)，当前为草稿；三个阶段已集成，代码验收和跨规格核对已完成，正进行最终总审查，随后标为 ready，等待合并。
+- 总 PR：[#20](https://github.com/Ghost233/DSH-Workflow/pull/20)，当前为草稿；三个阶段已集成，总审查的三项发现已修复，新门禁和浏览器复验通过，最终复审后标为 ready，等待合并。
 - 工作区原有未提交改动保留，只提交本规格范围内的内容。共享 checkout 的 Git 操作由唯一 merger 串行执行。
 
 | 阶段 | 工单 | 前置条件 | 状态 | 审查固定点 | PR |
@@ -107,3 +107,12 @@
 - 主线程按固定main基线核对总diff及跨插件合同：28用户故事、15公开测试决策与六工单均有代码/Host/标准设置/Native进展/命名调用/状态、记录和通知提交证据；多配置与实际监控消费者的在途变化由T06同Host场景交叉覆盖。无自动干预、SDK或第三方修改，无付费模型调用；默认/调试日志边界和完整输出清零分别有真实红态后修复。当前没有新发现，完整总diff仍接受独立两轴总审查。
 - 最新实现与新737/12门禁tree930f30一致，后续仅delivery/retro文档变更；源码、测试、构建和工程环境输入未变，不重复运行同一成功长测试。最终Browser76产品字节与集成提交匹配，完整输出恢复的实际截图为 `/private/tmp/jev-browser-block-recovered.jpg`；OS实际显示继续暂缓。
 - 旧阶段1打包失败已由项目profile本地包映射修复；PR21的macOS run37698543437 arm64/x64均真实SUCCESS，Owner/Matt亦成功，非tag的release正常SKIPPED。这是阶段2版本d83的完整远端证明，不是新core提交的CI结论。PR22及总PR20最新快照中Matt成功，Owner与两架构Mac仍运行，未记通过，当前无required远端检查。后续真实状态与本地门禁分别报告。
+
+## 最终总审查修复与重新验收
+
+总审查固定9d41a6985c94902366d809919c3ae05cb424910b，发现P1错误元数据回显凭据、P2完整思考块不能维持语义窗口，以及P2表单生成机制的错误文档事实。三个阶段的绿态不覆盖这些缺口。
+
+- 标准文件凭据、环境覆盖和env-only错误码在默认/调试模式的状态、HTTP/NativeRemote、日志及通知均脱敏；同步snapshot契约保留。目录不可读或未知provider时，不可信原生错误code收敛为UNKNOWN，身份、来源、状态和时间仍保留。完整思考只追加未观察后缀，完成/重复块保持原窗口，不取消在途判断。正式红态后定点绿，单次受影响模块75/75退出0；依据与新日志见[总复盘](total-retro.md)。
+- 精确候选tree6d87f4231d270c340178ca28ce61b93b7c531c04，4071个tracked blob逐项核对，排除用户原有WIP。Node v26.9.0，Owner全量751/751退出0；六文件Web/Desktop集成12/12退出0，均无取消或跳过。客户端、固定Harness构建证明、上游干净和diff检查通过。Owner测试输入不引用Matt面板；集成候选首次缺少自研Matt的lib/shared产物，补齐原有构建输出后两个原失败用例2/2及完整集成12/12通过，未降低期限或修改断言。日志 `/private/tmp/jev-resume-owner-full.log`、`jev-resume-integration-final.log`。
+- 实际内置Browser在该精确候选上保存隔离参数并持续输出完整思考块，84次模拟JEV判断产生逐轮语义告警；只有正常正文进展后才显示恢复时间。虚拟凭据错误回显的公开状态与journal均无裸值，默认169条记录没有会话片段/认证头，新模型请求未取消、无恢复弹窗。截图 `/private/tmp/jev-resume-browser-recovered.png`，70个相关运行时文件字节绑定于 `/private/tmp/jev-resume-browser-product.json`；临时Host清理退出0。测试探针最初缺少cwd导致persona变量无值，已修正隔离初始化，没有产品改动或当前服务切换。
+- 本轮刷新正式tracker确认13–18均CLOSED、父12仍OPEN、main仍2f84551；远端总PR20的旧集成6f227531已经Owner/Matt和两架构Mac全部SUCCESS。这个成功状态不替代最终修复提交的后续CI；OS实际通知显示仍按用户要求暂缓。

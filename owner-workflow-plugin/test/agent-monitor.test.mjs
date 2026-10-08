@@ -676,6 +676,61 @@ test('debug fragments are opt-in and redact credential values and authentication
   await f.finish()
 })
 
+test('complete reasoning blocks and delta completions retain one thinking window without duplicating evidence or cancelling judgments', async t => {
+  for (const origin of ['complete', 'delta-completion']) await t.test(origin, async t => {
+    const f = await configuredHost(t)
+    await f.saveEngine()
+    await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 1,
+      noOutputThreshold: 100, checkIntervalMs: 1000, debugEvidence: true })
+    await f.start()
+    const first = 'private first thinking', second = '\nprivate second thinking', third = '\nprivate third thinking'
+    await f.send(origin === 'complete' ? { type: 'block-end', index: 0, block: { type: 'reasoning', text: first } }
+      : { type: 'reasoning-delta', index: 0, text: first })
+    f.setTime(500)
+    await f.send({ type: 'block-end', index: origin === 'complete' ? 1 : 0,
+      block: { type: 'reasoning', text: origin === 'complete' ? second : first } })
+    f.setTime(origin === 'complete' ? 1000 : 900)
+    await f.send(origin === 'complete' ? { type: 'block-end', index: 2, block: { type: 'reasoning', text: third } }
+      : { type: 'reasoning-delta', index: 1, text: second })
+    await f.at(1000)
+    assert.equal(f.requests.length, 1, 'continued reasoning uses the wait that began with the first thinking output')
+    const initialEvidence = origin === 'complete' ? first + second + third : first + second
+    assert.equal(f.requests[0].body.state.reasoning, initialEvidence, 'delta completion does not append already observed text')
+    assert.equal(f.notices.length, 1)
+    assert.equal(f.ctx.get('agentMonitor').snapshot().agents[0].semanticCount, 1)
+    const index = origin === 'complete' ? 2 : 1, text = origin === 'complete' ? third : second
+    f.setTime(1500)
+    await f.send({ type: 'block-end', index, block: { type: 'reasoning', text } })
+    f.setTime(1900)
+    await f.send({ type: 'block-end', index, block: { type: 'reasoning', text: text + '\nnew suffix' } })
+    let held
+    f.respond((_request, res) => { held = res })
+    const pending = f.at(2000)
+    await until(() => held)
+    assert.equal(f.requests[1].body.state.reasoning, initialEvidence + '\nnew suffix', 'a longer completion appends only its new suffix')
+    await f.send({ type: 'block-end', index, block: { type: 'reasoning', text: text + '\nnew suffix' } })
+    f.setTime(2100)
+    await f.send({ type: 'reasoning-delta', index: index + 1, text: '\nongoing thinking' })
+    held.end(JSON.stringify(progressAnswer('jev-continued-thinking')))
+    await pending
+    assert.equal(f.ctx.get('agentMonitor').snapshot().agents[0].semanticCount, 2, 'reasoning completion leaves the in-flight judgment active')
+    assert.equal(f.notices.length, 2)
+    f.respond((_request, res) => res.end(JSON.stringify(progressAnswer('jev-continued-thinking'))))
+    await f.at(3000)
+    assert.equal(f.requests[2].body.state.reasoning, initialEvidence + '\nnew suffix\nongoing thinking')
+    const records = await f.ctx.get('agentMonitor').journal()
+    assert.equal(records.filter(record => record.recordType === 'judgment').length, 3)
+    assert.equal(records.filter(record => record.recordType === 'recovery').length, 0, 'reasoning does not report task progress')
+    assert.doesNotMatch(JSON.stringify(f.ctx.get('agentMonitor').snapshot()), /private first|private second|private third|outputLengths/)
+    assert.equal(f.request.signal.aborted, false)
+    assert.equal(f.handle.agent.status, 'running')
+    await f.finish()
+    await f.at(4000)
+    assert.equal(f.requests.length, 3, 'request completion stops semantic checks')
+    assert.equal(f.notices.length, 3)
+  })
+})
+
 test('a complete public text block ends a thinking window and the next window excludes the previous reasoning', async t => {
   const f = await configuredHost(t)
   await f.saveEngine()
@@ -901,6 +956,92 @@ test('debug judgments redact unlabeled managed credentials unrelated to JEV whil
   for (const secret of allSecrets) assert.equal(publicStatus.includes(secret), false)
   assert.equal(f.streams.get('model').request.signal.aborted, false)
   await f.finish()
+})
+
+test('native failures redact arbitrary credential values from every monitor surface in default and debug modes', async t => {
+  for (const debugEvidence of [false, true]) for (const origin of ['file', 'env-only', 'env-override']) await t.test(`${debugEvidence ? 'debug' : 'default'}-${origin}`, async t => {
+    const f = await configuredHost(t)
+    await f.saveEngine()
+    await f.ctx.plugin(req('@deepseek-ai/dsh-typert-registry').default)
+    await f.ctx.plugin(req('@deepseek-ai/dsh-api-gateway').default)
+    const suffix = randomUUID().replaceAll('-', '').toUpperCase(), ref = `UNRELATED_NATIVE_SLOT_${suffix}`
+    const secret = `MONITOR_FAKE_${suffix}`, stored = `MONITOR_STORED_${suffix}`
+    if (origin !== 'env-only') await f.ctx.credentials.set(ref, origin === 'file' ? secret : stored)
+    if (origin !== 'file') {
+      process.env[ref] = secret
+      t.after(() => { delete process.env[ref] })
+    }
+    const credential = await f.ctx.credentials.resolve(ref)
+    assert.equal(credential.source, origin === 'file' ? 'file' : 'env')
+    await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 100,
+      noOutputThreshold: 100, checkIntervalMs: 1000, debugEvidence })
+    await f.start()
+    await f.send({ type: 'reasoning-delta', index: 0, text: `safe native failure analysis\n${credential.value}` })
+    await f.at(1000)
+    const { LlmError } = req('@deepseek-ai/dsh-llm')
+    const watched = f.streams.get('model')
+    f.end('model', new LlmError(`Authorization: Bearer ${credential.value}`, credential.value, { status: 503 }))
+    await f.handle.agent.whenIdle()
+    const snapshot = f.ctx.get('agentMonitor').snapshot()
+    assert.equal(JSON.stringify(snapshot).includes(secret), false, 'the synchronous public snapshot must redact the managed credential')
+    await f.ctx.get('agentMonitor').flush()
+    const remote = await f.ctx.typertGateway.invoke({ namespace: 'agentMonitor', method: 'snapshot', args: {} })
+    const status = await (await fetch(`${f.url}/agent-monitor/api/status`)).json()
+    const journal = await f.ctx.get('agentMonitor').journal()
+    const httpJournal = await (await fetch(`${f.url}/agent-monitor/api/journal`)).json()
+    const persisted = await readFile(join(f.home, 'journal', 'alerts.jsonl'), 'utf8')
+    for (const [name, surface] of Object.entries({ remote, status, journal, httpJournal, persisted, notices: f.notices })) {
+      assert.equal(JSON.stringify(surface).includes(secret), false, `${name} must redact the managed credential`)
+    }
+    assert.equal(f.notices.length, 1)
+    assert.equal(snapshot.alerts[0].kind, 'model-error')
+    assert.equal(snapshot.alerts[0].evidence.status, 503, 'safe upstream status facts remain visible')
+    assert.equal(snapshot.alerts[0].agentId, 'settings-agent')
+    assert.equal(snapshot.alerts[0].attemptId, 'settings-agent:1')
+    assert.equal(snapshot.alerts[0].at, 1000)
+    assert.equal(f.notices[0].evidence.status, 503)
+    assert.equal(f.handle.agent.status, 'idle')
+    assert.equal(watched.request.signal.aborted, false)
+    const judgment = journal.find(record => record.recordType === 'judgment')
+    assert.equal(Boolean(judgment.debugEvidence), debugEvidence)
+    if (debugEvidence) assert.equal(judgment.debugEvidence.reasoning.includes('safe native failure analysis'), true)
+    f.handle.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'continue normal task' }] }))
+    await until(() => f.streams.get('model') !== watched)
+    await f.finish()
+    assert.equal(f.notices.length, 1, 'a later normal request finishes without monitor intervention')
+    assert.ok(f.handle.agent.session.snapshotEvents().some(event => event.type === 'assistant/message'))
+  })
+})
+
+test('native failure diagnostics fail closed when the standard credential catalog is unreadable while retaining safe facts', async t => {
+  for (const failure of ['read', 'parse', 'provider']) await t.test(failure, async t => {
+    const f = await configuredHost(t)
+    await f.saveEngine()
+    // A known-looking code can itself be credential material; its spelling is not a safety proof.
+    const secret = 'UPSTREAM_UNAVAILABLE'
+    await f.ctx.credentials.set('UNRELATED_NATIVE_SLOT', secret)
+    assert.equal((await f.ctx.credentials.resolve('UNRELATED_NATIVE_SLOT')).source, 'file')
+    await f.start()
+    const filename = join(f.home, '.credentials.yaml')
+    if (failure === 'read') await rm(filename)
+    else if (failure === 'parse') await writeFile(filename, 'version: 1\nrefs: [invalid-shape]\n')
+    else await f.ctx.configEditor.entries().find(entry => entry.options.id === 'credentials').fiber.dispose()
+    const { LlmError } = req('@deepseek-ai/dsh-llm')
+    f.end('model', new LlmError('upstream connection failed', secret, { status: 503 }))
+    await f.handle.agent.whenIdle(); await f.ctx.get('agentMonitor').flush()
+    const status = f.ctx.get('agentMonitor').snapshot(), journal = await f.ctx.get('agentMonitor').journal()
+    assert.equal(status.alerts[0].kind, 'model-error')
+    assert.equal(status.alerts[0].evidence.code, 'UNKNOWN')
+    assert.equal(status.alerts[0].evidence.status, 503)
+    assert.equal(status.alerts[0].evidence.source, 'finish')
+    assert.equal(status.alerts[0].agentId, 'settings-agent')
+    assert.equal(status.alerts[0].attemptId, 'settings-agent:1')
+    const httpStatus = await (await fetch(`${f.url}/agent-monitor/api/status`)).json()
+    const persisted = await readFile(join(f.home, 'journal', 'alerts.jsonl'), 'utf8')
+    for (const surface of [status, httpStatus, journal, persisted, f.notices]) assert.equal(JSON.stringify(surface).includes(secret), false)
+    assert.equal(f.notices.length, 1)
+    assert.equal(f.handle.agent.status, 'idle')
+  })
 })
 
 test('debug judgments redact env-only standard model credentials without changing request metadata', async t => {

@@ -395,7 +395,10 @@ test('public stream evidence distinguishes empty EOF, unmarked partial EOF and o
 
 test('a failed native request can be followed by a normal partial-looking answer without inherited terminal warnings or recovery actions', async t => {
   const { LlmError } = req('@deepseek-ai/dsh-llm')
-  const f = await fixture(t), handle = await f.create('after-error')
+  const f = await fixture(t)
+  await f.ctx.plugin(req('@deepseek-ai/dsh-credentials-local').default, { path: join(f.directory, '.credentials.yaml'), watch: false })
+  await f.ctx.credentials.set('UNRELATED_NATIVE_AUTH', 'safe-code-fixture-credential')
+  const handle = await f.create('after-error')
   const first = f.streams.get('after-error')
   f.end('after-error', new LlmError('connection closed', 'UPSTREAM_UNAVAILABLE', { status: 503 }))
   await handle.agent.whenIdle(); await f.monitor.flush()
