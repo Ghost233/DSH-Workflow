@@ -163,7 +163,7 @@ class AppDelegate: FlutterAppDelegate {
     if quitApproved { return false }
     do { try FileManager.default.createDirectory(at: dataRoot, withIntermediateDirectories: true) }
     catch { quitApproved = true; NSApp.terminate(nil); return false }
-    instanceLock = open(dataRoot.appendingPathComponent("launcher-instance.lock").path, O_CREAT | O_RDWR, 0o600)
+    instanceLock = open(dataRoot.appendingPathComponent("launcher-instance.lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
     guard instanceLock >= 0, flock(instanceLock, LOCK_EX | LOCK_NB) == 0 else {
       DistributedNotificationCenter.default().postNotificationName(reopen, object: dataRoot.path, userInfo: nil, deliverImmediately: true)
       quitApproved = true
@@ -326,7 +326,6 @@ class AppDelegate: FlutterAppDelegate {
           guard let path = call.arguments as? String else { throw self.failure("无效 Desktop 路径") }
           let application = try self.runningDesktop(path)
           if call.method == "desktopRunning" {
-            if application != nil { self.releaseColdDesktop("reuse") }
             result(application != nil); return
           }
           self.releaseColdDesktop("explicit-window-action")

@@ -30,6 +30,26 @@ void require(bool condition, String description) {
   stdout.writeln('PASS: $description');
 }
 
+Future<void> closeProbeResources(
+  List<(String, FutureOr<void> Function())> resources, {
+  required bool preserveFailure,
+}) async {
+  Object? firstFailure;
+  StackTrace? firstStack;
+  for (final (name, close) in resources) {
+    try {
+      await Future<void>.sync(close);
+    } catch (error, stack) {
+      firstFailure ??= error;
+      firstStack ??= stack;
+      stderr.writeln('PROBE_CLEANUP_FAILURE: $name ${error.runtimeType}');
+    }
+  }
+  if (!preserveFailure && firstFailure != null) {
+    await Future<void>.error(firstFailure, firstStack);
+  }
+}
+
 String applicationProbeRootParent({
   required bool systemCi,
   required bool keychainCi,
@@ -74,14 +94,27 @@ Future<void> main(List<String> arguments) async {
       arguments.length == 7 &&
       arguments[1] == '--desktop-window-runtime' &&
       arguments[3] == '--window-start' &&
-      {'hidden', 'show'}.contains(arguments[4]) &&
+      {'hidden', 'show', 'sdk-hidden'}.contains(arguments[4]) &&
       arguments[5] == '--web-port';
   if (arguments.length > 1 &&
       arguments[1] == '--desktop-window-runtime' &&
       !desktopWindowScenario) {
     throw ArgumentError(
-      'Use --desktop-window-runtime RESOURCES --window-start hidden|show --web-port PORT',
+      'Use --desktop-window-runtime RESOURCES --window-start hidden|show|sdk-hidden --web-port PORT',
     );
+  }
+  final externalSdkCold = desktopWindowScenario && arguments[4] == 'sdk-hidden';
+  if (externalSdkCold) {
+    require(
+      Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+          localAcceptanceRoot == null,
+      'external SDK cold validation runs only in its disposable runner',
+    );
+  }
+  if (externalSdkCold &&
+      Platform.environment['DSH_EXTERNAL_SDK_COLD_DRIVER'] != '1') {
+    await superviseSdkColdWindow(arguments);
+    return;
   }
   final instanceStartup =
       arguments.length == 3 && arguments[1] == '--instance-startup';
@@ -301,6 +334,30 @@ Future<void> main(List<String> arguments) async {
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
   settingsPhase('resources-stage-start');
   final webPort = await webScenario?.stage(root);
+  if (externalSdkCold) {
+    final destination = '${root.path}/missing-runtime/desktop';
+    await Link(destination).delete();
+    final source = '${webScenario!.sourceResources}/desktop';
+    final copy = await Process.run('/usr/bin/ditto', [source, destination]);
+    require(
+      copy.exitCode == 0,
+      'SDK cold case owns a private unchanged Desktop bundle copy',
+    );
+    final proof = await Process.run('/usr/bin/python3', [
+      '-c',
+      'import pathlib,hashlib,json,stat,sys; a,b=map(pathlib.Path,sys.argv[1:]); '
+          'snap=lambda p:{str(f.relative_to(p)):({"link":str(f.readlink())} if f.is_symlink() else {"mode":stat.S_IMODE(f.stat().st_mode),"sha256":hashlib.sha256(f.read_bytes()).hexdigest()} if f.is_file() else {"mode":stat.S_IMODE(f.stat().st_mode)}) for f in p.rglob("*")}; x,y=snap(a),snap(b); assert x==y; print(json.dumps({"source":str(a.resolve()),"destination":str(b.resolve()),"byteModeSymlinkEqual":True,"members":len(x),"aggregateSha256":hashlib.sha256(json.dumps(x,sort_keys=True).encode()).hexdigest()}))',
+      source,
+      destination,
+    ]);
+    require(
+      proof.exitCode == 0,
+      'private Desktop fixture bytes modes and symlinks match readonly source',
+    );
+    await File('${root.path}/desktop-fixture-copy-evidence.json')
+        .writeAsString(proof.stdout.toString());
+  }
+
   settingsPhase('resources-stage-end');
   if (webPort != null) environment['DSH_LAUNCHER_TEST_PORT'] = '$webPort';
   if (entryScenario) {
@@ -375,18 +432,21 @@ Future<void> main(List<String> arguments) async {
     sign.exitCode == 0,
     'private Debug candidate is signed after isolation metadata',
   );
-  final pluginRegistry = pluginUpdateScenario
-      ? await PluginRegistryFixture.prepare(
-          root,
-          environment['DSH_LAUNCHER_TEST_RESOURCES']!,
-        )
-      : null;
-  if (pluginRegistry != null) environment.addAll(pluginRegistry.environment);
-  final windowProbe = desktopWindowScenario
-      ? await DesktopWindowProbe.start(root)
-      : null;
+  PluginRegistryFixture? pluginRegistry;
+  DesktopWindowProbe? windowProbe;
   late final Process process;
   try {
+    pluginRegistry = pluginUpdateScenario
+        ? await PluginRegistryFixture.prepare(
+            root,
+            environment['DSH_LAUNCHER_TEST_RESOURCES']!,
+          )
+        : null;
+    if (pluginRegistry != null) environment.addAll(pluginRegistry.environment);
+    windowProbe = desktopWindowScenario
+        ? await DesktopWindowProbe.start(root)
+        : null;
+    if (externalSdkCold) await windowProbe!.prepareExternalForeground();
     settingsPhase('keychain-fixture-start');
     await settings?.prepareKeychain(executable.path);
     settingsPhase('keychain-fixture-end');
@@ -397,11 +457,37 @@ Future<void> main(List<String> arguments) async {
     process = await Process.start(executable.path, [
       '--vm-service-port=0',
     ], environment: environment);
+    if (externalSdkCold) {
+      await File('${root.path}/supervision-live.pending').writeAsString(
+        jsonEncode({
+          'pids': {'app': process.pid},
+        }),
+      );
+      await File('${root.path}/supervision-live.pending')
+          .rename('${root.path}/supervision-live.json');
+    }
     settingsPhase('application-launch-end');
   } catch (_) {
-    await settings?.close();
-    await pluginRegistry?.close();
-    await windowProbe?.close();
+    await closeProbeResources([
+      (
+        'settings preparation',
+        () async {
+          await settings?.close();
+        },
+      ),
+      (
+        'registry preparation',
+        () async {
+          await pluginRegistry?.close();
+        },
+      ),
+      (
+        'window preparation',
+        () async {
+          await windowProbe?.close();
+        },
+      ),
+    ], preserveFailure: true);
     rethrow;
   }
   final diagnostics = webScenario == null
@@ -415,7 +501,6 @@ Future<void> main(List<String> arguments) async {
               desktopWindowScenario,
           captureCIHostOnce: settingsScenario,
         );
-  await diagnostics?.start(process.pid, executable.path);
   var exited = false;
   unawaited(
     process.exitCode.then((code) {
@@ -446,7 +531,9 @@ Future<void> main(List<String> arguments) async {
   ];
   VmService? vm;
   LauncherServer? server;
+  var failed = false;
   try {
+    await diagnostics?.start(process.pid, executable.path);
     if ((settingsScenario || desktopWindowScenario) &&
         webScenario?.backend == 'desktop') {
       await diagnostics!.prepareOwnProcesses();
@@ -529,6 +616,9 @@ Future<void> main(List<String> arguments) async {
     }
 
     if (webScenario != null) {
+      if (externalSdkCold) {
+        await windowProbe!.bindNormalLauncher(app.path, process.pid);
+      }
       await runWebApplicationScenario(
         options: webScenario,
         root: root,
@@ -541,15 +631,21 @@ Future<void> main(List<String> arguments) async {
         startupFailure: (oldDesktop) => diagnostics!.startupFailure(oldDesktop),
         tap: tap,
         capture: capture,
+        startWebBySdk: externalSdkCold,
         beforeWebStart: windowProbe == null
             ? null
             : (ui, tap) async {
-                await windowProbe.beforeStart(ui, tap);
-                await tap(arguments[4] == 'hidden' ? '后台启动' : '启动后显示');
+                if (externalSdkCold) {
+                  await windowProbe!.beforeSdkColdStart(ui, tap);
+                } else {
+                  await windowProbe!.beforeStart(ui, tap);
+                  await tap(arguments[4] == 'hidden' ? '后台启动' : '启动后显示');
+                }
               },
         onConnected: desktopWindowScenario
-            ? (app) =>
-                  windowProbe!.run(app, coldHidden: arguments[4] == 'hidden')
+            ? (app) => externalSdkCold
+                  ? windowProbe!.runSdkColdFocus(app)
+                  : windowProbe!.run(app, coldHidden: arguments[4] == 'hidden')
             : settingsStartupScenario
             ? (actual) async {
                 final receipt =
@@ -897,54 +993,91 @@ Future<void> main(List<String> arguments) async {
       'application performs normal quit cleanup',
     );
     stdout.writeln('T01 APPLICATION PROBE PASSED');
+  } catch (_) {
+    failed = true;
+    rethrow;
   } finally {
-    settingsPhase('manager-close-start');
-    await server?.close();
-    settingsPhase('manager-close-end');
-    await releaseFixture?.close();
-    settingsPhase('settings-close-start');
-    await settings?.close();
-    settingsPhase('settings-close-end');
-    Object? registryCleanupFailure;
-    StackTrace? registryCleanupStack;
-    try {
-      await pluginRegistry?.close();
-    } catch (failure, stack) {
-      registryCleanupFailure = failure;
-      registryCleanupStack = stack;
-      stderr.writeln('PLUGIN_REGISTRY_CLEANUP_FAILURE: $failure');
-    }
-    settingsPhase('vm-close-start');
-    await vm?.dispose();
-    settingsPhase('vm-close-end');
-    settingsPhase('application-cleanup-start');
-    if (!exited) {
-      process.kill(ProcessSignal.sigterm);
-      try {
-        await process.exitCode.timeout(const Duration(seconds: 3));
-      } on TimeoutException {
-        process.kill(ProcessSignal.sigkill);
-        await process.exitCode;
-      }
-    }
-    settingsPhase('application-cleanup-end');
-    for (final subscription in subscriptions) {
-      await subscription.cancel();
-    }
-    await outputFile.close();
-    if (windowProbe != null && !windowProbe.closed) {
-      try {
-        await windowProbe.close();
-      } catch (error) {
-        stderr.writeln('WINDOW_OBSERVER_CLEANUP_ERROR: ${error.runtimeType}');
-      }
-    }
-    settingsPhase('diagnostics-close-start');
-    await diagnostics?.close();
-    settingsPhase('diagnostics-close-end');
-    stdout.writeln('APP_LOG=${root.path}/app.log');
-    if (registryCleanupFailure != null) {
-      await Future<void>.error(registryCleanupFailure, registryCleanupStack);
-    }
+    await closeProbeResources([
+      (
+        'manager',
+        () async {
+          settingsPhase('manager-close-start');
+          await server?.close();
+          settingsPhase('manager-close-end');
+        },
+      ),
+      (
+        'release fixture',
+        () async {
+          await releaseFixture?.close();
+        },
+      ),
+      (
+        'settings',
+        () async {
+          settingsPhase('settings-close-start');
+          await settings?.close();
+          settingsPhase('settings-close-end');
+        },
+      ),
+      (
+        'registry',
+        () async {
+          await pluginRegistry?.close();
+        },
+      ),
+      (
+        'vm',
+        () async {
+          settingsPhase('vm-close-start');
+          await vm?.dispose();
+          settingsPhase('vm-close-end');
+        },
+      ),
+      (
+        'application',
+        () async {
+          settingsPhase('application-cleanup-start');
+          if (!exited) {
+            process.kill(ProcessSignal.sigterm);
+            try {
+              await process.exitCode.timeout(const Duration(seconds: 3));
+            } on TimeoutException {
+              process.kill(ProcessSignal.sigkill);
+              final code = await process.exitCode;
+              throw StateError(
+                'Application cleanup required SIGKILL; actual exit $code',
+              );
+            }
+          }
+          settingsPhase('application-cleanup-end');
+        },
+      ),
+      for (final subscription in subscriptions)
+        ('application output subscription', subscription.cancel),
+      ('application log', outputFile.close),
+      (
+        'window observer',
+        () async {
+          if (windowProbe != null && !windowProbe.closed) {
+            await windowProbe.close();
+          }
+        },
+      ),
+      (
+        'diagnostics',
+        () async {
+          settingsPhase('diagnostics-close-start');
+          await diagnostics?.close();
+          settingsPhase('diagnostics-close-end');
+        },
+      ),
+      (
+        'log location',
+        () {
+          stdout.writeln('APP_LOG=${root.path}/app.log');
+        },
+      ),
+    ], preserveFailure: failed);
   }
 }

@@ -552,6 +552,22 @@ class PrivacyTest(unittest.TestCase):
         (root / 'owned-desktop-cleanup.log').write_text('HELPER_EXIT=0\nAuthorization: Bearer private-auth\n')
         return root, evidence, log
 
+    def test_failed_auxiliary_diagnostics_keeps_only_masked_log_and_actual_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); root, target, log = self.fixture(base)
+            def failed_diagnostics(command, **options):
+                Path(command[3], 'unknown-auxiliary.log').write_text('private-userdata')
+                return subprocess.CompletedProcess(command, 124, 'last phase password=private-password\n', 'deadline exceeded\n')
+            with patch.object(cycle.subprocess, 'run', side_effect=failed_diagnostics):
+                cycle.collect(log, target, base)
+            self.assertEqual((target / 'collector.exit').read_text(), '124\n')
+            text = (target / 'collector.log').read_text()
+            self.assertIn('last phase', text)
+            self.assertIn('deadline exceeded', text)
+            self.assertNotIn('private-password', text)
+            self.assertFalse((root / 'auxiliary-cycle-diagnostics').exists())
+            self.assertFalse(any(path.name == 'unknown-auxiliary.log' for path in target.rglob('*')))
+
     def test_only_safe_evidence_is_exported_with_structured_redaction(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory); root, target, log = self.fixture(base)
@@ -561,7 +577,9 @@ class PrivacyTest(unittest.TestCase):
                 cycle.collect(log, target, base)
             out = target / root.name
             self.assertFalse(any((out / name).exists() for name in ('preferences.json', 'keychain.json', 'userdata.log', 'unknown.png')))
-            exported = '\n'.join(file.read_text() for file in out.iterdir())
+            outputs = list(out.rglob('*'))
+            self.assertFalse(any(file.is_symlink() for file in outputs))
+            exported = '\n'.join(file.read_text() for file in outputs if file.is_file())
             for secret in ('private-password', 'private-api', 'private-token', 'private-auth', 'private-userdata'):
                 self.assertNotIn(secret, exported)
             self.assertTrue(json.loads((out / 'probe-timeline.jsonl').read_text())['ready'])

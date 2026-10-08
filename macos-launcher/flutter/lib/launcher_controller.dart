@@ -376,9 +376,18 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   Future<void> hideDesktop() => native.hideDesktop(desktop);
   Future<void> showExistingDesktop() => native.showDesktop(desktop);
-  Future<void> startDesktop() => _coldDesktopBackground
-      ? Future<void>.value()
-      : _startDesktop(hidden: hideWindowOnStart);
+  Future<void> startDesktop() async {
+    if (_coldDesktopBackground) {
+      if (_desktopOpen != null) {
+        await _desktopOpen;
+        return;
+      }
+      if (await native.desktopRunning(desktop)) return;
+      _coldDesktopBackground = false;
+    }
+    await _startDesktop(hidden: hideWindowOnStart);
+  }
+
   Future<void> startDesktopInBackground() => _startDesktop(hidden: true);
   Future<void> openDsh() async {
     await _startDesktop(hidden: false);
@@ -415,14 +424,19 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       throw StateError('插件装配失败（${result.exitCode}）：${result.stderr}');
     }
     _coldDesktopBackground = hidden;
-    await native.openDesktop(
-      desktop,
-      hidden: hidden,
-      environment: {
-        'DSH_HOME': environment.home,
-        'DSH_PERMISSION_MODE': processEnvironment['DSH_PERMISSION_MODE']!,
-      },
-    );
+    try {
+      await native.openDesktop(
+        desktop,
+        hidden: hidden,
+        environment: {
+          'DSH_HOME': environment.home,
+          'DSH_PERMISSION_MODE': processEnvironment['DSH_PERMISSION_MODE']!,
+        },
+      );
+    } catch (_) {
+      _coldDesktopBackground = false;
+      rethrow;
+    }
   }
 
   @override

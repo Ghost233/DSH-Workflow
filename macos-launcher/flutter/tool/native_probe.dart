@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 import 'package:vm_service/vm_service_io.dart';
 
+import 'application_probe.dart' show closeProbeResources;
+
 Future<void> main(List<String> arguments) async {
   if (arguments.length != 1) {
     throw ArgumentError('Pass the debug Flutter executable');
@@ -25,6 +27,7 @@ Future<void> main(List<String> arguments) async {
       'DSH_LAUNCHER_TEST_SOCKET': socketPath,
     },
   );
+  stdout.writeln('NATIVE_PROBE_PROCESS_PID=${process.pid}');
   final serviceUri = Completer<String>();
   void output(String line) {
     final uri = RegExp(r'http://127\.0\.0\.1:\d+/[^\s]+/')
@@ -42,6 +45,7 @@ Future<void> main(List<String> arguments) async {
       .transform(const LineSplitter())
       .listen(output);
   Socket? socket;
+  var failed = false;
   try {
     socket = await accepted.timeout(const Duration(seconds: 30));
     final replies = <String, Completer<Map<String, Object?>>>{};
@@ -63,6 +67,7 @@ Future<void> main(List<String> arguments) async {
     final vm = await vmServiceConnectUri(
       '${http.replaceFirst('http:', 'ws:')}ws',
     );
+    var nativeFailed = false;
     try {
       final isolate = (await vm.getVM()).isolates!.single.id!;
       Future<Map<String, Object?>> nativeState() async =>
@@ -111,22 +116,55 @@ Future<void> main(List<String> arguments) async {
       stdout.writeln(
         'Native window, menu handoff and disconnect restoration passed',
       );
+    } catch (_) {
+      nativeFailed = true;
+      rethrow;
     } finally {
-      await vm.dispose();
-      await subscription.cancel();
+      await closeProbeResources([
+        ('native vm', vm.dispose),
+        ('native messages', subscription.cancel),
+      ], preserveFailure: nativeFailed);
     }
+  } catch (_) {
+    failed = true;
+    rethrow;
   } finally {
-    socket?.destroy();
-    process.kill(ProcessSignal.sigterm);
-    try {
-      await process.exitCode.timeout(const Duration(seconds: 3));
-    } on TimeoutException {
-      process.kill(ProcessSignal.sigkill);
-      await process.exitCode;
-    }
-    await stdoutSubscription.cancel();
-    await stderrSubscription.cancel();
-    await server.close();
-    await root.delete(recursive: true);
+    await closeProbeResources([
+      (
+        'native socket',
+        () {
+          socket?.destroy();
+        },
+      ),
+      ('native process', () => stopNativeProbeProcess(process)),
+      ('native stdout', stdoutSubscription.cancel),
+      ('native stderr', stderrSubscription.cancel),
+      ('native server', server.close),
+      (
+        'native root',
+        () async {
+          await root.delete(recursive: true);
+        },
+      ),
+    ], preserveFailure: failed);
+  }
+}
+
+Future<void> stopNativeProbeProcess(Process process) async {
+  process.kill(ProcessSignal.sigterm);
+  var forced = false;
+  int code;
+  try {
+    code = await process.exitCode.timeout(const Duration(seconds: 3));
+  } on TimeoutException {
+    forced = true;
+    process.kill(ProcessSignal.sigkill);
+    code = await process.exitCode;
+  }
+  stdout.writeln('NATIVE_PROBE_PROCESS_EXIT=$code FORCED=$forced');
+  if (forced) {
+    throw StateError(
+      'Native probe cleanup required SIGKILL; actual exit $code',
+    );
   }
 }

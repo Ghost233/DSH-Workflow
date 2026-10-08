@@ -497,8 +497,8 @@ def collect(log, target, runner):
     try:
         auxiliary.mkdir()
         result = run_diagnostics(root, auxiliary)
+        shutil.copy2(auxiliary / 'diagnostic-collector.log', target / 'collector.log')
         if result == 0:
-            shutil.copy2(auxiliary / 'diagnostic-collector.log', target / 'collector.log')
             auxiliary.rename(destination / 'auxiliary-diagnostics')
     except Exception as error:
         auxiliary_error = type(error).__name__

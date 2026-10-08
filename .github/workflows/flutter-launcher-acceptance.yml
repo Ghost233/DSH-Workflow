@@ -32,12 +32,19 @@ on:
       - '!macos-launcher/flutter/tool/settings_repeat_gate.py'
       - '!macos-launcher/flutter/tool/settings_repeat_gate_test.py'
   workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: Successful macos-app producer run at this exact source SHA (T09 only)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   t07:
+    if: github.event_name != 'workflow_dispatch' || inputs.release_run_id == ''
     runs-on: macos-15
     timeout-minutes: 20
     defaults:
@@ -152,7 +159,7 @@ jobs:
 
   t02:
     needs: t07
-    if: always()
+    if: always() && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -270,6 +277,51 @@ jobs:
           cat "$EVIDENCE_DIR/application.log"
           exit "$result"
 
+      - name: Observe isolated SDK cold background focus with an external foreground app
+        working-directory: macos-launcher/flutter
+        run: |
+          set +e
+          dart run tool/application_probe.dart \
+            'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
+            --desktop-window-runtime "$T02_RUNTIME_RESOURCES" --window-start sdk-hidden --web-port 33080 \
+            > "$EVIDENCE_DIR/external-sdk-cold.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/external-sdk-cold.exit"
+          cat "$EVIDENCE_DIR/external-sdk-cold.log"
+          exit "$result"
+
+      - name: Preserve only known safe external SDK cold evidence
+        if: always()
+        run: |
+          python3 - <<'PYFOCUS'
+          import json, os, re, sys
+          from pathlib import Path
+          sys.path.insert(0, '.github/scripts')
+          from settings_startup_cycle import sanitize_json, sanitize_text, validate_observation_root
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          log = evidence / 'external-sdk-cold.log'
+          roots = re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M) if log.is_file() else []
+          for name in roots:
+              root = validate_observation_root(Path(name), Path(os.environ['RUNNER_TEMP']))
+              target = evidence / 'external-sdk-cold' / root.name
+              target.mkdir(parents=True, exist_ok=True)
+              for name in ('app.log', 'probe-process.json', 'probe-timeline.jsonl',
+                           'owned-desktop-process.json', 'owned-desktop-cleanup.log',
+                           'desktop-window-observations.jsonl', 'desktop-window-evidence.json',
+                           'desktop-fixture-copy-evidence.json', 'release-window-identity.json',
+                           'external-foreground-original.json', 'external-foreground-baseline.json',
+                           'supervision-live.json'):
+                  source = root / name
+                  if not source.is_file() or source.is_symlink(): continue
+                  if source.suffix == '.json':
+                      output = json.dumps(sanitize_json(json.loads(source.read_text()))) + '\n'
+                  elif source.suffix == '.jsonl':
+                      output = ''.join(json.dumps(sanitize_json(json.loads(line))) + '\n' for line in source.read_text().splitlines() if line)
+                  else: output = sanitize_text(source.read_text())
+                  (target / name).write_text(output)
+          PYFOCUS
+
       - name: Collect T02 observed application and process evidence
         if: always()
         run: |
@@ -369,6 +421,7 @@ jobs:
           if-no-files-found: error
 
   t05:
+    if: github.event_name != 'workflow_dispatch' || inputs.release_run_id == ''
     runs-on: macos-15-intel
     timeout-minutes: 35
     concurrency:
@@ -538,6 +591,8 @@ jobs:
                   'exit': auxiliary_exit, 'functionalCommandExitUnchanged': True,
                   'physicalGateUnchanged': True, 'auxiliaryOutputRetained': auxiliary_exit == 0}) + '\n')
               if auxiliary_exit != 0:
+                  shutil.copy2(auxiliary / 'diagnostic-collector.log', target / 'diagnostic-collector.log')
+                  shutil.copy2(auxiliary / 'diagnostic-collector.exit', target / 'diagnostic-collector.exit')
                   shutil.rmtree(auxiliary)
                   print('::warning::T05 auxiliary system/crash diagnostics failed or are unavailable; exit=' + str(auxiliary_exit), flush=True)
               print('T05_COLLECTOR_PHASE=hash-start ROOT=' + root.name, flush=True)
@@ -643,7 +698,7 @@ jobs:
 
   t06:
     needs: t07
-    if: always()
+    if: always() && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -873,7 +928,7 @@ jobs:
           if-no-files-found: error
   t08:
     needs: t07
-    if: always()
+    if: always() && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -1123,4 +1178,158 @@ jobs:
         with:
           name: flutter-launcher-t08-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/flutter-launcher-acceptance/T08
+          if-no-files-found: error
+
+  t09-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_run_id != ''
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: false
+      - name: Prepare exact source and runner evidence
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T09-$EXPECTED_ARCH"
+          mkdir -p "$acceptance_evidence"
+          printf 'EVIDENCE_DIR=%s\n' "$acceptance_evidence" >> "$GITHUB_ENV"
+          git rev-parse HEAD > "$acceptance_evidence/source-commit.txt"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          actual_arch="$(uname -m)"
+          printf '%s\n' "$actual_arch" > "$acceptance_evidence/architecture.txt"
+          if [[ "$EXPECTED_ARCH" == arm64 ]]; then test "$actual_arch" = arm64; else test "$actual_arch" = x86_64; fi
+      - name: Verify actual successful Release producer at the exact dispatched SHA
+        uses: actions/github-script@v8
+        env:
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+        with:
+          script: |
+            if (!/^[1-9][0-9]*$/.test(process.env.RELEASE_RUN_ID)) throw new Error('Invalid producer run ID');
+            const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: Number(process.env.RELEASE_RUN_ID)});
+            if (run.head_sha !== process.env.GITHUB_SHA || run.status !== 'completed' || run.conclusion !== 'success' ||
+                run.path !== '.github/workflows/macos-app.yml' || run.head_repository.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              throw new Error('Release producer is not a completed successful build of this exact repository/source');
+            }
+            require('fs').writeFileSync(`${process.env.EVIDENCE_DIR}/producer.json`, JSON.stringify({id:run.id, head_sha:run.head_sha, path:run.path, conclusion:run.conclusion, run_attempt:run.run_attempt}));
+      - name: Download this architecture's actual produced DMG
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.release_run_id }}
+          name: dsh-workflow-${{ matrix.arch }}
+          path: ${{ runner.temp }}/t09-release-artifact
+      - name: Verify and mount immutable DMG
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          dmgs=("$RUNNER_TEMP/t09-release-artifact/"*.dmg)
+          test "${#dmgs[@]}" -eq 1
+          shasum -a 256 "${dmgs[0]}" > "$EVIDENCE_DIR/dmg.sha256"
+          hdiutil verify "${dmgs[0]}" > "$EVIDENCE_DIR/dmg-verify.log" 2>&1
+          mount="$RUNNER_TEMP/t09-release-mount"
+          mkdir -p "$mount"
+          printf 'T09_RELEASE_MOUNT=%s\n' "$mount" >> "$GITHUB_ENV"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "${dmgs[0]}" > "$EVIDENCE_DIR/dmg-attach.log" 2>&1
+          codesign --verify --deep --strict "$mount/DSH Workflow.app"
+          "$mount/DSH Workflow.app/Contents/Resources/node" --version > "$EVIDENCE_DIR/packaged-node-version.txt"
+          test "$(cat "$EVIDENCE_DIR/packaged-node-version.txt")" = v24.12.0
+          packaged_arch="$("$mount/DSH Workflow.app/Contents/Resources/node" -p process.arch)"
+          printf '%s\n' "$packaged_arch" > "$EVIDENCE_DIR/packaged-node-process-arch.txt"
+          test "$packaged_arch" = "$EXPECTED_ARCH"
+          file "$mount/DSH Workflow.app/Contents/Resources/node" > "$EVIDENCE_DIR/packaged-node-architecture.txt"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+      - name: Resolve only locked validation-tool dependencies
+        working-directory: macos-launcher/flutter
+        run: flutter pub get --enforce-lockfile
+      - name: Build sanctioned public-close UI actor without an AUT dependency
+        working-directory: macos-launcher/flutter
+        run: |
+          python3 - <<'PYACTOR'
+          import hashlib, json, os, pathlib, plistlib, subprocess, sys
+          evidence = pathlib.Path(os.environ['EVIDENCE_DIR'])
+          derived = evidence / 'public-close-actor-build'
+          arch = subprocess.check_output(['uname', '-m'], text=True).strip()
+          assert arch in ('arm64', 'x86_64')
+          command = ['xcodebuild', '-project', 'tool/release_close_actor/Actor.xcodeproj',
+                     '-scheme', 'PublicCloseActor', '-configuration', 'Debug',
+                     '-destination', 'platform=macOS,arch=' + arch,
+                     '-derivedDataPath', str(derived), 'build-for-testing']
+          with (evidence / 'public-close-actor-build.log').open('w') as output:
+              result = subprocess.run(command, stdout=output, stderr=subprocess.STDOUT)
+          (evidence / 'public-close-actor-build.exit').write_text(str(result.returncode) + '\n')
+          if result.returncode: sys.exit(result.returncode)
+          inputs = list((derived / 'Build/Products').glob('*.xctestrun'))
+          assert len(inputs) == 1
+          path = inputs[0].resolve()
+          target = plistlib.loads(path.read_bytes())['PublicCloseUITests']
+          assert target['IsUITestBundle'] is True and target['UseUITargetAppProvidedByTests'] is True
+          assert 'UITargetAppPath' not in target and target['TestHostPath'].endswith('PublicCloseUITests-Runner.app')
+          owned = ('tool/release_close_actor/Actor.xcodeproj/project.pbxproj',
+                   'tool/release_close_actor/Actor.xcodeproj/xcshareddata/xcschemes/PublicCloseActor.xcscheme',
+                   'tool/release_close_actor/PublicCloseUITests.swift',
+                   'tool/release_distribution_probe.dart', 'tool/release_window_observer.swift')
+          metadata = {'command': command, 'actualExit': result.returncode, 'arch': arch,
+                      'sourceCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+                      'sourceHashes': {name: hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() for name in owned},
+                      'xctestrun': str(path), 'xctestrunSha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                      'target': target, 'defaultAUTDependency': False, 'UIBehaviorExecuted': False}
+          (evidence / 'public-close-actor-build-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
+          with pathlib.Path(os.environ['GITHUB_ENV']).open('a') as output:
+              output.write('DSH_T09_CLOSE_ACTOR_XCTESTRUN=' + str(path) + '\n')
+          PYACTOR
+      - name: Actual moved Release SDK, window and associated-entry acceptance
+        working-directory: macos-launcher/flutter
+        env:
+          GITHUB_ACTIONS: 'true'
+        run: |
+          set -euo pipefail
+          dart run tool/release_distribution_probe.dart --release "$T09_RELEASE_MOUNT/DSH Workflow.app" > "$EVIDENCE_DIR/release-distribution.log" 2>&1
+      - name: Preserve exact owned tool evidence
+        if: always()
+        run: |
+          python3 - <<'PYTHON'
+          import os, re, shutil, stat
+          from pathlib import Path
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          log = evidence / 'release-distribution.log'
+          roots = re.findall(r'^T09_ROOT=(.+)$', log.read_text(), re.M) if log.is_file() else []
+          if len(roots) == 1:
+              root = Path(roots[0]); runner = Path(os.environ['RUNNER_TEMP']).resolve()
+              assert root.resolve() == root and root.parent == runner and root.name.startswith('dsh-t05-t09-')
+              assert root.stat().st_uid == os.getuid() and stat.S_IMODE(root.stat().st_mode) == 0o700
+              for name in ['release-distribution-evidence.json', 'release-window-identity.json']:
+                  source = root / name
+                  if source.exists():
+                      assert source.is_file() and not source.is_symlink() and source.resolve().parent == root
+                      shutil.copy2(source, evidence / name)
+          PYTHON
+      - name: Detach only the owned read-only mount
+        if: always() && env.T09_RELEASE_MOUNT != ''
+        run: hdiutil detach "$T09_RELEASE_MOUNT" > "$EVIDENCE_DIR/dmg-detach.log" 2>&1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flutter-launcher-T09-release-${{ matrix.arch }}
+          path: ${{ env.EVIDENCE_DIR }}
           if-no-files-found: error

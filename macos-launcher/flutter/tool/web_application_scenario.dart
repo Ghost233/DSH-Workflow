@@ -191,6 +191,7 @@ Future<void> runWebApplicationScenario({
   required Future<void> Function(String) tap,
   required Future<void> Function(String) capture,
   Future<void> Function(WebObservation)? onConnected,
+  bool startWebBySdk = false,
   Future<void> Function(ApplicationState, Future<void> Function(String))?
   beforeWebStart,
   Process? prestartedHost,
@@ -253,7 +254,7 @@ Future<void> runWebApplicationScenario({
 
   Future<void> tapUi(String label) async {
     await ui();
-    if (beforeWebStart != null) {
+    if (beforeWebStart != null || label == '设置密码') {
       final node = await control(
         label,
         'tap',
@@ -531,8 +532,12 @@ Future<void> runWebApplicationScenario({
         ),
       );
       await beforeWebStart?.call(state, tapUi);
-      await control('启动 Web', 'tap', 'scrollDown');
-      await tapUi('启动 Web');
+      if (startWebBySdk) {
+        await sdk('start');
+      } else {
+        await control('启动 Web', 'tap', 'scrollDown');
+        await tapUi('启动 Web');
+      }
     } else {
       require(
         ((await ui())['nodes'] as List).cast<Map>().any(

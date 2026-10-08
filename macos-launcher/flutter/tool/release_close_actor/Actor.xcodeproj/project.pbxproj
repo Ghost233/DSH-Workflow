@@ -1,0 +1,25 @@
+// !$*UTF8*$!
+{
+ archiveVersion = 1;
+ classes = {};
+ objectVersion = 56;
+ objects = {
+  100000000000000000000001 = {isa = PBXProject; attributes = {LastUpgradeCheck = 2700;}; buildConfigurationList = 100000000000000000000003; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; knownRegions = (en, Base); mainGroup = 100000000000000000000004; productRefGroup = 100000000000000000000005; projectDirPath = ""; projectRoot = ""; targets = (100000000000000000000002);};
+  100000000000000000000002 = {isa = PBXNativeTarget; buildConfigurationList = 100000000000000000000006; buildPhases = (100000000000000000000009, 10000000000000000000000A, 10000000000000000000000B); buildRules = (); dependencies = (); name = PublicCloseUITests; productName = PublicCloseUITests; productReference = 100000000000000000000008; productType = "com.apple.product-type.bundle.ui-testing";};
+  100000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (10000000000000000000000D, 10000000000000000000000E); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug;};
+  100000000000000000000004 = {isa = PBXGroup; children = (100000000000000000000007, 100000000000000000000005); sourceTree = "<group>";};
+  100000000000000000000005 = {isa = PBXGroup; children = (100000000000000000000008); name = Products; sourceTree = "<group>";};
+  100000000000000000000006 = {isa = XCConfigurationList; buildConfigurations = (10000000000000000000000F, 100000000000000000000010); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug;};
+  100000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicCloseUITests.swift; sourceTree = "<group>";};
+  100000000000000000000008 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PublicCloseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR;};
+  100000000000000000000009 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (10000000000000000000000C); runOnlyForDeploymentPostprocessing = 0;};
+  10000000000000000000000A = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
+  10000000000000000000000B = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
+  10000000000000000000000C = {isa = PBXBuildFile; fileRef = 100000000000000000000007;};
+  10000000000000000000000D = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 14.0;}; name = Debug;};
+  10000000000000000000000E = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 14.0;}; name = Release;};
+  10000000000000000000000F = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_REQUIRED = NO; GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = com.ghostagent.dsh.t09.PublicCloseUITests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0;}; name = Debug;};
+  100000000000000000000010 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_REQUIRED = NO; GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = com.ghostagent.dsh.t09.PublicCloseUITests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0;}; name = Release;};
+ };
+ rootObject = 100000000000000000000001;
+}

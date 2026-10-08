@@ -10,7 +10,8 @@ class FixtureNative extends NativeBridge {
   FixtureNative(this.root);
   final String root;
   bool? savedHideWindowOnStart;
-  bool failPreferences = false;
+  bool failPreferences = false, failDesktopOpen = false;
+  int desktopOpenCalls = 0;
   bool desktopIsRunning = false, desktopIsHidden = false;
   @override
   Future<bool> desktopRunning(String path) async => desktopIsRunning;
@@ -32,6 +33,8 @@ class FixtureNative extends NativeBridge {
     required Map<String, String> environment,
     bool hidden = false,
   }) async {
+    desktopOpenCalls++;
+    if (failDesktopOpen) throw StateError('Desktop open refused');
     desktopIsRunning = true;
     desktopIsHidden = hidden;
   }
@@ -93,6 +96,7 @@ createInterface({ input: process.stdin }).on('line', line => {
 
 Future<({LauncherController model, Directory root})> fixture({
   ProcessStarter? startProcess,
+  bool desktopPreparation = false,
 }) async {
   final root = await Directory.systemTemp.createTemp('dsh-controller-');
   final node = Process.runSync('/usr/bin/which', ['node']);
@@ -102,6 +106,15 @@ Future<({LauncherController model, Directory root})> fixture({
     '${root.path}/workflow/macos-launcher/runtime',
   ).create(recursive: true);
   await File('${scripts.path}/global-supervisor.mjs').writeAsString(supervisor);
+  if (desktopPreparation) {
+    final executables = await Directory(
+      '${root.path}/desktop/DeepSeek Harness.app/Contents/MacOS',
+    ).create(recursive: true);
+    await Link('${executables.path}/DeepSeek Harness')
+        .create(node.stdout.toString().trim());
+    await File('${scripts.path}/prepare-desktop.mjs')
+        .writeAsString('process.exit(0);\n');
+  }
   final model = LauncherController(
     FixtureNative(root.path),
     startProcess: startProcess,
@@ -116,6 +129,32 @@ Future<({LauncherController model, Directory root})> fixture({
 }
 
 void main() {
+  test('cold pending retries after the native open failure', () async {
+    final f = await fixture(desktopPreparation: true);
+    final native = f.model.native as FixtureNative;
+    native.failDesktopOpen = true;
+    await expectLater(f.model.startDesktopInBackground(), throwsStateError);
+    native.failDesktopOpen = false;
+    await f.model.startDesktop();
+    expect(native.desktopOpenCalls, 2);
+    expect(native.desktopIsRunning, isTrue);
+    expect(native.desktopIsHidden, isFalse);
+  });
+  test('cold pending retries a stopped Desktop before any Web READY', () async {
+    final f = await fixture(desktopPreparation: true);
+    final native = f.model.native as FixtureNative;
+    await f.model.startDesktopInBackground();
+    expect(native.desktopIsHidden, isTrue);
+    await f.model.startDesktop();
+    expect(native.desktopOpenCalls, 1);
+    expect(native.desktopIsHidden, isTrue);
+    native.desktopIsRunning = false;
+    await f.model.startDesktop();
+    expect(native.desktopOpenCalls, 2);
+    expect(native.desktopIsRunning, isTrue);
+    expect(native.desktopIsHidden, isFalse);
+  });
+
   test('window-only actions never start a missing Desktop and preserve a running backend', () async {
     final f = await fixture();
     final native = f.model.native as FixtureNative;

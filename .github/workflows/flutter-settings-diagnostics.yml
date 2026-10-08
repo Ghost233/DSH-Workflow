@@ -210,7 +210,7 @@ jobs:
         timeout-minutes: 2
         run: |
           python3 - <<'PY'
-          import errno, hashlib, json, os, re, socket, subprocess, sys
+          import errno, hashlib, json, os, re, shutil, socket, subprocess, sys
           sys.path.insert(0, "macos-launcher/flutter/tool")
           from pathlib import Path
           sys.path.insert(0, '.github/scripts')
@@ -231,9 +231,13 @@ jobs:
               print('T05_COLLECTOR_PHASE=copy-start ROOT=' + root.name, flush=True)
               copy_safe_evidence(root, target, allow_independent_unknown=True)
               print('T05_COLLECTOR_PHASE=copy-end ROOT=' + root.name, flush=True)
-              auxiliary_exit = run_diagnostics(root, target)
+              auxiliary = target / 'auxiliary-diagnostics'
+              auxiliary.mkdir(exist_ok=True)
+              auxiliary_exit = run_diagnostics(root, auxiliary)
+              shutil.copy2(auxiliary / 'diagnostic-collector.log', target / 'diagnostic-collector.log')
+              shutil.copy2(auxiliary / 'diagnostic-collector.exit', target / 'diagnostic-collector.exit')
               if auxiliary_exit != 0:
-                  (target / 'diagnostic-collector.log').unlink(missing_ok=True)
+                  shutil.rmtree(auxiliary)
                   print('::warning::T05 auxiliary diagnostics failed; exit=' + str(auxiliary_exit), flush=True)
               print('T05_COLLECTOR_PHASE=hash-start ROOT=' + root.name, flush=True)
               hashes = {}

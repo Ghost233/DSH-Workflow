@@ -7,8 +7,9 @@ import 'package:vm_service/vm_service.dart' hide Error;
 import 'package:vm_service/vm_service_io.dart';
 
 import 'probe_diagnostics.dart';
+import 'release_distribution_probe.dart' show outerSupervisorPython;
 
-import 'application_probe.dart' show require, waitFor;
+import 'application_probe.dart' show require, waitFor, closeProbeResources;
 import 'web_application_scenario.dart';
 
 /// One private Desktop's real window facts; no user application is controlled.
@@ -49,6 +50,12 @@ class DesktopWindowProbe {
       'private read-only window observer compiles',
     );
     final process = await Process.start(binary, [root.path]);
+    stdout.writeln('WINDOW_OBSERVER_PROCESS_PID=${process.pid}');
+    unawaited(
+      process.exitCode.then((code) {
+        stdout.writeln('WINDOW_OBSERVER_PROCESS_EXIT=$code PID=${process.pid}');
+      }),
+    );
     final probe = DesktopWindowProbe._(
       root,
       process,
@@ -76,8 +83,181 @@ class DesktopWindowProbe {
           .transform(const LineSplitter())
           .listen(probe.log.writeln, onDone: stderrDone.complete),
     );
-    await ready.future.timeout(const Duration(seconds: 10));
-    return probe;
+    try {
+      await ready.future.timeout(const Duration(seconds: 10));
+      return probe;
+    } catch (_) {
+      await closeProbeResources([
+        ('failed window observer preparation', probe.close),
+      ], preserveFailure: true);
+      rethrow;
+    }
+  }
+
+  Future<Map<String, Object?>> foreground(String action) async {
+    final result = await Process.run(
+      '${root.path}/desktop-foreground-observer',
+      [root.path, action],
+    );
+    require(
+      result.exitCode == 0,
+      'external foreground $action is physically known: ${result.stderr}',
+    );
+    return (jsonDecode(result.stdout.toString()) as Map)
+        .cast<String, Object?>();
+  }
+
+  Future<void> prepareExternalForeground() async {
+    final build = await Process.run('/usr/bin/swiftc', [
+      File.fromUri(Platform.script.resolve('desktop_foreground_observer.swift'))
+          .path,
+      '-o',
+      '${root.path}/desktop-foreground-observer',
+    ]);
+    require(build.exitCode == 0, 'external foreground helper compiles');
+    await foreground('capture');
+    final normal = await Process.run('/usr/bin/swiftc', [
+      File.fromUri(Platform.script.resolve('release_window_observer.swift'))
+          .path,
+      '-o',
+      '${root.path}/release-window-observer',
+    ]);
+    require(
+      normal.exitCode == 0,
+      'existing owned normal-close helper compiles',
+    );
+  }
+
+  Future<void> bindNormalLauncher(String app, int pid) async {
+    await waitFor(
+      'normal-close helper binds this exact private Launcher',
+      () async {
+        final result = await Process.run(
+          '${root.path}/release-window-observer',
+          [root.path, app, 'capture'],
+        );
+        require(
+          result.exitCode == 0,
+          'private Launcher physical observation is known',
+        );
+        return (jsonDecode(result.stdout.toString()) as Map)['pid'] == pid;
+      },
+    );
+  }
+
+  Future<void> beforeSdkColdStart(
+    ApplicationState state,
+    Future<void> Function(String) tap,
+  ) async {
+    await beforeStart(state, tap);
+    await tap('启动时隐藏窗口');
+    await waitFor(
+      'real UI hide preference saved',
+      () async => ((await state())['nodes'] as List).cast<Map>().any(
+        (n) =>
+            n['label'].toString().startsWith('启动时隐藏窗口') && n['toggled'] == true,
+      ),
+    );
+    final saved = await Process.run('/usr/bin/plutil', [
+      '-convert',
+      'json',
+      '-o',
+      '-',
+      '${root.path}/data/test-preferences.plist',
+    ]);
+    require(
+      saved.exitCode == 0 &&
+          (jsonDecode(saved.stdout.toString()) as Map)['hideWindowOnStart'] ==
+              true,
+      'actual private hide preference persisted',
+    );
+    require(
+      current['ownershipKnown'] == true &&
+          current['running'] == false &&
+          !await File(
+            '${root.path}/data/global/.dsh-workflow/desktop/desktop-host.json',
+          ).exists() &&
+          (((await state())['native'] as Map)['coldCallerObservation'] as Map)
+              .isEmpty,
+      'SDK request is the only cold Desktop trigger',
+    );
+    await state({'action': 'close'});
+    final baseline = await foreground('activate');
+    await File('${root.path}/external-foreground-baseline.json')
+        .writeAsString(jsonEncode(baseline));
+  }
+
+  Future<void> runSdkColdFocus(WebObservation app) async {
+    final baseline = jsonDecode(
+      await File('${root.path}/external-foreground-baseline.json')
+          .readAsString(),
+    ) as Map;
+    final cold =
+        ((await app.state())['native'] as Map)['coldCallerObservation'] as Map;
+    final live = File('${root.path}/supervision-live.pending');
+    await live.writeAsString(
+      jsonEncode({
+        'pids': {
+          'app': ((await app.state())['native'] as Map)['pid'],
+          'desktop': current['pid'],
+          'host': app.backend['pid'],
+        },
+      }),
+    );
+    await live.rename('${root.path}/supervision-live.json');
+    await File('${root.path}/desktop-window-evidence.json').writeAsString(
+      jsonEncode({
+        'sdkColdTrigger': true,
+        'externalBaseline': baseline,
+        'nativeColdCapture': cold,
+        'physicalWindow': current,
+        'hostPid': app.backend['pid'],
+        'hostLease': app.backend['lease'],
+        'externalFocusVerified': false,
+      }),
+    );
+    require(
+      jsonEncode(cold['inputCountsBefore']) ==
+          jsonEncode(baseline['inputCounts']),
+      'external input epoch unchanged before native SDK cold capture',
+    );
+    require(
+      cold['foregroundPid'] == baseline['pid'] &&
+          cold['restoreSelfEligible'] == false,
+      'SDK cold baseline is the actual external app',
+    );
+    require(
+      await app.ownsHostReceipt(app.backend),
+      'SDK cold case binds exact physical Host',
+    );
+    await waitFor(
+      'same hidden Desktop preserves external foreground',
+      () async =>
+          current['ownershipKnown'] == true &&
+          current['hidden'] == true &&
+          current['onscreenWindowCount'] == 0 &&
+          current['active'] == false &&
+          current['frontmostPid'] == baseline['pid'],
+    );
+    require(
+      cold['inputUnchangedAtRecovery'] != false,
+      'cold recovery was not invalidated by new user input',
+    );
+    await File('${root.path}/desktop-window-evidence.json').writeAsString(
+      jsonEncode({
+        'sdkColdTrigger': true,
+        'externalBaseline': baseline,
+        'nativeColdCapture': cold,
+        'physicalWindow': current,
+        'hostPid': app.backend['pid'],
+        'hostLease': app.backend['lease'],
+        'externalFocusVerified': true,
+      }),
+    );
+    require(
+      (await app.appRequest('openWindow'))['error'] == null,
+      'official SDK recovers management window after external focus assertion',
+    );
   }
 
   Future<void> beforeStart(
@@ -99,10 +279,6 @@ class DesktopWindowProbe {
       'show-existing without Desktop never creates a process or window',
     );
     callerPid = ((await state())['native'] as Map)['pid'] as int;
-    await waitFor(
-      'actual cold caller is sampled in the foreground',
-      () async => current['frontmostPid'] == callerPid,
-    );
     coldStartIndex = rows.length;
   }
 
@@ -280,18 +456,64 @@ class DesktopWindowProbe {
   Future<void> close() async {
     if (closed) return;
     closed = true;
-    process.stdin.writeln('stop');
-    await process.stdin.flush();
-    final code = await process.exitCode;
-    await Future.wait(drained.map((done) => done.future));
-    for (final subscription in subscriptions) {
-      await subscription.cancel();
+    var failed = false;
+    int? code;
+    try {
+      process.stdin.writeln('stop');
+      await process.stdin.flush();
+      code = await process.exitCode;
+      await Future.wait(drained.map((done) => done.future));
+      require(
+        code == 0 && rows.any((row) => row['phase'] == 'observer-complete'),
+        'private window observation completes without unknown identity',
+      );
+    } catch (_) {
+      failed = true;
+      rethrow;
+    } finally {
+      await closeProbeResources([
+        (
+          'window observer process',
+          () async {
+            if (code == null) {
+              process.kill(ProcessSignal.sigterm);
+              var forced = false;
+              try {
+                code = await process.exitCode.timeout(
+                  const Duration(seconds: 3),
+                );
+              } on TimeoutException {
+                forced = true;
+                process.kill(ProcessSignal.sigkill);
+                code = await process.exitCode;
+              }
+              stdout.writeln(
+                'WINDOW_OBSERVER_CLEANUP_EXIT=$code FORCED=$forced',
+              );
+              throw StateError(
+                'Window observer required failure cleanup; actual exit $code forced=$forced',
+              );
+            }
+          },
+        ),
+        (
+          'window observer drain',
+          () => Future.wait(drained.map((done) => done.future)),
+        ),
+        for (final subscription in subscriptions)
+          ('window observer subscription', subscription.cancel),
+        ('window observer log', log.close),
+        (
+          'external foreground restore',
+          () async {
+            if (await File('${root.path}/external-foreground-original.json')
+                .exists()) {
+              await foreground('restore');
+            }
+          },
+        ),
+      ], preserveFailure: failed);
     }
-    await log.close();
-    require(
-      code == 0 && rows.any((row) => row['phase'] == 'observer-complete'),
-      'private window observation completes without unknown identity',
-    );
   }
 }
 
@@ -456,6 +678,21 @@ Future<void> runDesktopWindowRestarts(
       final child = await Process.start(executable.path, [
         '--vm-service-port=0',
       ], environment: environment);
+      Future<void> lifecycle(Map<String, Object?> facts) async {
+        try {
+          await File('${session.path}/restart-launcher-lifecycle.jsonl')
+              .writeAsString(
+                '${jsonEncode({'phase': phase, 'pid': child.pid, ...facts})}\n',
+                mode: FileMode.append,
+              );
+        } catch (error) {
+          stderr.writeln(
+            'RESTART_CHILD_EVIDENCE_WARNING: ${error.runtimeType}',
+          );
+        }
+      }
+
+      await lifecycle({'event': 'started', 'executable': executable.path});
       final output = File('${session.path}/restart-$phase-app.log').openWrite();
       final uri = Completer<String>();
       final drained = <Completer<void>>[];
@@ -479,9 +716,20 @@ Future<void> runDesktopWindowRestarts(
       }
       VmService? vm;
       var exited = false;
-      unawaited(child.exitCode.then((_) => exited = true));
+      var exitStage = 'vm-uri-await';
+      final exitRecorded = child.exitCode.then((code) async {
+        exited = true;
+        await lifecycle({
+          'event': 'exited',
+          'code': code,
+          'stage': exitStage,
+          'vmUriObserved': uri.isCompleted,
+        });
+      });
+      var failed = false;
       try {
         final address = await uri.future.timeout(const Duration(seconds: 30));
+        exitStage = 'scenario';
         vm = await vmServiceConnectUri(
           '${address.replaceFirst('http:', 'ws:')}ws',
         );
@@ -607,6 +855,7 @@ Future<void> runDesktopWindowRestarts(
             });
           },
         );
+        exitStage = 'normal-quit';
         await state({'action': 'quit'});
         final code = await child.exitCode.timeout(const Duration(seconds: 10));
         require(
@@ -614,17 +863,45 @@ Future<void> runDesktopWindowRestarts(
           'restarted Launcher quits through original normal stage',
         );
         phases.last['normalLauncherExit'] = code;
+      } catch (_) {
+        failed = true;
+        rethrow;
       } finally {
-        await vm?.dispose();
-        if (!exited) {
-          child.kill(ProcessSignal.sigterm);
-          await child.exitCode;
-        }
-        await Future.wait(drained.map((c) => c.future));
-        for (final subscription in subscriptions) {
-          await subscription.cancel();
-        }
-        await output.close();
+        await closeProbeResources([
+          (
+            'restart vm',
+            () async {
+              await vm?.dispose();
+            },
+          ),
+          (
+            'restart Launcher',
+            () async {
+              if (!exited) {
+                exitStage = 'finally-cleanup';
+                child.kill(ProcessSignal.sigterm);
+                await child.exitCode;
+              }
+            },
+          ),
+          ('restart drain', () => Future.wait(drained.map((c) => c.future))),
+          for (final subscription in subscriptions)
+            ('restart output subscription', subscription.cancel),
+          ('restart output log', output.close),
+          (
+            'restart exit receipt',
+            () async {
+              await exitRecorded;
+            },
+          ),
+          (
+            'restart output receipt',
+            () => lifecycle({
+              'event': 'output-complete',
+              'log': 'restart-$phase-app.log',
+            }),
+          ),
+        ], preserveFailure: failed);
       }
     }
     await File('${session.path}/desktop-window-restart-evidence.json')
@@ -722,4 +999,52 @@ Future<void> runDesktopWindowRestarts(
     }
   }
   if (firstError != null) Error.throwWithStackTrace(firstError, firstStack!);
+}
+
+Future<void> superviseSdkColdWindow(List<String> arguments) async {
+  require(
+    Platform.environment['GITHUB_ACTIONS'] == 'true' &&
+        Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] == null,
+    'external SDK cold scene uses only a disposable runner',
+  );
+  final base = await Directory(Platform.environment['RUNNER_TEMP']!)
+      .resolveSymbolicLinks();
+  require(
+    base == Platform.environment['RUNNER_TEMP'],
+    'runner input is physical',
+  );
+  final configuration = {
+    'evidence':
+        '${Platform.environment['EVIDENCE_DIR']!}/external-sdk-cold-supervision',
+    'rootParent': base,
+    'appRelativePath': 'candidate.app',
+    'desktopSdkCold': true,
+    'totalSeconds': 180,
+    'cleanupReserveSeconds': 30,
+    'termBeforeDeadlineSeconds': 15,
+    'forceBeforeDeadlineSeconds': 5,
+    'command': [
+      Platform.resolvedExecutable,
+      Platform.script.toFilePath(),
+      ...arguments,
+    ],
+    'environmentOverrides': {'DSH_EXTERNAL_SDK_COLD_DRIVER': '1'},
+    'requiredRoles': ['driver', 'app', 'desktop', 'host'],
+    'cleanupRoles': ['host', 'desktop', 'app', 'driver'],
+    'expectedExecutables': <String, String>{},
+    'supervisorSource': outerSupervisorPython,
+  };
+  await Directory(configuration['evidence'] as String).create(recursive: true);
+  await File('${configuration['evidence']}/actual-configuration.json')
+      .writeAsString(jsonEncode(configuration));
+  final outer = await Process.start('/usr/bin/python3', [
+    '-c',
+    outerSupervisorPython,
+    jsonEncode(configuration),
+  ]);
+  await Future.wait([
+    stdout.addStream(outer.stdout),
+    stderr.addStream(outer.stderr),
+  ]);
+  exitCode = await outer.exitCode;
 }
