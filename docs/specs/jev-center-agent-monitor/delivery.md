@@ -12,8 +12,8 @@
 | 阶段 | 工单 | 前置条件 | 状态 | 审查固定点 | PR |
 | --- | --- | --- | --- | --- | --- |
 | 1 | #13 单套中心、#15 无输出监控 | 无工单阻塞 | 双轴复审 0 P0/P1/P2，已集成；#13、#15 已关闭 | 初始固定基线 | [#19](https://github.com/Ghost233/DSH-Workflow/pull/19)，已合并 |
-| 2 | #14 多配置、#16 异常结束、#17 语义检测 | 阶段 1 审查并集成 | 完整本地门禁通过、首审 P1 已修复、复盘完成；最终双轴复审待运行 | e4692d73a9030a70d0890652bc655933591e52c4 | 待创建 |
-| 3 | #18 配置变化下的监控 | #14、#16、#17 完成且阶段 2 集成 | 待开始 | 待固定 | 待创建 |
+| 2 | #14 多配置、#16 异常结束、#17 语义检测 | 阶段 1 审查并集成 | 完整本地门禁通过，隐私 P1 已修复，复盘及最终双轴复审 0 P0/P1/P2；已集成 | e4692d73a9030a70d0890652bc655933591e52c4 | [#21](https://github.com/Ghost233/DSH-Workflow/pull/21)，已合并 |
+| 3 | #18 配置变化下的监控 | #14、#16、#17 完成且阶段 2 集成 | 同 Host 生命周期与无参数日常启动交叉验收进行中 | b0bdc3377e22ae635a5100ce90e4b1f13b2f1598 | 待创建 |
 
 每阶段依次经过 Standards/Spec 双轴审查、P0/P1/P2 修复、复盘及范围内修复、再次双轴审查。所有必需检查通过后才合并阶段 PR。最终核对整份规格、跨插件行为及完整总 diff，再进行总审查。
 
@@ -21,12 +21,12 @@
 
 ## 未完成项
 
-- 阶段 2 最终复审与集成；阶段 3 的 #18 实现与验收。
-- 后续阶段及最终审查、复盘与修复。
-- 后续阶段 PR、集成验证和最终 ready PR。
+- 阶段 3 的 #18 实现、交叉验收、双轴审查与复盘。
+- 阶段 3 PR、集成验证以及完整总 diff 和跨规格审计。
+- 最终双轴审查及总 PR #20 标为 ready。
 - macOS 实际通知送达（用户明确暂缓本轮）；最终阶段的完整浏览器复验尚待完成。
 
-阶段 1 已按本轮规格重新完成本地代码验收并合入集成分支；不能以历史原型测试替代本轮证据。集成分支本地与远端同为 e4692d73a9030a70d0890652bc655933591e52c4，阶段 1 分支本地与远端同为 067d166fd2928178fc7d7f7f37988e88ecab74fa。
+阶段 1、2 已按本轮规格完成本地代码验收并合入集成分支；不能以历史原型测试替代本轮证据。阶段 2 合并后集成分支本地与远端同为 b0bdc3377e22ae635a5100ce90e4b1f13b2f1598；阶段 2 分支同为 d83fea60e809336d054a0aca31192da434433e54，阶段 1 分支同为 067d166fd2928178fc7d7f7f37988e88ecab74fa。阶段 3 在同一 checkout 从集成提交创建，未创建额外 worktree，也未移动或暂存用户原有工作。
 
 ## 阶段 1 验证进度
 
@@ -83,5 +83,22 @@
 - 在 `78ff7ed72890edd1da49b06c68efeb9d82903a8b` 上，Standards 复审 0 项，Spec 仍证实同类 P1：标准提供者可解析仅存在于环境的合法引用，managed 文档没有条目；隔离 Native Adapter 经标准 resolve 消费测试模型 key 后，该裸值进入 journal。公开状态无值、无付费调用，没有额外声称网络认证头验签。
 - 最小修复仅在调试片段子树保守替换当前非空环境值，不把环境名称或值写入记录；普通元数据仍按已知凭据材料脱敏。catalog、有效 A/B、grant、header 与未知提供者失败关闭保持。正式与普通 Node 模块均 39/39、退出 0。
 - 中间 tree `da0dc5804db106df3b32945eb66c19a6d78cbb0a` 的完整门禁为 714/715、退出 1：npm 环境材料与 fixture 安全尾句碰撞。真实中心首尾交付已确认；只调整 fixture 安全文案、增加交付断言，未改产品、期限或安全断言。
-- 最新代码提交 `015f3380df95e985b94b07599c8a9aeff47ab990`，tree `38b149341ab6f6babb7ad570f59f12ae2f63d54d`；4069 个 tracked blob 核对，用户原有工作文件与 foreign hunks 保留。`npm test` 715/715、相关六文件集成 12/12、客户端产物、固定 Harness、SDK/上游与 diff 检查均退出 0，无取消或跳过。日志 `/private/tmp/jev-stage2-final4-owner-full.log`、`/private/tmp/jev-stage2-final4-integration.log`。714 旧绿态不作为此次证明。
-- 复盘已更新；最新全阶段双轴审查仍从固定 e469 到最新 HEAD。#18 尚未提前实施，总 PR #20 保持草稿，完整 `.app`/codesign/DMG 双架构结果与本地 SDK health 证明继续分开记录。
+- 阶段 2 最终代码提交 `015f3380df95e985b94b07599c8a9aeff47ab990`，tree `38b149341ab6f6babb7ad570f59f12ae2f63d54d`；4069 个 tracked blob 核对，用户原有工作文件与 foreign hunks 保留。`npm test` 715/715、相关六文件集成 12/12、客户端产物、固定 Harness、SDK/上游与 diff 检查均退出 0，无取消或跳过。日志 `/private/tmp/jev-stage2-final4-owner-full.log`、`/private/tmp/jev-stage2-final4-integration.log`。714 旧绿态不作为此次证明。
+- 复盘已更新；最终全阶段两轴在 `d83fea60e809336d054a0aca31192da434433e54` 上均为 0 P0/P1/P2，覆盖固定 e469 之后全部 19 个变更文件。报告 `/private/tmp/jev-stage2-standards-final2-review.md`、`/private/tmp/jev-stage2-spec-final2-review.md`；PR #21 已合入集成提交 b0bdc3377e22ae635a5100ce90e4b1f13b2f1598 并核对本地同步。#18 在此后才开始，总 PR #20 保持草稿；完整 `.app`/codesign/DMG 双架构结果与本地 SDK health 证明继续分开记录。
+
+## 阶段 3 交叉验收进度
+
+- #14、#16、#17 已逐项评论并关闭，#12 保持开放并追加阶段摘要；刷新后的 #18 仍开放且无评论。阶段 3 从 b0bdc337 固定点开始，同 Host 监控生命周期与日常启动验收按文件归属并行，Git 操作由主线程串行。
+- 内置浏览器在阶段 2 精确干净候选上再次验证原生设置、真实 Agent reasoning、中心判断和可见状态：逐轮语义告警后，401、503、200ms 超时分别显示具体原因。重新取得有效判断只改变引擎可用性，不为代理记录恢复；正文和正常 stop 后才更新恢复时间。原请求未取消、无恢复弹窗，默认 journal154条只含元数据，未含 fake 密钥或会话片段。临时 Host 退出0并清理；实际 OS 显示仍暂缓。
+- 浏览器操作、截图与完整记录见 `/private/tmp/jev-stage3-browser-notes.md`；最终恢复截图 `/private/tmp/jev-browser-final-agent-recovered.jpg`。初始 76 个运行时文件的 SHA256 已保存；完整 block 修复改变 core 一项，其他 75 项未变。修复后的 Browser 已重新绑定最终 76 项清单，受改恢复路径实际复验通过。
+- 最新 PR21 远端 Owner verify/Matt 已成功；双架构 macOS run37698543437 仍运行，尚不记为完整打包通过。这是阶段 3 开始时的远端状态；完整门禁与审查的新结果见下方，完整打包结果继续独立核对。
+- T06 同 Host 五组公开验收全部通过：主/子代理所选 quick 与另一个消费插件 full 并行；监控在途修改、停用、删除及原200ms截止；准确错误与引擎重新可用；未知/失败不恢复代理；故障期间无输出及真实子代理错误仍告警，主请求继续完成。正式 npm 受影响两监控文件50/50、退出0，无取消或跳过；该批配置生命周期验收未暴露 runtime 缺口；后续完整输出形态 P2 单独闭环。笔记 `/private/tmp/jev-stage3-t06-notes.md`。
+- 真实无参数日常入口的隔离验收1/1、退出0：公开 Loader 中两观察插件实际激活，JEV/monitor HTTP均200，Owner/Web健康就绪、正常终止退出0，保留原45s/30s期限。context与cost-meter使用固定原样产物并激活；visualize明确因缺少React peer跳过；billion-context在该隔离实例故意不提供固定产物，安装禁止边界返回77，明确跳过而其余继续。未安装依赖、修改第三方或当前用户服务；这些隔离结果不能替代用户当前实例的插件状态。测试探针404与编译擦除enum的读取错误已修复，不归因于产品。笔记 `/private/tmp/jev-stage3-daily-notes.md`。
+
+## 阶段 3 输出形态闭环与最终候选
+
+- 初始提交 `f39db7363bde5d1497fe727fdb0b009c8f906743`、tree `c421a59062db21416ebaa202330475c175222f7d`：Owner 726/726、相关集成 12/12，退出均 0。首轮从固定 b0bdc337 覆盖全部五文件：Standards 0 项、Spec 1 项 P2。公开 Host probe 证实新增完整正文 block-end 未清零连续无输出次数，原先 delta 验收不足。
+- P2 先以正文、reasoning、工具参数完整块三子例复现，正式 loader 红态退出 1；最小 core 改动按当前请求 block 索引记录已见长度，完整块只有新增长度才算输出活动。delta 完成与重复 finalized 不清零，不同索引同内容是新输出；Map 不存正文或参数，也不进入公开 snapshot/journal。定点 11/11、受影响模块 61/61，退出 0。
+- 修复提交 `52063f44c9a5f1c670f39bef942553b79596baba`，精确 tree `930f30ced5565de6b7a0f5745c319ab54bdc809d`，4070 个 tracked blob 核对。Node v26.9.0；新 `npm test` 737/737、六文件 Web/Desktop 集成 12/12，均退出 0、无失败/取消/跳过。日志 `/private/tmp/jev-stage3-final-owner-full.log`、`/private/tmp/jev-stage3-final-integration.log`；客户端、固定 Harness 构建证明、SDK/上游干净与 diff 检查均退出 0。旧 726 绿态不作为本次修复证明。
+- 精确修复候选上的实际原生 Browser 设置 1000ms/2、未选择 JEV：16 条无输出告警后，模型只发完整正文 block-end 和 stop，无 text-delta。公开计数清零、16 条告警恢复、原请求未取消、没有恢复弹窗；默认 journal17 条无片段/密钥/认证头/新 Map。Host 清理退出 0。记录 `/private/tmp/jev-stage3-block-browser-notes.md`，截图 `/private/tmp/jev-browser-block-recovered.jpg`；最终 `/private/tmp/jev-stage3-browser-final-product-manifest.json` 的 76 个产品字节全部与候选匹配，core 确实改变。
+- [阶段 3 复盘](stage3-retro.md) 已落实本范围内输出形态回归，没有新增未关闭整改项；最终两轴须从 b0bdc337 覆盖最新完整阶段 diff。用户原有 MCP 与其他 WIP 保留且不入提交，总 PR #20 保持草稿，阶段 PR 合入集成后才交总审。OS 实际通知显示按用户授权暂缓；本地 SDK health 不等于完整 `.app`/codesign/DMG 双架构通过。

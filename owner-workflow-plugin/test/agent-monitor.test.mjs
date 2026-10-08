@@ -89,6 +89,7 @@ async function configuredHost(t, options = {}) {
           if (!stream.chunks.length && !stream.complete) await new Promise(resolve => { stream.next = resolve })
           for (const chunk of stream.chunks.splice(0)) { yield chunk; stream.delivered++ }
         }
+        if (stream.failure) throw stream.failure
       } finally { options.signal.removeEventListener('abort', abort) }
     }
   }
@@ -107,6 +108,7 @@ async function configuredHost(t, options = {}) {
         upstreamModel: 'jev-upstream', modelName: 'quick', credentialRef: 'JEV_MONITOR_TEST_KEY', enabled: true, ...patch }] })
     },
     respond(callback) { respond = callback },
+    end(model, failure) { const stream = streams.get(model); stream.failure = failure; stream.complete = true; stream.next?.() },
     async send(...chunks) {
       const stream = streams.get('model'), target = stream.delivered + chunks.length
       stream.chunks.push(...chunks); stream.next?.()
@@ -127,6 +129,378 @@ async function configuredHost(t, options = {}) {
     async at(value) { time = value; await ctx.get('agentMonitor').tick(); await ctx.get('agentMonitor').flush() },
   }
 }
+
+async function jevUpstream(t, respond) {
+  const requests = []
+  const server = createServer(async (req, res) => {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk)
+    const received = { path: req.url, authorization: req.headers.authorization,
+      body: JSON.parse(Buffer.concat(chunks).toString()), response: res }
+    requests.push(received)
+    res.setHeader('content-type', 'application/json')
+    respond(received, res)
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) })
+  return { requests, url: `http://127.0.0.1:${server.address().port}`,
+    respond(callback) { respond = callback } }
+}
+
+function progressAnswer(model, choice = 'anomaly') {
+  return { model, answers: { progress: { type: 'choice', choice,
+    probabilities: { anomaly: choice === 'anomaly' ? 0.6 : 0.2,
+      normal: choice === 'normal' ? 0.6 : 0.2, unknown: choice === 'unknown' ? 0.6 : 0.2 }, confidence: 0.3,
+  } }, usage: { input_tokens: 5, output_tokens: 1 } }
+}
+
+async function spawnMonitorChild(t, f, model = 'config-child') {
+  await f.ctx.plugin(req('@deepseek-ai/dsh-subagent').default)
+  await f.ctx.plugin(req('@deepseek-ai/dsh-subagent-spawn-in-process'))
+  const run = await f.ctx.subagents.start('spawn', { parent: f.handle.agent, signal: new AbortController().signal,
+    prompt: [{ type: 'text', text: 'child task' }], agentOptions: { provider: 'fixture', model } })
+  t.after(async () => { await run.result; await run.dispose() })
+  await until(() => f.streams.has(model))
+  return { run, async finish() {
+    await f.sendTo(model, { type: 'text-delta', index: 1, text: 'child done' }, { type: 'finish', reason: { kind: 'stop' } })
+    const stream = f.streams.get(model); stream.complete = true; stream.next?.()
+    await run.result
+  } }
+}
+
+test('one Host routes main and spawned-child monitoring through quick while another consumer uses full independently', async t => {
+  const f = await configuredHost(t)
+  const quick = await jevUpstream(t, (received, response) => response.end(JSON.stringify(progressAnswer('quick-version',
+    received.body.state.reasoning.includes('child repetition') ? 'anomaly' : 'normal'))))
+  const full = await jevUpstream(t, (_received, response) => response.end(JSON.stringify({ model: 'full-version',
+    answers: { light: { type: 'noul', noul: 1 } }, usage: { input_tokens: 5, output_tokens: 1 } })))
+  await f.ctx.credentials.set('JEV_LIFECYCLE_QUICK', 'quick-fake-identity')
+  await f.ctx.credentials.set('JEV_LIFECYCLE_FULL', 'full-fake-identity')
+  await f.ctx.settings.update('jev-center', { engines: [
+    { url: quick.url, upstreamModel: 'shared-upstream', modelName: 'quick', credentialRef: 'JEV_LIFECYCLE_QUICK', enabled: true },
+    { url: full.url, upstreamModel: 'shared-upstream', modelName: 'full', credentialRef: 'JEV_LIFECYCLE_FULL', enabled: true },
+  ] })
+  await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 1,
+    noOutputThreshold: 100, checkIntervalMs: 1000 })
+  await f.ctx.plugin({ name: 'other-named-jev-consumer', inject: ['jevCenter'], apply(c) {
+    c.provide('fullConsumer', { evaluate: () => c.get('jevCenter').evaluate('full', {
+      state: 'The light is on.', questions: { light: { type: 'noul', instructions: 'Is the light on?' } },
+    }) })
+  } })
+  await f.start()
+  const child = await spawnMonitorChild(t, f)
+  await f.send({ type: 'reasoning-delta', index: 0, text: 'parent investigates new evidence' })
+  await f.sendTo('config-child', { type: 'reasoning-delta', index: 0, text: 'child repetition' })
+  const [, result] = await Promise.all([f.at(1000), f.ctx.get('fullConsumer').evaluate()])
+  assert.equal(result.model, 'full-version')
+  assert.equal(result.answers.light.noul, 1)
+  assert.equal(quick.requests.length, 2)
+  assert.equal(full.requests.length, 1)
+  assert.ok(quick.requests.every(request => request.path === '/v1/systemone' && request.body.model === 'shared-upstream'
+    && request.authorization === 'Bearer quick-fake-identity'))
+  assert.ok(full.requests.every(request => request.path === '/v1/systemone' && request.body.model === 'shared-upstream'
+    && request.authorization === 'Bearer full-fake-identity'))
+  const state = f.ctx.get('agentMonitor').snapshot()
+  assert.equal(state.agents.find(row => row.agentId === 'settings-agent').lastJudgment.status, 'normal')
+  assert.equal(state.agents.find(row => row.agentId === child.run.id).lastJudgment.status, 'anomaly')
+  assert.deepEqual(f.notices.map(alert => [alert.agentId, alert.parentId, alert.kind]), [[child.run.id, 'settings-agent', 'semantic-stall']])
+  assert.ok([...f.streams.values()].every(stream => !stream.request.signal.aborted))
+  assert.equal(f.handle.agent.status, 'running')
+  assert.equal(child.run.localAgent.status, 'running')
+  const records = JSON.stringify(await f.ctx.get('agentMonitor').journal())
+  assert.doesNotMatch(records, /quick-fake-identity|full-fake-identity|Authorization|Bearer|parent investigates|child repetition/)
+  assert.equal(f.ctx.settings.describe().find(row => row.ns === 'monitor').value.jevModelName, 'quick')
+  await child.finish(); await f.finish()
+  assert.equal(f.handle.agent.status, 'idle')
+})
+
+test('monitor judgments in flight retain their original engine while settings changes govern the next main and child round', async t => {
+  for (const action of ['modify', 'disable', 'delete']) await t.test(action, async t => {
+    const f = await configuredHost(t)
+    const original = await jevUpstream(t, () => {})
+    const replacement = await jevUpstream(t, (_received, response) => response.end(JSON.stringify(progressAnswer('new-quick-version'))))
+    const full = await jevUpstream(t, (_received, response) => response.end(JSON.stringify({ model: 'full-stable-version',
+      answers: { light: { type: 'noul', noul: 1 } }, usage: { input_tokens: 5, output_tokens: 1 } })))
+    for (const [ref, identity] of [['JEV_OLD_MONITOR', 'quick-old-fake'], ['JEV_NEW_MONITOR', 'quick-new-fake'], ['JEV_OTHER_CONSUMER', 'full-fake']]) {
+      await f.ctx.credentials.set(ref, identity)
+    }
+    const quick = { url: original.url, upstreamModel: 'old-upstream', modelName: 'quick', credentialRef: 'JEV_OLD_MONITOR', enabled: true, timeoutMs: 5000 }
+    const other = { url: full.url, upstreamModel: 'other-upstream', modelName: 'full', credentialRef: 'JEV_OTHER_CONSUMER', enabled: true }
+    await f.ctx.settings.update('jev-center', { engines: [quick, other] })
+    await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 1,
+      noOutputThreshold: 100, checkIntervalMs: 1000 })
+    await f.ctx.plugin({ name: 'in-flight-full-consumer', inject: ['jevCenter'], apply(c) {
+      c.provide('fullConsumer', { evaluate: () => c.get('jevCenter').evaluate('full', {
+        state: 'The light is on.', questions: { light: { type: 'noul', instructions: 'Is the light on?' } },
+      }) })
+    } })
+    await f.start()
+    const child = await spawnMonitorChild(t, f)
+    await f.send({ type: 'reasoning-delta', index: 0, text: 'main old thinking' })
+    await f.sendTo('config-child', { type: 'reasoning-delta', index: 0, text: 'child old thinking' })
+    const checking = f.at(1000)
+    await until(() => original.requests.length === 2)
+    const next = { ...quick, url: replacement.url, upstreamModel: 'new-upstream', credentialRef: 'JEV_NEW_MONITOR', timeoutMs: 10_000 }
+    await f.ctx.settings.update('jev-center', { engines: action === 'delete' ? [other]
+      : [action === 'disable' ? { ...quick, enabled: false } : next, other] })
+    assert.equal((await f.ctx.get('fullConsumer').evaluate()).model, 'full-stable-version')
+    assert.equal(replacement.requests.length, 0)
+    assert.ok(original.requests.every(request => request.body.model === 'old-upstream'
+      && request.authorization === 'Bearer quick-old-fake' && !request.response.destroyed))
+    for (const request of original.requests) request.response.end(JSON.stringify(progressAnswer('old-quick-version')))
+    await checking
+    let state = f.ctx.get('agentMonitor').snapshot()
+    const watched = state.agents.filter(row => ['settings-agent', child.run.id].includes(row.agentId))
+    assert.equal(watched.length, 2)
+    assert.ok(watched.every(row => row.lastJudgment.model === 'old-quick-version'))
+    assert.equal(f.notices.filter(alert => alert.kind === 'semantic-stall').length, 2)
+    const alertCount = f.notices.length
+    f.setTime(2000)
+    await f.send({ type: 'reasoning-delta', index: 0, text: 'main continues' })
+    await f.sendTo('config-child', { type: 'reasoning-delta', index: 0, text: 'child continues' })
+    await f.at(2000)
+    state = f.ctx.get('agentMonitor').snapshot()
+    if (action === 'modify') {
+      assert.equal(replacement.requests.length, 2)
+      assert.ok(replacement.requests.every(request => request.body.model === 'new-upstream' && request.authorization === 'Bearer quick-new-fake'))
+      assert.ok(state.agents.every(row => row.lastJudgment.model === 'new-quick-version'))
+      assert.equal(state.engineAvailability.available, true)
+      assert.equal(f.notices.length, alertCount + 2)
+    } else {
+      assert.equal(replacement.requests.length, 0)
+      assert.equal(state.engineAvailability.code, action === 'disable' ? 'ENGINE_DISABLED' : 'ENGINE_MISSING')
+      assert.equal(state.engineAvailability.color, 'red')
+      assert.ok(state.agents.every(row => row.semanticCount === 0 && row.lastJudgment.status === 'unknown'))
+      assert.equal(f.notices.length, alertCount)
+    }
+    assert.equal(original.requests.length, 2, 'the next round must not retry the original engine')
+    assert.equal(full.requests.length, 1, 'monitoring must not fall back to the other consumer engine')
+    assert.equal((await f.ctx.credentials.describe('JEV_OLD_MONITOR')).configured, true)
+    assert.equal((await f.ctx.get('agentMonitor').journal()).filter(record => record.recordType === 'recovery').length, 0)
+    assert.ok([...f.streams.values()].every(stream => !stream.request.signal.aborted))
+    assert.equal(f.handle.agent.status, 'running')
+    assert.equal(child.run.localAgent.status, 'running')
+    assert.doesNotMatch(JSON.stringify(state), /quick-old-fake|quick-new-fake|full-fake|Authorization|Bearer/)
+    await child.finish(); await f.finish()
+  })
+})
+
+test('in-flight main and child judgments keep their original deadline while a new quick configuration and full consumer remain independent', async t => {
+  const f = await configuredHost(t)
+  const original = await jevUpstream(t, () => {})
+  const replacement = await jevUpstream(t, (_received, response) => response.end(JSON.stringify(progressAnswer('replacement-version'))))
+  const full = await jevUpstream(t, (_received, response) => response.end(JSON.stringify({ model: 'other-version',
+    answers: { light: { type: 'noul', noul: 1 } }, usage: { input_tokens: 5, output_tokens: 1 } })))
+  await f.ctx.credentials.set('JEV_DEADLINE_OLD', 'old-deadline-fake')
+  await f.ctx.credentials.set('JEV_DEADLINE_NEW', 'new-deadline-fake')
+  const quick = { url: original.url, upstreamModel: 'old-deadline-model', modelName: 'quick', credentialRef: 'JEV_DEADLINE_OLD', enabled: true, timeoutMs: 200 }
+  const other = { url: full.url, upstreamModel: 'other-model', modelName: 'full', credentialRef: 'JEV_DEADLINE_NEW', enabled: true }
+  await f.ctx.settings.update('jev-center', { engines: [quick, other] })
+  await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 2,
+    noOutputThreshold: 100, checkIntervalMs: 1000 })
+  await f.start()
+  const child = await spawnMonitorChild(t, f)
+  await f.send({ type: 'reasoning-delta', index: 0, text: 'main waiting on old judgment' })
+  await f.sendTo('config-child', { type: 'reasoning-delta', index: 0, text: 'child waiting on old judgment' })
+  const checking = f.at(1000)
+  await until(() => original.requests.length === 2)
+  assert.ok(original.requests.every(request => !request.response.destroyed))
+  await f.ctx.settings.update('jev-center', { engines: [{ ...quick, url: replacement.url,
+    upstreamModel: 'new-deadline-model', credentialRef: 'JEV_DEADLINE_NEW', timeoutMs: 5000 }, other] })
+  const result = await f.ctx.get('jevCenter').evaluate('full', { state: 'The light is on.',
+    questions: { light: { type: 'noul', instructions: 'Is the light on?' } } })
+  assert.equal(result.model, 'other-version')
+  await checking
+  let state = f.ctx.get('agentMonitor').snapshot()
+  assert.equal(state.engineAvailability.code, 'TIMEOUT')
+  assert.ok(state.agents.every(row => row.lastJudgment.error.code === 'TIMEOUT' && row.lastJudgment.elapsedMs < 1500))
+  assert.ok(original.requests.every(request => request.body.model === 'old-deadline-model'
+    && request.authorization === 'Bearer old-deadline-fake'))
+  assert.equal(replacement.requests.length, 0)
+  assert.equal(f.notices.length, 0)
+  f.setTime(2000)
+  await f.send({ type: 'reasoning-delta', index: 0, text: 'main still thinking' })
+  await f.sendTo('config-child', { type: 'reasoning-delta', index: 0, text: 'child still thinking' })
+  await f.at(2000)
+  state = f.ctx.get('agentMonitor').snapshot()
+  assert.equal(state.engineAvailability.available, true)
+  assert.ok(state.agents.every(row => row.lastJudgment.model === 'replacement-version' && row.semanticCount === 1))
+  assert.equal(replacement.requests.length, 2)
+  assert.ok(replacement.requests.every(request => request.body.model === 'new-deadline-model'
+    && request.authorization === 'Bearer new-deadline-fake'))
+  assert.equal(original.requests.length, 2)
+  assert.equal(full.requests.length, 1)
+  assert.equal((await f.ctx.get('agentMonitor').journal()).filter(record => record.recordType === 'recovery').length, 0)
+  assert.ok([...f.streams.values()].every(stream => !stream.request.signal.aborted))
+  await child.finish(); await f.finish()
+})
+
+test('one Host shows precise quick failures and renewed availability without recovering agents or disturbing the full consumer', async t => {
+  const f = await configuredHost(t)
+  const quick = await jevUpstream(t, (_received, response) => response.end(JSON.stringify(progressAnswer('quick-working-version'))))
+  const full = await jevUpstream(t, (_received, response) => response.end(JSON.stringify({ model: 'full-working-version',
+    answers: { light: { type: 'noul', noul: 1 } }, usage: { input_tokens: 5, output_tokens: 1 } })))
+  await f.ctx.credentials.set('JEV_LIFECYCLE_VALID', 'lifecycle-valid-fake')
+  await f.ctx.credentials.set('JEV_LIFECYCLE_INVALID', 'lifecycle-invalid-fake')
+  const selected = { url: quick.url, upstreamModel: 'quick-upstream', modelName: 'quick', credentialRef: 'JEV_LIFECYCLE_VALID', enabled: true, timeoutMs: 5000 }
+  const other = { url: full.url, upstreamModel: 'full-upstream', modelName: 'full', credentialRef: 'JEV_LIFECYCLE_INVALID', enabled: true }
+  await f.ctx.settings.update('jev-center', { engines: [selected, other] })
+  await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 2,
+    noOutputThreshold: 100, checkIntervalMs: 1000 })
+  await f.ctx.plugin(req('@deepseek-ai/dsh-typert-registry').default)
+  await f.ctx.plugin(req('@deepseek-ai/dsh-api-gateway').default)
+  await f.ctx.plugin({ name: 'fault-independent-full-consumer', inject: ['jevCenter'], apply(c) {
+    c.provide('fullConsumer', { evaluate: () => c.get('jevCenter').evaluate('full', {
+      state: 'The light is on.', questions: { light: { type: 'noul', instructions: 'Is the light on?' } },
+    }) })
+  } })
+  await f.start()
+  const child = await spawnMonitorChild(t, f)
+  const mainStream = f.streams.get('model'), childStream = f.streams.get('config-child')
+  const reasoningAt = async time => {
+    f.setTime(time)
+    await f.send({ type: 'reasoning-delta', index: 0, text: 'private lifecycle main thought' })
+    await f.sendTo('config-child', { type: 'reasoning-delta', index: 0, text: 'private lifecycle child thought' })
+  }
+  await reasoningAt(0); await f.at(1000)
+  await reasoningAt(2000); await f.at(2000)
+  assert.equal(f.notices.length, 2)
+  const failures = [
+    { code: 'ENGINE_MISSING', engines: [other], calls: 0 },
+    { code: 'ENGINE_DISABLED', engines: [{ ...selected, enabled: false }, other], calls: 0 },
+    { code: 'AUTHENTICATION_FAILED', engines: [{ ...selected, credentialRef: 'JEV_LIFECYCLE_INVALID' }, other], calls: 2,
+      respond(received, response) { assert.equal(received.authorization === 'Bearer lifecycle-invalid-fake', true); response.statusCode = 401; response.end('Authorization: Bearer lifecycle-invalid-fake') } },
+    { code: 'UPSTREAM_UNAVAILABLE', engines: [selected, other], calls: 2,
+      respond(_received, response) { response.statusCode = 503; response.end('Authorization: Bearer lifecycle-valid-fake') } },
+    { code: 'TIMEOUT', engines: [{ ...selected, timeoutMs: 50 }, other], calls: 2, respond() {} },
+    { code: 'JUDGMENT_UNKNOWN', engines: [selected, other], calls: 2,
+      respond(_received, response) { response.end(JSON.stringify(progressAnswer('quick-unknown-version', 'unknown'))) } },
+  ]
+  let round = 2
+  for (const failure of failures) {
+    const before = quick.requests.length
+    if (failure.respond) quick.respond(failure.respond)
+    await f.ctx.settings.update('jev-center', { engines: failure.engines })
+    await reasoningAt(++round * 1000)
+    const [, result] = await Promise.all([f.at(round * 1000), f.ctx.get('fullConsumer').evaluate()])
+    assert.equal(result.model, 'full-working-version')
+    assert.equal(quick.requests.length - before, failure.calls)
+    const status = await f.ctx.typertGateway.invoke({ namespace: 'agentMonitor', method: 'snapshot', args: {} })
+    const webStatus = await (await fetch(`${f.url}/agent-monitor/api/status`)).json()
+    assert.equal(status.engineAvailability.code, failure.code)
+    assert.equal(status.engineAvailability.color, 'red')
+    assert.deepEqual(webStatus.engineAvailability, status.engineAvailability)
+    assert.ok(status.agents.every(row => row.semanticCount === 0 && row.lastJudgment.status === 'unknown'))
+    assert.equal(f.notices.length, 2, 'an engine fault must not submit a system notification')
+    assert.equal((await f.ctx.get('agentMonitor').journal()).filter(record => record.recordType === 'recovery').length, 0)
+    assert.equal((await f.ctx.credentials.describe('JEV_LIFECYCLE_VALID')).configured, true)
+    assert.equal(f.streams.get('model'), mainStream)
+    assert.equal(f.streams.get('config-child'), childStream)
+    assert.ok([...f.streams.values()].every(stream => !stream.request.signal.aborted))
+    assert.equal(f.handle.agent.status, 'running')
+    assert.equal(child.run.localAgent.status, 'running')
+    assert.doesNotMatch(JSON.stringify(status), /lifecycle-valid-fake|lifecycle-invalid-fake|Authorization|Bearer/)
+  }
+  assert.equal(full.requests.length, failures.length, 'only the explicit full consumer calls may use the full engine')
+  const defaultLog = JSON.stringify(await f.ctx.get('agentMonitor').journal())
+  assert.doesNotMatch(defaultLog, /private lifecycle|lifecycle-valid-fake|lifecycle-invalid-fake|Authorization|Bearer/)
+  quick.respond((_received, response) => response.end(JSON.stringify(progressAnswer('quick-restored-version'))))
+  await f.ctx.settings.update('jev-center', { engines: [selected, other] })
+  await reasoningAt(++round * 1000); await f.at(round * 1000)
+  let status = f.ctx.get('agentMonitor').snapshot()
+  assert.equal(status.engineAvailability.available, true)
+  assert.ok(status.agents.every(row => row.semanticCount === 1 && row.lastJudgment.model === 'quick-restored-version'))
+  assert.equal(f.notices.length, 2)
+  assert.equal((await f.ctx.get('agentMonitor').journal()).filter(record => record.recordType === 'recovery').length, 0)
+  await f.ctx.settings.update('monitor', { debugEvidence: true })
+  f.setTime(++round * 1000)
+  await f.send({ type: 'reasoning-delta', index: 0, text: '\nsafe lifecycle observations\nlifecycle-valid-fake\nAuthorization: Bearer lifecycle-invalid-fake' })
+  await f.sendTo('config-child', { type: 'reasoning-delta', index: 0, text: '\nsafe lifecycle observations\nlifecycle-invalid-fake' })
+  await f.at(round * 1000)
+  const debugLog = JSON.stringify(await f.ctx.get('agentMonitor').journal())
+  assert.match(debugLog, /safe lifecycle observations/)
+  assert.doesNotMatch(debugLog, /lifecycle-valid-fake|lifecycle-invalid-fake|Authorization|Bearer/)
+  await child.finish(); await f.finish()
+  status = f.ctx.get('agentMonitor').snapshot()
+  assert.ok(status.alerts.every(alert => alert.recoveredAt === round * 1000))
+  assert.equal((await f.ctx.get('agentMonitor').journal()).filter(record => record.recordType === 'recovery').length, 2)
+  assert.ok(f.notices.every(alert => alert.kind === 'semantic-stall'))
+  assert.equal(f.notices.length, 4, 'actual progress records recovery without a recovery popup')
+})
+
+test('deterministic main and child monitoring continues through missing engines and failed judgments without interfering with the task', async t => {
+  for (const fault of ['delete', 'service-error', 'timeout']) await t.test(fault, async t => {
+    const { LlmError } = req('@deepseek-ai/dsh-llm')
+    const f = await configuredHost(t)
+    const quick = await jevUpstream(t, (_received, response) => response.end(JSON.stringify(progressAnswer('initial-quick-version'))))
+    const full = await jevUpstream(t, (_received, response) => response.end(JSON.stringify({ model: 'independent-full-version',
+      answers: { light: { type: 'noul', noul: 1 } }, usage: { input_tokens: 5, output_tokens: 1 } })))
+    await f.ctx.credentials.set('JEV_CONTINUING_MONITOR', 'continuing-fake-identity')
+    const selected = { url: quick.url, upstreamModel: 'continuing-quick-model', modelName: 'quick', credentialRef: 'JEV_CONTINUING_MONITOR', enabled: true, timeoutMs: 5000 }
+    const other = { url: full.url, upstreamModel: 'continuing-full-model', modelName: 'full', credentialRef: 'JEV_CONTINUING_MONITOR', enabled: true }
+    await f.ctx.settings.update('jev-center', { engines: [selected, other] })
+    await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 2,
+      noOutputThreshold: 2, checkIntervalMs: 1000 })
+    await f.start()
+    const child = await spawnMonitorChild(t, f)
+    await f.send({ type: 'reasoning-delta', index: 0, text: 'main ongoing thought' })
+    await f.sendTo('config-child', { type: 'reasoning-delta', index: 0, text: 'child ongoing thought' })
+    await f.at(1000)
+    f.setTime(2000)
+    await f.send({ type: 'reasoning-delta', index: 0, text: 'main repeats thought' })
+    await f.sendTo('config-child', { type: 'reasoning-delta', index: 0, text: 'child repeats thought' })
+    await f.at(2000)
+    assert.equal(f.notices.filter(alert => alert.kind === 'semantic-stall').length, 2)
+    if (fault === 'delete') await f.ctx.settings.update('jev-center', { engines: [other] })
+    else {
+      quick.respond((_received, response) => {
+        if (fault === 'service-error') { response.statusCode = 503; response.end('Authorization: Bearer continuing-fake-identity') }
+      })
+      if (fault === 'timeout') await f.ctx.settings.update('jev-center', { engines: [{ ...selected, timeoutMs: 50 }, other] })
+    }
+    await f.at(3000)
+    const [, result] = await Promise.all([f.at(4000), f.ctx.get('jevCenter').evaluate('full', {
+      state: 'The light is on.', questions: { light: { type: 'noul', instructions: 'Is the light on?' } },
+    })])
+    assert.equal(result.model, 'independent-full-version')
+    let state = f.ctx.get('agentMonitor').snapshot()
+    assert.equal(state.engineAvailability.code, fault === 'delete' ? 'ENGINE_MISSING' : fault === 'timeout' ? 'TIMEOUT' : 'UPSTREAM_UNAVAILABLE')
+    assert.ok(state.agents.every(row => row.semanticCount === 0))
+    assert.deepEqual(f.notices.filter(alert => alert.kind === 'no-output').map(alert => [alert.agentId, alert.evidence.consecutiveChecks]),
+      [['settings-agent', 2], [child.run.id, 2]])
+    assert.equal((await f.ctx.get('agentMonitor').journal()).filter(record => record.recordType === 'recovery').length, 0)
+    assert.equal(f.handle.agent.status, 'running')
+    assert.equal(child.run.localAgent.status, 'running')
+    assert.ok([...f.streams.values()].every(stream => !stream.request.signal.aborted))
+    const noticesBeforeError = f.notices.length
+    f.end('config-child', new LlmError('upstream failed', 'UPSTREAM_UNAVAILABLE', { status: 503 }))
+    await child.run.result; await f.ctx.get('agentMonitor').flush()
+    assert.deepEqual(f.notices.slice(noticesBeforeError).map(alert => [alert.agentId, alert.parentId, alert.kind, alert.evidence.code]),
+      [[child.run.id, 'settings-agent', 'model-error', 'UPSTREAM_UNAVAILABLE']])
+    assert.equal(child.run.localAgent.status, 'idle')
+    assert.equal(f.handle.agent.status, 'running')
+    assert.equal(f.streams.get('model').request.signal.aborted, false)
+    await f.at(5000)
+    state = f.ctx.get('agentMonitor').snapshot()
+    assert.equal(f.notices.filter(alert => alert.kind === 'no-output' && alert.agentId === 'settings-agent').length, 2)
+    assert.equal(f.notices.filter(alert => alert.kind === 'no-output' && alert.agentId === child.run.id).length, 1)
+    assert.equal(f.notices.filter(alert => alert.kind === 'model-error').length, 1)
+    assert.ok(f.notices.every(alert => ['semantic-stall', 'no-output', 'model-error'].includes(alert.kind)))
+    assert.equal(full.requests.length, 1, 'engine faults cannot invoke full as a fallback')
+    assert.equal(quick.requests.length, fault === 'delete' ? 4 : 9, 'each active Agent round makes only its explicit judgment request')
+    assert.equal((await f.ctx.credentials.describe('JEV_CONTINUING_MONITOR')).configured, true)
+    assert.doesNotMatch(JSON.stringify(state), /continuing-fake-identity|Authorization|Bearer/)
+    f.setTime(6000)
+    await f.send({ type: 'text-delta', index: 1, text: 'main makes real progress' })
+    const noticesBeforeCompletion = f.notices.length
+    await f.finish()
+    assert.equal(f.handle.agent.status, 'idle')
+    assert.equal(f.notices.length, noticesBeforeCompletion)
+    const records = await f.ctx.get('agentMonitor').journal()
+    assert.equal(records.filter(record => record.recordType === 'recovery' && record.agentId === 'settings-agent').length, 2)
+    assert.equal(records.filter(record => record.recordType === 'recovery' && record.agentId === child.run.id).length, 0)
+    assert.doesNotMatch(JSON.stringify(records), /continuing-fake-identity|Authorization|Bearer|main ongoing thought|child ongoing thought/)
+  })
+})
 
 test('standard Settings saves custom check interval and threshold which immediately govern a native pending request', async t => {
   const f = await configuredHost(t)

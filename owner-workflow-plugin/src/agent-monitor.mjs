@@ -39,6 +39,18 @@ export function createAgentMonitor(config = {}, { now = Date.now, onAlert = () =
     row.terminalAlerted = true
     report(row, kind, reason, evidence)
   }
+  function output(row, index, length, delta = false) {
+    const previous = row.outputLengths.get(index) ?? 0
+    const current = delta ? previous + length : length
+    if (current <= previous) return false
+    row.outputLengths.set(index, current)
+    recover(row)
+    row.lastOutputAt = now()
+    row.lastCheckAt = now()
+    row.noOutputCount = 0
+    row.seenContent = true
+    return true
+  }
   function progress(row) {
     row.check?.abort()
     row.progressGeneration++
@@ -54,7 +66,7 @@ export function createAgentMonitor(config = {}, { now = Date.now, onAlert = () =
     Object.assign(row, { active: true, lastOutputAt: now(), lastCheckAt: now(), noOutputCount: 0,
       recoveredAt: undefined, seenFinish: false, seenContent: false, terminalAlerted: false,
       thinkingAt: undefined, semanticCount: 0, semanticStatus: 'waiting', semanticRecoveredAt: undefined,
-      reasoning: '', check: undefined, semanticCheckAt: undefined, semanticModelName: value('jevModelName', ''), progressGeneration: 0, ...facts })
+      reasoning: '', outputLengths: new Map(), check: undefined, semanticCheckAt: undefined, semanticModelName: value('jevModelName', ''), progressGeneration: 0, ...facts })
     row.reported.clear()
   }
   return {
@@ -86,11 +98,7 @@ export function createAgentMonitor(config = {}, { now = Date.now, onAlert = () =
           const chunk = frame.chunk
           if ((chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') && chunk.text?.length
             || chunk.type === 'tool-call-delta' && chunk.argumentsDelta?.length) {
-            recover(row)
-            row.lastOutputAt = now()
-            row.lastCheckAt = now()
-            row.noOutputCount = 0
-            row.seenContent = true
+            output(row, chunk.index, chunk.type === 'tool-call-delta' ? chunk.argumentsDelta.length : chunk.text.length, true)
             if (chunk.type === 'reasoning-delta') {
               row.thinkingAt ??= now()
               row.reasoning = (row.reasoning + chunk.text).slice(-6000)
@@ -100,7 +108,9 @@ export function createAgentMonitor(config = {}, { now = Date.now, onAlert = () =
           }
           if (chunk.type === 'block-end' && (chunk.block?.text?.length || chunk.block?.type === 'tool-call')) {
             row.seenContent = true
-            if (chunk.block.type === 'text' || chunk.block.type === 'tool-call') progress(row)
+            const length = (chunk.block.type === 'tool-call' ? chunk.block.arguments : chunk.block.text)?.length ?? 0
+            const added = output(row, chunk.index, length)
+            if (added && (chunk.block.type === 'text' || chunk.block.type === 'tool-call')) progress(row)
             else if (chunk.block.type === 'reasoning') { row.check?.abort(); row.thinkingAt = undefined }
           }
           if (chunk.type === 'finish') {
@@ -198,7 +208,7 @@ export function createAgentMonitor(config = {}, { now = Date.now, onAlert = () =
       await Promise.all(checks)
     },
     snapshot() {
-      return { semanticAvailable: Boolean(judge), agents: [...agents.values()].map(({ reported, signal, check, task, reasoning, ...row }) => row),
+      return { semanticAvailable: Boolean(judge), agents: [...agents.values()].map(({ reported, signal, check, task, reasoning, outputLengths, ...row }) => row),
         alerts: structuredClone(alerts), diagnostics: structuredClone(diagnostics) }
     },
     close() { closed = true; for (const row of agents.values()) row.check?.abort(); agents.clear() },
