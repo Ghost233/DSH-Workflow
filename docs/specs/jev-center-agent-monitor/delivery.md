@@ -6,14 +6,14 @@
 - 目标分支：main；集成分支：codex/jev-center-monitor。
 - 初始固定基线：2f84551b6a0e292df82a68c4f5948c9c5f66755d。
 - 阶段 PR 合入集成分支；最终 PR 面向 main，完成后标记 ready，等待合并。
-- 总 PR：[#20](https://github.com/Ghost233/DSH-Workflow/pull/20)，当前为草稿；完整验收和总审查尚未完成。
+- 总 PR：[#20](https://github.com/Ghost233/DSH-Workflow/pull/20)，当前为草稿；三个阶段已集成，代码验收和跨规格核对已完成，正进行最终总审查，随后标为 ready，等待合并。
 - 工作区原有未提交改动保留，只提交本规格范围内的内容。共享 checkout 的 Git 操作由唯一 merger 串行执行。
 
 | 阶段 | 工单 | 前置条件 | 状态 | 审查固定点 | PR |
 | --- | --- | --- | --- | --- | --- |
 | 1 | #13 单套中心、#15 无输出监控 | 无工单阻塞 | 双轴复审 0 P0/P1/P2，已集成；#13、#15 已关闭 | 初始固定基线 | [#19](https://github.com/Ghost233/DSH-Workflow/pull/19)，已合并 |
 | 2 | #14 多配置、#16 异常结束、#17 语义检测 | 阶段 1 审查并集成 | 完整本地门禁通过，隐私 P1 已修复，复盘及最终双轴复审 0 P0/P1/P2；已集成 | e4692d73a9030a70d0890652bc655933591e52c4 | [#21](https://github.com/Ghost233/DSH-Workflow/pull/21)，已合并 |
-| 3 | #18 配置变化下的监控 | #14、#16、#17 完成且阶段 2 集成 | 同 Host 生命周期与无参数日常启动交叉验收进行中 | b0bdc3377e22ae635a5100ce90e4b1f13b2f1598 | 待创建 |
+| 3 | #18 配置变化下的监控 | #14、#16、#17 完成且阶段 2 集成 | 737/737、集成12/12，完整块 P2 已修复，复盘及最终两轴0；已集成，#18已关闭 | b0bdc3377e22ae635a5100ce90e4b1f13b2f1598 | [#22](https://github.com/Ghost233/DSH-Workflow/pull/22)，已合并 |
 
 每阶段依次经过 Standards/Spec 双轴审查、P0/P1/P2 修复、复盘及范围内修复、再次双轴审查。所有必需检查通过后才合并阶段 PR。最终核对整份规格、跨插件行为及完整总 diff，再进行总审查。
 
@@ -21,12 +21,10 @@
 
 ## 未完成项
 
-- 阶段 3 的 #18 实现、交叉验收、双轴审查与复盘。
-- 阶段 3 PR、集成验证以及完整总 diff 和跨规格审计。
 - 最终双轴审查及总 PR #20 标为 ready。
-- macOS 实际通知送达（用户明确暂缓本轮）；最终阶段的完整浏览器复验尚待完成。
+- macOS 实际通知送达由用户明确暂缓，保持未验证，不作为本轮其余交付的阻塞项。
 
-阶段 1、2 已按本轮规格完成本地代码验收并合入集成分支；不能以历史原型测试替代本轮证据。阶段 2 合并后集成分支本地与远端同为 b0bdc3377e22ae635a5100ce90e4b1f13b2f1598；阶段 2 分支同为 d83fea60e809336d054a0aca31192da434433e54，阶段 1 分支同为 067d166fd2928178fc7d7f7f37988e88ecab74fa。阶段 3 在同一 checkout 从集成提交创建，未创建额外 worktree，也未移动或暂存用户原有工作。
+三个阶段均已完成本地代码验收并集成，六工单均已结项；父规格 #12 保持开放，等待总 PR 合并。阶段 3 合并后集成分支本地与远端同为 6f227531e453f0815fedfd849c1c20b4aad2737a；阶段 3 分支同为 e88cde3d6997d9d10b6b1e285f2d97095e430fa3，阶段 2 分支同为 d83fea60e809336d054a0aca31192da434433e54，阶段 1 分支同为 067d166fd2928178fc7d7f7f37988e88ecab74fa。实施使用同一 checkout，未创建额外 worktree，也未移动或暂存用户原有工作。以下早期进度保留为历史，以最新候选、集成与总审查状态为准。
 
 ## 阶段 1 验证进度
 
@@ -102,3 +100,10 @@
 - 修复提交 `52063f44c9a5f1c670f39bef942553b79596baba`，精确 tree `930f30ced5565de6b7a0f5745c319ab54bdc809d`，4070 个 tracked blob 核对。Node v26.9.0；新 `npm test` 737/737、六文件 Web/Desktop 集成 12/12，均退出 0、无失败/取消/跳过。日志 `/private/tmp/jev-stage3-final-owner-full.log`、`/private/tmp/jev-stage3-final-integration.log`；客户端、固定 Harness 构建证明、SDK/上游干净与 diff 检查均退出 0。旧 726 绿态不作为本次修复证明。
 - 精确修复候选上的实际原生 Browser 设置 1000ms/2、未选择 JEV：16 条无输出告警后，模型只发完整正文 block-end 和 stop，无 text-delta。公开计数清零、16 条告警恢复、原请求未取消、没有恢复弹窗；默认 journal17 条无片段/密钥/认证头/新 Map。Host 清理退出 0。记录 `/private/tmp/jev-stage3-block-browser-notes.md`，截图 `/private/tmp/jev-browser-block-recovered.jpg`；最终 `/private/tmp/jev-stage3-browser-final-product-manifest.json` 的 76 个产品字节全部与候选匹配，core 确实改变。
 - [阶段 3 复盘](stage3-retro.md) 已落实本范围内输出形态回归，没有新增未关闭整改项；最终两轴须从 b0bdc337 覆盖最新完整阶段 diff。用户原有 MCP 与其他 WIP 保留且不入提交，总 PR #20 保持草稿，阶段 PR 合入集成后才交总审。OS 实际通知显示按用户授权暂缓；本地 SDK health 不等于完整 `.app`/codesign/DMG 双架构通过。
+
+## 阶段集成与总审计
+
+- 阶段 3 最终两轴在 e88cde3d6997d9d10b6b1e285f2d97095e430fa3 覆盖完整八文件，Standards和Spec均0 P0/P1/P2；报告 `/private/tmp/jev-stage3-standards-final-review.md`、`jev-stage3-spec-final-review.md`。PR22合并到6f227531，合并tree与已审阶段tree完全相同，四个JEV分支的本地/远端完整SHA一致，工作文件原字节保留，index为空，无stash、reset、clean或备份。
+- 主线程按固定main基线核对总diff及跨插件合同：28用户故事、15公开测试决策与六工单均有代码/Host/标准设置/Native进展/命名调用/状态、记录和通知提交证据；多配置与实际监控消费者的在途变化由T06同Host场景交叉覆盖。无自动干预、SDK或第三方修改，无付费模型调用；默认/调试日志边界和完整输出清零分别有真实红态后修复。当前没有新发现，完整总diff仍接受独立两轴总审查。
+- 最新实现与新737/12门禁tree930f30一致，后续仅delivery/retro文档变更；源码、测试、构建和工程环境输入未变，不重复运行同一成功长测试。最终Browser76产品字节与集成提交匹配，完整输出恢复的实际截图为 `/private/tmp/jev-browser-block-recovered.jpg`；OS实际显示继续暂缓。
+- 旧阶段1打包失败已由项目profile本地包映射修复；PR21的macOS run37698543437 arm64/x64均真实SUCCESS，Owner/Matt亦成功，非tag的release正常SKIPPED。这是阶段2版本d83的完整远端证明，不是新core提交的CI结论。PR22及总PR20最新快照中Matt成功，Owner与两架构Mac仍运行，未记通过，当前无required远端检查。后续真实状态与本地门禁分别报告。
