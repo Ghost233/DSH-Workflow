@@ -11,6 +11,9 @@ const { default: monitorPlugin, apply } = await import('../src/agent-monitor-plu
 const { default: JevCenter } = await import('../src/jev-center-plugin.mjs')
 
 const req = createRequire(new URL('../../deepseek-harness/apps/cli/package.json', import.meta.url))
+const browserReq = createRequire(new URL('../../deepseek-harness/packages/test-support/client-runtime/package.json', import.meta.url))
+const { JSDOM } = browserReq('jsdom')
+const { waitFor } = browserReq('@testing-library/dom')
 const { boot, initProfile, readProfilePatches } = req('@deepseek-ai/dsh-app-boot')
 const { LlmAdapter, createUserMessage } = req('@deepseek-ai/dsh-llm')
 const modules = Object.fromEntries([
@@ -612,6 +615,13 @@ test('monitor page lets the user save its controls through standard Settings and
   const journal = await f.ctx.get('agentMonitor').journal()
   assert.equal(journal[0].attemptId, 'settings-agent:1')
   assert.equal(f.notices[0].kind, 'no-output')
+  const dom = new JSDOM(page, {
+    url: `${f.url}/agent-monitor`, runScripts: 'dangerously',
+    beforeParse(window) { window.fetch = (url, options) => fetch(new URL(url, f.url), options) },
+  })
+  t.after(() => dom.window.close())
+  await waitFor(() => assert.match(dom.window.document.querySelector('#alerts').textContent,
+    /settings-agent 请求：settings-agent:1 \[no-output\]/), { container: dom.window.document })
 })
 
 test('changing the interval in standard Settings reschedules automatic checks without manual monitor calls', async t => {

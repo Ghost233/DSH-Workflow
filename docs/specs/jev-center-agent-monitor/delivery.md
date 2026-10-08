@@ -118,3 +118,15 @@
 - 实际内置Browser在该精确候选上保存隔离参数并持续输出完整思考块，84次模拟JEV判断产生逐轮语义告警；只有正常正文进展后才显示恢复时间。虚拟凭据错误回显的公开状态与journal均无裸值，默认169条记录没有会话片段/认证头，新模型请求未取消、无恢复弹窗。截图 `/private/tmp/jev-resume-browser-recovered.png`，70个相关运行时文件字节绑定于 `/private/tmp/jev-resume-browser-product.json`；临时Host清理退出0。测试探针最初缺少cwd导致persona变量无值，已修正隔离初始化，没有产品改动或当前服务切换。
 - 本轮刷新正式tracker确认13–18均CLOSED、父12仍OPEN、main仍2f84551；远端总PR20的旧集成6f227531已经Owner/Matt和两架构Mac全部SUCCESS。这个成功状态不替代最终修复提交的后续CI；OS实际通知显示仍按用户要求暂缓。
 - 54f27b47上的完整总复审Standards0、Spec仅剩一项P2：实际osascript通知正文缺请求标识。已补attemptId（未开始流时turn:step回退）、类别和ISO观察时间，仍使用argv传入固定AppleScript；标准/调试模式、同一Agent连续请求、同轮去重和恢复无新提交由真实Host+系统exec边界mock验证。正式红后3/3绿、受影响78/78，未发真实OS测试通知。新精确treef69950e46d8982dd552314372054ec0117d2eef9，4072tracked blob核对，完整Owner754/754、集成12/12退出0，无失败/取消/跳过；日志 `/private/tmp/jev-final-owner.log`、`jev-final-integration.log`。此前751是上一修复版本，不能代替754的最终证明。新增macOS通知正文测试在本机darwin真实执行，非darwin平台显式跳过该专属用例。最后两行产品变更仅通知提交格式，不改变已复验的浏览器界面及语义/隐私逻辑；实际OS显示继续暂缓。
+
+## 2026-10-08 完成复查
+
+用户调用 code-review 与 retro 后，重新以 main `2f84551b6a0e292df82a68c4f5948c9c5f66755d` 到 `21254b27eec88b5f97a529b3290ae47643287469` 的完整三点 diff 审查（50 文件、18 提交），并读取正式 Issue #12 与总 PR #20。Standards 初审 0；Spec 初审 1 项 P2：独立 Web「最近告警」未显示请求编号，原测试仅检查 API。
+
+修复限于页面渲染与已有真实 Host 测试：列表显示 attemptId，未开始流时回退 turn:step；执行公开 HTML 并读取真实 HTTP 状态，断言可见 DOM 包含请求编号。旧源码上该断言 1/1 失败；修复后 1/1、监控模块 78/78、完整 Owner 754/754、六文件 Web/Desktop 集成 12/12 均真实退出 0，无失败、取消或跳过。客户端产物、固定 Harness 构建证明与上游干净核对通过。独立 Standards/Spec 对补充 diff 的复审均无剩余 P0/P1/P2。
+
+隔离候选 `/private/tmp/jev-check-candidate-f40e926eb143` 的 4072 个 tracked blob 逐项核对，排除用户原有 WIP；代码输入为上述 HEAD，仅覆盖两个 blob：监控插件 `2756c373b32d291b22f7275397bfec8676f42fe7`、监控测试 `a033f60f73e20cba1437fb28f05770b74b41bb12`。后续交付/复盘文档变更不改变源码、测试及构建输入。
+
+第一次导出覆盖了 SDK 的 gitlink 链接，两个完整门禁在启动前退出 1、无测试运行；补齐候选的五个固定 gitlink 后重新执行。原失败保留为 `/private/tmp/jev-check-owner-full-input-failed.log` 与 `jev-check-integration-input-failed.log`；最终日志为 `/private/tmp/jev-check-owner-full.log`、`jev-check-integration.log`。定点红绿与模块日志分别为 `jev-check-web-red.log`、`jev-check-web-green.log`、`jev-check-monitor.log`。复用既有 SDK、依赖和自研 Matt 构建产物，没有安装依赖、修改产品运行器或调整验收期限。
+
+Owner 使用 `npm test`；监控模块及六文件集成使用既有 `scripts/run-workflow-tests.mjs` 入口；定点使用同一固定 tsx/Host loader 的 `--test-name-pattern="monitor page lets"`。所有测试模拟上游。代码开发与自动验收已完成；实际 macOS 通知显示仍按用户要求暂缓，总 PR 等待合并，main 与当前用户服务未切换。
