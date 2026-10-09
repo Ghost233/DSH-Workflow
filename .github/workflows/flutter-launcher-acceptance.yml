@@ -79,14 +79,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          python3 .github/scripts/actor_validation_inputs.py --base 260fdbbb8a3697899e1133e3293e255df604e0d4 --output validation-inputs.json
+          python3 .github/scripts/actor_validation_inputs.py --base e2477054c5f84f59ccee52bf26be4a80919b5926 --output validation-inputs.json
           python3 - <<'PY'
           import json, os
           value = json.load(open('validation-inputs.json'))
           helper = value['helperOnly'] and value['materialInputsEqual'] and os.environ['EVENT_NAME'] != 'workflow_dispatch'
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('helper_only=' + str(helper).lower() + '\n')
-              output.write('native_reuse=' + str(helper and value['base'] == '260fdbbb8a3697899e1133e3293e255df604e0d4').lower() + '\n')
+              output.write('native_reuse=' + str(helper and value['nativeInputsEqual'] and value['base'] == 'e2477054c5f84f59ccee52bf26be4a80919b5926').lower() + '\n')
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -1763,7 +1763,7 @@ jobs:
           PRODUCT_SOURCE_SHA: ${{ inputs.product_source_sha || github.sha }}
         run: |
           if test "$PRODUCT_SOURCE_SHA" != "$GITHUB_SHA"; then
-            test "$PRODUCT_SOURCE_SHA" = 260fdbbb8a3697899e1133e3293e255df604e0d4
+            test "$PRODUCT_SOURCE_SHA" = e2477054c5f84f59ccee52bf26be4a80919b5926
             python3 .github/scripts/actor_validation_inputs.py --base "$PRODUCT_SOURCE_SHA" --output "$EVIDENCE_DIR/product-material-reuse.json"
             python3 - <<'PY'
           import json, os

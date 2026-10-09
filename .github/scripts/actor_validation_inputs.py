@@ -4,11 +4,15 @@ import json
 from pathlib import Path
 import subprocess
 
-VERIFIED_PRODUCT_SHA = '260fdbbb8a3697899e1133e3293e255df604e0d4'
+VERIFIED_PRODUCT_SHA = 'e2477054c5f84f59ccee52bf26be4a80919b5926'
 VALIDATION_FILES = {'.github/scripts/actor_validation_inputs.py', '.github/scripts/actor_validation_inputs_test.py',
                     '.github/scripts/flutter_debug_artifact_test.py', '.github/workflows/macos-app.yml',
                     '.github/workflows/flutter-launcher-acceptance.yml', '.github/workflows/flutter-launcher-diagnostics.yml',
-                    '.github/scripts/macos_arm64_ci_test.py'}
+                    '.github/scripts/macos_arm64_ci_test.py',
+                    # Excluded by the project resource inventory's test-directory filter.
+                    'agent-observation-plugin/test/agent-monitor.test.mjs',
+                    '.github/scripts/desktop_window_fixture_test.py',
+                    'macos-launcher/flutter/tool/application_probe.dart'}
 def validation_path(name):
     return name.startswith('macos-launcher/flutter/tool/release_close_actor/') or name in VALIDATION_FILES
 def parsed(text):
@@ -25,7 +29,7 @@ def unchanged_job(old, new, name):
     return before == after
 def classify(root, base, head='HEAD'):
     root = Path(root)
-    result = {'helperOnly': False, 'materialInputsEqual': False, 'base': base, 'head': head}
+    result = {'helperOnly': False, 'materialInputsEqual': False, 'nativeInputsEqual': False, 'base': base, 'head': head}
     try:
         command = ['git', 'diff', '--name-only', base] if head == 'WORKTREE' else ['git', 'diff', '--name-only', base, head]
         changed = subprocess.check_output(command, cwd=root, text=True).splitlines()
@@ -39,7 +43,8 @@ def classify(root, base, head='HEAD'):
             text = (root / file).read_text() if head == 'WORKTREE' else subprocess.check_output(['git', 'show', head + ':' + file], cwd=root, text=True)
             after = parsed(text)
             if not all(unchanged_job(before, after, job) for job in jobs): return result
-        result.update(helperOnly=True, materialInputsEqual=True)
+        result.update(helperOnly=True, materialInputsEqual=True,
+                      nativeInputsEqual='macos-launcher/flutter/tool/application_probe.dart' not in changed)
     except (subprocess.CalledProcessError, ValueError, KeyError, TypeError, OSError) as error:
         result['unknownReason'] = type(error).__name__
     return result

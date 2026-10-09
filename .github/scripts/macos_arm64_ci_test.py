@@ -26,6 +26,31 @@ class MacOSArm64CIContractTest(unittest.TestCase):
             consumer = next(index for index, step in enumerate(steps) if step.get('name') == name)
             self.assertLess(preparation_index, consumer, name)
 
+    def test_direct_diagnostics_stages_a_complete_current_project_layer_before_importing_the_subject(self):
+        root = Path(__file__).resolve().parents[2]
+        steps = parsed((root / '.github/workflows/flutter-launcher-diagnostics.yml').read_text())['jobs']['desktop-launch-loop']['steps']
+        body = next(step['run'] for step in steps if step.get('name') == 'Mount and stage the unchanged runtime')
+        stage = body[body.index('stage='):body.index('desktop="$resources/desktop/')]
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            resources = temporary / 'frozen-runtime-fixture'
+            resources.mkdir()
+            fixture = subprocess.run(['node', 'macos-launcher/project-resources.mjs', 'create', str(root), str(resources / 'workflow')],
+                                     cwd=root, capture_output=True, text=True)
+            self.assertEqual(fixture.returncode, 0, fixture.stderr)
+            # The retained runtime may lack a newer project integration dependency.
+            # The diagnostic subject must use the current sealed layer, not a partial overlay.
+            (resources / 'workflow/scripts/dsh-launch-composition.mjs').unlink()
+            environment = dict(os.environ, RUNNER_TEMP=str(temporary), GITHUB_ENV=str(temporary / 'github-env'))
+            result = subprocess.run(['/bin/bash', '-e', '-c', 'resources="$1"\n' + stage, 'stage-fixture', str(resources)],
+                                    cwd=root, env=environment, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subject = temporary / 'dsh-native-stage/workflow/macos-launcher/runtime/desktop-profile.mjs'
+            imported = subprocess.run(['node', '--input-type=module', '-e',
+                                       'const mod = await import(process.argv[1]); if (typeof mod.prepareDesktopProfile !== "function") process.exit(2)',
+                                       subject.as_uri()], cwd=root, env=environment, capture_output=True, text=True)
+            self.assertEqual(imported.returncode, 0, imported.stderr)
+
     def test_every_project_job_checks_its_macOS_ARM64_runner_before_work(self):
         root = Path(__file__).resolve().parents[2]
         workflows = sorted((root / '.github/workflows').glob('*.yml'))

@@ -86,8 +86,7 @@ jobs:
             > "$DIAGNOSTIC_ROOT/runtime-payload.sha256"
           stage="$RUNNER_TEMP/dsh-native-stage"
           mkdir -p "$stage"
-          ditto "$resources/workflow" "$stage/workflow"
-          ditto macos-launcher/runtime "$stage/workflow/macos-launcher/runtime"
+          node macos-launcher/project-resources.mjs create "$PWD" "$stage/workflow"
           for name in node desktop node_modules bin; do
             ln -s "$resources/$name" "$stage/$name"
           done

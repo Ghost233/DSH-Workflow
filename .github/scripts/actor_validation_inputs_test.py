@@ -46,6 +46,30 @@ class ActorInputsTest(unittest.TestCase):
         value = self.check()
         self.assertFalse(value['helperOnly']); self.assertFalse(value['materialInputsEqual'])
 
+    def test_window_probe_preparation_change_reuses_product_but_revalidates_native_consumers(self):
+        name = 'macos-launcher/flutter/tool/application_probe.dart'
+        probe = self.root / name; probe.parent.mkdir(parents=True, exist_ok=True)
+        probe.write_text('changed private window fixture preparation')
+        result = self.check()
+        self.assertTrue(result['helperOnly']); self.assertTrue(result['materialInputsEqual'])
+        self.assertFalse(result['nativeInputsEqual'])
+        runtime = self.root / 'macos-launcher/flutter/lib/main.dart'
+        runtime.write_text('changed actual app input')
+        self.assertFalse(self.check()['helperOnly'])
+
+    def test_exact_monitor_timeout_test_only_changes_preserve_product_inputs(self):
+        name = 'agent-observation-plugin/test/agent-monitor.test.mjs'
+        test = self.root / name; test.parent.mkdir(parents=True, exist_ok=True)
+        test.write_text('controlled timeout fixture only')
+        self.git('add', '.')
+        self.git('-c', 'user.name=Actor inputs fixture', '-c', 'user.email=actor@example.invalid', 'commit', '-qm', 'owned monitor test only')
+        result = guard.classify(self.root, self.base)
+        self.assertTrue(result['helperOnly']); self.assertTrue(result['materialInputsEqual'])
+        self.assertEqual(result['changedFiles'], [name])
+        runtime = self.root / 'agent-observation-plugin/src/agent-monitor-plugin.mjs'
+        runtime.parent.mkdir(parents=True, exist_ok=True); runtime.write_text('actual monitor behavior changed')
+        self.assertFalse(self.check()['helperOnly'])
+
     def test_real_material_and_unknown_file_changes_never_skip_product(self):
         self.mutate('macos-launcher/flutter/lib/main.dart', 'changed actual product')
         self.assertFalse(self.check()['helperOnly'])
