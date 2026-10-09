@@ -12,6 +12,10 @@ VALIDATION_FILES = {'.github/scripts/actor_validation_inputs.py', '.github/scrip
                     # Excluded by the project resource inventory's test-directory filter.
                     'agent-observation-plugin/test/agent-monitor.test.mjs',
                     '.github/scripts/desktop_window_fixture_test.py',
+                    '.github/scripts/desktop_restart_inspection_test.py',
+                    '.github/scripts/desktop_diagnostics_lifecycle_test.py',
+                    'macos-launcher/flutter/tool/desktop_window_application_scenario.dart',
+                    'macos-launcher/flutter/tool/desktop_launch_diagnostics.swift',
                     'macos-launcher/flutter/tool/application_probe.dart'}
 def validation_path(name):
     return name.startswith('macos-launcher/flutter/tool/release_close_actor/') or name in VALIDATION_FILES
@@ -44,7 +48,9 @@ def classify(root, base, head='HEAD'):
             after = parsed(text)
             if not all(unchanged_job(before, after, job) for job in jobs): return result
         result.update(helperOnly=True, materialInputsEqual=True,
-                      nativeInputsEqual='macos-launcher/flutter/tool/application_probe.dart' not in changed)
+                      nativeInputsEqual=not set(changed).intersection({
+                          'macos-launcher/flutter/tool/application_probe.dart',
+                          'macos-launcher/flutter/tool/desktop_window_application_scenario.dart'}))
     except (subprocess.CalledProcessError, ValueError, KeyError, TypeError, OSError) as error:
         result['unknownReason'] = type(error).__name__
     return result

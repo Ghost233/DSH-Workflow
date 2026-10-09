@@ -57,6 +57,30 @@ class ActorInputsTest(unittest.TestCase):
         runtime.write_text('changed actual app input')
         self.assertFalse(self.check()['helperOnly'])
 
+    def test_exact_diagnostic_executor_and_fixtures_preserve_product_inputs(self):
+        paths = ['macos-launcher/flutter/tool/desktop_launch_diagnostics.swift',
+                 '.github/scripts/desktop_diagnostics_lifecycle_test.py',
+                 '.github/scripts/desktop_restart_inspection_test.py']
+        for name in paths:
+            target = self.root / name; target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('bounded executor or fixture change')
+        result = self.check()
+        self.assertTrue(result['helperOnly']); self.assertTrue(result['materialInputsEqual'])
+        self.assertTrue(result['nativeInputsEqual'])
+        self.assertEqual(result['changedFiles'], sorted(paths))
+        (self.root / 'macos-launcher/flutter/lib/main.dart').write_text('changed actual product')
+        self.assertFalse(self.check()['helperOnly'])
+
+    def test_formal_window_executor_change_forces_native_validation(self):
+        target = self.root / 'macos-launcher/flutter/tool/desktop_window_application_scenario.dart'
+        target.parent.mkdir(parents=True, exist_ok=True); target.write_text('exact restart inspector argument fix')
+        result = self.check()
+        self.assertTrue(result['helperOnly']); self.assertTrue(result['materialInputsEqual'])
+        self.assertFalse(result['nativeInputsEqual'])
+        unknown = self.root / 'macos-launcher/flutter/tool/unknown_executor.dart'
+        unknown.write_text('unclassified input')
+        self.assertFalse(self.check()['helperOnly'])
+
     def test_exact_monitor_timeout_test_only_changes_preserve_product_inputs(self):
         name = 'agent-observation-plugin/test/agent-monitor.test.mjs'
         test = self.root / name; test.parent.mkdir(parents=True, exist_ok=True)

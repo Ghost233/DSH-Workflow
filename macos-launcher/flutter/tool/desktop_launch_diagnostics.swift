@@ -48,6 +48,59 @@ func sameIdentity(_ app: NSRunningApplication, _ bundle: String, _ executable: S
     abs(date.timeIntervalSince1970 - launched.timeIntervalSince1970) < 0.001
 }
 
+// BEGIN WORKSPACE READINESS
+// Official main-process journal: workspace-ready follows real backend startup.
+func workspaceJournalReadiness(_ directory: String, pid: pid_t, began: Date) -> [String: Any] {
+  let pending: [String: Any] = ["state": "pending", "pid": pid]
+  let manager = FileManager.default
+  guard manager.fileExists(atPath: directory) else { return pending }
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  var ready: [String: Any]?
+  var sources = 0
+  do {
+    let files = try manager.contentsOfDirectory(at: URL(fileURLWithPath: directory), includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+    for file in files.filter({ $0.pathExtension == "jsonl" }).sorted(by: { $0.path < $1.path }) {
+      let kind = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+      guard kind.isRegularFile == true, kind.isSymbolicLink != true else {
+        return ["state": "failed", "pid": pid, "source": file.path, "reason": "unsafe-journal-file"]
+      }
+      let content = try String(contentsOf: file, encoding: .utf8)
+      var started = false
+      // An append still in progress is pending, never evidence of readiness.
+      let complete = content.components(separatedBy: "\n").dropLast()
+      for line in complete where !line.isEmpty {
+        guard let bytes = line.data(using: .utf8),
+              let row = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else {
+          return ["state": "failed", "pid": pid, "source": file.path, "reason": "invalid-journal"]
+        }
+        guard row["pid"] as? Int == Int(pid) else { continue }
+        guard row["schemaVersion"] as? Int == 1, let sequence = row["sequence"] as? Int, sequence >= 0,
+              let event = row["event"] as? String,
+              let time = row["time"] as? String, let date = formatter.date(from: time) else {
+          return ["state": "failed", "pid": pid, "source": file.path, "reason": "invalid-journal-record"]
+        }
+        if event == "started", sequence == 0, date >= began {
+          started = true; sources += 1
+          if sources > 1 { return ["state": "failed", "pid": pid, "reason": "ambiguous-process-journal"] }
+        }
+        guard started else { continue }
+        let evidence: [String: Any] = ["state": "failed", "pid": pid, "source": file.path, "event": event, "time": time, "sequence": sequence]
+        if event == "workspace-failed" || event == "quit-requested" { return evidence }
+        if event == "workspace-ready" { ready = evidence.merging(["state": "ready"], uniquingKeysWith: { _, new in new }) }
+      }
+    }
+  } catch {
+    return ["state": "failed", "pid": pid, "reason": "journal-read-failed", "errorDomain": (error as NSError).domain, "errorCode": (error as NSError).code]
+  }
+  return ready ?? pending
+}
+func requestReadyTermination(_ readiness: [String: Any], ownershipKnown: Bool, request: () -> Bool) -> Bool {
+  guard readiness["state"] as? String == "ready", ownershipKnown else { return false }
+  return request()
+}
+// END WORKSPACE READINESS
+
 do {
   let args = CommandLine.arguments
   let env = ProcessInfo.processInfo.environment
@@ -150,9 +203,33 @@ do {
       facts["exitStatusAvailability"] = "not-a-child-process"
       try emit(facts, to: root.appendingPathComponent("launch-observation.json"))
       let pid = app.processIdentifier, binary = canonical(actualExecutable.path)
+      let readinessDeadline = began.addingTimeInterval(15)
+      var readiness: [String: Any] = ["state": "pending", "pid": pid]
+      var readinessSamples = 0
+      repeat {
+        guard let fresh = NSRunningApplication(processIdentifier: pid), !fresh.isTerminated,
+              sameIdentity(fresh, bundle, binary, launched) else {
+          readiness = ["state": "failed", "pid": pid, "reason": "process-exited-or-identity-changed-before-workspace-ready"]
+          break
+        }
+        readiness = workspaceJournalReadiness(data + "/desktop-update", pid: pid, began: began)
+        readinessSamples += 1
+        if readiness["state"] as? String != "pending" { break }
+        RunLoop.current.run(until: min(readinessDeadline, Date().addingTimeInterval(0.02)))
+      } while Date() < readinessDeadline
+      if readiness["state"] as? String == "pending" { readiness["reason"] = "workspace-readiness-deadline" }
+      facts["workspaceReadiness"] = readiness
+      facts["workspaceReadinessSamples"] = readinessSamples
+      guard readiness["state"] as? String == "ready" else {
+        facts["normalTerminationRequested"] = false
+        facts["cleanupFailure"] = "workspace-not-ready-no-termination-request"
+        facts["iterationWallMs"] = Int(Date().timeIntervalSince(iterationBegan) * 1000)
+        try emit(facts, to: root.appendingPathComponent("result.json"))
+        throw reject("Cannot qualify normal termination before this exact Desktop workspace is ready")
+      }
       let current = NSRunningApplication(processIdentifier: pid)
       let ownershipKnown = current.map { sameIdentity($0, bundle, binary, launched) } ?? true
-      let requested = ownershipKnown && (current?.terminate() ?? false)
+      let requested = requestReadyTermination(readiness, ownershipKnown: ownershipKnown) { current?.terminate() ?? false }
       facts["normalTerminationRequested"] = requested
       facts["nativeLookupMissingBeforeRequest"] = current == nil
       let deadline = Date().addingTimeInterval(15)
