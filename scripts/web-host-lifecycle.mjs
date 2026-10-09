@@ -28,10 +28,9 @@ export async function launchWebHost({ argv, cwd, logRoot, port = 3080, signal, s
   const log = await open(logPath, 'wx', 0o600)
   onLogPath(logPath)
   let child, exit, settled = false, stopping = false, escalation, lastProbe = 'not_started'
-  const grouped = process.platform !== 'win32'
   const kill = name => {
     if (!child?.pid || settled) return
-    try { grouped ? process.kill(-child.pid, name) : child.kill(name) }
+    try { process.kill(-child.pid, name) }
     catch (error) { if (error.code !== 'ESRCH') throw error }
   }
   const stop = () => {
@@ -41,14 +40,14 @@ export async function launchWebHost({ argv, cwd, logRoot, port = 3080, signal, s
   }
   try {
     child = spawn(argv[0], argv.slice(1), { cwd, env: environment,
-      detached: grouped, stdio: [stdin, log.fd, log.fd] })
+      detached: true, stdio: [stdin, log.fd, log.fd] })
     const closed = new Promise(resolve => {
       child.once('error', error => { lastProbe = `spawn_failed:${error.code ?? error.message}` })
       child.once('close', (code, terminatedBy) => {
         // The direct host may exit while descendants keep its process group
         // alive. Close that group immediately, before releasing ownership;
         // never schedule a later kill against a potentially reused group ID.
-        if (grouped) kill('SIGKILL')
+        kill('SIGKILL')
         settled = true; exit = { code, signal: terminatedBy }; clearTimeout(escalation); resolve(exit)
       })
     })

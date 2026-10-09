@@ -54,11 +54,16 @@ permissions:
 
 jobs:
   validation-inputs:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     outputs:
       helper_only: ${{ steps.proof.outputs.helper_only }}
       native_reuse: ${{ steps.proof.outputs.native_reuse }}
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -90,6 +95,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T07"
@@ -218,6 +228,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare T02 runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T02"
@@ -494,6 +509,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare T05 runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T05"
@@ -778,6 +798,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare T06 runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T06"
@@ -1018,6 +1043,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare T08 runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T08"
@@ -1275,6 +1305,11 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 15
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - uses: actions/checkout@v6
         with:
           submodules: false
@@ -1385,6 +1420,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - uses: actions/checkout@v6
         with:
           submodules: false

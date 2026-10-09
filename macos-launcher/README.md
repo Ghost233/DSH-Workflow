@@ -35,7 +35,7 @@ CI 同时准备固定 Flutter 3.47.6，检查 lockfile、Dart 格式、静态分
 
 ## 启动和关闭
 
-日常入口仍为无参数 `./start-dsh-workflow.sh`。在 macOS 上，它通过 `dsh-workflow://open-global` 唤起已构建的启动器并打开全局实例；重复运行复用启动器和官方 Desktop 的单实例机制。在其他平台保留原来的源码 Web 启动路径。
+日常入口是无参数 `./start-dsh-workflow.sh`，只支持 macOS ARM64。它通过 `dsh-workflow://open-global` 唤起已构建的启动器并打开全局实例；重复运行复用启动器和官方 Desktop 的单实例机制。其他系统或架构在启动应用前明确拒绝，不保留源码 Web 启动回退。
 
 首次打开管理窗口需要设置访问密码。启动器将 Web 连接到正在运行的 Desktop Host；后端未运行时才打开官方桌面端。唯一主入口“打开 DSH”激活已有桌面应用，不会额外打开浏览器标签。每个工程在 DSH 内选择工作目录。
 

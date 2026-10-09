@@ -44,11 +44,16 @@ permissions:
 
 jobs:
   validation-inputs:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     outputs:
       helper_only: ${{ steps.proof.outputs.helper_only }}
       native_reuse: ${{ steps.proof.outputs.native_reuse }}
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -76,6 +81,11 @@ jobs:
     if: always() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/macos-v') || needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.helper_only != 'true')
     runs-on: macos-15
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Checkout fixed DSH submodule
         uses: actions/checkout@v6
         with:
@@ -220,10 +230,15 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/macos-v')
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     permissions:
       contents: write
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Download the ARM64 macOS build
         uses: actions/download-artifact@v4
         with:

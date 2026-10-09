@@ -21,6 +21,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare disposable diagnostic evidence
         run: |
           evidence="$RUNNER_TEMP/dsh-native-diagnostics"

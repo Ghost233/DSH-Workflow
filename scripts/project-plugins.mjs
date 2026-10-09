@@ -78,7 +78,7 @@ export async function command(executable, args, options = {}) {
 export async function harnessAnchor(value) {
   if (value !== 'auto') return resolve(value)
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
-    const candidate = join(dir, process.platform === 'win32' ? 'dsh.cmd' : 'dsh')
+    const candidate = join(dir, 'dsh')
     if (!existsSync(candidate)) continue
     let current = dirname(await realpath(candidate))
     while (dirname(current) !== current) {

@@ -24,8 +24,13 @@ on:
 
 jobs:
   matt-panel:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -37,8 +42,13 @@ jobs:
           npm test --prefix matt-skills-panel-plugin
 
   verify:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: 检出固定子模块
         uses: actions/checkout@v4
         with:
@@ -71,10 +81,6 @@ jobs:
         run: |
           node scripts/harness-runtime.mjs ensure deepseek-harness
           node scripts/harness-runtime.mjs check deepseek-harness
-
-      - name: 准备 DSH CI 沙箱
-        working-directory: deepseek-harness
-        run: bash scripts/prepare-ci-bubblewrap.sh
 
       - name: 运行 当前自研项目测试
         run: npm test

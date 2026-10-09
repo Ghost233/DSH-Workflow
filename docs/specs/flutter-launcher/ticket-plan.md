@@ -50,7 +50,7 @@
 
 9. **[T09 — 交付ARM64独立应用并完成用户故事验收收尾](https://github.com/Ghost233/DSH-Workflow/issues/10)**
    被什么阻塞：[T03 — 通过 SDK 和管理窗口观察真实状态与实例日志](https://github.com/Ghost233/DSH-Workflow/issues/4)；[T04 — 在并发、断连与退出中正确结算 Web 生命周期](https://github.com/Ghost233/DSH-Workflow/issues/5)；[T05 — 保留既有配置并通过管理窗口设置访问与权限](https://github.com/Ghost233/DSH-Workflow/issues/6)；[T06 — 接管入口并在管理端断线后归还原生入口](https://github.com/Ghost233/DSH-Workflow/issues/7)；[T07 — 通过管理窗口管理登录启动与稳定版更新](https://github.com/Ghost233/DSH-Workflow/issues/8)；[T08 — 从管理窗口查看和更新插件并明确重新加载](https://github.com/Ghost233/DSH-Workflow/issues/9)。
-   交付内容：工具维护者获得可移动的 ARM64 应用和 DMG，并用逐故事证据确认统一维护体系与整份规格的交付范围。
+   交付内容：工具维护者获得仅支持 macOS ARM64 的可移动应用和 DMG，全部项目入口、运行兼容分支和 CI 均收敛到 macOS ARM64，并用逐故事证据确认统一维护体系与整份规格的交付范围。
    用户故事：1、2、27、28。
 
 ## 阻塞依据

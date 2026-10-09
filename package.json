@@ -32,7 +32,6 @@
     "vendor/mattpocock-skills-zh.upstream.json",
     "agent-observation-plugin/",
     "scripts/dsh-launch-composition.mjs",
-    "scripts/dsh-web-launch.mjs",
     "scripts/dsh-readiness.mjs"
   ],
   "dsh": {
@@ -46,11 +45,17 @@
   "scripts": {
     "build:client": "node agent-observation-plugin/scripts/build-client.mjs",
     "check:client": "node agent-observation-plugin/scripts/build-client.mjs --check",
-    "test:project-plugins": "node scripts/run-project-tests.mjs scripts/project-plugins.test.mjs scripts/daily-workflow-launch.test.mjs scripts/agent-team-profile.test.mjs scripts/dsh-web-launch.test.mjs",
+    "test:project-plugins": "node scripts/run-project-tests.mjs scripts/project-plugins.test.mjs scripts/daily-workflow-launch.test.mjs scripts/agent-team-profile.test.mjs",
     "test": "node scripts/run-project-tests.mjs"
   },
   "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000",
   "peerDependencies": {
     "@deepseek-ai/node-addon-system": "^0.1.2"
-  }
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ]
 }

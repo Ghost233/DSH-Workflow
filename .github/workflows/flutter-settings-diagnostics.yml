@@ -33,6 +33,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare T05 runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-settings-startup/T05"
