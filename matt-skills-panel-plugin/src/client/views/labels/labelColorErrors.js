@@ -220,7 +220,7 @@ export const lcRepoNameOf = function (store) {
 export const lcWorkspaceNameOf = function (cwd) {
   const s = String(cwd === null || cwd === undefined ? '' : cwd).trim()
   if (!s) return ''
-  const parts = s.split(/[\\/]+/).filter(function (p) { return p !== '' })
+  const parts = s.split(/\/+/).filter(function (p) { return p !== '' })
   return parts.length ? parts[parts.length - 1] : ''
 }
 

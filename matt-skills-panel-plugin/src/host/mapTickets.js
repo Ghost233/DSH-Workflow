@@ -66,7 +66,7 @@ export function createMapTickets(deps) {
     if (!tracker || typeof tracker.listSubIssues !== 'function') return unsupported('这个后端不支持按需取一张地图的子票')
     let repoRef = null
     try { repoRef = reg.describe({ cwd }, backendId) } catch (e) { repoRef = null }
-    if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/[\\/]/).pop() || backendId, url: '' }
+    if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/\//).pop() || backendId, url: '' }
     // effort 维度：地图的身份是 (effortId, key)，同号地图在不同工作单元里是两张 —— 调用方给就带上。
     if (args && args.effortId !== undefined && args.effortId !== null) repoRef = Object.assign({}, repoRef, { effortId: String(args.effortId) })
     const ctx2 = { cwd, platform: await getPlatform(), fs: ctx.get('fs'), exec: function (c, a, o) { return detectionExec(c, a, o, 'map-tickets') } }

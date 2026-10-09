@@ -10,7 +10,7 @@ export const useWsOverview = function (cx, sharedSt) {
       const normCwdClient=function(raw){
         if(!raw) return ''
         if(typeof raw!=='string') raw=String(raw)
-        try{ if(/^[A-Za-z]:[\\/]/.test(raw)||/^\//.test(raw)) return raw.replace(/[\\/]+$/,'') }catch{}
+        try{ if(/^\//.test(raw)) return raw.replace(/\/+/g,'/').replace(/(.+)\/$/, '$1') }catch{}
         return raw
       }
       const [wsOverview, setWsOverview] = React.useState({ loading:true, err:'', bindings:[], workspaces:[], modules:[], selections:{} })
@@ -98,7 +98,7 @@ export const renderWsOverview = function (h, sharedSt, wsOverview, loadRef, fold
                       const modsOrder=(wsOverview.modules||[]).map(function(m){return m.id})
                       const isBound=function(c){ const s=selMap[c]||bindingsByCwd[c]; return !!(s&&s.backendId) }
                       const backendRank=function(c){ const s=selMap[c]||bindingsByCwd[c]; const bid=s&&s.backendId; if(!bid) return 9999; const i=modsOrder.indexOf(bid); return i<0?9999:i }
-                      const baseName=function(c){ const k=String(c); return k.split(/[\\/]/).pop()||k }
+                      const baseName=function(c){ const k=String(c); return k.split(/\//).pop()||k }
                       const bound=all.filter(isBound)
                       const unbound=all.filter(function(c){return !isBound(c)})
                       bound.sort(function(a,b){ const ra=backendRank(a),rb=backendRank(b); if(ra!==rb) return ra-rb; const ba=baseName(a).toLowerCase(),bb=baseName(b).toLowerCase(); if(ba<bb) return -1; if(ba>bb) return 1; return 0 })
@@ -106,7 +106,7 @@ export const renderWsOverview = function (h, sharedSt, wsOverview, loadRef, fold
                       const ordered=bound.concat(unbound)
                       const boundCnt=bound.length
           // #653 归属标注所需的两个表：哪些行本身是工作区根、哪些行的根是谁（根用规整键比对，显示用原样路径）
-          const normOf = function (p) { try { return (typeof keyOf === 'function') ? keyOf(p) : String(p || '').toLowerCase() } catch (e) { return String(p || '') } }
+          const normOf = function (p) { try { return (typeof keyOf === 'function') ? keyOf(p) : String(p || '').trim().replace(/\/+/g, '/').replace(/(.+)\/$/, '$1') } catch (e) { return String(p || '').trim().replace(/\/+/g, '/').replace(/(.+)\/$/, '$1') } }
           const byNorm = {}
           all.forEach(function (c) { const n = normOf(c); if (n && !byNorm[n]) byNorm[n] = c })
           const rootRawOf = function (c) { const r = rootOf(c); return (r && byNorm[r]) || r || '' }
@@ -124,7 +124,7 @@ export const renderWsOverview = function (h, sharedSt, wsOverview, loadRef, fold
                 const srcLabel=source==='explicit'?tr('cfg.wsSrcExplicit'):source==='matches'?tr('cfg.wsSrcAuto'):tr('cfg.wsSrcUnset')
                 const srcColor=source==='explicit'?'#4ade80':source==='matches'?'#58a6ff':'#8b8b95'
                 const srcTitle=source==='explicit'?tr('cfg.wsSrcExplicitTip'):source==='matches'?tr('cfg.wsSrcAutoTip'):tr('cfg.wsSrcUnsetTip')
-                const base=cwd.split(/[\\/]/).pop()||cwd
+                const base=cwd.split(/\//).pop()||cwd
                 // #653：这一行被并进了哪个工作区根？两份证据都找不到就不标（不猜）
                 const _mr = rootOf(cwd)
                 const mergedInto = (_mr && _mr !== normOf(cwd) && byNorm[_mr]) ? rootRawOf(cwd) : ''

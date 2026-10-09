@@ -4,6 +4,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Project client builds require macOS ARM64')
+
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const pluginDirectory = dirname(scriptDirectory)
 const sourcePath = join(pluginDirectory, 'src', 'client-runtime.js')

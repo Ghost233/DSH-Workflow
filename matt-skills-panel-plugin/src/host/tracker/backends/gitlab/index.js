@@ -69,7 +69,7 @@ export function describe(handle, backendId) {
   const rawRef = handle && typeof handle.refId === 'string' && handle.refId ? String(handle.refId).trim() : ''
   const cwd = handle && typeof handle.cwd === 'string' ? String(handle.cwd) : ''
   let refId = rawRef
-  const name = refId || (cwd ? cwd.split(/[\\/]/).pop() || cwd : backendId) || backendId
+  const name = refId || (cwd ? cwd.split(/\//).pop() || cwd : backendId) || backendId
   const url = refId && refId.includes('/') ? 'https://gitlab.com/' + refId : ''
   return { backend: backendId, refId: refId || '', name, url }
 }
@@ -130,8 +130,8 @@ export const prompts = {
   // #716：这个后端自己的命令行名与站点名（提示词模板里的 {cli} / {cliBrand} 由这一格填）。
   commandVocabulary: { cli: 'glab', cliBrand: 'GitLab' },
   glabInstallFix: {
-    zh: '请为 DSH 安装 GitLab CLI（glab）：\n1. 先检查：终端执行 glab --version；\n2. 无 glab 则按 OS 安装：Windows → winget install --id GitLab.gitlab-cli（或 scoop install glab）；macOS → brew install glab；Linux → 按 gitlab.com/gitlab-org/cli 官方方式安装；\n3. 安装完成后请用户点「重查」。',
-    en: 'Install the GitLab CLI (glab) for DSH:\n1. Check first: glab --version;\n2. If missing, install per OS: Windows → winget install --id GitLab.gitlab-cli (or scoop install glab); macOS → brew install glab; Linux → follow gitlab.com/gitlab-org/cli official install;\n3. After install, ask the user to re-check.',
+    zh: '请为 DSH 安装 GitLab CLI（glab）：\n1. 先检查：终端执行 glab --version；\n2. 无 glab 则在 macOS 执行：brew install glab；\n3. 安装完成后请用户点「重查」。',
+    en: 'Install the GitLab CLI (glab) for DSH:\n1. Check first: glab --version;\n2. If missing on macOS, run brew install glab;\n3. After install, ask the user to re-check.',
   },
   glabLoginFix: {
     zh: '请完成 glab 登录（glab auth login）：按向导选择 GitLab.com → HTTPS → 浏览器授权（OAuth）；完成后 glab auth status 验证；然后请用户点「重查」。',

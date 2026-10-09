@@ -378,13 +378,13 @@ class ActorRoutingWiringTest(unittest.TestCase):
         conditions = [('build', producer['jobs']['build']['if'], 'helper_only')]
         conditions += [(name, acceptance['jobs'][name]['if'], 'native_reuse') for name in ['t07', 't02', 't05', 't06', 't08']]
 
-        def evaluate(condition, status, output, event='push', ref='refs/heads/main', actor_only=False):
+        def evaluate(condition, status, output, event='push', ref='refs/heads/main', actor_only=False, preference_only=False, release_run_id=''):
             values = {
                 'needs.validation-inputs.result': status,
                 'needs.validation-inputs.outputs.helper_only': output or '',
                 'needs.validation-inputs.outputs.native_reuse': output or '',
                 'github.event_name': event, 'github.ref': ref,
-                'inputs.actor_only': actor_only, 'inputs.release_run_id': '',
+                'inputs.actor_only': actor_only, 'inputs.preference_only': preference_only, 'inputs.release_run_id': release_run_id,
             }
             for token, value in values.items():
                 condition = condition.replace(token, repr(value))
@@ -401,6 +401,70 @@ class ActorRoutingWiringTest(unittest.TestCase):
                     self.assertTrue(evaluate(condition, status, 'true', ref='refs/tags/macos-v1.0.0'))
                 else:
                     self.assertFalse(evaluate(condition, status, 'true', event='workflow_dispatch', actor_only=True))
+                    self.assertFalse(evaluate(condition, status, 'false', event='workflow_dispatch', preference_only=True))
+
+    def test_preference_only_dispatch_uses_frozen_commands_and_original_debug_bytes(self):
+        from actor_validation_inputs import parsed
+        repo = Path(__file__).resolve().parents[2]
+        document = parsed((repo / '.github/workflows/flutter-launcher-acceptance.yml').read_text())
+        inputs = (document.get('on') or document['true'])['workflow_dispatch']['inputs']
+        self.assertEqual(inputs.get('preference_only'), {'description': 'Run only the existing saved Desktop startup-window preference scenarios', 'required': False, 'default': False, 'type': 'boolean'})
+        jobs = document['jobs']
+        for preference, actor, release, expected in [(True, False, '', [False, False, False, True]), (True, True, '1', [False, False, False, True]), (False, True, '', [True, True, False, False]), (False, False, '1', [True, False, True, False])]:
+            actual = []
+            for name in ['validation-inputs', 'actor-only', 't09-release', 'preference-only']:
+                condition = jobs[name]['if']
+                for token, value in {'github.event_name': 'workflow_dispatch', 'inputs.preference_only': preference, 'inputs.actor_only': actor, 'inputs.release_run_id': release}.items():
+                    condition = condition.replace(token, repr(value))
+                condition = re.sub(r'!(?!=)', ' not ', condition).replace('&&', ' and ').replace('||', ' or ')
+                actual.append(eval(condition, {'__builtins__': {}}))
+            self.assertEqual(actual, expected, (preference, actor, release))
+        steps = jobs['preference-only']['steps']
+        download = next(step for step in steps if step.get('name') == 'Download exact original Native Debug bytes')
+        self.assertIn('actions/artifacts/11588566917/zip', download['run'])
+        self.assertIn("actual_digest == '940ad67", download['run'])
+        self.assertIn('37866760770', next(step['with']['script'] for step in steps if step.get('name') == 'Verify original successful Native Debug provenance'))
+        runs = '\n'.join(step.get('run', '') + step.get('with', {}).get('script', '') for step in steps)
+        self.assertIn('940ad67ec8668539f5f1be081a814e08b4ce30b360f3874fe43bf9010fd0a0ff', runs)
+        self.assertIn('94f82e0d6012cbf31bce8f69f281af6839ea1169', runs)
+        self.assertIn('flutter_debug_artifact.py inputs', runs)
+        self.assertIn('flutter_debug_artifact.py restore', runs)
+        self.assertNotIn('flutter build', runs)
+        self.assertNotIn('flutter_debug_artifact.py build', runs)
+        upload = next(step for step in steps if step.get('name') == 'Upload preference evidence even on failure')
+        self.assertIn('!${{ runner.temp }}/flutter-launcher-acceptance/PREFERENCE/native-debug-artifact.zip', upload['with']['path'])
+        self.assertFalse(any('cache/' in step.get('uses', '') or step.get('uses') == './.github/actions/flutter-debug-app' for step in steps))
+        show = next(index for index, step in enumerate(steps) if '--window-start show' in step.get('run', ''))
+        restart = next(index for index, step in enumerate(steps) if '--desktop-window-restart "$PREFERENCE_SHOW_ROOT"' in step.get('run', ''))
+        hidden = next(index for index, step in enumerate(steps) if '--window-start hidden' in step.get('run', ''))
+        self.assertLess(show, restart); self.assertLess(restart, hidden)
+        for index in [show, restart, hidden]:
+            self.assertNotIn('if', steps[index])
+            self.assertIn('exit "$result"', steps[index]['run'])
+
+    def test_preference_show_root_handoff_rejects_unknown_or_symlinked_roots(self):
+        from actor_validation_inputs import parsed
+        from unittest.mock import patch
+        repo = Path(__file__).resolve().parents[2]
+        steps = parsed((repo / '.github/workflows/flutter-launcher-acceptance.yml').read_text())['jobs']['preference-only']['steps']
+        capture = next(step['run'] for step in steps if step.get('name') == 'Bind the one actual saved preference profile')
+        source = capture.split("<<'PYROOT'\n", 1)[1].split('\nPYROOT', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Path(directory).resolve(); runner.chmod(0o700)
+            evidence = runner / 'evidence'; evidence.mkdir()
+            root = runner / 'dsh-t05-preference-owned'; root.mkdir(mode=0o700)
+            output = runner / 'github-env'
+            with patch.dict(os.environ, {'GITHUB_ACTIONS': 'true', 'RUNNER_TEMP': str(runner), 'GITHUB_WORKSPACE': str(repo), 'EVIDENCE_DIR': str(evidence), 'GITHUB_ENV': str(output)}):
+                (evidence / 'show.log').write_text('ISOLATED_ROOT=' + str(root) + '\n')
+                exec(compile(source, '<actual preference root handoff>', 'exec'), {})
+                expected = 'PREFERENCE_SHOW_ROOT=' + str(root) + '\n'
+                self.assertEqual(output.read_text(), expected)
+                link = runner / 'dsh-t05-symlink'; link.symlink_to(root, target_is_directory=True)
+                for names in [[str(link)], [str(root), str(root)], [str(runner / 'unknown-root')]]:
+                    (evidence / 'show.log').write_text(''.join('ISOLATED_ROOT=' + name + '\n' for name in names))
+                    with self.assertRaises((AssertionError, ValueError, RuntimeError, OSError)):
+                        exec(compile(source, '<actual preference root handoff>', 'exec'), {})
+                    self.assertEqual(output.read_text(), expected)
 
     def test_actual_workflow_actor_dispatch_and_current_signed_arm_gate(self):
         from actor_validation_inputs import parsed

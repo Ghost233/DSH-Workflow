@@ -8,6 +8,7 @@
  * 用法：node packages/dsh-log/build.mjs（在仓库根目录或包目录均可）
  * 或：npm run build --workspace=dsh-log（需先接好 workspace，见 pnpm-workspace.yaml）
  */
+import '../../scripts/require-macos-arm64.mjs'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

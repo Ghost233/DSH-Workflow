@@ -82,8 +82,8 @@ export const useDockSync = function(s, sid, summaryCwd, props){
       React.useEffect(function () {
         const apply = function (cwd) {
           if (!cwd) return false
-          const norm = (typeof keyOf==='function'?keyOf(cwd):String(cwd).replace(/\\/g,'/').replace(/\/+$/,''))
-          const cur = (typeof keyOf==='function'?keyOf(s.cwd||''):String(s.cwd||'').replace(/\\/g,'/').replace(/\/+$/,''))
+          const norm = (typeof keyOf==='function'?keyOf(cwd):String(cwd).trim().replace(/\/+/g,'/').replace(/(.+)\/$/, '$1'))
+          const cur = (typeof keyOf==='function'?keyOf(s.cwd||''):String(s.cwd||'').trim().replace(/\/+/g,'/').replace(/(.+)\/$/, '$1'))
           const need = norm !== cur
           // 每次 cwd 变更都强制刷新（即使 hydrate 命中），避免“回切仍为旧快照/没有仓库”空白
           if (need) {

@@ -1,3 +1,4 @@
+import './require-macos-arm64.mjs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises'

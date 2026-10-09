@@ -12,9 +12,9 @@
 // 都不在这里：全部从 budget.js 取好注入（见 attentionLimits）。这就是「薄壳」两个字的含义 ——
 // 本文件里没有一条 if 在决定谁该被淘汰。
 //
-// 为什么工作区根必须走 canonicalKey：同一个仓库在会话里可能写成 D:\Repo、d:\repo\、D:/Repo/，
+// 为什么工作区根必须走 canonicalKey：同一个仓库在会话里可能写成 /Users/Matt/Repo 或 /Users/Matt/Repo/，
 // 界面上报的又是「这个会话选的那条目录」。不归一化就会同一个仓库占两个名额、花两份探测额度，
-// 而这条归一化的规则（含向上锚到工作区根）全仓只有一份，写在 src/host/workspaceKey.js。
+// macOS 路径保留大小写和字面反斜杠；工作区根锚定的规则全仓只有一份，写在 src/host/workspaceKey.js。
 //
 // 日志（按需级 P1，先判调试开关再组装字段，字段只记散列与枚举，绝不记路径原文）：
 //   attention.report 每一次上报落一行（心跳每 20 秒一次，按十取一采样）

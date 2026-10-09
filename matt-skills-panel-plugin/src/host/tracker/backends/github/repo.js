@@ -36,7 +36,7 @@ export function describe(handle, backendId) {
     const maybe = cwd.trim()
     if (/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(maybe)) refId = maybe
   }
-  const name = refId || (cwd ? cwd.split(/[\\/]/).pop() || cwd : backendId) || backendId
+  const name = refId || (cwd ? cwd.split(/\//).pop() || cwd : backendId) || backendId
   const url = refId && refId.includes('/') ? 'https://github.com/' + refId : ''
   return { backend: backendId, refId: refId || '', name: name || refId || backendId, url }
 }

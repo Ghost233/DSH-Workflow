@@ -25,7 +25,7 @@
  * 是否出错与结构化结果（`result.value.exitCode`）；会话事件里与工具有关的四条是 `tool/call`、
  * `tool/result`、`tool/ptc-dispatch-start`、`tool/ptc-dispatch`（磁盘格式 v2→v3 会把 ptc 写成 code，
  * 所以四个 code 旧名也要认）。只有「结果」形态才可能产生前两档；`tool/call` 与 `*-start` 是调用刚开始，
- * 没有成功与否的信息，一律走第三档。Windows 上执行命令的工具名是 `pwsh`。
+ * 没有成功与否的信息，一律走第三档。
  */
 import type { DetectInput, DetectResult, DetectTier, EventAction, WriteDetectLimits } from './ports.js'
 
@@ -59,7 +59,7 @@ export const DETECT_REASONS: Readonly<Record<string, string>> = {
   'cmd.git-local': 'git 的本地子命令（不是 push）：不触发取数',
   'cmd.script': '脚本或解释器（node / python / npm run 这一类）：里面干了什么看不出来，立刻探一次',
   'cmd.remote-client': '远端客户端（curl / wget / ssh 这一类）：可能直接打了接口，立刻探一次',
-  'cmd.file-write': '这一行里有重定向或写文件（> / >> / Out-File / Set-Content）：可能改到了票文件，立刻探一次',
+  'cmd.file-write': '这一行里有重定向或写文件（> / >> / tee）：可能改到了票文件，立刻探一次',
   'cmd.local-read': '已知只读的本地命令：不触发取数',
   'cmd.unknown': '认不出的命令：默认立刻探一次（宁可多探，不许漏）',
 }
@@ -86,8 +86,8 @@ const DECK_READ_TOOLS = LIST('deck_context,deck_issue_get,deck_map_snapshot')
 const TICKET_ARG_FIELDS = LIST('issue,number,ticket,key,id,child,parent')
 /** 联网抓取类工具：可能带着写意图，按「可疑」处理。 */
 const WEB_FETCH_TOOLS = LIST('webfetch,web_fetch,fetch,webfetchtool,fetchurl')
-/** 执行命令的工具（Windows 上是 pwsh；bash 只在非 Windows 出现）。 */
-const SHELL_TOOLS = LIST('pwsh,powershell,bash,sh,zsh,cmd,shell')
+/** macOS 执行命令的工具。 */
+const SHELL_TOOLS = LIST('bash,sh,zsh,shell')
 /** 已知只读的本地工具（看、搜、问、算）：它们在本地改不了工单仓库。 */
 const LOCAL_READ_TOOLS = LIST('read,readfile,glob,grep,search,ls,list,listfiles,askuserquestion,ask_user_question,todowrite,todo_write,websearch,web_search,skill,vision_describe,vision_ocr,vision_crop')
 /** 第三方终端工具（本机 better-sidebar 带来的 terminal_* 一族）参数字段形状不遵循 command 约定，
@@ -97,14 +97,14 @@ const LOCAL_READ_TOOLS = LIST('read,readfile,glob,grep,search,ls,list,listfiles,
 /** 段与段的分隔：管道、逻辑连接、分号、换行。一段一段看，绝不把整条命令行当一个字符串扫。 */
 const SEGMENT_SPLIT_RE = /&&|\|\||[;|\n\r]|(?<![&>])&(?![&>])/g
 /** 认得出「它只会看」的本地命令首词。 */
-const LOCAL_READ_HEADS = LIST('ls,dir,pwd,cd,cat,type,get-content,get-childitem,head,tail,wc,grep,rg,select-string,find,test-path,which,get-command,echo,write-output,write-host,date,get-date,whoami,tree,stat,du,df,printenv,get-item,resolve-path')
+const LOCAL_READ_HEADS = LIST('ls,pwd,cd,cat,type,head,tail,wc,grep,rg,find,which,echo,date,whoami,tree,stat,du,df,printenv')
 /** 脚本与解释器：里面干了什么看不出来，一律按「可疑」。注意这些名字也有「只看一眼」的用法（`node -v`），
  * 宁可多探一次，也不去猜它的参数。 */
-const SCRIPT_HEADS = LIST('node,deno,bun,npx,npm,pnpm,yarn,python,python3,py,ruby,perl,php,make,just,cargo,go,dotnet,java,mvn,gradle,docker,kubectl,terraform,ansible,pwsh,powershell,bash,sh,zsh,cmd')
+const SCRIPT_HEADS = LIST('node,deno,bun,npx,npm,pnpm,yarn,python,python3,ruby,perl,php,make,just,cargo,go,dotnet,java,mvn,gradle,docker,kubectl,terraform,ansible,bash,sh,zsh')
 /** 远端客户端：可能直接打了接口，一律按「可疑」。 */
-const REMOTE_HEADS = LIST('curl,wget,irm,iwr,invoke-restmethod,invoke-webrequest,http,https,httpie,ssh,scp,sftp,rsync,nc,telnet')
+const REMOTE_HEADS = LIST('curl,wget,http,https,httpie,ssh,scp,sftp,rsync,nc,telnet')
 /** 写文件的形状：出现这些就当「可能改到了票文件」（本地 Markdown 后端的票就是文件）。 */
-const FILE_WRITE_RE = /(^|[\s;|&])(>>?|out-file|set-content|add-content|tee)([\s;|&]|$)/i
+const FILE_WRITE_RE = /(^|[\s;|&])(>>?|tee)([\s;|&]|$)/i
 
 /** 子命令词算不算写（w 写 / r 读 / x 是本地动作，既不读也不写远端）。缺失的一律按「认不出」处理。 */
 const CLI_SCOPES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
@@ -157,14 +157,12 @@ function tokenize(segment: string): string[] {
   return cur ? out.concat(cur) : out
 }
 
-/** 首词归一：去掉目录与可执行后缀（`D:\x\gh.cmd` → `gh`），再去引号、转小写。 */
+/** 首词归一：去掉 POSIX 目录与引号，再转小写。 */
 function headWord(tok: string): string {
   let s = unquote(tok || '')
-  const cut = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'))
+  const cut = s.lastIndexOf('/')
   if (cut >= 0) s = s.slice(cut + 1)
-  s = s.toLowerCase()
-  for (const ext of ['.exe', '.cmd', '.bat', '.ps1', '.com']) if (s.length > ext.length && s.endsWith(ext)) { s = s.slice(0, -ext.length); break }
-  return s
+  return s.toLowerCase()
 }
 
 /** 位置参数：不以 `-` 开头，且不是「认得出的带值选项」后面那个跟着的值。 */

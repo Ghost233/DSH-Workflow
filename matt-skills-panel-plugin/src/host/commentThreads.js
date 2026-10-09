@@ -79,7 +79,7 @@ export function createCommentThreads(deps) {
         if (!tracker || typeof tracker.get !== 'function') return { ok: false, error: { kind: 'unsupported', message: "backend '" + backendId + "' 未实现 get" } }
         let repoRef = null
         try { repoRef = reg.describe({ cwd }, backendId) } catch {}
-        if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/[\\/]/).pop() || backendId, url: '' }
+        if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/\//).pop() || backendId, url: '' }
         // effort 维度：effort 是寻址范围，客户端带上来就放进 ref（不带 = 全仓库，单 effort 后端行为不变）
         if (args && args.effortId !== undefined && args.effortId !== null) repoRef.effortId = String(args.effortId)
         const opCtx = { cwd, platform: await getPlatform(), fs: ctx.get('fs') }
@@ -137,7 +137,7 @@ export function createCommentThreads(deps) {
         if (!tracker || typeof tracker.get !== 'function') return { ok: false, error: { kind: 'unsupported', message: "backend '" + backendId + "' 未实现 get" } }
         let repoRef = null
         try { repoRef = reg.describe({ cwd }, backendId) } catch {}
-        if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/[\\/]/).pop() || backendId, url: '' }
+        if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/\//).pop() || backendId, url: '' }
         // effort 维度：评论也按 effort 寻址（不带 = 全仓库；多 effort 同号时后端会诚实报 conflict）
         if (args && args.effortId !== undefined && args.effortId !== null) repoRef.effortId = String(args.effortId)
         const opCtx = { cwd, platform: await getPlatform(), fs: ctx.get('fs') }
@@ -215,7 +215,7 @@ export function createCommentThreads(deps) {
         if (tracker && typeof tracker.list === 'function') {
           let repoRef = null
           try { repoRef = reg.describe({ cwd }, _selProbe.backendId) } catch {}
-          if (!repoRef) repoRef = { backend: _selProbe.backendId, refId: cwd, name: String(cwd).split(/[\\/]/).pop() || _selProbe.backendId, url: '' }
+          if (!repoRef) repoRef = { backend: _selProbe.backendId, refId: cwd, name: String(cwd).split(/\//).pop() || _selProbe.backendId, url: '' }
           const opCtx = { cwd, platform: await getPlatform(), fs: ctx.get('fs') }
           const r = await tracker.list(repoRef, {}, opCtx)
           if (!r || !r.ok) return { ok: false, error: errText((r && r.error) || 'probe list 失败') }
@@ -232,7 +232,7 @@ export function createCommentThreads(deps) {
           lastIssueIndexByRepo[rk1] = idx
           lastProbeAtByRepo[rk1] = new Date().toISOString()
           if (changed) setCache({ ts: 0, snapshot: null, error: null, cwd: cwd })
-          return { ok: true, changed: changed, repo: { owner: _selProbe.backendId, name: String(cwd).split(/[\\/]/).pop()||'' }, count: all.length, since: lastProbeAtByRepo[rk1] }
+          return { ok: true, changed: changed, repo: { owner: _selProbe.backendId, name: String(cwd).split(/\//).pop()||'' }, count: all.length, since: lastProbeAtByRepo[rk1] }
         }
       } catch (e) { return { ok: false, error: errText(e) } }
     }

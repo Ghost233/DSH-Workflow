@@ -81,7 +81,7 @@ export function classifyGhError(err, ctx) {
   //   #620 整改收紧的那一条：`resolveexecutable` 原来是裸词，凡含这个词的文本都被判「本机没工具」；
   //   现在要求它跟 `platform.` 连写，并把我们自己用的原句 `gh not found` 显式写上。
   let mapped
-  if (/cannot find.*gh|gh not found|not found.*gh|which:.*gh|platform\.resolveexecutable|ENOENT|is not recognized|command not found|no such file/i.test(msg)) {
+  if (/cannot find.*gh|gh not found|not found.*gh|which:.*gh|platform\.resolveexecutable|ENOENT|command not found|no such file/i.test(msg)) {
     mapped = ERROR_KIND.ENV
   } else if (/not logged in|authentication|bad credentials|unauthorized|permission denied|credential/i.test(s) || /\b401\b|\b403\b/.test(s)) {
     // auth 必须在 rate-limit 之前（401/403 优先于 429 文案可能共存时的优先级由 contract 固定）

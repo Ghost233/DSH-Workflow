@@ -3,7 +3,7 @@
  *
  * 顶层是“首屏读数”：身份、未提交改动（已暂存/未暂存两组）、其他工作树、仓库级状态、提交历史。
  * 首屏三块同一次读取、成败一起：任一解析失败就整体显式失败，不做每块各自降级（#821）。
- * 判“哪个工作树是当前的”用分支名比对，不比较路径（Windows 大小写与斜杠坑，调研 7.3）。
+ * 判“哪个工作树是当前的”先比较 POSIX 路径，再按分支或提交补充匹配。
  * 冲突是叠加状态：解析层不去重，合成一行是这里的事（故事 26）。
  */
 import type { BranchInfo, BranchSync, CommitInfo, FileChange, FileEntry, FirstScreen, Identity, ParseFailure, RepoFlags, WorktreeInfo } from './ports.js'
@@ -45,14 +45,14 @@ function fail(detail: string): ParseFailure {
 
 /** 最短唯一后缀：同仓全部工作树里从末段往左数到可区分的最少段数（#812 定案）。 */
 export function shortestUniqueSuffix(paths: string[]): number[] {
-  const segs = paths.map((p) => String(p).replace(/\\/g, '/').split('/').filter((s) => s !== ''))
+  const segs = paths.map((p) => String(p).split('/').filter((s) => s !== ''))
   return segs.map((s, i) => {
     for (let n = 1; n <= s.length; n += 1) {
-      const tail = s.slice(-n).join('/').toLowerCase()
+      const tail = s.slice(-n).join('/')
       let clash = false
       for (let j = 0; j < segs.length; j += 1) {
         if (j === i) continue
-        if (segs[j].slice(-n).join('/').toLowerCase() === tail) { clash = true; break }
+        if (segs[j].slice(-n).join('/') === tail) { clash = true; break }
       }
       if (!clash) return n
     }
@@ -60,21 +60,14 @@ export function shortestUniqueSuffix(paths: string[]): number[] {
   })
 }
 
-/**
- * 工作树路径比对用的归一化：反斜杠与正斜杠统一、去掉结尾的斜杠、Windows 盘符只折大小写
- * （盘符大小写不敏感是 Windows 的事实）；其余部分原样保留，POSIX 上路径是大小写敏感的。
- */
+/** 工作树路径按 POSIX 字面比对，只去掉结尾斜杠。 */
 function sameWorktreePath(a: string, b: string): boolean {
-  const norm = (p: string): string => {
-    const s = String(p).replace(/\\/g, '/').replace(/\/+$/, '')
-    const drive = /^([a-zA-Z]):/.exec(s)
-    return drive ? s.charAt(0).toLowerCase() + s.slice(1) : s
-  }
+  const norm = (p: string): string => String(p).replace(/\/+$/, '')
   return norm(a) === norm(b)
 }
 
 export function displayFor(path: string, keep: number): string {
-  const segs = String(path).replace(/\\/g, '/').split('/').filter((s) => s !== '')
+  const segs = String(path).split('/').filter((s) => s !== '')
   return segs.slice(-Math.max(1, keep)).join('/')
 }
 

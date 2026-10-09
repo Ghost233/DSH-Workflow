@@ -31,6 +31,21 @@ class ActorInputsTest(unittest.TestCase):
         self.mutate('macos-launcher/flutter/tool/release_close_actor/Actor.entitlements', 'changed actor only')
         value = self.check(); self.assertTrue(value['helperOnly']); self.assertTrue(value['materialInputsEqual'])
         self.assertEqual(value['changedFiles'], ['macos-launcher/flutter/tool/release_close_actor/Actor.entitlements'])
+    def test_real_diagnostic_preparation_diff_reuses_only_equal_product_inputs(self):
+        paths = ['.github/workflows/flutter-launcher-diagnostics.yml', '.github/scripts/macos_arm64_ci_test.py']
+        for name in paths:
+            target = self.root / name; target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('current diagnostic executor preparation fixture')
+        self.git('add', '.')
+        self.git('-c', 'user.name=Actor inputs fixture', '-c', 'user.email=actor@example.invalid', 'commit', '-qm', 'diagnostic helper preparation only')
+        value = guard.classify(self.root, self.base)
+        self.assertTrue(value['helperOnly']); self.assertTrue(value['materialInputsEqual'])
+        self.assertEqual(value['changedFiles'], sorted(paths))
+        runtime = self.root / 'macos-launcher/runtime/run-dsh.mjs'
+        runtime.parent.mkdir(parents=True, exist_ok=True); runtime.write_text('changed actual product runtime')
+        value = self.check()
+        self.assertFalse(value['helperOnly']); self.assertFalse(value['materialInputsEqual'])
+
     def test_real_material_and_unknown_file_changes_never_skip_product(self):
         self.mutate('macos-launcher/flutter/lib/main.dart', 'changed actual product')
         self.assertFalse(self.check()['helperOnly'])

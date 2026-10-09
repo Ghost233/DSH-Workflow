@@ -20,10 +20,10 @@ const PRIMITIVE_KIND = Object.freeze({
   FILE_EXISTS: 'fileExists',       // 例：{path:'.git/config'} / {path:'docs/agents/issue-tracker.md'}
   ENV: 'env',                      // 例：{key:'HOME'}
   SKILL_PROBE: 'skillProbe',       // 例：{skill:'wayfinder'}
-  HOME_DIR: 'homeDir',             // 例：{} — 用户主目录可解析：一律问平台层（#171：win32 不读 HOME，走 os.homedir→USERPROFILE；linux/mac 走 os.homedir），
-                                   //   不再直接读 process.env.HOME（Windows 从不设置该变量，会误报 HOME not set）
+  HOME_DIR: 'homeDir',             // macOS home is resolved only through platform.getHome (#171).
+                                   // The platform source resolves macOS home; an actual write probe checks directory writability (#171).
   DIR_WRITABLE: 'dirWritable',     // 例：{path:'.scratch'} — 目录「存在且可写」：写探测（往目录写临时探针并清理），
-                                   //   跨 OS 唯一可靠的「可写」判据（stat/lstat 的权限位在 Windows 不可靠）；谓词只读纪律的唯一例外
+                                   // The platform source resolves macOS home; an actual write probe checks directory writability (#171).
 })
 
 /**

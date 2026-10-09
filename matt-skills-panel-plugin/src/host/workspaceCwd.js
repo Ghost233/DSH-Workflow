@@ -160,7 +160,7 @@ export function createWorkspaceCwd(deps) {
   // 没带会话号时怎么办：找这个工作区名下活着的会话，正好一个就用它；找不到（或不止一个，无法确定
   // 是哪一次操作）就不猜、也不自己拼政策——退回让 DSH 按部署默认政策判，写不进用户工作区就如实报失败。
   // 为什么不猜：会话模式可以不一样（有的是只读），猜错等于替用户绕开他自己选的那档限制。
-  function pathKeyOf(p) { return String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() }
+  function pathKeyOf(p) { return String(p || '').trim().replace(/\/+/g, '/').replace(/(.+)\/$/, '$1') }
   function sessionById(sid) {
     if (!sid) return null
     try {

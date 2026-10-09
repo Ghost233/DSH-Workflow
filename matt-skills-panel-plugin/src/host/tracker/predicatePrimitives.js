@@ -7,7 +7,7 @@
  *  - 宿主可知的原语（fs/exec/gh/技能探测）供检查项 check 引用，全部只读探测；注册表验形状不验内容。
  *  - 超时按 pending 处理（不抛、不阻塞整链），诚实透传 detail；谓词只读，永不写文件/环境。
  *  - 2026-08-29 修订（可写性判据）：唯一例外 = DIR_WRITABLE 原语，向被检目录写 2 字节临时探针并清理——
- *    跨 OS 唯一可靠的「可写」判据（Windows 无 POSIX 权限位）；fs 无 writeText 时回退存在性并如实注明。
+ *    macOS writability is checked by an actual write; unavailable write capability is reported honestly.
  */
 
 import { PRIMITIVE_KIND } from '../../shared/tracker/chain-types.js' // S1 #451：chain.js 已拆为三文件，枚举改从类型文件取（V1 新文件同步改路径）
@@ -79,7 +79,7 @@ export async function execPrimitive(check, ctx) {
           try{
             const directOk = await (async function(){
               try{
-                const pathJoin = (p && p.path && typeof p.path.join === 'function') ? p.path.join : function(a,b){ return (String(a||'').replace(/[\\/]+$/, '') + '/' + String(b||'').replace(/^[\\/]+/, '')) }
+                const pathJoin = (p && p.path && typeof p.path.join === 'function') ? p.path.join : function(a,b){ return (String(a||'').replace(/\/+$/, '') + '/' + String(b||'').replace(/^\/+/, '')) }
                 const absDirect = pathJoin(String(ctx.cwd||''), String(rel||''))
                 const mod = await import('node:fs/promises')
                 const fsp = mod.default || mod
@@ -95,7 +95,7 @@ export async function execPrimitive(check, ctx) {
           try { await p.fs.readText(abs); return makeResult('pass', detailFor(ctx, rel + ' 已存在', rel + ' exists')) } catch {
             // #344 加固：readText 未命中时同样尝试直读兜底
             try{
-              const pathJoin2 = (p && p.path && typeof p.path.join === 'function') ? p.path.join : function(a,b){ return (String(a||'').replace(/[\\/]+$/, '') + '/' + String(b||'').replace(/^[\\/]+/, '')) }
+              const pathJoin2 = (p && p.path && typeof p.path.join === 'function') ? p.path.join : function(a,b){ return (String(a||'').replace(/\/+$/, '') + '/' + String(b||'').replace(/^\/+/, '')) }
               const absDirect2 = pathJoin2(String(ctx.cwd||''), String(rel||''))
               const mod2 = await import('node:fs/promises')
               const fsp2 = mod2.default || mod2
@@ -113,7 +113,7 @@ export async function execPrimitive(check, ctx) {
     }
     if (kind === PRIMITIVE_KIND.DIR_WRITABLE) {
       // dirWritable：目录「存在且可写」——写探测（往目录写固定名临时探针，写完尽力清理）。
-      //   为什么不用 stat/lstat 权限位：Windows 无 POSIX mode 位、ACL 不可靠，唯一跨三端一致的判据是真实写入。
+      // macOS uses the platform home source and actual write probe (#171).
       //   谓词只读纪律的唯一例外（2026-08-29）：本探测向被检目录写 2 字节探针并删除，属验证性写、无业务副作用。
       //   2026-08-29 实机修复（用户反馈 "The "path" argument must be of type string. Received an instance of Object"）：
       //     fs.resolve 返回的是 target 对象（形状随宿主，无 .path 字符串），原实现把它喂进 path.join 必抛 TypeError。
@@ -191,8 +191,8 @@ export async function execPrimitive(check, ctx) {
       }
     }
     if (kind === PRIMITIVE_KIND.HOME_DIR) {
-      // /homeDir（2026-08-28 修复）：主目录判装只问平台层——win32 不读 HOME（os.homedir→USERPROFILE），linux/mac 走 os.homedir；
-      //   原 ENV(HOME) 在 Windows 必然误报「HOME not set」，主目录明明可解析却判 fail。
+      // macOS uses the platform home source and actual write probe (#171).
+      // macOS uses the platform home source and actual write probe (#171).
       //   平台层不可用 → 诚实 pending（不猜）；解析失败 → fail（环境级异常：daemon/容器/服务账户无用户上下文）。
       if (!p || typeof p.getHome !== 'function') return makeResult('pending', detailFor(ctx, '平台主目录能力不可用', 'platform.getHome unavailable'))
       try {

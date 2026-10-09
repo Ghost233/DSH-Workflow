@@ -203,7 +203,7 @@
           try {
             if (sessions.list && typeof sessions.list.getSnapshot === 'function') {
               const snap = sessions.list.getSnapshot()
-              const normCwd2 = typeof keyOf === 'function' ? keyOf(cwd) : String(cwd).replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase()
+              const normCwd2 = typeof keyOf === 'function' ? keyOf(cwd) : String(cwd).trim().replace(/\/+/g,'/').replace(/(.+)\/$/, '$1')
               const curSid = st.sessionId
               if (curSid) {
                 const curRow = snap.byId[curSid]
@@ -212,7 +212,7 @@
                   if (isReusableBlank(curRow, normCwd2) && allowReuse(curSid)) reuseSid = curSid
                 } else if (curRow && curRow.blank) {
                   const rowCwd = curRow.cwd || ''
-                  const normRow = typeof keyOf === 'function' ? keyOf(rowCwd) : String(rowCwd).replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase()
+                  const normRow = typeof keyOf === 'function' ? keyOf(rowCwd) : String(rowCwd).trim().replace(/\/+/g,'/').replace(/(.+)\/$/, '$1')
                   if ((normRow === normCwd2 || !normRow) && allowReuse(curSid)) reuseSid = curSid
                 }
               }
@@ -227,7 +227,7 @@
                   } else {
                     if (!row || !row.blank) continue
                     const rowCwd = row.cwd || ''
-                    const normRow = typeof keyOf === 'function' ? keyOf(rowCwd) : String(rowCwd).replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase()
+                    const normRow = typeof keyOf === 'function' ? keyOf(rowCwd) : String(rowCwd).trim().replace(/\/+/g,'/').replace(/(.+)\/$/, '$1')
                     if (normRow !== normCwd2 && normRow) continue
                   }
                   if (!allowReuse(sid)) continue

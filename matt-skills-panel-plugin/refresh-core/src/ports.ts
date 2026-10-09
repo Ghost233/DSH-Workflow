@@ -128,7 +128,7 @@ export type DetectTier = 'write-confirmed' | 'probe-now' | 'default-tick'
 export interface DetectInput {
   /** 事件形态（见 EventShape）。 */
   shape: EventShape | string
-  /** 工具名（Windows 上执行命令的那个叫 `pwsh`）。 */
+  /** 工具名（macOS 命令工具或已注册工具）。 */
   tool: string
   /** 解析后的命令行；没有就给 null。 */
   command?: string | null

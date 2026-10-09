@@ -166,7 +166,7 @@ export function chainEffortId(raw: unknown): string {
 export function chainTicketAndEffortFromPath(path: unknown): { ticketKey: string; effortId: string } {
   const raw = path === null || path === undefined ? '' : String(path)
   if (!raw) return { ticketKey: '', effortId: '' }
-  const text = raw.replace(/\\/g, '/')
+  const text = raw
   const base = text.slice(text.lastIndexOf('/') + 1)
   let ticketKey = ''
   const direct = /^(\d{1,10})(?:[-._][^/]*)?\.(?:md|markdown)$/i.exec(base)
@@ -247,7 +247,7 @@ const WRITE_TIER = 'write-confirmed'
 export interface ChainDecisionInput {
   /** 这条线索是从哪来的：工具参数最准，其次是命令行，markdown 后端从票文件路径来。 */
   source: ChainSource | string
-  /** 工具名（我们自己的工具用得上；Windows 上执行命令的那个叫 `pwsh`）。 */
+  /** 工具名（我们自己的工具或 macOS 命令工具）。 */
   tool?: string
   /** 判定表给的档位（write-detect.ts 的 tier）。没给就按「认不出」处理，不记。 */
   tier?: string | null
@@ -369,7 +369,7 @@ export function chainVerdictOf(input: ChainDecisionInput | null | undefined): Ch
     wrote = true
     action = isDeckWriter ? DECK_WRITE_ACTIONS[tool] : 'other-write'
   } else {
-    // 命令行那条来源：写了票文件的形状（重定向、Set-Content 这些）也算写，票号从路径里取。
+    // 命令行那条来源：写了票文件的形状（POSIX 重定向、tee 这些）也算写，票号从路径里取。
     if (reason === 'cmd.file-write' && fromFile) {
       wrote = true
       action = 'file-write'

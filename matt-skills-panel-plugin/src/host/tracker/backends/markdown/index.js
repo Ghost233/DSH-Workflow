@@ -12,7 +12,7 @@ import { listLabels, setLabelColors } from './label-colors-ops.js'
 import { ensureLabelColors } from './label-colors.js'
 import { useBuiltinLabelColors } from './label-colors-palette.js'
 import nodePath from 'node:path'
-function getPlat(ctx){if(ctx&&ctx.platform&&ctx.platform.path)return ctx.platform.path;if(ctx&&ctx.path)return ctx.path;if(typeof process!=='undefined'&&process.platform==='win32')return nodePath.win32;return nodePath.posix}
+function getPlat(ctx){if(ctx&&ctx.platform&&ctx.platform.path)return ctx.platform.path;if(ctx&&ctx.path)return ctx.path;return nodePath.posix}
 function isAbsolute(p,plat){try{return plat.isAbsolute(p)}catch{return nodePath.isAbsolute(p)}}
 export async function matches(handle, ctx){
   try{
@@ -60,7 +60,7 @@ export function describe(handle, backendId){
   const cwd=handle&&handle.cwd?String(handle.cwd):''
   const refId=handle&&handle.refId?String(handle.refId):(cwd?cwd:'')
   const finalRef=refId||cwd||''
-  const name=finalRef?finalRef.split(/[\\/]/).pop()||finalRef:backendId
+  const name=finalRef?finalRef.split(/\//).pop()||finalRef:backendId
   // effort 维度：handle 带 effortId 时如实透传（describe 是 ref 的唯一产地，这里丢掉就再也拿不回来）
   const out={backend:backendId,refId:finalRef,name:name||backendId,url:''}
   if(handle&&handle.effortId!==undefined&&handle.effortId!==null) out.effortId=String(handle.effortId)
@@ -78,7 +78,7 @@ export function issueUrl(ref, key) {
       return effortIssuePath(ref, k, cwdArg)
     }
     // 文件约束内现算：mdPath 已处理 refId 绝对/相对、repo.path、getRoot 三分支
-    // UI 拿到的是裸盘符路径（D:\…\issues\01-xxx.md），由 wf.openPath 按 OS 打开，不经 file:// 编码
+    // UI 拿到的是macOS 文件路径（/Users/Matt/…/issues/01-xxx.md），由 wf.openPath 在 macOS 上打开，不经 file:// 编码
     return mdPath(ref, 'issue', k, cwdArg)
   } catch { return '' }
 }
@@ -244,7 +244,7 @@ export const markdownModule = {
   labelPalette: defaultLabelPalette,
   create: createMarkdownBackend,
   matches,
-  // #231：本地 Markdown 无远程链接 —— issueUrl 由后端现算为裸盘符路径，links 仅留提及识别正则；开仓为打开文件夹
+  // #231：本地 Markdown 无远程链接 —— issueUrl 由后端现算为macOS 文件路径，links 仅留提及识别正则；开仓为打开文件夹
   links: { linkPatternSource: "#(\\d+)" },
   openRepository: 'folder',
   prompts,

@@ -39,7 +39,7 @@ function __patternSources(st) {
   return out
 }
 export const issueUrlFor = (st, key, effortId) => {
-  // 优先用后端现算的 url（markdown 的盘符路径已在快照 issues[].url 中）；回退到模板渲染（github）
+  // 优先用后端现算的 url（markdown 的 macOS 文件路径已在快照 issues[].url 中）；回退到模板渲染（github）
   const n = String(key || '').trim()
   if (!n) return ''
   // 快照直取：若当前快照中该 key 已有 url（markdown 文件路径），直接用，避免模板为空时回空。
@@ -61,7 +61,7 @@ export const issueUrlFor = (st, key, effortId) => {
   if (!refId) return ''
   return tpl.split('{refId}').join(refId).split('{key}').join(n)
 }
-// 统一打开：https 走新页，file 盘符走宿主 wf.openPath（UI 零分支）
+// 统一打开：https 走新页，本地文件路径走宿主 wf.openPath（UI 零分支）
 export const openIssueUrl = function(st, key, host, effortId){
   const u = issueUrlFor(st, key, effortId)
   if(!u) return false

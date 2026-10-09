@@ -24,7 +24,7 @@ export const DETECT_REASONS = {
   "cmd.git-local": "git \u7684\u672C\u5730\u5B50\u547D\u4EE4\uFF08\u4E0D\u662F push\uFF09\uFF1A\u4E0D\u89E6\u53D1\u53D6\u6570",
   "cmd.script": "\u811A\u672C\u6216\u89E3\u91CA\u5668\uFF08node / python / npm run \u8FD9\u4E00\u7C7B\uFF09\uFF1A\u91CC\u9762\u5E72\u4E86\u4EC0\u4E48\u770B\u4E0D\u51FA\u6765\uFF0C\u7ACB\u523B\u63A2\u4E00\u6B21",
   "cmd.remote-client": "\u8FDC\u7AEF\u5BA2\u6237\u7AEF\uFF08curl / wget / ssh \u8FD9\u4E00\u7C7B\uFF09\uFF1A\u53EF\u80FD\u76F4\u63A5\u6253\u4E86\u63A5\u53E3\uFF0C\u7ACB\u523B\u63A2\u4E00\u6B21",
-  "cmd.file-write": "\u8FD9\u4E00\u884C\u91CC\u6709\u91CD\u5B9A\u5411\u6216\u5199\u6587\u4EF6\uFF08> / >> / Out-File / Set-Content\uFF09\uFF1A\u53EF\u80FD\u6539\u5230\u4E86\u7968\u6587\u4EF6\uFF0C\u7ACB\u523B\u63A2\u4E00\u6B21",
+  "cmd.file-write": "\u8FD9\u4E00\u884C\u91CC\u6709\u91CD\u5B9A\u5411\u6216\u5199\u6587\u4EF6\uFF08> / >> / tee\uFF09\uFF1A\u53EF\u80FD\u6539\u5230\u4E86\u7968\u6587\u4EF6\uFF0C\u7ACB\u523B\u63A2\u4E00\u6B21",
   "cmd.local-read": "\u5DF2\u77E5\u53EA\u8BFB\u7684\u672C\u5730\u547D\u4EE4\uFF1A\u4E0D\u89E6\u53D1\u53D6\u6570",
   "cmd.unknown": "\u8BA4\u4E0D\u51FA\u7684\u547D\u4EE4\uFF1A\u9ED8\u8BA4\u7ACB\u523B\u63A2\u4E00\u6B21\uFF08\u5B81\u53EF\u591A\u63A2\uFF0C\u4E0D\u8BB8\u6F0F\uFF09"
 };
@@ -40,13 +40,13 @@ const DECK_WRITE_TOOLS = LIST("deck_issue_create,deck_issue_patch,deck_map_plan_
 const DECK_READ_TOOLS = LIST("deck_context,deck_issue_get,deck_map_snapshot");
 const TICKET_ARG_FIELDS = LIST("issue,number,ticket,key,id,child,parent");
 const WEB_FETCH_TOOLS = LIST("webfetch,web_fetch,fetch,webfetchtool,fetchurl");
-const SHELL_TOOLS = LIST("pwsh,powershell,bash,sh,zsh,cmd,shell");
+const SHELL_TOOLS = LIST("bash,sh,zsh,shell");
 const LOCAL_READ_TOOLS = LIST("read,readfile,glob,grep,search,ls,list,listfiles,askuserquestion,ask_user_question,todowrite,todo_write,websearch,web_search,skill,vision_describe,vision_ocr,vision_crop");
 const SEGMENT_SPLIT_RE = /&&|\|\||[;|\n\r]|(?<![&>])&(?![&>])/g;
-const LOCAL_READ_HEADS = LIST("ls,dir,pwd,cd,cat,type,get-content,get-childitem,head,tail,wc,grep,rg,select-string,find,test-path,which,get-command,echo,write-output,write-host,date,get-date,whoami,tree,stat,du,df,printenv,get-item,resolve-path");
-const SCRIPT_HEADS = LIST("node,deno,bun,npx,npm,pnpm,yarn,python,python3,py,ruby,perl,php,make,just,cargo,go,dotnet,java,mvn,gradle,docker,kubectl,terraform,ansible,pwsh,powershell,bash,sh,zsh,cmd");
-const REMOTE_HEADS = LIST("curl,wget,irm,iwr,invoke-restmethod,invoke-webrequest,http,https,httpie,ssh,scp,sftp,rsync,nc,telnet");
-const FILE_WRITE_RE = /(^|[\s;|&])(>>?|out-file|set-content|add-content|tee)([\s;|&]|$)/i;
+const LOCAL_READ_HEADS = LIST("ls,pwd,cd,cat,type,head,tail,wc,grep,rg,find,which,echo,date,whoami,tree,stat,du,df,printenv");
+const SCRIPT_HEADS = LIST("node,deno,bun,npx,npm,pnpm,yarn,python,python3,ruby,perl,php,make,just,cargo,go,dotnet,java,mvn,gradle,docker,kubectl,terraform,ansible,bash,sh,zsh");
+const REMOTE_HEADS = LIST("curl,wget,http,https,httpie,ssh,scp,sftp,rsync,nc,telnet");
+const FILE_WRITE_RE = /(^|[\s;|&])(>>?|tee)([\s;|&]|$)/i;
 const CLI_SCOPES = {
   issue: { create: "w", close: "w", reopen: "w", comment: "w", edit: "w", delete: "w", lock: "w", unlock: "w", transfer: "w", pin: "w", unpin: "w", develop: "w", list: "r", view: "r", status: "r" },
   pr: { create: "w", close: "w", reopen: "w", merge: "w", comment: "w", edit: "w", review: "w", ready: "w", lock: "w", unlock: "w", revert: "w", list: "r", view: "r", status: "r", diff: "r", checks: "r", checkout: "x" },
@@ -109,14 +109,9 @@ function tokenize(segment) {
 }
 function headWord(tok) {
   let s = unquote(tok || "");
-  const cut = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+  const cut = s.lastIndexOf("/");
   if (cut >= 0) s = s.slice(cut + 1);
-  s = s.toLowerCase();
-  for (const ext of [".exe", ".cmd", ".bat", ".ps1", ".com"]) if (s.length > ext.length && s.endsWith(ext)) {
-    s = s.slice(0, -ext.length);
-    break;
-  }
-  return s;
+  return s.toLowerCase();
 }
 function positionalsOf(tokens) {
   const out = [];

@@ -27,8 +27,8 @@
     // 拼绝对路径：{path} = cwd/.scratch/handoff/{file}（跨工作区 / 用户自行查看移动用；分隔符跟随 cwd）
     export const absHandoffPath = function (cwd, file) {
       if (!cwd || !file) return file || ''
-      const sep = cwd.indexOf('/') >= 0 ? '/' : '\\'
-      return (cwd.replace(/[\\/]+$/, '')) + sep + '.scratch' + sep + 'handoff' + sep + file
+      const sep = '/'
+      return (cwd.replace(/\/+$/, '')) + sep + '.scratch' + sep + 'handoff' + sep + file
     }
     export const handoffReadText = function (file, cwd) {
       if (!file) return ''
@@ -72,13 +72,13 @@
       try {
         normRow = typeof keyOf === 'function' ? keyOf(rawCwd) : String(rawCwd || '').trim()
         if (typeof keyOf !== 'function') {
-          let tmp = String(rawCwd || '').trim().toLowerCase().split(String.fromCharCode(92)).join('/')
+          let tmp = String(rawCwd || '').trim()
           while (tmp.indexOf('//') >= 0) tmp = tmp.split('//').join('/')
           while (tmp.length > 1 && tmp.charAt(tmp.length - 1) === '/') tmp = tmp.slice(0, -1)
           normRow = tmp
         }
       } catch (e) {
-        let tmp = String(rawCwd || '').trim().toLowerCase().split(String.fromCharCode(92)).join('/')
+        let tmp = String(rawCwd || '').trim()
         while (tmp.indexOf('//') >= 0) tmp = tmp.split('//').join('/')
         while (tmp.length > 1 && tmp.charAt(tmp.length - 1) === '/') tmp = tmp.slice(0, -1)
         normRow = tmp

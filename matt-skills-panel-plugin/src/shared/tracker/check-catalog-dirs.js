@@ -9,10 +9,10 @@ const PRIMITIVE_KIND = Object.freeze({
   FILE_EXISTS: 'fileExists',       // 例：{path:'.git/config'} / {path:'docs/agents/issue-tracker.md'}
   ENV: 'env',                      // 例：{key:'HOME'}
   SKILL_PROBE: 'skillProbe',       // 例：{skill:'wayfinder'}
-  HOME_DIR: 'homeDir',             // 例：{} — 用户主目录可解析：一律问平台层（#171：win32 不读 HOME，走 os.homedir→USERPROFILE；linux/mac 走 os.homedir），
-                                   //   不再直接读 process.env.HOME（Windows 从不设置该变量，会误报 HOME not set）
+  HOME_DIR: 'homeDir',             // macOS home is resolved only through platform.getHome (#171).
+                                   // The platform source resolves macOS home; an actual write probe checks directory writability (#171).
   DIR_WRITABLE: 'dirWritable',     // 例：{path:'.scratch'} — 目录「存在且可写」：写探测（往目录写临时探针并清理），
-                                   //   跨 OS 唯一可靠的「可写」判据（stat/lstat 的权限位在 Windows 不可靠）；谓词只读纪律的唯一例外
+                                   // The platform source resolves macOS home; an actual write probe checks directory writability (#171).
 })
 
 /**
@@ -75,8 +75,8 @@ export const GENERIC_CATALOG = Object.freeze([
     label: '用户主目录可解析',
     scope: 'generic',
     backends: ['github','markdown','gitlab'],
-    // /homeDir（2026-08-28 修复）：主目录判定只问平台层（#171：win32 不读 HOME，走 os.homedir→USERPROFILE；linux/mac 走 os.homedir）。
-    //   原 ENV(HOME) 在 Windows 必然误报「HOME not set」（Windows 从不设置该环境变量）。
+    // The platform source resolves macOS home; an actual write probe checks directory writability (#171).
+    // The platform source resolves macOS home; an actual write probe checks directory writability (#171).
     //   为什么是通用检查：技能判装的单一根 ~/.agents/skills（#276/#281）由此解析，三后端共用同一用户级根，
     //   换后端期望结果不变 → 按 #217 形式化判据归入通用；失败 = 环境级异常（daemon/容器/服务账户），应诚实红牌而非把技能误判为未安装。
     check: { kind: 'primitive', primitive: PRIMITIVE_KIND.HOME_DIR },

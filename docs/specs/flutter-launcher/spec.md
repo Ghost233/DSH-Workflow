@@ -16,6 +16,8 @@ MacLauncher 管理端管理 Web 访问服务、观察 Desktop 后端、打开管
 
 - 项目只支持 macOS ARM64：应用入口、项目维护的运行兼容分支、全部工程检查/验收/发布 CI 和分发目标均收敛到该平台。删除其他平台的源码 Web 启动入口与 Windows 命令/进程回退；保留 macOS 的认证共享 Web、JEV/原生监控、Matt 与自有进程组清理。
 - 全部 CI job 使用 macOS ARM64 runner 并核对真实系统/架构；取消 Linux sandbox 准备、其他 OS runner 与 Intel 构建。不修改固定官方 DSH、SDK 或第三方依赖中的上游跨平台源码、资源与锁定元数据；历史真实执行证据保留其原平台与结果。适用的完整工程检查和最终 main CI 仍必须实际通过。
+- 维护版 `matt-skills-panel-plugin/` 同样仅支持 macOS ARM64：删除 Windows/Linux 平台适配器、注册分派、platformChannel 回退、Windows/UNC 与 Markdown 路径处理、PowerShell/CMD 命令/错误兼容、Explorer/xdg-open 发布辅助及安装提示。核对关联导出、调用与专用测试，保留 macOS 行为。通过规范构建重建 TypeScript 生成 JS、开发产物与 `package/lib`，不直接删生成物冒充源代码清理。
+- 本地开发、编译和测试入口明确限制 macOS ARM64。拒绝其他平台的负面测试、普通窗口变量、第三方锁文件的平台元数据及真实原始历史证据保留，官方 DSH、SDK 和 vendor 上游保持原样。
 - 删除旧自研编排机制的实现、注册/导出、profile 装配、预设、客户端/仪表盘、执行/恢复、测试、CI 及当前规范文本。资源归属的一般生命周期语义继续存在，不等于保留被删除的系统。
 - 保留 `agent-observation-plugin/` 中的独立 JEV 中心及原生代理监控，根包名为 `dsh-workflow`；保留 `./jev-center`、`./agent-monitor` 和 `./client` 的独立入口、固定 profile ID 与既有配置。实际迁入、装配和验证结果以最终源码及证据为准。
 - 日常启动使用无参数 `./start-dsh-workflow.sh`。装配自研保留模块，并逐项尝试清单中标记 startup 的第三方插件；单项失败如实报告并继续，调用者无需拼接插件范围参数。

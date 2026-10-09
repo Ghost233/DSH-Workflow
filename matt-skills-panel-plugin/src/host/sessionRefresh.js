@@ -59,7 +59,7 @@ export function createSessionRefresh(deps) {
           if (!tracker) throw new Error('unknown backend ' + backendId)
           let repoRef = null
           try { repoRef = reg.describe({ cwd }, backendId) } catch {}
-          if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/[\\/]/).pop() || backendId, url: '' }
+          if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/\//).pop() || backendId, url: '' }
           const ctx2 = { cwd, platform: await getPlatform(), fs: ctx.get('fs'), exec: function (c, a, o) { return detectionExec(c, a, o, 'refresh') } }
           const { createSnapshotComposer } = await import('./tracker/snapshot.js')
           const composer = createSnapshotComposer(reg, { snapshotTtl: 5000 })
@@ -144,7 +144,7 @@ export function createSessionRefresh(deps) {
               }
             }
           } catch {}
-          // Q7: 兜底 url（Issue.url 为空时按后端现算；github 走 https，markdown 走盘符路径）
+          // Q7: 兜底 url（Issue.url 为空时按后端现算；github 走 https，markdown 走 macOS 文件路径）
           try {
             if(backendId==='markdown' && Array.isArray(allForList) && allForList.length){
               const mdModForUrl = backendModules && backendModules.find(function(m){ return m && m.id==='markdown' })

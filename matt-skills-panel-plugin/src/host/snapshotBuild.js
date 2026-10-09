@@ -167,7 +167,7 @@ export function createSnapshotBuilder(deps) {
             }
             if (!repository) {
               try {
-                const nm = String(cwd || '').split(/[\\/]/).filter(Boolean).pop() || sel.backendId
+                const nm = String(cwd || '').split(/\//).filter(Boolean).pop() || sel.backendId
                 repository = { backend: sel.backendId, refId: String(cwd || ''), name: nm, url: '' }
               } catch (eNb) {}
             }

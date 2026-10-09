@@ -75,4 +75,4 @@
 ## 访问 OS 只经 platform（#113）
 
 后端不得直接 `ctx.get('fs')`/`path.join`/硬编码分隔符；一律经 `host/platform`（`createPlatform(ctx)`，
-`#113` 实现）。这消除 `#110` 那类「getHome 只认 Windows / 反斜杠硬编码」bug。
+`#113` 实现）。macOS home/path capabilities use the platform layer (#110).

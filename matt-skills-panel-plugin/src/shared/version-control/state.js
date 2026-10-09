@@ -3,14 +3,14 @@ function fail(detail) {
   return { ok: false, error: "state-assemble-failed", detail };
 }
 export function shortestUniqueSuffix(paths) {
-  const segs = paths.map((p) => String(p).replace(/\\/g, "/").split("/").filter((s) => s !== ""));
+  const segs = paths.map((p) => String(p).split("/").filter((s) => s !== ""));
   return segs.map((s, i) => {
     for (let n = 1; n <= s.length; n += 1) {
-      const tail = s.slice(-n).join("/").toLowerCase();
+      const tail = s.slice(-n).join("/");
       let clash = false;
       for (let j = 0; j < segs.length; j += 1) {
         if (j === i) continue;
-        if (segs[j].slice(-n).join("/").toLowerCase() === tail) {
+        if (segs[j].slice(-n).join("/") === tail) {
           clash = true;
           break;
         }
@@ -21,15 +21,11 @@ export function shortestUniqueSuffix(paths) {
   });
 }
 function sameWorktreePath(a, b) {
-  const norm = (p) => {
-    const s = String(p).replace(/\\/g, "/").replace(/\/+$/, "");
-    const drive = /^([a-zA-Z]):/.exec(s);
-    return drive ? s.charAt(0).toLowerCase() + s.slice(1) : s;
-  };
+  const norm = (p) => String(p).replace(/\/+$/, "");
   return norm(a) === norm(b);
 }
 export function displayFor(path, keep) {
-  const segs = String(path).replace(/\\/g, "/").split("/").filter((s) => s !== "");
+  const segs = String(path).split("/").filter((s) => s !== "");
   return segs.slice(-Math.max(1, keep)).join("/");
 }
 export function foldMiddle(path, maxLen) {

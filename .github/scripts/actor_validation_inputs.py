@@ -7,7 +7,8 @@ import subprocess
 VERIFIED_PRODUCT_SHA = '260fdbbb8a3697899e1133e3293e255df604e0d4'
 VALIDATION_FILES = {'.github/scripts/actor_validation_inputs.py', '.github/scripts/actor_validation_inputs_test.py',
                     '.github/scripts/flutter_debug_artifact_test.py', '.github/workflows/macos-app.yml',
-                    '.github/workflows/flutter-launcher-acceptance.yml'}
+                    '.github/workflows/flutter-launcher-acceptance.yml', '.github/workflows/flutter-launcher-diagnostics.yml',
+                    '.github/scripts/macos_arm64_ci_test.py'}
 def validation_path(name):
     return name.startswith('macos-launcher/flutter/tool/release_close_actor/') or name in VALIDATION_FILES
 def parsed(text):

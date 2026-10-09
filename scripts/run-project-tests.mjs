@@ -4,6 +4,8 @@ import { resolve, join } from 'node:path'
 import { readdir, lstat } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 
+if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Project tests require macOS ARM64')
+
 const root = fileURLToPath(new URL('../', import.meta.url))
 const requireHarness = createRequire(new URL('../deepseek-harness/package.json', import.meta.url))
 let loader

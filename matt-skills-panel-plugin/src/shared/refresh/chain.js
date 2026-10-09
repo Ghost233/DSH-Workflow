@@ -69,7 +69,7 @@ export function chainEffortId(raw) {
 export function chainTicketAndEffortFromPath(path) {
   const raw = path === null || path === void 0 ? "" : String(path);
   if (!raw) return { ticketKey: "", effortId: "" };
-  const text = raw.replace(/\\/g, "/");
+  const text = raw;
   const base = text.slice(text.lastIndexOf("/") + 1);
   let ticketKey = "";
   const direct = /^(\d{1,10})(?:[-._][^/]*)?\.(?:md|markdown)$/i.exec(base);
