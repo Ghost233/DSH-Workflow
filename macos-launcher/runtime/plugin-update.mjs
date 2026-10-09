@@ -9,7 +9,7 @@ import { checkPluginVersions } from './plugin-versions.mjs'
 
 const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const packageNamePattern = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i
-const owned = new Set(['dsh-owner-workflow', 'dsh-mattpocock-skills-deck', 'dsh-workflow-matt-panel'])
+const owned = new Set(['dsh-workflow', 'dsh-mattpocock-skills-deck', 'dsh-workflow-matt-panel'])
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'))
 
@@ -32,9 +32,10 @@ async function installedVersion(profile, name) {
 
 async function runProfileUpdate({ resources, home, candidates, registry, profileName = 'web' }) {
   const cli = join(resources, 'node_modules/@deepseek-ai/dsh/lib/bin.js')
+  const runner = join(resources, 'workflow/macos-launcher/runtime/run-dsh.mjs')
   const pnpm = join(resources, 'node_modules/pnpm/bin/pnpm.mjs')
   const shim = join(resources, 'bin/pnpm')
-  if (![cli, pnpm, shim].every(existsSync)) throw new Error('应用缺少 DSH 或 pnpm 更新运行时，请重新构建应用')
+  if (![cli, pnpm, shim, ...(profileName === 'desktop' ? [runner] : [])].every(existsSync)) throw new Error('应用缺少 DSH 或 pnpm 更新运行时，请重新构建应用')
   const execute = args => new Promise((accept, reject) => {
     const child = spawn(process.execPath, args, { cwd: resources, env: {
       ...process.env, DSH_HOME: home, PATH: `${join(resources, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
@@ -47,7 +48,7 @@ async function runProfileUpdate({ resources, home, candidates, registry, profile
     child.once('close', (code, signal) => code === 0 ? accept()
       : reject(new Error(`DSH 插件更新失败（${signal ?? code}）：${diagnostics.slice(-1000)}`)))
   })
-  await execute([cli, 'plugin', '--profile', profileName, 'add', ...candidates.map(row => `${row.name}@${row.latest}`), '--save-exact',
+  await execute([...(profileName === 'desktop' ? [runner, resources] : [cli]), 'plugin', '--profile', profileName, 'add', ...candidates.map(row => `${row.name}@${row.latest}`), '--save-exact',
     ...(registry ? ['--registry', registry] : [])])
   if (profileName !== 'desktop') await execute([cli, '--profile', profileName, '--dump-config'])
 }

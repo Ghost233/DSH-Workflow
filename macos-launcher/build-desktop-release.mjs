@@ -19,7 +19,7 @@ const appRoot = join(root, 'deepseek-harness/apps/desktop')
 const requireDesktop = createRequire(join(appRoot, 'package.json'))
 const { build, Platform, Arch } = requireDesktop('electron-builder')
 const arch = process.arch
-if (process.platform !== 'darwin' || !['arm64', 'x64'].includes(arch)) throw new Error('Build on the target macOS architecture')
+if (process.platform !== 'darwin' || arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
 const paths = desktopTargetBuildPaths(`mac-${arch}`)
 const output = join(root, '.build', `desktop-${arch}`)
 if (existsSync(output)) throw new Error(`Desktop build output exists: ${output}`)
@@ -83,7 +83,7 @@ try {
       extendInfo: { CFBundleLocalizations: ['en', 'zh_CN'],
         NSMicrophoneUsageDescription: 'DeepSeek Harness uses your microphone to transcribe speech into message drafts.' } },
   } })
-  const app = join(output, arch === 'arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app')
+  const app = join(output, 'mac-arm64', 'DeepSeek Harness.app')
   const resources = join(app, 'Contents/Resources')
   const packagedDsh = join(resources, 'app/dsh')
   const magics = new Set(['cafebabe', 'cafebabf', 'cefaedfe', 'cffaedfe', 'feedface', 'feedfacf', 'bebafeca', 'bfbafeca'])

@@ -9,6 +9,46 @@ import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 class FixtureNative extends NativeBridge {
   FixtureNative(this.root);
   final String root;
+  bool? savedHideWindowOnStart;
+  bool failPreferences = false, failDesktopOpen = false;
+  int desktopOpenCalls = 0;
+  bool desktopIsRunning = false, desktopIsHidden = false;
+  @override
+  Future<bool> desktopRunning(String path) async => desktopIsRunning;
+  @override
+  Future<void> hideDesktop(String path) async {
+    if (!desktopIsRunning) throw StateError('Desktop 未运行');
+    desktopIsHidden = true;
+  }
+
+  @override
+  Future<void> showDesktop(String path) async {
+    if (!desktopIsRunning) throw StateError('Desktop 未运行');
+    desktopIsHidden = false;
+  }
+
+  @override
+  Future<void> openDesktop(
+    String path, {
+    required Map<String, String> environment,
+    bool hidden = false,
+  }) async {
+    desktopOpenCalls++;
+    if (failDesktopOpen) throw StateError('Desktop open refused');
+    desktopIsRunning = true;
+    desktopIsHidden = hidden;
+  }
+
+  @override
+  Future<void> savePreferences(
+    bool fullAccess,
+    bool allowLanSettings, {
+    required bool hideWindowOnStart,
+  }) async {
+    if (failPreferences) throw StateError('Preference storage refused');
+    savedHideWindowOnStart = hideWindowOnStart;
+  }
+
   @override
   Future<LauncherEnvironment> load() async => LauncherEnvironment({
     'resources': root,
@@ -16,6 +56,8 @@ class FixtureNative extends NativeBridge {
     'home': root,
     'appVersion': '0.2.3',
     'loginStatus': 'disabled',
+    if (savedHideWindowOnStart != null)
+      'hideWindowOnStart': savedHideWindowOnStart,
     'password': 'fixture-only',
   });
 }
@@ -54,6 +96,7 @@ createInterface({ input: process.stdin }).on('line', line => {
 
 Future<({LauncherController model, Directory root})> fixture({
   ProcessStarter? startProcess,
+  bool desktopPreparation = false,
 }) async {
   final root = await Directory.systemTemp.createTemp('dsh-controller-');
   final node = Process.runSync('/usr/bin/which', ['node']);
@@ -63,6 +106,15 @@ Future<({LauncherController model, Directory root})> fixture({
     '${root.path}/workflow/macos-launcher/runtime',
   ).create(recursive: true);
   await File('${scripts.path}/global-supervisor.mjs').writeAsString(supervisor);
+  if (desktopPreparation) {
+    final executables = await Directory(
+      '${root.path}/desktop/DeepSeek Harness.app/Contents/MacOS',
+    ).create(recursive: true);
+    await Link('${executables.path}/DeepSeek Harness')
+        .create(node.stdout.toString().trim());
+    await File('${scripts.path}/prepare-desktop.mjs')
+        .writeAsString('process.exit(0);\n');
+  }
   final model = LauncherController(
     FixtureNative(root.path),
     startProcess: startProcess,
@@ -77,6 +129,85 @@ Future<({LauncherController model, Directory root})> fixture({
 }
 
 void main() {
+  test('cold pending retries after the native open failure', () async {
+    final f = await fixture(desktopPreparation: true);
+    final native = f.model.native as FixtureNative;
+    native.failDesktopOpen = true;
+    await expectLater(f.model.startDesktopInBackground(), throwsStateError);
+    native.failDesktopOpen = false;
+    await f.model.startDesktop();
+    expect(native.desktopOpenCalls, 2);
+    expect(native.desktopIsRunning, isTrue);
+    expect(native.desktopIsHidden, isFalse);
+  });
+  test('cold pending retries a stopped Desktop before any Web READY', () async {
+    final f = await fixture(desktopPreparation: true);
+    final native = f.model.native as FixtureNative;
+    await f.model.startDesktopInBackground();
+    expect(native.desktopIsHidden, isTrue);
+    await f.model.startDesktop();
+    expect(native.desktopOpenCalls, 1);
+    expect(native.desktopIsHidden, isTrue);
+    native.desktopIsRunning = false;
+    await f.model.startDesktop();
+    expect(native.desktopOpenCalls, 2);
+    expect(native.desktopIsRunning, isTrue);
+    expect(native.desktopIsHidden, isFalse);
+  });
+
+  test('window-only actions never start a missing Desktop and preserve a running backend', () async {
+    final f = await fixture();
+    final native = f.model.native as FixtureNative;
+    await expectLater(f.model.showExistingDesktop(), throwsStateError);
+    await expectLater(f.model.hideDesktop(), throwsStateError);
+    expect(native.desktopIsRunning, isFalse);
+    native.desktopIsRunning = true;
+    await f.model.hideDesktop();
+    expect(native.desktopIsRunning, isTrue);
+    expect(native.desktopIsHidden, isTrue);
+    await f.model.showExistingDesktop();
+    expect(native.desktopIsRunning, isTrue);
+    expect(native.desktopIsHidden, isFalse);
+  });
+  test('explicit open shows an existing hidden Desktop despite the startup preference', () async {
+    final f = await fixture();
+    final native = f.model.native as FixtureNative;
+    native.desktopIsRunning = true;
+    native.desktopIsHidden = true;
+    await f.model.savePreferences(true, false, hideWindowOnStart: true);
+    await f.model.openDsh();
+    expect(native.desktopIsRunning, isTrue);
+    expect(native.desktopIsHidden, isFalse);
+  });
+  test(
+    'background and automatic startup preserve a running visible Desktop',
+    () async {
+      final f = await fixture();
+      final native = f.model.native as FixtureNative;
+      native.desktopIsRunning = true;
+      await f.model.savePreferences(true, false, hideWindowOnStart: true);
+      await f.model.startDesktopInBackground();
+      await f.model.startDesktop();
+      expect(native.desktopIsRunning, isTrue);
+      expect(native.desktopIsHidden, isFalse);
+    },
+  );
+  test('startup window preference migrates missing values and preserves storage failures', () async {
+    final f = await fixture();
+    final native = f.model.native as FixtureNative;
+    expect(f.model.hideWindowOnStart, isFalse);
+    await f.model.savePreferences(true, false, hideWindowOnStart: true);
+    await f.model.initialize();
+    expect(f.model.hideWindowOnStart, isTrue);
+    native.failPreferences = true;
+    await expectLater(
+      f.model.savePreferences(true, false, hideWindowOnStart: false),
+      throwsStateError,
+    );
+    expect(f.model.hideWindowOnStart, isTrue);
+    await f.model.initialize();
+    expect(f.model.hideWindowOnStart, isTrue);
+  });
   test(
     'UI startup and SDK recycle share the mutation gate before spawn completes',
     () async {
@@ -177,4 +308,59 @@ void main() {
     await failure;
     expect(f.model.isActive, isFalse);
   });
+
+  test(
+    'close settles a paused real child whose start handle arrives late',
+    () async {
+      final spawned = Completer<Process>(), release = Completer<void>();
+      final f = await fixture(
+        startProcess:
+            (executable, arguments, {workingDirectory, environment}) async {
+              final child = await Process.start(
+                executable,
+                arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+              );
+              spawned.complete(child);
+              await release.future;
+              return child;
+            },
+      );
+      final failure = expectLater(f.model.startWeb(), throwsStateError);
+      final child = await spawned.future;
+      await (() async {
+        while (!await File('${f.root.path}/pid').exists()) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      })().timeout(const Duration(seconds: 2));
+      expect(child.kill(ProcessSignal.sigstop), isTrue);
+      await (() async {
+        while (!(await Process.run('/bin/ps', [
+          '-o',
+          'stat=',
+          '-p',
+          '${child.pid}',
+        ])).stdout.toString().trim().startsWith('T')) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      })().timeout(const Duration(seconds: 2));
+      final close = f.model.close();
+      expect(identical(close, f.model.close()), isTrue);
+      release.complete();
+      try {
+        await close.timeout(const Duration(seconds: 5));
+        expect(
+          (await Process.run('/bin/kill', ['-0', '${child.pid}'])).exitCode,
+          isNot(0),
+        );
+        expect(f.model.isActive, isFalse);
+      } finally {
+        child.kill(ProcessSignal.sigcont);
+        child.kill(ProcessSignal.sigkill);
+        await child.exitCode;
+      }
+      await failure;
+    },
+  );
 }

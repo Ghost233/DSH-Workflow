@@ -24,7 +24,7 @@ async function fixture(t) {
   t.after(() => rm(root, { recursive: true, force: true }))
   const list = JSON.parse(await readFile(new URL('../project-plugins.json', import.meta.url), 'utf8'))
   await writeJson(join(root, 'project-plugins.json'), list)
-  await pkg(root, { name: 'dsh-owner-workflow', version: '1.0.0', dsh: { client: { platform: 'web' } } })
+  await pkg(root, { name: 'dsh-workflow', version: '1.0.0', dsh: { client: { platform: 'web' } } })
   await pkg(join(root, 'matt-skills-panel-plugin/package'), { name: 'dsh-workflow-matt-panel', version: '1.0.0', dsh: { client: { platform: 'web' } } })
   const harness = join(root, 'harness')
   await pkg(harness, { name: '@deepseek-ai/dsh', version: harnessTarget.version, dependencies: { '@deepseek-ai/dsh-app-boot': '1.0.0' } })
@@ -301,7 +301,7 @@ test('owned scope preserves the external lock and excludes configured third-part
     readMetadata: async () => { throw new Error('unexpected metadata fetch') },
     resolvePackage: async () => { throw new Error('unexpected package resolution') },
   })
-  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-owner-workflow', 'dsh-workflow-matt-panel'])
+  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-workflow', 'dsh-workflow-matt-panel'])
   assert.equal(await readFile(join(f.root, 'project-plugins.lock.json'), 'utf8'), lock)
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.ok(patch.some(row => row.id === 'dsh-context' && row.disabled === true))
@@ -321,7 +321,7 @@ test('startup scope installs only marked third-party plugins from the lock', asy
   })
   const selected = f.list.plugins.filter(item => item.startup === true)
   assert.deepEqual(f.calls.slice(previousCalls), selected.map(item => `${item.package}@1.0.0`))
-  assert.deepEqual(state.installed.map(item => item.package), [...selected.map(item => item.package), 'dsh-owner-workflow', 'dsh-workflow-matt-panel'])
+  assert.deepEqual(state.installed.map(item => item.package), [...selected.map(item => item.package), 'dsh-workflow', 'dsh-workflow-matt-panel'])
   assert.equal(await readFile(join(f.root, 'project-plugins.lock.json'), 'utf8'), lock)
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.deepEqual(patch.flatMap(item => item.insert?.map(row => row.name) ?? []), selected.map(item => item.package))
@@ -343,7 +343,7 @@ test('startup scope skips one failed third-party install and keeps the other plu
   assert.deepEqual(state.skipped, [{ package: 'dsh-cost-meter', reason: 'cost meter unavailable' }])
   assert.deepEqual(state.installed.map(item => item.package),
     [...f.list.plugins.filter(item => item.startup === true && item.package !== 'dsh-cost-meter').map(item => item.package),
-      'dsh-owner-workflow', 'dsh-workflow-matt-panel'])
+      'dsh-workflow', 'dsh-workflow-matt-panel'])
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.equal(patch.flatMap(item => item.insert?.map(row => row.name) ?? []).includes('dsh-cost-meter'), false)
   await releaseLock(state.directory, process.pid)
@@ -367,7 +367,7 @@ test('startup scope skips a third-party plugin with an incompatible host peer', 
   assert.deepEqual(state.skipped.map(item => item.package), ['dsh-cost-meter'])
   assert.match(state.skipped[0].reason, /missing-host-service/)
   assert.ok(state.installed.some(item => item.package === 'dsh-workflow-matt-panel'))
-  assert.ok(state.installed.some(item => item.package === 'dsh-owner-workflow'))
+  assert.ok(state.installed.some(item => item.package === 'dsh-workflow'))
   assert.equal(state.installed.some(item => item.package === 'dsh-sol-efficiency'), false)
   await releaseLock(state.directory, process.pid)
 })
@@ -381,7 +381,7 @@ test('owned scope ignores unrelated third-party resolution settings while exclud
   await assert.rejects(prepare(f.root, f.anchor, process.pid, f), /Invalid or duplicate plugin list entry/)
   const state = await prepare(f.root, f.anchor, process.pid, { ...f, scope: 'owned', update: false,
     run: async () => { throw new Error('unexpected installation') } })
-  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-owner-workflow', 'dsh-workflow-matt-panel'])
+  assert.deepEqual(state.installed.map(item => item.package).sort(), ['dsh-workflow', 'dsh-workflow-matt-panel'])
   const patch = JSON.parse(await readFile(state.patch, 'utf8'))
   assert.ok(patch.some(row => row.id === 'dsh-context' && row.disabled === true))
   await releaseLock(pluginDirectory(f.root), process.pid)

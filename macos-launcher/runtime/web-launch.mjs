@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 
-import { composeKernelLaunch } from '../../scripts/kernel-launch-composition.mjs'
+import { composeDshLaunch } from '../../scripts/dsh-launch-composition.mjs'
 import { hostPackageMap } from '../../scripts/project-plugins.mjs'
 import { installProjectResolver } from '../../scripts/project-plugin-resolver.mjs'
 import { launchWebHost, assertWebPortAvailable } from '../../scripts/web-host-lifecycle.mjs'
@@ -71,7 +71,7 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
   const installed = JSON.parse(readFileSync(join(workflow, 'dsh-runtime.json'), 'utf8'))
   if (manifest.version !== installed.version) throw new Error('Packaged DSH version mismatch')
   const packages = {
-    'dsh-owner-workflow': workflow,
+    'dsh-workflow': workflow,
     'dsh-workflow-matt-panel': join(workflow, 'matt-skills-panel-plugin/package'),
   }
   for (const [name, root] of Object.entries(packages)) {
@@ -100,8 +100,8 @@ export async function launchPackagedWeb({ resourcesRoot, workspace, port, signal
     const hmr = flattened(entries).filter(row => row.name === '@deepseek-ai/dsh-hmr' && row.disabled !== true)
     const patches = [
       ...hmr.map(row => ({ id: row.id, disabled: true })),
-      ...composeKernelLaunch(entries, { projectRoot: workflow, catalogRoot: catalog,
-        presetPlugins: boot.loadOverlayPatches('dsh', join(workflow, 'owner-workflow-plugin/kernel-presets/owner-workflow/agent.cordis.yml')) }),
+      ...composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: catalog,
+        }),
       browserUrlPatch(entries),
       portPatch(entries, port),
     ]

@@ -1,0 +1,93 @@
+name: Reuse actual Flutter Debug app
+description: Restore exact build bytes or produce them once before isolated acceptance.
+inputs:
+  producer-artifact:
+    description: Exact Debug app artifact from the producer in this same run; mismatches fail.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Bind actual Debug build inputs
+      id: inputs
+      shell: bash
+      run: |
+        key=$(python3 .github/scripts/flutter_debug_artifact.py inputs \
+          --root "$GITHUB_WORKSPACE" --output "$EVIDENCE_DIR/debug-build-inputs.json")
+        printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
+        printf 'bundle=%s\n' "$RUNNER_TEMP/flutter-debug-app-artifact" >> "$GITHUB_OUTPUT"
+
+    - name: Download exact same-run producer bytes
+      if: inputs.producer-artifact != ''
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.producer-artifact }}
+        path: ${{ steps.inputs.outputs.bundle }}
+
+    - name: Restore exact Debug app artifact
+      id: cache
+      if: inputs.producer-artifact == ''
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ steps.inputs.outputs.key }}
+        path: ${{ steps.inputs.outputs.bundle }}
+
+    - name: Validate and restore actual cached application bytes
+      if: inputs.producer-artifact != '' || steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      env:
+        DEBUG_APP_BUNDLE: ${{ steps.inputs.outputs.bundle }}
+      run: |
+        set +e
+        python3 .github/scripts/flutter_debug_artifact.py restore \
+          --inputs "$EVIDENCE_DIR/debug-build-inputs.json" --bundle "$DEBUG_APP_BUNDLE" \
+          --destination 'macos-launcher/flutter/build/macos/Build/Products/Debug/DSH Workflow.app' \
+          --receipt "$EVIDENCE_DIR/debug-app-decision.json" > "$EVIDENCE_DIR/debug-app-restore.log" 2>&1
+        result=$?
+        set -e
+        printf '%s\n' "$result" > "$EVIDENCE_DIR/debug-app-restore.exit"
+        cat "$EVIDENCE_DIR/debug-app-restore.log"
+        exit "$result"
+
+    - name: Produce actual Debug application on cache miss
+      if: inputs.producer-artifact == '' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        python3 .github/scripts/flutter_debug_artifact.py build \
+          --root "$GITHUB_WORKSPACE" --inputs "$EVIDENCE_DIR/debug-build-inputs.json" \
+          --evidence "$EVIDENCE_DIR"
+
+    - name: Seal complete app bytes with actual producer provenance
+      if: inputs.producer-artifact == '' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        DEBUG_APP_BUNDLE: ${{ steps.inputs.outputs.bundle }}
+      run: |
+        python3 .github/scripts/flutter_debug_artifact.py inputs \
+          --root "$GITHUB_WORKSPACE" --output "$EVIDENCE_DIR/debug-build-inputs-after.json"
+        cmp "$EVIDENCE_DIR/debug-build-inputs.json" "$EVIDENCE_DIR/debug-build-inputs-after.json"
+        python3 .github/scripts/flutter_debug_artifact.py pack \
+          --inputs "$EVIDENCE_DIR/debug-build-inputs.json" --bundle "$DEBUG_APP_BUNDLE" \
+          --app 'macos-launcher/flutter/build/macos/Build/Products/Debug/DSH Workflow.app' \
+          --receipt "$EVIDENCE_DIR/debug-app-decision.json" --build-exit "$EVIDENCE_DIR/build.exit"
+
+    - name: Save Debug bytes before business acceptance
+      if: inputs.producer-artifact == '' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ steps.inputs.outputs.key }}
+        path: ${{ steps.inputs.outputs.bundle }}
+
+    - name: Bind producer manifest to current evidence
+      shell: bash
+      env:
+        DEBUG_APP_BUNDLE: ${{ steps.inputs.outputs.bundle }}
+      run: cp "$DEBUG_APP_BUNDLE/manifest.json" "$EVIDENCE_DIR/debug-app-manifest.json"
+
+    - name: Upload complete Debug bytes before business acceptance
+      if: inputs.producer-artifact == ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: flutter-debug-app-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ steps.inputs.outputs.bundle }}
+        if-no-files-found: error

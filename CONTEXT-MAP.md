@@ -1,10 +1,5 @@
-# 上下文地图
+# 上下文指针
 
-## 上下文
-
-- [Owner Workflow](./CONTEXT.md) — 主线程组织 Spec、Ticket 与 Owner 执行。
-- [Dynamic Workflow](./dynamic-workflow-plugin/CONTEXT.md) — 暂缓实施的独立脚本工作流词汇。
-
-## 关系
-
-- 两者共享 DSH 宿主，但各自拥有运行状态和执行身份；Dynamic Workflow 不接管 Owner 的任务与授权。
+- 当前项目集成：读取 [GLOSSARY](GLOSSARY.md) 与 [领域文档读取规则](docs/agents/domain.md)。
+- JEV 中心与原生监控：读取 [ADR0003](docs/adr/0003-shared-named-jev-center.md) 与当前规格。
+- 独立 Dynamic Workflow：读取 [未来计划](docs/specs/dynamic-workflow-plugin.md) 和 [ADR0002](docs/adr/0002-independent-dynamic-workflow-plugin.md)。

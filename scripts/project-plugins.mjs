@@ -21,7 +21,7 @@ export const pluginDirectory = root => join(root, '.dsh-workflow', 'plugins')
  * integration surface rather than package-manager state.
  */
 const projectPackages = root => [
-  { package: 'dsh-owner-workflow', directory: '.' },
+  { package: 'dsh-workflow', directory: '.' },
   { package: 'dsh-workflow-matt-panel', directory: 'matt-skills-panel-plugin/package' },
 ]
 

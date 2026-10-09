@@ -1,0 +1,354 @@
+name: Flutter settings startup diagnostics
+
+on:
+  push:
+    branches: [codex/flutter-launcher-spec]
+    paths:
+      - .github/workflows/flutter-settings-diagnostics.yml
+      - .github/actions/flutter-debug-app/action.yml
+      - .github/scripts/flutter_debug_artifact.py
+      - macos-launcher/flutter/tool/application_probe.dart
+      - macos-launcher/flutter/tool/settings_application_scenario.dart
+      - macos-launcher/flutter/tool/web_application_scenario.dart
+      - macos-launcher/flutter/tool/probe_diagnostics.dart
+      - macos-launcher/flutter/tool/owned_desktop_cleanup.swift
+      - macos-launcher/flutter/tool/settings_repeat_gate.py
+      - .github/scripts/settings_startup_cycle.py
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  startup:
+    runs-on: macos-15
+    timeout-minutes: 35
+    concurrency:
+      group: flutter-t05-debug-arm64-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Prepare T05 runner evidence
+        run: |
+          acceptance_evidence="$RUNNER_TEMP/flutter-settings-startup/T05"
+          mkdir -p "$acceptance_evidence"
+          printf 'EVIDENCE_DIR=%s\n' "$acceptance_evidence" >> "$GITHUB_ENV"
+          printf 'T05_RUNTIME_MOUNT=%s\n' "$RUNNER_TEMP/t05-runtime-mount" >> "$GITHUB_ENV"
+          sw_vers > "$acceptance_evidence/macos-version.log"
+          uname -m > "$acceptance_evidence/architecture.log"
+
+      - name: Checkout current launcher without upstream initialization
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+
+      - name: Bind current source and fixed runtime artifact
+        run: |
+          git rev-parse HEAD > "$EVIDENCE_DIR/source-commit.txt"
+          printf '{"repository":"%s","runId":37325723931,"artifactName":"dsh-workflow-arm64"}\n' \
+            "$GITHUB_REPOSITORY" > "$EVIDENCE_DIR/runtime-artifact-source.json"
+
+      - name: Download the successful frozen ARM64 runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: dsh-workflow-arm64
+          run-id: 37325723931
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/t05-runtime-artifact
+
+      - name: Mount the frozen DMG read-only
+        run: |
+          shopt -s nullglob
+          t05_dmgs=("$RUNNER_TEMP/t05-runtime-artifact/"*.dmg)
+          test "${#t05_dmgs[@]}" -eq 1
+          runtime_dmg="${t05_dmgs[0]}"
+          shasum -a 256 "$runtime_dmg" > "$EVIDENCE_DIR/runtime-dmg.sha256"
+          hdiutil verify "$runtime_dmg" > "$EVIDENCE_DIR/runtime-dmg-verify.log" 2>&1
+          mkdir -p "$T05_RUNTIME_MOUNT"
+          set +e
+          hdiutil attach -readonly -nobrowse -mountpoint "$T05_RUNTIME_MOUNT" "$runtime_dmg" \
+            > "$EVIDENCE_DIR/runtime-mount.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/runtime-mount.exit"
+          cat "$EVIDENCE_DIR/runtime-mount.log"
+          test "$result" -eq 0
+          runtime_resources="$T05_RUNTIME_MOUNT/DSH Workflow.app/Contents/Resources"
+          test -x "$runtime_resources/node"
+          test -d "$runtime_resources/desktop/DeepSeek Harness.app"
+          test "$("$runtime_resources/node" -p 'process.arch')" = arm64
+          printf 'T05_RUNTIME_RESOURCES=%s\n' "$runtime_resources" >> "$GITHUB_ENV"
+          shasum -a 256 "$runtime_resources/node" \
+            "$runtime_resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+            "$runtime_resources/desktop/DeepSeek Harness.app/Contents/Resources/app/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js" \
+            > "$EVIDENCE_DIR/runtime-payload.sha256"
+
+      - name: Set up the fixed current Flutter toolchain
+        id: flutter_toolchain
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+          cache: true
+          pub-cache-key: flutter-pub-:os:-:version:-:arch:-${{ hashFiles('macos-launcher/flutter/pubspec.lock') }}
+
+      - name: Set up fixed project Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
+
+      - name: Check current launcher engineering
+        working-directory: macos-launcher/flutter
+        run: |
+          flutter --version --machine > "$EVIDENCE_DIR/flutter-version.json"
+          dart --version > "$EVIDENCE_DIR/dart-version.log" 2>&1
+          set +e
+          bash check.sh > "$EVIDENCE_DIR/check.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/check.exit"
+          cat "$EVIDENCE_DIR/check.log"
+          exit "$result"
+
+      - name: Save fixed Flutter SDK before business acceptance
+        if: steps.flutter_toolchain.outputs.CACHE-HIT != 'true'
+        uses: actions/cache/save@v5
+        with:
+          key: ${{ steps.flutter_toolchain.outputs.CACHE-KEY }}
+          path: ${{ steps.flutter_toolchain.outputs.CACHE-PATH }}
+
+      - name: Save locked pub dependencies before business acceptance
+        if: steps.flutter_toolchain.outputs.PUB-CACHE-HIT != 'true'
+        uses: actions/cache/save@v5
+        with:
+          key: ${{ steps.flutter_toolchain.outputs.PUB-CACHE-KEY }}-${{ hashFiles('**/pubspec.lock') }}
+          path: ${{ steps.flutter_toolchain.outputs.PUB-CACHE-PATH }}
+
+      - name: Prepare exact current Debug application bytes
+        uses: ./.github/actions/flutter-debug-app
+
+      - name: Stage the current relative application association
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['GITHUB_WORKSPACE'])
+          app = root / 'macos-launcher/flutter/build/macos/Build/Products/Debug/DSH Workflow.app'
+          manifest = json.loads((root / 'maclauncher.json').read_text())
+          manifest['entry']['path'] = '../..'
+          target = app / 'Contents/Resources/maclauncher.json'
+          target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          (evidence / 'input-association.json').write_text(target.read_text())
+          (evidence / 'input-app.txt').write_text(str(app) + '\n')
+          PY
+
+      - name: Warm isolated preloaded startup prefix 1
+        id: startup_1
+        working-directory: macos-launcher/flutter
+        run: python3 ../../.github/scripts/settings_startup_cycle.py 1
+
+      - name: Upload startup prefix 1 before another application
+        id: startup_upload_1
+        if: ${{ always() && steps.startup_1.outputs.cycle_started == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-settings-startup-${{ github.run_id }}-${{ github.run_attempt }}-cycle-1
+          path: ${{ runner.temp }}/flutter-settings-startup/T05/startup-1
+          if-no-files-found: error
+
+      - name: Warm isolated preloaded startup prefix 2
+        id: startup_2
+        if: ${{ always() && steps.startup_1.outputs.safe_to_repeat == 'true' && steps.startup_upload_1.outcome == 'success' }}
+        working-directory: macos-launcher/flutter
+        run: python3 ../../.github/scripts/settings_startup_cycle.py 2
+
+      - name: Upload startup prefix 2 before another application
+        id: startup_upload_2
+        if: ${{ always() && steps.startup_2.outputs.cycle_started == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-settings-startup-${{ github.run_id }}-${{ github.run_attempt }}-cycle-2
+          path: ${{ runner.temp }}/flutter-settings-startup/T05/startup-2
+          if-no-files-found: error
+
+      - name: Warm isolated preloaded startup prefix 3
+        id: startup_3
+        if: ${{ always() && steps.startup_2.outputs.safe_to_repeat == 'true' && steps.startup_upload_2.outcome == 'success' }}
+        working-directory: macos-launcher/flutter
+        run: python3 ../../.github/scripts/settings_startup_cycle.py 3
+
+      - name: Upload startup prefix 3 before another application
+        id: startup_upload_3
+        if: ${{ always() && steps.startup_3.outputs.cycle_started == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-settings-startup-${{ github.run_id }}-${{ github.run_attempt }}-cycle-3
+          path: ${{ runner.temp }}/flutter-settings-startup/T05/startup-3
+          if-no-files-found: error
+
+      - name: Exercise settings and normal Desktop permission reopen
+        if: ${{ always() && steps.startup_3.outputs.safe_to_repeat == 'true' && steps.startup_upload_3.outcome == 'success' }}
+        working-directory: macos-launcher/flutter
+        run: python3 ../../.github/scripts/settings_startup_cycle.py --full
+
+      - name: Preserve completed T05 command before diagnostics
+        id: completed_t05_command
+        if: always()
+        run: python3 .github/scripts/settings_startup_cycle.py --completed-full
+
+      - name: Upload completed T05 command before diagnostics
+        if: ${{ always() && steps.completed_t05_command.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-settings-full-command-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/flutter-settings-startup/T05/completed-command
+          if-no-files-found: error
+
+      - name: Collect T05 observed application and process evidence
+        if: always()
+        timeout-minutes: 2
+        run: |
+          python3 - <<'PY'
+          import errno, hashlib, json, os, re, shutil, socket, subprocess, sys
+          sys.path.insert(0, "macos-launcher/flutter/tool")
+          from pathlib import Path
+          sys.path.insert(0, '.github/scripts')
+          from settings_startup_cycle import can_repeat, collect_owned_processes, copy_safe_evidence, launcher_web_released, observe_os_query, run_diagnostics, validate_root
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          logs = [evidence / 'application.log', *sorted(evidence.glob('startup-*/command.log'))]
+          roots = [name for log in logs if log.is_file() and not log.is_symlink()
+                   for name in re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M)]
+          full_roots = {name for log in logs if log.name == 'application.log' and log.is_file() and not log.is_symlink()
+                        for name in re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M)}
+          results = []
+          functional_failed = not bool(full_roots)
+          print('T05_COLLECTOR_PHASE=root-validation-start', flush=True)
+          for name in dict.fromkeys(roots):
+              root = validate_root(name, Path(os.environ['RUNNER_TEMP']))
+              target = evidence / root.name
+              target.mkdir(exist_ok=True)
+              print('T05_COLLECTOR_PHASE=copy-start ROOT=' + root.name, flush=True)
+              copy_safe_evidence(root, target, allow_independent_unknown=True)
+              print('T05_COLLECTOR_PHASE=copy-end ROOT=' + root.name, flush=True)
+              auxiliary = target / 'auxiliary-diagnostics'
+              auxiliary.mkdir(exist_ok=True)
+              auxiliary_exit = run_diagnostics(root, auxiliary)
+              shutil.copy2(auxiliary / 'diagnostic-collector.log', target / 'diagnostic-collector.log')
+              shutil.copy2(auxiliary / 'diagnostic-collector.exit', target / 'diagnostic-collector.exit')
+              if auxiliary_exit != 0:
+                  shutil.rmtree(auxiliary)
+                  print('::warning::T05 auxiliary diagnostics failed; exit=' + str(auxiliary_exit), flush=True)
+              print('T05_COLLECTOR_PHASE=hash-start ROOT=' + root.name, flush=True)
+              hashes = {}
+              for relative in ('Contents/MacOS/DSH Workflow', 'Contents/MacOS/DSH Workflow.debug.dylib',
+                               'Contents/Frameworks/App.framework/Resources/flutter_assets/kernel_blob.bin',
+                               'Contents/Info.plist', 'Contents/Resources/maclauncher.json'):
+                  file = root / 'candidate.app' / relative
+                  hashes[relative] = hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else None
+              print('T05_COLLECTOR_PHASE=hash-end ROOT=' + root.name, flush=True)
+              owned_log = next(log for log in logs if log.exists() and ('ISOLATED_ROOT=' + name) in log.read_text())
+              command_exit_file = owned_log.parent / ('application.exit' if owned_log.name == 'application.log' else 'command.exit')
+              functional_command_exit = int(command_exit_file.read_text().strip()) if command_exit_file.is_file() and not command_exit_file.is_symlink() else None
+              owned = collect_owned_processes(owned_log, Path(os.environ['RUNNER_TEMP']))
+              processes = owned['processes']
+              print('T05_COLLECTOR_PHASE=port-observation-start ROOT=' + root.name, flush=True)
+              port = socket.socket()
+              try:
+                  port.bind(('127.0.0.1', 33080))
+                  raw_bind = {'available': True}
+              except OSError as error:
+                  raw_bind = {'available': False, 'errno': error.errno, 'error': str(error)}
+              finally:
+                  port.close()
+              port = socket.socket()
+              port.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+              try:
+                  port.bind(('0.0.0.0', 33080))
+                  port.listen(1)
+                  service_listen = {'available': True}
+              except OSError as error:
+                  service_listen = {'available': False, 'errno': error.errno, 'error': str(error)}
+              finally:
+                  port.close()
+              listener = observe_os_query(['/usr/sbin/lsof', '-nP', '-iTCP:33080', '-sTCP:LISTEN', '-Fpn'])
+              physical_complete = owned['hostBindingKnown'] and can_repeat({'ownership': owned['ownership'], 'processes': list(processes.values()), 'finallyComplete': owned['finallyComplete'], 'receipt': owned['receiptLookup'], 'listener': {key: listener[key] for key in ('exit', 'stdout', 'stderr')}, 'bindListen': service_listen})
+              resources_released = launcher_web_released(owned, listener, service_listen)
+              normal_exit = owned['normalExitStage']
+              settings_body = json.loads((target / 'settings-evidence.json').read_text())
+              permission_applicable = name in full_roots
+              permission_verified = None
+              if permission_applicable:
+                  request = settings_body.get('permissionNormalRequest') or {}
+                  permission_verified = (settings_body.get('fullAccessSaved') is True
+                      and settings_body.get('permissionReopenVerified') is True
+                      and settings_body.get('permissionOriginalExitObserved') is True
+                      and settings_body.get('permissionModeBeforeReopen') == 'workspace-write'
+                      and settings_body.get('permissionModeAfterReopen') == 'danger-full-access'
+                      and request.get('lookupFound') is True and request.get('accepted') is True
+                      and isinstance(settings_body.get('oldDesktopPid'), int) and settings_body['oldDesktopPid'] > 1
+                      and isinstance(settings_body.get('newDesktopPid'), int) and settings_body['newDesktopPid'] > 1
+                      and request.get('expectedPid') == settings_body['oldDesktopPid']
+                      and settings_body['newDesktopPid'] != settings_body['oldDesktopPid']
+                      and isinstance(settings_body.get('oldHostPid'), int) and settings_body['oldHostPid'] > 1
+                      and isinstance(settings_body.get('hostPid'), int) and settings_body['hostPid'] > 1
+                      and settings_body['hostPid'] != settings_body['oldHostPid']
+                      and isinstance(settings_body.get('initialBackendLease'), str)
+                      and isinstance(settings_body.get('reopenedBackendLease'), str)
+                      and bool(settings_body['reopenedBackendLease'])
+                      and settings_body['reopenedBackendLease'] != settings_body['initialBackendLease'])
+              functional_complete = functional_command_exit == 0 and normal_exit is not None and normal_exit.get('code') == 0 and resources_released and (not permission_applicable or permission_verified is True)
+              functional_failed = not functional_complete or functional_failed
+              if not physical_complete:
+                  print('::warning::Isolated Desktop/Host cleanup is incomplete or unknown; functional Launcher/Web result is separate', flush=True)
+              print('T05_COLLECTOR_PHASE=port-observation-end ROOT=' + root.name, flush=True)
+              results.append({'isolatedRoot': name, 'payloadSha256': hashes, 'trackedProcesses': processes, 'ownership': owned['ownership'], 'hostBindingKnown': owned['hostBindingKnown'],
+                              'functionalCommandExit': functional_command_exit, 'normalExitStage': normal_exit,
+                              'permissionProofApplicable': permission_applicable, 'permissionReopenVerified': permission_verified, 'settingsBusinessEvidence': settings_body,
+                              'launcherWebReleased': resources_released, 'functionalAcceptanceComplete': functional_complete, 'isolatedCleanup': owned['isolatedCleanup'],
+                              'allOwnedProcessesGone': physical_complete, 'finallyComplete': owned['finallyComplete'], 'receiptLookup': owned['receiptLookup'],
+                              'receiptRemoved': True if owned['receiptLookup'].get('state') == 'absent' and owned['receiptLookup'].get('errno') == errno.ENOENT else (False if owned['receiptLookup'].get('state') == 'present' else None),
+                              'rawNoReuseLoopbackBind': raw_bind,
+                              'reuseAddrServiceBindListen': service_listen,
+                              'listenObservation': listener,
+                              'webPortReleased': service_listen['available'] and not listener['timedOut']})
+          (evidence / 'isolated-payloads-and-cleanup.json').write_text(json.dumps(results, indent=2) + '\n')
+          print('T05_COLLECTOR_PHASE=complete', flush=True)
+          if functional_failed:
+              raise RuntimeError('Required permission reopen, Launcher normal exit or Web release is unknown or incomplete; isolated cleanup recorded separately')
+          PY
+
+      - name: Record isolated runtime detach separately
+        if: always()
+        continue-on-error: true
+        run: |
+          if mount | grep -Fq " on $T05_RUNTIME_MOUNT "; then
+            set +e
+            hdiutil detach "$T05_RUNTIME_MOUNT" > "$EVIDENCE_DIR/runtime-detach.log" 2>&1
+            result=$?
+            set -e
+            printf '%s\n' "$result" > "$EVIDENCE_DIR/runtime-detach.exit"
+            cat "$EVIDENCE_DIR/runtime-detach.log"
+            if [ "$result" -ne 0 ]; then
+              printf '::warning::Isolated runtime detach incomplete; recorded exit=%s\n' "$result"
+            fi
+            exit "$result"
+          fi
+
+      - name: Upload T05 evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-settings-startup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/flutter-settings-startup/T05
+          if-no-files-found: error

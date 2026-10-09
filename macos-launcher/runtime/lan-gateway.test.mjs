@@ -240,3 +240,55 @@ test('password rotation invalidates a login waiting for Desktop authentication',
   assert.equal(result.status, 401)
   assert.equal(result.headers.get('set-cookie'), null)
 })
+
+test('disabled LAN settings refuses authenticated writes while preserving loopback changes', async t => {
+  let enabled = true
+  const upstream = http.createServer(async (request, response) => {
+    if (request.url?.startsWith('/?token=')) {
+      response.writeHead(303, { 'set-cookie': 'dsh-auth=fixture; Path=/', location: '/' }); response.end(); return
+    }
+    if (request.url === '/api/settings/update') {
+      const chunks = []
+      for await (const chunk of request) chunks.push(chunk)
+      enabled = JSON.parse(Buffer.concat(chunks).toString()).payload.args.patch.enabled
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ result: { ok: true, value: { enabled } } })); return
+    }
+    response.writeHead(200); response.end('normal business')
+  })
+  await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => { upstream.closeAllConnections(); upstream.close(resolve) }))
+  const gate = await startLanGateway({ port: 0, password: 'test', allowLanSettings: false,
+    upstreamPort: upstream.address().port, authenticatedUrl: () => `http://127.0.0.1:${upstream.address().port}/?token=fixture` })
+  t.after(() => gate.close())
+  const lan = gate.lanUrls[0]
+  if (!lan) { t.skip('No actual private IPv4 address is available'); return }
+  const local = gate.localUrl
+  const login = async base => {
+    const response = await fetch(new URL('login', base), { method: 'POST', redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'password=test' })
+    assert.equal(response.status, 303)
+    await response.body?.cancel()
+    return response.headers.getSetCookie().map(value => value.split(';', 1)[0]).join('; ')
+  }
+  const localCookie = await login(local), lanCookie = await login(lan)
+  const change = async (base, cookie, path) => {
+    const response = await fetch(new URL(path, base), { method: 'POST', headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'settings-test', method: 'settings/update', payload: { args: { ns: 'session-log-deepseek', patch: { enabled: false } } } }) })
+    await response.body?.cancel()
+    return response.status
+  }
+  for (const path of ['api/settings/update', 'api/settings/replace', 'api/settings/mutate', 'api/credentials/set', 'api/credentials/unset']) {
+    assert.equal(await change(lan, lanCookie, path), 403)
+  }
+  assert.equal(await change(lan, lanCookie, 'api/x/../settings/update'), 403)
+  assert.equal(enabled, true, 'refused LAN request never reaches the Host writer')
+  assert.equal((await fetch(new URL('ordinary-business', lan), { headers: { cookie: lanCookie } })).status, 200)
+  assert.equal(await change(local, localCookie, 'api/settings/update'), 200)
+  assert.equal(enabled, false, 'authenticated loopback can still change Host settings')
+  const allowed = await startLanGateway({ port: 0, password: 'test', allowLanSettings: true,
+    upstreamPort: upstream.address().port, authenticatedUrl: () => `http://127.0.0.1:${upstream.address().port}/?token=fixture` })
+  t.after(() => allowed.close())
+  assert.equal(await change(allowed.lanUrls[0], await login(allowed.lanUrls[0]), 'api/settings/update'), 200,
+    'enabled authenticated LAN settings are forwarded')
+})

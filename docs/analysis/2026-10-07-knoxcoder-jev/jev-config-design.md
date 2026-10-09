@@ -26,7 +26,7 @@
 - Q18：持续思考3分钟且没有新增正文或工具调用后开始语义检测，之后沿用检查间隔，默认每分钟一次；起始等待时间可配置，仅在请求仍在思考时调用。
 - Q19：连续5次明确语义异常才告警，次数单独可配置；明确正常或未知/失败时清零语义计数。未知/失败显示判断不可用，不表示代理恢复；达到异常阈值后逐轮提醒，直到正常或结束。
 - Q20：JEV无法调用时，在界面显示红色引擎不可用状态及原因，由用户手动排查；不干预正常代理流程。此要求取代此前“引擎不可用也发系统通知”的建议。普通子代理的可观测性已按Q21事实核验。
-- Q21事实核验：用户要求仔细分析“不存在进展事件”的前提。普通DSH spawn/fork、官方Team默认成员、Owner均创建原生Agent，即使使用第三方LLM endpoint也发布agent/assistant-stream。撤回把特殊外部后端限制当成当前普通子代理需求的待选分支；本次按DSH原生主/子代理统一监控设计。
+- Q21事实核验：用户要求仔细分析“不存在进展事件”的前提。普通DSH spawn/fork、官方Team默认成员均创建原生Agent，即使使用第三方LLM endpoint也发布agent/assistant-stream。撤回把特殊外部后端限制当成当前普通子代理需求的待选分支；本次按DSH原生主/子代理统一监控设计。
 
 ## 访谈结论
 
@@ -45,9 +45,9 @@ DSH 的插件 Config/volatile 字段由 Settings 提供配置 schema、读写与
 
 ### 子代理进展的补充核验
 
-普通spawn/fork进入共享in-process driver，调用parent.ctx.agents.create并返回localAgent；原生AgentLoop读取llm stream的每个chunk并发布assistant-stream。Owner同样走原生create/resume并继承父模型选择；官方Agent Team默认freshProvider=spawn、forkProvider=fork。当前保存的Desktop profile包含这一官方Team bundle，其安装版本0.2.1-alpha.1的patch仍为spawn/fork。没有运行真实子代理任务，也没有查询当前运行Host的动态provider实例；保存配置证据不等于已验证每个当前实例。
+普通spawn/fork进入共享in-process driver，调用parent.ctx.agents.create并返回localAgent；原生AgentLoop读取llm stream的每个chunk并发布assistant-stream。官方Agent Team默认freshProvider=spawn、forkProvider=fork。当前保存的Desktop profile包含这一官方Team bundle，其安装版本0.2.1-alpha.1的patch仍为spawn/fork。没有运行真实子代理任务，也没有查询当前运行Host的动态provider实例；保存配置证据不等于已验证每个当前实例。
 
-[原生child创建](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/subagent/subagent-in-process-driver/src/index.ts:134)、[流事件发布](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/core/agent-loop/src/agent.ts:426)、[Owner创建](/Users/ghost233/Ghost233Code/DSH-Workflow/owner-workflow-plugin/src/owner-team.mjs:161)、[Team默认backend](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/experimental/agent-team-profile/cordis.patch.yml:26)
+[原生child创建](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/subagent/subagent-in-process-driver/src/index.ts:134)、[流事件发布](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/core/agent-loop/src/agent.ts:426)、[Team默认backend](/Users/ghost233/Ghost233Code/DSH-Workflow/deepseek-harness/packages/experimental/agent-team-profile/cordis.patch.yml:26)
 
 特殊外进程backend有另外的接口事实：ACP模块内部确实收到session updates，但明确不向公共子代理接口转发thoughts/tools/plans；Claude Code backend只取SDK result；DSH SDK backend内部折叠session notifications；这些run返回localAgent=undefined，共享SubagentRun只提供result/dispose等终态接口。限制在DSH适配器公共接线，不能说外部系统本身没有流式信息。这不属于使用第三方LLM地址的普通DSH子代理场景，不作为本轮要求用户决策的预设障碍。
 

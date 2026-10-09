@@ -12,7 +12,7 @@
 
 ## 配置与查看
 
-从 DSH 原生“设置”或“插件”面板进入“JEV 中心”与“代理监控”。监控可以修改检查间隔、连续无输出次数、JEV 调用模型名、语义检测等待时间、连续语义异常次数及调试片段开关，写入标准 Settings。Owner 仪表盘也提供独立页面入口；/agent-monitor/api/status 返回状态与配置描述，/agent-monitor/api/journal 提供持久记录。
+从 DSH 原生“设置”或“插件”面板进入“JEV 中心”与“代理监控”。监控可以修改检查间隔、连续无输出次数、JEV 调用模型名、语义检测等待时间、连续语义异常次数及调试片段开关，写入标准 Settings。/agent-monitor/api/status 返回状态与配置描述，/agent-monitor/api/journal 提供持久记录。
 
 记录位于 catalog 下 .dsh-workflow/agent-monitor/alerts.jsonl。默认记录元数据、判断概率、耗时和原因；调试片段默认关闭，密钥与认证请求头不入日志。告警提交 macOS 系统通知，实际显示验收由用户暂缓，提交接缝不等于实际送达。
 
@@ -26,6 +26,6 @@ JEV 中心通过标准 Settings 保存多套引擎字段，通过标准 credenti
 
 ## 验证边界
 
-模拟覆盖真实 Host、标准接口、spawn/fork、Agent Team 和 Owner。Owner 模拟请求挂起后告警、恢复后正常完成；项目 profile 重启后保留设置与用户字段。通知模拟证明提交接缝，不等于实际送达。浏览器操作、完整门禁与双轴审查按交付记录推进。
+原验证覆盖标准接口、原生 spawn/fork 与 Agent Team；项目 profile 重启后保留设置与用户字段。通知模拟证明提交接缝，不等于实际送达。浏览器操作、完整门禁与双轴审查按交付记录推进。
 
 没有付费模型调用，没有判断质量或零误报承诺。运行中的 DSH 服务未切换，旧启动器资源不会自动读取本分支源文件。

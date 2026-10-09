@@ -20,6 +20,20 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   vm_service: ^15.3.0
+  launcher_core:
+    git:
+      url: https://github.com/Ghost233/MacLauncher.git
+      path: packages/launcher_core
+      ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
+
+# The official management core declares a hosted SDK constraint; both sides
+# of this application probe must resolve to the same pinned official SDK.
+dependency_overrides:
+  maclauncher_sdk:
+    git:
+      url: https://github.com/Ghost233/MacLauncher.git
+      path: packages/maclauncher_sdk
+      ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
 
 flutter:
   uses-material-design: true

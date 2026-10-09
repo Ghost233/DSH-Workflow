@@ -1,27 +1,41 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:developer' as developer;
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 
+import 'application_probe.dart';
 import 'launcher_controller.dart';
+import 'lifecycle_probe_process.dart';
 import 'maclauncher_integration.dart';
 import 'native_bridge.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final native = NativeBridge();
-  final model = LauncherController(native);
+  late final LauncherController model;
+  model = LauncherController(
+    native,
+    startProcess: kDebugMode
+        ? (executable, arguments, {workingDirectory, environment}) =>
+              startLifecycleProbeProcess(
+                executable,
+                arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+                isolated: model.environment.testSocket != null,
+                dataRoot: model.environment.dataRoot,
+              )
+        : null,
+  );
   await model.initialize();
   final integration = MacLauncherIntegration(
     model,
-    socketPath: kDebugMode
-        ? Platform.environment['DSH_LAUNCHER_TEST_SOCKET']
-        : null,
+    socketPath: kDebugMode ? model.environment.testSocket : null,
   );
   if (kDebugMode) {
     developer.registerExtension('ext.dshlauncher.nativeState', (_, _) async {
@@ -39,14 +53,49 @@ Future<void> main() async {
   native.channel.setMethodCallHandler((call) async {
     switch (call.method) {
       case 'quitRequested':
-        await integration.close();
-        await model.close();
-        await native.finishQuit();
+        final traceEnabled =
+            kDebugMode &&
+            (Platform.environment['GITHUB_ACTIONS'] == 'true' ||
+                Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
+                    null) &&
+            model.environment.testSocket != null &&
+            call.arguments is Map &&
+            (call.arguments as Map)['ownQuitTraceEnabled'] == true;
+        if (traceEnabled) {
+          stderr.writeln('OWN_QUIT_TRACE phase=dart-received');
+        }
+        var stage = 'integration-close';
+        try {
+          await integration.close();
+          if (traceEnabled) {
+            stderr.writeln('OWN_QUIT_TRACE phase=integration-done');
+          }
+          stage = 'model-close';
+          await model.close();
+          if (traceEnabled) {
+            stderr.writeln('OWN_QUIT_TRACE phase=model-done');
+          }
+          stage = 'finish-quit';
+          if (traceEnabled) {
+            stderr.writeln('OWN_QUIT_TRACE phase=finish-called');
+          }
+          await native.finishQuit();
+        } catch (error) {
+          if (traceEnabled) {
+            stderr.writeln(
+              'OWN_QUIT_ERROR stage=$stage errorType=${error.runtimeType}',
+            );
+          }
+          rethrow;
+        }
       case 'openGlobal':
         await model.openDsh();
         await model.startWeb();
     }
   });
+  if (kDebugMode && model.environment.testSocket != null) {
+    registerApplicationProbe(native);
+  }
   runApp(LauncherApp(controller: model));
   if (model.hasPassword) {
     unawaited(model.startWeb().catchError(model.reportError));
@@ -213,6 +262,10 @@ class _LauncherPageState extends State<LauncherPage> {
           spacing: 8,
           runSpacing: 8,
           children: [
+            _button('后台启动', model.startDesktopInBackground),
+            _button('启动后显示', model.openDsh),
+            _button('隐藏窗口', model.hideDesktop),
+            _button('仅显示已运行窗口', model.showExistingDesktop),
             _button('启动 Web', model.startWeb, enabled: !model.isActive),
             _button('停止 Web', model.stopWeb, enabled: model.isActive),
             _button('重连 Web', model.restartWeb, enabled: model.isActive),
@@ -225,6 +278,21 @@ class _LauncherPageState extends State<LauncherPage> {
         ),
       ]),
       _section('访问与权限', [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('启动时隐藏窗口'),
+          subtitle: const Text('常规与登录启动时隐藏新启动的 Desktop；已有窗口保持当前状态。'),
+          value: model.hideWindowOnStart,
+          onChanged: (value) => unawaited(
+            _act(
+              () => model.savePreferences(
+                model.fullAccess,
+                model.allowLanSettings,
+                hideWindowOnStart: value,
+              ),
+            ),
+          ),
+        ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('DSH 工具使用完整访问权限'),
@@ -270,12 +338,22 @@ class _LauncherPageState extends State<LauncherPage> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('登录后启动应用'),
-          value: model.loginStatus == 'enabled',
+          subtitle: Text(switch (model.loginStatus) {
+            'notRegistered' => '登录启动：未注册',
+            'enabled' => '登录启动：已启用',
+            'requiresApproval' => '登录启动：需要系统批准。请在系统设置的登录项中允许启动。',
+            'notFound' => '登录启动：系统未找到此应用',
+            'unsupported' => '登录启动：系统不支持（需要 macOS 13 或更新版本）',
+            'unavailableInTest' => '登录启动：测试环境不访问系统登录项',
+            _ => '登录启动：无法确认系统状态',
+          }),
+          value:
+              model.loginStatus == 'enabled' ||
+              model.loginStatus == 'requiresApproval',
           onChanged: (value) =>
               unawaited(_act(() => model.setLoginEnabled(value))),
         ),
-        if (model.loginStatus == 'requiresApproval')
-          const Text('请在系统设置的登录项中允许启动。'),
+        _button('刷新登录项状态', model.refreshLoginStatus),
         Text(model.updateMessage),
         Wrap(
           spacing: 8,
@@ -319,7 +397,13 @@ class _LauncherPageState extends State<LauncherPage> {
       ),
       const SizedBox(height: 12),
       Text(model.pluginMessage),
-      if (model.pluginUpdateMessage.isNotEmpty) Text(model.pluginUpdateMessage),
+      if (model.pluginUpdateMessage.isNotEmpty)
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 120),
+          child: SingleChildScrollView(
+            child: SelectionArea(child: Text(model.pluginUpdateMessage)),
+          ),
+        ),
       if (model.pluginsNeedReload)
         const Text('插件已更新。完全退出并重新打开 Desktop 后加载新版本。'),
       const SizedBox(height: 12),
@@ -389,6 +473,8 @@ class _LauncherPageState extends State<LauncherPage> {
     children: [
       Text('Web 业务进程日志', style: Theme.of(context).textTheme.titleLarge),
       const Text('显示原始输出；来源未提供原始时间时不生成时间戳。'),
+      Text('日志实例：${model.logInstanceId ?? '未提供'}'),
+      Text(model.logsTruncated ? '更早的日志已丢弃' : '已显示当前缓存的全部日志'),
       const SizedBox(height: 12),
       Expanded(
         child: SelectionArea(

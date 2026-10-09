@@ -9,7 +9,7 @@ const resources = resolve(process.argv[2] ?? '')
 const anchor = join(resources, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
 const workflow = join(resources, 'workflow')
 const packages = {
-  'dsh-owner-workflow': workflow,
+  'dsh-workflow': workflow,
   'dsh-workflow-matt-panel': join(workflow, 'matt-skills-panel-plugin/package'),
 }
 const manifest = JSON.parse(readFileSync(anchor, 'utf8'))
@@ -19,4 +19,4 @@ const entry = join(dirname(anchor), 'lib', 'bin.js')
 process.argv = [process.execPath, entry, ...process.argv.slice(3)]
 const { runCli } = await import(pathToFileURL(entry))
 if (typeof runCli !== 'function') throw new Error('Packaged DSH CLI does not expose runCli')
-await runCli()
+await runCli({ manageDesktopProfile: process.argv[2] === 'plugin' && process.argv[3] === '--profile' && process.argv[4] === 'desktop' })

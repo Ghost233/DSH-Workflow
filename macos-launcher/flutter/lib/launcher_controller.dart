@@ -38,8 +38,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   final NativeBridge native;
   final ProcessStarter _startProcess;
   late LauncherEnvironment environment;
-  bool initialized = false, fullAccess = true, allowLanSettings = false;
+  bool initialized = false,
+      fullAccess = true,
+      allowLanSettings = false,
+      hideWindowOnStart = false;
   String? _password;
+  bool _coldDesktopBackground = false;
   String loginStatus = 'unknown', error = '', updateMessage = '尚未检查更新';
   String pluginMessage = '尚未检查插件版本', pluginUpdateMessage = '';
   String sdkMessage = '等待 MacLauncher';
@@ -65,6 +69,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void>? _mutation, _closeFuture;
   Future<void>? _desktopOpen;
   ServiceStatus get snapshot => _web;
+  String? get logInstanceId => _logInstanceId;
+  bool get logsTruncated => _logsDropped;
   bool get isActive => _child != null || _mutation != null;
   bool get hasPassword => _password?.isNotEmpty == true;
   String get node => '${environment.resources}/node';
@@ -76,6 +82,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     environment = await native.load();
     fullAccess = environment.fullAccess;
     allowLanSettings = environment.allowLanSettings;
+    hideWindowOnStart = environment.hideWindowOnStart;
     _password = environment.password;
     loginStatus = environment.loginStatus;
     initialized = true;
@@ -84,6 +91,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   Map<String, String> get processEnvironment => {
     ...Platform.environment,
+    'DSH_HOME': environment.home,
     'DSH_PERMISSION_MODE': fullAccess
         ? 'danger-full-access'
         : 'workspace-write',
@@ -143,18 +151,32 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     try {
       final child = await _startProcess(
         node,
-        [script('global-supervisor.mjs'), environment.dataRoot],
+        [
+          script('global-supervisor.mjs'),
+          environment.dataRoot,
+          if (kDebugMode &&
+              environment.testSocket != null &&
+              Platform.environment['DSH_LAUNCHER_TEST_PORT'] != null) ...[
+            '--port',
+            Platform.environment['DSH_LAUNCHER_TEST_PORT']!,
+          ],
+        ],
         workingDirectory: environment.resources,
         environment: processEnvironment,
       );
       if (_closed) {
-        child.kill();
-        await child.exitCode;
+        final drained = Future.wait([
+          child.stdout.drain<void>(),
+          child.stderr.drain<void>(),
+        ]);
+        await _terminateChild(child);
+        await drained;
         throw StateError('启动器正在退出');
       }
       _child = child;
       _web = ServiceStatus(
         state: ServiceState.starting,
+        ready: false,
         observedAt: DateTime.now().toUtc(),
       );
       notifyListeners();
@@ -187,6 +209,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         }),
       );
       _observer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (!ready.isCompleted) return;
         unawaited(
           _query({'type': 'status'}).catchError((Object failure) {
             reportError(failure);
@@ -225,8 +248,9 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
             jsonDecode(line.substring(separator + 1)),
           );
           if (name == 'DSH_WORKFLOW_DESKTOP_NEEDED') {
-            unawaited(openDsh().catchError(reportError));
+            unawaited(startDesktop().catchError(reportError));
           } else if (name == 'DSH_WORKFLOW_READY') {
+            _coldDesktopBackground = false;
             webUrl = Uri.parse(payload['url'] as String);
             lanUrls = (payload['lanUrls'] as List? ?? []).cast<String>();
             if (_ready?.isCompleted == false) _ready!.complete();
@@ -238,6 +262,13 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
             );
           } else if (name == 'DSH_WORKFLOW_STATE') {
             _setSnapshot(objectValue(payload['global']));
+          } else if (name == 'DSH_WORKFLOW_LOG') {
+            if (payload['instanceId'] != _logInstanceId) continue;
+            logs.add(LogEntry.fromJson(objectValue(payload['entry'])));
+            if (logs.length > 500) {
+              logs.removeAt(0);
+              _logsDropped = true;
+            }
           } else if (name == 'DSH_WORKFLOW_REPLY') {
             if (payload['global'] != null) {
               _setSnapshot(objectValue(payload['global']));
@@ -271,10 +302,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     final state = ServiceState.fromJson(value['state'] as String? ?? 'unknown');
     final instance = value['instanceId'] as String?;
     if (instance != null && instance != _logInstanceId) {
-      if (_logInstanceId != null) {
-        logs.clear();
-        _logsDropped = false;
-      }
+      logs.clear();
+      _logsDropped = false;
       _logInstanceId = instance;
     }
     if (state == ServiceState.running && value['url'] is String) {
@@ -327,6 +356,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     final child = _child;
     if (child == null) return;
     _stopping = true;
+    await _terminateChild(child);
+  }
+
+  Future<void> _terminateChild(Process child) async {
     child.kill(ProcessSignal.sigterm);
     try {
       await child.exitCode.timeout(const Duration(seconds: 3));
@@ -341,10 +374,32 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     await _startWeb();
   });
 
-  Future<void> openDsh() =>
-      _desktopOpen ??= _openDesktop().whenComplete(() => _desktopOpen = null);
+  Future<void> hideDesktop() => native.hideDesktop(desktop);
+  Future<void> showExistingDesktop() => native.showDesktop(desktop);
+  Future<void> startDesktop() async {
+    if (_coldDesktopBackground) {
+      if (_desktopOpen != null) {
+        await _desktopOpen;
+        return;
+      }
+      if (await native.desktopRunning(desktop)) return;
+      _coldDesktopBackground = false;
+    }
+    await _startDesktop(hidden: hideWindowOnStart);
+  }
 
-  Future<void> _openDesktop() async {
+  Future<void> startDesktopInBackground() => _startDesktop(hidden: true);
+  Future<void> openDsh() async {
+    await _startDesktop(hidden: false);
+    await native.showDesktop(desktop);
+  }
+
+  Future<void> _startDesktop({required bool hidden}) =>
+      _desktopOpen ??= _openDesktop(hidden: hidden)
+          .whenComplete(() => _desktopOpen = null);
+
+  Future<void> _openDesktop({required bool hidden}) async {
+    if (await native.desktopRunning(desktop)) return;
     final resources = '$desktop/Contents/Resources';
     final source = File('$resources/dsh-source-runtime.json');
     final runtime = await source.exists()
@@ -368,12 +423,25 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     if (result.exitCode != 0) {
       throw StateError('插件装配失败（${result.exitCode}）：${result.stderr}');
     }
-    await native.openDesktop(desktop);
+    _coldDesktopBackground = hidden;
+    try {
+      await native.openDesktop(
+        desktop,
+        hidden: hidden,
+        environment: {
+          'DSH_HOME': environment.home,
+          'DSH_PERMISSION_MODE': processEnvironment['DSH_PERMISSION_MODE']!,
+        },
+      );
+    } catch (_) {
+      _coldDesktopBackground = false;
+      rethrow;
+    }
   }
 
   @override
   Future<ServiceStatus> webStatus() async {
-    if (_child != null) {
+    if (_child != null && _ready?.isCompleted == true) {
       await _query({'type': 'status'});
     }
     return _child == null
@@ -412,10 +480,16 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   @override
   Future<bool> setEntryManaged(bool managed) => native.setEntryManaged(managed);
 
-  Future<void> savePreferences(bool access, bool lan) async {
-    await native.savePreferences(access, lan);
+  Future<void> savePreferences(
+    bool access,
+    bool lan, {
+    bool? hideWindowOnStart,
+  }) async {
+    final hide = hideWindowOnStart ?? this.hideWindowOnStart;
+    await native.savePreferences(access, lan, hideWindowOnStart: hide);
     fullAccess = access;
     allowLanSettings = lan;
+    this.hideWindowOnStart = hide;
     notifyListeners();
   }
 
@@ -432,33 +506,47 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     notifyListeners();
   }
 
-  Future<void> setLoginEnabled(bool enabled) async {
-    loginStatus = await native.setLoginEnabled(enabled);
+  Future<void> refreshLoginStatus() async {
+    loginStatus = await native.getLoginStatus();
     notifyListeners();
+  }
+
+  Future<void> setLoginEnabled(bool enabled) async {
+    try {
+      loginStatus = await native.setLoginEnabled(enabled);
+    } catch (_) {
+      loginStatus = await native.getLoginStatus();
+      rethrow;
+    } finally {
+      notifyListeners();
+    }
   }
 
   Future<void> checkUpdates() async {
     if (checkingUpdates) return;
     checkingUpdates = true;
+    update = null;
     updateMessage = '正在检查更新…';
     notifyListeners();
     final http = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
-      final request = await http.getUrl(
-        Uri.parse(
-          'https://api.github.com/repos/Ghost233/DSH-Workflow/releases?per_page=100',
-        ),
-      );
-      request.headers.set('Accept', 'application/vnd.github+json');
-      request.headers.set('User-Agent', 'DSH-Workflow-macOS');
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        throw HttpException('GitHub 发布接口 ${response.statusCode}');
-      }
-      update = newerRelease(
-        await response.transform(utf8.decoder).join(),
-        environment.appVersion,
-      );
+      final body = await (() async {
+        final request = await http.getUrl(
+          Uri.parse(
+            kDebugMode && environment.testSocket != null
+                ? environment.testReleaseEndpoint ?? 'https://api.github.com/repos/Ghost233/DSH-Workflow/releases?per_page=100'
+                : 'https://api.github.com/repos/Ghost233/DSH-Workflow/releases?per_page=100',
+          ),
+        );
+        request.headers.set('Accept', 'application/vnd.github+json');
+        request.headers.set('User-Agent', 'DSH-Workflow-macOS');
+        final response = await request.close();
+        if (response.statusCode != 200) {
+          throw HttpException('GitHub 发布接口 ${response.statusCode}');
+        }
+        return response.transform(utf8.decoder).join();
+      })().timeout(const Duration(seconds: 10));
+      update = newerRelease(body, environment.appVersion);
       updateMessage = update == null ? '暂无新版本' : '发现新版本 ${update!.version}';
     } catch (failure) {
       updateMessage = '检查更新失败：$failure';
@@ -519,7 +607,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       if (updated is! List) {
         throw const FormatException('Missing update results');
       }
-      pluginsNeedReload = updated.isNotEmpty;
+      pluginsNeedReload = pluginsNeedReload || updated.isNotEmpty;
       pluginUpdateMessage =
           '已更新 ${updated.length} 个插件${report['error'] == null ? '' : '；${report['error']}'}';
     } catch (failure) {
@@ -535,6 +623,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   Future<void> _close() async {
     _closed = true;
+    if (kDebugMode &&
+        environment.testSocket != null &&
+        Platform.environment['DSH_LAUNCHER_TEST_START_GATE'] != null) {
+      await File('${environment.dataRoot}/lifecycle-close-started')
+          .writeAsString('close-started');
+    }
     _observer?.cancel();
     final pending = _mutation;
     await _stopWeb();

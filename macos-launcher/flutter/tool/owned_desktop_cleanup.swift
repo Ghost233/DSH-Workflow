@@ -1,0 +1,89 @@
+import AppKit
+import Foundation
+
+// Only the exact Desktop instance observed in a disposable CI probe may exit.
+func fail(_ message: String) -> NSError {
+  NSError(domain: "OwnedDesktopCleanup", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+}
+func canonical(_ path: String) -> String {
+  if let resolved = realpath(path, nil) {
+    defer { free(resolved) }
+    return String(cString: resolved)
+  }
+  return URL(fileURLWithPath: path).standardizedFileURL.path
+}
+func emit(_ facts: [String: Any]) throws {
+  FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]))
+  FileHandle.standardOutput.write(Data("\n".utf8))
+}
+
+do {
+  let arguments = CommandLine.arguments
+  guard arguments.count >= 3 else { throw fail("Missing owned cleanup context") }
+  let environment = ProcessInfo.processInfo.environment
+  let runnerRoot: String
+  if environment["GITHUB_ACTIONS"] == "true", environment["DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT"] == nil,
+     let runner = environment["RUNNER_TEMP"] {
+    runnerRoot = canonical(runner)
+  } else {
+    guard environment["GITHUB_ACTIONS"] != "true",
+          let local = environment["DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT"],
+          local == "/private/tmp/dsh-launcher-local-" + String(getuid()), canonical(local) == local,
+          let attributes = try? FileManager.default.attributesOfItem(atPath: local),
+          (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
+          (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700 else { throw fail("Requires explicit private local or CI context") }
+    runnerRoot = local
+  }
+  let root = canonical(arguments[1])
+  guard root.hasPrefix(runnerRoot + "/"), URL(fileURLWithPath: root).lastPathComponent.hasPrefix("dsh-") else {
+    throw fail("Unowned probe root")
+  }
+  let ledger = URL(fileURLWithPath: root).appendingPathComponent("owned-desktop-process.json")
+  let mode = arguments[2]
+  if mode == "capture" {
+    guard (arguments.count == 5 || arguments.count == 6), let pid = Int32(arguments[4]), pid > 1,
+          let app = NSRunningApplication(processIdentifier: pid),
+          let actual = app.bundleURL, let executable = app.executableURL else {
+      throw fail("Owned Desktop is unavailable")
+    }
+    let expected = canonical(arguments[3])
+    guard expected.hasPrefix(runnerRoot + "/"), canonical(actual.path) == expected,
+          canonical(executable.path).hasPrefix(expected + "/Contents/MacOS/") else {
+      throw fail("Desktop bundle identity differs from private candidate")
+    }
+    let probe = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: root).appendingPathComponent("probe-process.json"))) as! [String: Any]
+    var facts: [String: Any] = ["pid": pid, "bundlePath": expected, "executablePath": canonical(executable.path),
+                              "probeStartedAt": probe["startedAt"]!]
+    if arguments.count == 6 {
+      facts["kernelIdentity"] = try? JSONSerialization.jsonObject(with: Data(arguments[5].utf8))
+    }
+    try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]).write(to: ledger, options: .atomic)
+    try emit(facts.merging(["event": "captured"], uniquingKeysWith: { _, new in new }))
+  } else if mode == "terminate" {
+    guard arguments.count == 3 else { throw fail("Invalid cleanup arguments") }
+    let facts = try JSONSerialization.jsonObject(with: Data(contentsOf: ledger)) as! [String: Any]
+    guard let pid = facts["pid"] as? Int32, pid > 1, let expected = facts["bundlePath"] as? String,
+          expected.hasPrefix(runnerRoot + "/"),
+          let executable = facts["executablePath"] as? String else { throw fail("Invalid owned Desktop ledger") }
+    guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated else {
+      try emit(["event": "already-exited", "mode": mode, "requests": 0, "pid": pid, "observedExited": true])
+      exit(0)
+    }
+    guard let bundle = app.bundleURL, canonical(bundle.path) == expected,
+          let actualExecutable = app.executableURL, canonical(actualExecutable.path) == executable else {
+      throw fail("Desktop PID identity changed")
+    }
+    let requested = app.terminate()
+    try emit(["event": "normal-termination-request", "mode": mode, "requests": 1, "pid": pid, "requested": requested])
+    guard requested else { throw fail("Desktop declined normal termination") }
+    let deadline = Date().addingTimeInterval(15)
+    while !app.isTerminated && Date() < deadline {
+      RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+    }
+    try emit(["event": "termination-observation", "pid": pid, "observedExited": app.isTerminated])
+    guard app.isTerminated else { throw fail("Desktop did not exit after normal termination") }
+  } else { throw fail("Unknown cleanup action") }
+} catch {
+  FileHandle.standardError.write(Data("OWNED_DESKTOP_CLEANUP_ERROR: \(error.localizedDescription)\n".utf8))
+  exit(1)
+}

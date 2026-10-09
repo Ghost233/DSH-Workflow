@@ -1,3 +1,4 @@
+import {dshReadiness} from '../scripts/dsh-readiness.mjs'
 import { cp, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -39,20 +40,13 @@ try {
     let timer
     try {
       const ready = await Promise.race([host.start(), new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Packaged Owner Host readiness exceeded 120 seconds')), 120_000)
+        timer = setTimeout(() => reject(new Error('Packaged DSH Host readiness exceeded 120 seconds')), 120_000)
       })])
       const login = await fetch(ready.url, { redirect: 'manual' })
       const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
-      const response = await fetch(new URL('/owner-workflow/api/health', ready.url), { headers: { cookie } })
-      const health = await response.json()
-      if (!response.ok || health.ready !== true || health.components?.owner !== 'ready') {
-        throw new Error(`Packaged Owner Host is not ready: ${JSON.stringify(health)}`)
-      }
-      const backend = await desktopStatus(globalRoot)
-      if (backend.state !== 'running' || backend.ready !== true || !backend.instanceId) {
-        throw new Error(`Packaged Desktop observation failed: ${JSON.stringify(backend)}`)
-      }
-      process.stdout.write('Relocated launcher: Desktop profile, Owner readiness and Matt panel composition passed\n')
+      const health = await dshReadiness(ready.url,{cookie})
+      if (health.ready !== true) throw new Error('Packaged official DSH Host is not ready')
+      process.stdout.write('Relocated launcher: Desktop profile, official DSH readiness and Matt panel composition passed\n')
     } finally { clearTimeout(timer); await host.stop() }
   }
   process.stdout.write(`Relocated Desktop ${process.arch}: runtime integrity, Host, frontend and Office smoke passed\n`)

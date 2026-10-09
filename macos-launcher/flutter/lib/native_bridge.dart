@@ -8,7 +8,10 @@ class LauncherEnvironment {
       appVersion = _string(values, 'appVersion'),
       fullAccess = values['fullAccess'] as bool? ?? true,
       allowLanSettings = values['allowLanSettings'] as bool? ?? false,
+      hideWindowOnStart = values['hideWindowOnStart'] as bool? ?? false,
       password = values['password'] as String?,
+      testSocket = values['testSocket'] as String?,
+      testReleaseEndpoint = values['testReleaseEndpoint'] as String?,
       loginStatus = _string(values, 'loginStatus');
 
   static String _string(Map<Object?, Object?> values, String key) {
@@ -20,8 +23,8 @@ class LauncherEnvironment {
   }
 
   final String resources, dataRoot, home, appVersion, loginStatus;
-  final bool fullAccess, allowLanSettings;
-  final String? password;
+  final bool fullAccess, allowLanSettings, hideWindowOnStart;
+  final String? password, testSocket, testReleaseEndpoint;
 }
 
 class NativeBridge {
@@ -40,19 +43,42 @@ class NativeBridge {
   }
 
   Future<void> showWindow() => channel.invokeMethod<void>('showWindow');
-  Future<void> openDesktop(String path) =>
-      channel.invokeMethod<void>('openDesktop', path);
+  Future<void> openDesktop(
+    String path, {
+    required Map<String, String> environment,
+    bool hidden = false,
+  }) => channel.invokeMethod<void>('openDesktop', {
+    'path': path,
+    'environment': environment,
+    'hidden': hidden,
+  });
+  Future<bool> desktopRunning(String path) async {
+    final running = await channel.invokeMethod<bool>('desktopRunning', path);
+    if (running == null) throw StateError('Desktop 运行状态未知');
+    return running;
+  }
+
+  Future<void> hideDesktop(String path) =>
+      channel.invokeMethod<void>('hideDesktop', path);
+  Future<void> showDesktop(String path) =>
+      channel.invokeMethod<void>('showDesktop', path);
   Future<void> openUrl(String url) =>
       channel.invokeMethod<void>('openUrl', url);
   Future<bool> setEntryManaged(bool managed) async =>
       await channel.invokeMethod<bool>('setEntryManaged', managed) ?? false;
-  Future<void> savePreferences(bool fullAccess, bool allowLanSettings) =>
-      channel.invokeMethod<void>('savePreferences', {
-        'fullAccess': fullAccess,
-        'allowLanSettings': allowLanSettings,
-      });
+  Future<void> savePreferences(
+    bool fullAccess,
+    bool allowLanSettings, {
+    required bool hideWindowOnStart,
+  }) => channel.invokeMethod<void>('savePreferences', {
+    'fullAccess': fullAccess,
+    'allowLanSettings': allowLanSettings,
+    'hideWindowOnStart': hideWindowOnStart,
+  });
   Future<void> savePassword(String password) =>
       channel.invokeMethod<void>('savePassword', password);
+  Future<String> getLoginStatus() async =>
+      await channel.invokeMethod<String>('getLoginStatus') ?? 'unknown';
   Future<String> setLoginEnabled(bool enabled) async =>
       await channel.invokeMethod<String>('setLoginEnabled', enabled) ??
       'unknown';

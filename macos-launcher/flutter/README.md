@@ -14,7 +14,12 @@ project.id 为 dsh-workflow；web 服务提供启动、回收、状态和日志�
 
 ## 检查与构建
 
+工程检查使用 Node.js 24.12.0。先在仓库根目录准备当前维护版 Matt 面板；真实项目装配测试需要它的构建产物，再进入 Flutter 目录运行检查：
+
 ```sh
+npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+npm run build --prefix matt-skills-panel-plugin
+cd macos-launcher/flutter
 FLUTTER_BIN="$HOME/flutter/bin/flutter" DART_BIN="$HOME/flutter/bin/dart" bash check.sh
 ```
 
@@ -29,6 +34,6 @@ dart run tool/native_probe.dart 'build/macos/Build/Products/Debug/DSH Workflow.a
 
 Debug 验收检查真实窗口、菜单显隐与断线恢复。测试配置环境和 VM 原生状态接口仅在 Debug 生效；Release 不提供它们。验收不使用当前用户 profile，不启动用户业务。
 
-生产构建从仓库根目录使用 macos-launcher/build.mjs；先准备现有官方 Desktop 与面板产物。构建将 Flutter Release 应用、现有 Node/DSH 运行时、插件和 Desktop 装配为一个独立应用。CI 在对应原生架构上设置构建架构、测试并生成两种 DMG；移动副本继续接受真实 Host、Office、Owner 与 Matt 验收。
+生产构建从仓库根目录使用 macos-launcher/build.mjs；先准备现有官方 Desktop 与面板产物。构建将 Flutter Release 应用、现有 Node/DSH 运行时、插件和 Desktop 装配为一个独立应用。CI 在对应原生架构上设置构建架构、测试并生成一份 ARM64 DMG；移动副本继续接受真实 Host、Office、JEV/监控与 Matt 验收。
 
 更新入口继续查询本仓库的 macos-v 发行版本。MacLauncher SDK 只承担已实现的生命周期与入口协作，不替代本项目的更新和插件管理。

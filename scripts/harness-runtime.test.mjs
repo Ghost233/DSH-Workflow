@@ -72,7 +72,7 @@ test('failed build and concurrent source modification cannot publish a successfu
     await f.run(...args)
     if (args[1][1] === 'build') await writeFile(join(f.root, 'pnpm-lock.yaml'), 'concurrent source change')
   } }), /tracked changes/)
-  await assert.rejects(readFile(join(f.root, '.dsh-build/owner-workflow-runtime.json')), /ENOENT/)
+  await assert.rejects(readFile(join(f.root, '.dsh-build/dsh-runtime.json')), /ENOENT/)
 })
 
 test('concurrent launchers cannot clean or build the same Harness at the same time', async t => {

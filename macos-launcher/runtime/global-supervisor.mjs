@@ -8,7 +8,7 @@ export const WEB_PORT = 33080
 
 /** Own one password-authenticated Web port; Electron owns the backend. */
 export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port = WEB_PORT,
-  password, allowLanSettings = false, attachDesktop = launchDesktopWeb, onDesktopNeeded = () => {}, signal }) {
+  password, allowLanSettings = false, attachDesktop = launchDesktopWeb, onDesktopNeeded = () => {}, onLog = () => {}, signal }) {
   if (typeof password !== 'string' || !password || !Number.isSafeInteger(port) || port < 0 || port > 65535) {
     throw new Error('Invalid Web service configuration')
   }
@@ -51,7 +51,10 @@ export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port =
           emit()
         } })
     })().catch(error => {
-      if (!controller.signal.aborted) lastError = error.message
+      if (!controller.signal.aborted) {
+        lastError = error.message.replace(/token=[^&\s]+/g, 'token=<REDACTED>')
+        if (connection.ready) onLog({ instanceId: connection.instanceId, entry: { text: lastError } })
+      }
       ready.reject(error)
     }).finally(() => {
       if (!connection.ready) ready.reject(new Error(lastError || 'Web connection stopped'))
@@ -88,7 +91,7 @@ export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port =
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [dataRoot] = process.argv.slice(2)
+  const [dataRoot, portFlag, portValue] = process.argv.slice(2)
   let supervisor, addressWatch
   const controller = new AbortController()
   process.once('SIGINT', () => controller.abort())
@@ -99,9 +102,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const write = (label, payload) => process.stdout.write(`${label}\t${JSON.stringify(payload)}\n`)
   try {
     if (!dataRoot) throw new Error('Usage: global-supervisor.mjs DATA_ROOT')
+    if (portFlag !== undefined && (portFlag !== '--port' || !/^\d+$/.test(portValue ?? '') || process.argv.length !== 5)) {
+      throw new Error('Usage: global-supervisor.mjs DATA_ROOT [--port PORT]')
+    }
     supervisor = await startGlobalSupervisor({ dataRoot, password: process.env.DSH_LAUNCH_PASSWORD,
+      port: portFlag === undefined ? WEB_PORT : Number(portValue),
       allowLanSettings: process.env.DSH_ALLOW_LAN_SETTINGS === '1', signal: controller.signal,
-      onDesktopNeeded: () => write('DSH_WORKFLOW_DESKTOP_NEEDED', {}) })
+      onDesktopNeeded: () => write('DSH_WORKFLOW_DESKTOP_NEEDED', {}),
+      onLog: record => write('DSH_WORKFLOW_LOG', record) })
     const readyEvent = () => ({ port: supervisor.port, url: supervisor.url, localUrl: supervisor.localUrl, lanUrls: supervisor.lanUrls })
     write('DSH_WORKFLOW_READY', readyEvent())
     write('DSH_WORKFLOW_STATE', { global: supervisor.global() })

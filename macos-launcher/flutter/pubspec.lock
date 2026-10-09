@@ -67,6 +67,15 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  launcher_core:
+    dependency: "direct dev"
+    description:
+      path: "packages/launcher_core"
+      ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
+      resolved-ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
+      url: "https://github.com/Ghost233/MacLauncher.git"
+    source: git
+    version: "0.1.0"
   leak_tracker:
     dependency: transitive
     description:
