@@ -20,3 +20,9 @@ agent-observation-plugin/pnpm-lock.yaml
 /.codegraph/
 /codegraph.json
 /codegraph.json.tmp-*
+
+/.codex/config.toml
+
+/.ghswitch
+
+/.dsh-mattskillsdeck-cache/

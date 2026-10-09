@@ -1,4 +1,5 @@
 import { resolve, join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { observationProfilePatches } from './observation-profile.mjs'
 
@@ -17,8 +18,10 @@ export function composeDshLaunch(entries, { projectRoot, catalogRoot }) {
     { id: 'matt-skills-board', name: join(root, 'matt-skills-panel-plugin/package/lib/index.js'), names: ['dsh-mattpocock-skills-deck', 'dsh-workflow-matt-panel'] },
     { id: 'matt-panel-tools', name: 'dsh-workflow-matt-panel/tools', names: ['dsh-mattpocock-skills-deck/tools', 'dsh-workflow-matt-panel/tools'] },
   ]
+  const mcpEntries = JSON.parse(readFileSync(join(root, 'project-mcp.json'), 'utf8'))
   const definitions = [
     { id: 'mattpocock-skills-zh', name: '@deepseek-ai/dsh-skill-filesystem', config: { providerName: 'mattpocock-skills-zh', includeDefaultRoots: false, customSkillDirs: [join(root, 'vendor/mattpocock-skills-zh/skills')] } },
+    ...mcpEntries.filter(row => !all.some(item => item.name === row.name && item.config?.serverName === row.config.serverName)),
   ]
   for (const replacement of replacements) {
     const matches = all.filter(row => replacement.names.includes(row.name) && row.id !== replacement.id)

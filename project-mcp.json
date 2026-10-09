@@ -1,0 +1,12 @@
+[
+  {
+    "id": "workflow-mcp-codegraph",
+    "name": "@deepseek-ai/dsh-mcp-client",
+    "config": {
+      "serverName": "codegraph",
+      "transport": "stdio",
+      "command": "codegraph",
+      "args": ["serve", "--mcp"]
+    }
+  }
+]

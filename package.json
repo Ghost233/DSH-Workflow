@@ -15,6 +15,7 @@
   "files": [
     "start-dsh-workflow.sh",
     "project-plugins.json",
+    "project-mcp.json",
     "scripts/project-plugins.mjs",
     "scripts/project-plugin-resolver.mjs",
     "docs/",

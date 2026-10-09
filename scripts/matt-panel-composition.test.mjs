@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { composeDshLaunch } from './dsh-launch-composition.mjs'
+
+const projectRoot = fileURLToPath(new URL('../', import.meta.url))
 
 test('the maintained Matt panel replaces upstream host and tools without changing unrelated configuration', () => {
   const entries = [
@@ -10,7 +14,7 @@ test('the maintained Matt panel replaces upstream host and tools without changin
     { id: 'unrelated', name: 'unrelated', config: { value: 1 } },
   ]
   const before = structuredClone(entries)
-  const patches = composeDshLaunch(entries, { projectRoot: '/project', catalogRoot: '/global',
+  const patches = composeDshLaunch(entries, { projectRoot, catalogRoot: '/global',
      })
   assert.deepEqual(entries, before)
   assert.ok(patches.some(row => row.id === 'upstream-panel' && row.disabled))
@@ -19,7 +23,7 @@ test('the maintained Matt panel replaces upstream host and tools without changin
   const inserts = patches.flatMap(row => row.insert ?? [])
   const panel = inserts.find(row => row.id === 'matt-skills-board')
   const tools = inserts.find(row => row.id === 'matt-panel-tools')
-  assert.equal(panel.name, '/project/matt-skills-panel-plugin/package/lib/index.js')
+  assert.equal(panel.name, join(projectRoot, 'matt-skills-panel-plugin/package/lib/index.js'))
   assert.equal(tools.name, 'dsh-workflow-matt-panel/tools')
   assert.deepEqual(panel.config, { retainedSetting: true })
   assert.deepEqual(tools.config, { retainedToolSetting: true })

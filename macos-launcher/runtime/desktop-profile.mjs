@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { cp, mkdir, readFile, writeFile, symlink, lstat, readlink, rename, unlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
@@ -21,7 +21,8 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const stampPath = join(directory, 'integration.json')
   const localPackages = { 'dsh-workflow': workflow,
     'dsh-workflow-matt-panel': join(workflow, 'matt-skills-panel-plugin/package') }
-  const identity = { integrationVersion: 3, workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', hostInstance: 'desktop-bridge', agentMonitor: 2, jevCenter: 1, localPackages }
+  const identity = { integrationVersion: 3, workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', hostInstance: 'desktop-bridge', agentMonitor: 2, jevCenter: 1, localPackages,
+    projectMcp: JSON.parse(await readFile(join(workflow, 'project-mcp.json'), 'utf8')) }
   await mkdir(profile, { recursive: true })
   const manifestPath = join(profile, 'package.json')
   if (!existsSync(manifestPath)) {
@@ -59,22 +60,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   if (installed && (!installed.isSymbolicLink() || resolve(dirname(installedBundle), await readlink(installedBundle)) !== resolve(directory))) {
     throw new Error('Desktop integration bundle is already owned by another installation')
   }
-  if (current?.dependencies?.[BUNDLE] === `file:${directory}`
-    && pendingLinks.length === 0
-    && Object.entries(localPackages).every(([name, target]) => current.dependencies[name] === `file:${target}`)
-    && JSON.stringify(previous) === JSON.stringify(identity)
-    && !await migrateProjectEntryNames({ profile: { dir: profile, patchPath: join(profile, 'cordis.patch.yml') }, anchor, projectRoot: workflow, previousProjectRoot: previous?.workflow })) {
-    return { profile, bundle: directory, version: runtime.version }
-  }
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-  manifest.private = true
-  manifest.name = 'dsh-profile-desktop'
-  manifest.dsh ??= {}
-  manifest.dsh.profile ??= { bundles: [...boot.PROFILE_TEMPLATES.web.bundles] }
-  const bundles = manifest.dsh.profile.bundles.filter(name => name !== BUNDLE)
-  if (!bundles.includes(TEAM)) bundles.push(TEAM)
-  await migrateProjectEntryNames({ profile: { dir: profile, patchPath: join(profile, 'cordis.patch.yml') }, anchor, projectRoot: workflow, previousProjectRoot: previous?.workflow })
-  // Compose from the existing profile before adding our own rows, so preparation is idempotent.
+  const migrated = await migrateProjectEntryNames({ profile: { dir: profile, patchPath: join(profile, 'cordis.patch.yml') }, anchor, projectRoot: workflow, previousProjectRoot: previous?.workflow })
   const resolved = boot.loadProfileDirectory('dsh', profile, anchor)
   const layers = resolved.layers.filter(layer => layer.packageName !== BUNDLE).map(layer => layer.patches)
   if (!resolved.layers.some(layer => layer.packageName === TEAM)) {
@@ -84,8 +70,27 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
       .flatMap(path => boot.loadOverlayPatches('dsh', path)))
   }
   const entries = boot.composeEntries([...layers, resolved.patches])
-  const patches = composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot })
   const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
+  const mcpNames = new Set(identity.projectMcp.map(row => row.config.serverName))
+  // Only a digest of relevant user choices is stamped; user credentials are not copied.
+  identity.userMcpFingerprint = createHash('sha256').update(JSON.stringify(flatten(entries)
+    .filter(row => row.name === '@deepseek-ai/dsh-mcp-client' && mcpNames.has(row.config?.serverName)))).digest('hex')
+  if (current?.dependencies?.[BUNDLE] === `file:${directory}`
+    && pendingLinks.length === 0
+    && Object.entries(localPackages).every(([name, target]) => current.dependencies[name] === `file:${target}`)
+    && JSON.stringify(previous) === JSON.stringify(identity)
+    && !migrated) {
+    return { profile, bundle: directory, version: runtime.version }
+  }
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+  manifest.private = true
+  manifest.name = 'dsh-profile-desktop'
+  manifest.dsh ??= {}
+  manifest.dsh.profile ??= { bundles: [...boot.PROFILE_TEMPLATES.web.bundles] }
+  const bundles = manifest.dsh.profile.bundles.filter(name => name !== BUNDLE)
+  if (!bundles.includes(TEAM)) bundles.push(TEAM)
+  // Compose from the existing profile before adding our own rows, so preparation is idempotent.
+  const patches = composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot })
   for (const row of flatten(entries)) {
     if (permissionMode && row.name === '@deepseek-ai/dsh-sandbox-policy' && row.disabled !== true) {
       patches.push({ id: row.id, config: { ...structuredClone(row.config ?? {}), mode: permissionMode } })

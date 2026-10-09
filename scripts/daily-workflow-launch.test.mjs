@@ -63,7 +63,7 @@ test('daily shell rejects arguments before launching a host', () => {
 test('supervised Web readiness publishes its official URL without changing saved profile settings', () => {
   const entries = [{ id: 'web-runtime', name: '@deepseek-ai/dsh-web-app', config: { printUrl: false, openBrowser: false } }]
   const before = structuredClone(entries)
-  const patches = composeDshLaunch(entries, { projectRoot: '/project', catalogRoot: '/global' })
+  const patches = composeDshLaunch(entries, { projectRoot: resolve('.'), catalogRoot: '/global' })
   assert.deepEqual(entries, before)
   const { composeEntries } = createRequire(resolve('deepseek-harness/apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
   const actual = composeEntries([[{ insert: entries }], patches]).find(row => row.id === 'web-runtime')

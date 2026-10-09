@@ -13,7 +13,7 @@ const scripts = ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-
   'dsh-readiness.mjs', 'observation-profile.mjs', 'web-host-lifecycle.mjs']
 
 async function sources(root) {
-  const files = ['package.json', 'dsh-runtime.json', 'project-plugins.json', 'project-plugins.lock.json',
+  const files = ['package.json', 'dsh-runtime.json', 'project-plugins.json', 'project-plugins.lock.json', 'project-mcp.json',
     'vendor/mattpocock-skills-zh.upstream.json', 'matt-skills-panel-plugin/upstream.json',
     'matt-skills-panel-plugin/LICENSE', 'matt-skills-panel-plugin/THIRD_PARTY_NOTICES.md',
     ...scripts.map(name => `scripts/${name}`)]
