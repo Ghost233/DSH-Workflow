@@ -1,12 +1,14 @@
 # DSH Workflow Matt 面板
 
-本目录是主仓库维护的 MattSkillsDeck 派生版本。上游基准见 `upstream.json`。
+本目录是主仓库维护、仅支持 macOS ARM64 的 MattSkillsDeck 派生版本。上游基准见 `upstream.json`。
 
 保留面板与工具，技能由独立中文提供器加载。原版 submodule 保留原样用于对照升级。构建只写本目录，不同步用户 profile，不重启服务。
 
 ```sh
 npm ci --prefix matt-skills-panel-plugin --ignore-scripts
 npm run build --prefix matt-skills-panel-plugin
+# 同步本地开发产物（与 package/lib 同源）
+node matt-skills-panel-plugin/scripts/build.mjs --dev-only
 npm test --prefix matt-skills-panel-plugin
 npm run upstream:check --prefix matt-skills-panel-plugin
 ```

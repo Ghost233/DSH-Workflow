@@ -44,7 +44,7 @@ export function classifyError(err) {
   // 限流
   if (/\brate ?limit\b|\b429\b/i.test(s)) return ERROR_KIND.RATELIMIT
   // 环境问题（缺工具/缺文件/无法识别命令）——必须在 NOTFOUND 之前判，否则被「not found」误吞
-  if (/is not recognized|\bcommand not found\b|\bno such file\b|cannot find|not found in path|which:|ENOENT/i.test(s)) return ERROR_KIND.ENV
+  if (/\bcommand not found\b|\bno such file\b|cannot find|not found in path|which:|ENOENT/i.test(s)) return ERROR_KIND.ENV
   // 资源不存在
   if (/not ?found|\b404\b/.test(s)) return ERROR_KIND.NOTFOUND
   // 不支持

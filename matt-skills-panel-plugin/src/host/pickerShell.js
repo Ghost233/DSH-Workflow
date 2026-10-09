@@ -82,13 +82,11 @@ export function createPickerShell(deps) {
     const raw = args && args.path ? String(args.path) : ''
     if (!raw) return { ok: false, error: '缺少 path', errorKind: 'bad-arg' }
     let p = raw.trim()
-    // 去 file:// 前缀（UI 传来可能是 file:///D:/a/b.md）
+    // 去 file:// 前缀（UI 传来可能是 file:///Users/Matt/a.md）
     if (/^file:\/\//i.test(p)) {
-      try { p = decodeURI(p.replace(/^file:\/\/\//i, '').replace(/^file:\/\//i, '')) } catch {}
-      // win32 file:///D:/a -> D:/a
-      if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1)
+      try { p = decodeURI(p.replace(/^file:\/\//i, '')) } catch {}
     }
-    // 基础校验：路径需为绝对或含盘符/斜杠，避免 shell 注入的相对跳出
+    // 基础校验：路径使用 macOS 文件路径，避免 shell 注入的相对跳出
     if (!p) return { ok: false, error: 'path 为空', errorKind: 'bad-arg' }
     try {
       const plat = await getPlatform()

@@ -66,7 +66,7 @@
     export const repoShortName = function (repoRef) {
       if (!repoRef || !repoRef.name) return ''
       const n = String(repoRef.name)
-      const parts = n.split(/[\\/]/)
+      const parts = n.split(/\//)
       return parts[parts.length-1] || n
     }
     // #189 · 切换三选一确认态（全局 per-store，复用 wf.bind + 三缓存失效）

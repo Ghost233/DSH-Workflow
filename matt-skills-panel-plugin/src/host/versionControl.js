@@ -168,7 +168,7 @@ export function createVersionControl(deps) {
   }
   /** 读那五个「正在合并 / 变基 / 拣选 / 回退」的标记文件；查不了就返回 null，让调用方明说读不到。 */
   async function readRunningMarkers(gitDir) {
-    const dir = String(gitDir || '').replace(/[\\/]+$/, '')
+    const dir = String(gitDir || '').replace(/\/+$/, '')
     const out = { merging: false, rebasing: false, cherryPicking: false, reverting: false }
     for (const rel of RUNNING_MARKER_PATHS) {
       const hit = await pathExists(dir + '/' + rel)

@@ -44,12 +44,10 @@ function workspaceDirOf(ctx, repo) {
   return (typeof process !== 'undefined' && typeof process.cwd === 'function') ? process.cwd() : '.'
 }
 
-/** 队列钥匙：同一个工作区的不同写法（盘符大小写、斜杠方向、尾部斜杠）必须落到同一把钥匙上。
- *  为什么不能直接用路径串当钥匙：`D:\ws` 与 `d:/ws` 是同一个工作区，用原始串会各走一条队列，
- *  两次并发保存就会交错执行、后写的那份把先写的那份整份覆盖——正是本功能要防的那种「保存成功、
- *  颜色却没变」（审查实测：/ws 与 /WS 同时保存会丢一份）。 */
+/** macOS workspace spellings share a queue only after POSIX slash normalization.
+ * Case and literal backslashes distinguish separate workspace paths. */
 function workspaceKeyOf(ctx, repo) {
-  return String(workspaceDirOf(ctx, repo)).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  return String(workspaceDirOf(ctx, repo)).trim().replace(/\/+/g, '/').replace(/(.+)\/$/, '$1')
 }
 
 /** 配色文件的完整路径。 */

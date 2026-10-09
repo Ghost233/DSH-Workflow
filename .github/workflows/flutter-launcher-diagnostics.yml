@@ -21,6 +21,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare disposable diagnostic evidence
         run: |
           evidence="$RUNNER_TEMP/dsh-native-diagnostics"
@@ -33,6 +38,16 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: false
+
+      - name: Set up the fixed Node toolchain
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
 
       - name: Bind current source and frozen runtime identity
         run: |
@@ -71,8 +86,7 @@ jobs:
             > "$DIAGNOSTIC_ROOT/runtime-payload.sha256"
           stage="$RUNNER_TEMP/dsh-native-stage"
           mkdir -p "$stage"
-          ditto "$resources/workflow" "$stage/workflow"
-          ditto macos-launcher/runtime "$stage/workflow/macos-launcher/runtime"
+          node macos-launcher/project-resources.mjs create "$PWD" "$stage/workflow"
           for name in node desktop node_modules bin; do
             ln -s "$resources/$name" "$stage/$name"
           done

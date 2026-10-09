@@ -80,6 +80,8 @@ import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
+if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Matt tools require macOS ARM64');
+
 const SCRIPT_NAME = "scripts/wire-subissues.mjs";
 const SIBLING_SCRIPT = "scripts/fix-issue-body.mjs";
 const TRACKER_DOC = "docs/agents/issue-tracker.md";
@@ -147,15 +149,13 @@ function fail(code, message, extra) {
 /** 取路径最后一段（不把本地绝对路径写进评论、stderr 或回包）。 */
 function baseName(p) {
   const s = String(p == null ? "" : p);
-  const parts = s.split(/[\\/]+/).filter(Boolean);
+  const parts = s.split(/\/+/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : s;
 }
 
 /** 把文本里的本地绝对路径换成文件名。评论与日志只留文件名，不记工作区原始路径。 */
 function redactLocalPaths(text) {
   let s = String(text == null ? "" : text);
-  s = s.replace(/[A-Za-z]:\\[^\s"'`|<>]*/g, (m) => baseName(m));
-  s = s.replace(/\\\\[^\s"'`|<>]+/g, (m) => baseName(m));
   s = s.replace(/(^|[\s(`"'])\/(?:[^\s"'`|<>/]+\/)+[^\s"'`|<>]*/g, (m, p1) => p1 + baseName(m));
   return s;
 }
@@ -376,7 +376,6 @@ function runGh(argv) {
     cwd: WORKSPACE_ROOT || process.cwd(),
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
-    windowsHide: true,
   });
   if (res.error) return { ok: false, status: -1, stdout: "", stderr: String(res.error.message || res.error) };
   return {

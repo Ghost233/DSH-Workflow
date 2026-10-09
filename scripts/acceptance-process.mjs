@@ -8,23 +8,21 @@ export function acceptanceEnvironment(source = process.env) {
   return environment
 }
 
-/** An acceptance deadline owns the entire spawned process group on POSIX,
+/** An acceptance deadline owns the entire spawned process group on macOS,
  * including a Node test worker that still holds the parent's output pipes.
  */
 export function runAcceptanceProcess({ argv, cwd, timeoutMs, signal, graceMs = 2_000 }) {
   if (signal?.aborted) return Promise.resolve({ exitCode: 1, timedOut: false, aborted: true, stdout: '', stderr: '' })
   return new Promise(resolve => {
-    const grouped = process.platform !== 'win32'
     const child = spawn(argv[0], argv.slice(1), {
-      cwd, env: acceptanceEnvironment(), detached: grouped, stdio: ['ignore', 'pipe', 'pipe'],
+      cwd, env: acceptanceEnvironment(), detached: true, stdio: ['ignore', 'pipe', 'pipe'],
     })
     const stdout = [], stderr = []
     let timedOut = false, aborted = false, settled = false, escalation
     const kill = name => {
       if (!child.pid) return
       try {
-        if (grouped) process.kill(-child.pid, name)
-        else child.kill(name)
+        process.kill(-child.pid, name)
       } catch (error) { if (error.code !== 'ESRCH') stderr.push(Buffer.from(error.message)) }
     }
     const stop = reason => {

@@ -691,6 +691,7 @@ Future<void> runDesktopWindowRestarts(
       cyclePath,
       root.path,
       '$target',
+      'false',
     ]);
     if (result.exitCode != 0) return false;
     final identity = (jsonDecode(result.stdout.toString()) as Map)
@@ -992,6 +993,7 @@ Future<void> runDesktopWindowRestarts(
         cyclePath,
         root.path,
         '$desktopPid',
+        'false',
       ]);
       final identity = fresh.exitCode == 0
           ? jsonDecode(fresh.stdout.toString()) as Map

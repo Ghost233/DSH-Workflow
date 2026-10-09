@@ -59,7 +59,7 @@ export function createSkillProbe(deps) {
     }
     function isSkillCardValid(skillText, expectedName) {
       try {
-        // #295 加固：先剥首个 UTF-8 BOM 再做 frontmatter 匹配——Windows 编辑器另存的 SKILL.md
+        // #295 加固：先剥首个 UTF-8 BOM 再做 frontmatter 匹配——带 UTF-8 BOM 的 SKILL.md
         //   带隐形 BOM 前缀时 frontmatter 本身合法，此前被误判「名片无效 · frontmatter invalid」。
         //   仅剥离开头一个 BOM：非 BOM 输入逐字节透传（行为差集实测为空），name 精确匹配防冒名机制不变。
         const s = String(skillText || '').replace(/^\uFEFF/, '')
@@ -292,16 +292,13 @@ export function createSkillProbe(deps) {
               const normFoundRaw = String(foundPath)
               const normStd = plat.path.normalize(String(standard))
               const normFound = plat.path.normalize(normFoundRaw)
-              let cmpFound = normFound
-              let cmpStd = normStd
-              if (plat.os === 'win32') { cmpFound = cmpFound.toLowerCase(); cmpStd = cmpStd.toLowerCase() }
-              let foundDir = cmpFound
+              let foundDir = normFound
               try {
                 if (foundDir.toLowerCase().endsWith('skill.md')) foundDir = plat.path.dirname(foundDir)
-                if (foundDir.length > 1 && (foundDir.endsWith('/') || foundDir.endsWith('\\'))) foundDir = foundDir.slice(0, -1)
+                if (foundDir.length > 1 && foundDir.endsWith('/')) foundDir = foundDir.slice(0, -1)
               } catch {}
-              let stdDir = cmpStd
-              try { if (stdDir.length > 1 && (stdDir.endsWith('/') || stdDir.endsWith('\\'))) stdDir = stdDir.slice(0, -1) } catch {}
+              let stdDir = normStd
+              try { if (stdDir.length > 1 && stdDir.endsWith('/')) stdDir = stdDir.slice(0, -1) } catch {}
               isOffRoot = foundDir !== stdDir
             } else {
               isOffRoot = true

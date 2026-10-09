@@ -33,15 +33,14 @@
     // 彻底移除：清理遗留的 dsws.issuePath（v1.7.0 遗留，见 #345 移除落地）
     try { localStorage.removeItem('dsws.issuePath'); } catch (e) {}
     // T2 #35 · 无仓库红卡状态机（按工作区维度持久化 dismiss；表单态 expanded/name/visibility/loading/error）
-    // #653 修正：此前这里用 cwdHash 散列**原始串**（没走规整函数），同一个目录换一种写法（多一个尾斜杠、
-    //   盘符大小写不同）就会散出另一把键，收起过的红卡会重新冒出来。现在统一走工作区键（wsKeyOf）：
+    // #653 修正：此前这里用 cwdHash 散列**原始串**（没走规整函数），同一个目录多一个尾斜杠就会散出另一把键，收起过的红卡会重新冒出来。现在统一走工作区键（wsKeyOf）：
     //   先按工作区根锚定，再散列，同一工作区只有一条记录。
     export const NOREPO_DISMISS_PREFIX = 'dsws:noRepoDismiss:'
     export const cwdHash = function (s) { let h = 0; const t = String(s || ''); for (let i = 0; i < t.length; i++) h = ((h << 5) - h + t.charCodeAt(i)) | 0; return String(h >>> 0) }
     export const noRepoDismissKey = function (cwd) { return NOREPO_DISMISS_PREFIX + cwdHash((typeof wsKeyOf === 'function' ? wsKeyOf(cwd) : (typeof keyOf === 'function' ? keyOf(cwd) : cwd)) || '') }
     export const isNoRepoDismissed = function (cwd) { try { return localStorage.getItem(noRepoDismissKey(cwd)) === '1' } catch (e) { try { log('warn', 'storage.fail', { key: NOREPO_DISMISS_PREFIX, op: 'read' }) } catch (eL) {}; return false } }
     export const setNoRepoDismissed = function (cwd, v) { try { if (v) localStorage.setItem(noRepoDismissKey(cwd), '1'); else localStorage.removeItem(noRepoDismissKey(cwd)) } catch (e) { try { log('warn', 'storage.fail', { key: NOREPO_DISMISS_PREFIX, op: 'write' }) } catch (eL) {} } }
-    export const cwdBasename = function (cwd) { if (!cwd) return 'repo'; const parts = String(cwd).split(/[\\/]/); for (let i = parts.length - 1; i >= 0; i--) if (parts[i]) return parts[i]; return 'repo' }
+    export const cwdBasename = function (cwd) { if (!cwd) return 'repo'; const parts = String(cwd).split(/\//); for (let i = parts.length - 1; i >= 0; i--) if (parts[i]) return parts[i]; return 'repo' }
     export const isNoRepoNameValid = function (name) { return typeof name === 'string' && name.length >= 1 && name.length <= 100 && /^[A-Za-z0-9._-]+$/.test(name) }
     export const ensureNoRepoCard = function (st) {
       if (!st.noRepoCard) st.noRepoCard = { expanded: false, name: '', visibility: 'private', loading: false, error: '', errorKind: '', errorRepoUrl: '' }

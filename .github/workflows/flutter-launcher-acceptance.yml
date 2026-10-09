@@ -38,6 +38,11 @@ on:
         required: false
         default: ''
         type: string
+      preference_only:
+        description: Run only the existing saved Desktop startup-window preference scenarios
+        required: false
+        default: false
+        type: boolean
       actor_only:
         description: Run only the owned actor startup and exact-window-close subject
         required: false
@@ -54,11 +59,17 @@ permissions:
 
 jobs:
   validation-inputs:
-    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || !inputs.preference_only
+    runs-on: macos-15
     outputs:
       helper_only: ${{ steps.proof.outputs.helper_only }}
       native_reuse: ${{ steps.proof.outputs.native_reuse }}
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -68,14 +79,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          python3 .github/scripts/actor_validation_inputs.py --base 260fdbbb8a3697899e1133e3293e255df604e0d4 --output validation-inputs.json
+          python3 .github/scripts/actor_validation_inputs.py --base e2477054c5f84f59ccee52bf26be4a80919b5926 --output validation-inputs.json
           python3 - <<'PY'
           import json, os
           value = json.load(open('validation-inputs.json'))
           helper = value['helperOnly'] and value['materialInputsEqual'] and os.environ['EVENT_NAME'] != 'workflow_dispatch'
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('helper_only=' + str(helper).lower() + '\n')
-              output.write('native_reuse=' + str(helper and value['base'] == '260fdbbb8a3697899e1133e3293e255df604e0d4').lower() + '\n')
+              output.write('native_reuse=' + str(helper and value['nativeInputsEqual'] and value['base'] == 'e2477054c5f84f59ccee52bf26be4a80919b5926').lower() + '\n')
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -83,13 +94,18 @@ jobs:
           path: validation-inputs.json
   t07:
     needs: validation-inputs
-    if: always() && (needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.native_reuse != 'true') && !inputs.actor_only && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
+    if: always() && (needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.native_reuse != 'true') && !inputs.actor_only && !inputs.preference_only && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
     runs-on: macos-15
     timeout-minutes: 20
     defaults:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T07"
@@ -208,7 +224,7 @@ jobs:
 
   t02:
     needs: [t07, validation-inputs]
-    if: always() && (needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.native_reuse != 'true') && !inputs.actor_only && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
+    if: always() && (needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.native_reuse != 'true') && !inputs.actor_only && !inputs.preference_only && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -218,6 +234,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare T02 runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T02"
@@ -481,7 +502,7 @@ jobs:
 
   t05:
     needs: validation-inputs
-    if: always() && (needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.native_reuse != 'true') && !inputs.actor_only && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
+    if: always() && (needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.native_reuse != 'true') && !inputs.actor_only && !inputs.preference_only && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
     runs-on: macos-15
     timeout-minutes: 35
     concurrency:
@@ -494,6 +515,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare T05 runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T05"
@@ -768,7 +794,7 @@ jobs:
 
   t06:
     needs: [t07, validation-inputs]
-    if: always() && (needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.native_reuse != 'true') && !inputs.actor_only && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
+    if: always() && (needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.native_reuse != 'true') && !inputs.actor_only && !inputs.preference_only && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -778,6 +804,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare T06 runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T06"
@@ -1008,7 +1039,7 @@ jobs:
           if-no-files-found: error
   t08:
     needs: [t07, validation-inputs]
-    if: always() && (needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.native_reuse != 'true') && !inputs.actor_only && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
+    if: always() && (needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.native_reuse != 'true') && !inputs.actor_only && !inputs.preference_only && (github.event_name != 'workflow_dispatch' || inputs.release_run_id == '')
     runs-on: macos-15
     timeout-minutes: 35
     permissions:
@@ -1018,6 +1049,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Prepare T08 runner evidence
         run: |
           acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/T08"
@@ -1270,11 +1306,311 @@ jobs:
           path: ${{ runner.temp }}/flutter-launcher-acceptance/T08
           if-no-files-found: error
 
+  preference-only:
+    if: github.event_name == 'workflow_dispatch' && inputs.preference_only
+    runs-on: macos-15
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+
+      - name: Prepare PREFERENCE runner evidence
+        run: |
+          acceptance_evidence="$RUNNER_TEMP/flutter-launcher-acceptance/PREFERENCE"
+          mkdir -p "$acceptance_evidence"
+          printf 'EVIDENCE_DIR=%s\n' "$acceptance_evidence" >> "$GITHUB_ENV"
+          printf 'PREFERENCE_RUNTIME_MOUNT=%s\n' "$RUNNER_TEMP/preference-runtime-mount" >> "$GITHUB_ENV"
+          sw_vers > "$acceptance_evidence/macos-version.log"
+          uname -m > "$acceptance_evidence/architecture.log"
+
+      - name: Checkout current launcher without upstream initialization
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+
+      - name: Bind current source and fixed runtime artifact
+        run: |
+          git rev-parse HEAD > "$EVIDENCE_DIR/source-commit.txt"
+          printf '{"repository":"%s","runId":37325723931,"artifactName":"dsh-workflow-arm64"}\n' \
+            "$GITHUB_REPOSITORY" > "$EVIDENCE_DIR/runtime-artifact-source.json"
+
+      - name: Download the successful frozen arm64 runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: dsh-workflow-arm64
+          run-id: 37325723931
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/preference-runtime-artifact
+
+      - name: Mount the frozen DMG read-only
+        run: |
+          shopt -s nullglob
+          preference_dmgs=("$RUNNER_TEMP/preference-runtime-artifact/"*.dmg)
+          test "${#preference_dmgs[@]}" -eq 1
+          runtime_dmg="${preference_dmgs[0]}"
+          shasum -a 256 "$runtime_dmg" > "$EVIDENCE_DIR/runtime-dmg.sha256"
+          hdiutil verify "$runtime_dmg" > "$EVIDENCE_DIR/runtime-dmg-verify.log" 2>&1
+          mkdir -p "$PREFERENCE_RUNTIME_MOUNT"
+          set +e
+          hdiutil attach -readonly -nobrowse -mountpoint "$PREFERENCE_RUNTIME_MOUNT" "$runtime_dmg" \
+            > "$EVIDENCE_DIR/runtime-mount.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/runtime-mount.exit"
+          cat "$EVIDENCE_DIR/runtime-mount.log"
+          test "$result" -eq 0
+          runtime_resources="$PREFERENCE_RUNTIME_MOUNT/DSH Workflow.app/Contents/Resources"
+          test -x "$runtime_resources/node"
+          test -d "$runtime_resources/desktop/DeepSeek Harness.app"
+          test "$("$runtime_resources/node" -p 'process.arch')" = arm64
+          printf 'PREFERENCE_RUNTIME_RESOURCES=%s\n' "$runtime_resources" >> "$GITHUB_ENV"
+          shasum -a 256 "$runtime_resources/node" \
+            "$runtime_resources/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+            "$runtime_resources/desktop/DeepSeek Harness.app/Contents/Resources/app/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js" \
+            > "$EVIDENCE_DIR/runtime-payload.sha256"
+
+      - name: Set up the fixed current Flutter toolchain
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+
+      - name: Set up fixed project Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+
+      - name: Build current maintained Matt package
+        run: |
+          npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
+          npm run build --prefix matt-skills-panel-plugin
+
+      - name: Prepare locked validation metadata without building an App
+        working-directory: macos-launcher/flutter
+        run: flutter pub get --enforce-lockfile
+
+      - name: Verify original successful Native Debug provenance
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const source = '94f82e0d6012cbf31bce8f69f281af6839ea1169';
+            const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: 37866760770});
+            const {data: artifact} = await github.rest.actions.getArtifact({...context.repo, artifact_id: 11588566917});
+            if (run.head_sha !== source || run.status !== 'completed' || run.conclusion !== 'success' ||
+                run.path !== '.github/workflows/flutter-launcher-acceptance.yml' ||
+                run.head_repository.full_name !== `${context.repo.owner}/${context.repo.repo}` ||
+                artifact.workflow_run.id !== run.id || artifact.workflow_run.head_sha !== source || artifact.expired ||
+                artifact.name !== `flutter-debug-app-t07-${run.id}-${run.run_attempt}` ||
+                artifact.digest !== 'sha256:940ad67ec8668539f5f1be081a814e08b4ce30b360f3874fe43bf9010fd0a0ff') {
+              throw new Error('Original Native Debug artifact provenance is not the verified successful S source');
+            }
+            require('fs').writeFileSync(`${process.env.EVIDENCE_DIR}/native-debug-artifact-source.json`, JSON.stringify({runId:run.id, head_sha:run.head_sha, path:run.path, conclusion:run.conclusion, runAttempt:run.run_attempt, artifactId:artifact.id, artifactName:artifact.name, digest:artifact.digest}));
+
+      - name: Download exact original Native Debug bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/11588566917/zip" \
+            -o "$EVIDENCE_DIR/native-debug-artifact.zip"
+          python3 - <<'PYDEBUG'
+          import hashlib, json, os, stat, zipfile
+          from pathlib import Path
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          archive = evidence / 'native-debug-artifact.zip'
+          actual_digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          (evidence / 'native-debug-download.sha256').write_text(actual_digest + '\n')
+          assert actual_digest == '940ad67ec8668539f5f1be081a814e08b4ce30b360f3874fe43bf9010fd0a0ff'
+          bundle = Path(os.environ['RUNNER_TEMP']) / 'preference-debug-bundle'
+          bundle.mkdir(mode=0o700)
+          with zipfile.ZipFile(archive) as zipped:
+              entries = zipped.infolist()
+              assert len(entries) == 2 and {entry.filename for entry in entries} == {'manifest.json', 'app.tar.gz'}
+              assert all(stat.S_IFMT(entry.external_attr >> 16) in (0, stat.S_IFREG) for entry in entries)
+              contents = {entry.filename: zipped.read(entry) for entry in entries}
+          manifest = json.loads(contents['manifest.json'])
+          assert manifest['producer']['sourceCommit'] == 'b3045b4dc2b78c2004003a9f77d15d42a8c3cd4f'
+          assert str(manifest['producer']['runId']) == '37838756597'
+          assert manifest['inputs']['key'] == 'flutter-debug-v1-daf637d77e2d0eeb530f22973ef9e90c208340b6a71309b26525f594f5b16385'
+          assert manifest['archiveSha256'] == '65ca2d5107299c8a55ee6642136a8c70e3445dd243f64bd93687d60175673b29'
+          for name, content in contents.items(): (bundle / name).write_bytes(content)
+          (evidence / 'debug-app-manifest.json').write_bytes(contents['manifest.json'])
+          PYDEBUG
+
+      - name: Restore only exact original Native Debug bytes
+        run: |
+          python3 .github/scripts/flutter_debug_artifact.py inputs \
+            --root "$GITHUB_WORKSPACE" --output "$EVIDENCE_DIR/debug-build-inputs.json"
+          set +e
+          python3 .github/scripts/flutter_debug_artifact.py restore \
+            --inputs "$EVIDENCE_DIR/debug-build-inputs.json" --bundle "$RUNNER_TEMP/preference-debug-bundle" \
+            --destination 'macos-launcher/flutter/build/macos/Build/Products/Debug/DSH Workflow.app' \
+            --receipt "$EVIDENCE_DIR/debug-app-decision.json" > "$EVIDENCE_DIR/debug-app-restore.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/debug-app-restore.exit"
+          cat "$EVIDENCE_DIR/debug-app-restore.log"
+          exit "$result"
+
+      - name: Stage the current relative application association
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['GITHUB_WORKSPACE'])
+          app = root / 'macos-launcher/flutter/build/macos/Build/Products/Debug/DSH Workflow.app'
+          manifest = json.loads((root / 'maclauncher.json').read_text())
+          manifest['entry']['path'] = '../..'
+          target = app / 'Contents/Resources/maclauncher.json'
+          target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          (evidence / 'input-association.json').write_text(target.read_text())
+          (evidence / 'input-app.txt').write_text(str(app) + '\n')
+          PY
+
+      - name: Exercise startup-visible preference with real Desktop
+        working-directory: macos-launcher/flutter
+        run: |
+          set +e
+          dart run tool/application_probe.dart \
+            'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
+            --desktop-window-runtime "$PREFERENCE_RUNTIME_RESOURCES" --window-start show --web-port 33080 \
+            > "$EVIDENCE_DIR/show.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/show.exit"
+          cat "$EVIDENCE_DIR/show.log"
+          exit "$result"
+
+      - name: Bind the one actual saved preference profile
+        run: |
+          python3 - <<'PYROOT'
+          import json, os, re, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path(os.environ['GITHUB_WORKSPACE']) / '.github/scripts'))
+          from settings_startup_cycle import validate_observation_root
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          roots = re.findall(r'^ISOLATED_ROOT=(.+)$', (evidence / 'show.log').read_text(), re.M)
+          assert len(roots) == 1, 'Expected one actual saved preference profile'
+          root = validate_observation_root(Path(roots[0]), Path(os.environ['RUNNER_TEMP']))
+          (evidence / 'preference-show-root.json').write_text(json.dumps({'root': str(root)}) + '\n')
+          with open(os.environ['GITHUB_ENV'], 'a') as output: output.write('PREFERENCE_SHOW_ROOT=' + str(root) + '\n')
+          PYROOT
+
+      - name: Restart exact saved startup preference profile
+        working-directory: macos-launcher/flutter
+        run: |
+          set +e
+          dart run tool/application_probe.dart \
+            'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
+            --desktop-window-restart "$PREFERENCE_SHOW_ROOT" \
+            > "$EVIDENCE_DIR/restart.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/restart.exit"
+          cat "$EVIDENCE_DIR/restart.log"
+          exit "$result"
+
+      - name: Exercise startup-hidden preference with real Desktop
+        working-directory: macos-launcher/flutter
+        run: |
+          set +e
+          dart run tool/application_probe.dart \
+            'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow' \
+            --desktop-window-runtime "$PREFERENCE_RUNTIME_RESOURCES" --window-start hidden --web-port 33080 \
+            > "$EVIDENCE_DIR/hidden.log" 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > "$EVIDENCE_DIR/hidden.exit"
+          cat "$EVIDENCE_DIR/hidden.log"
+          exit "$result"
+
+      - name: Collect only actual private preference observations
+        if: always()
+        run: |
+          python3 - <<'PYEVIDENCE'
+          import json, os, re, sys
+          from pathlib import Path
+          sys.path.insert(0, '.github/scripts')
+          from settings_startup_cycle import sanitize_json, sanitize_text, validate_observation_root
+          evidence = Path(os.environ['EVIDENCE_DIR'])
+          for case in ('show', 'hidden'):
+              log = evidence / (case + '.log')
+              for name in re.findall(r'^ISOLATED_ROOT=(.+)$', log.read_text(), re.M) if log.is_file() else []:
+                  root = validate_observation_root(Path(name), Path(os.environ['RUNNER_TEMP']))
+                  selections = [(root, evidence / case / root.name)]
+                  sessions = root / 'restart-sessions'
+                  if sessions.exists():
+                      assert not sessions.is_symlink() and sessions.is_dir() and sessions.resolve() == sessions
+                      for session in sessions.iterdir():
+                          assert not session.is_symlink() and session.is_dir() and session.resolve().parent == sessions and session.name.startswith('run-')
+                          selections.append((session, evidence / case / root.name / 'restart-sessions' / session.name))
+                          cleanup = session / 'dsh-restart-cleanup'
+                          if cleanup.exists():
+                              assert not cleanup.is_symlink() and cleanup.is_dir() and cleanup.resolve().parent == session
+                              selections.append((cleanup, evidence / case / root.name / 'restart-sessions' / session.name / cleanup.name))
+                  for source, target in selections:
+                      target.mkdir(parents=True, exist_ok=True)
+                      for file in source.iterdir():
+                          if file.suffix not in ('.log', '.json', '.jsonl'): continue
+                          assert not file.is_symlink() and file.is_file() and file.resolve().parent == source
+                          if file.suffix == '.json': output = json.dumps(sanitize_json(json.loads(file.read_text()))) + '\n'
+                          elif file.suffix == '.jsonl': output = ''.join(json.dumps(sanitize_json(json.loads(line))) + '\n' for line in file.read_text().splitlines() if line)
+                          else: output = sanitize_text(file.read_text())
+                          (target / file.name).write_text(output)
+          PYEVIDENCE
+
+      - name: Detach the read-only preference runtime
+        if: always()
+        run: |
+          if mount | grep -Fq " on $PREFERENCE_RUNTIME_MOUNT "; then
+            set +e
+            hdiutil detach "$PREFERENCE_RUNTIME_MOUNT" > "$EVIDENCE_DIR/runtime-detach.log" 2>&1
+            result=$?
+            set -e
+            printf '%s\n' "$result" > "$EVIDENCE_DIR/runtime-detach.exit"
+            exit "$result"
+          fi
+
+      - name: Upload preference evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-launcher-preference-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/flutter-launcher-acceptance/PREFERENCE
+            !${{ runner.temp }}/flutter-launcher-acceptance/PREFERENCE/native-debug-artifact.zip
+          if-no-files-found: error
+
+      - name: Preserve the three original actual preference exits
+        if: always()
+        run: |
+          for case in show restart hidden; do
+            test -f "$EVIDENCE_DIR/$case.exit"
+            test "$(cat "$EVIDENCE_DIR/$case.exit")" -eq 0
+          done
+          ! grep -Fq 'RESTART_INDEPENDENT_CLEANUP_WARNING:' "$EVIDENCE_DIR/restart.log"
+
   actor-only:
-    if: github.event_name == 'workflow_dispatch' && inputs.actor_only
+    if: github.event_name == 'workflow_dispatch' && inputs.actor_only && !inputs.preference_only
     runs-on: macos-15
     timeout-minutes: 15
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - uses: actions/checkout@v6
         with:
           submodules: false
@@ -1375,7 +1711,7 @@ jobs:
           if-no-files-found: error
 
   t09-release:
-    if: github.event_name == 'workflow_dispatch' && !inputs.actor_only && inputs.release_run_id != ''
+    if: github.event_name == 'workflow_dispatch' && !inputs.actor_only && !inputs.preference_only && inputs.release_run_id != ''
     permissions:
       contents: read
       actions: read
@@ -1385,6 +1721,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - uses: actions/checkout@v6
         with:
           submodules: false
@@ -1422,7 +1763,7 @@ jobs:
           PRODUCT_SOURCE_SHA: ${{ inputs.product_source_sha || github.sha }}
         run: |
           if test "$PRODUCT_SOURCE_SHA" != "$GITHUB_SHA"; then
-            test "$PRODUCT_SOURCE_SHA" = 260fdbbb8a3697899e1133e3293e255df604e0d4
+            test "$PRODUCT_SOURCE_SHA" = e2477054c5f84f59ccee52bf26be4a80919b5926
             python3 .github/scripts/actor_validation_inputs.py --base "$PRODUCT_SOURCE_SHA" --output "$EVIDENCE_DIR/product-material-reuse.json"
             python3 - <<'PY'
           import json, os

@@ -12,7 +12,7 @@ export function createPlatformChannel(deps) {
   function hash8(s) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch { return '00000000' } }
   // #606 命令名只留程序名：调用方通常给的是 'gh' / 'git' 这种裸名字，但若给了带目录的完整路径，
   //   这里也把目录部分去掉，保证日志里永远不会出现一条文件系统路径。
-  function progName(cmd) { try { return String(cmd || '').split(/[\\/]/).pop() || '' } catch { return '' } }
+  function progName(cmd) { try { return String(cmd || '').split(/\//).pop() || '' } catch { return '' } }
   const STATUS_CACHE_MS = 30000  // workspaceStore 探测级联 TTL（#344 沿革 · #284 保留；原 index.js 234 行）
     // ============ Tracker Registry（#155 · 后端选择 UI）============
     let _trackerRegistry = null
@@ -75,7 +75,7 @@ export function createPlatformChannel(deps) {
     // 触发预热（不阻塞主流程）
     try { getTrackerRegistry().catch(()=>{}) } catch {}
     // ============ 平台抽象（#171 · createPlatform 惰性单例）============
-    // 第一性原理：平台单点 + 零手拼 + 双闸不变量；经 ctx.get('platform') 或内联 fallback（零 import 语法，避 D7 dev host vm.Script 阻塞）
+    // 第一性原理：平台单点 + 零手拼 + 双闸不变量；经 ctx.get('platform') 或唯一 macOS 平台工厂
     let _platform = null
     let _platformInit = null
     let lastPlatformOk = null
@@ -85,71 +85,14 @@ export function createPlatformChannel(deps) {
       if (_platformInit) return _platformInit
       _platformInit = (async () => {
         const injected = ctx.get('platform')
-        if (injected && typeof injected.getHome === 'function' && injected.path) return injected
-        try {
-          const platMod = await import('./platform/index.js')
-          const createPlatform = platMod.createPlatform || platMod.default
-          if (typeof createPlatform === 'function') return createPlatform(ctx)
-        } catch {}
-        let nodePath = null
-        let nodeOs = null
-        try { const m = await import('node:path'); nodePath = m.default || m } catch {}
-        try { const m2 = await import('node:os'); nodeOs = m2.default || m2 } catch {}
-        if (!nodePath || !nodeOs) {
-          const sepWin = String.fromCharCode(92)
-          nodePath = { posix: { join: (...a) => a.join('/').replace(/\/\//g,'/'), sep: '/', dirname: (p)=>p.slice(0,p.lastIndexOf('/')), basename: (p)=>p.split('/').pop(), resolve: (...a)=>a.join('/'), normalize: (p)=>p, isAbsolute: (p)=>p.startsWith('/'), relative: (a,b)=>b }, win32: { join: (...a) => a.join(sepWin).replace(/\//g,sepWin), sep: sepWin, dirname: (p)=>p.slice(0,p.lastIndexOf(sepWin)), basename: (p)=>p.split(sepWin).pop(), resolve: (...a)=>a.join(sepWin), normalize: (p)=>p, isAbsolute: (p)=>/^[A-Za-z]:/.test(p), relative: (a,b)=>b } }
-          nodeOs = { homedir: () => (typeof process !== 'undefined' && process.env && (process.env.USERPROFILE || process.env.HOME)) || '', platform: () => { try { return (typeof process !== 'undefined' && process['platform']) || 'win32' } catch { return 'win32' } } }
+        if (injected && typeof injected.getHome === 'function' && injected.path) {
+          if (injected.os && injected.os !== 'darwin') throw new Error('platform unsupported: ' + injected.os)
+          return injected
         }
-        const osName = (nodeOs.platform ? nodeOs.platform() : 'win32')
-        const pathImpl = osName === 'win32' ? nodePath.win32 : nodePath.posix
-        const envSrc = (typeof process !== 'undefined' && process.env) ? process.env : {}
-        const homedirFn = () => { try { return nodeOs.homedir() } catch { return '' } }
-        const WIN32_GUARD_RE = /^[A-Za-z]:/
-        let cachedHome
-        const getHomeInner = async () => {
-          if (cachedHome !== undefined) return cachedHome
-          let primary = ''
-          try { const v = homedirFn(); primary = v == null ? '' : String(v) } catch { primary = '' }
-          if (osName === 'win32') {
-            if (primary && WIN32_GUARD_RE.test(primary)) { cachedHome = primary; return cachedHome }
-            const up = envSrc.USERPROFILE
-            if (up) { cachedHome = up; return cachedHome }
-            const combined = (envSrc.HOMEDRIVE || '') + (envSrc.HOMEPATH || '')
-            if (combined) { cachedHome = combined; return cachedHome }
-            cachedHome = null; return cachedHome
-          } else {
-            try { const v = homedirFn(); cachedHome = v || null; return cachedHome } catch { cachedHome = null; return cachedHome }
-          }
-        }
-        const pathObj = Object.freeze({
-          join: pathImpl.join.bind(pathImpl),
-          sep: pathImpl.sep,
-          dirname: pathImpl.dirname.bind(pathImpl),
-          basename: pathImpl.basename.bind(pathImpl),
-          resolve: pathImpl.resolve.bind(pathImpl),
-          normalize: pathImpl.normalize.bind(pathImpl),
-          isAbsolute: pathImpl.isAbsolute.bind(pathImpl),
-          relative: pathImpl.relative.bind(pathImpl),
-          async joinHome(...segs) { const h = await getHomeInner(); return pathImpl.join(h, ...segs) },
-        })
-        async function resolveExec(name) {
-          const mapped = osName === 'win32' && name === 'cmd' ? 'cmd.exe' : name
-          const subprocessSvc = ctx.get('subprocess')
-          try { return await subprocessSvc.resolveExecutable(mapped) } catch (e) {
-            if (name === 'gh') {
-              const fb = envSrc.DSH_GH_PATH || ''
-              if (!fb) throw e
-              const fss = ctx.get('fs')
-              if (!fss || typeof fss.lstat !== 'function') throw e
-              try { const info = await fss.lstat(fb); if (info) return fb } catch {}
-            }
-            throw e
-          }
-        }
-        const resolveExecutable = async (name) => { try { return await resolveExec(name) } catch { return null } }
-        const fss = ctx.get('fs')
-        const envView = Object.freeze({ get(k){ return envSrc[k] }, has(k){ return k in envSrc } })
-        return Object.freeze({ os: osName, getHome: getHomeInner, path: pathObj, resolveExecutable, fs: fss, env: envView })
+        const platMod = await import('./platform/index.js')
+        const createPlatform = platMod.createPlatform || platMod.default
+        if (typeof createPlatform !== 'function') throw new Error('platform unavailable')
+        return createPlatform(ctx)
       })()
       _platform = await _platformInit
       try { const okNow = !!_platform; if (logCtx && logCtx.isEnabled('debug') && okNow !== lastPlatformOk) { lastPlatformOk = okNow; logCtx.fire('debug', 'platform.resolve', function () { return { name: 'platform', ok: okNow, latencyMs: Date.now() - platT0 } }) } } catch (eL) {}

@@ -885,17 +885,34 @@ test('JEV timeout leaves deterministic monitoring and the native model request r
   await f.saveEngine({ timeoutMs: 20 })
   await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 1, noOutputThreshold: 1, checkIntervalMs: 1000 })
   await f.start(); await f.send({ type: 'reasoning-delta', index: 0, text: 'still thinking' })
-  await f.at(1000); await f.at(2000)
-  assert.equal(f.requests.length, 2)
-  assert.deepEqual(f.notices.map(alert => alert.kind), ['no-output', 'no-output'])
-  const state = f.ctx.get('agentMonitor').snapshot()
-  assert.equal(state.engineAvailability.code, 'TIMEOUT')
-  assert.equal(state.engineAvailability.color, 'red')
-  assert.equal(state.agents[0].semanticCount, 0)
-  assert.equal(f.streams.get('model').request.signal.aborted, false)
-  assert.equal(f.handle.agent.status, 'running')
-  await f.finish()
-  assert.equal(f.handle.agent.status, 'idle')
+  const evaluate = t.mock.method(f.ctx.get('jevCenter'), 'evaluate')
+  // The engine deadline can expire before transport reaches the server; receipt count is not evaluation count.
+  const actualFetch = globalThis.fetch
+  t.mock.method(globalThis, 'fetch', async function (url, options) {
+    if (new URL(url).pathname.endsWith('/v1/systemone')) {
+      assert.ok(options.signal, 'real JEV transport carries its own deadline signal')
+      if (!options.signal.aborted) await new Promise(resolve => options.signal.addEventListener('abort', resolve, { once: true }))
+    }
+    return actualFetch.call(this, url, options)
+  })
+  try {
+    await f.at(1000); await f.at(2000)
+    assert.equal(evaluate.mock.calls.length, 2)
+    assert.deepEqual(evaluate.mock.calls.map(call => call.arguments[0]), ['quick', 'quick'])
+    const outcomes = await Promise.all(evaluate.mock.calls.map(call => call.result))
+    assert.deepEqual(outcomes.map(result => ({ ok: result.ok, code: result.error?.code })), [
+      { ok: false, code: 'TIMEOUT' }, { ok: false, code: 'TIMEOUT' },
+    ])
+    assert.deepEqual(f.notices.map(alert => alert.kind), ['no-output', 'no-output'])
+    const state = f.ctx.get('agentMonitor').snapshot()
+    assert.equal(state.engineAvailability.code, 'TIMEOUT')
+    assert.equal(state.engineAvailability.color, 'red')
+    assert.equal(state.agents[0].semanticCount, 0)
+    assert.equal(f.streams.get('model').request.signal.aborted, false)
+    assert.equal(f.handle.agent.status, 'running')
+    await f.finish()
+    assert.equal(f.handle.agent.status, 'idle')
+  } finally { t.mock.reset() }
 })
 
 test('actual model progress discards an in-flight JEV result without reporting a failure or blocking task completion', async t => {

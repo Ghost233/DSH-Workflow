@@ -151,7 +151,7 @@ export function createWriteEvents(deps) {
     try { const o = JSON.parse(raw); return (o && typeof o === 'object') ? o : null } catch (e) { return null }
   }
 
-  /** 命令行：Windows 上命令工具是 pwsh，命令行在 `JSON.parse(arguments).command`。原样喂给纯函数，随即丢弃。 */
+  /** 命令行：macOS 命令文本在 `JSON.parse(arguments).command`。原样喂给纯函数，随即丢弃。 */
   function commandOf(argsObj) {
     try { return (argsObj && typeof argsObj.command === 'string') ? argsObj.command : '' } catch (e) { return '' }
   }

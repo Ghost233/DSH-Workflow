@@ -22,7 +22,7 @@
 //   宿主从 #652 起在每份快照里带回工作区根（snapshot.workspaceRoot），面板分桶读的也是同一份快照。
 //   这里不再另读「所选目录 → 工作区根」那张表：那张表是整个工作区共用的，别的会话学到的根会窜到本会话的
 //   浮层里；快照里的根是本会话自己的。快照里没有工作区根时返回空串：认不出根就不出现，不猜、不谎报。
-//   注意快照里那个值是**折算过的键**（小写、正斜杠），不能直接显示给用户看 —— 显示用的写法由下面的
+//   Snapshot keys normalize POSIX slashes but preserve macOS filename spelling;
 //   subwsMarkRootShown 按会话原始目录还原。
 //
 // 渲染之外的决定（取根、该不该出现、相对尾巴怎么拼、显示哪几行、显示成哪种写法）全在这几个纯函数里，
@@ -42,30 +42,26 @@ export const subwsMarkRootOf = function (st) {
     return (st.sessionWorkspaceRoot) ? String(st.sessionWorkspaceRoot).trim() : ''
   } catch (e) { return '' }
 }
-// 显示用的工作区根：把宿主那份快照里的根，按本会话所选目录的写法还原出来。
-//   为什么需要这一步：宿主放进快照的那个值是**折算过的键**（`canonicalWorkspaceKey`：Windows 上小写折叠、
-//   反斜杠转正斜杠），于是直接拿它显示会说出「面板数据来自工作区 d:\ilife」—— 而 #650 定稿的文案是
-//   `D:\ilife`，维护者看到的就是后者。客户端的 `st.cwd` 是会话原始目录（走 wf.cwd 拿的 header.cwd），
-//   写法是用户自己的那一种，所以按它逐段还原；**比对该用键、显示该用原样**（与设置页工作区总览同一条规矩）。
-//   比对仍然只用折算后的键，绝不按字符切目录名（`D:\ilife-other` 那种会切出残留片段）。
-//   还原不出来（两侧根本不是同一条目录，或写法对不齐）就原样回退回那个键 —— 宁可与规格差一点，也不猜。
+// Display the macOS root using complete POSIX path segments from this session.
+// Case and literal backslashes are filename characters; comparisons use the
+// shared workspace key and display preserves the original directory spelling.
 export const subwsMarkRootShown = function (root, cwd) {
   try {
     const key = subwsMarkCmpKey(root)
     if (!key) return ''
-    const segsOf = function (v) { return String(v || '').split(/[\\/]+/).filter(function (x) { return !!x }) }
+    const segsOf = function (v) { return String(v || '').split(/\/+/).filter(function (x) { return !!x }) }
     const cs = segsOf(cwd)
     const rs = segsOf(root)
     if (cs.length <= rs.length) return String(root)
     // 从根那一段往外逐段试着取（取几段就是几段，不去按字符切），谁折算出来的键等于根，谁就是它
     for (let take = rs.length; take < cs.length; take++) {
-      const cand = cs.slice(0, take).join('\\')
+      const cand = (String(cwd || '').startsWith('/') ? '/' : '') + cs.slice(0, take).join('/')
       if (subwsMarkCmpKey(cand) === key) return cand
     }
     return String(root)
   } catch (e) { return String(root == null ? '' : root) }
 }
-// 折算到同一把键再比较（大小写、分隔符写法不同也算同一条目录）。keyOf 是内核里那把规整函数的单源；
+// Normalize only POSIX slash spelling before comparing. keyOf 是内核里那把规整函数的单源；
 //   真闭包里拿不到它时退回原样比较 —— 两串本就同源同写法，结论仍然对，不会把子目录误判成根。
 export const subwsMarkCmpKey = function (v) {
   try { return (typeof keyOf === 'function') ? String(keyOf(v)) : String(v == null ? '' : v) } catch (e) { return '' }
@@ -75,19 +71,16 @@ export const subwsMarkCmpKey = function (v) {
 export const subwsMarkShows = function (root, cwd) {
   return !!(root && cwd && subwsMarkCmpKey(root) !== subwsMarkCmpKey(cwd))
 }
-// 相对尾巴：所选目录去掉工作区根前缀的那一段，用 › 连接。绝不把反斜杠原样吐给用户。
-//   必须按「一段目录」比，不能按「一串字符」比：`D:\ilife-other` 与 `D:\ilife2` 的前几个字符
-//   恰好是根的写法，按字符串前缀切会把它们切成 `-other` / `2` 这种看不出所以然的东西。
-//   所以逐段走出去，只有整段对得上才算「在根下面」；对不上（不是子目录、或大小写与斜杠写法不同
-//   导致切成两段不好对齐）就整段列出，别切。
+// Relative segments use the macOS slash separator; literal backslashes remain
+// visible filename characters. Complete segments prevent sibling-prefix matches.
 export const subwsMarkRelOf = function (root, cwd) {
   try {
     const segsOf = function (v) {
-      return String(v || '').split(/[\\/]+/).map(function (x) { return x.trim() }).filter(function (x) { return !!x })
+      return String(v || '').split(/\/+/).map(function (x) { return x.trim() }).filter(function (x) { return !!x })
     }
     const rs = segsOf(root)
     const cs = segsOf(cwd)
-    // 先按原样逐段比；对不上再用同一把规整钥匙逐段比（大小写、斜杠写法不同也算同一条目录）
+    // Compare complete segments with the same case-preserving workspace key.
     const sameSeg = function (a, b) { return a === b || subwsMarkCmpKey(a) === subwsMarkCmpKey(b) }
     let under = rs.length > 0 && cs.length > rs.length
     for (let i = 0; under && i < rs.length; i++) under = sameSeg(rs[i], cs[i])
@@ -160,7 +153,7 @@ export const SubworkspaceMark = function (props) {
   }
   if (!isSub) return null
   const aria = shown.join('；')
-  // 显示与点击都用还原过写法的那一条：浮层里写着「点一下打开 D:\ilife」，点下去就不该打开另一条写法
+  // 显示与点击都用还原过写法的那一条：浮层里写着「点一下打开 /Users/Matt/ilife」，点下去就不该打开另一条写法
   const shownRoot = subwsMarkRootShown(root, cwd)
   const dim = { fontSize: 11, lineHeight: '16px', whiteSpace: 'normal', wordBreak: 'break-word' }
   // 渲染时，最后一行是那条「还没初始化」的提醒，用琥珀色；其余灰色。

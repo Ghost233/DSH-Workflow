@@ -57,5 +57,11 @@
     }
   },
   "homepage": "https://github.com/Ghost233/DSH-Workflow/tree/main/matt-skills-panel-plugin",
-  "license": "MIT"
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ]
 }

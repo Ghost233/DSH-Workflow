@@ -59,7 +59,7 @@ export interface CreateWriteRetryDecision {
  * 「程序没启动起来」的证据。每一条都点名 glab，或者是本插件客户端自己写的「平台/执行器不可用」，
  * 不用泛泛的「文件不存在」——理由见文件头。
  */
-const NEVER_STARTED_RE = /['"]?glab['"]? (?:command not found|is not recognized as an internal or external command)|command not found: glab|which: no glab|glab not found in path|cannot find glab|spawn (?:[^\s]*[\\/])?glab(?:\.exe|\.cmd|\.bat)? (?:enoent|eacces|eperm)|platform unavailable|exec unavailable/i
+const NEVER_STARTED_RE = /['"]?glab['"]? command not found|command not found: glab(?![\w.])|which: no glab(?![\w.])|glab not found in path|cannot find glab(?![\w.])|spawn (?:[^\s]*\/)?glab (?:enoent|eacces|eperm)|platform unavailable|exec unavailable/i
 
 /** 「远端说这个端点不存在」的证据：404 / 405 两种回答，或它们的英文原话。 */
 const ENDPOINT_ABSENT_RE = /\b40[45]\b|method not allowed|404 not found/i

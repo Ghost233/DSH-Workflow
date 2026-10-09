@@ -125,7 +125,7 @@ export function createHandoffClaim(deps) {
       if (!tracker || typeof tracker.setAssignees !== 'function') return { ok: false, error: { kind: 'unsupported', message: "backend '" + backendId + "' 未实现 setAssignees" } }
       let repoRef = null
       try { repoRef = reg.describe({ cwd }, backendId) } catch {}
-      if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/[\\/]/).pop() || backendId, url: '' }
+      if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/\//).pop() || backendId, url: '' }
       const opCtx = { cwd, platform: await getPlatform(), fs: ctx.get('fs') }
       const key = String(n).padStart(2, '0')
       // 尝试取当前用户

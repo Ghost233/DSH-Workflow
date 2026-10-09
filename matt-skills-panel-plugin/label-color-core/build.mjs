@@ -18,6 +18,7 @@
  * 用法：node label-color-core/build.mjs（在仓库根目录；日常更常用 node scripts/build.mjs，
  * 那条命令会把本脚本带进去一起跑）。
  */
+import '../scripts/require-macos-arm64.mjs'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

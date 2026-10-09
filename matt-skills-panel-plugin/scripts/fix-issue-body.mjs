@@ -3,8 +3,7 @@
  * scripts/fix-issue-body.mjs —— 「把一段正文写回 issue」的可执行化身
  *
  * 出处：#571（任务：正文写回脚本落地）按契约 #576 落地。
- * 为什么要它：agent 在终端里手敲 gh 命令写正文时，Windows PowerShell 会吞掉参数里的引号，
- *   长正文内联进命令行也容易写坏；写坏以后正文格式（字面 \n 转义、开头不可见字符）没人兜底。
+ * 为什么要它：长正文内联进命令行容易写坏；写坏以后正文格式（字面 \n 转义、开头不可见字符）没人兜底。
  *   这个脚本把「读文件 → 校正写法 → 走文件参数写回」收成一条命令，提示词以后只写脚本名加参数。
  *
  * 用法：
@@ -23,7 +22,7 @@
  * 脚本做五件事：
  *   1. 认工作区：从当前目录逐层向上找到工作区根（自带 .git 或自带主锚文件的最近一层），读根上的主锚文件认后端。
  *      在子目录里跑也认得出；一路到顶都没有标记时，提示说清「请到工作区根目录去跑」并给出那条目录的名字。
- *   2. 剥掉正文开头的第一个不可见字符（BOM）——Windows 编辑器另存常带这个字符。
+ *   2. 剥掉正文开头的第一个不可见字符（BOM）。
  *   3. 正文几乎没有真实换行、却存在字面 \n 转义时，把转义还原成真实换行；否则原样保留
  *      （阈值与 src/shared/parser.js 的 normalizeBody 一致：真实换行少于 2 处且字面转义至少 1 处才还原）。
  *   4. 检查正文格式，只告警不改写：每个 `## 章节` 是否独占一行、标题后是否留空行。
@@ -54,6 +53,8 @@ import { join, resolve, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
+if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Matt tools require macOS ARM64');
+
 const SCRIPT_NAME = "scripts/fix-issue-body.mjs";
 const TRACKER_DOC = "docs/agents/issue-tracker.md";
 const BOM = "\uFEFF";
@@ -66,7 +67,7 @@ let WORKSPACE_ROOT = "";
 /** 取路径最后一段，单独用（不经 redactLocalPaths 的整句改写）。 */
 function nameOf(p) {
   const s = String(p == null ? "" : p);
-  const parts = s.split(/[\\/]+/).filter(Boolean);
+  const parts = s.split(/\/+/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : s;
 }
 
@@ -75,8 +76,6 @@ function nameOf(p) {
  *  本地绝对路径不该跟着走。与姊妹脚本 scripts/wire-subissues.mjs 的 redactLocalPaths 同一条口径。 */
 function redactLocalPaths(text) {
   let s = String(text == null ? "" : text);
-  s = s.replace(/[A-Za-z]:\\[^\s"'`|<>]*/g, (m) => basename(m));
-  s = s.replace(/\\\\[^\s"'`|<>]+/g, (m) => basename(m));
   s = s.replace(/(^|[\s(`"'])\/(?:[^\s"'`|<>/]+\/)+[^\s"'`|<>]*/g, (m, p1) => p1 + basename(m));
   return s;
 }
@@ -296,7 +295,6 @@ function runGh(argv) {
     cwd: WORKSPACE_ROOT || process.cwd(),
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
-    windowsHide: true,
   });
   if (res.error) return { ok: false, status: -1, stdout: "", stderr: String(res.error.message || res.error) };
   return {

@@ -336,7 +336,7 @@ Future<void> main(List<String> arguments) async {
   await Directory(environment['DSH_LAUNCHER_TEST_RESOURCES']!).create();
   settingsPhase('resources-stage-start');
   final webPort = await webScenario?.stage(root);
-  if (externalSdkCold) {
+  if (desktopWindowScenario) {
     final destination = '${root.path}/missing-runtime/desktop';
     final source = '${webScenario!.sourceResources}/desktop';
     if (localAcceptanceRoot == null) {
@@ -344,7 +344,7 @@ Future<void> main(List<String> arguments) async {
       final copy = await Process.run('/usr/bin/ditto', [source, destination]);
       require(
         copy.exitCode == 0,
-        'SDK cold case owns a private unchanged Desktop bundle copy',
+        'window scenario owns a private unchanged Desktop bundle copy',
       );
     }
     final proof = await Process.run('/usr/bin/python3', [

@@ -23,7 +23,7 @@ export function classifyGlabError(err) {
   if (/\bnot logged in\b|\bno token\b|\bhost not found\b|\b401\b|\b403\b.*blocked/i.test(s)) return ERROR_KIND.AUTH
   if (/\bnot (logged )?in\b|\bauth\b|\b401\b|\b403\b|credential|unauthorized|permission denied/i.test(s)) return ERROR_KIND.AUTH
   if (/\brate ?limit\b|\b429\b/i.test(s)) return ERROR_KIND.RATELIMIT
-  if (/is not recognized|\bcommand not found\b|\bno such file\b|cannot find|not found in path|which:|enoent/i.test(s)) return ERROR_KIND.ENV
+  if (/\bcommand not found\b|\bno such file\b|cannot find|not found in path|which:|enoent/i.test(s)) return ERROR_KIND.ENV
   if (/not ?found|\b404\b/.test(s)) return ERROR_KIND.NOTFOUND
   if (/unsupported|not supported|not implemented/i.test(s)) return ERROR_KIND.UNSUPPORTED
   if (/parse|invalid json|syntax/i.test(s)) return ERROR_KIND.PARSE

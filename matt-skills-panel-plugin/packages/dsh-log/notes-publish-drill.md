@@ -69,10 +69,10 @@ npm notice Publishing to https://registry.npmjs.org/ with tag latest and public 
 
 ## 三、怎么再发一版
 
-包目录下的 `publish-wizard.sh`（不随包发布）把全过程做成六段：体检（发布目标、文件数、名字是否被占）、网页登录（扫码）、升版本号、构建与干跑、正式发布（带确认闸）、发布后验证。Windows 上用 Git 自带的 bash 跑（不要用 WSL 的 bash，路径会对不上）：
+包目录下的 `publish-wizard.sh`（不随包发布）把全过程做成六段：体检（发布目标、文件数、名字是否被占）、网页登录（扫码）、升版本号、构建与干跑、正式发布（带确认闸）、发布后验证。当前维护范围为 macOS ARM64，工程使用 Node `24.12.0`，在 macOS 的 bash 中运行：
 
 ```sh
-"C:\Program Files\Git\bin\bash.exe" packages/dsh-log/publish-wizard.sh
+bash packages/dsh-log/publish-wizard.sh
 ```
 
 向导的"发布后验证"这一段只查官方源上的版本号，并要求把 `npm publish` 的原始输出补进本文档。另外两件事它没做，手动补上，都是几步的事：

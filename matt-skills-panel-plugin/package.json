@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "build": "node packages/dsh-log/build.mjs && node scripts/build.mjs --pkg-only",
-    "test": "node --test test/*.test.mjs",
+    "test": "node scripts/require-macos-arm64.mjs && node --test test/*.test.mjs",
     "upstream:check": "node scripts/compare-upstream.mjs"
   },
   "dependencies": {
@@ -15,5 +15,11 @@
   "devDependencies": {
     "esbuild": "0.28.2",
     "typescript": "5.6.3"
-  }
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ]
 }

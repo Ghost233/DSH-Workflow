@@ -100,7 +100,7 @@ export function attachFixContract(items, mod, lang, opts = {}) {
           nf.preview = nf.preview.split('{owner}').join(owner)
         }
         if (cwd && f.name === 'name') {
-          const bs = String(cwd).split(/[\\/]/).filter(Boolean).pop()
+          const bs = String(cwd).split(/\//).filter(Boolean).pop()
           if (bs && !nf.placeholder) nf.placeholder = bs
           // defaultFrom（2026-08-28 用户反馈）：预填默认仓库名 = 工作区尾段（清洗为合法名），
           //   提交后预览立即显示真实名字（不再出现 '...'）；清洗不通过则回落 placeholder（不预填）

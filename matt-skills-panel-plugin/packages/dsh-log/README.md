@@ -16,10 +16,12 @@
 ## 1. 安装
 
 ```sh
-npm install dsh-log
+npm install ../dsh-log
 ```
 
-要求 Node 22 或更高。当前版本 `0.2.1`，已发布到 npm 官方源（标签 `latest`；可用 `npm view dsh-log version` 自查）。
+本项目维护的派生源码仅支持 macOS ARM64，工程使用 Node `24.12.0`。上面的本地路径应指向已按本仓构建入口生成产物的 `packages/dsh-log`。
+
+`dsh-log@0.2.1` 是保留的历史 npm 发布记录；当前派生源码的维护范围与这份历史发布分开记录，不把旧包当作本次修改的产物。
 
 ## 2. 三个入口，按运行位置选用
 

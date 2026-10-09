@@ -156,6 +156,7 @@ export async function ensureBuild(root, { expected = target, run = buildCommand 
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
+    if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Project engineering requires macOS ARM64')
     const [action, directory] = process.argv.slice(2)
     if (!directory || !['ensure', 'check'].includes(action)) throw new Error('Usage: harness-runtime.mjs ensure|check <Harness directory>')
     const root = resolve(directory)

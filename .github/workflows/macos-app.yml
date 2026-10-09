@@ -44,11 +44,16 @@ permissions:
 
 jobs:
   validation-inputs:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     outputs:
       helper_only: ${{ steps.proof.outputs.helper_only }}
       native_reuse: ${{ steps.proof.outputs.native_reuse }}
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -58,14 +63,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          python3 .github/scripts/actor_validation_inputs.py --base 260fdbbb8a3697899e1133e3293e255df604e0d4 --output validation-inputs.json
+          python3 .github/scripts/actor_validation_inputs.py --base e2477054c5f84f59ccee52bf26be4a80919b5926 --output validation-inputs.json
           python3 - <<'PY'
           import json, os
           value = json.load(open('validation-inputs.json'))
           helper = value['helperOnly'] and value['materialInputsEqual'] and os.environ['EVENT_NAME'] != 'workflow_dispatch'
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('helper_only=' + str(helper).lower() + '\n')
-              output.write('native_reuse=' + str(helper and value['base'] == '260fdbbb8a3697899e1133e3293e255df604e0d4').lower() + '\n')
+              output.write('native_reuse=' + str(helper and value['nativeInputsEqual'] and value['base'] == 'e2477054c5f84f59ccee52bf26be4a80919b5926').lower() + '\n')
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -76,6 +81,11 @@ jobs:
     if: always() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/macos-v') || needs.validation-inputs.result != 'success' || needs.validation-inputs.outputs.helper_only != 'true')
     runs-on: macos-15
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Checkout fixed DSH submodule
         uses: actions/checkout@v6
         with:
@@ -220,10 +230,15 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/macos-v')
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     permissions:
       contents: write
     steps:
+      - name: Require macOS ARM64 runner
+        shell: bash
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
       - name: Download the ARM64 macOS build
         uses: actions/download-artifact@v4
         with:

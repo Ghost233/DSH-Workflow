@@ -21,6 +21,7 @@
  *
  * 用法：node scripts/build.mjs [--dev-only|--pkg-only] [--out-dir DIR]
  */
+import './require-macos-arm64.mjs'
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, rmSync, cpSync, utimesSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'

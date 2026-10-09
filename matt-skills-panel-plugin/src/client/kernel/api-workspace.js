@@ -24,7 +24,7 @@
       return null
     }
     // 工作区路径归一：有 keyOf 时走它（与客户端其余位置同口径），没有时走本地回退。
-    export const workspaceNormOf = function (p) { try { return (typeof keyOf === 'function' ? keyOf(p) : String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()) } catch (eN) { return String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() } }
+    export const workspaceNormOf = function (p) { try { return (typeof keyOf === 'function' ? keyOf(p) : String(p || '').trim().replace(/\/+/g, '/').replace(/(.+)\/$/, '$1')) } catch (eN) { return String(p || '').trim().replace(/\/+/g, '/').replace(/(.+)\/$/, '$1') } }
     // 从工作区快照里收齐登记项：items 数组、直接数组、按编号存的对象、workspaces 数组都要收，
     // 不能互斥只取一种；DSH 升级别名（行数组、映射表、data 包裹、entries）同样要收，
     // 否则新版快照形状一变就按空处理，直接掉进创建分支。

@@ -15,7 +15,7 @@ export function createRepoKeys(deps) {
   function hash8(s) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
   // #606 命令名只留程序名：调用方通常给的是 'git' 这种裸名字，但若给了带目录的完整路径，
   //   这里也把目录部分去掉，保证日志里永远不会出现一条文件系统路径。
-  function progName(cmd) { try { return String(cmd || '').split(/[\\/]/).pop() || '' } catch (e) { return '' } }
+  function progName(cmd) { try { return String(cmd || '').split(/\//).pop() || '' } catch (e) { return '' } }
   let lastNormKind = ''
   let lastCanonOut = ''
 
@@ -34,12 +34,12 @@ export function createRepoKeys(deps) {
     async function resolveGh() {
       if (getGhPath()) return getGhPath()
       const platform = await getPlatform()
-      // 2026-08-29 去重（research 实锤「DSH_GH_PATH 三端不一致」）：DSH_GH_PATH 兜底已下沉至 composePlatform
+      // macOS home and POSIX workspace keys are provided by the platform layer (#171/#279).
       //   通用层单点拥有（platform.resolveExecutable('gh') 内置 env.get+lstat 校验），此处不再重复实现，
       //   host 只保留未命中的诚实错误信息与 ghPath 缓存。
       const p = await platform.resolveExecutable('gh').catch(function () { return null })
       if (p) { setGhPath(p); setGhLastError(null); return p }
-      // 回退：platform 未找到时，直接探测 gh 是否在 PATH 可执行（与 pwsh 的 where gh 一致）
+      // 回退：platform 未找到时，直接探测 gh 是否在 PATH 可执行（使用 macOS 可执行程序解析）
       // 避免因 subprocess.resolveExecutable 的 PATH 与用户终端 PATH 分叉导致 414 这类外部建票永远拉不到
       try {
         // #723（T19）：这一条 `gh --version` 探测也是一笔真实出站（虽然不扣配额），照记一笔。
@@ -163,14 +163,14 @@ export function createRepoKeys(deps) {
       return platform.resolveExecutable('git')
     }
 
-    // 用户主目录（#171 已迁 platform.getHome；原 cmd.exe 探测仅 win32 生效，现平台层统一）
+    // macOS home and POSIX workspace keys are provided by the platform layer (#171/#279).
     async function getHome() {
       const platform = await getPlatform()
       return platform.getHome()
     }
 
     // ============ 规整工作区钥匙（地图 #278 A 方案 · #279 落地）============
-    // 同一工作区经会话快照不同字段上报时写法可能不同（盘符大小写/尾斜杠/斜杠方向）。
+    // macOS home and POSIX workspace keys are provided by the platform layer (#171/#279).
     // 按工作区分桶的抽屉（repoKeys/repoRoots/chainCache/workspaceStore/快照单槽）统一在
     // 读写删三侧使用 canonicalWorkspaceKey 洗出的规整钥匙——读写删同形，失效删除才删得中。
     // 绝对路径（主流形态）在洗衣机内部短路，零 fs 调用；异常时回退原串（读写删仍同形）。

@@ -30,11 +30,17 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "node ../../scripts/require-macos-arm64.mjs && tsc -p tsconfig.json",
     "build": "node build.mjs",
-    "test": "node --test tests/host.test.mjs tests/eventList.test.mjs tests/client.test.mjs tests/node.test.mjs"
+    "test": "node ../../scripts/require-macos-arm64.mjs && node --test tests/host.test.mjs tests/eventList.test.mjs tests/client.test.mjs tests/node.test.mjs"
   },
   "devDependencies": {
     "typescript": "5.6.3"
-  }
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ]
 }

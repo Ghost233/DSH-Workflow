@@ -17,7 +17,7 @@ import { issuesDir } from './path.js'
 import { ERROR_KIND } from '../../../../shared/tracker/constants.js'
 import nodePath from 'node:path'
 
-export function getPlat(ctx){if(ctx&&ctx.platform&&ctx.platform.path)return ctx.platform.path;if(ctx&&ctx.path)return ctx.path;if(typeof process!=='undefined'&&process.platform==='win32')return nodePath.win32;return nodePath.posix}
+export function getPlat(ctx){if(ctx&&ctx.platform&&ctx.platform.path)return ctx.platform.path;if(ctx&&ctx.path)return ctx.path;return nodePath.posix}
 export async function getScratchRoot(ctx){
   const plat=getPlat(ctx)
   const cwd=ctx&&typeof ctx.cwd==='string'?ctx.cwd:(typeof process!=='undefined'&&typeof process.cwd==='function'?process.cwd():'.')
@@ -140,7 +140,7 @@ export async function loadIssueFromFile(ctx,repo,fullPath,metaExtra={}){
     if(t){try{mtime=new Date(t).toISOString()}catch{} if(!mtime&&typeof t==='number'){try{mtime=new Date(t).toISOString()}catch{}}}
     if(!mtime&&st.mtime)mtime=String(st.mtime)
   }
-  const base=fullPath.split(/[\\/]/).pop()||''
+  const base=fullPath.split(/\//).pop()||''
   const km=/^(\d+)-/.exec(base)
   const key=km?km[1].padStart(2,'0'):String(metaExtra.key||'00').padStart(2,'0')
   const parentKey=metaExtra.parentKey!==undefined?metaExtra.parentKey:null

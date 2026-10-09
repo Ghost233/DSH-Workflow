@@ -14,7 +14,7 @@ test('normal command captures stdout, stderr and exit status', async () => {
 })
 
 for (const kind of ['timeout', 'cancel']) test(`${kind} terminates a test worker that survives its parent and holds output pipes`, {
-  skip: process.platform === 'win32' ? 'POSIX process-group contract' : false, timeout: 8_000,
+  timeout: 8_000,
 }, async () => {
   const controller = new AbortController()
   const childScript = 'process.on("SIGTERM",()=>{}); setInterval(()=>{},1000)'

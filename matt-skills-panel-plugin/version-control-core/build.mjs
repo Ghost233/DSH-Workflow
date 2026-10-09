@@ -15,6 +15,7 @@
  * 用法：node version-control-core/build.mjs（日常更常用 node scripts/build.mjs，
  * 那条命令会把本脚本的两步一起带上，不必手动补跑）。
  */
+import '../scripts/require-macos-arm64.mjs'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
