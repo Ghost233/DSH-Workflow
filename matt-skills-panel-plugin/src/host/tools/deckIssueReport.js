@@ -9,11 +9,12 @@
 // 票存在性经 tracker.get 校验一遍：读不到就诚实失败，不记链。
 // 本地后端多工作单元时用 effortId 指到那一个目录（根目录的不填）；远端后端忽略它。
 import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../../shared/deck-tools/shell.js'
+import { sessionContextOfAsync } from '../../shared/deck-tools/session-resolve.js'
 import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/tool-cost.js'
 
 export const definition = {
   name: 'deck_issue_report',
-  description: '同属插件的 ISSUE 与 map 管理能力，只处理当前 workspace 对应的 repo；先调 deck_context 确认 workspace 与 backend。当你开始、切换或完成一个 ISSUE 时调用，上报你当前在处理的 ISSUE；调用时机强制：开始处理前必须调用一次上报当前 issue，处理完成关闭时必须再次调用上报关闭结果；该调用为必选，非可选。职责划分：deck_issue_patch 负责变更 issue 内容，deck_issue_report 负责上报处理关系；调用前者关闭 issue 不等价于已完成上报；key 填你要上报的那个 ISSUE 的编号，只有本地后端需要填 effortId，填你上报的 ISSUE 所在的目录名，放在根目录的不填；有没有记上、记在哪里，看返回里的结果。',
+  description: '同属插件的 ISSUE 与 map 管理能力，只处理当前 workspace 对应的 repo；先调 deck_context 确认 workspace 与 backend。开始处理、切换或完成一个 ISSUE 时都必须调用：开始前报一次，关闭时再报一次，这条是必选。职责划分：deck_issue_patch 负责变更 issue 内容，deck_issue_report 负责上报处理关系；用前者关闭 issue 不等价于已完成上报。key 填你要上报的 ISSUE 编号；只有本地后端需要填 effortId，填票所在目录名，根目录不填。有没有记上、记在哪里，看返回里的结果。',
   parameters: {
     type: 'object',
     properties: {
@@ -48,7 +49,7 @@ export function createDeckIssueReport(deps) {
     const a = args || {}
     const key = normKey(a.key)
     const est = shell.estimateFor('deck_issue_report', a)
-    const s = shell.context(exec)
+    const s = await sessionContextOfAsync(exec, { canonicalKey: d.canonicalKey, workspaceKeyOf: d.workspaceKeyOf })
     if (!s.ok) return shell.unsupported('deck_issue_report', s.reason, s.text, { cost: { estimated: est } })
     if (!key) return shell.unsupported('deck_issue_report', REFUSAL_REASONS.BAD_ARGS, '要上报哪一张票：把票号写在 key 里（例如 775）。', { cost: { estimated: est } })
     const effortId = normEffort(a.effortId)
@@ -59,7 +60,7 @@ export function createDeckIssueReport(deps) {
     const repo = shell.repoOf(pick, s)
     if (effortId) repo.effortId = effortId
 
-    return shell.call({ tool: 'deck_issue_report', kind: 'write', session: s, pick: pick, repo: repo, estimate: est }, async (c) => {
+    return shell.call({ tool: 'deck_issue_report', kind: 'write', session: s, pick: pick, repo: repo, estimate: est, sandbox: (typeof d.sandboxPolicyFor === 'function' ? await d.sandboxPolicyFor({ cwd: s.cwd, sessionId: s.sessionId }).catch(function(){ return null }) : null) }, async (c) => {
       const notes = []
       if (effortId) notes.push('这次带了 effortId（' + effortId.slice(0, 60) + '）：本地后端只在那一个目录里找，远端后端忽略它。')
       if (note) notes.push('备注只回显，不进链（链上每条只留票键、时间与动作类别）。')

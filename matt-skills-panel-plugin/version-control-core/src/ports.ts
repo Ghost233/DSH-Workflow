@@ -44,10 +44,13 @@ export interface FileEntry {
   deletedLines: number | null
 }
 
-/** 分支同步状态五值枚举（#821：合并成布尔就会对用户说错话）。 */
+/** 分支同步状态五值枚举（#821：合并成布尔就会对用户说错话）。#819 收口把前两个名字改成它真正的含义
+ *  （纯内部标识符，用户可见话术一个字没变）：tracked-known = 有上游、依据时间读得到；
+ *  tracked-unknown = 有上游、依据时间读不到（判据 basisMs === null）。名字里不许出现「新 / 旧」——
+ *  ADR 第 3 条不设阈值，代码根本没有办法判「旧」，叫 fresh/stale 就是名字在说谎。 */
 export type BranchSync =
-  | 'tracked-fresh'
-  | 'tracked-stale'
+  | 'tracked-known'
+  | 'tracked-unknown'
   | 'upstream-gone'
   | 'no-upstream'
   | 'detached'
@@ -75,6 +78,8 @@ export interface WorktreeInfo {
   lockReason: string | null
   lockUnknown: boolean
   prunable: boolean
+  /** 这个 git 版本答不出「目录还在不在」时为真：答不出不等于还在（与 lockUnknown 同一形状）。 */
+  prunableUnknown: boolean
 }
 
 export interface BranchInfo {
@@ -123,7 +128,7 @@ export interface FirstScreen {
 }
 
 /** 四个未来写操作的判定对象（本版只读，规则先行为后面的票备好）。 */
-export type Operation = 'stage' | 'commit' | 'pull' | 'push'
+export type Operation = 'stage' | 'commit' | 'pull' | 'push' | 'fetch'
 
 export type Verdict = 'allow' | 'warn' | 'block'
 
@@ -137,6 +142,39 @@ export interface ParseFailure {
   ok: false
   error: string
   detail: string
+}
+
+/** 写操作四档（暂存不走票据，所以不在这里；更新远方记录是只读远端的网络读，不碰工作树）。 */
+export type WriteOp = 'commit' | 'pull' | 'push' | 'fetch'
+
+/** 预检解析出来的推送目标；localBranch 是 refspec 左边那一段（本地分支）。 */
+export interface WritePlan {
+  mode: 'existing' | 'set-upstream' | 'recreate' | 'fetch'
+  /** mode 的布尔派生（界面与反证脚本按它读）：true = 这次推送会建立/重建上游（带 -u）。 */
+  setUpstream?: boolean
+  remote: string
+  branch: string
+  localBranch: string
+  /** pull 用：预检时这个分支的上游短名（执行前要重量一次比对，防「预检后改上游/切分支」绕过）。 */
+  upstream?: string | null
+}
+
+/**
+ * 一次性票据（形制照 src/host/updatePkg/service.js 的 receipt：checkId + 过期时刻；重放保护靠 requestId 去重，
+ * 不自创第三种语义）。客户端只拿得到 id / checkedAtMs / expiresAtMs / op，其余留在宿主内存里。
+ */
+export interface WriteTicket {
+  id: string
+  op: WriteOp
+  /** 票绑仓库（#841 第三批）：两个不同目录的仓库可以有完全相同的 HEAD 与索引指纹，所以票据必须记住
+   *  自己是给哪个工作树发的，执行前比对；对不上按 stale-repo 拒。 */
+  repoRoot: string
+  checkedAtMs: number
+  expiresAtMs: number
+  headOid: string
+  indexFingerprint: string | null
+  indexEntries: number | null
+  target: WritePlan | null
 }
 
 export const PORTS_SOURCE = 'version-control-core/src/ports.ts'

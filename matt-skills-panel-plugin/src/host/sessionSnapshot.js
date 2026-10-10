@@ -8,7 +8,7 @@ import { createSnapshotEnvelope } from './snapshotEnvelope.js'
 // 以后谁改它：改快照缓存短路或快照组装的人。预估约340行，超 350 打回。
 // 接线：由 index.js 动态 import 加载；早选判据由 index 从启停模块转供给；本文件不引用其他新文件。
 export function createSessionSnapshot(deps) {
-  const { canonicalKey, selectEarly, isComposerSelection, getTrackerRegistry, getPlatform, ctx, getCache, setCache, CACHE_MS, cacheSnapshotIsCurrent, upcaseSnapStates, computeLevels, groupTickets, getRepoRoot, getRepoKey, readDiskCache, writeDiskCache, adoptSnapshot, detectionExec, getGhPath, getGhLastError, errText, DEFAULT_CWD, logCtx, getChoiceStore, envelope, chainReadout, chainField } = deps
+  const { canonicalKey, selectEarly, isComposerSelection, getTrackerRegistry, getPlatform, ctx, getCache, setCache, CACHE_MS, cacheSnapshotIsCurrent, upcaseSnapStates, computeLevels, groupTickets, getRepoRoot, getRepoKey, readDiskCache, writeDiskCache, adoptSnapshot, detectionExec, getGhPath, getGhLastError, errText, DEFAULT_CWD, logCtx, getChoiceStore, envelope, chainReadout, chainField, send } = deps
   // #723（T19）：快照信封（字段清单 + 落盘那一步的 snapshot.built 日志）搬到了 ./snapshotEnvelope.js
   // （这个文件贴着 350 行上限，要让出位置挂「每个会话在处理哪些票」的读数）。没注入时现造一个，
   // 行为与搬前逐字一致 —— 单测里手工拼实例的那几处就靠这条兜底。
@@ -102,7 +102,8 @@ export function createSessionSnapshot(deps) {
           let repoRef = null
           try { repoRef = reg.describe({ cwd }, backendId) } catch {}
           if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/\//).pop() || backendId, url: '' }
-          const ctx2 = { cwd, platform: await getPlatform(), fs: ctx.get('fs'), exec: function (c, a, o) { return detectionExec(c, a, o, 'snapshot') } }
+          // #927：面板取数这一路的每条命令都过闸（分类是「人的动作」那一档：只记账、不降档）；没给 send 时照旧直发。
+          const ctx2 = { cwd, platform: await getPlatform(), fs: ctx.get('fs'), exec: function (c, a, o) { if (typeof send !== 'function') return detectionExec(c, a, o, 'snapshot'); const isGql = String((a && a[0]) || '') === 'api' && String((a && a[1]) || '').indexOf('graphql') >= 0; return send({ source: 'panel.refresh', kind: 'detail', bucket: isGql ? 'graphql' : 'rest', workspaceKey: cwd }, function () { return detectionExec(c, a, o, 'snapshot') }).then(function (r) { return r.result }) } }
           const { createSnapshotComposer } = await import('./tracker/snapshot.js')
           const composer = createSnapshotComposer(reg, { snapshotTtl: 5000 })
           const res = await composer.composeSnapshot(backendId, repoRef, ctx2, { ifNoneMatch: (args && (args.ifNoneMatch || args.version)) || '', force: !!(args && args.force) })
@@ -208,7 +209,7 @@ export function createSessionSnapshot(deps) {
           const repoRoot = await getRepoRoot(cwd)
           const snap = buildSnap({
             repoRoot, workspaceRoot: cwd,
-            maps: inner.maps, issues: allForList, labels: labels,
+            maps: inner.maps, issues: allForList, thinTickets: inner.thinTickets, labels: labels,
             repository: repoRef, backendModules: backendModules, selection: _sel, setupLayout: _layEarly, deck: inner.deck, fallback: inner.fallback, fallbackAt: inner.fallbackAt, fallbackReason: inner.fallbackReason, refresh: inner.refresh,
           })
           return adoptSnapLog(snap, cwd)
@@ -225,7 +226,7 @@ export function createSessionSnapshot(deps) {
           } catch {}
           const snap = buildSnap({
             repoRoot, workspaceRoot: cwd,
-            maps: [], issues: [], labels: [],
+            maps: [], issues: [], thinTickets: [], labels: [],
             backendModules, selection: _sel, setupLayout: _layEarly,
             deck: { total:0, open:0, closed:0, frontier:0, claimed:0, blocked:0, indeterminate:0, levels:[], levelOf:{} },
           })
@@ -254,7 +255,7 @@ export function createSessionSnapshot(deps) {
             const _selNoRepo = (typeof _sel !== 'undefined' ? _sel : (typeof _selEarly !== 'undefined' ? _selEarly : null))
             const snapNoRepo = buildSnap({
               repoRoot: repoRootNoRepo, workspaceRoot: cwd,
-              maps: [], issues: [], labels: [],
+              maps: [], issues: [], thinTickets: [], labels: [],
               backendModules: backendModulesNoRepo, selection: _selNoRepo, setupLayout: _layEarly,
               deck: { total:0, open:0, closed:0, frontier:0, claimed:0, blocked:0, indeterminate:0, levels:[], levelOf:{} },
             })
@@ -331,7 +332,7 @@ export function createSessionSnapshot(deps) {
         } catch {}
         const snap2 = buildSnap({
           repo: repo0b, repoRoot: repoRoot2, workspaceRoot: cwd,
-          maps: inner2.maps, issues: allForList2, labels: labels2,
+          maps: inner2.maps, issues: allForList2, thinTickets: inner2.thinTickets, labels: labels2,
           repository: repoRef2, backendModules: backendModules2, selection: _sel, setupLayout: _layEarly,
           viewer: viewer2, viewerLogin: viewerLogin2, deck: inner2.deck, fallback: inner2.fallback, fallbackAt: inner2.fallbackAt, fallbackReason: inner2.fallbackReason, refresh: inner2.refresh,
         })

@@ -96,12 +96,16 @@ Future<void> main(List<String> arguments) async {
         }
       }
 
+      // Establish the isolated scenario's initial menu ownership explicitly.
+      await request('initial-entry', 'setEntryManaged', {'managed': false});
       await request('open', 'openWindow');
       var visible = await nativeState();
       for (
         var attempt = 0;
         attempt < 50 &&
-            (visible['appActive'] != true || visible['windowKey'] != true);
+            (visible['appActive'] != true ||
+                visible['windowKey'] != true ||
+                visible['entryVisible'] != true);
         attempt++
       ) {
         await Future<void>.delayed(const Duration(milliseconds: 100));

@@ -145,7 +145,105 @@ export function childrenOf(rows, mapKey) {
   return { children: list.filter((r) => r && String(r.parentKey) === String(mapKey)), filtered: true, note: '' }
 }
 
+/**
+ * 写一条父子边并读回核对。回 { item, applied }：item 是拼好明细的那一行，
+ * applied 表示读回来的 parentKey 确实等于目标。
+ * 同一张票的父子写必须串行（同时写同一张票会丢一次改动），不同票的可以同时调。
+ */
+export async function applyParentEdge(t, repo, opCtx, from, to) {
+  const want = String(to)
+  const written = await t.setParent(repo, from, want, {}, opCtx)
+  if (!written || written.ok !== true) {
+    const ev = unsupportedEvidence(String((written && written.error && written.error.message) || '后端没给出原因').slice(0, 200))
+    return { item: Object.assign({ key: from, role: 'edge', status: 'failed' }, edgeEvidence('parent', want, ev)), applied: false }
+  }
+  const back = (t && typeof t.get === 'function') ? await t.get(repo, from, {}, opCtx) : null
+  const afterIssue = (back && back.ok === true) ? back.data : null
+  const backError = (back && back.ok !== true && back.error && back.error.message) ? String(back.error.message).slice(0, 200) : ''
+  let ev = classifyEdgeLanding('parent', want, { issue: afterIssue, dependencies: null })
+  const landedKey = (afterIssue && afterIssue.parentKey !== undefined && afterIssue.parentKey !== null) ? String(afterIssue.parentKey) : ''
+  const landedOk = (landedKey === want) || ((ev && ev.kind) === 'body-line')
+  if (!landedOk && ev && ev.kind !== 'unsupported') {
+    ev = backError
+      ? { kind: 'unknown', ok: false, text: '写后读回失败：读票没成功（后端原话：' + backError + '）；写操作已回成功，边可能已建成但没确认。票的 parentKey 读到的是 ' + (landedKey || '空') + '，要的是 ' + want }
+      : { kind: 'unknown', ok: false, text: '写后读回：票的 parentKey = ' + (landedKey || '空') + '，要的是 ' + want + '（这条父子没挂上）' }
+  }
+  return { item: Object.assign({ key: from, role: 'edge', status: landedOk ? 'ok' : 'failed' }, edgeEvidence('parent', want, ev)), applied: landedOk }
+}
+
+/**
+ * 写一组阻塞边（整批替换一次）并读回核对。occurrences 是本次要出明细的目标清单
+ * （调用方已按票合并，同一张票只调一次）。回 { items, applied, landed, after, failed }：
+ * items 是逐条明细，applied 是真正落上的目标，landed 是读回来的全集，
+ * after 是读回的原文（调用方给重复项补明细用），failed 非空表示写这一步就没成。
+ */
+export async function applyBlockEdges(t, repo, opCtx, from, targets, occurrences) {
+  const want = (Array.isArray(targets) ? targets : []).map(String)
+  const list = (Array.isArray(occurrences) ? occurrences : []).map(String)
+  const written = await t.setBlockedBy(repo, from, want, {}, opCtx)
+  if (!written || written.ok !== true) {
+    const ev = unsupportedEvidence(String((written && written.error && written.error.message) || '后端没给出原因').slice(0, 200))
+    return { items: list.map((to) => Object.assign({ key: from, role: 'edge', status: 'failed' }, edgeEvidence('block', to, ev))), applied: [], landed: [], after: { issue: null, dependencies: null }, failed: ev }
+  }
+  const back = (t && typeof t.get === 'function') ? await t.get(repo, from, {}, opCtx) : null
+  const dep = (t && typeof t.getDependencies === 'function') ? await t.getDependencies(repo, from, {}, opCtx) : null
+  const after = { issue: (back && back.ok === true) ? back.data : null, dependencies: (dep && dep.ok === true) ? dep.data : null }
+  const landed = relationsOf(after.issue || {}, after.dependencies).blockedBy
+  const items = list.map((to) => {
+    const hit = landed.indexOf(to) >= 0
+    const ev = hit ? classifyEdgeLanding('block', to, after) : { kind: 'unknown', ok: false, text: '写后读回：这条依赖没出现在票上（要 ' + to + '，读回来 ' + (landed.join('、') || '空') + '）' }
+    return Object.assign({ key: from, role: 'edge', status: hit ? 'ok' : 'failed' }, edgeEvidence('block', to, ev))
+  })
+  return { items: items, applied: list.filter((to) => landed.indexOf(to) >= 0), landed: landed, after: after, failed: null }
+}
+
 /** 一批里有的成、有的没成时，这条总结论是 partial；全成是 ok；全没成是 unsupported。 */
+/** 依赖图里有没有环：邻接表是「票号 → 它的阻塞方集合」，顺着阻塞方走一圈回到自己就是环。
+ *  与 github 房 cycle-check.js 的 DFS 同形，写在这里是因为它是一条「边的规矩」，三个后端共用同一份判据。 */
+export function hasCycleInAdj(adj) {
+  const state = new Map()   // 1 = 在栈上，2 = 已走完
+  function walk(node) {
+    const s = state.get(node) || 0
+    if (s === 1) return true
+    if (s === 2) return false
+    state.set(node, 1)
+    const next = adj.get(node)
+    if (next) for (const n of next) { if (walk(n)) return true }
+    state.set(node, 2)
+    return false
+  }
+  for (const node of Array.from(adj.keys())) { if (walk(node)) return true }
+  return false
+}
+
+/** 整批成环预检（#929）：写任何一条边之前，先读一次整图，把这一批要写的阻塞边按实际写出顺序逐条试放，
+ *  会让依赖图成环的那一条挑出来（返回 refused：票号 → 原因）。
+ *  为什么要整批一起算：「某一条边单独看不成环」不代表安全 —— 缺的那一段可能就是同批另一条边
+ *  （两条互不相干的边加上盘上已有的边照样能闭合成环），所以只有把「本批全部意图 + 完整现状」
+ *  放在同一张图上才算得出来。读不回整图时不猜：回 ok:false，调用方照旧往下写并在 notes 里如实说一句。 */
+export async function precheckBlockBatch(t, repo, opCtx, keyOrder, mergedBlocked) {
+  let res = null
+  try { res = await t.list(repo, {}, opCtx) } catch (e) { return { ok: false, refused: new Map() } }
+  if (!res || res.ok !== true || !Array.isArray(res.data)) return { ok: false, refused: new Map() }
+  const adj = new Map()
+  for (const row of res.data) {
+    if (!row || row.key === undefined || row.key === null) continue
+    adj.set(String(row.key), new Set(((row.blockedBy) || []).map((b) => String((b && b.key) || b)).filter(Boolean)))
+  }
+  const refused = new Map()
+  for (const key of keyOrder) {
+    const want = (mergedBlocked.get(key) || []).filter((x) => x && String(x) !== String(key))
+    if (!want.length) continue
+    const before = adj.get(key)
+    adj.set(key, new Set(want))
+    if (hasCycleInAdj(adj)) {
+      if (before === undefined) adj.delete(key); else adj.set(key, before)
+      refused.set(key, '写前整批预检：这一组阻塞边和同一批里其它边合起来会让依赖图成环（要 ' + want.join('、') + '），所以这条边没写。')
+    }
+  }
+  return { ok: true, refused: refused }
+}
+
 export function statusOfItems(items) {
   const list = Array.isArray(items) ? items : []
   if (!list.length) return 'ok'

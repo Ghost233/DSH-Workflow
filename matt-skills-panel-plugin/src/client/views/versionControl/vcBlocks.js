@@ -17,13 +17,17 @@
 export const VC_FILE_ROWS_FIRST = 10
 /** 展开一次多列几个（规格第 25 条：展开要分批出现）。 */
 export const VC_FILE_ROWS_BATCH = 10
-/** 差异最多就地画多少行；更多的先给「哪几段行区间变了」，再给头一段，并如实说只显示了前多少行。 */
-export const VC_DIFF_LINES_SHOWN = 200
+/** 窄面板「其他工作树」摘要那一行最多列几个名字（其余明说还有几棵；悬停给列出来这几个的完整路径）。 */
+export const VC_OTHER_SUMMARY_NAMES = 20
 /** 六个块的名字与顺序（门禁按这个顺序断言；也说明「异常带在最上、终端出路在最下」）。 */
 export const VC_BLOCK_ORDER = ['hint', 'band', 'identity', 'changes', 'commits', 'other', 'terminal']
 /** 宿主失败信封里的种类 → 词条键。宿主那一句 message 是中文原话，直接画到英文界面上会串语言，
  *  所以主句一律按种类走词条，宿主原文只作悬停里的诊断线索（vc.fail.raw）。 */
 export const VC_FAIL_KEY = {
+  // #842/宿主新档：'env-fs' 是「宿主的文件服务读不到运行状态标记」——那是环境问题，但**不是找不到 git**，
+  //   所以单独一档、话术里不提 git（用户验收时看到的那句「找不到 git 程序」就是它错档造成的）。
+  'env-fs': 'vc.fail.envFs',
+  // 'env' 留给真·找不到 git 那一档。
   'env': 'vc.fail.noGit',
   'not-repo': 'vc.fail.notRepo',
   'timeout': 'vc.fail.timeout',
@@ -37,112 +41,20 @@ export const VC_FAIL_KEY = {
   'throw': 'vc.fail.throw',
 }
 export const vcFailKeyOf = function (kind) { return VC_FAIL_KEY[String(kind)] || 'vc.fail.unknown' }
-/** 差异那几种「没有内容」的原因 → 词条键（宿主 reason 字段的原样取值）。 */
-export const VC_DIFF_REASON_KEY = {
-  'untracked-no-diff': 'vc.diff.untracked',
-  'no-commit-baseline': 'vc.diff.noBaseline',
-  'no-diff': 'vc.diff.empty',
-  'binary-diff': 'vc.diff.binary',
-  'truncated': 'vc.diff.tooBig',
-  // 合并提交：git show -p 默认不展开组合差异，所以这一处本来就没有内容 —— 这不是「读不到」，
-  //   是 git 不展开合并提交（宿主用 reason:'merge-commit' 与「空提交」的 'no-diff' 分开说）。
-  'merge-commit': 'vc.diff.mergeCommit',
-}
-/** 一个文件条目该怎么分组：冲突单独一组（排在已暂存之后、未暂存之前，照核心与规格的风险次序）。 */
-export const vcGroupOfRow = function (row) {
-  if (row.conflict) return 'conflict'
-  if (row.staged) return 'staged'
-  return 'unstaged'
-}
 /**
- * 未提交改动 → 一个文件一行的清单。解析层对同一路径给两条记录（x 与 y 各一条）不去重，这里合并：
- * 暂存与未暂存两个标记取或、冲突标记取或、变化类型优先取带冲突那条的、行数取先拿到的非空值。
- */
-export const vcFileRowsOf = function (screen) {
-  const all = []
-  const staged = (screen && Array.isArray(screen.staged)) ? screen.staged : []
-  const unstaged = (screen && Array.isArray(screen.unstaged)) ? screen.unstaged : []
-  staged.forEach(function (f) { if (f) all.push(f) })
-  unstaged.forEach(function (f) { if (f) all.push(f) })
-  const byPath = {}
-  const order = []
-  all.forEach(function (f) {
-    const path = String(f.path || '')
-    if (!path) return
-    let hit = byPath[path]
-    if (!hit) {
-      hit = { path: path, origPath: f.origPath || null, staged: false, unstaged: false, conflict: false, change: f.change, addedLines: f.addedLines, deletedLines: f.deletedLines }
-      byPath[path] = hit
-      order.push(path)
-    }
-    hit.staged = hit.staged || f.staged === true
-    hit.unstaged = hit.unstaged || f.unstaged === true || f.change === 'untracked'
-    if (f.conflict === true) hit.conflict = true
-    if (f.conflict === true || !hit.change) hit.change = f.change
-    if (hit.origPath === null && f.origPath) hit.origPath = f.origPath
-    if ((hit.addedLines === null || hit.addedLines === undefined) && f.addedLines !== null && f.addedLines !== undefined) hit.addedLines = f.addedLines
-    if ((hit.deletedLines === null || hit.deletedLines === undefined) && f.deletedLines !== null && f.deletedLines !== undefined) hit.deletedLines = f.deletedLines
-  })
-  const rows = order.map(function (p) { return byPath[p] })
-  const rank = function (r) { return r.conflict ? 1 : (r.staged ? 0 : 2) }
-  rows.sort(function (a, b) { return rank(a) - rank(b) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0) })
-  return rows
-}
-/** 一行的变化语义（冲突行按核心的口径就是「修改」，但界面上单挂一枚冲突标记，不算第七种类型）。 */
-export const vcRowViewOf = function (row, t, diffBlock) {
-  return {
-    key: row.path,
-    path: row.path,
-    pathText: vcMiddle(row.path, 46),
-    pathTip: row.path,
-    origPath: row.origPath || '',
-    changeKey: vcChangeKeyOf(row.change),
-    // changeProven === false 的那一行（提交那一层判不出类型）就不画变化类型的字：宁可少说一句，不说错一句。
-    changeText: row.changeProven === false ? '' : t(vcChangeKeyOf(row.change)),
-    changeTone: row.conflict ? 'warning' : vcChangeToneOf(row.change),
-    countsText: vcPlusMinus(row.addedLines, row.deletedLines),
-    countsTip: (row.addedLines === null || row.addedLines === undefined) ? t('vc.row.binaryTip') : t('vc.row.diffTip'),
-    conflict: row.conflict === true,
-    conflictText: row.conflict ? t('vc.row.conflict') : '',
-    untracked: row.change === 'untracked',
-    // 提交那一层判不出变化类型时，悬停里第一行如实说「只回了路径与增删行数」——
-    //   拿不到的不装作没有，也不让用户以为 git 没给。
-    rowTip: (row.typeTip ? String(row.typeTip) + '\n' : '') + (row.conflict ? t('vc.row.conflictTip') : (row.change === 'untracked' ? t('vc.row.untrackedTip') : t('vc.row.diffTip'))),
-    diff: diffBlock || null,
-  }
-}
-/** 一处差异该画什么：行、要截断时先说「哪几段行区间变了」、以及一句「只显示了前 N 行」。 */
-export const vcDiffViewOf = function (entry, t) {
-  const e = entry || { state: 'idle' }
-  if (e.state === 'idle' || (e.state === 'loading' && !e.lines)) return { state: 'loading', text: t('vc.diff.loading') }
-  if (e.state === 'err' && !e.lines) return { state: 'err', text: t('vc.diff.fail'), retry: t('vc.retry') }
-  const raw = Array.isArray(e.lines) ? e.lines : []
-  const reason = String(e.reason || 'ok')
-  if (reason !== 'ok') {
-    const key = VC_DIFF_REASON_KEY[reason]
-    return { state: 'note', text: key ? t(key) : t('vc.diff.empty'), stale: e.state === 'err', retry: e.state === 'err' ? t('vc.retry') : '' }
-  }
-  const hunkLines = []
-  raw.forEach(function (l) { if (l && l.kind === 'hunk') hunkLines.push(String(l.text || '')) })
-  const long = raw.length > VC_DIFF_LINES_SHOWN
-  return {
-    state: 'ok',
-    lines: raw.slice(0, VC_DIFF_LINES_SHOWN),
-    total: raw.length,
-    hunks: long ? hunkLines : [],
-    hunksTitle: t('vc.diff.hunksTitle'),
-    shownNote: long ? t('vc.diff.shownHead', { n: String(VC_DIFF_LINES_SHOWN) }) : '',
-    stale: e.state === 'err',
-    retry: e.state === 'err' ? t('vc.retry') : '',
-  }
-}
-/**
- * 身份行那一条「同步状态」（核心的五值枚举）：有推进目标且依据新 / 依据读不到 / 推进目标没了 /
+ * 身份行那一条「同步状态」（核心的五值枚举）：有推进目标且依据读得到 / 依据读不到 / 推进目标没了 /
  * 还没设推进目标 / 游离头指针。合并成一个布尔就会对用户说错话，所以这里一支一支分开写。
+ * #819 收口：前两个标识符改成了 tracked-known / tracked-unknown（名字不再暗示「新 / 旧」；界面话术没动）。
  */
+export const VC_SYNC_VALUES = ['tracked-known', 'tracked-unknown', 'upstream-gone', 'no-upstream', 'detached']
 export const vcSyncViewOf = function (identity, t, nowMs) {
   const sync = String((identity && identity.sync) || 'no-upstream')
   const basis = vcBasisText(t, nowMs, identity ? identity.basisMs : null)
+  // 五值枚举以外的取值一律如实说「读到的这一档不认识」，绝不落到「领先 0 / 落后 0」——
+  //   那等于替一个形状坏掉的模型说「一切正常，没多没少」。
+  if (VC_SYNC_VALUES.indexOf(sync) < 0) {
+    return { text: t('vc.sync.unknown'), tip: t('vc.sync.unknownTip', { kind: sync }), basis: '', basisTip: '' }
+  }
   if (sync === 'detached') return { text: t('vc.sync.detached'), tip: t('vc.detachedTip'), basis: '', basisTip: '' }
   if (sync === 'no-upstream') return { text: t('vc.sync.noUpstream'), tip: t('vc.sync.noUpstreamTip'), basis: '', basisTip: '' }
   if (sync === 'upstream-gone') return { text: t('vc.sync.upstreamGone'), tip: t('vc.sync.upstreamGoneTip'), basis: '', basisTip: '' }
@@ -152,32 +64,6 @@ export const vcSyncViewOf = function (identity, t, nowMs) {
     basis: basis,
     basisTip: t('vc.basis.tip'),
   }
-}
-/** 其他工作树一条：占用三档（被占用 / 明确没被占用 / 这个 git 版本答不出）+ 目录已不存在。 */
-export const vcOtherRowOf = function (w, t) {
-  const reason = w && w.lockReason ? String(w.lockReason) : ''
-  let stateText = ''
-  let stateTone = ''
-  let stateTip = ''
-  if (w && w.prunable === true) { stateText = t('vc.other.prunable'); stateTone = 'warning'; stateTip = t('vc.other.prunableTip') }
-  else if (w && w.locked === true) { stateText = t('vc.other.locked'); stateTone = 'warning'; stateTip = t('vc.other.lockedTip') + (reason ? ' ' + reason : '') }
-  else if (w && w.lockUnknown === true) { stateText = t('vc.other.lockUnknown'); stateTone = 'caption'; stateTip = t('vc.other.lockUnknownTip') }
-  return {
-    key: String((w && w.path) || ''),
-    path: String((w && w.path) || ''),
-    displayText: String((w && w.display) || ''),
-    displayTip: String((w && w.path) || ''),
-    branchText: w && w.bare === true ? t('vc.other.bare') : (w && w.branch ? String(w.branch) : t('vc.other.noBranch')),
-    stateText: stateText,
-    stateTone: stateTone,
-    stateTip: stateTip,
-  }
-}
-/** 一个字都不用改的日常读数（门禁与界面都读它，保证两边看的是一份东西）。 */
-export const vcReadsOf = function (reads, path) {
-  const r = reads || {}
-  const diffs = r.diffs || {}
-  return diffs[String(path || '')] || { state: 'idle' }
 }
 /**
  * 块清单的唯一入口。
@@ -206,21 +92,26 @@ export const vcBlocksOf = function (screen, reads, ui, env) {
         rawTip: err.message ? t('vc.fail.raw', { msg: String(err.message) }) : '',
         // 「这个目录不在任何 git 仓库里」不是读取失败，是这个目录本来就不是仓库：不给重试按钮。
         retry: kind === 'not-repo' ? '' : t('vc.retry'),
+        // #854：这五档是「换个地方能动手」的读失败，配一个交出去的描述；配环境那几档不配。
+        ai: VC_AI_READ_FAIL_KINDS.indexOf(String(err.kind || '')) >= 0 ? { kind: 'read-fail', errorKind: String(err.kind || ''), summary: t(vcFailKeyOf(kind)), detail: err.message ? t('vc.fail.raw', { msg: String(err.message) }) : '' } : null,
       }]
     }
     return []
   }
   const t0 = (ui && ui.fileShown) || {}
   const shownOf = function (g) { const n = Math.floor(Number(t0[g])); return isFinite(n) && n > 0 ? n : VC_FILE_ROWS_FIRST }
+  // #842 写操作：按钮 / 提交区 / 确认框的模型都在 vcWriteUi.js 那一层；四个动作的判定由组件算好（env.decisions）
+  //   传进来，这一层只把它们挂到对应的块上（块顺序 VC_BLOCK_ORDER 一个字不动）。
+  const write = (typeof vcWriteUiOf === 'function') ? vcWriteUiOf(screen, ui, env) : null
   const blocks = []
   if (state === 'err' && err) blocks.push({ kind: 'hint', key: 'stale', tone: 'warning', text: t('vc.staleHint'), retry: t('vc.retry') })
   const repo = screen.repo || {}
   const identity = screen.identity || {}
   const bandItems = []
-  if (repo.merging === true) bandItems.push({ key: 'merge', tone: 'warning', text: t('vc.band.merge'), tip: t('vc.band.terminalTip') })
-  if (repo.rebasing === true) bandItems.push({ key: 'rebase', tone: 'warning', text: t('vc.band.rebase'), tip: t('vc.band.terminalTip') })
-  if (repo.cherryPicking === true) bandItems.push({ key: 'cherry', tone: 'warning', text: t('vc.band.cherryPick'), tip: t('vc.band.terminalTip') })
-  if (repo.reverting === true) bandItems.push({ key: 'revert', tone: 'warning', text: t('vc.band.revert'), tip: t('vc.band.terminalTip') })
+  if (repo.merging === true) bandItems.push({ key: 'merge', tone: 'warning', text: t('vc.band.merge'), tip: t('vc.band.terminalTip'), ai: { kind: 'midop', summary: t('vc.band.merge'), detail: t('vc.band.terminalTip') } })
+  if (repo.rebasing === true) bandItems.push({ key: 'rebase', tone: 'warning', text: t('vc.band.rebase'), tip: t('vc.band.terminalTip'), ai: { kind: 'midop', summary: t('vc.band.rebase'), detail: t('vc.band.terminalTip') } })
+  if (repo.cherryPicking === true) bandItems.push({ key: 'cherry', tone: 'warning', text: t('vc.band.cherryPick'), tip: t('vc.band.terminalTip'), ai: { kind: 'midop', summary: t('vc.band.cherryPick'), detail: t('vc.band.terminalTip') } })
+  if (repo.reverting === true) bandItems.push({ key: 'revert', tone: 'warning', text: t('vc.band.revert'), tip: t('vc.band.terminalTip'), ai: { kind: 'midop', summary: t('vc.band.revert'), detail: t('vc.band.terminalTip') } })
   const conflicts = Math.max(0, Number(screen.conflictCount) || 0)
   // 冲突这句是按仓库级标记说的（正在合并 → 你这边与要合进来那边；正在变基 → 已在分支上那些与正在重放的那一笔）。
   //   每条冲突各自的「两侧来源」模型里没有（宿主回包只给 conflictCount 与条目的 conflict 标记），
@@ -229,6 +120,7 @@ export const vcBlocksOf = function (screen, reads, ui, env) {
     key: 'conflicts', tone: 'warning',
     text: t('vc.conflicts.count', { n: String(conflicts) }),
     tip: (repo.merging === true ? t('vc.conflicts.merge') : (repo.rebasing === true ? t('vc.conflicts.rebase') : t('vc.conflicts.other'))) + ' ' + t('vc.band.terminalTip'),
+    ai: { kind: 'conflict', summary: t('vc.conflicts.count', { n: String(conflicts) }), detail: (repo.merging === true ? t('vc.conflicts.merge') : (repo.rebasing === true ? t('vc.conflicts.rebase') : t('vc.conflicts.other'))) },
   })
   if (repo.hasCommits === false && repo.bare !== true) bandItems.push({ key: 'noc', tone: 'caption', text: t('vc.noCommits'), tip: t('vc.noCommitsTip') })
   if (bandItems.length) blocks.push({ kind: 'band', key: 'band', items: bandItems })
@@ -239,20 +131,27 @@ export const vcBlocksOf = function (screen, reads, ui, env) {
     nameTip: t('vc.identity.worktreeTip', { path: String(identity.worktreePath || '') }),
     detached: identity.detached === true,
     branchText: identity.detached === true ? t('vc.detached') : String(identity.branch || t('vc.other.noBranch')),
-    branchTone: identity.detached === true ? 'caption' : 'accent',
+    // 分支名用成功档的绿（原型 v3-id 的 br 就是强调绿，蓝色是之前映射错档）。
+    branchTone: identity.detached === true ? 'caption' : 'success',
     oidText: identity.detached === true ? t('vc.detachedAt', { oid: vcShortOid(identity.oid) }) : '',
     oidTip: String(identity.oid || ''),
     pathText: fold.state.path || '',
     pathTip: String(identity.worktreePath || ''),
     sync: vcSyncViewOf(identity, t, nowMs),
+    // 这份首屏读数是什么时候取的（#819 发现 3）：存着不画，用户就不知道手上这几个数有多旧。
+    readAtText: (reads && reads.screen && reads.screen.data && reads.screen.data.readAtMs)
+      ? t('vc.readAt', { when: vcWhenText(t, nowMs, reads.screen.data.readAtMs) })
+      : '',
+    // #842 身份行右侧那两颗（拉取 / 推送）：领先落后就在这一行，动作也跟着放这里。
+    actions: write ? write.actions : null,
   })
   const rows = vcFileRowsOf(screen)
   const groups = []
   // 空组不画（一组都没有时由下面那句「没有未提交的改动」兜底）：计数在汇总句里照样有，不必空占一行。
-  const pushGroup = function (key, titleKey, list) {
+  const pushGroup = function (key, titleKey, list, tipKey) {
     if (list.length === 0) return
     const n = shownOf(key)
-    groups.push({ key: key, title: t(titleKey, { n: String(list.length) }), count: list.length, rows: list.slice(0, n), moreCount: Math.max(0, list.length - n), moreLabel: t('vc.more', { n: String(Math.max(0, list.length - n)) }) })
+    groups.push({ key: key, title: t(titleKey, { n: String(list.length) }), tip: tipKey ? t(tipKey) : '', count: list.length, rows: list.slice(0, n), moreCount: Math.max(0, list.length - n), moreLabel: t('vc.more', { n: String(Math.max(0, list.length - n)) }) })
   }
   const stagedRows = rows.filter(function (r) { return vcGroupOfRow(r) === 'staged' })
   const conflictRows = rows.filter(function (r) { return vcGroupOfRow(r) === 'conflict' })
@@ -260,29 +159,43 @@ export const vcBlocksOf = function (screen, reads, ui, env) {
   // 提交行点开之后走这一层（规格故事 32）：同一套文件行、同一套就地差异，只是来路是按需读的。
   const commitMode = (typeof vcCommitModeOf === 'function') ? vcCommitModeOf(ui) : ''
   const openDiff = ui && ui.openDiff ? String(ui.openDiff) : ''
-  const diffKeyOf = function (r) { return commitMode ? vcCommitKeyOf(commitMode, r.path) : String(r.path || '') }
+  // 展开键：未提交那一层把「哪一组」也算进去 —— 同一个文件在已暂存与未暂存各有一行时，
+  //   点开其中一行只展开那一行，不会两行一起开。差异数据本身仍按路径存一份（同一份补丁）。
+  // 展开键与界面侧共用同一个函数（#850）：这里原来自己拼一份，界面侧按路径判，两边对不上就打不开。
+  const diffKeyOf = function (r) { return vcDiffOpenKeyOf(r, commitMode) }
   const rowViewOf = function (r) {
     const key = diffKeyOf(r)
     const entry = commitMode ? ((reads && reads.commitDiffs) || {})[key] : vcReadsOf(reads, r.path)
-    const diff = openDiff === key ? vcDiffViewOf(entry, t) : null
-    return vcRowViewOf(r, t, diff)
+    const diff = openDiff === key ? vcDiffViewOf(entry, t, commitMode ? '' : 'vc.diff.scopeHead') : null
+    const v = vcRowViewOf(r, t, diff)
+    // #842：这一行给不给「暂存」按钮（冲突行不给，只给一句去终端的指引）由写操作那一层说了算。
+    v.stageAction = (typeof vcRowStageOf === 'function') ? vcRowStageOf(r, t) : null
+    v.unstageAction = (typeof vcRowUnstageOf === 'function') ? vcRowUnstageOf(r, t) : null
+    return v
   }
   if (commitMode) {
     const cb = vcCommitBlockOf(screen, reads, ui, t, nowMs, shownOf, rowViewOf)
     if (cb) blocks.push(cb)
   } else {
     pushGroup('staged', 'vc.group.staged', stagedRows.map(rowViewOf))
-    if (conflictRows.length) pushGroup('conflict', 'vc.group.conflict', conflictRows.map(rowViewOf))
+    if (conflictRows.length) pushGroup('conflict', 'vc.group.conflict', conflictRows.map(rowViewOf), 'vc.group.conflictTip')
     pushGroup('unstaged', 'vc.group.unstaged', unstagedRows.map(rowViewOf))
+    // 汇总句用宿主给的 stagedCount / unstagedCount：那两个数就是 git 自己的说法，
+    //   界面拿合并后的行去数会把「同一个文件两段改动」的那一段漏掉（真机缺陷 #819 发现 4）。
+    const hostStaged = Number(screen.stagedCount) || 0
+    const hostUnstaged = Number(screen.unstagedCount) || 0
     blocks.push({
       kind: 'changes', key: 'changes', title: t('vc.changes.title'),
       summary: conflicts > 0
-        ? t('vc.changes.summaryConflicts', { staged: String(stagedRows.length), unstaged: String(unstagedRows.length), conflicts: String(conflicts) })
-        : t('vc.changes.summary', { staged: String(stagedRows.length), unstaged: String(unstagedRows.length) }),
+        ? t('vc.changes.summaryConflicts', { staged: String(hostStaged), unstaged: String(hostUnstaged), conflicts: String(conflicts) })
+        : t('vc.changes.summary', { staged: String(hostStaged), unstaged: String(hostUnstaged) }),
       groups: groups,
       empty: rows.length === 0,
       // 只有真空的时候才带上那句话：块模型里不该留一句不会被画出来的字（门禁按模型判「有没有冒这句话」）。
       emptyText: rows.length === 0 ? t('vc.changes.none') : '',
+      // #842 写操作：标题行那颗「全部暂存」与块底部的提交区（提交区不新增块，见设计 §1 的理由）。
+      stageAll: write ? write.stageAll : null,
+      commitArea: write ? write.commitArea : null,
     })
   }
   const logRead = (reads && reads.log) || {}
@@ -324,16 +237,29 @@ export const vcBlocksOf = function (screen, reads, ui, env) {
     v.displayText = fold.state.others[i] !== undefined ? fold.state.others[i] : v.displayText
     return v
   })
+  // 其他工作树也按同一套规矩限量（默认 10 条 + 分批展开）：一千个工作树时不该一次画一千行。
+  const otherShown = shownOf('other')
+  const otherRows = fold.otherMode === 'summary' ? [] : otherViews.slice(0, otherShown)
+  const otherMore = fold.otherMode === 'summary' ? 0 : Math.max(0, otherViews.length - otherShown)
+  // 摘要档那一行：名字折短过，悬停必须给完整路径（规格第 5 条）；最多列 N 个，其余明说还有几棵。
+  const summaryViews = fold.otherMode === 'summary' ? otherViews.slice(0, VC_OTHER_SUMMARY_NAMES) : []
+  const summaryHidden = fold.otherMode === 'summary' ? Math.max(0, otherViews.length - summaryViews.length) : 0
+  const summaryTip = summaryViews.map(function (v) { return v.path }).join('\n')
   blocks.push({
     kind: 'other', key: 'other',
     title: t('vc.other.title', { n: String(others.length) }),
-    tip: t('vc.other.tip'),
+    // 摘要档把完整路径并进这条悬停（标题与摘要那一行都挂它）；列表档每行自己带悬停，这条保持通用说明。
+    tip: t('vc.other.tip') + (summaryTip ? '\n' + summaryTip : ''),
     mode: fold.otherMode,
-    rows: fold.otherMode === 'summary' ? [] : otherViews,
-    summaryText: t('vc.other.summary', { n: String(others.length), list: otherViews.map(function (v) { return v.displayText }).join(t('vc.other.join')) }),
+    rows: otherRows,
+    moreCount: otherMore,
+    moreLabel: t('vc.other.more', { n: String(otherMore) }),
+    summaryText: fold.otherMode === 'summary'
+      ? t('vc.other.summary', { n: String(others.length), list: summaryViews.map(function (v) { return v.displayText }).join(t('vc.other.join')) }) + (summaryHidden > 0 ? ' ' + t('vc.other.summaryMore', { n: String(summaryHidden) }) : '')
+      : '',
     empty: others.length === 0,
     emptyText: t('vc.other.empty'),
   })
-  blocks.push({ kind: 'terminal', key: 'terminal', text: t('vc.terminal'), tip: t('vc.terminalTip') })
+  blocks.push({ kind: 'terminal', key: 'terminal', text: t('vc.terminal'), tip: t('vc.terminalTip'), ai: { kind: 'boundary', summary: t('vc.terminal') } })
   return blocks
 }

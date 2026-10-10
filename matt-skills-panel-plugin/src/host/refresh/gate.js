@@ -10,7 +10,7 @@
 //      静态扫描门禁（tests/verify-gh-gateway.js）扫整个 src，要求每一个能起 gh 进程的调用点都登记在册。
 //   2. **记账单位是真实出站 HTTP 请求数**：调用方报几条、传输层真发几条，两个数各自记账并当场对账；
 //      分页、重试、兜底链、扇出都要算进去，所以闸不认「逻辑上一次调用」这个说法。
-//   3. **扇出排队，不并行发**：一次 send 里的多步（翻页、兜底链、批量）排成一队逐条发，多次 send 也同队。
+//   3. **不排队、按步记账**：发送之间互不排队（不同工作区、同一工作区的并发都直接发，本地文件的写保护见各自房间的单写者队列）；每一步的真实花费按这一步的计数器归属（见 shared/step-cost.js），并发算不进对方。
 //   4. **推迟 ≠ 失败**：被推迟的进推迟队列，同一工作区只留最后一次，5 分钟（DEFER_EXPIRY_MS）过期即丢；
 //      丢弃不算失败、不计连续失败次数。只有真失败才进 failuresSinceSuccess，由裁决那侧安排退避。
 //   5. **运行期漏网计数**：传输层每真发一条就报一次（noteOutbound），与闸记下来的条数之差就是绕开闸
@@ -20,6 +20,7 @@
 // 并把那个工作区标成撞限流 —— 裁决那侧对它的处置是「后台停、生命周期降级、人的动作照做」。
 import { decide, aiToolAdmission, degradePlanFor, REQUEST_KINDS, REASONS } from '../../shared/refresh/policy.js'
 import * as budget from '../../shared/refresh/budget.js'
+import { measureStep, noteStepOutbound } from '../../shared/step-cost.js'
 
 /** 四个类别（谁在做事）。与 policy.js 的 RequestCategory 同一套取值。 */
 export const GATE_CATEGORIES = ['user-action', 'lifecycle', 'background', 'ai-tool']
@@ -82,10 +83,15 @@ export function classify(source, explicitCategory) {
 
 function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0 }
 
-/** 报数归一：调用方可以只回一个数字（请求条数），也可以回 { requests, points }。 */
+/** 报数归一：调用方可以只回一个数字（请求条数），也可以回 { requests, points }。
+ *  什么都不回（undefined / null / 没有这两个数的对象）算「没报数」：只按传输层实测记账、不计「对不上」——
+ *  「对不上」说的是报的数与真发的数不一致，没报数不是报假数（#927：面板取数那两路拿不出预估）。 */
 function readReport(report) {
   if (typeof report === 'number') return { requests: report, points: 0 }
   const r = report || {}
+  const hasReq = typeof r.requests === 'number' && isFinite(r.requests)
+  const hasPts = typeof r.points === 'number' && isFinite(r.points)
+  if (!hasReq && !hasPts) return null
   return { requests: num(r.requests), points: num(r.points) }
 }
 
@@ -123,7 +129,6 @@ export function createGate(deps) {
     mismatch: 0,                             // 报数与真发数对不上的次数
     sent: 0, deferred: 0, coalesced: 0, droppedExpired: 0, retryAfter: 0, unclassified: 0,
   }
-  let queue = Promise.resolve()   // 扇出与并发都在这一条队上（并发数恒为 1）
   const byCategory = {}
   for (const c of GATE_CATEGORIES) byCategory[c] = 0
 
@@ -175,30 +180,23 @@ export function createGate(deps) {
     return { source: r.source, category: cls.category, kind: kind, bucket: bucket, workspaceKey: String(r.workspaceKey || 'unknown'), plan: Array.isArray(r.plan) && r.plan.length ? r.plan : [{}] }
   }
 
-  /** 一次 send 的整段（多步逐条发）排在同一条队上：并发数恒为 1，扇出永远不并行。 */
-  function enqueue(fn) {
-    const run = queue.then(() => fn())
-    queue = run.then(() => {}, () => {})
-    return run
-  }
-
   /**
-   * 真发一步：先问传输层「你在我动手之前发了几条」，动完手再问一次，差就是这一步的真花费。
-   * 快照与动手都在同一条队上（不然并发的另一次 send 会把它的条数算进这一步）。
+   * 真发一步：这一步实际发出去的条数由这一步的计数器归属（并发的另一步记在它自己的计数器上）。
    * 失败也照样记账 —— 发出去的那几条就是已经花掉的额度，账不许因为失败就不记（I6）。
    */
   async function runStep(req, step, perform) {
     let actual = { requests: 0, points: 0 }
-    let reported = { requests: 0, points: 0 }
+    let reported = null
     let failure = null
-    await enqueue(async function () {
-      const before = { requests: stats.transport.requests, points: stats.transport.points }
-      try { reported = readReport(await perform(step, { category: req.category, kind: req.kind, bucket: req.bucket })) } catch (e) { failure = e }
-      actual = { requests: stats.transport.requests - before.requests, points: stats.transport.points - before.points }
-    })
-    stats.claimed.requests += reported.requests
-    stats.claimed.points += reported.points
-    if (reported.requests !== actual.requests || reported.points !== actual.points) stats.mismatch += 1
+    const m = await measureStep(function () { return perform(step, { category: req.category, kind: req.kind, bucket: req.bucket }) })
+    if (m.thrown) failure = m.thrown
+    else reported = readReport(m.result)
+    actual = { requests: m.actual.requests, points: m.actual.points }
+    if (reported) {
+      stats.claimed.requests += reported.requests
+      stats.claimed.points += reported.points
+      if (reported.requests !== actual.requests || reported.points !== actual.points) stats.mismatch += 1
+    }
     // 账记的是真发出去的那几条（传输层说了算），不是调用方报的数；报到哪儿去由账本按档与桶分开记。
     stats.accounted.requests += actual.requests
     stats.accounted.points += actual.points
@@ -206,7 +204,7 @@ export function createGate(deps) {
     const after = ledger.spend({ account: account, bucket: req.bucket, kind: req.kind, requests: actual.requests, points: actual.points })
     if (failure) { wsState(req.workspaceKey).failuresSinceSuccess += 1; throw failure }
     wsState(req.workspaceKey).failuresSinceSuccess = 0
-    return { requests: actual.requests, points: actual.points, claimed: reported, remaining: after.remaining, tier: after.tier }
+    return { requests: actual.requests, points: actual.points, claimed: reported || { requests: 0, points: 0 }, remaining: after.remaining, tier: after.tier, result: m.result }
   }
 
   /**
@@ -231,15 +229,17 @@ export function createGate(deps) {
     let points = 0
     let remaining = 0
     let tier = 'green'
+    let result = null   // #927：把这一步真做出来的东西原样带回去（面板取数那两路要用它的返回值）
     for (const step of r.plan) {
       const out = await runStep(r, step, perform)
       requests += out.requests
       points += out.points
       remaining = out.remaining
       tier = out.tier
+      result = out.result
     }
     stats.sent += 1
-    return { sent: true, verdict: v.verdict, reason: v.reason, detail: REASONS[v.reason] || '', requests: requests, points: points, remaining: remaining, tier: tier, steps: r.plan.length }
+    return { sent: true, verdict: v.verdict, reason: v.reason, detail: REASONS[v.reason] || '', requests: requests, points: points, remaining: remaining, tier: tier, steps: r.plan.length, result: result }
   }
 
   /** 传输层每真发一条就报一次（生产里挂在起 gh 进程那一层）。绕开闸发的那几条就靠它露出来。 */
@@ -247,6 +247,7 @@ export function createGate(deps) {
     const e = entry || {}
     stats.transport.requests += num(e.requests) || 1
     stats.transport.points += num(e.points)
+    try { noteStepOutbound(e) } catch (e2) {}
     return { requests: stats.transport.requests, points: stats.transport.points }
   }
 

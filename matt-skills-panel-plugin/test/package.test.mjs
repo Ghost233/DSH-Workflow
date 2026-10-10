@@ -51,3 +51,9 @@ test('upstream npm update calls cannot replace the project-maintained panel', ()
   assert.throws(() => handlers.handleUpdateInstall(), /DSH Workflow/)
   assert.doesNotMatch(read('scripts/build.mjs'), /profilesDir|node_modules\/dsh-mattpocock-skills-deck|process\.env\.HOME/)
 })
+
+test('upstream updater files removed during the upgrade are absent from the shipped package', () => {
+  for (const name of ['update.js', 'updateReader.js', 'updateStore.js', 'updatePkg']) {
+    assert.equal(existsSync(new URL(`package/lib/${name}`, root)), false, name)
+  }
+})

@@ -8,7 +8,9 @@
 // 在内存里再筛一遍 —— GitHub 房的列表查询本来就是批量取回内存筛（见 backends/github/queries.js
 // 的 LIST_QUERY 注释），三后端行为一致，不逐后端写分支。顺序沿用后端原序，不重排。
 import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../../shared/deck-tools/shell.js'
+import { sessionContextOfAsync } from '../../shared/deck-tools/session-resolve.js'
 import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/tool-cost.js'
+import { withCallScope } from '../../shared/deck-tools/call-scope.js'
 
 export const definition = {
   name: 'deck_issue_list',
@@ -71,7 +73,7 @@ export function createDeckIssueList(deps) {
     const wantQuery = String(a.query === undefined || a.query === null ? '' : a.query).trim().toLowerCase()
     const limit = Math.max(1, Math.min(200, Number(a.limit) > 0 ? Math.floor(Number(a.limit)) : 50))
     const est = shell.estimateFor('deck_issue_list', a)
-    const s = shell.context(exec)
+    const s = await sessionContextOfAsync(exec, { canonicalKey: d.canonicalKey, workspaceKeyOf: d.workspaceKeyOf })
     if (!s.ok) return shell.unsupported('deck_issue_list', s.reason, s.text, { cost: { estimated: est } })
 
     const pick = await shell.pickBackend(exec, s)
@@ -80,11 +82,14 @@ export function createDeckIssueList(deps) {
     const effortId = (a.effortId === undefined || a.effortId === null) ? '' : String(a.effortId).trim()
     if (effortId) repo.effortId = effortId
 
-    return shell.call({ tool: 'deck_issue_list', kind: 'read', session: s, pick: pick, repo: repo, estimate: est }, async (c) => {
+    return shell.call({ tool: 'deck_issue_list', kind: 'read', session: s, pick: pick, repo: repo, estimate: est, sandbox: (typeof d.sandboxPolicyFor === 'function' ? await d.sandboxPolicyFor({ cwd: s.cwd, sessionId: s.sessionId }).catch(function(){ return null }) : null) }, async (c) => {
+      const sc = withCallScope(c, exec, { timeoutMs: undefined, marginMs: undefined, now: (typeof d.now === 'function') ? d.now : Date.now })
+      const t = sc.tracker
+      const opCtx = sc.opCtx
       const filter = {}
       if (state !== 'all') filter.state = state
       if (type !== 'all') filter.type = type
-      const listed = await c.tracker.list(repo, filter, c.opCtx)
+      const listed = await t.list(repo, filter, opCtx)
       if (!listed || listed.ok !== true) {
         const msg = String((listed && listed.error && listed.error.message) || '后端没给出原因').slice(0, 300)
         return {

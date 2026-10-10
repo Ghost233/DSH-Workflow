@@ -68,6 +68,10 @@ export default {
 
     // ==== kernel:styles (spliced by build) ====
     styles.insert(STYLE_TEXT)
+    // #851：版本管理页签的视觉语言另起一个样式叶子（styles.js 已 350/350 是冻结基线）。
+    //   注入仍走同一个 styles.insert 接缝 —— 不是第二个 <style>，也没有新的注入机制。
+    // ==== leaf:vcStyles (spliced by build) ====
+    styles.insert(VC_STYLE_TEXT)
 
     // ============================================================
     // 0.5 locale（T3 #366 · dsws 命名空间 zh/en；跟随 harness 语言；GitHub 数据不翻译）
@@ -83,6 +87,10 @@ export default {
     // ==== kernel:localeLabels (spliced by build) ====
     // #690 历史票按需翻页的五条文案：locale-flow.js 已贴 350 行上限，照 #621 的做法自成一个片段。
     // ==== kernel:localePages (spliced by build) ====
+    // #842 写操作那一族的词条：locale-panel 与 locale-flow 都在上限上，照 #621/#690 的做法自成一个片段。
+    // ==== kernel:localeVcWrite (spliced by build) ====
+    // #879 技能描述 27 条中英词条：locale-word.js 已贴 350 行上限，照 #621/#690/#842 的做法自成一个片段。
+    // ==== kernel:localeSkilldesc (spliced by build) ====
     // ==== kernel:locale (spliced by build) ====
     const localeSvc = ctx.get('locale')
     if (localeSvc && typeof localeSvc.register === 'function') {
@@ -170,6 +178,10 @@ export default {
     // 只有一份真源（refresh-core/src/budget.ts → src/shared/refresh/budget.js），拼进来给界面读；
     // 判据与渲染见 views/shared/truthLines.js 与 views/ListTab.js。
     // ==== shared:refreshBudget (spliced by build) ====
+    // #842 写操作：能不能暂存/提交/拉取/推送的判定只有一份真源（version-control-core/src/rules.ts →
+    // src/shared/version-control/rules.js）。界面按同一份判定画按钮状态，不自己算 —— 自己算就会与
+    // 宿主执行前那次判定各说各话。
+    // ==== shared:vcRules (spliced by build) ====
     // ==== kernel:storePrefs (spliced by build) ====
     // ==== kernel:storeSwitch (spliced by build) ====
     // ==== kernel:storeSnapshot (spliced by build) ====
@@ -229,8 +241,8 @@ export default {
     // ==== leaf:checksums (spliced by build) ====
     // ==== leaf:chainRenderer (spliced by build) ====
     // ==== leaf:skillFloatList (spliced by build) ====
-    // ==== leaf:vcText (spliced by build) ==== // ==== leaf:vcFold (spliced by build) ==== // ==== leaf:vcCommit (spliced by build) ==== // ==== leaf:vcBlocks (spliced by build) ====
-    // ==== leaf:vcTabVisible (spliced by build) ==== // ==== leaf:vcData (spliced by build) ==== // ==== leaf:versionControlTab (spliced by build) ====
+    // ==== leaf:vcText (spliced by build) ==== // ==== leaf:vcFold (spliced by build) ==== // ==== leaf:vcDiff (spliced by build) ==== // ==== leaf:vcCommit (spliced by build) ==== // ==== leaf:vcRows (spliced by build) ==== // ==== leaf:vcWrite (spliced by build) ==== // ==== leaf:vcWriteRun (spliced by build) ==== // ==== leaf:vcWriteUi (spliced by build) ==== // ==== leaf:vcWriteOps (spliced by build) ==== // ==== leaf:vcWriteView (spliced by build) ==== // ==== leaf:vcDiffOps (spliced by build) ==== // ==== leaf:vcBlocks (spliced by build) ==== // ==== leaf:vcViews (spliced by build) ==== // ==== leaf:vcAiHandoff (spliced by build) ====
+    // ==== leaf:vcTabVisible (spliced by build) ==== // ==== leaf:vcData (spliced by build) ==== // ==== leaf:vcCache (spliced by build) ==== // ==== leaf:versionControlTab (spliced by build) ====
     // ==== leaf:tabs (spliced by build) ====
     // ==== leaf:truthLines (spliced by build) ====
     // 2026-09-24：降级横幅的「画」那一段从 ListTab.js 搬来这里（判据仍是上面 truthLines 里的 restFallbackView）。
@@ -303,8 +315,8 @@ export default {
     // ==== kernel:updateClient (spliced by build) ====
 
     // ==== leaf:debugSwitchFailHint (spliced by build) ==== // ==== leaf:SettingsWorkspaces (spliced by build) ====
-    // #587：检查更新的浮层弹窗、待重启常驻提示、以及状态与电话调用（后两者按名字使用，拼接次序即依赖次序）
-    // ==== leaf:updateDialog (spliced by build) ==== // ==== leaf:updateRestartBanner (spliced by build) ==== // ==== leaf:useUpdatePanel (spliced by build) ====
+    // #876：更新入口挂载点（只挂包的入口件，含内部 dialog 面板；本仓不再自带按钮状态机与浮层弹窗）
+    // ==== leaf:updateEntryHost (spliced by build) ====
     // ==== leaf:settingsPage (spliced by build) ====
 
     // ==== leaf:runPanel (spliced by build) ====

@@ -50,6 +50,8 @@ function judgeCommit(s: FirstScreen): Decision {
   if (s.conflictCount > 0) return { verdict: 'block', reasons: ['conflicts-unresolved'] }
   if (s.stagedCount === 0) return { verdict: 'block', reasons: ['nothing-staged'] }
   const mid = midReasons(s)
+  // 游离头上提交本身合法（git 允许），但提交完就只剩 reflog 能把它找回来——至少提醒一句（#819 复审 P2-8c）。
+  if (s.identity.detached) return { verdict: 'warn', reasons: ['detached-head'].concat(mid) }
   if (mid.length > 0) return { verdict: 'warn', reasons: mid }
   return { verdict: 'allow', reasons: ['ok'] }
 }
@@ -73,8 +75,21 @@ function judgePush(s: FirstScreen): Decision {
   if (s.identity.sync === 'no-upstream') return { verdict: 'block', reasons: ['no-upstream'] }
   if (s.identity.sync === 'upstream-gone') return { verdict: 'block', reasons: ['upstream-gone'] }
   if (s.conflictCount > 0) return { verdict: 'block', reasons: ['conflicts-unresolved'] }
-  if (s.identity.behind > 0) return { verdict: 'warn', reasons: ['behind-remote'] }
+  // 合并/变基/拣选/回退进行中时，推上去的是**动手之前**那次提交，用户却以为推的是这次合并的结果：
+  // 与拉取同一条边界，拦住（#819 复审 P2-8a）。提交那条故意不同：合并进行中提交正是收尾那一步，只提醒。
+  const mid = midReasons(s)
+  if (mid.length > 0) return { verdict: 'block', reasons: mid }
+  // 落后远端时推上去会被拒（非快进），与拉取那条边界统一成 block（#819 复审 P2-8b）。
+  if (s.identity.behind > 0) return { verdict: 'block', reasons: ['behind-remote'] }
   if (s.identity.basisMs === null) return { verdict: 'warn', reasons: ['basis-unknown'] }
+  return { verdict: 'allow', reasons: ['ok'] }
+}
+
+/** 更新远方记录：只更新远端跟踪引用，不碰工作树与索引，所以游离头、未暂存、冲突、
+ *  进行中、落后远端、依据未知都不挡；落后与依据未知正是要用它来修复的。裸仓库沿用不可用
+ *  （与拉取推送一致，面板裸仓不提供写入口）。 */
+function judgeFetch(s: FirstScreen): Decision {
+  if (s.repo.bare) return { verdict: 'block', reasons: ['bare-repo'] }
   return { verdict: 'allow', reasons: ['ok'] }
 }
 
@@ -84,6 +99,7 @@ export function judge(screen: FirstScreen, op: Operation): Decision {
     case 'commit': return judgeCommit(screen)
     case 'pull': return judgePull(screen)
     case 'push': return judgePush(screen)
+    case 'fetch': return judgeFetch(screen)
     default: return { verdict: 'block', reasons: ['unknown-operation'] }
   }
 }

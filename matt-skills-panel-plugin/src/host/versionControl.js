@@ -10,7 +10,9 @@
 //   3. 会输出路径的命令加 -z；标准输入 ignore；标准输出设字节上限；超时走 DSH 的 timer 服务；
 //   4. 退出码非零原样交给调用方判，本文件不抛；起进程之前先向闸报一笔（gate.noteOutbound）；
 //   5. 第一版不发起网络动作（不 fetch / 不 pull / 不 push）：领先落后只读本地记录，依据时间取远端
-//      跟踪引用 reflog 的末条时间戳（ADR 第 3 条）。日志：每条命令一行常驻 git.exec（成功与非零退出
+//      跟踪引用 reflog 的末条时间戳（ADR 第 3 条）；刚克隆、还没 fetch 过的仓库没有 reflog，只有这个上游
+//      自己的松散引用文件在时才退回它的落盘时间，否则如实回 null（拿全仓库共用的 packed-refs 的 mtime 凑
+//      一个时间是不行的，#819 复审再修）。日志：每条命令一行常驻 git.exec（成功与非零退出
 //      各一行），超时与起进程失败一行告警级 git.exec.fail（直通刷盘）；目录只记散列，输出不进日志。
 import { fixedPrefix, stepZeroArgs, commandFor, autocrlfArgs, RUNNING_MARKER_PATHS } from '../shared/version-control/commands.js'
 import { parseVersion, tierFor } from '../shared/version-control/capabilities.js'
@@ -20,6 +22,7 @@ import { parseRefs } from '../shared/version-control/parse-refs.js'
 import { parseLog } from '../shared/version-control/parse-log.js'
 import { parseDiffFiles } from '../shared/version-control/parse-diff-files.js'
 import { assemble, classifyStepZero } from '../shared/version-control/state.js'
+import { makeStallWatch } from './stallWatch.js' // #847：字节增长看门狗（自包含叶子，照 #500/#821 先例）
 
 const VIA = 'version-control'          // 日志的 via：这一族 git 命令都由版本管理页签发起
 const GIT_NAME = 'git'                 // 日志的 argv0：只记程序名，不记路径
@@ -36,6 +39,10 @@ export function createVersionControl(deps) {
   const timeoutMs = (typeof TIMEOUT_MS === 'number' && TIMEOUT_MS > 0) ? TIMEOUT_MS : RUN_TIMEOUT_MS
   /** 路径短散列：日志里只认它，不记原始目录。 */
   function hash8(s) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
+  /** 目录散列：散列之前先把目录归一（反斜杠统一成正斜杠、去掉结尾的斜杠）。首屏头两条命令用的是
+   *  调用方给的写法，后面几条用的是 git 自己回的正斜杠仓库根；不归一，同一个目录会算出两个 cwdHash
+   *  （#819 复审发现），按它过滤日志就会把一次面板打开拆成两组。 */
+  function dirHash(dir) { try { return hash8(String(dir || '').replace(/\\/g, '/').replace(/\/+$/, '')) } catch (e) { return '00000000' } }
   /** 落一行日志；日志设施缺席时静默跳过，绝不影响已经要回给界面的结果。 */
   function fire(level, event, fields) { try { if (logCtx && typeof logCtx.fire === 'function') logCtx.fire(level, event, fields) } catch (e) {} }
   /** 起进程之前把这一笔报给闸；闸没接上时照旧执行（门禁会因漏账判红，不在这里静默假装记过）。 */
@@ -54,7 +61,7 @@ export function createVersionControl(deps) {
   /** 把一次「钉死目录」的执行跑起来；返回核心 ports.ts 里那四种情形之一。 */
   function runPinned(exe, dir, args, opts) { return runGit(exe, dir, pinned(exe, dir, args).slice(1), opts) }
 
-  /** 跑一条 git 命令：成功与非零退出各落一行 git.exec，超时与起进程失败各落一行 git.exec.fail。 */
+  /** 跑一条 git 命令：成功与非零退出各落一行 git.exec，超时与起进程失败各落一行 git.exec.fail。opts.env 是给 #839 那一族「可能弹凭据提示」的命令传非交互环境用的（undefined 值是墓碑，从继承环境里删掉这一项）。 */
   async function runGit(exe, dir, args, opts) {
     const t0 = Date.now()
     const limit = (opts && opts.stdoutLimit) ? opts.stdoutLimit : STDOUT_LIMIT
@@ -67,29 +74,36 @@ export function createVersionControl(deps) {
         cwd: dir,
         stdio: { stdin: 'ignore', stdout: { maxBytes: limit }, stderr: { maxBytes: STDERR_LIMIT } },
         graceMs: 2000,
+        env: (opts && opts.env) ? opts.env : undefined,
       })
     } catch (e) {
-      fire('warn', 'git.exec.fail', { argv0: GIT_NAME, cwdHash: hash8(dir), via: VIA, errorHash: hash8(String((e && e.message) || e)) })
+      fire('warn', 'git.exec.fail', { argv0: GIT_NAME, cwdHash: dirHash(dir), via: VIA, errorHash: hash8(String((e && e.message) || e)) })
       return { kind: 'spawn-failed', message: String((e && e.message) || e) }
     }
+    const watch = (opts && opts.stallMs) ? makeStallWatch(handle, Math.max(1000, Math.min(600000, Math.floor(opts.stallMs))), budget, timer) : null
     let outcome
     try {
       outcome = await Promise.race([
         handle.done,
         timer.timeout(budget).then(function () { try { handle.terminate() } catch (eT) {} return { exitCode: -1, signal: 'timeout' } }),
+        watch ? watch : new Promise(function () {}),
       ])
     } catch (e) {
-      fire('warn', 'git.exec.fail', { argv0: GIT_NAME, cwdHash: hash8(dir), via: VIA, errorHash: hash8(String((e && e.message) || e)) })
+      fire('warn', 'git.exec.fail', { argv0: GIT_NAME, cwdHash: dirHash(dir), via: VIA, errorHash: hash8(String((e && e.message) || e)) })
       return { kind: 'spawn-failed', message: String((e && e.message) || e) }
     }
+    if (outcome && outcome.signal === 'stalled') {
+      fire('warn', 'git.exec.fail', { argv0: GIT_NAME, cwdHash: dirHash(dir), via: VIA, timeoutMs: outcome.stallMs })
+      return { kind: 'stalled', stallMs: outcome.stallMs }
+    }
     if (outcome && outcome.signal === 'timeout') {
-      fire('warn', 'git.exec.fail', { argv0: GIT_NAME, cwdHash: hash8(dir), via: VIA, timeoutMs: budget })
+      fire('warn', 'git.exec.fail', { argv0: GIT_NAME, cwdHash: dirHash(dir), via: VIA, timeoutMs: budget })
       return { kind: 'timeout', timeoutMs: budget }
     }
     const out = readCollector(handle.collected && handle.collected.stdout)
     const err = readCollector(handle.collected && handle.collected.stderr)
     const exitCode = (outcome && typeof outcome.exitCode === 'number') ? outcome.exitCode : -1
-    fire('info', 'git.exec', { argv0: GIT_NAME, cwdHash: hash8(dir), latencyMs: Date.now() - t0, exitCode: exitCode, via: VIA })
+    fire('info', 'git.exec', { argv0: GIT_NAME, cwdHash: dirHash(dir), latencyMs: Date.now() - t0, exitCode: exitCode, via: VIA })
     if (exitCode !== 0) return { kind: 'non-zero', exitCode: exitCode, stderr: err.text }
     return { kind: 'ok', stdout: out.text, truncated: out.truncated }
   }
@@ -151,46 +165,41 @@ export function createVersionControl(deps) {
     return null
   }
 
-  /** 查一个绝对路径在不在：拿到真值或对象算在；明确说「没有」（exists 回 false、或抛 ENOENT）算不在；其余错误与没有可用的文件服务都算「查不了」（null），绝不当成不在（照 choiceStore.js 对 ENOENT 的先例分档）。 */
+  // 缺文件判据（#858）：DSH fs 服务抛的缺失 code 是 FS_NOT_FOUND、不是 ENOENT，见 ./fsAbsence.js 的头注释。
+  let _fsAbsP = null
+  let _fsLastError = '' // 文件服务最近一次「不是缺文件」的错误原话（#858：两条路都不通时要把它带给界面）
+  function fsAbsence() { if (!_fsAbsP) _fsAbsP = import('./fsAbsence.js'); return _fsAbsP }
+  /** 查一个绝对路径在不在（#858 修正形状）：DSH 的 fs 服务是 **stat(target) / lstat(path)**、**没有 exists**——
+   *  stat 吃的是 fs.resolve() 给的 target 对象，直接喂路径会抛 TypeError（不是 ENOENT），老写法因此一票否决了
+   *  后面本来能给出结论的 lstat，于是「四个标记文件（正常仓库里全都不存在）」这条路必然失败。
+   *  现在：先 resolve→stat；拿不到再退路径式的 lstat（缺失回 undefined）；**每个探测各自给结论，一条抛错不许
+   *  否决别的探测**；只有所有探测都答不出来才算「查不了」（null）。 */
   async function pathExists(abs) {
-    let usable = false
-    let sawError = false
-    for (const name of ['stat', 'lstat', 'exists']) {
-      if (!fs || typeof fs[name] !== 'function') continue
-      usable = true
-      try {
-        const r = await fs[name](abs)
-        if (name === 'exists') { if (r === true) return true; if (r === false && !sawError) return false }
-        else if (r) return true
-      } catch (e) { if (e && e.code === 'ENOENT') return false; sawError = true }
+    let answered = false
+    if (fs && typeof fs.resolve === 'function' && typeof fs.stat === 'function') {
+      try { const t = await fs.resolve(abs); const r = await fs.stat(t); if (r) return true; answered = true } catch (e) { if ((await fsAbsence()).isAbsenceError(e)) return false; _fsLastError = String((e && (e.code || e.message)) || e) }
     }
-    return (usable && !sawError) ? false : null
-  }
-  /** 读那五个「正在合并 / 变基 / 拣选 / 回退」的标记文件；查不了就返回 null，让调用方明说读不到。 */
-  async function readRunningMarkers(gitDir) {
-    const dir = String(gitDir || '').replace(/\/+$/, '')
-    const out = { merging: false, rebasing: false, cherryPicking: false, reverting: false }
-    for (const rel of RUNNING_MARKER_PATHS) {
-      const hit = await pathExists(dir + '/' + rel)
-      if (hit === null) return null
-      if (!hit) continue
-      if (rel === 'MERGE_HEAD') out.merging = true
-      else if (rel === 'CHERRY_PICK_HEAD') out.cherryPicking = true
-      else if (rel === 'REVERT_HEAD') out.reverting = true
-      else out.rebasing = true
+    if (fs && typeof fs.lstat === 'function') {
+      try { const r = await fs.lstat(abs); if (r) return true; answered = true } catch (e) { if ((await fsAbsence()).isAbsenceError(e)) return false; _fsLastError = String((e && (e.code || e.message)) || e) }
     }
-    return out
+    if (fs && typeof fs.exists === 'function') {
+      try { const r = await fs.exists(abs); if (r === true) return true; answered = true } catch (e) { if ((await fsAbsence()).isAbsenceError(e)) return false; _fsLastError = String((e && (e.code || e.message)) || e) }
+    }
+    return answered ? false : null
   }
+  // 标记探测（#858）搬进 ./runningMarkers.js：本文件 350 行顶格，照 #500/#821 先例做自包含叶子。
+  // 叶子只做「文件服务优先、拿不到结论走 git 兜底、两条都不通回 kind='env-fs' 并带文件服务的原话」，
+  // git 那条命令由这里注入（叶子不碰 git）。为什么要有兜底：文件服务不可用时原来回 kind='env'，
+  // 界面上被读成「找不到 git 程序」——真因不是 git（#858 人验收抓到的真 bug）。
+  let _markersP = null
+  function markersPhone() { if (!_markersP) _markersP = import('./runningMarkers.js').then(function (m) { return m.createRunningMarkers({ existsViaFs: pathExists, paths: RUNNING_MARKER_PATHS, runProbe: async function (rel, ctx) { const r = await runPinned(ctx.exe, ctx.root, ['rev-parse', '-q', '--verify', rel]); if (r && r.kind === 'ok') return true; if (r && r.kind === 'non-zero' && r.exitCode === 1) return false; return null }, getFsDetail: function () { return _fsLastError } }) }); return _markersP }
 
-  /** 依据时间：远端跟踪引用 reflog 的末条是何时写下的（ADR 第 3 条要显示的正是这个时刻）；读不到给 null。 */
-  async function readBasisMs(exe, root, upstream) {
-    if (!upstream) return null
-    const res = await runPinned(exe, root, ['reflog', 'show', '--date=iso-strict', '--format=%gD', '-1', upstream], { stdoutLimit: 65536 })
-    if (res.kind !== 'ok') return null
-    const m = /\{([^}]*)\}/.exec(res.stdout)
-    if (!m) return null
-    const ms = Date.parse(m[1])
-    return Number.isNaN(ms) ? null : ms
+  // 依据时间那一段（reflog 取不到时退回引用文件的落盘时间，#819 复审 P0-3）在 ./versionControlBasis.js：
+  // 本文件贴着 350 行上限，与差异电话体同一条先例（依赖全显式传入，那个叶子不引用本文件）。
+  let _basisP = null
+  function basisReader() {
+    if (!_basisP) _basisP = import('./versionControlBasis.js').then(function (m) { return m.createBasisReader({ runPinned: runPinned, fs: fs }) })
+    return _basisP
   }
   /** 换行配置的事实来源（核心的 autocrlfArgs）；没配过时 git 退出码 1，这里如实记 null。 */
   async function readAutocrlf(exe, root) {
@@ -251,15 +260,16 @@ export function createVersionControl(deps) {
       diffFiles = df.parsed.files
     }
 
-    const markers = await readRunningMarkers(base.gitDir)
-    if (!markers) return failPhone('env', '宿主的文件服务现在用不了，判断不了是不是正在合并或变基；这一项读不到就不给数')
+    const mres = await (await markersPhone()).read(base.gitDir, { exe: exe, root: base.root })
+    if (mres.ok !== true) return failPhone(mres.kind === 'env-fs' ? 'env-fs' : 'env', '宿主的文件服务现在用不了（' + String(mres.detail || '没有给出原因') + '），判断不了是不是正在合并或变基；这一项读不到就不给数')
+    const markers = mres.markers
     const asm = assemble({
       repoRoot: base.root, bare: false,
       statusHead: status.branch.head, statusDetached: status.branch.detached, statusOid: status.branch.oid,
       statusUpstream: status.branch.upstream, statusAhead: status.branch.ahead, statusBehind: status.branch.behind,
       statusEntries: status.entries, worktrees: worktrees.worktrees, refs: rf.parsed.refs, commits: commits, diffFiles: diffFiles,
       merging: markers.merging, rebasing: markers.rebasing, cherryPicking: markers.cherryPicking, reverting: markers.reverting,
-      tier: tier, autocrlf: await readAutocrlf(exe, base.root), nowMs: Date.now(), basisMs: await readBasisMs(exe, base.root, status.branch.upstream),
+      tier: tier, autocrlf: await readAutocrlf(exe, base.root), nowMs: Date.now(), basisMs: await (await basisReader()).readBasisMs(exe, base.root, base.gitDir, status.branch.upstream),
     })
     if (asm.ok !== true) return failPhone('parse', '首屏组装失败：' + asm.detail)
     return { ok: true, screen: asm.screen, tier: tier, gitVersion: gitVersion, worktreesNul: worktreesNul, readAtMs: Date.now() }
@@ -272,17 +282,9 @@ export function createVersionControl(deps) {
     return readScreen(exe, cwdOf(args))
   }
 
-  // 差异电话体（#821 起含「看某一次提交改了什么」）在 ./versionControlFiles.js：本文件贴着 350 行上限，
-  // 照仓库惯例（logStore→logPhones、update→updateReader）把整条电话体搬成自包含叶子，依赖全显式传入，
-  // 那个叶子不引用本文件（单向引用）；加载器与既有的按目的动态加载同形。
+  // 差异电话体（#821 起含「看某一次提交改了什么」）在 ./versionControlFiles.js：本文件贴着 350 行上限，照 logStore→logPhones 惯例搬成自包含叶子，依赖全显式传入、单向引用。
   let _filesP = null
-  function diffPhone() {
-    if (!_filesP) _filesP = import('./versionControlFiles.js').then(function (m) {
-      return m.createGitDiffPhone({ failPhone: failPhone, runPinned: runPinned, failureFromExec: failureFromExec, resolveGitExecutable: resolveGitExecutable, resolveRepoRoot: resolveRepoRoot, readHasHead: readHasHead, cwdOf: cwdOf, patchLimit: PATCH_LIMIT })
-    })
-    return _filesP
-  }
-  /** 电话 wf.gitDiff 的处理体：把叶子装配起来，再把这一次调用交给它。 */
+  function diffPhone() { if (!_filesP) _filesP = import('./versionControlFiles.js').then(function (m) { return m.createGitDiffPhone({ failPhone: failPhone, runPinned: runPinned, failureFromExec: failureFromExec, resolveGitExecutable: resolveGitExecutable, resolveRepoRoot: resolveRepoRoot, readHasHead: readHasHead, cwdOf: cwdOf, patchLimit: PATCH_LIMIT }) }); return _filesP }
   async function handleGitDiff(args) { const p = await diffPhone(); return p(args) }
 
   /** 电话 wf.gitLog 的处理体：历史按批取；多要一条用来判断后面还有没有。 */
@@ -311,24 +313,36 @@ export function createVersionControl(deps) {
   function cwdOf(args) { const c = args && args.cwd; return (typeof c === 'string' && c.trim() !== '') ? c : DEFAULT_CWD }
 
   /** 把一批条数夹进允许范围；给了看不懂的值就用默认值。 */
-  function clampInt(v, fallback, min, max) {
-    const n = (typeof v === 'number' && isFinite(v)) ? Math.floor(v) : ((typeof v === 'string' && /^[0-9]+$/.test(v)) ? Number(v) : NaN)
-    if (!isFinite(n)) return fallback
-    return Math.min(max, Math.max(min, n))
-  }
+  function clampInt(v, fallback, min, max) { const n = (typeof v === 'number' && isFinite(v)) ? Math.floor(v) : ((typeof v === 'string' && /^[0-9]+$/.test(v)) ? Number(v) : NaN); if (!isFinite(n)) return fallback; return Math.min(max, Math.max(min, n)) }
 
   /** 电话体记一行日志：成功落 host.call，失败落 host.call.fail（沿用仓库里既有两个事件，不新增）。 */
   function phoneLog(method, kind, t0, res, err) { try {
     if (err !== undefined && err !== null) { if (logCtx) logCtx.fire('warn', 'host.call.fail', { method: method, kind: kind, errorHash: hash8(String((err && err.message) || err)) }) }
     else if (res && res.ok) { if (logCtx) logCtx.fire('info', 'host.call', { method: method, latencyMs: Date.now() - t0, ok: true, kind: kind }) }
-    else if (logCtx) logCtx.fire('warn', 'host.call.fail', { method: method, kind: kind, errorHash: hash8(String((res && res.error && res.error.message) || 'version-control-not-ok')) }) } catch (eL) {} }
+    else if (logCtx) logCtx.fire('warn', 'host.call.fail', { method: method, kind: kind, errorKind: (res && res.error && res.error.kind) || '', errorHash: hash8(String((res && res.error && res.error.message) || 'version-control-not-ok')) }) } catch (eL) {} }
 
   /** 把一条电话体包成「进出各一行日志」的形状。 */
   function loggedPhone(method, kind, fn) { return async function () { const t0 = Date.now(); try { const r = await fn.apply(null, arguments); phoneLog(method, kind, t0, r); return r } catch (e) { phoneLog(method, kind, t0, null, e); throw e } } }
+
+  /** 首屏读数（#841）：写模块的预检要的就是这一份——同一个 readScreen，不另起一套读法。 */
+  async function readScreenOf(cwd) { const exe = await resolveGitExecutable(); if (!exe) return failPhone('env', '找不到 git 命令（platform.resolveExecutable("git") 没有给出路径）'); return readScreen(exe, cwd) }
+
+  // 写操作那一族（#841 起 1 预检 + 5 执行，#865 再加更新远方记录 1 条）住另两文件；本文件只做装配与日志包装（动态加载、同层单向，同一出口、同一信封、同一读数、同一 loggedPhone）。
+  let _writeP = null
+  function writePhone() { if (!_writeP) _writeP = Promise.all([import('./gitCredentialExec.js'), import('./versionControlCheck.js'), import('./versionControlWrite.js')]).then(function (ms) { const sg = ms[0].createCredentialSafeGit({ runGit: runGit, getPlatform: getPlatform, DEFAULT_CWD: DEFAULT_CWD }); const nowFn = (deps && typeof deps.now === 'function') ? deps.now : Date.now; const c = ms[1].createWriteCheck({ vc: { readScreenOf: readScreenOf }, safeGit: sg, failPhone: failPhone, nowMs: nowFn, randomId: function () { return Math.random().toString(36).slice(2) } }); const w = ms[2].createWritePhones({ vc: { readScreenOf: readScreenOf }, safeGit: sg, tickets: c.tickets, results: c.results, nowMs: nowFn }); return { check: loggedPhone('wf.gitWriteCheck', 'git-write-check', c.handleGitWriteCheck), stage: loggedPhone('wf.gitStage', 'git-stage', w.handleGitStage), unstage: loggedPhone('wf.gitUnstage', 'git-unstage', w.handleGitUnstage), commit: loggedPhone('wf.gitCommit', 'git-commit', w.handleGitCommit), pull: loggedPhone('wf.gitPull', 'git-pull', w.handleGitPull), fetch: loggedPhone('wf.gitFetch', 'git-fetch', w.handleGitFetch), push: loggedPhone('wf.gitPush', 'git-push', w.handleGitPush) } }).catch(function (e) { const f = function () { return failPhone('env', '写操作那一族加载失败：' + String((e && e.message) || e)) }; return { check: f, stage: f, unstage: f, commit: f, pull: f, fetch: f, push: f } }); return _writeP }
 
   return {
     handleGitStatus: loggedPhone('wf.gitStatus', 'git-status', handleGitStatus),
     handleGitDiff: loggedPhone('wf.gitDiff', 'git-diff', handleGitDiff),
     handleGitLog: loggedPhone('wf.gitLog', 'git-log', handleGitLog),
+    // 写电话（1 预检 + 6 执行）：第一次调用时才装配，装完缓存；键名与只读那三条同形。
+    handleGitWriteCheck: async function (a) { const w = await writePhone(); return w.check(a) },
+    handleGitStage: async function (a) { const w = await writePhone(); return w.stage(a) },
+    handleGitUnstage: async function (a) { const w = await writePhone(); return w.unstage(a) },
+    handleGitCommit: async function (a) { const w = await writePhone(); return w.commit(a) },
+    handleGitPull: async function (a) { const w = await writePhone(); return w.pull(a) },
+    handleGitFetch: async function (a) { const w = await writePhone(); return w.fetch(a) },
+    handleGitPush: async function (a) { const w = await writePhone(); return w.push(a) },
+    runGitCommand: runGit, // #839：那一族「可能弹凭据提示」的命令复用同一条进程出口（同一个报闸、同一条 git.exec 日志、同一套字节上限）
   }
 }

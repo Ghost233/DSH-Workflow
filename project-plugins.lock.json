@@ -2,14 +2,14 @@
   "schema": 1,
   "harnessVersion": "0.2.1-alpha.2",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "7633f702fe0495cf3c6115546f6e0500101c432b4048f91b28df0fd552ead937",
+  "manifestSha256": "ba535eb728043ce6af79f572e43c0144ef68943ef1c7a78dfde6e5d5b34d6e75",
   "plugins": [
     {
       "package": "dsh-context",
-      "version": "0.63.0",
+      "version": "0.66.1",
       "metadata": {
         "name": "dsh-context",
-        "version": "0.63.0",
+        "version": "0.66.1",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -27,7 +27,6 @@
           },
           "compatibility": {
             "dshReleases": {
-              "0.1.5-rc.1": "compatible",
               "0.1.7-rc.2": "compatible",
               "0.2.0-rc.2": "compatible"
             }
@@ -36,11 +35,10 @@
         "peerDependencies": {
           "react": "^18.3.1",
           "react-dom": "^18.3.1",
-          "@deepseek-ai/cordis": "^4.0.2",
-          "@deepseek-ai/dsh-session": ">=0.1.5-rc.1",
+          "@deepseek-ai/cordis": "^4.0.4",
+          "@deepseek-ai/dsh-session": ">=0.1.7-rc.2",
           "@deepseek-ai/schemastery": "^3.18.2",
-          "@deepseek-ai/dsh-settings": ">=0.1.5-rc.1",
-          "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.5-rc.1"
+          "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.7-rc.2"
         },
         "peerDependenciesMeta": {
           "react": {
@@ -57,10 +55,10 @@
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.8.10",
+      "version": "1.8.19",
       "metadata": {
         "name": "dsh-cost-meter",
-        "version": "1.8.10",
+        "version": "1.8.19",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"

@@ -11,6 +11,18 @@ export const RUNNING_MARKER_PATHS = [
 export function fixedPrefix() {
   return [
     "--no-optional-locks",
+    // 路径参数一律按字面量解释，不许当通配（#819 复审 P0-1 真机复现）：默认口径下 `方括号[1].txt`
+    // 会把 `[1]` 当字符组、连 `方括号1.txt` 一起匹配，补丁里就混进没被点名那个文件的内容。
+    // 这一族命令没有哪一条需要 git 展开路径通配，所以放进固定前缀对所有命令一视同仁——
+    // 只挂在 patch 那一条上，将来再加带路径的命令时没人会记得补这个开关。
+    "--literal-pathspecs",
+    // 推送三道保险（总工 2026-10-04 最终口径）：① 显式 refspec（见 pushArgs，主保证）；
+    // ② followTags 关掉——配成 true 时即使显式 refspec 也会把标签顺带推上去（实测）；
+    // ③ default=nothing 作为第二道（它单独挡不住裸 push，有 remote.<name>.push 时会被当成 refspec 来源）。
+    "-c",
+    "push.followTags=false",
+    "-c",
+    "push.default=nothing",
     "-c",
     "core.quotepath=false",
     "-c",
@@ -46,6 +58,41 @@ export function commandFor(key, opts) {
       return { key, subcommand: "diff", args: ["diff", "--unified=3", "--no-color", "--no-ext-diff", "--no-prefix", "--find-renames", "HEAD", "--", p] };
     }
   }
+}
+export const WRITE_SUBCOMMANDS = ["add", "reset", "commit", "pull", "push", "fetch", "ls-files", "remote"];
+export const REMOTE_PATTERN = /^(?!-)[A-Za-z0-9._/-]+$/;
+export const BRANCH_PATTERN = /^(?![-+])[^\s\u0000:\\]+$/;
+export function stageArgs(paths) {
+  return ["add", "--"].concat(paths);
+}
+export function unstageArgs(paths) {
+  return ["reset", "HEAD", "--"].concat(paths);
+}
+export function commitArgs(message) {
+  return ["commit", "-m", message];
+}
+export function pullArgs() {
+  return ["pull", "--ff-only"];
+}
+export function pushArgs(plan) {
+  const spec = plan.localBranch + ":" + plan.branch;
+  if (spec.charAt(0) === "+" || plan.localBranch.charAt(0) === "+" || plan.branch.charAt(0) === "+") {
+    throw new Error("[version-control] refspec \u4E0D\u8BB8\u4EE5 + \u5F00\u5934\uFF08\u4F1A\u88AB git \u5F53\u5F3A\u63A8\uFF09\uFF1A" + spec);
+  }
+  return plan.mode === "existing" ? ["push", "--no-follow-tags", plan.remote, spec] : ["push", "-u", "--no-follow-tags", plan.remote, spec];
+}
+export function fetchArgs(remote) {
+  if (remote !== void 0 && remote !== "") return ["fetch", remote];
+  return ["fetch"];
+}
+export function lsFilesStageArgs() {
+  return ["ls-files", "--stage", "-z"];
+}
+export function remoteListArgs() {
+  return ["remote"];
+}
+export function checkRefArgs(branch) {
+  return ["check-ref-format", "--branch", branch];
 }
 export function autocrlfArgs() {
   return ["config", "--get", "core.autocrlf"];

@@ -13,7 +13,8 @@ import { classifyError } from '../../preflight.js'
 import { ERROR_KIND } from '../../../../shared/tracker/constants.js'
 import { getPlat, listEfforts, findIssueFileInEffort } from './issues-locate.js'
 import { loadPaintColorMap, applyLabelColors } from './label-colors-paint.js'
-import { withLabelColorsWriter } from './label-colors.js'
+// #712/#922：建票取号的「读目录 → 取号 → 落盘」排队，与写票文件、配色文件共用 write-queue.js 那一份实现。
+import { withWorkspaceWriter } from './write-queue.js'
 // #711：创建幂等锚。锚那一行长什么样、怎么从票面把锚读回来、回查命中要满足什么条件，
 // 全在刷新核心的产物里（唯一一处判据），本文件只负责把锚写进票文件、并从盘上按锚找票。
 import { anchorLineFor, checkIdempotencyKey, idempotencyKeyOf } from '../../../../shared/refresh/idempotency.js'
@@ -119,12 +120,12 @@ export async function createIssue(ctx,repo,input){
     // （write.js 的 writeTextFile，没有独占创建），而读目录这个 await 会让出事件循环 ——
     // 多个会话/子代理同时建票时，多路会读到同一个 max、算出同一个编号、都探测到「这个编号还没人占」，
     // 然后互相覆盖，最后盘上只剩一张，而每一路都回了 ok:true（本机实测 8 路并发全部回 key="01"）。
-    // 队列钥匙按工作区归一（withLabelColorsWriter 内部用 workspaceKeyOf），与配色文件那条写路径共用同一条队，
-    // 所以「同一个工作区里的写入」在插件内部是彼此排队、不交错的。
+    // 队列钥匙按工作区归一（write-queue.js 的 workspaceWriteKey），与配色文件那条写路径共用同一条队，
+    // 所以「同一个工作区里要读整个目录才知道该写哪一份」这类操作，在插件内部是彼此排队、不交错的。
     // #711 的锚回查与落盘后的回读核对也在这条队里：#712 解决「同一个进程里两路同时建」，锚解决
     // 「跨进程、跨重试再建一次」；两件事都要做，而且都必须发生在握着队列的时候 —— 在队列外面先查一遍盘、
     // 再进队列建票的话，两次查询之间有别人刚建好一张，这一路就查不到了。
-    const r=await withLabelColorsWriter(ctx,repo,async function(){
+    const r=await withWorkspaceWriter(ctx,repo,async function(){
       const target=await resolveCreateTarget(ctx,repo)
       if(!target.ok)return target
       const effortId=target.effortId
@@ -166,7 +167,7 @@ export async function createIssue(ctx,repo,input){
       if(!finalPath)return{ok:false,error:{kind:ERROR_KIND.CONFLICT,message:'create NN conflict'}}
       // 内容拼装与落盘同样留在队列里：落盘这一步必须发生在**还握着队列**的时候，
       // 否则下一路会在「这一路已经取到号、但还没写下去」的缝里读目录，又读不到这张票、又取到同一个号。
-      await writeTextFile(ctx,finalPath,buildIssueText(input))
+      await writeTextFile(ctx,finalPath,buildIssueText(input), ctx && ctx.sandboxPolicy)
       // ② 落盘之后当场回读核对（#711）：确认锚真的写进了这个文件。只写不核对的话，
       //    写入被拒、写了一半、被别的进程覆盖回去这类情况会以「建票成功」的样子交回去，
       //    而锚没落上去意味着下一次重试再也找不到这张票（重复建票的根就没被切断）。

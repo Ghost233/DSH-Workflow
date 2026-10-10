@@ -2,8 +2,15 @@
 // 以后谁改它：改平台抽象、后端注册表或探测级联的人。预估约 280 行，超 350 打回。
 // 接线：由 index.js 动态 import 动态加载；STATUS_CACHE_MS 随本文件搬入（无外部引用）；getMattSkillProbeNames/probeSkill 显式注入；本文件不引用其他新文件。
 export function createPlatformChannel(deps) {
-  const { ctx, subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, getMattSkillProbeNames, probeSkill, logCtx, gate } = deps
+  const { ctx, subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, getMattSkillProbeNames, probeSkill, logCtx, gate, getGate } = deps
   // #494 O1：旧文本通道退役——backend.diagnostic 不再产生（github 房内零调用；残留 ctx.log.* 调用自动静默，gitlab 房由本房 O 票另行结构化）。房内埋点只走 logEvent/isEnabled。
+  // #927：闸可能比本通道晚一步就位（刷新接线要到插件起步时才建好），所以每次报账现问一次：
+  // 拿到就用，还没有就什么都不做。写成一次性快照的话，先建好的那一路会永远拿不到闸。
+  function gateOf() {
+    let g = null
+    try { g = (typeof getGate === 'function') ? getGate() : gate } catch (e) { g = null }
+    return (g && typeof g.noteOutbound === 'function') ? g : null
+  }
   const backendLogCtx = (logCtx && typeof logCtx.fire === 'function') ? logCtx : null
   function backendLogEvent(level, event, fields) { try { if (backendLogCtx) backendLogCtx.fire(level, event, fields) } catch (e) {} }
   function backendLogEnabled(level) { try { return backendLogCtx ? backendLogCtx.isEnabled(level) : (level === 'error' || level === 'warn') } catch (e) { return level === 'error' || level === 'warn' } }
@@ -132,10 +139,15 @@ export function createPlatformChannel(deps) {
       // （tracker 三个房间与快照那几路都走它），起的是 gh / glab / git 三条命令；gh 与 glab 是真出站，
       // git 只读远端地址，但都是「起了一个进程」，一起报才能保证账上的条数与真起的命令数一一对应。
       try {
-        if (gate && typeof gate.noteOutbound === 'function') {
+        const g = gateOf()
+        if (g) {
+          // #927 复核发现：GraphQL 那一路要看第二段（`gh api graphql …` 的第一段是 api），
+          // 原来只看第一段，于是面板与工具那一路的 GraphQL 调用被当成 REST 记（点数记成 0）。
+          // 口径与 repoKeys.js 里那一处对齐。
           const a0 = String((args && args[0]) || '')
-          const isGraphql = a0.indexOf('graphql') >= 0
-          gate.noteOutbound({ requests: 1, points: isGraphql ? 1 : 0 })
+          const a1 = String((args && args[1]) || '')
+          const isGraphql = a0.indexOf('graphql') >= 0 || (a0 === 'api' && a1.indexOf('graphql') >= 0)
+          g.noteOutbound({ requests: 1, points: isGraphql ? 1 : 0 })
         }
       } catch (eR) { /* 报账失败不许影响已经起来的这一条命令 */ }
       let handle
@@ -150,15 +162,26 @@ export function createPlatformChannel(deps) {
         throw new Error('exec spawn failed: ' + String((e && e.message) || e))
       }
       const timeoutMs = (opts && opts.timeout != null) ? opts.timeout : TIMEOUT_MS
+      // 调用方取消信号（#895）：中止即杀进程，不留没人等的写入；没有信号时与原来一字不差。
+      let onAbortSig = null
+      const abortP = new Promise(function (resolve) {
+        const sig = opts && opts.signal
+        if (!sig || typeof sig.addEventListener !== 'function') return
+        if (sig.aborted === true) { try { handle.terminate() } catch (e2) {} resolve({ exitCode: -1, signal: 'aborted' }); return }
+        onAbortSig = function () { try { handle.terminate() } catch (e2) {} resolve({ exitCode: -1, signal: 'aborted' }) }
+        try { sig.addEventListener('abort', onAbortSig, { once: true }) } catch (e) {}
+      })
       let outcome
       try {
         outcome = await Promise.race([
           handle.done,
           timer.timeout(timeoutMs).then(function () { try { handle.terminate() } catch (e2) {} return { exitCode: -1, signal: 'timeout' } }),
+          abortP,
         ])
       } catch (e) {
         outcome = { exitCode: -1, signal: 'error' }
       }
+      try { if (opts && opts.signal && onAbortSig && typeof opts.signal.removeEventListener === 'function') opts.signal.removeEventListener('abort', onAbortSig) } catch (e) {}
       const out = (handle.collected && handle.collected.stdout) ? handle.collected.stdout.readFrom(0) : { text: '' }
       const err = (handle.collected && handle.collected.stderr) ? handle.collected.stderr.readFrom(0) : { text: '' }
       try { if (execT0 && logCtx.isEnabled('debug')) logCtx.fire('debug', 'exec.run', { argv0: progName(argv[0]), cwdHash: hash8(c || DEFAULT_CWD), latencyMs: Date.now() - execT0, exitCode: (outcome && typeof outcome.exitCode === 'number') ? outcome.exitCode : -1, via: String(via || 'unspecified') }) } catch (eL) {}

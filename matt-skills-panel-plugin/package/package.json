@@ -1,6 +1,6 @@
 {
   "name": "dsh-workflow-matt-panel",
-  "version": "1.7.39-workflow.2",
+  "version": "1.7.51-workflow.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Ghost233/DSH-Workflow.git",
@@ -29,6 +29,7 @@
     "cordis.patch.yml",
     "scripts/",
     "LICENSE",
+    "dsh-log.LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "upstream.json"
   ],

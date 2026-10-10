@@ -289,6 +289,10 @@ const KERNEL_MODULES = [
   { name: 'localeLabels', file: 'src/client/kernel/locale-labels.js' },
   // #690 历史票按需翻页的五条文案：locale-flow.js 已贴 350 行上限，照 #621 的做法自成一个片段
   { name: 'localePages', file: 'src/client/kernel/locale-pages.js' },
+  // #842 写操作那一族的词条：locale-panel 与 locale-flow 都在上限上（后者还冻结在零增长基线里），照 #621/#690 的做法自成一个片段
+  { name: 'localeVcWrite', file: 'src/client/kernel/locale-vcwrite.js' },
+  // #879 技能描述 27 条中英词条：locale-word.js 已贴 350 行上限（363 行超标），照 #621/#690/#842 的做法自成一个片段
+  { name: 'localeSkilldesc', file: 'src/client/kernel/locale-skilldesc.js' },
   { name: 'locale', file: 'src/client/kernel/locale.js' },
   { name: 'icons', file: 'src/client/kernel/icons.js' },
   // #685：「体检」按钮的件数派生与开新会话注入（游离票口径见 #678、按钮形态见 #681）；
@@ -372,6 +376,10 @@ const SHARED_SPLICE = [
   // 界面那一半不能运行时 import（客户端半边今天没有任何对 src/shared 的运行时 import），
   // 所以按同一套拼接做法把这一份拼进界面闭包 —— 界面只许消费这些名字，不许再写一份数字。
   { marker: '// ==== shared:refreshBudget (spliced by build) ====', file: 'src/shared/refresh/budget.js' },
+  // #842 写操作：判定（能不能暂存/提交/拉取/推送）只有一份真源 version-control-core/src/rules.ts，
+  //   产物 src/shared/version-control/rules.js 由本文件上面的版本控制核心构建步骤生成。
+  //   界面不许自己算（自己算就会与宿主执行前那次判定各说各话），所以把这一份也拼进界面闭包。
+  { marker: '// ==== shared:vcRules (spliced by build) ====', file: 'src/shared/version-control/rules.js' },
 ]
 
 // ---------- 叶子模块组合（阶段 2 叶子迁移 · #97 T4）----------
@@ -402,10 +410,22 @@ const LEAF_MODULES = [
   //   按依赖次序登记，六项都排在 tabs 之前（Tabs.js 按 vcTabVisible 决定这个页签显不显示）。
   { id: 'vcText', file: 'src/client/views/versionControl/vcText.js' },
   { id: 'vcFold', file: 'src/client/views/versionControl/vcFold.js' },
+  { id: 'vcDiff', file: 'src/client/views/versionControl/vcDiff.js' }, // #819 审查后从 vcBlocks 拆出：一处差异该怎么画（那个文件贴着 350 行）
   { id: 'vcCommit', file: 'src/client/views/versionControl/vcCommit.js' }, // 规格故事 32：「这笔提交改了什么」那一层（排在 vcBlocks 之前，行是 vcBlocks 现传进去的同一份）
+  { id: 'vcStyles', file: 'src/client/views/versionControl/vcStyles.js' }, // #851 版本管理页签的视觉语言（档案索引）：一段 CSS 文本，经同一个 styles.insert 接缝注入
+  { id: 'vcRows', file: 'src/client/views/versionControl/vcRows.js' }, // #842 从 vcBlocks 原样搬出：行分组 / 行画法 / 其他工作树行 / 某路径的差异读数（vcBlocks 要腾行给写操作）
+  { id: 'vcWrite', file: 'src/client/views/versionControl/vcWrite.js' }, // #842 写操作的纯规则层（判定→状态、理由→词条、写失败→话术族、确认框内容）
+  { id: 'vcWriteRun', file: 'src/client/views/versionControl/vcWriteRun.js' }, // #842 写操作的执行层（预检、四条写电话、结果记账、成功后的重读）
+  { id: 'vcWriteUi', file: 'src/client/views/versionControl/vcWriteUi.js' }, // #842 写操作的画法层（按钮、提交区、确认框模型）
+  { id: 'vcWriteOps', file: 'src/client/views/versionControl/vcWriteOps.js' }, // #842 写操作的动作层（点下去发生什么：预检、写电话、重读）
+  { id: 'vcWriteView', file: 'src/client/views/versionControl/vcWriteView.js' }, // #842 写操作的节点画法（从入口组件搬出，组件守住 350 行）
+  { id: 'vcDiffOps', file: 'src/client/views/versionControl/vcDiffOps.js' }, // #857 差异与提交那几路的动作（从入口组件搬出，组件守 350 行）
   { id: 'vcBlocks', file: 'src/client/views/versionControl/vcBlocks.js' },
+  { id: 'vcViews', file: 'src/client/views/versionControl/vcViews.js' }, // #853 第三步：布局 C 的三个视图（改动 / 提交历史 / 工作树）
+  { id: 'vcAiHandoff', file: 'src/client/views/versionControl/vcAiHandoff.js' }, // #854：「让 AI 帮我解决」交接按钮（prompt 三段式 + 开新会话路由）
   { id: 'vcTabVisible', file: 'src/client/views/versionControl/vcTabVisible.js' },
   { id: 'vcData', file: 'src/client/views/versionControl/vcData.js' },
+  { id: 'vcCache', file: 'src/client/views/versionControl/vcCache.js' }, // #864：进出缓存（首屏与历史首批按工作区暂存）
   { id: 'versionControlTab', file: 'src/client/views/versionControl/VersionControlTab.js' },
   { id: 'tabs', file: 'src/client/views/shared/Tabs.js' },
   { id: 'truthLines', file: 'src/client/views/shared/truthLines.js' }, // #715 新增：面板头部那几句「上次更新 / 刷新失败 / 现在是不是降级」的判据（纯函数，画在 ListTab 最上面那一行；行上的「更新中」标记也问它）
@@ -430,9 +450,7 @@ const LEAF_MODULES = [
   { id: 'checksTab', file: 'src/client/views/ChecksTab.js' },
   { id: 'SettingsWorkspaces', file: 'src/client/views/SettingsWorkspaces.js' },
   { id: 'debugSwitchFailHint', file: 'src/client/views/shared/DebugSwitchFailHint.js' }, // #597 由 SettingsPage.js 拆出：写开关失败的机器码挑提示词条（无组件，纯函数）
-  { id: 'updateDialog', file: 'src/client/views/UpdateDialog.js' }, // #587 由 SettingsPage.js 拆出：检查更新的浮层弹窗（组件）
-  { id: 'updateRestartBanner', file: 'src/client/views/UpdateRestartBanner.js' }, // #587 新增：装完待重启的常驻提示行（组件）
-  { id: 'useUpdatePanel', file: 'src/client/views/useUpdatePanel.js' }, // #587 由 SettingsPage.js 拆出：检查更新的状态与电话调用（钩子，无组件）
+  { id: 'updateEntryHost', file: 'src/client/views/UpdateEntryHost.js' }, // #876 更新入口挂载点：只挂包的入口件（含内部 dialog 面板），本仓不再自带按钮状态机与浮层弹窗
   { id: 'settingsPage', file: 'src/client/views/SettingsPage.js' },
   { id: 'runPanel', file: 'src/client/views/RunPanel.js' },
   { id: 'DockSync', file: 'src/client/panel/DockSync.js' },
@@ -552,11 +570,7 @@ async function buildHost({ version }) {
   const pkgLib = resolve(ROOT, 'package/lib')
   const pkgShared = resolve(ROOT, 'package/shared')
   // 清理 package/lib 下的 host 树（保留 lib/client.js）
-  const toRemove = [
-    join(pkgLib, 'index.js'),
-    join(pkgLib, 'platform'),
-    join(pkgLib, 'tracker'),
-  ]
+  const toRemove = readdirSync(pkgLib).filter(name => name !== 'client.js').map(name => join(pkgLib, name))
   for (const p of toRemove) {
     try { rmSync(p, { recursive: true, force: true }) } catch {}
   }
@@ -604,23 +618,7 @@ async function buildHost({ version }) {
   } catch (e) {
     throw new Error(`[build] 原样复制校验失败：${e.message}`)
   }
-  // #586 更新包派生副本：src/host/updatePkg/* → package/lib/updatePkg/*（逐文件原样，包内相对引用保持有效）
-  {
-    const srcUpdatePkg = resolve(ROOT, 'src/host/updatePkg')
-    const dstUpdatePkg = join(pkgLib, 'updatePkg')
-    try { rmSync(dstUpdatePkg, { recursive: true, force: true }) } catch {}
-    mkdirSync(dstUpdatePkg, { recursive: true })
-    const names = readdirSync(srcUpdatePkg)
-    for (const name of names) {
-      const from = join(srcUpdatePkg, name)
-      const to = join(dstUpdatePkg, name)
-      writeFileSync(to, readFileSync(from))
-      const a = readFileSync(from, 'utf8')
-      const b = readFileSync(to, 'utf8')
-      if (a !== b) throw new Error(`[build] updatePkg/${name} 原样复制不一致`)
-    }
-    console.log(`[build] 更新包派生副本已随包 → package/lib/updatePkg（${names.length} 个文件）`)
-  }
+  // #875 薄接线：旧派生目录已删，不再随包复制 updatePkg（能力只走已安装的更新包）。
   // 分发 scripts/：消费者工作区调用的两条脚本随包发布（#588 总指挥裁定：只收两条消费者脚本，
   // 构建/调试脚本（build.mjs、ui-*、wizard-*、generate-*、matrix-*、sync-* 等）不许进发布包；
   // 清单写死在这里并注释原因，不另维护第二份——门禁从这份清单机械求值发布包脚本集合）。
@@ -716,6 +714,7 @@ gateBuildArtifacts()
 if (existsSync(resolve(ROOT, 'package/bundled-skills'))) throw new Error('The derived panel must use external Chinese skills')
 syncReadme(version, repoUrl)
 for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'upstream.json']) cpSync(resolve(ROOT, file), resolve(ROOT, 'package', file))
+cpSync(resolve(ROOT, 'licenses/dsh-log.LICENSE'), resolve(ROOT, 'package/dsh-log.LICENSE'))
 
 // #629 内置 TypeScript 核（配色核心）：先转译再跑类型检查，产物落进 src/shared/label-color/。
 // 它自己会判源码目录在不在（发布包与 package/ 子树里没有这棵源码树），不在就跳过并打印提示。
@@ -748,7 +747,7 @@ try {
   deriveHost()
   deriveClient()
 } catch (e) {
-  throw new Error('[build] 日志派生失败（先跑 node packages/dsh-log/build.mjs 再重跑本构建）：' + ((e && e.message) || e))
+  throw new Error('[build] 日志派生失败（取值来源是已安装的日志包：先确认 pnpm install 已装好 dsh-log@^0.2.2，再重跑本构建）：' + ((e && e.message) || e))
 }
 try {
   const updVersion = deriveUpdateClientVersionForLog()
