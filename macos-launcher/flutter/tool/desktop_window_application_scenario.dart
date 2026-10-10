@@ -460,6 +460,26 @@ class DesktopWindowProbe {
     await app.tap('仅显示已运行窗口');
     await visible();
     await sameBackend();
+    await prepareExternalForeground();
+    await foreground('activate');
+    await waitFor(
+      'visible Desktop and Launcher are both inactive before accessibility hide',
+      () async =>
+          current['hidden'] == false &&
+          current['active'] == false &&
+          ((await app.state())['native'] as Map)['appActive'] == false,
+    );
+    await app.tap('隐藏窗口');
+    await waitFor(
+      'accessibility hide works without prior application activation',
+      () async =>
+          current['pid'] == pid &&
+          current['hidden'] == true &&
+          current['onscreenWindowCount'] == 0,
+    );
+    await sameBackend();
+    await app.tap('仅显示已运行窗口');
+    await visible();
     await app.tap('启动时隐藏窗口');
     final preferences = File('${root.path}/data/test-preferences.plist');
     await waitFor('actual native startup preference is saved', () async {

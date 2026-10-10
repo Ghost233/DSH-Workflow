@@ -333,7 +333,26 @@ class AppDelegate: FlutterAppDelegate {
           self.releaseColdDesktop("explicit-window-action")
           guard let application else { throw self.failure("Desktop 未运行，请先启动；仅显示不会启动 Desktop。") }
           if call.method == "hideDesktop" {
-            guard application.isHidden || application.hide() else { throw self.failure("Desktop 隐藏失败") }
+            // AppKit refreshes isHidden on a later run-loop turn. Complete
+            // against the observed state, including already pending requests.
+            let expected = self.desktopIdentity
+            if !application.isHidden { _ = application.hide() }
+            let deadline = ProcessInfo.processInfo.systemUptime + 1
+            func completeHide() {
+              do {
+                guard let current = try self.runningDesktop(path), let actual = self.desktopIdentity,
+                      let expected, actual.0 == expected.0, actual.1 == expected.1, actual.2 == expected.2 else {
+                  throw self.failure("Desktop 隐藏期间进程身份已改变")
+                }
+                if current.isHidden { result(nil); return }
+                guard ProcessInfo.processInfo.systemUptime < deadline else { throw self.failure("Desktop 隐藏失败") }
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { completeHide() }
+              } catch {
+                result(FlutterError(code: "native-error", message: error.localizedDescription, details: nil))
+              }
+            }
+            completeHide()
+            return
           } else {
             let unhideAccepted = !application.isHidden || application.unhide()
             FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=explicit-unhide-return accepted=\(unhideAccepted) pid=\(application.processIdentifier)\n".utf8))

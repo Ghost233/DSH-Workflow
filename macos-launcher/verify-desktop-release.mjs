@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process'
 import { verifyDesktopRuntime } from '../deepseek-harness/apps/desktop/src/runtime-tree.ts'
 import { smokePreparedRuntime } from '../deepseek-harness/apps/desktop/scripts/smoke-prepared-runtime.ts'
 import { DesktopHostProcess } from '../deepseek-harness/apps/desktop/src/host-process.ts'
+import { resolvePrimaryRuntime } from '../deepseek-harness/packages/skill/tool-workspace-dependencies/src/index.ts'
 import { prepareDesktopProfile } from './runtime/desktop-profile.mjs'
 import { desktopStatus } from './runtime/desktop-status.mjs'
 
@@ -26,6 +27,8 @@ try {
   const version = JSON.parse(await readFile(join(resources, 'app/package.json'), 'utf8')).version
   const descriptor = await verifyDesktopRuntime(dsh, version, { platform: 'darwin', arch: process.arch })
   const executable = join(app, 'Contents/MacOS/DeepSeek Harness')
+  const { pnpm } = await resolvePrimaryRuntime(join(resources, 'runtime/primary-runtime'))
+  if (!pnpm) throw new Error('Packaged Desktop primary runtime has no pnpm entry')
   await promisify(execFile)('codesign', ['--verify', '--deep', '--strict', app])
   await smokePreparedRuntime(dsh, executable, join(resources, 'runtime'), descriptor)
   if (workflowResources) {
@@ -36,7 +39,7 @@ try {
     await writeFile(join(profile, 'cordis.patch.yml'), '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n')
     const host = new DesktopHostProcess(executable, dsh, profile, undefined,
       { ...process.env, DSH_HOME: home, NODE_OPTIONS: '' }, undefined, join(resources, 'runtime/primary-runtime'),
-      { pnpm: join(resources, 'runtime/pnpm/bin/pnpm.cjs'), nodeBin: join(resources, 'runtime/bin') })
+      { pnpm, nodeBin: join(resources, 'runtime/bin') })
     let timer
     try {
       const ready = await Promise.race([host.start(), new Promise((_, reject) => {

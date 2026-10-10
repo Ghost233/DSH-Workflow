@@ -144,6 +144,7 @@ class _LauncherPageState extends State<LauncherPage> {
   }
 
   Future<void> _act(Future<void> Function() action) async {
+    model.clearError();
     try {
       await action();
     } catch (failure) {

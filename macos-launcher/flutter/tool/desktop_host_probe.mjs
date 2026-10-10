@@ -4,17 +4,21 @@ import { fork } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
 
 const [resources, dataRoot, home, permissionMode = 'danger-full-access'] = process.argv.slice(2)
 if (!resources || !dataRoot || !home) throw new Error('Pass private resources, data root and home')
 const desktop = join(resources, 'desktop/DeepSeek Harness.app/Contents')
 const runtime = join(desktop, 'Resources/app/dsh')
+const { resolvePrimaryRuntime } = createRequire(join(runtime, 'package.json'))('@deepseek-ai/dsh-tool-workspace-dependencies')
+const { pnpm } = await resolvePrimaryRuntime(join(desktop, 'Resources/runtime/primary-runtime'))
+if (!pnpm) throw new Error('Packaged Desktop primary runtime has no pnpm entry')
 const { prepareDesktopProfile } = await import(pathToFileURL(join(resources, 'workflow/macos-launcher/runtime/desktop-profile.mjs')))
 const prepared = await prepareDesktopProfile({ resourcesRoot: resources, globalRoot: join(dataRoot, 'global'),
   desktopRuntimeRoot: runtime, home, permissionMode })
 const child = fork(join(runtime, 'node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js'), [
   runtime, prepared.profile, join(desktop, 'Resources/runtime/primary-runtime'),
-  join(desktop, 'Resources/runtime/pnpm/bin/pnpm.cjs'), join(desktop, 'MacOS'),
+  pnpm, join(desktop, 'MacOS'),
 ], { execPath: join(desktop, 'MacOS/DeepSeek Harness'), execArgv: ['--expose-internals'],
   cwd: prepared.profile, env: { ...process.env, DSH_HOME: home, ELECTRON_RUN_AS_NODE: '1' },
   stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })

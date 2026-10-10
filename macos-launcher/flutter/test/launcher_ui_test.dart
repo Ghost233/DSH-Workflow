@@ -9,6 +9,8 @@ class UiNative extends NativeBridge {
   String loginStatus;
   bool running = false, hidden = false, hideWindowOnStart = false;
   @override
+  Future<void> showWindow() async {}
+  @override
   Future<bool> desktopRunning(String path) async => running;
   @override
   Future<void> hideDesktop(String path) async {
@@ -72,6 +74,7 @@ void main() {
       await tester.tap(find.text('后台启动'));
       await tester.pumpAndSettle();
       expect(native.hidden, isFalse);
+      expect(find.textContaining('Desktop 未运行'), findsNothing);
       await tester.tap(find.text('隐藏窗口'));
       await tester.pumpAndSettle();
       expect(native.hidden, isTrue);

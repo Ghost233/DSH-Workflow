@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "harnessVersion": "0.2.1-alpha.1",
+  "harnessVersion": "0.2.1-alpha.2",
   "registry": "https://registry.npmjs.org/",
   "manifestSha256": "7633f702fe0495cf3c6115546f6e0500101c432b4048f91b28df0fd552ead937",
   "plugins": [

@@ -13,6 +13,12 @@ on:
       - scripts/harness-runtime.mjs
       - scripts/dsh-launch-composition.mjs
       - scripts/web-host-lifecycle.mjs
+      - scripts/release.sh
+      - scripts/release.py
+      - scripts/test_release.py
+      - scripts/build-release.sh
+      - .agents/skills/macos-release/**
+      - docs/agents/release.md
       - package.json
       - dsh-runtime.json
       - .gitmodules
@@ -33,6 +39,12 @@ on:
       - scripts/harness-runtime.mjs
       - scripts/dsh-launch-composition.mjs
       - scripts/web-host-lifecycle.mjs
+      - scripts/release.sh
+      - scripts/release.py
+      - scripts/test_release.py
+      - scripts/build-release.sh
+      - .agents/skills/macos-release/**
+      - docs/agents/release.md
       - package.json
       - dsh-runtime.json
       - .gitmodules
@@ -103,6 +115,11 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24.12.0
+
+      - name: Verify release command and packaging contract
+        run: |
+          bash -n scripts/release.sh scripts/build-release.sh
+          python3 -B scripts/test_release.py
 
       - name: Set up the shared Flutter toolchain
         uses: subosito/flutter-action@v2
@@ -202,29 +219,19 @@ jobs:
       - name: Package and verify DMG
         id: package
         shell: bash
-        env:
-          TARGET_ARCH: arm64
         run: |
           set -euxo pipefail
           APP_VERSION="$(node -p "require('./macos-launcher/package.json').version")"
           DSH_VERSION="$(node -p "require('./dsh-runtime.json').version")"
-          APP=".build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-${TARGET_ARCH}.app"
-          DMG="DSH-Workflow-macOS-${APP_VERSION}-${TARGET_ARCH}.dmg"
-          STAGING="$RUNNER_TEMP/dsh-workflow-dmg-${TARGET_ARCH}"
-          codesign --verify --deep --strict "$APP"
-          mkdir -p "$STAGING"
-          ditto "$APP" "$STAGING/DSH Workflow.app"
-          ln -s /Applications "$STAGING/Applications"
-          hdiutil create -ov -format UDZO -volname "DSH Workflow" -srcfolder "$STAGING" "$DMG"
-          hdiutil verify "$DMG"
-          test -s "$DMG"
-          echo "dmg=$DMG" >> "$GITHUB_OUTPUT"
+          APP=".build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
+          scripts/build-release.sh --app-path "$APP" --output-dir .build/release-assets
+          echo 'assets=.build/release-assets' >> "$GITHUB_OUTPUT"
 
       - name: Upload macOS application
         uses: actions/upload-artifact@v4
         with:
           name: dsh-workflow-arm64
-          path: ${{ steps.package.outputs.dmg }}
+          path: ${{ steps.package.outputs.assets }}/*
           if-no-files-found: error
 
   release:
@@ -251,13 +258,28 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
           test "$(find release-assets -maxdepth 1 -name '*.dmg' -type f | wc -l | tr -d ' ')" = 1
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/*.dmg --clobber
-          else
-            gh release create "$RELEASE_TAG" release-assets/*.dmg --verify-tag \
-              --title "DSH Workflow macOS ${RELEASE_TAG#macos-v}" \
-              --notes "Automated macOS builds for Apple Silicon (ARM64). Locally ad-hoc signed; not notarized."
-          fi
+          (cd release-assets && shasum -a 256 -c SHA256SUMS)
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path('release-assets')
+          value = json.loads((root / 'manifest.json').read_text())
+          version = os.environ['RELEASE_TAG'].removeprefix('macos-v')
+          expected = f'DSH-Workflow-macOS-{version}-arm64.dmg'
+          assert value['tag'] == os.environ['RELEASE_TAG'] and value['version'] == version
+          assert value['sourceCommit'] == os.environ['RELEASE_COMMIT']
+          assert len(value['assets']) == 1 and value['assets'][0]['name'] == expected
+          assert value['assets'][0]['size'] == (root / expected).stat().st_size
+          digest = hashlib.sha256()
+          with (root / expected).open('rb') as file:
+              for chunk in iter(lambda: file.read(1024 * 1024), b''):
+                  digest.update(chunk)
+          assert value['assets'][0]['sha256'] == digest.hexdigest()
+          PY
+          gh release create "$RELEASE_TAG" release-assets/*.dmg release-assets/manifest.json release-assets/SHA256SUMS --verify-tag \
+            --title "DSH Workflow macOS ${RELEASE_TAG#macos-v}" \
+            --notes "Automated macOS builds for Apple Silicon (ARM64). Locally ad-hoc signed; not notarized."

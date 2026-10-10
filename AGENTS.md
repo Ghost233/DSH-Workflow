@@ -36,3 +36,7 @@ SoL 和 Synapse 已移除；历史文档中的接入和验收要求不再适用�
 ### 领域文档
 
 编写规格或开展设计、诊断、审查前，按 `docs/agents/domain.md` 读取单上下文的术语表与相关 ADR。
+
+### 发布流程
+
+正式发布或修改发布入口前，读取 `docs/agents/release.md`；统一入口为 `scripts/release.sh`，标签发布沿用 `macos-release` skill。

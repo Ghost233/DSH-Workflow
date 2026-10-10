@@ -1,9 +1,9 @@
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { cp, mkdir, mkdtemp, readFile, writeFile, rm, open } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, writeFile, rm, open, symlink } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join, relative, delimiter } from 'node:path'
+import { join, relative, delimiter, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { desktopTargetBuildPaths } from '../deepseek-harness/apps/desktop/scripts/desktop-build-paths.mjs'
 import { createRuntimeProjectMetadata } from '../deepseek-harness/apps/desktop/src/project-manager.ts'
@@ -13,6 +13,7 @@ import { desktopNodeEnvironment } from '../deepseek-harness/apps/desktop/src/nod
 import { desktopRuntimeFileExclusion } from '../deepseek-harness/apps/desktop/scripts/runtime-file-policy.ts'
 import { selectOfficeEngine } from '../deepseek-harness/scripts/libreoffice-packages.mjs'
 import { inventoryDesktopRuntime, writeDesktopRuntime } from '../deepseek-harness/apps/desktop/src/runtime-tree.ts'
+import { resolvePrimaryRuntime } from '../deepseek-harness/packages/skill/tool-workspace-dependencies/src/index.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const appRoot = join(root, 'deepseek-harness/apps/desktop')
@@ -21,14 +22,15 @@ const { build, Platform, Arch } = requireDesktop('electron-builder')
 const arch = process.arch
 if (process.platform !== 'darwin' || arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
 const paths = desktopTargetBuildPaths(`mac-${arch}`)
-const output = join(root, '.build', `desktop-${arch}`)
+const output = process.argv[2] ? resolve(process.argv[2]) : join(root, '.build', `desktop-${arch}`)
 if (existsSync(output)) throw new Error(`Desktop build output exists: ${output}`)
 const version = JSON.parse(await readFile(join(appRoot, 'package.json'), 'utf8')).version
 const runtimeVersions = JSON.parse(await readFile(join(paths.runtime, 'versions.json'), 'utf8'))
 const release = { schemaVersion: 1, version, hostProtocolVersion: DESKTOP_HOST_PROTOCOL_VERSION,
   nodeVersion: runtimeVersions.node, pnpmVersion: runtimeVersions.pnpm }
 const electron = join(paths.electron, 'Electron.app/Contents/MacOS/Electron')
-const pnpm = join(paths.runtime, 'pnpm/bin/pnpm.mjs')
+const { pnpm } = await resolvePrimaryRuntime(join(paths.runtime, 'primary-runtime'))
+if (!pnpm) throw new Error('Prepared Desktop primary runtime has no pnpm entry')
 await mkdir(join(root, '.build'), { recursive: true })
 const staging = await mkdtemp(join(root, '.build', `desktop-runtime-${arch}-`))
 const dsh = join(staging, 'dsh')
@@ -85,6 +87,8 @@ try {
   } })
   const app = join(output, 'mac-arm64', 'DeepSeek Harness.app')
   const resources = join(app, 'Contents/Resources')
+  // The unpacked CLI resolves app/runtime beside dsh. Share the bundled payload through a relative path.
+  await symlink('../runtime', join(resources, 'app/runtime'))
   const packagedDsh = join(resources, 'app/dsh')
   const magics = new Set(['cafebabe', 'cafebabf', 'cefaedfe', 'cffaedfe', 'feedface', 'feedfacf', 'bebafeca', 'bfbafeca'])
   for (const directory of [packagedDsh, join(resources, 'runtime/primary-runtime')]) {
@@ -103,5 +107,5 @@ try {
   await run('codesign', ['--verify', '--deep', '--strict', app], root)
   process.stdout.write(`Desktop production application: ${app}\n`)
 } finally {
-  await rm(staging, { recursive: true, force: true })
+  await rm(staging, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
 }

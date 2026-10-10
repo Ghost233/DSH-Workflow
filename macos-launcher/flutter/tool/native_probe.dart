@@ -97,9 +97,23 @@ Future<void> main(List<String> arguments) async {
       }
 
       await request('open', 'openWindow');
-      final visible = await nativeState();
-      if (visible['windowVisible'] != true || visible['entryVisible'] != true) {
-        throw StateError('Initial native UI unavailable: $visible');
+      var visible = await nativeState();
+      for (
+        var attempt = 0;
+        attempt < 50 &&
+            (visible['appActive'] != true || visible['windowKey'] != true);
+        attempt++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        visible = await nativeState();
+      }
+      if (visible['windowVisible'] != true ||
+          visible['entryVisible'] != true ||
+          visible['windowKey'] != true ||
+          visible['appActive'] != true) {
+        throw StateError(
+          'Native management window cannot receive input: $visible',
+        );
       }
       await request('managed', 'setEntryManaged', {'managed': true});
       if ((await nativeState())['entryVisible'] != false) {

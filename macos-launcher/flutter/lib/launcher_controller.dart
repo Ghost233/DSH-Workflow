@@ -107,6 +107,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     notifyListeners();
   }
 
+  void clearError() {
+    if (error.isEmpty) return;
+    error = '';
+    notifyListeners();
+  }
+
   void setSdkMessage(String message) {
     sdkMessage = message;
     notifyListeners();
@@ -374,7 +380,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     await _startWeb();
   });
 
-  Future<void> hideDesktop() => native.hideDesktop(desktop);
+  Future<void> hideDesktop() async {
+    await native.showWindow();
+    await native.hideDesktop(desktop);
+  }
+
   Future<void> showExistingDesktop() => native.showDesktop(desktop);
   Future<void> startDesktop() async {
     if (_coldDesktopBackground) {

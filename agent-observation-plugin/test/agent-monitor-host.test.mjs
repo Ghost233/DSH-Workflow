@@ -43,6 +43,8 @@ async function fixture(t, config = {}) {
     }
   }
   for (const plugin of [LlmRuntime, SessionStore, Projections, SystemPrompt, Tools, Agents]) await ctx.plugin(plugin)
+  await ctx.plugin(req('@deepseek-ai/dsh-fs-local').default)
+  await ctx.plugin(req('@deepseek-ai/dsh-working-directory').default, { defaultDirectory: directory })
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['third-party-fixture'], new Adapter())
   await ctx.plugin({ name: 'monitor-fixture', apply: c => apply(c, { directory, ...config }, {
@@ -212,9 +214,9 @@ test('native spawn and fork children are visible and independent of their active
   }
   const runs = []
   for (const provider of ['spawn', 'fork']) {
-    const run = await f.ctx.subagents.start(provider, { parent: main.agent,
-      signal: new AbortController().signal, prompt: [{ type: 'text', text: 'child private task' }],
-      agentOptions: { provider: 'third-party-fixture', model: provider } })
+    const run = await f.ctx.subagents.startActivation({ provider, label: provider, delivery: 'caller',
+      signal: new AbortController().signal, request: { parent: main.agent, prompt: [{ type: 'text', text: 'child private task' }],
+      agentOptions: { provider: 'third-party-fixture', model: provider } } })
     runs.push(run)
     await until(() => f.streams.has(provider))
   }
@@ -223,9 +225,9 @@ test('native spawn and fork children are visible and independent of their active
   await f.send('parent', { type: 'text-delta', index: 0, text: 'parent progresses' })
   await f.at(2000)
   assert.deepEqual(f.notices.map(alert => [alert.agentId, alert.role, alert.parentId]),
-    runs.map(run => [run.id, 'child', 'parent']))
+    runs.map(run => [run.childId, 'child', 'parent']))
   assert.equal(f.monitor.snapshot().agents.find(row => row.agentId === 'parent').noOutputCount, 1)
-  for (const run of runs) assert.equal(run.localAgent.status, 'running')
+  for (const run of runs) assert.equal(f.ctx.agents.get(run.childId).status, 'running')
 })
 
 test('new requests on the same Agent begin with zero checks and cannot inherit an earlier alert', async t => {
@@ -420,13 +422,14 @@ test('a native spawned child error is associated with its own request and main A
   const f = await fixture(t), parent = await f.create('error-parent')
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent').default)
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent-spawn-in-process'))
-  const run = await f.ctx.subagents.start('spawn', { parent: parent.agent, signal: new AbortController().signal,
-    prompt: [{ type: 'text', text: 'child task' }], agentOptions: { provider: 'third-party-fixture', model: 'error-child' } })
+  const run = await f.ctx.subagents.startActivation({ provider: 'spawn', label: 'child task', delivery: 'caller',
+    signal: new AbortController().signal, request: { parent: parent.agent,
+    prompt: [{ type: 'text', text: 'child task' }], agentOptions: { provider: 'third-party-fixture', model: 'error-child' } } })
   await until(() => f.streams.has('error-child'))
   f.end('error-child', new LlmError('upstream unavailable', 'UPSTREAM_UNAVAILABLE', { status: 503 }))
   await run.result; await f.monitor.flush()
   assert.deepEqual(f.notices.map(alert => [alert.agentId, alert.role, alert.parentId, alert.kind]),
-    [[run.id, 'child', 'error-parent', 'model-error']])
+    [[run.childId, 'child', 'error-parent', 'model-error']])
   assert.equal(parent.agent.status, 'running')
   await run.dispose()
 })

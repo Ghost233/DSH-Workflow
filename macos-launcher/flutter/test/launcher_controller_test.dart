@@ -14,6 +14,8 @@ class FixtureNative extends NativeBridge {
   int desktopOpenCalls = 0;
   bool desktopIsRunning = false, desktopIsHidden = false;
   @override
+  Future<void> showWindow() async {}
+  @override
   Future<bool> desktopRunning(String path) async => desktopIsRunning;
   @override
   Future<void> hideDesktop(String path) async {

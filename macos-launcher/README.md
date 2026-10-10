@@ -16,7 +16,7 @@ DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-wo
 
 ```sh
 node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/build-desktop.mjs
-DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.1-source.app" node macos-launcher/build.mjs
+DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.2-source.app" node macos-launcher/build.mjs
 ```
 
 `build-desktop.mjs` 使用上游开发运行时装配流程、固定依赖的 Electron 和官方 primary runtime，不修改 DSH 源文件。源码应用输出为 `.build/DeepSeek Harness-<DSH版本>-source.app`；启动器将它放入 `Contents/Resources/desktop/`。已有产物不会被覆盖；重新构建前应明确处理旧产物。两个应用均使用本地 ad-hoc 签名。
@@ -25,11 +25,15 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.1-source.app" no
 
 ## GitHub ARM64生产构建
 
+标准发布入口为 `scripts/release.sh`，操作说明见 [发布流程](../docs/agents/release.md)，代理使用仓库 `macos-release` skill。先完成本地验证、版本及 main 同步检查，再空跑并推送 `macos-v<版本>` 标签。`scripts/build-release.sh` 统一生成 DMG、manifest 和 SHA256SUMS；CI 与本地包预检使用同一入口，已有产物及 Release 资产不覆盖。
+
 `.github/workflows/macos-app.yml` 在 ARM64 原生 runner 上初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。上游源码保持原样。
 
 CI 同时准备固定 Flutter 3.47.6，检查 lockfile、Dart 格式、静态分析与真实 SDK socket 测试，再将对应架构的 Flutter Release 应用与既有运行时装配为启动器。maclauncher.json 声明 Web 访问服务的启动/回收/状态/日志与 Desktop 后端的只读状态；入口托管、窗口激活和失联恢复由应用负责。
 
 `build-desktop-release.mjs` 使用上游生产包集合、工程元数据和运行时校验接口，按 Electron 的 Node 版本安装生产依赖，生成包含完整资源的 Desktop 应用。应用资源不使用源码目录或开发运行时链接；本项目使用 ad-hoc 签名，不调用上游要求 Developer ID 与公证凭据的发行入口。
+
+重复本地预检时，可向 `build-desktop-release.mjs` 传入一个尚不存在的输出目录，例如 `.build/release-0.2.5/desktop`，保留旧应用。省略参数时，CI 沿用 `.build/desktop-arm64`。
 
 `verify-desktop-release.mjs` 将应用复制到独立临时目录，核对签名和运行时文件完整性，并运行上游真实 Host、前端、插件及 DOCX／XLSX／PPTX 转 PDF 验收。通过后，CI 将该 Desktop 应用传给启动器打包，再验收实际包中的 Desktop、官方 DSH 就绪状态及 Matt 面板装配，最后校验ARM64的 DMG。验收使用临时 profile，不修改用户运行配置。main 构建生成 Actions artifacts；正式发布仍由 `macos-v<版本>` 标签触发。
 

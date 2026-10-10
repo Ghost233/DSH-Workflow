@@ -69,6 +69,8 @@ async function configuredHost(t, options = {}) {
       now: () => time, ...options.desktopNotifications ? {} : { notify: alert => notices.push(alert) },
     }) } })
   })
+  await ctx.plugin(req('@deepseek-ai/dsh-fs-local').default)
+  await ctx.plugin(req('@deepseek-ai/dsh-working-directory').default, { defaultDirectory: home })
   class Adapter extends LlmAdapter {
     resolveModel(provider, model) { return Promise.resolve({ provider, id: model, name: model }) }
     async *stream(options) {
@@ -159,11 +161,12 @@ function progressAnswer(model, choice = 'anomaly') {
 async function spawnMonitorChild(t, f, model = 'config-child') {
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent').default)
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent-spawn-in-process'))
-  const run = await f.ctx.subagents.start('spawn', { parent: f.handle.agent, signal: new AbortController().signal,
-    prompt: [{ type: 'text', text: 'child task' }], agentOptions: { provider: 'fixture', model } })
+  const run = await f.ctx.subagents.startActivation({ provider: 'spawn', label: 'child task', delivery: 'caller',
+    signal: new AbortController().signal, request: { parent: f.handle.agent,
+    prompt: [{ type: 'text', text: 'child task' }], agentOptions: { provider: 'fixture', model } } })
   t.after(async () => { await run.result; await run.dispose() })
   await until(() => f.streams.has(model))
-  return { run, async finish() {
+  return { run, agent: f.ctx.agents.get(run.childId), async finish() {
     await f.sendTo(model, { type: 'text-delta', index: 1, text: 'child done' }, { type: 'finish', reason: { kind: 'stop' } })
     const stream = f.streams.get(model); stream.complete = true; stream.next?.()
     await run.result
@@ -204,11 +207,11 @@ test('one Host routes main and spawned-child monitoring through quick while anot
     && request.authorization === 'Bearer full-fake-identity'))
   const state = f.ctx.get('agentMonitor').snapshot()
   assert.equal(state.agents.find(row => row.agentId === 'settings-agent').lastJudgment.status, 'normal')
-  assert.equal(state.agents.find(row => row.agentId === child.run.id).lastJudgment.status, 'anomaly')
-  assert.deepEqual(f.notices.map(alert => [alert.agentId, alert.parentId, alert.kind]), [[child.run.id, 'settings-agent', 'semantic-stall']])
+  assert.equal(state.agents.find(row => row.agentId === child.run.childId).lastJudgment.status, 'anomaly')
+  assert.deepEqual(f.notices.map(alert => [alert.agentId, alert.parentId, alert.kind]), [[child.run.childId, 'settings-agent', 'semantic-stall']])
   assert.ok([...f.streams.values()].every(stream => !stream.request.signal.aborted))
   assert.equal(f.handle.agent.status, 'running')
-  assert.equal(child.run.localAgent.status, 'running')
+  assert.equal(child.agent.status, 'running')
   const records = JSON.stringify(await f.ctx.get('agentMonitor').journal())
   assert.doesNotMatch(records, /quick-fake-identity|full-fake-identity|Authorization|Bearer|parent investigates|child repetition/)
   assert.equal(f.ctx.settings.describe().find(row => row.ns === 'monitor').value.jevModelName, 'quick')
@@ -252,7 +255,7 @@ test('monitor judgments in flight retain their original engine while settings ch
     for (const request of original.requests) request.response.end(JSON.stringify(progressAnswer('old-quick-version')))
     await checking
     let state = f.ctx.get('agentMonitor').snapshot()
-    const watched = state.agents.filter(row => ['settings-agent', child.run.id].includes(row.agentId))
+    const watched = state.agents.filter(row => ['settings-agent', child.run.childId].includes(row.agentId))
     assert.equal(watched.length, 2)
     assert.ok(watched.every(row => row.lastJudgment.model === 'old-quick-version'))
     assert.equal(f.notices.filter(alert => alert.kind === 'semantic-stall').length, 2)
@@ -281,7 +284,7 @@ test('monitor judgments in flight retain their original engine while settings ch
     assert.equal((await f.ctx.get('agentMonitor').journal()).filter(record => record.recordType === 'recovery').length, 0)
     assert.ok([...f.streams.values()].every(stream => !stream.request.signal.aborted))
     assert.equal(f.handle.agent.status, 'running')
-    assert.equal(child.run.localAgent.status, 'running')
+    assert.equal(child.agent.status, 'running')
     assert.doesNotMatch(JSON.stringify(state), /quick-old-fake|quick-new-fake|full-fake|Authorization|Bearer/)
     await child.finish(); await f.finish()
   })
@@ -400,7 +403,7 @@ test('one Host shows precise quick failures and renewed availability without rec
     assert.equal(f.streams.get('config-child'), childStream)
     assert.ok([...f.streams.values()].every(stream => !stream.request.signal.aborted))
     assert.equal(f.handle.agent.status, 'running')
-    assert.equal(child.run.localAgent.status, 'running')
+    assert.equal(child.agent.status, 'running')
     assert.doesNotMatch(JSON.stringify(status), /lifecycle-valid-fake|lifecycle-invalid-fake|Authorization|Bearer/)
   }
   assert.equal(full.requests.length, failures.length, 'only the explicit full consumer calls may use the full engine')
@@ -469,23 +472,23 @@ test('deterministic main and child monitoring continues through missing engines 
     assert.equal(state.engineAvailability.code, fault === 'delete' ? 'ENGINE_MISSING' : fault === 'timeout' ? 'TIMEOUT' : 'UPSTREAM_UNAVAILABLE')
     assert.ok(state.agents.every(row => row.semanticCount === 0))
     assert.deepEqual(f.notices.filter(alert => alert.kind === 'no-output').map(alert => [alert.agentId, alert.evidence.consecutiveChecks]),
-      [['settings-agent', 2], [child.run.id, 2]])
+      [['settings-agent', 2], [child.run.childId, 2]])
     assert.equal((await f.ctx.get('agentMonitor').journal()).filter(record => record.recordType === 'recovery').length, 0)
     assert.equal(f.handle.agent.status, 'running')
-    assert.equal(child.run.localAgent.status, 'running')
+    assert.equal(child.agent.status, 'running')
     assert.ok([...f.streams.values()].every(stream => !stream.request.signal.aborted))
     const noticesBeforeError = f.notices.length
     f.end('config-child', new LlmError('upstream failed', 'UPSTREAM_UNAVAILABLE', { status: 503 }))
     await child.run.result; await f.ctx.get('agentMonitor').flush()
     assert.deepEqual(f.notices.slice(noticesBeforeError).map(alert => [alert.agentId, alert.parentId, alert.kind, alert.evidence.code]),
-      [[child.run.id, 'settings-agent', 'model-error', 'UPSTREAM_UNAVAILABLE']])
-    assert.equal(child.run.localAgent.status, 'idle')
+      [[child.run.childId, 'settings-agent', 'model-error', 'UPSTREAM_UNAVAILABLE']])
+    assert.equal(child.agent.status, 'idle')
     assert.equal(f.handle.agent.status, 'running')
     assert.equal(f.streams.get('model').request.signal.aborted, false)
     await f.at(5000)
     state = f.ctx.get('agentMonitor').snapshot()
     assert.equal(f.notices.filter(alert => alert.kind === 'no-output' && alert.agentId === 'settings-agent').length, 2)
-    assert.equal(f.notices.filter(alert => alert.kind === 'no-output' && alert.agentId === child.run.id).length, 1)
+    assert.equal(f.notices.filter(alert => alert.kind === 'no-output' && alert.agentId === child.run.childId).length, 1)
     assert.equal(f.notices.filter(alert => alert.kind === 'model-error').length, 1)
     assert.ok(f.notices.every(alert => ['semantic-stall', 'no-output', 'model-error'].includes(alert.kind)))
     assert.equal(full.requests.length, 1, 'engine faults cannot invoke full as a fallback')
@@ -500,7 +503,7 @@ test('deterministic main and child monitoring continues through missing engines 
     assert.equal(f.notices.length, noticesBeforeCompletion)
     const records = await f.ctx.get('agentMonitor').journal()
     assert.equal(records.filter(record => record.recordType === 'recovery' && record.agentId === 'settings-agent').length, 2)
-    assert.equal(records.filter(record => record.recordType === 'recovery' && record.agentId === child.run.id).length, 0)
+    assert.equal(records.filter(record => record.recordType === 'recovery' && record.agentId === child.run.childId).length, 0)
     assert.doesNotMatch(JSON.stringify(records), /continuing-fake-identity|Authorization|Bearer|main ongoing thought|child ongoing thought/)
   })
 })
@@ -945,17 +948,18 @@ test('main and native spawned child semantic states remain independent while sha
   await f.start(); await f.send({ type: 'reasoning-delta', index: 0, text: 'parent investigates new evidence' })
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent').default)
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent-spawn-in-process'))
-  const run = await f.ctx.subagents.start('spawn', { parent: f.handle.agent, signal: new AbortController().signal,
-    prompt: [{ type: 'text', text: 'child task' }], agentOptions: { provider: 'fixture', model: 'semantic-child' } })
+  const run = await f.ctx.subagents.startActivation({ provider: 'spawn', label: 'child task', delivery: 'caller',
+    signal: new AbortController().signal, request: { parent: f.handle.agent,
+    prompt: [{ type: 'text', text: 'child task' }], agentOptions: { provider: 'fixture', model: 'semantic-child' } } })
   await until(() => f.streams.has('semantic-child'))
   await f.sendTo('semantic-child', { type: 'reasoning-delta', index: 0, text: 'child repetition' })
   await f.at(1000); await f.at(2000)
   assert.equal(f.requests.length, 4)
   assert.ok(f.requests.every(request => request.body.model === 'jev-upstream'))
-  assert.deepEqual(f.notices.map(alert => [alert.agentId, alert.role, alert.kind]), [[run.id, 'child', 'semantic-stall']])
+  assert.deepEqual(f.notices.map(alert => [alert.agentId, alert.role, alert.kind]), [[run.childId, 'child', 'semantic-stall']])
   const state = f.ctx.get('agentMonitor').snapshot()
   assert.equal(state.agents.find(row => row.agentId === 'settings-agent').semanticCount, 0)
-  assert.equal(state.agents.find(row => row.agentId === run.id).semanticCount, 2)
+  assert.equal(state.agents.find(row => row.agentId === run.childId).semanticCount, 2)
   await f.sendTo('semantic-child', { type: 'text-delta', index: 1, text: 'child finished' }, { type: 'finish', reason: { kind: 'stop' } })
   const child = f.streams.get('semantic-child'); child.complete = true; child.next?.()
   await run.result; await run.dispose(); await f.finish()
