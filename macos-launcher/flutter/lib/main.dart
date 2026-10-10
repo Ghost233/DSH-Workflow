@@ -255,26 +255,38 @@ class _LauncherPageState extends State<LauncherPage> {
         Text('应用版本 ${model.environment.appVersion}'),
         Text('Web 访问：${_stateName(model.snapshot.state)}'),
         const Text('桌面版持有后端，Web 连接同一实例。项目目录在 DSH 内选择。'),
-        FilledButton(
-          onPressed: () => unawaited(_act(model.openDsh)),
-          child: const Text('打开 DSH'),
-        ),
+        Text('桌面版', style: Theme.of(context).textTheme.titleMedium),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
+            FilledButton(
+              onPressed: () => unawaited(_act(model.openDsh)),
+              child: const Text('打开桌面版'),
+            ),
             _button('后台启动', model.startDesktopInBackground),
             _button('启动后显示', model.openDsh),
             _button('隐藏窗口', model.hideDesktop),
             _button('仅显示已运行窗口', model.showExistingDesktop),
+          ],
+        ),
+        const Divider(),
+        Text('Web', style: Theme.of(context).textTheme.titleMedium),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton(
+              onPressed: model.webUrl == null
+                  ? null
+                  : () => unawaited(
+                      _act(() => model.native.openUrl(model.webUrl.toString())),
+                    ),
+              child: const Text('打开 Web'),
+            ),
             _button('启动 Web', model.startWeb, enabled: !model.isActive),
             _button('停止 Web', model.stopWeb, enabled: model.isActive),
             _button('重连 Web', model.restartWeb, enabled: model.isActive),
-            _button(
-              '打开 Web 入口',
-              () => model.native.openUrl(model.webUrl.toString()),
-              enabled: model.webUrl != null,
-            ),
           ],
         ),
       ]),

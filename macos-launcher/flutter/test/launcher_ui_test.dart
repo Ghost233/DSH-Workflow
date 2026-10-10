@@ -7,6 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 class UiNative extends NativeBridge {
   UiNative({this.loginStatus = 'disabled'});
   String loginStatus;
+  String? openedUrl;
+  @override
+  Future<void> openUrl(String url) async => openedUrl = url;
   bool running = false, hidden = false, hideWindowOnStart = false;
   @override
   Future<void> showWindow() async {}
@@ -66,6 +69,39 @@ void main() {
       for (final label in ['后台启动', '启动后显示', '隐藏窗口', '仅显示已运行窗口']) {
         expect(find.text(label), findsOneWidget);
       }
+      final desktopGroup = find.ancestor(
+        of: find.text('打开桌面版'),
+        matching: find.byType(Wrap),
+      );
+      final webGroup = find.ancestor(
+        of: find.text('打开 Web'),
+        matching: find.byType(Wrap),
+      );
+      for (final label in ['后台启动', '启动后显示', '隐藏窗口', '仅显示已运行窗口']) {
+        expect(
+          find.descendant(of: desktopGroup, matching: find.text(label)),
+          findsOneWidget,
+        );
+      }
+      for (final label in ['启动 Web', '停止 Web', '重连 Web']) {
+        expect(
+          find.descendant(of: webGroup, matching: find.text(label)),
+          findsOneWidget,
+        );
+      }
+      expect(
+        find.descendant(of: desktopGroup, matching: find.text('打开 Web')),
+        findsNothing,
+      );
+      final openWeb = find.widgetWithText(FilledButton, '打开 Web');
+      expect(tester.widget<FilledButton>(openWeb).onPressed, isNull);
+      model.webUrl = Uri.parse('http://127.0.0.1:33080/');
+      model.setSdkMessage('connected');
+      await tester.pumpAndSettle();
+      await tester.tap(openWeb);
+      await tester.pumpAndSettle();
+      expect(native.openedUrl, 'http://127.0.0.1:33080/');
+      expect(native.running, isFalse);
       await tester.tap(find.text('仅显示已运行窗口'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Desktop 未运行'), findsOneWidget);
@@ -78,7 +114,7 @@ void main() {
       await tester.tap(find.text('隐藏窗口'));
       await tester.pumpAndSettle();
       expect(native.hidden, isTrue);
-      await tester.tap(find.text('启动后显示'));
+      await tester.tap(find.text('打开桌面版'));
       await tester.pumpAndSettle();
       expect(native.hidden, isFalse);
       final preference = find.ancestor(

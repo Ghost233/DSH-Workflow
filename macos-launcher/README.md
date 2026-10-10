@@ -41,11 +41,11 @@ CI 同时准备固定 Flutter 3.47.6，检查 lockfile、Dart 格式、静态分
 
 日常入口是无参数 `./start-dsh-workflow.sh`，只支持 macOS ARM64。它通过 `dsh-workflow://open-global` 唤起已构建的启动器并打开全局实例；重复运行复用启动器和官方 Desktop 的单实例机制。其他系统或架构在启动应用前明确拒绝，不保留源码 Web 启动回退。
 
-首次打开管理窗口需要设置访问密码。启动器将 Web 连接到正在运行的 Desktop Host；后端未运行时才打开官方桌面端。唯一主入口“打开 DSH”激活已有桌面应用，不会额外打开浏览器标签。每个工程在 DSH 内选择工作目录。
+首次打开管理窗口需要设置访问密码。启动器将 Web 连接到正在运行的 Desktop Host；后端未运行时才打开官方桌面端。管理页按“桌面版”和“Web”分组：“打开桌面版”激活已有桌面应用，“打开 Web”在 Web 服务就绪后打开浏览器入口。每个工程在 DSH 内选择工作目录。
 
 Web 只有一个端口 `33080`，监听 `0.0.0.0`。本机访问 `http://127.0.0.1:33080/`，局域网使用 Mac 当前的内网 IP 和同一个端口。没有有效登录 cookie 时显示密码页；密码正确后，代理在服务器内部通过桌面后端的私有 token 取得后端认证 cookie，并把它保存在当前 Web 会话中。浏览器只持有代理登录 cookie，登录后回到同一端口的 `/`，随后直接访问 DSH。HTTP 和 WebSocket 使用同一认证会话，不再经过导航页或跨端口跳转。
 
-访问设置中的“停止 Web 服务”或退出启动器只关闭代理，不终止官方桌面端的 Host。“重连 Web”重新启动同一端口的 Web 入口并连接现有 Host。关闭 Desktop 窗口的行为沿用官方设计；完全退出 Desktop 才会结束它的后端。Desktop 重新启动后，在启动器点“打开 DSH”即可连接新的 Host。
+访问设置中的“停止 Web 服务”或退出启动器只关闭代理，不终止官方桌面端的 Host。“重连 Web”重新启动同一端口的 Web 入口并连接现有 Host。关闭 Desktop 窗口的行为沿用官方设计；完全退出 Desktop 才会结束它的后端。Desktop 重新启动后，在启动器点“打开桌面版”即可显示桌面窗口，再点“重连 Web”连接新的 Host。
 
 启动器使用 `global-supervisor.mjs`，只保存一个全局连接状态；管理指令通过启动器私有控制管道传递，没有 `/global/open`、等待页、导航登录或目录实例 HTTP 接口。原 `catalogs.json` 和目录实例历史数据保留但不再读取。全局工作流数据仍位于 `~/Library/Application Support/DSH Workflow/global`。Desktop profile 初次缺失时复制已有 Web profile 配置和插件，后续保留 Desktop 用户配置。
 

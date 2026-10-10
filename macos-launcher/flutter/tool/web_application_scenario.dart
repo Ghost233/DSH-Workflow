@@ -236,7 +236,7 @@ Future<void> runWebApplicationScenario({
                           '启动后显示',
                           '隐藏窗口',
                           '仅显示已运行窗口',
-                          '打开 DSH',
+                          '打开桌面版',
                         ].contains(label)
                     ? node['label'].toString().split('\n').first == label
                     : node['label'].toString().contains(label)) &&

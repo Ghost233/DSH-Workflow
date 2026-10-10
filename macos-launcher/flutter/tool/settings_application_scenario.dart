@@ -586,8 +586,8 @@ Future<void> runSettingsApplicationScenario(
             await desktopExitObserved(oldDesktopPid!) &&
             await ownedReceiptAbsent(o.receipt),
       );
-      await control('打开 DSH', 'tap', 'scrollDown');
-      await o.tap('打开 DSH');
+      await control('打开桌面版', 'tap', 'scrollDown');
+      await o.tap('打开桌面版');
       reopenedBackend = await waitForActualDesktopLease(
         oldLease: firstBackend['lease'] as String,
         receipt: () async =>

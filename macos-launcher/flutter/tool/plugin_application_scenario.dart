@@ -702,7 +702,7 @@ Future<void> runPluginUpdateApplicationScenario(
         },
       );
       await app.tap('管理');
-      await app.tap('打开 DSH');
+      await app.tap('打开桌面版');
       final after = await waitForActualDesktopLease(
         oldLease: before['lease'] as String,
         receipt: () async => await ownedReceiptAbsent(app.receipt)

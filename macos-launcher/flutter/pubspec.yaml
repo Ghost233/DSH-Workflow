@@ -1,7 +1,7 @@
 name: dsh_workflow_launcher
 description: Flutter launcher and MacLauncher SDK peer for DSH Workflow.
 publish_to: none
-version: 0.2.6+5
+version: 0.2.7+5
 
 environment:
   sdk: ^3.13.0

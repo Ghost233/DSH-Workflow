@@ -502,7 +502,7 @@ class DesktopWindowProbe {
       'Desktop is hidden before explicit open',
       () async => current['hidden'] == true,
     );
-    await app.tap('打开 DSH');
+    await app.tap('打开桌面版');
     await visible();
     await sameBackend();
     await File('${root.path}/desktop-window-evidence.json').writeAsString(
@@ -880,7 +880,7 @@ Future<void> runDesktopWindowRestarts(
               desktopPid = windows.current['pid'] as int;
               hostPid = actual.backend['pid'] as int;
               lease = actual.backend['lease'];
-              await actual.tap('打开 DSH');
+              await actual.tap('打开桌面版');
               await waitFor(
                 'explicit open after persisted hidden startup shows and focuses',
                 () async =>
@@ -904,7 +904,7 @@ Future<void> runDesktopWindowRestarts(
                     windows.current['hidden'] == true &&
                     windows.current['onscreenWindowCount'] == 0,
               );
-              await actual.tap('打开 DSH');
+              await actual.tap('打开桌面版');
               await waitFor(
                 'explicit open recovers that same running Desktop',
                 () async =>
