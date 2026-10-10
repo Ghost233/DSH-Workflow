@@ -25,7 +25,7 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.2-source.app" no
 
 ## GitHub ARM64生产构建
 
-标准发布入口为 `scripts/release.sh`，操作说明见 [发布流程](../docs/agents/release.md)，代理使用仓库 `macos-release` skill。先完成本地验证、版本及 main 同步检查，再空跑并推送 `macos-v<版本>` 标签。`scripts/build-release.sh` 统一生成 DMG、manifest 和 SHA256SUMS；CI 与本地包预检使用同一入口，已有产物及 Release 资产不覆盖。
+标准发布入口为 `scripts/release.sh`，操作说明见 [发布流程](../docs/agents/release.md)，代理使用仓库 `deploy-release` skill。按改动范围完成验证，再空跑并推送 `macos-v<版本>` 标签。`scripts/build-release.sh` 统一生成 DMG、manifest 和 SHA256SUMS；CI 与本地包预检使用同一入口。
 
 `.github/workflows/macos-app.yml` 在 ARM64 原生 runner 上初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。上游源码保持原样。
 

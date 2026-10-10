@@ -17,12 +17,11 @@ on:
       - scripts/release.py
       - scripts/test_release.py
       - scripts/build-release.sh
-      - .agents/skills/macos-release/**
-      - docs/agents/release.md
       - package.json
       - dsh-runtime.json
       - .gitmodules
       - deepseek-harness
+      - '!**/*.md'
   push:
     branches:
       - main
@@ -43,12 +42,11 @@ on:
       - scripts/release.py
       - scripts/test_release.py
       - scripts/build-release.sh
-      - .agents/skills/macos-release/**
-      - docs/agents/release.md
       - package.json
       - dsh-runtime.json
       - .gitmodules
       - deepseek-harness
+      - '!**/*.md'
   workflow_dispatch:
 
 permissions:
