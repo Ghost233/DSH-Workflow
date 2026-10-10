@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { homedir } from 'node:os'
+import { manageProfilePluginOperation } from './plugin-configuration.mjs'
 
 import { hostPackageMap } from '../../scripts/project-plugins.mjs'
 import { installProjectResolver } from '../../scripts/project-plugin-resolver.mjs'
@@ -19,4 +21,11 @@ const entry = join(dirname(anchor), 'lib', 'bin.js')
 process.argv = [process.execPath, entry, ...process.argv.slice(3)]
 const { runCli } = await import(pathToFileURL(entry))
 if (typeof runCli !== 'function') throw new Error('Packaged DSH CLI does not expose runCli')
-await runCli({ manageDesktopProfile: process.argv[2] === 'plugin' && process.argv[3] === '--profile' && process.argv[4] === 'desktop' })
+const synchronize = process.argv.includes('--workflow-sync')
+process.argv = process.argv.filter(value => value !== '--workflow-sync')
+const profileOperation = process.argv[2] === 'plugin' && process.argv[3] === '--profile'
+const run = () => runCli({ manageDesktopProfile: profileOperation && process.argv[4] === 'desktop' })
+if (profileOperation && ['add', 'remove'].includes(process.argv[5])) {
+  await manageProfilePluginOperation({ resources, home: process.env.DSH_HOME || join(homedir(), '.dsh'),
+    profileName: process.argv[4], synchronize, args: process.argv.slice(5), run })
+} else await run()

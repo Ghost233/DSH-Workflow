@@ -4,6 +4,7 @@ import { cp, mkdir, readFile, writeFile, symlink, lstat, readlink, rename, unlin
 import { existsSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { composeDshLaunch } from '../../scripts/dsh-launch-composition.mjs'
+import { readPluginConfiguration, savePluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
 import { migrateProjectEntryNames } from '../../scripts/observation-profile.mjs'
 
 const BUNDLE = 'dsh-workflow-desktop'
@@ -35,6 +36,12 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
         await cp(join(web, 'node_modules'), join(profile, 'node_modules'), { recursive: true, dereference: false })
       }
     } else boot.initProfile(profile, boot.PROFILE_TEMPLATES.web.bundles)
+  }
+  const pluginConfig = await readPluginConfiguration(resourcesRoot, home)
+  if (pluginConfig) {
+    await savePluginConfiguration(home, pluginConfig)
+    try { await assertProfilePluginVersions(profile, pluginConfig) }
+    catch (error) { process.stderr.write(`[project-plugins] ${error.message}\n`) }
   }
   const previous = existsSync(stampPath) ? JSON.parse(await readFile(stampPath, 'utf8')) : undefined
   const current = existsSync(manifestPath) ? JSON.parse(await readFile(manifestPath, 'utf8')) : undefined

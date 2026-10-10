@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { configurationPath } from './plugin-configuration.mjs'
 
 const registry = 'https://registry.npmjs.org/'
 const owned = [
@@ -170,6 +171,15 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
     const manifest = await jsonFile(join(resources, 'node_modules', ...name.split('/'), 'package.json'))
     if (manifest?.name === name) rows.push({ source: 'DSH 版本绑定插件', name, current: manifest.version,
       latest: null, status: 'coupled', note: '与当前 DSH 版本绑定；不能单独升级' })
+  }
+
+  const activeConfiguration = await jsonFile(configurationPath(home)) ?? projectManifest
+  for (const row of rows.filter(row => row.source === profileSource)) {
+    const target = activeConfiguration?.plugins?.find(item => item.package === row.name)?.version
+    if (exactVersion(target) && (row.current !== target || profileManifest?.dependencies?.[row.name] !== target)) {
+      row.status = 'error'
+      row.note = `插件版本偏差：统一配置 ${target}，依赖声明 ${profileManifest?.dependencies?.[row.name] ?? '缺失'}，实际安装 ${row.current ?? '缺失'}`
+    }
   }
 
   const pending = rows.filter(row => row.status === 'pending')

@@ -17,7 +17,7 @@ test('only independent npm Web-profile plugins are update candidates', () => {
   ] }), [external])
 })
 
-test('marked project plugins join Web profile without downgrading existing versions', async () => {
+test('marked project plugins join Web profile using the single configuration', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-plugin-startup-'))
   try {
     const resources = join(root, 'resources'), workflow = join(resources, 'workflow')
@@ -25,11 +25,11 @@ test('marked project plugins join Web profile without downgrading existing versi
     await mkdir(workflow, { recursive: true })
     await mkdir(join(profile, 'node_modules/dsh-context'), { recursive: true })
     const plugins = [
-      { package: 'dsh-context', version: '0.56.2', startup: true },
+      { package: 'dsh-context', version: '0.60.0', startup: true },
       { package: 'dsh-cost-meter', version: '1.7.37', startup: true },
       { package: 'dsh-mattpocock-skills-deck', version: '1.7.30', startup: true },
     ]
-    const manifest = JSON.stringify({ registry: 'https://registry.npmjs.org/', plugins: plugins.map(({ package: name, startup }) => ({ package: name, startup })) })
+    const manifest = JSON.stringify({ registry: 'https://registry.npmjs.org/', plugins })
     await writeFile(join(workflow, 'project-plugins.json'), manifest)
     await writeFile(join(workflow, 'dsh-runtime.json'), JSON.stringify({ version: '0.1.7-rc.2' }))
     await writeFile(join(workflow, 'project-plugins.lock.json'), JSON.stringify({ schema: 1, harnessVersion: '0.1.7-rc.2',

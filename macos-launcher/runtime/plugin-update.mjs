@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkPluginVersions } from './plugin-versions.mjs'
+import { readPluginConfiguration, savePluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
 
 const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const packageNamePattern = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i
@@ -30,12 +30,12 @@ async function installedVersion(profile, name) {
   }
 }
 
-async function runProfileUpdate({ resources, home, candidates, registry, profileName = 'web' }) {
+async function runProfileUpdate({ resources, home, candidates, registry, profileName = 'web', synchronize = false }) {
   const cli = join(resources, 'node_modules/@deepseek-ai/dsh/lib/bin.js')
   const runner = join(resources, 'workflow/macos-launcher/runtime/run-dsh.mjs')
   const pnpm = join(resources, 'node_modules/pnpm/bin/pnpm.mjs')
   const shim = join(resources, 'bin/pnpm')
-  if (![cli, pnpm, shim, ...(profileName === 'desktop' ? [runner] : [])].every(existsSync)) throw new Error('应用缺少 DSH 或 pnpm 更新运行时，请重新构建应用')
+  if (![cli, pnpm, shim, runner].every(existsSync)) throw new Error('应用缺少 DSH 或 pnpm 更新运行时，请重新构建应用')
   const execute = args => new Promise((accept, reject) => {
     const child = spawn(process.execPath, args, { cwd: resources, env: {
       ...process.env, DSH_HOME: home, PATH: `${join(resources, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
@@ -48,7 +48,8 @@ async function runProfileUpdate({ resources, home, candidates, registry, profile
     child.once('close', (code, signal) => code === 0 ? accept()
       : reject(new Error(`DSH 插件更新失败（${signal ?? code}）：${diagnostics.slice(-1000)}`)))
   })
-  await execute([...(profileName === 'desktop' ? [runner, resources] : [cli]), 'plugin', '--profile', profileName, 'add', ...candidates.map(row => `${row.name}@${row.latest}`), '--save-exact',
+  await execute([runner, resources, 'plugin', '--profile', profileName, 'add', ...candidates.map(row => `${row.name}@${row.latest}`), '--save-exact',
+    ...(synchronize ? ['--workflow-sync'] : []),
     ...(registry ? ['--registry', registry] : [])])
   if (profileName !== 'desktop') await execute([cli, '--profile', profileName, '--dump-config'])
 }
@@ -57,26 +58,14 @@ async function runProfileUpdate({ resources, home, candidates, registry, profile
 export async function ensureStartupPlugins({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
   run = runProfileUpdate } = {}) {
   const resources = resolve(resourcesRoot)
-  const workflow = join(resources, 'workflow')
-  const listBytes = await readFile(join(workflow, 'project-plugins.json'))
-  const list = JSON.parse(listBytes)
-  const lock = await readJson(join(workflow, 'project-plugins.lock.json'))
-  const runtime = await readJson(join(workflow, 'dsh-runtime.json'))
-  if (lock.schema !== 1 || lock.harnessVersion !== runtime.version || lock.registry !== list.registry
-    || new URL(list.registry).protocol !== 'https:' || !Array.isArray(lock.plugins)
-    || lock.plugins.length !== list.plugins.length
-    || lock.manifestSha256 !== createHash('sha256').update(listBytes).digest('hex')) {
-    throw new Error('Project plugin lock does not match the packaged manifest')
-  }
+  const list = await readPluginConfiguration(resources, home)
+  if (!list) throw new Error('Missing project plugin configuration')
   const profile = join(home, 'profiles/web')
   const result = { added: [], already: [], skipped: [] }
+  await assertProfilePluginVersions(profile, list)
+  await savePluginConfiguration(home, list)
   for (const item of list.plugins.filter(row => row.startup === true)) {
     try {
-      const pinned = lock.plugins.find(row => row.package === item.package)
-      if (!packageNamePattern.test(item.package) || !pinned || !versionPattern.test(pinned.version)
-        || pinned.metadata?.name !== item.package || pinned.metadata?.version !== pinned.version) {
-        throw new Error('Missing or invalid published package pin')
-      }
       const before = await readJson(join(profile, 'package.json')).catch(error => {
         if (error.code === 'ENOENT') return undefined
         throw error
@@ -86,11 +75,13 @@ export async function ensureStartupPlugins({ resourcesRoot, home = process.env.D
         result.already.push({ name: item.package, version: current })
         continue
       }
-      const target = current && versionPattern.test(current) ? current : pinned.version
+      const target = item.version
+      await assertProfilePluginVersions(profile, list)
       await run({ resources, home, candidates: [{ name: item.package, latest: target }], registry: list.registry })
       const after = await readJson(join(profile, 'package.json'))
       if (await installedVersion(profile, item.package) !== target
         || !after.dsh?.profile?.bundles?.includes(item.package)) throw new Error('DSH did not enable the selected plugin')
+      await assertProfilePluginVersions(profile, list)
       result.added.push({ name: item.package, version: target })
     } catch (error) {
       result.skipped.push({ name: item.package, reason: String(error.message ?? error).slice(0, 500) })
@@ -109,6 +100,8 @@ export async function updateProfilePlugins({ resourcesRoot, home = process.env.D
   }
   const resources = resolve(resourcesRoot)
   const profile = join(home, 'profiles', profileName)
+  const config = await readPluginConfiguration(resources, home)
+  await assertProfilePluginVersions(profile, config)
   const report = await check({ resourcesRoot: resources, home, profileName })
   const available = updateCandidates(report).filter(row => selection === undefined || selection.has(row.name))
   if (available.length === 0) return { checkedAt: report.checkedAt, updated: [], failedChecks: report.rows.filter(row => row.status === 'error').length }
@@ -116,6 +109,7 @@ export async function updateProfilePlugins({ resourcesRoot, home = process.env.D
   const enabled = new Set(profileManifest.dsh?.profile?.bundles ?? [])
   const candidates = available.filter(row => enabled.has(row.name))
   if (candidates.length === 0) return { checkedAt: report.checkedAt, updated: [], failedChecks: report.rows.filter(row => row.status === 'error').length }
+  if (config) await savePluginConfiguration(home, config)
   const before = new Map(await Promise.all(candidates.map(async row => [row.name, await installedVersion(profile, row.name)])))
   let failure
   try { await run({ resources, home, candidates, profileName }) }
@@ -125,12 +119,46 @@ export async function updateProfilePlugins({ resourcesRoot, home = process.env.D
   for (const row of candidates) {
     const actual = await installedVersion(profile, row.name)
     if (actual && before.get(row.name) !== actual) updated.push({ name: row.name, from: before.get(row.name) ?? null, to: actual })
-    if (!failure && (actual !== row.latest || !manifest.dsh?.profile?.bundles?.includes(row.name))) {
+    if (!failure && (actual !== row.latest || manifest.dependencies?.[row.name] !== row.latest || !manifest.dsh?.profile?.bundles?.includes(row.name))) {
       failure = `DSH 未完整启用更新后的插件：${row.name}`
     }
   }
+  if (config) {
+    for (const item of config.plugins) {
+      const row = candidates.find(row => row.name === item.package)
+      if (row && await installedVersion(profile, row.name) === row.latest
+        && manifest.dependencies?.[row.name] === row.latest) item.version = row.latest
+    }
+    await savePluginConfiguration(home, config)
+    try { await assertProfilePluginVersions(profile, config, new Map(config.plugins.filter(item => profileManifest.dependencies?.[item.package] !== undefined).map(item => [item.package, item.version]))) }
+    catch (error) { failure = [failure, error.message].filter(Boolean).join('；') }
+  }
   return { checkedAt: report.checkedAt, updated, failedChecks: report.rows.filter(row => row.status === 'error').length,
     ...(failure ? { error: failure } : {}) }
+}
+
+/** Explicitly apply edited configuration to selected packages; never reconcile unrelated drift. */
+export async function synchronizeProfilePlugins({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
+  profileName = existsSync(join(resourcesRoot, 'desktop/DeepSeek Harness.app')) ? 'desktop' : 'web',
+  only, run = runProfileUpdate } = {}) {
+  const resources = resolve(resourcesRoot)
+  const config = await readPluginConfiguration(resources, home)
+  if (!config || !only?.length || only.some(name => !config.plugins.some(item => item.package === name))) {
+    throw new Error('同步需要通过 --only 指定统一配置中的插件')
+  }
+  const selected = new Set(only)
+  const profile = join(home, 'profiles', profileName)
+  await assertProfilePluginVersions(profile, { ...config, plugins: config.plugins.filter(item => !selected.has(item.package)) })
+  await savePluginConfiguration(home, config)
+  const candidates = config.plugins.filter(item => selected.has(item.package)).map(item => ({ name: item.package, latest: item.version }))
+  await run({ resources, home, candidates, profileName, registry: config.registry, synchronize: true })
+  await assertProfilePluginVersions(profile, config)
+  const manifest = await readJson(join(profile, 'package.json'))
+  for (const row of candidates) {
+    if (await installedVersion(profile, row.name) !== row.latest || manifest.dependencies?.[row.name] !== row.latest
+      || !manifest.dsh?.profile?.bundles?.includes(row.name)) throw new Error(`插件同步未完成：${row.name}`)
+  }
+  return { synchronized: candidates.map(row => ({ name: row.name, version: row.latest })) }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -140,7 +168,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (!process.argv[2] || onlyIndex >= 0 && !only) {
       throw new Error('Usage: plugin-update.mjs RESOURCES [--only name1,name2]')
     }
-    process.stdout.write(JSON.stringify(await updateProfilePlugins({ resourcesRoot: process.argv[2], only })) + '\n')
+    const operation = process.argv.includes('--sync') ? synchronizeProfilePlugins : updateProfilePlugins
+    process.stdout.write(JSON.stringify(await operation({ resourcesRoot: process.argv[2], only })) + '\n')
   } catch (error) {
     process.stderr.write(`${error.stack ?? error}\n`)
     process.exitCode = 1

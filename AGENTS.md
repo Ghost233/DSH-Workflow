@@ -39,4 +39,4 @@ SoL 和 Synapse 已移除；历史文档中的接入和验收要求不再适用�
 
 ### 发布流程
 
-正式发布或修改发布入口前，使用 `deploy-release` skill，读取 `docs/agents/release.md`；统一入口为 `scripts/release.sh`。
+正式发布或修改发布入口前，读取并遵循 [deploy-release skill](.agents/skills/deploy-release/SKILL.md)。

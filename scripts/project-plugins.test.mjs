@@ -23,6 +23,7 @@ async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-project-plugins-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const list = JSON.parse(await readFile(new URL('../project-plugins.json', import.meta.url), 'utf8'))
+  for (const item of list.plugins) item.version = '1.0.0'
   await writeJson(join(root, 'project-plugins.json'), list)
   await pkg(root, { name: 'dsh-workflow', version: '1.0.0', dsh: { client: { platform: 'web' } } })
   await pkg(join(root, 'matt-skills-panel-plugin/package'), { name: 'dsh-workflow-matt-panel', version: '1.0.0', dsh: { client: { platform: 'web' } } })
@@ -85,6 +86,8 @@ test('ordered latest resolution, project-local install, patch publication and pr
   await assert.rejects(acquireLock(state.directory, process.pid), /正在被启动进程/)
   await releaseLock(state.directory, process.pid)
   await writeFile(join(state.directory, 'pnpm-workspace.yaml'), workspace + '# explicit user approvals must survive\n')
+  for (const item of f.list.plugins) if (item.source !== 'git') item.version = '1.0.1'
+  await writeJson(join(f.root, 'project-plugins.json'), f.list)
   const next = await prepare(f.root, f.anchor, process.pid, { ...f, resolvePackage: async item => item.source === 'git' ? { commit: 'b'.repeat(40) } : { version: '1.0.1' } })
   assert.ok(next.installed.filter(p => p.source !== 'project').every(p => p.source === 'git' ? p.commit === 'b'.repeat(40) : p.version === '1.0.1'))
   assert.match(await readFile(join(state.directory, 'pnpm-workspace.yaml'), 'utf8'), /explicit user approvals must survive/)

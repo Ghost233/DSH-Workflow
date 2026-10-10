@@ -186,7 +186,8 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
   if (locked && (locked.schema !== 1 || locked.harnessVersion !== host.version || locked.registry !== list.registry
     || locked.manifestSha256 !== digest(listBytes) || !Array.isArray(locked.plugins)
     || locked.plugins.length !== list.plugins.length
-    || locked.plugins.some((item, index) => item.package !== list.plugins[index].package))) {
+    || locked.plugins.some((item, index) => item.package !== list.plugins[index].package
+      || /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(list.plugins[index].version) && item.version !== list.plugins[index].version))) {
     throw new Error('Project plugin lock does not match the manifest/host; use the explicit update command before launching')
   }
   const excludedPackages = scope === 'all' ? new Set() : new Set(names)
@@ -208,6 +209,9 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
       const revision = update ? await resolvePackage(item, list.registry) : locked.plugins.find(row => row.package === item.package)
       if (item.source === 'git' ? !/^[a-f0-9]{40}$/.test(revision.commit) : !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(revision.version)) {
         throw new Error(`Invalid plugin revision: ${item.package}`)
+      }
+      if (/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(item.version) && revision.version !== item.version) {
+        throw new Error(`Resolved plugin version does not match configuration: ${item.package}`)
       }
       const metadata = update ? await readMetadata(item, revision, list.registry) : revision.metadata
       if (scope === 'startup') assertClientDependencies([{ package: item.package, metadata }], hostPackages, activeNames)

@@ -123,7 +123,7 @@ class Release:
         published_versions = [tuple(map(int, name.removeprefix("refs/tags/macos-v").split("."))) for name in tags
                               if re.fullmatch(r"refs/tags/macos-v\d+\.\d+\.\d+", name)]
         if published_versions and tuple(map(int, version.split("."))) <= max(published_versions):
-            raise ReleaseError("版本必须高于远端已有发布 tag；按 docs/agents/release.md 确定目标版本")
+            raise ReleaseError("版本必须高于远端已有发布 tag；按 .agents/skills/deploy-release/SKILL.md 确定目标版本")
         local_tags = self.git("tag", "--list", tag).splitlines()
         if local_tags:
             if not retry:

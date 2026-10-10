@@ -25,7 +25,7 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.2-source.app" no
 
 ## GitHub ARM64生产构建
 
-标准发布入口为 `scripts/release.sh`，操作说明见 [发布流程](../docs/agents/release.md)，代理使用仓库 `deploy-release` skill。按改动范围完成验证，再空跑并推送 `macos-v<版本>` 标签。`scripts/build-release.sh` 统一生成 DMG、manifest 和 SHA256SUMS；CI 与本地包预检使用同一入口。
+发布操作统一遵循 [deploy-release skill](../.agents/skills/deploy-release/SKILL.md)。
 
 `.github/workflows/macos-app.yml` 在 ARM64 原生 runner 上初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。上游源码保持原样。
 
@@ -58,3 +58,23 @@ Web 只有一个端口 `33080`，监听 `0.0.0.0`。本机访问 `http://127.0.0
 插件管理表格读取实际使用的 `$DSH_HOME/profiles/desktop`，包括 npm 依赖、Bundle、自研插件、中文技能和项目锁定快照。表格中的兼容版本及最新支持 DSH 版本取作者发布元数据；未声明时如实显示。与 DSH 绑定的官方包和项目打包插件随应用构建更新。
 
 独立 npm 插件可逐项更新。更新 Desktop profile 前应完全退出官方 Desktop，沿用官方 profile 管理约束；更新后重新启动 Desktop 加载新版本。插件管理不会终止正在运行的 Desktop 任务。项目清单中的 `startup: true` 插件沿用既有 Web profile 安装结果，首次 Desktop 初始化时一并复制；单项安装失败仍应报告真实原因。
+
+
+## 插件版本配置
+
+仓库的 `project-plugins.json` 是发布默认值的唯一编辑入口。`project-plugins.lock.json` 是脚本生成的发布快照，禁止手动修改。生成时核对解析版本与清单中的精确版本；启动时也核对两者，锁文件不能覆盖清单中的版本。
+
+应用首次准备 profile 时，以发布清单初始化 `$DSH_HOME/workflow/project-plugins.json`。这是本机插件版本的唯一配置入口，Desktop 和 Web 共用。默认 `DSH_HOME` 为 `~/.dsh`。后续启动和应用升级保留本机配置；应用内的清单只提供初始化默认值。profile 的依赖声明和实际安装包属于安装状态，需要与本机配置一致。
+
+启动器更新插件时，同时保存精确依赖声明和本机配置。依赖操作前后检查项目管理的全部插件，发现版本偏差就停止依赖操作并报告。Desktop 启动会报告已有偏差，不自动替换插件。通过项目 CLI 卸载无关插件也执行这项检查。DSH 上游公开接口及直接调用 pnpm 不经过项目检查；使用这些入口后，需要重新核对版本状态。
+
+手动调整本机配置后，用应用内的 Node 执行同步命令。同步只处理 `--only` 指定的插件，目标版本取自本机配置。先完全退出 Desktop，再执行：
+
+```sh
+"/Applications/DSH Workflow.app/Contents/Resources/node" \
+  "/Applications/DSH Workflow.app/Contents/Resources/workflow/macos-launcher/runtime/plugin-update.mjs" \
+  "/Applications/DSH Workflow.app/Contents/Resources" \
+  --sync --only billion-context
+```
+
+同步后重新打开 Desktop，使 Host 加载新版本。其他插件存在版本偏差时，先报告并停止，不顺带修复。命令失败后可能已有部分安装变化；保留失败信息，核对实际包和依赖声明后再同步。配置写入失败也按失败报告。
