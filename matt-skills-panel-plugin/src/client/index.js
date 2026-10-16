@@ -72,6 +72,11 @@ export default {
     //   注入仍走同一个 styles.insert 接缝 —— 不是第二个 <style>，也没有新的注入机制。
     // ==== leaf:vcStyles (spliced by build) ====
     styles.insert(VC_STYLE_TEXT)
+    // 887：技能详情像素风皮肤另起一个样式叶子（与 vcStyles 同一套做法）。
+    // ==== leaf:pixelStyles (spliced by build) ====
+    styles.insert(PIXEL_STYLE_TEXT)
+    // ==== leaf:feedbackStyles (spliced by build) ====
+    styles.insert(FEEDBACK_STYLE_TEXT) // 948 反馈样式叶子（与像素皮肤同款做法，见叶子头）
 
     // ============================================================
     // 0.5 locale（T3 #366 · dsws 命名空间 zh/en；跟随 harness 语言；GitHub 数据不翻译）
@@ -91,6 +96,8 @@ export default {
     // ==== kernel:localeVcWrite (spliced by build) ====
     // #879 技能描述 27 条中英词条：locale-word.js 已贴 350 行上限，照 #621/#690/#842 的做法自成一个片段。
     // ==== kernel:localeSkilldesc (spliced by build) ====
+    // 887：技能详情像素风的中英词条单独一份片段（sd.*）。
+    // ==== kernel:localeSkilldetail (spliced by build) ==== // ==== kernel:localeCards (spliced by build) ====
     // ==== kernel:locale (spliced by build) ====
     const localeSvc = ctx.get('locale')
     if (localeSvc && typeof localeSvc.register === 'function') {
@@ -226,6 +233,16 @@ export default {
     // ==== leaf:chips (spliced by build) ====
     // ==== leaf:hoverTip (spliced by build) ====
     // ==== leaf:tip (spliced by build) ====
+    // 887：八个像素风最小组件。
+    // ==== leaf:pixelBtn (spliced by build) ====
+    // ==== leaf:pixelDot (spliced by build) ====
+    // ==== leaf:pixelNum (spliced by build) ====
+    // ==== leaf:pixelStateIcon (spliced by build) ====
+    // ==== leaf:pixelSeal (spliced by build) ====
+    // ==== leaf:pixelSkeleton (spliced by build) ====
+    // ==== leaf:pixelBanner (spliced by build) ====
+    // ==== leaf:pixelStatusLine (spliced by build) ==== // ==== leaf:cardsTheme (spliced by build) ==== // ==== leaf:cardsStyles (spliced by build) ==== // ==== leaf:cardPin (spliced by build) ==== // ==== leaf:cardTitle (spliced by build) ==== // ==== leaf:cardNo (spliced by build) ==== // ==== leaf:cardTags (spliced by build) ==== // ==== leaf:cardNote (spliced by build) ==== // ==== leaf:cardFoot (spliced by build) ==== // ==== leaf:cardStamp (spliced by build) ==== // ==== leaf:blockedChrome (spliced by build) ==== // ==== leaf:cardBtns (spliced by build) ==== // ==== leaf:mapDots (spliced by build) ==== // ==== leaf:cardHead (spliced by build) ==== // ==== leaf:issueCard (spliced by build) ==== // ==== leaf:issueMapCard (spliced by build) ==== // ==== leaf:mapCard (spliced by build) ==== // S1/S6/S7 三张卡：先主题与皮肤，再共享小件，最后大卡，次序即依赖次序。
+    styles.insert(PIXEL_CARDS_STYLE_TEXT)
     // ==== leaf:backendSelector (spliced by build) ====
     // ==== leaf:switchConfirmModal (spliced by build) ====
 
@@ -242,7 +259,7 @@ export default {
     // ==== leaf:chainRenderer (spliced by build) ====
     // ==== leaf:skillFloatList (spliced by build) ====
     // ==== leaf:vcText (spliced by build) ==== // ==== leaf:vcFold (spliced by build) ==== // ==== leaf:vcDiff (spliced by build) ==== // ==== leaf:vcCommit (spliced by build) ==== // ==== leaf:vcRows (spliced by build) ==== // ==== leaf:vcWrite (spliced by build) ==== // ==== leaf:vcWriteRun (spliced by build) ==== // ==== leaf:vcWriteUi (spliced by build) ==== // ==== leaf:vcWriteOps (spliced by build) ==== // ==== leaf:vcWriteView (spliced by build) ==== // ==== leaf:vcDiffOps (spliced by build) ==== // ==== leaf:vcBlocks (spliced by build) ==== // ==== leaf:vcViews (spliced by build) ==== // ==== leaf:vcAiHandoff (spliced by build) ====
-    // ==== leaf:vcTabVisible (spliced by build) ==== // ==== leaf:vcData (spliced by build) ==== // ==== leaf:vcCache (spliced by build) ==== // ==== leaf:versionControlTab (spliced by build) ====
+    // ==== leaf:vcTabVisible (spliced by build) ==== // ==== leaf:vcData (spliced by build) ==== // ==== leaf:vcCache (spliced by build) ==== // ==== leaf:vcInView (spliced by build) ==== // ==== leaf:versionControlTab (spliced by build) ====
     // ==== leaf:tabs (spliced by build) ====
     // ==== leaf:truthLines (spliced by build) ====
     // 2026-09-24：降级横幅的「画」那一段从 ListTab.js 搬来这里（判据仍是上面 truthLines 里的 restFallbackView）。
@@ -252,7 +269,7 @@ export default {
     // #725：状态栏胶囊那条横条的逐字折叠阶梯（纯函数）与它的阶梯机（读写 DOM），都排在 statusBar 之前
     //   —— 状态栏那边只留接线：把胶囊元素与两张跨调用带着走的表交给机器。
     // ==== leaf:capFold (spliced by build) ==== // ==== leaf:capFoldMachine (spliced by build) ====
-    // ==== leaf:StatusMenus (spliced by build) ==== // ==== leaf:StatusBackend (spliced by build) ==== // ==== leaf:bannerChain (spliced by build) ==== // ==== leaf:StatusLogMenu (spliced by build) ==== // ==== leaf:statusBar (spliced by build) ====
+    // ==== leaf:StatusMenus (spliced by build) ==== // ==== leaf:StatusBackend (spliced by build) ==== // ==== leaf:bannerChain (spliced by build) ==== // ==== leaf:logDangerConfirm (spliced by build) ==== // ==== leaf:StatusLogMenu (spliced by build) ==== // ==== leaf:statusBar (spliced by build) ====
     // ==== leaf:sessionChainCapsule (spliced by build) ====
 
     // ==== leaf:md (spliced by build) ====
@@ -275,9 +292,15 @@ export default {
 
     // ==== leaf:prTab (spliced by build) ====
 
-    // ==== leaf:ringSkills (spliced by build) ====
 
     // ==== leaf:skillsTab (spliced by build) ====
+    // 887：技能详情像素风中组件与整页（皮肤拼在上面样式区）。
+    // ==== leaf:pixelContents (spliced by build) ====
+    // ==== leaf:pixelMarkdown (spliced by build) ====
+    // ==== leaf:pixelSkillRow (spliced by build) ====
+    // ==== leaf:pixelSkillList (spliced by build) ====
+    // ==== leaf:pixelSkillDetailModal (spliced by build) ====
+    // ==== leaf:pixelSkillOps (spliced by build) ====
 
     // ==== leaf:checksTab (spliced by build) ====
 
@@ -316,11 +339,7 @@ export default {
 
     // ==== leaf:debugSwitchFailHint (spliced by build) ==== // ==== leaf:SettingsWorkspaces (spliced by build) ====
     // #876：更新入口挂载点（只挂包的入口件，含内部 dialog 面板；本仓不再自带按钮状态机与浮层弹窗）
-    // ==== leaf:updateEntryHost (spliced by build) ====
-    // ==== leaf:settingsPage (spliced by build) ====
-
-    // ==== leaf:runPanel (spliced by build) ====
-
-    // ==== leaf:panelAssembly (spliced by build) ====
+    // ==== leaf:updateEntryHost (spliced by build) ==== // ==== leaf:settingsPage (spliced by build) ====
+    // ==== leaf:runPanel (spliced by build) ==== // ==== leaf:panelAssembly (spliced by build) ====
   },
 }

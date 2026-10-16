@@ -14,15 +14,24 @@ import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/tool-c
 import { withCallScope } from '../../shared/deck-tools/call-scope.js'
 
 function numOpt(v) { return (typeof v === 'number' && isFinite(v) && v > 0) ? Math.floor(v) : undefined }
+// 沙箱许可等待上限：超时按缺席走老路（不限权），与既有 catch null 同形。
+function withCap(promise, ms) {
+  return Promise.race([
+    Promise.resolve(promise).then(function (v) { return { ok: true, value: v } }, function () { return { ok: false } }),
+    new Promise(function (resolve) { setTimeout(function () { resolve({ ok: false, timedOut: true }) }, ms) }),
+  ])
+}
+const SANDBOX_TIMEOUT_MS = 5000
 
 export const definition = {
   name: 'deck_map_snapshot',
-  description: '同属 dsh-mattpocock-skills-deck 插件的 ISSUE 与 map 管理能力，只处理当前 workspace 对应的 repo；动 ISSUE 前先调用 deck_context 确认 workspace 与 backend，若它说没 backend 就停下。看一个 map 的全部 child ISSUE、进度统计与五个区块，用来判断 map 做到哪一步。',
+  description: '同属 dsh-mattpocock-skills-deck 插件的 ISSUE 与 map 管理能力，只处理当前 workspace 对应的 repo；动 ISSUE 前先调用 deck_context 确认 workspace 与 backend，若它说没 backend 就停下。看一个 map 的全部 child ISSUE、进度统计与五个区块，用来判断 map 做到哪一步。detail=thin 只要薄行不断（见 detail 参数）。',
   parameters: {
     type: 'object',
     properties: {
       key: { type: 'string', description: '地图那张票的票号' },
       frontierOnly: { type: 'boolean', description: '只回可接的子票（未关闭、未认领、阻塞已满足），缺省回全部' },
+      detail: { type: 'string', enum: ['full', 'thin'], description: '子票行要多细。缺省 full：每行带正文进度（回包大，票多时被截断）。thin：只要键、标题、状态、标签、认领、阻塞（回包小、清单不断；统计与进度表照算不变；要正文用 deck_issue_get 逐张取）。' },
       effortId: { type: 'string', description: '只有本地后端需要填，填票所在的目录名，根目录的不填' },
     },
     required: ['key'],
@@ -37,6 +46,14 @@ function childRow(issue) {
   // 进度直接从正文算（与汇总用的同一个函数，结果一致）：汇总那张表按池内身份存键，
   // 行里拿裸票号去查恒查不到，之前有子票的地图就整包被外层拒收（只读空地图能过）。
   return { key: issue.key, title: issue.title, state: issue.state, labels: labels, assignees: assignees, blockedBy: blockedBy, updatedAt: issue.updatedAt || '', progress: parseProgress(issue.body) }
+}
+
+// 薄行：只要画清单用得上的格，不要正文与进度（回包小、票多时不断；统计与进度表另有去处）。
+function thinRow(issue) {
+  const labels = Array.isArray(issue.labels) ? issue.labels.map((l) => (l && l.name) || String(l)) : []
+  const assignees = Array.isArray(issue.assignees) ? issue.assignees.map((a) => (a && a.login) || String(a)) : []
+  const blockedBy = Array.isArray(issue.blockedBy) ? issue.blockedBy.map((r) => (r && r.key) || String(r)) : []
+  return { key: issue.key, title: issue.title, state: issue.state, labels: labels, assignees: assignees, blockedBy: blockedBy, updatedAt: issue.updatedAt || '' }
 }
 
 export function createDeckMapSnapshot(deps) {
@@ -60,7 +77,7 @@ export function createDeckMapSnapshot(deps) {
     const effortId = (a.effortId === undefined || a.effortId === null) ? '' : String(a.effortId).trim()
     if (effortId) repo.effortId = effortId
 
-    return shell.call({ tool: 'deck_map_snapshot', kind: 'read', session: s, pick: pick, repo: repo, estimate: est, sandbox: (typeof d.sandboxPolicyFor === 'function' ? await d.sandboxPolicyFor({ cwd: s.cwd, sessionId: s.sessionId }).catch(function(){ return null }) : null) }, async (c) => {
+    return shell.call({ tool: 'deck_map_snapshot', kind: 'read', session: s, pick: pick, repo: repo, estimate: est, sandbox: (await (async function () { try { if (typeof d.sandboxPolicyFor !== 'function') return null; const raced = await withCap(d.sandboxPolicyFor({ cwd: s.cwd, sessionId: s.sessionId }), SANDBOX_TIMEOUT_MS); return (raced && raced.ok === true) ? raced.value : null } catch (eS) { return null } })()), signal: (exec && exec.signal && typeof exec.signal === 'object') ? exec.signal : undefined }, async (c) => {
       const sc = withCallScope(c, exec, { timeoutMs: numOpt(d.toolTimeoutMs), marginMs: numOpt(d.toolMarginMs), now: (typeof d.now === 'function') ? d.now : Date.now })
       const t = sc.tracker
       const opCtx = sc.opCtx
@@ -115,6 +132,11 @@ export function createDeckMapSnapshot(deps) {
         frontierNote = '已按 frontierOnly 只回可接的 ' + shown.length + ' 张（总数 ' + children.length + ' 张）。'
       }
       if (frontierNote) notes.push(frontierNote)
+      // 行级明细缺省全量：只有显式传 thin 才变薄。统计、进度表、阻塞键都用全量行算好
+      // 再薄行，数字与 full 一字不差；行里不带正文，回包小、票多时不断。
+      // 远端传输量今天不变（瘦的是回包，不是这一趟的拉取），注记里如实说。
+      const thin = String(a.detail || 'full').trim().toLowerCase() === 'thin'
+      if (thin) notes.push('子票行是薄的（detail=thin：无正文无行级进度，回包小、清单不断；统计与进度表照算不变；要正文用 deck_issue_get 逐张取，远端拉取量今天与 full 相同）。')
       return {
         value: {
           status: partial ? DECK_STATUS.PARTIAL : DECK_STATUS.OK,
@@ -122,7 +144,7 @@ export function createDeckMapSnapshot(deps) {
           text: partial ? '地图 ' + key + '：子票没取全（后端没给全），手上这 ' + children.length + ' 张算出来的数偏乐观，先重调一次再看数。' : '地图 ' + key + '：子票 ' + children.length + ' 张，未关闭 ' + projection.stats.open + ' 张、已关闭 ' + projection.stats.closed + ' 张、可接 ' + projection.stats.frontier + ' 张、被阻塞 ' + projection.stats.blocked + ' 张。',
           data: {
             map: { key: map.key, title: map.title, state: map.state, labels: Array.isArray(map.labels) ? map.labels.map((l) => (l && l.name) || String(l)) : [], updatedAt: map.updatedAt || '', url: map.url || '' },
-            children: shown.map((t) => childRow(t)),
+            children: shown.map((t) => (thin ? thinRow(t) : childRow(t))),
             stats: partial ? null : projection.stats,
             truncated: partial,
             labels: projection.labels,

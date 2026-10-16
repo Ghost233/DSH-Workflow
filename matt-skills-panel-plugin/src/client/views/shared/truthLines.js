@@ -77,6 +77,10 @@ export const truthNoticeLines = function (st, nowMs) {
   const refresh = (snap && snap.refresh) || null
   const tierPaused = !!(refresh && refresh.tier && lagPromiseFor(refresh.tier).paused)
   const paused = !!(refresh && refresh.paused === true) || tierPaused
+  // #1009 优化：放弃等待后活还在跑时，无快照也要说「仍在等」，不留白。
+  if (st && st.snapMode === 'err' && st.snapError && st.snapPending === true) {
+    return [{ key: 'truth.pendingLate', params: {}, tone: 'yellow', kind: 'pending' }]
+  }
   if (!snap) return lines
   // 一、上次刷新失败。有旧数据也照说：老数据配一句「刷新失败」，才说得清「你现在看的这份是旧的」。
   //   三种情形三句话，判据全是宿主送进来的事实：

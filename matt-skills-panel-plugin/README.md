@@ -24,3 +24,7 @@ npm run upstream:check --prefix matt-skills-panel-plugin
 5. 运行构建与全部派生版测试，再将 `upstream.json` 的 commit/version 更新为审查目标，提升根开发清单和 `package/package.json` 的本地版本，重新生成 npm 锁文件。源码、基准和锁文件一起提交主仓库。
 
 提案工具不覆盖源码、不删除文件、不自动提升基准。变更判断依据完整 commit，避免上游未提升版本号时漏掉更新。新上游出现导入范围以外的构建依赖时，按构建脚本实际需求补充 `sourcePaths` 和源码。
+
+## 本次升级
+
+当前派生版本为 `1.8.0-rc.7.workflow.1`，基于 npm 已发布 `1.8.0-rc.7` 的源码提交；最新 main 不等于该发布版本。合入范围、保留的集成差异与验证结果见 [升级记录](UPGRADE-1.8.0-rc.7.md)。

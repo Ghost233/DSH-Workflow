@@ -11,6 +11,12 @@
     //   正常那一路已经跑过之后，迟到的这一份一个字节都不许重复装（同一个工作区两边同时就绪是会碰上的）。
     //   判据与落地在 kernel/probe-select.js，读写都在本文件这一行与那里的迟到处理器之间。
     export const _snapInstallState = { handedOff: false }
+    // #1009 收口（2026-10-10）：只留一条「界面耐心」30 秒，不再按「手上有没有画面」分两档。
+    //   为什么删掉冷启动那一档：分档判据选错了信号 —— 「有没有画面」不等于「这次要等多久」；
+    //   2026-09-24 那个现场是「磁盘快照已有画面、重建要几分钟」，按该判据仍是热档，照样早放手。
+    //   删档只丢「等待体感」，不丢能力：迟到的结果仍会落地（判据与落地在 kernel/probe-select.js）。
+    //   超时原文回到固定串，散列 246ae7f1 与文档的对应关系继续成立。
+    export const SNAP_WAIT_MS = 30000
     // #491 房外埋点 helpers（同一闭包拼回后全内核文件可见；只记散列与计数，渲染路径不用）：
     const dswsLogHash = function (s) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
     const dswsScrubHits = {}
@@ -24,7 +30,7 @@
     // #727：这一趟取数里有三处与「子目录会话的第一帧」直接相关，判据与理由都在 kernel/probe-select.js
     //   （本文件贴着上限，所以那一段的文字放在那边）：
     //     ① 进工作区时补问一次 wf.selection（askSelectionOnce，本文件末尾那行接线）；
-    //     ② 超时之后那份回包迟到时的落地口（_installLateSnapshotSelection，本文件里那行 _rawP.then 接线）；
+    //     ② 超时之后那份回包迟到时的落地口（_installLateSnapshot，本文件里那行 _rawP.then 接线）；
     //     ③ 回包过期判据换成「按请求发出时那条目录比」（_snapRequestKeyWas，就是下面 H2 那一处守卫）。
 
     // ============================================================
@@ -156,21 +162,24 @@
         // #653 日志纪律：发起这条跨边界调用前先记一行，与收到回包时那一行配成一对（按需级，先判开关）
         try { if (isEnabled('debug')) log('debug', 'host.call', { method: callMethod, kind: force ? 'refresh' : 'snapshot', ok: true, latencyMs: 0 }) } catch (eL) {}
         const _rawP = force ? host.call('wf.refresh', args) : host.call('wf.snapshot', args);
-        const _timeoutP = new Promise((_,rej)=>{ _timer=setTimeout(()=>{ try{_ctrl.abort();}catch{}; rej(new Error('client loadSnapshot timeout 30s')); },30000); });
+        // #1009 收口：只等上面那一条 30 秒。超时原文是固定串（散列 246ae7f1），不按等待时长拼。
+        const _waitMs = SNAP_WAIT_MS
+        const _timeoutP = new Promise((_,rej)=>{ _timer=setTimeout(()=>{ try{_ctrl.abort();}catch{}; rej(new Error('client loadSnapshot timeout 30s')); }, _waitMs); });
         const p = Promise.race([_rawP, _timeoutP]).finally(function(){ try{clearTimeout(_timer);}catch{}; });
         // #669 第 5 件：登记这一次请求（序号 + 这次问的后端 + 在途键），发出去就记（判据见 kernel/probe-stale.js）。
         const _mine = _snapMarkRequest(st)
         try{ pendingSnapshotByCwd.set(_mine.pendKey,{promise:p, controller:_ctrl, force: !!force, backendId: _mine.reqBackend, seq: _mine.seq}); p.finally(function(){ try{ const cur=pendingSnapshotByCwd.get(_mine.pendKey); if(cur && cur.promise===p) pendingSnapshotByCwd.delete(_mine.pendKey);}catch{} }); }catch(e){}
         const _reqNorm = _normKeyP // capture request cwd for H2 stale discard
-        // #727（I3）：迟到的正确结果必须能落地。那条 30 秒死线只结束「这一次等待」，不判「这份结果作废」——
-        //   所以原始回包单独挂一个处理器：p 先被超时判负时，由它把 selection 那一小块补装上去；
-        //   p 自己赢了（正常那一路跑过）时，_snapInstallState.handedOff 已经压下，这里一个字节都不重复装。
-        //   判据与落地都在 kernel/probe-select.js（本文件只留这一行接线）。
-        _rawP.then(function (lateSnap) { try { _installLateSnapshotSelection(st, lateSnap, _reqNorm, _mine) } catch (eLate) {} }, function () {});
+        // #1009：死线只结束「这一次等待」，不判「这份结果作废」—— 已经发出去的请求，回来时只要还是这把键上
+        //   最新的一次、后端没换过、工作区没真的换走，就把**整份**装上（#727 那版只补 selection 与仓库引用
+        //   那一小块；真机上更常见的后果是宿主辛苦拿回来的那份被丢掉、下一次还得整趟重跑）。判据与落地都在
+        //   kernel/probe-select.js（本文件只留这一行接线）。
+        _rawP.then(function (lateSnap) { try { _installLateSnapshot(st, lateSnap, _reqNorm, _mine) } catch (eLate) {} }, function () { try { if (typeof _snapRespStale !== 'function' || !_snapRespStale(_reqNorm, _mine.seq, _mine.reqBackend, st)) { st.snapPending = false; emit(st) } } catch (eLateFail) {} });
         // #653：宿主这次回话里带的工作区根，先记进工作区键表——本会话与同工作区的其它会话随后都按它分桶。
         //   不管 ok 与否都记：它是宿主算出来的事实，与这份快照能不能装没有关系。
         return p.then(function (snap) {
-          if (_snapInstallState) _snapInstallState.handedOff = true // #727：正常那一路跑过了，迟到的处理器从此只认「不重复装」
+          // _snapInstallState.handedOff 已退役：重复安装改按这次请求的 gaveUp/mine.done 判，不跨请求共享。
+          _mine.done = true // #1009：那道判据收窄到「**这一次**请求装过没有」—— 更早的请求装过，不挡这一份迟到结果落地
           try { if (snap && snap.workspaceRoot) rememberWorkspaceRoot(st.cwd, snap.workspaceRoot) } catch (eWr) {}
           try { const okSnap = !!(snap && (snap.ok === true || snap.notModified === true || snap.status === 304)); const callKind = force ? 'refresh' : 'snapshot'; if (okSnap) log('info', 'host.call', { method: callMethod, latencyMs: Date.now() - callT0, ok: true, kind: callKind }); else log('warn', 'host.call.fail', { method: callMethod, kind: callKind, errorHash: dswsLogHash(dswsLogTrunc(String((snap && snap.error) || 'snapshot-failed'), 120, 'error')) }) } catch (eL) {}
           // #327 特性 A：对该工作区完成了一次检查（成功/304/串台落地均算——请求已真实发出并返回）→ 时间走针
@@ -195,6 +204,7 @@
             st.snapLoading = false; emit(st); return
           }
           st.snapLoading = false
+          try { st.snapPending = false } catch (ePendOk) {}
           if (snap && (snap.notModified===true || snap.status===304)) {
             // 304 zero emit per spec: version unchanged -> keep old table, no UI change
             st.snapLoading=false;
@@ -206,53 +216,9 @@
             return;
           }
           if (snap && snap.ok === true && Array.isArray(snap.maps)) {
-            // v1.5 T10 R4：数据层增量 diff（新旧快照对比）—— 供多视图增量与 R5 视觉
-            st.lastDiff = diffSnapshots(st.snapshot, snap)
-            st.rowFlash = {}
-            st.issueFlash = {}
-            var _df = st.lastDiff
-            _df.added.forEach(function (n) { st.rowFlash[n] = 'added' })
-            _df.changed.forEach(function (n) { st.rowFlash[n] = 'changed' })
-            if (_df.issueFlash) Object.keys(_df.issueFlash).forEach(function (k) { st.issueFlash[k] = _df.issueFlash[k] })
-            // R5 视觉：有变化才提示 + 定时清除高亮（防堆积）
-            if (_df.removed.length) flash(st, tr('panel.diffRemoved', { n: _df.removed.length }), 'info')
-            scheduleFlashClear(st)
-            st.snapshot = snap
-            try { if (snap.setupLayout && typeof setCachedSetupLayout === 'function') setCachedSetupLayout(st.cwd, snap.setupLayout) } catch (eSL) {} // #683（F1 · R6）：宿主记住的布局回填本地（两壳各答一样时按时刻仲裁，本地刚点的那一下不会被顶回去）
-            // #635：这份快照如果是「保存前就发出去、保存后才回来」的那一次刷新拿回来的，它不知道刚改过的
-            // 标签颜色，装进来就会把面板倒回旧色。装进来之后先按那次保存确认过的色值补一遍，
-            // 补的规则与记录都住在 views/labels/labelColorPatch.js（比那份记录旧才补，新的就作废记录）。
-            try { if (typeof lcApplySavedColorsOnInstall === 'function') lcApplySavedColorsOnInstall(st, st.snapshot) } catch (eLC) {}
-            st.snapMode = 'real'
-            st.snapError = null
-            // #155：同步 selection/repository 镜像
-            try { if (typeof applySnapshotSelection === 'function') applySnapshotSelection(st, snap) } catch {}
-            // #58 缓存优先：落内存表，供新会话秒开 — suspicious fallback 不污染缓存
-            // #653：这里从前会先把同一份快照按 snap.repoRoot 存一把、再按所选目录存一把（两把键，两个桶），
-            //   子目录会话与根会话因此各看各的。现在 setCachedSnapshot 自己按工作区键（wsKeyOf）落，
-            //   只需要一次调用，同一工作区天然同桶。
-            try {
-              const nxt = snap.selection
-              const cur = st.selection
-              const isSuspicious = !!(nxt && nxt.backendId===null && !nxt.pending && nxt.source==='fallback' && cur && cur.backendId)
-              if (!isSuspicious) {
-                setCachedSnapshot(st.cwd, snap)
-              }
-            } catch (e) { /* 忽略 */ }
-            // 拉取 backendModules（若 snapshot 未带，则另调 registry）
-            try {
-              if (!st.backendModules && typeof host !== 'undefined' && host.call) {
-                host.call('wf.registry', { cwd: st.cwd }).then(function(r){
-                  if (r && r.ok && Array.isArray(r.modules)) { st.backendModules = r.modules; try{ setPresentationMap(r.modules) }catch{}; emit(st) }
-                }).catch(function(){})
-              }
-            } catch {}
-            // v1.5 T10：启动自动变化探测（幂等；快照就绪后生效）
-            startAutoProbe()
-            // v1.5 B5 修订：磁盘缓存秒开（fromCache）→ 不再 400ms 强制全量刷新。
-            //   原逻辑每次打开面板 = 1 次额外 wf.refresh（aliases 大查询 ≈ 18 GraphQL 点），
-            //   多仓库会话下成倍放大；变化检测已由低频 probe（5min + focus 限流）接管，
-            //   磁盘缓存本身是最新全量快照，秒开直接展示即可，无需立即重建。
+            // #1009：装快照那一整段搬去 kernel/probe-select.js 的 _snapInstallBody —— 正常那一路与迟到那一路
+            //   共用同一处，免得两处各写一遍、判据（缓存优先落表、补标签颜色、回填布局）迟早长岔。
+            _snapInstallBody(st, snap)
           } else {
             st.snapMode = 'err'
             st.snapError = (snap && snap.error) ? String(snap.error).slice(0, 160) : tr('err.snapshotEmpty')
@@ -263,10 +229,23 @@
           }
           emit(st)
         }).catch(function (e) {
+          try { _mine.gaveUp = true } catch (eGave) {}
           try { log('warn', 'host.call.fail', { method: callMethod, kind: force ? 'refresh' : 'snapshot', errorHash: dswsLogHash(dswsLogTrunc(String((e && e.message) || e), 120, 'error')) }) } catch (eL) {}
           st.snapLoading = false
+          // #1009 收口：放弃等待时立一面诚实旗子 —— 30 秒到点界面会说失败，可活还在跑；
+          //   有这面旗子，提示语改说「仍在等，拿到后自动更新」，不再把「没等到」说成「失败了」。
+          //   迟到落地或真失败时清掉（落地那两处在 kernel/probe-select.js，迟到失败在上面那行 late 口）。
+          // 优化：过期请求（已有更新一次在后）不碰旗子，免得老超时盖掉新数据的状态。
+          try {
+            const _msg = String((e && e.message) || e)
+            const _stale = (typeof _snapRespStale === 'function') ? _snapRespStale(_reqNorm, _mine.seq, _mine.reqBackend, st) : false
+            if (!_stale) {
+              if (_msg.indexOf('client loadSnapshot timeout') >= 0) st.snapPending = true
+              else st.snapPending = false
+            }
+          } catch (ePend2) {}
           // #727：这一次等待到此为止（超时也算）——「在途」这个理由不再成立，横幅回到原来那套判据上。
-          //   注意这里只结束「等待」：那份回包若后来还是回来了，由上面的迟到处理器把 selection 补装上。
+          //   注意这里只结束「等待」：那份回包若后来还是回来了，由上面的迟到处理器收下（#1009 起整份落地）。
           if (st.selPending === true) st.selPending = false
           st.snapMode = 'err'
           st.snapError = String((e && e.message) || e).slice(0, 160)

@@ -25,6 +25,7 @@ import './require-macos-arm64.mjs'
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, rmSync, cpSync, utimesSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
 import vm from 'node:vm'
 import { spawnSync } from 'node:child_process'
 import { deriveHost, deriveClient } from './derive-log-from-package.mjs'
@@ -293,6 +294,9 @@ const KERNEL_MODULES = [
   { name: 'localeVcWrite', file: 'src/client/kernel/locale-vcwrite.js' },
   // #879 技能描述 27 条中英词条：locale-word.js 已贴 350 行上限（363 行超标），照 #621/#690/#842 的做法自成一个片段
   { name: 'localeSkilldesc', file: 'src/client/kernel/locale-skilldesc.js' },
+  { name: 'localeSkilldetail', file: 'src/client/kernel/locale-skilldetail.js' },
+  // S1/S6/S7 卡片词条：locale-panel.js 已贴 350 行上限，照 #879/#887 的做法自成一个片段。
+  { name: 'localeCards', file: 'src/client/kernel/locale-cards.js' },
   { name: 'locale', file: 'src/client/kernel/locale.js' },
   { name: 'icons', file: 'src/client/kernel/icons.js' },
   // #685：「体检」按钮的件数派生与开新会话注入（游离票口径见 #678、按钮形态见 #681）；
@@ -391,6 +395,32 @@ const LEAF_MODULES = [
   { id: 'chips', file: 'src/client/views/shared/chips.js' },
   { id: 'hoverTip', file: 'src/client/views/primitives/HoverTip.js' },
   { id: 'tip', file: 'src/client/views/primitives/Tip.js' },
+  // 887 技能详情像素风：八个最小组件（无依赖，按使用次序登记）
+  { id: 'pixelBtn', file: 'src/client/views/pixel/PixelBtn.js' },
+  { id: 'pixelDot', file: 'src/client/views/pixel/PixelDot.js' },
+  { id: 'pixelNum', file: 'src/client/views/pixel/PixelNum.js' },
+  { id: 'pixelStateIcon', file: 'src/client/views/pixel/PixelStateIcon.js' },
+  { id: 'pixelSeal', file: 'src/client/views/pixel/PixelSeal.js' },
+  { id: 'pixelSkeleton', file: 'src/client/views/pixel/PixelSkeleton.js' },
+  { id: 'pixelBanner', file: 'src/client/views/pixel/PixelBanner.js' },
+  { id: 'pixelStatusLine', file: 'src/client/views/pixel/PixelStatusLine.js' },
+  // S1/S6/S7 三种卡片：先主题与皮肤，再共享小件，最后三张大卡（次序即依赖次序）。
+  { id: 'cardsTheme', file: 'src/client/views/cards/PixelCardTheme.js' },
+  { id: 'cardsStyles', file: 'src/client/views/cards/PixelCardsStyles.js' },
+  { id: 'cardPin', file: 'src/client/views/cards/PixelCardPin.js' },
+  { id: 'cardTitle', file: 'src/client/views/cards/PixelCardTitle.js' },
+  { id: 'cardNo', file: 'src/client/views/cards/PixelCardNo.js' },
+  { id: 'cardTags', file: 'src/client/views/cards/PixelCardTags.js' },
+  { id: 'cardNote', file: 'src/client/views/cards/PixelCardNote.js' },
+  { id: 'cardFoot', file: 'src/client/views/cards/PixelCardFoot.js' },
+  { id: 'cardStamp', file: 'src/client/views/cards/PixelCardStamp.js' },
+  { id: 'blockedChrome', file: 'src/client/views/cards/PixelBlockedChrome.js' },
+  { id: 'cardBtns', file: 'src/client/views/cards/PixelCardBtns.js' },
+  { id: 'mapDots', file: 'src/client/views/cards/PixelMapDots.js' },
+  { id: 'cardHead', file: 'src/client/views/cards/PixelCardHead.js' },
+  { id: 'issueCard', file: 'src/client/views/cards/PixelIssueCard.js' },
+  { id: 'issueMapCard', file: 'src/client/views/cards/PixelIssueMapCard.js' },
+  { id: 'mapCard', file: 'src/client/views/cards/PixelMapCard.js' },
   { id: 'backendSelector', file: 'src/client/views/shared/BackendSelector.js' },
   { id: 'switchConfirmModal', file: 'src/client/views/shared/SwitchConfirmModal.js' },
   // #621 标签配色的七个叶子（纯函数三份 + 状态机一份 + 界面三份；按拼接次序登记，次序即依赖次序）
@@ -426,6 +456,7 @@ const LEAF_MODULES = [
   { id: 'vcTabVisible', file: 'src/client/views/versionControl/vcTabVisible.js' },
   { id: 'vcData', file: 'src/client/views/versionControl/vcData.js' },
   { id: 'vcCache', file: 'src/client/views/versionControl/vcCache.js' }, // #864：进出缓存（首屏与历史首批按工作区暂存）
+  { id: 'vcInView', file: 'src/client/views/versionControl/vcInView.js' }, // #997：「还能显示更多」那几处什么时候接着显示（进入视野就接着显示、显示完再判一次；三处共用一套）
   { id: 'versionControlTab', file: 'src/client/views/versionControl/VersionControlTab.js' },
   { id: 'tabs', file: 'src/client/views/shared/Tabs.js' },
   { id: 'truthLines', file: 'src/client/views/shared/truthLines.js' }, // #715 新增：面板头部那几句「上次更新 / 刷新失败 / 现在是不是降级」的判据（纯函数，画在 ListTab 最上面那一行；行上的「更新中」标记也问它）
@@ -445,8 +476,16 @@ const LEAF_MODULES = [
   { id: 'ListTabRow', file: 'src/client/views/ListTabRow.js' },
   { id: 'listTab', file: 'src/client/views/ListTab.js' },
   { id: 'prTab', file: 'src/client/views/PrTab.js' },
-  { id: 'ringSkills', file: 'src/client/views/RingSkills.js' },
   { id: 'skillsTab', file: 'src/client/views/SkillsTab.js' },
+  // 887 技能详情像素风：皮肤、中组件与整页（PixelMarkdown 无横向 import，只调全局 emit/tr）
+  { id: 'pixelStyles', file: 'src/client/views/skillDetail/PixelStyles.js' },
+  { id: 'feedbackStyles', file: 'src/client/views/feedback/feedback-styles.js' }, // 948 交互反馈三批的视觉语言（样式叶子：一段 CSS 文本，经同一个 styles.insert 接缝注入；styles.js 已贴 350 行上限，照 #851 做法另起叶子）
+  { id: 'pixelContents', file: 'src/client/views/skillDetail/PixelContents.js' },
+  { id: 'pixelMarkdown', file: 'src/client/views/skillDetail/PixelMarkdown.js' },
+  { id: 'pixelSkillRow', file: 'src/client/views/skillDetail/PixelSkillRow.js' },
+  { id: 'pixelSkillList', file: 'src/client/views/skillDetail/PixelSkillList.js' },
+  { id: 'pixelSkillDetailModal', file: 'src/client/views/skillDetail/PixelSkillDetailModal.js' },
+  { id: 'pixelSkillOps', file: 'src/client/views/skillDetail/PixelSkillOps.js' }, // 888：详情取数（开合、阶段、缓存、重试），依赖宿主电话 skill.readDoc
   { id: 'checksTab', file: 'src/client/views/ChecksTab.js' },
   { id: 'SettingsWorkspaces', file: 'src/client/views/SettingsWorkspaces.js' },
   { id: 'debugSwitchFailHint', file: 'src/client/views/shared/DebugSwitchFailHint.js' }, // #597 由 SettingsPage.js 拆出：写开关失败的机器码挑提示词条（无组件，纯函数）
@@ -466,6 +505,7 @@ const LEAF_MODULES = [
   { id: 'capFold', file: 'src/client/statusbar/capFold.js' }, // #725 新增：状态栏胶囊那条横条的逐字折叠阶梯（纯函数，无组件）
   { id: 'capFoldMachine', file: 'src/client/statusbar/capFoldMachine.js' }, // #725 新增：同一处的阶梯机（读写胶囊那一段 DOM；判据在上一项，接线在 statusBar）
   { id: 'bannerChain', file: 'src/client/statusbar/bannerChain.js' }, // #663 新增：状态栏那条横幅按引导链清单决定出哪一条、那颗按钮点了做什么
+  { id: 'logDangerConfirm', file: 'src/client/statusbar/LogDangerConfirm.js' }, // #954 高危险动作的就近确认框与留痕横幅（从 StatusLogMenu 搬出，那份叶子贴 350 行粒度红线）
   { id: 'StatusLogMenu', file: 'src/client/statusbar/StatusLogMenu.js' },
   { id: 'statusBar', file: 'src/client/statusbar/StatusBar.js' },
   { id: 'sessionChainCapsule', file: 'src/client/statusbar/SessionChainCapsule.js' }, // 胶囊里「这个会话在办哪张票」那一段（只读链读数里当前会话那一格，不进折叠阶梯）
@@ -736,6 +776,72 @@ if (buildVersionControlCore) {
   buildVersionControlCore.runTypeCheck()
   buildVersionControlCore.buildAll()
 }
+
+// 887 客户端 TS 真源（px 系列）：真源是同名 .ts，esbuild 逐文件转译出 .js（AUTO-GENERATED 头），
+// tsc --noEmit 只做类型检查；拼接拼的是生成的 .js。与三个核心同模式，只是真源与产物同目录并排。
+const PX_TS_DIRS = ['src/client/views', 'src/client/views/pixel', 'src/client/views/skillDetail', 'src/client/views/cards', 'src/client/kernel']
+function pixelTsTruthFiles() {
+  const out = []
+  for (const d of PX_TS_DIRS) {
+    const abs = resolve(ROOT, d)
+    if (!existsSync(abs)) continue
+    for (const ent of readdirSync(abs, { withFileTypes: true })) {
+      if (ent.isFile() && ent.name.endsWith('.ts') && !ent.name.endsWith('.d.ts')) out.push(join(abs, ent.name))
+    }
+  }
+  return out
+}
+function buildPixelTs() {
+  const files = pixelTsTruthFiles()
+  if (files.length === 0) { console.log('[pixel-ts] 客户端没有 TS 真源，跳过。'); return }
+  const require = createRequire(resolve(ROOT, 'package.json'))
+  let esbuild
+  try { esbuild = require('esbuild') } catch (e) { throw new Error('[pixel-ts] 没装 esbuild（先跑 pnpm install 再构建）：' + ((e && e.message) || e)) }
+  for (const f of files) {
+    const source = readFileSync(f, 'utf8')
+    let code
+    try { // charset utf8：产物里的中文保持原样，别转成 \uXXXX 转义（生成物也要人看得懂）
+    code = esbuild.transformSync(source, { loader: 'ts', format: 'esm', target: 'es2020', charset: 'utf8' }).code }
+    catch (e) { throw new Error('[pixel-ts] 转译失败 ' + f + '：' + ((e && e.message) || e)) }
+    const rel = f.replace(/\\/g, '/').split('src/client/')[1] || f
+    // esbuild 把导出收成尾部子句 export { A, B }，拼回闭包时只剥行首 export 会把它变成废块、
+    // 界面叶子因此「没有导出」。照核心库同法还原成行首形式（只认声明能在同文件找到的情形，找不到就抛）。
+    const inlined = (function (code) {
+      const clause = /(^|\n)export \{\n([\s\S]*?)\n\};\n?$/.exec(code)
+      if (!clause) {
+        if (/(^|\n)export \{/.test(code)) throw new Error('[pixel-ts] 转译结果里出现了没有预料到的导出块写法，拒绝改写：' + code.slice(-300))
+        return code
+      }
+      const names = clause[2].split(',').map(function (s) { return s.trim() }).filter(function (s) { return s !== '' })
+      let body = code.slice(0, clause.index) + (clause[1] === '\n' ? '\n' : '')
+      for (const name of names) {
+        if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw new Error('[pixel-ts] 导出块里有改不了名的条目「' + name + '」：本步骤只支持原样导出')
+        const decl = new RegExp('^(?:async )?function ' + name + '\\b|^(?:const|let|var) ' + name + '\\b|^class ' + name + '\\b', 'm')
+        const hit = decl.exec(body)
+        if (!hit) throw new Error('[pixel-ts] 导出块里的名字「' + name + '」在这份文件里找不到声明，拒绝生成少一个导出的产物')
+        body = body.slice(0, hit.index) + 'export ' + body.slice(hit.index)
+      }
+      return body
+    })(code)
+    writeFileSync(f.slice(0, -3) + '.js', '// AUTO-GENERATED by node scripts/build.mjs (pixel-ts) — DO NOT EDIT. Source: ' + rel + '\n' + inlined.replace(/\r\n/g, '\n').replace(/\s+$/, '') + '\n')
+  }
+  console.log(`[pixel-ts] 转译 ${files.length} 个 TS 真源 → 同名 .js`)
+}
+function checkPixelTs() {
+  if (pixelTsTruthFiles().length === 0) return
+  const require = createRequire(resolve(ROOT, 'package.json'))
+  let tscBin
+  try { tscBin = resolve(dirname(require.resolve('typescript/package.json')), 'bin/tsc') }
+  catch (e) { throw new Error('[pixel-ts] 没装 typescript（先跑 pnpm install 再构建）：' + ((e && e.message) || e)) }
+  const r = spawnSync(process.execPath, [tscBin, '-p', resolve(ROOT, 'tsconfig.client.json')], { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error('[pixel-ts] tsc --noEmit 未通过：\n' + (r.stdout || '') + (r.stderr || ''))
+  console.log('[pixel-ts] tsc --noEmit 通过')
+}
+
+// 887 客户端 TS 真源：先转译再跑类型检查，产物是同名 .js（随后拼进闭包）。
+// 与三个核心一致放在两段派生之前：产物是闭包的输入，必须比闭包先就位。
+buildPixelTs()
+checkPixelTs()
 
 // #564 日志系统派生：先把日志包产物派生为运行时文件（旧文件不动），再拼装。
 // #586 更新系统派生：同样先把更新包产物派生为运行时文件（旧文件不动）。

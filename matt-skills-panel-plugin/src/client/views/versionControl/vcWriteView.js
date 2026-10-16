@@ -7,6 +7,17 @@
 //   data-vc-stage-all / data-vc-commit-area / data-vc-commit-msg / data-vc-commit-btn /
 //   data-vc-running / data-vc-op-result / data-vc-op-text / data-vc-op-limit / data-vc-op-retry /
 //   data-vc-confirm / data-vc-confirm-body / data-vc-confirm-ok / data-vc-confirm-cancel / data-vc-remote-pick
+// #953 中长等待：跑起来的那一颗盖转圈（忙态覆盖层复用 951：文字占位、圈盖上面；
+//   窄按钮只转圈加禁用，不轮阶段文字；行级暂存/撤回不盖——在跑哪个文件模型里没有，只拦重入）。
+//   同文件三个画法共用这一对，跨文件不共用（各叶独立，构建拼接顺序不靠）。
+const vcBusySpinOf = function (h) {
+  return h('span', { className: 'dsws-spinner', style: { width: 11, height: 11, borderWidth: 2 } })
+}
+const vcBusyClsOf = function (runningOp, op) { return runningOp === op ? ' dsws-fb-busy' : '' }
+const vcBusyKidsOf = function (h, runningOp, op, text) {
+  if (runningOp !== op) return text
+  return [h('span', { key: 't', className: 'fb-t', 'aria-hidden': 'true' }, text), h('span', { key: 's', className: 'fb-spin', 'aria-hidden': 'true' }, vcBusySpinOf(h))]
+}
 export const vcRowStageNodes = function (h, o) {
   const a = o && o.row ? o.row.stageAction : null
   if (!a) return []
@@ -36,10 +47,22 @@ export const vcActionsNode = function (h, o) {
   const a = o && o.actions
   if (!a) return null
   const label = function (key, full) { return (o.foldActions && o.foldActions[key]) || full }
-  return h('div', { key: 'actions', 'data-vc-actions': 1, style: { display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 } }, [
-    o.tipNode(a.pull.tip || a.pull.text, h('button', { key: 'pull', className: 'dsws-btn', type: 'button', 'data-vc-action': 'pull', disabled: a.pull.disabled === true, onClick: o.startPull, style: { fontSize: 11, padding: '1px 8px', flex: 'none' } }, label('pull', a.pull.text))),
-    a.fetch ? o.tipNode(a.fetch.tip || a.fetch.text, h('button', { key: 'fetch', className: 'dsws-btn', type: 'button', 'data-vc-action': 'fetch', disabled: a.fetch.disabled === true, onClick: function () { o.startFetch('') }, style: { fontSize: 11, padding: '1px 8px', flex: 'none' } }, a.fetch.text)) : null,
-    o.tipNode(a.push.tip || a.push.text, h('button', { key: 'push', className: 'dsws-btn', type: 'button', 'data-vc-action': 'push', disabled: a.push.disabled === true, onClick: function () { o.startPush('') }, style: { fontSize: 11, padding: '1px 8px', flex: 'none' } }, label('push', a.push.text))),
+  // #976：禁用与警告的理由一定有常驻文字，不只放悬停。提示行可聚焦，键盘与触屏都能读到。
+  const hintOf = function (op) { return String((a[op] && (a[op].hint || a[op].tip)) || '') }
+  const hintNode = function (op) {
+    const text = hintOf(op)
+    if (!text) return null
+    return h('div', { key: 'hint-' + op, 'data-vc-action-hint': op, tabIndex: 0, style: { fontSize: 11, marginTop: 2 } }, text)
+  }
+  return h('div', { key: 'actions', 'data-vc-actions': 1, style: { display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2 } }, [
+    h('div', { key: 'row', style: { display: 'flex', gap: 6, alignItems: 'center' } }, [
+      o.tipNode(a.pull.tip || a.pull.text, h('button', { key: 'pull', className: 'dsws-btn', type: 'button', 'data-vc-action': 'pull', disabled: a.pull.disabled === true, onClick: o.startPull, style: { fontSize: 11, padding: '1px 8px', flex: 'none' } }, label('pull', a.pull.text))),
+      a.fetch ? o.tipNode(a.fetch.tip || a.fetch.text, h('button', { key: 'fetch', className: 'dsws-btn', type: 'button', 'data-vc-action': 'fetch', disabled: a.fetch.disabled === true, onClick: function () { o.startFetch('') }, style: { fontSize: 11, padding: '1px 8px', flex: 'none' } }, a.fetch.text)) : null,
+      o.tipNode(a.push.tip || a.push.text, h('button', { key: 'push', className: 'dsws-btn', type: 'button', 'data-vc-action': 'push', disabled: a.push.disabled === true, onClick: function () { o.startPush('') }, style: { fontSize: 11, padding: '1px 8px', flex: 'none' } }, label('push', a.push.text))),
+    ]),
+    hintNode('pull'),
+    hintNode('fetch'),
+    hintNode('push'),
   ])
 }
 
@@ -85,14 +108,16 @@ export const vcViewBarNode = function (h, o) {
   return h('div', { key: 'viewbar', className: 'dsws-vc-viewbar', 'data-vc-viewbar': 1, 'data-vc-commit-area': 1 }, [
     h('div', { key: 'lbl', className: 'dsws-vc-viewbar-lbl', style: { marginBottom: 1 } }, o.t('vc.viewbar.submit')),
     h('div', { key: 'acts', className: 'dsws-vc-viewbar-row' }, [
-      a && a.pull ? o.tipNode(a.pull.tip || a.pull.text, h('button', { key: 'pull', className: 'dsws-btn', type: 'button', 'data-vc-action': 'pull', disabled: a.pull.disabled === true, onClick: o.startPull, style: { flex: 'none' } }, label('pull', a.pull.text))) : null,
-      a && a.fetch ? o.tipNode(a.fetch.tip || a.fetch.text, h('button', { key: 'fetch', className: 'dsws-btn', type: 'button', 'data-vc-action': 'fetch', disabled: a.fetch.disabled === true, onClick: function () { o.startFetch('') }, style: { flex: 'none' } }, a.fetch.text)) : null,
-      a && a.push ? o.tipNode(a.push.tip || a.push.text, h('button', { key: 'push', className: 'dsws-btn primary', type: 'button', 'data-vc-action': 'push', disabled: a.push.disabled === true, onClick: function () { o.startPush('') }, style: { flex: 'none' } }, label('push', a.push.text))) : null,
+      a && a.pull ? o.tipNode(a.pull.tip || a.pull.text, h('button', { key: 'pull', className: 'dsws-btn' + vcBusyClsOf(o.runningOp, 'pull'), type: 'button', 'data-vc-action': 'pull', disabled: a.pull.disabled === true, onClick: o.startPull, style: { flex: 'none' } }, vcBusyKidsOf(h, o.runningOp, 'pull', label('pull', a.pull.text)))) : null,
+      a && a.fetch ? o.tipNode(a.fetch.tip || a.fetch.text, h('button', { key: 'fetch', className: 'dsws-btn' + vcBusyClsOf(o.runningOp, 'fetch'), type: 'button', 'data-vc-action': 'fetch', disabled: a.fetch.disabled === true, onClick: function () { o.startFetch('') }, style: { flex: 'none' } }, vcBusyKidsOf(h, o.runningOp, 'fetch', a.fetch.text))) : null,
+      a && a.push ? o.tipNode(a.push.tip || a.push.text, h('button', { key: 'push', className: 'dsws-btn primary' + vcBusyClsOf(o.runningOp, 'push'), type: 'button', 'data-vc-action': 'push', disabled: a.push.disabled === true, onClick: function () { o.startPush('') }, style: { flex: 'none' } }, vcBusyKidsOf(h, o.runningOp, 'push', label('push', a.push.text)))) : null,
+      a && a.pull && (a.pull.hint || a.pull.tip) ? h('span', { key: 'pullhint', 'data-vc-action-hint': 'pull', tabIndex: 0, style: { fontSize: 11 } }, String(a.pull.hint || a.pull.tip)) : null,
+      a && a.push && (a.push.hint || a.push.tip) ? h('span', { key: 'pushhint', 'data-vc-action-hint': 'push', tabIndex: 0, style: { fontSize: 11 } }, String(a.push.hint || a.push.tip)) : null,
       a && (a.pull || a.push) && s && s.show === true ? h('span', { key: 'sep', style: { width: 1, height: 16, background: 'var(--vc-line2)', margin: '0 3px', flex: 'none' } }) : null,
       s && s.show === true ? o.tipNode(s.tip, h('button', {
-        key: 'stageAll', className: 'dsws-btn', type: 'button', 'data-vc-stage-all': 1, disabled: s.disabled === true,
+        key: 'stageAll', className: 'dsws-btn' + vcBusyClsOf(o.runningOp, 'stage'), type: 'button', 'data-vc-stage-all': 1, disabled: s.disabled === true,
         onClick: function () { o.stagePaths(s.paths) }, style: { flex: 'none' },
-      }, (o.foldActions && o.foldActions.stageAll) || s.text)) : null,
+      }, vcBusyKidsOf(h, o.runningOp, 'stage', (o.foldActions && o.foldActions.stageAll) || s.text))) : null,
       h('span', { key: 'grow', style: { flex: 1, minWidth: 8 } }),
       h('span', { key: 'inputLbl', className: 'dsws-vc-viewbar-lbl' }, o.t('vc.viewbar.inputLabel')),
     ]),
@@ -103,9 +128,9 @@ export const vcViewBarNode = function (h, o) {
         style: { flex: 1, minWidth: 120 },
       }),
       o.tipNode(c.tip || c.text, h('button', {
-        className: 'dsws-btn primary', type: 'button', 'data-vc-commit-btn': 1, disabled: c.disabled === true,
+        className: 'dsws-btn primary' + vcBusyClsOf(o.runningOp, 'commit'), type: 'button', 'data-vc-commit-btn': 1, disabled: c.disabled === true,
         onClick: o.submitCommit, style: { flex: 'none' },
-      }, (o.foldActions && o.foldActions.commit) || c.text)),
+      }, vcBusyKidsOf(h, o.runningOp, 'commit', (o.foldActions && o.foldActions.commit) || c.text))),
     ]),
   ])
 }
@@ -144,6 +169,7 @@ export const vcWriteTailNodes = function (h, o) {
     ? h('div', { key: 'confirm', 'data-vc-confirm': c.op, style: { border: '1px solid var(--vc-line2)', borderRadius: 'var(--vc-radius,4px)', padding: 12, background: 'var(--vc-inset)', display: 'flex', flexDirection: 'column', gap: 6 } }, [
         h('div', { key: 'title', className: 'dsws-vc-dlg-t', style: { fontWeight: 700, color: o.tone('primary') } }, c.title),
         h('div', { key: 'body', className: 'dsws-vc-dlg-b', 'data-vc-confirm-body': 1, style: { color: o.tone('primary'), lineHeight: 1.6 } }, c.body),
+        c.warnText ? h('div', { key: 'warn', 'data-vc-confirm-warn': 1, tabIndex: 0, style: { fontSize: 11, lineHeight: 1.6 } }, c.warnText) : null,
         c.ttlText ? h('div', { key: 'ttl', 'data-vc-confirm-ttl': 1, style: { fontSize: 11, color: o.tone('caption') } }, c.ttlText) : null,
         c.pickRemote && c.remotes.length
           ? h('select', { key: 'pick', 'data-vc-remote-pick': 1, value: c.remote || 'origin', onChange: function (e) { o.pickRemote(e && e.target ? e.target.value : '') }, style: { fontSize: 11, padding: '2px 6px', borderRadius: 6, border: '1px solid var(--vc-line2,#3a3f4a)', background: 'var(--vc-inset,#0c0e12)', color: 'var(--vc-ink,#e6edf3)' } }, c.remotes.map(function (r) { return h('option', { key: r, value: r }, r) }))

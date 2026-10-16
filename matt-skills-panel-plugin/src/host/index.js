@@ -65,10 +65,10 @@ export default {
     let _bootP = null
     function _boot() { if (!_bootP) _bootP = import('./bootstrap.js').then(function(m){ return m.createBootstrap({ ctx: ctx }) }); return _bootP }
     let _platP = null
-    function _plat() { if (!_platP) _platP = (async function(){ const boot = await _boot(); const mod = await import('./platformChannel.js'); return mod.createPlatformChannel({ ctx: ctx, subprocess: subprocess, timer: timer, fs: fs, DEFAULT_CWD: DEFAULT_CWD, TIMEOUT_MS: TIMEOUT_MS, getMattSkillProbeNames: function(){ return getMattSkillProbeNames.apply(null, arguments) }, probeSkill: function(){ return probeSkill.apply(null, arguments) }, getChoiceStore: function(){ return getChoiceStore.apply(null, arguments) }, logCtx: logCtx, getGate: function () { return refreshGate } }) })(); return _platP } // #927：闸要晚一步才建好，所以传一个活的取值口，不传一次性快照
+    function _plat() { if (!_platP) _platP = (async function(){ const boot = await _boot(); const mod = await import('./platformChannel.js'); return mod.createPlatformChannel({ ctx: ctx, subprocess: subprocess, timer: timer, fs: fs, DEFAULT_CWD: DEFAULT_CWD, TIMEOUT_MS: TIMEOUT_MS, getMattSkillProbeNames: function(){ return getMattSkillProbeNames.apply(null, arguments) }, getChainSkillNames: function(){ return getChainSkillNames.apply(null, arguments) }, probeSkill: function(){ return probeSkill.apply(null, arguments) }, getChoiceStore: function(){ return getChoiceStore.apply(null, arguments) }, logCtx: logCtx, getGate: function () { return refreshGate } }) })(); return _platP } // #927：闸要晚一步才建好，所以传一个活的取值口，不传一次性快照
     let _repoP = null
     function _repo() { if (!_repoP) _repoP = (async function(){ const plat = await _plat(); const mod = await import('./repoKeys.js'); return mod.createRepoKeys({ subprocess: subprocess, timer: timer, fs: fs, DEFAULT_CWD: DEFAULT_CWD, TIMEOUT_MS: TIMEOUT_MS, repoKeys: repoKeys, repoRoots: repoRoots, getGhPath: function(){ return ghPath }, setGhPath: function(v){ ghPath = v }, getGhLastError: function(){ return ghLastError }, setGhLastError: function(v){ ghLastError = v }, getPlatform: function(){ return getPlatform.apply(null, arguments) }, getWorkspaceStore: function(){ return getWorkspaceStore.apply(null, arguments) }, setCache: setCache, clearWorkspaceStore: function(){ return plat.clearWorkspaceStore.apply(plat, arguments) }, namingSweepSoon: function(){ return namingSweepSoon.apply(null, arguments) }, getChainBackoff: getChainBackoff, parseGithubRepo: function(){ return parseGithubRepo.apply(null, arguments) }, logCtx: logCtx, getGate: function () { return refreshGate } }) })(); return _repoP } // #927：同上，取数层（runGh / 探测）报账时现问一次
-    async function getMattSkillProbeNames() { const h = await _boot(); return h.getMattSkillProbeNames.apply(h, arguments) }
+    async function getMattSkillProbeNames() { const h = await _boot(); return h.getMattSkillProbeNames.apply(h, arguments) } async function getChainSkillNames() { const h = await _boot(); return h.getChainSkillNames.apply(h, arguments) } // #968 后者经 _boot 取链目录三项
     async function getTrackerRegistry() { const h = await _plat(); return h.getTrackerRegistry.apply(h, arguments) }
     async function getPlatform() { const h = await _plat(); return h.getPlatform.apply(h, arguments) }
     async function getWorkspaceStore() { const h = await _plat(); return h.getWorkspaceStore.apply(h, arguments) }
@@ -123,10 +123,11 @@ export default {
     function touchChainLRU(k, v) { if (chainByKey.has(k)) chainByKey.delete(k); chainByKey.set(k, v); if (chainByKey.size > 20) chainByKey.delete(chainByKey.keys().next().value) }
     function getChainCache(key) { if (!key) return { ts: 0, key: null, value: null }; const k = String(key); const e = chainByKey.get(k); if (e) { chainByKey.delete(k); chainByKey.set(k, e); return e } return { ts: 0, key: k, value: null } }
     function setChainCache(v) { if (!v || !v.key) { chainByKey.clear(); return } /* #696 清全部仅技能广播（无目录）与旧调用 */ touchChainLRU(String(v.key), { ts: v.ts, key: String(v.key), value: v.value }) }
+    function invalidateChainCacheForKey(scopeKey) { try { const prefix = String(scopeKey) + '|'; for (const k of Array.from(chainByKey.keys())) { if (k === String(scopeKey) || k.indexOf(prefix) === 0) chainByKey.delete(k) } } catch {} } // #968 按工作区键只清一桶
     let _remotePredP = null
     function _remotePred() { if (!_remotePredP) _remotePredP = import('./remotePredicates.js').then(function(m){ return m.createRemotePredicates() }); return _remotePredP }
     let _skillProbeP = null
-    function _skillProbe() { if (!_skillProbeP) _skillProbeP = (async function(){ const mod = await import('./skillProbe.js'); return mod.createSkillProbe({ ctx: ctx, getPlatform: function(){ return getPlatform.apply(null, arguments) }, getWorkspaceStore: function(){ return getWorkspaceStore.apply(null, arguments) }, resetChainCache: function(){ chainByKey.clear() } /* #696 技能广播清全部链（整机事，无目录可分） */, logCtx: logCtx }) })(); return _skillProbeP }
+    function _skillProbe() { if (!_skillProbeP) _skillProbeP = (async function(){ const mod = await import('./skillProbe.js'); return mod.createSkillProbe({ ctx: ctx, getPlatform: function(){ return getPlatform.apply(null, arguments) }, getWorkspaceStore: function(){ return getWorkspaceStore.apply(null, arguments) }, resetChainCache: function(){ chainByKey.clear() } /* #696 不带工作区的技能广播才清全部链 */, resetChainCacheForKey: function(key){ invalidateChainCacheForKey(key) } /* #968 带工作区的广播只清那一桶 */, logCtx: logCtx }) })(); return _skillProbeP }
     let _detectChainP = null
     // #709（T5）：检查链退避的宿主薄壳（懒加载一次，之后复用）。它自己不排任何定时器。
     function getChainBackoff() {
@@ -202,8 +203,8 @@ export default {
       return { owner: m[1], name: m[2] }
     }
     // H3 #447：远程谓词、技能探测通道、探测编排三组接线都在上面 H3 段（原委见账本 §4）。
-    harness.handle('wf.detect', async function (args) { const h = await _detectChain(); return h.handleDetect(args) })
-    harness.handle('wf.chain', async function (args) { const h = await _detectChain(); return h.handleChain(args) })
+    harness.handle('wf.detect', async function (args) { const h = await _detectChain(); return h.handleDetect(args) }); harness.handle('wf.chain', async function (args) { const h = await _detectChain(); return h.handleChain(args) })   // 后两句合一行：本文件已顶 350 行上限，把腾出的一行留给下面 888 的技能原文直读
+    harness.handle('skill.readDoc', async function (args) { const m = await import('./skillDoc.js'); return m.createSkillDoc({ ctx: ctx }).readDoc(args) })   // 888：详情页通过中文技能提供器读 SKILL.md（读不到回 missing，不抛原文）；skillDoc 无状态，按需引入即可
     // ---- H4 #448 接线：3 新文件动态 import 加载（D7 禁止静态 import），依赖全显式传入；新文件之间不互引用 ---- harness 留守原因：harness.handle 在 apply 同步注册，动态 import 无法同步供给。 这一组的拆分缘由见账本 §5。
     let _sessLifeP = null
     function _sessLife() { if (!_sessLifeP) _sessLifeP = (async function(){ const mod = await import('./sessionLifecycle.js'); return mod.createSessionLifecycle({ ctx: ctx, DEFAULT_CWD: DEFAULT_CWD, errText: errText, canonicalKey: function(){ return canonicalKey.apply(null, arguments) }, getDetectionService: function(){ return getDetectionService.apply(null, arguments) }, getTrackerRegistry: function(){ return getTrackerRegistry.apply(null, arguments) }, getPlatform: function(){ return getPlatform.apply(null, arguments) }, logCtx: logCtx }) })(); return _sessLifeP }

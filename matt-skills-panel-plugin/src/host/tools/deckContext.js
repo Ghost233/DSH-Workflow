@@ -7,8 +7,27 @@
 // 拿不到的东西一律如实说：没有会话工作区、没有后端、后端不认这条路，都在返回值里写明。
 import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../../shared/deck-tools/shell.js'
 import { sessionContextOfAsync } from '../../shared/deck-tools/session-resolve.js'
+import { withCallScope } from '../../shared/deck-tools/call-scope.js'
 import * as budget from '../../shared/refresh/budget.js'
 import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/tool-cost.js'
+import { knownWritePermissions } from '../../shared/tracker/backendWritePermissions.js'
+
+function numOpt(v) { return (typeof v === 'number' && isFinite(v) && v > 0) ? Math.floor(v) : undefined }
+function withCap(promise, ms) {
+  return Promise.race([
+    Promise.resolve(promise).then(function (v) { return { ok: true, value: v } }, function () { return { ok: false } }),
+    new Promise(function (resolve) { setTimeout(function () { resolve({ ok: false, timedOut: true }) }, ms) }),
+  ])
+}
+const SANDBOX_TIMEOUT_MS = 5000
+// 执行层失败与后端诚实失败的分界（见 deckIssueCreate.js 同名注释）：前者抛给壳走
+// backend-threw（可重试），后者走 PARTIAL/notes。钳制只管超时，不改判。
+const TRANSPORT_KINDS = ['backend-threw', 'timeout', 'aborted', 'over-budget']
+function transportMessage(result) {
+  const e = result && result.error
+  if (e && TRANSPORT_KINDS.indexOf(e.kind) >= 0) return String(e.message || '执行层没回来')
+  return null
+}
 
 export const definition = {
   name: 'deck_context',
@@ -45,14 +64,52 @@ export function createDeckContext(deps) {
       })
     }
     const repo = shell.repoOf(pick, s)
+    let sandbox = null
+    try {
+      if (typeof d.sandboxPolicyFor === 'function') {
+        const raced = await withCap(d.sandboxPolicyFor({ cwd: s.cwd, sessionId: s.sessionId }), SANDBOX_TIMEOUT_MS)
+        sandbox = (raced && raced.ok === true) ? raced.value : null
+      }
+    } catch (eS) { sandbox = null }
 
-    return shell.call({ tool: 'deck_context', kind: 'read', session: s, pick: pick, repo: repo, estimate: est, sandbox: (typeof d.sandboxPolicyFor === 'function' ? await d.sandboxPolicyFor({ cwd: s.cwd, sessionId: s.sessionId }).catch(function(){ return null }) : null) }, async (c) => {
-      const pre = typeof c.tracker.preflight === 'function' ? await c.tracker.preflight({ cwd: s.cwd }, c.opCtx) : null
-      const listed = await c.tracker.list(repo, { type: 'map' }, c.opCtx)
+    return shell.call({ tool: 'deck_context', kind: 'read', session: s, pick: pick, repo: repo, estimate: est, sandbox: sandbox }, async (c) => {
+      // 进预算壳 + 两路并行：预检与清单互相独立，之前串行要等两份慢调用，
+      // 并行后只等较慢的那一份。回包的字段与 notes 顺序与之前一致。
+      const sc = withCallScope(c, exec, { timeoutMs: numOpt(d.toolTimeoutMs), marginMs: numOpt(d.toolMarginMs), now: (typeof d.now === 'function') ? d.now : Date.now })
+      const t = sc.tracker
+      const opCtx = sc.opCtx
+      const preP = (typeof t.preflight === 'function') ? t.preflight({ cwd: s.cwd }, opCtx) : Promise.resolve(null)
+      const listP = t.list(repo, { type: 'map' }, opCtx)
+      // #992：仓库写权限能力位（只读旁路，与预检/清单并行）。本地文件后端没有远端权限模型，
+      //   由共享判断直接给「可写」（见 shared/tracker/backendWritePermissions.js）；其余后端问一遍
+      //   写权限旁路，问不出来不拦事、按未知处理（GitLab 不实现这条旁路，诚实未知）。
+      const knownPerm = knownWritePermissions(pick.backendId)
+      const wantPerms = !knownPerm && typeof t.getRepoPermissions === 'function' && !sc.outOfBudget()
+      const permP = wantPerms ? t.getRepoPermissions(repo, opCtx) : Promise.resolve(null)
+      const pre = await preP
+      const listed = await listP
+      const perm = await permP
+      const preTransport = transportMessage(pre)
+      if (preTransport) throw new Error(preTransport)
+      const listedTransport = transportMessage(listed)
+      if (listedTransport) throw new Error(listedTransport)
+      const permTransport = transportMessage(perm)
+      if (permTransport) throw new Error(permTransport)
       const maps = (listed.ok && Array.isArray(listed.data)) ? listed.data.map(mapRow) : []
+      // 能力位：本地文件后端恒可写（本地文件可写性归 md:scratchWritable 管，这里不重复判）；
+      //   其余后端问到了用真值，问不到按未知（不捏造）。
+      let permissions = null
+      if (knownPerm) permissions = knownPerm
+      else if (perm && perm.ok === true && perm.data && typeof perm.data.push === 'boolean' && typeof perm.data.triage === 'boolean') {
+        permissions = { push: perm.data.push, triage: perm.data.triage }
+      } else permissions = { unknown: true }
       const notes = []
       if (!listed.ok) notes.push('地图清单这次没取到（后端原话：' + String((listed.error && listed.error.message) || '').slice(0, 200) + '）。')
       if (pre && pre.ok === false) notes.push('环境预检没过（' + String((pre.error && pre.error.message) || '').slice(0, 200) + '）：票还是能读，写操作可能失败。')
+      if (permissions && permissions.push === false) {
+        notes.push('这个仓库只读：标签与写操作不可用。')
+        notes.push('要在只读库上长期协作，建议先 fork 到自己名下，再把工作区 origin 指向 fork（插件只认 origin，不代改配置）。')
+      }
       const status = listed.ok ? DECK_STATUS.OK : DECK_STATUS.PARTIAL
       return {
         value: {
@@ -62,12 +119,12 @@ export function createDeckContext(deps) {
           data: {
             workspace: { root: s.cwd, key: s.workspaceKey, sessionId: s.sessionId, source: s.source },
             backend: { id: pick.backendId, source: pick.source, label: '' },
-            repo: { backend: repo.backend, refId: repo.refId, name: repo.name, url: repo.url },
+            repo: { backend: repo.backend, refId: repo.refId, name: repo.name, url: repo.url, permissions: permissions },
             initialized: pre ? pre.ok === true : null,
             preflight: pre ? { ok: pre.ok === true, message: String((pre.error && pre.error.message) || '').slice(0, 300) } : null,
             maps: maps,
             // 这一句是给 AI 的用法说明（描述只有路由，语义放这里）。
-            howto: '写票之前先用本工具确认工作区与后端；建票用 deck_issue_create，建整张地图骨架用 deck_map_plan_create，补边用 deck_map_link，改票用 deck_issue_patch，上报当前在办哪张票用 deck_issue_report，读一张票用 deck_issue_get，看一张地图的全部子票用 deck_map_snapshot，按状态与 label 和 assignee 列薄行用 deck_issue_list。工作区与仓库不接受参数：它们只从当前会话取。',
+            howto: '写票之前先用本工具确认工作区与后端；建票用 deck_issue_create，建整张地图骨架用 deck_map_plan_create，补边用 deck_map_link，改票用 deck_issue_patch，上报当前在办哪张票用 deck_issue_report，读一张票用 deck_issue_get，看一张地图的全部子票用 deck_map_snapshot，按状态与 label 和 assignee 列薄行用 deck_issue_list。要快数：扫数先用 deck_issue_list 薄行；单票反向边不急就 deck_issue_get 传 blocking=false（跳过一次全仓扫描）；子票清单要全不断就 deck_map_snapshot 传 detail=thin（统计不变）。工作区与仓库不接受参数：它们只从当前会话取。',
             quota: { perCallPoints: budget.AI_TOOL_MAX_POINTS_PER_CALL, perCallRequests: budget.AI_TOOL_MAX_REQUESTS_PER_CALL, perHourPoints: budget.AI_TOOL_MAX_POINTS_PER_HOUR, perHourRequests: budget.AI_TOOL_MAX_REQUESTS_PER_HOUR, maxChildTicketsPerCall: budget.AI_TOOL_MAX_CHILD_TICKETS_PER_CALL },
           },
           notes: notes,
