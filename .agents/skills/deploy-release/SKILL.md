@@ -19,7 +19,7 @@ disable-model-invocation: true
    gh run list -R Ghost233/DSH-Workflow --workflow macos-app.yml --commit <发布提交>
    ```
 
-5. 按下方 Ghost233 护栏核验每个认证命令。完成条件：对应管线成功，正式 Release/tag/`macos-launcher/package.json` 版本一致，DMG、manifest.json、SHA256SUMS 完整且校验通过，本地 main 与 tag 同实际远端；缺少证据保持未完成。
+5. 按下方 Ghost233 护栏核验每个认证命令，依照“完成验证”核对远端发布结果。通过后给出 Release 与 Actions 链接并结束发布；缺少远端证据时保持未完成。发布后的本地资产下载、哈希校验、安装和运行仅在用户另行明确要求时执行。
 
 ## 标准发布流程
 
@@ -56,16 +56,26 @@ scripts/release.sh
 
 ### 完成验证
 
+发布完成以 GitHub Actions 和 GitHub Release 的远端证据为准。发布前的本地门禁、Mac 构建和打包预检仍按“发布前”执行。
+
 每个认证 gh 命令前执行 `gh auth switch --hostname github.com --user Ghost233`，再执行 `gh api --hostname github.com user --jq .login`；只有有效身份为 Ghost233 才继续，设置了 GH_TOKEN 或 GITHUB_TOKEN 时同样核验。Git 远端写操作还必须确认实际使用的认证凭据属于 Ghost233；不以 gh 身份推断独立 Git credential helper 的身份。业务命令显式指定本仓库。
 
 ```sh
 gh run list -R Ghost233/DSH-Workflow --workflow macos-app.yml --commit <发布提交>
 gh run watch <run-id> -R Ghost233/DSH-Workflow --exit-status
-gh release view macos-vX.Y.Z -R Ghost233/DSH-Workflow
-gh release download macos-vX.Y.Z -R Ghost233/DSH-Workflow --dir <本次验证目录>
+gh release view macos-vX.Y.Z -R Ghost233/DSH-Workflow --json tagName,isDraft,isPrerelease,assets,url
 ```
 
-选择与发布 tag/完整提交匹配的 run。网络瞬态故障重试同一读取，不创建第二次发布。验收：对应管线成功，Release 是正式版本，tag/macos-launcher/package.json/manifest/.app 版本一致，三件套名称、大小与 SHA 校验通过，本地 main/tag 与实际远端一致。下载目录内运行 `shasum -a 256 -c SHA256SUMS` 并核对 manifest 中 DMG 的大小和 sha256。
+完成前核对：
+
+- Actions：选择发布 tag 和完整提交对应的 `macos-app.yml` run，确认已完成且结论为 `success`。
+- Release：对应版本已正式发布，非草稿、非预发布，tag 与发布提交中 `macos-launcher/package.json` 的版本一致。
+- 远端资产：Release 列表含 `DSH-Workflow-macOS-X.Y.Z-arm64.dmg`、`manifest.json` 和 `SHA256SUMS`，大小均大于零。应用版本、ARM64 架构、清单生成与 SHA 校验以成功的 Actions 构建记录为依据。
+- Git 同步：本地 main、origin/main 与实际远端 main 一致；本地 tag 与实际远端 tag 指向同一发布提交。
+
+以上条件满足即完成发布，报告版本、发布提交、Release 和 Actions 链接。网络瞬态故障重试同一读取，不创建第二次发布；失败或缺少证据时保持未完成。
+
+发布后默认只读取远端状态和资产元数据。下载资产到本地、重新计算哈希、安装或运行应用，仅在用户另行明确要求时执行，不作为默认发布完成条件。
 
 本地流程回归：`python3 -B scripts/test_release.py` 使用临时 Git 仓库与本地裸仓库，在外部 Git/gh CLI 接缝模拟身份；不访问 GitHub，不发正式版。Shell 入口需通过 `bash -n scripts/release.sh scripts/build-release.sh`。真实包预检可用 `scripts/build-release.sh --app-path <本次已构建的.app> --output-dir <空产物目录>`，只产出本地文件，避免覆盖既有产物。
 
@@ -109,7 +119,7 @@ gh release download macos-vX.Y.Z -R Ghost233/DSH-Workflow --dir <本次验证目
 1. 在发布工单中按上方规则由人手动修改 `macos-launcher/package.json`，完成本地门禁与发布包预检，随已审查内容合入 main，并同步本地 main。
 2. 明确要求正式发布时执行 `scripts/release.sh --dry-run`，核对当前手动版本与 tag/完整提交，再执行 `scripts/release.sh`。
 3. 脚本仅创建并推送 `macos-v<x.y.z>` 附注 tag，不自动 bump、不提交、不推送 main。tag 触发 workflow 构建并创建正式 Release。
-4. 发布后核对三件套资产、manifest 版本/大小/哈希、SHA256SUMS 与应用版本；失败恢复见上方“标准发布流程”。
+4. 发布后按“完成验证”核对 Actions、正式 Release 和远端资产，并同步本地 main/tag。默认以远端证据完成验收；发布后的本地资产下载、校验、安装或运行仅在用户另行明确要求时执行。失败恢复见上方“标准发布流程”。
 
 ### workflow 行为
 
