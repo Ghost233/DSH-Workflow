@@ -4,7 +4,7 @@
 import { resolveSessionCwd } from '../shared/session-cwd.js'
 import { parseWorkspaceFile, stringifyWorkspaceFile, WORKSPACE_FILE_REL } from '../shared/deck-tools/workspace-file.js'
 export function createWorkspaceCwd(deps) {
-  const { ctx, DEFAULT_CWD, getPlatform, getTrackerRegistry, getWorkspaceStore, getChoiceStore, canonicalKey, setCache, logCtx, timer, detectionExec } = deps
+  const { ctx, DEFAULT_CWD, getPlatform, getTrackerRegistry, getDetectionService, getWorkspaceStore, getChoiceStore, canonicalKey, setCache, logCtx, timer, detectionExec } = deps
   // #176 + #190 修复：cwd 归一（绝对直通 + 相对尝试 fs.resolve + home 试探）
   // 根因：workspaces 服务在 client runtime 暴露的 item.path 可能是相对名（如 "matt-demo-markdown"），
   // 传给 wf.selection 后 select() 三级联中 markdown.matches 收到相对 cwd，plat.join(cwd,...) 仍是相对，
@@ -115,7 +115,8 @@ export function createWorkspaceCwd(deps) {
     try {
       const reg = await getTrackerRegistry()
       if (!reg) return { ok: false, error: 'registry unavailable' }
-      const sel = await reg.select({ cwd: cwd }, { cwd: cwd, platform: await getPlatform(), fs: ctx.get('fs'), caller: 'wf.selection' })
+      const detection = await getDetectionService()
+      const { selection: sel } = await detection.detect({ cwd: cwd }, { force: true, selectionOnly: true })
       let repoRef = null
       if (sel && sel.backendId) { try { repoRef = reg.describe({ cwd: cwd }, sel.backendId) } catch {} }
       return { ok: true, selection: sel, repository: repoRef }

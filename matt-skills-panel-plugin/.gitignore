@@ -5,8 +5,8 @@ package/shared/
 package/README.md
 packages/dsh-log/dist/
 .tmp/
-client.js
-host.js
+/client.js
+/host.js
 .DS_Store
 
 .upstream-review/

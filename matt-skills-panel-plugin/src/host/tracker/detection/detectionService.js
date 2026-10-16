@@ -253,6 +253,9 @@ export function createDetectionService({ registry, getPlatform, getFs, getTimers
       opCtx.caller = 'detection-service'; selection = await registry.select(handle, opCtx)
     }
 
+    // Fast queries share initialization and saved-choice resolution, without preflight or skill IO.
+    if (opts.selectionOnly) return { selection, explicit }
+
     // repoHandle：轻量化复用 getRepoKey 语义中的 handle → describe ref
     let repoHandle = null
     try {

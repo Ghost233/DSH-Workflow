@@ -142,4 +142,3 @@ export const FB_FAIL_RED_PATHS = [
   { path: '浮层小提示失败', file: 'src/client/kernel/store-snapshot.js', colors: ['#fbbf24'], note: '浮层提示只有 ok/warn/info 三档，失败走 warn 琥珀（NOTICE_COLOR.warn），不自造红' },
   { path: '原型占位红（不在反馈路径）', file: 'src/client/views/SubworkspaceMark.js', colors: ['#f85149'], note: '子工作区角标的既有红，保留原样；反馈路径一处都不用，也不许把它提成全局值' },
 ]
-

@@ -1,5 +1,5 @@
 import {dshReadiness} from '../scripts/dsh-readiness.mjs'
-import { cp, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
+import { cp, mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -49,6 +49,27 @@ try {
       const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
       const health = await dshReadiness(ready.url,{cookie})
       if (health.ready !== true) throw new Error('Packaged official DSH Host is not ready')
+      const workspace = join(relocated, 'github-workspace')
+      await mkdir(join(workspace, 'docs/agents'), { recursive: true })
+      await writeFile(join(workspace, 'docs/agents/issue-tracker.md'), '# Issue tracker: GitHub\n\nUse GitHub Issues through gh.\n')
+      const panelCall = async (method, payload) => {
+        const response = await fetch(new URL('/api/dsws', ready.url), { method: 'POST',
+          headers: { 'Content-Type': 'application/json', cookie },
+          body: JSON.stringify({ type: 'client-request', rpcId: 'release-' + method, payload: { method, payload } }),
+          signal: AbortSignal.timeout(15000) })
+        const reply = await response.json()
+        if (!response.ok || reply.result?.ok !== true || reply.result.value?.ok !== true) throw new Error('Packaged Matt call failed: ' + method)
+        return reply.result.value
+      }
+      const registry = await panelCall('registry', { cwd: workspace })
+      if (!['github', 'gitlab', 'markdown'].every(id => registry.modules.some(row => row.id === id))) {
+        throw new Error('Packaged Matt backend modules are incomplete')
+      }
+      const selection = await panelCall('selection', { cwd: workspace })
+      if (selection.selection?.backendId !== 'github' || selection.selection?.source !== 'explicit') {
+        throw new Error('Packaged Matt did not honor standard GitHub initialization')
+      }
+      process.stdout.write('Packaged Matt: all backend modules and GitHub initialization passed\n')
       process.stdout.write('Relocated launcher: Desktop profile, official DSH readiness and Matt panel composition passed\n')
     } finally { clearTimeout(timer); await host.stop() }
   }
