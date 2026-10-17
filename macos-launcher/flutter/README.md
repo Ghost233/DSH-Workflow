@@ -1,6 +1,6 @@
 # DSH Workflow Flutter 启动器
 
-与 MacLauncher 采用同一 Flutter、官方 SDK 和工程规范体系，保留独立仓库。固定工具链为 Flutter 3.47.6 / Dart 3.13.5，SDK Git 提交由 pubspec.yaml 与生成的 pubspec.lock 固定。
+与 MacLauncher 采用同一 Flutter、官方 SDK 和工程规范体系，保留独立仓库。固定工具链为 Flutter 3.47.7 / Dart 3.13.5，SDK Git 提交由 pubspec.yaml 与生成的 pubspec.lock 固定。
 
 Flutter Widget 负责界面；LauncherController 负责业务生命周期、真实状态和日志；MacLauncherIntegration 将 SDK 与界面连接到同一控制入口。Swift Runner 仅保留窗口、菜单栏、登录项、实例锁及原有配置兼容接口。
 

@@ -29,7 +29,7 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.2-source.app" no
 
 `.github/workflows/macos-app.yml` 在 ARM64 原生 runner 上初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。上游源码保持原样。
 
-CI 同时准备固定 Flutter 3.47.6，检查 lockfile、Dart 格式、静态分析与真实 SDK socket 测试，再将对应架构的 Flutter Release 应用与既有运行时装配为启动器。maclauncher.json 声明 Web 访问服务的启动/回收/状态/日志与 Desktop 后端的只读状态；入口托管、窗口激活和失联恢复由应用负责。
+CI 同时准备固定 Flutter 3.47.7，检查 lockfile、Dart 格式、静态分析与真实 SDK socket 测试，再将对应架构的 Flutter Release 应用与既有运行时装配为启动器。maclauncher.json 声明 Web 访问服务的启动/回收/状态/日志与 Desktop 后端的只读状态；入口托管、窗口激活和失联恢复由应用负责。
 
 `build-desktop-release.mjs` 使用上游生产包集合、工程元数据和运行时校验接口，按 Electron 的 Node 版本安装生产依赖，生成包含完整资源的 Desktop 应用。应用资源不使用源码目录或开发运行时链接；本项目使用 ad-hoc 签名，不调用上游要求 Developer ID 与公证凭据的发行入口。
 
