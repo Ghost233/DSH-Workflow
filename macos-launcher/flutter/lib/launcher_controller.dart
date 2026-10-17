@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 
 import 'maclauncher_integration.dart';
+import 'service_stop.dart';
 import 'native_bridge.dart';
 import 'update_policy.dart';
 
@@ -135,7 +136,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     notifyListeners();
   }
 
-  Future<Map<String, Object?>> _serviceCommand(String type) async {
+  Future<Map<String, Object?>> _serviceCommand(
+    String type, {
+    Map<String, Object?> fields = const {},
+  }) async {
     final child = await _startProcess(node, [
       script('service-cli.mjs'),
       environment.dataRoot,
@@ -144,7 +148,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     ], environment: processEnvironment);
     final output = child.stdout.transform(utf8.decoder).join();
     final diagnostics = child.stderr.transform(utf8.decoder).join();
-    child.stdin.writeln(jsonEncode({'type': type}));
+    child.stdin.writeln(jsonEncode({'type': type, ...fields}));
     await child.stdin.close();
     final code = await child.exitCode;
     final text = await output;
@@ -182,6 +186,76 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       );
       notifyListeners();
       rethrow;
+    }
+  }
+
+  @override
+  Future<void> stopService() => _changeService('stop');
+
+  Future<bool> Function(ServiceStopInspection)? confirmServiceStop;
+  bool _changingService = false;
+  bool _serviceCommitStarted = false;
+  String? _pendingServiceStop;
+  Future<void> restartService() => _changeService('restart');
+
+  Future<void> _changeService(String action) async {
+    if (_closed) throw StateError('启动器正在退出');
+    if (_changingService) throw StateError('DSH 服务已有停止或重启操作正在进行');
+    _changingService = true;
+    String? pending;
+    try {
+      var value = await _serviceCommand(
+        'inspect-stop',
+        fields: {'action': action},
+      );
+      while (true) {
+        final inspection = ServiceStopInspection(objectValue(value['stop']));
+        if (inspection.stopped) {
+          if (action == 'restart') await startService();
+          return;
+        }
+        pending = inspection.operationId;
+        if (pending == null) throw StateError('DSH 停止检查缺少操作标识');
+        _pendingServiceStop = pending;
+        if (_closed) throw StateError('启动器正在退出，已取消 DSH 停止操作');
+        var confirmed = false;
+        if (inspection.needsConfirmation) {
+          final confirm = confirmServiceStop;
+          if (confirm == null) {
+            throw StateError(
+              '需要在 DSH 启动器中明确确认${action == 'restart' ? '重启' : '停止'}：${inspection.message ?? inspection.work.map((row) => row['label']).join('；')}',
+            );
+          }
+          confirmed = await confirm(inspection);
+          if (!confirmed || _closed) {
+            throw StateError('已取消${action == 'restart' ? '重启' : '停止'} DSH 服务');
+          }
+        }
+        _serviceCommitStarted = true;
+        try {
+          value = await _serviceCommand(
+            action == 'restart' ? 'restart-service' : 'stop-service',
+            fields: {'operationId': pending, 'confirmed': confirmed},
+          );
+        } finally {
+          _serviceCommitStarted = false;
+        }
+        pending = null;
+        _pendingServiceStop = null;
+        if (value['stop'] == null) return;
+      }
+    } finally {
+      try {
+        if (pending != null) {
+          await _serviceCommand(
+            'cancel-stop',
+            fields: {'operationId': pending},
+          );
+        }
+      } finally {
+        _pendingServiceStop = null;
+        _changingService = false;
+      }
     }
   }
 
@@ -387,30 +461,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
           .whenComplete(() => _desktopOpen = null);
 
   Future<void> _openDesktop({required bool hidden}) async {
-    if (await native.desktopRunning(desktop)) return;
-    final resources = '$desktop/Contents/Resources';
-    final source = File('$resources/dsh-source-runtime.json');
-    final runtime = await source.exists()
-        ? objectValue(jsonDecode(await source.readAsString()))['runtimeRoot']
-              as String
-        : '$resources/app/dsh';
-    final electron = File('$desktop/Contents/MacOS/Electron');
-    final executable = await electron.exists()
-        ? electron.path
-        : '$desktop/Contents/MacOS/DeepSeek Harness';
-    final result = await Process.run(
-      executable,
-      [
-        script('prepare-desktop.mjs'),
-        environment.resources,
-        '${environment.dataRoot}/global',
-        runtime,
-      ],
-      environment: {...processEnvironment, 'ELECTRON_RUN_AS_NODE': '1'},
-    );
-    if (result.exitCode != 0) {
-      throw StateError('插件装配失败（${result.exitCode}）：${result.stderr}');
+    await _serviceCommand('connect-web');
+    if (_service.ready != true) {
+      throw StateError('DSH 服务未启动或暂不可用，请先启动 DSH 服务。');
     }
+    if (await native.desktopRunning(desktop)) return;
     _coldDesktopBackground = hidden;
     try {
       await native.openDesktop(
@@ -418,7 +473,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         hidden: hidden,
         environment: {
           'DSH_HOME': environment.home,
-          'DSH_PERMISSION_MODE': processEnvironment['DSH_PERMISSION_MODE']!,
+          'DSH_WORKFLOW_DATA_ROOT': environment.dataRoot,
         },
       );
     } catch (_) {
@@ -602,6 +657,13 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
     _observer?.cancel();
     _serviceObserver?.cancel();
+    if (_pendingServiceStop != null && !_serviceCommitStarted) {
+      await _serviceCommand(
+        'cancel-stop',
+        fields: {'operationId': _pendingServiceStop},
+      );
+      _pendingServiceStop = null;
+    }
     await _mutation;
   }
 }

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { apply as applyStopInspection, inject as stopInspectionServices } from './stop-inspection.mjs'
 
 export const name = 'dsh-workflow-desktop-bridge'
 export const inject = ['connection', 'webServer', 'appReady']
@@ -9,6 +10,7 @@ export const inject = ['connection', 'webServer', 'appReady']
 export function apply(ctx, { directory, runtimeVersion }) {
   const lease = randomUUID()
   ctx.provide('workflowHostInstance', { instanceId: lease })
+  ctx.inject(stopInspectionServices, applyStopInspection)
   const path = join(directory, 'desktop-host.json')
   let closed = false
   let published = Promise.resolve()
