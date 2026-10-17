@@ -12,6 +12,10 @@ on:
       - scripts/project-plugin-resolver.mjs
       - scripts/harness-runtime.mjs
       - scripts/dsh-launch-composition.mjs
+      - scripts/dsh-delivery-policy.mjs
+      - scripts/dsh-readiness.mjs
+      - project-plugins.json
+      - project-plugins.lock.json
       - scripts/web-host-lifecycle.mjs
       - scripts/release.sh
       - scripts/release.py
@@ -37,6 +41,10 @@ on:
       - scripts/project-plugin-resolver.mjs
       - scripts/harness-runtime.mjs
       - scripts/dsh-launch-composition.mjs
+      - scripts/dsh-delivery-policy.mjs
+      - scripts/dsh-readiness.mjs
+      - project-plugins.json
+      - project-plugins.lock.json
       - scripts/web-host-lifecycle.mjs
       - scripts/release.sh
       - scripts/release.py
@@ -178,6 +186,17 @@ jobs:
             macos-launcher/runtime/service-notification-native.test.mjs \
             macos-launcher/runtime/service-notification-management.test.mjs
 
+      - name: Verify managed Workflow update policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/run-project-tests.mjs \
+            scripts/dsh-launch-composition.test.mjs \
+            scripts/dsh-readiness.test.mjs \
+            macos-launcher/runtime/plugin-configuration.test.mjs \
+            macos-launcher/runtime/plugin-versions.test.mjs \
+            macos-launcher/runtime/plugin-update.test.mjs
+
       - name: Build fixed DSH production packages
         working-directory: deepseek-harness
         env:
@@ -207,6 +226,22 @@ jobs:
           node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs "$APP"
           echo "app=$APP" >> "$GITHUB_OUTPUT"
 
+      - name: Verify Workflow desktop client assembly
+        shell: bash
+        env:
+          DSH_DESKTOP_TEST_MAIN: ${{ steps.desktop.outputs.app }}/Contents/Resources/app/lib/main.js
+        run: |
+          set -euo pipefail
+          test -f "$DSH_DESKTOP_TEST_MAIN"
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { createHash } from 'node:crypto';
+          import { readFileSync } from 'node:fs';
+          const digest = createHash('sha256').update(readFileSync(process.env.DSH_DESKTOP_TEST_MAIN)).digest('hex');
+          assert.equal(digest, 'b0c715cb750322ebd3fe46f4157fdc370efe92b21408854bcf8083f2ed1e85f9');
+          JS
+          node --test macos-launcher/desktop-adaptation.test.mjs
+
       - name: Build macOS application
         env:
           DSH_MACOS_DESKTOP_APP: ${{ steps.desktop.outputs.app }}
@@ -231,6 +266,7 @@ jobs:
           export DSH_SERVICE_TEST_RESOURCES="$GITHUB_WORKSPACE/.build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app/Contents/Resources"
           test -x "$DSH_SERVICE_TEST_RESOURCES/node"
           export DSH_TEST_NODE24="$(command -v node)"
+          export DSH_TEST_NODE="$DSH_TEST_NODE24"
           export DSH_LAUNCHER_TEST_PORT=0
           flutter test --no-pub --concurrency=1 \
             test/independent_service_test.dart \
@@ -245,7 +281,8 @@ jobs:
             test/independent_service_unknown_stop_test.dart \
             test/independent_service_operation_stop_test.dart \
             test/independent_service_fault_test.dart \
-            test/independent_service_web_admission_test.dart
+            test/independent_service_web_admission_test.dart \
+            test/independent_service_update_test.dart
 
       - name: Package and verify DMG
         id: package

@@ -2,9 +2,9 @@
 
 启动器界面、应用侧业务控制与 SDK 接入采用 Flutter/Dart，与 MacLauncher 使用同一技术体系并保持独立仓库。Swift 仅保留 macOS 原生接口。接入和统一检查流程见 [Flutter 启动器说明](flutter/README.md)。
 
-启动器只管理一个全局实例。官方 Electron 桌面端启动并持有 DSH Host；Web 入口通过带密码的代理连接这个 Host，不再启动第二个 Web 后端。桌面端和浏览器共享模型配置、会话、工作区及插件。
+启动器管理一个独立 DSH 服务端。桌面客户端和带密码的 Web 入口连接同一个实例，共享模型配置、会话、工作区及插件。桌面客户端不持有服务的启动和停止权限。
 
-DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-workflow-desktop` Bundle 加载 JEV/监控、中文 Matt 技能和 `dsh-workflow-matt-panel` 本地派生面板，并发布权限为 `0600` 的后端就绪记录。本地面板不包含 bundled skills，原版 Deck 的宿主和工具条目在项目装配中停用。
+DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-workflow-desktop` Bundle 加载 JEV/监控、中文 Matt 技能和 `dsh-workflow-matt-panel` 本地派生面板，并发布权限为 `0600` 的服务就绪记录。本地面板不包含 bundled skills，原版 Deck 的宿主和工具条目在项目装配中停用。
 
 面板源码位于主仓库普通目录 `matt-skills-panel-plugin/`，按主项目正常提交即可被 CI 获取；`vendor/dsh-mattpocock-skills-deck` 只用于追踪上游。打包前运行 `npm ci --prefix matt-skills-panel-plugin --ignore-scripts`、`npm run build --prefix matt-skills-panel-plugin`。构建不写入运行中的 profile，也不重启服务；升级对照见派生版 README。
 
@@ -29,7 +29,7 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.2-source.app" no
 
 `.github/workflows/macos-app.yml` 在 ARM64 原生 runner 上初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。上游源码保持原样。
 
-CI 同时准备固定 Flutter 3.47.7，检查 lockfile、Dart 格式、静态分析与真实 SDK socket 测试，再将对应架构的 Flutter Release 应用与既有运行时装配为启动器。maclauncher.json 声明 Web 访问服务的启动/回收/状态/日志与 Desktop 后端的只读状态；入口托管、窗口激活和失联恢复由应用负责。
+CI 同时准备固定 Flutter 3.47.7，检查 lockfile、Dart 格式、静态分析与真实 SDK socket 测试，再将对应架构的 Flutter Release 应用与运行时装配为启动器。maclauncher.json 分别声明 DSH 服务端和 Web 访问服务的启动、回收、状态与日志能力；入口托管、窗口激活和失联恢复由应用负责。
 
 `build-desktop-release.mjs` 使用上游生产包集合、工程元数据和运行时校验接口，按 Electron 的 Node 版本安装生产依赖，生成包含完整资源的 Desktop 应用。应用资源不使用源码目录或开发运行时链接；本项目使用 ad-hoc 签名，不调用上游要求 Developer ID 与公证凭据的发行入口。
 
@@ -39,42 +39,35 @@ CI 同时准备固定 Flutter 3.47.7，检查 lockfile、Dart 格式、静态分
 
 ## 启动和关闭
 
-日常入口是无参数 `./start-dsh-workflow.sh`，只支持 macOS ARM64。它通过 `dsh-workflow://open-global` 唤起已构建的启动器并打开全局实例；重复运行复用启动器和官方 Desktop 的单实例机制。其他系统或架构在启动应用前明确拒绝，不保留源码 Web 启动回退。
+日常入口是无参数 `./start-dsh-workflow.sh`，只支持 macOS ARM64。它通过 `dsh-workflow://open-global` 唤起已构建的启动器。每次启动器启动只尝试一次启动或复用服务，不强制打开桌面窗口；启动失败后显示原因，不循环重试。其他系统或架构在启动应用前明确拒绝。
 
-首次打开管理窗口需要设置访问密码。启动器将 Web 连接到正在运行的 Desktop Host；后端未运行时才打开官方桌面端。管理页按“桌面版”和“Web”分组：“打开桌面版”激活已有桌面应用，“打开 Web”在 Web 服务就绪后打开浏览器入口。每个工程在 DSH 内选择工作目录。
+首次使用 Web 需要设置访问密码。启动器分别提供“打开桌面版”和“打开 Web”入口；两个客户端只连接已有服务。服务未运行或版本不兼容时明确提示，由用户启动或处理，不另起实例。每个工程在 DSH 内选择工作目录。
 
-Web 只有一个端口 `33080`，监听 `0.0.0.0`。本机访问 `http://127.0.0.1:33080/`，局域网使用 Mac 当前的内网 IP 和同一个端口。没有有效登录 cookie 时显示密码页；密码正确后，代理在服务器内部通过桌面后端的私有 token 取得后端认证 cookie，并把它保存在当前 Web 会话中。浏览器只持有代理登录 cookie，登录后回到同一端口的 `/`，随后直接访问 DSH。HTTP 和 WebSocket 使用同一认证会话，不再经过导航页或跨端口跳转。
+Web 只有一个端口 `33080`，监听 `0.0.0.0`。本机访问 `http://127.0.0.1:33080/`，局域网使用 Mac 当前的内网 IP 和同一个端口。没有有效登录 cookie 时显示密码页；密码正确后，代理在服务器内部通过服务端的私有 token 取得后端认证 cookie，并把它保存在当前 Web 会话中。浏览器只持有代理登录 cookie，登录后回到同一端口的 `/`，随后直接访问 DSH。HTTP 和 WebSocket 使用同一认证会话，不再经过导航页或跨端口跳转。
 
-访问设置中的“停止 Web 服务”或退出启动器只关闭代理，不终止官方桌面端的 Host。“重连 Web”重新启动同一端口的 Web 入口并连接现有 Host。关闭 Desktop 窗口的行为沿用官方设计；完全退出 Desktop 才会结束它的后端。Desktop 重新启动后，在启动器点“打开桌面版”即可显示桌面窗口，再点“重连 Web”连接新的 Host。
+“停止 Web 服务”只关闭浏览器访问，桌面端与业务继续运行。关闭桌面窗口、真正退出桌面客户端或退出启动器，都保留 DSH 服务和已经启动的 Web 入口。停止 DSH 服务后，保留的 Web 入口显示服务不可用。停止或重启服务前检查未完成工作和相关定时提醒；有工作或状态未知时先展示影响并确认，取消后原实例和工作继续运行。
+
+服务异常退出后保持停止，通过 macOS 系统通知提醒检查日志，等待用户手动启动。通知权限受限或发送失败时显示真实原因；主动停止不发送故障通知。现有登录启动开关控制是否在登录时打开启动器，关闭开关不会停止当前服务。
 
 启动器使用 `global-supervisor.mjs`，只保存一个全局连接状态；管理指令通过启动器私有控制管道传递，没有 `/global/open`、等待页、导航登录或目录实例 HTTP 接口。原 `catalogs.json` 和目录实例历史数据保留但不再读取。全局工作流数据仍位于 `~/Library/Application Support/DSH Workflow/global`。Desktop profile 初次缺失时复制已有 Web profile 配置和插件，后续保留 Desktop 用户配置。
 
 ## 权限、网络和插件
 
-“完整访问权限”在项目 Desktop Bundle 中配置 DSH 的 `danger-full-access`；关闭时使用 `workspace-write`。权限处理沿用 DSH，已有会话设置也遵循其原生规则。改变后端权限或更新 Host 插件需要完全退出并重新打开 Desktop，仅断开 Web 不会重启 Host。
+“完整访问权限”在项目 Desktop Bundle 中配置 DSH 的 `danger-full-access`；关闭时使用 `workspace-write`。权限处理沿用 DSH，已有会话设置也遵循其原生规则。需要重新加载服务配置时，使用显式服务重启并遵守任务检查；退出桌面客户端或断开 Web 不会重启服务。
 
-本机入口用于管理模型和 API Key。局域网设置写入默认关闭；打开“允许局域网修改 DSH 设置”后，密码认证的 Web 代理为客户端提供该能力，DSH 源码和桌面端资源保持不变。变更该设置后重连 Web 并重新登录。代理验证密码、有效会话、Host 和 Origin；修改密码会立即撤销旧会话并关闭其 WebSocket。监听所有 IPv4 网卡后，切换网络无需重绑代理，Host 校验和启动器展示的内网地址使用当前网卡 IP，不把 `0.0.0.0` 当作访问地址。
+本机入口用于管理模型和 API Key。局域网设置写入默认关闭；打开“允许局域网修改 DSH 设置”后，密码认证的 Web 代理为客户端提供该能力，规则由项目 Web 代理处理。变更该设置后重连 Web 并重新登录。代理验证密码、有效会话、Host 和 Origin；修改密码会立即撤销旧会话并关闭其 WebSocket。监听所有 IPv4 网卡后，切换网络无需重绑代理，Host 校验和启动器展示的内网地址使用当前网卡 IP，不把 `0.0.0.0` 当作访问地址。
 
-插件管理表格读取实际使用的 `$DSH_HOME/profiles/desktop`，包括 npm 依赖、Bundle、自研插件、中文技能和项目锁定快照。表格中的兼容版本及最新支持 DSH 版本取作者发布元数据；未声明时如实显示。与 DSH 绑定的官方包和项目打包插件随应用构建更新。
+启动器插件页展示磁盘安装版本；DSH 的“设置 → 插件 → 组件版本与来源”展示实际运行解析、全局和代理预设的作用域。两者分别对照打包的仓库固定值和来源，未知或版本偏差如实显示。应用内不查询 npm 最新版本或单独安装插件；DSH、桌面适配和插件统一随本仓库 DMG 交付。
 
-独立 npm 插件可逐项更新。更新 Desktop profile 前应完全退出官方 Desktop，沿用官方 profile 管理约束；更新后重新启动 Desktop 加载新版本。插件管理不会终止正在运行的 Desktop 任务。项目清单中的 `startup: true` 插件沿用既有 Web profile 安装结果，首次 Desktop 初始化时一并复制；单项安装失败仍应报告真实原因。
+官方安装管理侧栏和市场入口停用，原 `plugins.*` 扩展插槽失去该容器。自研 JEV、监控的设置入口及 Matt 的标准设置插槽保留；其他第三方仅注册在旧管理页的扩展内容不再显示。
+
+启动器和桌面端的更新检查只读取 Ghost233/DSH-Workflow 的正式 Release，并核对候选包含正确版本、架构和非空大小的配套 DMG。检查更新和打开发布页不自动下载、安装、锁定或停止服务；实际服务替换仍须显式执行并遵守任务确认。
 
 
 ## 插件版本配置
 
-仓库的 `project-plugins.json` 是发布默认值的唯一编辑入口。`project-plugins.lock.json` 是脚本生成的发布快照，禁止手动修改。生成时核对解析版本与清单中的精确版本；启动时也核对两者，锁文件不能覆盖清单中的版本。
+仓库的 `project-plugins.json` 是项目第三方插件发布版本的唯一编辑入口。`project-plugins.lock.json` 是脚本生成的发布快照，禁止手动修改。生成时核对解析版本与清单中的精确版本；启动时也核对两者，锁文件不能覆盖清单中的版本。
 
-应用首次准备 profile 时，以发布清单初始化 `$DSH_HOME/workflow/project-plugins.json`。这是本机插件版本的唯一配置入口，Desktop 和 Web 共用。默认 `DSH_HOME` 为 `~/.dsh`。后续启动和应用升级保留本机配置；应用内的清单只提供初始化默认值。profile 的依赖声明和实际安装包属于安装状态，需要与本机配置一致。
+运行端以本次应用打包的仓库清单和锁文件展示预期版本，以实际加载或解析到的包展示运行版本。历史 `$DSH_HOME/workflow/project-plugins.json` 可以保留，但不再作为运行端可编辑的插件版本权威。默认 `DSH_HOME` 为 `~/.dsh`。已有模型配置、凭据、工作区和会话历史继续保留。
 
-启动器更新插件时，同时保存精确依赖声明和本机配置。依赖操作前后检查项目管理的全部插件，发现版本偏差就停止依赖操作并报告。Desktop 启动会报告已有偏差，不自动替换插件。通过项目 CLI 卸载无关插件也执行这项检查。DSH 上游公开接口及直接调用 pnpm 不经过项目检查；使用这些入口后，需要重新核对版本状态。
-
-手动调整本机配置后，用应用内的 Node 执行同步命令。同步只处理 `--only` 指定的插件，目标版本取自本机配置。先完全退出 Desktop，再执行：
-
-```sh
-"/Applications/DSH Workflow.app/Contents/Resources/node" \
-  "/Applications/DSH Workflow.app/Contents/Resources/workflow/macos-launcher/runtime/plugin-update.mjs" \
-  "/Applications/DSH Workflow.app/Contents/Resources" \
-  --sync --only billion-context
-```
-
-同步后重新打开 Desktop，使 Host 加载新版本。其他插件存在版本偏差时，先报告并停止，不顺带修复。命令失败后可能已有部分安装变化；保留失败信息，核对实际包和依赖声明后再同步。配置写入失败也按失败报告。
+运行端的单独安装、卸载、更新与同步换包入口已关闭。组件升级在仓库中修改、验证并统一打包；遇到实际版本偏差时报告原因，不静默替换运行服务。构建、正式发布和服务切换分别遵守各自流程。
