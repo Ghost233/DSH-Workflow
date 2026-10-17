@@ -714,7 +714,7 @@ Future<void> _runLauncherDeepLinkChecks(
     );
     Future<({int code, String body})> plugins() async {
       final request = await client.postUrl(
-        url.resolve('api/pluginManager/listPlugins'),
+        url.resolve('api/pluginInventory/list'),
       );
       request.followRedirects = false;
       request.headers.contentType = ContentType.json;
@@ -723,7 +723,7 @@ Future<void> _runLauncherDeepLinkChecks(
         jsonEncode({
           'type': 'client-request',
           'rpcId': 's06-uri-plugins',
-          'method': 'pluginManager/listPlugins',
+          'method': 'pluginInventory/list',
           'payload': {'args': {}},
         }),
       );
@@ -740,8 +740,13 @@ Future<void> _runLauncherDeepLinkChecks(
       first.code == 200,
       'fresh Launcher URI reaches the actual authenticated Host RPC',
     );
-    final active =
-        ((jsonDecode(first.body) as Map)['result'] as Map)['value'] as List;
+    final inventory =
+        ((jsonDecode(first.body) as Map)['result'] as Map)['value'] as Map;
+    final active = inventory['entries'] as List;
+    require(
+      inventory['managementAvailable'] != true,
+      'URI Web access exposes only the managed readonly inventory',
+    );
     require(
       ['dsh-workflow/jev-center', 'dsh-workflow/agent-monitor'].every(
         (name) => active.cast<Map>().any(

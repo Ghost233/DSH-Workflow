@@ -22,14 +22,14 @@ class PluginRow {
     : name = value['name'] as String,
       source = value['source'] as String,
       current = value['current'] as String?,
-      latest = value['latest'] as String?,
+      expected = value['expected'] as String?,
       supportedDsh = value['supportedDsh'] as String?,
       latestSupportedDsh = value['latestSupportedDsh'] as String?,
       status = value['status'] as String,
       note = value['note'] as String?,
       updatable = value['updatable'] as bool? ?? false;
   final String name, source, status;
-  final String? current, latest, supportedDsh, latestSupportedDsh, note;
+  final String? current, expected, supportedDsh, latestSupportedDsh, note;
   final bool updatable;
 }
 
@@ -46,14 +46,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   String? _password;
   bool _coldDesktopBackground = false;
   String loginStatus = 'unknown', error = '', updateMessage = '尚未检查更新';
-  String pluginMessage = '尚未检查插件版本', pluginUpdateMessage = '';
+  String pluginMessage = '尚未检查插件版本';
   String sdkMessage = '等待 MacLauncher';
   String notificationMessage = '故障通知：尚未查询授权状态。';
   bool requestingNotificationAuthorization = false;
-  bool checkingUpdates = false,
-      checkingPlugins = false,
-      updatingPlugins = false;
-  bool pluginsNeedReload = false;
+  bool checkingUpdates = false, checkingPlugins = false;
   List<PluginRow> plugins = [];
   AppUpdate? update;
   Uri? webUrl;
@@ -633,7 +630,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   }
 
   Future<void> checkPlugins() async {
-    if (checkingPlugins || updatingPlugins) return;
+    if (checkingPlugins) return;
     checkingPlugins = true;
     pluginMessage = '正在检查插件版本…';
     notifyListeners();
@@ -645,7 +642,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       if (rows is! List) throw const FormatException('Missing plugin rows');
       plugins = rows.map((row) => PluginRow(objectValue(row))).toList();
       pluginMessage =
-          '${plugins.where((p) => p.status == 'newer').length} 个新版本；共 ${plugins.length} 项';
+          '共 ${plugins.length} 项；${plugins.where((p) => p.status == 'drift').length} 项版本偏差。此处检查安装文件，运行解析请在 DSH 设置 → 插件查看。';
     } catch (failure) {
       pluginMessage = '插件检查失败：$failure';
     } finally {
@@ -666,32 +663,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       throw StateError('检查器退出 ${result.exitCode}：${result.stderr}');
     }
     return objectValue(jsonDecode(result.stdout.toString()));
-  }
-
-  Future<void> updatePlugins(List<String> names) async {
-    if (updatingPlugins || checkingPlugins) return;
-    updatingPlugins = true;
-    pluginUpdateMessage = '正在更新插件…';
-    notifyListeners();
-    try {
-      final report = await _runReport('plugin-update.mjs', [
-        environment.resources,
-        if (names.isNotEmpty) ...['--only', names.join(',')],
-      ]);
-      final updated = report['updated'];
-      if (updated is! List) {
-        throw const FormatException('Missing update results');
-      }
-      pluginsNeedReload = pluginsNeedReload || updated.isNotEmpty;
-      pluginUpdateMessage =
-          '已更新 ${updated.length} 个插件${report['error'] == null ? '' : '；${report['error']}'}';
-    } catch (failure) {
-      pluginUpdateMessage = '插件更新失败：$failure';
-    } finally {
-      updatingPlugins = false;
-      notifyListeners();
-    }
-    await checkPlugins();
   }
 
   Future<void> close() => _closeFuture ??= _close();

@@ -1,4 +1,4 @@
-import { symlink, mkdir, writeFile, chmod } from 'node:fs/promises'
+import { symlink, mkdir, writeFile, chmod, copyFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { copyProjectIntegration } from '../../project-resources.mjs'
 import { bundleServiceEnvironment } from '../../service-environment.mjs'
@@ -8,6 +8,7 @@ if (!artifact || !destination) throw new Error('Pass frozen packaged resources a
 await mkdir(destination, { recursive: true })
 const projectRoot = resolve(import.meta.dirname, '../../..')
 await copyProjectIntegration(projectRoot, join(destination, 'workflow'))
+await copyFile(join(projectRoot, 'macos-launcher/package-lock.json'), join(destination, 'package-lock.json'))
 await bundleServiceEnvironment(projectRoot, destination)
 for (const name of ['node', 'node_modules', 'desktop']) await symlink(join(resolve(artifact), name), join(destination, name))
 // Exclude unrelated network endpoints only in this isolated acceptance profile.

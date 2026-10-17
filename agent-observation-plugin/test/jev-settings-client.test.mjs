@@ -50,6 +50,7 @@ async function fixture(t, hostCtx) {
     'shell.overlay': { kind: 'list', scope: 'root' },
     'settings.section': { kind: 'list', scope: 'root' },
     'plugins.item': { kind: 'list', scope: 'root' },
+    'settings.plugins.tab': { kind: 'list', scope: 'root' },
   } }, () => null)
   ctx.provide('sessions', { open() {}, list: { getSnapshot: () => ({ current: undefined }), subscribe: () => () => {} } })
   ctx.provide('uiSession', { sessionStatus: { getSnapshot: () => new Map(), subscribe: () => () => {} }, adapter: { current: { value: { key: undefined }, subscribe: () => () => {} } } })
@@ -90,6 +91,12 @@ async function fixture(t, hostCtx) {
       if (endpoint === 'credentials/set') return host.credentials.set(payload.args.ref, payload.args.value)
       if (endpoint === 'jevCenter/testConnection') return host.jevCenter.testConnection(payload.args.modelName)
       if (endpoint === 'agentMonitor/snapshot') return host.agentMonitor.snapshot()
+      if (endpoint === 'workflowDelivery/list') return { ok: true, value: {
+        actualScope: 'runtime-resolution', policy: '组件随本仓库正式 DMG 统一交付', rows: [
+          { entryId: 'fixture-pin', moduleName: 'example-plugin', current: '1.1.0', expected: '1.2.0', source: '/actual/profile/node_modules/example-plugin', status: 'drift', enabled: true, fiberPhase: 'active', updatable: false },
+          { entryId: 'fixture-unknown', moduleName: 'unresolved-plugin', current: null, expected: null, source: '运行解析来源未知', status: 'unknown', enabled: false, fiberPhase: null, updatable: false },
+        ],
+      } }
       throw new Error(`unexpected Connection endpoint: ${endpoint}`)
     },
     async *open() {},
@@ -171,6 +178,25 @@ test('native Settings and Plugins receive JEV configuration pages only while the
   assert.deepEqual(f.ctx.slots.entries('settings.section').map(entry => entry.options.label), ['代理监控'])
   await f.serve([])
   assert.equal(f.ctx.slots.entries('plugins.item').length, 0)
+})
+
+test('Settings Plugins exposes actual runtime versions, repository pins, sources and drift without mutation actions', async t => {
+  const f = await fixture(t)
+  await waitFor(() => assert.ok(f.ctx.slots.entries('settings.plugins.tab').some(row => row.options.id === 'workflow-delivery'), 'Settings → Plugins needs the project readonly versions tab when the official manager is disabled'))
+  const entry = f.ctx.slots.entries('settings.plugins.tab').find(row => row.options.id === 'workflow-delivery')
+  assert.ok(entry, 'Settings → Plugins needs the project readonly versions tab when the official manager is disabled')
+  const ui = render(React.createElement(entry.component, entry.inject()))
+  await waitFor(() => assert.ok(ui.getByText('example-plugin')))
+  assert.ok(ui.getByText('1.1.0'))
+  assert.ok(ui.getByText('1.2.0'))
+  assert.ok(ui.getByText('/actual/profile/node_modules/example-plugin'))
+  assert.ok(ui.getByText('版本偏差'))
+  assert.ok(ui.getByText('未能核验'))
+  assert.match(ui.container.textContent, /正式 DMG/)
+  assert.equal(ui.queryByRole('button', { name: /安装|更新|卸载|删除/ }), null)
+  fireEvent.click(ui.getByRole('button', { name: '刷新组件清单' }))
+  await waitFor(() => assert.equal(f.calls.filter(call => call.endpoint === 'workflowDelivery/list').length, 2))
+  assert.equal(f.calls.some(call => /pluginManager|install|remove/.test(call.endpoint)), false)
 })
 
 test('the native JEV configuration page lets users edit and save through ConfigForms on the Desktop carrier', async t => {

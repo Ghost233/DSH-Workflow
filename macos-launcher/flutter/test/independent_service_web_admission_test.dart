@@ -360,7 +360,7 @@ void main() {
         }
 
         final attached = await tester.runAsync(() async {
-          final rpc = await webRpc('pluginManager/listPlugins', {});
+          final rpc = await webRpc('pluginInventory/list', {});
           expect(rpc.code, 200);
           expect((jsonDecode(rpc.text) as Map)['result']['ok'], true);
           final terminal = await webRpc('terminal/create', {
@@ -473,7 +473,7 @@ void main() {
               },
             }),
           );
-          final refused = await webRpc('pluginManager/listPlugins', {});
+          final refused = await webRpc('pluginInventory/list', {});
           expect(refused.code, 503);
           final service =
               (await actual.session.sendRequest(
@@ -549,7 +549,7 @@ void main() {
             's03-web-input\n',
           );
           expect(socket!.readyState, WebSocket.open);
-          final sameCookieRpc = await webRpc('pluginManager/listPlugins', {});
+          final sameCookieRpc = await webRpc('pluginInventory/list', {});
           expect(sameCookieRpc.code, 200);
           expect((jsonDecode(sameCookieRpc.text) as Map)['result']['ok'], true);
           final web =

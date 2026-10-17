@@ -324,7 +324,7 @@ void main() {
         try {
           final address = Uri.parse(receipt['url'] as String);
           final rpc = address.replace(
-            path: '/api/pluginManager/listPlugins',
+            path: '/api/pluginInventory/list',
             query: '',
           );
           final unauthorized = await client.postUrl(rpc);
@@ -333,7 +333,7 @@ void main() {
             jsonEncode({
               'type': 'client-request',
               'rpcId': 's01-unauthorized',
-              'method': 'pluginManager/listPlugins',
+              'method': 'pluginInventory/list',
               'payload': {'args': {}},
             }),
           );
@@ -352,7 +352,7 @@ void main() {
             jsonEncode({
               'type': 'client-request',
               'rpcId': 's01-plugins',
-              'method': 'pluginManager/listPlugins',
+              'method': 'pluginInventory/list',
               'payload': {'args': {}},
             }),
           );
@@ -360,8 +360,9 @@ void main() {
           expect(response.statusCode, 200);
           final envelope =
               jsonDecode(await response.transform(utf8.decoder).join()) as Map;
-          final plugins = ((envelope['result'] as Map)['value'] as List)
-              .cast<Map>();
+          final inventory = (envelope['result'] as Map)['value'] as Map;
+          expect(inventory['managementAvailable'], isNot(true));
+          final plugins = (inventory['entries'] as List).cast<Map>();
           for (final module in [
             'dsh-workflow/jev-center',
             'dsh-workflow/agent-monitor',

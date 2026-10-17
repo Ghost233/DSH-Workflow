@@ -43,11 +43,23 @@
       }
 
       })(monitorRemote)
+      const deliveryRemote = { exports: {} }
+      ;(function(module) {
+      module.exports = function createDeliveryRemoteDescriptor() {
+        return {
+          id: 'dsh-workflow#workflowDelivery/list',
+          service: 'workflowDelivery', namespace: 'workflowDelivery', method: 'list',
+          invocation: { kind: 'direct' }, parameters: [], result: { mode: 'src-json' },
+        }
+      }
+
+      })(deliveryRemote)
       const hostRequire = require
-      require = name => name === './jev-center-remote.cjs' ? jevRemote.exports : name === './agent-monitor-remote.cjs' ? monitorRemote.exports : hostRequire(name)
+      require = name => name === './jev-center-remote.cjs' ? jevRemote.exports : name === './agent-monitor-remote.cjs' ? monitorRemote.exports : name === './delivery-remote.cjs' ? deliveryRemote.exports : hostRequire(name)
       const React = require('react')
       const createJevCenterRemoteDescriptor = require('./jev-center-remote.cjs')
       const createAgentMonitorRemoteDescriptor = require('./agent-monitor-remote.cjs')
+      const createDeliveryRemoteDescriptor = require('./delivery-remote.cjs')
       const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
 
       function NativeJevSettings({ scope, kind, view, saveCredential, testConnection, monitor }) {
@@ -206,13 +218,51 @@
         )
       }
 
+      function DeliverySettings({ read }) {
+        const [state, setState] = useState({ loading: true })
+        const refresh = useRef(() => {})
+        useEffect(() => {
+          let active = true, generation = 0
+          refresh.current = async () => {
+            const current = ++generation
+            setState({ loading: true })
+            try {
+              const result = await read()
+              if (active && current === generation) setState(result.ok ? { report: result.value } : { error: true })
+            } catch { if (active && current === generation) setState({ error: true }) }
+          }
+          void refresh.current()
+          return () => { active = false; refresh.current = () => {} }
+        }, [read])
+        const status = { fixed: '符合仓库固定值', drift: '版本偏差', unknown: '未能核验', untracked: '仓库未固定' }
+        return h('section', { className: 'dsh-jev-native-settings', 'aria-label': '组件版本与来源' },
+          h('h2', null, '组件版本与来源'),
+          h('p', null, '组件随本仓库正式 DMG 统一交付。此页只读；未启用条目的版本仅表示当前 Host 的解析结果。'),
+          h('button', { type: 'button', disabled: state.loading, onClick: () => { void refresh.current() } }, '刷新组件清单'),
+          state.loading ? h('p', { role: 'status' }, '正在读取组件清单…') : state.error ? h('p', { role: 'alert' }, '组件清单暂不可用，请检查服务连接后刷新。') :
+            h('div', { style: { overflowX: 'auto' } }, h('table', null,
+              h('thead', null, h('tr', null, ...['插件', '实际版本', '仓库固定值', '解析来源', '状态', '启用 / 生命周期'].map(label => h('th', { key: label }, label)))),
+              h('tbody', null, ...state.report.rows.map(row => h('tr', { key: row.entryId },
+                h('td', null, row.scope ? `${row.scope} · ${row.moduleName}` : row.moduleName), h('td', null, row.current ?? '未知'), h('td', null, row.expected ?? '未固定'),
+                h('td', null, row.source), h('td', { title: row.error }, status[row.status] ?? '未能核验'),
+                h('td', null, `${row.enabled === 'conditional' ? '条件启用' : row.enabled ? '启用' : '停用'} / ${row.fiberPhase ?? '未加载'}`),
+              ))))),
+        )
+      }
+
       function registerNativeJevSettings(ctx) {
         let credentialAction, connectionAction, monitorAction
         const monitorListeners = new Set()
         const monitor = { read: () => monitorAction?.() ?? Promise.resolve({ ok: false }),
           subscribe: listener => { monitorListeners.add(listener); return () => monitorListeners.delete(listener) } }
         ctx.inject(['remote', 'typert'], child => {
-          child.effect(() => child.remote.$mount({ package: 'dsh-workflow', descriptors: [createJevCenterRemoteDescriptor(), createAgentMonitorRemoteDescriptor()] }), 'JEV and monitor Remote descriptors')
+          child.effect(() => child.remote.$mount({ package: 'dsh-workflow', descriptors: [createJevCenterRemoteDescriptor(), createAgentMonitorRemoteDescriptor(), createDeliveryRemoteDescriptor()] }), 'Project Remote descriptors')
+          child.inject(['remote.workflowDelivery'], remote => {
+            remote.slots.inject('settings.plugins.tab', () => remote.slots.register({
+              name: 'settings.plugins.tab', id: 'workflow-delivery', label: '组件版本与来源', order: 10,
+              inject: () => ({ read: () => remote.remote.workflowDelivery.list() }),
+            }, DeliverySettings))
+          })
           child.inject(['remote.jevCenter'], remote => {
             connectionAction = modelName => remote.remote.jevCenter.testConnection(modelName)
             remote.effect(() => () => { connectionAction = undefined }, 'JEV connection-test caller lifetime')
