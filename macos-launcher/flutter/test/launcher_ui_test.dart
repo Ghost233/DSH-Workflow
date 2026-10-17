@@ -66,6 +66,8 @@ void main() {
       final model = LauncherController(native);
       await model.initialize();
       await tester.pumpWidget(LauncherApp(controller: model));
+      expect(find.text('启动 DSH 服务'), findsOneWidget);
+      expect(find.text('DSH 服务：已停止'), findsOneWidget);
       for (final label in ['后台启动', '启动后显示', '隐藏窗口', '仅显示已运行窗口']) {
         expect(find.text(label), findsOneWidget);
       }
@@ -151,6 +153,8 @@ void main() {
     );
     expect(find.text('登录启动：需要系统批准。请在系统设置的登录项中允许启动。'), findsOneWidget);
     expect(tester.widget<SwitchListTile>(choice).value, isTrue);
+    await tester.ensureVisible(choice);
+    await tester.pumpAndSettle();
     await tester.tap(choice.hitTestable());
     await tester.pumpAndSettle();
     expect(find.text('登录启动：未注册'), findsOneWidget);

@@ -12,6 +12,10 @@ class Business implements LauncherActions {
   final enteredHandoff = Completer<void>();
   var restored = Completer<void>();
   @override
+  Future<void> startService() async {}
+  @override
+  Future<LogBatch> serviceLogs(LogQuery query) async => LogBatch(entries: []);
+  @override
   Future<void> startWeb() async {
     starts++;
     await delayedStart?.future;
@@ -141,7 +145,7 @@ void main() {
     final desktop = services.cast<Map>().singleWhere(
       (row) => row['id'] == 'desktop',
     );
-    expect(desktop['methods'], ['status']);
+    expect(desktop['methods'], ['start', 'status', 'logs']);
     final response = await fixture.peer.request('status', service: 'web');
     expect((response['result']! as Map)['instanceId'], 'real-business-run');
     final logs = await fixture.peer.request(

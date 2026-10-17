@@ -56,9 +56,15 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Uri? webUrl;
   List<String> lanUrls = [];
   ServiceStatus _web = ServiceStatus(state: ServiceState.stopped);
+  ServiceStatus _service = ServiceStatus(
+    state: ServiceState.stopped,
+    ready: false,
+  );
   Process? _child;
   Completer<void>? _ready;
-  Timer? _observer;
+  Timer? _observer, _serviceObserver;
+  bool _observingService = false;
+  List<LogEntry> serviceLogEntries = [];
   int _requestId = 0;
   Future<void> _inputQueue = Future<void>.value();
   final Map<int, Completer<Map<String, Object?>>> _requests = {};
@@ -69,6 +75,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void>? _mutation, _closeFuture;
   Future<void>? _desktopOpen;
   ServiceStatus get snapshot => _web;
+  ServiceStatus get serviceSnapshot => _service;
   String? get logInstanceId => _logInstanceId;
   bool get logsTruncated => _logsDropped;
   bool get isActive => _child != null || _mutation != null;
@@ -86,6 +93,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     _password = environment.password;
     loginStatus = environment.loginStatus;
     initialized = true;
+    if (File(script('service-cli.mjs')).existsSync()) {
+      await _observeService();
+      _serviceObserver = Timer.periodic(const Duration(seconds: 2), (_) {
+        unawaited(_observeService());
+      });
+    }
     notifyListeners();
   }
 
@@ -116,6 +129,94 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   void setSdkMessage(String message) {
     sdkMessage = message;
     notifyListeners();
+  }
+
+  Future<Map<String, Object?>> _serviceCommand(String type) async {
+    final child = await _startProcess(node, [
+      script('service-cli.mjs'),
+      environment.dataRoot,
+      environment.resources,
+      environment.home,
+    ], environment: processEnvironment);
+    final output = child.stdout.transform(utf8.decoder).join();
+    final diagnostics = child.stderr.transform(utf8.decoder).join();
+    child.stdin.writeln(jsonEncode({'type': type}));
+    await child.stdin.close();
+    final code = await child.exitCode;
+    final text = await output;
+    final stderr = await diagnostics;
+    if (text.trim().isEmpty) {
+      throw StateError('服务管理入口退出 $code：$stderr');
+    }
+    final reply = objectValue(jsonDecode(text));
+    if (code != 0 || reply['ok'] != true) {
+      throw StateError(reply['error'] as String? ?? '服务管理入口退出 $code：$stderr');
+    }
+    final value = objectValue(reply['value']);
+    _service = ServiceStatus.fromJson(objectValue(value['service']));
+    serviceLogEntries = (value['logs'] as List)
+        .cast<Map>()
+        .map((row) => LogEntry(text: row['text'] as String))
+        .toList();
+    if (!_closed) notifyListeners();
+    return value;
+  }
+
+  @override
+  Future<void> startService() async {
+    if (_closed) throw StateError('启动器正在退出');
+    _service = ServiceStatus(state: ServiceState.starting, ready: false);
+    notifyListeners();
+    try {
+      await _serviceCommand('start-service');
+    } catch (failure) {
+      _service = ServiceStatus(
+        state: ServiceState.failed,
+        ready: false,
+        message: failure.toString(),
+        observedAt: DateTime.now().toUtc(),
+      );
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> _observeService() async {
+    if (_closed || _observingService) return;
+    _observingService = true;
+    try {
+      await serviceStatus();
+    } catch (failure) {
+      _service = ServiceStatus(
+        state: ServiceState.unknown,
+        ready: false,
+        message: failure.toString(),
+        observedAt: DateTime.now().toUtc(),
+      );
+      if (!_closed) notifyListeners();
+    } finally {
+      _observingService = false;
+    }
+  }
+
+  Future<ServiceStatus> serviceStatus() async {
+    await _serviceCommand('status');
+    return _service;
+  }
+
+  @override
+  Future<LogBatch> serviceLogs(LogQuery query) async {
+    final value = await _serviceCommand('logs');
+    final rows = (value['logs'] as List).cast<Map>();
+    return LogBatch(
+      entries: rows
+          .skip(rows.length > query.limit ? rows.length - query.limit : 0)
+          .map((row) => LogEntry(text: row['text'] as String))
+          .toList(),
+      instanceId: _service.instanceId,
+      truncated: rows.length > query.limit,
+      observedAt: DateTime.now().toUtc(),
+    );
   }
 
   @override
@@ -464,16 +565,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   }
 
   @override
-  Future<ServiceStatus> desktopStatus() async {
-    final result = await Process.run(node, [
-      script('desktop-status.mjs'),
-      '${environment.dataRoot}/global',
-    ], environment: processEnvironment);
-    if (result.exitCode != 0) throw StateError(result.stderr.toString());
-    return ServiceStatus.fromJson(
-      objectValue(jsonDecode(result.stdout.toString())),
-    );
-  }
+  Future<ServiceStatus> desktopStatus() => serviceStatus();
 
   @override
   Future<LogBatch> recentLogs(LogQuery query) async => LogBatch(
@@ -640,6 +732,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
           .writeAsString('close-started');
     }
     _observer?.cancel();
+    _serviceObserver?.cancel();
     final pending = _mutation;
     await _stopWeb();
     await pending;

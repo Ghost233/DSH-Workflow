@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { copyProjectIntegration } from './project-resources.mjs'
+import { bundleServiceEnvironment } from './service-environment.mjs'
 import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
 
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
@@ -69,6 +70,7 @@ try {
   await cp(process.execPath, join(resources, 'node'))
   await chmod(join(resources, 'node'), 0o755)
   await copyProjectIntegration(root, join(resources, 'workflow'))
+  await bundleServiceEnvironment(root, resources)
   await mkdir(join(resources, 'desktop'), { recursive: true })
   await run('/usr/bin/ditto', [desktopApp, join(resources, 'desktop/DeepSeek Harness.app')])
   const association = JSON.parse(await readFile(join(root, 'maclauncher.json'), 'utf8'))

@@ -511,10 +511,10 @@ Future<void> runWebApplicationScenario({
             'logs',
           }) &&
           services.singleWhere((s) => s.id == 'desktop').methods.join(',') ==
-              'status',
-      'official SDK capabilities match Web ownership and Desktop observation',
+              'start,status,logs',
+      'official SDK capabilities match Web ownership and DSH service start, status and logs',
     );
-    for (final method in ['start', 'recycle', 'logs']) {
+    for (final method in ['recycle']) {
       final denied = await session.sendRequest(
         method,
         serviceId: 'desktop',

@@ -302,8 +302,8 @@ Future<void> main(List<String> arguments) async {
             'logs',
           }) &&
           services.singleWhere((s) => s.id == 'desktop').methods.join(',') ==
-              'status',
-      'real SDK capabilities preserve owned Web and observation-only Desktop',
+              'start,status,logs',
+      'real SDK capabilities preserve owned Web and DSH service start, status and logs',
     );
     evidence['appSessionId'] = project.appSessionId;
     evidence['launcherSessionId'] = project.launcherSessionId;
