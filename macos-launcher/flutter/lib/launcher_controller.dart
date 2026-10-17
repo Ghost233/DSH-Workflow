@@ -48,6 +48,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   String loginStatus = 'unknown', error = '', updateMessage = '尚未检查更新';
   String pluginMessage = '尚未检查插件版本', pluginUpdateMessage = '';
   String sdkMessage = '等待 MacLauncher';
+  String notificationMessage = '故障通知：尚未查询授权状态。';
+  bool requestingNotificationAuthorization = false;
   bool checkingUpdates = false,
       checkingPlugins = false,
       updatingPlugins = false;
@@ -162,6 +164,32 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
     final value = objectValue(reply['value']);
     _service = ServiceStatus.fromJson(objectValue(value['service']));
+    final notification = value['notificationAuthorization'];
+    if (notification is Map) {
+      final settings = notification['authorization'];
+      final request = notification['authorizationRequest'];
+      final failure = request is Map ? request['error'] : null;
+      requestingNotificationAuthorization =
+          value['notificationAuthorizationPending'] == true ||
+          request is Map && request['state'] == 'requesting';
+      notificationMessage =
+          notification['message'] as String? ??
+          (failure is Map
+              ? 'macOS 通知授权失败：${failure['message'] ?? failure['code']}'
+              : null) ??
+          (requestingNotificationAuthorization
+              ? '正在等待 macOS 通知授权。'
+              : switch (settings is Map ? settings['status'] : null) {
+                  'authorized' => 'macOS 已授权故障通知。',
+                  'provisional' => 'macOS 已允许静默故障通知。',
+                  'denied' => 'macOS 已拒绝故障通知授权。',
+                  'notDetermined' => '故障通知尚未获得 macOS 授权。',
+                  _ => '故障通知授权状态未知，请查看服务日志。',
+                });
+    } else {
+      notificationMessage = '故障通知：尚未查询授权状态。';
+      requestingNotificationAuthorization = false;
+    }
     serviceLogEntries = (value['logs'] as List)
         .cast<Map>()
         .map((row) => LogEntry(text: row['text'] as String))
@@ -280,6 +308,27 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<ServiceStatus> serviceStatus() async {
     await _serviceCommand('status');
     return _service;
+  }
+
+  Future<void> authorizeServiceNotifications() async {
+    if (_closed) throw StateError('启动器正在退出');
+    if (requestingNotificationAuthorization) return;
+    requestingNotificationAuthorization = true;
+    notificationMessage = '正在等待 macOS 通知授权。';
+    notifyListeners();
+    try {
+      await _serviceCommand('authorize-notifications');
+    } catch (_) {
+      requestingNotificationAuthorization = false;
+      notificationMessage = '故障通知授权结果未知，请查看服务日志。';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> refreshServiceNotificationStatus() async {
+    if (_closed) throw StateError('启动器正在退出');
+    await _serviceCommand('notification-status');
   }
 
   @override

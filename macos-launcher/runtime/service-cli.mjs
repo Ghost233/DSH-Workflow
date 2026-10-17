@@ -40,7 +40,7 @@ if (import.meta.main) {
     if (request.type === 'connect-web') {
       request.runtimeVersion = JSON.parse(await readFile(join(resources, 'workflow/dsh-runtime.json'), 'utf8')).version
     }
-    const socket = request.type === 'start-service'
+    const socket = ['start-service', 'authorize-notifications'].includes(request.type)
       ? await ensureServiceManager({ dataRoot, resources, home })
       : serviceSocket(dataRoot)
     let value

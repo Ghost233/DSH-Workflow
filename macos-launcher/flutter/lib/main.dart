@@ -158,7 +158,7 @@ class _LauncherPageState extends State<LauncherPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('实例：${inspection.instanceId}'),
-                  Text('${verb}会中断列出的未完成工作及其继续产生的工作。取消后继续使用原实例。'),
+                  Text('$verb会中断列出的未完成工作及其继续产生的工作。取消后继续使用原实例。'),
                   if (inspection.unknown) const Text('任务状态未知，可能仍有未完成工作。'),
                   if (inspection.message != null) Text(inspection.message!),
                   for (final work in inspection.work)
@@ -322,6 +322,19 @@ class _LauncherPageState extends State<LauncherPage> {
           ],
         ),
         const Text('关闭启动器后，已启动的 DSH 服务继续运行。'),
+        SelectableText(model.notificationMessage),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _button(
+              '启用故障通知',
+              model.authorizeServiceNotifications,
+              enabled: !model.requestingNotificationAuthorization,
+            ),
+            _button('刷新通知状态', model.refreshServiceNotificationStatus),
+          ],
+        ),
       ]),
       _section('客户端入口', [
         Text('应用版本 ${model.environment.appVersion}'),

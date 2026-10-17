@@ -12,6 +12,7 @@ import { readDesktopHost } from './desktop-launch.mjs'
 import { dshReadiness } from '../../scripts/dsh-readiness.mjs'
 import { SERVICE_PROTOCOL, serviceDirectory, serviceSocket, privateDirectory, redact } from './service-control.mjs'
 import { createServiceAdmission } from './service-admission.mjs'
+import { serviceNotification } from './service-notification.mjs'
 
 /** The manager owns the official Host; GUI clients only send explicit management commands. */
 export async function serveManager({ dataRoot, resources, home }) {
@@ -29,6 +30,7 @@ export async function serveManager({ dataRoot, resources, home }) {
   await chmod(socketPath, 0o600)
   let child, receipt, injections, admission, platformSession = null, starting, stopping, normalStop, stopOperation, failure = '', state = 'stopped', closing = false
   let controlId = 0
+  let notificationAuthorization, authorizing
   let preparingStop = false
   const shellRead = new AbortController()
   let shellEnvironment
@@ -201,7 +203,8 @@ export async function serveManager({ dataRoot, resources, home }) {
     if (stopOperation?.owned === child && admission?.locked) { ready = false; message = '正在等待停止或重启确认，暂缓接收新工作。' }
     return { identityVerified, value: { protocol: SERVICE_PROTOCOL, service: { state, ready, instanceId: receipt?.lease ?? null,
       pid: child?.pid ?? null, runtimeVersion: receipt?.runtimeVersion ?? null,
-      message, observedAt: new Date().toISOString() }, logs: [...logs] } }
+      message, observedAt: new Date().toISOString() }, logs: [...logs], notificationAuthorization: notificationAuthorization ?? null,
+      notificationAuthorizationPending: Boolean(authorizing) } }
   }
   const start = async (permissionMode = 'workspace-write') => {
     if (!['read-only', 'workspace-write', 'danger-full-access'].includes(permissionMode)) throw new Error('Invalid DSH permission mode')
@@ -243,6 +246,7 @@ export async function serveManager({ dataRoot, resources, home }) {
             stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
           })
         child = owned
+        let startupCleanup = false
         const ready = Promise.withResolvers()
         // Attach rejection handling before any IPC/error event can arrive.
         void ready.promise.catch(() => {})
@@ -262,11 +266,20 @@ export async function serveManager({ dataRoot, resources, home }) {
         owned.once('error', error => ready.reject(error))
         owned.once('close', (code, signal) => {
           const expected = closing || normalStop?.owned === owned && normalStop.committed
+          const observed = child === owned
           if (child === owned) { child = undefined; state = expected ? 'stopped' : 'failed' }
           const previousAdmission = admission; admission = undefined
           void previousAdmission?.close().catch(error => log(redact(error.message)))
           failure = expected ? '' : `DSH 服务已退出（${signal || code}）。请检查日志后手动启动。`
           if (failure) log(failure)
+          if (observed && !expected && !startupCleanup) {
+            const faultId = randomUUID()
+            log(`DSH 服务故障：${JSON.stringify({ faultId, instanceId: receipt?.lease ?? null,
+              pid: owned.pid, code, signal, observedAt: new Date().toISOString() })}`)
+            void serviceNotification(resources, 'notify', faultId)
+              .then(result => log(`DSH 服务故障通知：${JSON.stringify(result)}`))
+              .catch(error => log(`DSH 服务故障通知结果未知：${redact(error.message)}`))
+          }
           ready.reject(new Error(failure || 'DSH 服务已停止'))
         })
         try {
@@ -290,7 +303,7 @@ export async function serveManager({ dataRoot, resources, home }) {
           receipt = actual; injections = message.injections; state = 'running'
           log(`DSH 服务已就绪，实例 ${actual.lease}，Host PID ${owned.pid}。`)
         } catch (error) {
-          if (child === owned) owned.kill('SIGTERM')
+          if (child === owned) { startupCleanup = true; owned.kill('SIGTERM') }
           throw error
         } finally { clearTimeout(timeout) }
       } catch (error) {
@@ -317,6 +330,23 @@ export async function serveManager({ dataRoot, resources, home }) {
           if (closing) throw new Error('DSH 服务管理进程正在退出')
           let stopInspection
           if (input.type === 'start-service') await start(input.permissionMode)
+          else if (input.type === 'authorize-notifications') {
+            if (!authorizing) {
+              notificationAuthorization = { authorizationRequest: { state: 'requesting' }, observedAt: new Date().toISOString() }
+              authorizing = serviceNotification(resources, 'authorize')
+                .then(result => { notificationAuthorization = result; log(`DSH 服务通知授权：${JSON.stringify(result)}`) })
+                .catch(error => {
+                  notificationAuthorization = { available: false, authorizationRequest: { state: 'unknown' },
+                    message: `macOS 通知授权结果未知：${redact(error.message)}` }
+                  log(notificationAuthorization.message)
+                })
+                .finally(() => { authorizing = undefined })
+            }
+          }
+          else if (input.type === 'notification-status') {
+            notificationAuthorization = await serviceNotification(resources, 'status')
+            log(`DSH 服务通知状态：${JSON.stringify(notificationAuthorization)}`)
+          }
           else if (input.type === 'inspect-stop') stopInspection = await prepareStop(input.action)
           else if (input.type === 'cancel-stop') {
             if (stopping) throw new Error('DSH 停止操作已经执行，无法返回确认阶段。')
@@ -362,6 +392,7 @@ export async function serveManager({ dataRoot, resources, home }) {
       const force = setTimeout(() => owned.kill('SIGKILL'), 15_000)
       try { await exited } finally { clearTimeout(terminate); clearTimeout(force) }
     }
+    await authorizing
     await new Promise(accept => server.close(accept))
     await logWrites
     await unlink(socketPath).catch(error => { if (error.code !== 'ENOENT') throw error })
