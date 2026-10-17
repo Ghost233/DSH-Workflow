@@ -1,3 +1,4 @@
+import { ownerPeer } from './gateway-peer.mjs'
 import '../../scripts/harness-test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -38,7 +39,7 @@ async function fixture(t, hostCtx) {
   t.after(async () => { cleanup(); await ctx.fiber.dispose() })
   const renderer = await browserPlugin('../../deepseek-harness/packages/client/ui-renderer/lib/client.js', window, document)
   const settings = await browserPlugin('../../deepseek-harness/packages/client/ui-settings/lib/client.js', window, document)
-  const gateway = await browserPlugin('../../deepseek-harness/packages/api/gateway/lib/client.js', window, document)
+  const gateway = await browserPlugin('../../deepseek-harness/packages/api/gateway/lib/client.browser.js', window, document)
   const own = await browserPlugin('../client.js', window, document)
   await ctx.plugin(renderer)
   ctx.slots.register({ name: 'root', children: {
@@ -77,12 +78,12 @@ async function fixture(t, hostCtx) {
     agentMonitor: { snapshot: async () => ({ ok: true, value: structuredClone(monitorState) }) },
   }
   await ctx.plugin(req('@deepseek-ai/dsh-typert-registry').default)
-  ctx.provide('connection', { isLoopback: true, generation: { getSnapshot: () => ({ host: { home: '/fixture' } }) }, registerGenerationSource: () => () => {}, start: () => ({ stop() {} }), rpc: {
+  ctx.provide('connection', { interactions: 'answer', isLoopback: true, generation: { getSnapshot: () => ({ host: { home: '/fixture' } }) }, registerGenerationSource: () => () => {}, start: () => ({ stop() {} }), rpc: {
     async call(channel, endpoint, payload) {
       calls.push({ channel, endpoint, payload: structuredClone(payload) })
       if (hostCtx) {
         const [namespace, method] = endpoint.split('/')
-        return { ok: true, value: JSON.parse(JSON.stringify(await hostCtx.typertGateway.invoke({ namespace, method, args: payload.args }))) }
+        return { ok: true, value: JSON.parse(JSON.stringify(await hostCtx.typertGateway.invoke({ peer: ownerPeer(hostCtx), namespace, method, args: payload.args }))) }
       }
       if (endpoint === 'settings/describe') return host.settings.describe()
       if (endpoint === 'settings/mutate') return host.settings.mutate(payload.args.ns, payload.args.ops)
@@ -149,6 +150,7 @@ async function realSettingsHost(t, { includeMonitor = false } = {}) {
   })
   t.after(async () => { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) })
   await ctx.plugin(req('@deepseek-ai/dsh-typert-registry').default)
+  await ctx.plugin(req('@deepseek-ai/dsh-api-remote-access').default)
   await ctx.plugin(req('@deepseek-ai/dsh-api-gateway').default)
   await ctx.plugin(req('@deepseek-ai/dsh-api-settings-controller').default)
   return ctx

@@ -1,6 +1,6 @@
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { cp, mkdir, mkdtemp, readFile, writeFile, rm, open, symlink } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, writeFile, rm, open, symlink, readdir } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, relative, delimiter, resolve } from 'node:path'
@@ -12,7 +12,7 @@ import { readDesktopCorePackageSet, verifyDesktopCoreLockfile } from '../deepsee
 import { desktopNodeEnvironment } from '../deepseek-harness/apps/desktop/src/node-environment.ts'
 import { desktopRuntimeFileExclusion } from '../deepseek-harness/apps/desktop/scripts/runtime-file-policy.ts'
 import { selectOfficeEngine } from '../deepseek-harness/scripts/libreoffice-packages.mjs'
-import { inventoryDesktopRuntime, writeDesktopRuntime } from '../deepseek-harness/apps/desktop/src/runtime-tree.ts'
+import { writeDesktopRuntime } from '../deepseek-harness/apps/desktop/src/runtime-tree.ts'
 import { resolvePrimaryRuntime } from '../deepseek-harness/packages/skill/tool-workspace-dependencies/src/index.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -34,6 +34,14 @@ if (!pnpm) throw new Error('Prepared Desktop primary runtime has no pnpm entry')
 await mkdir(join(root, '.build'), { recursive: true })
 const staging = await mkdtemp(join(root, '.build', `desktop-runtime-${arch}-`))
 const dsh = join(staging, 'dsh')
+
+async function* signingFiles(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const file = join(directory, entry.name)
+    if (entry.isDirectory()) yield* signingFiles(file)
+    else if (entry.isFile()) yield file
+  }
+}
 
 async function run(command, args, cwd, env = process.env) {
   await new Promise((accept, reject) => {
@@ -92,8 +100,7 @@ try {
   const packagedDsh = join(resources, 'app/dsh')
   const magics = new Set(['cafebabe', 'cafebabf', 'cefaedfe', 'cffaedfe', 'feedface', 'feedfacf', 'bebafeca', 'bfbafeca'])
   for (const directory of [packagedDsh, join(resources, 'runtime/primary-runtime')]) {
-    for (const entry of inventoryDesktopRuntime(directory)) {
-      const file = join(directory, entry.path)
+    for await (const file of signingFiles(directory)) {
       const descriptor = await open(file, 'r')
       const header = Buffer.alloc(4)
       try { await descriptor.read(header, 0, 4, 0) } finally { await descriptor.close() }

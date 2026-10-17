@@ -305,7 +305,7 @@ test('a completed model request is not counted while its tool awaits approval or
 
 test('an Agent Team teammate uses the same native monitor path and remains running after an alert', async t => {
   const f = await fixture(t, { checkIntervalMs: 1000, noOutputThreshold: 2 })
-  await f.ctx.plugin(req('@deepseek-ai/dsh-session-persistence-jsonl').default, { root: join(f.directory, 'sessions') })
+  await f.ctx.plugin(req('@deepseek-ai/dsh-session-persistence-jsonl'), { root: join(f.directory, 'sessions') })
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent').default)
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent-spawn-in-process'))
   await f.ctx.plugin(req('@deepseek-ai/dsh-experimental-agent-team').default)

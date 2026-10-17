@@ -1,3 +1,4 @@
+import { ownerPeer } from './gateway-peer.mjs'
 import '../../scripts/harness-test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -353,6 +354,7 @@ test('one Host shows precise quick failures and renewed availability without rec
   await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 2,
     noOutputThreshold: 100, checkIntervalMs: 1000 })
   await f.ctx.plugin(req('@deepseek-ai/dsh-typert-registry').default)
+  await f.ctx.plugin(req('@deepseek-ai/dsh-api-remote-access').default)
   await f.ctx.plugin(req('@deepseek-ai/dsh-api-gateway').default)
   await f.ctx.plugin({ name: 'fault-independent-full-consumer', inject: ['jevCenter'], apply(c) {
     c.provide('fullConsumer', { evaluate: () => c.get('jevCenter').evaluate('full', {
@@ -390,7 +392,7 @@ test('one Host shows precise quick failures and renewed availability without rec
     const [, result] = await Promise.all([f.at(round * 1000), f.ctx.get('fullConsumer').evaluate()])
     assert.equal(result.model, 'full-working-version')
     assert.equal(quick.requests.length - before, failure.calls)
-    const status = await f.ctx.typertGateway.invoke({ namespace: 'agentMonitor', method: 'snapshot', args: {} })
+    const status = await f.ctx.typertGateway.invoke({ peer: ownerPeer(f.ctx), namespace: 'agentMonitor', method: 'snapshot', args: {} })
     const webStatus = await (await fetch(`${f.url}/agent-monitor/api/status`)).json()
     assert.equal(status.engineAvailability.code, failure.code)
     assert.equal(status.engineAvailability.color, 'red')
@@ -982,16 +984,17 @@ test('a disabled duplicate name before its enabled engine does not make the name
 test('the native Gateway exposes only the read-only monitor snapshot with real engine reasons and alerts', async t => {
   const f = await configuredHost(t)
   await f.ctx.plugin(req('@deepseek-ai/dsh-typert-registry').default)
+  await f.ctx.plugin(req('@deepseek-ai/dsh-api-remote-access').default)
   await f.ctx.plugin(req('@deepseek-ai/dsh-api-gateway').default)
   await f.ctx.settings.update('monitor', { jevModelName: 'missing', semanticWaitMs: 1000, semanticThreshold: 1, noOutputThreshold: 1, checkIntervalMs: 1000 })
   await f.start(); await f.send({ type: 'reasoning-delta', index: 0, text: 'thinking' }); await f.at(1000)
-  const status = await f.ctx.typertGateway.invoke({ namespace: 'agentMonitor', method: 'snapshot', args: {} })
+  const status = await f.ctx.typertGateway.invoke({ peer: ownerPeer(f.ctx), namespace: 'agentMonitor', method: 'snapshot', args: {} })
   assert.equal(status.engineAvailability.code, 'ENGINE_MISSING')
   assert.equal(status.engineAvailability.color, 'red')
   assert.equal(status.alerts[0].kind, 'no-output')
   assert.equal(status.agents[0].agentId, 'settings-agent')
   assert.equal(f.requests.length, 0)
-  await assert.rejects(f.ctx.typertGateway.invoke({ namespace: 'agentMonitor', method: 'tick', args: {} }))
+  await assert.rejects(f.ctx.typertGateway.invoke({ peer: ownerPeer(f.ctx), namespace: 'agentMonitor', method: 'tick', args: {} }))
   assert.equal(f.notices.length, 1)
   await f.finish()
 })
@@ -1029,7 +1032,7 @@ test('debug judgments redact unlabeled managed credentials unrelated to JEV whil
   const shadowedSecret = `opaque-effective-${randomUUID()}`, previousShadow = process.env[refs[0]]
   process.env[refs[0]] = shadowedSecret
   t.after(() => { previousShadow === undefined ? delete process.env[refs[0]] : process.env[refs[0]] = previousShadow })
-  assert.equal((await f.ctx.credentials.resolve(refs[0])).source, 'env')
+  assert.equal((await f.ctx.credentials.resolve(refs[0])).source, 'file')
   await f.ctx.credentials.modifyRecord(credentialKey('other-provider', 'grant'), () => ({ kind: 'grant',
     payload: { nested: [{ value: grantSecret }], attempts: 2 } }))
   await f.ctx.credentials.modifyRecord(credentialKey('other-provider', 'api'), () => ({ kind: 'api-key',
@@ -1062,6 +1065,7 @@ test('native failures redact arbitrary credential values from every monitor surf
     const f = await configuredHost(t)
     await f.saveEngine()
     await f.ctx.plugin(req('@deepseek-ai/dsh-typert-registry').default)
+    await f.ctx.plugin(req('@deepseek-ai/dsh-api-remote-access').default)
     await f.ctx.plugin(req('@deepseek-ai/dsh-api-gateway').default)
     const suffix = randomUUID().replaceAll('-', '').toUpperCase(), ref = `UNRELATED_NATIVE_SLOT_${suffix}`
     const secret = `MONITOR_FAKE_${suffix}`, stored = `MONITOR_STORED_${suffix}`
@@ -1071,7 +1075,7 @@ test('native failures redact arbitrary credential values from every monitor surf
       t.after(() => { delete process.env[ref] })
     }
     const credential = await f.ctx.credentials.resolve(ref)
-    assert.equal(credential.source, origin === 'file' ? 'file' : 'env')
+    assert.equal(credential.source, origin === 'env-only' ? 'env' : 'file')
     await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 100,
       noOutputThreshold: 100, checkIntervalMs: 1000, debugEvidence })
     await f.start()
@@ -1084,7 +1088,7 @@ test('native failures redact arbitrary credential values from every monitor surf
     const snapshot = f.ctx.get('agentMonitor').snapshot()
     assert.equal(JSON.stringify(snapshot).includes(secret), false, 'the synchronous public snapshot must redact the managed credential')
     await f.ctx.get('agentMonitor').flush()
-    const remote = await f.ctx.typertGateway.invoke({ namespace: 'agentMonitor', method: 'snapshot', args: {} })
+    const remote = await f.ctx.typertGateway.invoke({ peer: ownerPeer(f.ctx), namespace: 'agentMonitor', method: 'snapshot', args: {} })
     const status = await (await fetch(`${f.url}/agent-monitor/api/status`)).json()
     const journal = await f.ctx.get('agentMonitor').journal()
     const httpJournal = await (await fetch(`${f.url}/agent-monitor/api/journal`)).json()

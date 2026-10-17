@@ -1,3 +1,4 @@
+import { ownerPeer } from './gateway-peer.mjs'
 import '../../scripts/harness-test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -70,15 +71,16 @@ test('native Remote connection test uses the same fixed judgment without an HTTP
   await f.save({ modelName: 'quick' })
   await f.ctx.credentials.set('JEV_CENTER_TEST_KEY', 'remote-fixture-key')
   await f.ctx.plugin(TypertRegistry)
+  await f.ctx.plugin(req('@deepseek-ai/dsh-api-remote-access').default)
   await f.ctx.plugin(TypertGateway)
-  const result = await f.ctx.typertGateway.invoke({ namespace: 'jevCenter', method: 'testConnection', args: { modelName: 'quick' } })
+  const result = await f.ctx.typertGateway.invoke({ peer: ownerPeer(f.ctx), namespace: 'jevCenter', method: 'testConnection', args: { modelName: 'quick' } })
   assert.equal(result.ok, true)
   assert.equal(result.model, 'jev-remote-version')
   assert.equal(typeof result.elapsedMs, 'number')
   assert.equal(f.requests.length, 1)
   assert.deepEqual(f.requests[0].body, { model: 'jev-latest', state: 'The light is on.',
     questions: { connectivity: { type: 'noul', instructions: 'Is the light on?' } } })
-  await assert.rejects(f.ctx.typertGateway.invoke({ namespace: 'jevCenter', method: 'testConnection', args: { modelName: 42 } }))
+  await assert.rejects(f.ctx.typertGateway.invoke({ peer: ownerPeer(f.ctx), namespace: 'jevCenter', method: 'testConnection', args: { modelName: 42 } }))
   assert.equal(f.requests.length, 1)
 })
 

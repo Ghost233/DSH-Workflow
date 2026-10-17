@@ -21,3 +21,11 @@ test('packaged settings client keeps loopback access and gates LAN access on the
   assert.throws(() => allowAuthenticatedLanSettings('different upstream code'), /Pinned DSH settings client/u)
   assert.throws(() => allowAuthenticatedLanSettings(`${original}${original}`), /Pinned DSH settings client/u)
 })
+
+import { readFileSync } from 'node:fs'
+
+test('alpha.5 Host-backed settings need no persistence rewrite', () => {
+  const source = readFileSync(new URL('../../deepseek-harness/packages/client/ui-settings/lib/client.js', import.meta.url), 'utf8')
+  assert.equal(allowAuthenticatedLanSettings(source), source)
+  assert.throws(() => allowAuthenticatedLanSettings('const { writable } = mirrored.view;'), /Pinned DSH settings client/u)
+})
