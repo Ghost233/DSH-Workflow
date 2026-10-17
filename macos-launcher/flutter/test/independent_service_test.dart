@@ -8,8 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:launcher_core/launcher_core.dart';
 
 class ServiceNative extends NativeBridge {
-  ServiceNative(this.root, this.resources);
+  ServiceNative(this.root, this.resources, {this.loginStatus = 'disabled'});
   final String root, resources;
+  String loginStatus;
   int desktopOpens = 0;
   bool fullAccess = false;
   @override
@@ -18,7 +19,7 @@ class ServiceNative extends NativeBridge {
     'dataRoot': root,
     'home': '$root/home',
     'appVersion': '0.3.0',
-    'loginStatus': 'disabled',
+    'loginStatus': loginStatus,
     'fullAccess': fullAccess,
   });
   @override
@@ -29,6 +30,10 @@ class ServiceNative extends NativeBridge {
   }) async {
     fullAccess = access;
   }
+
+  @override
+  Future<String> setLoginEnabled(bool enabled) async =>
+      loginStatus = enabled ? 'enabled' : 'notRegistered';
 
   @override
   Future<bool> setEntryManaged(bool value) async => true;
@@ -184,7 +189,11 @@ void main() {
         layout: EndpointLayout(directory: '${root.path}/sdk'),
         bindings: InMemoryBindingLookup({'dsh-workflow'}),
       );
-      final native = ServiceNative(root.path, resources);
+      final native = ServiceNative(
+        root.path,
+        resources,
+        loginStatus: 'enabled',
+      );
       LauncherController controller() => LauncherController(
         native,
         startProcess:
@@ -262,6 +271,24 @@ void main() {
         );
         final receipt = jsonDecode(await receiptFile.readAsString()) as Map;
         expect(receipt['lease'], running['instanceId']);
+        expect(model.loginStatus, 'enabled');
+        await model.setLoginEnabled(false);
+        expect(model.loginStatus, 'notRegistered');
+        final afterLoginDisabled = await first.sendRequest(
+          'status',
+          serviceId: 'desktop',
+          timeout: const Duration(seconds: 5),
+        );
+        expect((afterLoginDisabled['result'] as Map)['ready'], true);
+        expect(
+          (afterLoginDisabled['result'] as Map)['instanceId'],
+          receipt['lease'],
+          reason: 'Disabling login startup must keep the same real service',
+        );
+        expect(
+          (jsonDecode(await receiptFile.readAsString()) as Map)['pid'],
+          receipt['pid'],
+        );
         expect((await receiptFile.stat()).mode & 0x1ff, 0x180);
         expect(
           (await Directory(
@@ -370,12 +397,6 @@ void main() {
         );
         expect((logs['result'] as Map)['entries'], isNotEmpty);
         expect(jsonEncode(logs), isNot(contains('token=')));
-        final denied = await first.sendRequest(
-          'recycle',
-          serviceId: 'desktop',
-          timeout: const Duration(seconds: 5),
-        );
-        expect((denied['error'] as Map)['code'], 'unsupported');
         await integration.close();
         await model.close();
         for (
@@ -409,8 +430,8 @@ void main() {
         final managerPid =
             (jsonDecode(await managerFile.readAsString()) as Map)['pid'];
         await model.savePreferences(true, false);
-        // External failure prepares an owned stopped Host; this is not a product stop/restart interface.
-        Process.killPid(receipt['pid'] as int, ProcessSignal.sigterm);
+        // An abrupt owned Host failure also exercises recovery with its old receipt still present.
+        Process.killPid(receipt['pid'] as int, ProcessSignal.sigkill);
         var failed = false;
         for (var attempt = 0; attempt < 100; attempt++) {
           final observed = await reopened.sendRequest(

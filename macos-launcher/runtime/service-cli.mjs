@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { open } from 'node:fs/promises'
+import { open, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -35,7 +35,11 @@ if (import.meta.main) {
     let body = ''
     for await (const chunk of process.stdin) { body += chunk; if (body.length > 16 * 1024) throw new Error('Control request too large') }
     const request = JSON.parse(body)
-    if (request.type === 'start-service') request.permissionMode = process.env.DSH_PERMISSION_MODE || 'workspace-write'
+    if (request.type === 'connect-desktop') throw new Error('桌面专用连接仅供本机 Electron 主进程使用。')
+    if (['start-service', 'restart-service'].includes(request.type)) request.permissionMode = process.env.DSH_PERMISSION_MODE || 'workspace-write'
+    if (request.type === 'connect-web') {
+      request.runtimeVersion = JSON.parse(await readFile(join(resources, 'workflow/dsh-runtime.json'), 'utf8')).version
+    }
     const socket = request.type === 'start-service'
       ? await ensureServiceManager({ dataRoot, resources, home })
       : serviceSocket(dataRoot)
@@ -44,6 +48,8 @@ if (import.meta.main) {
     catch (error) {
       if (['status', 'logs'].includes(request.type) && error.code === 'ENOENT') {
         value = { service: { state: 'stopped', ready: false, observedAt: new Date().toISOString() }, logs: [] }
+      } else if (request.type === 'connect-web' && ['ENOENT', 'ECONNREFUSED'].includes(error.code)) {
+        throw new Error('DSH 服务未启动或暂不可用，请先启动 DSH 服务。')
       } else throw error
     }
     process.stdout.write(JSON.stringify({ ok: true, value }) + '\n')

@@ -4,6 +4,7 @@ import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 
 abstract interface class LauncherActions {
   Future<void> startService();
+  Future<void> stopService();
   Future<LogBatch> serviceLogs(LogQuery query);
   Future<void> startWeb();
   Future<void> stopWeb();
@@ -30,6 +31,7 @@ class MacLauncherIntegration {
         'desktop': ServiceCallbacks(
           name: 'DSH 服务',
           onStart: actions.startService,
+          onRecycle: actions.stopService,
           onStatus: actions.desktopStatus,
           onLogs: actions.serviceLogs,
         ),
