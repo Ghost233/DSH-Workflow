@@ -4,13 +4,18 @@
 
 - 规格：[GitHub #25](https://github.com/Ghost233/DSH-Workflow/issues/25)。用户已确认整体设计、测试接缝、8 张工单及依赖关系。
 - 总交付起始提交：`392ac2f4180e9ec5e73a95c78bac81cb1c5358fb`。DSH 固定提交为 `1517a4dbca0a2789ff1d41ba439600f8547d23fa`。
-- 当前阶段：阶段 1，建立独立服务的真实启动和观察路径。当前尚无已验收阶段候选。
+- 当前阶段：阶段 1，S01（#26）已完成本地实现和验收，准备阶段候选审查，尚未集成。证据与限制见[阶段 1 记录](phase-1.md)。
 - 分支流向：工单分支 → 阶段候选 PR → `codex/independent-dsh-server`；最终总 PR → `main`，仅标记 ready，等待用户另行要求合并。
 - 分支授权：用户已明确允许本次集成分支、`codex/dsh-server-sNN` 阶段和工单分支，以及实现者托管 worktree。
 - 负责人：主线程负责调度、证据验收和 Git 串行操作；实现者按工单负责；merger 负责合入阶段候选；阶段审查、复盘、复审由 spec-delivery 衔接。
 - 未验证草稿：10 个代码文件及完整差异已逐文件校验保存在 `.build/independent-dsh-server/initial-drafts/`，仅作为实现输入，不是验收结果。
-- 活动作业：8 张工单 #26—#33 已发布且原生关系核验完成；最小真实 Host 预检已结束，详见下文。
-- 下一动作：提交规格基线，为 S01（#26）准备 worktree 并执行 TDD。
+- 规格基线提交：`e9748ebb468aea0adb93148c1a78218857ca3133`，本地和远端集成分支均指向该提交；main 与 origin/main 均保持总交付起始 SHA。
+- 实现者：`implement_s01`，托管 worktree 位于 `/Users/ghost233/.codex/worktrees/dsh-server-s01/DSH-Workflow`，工单分支 `codex/dsh-server-s01`。
+- 阶段验证：主 checkout 位于 `codex/dsh-server-s01-stage`。worktree 只写自研源码；经过 SHA 校验的源码交接到已有工程环境验证，不向 worktree 注入依赖或共享上游源码链接。Git 写操作保持串行。
+- S01 实现提交：`aae8b1b1fbbb89b7d1e47914cb831b70f58730da`；对应 18 个文件已完成逐文件交接验证。
+- 合入结果：S01 源码已快进到阶段候选，主线程的 CI、工具链说明和交付记录改动完整保留；merger 证据位于 `.build/independent-dsh-server/s01/merge/`。
+- 当前入口：有效作业、固定候选和未关闭发现保存在 `.build/independent-dsh-server/controller-state.json`，审查报告保存于相邻阶段证据目录。恢复执行时先核对实际 Git、作业和结果。
+- 下一动作：执行双轴首审、复盘和复审，再完成实际 Wrapper 构建与阶段 PR。完整验收范围见[验收索引](acceptance.md)。
 
 ## 阶段与验收
 
@@ -41,7 +46,7 @@
 | 缺口 | 证据与分类 | 责任与解锁动作 |
 | --- | --- | --- |
 | Host 自然退出未证实 | 官方 Host 已确认 shutdown，10 秒后 owner 发送 SIGTERM，最终原始退出 code 0；不能记为自然退出通过。 | S04 在真实控制路径核对本项目连接和资源释放，保留原始结果，不修改上游源码。 |
-| Flutter 本地工具访问和固定版本 | 现有工具版本查询因 SDK lockfile 沙箱权限退出 1；缓存元数据 3.47.7，CI 固定 3.47.6。 | 工程预检核对既有固定 SDK；具备条件后运行完整门禁，缺失时明确请求适用远端补验证授权。 |
+| Flutter 工具链统一 | 初次版本查询因 SDK lockfile 沙箱权限退出 1，获准正常访问锁后版本查询退出 0，确认 3.47.7。 | 用户明确要求按 3.47.7 执行；当前生效的 CI 固定值与说明同步为 3.47.7，不再采用 3.47.6 补验方案。 |
 | 实际系统通知与登录启动 | 目前尚无本次候选的系统授权和展示证据。 | S05、S06 在受控系统边界验证，拒绝、未知和缺失证据均不记通过。 |
 
 当前没有正式发布、替换安装或切换用户服务的动作。总 PR 达到 ready 前，必须完成逐条验收、阶段审查和总审查；父规格与工单不提前结项。

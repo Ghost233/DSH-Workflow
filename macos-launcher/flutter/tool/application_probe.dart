@@ -8,6 +8,7 @@ import 'package:vm_service/vm_service.dart';
 import 'package:vm_service/vm_service_io.dart';
 
 import 'web_application_scenario.dart';
+import 'independent_service_application_scenario.dart';
 import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
 import 'entry_application_scenario.dart';
@@ -86,6 +87,10 @@ String applicationProbeRootParent({
 }
 
 Future<void> main(List<String> arguments) async {
+  if (arguments.length == 3 && arguments[1] == '--service-runtime') {
+    await runIndependentServiceApplicationProbe(arguments);
+    return;
+  }
   final localAcceptanceRoot =
       Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'];
   final desktopWindowRestart =
@@ -895,14 +900,14 @@ Future<void> main(List<String> arguments) async {
             'desktop',
           }) &&
           capabilities.services
-                  .singleWhere((service) => service.id == 'desktop')
-                  .methods
-                  .length ==
-              1 &&
-          capabilities.services
               .singleWhere((service) => service.id == 'desktop')
-              .supports(kMethodStatus),
-      'official manager discovers web controls and observation-only desktop through the official SDK',
+              .methods
+              .toSet()
+              .containsAll({kMethodStart, kMethodStatus, kMethodLogs}) &&
+          !capabilities.services
+              .singleWhere((service) => service.id == 'desktop')
+              .supports(kMethodRecycle),
+      'official manager discovers Web controls and DSH service start, status and logs through the official SDK',
     );
     final session = server.sessionFor('dsh-workflow')!;
     Future<void> request(String method) async {

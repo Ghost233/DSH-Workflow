@@ -89,7 +89,7 @@ Future<void> main() async {
           rethrow;
         }
       case 'openGlobal':
-        await model.openDsh();
+        await model.startService();
         await model.startWeb();
     }
   });
@@ -97,9 +97,6 @@ Future<void> main() async {
     registerApplicationProbe(native);
   }
   runApp(LauncherApp(controller: model));
-  if (model.hasPassword) {
-    unawaited(model.startWeb().catchError(model.reportError));
-  }
   unawaited(model.checkUpdates());
   unawaited(model.checkPlugins());
 }
@@ -251,10 +248,33 @@ class _LauncherPageState extends State<LauncherPage> {
 
   Widget _overview() => ListView(
     children: [
-      _section('全局实例 · 官方桌面版', [
+      _section('DSH 服务', [
+        Text(
+          'DSH 服务：${model.serviceSnapshot.state == ServiceState.running && model.serviceSnapshot.ready != true ? '运行中，尚未就绪' : _stateName(model.serviceSnapshot.state)}',
+        ),
+        Text('服务实例：${model.serviceSnapshot.instanceId ?? '尚未启动'}'),
+        if (model.serviceSnapshot.message?.isNotEmpty == true)
+          SelectableText(model.serviceSnapshot.message!),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _button(
+              '启动 DSH 服务',
+              model.startService,
+              enabled: model.serviceSnapshot.state != ServiceState.starting,
+            ),
+            _button('刷新服务状态', () async {
+              await model.serviceStatus();
+            }),
+          ],
+        ),
+        const Text('关闭启动器后，已启动的 DSH 服务继续运行。'),
+      ]),
+      _section('客户端入口', [
         Text('应用版本 ${model.environment.appVersion}'),
         Text('Web 访问：${_stateName(model.snapshot.state)}'),
-        const Text('桌面版持有后端，Web 连接同一实例。项目目录在 DSH 内选择。'),
+        const Text('项目目录在 DSH 内选择。'),
         Text('桌面版', style: Theme.of(context).textTheme.titleMedium),
         Wrap(
           spacing: 8,
@@ -309,7 +329,7 @@ class _LauncherPageState extends State<LauncherPage> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('DSH 工具使用完整访问权限'),
-          subtitle: const Text('更改后须完全退出并重新打开 Desktop。'),
+          subtitle: const Text('下次启动 DSH 服务时生效。'),
           value: model.fullAccess,
           onChanged: (value) => unawaited(
             _act(() => model.savePreferences(value, model.allowLanSettings)),
@@ -484,19 +504,40 @@ class _LauncherPageState extends State<LauncherPage> {
   Widget _logs() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text('Web 业务进程日志', style: Theme.of(context).textTheme.titleLarge),
+      Text('DSH 服务日志', style: Theme.of(context).textTheme.titleLarge),
+      Text('服务实例：${model.serviceSnapshot.instanceId ?? '尚未启动'}'),
+      _button('刷新服务日志', () async {
+        await model.serviceLogs(LogQuery(limit: 500));
+      }),
       const Text('显示原始输出；来源未提供原始时间时不生成时间戳。'),
-      Text('日志实例：${model.logInstanceId ?? '未提供'}'),
-      Text(model.logsTruncated ? '更早的日志已丢弃' : '已显示当前缓存的全部日志'),
       const SizedBox(height: 12),
       Expanded(
         child: SelectionArea(
           child: ListView.builder(
-            itemCount: model.logs.length,
+            itemCount: model.serviceLogEntries.length + model.logs.length + 1,
             itemBuilder: (context, index) {
-              final entry = model.logs[index];
+              if (index == model.serviceLogEntries.length) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Web 业务进程日志',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      Text('日志实例：${model.logInstanceId ?? '未提供'}'),
+                      Text(model.logsTruncated ? '更早的日志已丢弃' : '已显示当前缓存的全部日志'),
+                    ],
+                  ),
+                );
+              }
+              final service = index < model.serviceLogEntries.length;
+              final entry = service
+                  ? model.serviceLogEntries[index]
+                  : model.logs[index - model.serviceLogEntries.length - 1];
               return Text(
-                '${entry.stream.name}  ${entry.text}',
+                '${service ? 'DSH' : entry.stream.name}  ${entry.text}',
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
               );
             },

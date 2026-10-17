@@ -123,7 +123,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.47.6
+          flutter-version: 3.47.7
 
       - name: Build project-maintained Matt panel
         run: |
@@ -213,6 +213,17 @@ jobs:
           DSH_VERSION="$(node -p "require('./dsh-runtime.json').version")"
           node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs \
             ".build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
+
+      - name: Verify independent service through the official SDK
+        working-directory: macos-launcher/flutter
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(node -p "require('../../macos-launcher/package.json').version")"
+          DSH_VERSION="$(node -p "require('../../dsh-runtime.json').version")"
+          export DSH_SERVICE_TEST_RESOURCES="$GITHUB_WORKSPACE/.build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app/Contents/Resources"
+          test -x "$DSH_SERVICE_TEST_RESOURCES/node"
+          flutter test --no-pub test/independent_service_test.dart
 
       - name: Package and verify DMG
         id: package

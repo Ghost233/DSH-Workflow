@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 
 abstract interface class LauncherActions {
+  Future<void> startService();
+  Future<LogBatch> serviceLogs(LogQuery query);
   Future<void> startWeb();
   Future<void> stopWeb();
   Future<ServiceStatus> webStatus();
@@ -26,8 +28,10 @@ class MacLauncherIntegration {
           onLogs: actions.recentLogs,
         ),
         'desktop': ServiceCallbacks(
-          name: 'DSH Desktop 后端',
+          name: 'DSH 服务',
+          onStart: actions.startService,
           onStatus: actions.desktopStatus,
+          onLogs: actions.serviceLogs,
         ),
       },
       app: AppCallbacks(
