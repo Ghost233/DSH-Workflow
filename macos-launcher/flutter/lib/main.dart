@@ -50,6 +50,7 @@ Future<void> main() async {
         ? status.state.name
         : '${status.state.name}：${status.reason}',
   );
+  late final Future<void> serviceStartup;
   native.channel.setMethodCallHandler((call) async {
     switch (call.method) {
       case 'quitRequested':
@@ -89,7 +90,7 @@ Future<void> main() async {
           rethrow;
         }
       case 'openGlobal':
-        await model.startService();
+        await serviceStartup;
         await model.startWeb();
     }
   });
@@ -97,6 +98,7 @@ Future<void> main() async {
     registerApplicationProbe(native);
   }
   runApp(LauncherApp(controller: model));
+  serviceStartup = model.startService().catchError(model.reportError);
   unawaited(model.checkUpdates());
   unawaited(model.checkPlugins());
 }

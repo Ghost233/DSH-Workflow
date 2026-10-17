@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dsh_workflow_launcher/launcher_controller.dart';
 import 'package:dsh_workflow_launcher/main.dart';
 import 'package:dsh_workflow_launcher/native_bridge.dart';
@@ -63,7 +65,42 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final native = UiNative();
-      final model = LauncherController(native);
+      final model = LauncherController(
+        native,
+        // This Widget fixture supplies only the existing-service precondition
+        // at the external process boundary; real Host acceptance is separate.
+        startProcess:
+            (executable, arguments, {workingDirectory, environment}) =>
+                Process.start('/usr/bin/python3', [
+                  '-c',
+                  r'''
+import json, sys
+request = json.load(sys.stdin)
+assert request['type'] == 'connect-web', request['type']
+json.dump({'ok': True, 'value': {'service': {'state': 'running', 'ready': True, 'instanceId': 'widget-existing-service'}, 'logs': []}}, sys.stdout)
+''',
+                ]),
+      );
+      Future<void> tapServiceAction(
+        String label,
+        bool Function() completed,
+      ) async {
+        await tester.runAsync(() async {
+          await tester.tap(find.text(label));
+          final elapsed = Stopwatch()..start();
+          while (!completed()) {
+            if (model.error.isNotEmpty ||
+                elapsed.elapsed >= const Duration(seconds: 5)) {
+              throw StateError(
+                'Widget service precondition did not complete: ${model.error}',
+              );
+            }
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+          }
+        });
+        await tester.pumpAndSettle();
+      }
+
       await model.initialize();
       await tester.pumpWidget(LauncherApp(controller: model));
       expect(find.text('启动 DSH 服务'), findsOneWidget);
@@ -109,15 +146,15 @@ void main() {
       expect(find.textContaining('Desktop 未运行'), findsOneWidget);
       expect(native.running, isFalse);
       native.running = true;
-      await tester.tap(find.text('后台启动'));
-      await tester.pumpAndSettle();
+      await tapServiceAction('后台启动', () => model.serviceSnapshot.ready == true);
+      expect(model.error, isEmpty);
       expect(native.hidden, isFalse);
       expect(find.textContaining('Desktop 未运行'), findsNothing);
       await tester.tap(find.text('隐藏窗口'));
       await tester.pumpAndSettle();
       expect(native.hidden, isTrue);
-      await tester.tap(find.text('打开桌面版'));
-      await tester.pumpAndSettle();
+      await tapServiceAction('打开桌面版', () => !native.hidden);
+      expect(model.error, isEmpty);
       expect(native.hidden, isFalse);
       final preference = find.ancestor(
         of: find.text('启动时隐藏窗口'),
@@ -147,6 +184,11 @@ void main() {
     final model = LauncherController(UiNative(loginStatus: 'requiresApproval'));
     await model.initialize();
     await tester.pumpWidget(LauncherApp(controller: model));
+    await tester.scrollUntilVisible(
+      find.text('登录后启动应用'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     final choice = find.ancestor(
       of: find.text('登录后启动应用'),
       matching: find.byType(SwitchListTile),
