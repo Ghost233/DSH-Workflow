@@ -1,0 +1,88 @@
+{
+  "spec": 25,
+  "tickets": [
+    {
+      "ordinal": 1,
+      "number": 26,
+      "databaseId": 5895027803,
+      "title": "DSH-S01：从启动器和 SDK 启动并观察独立 DSH 服务",
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/26",
+      "dependencies": []
+    },
+    {
+      "ordinal": 2,
+      "number": 27,
+      "databaseId": 5895036703,
+      "title": "DSH-S02：桌面端连接独立服务并保留原生能力",
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/27",
+      "dependencies": [
+        1
+      ]
+    },
+    {
+      "ordinal": 3,
+      "number": 28,
+      "databaseId": 5895037637,
+      "title": "DSH-S03：独立启停 Web 入口并连接同一服务",
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/28",
+      "dependencies": [
+        1
+      ]
+    },
+    {
+      "ordinal": 4,
+      "number": 29,
+      "databaseId": 5895038706,
+      "title": "DSH-S04：检查未完成工作并安全停止或重启服务",
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/29",
+      "dependencies": [
+        1
+      ]
+    },
+    {
+      "ordinal": 5,
+      "number": 30,
+      "databaseId": 5895039746,
+      "title": "DSH-S05：服务异常退出后通知检查并保持停止",
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/30",
+      "dependencies": [
+        1
+      ]
+    },
+    {
+      "ordinal": 6,
+      "number": 31,
+      "databaseId": 5895040761,
+      "title": "DSH-S06：登录后启动服务并保留后台运行",
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/31",
+      "dependencies": [
+        1
+      ]
+    },
+    {
+      "ordinal": 7,
+      "number": 32,
+      "databaseId": 5895042065,
+      "title": "DSH-S07：更新只检查本仓库 DMG 并统一组件交付",
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/32",
+      "dependencies": [
+        2
+      ]
+    },
+    {
+      "ordinal": 8,
+      "number": 33,
+      "databaseId": 5895043163,
+      "title": "DSH-S08：构建可复现 ARM64 应用并完成共享实例验收",
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/33",
+      "dependencies": [
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    }
+  ],
+  "verified": true
+}
