@@ -9,6 +9,7 @@ import 'package:vm_service/vm_service_io.dart';
 
 import 'web_application_scenario.dart';
 import 'independent_service_application_scenario.dart';
+import 'launcher_autostart_application_scenario.dart';
 import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
 import 'entry_application_scenario.dart';
@@ -87,6 +88,14 @@ String applicationProbeRootParent({
 }
 
 Future<void> main(List<String> arguments) async {
+  if (arguments.length == 3 && arguments[1] == '--launcher-deeplink-runtime') {
+    await runLauncherDeepLinkApplicationProbe(arguments);
+    return;
+  }
+  if (arguments.length == 3 && arguments[1] == '--launcher-autostart-runtime') {
+    await runLauncherAutostartApplicationProbe(arguments);
+    return;
+  }
   if (arguments.length == 3 && arguments[1] == '--service-runtime') {
     await runIndependentServiceApplicationProbe(arguments);
     return;
