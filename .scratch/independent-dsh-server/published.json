@@ -53,7 +53,7 @@
       "ordinal": 6,
       "number": 31,
       "databaseId": 5895040761,
-      "title": "DSH-S06：登录后启动服务并保留后台运行",
+      "title": "DSH-S06：打开启动器后自动启动服务并保留后台运行",
       "url": "https://github.com/Ghost233/DSH-Workflow/issues/31",
       "dependencies": [
         1

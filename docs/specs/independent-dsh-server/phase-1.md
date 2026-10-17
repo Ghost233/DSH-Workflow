@@ -1,6 +1,6 @@
 # 阶段 1：独立服务启动与观察
 
-范围为 [S01 #26](https://github.com/Ghost233/DSH-Workflow/issues/26)。实现提交：`aae8b1b1fbbb89b7d1e47914cb831b70f58730da`，阶段基准：`e9748ebb468aea0adb93148c1a78218857ca3133`。
+范围为 [S01 #26](https://github.com/Ghost233/DSH-Workflow/issues/26)。实现提交：`aae8b1b1fbbb89b7d1e47914cb831b70f58730da`，阶段基准：`e9748ebb468aea0adb93148c1a78218857ca3133`。阶段候选为 `e3bf33ae7477ae1109ef936a20d58b52684558eb`；[阶段 PR #34](https://github.com/Ghost233/DSH-Workflow/pull/34) 已合入集成分支 `609a90eb3feb32d211a765cb6ed607e596d14327`，本地与实际远端一致。
 
 本阶段打通启动器、正式 MacLauncher SDK、本机控制接口和真实 Host。管理端退出重开后发现同一业务租约，保留既有 `desktop` 服务标识，显示名称改为“DSH 服务”。服务停止和重启尚未对外声明可用，桌面接入、Web 独立生命周期和其他后续工单不在本阶段的完成范围内。
 
@@ -31,6 +31,9 @@
 - `32-flutter-final-check` 虽然业务断言通过，但输入绑定未证实，未计作最终通过；34 的完整逐文件证据用于最终检查。
 - 原生 fixture 中未创建的隔离 HOME 导致官方 shell reader 回退继承环境。该场景只证明 UI 和实例生命周期；正向 shell 恢复由另一个具有隔离 HOME 的真实 MCP 场景证明。
 - 最小旧产物预检中的 Host 自然退出未证实，仍由 S04 跟踪。测试回收不能代替服务正常停止验收。
-- 当前本地结果不代替阶段首审、复盘、复审和实际生产 Wrapper 构建；远端阶段 PR 通过并集成前不关闭 S01。
+- Standards 与 Spec 首审均无 P0/P1/P2；复盘无未关闭项。未变候选复用有效首审，用户调整 S06/S08 后的 Spec 增量审查也无新增发现。
+- 正式 Wrapper 构建、完整项目层和登录 shell 辅助模块来源核对、外层签名、搬迁运行时/Office/插件验证，以及正式打包资源的两项真实 SDK 测试均退出 0，相关源码验前验后摘要一致。证据为 37—41。
+- [macOS CI](https://github.com/Ghost233/DSH-Workflow/actions/runs/39007975654) 完成正式 Wrapper、真实 SDK 与 DMG 校验，两组项目 CI 也成功；S01 已按结项约定关闭。
+- 构建验证后曾发现 build.mjs 两行打包调用被删除。用户确认非其改动并要求修复，已保存原文件并恢复为已验证 HEAD 原字节；全部构建输入再次一致。现有调用日志未定位写入者，不推断来源。记录位于 `s01/unexpected-build-edit/repair.json`。
 
-当前审查、有效作业与下一动作以交付入口及 `.build/independent-dsh-server/controller-state.json` 为准，不把本阶段结果扩展为完整规格已经完成。
+后续审查、有效作业与下一动作以交付入口及 `.build/independent-dsh-server/controller-state.json` 为准，不把本阶段结果扩展为完整规格已经完成。
