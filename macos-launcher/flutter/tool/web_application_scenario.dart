@@ -82,6 +82,11 @@ class WebObservation {
     required this.state,
     required this.backendHealth,
     required this.webHealth,
+    required this.webEntry,
+    required this.hostRpc,
+    required this.webRpc,
+    required this.initialSessionStatus,
+    required this.openSocket,
     required this.tap,
     required this.capture,
     required this.reconnectManager,
@@ -101,6 +106,10 @@ class WebObservation {
   final Map<String, Object?> backend, capabilities;
   final WebSdkRequest sdk;
   final Future<Map<String, Object?>> Function() ui, backendHealth, webHealth;
+  final Future<({int code, String body})> Function() webEntry;
+  final Future<Object?> Function(String, Map<String, Object?>) hostRpc, webRpc;
+  final Future<int> Function() initialSessionStatus;
+  final Future<WebSocket> Function({bool originalSession}) openSocket;
   final ApplicationState state;
   String get resources => '${root.path}/missing-runtime';
   File get receipt =>
@@ -151,6 +160,27 @@ class WebProbeOptions {
     }
     final project = await File.fromUri(library).parent.parent.parent.parent
         .resolveSymbolicLinks();
+    if (Platform.environment['DSH_WEB_TASK_CONTINUITY'] == '1') {
+      final staged = await Process.run('$sourceResources/node', [
+        '$project/macos-launcher/flutter/tool/independent_service_resources.mjs',
+        sourceResources,
+        resources,
+      ]);
+      require(
+        staged.exitCode == 0,
+        'the task fixture stages the current project and frozen Host: ${staged.stderr}',
+      );
+      final configured = await Process.run('$sourceResources/node', [
+        '$project/macos-launcher/flutter/tool/service_task_resources.mjs',
+        resources,
+        root.path,
+      ]);
+      require(
+        configured.exitCode == 0,
+        'the task fixture configures only the external model boundary before Host startup: ${configured.stderr}',
+      );
+      return selected;
+    }
     final copier = '$project/macos-launcher/project-resources.mjs';
     final prepared = Platform.environment['DSH_CANDIDATE_PROJECT_LAYER'];
     final copied = await Process.run('$sourceResources/node', [
@@ -164,7 +194,7 @@ class WebProbeOptions {
       copied.exitCode == 0,
       'private project layer matches this candidate source and complete membership: ${copied.stderr}',
     );
-    for (final name in ['node', 'desktop', 'node_modules', 'bin']) {
+    for (final name in ['node', 'desktop', 'node_modules', 'bin', 'service']) {
       if (name == 'desktop' &&
           Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] != null) {
         final desktopCopy = await Process.run('/usr/bin/ditto', [
@@ -214,6 +244,10 @@ Future<void> runWebApplicationScenario({
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
   final password = 'isolated-web-probe-password';
   Process? host = prestartedHost;
+  final independentHost =
+      options.backend == 'headless' && prestartedHost == null;
+  int? ownedManagerPid;
+  late WebSdkRequest sdkControl;
   LauncherServer? server;
   IOSink? hostLog = prestartedHostLog;
   var hostExited = false;
@@ -275,6 +309,54 @@ Future<void> runWebApplicationScenario({
 
   Future<Map<String, Object?>> readReceipt() async =>
       (jsonDecode(await receipt.readAsString()) as Map).cast<String, Object?>();
+  Future<bool> ownsReceipt(Map<String, Object?> value) async {
+    if (!independentHost) return ownsHostReceipt(value);
+    final manager = jsonDecode(
+      await File('$data/global/.dsh-workflow/service/manager.json')
+          .readAsString(),
+    ) as Map;
+    final current = await readReceipt();
+    if (manager['pid'] != ownedManagerPid ||
+        current['pid'] != value['pid'] ||
+        current['lease'] != value['lease']) {
+      return false;
+    }
+    final uid = (await Process.run('/usr/bin/id', [
+      '-u',
+    ])).stdout.toString().trim();
+    final owner = await Process.run('/bin/ps', [
+      '-p',
+      '$ownedManagerPid',
+      '-o',
+      'uid=,command=',
+    ]);
+    final process = await Process.run('/bin/ps', [
+      '-p',
+      '${value['pid']}',
+      '-o',
+      'ppid=,uid=,command=',
+    ]);
+    final managerIdentity = owner.stdout.toString().trim();
+    final hostIdentity = process.stdout.toString().trim();
+    final hostFields = hostIdentity.split(RegExp(r'\s+'));
+    final owned =
+        owner.exitCode == 0 &&
+        process.exitCode == 0 &&
+        managerIdentity.startsWith('$uid ') &&
+        managerIdentity.contains('service-manager.mjs') &&
+        managerIdentity.contains('$data ') &&
+        hostFields.length > 2 &&
+        hostFields[0] == '$ownedManagerPid' &&
+        hostFields[1] == uid &&
+        hostIdentity.contains('$home/profiles/desktop') &&
+        hostIdentity.contains('dsh-desktop-host');
+    await File('${root.path}/web-independent-host-identity.log').writeAsString(
+      'owned=$owned lease=${value['lease']}\n$managerIdentity\n$hostIdentity\n',
+      mode: FileMode.append,
+    );
+    return owned;
+  }
+
   Future<({int code, String body, List<Cookie> cookies})> request(
     Uri uri, {
     String method = 'GET',
@@ -324,7 +406,7 @@ Future<void> runWebApplicationScenario({
     );
     final bound = await readReceipt();
     require(
-      await ownsHostReceipt(bound),
+      await ownsReceipt(bound),
       'ready DSH response retains the exact physical Host lease',
     );
     return {
@@ -332,6 +414,36 @@ Future<void> runWebApplicationScenario({
       'instanceId': bound['lease'],
       'plugins': result!['value'],
     };
+  }
+
+  Future<Object?> rpc(
+    Uri uri,
+    List<Cookie> cookies,
+    String method,
+    Map<String, Object?> args,
+  ) async {
+    final rpcId = 's03-${DateTime.now().microsecondsSinceEpoch}';
+    final response = await request(
+      uri.resolve('/api/$method'),
+      method: 'POST',
+      cookies: cookies,
+      contentType: ContentType.json,
+      body: jsonEncode({
+        'type': 'client-request',
+        'rpcId': rpcId,
+        'method': method,
+        'payload': {'args': args},
+      }),
+    );
+    final envelope = jsonDecode(response.body) as Map;
+    final result = envelope['result'] as Map?;
+    require(
+      response.code == 200 &&
+          envelope['rpcId'] == rpcId &&
+          result?['ok'] == true,
+      'the actual authenticated Host accepts $method',
+    );
+    return result!['value'];
   }
 
   Future<void> portReleased() async {
@@ -351,6 +463,20 @@ Future<void> runWebApplicationScenario({
   }
 
   Future<void> startOwnedHost() async {
+    if (independentHost) {
+      await sdkControl('start', service: 'desktop');
+      final manager = jsonDecode(
+        await File('$data/global/.dsh-workflow/service/manager.json')
+            .readAsString(),
+      ) as Map;
+      ownedManagerPid = manager['pid'] as int;
+      hostExited = false;
+      require(
+        await ownsReceipt(await readReceipt()),
+        'the replacement Host is owned by the isolated independent manager',
+      );
+      return;
+    }
     require(
       options.backend == 'headless',
       'owned Host helper is headless only',
@@ -393,6 +519,28 @@ Future<void> runWebApplicationScenario({
   }
 
   Future<void> stopOwnedHost() async {
+    if (independentHost) {
+      final bound = await readReceipt();
+      require(
+        await ownsReceipt(bound),
+        'only this isolated independent manager fixture is terminated',
+      );
+      Process.killPid(ownedManagerPid!, ProcessSignal.sigterm);
+      await waitFor(
+        'owned manager and real Host fixture stop',
+        () async =>
+            !await File('$data/global/.dsh-workflow/service/manager.json')
+                .exists() &&
+            !await receipt.exists() &&
+            (await Process.run('/bin/kill', [
+                  '-0',
+                  '${bound['pid']}',
+                ])).exitCode !=
+                0,
+      );
+      hostExited = true;
+      return;
+    }
     require(
       options.backend == 'headless' && host != null && !hostExited,
       'only this probe owned headless Host is shut down',
@@ -427,8 +575,13 @@ Future<void> runWebApplicationScenario({
     if (prestartedHost != null) {
       require(await receipt.exists(), 'private prestarted Host receipt exists');
       unawaited(prestartedHost.exitCode.then((_) => hostExited = true));
-    } else if (options.backend == 'headless') {
-      await startOwnedHost();
+    } else if (independentHost) {
+      require(
+        !await receipt.exists() ||
+            await File('$data/global/.dsh-workflow/service/manager.json')
+                .exists(),
+        'the Web fixture has no external unmanaged Host',
+      );
     } else if (!passwordPreloaded) {
       require(
         !await receipt.exists(),
@@ -499,6 +652,8 @@ Future<void> runWebApplicationScenario({
       return (response['result'] as Map).cast<String, Object?>();
     }
 
+    sdkControl = sdk;
+
     final services = server.registry
         .byProject('dsh-workflow')!
         .capabilities
@@ -523,6 +678,22 @@ Future<void> runWebApplicationScenario({
       require(
         (denied['error'] as Map)['code'] == 'unsupported',
         'Desktop $method explicitly returns unsupported',
+      );
+    }
+    if (independentHost) {
+      await sdk('start', service: 'desktop');
+      await waitFor(
+        'official SDK creates an independent ready Host',
+        () async => (await sdk('status', service: 'desktop'))['ready'] == true,
+      );
+      final manager = jsonDecode(
+        await File('$data/global/.dsh-workflow/service/manager.json')
+            .readAsString(),
+      ) as Map;
+      ownedManagerPid = manager['pid'] as int;
+      require(
+        await ownsReceipt(await readReceipt()),
+        'the official SDK Host is owned by this isolated independent manager',
       );
     }
     if (!passwordPreloaded) {
@@ -693,7 +864,7 @@ Future<void> runWebApplicationScenario({
         WebObservation(
           root: root,
           applicationExit: applicationExit,
-          ownsHostReceipt: ownsHostReceipt,
+          ownsHostReceipt: ownsReceipt,
           startupFailure: startupFailure,
           port: port,
           backend: backend,
@@ -706,6 +877,40 @@ Future<void> runWebApplicationScenario({
           state: state,
           backendHealth: () => health(backendUrl, backendLogin.cookies),
           webHealth: () async => health(url, await authenticate()),
+          webEntry: () async {
+            final response = await request(url);
+            return (code: response.code, body: response.body);
+          },
+          hostRpc: (method, args) =>
+              rpc(backendUrl, backendLogin.cookies, method, args),
+          webRpc: (method, args) async =>
+              rpc(url, await authenticate(), method, args),
+          initialSessionStatus: () async {
+            final response = await request(
+              url.resolve('/api/pluginManager/listPlugins'),
+              method: 'POST',
+              cookies: webCookies,
+              contentType: ContentType.json,
+              body: jsonEncode({
+                'type': 'client-request',
+                'rpcId': 's03-old-session',
+                'method': 'pluginManager/listPlugins',
+                'payload': {'args': <String, Object?>{}},
+              }),
+            );
+            return response.code;
+          },
+          openSocket: ({bool originalSession = false}) async {
+            final cookies = originalSession ? webCookies : await authenticate();
+            return WebSocket.connect(
+              url.resolve('/api/remote.mux').replace(scheme: 'ws').toString(),
+              headers: {
+                'cookie': cookies
+                    .map((cookie) => '${cookie.name}=${cookie.value}')
+                    .join('; '),
+              },
+            ).timeout(const Duration(seconds: 10));
+          },
           tap: tapUi,
           capture: capture,
           appRequest: appRequest,
@@ -845,6 +1050,35 @@ Future<void> runWebApplicationScenario({
           await remainingHost.exitCode.timeout(const Duration(seconds: 30)) ==
               0,
           'owned official Host acknowledges disposal and is reaped through the fixed official owner contract',
+        );
+      }
+      final managerFile = File(
+        '$data/global/.dsh-workflow/service/manager.json',
+      );
+      if (independentHost && await managerFile.exists()) {
+        final manager = jsonDecode(await managerFile.readAsString()) as Map;
+        final managerPid = manager['pid'] as int;
+        final identity = await Process.run('/bin/ps', [
+          '-p',
+          '$managerPid',
+          '-o',
+          'uid=,command=',
+        ]);
+        final uid = (await Process.run('/usr/bin/id', [
+          '-u',
+        ])).stdout.toString().trim();
+        final command = identity.stdout.toString().trim();
+        require(
+          identity.exitCode == 0 &&
+              command.startsWith('$uid ') &&
+              command.contains('service-manager.mjs') &&
+              command.contains('$data '),
+          'cleanup only signals this UID and isolated service manager fixture',
+        );
+        Process.killPid(managerPid, ProcessSignal.sigterm);
+        await waitFor(
+          'owned independent service fixture cleanup',
+          () async => !await managerFile.exists(),
         );
       }
       if (options.backend == 'headless' && await receipt.exists()) {
