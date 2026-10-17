@@ -38,6 +38,21 @@ AppUpdate? newerRelease(String body, String installed) {
     if (tag is! String || !tag.startsWith('macos-v')) continue;
     final version = _version(tag.substring(7));
     if (version == null || _compare(version, best) <= 0) continue;
+    final name = 'DSH-Workflow-macOS-${tag.substring(7)}-arm64.dmg';
+    final address =
+        'https://github.com/Ghost233/DSH-Workflow/releases/download/$tag/$name';
+    final assets = value['assets'];
+    if (assets is! List ||
+        !assets.any(
+          (asset) =>
+              asset is Map &&
+              asset['name'] == name &&
+              asset['size'] is int &&
+              asset['size'] > 0 &&
+              asset['browser_download_url'] == address,
+        )) {
+      continue;
+    }
     best = version;
     newest = tag;
   }

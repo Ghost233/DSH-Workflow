@@ -4,7 +4,7 @@ import { cp, mkdir, readFile, writeFile, symlink, lstat, readlink, rename, unlin
 import { existsSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { composeDshLaunch } from '../../scripts/dsh-launch-composition.mjs'
-import { readPluginConfiguration, savePluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
+import { readPluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
 import { migrateProjectEntryNames } from '../../scripts/observation-profile.mjs'
 
 const BUNDLE = 'dsh-workflow-desktop'
@@ -39,7 +39,6 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   }
   const pluginConfig = await readPluginConfiguration(resourcesRoot, home)
   if (pluginConfig) {
-    await savePluginConfiguration(home, pluginConfig)
     try { await assertProfilePluginVersions(profile, pluginConfig) }
     catch (error) { process.stderr.write(`[project-plugins] ${error.message}\n`) }
   }

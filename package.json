@@ -9,6 +9,7 @@
     "./client": "./agent-observation-plugin/client.js",
     "./jev-center": "./agent-observation-plugin/src/jev-center-plugin.mjs",
     "./agent-monitor": "./agent-observation-plugin/src/agent-monitor-plugin.mjs",
+    "./delivery-inventory": "./agent-observation-plugin/src/delivery-inventory.mjs",
     "./package.json": "./package.json"
   },
   "license": "MIT",
@@ -33,7 +34,8 @@
     "vendor/mattpocock-skills-zh.upstream.json",
     "agent-observation-plugin/",
     "scripts/dsh-launch-composition.mjs",
-    "scripts/dsh-readiness.mjs"
+    "scripts/dsh-readiness.mjs",
+    "scripts/dsh-delivery-policy.mjs"
   ],
   "dsh": {
     "client": {

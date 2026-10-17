@@ -37,12 +37,22 @@ test('generated lock cannot override an exact manifest version even with a match
   await assert.rejects(readPluginConfiguration(f.resources, f.home), /lock does not match/)
 })
 
-test('one saved configuration survives an older packaged default and serves both profiles', async t => {
+test('the packaged lock remains the version authority while historical home configuration is preserved', async t => {
   const f = await fixture(t)
-  f.config.plugins[0].version = '0.1.191'
-  await savePluginConfiguration(f.home, f.config)
-  assert.equal((await readPluginConfiguration(f.resources, f.home)).plugins[0].version, '0.1.191')
-  assert.equal(JSON.parse(await readFile(join(f.workflow, 'project-plugins.json'))).plugins[0].version, '0.1.184')
+  const historical = { ...f.config, plugins: [{ ...f.config.plugins[0], version: '0.1.191' }] }
+  await savePluginConfiguration(f.home, historical)
+  const before = await readFile(configurationPath(f.home))
+  assert.equal((await readPluginConfiguration(f.resources, f.home)).plugins[0].version, '0.1.184')
+  assert.deepEqual(await readFile(configurationPath(f.home)), before)
+})
+
+test('a malformed historical configuration is preserved and cannot replace the packaged authority', async t => {
+  const f = await fixture(t)
+  await mkdir(join(f.home, 'workflow'), { recursive: true })
+  const path = configurationPath(f.home), before = '{historical malformed configuration'
+  await writeFile(path, before)
+  assert.equal((await readPluginConfiguration(f.resources, f.home)).plugins[0].version, '0.1.184')
+  assert.equal(await readFile(path, 'utf8'), before)
 })
 
 test('driver removal refuses the original 191 installed / 184 declared mismatch before executing', async t => {
@@ -53,28 +63,47 @@ test('driver removal refuses the original 191 installed / 184 declared mismatch 
   assert.equal(called, false)
 })
 
-test('unrelated removal detects a side effect instead of claiming success', async t => {
+test('runtime package removal and versions outside the packaged pins are refused before execution', async t => {
   const f = await fixture(t)
-  await assert.rejects(manageProfilePluginOperation({ ...f, profileName: 'desktop', args: ['remove', 'test-driver'], run: () => f.install('0.1.183') }), /插件版本偏差/)
+  const original = await readFile(join(f.profile, 'package.json'))
+  for (const args of [['remove', 'test-driver'], ['remove', 'billion-context'],
+    ['add', 'billion-context@0.1.191', '--save-exact'], ['add', 'billion-context@0.1.184', '--registry', 'https://outside.example/']]) {
+    await assert.rejects(manageProfilePluginOperation({ ...f, profileName: 'desktop', args,
+      run: () => assert.fail('must not execute a forbidden runtime package operation'),
+    }), /本仓库.*DMG/)
+  }
+  assert.deepEqual(await readFile(join(f.profile, 'package.json')), original)
+  await assert.rejects(readFile(configurationPath(f.home)), { code: 'ENOENT' })
 })
 
-test('an explicit exact update synchronizes the shared configuration after installation', async t => {
+test('locked maintenance adds retain exact declarations and detect unexpected external tool changes', async t => {
   const f = await fixture(t)
-  await manageProfilePluginOperation({ ...f, profileName: 'desktop', args: ['add', 'billion-context@0.1.191', '--save-exact'], run: () => f.install('0.1.191') })
-  assert.equal(JSON.parse(await readFile(configurationPath(f.home))).plugins[0].version, '0.1.191')
+  let called = false
+  await manageProfilePluginOperation({ ...f, profileName: 'desktop', args: ['add', 'billion-context@0.1.184', '--save-exact', '--registry', f.config.registry],
+    run: async () => { called = true },
+  })
+  assert.equal(called, true)
+  await assert.rejects(manageProfilePluginOperation({ ...f, profileName: 'desktop', args: ['add', 'billion-context@0.1.184'],
+    run: () => f.install('0.1.191', '0.1.184'),
+  }), /依赖声明 0.1.184.*实际安装 0.1.191/)
+  await assert.rejects(readFile(configurationPath(f.home)), { code: 'ENOENT' })
 })
 
-test('an installed upgrade without the exact dependency declaration fails verification', async t => {
+test('packaged runtime resources cannot reinstall even the same pinned version into an existing profile', async t => {
   const f = await fixture(t)
-  await assert.rejects(manageProfilePluginOperation({ ...f, profileName: 'desktop', args: ['add', 'billion-context@0.1.191'], run: () => f.install('0.1.191', '0.1.184') }), /依赖声明 0.1.184/)
-})
-
-test('launcher update persists the target and checks plugins outside the selection', async t => {
-  const f = await fixture(t)
-  const report = { checkedAt: 'fixture', rows: [{ source: 'DSH Desktop profile', name: 'billion-context', current: '0.1.184', latest: '0.1.191', status: 'newer' }] }
-  const result = await updateProfilePlugins({ ...f, resourcesRoot: f.resources, profileName: 'desktop', check: async () => report, run: () => f.install('0.1.191') })
-  assert.equal(result.error, undefined)
-  assert.equal((await readPluginConfiguration(f.resources, f.home)).plugins[0].version, '0.1.191')
+  await writeFile(join(f.resources, 'project-layer.json'), JSON.stringify({ schema: 1, sourceCommit: 'packaged-fixture' }))
+  await savePluginConfiguration(f.home, { ...f.config, preserved: true })
+  const paths = [join(f.profile, 'package.json'), join(f.profile, 'node_modules/billion-context/package.json'), configurationPath(f.home)]
+  const before = await Promise.all(paths.map(path => readFile(path)))
+  await assert.rejects(manageProfilePluginOperation({ ...f, profileName: 'desktop', args: ['add', 'billion-context@0.1.184', '--save-exact'],
+    synchronize: true, run: () => assert.fail('a packaged runtime cannot invoke package maintenance'),
+  }), /本仓库.*DMG/)
+  assert.deepEqual(await Promise.all(paths.map(path => readFile(path))), before)
+  const startup = await ensureStartupPlugins({ ...f, resourcesRoot: f.resources,
+    run: () => assert.fail('packaged runtime startup cannot invoke package maintenance'),
+  })
+  assert.equal(startup.added.length, 0)
+  assert.match(startup.skipped[0].reason, /本仓库.*DMG/)
 })
 
 test('startup never downgrades a divergent existing profile or installs another plugin', async t => {
@@ -85,58 +114,39 @@ test('startup never downgrades a divergent existing profile or installs another 
   await assert.rejects(ensureStartupPlugins({ ...f, resourcesRoot: f.resources, run: () => { throw new Error('must not install') } }), /插件版本偏差/)
 })
 
-test('explicit synchronization repairs the selected drift using configuration, preserving unrelated plugins', async t => {
+test('runtime update and synchronization preserve drift and the historical configuration instead of repairing it', async t => {
   const { synchronizeProfilePlugins } = await import('./plugin-update.mjs')
   const f = await fixture(t)
-  f.config.plugins[0].version = '0.1.191'
-  await savePluginConfiguration(f.home, f.config)
-  const result = await synchronizeProfilePlugins({ ...f, resourcesRoot: f.resources, profileName: 'desktop', only: ['billion-context'],
-    run: async ({ candidates, synchronize }) => {
-      assert.equal(synchronize, true)
-      assert.deepEqual(candidates, [{ name: 'billion-context', latest: '0.1.191' }])
-      await manageProfilePluginOperation({ ...f, profileName: 'desktop', args: ['add', 'billion-context@0.1.191'], synchronize, run: () => f.install('0.1.191') })
-    } })
-  assert.deepEqual(result.synchronized, [{ name: 'billion-context', version: '0.1.191' }])
+  const historical = { ...f.config, plugins: [{ ...f.config.plugins[0], version: '0.1.191' }] }
+  await savePluginConfiguration(f.home, historical)
+  await f.install('0.1.191', '0.1.184')
+  const before = await readFile(join(f.profile, 'package.json'))
+  for (const operation of [updateProfilePlugins, synchronizeProfilePlugins]) {
+    await assert.rejects(operation({ ...f, resourcesRoot: f.resources, profileName: 'desktop', only: ['billion-context'],
+      run: () => assert.fail('runtime checking cannot reconcile version drift'),
+    }), /本仓库.*DMG/)
+  }
+  assert.deepEqual(await readFile(join(f.profile, 'package.json')), before)
+  assert.equal(JSON.parse(await readFile(configurationPath(f.home))).plugins[0].version, '0.1.191')
+  assert.equal((await readPluginConfiguration(f.resources, f.home)).plugins[0].version, '0.1.184')
 })
 
-test('launcher reports drift in an unselected managed plugin after updating a different package', async t => {
-  const f = await fixture(t)
-  f.config.plugins.push({ package: 'other-plugin', version: '1.0.0' })
-  await savePluginConfiguration(f.home, f.config)
-  await mkdir(join(f.profile, 'node_modules/other-plugin'), { recursive: true })
-  const otherPackage = join(f.profile, 'node_modules/other-plugin/package.json')
-  await writeFile(otherPackage, JSON.stringify({ name: 'other-plugin', version: '1.0.0' }))
-  const manifestPath = join(f.profile, 'package.json')
-  const manifest = JSON.parse(await readFile(manifestPath))
-  manifest.dependencies['other-plugin'] = '1.0.0'
-  await writeFile(manifestPath, JSON.stringify(manifest))
-  const result = await updateProfilePlugins({ ...f, resourcesRoot: f.resources, profileName: 'desktop', only: ['billion-context'],
-    check: async () => ({ checkedAt: 'fixture', rows: [{ source: 'DSH Desktop profile', name: 'billion-context', latest: '0.1.191', status: 'newer' }] }),
-    run: async () => {
-      manifest.dependencies['billion-context'] = '0.1.191'
-      await writeFile(manifestPath, JSON.stringify(manifest))
-      await writeFile(join(f.profile, 'node_modules/billion-context/package.json'), JSON.stringify({ name: 'billion-context', version: '0.1.191' }))
-      await writeFile(otherPackage, JSON.stringify({ name: 'other-plugin', version: '0.9.0' }))
-    } })
-  assert.match(result.error, /插件版本偏差：other-plugin/)
-  assert.equal((await readPluginConfiguration(f.resources, f.home)).plugins[0].version, '0.1.191')
-})
-
-test('version table marks config/profile drift as an error without offering an automatic update', async t => {
+test('version table reports packaged/profile drift without offering an automatic update', async t => {
   const { checkPluginVersions } = await import('./plugin-versions.mjs')
   const f = await fixture(t)
   await f.install('0.1.191', '0.1.184')
   const report = await checkPluginVersions({ resourcesRoot: f.resources, home: f.home, profileName: 'desktop', fetchLatest: async () => '0.1.192' })
   const row = report.rows.find(row => row.source === 'DSH Desktop profile' && row.name === 'billion-context')
-  assert.equal(row.status, 'error')
+  assert.equal(row.status, 'drift')
   assert.equal(row.updatable, false)
-  assert.match(row.note, /统一配置 0.1.184/)
+  assert.match(row.note, /仓库固定 0.1.184/)
 })
 
-test('unrelated removal cannot silently delete a managed plugin and its declaration', async t => {
+test('forbidden removal cannot delete a managed package or its declaration', async t => {
   const f = await fixture(t)
-  await assert.rejects(manageProfilePluginOperation({ ...f, profileName: 'desktop', args: ['remove', 'test-driver'], run: async () => {
-    await rm(join(f.profile, 'node_modules/billion-context'), { recursive: true })
-    await writeFile(join(f.profile, 'package.json'), JSON.stringify({ dependencies: {} }))
-  } }), /实际安装 缺失/)
+  const path = join(f.profile, 'node_modules/billion-context/package.json'), original = await readFile(path)
+  await assert.rejects(manageProfilePluginOperation({ ...f, profileName: 'desktop', args: ['remove', 'test-driver'],
+    run: () => assert.fail('must not execute removal'),
+  }), /本仓库.*DMG/)
+  assert.deepEqual(await readFile(path), original)
 })

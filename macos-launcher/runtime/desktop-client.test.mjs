@@ -4,7 +4,7 @@ import { createServer } from 'node:net'
 import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { WorkflowDesktopConnection } from './desktop-client.mjs'
+import { WorkflowDesktopConnection, WorkflowDesktopUpdates } from './desktop-client.mjs'
 import { SERVICE_PROTOCOL, serviceSocket, privateDirectory } from './service-control.mjs'
 
 const version = '0.2.1-alpha.5'
@@ -125,4 +125,82 @@ test('a replacement lease or incompatible version never receives the old private
     assert.deepEqual(fixture.sessions, [fixture.grant, null])
     readOnly(fixture)
   }
+})
+
+test('manual Desktop update checks offer the Workflow release page without upstream transfer or service control', async () => {
+  const forbidden = () => assert.fail('Repository checking must not use the upstream updater or service lifecycle')
+  const network = [], published = []
+  const updater = { checkForUpdates: forbidden, downloadUpdate: forbidden, quitAndInstall: forbidden }
+  const updates = new WorkflowDesktopUpdates(updater, state => published.push(state), {
+    workflowVersion: '0.3.0',
+    request: async (url, options) => {
+      network.push({ url: String(url), method: options.method })
+      return { ok: true, json: async () => [{ tag_name: 'macos-v0.4.0', draft: false, prerelease: false,
+        assets: [{ name: 'DSH-Workflow-macOS-0.4.0-arm64.dmg', size: 1234,
+          browser_download_url: 'https://github.com/Ghost233/DSH-Workflow/releases/download/macos-v0.4.0/DSH-Workflow-macOS-0.4.0-arm64.dmg' }] }] }
+    },
+  }, forbidden)
+  const state = await updates.check(true)
+  assert.deepEqual({ phase: state.phase, release: state.release }, { phase: 'idle', release: {
+    version: '0.4.0', page: 'https://github.com/Ghost233/DSH-Workflow/releases/tag/macos-v0.4.0',
+  } })
+  assert.deepEqual(network, [{ url: 'https://api.github.com/repos/Ghost233/DSH-Workflow/releases?per_page=100', method: 'GET' }])
+  assert.equal(updater.autoDownload, false)
+  assert.equal(updater.autoInstallOnAppQuit, false)
+  assert.equal((await updates.download()).phase, 'error')
+  assert.equal((await updates.install()).phase, 'error')
+  assert.ok(published.length > 0)
+  updates.dispose()
+})
+
+test('Desktop checking opens the trusted release page only after the user selects it', async () => {
+  const dialogs = [], opened = []
+  const updates = new WorkflowDesktopUpdates({}, () => {}, {
+    workflowVersion: '0.3.0', request: async () => ({ ok: true, json: async () => [{
+      tag_name: 'macos-v0.4.0', draft: false, prerelease: false, html_url: 'https://outside.example/release',
+      assets: [{ name: 'DSH-Workflow-macOS-0.4.0-arm64.dmg', size: 1234,
+        browser_download_url: 'https://github.com/Ghost233/DSH-Workflow/releases/download/macos-v0.4.0/DSH-Workflow-macOS-0.4.0-arm64.dmg' }],
+    }] }),
+  })
+  await updates.check(true, {
+    showMessage: async options => { dialogs.push(options); return { response: 0 } },
+    openExternal: async url => { opened.push(url) },
+  })
+  assert.deepEqual(opened, ['https://github.com/Ghost233/DSH-Workflow/releases/tag/macos-v0.4.0'])
+  assert.deepEqual(dialogs[0].buttons, ['打开发布页', '稍后'])
+  assert.match(dialogs[0].detail, /0\.3\.0/)
+  await updates.check(true, {
+    showMessage: async options => { dialogs.push(options); return { response: 1 } },
+    openExternal: async url => { opened.push(url) },
+  })
+  assert.equal(opened.length, 1, 'declining the second prompt cannot open a page')
+  updates.dispose()
+})
+
+test('Desktop release checks reject inapplicable DMGs and clear a stale candidate after a network failure', async () => {
+  const release = { tag_name: 'macos-v0.4.0', draft: false, prerelease: false,
+    assets: [{ name: 'DSH-Workflow-macOS-0.4.0-arm64.dmg', size: 1234,
+      browser_download_url: 'https://github.com/Ghost233/DSH-Workflow/releases/download/macos-v0.4.0/DSH-Workflow-macOS-0.4.0-arm64.dmg' }] }
+  let response = { ok: true, json: async () => [release] }, calls = 0
+  const updates = new WorkflowDesktopUpdates({}, () => {}, { workflowVersion: '0.3.0', request: async () => { calls++; return response } })
+  await updates.check(false)
+  assert.equal(calls, 0, 'automatic upstream check requests no metadata')
+  assert.equal((await updates.check(true)).release.version, '0.4.0')
+  response = { ok: false, status: 500 }
+  const failed = await updates.check(true)
+  assert.equal(failed.phase, 'error')
+  assert.equal(failed.release, undefined, 'a failed refresh cannot offer the previous candidate')
+  for (const candidate of [
+    { ...release, assets: [] }, { ...release, draft: true }, { ...release, prerelease: true },
+    { ...release, assets: [{ ...release.assets[0], size: 0 }] },
+    { ...release, assets: [{ ...release.assets[0], size: '1234' }] },
+    { ...release, assets: [{ ...release.assets[0], name: 'DSH-Workflow-macOS-0.4.0-x64.dmg' }] },
+    { ...release, assets: [{ ...release.assets[0], browser_download_url: 'https://outside.example/release.dmg' }] },
+  ]) {
+    response = { ok: true, json: async () => [candidate] }
+    const state = await updates.check(true)
+    assert.equal(state.phase, 'idle')
+    assert.equal(state.release, null)
+  }
+  updates.dispose()
 })

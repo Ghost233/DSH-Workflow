@@ -383,13 +383,13 @@ Future<void> runWebApplicationScenario({
   Future<Map<String, Object?>> health(Uri uri, List<Cookie> cookies) async {
     final rpcId = 'dsh-ready-${DateTime.now().microsecondsSinceEpoch}';
     final response = await request(
-      uri.resolve('/api/pluginManager/listPlugins'),
+      uri.resolve('/api/pluginInventory/list'),
       method: 'POST',
       cookies: cookies,
       body: jsonEncode({
         'type': 'client-request',
         'rpcId': rpcId,
-        'method': 'pluginManager/listPlugins',
+        'method': 'pluginInventory/list',
         'payload': {'args': <String, Object?>{}},
       }),
       contentType: ContentType.json,
@@ -401,8 +401,10 @@ Future<void> runWebApplicationScenario({
           envelope['type'] == 'server-response' &&
           envelope['rpcId'] == rpcId &&
           result?['ok'] == true &&
-          result?['value'] is List,
-      'authenticated official DSH plugin manager proves actual Host readiness',
+          result?['value'] is Map &&
+          (result?['value'] as Map)['entries'] is List &&
+          (result?['value'] as Map)['managementAvailable'] != true,
+      'authenticated official DSH readonly inventory proves actual Host readiness',
     );
     final bound = await readReceipt();
     require(
@@ -412,7 +414,7 @@ Future<void> runWebApplicationScenario({
     return {
       'ready': true,
       'instanceId': bound['lease'],
-      'plugins': result!['value'],
+      'plugins': (result!['value'] as Map)['entries'],
     };
   }
 
@@ -764,7 +766,7 @@ Future<void> runWebApplicationScenario({
     final backendPid = backend['pid'] as int;
     final url = Uri.parse('http://127.0.0.1:$port/');
     require(
-      (await request(url.resolve('api/pluginManager/listPlugins'))).code == 401,
+      (await request(url.resolve('api/pluginInventory/list'))).code == 401,
       'unauthenticated clients cannot access the real backend',
     );
     Future<List<Cookie>> authenticate() async {
@@ -887,14 +889,14 @@ Future<void> runWebApplicationScenario({
               rpc(url, await authenticate(), method, args),
           initialSessionStatus: () async {
             final response = await request(
-              url.resolve('/api/pluginManager/listPlugins'),
+              url.resolve('/api/pluginInventory/list'),
               method: 'POST',
               cookies: webCookies,
               contentType: ContentType.json,
               body: jsonEncode({
                 'type': 'client-request',
                 'rpcId': 's03-old-session',
-                'method': 'pluginManager/listPlugins',
+                'method': 'pluginInventory/list',
                 'payload': {'args': <String, Object?>{}},
               }),
             );

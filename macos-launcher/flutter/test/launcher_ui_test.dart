@@ -221,7 +221,9 @@ json.dump({'ok': True, 'value': {'service': {'state': 'running', 'ready': True, 
         PluginRow({
           'name': 'a-project-maintained-plugin',
           'source': 'project',
-          'status': 'current',
+          'current': '1.1.0',
+          'expected': '1.2.0',
+          'status': 'drift',
         }),
       ];
       await tester.pumpWidget(LauncherApp(controller: model));
@@ -230,6 +232,12 @@ json.dump({'ok': True, 'value': {'service': {'state': 'running', 'ready': True, 
       await tester.tap(find.text('插件'));
       await tester.pumpAndSettle();
       expect(find.text('a-project-maintained-plugin'), findsOneWidget);
+      expect(find.text('实际 / 仓库固定'), findsOneWidget);
+      expect(find.text('1.1.0 / 1.2.0'), findsOneWidget);
+      expect(find.text('版本偏差'), findsOneWidget);
+      expect(find.textContaining('正式 DMG'), findsOneWidget);
+      expect(find.text('更新全部可更新插件'), findsNothing);
+      expect(find.widgetWithText(OutlinedButton, '更新'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.tap(find.text('日志'));
       await tester.pumpAndSettle();

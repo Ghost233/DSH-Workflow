@@ -76,7 +76,11 @@ try {
   await bundleServiceNotifications(root, resources)
   await mkdir(join(resources, 'desktop'), { recursive: true })
   await run('/usr/bin/ditto', [desktopApp, join(resources, 'desktop/DeepSeek Harness.app')])
-  await assembleDesktopClient(join(resources, 'desktop/DeepSeek Harness.app'))
+  const adaptation = await assembleDesktopClient(join(resources, 'desktop/DeepSeek Harness.app'))
+  const { stdout: outerVersion } = await exec('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(contents, 'Info.plist')])
+  if (outerVersion.trim() !== appVersion || adaptation.workflowVersion !== outerVersion.trim()) {
+    throw new Error('Workflow app, Desktop adaptation and release metadata versions differ')
+  }
   // Resources/desktop is not a standard nested-code location; seal the adapted child explicitly.
   await run('codesign', ['--force', '--sign', '-', '--preserve-metadata=identifier,entitlements,flags,runtime', join(resources, 'desktop/DeepSeek Harness.app')])
   await run('codesign', ['--verify', '--deep', '--strict', join(resources, 'desktop/DeepSeek Harness.app')])

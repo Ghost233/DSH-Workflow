@@ -88,6 +88,17 @@ String applicationProbeRootParent({
 }
 
 Future<void> main(List<String> arguments) async {
+  if (arguments.any(
+    (value) => {
+      '--plugins-update-runtime',
+      '--plugins-desktop-runtime',
+    }.contains(value),
+  )) {
+    throw ArgumentError(
+      '在线插件换包验收已取消；组件随正式 DMG 统一交付，请使用 --plugins-runtime 检查只读清单。',
+    );
+  }
+
   if (arguments.length == 3 && arguments[1] == '--launcher-deeplink-runtime') {
     await runLauncherDeepLinkApplicationProbe(arguments);
     return;
@@ -171,33 +182,8 @@ Future<void> main(List<String> arguments) async {
       : arguments;
   final pluginsScenario =
       arguments.length == 3 && arguments[1] == '--plugins-runtime';
-  final pluginUpdateScenario =
-      arguments.length == 3 &&
-      {
-        '--plugins-update-runtime',
-        '--plugins-desktop-runtime',
-      }.contains(arguments[1]);
-  final pluginDesktopScenario =
-      pluginUpdateScenario && arguments[1] == '--plugins-desktop-runtime';
-  if (arguments.length > 1 &&
-      {
-        '--plugins-update-runtime',
-        '--plugins-desktop-runtime',
-      }.contains(arguments[1]) &&
-      (!pluginUpdateScenario ||
-          (Platform.environment['GITHUB_ACTIONS'] != 'true' &&
-              localAcceptanceRoot == null))) {
-    throw ArgumentError(
-      'Plugin update acceptance requires isolated CI or explicit private local acceptance',
-    );
-  }
-  final webScenario =
-      logsScenario || entryScenario || pluginsScenario || pluginUpdateScenario
-      ? WebProbeOptions(
-          Directory(arguments[2]).absolute.path,
-          pluginDesktopScenario ? 'desktop' : 'headless',
-          pluginUpdateScenario ? 33080 : 0,
-        )
+  final webScenario = logsScenario || entryScenario || pluginsScenario
+      ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
       : WebProbeOptions.parse(webArgs) ?? lifecycle?.web;
   final systemCi =
       arguments.length == 3 &&
@@ -209,7 +195,6 @@ Future<void> main(List<String> arguments) async {
   final rootParent = applicationProbeRootParent(
     systemCi: systemCi,
     keychainCi: keychainCi,
-    pluginUpdateCi: pluginUpdateScenario,
     localAcceptanceRoot: localAcceptanceRoot,
     webScenario: webScenario,
     githubActions: Platform.environment['GITHUB_ACTIONS'] == 'true',
@@ -510,17 +495,9 @@ Future<void> main(List<String> arguments) async {
       'the isolated Web launcher copy passes signature verification',
     );
   }
-  PluginRegistryFixture? pluginRegistry;
   DesktopWindowProbe? windowProbe;
   late final Process process;
   try {
-    pluginRegistry = pluginUpdateScenario
-        ? await PluginRegistryFixture.prepare(
-            root,
-            environment['DSH_LAUNCHER_TEST_RESOURCES']!,
-          )
-        : null;
-    if (pluginRegistry != null) environment.addAll(pluginRegistry.environment);
     windowProbe = desktopWindowScenario
         ? await DesktopWindowProbe.start(root)
         : null;
@@ -551,12 +528,6 @@ Future<void> main(List<String> arguments) async {
         'settings preparation',
         () async {
           await settings?.close();
-        },
-      ),
-      (
-        'registry preparation',
-        () async {
-          await pluginRegistry?.close();
         },
       ),
       (
@@ -752,12 +723,6 @@ Future<void> main(List<String> arguments) async {
             ? runLogApplicationScenario
             : pluginsScenario
             ? runPluginApplicationScenario
-            : pluginUpdateScenario
-            ? (app) => runPluginUpdateApplicationScenario(
-                app,
-                pluginRegistry!,
-                desktop: pluginDesktopScenario,
-              )
             : null,
         prestartedHost: settings?.host,
         prestartedHostLog: settings?.hostLog,
@@ -1097,12 +1062,6 @@ Future<void> main(List<String> arguments) async {
           settingsPhase('settings-close-start');
           await settings?.close();
           settingsPhase('settings-close-end');
-        },
-      ),
-      (
-        'registry',
-        () async {
-          await pluginRegistry?.close();
         },
       ),
       (

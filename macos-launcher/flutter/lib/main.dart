@@ -481,29 +481,13 @@ class _LauncherPageState extends State<LauncherPage> {
           _button(
             '检查插件版本',
             model.checkPlugins,
-            enabled: !model.checkingPlugins && !model.updatingPlugins,
-          ),
-          _button(
-            '更新全部可更新插件',
-            () => model.updatePlugins([]),
-            enabled:
-                !model.checkingPlugins &&
-                !model.updatingPlugins &&
-                model.plugins.any((row) => row.updatable),
+            enabled: !model.checkingPlugins,
           ),
         ],
       ),
       const SizedBox(height: 12),
       Text(model.pluginMessage),
-      if (model.pluginUpdateMessage.isNotEmpty)
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 120),
-          child: SingleChildScrollView(
-            child: SelectionArea(child: Text(model.pluginUpdateMessage)),
-          ),
-        ),
-      if (model.pluginsNeedReload)
-        const Text('插件已更新。完全退出并重新打开 Desktop 后加载新版本。'),
+      const Text('组件随本仓库正式 DMG 统一更新；此页只读检查本地安装文件，不能证明当前 Host 已加载该版本。'),
       const SizedBox(height: 12),
       Expanded(
         child: SingleChildScrollView(
@@ -512,10 +496,9 @@ class _LauncherPageState extends State<LauncherPage> {
             child: DataTable(
               columns: const [
                 DataColumn(label: Text('插件 / 来源')),
-                DataColumn(label: Text('当前 / 最新')),
+                DataColumn(label: Text('实际 / 仓库固定')),
                 DataColumn(label: Text('DSH 兼容声明')),
                 DataColumn(label: Text('状态')),
-                DataColumn(label: Text('操作')),
               ],
               rows: model.plugins
                   .map(
@@ -535,7 +518,9 @@ class _LauncherPageState extends State<LauncherPage> {
                           ),
                         ),
                         DataCell(
-                          Text('${row.current ?? '未知'} / ${row.latest ?? '—'}'),
+                          Text(
+                            '${row.current ?? '未知'} / ${row.expected ?? '未固定'}',
+                          ),
                         ),
                         DataCell(
                           Text(
@@ -546,13 +531,6 @@ class _LauncherPageState extends State<LauncherPage> {
                           Tooltip(
                             message: row.note ?? '',
                             child: Text(_pluginState(row.status)),
-                          ),
-                        ),
-                        DataCell(
-                          _button(
-                            '更新',
-                            () => model.updatePlugins([row.name]),
-                            enabled: row.updatable && !model.updatingPlugins,
                           ),
                         ),
                       ],
@@ -623,9 +601,11 @@ String _stateName(ServiceState state) => switch (state) {
 };
 
 String _pluginState(String state) => switch (state) {
-  'newer' => '有新版本',
-  'current' => '已是最新',
-  'ahead' => '高于 latest',
+  'fixed' => '符合仓库固定值',
+  'expected' => '仓库固定快照',
+  'drift' => '版本偏差',
+  'unknown' => '未能核验',
+  'untracked' => '仓库未固定',
   'bundled' => '随 App 更新',
   'coupled' => '随 DSH 更新',
   'local' => '本地依赖',

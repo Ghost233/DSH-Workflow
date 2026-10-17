@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { serviceRequest, serviceSocket } from './service-control.mjs'
+import { newerWorkflowRelease, workflowReleaseEndpoint } from './workflow-release.mjs'
 
 const unavailable = 'DSH 服务未启动或暂不可用，请先启动 DSH 服务。'
 
@@ -114,18 +115,63 @@ export class WorkflowReadOnlyProfile {
 
 /** Repository DMGs own updates; no upstream transfer or service-stop callback is retained. */
 export class WorkflowDesktopUpdates {
-  constructor(updater, publish) {
+  constructor(updater, publish, options = {}) {
     updater.autoDownload = false
     updater.autoInstallOnAppQuit = false
     this.publish = publish
+    this.options = options && typeof options === 'object' ? options : {}
     this.current = { phase: 'idle' }
   }
   get state() { return this.current }
-  async check(manual = false) { return manual ? this.disabled('check') : this.current }
+  async check(manual = false, presentation) {
+    if (!manual) return this.current
+    if (this.checking) return this.checking
+    this.checking = (async () => {
+      try {
+        let workflowVersion = this.options.workflowVersion
+        if (workflowVersion === undefined) {
+          try {
+            const receipt = JSON.parse(await readFile(new URL('../../workflow-desktop-adaptation.json', import.meta.url), 'utf8'))
+            workflowVersion = receipt.workflowVersion
+          } catch { throw new Error('无法读取 DSH Workflow 版本信息，请使用本仓库配套应用。') }
+        }
+        newerWorkflowRelease([], workflowVersion)
+        const response = await (this.options.request ?? fetch)(workflowReleaseEndpoint, {
+          method: 'GET', headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'DSH-Workflow-macOS' },
+          signal: AbortSignal.timeout(10_000),
+        })
+        if (!response.ok) throw new Error(`GitHub 发布接口 ${response.status}`)
+        const release = newerWorkflowRelease(await response.json(), workflowVersion)
+        // The official available phase starts its download UI. Repository releases only open a page.
+        this.current = { phase: 'idle', workflowVersion, release }
+      } catch (error) {
+        this.current = { phase: 'error', failedOperation: 'check', message: `检查更新失败：${error.message}` }
+      }
+      this.publish(this.current)
+      if (presentation) {
+        const state = this.current, release = state.release
+        try {
+          const result = await presentation.showMessage({
+            type: state.phase === 'error' ? 'error' : 'info', title: '检查 DSH Workflow 更新',
+            message: state.phase === 'error' ? state.message : release ? `发现 DSH Workflow ${release.version}`
+              : `当前 DSH Workflow ${state.workflowVersion}，暂无适用的新版本。`,
+            detail: release ? `当前版本 ${state.workflowVersion}。只打开本仓库发布页，不自动下载或安装。` : '',
+            buttons: release ? ['打开发布页', '稍后'] : ['确定'], defaultId: 0, cancelId: release ? 1 : 0,
+          })
+          if (release && result.response === 0) await presentation.openExternal(release.page)
+        } catch (error) {
+          this.current = { phase: 'error', failedOperation: 'check', message: `无法打开更新信息：${error.message}` }
+          this.publish(this.current)
+        }
+      }
+      return this.current
+    })()
+    try { return await this.checking } finally { this.checking = undefined }
+  }
   async download() { return this.disabled('download') }
   async install() { return this.disabled('install') }
   disabled(operation) {
-    this.current = { phase: 'error', failedOperation: operation, message: '请在 DSH 启动器中检查本仓库的 DMG 更新。' }
+    this.current = { phase: 'error', failedOperation: operation, message: 'DSH Workflow 只通过本仓库正式 DMG 更新；请打开发布页。' }
     this.publish(this.current)
     return this.current
   }

@@ -13,7 +13,8 @@ const outputPath = join(pluginDirectory, 'client.js')
 const source = await readFile(sourcePath, 'utf8')
 const remoteSource = await readFile(join(pluginDirectory, 'src', 'jev-center-remote.cjs'), 'utf8')
 const monitorRemoteSource = await readFile(join(pluginDirectory, 'src', 'agent-monitor-remote.cjs'), 'utf8')
-const remotePrelude = `const jevRemote = { exports: {} }\n;(function(module) {\n${remoteSource}\n})(jevRemote)\nconst monitorRemote = { exports: {} }\n;(function(module) {\n${monitorRemoteSource}\n})(monitorRemote)\nconst hostRequire = require\nrequire = name => name === './jev-center-remote.cjs' ? jevRemote.exports : name === './agent-monitor-remote.cjs' ? monitorRemote.exports : hostRequire(name)\n`
+const deliveryRemoteSource = await readFile(join(pluginDirectory, 'src', 'delivery-remote.cjs'), 'utf8')
+const remotePrelude = `const jevRemote = { exports: {} }\n;(function(module) {\n${remoteSource}\n})(jevRemote)\nconst monitorRemote = { exports: {} }\n;(function(module) {\n${monitorRemoteSource}\n})(monitorRemote)\nconst deliveryRemote = { exports: {} }\n;(function(module) {\n${deliveryRemoteSource}\n})(deliveryRemote)\nconst hostRequire = require\nrequire = name => name === './jev-center-remote.cjs' ? jevRemote.exports : name === './agent-monitor-remote.cjs' ? monitorRemote.exports : name === './delivery-remote.cjs' ? deliveryRemote.exports : hostRequire(name)\n`
 const indentedSource = (remotePrelude + source).split('\n').map(line => line === '' ? '' : `      ${line}`).join('\n')
 
 const output = `// 此文件由 scripts/build-client.mjs 生成，请修改 src/client-runtime.js 后重新构建。\n` +

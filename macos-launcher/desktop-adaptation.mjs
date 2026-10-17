@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 const sha = value => createHash('sha256').update(value).digest('hex')
 const frozenMainSha256 = 'b0c715cb750322ebd3fe46f4157fdc370efe92b21408854bcf8083f2ed1e85f9'
 const root = fileURLToPath(new URL('../', import.meta.url))
-const members = { 'workflow-desktop-client.mjs': 'desktop-client.mjs', 'service-control.mjs': 'service-control.mjs' }
+const members = { 'workflow-desktop-client.mjs': 'desktop-client.mjs', 'service-control.mjs': 'service-control.mjs',
+  'workflow-release.mjs': 'workflow-release.mjs' }
 
 /** Only an owned, physical staging copy may receive the project Desktop adaptation. */
 export async function assembleDesktopClient(application) {
@@ -19,6 +20,8 @@ export async function assembleDesktopClient(application) {
   const main = join(lib, 'main.js'), info = await lstat(main)
   if (!info.isFile() || info.nlink !== 1 || await realpath(main) !== main) throw new Error('Desktop main is not an owned staging file')
   const target = JSON.parse(await readFile(join(root, 'dsh-runtime.json'), 'utf8'))
+  const { version: workflowVersion } = JSON.parse(await readFile(join(root, 'macos-launcher/package.json'), 'utf8'))
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(workflowVersion)) throw new Error('Invalid outer Workflow build version')
   const pkg = JSON.parse(await readFile(join(resources, 'app/package.json'), 'utf8'))
   if (pkg.version !== target.version || 'dshMandatoryUpdatePolicy' in pkg) throw new Error('Desktop does not match the fixed adaptation baseline')
   const inputs = Object.fromEntries(await Promise.all(Object.entries(members).map(async ([name, source]) =>
@@ -27,7 +30,7 @@ export async function assembleDesktopClient(application) {
   const existing = await readFile(path, 'utf8').catch(error => { if (error.code !== 'ENOENT') throw error })
   if (existing) {
     const manifest = JSON.parse(existing)
-    if (manifest.schema !== 1 || manifest.runtimeVersion !== target.version || manifest.upstreamCommit !== target.commit || manifest.upstreamMainSha256 !== frozenMainSha256
+    if (manifest.schema !== 1 || manifest.workflowVersion !== workflowVersion || manifest.runtimeVersion !== target.version || manifest.upstreamCommit !== target.commit || manifest.upstreamMainSha256 !== frozenMainSha256
       || sha(await readFile(main)) !== manifest.mainSha256
       || Object.keys(manifest.members).length !== Object.keys(members).length) throw new Error('Desktop adaptation input has changed; rebuild the candidate')
     for (const [name, bytes] of Object.entries(inputs)) {
@@ -42,6 +45,7 @@ export async function assembleDesktopClient(application) {
     ['new DesktopHostProcess(', 'new WorkflowDesktopConnection(', 1],
     ['new DesktopProjectManager(', 'new WorkflowReadOnlyProfile(', 2],
     ['new DesktopUpdateCoordinator(', 'new WorkflowDesktopUpdates(autoUpdater, ', 1],
+    ['const openUpdatePrompt = (manual = false) => {', 'const openUpdatePrompt = (manual = false) => {\n\t\tpromptOperation ??= updates.check(true, { showMessage: options => ordinaryMessageBox(options), openExternal: url => shell.openExternal(url) }).then(() => {}).finally(() => { promptOperation = void 0; });\n\t\treturn promptOperation;', 1],
     ['inspect: () => backend.host?.inspectQuit()', 'inspect: async () => ({ activeTasks: false, scheduledTasks: false })', 1],
   ]
   for (const [before, after, count] of changes) {
@@ -51,7 +55,7 @@ export async function assembleDesktopClient(application) {
   adapted = 'import { WorkflowDesktopConnection, WorkflowReadOnlyProfile, WorkflowDesktopUpdates } from "./workflow-desktop-client.mjs";\n' + adapted
   for (const [name, bytes] of Object.entries(inputs)) await writeFile(join(lib, name), bytes, { flag: 'wx', mode: 0o644 })
   await writeFile(main, adapted)
-  const manifest = { schema: 1, runtimeVersion: target.version, upstreamCommit: target.commit,
+  const manifest = { schema: 1, workflowVersion, runtimeVersion: target.version, upstreamCommit: target.commit,
     upstreamMainSha256: frozenMainSha256, mainSha256: sha(adapted),
     members: Object.fromEntries(Object.entries(inputs).map(([name, bytes]) => [name, sha(bytes)])) }
   await writeFile(path, JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' })
