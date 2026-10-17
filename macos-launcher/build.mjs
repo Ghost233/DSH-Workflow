@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { copyProjectIntegration } from './project-resources.mjs'
 import { bundleServiceEnvironment } from './service-environment.mjs'
+import { bundleServiceNotifications } from './service-notifications.mjs'
 import { assembleDesktopClient } from './desktop-adaptation.mjs'
 import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
 
@@ -72,9 +73,13 @@ try {
   await chmod(join(resources, 'node'), 0o755)
   await copyProjectIntegration(root, join(resources, 'workflow'))
   await bundleServiceEnvironment(root, resources)
+  await bundleServiceNotifications(root, resources)
   await mkdir(join(resources, 'desktop'), { recursive: true })
   await run('/usr/bin/ditto', [desktopApp, join(resources, 'desktop/DeepSeek Harness.app')])
   await assembleDesktopClient(join(resources, 'desktop/DeepSeek Harness.app'))
+  // Resources/desktop is not a standard nested-code location; seal the adapted child explicitly.
+  await run('codesign', ['--force', '--sign', '-', '--preserve-metadata=identifier,entitlements,flags,runtime', join(resources, 'desktop/DeepSeek Harness.app')])
+  await run('codesign', ['--verify', '--deep', '--strict', join(resources, 'desktop/DeepSeek Harness.app')])
   const association = JSON.parse(await readFile(join(root, 'maclauncher.json'), 'utf8'))
   association.entry.path = '../..'
   await writeFile(join(resources, 'maclauncher.json'), JSON.stringify(association, null, 2) + '\n')

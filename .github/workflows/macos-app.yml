@@ -169,7 +169,14 @@ jobs:
             macos-launcher/runtime/single-port-entry.test.mjs \
             macos-launcher/runtime/lan-gateway.test.mjs \
             macos-launcher/runtime/desktop-launch.test.mjs \
-            macos-launcher/runtime/desktop-status.test.mjs
+            macos-launcher/runtime/desktop-status.test.mjs \
+            macos-launcher/runtime/desktop-client.test.mjs \
+            macos-launcher/runtime/web-control-startup.test.mjs \
+            macos-launcher/runtime/lan-gateway-lifecycle.test.mjs \
+            macos-launcher/runtime/web-readiness.test.mjs \
+            macos-launcher/runtime/service-notification.test.mjs \
+            macos-launcher/runtime/service-notification-native.test.mjs \
+            macos-launcher/runtime/service-notification-management.test.mjs
 
       - name: Build fixed DSH production packages
         working-directory: deepseek-harness
@@ -223,7 +230,22 @@ jobs:
           DSH_VERSION="$(node -p "require('../../dsh-runtime.json').version")"
           export DSH_SERVICE_TEST_RESOURCES="$GITHUB_WORKSPACE/.build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app/Contents/Resources"
           test -x "$DSH_SERVICE_TEST_RESOURCES/node"
-          flutter test --no-pub test/independent_service_test.dart
+          export DSH_TEST_NODE24="$(command -v node)"
+          export DSH_LAUNCHER_TEST_PORT=0
+          flutter test --no-pub --concurrency=1 \
+            test/independent_service_test.dart \
+            test/independent_desktop_test.dart \
+            test/independent_desktop_version_test.dart \
+            test/desktop_launch_preferences_test.dart \
+            test/independent_service_stop_test.dart \
+            test/independent_service_confirmation_test.dart \
+            test/independent_service_admission_test.dart \
+            test/independent_service_terminal_stop_test.dart \
+            test/independent_service_final_stop_test.dart \
+            test/independent_service_unknown_stop_test.dart \
+            test/independent_service_operation_stop_test.dart \
+            test/independent_service_fault_test.dart \
+            test/independent_service_web_admission_test.dart
 
       - name: Package and verify DMG
         id: package

@@ -972,11 +972,13 @@ Future<void> main(List<String> arguments) async {
               .singleWhere((service) => service.id == 'desktop')
               .methods
               .toSet()
-              .containsAll({kMethodStart, kMethodStatus, kMethodLogs}) &&
-          !capabilities.services
-              .singleWhere((service) => service.id == 'desktop')
-              .supports(kMethodRecycle),
-      'official manager discovers Web controls and DSH service start, status and logs through the official SDK',
+              .containsAll({
+                kMethodStart,
+                kMethodRecycle,
+                kMethodStatus,
+                kMethodLogs,
+              }),
+      'official manager discovers Web controls and DSH service start, recycle, status and logs through the official SDK',
     );
     final session = server.sessionFor('dsh-workflow')!;
     Future<void> request(String method) async {
