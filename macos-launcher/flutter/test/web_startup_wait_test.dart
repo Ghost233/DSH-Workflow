@@ -51,6 +51,36 @@ void main() {
       isNotNull,
     );
   });
+  test('the actual Unsafe socket startup error is terminal UI feedback', () {
+    expect(
+      webStartupFailure(const {}, {
+        'nodes': [
+          {'value': 'Bad state: Unsafe DSH service socket'},
+        ],
+      }, sawStarting: false),
+      isNotNull,
+    );
+  });
+  testWidgets('a pending startup observation terminates after thirty seconds', (
+    tester,
+  ) async {
+    final pending = Completer<Map<String, Object?>>();
+    Object? failure;
+    unawaited(
+      waitForActualWebStartup(
+        status: () => pending.future,
+        ui: () async => {'nodes': []},
+        applicationExit: Completer<int>().future,
+      ).catchError((Object error) {
+        failure = error;
+      }),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 30));
+    expect(failure, isA<TimeoutException>());
+    pending.complete({'state': 'stopped', 'ready': false});
+    await tester.pump();
+  });
   test('application exit cancels polling even with a pending read', () async {
     final pendingStatus = Completer<Map<String, Object?>>();
     final exit = Completer<int>();

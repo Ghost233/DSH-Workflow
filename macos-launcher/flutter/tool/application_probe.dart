@@ -325,6 +325,9 @@ Future<void> main(List<String> arguments) async {
   );
   stdout.writeln('ISOLATED_ROOT=${root.path}');
   final layout = EndpointLayout(directory: '${root.path}/manager');
+  if (webScenario != null) {
+    await Directory('${root.path}/os-home').create();
+  }
   final environment = {
     ...Platform.environment,
     'DSH_LAUNCHER_TEST_ROOT': '${root.path}/data',
@@ -332,6 +335,8 @@ Future<void> main(List<String> arguments) async {
     'DSH_LAUNCHER_TEST_RESOURCES': '${root.path}/missing-runtime',
     'DSH_LAUNCHER_TEST_SOCKET': layout.socketPath,
     'DSH_HOME': '${root.path}/home',
+    if (webScenario != null) 'HOME': '${root.path}/os-home',
+    if (webScenario != null) 'TMPDIR': root.path,
     if (lifecycle != null)
       'DSH_LAUNCHER_TEST_START_GATE': '${root.path}/data/start-gate.sock',
     if (systemCi) 'DSH_LAUNCHER_SYSTEM_BOUNDARY_CI': '1',
@@ -417,6 +422,49 @@ Future<void> main(List<String> arguments) async {
     configure.exitCode == 0,
     'private Debug candidate has LaunchServices isolation',
   );
+  if (webScenario != null) {
+    final ownedInfo = '${app.path}/Contents/Info.plist';
+    final bundleId =
+        'com.ghostagent.dsh-workflow-launcher.web-fixture-$pid-${DateTime.now().microsecondsSinceEpoch}';
+    final identity = await Process.run('/usr/bin/plutil', [
+      '-replace',
+      'CFBundleIdentifier',
+      '-string',
+      bundleId,
+      ownedInfo,
+    ]);
+    require(
+      identity.exitCode == 0,
+      'the owned Web launcher copy has a unique fixture bundle identifier',
+    );
+    if (values.containsKey('CFBundleURLTypes')) {
+      final removed = await Process.run('/usr/bin/plutil', [
+        '-remove',
+        'CFBundleURLTypes',
+        ownedInfo,
+      ]);
+      require(
+        removed.exitCode == 0,
+        'the owned Web launcher copy does not declare production URL schemes',
+      );
+    }
+    final readback = await Process.run('/usr/bin/plutil', [
+      '-convert',
+      'json',
+      '-o',
+      '-',
+      ownedInfo,
+    ]);
+    final isolated = jsonDecode(readback.stdout.toString()) as Map;
+    require(
+      readback.exitCode == 0 &&
+          isolated['CFBundleIdentifier'] == bundleId &&
+          !isolated.containsKey('CFBundleURLTypes') &&
+          isolated['DSHLauncherTestRoot'] ==
+              environment['DSH_LAUNCHER_TEST_ROOT'],
+      'owned Web launcher identity and URL isolation are confirmed by plist readback',
+    );
+  }
   if (updates) {
     final version = await Process.run('/usr/bin/plutil', [
       '-replace',
@@ -441,6 +489,18 @@ Future<void> main(List<String> arguments) async {
     sign.exitCode == 0,
     'private Debug candidate is signed after isolation metadata',
   );
+  if (webScenario != null) {
+    final verified = await Process.run('/usr/bin/codesign', [
+      '--verify',
+      '--deep',
+      '--strict',
+      app.path,
+    ]);
+    require(
+      verified.exitCode == 0,
+      'the isolated Web launcher copy passes signature verification',
+    );
+  }
   PluginRegistryFixture? pluginRegistry;
   DesktopWindowProbe? windowProbe;
   late final Process process;
@@ -639,7 +699,7 @@ Future<void> main(List<String> arguments) async {
         startupFailure: (oldDesktop) => diagnostics!.startupFailure(oldDesktop),
         tap: tap,
         capture: capture,
-        startWebBySdk: externalSdkCold,
+        startWebBySdk: externalSdkCold || lifecycle != null,
         beforeWebStart: windowProbe == null
             ? null
             : (ui, tap) async {
