@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { copyProjectIntegration } from './project-resources.mjs'
 import { bundleServiceEnvironment } from './service-environment.mjs'
+import { assembleDesktopClient } from './desktop-adaptation.mjs'
 import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
 
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
@@ -73,6 +74,7 @@ try {
   await bundleServiceEnvironment(root, resources)
   await mkdir(join(resources, 'desktop'), { recursive: true })
   await run('/usr/bin/ditto', [desktopApp, join(resources, 'desktop/DeepSeek Harness.app')])
+  await assembleDesktopClient(join(resources, 'desktop/DeepSeek Harness.app'))
   const association = JSON.parse(await readFile(join(root, 'maclauncher.json'), 'utf8'))
   association.entry.path = '../..'
   await writeFile(join(resources, 'maclauncher.json'), JSON.stringify(association, null, 2) + '\n')

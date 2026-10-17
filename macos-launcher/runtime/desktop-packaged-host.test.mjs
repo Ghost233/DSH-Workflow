@@ -41,12 +41,15 @@ test('packaged project profile serves authenticated official DSH readiness using
   await cp(resolve('macos-launcher/runtime/plugin-configuration.mjs'), join(workflow, 'macos-launcher/runtime/plugin-configuration.mjs'))
   await cp(resolve('macos-launcher/runtime/desktop-profile.mjs'), join(workflow, 'macos-launcher/runtime/desktop-profile.mjs'))
   await cp(resolve('macos-launcher/runtime/desktop-bridge.mjs'), join(workflow, 'macos-launcher/runtime/desktop-bridge.mjs'))
+  await cp(resolve('macos-launcher/runtime/stop-inspection.mjs'), join(workflow, 'macos-launcher/runtime/stop-inspection.mjs'))
   const { prepareDesktopProfile } = await import(pathToFileURL(join(workflow, 'macos-launcher/runtime/desktop-profile.mjs')))
   const prepared = await prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot, globalRoot, home })
   const saved = process.env.DSH_HOME
   process.env.DSH_HOME = home
-  let ctx
+  let ctx, starting, disposing
   t.after(async () => {
+    await starting?.catch(() => {})
+    await disposing?.catch(() => {})
     await ctx?.fiber.dispose()
     saved === undefined ? delete process.env.DSH_HOME : process.env.DSH_HOME = saved
     await rm(root, { recursive: true, force: true })
@@ -77,8 +80,11 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(effective.find(row => row.id === 'matt-panel-tools').name, 'dsh-workflow-matt-panel/tools')
   assert.equal(effective.find(row => row.id === 'mattpocock-skills-zh').name, '@deepseek-ai/dsh-skill-filesystem')
   assert.deepEqual(effective.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
-  const startHost = async () => {
+  const startHost = () => {
+    starting = (async () => {
+    t.signal.throwIfAborted()
     const resolution = await createRuntimeResolution({ installAnchor: anchor, profile })
+    t.signal.throwIfAborted()
     const readyListeners = new Set()
     ctx = await boot('packaged-dsh-ready', join(prepared.profile, 'cordis.yml'), [...profile.layers.flatMap(layer => layer.patches), ...profile.patches], async c => {
     c.provide('profileContext', { name: 'desktop', dir: profile.dir, patchPath: profile.patchPath, installAnchor: anchor,
@@ -88,14 +94,19 @@ test('packaged project profile serves authenticated official DSH readiness using
     } } })
     await c.plugin(PluginPackages, { resolution })
   })
+    t.signal.throwIfAborted()
     for (const listener of readyListeners) listener()
+    })()
+    return starting
   }
   await startHost()
+  t.signal.throwIfAborted()
   const baseUrl = c => c.connection.authenticatedUrl(`http://127.0.0.1:${c.webServer.port}`)
-  const login = await fetch(baseUrl(ctx), { redirect: 'manual', headers: { connection: 'close' } })
+  const login = await fetch(baseUrl(ctx), { redirect: 'manual', headers: { connection: 'close' }, signal: t.signal })
   const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
   await login.text()
-  const health = await dshReadiness(baseUrl(ctx),{cookie})
+  t.signal.throwIfAborted()
+  const health = await dshReadiness(baseUrl(ctx),{cookie, signal: t.signal})
   assert.equal(health.ready,true)
   assert.ok(health.plugins.length>0)
   const manifest = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
@@ -104,7 +115,9 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.ok(ctx.tools.get('deck_context'), 'the named Matt tools package registers its public tool')
   assert.ok(ctx.get('jevCenter'), 'the named JEV center package provides its public service')
   assert.ok(ctx.get('agentMonitor'), 'the named monitor package provides its public service')
-  await ctx.fiber.dispose(); ctx = undefined
+  disposing = ctx.fiber.dispose()
+  await disposing; ctx = undefined; disposing = undefined
+  t.signal.throwIfAborted()
   const beforeMove = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
   beforeMove.userMetadata = { keep: 'same-home' }
   await writeFile(join(prepared.profile, 'package.json'), JSON.stringify(beforeMove))
@@ -123,10 +136,12 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.deepEqual(movedEntries.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true })
   assert.deepEqual(movedEntries.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
   await startHost()
-  const movedLogin = await fetch(baseUrl(ctx), { redirect: 'manual', headers: { connection: 'close' } })
+  t.signal.throwIfAborted()
+  const movedLogin = await fetch(baseUrl(ctx), { redirect: 'manual', headers: { connection: 'close' }, signal: t.signal })
   const movedCookie = movedLogin.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
   await movedLogin.text()
-  assert.equal((await dshReadiness(baseUrl(ctx), { cookie: movedCookie })).ready, true)
+  t.signal.throwIfAborted()
+  assert.equal((await dshReadiness(baseUrl(ctx), { cookie: movedCookie, signal: t.signal })).ready, true)
   assert.ok(ctx.get('jevCenter'))
   assert.ok(ctx.get('agentMonitor'))
   assert.ok(ctx.tools.get('deck_context'))

@@ -1,4 +1,5 @@
 import Cocoa
+import Carbon
 import FlutterMacOS
 import ServiceManagement
 import Security
@@ -354,11 +355,28 @@ class AppDelegate: FlutterAppDelegate {
             completeHide()
             return
           } else {
+            let expected = self.desktopIdentity
             let unhideAccepted = !application.isHidden || application.unhide()
             FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=explicit-unhide-return accepted=\(unhideAccepted) pid=\(application.processIdentifier)\n".utf8))
             guard application.activate(options: [.activateAllWindows]) else { throw self.failure("Desktop 激活失败") }
+            guard let current = try self.runningDesktop(path), let actual = self.desktopIdentity,
+                  let expected, actual.0 == expected.0, actual.1 == expected.1, actual.2 == expected.2 else {
+              throw self.failure("Desktop 显示期间进程身份已改变")
+            }
+            // Reopen the Electron document even when its process is already active.
+            // A PID address and no-reconnect mode cannot launch a missing client.
+            let event = NSAppleEventDescriptor(eventClass: AEEventClass(kInternetEventClass),
+              eventID: AEEventID(kAEGetURL), targetDescriptor: NSAppleEventDescriptor(processIdentifier: current.processIdentifier),
+              returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))
+            event.setParam(NSAppleEventDescriptor(string: "dsh://open"), forKeyword: AEKeyword(keyDirectObject))
+            let options = NSAppleEventDescriptor.SendOptions(rawValue: UInt(
+              kAENoReply | kAENeverInteract | kAEDontReconnect | kAEDoNotPromptForUserConsent))
+            _ = try event.sendEvent(options: options, timeout: 1)
+            guard try self.runningDesktop(path) != nil, let final = self.desktopIdentity,
+                  final.0 == expected.0, final.1 == expected.1, final.2 == expected.2 else {
+              throw self.failure("Desktop 显示期间进程身份已改变")
+            }
           }
-          _ = try self.runningDesktop(path)
           result(nil)
         case "openDesktop":
           guard let values = call.arguments as? [String: Any], let path = values["path"] as? String,
@@ -377,6 +395,15 @@ class AppDelegate: FlutterAppDelegate {
             configuration.arguments = ["--user-data-dir=" + self.dataRoot.appendingPathComponent("desktop-user-data").path]
             configuration.environment["DSH_DESKTOP_UPDATE_JOURNAL_DIR"] = self.dataRoot.appendingPathComponent("desktop-update").path
             configuration.environment["DSH_DESKTOP_DIAGNOSTIC_FILE"] = self.dataRoot.appendingPathComponent("desktop-diagnostic.json").path
+            if self.ownQuitTraceEnabled,
+               ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_DESKTOP_CDP"] == "1" {
+              let fixture = self.dataRoot.deletingLastPathComponent()
+              let shellHome = fixture.appendingPathComponent("os-home").path
+              configuration.environment["HOME"] = shellHome
+              configuration.environment["ZDOTDIR"] = shellHome
+              configuration.environment["TMPDIR"] = fixture.path
+              configuration.arguments += ["--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0"]
+            }
           }
           #endif
           if hidden {
