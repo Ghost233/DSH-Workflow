@@ -17,7 +17,7 @@ async function sources(root) {
     'vendor/mattpocock-skills-zh.upstream.json', 'matt-skills-panel-plugin/upstream.json',
     'matt-skills-panel-plugin/LICENSE', 'matt-skills-panel-plugin/THIRD_PARTY_NOTICES.md',
     ...scripts.map(name => `scripts/${name}`)]
-  for (const directory of ['agent-observation-plugin', 'vendor/mattpocock-skills-zh', 'matt-skills-panel-plugin/package']) files.push(directory)
+  for (const directory of ['agent-observation-plugin', 'vendor/mattpocock-skills-zh', 'matt-skills-panel-plugin/package', 'skills']) files.push(directory)
   files.push(...(await readdir(join(root, 'macos-launcher/runtime'))).filter(name => name.endsWith('.mjs') && !name.endsWith('.test.mjs')).map(name => `macos-launcher/runtime/${name}`))
   for (const name of ['lib/index.js', 'lib/client.js', 'lib/bootstrap.js']) {
     if (!existsSync(join(root, 'matt-skills-panel-plugin/package', name))) throw new Error('Build the current maintained Matt package before staging')
