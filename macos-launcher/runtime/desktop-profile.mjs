@@ -6,6 +6,7 @@ import { join, dirname, resolve } from 'node:path'
 import { composeDshLaunch } from '../../scripts/dsh-launch-composition.mjs'
 import { readPluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
 import { migrateProjectEntryNames } from '../../scripts/observation-profile.mjs'
+import { prepareStartupPlugins } from './startup-plugins.mjs'
 
 const BUNDLE = 'dsh-workflow-desktop'
 const TEAM = '@deepseek-ai/dsh-experimental-agent-team-profile'
@@ -75,7 +76,10 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
     layers.push(boot.bundlePatchPaths(teamDirectory, teamManifest.dsh.bundle)
       .flatMap(path => boot.loadOverlayPatches('dsh', path)))
   }
-  const entries = boot.composeEntries([...layers, resolved.patches])
+  let entries = boot.composeEntries([...layers, resolved.patches])
+  const startup = await prepareStartupPlugins({ profile, entries, config: pluginConfig, boot })
+  entries = boot.composeEntries([...layers, resolved.patches, startup.patches])
+  identity.startupPlugins = createHash('sha256').update(JSON.stringify(startup.patches)).digest('hex')
   const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
   const mcpNames = new Set(identity.projectMcp.map(row => row.config.serverName))
   // Only a digest of relevant user choices is stamped; user credentials are not copied.
@@ -86,7 +90,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
     && Object.entries(localPackages).every(([name, target]) => current.dependencies[name] === `file:${target}`)
     && JSON.stringify(previous) === JSON.stringify(identity)
     && !migrated) {
-    return { profile, bundle: directory, version: runtime.version }
+    return { profile, bundle: directory, version: runtime.version, startup: startup.skipped }
   }
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   manifest.private = true
@@ -96,7 +100,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const bundles = manifest.dsh.profile.bundles.filter(name => name !== BUNDLE)
   if (!bundles.includes(TEAM)) bundles.push(TEAM)
   // Compose from the existing profile before adding our own rows, so preparation is idempotent.
-  const patches = composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot })
+  const patches = [...startup.patches, ...composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot })]
   for (const row of flatten(entries)) {
     if (permissionMode && row.name === '@deepseek-ai/dsh-sandbox-policy' && row.disabled !== true) {
       patches.push({ id: row.id, config: { ...structuredClone(row.config ?? {}), mode: permissionMode } })
@@ -126,5 +130,5 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   manifest.dsh.profile.bundles = [...bundles, BUNDLE]
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 })
   await writeFile(stampPath, JSON.stringify(identity) + '\n', { mode: 0o600 })
-  return { profile, bundle: directory, version: runtime.version }
+  return { profile, bundle: directory, version: runtime.version, startup: startup.skipped }
 }
