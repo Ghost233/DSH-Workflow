@@ -270,6 +270,7 @@ jobs:
           export DSH_LAUNCHER_TEST_PORT=0
           flutter test --no-pub --concurrency=1 \
             test/independent_service_test.dart \
+            test/independent_service_startup_test.dart \
             test/independent_desktop_test.dart \
             test/independent_desktop_version_test.dart \
             test/desktop_launch_preferences_test.dart \

@@ -4,14 +4,14 @@
 
 - 规格：[GitHub #25](https://github.com/Ghost233/DSH-Workflow/issues/25)。用户已确认设计、测试接缝、8 张工单与分支/worktree 方案。
 - 总交付起点：`392ac2f4180e9ec5e73a95c78bac81cb1c5358fb`；DSH 固定为 `1517a4dbca0a2789ff1d41ba439600f8547d23fa`。
-- 当前阶段：阶段 2，S02—S07。S01 已通过审查、复盘、本地实际产物与 CI，[阶段 PR #34](https://github.com/Ghost233/DSH-Workflow/pull/34) 已集成，[#26](https://github.com/Ghost233/DSH-Workflow/issues/26) 已关闭。详见[阶段 1](phase-1.md)。
-- 集成分支：`codex/independent-dsh-server`，本地与实际远端均为 `609a90eb3feb32d211a765cb6ed607e596d14327`；main 与 origin/main 保持总起点。
-- 总交付：[草稿 PR #35](https://github.com/Ghost233/DSH-Workflow/pull/35) → main。完整交付后仅标 ready，不自动合入 main。
-- 当前验证 checkout：主工作区 `codex/dsh-server-s02-stage`，阶段基准为上述集成提交。主线程负责调度、证据与串行 Git 操作；实现者各用自有 worktree，merger 串行合入候选。
+- 当前交付阶段：阶段 3，S08 和总交付审查，执行入口见[阶段 3](phase-3.md)，实时验收与交付状态以 GitHub 工单和 PR 为准。S01 与 S02—S07 已通过验收、审查、复盘和必需 CI，[阶段 PR #34](https://github.com/Ghost233/DSH-Workflow/pull/34)、[阶段 PR #36](https://github.com/Ghost233/DSH-Workflow/pull/36) 已集成，#26—#32 已关闭。详见[阶段 1](phase-1.md)和[阶段 2](phase-2.md)。
+- 集成分支：`codex/independent-dsh-server`。阶段 2 完成时，本地与实际远端均已同步到 `f04ae8be054c3a5ede0abe7686a9cfc4b306619b`；后续阶段的提交及同步记录见当前证据入口。总 PR 合入前，main 与 origin/main 保持总起点。
+- 总交付：[PR #35](https://github.com/Ghost233/DSH-Workflow/pull/35) → main。完整交付后仅标 ready，不自动合入 main。
+- 当前主工作区为 `codex/dsh-server-s08-stage`，从上述集成提交开始。S08 复用清洁 worktree，分支为 `codex/dsh-server-s08`；主线程负责调度、证据与串行 Git 操作，merger 串行合入候选。
 - 工程环境：worktree 只写自有源码，逐文件核对后交到已有主工程环境验证；不注入依赖或共享上游源码链接。同一时刻只保留一个主 checkout 验证窗口，长检查期间冻结输入。
-- S02—S06 已进入阶段候选；S02 已验收并关闭 #27，S07 已完成实现及本地自动门禁，实机界面核对和阶段双轴审查仍待完成。见[阶段 2](phase-2.md)。
+- [S08 #33](https://github.com/Ghost233/DSH-Workflow/issues/33) 的原生阻塞项已全部关闭，由 Ghost233 认领。验收覆盖无参入口实际启动、最终干净构建、Desktop/Web 联合场景及完整 29 条故事映射，不执行正式发布或切换用户现有服务。
 - 用户最新调整：取消真实 macOS 登录启动验收，不重启或退出 macOS；S06/S08 改为验证打开启动器后自动启动或复用服务。系统通知的实际边界要求保留。
-- S01 worktree 已通过工具归档；初期未验证草稿保留在 `.build/independent-dsh-server/initial-drafts/`，不得据此宣称通过或直接恢复到实现。
+- S01、S02、S03、S05、S06 worktree 已通过工具归档，借用文件保存在可恢复快照中；S04 worktree 复用于 S08。初期未验证草稿保留在 `.build/independent-dsh-server/initial-drafts/`，不得据此宣称通过或直接恢复到实现。
 - 当前负责人、候选、作业、发现与证据入口为 `.build/independent-dsh-server/controller-state.json`。恢复执行先核对实际 Git 与原作业，不能仅依据旧句柄判断作业结束。
 
 ## 阶段与验收
