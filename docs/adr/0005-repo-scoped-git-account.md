@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-19
-implementation: planned
+implementation: implemented
 ---
 
 # 用仓库内声明与运行时注入承载按仓库的 Git/GitHub 账号

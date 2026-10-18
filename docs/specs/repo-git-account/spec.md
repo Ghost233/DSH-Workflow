@@ -1,5 +1,5 @@
 ---
-status: draft
+status: implemented
 updated: 2026-10-19
 ---
 
@@ -49,7 +49,7 @@ updated: 2026-10-19
 ## deck 实现
 
 1. 新增 `src/host/ghAccount.js`：`resolveGhConfigDir(cwd)` 向上查找并校验 `.ghswitch`，返回账号目录或 `undefined`；账号目录不存在的检查也在此完成。该模块被宿主出站与 shim 生成共用。
-2. 宿主 `src/host/index.js` 在 `apply` 安装分发脚本：把 shim 写到 `~/.dsh/mattskillsdeck/gh-account-env.sh`（与 `src/host/choiceStore.js` 的宿主记忆目录约定一致），把 `process.env.BASH_ENV` 指向它，原值存入非敏感变量供 shim 链式 source，用 `ctx.effect` 在 unload 时还原并清理。deck 宿主条目配置 `ghAccount: false` 时跳过安装。
+2. 宿主 `src/host/index.js` 在 `apply` 安装分发脚本：把 shim 写到 `~/.dsh/mattskillsdeck/gh-account-env.sh`（与 `src/host/choiceStore.js` 的宿主记忆目录约定一致），把 `process.env.BASH_ENV` 指向它，原值存入非敏感变量供 shim 链式 source，用 `ctx.effect` 在 unload 时还原并清理。deck 宿主条目配置 `ghAccount: false` 时跳过安装。macOS 自带 bash 3.2 在父进程环境没有 `SHLVL` 时不读 `BASH_ENV`（实测），因此安装时若 `SHLVL` 缺失、为空或为 `0` 会补 `SHLVL=1`，卸载时只在值仍是 `1` 时还原；该兜底只保证 shim 被 source，不改变声明与注入语义。
 3. shim 内容要求：先 source 原 `BASH_ENV`（存在且可读时），再向上查找声明；命中且账号目录存在时 `export GH_CONFIG_DIR=<目录>`；其余情况零输出零副作用；任何分支都不得让 shell 启动失败；只导出这一个变量。
 4. gh 出站三处改为按调用传环境：`src/host/repoKeys.js` 的 `runGh`、`src/host/platformChannel.js` 的 `detectionExec`、github 后端 `client.js` 经 `ctx.exec` 的路径。无声明时保持现状，不构造 `env`。
 5. 不新增 RPC、工具、检查项、面板视图或宿主记忆；deck 仍不修改 git 配置、不保存凭据。
@@ -89,7 +89,7 @@ updated: 2026-10-19
 ## 验收
 
 1. 在 DSH-Workflow 工作区（根目录已有未跟踪且被忽略的 `.ghswitch`，内容 `Ghost233`）的模型 bash 中：`bash -c 'echo "$GH_CONFIG_DIR"'` 指向 `~/.config/gh-profiles/Ghost233`，`gh api user --jq .login` 为 `Ghost233`。
-2. 在无 `.ghswitch` 的工作区：`GH_CONFIG_DIR` 为空，`gh api user` 回到全局账号（当前为 `Charlotte`）。
+2. 在无 `.ghswitch` 的工作区：`GH_CONFIG_DIR` 为空，`gh api user` 回到全局账号（验收时实测为 `Ghost233`，见文末验收记录）。
 3. 非法声明（例如含空格或空文件）：静默回落全局，不报错、不阻塞命令。
 4. 声明了账号但账号目录不存在：按未声明处理，回落全局。
 5. 跑过 skill 的声明仓库：`git config --local user.name` 为该账号、`git config --local credential.https://github.com.helper` 含对应 `GH_CONFIG_DIR`；空提交 author 正确。
@@ -109,3 +109,41 @@ updated: 2026-10-19
 - `BASH_ENV` 是进程级设置：所有继承宿主环境的非交互 bash 都会 source；shim 必须零副作用、永不失败，且只导出 `GH_CONFIG_DIR`。关闭 deck 条目的 `ghAccount` 或不加载 deck 即回滚该层。
 - 静默回落语义下，声明了但账号目录缺失会用全局账号工作；靠 `gh api user` 自检发现，不在 deck 内做检查项。
 - deck 与上游保持小差异（新模块、三处调用、一个加载钩子），便于按 `upstream.json` 三方合并；若 DSH 未来提供按工作区环境变量注入，可替换分发脚本层而保留声明契约。
+
+## 验收记录
+
+2026-10-19 于 `codex/repo-git-account`（HEAD `0fb9764`，已合并 #39/#40/#41）完成 #42 全链路验收。
+
+### 账号注入面
+
+用 `/tmp` 临时工作区真实调用 `createGhAccount().installBashEnvShim()` 安装 shim，再按 DSH bash 工具的洗环境规则（去掉匹配 `/KEY|PASSWORD|SECRET|TOKEN/i` 与 `DSH_*` 前缀的变量）spawn `bash -c`，39 项断言全部通过：
+
+- 本仓库根 `.ghswitch`=`Ghost233`：子进程 `GH_CONFIG_DIR` 为 `~/.config/gh-profiles/Ghost233`，`gh api user --jq .login` 为 `Ghost233`；子目录同样解析到仓库根声明。
+- 无声明：不导出 `GH_CONFIG_DIR`，`gh api user` 为 ambient 全局账号（本次实测 `Ghost233`）。
+- 非法声明（`bad user!`）与账号目录缺失（合法但不存在的 `Ghost233-missing`）：静默回落全局，命令不报错；嵌套目录里最近的非法声明不会回退到父目录声明。
+- `.ghswitch`=`Charlotte-765`：`GH_CONFIG_DIR` 指向 `gh-profiles/Charlotte-765`，`gh api user` 为 `Charlotte-765`，证明声明覆盖 ambient 全局账号。
+- 预置用户 `BASH_ENV` 被链式 source，dispose 后还原原值；父进程没有 `SHLVL` 时安装补 `SHLVL=1`，shim 才能被 bash 3.2 source。
+- deck 出站：`resolveGhConfigDir` / `envFor` 对有声明仓库返回 `{GH_CONFIG_DIR: …}`，对无声明仓库返回 `undefined` / `null`。
+
+### 提交身份与 HTTPS 推认证
+
+在 `/tmp` 临时 git 仓库（remote `origin https://github.com/Ghost233/DSH-Workflow.git`）运行 `skills/configure-gh-account/scripts/configure_local_git.py --project … --account Ghost233 --profile … --name Ghost233 --email only.yesc@gmail.com --write-gitignore`，29 项断言全部通过：
+
+- 仓库本地 `user.name`=`Ghost233`、`user.email`=`only.yesc@gmail.com`；空提交 author/committer 均为 `Ghost233 <only.yesc@gmail.com>`。
+- `credential.https://github.com.helper` 内嵌 `GH_CONFIG_DIR=/Users/ghost233/.config/gh-profiles/Ghost233`，`credential.https://github.com.username`=`Ghost233`；重复执行不累积 helper。
+- `env -u GH_CONFIG_DIR -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git credential fill`（输入 `protocol=https`、`host=github.com`）返回 `username=Ghost233`，token 只经 helper 进程内返回，未出现在输出与证据中；未推送远端。
+- `.ghswitch` 为单行 `Ghost233`，`/.ghswitch` 被 `.gitignore` 覆盖且未被跟踪；DSH 分支不生成 `.codex/config.toml`。用户级 git 配置未改变。
+
+### 工程检查
+
+- `npm test --prefix matt-skills-panel-plugin`：51 pass / 0 fail。
+- `node scripts/run-project-tests.mjs`：258 pass + 1 pass（packaged-host）/ 0 fail；其中 `the packaged project layer ships the configure-gh-account skill` 覆盖 #41 的打包清单。
+- `npm run upstream:check --prefix matt-skills-panel-plugin`（主工作区，vendor 已初始化）：退出码 0。
+- `node --test scripts/matt-panel-composition.test.mjs`（3 pass）与 `node --test scripts/dsh-launch-composition.test.mjs`（5 pass）通过。
+- `git status --porcelain vendor/` 与 `git -C deepseek-harness status --porcelain` 为空，第三方与 DSH 源码未被修改。
+
+### 环境与 residual
+
+- 根测试环境是已构建的 pinned Harness：`deepseek-harness/` 子模块 `1517a4dbca0a2789ff1d41ba439600f8547d23fa`，host 与 client face 的 tsdown 产物已构建，`system.node` 已就位；不是在本地从零安装。
+- 启动器 app 的完整重建与真机启动会话未在本地验证，留给 PR CI 与 release 的 `macos-app` workflow；本工单只确认打包清单与组合层测试。
+- SSH remote 与交互式终端不在覆盖范围。
