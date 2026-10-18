@@ -1,0 +1,4 @@
+interface:
+  display_name: "配置仓库 Git/GitHub 账号"
+  short_description: "写仓库本地提交身份、HTTPS 凭据与 .ghswitch 声明，并按 DSH/Codex 验证生效。"
+  default_prompt: "使用 $configure-gh-account 为当前仓库固定 Git/GitHub 账号：写入本地提交身份、HTTPS 凭据与单行 .ghswitch，并按当前 harness 完成验证。"
