@@ -50,10 +50,8 @@ void main() {
           .expand((row) => (row['insert'] as List?) ?? [])
           .cast<Map>();
       expect(
-        inserted.singleWhere(
-          (row) => row['id'] == 'workflow-jev-center',
-        )['name'],
-        'dsh-workflow/jev-center',
+        inserted.where((row) => row['id'] == 'workflow-jev-center'),
+        isEmpty,
       );
       expect(
         inserted.singleWhere(

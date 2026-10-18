@@ -27,7 +27,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
   // Native SDK package artifacts are fixed external runtime inputs; no source resolver or own-package alias is injected.
   await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
-  for (const path of ['agent-observation-plugin', 'matt-skills-panel-plugin/package', 'vendor/mattpocock-skills-zh/skills']) {
+  for (const path of ['agent-observation-plugin', 'matt-skills-panel-plugin/package', 'vendor/mattpocock-skills-zh/skills', 'vendor/dsh-skills/skills']) {
     await cp(resolve(path), join(workflow, path), { recursive: true, filter: path => !/(?:^|\/)(?:test|tests|node_modules|\.git)(?:\/|$)/.test(path) })
   }
   for (const name of ['package.json', 'project-plugins.json', 'project-plugins.lock.json', 'dsh-runtime.json']) {
@@ -142,16 +142,16 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(unresolved.status, 'unknown', 'unresolved disabled user choices must remain unknown rather than claim a fixed version')
   const sdkRow = report.rows.find(row => row.package === '@deepseek-ai/dsh-host-plugin-inventory')
   assert.ok(sdkRow, 'the actual readonly inventory package is resolved by this Host')
-  assert.equal(sdkRow.expected, '0.2.1-alpha.5', 'SDK fixed versions must come from the packaged npm lock')
+  assert.equal(sdkRow.expected, '0.2.1-rc.2', 'SDK fixed versions must come from the packaged npm lock')
   const presetRow = report.rows.find(row => row.scope === 'Agent 预设 cordis' && row.moduleName === '@deepseek-ai/dsh-plugin-manager/tools')
   assert.ok(presetRow, 'the versions page must retain the effective agent-preset scope from official inventory')
   assert.equal(presetRow.enabled, false)
-  assert.equal(presetRow.current, '0.2.1-alpha.5')
-  assert.equal(presetRow.expected, '0.2.1-alpha.5')
+  assert.equal(presetRow.current, '0.2.1-rc.2')
+  assert.equal(presetRow.expected, '0.2.1-rc.2')
   const ownRows = report.rows.filter(row => row.moduleName.startsWith('dsh-workflow/'))
-  assert.deepEqual(ownRows.map(row => row.entryId).sort(), ['include:workflow-agent-monitor', 'include:workflow-delivery-inventory', 'include:workflow-jev-center'])
+  assert.deepEqual(ownRows.map(row => row.entryId).sort(), ['include:workflow-agent-monitor', 'include:workflow-delivery-inventory'])
   assert.equal(new Set(ownRows.map(row => row.source)).size, 1, 'all named project entries resolve from one existing package source')
-  for (const moduleName of ['dsh-workflow/jev-center', 'dsh-workflow/agent-monitor']) {
+  for (const moduleName of ['dsh-workflow/agent-monitor', 'dsh-workflow/delivery-inventory']) {
     const row = report.rows.find(row => row.moduleName === moduleName)
     assert.equal(row.current, '0.1.1', `${moduleName} actual package version`)
     assert.equal(row.expected, '0.1.1', `${moduleName} repository component pin`)
@@ -172,8 +172,9 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(manifest.dependencies['dsh-workflow'], `file:${workflow}`)
   assert.equal(manifest.dependencies['dsh-workflow-matt-panel'], `file:${join(workflow, 'matt-skills-panel-plugin/package')}`)
   assert.ok(ctx.tools.get('deck_context'), 'the named Matt tools package registers its public tool')
-  assert.ok(ctx.get('jevCenter'), 'the named JEV center package provides its public service')
-  assert.ok(ctx.get('agentMonitor'), 'the named monitor package provides its public service')
+  assert.match((await ctx.skills.get('spec-delivery')).content, /spawn_teammate/, 'the real Host loads the native DSH team skill')
+  assert.equal(ctx.get('jevCenter'), undefined, 'the retired JEV center is not loaded')
+  assert.equal(ctx.get('agentMonitor'), undefined, 'the disabled project agent monitor is not loaded')
   disposing = ctx.fiber.dispose()
   await disposing; ctx = undefined; disposing = undefined
   t.signal.throwIfAborted()
@@ -201,8 +202,9 @@ test('packaged project profile serves authenticated official DSH readiness using
   await movedLogin.text()
   t.signal.throwIfAborted()
   assert.equal((await dshReadiness(baseUrl(ctx), { cookie: movedCookie, signal: t.signal, request: observedInventory })).ready, true)
-  assert.ok(ctx.get('jevCenter'))
-  assert.ok(ctx.get('agentMonitor'))
+  assert.equal(ctx.get('jevCenter'), undefined)
+  assert.equal(ctx.get('agentMonitor'), undefined, 'the disabled project agent monitor stays unloaded after moving resources')
   assert.ok(ctx.tools.get('deck_context'))
   assert.ok((await ctx.skills.list()).some(skill => skill.name === 'implement-spec'), 'moved Host still loads the managed Chinese skill directory')
+  assert.match((await ctx.skills.get('spec-delivery')).content, /team_task_create/, 'moved Host still loads the native DSH team skill')
 })

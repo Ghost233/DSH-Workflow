@@ -32,6 +32,8 @@
     "matt-skills-panel-plugin/THIRD_PARTY_NOTICES.md",
     "vendor/mattpocock-skills-zh/",
     "vendor/mattpocock-skills-zh.upstream.json",
+    "vendor/dsh-skills/",
+    "vendor/dsh-skills.upstream.json",
     "agent-observation-plugin/",
     "scripts/dsh-launch-composition.mjs",
     "scripts/dsh-readiness.mjs",

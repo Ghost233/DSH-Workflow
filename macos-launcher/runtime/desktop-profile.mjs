@@ -23,7 +23,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const stampPath = join(directory, 'integration.json')
   const localPackages = { 'dsh-workflow': workflow,
     'dsh-workflow-matt-panel': join(workflow, 'matt-skills-panel-plugin/package') }
-  const identity = { integrationVersion: 3, workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', hostInstance: 'desktop-bridge', stopInspection: 1, agentMonitor: 2, jevCenter: 1, localPackages,
+  const identity = { integrationVersion: 4, workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', hostInstance: 'desktop-bridge', stopInspection: 1, agentMonitor: 2, jevCenter: 1, localPackages,
     projectMcp: JSON.parse(await readFile(join(workflow, 'project-mcp.json'), 'utf8')) }
   await mkdir(profile, { recursive: true })
   const manifestPath = join(profile, 'package.json')

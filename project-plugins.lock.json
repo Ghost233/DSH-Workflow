@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "harnessVersion": "0.2.1-alpha.5",
+  "harnessVersion": "0.2.1-rc.2",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "754eabdbedbeb70af33f40d8accf45c7e0d3169c52086f12c1434d8d33674df4",
+  "manifestSha256": "6ba25cff88520f329600f986dc899e48084d65a3190316250c5aa58c33f3fcf3",
   "plugins": [
     {
       "package": "dsh-context",
@@ -145,6 +145,81 @@
           "client": {
             "platform": "web",
             "inject": [],
+            "immediately": true
+          }
+        },
+        "peerDependencies": {},
+        "peerDependenciesMeta": {}
+      }
+    },
+    {
+      "package": "dsh-better-sidebar",
+      "version": "0.28.0",
+      "metadata": {
+        "name": "dsh-better-sidebar",
+        "version": "0.28.0",
+        "dsh": {
+          "bundle": {
+            "patch": "./cordis.patch.yml"
+          },
+          "client": {
+            "inject": [
+              "@deepseek-ai/dsh-client-locale",
+              "@deepseek-ai/dsh-client-ui-slots",
+              "@deepseek-ai/dsh-client-ui-conversation",
+              "@deepseek-ai/dsh-client-ui-sidebar-right",
+              "@deepseek-ai/dsh-client-modules"
+            ],
+            "platform": "web"
+          },
+          "manifestVersion": 1
+        },
+        "peerDependencies": {
+          "react": "^18.2.0",
+          "react-dom": "^18.2.0",
+          "@deepseek-ai/cordis": "^4.0.5",
+          "@deepseek-ai/dsh-llm": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-agent": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-tools": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-session": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-settings": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-subagent": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-client-locale": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-host-webserver": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-client-ui-slots": "^0.2.1-rc.1",
+          "@huanlin/dsh-plugin-better-locale": "^0.1.0",
+          "@deepseek-ai/dsh-client-ui-settings": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-client-ui-primitives": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-client-ui-conversation": "^0.2.1-rc.1",
+          "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.2.1-rc.1"
+        },
+        "peerDependenciesMeta": {
+          "@huanlin/dsh-plugin-better-locale": {
+            "optional": true
+          },
+          "@deepseek-ai/dsh-client-ui-sidebar-right": {
+            "optional": true
+          }
+        }
+      }
+    },
+    {
+      "package": "ghost-agent-sentinel",
+      "version": "0.1.1",
+      "commit": "fa0ecf12b8ed74ad3a5efbfa328b8dc24957c722",
+      "metadata": {
+        "name": "ghost-agent-sentinel",
+        "version": "0.1.1",
+        "dsh": {
+          "bundle": {
+            "patch": "./dsh/cordis.patch.yml"
+          },
+          "client": {
+            "inject": [
+              "@deepseek-ai/dsh-client-ui-sidebar-right",
+              "@deepseek-ai/dsh-client-ui-conversation"
+            ],
+            "platform": "web",
             "immediately": true
           }
         },

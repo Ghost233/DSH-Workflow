@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/Ghost233/ghost-agent-market",
+  "commit": "8542fe93e62f463162bd813d393de9c713ff0b26",
+  "path": "dsh-market/skills",
+  "tree": "4185062e37eae1ae45a56e5dd8584a3bebc7be28",
+  "version": "0.1.6",
+  "license": "MIT"
+}

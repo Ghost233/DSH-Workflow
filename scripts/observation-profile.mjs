@@ -4,13 +4,18 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const observationEntries = catalogRoot => [
-  { id: 'workflow-jev-center', name: 'dsh-workflow/jev-center', config: {} },
   { id: 'workflow-agent-monitor', name: 'dsh-workflow/agent-monitor',
+    disabled: true,
     config: { directory: join(catalogRoot, '.dsh-workflow/agent-monitor') } },
 ]
 
 export function observationProfilePatches(entries, catalogRoot) {
   const missing = [], patches = []
+  for (const id of ['workflow-jev-center', 'workflow-agent-monitor']) {
+    const retired = entries.filter(row => row.id === id)
+    if (retired.length > 1 || retired.some(row => row.group)) throw new Error(`Observation entry conflicts with profile: ${id}`)
+    if (retired.some(row => row.disabled !== true)) patches.push({ id, disabled: true })
+  }
   for (const definition of observationEntries(catalogRoot)) {
     const matches = entries.filter(row => row.id === definition.id)
     if (matches.length > 1 || matches.some(row => row.group)) throw new Error(`Observation entry conflicts with profile: ${definition.id}`)
@@ -31,7 +36,6 @@ export async function migrateProjectEntryNames({ profile, anchor, projectRoot = 
   const base = boot.resolveBundleDir('dsh', '@deepseek-ai/dsh-base', anchor, profile.dir)
   const yaml = createRequire(createRequire(join(base, 'package.json')).resolve('@deepseek-ai/dsh-config-editor/package.json'))('yaml')
   const names = new Map([
-    ['workflow-jev-center', 'dsh-workflow/jev-center'],
     ['workflow-agent-monitor', 'dsh-workflow/agent-monitor'],
     ['matt-skills-board', pathToFileURL(join(projectRoot, 'matt-skills-panel-plugin/package/lib/index.js')).href],
     ['matt-panel-tools', 'dsh-workflow-matt-panel/tools'],
@@ -50,6 +54,10 @@ export async function migrateProjectEntryNames({ profile, anchor, projectRoot = 
         if (!yaml.isSeq(sequence)) return
         for (const row of sequence.items) {
           if (!yaml.isMap(row)) continue
+          if (['workflow-jev-center', 'workflow-agent-monitor'].includes(row.get('id'))) {
+            if (row.get('group') === true) throw new Error(`Project entry conflicts with group: ${row.get('id')}`)
+            if (row.get('disabled') !== true) { row.set('disabled', true); edited = true }
+          }
           const name = names.get(row.get('id'))
           if (name && row.has('name') && row.get('name') !== name) {
             if (row.get('group') === true) throw new Error(`Project entry conflicts with group: ${row.get('id')}`)

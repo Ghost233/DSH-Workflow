@@ -56,6 +56,7 @@ export function composeDshLaunch(entries, { projectRoot, catalogRoot }) {
     { id: 'workflow-delivery-inventory', name: 'dsh-workflow/delivery-inventory', config: { projectRoot: root } },
     { id: 'mattpocock-skills-zh', name: '@deepseek-ai/dsh-skill-filesystem', config: { providerName: 'mattpocock-skills-zh', includeDefaultRoots: false, customSkillDirs: [join(root, 'vendor/mattpocock-skills-zh/skills')] } },
     { id: 'dsh-workflow-gh-account', name: '@deepseek-ai/dsh-skill-filesystem', config: { providerName: 'dsh-workflow-gh-account', includeDefaultRoots: false, customSkillDirs: [join(root, 'skills')] } },
+    { id: 'dsh-workflow-skills', name: '@deepseek-ai/dsh-skill-filesystem', config: { providerName: 'dsh-workflow-skills', includeDefaultRoots: false, customSkillDirs: [join(root, 'vendor/dsh-skills/skills')] } },
     ...mcpEntries.filter(row => !all.some(item => item.name === row.name && item.config?.serverName === row.config.serverName)),
   ]
   for (const replacement of replacements) {

@@ -11,7 +11,7 @@ const req = createRequire(anchor)
 const boot = req('@deepseek-ai/dsh-app-boot')
 const { provideCmdline } = req('@deepseek-ai/dsh-cmdline')
 
-for (const disabled of [false, true]) test(`persisted observation names migrate through native composition and Host, disabled=${disabled}`, async t => {
+for (const disabled of [false, true]) test(`profile migration disables JEV and agent monitoring while preserving configuration, disabled=${disabled}`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'observation-native-migration-'))
   const home = join(root, 'home'), profileDir = join(home, 'profiles/web')
   const oldHome = process.env.DSH_HOME
@@ -44,11 +44,8 @@ for (const disabled of [false, true]) test(`persisted observation names migrate 
   const profile = boot.loadProfile('dsh', 'web', anchor, home)
   const layers = [...profile.layers.map(layer => layer.patches), profile.patches]
   const entries = boot.composeEntries(layers)
-  for (const [before, name] of [[center, 'dsh-workflow/jev-center'], [monitor, 'dsh-workflow/agent-monitor']]) {
-    const actual = entries.filter(row => row.id === before.id)
-    assert.equal(actual.length, 1)
-    assert.deepEqual(actual[0], { ...before, name })
-  }
+  assert.deepEqual(entries.filter(row => row.id === center.id), [{ ...center, disabled: true }])
+  assert.deepEqual(entries.filter(row => row.id === monitor.id), [{ ...monitor, name: 'dsh-workflow/agent-monitor', disabled: true }])
   assert.deepEqual(entries.find(row => row.id === user.id), user)
   const resolution = await boot.createRuntimeResolution({ installAnchor: anchor, profile })
   ctx = await boot.boot('observation-migration', join(profileDir, 'cordis.yml'), layers.flat(), async c => {
@@ -56,9 +53,8 @@ for (const disabled of [false, true]) test(`persisted observation names migrate 
     provideCmdline(c, { args: [], exit: () => {}, ready: { onReady: listener => { listener(); return () => {} } } })
     await c.plugin(boot.PluginPackages, { resolution })
   })
-  assert.equal(Boolean(ctx.get('jevCenter')), !disabled)
-  assert.equal(Boolean(ctx.get('agentMonitor')), !disabled)
-  if (!disabled) assert.equal(ctx.settings.describe({ redactSecrets: true }).find(row => row.ns === 'workflow-agent-monitor').value.checkIntervalMs, 17)
+  assert.equal(ctx.get('jevCenter'), undefined)
+  assert.equal(ctx.get('agentMonitor'), undefined)
   const saved = await readFile(join(profileDir, 'cordis.patch.yml'), 'utf8')
   assert.equal(await ensureObservationProfile({ profile, anchor, catalogRoot: root, projectRoot: resolve('.') }), false)
   assert.equal(await readFile(join(profileDir, 'cordis.patch.yml'), 'utf8'), saved)

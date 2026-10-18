@@ -41,7 +41,7 @@ test('startup outcomes distinguish actual loading, disabled, failed, drift and a
     row('@nagi-ovo/dsh-visualize', '0.1.4', { fiberPhase: 'failed' }),
     row('billion-context', '0.1.185', { status: 'drift' })])
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
-  assert.deepEqual(results.map(item => item.state), ['loaded', 'skipped', 'skipped', 'skipped', 'skipped'])
+  assert.deepEqual(results.map(item => item.state), ['loaded', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped'])
   assert.match(results[1].reason, /停用/)
   assert.match(results[2].reason, /失败/)
   assert.match(results[3].reason, /偏离/)

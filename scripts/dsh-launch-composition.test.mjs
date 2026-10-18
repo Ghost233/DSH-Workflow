@@ -23,6 +23,22 @@ test('DSH launch loads the project CodeGraph server while preserving unrelated p
     serverName: 'codegraph', transport: 'stdio', command: 'codegraph', args: ['serve', '--mcp'],
   })
   assert.equal(patches.some(row => row.id === 'user-setting'), false)
+  assert.equal(rows.some(row => row.id === 'workflow-jev-center'), false)
+  assert.equal(rows.filter(row => row.id === 'workflow-agent-monitor').length, 1)
+  assert.equal(rows.find(row => row.id === 'workflow-agent-monitor').disabled, true)
+})
+
+test('launch disables saved JEV and monitoring without changing their settings or an existing MCP server', () => {
+  const center = { id: 'workflow-jev-center', name: 'previous-observation/jev-center', config: { engines: [{ credentialRef: 'SAVED_KEY' }] } }
+  const monitor = { id: 'workflow-agent-monitor', name: 'dsh-workflow/agent-monitor', config: { jevModelName: 'saved-model' } }
+  const mcp = { id: 'mcp-jev', name: '@deepseek-ai/dsh-mcp-client', config: { serverName: 'jev', transport: 'http', url: 'http://127.0.0.1:54842/mcp' } }
+  const entries = [{ id: 'saved-group', group: true, config: [center, monitor, mcp] }]
+  const before = structuredClone(entries)
+  const patches = composeDshLaunch(entries, { projectRoot, catalogRoot: '/catalog' })
+  assert.deepEqual(patches.find(row => row.id === center.id), { id: center.id, disabled: true })
+  assert.deepEqual(patches.find(row => row.id === monitor.id), { id: monitor.id, disabled: true })
+  assert.equal(patches.some(row => row.id === mcp.id), false)
+  assert.deepEqual(entries, before)
 })
 
 test('project MCP configuration preserves an existing user server including its disabled state', () => {
