@@ -12,7 +12,7 @@ import { timeoutForGhArgs, isWriteGhArgs } from '../shared/tracker/outbound-tier
 import { getGhLane } from '../shared/tracker/outbound-admission.js'
 import { getChainRide } from '../shared/refresh/chain-ride.js'
 export function createRepoKeys(deps) {
-  const { subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, repoKeys, repoRoots, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, setCache, clearWorkspaceStore, namingSweepSoon, getChainBackoff, parseGithubRepo, logCtx, gate, getGate } = deps
+  const { subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, repoKeys, repoRoots, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, setCache, clearWorkspaceStore, namingSweepSoon, getChainBackoff, parseGithubRepo, logCtx, gate, getGate, accountEnvFor } = deps
   // 共享状态归 index.js 单一持有：ghPath/ghLastError 经存取器（基本类型重赋值不能按引用共享）；repoKeys/repoRoots 按引用共享（只做属性读写与删除，从不整体重赋值）。
   // #491 房外埋点 helpers：hash8 只记散列不记原文；P1 事件外层先判开关再组装字段（字段函数只在守卫通过后求值）。
   function hash8(s) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
@@ -78,6 +78,7 @@ export function createRepoKeys(deps) {
       // #723（T19）：这一笔真实出站先报给闸（I1 的唯一出口）。报在拿名额之后 —— 真要起进程了才报；
       // resolveGh 失败那一条根本没有出站，不该记进账。
       reportOutbound(args)
+      const rkEnv = await accountEnvFor(cwd || DEFAULT_CWD)
       let handle
       try {
         handle = subprocess.spawn({
@@ -85,6 +86,7 @@ export function createRepoKeys(deps) {
           cwd: cwd || DEFAULT_CWD,
           stdio: { stdin: 'ignore', stdout: { maxBytes: 4 * 1024 * 1024 }, stderr: { maxBytes: 256 * 1024 } },
           graceMs: 2000,
+          env: rkEnv || undefined,
         })
       } catch (e) {
         try { if (logCtx) logCtx.fire('info', 'gh.exec', { argv0: 'gh', cwdHash: hash8(cwd || DEFAULT_CWD), latencyMs: Date.now() - ghT0, kind: 'spawn', exitCode: -1 }) } catch (eL) {}
@@ -164,6 +166,7 @@ export function createRepoKeys(deps) {
       // 其中 gh 与 glab 是真实出站；git 只读远端地址、不起 HTTP 请求，但它是同一个进程出口，
       // 一起报能保证「起过几条命令」与账上的条数一一对应（宁可多记一笔，也不要漏一笔）。
       reportOutbound(argv)
+      const xpEnv = await accountEnvFor(cwd || DEFAULT_CWD)
       let handle
       try {
         handle = subprocess.spawn({
@@ -171,6 +174,7 @@ export function createRepoKeys(deps) {
           cwd: cwd || DEFAULT_CWD,
           stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 * 1024 }, stderr: { maxBytes: 256 * 1024 } },
           graceMs: 2000,
+          env: xpEnv || undefined,
         })
       } catch (e) {
         if (xpIsOutbound) { try { if (xpRelease) xpRelease() } catch {} }

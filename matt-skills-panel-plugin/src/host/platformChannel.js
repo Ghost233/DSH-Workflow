@@ -14,7 +14,7 @@ export function selectSkillProbeNames(allNames, chainNames, scope) {
 }
 
 export function createPlatformChannel(deps) {
-  const { ctx, subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, getMattSkillProbeNames, getChainSkillNames, probeSkill, logCtx, gate, getGate } = deps
+  const { ctx, subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, getMattSkillProbeNames, getChainSkillNames, probeSkill, logCtx, gate, getGate, accountEnvFor } = deps
   // #494 O1：旧文本通道退役——backend.diagnostic 不再产生（github 房内零调用；残留 ctx.log.* 调用自动静默，gitlab 房由本房 O 票另行结构化）。房内埋点只走 logEvent/isEnabled。
   // #927：闸可能比本通道晚一步就位（刷新接线要到插件起步时才建好），所以每次报账现问一次：
   // 拿到就用，还没有就什么都不做。写成一次性快照的话，先建好的那一路会永远拿不到闸。
@@ -176,6 +176,7 @@ export function createPlatformChannel(deps) {
           g.noteOutbound({ requests: 1, points: isGraphql ? 1 : 0 })
         }
       } catch (eR) { /* 报账失败不许影响已经起来的这一条命令 */ }
+      const deAccountEnv = await accountEnvFor(c || DEFAULT_CWD)
       let handle
       try {
         handle = subprocess.spawn({
@@ -183,6 +184,7 @@ export function createPlatformChannel(deps) {
           cwd: c || DEFAULT_CWD,
           stdio: { stdin: 'ignore', stdout: { maxBytes: 4 * 1024 * 1024 }, stderr: { maxBytes: 256 * 1024 } },
           graceMs: 2000,
+          env: deAccountEnv || undefined,
         })
       } catch (e) {
         if (deIsOutbound) { try { if (deRelease) deRelease() } catch {} }
