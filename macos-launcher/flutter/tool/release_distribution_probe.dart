@@ -301,9 +301,12 @@ Future<void> main(List<String> arguments) async {
             'status',
             'logs',
           }) &&
-          services.singleWhere((s) => s.id == 'desktop').methods.join(',') ==
-              'start,status,logs',
-      'real SDK capabilities preserve owned Web and DSH service start, status and logs',
+          services
+              .singleWhere((s) => s.id == 'desktop')
+              .methods
+              .toSet()
+              .containsAll({'start', 'recycle', 'status', 'logs'}),
+      'real SDK capabilities preserve owned Web and DSH service start, recycle, status and logs',
     );
     evidence['appSessionId'] = project.appSessionId;
     evidence['launcherSessionId'] = project.launcherSessionId;

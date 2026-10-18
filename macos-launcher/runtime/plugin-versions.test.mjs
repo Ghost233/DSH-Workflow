@@ -49,6 +49,61 @@ test('readonly version inspection uses packaged pins and actual installation wit
   assert.deepEqual(await readFile(historical), before)
 })
 
+test('verified snapshots distinguish Git pins from npm registry sources without a deployed profile', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-snapshot-sources-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  t.mock.method(globalThis, 'fetch', () => assert.fail('Readonly inspection must not query a registry or Git repository'))
+  const resources = join(root, 'resources'), workflow = join(resources, 'workflow'), home = join(root, 'home')
+  await mkdir(workflow, { recursive: true })
+  const config = { registry: 'https://registry.npmjs.org/', plugins: [
+    { package: 'dsh-source-npm-fixture', version: '2.3.4', source: 'npm', repository: 'https://github.com/owned/npm-fixture' },
+    { package: 'dsh-source-git-fixture', version: '1.3.0', source: 'git', repository: 'https://github.com/owned/git-fixture',
+      commit: '0123456789abcdef0123456789abcdef01234567' },
+  ] }
+  const bytes = JSON.stringify(config)
+  const lock = { schema: 1, harnessVersion: '0.2.1-alpha.5', registry: config.registry,
+    manifestSha256: createHash('sha256').update(bytes).digest('hex'),
+    plugins: config.plugins.map(item => ({ package: item.package, version: item.version,
+      ...(item.source === 'git' ? { commit: item.commit } : {}), metadata: { name: item.package, version: item.version } })),
+  }
+  const manifestPath = join(workflow, 'project-plugins.json'), lockPath = join(workflow, 'project-plugins.lock.json')
+  const runtimePath = join(workflow, 'dsh-runtime.json'), paths = [manifestPath, lockPath, runtimePath]
+  await writeFile(manifestPath, bytes)
+  await writeFile(lockPath, JSON.stringify(lock))
+  await writeFile(runtimePath, JSON.stringify({ version: '0.2.1-alpha.5' }))
+  const before = await Promise.all(paths.map(path => readFile(path)))
+  const report = await checkPluginVersions({ resourcesRoot: resources, home, profileName: 'desktop' })
+  assert.deepEqual(report.rows.map(row => ({ name: row.name, current: row.current, expected: row.expected,
+    latest: row.latest, status: row.status, updatable: row.updatable, source: row.source })), [
+    { name: 'dsh-source-npm-fixture', current: null, expected: '2.3.4', latest: null, status: 'expected', updatable: false,
+      source: '项目插件锁定清单（打包快照）' },
+    { name: 'dsh-source-git-fixture', current: null, expected: '1.3.0', latest: null, status: 'expected', updatable: false,
+      source: '项目插件锁定清单（打包快照）' },
+  ])
+  assert.ok(report.rows[1].note.includes('https://github.com/owned/git-fixture'), report.rows[1].note)
+  assert.ok(report.rows[1].note.includes('0123456789abcdef0123456789abcdef01234567'), report.rows[1].note)
+  assert.equal(report.rows[1].note.includes(config.registry), false)
+  assert.ok(report.rows[0].note.includes(config.registry))
+  assert.equal(report.rows[0].note.includes('https://github.com/owned/npm-fixture'), false)
+  for (const row of report.rows) assert.match(row.note, /不代表已安装或已加载.*DMG/)
+  assert.equal(report.actualScope, 'installed-files')
+  assert.match(report.policy, /DMG.*不代表已经在 Host 加载/)
+  assert.deepEqual(await Promise.all(paths.map(path => readFile(path))), before)
+  await assert.rejects(readFile(join(home, 'profiles/desktop/package.json')), { code: 'ENOENT' })
+  lock.plugins[1].commit = 'b'.repeat(40)
+  await writeFile(lockPath, JSON.stringify(lock))
+  const invalidBefore = await readFile(lockPath)
+  const invalid = await checkPluginVersions({ resourcesRoot: resources, home, profileName: 'desktop' })
+  for (const row of invalid.rows) {
+    assert.equal(row.current, null)
+    assert.equal(row.expected, null)
+    assert.equal(row.status, 'error')
+    assert.equal(row.updatable, false)
+    assert.match(row.note, /锁定清单无法验证/)
+  }
+  assert.deepEqual(await readFile(lockPath), invalidBefore)
+})
+
 test('version report compares SemVer without treating a prerelease as newer than stable', () => {
   assert.equal(compareVersions('1.2.3-rc.2', '1.2.3'), -1)
   assert.equal(compareVersions('1.2.3', '1.2.3-rc.2'), 1)

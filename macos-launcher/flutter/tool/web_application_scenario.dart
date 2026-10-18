@@ -599,7 +599,6 @@ Future<void> runWebApplicationScenario({
       'official manager connection',
       () async => server!.sessionFor('dsh-workflow') != null,
     );
-    final session = server.sessionFor('dsh-workflow')!;
     Future<Map<String, Object?>> sdk(
       String method, {
       String service = 'web',
@@ -667,21 +666,13 @@ Future<void> runWebApplicationScenario({
             'status',
             'logs',
           }) &&
-          services.singleWhere((s) => s.id == 'desktop').methods.join(',') ==
-              'start,status,logs',
-      'official SDK capabilities match Web ownership and DSH service start, status and logs',
+          services
+              .singleWhere((s) => s.id == 'desktop')
+              .methods
+              .toSet()
+              .containsAll({'start', 'recycle', 'status', 'logs'}),
+      'official SDK capabilities match Web ownership and DSH service start, recycle, status and logs',
     );
-    for (final method in ['recycle']) {
-      final denied = await session.sendRequest(
-        method,
-        serviceId: 'desktop',
-        timeout: const Duration(seconds: 5),
-      );
-      require(
-        (denied['error'] as Map)['code'] == 'unsupported',
-        'Desktop $method explicitly returns unsupported',
-      );
-    }
     if (independentHost) {
       await sdk('start', service: 'desktop');
       await waitFor(

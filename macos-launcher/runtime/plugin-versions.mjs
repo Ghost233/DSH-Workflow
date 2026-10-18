@@ -143,7 +143,7 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
       supportedDsh: declaredDshVersions(verifiedLock ? pinned?.metadata : undefined),
       latestSupportedDsh: latestDeclaredDsh(verifiedLock ? pinned?.metadata : undefined),
       status: verifiedLock ? 'expected' : 'error',
-      note: verifiedLock ? `仓库固定清单；来源 ${projectManifest.registry}；不代表已安装或已加载，随本仓库 DMG 更新`
+      note: verifiedLock ? `仓库固定清单；来源 ${item.source === 'git' ? pluginDependencySpec(item) : projectManifest.registry}；不代表已安装或已加载，随本仓库 DMG 更新`
         : `锁定清单无法验证：${configurationError ?? '与打包配置不一致'}` })
   }
 
