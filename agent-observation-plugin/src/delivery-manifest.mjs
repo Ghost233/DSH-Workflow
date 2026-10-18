@@ -7,6 +7,9 @@ const readJson = async path => {
   catch (error) { if (error.code !== 'ENOENT') throw error }
 }
 
+export const pluginDependencySpec = item => item.source === 'git'
+  ? `git+${item.repository}.git#${item.commit}` : item.version
+
 /** The packaged repository manifest and generated lock are the runtime version authority. */
 export async function readDeliveryManifest(workflow) {
   const manifest = await readJson(join(workflow, 'project-plugins.json'))
@@ -20,6 +23,7 @@ export async function readDeliveryManifest(workflow) {
     || manifest.plugins.some(item => {
       const pin = lock.plugins.find(row => row.package === item.package)
       return !pin || pin.version !== item.version || pin.metadata?.name !== item.package || pin.metadata?.version !== item.version
+        || item.source === 'git' && pin.commit !== item.commit
     })) throw new Error('Project plugin lock does not match the packaged manifest')
   const config = manifest
   const names = new Set()
@@ -27,7 +31,9 @@ export async function readDeliveryManifest(workflow) {
   for (const item of config.plugins) {
     if (!/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(item.package)
       || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(item.version)
-      || names.has(item.package) || item.source && item.source !== 'npm') throw new Error('Invalid or duplicate project plugin configuration')
+      || names.has(item.package) || item.source && !['npm', 'git'].includes(item.source)
+      || item.source === 'git' && (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_-]+$/.test(item.repository)
+        || !/^[a-f0-9]{40}$/.test(item.commit))) throw new Error('Invalid or duplicate project plugin configuration')
     names.add(item.package)
   }
   return config

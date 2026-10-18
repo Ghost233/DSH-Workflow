@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, realpath } from 'node:fs/promises'
 import { join, isAbsolute } from 'node:path'
 import { readPluginConfiguration } from './plugin-configuration.mjs'
+import { pluginDependencySpec } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 
 /** Only try already-present exact packages; no download, installation or profile dependency rewrite. */
 export async function prepareStartupPlugins({ profile, entries, config, boot }) {
@@ -9,8 +10,9 @@ export async function prepareStartupPlugins({ profile, entries, config, boot }) 
   const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
   const existing = flatten(entries)
   for (const item of config?.plugins.filter(row => row.startup === true) ?? []) {
-    // Existing entries keep their conditions and user-disabled state; the normal Host loader tries them.
-    if (existing.some(row => row.name === item.package || row.name?.startsWith(item.package + '/'))) continue
+    const matches = existing.filter(row => row.name === item.package || row.name?.startsWith(item.package + '/'))
+    // Git pins must also validate existing entries before allowing the normal Host loader to try them.
+    if (matches.length && item.source !== 'git') continue
     let installedVersion, installedSource
     try {
       installedSource = await realpath(join(profile, 'node_modules', item.package))
@@ -20,6 +22,15 @@ export async function prepareStartupPlugins({ profile, entries, config, boot }) 
       if (manifest.name !== item.package || manifest.version !== item.version) {
         throw new Error(`已安装版本 ${manifest.version ?? '未知'} 偏离包内固定值 ${item.version}，未替换运行包。`)
       }
+      if (item.source === 'git') {
+        const profileManifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+        const declaration = profileManifest.dependencies?.[item.package], dependency = pluginDependencySpec(item)
+        if (declaration !== dependency) {
+          throw new Error(`依赖来源声明 ${declaration ?? '缺失'} 偏离包内固定值 ${dependency}，未替换运行包。`)
+        }
+      }
+      // Keep existing conditions, configuration and user-disabled state after source validation.
+      if (matches.length) continue
       // The actual Host owns module resolution and execution, including its public peer mappings.
       const candidate = manifest.dsh?.bundle
         ? boot.bundlePatchPaths(installedSource, manifest.dsh.bundle).flatMap(path => boot.loadOverlayPatches('dsh', path))
@@ -28,6 +39,7 @@ export async function prepareStartupPlugins({ profile, entries, config, boot }) 
       flatten(boot.composeEntries([[{ insert: entries }], patches, candidate]))
       patches.push(...candidate)
     } catch (error) {
+      patches.push(...matches.filter(row => row.disabled !== true).map(row => ({ id: row.id, disabled: true })))
       const reason = error.code === 'ENOENT' || error.code === 'MODULE_NOT_FOUND'
         ? '固定插件未部署或入口依赖不可用；打包运行端不在线安装或换包。'
         : `启动插件尝试失败：${String(error.message).slice(0, 300)}`
@@ -68,7 +80,8 @@ export async function startupPluginResults({ resourcesRoot, url, preparation = [
     const actual = active ?? matches[0]
     const attempted = preparation.find(row => row.package === item.package)
     let reason
-    if (unknown) reason = `实际启动状态未知：${unknown}`
+    if (attempted) reason = attempted.reason
+    else if (unknown) reason = `实际启动状态未知：${unknown}`
     else if (active) reason = '当前 Host 已加载包内固定版本。'
     else if (!matches.length) reason = attempted?.reason ?? '当前 Host 未装配该插件；打包运行端不在线安装或换包。'
     else if (matches.every(row => row.enabled === false)) reason = '当前 profile 已停用该插件，保留用户选择。'
@@ -83,6 +96,6 @@ export async function startupPluginResults({ resourcesRoot, url, preparation = [
     return { package: item.package, version: item.version, versionSource: 'packaged-lock',
       actualVersion: actual?.current ?? null, source: actual?.source ?? null,
       ...(attempted ? { installedVersion: attempted.installedVersion, installedSource: attempted.installedSource } : {}),
-      state: active && !unknown ? 'loaded' : 'skipped', reason }
+      state: active && !unknown && !attempted ? 'loaded' : 'skipped', reason }
   })
 }

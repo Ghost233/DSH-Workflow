@@ -65,6 +65,7 @@ export async function ensureStartupPlugins({ resourcesRoot, home = process.env.D
         continue
       }
       const target = item.version
+      if (item.source === 'git') throw new Error('GitHub 固定源码插件需在工程准备阶段部署，不能从同名 npm 包安装。')
       await assertProfilePluginVersions(profile, list)
       assertPackageMaintenanceResource(resources)
       await run({ resources, home, candidates: [{ name: item.package, latest: target }], registry: list.registry })

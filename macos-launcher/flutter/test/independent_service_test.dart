@@ -411,6 +411,7 @@ void main() {
             'dsh-cost-meter',
             '@nagi-ovo/dsh-visualize',
             'billion-context',
+            'dsh-plugin-notify',
           ],
           reason: 'The real independent Host must report every startup plugin and continue after an optional failure',
         );

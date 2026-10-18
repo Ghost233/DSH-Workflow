@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { readPluginConfiguration, savePluginConfiguration, configurationPath, manageProfilePluginOperation } from './plugin-configuration.mjs'
+import { readPluginConfiguration, savePluginConfiguration, configurationPath, manageProfilePluginOperation, assertProfilePluginVersions } from './plugin-configuration.mjs'
 import { ensureStartupPlugins, updateProfilePlugins } from './plugin-update.mjs'
 
 async function fixture(t) {
@@ -29,6 +29,57 @@ async function fixture(t) {
   await install('0.1.184')
   return { resources, home, profile, workflow, config, lock, install }
 }
+
+async function githubPlugin(f) {
+  const item = { package: 'dsh-plugin-notify', version: '1.3.0', source: 'git',
+    repository: 'https://github.com/c-ling/dsh-plugin-notify', commit: 'a'.repeat(40), startup: true }
+  f.config.plugins = [item]
+  const bytes = JSON.stringify(f.config)
+  f.lock.manifestSha256 = createHash('sha256').update(bytes).digest('hex')
+  f.lock.plugins = [{ package: item.package, version: item.version, commit: item.commit,
+    metadata: { name: item.package, version: item.version } }]
+  await writeFile(join(f.workflow, 'project-plugins.json'), bytes)
+  await writeFile(join(f.workflow, 'project-plugins.lock.json'), JSON.stringify(f.lock))
+  return item
+}
+
+test('a GitHub-only plugin retains its fixed version and source instead of resolving a same-name npm package', async t => {
+  const f = await fixture(t)
+  const item = await githubPlugin(f)
+  assert.deepEqual((await readPluginConfiguration(f.resources)).plugins, [item])
+  await assert.rejects(manageProfilePluginOperation({ ...f, profileName: 'desktop',
+    args: ['add', `${item.package}@${item.version}`], run: () => assert.fail('must not install the same-name npm package'),
+  }), /本仓库.*DMG/)
+  const startup = await ensureStartupPlugins({ ...f, resourcesRoot: f.resources,
+    run: () => assert.fail('must not install a GitHub-only package from npm'),
+  })
+  assert.equal(startup.added.length, 0)
+  assert.match(startup.skipped[0].reason, /GitHub/)
+})
+
+test('a different locked GitHub commit is rejected even with the correct version and manifest digest', async t => {
+  const f = await fixture(t)
+  await githubPlugin(f)
+  f.lock.plugins[0].commit = 'b'.repeat(40)
+  await writeFile(join(f.workflow, 'project-plugins.lock.json'), JSON.stringify(f.lock))
+  await assert.rejects(readPluginConfiguration(f.resources), /lock does not match/)
+})
+
+test('an installed GitHub plugin is checked against its pinned repository and commit declaration', async t => {
+  const f = await fixture(t)
+  const item = await githubPlugin(f)
+  await mkdir(join(f.profile, 'node_modules', item.package), { recursive: true })
+  await writeFile(join(f.profile, 'node_modules', item.package, 'package.json'), JSON.stringify({ name: item.package, version: item.version }))
+  const manifest = { dependencies: { [item.package]: `git+${item.repository}.git#${item.commit}` } }
+  await writeFile(join(f.profile, 'package.json'), JSON.stringify(manifest))
+  await assertProfilePluginVersions(f.profile, await readPluginConfiguration(f.resources))
+  const { checkPluginVersions } = await import('./plugin-versions.mjs')
+  const report = await checkPluginVersions({ resourcesRoot: f.resources, home: f.home, profileName: 'desktop' })
+  assert.equal(report.rows.find(row => row.source === 'DSH Desktop profile' && row.name === item.package).status, 'fixed')
+  manifest.dependencies[item.package] = item.version
+  await writeFile(join(f.profile, 'package.json'), JSON.stringify(manifest))
+  await assert.rejects(assertProfilePluginVersions(f.profile, await readPluginConfiguration(f.resources)), /插件版本偏差/)
+})
 
 test('generated lock cannot override an exact manifest version even with a matching digest', async t => {
   const f = await fixture(t)

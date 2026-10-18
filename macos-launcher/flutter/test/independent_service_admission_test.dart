@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -118,15 +119,50 @@ void main() {
         if (prepared == null) return;
         final (session, receipt, sessionId) = prepared;
         await tester.pumpWidget(LauncherApp(controller: model!));
+        final confirmationClock = Stopwatch()..start();
+        var requestCompleted = false;
+        String? requestErrorType;
+        Object? requestErrorCode;
         await tester.runAsync(() async {
           pending = session.sendRequest(
             'recycle',
             serviceId: 'desktop',
             timeout: const Duration(seconds: 30),
           );
-          await Future<void>.delayed(const Duration(milliseconds: 300));
+          unawaited(
+            pending!.then<void>(
+              (response) {
+                final error = response['error'];
+                requestErrorCode = error is Map ? error['code'] : null;
+                requestCompleted = true;
+              },
+              onError: (Object error) {
+                requestErrorType = error.runtimeType.toString();
+                requestCompleted = true;
+              },
+            ),
+          );
         });
         await tester.pump();
+        while (!requestCompleted &&
+            find.byType(AlertDialog).evaluate().isEmpty &&
+            confirmationClock.elapsed < const Duration(seconds: 30)) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump();
+        }
+        expect(
+          requestErrorType,
+          isNull,
+          reason: 'Actual SDK stop failed before confirmation.',
+        );
+        expect(
+          requestCompleted,
+          false,
+          reason:
+              'Actual SDK stop returned before explicit confirmation: code=$requestErrorCode',
+        );
         expect(find.byType(AlertDialog), findsOneWidget);
         final observed = await tester.runAsync(() async {
           task!.sendOwnedMarker();

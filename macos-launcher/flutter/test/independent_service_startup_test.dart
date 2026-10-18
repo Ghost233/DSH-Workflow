@@ -129,7 +129,7 @@ void main() {
           )['reason'],
           contains('失败'),
         );
-        expect(results.length, 6);
+        expect(results.length, 7);
         final stopped = await session.sendRequest(
           'recycle',
           serviceId: 'desktop',

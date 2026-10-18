@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
@@ -41,12 +41,14 @@ test('startup outcomes distinguish actual loading, disabled, failed, drift and a
     row('@nagi-ovo/dsh-visualize', '0.1.4', { fiberPhase: 'failed' }),
     row('billion-context', '0.1.185', { status: 'drift' })])
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
-  assert.deepEqual(results.map(item => item.state), ['loaded', 'skipped', 'skipped', 'skipped'])
+  assert.deepEqual(results.map(item => item.state), ['loaded', 'skipped', 'skipped', 'skipped', 'skipped'])
   assert.match(results[1].reason, /停用/)
   assert.match(results[2].reason, /失败/)
   assert.match(results[3].reason, /偏离/)
   assert.equal(results[3].version, '0.1.184')
   assert.equal(results[3].actualVersion, '0.1.185')
+  assert.equal(results[4].package, 'dsh-plugin-notify')
+  assert.match(results[4].reason, /未装配/)
   assert.deepEqual(f.requests, [{ method: 'GET', path: '/?token=owned-fixture' },
     { method: 'POST', path: '/api/workflowDelivery/list' }])
 })
@@ -71,6 +73,15 @@ test('a settled enabled entry without a live fiber reports import failure while 
   assert.match(results[0].reason, /导入.*失败/)
   assert.match(results[1].reason, /停用/)
   assert.match(results[2].reason, /未知/)
+})
+
+test('a rejected startup preparation cannot be reported as loaded by a matching inventory row', async t => {
+  const f = await fixture(t, [row('dsh-context', '0.66.1')])
+  const reason = '启动插件尝试失败：依赖来源声明与包内 Git 固定值不一致。'
+  const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url,
+    preparation: [{ package: 'dsh-context', installedVersion: '0.66.1', installedSource: '/owned/dsh-context', reason }] })
+  assert.equal(results[0].state, 'skipped')
+  assert.equal(results[0].reason, reason)
 })
 
 test('an optional bundle with an invalid composed group is isolated before a valid sibling', async t => {
@@ -115,4 +126,50 @@ test('an optional bundle with an invalid composed group is isolated before a val
   assert.deepEqual(accepted.find(row => row.id === 'p2-existing-disabled'), before[0])
   assert.deepEqual(entries, before, 'The original user entry must remain unchanged')
   await assert.doesNotReject(prepareStartupPlugins({ profile, entries: accepted, config: { plugins: [] }, boot }))
+})
+
+test('Git-pinned startup packages reject a same-version npm declaration while preserving other entries', async t => {
+  const require = createRequire(resolve('deepseek-harness/apps/cli/package.json'))
+  const boot = require('@deepseek-ai/dsh-app-boot')
+  for (const existing of [false, true]) await t.test(existing ? 'existing entry' : 'new entry', async t => {
+    const root = await mkdtemp(join(tmpdir(), 's08-owned-source-'))
+    t.after(() => rm(root, { recursive: true, force: true }))
+    const profile = join(root, 'profile')
+    const badName = 's08-owned-git-source', goodName = 's08-owned-npm-sibling', pinnedName = 's08-owned-git-sibling'
+    const pin = { source: 'git', repository: 'https://github.com/owned/startup-fixture', commit: 'a'.repeat(40) }
+    const config = { plugins: [
+      { package: badName, version: '1.3.0', startup: true, ...pin },
+      { package: goodName, version: '1.0.0', startup: true },
+      { package: pinnedName, version: '1.0.0', startup: true, ...pin },
+    ] }
+    for (const item of config.plugins) {
+      const directory = join(profile, 'node_modules', item.package)
+      await mkdir(directory, { recursive: true })
+      await writeFile(join(directory, 'package.json'), JSON.stringify({ name: item.package, version: item.version }))
+    }
+    const manifestPath = join(profile, 'package.json')
+    const manifest = JSON.stringify({ dependencies: { [badName]: '1.3.0', [goodName]: '1.0.0',
+      [pinnedName]: `git+https://github.com/owned/startup-fixture.git#${'a'.repeat(40)}` } })
+    await writeFile(manifestPath, manifest)
+    const entries = [{ id: 's08-owned-kept', name: 's08-owned-keeper', disabled: true, config: { saved: 'keep' } }]
+    if (existing) entries.push({ id: 's08-owned-group', group: true, config: [
+      { id: 's08-owned-source', name: `${badName}/index.mjs`, config: { saved: 'source-setting' } },
+      { id: 's08-owned-disabled', name: badName, disabled: true, config: { saved: 'disabled-setting' } },
+    ] })
+    const before = structuredClone(entries)
+    const result = await prepareStartupPlugins({ profile, entries, config, boot })
+    assert.deepEqual(result.skipped.map(row => row.package), [badName])
+    assert.match(result.skipped[0].reason, /依赖.*来源.*声明/)
+    const accepted = boot.composeEntries([[{ insert: entries }], result.patches])
+    assert.deepEqual(accepted.find(row => row.id === 's08-owned-kept'), before[0])
+    assert.equal(accepted.some(row => row.name === goodName), true)
+    assert.equal(accepted.some(row => row.name === pinnedName), true)
+    if (existing) {
+      assert.deepEqual(accepted.find(row => row.id === 's08-owned-group').config, [
+        { ...before[1].config[0], disabled: true }, before[1].config[1],
+      ])
+    } else assert.equal(accepted.some(row => row.name === badName), false)
+    assert.deepEqual(entries, before, 'Saved conditions, disabled state and configuration must not be mutated')
+    assert.equal(await readFile(manifestPath, 'utf8'), manifest, 'Preparation must not rewrite dependency declarations')
+  })
 })
