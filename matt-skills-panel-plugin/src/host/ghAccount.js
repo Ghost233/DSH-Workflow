@@ -141,7 +141,8 @@ export function createGhAccount(deps) {
 
   /**
    * 生成/覆盖 shim 并把本进程的 BASH_ENV 指向它。
-   * 返回幂等的 dispose：只在 BASH_ENV 仍指向本 shim 时还原为安装前的值（原来没有则删除）。
+   * 返回幂等的 async dispose：BASH_ENV 仍指向本 shim 时还原为安装前的值（原来没有则删除），
+   * 并按规格「还原并清理」删掉本实例写的 shim 文件。
    */
   async function installBashEnvShim() {
     if (installed) return installed.dispose
@@ -150,45 +151,34 @@ export function createGhAccount(deps) {
     const shimPath = join(dir, 'gh-account-env.sh')
     let previous
     try { previous = processEnv.BASH_ENV } catch (e) { previous = undefined }
-    let previousShlvl
-    try { previousShlvl = processEnv.SHLVL } catch (e) { previousShlvl = undefined }
     const chained = (typeof previous === 'string' && previous && previous !== shimPath) ? previous : ''
+    const shimText = renderShim(chained)
     await fs.mkdir(dir, { recursive: true })
-    await fs.writeFile(shimPath, renderShim(chained), { mode: 0o600 })
+    await fs.writeFile(shimPath, shimText, { mode: 0o600 })
 
-    const state = { shimPath, previous, previousShlvl, changedShlvl: false, dispose: null }
-    const dispose = function () {
+    const state = { shimPath, previous, dispose: null }
+    // 清理只删「内容仍是本实例写的那一份」的 shim：后来实例覆盖后内容会变，不能误删。
+    // 卸载路径不允许抛错（文件已不在、不可读都只是无需清理）。
+    const dispose = async function () {
       if (state.disposed) return
       state.disposed = true
       if (installed === state) installed = null
-      // macOS 自带 bash 3.2 在父进程环境没有 SHLVL（GUI 启动的宿主常见）时不读 BASH_ENV（实测），
-      // 安装时补一个 SHLVL=1 让 shim 真的被 source；卸载只在值仍是我们写的 1 时还原。
-      if (state.changedShlvl) {
-        let shlvl
-        try { shlvl = processEnv.SHLVL } catch (e) { shlvl = undefined }
-        if (shlvl === '1') {
-          if (previousShlvl === undefined) {
-            try { delete processEnv.SHLVL } catch (e) { processEnv.SHLVL = undefined }
-          } else {
-            processEnv.SHLVL = previousShlvl
-          }
-        }
-      }
       let current
       try { current = processEnv.BASH_ENV } catch (e) { current = undefined }
-      if (current !== shimPath) return
-      if (previous === undefined) {
-        try { delete processEnv.BASH_ENV } catch (e) { processEnv.BASH_ENV = undefined }
-      } else {
-        processEnv.BASH_ENV = previous
+      if (current === shimPath) {
+        if (previous === undefined) {
+          try { delete processEnv.BASH_ENV } catch (e) { processEnv.BASH_ENV = undefined }
+        } else {
+          processEnv.BASH_ENV = previous
+        }
       }
+      try {
+        const onDisk = await fs.readFile(shimPath, 'utf8')
+        if (onDisk === shimText) await fs.rm(shimPath, { force: true })
+      } catch (e) { /* 文件已不在或不可读：无需清理 */ }
     }
     state.dispose = dispose
     processEnv.BASH_ENV = shimPath
-    if (previousShlvl === undefined || previousShlvl === '' || previousShlvl === '0') {
-      processEnv.SHLVL = '1'
-      state.changedShlvl = true
-    }
     installed = state
     return dispose
   }

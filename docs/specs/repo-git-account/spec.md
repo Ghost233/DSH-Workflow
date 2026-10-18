@@ -34,6 +34,7 @@ updated: 2026-10-19
 ### 账号目录
 
 - 路径 `${XDG_CONFIG_HOME:-$HOME/.config}/gh-profiles/<登录名>`，由 skill 验证或从已有 gh 目录导入（token 只走管道，不落盘、不打印、不创建新 token、不启动浏览器授权）。
+- 声明中的登录名必须与账号目录名大小写一致；skill 负责写入正确大小写，deck 与 shim 不做大小写猜测。
 - deck 与 shim 只拼路径，不读取其中凭据；目录不存在时按未声明处理，回落全局。
 - gh 与 credential helper 都通过 `GH_CONFIG_DIR` 使用该目录，两者指向同一份登录状态。
 
@@ -49,7 +50,7 @@ updated: 2026-10-19
 ## deck 实现
 
 1. 新增 `src/host/ghAccount.js`：`resolveGhConfigDir(cwd)` 向上查找并校验 `.ghswitch`，返回账号目录或 `undefined`；账号目录不存在的检查也在此完成。该模块被宿主出站与 shim 生成共用。
-2. 宿主 `src/host/index.js` 在 `apply` 安装分发脚本：把 shim 写到 `~/.dsh/mattskillsdeck/gh-account-env.sh`（与 `src/host/choiceStore.js` 的宿主记忆目录约定一致），把 `process.env.BASH_ENV` 指向它，原值存入非敏感变量供 shim 链式 source，用 `ctx.effect` 在 unload 时还原并清理。deck 宿主条目配置 `ghAccount: false` 时跳过安装。macOS 自带 bash 3.2 在父进程环境没有 `SHLVL` 时不读 `BASH_ENV`（实测），因此安装时若 `SHLVL` 缺失、为空或为 `0` 会补 `SHLVL=1`，卸载时只在值仍是 `1` 时还原；该兜底只保证 shim 被 source，不改变声明与注入语义。
+2. 宿主 `src/host/index.js` 在 `apply` 安装分发脚本：把 shim 写到 `~/.dsh/mattskillsdeck/gh-account-env.sh`（与 `src/host/choiceStore.js` 的宿主记忆目录约定一致），把 `process.env.BASH_ENV` 指向它，原值存入非敏感变量供 shim 链式 source，用 `ctx.effect` 在 unload 时还原并清理。deck 宿主条目配置 `ghAccount: false` 时跳过安装。实测 macOS 自带 bash 3.2 无需 SHLVL 兜底；早期实现的兜底已撤销（deck 以 stdin=/dev/null 启动 bash；若 stdin 是 socket，bash 3.2 会走 sshd 分支读 `~/.bashrc` 并跳过 `BASH_ENV`，不属于 deck 启动面）。
 3. shim 内容要求：先 source 原 `BASH_ENV`（存在且可读时），再向上查找声明；命中且账号目录存在时 `export GH_CONFIG_DIR=<目录>`；其余情况零输出零副作用；任何分支都不得让 shell 启动失败；只导出这一个变量。
 4. gh 出站三处改为按调用传环境：`src/host/repoKeys.js` 的 `runGh`、`src/host/platformChannel.js` 的 `detectionExec`、github 后端 `client.js` 经 `ctx.exec` 的路径。无声明时保持现状，不构造 `env`。
 5. 不新增 RPC、工具、检查项、面板视图或宿主记忆；deck 仍不修改 git 配置、不保存凭据。
@@ -96,6 +97,7 @@ updated: 2026-10-19
 6. deck 自身 gh 出站（版本控制/健康检查等）在声明仓库使用声明账号，面板不新增任何账号相关界面。
 7. `BASH_ENV` 链式：启动前预置用户自己的 `BASH_ENV` 脚本，声明仓库内模型 bash 仍执行用户脚本；停用 deck 或退出宿主后不再 source shim。
 8. 重新构建启动器后，`project-layer.json` 包含 `skills/`；新会话在任意工作区可见该 skill。
+   > 本工单只验证打包清单与组合层；完整闭环由 PR #47 的 `macos-app` CI 与 release workflow 覆盖。
 
 ## 边界与不做
 
@@ -122,8 +124,9 @@ updated: 2026-10-19
 - 无声明：不导出 `GH_CONFIG_DIR`，`gh api user` 为 ambient 全局账号（本次实测 `Ghost233`）。
 - 非法声明（`bad user!`）与账号目录缺失（合法但不存在的 `Ghost233-missing`）：静默回落全局，命令不报错；嵌套目录里最近的非法声明不会回退到父目录声明。
 - `.ghswitch`=`Charlotte-765`：`GH_CONFIG_DIR` 指向 `gh-profiles/Charlotte-765`，`gh api user` 为 `Charlotte-765`，证明声明覆盖 ambient 全局账号。
-- 预置用户 `BASH_ENV` 被链式 source，dispose 后还原原值；父进程没有 `SHLVL` 时安装补 `SHLVL=1`，shim 才能被 bash 3.2 source。
+- 预置用户 `BASH_ENV` 被链式 source；dispose 后还原原值并删除 shim 文件。显式 env（只含 `HOME`/`PATH`/`BASH_ENV`，不含 `SHLVL`）下 shim 仍被 bash 3.2 source（实测无需 SHLVL 兜底）。
 - deck 出站：`resolveGhConfigDir` / `accountEnvFor` 对有声明仓库返回 `{GH_CONFIG_DIR: …}`，对无声明仓库返回 `undefined` / `null`。
+- `ghAccount:false` 已由面板单测覆盖：跳过 shim 安装，deck 出站仍按声明注入 `GH_CONFIG_DIR`。
 
 ### 提交身份与 HTTPS 推认证
 
@@ -145,5 +148,5 @@ updated: 2026-10-19
 ### 环境与 residual
 
 - 根测试环境是已构建的 pinned Harness：`deepseek-harness/` 子模块 `1517a4dbca0a2789ff1d41ba439600f8547d23fa`，host 与 client face 的 tsdown 产物已构建，`system.node` 已就位；不是在本地从零安装。
-- 启动器 app 的完整重建与真机启动会话未在本地验证，留给 PR CI 与 release 的 `macos-app` workflow；本工单只确认打包清单与组合层测试。
+- 验收项 8 的完整闭环由 PR #47 的 `macos-app` CI 与 release workflow 覆盖：启动器 app 的重建与真机启动会话未在本地验证，本工单只确认打包清单与组合层测试。
 - SSH remote 与交互式终端不在覆盖范围。

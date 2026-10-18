@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGhAccount } from '../src/host/ghAccount.js'
@@ -182,9 +182,14 @@ test('ghAccount:false 只跳过 BASH_ENV shim；wiring 的出站 accountEnvFor �
 
 function runBash(cwd, script, env) {
   return new Promise(function (resolvePromise, rejectPromise) {
+    // stdin 用 /dev/null，与 deck 宿主 subprocess.spawn({ stdio: { stdin: 'ignore' } }) 一致。
+    // macOS bash 3.2 在 -c 且 stdin 是 socket 时会走 sshd/rshd 分支去读 ~/.bashrc，
+    // 并在 shell_level<2 时提前返回、跳过 BASH_ENV；Node 默认 pipe stdio 的 stdin 正是
+    // socketpair，会误触该分支。deck 的真实启动面是 /dev/null，故这里显式对齐。
     const child = spawn('/bin/bash', ['-c', script], {
       cwd,
       env: Object.assign({ PATH: process.env.PATH }, env),
+      stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = ''
     let stderr = ''
@@ -202,7 +207,10 @@ test('BASH_ENV shim 让真实 bash 读到声明账号；四种回落都不导出
   const gh = account(home, { processEnv })
   const dispose = await gh.installBashEnvShim()
   assert.equal(processEnv.BASH_ENV, join(home, '.dsh', 'mattskillsdeck', 'gh-account-env.sh'))
-  const env = { HOME: home, BASH_ENV: processEnv.BASH_ENV, SHLVL: processEnv.SHLVL }
+  // (a) 安装不再写 SHLVL：实测 macOS 自带 bash 3.2 无需 SHLVL 兜底（显式无 SHLVL 的 env 见下）。
+  assert.equal('SHLVL' in processEnv, false, 'install 不应写入 SHLVL')
+  // (b) 显式 env 只给 HOME/PATH/BASH_ENV，不含 SHLVL；shim 仍被 source 并导出正确账号目录。
+  const env = { HOME: home, BASH_ENV: processEnv.BASH_ENV }
   const read = async function (cwd, extra) {
     const r = await runBash(cwd, 'printf "%s" "${GH_CONFIG_DIR:-}"', Object.assign({}, env, extra || {}))
     assert.equal(r.code, 0, r.stderr)
@@ -223,7 +231,7 @@ test('BASH_ENV shim 让真实 bash 读到声明账号；四种回落都不导出
   await mkdir(src, { recursive: true })
   assert.equal(await read(src), expected)
   assert.equal(await read(repo, { GH_CONFIG_DIR: '/already/global' }), expected)
-  dispose()
+  await dispose()
 }))
 
 test('用户原有 BASH_ENV 被链式 source，含单引号的路径也安全', async () => withWorld(async ({ root, home }) => {
@@ -240,25 +248,32 @@ test('用户原有 BASH_ENV 被链式 source，含单引号的路径也安全', 
   const r = await runBash(repo, 'printf "%s|%s" "${DSH_ORIGINAL_ENV:-}" "${GH_CONFIG_DIR:-}"', Object.assign({}, processEnv, { HOME: home }))
   assert.equal(r.code, 0, r.stderr)
   assert.equal(r.stdout, 'kept|' + join(home, '.config', 'gh-profiles', 'Ghost233'))
-  dispose()
+  await dispose()
   assert.equal(processEnv.BASH_ENV, original)
+  // (c) dispose 同时清理本实例写的 shim 文件。
+  await assert.rejects(stat(join(home, '.dsh', 'mattskillsdeck', 'gh-account-env.sh')))
 }))
 
-test('无声明时不覆盖继承的 GH_CONFIG_DIR；dispose 后还原或删除 BASH_ENV', async () => withWorld(async ({ root, home }) => {
+test('无声明时不覆盖继承的 GH_CONFIG_DIR；dispose 后还原或删除 BASH_ENV 并清理 shim', async () => withWorld(async ({ root, home }) => {
   const repo = join(root, 'repo')
   await mkdir(repo, { recursive: true })
-  const processEnv = {}
+  const processEnv = { SHLVL: '7' }
   const gh = account(home, { processEnv })
+  const shimPath = join(home, '.dsh', 'mattskillsdeck', 'gh-account-env.sh')
   const dispose = await gh.installBashEnvShim()
+  // (a) 已有 SHLVL 也不被改动。
+  assert.equal(processEnv.SHLVL, '7', 'install 不应改写已有 SHLVL')
   const r = await runBash(repo, 'printf "%s" "${GH_CONFIG_DIR:-}"', Object.assign({}, processEnv, {
     HOME: home,
     GH_CONFIG_DIR: '/inherited/global',
   }))
   assert.equal(r.code, 0, r.stderr)
   assert.equal(r.stdout, '/inherited/global')
-  dispose()
+  await dispose()
   assert.equal('BASH_ENV' in processEnv, false)
-  assert.equal('SHLVL' in processEnv, false)
+  assert.equal(processEnv.SHLVL, '7', 'dispose 不应改写已有 SHLVL')
+  // (c) shim 文件被删除，BASH_ENV 还原为未设置。
+  await assert.rejects(stat(shimPath))
 }))
 
 function fakeHandle() {

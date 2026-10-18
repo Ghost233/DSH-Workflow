@@ -131,6 +131,12 @@ def configure(args):
     urls, ssh_remotes = scan_remotes(project, args.account)
     helper = credential_helper(account_dir)
 
+    # 规格 §skill 6：.ghswitch 必须被忽略。ignore 校验是唯一可能失败的写步骤，放在
+    # 任何 git config / .ghswitch 写入之前——失败时仓库里不会留下已写配置或未忽略的声明。
+    appended = []
+    if args.write_gitignore:
+        appended = ensure_ignored(project, declaration, ["/" + DECLARATION] + args.ignore)
+
     git(project, "config", "--local", "user.name", args.name)
     git(project, "config", "--local", "user.email", args.email)
     for url in ["https://github.com"] + sorted(urls):
@@ -141,9 +147,6 @@ def configure(args):
 
     declaration.write_text(args.account + "\n", encoding="utf-8")
 
-    appended = []
-    if args.write_gitignore:
-        appended = ensure_ignored(project, declaration, ["/" + DECLARATION] + args.ignore)
     return project, account_dir, declaration, sorted(urls), sorted(ssh_remotes), appended
 
 
