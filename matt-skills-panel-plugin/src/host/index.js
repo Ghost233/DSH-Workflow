@@ -10,7 +10,41 @@ export default {
   // 声明 connection + llm + sessionQuery：webServer 仍不加（#596）；llm 给首轮摘要调模型用，
   // sessionQuery 给读首轮两段用（读而不激活），缺任何一个对应功能静默降级（#746）。
   inject: ['connection', 'llm', 'sessionQuery'],
-  apply(ctx) {
+  apply(ctx, config) {
+    const pluginConfig = (config && typeof config === 'object') ? config : {}
+    // #39 仓库账号：模型 bash 的 BASH_ENV shim 与 deck 出站 env 共用一份解析。
+    // 先起动态 import，出站第一笔也能等到解析器就绪；shim 安装失败只 warn，绝不让插件启动失败。
+    let ghAccount = null
+    const ghAccountReady = (async function () {
+      try {
+        const mod = await import('./ghAccount.js')
+        ghAccount = mod.createGhAccount({ processEnv: process.env })
+      } catch (e) {
+        try { console.warn('[dsh-workflow-matt-panel] ghAccount load failed: ' + String((e && e.message) || e)) } catch (eW) {}
+      }
+    })()
+    function ghAccountEnvFor(cwd) {
+      return ghAccountReady.then(function () {
+        if (!ghAccount) return null
+        try { return ghAccount.envFor(cwd) } catch (e) { return null }
+      }).catch(function () { return null })
+    }
+    // 规格 §deck 2：ghAccount:false 只跳过 BASH_ENV 安装；git 面与 deck 出站继续按声明走（规格 §影响 1）。
+    if (pluginConfig.ghAccount !== false) {
+      try {
+        ctx.effect(function () {
+          return ghAccountReady.then(function () {
+            if (!ghAccount) return function () {}
+            return ghAccount.installBashEnvShim().catch(function (e) {
+              try { console.warn('[dsh-workflow-matt-panel] GH account BASH_ENV shim install failed: ' + String((e && e.message) || e)) } catch (eW) {}
+              return function () {}
+            })
+          })
+        })
+      } catch (eEffect) {
+        try { console.warn('[dsh-workflow-matt-panel] GH account BASH_ENV effect failed: ' + String((eEffect && eEffect.message) || eEffect)) } catch (eW2) {}
+      }
+    }
     // 启动门（2026-09-26）：subprocess/timer 晚到时不再静默跳过——旧代码直接 return， wiring 与工具注册 hook 从没跑起来，deck 工具永不注册还查无对证。 先试一次；不齐就挂到框架依赖门上等人齐（官方 ctx.inject 写法，见 dsh-tool-pwsh）； 30 秒还没齐落一条 warn。 为何只能留在入口，见账本 §1。
     const bootBody = () => {
     const subprocess = ctx.get('subprocess')
@@ -65,9 +99,9 @@ export default {
     let _bootP = null
     function _boot() { if (!_bootP) _bootP = import('./bootstrap.js').then(function(m){ return m.createBootstrap({ ctx: ctx }) }); return _bootP }
     let _platP = null
-    function _plat() { if (!_platP) _platP = (async function(){ const boot = await _boot(); const mod = await import('./platformChannel.js'); return mod.createPlatformChannel({ ctx: ctx, subprocess: subprocess, timer: timer, fs: fs, DEFAULT_CWD: DEFAULT_CWD, TIMEOUT_MS: TIMEOUT_MS, getMattSkillProbeNames: function(){ return getMattSkillProbeNames.apply(null, arguments) }, getChainSkillNames: function(){ return getChainSkillNames.apply(null, arguments) }, probeSkill: function(){ return probeSkill.apply(null, arguments) }, getChoiceStore: function(){ return getChoiceStore.apply(null, arguments) }, logCtx: logCtx, getGate: function () { return refreshGate } }) })(); return _platP } // #927：闸要晚一步才建好，所以传一个活的取值口，不传一次性快照
+    function _plat() { if (!_platP) _platP = (async function(){ const boot = await _boot(); const mod = await import('./platformChannel.js'); return mod.createPlatformChannel({ ctx: ctx, subprocess: subprocess, timer: timer, fs: fs, DEFAULT_CWD: DEFAULT_CWD, TIMEOUT_MS: TIMEOUT_MS, getMattSkillProbeNames: function(){ return getMattSkillProbeNames.apply(null, arguments) }, getChainSkillNames: function(){ return getChainSkillNames.apply(null, arguments) }, probeSkill: function(){ return probeSkill.apply(null, arguments) }, getChoiceStore: function(){ return getChoiceStore.apply(null, arguments) }, logCtx: logCtx, getGate: function () { return refreshGate }, ghAccountEnvFor: ghAccountEnvFor }) })(); return _platP } // #927：闸要晚一步才建好，所以传一个活的取值口，不传一次性快照
     let _repoP = null
-    function _repo() { if (!_repoP) _repoP = (async function(){ const plat = await _plat(); const mod = await import('./repoKeys.js'); return mod.createRepoKeys({ subprocess: subprocess, timer: timer, fs: fs, DEFAULT_CWD: DEFAULT_CWD, TIMEOUT_MS: TIMEOUT_MS, repoKeys: repoKeys, repoRoots: repoRoots, getGhPath: function(){ return ghPath }, setGhPath: function(v){ ghPath = v }, getGhLastError: function(){ return ghLastError }, setGhLastError: function(v){ ghLastError = v }, getPlatform: function(){ return getPlatform.apply(null, arguments) }, getWorkspaceStore: function(){ return getWorkspaceStore.apply(null, arguments) }, setCache: setCache, clearWorkspaceStore: function(){ return plat.clearWorkspaceStore.apply(plat, arguments) }, namingSweepSoon: function(){ return namingSweepSoon.apply(null, arguments) }, getChainBackoff: getChainBackoff, parseGithubRepo: function(){ return parseGithubRepo.apply(null, arguments) }, logCtx: logCtx, getGate: function () { return refreshGate } }) })(); return _repoP } // #927：同上，取数层（runGh / 探测）报账时现问一次
+    function _repo() { if (!_repoP) _repoP = (async function(){ const plat = await _plat(); const mod = await import('./repoKeys.js'); return mod.createRepoKeys({ subprocess: subprocess, timer: timer, fs: fs, DEFAULT_CWD: DEFAULT_CWD, TIMEOUT_MS: TIMEOUT_MS, repoKeys: repoKeys, repoRoots: repoRoots, getGhPath: function(){ return ghPath }, setGhPath: function(v){ ghPath = v }, getGhLastError: function(){ return ghLastError }, setGhLastError: function(v){ ghLastError = v }, getPlatform: function(){ return getPlatform.apply(null, arguments) }, getWorkspaceStore: function(){ return getWorkspaceStore.apply(null, arguments) }, setCache: setCache, clearWorkspaceStore: function(){ return plat.clearWorkspaceStore.apply(plat, arguments) }, namingSweepSoon: function(){ return namingSweepSoon.apply(null, arguments) }, getChainBackoff: getChainBackoff, parseGithubRepo: function(){ return parseGithubRepo.apply(null, arguments) }, logCtx: logCtx, getGate: function () { return refreshGate }, ghAccountEnvFor: ghAccountEnvFor }) })(); return _repoP } // #927：同上，取数层（runGh / 探测）报账时现问一次
     async function getMattSkillProbeNames() { const h = await _boot(); return h.getMattSkillProbeNames.apply(h, arguments) } async function getChainSkillNames() { const h = await _boot(); return h.getChainSkillNames.apply(h, arguments) } // #968 后者经 _boot 取链目录三项
     async function getTrackerRegistry() { const h = await _plat(); return h.getTrackerRegistry.apply(h, arguments) }
     async function getPlatform() { const h = await _plat(); return h.getPlatform.apply(h, arguments) }
