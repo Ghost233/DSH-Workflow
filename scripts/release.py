@@ -119,7 +119,7 @@ class Release:
         remote_tags = self.git("ls-remote", "--tags", "origin")
         tags = {line.split()[1]: line.split()[0] for line in remote_tags.splitlines()}
         if "refs/tags/" + tag in tags:
-            raise ReleaseError(f"{tag} 已推送；跟踪既有 macos-app.yml，不重用版本或重推 tag")
+            raise ReleaseError(f"{tag} 已推送；不重用版本或重推 tag")
         published_versions = [tuple(map(int, name.removeprefix("refs/tags/macos-v").split("."))) for name in tags
                               if re.fullmatch(r"refs/tags/macos-v\d+\.\d+\.\d+", name)]
         if published_versions and tuple(map(int, version.split("."))) <= max(published_versions):
@@ -155,7 +155,7 @@ class Release:
         if not main or main.split()[0] != head:
             raise ReleaseError("tag 已推送，但远端 main 已变化；先 fast-forward 同步本地，再跟踪既有管线")
         print(f"release: 完成：{tag} 已推送")
-        print(f"release: 跟踪：gh run list -R {REPOSITORY} --workflow macos-app.yml --commit {head}")
+        print("release: 后续：scripts/build-local-release.sh 编译并打包，再以 scripts/publish-release.sh 创建 Release（见 .agents/skills/deploy-release/SKILL.md）")
 
 
 def main():
@@ -168,7 +168,7 @@ def main():
         tag, head, local_tag = release.prepare(args.retry_tag)
         if args.dry_run:
             print("release: [dry-run] " + ("复用本地 tag" if local_tag else "创建附注 tag") + f" {tag}")
-            print(f"release: [dry-run] 推送 {tag}，触发 macos-app.yml 构建 DMG、manifest.json 和 SHA256SUMS")
+            print(f"release: [dry-run] 推送 {tag}（仅 tag；本地编译与 Release 上传按 .agents/skills/deploy-release/SKILL.md 执行）")
         else:
             release.publish(tag, head, local_tag)
     except (ReleaseError, OSError, ValueError) as error:

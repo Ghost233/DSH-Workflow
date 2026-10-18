@@ -325,12 +325,7 @@ else:sys.exit(2)
         self.assertFalse(output.exists())
 
     def release_job_cli(self, assets):
-        workflow = (SOURCE.parent / '.github/workflows/macos-app.yml').read_text()
-        parsed = subprocess.run(['/usr/bin/ruby', '-rpsych', '-rjson', '-e',
-                                 'puts JSON.generate(Psych.safe_load(STDIN.read, aliases: true))'],
-                                input=workflow, capture_output=True, text=True, check=True)
-        steps = json.loads(parsed.stdout)['jobs']['release']['steps']
-        shell = next(step['run'] for step in steps if step.get('name') == 'Publish GitHub Release')
+        shutil.copy2(SOURCE / 'publish-release.sh', self.repo / 'scripts/publish-release.sh')
         shutil.copytree(assets, self.repo / 'release-assets')
         self.wrapper('gh', '''import json,os,sys
 from pathlib import Path
@@ -339,8 +334,9 @@ Path(os.environ['FIXTURE_RELEASE_LOG']).write_text(json.dumps(sys.argv[1:]))
 ''')
         env = self.env.copy()
         env.update(RELEASE_TAG='macos-v0.2.5', RELEASE_COMMIT=self.git('rev-parse', 'HEAD'),
+                   RELEASE_ASSETS='release-assets',
                    FIXTURE_RELEASE_LOG=str(self.root / 'release-command.json'))
-        return subprocess.run(['bash', '-c', shell], cwd=self.repo, env=env,
+        return subprocess.run(['bash', str(self.repo / 'scripts/publish-release.sh')], cwd=self.repo, env=env,
                               capture_output=True, text=True, timeout=15)
 
     @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS release job CLI seam')

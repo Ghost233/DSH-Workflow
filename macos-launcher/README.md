@@ -6,7 +6,7 @@
 
 DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-workflow-desktop` Bundle 加载 JEV/监控、中文 Matt 技能和 `dsh-workflow-matt-panel` 本地派生面板，并发布权限为 `0600` 的服务就绪记录。本地面板不包含 bundled skills，原版 Deck 的宿主和工具条目在项目装配中停用。
 
-面板源码位于主仓库普通目录 `matt-skills-panel-plugin/`，按主项目正常提交即可被 CI 获取；`vendor/dsh-mattpocock-skills-deck` 只用于追踪上游。打包前运行 `npm ci --prefix matt-skills-panel-plugin --ignore-scripts`、`npm run build --prefix matt-skills-panel-plugin`。构建不写入运行中的 profile，也不重启服务；升级对照见派生版 README。
+面板源码位于主仓库普通目录 `matt-skills-panel-plugin/`，随主仓库提交并被打包进启动器资源；`vendor/dsh-mattpocock-skills-deck` 只用于追踪上游。打包前运行 `npm ci --prefix matt-skills-panel-plugin --ignore-scripts`、`npm run build --prefix matt-skills-panel-plugin`。构建不写入运行中的 profile，也不重启服务；升级对照见派生版 README。
 
 ## 当前本地构建
 
@@ -24,19 +24,19 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-${DSH_SOURCE_VERSION}-source
 
 `build.mjs` 必须提供已构建的 Desktop 应用，并提前在 `macos-launcher/flutter` 完成固定 Flutter 依赖解析。打包使用独立 Node 发行版；共享库版 Node 不能直接复制到应用包。上述源码开发应用用于本机调试；分发使用下面的生产构建流程。
 
-## GitHub ARM64生产构建
+## ARM64 生产构建
 
 发布操作统一遵循 [deploy-release skill](../.agents/skills/deploy-release/SKILL.md)。
 
-`.github/workflows/macos-app.yml` 在 ARM64 原生 runner 上初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。上游源码保持原样。
+正式版在本机 macOS ARM64 上编译发布，不使用 GitHub Actions 构建流水线。`scripts/build-local-release.sh` 初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime；上游源码保持原样。该脚本不运行集成测试，只编译并打包 DMG、`manifest.json` 与 `SHA256SUMS`，资产默认输出到 `.build/release-assets`。
 
-CI 同时准备固定 Flutter 3.47.7，检查 lockfile、Dart 格式、静态分析与真实 SDK socket 测试，再将对应架构的 Flutter Release 应用与运行时装配为启动器。maclauncher.json 分别声明 DSH 服务端和 Web 访问服务的启动、回收、状态与日志能力；入口托管、窗口激活和失联恢复由应用负责。
+脚本同时按固定 Flutter 依赖装配 Flutter Release 应用与运行时启动器。maclauncher.json 分别声明 DSH 服务端和 Web 访问服务的启动、回收、状态与日志能力；入口托管、窗口激活和失联恢复由应用负责。
 
 `build-desktop-release.mjs` 使用上游生产包集合、工程元数据和运行时校验接口，按 Electron 的 Node 版本安装生产依赖，生成包含完整资源的 Desktop 应用。应用资源不使用源码目录或开发运行时链接；本项目使用 ad-hoc 签名，不调用上游要求 Developer ID 与公证凭据的发行入口。
 
-重复本地预检时，可向 `build-desktop-release.mjs` 传入一个尚不存在的输出目录，例如 `.build/release-0.2.5/desktop`，保留旧应用。省略参数时，CI 沿用 `.build/desktop-arm64`。
+重复本地预检时，可向 `build-desktop-release.mjs` 传入一个尚不存在的输出目录，例如 `.build/release-0.2.5/desktop`，保留旧应用。省略参数时沿用 `.build/desktop-arm64`。
 
-`verify-desktop-release.mjs` 将应用复制到独立临时目录，核对签名和运行时文件完整性，并运行上游真实 Host、前端、插件及 DOCX／XLSX／PPTX 转 PDF 验收。通过后，CI 将该 Desktop 应用传给启动器打包，再验收实际包中的 Desktop、官方 DSH 就绪状态及 Matt 面板装配，最后校验ARM64的 DMG。验收使用临时 profile，不修改用户运行配置。main 构建生成 Actions artifacts；正式发布仍由 `macos-v<版本>` 标签触发。
+`verify-desktop-release.mjs` 将应用复制到独立临时目录，核对签名和运行时文件完整性，并运行上游真实 Host、前端、插件及 DOCX／XLSX／PPTX 转 PDF 验收。通过后，脚本将该 Desktop 应用传给启动器打包，再验收实际包中的 Desktop、官方 DSH 就绪状态及 Matt 面板装配，最后校验 ARM64 的 DMG。验收使用临时 profile，不修改用户运行配置。发布 tag 由 `scripts/release.sh` 创建，`scripts/publish-release.sh` 上传已校验资产并创建正式 Release。
 
 ## 启动和关闭
 
