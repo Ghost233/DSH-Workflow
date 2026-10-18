@@ -4,8 +4,9 @@ import { cp, mkdir, readFile, writeFile, symlink, lstat, readlink, rename, unlin
 import { existsSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { composeDshLaunch } from '../../scripts/dsh-launch-composition.mjs'
-import { readPluginConfiguration, savePluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
+import { readPluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
 import { migrateProjectEntryNames } from '../../scripts/observation-profile.mjs'
+import { prepareStartupPlugins } from './startup-plugins.mjs'
 
 const BUNDLE = 'dsh-workflow-desktop'
 const TEAM = '@deepseek-ai/dsh-experimental-agent-team-profile'
@@ -22,7 +23,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const stampPath = join(directory, 'integration.json')
   const localPackages = { 'dsh-workflow': workflow,
     'dsh-workflow-matt-panel': join(workflow, 'matt-skills-panel-plugin/package') }
-  const identity = { integrationVersion: 3, workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', hostInstance: 'desktop-bridge', agentMonitor: 2, jevCenter: 1, localPackages,
+  const identity = { integrationVersion: 3, workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', hostInstance: 'desktop-bridge', stopInspection: 1, agentMonitor: 2, jevCenter: 1, localPackages,
     projectMcp: JSON.parse(await readFile(join(workflow, 'project-mcp.json'), 'utf8')) }
   await mkdir(profile, { recursive: true })
   const manifestPath = join(profile, 'package.json')
@@ -39,7 +40,6 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   }
   const pluginConfig = await readPluginConfiguration(resourcesRoot, home)
   if (pluginConfig) {
-    await savePluginConfiguration(home, pluginConfig)
     try { await assertProfilePluginVersions(profile, pluginConfig) }
     catch (error) { process.stderr.write(`[project-plugins] ${error.message}\n`) }
   }
@@ -76,7 +76,10 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
     layers.push(boot.bundlePatchPaths(teamDirectory, teamManifest.dsh.bundle)
       .flatMap(path => boot.loadOverlayPatches('dsh', path)))
   }
-  const entries = boot.composeEntries([...layers, resolved.patches])
+  let entries = boot.composeEntries([...layers, resolved.patches])
+  const startup = await prepareStartupPlugins({ profile, entries, config: pluginConfig, boot })
+  entries = boot.composeEntries([...layers, resolved.patches, startup.patches])
+  identity.startupPlugins = createHash('sha256').update(JSON.stringify(startup.patches)).digest('hex')
   const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
   const mcpNames = new Set(identity.projectMcp.map(row => row.config.serverName))
   // Only a digest of relevant user choices is stamped; user credentials are not copied.
@@ -87,7 +90,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
     && Object.entries(localPackages).every(([name, target]) => current.dependencies[name] === `file:${target}`)
     && JSON.stringify(previous) === JSON.stringify(identity)
     && !migrated) {
-    return { profile, bundle: directory, version: runtime.version }
+    return { profile, bundle: directory, version: runtime.version, startup: startup.skipped }
   }
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   manifest.private = true
@@ -97,7 +100,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const bundles = manifest.dsh.profile.bundles.filter(name => name !== BUNDLE)
   if (!bundles.includes(TEAM)) bundles.push(TEAM)
   // Compose from the existing profile before adding our own rows, so preparation is idempotent.
-  const patches = composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot })
+  const patches = [...startup.patches, ...composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot })]
   for (const row of flatten(entries)) {
     if (permissionMode && row.name === '@deepseek-ai/dsh-sandbox-policy' && row.disabled !== true) {
       patches.push({ id: row.id, config: { ...structuredClone(row.config ?? {}), mode: permissionMode } })
@@ -127,5 +130,5 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   manifest.dsh.profile.bundles = [...bundles, BUNDLE]
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 })
   await writeFile(stampPath, JSON.stringify(identity) + '\n', { mode: 0o600 })
-  return { profile, bundle: directory, version: runtime.version }
+  return { profile, bundle: directory, version: runtime.version, startup: startup.skipped }
 }

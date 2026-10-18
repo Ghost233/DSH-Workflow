@@ -3,10 +3,9 @@ import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { configurationPath } from './plugin-configuration.mjs'
+import { readPluginConfiguration } from './plugin-configuration.mjs'
+import { pluginDependencySpec } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 
-const registry = 'https://registry.npmjs.org/'
 const owned = [
   ['dsh-workflow', 'agent-observation-plugin'],
   ['dsh-workflow-matt-panel', 'matt-skills-panel-plugin/package'],
@@ -82,19 +81,9 @@ async function installedPackage(profile, name) {
   return manifest?.name === name && typeof manifest.version === 'string' ? manifest : undefined
 }
 
+/** Inspect local package files only; repository DMGs own version changes. */
 export async function checkPluginVersions({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
-  profileName = existsSync(join(resourcesRoot, 'desktop/DeepSeek Harness.app')) ? 'desktop' : 'web',
-  fetchLatest = async name => {
-    const response = await fetch(new URL(encodeURIComponent(name), registry), {
-      headers: { accept: 'application/vnd.npm.install-v1+json' }, signal: AbortSignal.timeout(7000),
-    })
-    if (!response.ok) throw new Error(`npm registry HTTP ${response.status}`)
-    const metadata = await response.json()
-    if (metadata.name !== name || typeof metadata['dist-tags']?.latest !== 'string') {
-      throw new Error('npm registry metadata is incomplete')
-    }
-    return metadata['dist-tags'].latest
-  } } = {}) {
+  profileName = existsSync(join(resourcesRoot, 'desktop/DeepSeek Harness.app')) ? 'desktop' : 'web' } = {}) {
   const resources = resolve(resourcesRoot)
   const workflow = join(resources, 'workflow')
   const rows = []
@@ -113,11 +102,11 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
     }
     const current = installed?.version
     const local = /^(?:file:|link:|workspace:|git\+|https?:|\.\.?\/|\/)/.test(spec)
-    rows.push({ source: profileSource, name, current: current ?? (exactVersion(spec) ? spec : null),
-      latest: null, status: local ? 'local' : 'pending',
+    rows.push({ source: profileSource, name, current: current ?? null,
+      latest: null, status: local ? 'local' : current ? 'installed' : 'unknown',
       supportedDsh: declaredDshVersions(installed),
       latestSupportedDsh: latestDeclaredDsh(installed),
-      note: local ? '本地或 Git 依赖；不按 npm latest 判断' : current ? '当前已安装版本' : '未找到已安装包；仅显示声明版本' })
+      note: local ? '本地或 Git 依赖；随本仓库 DMG 更新' : current ? '实际安装版本；不查询 npm latest' : '未找到实际安装包；不把依赖声明当成实际版本' })
   }
   for (const name of profileManifest?.dsh?.profile?.bundles ?? []) {
     if (typeof name !== 'string' || rows.some(row => row.name === name)) continue
@@ -131,7 +120,7 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
       : await installedPackage(profile, name)
     const current = manifest?.name === name ? manifest.version : undefined
     rows.push({ source: bundled ? 'DSH 内置 Bundle' : `${profileSource} Bundle`, name,
-      current: current ?? null, latest: null, status: bundled ? 'coupled' : 'pending',
+      current: current ?? null, latest: null, status: bundled ? 'coupled' : current ? 'untracked' : 'unknown',
       ...(bundled ? {} : { supportedDsh: declaredDshVersions(manifest), latestSupportedDsh: latestDeclaredDsh(manifest) }),
       note: bundled ? '随打包的 DSH 更新，不能单独升级' : 'profile Bundle；未在 dependencies 声明' })
   }
@@ -141,16 +130,21 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
   const projectManifest = projectManifestBytes ? JSON.parse(projectManifestBytes) : undefined
   const projectLock = await jsonFile(join(workflow, 'project-plugins.lock.json'))
   const lockMatches = projectManifestBytes && projectLock?.manifestSha256 === createHash('sha256').update(projectManifestBytes).digest('hex')
+  let configuration, configurationError
+  try { configuration = await readPluginConfiguration(resources) }
+  catch (error) { configurationError = error.message }
+  const verifiedLock = lockMatches && configuration !== undefined
+  const runtime = await jsonFile(join(workflow, 'dsh-runtime.json'))
   for (const item of projectManifest?.plugins ?? []) {
     if (!packageName(item.package)) continue
     const pinned = projectLock?.plugins?.find(row => row.package === item.package)
     rows.push({ source: '项目插件锁定清单（打包快照）', name: item.package,
-      current: typeof pinned?.version === 'string' ? pinned.version : null, latest: null,
-      supportedDsh: declaredDshVersions(pinned?.metadata),
-      latestSupportedDsh: latestDeclaredDsh(pinned?.metadata),
-      status: projectManifest.registry === registry ? 'pending' : 'unsupported',
-      note: projectManifest.registry !== registry ? '非 npm 公共 registry，未查询'
-        : lockMatches ? '与打包时清单一致' : '锁定清单缺失或与打包时配置不一致' })
+      current: null, expected: verifiedLock && typeof pinned?.version === 'string' ? pinned.version : null, latest: null,
+      supportedDsh: declaredDshVersions(verifiedLock ? pinned?.metadata : undefined),
+      latestSupportedDsh: latestDeclaredDsh(verifiedLock ? pinned?.metadata : undefined),
+      status: verifiedLock ? 'expected' : 'error',
+      note: verifiedLock ? `仓库固定清单；来源 ${item.source === 'git' ? pluginDependencySpec(item) : projectManifest.registry}；不代表已安装或已加载，随本仓库 DMG 更新`
+        : `锁定清单无法验证：${configurationError ?? '与打包配置不一致'}` })
   }
 
   for (const [name, directory] of owned) {
@@ -159,51 +153,56 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
       const panel = name === 'dsh-workflow-matt-panel'
       const upstream = panel ? await jsonFile(join(workflow, 'matt-skills-panel-plugin/upstream.json')) : undefined
       rows.push({ source: panel ? 'App 内置派生插件' : 'App 内置自研插件', name, current: manifest.version,
-        latest: null, status: 'bundled', note: panel ? `上游基准 ${upstream?.version ?? '未知'}；随 App 构建更新` : '随 App 构建更新，不在运行中替换' })
+        expected: manifest.version, latest: null, status: 'bundled', note: panel ? `上游基准 ${upstream?.version ?? '未知'}；随 App 构建更新` : '随 App 构建更新，不在运行中替换' })
     }
   }
   const mattZh = await jsonFile(join(workflow, 'vendor/mattpocock-skills-zh/.codex-plugin/plugin.json'))
   if (mattZh?.name === 'mattpocock-skills-zh') rows.push({ source: 'App 内置中文技能', name: mattZh.name,
-    current: mattZh.version, latest: null, status: 'bundled', supportedDsh: '未声明', latestSupportedDsh: '未声明',
+    current: mattZh.version, expected: mattZh.version, latest: null, status: 'bundled', supportedDsh: '未声明', latestSupportedDsh: '未声明',
     note: '启动时由 DSH 技能文件提供器加载；随 App 构建更新' })
   for (const name of agentTeams) {
     if (rows.some(row => row.name === name)) continue
     const manifest = await jsonFile(join(resources, 'node_modules', ...name.split('/'), 'package.json'))
     if (manifest?.name === name) rows.push({ source: 'DSH 版本绑定插件', name, current: manifest.version,
-      latest: null, status: 'coupled', note: '与当前 DSH 版本绑定；不能单独升级' })
+      expected: runtime?.version ?? null, latest: null, status: 'coupled', note: '与当前 DSH 版本绑定；随本仓库 DMG 更新' })
   }
 
-  const activeConfiguration = await jsonFile(configurationPath(home)) ?? projectManifest
-  for (const row of rows.filter(row => row.source === profileSource)) {
-    const target = activeConfiguration?.plugins?.find(item => item.package === row.name)?.version
-    if (exactVersion(target) && (row.current !== target || profileManifest?.dependencies?.[row.name] !== target)) {
-      row.status = 'error'
-      row.note = `插件版本偏差：统一配置 ${target}，依赖声明 ${profileManifest?.dependencies?.[row.name] ?? '缺失'}，实际安装 ${row.current ?? '缺失'}`
+  for (const row of rows) {
+    row.updatable = false
+    row.latest = null
+    if (row.expected === undefined) row.expected = row.source === 'DSH 内置 Bundle' ? runtime?.version ?? null : null
+    if (row.source !== profileSource) {
+      if (row.current !== null && row.expected !== null && row.current !== row.expected) {
+        row.status = 'drift'; row.note = `仓库固定 ${row.expected}，实际打包 ${row.current}；随本仓库 DMG 更新`
+      }
+      continue
+    }
+    const configuredPlugin = configuration?.plugins?.find(item => item.package === row.name)
+    const configuredTarget = configuredPlugin?.version
+    const target = configuredTarget
+      ?? rows.find(item => item.name === row.name && item.status === 'bundled')?.expected
+      ?? (row.name.startsWith('@deepseek-ai/dsh-') ? runtime?.version : undefined)
+    row.expected = exactVersion(target) ? target : null
+    const declared = profileManifest?.dependencies?.[row.name] ?? null
+    const expectedDeclaration = configuredPlugin ? pluginDependencySpec(configuredPlugin) : row.expected
+    row.declared = configuredPlugin?.source === 'git' && declared === expectedDeclaration ? 'GitHub 固定提交'
+      : exactVersion(declared) ? declared : declared === null ? null
+      : /^(?:file:|link:|workspace:)/.test(declared) ? '本地引用' : '非精确版本引用'
+    if (row.status === 'error') continue
+    if (row.expected) {
+      const declarationMismatch = configuredTarget ? declared !== expectedDeclaration : exactVersion(declared) && declared !== row.expected
+      row.status = row.current === null ? 'unknown' : row.current !== row.expected || declarationMismatch ? 'drift' : 'fixed'
+      row.note = `仓库固定 ${row.expected}，依赖声明 ${row.declared ?? '缺失'}，实际安装 ${row.current ?? '未知'}；随本仓库 DMG 更新`
+    } else if (configurationError) {
+      row.status = 'unknown'; row.note = `实际安装 ${row.current ?? '未知'}；仓库固定值无法验证：${configurationError}`
+    } else if (row.status === 'installed') {
+      row.status = 'untracked'; row.note = '实际安装包未列入仓库固定清单；不查询 npm latest，不在运行端替换'
     }
   }
-
-  const pending = rows.filter(row => row.status === 'pending')
-  const latestByName = new Map()
-  await Promise.all(pending.map(async row => {
-    if (!latestByName.has(row.name)) latestByName.set(row.name, Promise.resolve().then(() => fetchLatest(row.name)))
-    try {
-      row.latest = await latestByName.get(row.name)
-      const comparison = row.current ? compareVersions(row.current, row.latest) : null
-      row.status = comparison === -1 ? 'newer' : comparison === 0 ? 'current'
-        : comparison === 1 ? 'ahead' : 'unknown'
-    } catch (error) { row.status = 'error'; row.note = String(error.message).slice(0, 180) }
-  }))
-  const enabledBundles = new Set(profileManifest?.dsh?.profile?.bundles ?? [])
-  const ownedNames = new Set([...owned.map(([name]) => name), 'dsh-mattpocock-skills-deck'])
-  for (const row of rows) {
-    row.updatable = ['DSH Web profile', 'DSH Desktop profile'].includes(row.source) && row.status === 'newer' && typeof row.latest === 'string'
-      && exactVersion(row.latest) && enabledBundles.has(row.name)
-      && !row.name.startsWith('@deepseek-ai/') && !ownedNames.has(row.name)
-  }
-  return { checkedAt: new Date().toISOString(), rows }
+  return { checkedAt: new Date().toISOString(), rows, actualScope: 'installed-files', policy: '随本仓库 DMG 统一更新；本地盘点不代表已经在 Host 加载' }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   try {
     if (!process.argv[2]) throw new Error('Usage: plugin-versions.mjs RESOURCES')
     process.stdout.write(JSON.stringify(await checkPluginVersions({ resourcesRoot: process.argv[2] })) + '\n')

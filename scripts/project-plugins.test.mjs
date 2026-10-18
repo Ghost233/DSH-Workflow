@@ -23,7 +23,10 @@ async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-project-plugins-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const list = JSON.parse(await readFile(new URL('../project-plugins.json', import.meta.url), 'utf8'))
-  for (const item of list.plugins) item.version = '1.0.0'
+  for (const item of list.plugins) {
+    item.version = '1.0.0'
+    delete item.source; delete item.commit; delete item.ref
+  }
   await writeJson(join(root, 'project-plugins.json'), list)
   await pkg(root, { name: 'dsh-workflow', version: '1.0.0', dsh: { client: { platform: 'web' } } })
   await pkg(join(root, 'matt-skills-panel-plugin/package'), { name: 'dsh-workflow-matt-panel', version: '1.0.0', dsh: { client: { platform: 'web' } } })
@@ -61,8 +64,8 @@ async function fixture(t) {
     await writeFile(join(semver, 'index.cjs'), 'exports.satisfies = () => true')
   }
   return { root, home: join(root, 'home'), anchor, list, calls, run, update: true,
-    readMetadata: async item => ({ name: item.package, dsh: { client: { inject: [] } } }),
-    resolvePackage: async item => item.source === 'git' ? { commit: 'a'.repeat(40) } : { version: '1.0.0' } }
+    readMetadata: async item => ({ name: item.package, version: '1.0.0', dsh: { client: { inject: [] } } }),
+    resolvePackage: async item => item.source === 'git' ? { commit: 'a'.repeat(40), ...item.commit ? { version: item.version } : {} } : { version: '1.0.0' } }
 }
 
 async function withGitPlugin(f) {
@@ -71,6 +74,24 @@ async function withGitPlugin(f) {
   f.list.plugins.splice(1, 0, item)
   await writeJson(join(f.root, 'project-plugins.json'), f.list)
 }
+
+test('an exact GitHub-only release installs its pinned source and retains version plus commit in the lock', async t => {
+  const f = await fixture(t)
+  await withGitPlugin(f)
+  const item = f.list.plugins.find(item => item.source === 'git')
+  item.version = '1.0.0'; item.commit = 'a'.repeat(40); delete item.ref
+  await writeJson(join(f.root, 'project-plugins.json'), f.list)
+  const state = await prepare(f.root, f.anchor, process.pid, f)
+  const lock = JSON.parse(await readFile(join(f.root, 'project-plugins.lock.json'), 'utf8'))
+  const pin = lock.plugins.find(pin => pin.package === item.package)
+  assert.equal(pin.version, '1.0.0')
+  assert.equal(pin.commit, item.commit)
+  assert.ok(f.calls.includes(`${item.package}@git+${item.repository}.git#${item.commit}`))
+  await releaseLock(state.directory, process.pid)
+  await assert.rejects(prepare(f.root, f.anchor, process.pid, { ...f,
+    readMetadata: async row => ({ name: row.package, version: row.source === 'git' ? '9.9.9' : '1.0.0' }),
+  }), /metadata version does not match/)
+})
 
 test('ordered latest resolution, project-local install, patch publication and profile deduplication', async t => {
   const f = await fixture(t)

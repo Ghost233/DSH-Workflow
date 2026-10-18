@@ -10,7 +10,7 @@ const exec = promisify(execFile)
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
 const ignored = path => path.split('/').some(part => ['test', 'tests', '.git', 'node_modules'].includes(part))
 const scripts = ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-runtime.mjs', 'dsh-launch-composition.mjs',
-  'dsh-readiness.mjs', 'observation-profile.mjs', 'web-host-lifecycle.mjs']
+  'dsh-readiness.mjs', 'dsh-delivery-policy.mjs', 'observation-profile.mjs', 'web-host-lifecycle.mjs']
 
 async function sources(root) {
   const files = ['package.json', 'dsh-runtime.json', 'project-plugins.json', 'project-plugins.lock.json', 'project-mcp.json',

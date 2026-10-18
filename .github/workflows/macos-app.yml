@@ -12,6 +12,10 @@ on:
       - scripts/project-plugin-resolver.mjs
       - scripts/harness-runtime.mjs
       - scripts/dsh-launch-composition.mjs
+      - scripts/dsh-delivery-policy.mjs
+      - scripts/dsh-readiness.mjs
+      - project-plugins.json
+      - project-plugins.lock.json
       - scripts/web-host-lifecycle.mjs
       - scripts/release.sh
       - scripts/release.py
@@ -37,6 +41,10 @@ on:
       - scripts/project-plugin-resolver.mjs
       - scripts/harness-runtime.mjs
       - scripts/dsh-launch-composition.mjs
+      - scripts/dsh-delivery-policy.mjs
+      - scripts/dsh-readiness.mjs
+      - project-plugins.json
+      - project-plugins.lock.json
       - scripts/web-host-lifecycle.mjs
       - scripts/release.sh
       - scripts/release.py
@@ -123,7 +131,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.47.6
+          flutter-version: 3.47.7
 
       - name: Build project-maintained Matt panel
         run: |
@@ -169,7 +177,25 @@ jobs:
             macos-launcher/runtime/single-port-entry.test.mjs \
             macos-launcher/runtime/lan-gateway.test.mjs \
             macos-launcher/runtime/desktop-launch.test.mjs \
-            macos-launcher/runtime/desktop-status.test.mjs
+            macos-launcher/runtime/desktop-status.test.mjs \
+            macos-launcher/runtime/desktop-client.test.mjs \
+            macos-launcher/runtime/web-control-startup.test.mjs \
+            macos-launcher/runtime/lan-gateway-lifecycle.test.mjs \
+            macos-launcher/runtime/web-readiness.test.mjs \
+            macos-launcher/runtime/service-notification.test.mjs \
+            macos-launcher/runtime/service-notification-native.test.mjs \
+            macos-launcher/runtime/service-notification-management.test.mjs
+
+      - name: Verify managed Workflow update policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/run-project-tests.mjs \
+            scripts/dsh-launch-composition.test.mjs \
+            scripts/dsh-readiness.test.mjs \
+            macos-launcher/runtime/plugin-configuration.test.mjs \
+            macos-launcher/runtime/plugin-versions.test.mjs \
+            macos-launcher/runtime/plugin-update.test.mjs
 
       - name: Build fixed DSH production packages
         working-directory: deepseek-harness
@@ -200,6 +226,22 @@ jobs:
           node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs "$APP"
           echo "app=$APP" >> "$GITHUB_OUTPUT"
 
+      - name: Verify Workflow desktop client assembly
+        shell: bash
+        env:
+          DSH_DESKTOP_TEST_MAIN: ${{ steps.desktop.outputs.app }}/Contents/Resources/app/lib/main.js
+        run: |
+          set -euo pipefail
+          test -f "$DSH_DESKTOP_TEST_MAIN"
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { createHash } from 'node:crypto';
+          import { readFileSync } from 'node:fs';
+          const digest = createHash('sha256').update(readFileSync(process.env.DSH_DESKTOP_TEST_MAIN)).digest('hex');
+          assert.equal(digest, 'b0c715cb750322ebd3fe46f4157fdc370efe92b21408854bcf8083f2ed1e85f9');
+          JS
+          node --test macos-launcher/desktop-adaptation.test.mjs
+
       - name: Build macOS application
         env:
           DSH_MACOS_DESKTOP_APP: ${{ steps.desktop.outputs.app }}
@@ -213,6 +255,35 @@ jobs:
           DSH_VERSION="$(node -p "require('./dsh-runtime.json').version")"
           node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs \
             ".build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
+
+      - name: Verify independent service through the official SDK
+        working-directory: macos-launcher/flutter
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(node -p "require('../../macos-launcher/package.json').version")"
+          DSH_VERSION="$(node -p "require('../../dsh-runtime.json').version")"
+          export DSH_SERVICE_TEST_RESOURCES="$GITHUB_WORKSPACE/.build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app/Contents/Resources"
+          test -x "$DSH_SERVICE_TEST_RESOURCES/node"
+          export DSH_TEST_NODE24="$(command -v node)"
+          export DSH_TEST_NODE="$DSH_TEST_NODE24"
+          export DSH_LAUNCHER_TEST_PORT=0
+          flutter test --no-pub --concurrency=1 \
+            test/independent_service_test.dart \
+            test/independent_service_startup_test.dart \
+            test/independent_desktop_test.dart \
+            test/independent_desktop_version_test.dart \
+            test/desktop_launch_preferences_test.dart \
+            test/independent_service_stop_test.dart \
+            test/independent_service_confirmation_test.dart \
+            test/independent_service_admission_test.dart \
+            test/independent_service_terminal_stop_test.dart \
+            test/independent_service_final_stop_test.dart \
+            test/independent_service_unknown_stop_test.dart \
+            test/independent_service_operation_stop_test.dart \
+            test/independent_service_fault_test.dart \
+            test/independent_service_web_admission_test.dart \
+            test/independent_service_update_test.dart
 
       - name: Package and verify DMG
         id: package

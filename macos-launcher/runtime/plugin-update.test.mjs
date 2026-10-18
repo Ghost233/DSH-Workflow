@@ -4,17 +4,29 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ensureStartupPlugins, updateCandidates, updateProfilePlugins } from './plugin-update.mjs'
+import { ensureStartupPlugins, updateCandidates, updateProfilePlugins, synchronizeProfilePlugins } from './plugin-update.mjs'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 const external = { source: 'DSH Web profile', name: 'dsh-context', current: '1.0.0', latest: '1.1.0', status: 'newer' }
 const team = { source: 'DSH Web profile', name: '@deepseek-ai/dsh-experimental-agent-team-profile', current: '0.1.6-alpha.1', latest: '0.2.0', status: 'newer' }
 
-test('only independent npm Web-profile plugins are update candidates', () => {
+test('runtime direct plugin replacement is refused before any registry or package-tool operation', async () => {
+  let checks = 0, runs = 0
+  await assert.rejects(updateProfilePlugins({ resourcesRoot: '/unused', home: '/unused',
+    check: async () => { checks++; return { checkedAt: 'fixture', rows: [] } },
+    run: async () => { runs++ },
+  }), /本仓库.*DMG/)
+  assert.equal(checks, 0)
+  assert.equal(runs, 0)
+})
+
+test('repository-delivered profiles offer no independent runtime update candidates', () => {
   assert.deepEqual(updateCandidates({ rows: [external, team,
     { ...external, source: '项目插件锁定清单（打包快照）', name: 'dsh-cost-meter' },
     { ...external, name: 'dsh-workflow' },
     { ...external, name: 'local-plugin', status: 'local' },
-  ] }), [external])
+  ] }), [])
 })
 
 test('marked project plugins join Web profile using the single configuration', async () => {
@@ -58,115 +70,68 @@ test('marked project plugins join Web profile using the single configuration', a
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
-test('plugin update changes only the selected profile package and returns a restart receipt', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'dsh-plugin-update-'))
-  const profile = join(home, 'profiles/web')
-  try {
-    await mkdir(join(profile, 'node_modules/dsh-context'), { recursive: true })
-    const manifestPath = join(profile, 'package.json')
-    await writeFile(manifestPath, JSON.stringify({ dependencies: { 'dsh-context': '1.0.0', 'dsh-workflow': 'link:/owned', 'plain-library': '1.0.0' },
-      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-context'] } } }))
-    await writeFile(join(profile, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.0.0' }))
-    const result = await updateProfilePlugins({ resourcesRoot: home, home,
-      check: async () => ({ checkedAt: '2026-09-18T00:00:00Z', rows: [external, team, { ...external, name: 'plain-library' }] }),
-      run: async ({ candidates }) => {
-        assert.deepEqual(candidates, [external])
-        const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-        manifest.dependencies['dsh-context'] = '1.1.0'
-        await writeFile(manifestPath, JSON.stringify(manifest))
-        await writeFile(join(profile, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.1.0' }))
-      } })
-    assert.deepEqual(result.updated, [{ name: 'dsh-context', from: '1.0.0', to: '1.1.0' }])
-    assert.equal(JSON.parse(await readFile(manifestPath, 'utf8')).dependencies['dsh-workflow'], 'link:/owned')
-  } finally { await rm(home, { recursive: true, force: true }) }
-})
-
-test('an empty new profile needs no package-manager invocation', async () => {
-  const result = await updateProfilePlugins({ resourcesRoot: '/unused', home: '/unused',
-    check: async () => ({ checkedAt: '2026-09-18T00:00:00Z', rows: [] }),
-    run: () => { throw new Error('must not run') } })
-  assert.deepEqual(result.updated, [])
-})
-
-test('a shared Desktop build updates Desktop packages while preserving the legacy Web profile', async t => {
-  const root = await mkdtemp(join(tmpdir(), 'desktop-plugin-update-'))
+test('runtime update and sync preserve installed profiles and the historical user configuration', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-runtime-package-readonly-'))
   t.after(() => rm(root, { recursive: true, force: true }))
-  await mkdir(join(root, 'desktop/DeepSeek Harness.app'), { recursive: true })
-  const desktop = join(root, 'profiles/desktop'), web = join(root, 'profiles/web')
-  await mkdir(join(desktop, 'node_modules/dsh-context'), { recursive: true })
-  await mkdir(web, { recursive: true })
-  const manifest = { dependencies: { 'dsh-context': '1.0.0' }, dsh: { profile: { bundles: ['dsh-context'] } } }
-  await writeFile(join(desktop, 'package.json'), JSON.stringify(manifest))
-  await writeFile(join(web, 'package.json'), JSON.stringify(manifest))
-  await writeFile(join(desktop, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.0.0' }))
-  const result = await updateProfilePlugins({ resourcesRoot: root, home: root,
-    check: async ({ profileName }) => {
-      assert.equal(profileName, 'desktop')
-      return { checkedAt: 'fixture', rows: [{ ...external, source: 'DSH Desktop profile' }] }
-    }, run: async ({ profileName }) => {
-      assert.equal(profileName, 'desktop')
-      manifest.dependencies['dsh-context'] = '1.1.0'
-      await writeFile(join(desktop, 'package.json'), JSON.stringify(manifest))
-      await writeFile(join(desktop, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.1.0' }))
-    } })
-  assert.equal(result.updated[0].to, '1.1.0')
-  assert.equal(JSON.parse(await readFile(join(web, 'package.json'), 'utf8')).dependencies['dsh-context'], '1.0.0')
-})
-
-test('a selected subset updates only the chosen plugin', async t => {
-  const home = await mkdtemp(join(tmpdir(), 'dsh-plugin-only-'))
-  const profile = join(home, 'profiles/web')
-  try {
+  const paths = []
+  for (const profileName of ['web', 'desktop']) {
+    const profile = join(root, 'profiles', profileName)
     await mkdir(join(profile, 'node_modules/dsh-context'), { recursive: true })
-    await mkdir(join(profile, 'node_modules/dsh-other'), { recursive: true })
-    const manifestPath = join(profile, 'package.json')
-    await writeFile(manifestPath, JSON.stringify({ dependencies: { 'dsh-context': '1.0.0', 'dsh-other': '1.0.0' },
-      dsh: { profile: { bundles: ['dsh-context', 'dsh-other'] } } }))
-    await writeFile(join(profile, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.0.0' }))
-    await writeFile(join(profile, 'node_modules/dsh-other/package.json'), JSON.stringify({ name: 'dsh-other', version: '1.0.0' }))
-    const rows = [
-      { source: 'DSH Web profile', name: 'dsh-context', current: '1.0.0', latest: '1.1.0', status: 'newer' },
-      { source: 'DSH Web profile', name: 'dsh-other', current: '1.0.0', latest: '2.0.0', status: 'newer' },
-    ]
-    const result = await updateProfilePlugins({ resourcesRoot: home, home, only: ['dsh-context'],
-      check: async () => ({ checkedAt: '2026-09-18T00:00:00Z', rows }),
-      run: async ({ candidates }) => {
-        assert.deepEqual(candidates.map(row => row.name), ['dsh-context'])
-        const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-        manifest.dependencies['dsh-context'] = '1.1.0'
-        await writeFile(manifestPath, JSON.stringify(manifest))
-        await writeFile(join(profile, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.1.0' }))
-      } })
-    assert.deepEqual(result.updated, [{ name: 'dsh-context', from: '1.0.0', to: '1.1.0' }])
-    assert.equal(JSON.parse(await readFile(manifestPath, 'utf8')).dependencies['dsh-other'], '1.0.0')
-  } finally { await rm(home, { recursive: true, force: true }) }
+    const manifest = join(profile, 'package.json'), actual = join(profile, 'node_modules/dsh-context/package.json')
+    await writeFile(manifest, JSON.stringify({ dependencies: { 'dsh-context': '1.0.0' }, dsh: { profile: { bundles: ['dsh-context'] } } }))
+    await writeFile(actual, JSON.stringify({ name: 'dsh-context', version: '1.0.0' }))
+    paths.push(manifest, actual)
+  }
+  await mkdir(join(root, 'workflow'), { recursive: true })
+  const saved = join(root, 'workflow/project-plugins.json')
+  await writeFile(saved, JSON.stringify({ registry: 'https://registry.npmjs.org/', plugins: [{ package: 'dsh-context', version: '9.9.9' }] }))
+  paths.push(saved)
+  const before = await Promise.all(paths.map(path => readFile(path, 'utf8')))
+  for (const operation of [updateProfilePlugins, synchronizeProfilePlugins]) {
+    for (const profileName of ['web', 'desktop']) for (const only of [undefined, ['dsh-context']]) {
+      await assert.rejects(operation({ resourcesRoot: root, home: root, profileName, only,
+        check: () => assert.fail('Runtime package rejection must not query a registry'),
+        run: () => assert.fail('Runtime package rejection must not start a package tool'),
+      }), /本仓库.*DMG/)
+    }
+  }
+  assert.deepEqual(await Promise.all(paths.map(path => readFile(path, 'utf8'))), before)
 })
 
-test('invalid selections are rejected before any check runs', async () => {
-  const fail = () => { throw new Error('must not check') }
-  await assert.rejects(updateProfilePlugins({ resourcesRoot: '/unused', home: '/unused', only: [], check: fail }),
-    /Invalid plugin selection/u)
-  await assert.rejects(updateProfilePlugins({ resourcesRoot: '/unused', home: '/unused', only: ['not a name'], check: fail }),
-    /Invalid plugin selection/u)
+test('empty and invalid runtime selections still reject package replacement before external work', async () => {
+  for (const operation of [updateProfilePlugins, synchronizeProfilePlugins]) for (const only of [[], ['not a name']]) {
+    await assert.rejects(operation({ resourcesRoot: '/unused', home: '/unused', only,
+      check: () => assert.fail('must not check'), run: () => assert.fail('must not run'),
+    }), /本仓库.*DMG/)
+  }
 })
 
-test('a failed update reports packages already changed so the launcher can still offer restart', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'dsh-plugin-partial-'))
-  const profile = join(home, 'profiles/web')
-  try {
-    await mkdir(join(profile, 'node_modules/dsh-context'), { recursive: true })
-    await writeFile(join(profile, 'package.json'), JSON.stringify({
-      dependencies: { 'dsh-context': '1.0.0' }, dsh: { profile: { bundles: ['dsh-context'] } },
-    }))
-    await writeFile(join(profile, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.0.0' }))
-    const result = await updateProfilePlugins({ resourcesRoot: home, home,
-      check: async () => ({ checkedAt: '2026-09-18T00:00:00Z', rows: [external] }),
-      run: async () => {
-        await writeFile(join(profile, 'node_modules/dsh-context/package.json'), JSON.stringify({ name: 'dsh-context', version: '1.1.0' }))
-        throw new Error('profile validation failed')
-      },
-    })
-    assert.deepEqual(result.updated, [{ name: 'dsh-context', from: '1.0.0', to: '1.1.0' }])
-    assert.equal(result.error, 'profile validation failed')
-  } finally { await rm(home, { recursive: true, force: true }) }
+test('runtime updater and sync CLI commands report DMG delivery without creating profile data', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-runtime-package-cli-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const script = fileURLToPath(new URL('./plugin-update.mjs', import.meta.url))
+  for (const args of [[], ['--sync', '--only', 'dsh-context']]) {
+    const result = spawnSync(process.execPath, [script, root, ...args], { encoding: 'utf8', env: { ...process.env, DSH_HOME: root } })
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /本仓库.*DMG/)
+    assert.equal(result.stdout, '')
+  }
+  await assert.rejects(readFile(join(root, 'profiles/web/package.json')), { code: 'ENOENT' })
+  await assert.rejects(readFile(join(root, 'workflow/project-plugins.json')), { code: 'ENOENT' })
+})
+
+test('packaged run-dsh rejects package mutation before loading the upstream CLI', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-runtime-maintenance-cli-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  await writeFile(join(root, 'project-layer.json'), JSON.stringify({ schema: 1, sourceCommit: 'packaged-fixture' }))
+  const script = fileURLToPath(new URL('./run-dsh.mjs', import.meta.url))
+  for (const args of [['plugin', '--profile', 'desktop', 'add', 'dsh-context@1.0.0'],
+    ['plugin', 'add', 'dsh-context@1.0.0', '--profile=desktop', '--workflow-sync'],
+    ['plugin', '--profile', 'desktop', 'remove', 'dsh-context']]) {
+    const result = spawnSync(process.execPath, [script, root, ...args], { encoding: 'utf8', env: { ...process.env, DSH_HOME: root } })
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /本仓库.*DMG/)
+    assert.equal(result.stdout, '')
+  }
+  await assert.rejects(readFile(join(root, 'profiles/desktop/package.json')), { code: 'ENOENT' })
 })

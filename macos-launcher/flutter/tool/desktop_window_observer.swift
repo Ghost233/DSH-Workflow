@@ -30,14 +30,16 @@ do {
     parent == "/private/tmp/dsh-launcher-local-" + String(getuid())
   let ciAllowed = environment["GITHUB_ACTIONS"] == "true" &&
     environment["RUNNER_TEMP"].flatMap { canonical($0) } == parent
-  guard (localAllowed || ciAllowed), (rootURL.lastPathComponent.hasPrefix("dsh-t01-") || rootURL.lastPathComponent.hasPrefix("dsh-t05-")) else {
+  let independentDesktop = rootURL.lastPathComponent.hasPrefix("dsh-s02-")
+  guard (localAllowed || ciAllowed), (rootURL.lastPathComponent.hasPrefix("dsh-t01-") || rootURL.lastPathComponent.hasPrefix("dsh-t05-") || independentDesktop) else {
     throw NSError(domain: "window-observer", code: 1)
   }
+  let desktopBundle = root + (independentDesktop ? "/resources" : "/missing-runtime") + "/desktop/DeepSeek Harness.app"
   let attributes = try FileManager.default.attributesOfItem(atPath: root)
   guard (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
         (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700,
-        let bundlePath = canonical(root + "/missing-runtime/desktop/DeepSeek Harness.app"),
-        bundlePath == root + "/missing-runtime/desktop/DeepSeek Harness.app",
+        let bundlePath = canonical(desktopBundle),
+        bundlePath == desktopBundle,
         let executableURL = Bundle(url: URL(fileURLWithPath: bundlePath))?.executableURL,
         let executable = canonical(executableURL.path) else {
     throw NSError(domain: "window-observer", code: 2)

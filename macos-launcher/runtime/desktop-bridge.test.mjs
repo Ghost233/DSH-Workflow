@@ -12,6 +12,7 @@ test('desktop readiness keeps its token private and disposal cannot remove a new
   const services = new Map()
   apply({ connection: { authenticatedUrl: url => `${url}/?token=fixture` }, webServer: { port: 40321 },
     appReady: { onReady(fn) { ready = fn; return () => {} } },
+    inject() {},
     provide(name, value) { services.set(name, value) },
     effect(fn) { dispose = fn() }, logger: { error(error) { throw error } } },
   { directory, runtimeVersion: '0.2.1-alpha.1' })

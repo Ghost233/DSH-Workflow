@@ -3,22 +3,12 @@ import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { checkPluginVersions } from './plugin-versions.mjs'
-import { readPluginConfiguration, savePluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
-
-const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
-const packageNamePattern = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i
-const owned = new Set(['dsh-workflow', 'dsh-mattpocock-skills-deck', 'dsh-workflow-matt-panel'])
+import { readPluginConfiguration, assertProfilePluginVersions, assertPackageMaintenanceResource } from './plugin-configuration.mjs'
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'))
 
-/** Only npm-hosted Web-profile plugins may change independently of the packaged DSH/App. */
-export function updateCandidates(report) {
-  return report.rows.filter(row => ['DSH Web profile', 'DSH Desktop profile'].includes(row.source) && row.status === 'newer'
-    && !row.name.startsWith('@deepseek-ai/') && !owned.has(row.name)
-    && typeof row.latest === 'string' && versionPattern.test(row.latest))
-}
+/** Repository-delivered profiles have no independently replaceable runtime packages. */
+export function updateCandidates() { return [] }
 
 async function installedVersion(profile, name) {
   try {
@@ -63,7 +53,6 @@ export async function ensureStartupPlugins({ resourcesRoot, home = process.env.D
   const profile = join(home, 'profiles/web')
   const result = { added: [], already: [], skipped: [] }
   await assertProfilePluginVersions(profile, list)
-  await savePluginConfiguration(home, list)
   for (const item of list.plugins.filter(row => row.startup === true)) {
     try {
       const before = await readJson(join(profile, 'package.json')).catch(error => {
@@ -76,7 +65,9 @@ export async function ensureStartupPlugins({ resourcesRoot, home = process.env.D
         continue
       }
       const target = item.version
+      if (item.source === 'git') throw new Error('GitHub 固定源码插件需在工程准备阶段部署，不能从同名 npm 包安装。')
       await assertProfilePluginVersions(profile, list)
+      assertPackageMaintenanceResource(resources)
       await run({ resources, home, candidates: [{ name: item.package, latest: target }], registry: list.registry })
       const after = await readJson(join(profile, 'package.json'))
       if (await installedVersion(profile, item.package) !== target
@@ -90,78 +81,14 @@ export async function ensureStartupPlugins({ resourcesRoot, home = process.env.D
   return result
 }
 
-/** Update eligible profile packages on disk. Never restart or alter packaged plugins. */
-export async function updateProfilePlugins({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
-  profileName = existsSync(join(resourcesRoot, 'desktop/DeepSeek Harness.app')) ? 'desktop' : 'web',
-  only, check = checkPluginVersions, run = runProfileUpdate } = {}) {
-  const selection = only === undefined ? undefined : new Set(only)
-  if (selection !== undefined && (selection.size === 0 || [...selection].some(name => !packageNamePattern.test(name)))) {
-    throw new Error('Invalid plugin selection')
-  }
-  const resources = resolve(resourcesRoot)
-  const profile = join(home, 'profiles', profileName)
-  const config = await readPluginConfiguration(resources, home)
-  await assertProfilePluginVersions(profile, config)
-  const report = await check({ resourcesRoot: resources, home, profileName })
-  const available = updateCandidates(report).filter(row => selection === undefined || selection.has(row.name))
-  if (available.length === 0) return { checkedAt: report.checkedAt, updated: [], failedChecks: report.rows.filter(row => row.status === 'error').length }
-  const profileManifest = await readJson(join(profile, 'package.json'))
-  const enabled = new Set(profileManifest.dsh?.profile?.bundles ?? [])
-  const candidates = available.filter(row => enabled.has(row.name))
-  if (candidates.length === 0) return { checkedAt: report.checkedAt, updated: [], failedChecks: report.rows.filter(row => row.status === 'error').length }
-  if (config) await savePluginConfiguration(home, config)
-  const before = new Map(await Promise.all(candidates.map(async row => [row.name, await installedVersion(profile, row.name)])))
-  let failure
-  try { await run({ resources, home, candidates, profileName }) }
-  catch (error) { failure = String(error.message ?? error).slice(-1000) }
-  const manifest = await readJson(join(profile, 'package.json'))
-  const updated = []
-  for (const row of candidates) {
-    const actual = await installedVersion(profile, row.name)
-    if (actual && before.get(row.name) !== actual) updated.push({ name: row.name, from: before.get(row.name) ?? null, to: actual })
-    if (!failure && (actual !== row.latest || manifest.dependencies?.[row.name] !== row.latest || !manifest.dsh?.profile?.bundles?.includes(row.name))) {
-      failure = `DSH 未完整启用更新后的插件：${row.name}`
-    }
-  }
-  if (config) {
-    for (const item of config.plugins) {
-      const row = candidates.find(row => row.name === item.package)
-      if (row && await installedVersion(profile, row.name) === row.latest
-        && manifest.dependencies?.[row.name] === row.latest) item.version = row.latest
-    }
-    await savePluginConfiguration(home, config)
-    try { await assertProfilePluginVersions(profile, config, new Map(config.plugins.filter(item => profileManifest.dependencies?.[item.package] !== undefined).map(item => [item.package, item.version]))) }
-    catch (error) { failure = [failure, error.message].filter(Boolean).join('；') }
-  }
-  return { checkedAt: report.checkedAt, updated, failedChecks: report.rows.filter(row => row.status === 'error').length,
-    ...(failure ? { error: failure } : {}) }
+/** Runtime package changes are delivered only through the repository DMG. */
+export async function updateProfilePlugins() {
+  throw new Error('运行端插件随本仓库正式 DMG 统一更新，请在启动器中检查应用更新。')
 }
 
-/** Explicitly apply edited configuration to selected packages; never reconcile unrelated drift. */
-export async function synchronizeProfilePlugins({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
-  profileName = existsSync(join(resourcesRoot, 'desktop/DeepSeek Harness.app')) ? 'desktop' : 'web',
-  only, run = runProfileUpdate } = {}) {
-  const resources = resolve(resourcesRoot)
-  const config = await readPluginConfiguration(resources, home)
-  if (!config || !only?.length || only.some(name => !config.plugins.some(item => item.package === name))) {
-    throw new Error('同步需要通过 --only 指定统一配置中的插件')
-  }
-  const selected = new Set(only)
-  const profile = join(home, 'profiles', profileName)
-  await assertProfilePluginVersions(profile, { ...config, plugins: config.plugins.filter(item => !selected.has(item.package)) })
-  await savePluginConfiguration(home, config)
-  const candidates = config.plugins.filter(item => selected.has(item.package)).map(item => ({ name: item.package, latest: item.version }))
-  await run({ resources, home, candidates, profileName, registry: config.registry, synchronize: true })
-  await assertProfilePluginVersions(profile, config)
-  const manifest = await readJson(join(profile, 'package.json'))
-  for (const row of candidates) {
-    if (await installedVersion(profile, row.name) !== row.latest || manifest.dependencies?.[row.name] !== row.latest
-      || !manifest.dsh?.profile?.bundles?.includes(row.name)) throw new Error(`插件同步未完成：${row.name}`)
-  }
-  return { synchronized: candidates.map(row => ({ name: row.name, version: row.latest })) }
-}
+export const synchronizeProfilePlugins = updateProfilePlugins
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   try {
     const onlyIndex = process.argv.indexOf('--only')
     const only = onlyIndex >= 0 ? process.argv[onlyIndex + 1]?.split(',') : undefined

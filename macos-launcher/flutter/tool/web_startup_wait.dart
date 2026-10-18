@@ -16,16 +16,17 @@ String? webStartupFailure(
       if (text.startsWith('PlatformException(open-failed,') ||
           text.startsWith('Bad state: 插件装配失败（') ||
           text.startsWith('ProcessException:') ||
+          text.startsWith('Bad state: Unsafe DSH service ') ||
           text.startsWith('Bad state: Web 启动未完成') ||
           text.startsWith('Bad state: Web 服务已退出')) {
-        return 'Actual management UI reported a startup failure';
+        return 'Actual management UI reported a startup failure: ${text.replaceAll(RegExp(r'token=[^&\s]+'), 'token=<REDACTED>')}';
       }
     }
   }
   return null;
 }
 
-/// Startup has no short deadline; the CI job budget remains the outer bound.
+/// Match the management request deadline so a lost observation cannot hang a probe.
 Future<void> waitForActualWebStartup({
   required Future<Map<String, Object?>> Function() status,
   required Future<Map<String, Object?>> Function() ui,
@@ -59,7 +60,7 @@ Future<void> waitForActualWebStartup({
         (code) =>
             throw StateError('Application exited ($code) before Web readiness'),
       ),
-    ]);
+    ]).timeout(const Duration(seconds: 30));
   } finally {
     done = true;
   }

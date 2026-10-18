@@ -2,17 +2,35 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+Map<String, Object> _release(
+  String version, {
+  bool draft = false,
+  bool prerelease = false,
+}) => {
+  'tag_name': 'macos-v$version',
+  'draft': draft,
+  'prerelease': prerelease,
+  'assets': [
+    {
+      'name': 'DSH-Workflow-macOS-$version-arm64.dmg',
+      'size': 1024,
+      'browser_download_url':
+          'https://github.com/Ghost233/DSH-Workflow/releases/download/macos-v$version/DSH-Workflow-macOS-$version-arm64.dmg',
+    },
+  ],
+};
+
 class ReleaseFixture {
   ReleaseFixture._(this.server);
   final HttpServer server;
   int status = 200;
   String body = jsonEncode([
-    {'tag_name': 'macos-v1.9.9', 'draft': false, 'prerelease': false},
-    {'tag_name': 'macos-v1.10.0', 'draft': false, 'prerelease': false},
-    {'tag_name': 'macos-v3.0.0', 'draft': true, 'prerelease': false},
-    {'tag_name': 'macos-v4.0.0', 'draft': false, 'prerelease': true},
-    {'tag_name': 'macos-v09.0.0', 'draft': false, 'prerelease': false},
-    {'tag_name': 'macos-v9.0.0-beta', 'draft': false, 'prerelease': false},
+    _release('1.9.9'),
+    _release('1.10.0'),
+    _release('3.0.0', draft: true),
+    _release('4.0.0', prerelease: true),
+    _release('09.0.0'),
+    _release('9.0.0-beta'),
     {'tag_name': 'v9.0.0', 'draft': false, 'prerelease': false},
   ]);
   bool hang = false;
@@ -148,10 +166,7 @@ Future<void> runUpdateScenarios({
     'failed refresh removes the stale release action',
   );
 
-  fixture.releases([
-    {'tag_name': 'macos-v1.10.0', 'draft': false, 'prerelease': false},
-    {'tag_name': 'macos-v2.0.0', 'draft': false, 'prerelease': false},
-  ]);
+  fixture.releases([_release('1.10.0'), _release('2.0.0')]);
   await tap('检查更新');
   await waitFor(
     'numeric major update',
@@ -173,10 +188,7 @@ Future<void> runUpdateScenarios({
   );
   await captureGeneral('update-major');
 
-  fixture.releases([
-    {'tag_name': 'macos-v1.9.0', 'draft': false, 'prerelease': false},
-    {'tag_name': 'macos-v1.8.9', 'draft': false, 'prerelease': false},
-  ]);
+  fixture.releases([_release('1.9.0'), _release('1.8.9')]);
   await tap('检查更新');
   await waitFor('no newer release', () async => text(await state(), '暂无新版本'));
   require(

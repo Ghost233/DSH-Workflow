@@ -125,7 +125,7 @@ gh release view macos-vX.Y.Z -R Ghost233/DSH-Workflow --json tagName,isDraft,isP
 
 - `.github/workflows/macos-app.yml` 由 **push macos-v* tag** 触发；普通 push 到 main 不发布正式 Release。
 - tag 去掉 macos-v 后必须与 `macos-launcher/package.json` 版本严格相等；checkout 的提交必须等于发布 tag 的提交。
-- 使用固定 macos-15 / Flutter 3.47.6 调用 `scripts/build-release.sh`；该脚本验证应用 bundle id、`.app` 版本及打包的 DSH 版本。
+- 使用固定 macos-15 / Flutter 3.47.7 调用 `scripts/build-release.sh`；该脚本验证应用 bundle id、`.app` 版本及打包的 DSH 版本。
 - tag 已由本地发布入口创建，CI 使用 `gh release create --verify-tag`，不自动生成 tag、不覆盖同版本资产。同一 tag 的流水线应串行执行。
 - 资产为 `DSH-Workflow-macOS-<x.y.z>-arm64.dmg`、`manifest.json`、`SHA256SUMS`。构建号由 `macos-launcher/build.mjs` 使用应用版本注入。
 - `scripts/build-release.sh --app-path <已构建的.app>` 在本机预检打包环节；应用版本必须与 `macos-launcher/package.json` 一致。

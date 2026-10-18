@@ -7,10 +7,19 @@ import 'package:dsh_workflow_launcher/maclauncher_integration.dart';
 
 class Business implements LauncherActions {
   bool running = true, managed = false;
-  int starts = 0, recycles = 0, windows = 0;
+  int starts = 0, recycles = 0, windows = 0, serviceStops = 0;
   Completer<void>? delayedStart, delayedHandoff;
   final enteredHandoff = Completer<void>();
   var restored = Completer<void>();
+  @override
+  Future<void> startService() async {}
+  @override
+  Future<void> stopService() async {
+    serviceStops++;
+  }
+
+  @override
+  Future<LogBatch> serviceLogs(LogQuery query) async => LogBatch(entries: []);
   @override
   Future<void> startWeb() async {
     starts++;
@@ -141,7 +150,7 @@ void main() {
     final desktop = services.cast<Map>().singleWhere(
       (row) => row['id'] == 'desktop',
     );
-    expect(desktop['methods'], ['status']);
+    expect(desktop['methods'], ['start', 'recycle', 'status', 'logs']);
     final response = await fixture.peer.request('status', service: 'web');
     expect((response['result']! as Map)['instanceId'], 'real-business-run');
     final logs = await fixture.peer.request(
@@ -158,8 +167,9 @@ void main() {
     expect(fixture.business.windows, 1);
     await fixture.peer.request('recycle', service: 'web');
     expect(fixture.business.running, isFalse);
-    final denied = await fixture.peer.request('recycle', service: 'desktop');
-    expect((denied['error']! as Map)['code'], 'unsupported');
+    final stopped = await fixture.peer.request('recycle', service: 'desktop');
+    expect(stopped['error'], isNull);
+    expect(fixture.business.serviceStops, 1);
   });
 
   test(

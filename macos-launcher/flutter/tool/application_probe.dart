@@ -8,6 +8,8 @@ import 'package:vm_service/vm_service.dart';
 import 'package:vm_service/vm_service_io.dart';
 
 import 'web_application_scenario.dart';
+import 'independent_service_application_scenario.dart';
+import 'launcher_autostart_application_scenario.dart';
 import 'update_application_scenarios.dart';
 import 'log_application_scenario.dart';
 import 'entry_application_scenario.dart';
@@ -86,6 +88,29 @@ String applicationProbeRootParent({
 }
 
 Future<void> main(List<String> arguments) async {
+  if (arguments.any(
+    (value) => {
+      '--plugins-update-runtime',
+      '--plugins-desktop-runtime',
+    }.contains(value),
+  )) {
+    throw ArgumentError(
+      '在线插件换包验收已取消；组件随正式 DMG 统一交付，请使用 --plugins-runtime 检查只读清单。',
+    );
+  }
+
+  if (arguments.length == 3 && arguments[1] == '--launcher-deeplink-runtime') {
+    await runLauncherDeepLinkApplicationProbe(arguments);
+    return;
+  }
+  if (arguments.length == 3 && arguments[1] == '--launcher-autostart-runtime') {
+    await runLauncherAutostartApplicationProbe(arguments);
+    return;
+  }
+  if (arguments.length == 3 && arguments[1] == '--service-runtime') {
+    await runIndependentServiceApplicationProbe(arguments);
+    return;
+  }
   final localAcceptanceRoot =
       Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'];
   final desktopWindowRestart =
@@ -157,33 +182,8 @@ Future<void> main(List<String> arguments) async {
       : arguments;
   final pluginsScenario =
       arguments.length == 3 && arguments[1] == '--plugins-runtime';
-  final pluginUpdateScenario =
-      arguments.length == 3 &&
-      {
-        '--plugins-update-runtime',
-        '--plugins-desktop-runtime',
-      }.contains(arguments[1]);
-  final pluginDesktopScenario =
-      pluginUpdateScenario && arguments[1] == '--plugins-desktop-runtime';
-  if (arguments.length > 1 &&
-      {
-        '--plugins-update-runtime',
-        '--plugins-desktop-runtime',
-      }.contains(arguments[1]) &&
-      (!pluginUpdateScenario ||
-          (Platform.environment['GITHUB_ACTIONS'] != 'true' &&
-              localAcceptanceRoot == null))) {
-    throw ArgumentError(
-      'Plugin update acceptance requires isolated CI or explicit private local acceptance',
-    );
-  }
-  final webScenario =
-      logsScenario || entryScenario || pluginsScenario || pluginUpdateScenario
-      ? WebProbeOptions(
-          Directory(arguments[2]).absolute.path,
-          pluginDesktopScenario ? 'desktop' : 'headless',
-          pluginUpdateScenario ? 33080 : 0,
-        )
+  final webScenario = logsScenario || entryScenario || pluginsScenario
+      ? WebProbeOptions(Directory(arguments[2]).absolute.path, 'headless', 0)
       : WebProbeOptions.parse(webArgs) ?? lifecycle?.web;
   final systemCi =
       arguments.length == 3 &&
@@ -195,7 +195,6 @@ Future<void> main(List<String> arguments) async {
   final rootParent = applicationProbeRootParent(
     systemCi: systemCi,
     keychainCi: keychainCi,
-    pluginUpdateCi: pluginUpdateScenario,
     localAcceptanceRoot: localAcceptanceRoot,
     webScenario: webScenario,
     githubActions: Platform.environment['GITHUB_ACTIONS'] == 'true',
@@ -320,6 +319,9 @@ Future<void> main(List<String> arguments) async {
   );
   stdout.writeln('ISOLATED_ROOT=${root.path}');
   final layout = EndpointLayout(directory: '${root.path}/manager');
+  if (webScenario != null) {
+    await Directory('${root.path}/os-home').create();
+  }
   final environment = {
     ...Platform.environment,
     'DSH_LAUNCHER_TEST_ROOT': '${root.path}/data',
@@ -327,6 +329,8 @@ Future<void> main(List<String> arguments) async {
     'DSH_LAUNCHER_TEST_RESOURCES': '${root.path}/missing-runtime',
     'DSH_LAUNCHER_TEST_SOCKET': layout.socketPath,
     'DSH_HOME': '${root.path}/home',
+    if (webScenario != null) 'HOME': '${root.path}/os-home',
+    if (webScenario != null) 'TMPDIR': root.path,
     if (lifecycle != null)
       'DSH_LAUNCHER_TEST_START_GATE': '${root.path}/data/start-gate.sock',
     if (systemCi) 'DSH_LAUNCHER_SYSTEM_BOUNDARY_CI': '1',
@@ -412,6 +416,49 @@ Future<void> main(List<String> arguments) async {
     configure.exitCode == 0,
     'private Debug candidate has LaunchServices isolation',
   );
+  if (webScenario != null) {
+    final ownedInfo = '${app.path}/Contents/Info.plist';
+    final bundleId =
+        'com.ghostagent.dsh-workflow-launcher.web-fixture-$pid-${DateTime.now().microsecondsSinceEpoch}';
+    final identity = await Process.run('/usr/bin/plutil', [
+      '-replace',
+      'CFBundleIdentifier',
+      '-string',
+      bundleId,
+      ownedInfo,
+    ]);
+    require(
+      identity.exitCode == 0,
+      'the owned Web launcher copy has a unique fixture bundle identifier',
+    );
+    if (values.containsKey('CFBundleURLTypes')) {
+      final removed = await Process.run('/usr/bin/plutil', [
+        '-remove',
+        'CFBundleURLTypes',
+        ownedInfo,
+      ]);
+      require(
+        removed.exitCode == 0,
+        'the owned Web launcher copy does not declare production URL schemes',
+      );
+    }
+    final readback = await Process.run('/usr/bin/plutil', [
+      '-convert',
+      'json',
+      '-o',
+      '-',
+      ownedInfo,
+    ]);
+    final isolated = jsonDecode(readback.stdout.toString()) as Map;
+    require(
+      readback.exitCode == 0 &&
+          isolated['CFBundleIdentifier'] == bundleId &&
+          !isolated.containsKey('CFBundleURLTypes') &&
+          isolated['DSHLauncherTestRoot'] ==
+              environment['DSH_LAUNCHER_TEST_ROOT'],
+      'owned Web launcher identity and URL isolation are confirmed by plist readback',
+    );
+  }
   if (updates) {
     final version = await Process.run('/usr/bin/plutil', [
       '-replace',
@@ -436,17 +483,21 @@ Future<void> main(List<String> arguments) async {
     sign.exitCode == 0,
     'private Debug candidate is signed after isolation metadata',
   );
-  PluginRegistryFixture? pluginRegistry;
+  if (webScenario != null) {
+    final verified = await Process.run('/usr/bin/codesign', [
+      '--verify',
+      '--deep',
+      '--strict',
+      app.path,
+    ]);
+    require(
+      verified.exitCode == 0,
+      'the isolated Web launcher copy passes signature verification',
+    );
+  }
   DesktopWindowProbe? windowProbe;
   late final Process process;
   try {
-    pluginRegistry = pluginUpdateScenario
-        ? await PluginRegistryFixture.prepare(
-            root,
-            environment['DSH_LAUNCHER_TEST_RESOURCES']!,
-          )
-        : null;
-    if (pluginRegistry != null) environment.addAll(pluginRegistry.environment);
     windowProbe = desktopWindowScenario
         ? await DesktopWindowProbe.start(root)
         : null;
@@ -477,12 +528,6 @@ Future<void> main(List<String> arguments) async {
         'settings preparation',
         () async {
           await settings?.close();
-        },
-      ),
-      (
-        'registry preparation',
-        () async {
-          await pluginRegistry?.close();
         },
       ),
       (
@@ -634,7 +679,7 @@ Future<void> main(List<String> arguments) async {
         startupFailure: (oldDesktop) => diagnostics!.startupFailure(oldDesktop),
         tap: tap,
         capture: capture,
-        startWebBySdk: externalSdkCold,
+        startWebBySdk: externalSdkCold || lifecycle != null,
         beforeWebStart: windowProbe == null
             ? null
             : (ui, tap) async {
@@ -678,12 +723,6 @@ Future<void> main(List<String> arguments) async {
             ? runLogApplicationScenario
             : pluginsScenario
             ? runPluginApplicationScenario
-            : pluginUpdateScenario
-            ? (app) => runPluginUpdateApplicationScenario(
-                app,
-                pluginRegistry!,
-                desktop: pluginDesktopScenario,
-              )
             : null,
         prestartedHost: settings?.host,
         prestartedHostLog: settings?.hostLog,
@@ -895,14 +934,16 @@ Future<void> main(List<String> arguments) async {
             'desktop',
           }) &&
           capabilities.services
-                  .singleWhere((service) => service.id == 'desktop')
-                  .methods
-                  .length ==
-              1 &&
-          capabilities.services
               .singleWhere((service) => service.id == 'desktop')
-              .supports(kMethodStatus),
-      'official manager discovers web controls and observation-only desktop through the official SDK',
+              .methods
+              .toSet()
+              .containsAll({
+                kMethodStart,
+                kMethodRecycle,
+                kMethodStatus,
+                kMethodLogs,
+              }),
+      'official manager discovers Web controls and DSH service start, recycle, status and logs through the official SDK',
     );
     final session = server.sessionFor('dsh-workflow')!;
     Future<void> request(String method) async {
@@ -1021,12 +1062,6 @@ Future<void> main(List<String> arguments) async {
           settingsPhase('settings-close-start');
           await settings?.close();
           settingsPhase('settings-close-end');
-        },
-      ),
-      (
-        'registry',
-        () async {
-          await pluginRegistry?.close();
         },
       ),
       (

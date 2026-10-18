@@ -9,6 +9,7 @@
     "./jev-center": "./src/jev-center-plugin.mjs",
     "./agent-monitor": "./src/agent-monitor-plugin.mjs",
     "./client": "./client.js",
+    "./delivery-inventory": "./src/delivery-inventory.mjs",
     "./package.json": "./package.json"
   },
   "license": "MIT",
