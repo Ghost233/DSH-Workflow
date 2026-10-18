@@ -29,6 +29,15 @@ fi
 [[ -n "$FLUTTER_BIN" ]] || fail "未找到 Flutter；设置 FLUTTER_BIN 或安装 Flutter"
 export PATH="$(dirname "$FLUTTER_BIN"):$PATH"
 
+# 步骤 4 的 `node` 需要 Node-API 开发头文件；步骤 6 会复制一个自包含的 Node 进启动器，
+# 由 DSH_LAUNCHER_NODE 指定（默认 PATH 中的 node）。Homebrew 等动态链接 libnode 的发行版
+# 不能直接复制，需另备自包含 Node 后在执行时设置该变量。
+LAUNCHER_NODE="${DSH_LAUNCHER_NODE:-$(command -v node || true)}"
+[[ -n "$LAUNCHER_NODE" ]] || fail "未找到 node；设置 PATH 或 DSH_LAUNCHER_NODE"
+if otool -L "$LAUNCHER_NODE" 2>/dev/null | grep -q 'libnode'; then
+  fail "步骤 6 需要自包含的 Node；$LAUNCHER_NODE 依赖 libnode。请设置 DSH_LAUNCHER_NODE"
+fi
+
 SKIP_DSH_INSTALL=0
 for arg in "$@"; do
   case "$arg" in
@@ -68,12 +77,17 @@ step '4/8 构建 DSH 生产包'
 )
 
 step '5/8 构建并校验可重定位 Desktop'
+if [[ -e .build/desktop-arm64 ]]; then
+  STALE_APP=".build/desktop-arm64.stale-$(date +%Y%m%d%H%M%S)"
+  step "已有 .build/desktop-arm64，移动到 $STALE_APP"
+  mv .build/desktop-arm64 "$STALE_APP"
+fi
 node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/build-desktop-release.mjs
 DESKTOP_APP="$ROOT/.build/desktop-arm64/mac-arm64/DeepSeek Harness.app"
 node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs "$DESKTOP_APP"
 
 step '6/8 构建并校验启动器 App'
-DSH_MACOS_DESKTOP_APP="$DESKTOP_APP" node macos-launcher/build.mjs
+DSH_MACOS_DESKTOP_APP="$DESKTOP_APP" "$LAUNCHER_NODE" macos-launcher/build.mjs
 APP="$ROOT/.build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
 [[ -d "$APP" ]] || fail "启动器 App 未生成：$APP"
 node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs "$APP"

@@ -30,7 +30,7 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-${DSH_SOURCE_VERSION}-source
 
 正式版在本机 macOS ARM64 上编译发布，不使用 GitHub Actions 构建流水线。`scripts/build-local-release.sh` 初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime；上游源码保持原样。该脚本不运行集成测试，只编译并打包 DMG、`manifest.json` 与 `SHA256SUMS`，资产默认输出到 `.build/release-assets`。
 
-脚本同时按固定 Flutter 依赖装配 Flutter Release 应用与运行时启动器。maclauncher.json 分别声明 DSH 服务端和 Web 访问服务的启动、回收、状态与日志能力；入口托管、窗口激活和失联恢复由应用负责。
+脚本同时按固定 Flutter 依赖装配 Flutter Release 应用与运行时启动器。本机 Node 需 22+ 且带有 Node-API 开发头文件；启动器会打包一个自包含 Node，若默认 `node` 动态链接 `libnode`（例如 Homebrew 发行版），需另备自包含 Node 并以 `DSH_LAUNCHER_NODE=<路径>` 指向它。maclauncher.json 分别声明 DSH 服务端和 Web 访问服务的启动、回收、状态与日志能力；入口托管、窗口激活和失联恢复由应用负责。
 
 `build-desktop-release.mjs` 使用上游生产包集合、工程元数据和运行时校验接口，按 Electron 的 Node 版本安装生产依赖，生成包含完整资源的 Desktop 应用。应用资源不使用源码目录或开发运行时链接；本项目使用 ad-hoc 签名，不调用上游要求 Developer ID 与公证凭据的发行入口。
 
