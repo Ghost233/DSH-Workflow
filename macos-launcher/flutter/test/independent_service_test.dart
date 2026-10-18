@@ -393,11 +393,33 @@ void main() {
         final logs = await first.sendRequest(
           'logs',
           serviceId: 'desktop',
-          params: {'limit': 100},
+          params: {'limit': 500},
           timeout: const Duration(seconds: 5),
         );
         expect((logs['result'] as Map)['entries'], isNotEmpty);
         expect(jsonEncode(logs), isNot(contains('token=')));
+        final startupResults = ((logs['result'] as Map)['entries'] as List)
+            .cast<Map>()
+            .map((row) => row['text'] as String)
+            .where((text) => text.startsWith('项目启动插件：'))
+            .map((text) => jsonDecode(text.substring('项目启动插件：'.length)) as Map)
+            .toList();
+        expect(
+          startupResults.map((row) => row['package']).toList(),
+          [
+            'dsh-context',
+            'dsh-cost-meter',
+            '@nagi-ovo/dsh-visualize',
+            'billion-context',
+          ],
+          reason: 'The real independent Host must report every startup plugin and continue after an optional failure',
+        );
+        for (final result in startupResults) {
+          expect(result['version'], isNotEmpty);
+          expect(result['state'], isIn(['loaded', 'skipped']));
+          expect(result['reason'], isNotEmpty);
+        }
+        stdout.writeln('S08_STARTUP_RESULTS=${jsonEncode(startupResults)}');
         await integration.close();
         await model.close();
         for (
