@@ -21,7 +21,6 @@ const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/
  * @param {object} [deps.fs] node:fs/promises 形状（测试注入用）
  * @param {object} [deps.processEnv] 进程环境对象（测试注入用）
  * @param {string} [deps.homeDir] 用户 HOME
- * @param {object} [deps.logCtx] 宿主日志上下文（可选；解析失败按静默处理）
  */
 export function createGhAccount(deps) {
   const d = deps || {}
@@ -81,18 +80,24 @@ export function createGhAccount(deps) {
   }
 
   /**
-   * 给 spawn 用的 env：只在其一解析成功时返回 GH_CONFIG_DIR，否则 null（不覆盖继承环境）。
+   * 给 spawn 用的 env：只有解析成功时返回 `{ GH_CONFIG_DIR }`，否则 null（不覆盖继承环境）。
+   * 自身 fail-safe：任何异常都按未声明处理，调用点不需要再包一层 try/catch。
    * @param {string} [cwd]
    * @returns {Promise<{GH_CONFIG_DIR: string}|null>}
    */
-  async function envFor(cwd) {
-    const dir = await resolveGhConfigDir(cwd)
-    return dir ? { GH_CONFIG_DIR: dir } : null
+  async function accountEnvFor(cwd) {
+    try {
+      const dir = await resolveGhConfigDir(cwd)
+      return dir ? { GH_CONFIG_DIR: dir } : null
+    } catch (e) {
+      return null
+    }
   }
 
   // ============ BASH_ENV shim：模型 bash 的账号注入面 ============
   // 脚本装在 ~/.dsh/mattskillsdeck/（与 choiceStore 同一宿主缓存根），由宿主进程设置 BASH_ENV 指向它。
-  // 用户原来的 BASH_ENV 被写进 shim 顶部按原顺序 source，卸载时还原；脚本永远零输出、不覆盖已有 GH_CONFIG_DIR。
+  // 用户原来的 BASH_ENV 被写进 shim 顶部按原顺序 source，卸载时还原；脚本永远零输出。
+  // 只有命中有效声明且账号目录存在时才导出唯一的 GH_CONFIG_DIR；无声明/非法/目录缺失时零动作。
   let installed = null
 
   /** 单引号安全地嵌入 shell 脚本。 */
@@ -188,5 +193,5 @@ export function createGhAccount(deps) {
     return dispose
   }
 
-  return { resolveGhConfigDir, envFor, installBashEnvShim }
+  return { resolveGhConfigDir, accountEnvFor, installBashEnvShim }
 }

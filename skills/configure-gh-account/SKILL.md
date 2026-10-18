@@ -53,7 +53,7 @@ env -u GH_TOKEN -u GITHUB_TOKEN -u GH_DEBUG \
 python3 "$SKILL_ROOT/scripts/configure_local_git.py" \
   --project "$project_root" --account "$profile_account" \
   --profile "$profile_dir" --name "$git_name" --email "$git_email" \
-  --declaration "$project_root/.ghswitch" --write-gitignore
+  --write-gitignore
 ```
 
 脚本行为：
@@ -61,7 +61,7 @@ python3 "$SKILL_ROOT/scripts/configure_local_git.py" \
 - 校验仓库根、登录名形状、账号目录存在且目录名与登录名一致；声明冲突或已被 Git 跟踪时停止，不做任何写入。
 - 扫描所有 remote 的 fetch 与 push URL（`--all`、`--push --all`），只处理 HTTPS `github.com`；拒绝 URL 内嵌凭据或用户名与账号不一致，不改 remote 地址。
 - 写 `--local user.name`/`user.email`；对 `https://github.com` 和每个 HTTPS GitHub remote URL 写 `credential.<url>.username`，先用 `--replace-all .helper ""` 清空继承的 helper，再 `--add` 内嵌 `GH_CONFIG_DIR` 与 gh 绝对路径的 `gh auth git-credential`。重复执行不累积 helper。
-- 写单行 `.ghswitch`；`--write-gitignore` 确保 `.gitignore` 含 `/.ghswitch`，以及 `--ignore` 指定的额外规则。
+- 写仓库根的单行 `.ghswitch`；`--write-gitignore` 确保 `.gitignore` 含 `/.ghswitch`，以及 `--ignore` 指定的额外规则。
 - SSH remote 只打印“认证仍需单独验证”，不自动迁移；失败以非 0 退出并输出中文原因。
 - 不修改用户级/全局配置，不打印任何 token。
 

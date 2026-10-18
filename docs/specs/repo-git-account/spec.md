@@ -123,7 +123,7 @@ updated: 2026-10-19
 - 非法声明（`bad user!`）与账号目录缺失（合法但不存在的 `Ghost233-missing`）：静默回落全局，命令不报错；嵌套目录里最近的非法声明不会回退到父目录声明。
 - `.ghswitch`=`Charlotte-765`：`GH_CONFIG_DIR` 指向 `gh-profiles/Charlotte-765`，`gh api user` 为 `Charlotte-765`，证明声明覆盖 ambient 全局账号。
 - 预置用户 `BASH_ENV` 被链式 source，dispose 后还原原值；父进程没有 `SHLVL` 时安装补 `SHLVL=1`，shim 才能被 bash 3.2 source。
-- deck 出站：`resolveGhConfigDir` / `envFor` 对有声明仓库返回 `{GH_CONFIG_DIR: …}`，对无声明仓库返回 `undefined` / `null`。
+- deck 出站：`resolveGhConfigDir` / `accountEnvFor` 对有声明仓库返回 `{GH_CONFIG_DIR: …}`，对无声明仓库返回 `undefined` / `null`。
 
 ### 提交身份与 HTTPS 推认证
 

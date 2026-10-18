@@ -26,9 +26,9 @@ def git(project, *args):
     ).stdout.strip()
 
 
-def resolve_target(project, account, profile):
+def resolve_target(project, account, account_dir):
     project = Path(project).expanduser().resolve()
-    profile = Path(profile).expanduser().resolve()
+    account_dir = Path(account_dir).expanduser().resolve()
     if not project.is_dir():
         raise ValueError("目标仓库目录不存在：{}".format(project))
     try:
@@ -39,21 +39,11 @@ def resolve_target(project, account, profile):
         raise ValueError("请使用仓库根目录作为 --project：{}".format(root))
     if not LOGIN.match(account):
         raise ValueError("GitHub 登录名形状不合法：{}".format(account))
-    if not profile.is_dir():
-        raise ValueError("账号目录不存在，请先按 references/profile.md 验证或导入：{}".format(profile))
-    if profile.name.lower() != account.lower():
-        raise ValueError("账号目录名与登录名不一致：{} / {}".format(profile.name, account))
-    return project, profile
-
-
-def resolve_declaration(project, value):
-    path = Path(value).expanduser() if value else project / DECLARATION
-    if not path.is_absolute():
-        path = project / path
-    path = path.resolve()
-    if path.parent != project or path.name != DECLARATION:
-        raise ValueError("声明只能写在仓库根的 {}：{}".format(DECLARATION, path))
-    return path
+    if not account_dir.is_dir():
+        raise ValueError("账号目录不存在，请先按 references/profile.md 验证或导入：{}".format(account_dir))
+    if account_dir.name.lower() != account.lower():
+        raise ValueError("账号目录名与登录名不一致：{} / {}".format(account_dir.name, account))
+    return project, account_dir
 
 
 def check_declaration(project, path, account, replace):
@@ -98,13 +88,13 @@ def scan_remotes(project, account):
     return urls, ssh_remotes
 
 
-def credential_helper(profile):
+def credential_helper(account_dir):
     executable = shutil.which("gh")
     if not executable:
         raise ValueError("找不到 gh 可执行文件，无法写入 GitHub HTTPS 凭据。")
     gh = Path(executable).resolve()
     return "!env -u GH_TOKEN -u GITHUB_TOKEN -u GH_DEBUG GH_CONFIG_DIR={} {} auth git-credential".format(
-        shlex.quote(str(profile)), shlex.quote(str(gh)),
+        shlex.quote(str(account_dir)), shlex.quote(str(gh)),
     )
 
 
@@ -133,13 +123,13 @@ def ensure_ignored(project, declaration, patterns):
 
 
 def configure(args):
-    project, profile = resolve_target(args.project, args.account, args.profile)
+    project, account_dir = resolve_target(args.project, args.account, args.profile)
     if not all(value.strip() for value in (args.account, args.name, args.email)):
         raise ValueError("账号、提交姓名和邮箱都不能为空。")
-    declaration = resolve_declaration(project, args.declaration)
+    declaration = project / DECLARATION
     check_declaration(project, declaration, args.account, args.replace_declaration)
     urls, ssh_remotes = scan_remotes(project, args.account)
-    helper = credential_helper(profile)
+    helper = credential_helper(account_dir)
 
     git(project, "config", "--local", "user.name", args.name)
     git(project, "config", "--local", "user.email", args.email)
@@ -149,24 +139,21 @@ def configure(args):
         git(project, "config", "--local", "--replace-all", key + ".helper", "")
         git(project, "config", "--local", "--add", key + ".helper", helper)
 
-    if not declaration.parent.is_dir():
-        raise ValueError("声明所在目录不存在：{}".format(declaration.parent))
     declaration.write_text(args.account + "\n", encoding="utf-8")
 
     appended = []
     if args.write_gitignore:
         appended = ensure_ignored(project, declaration, ["/" + DECLARATION] + args.ignore)
-    return project, profile, declaration, sorted(urls), sorted(ssh_remotes), appended
+    return project, account_dir, declaration, sorted(urls), sorted(ssh_remotes), appended
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True, help="目标仓库根目录")
     parser.add_argument("--account", required=True, help="GitHub 登录名")
-    parser.add_argument("--profile", required=True, help="账号目录（gh 配置目录）")
+    parser.add_argument("--profile", required=True, help="账号目录（gh 配置目录），其 basename 必须与登录名一致")
     parser.add_argument("--name", required=True, help="仓库本地提交姓名")
     parser.add_argument("--email", required=True, help="仓库本地提交邮箱")
-    parser.add_argument("--declaration", help="账号声明路径，默认 <project>/.ghswitch")
     parser.add_argument("--write-gitignore", action="store_true", help="确保 /.ghswitch 被忽略")
     parser.add_argument("--ignore", action="append", default=[], metavar="PATTERN",
                         help="额外写入 .gitignore 的精确规则，可重复；需配合 --write-gitignore")
@@ -181,7 +168,7 @@ def main():
             parser.error("--ignore 模式不能为空或包含换行")
 
     try:
-        project, profile, declaration, urls, ssh_remotes, appended = configure(args)
+        project, account_dir, declaration, urls, ssh_remotes, appended = configure(args)
     except ValueError as error:
         print("错误：{}".format(error), file=sys.stderr)
         return 1
@@ -196,7 +183,7 @@ def main():
 
     print("目标仓库：{}".format(project))
     print("仓库本地提交身份：{} <{}>".format(args.name, args.email))
-    print("账号目录：{}".format(profile))
+    print("账号目录：{}".format(account_dir))
     print("已绑定 GitHub HTTPS 凭据：https://github.com{}".format(
         "" if not urls else "、" + "、".join(urls)
     ))

@@ -12,15 +12,10 @@ import { timeoutForGhArgs, isWriteGhArgs } from '../shared/tracker/outbound-tier
 import { getGhLane } from '../shared/tracker/outbound-admission.js'
 import { getChainRide } from '../shared/refresh/chain-ride.js'
 export function createRepoKeys(deps) {
-  const { subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, repoKeys, repoRoots, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, setCache, clearWorkspaceStore, namingSweepSoon, getChainBackoff, parseGithubRepo, logCtx, gate, getGate, ghAccountEnvFor } = deps
+  const { subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, repoKeys, repoRoots, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, setCache, clearWorkspaceStore, namingSweepSoon, getChainBackoff, parseGithubRepo, logCtx, gate, getGate, accountEnvFor } = deps
   // 共享状态归 index.js 单一持有：ghPath/ghLastError 经存取器（基本类型重赋值不能按引用共享）；repoKeys/repoRoots 按引用共享（只做属性读写与删除，从不整体重赋值）。
   // #491 房外埋点 helpers：hash8 只记散列不记原文；P1 事件外层先判开关再组装字段（字段函数只在守卫通过后求值）。
   function hash8(s) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
-  // 按本次出站 cwd 找仓库账号声明；解析失败一律不注入，静默回落继承的全局登录态。
-  async function accountEnv(cwd) {
-    if (typeof ghAccountEnvFor !== 'function') return null
-    try { return await ghAccountEnvFor(cwd) } catch (e) { return null }
-  }
   // #606 命令名只留程序名：调用方通常给的是 'git' 这种裸名字，但若给了带目录的完整路径，
   //   这里也把目录部分去掉，保证日志里永远不会出现一条文件系统路径。
   function progName(cmd) { try { return String(cmd || '').split(/\//).pop() || '' } catch (e) { return '' } }
@@ -83,7 +78,7 @@ export function createRepoKeys(deps) {
       // #723（T19）：这一笔真实出站先报给闸（I1 的唯一出口）。报在拿名额之后 —— 真要起进程了才报；
       // resolveGh 失败那一条根本没有出站，不该记进账。
       reportOutbound(args)
-      const rkEnv = await accountEnv(cwd || DEFAULT_CWD)
+      const rkEnv = await accountEnvFor(cwd || DEFAULT_CWD)
       let handle
       try {
         handle = subprocess.spawn({
@@ -171,7 +166,7 @@ export function createRepoKeys(deps) {
       // 其中 gh 与 glab 是真实出站；git 只读远端地址、不起 HTTP 请求，但它是同一个进程出口，
       // 一起报能保证「起过几条命令」与账上的条数一一对应（宁可多记一笔，也不要漏一笔）。
       reportOutbound(argv)
-      const xpEnv = await accountEnv(cwd || DEFAULT_CWD)
+      const xpEnv = await accountEnvFor(cwd || DEFAULT_CWD)
       let handle
       try {
         handle = subprocess.spawn({

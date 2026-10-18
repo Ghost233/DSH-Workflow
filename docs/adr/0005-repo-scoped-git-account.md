@@ -6,7 +6,7 @@ implementation: implemented
 
 # 用仓库内声明与运行时注入承载按仓库的 Git/GitHub 账号
 
-用户需要同时访问多个仓库，且不同仓库使用不同的 Git/GitHub 账号，不能依赖全局登录态。方案把账号归属收敛到仓库自身：仓库内一份被 Git 忽略、可选、单行的 `.ghswitch` 记录该仓库使用的 GitHub 登录名；账号目录沿用 `${XDG_CONFIG_HOME:-$HOME/.config}/gh-profiles/<登录名>`。声明只由 `configure-gh-account` skill 写入，deck 只读取，每次使用时现读，不缓存、不校验、不保存状态。文件缺失、为空或内容不是合法登录名时整条链路完全 no-op，沿用从宿主进程继承的全局 gh 登录态。用户明确否决了在声明之上增加绑定/解绑、快照恢复、漂移检测、检查链步骤、面板显示和宿主记忆，避免把一条声明做成账号管理系统。
+用户需要同时访问多个仓库，且不同仓库使用不同的 Git/GitHub 账号，不能依赖全局登录态。方案把账号归属收敛到仓库自身：仓库内一份被 Git 忽略、可选、单行的 `.ghswitch` 记录该仓库使用的 GitHub 登录名；账号目录沿用 `${XDG_CONFIG_HOME:-$HOME/.config}/gh-profiles/<登录名>`。声明只由 `configure-gh-account` skill 写入，deck 只读取，每次使用时现读，不缓存声明、不保存状态；账号名格式非法或账号目录缺失时按未声明处理。文件缺失或为空时整条链路完全 no-op，沿用从宿主进程继承的全局 gh 登录态。用户明确否决了在声明之上增加绑定/解绑、快照恢复、漂移检测、检查链步骤、面板显示和宿主记忆，避免把一条声明做成账号管理系统。
 
 账号需要作用到四个面：提交身份、HTTPS 推认证、面板自身的 gh 出站，以及模型在 bash 里直接敲的 git/gh。DSH 没有按工作区注入普通环境变量的机制：启动环境只有调用目录的 `.env` 一层且进程级定格，hooks 配置是进程级且输出没有环境变量通道，`ctx.shell` 每个上下文只允许一个执行器，`shellEnv` 只接受 `DSH_*` 保留前缀。因此分工为：提交身份与推认证由仓库本地 git 配置承担（credential helper 内嵌 `GH_CONFIG_DIR`，与 harness 无关）；面板 gh 出站在每次 spawn 时显式传 `GH_CONFIG_DIR`；模型 bash 面用 `BASH_ENV` 分发脚本补齐——deck 宿主插件加载时生成 shim 并把 `process.env.BASH_ENV` 指向它（保存并链式承接原值，卸载时还原），非交互 `bash -c` 启动即 source，脚本从当前目录向上找最近的 `.ghswitch` 并导出对应的账号目录，无声明则什么都不做。不全局切号、不解析命令文本、不修改已跟踪文件。
 

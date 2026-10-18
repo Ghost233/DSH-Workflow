@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { createGhAccount } from '../src/host/ghAccount.js'
 import { createRepoKeys } from '../src/host/repoKeys.js'
 import { createPlatformChannel } from '../src/host/platformChannel.js'
+import { createGhAccountWiring } from '../src/host/ghAccountWiring.js'
 
 async function withWorld(fn) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-gh-account-'))
@@ -24,7 +25,7 @@ async function declare(dir, content) {
   await writeFile(join(dir, '.ghswitch'), content)
 }
 
-async function profile(home, login) {
+async function accountDir(home, login) {
   const dir = join(home, '.config', 'gh-profiles', login)
   await mkdir(dir, { recursive: true })
   return dir
@@ -34,25 +35,28 @@ function account(home, extra) {
   return createGhAccount(Object.assign({ processEnv: {}, homeDir: home }, extra || {}))
 }
 
+// 同一张非法登录名表同时喂给 JS 解析与真实 bash shim，防止两套实现分叉。
+const INVALID_LOGINS = ['not a login', '-Ghost233', 'Ghost233-', 'Ghost_233', 'a'.repeat(40)]
+
 test('最近声明决定账号目录，尾斜杠 cwd 也能解析', async () => withWorld(async ({ root, home }) => {
   const repo = join(root, 'repo')
   await mkdir(join(repo, '.git'), { recursive: true })
   await declare(repo, 'Ghost233\n')
-  const expected = await profile(home, 'Ghost233')
+  const expected = await accountDir(home, 'Ghost233')
   const cwd = join(repo, 'packages', 'deep')
   await mkdir(cwd, { recursive: true })
   assert.equal(await account(home).resolveGhConfigDir(cwd), expected)
   assert.equal(await account(home).resolveGhConfigDir(repo + '/'), expected)
-  assert.deepEqual(await account(home).envFor(cwd), { GH_CONFIG_DIR: expected })
+  assert.deepEqual(await account(home).accountEnvFor(cwd), { GH_CONFIG_DIR: expected })
 }))
 
 test('更深一层的声明优先；最近声明非法时不回退到外层声明', async () => withWorld(async ({ root, home }) => {
   const repo = join(root, 'repo')
   await mkdir(join(repo, '.git'), { recursive: true })
   await declare(repo, 'Ghost233\n')
-  await profile(home, 'Ghost233')
+  await accountDir(home, 'Ghost233')
   const nested = join(repo, 'nested')
-  const expected = await profile(home, 'OtherUser')
+  const expected = await accountDir(home, 'OtherUser')
   await declare(nested, 'OtherUser')
   const cwd = join(nested, 'deep')
   await mkdir(cwd, { recursive: true })
@@ -66,7 +70,7 @@ test('遇到 .git（目录或文件）停止上溯', async () => withWorld(async
   const outer = join(root, 'outer')
   await mkdir(outer, { recursive: true })
   await declare(outer, 'Ghost233')
-  await profile(home, 'Ghost233')
+  await accountDir(home, 'Ghost233')
 
   const repo = join(outer, 'repo')
   await mkdir(join(repo, '.git'), { recursive: true })
@@ -84,7 +88,7 @@ test('遇到 .git（目录或文件）停止上溯', async () => withWorld(async
 
 test('到 HOME 即停止，不读取 HOME 之上的声明', async () => withWorld(async ({ root, home }) => {
   await declare(root, 'Ghost233')
-  await profile(home, 'Ghost233')
+  await accountDir(home, 'Ghost233')
   const cwd = join(home, 'work')
   await mkdir(cwd, { recursive: true })
   assert.equal(await account(home).resolveGhConfigDir(cwd), undefined)
@@ -99,14 +103,81 @@ test('无声明、空声明、非法声明、账号目录不存在都静默回�
   await declare(repo, '  \n\t\n')
   assert.equal(await account(home).resolveGhConfigDir(repo), undefined)
 
-  for (const bad of ['not a login', '-Ghost233', 'Ghost233-', 'Ghost_233', 'a'.repeat(40)]) {
+  for (const bad of INVALID_LOGINS) {
     await declare(repo, bad + '\n')
     assert.equal(await account(home).resolveGhConfigDir(repo), undefined, bad)
   }
 
   await declare(repo, 'Ghost233\n')
   assert.equal(await account(home).resolveGhConfigDir(repo), undefined)
-  assert.equal(await account(home).envFor(repo), null)
+  assert.equal(await account(home).accountEnvFor(repo), null)
+}))
+
+test('XDG_CONFIG_HOME 为绝对路径时决定账号目录；相对路径回退 HOME/.config', async () => withWorld(async ({ root, home }) => {
+  const repo = join(root, 'repo')
+  await mkdir(repo, { recursive: true })
+  await declare(repo, 'Ghost233\n')
+  const xdg = join(root, 'xdg')
+  const expected = join(xdg, 'gh-profiles', 'Ghost233')
+  await mkdir(expected, { recursive: true })
+  const absolute = account(home, { processEnv: { XDG_CONFIG_HOME: xdg } })
+  assert.equal(await absolute.resolveGhConfigDir(repo), expected)
+  assert.deepEqual(await absolute.accountEnvFor(repo), { GH_CONFIG_DIR: expected })
+
+  const fallback = await accountDir(home, 'Ghost233')
+  const relative = account(home, { processEnv: { XDG_CONFIG_HOME: 'relative/xdg' } })
+  assert.equal(await relative.resolveGhConfigDir(repo), fallback)
+  assert.deepEqual(await relative.accountEnvFor(repo), { GH_CONFIG_DIR: fallback })
+}))
+
+test('accountEnvFor 自身 fail-safe：声明非法、账号目录缺失、解析异常都返回 null 不抛', async () => withWorld(async ({ root, home }) => {
+  const repo = join(root, 'repo')
+  await mkdir(repo, { recursive: true })
+
+  await declare(repo, 'not a login\n')
+  assert.equal(await account(home).accountEnvFor(repo), null)
+
+  await declare(repo, 'Ghost233\n')
+  assert.equal(await account(home).accountEnvFor(repo), null)
+
+  const throwingFs = {
+    lstat: async () => { throw new Error('boom') },
+    readFile: async () => { throw new Error('boom') },
+    stat: async () => { throw new Error('boom') },
+  }
+  assert.equal(await account(home, { fs: throwingFs }).accountEnvFor(repo), null)
+
+  // 注入坏依赖（HOME 不是路径）时也不许把异常漏给出站调用点。
+  assert.equal(await createGhAccount({ processEnv: {}, homeDir: 42 }).accountEnvFor(repo), null)
+}))
+
+test('ghAccount:false 只跳过 BASH_ENV shim；wiring 的出站 accountEnvFor 仍按声明解析', async () => withWorld(async ({ root }) => {
+  const repo = join(root, 'repo')
+  await mkdir(repo, { recursive: true })
+  await declare(repo, 'Ghost233\n')
+  const xdg = join(root, 'xdg')
+  const expected = join(xdg, 'gh-profiles', 'Ghost233')
+  await mkdir(expected, { recursive: true })
+
+  const effects = []
+  const previousXdg = process.env.XDG_CONFIG_HOME
+  const previousBashEnv = process.env.BASH_ENV
+  process.env.XDG_CONFIG_HOME = xdg
+  process.env.BASH_ENV = '/test/keep-bash-env'
+  try {
+    const wiring = createGhAccountWiring({
+      ctx: { effect(fn) { effects.push(fn) } },
+      config: { ghAccount: false },
+    })
+    assert.deepEqual(await wiring.accountEnvFor(repo), { GH_CONFIG_DIR: expected })
+    assert.equal(effects.length, 0, 'ghAccount:false 不注册 shim effect')
+    assert.equal(process.env.BASH_ENV, '/test/keep-bash-env')
+  } finally {
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME
+    else process.env.XDG_CONFIG_HOME = previousXdg
+    if (previousBashEnv === undefined) delete process.env.BASH_ENV
+    else process.env.BASH_ENV = previousBashEnv
+  }
 }))
 
 function runBash(cwd, script, env) {
@@ -141,11 +212,13 @@ test('BASH_ENV shim 让真实 bash 读到声明账号；四种回落都不导出
   assert.equal(await read(repo), '')
   await declare(repo, '   \n')
   assert.equal(await read(repo), '')
-  await declare(repo, 'bad login\n')
-  assert.equal(await read(repo), '', 'invalid declaration')
+  for (const bad of INVALID_LOGINS) {
+    await declare(repo, bad + '\n')
+    assert.equal(await read(repo), '', 'invalid declaration: ' + bad)
+  }
   await declare(repo, 'Ghost233\n')
   assert.equal(await read(repo), '', 'account dir missing')
-  const expected = await profile(home, 'Ghost233')
+  const expected = await accountDir(home, 'Ghost233')
   const src = join(repo, 'src')
   await mkdir(src, { recursive: true })
   assert.equal(await read(src), expected)
@@ -156,7 +229,7 @@ test('BASH_ENV shim 让真实 bash 读到声明账号；四种回落都不导出
 test('用户原有 BASH_ENV 被链式 source，含单引号的路径也安全', async () => withWorld(async ({ root, home }) => {
   const repo = join(root, 'repo')
   await mkdir(repo, { recursive: true })
-  await profile(home, 'Ghost233')
+  await accountDir(home, 'Ghost233')
   await declare(repo, 'Ghost233\n')
   const original = join(root, "orig'inal.sh")
   await writeFile(original, 'export DSH_ORIGINAL_ENV=kept\n')
@@ -210,7 +283,7 @@ function captureSpawn() {
   }
 }
 
-function repoKeysWith(subprocess, envForCwd) {
+function repoKeysWith(subprocess, accountEnvByCwd) {
   return createRepoKeys({
     subprocess,
     timer: { timeout: () => new Promise(function () {}) },
@@ -232,7 +305,7 @@ function repoKeysWith(subprocess, envForCwd) {
     parseGithubRepo: () => null,
     logCtx: null,
     getGate: () => null,
-    ghAccountEnvFor: async (cwd) => envForCwd[cwd] || null,
+    accountEnvFor: async (cwd) => accountEnvByCwd[cwd] || null,
   })
 }
 
@@ -267,7 +340,7 @@ test('detectionExec 的 spawn spec 带上按 opts.cwd 解析出的 GH_CONFIG_DIR
     getChoiceStore: async () => null,
     logCtx: null,
     getGate: () => null,
-    ghAccountEnvFor: async (cwd) => cwd === '/repo' ? { GH_CONFIG_DIR: '/profiles/Ghost233' } : null,
+    accountEnvFor: async (cwd) => cwd === '/repo' ? { GH_CONFIG_DIR: '/profiles/Ghost233' } : null,
   })
 
   const r = await channel.detectionExec('gh', ['api', 'user'], { cwd: '/repo' }, 'test')
