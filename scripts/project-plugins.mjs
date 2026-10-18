@@ -31,6 +31,7 @@ export async function resolvePlugin(item, registry) {
     const { stdout } = await exec('pnpm', ['view', `${item.package}@${item.version}`, 'version', '--json', '--registry', registry], { timeout: 30000 })
     return { version: JSON.parse(stdout) }
   }
+  if (item.commit) return { commit: item.commit, version: item.version }
   const { stdout } = await exec('git', ['ls-remote', '--exit-code', `${item.repository}.git`, `refs/heads/${item.ref}`], { timeout: 30000 })
   const commit = stdout.trim().split(/\s+/)[0]
   return { commit }
@@ -174,7 +175,8 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
       || !/^[a-z0-9-]+$/.test(item.entryId) || names.has(item.package) || ids.has(item.entryId)) throw new Error('Invalid or duplicate plugin list entry')
     if (item.source && !['npm', 'git'].includes(item.source)) throw new Error(`Unknown plugin source: ${item.source}`)
     if (item.source === 'git' && (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_-]+$/.test(item.repository)
-      || !/^[A-Za-z0-9_-]+$/.test(item.ref) || item.version !== 'latest')) throw new Error(`Invalid Git source: ${item.package}`)
+      || (item.commit ? !/^[a-f0-9]{40}$/.test(item.commit) || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(item.version)
+        : !/^[A-Za-z0-9_-]+$/.test(item.ref) || item.version !== 'latest'))) throw new Error(`Invalid Git source: ${item.package}`)
     if (item.bundle && item.bundle !== 'entry') throw new Error(`Unknown bundle adapter: ${item.package}`)
     if (item.startup !== undefined && item.startup !== true) throw new Error(`Invalid startup selection: ${item.package}`)
     if (item.requires && (!Array.isArray(item.requires) || item.requires.some(name => !names.has(name)))) throw new Error(`Required plugin must precede ${item.package}`)
@@ -210,10 +212,14 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
       if (item.source === 'git' ? !/^[a-f0-9]{40}$/.test(revision.commit) : !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(revision.version)) {
         throw new Error(`Invalid plugin revision: ${item.package}`)
       }
-      if (/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(item.version) && revision.version !== item.version) {
+      if (/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(item.version) && revision.version !== item.version
+        || item.commit && revision.commit !== item.commit) {
         throw new Error(`Resolved plugin version does not match configuration: ${item.package}`)
       }
       const metadata = update ? await readMetadata(item, revision, list.registry) : revision.metadata
+      if (item.commit && (metadata?.name !== item.package || metadata.version !== item.version)) {
+        throw new Error(`Pinned metadata version does not match configuration: ${item.package}`)
+      }
       if (scope === 'startup') assertClientDependencies([{ package: item.package, metadata }], hostPackages, activeNames)
       resolutions.push({ ...revision, package: item.package, metadata })
       ready.push(item)
@@ -390,7 +396,7 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
     if (update) {
       const nextLock = { schema: 1, harnessVersion: host.version, registry: list.registry, manifestSha256: digest(listBytes),
         plugins: installed.filter(item => item.source !== 'project').map(item => ({ package: item.package,
-          ...item.commit ? { commit: item.commit } : { version: item.version }, metadata: metadata.get(item.package) })) }
+          version: item.version, ...item.commit ? { commit: item.commit } : {}, metadata: metadata.get(item.package) })) }
       await writeFile(`${lockPath}.tmp`, JSON.stringify(nextLock, null, 2) + '\n')
       await rename(`${lockPath}.tmp`, lockPath)
     }

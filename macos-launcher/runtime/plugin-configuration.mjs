@@ -1,4 +1,4 @@
-import { readDeliveryManifest } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { readDeliveryManifest, pluginDependencySpec } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
@@ -36,7 +36,8 @@ export async function assertProfilePluginVersions(profile, config, expected = ne
     const installed = await readJson(join(profile, 'node_modules', item.package, 'package.json'))
     if (declaration === undefined && !installed && !expected.has(item.package)) continue
     const target = expected.get(item.package) ?? item.version
-    if (declaration !== target || installed?.name !== item.package || installed.version !== target) {
+    const dependency = item.source === 'git' ? pluginDependencySpec(item) : target
+    if (declaration !== dependency || installed?.name !== item.package || installed.version !== target) {
       throw new Error(`插件版本偏差：${item.package}，配置 ${target}，依赖声明 ${declaration ?? '缺失'}，实际安装 ${installed?.version ?? '缺失'}。请先统一配置与安装状态，已停止依赖操作。`)
     }
   }
@@ -58,7 +59,7 @@ export async function manageProfilePluginOperation({ resources, home, profileNam
       if (args[++index] !== config.registry) refused()
       continue
     }
-    const item = config.plugins.find(item => `${item.package}@${item.version}` === value)
+    const item = config.plugins.find(item => item.source !== 'git' && `${item.package}@${item.version}` === value)
     if (!item) refused()
     selected.set(item.package, item.version)
   }

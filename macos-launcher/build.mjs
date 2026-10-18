@@ -1,6 +1,6 @@
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile, chmod } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile, chmod, utimes } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -108,6 +108,8 @@ try {
   await run('codesign', ['--force', '--sign', '-', join(resources, 'node')])
   await run('codesign', ['--deep', '--force', '--sign', '-', app])
   await rename(app, destination)
+  // The no-argument launcher selects the newest completed bundle by directory mtime.
+  await utimes(destination, new Date(), new Date())
   process.stdout.write(`${destination}\n`)
 } finally {
   await rm(staging, { recursive: true, force: true })

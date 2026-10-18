@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { readPluginConfiguration } from './plugin-configuration.mjs'
+import { pluginDependencySpec } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 
 const owned = [
   ['dsh-workflow', 'agent-observation-plugin'],
@@ -176,17 +177,20 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
       }
       continue
     }
-    const configuredTarget = configuration?.plugins?.find(item => item.package === row.name)?.version
+    const configuredPlugin = configuration?.plugins?.find(item => item.package === row.name)
+    const configuredTarget = configuredPlugin?.version
     const target = configuredTarget
       ?? rows.find(item => item.name === row.name && item.status === 'bundled')?.expected
       ?? (row.name.startsWith('@deepseek-ai/dsh-') ? runtime?.version : undefined)
     row.expected = exactVersion(target) ? target : null
     const declared = profileManifest?.dependencies?.[row.name] ?? null
-    row.declared = exactVersion(declared) ? declared : declared === null ? null
+    const expectedDeclaration = configuredPlugin ? pluginDependencySpec(configuredPlugin) : row.expected
+    row.declared = configuredPlugin?.source === 'git' && declared === expectedDeclaration ? 'GitHub 固定提交'
+      : exactVersion(declared) ? declared : declared === null ? null
       : /^(?:file:|link:|workspace:)/.test(declared) ? '本地引用' : '非精确版本引用'
     if (row.status === 'error') continue
     if (row.expected) {
-      const declarationMismatch = configuredTarget ? declared !== row.expected : exactVersion(declared) && declared !== row.expected
+      const declarationMismatch = configuredTarget ? declared !== expectedDeclaration : exactVersion(declared) && declared !== row.expected
       row.status = row.current === null ? 'unknown' : row.current !== row.expected || declarationMismatch ? 'drift' : 'fixed'
       row.note = `仓库固定 ${row.expected}，依赖声明 ${row.declared ?? '缺失'}，实际安装 ${row.current ?? '未知'}；随本仓库 DMG 更新`
     } else if (configurationError) {

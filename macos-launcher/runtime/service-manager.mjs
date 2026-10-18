@@ -13,6 +13,7 @@ import { dshReadiness } from '../../scripts/dsh-readiness.mjs'
 import { SERVICE_PROTOCOL, serviceDirectory, serviceSocket, privateDirectory, redact } from './service-control.mjs'
 import { createServiceAdmission } from './service-admission.mjs'
 import { serviceNotification } from './service-notification.mjs'
+import { startupPluginResults } from './startup-plugins.mjs'
 
 /** The manager owns the official Host; GUI clients only send explicit management commands. */
 export async function serveManager({ dataRoot, resources, home }) {
@@ -294,6 +295,9 @@ export async function serveManager({ dataRoot, resources, home }) {
           }
           if (!actual || actual.pid !== owned.pid || actual.url !== message.url) throw new Error('DSH readiness receipt does not identify the owned Host')
           await health(actual)
+          for (const result of await startupPluginResults({ resourcesRoot: resources, url: actual.url, preparation: profile.startup })) {
+            log(`项目启动插件：${JSON.stringify(result)}`)
+          }
           if (child !== owned || owned.exitCode !== null || owned.signalCode !== null) throw new Error('DSH Host exited during readiness')
           const gatewayRequire = createRequire(createRequire(join(runtime, 'package.json')).resolve('@deepseek-ai/dsh-api-gateway/package.json'))
           const ws = gatewayRequire('ws')

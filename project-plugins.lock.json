@@ -2,7 +2,7 @@
   "schema": 1,
   "harnessVersion": "0.2.1-alpha.5",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "ba535eb728043ce6af79f572e43c0144ef68943ef1c7a78dfde6e5d5b34d6e75",
+  "manifestSha256": "754eabdbedbeb70af33f40d8accf45c7e0d3169c52086f12c1434d8d33674df4",
   "plugins": [
     {
       "package": "dsh-context",
@@ -128,6 +128,24 @@
           },
           "client": {
             "platform": "web"
+          }
+        },
+        "peerDependencies": {},
+        "peerDependenciesMeta": {}
+      }
+    },
+    {
+      "package": "dsh-plugin-notify",
+      "version": "1.3.0",
+      "commit": "98f0c7b5722f3bb078810656cfe7cdd5bfc75597",
+      "metadata": {
+        "name": "dsh-plugin-notify",
+        "version": "1.3.0",
+        "dsh": {
+          "client": {
+            "platform": "web",
+            "inject": [],
+            "immediately": true
           }
         },
         "peerDependencies": {},

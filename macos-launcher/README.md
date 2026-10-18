@@ -16,7 +16,8 @@ DSH 源码保持上游原样。项目集成通过 Desktop profile 中的 `dsh-wo
 
 ```sh
 node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/build-desktop.mjs
-DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-0.2.1-alpha.2-source.app" node macos-launcher/build.mjs
+DSH_SOURCE_VERSION="$(node -p "require('./dsh-runtime.json').version")"
+DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-${DSH_SOURCE_VERSION}-source.app" node macos-launcher/build.mjs
 ```
 
 `build-desktop.mjs` 使用上游开发运行时装配流程、固定依赖的 Electron 和官方 primary runtime，不修改 DSH 源文件。源码应用输出为 `.build/DeepSeek Harness-<DSH版本>-source.app`；启动器将它放入 `Contents/Resources/desktop/`。已有产物不会被覆盖；重新构建前应明确处理旧产物。两个应用均使用本地 ad-hoc 签名。
@@ -40,6 +41,8 @@ CI 同时准备固定 Flutter 3.47.7，检查 lockfile、Dart 格式、静态分
 ## 启动和关闭
 
 日常入口是无参数 `./start-dsh-workflow.sh`，只支持 macOS ARM64。它通过 `dsh-workflow://open-global` 唤起已构建的启动器。每次启动器启动只尝试一次启动或复用服务，不强制打开桌面窗口；启动失败后显示原因，不循环重试。其他系统或架构在启动应用前明确拒绝。
+
+服务启动时逐项尝试清单中标记 `startup: true`、已部署且版本与仓库固定值一致的插件，保留用户已有的停用选择和条件。日志分别报告实际加载结果或跳过原因；单个插件失败后继续处理其余插件。缺包、版本偏差或来源未知会如实说明，运行端不在线安装或单独更新插件。
 
 首次使用 Web 需要设置访问密码。启动器分别提供“打开桌面版”和“打开 Web”入口；两个客户端只连接已有服务。服务未运行或版本不兼容时明确提示，由用户启动或处理，不另起实例。每个工程在 DSH 内选择工作目录。
 
