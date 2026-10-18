@@ -37,3 +37,46 @@ test('project MCP configuration preserves an existing user server including its 
     assert.equal(patches.some(row => row.id === 'user-codegraph'), false)
   }
 })
+
+test('managed launch disables installer services, tools and pages by module while retaining readonly inventory', () => {
+  const names = ['@deepseek-ai/dsh-plugin-manager', '@deepseek-ai/dsh-plugin-manager/tools',
+    '@deepseek-ai/dsh-client-ui-plugin-manager', '@deepseek-ai/dsh-plugin-market', '@deepseek-ai/dsh-plugin-market/tools', '@deepseek-ai/dsh-client-ui-plugin-market']
+  const entries = [
+    ...names.map((name, index) => ({ id: `renamed-manager-${index}`, name })),
+    { id: 'saved-group', group: true, config: [{ id: 'another-manager', name: names[0] }] },
+    { id: 'readonly-inventory', name: '@deepseek-ai/dsh-plugin-inventory' },
+    { id: 'readonly-settings', name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory' },
+  ]
+  const before = structuredClone(entries)
+  const patches = composeDshLaunch(entries, { projectRoot, catalogRoot: '/catalog' })
+  for (const id of [...names.map((_, index) => `renamed-manager-${index}`), 'another-manager']) {
+    assert.equal(patches.find(row => row.id === id)?.disabled, true, `${id} must not expose a mutable package channel`)
+  }
+  assert.equal(patches.some(row => ['readonly-inventory', 'readonly-settings'].includes(row.id)), false)
+  assert.deepEqual(entries, before, 'saved profile values are not rewritten')
+})
+
+test('managed launch refuses an installer row that cannot be disabled unambiguously', () => {
+  const name = '@deepseek-ai/dsh-plugin-manager'
+  for (const entries of [[{ name }], [{ id: 'duplicate', name }, { id: 'duplicate', name: 'unrelated' }]]) {
+    assert.throws(() => composeDshLaunch(entries, { projectRoot, catalogRoot: '/catalog' }), /readonly.*unambiguous/)
+  }
+})
+
+test('agent preset package tools are disabled without altering unrelated expressions or saved settings', () => {
+  const condition = { expression: 'preserved external Loader expression' }
+  const plugins = [
+    { id: 'installer', name: '@deepseek-ai/dsh-plugin-manager/tools', disabled: condition },
+    { id: 'group', group: true, config: [{ id: 'market', name: '@deepseek-ai/dsh-plugin-market/tools' }] },
+    { id: 'unrelated', name: 'saved-tool', disabled: condition, config: { keep: true } },
+  ]
+  const entries = [{ id: 'renamed-preset', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'cordis', plugins, saved: true } }]
+  const patches = composeDshLaunch(entries, { projectRoot, catalogRoot: '/catalog' })
+  const config = patches.find(row => row.id === 'renamed-preset').config
+  assert.equal(config.saved, true)
+  assert.equal(config.plugins[0].disabled, true)
+  assert.equal(config.plugins[1].config[0].disabled, true)
+  assert.equal(config.plugins[2], plugins[2])
+  assert.equal(config.plugins[2].disabled, condition)
+  assert.equal(plugins[0].disabled, condition, 'only the launch overlay changes, not saved configuration')
+})

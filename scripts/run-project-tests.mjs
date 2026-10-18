@@ -23,14 +23,26 @@ if (new Set(files).size !== files.length) throw new Error('Duplicate test files 
 for (const file of files) {
   if (!(await lstat(file)).isFile()) throw new Error(`Selected test is not a regular file: ${file}`)
 }
-// Each native file launches its own DSH host and nested subprocess tests.
-// Bound suite-level fan-out independently of each module's tested capacity;
-// retain the actual scenario deadlines instead of extending them under load.
-const child = spawn(process.execPath, ['--import', loader, '--import', join(root, 'scripts/harness-test-loader.mjs'), '--test', '--test-concurrency=4', ...files], { cwd: root, stdio: 'inherit' })
-const stop = () => child.kill('SIGTERM')
+// Keep the complete profile/relocation fixture outside the native worker pool.
+// Its own 30-second deadline still covers both real Host lifetimes.
+const packagedHost = join(root, 'macos-launcher/runtime/desktop-packaged-host.test.mjs')
+const groups = [files.filter(file => file !== packagedHost), files.filter(file => file === packagedHost)]
+let child, interrupted = false, exitCode = 0
+const stop = () => { interrupted = true; child?.kill('SIGTERM') }
 process.once('SIGINT', stop); process.once('SIGTERM', stop)
-child.once('error', error => { console.error(error.message); process.exitCode = 1 })
-child.once('close', (code, signal) => {
+try {
+  for (const group of groups) {
+    if (interrupted || !group.length) continue
+    const code = await new Promise(accept => {
+      child = spawn(process.execPath, ['--import', loader, '--import', join(root, 'scripts/harness-test-loader.mjs'),
+        '--test', '--test-concurrency=4', ...group], { cwd: root, stdio: 'inherit' })
+      child.once('error', error => { console.error(error.message); accept(1) })
+      child.once('close', (code, signal) => accept(code ?? (signal ? 1 : 0)))
+    })
+    child = undefined
+    if (code !== 0 && exitCode === 0) exitCode = code
+  }
+} finally {
   process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop)
-  process.exitCode = code ?? (signal ? 1 : 0)
-})
+  process.exitCode = interrupted ? (exitCode || 1) : exitCode
+}

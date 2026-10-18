@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 
 import 'maclauncher_integration.dart';
+import 'service_stop.dart';
 import 'native_bridge.dart';
 import 'update_policy.dart';
 
@@ -21,14 +22,14 @@ class PluginRow {
     : name = value['name'] as String,
       source = value['source'] as String,
       current = value['current'] as String?,
-      latest = value['latest'] as String?,
+      expected = value['expected'] as String?,
       supportedDsh = value['supportedDsh'] as String?,
       latestSupportedDsh = value['latestSupportedDsh'] as String?,
       status = value['status'] as String,
       note = value['note'] as String?,
       updatable = value['updatable'] as bool? ?? false;
   final String name, source, status;
-  final String? current, latest, supportedDsh, latestSupportedDsh, note;
+  final String? current, expected, supportedDsh, latestSupportedDsh, note;
   final bool updatable;
 }
 
@@ -45,12 +46,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   String? _password;
   bool _coldDesktopBackground = false;
   String loginStatus = 'unknown', error = '', updateMessage = '尚未检查更新';
-  String pluginMessage = '尚未检查插件版本', pluginUpdateMessage = '';
+  String pluginMessage = '尚未检查插件版本';
   String sdkMessage = '等待 MacLauncher';
-  bool checkingUpdates = false,
-      checkingPlugins = false,
-      updatingPlugins = false;
-  bool pluginsNeedReload = false;
+  String notificationMessage = '故障通知：尚未查询授权状态。';
+  bool requestingNotificationAuthorization = false;
+  bool checkingUpdates = false, checkingPlugins = false;
   List<PluginRow> plugins = [];
   AppUpdate? update;
   Uri? webUrl;
@@ -60,25 +60,23 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     state: ServiceState.stopped,
     ready: false,
   );
-  Process? _child;
-  Completer<void>? _ready;
   Timer? _observer, _serviceObserver;
-  bool _observingService = false;
+  bool _observingWeb = false, _observingService = false;
   List<LogEntry> serviceLogEntries = [];
-  int _requestId = 0;
-  Future<void> _inputQueue = Future<void>.value();
-  final Map<int, Completer<Map<String, Object?>>> _requests = {};
   final List<LogEntry> logs = [];
   String? _logInstanceId;
   bool _logsDropped = false;
-  bool _closed = false, _stopping = false;
+  bool _closed = false;
   Future<void>? _mutation, _closeFuture;
   Future<void>? _desktopOpen;
   ServiceStatus get snapshot => _web;
   ServiceStatus get serviceSnapshot => _service;
   String? get logInstanceId => _logInstanceId;
   bool get logsTruncated => _logsDropped;
-  bool get isActive => _child != null || _mutation != null;
+  bool get isActive =>
+      _web.state == ServiceState.running ||
+      _web.state == ServiceState.starting ||
+      _mutation != null;
   bool get hasPassword => _password?.isNotEmpty == true;
   String get node => '${environment.resources}/node';
   String script(String name) =>
@@ -97,6 +95,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       await _observeService();
       _serviceObserver = Timer.periodic(const Duration(seconds: 2), (_) {
         unawaited(_observeService());
+      });
+    }
+    if (File(script('web-cli.mjs')).existsSync()) {
+      await _observeWeb();
+      _observer = Timer.periodic(const Duration(seconds: 2), (_) {
+        unawaited(_observeWeb());
       });
     }
     notifyListeners();
@@ -131,7 +135,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     notifyListeners();
   }
 
-  Future<Map<String, Object?>> _serviceCommand(String type) async {
+  Future<Map<String, Object?>> _serviceCommand(
+    String type, {
+    Map<String, Object?> fields = const {},
+  }) async {
     final child = await _startProcess(node, [
       script('service-cli.mjs'),
       environment.dataRoot,
@@ -140,7 +147,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     ], environment: processEnvironment);
     final output = child.stdout.transform(utf8.decoder).join();
     final diagnostics = child.stderr.transform(utf8.decoder).join();
-    child.stdin.writeln(jsonEncode({'type': type}));
+    child.stdin.writeln(jsonEncode({'type': type, ...fields}));
     await child.stdin.close();
     final code = await child.exitCode;
     final text = await output;
@@ -154,6 +161,32 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
     final value = objectValue(reply['value']);
     _service = ServiceStatus.fromJson(objectValue(value['service']));
+    final notification = value['notificationAuthorization'];
+    if (notification is Map) {
+      final settings = notification['authorization'];
+      final request = notification['authorizationRequest'];
+      final failure = request is Map ? request['error'] : null;
+      requestingNotificationAuthorization =
+          value['notificationAuthorizationPending'] == true ||
+          request is Map && request['state'] == 'requesting';
+      notificationMessage =
+          notification['message'] as String? ??
+          (failure is Map
+              ? 'macOS 通知授权失败：${failure['message'] ?? failure['code']}'
+              : null) ??
+          (requestingNotificationAuthorization
+              ? '正在等待 macOS 通知授权。'
+              : switch (settings is Map ? settings['status'] : null) {
+                  'authorized' => 'macOS 已授权故障通知。',
+                  'provisional' => 'macOS 已允许静默故障通知。',
+                  'denied' => 'macOS 已拒绝故障通知授权。',
+                  'notDetermined' => '故障通知尚未获得 macOS 授权。',
+                  _ => '故障通知授权状态未知，请查看服务日志。',
+                });
+    } else {
+      notificationMessage = '故障通知：尚未查询授权状态。';
+      requestingNotificationAuthorization = false;
+    }
     serviceLogEntries = (value['logs'] as List)
         .cast<Map>()
         .map((row) => LogEntry(text: row['text'] as String))
@@ -181,6 +214,76 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
   }
 
+  @override
+  Future<void> stopService() => _changeService('stop');
+
+  Future<bool> Function(ServiceStopInspection)? confirmServiceStop;
+  bool _changingService = false;
+  bool _serviceCommitStarted = false;
+  String? _pendingServiceStop;
+  Future<void> restartService() => _changeService('restart');
+
+  Future<void> _changeService(String action) async {
+    if (_closed) throw StateError('启动器正在退出');
+    if (_changingService) throw StateError('DSH 服务已有停止或重启操作正在进行');
+    _changingService = true;
+    String? pending;
+    try {
+      var value = await _serviceCommand(
+        'inspect-stop',
+        fields: {'action': action},
+      );
+      while (true) {
+        final inspection = ServiceStopInspection(objectValue(value['stop']));
+        if (inspection.stopped) {
+          if (action == 'restart') await startService();
+          return;
+        }
+        pending = inspection.operationId;
+        if (pending == null) throw StateError('DSH 停止检查缺少操作标识');
+        _pendingServiceStop = pending;
+        if (_closed) throw StateError('启动器正在退出，已取消 DSH 停止操作');
+        var confirmed = false;
+        if (inspection.needsConfirmation) {
+          final confirm = confirmServiceStop;
+          if (confirm == null) {
+            throw StateError(
+              '需要在 DSH 启动器中明确确认${action == 'restart' ? '重启' : '停止'}：${inspection.message ?? inspection.work.map((row) => row['label']).join('；')}',
+            );
+          }
+          confirmed = await confirm(inspection);
+          if (!confirmed || _closed) {
+            throw StateError('已取消${action == 'restart' ? '重启' : '停止'} DSH 服务');
+          }
+        }
+        _serviceCommitStarted = true;
+        try {
+          value = await _serviceCommand(
+            action == 'restart' ? 'restart-service' : 'stop-service',
+            fields: {'operationId': pending, 'confirmed': confirmed},
+          );
+        } finally {
+          _serviceCommitStarted = false;
+        }
+        pending = null;
+        _pendingServiceStop = null;
+        if (value['stop'] == null) return;
+      }
+    } finally {
+      try {
+        if (pending != null) {
+          await _serviceCommand(
+            'cancel-stop',
+            fields: {'operationId': pending},
+          );
+        }
+      } finally {
+        _pendingServiceStop = null;
+        _changingService = false;
+      }
+    }
+  }
+
   Future<void> _observeService() async {
     if (_closed || _observingService) return;
     _observingService = true;
@@ -202,6 +305,27 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<ServiceStatus> serviceStatus() async {
     await _serviceCommand('status');
     return _service;
+  }
+
+  Future<void> authorizeServiceNotifications() async {
+    if (_closed) throw StateError('启动器正在退出');
+    if (requestingNotificationAuthorization) return;
+    requestingNotificationAuthorization = true;
+    notificationMessage = '正在等待 macOS 通知授权。';
+    notifyListeners();
+    try {
+      await _serviceCommand('authorize-notifications');
+    } catch (_) {
+      requestingNotificationAuthorization = false;
+      notificationMessage = '故障通知授权结果未知，请查看服务日志。';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> refreshServiceNotificationStatus() async {
+    if (_closed) throw StateError('启动器正在退出');
+    await _serviceCommand('notification-status');
   }
 
   @override
@@ -238,170 +362,80 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
   }
 
-  Future<void> _startWeb() async {
-    if (_child != null) {
-      await _query({'type': 'status'});
-      if (_web.state != ServiceState.running) {
-        await _query({'type': 'open-global'});
-      }
-      return;
+  Future<Map<String, Object?>> _webCommand(String type) async {
+    final child = await _startProcess(node, [
+      script('web-cli.mjs'),
+      environment.dataRoot,
+      environment.resources,
+    ], environment: processEnvironment);
+    final output = child.stdout.transform(utf8.decoder).join();
+    final diagnostics = child.stderr.transform(utf8.decoder).join();
+    child.stdin.writeln(
+      jsonEncode({
+        'type': type,
+        if (type == 'start-web' &&
+            kDebugMode &&
+            environment.testSocket != null &&
+            Platform.environment['DSH_LAUNCHER_TEST_PORT'] != null)
+          'port': int.parse(Platform.environment['DSH_LAUNCHER_TEST_PORT']!),
+      }),
+    );
+    await child.stdin.close();
+    final code = await child.exitCode;
+    final text = await output;
+    final stderr = await diagnostics;
+    if (text.trim().isEmpty) throw StateError('Web 管理入口退出 $code：$stderr');
+    final reply = objectValue(jsonDecode(text));
+    if (code != 0 || reply['ok'] != true) {
+      throw StateError(reply['error'] as String? ?? 'Web 服务请求失败');
     }
-    if (!hasPassword) throw StateError('请先设置内网访问密码');
-    error = '';
-    _stopping = false;
-    final ready = Completer<void>();
-    _ready = ready;
+    final value = objectValue(reply['value']);
+    _setSnapshot(objectValue(value['web']));
     logs.clear();
-    _logInstanceId = null;
-    _logsDropped = false;
-    unawaited(ready.future.catchError((Object _) {}));
+    logs.addAll(
+      (value['logs'] as List).cast<Map>().map(
+        (row) => LogEntry(text: row['text'] as String),
+      ),
+    );
+    if (!_closed) notifyListeners();
+    return value;
+  }
+
+  Future<void> _observeWeb() async {
+    if (_closed || _observingWeb) return;
+    _observingWeb = true;
     try {
-      final child = await _startProcess(
-        node,
-        [
-          script('global-supervisor.mjs'),
-          environment.dataRoot,
-          if (kDebugMode &&
-              environment.testSocket != null &&
-              Platform.environment['DSH_LAUNCHER_TEST_PORT'] != null) ...[
-            '--port',
-            Platform.environment['DSH_LAUNCHER_TEST_PORT']!,
-          ],
-        ],
-        workingDirectory: environment.resources,
-        environment: processEnvironment,
-      );
-      if (_closed) {
-        final drained = Future.wait([
-          child.stdout.drain<void>(),
-          child.stderr.drain<void>(),
-        ]);
-        await _terminateChild(child);
-        await drained;
-        throw StateError('启动器正在退出');
-      }
-      _child = child;
+      await _webCommand('status');
+    } catch (failure) {
       _web = ServiceStatus(
-        state: ServiceState.starting,
-        ready: false,
+        state: ServiceState.failed,
+        message: failure.toString(),
         observedAt: DateTime.now().toUtc(),
       );
-      notifyListeners();
-      unawaited(_consume(child, child.stdout, LogStream.stdout));
-      unawaited(_consume(child, child.stderr, LogStream.stderr));
-      unawaited(
-        child.exitCode.then((code) {
-          if (!identical(_child, child)) return;
-          _child = null;
-          _observer?.cancel();
-          webUrl = null;
-          lanUrls = [];
-          _web = ServiceStatus(
-            state: _stopping || code == 0
-                ? ServiceState.stopped
-                : ServiceState.failed,
-            message: code == 0 ? null : '业务进程退出（$code）',
-            observedAt: DateTime.now().toUtc(),
-          );
-          if (!ready.isCompleted) {
-            ready.completeError(
-              StateError(error.isEmpty ? 'Web 启动未完成' : error),
-            );
-          }
-          for (final pending in _requests.values) {
-            pending.completeError(StateError('Web 服务已退出'));
-          }
-          _requests.clear();
-          notifyListeners();
-        }),
-      );
-      _observer = Timer.periodic(const Duration(seconds: 4), (_) {
-        if (!ready.isCompleted) return;
-        unawaited(
-          _query({'type': 'status'}).catchError((Object failure) {
-            reportError(failure);
-            return <String, Object?>{};
-          }),
-        );
-      });
-      await ready.future;
-    } catch (failure) {
-      if (!ready.isCompleted) ready.completeError(failure);
-      if (_child == null) {
-        _web = ServiceStatus(
-          state: ServiceState.failed,
-          message: failure.toString(),
-          observedAt: DateTime.now().toUtc(),
-        );
-      }
-      reportError(failure);
-      rethrow;
+      if (!_closed) notifyListeners();
+    } finally {
+      _observingWeb = false;
     }
   }
 
-  Future<void> _consume(
-    Process child,
-    Stream<List<int>> stream,
-    LogStream kind,
-  ) async {
+  Future<void> _startWeb() async {
+    if (!hasPassword) throw StateError('请先设置内网访问密码');
+    error = '';
+    _web = ServiceStatus(
+      state: ServiceState.starting,
+      ready: false,
+      observedAt: DateTime.now().toUtc(),
+    );
+    notifyListeners();
     try {
-      await for (final line
-          in stream.transform(utf8.decoder).transform(const LineSplitter())) {
-        if (!identical(_child, child)) return;
-        final separator = line.indexOf('\t');
-        if (separator > 0 && line.startsWith('DSH_WORKFLOW_')) {
-          final name = line.substring(0, separator);
-          final payload = objectValue(
-            jsonDecode(line.substring(separator + 1)),
-          );
-          if (name == 'DSH_WORKFLOW_DESKTOP_NEEDED') {
-            unawaited(startDesktop().catchError(reportError));
-          } else if (name == 'DSH_WORKFLOW_READY') {
-            _coldDesktopBackground = false;
-            webUrl = Uri.parse(payload['url'] as String);
-            lanUrls = (payload['lanUrls'] as List? ?? []).cast<String>();
-            if (_ready?.isCompleted == false) _ready!.complete();
-            unawaited(
-              _query({'type': 'status'}).catchError((Object failure) {
-                reportError(failure);
-                return <String, Object?>{};
-              }),
-            );
-          } else if (name == 'DSH_WORKFLOW_STATE') {
-            _setSnapshot(objectValue(payload['global']));
-          } else if (name == 'DSH_WORKFLOW_LOG') {
-            if (payload['instanceId'] != _logInstanceId) continue;
-            logs.add(LogEntry.fromJson(objectValue(payload['entry'])));
-            if (logs.length > 500) {
-              logs.removeAt(0);
-              _logsDropped = true;
-            }
-          } else if (name == 'DSH_WORKFLOW_REPLY') {
-            if (payload['global'] != null) {
-              _setSnapshot(objectValue(payload['global']));
-            }
-            final pending = _requests.remove(payload['requestId']);
-            if (pending != null) {
-              if (payload['ok'] == true) {
-                pending.complete(payload);
-              } else {
-                pending.completeError(
-                  StateError(payload['error'] as String? ?? '管理请求失败'),
-                );
-              }
-            }
-          }
-        } else {
-          logs.add(LogEntry(text: line, stream: kind));
-          if (logs.length > 500) {
-            logs.removeAt(0);
-            _logsDropped = true;
-          }
-        }
-        notifyListeners();
-      }
+      await _webCommand('start-web');
     } catch (failure) {
-      reportError(failure);
+      _web = ServiceStatus(
+        state: ServiceState.failed,
+        message: failure.toString(),
+        observedAt: DateTime.now().toUtc(),
+      );
+      rethrow;
     }
   }
 
@@ -415,6 +449,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
     if (state == ServiceState.running && value['url'] is String) {
       webUrl = Uri.parse(value['url'] as String);
+      lanUrls = (value['lanUrls'] as List? ?? []).cast<String>();
     } else if (state == ServiceState.stopped) {
       webUrl = null;
       lanUrls = [];
@@ -422,7 +457,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     _web = ServiceStatus(
       state: state,
       instanceId: value['instanceId'] as String?,
-      ready: state == ServiceState.running,
+      ready: state == ServiceState.running && value['ready'] == true,
       message: value['error'] as String?,
       observedAt: switch (value['observedAt']) {
         final String s => DateTime.tryParse(s)?.toUtc(),
@@ -431,49 +466,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     );
   }
 
-  Future<Map<String, Object?>> _query(Map<String, Object?> command) async {
-    final child = _child;
-    if (child == null) throw StateError('Web 服务未运行');
-    final id = ++_requestId;
-    final pending = Completer<Map<String, Object?>>();
-    unawaited(pending.future.catchError((Object _) => <String, Object?>{}));
-    _requests[id] = pending;
-    try {
-      await _writeCommand(child, {...command, 'requestId': id});
-      return await pending.future.timeout(const Duration(seconds: 10));
-    } finally {
-      _requests.remove(id);
-    }
-  }
-
-  Future<void> _writeCommand(Process child, Map<String, Object?> command) {
-    final write = _inputQueue.then((_) async {
-      if (!identical(_child, child)) throw StateError('Web 服务已退出');
-      child.stdin.writeln(jsonEncode(command));
-      await child.stdin.flush();
-    });
-    _inputQueue = write.catchError((Object _) {});
-    return write;
-  }
-
   @override
   Future<void> stopWeb() => _mutate(_stopWeb);
 
   Future<void> _stopWeb() async {
-    final child = _child;
-    if (child == null) return;
-    _stopping = true;
-    await _terminateChild(child);
-  }
-
-  Future<void> _terminateChild(Process child) async {
-    child.kill(ProcessSignal.sigterm);
-    try {
-      await child.exitCode.timeout(const Duration(seconds: 3));
-    } on TimeoutException {
-      child.kill(ProcessSignal.sigkill);
-      await child.exitCode;
-    }
+    await _webCommand('recycle-web');
   }
 
   Future<void> restartWeb() => _mutate(() async {
@@ -510,30 +507,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
           .whenComplete(() => _desktopOpen = null);
 
   Future<void> _openDesktop({required bool hidden}) async {
-    if (await native.desktopRunning(desktop)) return;
-    final resources = '$desktop/Contents/Resources';
-    final source = File('$resources/dsh-source-runtime.json');
-    final runtime = await source.exists()
-        ? objectValue(jsonDecode(await source.readAsString()))['runtimeRoot']
-              as String
-        : '$resources/app/dsh';
-    final electron = File('$desktop/Contents/MacOS/Electron');
-    final executable = await electron.exists()
-        ? electron.path
-        : '$desktop/Contents/MacOS/DeepSeek Harness';
-    final result = await Process.run(
-      executable,
-      [
-        script('prepare-desktop.mjs'),
-        environment.resources,
-        '${environment.dataRoot}/global',
-        runtime,
-      ],
-      environment: {...processEnvironment, 'ELECTRON_RUN_AS_NODE': '1'},
-    );
-    if (result.exitCode != 0) {
-      throw StateError('插件装配失败（${result.exitCode}）：${result.stderr}');
+    await _serviceCommand('connect-web');
+    if (_service.ready != true) {
+      throw StateError('DSH 服务未启动或暂不可用，请先启动 DSH 服务。');
     }
+    if (await native.desktopRunning(desktop)) return;
     _coldDesktopBackground = hidden;
     try {
       await native.openDesktop(
@@ -541,7 +519,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         hidden: hidden,
         environment: {
           'DSH_HOME': environment.home,
-          'DSH_PERMISSION_MODE': processEnvironment['DSH_PERMISSION_MODE']!,
+          'DSH_WORKFLOW_DATA_ROOT': environment.dataRoot,
         },
       );
     } catch (_) {
@@ -552,30 +530,25 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   @override
   Future<ServiceStatus> webStatus() async {
-    if (_child != null && _ready?.isCompleted == true) {
-      await _query({'type': 'status'});
-    }
-    return _child == null
-        ? ServiceStatus(
-            state: _web.state,
-            message: _web.message,
-            observedAt: DateTime.now().toUtc(),
-          )
-        : _web;
+    await _webCommand('status');
+    return _web;
   }
 
   @override
   Future<ServiceStatus> desktopStatus() => serviceStatus();
 
   @override
-  Future<LogBatch> recentLogs(LogQuery query) async => LogBatch(
-    entries: logs
-        .skip(logs.length > query.limit ? logs.length - query.limit : 0)
-        .toList(),
-    instanceId: _logInstanceId,
-    truncated: logs.length > query.limit || _logsDropped,
-    observedAt: DateTime.now().toUtc(),
-  );
+  Future<LogBatch> recentLogs(LogQuery query) async {
+    await _webCommand('logs');
+    return LogBatch(
+      entries: logs
+          .skip(logs.length > query.limit ? logs.length - query.limit : 0)
+          .toList(),
+      instanceId: _logInstanceId,
+      truncated: logs.length > query.limit || _logsDropped,
+      observedAt: DateTime.now().toUtc(),
+    );
+  }
 
   @override
   Future<void> showWindow() => native.showWindow();
@@ -601,10 +574,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
     await native.savePassword(value);
     _password = value;
-    final child = _child;
-    if (child != null) {
-      await _writeCommand(child, {'type': 'set-password', 'password': value});
-    }
+    if (isActive) await _webCommand('set-password');
     notifyListeners();
   }
 
@@ -660,7 +630,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   }
 
   Future<void> checkPlugins() async {
-    if (checkingPlugins || updatingPlugins) return;
+    if (checkingPlugins) return;
     checkingPlugins = true;
     pluginMessage = '正在检查插件版本…';
     notifyListeners();
@@ -672,7 +642,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       if (rows is! List) throw const FormatException('Missing plugin rows');
       plugins = rows.map((row) => PluginRow(objectValue(row))).toList();
       pluginMessage =
-          '${plugins.where((p) => p.status == 'newer').length} 个新版本；共 ${plugins.length} 项';
+          '共 ${plugins.length} 项；${plugins.where((p) => p.status == 'drift').length} 项版本偏差。此处检查安装文件，运行解析请在 DSH 设置 → 插件查看。';
     } catch (failure) {
       pluginMessage = '插件检查失败：$failure';
     } finally {
@@ -695,32 +665,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     return objectValue(jsonDecode(result.stdout.toString()));
   }
 
-  Future<void> updatePlugins(List<String> names) async {
-    if (updatingPlugins || checkingPlugins) return;
-    updatingPlugins = true;
-    pluginUpdateMessage = '正在更新插件…';
-    notifyListeners();
-    try {
-      final report = await _runReport('plugin-update.mjs', [
-        environment.resources,
-        if (names.isNotEmpty) ...['--only', names.join(',')],
-      ]);
-      final updated = report['updated'];
-      if (updated is! List) {
-        throw const FormatException('Missing update results');
-      }
-      pluginsNeedReload = pluginsNeedReload || updated.isNotEmpty;
-      pluginUpdateMessage =
-          '已更新 ${updated.length} 个插件${report['error'] == null ? '' : '；${report['error']}'}';
-    } catch (failure) {
-      pluginUpdateMessage = '插件更新失败：$failure';
-    } finally {
-      updatingPlugins = false;
-      notifyListeners();
-    }
-    await checkPlugins();
-  }
-
   Future<void> close() => _closeFuture ??= _close();
 
   Future<void> _close() async {
@@ -733,10 +677,14 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
     _observer?.cancel();
     _serviceObserver?.cancel();
-    final pending = _mutation;
-    await _stopWeb();
-    await pending;
-    await _stopWeb();
+    if (_pendingServiceStop != null && !_serviceCommitStarted) {
+      await _serviceCommand(
+        'cancel-stop',
+        fields: {'operationId': _pendingServiceStop},
+      );
+      _pendingServiceStop = null;
+    }
+    await _mutation;
   }
 }
 

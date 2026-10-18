@@ -13,6 +13,7 @@ import 'launcher_controller.dart';
 import 'lifecycle_probe_process.dart';
 import 'maclauncher_integration.dart';
 import 'native_bridge.dart';
+import 'service_stop.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,6 +51,7 @@ Future<void> main() async {
         ? status.state.name
         : '${status.state.name}：${status.reason}',
   );
+  late final Future<void> serviceStartup;
   native.channel.setMethodCallHandler((call) async {
     switch (call.method) {
       case 'quitRequested':
@@ -89,7 +91,7 @@ Future<void> main() async {
           rethrow;
         }
       case 'openGlobal':
-        await model.startService();
+        await serviceStartup;
         await model.startWeb();
     }
   });
@@ -97,6 +99,7 @@ Future<void> main() async {
     registerApplicationProbe(native);
   }
   runApp(LauncherApp(controller: model));
+  serviceStartup = model.startService().catchError(model.reportError);
   unawaited(model.checkUpdates());
   unawaited(model.checkPlugins());
 }
@@ -135,7 +138,54 @@ class _LauncherPageState extends State<LauncherPage> {
   final _password = TextEditingController();
   LauncherController get model => widget.controller;
   @override
+  void initState() {
+    super.initState();
+    model.confirmServiceStop = _confirmServiceStop;
+  }
+
+  Future<bool> _confirmServiceStop(ServiceStopInspection inspection) async {
+    await model.showWindow();
+    if (!mounted) return false;
+    final verb = inspection.action == 'restart' ? '重启' : '停止';
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Text('$verb DSH 服务'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('实例：${inspection.instanceId}'),
+                  Text('$verb会中断列出的未完成工作及其继续产生的工作。取消后继续使用原实例。'),
+                  if (inspection.unknown) const Text('任务状态未知，可能仍有未完成工作。'),
+                  if (inspection.message != null) Text(inspection.message!),
+                  for (final work in inspection.work)
+                    Text('• ${work['label']}（${work['id']}）'),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('确认$verb'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  @override
   void dispose() {
+    if (model.confirmServiceStop == _confirmServiceStop) {
+      model.confirmServiceStop = null;
+    }
     _password.dispose();
     super.dispose();
   }
@@ -264,12 +314,27 @@ class _LauncherPageState extends State<LauncherPage> {
               model.startService,
               enabled: model.serviceSnapshot.state != ServiceState.starting,
             ),
+            _button('停止 DSH 服务', model.stopService),
+            _button('重启 DSH 服务', model.restartService),
             _button('刷新服务状态', () async {
               await model.serviceStatus();
             }),
           ],
         ),
         const Text('关闭启动器后，已启动的 DSH 服务继续运行。'),
+        SelectableText(model.notificationMessage),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _button(
+              '启用故障通知',
+              model.authorizeServiceNotifications,
+              enabled: !model.requestingNotificationAuthorization,
+            ),
+            _button('刷新通知状态', model.refreshServiceNotificationStatus),
+          ],
+        ),
       ]),
       _section('客户端入口', [
         Text('应用版本 ${model.environment.appVersion}'),
@@ -416,29 +481,13 @@ class _LauncherPageState extends State<LauncherPage> {
           _button(
             '检查插件版本',
             model.checkPlugins,
-            enabled: !model.checkingPlugins && !model.updatingPlugins,
-          ),
-          _button(
-            '更新全部可更新插件',
-            () => model.updatePlugins([]),
-            enabled:
-                !model.checkingPlugins &&
-                !model.updatingPlugins &&
-                model.plugins.any((row) => row.updatable),
+            enabled: !model.checkingPlugins,
           ),
         ],
       ),
       const SizedBox(height: 12),
       Text(model.pluginMessage),
-      if (model.pluginUpdateMessage.isNotEmpty)
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 120),
-          child: SingleChildScrollView(
-            child: SelectionArea(child: Text(model.pluginUpdateMessage)),
-          ),
-        ),
-      if (model.pluginsNeedReload)
-        const Text('插件已更新。完全退出并重新打开 Desktop 后加载新版本。'),
+      const Text('组件随本仓库正式 DMG 统一更新；此页只读检查本地安装文件，不能证明当前 Host 已加载该版本。'),
       const SizedBox(height: 12),
       Expanded(
         child: SingleChildScrollView(
@@ -447,10 +496,9 @@ class _LauncherPageState extends State<LauncherPage> {
             child: DataTable(
               columns: const [
                 DataColumn(label: Text('插件 / 来源')),
-                DataColumn(label: Text('当前 / 最新')),
+                DataColumn(label: Text('实际 / 仓库固定')),
                 DataColumn(label: Text('DSH 兼容声明')),
                 DataColumn(label: Text('状态')),
-                DataColumn(label: Text('操作')),
               ],
               rows: model.plugins
                   .map(
@@ -470,7 +518,9 @@ class _LauncherPageState extends State<LauncherPage> {
                           ),
                         ),
                         DataCell(
-                          Text('${row.current ?? '未知'} / ${row.latest ?? '—'}'),
+                          Text(
+                            '${row.current ?? '未知'} / ${row.expected ?? '未固定'}',
+                          ),
                         ),
                         DataCell(
                           Text(
@@ -481,13 +531,6 @@ class _LauncherPageState extends State<LauncherPage> {
                           Tooltip(
                             message: row.note ?? '',
                             child: Text(_pluginState(row.status)),
-                          ),
-                        ),
-                        DataCell(
-                          _button(
-                            '更新',
-                            () => model.updatePlugins([row.name]),
-                            enabled: row.updatable && !model.updatingPlugins,
                           ),
                         ),
                       ],
@@ -558,9 +601,11 @@ String _stateName(ServiceState state) => switch (state) {
 };
 
 String _pluginState(String state) => switch (state) {
-  'newer' => '有新版本',
-  'current' => '已是最新',
-  'ahead' => '高于 latest',
+  'fixed' => '符合仓库固定值',
+  'expected' => '仓库固定快照',
+  'drift' => '版本偏差',
+  'unknown' => '未能核验',
+  'untracked' => '仓库未固定',
   'bundled' => '随 App 更新',
   'coupled' => '随 DSH 更新',
   'local' => '本地依赖',

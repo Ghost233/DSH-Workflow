@@ -30,23 +30,29 @@ test('packaged project profile serves authenticated official DSH readiness using
   for (const path of ['agent-observation-plugin', 'matt-skills-panel-plugin/package', 'vendor/mattpocock-skills-zh/skills']) {
     await cp(resolve(path), join(workflow, path), { recursive: true, filter: path => !/(?:^|\/)(?:test|tests|node_modules|\.git)(?:\/|$)/.test(path) })
   }
-  await cp(resolve('package.json'), join(workflow, 'package.json'))
+  for (const name of ['package.json', 'project-plugins.json', 'project-plugins.lock.json', 'dsh-runtime.json']) {
+    await cp(resolve(name), join(workflow, name))
+  }
+  await cp(resolve('macos-launcher/package-lock.json'), join(resourcesRoot, 'package-lock.json'))
   // User MCP endpoints are unrelated foreign work, absent from the CI input under diagnosis.
   await writeFile(join(workflow, 'project-mcp.json'), '[]\n')
   await mkdir(join(workflow, 'scripts'), { recursive: true })
-  for (const path of ['dsh-launch-composition.mjs', 'observation-profile.mjs']) {
+  for (const path of ['dsh-launch-composition.mjs', 'dsh-delivery-policy.mjs', 'observation-profile.mjs']) {
     await cp(resolve('scripts', path), join(workflow, 'scripts', path))
   }
   await mkdir(join(workflow, 'macos-launcher/runtime'), { recursive: true })
   await cp(resolve('macos-launcher/runtime/plugin-configuration.mjs'), join(workflow, 'macos-launcher/runtime/plugin-configuration.mjs'))
   await cp(resolve('macos-launcher/runtime/desktop-profile.mjs'), join(workflow, 'macos-launcher/runtime/desktop-profile.mjs'))
   await cp(resolve('macos-launcher/runtime/desktop-bridge.mjs'), join(workflow, 'macos-launcher/runtime/desktop-bridge.mjs'))
+  await cp(resolve('macos-launcher/runtime/stop-inspection.mjs'), join(workflow, 'macos-launcher/runtime/stop-inspection.mjs'))
   const { prepareDesktopProfile } = await import(pathToFileURL(join(workflow, 'macos-launcher/runtime/desktop-profile.mjs')))
   const prepared = await prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot, globalRoot, home })
   const saved = process.env.DSH_HOME
   process.env.DSH_HOME = home
-  let ctx
+  let ctx, starting, disposing
   t.after(async () => {
+    await starting?.catch(() => {})
+    await disposing?.catch(() => {})
     await ctx?.fiber.dispose()
     saved === undefined ? delete process.env.DSH_HOME : process.env.DSH_HOME = saved
     await rm(root, { recursive: true, force: true })
@@ -77,8 +83,11 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(effective.find(row => row.id === 'matt-panel-tools').name, 'dsh-workflow-matt-panel/tools')
   assert.equal(effective.find(row => row.id === 'mattpocock-skills-zh').name, '@deepseek-ai/dsh-skill-filesystem')
   assert.deepEqual(effective.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
-  const startHost = async () => {
+  const startHost = () => {
+    starting = (async () => {
+    t.signal.throwIfAborted()
     const resolution = await createRuntimeResolution({ installAnchor: anchor, profile })
+    t.signal.throwIfAborted()
     const readyListeners = new Set()
     ctx = await boot('packaged-dsh-ready', join(prepared.profile, 'cordis.yml'), [...profile.layers.flatMap(layer => layer.patches), ...profile.patches], async c => {
     c.provide('profileContext', { name: 'desktop', dir: profile.dir, patchPath: profile.patchPath, installAnchor: anchor,
@@ -88,23 +97,85 @@ test('packaged project profile serves authenticated official DSH readiness using
     } } })
     await c.plugin(PluginPackages, { resolution })
   })
+    t.signal.throwIfAborted()
     for (const listener of readyListeners) listener()
+    })()
+    return starting
   }
   await startHost()
+  t.signal.throwIfAborted()
   const baseUrl = c => c.connection.authenticatedUrl(`http://127.0.0.1:${c.webServer.port}`)
-  const login = await fetch(baseUrl(ctx), { redirect: 'manual', headers: { connection: 'close' } })
+  const login = await fetch(baseUrl(ctx), { redirect: 'manual', headers: { connection: 'close' }, signal: t.signal })
   const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
   await login.text()
-  const health = await dshReadiness(baseUrl(ctx),{cookie})
+  t.signal.throwIfAborted()
+  let inventoryReads = 0
+  const observedInventory = async (url, options) => {
+    const response = await fetch(url, options)
+    const evidence = process.env.DSH_TEST_EVIDENCE_DIRECTORY
+    if (evidence) {
+      await mkdir(evidence, { recursive: true })
+      await writeFile(join(evidence, `inventory-${++inventoryReads}.json`), JSON.stringify(await response.clone().json(), null, 2) + '\n')
+    }
+    return response
+  }
+  const health = await dshReadiness(baseUrl(ctx),{cookie, signal: t.signal, request: observedInventory})
   assert.equal(health.ready,true)
   assert.ok(health.plugins.length>0)
+  const deliveryResponse = await fetch(new URL('/api/workflowDelivery/list', baseUrl(ctx)), {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie }, signal: t.signal,
+    body: JSON.stringify({ type: 'client-request', rpcId: 's07-delivery', method: 'workflowDelivery/list', payload: { args: {} } }),
+  })
+  const deliveryText = await deliveryResponse.text()
+  if (process.env.DSH_TEST_EVIDENCE_DIRECTORY) {
+    await writeFile(join(process.env.DSH_TEST_EVIDENCE_DIRECTORY, 'delivery-response.json'), JSON.stringify({ status: deliveryResponse.status, body: deliveryText }, null, 2) + '\n')
+  }
+  assert.equal(deliveryResponse.status, 200, `the readonly settings page needs a public Host delivery report; received ${deliveryResponse.status}: ${deliveryText}`)
+  const delivery = JSON.parse(deliveryText)
+  assert.equal(delivery.result?.ok, true, `the readonly settings page needs the actual Host delivery report: ${JSON.stringify(delivery)}`)
+  const report = delivery.result.value
+  assert.equal(report.actualScope, 'runtime-resolution')
+  const unresolved = report.rows.find(row => row.moduleName === 'user-choice')
+  assert.equal(unresolved.current, null)
+  assert.equal(unresolved.expected, null)
+  assert.equal(unresolved.status, 'unknown', 'unresolved disabled user choices must remain unknown rather than claim a fixed version')
+  const sdkRow = report.rows.find(row => row.package === '@deepseek-ai/dsh-host-plugin-inventory')
+  assert.ok(sdkRow, 'the actual readonly inventory package is resolved by this Host')
+  assert.equal(sdkRow.expected, '0.2.1-alpha.5', 'SDK fixed versions must come from the packaged npm lock')
+  const presetRow = report.rows.find(row => row.scope === 'Agent 预设 cordis' && row.moduleName === '@deepseek-ai/dsh-plugin-manager/tools')
+  assert.ok(presetRow, 'the versions page must retain the effective agent-preset scope from official inventory')
+  assert.equal(presetRow.enabled, false)
+  assert.equal(presetRow.current, '0.2.1-alpha.5')
+  assert.equal(presetRow.expected, '0.2.1-alpha.5')
+  const ownRows = report.rows.filter(row => row.moduleName.startsWith('dsh-workflow/'))
+  assert.deepEqual(ownRows.map(row => row.entryId).sort(), ['include:workflow-agent-monitor', 'include:workflow-delivery-inventory', 'include:workflow-jev-center'])
+  assert.equal(new Set(ownRows.map(row => row.source)).size, 1, 'all named project entries resolve from one existing package source')
+  for (const moduleName of ['dsh-workflow/jev-center', 'dsh-workflow/agent-monitor']) {
+    const row = report.rows.find(row => row.moduleName === moduleName)
+    assert.equal(row.current, '0.1.1', `${moduleName} actual package version`)
+    assert.equal(row.expected, '0.1.1', `${moduleName} repository component pin`)
+    assert.ok(row.source.includes(workflow), 'the package source must be the actual staged project')
+    assert.equal(row.updatable, false)
+  }
+  const beforeMutationProbe = await readFile(join(prepared.profile, 'package.json'))
+  for (const [method, args] of [['pluginManager/installBundle', { spec: '' }], ['pluginManager/removeBundle', { name: 's07-not-installed' }], ['workflowDelivery/installBundle', { spec: '' }]]) {
+    const response = await fetch(new URL(`/api/${method}`, baseUrl(ctx)), {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie }, signal: t.signal,
+      body: JSON.stringify({ type: 'client-request', rpcId: `s07-${method}`, method, payload: { args } }),
+    })
+    const body = await response.text()
+    assert.equal(response.status, 404, `runtime package mutation must be unavailable: ${method}: ${body}`)
+  }
+  assert.deepEqual(await readFile(join(prepared.profile, 'package.json')), beforeMutationProbe)
   const manifest = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
   assert.equal(manifest.dependencies['dsh-workflow'], `file:${workflow}`)
   assert.equal(manifest.dependencies['dsh-workflow-matt-panel'], `file:${join(workflow, 'matt-skills-panel-plugin/package')}`)
   assert.ok(ctx.tools.get('deck_context'), 'the named Matt tools package registers its public tool')
   assert.ok(ctx.get('jevCenter'), 'the named JEV center package provides its public service')
   assert.ok(ctx.get('agentMonitor'), 'the named monitor package provides its public service')
-  await ctx.fiber.dispose(); ctx = undefined
+  disposing = ctx.fiber.dispose()
+  await disposing; ctx = undefined; disposing = undefined
+  t.signal.throwIfAborted()
   const beforeMove = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
   beforeMove.userMetadata = { keep: 'same-home' }
   await writeFile(join(prepared.profile, 'package.json'), JSON.stringify(beforeMove))
@@ -123,10 +194,12 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.deepEqual(movedEntries.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true })
   assert.deepEqual(movedEntries.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
   await startHost()
-  const movedLogin = await fetch(baseUrl(ctx), { redirect: 'manual', headers: { connection: 'close' } })
+  t.signal.throwIfAborted()
+  const movedLogin = await fetch(baseUrl(ctx), { redirect: 'manual', headers: { connection: 'close' }, signal: t.signal })
   const movedCookie = movedLogin.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
   await movedLogin.text()
-  assert.equal((await dshReadiness(baseUrl(ctx), { cookie: movedCookie })).ready, true)
+  t.signal.throwIfAborted()
+  assert.equal((await dshReadiness(baseUrl(ctx), { cookie: movedCookie, signal: t.signal, request: observedInventory })).ready, true)
   assert.ok(ctx.get('jevCenter'))
   assert.ok(ctx.get('agentMonitor'))
   assert.ok(ctx.tools.get('deck_context'))

@@ -404,7 +404,7 @@ Future<void> runSettingsApplicationScenario(
     );
     require(
       (await request(
-            local.resolve('api/pluginManager/listPlugins'),
+            local.resolve('api/pluginInventory/list'),
             cookies: oldCookies,
           )).code ==
           401,

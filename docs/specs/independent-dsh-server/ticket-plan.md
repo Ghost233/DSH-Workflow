@@ -11,7 +11,7 @@
 | [03 #28](https://github.com/Ghost233/DSH-Workflow/issues/28) | 独立启停 Web 入口并连接同一服务 | [01 #26](https://github.com/Ghost233/DSH-Workflow/issues/26) | 真实认证访问、Web 独立回收、启动器退出后访问保留。 |
 | [04 #29](https://github.com/Ghost233/DSH-Workflow/issues/29) | 检查未完成工作并安全停止或重启服务 | [01 #26](https://github.com/Ghost233/DSH-Workflow/issues/26) | 活动和未知状态先确认，取消保持，手动重启保留持久化数据。 |
 | [05 #30](https://github.com/Ghost233/DSH-Workflow/issues/30) | 服务异常退出后通知检查并保持停止 | [01 #26](https://github.com/Ghost233/DSH-Workflow/issues/26) | 实际崩溃后保持停止，关闭启动器仍通知，通知失败如实记录。 |
-| [06 #31](https://github.com/Ghost233/DSH-Workflow/issues/31) | 登录后启动服务并保留后台运行 | [01 #26](https://github.com/Ghost233/DSH-Workflow/issues/26) | 登录启动服务且不强制打开桌面窗口，停用不影响当前业务。 |
+| [06 #31](https://github.com/Ghost233/DSH-Workflow/issues/31) | 打开启动器后自动启动服务并保留后台运行 | [01 #26](https://github.com/Ghost233/DSH-Workflow/issues/26) | 打开启动器自动启动或复用服务，退出后继续；真实 macOS 登录实测已由用户取消。 |
 | [07 #32](https://github.com/Ghost233/DSH-Workflow/issues/32) | 更新只检查本仓库 DMG 并统一组件交付 | [02 #27](https://github.com/Ghost233/DSH-Workflow/issues/27) | 桌面端与启动器只检查本仓库正式 DMG，运行端不直接换上游包。 |
 | [08 #33](https://github.com/Ghost233/DSH-Workflow/issues/33) | 构建可复现 ARM64 应用并完成共享实例验收 | 03、04、05、06、07 | 用实际分发产物完成桌面与 Web 共享、后台任务、系统边界和完整门禁。 |
 
@@ -19,7 +19,7 @@
 
 初始前沿只有 01。完成后解锁 02、03、04、05、06；02 完成后解锁 07。08 依赖 03、04、05、06、07，已通过传递关系依赖 01 和 02，不重复声明传递边。
 
-桌面接入和 Web 接入都只依赖真实独立服务，因此相互不设阻塞。任务保护、故障通知和登录启动也不必等全部客户端接入完成。完整产物和跨客户端回归在 08 汇总，不用最终回归票替代前序工单自身的行为验证。
+桌面接入和 Web 接入都只依赖真实独立服务，因此相互不设阻塞。任务保护、故障通知和启动器自动启动也不必等全部客户端接入完成。完整产物和跨客户端回归在 08 汇总，不用最终回归票替代前序工单自身的行为验证。
 
 ## 发布约定
 

@@ -2,12 +2,16 @@ import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { homedir } from 'node:os'
-import { manageProfilePluginOperation } from './plugin-configuration.mjs'
+import { manageProfilePluginOperation, assertPackageMaintenanceResource } from './plugin-configuration.mjs'
 
 import { hostPackageMap } from '../../scripts/project-plugins.mjs'
 import { installProjectResolver } from '../../scripts/project-plugin-resolver.mjs'
 
 const resources = resolve(process.argv[2] ?? '')
+const requested = process.argv.slice(3)
+if (requested[0] === 'plugin' && requested.some(value => ['add', 'remove'].includes(value))) {
+  assertPackageMaintenanceResource(resources)
+}
 const anchor = join(resources, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
 const workflow = join(resources, 'workflow')
 const packages = {

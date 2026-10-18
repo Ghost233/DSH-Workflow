@@ -1,92 +1,83 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, readFile, mkdir, rm } from 'node:fs/promises'
+import net from 'node:net'
+import { mkdtemp, writeFile, readFile, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 import { WEB_PORT, startGlobalSupervisor } from './global-supervisor.mjs'
 
 async function dataRoot(t) {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-global-control-'))
+  const root = await mkdtemp('/private/tmp/dsh-global-control-')
   t.after(() => rm(root, { recursive: true, force: true }))
   return root
 }
 
+async function availablePort(port = 0) {
+  const listener = net.createServer()
+  await new Promise((accept, reject) => { listener.once('error', reject); listener.listen(port, '127.0.0.1', accept) })
+  const actual = listener.address().port
+  await new Promise(accept => listener.close(accept))
+  return actual
+}
+
 test('the single Web entry uses the previous stable port', () => assert.equal(WEB_PORT, 33080))
 
-test('repeated opens share one Desktop connection and leave directory history untouched', async t => {
+test('repeated opens share one actual Web listener without starting a missing DSH service', async t => {
   const root = await dataRoot(t)
   const history = JSON.stringify([{ id: 'old', path: root }])
   await writeFile(join(root, 'catalogs.json'), history)
-  let started = 0, needed = 0, rotated
-  const supervisor = await startGlobalSupervisor({ dataRoot: root, port: 0, password: 'fixture',
-    onDesktopNeeded: () => needed++,
-    attachDesktop: ({ globalRoot, gatewayHost, gatewayPort, password, onReady, onGateway, signal }) => {
-      started++
-      assert.equal(globalRoot, join(root, 'global'))
-      assert.equal(gatewayHost, '0.0.0.0')
-      assert.equal(gatewayPort, 0)
-      assert.equal(password, 'fixture')
-      onGateway({ port: 41999, lanUrls: [], setPassword(value) { rotated = value } })
-      onReady({ port: 45678 })
-      return new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }))
-    } })
+  const supervisor = await startGlobalSupervisor({ dataRoot: root, host: '127.0.0.1', port: 0, password: 'fixture' })
   t.after(() => supervisor.close())
+  const first = supervisor.global().instanceId
   const entries = await Promise.all(Array.from({ length: 10 }, () => supervisor.openGlobal()))
-  assert.deepEqual([...new Set(entries)], ['http://127.0.0.1:41999/'])
-  assert.equal(started, 1)
-  assert.equal(needed, 1)
+  assert.equal(new Set(entries).size, 1)
+  assert.equal(supervisor.global().instanceId, first)
+  assert.match(first, /^[a-f0-9-]{36}$/)
+  assert.equal(supervisor.global().state, 'running')
   assert.equal(supervisor.global().gatePort, supervisor.port)
-  const firstInstance = supervisor.global().instanceId
-  assert.match(firstInstance, /^[a-f0-9-]{36}$/)
-  assert.ok(Number.isFinite(Date.parse(supervisor.global().observedAt)))
-  for (const name of ['catalogs', 'createCatalog', 'attachCatalog', 'openCatalog']) assert.equal(supervisor[name], undefined)
-  supervisor.setPassword('changed'); assert.equal(rotated, 'changed')
+  assert.equal(supervisor.global().serviceInstanceId, null)
+  const response = await fetch(supervisor.localUrl)
+  assert.equal(response.status, 503)
+  assert.match(await response.text(), /DSH 服务不可用/)
+  assert.equal(await readFile(join(root, 'catalogs.json'), 'utf8'), history)
+  await assert.rejects(stat(join(root, 'global/.dsh-workflow/service/manager.json')), { code: 'ENOENT' })
+})
+
+test('stopping and reopening releases and reuses the actual configured Web port', async t => {
+  const root = await dataRoot(t)
+  const port = await availablePort()
+  const supervisor = await startGlobalSupervisor({ dataRoot: root, host: '127.0.0.1', port, password: 'fixture' })
+  t.after(() => supervisor.close())
+  const first = supervisor.global().instanceId
   await supervisor.stopGlobal()
   assert.equal(supervisor.global().state, 'stopped')
   assert.equal(supervisor.global().instanceId, null)
-  assert.equal(await readFile(join(root, 'catalogs.json'), 'utf8'), history)
-})
-
-test('a stopped Web connection reconnects without allocating a second exposed port', async t => {
-  const root = await dataRoot(t)
-  let attempts = 0
-  const supervisor = await startGlobalSupervisor({ dataRoot: root, port: 41998, password: 'fixture',
-    attachDesktop: ({ gatewayPort, onGateway, onReady, signal }) => {
-      attempts++
-      assert.equal(gatewayPort, 41998)
-      onGateway({ port: gatewayPort, lanUrls: [], setPassword() {} })
-      onReady({ port: 45678 })
-      return new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }))
-    } })
-  t.after(() => supervisor.close())
-  const firstInstance = supervisor.global().instanceId
-  await supervisor.stopGlobal()
+  assert.equal(await availablePort(port), port)
   await Promise.all([supervisor.openGlobal(), supervisor.openGlobal()])
-  assert.equal(attempts, 2)
+  assert.equal(supervisor.port, port)
   assert.equal(supervisor.global().state, 'running')
-  assert.notEqual(supervisor.global().instanceId, firstInstance)
+  assert.notEqual(supervisor.global().instanceId, first)
+  const response = await fetch(supervisor.localUrl)
+  assert.equal(response.status, 503)
+  await response.body?.cancel()
 })
 
-test('cancelling while Desktop is starting closes the pending Web startup', async t => {
+test('cancelling actual Web startup leaves its configured port free', async t => {
+  const root = await dataRoot(t)
+  const port = await availablePort()
+  const controller = new AbortController()
+  const starting = startGlobalSupervisor({ dataRoot: root, host: '127.0.0.1', port, password: 'fixture', signal: controller.signal })
+  controller.abort()
+  await assert.rejects(starting, { name: 'AbortError' })
+  assert.equal(await availablePort(port), port)
+})
+
+test('aborting a running Web entry closes its actual listener without creating a Host', async t => {
   const root = await dataRoot(t)
   const controller = new AbortController()
-  const started = Promise.withResolvers()
-  const task = startGlobalSupervisor({ dataRoot: root, port: 0, password: 'fixture', signal: controller.signal,
-    attachDesktop: ({ signal }) => new Promise(resolve => {
-      signal.addEventListener('abort', resolve, { once: true })
-      started.resolve()
-    }) })
-  const rejected = assert.rejects(task, /Web connection stopped/)
-  await started.promise
+  const supervisor = await startGlobalSupervisor({ dataRoot: root, host: '127.0.0.1', port: 0, password: 'fixture', signal: controller.signal })
+  const port = supervisor.port
   controller.abort()
-  await rejected
-})
-
-test('an unsafe Desktop receipt fails without launching another backend', async t => {
-  const root = await dataRoot(t)
-  const dir = join(root, 'global/.dsh-workflow/desktop')
-  await mkdir(dir, { recursive: true })
-  await writeFile(join(dir, 'desktop-host.json'), '{}', { mode: 0o644 })
-  await assert.rejects(startGlobalSupervisor({ dataRoot: root, password: 'fixture', port: 0,
-    onDesktopNeeded: () => assert.fail('unsafe receipts must not relaunch Desktop') }), /Unsafe Desktop Host receipt/)
+  await supervisor.close()
+  assert.equal(await availablePort(port), port)
+  await assert.rejects(stat(join(root, 'global/.dsh-workflow/desktop/desktop-host.json')), { code: 'ENOENT' })
 })

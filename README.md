@@ -2,7 +2,7 @@
 
 本项目维护 DSH 启动器、独立 JEV 中心与原生代理监控，以及 [Matt 本地派生面板](matt-skills-panel-plugin/README.md)。DSH、SDK 与第三方上游保持原样。
 
-日常入口是无参数 `./start-dsh-workflow.sh`。仅支持 macOS ARM64，使用官方 Desktop 的全局后端，浏览器访问连接同一实例。JEV/监控由 `agent-observation-plugin/` 提供，根包 `dsh-workflow` 的 `/jev-center`、`/agent-monitor` 及 `/client` 入口保持配置与功能。固定配置 entry IDs 延续，迁移仅修改这些 entry 的包入口；用户其他配置和凭据保留。
+日常入口是无参数 `./start-dsh-workflow.sh`。仅支持 macOS ARM64。启动器启动或复用独立 DSH 服务端，桌面客户端和 Web 连接同一个实例；关闭客户端或启动器后服务继续运行。JEV/监控由 `agent-observation-plugin/` 提供，根包 `dsh-workflow` 的 `/jev-center`、`/agent-monitor` 及 `/client` 入口保持配置与功能。固定配置 entry IDs 延续，迁移仅修改这些 entry 的包入口；用户其他配置和凭据保留。
 
 第三方启动清单由 `project-plugins.json` 和锁文件提供，失败逐项报告并继续其余装配。中文技能和 Matt 面板通过项目 integration layer 加载。
 
