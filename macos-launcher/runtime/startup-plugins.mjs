@@ -24,6 +24,8 @@ export async function prepareStartupPlugins({ profile, entries, config, boot }) 
       const candidate = manifest.dsh?.bundle
         ? boot.bundlePatchPaths(installedSource, manifest.dsh.bundle).flatMap(path => boot.loadOverlayPatches('dsh', path))
         : [{ insert: [{ id: `project-startup-${item.entryId ?? item.package}`, name: item.package }] }]
+      // Compose a cloned full tree, then use the same traversal as profile preparation before accepting this package.
+      flatten(boot.composeEntries([[{ insert: entries }], patches, candidate]))
       patches.push(...candidate)
     } catch (error) {
       const reason = error.code === 'ENOENT' || error.code === 'MODULE_NOT_FOUND'
