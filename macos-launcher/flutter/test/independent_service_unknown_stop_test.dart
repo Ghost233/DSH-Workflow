@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:launcher_core/launcher_core.dart';
 
 import '../tool/service_task_fixture.dart';
+import 'service_stop_confirmation.dart';
 
 class _UnknownNative extends NativeBridge {
   _UnknownNative(this.root, this.resources);
@@ -134,20 +135,14 @@ void main() {
         }
         final (session, receipt, sessionId) = prepared;
         await tester.pumpWidget(LauncherApp(controller: model!));
-        await tester.runAsync(() async {
+        await expectServiceStopConfirmation(tester, () {
           pending = session.sendRequest(
             'recycle',
             serviceId: 'desktop',
             timeout: const Duration(seconds: 30),
           );
-          await Future<void>.delayed(const Duration(seconds: 3));
+          return pending!;
         });
-        await tester.pump();
-        expect(
-          find.byType(AlertDialog),
-          findsOneWidget,
-          reason: 'A real SDK stop must wait for explicit user confirmation of the actual running task.',
-        );
         expect(find.textContaining('任务状态未知'), findsWidgets);
         await tester.runAsync(() async {
           await tester.tap(find.text('取消'));
@@ -178,12 +173,13 @@ void main() {
           await task!.waitForModelRequest(2);
           pendingRestart = model!.restartService();
           pendingRestart!.ignore();
-          await Future<void>.delayed(const Duration(seconds: 3));
           return true;
         });
         if (firstCanceled != true) return;
-        await tester.pump();
-        expect(find.byType(AlertDialog), findsOneWidget);
+        await expectServiceStopConfirmation<void>(
+          tester,
+          () => pendingRestart!,
+        );
         expect(find.textContaining('任务状态未知'), findsWidgets);
         await tester.runAsync(() async {
           await tester.tap(find.text('确认重启'));

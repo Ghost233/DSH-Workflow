@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:launcher_core/launcher_core.dart';
 
 import '../tool/service_task_fixture.dart';
+import 'service_stop_confirmation.dart';
 
 class _TaskNative extends NativeBridge {
   _TaskNative(this.root, this.resources);
@@ -115,20 +116,14 @@ void main() {
         }
         final (session, receipt, sessionId) = prepared;
         await tester.pumpWidget(LauncherApp(controller: model!));
-        await tester.runAsync(() async {
+        await expectServiceStopConfirmation(tester, () {
           pending = session.sendRequest(
             'recycle',
             serviceId: 'desktop',
             timeout: const Duration(seconds: 30),
           );
-          await Future<void>.delayed(const Duration(milliseconds: 300));
+          return pending!;
         });
-        await tester.pump();
-        expect(
-          find.byType(AlertDialog),
-          findsOneWidget,
-          reason: 'A real SDK stop must wait for explicit user confirmation of the actual running task.',
-        );
         expect(find.textContaining(sessionId), findsWidgets);
         await tester.runAsync(() async {
           await tester.tap(find.text('取消'));

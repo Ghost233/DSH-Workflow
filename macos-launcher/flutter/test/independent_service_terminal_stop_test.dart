@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:launcher_core/launcher_core.dart';
 
 import '../tool/service_admission_fixture.dart';
+import 'service_stop_confirmation.dart';
 
 class _TerminalNative extends NativeBridge {
   _TerminalNative(this.root, this.resources);
@@ -122,16 +123,14 @@ void main() {
         if (prepared == null) return;
         final (session, receipt, sessionId) = prepared;
         await tester.pumpWidget(LauncherApp(controller: model!));
-        await tester.runAsync(() async {
+        await expectServiceStopConfirmation(tester, () {
           pending = session.sendRequest(
             'recycle',
             serviceId: 'desktop',
             timeout: const Duration(seconds: 30),
           );
-          await Future<void>.delayed(const Duration(milliseconds: 300));
+          return pending!;
         });
-        await tester.pump();
-        expect(find.byType(AlertDialog), findsOneWidget);
         expect(find.textContaining('s04-terminal'), findsWidgets);
         await tester.runAsync(() async {
           await tester.tap(find.text('取消'));
