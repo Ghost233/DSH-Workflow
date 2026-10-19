@@ -10,7 +10,7 @@ const compare = (left, right) => {
 /** Select metadata only; assets are never requested or installed here. */
 export function newerWorkflowRelease(releases, installed) {
   let best = version(installed), selected = null
-  if (!best) throw new Error('无法确认 DSH Workflow 的实际版本，请使用本仓库配套应用。')
+  if (!best) throw new Error('无法确认 Ghost DSH Station 的实际版本，请使用本仓库配套应用。')
   if (!Array.isArray(releases)) throw new Error('GitHub 发布列表格式无效。')
   for (const release of releases) {
     if (release?.draft !== false || release.prerelease !== false || typeof release.tag_name !== 'string'

@@ -31,6 +31,6 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>CFBundleURLTypes</key>
-	<array><dict><key>CFBundleURLName</key><string>DSH Workflow</string><key>CFBundleURLSchemes</key><array><string>dsh-workflow</string></array></dict></array>
+	<array><dict><key>CFBundleURLName</key><string>Ghost DSH Station</string><key>CFBundleURLSchemes</key><array><string>dsh-workflow</string></array></dict></array>
 </dict>
 </plist>

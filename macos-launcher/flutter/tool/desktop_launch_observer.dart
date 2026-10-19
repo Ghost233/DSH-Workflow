@@ -313,8 +313,8 @@ Future<void> main(List<String> args) async {
                   '/usr/bin/shasum',
                   '-a',
                   '256',
-                  '$app/Contents/MacOS/DSH Workflow',
-                  '$app/Contents/MacOS/DSH Workflow.debug.dylib',
+                  '$app/Contents/MacOS/Ghost DSH Station',
+                  '$app/Contents/MacOS/Ghost DSH Station.debug.dylib',
                   '$app/Contents/Info.plist',
                 ],
               }.entries) {
@@ -493,7 +493,7 @@ Future<void> main(List<String> args) async {
           started == null ||
           executable is! String ||
           await File(executable).resolveSymbolicLinks() !=
-              '$root/candidate.app/Contents/MacOS/DSH Workflow' ||
+              '$root/candidate.app/Contents/MacOS/Ghost DSH Station' ||
           (launcherPid != null && launcherPid != pid)) {
         throw StateError(
           'Launcher ownership ledger is incomplete or mismatched',

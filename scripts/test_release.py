@@ -234,9 +234,9 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
 
     def packaging_fixture(self):
         shutil.copy2(SOURCE / 'build-release.sh', self.repo / 'scripts/build-release.sh')
-        app = self.root / 'DSH Workflow.app'
+        app = self.root / 'Ghost DSH Station.app'
         (app / 'Contents/MacOS').mkdir(parents=True)
-        (app / 'Contents/MacOS/DSH Workflow').write_bytes(b'fixture executable')
+        (app / 'Contents/MacOS/Ghost DSH Station').write_bytes(b'fixture executable')
         with (app / 'Contents/Info.plist').open('wb') as file:
             plistlib.dump({'CFBundleIdentifier': 'com.ghostagent.dsh-workflow-launcher',
                           'CFBundleShortVersionString': '0.2.5'}, file)
@@ -370,7 +370,7 @@ elif name=='node':
  elif 'macos-launcher/build-desktop-release.mjs' in a:
   (root/'.build/desktop-arm64/mac-arm64/DeepSeek Harness.app').mkdir(parents=True)
  elif a==['macos-launcher/build.mjs']:
-  (root/'.build/DSH Workflow-0.2.5-dsh0.2.1-alpha.2-arm64.app').mkdir(parents=True)
+  (root/'.build/Ghost DSH Station-0.2.5-dsh0.2.1-alpha.2-arm64.app').mkdir(parents=True)
  else:raise SystemExit('Unexpected runtime invocation: '+repr(a))
 elif name in ['npm','pnpm','flutter']:
  if any(x=='test' or x.startswith('test:') or x=='analyze' for x in a):raise SystemExit('Tests are forbidden')
@@ -417,9 +417,9 @@ for name in ['fixture.dmg','manifest.json']:(root/name).write_bytes(b'fixture as
     @unittest.skipUnless(os.uname().sysname == "Darwin", "macOS package validation")
     def test_prebuilt_app_version_mismatch_fails_before_packaging(self):
         shutil.copy2(SOURCE / "build-release.sh", self.repo / "scripts/build-release.sh")
-        app = self.root / "DSH Workflow.app"
+        app = self.root / "Ghost DSH Station.app"
         (app / "Contents/MacOS").mkdir(parents=True)
-        (app / "Contents/MacOS/DSH Workflow").write_bytes(b"fixture executable")
+        (app / "Contents/MacOS/Ghost DSH Station").write_bytes(b"fixture executable")
         with (app / "Contents/Info.plist").open("wb") as file:
             plistlib.dump({"CFBundleIdentifier": "com.ghostagent.dsh-workflow-launcher",
                           "CFBundleShortVersionString": "0.2.4"}, file)

@@ -87,7 +87,7 @@ DESKTOP_APP="$ROOT/.build/desktop-arm64/mac-arm64/DeepSeek Harness.app"
 
 step '6/8 构建并签名启动器 App'
 DSH_MACOS_DESKTOP_APP="$DESKTOP_APP" "$LAUNCHER_NODE" macos-launcher/build.mjs
-APP="$ROOT/.build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
+APP="$ROOT/.build/Ghost DSH Station-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
 [[ -d "$APP" ]] || fail "启动器 App 未生成：$APP"
 
 step '7/8 打包 DMG、manifest.json 与 SHA256SUMS'

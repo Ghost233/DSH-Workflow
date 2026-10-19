@@ -1,6 +1,6 @@
 ---
 name: deploy-release
-description: 发布 DSH Workflow 正式版，核验手动版本与 Ghost233 身份，推送 tag，并跟踪 GitHub Actions 编译、打包和上传 Release。仅在用户明确要求正式发布时使用；编辑此流程不触发发布。
+description: 发布 Ghost DSH Station 正式版，核验手动版本与 Ghost233 身份，推送 tag，并跟踪 GitHub Actions 编译、打包和上传 Release。仅在用户明确要求正式发布时使用；编辑此流程不触发发布。
 disable-model-invocation: true
 ---
 
@@ -62,7 +62,7 @@ git ls-remote origin 'refs/tags/macos-vX.Y.Z^{}' refs/heads/main
 
 ## 发布版本号规则
 
-本节是 DSH Workflow 版本发布纪律的权威来源。
+本节是 Ghost DSH Station 版本发布纪律的权威来源。
 
 ### 版本权威
 

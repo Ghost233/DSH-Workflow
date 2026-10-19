@@ -55,7 +55,7 @@ async function verifyInputs() {
 await verifyInputs()
 const buildLabel = process.env.DSH_MACOS_BUILD_LABEL
 if (buildLabel !== undefined && !/^[A-Za-z0-9-]{1,32}$/.test(buildLabel)) throw new Error('Invalid DSH_MACOS_BUILD_LABEL')
-const destination = join(buildRoot, `DSH Workflow-${appVersion}-dsh${version}-${arch}${buildLabel ? `-${buildLabel}` : ''}.app`)
+const destination = join(buildRoot, `Ghost DSH Station-${appVersion}-dsh${version}-${arch}${buildLabel ? `-${buildLabel}` : ''}.app`)
 if (existsSync(destination)) throw new Error(`Build output exists: ${destination}`)
 await mkdir(buildRoot, { recursive: true })
 await mkdir(join(flutterRoot, 'macos/Flutter/ephemeral'), { recursive: true })
@@ -64,11 +64,11 @@ await writeFile(join(flutterRoot, 'macos/Flutter/ephemeral/DSHArchitecture.xccon
 await run(process.env.FLUTTER_BIN || 'flutter', ['build', 'macos', '--release', '--no-pub',
   `--build-name=${appVersion}`, `--build-number=${appVersion}`], flutterRoot)
 const staging = await mkdtemp(join(buildRoot, 'launcher-stage-'))
-const app = join(staging, 'DSH Workflow.app')
+const app = join(staging, 'Ghost DSH Station.app')
 const contents = join(app, 'Contents')
 const resources = join(contents, 'Resources')
 try {
-  await run('/usr/bin/ditto', [join(flutterRoot, 'build/macos/Build/Products/Release/DSH Workflow.app'), app])
+  await run('/usr/bin/ditto', [join(flutterRoot, 'build/macos/Build/Products/Release/Ghost DSH Station.app'), app])
   await cp(process.execPath, join(resources, 'node'))
   await chmod(join(resources, 'node'), 0o755)
   await copyProjectIntegration(root, join(resources, 'workflow'))

@@ -92,7 +92,7 @@ Future<void> main(List<String> arguments) async {
     await Directory(arguments[1]).resolveSymbolicLinks(),
   );
   final debugDylib = File(
-    '${source.path}/Contents/MacOS/DSH Workflow.debug.dylib',
+    '${source.path}/Contents/MacOS/Ghost DSH Station.debug.dylib',
   );
   require(
     await debugDylib.exists() == local,
@@ -104,7 +104,7 @@ Future<void> main(List<String> arguments) async {
   final stage = Directory('${root.path}/staged.app');
   await command('/usr/bin/ditto', [source.path, stage.path]);
   final movedDir = await Directory('${root.path}/moved').create();
-  final moved = await stage.rename('${movedDir.path}/DSH Workflow.app');
+  final moved = await stage.rename('${movedDir.path}/Ghost DSH Station.app');
   if (local) {
     await Directory('${root.path}/data').create();
     await Directory('${root.path}/manager').create();
@@ -209,13 +209,13 @@ Future<void> main(List<String> arguments) async {
     ),
     'movedManifestSha256': await digest(manifestPath),
     'sourceExecutableSha256': await digest(
-      '${source.path}/Contents/MacOS/DSH Workflow',
+      '${source.path}/Contents/MacOS/Ghost DSH Station',
     ),
     'movedExecutableSha256': await digest(
-      '${moved.path}/Contents/MacOS/DSH Workflow',
+      '${moved.path}/Contents/MacOS/Ghost DSH Station',
     ),
     'executableArchitecture': (await command('/usr/bin/file', [
-      '${moved.path}/Contents/MacOS/DSH Workflow',
+      '${moved.path}/Contents/MacOS/Ghost DSH Station',
     ])).stdout.toString(),
     'debugOverlayUsed': local,
   };
@@ -225,7 +225,7 @@ Future<void> main(List<String> arguments) async {
       final uri = Completer<String>();
       debugLog = File('${root.path}/debug-app.log').openWrite();
       debugProcess = await Process.start(
-        '${moved.path}/Contents/MacOS/DSH Workflow',
+        '${moved.path}/Contents/MacOS/Ghost DSH Station',
         ['--vm-service-port=0'],
         environment: {
           ...Platform.environment,
@@ -762,7 +762,7 @@ with (evidence/'overall-command.log').open('wb') as output:
             live=root/'supervision-live.json'
             if live.is_file() and not live.is_symlink():
                 value=json.loads(live.read_text())
-                app=root/config.get('appRelativePath','moved/DSH Workflow.app')/'Contents/MacOS/DSH Workflow'; expected['app']=os.path.realpath(app)
+                app=root/config.get('appRelativePath','moved/Ghost DSH Station.app')/'Contents/MacOS/Ghost DSH Station'; expected['app']=os.path.realpath(app)
                 if config.get('desktopSdkCold'): expected['desktop']=expected['host']=os.path.realpath(root/'missing-runtime/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness')
                 for role,pid in value.get('pids',{}).items():
                     if role not in ids: bind(role,int(pid))
@@ -778,7 +778,7 @@ with (evidence/'overall-command.log').open('wb') as output:
                 old=ids.get('app')
                 if old and identity(old['pid'])==old:
                     helper=root/'release-window-observer'
-                    normal=subprocess.Popen([str(helper),str(root),str(root/config.get('appRelativePath','moved/DSH Workflow.app')),'terminate'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+                    normal=subprocess.Popen([str(helper),str(root),str(root/config.get('appRelativePath','moved/Ghost DSH Station.app')),'terminate'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
                     state['normalAppCleanupHelperIdentity']=identity(normal.pid);persist()
                     try:
                         text,_=normal.communicate(timeout=max(.1,min(10,deadline-time.monotonic())))

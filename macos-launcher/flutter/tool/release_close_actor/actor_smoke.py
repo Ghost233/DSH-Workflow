@@ -38,7 +38,7 @@ subject = None
 captured = False
 observer = root / 'actor-window-observer'
 app = root / 'Actor Subject.app'
-exe = app / 'Contents/MacOS/DSH Workflow'
+exe = app / 'Contents/MacOS/Ghost DSH Station'
 def persist():
     (evidence_dir / 'actor-smoke-evidence.json').write_text(json.dumps(report, indent=2) + '\n')
 def command(argv):

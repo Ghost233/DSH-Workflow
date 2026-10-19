@@ -180,7 +180,7 @@ class AppDelegate: FlutterAppDelegate {
     NSApp.setActivationPolicy(.accessory)
     guard claimInstance() else { return }
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    statusItem?.button?.image = NSImage(systemSymbolName: "bolt.circle", accessibilityDescription: "DSH Workflow")
+    statusItem?.button?.image = NSImage(systemSymbolName: "bolt.circle", accessibilityDescription: "Ghost DSH Station")
     let menu = NSMenu()
     menu.addItem(NSMenuItem(title: "打开 DSH", action: #selector(openGlobal), keyEquivalent: ""))
     menu.addItem(NSMenuItem(title: "管理…", action: #selector(showWindow), keyEquivalent: ""))

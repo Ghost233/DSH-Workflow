@@ -48,7 +48,7 @@ class OwnedDiagnosticsTest(unittest.TestCase):
             root, target, reports = base / 'probe', base / 'evidence', base / 'reports'
             (root / 'data').mkdir(parents=True)
             reports.mkdir()
-            executable = str(root / 'candidate.app/Contents/MacOS/DSH Workflow')
+            executable = str(root / 'candidate.app/Contents/MacOS/Ghost DSH Station')
             (root / 'probe-process.json').write_text(json.dumps({
                 'pid': 12345, 'executable': executable, 'startedAt': '2020-01-01T00:00:00+00:00'}))
             (root / 'data/desktop-diagnostic.json').write_text('host-failed stack token=abcdef isolated-web-probe-password')

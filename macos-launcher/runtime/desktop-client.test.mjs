@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:net'
+import { createServer as createHttpServer } from 'node:http'
 import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -78,6 +79,45 @@ function readOnly(fixture) {
   assert.ok(fixture.requests.filter(request => request.type === 'connect-desktop')
     .every(request => request.runtimeVersion === version))
 }
+
+test('opening Desktop refreshes a stale bootstrap revision without restarting its live Host', async t => {
+  const fixture = await connectionFixture(t)
+  const oldUrl = 'plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=old'
+  const newUrl = oldUrl.replace('rev=old', 'rev=current')
+  const graph = url => ({ batches: [{ phase: 'bootstrap', url }], rev: url })
+  const requests = []
+  const server = createHttpServer((request, response) => {
+    requests.push(request.url)
+    if (request.url === '/?token=public-fixture') {
+      response.writeHead(303, { 'Set-Cookie': 'dsh=fixture; HttpOnly', Location: '/' }); response.end(); return
+    }
+    if (request.url === '/') {
+      assert.equal(request.headers.cookie, 'dsh=fixture')
+      response.end('<script>globalThis["__DSH_BOOT__"] = ' + JSON.stringify(graph(newUrl)) + '</script>'); return
+    }
+    response.writeHead(request.url === '/' + newUrl ? 200 : 404, { 'Content-Type': 'text/javascript' })
+    response.end(request.url === '/' + newUrl ? 'current module' : '')
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  fixture.original.url = `http://127.0.0.1:${server.address().port}/?token=public-fixture`
+  fixture.original.injections = [
+    { kind: 'script', placement: 'head', text: 'preserve bootstrap queue' },
+    { kind: 'script-src', placement: 'head', src: oldUrl },
+    { kind: 'global', name: '__DSH_BOOT__', value: graph(oldUrl) },
+    { kind: 'global', name: 'preserved', value: true },
+  ]
+  const ready = await fixture.connection.start()
+  const script = ready.injections.find(row => row.kind === 'script-src')
+  const resource = await fetch(new URL(script.src, ready.url))
+  assert.equal(resource.status, 200, 'desktop web must load the current bootstrap module rather than the cached 404 revision')
+  assert.equal(script.src, newUrl)
+  assert.deepEqual(ready.injections[0], fixture.original.injections[0])
+  assert.deepEqual(ready.injections.at(-1), fixture.original.injections.at(-1))
+  assert.equal(fixture.connection.instanceId, fixture.original.instanceId)
+  assert.deepEqual(requests, ['/?token=public-fixture', '/', '/' + newUrl])
+  readOnly(fixture)
+})
 
 test('temporary same-instance unavailability preserves the client and private session, then recovers', { timeout: 6000 }, async t => {
   const fixture = await connectionFixture(t)

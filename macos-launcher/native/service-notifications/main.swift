@@ -78,7 +78,7 @@ func inspect(_ authorizationRequest: [String: Any] = ["state": "not-requested"])
         let content = UNMutableNotificationContent()
         content.title = "DSH 服务意外退出"
         content.subtitle = "请检查日志后手动启动"
-        content.body = "服务已保持停止。请打开 DSH Workflow 查看服务日志，确认原因后手动启动。"
+        content.body = "服务已保持停止。请打开 Ghost DSH Station 查看服务日志，确认原因后手动启动。"
         content.sound = .default
         let request = UNNotificationRequest(identifier: faultId!, content: content, trigger: nil)
         center.add(request) { error in

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DSH Workflow DMG 打包；改编自 GhostModelDeck 的 build-release.sh。
+# Ghost DSH Station DMG 打包；改编自 GhostModelDeck 的 build-release.sh。
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,7 +26,7 @@ done
 cd "$REPO_ROOT"
 VERSION="$(python3 -c 'import json,re; v=json.load(open("macos-launcher/package.json"))["version"]; assert re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)",v), "Invalid app version"; print(v)')"
 DSH_VERSION="$(python3 -c 'import json; print(json.load(open("dsh-runtime.json"))["version"])')"
-[[ -n "$APP_PATH" ]] || APP_PATH="$REPO_ROOT/.build/DSH Workflow-${VERSION}-dsh${DSH_VERSION}-arm64.app"
+[[ -n "$APP_PATH" ]] || APP_PATH="$REPO_ROOT/.build/Ghost DSH Station-${VERSION}-dsh${DSH_VERSION}-arm64.app"
 [[ -d "$APP_PATH" ]] || die "完整应用不存在：${APP_PATH}；先完成生产运行时与启动器构建"
 plist="$APP_PATH/Contents/Info.plist"
 [[ -f "$plist" ]] || die "缺少 Info.plist：$plist"
@@ -44,11 +44,12 @@ if package.get('name') != '@deepseek-ai/dsh' or package.get('version') != sys.ar
 if not (resources / 'desktop/DeepSeek Harness.app').is_dir():
     raise SystemExit('build-release: 缺少完整 Desktop 应用')
 PY
-exe="$APP_PATH/Contents/MacOS/DSH Workflow"
+exe="$APP_PATH/Contents/MacOS/Ghost DSH Station"
 [[ -s "$exe" ]] || die "可执行文件缺失或为空：$exe"
 [[ "$(lipo -archs "$exe")" == arm64 ]] || die '启动器可执行文件必须为 ARM64'
 codesign --verify --deep --strict "$APP_PATH"
 
+# Retain the asset name recognized by existing installations' update checks.
 DMG_NAME="DSH-Workflow-macOS-${VERSION}-arm64.dmg"
 for name in "$DMG_NAME" manifest.json SHA256SUMS; do
   [[ ! -e "$DIST_DIR/$name" && ! -L "$DIST_DIR/$name" ]] || die "产物已存在，保留原文件：$DIST_DIR/$name"
@@ -64,9 +65,9 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir "$STAGING_DIR/image" "$STAGING_DIR/assets"
-ditto "$APP_PATH" "$STAGING_DIR/image/DSH Workflow.app"
+ditto "$APP_PATH" "$STAGING_DIR/image/Ghost DSH Station.app"
 ln -s /Applications "$STAGING_DIR/image/Applications"
-hdiutil create -format UDZO -volname 'DSH Workflow' -srcfolder "$STAGING_DIR/image" "$STAGING_DIR/assets/$DMG_NAME"
+hdiutil create -format UDZO -volname 'Ghost DSH Station' -srcfolder "$STAGING_DIR/image" "$STAGING_DIR/assets/$DMG_NAME"
 hdiutil verify "$STAGING_DIR/assets/$DMG_NAME"
 [[ -s "$STAGING_DIR/assets/$DMG_NAME" ]] || die 'DMG 为空'
 source_commit="$(git rev-parse HEAD)"

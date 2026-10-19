@@ -34,7 +34,7 @@ def launcher_ownership(log, runner, *, require_finally=True):
         return file.read_text()
     probe = json.loads(read('probe-process.json'))
     launcher = probe['pid']
-    expected = (root / 'candidate.app/Contents/MacOS/DSH Workflow').resolve(strict=True)
+    expected = (root / 'candidate.app/Contents/MacOS/Ghost DSH Station').resolve(strict=True)
     if not valid_pid(launcher) or Path(probe['executable']).resolve(strict=True) != expected or not expected.is_relative_to(root):
         raise ValueError('Invalid application ownership')
     timeline = [json.loads(line) for line in read('probe-timeline.jsonl').splitlines()]

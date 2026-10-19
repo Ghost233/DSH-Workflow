@@ -145,6 +145,7 @@ void main() {
     final fixture = await connected(Business());
     final hello = await fixture.peer.hello.future;
     expect(hello['projectId'], 'dsh-workflow');
+    expect(hello['projectName'], 'Ghost DSH Station');
     final capabilities = hello['capabilities']! as Map;
     final services = capabilities['services']! as List;
     final desktop = services.cast<Map>().singleWhere(

@@ -50,7 +50,7 @@ gh release create "$RELEASE_TAG" \
   "$RELEASE_ASSETS"/SHA256SUMS \
   --verify-tag \
   --repo Ghost233/DSH-Workflow \
-  --title "DSH Workflow macOS ${RELEASE_TAG#macos-v}" \
+  --title "Ghost DSH Station macOS ${RELEASE_TAG#macos-v}" \
   --notes "Automated macOS builds for Apple Silicon (ARM64). Locally ad-hoc signed; not notarized."
 
 echo "publish-release: 完成：$RELEASE_TAG 已创建 Release"

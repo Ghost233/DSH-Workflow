@@ -19,6 +19,8 @@ class MacLauncherIntegration {
   MacLauncherIntegration(this.actions, {String? socketPath}) {
     sdk = MacLauncherSdk.connect(
       projectId: 'dsh-workflow',
+      projectName: 'Ghost DSH Station',
+      entry: SdkEntry.currentAppBundle(),
       socketPath: socketPath,
       services: {
         'web': ServiceCallbacks(

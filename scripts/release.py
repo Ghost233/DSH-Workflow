@@ -1,4 +1,4 @@
-"""Guard and push a DSH Workflow release tag; adapted from GhostModelDeck."""
+"""Guard and push a Ghost DSH Station release tag; adapted from GhostModelDeck."""
 
 import argparse
 import hashlib
@@ -62,7 +62,7 @@ class Release:
     def prepare(self, retry):
         app = json.loads((ROOT / "macos-launcher/package.json").read_text())
         if app.get("name") != "dsh-workflow-macos-runtime":
-            raise ReleaseError("当前工作区不是 DSH Workflow")
+            raise ReleaseError("当前工作区不是 Ghost DSH Station")
         version = app.get("version", "")
         if not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version):
             raise ReleaseError("macos-launcher/package.json 必须使用纯 X.Y.Z 版本")
@@ -98,7 +98,7 @@ class Release:
                 (p.get("package"), p.get("version")) for p in plugins.get("plugins", [])]:
             raise ReleaseError("项目插件锁定版本与清单不一致")
         if self.git("rev-parse", "--show-toplevel") != str(ROOT):
-            raise ReleaseError("发布脚本必须位于 DSH Workflow 仓库根下")
+            raise ReleaseError("发布脚本必须位于 Ghost DSH Station 仓库根下")
         if self.git("symbolic-ref", "--short", "HEAD") != "main":
             raise ReleaseError("必须在 main 分支执行")
         if self.git("status", "--porcelain"):
@@ -143,7 +143,7 @@ class Release:
         if self.git("rev-parse", "HEAD") != head or self.git("status", "--porcelain"):
             raise ReleaseError("发布准备后工作区已变化，重新检查后再发布")
         if not local_tag:
-            self.git("tag", "-a", tag, head, "-m", "DSH Workflow " + tag)
+            self.git("tag", "-a", tag, head, "-m", "Ghost DSH Station " + tag)
         try:
             self.git("push", "origin", "refs/tags/" + tag)
         except ReleaseError as error:
@@ -159,7 +159,7 @@ class Release:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="发布 DSH Workflow 当前版本；不 bump、不提交、不推 main")
+    parser = argparse.ArgumentParser(description="发布 Ghost DSH Station 当前版本；不 bump、不提交、不推 main")
     parser.add_argument("--dry-run", action="store_true", help="只检查和显示计划，不创建或推送 tag")
     parser.add_argument("--retry-tag", action="store_true", help="重试尚未推送且指向当前 main 的本地 tag")
     args = parser.parse_args()

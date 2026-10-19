@@ -1,7 +1,7 @@
 name: dsh_workflow_launcher
-description: Flutter launcher and MacLauncher SDK peer for DSH Workflow.
+description: Flutter launcher and MacLauncher SDK peer for Ghost DSH Station.
 publish_to: none
-version: 0.3.5+5
+version: 0.3.6+5
 
 environment:
   sdk: ^3.13.0
@@ -13,7 +13,7 @@ dependencies:
     git:
       url: https://github.com/Ghost233/MacLauncher.git
       path: packages/maclauncher_sdk
-      ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
+      ref: b48c5a9c232a609b59c9510c59cca82046fc9e55
 
 dev_dependencies:
   flutter_test:
@@ -24,7 +24,7 @@ dev_dependencies:
     git:
       url: https://github.com/Ghost233/MacLauncher.git
       path: packages/launcher_core
-      ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
+      ref: b48c5a9c232a609b59c9510c59cca82046fc9e55
 
 # The official management core declares a hosted SDK constraint; both sides
 # of this application probe must resolve to the same pinned official SDK.
@@ -33,7 +33,7 @@ dependency_overrides:
     git:
       url: https://github.com/Ghost233/MacLauncher.git
       path: packages/maclauncher_sdk
-      ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
+      ref: b48c5a9c232a609b59c9510c59cca82046fc9e55
 
 flutter:
   uses-material-design: true

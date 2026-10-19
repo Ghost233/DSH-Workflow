@@ -43,7 +43,7 @@ do {
       (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700), "private UID and mode required")
   }
   try require(physical(bundle) == bundle && bundle.hasPrefix(root + "/"), "physical private app required")
-  let executable = try physical(bundle + "/Contents/MacOS/DSH Workflow")
+  let executable = try physical(bundle + "/Contents/MacOS/Ghost DSH Station")
   let ledger = root + "/release-window-identity.json"
   let matches = NSWorkspace.shared.runningApplications.filter { app in
     guard let path = app.bundleURL?.path else { return false }

@@ -41,6 +41,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.19.1"
+  crypto:
+    dependency: transitive
+    description:
+      name: crypto
+      sha256: c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.7"
   fake_async:
     dependency: transitive
     description:
@@ -71,8 +79,8 @@ packages:
     dependency: "direct dev"
     description:
       path: "packages/launcher_core"
-      ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
-      resolved-ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
+      ref: b48c5a9c232a609b59c9510c59cca82046fc9e55
+      resolved-ref: b48c5a9c232a609b59c9510c59cca82046fc9e55
       url: "https://github.com/Ghost233/MacLauncher.git"
     source: git
     version: "0.1.0"
@@ -112,8 +120,8 @@ packages:
     dependency: "direct main"
     description:
       path: "packages/maclauncher_sdk"
-      ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
-      resolved-ref: bc7262f4047e81f55922c203948ac64d9e0e2d13
+      ref: b48c5a9c232a609b59c9510c59cca82046fc9e55
+      resolved-ref: b48c5a9c232a609b59c9510c59cca82046fc9e55
       url: "https://github.com/Ghost233/MacLauncher.git"
     source: git
     version: "0.1.0"
@@ -149,6 +157,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.9.1"
+  pub_semver:
+    dependency: transitive
+    description:
+      name: pub_semver
+      sha256: "261236774e8b1d69cfc6b9eabbc96c40f25e7a2d6b171f3385d4f65d5734fb24"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.1"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -202,6 +218,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.12"
+  typed_data:
+    dependency: transitive
+    description:
+      name: typed_data
+      sha256: f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.4.0"
   vector_math:
     dependency: transitive
     description:

@@ -665,7 +665,7 @@ Future<void> runDesktopWindowRestarts(
     sign.exitCode == 0,
     'restart copy is signed after exact private isolation metadata',
   );
-  final executable = File('${app.path}/Contents/MacOS/DSH Workflow');
+  final executable = File('${app.path}/Contents/MacOS/Ghost DSH Station');
   final manifest = '${app.path}/Contents/Resources/maclauncher.json';
   final layout = EndpointLayout(directory: '${root.path}/manager');
   await Directory(layout.directory).create();

@@ -45,11 +45,11 @@ function secureHeaders(type = 'text/html; charset=utf-8') {
 }
 
 function loginPage(error = '') {
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DSH Workflow 登录</title><style>
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ghost DSH Station 登录</title><style>
 body{font:16px -apple-system,BlinkMacSystemFont,sans-serif;min-height:100vh;margin:0;display:grid;place-items:center;background:#f5f6f8;color:#202124}
 main{box-sizing:border-box;width:min(380px,calc(100vw - 40px));padding:32px;border-radius:16px;background:white;box-shadow:0 12px 36px #0002}
 h1{font-size:22px;margin:0 0 12px}p{color:#555}input,button{box-sizing:border-box;width:100%;padding:12px;margin-top:12px;font:inherit;border-radius:8px}input{border:1px solid #aaa}button{border:0;background:#2563eb;color:#fff;cursor:pointer}.error{color:#b42318}
-</style></head><body><main><h1>DSH Workflow</h1><p>输入访问密码，打开当前运行的 DSH。</p>${error ? `<p class="error">${error}</p>` : ''}<form method="post" action="/login"><input aria-label="访问密码" name="password" type="password" autocomplete="current-password" required autofocus><button type="submit">登录</button></form></main></body></html>`
+</style></head><body><main><h1>Ghost DSH Station</h1><p>输入访问密码，打开当前运行的 DSH。</p>${error ? `<p class="error">${error}</p>` : ''}<form method="post" action="/login"><input aria-label="访问密码" name="password" type="password" autocomplete="current-password" required autofocus><button type="submit">登录</button></form></main></body></html>`
 }
 
 async function readBody(request) {

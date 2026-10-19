@@ -1,4 +1,4 @@
-# DSH Workflow macOS 启动器
+# Ghost DSH Station macOS 启动器
 
 启动器界面、应用侧业务控制与 SDK 接入采用 Flutter/Dart，与 MacLauncher 使用同一技术体系并保持独立仓库。Swift 仅保留 macOS 原生接口。接入和统一检查流程见 [Flutter 启动器说明](flutter/README.md)。
 

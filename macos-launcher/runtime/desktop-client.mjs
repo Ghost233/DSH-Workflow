@@ -5,6 +5,32 @@ import { newerWorkflowRelease, workflowReleaseEndpoint } from './workflow-releas
 
 const unavailable = 'DSH 服务未启动或暂不可用，请先启动 DSH 服务。'
 
+/** A long-lived Host can recompose its graph after the manager cached its ready message. */
+async function currentInjections({ url, injections }) {
+  const end = injections.findIndex(row => row.kind === 'global' && row.name === '__DSH_BOOT__')
+  if (end < 0) return injections
+  const signal = AbortSignal.timeout(10_000)
+  const login = await fetch(url, { redirect: 'manual', signal })
+  const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
+  const response = await fetch(new URL('/', url), { headers: { cookie }, signal })
+  if (!response.ok) throw new Error(`DSH 前端清单读取失败（${response.status}）。`)
+  const match = (await response.text()).match(/<script>globalThis\["__DSH_BOOT__"\] = ([\s\S]*?)<\/script>/)
+  if (!match) throw new Error('DSH 服务未提供当前前端模块清单。')
+  const graph = JSON.parse(match[1])
+  if (!Array.isArray(graph.batches)) throw new Error('DSH 前端模块清单不兼容。')
+  const previous = new Set(injections[end].value.batches.map(batch => batch.url))
+  const start = injections.findIndex(row => previous.has(row.src))
+  if (start < 0 || start > end || injections.slice(start, end).some(row => !previous.has(row.src))) {
+    throw new Error('DSH 前端启动信息不兼容。')
+  }
+  const batches = [
+    ...graph.batches.filter(batch => batch.phase === 'application').map(batch => ({ kind: 'script-preload', src: batch.url })),
+    ...graph.batches.filter(batch => batch.phase === 'bootstrap').map(batch => ({ kind: 'script-src', placement: 'head', src: batch.url })),
+    { ...injections[end], value: graph },
+  ]
+  return [...injections.slice(0, start), ...batches, ...injections.slice(end + 1)]
+}
+
 /** Preserve the upstream private IPC session restrictions at the local socket boundary. */
 function privateSession(value) {
   if (value === null) return value
@@ -52,13 +78,14 @@ export class WorkflowDesktopConnection {
 
   async start() {
     const value = await this.connect()
+    const injections = await currentInjections(value.connection)
     if (this.closed) throw new Error('DSH 桌面连接已关闭。')
     this.instanceId = value.connection.instanceId
     this.pid = value.connection.pid
     this.runtimeVersion = value.connection.runtimeVersion
     this.onPlatformSession?.(value.platformSession)
     this.schedule()
-    return { url: value.connection.url, injections: value.connection.injections }
+    return { url: value.connection.url, injections }
   }
 
   schedule() {
@@ -133,7 +160,7 @@ export class WorkflowDesktopUpdates {
           try {
             const receipt = JSON.parse(await readFile(new URL('../../workflow-desktop-adaptation.json', import.meta.url), 'utf8'))
             workflowVersion = receipt.workflowVersion
-          } catch { throw new Error('无法读取 DSH Workflow 版本信息，请使用本仓库配套应用。') }
+          } catch { throw new Error('无法读取 Ghost DSH Station 版本信息，请使用本仓库配套应用。') }
         }
         newerWorkflowRelease([], workflowVersion)
         const response = await (this.options.request ?? fetch)(workflowReleaseEndpoint, {
@@ -152,9 +179,9 @@ export class WorkflowDesktopUpdates {
         const state = this.current, release = state.release
         try {
           const result = await presentation.showMessage({
-            type: state.phase === 'error' ? 'error' : 'info', title: '检查 DSH Workflow 更新',
-            message: state.phase === 'error' ? state.message : release ? `发现 DSH Workflow ${release.version}`
-              : `当前 DSH Workflow ${state.workflowVersion}，暂无适用的新版本。`,
+            type: state.phase === 'error' ? 'error' : 'info', title: '检查 Ghost DSH Station 更新',
+            message: state.phase === 'error' ? state.message : release ? `发现 Ghost DSH Station ${release.version}`
+              : `当前 Ghost DSH Station ${state.workflowVersion}，暂无适用的新版本。`,
             detail: release ? `当前版本 ${state.workflowVersion}。只打开本仓库发布页，不自动下载或安装。` : '',
             buttons: release ? ['打开发布页', '稍后'] : ['确定'], defaultId: 0, cancelId: release ? 1 : 0,
           })
@@ -171,7 +198,7 @@ export class WorkflowDesktopUpdates {
   async download() { return this.disabled('download') }
   async install() { return this.disabled('install') }
   disabled(operation) {
-    this.current = { phase: 'error', failedOperation: operation, message: 'DSH Workflow 只通过本仓库正式 DMG 更新；请打开发布页。' }
+    this.current = { phase: 'error', failedOperation: operation, message: 'Ghost DSH Station 只通过本仓库正式 DMG 更新；请打开发布页。' }
     this.publish(this.current)
     return this.current
   }

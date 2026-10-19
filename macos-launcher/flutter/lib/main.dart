@@ -111,7 +111,7 @@ class LauncherApp extends StatelessWidget {
   final LauncherController controller;
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'DSH Workflow',
+    title: 'Ghost DSH Station',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       useMaterial3: true,
@@ -243,7 +243,7 @@ class _LauncherPageState extends State<LauncherPage> {
     listenable: model,
     builder: (context, _) => Scaffold(
       appBar: AppBar(
-        title: const Text('DSH Workflow'),
+        title: const Text('Ghost DSH Station'),
         actions: [
           Padding(
             padding: const EdgeInsets.all(16),

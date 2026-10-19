@@ -12,7 +12,7 @@ if [[ "$(uname -s)" != Darwin || "$(uname -m)" != arm64 ]]; then
   exit 1
 fi
 launcher=""
-for candidate in "${SCRIPT_DIRECTORY}"/.build/*.app "/Applications/DSH Workflow.app"; do
+for candidate in "${SCRIPT_DIRECTORY}"/.build/*.app "/Applications/Ghost DSH Station.app" "/Applications/DSH Workflow.app"; do
   if [[ -f "${candidate}/Contents/Resources/workflow/macos-launcher/runtime/global-supervisor.mjs" &&
         -f "${candidate}/Contents/Resources/workflow/macos-launcher/runtime/prepare-desktop.mjs" &&
         -d "${candidate}/Contents/Resources/desktop/DeepSeek Harness.app" ]]; then
@@ -20,7 +20,7 @@ for candidate in "${SCRIPT_DIRECTORY}"/.build/*.app "/Applications/DSH Workflow.
   fi
 done
 if [[ -z "$launcher" ]]; then
-  printf '请先构建包含官方桌面端的 DSH Workflow 启动器。\n' >&2
+  printf '请先构建包含官方桌面端的 Ghost DSH Station 启动器。\n' >&2
   exit 1
 fi
 exec /usr/bin/open -a "$launcher" 'dsh-workflow://open-global'

@@ -7,9 +7,9 @@
   <key>CFBundleIdentifier</key>
   <string>com.ghostagent.dsh-workflow.service-notifications</string>
   <key>CFBundleName</key>
-  <string>DSH Workflow 服务通知</string>
+  <string>Ghost DSH Station 服务通知</string>
   <key>CFBundleDisplayName</key>
-  <string>DSH Workflow 服务通知</string>
+  <string>Ghost DSH Station 服务通知</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleVersion</key>
