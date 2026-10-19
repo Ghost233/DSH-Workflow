@@ -129,7 +129,19 @@ void main() {
           )['reason'],
           contains('失败'),
         );
-        expect(results.length, 7);
+        final configured = jsonDecode(
+          await File('$resources/workflow/project-plugins.json').readAsString(),
+        ) as Map;
+        expect(
+          results.map((row) => row['package']).toList(),
+          (configured['plugins'] as List)
+              .cast<Map>()
+              .where((row) => row['startup'] == true)
+              .map((row) => row['package'])
+              .toList(),
+          reason:
+              'Every configured startup package needs an actual Host outcome',
+        );
         final stopped = await session.sendRequest(
           'recycle',
           serviceId: 'desktop',

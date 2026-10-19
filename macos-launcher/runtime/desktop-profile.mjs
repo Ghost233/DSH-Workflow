@@ -7,6 +7,7 @@ import { composeDshLaunch } from '../../scripts/dsh-launch-composition.mjs'
 import { readPluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
 import { migrateProjectEntryNames } from '../../scripts/observation-profile.mjs'
 import { prepareStartupPlugins } from './startup-plugins.mjs'
+import { deployPluginPayload } from './plugin-payload.mjs'
 
 const BUNDLE = 'dsh-workflow-desktop'
 const TEAM = '@deepseek-ai/dsh-experimental-agent-team-profile'
@@ -38,6 +39,9 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
       }
     } else boot.initProfile(profile, boot.PROFILE_TEMPLATES.web.bundles)
   }
+  const deployment = await deployPluginPayload({ resourcesRoot, profile })
+  if (deployment?.changed) process.stderr.write(`[project-plugins] 已从应用交付目录部署固定插件，原配置与包链接备份：${deployment.backup}\n`)
+  if (deployment) identity.pluginPayloadSha256 = deployment.sha256
   const pluginConfig = await readPluginConfiguration(resourcesRoot, home)
   if (pluginConfig) {
     try { await assertProfilePluginVersions(profile, pluginConfig) }

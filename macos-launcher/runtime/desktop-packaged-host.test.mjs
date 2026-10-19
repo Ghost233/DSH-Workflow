@@ -1,11 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { cp, mkdtemp, mkdir, symlink, readFile, rm, writeFile, rename, readlink } from 'node:fs/promises'
+import { cp, mkdtemp, mkdir, symlink, readFile, rm, writeFile, rename, readlink, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {dshReadiness} from '../../scripts/dsh-readiness.mjs'
+import { createHash } from 'node:crypto'
+import { sealPluginPayload } from './plugin-payload.mjs'
+import { startupPluginResults } from './startup-plugins.mjs'
 
 const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
 const anchor = join(source, 'apps/cli/package.json'), req = createRequire(anchor)
@@ -44,8 +47,25 @@ test('packaged project profile serves authenticated official DSH readiness using
   await cp(resolve('macos-launcher/runtime/plugin-configuration.mjs'), join(workflow, 'macos-launcher/runtime/plugin-configuration.mjs'))
   await cp(resolve('macos-launcher/runtime/desktop-profile.mjs'), join(workflow, 'macos-launcher/runtime/desktop-profile.mjs'))
   await cp(resolve('macos-launcher/runtime/startup-plugins.mjs'), join(workflow, 'macos-launcher/runtime/startup-plugins.mjs'))
+  await cp(resolve('macos-launcher/runtime/plugin-payload.mjs'), join(workflow, 'macos-launcher/runtime/plugin-payload.mjs'))
   await cp(resolve('macos-launcher/runtime/desktop-bridge.mjs'), join(workflow, 'macos-launcher/runtime/desktop-bridge.mjs'))
   await cp(resolve('macos-launcher/runtime/stop-inspection.mjs'), join(workflow, 'macos-launcher/runtime/stop-inspection.mjs'))
+  const delivered = { package: 'workflow-owned-delivery-fixture', version: '1.2.3', source: 'git',
+    repository: 'https://github.com/owned/delivery-fixture', commit: 'c'.repeat(40), startup: true }
+  const payloadPackage = join(resourcesRoot, 'plugins/node_modules', delivered.package)
+  await mkdir(payloadPackage, { recursive: true })
+  const deliveredManifest = { name: delivered.package, version: delivered.version, type: 'module',
+    exports: { '.': './host.mjs', './client': './client.js' }, dsh: { bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web', inject: [], immediately: true } } }
+  await writeFile(join(payloadPackage, 'package.json'), JSON.stringify(deliveredManifest))
+  await writeFile(join(payloadPackage, 'host.mjs'), `export const name='workflow-owned-delivery-fixture'; export function apply(ctx){ctx.provide('workflowOwnedDeliveryFixture', {version:'1.2.3'})}`)
+  await writeFile(join(payloadPackage, 'client.js'), 'export function apply(){}')
+  await writeFile(join(payloadPackage, 'cordis.patch.yml'), JSON.stringify([{ insert: [{ id: 'owned-delivery-fixture', name: delivered.package }] }]))
+  const pluginConfig = JSON.stringify({ registry: 'https://registry.npmjs.org/', plugins: [delivered] })
+  await writeFile(join(workflow, 'project-plugins.json'), pluginConfig)
+  await writeFile(join(workflow, 'project-plugins.lock.json'), JSON.stringify({ schema: 1, harnessVersion: '0.2.1-rc.2',
+    registry: 'https://registry.npmjs.org/', manifestSha256: createHash('sha256').update(pluginConfig).digest('hex'),
+    plugins: [{ package: delivered.package, version: delivered.version, commit: delivered.commit, metadata: deliveredManifest }] }))
+  await sealPluginPayload(resourcesRoot, [{ ...delivered, archiveSha256: 'd'.repeat(64) }])
   const { prepareDesktopProfile } = await import(pathToFileURL(join(workflow, 'macos-launcher/runtime/desktop-profile.mjs')))
   const prepared = await prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot, globalRoot, home })
   const saved = process.env.DSH_HOME
@@ -60,12 +80,12 @@ test('packaged project profile serves authenticated official DSH readiness using
   })
   await writeFile(join(prepared.profile, 'cordis.patch.yml'), JSON.stringify([
     { insert: [
-      { id: 'matt-skills-board', name: '/previous location/matt-skills-panel-plugin/package/lib/index.js', config: { savedPanelSetting: true } },
+      { id: 'matt-skills-board', name: '/previous location/matt-skills-panel-plugin/package/lib/index.js', config: { savedPanelSetting: true, ghAccount: false } },
       { id: 'matt-panel-tools', name: 'previous-panel/tools', config: { savedToolSetting: true } },
       { id: 'mattpocock-skills-zh', name: 'previous-skills', config: { providerName: 'mattpocock-skills-zh', includeDefaultRoots: false, customSkillDirs: [join(workflow, 'vendor/mattpocock-skills-zh/skills')] } },
       { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } },
     ] },
-    { id: 'matt-skills-board', name: '/previous location/matt-skills-panel-plugin/package/lib/index.js', config: { savedPanelSetting: true } },
+    { id: 'matt-skills-board', name: '/previous location/matt-skills-panel-plugin/package/lib/index.js', config: { savedPanelSetting: true, ghAccount: false } },
     { id: 'webserver', config: { host: '127.0.0.1', port: 0 } },
     { id: 'web-runtime', config: { openBrowser: false, printUrl: false } },
     { id: 'hmr', disabled: true }, { id: 'session-telemetry-otel', disabled: true }, { id: 'session-title-llm', disabled: true },
@@ -80,7 +100,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   const effective = composeEntries([...entries.layers.map(layer => layer.patches), entries.patches])
   assert.equal(effective.filter(row => row.id === 'matt-skills-board').length, 1)
   assert.equal(effective.find(row => row.id === 'matt-skills-board').name, pathToFileURL(join(workflow, 'matt-skills-panel-plugin/package/lib/index.js')).href)
-  assert.deepEqual(effective.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true })
+  assert.deepEqual(effective.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true, ghAccount: false })
   assert.equal(effective.find(row => row.id === 'matt-panel-tools').name, 'dsh-workflow-matt-panel/tools')
   assert.equal(effective.find(row => row.id === 'mattpocock-skills-zh').name, '@deepseek-ai/dsh-skill-filesystem')
   assert.deepEqual(effective.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
@@ -136,6 +156,11 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(delivery.result?.ok, true, `the readonly settings page needs the actual Host delivery report: ${JSON.stringify(delivery)}`)
   const report = delivery.result.value
   assert.equal(report.actualScope, 'runtime-resolution')
+  assert.equal(ctx.get('workflowOwnedDeliveryFixture')?.version, delivered.version)
+  const actualPlugin = (await startupPluginResults({ resourcesRoot, url: baseUrl(ctx) })).find(row => row.package === delivered.package)
+  assert.equal(actualPlugin.state, 'loaded', JSON.stringify(actualPlugin))
+  assert.equal(actualPlugin.actualVersion, delivered.version)
+  assert.equal(actualPlugin.source, await realpath(payloadPackage))
   const unresolved = report.rows.find(row => row.moduleName === 'user-choice')
   assert.equal(unresolved.current, null)
   assert.equal(unresolved.expected, null)
@@ -193,7 +218,7 @@ test('packaged project profile serves authenticated official DSH readiness using
     assert.equal(await readlink(join(prepared.profile, 'node_modules', name)), target)
   }
   const movedEntries = composeEntries([...profile.layers.map(layer => layer.patches), profile.patches])
-  assert.deepEqual(movedEntries.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true })
+  assert.deepEqual(movedEntries.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true, ghAccount: false })
   assert.deepEqual(movedEntries.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
   await startHost()
   t.signal.throwIfAborted()
@@ -202,6 +227,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   await movedLogin.text()
   t.signal.throwIfAborted()
   assert.equal((await dshReadiness(baseUrl(ctx), { cookie: movedCookie, signal: t.signal, request: observedInventory })).ready, true)
+  assert.equal(ctx.get('workflowOwnedDeliveryFixture')?.version, delivered.version, 'the relocated Host must actually execute the shipped plugin')
   assert.equal(ctx.get('jevCenter'), undefined)
   assert.equal(ctx.get('agentMonitor'), undefined, 'the disabled project agent monitor stays unloaded after moving resources')
   assert.ok(ctx.tools.get('deck_context'))

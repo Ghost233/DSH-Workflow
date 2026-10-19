@@ -9,6 +9,8 @@ import { bundleServiceEnvironment } from './service-environment.mjs'
 import { bundleServiceNotifications } from './service-notifications.mjs'
 import { assembleDesktopClient } from './desktop-adaptation.mjs'
 import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
+import { bundleProjectPlugins } from './bundle-plugins.mjs'
+import { verifyPluginPayload } from './runtime/plugin-payload.mjs'
 
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
 
@@ -72,6 +74,7 @@ try {
   await cp(process.execPath, join(resources, 'node'))
   await chmod(join(resources, 'node'), 0o755)
   await copyProjectIntegration(root, join(resources, 'workflow'))
+  await bundleProjectPlugins({ resourcesRoot: resources })
   await bundleServiceEnvironment(root, resources)
   await bundleServiceNotifications(root, resources)
   await mkdir(join(resources, 'desktop'), { recursive: true })
@@ -107,6 +110,7 @@ try {
   await run(join(resources, 'node'), [join(dsh, 'lib/bin.js'), '--version'], resources)
   await run('codesign', ['--force', '--sign', '-', join(resources, 'node')])
   await run('codesign', ['--deep', '--force', '--sign', '-', app])
+  await verifyPluginPayload(resources, root)
   await rename(app, destination)
   // The no-argument launcher selects the newest completed bundle by directory mtime.
   await utimes(destination, new Date(), new Date())

@@ -10,7 +10,7 @@ const projectRoot = resolve(import.meta.dirname, '../../..')
 await copyProjectIntegration(projectRoot, join(destination, 'workflow'))
 await copyFile(join(projectRoot, 'macos-launcher/package-lock.json'), join(destination, 'package-lock.json'))
 await bundleServiceEnvironment(projectRoot, destination)
-for (const name of ['node', 'node_modules', 'desktop']) await symlink(join(resolve(artifact), name), join(destination, name))
+for (const name of ['node', 'node_modules', 'desktop', 'plugins', 'plugin-payload.json']) await symlink(join(resolve(artifact), name), join(destination, name))
 // Exclude unrelated network endpoints only in this isolated acceptance profile.
 const home = resolve(destination, '../home')
 await mkdir(join(home, 'profiles/desktop'), { recursive: true })

@@ -363,6 +363,15 @@ void main() {
           final inventory = (envelope['result'] as Map)['value'] as Map;
           expect(inventory['managementAvailable'], isNot(true));
           final plugins = (inventory['entries'] as List).cast<Map>();
+          expect(
+            plugins.any(
+              (row) =>
+                  row['moduleName'] == 'dsh-workflow/delivery-inventory' &&
+                  row['fiberPhase'] == 'active',
+            ),
+            true,
+            reason: 'The managed delivery inventory must be active in the real Host',
+          );
           for (final module in [
             'dsh-workflow/jev-center',
             'dsh-workflow/agent-monitor',
@@ -373,8 +382,9 @@ void main() {
                     row['moduleName'] == module &&
                     row['fiberPhase'] == 'active',
               ),
-              true,
-              reason: '$module must be loaded in the actual Host',
+              false,
+              reason:
+                  '$module must retain the existing launch policy instead of reviving a disabled legacy module',
             );
           }
           stdout.writeln(
@@ -406,13 +416,15 @@ void main() {
             .toList();
         expect(
           startupResults.map((row) => row['package']).toList(),
-          [
-            'dsh-context',
-            'dsh-cost-meter',
-            '@nagi-ovo/dsh-visualize',
-            'billion-context',
-            'dsh-plugin-notify',
-          ],
+          ((jsonDecode(
+                    await File('$resources/workflow/project-plugins.json')
+                        .readAsString(),
+                  ) as Map)['plugins']
+                  as List)
+              .cast<Map>()
+              .where((row) => row['startup'] == true)
+              .map((row) => row['package'])
+              .toList(),
           reason: 'The real independent Host must report every startup plugin and continue after an optional failure',
         );
         for (final result in startupResults) {

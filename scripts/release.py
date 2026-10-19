@@ -97,6 +97,12 @@ class Release:
         if [(p.get("package"), p.get("version")) for p in plugin_lock.get("plugins", [])] != [
                 (p.get("package"), p.get("version")) for p in plugins.get("plugins", [])]:
             raise ReleaseError("项目插件锁定版本与清单不一致")
+        for item, locked in zip(plugins["plugins"], plugin_lock["plugins"]):
+            if (locked.get("metadata", {}).get("name") != item["package"]
+                    or locked.get("metadata", {}).get("version") != item["version"]
+                    or item.get("source") == "git" and (not re.fullmatch(r"[0-9a-f]{40}", item.get("commit", ""))
+                                                       or locked.get("commit") != item["commit"])):
+                raise ReleaseError("项目插件锁定元数据或 Git 提交与清单不一致")
         if self.git("rev-parse", "--show-toplevel") != str(ROOT):
             raise ReleaseError("发布脚本必须位于 Ghost DSH Station 仓库根下")
         if self.git("symbolic-ref", "--short", "HEAD") != "main":

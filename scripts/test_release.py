@@ -221,6 +221,23 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
         self.assertIn('缓存过期', result.stderr)
         self.assertFalse(self.git('tag', '--list', 'macos-v0.2.5'))
 
+    def test_same_version_with_a_different_git_plugin_commit_is_rejected(self):
+        item = {'package': 'owned-release-fixture', 'version': '1.2.3', 'source': 'git',
+                'repository': 'https://github.com/owned/fixture', 'commit': 'a' * 40}
+        manifest = {'registry': 'https://registry.npmjs.org/', 'plugins': [item]}
+        content = json.dumps(manifest)
+        (self.repo / 'project-plugins.json').write_text(content)
+        lock_path = self.repo / 'project-plugins.lock.json'
+        lock = json.loads(lock_path.read_text())
+        lock.update(manifestSha256=hashlib.sha256(content.encode()).hexdigest(),
+                    plugins=[{'package': item['package'], 'version': item['version'], 'commit': 'b' * 40,
+                              'metadata': {'name': item['package'], 'version': item['version']}}])
+        lock_path.write_text(json.dumps(lock))
+        result = self.cli('--dry-run')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Git 提交', result.stderr)
+        self.assertFalse(self.git('tag', '--list', 'macos-v0.2.5'))
+
     def test_reserved_remote_version_is_not_reused(self):
         self.git('tag', '-a', 'macos-v0.2.9', '-m', 'reserved')
         self.git('push', str(self.remote), 'macos-v0.2.9')
@@ -245,6 +262,19 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
         (resources / 'node_modules/@deepseek-ai/dsh/package.json').write_text(json.dumps(
             {'name': '@deepseek-ai/dsh', 'version': '0.2.1-alpha.2'}))
         (resources / 'desktop/DeepSeek Harness.app').mkdir(parents=True)
+        for relative in ['macos-launcher/runtime/plugin-payload.mjs', 'agent-observation-plugin/src/delivery-manifest.mjs']:
+            destination = self.repo / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(SOURCE.parent / relative, destination)
+        workflow = resources / 'workflow'
+        workflow.mkdir()
+        for name in ['project-plugins.json', 'project-plugins.lock.json', 'dsh-runtime.json']:
+            shutil.copy2(self.repo / name, workflow / name)
+        (resources / 'plugins').mkdir()
+        helper = (SOURCE.parent / 'macos-launcher/runtime/plugin-payload.mjs').as_uri()
+        subprocess.run(['node', '--input-type=module', '-e',
+                        f'import {{sealPluginPayload}} from {json.dumps(helper)}; await sealPluginPayload({json.dumps(str(resources))}, []);'],
+                       env=self.env, check=True, capture_output=True, text=True)
         self.wrapper('lipo', "print('arm64')")
         self.wrapper('codesign', 'import os,sys;sys.exit(int(os.environ.get("FIXTURE_SIGN_FAIL","0")))')
         self.wrapper('ditto', 'import shutil,sys;shutil.copytree(sys.argv[1],sys.argv[2])')
@@ -280,6 +310,8 @@ else:sys.exit(2)
         self.assertEqual(manifest['tag'], 'macos-v0.2.5')
         self.assertEqual(manifest['sourceCommit'], self.git('rev-parse', 'HEAD'))
         self.assertEqual(manifest['dshVersion'], '0.2.1-alpha.2')
+        self.assertRegex(manifest['pluginPayload']['sha256'], r'^[a-f0-9]{64}$')
+        self.assertEqual(manifest['pluginPayload']['plugins'], [])
         asset = manifest['assets'][0]
         self.assertEqual(asset['size'], (output / asset['name']).stat().st_size)
         self.assertEqual(asset['sha256'], hashlib.sha256((output / asset['name']).read_bytes()).hexdigest())
@@ -323,6 +355,23 @@ else:sys.exit(2)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('DSH 版本', result.stderr)
         self.assertFalse(output.exists())
+
+    @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS packaging CLI seam')
+    def test_packaging_rejects_missing_or_changed_plugin_payload_before_creating_dmg(self):
+        app, output = self.packaging_fixture()
+        seal = app / 'Contents/Resources/plugin-payload.json'
+        original = seal.read_bytes()
+        seal.unlink()
+        result = self.package_cli(app, output)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / 'hdiutil.json').exists())
+        seal.write_bytes(original)
+        (app / 'Contents/Resources/plugins/unexpected.js').write_text('changed delivery')
+        result = self.package_cli(app, output)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('content mismatch', result.stderr)
+        self.assertFalse(output.exists())
+        self.assertFalse((self.root / 'hdiutil.json').exists())
 
     def release_job_cli(self, assets):
         shutil.copy2(SOURCE / 'publish-release.sh', self.repo / 'scripts/publish-release.sh')
@@ -412,6 +461,22 @@ for name in ['fixture.dmg','manifest.json']:(root/name).write_bytes(b'fixture as
         (assets / 'SHA256SUMS').write_text(checksum)
         result = self.release_job_cli(assets)
         self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / 'release-command.json').exists())
+
+    @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS release job CLI seam')
+    def test_release_job_rejects_missing_plugin_delivery_evidence_even_with_valid_checksums(self):
+        app, assets = self.packaging_fixture()
+        result = self.package_cli(app, assets)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((assets / 'manifest.json').read_text())
+        del manifest['pluginPayload']
+        (assets / 'manifest.json').write_text(json.dumps(manifest))
+        names = ['DSH-Workflow-macOS-0.2.5-arm64.dmg', 'manifest.json']
+        (assets / 'SHA256SUMS').write_text(''.join(hashlib.sha256((assets / name).read_bytes()).hexdigest() + '  ' + name + '\n'
+                                                for name in names))
+        result = self.release_job_cli(assets)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('插件本体交付校验', result.stderr)
         self.assertFalse((self.root / 'release-command.json').exists())
 
     @unittest.skipUnless(os.uname().sysname == "Darwin", "macOS package validation")
