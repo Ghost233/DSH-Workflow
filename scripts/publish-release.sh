@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 上传已校验的发布资产并创建 GitHub 正式 Release（不创建 tag）。
 # 用法：RELEASE_TAG=macos-vX.Y.Z [RELEASE_COMMIT=<sha>] [RELEASE_ASSETS=.build/release-assets] scripts/publish-release.sh
-# 前置：tag 已由 scripts/release.sh 推送；资产由 scripts/build-local-release.sh 生成。
+# 前置：tag 已由 scripts/release.sh 推送；Actions 已完成编译与打包。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -32,6 +32,7 @@ version = tag.removeprefix('macos-v')
 expected = f'DSH-Workflow-macOS-{version}-arm64.dmg'
 value = json.loads((root / 'manifest.json').read_text())
 assert value['tag'] == tag and value['version'] == version, f"manifest tag/version 不一致：{value.get('tag')} {value.get('version')}"
+assert json.loads(Path('macos-launcher/package.json').read_text())['version'] == version, '发布 tag 与源码版本不一致'
 assert value['sourceCommit'] == commit, f"manifest sourceCommit 不一致：{value.get('sourceCommit')}"
 assert len(value['assets']) == 1 and value['assets'][0]['name'] == expected, f"manifest assets 不符合预期：{value.get('assets')}"
 assert value['assets'][0]['size'] == (root / expected).stat().st_size, 'manifest size 不一致'
@@ -48,6 +49,7 @@ gh release create "$RELEASE_TAG" \
   "$RELEASE_ASSETS"/manifest.json \
   "$RELEASE_ASSETS"/SHA256SUMS \
   --verify-tag \
+  --repo Ghost233/DSH-Workflow \
   --title "DSH Workflow macOS ${RELEASE_TAG#macos-v}" \
   --notes "Automated macOS builds for Apple Silicon (ARM64). Locally ad-hoc signed; not notarized."
 

@@ -351,6 +351,53 @@ Path(os.environ['FIXTURE_RELEASE_LOG']).write_text(json.dumps(sys.argv[1:]))
         self.assertEqual(args[3:6], ['release-assets/DSH-Workflow-macOS-0.2.5-arm64.dmg',
                                    'release-assets/manifest.json', 'release-assets/SHA256SUMS'])
         self.assertIn('--verify-tag', args)
+        self.assertEqual(args[args.index('--repo') + 1], 'Ghost233/DSH-Workflow')
+
+    def test_production_build_packages_without_running_tests_or_runtime_smoke(self):
+        shutil.copy2(SOURCE / 'build-local-release.sh', self.repo / 'scripts/build-local-release.sh')
+        log = self.root / 'build-commands.jsonl'
+        source = '''import json,os,sys
+from pathlib import Path
+name=Path(sys.argv[0]).name
+a=sys.argv[1:]
+root=Path(os.environ['FIXTURE_BUILD_ROOT'])
+with open(os.environ['FIXTURE_BUILD_LOG'],'a') as f:f.write(json.dumps([name,*a])+'\\n')
+if name=='uname':print('Darwin' if a==['-s'] else 'arm64')
+elif name=='node':
+ if a[:1]==['-p']:
+  p='macos-launcher/package.json' if 'macos-launcher' in a[1] else 'dsh-runtime.json'
+  print(json.loads((root/p).read_text())['version'])
+ elif 'macos-launcher/build-desktop-release.mjs' in a:
+  (root/'.build/desktop-arm64/mac-arm64/DeepSeek Harness.app').mkdir(parents=True)
+ elif a==['macos-launcher/build.mjs']:
+  (root/'.build/DSH Workflow-0.2.5-dsh0.2.1-alpha.2-arm64.app').mkdir(parents=True)
+ else:raise SystemExit('Unexpected runtime invocation: '+repr(a))
+elif name in ['npm','pnpm','flutter']:
+ if any(x=='test' or x.startswith('test:') or x=='analyze' for x in a):raise SystemExit('Tests are forbidden')
+'''
+        for name in ['node', 'npm', 'pnpm', 'flutter', 'otool', 'uname']:
+            self.wrapper(name, source)
+        package = self.repo / 'scripts/build-release.sh'
+        package.write_text('''#!/usr/bin/env python3
+import hashlib,json,os
+from pathlib import Path
+root=Path(os.environ['FIXTURE_BUILD_ROOT'])/'.build/release-assets'
+root.mkdir(parents=True)
+for name in ['fixture.dmg','manifest.json']:(root/name).write_bytes(b'fixture asset')
+(root/'SHA256SUMS').write_text(''.join(hashlib.sha256((root/n).read_bytes()).hexdigest()+'  '+n+'\\n' for n in ['fixture.dmg','manifest.json']))
+''')
+        package.chmod(0o755)
+        env = self.env.copy()
+        env.update(FIXTURE_BUILD_ROOT=str(self.repo), FIXTURE_BUILD_LOG=str(log),
+                   FLUTTER_BIN=str(self.bin / 'flutter'), DSH_LAUNCHER_NODE=str(self.bin / 'node'))
+        result = subprocess.run(['bash', str(self.repo / 'scripts/build-local-release.sh')], cwd=self.repo,
+                                env=env, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [json.loads(line) for line in log.read_text().splitlines()]
+        self.assertIn(['pnpm', 'run', 'build:official', '--scope', 'artifacts'], calls)
+        self.assertIn(['pnpm', '--dir', 'apps/desktop', 'run', 'prepare:runtime',
+                       '--defer-primary-runtime-smoke'], calls)
+        self.assertTrue((self.repo / '.build/release-assets/SHA256SUMS').is_file())
 
     @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS release job CLI seam')
     def test_release_job_rejects_inconsistent_manifest_even_with_valid_checksum_file(self):

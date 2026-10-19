@@ -28,7 +28,9 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-${DSH_SOURCE_VERSION}-source
 
 发布操作统一遵循 [deploy-release skill](../.agents/skills/deploy-release/SKILL.md)。
 
-正式版在本机 macOS ARM64 上编译发布，不使用 GitHub Actions 构建流水线。`scripts/build-local-release.sh` 初始化固定 DSH 依赖、运行上游 `build:official`、封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime；上游源码保持原样。该脚本不运行集成测试，只编译并打包 DMG、`manifest.json` 与 `SHA256SUMS`，资产默认输出到 `.build/release-assets`。
+正式版由 `macos-v*` tag 触发 GitHub Actions，在 macOS ARM64 runner 上编译、打包并上传 Release。流水线只执行生产构建、签名和打包，不运行 CI、单元、集成、smoke 或运行时验收测试；普通 push 和 PR 不触发测试工作流。版本、签名、包结构及文件哈希核对保留在打包流程中。
+
+`scripts/build-local-release.sh` 供 Actions 和本机使用。它初始化固定 DSH 依赖，以 `build:official --scope artifacts` 生成生产产物，封装本地 npm 包集合并准备官方 Electron、Node、pnpm 和 Python／Office runtime。准备运行时时传入 `--defer-primary-runtime-smoke`，仅装配资源。上游源码保持原样。资产为 DMG、`manifest.json` 与 `SHA256SUMS`，默认输出到 `.build/release-assets`。
 
 脚本同时按固定 Flutter 依赖装配 Flutter Release 应用与运行时启动器。本机 Node 需 22+ 且带有 Node-API 开发头文件；启动器会打包一个自包含 Node，若默认 `node` 动态链接 `libnode`（例如 Homebrew 发行版），需另备自包含 Node 并以 `DSH_LAUNCHER_NODE=<路径>` 指向它。maclauncher.json 分别声明 DSH 服务端和 Web 访问服务的启动、回收、状态与日志能力；入口托管、窗口激活和失联恢复由应用负责。
 
@@ -36,7 +38,7 @@ DSH_MACOS_DESKTOP_APP="$PWD/.build/DeepSeek Harness-${DSH_SOURCE_VERSION}-source
 
 重复本地预检时，可向 `build-desktop-release.mjs` 传入一个尚不存在的输出目录，例如 `.build/release-0.2.5/desktop`，保留旧应用。省略参数时沿用 `.build/desktop-arm64`。
 
-`verify-desktop-release.mjs` 将应用复制到独立临时目录，核对签名和运行时文件完整性，并运行上游真实 Host、前端、插件及 DOCX／XLSX／PPTX 转 PDF 验收。通过后，脚本将该 Desktop 应用传给启动器打包，再验收实际包中的 Desktop、官方 DSH 就绪状态及 Matt 面板装配，最后校验 ARM64 的 DMG。验收使用临时 profile，不修改用户运行配置。发布 tag 由 `scripts/release.sh` 创建，`scripts/publish-release.sh` 上传已校验资产并创建正式 Release。
+`verify-desktop-release.mjs` 保留为单独的本机诊断工具，正式发布流程不调用它。发布 tag 由 `scripts/release.sh` 创建；Actions 完成构建后，调用 `scripts/publish-release.sh` 上传已校验资产并创建正式 Release。runner 使用本仓库的 `GITHUB_TOKEN`，不需要个人 GitHub 凭据。
 
 ## 启动和关闭
 

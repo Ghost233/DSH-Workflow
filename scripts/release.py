@@ -155,7 +155,7 @@ class Release:
         if not main or main.split()[0] != head:
             raise ReleaseError("tag 已推送，但远端 main 已变化；先 fast-forward 同步本地，再跟踪既有管线")
         print(f"release: 完成：{tag} 已推送")
-        print("release: 后续：scripts/build-local-release.sh 编译并打包，再以 scripts/publish-release.sh 创建 Release（见 .agents/skills/deploy-release/SKILL.md）")
+        print("release: 后续：跟踪 macos-app.yml；GitHub Actions 只编译、打包并创建 Release，不运行测试")
 
 
 def main():
@@ -168,7 +168,7 @@ def main():
         tag, head, local_tag = release.prepare(args.retry_tag)
         if args.dry_run:
             print("release: [dry-run] " + ("复用本地 tag" if local_tag else "创建附注 tag") + f" {tag}")
-            print(f"release: [dry-run] 推送 {tag}（仅 tag；本地编译与 Release 上传按 .agents/skills/deploy-release/SKILL.md 执行）")
+            print(f"release: [dry-run] 推送 {tag}（仅 tag；由 GitHub Actions 编译、打包并创建 Release，不运行测试）")
         else:
             release.publish(tag, head, local_tag)
     except (ReleaseError, OSError, ValueError) as error:

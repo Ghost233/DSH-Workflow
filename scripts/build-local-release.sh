@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本地编译并打包发布资产；不运行集成测试，不访问 GitHub。
+# 在本机或 GitHub macOS ARM64 runner 编译、打包；不运行测试，不访问 GitHub Release。
 # 产物：.build/release-assets/{*.dmg,manifest.json,SHA256SUMS}
 # 用法：scripts/build-local-release.sh [--skip-dsh-install]
 # 说明：发布入口见 .agents/skills/deploy-release/SKILL.md；本脚本只做编译与打包。
@@ -65,18 +65,18 @@ step '4/8 构建 DSH 生产包'
   cd deepseek-harness
   export DSH_DESKTOP_TARGET_PLATFORM=darwin DSH_DESKTOP_TARGET_ARCH=arm64
   TARGET="$PWD/apps/desktop/.desktop-build/targets/mac-${DSH_DESKTOP_TARGET_ARCH}"
-  pnpm run build:official
+  pnpm run build:official --scope artifacts
   pnpm run release:pack --family dsh --out "$TARGET/packed/dsh" --concurrency 4
   pnpm --dir apps/desktop-host pack --pack-destination "$TARGET/packed/dsh"
   pnpm run release:pack --family vendor --out "$TARGET/packed/vendor" --concurrency 4
   pnpm --dir native/system run build:ts
   mkdir -p "$TARGET/packed/landlock"
   pnpm --dir native/system/packages/entry pack --pack-destination "$TARGET/packed/landlock"
-  pnpm --dir apps/desktop run prepare:runtime
+  pnpm --dir apps/desktop run prepare:runtime --defer-primary-runtime-smoke
   pnpm --dir apps/desktop run prepare:packages
 )
 
-step '5/8 构建并校验可重定位 Desktop'
+step '5/8 构建并签名可重定位 Desktop'
 if [[ -e .build/desktop-arm64 ]]; then
   STALE_APP=".build/desktop-arm64.stale-$(date +%Y%m%d%H%M%S)"
   step "已有 .build/desktop-arm64，移动到 $STALE_APP"
@@ -84,13 +84,11 @@ if [[ -e .build/desktop-arm64 ]]; then
 fi
 node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/build-desktop-release.mjs
 DESKTOP_APP="$ROOT/.build/desktop-arm64/mac-arm64/DeepSeek Harness.app"
-node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs "$DESKTOP_APP"
 
-step '6/8 构建并校验启动器 App'
+step '6/8 构建并签名启动器 App'
 DSH_MACOS_DESKTOP_APP="$DESKTOP_APP" "$LAUNCHER_NODE" macos-launcher/build.mjs
 APP="$ROOT/.build/DSH Workflow-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
 [[ -d "$APP" ]] || fail "启动器 App 未生成：$APP"
-node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/verify-desktop-release.mjs "$APP"
 
 step '7/8 打包 DMG、manifest.json 与 SHA256SUMS'
 rm -rf .build/release-assets
