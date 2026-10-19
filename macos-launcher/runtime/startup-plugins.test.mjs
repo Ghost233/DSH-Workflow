@@ -36,26 +36,26 @@ const row = (name, version, extra = {}) => ({ scope: 'Host', moduleName: name, p
   current: version, source: `/owned/${name}`, status: 'fixed', enabled: true, fiberPhase: 'active', ...extra })
 
 test('startup outcomes distinguish actual loading, disabled, failed, drift and absence without package mutation', async t => {
-  const f = await fixture(t, [row('dsh-context', '0.66.1'),
-    row('dsh-cost-meter', '1.8.19', { enabled: false, fiberPhase: null }),
+  const f = await fixture(t, [row('dsh-context', '0.73.3'),
+    row('dsh-cost-meter', '1.9.9', { enabled: false, fiberPhase: null }),
     row('@nagi-ovo/dsh-visualize', '0.1.4', { fiberPhase: 'failed' }),
     row('billion-context', '0.1.185', { status: 'drift' })])
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
-  assert.deepEqual(results.map(item => item.state), ['loaded', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped'])
+  assert.deepEqual(results.map(item => item.state), ['loaded', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped'])
   assert.match(results[1].reason, /停用/)
   assert.match(results[2].reason, /失败/)
   assert.match(results[3].reason, /偏离/)
-  assert.equal(results[3].version, '0.1.184')
+  assert.equal(results[3].version, '0.1.201')
   assert.equal(results[3].actualVersion, '0.1.185')
-  assert.equal(results[4].package, 'dsh-plugin-notify')
+  assert.equal(results[4].package, '@goodandready/dsh-plugin-notify')
   assert.match(results[4].reason, /未装配/)
   assert.deepEqual(f.requests, [{ method: 'GET', path: '/?token=owned-fixture' },
     { method: 'POST', path: '/api/workflowDelivery/list' }])
 })
 
 test('an unknown runtime source is never reported as a loaded fixed package and later startup items remain visible', async t => {
-  const f = await fixture(t, [row('dsh-context', '0.66.1', { source: null }),
-    row('dsh-cost-meter', '1.8.19')])
+  const f = await fixture(t, [row('dsh-context', '0.73.3', { source: null }),
+    row('dsh-cost-meter', '1.9.9')])
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
   assert.equal(results[0].state, 'skipped')
   assert.match(results[0].reason, /未知/)
@@ -65,8 +65,8 @@ test('an unknown runtime source is never reported as a loaded fixed package and 
 })
 
 test('a settled enabled entry without a live fiber reports import failure while disabled and pending stay distinct', async t => {
-  const f = await fixture(t, [row('dsh-context', '0.66.1', { fiberPhase: null }),
-    row('dsh-cost-meter', '1.8.19', { enabled: false, fiberPhase: null }),
+  const f = await fixture(t, [row('dsh-context', '0.73.3', { fiberPhase: null }),
+    row('dsh-cost-meter', '1.9.9', { enabled: false, fiberPhase: null }),
     row('@nagi-ovo/dsh-visualize', '0.1.4', { fiberPhase: 'pending' })])
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
   assert.equal(results[0].state, 'skipped')
@@ -76,10 +76,10 @@ test('a settled enabled entry without a live fiber reports import failure while 
 })
 
 test('a rejected startup preparation cannot be reported as loaded by a matching inventory row', async t => {
-  const f = await fixture(t, [row('dsh-context', '0.66.1')])
+  const f = await fixture(t, [row('dsh-context', '0.73.3')])
   const reason = '启动插件尝试失败：依赖来源声明与包内 Git 固定值不一致。'
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url,
-    preparation: [{ package: 'dsh-context', installedVersion: '0.66.1', installedSource: '/owned/dsh-context', reason }] })
+    preparation: [{ package: 'dsh-context', installedVersion: '0.73.3', installedSource: '/owned/dsh-context', reason }] })
   assert.equal(results[0].state, 'skipped')
   assert.equal(results[0].reason, reason)
 })
