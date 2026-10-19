@@ -14,6 +14,7 @@ import { SERVICE_PROTOCOL, serviceDirectory, serviceSocket, privateDirectory, re
 import { createServiceAdmission } from './service-admission.mjs'
 import { serviceNotification } from './service-notification.mjs'
 import { startupPluginResults } from './startup-plugins.mjs'
+import { statusNotifications } from './status-notifications.mjs'
 
 /** The manager owns the official Host; GUI clients only send explicit management commands. */
 export async function serveManager({ dataRoot, resources, home }) {
@@ -37,12 +38,27 @@ export async function serveManager({ dataRoot, resources, home }) {
   let shellEnvironment
   let logWrites = Promise.resolve()
   const logs = []
+  let lastHealth = { ready: false, message: null }
+  const publicSnapshot = () => {
+    const paused = stopOperation?.owned === child && admission?.locked
+    return { protocol: SERVICE_PROTOCOL, service: {
+      state, ready: state === 'running' && lastHealth.ready && !paused,
+      instanceId: receipt?.lease ?? null, pid: child?.pid ?? null,
+      runtimeVersion: receipt?.runtimeVersion ?? null,
+      message: paused ? '正在等待停止或重启确认，暂缓接收新工作。'
+        : failure || (state === 'running' ? lastHealth.message : null),
+      observedAt: new Date().toISOString(),
+    }, logs: [...logs], notificationAuthorization: notificationAuthorization ?? null,
+    notificationAuthorizationPending: Boolean(authorizing) }
+  }
+  const updates = statusNotifications(publicSnapshot)
   const log = value => {
     const entry = { text: redact(value).slice(-4096), observedAt: new Date().toISOString() }
     logs.push(entry)
     if (logs.length > 500) logs.shift()
     logWrites = logWrites.then(() => appendFile(join(directory, 'service.log'), JSON.stringify(entry) + '\n', { mode: 0o600 }))
     void logWrites.catch(() => {})
+    updates.publish()
   }
   const health = async host => {
     const signal = AbortSignal.timeout(2000)
@@ -100,6 +116,7 @@ export async function serveManager({ dataRoot, resources, home }) {
     clearTimeout(operation.timer)
     operation.operationId = randomUUID(); operation.inspection = inspection
     stopOperation = operation
+    updates.publish()
     operation.timer = setTimeout(() => {
       if (stopOperation !== operation || stopping) return
       stopOperation = undefined
@@ -119,7 +136,7 @@ export async function serveManager({ dataRoot, resources, home }) {
       const operation = { action, owned, instanceId, admission }
       stopOperation = operation
       let inspection
-      try { await admission.lock(); inspection = await inspect(owned) }
+      try { await admission.lock(); updates.publish(); inspection = await inspect(owned) }
       catch (error) { inspection = { unknown: true, work: [], message: redact(error.message) } }
       if (child !== owned || receipt?.lease !== instanceId) throw new Error('DSH 服务实例已改变，请重新检查。')
       return publishStop(operation, inspection)
@@ -163,6 +180,7 @@ export async function serveManager({ dataRoot, resources, home }) {
           return publishStop(operation, inspection)
         }
         state = 'stopping'
+        updates.publish()
         const result = await exited.promise
         if (!normalStop.acknowledged || result.code !== 0 || result.signal !== null) {
           throw new Error(`DSH 未确认完成正常停止（${result.signal || result.code}），请检查日志。`)
@@ -201,11 +219,9 @@ export async function serveManager({ dataRoot, resources, home }) {
         ready = (await health(current)).ready === true
       } catch (error) { message = redact(error.message) }
     }
-    if (stopOperation?.owned === child && admission?.locked) { ready = false; message = '正在等待停止或重启确认，暂缓接收新工作。' }
-    return { identityVerified, value: { protocol: SERVICE_PROTOCOL, service: { state, ready, instanceId: receipt?.lease ?? null,
-      pid: child?.pid ?? null, runtimeVersion: receipt?.runtimeVersion ?? null,
-      message, observedAt: new Date().toISOString() }, logs: [...logs], notificationAuthorization: notificationAuthorization ?? null,
-      notificationAuthorizationPending: Boolean(authorizing) } }
+    lastHealth = { ready, message }
+    updates.publish()
+    return { identityVerified, value: publicSnapshot() }
   }
   const start = async (permissionMode = 'workspace-write') => {
     if (!['read-only', 'workspace-write', 'danger-full-access'].includes(permissionMode)) throw new Error('Invalid DSH permission mode')
@@ -269,6 +285,7 @@ export async function serveManager({ dataRoot, resources, home }) {
           const expected = closing || normalStop?.owned === owned && normalStop.committed
           const observed = child === owned
           if (child === owned) { child = undefined; state = expected ? 'stopped' : 'failed' }
+          updates.publish()
           const previousAdmission = admission; admission = undefined
           void previousAdmission?.close().catch(error => log(redact(error.message)))
           failure = expected ? '' : `DSH 服务已退出（${signal || code}）。请检查日志后手动启动。`
@@ -294,7 +311,7 @@ export async function serveManager({ dataRoot, resources, home }) {
             catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; await delay(20) }
           }
           if (!actual || actual.pid !== owned.pid || actual.url !== message.url) throw new Error('DSH readiness receipt does not identify the owned Host')
-          await health(actual)
+          lastHealth = { ready: (await health(actual)).ready === true, message: null }
           for (const result of await startupPluginResults({ resourcesRoot: resources, url: actual.url, preparation: profile.startup })) {
             log(`项目启动插件：${JSON.stringify(result)}`)
           }
@@ -332,6 +349,7 @@ export async function serveManager({ dataRoot, resources, home }) {
           const input = JSON.parse(buffer.slice(0, buffer.indexOf('\n')))
           if (input.protocol !== SERVICE_PROTOCOL) throw new Error('DSH 服务协议不兼容，请使用配套应用。')
           if (closing) throw new Error('DSH 服务管理进程正在退出')
+          if (input.type === 'watch-status') { updates.subscribe(socket); return }
           let stopInspection
           if (input.type === 'start-service') await start(input.permissionMode)
           else if (input.type === 'authorize-notifications') {
@@ -344,7 +362,7 @@ export async function serveManager({ dataRoot, resources, home }) {
                     message: `macOS 通知授权结果未知：${redact(error.message)}` }
                   log(notificationAuthorization.message)
                 })
-                .finally(() => { authorizing = undefined })
+                .finally(() => { authorizing = undefined; updates.publish() })
             }
           }
           else if (input.type === 'notification-status') {
@@ -386,6 +404,7 @@ export async function serveManager({ dataRoot, resources, home }) {
   await writeFile(statePath, JSON.stringify({ pid: process.pid, protocol: SERVICE_PROTOCOL }) + '\n', { mode: 0o600, flag: 'wx' })
   return { async close() {
     closing = true
+    updates.close()
     shellRead.abort()
     await starting?.catch(() => {})
     const owned = child

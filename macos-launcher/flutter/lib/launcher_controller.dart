@@ -34,6 +34,7 @@ class PluginRow {
 }
 
 class LauncherController extends ChangeNotifier implements LauncherActions {
+  static const _statusDisconnected = '状态通知连接已断开，重新打开管理窗口可重连。';
   LauncherController(this.native, {ProcessStarter? startProcess})
     : _startProcess = startProcess ?? Process.start;
   final NativeBridge native;
@@ -60,8 +61,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     state: ServiceState.stopped,
     ready: false,
   );
-  Timer? _observer, _serviceObserver;
   bool _observingWeb = false, _observingService = false;
+  bool _windowVisible = true;
+  Process? _statusObserver;
+  StreamSubscription<String>? _statusEvents;
+  Future<void>? _watchStarting;
+  Future<void>? _refreshingStatus;
   List<LogEntry> serviceLogEntries = [];
   final List<LogEntry> logs = [];
   String? _logInstanceId;
@@ -91,19 +96,121 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     _password = environment.password;
     loginStatus = environment.loginStatus;
     initialized = true;
+    await _refreshStatus();
+    await _subscribeStatus();
+    notifyListeners();
+  }
+
+  Future<void> _refreshStatus() => _refreshingStatus ??= _readStatus()
+      .whenComplete(() => _refreshingStatus = null);
+
+  Future<void> _readStatus() async {
+    if (_closed || !initialized) return;
     if (File(script('service-cli.mjs')).existsSync()) {
       await _observeService();
-      _serviceObserver = Timer.periodic(const Duration(seconds: 2), (_) {
-        unawaited(_observeService());
-      });
     }
     if (File(script('web-cli.mjs')).existsSync()) {
       await _observeWeb();
-      _observer = Timer.periodic(const Duration(seconds: 2), (_) {
-        unawaited(_observeWeb());
-      });
     }
-    notifyListeners();
+  }
+
+  void setWindowVisible(bool visible) {
+    if (_closed || _windowVisible == visible) return;
+    _windowVisible = visible;
+    if (visible) {
+      unawaited(refreshWindowStatus());
+    }
+  }
+
+  Future<void> refreshWindowStatus() async {
+    await _refreshStatus();
+    await _subscribeStatus();
+  }
+
+  Future<void> _subscribeStatus() async {
+    if (_closed ||
+        !initialized ||
+        !File(script('launcher-events.mjs')).existsSync()) {
+      return;
+    }
+    if (_statusObserver != null) {
+      _statusObserver!.stdin.writeln('refresh');
+      return;
+    }
+    await (_watchStarting ??= _openStatusNotifications().whenComplete(
+      () => _watchStarting = null,
+    ));
+  }
+
+  Future<void> _openStatusNotifications() async {
+    try {
+      final child = await _startProcess(node, [
+        script('launcher-events.mjs'),
+        environment.dataRoot,
+      ], environment: processEnvironment);
+      if (_closed) {
+        await child.stdin.close();
+        await child.exitCode;
+        return;
+      }
+      _statusObserver = child;
+      unawaited(child.stderr.drain<void>());
+      _statusEvents = child.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+            if (_closed || !identical(_statusObserver, child)) return;
+            try {
+              final event = objectValue(jsonDecode(line));
+              final source = event['source'];
+              if (source != 'service' && source != 'web') {
+                throw const FormatException('Unknown status source');
+              }
+              if (event['value'] is Map) {
+                if (error == _statusDisconnected) error = '';
+                final value = objectValue(event['value']);
+                if (source == 'service') {
+                  _setServiceSnapshot(value);
+                } else {
+                  _setWebSnapshot(value);
+                }
+              } else {
+                final status = ServiceStatus(
+                  state: event['missing'] == true
+                      ? ServiceState.stopped
+                      : ServiceState.unknown,
+                  ready: false,
+                  message: event['error'] as String?,
+                );
+                if (source == 'service') {
+                  _service = status;
+                } else {
+                  _web = status;
+                  if (event['missing'] == true) {
+                    webUrl = null;
+                    lanUrls = [];
+                  }
+                }
+                notifyListeners();
+              }
+            } catch (failure) {
+              reportError(failure);
+            }
+          }, onError: reportError);
+      unawaited(
+        child.exitCode.then((_) {
+          if (_closed || !identical(_statusObserver, child)) return;
+          _statusObserver = null;
+          unawaited(_statusEvents?.cancel());
+          _statusEvents = null;
+          _service = ServiceStatus(state: ServiceState.unknown, ready: false);
+          _web = ServiceStatus(state: ServiceState.unknown, ready: false);
+          reportError(_statusDisconnected);
+        }),
+      );
+    } catch (failure) {
+      if (!_closed) reportError(failure);
+    }
   }
 
   Map<String, String> get processEnvironment => {
@@ -160,6 +267,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       throw StateError(reply['error'] as String? ?? '服务管理入口退出 $code：$stderr');
     }
     final value = objectValue(reply['value']);
+    _setServiceSnapshot(value);
+    return value;
+  }
+
+  void _setServiceSnapshot(Map<String, Object?> value) {
     _service = ServiceStatus.fromJson(objectValue(value['service']));
     final notification = value['notificationAuthorization'];
     if (notification is Map) {
@@ -192,7 +304,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         .map((row) => LogEntry(text: row['text'] as String))
         .toList();
     if (!_closed) notifyListeners();
-    return value;
   }
 
   @override
@@ -390,6 +501,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       throw StateError(reply['error'] as String? ?? 'Web 服务请求失败');
     }
     final value = objectValue(reply['value']);
+    _setWebSnapshot(value);
+    return value;
+  }
+
+  void _setWebSnapshot(Map<String, Object?> value) {
     _setSnapshot(objectValue(value['web']));
     logs.clear();
     logs.addAll(
@@ -398,7 +514,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       ),
     );
     if (!_closed) notifyListeners();
-    return value;
   }
 
   Future<void> _observeWeb() async {
@@ -675,8 +790,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       await File('${environment.dataRoot}/lifecycle-close-started')
           .writeAsString('close-started');
     }
-    _observer?.cancel();
-    _serviceObserver?.cancel();
+    await _watchStarting;
+    final observer = _statusObserver;
+    _statusObserver = null;
+    await observer?.stdin.close();
+    await observer?.exitCode;
+    await _statusEvents?.cancel();
     if (_pendingServiceStop != null && !_serviceCommitStarted) {
       await _serviceCommand(
         'cancel-stop',

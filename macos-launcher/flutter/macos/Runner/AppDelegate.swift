@@ -703,6 +703,7 @@ class AppDelegate: FlutterAppDelegate {
     let window = mainFlutterWindow ?? NSApp.windows.first { $0 is MainFlutterWindow }
     window?.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
+    channel?.invokeMethod("windowShown", arguments: nil)
   }
   @objc private func openGlobal() { channel?.invokeMethod("openGlobal", arguments: nil) }
   @objc private func requestQuit() { NSApp.terminate(nil) }

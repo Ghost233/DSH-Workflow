@@ -93,6 +93,8 @@ Future<void> main() async {
       case 'openGlobal':
         await serviceStartup;
         await model.startWeb();
+      case 'windowShown':
+        await model.refreshWindowStatus();
     }
   });
   if (kDebugMode && model.environment.testSocket != null) {
@@ -136,12 +138,20 @@ class LauncherPage extends StatefulWidget {
 class _LauncherPageState extends State<LauncherPage> {
   int _page = 0;
   final _password = TextEditingController();
+  late final AppLifecycleListener _lifecycle;
   LauncherController get model => widget.controller;
   @override
   void initState() {
     super.initState();
     model.confirmServiceStop = _confirmServiceStop;
+    _lifecycle = AppLifecycleListener(onStateChange: _windowStateChanged);
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state != null) _windowStateChanged(state);
   }
+
+  void _windowStateChanged(AppLifecycleState state) => model.setWindowVisible(
+    state == AppLifecycleState.resumed || state == AppLifecycleState.inactive,
+  );
 
   Future<bool> _confirmServiceStop(ServiceStopInspection inspection) async {
     await model.showWindow();
@@ -183,6 +193,8 @@ class _LauncherPageState extends State<LauncherPage> {
 
   @override
   void dispose() {
+    _lifecycle.dispose();
+    model.setWindowVisible(false);
     if (model.confirmServiceStop == _confirmServiceStop) {
       model.confirmServiceStop = null;
     }

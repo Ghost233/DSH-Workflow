@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { startLanGateway } from './lan-gateway.mjs'
 import { privateDirectory, SERVICE_PROTOCOL, serviceRequest, serviceSocket, redact } from './service-control.mjs'
 import { webDirectory, webSocket } from './web-control.mjs'
+import { statusNotifications } from './status-notifications.mjs'
 
 export const WEB_PORT = 33080
 
@@ -113,13 +114,14 @@ export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port =
   }
 }
 
-/** The detached Web process owns its gateway; launchers only open short-lived local connections. */
+/** The detached Web process owns its gateway; launcher subscriptions only observe it. */
 export async function serveGlobalSupervisor({ dataRoot }) {
   const directory = webDirectory(dataRoot), socketPath = webSocket(dataRoot)
   await privateDirectory(directory)
   await privateDirectory(dirname(socketPath))
   const server = createServer()
   let supervisor, password, closing = false, mutation = Promise.resolve(), logWrites = Promise.resolve()
+  let releaseState
   const logs = []
   const log = text => {
     const entry = { text: redact(text).slice(-4096), observedAt: new Date().toISOString() }
@@ -127,10 +129,12 @@ export async function serveGlobalSupervisor({ dataRoot }) {
     if (logs.length > 500) logs.shift()
     logWrites = logWrites.then(() => appendFile(join(directory, 'web.log'), JSON.stringify(entry) + '\n', { mode: 0o600 }))
     void logWrites.catch(() => {})
+    updates.publish()
   }
   const snapshot = () => ({ protocol: SERVICE_PROTOCOL,
     web: supervisor ? { ...supervisor.global(), lanUrls: supervisor.lanUrls }
       : { state: 'stopped', ready: false, observedAt: new Date().toISOString() }, logs: [...logs] })
+  const updates = statusNotifications(snapshot)
   const command = async input => {
     if (input.protocol !== SERVICE_PROTOCOL) throw new Error('Web 服务协议不兼容，请使用配套应用。')
     if (closing) throw new Error('Web 访问管理进程正在退出')
@@ -141,6 +145,7 @@ export async function serveGlobalSupervisor({ dataRoot }) {
         supervisor = await startGlobalSupervisor({ dataRoot, password: input.password,
           port: input.port ?? WEB_PORT, allowLanSettings: input.allowLanSettings === true,
           onLog: record => log(record.entry.text) })
+        releaseState = supervisor.onState(updates.publish)
         password = input.password
         log(`Web 访问已启动，实例 ${supervisor.global().instanceId}，端口 ${supervisor.port}。`)
       } else {
@@ -148,6 +153,7 @@ export async function serveGlobalSupervisor({ dataRoot }) {
         await supervisor.openGlobal()
       }
     } else if (input.type === 'recycle-web') {
+      releaseState?.(); releaseState = undefined
       await supervisor?.close()
       supervisor = undefined
       log('Web 访问资源已回收，DSH 服务继续独立运行。')
@@ -155,6 +161,7 @@ export async function serveGlobalSupervisor({ dataRoot }) {
       supervisor?.setPassword(input.password)
       password = input.password
     } else if (!['status', 'logs'].includes(input.type)) throw new Error('Unsupported Web service command')
+    updates.publish()
     return snapshot()
   }
   server.on('connection', socket => {
@@ -167,7 +174,14 @@ export async function serveGlobalSupervisor({ dataRoot }) {
       if (buffer.length > 16 * 1024) { socket.destroy(); return }
       if (handled || !buffer.includes('\n')) return
       handled = true
-      const operation = mutation.then(async () => command(JSON.parse(buffer.slice(0, buffer.indexOf('\n')))))
+      let input
+      try {
+        input = JSON.parse(buffer.slice(0, buffer.indexOf('\n')))
+        if (input.protocol !== SERVICE_PROTOCOL) throw new Error('Web 服务协议不兼容，请使用配套应用。')
+        if (closing) throw new Error('Web 访问管理进程正在退出')
+        if (input.type === 'watch-status') { updates.subscribe(socket); return }
+      } catch (error) { socket.end(JSON.stringify({ ok: false, error: redact(error.message) }) + '\n'); return }
+      const operation = mutation.then(async () => command(input))
       mutation = operation.catch(() => {})
       void operation.then(value => socket.end(JSON.stringify({ ok: true, value }) + '\n'),
         error => socket.end(JSON.stringify({ ok: false, error: redact(error.message) }) + '\n'))
@@ -189,6 +203,8 @@ export async function serveGlobalSupervisor({ dataRoot }) {
   await writeFile(statePath, JSON.stringify({ pid: process.pid, protocol: SERVICE_PROTOCOL }) + '\n', { mode: 0o600, flag: 'wx' })
   return { async close() {
     closing = true
+    updates.close()
+    releaseState?.()
     await mutation
     await supervisor?.close()
     await new Promise(accept => server.close(accept))

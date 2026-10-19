@@ -4,6 +4,10 @@
 
 Flutter Widget 负责界面；LauncherController 组织服务控制、客户端操作、状态与日志；MacLauncherIntegration 将 SDK 与界面连接到同一控制入口。独立服务管理进程持有 DSH 服务端生命周期，关闭 Flutter 启动器不停止服务。Swift Runner 保留窗口、菜单栏、登录项、实例锁及原有配置兼容接口。
 
+启动器通过本机 Unix socket 订阅 DSH 和 Web 管理进程的状态。管理进程在状态或日志变化时推送快照。订阅连接空闲时不发心跳，也不触发状态查询。启动器首次打开和再次显示窗口时补读状态，MacLauncher 的主动查询继续按请求执行。
+
+启动器只启动一个 Node 通知辅助进程，用文件系统事件发现管理进程重建并恢复订阅。退出启动器会关闭通知订阅及其辅助进程，已运行的服务继续工作。旧管理进程不支持通知时，启动器明确提示版本不兼容，不启用轮询。更新管理进程仍须遵守未完成工作检查，通知重连不会启动或重启业务服务。
+
 ## 接入
 
 在 MacLauncher 中关联仓库根目录 maclauncher.json，或已打包应用 Contents/Resources/maclauncher.json。前者打开 /Applications/DSH Workflow.app，后者通过相对路径指向包含它的应用包。

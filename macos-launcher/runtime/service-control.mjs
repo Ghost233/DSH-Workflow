@@ -18,12 +18,16 @@ export async function privateDirectory(directory, { create = true } = {}) {
 }
 
 /** Filesystem identity and 0700/0600 permissions restrict this socket to its local owner. */
-export async function serviceRequest(socketPath, request, timeout = 45_000) {
+export async function connectServiceSocket(socketPath) {
   await privateDirectory(dirname(socketPath), { create: false })
   const info = await lstat(socketPath)
   if (!info.isSocket() || info.uid !== process.getuid() || (info.mode & 0o077)) throw new Error('Unsafe DSH service socket')
+  return createConnection(socketPath)
+}
+
+export async function serviceRequest(socketPath, request, timeout = 45_000) {
+  const socket = await connectServiceSocket(socketPath)
   return new Promise((accept, reject) => {
-    const socket = createConnection(socketPath)
     let buffer = '', answered = false
     const fail = error => { socket.destroy(); reject(error) }
     socket.setTimeout(timeout, () => fail(new Error('DSH service control timed out')))

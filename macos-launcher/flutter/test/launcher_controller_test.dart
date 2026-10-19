@@ -170,6 +170,7 @@ Future<({LauncherController model, Directory root})> fixture({
       'lan-settings-client.mjs',
       'web-control.mjs',
       'service-control.mjs',
+      'status-notifications.mjs',
     ]) {
       await File('${launcher.path}/runtime/$name')
           .copy('${scripts.path}/$name');

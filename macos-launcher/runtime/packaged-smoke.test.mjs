@@ -13,7 +13,7 @@ test('the final packaged Web entry retains one real access port and clearly repo
   assert.ok(resources, 'Set DSH_MACOS_RESOURCES to the final candidate Wrapper resources; this check cannot be skipped')
   const directory = join(resources, 'workflow/macos-launcher/runtime')
   const digest = value => createHash('sha256').update(value).digest('hex')
-  for (const name of ['global-supervisor.mjs', 'lan-gateway.mjs', 'web-cli.mjs', 'web-control.mjs']) {
+  for (const name of ['global-supervisor.mjs', 'status-notifications.mjs', 'lan-gateway.mjs', 'web-cli.mjs', 'web-control.mjs']) {
     assert.equal(digest(await readFile(join(directory, name))), digest(await readFile(new URL(name, import.meta.url))),
       `packaged ${name} must match the current candidate`)
   }
