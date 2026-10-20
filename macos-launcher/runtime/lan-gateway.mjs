@@ -307,6 +307,11 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
   return {
     port: listeningPort,
     localUrl: `http://127.0.0.1:${listeningPort}/`,
+    setUpstreamPort(next) {
+      if (!Number.isSafeInteger(next) || next < 1 || next > 65535 || next === listeningPort) throw new Error('Invalid LAN gateway upstream port')
+      upstreamPort = next
+      backendCookies.clear()
+    },
     get lanUrls() {
       const addresses = host === '0.0.0.0' ? [...localAddresses()].filter(isPrivateIPv4) : host === '127.0.0.1' ? [] : [host]
       return addresses.map(address => `http://${address}:${listeningPort}/`)

@@ -1,12 +1,15 @@
-import { appendFile, chmod, readFile, rmdir, unlink, writeFile } from 'node:fs/promises'
+import { appendFile, readFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { startLanGateway } from './lan-gateway.mjs'
-import { privateDirectory, SERVICE_PROTOCOL, serviceRequest, serviceSocket, redact } from './service-control.mjs'
+import { SERVICE_PROTOCOL, redact } from './service-control.mjs'
+import { listenManagerControl } from './manager-control.mjs'
+import { attachManagerWebSocket } from './manager-websocket.mjs'
 import { webDirectory, webSocket } from './web-control.mjs'
 import { statusNotifications } from './status-notifications.mjs'
+import { watchLauncherStatus } from './launcher-events.mjs'
 
 export const WEB_PORT = 33080
 
@@ -17,7 +20,8 @@ export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port =
     throw new Error('Invalid Web service configuration')
   }
   const runtime = JSON.parse(await readFile(new URL('../../dsh-runtime.json', import.meta.url), 'utf8'))
-  let gateway, connection, starting, timer, lastError = '', instanceId = null, closing = false, checking, upstreamReady = false
+  let gateway, connection, starting, observer, lastError = '', instanceId = null, closing = false, upstreamReady = false
+  let latestEvent, acquiring, pendingAcquire = false
   const listeners = new Set()
   const state = () => ({ state: gateway ? 'running' : starting ? 'starting' : 'stopped',
     instanceId, ready: Boolean(gateway && upstreamReady), observedAt: new Date().toISOString(), error: lastError,
@@ -25,17 +29,18 @@ export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port =
     gatePort: gateway?.port ?? port, url: gateway?.localUrl ?? null })
   const emit = () => { for (const notify of listeners) notify(state()) }
   const discover = async () => {
-    const value = await serviceRequest(serviceSocket(dataRoot), { type: 'connect-web', runtimeVersion: runtime.version }, 5000)
+    const { value, generation } = await observer.requestService({ type: 'connect-web', runtimeVersion: runtime.version })
     const current = value.connection
     const url = new URL(current?.url)
     if (typeof current?.instanceId !== 'string' || !current.instanceId || !Number.isSafeInteger(current.pid)
       || current.runtimeVersion !== runtime.version || url.protocol !== 'http:' || url.hostname !== '127.0.0.1'
-      || !url.port || url.pathname !== '/' || !url.searchParams.get('token') || url.username || url.password) {
+      || !url.port || url.pathname !== '/' || !url.searchParams.get('token') || url.username || url.password
+      || !Number.isSafeInteger(value.revision) || value.revision < 1) {
       throw new Error('DSH 服务接入信息不兼容，请使用配套应用。')
     }
     return { instanceId: current.instanceId, pid: current.pid, runtimeVersion: current.runtimeVersion,
       url: current.url, port: Number(url.port), ready: value.service?.ready === true,
-      message: value.service?.message }
+      message: value.service?.message, generation, revision: value.revision }
   }
   const unavailable = error => {
     upstreamReady = false
@@ -43,51 +48,77 @@ export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port =
     if (lastError !== message) { lastError = message; onLog({ instanceId, entry: { text: message } }); emit() }
     return false
   }
-  const available = async () => {
-    if (checking) return checking
-    checking = (async () => {
+  const apply = event => {
+    if (event.error || event.missing) { unavailable(new Error(event.error || 'DSH 服务管理进程尚未运行')); return }
+    if (!connection) return
+    const current = event.value?.service
+    if (event.generation !== connection.generation || current?.instanceId !== connection.instanceId || current.pid !== connection.pid
+      || current.runtimeVersion !== connection.runtimeVersion) { unavailable(new Error('DSH 服务实例已更换')); return }
+    if (!Number.isSafeInteger(event.value.revision) || event.value.revision < 1) { unavailable(new Error('DSH 状态版本不可判断')); return }
+    if (event.value.revision < connection.revision) return
+    connection.revision = event.value.revision
+    if (current.ready !== true) { unavailable(new Error(current.message || 'DSH 服务尚未就绪')); return }
+    if (!upstreamReady || lastError) { upstreamReady = true; lastError = ''; emit() }
+  }
+  const acquire = () => {
+    if (acquiring) return acquiring
+    pendingAcquire = false
+    const owner = observer
+    acquiring = (async () => {
       try {
         const current = await discover()
-        if (!connection || current.instanceId !== connection.instanceId || current.pid !== connection.pid) {
-          throw new Error('DSH 服务实例已更换')
-        }
-        if (!current.ready) throw new Error(current.message || 'DSH 服务尚未就绪')
-        upstreamReady = true
-        if (lastError) { lastError = ''; emit() }
-        return true
-      } catch (error) { return unavailable(error) }
-    })()
-    try { return await checking } finally { checking = undefined }
+        if (observer !== owner || closing) return
+        const sameHost = connection && current.instanceId === connection.instanceId && current.pid === connection.pid
+          && current.runtimeVersion === connection.runtimeVersion && current.url === connection.url
+        if (!sameHost) gateway?.setUpstreamPort(current.port)
+        connection = current
+        const newer = latestEvent && (latestEvent.error || latestEvent.missing || latestEvent.generation !== current.generation
+          || latestEvent.value?.revision > current.revision)
+        apply(newer ? latestEvent : { generation: current.generation,
+          value: { revision: current.revision, service: current } })
+      } catch (error) { if (observer === owner && !closing) unavailable(error) }
+    })().finally(() => {
+      const again = pendingAcquire
+      pendingAcquire = false; acquiring = undefined
+      if (again && observer === owner && !closing && !connection && latestEvent?.value?.service?.ready === true) return acquire()
+    })
+    return acquiring
+  }
+  const observe = event => {
+    const previous = latestEvent
+    latestEvent = event
+    apply(event)
+    const becameReady = event.value?.service?.ready === true && (previous?.value?.service?.ready !== true
+      || event.generation !== previous.generation || event.value.service.instanceId !== previous.value.service.instanceId)
+    if (!connection && observer && becameReady) { pendingAcquire = true; void acquire() }
   }
   const start = async () => {
     if (closing) throw new Error('Web service is closed')
-    if (gateway) return gateway.localUrl
     if (starting) return starting
+    if (gateway) { await observer.refresh(); await acquire(); return gateway.localUrl }
     signal?.throwIfAborted()
     starting = (async () => {
-      try {
-        connection = await discover()
-        if (connection.ready) { upstreamReady = true; lastError = '' }
-        else unavailable(new Error(connection.message || 'DSH 服务尚未就绪'))
-      }
-      catch (error) { connection = undefined; unavailable(error) }
+      observer = await watchLauncherStatus(dataRoot, observe, { serviceOnly: true })
+      await acquire()
       const created = await startLanGateway({ host, port, password, allowLanSettings,
-        upstreamPort: connection?.port ?? null, authenticatedUrl: () => connection?.url, available })
+        upstreamPort: connection?.port ?? null, authenticatedUrl: () => connection?.url, available: () => upstreamReady })
       if (closing || signal?.aborted) { await created.close(); throw new Error('Web startup cancelled') }
       gateway = created
       instanceId = randomUUID()
-      timer = setInterval(() => { void available() }, 1000)
-      timer.unref()
       emit()
       return gateway.localUrl
     })()
-    try { return await starting } finally { starting = undefined }
+    try { return await starting }
+    catch (error) { observer?.close(); observer = undefined; throw error }
+    finally { starting = undefined }
   }
   const stop = async () => {
     await starting?.catch(() => {})
-    clearInterval(timer)
+    observer?.close(); observer = undefined
+    await acquiring
     const owned = gateway
     gateway = undefined
+    connection = undefined; latestEvent = undefined; upstreamReady = false
     instanceId = null
     await owned?.close()
     emit()
@@ -117,8 +148,6 @@ export async function startGlobalSupervisor({ dataRoot, host = '0.0.0.0', port =
 /** The detached Web process owns its gateway; launcher subscriptions only observe it. */
 export async function serveGlobalSupervisor({ dataRoot }) {
   const directory = webDirectory(dataRoot), socketPath = webSocket(dataRoot)
-  await privateDirectory(directory)
-  await privateDirectory(dirname(socketPath))
   const server = createServer()
   let supervisor, password, closing = false, mutation = Promise.resolve(), logWrites = Promise.resolve()
   let releaseState
@@ -164,54 +193,23 @@ export async function serveGlobalSupervisor({ dataRoot }) {
     updates.publish()
     return snapshot()
   }
-  server.on('connection', socket => {
-    let buffer = '', handled = false
-    socket.setTimeout(45_000, () => socket.destroy())
-    socket.setEncoding('utf8')
-    socket.on('error', () => {})
-    socket.on('data', chunk => {
-      buffer += chunk
-      if (buffer.length > 16 * 1024) { socket.destroy(); return }
-      if (handled || !buffer.includes('\n')) return
-      handled = true
-      let input
-      try {
-        input = JSON.parse(buffer.slice(0, buffer.indexOf('\n')))
-        if (input.protocol !== SERVICE_PROTOCOL) throw new Error('Web 服务协议不兼容，请使用配套应用。')
-        if (closing) throw new Error('Web 访问管理进程正在退出')
-        if (input.type === 'watch-status') { updates.subscribe(socket); return }
-      } catch (error) { socket.end(JSON.stringify({ ok: false, error: redact(error.message) }) + '\n'); return }
-      const operation = mutation.then(async () => command(input))
-      mutation = operation.catch(() => {})
-      void operation.then(value => socket.end(JSON.stringify({ ok: true, value }) + '\n'),
-        error => socket.end(JSON.stringify({ ok: false, error: redact(error.message) }) + '\n'))
-    })
-  })
-  try {
-    await new Promise((accept, reject) => {
-      server.once('error', reject)
-      const mask = process.umask(0o177)
-      try { server.listen(socketPath, () => { server.removeListener('error', reject); accept() }) }
-      finally { process.umask(mask) }
-    })
-  } catch (error) {
-    if (error.code === 'EADDRINUSE') return null
-    throw error
-  }
-  await chmod(socketPath, 0o600)
-  const statePath = join(directory, 'manager.json')
-  await writeFile(statePath, JSON.stringify({ pid: process.pid, protocol: SERVICE_PROTOCOL }) + '\n', { mode: 0o600, flag: 'wx' })
+  const closeChannels = attachManagerWebSocket(server, input => {
+    const operation = mutation.then(() => command(input))
+    mutation = operation.catch(() => {})
+    return operation
+  }, updates)
+  const control = await listenManagerControl(server, { directory, socketPath })
+  if (!control) { updates.close(); closeChannels(); return null }
+  if (control.backups.length) log(`已恢复失效的 Web 管理记录，原文件备份：${control.backups.join('，')}`)
   return { async close() {
     closing = true
     updates.close()
+    closeChannels()
     releaseState?.()
     await mutation
     await supervisor?.close()
-    await new Promise(accept => server.close(accept))
+    await control.close()
     await logWrites
-    await unlink(socketPath).catch(error => { if (error.code !== 'ENOENT') throw error })
-    await unlink(statePath)
-    await rmdir(dirname(socketPath))
   } }
 }
 

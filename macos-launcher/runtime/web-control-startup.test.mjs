@@ -29,6 +29,9 @@ test('published Web control sockets accept immediate owner requests without tran
         catch (error) { if (error.code !== 'ENOENT') throw error }
         try { await serviceRequest(owned.socket, { type: 'status' }, 1000) }
         catch (error) { if (error.code !== 'ENOENT') rejected.push(error.message) }
+        // Publication can finish during the awaited request; sample that boundary too.
+        try { modes.push(lstatSync(owned.socket).mode & 0o777) }
+        catch (error) { if (error.code !== 'ENOENT') throw error }
       }
       manager = await creating
       assert.equal((await serviceRequest(owned.socket, { type: 'status' })).web.state, 'stopped')

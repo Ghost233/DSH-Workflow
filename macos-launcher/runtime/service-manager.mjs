@@ -1,8 +1,8 @@
 import { fork } from 'node:child_process'
 import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
-import { appendFile, chmod, readFile, rmdir, unlink, writeFile } from 'node:fs/promises'
-import { dirname, join, delimiter } from 'node:path'
+import { appendFile, readFile } from 'node:fs/promises'
+import { join, delimiter } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createInterface } from 'node:readline'
@@ -10,7 +10,9 @@ import { randomUUID } from 'node:crypto'
 import { prepareDesktopProfile } from './desktop-profile.mjs'
 import { readDesktopHost } from './desktop-launch.mjs'
 import { dshReadiness } from '../../scripts/dsh-readiness.mjs'
-import { SERVICE_PROTOCOL, serviceDirectory, serviceSocket, privateDirectory, redact } from './service-control.mjs'
+import { SERVICE_PROTOCOL, serviceDirectory, serviceSocket, redact } from './service-control.mjs'
+import { listenManagerControl } from './manager-control.mjs'
+import { attachManagerWebSocket } from './manager-websocket.mjs'
 import { createServiceAdmission } from './service-admission.mjs'
 import { serviceNotification } from './service-notification.mjs'
 import { startupPluginResults } from './startup-plugins.mjs'
@@ -19,29 +21,19 @@ import { statusNotifications } from './status-notifications.mjs'
 /** The manager owns the official Host; GUI clients only send explicit management commands. */
 export async function serveManager({ dataRoot, resources, home }) {
   const directory = serviceDirectory(dataRoot), socketPath = serviceSocket(dataRoot)
-  await privateDirectory(directory)
-  await privateDirectory(dirname(socketPath))
   const server = createServer()
-  try {
-    await new Promise((accept, reject) => { server.once('error', reject); server.listen(socketPath, () => { server.removeListener('error', reject); accept() }) })
-  } catch (error) {
-    // Never unlink a socket that another starter may already own, or replace an unknown manager.
-    if (error.code === 'EADDRINUSE') return null
-    throw error
-  }
-  await chmod(socketPath, 0o600)
   let child, receipt, injections, admission, platformSession = null, starting, stopping, normalStop, stopOperation, failure = '', state = 'stopped', closing = false
-  let controlId = 0
+  let controlId = 0, statusRevision = 0
   let notificationAuthorization, authorizing
   let preparingStop = false
   const shellRead = new AbortController()
   let shellEnvironment
   let logWrites = Promise.resolve()
   const logs = []
-  let lastHealth = { ready: false, message: null }
+  let validatedReady = false, lastHealth = { ready: false, message: null }
   const publicSnapshot = () => {
     const paused = stopOperation?.owned === child && admission?.locked
-    return { protocol: SERVICE_PROTOCOL, service: {
+    return { protocol: SERVICE_PROTOCOL, revision: ++statusRevision, service: {
       state, ready: state === 'running' && lastHealth.ready && !paused,
       instanceId: receipt?.lease ?? null, pid: child?.pid ?? null,
       runtimeVersion: receipt?.runtimeVersion ?? null,
@@ -216,7 +208,7 @@ export async function serveManager({ dataRoot, resources, home }) {
         const current = await readDesktopHost(join(dataRoot, 'global/.dsh-workflow/desktop'))
         if (current.lease !== receipt.lease || current.pid !== child.pid) throw new Error('DSH service identity changed')
         identityVerified = true
-        ready = (await health(current)).ready === true
+        ready = validatedReady
       } catch (error) { message = redact(error.message) }
     }
     lastHealth = { ready, message }
@@ -234,7 +226,7 @@ export async function serveManager({ dataRoot, resources, home }) {
           await readDesktopHost(join(dataRoot, 'global/.dsh-workflow/desktop'))
           throw new Error('检测到已有 DSH 实例。请先保存工作并退出旧版 Desktop，再启动独立服务。')
         } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error }
-        state = 'starting'; failure = ''; receipt = undefined; injections = undefined; platformSession = null
+        state = 'starting'; failure = ''; receipt = undefined; injections = undefined; platformSession = null; validatedReady = false
         log('正在准备原有 DSH profile 与项目插件。')
         const contents = join(resources, 'desktop/DeepSeek Harness.app/Contents')
         const desktopResources = join(contents, 'Resources')
@@ -311,7 +303,8 @@ export async function serveManager({ dataRoot, resources, home }) {
             catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; await delay(20) }
           }
           if (!actual || actual.pid !== owned.pid || actual.url !== message.url) throw new Error('DSH readiness receipt does not identify the owned Host')
-          lastHealth = { ready: (await health(actual)).ready === true, message: null }
+          validatedReady = (await health(actual)).ready === true
+          lastHealth = { ready: validatedReady, message: null }
           for (const result of await startupPluginResults({ resourcesRoot: resources, url: actual.url, preparation: profile.startup })) {
             log(`项目启动插件：${JSON.stringify(result)}`)
           }
@@ -334,77 +327,64 @@ export async function serveManager({ dataRoot, resources, home }) {
     })()
     try { await starting } finally { starting = undefined }
   }
-  server.on('connection', socket => {
-    let buffer = '', handled = false
-    socket.setTimeout(45_000, () => socket.destroy())
-    socket.setEncoding('utf8')
-    socket.on('error', () => {})
-    socket.on('data', chunk => {
-      buffer += chunk
-      if (buffer.length > 16 * 1024) { socket.destroy(); return }
-      if (handled || !buffer.includes('\n')) return
-      handled = true
-      void (async () => {
-        try {
-          const input = JSON.parse(buffer.slice(0, buffer.indexOf('\n')))
-          if (input.protocol !== SERVICE_PROTOCOL) throw new Error('DSH 服务协议不兼容，请使用配套应用。')
-          if (closing) throw new Error('DSH 服务管理进程正在退出')
-          if (input.type === 'watch-status') { updates.subscribe(socket); return }
-          let stopInspection
-          if (input.type === 'start-service') await start(input.permissionMode)
-          else if (input.type === 'authorize-notifications') {
-            if (!authorizing) {
-              notificationAuthorization = { authorizationRequest: { state: 'requesting' }, observedAt: new Date().toISOString() }
-              authorizing = serviceNotification(resources, 'authorize')
-                .then(result => { notificationAuthorization = result; log(`DSH 服务通知授权：${JSON.stringify(result)}`) })
-                .catch(error => {
-                  notificationAuthorization = { available: false, authorizationRequest: { state: 'unknown' },
-                    message: `macOS 通知授权结果未知：${redact(error.message)}` }
-                  log(notificationAuthorization.message)
-                })
-                .finally(() => { authorizing = undefined; updates.publish() })
-            }
-          }
-          else if (input.type === 'notification-status') {
-            notificationAuthorization = await serviceNotification(resources, 'status')
-            log(`DSH 服务通知状态：${JSON.stringify(notificationAuthorization)}`)
-          }
-          else if (input.type === 'inspect-stop') stopInspection = await prepareStop(input.action)
-          else if (input.type === 'cancel-stop') {
-            if (stopping) throw new Error('DSH 停止操作已经执行，无法返回确认阶段。')
-            if (stopOperation) {
-              if (stopOperation.operationId !== input.operationId) throw new Error('DSH 停止操作已过期')
-              await releaseStop(stopOperation); stopOperation = undefined
-            }
-          }
-          else if (['stop-service', 'restart-service'].includes(input.type)) {
-            stopInspection = await stop(input)
-            if (!stopInspection && input.type === 'restart-service') await start(input.permissionMode)
-          }
-          else if (!['status', 'logs', 'connect-web', 'connect-desktop'].includes(input.type)) throw new Error('Unsupported DSH service command')
-          const { value, identityVerified } = await snapshot()
-          if (stopInspection) value.stop = stopInspection
-          if (['connect-web', 'connect-desktop'].includes(input.type)) {
-            const paused = identityVerified && stopOperation?.owned === child && admission?.locked
-            if (value.service.ready !== true && !paused || !receipt || !child || !injections || !admission) {
-              throw new Error('DSH 服务未启动或暂不可用，请先启动 DSH 服务。')
-            }
-            if (input.runtimeVersion !== receipt.runtimeVersion) throw new Error('DSH 服务接入版本不兼容，请使用配套应用。')
-            value.connection = { instanceId: receipt.lease, pid: receipt.pid,
-              runtimeVersion: receipt.runtimeVersion, url: admission.url, injections }
-            // Only Electron main requests this local private response; it is never part of the Web descriptor.
-            if (input.type === 'connect-desktop') value.platformSession = platformSession
-          }
-          socket.end(JSON.stringify({ ok: true, value }) + '\n')
-        } catch (error) { socket.end(JSON.stringify({ ok: false, error: redact(error.message) }) + '\n') }
-      })()
-    })
-  })
-  const statePath = join(directory, 'manager.json')
-  await writeFile(statePath, JSON.stringify({ pid: process.pid, protocol: SERVICE_PROTOCOL }) + '\n', { mode: 0o600, flag: 'wx' })
+  const command = async input => {
+    if (input.protocol !== SERVICE_PROTOCOL) throw new Error('DSH 服务协议不兼容，请使用配套应用。')
+    if (closing) throw new Error('DSH 服务管理进程正在退出')
+    let stopInspection
+    if (input.type === 'start-service') await start(input.permissionMode)
+    else if (input.type === 'authorize-notifications') {
+      if (!authorizing) {
+        notificationAuthorization = { authorizationRequest: { state: 'requesting' }, observedAt: new Date().toISOString() }
+        authorizing = serviceNotification(resources, 'authorize')
+          .then(result => { notificationAuthorization = result; log(`DSH 服务通知授权：${JSON.stringify(result)}`) })
+          .catch(error => {
+            notificationAuthorization = { available: false, authorizationRequest: { state: 'unknown' },
+              message: `macOS 通知授权结果未知：${redact(error.message)}` }
+            log(notificationAuthorization.message)
+          })
+          .finally(() => { authorizing = undefined; updates.publish() })
+      }
+    }
+    else if (input.type === 'notification-status') {
+      notificationAuthorization = await serviceNotification(resources, 'status')
+      log(`DSH 服务通知状态：${JSON.stringify(notificationAuthorization)}`)
+    }
+    else if (input.type === 'inspect-stop') stopInspection = await prepareStop(input.action)
+    else if (input.type === 'cancel-stop') {
+      if (stopping) throw new Error('DSH 停止操作已经执行，无法返回确认阶段。')
+      if (stopOperation) {
+        if (stopOperation.operationId !== input.operationId) throw new Error('DSH 停止操作已过期')
+        await releaseStop(stopOperation); stopOperation = undefined
+      }
+    }
+    else if (['stop-service', 'restart-service'].includes(input.type)) {
+      stopInspection = await stop(input)
+      if (!stopInspection && input.type === 'restart-service') await start(input.permissionMode)
+    }
+    else if (!['status', 'logs', 'connect-web', 'connect-desktop'].includes(input.type)) throw new Error('Unsupported DSH service command')
+    const { value, identityVerified } = await snapshot()
+    if (stopInspection) value.stop = stopInspection
+    if (['connect-web', 'connect-desktop'].includes(input.type)) {
+      const paused = identityVerified && stopOperation?.owned === child && admission?.locked
+      if (value.service.ready !== true && !paused || !receipt || !child || !injections || !admission) {
+        throw new Error('DSH 服务未启动或暂不可用，请先启动 DSH 服务。')
+      }
+      if (input.runtimeVersion !== receipt.runtimeVersion) throw new Error('DSH 服务接入版本不兼容，请使用配套应用。')
+      value.connection = { instanceId: receipt.lease, pid: receipt.pid,
+        runtimeVersion: receipt.runtimeVersion, url: admission.url, injections }
+      // Only Electron main requests this local private response; it is never part of the Web descriptor.
+      if (input.type === 'connect-desktop') value.platformSession = platformSession
+    }
+    return value
+  }
+  const closeChannels = attachManagerWebSocket(server, command, updates)
+  const control = await listenManagerControl(server, { directory, socketPath })
+  if (!control) { updates.close(); closeChannels(); return null }
+  if (control.backups.length) log(`已恢复失效的服务管理记录，原文件备份：${control.backups.join('，')}`)
   return { async close() {
     closing = true
     updates.close()
+    closeChannels()
     shellRead.abort()
     await starting?.catch(() => {})
     const owned = child
@@ -416,11 +396,8 @@ export async function serveManager({ dataRoot, resources, home }) {
       try { await exited } finally { clearTimeout(terminate); clearTimeout(force) }
     }
     await authorizing
-    await new Promise(accept => server.close(accept))
+    await control.close()
     await logWrites
-    await unlink(socketPath).catch(error => { if (error.code !== 'ENOENT') throw error })
-    await unlink(statePath)
-    await rmdir(dirname(socketPath))
   } }
 }
 

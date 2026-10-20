@@ -5,9 +5,11 @@ import net from 'node:net'
 import { createHash, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { dirname } from 'node:path'
 import { startGlobalSupervisor } from './global-supervisor.mjs'
-import { privateDirectory, SERVICE_PROTOCOL, serviceSocket } from './service-control.mjs'
+import { SERVICE_PROTOCOL, serviceSocket, serviceDirectory } from './service-control.mjs'
+import { attachManagerWebSocket } from './manager-websocket.mjs'
+import { listenManagerControl } from './manager-control.mjs'
+import { statusNotifications } from './status-notifications.mjs'
 
 // This is the protected discovery/admission protocol boundary, not a substitute
 // for the separate real official Host + SDK + accepted-task acceptance cases.
@@ -31,41 +33,37 @@ for (const initiallyPaused of [false, true]) {
         + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
       socket.write('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n')
     })
-    const control = net.createServer(socket => {
-      let input = ''
-      socket.setEncoding('utf8')
-      socket.on('data', data => {
-        input += data
-        if (!input.includes('\n')) return
-        const request = JSON.parse(input.slice(0, input.indexOf('\n')))
-        requests.push(request)
-        socket.end(JSON.stringify({ ok: true, value: {
-          protocol: SERVICE_PROTOCOL,
-          service: { state: 'running', ready, instanceId, pid: process.pid,
-            runtimeVersion: runtime.version, message: ready ? null : pauseMessage },
-          logs: [],
-          connection: { instanceId, pid: process.pid, runtimeVersion: runtime.version,
-            url: `http://127.0.0.1:${upstream.address().port}/?token=owned-admission-fixture`, injections: {} },
-        } }) + '\n')
-      })
-    })
+    let revision = 0
+    const snapshot = () => ({ protocol: SERVICE_PROTOCOL, revision: ++revision,
+      service: { state: 'running', ready, instanceId, pid: process.pid,
+        runtimeVersion: runtime.version, message: ready ? null : pauseMessage }, logs: [] })
+    const updates = statusNotifications(snapshot), control = net.createServer()
+    const closeChannels = attachManagerWebSocket(control, async request => {
+      requests.push(request)
+      return { ...snapshot(), connection: { instanceId, pid: process.pid, runtimeVersion: runtime.version,
+        url: `http://127.0.0.1:${upstream.address().port}/?token=owned-admission-fixture`, injections: {} } }
+    }, updates)
+    let binding
     t.after(async () => {
       websocket?.destroy()
       await supervisor?.close()
-      await new Promise(accept => control.close(accept))
+      updates.close(); closeChannels(); await binding?.close()
       for (const socket of sockets) socket.destroy()
       await new Promise(accept => upstream.close(accept))
-      await rm(dirname(socketPath), { recursive: true, force: true })
       await rm(root, { recursive: true, force: true })
     })
     upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening')
-    await privateDirectory(dirname(socketPath))
-    const published = once(control, 'listening')
-    const mask = process.umask(0o177)
-    try { control.listen(socketPath) } finally { process.umask(mask) }
-    await published
+    binding = await listenManagerControl(control, { directory: serviceDirectory(root), socketPath })
     supervisor = await startGlobalSupervisor({ dataRoot: root, host: '127.0.0.1', port: 0, password: 'owned-admission-fixture' })
     const webInstance = supervisor.global().instanceId, webPort = supervisor.port
+    const publishReady = value => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { release(); reject(new Error('Web did not consume the pushed readiness event')) }, 1000)
+      const release = supervisor.onState(current => {
+        if (current.ready === value) { clearTimeout(timer); release(); resolve() }
+      })
+      ready = value
+      updates.publish()
+    })
     const get = async cookie => {
       const response = await fetch(supervisor.localUrl + 'api/owned', { headers: cookie ? { cookie } : {} })
       const code = response.status
@@ -76,7 +74,7 @@ for (const initiallyPaused of [false, true]) {
       assert.equal(await get(), 503)
       assert.equal(supervisor.global().ready, false)
       assert.match(supervisor.global().error, /等待停止或重启确认/)
-      ready = true
+      await publishReady(true)
     }
     const login = await fetch(supervisor.localUrl + 'login', { method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -90,7 +88,7 @@ for (const initiallyPaused of [false, true]) {
     await once(websocket, 'connect')
     websocket.write(`GET /socket HTTP/1.1\r\nHost: 127.0.0.1:${webPort}\r\nCookie: ${cookie}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: b3duZWQtcmVhZGluZXNz\r\n\r\n`)
     assert.match(String((await once(websocket, 'data'))[0]), /^HTTP\/1.1 101/)
-    ready = false
+    await publishReady(false)
     assert.equal(await get(cookie), 503)
     assert.equal(supervisor.global().state, 'running')
     assert.equal(supervisor.global().ready, false)
@@ -99,14 +97,14 @@ for (const initiallyPaused of [false, true]) {
     assert.equal(supervisor.global().serviceInstanceId, instanceId)
     assert.equal(supervisor.port, webPort)
     assert.equal(websocket.destroyed, false)
-    ready = true
+    await publishReady(true)
     assert.equal(await get(cookie), 200, 'cancel preserves the authenticated Web session')
     assert.equal(supervisor.global().ready, true)
     assert.equal(supervisor.global().error, '')
     assert.equal(supervisor.global().instanceId, webInstance)
     assert.equal(supervisor.global().serviceInstanceId, instanceId)
     assert.equal(websocket.destroyed, false)
-    assert.ok(requests.length >= 3)
+    assert.equal(requests.length, 1, 'the same WebSocket uses pushed state without rediscovering the Host')
     assert.ok(requests.every(request => request.type === 'connect-web'
       && request.protocol === SERVICE_PROTOCOL && request.runtimeVersion === runtime.version),
     'the Web entry only discovers the existing service; it never starts or stops it')

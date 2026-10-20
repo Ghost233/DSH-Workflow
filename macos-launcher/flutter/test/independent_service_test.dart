@@ -194,6 +194,19 @@ void main() {
         resources,
         loginStatus: 'enabled',
       );
+      final inventoryReads = File('${root.path}/manager-inventory-reads');
+      final inventoryProbe = File('${root.path}/inventory-probe.mjs');
+      await inventoryProbe.writeAsString('''
+import { appendFileSync } from 'node:fs';
+const original = globalThis.fetch;
+globalThis.fetch = (input, ...args) => {
+  const url = new URL(input instanceof Request ? input.url : input);
+  if (process.argv[1]?.endsWith('/service-manager.mjs') && url.pathname === '/api/pluginInventory/list') {
+    appendFileSync(${jsonEncode(inventoryReads.path)}, 'inventory' + String.fromCharCode(10));
+  }
+  return original(input, ...args);
+};
+''');
       LauncherController controller() => LauncherController(
         native,
         startProcess:
@@ -207,6 +220,7 @@ void main() {
                     'HOME': '${root.path}/os-home',
                     'ZDOTDIR': '${root.path}/os-home',
                     'TMPDIR': root.path,
+                    'NODE_OPTIONS': '--import=${Uri.file(inventoryProbe.path)}',
                   },
                 ),
       );
@@ -252,6 +266,25 @@ void main() {
         final running = status['result'] as Map;
         expect(running['state'], 'running');
         expect(running['ready'], true);
+        final startupAudits = (await inventoryReads.readAsLines()).length;
+        expect(
+          startupAudits,
+          greaterThan(0),
+          reason: 'Startup must still run the real plugin-policy audit',
+        );
+        for (var attempt = 0; attempt < 10; attempt++) {
+          final observed = await first.sendRequest(
+            attempt.isEven ? 'status' : 'logs',
+            serviceId: 'desktop',
+            timeout: const Duration(seconds: 5),
+          );
+          expect(observed['error'], isNull, reason: '$observed');
+        }
+        expect(
+          (await inventoryReads.readAsLines()).length,
+          startupAudits,
+          reason: 'Status/log reads must never wake the real Host for another plugin inventory audit',
+        );
         expect(
           running['instanceId'],
           isA<String>().having(

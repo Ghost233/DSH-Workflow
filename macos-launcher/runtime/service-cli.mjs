@@ -8,7 +8,7 @@ import { serviceRequest, serviceSocket, serviceDirectory, privateDirectory, reda
 async function ensureServiceManager({ dataRoot, resources, home }) {
   const socket = serviceSocket(dataRoot)
   try { await serviceRequest(socket, { type: 'status' }); return socket }
-  catch (error) { if (error.code !== 'ENOENT') throw error }
+  catch (error) { if (!['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw error }
   await privateDirectory(serviceDirectory(dataRoot))
   const log = await open(join(serviceDirectory(dataRoot), 'manager.log'), 'a', 0o600)
   try {
@@ -46,7 +46,7 @@ if (import.meta.main) {
     let value
     try { value = await serviceRequest(socket, request) }
     catch (error) {
-      if (['status', 'logs'].includes(request.type) && error.code === 'ENOENT') {
+      if (['status', 'logs'].includes(request.type) && ['ENOENT', 'ECONNREFUSED'].includes(error.code)) {
         value = { service: { state: 'stopped', ready: false, observedAt: new Date().toISOString() }, logs: [] }
       } else if (request.type === 'connect-web' && ['ENOENT', 'ECONNREFUSED'].includes(error.code)) {
         throw new Error('DSH 服务未启动或暂不可用，请先启动 DSH 服务。')

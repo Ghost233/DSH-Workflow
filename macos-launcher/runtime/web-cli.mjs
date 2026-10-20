@@ -9,7 +9,7 @@ import { webDirectory, webSocket } from './web-control.mjs'
 async function ensureWeb({ dataRoot, resources }) {
   const socket = webSocket(dataRoot)
   try { await serviceRequest(socket, { type: 'status' }); return socket }
-  catch (error) { if (error.code !== 'ENOENT') throw error }
+  catch (error) { if (!['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw error }
   await privateDirectory(webDirectory(dataRoot))
   const log = await open(join(webDirectory(dataRoot), 'manager.log'), 'a', 0o600)
   try {
@@ -44,7 +44,7 @@ if (import.meta.main) {
     let value
     try { value = await serviceRequest(socket, request) }
     catch (error) {
-      if (['status', 'logs', 'recycle-web'].includes(request.type) && error.code === 'ENOENT') {
+      if (['status', 'logs', 'recycle-web'].includes(request.type) && ['ENOENT', 'ECONNREFUSED'].includes(error.code)) {
         value = { protocol: SERVICE_PROTOCOL, web: { state: 'stopped', ready: false, observedAt: new Date().toISOString() }, logs: [] }
       } else throw error
     }

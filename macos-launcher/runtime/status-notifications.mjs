@@ -1,4 +1,4 @@
-import { SERVICE_PROTOCOL, redact, connectServiceSocket } from './service-control.mjs'
+import { connectManagerChannel } from './manager-websocket.mjs'
 
 /** Read-only control connections receive snapshots only when their contents change. */
 export function statusNotifications(snapshot) {
@@ -11,63 +11,37 @@ export function statusNotifications(snapshot) {
       queued = false
       if (closed) return
       const value = snapshot()
-      const fingerprint = JSON.stringify({ ...value,
+      const fingerprint = JSON.stringify({ ...value, revision: undefined,
         ...(value.service ? { service: { ...value.service, observedAt: undefined } } : {}),
         ...(value.web ? { web: { ...value.web, observedAt: undefined } } : {}),
       })
       const line = JSON.stringify({ ok: true, value }) + '\n'
-      for (const [socket, previous] of clients) {
-        if (fingerprint === previous) continue
-        if (socket.writableLength > 4 * 1024 * 1024) { socket.destroy(); continue }
-        clients.set(socket, fingerprint)
-        socket.write(line)
+      for (const client of clients.values()) {
+        if (fingerprint === client.previous) continue
+        if (client.pending() > 4 * 1024 * 1024) { client.close(); continue }
+        client.previous = fingerprint
+        client.write(line)
       }
     })
   }
   return {
     publish,
-    subscribe(socket) {
-      socket.setTimeout(0)
-      clients.set(socket, null)
+    subscribe(socket, { webSocket = false } = {}) {
+      socket.setTimeout?.(0)
+      clients.set(socket, { previous: null,
+        write: line => webSocket ? socket.send(line) : socket.write(line),
+        pending: () => webSocket ? socket.bufferedAmount : socket.writableLength,
+        close: () => webSocket ? socket.terminate() : socket.destroy() })
       socket.once('close', () => clients.delete(socket))
       publish()
     },
-    close() { closed = true; for (const socket of clients.keys()) socket.destroy(); clients.clear() },
+    close() { closed = true; for (const client of clients.values()) client.close(); clients.clear() },
   }
 }
 
-/** Consume the same private local socket without request timers or heartbeats. */
+/** One duplex WebSocket; no idle requests, reconnect timers or heartbeats. */
 export async function watchServiceStatus(socketPath, onValue, onFailure) {
-  const socket = await connectServiceSocket(socketPath)
-  let buffer = '', closed = false
-  const fail = error => {
-    if (closed) return
-    closed = true
-    socket.destroy()
-    onFailure(new Error(redact(error.message)))
-  }
-  socket.setEncoding('utf8')
-  socket.on('error', fail)
-  socket.once('close', () => fail(new Error('状态通知连接已断开。')))
-  socket.once('connect', () => socket.write(JSON.stringify({ protocol: SERVICE_PROTOCOL, type: 'watch-status' }) + '\n'))
-  socket.on('data', chunk => {
-    buffer += chunk
-    if (buffer.length > 4 * 1024 * 1024) { fail(new Error('状态通知超过大小限制。')); return }
-    let end
-    while (!closed && (end = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, end); buffer = buffer.slice(end + 1)
-      try {
-        const reply = JSON.parse(line)
-        if (reply.ok !== true) {
-          const message = /^Unsupported (DSH|Web) service command$/.test(reply.error || '')
-            ? '当前管理进程不支持状态通知，请在任务结束后更新并重启服务。'
-            : reply.error || '状态通知不可用。'
-          throw new Error(message)
-        }
-        if (reply.value?.protocol !== SERVICE_PROTOCOL) throw new Error('状态通知协议不兼容。')
-        onValue(reply.value)
-      } catch (error) { fail(error) }
-    }
-  })
-  return { close() { closed = true; socket.destroy() } }
+  const channel = await connectManagerChannel(socketPath, { onStatus: onValue, onFailure })
+  try { await channel.request({ type: 'watch-status' }); return channel }
+  catch (error) { channel.close(); throw error }
 }

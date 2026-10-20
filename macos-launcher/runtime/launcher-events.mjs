@@ -7,13 +7,14 @@ import { webSocket } from './web-control.mjs'
 import { watchServiceStatus } from './status-notifications.mjs'
 
 /** One idle local subscriber; only manager-record events or an explicit refresh reconnect it. */
-export async function watchLauncherStatus(dataRoot, publish) {
+export async function watchLauncherStatus(dataRoot, publish, { serviceOnly = false } = {}) {
   let closed = false
   const sources = [
     { name: 'service', record: 'global/.dsh-workflow/service/manager.json', socket: serviceSocket(dataRoot) },
     { name: 'web', record: 'global/.dsh-workflow/web/manager.json', socket: webSocket(dataRoot) },
   ]
-  const notify = (source, event) => { if (!closed) publish({ source: source.name, ...event }) }
+  if (serviceOnly) sources.pop()
+  const notify = (source, event) => { if (!closed) publish({ source: source.name, generation: source.generation, ...event }) }
   const reconnect = source => {
     source.pending = true
     if (source.running || closed) return source.running
@@ -29,15 +30,25 @@ export async function watchLauncherStatus(dataRoot, publish) {
         const generation = source.generation = (source.generation || 0) + 1
         if (record === null) { notify(source, { missing: true, error: '服务管理进程尚未运行。' }); continue }
         try {
+          let initial, connected = false, failed
           const connection = await watchServiceStatus(source.socket,
-            value => { if (source.generation === generation) notify(source, { value }) },
+            value => {
+              if (source.generation !== generation) return
+              if (connected) notify(source, { value })
+              else initial = value
+            },
             error => {
               if (source.generation !== generation) return
+              if (!connected) { failed = error; return }
               source.connection = undefined
               notify(source, { error: redact(error.message) })
             })
+          if (failed) { connection.close(); throw failed }
           if (closed || source.generation !== generation) connection.close()
-          else source.connection = connection
+          else {
+            source.connection = connection; connected = true
+            if (initial) notify(source, { value: initial })
+          }
         } catch (error) { notify(source, { error: redact(error.message) }) }
       }
     })().catch(error => notify(source, { error: redact(error.message) }))
@@ -51,7 +62,12 @@ export async function watchLauncherStatus(dataRoot, publish) {
   watcher.on('error', error => { for (const source of sources) notify(source, { error: redact(error.message) }) })
   await Promise.all(sources.map(reconnect))
   return {
-    refresh() { for (const source of sources) void reconnect(source) },
+    requestService(input) {
+      if (!sources[0].connection) throw new Error('DSH 服务管理连接不可用，请先启动服务或重新连接。')
+      const generation = sources[0].generation
+      return sources[0].connection.request(input).then(value => ({ value, generation }))
+    },
+    refresh() { return Promise.all(sources.map(reconnect)) },
     close() {
       if (closed) return
       closed = true; watcher.close()

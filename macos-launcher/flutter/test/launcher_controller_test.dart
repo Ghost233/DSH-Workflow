@@ -166,6 +166,9 @@ Future<({LauncherController model, Directory root})> fixture({
     );
     for (final name in [
       'global-supervisor.mjs',
+      'launcher-events.mjs',
+      'manager-control.mjs',
+      'manager-websocket.mjs',
       'lan-gateway.mjs',
       'lan-settings-client.mjs',
       'web-control.mjs',
@@ -175,6 +178,8 @@ Future<({LauncherController model, Directory root})> fixture({
       await File('${launcher.path}/runtime/$name')
           .copy('${scripts.path}/$name');
     }
+    await Link('${root.path}/node_modules')
+        .create('${launcher.path}/node_modules');
     await File('${launcher.path}/runtime/web-cli.mjs')
         .copy('${scripts.path}/web-cli-runtime.mjs');
     await File('${launcher.parent.path}/dsh-runtime.json')
