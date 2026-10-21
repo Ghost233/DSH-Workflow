@@ -1,5 +1,7 @@
 # 来源与署名
 
-本目录派生自 [FeatherHunter/dsh-mattpocock-skills-deck](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck)，上游基准为 1428661e2cbdd543c37bc56b6182a1b7732fe11e（1.8.0-rc.7，npm 发布来源）。
+本目录派生自 [FeatherHunter/dsh-mattpocock-skills-deck](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck)，上游基准为 ea0dc0736bbfe9fea0fbe4753a524ab4fc007493（1.9.0-beta.5，npm 发布来源）。
 
-保留上游 MIT 许可证和源码中的署名。Ghost233 在 DSH Workflow 中维护面板专用改动。日志产物来自已发布的 dsh-log 0.2.2，许可证保留在 `licenses/dsh-log.LICENSE`，构建时复制为包内的 `dsh-log.LICENSE`。
+保留上游 MIT 许可证和源码中的署名。Ghost233 在 DSH Workflow 中维护面板专用改动。日志产物来自 dsh-log 0.3.4，MIT 许可证保留为包内的 `dsh-log.LICENSE`。YAML 解析来自 yaml 2.9.1，ISC 许可证随包保留为 `yaml.LICENSE`。
+
+构建将两项生产依赖内嵌到 `package/vendor/`，生成的宿主代码使用包内相对引用。源码仍按原包名导入，运行端无需安装依赖。

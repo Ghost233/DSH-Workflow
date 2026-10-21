@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGhAccount } from '../src/host/ghAccount.js'
-import { createRepoKeys } from '../src/host/repoKeys.js'
+import { createRepoKeys } from '../src/host/git-process.js'
 import { createPlatformChannel } from '../src/host/platformChannel.js'
 import { createGhAccountWiring } from '../src/host/ghAccountWiring.js'
 
@@ -363,5 +363,24 @@ test('detectionExec 的 spawn spec 带上按 opts.cwd 解析出的 GH_CONFIG_DIR
   assert.deepEqual(capture.specs[0].env, { GH_CONFIG_DIR: '/profiles/Ghost233' })
 
   await channel.detectionExec('gh', ['api', 'user'], { cwd: '/elsewhere' }, 'test')
+  assert.equal(capture.specs[1].env, undefined)
+})
+
+
+test('an unknown workspace never falls back to a process-directory account', async () => {
+  const capture = captureSpawn()
+  const keys = repoKeysWith(capture.subprocess, { '/default': { GH_CONFIG_DIR: '/profiles/unrelated' } })
+  assert.equal((await keys.runGh(['api', 'user'], '   ')).kind, 'env')
+  assert.equal(capture.specs.length, 0)
+  await keys.execProc(['git', '--version'], '', 'test')
+  assert.equal(capture.specs[0].env, undefined)
+  let reads = 0
+  const channel = createPlatformChannel({
+    ctx: { get: () => undefined }, subprocess: capture.subprocess,
+    timer: { timeout: () => new Promise(() => {}) }, DEFAULT_CWD: '', TIMEOUT_MS: 1000,
+    accountEnvFor: async () => { reads++; return { GH_CONFIG_DIR: '/profiles/unrelated' } },
+  })
+  await channel.detectionExec('gh', ['--version'], {}, 'test')
+  assert.equal(reads, 0)
   assert.equal(capture.specs[1].env, undefined)
 })

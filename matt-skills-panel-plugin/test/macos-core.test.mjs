@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readCommand, detectWrite } from '../src/shared/refresh/write-detect.js'
-import { classifyCreateWriteAttempt, decideCreateWriteRetry } from '../src/shared/refresh/create-write.js'
-import { chainTicketAndEffortFromPath } from '../src/shared/refresh/chain.js'
-import { shortestUniqueSuffix, displayFor, assemble } from '../src/shared/version-control/state.js'
+import { readCommand, detectWrite } from '../src/shared/refresh/src/write-detect.js'
+import { classifyCreateWriteAttempt, decideCreateWriteRetry } from '../src/shared/refresh/src/create-write.js'
+import { chainTicketAndEffortFromPath } from '../src/shared/refresh/src/chain.js'
+import { shortestUniqueSuffix, displayFor, assemble } from '../src/shared/version-control/src/state.js'
 
 test('Windows executable spellings are not promoted to POSIX issue writes', () => {
   for (const command of ['gh.exe issue close 42', 'gh.bat issue close 42', 'gh.ps1 issue close 42', '"C:\\tools\\gh.cmd" issue close 42', 'powershell -Command "gh issue close 42"']) {

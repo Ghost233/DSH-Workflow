@@ -5,9 +5,11 @@ import nodePath from 'node:path'
 import { keyOf, currentOs } from '../src/shared/workspaceKey.js'
 import { normalizeWorkspacePath, parentWorkspaceDir, canonicalWorkspaceKey } from '../src/host/workspaceKey.js'
 import { workspaceNormOf, resolveWorkspaceEntry } from '../src/client/kernel/api-workspace.js'
-import { getRoot, mdPath } from '../src/host/tracker/backends/markdown/path.js'
-import { getScratchRoot } from '../src/host/tracker/backends/markdown/issues-locate.js'
+import { getRoot, mdPath } from '../src/tracker/rooms/markdown/path.js'
+import { getScratchRoot } from '../src/tracker/rooms/markdown/issues-locate.js'
 import { createPublishFlow } from '../src/host/publishFlow.js'
+import { makeCreateErrorClassifier, KIND_UNKNOWN } from '../src/tracker/rooms/github/init-project-error-kinds.js'
+import { initProject } from '../src/tracker/rooms/github/init-project.js'
 import { createPlatformChannel } from '../src/host/platformChannel.js'
 import { createSkillProbe } from '../src/host/skillProbe.js'
 
@@ -79,10 +81,12 @@ test('public platform composition also rejects unsupported adapter overrides', a
 
 test('missing CLI guidance exposes only macOS installation without executing a command', async () => {
   const forbid = () => { throw new Error('no external command expected') }
-  const flow = createPublishFlow({ DEFAULT_CWD: '/Users/Matt/Project', resolveGit: async () => '/mock/git', resolveGh: async () => null, getGhLastError: () => '', runGh: forbid, execProc: forbid })
-  const host = await flow.handleInitPublish({ name: 'project' })
+  const flow = createPublishFlow({ DEFAULT_CWD: '/Users/Matt/Project', resolveGit: async () => '/mock/git', resolveGh: async () => null, getGhLastError: () => '', runGh: forbid, execProc: forbid, makeCreateErrorClassifier, KIND_UNKNOWN })
+  const host = await flow.handleInitPublish({ name: 'project', cwd: '/Users/Matt/Project' })
   assert.equal(host.errorKind, 'no-gh')
-  for (const prompt of [host.prompt]) {
+  const backend = await initProject({ cwd: '/Users/Matt/Project' }, { name: 'project' }, { platform: { resolveExecutable: async name => name === 'git' ? '/mock/git' : null } })
+  assert.equal(backend.error.kind, 'no-gh')
+  for (const prompt of [host.prompt, backend.error.prompt]) {
     assert.match(prompt, /brew install gh/)
     assert.doesNotMatch(prompt, /Windows|Linux|winget|scoop|apt install/)
   }

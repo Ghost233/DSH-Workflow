@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { workspaceWriteKey, fileWriteKey, withFileWriter } from '../src/host/tracker/backends/markdown/write-queue.js'
+import { workspaceWriteKey, fileWriteKey, withFileWriter } from '../src/tracker/rooms/markdown/write-queue.js'
 import { createRunningMarkers } from '../src/host/runningMarkers.js'
 
 test('the shared Markdown writer preserves distinct macOS files and workspace names', () => {
@@ -41,8 +41,8 @@ test('running markers fall back to Git while preserving a literal macOS director
 })
 
 import { createSkillDoc } from '../src/host/skillDoc.js'
-import { readRepoPermissions } from '../src/host/tracker/backends/github/repo-permissions.js'
-import { halfOpenTrialIsDue, recordFailure } from '../src/shared/refresh/failure-window.js'
+import { readRepoPermissions } from '../src/tracker/rooms/github/repo-permissions.js'
+import { halfOpenTrialIsDue, recordFailure } from '../src/shared/refresh/src/failure-window.js'
 
 test('skill details use the registered Chinese provider and preserve the requested workspace', async () => {
   const calls = []
@@ -86,12 +86,13 @@ test('failed refreshes reopen only after the backoff window', () => {
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { transformSync } from 'esbuild'
+import { SKILL_SKELETON_DELAY_MS } from '../src/shared/time-config/values.js'
 
 test('detail UI isolates workspace results and offers retry when the provider is unavailable', async () => {
   const calls = []
   const context = vm.createContext({
     host: { call: async (_method, args) => { calls.push(args); return args.cwd === '/unavailable' ? { ok: false, missing: false } : { ok: true, md: args.cwd, path: args.cwd + '/SKILL.md' } } },
-    tr: key => key, emit() {}, log() {}, setTimeout, clearTimeout,
+    tr: key => key, emit() {}, log() {}, setTimeout, clearTimeout, SKILL_SKELETON_DELAY_MS,
   })
   const source = readFileSync(new URL('../src/client/views/skillDetail/PixelSkillOps.ts', import.meta.url), 'utf8').replace(/^export /gm, '')
   vm.runInContext(transformSync(source, { loader: 'ts', target: 'es2020' }).code + '\nthis.open = pixelOpenDetail; this.cache = pixelDetailCache;', context)

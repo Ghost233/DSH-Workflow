@@ -6,12 +6,12 @@ import { cwdBasename } from '../src/client/kernel/store-prefs.js'
 import { repoShortName } from '../src/client/kernel/store-switch.js'
 import { lcWorkspaceNameOf } from '../src/client/views/labels/labelColorErrors.js'
 import { createWorkspaceCwd } from '../src/host/workspaceCwd.js'
-import { withLabelColorsWriter } from '../src/host/tracker/backends/markdown/label-colors.js'
+import { withLabelColorsWriter } from '../src/tracker/rooms/markdown/label-colors.js'
 import { createPickerShell } from '../src/host/pickerShell.js'
 import { subwsMarkRootShown, subwsMarkRelOf } from '../src/client/views/SubworkspaceMark.js'
-import { classifyError } from '../src/host/tracker/preflight.js'
-import { classifyGhError } from '../src/host/tracker/backends/github/errors.js'
-import { classifyGlabError } from '../src/host/tracker/backends/gitlab/errors.js'
+import { classifyError } from '../src/tracker/kernel/preflight.js'
+import { classifyGhError } from '../src/tracker/rooms/github/errors.js'
+import { classifyGlabError } from '../src/tracker/rooms/gitlab/errors.js'
 
 test('session reuse and handoff paths retain macOS case and literal backslashes', () => {
   const cwd = '/Users/Matt/Project\\Name'
@@ -29,9 +29,9 @@ test('workspace label operations select the exact macOS session policy', async (
     const sandboxPolicy = { resolve: ({ session }) => ({ sourceSession: session.id }) }
     const ctx = { get: name => ({ sessions, sandboxPolicy })[name] }
     const tracker = { setLabelColors: async (_repo, _changes, op) => { context = op; return { ok: true, data: { applied: [], failed: [] } } } }
-    const registry = { select: async () => ({ backendId: 'markdown' }), get: () => tracker, describe: () => ({ backend: 'markdown', refId: cwd }) }
+    const registry = { has: id => id === 'markdown', select: async () => ({ backendId: 'markdown' }), get: () => tracker, describe: () => ({ backend: 'markdown', refId: cwd }) }
     const platform = { os: 'darwin', path: nodePath.posix }
-    const api = createWorkspaceCwd({ ctx, DEFAULT_CWD: cwd, canonicalKey: async path => path, getPlatform: async () => platform, getTrackerRegistry: async () => registry })
+    const api = createWorkspaceCwd({ ctx, DEFAULT_CWD: cwd, canonicalKey: async path => path, getPlatform: async () => platform, getTrackerRegistry: async () => registry, getDecisionFn: async () => ({ decideBackend() {} }), getDetectionService: async () => ({ detect: async () => ({ outlet: { backendId: 'markdown', canWrite: true } }) }) })
     assert.equal((await api.handleSetLabelColors({ cwd, changes: [] })).ok, true)
     assert.equal(context.sessionId, 'exact')
     assert.deepEqual(context.sandboxPolicy, { sourceSession: 'exact' })
@@ -75,11 +75,13 @@ test('picker file URLs retain their absolute macOS path including colon filename
 
 test('CLI failure classification retains POSIX and network/auth contracts without CMD error compatibility', () => {
   for (const classify of [classifyError, classifyGhError, classifyGlabError]) {
-    assert.equal(classify('command not found'), 'env')
-    assert.equal(classify('ENOENT'), 'env')
-    assert.equal(classify('permission denied'), 'auth')
-    assert.equal(classify('connection timed out'), 'network')
-    assert.equal(classify("'glab' is not recognized as an internal or external command"), 'network')
+    // GitLab now returns the classification with its fallback metadata.
+    const kind = text => { const result = classify(text); return typeof result === 'string' ? result : result.kind }
+    assert.equal(kind('command not found'), 'env')
+    assert.equal(kind('ENOENT'), 'env')
+    assert.equal(kind('permission denied'), 'auth')
+    assert.equal(kind('connection timed out'), 'network')
+    assert.equal(kind("'glab' is not recognized as an internal or external command"), 'network')
   }
 })
 

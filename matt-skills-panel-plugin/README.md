@@ -27,4 +27,4 @@ npm run upstream:check --prefix matt-skills-panel-plugin
 
 ## 本次升级
 
-当前派生版本为 `1.8.0-rc.7.workflow.1`，基于 npm 已发布 `1.8.0-rc.7` 的源码提交；最新 main 不等于该发布版本。合入范围、保留的集成差异与验证结果见 [升级记录](UPGRADE-1.8.0-rc.7.md)。
+当前派生版本为 `1.9.0-beta.5.workflow.1`，基于 npm 已发布的 `1.9.0-beta.5`。本次按用户选择纳入上游测试版。合入范围、保留的集成差异与验证结果见[升级记录](UPGRADE-1.9.0-beta.5.md)。

@@ -1,12 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, existsSync } from 'node:fs'
+import { cp, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import vm from 'node:vm'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createBootstrap } from '../package/lib/bootstrap.js'
 import host from '../package/lib/index.js'
-import * as tools from '../package/lib/platform/deckToolsRow.js'
+import * as tools from '../package/deck/registration/agent-row.js'
 import { createUpdatePhoneHandlers } from '../package/lib/updateFromPackage.js'
 
 const root = new URL('../', import.meta.url)
@@ -56,4 +59,26 @@ test('upstream updater files removed during the upgrade are absent from the ship
   for (const name of ['update.js', 'updateReader.js', 'updateStore.js', 'updatePkg']) {
     assert.equal(existsSync(new URL(`package/lib/${name}`, root)), false, name)
   }
+})
+
+test('the relocated package executes log and YAML dependencies without an installed dependency tree', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'matt-shipped-dependencies-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  await cp(new URL('package/', root), directory, { recursive: true })
+  const load = file => import(pathToFileURL(join(directory, file)).href)
+  const host = await load('lib/index.js')
+  const tools = await load('deck/registration/agent-row.js')
+  assert.equal(host.default.name, 'dsh-workflow-matt-panel')
+  assert.equal(tools.name, 'dsh-workflow-matt-panel-tools')
+  const { createLogFromPackage } = await load('lib/logFromPackage.js')
+  const store = await createLogFromPackage({ getCacheDir: () => directory, getPlatform: () => 'darwin', DEFAULT_CWD: directory })
+  t.after(() => store.release())
+  assert.equal(typeof store.handleLogBatch, 'function')
+  const config = await load('lib/configStore.js')
+  const workspace = await load('shared/config-store/workspace.js')
+  const text = 'version: 2\nbackendId: github\npickedAt: 1\nsource: user\n'
+  assert.equal(config.parseConfig(text, 'workspace').value.backendId, 'github')
+  assert.equal(workspace.parseWorkspaceText(text).value.backendId, 'github')
+  const labels = await load('shared/config-store/labels.js')
+  assert.equal(labels.parseLabelsText('version: 1\nbug: "#ff0000"\n').ok, true)
 })

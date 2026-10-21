@@ -43,7 +43,6 @@
  * 失败不兜假数据 / 三视图收敛 / 沉淀=注入快照模板。
  * v11：label 颜色 = GitHub 配置色。v10：cwd 关联 / 标签视图 / 圆形技能环。
  * v9：DESIGN.md §12.2 Round 3 定稿 1A-7A 落实。
- *
  * 本文件内容 = cordis_define 的 code.client（纯 JS 函数体，返回 Cordis Plugin）。
  */
 
@@ -53,6 +52,7 @@ export default {
     const slots = ctx.get('slots')
     if (slots === undefined) return
     // ==== leaf:hostShim (spliced by build) ====
+    // ==== shared:timeConfig (spliced by build) ==== // #1215：中央时间参数先于闭包里所有读者声明（const 有暂时性死区）
     // ==== kernel:portal (spliced by build) ====
     // v1.3.3：面板版本号（tabs 行最右侧显示，便于核对已更新）
     const DSW_VERSION = __DSW_VERSION__
@@ -154,7 +154,7 @@ export default {
     // ==== kernel:healthCheck (spliced by build) ====
 
     // ============================================================
-    // 2.5 配置模型（v25 · T2a：dsws.cfg + dsws.templates；旧 dsws.startCfg 自动迁移）
+    // 2.5 配置模型（v25 · T2a：dsws.templates；#1012：模板改走本机设置文件的 templates 节，两个旧存档已删）
     // 必须位于 §3 store 之前（DEFAULT_PANEL_H 固定 1/2）
     // ============================================================
     // ============================================================
@@ -177,19 +177,22 @@ export default {
     // v1.5 T3：面板默认高度固定 1/2（用户拍板彻底移除 panelHeight 配置 —— details 列高度与它无关，配置不生效）
     // ==== shared:workspaceKey (spliced by build) ====
     // #629 配色核心：色值归一、合法性判断、比较颜色有没有变，以及调色盘表格与提示词的拼装。
-    // 这两份是内置 TypeScript 核（label-color-core/）的产物，界面只当普通函数调用；
-    // 界面文案一律从词条传进去，核心不含任何用户能看到的字（详见 label-color-core/README.md）。
+    // 这两份是内置 TypeScript 核（src/shared/label-color/）的产物，界面只当普通函数调用；
+    // 界面文案一律从词条传进去，核心不含任何用户能看到的字（详见 src/shared/label-color/README.md）。
     // ==== shared:labelColors (spliced by build) ====
     // ==== shared:labelColorPrompt (spliced by build) ====
     // #715 诚实显示：新鲜度阈值（5 分钟黄 / 30 分钟红）、写入合并窗口、降档的延迟承诺，
-    // 只有一份真源（refresh-core/src/budget.ts → src/shared/refresh/budget.js），拼进来给界面读；
+    // 只有一份真源（src/shared/refresh/src/budget.ts → src/shared/refresh/budget.js），拼进来给界面读；
     // 判据与渲染见 views/shared/truthLines.js 与 views/ListTab.js。
     // ==== shared:refreshBudget (spliced by build) ====
-    // #842 写操作：能不能暂存/提交/拉取/推送的判定只有一份真源（version-control-core/src/rules.ts →
+    // #842 写操作：能不能暂存/提交/拉取/推送的判定只有一份真源（src/shared/version-control/src/rules.ts →
     // src/shared/version-control/rules.js）。界面按同一份判定画按钮状态，不自己算 —— 自己算就会与
     // 宿主执行前那次判定各说各话。
     // ==== shared:vcRules (spliced by build) ====
     // ==== kernel:storePrefs (spliced by build) ====
+    // ==== kernel:settingsViewState (spliced by build) ====
+    // ==== kernel:settingsView (spliced by build) ====
+    // ==== kernel:settingsViewWrite (spliced by build) ==== // ==== kernel:settingsUi (spliced by build) ==== // ==== kernel:settingsTemplates (spliced by build) ==== // ==== kernel:settingsDebug (spliced by build) ====
     // ==== kernel:storeSwitch (spliced by build) ====
     // ==== kernel:storeSnapshot (spliced by build) ====
     // ==== kernel:storeDerived (spliced by build) ====
@@ -219,6 +222,9 @@ export default {
     // ==== kernel:apiNaming (spliced by build) ====
     // ==== kernel:apiPresetGuard (spliced by build) ====
     // ==== kernel:apiWorkspace (spliced by build) ====
+    // #1251：交接执行那一族自成一个片段（原来住在 apiNewSession 里，那份文件有效行超 350 上限）；
+    //   标记留在 apiNewSession 之前，与拆出前的位置一致。
+    // ==== kernel:apiHandoff (spliced by build) ====
     // ==== kernel:apiNewSession (spliced by build) ====
     // ==== kernel:apiIo (spliced by build) ====
     // #690：历史票的页数据（已关闭票按需翻页）。排在 apiIo 之后 —— 它调的 fetchIssuesPage 住在 apiIo 里。
@@ -337,7 +343,7 @@ export default {
 
     // ==== kernel:updateClient (spliced by build) ====
 
-    // ==== leaf:debugSwitchFailHint (spliced by build) ==== // ==== leaf:SettingsWorkspaces (spliced by build) ====
+    // ==== leaf:diagnosticLogModel (spliced by build) ==== // ==== leaf:diagnosticLogActions (spliced by build) ==== // ==== leaf:diagnosticLogSection (spliced by build) ==== // ==== leaf:SettingsWorkspaces (spliced by build) ====
     // #876：更新入口挂载点（只挂包的入口件，含内部 dialog 面板；本仓不再自带按钮状态机与浮层弹窗）
     // ==== leaf:updateEntryHost (spliced by build) ==== // ==== leaf:settingsPage (spliced by build) ====
     // ==== leaf:runPanel (spliced by build) ==== // ==== leaf:panelAssembly (spliced by build) ====

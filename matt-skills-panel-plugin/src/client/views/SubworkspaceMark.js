@@ -25,6 +25,12 @@
 //   Snapshot keys normalize POSIX slashes but preserve macOS filename spelling;
 //   subwsMarkRootShown 按会话原始目录还原。
 //
+// #1012 后续修复（2026-10-12）：这份「以前自动展开过没有」的记录搬到本机设置文件之后是**异步读来的**，
+//   挂载那一刻文档往往还在路上。所以这一次判断必须先问 kernel/settings-view-state.js 的 viewFlagReadyNow()：
+//   文档还在路上就先不弹，等它到手（或判定问不到）重跑再判。不这么等，就会拿旧 localStorage 键那一版答案
+//   当场弹一次 —— 那个工作区每进一次子目录会话都白弹一次，#650 承诺的「同一个工作区只弹一次」就没了。
+//   三档判决（等 / 弹 / 不弹）见下面的 subwsMarkAutoDecide，怎么重跑见下面那个订阅效果。
+//
 // 渲染之外的决定（取根、该不该出现、相对尾巴怎么拼、显示哪几行、显示成哪种写法）全在这几个纯函数里，
 //   组件只负责画与点击。门禁既直接跑这几个纯函数，也把组件真的渲染一次（tests/verify-666-subws-mark-root.js
 //   的 A～D 组跑纯函数，E 组渲染组件）—— 因为本票的缺陷是「纯函数全对、组件却每次都返回 null」，
@@ -54,12 +60,17 @@ export const subwsMarkRootShown = function (root, cwd) {
     const rs = segsOf(root)
     if (cs.length <= rs.length) return String(root)
     // 从根那一段往外逐段试着取（取几段就是几段，不去按字符切），谁折算出来的键等于根，谁就是它
+    const sep = subwsMarkSepOf()
     for (let take = rs.length; take < cs.length; take++) {
-      const cand = (String(cwd || '').startsWith('/') ? '/' : '') + cs.slice(0, take).join('/')
+      const cand = (String(cwd || '').startsWith('/') ? '/' : '') + cs.slice(0, take).join(sep)
       if (subwsMarkCmpKey(cand) === key) return cand
     }
     return String(root)
   } catch (e) { return String(root == null ? '' : root) }
+}
+// macOS paths use the POSIX separator; literal backslashes remain filename characters.
+export const subwsMarkSepOf = function () {
+  return '/'
 }
 // Normalize only POSIX slash spelling before comparing. keyOf 是内核里那把规整函数的单源；
 //   真闭包里拿不到它时退回原样比较 —— 两串本就同源同写法，结论仍然对，不会把子目录误判成根。
@@ -101,6 +112,27 @@ export const subwsMarkLinesOf = function (root, cwd, rootInitialized) {
     return (rootInitialized === false) ? parts : parts.slice(0, 3)
   } catch (e) { return [] }
 }
+// 该不该自动展开这一次浮层？三选一，'wait'（等）必须与 'skip'（不弹）分开 —— 这两件事在界面上完全不同：
+//   'wait' ＝ 设置文档还在路上，这一次先不弹，等它到手（或判定问不到）之后重跑再判；
+//   'skip' ＝ 问过真源了，这个工作区以前自动展开过，不再打扰；
+//   'open' ＝ 问过真源了，以前没展开过，弹这一次。
+// 为什么必须有 'wait' 这一档：文档是异步读来的，挂载那一刻往往还没到手，那时读口只能按旧 localStorage
+//   键答（旧键是兜底），拿这个答案去弹就成了「每进一次子目录会话都白弹一次」—— #650 要的是同一个工作区只弹一次。
+// 「问过真源了没有」由调用方去问 kernel/settings-view-state.js 的 viewFlagReadyNow() 再传进来，本函数自己不去问：
+//   这样它是纯函数，门禁可以直接喂它几组输入把三档判决钉住，不必渲染 React。
+export const subwsMarkAutoDecide = function (ready, shownBefore) {
+  if (ready !== true) return 'wait'
+  return (shownBefore === true) ? 'skip' : 'open'
+}
+// 「这个工作区以前自动展开过没有」这道判断的纯函数形态（门禁从真源里切出来验，见 tests/verify-settings-view.js）：
+//   设置视图答得出这一格（文件里查得到这个工作区这一条记录，或按会话目录认得出的根那一格）就以它为准 ——
+//   搬进文件之后它是唯一真源；它答不出（认不出根、文档读失败、文件是更高版本）时才看旧表那一份。旧表按
+//   工作区根记，而本组件自己认得出根（subwsMarkRootOf 那一路），迁移前正是靠旧表判的；不这么退一步，
+//   这个工作区就会在每次挂载时白弹一次浮层 —— 与 #650 承诺的「同一个工作区只自动展开一次」正好相反。
+export const subwsMarkShownBefore = function (docAnswer, docCanAnswer, legacyShown) {
+  if (docCanAnswer === true) return docAnswer === true
+  return legacyShown === true
+}
 export const SubworkspaceMark = function (props) {
   const p = props || {}
   const st = p.st || null
@@ -128,32 +160,100 @@ export const SubworkspaceMark = function (props) {
   const shown = subwsMarkLinesOf(root, cwd, inited)
   const isSub = shown.length > 0
   // 「第一次自动展开」按工作区记一份状态：记在工作区根这把键上，同一个工作区只展开一次。
+  //   #1012 起这份状态的真源是本机设置文件（kernel/settings-view.js 的 viewFlagOf / setViewFlag，
+  //   键取工作区根的可读路径），下面这两个函数只是过渡：新模块不在（老产物、或渲染替身里）、
+  //   或它接不下这一笔（还没认出工作区根、文档问不到、文件只读）时才用。
+  //   说准这一手兜得住什么：设置文件里已经有这个工作区的记录时，写进旧键这一份读不回来
+  //   （读侧以文件里那条为准），它只在本窗口内充当记性；真正让这次改动不丢的是新模块的待写队列
+  //   （写失败时留着那一格，下一趟写再试一次）。
   const AUTO_KEY = 'dsws.subwsAutoShown'
   const readAutoMap = function () {
     try { const raw = localStorage.getItem(AUTO_KEY); const m = raw ? JSON.parse(raw) : null; return (m && typeof m === 'object') ? m : {} } catch (e) { return {} }
   }
+  // 这个工作区以前自动展开过没有：先问新模块；它认不出这个工作区的根（或这一片不在）时读旧键兜底
+  //   （旧键按工作区根那把折算键记）。判断本身在纯函数 subwsMarkShownBefore 里，这里只负责把三样东西凑齐。
+  //   同一次调用有两种含义：文档还在路上时它只能按旧表答，那一次调用真正的作用是把「读一次设置文档」
+  //   这件事叫起来，答出来的值不作数；要等 viewFlagReadyNow() 说就绪了，再拿它下判断（见下面那个效果）。
+  const autoShownBefore = function () {
+    let docAnswer = false
+    let docCanAnswer = false
+    try {
+      if (typeof viewFlagOfRoot === 'function') {
+        // 按本组件手上这个根读（2026-10-12 复核 Q2）：这一格的状态是「按工作区记」的，而内核那把
+        //   「所选目录 → 工作区根」的表是快照缓存，同一条目录的根变过时它可能还留着旧条目 —— 视图认出的
+        //   就是另一个根，于是同一份记录读在一把键上、写在另一把键上：文件里明明记过，判据却认为
+        //   「问不出这一格」，退回空的旧表，用户每开一次窗就白弹一次（搬迁前只弹一次，这是比搬迁前差）。
+        //   本组件自己认得出根（subwsMarkRootOf 那一路），读写都按这把根走，两边就是同一把键。
+        //   known 的含义：文件里查得到这个工作区这一条记录 —— 查得到就以它为准（文件是唯一真源）；
+        //   查不到（文件还没建、这一条还没写过、读失败、更高版本）才退回旧表那一份。
+        const ans = viewFlagOfRoot(root, 'subwsMarkAutoShown')
+        docAnswer = !!(ans && ans.value === true)
+        docCanAnswer = !!(ans && ans.known === true)
+      } else if (typeof viewFlagOf === 'function') {
+        // 老产物（或渲染替身）没有按根读的口子：退回原来的会话目录路，判据仍要求「视图认出的根与本组件
+        //   手上这个根是同一条目录」；两边认的不是同一个根就退回旧表那一份。
+        docAnswer = viewFlagOf(cwd, 'subwsMarkAutoShown') === true
+        docCanAnswer = (typeof viewFlagWriteKeyOf === 'function')
+          ? (subwsMarkCmpKey(viewFlagWriteKeyOf(cwd)) === subwsMarkCmpKey(root))
+          : true
+      }
+    } catch (eN) {}
+    let legacyShown = false
+    try { legacyShown = !!readAutoMap()[subwsMarkCmpKey(root)] } catch (e) {}
+    return subwsMarkShownBefore(docAnswer, docCanAnswer, legacyShown)
+  }
   const [autoOpen, setAutoOpen] = React.useState(false)
   const [autoDone, setAutoDone] = React.useState(false)
+  // 「设置文档问完了没有」这件事推动的计数：文档到手、或判定问不到时加一，下面那个自动展开效果依赖它重跑一次。
+  //   没有它，挂载那一刻文档还在路上，判断就永远停在旧 localStorage 键那一版上，再也不会按真源重判。
+  const [flagTick, setFlagTick] = React.useState(0)
+  // 只挂一次的效果：登记「问完了叫我一声」，卸载时取消登记。找不到那个口子（老产物、渲染替身里没有这一片）
+  //   就不登记，下面那个效果按「这道门不存在」照旧判断（那时读口本来也只有旧表那一条路）。
+  React.useEffect(function () {
+    try {
+      if (typeof viewFlagSubscribe === 'function') {
+        return viewFlagSubscribe(function () { setFlagTick(function (n) { return n + 1 }) })
+      }
+    } catch (e) {}
+    return undefined
+  }, [])
   React.useEffect(function () {
     if (!isSub || !root) return
     try {
-      const m = readAutoMap()
-      if (m[subwsMarkCmpKey(root)]) { setAutoDone(true); return } // 这个工作区已经自动展开过，不再打扰
+      // 先问一句「以前自动展开过没有」：这一次问话顺手把设置文档读起来（第一次用到时才问宿主一次）。
+      const shownBefore = autoShownBefore()
+      // 读口在不在（老产物、渲染替身）决定「就绪这道门有没有」：没有就当作已经问过真源，照旧判断。
+      const ready = (typeof viewFlagReadyNow === 'function') ? (viewFlagReadyNow() === true) : true
+      const verdict = subwsMarkAutoDecide(ready, shownBefore)
+      if (verdict === 'wait') return // 文档还在路上：这一次先不弹，等加载结束重跑再判
+      if (verdict === 'skip') { setAutoDone(true); return } // 这个工作区已经自动展开过，不再打扰
       setAutoOpen(true)
     } catch (e) {}
-  }, [isSub, root])
+  }, [isSub, root, flagTick])
   const markAutoShown = function () {
-    try {
-      const m = readAutoMap()
-      m[subwsMarkCmpKey(root)] = 1
-      localStorage.setItem(AUTO_KEY, JSON.stringify(m))
-    } catch (e) {}
+    // 交给新模块写，而且按本组件手上这个根写（与上面读的那把键同一把，见 autoShownBefore 的说明）：
+    // 它接下了就不再写旧键（写成功那条路上一个字都不写旧键）；它接不下（还没认出工作区根、文档问不到、
+    // 文件只读）或不在时，才照老办法写旧键 —— 与搬迁前的行为一致，只是这一次暂时不落新家。
+    // 第四个参数是会话目录，只用来在文件里新建这条记录时从旧表种上另外那几格（见 kernel/settings-view.js
+    // 的 viewFlagSetInDoc）：横幅折叠那一格按会话目录记，不传它就种不准。
+    let handled = false
+    try { if (typeof setViewFlagRoot === 'function') handled = (setViewFlagRoot(root, 'subwsMarkAutoShown', true, cwd) === true) } catch (eRoot) { handled = false }
+    if (!handled) {
+      try { if (typeof setViewFlag === 'function') handled = (setViewFlag(cwd, 'subwsMarkAutoShown', true) === true) } catch (eNew) { handled = false }
+    }
+    if (!handled) {
+      try {
+        const m = readAutoMap()
+        m[subwsMarkCmpKey(root)] = 1
+        localStorage.setItem(AUTO_KEY, JSON.stringify(m))
+      } catch (e) {}
+    }
     setAutoOpen(false)
     setAutoDone(true)
   }
   if (!isSub) return null
   const aria = shown.join('；')
-  // 显示与点击都用还原过写法的那一条：浮层里写着「点一下打开 /Users/Matt/ilife」，点下去就不该打开另一条写法
+  // 显示与点击都用还原过写法的那一条：浮层里写着「点一下打开 D:\ilife」，点下去就不该打开另一条写法
   const shownRoot = subwsMarkRootShown(root, cwd)
   const dim = { fontSize: 11, lineHeight: '16px', whiteSpace: 'normal', wordBreak: 'break-word' }
   // 渲染时，最后一行是那条「还没初始化」的提醒，用琥珀色；其余灰色。

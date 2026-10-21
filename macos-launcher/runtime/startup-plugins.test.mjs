@@ -7,6 +7,9 @@ import { join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { startupPluginResults, prepareStartupPlugins } from './startup-plugins.mjs'
 
+const versions = Object.fromEntries(JSON.parse(await readFile(new URL('../../project-plugins.json', import.meta.url), 'utf8'))
+  .plugins.map(item => [item.package, item.version]))
+
 // Only the external authenticated HTTP inventory is controlled here; no DSH or GUI is launched.
 async function fixture(t, rows) {
   const root = await mkdtemp(join(tmpdir(), 's08-startup-http-'))
@@ -36,16 +39,16 @@ const row = (name, version, extra = {}) => ({ scope: 'Host', moduleName: name, p
   current: version, source: `/owned/${name}`, status: 'fixed', enabled: true, fiberPhase: 'active', ...extra })
 
 test('startup outcomes distinguish actual loading, disabled, failed, drift and absence without package mutation', async t => {
-  const f = await fixture(t, [row('dsh-context', '0.73.3'),
-    row('dsh-cost-meter', '1.9.9', { enabled: false, fiberPhase: null }),
-    row('@nagi-ovo/dsh-visualize', '0.1.4', { fiberPhase: 'failed' }),
+  const f = await fixture(t, [row('dsh-context', versions['dsh-context']),
+    row('dsh-cost-meter', versions['dsh-cost-meter'], { enabled: false, fiberPhase: null }),
+    row('@nagi-ovo/dsh-visualize', versions['@nagi-ovo/dsh-visualize'], { fiberPhase: 'failed' }),
     row('billion-context', '0.1.185', { status: 'drift' })])
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
   assert.deepEqual(results.map(item => item.state), ['loaded', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped'])
   assert.match(results[1].reason, /停用/)
   assert.match(results[2].reason, /失败/)
   assert.match(results[3].reason, /偏离/)
-  assert.equal(results[3].version, '0.1.201')
+  assert.equal(results[3].version, versions['billion-context'])
   assert.equal(results[3].actualVersion, '0.1.185')
   assert.equal(results[4].package, '@goodandready/dsh-plugin-notify')
   assert.match(results[4].reason, /未装配/)
@@ -54,8 +57,8 @@ test('startup outcomes distinguish actual loading, disabled, failed, drift and a
 })
 
 test('an unknown runtime source is never reported as a loaded fixed package and later startup items remain visible', async t => {
-  const f = await fixture(t, [row('dsh-context', '0.73.3', { source: null }),
-    row('dsh-cost-meter', '1.9.9')])
+  const f = await fixture(t, [row('dsh-context', versions['dsh-context'], { source: null }),
+    row('dsh-cost-meter', versions['dsh-cost-meter'])])
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
   assert.equal(results[0].state, 'skipped')
   assert.match(results[0].reason, /未知/)
@@ -65,9 +68,9 @@ test('an unknown runtime source is never reported as a loaded fixed package and 
 })
 
 test('a settled enabled entry without a live fiber reports import failure while disabled and pending stay distinct', async t => {
-  const f = await fixture(t, [row('dsh-context', '0.73.3', { fiberPhase: null }),
-    row('dsh-cost-meter', '1.9.9', { enabled: false, fiberPhase: null }),
-    row('@nagi-ovo/dsh-visualize', '0.1.4', { fiberPhase: 'pending' })])
+  const f = await fixture(t, [row('dsh-context', versions['dsh-context'], { fiberPhase: null }),
+    row('dsh-cost-meter', versions['dsh-cost-meter'], { enabled: false, fiberPhase: null }),
+    row('@nagi-ovo/dsh-visualize', versions['@nagi-ovo/dsh-visualize'], { fiberPhase: 'pending' })])
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
   assert.equal(results[0].state, 'skipped')
   assert.match(results[0].reason, /导入.*失败/)
@@ -76,7 +79,7 @@ test('a settled enabled entry without a live fiber reports import failure while 
 })
 
 test('a rejected startup preparation cannot be reported as loaded by a matching inventory row', async t => {
-  const f = await fixture(t, [row('dsh-context', '0.73.3')])
+  const f = await fixture(t, [row('dsh-context', versions['dsh-context'])])
   const reason = '启动插件尝试失败：依赖来源声明与包内 Git 固定值不一致。'
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url,
     preparation: [{ package: 'dsh-context', installedVersion: '0.73.3', installedSource: '/owned/dsh-context', reason }] })
