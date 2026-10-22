@@ -7,7 +7,7 @@
     { "package": "billion-context", "version": "0.1.202", "entryId": "bili-native", "repository": "https://github.com/ranxianglei/billion-context", "startup": true },
     { "package": "@goodandready/dsh-plugin-notify", "version": "0.4.5", "entryId": "plugin-notify", "repository": "https://github.com/GooDAnDReaDY/dsh-plugin-notify", "startup": true },
     { "package": "dsh-better-sidebar", "version": "0.28.0", "entryId": "better-sidebar", "repository": "https://github.com/omdsh-dev/DSH-better-sidebar", "startup": true },
-    { "package": "ghost-agent-sentinel", "version": "0.1.5", "entryId": "ghost-agent-sentinel", "repository": "https://github.com/Ghost233/GhostAgentSentinel", "source": "git", "commit": "c255756368e61d14ab102fb6a9dad7bbf0f3b5f3", "startup": true },
+    { "package": "ghost-agent-sentinel", "version": "0.1.6", "entryId": "ghost-agent-sentinel", "repository": "https://github.com/Ghost233/GhostAgentSentinel", "source": "git", "commit": "042c0feee058121b92c117c11c84ee954c5d7ba6", "startup": true },
     { "package": "dsh-provider-hub", "version": "0.3.2", "entryId": "dsh-provider-hub", "repository": "https://github.com/DDDMUC/dsh-provider-hub", "startup": true },
     { "package": "dsh-our-free-model", "version": "2.5.7", "entryId": "our-free-model", "repository": "https://github.com/Ebony-Vinyl/dsh-our-free-model", "source": "git", "commit": "d857f8ecb6236608dd97f8f2aa81beacc4994a8d", "startup": true }
   ]
