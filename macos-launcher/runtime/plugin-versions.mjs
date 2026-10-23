@@ -5,10 +5,12 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { readPluginConfiguration } from './plugin-configuration.mjs'
 import { pluginDependencySpec } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { browserHarnessVersionRows } from '../../browser-harness-plugin/report.mjs'
 
 const owned = [
   ['dsh-workflow', 'agent-observation-plugin'],
   ['dsh-workflow-matt-panel', 'matt-skills-panel-plugin/package'],
+  ['dsh-workflow-browser-harness', 'browser-harness-plugin'],
 ]
 const agentTeams = [
   '@deepseek-ai/dsh-experimental-agent-team-profile',
@@ -82,7 +84,7 @@ async function installedPackage(profile, name) {
 }
 
 /** Inspect local package files only; repository DMGs own version changes. */
-export async function checkPluginVersions({ resourcesRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
+export async function checkPluginVersions({ resourcesRoot, dataRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
   profileName = existsSync(join(resourcesRoot, 'desktop/DeepSeek Harness.app')) ? 'desktop' : 'web' } = {}) {
   const resources = resolve(resourcesRoot)
   const workflow = join(resources, 'workflow')
@@ -167,6 +169,7 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
       expected: runtime?.version ?? null, latest: null, status: 'coupled', note: '与当前 DSH 版本绑定；随本仓库 DMG 更新' })
   }
 
+  rows.push(...await browserHarnessVersionRows({ resourcesRoot: resources, dataRoot }))
   for (const row of rows) {
     row.updatable = false
     row.latest = null
@@ -205,7 +208,7 @@ export async function checkPluginVersions({ resourcesRoot, home = process.env.DS
 if (import.meta.main) {
   try {
     if (!process.argv[2]) throw new Error('Usage: plugin-versions.mjs RESOURCES')
-    process.stdout.write(JSON.stringify(await checkPluginVersions({ resourcesRoot: process.argv[2] })) + '\n')
+    process.stdout.write(JSON.stringify(await checkPluginVersions({ resourcesRoot: process.argv[2], dataRoot: process.argv[3] })) + '\n')
   } catch (error) {
     process.stderr.write(`${error.stack ?? error}\n`)
     process.exitCode = 1

@@ -225,6 +225,17 @@ json.dump({'ok': True, 'value': {'service': {'state': 'running', 'ready': True, 
           'expected': '1.2.0',
           'status': 'drift',
         }),
+        PluginRow({
+          'name': 'browser-harness',
+          'source': 'DSH Shell',
+          'current': '0.1.13',
+          'status': 'installed',
+        }),
+        PluginRow({
+          'name': 'missing-browser-fixture',
+          'source': 'DSH Shell',
+          'status': 'missing',
+        }),
       ];
       await tester.pumpWidget(LauncherApp(controller: model));
       expect(find.text('启动 Web'), findsOneWidget);
@@ -235,6 +246,8 @@ json.dump({'ok': True, 'value': {'service': {'state': 'running', 'ready': True, 
       expect(find.text('实际 / 仓库固定'), findsOneWidget);
       expect(find.text('1.1.0 / 1.2.0'), findsOneWidget);
       expect(find.text('版本偏差'), findsOneWidget);
+      expect(find.text('已安装（DSH 可调用）'), findsOneWidget);
+      expect(find.text('DSH 未找到安装'), findsOneWidget);
       expect(find.textContaining('正式 DMG'), findsOneWidget);
       expect(find.text('更新全部可更新插件'), findsNothing);
       expect(find.widgetWithText(OutlinedButton, '更新'), findsNothing);

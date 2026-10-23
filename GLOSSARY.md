@@ -1,6 +1,6 @@
 # DSH Workflow
 
-本上下文记录应用入口管理、JEV 引擎配置、代理监控与项目学习涉及的领域语言。
+本上下文记录应用入口管理、JEV 引擎配置、代理监控、浏览器能力管理与项目学习涉及的领域语言。
 
 ## 语言
 
@@ -56,6 +56,21 @@ _避免使用_：gh 登录态、token 文件
 
 **账号注入面**：把仓库账号声明转换成认证身份的通道。首版有四个：提交身份（仓库本地 `user.name`/`user.email`）、HTTPS 推认证（内嵌 `GH_CONFIG_DIR` 的仓库本地 credential helper）、deck 自身 gh 出站（spawn 时显式传环境变量）、模型 bash（`BASH_ENV` 分发脚本导出 `GH_CONFIG_DIR`）。面板界面不属于注入面。
 _避免使用_：账号切换、全局切号
+
+## 浏览器能力管理
+
+**Browser Harness 管理插件**：DSH Workflow 内部维护的浏览器能力管理扩展，提供内置浏览器技能版本和 Browser Harness 本机安装状态。
+_避免使用_：Browser Harness Agent、浏览器模型
+
+**内置浏览器技能**：DSH Workflow 随应用交付、供 DSH 原生代理使用的 Browser Harness 操作技能。
+_避免使用_：已安装的 Browser Harness
+
+**浏览器技能更新检查**：判断官方浏览器技能是否存在尚未纳入当前交付基准的变化。
+
+**浏览器技能基准更新**：将选定的官方浏览器技能版本纳入 DSH Workflow 后续应用交付的行为。
+
+**Browser Harness 可用安装**：当前 DSH 任务执行环境能够调用的本机 Browser Harness 安装。
+_避免使用_：任意环境装过的 Browser Harness
 
 ## 项目学习
 

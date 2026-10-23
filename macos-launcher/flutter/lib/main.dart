@@ -499,7 +499,9 @@ class _LauncherPageState extends State<LauncherPage> {
       ),
       const SizedBox(height: 12),
       Text(model.pluginMessage),
-      const Text('组件随本仓库正式 DMG 统一更新；此页只读检查本地安装文件，不能证明当前 Host 已加载该版本。'),
+      const Text(
+        '组件随本仓库正式 DMG 统一更新；插件版本来自本地文件。Browser Harness 安装状态由运行中的 DSH 查询，不代表浏览器已连接。',
+      ),
       const SizedBox(height: 12),
       Expanded(
         child: SingleChildScrollView(
@@ -623,5 +625,7 @@ String _pluginState(String state) => switch (state) {
   'local' => '本地依赖',
   'error' => '检查失败',
   'unsupported' => '不支持查询',
+  'installed' => '已安装（DSH 可调用）',
+  'missing' => 'DSH 未找到安装',
   _ => '无法确认',
 };

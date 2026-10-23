@@ -54,6 +54,10 @@ export function composeDshLaunch(entries, { projectRoot, catalogRoot }) {
   const mcpEntries = JSON.parse(readFileSync(join(root, 'project-mcp.json'), 'utf8'))
   const definitions = [
     { id: 'workflow-delivery-inventory', name: 'dsh-workflow/delivery-inventory', config: { projectRoot: root } },
+    { id: 'workflow-browser-harness', name: join(root, 'browser-harness-plugin/index.mjs') },
+    { id: 'workflow-browser-harness-skills', name: '@deepseek-ai/dsh-skill-filesystem', config: {
+      providerName: 'workflow-browser-harness', includeDefaultRoots: false, customSkillDirs: [join(root, 'browser-harness-plugin/skills')],
+    } },
     { id: 'mattpocock-skills-zh', name: '@deepseek-ai/dsh-skill-filesystem', config: { providerName: 'mattpocock-skills-zh', includeDefaultRoots: false, customSkillDirs: [join(root, 'vendor/mattpocock-skills-zh/skills')] } },
     { id: 'dsh-workflow-gh-account', name: '@deepseek-ai/dsh-skill-filesystem', config: { providerName: 'dsh-workflow-gh-account', includeDefaultRoots: false, customSkillDirs: [join(root, 'skills')] } },
     { id: 'dsh-workflow-skills', name: '@deepseek-ai/dsh-skill-filesystem', config: { providerName: 'dsh-workflow-skills', includeDefaultRoots: false, customSkillDirs: [join(root, 'vendor/dsh-skills/skills')] } },

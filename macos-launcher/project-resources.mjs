@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { readPinnedBrowserHarness, stageBrowserHarnessSkills } from '../browser-harness-plugin/build.mjs'
 
 const exec = promisify(execFile)
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -17,7 +18,7 @@ async function sources(root) {
     'vendor/mattpocock-skills-zh.upstream.json', 'vendor/dsh-skills.upstream.json', 'matt-skills-panel-plugin/upstream.json',
     'matt-skills-panel-plugin/LICENSE', 'matt-skills-panel-plugin/THIRD_PARTY_NOTICES.md',
     ...scripts.map(name => `scripts/${name}`)]
-  for (const directory of ['agent-observation-plugin', 'vendor/mattpocock-skills-zh', 'vendor/dsh-skills', 'matt-skills-panel-plugin/package', 'skills']) files.push(directory)
+  for (const directory of ['agent-observation-plugin', 'browser-harness-plugin', 'vendor/mattpocock-skills-zh', 'vendor/dsh-skills', 'matt-skills-panel-plugin/package', 'skills']) files.push(directory)
   files.push(...(await readdir(join(root, 'macos-launcher/runtime'))).filter(name => name.endsWith('.mjs') && !name.endsWith('.test.mjs')).map(name => `macos-launcher/runtime/${name}`))
   for (const name of ['lib/index.js', 'lib/client.js', 'lib/bootstrap.js']) {
     if (!existsSync(join(root, 'matt-skills-panel-plugin/package', name))) throw new Error('Build the current maintained Matt package before staging')
@@ -44,7 +45,8 @@ async function inventory(root, selections = ['']) {
 async function identity(root) {
   const { stdout } = await exec('git', ['-C', root, 'rev-parse', 'HEAD'])
   const files = await sources(root)
-  return { sourceCommit: stdout.trim(), files: await inventory(root, files),
+  const { blobs, ...browserHarness } = await readPinnedBrowserHarness(root)
+  return { sourceCommit: stdout.trim(), files: await inventory(root, files), browserHarness,
     mattBuildInputs: Object.fromEntries(await Promise.all(['package.json', 'package-lock.json', 'upstream.json'].map(async name =>
       [name, sha(await readFile(join(root, 'matt-skills-panel-plugin', name)))]))) }
 }
@@ -58,6 +60,7 @@ export async function copyProjectIntegration(projectRoot, workflow) {
     await mkdir(dirname(join(workflow, name)), { recursive: true })
     await cp(join(root, name), join(workflow, name), { recursive: true, filter: path => !ignored(relative(root, path).replaceAll('\\', '/')) })
   }
+  await stageBrowserHarnessSkills(root, workflow)
   const pkg = JSON.parse(await readFile(join(workflow, 'package.json'), 'utf8'))
   if (pkg.name !== 'dsh-workflow' || pkg.exports?.['./jev-center'] !== './agent-observation-plugin/src/jev-center-plugin.mjs'
     || pkg.exports?.['./agent-monitor'] !== './agent-observation-plugin/src/agent-monitor-plugin.mjs') throw new Error('Current project module contract is missing')

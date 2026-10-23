@@ -35,6 +35,8 @@
     "vendor/dsh-skills/",
     "vendor/dsh-skills.upstream.json",
     "agent-observation-plugin/",
+    "browser-harness-plugin/",
+    "skills/",
     "scripts/dsh-launch-composition.mjs",
     "scripts/dsh-readiness.mjs",
     "scripts/dsh-delivery-policy.mjs"

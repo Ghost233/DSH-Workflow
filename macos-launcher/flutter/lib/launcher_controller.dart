@@ -752,12 +752,13 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     try {
       final report = await _runReport('plugin-versions.mjs', [
         environment.resources,
+        environment.dataRoot,
       ]);
       final rows = report['rows'];
       if (rows is! List) throw const FormatException('Missing plugin rows');
       plugins = rows.map((row) => PluginRow(objectValue(row))).toList();
       pluginMessage =
-          '共 ${plugins.length} 项；${plugins.where((p) => p.status == 'drift').length} 项版本偏差。此处检查安装文件，运行解析请在 DSH 设置 → 插件查看。';
+          '共 ${plugins.length} 项；${plugins.where((p) => p.status == 'drift').length} 项版本偏差。插件运行解析请在 DSH 设置 → 插件查看；Browser Harness 状态来自 DSH Shell。';
     } catch (failure) {
       pluginMessage = '插件检查失败：$failure';
     } finally {

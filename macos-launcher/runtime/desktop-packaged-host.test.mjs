@@ -9,6 +9,7 @@ import {dshReadiness} from '../../scripts/dsh-readiness.mjs'
 import { createHash } from 'node:crypto'
 import { sealPluginPayload } from './plugin-payload.mjs'
 import { startupPluginResults } from './startup-plugins.mjs'
+import { stageBrowserHarnessSkills } from '../../browser-harness-plugin/build.mjs'
 
 const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
 const anchor = join(source, 'apps/cli/package.json'), req = createRequire(anchor)
@@ -30,9 +31,10 @@ test('packaged project profile serves authenticated official DSH readiness using
   await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
   // Native SDK package artifacts are fixed external runtime inputs; no source resolver or own-package alias is injected.
   await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
-  for (const path of ['agent-observation-plugin', 'matt-skills-panel-plugin/package', 'vendor/mattpocock-skills-zh/skills', 'vendor/dsh-skills/skills']) {
+  for (const path of ['agent-observation-plugin', 'browser-harness-plugin', 'matt-skills-panel-plugin/package', 'vendor/mattpocock-skills-zh/skills', 'vendor/dsh-skills/skills']) {
     await cp(resolve(path), join(workflow, path), { recursive: true, filter: path => !/(?:^|\/)(?:test|tests|node_modules|\.git)(?:\/|$)/.test(path) })
   }
+  await stageBrowserHarnessSkills(resolve('.'), workflow)
   for (const name of ['package.json', 'project-plugins.json', 'project-plugins.lock.json', 'dsh-runtime.json']) {
     await cp(resolve(name), join(workflow, name))
   }
@@ -198,6 +200,21 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(manifest.dependencies['dsh-workflow-matt-panel'], `file:${join(workflow, 'matt-skills-panel-plugin/package')}`)
   assert.ok(ctx.tools.get('deck_context'), 'the named Matt tools package registers its public tool')
   assert.match((await ctx.skills.get('spec-delivery')).content, /spawn_teammate/, 'the real Host loads the native DSH team skill')
+  const browserPlugin = report.rows.find(row => row.package === 'dsh-workflow-browser-harness')
+  assert.equal(browserPlugin.current, '0.1.0')
+  assert.equal(browserPlugin.expected, '0.1.0')
+  const browserSkill = await ctx.skills.get('browser-harness')
+  assert.match(browserSkill.content, /references\/SKILL.md/)
+  assert.equal((await ctx.skills.list()).filter(skill => skill.name === 'browser-harness').length, 1)
+  const browserResponse = await fetch(new URL('/api/browserHarness/inspect', baseUrl(ctx)), {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie }, signal: t.signal,
+    body: JSON.stringify({ type: 'client-request', rpcId: 'browser-inspect', method: 'browserHarness/inspect', payload: { args: {} } }),
+  })
+  const browserInspection = await browserResponse.json()
+  assert.equal(browserResponse.status, 200, JSON.stringify(browserInspection))
+  assert.equal(browserInspection.result?.ok, true, JSON.stringify(browserInspection))
+  assert.equal(browserInspection.result.value.actualScope, 'dsh-shell')
+  assert.ok(['installed', 'missing', 'error'].includes(browserInspection.result.value.state))
   assert.equal(ctx.get('jevCenter'), undefined, 'the retired JEV center is not loaded')
   assert.equal(ctx.get('agentMonitor'), undefined, 'the disabled project agent monitor is not loaded')
   disposing = ctx.fiber.dispose()
@@ -233,4 +250,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.ok(ctx.tools.get('deck_context'))
   assert.ok((await ctx.skills.list()).some(skill => skill.name === 'implement-spec'), 'moved Host still loads the managed Chinese skill directory')
   assert.match((await ctx.skills.get('spec-delivery')).content, /team_task_create/, 'moved Host still loads the native DSH team skill')
+  assert.match((await ctx.skills.get('browser-harness')).content, /references\/SKILL.md/)
+  assert.deepEqual(await readFile(join(movedWorkflow, 'browser-harness-plugin/skills/browser-harness/references/SKILL.md')),
+    await readFile(resolve('vendor/browser-harness/SKILL.md')), 'relocation keeps original skill bytes')
 })

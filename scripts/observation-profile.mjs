@@ -40,6 +40,7 @@ export async function migrateProjectEntryNames({ profile, anchor, projectRoot = 
     ['matt-skills-board', pathToFileURL(join(projectRoot, 'matt-skills-panel-plugin/package/lib/index.js')).href],
     ['matt-panel-tools', 'dsh-workflow-matt-panel/tools'],
     ['mattpocock-skills-zh', '@deepseek-ai/dsh-skill-filesystem'],
+    ['workflow-browser-harness', pathToFileURL(join(projectRoot, 'browser-harness-plugin/index.mjs')).href],
   ])
   return withFileLock(join(profile.dir, 'package.json'), async () => {
     let changed = false

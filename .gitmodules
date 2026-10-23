@@ -5,3 +5,6 @@
 [submodule "vendor/dsh-mattpocock-skills-deck"]
 	path = vendor/dsh-mattpocock-skills-deck
 	url = https://github.com/FeatherHunter/dsh-mattpocock-skills-deck.git
+[submodule "vendor/browser-harness"]
+	path = vendor/browser-harness
+	url = https://github.com/browser-use/browser-harness.git

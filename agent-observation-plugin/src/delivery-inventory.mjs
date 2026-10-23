@@ -28,8 +28,10 @@ export function apply(ctx, { projectRoot }) {
     const config = await readDeliveryManifest(projectRoot)
     if (!config) throw new Error('包内仓库清单缺失，无法核验固定版本')
     const pins = new Map(config.plugins.map(item => [item.package, item.version]))
-    for (const path of ['package.json', 'matt-skills-panel-plugin/package/package.json']) {
-      const manifest = await json(join(projectRoot, path))
+    for (const path of ['package.json', 'matt-skills-panel-plugin/package/package.json', 'browser-harness-plugin/package.json']) {
+      let manifest
+      try { manifest = await json(join(projectRoot, path)) }
+      catch (error) { if (error.code === 'ENOENT' && path.startsWith('browser-harness-plugin/')) continue; throw error }
       pins.set(manifest.name, manifest.version)
     }
     const runtime = await json(join(projectRoot, 'dsh-runtime.json'))
