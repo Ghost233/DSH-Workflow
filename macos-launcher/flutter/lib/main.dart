@@ -625,7 +625,7 @@ String _pluginState(String state) => switch (state) {
   'local' => '本地依赖',
   'error' => '检查失败',
   'unsupported' => '不支持查询',
-  'installed' => '已安装（DSH 可调用）',
+  'installed' => '已安装',
   'missing' => 'DSH 未找到安装',
   _ => '无法确认',
 };
