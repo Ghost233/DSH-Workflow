@@ -6,6 +6,8 @@
 //   - 仓库有多个 effort 又没指定 → 返回 conflict 诚实失败，绝不猜（旧实现在所有 effort 之间取全局 max+1，
 //     与契约冲突，而且因为少了 getScratchRoot 的 import 从未生效）。
 import { parseMd, slugify, stripLabelDecoration, isWholeIssueBody, loginOfAssignee } from './parse.js'
+// #1277：票面对象类型标记（唯一真源）的读写判据全在共享包里；建票这一层只负责把它放到文件头。
+import { countMarkerLines, isHeaderOnlyKind, markerKindAtStart, markerKindInHeader, markerLineFor, stripMarkerLines } from '../../../shared/issue-file/src/marker.js'
 import { listDir, readTextFile, statFile, exists } from './read.js'
 import { publishTextFile, ensureDir } from './write.js'
 // #1059：这一趟写没写下去的结论线（事件 `issue.write`，与 GitHub 房同一个名字、同一套字段；GitLab 房的写路径还没做）。
@@ -22,7 +24,7 @@ import { withWorkspaceWriter } from './write-queue.js'
 // 全在刷新核心的产物里（唯一一处判据），本文件只负责把锚写进票文件、并从盘上按锚找票。
 // #1174：回查的**结论**也交给那份判据（matchAnchor）—— 旧实现自己写了一套「比中锚就算命中」，
 // 少了「候选必须还开着」这一条，于是票关掉之后拿同一个锚再提交，会把新活记到那张关着的旧票上。
-import { anchorLineFor, checkIdempotencyKey, idempotencyKeyOf, matchAnchor, isAnchorHit, isAnchorUnsupported, anchorUnsupported, describeAnchorFailure } from '../../../shared/refresh/idempotency.js'
+import { anchorLineFor, checkIdempotencyKey, idempotencyKeyOf, matchAnchor, isAnchorHit, isAnchorUnsupported, anchorUnsupported, describeAnchorFailure } from '../../../shared/refresh/src/idempotency.js'
 import type { AnchorCandidate, AnchorMatch } from '../../../shared/refresh/src/idempotency.js'
 import type { OpContext } from '../../contract/contexts.js'
 import type { RepositoryRef, Issue } from '../../contract/entities.js'
@@ -34,7 +36,7 @@ type RepoWithPath = RepositoryRef & { path?: string }
 // 调用方递进来的创建输入：契约只收小写子集，运行时还会带大小写两种写法（Type/Labels）、
 // 状态行（status）、阻塞行（blockedBy）与整行字符串的 labels（见 buildIssueText 的读取）；
 // 经视图读，不拓契约签名。
-type CreateView = Omit<CreateInput, 'labels'> & { labels?: LabelInput[] | string; Type?: unknown; Labels?: unknown; status?: unknown; blockedBy?: unknown }
+type CreateView = Omit<CreateInput, 'labels'> & { labels?: LabelInput[] | string; Type?: unknown; Labels?: unknown; status?: unknown; blockedBy?: unknown; typeLine?: unknown }
 
 // 写者队列里取号落盘的结果：成功带落盘位置（命中锚复用旧票也走这里），失败带三段式。
 interface CreatePlacement {
@@ -91,6 +93,9 @@ function cleanWholeBodyForCreate(rawBody: string): string{
   clean=clean.replace(/^##\s*Comments\s*$[\s\S]*?(?=^##\s|$(?![\s\S]))/gim, '')
   clean=clean.replace(/^##\s*Answer\s*$[\s\S]*?(?=^##\s|$(?![\s\S]))/gim, '')
   clean=clean.split('\n').filter(function(l){ return !/^\s*(Status|Type|Blocked\s+by|Labels)\s*[:\uFF1A]/i.test(l) }).join('\n')
+  // #1277：正文里可能带着上次读回时的那行类型标记（整份票文件原样写回时最常见）。标记只能由文件头
+  // 唯一的一条来表达，正文里的一律剥掉，避免落盘后出现两条、读的时候先碰到哪条全看顺序。
+  clean=stripMarkerLines(clean)
   return clean.trim()
 }
 /** 落盘前核对单例：新票必须恰好一个一级标题、一个锚、一套字段行、一套骨架，做不到就返回原因（调用方转成如实失败）。 */
@@ -108,13 +113,40 @@ function checkSingletonsForCreate(content: string, wantAnchor: boolean): string{
   if(count(/^##\s*Answer\s*$/gim)!==1) return 'Answer 骨架不是 1 个'
   if(count(/^\s*Type\s*[:\uFF1A]/gim)>1) return 'Type 行翻倍了'
   if(count(/^\s*Assignees\s*[:\uFF1A]/gim)>1) return 'Assignees 行翻倍了'
+  // #1277：类型标记至多一条 —— 两条标记读哪条全看顺序，落盘前就判出来（数整行，正文里引用写法不算）。
+  if(countMarkerLines(content)>1) return '类型标记行翻倍了'
   return ''
+}
+/** Type 行只留四个老值：地图工单的 research / prototype / grilling / task。 */
+const TYPE_FIELD_VALUES=['research','prototype','grilling','task']
+/** 文件头 Type 行的取值：先看标签里那枚 wayfinder:<四值>，没有再认调用方明确传的四个老值；其余一律空串。
+ *  #1403 的「本地只写三类」就靠这一处收口 —— 契约三值（issue / map / spec）不会从任何一条路漏进 Type 行。 */
+function typeFieldOf(explicit: unknown, labelsStr: string): string{
+  const parts=String(labelsStr||'').split(/[,\uFF0C]+/)
+  for(const part of parts){
+    const m=/^wayfinder:(research|prototype|grilling|task)$/i.exec(part.trim())
+    if(m) return m[1].toLowerCase()
+  }
+  const raw=String(explicit||'').trim().toLowerCase()
+  return TYPE_FIELD_VALUES.indexOf(raw)>=0?raw:''
 }
 /** 建票时刻：本仓房间层的既有做法就是取真实时钟（comments.ts 那条评论时间同款），不另立时钟源。 */
 function builtAtIso(): string { return new Date().toISOString() }
+/** 从调用方输入里认出规格 / 实施票的标记值：明确传的 type 优先，其次是正文最前面那行标记；都没有回空串。
+ *  建票拼装与「实施票必须挂在规格票下」的校验共用这一处，不在两条路上各判一遍。 */
+function kindMarkerOf(input: CreateView): string{
+  const explicit=String(input.type||input.Type||'').trim().toLowerCase()
+  if(isHeaderOnlyKind(explicit)) return explicit
+  const incomingBody=input.body?String(input.body):''
+  const atStart=markerKindAtStart(incomingBody)
+  const bodyKind=isHeaderOnlyKind(atStart)?atStart:markerKindInHeader(incomingBody)
+  return isHeaderOnlyKind(bodyKind)?bodyKind:''
+}
 function buildIssueText(input: CreateView){
   const blockedByStr=Array.isArray(input.blockedBy)&&input.blockedBy.length?input.blockedBy.map(k=>'#'+String(k).padStart(2,'0')).join(', '):(typeof input.blockedBy==='string'?input.blockedBy:'')
-  const typeField=input.type?String(input.type):(input.Type?String(input.Type):'')
+  // #1277：规格与实施票的标记写进文件头，不写 Type 行 —— ADR 2.1 已把 Type 的候选值收回到
+  // research / prototype / grilling / task 四个老值，规格不再靠 Type 行表达。标记取值来源见 kindMarkerOf。
+  const kindMarker=kindMarkerOf(input)
   const labelsInput = Array.isArray(input.labels) ? input.labels : (Array.isArray(input.Labels)? input.Labels : null)
   let labelsStr=''
   if(labelsInput && labelsInput.length){
@@ -129,8 +161,16 @@ function buildIssueText(input: CreateView){
     // 整行直接给字符串时，同样逐个剥净：这是「一次贴一整行」的用法，最容易把引号一起带进来
     labelsStr=String(input.labels).split(/[,\uFF0C]+/).map(function(s){return stripLabelDecoration(s)}).filter(Boolean).join(', ')
   }
+  // #1403：文件头只写三类 —— 规格与实施票写对象标记（上面 kindMarker），地图工单写 Type 行（去前缀的
+  // research / prototype / grilling / task），其余（map / bug / issue）不写类型行，也不写 Type: issue/map/bug。
+  // 地图工单的类型来自被选中那一枚 wayfinder 标签；还没迁移的调用点（地图骨架建子票）传的 input.type
+  // 正好是这四个老值时照旧写，保住旧行为；契约三值（issue / map / spec）一个字都不落到 Type 行。
+  // 新工具会明确交下 typeLine（地图工单是 label 去前缀，其余位置是一句空串），照它写；
+  // 没有 typeLine 的是还没迁移的旧调用点（地图骨架建子票），退回按传来的老值与标签推。
+  const typeField=kindMarker?'':(typeof input.typeLine==='string'?String(input.typeLine):typeFieldOf(input.type||input.Type, labelsStr))
   const rawBody=input.body?String(input.body):''
-  const bodyPart=isWholeIssueBody(rawBody)?cleanWholeBodyForCreate(rawBody):rawBody.trim()
+  // #1277：片段正文里夹带的标记行先剥掉：标记只由文件头那条表达（整份正文的处理见 cleanWholeBodyForCreate）。
+  const bodyPart=isWholeIssueBody(rawBody)?cleanWholeBodyForCreate(rawBody):stripMarkerLines(rawBody.trim())
   const title=String(input.title).trim()
   // 建票时的指派人（#1174 决策 8）：契约的 `CreateInput.assignees` 以前被静默丢掉 —— 调用方以为指派了，
   // 票面上一个字都没有。现在原样写进 `Assignees:` 那一行；给了人就同时把状态记成「已认领」，
@@ -152,6 +192,9 @@ function buildIssueText(input: CreateView){
   // 老票没有这一行，继续回落到文件修改时间（见 parse.ts 的 createdStampFromFile，那里也不回填）。
   content='<!-- created: '+builtAtIso()+' -->\n'+content
   if(input.parentKey)content='<!-- parentKey: '+input.parentKey+' -->\n'+content
+  // #1277：落盘后文件头顺序是 幂等锚 → 类型标记 → 父注释 → 建票时间（设计文档第 2 节）。
+  // 锚最后前缀，所以标记要在锚之前插、在父注释之后插。
+  if(kindMarker)content=markerLineFor(kindMarker)+content
   // 锚在最前（含它自己的换行）：parentKey 那行若也在，紧跟在锚后面，两行都是看不见的注释。
   if(input.idempotencyKey)content=anchorLineFor(String(input.idempotencyKey))+content
   return content
@@ -253,6 +296,19 @@ async function createIssueInner(ctx: OpContext,repo: RepoWithPath | null,input: 
       if(!target.ok)return target
       const effortId=target.effortId
       const idir=target.idir
+      // #1277：实施票必须挂在规格票下（ADR 2.1、#1280 验收②）。不给父票、父票找不到、父票不是规格容器，
+      // 都当场如实失败、不落盘 —— 让实施票掉进探索地图（00）或根票，后面拆票时谁也找不到它。
+      const kindMarker=kindMarkerOf(input)
+      if(kindMarker==='ticket'){
+        const wantParent=(input.parentKey===undefined||input.parentKey===null)?'':String(input.parentKey).trim()
+        if(!wantParent)return failAs(ERROR_KIND.PARSE,'实施票必须挂在规格票下：建 ticket 时要给 parentKey（填规格票号，不是探索地图的 00）。','')
+        const parentPath=await findIssueFileInEffort(ctx,{effortId},wantParent)
+        if(!parentPath)return failAs(ERROR_KIND.NOTFOUND,'实施票的父票 '+wantParent+' 在这个 effort 里找不到，这次没建：先确认规格票号再试。',String(wantParent))
+        const parentText=String(await readTextFile(ctx,parentPath))
+        if(markerKindInHeader(parentText)!=='spec'){
+          return failAs(ERROR_KIND.PARSE,'实施票的父必须是规格票：'+wantParent+' 的票面文件头没有 spec 标记（它可能是探索地图或普通票），这次没建。',parentPath)
+        }
+      }
       await ensureDir(ctx,idir)
       // ① 先按锚回查盘上有没有这张票（回查看的是票文件里的锚，不是内存里的表）。命中就复用它：
       //    不取号、不落盘、不改任何文件，返回同一个 key。

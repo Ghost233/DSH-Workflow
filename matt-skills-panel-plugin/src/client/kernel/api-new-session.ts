@@ -1,9 +1,9 @@
 /**
  * src/client/kernel/api-new-session.ts — 内核模块（#457 由 api.js 拆出之新会话创建）
  *
- * 契约：本文件为模块真源（ESM 导出）；scripts/build.mjs 在构建时去掉每行行首
- * export 关键字，把声明体文本拼回 src/client/index.js 的拼接标记处（apply 闭包内
- * 原位），与 ctx.ts/seam 同模式，一源两物，src 零复制。
+ * 契约：本文件为模块真源（ESM 导出）；scripts/build.mts 在构建时去掉每行行首
+ * export 关键字，把声明体文本拼回 src/client/index.ts 的拼接标记处（apply 闭包内
+ * 原位），与 ctx.ts/seam 同模式，源码树里只有这一份真源。
  * 接口冻结清单见 docs/architecture/kernel-contract.md（G3 · #91 拍板）。
  *
  * （#1251：本文件由同名 .js 转成 .ts，只补类型标注与环境声明，运行时行为一字不动；
@@ -24,6 +24,7 @@ declare const resolveWorkspaceEntry: any;
 declare const storeOf: any;
 declare const hydrateFromCache: any;
 declare const getCachedSnapshot: any;
+declare const snapshotWithoutWorkRoute: any;
 declare const isReusableBlank: any;
 declare const buildCreateOpts: any;
 declare const createPTCSession: any;
@@ -171,10 +172,10 @@ declare const ensureInjectFocusAtEnd: any;
                 try {
                   const hasShared = (typeof getCachedSnapshot === 'function' ? getCachedSnapshot(cwd) : null)
                   if (!hasShared && st.snapshot && st.cwd && (typeof keyOf === 'function' ? keyOf(st.cwd) : String(st.cwd||'')) === (typeof keyOf === 'function' ? keyOf(cwd) : String(cwd||''))) {
-                    ns.snapshot = st.snapshot
+                    ns.snapshot = snapshotWithoutWorkRoute(st.snapshot)
                     ns.snapMode = 'real'
                   }
-                } catch(eFb){ if (st.snapshot) { ns.snapshot = st.snapshot; ns.snapMode='real'; } }
+                } catch(eFb){ if (st.snapshot) { ns.snapshot = snapshotWithoutWorkRoute(st.snapshot); ns.snapMode='real'; } }
               }
               try {
                 const sharedSnap = (typeof getCachedSnapshot === 'function' ? getCachedSnapshot(cwd) : null)
@@ -262,10 +263,10 @@ declare const ensureInjectFocusAtEnd: any;
               try {
                 const hasShared = (typeof getCachedSnapshot === 'function' ? getCachedSnapshot(cwd) : null)
                 if (!hasShared && st.snapshot && st.cwd && (typeof keyOf === 'function' ? keyOf(st.cwd) : String(st.cwd||'')) === (typeof keyOf === 'function' ? keyOf(cwd) : String(cwd||''))) {
-                  ns.snapshot = st.snapshot
+                  ns.snapshot = snapshotWithoutWorkRoute(st.snapshot)
                   ns.snapMode = 'real'
                 }
-              } catch(eFb){ if (st.snapshot) { ns.snapshot = st.snapshot; ns.snapMode='real'; } }
+              } catch(eFb){ if (st.snapshot) { ns.snapshot = snapshotWithoutWorkRoute(st.snapshot); ns.snapMode='real'; } }
             }
             // 版本以最新 generatedMs 者胜：若源快照更新，则以最新者为准（hydrate 已处理，但兜底后需校正）
             try {

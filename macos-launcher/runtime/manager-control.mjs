@@ -1,8 +1,8 @@
-import { constants } from 'node:fs'
+import { constants, watch } from 'node:fs'
 import { open, lstat, readFile, rename, unlink, rmdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { privateDirectory, serviceRequest, SERVICE_PROTOCOL } from './service-control.mjs'
+import { privateDirectory, serviceRequest, SERVICE_PROTOCOL, redact } from './service-control.mjs'
 
 // Darwin O_EXLOCK is released by the kernel when the descriptor's process exits.
 // Keep the lock file: unlinking it would let another starter lock a different inode.
@@ -19,12 +19,48 @@ export async function listenManagerControl(server, { directory, socketPath }) {
   catch (error) { if (error.code === 'EAGAIN') return null; throw error }
   const statePath = join(directory, 'manager.json'), backups = []
   let owned = false, bound = false, retained = false, failure
+  let watcher, closing = false, recovery = Promise.resolve()
+  const listen = async () => {
+    await new Promise((accept, reject) => {
+      server.once('error', reject)
+      const mask = process.umask(0o177)
+      try { server.listen(socketPath, () => { server.removeListener('error', reject); bound = true; accept() }) }
+      finally { process.umask(mask) }
+    })
+    if (!closing) {
+      const now = new Date()
+      await lock.utimes(now, now)
+    }
+  }
+  const watchSocket = () => {
+    watcher?.close()
+    watcher = watch(dirname(socketPath), () => {
+      recovery = recovery.then(async () => {
+        if (closing || !bound || await missing(socketPath)) return
+        await privateDirectory(dirname(socketPath))
+        if (closing) return
+        watcher.close()
+        // Rebind the listening handle without ending established control channels.
+        server.close()
+        await listen()
+        if (!closing) watchSocket()
+      }).catch(error => console.error(`DSH control recovery failed: ${redact(error.message)}`))
+    })
+    watcher.on('error', error => console.error(`DSH control watch failed: ${redact(error.message)}`))
+  }
   const release = async () => {
+    closing = true
+    watcher?.close()
     try {
+      await recovery
       // net.Server.close removes its Unix socket; never unlink a later listener's path.
       if (bound && server.listening) await new Promise((accept, reject) => server.close(error => error ? reject(error) : accept()))
-      if (owned) await unlink(statePath)
-      if (bound) await rmdir(dirname(socketPath))
+      if (owned) {
+        await unlink(statePath)
+        const now = new Date()
+        await lock.utimes(now, now)
+      }
+      if (bound) await rmdir(dirname(socketPath)).catch(error => { if (error.code !== 'ENOENT') throw error })
     } finally { await lock.close() }
   }
   try {
@@ -54,18 +90,15 @@ export async function listenManagerControl(server, { directory, socketPath }) {
       await rename(dirname(socketPath), backup); backups.push(backup)
       await privateDirectory(dirname(socketPath))
     }
+    watchSocket()
+    await new Promise(setImmediate)
     // Publish a complete ownership record before accepting any management request.
     const record = await open(statePath, 'wx', 0o600)
     owned = true
     try { await record.writeFile(JSON.stringify({ pid: process.pid, protocol: SERVICE_PROTOCOL }) + '\n') }
     finally { await record.close() }
     try {
-      await new Promise((accept, reject) => {
-        server.once('error', reject)
-        const mask = process.umask(0o177)
-        try { server.listen(socketPath, () => { server.removeListener('error', reject); bound = true; accept() }) }
-        finally { process.umask(mask) }
-      })
+      await listen()
     } catch (error) { if (error.code === 'EADDRINUSE') return null; throw error }
     retained = true
     return { backups, close: release }

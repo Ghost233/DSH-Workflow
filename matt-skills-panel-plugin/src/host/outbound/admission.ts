@@ -22,11 +22,18 @@
  * 终值仍以测量回填（#967 测量 / #966 收口）为准。
  */
 
-import { TUNING } from '../../shared/refresh/tuning.js'
+import { TUNING } from '../../shared/refresh/src/tuning.js'
 
 // 取值住共用调参表（真源 src/shared/refresh/src/tuning.ts），这里只留缺表回落的缺省值（与今天一致）。
 export const READ_BUCKET_MAX = TUNING.readBucketMax ?? 64
 export const WRITE_BUCKET_MAX = TUNING.writeBucketMax ?? 16
+
+// #1101：排队放行时「等了很久」的常驻轨迹门槛与节流间隔。
+//   为什么要有：调试开关默认关着，2026-10-21 那种「64 个名额全满、队尾排到 338 位、等 15 秒」的风暴
+//   在普通用户的日志里一行都不留 —— 事后只能看到一串耗时十几秒的 gh.exec，分不出慢在命令还是慢在门口。
+//   为什么要节流：风暴期间每秒都有放行，逐条记一天就是几十万行的垃圾；同桶五分钟最多一行足够定性。
+const LANE_LONG_WAIT_MS = 3000
+const LANE_WAIT_LOG_INTERVAL_MS = 5 * 60 * 1000
 
 // 准入桶：读与写两只桶，配额与统计都按桶隔离，跨桶不抢名额。
 type GhBucket = 'read' | 'write'
@@ -53,6 +60,14 @@ interface GhLaneOpts {
 }
 // 取消错误的形状：标准 Error 上加两个标记，调用方靠它们认出取消而非失败。
 type AdmissionCancelledError = Error & { code: string; admissionCancelled: boolean }
+// 日志出口（#960 复核）：可选注入；没注入时本文件照旧不写任何日志，准入行为一字不变。
+interface GhLogCtxLike {
+  fire(level: string, event: string, fields: Record<string, unknown>): void
+  isEnabled?(level: string): boolean
+}
+let laneLogCtx: GhLogCtxLike | null = null
+/** 把宿主的日志上下文接到这道门上：调用方在拿名额前传一次即可，没传也不影响准入。 */
+export function setGhLaneLogCtx(ctx: GhLogCtxLike | null | undefined): void { laneLogCtx = ctx || null }
 
 /** 取消错误的标记：调用方据此返回“取消”而非“失败”。 */
 export const ADMISSION_CANCELLED = 'admission-cancelled'
@@ -92,6 +107,8 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
     write: { peak: 0, waited: 0, done: 0 },
     cancelled: 0,
   }
+  // 两只桶各记「上一次因长等待落行」的钟点，用来做五分钟节流；0 表示还没记过。
+  const lastWaitLogAt: Record<GhBucket, number> = { read: 0, write: 0 }
 
   // 桶名归一：不是写桶一律按读桶算，调用方传错也不炸。
   function normBucket(b: unknown): GhBucket { return b === 'write' ? 'write' : 'read' }
@@ -128,11 +145,32 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
       return Promise.resolve(releaseOf(bucket))
     }
     stats[bucket].waited += 1
+    // #960 复核：排上队的那一刻记下钟点，放行时把「等了多久、等候期间这只桶里还有谁」落一行按需日志。
+    //   为什么要有：票面问的是「准入这道门到底有没有把人憋死」，只看 gh.exec 的耗时分不清「命令慢」与「排队慢」。
+    const waitT0 = Date.now()
     // 类型说明：Promise 泛型只定放行函数的形状，运行时仍是原来那只 Promise。
     return new Promise<() => void>(function (resolve, reject) {
       // 类型说明：放行与取消函数先空着，随后立即补上，空只存在这两行之间。
       const waiter: GhWaiter = { settled: false, signal: signal, resolve: null, reject: null, bucket: bucket }
-      waiter.resolve = function (): void { resolve(releaseOf(bucket)) }
+      waiter.resolve = function (): void {
+        // #960：排队拿到名额时落一行 —— 桶名、放行时在飞数、上限、放行时队列残长、等了多久。
+        //   只记短枚举与数字，不记命令、路径、票号。按需级（先判调试开关），不采样。
+        try {
+          const now = Date.now()
+          const waitedMs = now - waitT0
+          if (laneLogCtx && typeof laneLogCtx.fire === 'function' && (!laneLogCtx.isEnabled || laneLogCtx.isEnabled('debug'))) {
+            laneLogCtx.fire('debug', 'gh.lane.saturated', { bucket: bucket, inflight: running[bucket], max: maxOf[bucket], queued: queues[bucket].length, waitedMs: waitedMs })
+          }
+          // #1101：常驻一行「门口确实憋过」的轨迹。信息和调试两档各管一件事：
+          //   调试那行是逐条明细（排一次记一次，用来画分布）；这一行只说「这段时间这只桶憋过」，
+          //   三秒起记、同桶五分钟最多一条，风暴一天也只有几百行，不用开调试也查得到。
+          if (laneLogCtx && typeof laneLogCtx.fire === 'function' && waitedMs >= LANE_LONG_WAIT_MS && now - lastWaitLogAt[bucket] >= LANE_WAIT_LOG_INTERVAL_MS) {
+            lastWaitLogAt[bucket] = now
+            laneLogCtx.fire('info', 'gh.lane.wait', { bucket: bucket, waitedMs: waitedMs, inflight: running[bucket], max: maxOf[bucket], queued: queues[bucket].length })
+          }
+        } catch (eL) {}
+        resolve(releaseOf(bucket))
+      }
       waiter.reject = function (e: unknown): void { reject(e) }
       const onAbort = function (): void {
         if (waiter.settled) return
@@ -194,7 +232,8 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
 let defaultLane: ReturnType<typeof createGhAdmission> | null = null
 
 /** 进程内默认的一道准入：三个出站路（room client / detectionExec / runGh）共用它才叫“同一口径”。 */
-export function getGhLane(): ReturnType<typeof createGhAdmission> {
+export function getGhLane(logCtx?: GhLogCtxLike | null): ReturnType<typeof createGhAdmission> {
+  if (logCtx) setGhLaneLogCtx(logCtx)
   if (!defaultLane) defaultLane = createGhAdmission({ readMax: READ_BUCKET_MAX, writeMax: WRITE_BUCKET_MAX })
   return defaultLane
 }

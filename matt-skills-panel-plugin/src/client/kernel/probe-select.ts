@@ -3,8 +3,8 @@
  *
  * 为什么拆出来：probe-snapshot.ts 一直贴着「单文件 ≤350 行」那条上限，
  * 加上这两段就过线了；#707 也是为同一个原因从它身上拆出过颜色与差异那三样。
- * 本文件为模块真源，同名 .js 是构建产物，改这里，不要去改生成的 .js。
- * 构建侧把声明体拼回 src/client/index.js 里那条 probeSelect 拼接标记处。
+ * 本文件为模块真源，源码树里只有这一份真源，改这里就够。
+ * 构建侧把声明体拼回 src/client/index.ts 里那条 probeSelect 拼接标记处。
  *
  * 本文件管两件事，都与「这个工作区用哪个后端」这条事实有关：
  * ① 进工作区时补问一次宿主那条专用电话（wf.selection）；
@@ -44,6 +44,7 @@ declare const setCachedSnapshot: any;
 declare const setPresentationMap: any;
 declare const startAutoProbe: any;
 declare const touchProbeAt: any;
+declare const adoptWorkRouteTableIfNewer: any;
 // 进工作区时补问一次「这个工作区用哪个后端」（I1：几十字节的事实不搭 16 MB 的车）。
 // 宿主那边这条电话本来就有（wf.selection），只是界面进工作区时一条都不用 —— 全仓原先只有设置页在调。
 // 判据（口径只此一处）：
@@ -70,7 +71,7 @@ export const askSelectionOnce = function (st: any): any {
     const t0: number = Date.now();
     // 跨边界调用先记一行（按需级，外层先判开关），与收到回包那一行配成一对。
     try { if (isEnabled('debug')) log('debug', 'host.call', { method: method, kind: 'selection', ok: true, latencyMs: 0 }); } catch (eL) {}
-    return host.call(method, { cwd: st.cwd }).then(function (res: any): any {
+    return host.call(method, { cwd: st.cwd, sessionId: st.sessionId || '' }).then(function (res: any): any {
       try {
         const okRes: boolean = !!(res && (res.ok === true || (res.value && res.value.ok === true)));
         if (okRes) log('info', 'host.call', { method: method, latencyMs: Date.now() - t0, ok: true, kind: 'selection' });
@@ -130,6 +131,9 @@ export const _installLateSnapshotSelection = function (st: any, snap: any, reqNo
     mine.done = true;
     let changed: boolean = false;
     if (snap.selection !== undefined && typeof mergeSelection === 'function') { try { if (mergeSelection(st, snap.selection)) changed = true; } catch (eSel) {} }
+    // #1373：迟到的 304 同样可能捎着更新的工作路线读数 —— 只补 selection 的老路会把它丢掉，
+    //   胶囊就还是空的。判据与正常那一路共用 adoptWorkRouteTableIfNewer，换上才记 changed（会 emit）。
+    try { if (typeof adoptWorkRouteTableIfNewer === 'function' && adoptWorkRouteTableIfNewer(st, snap)) changed = true } catch (eWrLate) {}
     if (snap.repository !== undefined) { try { st.repository = snap.repository; if (st.cwd) setCachedRepository(st.cwd, snap.repository); } catch (eRep) {} }
     st.selPending = false;
     try { st.snapPending = false; } catch (ePendLate) {}

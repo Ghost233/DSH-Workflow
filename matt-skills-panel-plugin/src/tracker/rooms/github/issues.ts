@@ -20,7 +20,7 @@ import { STATE, ERROR_KIND } from '../../contract/vocabulary.js'
 import type { OpContext } from '../../contract/contexts.js';
 import type { Issue, RepositoryRef } from '../../contract/entities.js';
 import type { GetOpts, ListFilter } from '../../contract/inputs.js';
-import type { OpResult } from '../../contract/results.js';
+import type { IssueListResult, OpResult } from '../../contract/results.js';
 import { fail } from '../../kernel/preflight.js'
 import { emitReadDegraded } from './read-log.js'
 import { ghClient } from './client.js'
@@ -34,6 +34,7 @@ import { fetchAllPullsREST, enrichRestPRs, enrichSinglePR } from './pulls.js'
 import { pickFallbackReason } from './fallback-reason.js'
 // 记日志那层壳与「调试开关开着吗」那一问都在内核一份（#1182 第 3 件）。
 import { debugOn, guardEmit } from '../../kernel/log-emit.js'
+import { PAGINATION } from '../../contract/pagination.js'
 
 /** 仓库坐标：拥有者与仓库名，refId 形不对就回 null 而不是抛。 */
 interface ParsedRepo {
@@ -41,8 +42,10 @@ interface ParsedRepo {
   name: string;
 }
 
-/** list 的返回：成功时带票数组；走了 REST 降级时多带 fallback 标记（宿主快照据此写降级标记，界面只读不写）。 */
-type ListIssuesResult = OpResult<Issue[]> & { fallback?: string; fallbackReason?: string };
+// list 的返回形状跑到了契约里（#1304）：房间多交代的 `truncated` / `fallback` / `fallbackReason`
+// 是从房间流向调用方的合同，不只是本文件内部的事；契约那份带完整字段说明，这里只留别名。
+// 从前的类型名字仍在文件里各处引用，所以留一行别名，不把调用点全改一遍。
+type ListIssuesResult = IssueListResult;
 
 // 为什么 catch 里的错误要先转这层再读：catch 出来是 unknown，短路后的真值分支会被收成空对象形状、
 // 直接读 message 报缺成员；转成最小形状后读法与原来一致，运行时不变。
@@ -100,8 +103,8 @@ async function fetchAllIssuesREST(parsed: ParsedRepo, ctx: OpContext): Promise<O
   const c = ghClient(ctx)
   // 为什么标成未知数组：回包是 GitHub 的原始行，本函数只负责翻页搬运、不解读形状，解读是调用方的事。
   const out: unknown[] = []
-  const MAX_PAGES = 10
-  const PAGE = 100
+  const MAX_PAGES = PAGINATION.github.restMaxPages
+  const PAGE = PAGINATION.github.restPageSize
   // 本函数的起点：下面每一行降级日志带的是「这一笔从本函数入口到这里花掉的毫秒数」。
   const startsAt = Date.now()
   for (let p = 1; p <= MAX_PAGES; p++) {
@@ -203,7 +206,7 @@ export async function listIssues(repo: RepositoryRef, filter: ListFilter | undef
     while (hasNext) {
       // 构造带变量查询：gh api graphql -f query -F owner -F name -F first -F after
       const query = LIST_QUERY
-      const args = ['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${parsed.owner}`, '-F', `name=${parsed.name}`, '-F', `first=100`]
+      const args = ['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${parsed.owner}`, '-F', `name=${parsed.name}`, '-F', `first=${PAGINATION.github.listPageSize}`]
       if (after) args.push('-F', `after=${after}`)
       else args.push('-F', 'after=')
       const r = await c.execGh(args, { cwd: ctx && ctx.cwd, via: 'list.gql' })
@@ -231,7 +234,7 @@ export async function listIssues(repo: RepositoryRef, filter: ListFilter | undef
       let prAfter = null
       let prHasNext = true
       while (prHasNext) {
-        const args = ['api', 'graphql', '-f', `query=${LIST_PR_QUERY}`, '-F', `owner=${parsed.owner}`, '-F', `name=${parsed.name}`, '-F', `first=100`]
+        const args = ['api', 'graphql', '-f', `query=${LIST_PR_QUERY}`, '-F', `owner=${parsed.owner}`, '-F', `name=${parsed.name}`, '-F', `first=${PAGINATION.github.listPageSize}`]
         if (prAfter) args.push('-F', `after=${prAfter}`)
         else args.push('-F', 'after=')
         const r = await c.execGh(args, { cwd: ctx && ctx.cwd, via: 'list.pr' })
@@ -289,14 +292,22 @@ export async function listIssues(repo: RepositoryRef, filter: ListFilter | undef
       // #734：同时带上 `fallbackReason`（quota = 真配额耗尽，other = 其它原因走了 REST；
       //   未知由调用方缺失表示为 null）。界面新鲜时只有 quota 才说「配额耗尽」，other 与未知一律
       //   说中性那句，一个字不许提配额。旧判据 isRateLimitError 一处不动（裸 403 照旧走老路）。
-      try { if (ctx && ctx.memo) rosterAdoptList(ctx.memo, restNorm, filter) } catch (eU) {}
-      return { ok: true, data: applyIssueFilter(restNorm, filter), fallback: 'rest', fallbackReason: fbCause }
+      // REST 这条路自己可能撞上尾页失败，完整性判不了：名册保守按「不完整」收下，不拿子集当全集（#1304）。
+      // 同一个「不全」还要交给调用方：REST 自己有翻页上限（10 页 × 100 条），尾页失败时只回已经拿到的，
+      // 所以这里一并标 truncated: true —— 壳层据此把名册继续按「不完整」收，工具层据此在回执里自曝。
+      try { if (ctx && ctx.memo) rosterAdoptList(ctx.memo, restNorm, filter, { complete: false }) } catch (eU) {}
+      return { ok: true, data: applyIssueFilter(restNorm, filter), fallback: 'rest', fallbackReason: fbCause, truncated: true }
     }
     // 上限截断要能从日志里看出来：工单那条一到 500 就 break、拉取请求那条到 1000 才 break，
     // 两条都是「回成功、只装了一部分」。
     if (issuesTruncated || prTruncated) emitReadDegraded(ctx, 'list', 'list:partial', Date.now() - tList)
-    try { if (ctx && ctx.memo) rosterAdoptList(ctx.memo, all, filter) } catch (eU) {}
-    return { ok: true, data: applyIssueFilter(all, filter) }
+    // 截断过的列表不能当「完整名册」收下（#1304）：否则名册的读者会拿一份少了一半票的索引去算关系。
+    // 名册的读者是成环检查（kernel/cycle-check.ts 读 adjacencyFor）与 setBlockedBy 里的环检测；
+    // 单票读依赖已经不读名册了（换票 #1304 之后它直接调 listIssues 自己取整仓列表），
+    // 所以这里要防的是「名册声明完整、实际少票」这件事本身。把「不全」同时交给名册与调用方。
+    const truncated = issuesTruncated || prTruncated
+    try { if (ctx && ctx.memo) rosterAdoptList(ctx.memo, all, filter, { complete: !truncated }) } catch (eU) {}
+    return { ok: true, data: applyIssueFilter(all, filter), truncated: truncated }
   } catch (e) {
     // 判档只走本房唯一的出口（`ghVerdictOf`）：档位由规则表判、话术按票面实现决定第 11 条挑。
     // 第三段把出错的那个值原样交出去当原文（合并、遮蔽、截断由 `fail` 统一做）。

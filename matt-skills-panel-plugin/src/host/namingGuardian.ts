@@ -4,7 +4,7 @@
  * 为什么要有它（一句话）：跟踪态持有、落盘台账与事件驱动的索引结算；判定真源见 shared 命名三文件。
  *
  * 三条不能改的约定（改之前先看原 namingGuardian.js 头注释与调用点 index.ts）：
- * 1. 行为零变化：逻辑逐行对应，只加类型标注与中文注释，不改任何运行时语义；相对导入保留 .js 后缀，由 scripts/ts-hook.mjs 改指同名 .ts。
+ * 1. 行为零变化：逻辑逐行对应，只加类型标注与中文注释，不改任何运行时语义；相对导入保留 .js 后缀，由 scripts/ts-hook.mts 改指同名 .ts。
  * 2. 只写可剥离 TypeScript：不新增运行时语法（禁用 enum 与构造函数参数属性），类型一律 import type 或内联标注，转译后与原 .js 逐行同义。
  * 3. 不新增任何 import 边：只给已有引用加类型，不引入新模块依赖；Node 内建模块的类型缺席由文件内局部声明与 @ts-expect-error 承接，不装 @types/node。
  */
@@ -33,7 +33,7 @@ type WfArgs = any;
 //   NAMING_SWEEP_SOON_MS —— 即时推进（namingSweepSoon）没带延时参数时的缺省合并窗（住
 //     config/intervals.yaml 的 namingSweepSoonMs 键）：短窗内多次事件合成一次索引扫描，防堆积。
 // 值由 tests/verify-time-config.ts 看守一致。
-import { NAMING_FALLBACK_INTERVAL_MS as NAMING_FALLBACK_MS, NAMING_PERSIST_DEBOUNCE_MS, NAMING_SWEEP_SOON_MS } from '../shared/time-config/values.js'
+import { NAMING_FALLBACK_INTERVAL_MS as NAMING_FALLBACK_MS, NAMING_PERSIST_DEBOUNCE_MS, NAMING_SWEEP_SOON_MS } from '../shared/time-config/src/values.js'
 // 自由变量 getTitle 的存在性声明（原 .js 里它是未声明的自由引用，运行时靠 typeof 守卫：
 // 有这个名字的函数才调，没有就跳过，try 包着兜底；declare 不产生运行时代码，行为与原来逐行一致）。
 // 为什么不断言它一定存在：调用方从未传入它，它今天就是缺席的，类型必须照实写成「可能有」。

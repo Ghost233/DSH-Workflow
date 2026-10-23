@@ -10,6 +10,7 @@
  */
 declare function idOfParts(...args: any[]): any;
 declare function idOf(...args: any[]): any;
+declare function promptText(...args: any[]): any;
 declare function effortOf(...args: any[]): any;
 declare function refKeyOf(...args: any[]): any;
 declare function issueUrlFor(...args: any[]): any;
@@ -21,6 +22,13 @@ declare const Tip: any;
 declare function Ic(...args: any[]): any;
 declare function inject(...args: any[]): any;
 declare function moduleMetaOf(...args: any[]): any;
+// #1296：身份色只从中央色表取（container-view.ts 的 CONTAINER_ACCENT，构建时排在本文件之前）。
+declare const CONTAINER_ACCENT: any;
+// #1286 收口：规格与地图也是快照里的「行」，行级动作要先认出容器再走三态口径（见下方 containerActionOf）。
+declare function containerKindOf(...args: any[]): any;
+declare function containerStateOf(...args: any[]): any;
+declare function containerTriState(...args: any[]): any;
+declare function containerPromptText(...args: any[]): any;
 // ---- effort 维度共用小件（面板多处要按身份找地图/分组/取 effort 名单，只此一份实现）----
 /** 按票身份 (effort, 编号) 在 maps 数组里找地图；找不到就老实返回空，不猜第一张。
   * 只有整份快照都没有工作单元标识（老快照）时，才回落按编号找——新快照里按编号取第一张会开错地图。 */
@@ -82,6 +90,8 @@ export const mapBlockOf = function (snapshot: any): any {
 //   阻塞判定只算一遍，趟数从六降到二。
 // 不能改的约定：五个数组的元素顺序仍与 m.tickets 一致（面板按这个顺序画）；
 //   判定表达式与短路条件原样保留——t.claimedBy 为真时根本不碰 blockedBy，blockedBy 是 undefined 时照旧当场抛错（不兜底、不吞）。
+// 这一笔优化成立的前提：state 与 blockedBy 是纯数据（普通属性，读几次结果都一样）。哪天它们变成带副作用的取值器
+//   （getter 或 Proxy），「每张票只读一次状态」就不再等价于原来读三次，届时要么改回多趟，要么把票据在入口处先拍成纯数据。
 export const compute = (st: any): any => {
   const maps: any[] = (st.snapshot && Array.isArray(st.snapshot.maps)) ? st.snapshot.maps : []
   return maps.map(function (m: any): any {
@@ -204,7 +214,11 @@ export const applyStandaloneBlocks = function (st: any, blockOf: any): any {
     })
   })
   const stateOf: any = standaloneStateMapOf(st)
-  const isMapRow = function (x: any): any { return x.type === 'map' || ((x.labels || []).some(function (l: any): any { return l && l.name === 'wayfinder:map' })) }
+  // #1286：容器行也算容器 —— 探索地图（type==='map' 或带 wayfinder:map 标签）与规格（type==='spec'）。
+  //   容器不是「一张要独立接手的票」，所以不挂独立票那套阻塞徽标（地图子票、规格单票都算）。
+  //   口径与内核 container-view.ts 的 containerKindOf 一致；这里内联写死而不是调它：门禁
+  //   tests/verify-544-standalone-blocked.ts 会把本文件单独求值，跨文件调函数会 ReferenceError。
+  const isMapRow = function (x: any): any { return x.type === 'map' || x.type === 'spec' || ((x.labels || []).some(function (l: any): any { return l && l.name === 'wayfinder:map' })) }
   issues.forEach(function (x: any): void {
     try {
       if (!x || x.state === 'CLOSED' || isMapRow(x)) return
@@ -264,92 +278,9 @@ export const isLightHex = function (hex: any): boolean {
     return cDark >= cWhite
   } catch (e) { return false }
 }
-// #771 一处分类（状态优先于类型）：未分流 → 接手 → 补充 → 修复 → 讨论 → 研究 → 原型 → 执行。
-//   两枚同时出现取接手；needs-triage 与 needs-info 同时出现仍先诊断（按定义不该同时出现）。
-//   四处展示（注入文本 / 行按钮 / 新会话与详情顶栏取色 / 详情顶栏字与悬停）一律调它，不各写一份阶梯。
-export const rowActionKind = function (x: any): any {
-  const has = function (nm: any): any { return ((x && x.labels) || []).some(function (l: any): any { return (typeof l === 'string') ? l === nm : l.name === nm }) }
-  const _isTriageLike: boolean = !(x && x.labels && x.labels.length) || has('needs-triage')
-  if (_isTriageLike) return 'diagnose'
-  if (has('ready-for-human')) return 'takeover'
-  if (has('needs-info')) return 'supplement'
-  if (has('bug')) return 'fix'
-  if (has('wayfinder:grilling')) return 'discuss'
-  if (has('wayfinder:research')) return 'research'
-  if (has('wayfinder:prototype')) return 'prototype'
-  return 'execute'
-}
-export const actionColorOf = function (x: any, colorOf: any): any {
-  const has = function (nm: any): any { return (x.labels || []).some(function (l: any): any { return (typeof l === 'string') ? l === nm : l.name === nm }) }
-  const bc = function (nm: any, fb: any): any { const cc: any = colorOf[nm]; return cc ? '#' + cc : fb }
-  const kind: any = rowActionKind(x)
-  if (kind === 'diagnose') return bc('needs-triage', '#f59e0b')
-  // #785：接手跟 ready-for-human 标签色、补充跟 needs-info 标签色，取不到时兜底 #c084fc（与 10 个核心标签色均不同）
-  if (kind === 'takeover') return bc('ready-for-human', '#c084fc')
-  if (kind === 'supplement') return bc('needs-info', '#c084fc')
-  if (kind === 'fix') return bc('bug', '#f87171')
-  if (kind === 'discuss') return bc('wayfinder:grilling', '#d93f0b')
-  if (kind === 'research') return bc('wayfinder:research', '#0ea5e9')
-  if (kind === 'prototype') return bc('wayfinder:prototype', '#f59e0b')
-  return '#c084fc'
-}
-// #361：行级动作注入文本的单一真源（诊断/接手/补充/修复/讨论/研究/原型/执行）—— 新会话打开与行内动作共用
-export const rowActionText = function (st: any, x: any): any {
-  let url: string = ''
-  try { url = issueUrlFor(st, x.number) } catch(e) { url = '' }
-  if (!url) {
-    const fallbackKey: any = (x && (x.number != null ? x.number : x.key != null ? x.key : ''))
-    if (fallbackKey !== '') url = '#' + String(fallbackKey)
-  }
-  const kind: any = rowActionKind(x)
-  if (kind === 'diagnose') return renderTemplate('diagnose', { url: url }, st)
-  if (kind === 'takeover') return renderTemplate('takeover', { url: url }, st)
-  if (kind === 'supplement') return renderTemplate('supplement', { url: url }, st)
-  if (kind === 'fix') return renderTemplate('fix', { url: url }, st)
-  if (kind === 'discuss') return renderTemplate('discuss', { url: url }, st)
-  if (kind === 'research') return renderTemplate('research', { url: url }, st)
-  if (kind === 'prototype') return renderTemplate('prototype', { url: url }, st)
-  try { return startText(st, x) } catch(e) { return renderTemplate('diagnose', { url: url }, st) }
-}
-// v19：共享 —— 行级动作（列表与 map 详情共用）：按一处分类八选一（诊断/接手/补充/修复/讨论/研究/原型/执行），预填输入框；
-// 按钮主体色 = 对应 label 的 GitHub 配置色（字色按对比度在深白两色里择优，见 isLightHex）；接手跟 ready-for-human、补充跟 needs-info（#785），取不到时兜底 #c084fc
-export const mkRowAction = function (st: any, x: any, narrow: any, colorOf: any): any {
-  const url: any = issueUrlFor(st, x.number)
-  const kind: any = rowActionKind(x)
-  const isLight: any = isLightHex
-  const btnColor = function (nm: any, fb: any): any { const c: any = colorOf[nm]; return c ? '#' + c : fb }
-  const mk = (icon: any, label: any, text: any, colorHex: any): any => {
-    const light: any = isLight(colorHex)
-    const tipByLabel = (function(): any{
-      try {
-        if (label === tr('act.diagnose')) return tr('tip.diagnose')
-        if (label === tr('act.takeover')) return tr('tip.takeover')
-        if (label === tr('act.supplement')) return tr('tip.supplement')
-        if (label === tr('act.fix')) return tr('tip.fix')
-        if (label === tr('act.discuss')) return tr('tip.discuss')
-        if (label === tr('act.research')) return tr('tip.research')
-        if (label === tr('act.prototype')) return tr('tip.prototype')
-        if (label === tr('act.execute')) return tr('tip.execute')
-      } catch(e){}
-      return label
-    })()
-    return h(Tip, { content: tipByLabel }, h('button', {
-      className: 'dsws-btn primary' + (narrow ? ' narrow-icon' : ''),
-      onClick: function (e: any): void { e.stopPropagation(); inject(st, text) },
-      style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, flex: 'none', background: colorHex, borderColor: 'transparent', color: light ? '#140a1e' : '#ffffff' },
-    }, [Ic({ n: icon, size: icon === 'prototype' ? 12 : 10 }), narrow ? null : h('span', null, label)]))
-  }
-  // v21：技能命令 + URL + 统一引导句（不再重复灌输技能内部流程）
-  // v25 · T2b：诊断/修复/讨论走模板渲染（用户可自定义静态文本，{url} 注入）
-  if (kind === 'diagnose') return mk('chat', tr('act.diagnose'), rowActionText(st, x), btnColor('needs-triage', '#f59e0b'))
-  if (kind === 'takeover') return mk('play', tr('act.takeover'), rowActionText(st, x), btnColor('ready-for-human', '#c084fc'))
-  if (kind === 'supplement') return mk('play', tr('act.supplement'), rowActionText(st, x), btnColor('needs-info', '#c084fc'))
-  if (kind === 'fix') return mk('hammer', tr('act.fix'), rowActionText(st, x), btnColor('bug', '#f87171'))
-  if (kind === 'discuss') return mk('chat', tr('act.discuss'), rowActionText(st, x), btnColor('wayfinder:grilling', '#d93f0b'))
-  if (kind === 'research') return mk('search', tr('act.research'), rowActionText(st, x), btnColor('wayfinder:research', '#0ea5e9'))
-  if (kind === 'prototype') return mk('prototype', tr('act.prototype'), rowActionText(st, x), btnColor('wayfinder:prototype', '#f59e0b'))
-  return mk('play', tr('act.execute'), rowActionText(st, x), '#c084fc')
-}
+// 行级动作（containerActionOf / rowActionKind / actionColorOf / rowActionText / mkRowAction）
+// 已拆到 kernel/row-actions.ts：构建时紧随本文件拼入同一闭包，外部调用点无需改动。
+// 拆出的理由：本文件越过每文件 350 有效行的门禁，且那族函数与派生统计没有共享状态。
 // #506 拉取请求页签门控与列表派生（前端房纯函数，无日志点：无跨边界调用、无新缓存、无定时器，复用既有快照链路）
 // 门控只读后端模块的能力位，不写后端名字；快照组装全留，过滤归前端。
 // ListFilter 登记（前端房登记，后端按此实现过滤；示例见 #504 正文）：

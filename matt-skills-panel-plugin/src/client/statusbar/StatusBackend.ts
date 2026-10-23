@@ -1,8 +1,8 @@
 /**
  * statusbar/StatusBackend.ts — 状态栏后端选择与门控动作（从 StatusBar.js 拆出，B1 #460，纯结构、行为零变化；
  * #1209 由同名 .js 转成 TypeScript，真源从此是这一份）
- * 契约：模块真源（ESM 导出）；scripts/build.mjs 构建时剥行首 export 拼回
- * src/client/index.js 的 leaf 标记处（一源两物，标记 id 与本文件名一致）。
+ * 契约：模块真源（ESM 导出）；scripts/build.mts 构建时剥行首 export 拼回
+ * src/client/index.ts 的 leaf 标记处（源码树里只有这一份真源，标记 id 与本文件名一致）。
  * 以后谁改它：改状态栏后端选择（gate 蓝条选后端：打开关闭确认绑定）与初始化那张小卡（域文档布局）的人改它。
  * #655 起本文件还管初始化那张小卡上的那组单选（域文档布局）与「没选过布局就先弹卡、不注入」这条漏斗。
  * #663 起：门控那个窗只问后端（里面那组布局单选撤了，点确认也不再注入任何文字）；横幅那条链搬去
@@ -34,11 +34,15 @@
 //   getCachedSetupLayout / setCachedSetupLayout），同一个工作区下次打开直接沿用；想改随时在黄条那颗
 //   「初始化」按钮弹出的那张卡上改 —— 那条入口每次都问（卡上预选着上次那一项），确认后才注入。
 //
+//   2026-10-21（#1342）取值名单收到唯一真源 src/shared/doc-layout/src/layouts.ts，本文件不再自己写一份字面量：
+//   构建把它拼进界面闭包（见 scripts/build.mts 的 shared:docLayout 与 src/client/index.ts 的 marker），
+//   下面按 declare 取用（见本文件末尾那一段 declare）。
+//
 //   类型为什么是这两个字面量的联合而不是 string[]：下面每一处校验（readStatusSetupLayout、layoutSelectionOf、
 //   applyStatusSetupLayout、cancelStatusSetupPick）判的都是「这个值在不在名单里」，名单一旦写成宽的
 //   string[]，那些判断就退化成「是不是字符串」而看不出意图；写成联合类型之后，把 'singel' 这种错字递进来
 //   在类型检查那一关就被挡住。卡片与注入文案两边都按这两个值分支，第三档取值进来是 bug，不是新选项。
-export const SETUP_LAYOUT_VALUES: readonly SetupLayoutValue[] = ['single', 'multi']
+export const SETUP_LAYOUT_VALUES: readonly SetupLayoutValue[] = DOC_LAYOUT_VALUES
 // 什么都没有时的兜底值：#669 定的「第一项默认选中，不额外问一句」。
 export const SETUP_LAYOUT_FALLBACK: SetupLayoutValue = 'single'
 export const readStatusSetupLayout = function(s: StatusPickState | null | undefined): SetupLayoutValue | string | null {
@@ -182,7 +186,7 @@ export const confirmStatusSetupPick = function(s: StatusPickState): void {
   const ownerSwitch=cardOwnedBySwitch(s)
   applyStatusSetupLayout(s, layoutSelectionOf(s))
   // #683（F1 · ADR 的 R6）：卡上确认写的是「卡上当时显示的那一个」—— 同时写 H（宿主侧，跨重启跨地址不失忆）与 C（本地，applyStatusSetupLayout 刚写过）。宿主写不进去也不挡注入（下次打开卡片重选一次即可；宿主侧那次失败宿主自己记了 warn）。
-  try{ if(typeof host!=='undefined'&&host.call) host.call('wf.setupLayout',{cwd:s.cwd||'',layout:layoutSelectionOf(s)}).catch(function(){}) }catch(eSL){}
+  try{ if(typeof host!=='undefined'&&host.call) host.call('wf.setupLayout',{cwd:s.cwd||'',layout:layoutSelectionOf(s),sessionId:s.sessionId||''}).catch(function(){}) }catch(eSL){}
   try{ delete s.setupPickLayout }catch(e0){} // 卡上那一下已经落定（会话 + 按工作区记住），这份草稿清掉，免得下次打开时它还压着
   try{ delete s.setupLayoutDraftBefore }catch(e1){} // 确认了就没有「退回开卡前那一份」这回事了（那份是给取消用的）
   const id = (s.selection && s.selection.backendId != null) ? s.selection.backendId : firstBackendIdOf(null)
@@ -218,13 +222,16 @@ export const confirmStatusGate = function(s: StatusPickState): void { const id=s
   //   此前这里顺手记了「域文档布局」并在绑好后调一次注入决策；两处一起撤（#661 第①条）：
   //   只撤单选而留注入，会在库房还没装 gh、还没建仓库的时候就把初始化长文塞进会话 ——
   //   正是这次定版要结束的那件事。布局那一问现在只在初始化那一步问（黄条那颗按钮弹的小卡）。
-  const prev: StatusPickState['selection']=s.selection; const repoRef=s.repository||(s.snapshot&&s.snapshot.repository)||null; const nxt: StatusPickState['selection']=(typeof userPickSelection==='function')?userPickSelection(id,repoRef,prev):{backendId:id,source:'explicit',ref:repoRef,userPicked:true}; s.selection=nxt; try{ if(s.cwd)setCachedSelection(s.cwd,nxt) }catch(e){} s.gateModalOpen=false; s.gateModalSource=null; emit(s); if(typeof host!=='undefined'&&host.call){ host.call('wf.bind',{cwd:s.cwd||'',backendId:id}).then(function(res: BindReply | null | undefined){ const ok=res&&(res.ok===true||(res.value&&res.value.ok===true)||res.ok); if(ok){ try{ if(typeof adoptBoundRev==='function') adoptBoundRev(s,res) }catch(eRev){} try{ var _np=res&&(res.persisted===false||(res.value&&res.value.persisted===false)); if(_np) flash(s,tr('switch.bindNotPersisted'),'info') }catch(eP){} s.tab='list'; emit(s); try{ flash(s,tr('switch.bindOkFresh',{label:(typeof labelOf==='function'?labelOf(id):String(id))}),'ok') }catch(e){} loadSnapshot(s,true,true); // #669 第 6 件：这个窗只在「还没有后端」时开，谈不上「旧数据已保留」——用「接下来按提示完成初始化」那句（旧数据那句留给切换弹窗）
+  const prev: StatusPickState['selection']=s.selection; const repoRef=s.repository||(s.snapshot&&s.snapshot.repository)||null; const nxt: StatusPickState['selection']=(typeof userPickSelection==='function')?userPickSelection(id,repoRef,prev):{backendId:id,source:'explicit',ref:repoRef,userPicked:true}; s.selection=nxt; try{ if(s.cwd)setCachedSelection(s.cwd,nxt) }catch(e){} s.gateModalOpen=false; s.gateModalSource=null; emit(s); if(typeof host!=='undefined'&&host.call){ host.call('wf.bind',{cwd:s.cwd||'',backendId:id,sessionId:s.sessionId||''}).then(function(res: BindReply | null | undefined){ const ok=res&&(res.ok===true||(res.value&&res.value.ok===true)||res.ok); if(ok){ try{ if(typeof adoptBoundRev==='function') adoptBoundRev(s,res) }catch(eRev){} try{ var _np=res&&(res.persisted===false||(res.value&&res.value.persisted===false)); if(_np) flash(s,tr('switch.bindNotPersisted'),'info') }catch(eP){} s.tab='list'; emit(s); try{ flash(s,tr('switch.bindOkFresh',{label:(typeof labelOf==='function'?labelOf(id):String(id))}),'ok') }catch(e){} loadSnapshot(s,true,true); // #669 第 6 件：这个窗只在「还没有后端」时开，谈不上「旧数据已保留」——用「接下来按提示完成初始化」那句（旧数据那句留给切换弹窗）
     // 2026-09-21（用户报「选完后端看不见下一步，过一会儿才出来」）：绑定成功之后要**立刻重取一次链**。
     //   原来这条路只重取快照、不重取链，于是那条横幅得等「上一轮链探测结束时挂上的 8 秒定时器」到点才更新
     //   （实测：点确认 → 横幅出现 11.4 秒，其中 8.16 秒纯等定时器）。同仓另外两条路本来就是
     //   `loadSnapshot + loadChain` 一对（`kernel/store-switch.js` 切后端那条、`views/NoRepoCard.js` 建完仓库那条），
     //   只有蓝条这条门控路少了后半句。
-    try{ if(typeof loadChain==='function') loadChain(s,true) }catch(eLc){}
+    // #1363 场景一：只「重取」不够，这一次还得被宿主当成人的动作（trigger 'user-recheck'）——
+    //   否则它会落进后台退避档，被挡下时宿主原样回一份选后端之前的旧快照（里面连仓库那一行都没有），
+    //   横幅链于是继续什么都不显示。选后端是用户亲手做的，修法就是把这一次的意图如实带上去。
+    try{ if(typeof loadChain==='function') loadChain(s,true,'user-recheck') }catch(eLc){}
     } else { s.selection=prev; try{ if(s.cwd)setCachedSelection(s.cwd,prev) }catch(e){} emit(s); try{ flash(s,tr('switch.bindFail',{err:String(res&&(res.error||res.message)||'unknown')}),'warn') }catch(e){} } }).catch(function(){ s.selection=prev; try{ if(s.cwd)setCachedSelection(s.cwd,prev) }catch(e){} emit(s); }); } };
 
 // ---------------------------------------------------------------------------
@@ -233,6 +240,10 @@ export const confirmStatusGate = function(s: StatusPickState): void { const id=s
 // 参数一律 any：这些名字的实现住在别处（同一次构建拼进来的别的片段里），在这里替它们立契约等于在
 // 第二处写一遍签名，两边会慢慢走岔；本文件的类型价值在于它自己的导出面与状态字段，不在于替邻居立契约。
 // ---------------------------------------------------------------------------
+// #1342：域文档布局取值的名单不是本文件写的，由共享真源 src/shared/doc-layout/src/layouts.ts 拼进闭包
+// （见 scripts/build.mts 的 shared:docLayout）。客户端这一侧的字面量只写这一处：下面的 SetupLayoutValue 从它推出，
+// kernel/prompts.ts 也从这里 type-only import，不再各写一份联合。
+declare const DOC_LAYOUT_VALUES: readonly ('single' | 'multi')[]
 declare function getCachedSetupLayout(cwd: unknown): SetupLayoutValue | string | null | undefined
 declare function setCachedSetupLayout(cwd: unknown, layout: unknown): void
 declare function emit(s: unknown): void
@@ -253,7 +264,7 @@ declare function userPickSelection(backendId: unknown, repoRef: unknown, prev: u
 declare function setCachedSelection(cwd: unknown, selection: unknown): void
 declare function adoptBoundRev(s: unknown, res: unknown): void
 declare function loadSnapshot(s: unknown, force?: boolean, soft?: boolean): void
-declare function loadChain(s: unknown, force?: boolean): void
+declare function loadChain(s: unknown, force?: boolean, trigger?: string): void
 declare function setPresentationMap(modules: unknown): void
 declare function labelOf(backendId: unknown): string
 declare const host: { call(method: string, params?: Record<string, unknown>): Promise<any> }
@@ -262,8 +273,8 @@ declare const host: { call(method: string, params?: Record<string, unknown>): Pr
 // 本文件自己用到的几个类型（#1209 加，写给读代码的人看的那部分在这里，不在上面那一堆 declare 里）
 // ---------------------------------------------------------------------------
 
-/** 域文档布局的两个合法取值，与 locale 里两句注入文案、卡片上两个选项一一对应。 */
-type SetupLayoutValue = 'single' | 'multi'
+/** 域文档布局的两个合法取值，由上面声明的 DOC_LAYOUT_VALUES 推出；与 locale 里两句注入文案、卡片上两个选项一一对应。 */
+export type SetupLayoutValue = (typeof DOC_LAYOUT_VALUES)[number]
 
 /** 这一趟收尾给出去的是哪一类（settleSwitchCard 的返回值；调用处按它落日志）。 */
 type SettlePhase = 'none' | 'setup' | 'blocked' | 'align-layout' | 'align'

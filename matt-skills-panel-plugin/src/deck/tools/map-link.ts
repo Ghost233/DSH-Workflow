@@ -7,11 +7,11 @@
 import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../shell/call-shell.js'
 import { sessionContextOfAsync } from '../shell/session-workdir.js'
 import { classifyEdgeLanding, edgeEvidence, statusOfItems, applyParentEdge, applyBlockEdges, precheckBlockBatch } from '../shell/edge-landing.js'
-import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/tool-cost.js'
+import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/src/tool-cost.js'
 import { withCallScope } from '../shell/call-budget.js'
 import { withKeyLock } from '../shell/write-mutex.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
-import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/values.js'
+import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
 
 /** 数字型参数的统一收口：正的有限数才要（取整），其余一律当「没给」，由调用方退自己的默认。 */
 function numOpt(v: unknown): number | undefined { return (typeof v === 'number' && isFinite(v) && v > 0) ? Math.floor(v) : undefined }
@@ -65,6 +65,7 @@ export const definition = {
           additionalProperties: false,
         },
       },
+      workRouteDetail: { type: 'string', enum: ['core', 'standard'], description: '成功后回执里在办表（data.workRoute）带多细：core 只带票号、会话、时间（缺省，最多 20 条），standard 再加标题与动作（全部条目）' },
       effortId: { type: 'string', description: '只有本地后端需要填，填票所在的目录名，根目录的不填' },
     },
     additionalProperties: false,
@@ -266,6 +267,7 @@ export function createDeckMapLink(deps?: DeckMapLinkDeps) {
         value: {
           status: status,
           reason: status === DECK_STATUS.OK ? '' : REFUSAL_REASONS.BACKEND_UNSUPPORTED,
+          workRouteDetail: a.workRouteDetail,
           text: text,
           data: { requested: items.length, done: done, jobs: jobs },
           items: items,

@@ -6,10 +6,12 @@
 // 2026-10 搬进 src/deck/ 之后那条门禁不再覆盖这棵树，但「一份规则、九个工具各引一条边」的形状照旧不变，
 // 地图 #1037（规则只有一份）继续沿这个方向往下拆。
 //
-// 本文件不 import 任何运行时的东西：闸、后端注册表、额度常量、算账函数都由接线方（或测试）从构造函数传进来。
+// 本文件不 import 闸、后端注册表、额度常量、算账函数这类运行时依赖：它们都由接线方（或测试）从构造函数传进来。
 // 这不是洁癖 —— 额度常量住在 src/shared/refresh/budget.js，本层不该反向去取，所以只能由调用方取好传进来
 // （做法与宿主侧的 gate.js / ledger.js、纯函数层的 policy.ts / backoff.ts 一致）。
-// 唯一的 import 是 ./call-shell-types.js，而且是 `import type`：只借形状，运行时不留一条边。
+// 本文件自己的运行时 import 只有三处：./in-flight-lease.js（并发同票串行）、./work-path-record.js
+// （#1261 成功收口记一笔）与中央超时的值；其余形状全部 `import type` 自 ./call-shell-types.js，只借形状。
+// （work-path-record.ts 内部另外运行时 import 了一处共享纯逻辑，那笔边记在它自己的文件头上。）
 // 为什么要拆出那份形状文件：这个文件补完类型标注之后有效行数到了 461，越过了「单文件 350 行」那条上限
 // （tests/verify-file-granularity.ts）。拆开的唯一原因就是那条上限，不是为了分层 —— 与同目录 rules/ 那几份的口径一致。
 //
@@ -39,14 +41,19 @@ import type {
   ShellSession, UnknownRecord, WaitSignal,
 } from './call-shell-types.js'
 import { withInFlightLease } from './in-flight-lease.js'
+import { recordWorkRoute } from './work-path-record.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
-import { SHELL_RESOLVE_TIMEOUT_MS } from '../../shared/time-config/values.js'
+import { SHELL_RESOLVE_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
 
 /** 这批工具的身份（写日志时进 host.call 的 kind 字段；不是新事件，沿用它原有的字段清单）。 */
 export const DECK_TOOL_KIND = 'deck-tool'
 /** 三态返回的取值。edges.ts 的 statusOfItems 返回的就是这三个字符串（验收脚本有一条断言钉住这件事）。 */
 export const DECK_STATUS = Object.freeze({ OK: 'ok', PARTIAL: 'partial', UNSUPPORTED: 'unsupported' })
-/** 「这件事没做成」的原因取值。文案给人的那句话说在返回的 text 里，这里只放机器可读的那一格。 */
+/**
+ * 「这件事没做成」的原因取值。文案给人的那句话说在返回的 text 里，这里只放机器可读的那一格。
+ * ai-tool-refused 有两种用法：额度用尽（OVER_CAP 这个名字的来源），以及「工具面上的规矩不允许」——
+ * 例如 deck_issue_patch 拒绝重开（#1298）。两种都是「AI 这一侧不许做这件事」，所以不再分一个新码。
+ */
 export const REFUSAL_REASONS = Object.freeze({
   NO_SESSION: 'no-session-context',
   OVER_CAP: 'ai-tool-refused',
@@ -423,6 +430,11 @@ export function createDeckShell(deps?: DeckShellDeps): DeckShell {
     const failed = vRec ? (vRec.ok === false) : false
     fire(tool, ms, !failed, failed ? hash8(str(vRec && vRec.reason)) : '')
     noteGate('op', failed ? 'fail' : 'allow', failed ? str(vRec && vRec.reason) : '')
+    // #1261/#1262：五个写工具（report、create、patch、plan、link）成功收口处把这一次记进工作路线，
+    // 并在合并信封之前把在办表与摘要带进回执；四个读工具、失败与被闸推迟的调用都不记。
+    if (!failed) {
+      await recordWorkRoute(d, tool, s, str(meta.pick.backendId), value)
+    }
     const out = envelope(tool, DECK_STATUS.OK, {
       workspace: { root: s.cwd, key: s.workspaceKey },
       backend: { id: meta.pick.backendId, source: meta.pick.source },

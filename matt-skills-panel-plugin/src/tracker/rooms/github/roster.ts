@@ -64,11 +64,19 @@ export function isFullListFilter(filter: ListFilter | null | undefined): boolean
   if (typeof f.state === 'string' && f.state && (f.state as string) !== 'all') return false
   return true
 }
-/** 整仓重建，带筛合并；返回成员键（调用方裁剪缓存用）。 */
-export function rosterAdoptList(memo: RosterMemo | null | undefined, rows: unknown, filter: ListFilter | null | undefined): string[] {
+/**
+ * 整仓重建，带筛合并；返回成员键（调用方裁剪缓存用）。
+ * `opts.complete === false`（#1304）：这份列表自己被上限截断过，只能合并本批行，
+ * 名册的 complete 位保持 false、dirty 不清 —— 不能拿子集当全集，否则名册的读者
+ * （成环检查等）会拿少了一半票的索引算关系，静默少边。
+ * 这个可选布尔只在本函数用，不导出类型：跨层各留一份同名接口没有收益。
+ */
+export function rosterAdoptList(memo: RosterMemo | null | undefined, rows: unknown, filter: ListFilter | null | undefined, opts?: { complete?: boolean }): string[] {
   if (!memo) return []
   const list: unknown[] = isArr(rows) ? rows : []
-  if (isFullListFilter(filter)) {
+  const full = isFullListFilter(filter)
+  // 只有「整仓筛选 + 这份列表确实完整」才重建名册；其余一律只合并。
+  if (full && !(opts && opts.complete === false)) {
     const byKey = new Map<string, RosterFacts>()
     for (const r of list) {
       if (!r) continue
@@ -78,6 +86,15 @@ export function rosterAdoptList(memo: RosterMemo | null | undefined, rows: unkno
     }
     memo.roster = { complete: true, byKey: byKey }
     memo.dirty = new Set<string>()
+  } else if (full) {
+    // 列表不全：把这一批行并进现有名册（没有就新建），完整性位明确置 false，之前写过的脏票不清。
+    const byKey = new Map<string, RosterFacts>(memo.roster && memo.roster.byKey instanceof Map ? memo.roster.byKey : [])
+    for (const r of list) {
+      if (!r) continue
+      const row = r as RosterRow;
+      byKey.set(String(row.key), { blockedBy: blockedKeysOf(row), parentKey: parentOf(row) })
+    }
+    memo.roster = { complete: false, byKey: byKey }
   } else {
     for (const r of list) { if (r) rosterUpsert(memo, r as RosterRow) }
   }

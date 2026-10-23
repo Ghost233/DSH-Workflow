@@ -12,7 +12,7 @@ const command = (name, args, cwd) => execute(name, args, { cwd, maxBuffer: 16 * 
   timeout: 60_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })
 
 /** Build-time acquisition only. Startup consumes this sealed production graph without a package manager. */
-export async function bundleProjectPlugins({ resourcesRoot, run = command }) {
+export async function bundleProjectPlugins({ resourcesRoot, npmCache, run = command }) {
   const config = await readDeliveryManifest(join(resourcesRoot, 'workflow'))
   if (!config) throw new Error('Missing packaged plugin manifest')
   const directory = join(resourcesRoot, 'plugins'), tarballs = join(directory, 'tarballs')
@@ -21,7 +21,7 @@ export async function bundleProjectPlugins({ resourcesRoot, run = command }) {
   const scratch = await mkdtemp(join(tmpdir(), 'workflow-plugin-build-'))
   const dependencies = {}, provenance = []
   let failure
-  const npmOptions = ['--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false', '--cache', join(scratch, 'npm-cache'), '--registry', config.registry]
+  const npmOptions = ['--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false', '--prefer-offline', '--cache', npmCache ?? join(scratch, 'npm-cache'), '--registry', config.registry]
   try {
     for (const [index, item] of config.plugins.filter(row => row.startup === true).entries()) {
       let source = tarballs, spec = `${item.package}@${item.version}`

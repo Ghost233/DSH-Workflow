@@ -21,11 +21,12 @@
 //   attention.sweep  每一次收摊结论落一行。两条登记在 research/489-appendix.md 第 1.5 节。
 //
 // （2026-10-18 #1247 从 attention.js 转成 .ts：只加类型标注与注释，逻辑一行未动。
-// 相对引用保持 .js 后缀，由 scripts/ts-hook.mjs 改指同名 .ts；判定全在纯函数那一侧，
+// 相对引用保持 .js 后缀，由 scripts/ts-hook.mts 改指同名 .ts；判定全在纯函数那一侧，
 // 本文件只做翻译与台账，所以类型只收依赖形状，不收任何判定规则。）
-import * as budget from '../../shared/refresh/budget.js'
-import { ACTIVE_LINGER_MS, ATTENTION_EXPIRY_MS, PROBE_INTERVAL_MS, PROBE_INTERVAL_LINGER_MS, ATTENTION_HEARTBEAT_MS } from '../../shared/time-config/values.js'
-import { createAttentionState, report, collect, heartbeatIntervalMs } from '../../shared/refresh/attention.js'
+import * as budget from '../../shared/refresh/src/budget.js'
+import { ACTIVE_LINGER_MS, ATTENTION_EXPIRY_MS, PROBE_INTERVAL_MS, PROBE_INTERVAL_LINGER_MS, ATTENTION_HEARTBEAT_MS } from '../../shared/time-config/src/values.js'
+import { createAttentionState, report, collect, heartbeatIntervalMs } from '../../shared/refresh/src/attention.js'
+import type { AttentionSignalKind } from '../../shared/refresh/src/attention.js'
 
 // ---------------------------------------------------------------------------
 // 类型（#1247 转写：只写类型不写实现）。
@@ -96,7 +97,7 @@ export function attentionLimits(src?: any): AttentionLimits {
 }
 
 /** 上报的六种信号（与纯函数那侧的取值表同一串；不认识的取值按 focus 算）。 */
-export const ATTENTION_SIGNAL_KINDS = ['focus', 'panel-open', 'session-switch', 'heartbeat', 'window-blur', 'panel-hidden']
+export const ATTENTION_SIGNAL_KINDS: readonly AttentionSignalKind[] = ['focus', 'panel-open', 'session-switch', 'heartbeat', 'window-blur', 'panel-hidden']
 
 function num(v: unknown): number {
   return (typeof v === 'number' && isFinite(v)) ? v : 0
@@ -129,6 +130,18 @@ export function createAttention(deps?: AttentionDeps | null): Attention {
   let state: any = createAttentionState()
   const canonByRoot = new Map<string, string>()   // 上报原文 → 归一化后的键（同一条目录只洗一次）
   let reportN = 0
+  // 同一窗口、同一种上报、同一份上报原文在 1 秒内重复到达：只处理第一条。现场日志（2026-10-20）里
+  // window-blur 会在同一秒成批到达（25 秒 28 条），每条都要把工作区根重新归一
+  // （workspaceRoot.resolve → workspaceKey.canonical → workspaceStore.miss → wf.namingPlan），而归一结果
+  // 与状态推进与上一条完全相同 —— 纯属重复劳动。去重放在 rootOf 之前，省掉的正是这趟归一化。
+  const REPORT_DEDUPE_MS = 1000
+  const lastReport = new Map<string, any>()
+  const stats = { deduped: 0 }
+
+  // 被去重窗口并掉的那一串只在开头记一行（按需级 P1）：回答「这一批上报被谁吃掉、吃掉几条」。
+  function fireDeduped(kind: any, windowId: any, rawRoot: any, visible: any): void {
+    try { if (logCtx && logCtx.isEnabled('debug')) logCtx.fire('debug', 'attention.report', { kind: kind, windowHash: hash8(windowId), rootHash: hash8(rawRoot), visible: !!visible, accepted: false, deduped: true }) } catch (eL: any) {}
+  }
 
   // 每一次上报落一行（按需级 P1）。心跳每 20 秒一次，所以按十取一采样。
   //   判断与落行必须同一行（tests/verify-log-guards.js 的口径：关着开关时连字段对象都不组装）。
@@ -210,8 +223,21 @@ export function createAttention(deps?: AttentionDeps | null): Attention {
     const a: any = args || {}
     const windowId = String(a.windowId || '')
     if (!windowId) return { ok: false, error: '没有窗口标识', text: '这一笔上报没有带窗口标识，视同没有发生：插件认不出是哪个窗口在看，不敢据此调整刷新。' }
-    const kind = ATTENTION_SIGNAL_KINDS.indexOf(String(a.kind || '')) >= 0 ? String(a.kind) : 'focus'
+    // 清单已标成共享层的取值联合；外面报上来的 kind 是字符串，查得到才收、查不到按 focus，
+    // 这一处收窄不改判断（从前读转译产物时类型被剥掉，看不出这道缺口）。
+    const kind = (ATTENTION_SIGNAL_KINDS as readonly string[]).indexOf(String(a.kind || '')) >= 0 ? (String(a.kind) as AttentionSignalKind) : 'focus'
     const visible = !!a.visible
+    const rawRoot = String(a.workspaceRoot || '')
+    const sig = kind + '|' + (visible ? '1' : '0') + '|' + rawRoot
+    const prevReport: any = lastReport.get(windowId)
+    if (prevReport && prevReport.sig === sig && (now() - prevReport.at) < REPORT_DEDUPE_MS) {
+      // 成批期间一直算同一条：at 往前滑，这一串只记第一行日志（suppressed 数着被并掉几条）。
+      prevReport.at = now()
+      prevReport.suppressed = (prevReport.suppressed || 0) + 1
+      stats.deduped += 1
+      if (prevReport.suppressed === 1) fireDeduped(kind, windowId, rawRoot, visible)
+      return prevReport.out
+    }
     const root = await rootOf(a.workspaceRoot)
     const at = num(a.atMs) || now()
     const humanMs = num(a.lastHumanInputMs) || 0
@@ -225,12 +251,14 @@ export function createAttention(deps?: AttentionDeps | null): Attention {
     const mine: any = intervalFor(plan, root)
     const standing = plan.collaped ? 'collapsed' : (mine ? 'active' : 'evicted')
     const seen = lastSeenOf(fresh, root)
-    return {
+    const reply: any = {
       ok: true, root: root, standing: standing, active: plan.active.length, keepers: plan.keepers,
       limit: limits.maxActive, heartbeatMs: heartbeatIntervalMs(limits),
       probeIntervalMs: limits.probeIntervalMs, probeIntervalLingerMs: limits.probeIntervalLingerMs,
       lastReportAgeMs: seen ? Math.max(0, now() - seen) : -1,
     }
+    lastReport.set(windowId, { sig: sig, at: at, out: reply })
+    return reply
   }
 
   /** 台账：给闸（哪些工作区算活跃）与界面（谁没在刷新）问一句。 */

@@ -11,7 +11,7 @@
 import nodePath from 'node:path'
 import darwin from './darwin/index.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
-import { PROC_GRACE_MS } from '../../shared/time-config/values.js'
+import { PROC_GRACE_MS } from '../../shared/time-config/src/values.js'
 
 /** 宿主上下文（动态缝）：取哪个服务都可能缺席，取回值按 any 收，调用点用 typeof 与 try/catch 守。 */
 interface HostCtx {

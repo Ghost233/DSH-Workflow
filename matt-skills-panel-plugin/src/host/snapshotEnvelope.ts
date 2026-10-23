@@ -14,8 +14,13 @@ type EnvelopeDeps = {
   getGhLastError: () => unknown
   adoptSnapshot: (snap: unknown, c: unknown) => unknown
   logCtx?: { fire(level: string, event: string, fields?: unknown): void } | null
-  chainReadout?: () => unknown
-  chainField?: string
+  /**
+   * #1082：面板「跨会话在办表」的读数出口。输入回包与当前会话，返回字段值
+   * （{ ok:true, readout } 或 { ok:false, reason }）；不接就整块不挂。
+   */
+  workRouteTableReadout?: (reply: unknown, ctx: { sessionId?: unknown }) => Promise<unknown> | unknown
+  /** 挂到回包上的字段名；缺省 workRouteTable（与宿主读数模块、界面叶子同一个名字）。 */
+  workRouteTableField?: string
 }
 
 /** buildSnap 的输入：五条分支各带一部分字段，这里只声明本文件真读到的那些。 */
@@ -86,6 +91,11 @@ export function createSnapshotEnvelope(deps: EnvelopeDeps) {
 
   // #689：snapshot.built 多了三个字段（open / closed 是后端计数给的真值、拿不到记 -1；partial 说这份行数据全不全）
   // —— 加在既有事件里不新增一条（每次重建都会走到这里），字段表见 research/489-appendix.md 第 1 章。
+  // #1295：再多记一个 specs —— 这一轮快照里认出几张「实施地图」（规格容器）。maps 是容器总数，
+  //   maps 减 specs 就是「探索地图」的张数；面板的双轨分流一旦看起来不对，先拿这两个数对账：
+  //   是这一轮就没认出来（specs=0），还是认出来了却没被列表画成蓝轨（渲染侧问题）。
+  //   注意老直连快照路（src/host/snapshotBuild.ts）只认 wayfinder:map 标签、不产规格容器，
+  //   那条路上 specs 恒 0 属正常，别据此判「一张规格都没认出来」。
   // 类型说明（#1155）：落盘那一步是接线处给的回调，它的返回形状在这一层表达不出来，
   // 所以按调用方传进来的类型原样还回去（运行时不碰，只是把类型跟过去）。
   // 这里必须保持 async（原样就是 async）：调用方按承诺等它，产物里也必须是 async 函数。
@@ -97,35 +107,32 @@ export function createSnapshotEnvelope(deps: EnvelopeDeps) {
       if (logCtx && snap && (snap as SnapLike).fromCache !== true) {
         const _d: DeckLike = ((snap as SnapLike).deck && typeof (snap as SnapLike).deck === 'object') ? ((snap as SnapLike).deck as DeckLike) : {}
         const _ct = (_d.counts && typeof _d.counts === 'object') ? _d.counts : null
-        logCtx.fire('info', 'snapshot.built', { maps: ((snap as SnapLike).maps || []).length, issues: ((snap as SnapLike).issues || []).length, labels: ((snap as SnapLike).labels || []).length, open: _ct ? _ct.open : -1, closed: _ct ? _ct.closed : -1, partial: _d.partial === true, latencyMs: Date.now() - ((snap as SnapLike).generatedMs || Date.now()) })
+        logCtx.fire('info', 'snapshot.built', { maps: ((snap as SnapLike).maps || []).length, specs: (((snap as SnapLike).maps || []) as any[]).filter(function (m: any) { return !!m && m.type === 'spec' }).length, issues: ((snap as SnapLike).issues || []).length, labels: ((snap as SnapLike).labels || []).length, open: _ct ? _ct.open : -1, closed: _ct ? _ct.closed : -1, partial: _d.partial === true, latencyMs: Date.now() - ((snap as SnapLike).generatedMs || Date.now()) })
       }
     } catch (e) {}
     return d.adoptSnapshot(snap, c) as T
   }
 
   /**
-   * 把「每个会话在处理哪些票」的读数挂到一份 ok:true 的回包上（票 #721 的界面那一块读的就是它）。
+   * 把面板「跨会话在办表」的读数挂到一份 ok:true 的回包上（#1082）。
    *
-   * 为什么包在最外一层、而不是写进 buildSnap：缓存短路那两条回的是缓存里**同一个对象**，
-   * 写进信封会把读数的时刻冻在缓存落盘那一刻。读数每次现算，所以这一步只能在回包交出去之前做。
+   * 与旧的 withChainReadout 同一个理由包在最外一层（旧链读数已随 #1271 退役）：缓存短路回的是缓存里同一个对象，写进 buildSnap
+   * 会把读数的时刻冻在落盘那一刻。这一步是异步的（读数要读盘），所以两条电话路都要等它。
    *
-   * 2026-09-24：这一步从 sessionSnapshot.js 搬到这里，因为**两条回包路径都要用它**——
-   * wf.snapshot 一直挂着这个字段，wf.refresh 从来没挂过，界面走过一次强制刷新就永久显示
-   * 「读不到处理记录」（真机反馈的那条）。搬家之后两条路共用同一份信封与同一个挂载口，
-   * 「两边字段不一样」这种漂移不再可能悄悄发生（tests/verify-reply-envelope-parity.js 每次比对）。
-   *
-   * 回包不是 ok:true（失败那种）、或接线处没给读数函数，都原样返回：不挂字段，
-   * 也不能把一份失败的快照伪装成成功的。
-   *
-   * 类型说明（#1155）：回包形状由各条电话自己定，这里按调用方传进来的类型原样还回去；
-   * 读 `ok` 与挂字段处都用「就地断言」（`(reply as …).ok`），断言转译时消失，产物与标注前逐字节相同。
+   * 只挂这一个字段、只信宿主读数：回包不是 ok:true 或接线处没给出口时原样返回；
+   * 出口自己抛错就挂一条读不到的原因，不把整份快照带成失败。
    */
-  function withChainReadout<T>(reply: T): T {
+  async function withWorkRouteTable<T>(reply: T, args?: any): Promise<T> {
     if (!reply || typeof reply !== 'object' || (reply as { ok?: unknown }).ok !== true) return reply
-    if (typeof d.chainReadout !== 'function') return reply
-    try { (reply as { [key: string]: unknown })[d.chainField || 'sessionTickets'] = d.chainReadout() } catch (eR) { /* 读数取不到不影响这份快照本身 */ }
+    if (typeof d.workRouteTableReadout !== 'function') return reply
+    const field = d.workRouteTableField || 'workRouteTable'
+    try {
+      (reply as { [key: string]: unknown })[field] = await d.workRouteTableReadout(reply, { sessionId: args && args.sessionId })
+    } catch (eW) {
+      (reply as { [key: string]: unknown })[field] = { ok: false, reason: 'read-failed' }
+    }
     return reply
   }
 
-  return { buildSnap: buildSnap, adoptSnapLog: adoptSnapLog, withChainReadout: withChainReadout }
+  return { buildSnap: buildSnap, adoptSnapLog: adoptSnapLog, withWorkRouteTable: withWorkRouteTable }
 }

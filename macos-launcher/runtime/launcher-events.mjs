@@ -1,12 +1,12 @@
-import { watch } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { constants, watch } from 'node:fs'
+import { open, readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { serviceSocket, redact } from './service-control.mjs'
+import { serviceSocket, privateDirectory, redact } from './service-control.mjs'
 import { webSocket } from './web-control.mjs'
 import { watchServiceStatus } from './status-notifications.mjs'
 
-/** One idle local subscriber; only manager-record events or an explicit refresh reconnect it. */
+/** One idle local subscriber; only manager announcements or an explicit refresh reconnect it. */
 export async function watchLauncherStatus(dataRoot, publish, { serviceOnly = false } = {}) {
   let closed = false
   const sources = [
@@ -55,12 +55,28 @@ export async function watchLauncherStatus(dataRoot, publish, { serviceOnly = fal
       .finally(() => { source.running = undefined })
     return source.running
   }
-  const watcher = watch(dataRoot, { recursive: true }, (_event, filename) => {
-    const name = filename?.toString()
-    for (const source of sources) if (name === source.record || name === undefined) void reconnect(source)
-  })
-  watcher.on('error', error => { for (const source of sources) notify(source, { error: redact(error.message) }) })
-  await Promise.all(sources.map(reconnect))
+  const watchers = []
+  try {
+    for (const source of sources) {
+      const directory = dirname(join(dataRoot, source.record))
+      await privateDirectory(directory)
+      // This inode is retained by managers. File watches use macOS kqueue and
+      // avoid the startup gap in recursive directory discovery via FSEvents.
+      const path = join(directory, 'manager.lock')
+      const file = await open(path, constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW, 0o600)
+      try {
+        const info = await file.stat()
+        if (!info.isFile() || info.uid !== process.getuid() || info.nlink !== 1 || (info.mode & 0o077)) throw new Error('Unsafe DSH manager lock')
+      } finally { await file.close() }
+      const watcher = watch(path, () => { void reconnect(source) })
+      watcher.on('error', error => notify(source, { error: redact(error.message) }))
+      watchers.push(watcher)
+    }
+    await Promise.all(sources.map(reconnect))
+  } catch (error) {
+    for (const watcher of watchers) watcher.close()
+    throw error
+  }
   return {
     requestService(input) {
       if (!sources[0].connection) throw new Error('DSH 服务管理连接不可用，请先启动服务或重新连接。')
@@ -70,7 +86,8 @@ export async function watchLauncherStatus(dataRoot, publish, { serviceOnly = fal
     refresh() { return Promise.all(sources.map(reconnect)) },
     close() {
       if (closed) return
-      closed = true; watcher.close()
+      closed = true
+      for (const watcher of watchers) watcher.close()
       for (const source of sources) { source.generation = (source.generation || 0) + 1; source.connection?.close() }
     },
   }

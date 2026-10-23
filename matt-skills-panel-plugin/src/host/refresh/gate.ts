@@ -18,11 +18,16 @@
 //
 // 二级限流（Retry-After）也是降档信号：noteRetryAfter() 一次就把所在桶按红档处理（主桶没用完也降档），并把那个工作区标成撞限流。
 // #998：连续失败到门槛之后由 failure-window.js 那台状态机放一笔探针进来试（细节见那个文件）。
-import { decide, aiToolAdmission, degradePlanFor, REQUEST_KINDS, REASONS, FAILURE_DEFER_AT, nextAttemptDelayMs } from '../../shared/refresh/policy.js'
-import { FAILURE_HALF_OPEN_DELAY_MS, DEFER_EXPIRY_MS, PROBE_INTERVAL_MS, PROBE_INTERVAL_YELLOW_MS, RECONCILE_INTERVAL_MS, REBUILD_MIN_INTERVAL_YELLOW_MS, CHAIN_BACKOFF_MS } from '../../shared/time-config/values.js'
-import * as budget from '../../shared/refresh/budget.js'
-import * as failureWindow from '../../shared/refresh/failure-window.js'
-import { measureStep, noteStepOutbound } from '../../shared/refresh/step-cost.js'
+import { decide, aiToolAdmission, degradePlanFor, REQUEST_KINDS, REASONS, FAILURE_DEFER_AT, nextAttemptDelayMs } from '../../shared/refresh/src/policy.js'
+import type { PolicyInput } from '../../shared/refresh/src/policy.js'
+// 说明符指向真源后，policy 的精确类型第一次被 tsc 看见（从前读转译产物，类型已被剥掉）。
+// 本文件的本地接口刻意只记「形状」（类别、种类、档位都是 string）：查表与兜底那两条分支
+// 靠运行时判，不靠类型判。归一化结果喂给裁决之前，在 inputFor / planOf 两处收窄一次，
+// 运行时一个字节都不变。真要给这几格加取值校验，另立一票，别顺手放宽 policy 的签名。
+import { FAILURE_HALF_OPEN_DELAY_MS, DEFER_EXPIRY_MS, PROBE_INTERVAL_MS, PROBE_INTERVAL_YELLOW_MS, RECONCILE_INTERVAL_MS, REBUILD_MIN_INTERVAL_YELLOW_MS, CHAIN_BACKOFF_MS } from '../../shared/time-config/src/values.js'
+import * as budget from '../../shared/refresh/src/budget.js'
+import * as failureWindow from '../../shared/refresh/src/failure-window.js'
+import { measureStep, noteStepOutbound } from '../../shared/refresh/src/step-cost.js'
 import { refusalTextRef } from './refusal-text.js'
 
 // ---------------------------------------------------------------------------
@@ -47,6 +52,8 @@ interface GateRequest {
   bucket?: string
   workspaceKey?: unknown
   plan?: unknown[]
+  /** 调用方给的这一趟号码（写事件那条路会带；闸只把它写进日志，不参与裁决）。 */
+  cycle?: string
 }
 
 /** 归一之后的请求：下面每一处都按这个形状读，所以类别、种类、桶、工作区键都已经是字符串。 */
@@ -57,6 +64,7 @@ interface NormalizedReq {
   bucket: string
   workspaceKey: string
   plan: unknown[]
+  cycle: string
 }
 
 /** 一个工作区被闸记住的状态（与账本无关，纯粹是本闸自己的记忆）。 */
@@ -65,6 +73,11 @@ interface WorkspaceState {
   failuresSinceSuccess: number
   rateLimitedUntil: number
   backoffWindowStartedAt: number
+  // #1008/#1218 复核补的三格：这个窗口里「最近一次失败是谁、什么种类、连续第几次」。
+  // 为什么必须有：从前日志只记「推迟了」与推迟原因，回答不了票面那句「这 3 次是谁攒的」——
+  // 同一个窗口里可能既有登录失败又有网络失败，归因丢了就分不清该修哪条路。
+  // 只在失败时写入、成功时清空，纯记忆，不参与任何裁决（裁决只看 failuresSinceSuccess 与窗口起点）。
+  lastFailure: { category: string; kind: string; streak: number } | null
 }
 
 /** 推迟队列里的一条：同一工作区只留最后一次（后来的覆盖先来的，覆盖次数计入 coalesced）。 */
@@ -271,7 +284,7 @@ export function createGate(deps?: GateDeps) {
 
   function wsState(key: string): WorkspaceState {
     let s = workspaces.get(key)
-    if (!s) { s = { active: false, failuresSinceSuccess: 0, rateLimitedUntil: 0, backoffWindowStartedAt: 0 }; workspaces.set(key, s) }
+    if (!s) { s = { active: false, failuresSinceSuccess: 0, rateLimitedUntil: 0, backoffWindowStartedAt: 0, lastFailure: null }; workspaces.set(key, s) }
     return s
   }
 
@@ -279,6 +292,13 @@ export function createGate(deps?: GateDeps) {
     const s = wsState(key)
     return { active: !!s.active, failuresSinceSuccess: s.failuresSinceSuccess, rateLimited: s.rateLimitedUntil > now(), backoffWindowStartedAt: s.backoffWindowStartedAt }
   }
+
+  // #1008/#1218 复核补的失败归因：窗口里最近一次失败是谁（类别、种类、连续第几次），
+  // 只在失败窗口内写入、成功时清空，纯记忆不参与裁决；窗口外回 null，日志对象因此不多长字段，
+  // 正常时段的 refresh.decide 与从前一字不差。三个值都来自本闸自己的记忆，不查账本、不联网。
+  function failureAttribution(key: string) { const s = wsState(key); return (s.failuresSinceSuccess > 0 && s.lastFailure) ? { failuresSinceSuccess: s.failuresSinceSuccess, backoffWindowStartedAt: s.backoffWindowStartedAt, lastFailureCategory: s.lastFailure.category, lastFailureKind: s.lastFailure.kind, failureStreak: s.lastFailure.streak } : null }
+  function rememberFailure(key: string, category: string, kind: string, streak: number) { wsState(key).lastFailure = { category: category, kind: kind, streak: streak } }
+  function forgetFailure(key: string) { const s = wsState(key); s.failuresSinceSuccess = 0; s.lastFailure = null }
 
   /** 裁决的输入：类别 + 种类 + 桶的档位与账 + 工作区状态。 */
   function inputFor(req: NormalizedReq) {
@@ -290,22 +310,21 @@ export function createGate(deps?: GateDeps) {
     const trialDue = win.failures >= FAILURE_DEFER_AT && failureWindow.halfOpenTrialIsDue(
       win, now(), nextAttemptDelayMs(win.failures, limits), FAILURE_HALF_OPEN_DELAY_MS,
     )
+    // 收窄到 policy 的取值联合：q.tier 来自账本形状（string），取值本身由 budget.js 生成、运行时不变。
     return {
-      category: req.category, kind: req.kind, tier: q.tier,
+      category: req.category as PolicyInput['category'], kind: req.kind as PolicyInput['kind'], tier: q.tier as PolicyInput['tier'],
       quota: { allowance: q.allowance, used: q.used, remaining: q.remaining, reserve: q.reserve },
       workspace: { active: !!s.active, failuresSinceSuccess: s.failuresSinceSuccess, rateLimited: s.rateLimitedUntil > now(), halfOpenTrialDue: trialDue },
     }
   }
 
   // 账本三个事件之一（按需级 P1）：这一笔的结论与原因。外层先判调试开关，关着连字段对象都不组装。
-  function fireDecide(req: NormalizedReq, verdict: string, reason: string, tier: string) {
-    try { if (logCtx && logCtx.isEnabled('debug')) logCtx.fire('debug', 'refresh.decide', { category: req.category, kind: req.kind, verdict: verdict, reason: reason, tier: tier }) } catch (eL) {}
-  }
+  // #1008/#1218：失败窗口里再补五个归因键（窗口外自动不加，正常时段的这一行与从前一字不差）。
+  function fireDecide(req: NormalizedReq, verdict: string, reason: string, tier: string) { try { if (logCtx && logCtx.isEnabled('debug')) logCtx.fire('debug', 'refresh.decide', Object.assign({ category: req.category, kind: req.kind, verdict: verdict, reason: reason, tier: tier, cycle: req.cycle, keyHash: hash8(req.workspaceKey) }, failureAttribution(req.workspaceKey) || {})) } catch (eL) {} }
 
   // 账本三个事件之一（按需级 P1）：被跳过的那些（后台档被推迟、额度不足、过期丢弃）。
-  function fireSkipped(key: string, kind: string, reason: string, pending: number) {
-    try { if (logCtx && logCtx.isEnabled('debug')) logCtx.fire('debug', 'refresh.skipped', { keyHash: hash8(key), kind: kind, reason: reason, pending: pending }) } catch (eL) {}
-  }
+  // #1008/#1218：同样只在失败窗口里补五个归因键。
+  function fireSkipped(key: string, kind: string, reason: string, pending: number) { try { if (logCtx && logCtx.isEnabled('debug')) logCtx.fire('debug', 'refresh.skipped', Object.assign({ keyHash: hash8(key), kind: kind, reason: reason, pending: pending }, failureAttribution(key) || {})) } catch (eL) {} }
 
   /** 只看结论不发送（界面与门禁都要能用同一套裁决问一句）。 */
   function decideFor(req?: GateRequest) {
@@ -319,9 +338,9 @@ export function createGate(deps?: GateDeps) {
     if (!cls.known) stats.unclassified += 1
     // REQUEST_KINDS 那份清单只收字符串；kind 缺了（撞限流那一笔就没有）与空串同结论（−1），
     // 所以这里断言成字符串只为过签名，判断本身一字未改。
-    const kind = REQUEST_KINDS.indexOf(r.kind as string) >= 0 ? (r.kind as string) : 'probe'
+    const kind = (REQUEST_KINDS as readonly string[]).indexOf(r.kind as string) >= 0 ? (r.kind as string) : 'probe'
     const bucket = (r.bucket === 'graphql' || r.bucket === 'rest') ? r.bucket : (BUCKET_OF_KIND[kind] || 'rest')
-    return { source: r.source, category: cls.category, kind: kind, bucket: bucket, workspaceKey: String(r.workspaceKey || 'unknown'), plan: Array.isArray(r.plan) && r.plan.length ? r.plan : [{}] }
+    return { source: r.source, category: cls.category, kind: kind, bucket: bucket, workspaceKey: String(r.workspaceKey || 'unknown'), plan: Array.isArray(r.plan) && r.plan.length ? r.plan : [{}], cycle: String(r.cycle || '') }
   }
 
   /**
@@ -351,11 +370,15 @@ export function createGate(deps?: GateDeps) {
     if (failure) {
       // 一次真失败：计数加一，窗口从此刻重开（窗口长短的判据在 refresh-core/src/failure-window.ts）。
       const next = failureWindow.recordFailure({ failures: wsState(req.workspaceKey).failuresSinceSuccess, windowStartedAt: 0 }, now())
-      wsState(req.workspaceKey).failuresSinceSuccess = next.failures
-      wsState(req.workspaceKey).backoffWindowStartedAt = next.windowStartedAt
+      const failed = wsState(req.workspaceKey)
+      failed.failuresSinceSuccess = next.failures
+      failed.backoffWindowStartedAt = next.windowStartedAt
+      // #1008/#1218：把「最近这一次失败是谁」记进本工作区，下一次裁决与跳过落日志时带出去。
+      rememberFailure(req.workspaceKey, req.category, req.kind, next.failures)
       throw failure
     }
-    wsState(req.workspaceKey).failuresSinceSuccess = 0
+    // 真成功：连续失败归零，归因一起清空（窗口已经关了，留着只会误导下一次读日志的人）。
+    forgetFailure(req.workspaceKey)
     return { requests: actual.requests, points: actual.points, claimed: reported || { requests: 0, points: 0 }, remaining: after.remaining, tier: after.tier, result: m.result }
   }
 
@@ -450,7 +473,7 @@ export function createGate(deps?: GateDeps) {
 
   /** 某个桶现在的降档安排（探测节拍、对账节拍、最短重建间隔），数值全部来自 budget.js。 */
   function planOf(bucketName?: string) {
-    return degradePlanFor(ledger.view(bucketName || 'rest').tier, limits)
+    return degradePlanFor(ledger.view(bucketName || 'rest').tier as PolicyInput['tier'], limits)
   }
 
   /** 运行期漏网计数：传输层真发的条数减去闸记下来的条数。不为 0 就说明有人绕开了闸。 */

@@ -1,23 +1,22 @@
 // src/host/refresh/wiring.ts —— 刷新机制的宿主接线（#723 T19）
 //
 // 这个文件只做一件事：把刷新机制那几件已经落库的东西**在宿主里真的装起来**，并交回去。它不判断任何业务：
-// 闸与账本是 gate.js 与 ledger.js 的产物，写事件订阅是 writeEvents.js 的产物，会话↔票处理链是 sessionTickets.js
-// 的产物，界面读数由 sessionChainReadout.js 拼 —— 这里只把它们之间的依赖接上。单开一个文件而不写进
+// 闸与账本是 gate.js 与 ledger.js 的产物，写事件订阅是 writeEvents.js 的产物，工作路线读写是
+// workRouteReadoutForHost.js 懒装配的那一套 —— 这里只把它们之间的依赖接上。单开一个文件而不写进
 // src/host/index.js 的原因：那个文件贴着 350 行上限（verify-file-granularity 的零增长基线），#723 起不许再加行。
 //
 // 装起来的四件（票面 3a/3b/3c/3e）：
 //   a 闸与账本：createLedger + createGate，send 真的被调用（后面几件取数都经它）；
 //   b 写事件订阅：createWriteEvents(...).attach(ctx)，活跃集合变化时 allowRoot / 切走时 forgetRoot；
 //   c 视野模型：wf.focus 那一份「当前在看谁」就是这里的唯一来源（syncAttention 读它）；
-//   e 会话↔票处理链：createSessionTickets() 真的建起来，并把界面读数交给快照回包。
+//   e 工作路线读写：懒装配的那一套（workRouteReadoutForHost.js），工具收口与面板读数共用。
 //
 // 日志：本文件不新增事件。它调到的每一个模块各自记自己那几行（闸的 refresh.decide / refresh.skipped、
-// 账本的 quota.spend、写事件的 write.event、处理链的 sessionTickets.chain）。
+// 账本的 quota.spend、写事件的 write.event、工作路线落盘的 workRoute.write / workRoute.read（由 work-path-store.ts 记）——
+// 旧的会话票缓存与旧链读数已随 #1271 退役）。
 import { createLedger } from './ledger.js'
 import { createGate } from './gate.js'
 import { createWriteEvents } from './writeEvents.js'
-import { createSessionTickets } from './sessionTickets.js'
-import { buildSessionChainReadout, SESSION_CHAIN_FIELD } from './sessionChainReadout.js'
 import { createAttention, createFocusHandler } from './attention.js'
 // #723（T19c）第 D 件：九个 deck_* 工具。装配口在共享层（createDeckTools 只收参数、不 import 工具文件），九个
 // 工厂由 ../platform/deckToolsAssembly.js 一处读进来 —— 收在那一层是因为宿主层文件之间不许互引（同层引用门禁），
@@ -26,8 +25,12 @@ import { createDeckToolsForHost, DECK_TOOL_FILES, withCap } from '../../deck/reg
 // #1150：批量建图的计划游标（中间态）要真落盘，存储器在这里造、随工具依赖注入。落盘目录与文件名约定
 // 都住在 plan-cursor.ts 里（planCursorDir / createFilePlanStore），不在这里另写一份。
 import { createFilePlanStore, planCursorDir } from '../../deck/shell/plan-cursor.js'
+// #1261：工作路线的新落盘（每个工作区一份 <根散列>.json）与读出口，两支合在一起从这里递进工具依赖。
+// #1082：这套读写零件的惰性装配与面板「跨会话在办表」的挂载口搬去 workRouteReadoutForHost.ts
+// （wiring 贴着 350 有效行红线；两件合一个文件，接线处只多一条同层边，已记进同层豁免清单）。
+import { createLazyWorkRouteBindings, createWorkRouteTableReadout, WORK_ROUTE_TABLE_FIELD } from './workRouteReadoutForHost.js'
 // #1115：计时器口的唯一实现放在共享层（本文件原先自己写了一份，写法对但仍是第二份；六处调用点收成一份）。
-import { hostTimers } from '../../shared/host-timer/host-timers.js'
+import { hostTimers } from '../../shared/host-timer/src/host-timers.js'
 // #1159：出站控制面（名额闸 / 取消判定 / 搭车账本）由宿主实现、随进程注入一次，房间只认形状、
 // 不再从宿主 import。这里与 src/host/platformChannel.ts 的 backendCtxForRooms 是两处注入点，
 // 缺一处那条路上的房间会按环境失败大声报出来（宁可报错，也不静默绕过名额闸）。
@@ -36,19 +39,20 @@ import { createOutboundControl } from '../platform/outbound-control.js'
 // 本机记忆与工作区文件是本地读，给 5 秒。超时都走既有的失败继续路径（保不住照旧往下走、
 // 读不到按缺席跳过），成功路径一字不动——挂住的文件服务或排满的出站队列不能卡住整笔调用。
 // 取值只有一份真源（中央 YAML 的 deckEnsureMs 键），这里直接读它生成出来的值，不再经 TUNING 中转、不留回落。
-import { DECK_ENSURE_TIMEOUT_MS } from '../../shared/time-config/values.js'
+import { DECK_ENSURE_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
 import { createNamingSummary, readFirstUserText } from '../platform/namingSummary.js'   // #746：命名摘要编排（单例，见下）；#746 首句直读（随单下发供免锁比对）
 import { hookDeckAgentTools, makeDeckRegisterReport } from '../../deck/registration/register-options.js' // #741 注册那一步（向 agent 交九个工具）：形状、循环与报告住共享层（两边都要用），这里只递表
+import { hookSuggestNextSteps } from '../../deck/registration/suggest-steps-register.js' // #1406 建议工具单独登记（不进九工具装配顺序表）
 import { publishDeckTable, noteDeckGate } from '../../deck/shell/table-cell.js' // #758 同进程共享格：行与宿主同一进程，表放进格子里行直接取，不经调用面
 import { createSandboxPolicyFor } from '../../deck/registration/sandbox-guard.js'
 import { createDeckQuotaSync } from '../../deck/registration/quota-sync.js' // #758 剩余额度读数接线：差读数先免费读一次，裁决数字不动（平台区，不新增宿主层边）
 // #723（T19c）第 E 件：行级增量那半边（refresh/patch.js）同理收在 src/host/platform/refreshAssembly.js 一处。
 import { createPatchForHost } from '../platform/refreshAssembly.js'
-import * as budget from '../../shared/refresh/budget.js'
-import * as toolCost from '../../shared/refresh/tool-cost.js'
+import * as budget from '../../shared/refresh/src/budget.js'
+import * as toolCost from '../../shared/refresh/src/tool-cost.js'
 // #1215 中央时间参数（deckEnsureMs / deckLocalReadMs / shellResolveMs）只有一份真源 config/timeouts.yaml，
 // 这里直接读它生成出来的值，不再各写一份数字。
-import { DECK_LOCAL_READ_TIMEOUT_MS, SHELL_RESOLVE_TIMEOUT_MS } from '../../shared/time-config/values.js'
+import { DECK_LOCAL_READ_TIMEOUT_MS, SHELL_RESOLVE_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
 // #724：闸那一侧的工作区钥匙（短散列）只有一份实现，住在共享层（宿主层文件之间不许互引，而链求值那侧也要用
 // 同一把钥匙）。本文件把它转出来，「活跃集合、写事件白名单、九个 deck_* 工具、行级增量、检查链记账」五处同源。
 import { hash8, workspaceKeyOf } from '../../shared/refresh-workspace-key.js'
@@ -85,7 +89,7 @@ function once(fn: () => any): () => any {
 /**
  * 造宿主入口那一侧**唯一的那一套**刷新机制（调用多少次都只建一次，所有使用者共用同一个实例）。
  *
- * 为什么「唯一」是硬要求而不是省事：闸的活跃集合、写事件的白名单、视野模型、处理链、界面读数这五件
+ * 为什么「唯一」是硬要求而不是省事：闸的活跃集合、写事件的白名单、视野模型这三件
  * 认的是**同一个「当前在看谁」**。宿主要是建了两套（哪怕两套代码一模一样），标活跃标在一套上、
  * 过闸走在另一套上，后台档的 background-inactive 就会把写事件那一笔恒判推迟 —— 生产里看起来谁都在
  * 工作，实际一次都发不出去，而且读数那一边永远空着。（#723 复核抓到的正是这个：入口一处、wf.focus 又一处。）
@@ -96,8 +100,7 @@ export function makeRefreshLoader(deps: any): () => Promise<any> {
     if (!load) load = (async function (): Promise<any> {
       const w: any = createRefreshWiring(deps)
       try { w.attach() } catch (eAt: any) {}
-      // 界面读数（e）：快照回包要挂的那个字段由它产出，形状归 refresh/sessionChainReadout.js 一处。
-      const chainReadout = function (): any { return w.chainReadoutOf() }
+      // 界面读数（e）：面板「跨会话在办表」由 workRouteTableReadout 产出（#1271 起唯一的读数口）。
       // wf.focus 的处理器（c）：用的就是这一套里的视野模型；上报之后把活跃集合同步给白名单与闸。
       const focus = (function (): any {
         let h: any = null
@@ -106,7 +109,7 @@ export function makeRefreshLoader(deps: any): () => Promise<any> {
           return await h(args)
         }
       })()
-      return Object.assign({}, w, { chainReadout: chainReadout, chainField: SESSION_CHAIN_FIELD, focus: focus })
+      return Object.assign({}, w, { focus: focus, workRouteTableReadout: w.workRouteTableReadout, workRouteTableField: WORK_ROUTE_TABLE_FIELD })
     })()
     return await load
   }
@@ -122,8 +125,8 @@ export function makeRefreshLoader(deps: any): () => Promise<any> {
  *   trackerRegistry 可选：后端注册表（九个 deck 工具的壳要用它选后端）
  *   gate / ledger  可选：已经造好的闸与账本（门禁与单测里注入用）；不给就现场造
  *
- * 回包：{ ledger, gate, writeEvents, sessionTickets, attention, chainReadoutOf, noteWorkspaceActive,
- *        makeFetch, attach, stats }
+ * 回包：{ ledger, gate, writeEvents, attention, noteWorkspaceActive,
+ *        workRouteTableReadout, workRouteTableField, makeFetch, attach, stats }
  */
 export function createRefreshWiring(deps: any): any {
   const d: any = deps || {}
@@ -162,13 +165,7 @@ export function createRefreshWiring(deps: any): any {
     return { requests: 0, points: 0 }
   }
 
-  // e：会话↔票处理链。喂数据的是 b 那条订阅（工具结果一到就 note 一笔），读数是下面那个读数。
-  // #781：把归一出口递进去，note() 先洗根再算散列（调用方传所选目录原文时与读回侧同格）。
-  const sessionTickets: any = d.sessionTickets || createSessionTickets({
-    getCacheDir: d.getCacheDir, logCtx: logCtx, canonicalKey: d.canonicalKey,
-  })
-
-  // b：写事件订阅（门前是归我们的工作区根白名单，见 writeEvents.js 文件头）；判定过的那一笔喂给处理链（note），否则界面恒空。
+  // b：写事件订阅（门前是归我们的工作区根白名单，见 writeEvents.ts 文件头）；只负责取数，不再喂工作路线（#1262 起写入口只在工具壳）。
   // #746：命名摘要编排单例（ctx 与 getNaming 由宿主入口经 deps 给；任一缺失则钩子静默降级）。
   let namingSummary: any = null
   function summaryOf(): any {
@@ -218,8 +215,6 @@ export function createRefreshWiring(deps: any): any {
   }
   const writeEvents: any = d.writeEvents || createWriteEvents({
     gate: gate, fetch: fetchForWriteEvent, canonicalKey: d.canonicalKey, logCtx: logCtx,
-    note: function (input: any): any { try { return sessionTickets.note(input) } catch (e: any) { return null } },
-    backendOf: function (rootKey: any): any { return backendOfRoot(rootKey) },
     onFirstAssistant: onFirstAssistant,
     onFirstUser: onFirstUser,
     isNamingTracked: isNamingTracked,
@@ -228,49 +223,24 @@ export function createRefreshWiring(deps: any): any {
   // c：视野模型。wf.focus 上报「我在看谁」之后，活跃集合就在这里，b 的白名单跟着它走。
   const attention: any = d.attention || createAttention({ canonicalKey: d.canonicalKey, logCtx: logCtx })
 
-  /**
-   * 「这个工作区现在用哪个后端」（#723 T19）：链只认 github / gitlab / markdown 三个白名单名字
-   * （src/shared/refresh/chain.js 的 CHAIN_BACKENDS），空串与别的名字都会被它丢掉并说 chain.bad-backend。
-   * 两条来源，都不在本文件里另写判定：
-   *   ① 宿主既有的后端注册表（reg.describe）—— 用户手动选择那一档；
-   *   ② 宿主既有的探测服务（getDetectionService().detect）—— 锚文件那一档（不传 hint、不强制）。
-   * 两条都问不出来就如实回空串：让链丢掉并说原因（界面照实说读不到），**不编一个假名字**让它看着能记。
-   */
-  async function backendOfRoot(rootKey: any): Promise<any> {
-    const cwd = String(rootKey || '')
-    if (!cwd) return ''
+  /** #1263：会话标题快照（与下面 titleFactOf 同一条取法：sessions 加 sessionTitle；取不到回空串）。 */
+  function sessionTitleSnapshotOf(sid: any): string {
     try {
-      if (typeof d.getTrackerRegistry === 'function') {
-        const reg: any = await d.getTrackerRegistry()
-        if (reg && typeof reg.describe === 'function') {
-          const info: any = reg.describe({ cwd: cwd })
-          const id = String((info && info.backend) || '')
-          if (id) return id
-        }
-      }
-    } catch (e: any) { /* 往下问探测服务 */ }
-    try {
-      if (typeof d.getDetectionService === 'function') {
-        const svc: any = await d.getDetectionService()
-        if (svc && typeof svc.detect === 'function') {
-          const res: any = await svc.detect({ cwd: cwd }, {})
-          const id = String((res && res.selection && res.selection.backendId) || '')
-          if (id) return id
-        }
-      }
-    } catch (e2: any) { /* 问不出来就空串 */ }
-    return ''
-  }
-
-  /** 界面要的那份读数（e）。挂在快照回包上，界面读不到时它会如实说 ok:false + 代号。 */
-  function chainReadoutOf(): any {
-    return buildSessionChainReadout({ tickets: sessionTickets, at: Date.now() })
+      const ctx: any = d.ctx;
+      if (!ctx || typeof ctx.get !== 'function') return '';
+      const ss: any = ctx.get('sessions');
+      const ts: any = ctx.get('sessionTitle');
+      if (!ss || typeof ss.get !== 'function' || !ts || typeof ts.get !== 'function') return '';
+      const session: any = ss.get(sid);
+      if (!session) return '';
+      const snap: any = ts.get(session);
+      if (!snap || typeof snap.title !== 'string' || !snap.title) return '';
+      return snap.title;
+    } catch (e: any) { return '' }
   }
 
   // 上一次同步给写事件白名单的那些根（切走的那几个要 forgetRoot）。
   let allowed: string[] = []
-  // #735：盘读回守卫（内存按进程活、盘跨进程；重启后每个根第一次被看见时读回一格，一根只读一次）。
-  const restoredRoots = new Set()
 
   /**
    * 把「现在在看哪些工作区根」同步给写事件的白名单（b）与闸的活跃集合（c）——**同一份来源**（视野模型）。
@@ -291,14 +261,6 @@ export function createRefreshWiring(deps: any): any {
     for (const root of roots) {
       if (allowed.indexOf(root) < 0) { try { await writeEvents.allowRoot(root) } catch (eA: any) {} }
       try { gate.setWorkspace(workspaceKeyOf(root), { active: true }) } catch (eG: any) {}
-      // #735：新根把盘上这一格读回来（重启丢的内存与别的进程写的格子都靠这一次；restore 永不抛错）。
-      // #781：等它落定再往下走 —— 不等的话紧接着取快照会赶在读完之前，第一次看到空、第二次才有，
-      // 重启后第一眼空很容易当成丢了。读失败时把标记拿掉，下次切进这个根再试一次。
-      if (!restoredRoots.has(root)) {
-        restoredRoots.add(root)
-        try { await sessionTickets.restore({ rootKey: root }) }
-        catch (eR: any) { try { restoredRoots.delete(root) } catch (eD: any) {} }
-      }
     }
     for (const root of allowed) {
       if (roots.indexOf(root) < 0) {
@@ -324,6 +286,18 @@ export function createRefreshWiring(deps: any): any {
     return { detach: detach }
   }
 
+  // #1082：工作路线读写零件只造一份 —— 工具依赖与「面板跨会话在办表」共用（同一份存档、同一套零件）。
+  const loadWorkRouteBindings = createLazyWorkRouteBindings({
+    getPlatform: function (): any { return (typeof d.getPlatform === 'function') ? d.getPlatform() : null },
+    logCtx: logCtx,
+  })
+  // 面板那张表的挂载口：函数形状与快照信封的读数出口一致（输入回包与当前会话，返回字段值）。
+  const attachWorkRouteTable = createWorkRouteTableReadout({
+    read: function (input: any): any { return loadWorkRouteBindings().then(function (b: any): any { return b.read(input) }) },
+    rootKeyOf: workspaceKeyOf,
+    now: function (): number { return Date.now() },
+  })
+
   // ── D（#723 T19c）：九个 deck_* 工具在宿主里装起来 ─────────────────────────────────────────
   // 把九个工具工厂交给共享层装配口 createDeckTools，并把它要的依赖如实给全：gate（本文件造的那一个闸）、
   // registry（后端注册表，选后端走它的三级联）、budget 与 estimate/costInputFrom（额度与算账两件）、
@@ -336,6 +310,11 @@ export function createRefreshWiring(deps: any): any {
   // 注册纯数据对象；从前这里动态 import 自带副本，挂载后全部工具调用报 prepare undefined。
   // 退路输出与参数形状见 shared/deck-tools/agent-register.js（deckAgentOutputSchemaRaw）。
   let deckToolsP: Promise<any> | null = null; try { hookDeckAgentTools(d.ctx, deckToolsForHost, function (): Promise<any> { return Promise.resolve(null) }, makeDeckRegisterReport(logCtx), undefined) } catch (eH: any) {} // #741 注册那一步：表装好就向 agent 交九个工具，成败落既有日志（deckToolsForHost 声明提升，这里可直接用）。末尾的 undefined 是“轮数与间隔都用缺省”（五轮、每轮两秒）：原 JS 只传四个实参，被调方按缺席取缺省；这里显式写出才能过类型检查，运行期走的是同一条缺省分支。
+  // #1406：建议工具单独登记一次（与九工具那条钩子并列，不进 DECK_TOOL_ORDER）。失败只落日志，不影响九个追踪器工具。
+  // #1406 补（2026-10-23）：hookSuggestNextSteps 是 async，开头读上下文若抛错会变成 rejected Promise，
+  // 那一行同步 try/catch 抓不到；宿主加载期会把未处理的 rejection 判成致命错误（真机启动即退出 1）。
+  // 所以给返回的 Promise 再挂一层 .catch 兜底：登记失败只落既有日志，绝不拖垮启动。
+  try { hookSuggestNextSteps(d.ctx, { log: logCtx }).catch(function (eSuggest: any) {}) } catch (eSuggest: any) {}
   async function deckToolsForHost(): Promise<any> {
     if (!deckToolsP) {
       deckToolsP = (async function (): Promise<any> {        const empty = { tools: {}, names: [], definitions: [], missing: [], reason: '', files: DECK_TOOL_FILES }
@@ -402,6 +381,11 @@ export function createRefreshWiring(deps: any): any {
             })
           } catch (e: any) { return null }
         }
+        // 工作路线的新落盘装配（#1261 建、#1083 加固、#1082 起与面板读数共用一份）：
+        // 家目录、文件读写、改名与日志的细节都在 workRouteReadoutForHost.ts 里，这里只取现成的实例。
+        // 取不到就留给三支依赖各自回「没落上 / 没接上」的诚实原因，不静默跳过。
+        let workRouteBindings: any = null
+        try { workRouteBindings = await loadWorkRouteBindings() } catch (eW: any) {}
         const built: any = createDeckToolsForHost({
           gate: gate,
           registry: registry,
@@ -427,7 +411,13 @@ export function createRefreshWiring(deps: any): any {
           //   #1215：这个数（8000）住中央 YAML 的 shellResolveMs，装配层与壳读同一份生成值。
           resolveTimeoutMs: SHELL_RESOLVE_TIMEOUT_MS,
           invalidate: function (info: any): void { try { const root: any = (info && info.workspace && info.workspace.root) || (info && info.cwd); if (typeof d.setCache === 'function' && root) d.setCache({ ts: 0, snapshot: null, error: null, cwd: String(root) }) } catch (e: any) {} },
-          onTicketCreated: onDeckWrite, chainNote: function (input: any): any { try { return sessionTickets.note(input) } catch (e: any) { return null } }, // #746 建票直达命名守护；#775 主动上报写同一份链（report）
+          onTicketCreated: onDeckWrite, // #746 建票直达命名守护
+          // #1263：上报成功收口记一笔 + 读在办表（壳经这两支调到；装配失败时给没落上的诚实回执，不静默跳过）。
+          // 会话标题快照由宿主侧填（与 titleFactOf 同一条取法；取不到留空，读出口显示散列前 6 位）。
+          workRouteNote: function (input: any): any { try { const enriched: any = (input && typeof input === 'object') ? Object.assign({}, input) : {}; if (!enriched.sessionLabel) { const t = sessionTitleSnapshotOf(enriched.sessionId); if (t) enriched.sessionLabel = t } return workRouteBindings ? workRouteBindings.note(enriched) : Promise.resolve({ ok: false, reason: 'no-store' }) } catch (e: any) { return Promise.resolve({ ok: false, reason: 'threw' }) } },
+          workRouteRead: function (input: any): any { try { return workRouteBindings ? workRouteBindings.read(input) : { ok: false, reason: 'no-store' } } catch (e: any) { return { ok: false, reason: 'read-failed' } } },
+          // #1086：释放（带 release=true 的上报）走这一支；装配失败时回没释放的诚实原因，由回执备注如实写出。
+          workRouteRelease: function (input: any): any { try { return workRouteBindings ? workRouteBindings.release(input) : Promise.resolve({ ok: false, reason: 'no-store' }) } catch (e: any) { return Promise.resolve({ ok: false, reason: 'threw' }) } },
           hourUsage: function (): any { try { return ledger.hourOf('ai-tool') || {} } catch (e: any) { return {} } },
           ensureReading: function (cwd: any, workspaceKey: any): Promise<any> { return ensureDeckReading(cwd, workspaceKey) }, // #758 动手前保读数：差就免费读一次，不差不打；失败调用方照旧被闸推迟
           noteGate: function (info: any): void { try { noteDeckGate(info) } catch (eN: any) {} }, // #758 闸口径迹：探针读走，线上卡在哪段一眼可见
@@ -496,10 +486,11 @@ export function createRefreshWiring(deps: any): any {
     ledger: ledger,
     gate: gate, send: function (req: any, perform: any): any { return gate.send(req, perform) }, // #927：面板取数那两路要过闸（它们是「人的动作」那一类，只记账、不降档）
     writeEvents: writeEvents,
-    sessionTickets: sessionTickets,
     attention: attention,
     hash8: hash8,
-    chainReadoutOf: chainReadoutOf,
+    // #1082：面板「跨会话在办表」的挂载口（wf.snapshot 与 wf.refresh 两条路共用同一个函数；#1271 起唯一的读数口）。
+    workRouteTableReadout: attachWorkRouteTable,
+    workRouteTableField: WORK_ROUTE_TABLE_FIELD,
     deckToolsForHost: deckToolsForHost,
     deltaRefresh: deltaRefresh,
     deltaEnter: deltaEnter,
@@ -510,10 +501,9 @@ export function createRefreshWiring(deps: any): any {
     attach: attach,
     once: once,
     stats: function (): any {
-      const out: { gate: any; writeEvents: any; sessionTickets: any; allowedRoots: number } = { gate: null, writeEvents: null, sessionTickets: null, allowedRoots: allowed.length }
+      const out: { gate: any; writeEvents: any; allowedRoots: number } = { gate: null, writeEvents: null, allowedRoots: allowed.length }
       try { out.gate = gate.stats() } catch (e: any) {}
       try { out.writeEvents = writeEvents.stats() } catch (e: any) {}
-      try { out.sessionTickets = sessionTickets.stats() } catch (e: any) {}
       return out
     },
   }

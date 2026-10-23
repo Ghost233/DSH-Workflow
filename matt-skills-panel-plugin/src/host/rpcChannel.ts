@@ -4,7 +4,7 @@
  * 为什么要有它（一句话）：通道注册、信封校验与分发异常记账；注册走 fetch 精确路由。
  *
  * 三条不能改的约定（改之前先看原 rpcChannel.js 头注释与调用点 index.ts）：
- * 1. 行为零变化：逻辑逐行对应，只加类型标注与中文注释，不改任何运行时语义；相对导入保留 .js 后缀，由 scripts/ts-hook.mjs 改指同名 .ts。
+ * 1. 行为零变化：逻辑逐行对应，只加类型标注与中文注释，不改任何运行时语义；相对导入保留 .js 后缀，由 scripts/ts-hook.mts 改指同名 .ts。
  * 2. 只写可剥离 TypeScript：不新增运行时语法（禁用 enum 与构造函数参数属性），类型一律 import type 或内联标注，转译后与原 .js 逐行同义。
  * 3. 不新增任何 import 边：只给已有引用加类型，不引入新模块依赖；Node 内建模块的类型缺席由文件内局部声明与 @ts-expect-error 承接，不装 @types/node。
  */
@@ -52,6 +52,25 @@ function replyEnvelope(rpcId?: any, result?: any) {
 const MANIFEST_CANDIDATES = ['../package.json', '../../package/package.json']
 const MANIFEST_NAME = 'dsh-mattpocock-skills-deck'
 let servingVersion: any = null
+let servingVersionRaw: any = null
+
+/**
+ * 读「服务这一份」的原始版本串（读不到回空串，绝不编一个）。宿主启动日志头用它，不替它加 v 前缀；
+ * 读法与缓存口径与 versionOfServingCopy 同一份清单，两处不许各读各的。
+ */
+export function readServingPackageVersion(): string {
+  if (servingVersionRaw !== null) return servingVersionRaw
+  servingVersionRaw = ''
+  for (const rel of MANIFEST_CANDIDATES) {
+    try {
+      const url = new URL(rel, import.meta.url)
+      const pkg = JSON.parse(readFileSync(url, 'utf8'))
+      const v = pkg && pkg.name === MANIFEST_NAME ? String(pkg.version || '') : ''
+      if (v) { servingVersionRaw = v; break }
+    } catch (e) { /* 读不到就试下一条；全读不到就 keep 空串 */ }
+  }
+  return servingVersionRaw
+}
 
 /**
  * 「服务这一份」的版本：本文件所在的那一份插件里 package.json 说的版本号。
@@ -64,15 +83,8 @@ let servingVersion: any = null
  */
 function versionOfServingCopy() {
   if (servingVersion !== null) return servingVersion
-  servingVersion = 'unknown'
-  for (const rel of MANIFEST_CANDIDATES) {
-    try {
-      const url = new URL(rel, import.meta.url)
-      const pkg = JSON.parse(readFileSync(url, 'utf8'))
-      const v = pkg && pkg.name === MANIFEST_NAME ? String(pkg.version || '') : ''
-      if (v) { servingVersion = 'v' + v; break }
-    } catch (e) { /* 读不到就试下一条；全读不到就 keep unknown */ }
-  }
+  const raw = readServingPackageVersion()
+  servingVersion = raw ? 'v' + raw : 'unknown'
   return servingVersion
 }
 

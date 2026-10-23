@@ -2,8 +2,8 @@
  * views/SettingsWorkspaces.ts — 设置页工作区后端总览（从 SettingsPage.js 拆出，V3 #463，纯结构、行为零变化；
  * #1231 由同名 .js 转成 TypeScript，真源从此是这一份）
  *
- * 契约：模块真源（ESM 导出）；scripts/build.mjs 构建时把转译出的同名 .js 产物剥行首 export，
- * 拼回 src/client/index.js 的 leaf 标记处（一源两物，标记 id 与本文件名一致）。
+ * 契约：模块真源（ESM 导出）；scripts/build.mts 构建时把转译出的同名 .js 产物剥行首 export，
+ * 拼回 src/client/index.ts 的 leaf 标记处（源码树里只有这一份真源，标记 id 与本文件名一致）。
  * 以后谁改它：改工作区后端总览、绑定排序、工作区跳转的人改它。
  * 接线：SettingsPage.ts 顶部调 useWsOverview 取数据（自带首屏加载，跳转函数随附返回），
  *   总览分组处调 renderWsOverview；cwd 归一贴加载逻辑放一起（原样搬入）。
@@ -307,7 +307,7 @@ export const renderWsOverview = function (h: any, sharedSt: any, wsOverview: any
           const ordered=view.rows
           const boundCnt=view.boundCount
           return h('details',{ open:false, style:{ marginTop:6, border:'1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius:8, background:'rgba(255,255,255,.02)'}},[
-            h('summary',{ style:{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', cursor:'pointer', listStyle:'none', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', fontSize:11, fontWeight:600 }},[ h('span',{style:{whiteSpace:'nowrap'}},tr('cfg.wsTotal', { n: view.total })), h('span',{style:{ color:boundCnt?'#4ade80':'#8b8b95', whiteSpace:'nowrap'}},tr('cfg.wsBound', { n: boundCnt })), h(Tip, { content: tr('tip.refreshWs') }, h('button',{ style:{ marginLeft:'auto', padding:'2px 8px', fontSize:10, color:'#58a6ff', border:'1px solid #58a6ff', borderRadius:4, background:'transparent', cursor:'pointer', whiteSpace:'nowrap', flex:'none' }, onClick:function(e: any){ e.preventDefault(); e.stopPropagation(); if(loadRef.current){ loadRef.current().then(function(){ try{ flash(sharedSt,tr('cfg.wsRefreshed'),'ok') }catch(e){} }).catch(function(){ try{ flash(sharedSt,tr('cfg.wsRefreshFail'),'warn') }catch(e){} }) } } }, tr('cfg.wsRefresh'))), h('span',{style:{ fontSize:10, color:'#58a6ff', whiteSpace:'nowrap'}},tr('cfg.wsToggleHint'))]),
+            h('summary',{ className:'dsws-hov', 'data-press':'row', 'data-log':'settings.workspaces.toggle', style:{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', cursor:'pointer', listStyle:'none', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', fontSize:11, fontWeight:600, borderRadius:4 }},[ h('span',{style:{whiteSpace:'nowrap'}},tr('cfg.wsTotal', { n: view.total })), h('span',{style:{ color:boundCnt?'#4ade80':'#8b8b95', whiteSpace:'nowrap'}},tr('cfg.wsBound', { n: boundCnt })), h(Tip, { content: tr('tip.refreshWs') }, h('button',{ className:'dsws-hov', 'data-press':'button', 'data-log':'settings.workspaces.refresh', style:{ marginLeft:'auto', padding:'2px 8px', fontSize:10, color:'#58a6ff', border:'1px solid #58a6ff', borderRadius:4, background:'transparent', cursor:'pointer', whiteSpace:'nowrap', flex:'none' }, onClick:function(e: any){ e.preventDefault(); e.stopPropagation(); if(loadRef.current){ loadRef.current().then(function(){ try{ flash(sharedSt,tr('cfg.wsRefreshed'),'ok') }catch(e){} }).catch(function(){ try{ flash(sharedSt,tr('cfg.wsRefreshFail'),'warn') }catch(e){} }) } } }, tr('cfg.wsRefresh'))), h('span',{style:{ fontSize:10, color:'#58a6ff', whiteSpace:'nowrap'}},tr('cfg.wsToggleHint'))]),
             h('div',{ style:{ padding:'0 6px 6px' }},[
               wsOverview.loading ? h('div',{style:{fontSize:11,color:'#8b8b95',padding:'6px 0',whiteSpace:'nowrap'}},tr('cfg.wsLoading')) :
               wsOverview.err ? h('div',{style:{fontSize:11,color:'#f87171',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},wsOverview.err) :

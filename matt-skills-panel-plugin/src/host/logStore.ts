@@ -4,7 +4,7 @@
  * 为什么要有它（一句话）：内存队列、级别判断、按天文件名、单写者刷盘与失败计数；导出、清空与开关三组电话体由 ./logPhones.js 承载，本文件只留动态加载器。
  *
  * 三条不能改的约定（改之前先看原 logStore.js 头注释与调用点 index.ts）：
- * 1. 行为零变化：逻辑逐行对应，只加类型标注与中文注释，不改任何运行时语义；相对导入保留 .js 后缀，由 scripts/ts-hook.mjs 改指同名 .ts。
+ * 1. 行为零变化：逻辑逐行对应，只加类型标注与中文注释，不改任何运行时语义；相对导入保留 .js 后缀，由 scripts/ts-hook.mts 改指同名 .ts。
  * 2. 只写可剥离 TypeScript：不新增运行时语法（禁用 enum 与构造函数参数属性），类型一律 import type 或内联标注，转译后与原 .js 逐行同义。
  * 3. 不新增任何 import 边：只给已有引用加类型，不引入新模块依赖；Node 内建模块的类型缺席由文件内局部声明与 @ts-expect-error 承接，不装 @types/node。
  */
@@ -35,7 +35,7 @@ type WfArgs = any;
 // 真按每次调用各写一次会把磁盘和文件服务拖住，所以窗口内的多次调用只换一次读改写。
 // 值住中央 YAML（config/intervals.yaml 的 logWriteDebounceMs 键）：这里直接引用中央常量，调时间改 YAML。
 // 路径走域构建产物写法，值由 tests/verify-time-config.ts 看守一致。
-import { LOG_WRITE_DEBOUNCE_MS as LOG_DEBOUNCE_MS } from '../shared/time-config/values.js'
+import { LOG_WRITE_DEBOUNCE_MS as LOG_DEBOUNCE_MS } from '../shared/time-config/src/values.js'
 export { LOG_DEBOUNCE_MS }
 // 缓存目录下的独立日志子目录名（设计 2.1：.dsh-mattskillsdeck-cache/logs/）。
 export const LOG_DIR_NAME = 'logs'

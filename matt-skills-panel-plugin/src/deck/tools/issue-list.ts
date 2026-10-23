@@ -9,10 +9,12 @@
 // 的 LIST_QUERY 注释），三后端行为一致，不逐后端写分支。顺序沿用后端原序，不重排。
 import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../shell/call-shell.js'
 import { sessionContextOfAsync } from '../shell/session-workdir.js'
-import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/tool-cost.js'
+import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/src/tool-cost.js'
 import { withCallScope } from '../shell/call-budget.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
-import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/values.js'
+import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
+// #1277：类型没标对的规格票靠票面文件头标记兜底认出来（与宿主快照组装层同一口径）。
+import { isSpecHeaderMarked } from '../../shared/issue-file/src/marker.js'
 
 /**
  * 装配层注入的依赖袋。壳要用的键原样透传（没列的键也一律接受：壳自己还没标类型，这一层不替它把关）；
@@ -35,7 +37,7 @@ export const definition = {
     type: 'object',
     properties: {
       state: { type: 'string', enum: ['open', 'closed', 'all'], description: '只列哪种状态，缺省 open' },
-      type: { type: 'string', enum: ['issue', 'map', 'all'], description: '只列哪种类型，缺省 all' },
+      type: { type: 'string', enum: ['issue', 'map', 'spec', 'all'], description: '只列哪种类型，缺省 all' },
       labels: { type: 'array', items: { type: 'string' }, description: '必须同时带上这些 label（AND），缺省不过滤' },
       assignee: { type: 'string', description: '只留认领含此人的行，缺省不过滤' },
       query: { type: 'string', description: '标题与正文的子串过滤，缺省不过滤' },
@@ -87,6 +89,22 @@ function isMapRow(issue: Record<string, unknown> | null | undefined): boolean { 
   } catch (e) { return false }
 }
 
+/** 把一行归成三种契约类型之一：地图 / 规格 / 普通票。
+ *
+ *  后端的 type 认 map/spec 时直接采用；没标对时按标签与票面文件头标记兜底 —— 标签先于标记，
+ *  与客户端 containerKindOf、宿主快照组装层的判定次序一致（#1277 的视图兜底）。
+ */
+function rowKindOf(issue: Record<string, unknown> | null | undefined): string {
+  try {
+    if (!issue || typeof issue !== 'object') return 'issue'
+    const declared = String(issue.type || '')
+    if (declared === 'map' || declared === 'spec') return declared
+    if (isMapRow(issue)) return 'map'
+    if (isSpecHeaderMarked(issue.body)) return 'spec'
+    return 'issue'
+  } catch (e) { return 'issue' }
+}
+
 /**
  * 装配层调一次，拿到这对 { definition, run }。deps 是宿主注入的依赖袋（见 DeckIssueListDeps），
  * 什么都不给也能跑：壳与这里的每一处都各自退默认。
@@ -110,7 +128,7 @@ export function createDeckIssueList(deps?: DeckIssueListDeps) {
     const rawState = String(a.state === undefined || a.state === null ? 'open' : a.state).trim().toLowerCase()
     const state = (rawState === 'closed' || rawState === 'all') ? rawState : 'open'
     const rawType = String(a.type === undefined || a.type === null ? 'all' : a.type).trim().toLowerCase()
-    const type = (rawType === 'issue' || rawType === 'map') ? rawType : 'all'
+    const type = (rawType === 'issue' || rawType === 'map' || rawType === 'spec') ? rawType : 'all'
     const wantLabels = (Array.isArray(a.labels) ? a.labels : []).map((x) => String(x).trim()).filter(Boolean)
     const wantAssignee = String(a.assignee === undefined || a.assignee === null ? '' : a.assignee).trim().toLowerCase()
     const wantQuery = String(a.query === undefined || a.query === null ? '' : a.query).trim().toLowerCase()
@@ -161,15 +179,18 @@ export function createDeckIssueList(deps?: DeckIssueListDeps) {
         }
       }
       const rows = Array.isArray(listed.data) ? listed.data : []
+      // 后端自己的列表有安全上限（工单 500 条、拉取请求 1000 条）：它到顶就停，却仍回成功。
+      // 走了 REST 降级通道时也一样：REST 自己有翻页上限，尾页失败时只回已经拿到的。
+      // 这两种「可能不全」都要如实转告，别让调用方当成「库里就这么多」（#1304）。
+      const backendTruncated = listed.truncated === true
+      const backendFallback = listed.fallback === 'rest'
       const wantLabelLow = wantLabels.map((x) => x.toLowerCase())
       const matched = []
       for (const issue of rows) {
         if (!issue || typeof issue !== 'object') continue
         // type 在内存里再判一次：后端可能忽略它（契约只保证它透传，不过滤包容）。
         if (type !== 'all') {
-          const isMap = isMapRow(issue)
-          if (type === 'map' && !isMap) continue
-          if (type === 'issue' && isMap) continue
+          if (rowKindOf(issue) !== type) continue
         }
         if (wantLabelLow.length) {
           const have = labelNames(issue.labels).map((x) => x.toLowerCase())
@@ -189,7 +210,7 @@ export function createDeckIssueList(deps?: DeckIssueListDeps) {
           key: issue.key,
           title: issue.title,
           state: issue.state,
-          type: issue.type || (isMapRow(issue) ? 'map' : 'issue'),
+          type: rowKindOf(issue),
           labels: labelNames(issue.labels),
           assignees: assigneeNames(issue.assignees),
           updatedAt: issue.updatedAt || '',
@@ -209,6 +230,8 @@ export function createDeckIssueList(deps?: DeckIssueListDeps) {
       if (wantQuery) cond.push('query=' + String(a.query).trim().slice(0, 40))
       const notes = []
       if (effortId) notes.push('这次带了 effortId（' + effortId.slice(0, 60) + '）：本地后端只在那一个目录里找，远端后端忽略它。')
+      if (backendFallback) notes.push('后端主路这次用不了，走的是 REST 降级通道：REST 自己有翻页上限，尾页失败时只回已经拿到的，这份清单可能不全：收窄过滤再查一次。')
+      else if (backendTruncated) notes.push('后端这次只翻到自己的上限就停了（工单 500 条、拉取请求 1000 条），这份清单可能不全：收窄过滤再查一次。')
       if (truncated) notes.push('只回前 ' + sliced.length + ' 行（共 ' + total + ' 行符合）：收窄过滤或调大 limit 再取一次。')
       return {
         value: {

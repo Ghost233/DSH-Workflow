@@ -46,6 +46,16 @@ export async function prepareUpgrade(options = {}) {
       continue
     }
     const base = await git(report.upstreamRoot, ['show', `${report.baseCommit}:${change.path}`])
+    if (current === base || current === next) {
+      await writeFile(proposal, next)
+      proposals.push({ ...change, resolution: 'clean-merge' })
+      continue
+    }
+    if ([current, base, next].some(text => text.includes('\0'))) {
+      await writeFile(proposal, next)
+      proposals.push({ ...change, resolution: 'review-binary' })
+      continue
+    }
     const work = await mkdtemp(join(reviewRoot, '.merge-'))
     let merged, conflict = false
     try {

@@ -1,6 +1,6 @@
 # 来源与署名
 
-本目录派生自 [FeatherHunter/dsh-mattpocock-skills-deck](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck)，上游基准为 ea0dc0736bbfe9fea0fbe4753a524ab4fc007493（1.9.0-beta.5，npm 发布来源）。
+本目录派生自 [FeatherHunter/dsh-mattpocock-skills-deck](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck)，上游基准为 f8ccc9c4964477d6c6753ebff2d0244afd7bc0dd（1.9.0-beta.10，发布标签）。
 
 保留上游 MIT 许可证和源码中的署名。Ghost233 在 DSH Workflow 中维护面板专用改动。日志产物来自 dsh-log 0.3.4，MIT 许可证保留为包内的 `dsh-log.LICENSE`。YAML 解析来自 yaml 2.9.1，ISC 许可证随包保留为 `yaml.LICENSE`。
 

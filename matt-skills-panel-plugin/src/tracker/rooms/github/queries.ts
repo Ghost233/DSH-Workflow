@@ -13,6 +13,8 @@
  *  - 能力字段来源全覆盖：author/assignees/milestone/comments/parent/blockedBy。
  */
 
+import { PAGINATION } from '../../contract/pagination.js'
+
 // 单票必需字段（core + 能力字段来源）。`number` 作 keySource 注释明确不外泄。
 export const ISSUE_FRAGMENT = [
   'number', // keySource only → normalize String(number) → Issue.key（不产 number 字段）
@@ -46,6 +48,23 @@ export const LIST_QUERY = `query($owner:String!,$name:String!,$first:Int!,$after
 export const GET_QUERY = `query($owner:String!,$name:String!,$number:Int!){
   repository(owner:$owner,name:$name){
     issue(number:$number){ ${ISSUE_FRAGMENT} }
+  }
+}`
+
+// 依赖投影查询（#1304）：一次取齐正向与反向阻塞边，标题与状态随行回来，不再逐张再读。
+// 为什么不并进 ISSUE_FRAGMENT：列表查询不需要反向边（每行多付一整条连接的钱），
+// 而且契约不允许把 blocking 塞进 Issue 实体；它只是 getDependencies 的投影。
+// 两条连接都带 pageInfo：到了后端一次能给的条数上限时，调用方要能如实说「可能不全」。
+// 条数从共享分页表取（src/tracker/contract/pagination.ts 的 github.depsMax）：查询串与「到没到上限」的判定用同一个常量，不会两处漂移。
+export const DEPS_MAX = PAGINATION.github.depsMax
+
+export const DEPS_QUERY = `query($owner:String!,$name:String!,$number:Int!){
+  repository(owner:$owner,name:$name){
+    issue(number:$number){
+      number
+      blockedBy(first:${DEPS_MAX}){ pageInfo{ hasNextPage } nodes{ number title state labels(first:20){ nodes{ name } } } }
+      blocking(first:${DEPS_MAX}){ pageInfo{ hasNextPage } nodes{ number title state labels(first:20){ nodes{ name } } } }
+    }
   }
 }`
 
@@ -219,6 +238,41 @@ export const GET_PR_QUERY = `query($owner:String!,$name:String!,$number:Int!){
   }
 }`
 
+// ── 阻塞边写入用的 statements（2026-10-20）：写边优先走 GraphQL mutation ──
+//
+// 为什么不用 REST 依赖接口当主路：
+//   一、加/删阻塞边本来就是 GitHub GraphQL 的原生 mutation（addBlockedBy / removeBlockedBy），
+//       入参是两张票的 node id（全局 ID，字符串），一次往返写一条；
+//   二、REST 依赖接口与 GraphQL 分属两套配额账：REST 配额耗尽时 GraphQL 往往还能写。
+//       写边是用户显式动作，不该因为读把 REST 配额吃光而写不下去；
+//   三、REST 那条路要先用「查数据库编号」再 POST/DELETE，一次写边至少三次往返；
+//       GraphQL 这边「一次批量取 id + 每条边一次 mutation」就够了。
+// REST 依赖接口保留为兜底：GHES 老版本没有这两个 mutation 字段时仍走老路（见 blocked-by-write.ts）。
+//
+// 回包只要 clientMutationId：两种 payload 上都有这一格，不拉整个 Issue，
+// 既省额度，也不会因为 Issue 字段改名连坐。
+export const ADD_BLOCKED_BY_MUTATION = `mutation($issueId:ID!,$blockingIssueId:ID!){
+  addBlockedBy(input:{issueId:$issueId, blockingIssueId:$blockingIssueId}){ clientMutationId }
+}`
+
+export const REMOVE_BLOCKED_BY_MUTATION = `mutation($issueId:ID!,$blockingIssueId:ID!){
+  removeBlockedBy(input:{issueId:$issueId, blockingIssueId:$blockingIssueId}){ clientMutationId }
+}`
+
+/**
+ * 一次查询取齐一组票的 node id（GraphQL 全局 ID）。
+ *
+ * 为什么用别名批量：写一条阻塞边要两张票的 id；逐票各查一次就是 N 次进程、N 点额度，
+ * 而别名把 N 张票并进一次查询（额度按一次查询算，2026-10-20 真仓实测）。
+ * 只接纯数字票号：非数字塞进 GraphQL 的 Int 位置会让整条查询报错，
+ * 调用方据此回落 REST 更诚实（REST 那条路对怪票号本来就回 not-found）。
+ */
+export function issueNodeIdsQuery(keys: string[]): string {
+  const parts: string[] = []
+  for (let i = 0; i < keys.length; i++) parts.push('i' + i + ': issue(number:' + String(Number(keys[i])) + '){ id }')
+  return 'query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ' + parts.join(' ') + ' } }'
+}
+
 // 兼容旧命名（#132 登记旧片段迁移）：保留但指向新 fragment
 export const GITHUB_ISSUE_FIELDS = ISSUE_FRAGMENT
-export default { ISSUE_FRAGMENT, GITHUB_ISSUE_FIELDS, LIST_QUERY, GET_QUERY, COUNTS_QUERY, COUNTS_QUERY_WITH_LABELS, PULL_REQUEST_FRAGMENT, LIST_PR_QUERY, GET_PR_QUERY }
+export default { ISSUE_FRAGMENT, GITHUB_ISSUE_FIELDS, LIST_QUERY, GET_QUERY, COUNTS_QUERY, COUNTS_QUERY_WITH_LABELS, PULL_REQUEST_FRAGMENT, LIST_PR_QUERY, GET_PR_QUERY, ADD_BLOCKED_BY_MUTATION, REMOVE_BLOCKED_BY_MUTATION, issueNodeIdsQuery }

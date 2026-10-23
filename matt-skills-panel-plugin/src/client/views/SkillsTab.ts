@@ -1,7 +1,7 @@
 /**
  * views/SkillsTab.ts — 技能视图（5.6）的 TS 真源（888 落地：列表换成像素风组件）。
- * 契约：本文件为真源；构建经 esbuild 转译出同名 .js（AUTO-GENERATED 头），再剥行首 export
- * 拼回 src/client/index.js 的 `// ==== leaf:skillsTab (spliced by build) ====` 标记处。
+ * 契约：本文件为真源；构建直接读这份 .ts 真源、用 esbuild 当场转译，再剥行首 export
+ * 拼回 src/client/index.ts 的 `// ==== leaf:skillsTab (spliced by build) ====` 标记处。
  * 列表与详情都交给 views/skillDetail 下的像素风组件画；本文件只做三件事：
  * ①算推荐组（老逻辑一字不动）；②把 SKILLS 转成组件要的 items；③把加载与详情两个动作接上
  * （加载＝老行为 inject，详情＝pixelOpenDetail 取原文）。
@@ -51,11 +51,15 @@ export const SkillsTab = ({ st }: any): any => {
         if (typeof pixelOpenDetail === 'function') pixelOpenDetail(st, name, itemOf(name))
       }
       const chips = h('div', { style: { marginBottom: 8 } }, rec.map(function (r, i) {
+        // 本次界面反馈需求：推荐药丸能点开技能详情，给它按压态、悬停反馈与自己的点击日志；
+        //   定位串用序号（技能名可能带斜杠等字符，定位串只收小写字母数字与点横线下划线）。
         return h('span', {
           key: i,
-          className: 'dsws-chip dsws-chip-m pixel-chipref',
+          className: 'dsws-chip dsws-chip-m pixel-chipref dsws-hov',
           role: 'button',
           tabIndex: 0,
+          'data-press': 'chip',
+          'data-log': 'skill.chip.' + i,
           onClick: function () { openSkill(r) },
         }, '/' + r)
       }))

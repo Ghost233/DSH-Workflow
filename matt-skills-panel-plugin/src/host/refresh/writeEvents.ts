@@ -14,9 +14,9 @@
 //      `header.cwd` 经宿主既有出口算（生产里传进来的是 src/host/index.js 的 canonicalKey，它内部走
 //      src/host/workspaceKey.js 的 canonicalWorkspaceKey，上溯到工作区根那一步也在那里；本文件绝不另写
 //      一套归一化，也不 import 同层的文件——同层互引门禁要求依赖一律由接线处显式传入）。
-//      **取数之前先过这道门**：不归我们的事件不取数、不记那一路的日志 —— 但处理链那一笔在门前就喂了
-//      （#781：链记的是“发生过”，只看会话与工作区根认不认得出来，不看当时有没有人在看；
-//      白名单只决定取不取数，不决定记不记）。
+//      **取数之前先过这道门**：不归我们的事件不取数、不记那一路的日志。工作路线不在门前喂了：
+//      #1262 起改由工具壳在写工具成功收口处统一记（见 src/deck/shell/work-path-record.ts），
+//      本文件只决定取不取数，不再经手任何记录。
 //   3. **参数只做瞬时匹配**：命令原文进不了日志、落不了盘、回不了界面。返回值与日志字段里只有档位、原因代号、
 //      工作区短散列与「认没认出票号」这个布尔。
 //   4. **写事件触发的取数一律过闸**，并受同一工作区 10 秒合并窗口约束（合并窗口的值来自 budget.js）；
@@ -28,19 +28,18 @@
 //   本票没有动 src/host/index.js（全库共用的大文件，别的票同时在改），这一处接线请统筹者统一做。
 //
 // （2026-10-18 #1247 从 writeEvents.js 转成 .ts：只加类型标注与注释，逻辑一行未动。
-// 相对引用保持 .js 后缀，由 scripts/ts-hook.mjs 改指同名 .ts；判定全在纯函数那一侧，
+// 相对引用保持 .js 后缀，由 scripts/ts-hook.mts 改指同名 .ts；判定全在纯函数那一侧，
 // 本文件只做订阅、过门、合并窗口与过闸，白名单的钥匙与活跃集合用同一把短散列，绝不另写归一。）
-import { detectWrite, actionFor } from '../../shared/refresh/write-detect.js'
-import { chainRootHash, looksLikeTicketFilePath } from '../../shared/refresh/chain.js'
-import { PATCH_MERGE_WINDOW_MS, PROBE_INTERVAL_MS } from '../../shared/time-config/values.js'
+import { detectWrite, actionFor } from '../../shared/refresh/src/write-detect.js'
+import { PATCH_MERGE_WINDOW_MS, PROBE_INTERVAL_MS } from '../../shared/time-config/src/values.js'
 
 // ---------------------------------------------------------------------------
 // 类型（#1247 转写：只写类型不写实现）。
 //
 // 为什么这样标：订阅面上来的是整个 DSH 的事件（跨会话、跨工作区、跨子代理都会到），
 // 形状不可信，所以会话与事件都按 any 收，收窄发生在 isOurs 那道门与各形状判断里，
-// 类型不替代那道门。白名单只存散列（会话 id → 根散列、根原文另存一份只给处理链），
-// 路径与命令原文只做瞬时匹配，绝不进表、不进日志、不落盘 —— 这条纪律由字段形状守，
+// 类型不替代那道门。白名单只存散列（会话 id → 根散列），路径与命令原文只做瞬时匹配，
+// 绝不进表、不进日志、不落盘 —— 这条纪律由字段形状守，
 // 类型把表记成 string 到 string，不给原文留位置。
 // ---------------------------------------------------------------------------
 
@@ -49,8 +48,6 @@ interface WriteEventsDeps {
   gate?: any
   canonicalKey?: (cwd: string) => string | Promise<string>
   fetch?: (step: any, meta: any) => any
-  note?: (input: any) => unknown | Promise<unknown>
-  backendOf?: (rootKey: string) => string | Promise<string>
   logCtx?: any
   now?: () => number
   hash8?: (s: string) => string
@@ -88,8 +85,6 @@ function shortHash(s: unknown): string {
  *                   这里不直接 import 那个文件：同层互引门禁（tests/verify-dependency-rules.ts）
  *                   要求宿主层的文件之间不互相引用，依赖一律由接线处显式传入（本目录既有做法）。
  *   fetch     —— 真去取数的函数（由宿主接线传进来，T3/T4 那一层）。签名 fetch(step, meta)。
- *   note      —— 可选：把判定过的那一笔喂给会话↔票处理链（生产里是 sessionTickets.js 的 note）。
- *                给了它，界面上「每个会话在处理哪些票」才有东西可读（#723 T19 接的线）。
  *   logCtx / now / hash8 / mergeWindowMs / probeIntervalMs —— 可选，与仓库其它模块同款。
  */
 export function createWriteEvents(deps?: WriteEventsDeps | null): any {
@@ -109,10 +104,6 @@ export function createWriteEvents(deps?: WriteEventsDeps | null): any {
 
   const allowedRoots = new Set<string>()   // 我们服务的工作区根散列（白名单，按散列存）
   const sessionRoots = new Map<string, string>()   // 会话 id → 工作区根散列（**只有归我们的会话**才进这张表）
-  // #723（T19）：会话 id → 归一化之后的工作区根原文。上面那张表按短散列存（门与钥匙用），
-  // 但处理链要的是它自己那套 16 位指纹（chainRootHash 从**原文**算），所以在门过掉之后
-  // 把原文也留一份 —— 只留归我们的会话，一样不落盘、不进日志。
-  const sessionRootKeys = new Map<string, string>()
   const lastFireAt = new Map<string, number>()     // 工作区根散列 → 上一次事件触发取数的时刻（10 秒合并窗口）
   const firedLogAt = new Map<string, number>()     // 工作区根散列 → 上一次记日志的时刻（节流，1 秒一条）
   const stats = { seen: 0, fired: 0, coalesced: 0, deferred: 0, sent: 0, noGate: 0, noKeyFn: 0, event: { requests: 0, points: 0 } }
@@ -120,6 +111,11 @@ export function createWriteEvents(deps?: WriteEventsDeps | null): any {
   // 「过闸用的钥匙」与「标活跃用的钥匙」是不是同一把 —— #723（T19）就是在这里栽过一次
   // （同一份逻辑把已经是散列的值又散列了一遍，两把钥匙对不上，于是这条路径恒被推迟）。
   let lastGateKey = ''
+
+  // 每一趟「判定 → 合并/发出 → 过闸」的号码：只在本进程内递增，日志里靠它把同一趟的几行串起来
+  // （write.event 的那行给出 tier/reason/action/result，write.sent 那行给出闸的结论与花费）。
+  let cycleSeq = 0
+  function nextCycle(): string { cycleSeq = (cycleSeq + 1) % 100000000; return 'c' + ('0000000' + cycleSeq).slice(-7) }
 
   /** 会话的工作区钥匙：交给接线处传进来的宿主既有出口算（本文件不另写一套归一化）。 */
   async function keyOf(cwd: any): Promise<any> {
@@ -151,7 +147,6 @@ export function createWriteEvents(deps?: WriteEventsDeps | null): any {
     const rootHash = hash8(key)
     if (!allowedRoots.has(rootHash)) return false   // 别的会话、别的工作区：到此为止，不留任何痕迹
     sessionRoots.set(id, rootHash)
-    sessionRootKeys.set(id, key)   // 归一化后的根原文：处理链按它算自己那套 16 位指纹
     return true
   }
 
@@ -169,9 +164,13 @@ export function createWriteEvents(deps?: WriteEventsDeps | null): any {
   function forgetRoot(rootOrCwd: any): void {
     const h = hash8(String(rootOrCwd || ''))
     allowedRoots.delete(h)
-    for (const [id, v] of Array.from(sessionRoots.entries())) if (v === h) { sessionRoots.delete(id); sessionRootKeys.delete(id) }
     lastFireAt.delete(h)
     firedLogAt.delete(h)
+    // 白名单里已经没有这根了，缓存里的「会话 → 根」也要一并清掉：不清的话 debugState().knownSessions
+    // 只增不减，同一会话以后换了工作区还会命中旧缓存、永远不算归我们。
+    for (const [id, root] of Array.from(sessionRoots.entries())) {
+      if (root === h) sessionRoots.delete(id)
+    }
   }
 
   // ---- 参数与结果的瞬时读取（读完就丢，一个字符都不留） ----
@@ -185,60 +184,6 @@ export function createWriteEvents(deps?: WriteEventsDeps | null): any {
   /** 命令行：macOS 命令文本在 `JSON.parse(arguments).command`。原样喂给纯函数，随即丢弃。 */
   function commandOf(argsObj: any): string {
     try { return (argsObj && typeof argsObj.command === 'string') ? argsObj.command : '' } catch (e: any) { return '' }
-  }
-
-  /**
-   * #783：从工具参数里取出被写的文件路径（只做瞬时匹配，不留存）。
-   * 文件写工具的参数形状各异（`file_path` / `path` / `file` 等），按顺序取第一个像路径的字符串；
-   * 数组形态（批量改）取第一个元素。读工具看票文件时这里同样能取出路径，来源照样标成票文件，
-   * 链那一侧会按「读」不记 —— 这条纪律不松。
-   */
-  function filePathOf(argsObj: any): string {
-    if (!argsObj || typeof argsObj !== 'object') return ''
-    const fields = ['file_path', 'filePath', 'path', 'file', 'filename', 'fileName', 'target_file', 'targetFile']
-    for (let i = 0; i < fields.length; i++) {
-      const v: any = argsObj[fields[i]]
-      if (typeof v === 'string' && v.trim()) return v
-      if (Array.isArray(v)) {
-        for (let j = 0; j < v.length; j++) {
-          const item: any = v[j]
-          if (typeof item === 'string' && item.trim()) return item
-          if (item && typeof item === 'object') {
-            for (let k = 0; k < fields.length; k++) {
-              const iv: any = item[fields[k]]
-              if (typeof iv === 'string' && iv.trim()) return iv
-            }
-          }
-        }
-      }
-      if (v && typeof v === 'object' && !Array.isArray(v)) {
-        for (let k = 0; k < fields.length; k++) {
-          const iv: any = v[fields[k]]
-          if (typeof iv === 'string' && iv.trim()) return iv
-        }
-      }
-    }
-    return ''
-  }
-
-  /** #783：是不是我们自己的写工具（这类走工具参数那条来源，不走票文件那条）。 */
-  function isDeckWriterTool(tool: any): boolean {
-    const t = String(tool || '')
-    return t === 'deck_issue_create' || t === 'deck_issue_patch' || t === 'deck_map_plan_create' || t === 'deck_map_link' || t === 'deck_issue_report'
-  }
-
-  /** #723：处理链动作词（白名单见 chain.js CHAIN_ACTIONS；认不出回空串，链照实丢掉）。 */
-  const ACTION_BY_TOOL: Record<string, string> = Object.freeze({
-    deck_issue_create: 'create', deck_issue_patch: 'edit', deck_map_plan_create: 'create', deck_map_link: 'link', deck_issue_report: 'report',
-    create: 'create', edit: 'edit', close: 'close', reopen: 'reopen', comment: 'comment',
-    assign: 'assign', label: 'label', unlabel: 'unlabel', link: 'link', unlink: 'unlink', delete: 'delete',
-  })
-  function actionOf(tool: any, command: any): string {
-    const t = String(tool || '').toLowerCase()
-    if (Object.prototype.hasOwnProperty.call(ACTION_BY_TOOL, t)) return (ACTION_BY_TOOL as Record<string, string>)[t]
-    const hit: RegExpExecArray | null = /\b(?:gh|glab)\s+\w+\s+([a-z-]+)/i.exec(String(command || ''))
-    const verb = hit ? String(hit[1]).toLowerCase().replace(/^--?/, '') : ''
-    return Object.prototype.hasOwnProperty.call(ACTION_BY_TOOL, verb) ? (ACTION_BY_TOOL as Record<string, string>)[verb] : ''
   }
 
   /** 会话事件里的正文（`tool/result` 的 message.content、ptc 派发的 content 两处形状都认）。 */
@@ -272,20 +217,24 @@ export function createWriteEvents(deps?: WriteEventsDeps | null): any {
   }
 
   /** 真的去做那一次取数（过了合并窗口才走到这里）。 */
-  async function fire(shape: any, verdict: any, plan: any, rootHash: string): Promise<any> {
+  async function fire(shape: any, verdict: any, plan: any, rootHash: string, cycle: string, tool: string): Promise<any> {
     stats.fired += 1
-    logFired(shape, rootHash, verdict, plan)
     const last: number | undefined = lastFireAt.get(rootHash)
-    if (last !== undefined && (now() - last) < limits.mergeWindowMs) {
+    const waitedMs: number = (last === undefined) ? -1 : Math.max(0, now() - last)
+    // 合并窗口吃掉的那一档也要留一行：它回答「这次写为什么没有马上取数」。
+    if (last !== undefined && waitedMs < limits.mergeWindowMs) {
       stats.coalesced += 1
+      logEvent(shape, rootHash, verdict, plan, cycle, tool, waitedMs, 'coalesced')
       return { tier: verdict.tier, reason: verdict.reason, action: plan.action, ticket: plan.ticket, coalesced: true }
     }
     lastFireAt.set(rootHash, now())
+    logEvent(shape, rootHash, verdict, plan, cycle, tool, waitedMs, 'fired')
     if (!gate || typeof gate.send !== 'function') {
       stats.noGate += 1
       return { tier: verdict.tier, reason: verdict.reason, action: plan.action, ticket: plan.ticket, gated: false }
     }
     const kind = (plan.action === 'patch-now') ? 'patch' : 'probe'
+    const sentAt: number = now()
     // 过闸：调用点名字写 `event.write`（事件触发那一档），**并且带上这个工作区的钥匙**（rootHash）。
     //
     // #723（T19）修掉的一处真错：从前这里没带 workspaceKey，闸就落到它的「认不出这个工作区」兜底上
@@ -295,25 +244,36 @@ export function createWriteEvents(deps?: WriteEventsDeps | null): any {
     // （wiring.js 的 syncAttention）拿同一把钥匙标活跃，所以这一笔才放行得出来。
     lastGateKey = rootHash
     const out: any = await gate.send(
-      { source: WRITE_EVENT_SOURCE, kind: kind, workspaceKey: rootHash, plan: [{ action: plan.action, ticket: plan.ticket }] },
+      { source: WRITE_EVENT_SOURCE, kind: kind, workspaceKey: rootHash, plan: [{ action: plan.action, ticket: plan.ticket }], cycle: cycle },
       async function (step: any, meta: any): Promise<any> { return doFetch ? await doFetch(step, meta) : { requests: 0, points: 0 } }
     )
     if (out && out.sent) { stats.sent += 1; stats.event.requests += num(out.requests, 0); stats.event.points += num(out.points, 0) }
     else if (out) stats.deferred += 1
+    // 这一趟的终点：发出去了还是被闸推迟、花了几条几点、在路上多久 —— 与上面那行 write.event 用 cycle 对上。
+    fireSent(rootHash, cycle, kind, out, Math.max(0, now() - sentAt))
     return { tier: verdict.tier, reason: verdict.reason, action: plan.action, ticket: plan.ticket, verdictOfGate: (out && out.verdict) || '' }
   }
 
   // 按需级 P1：外层先判调试开关，关着连字段对象都不组装（每一次成功的工具调用都会过这里，属高频路径）。
   // 节流两条：同一工作区一秒只记第一条；兜底那一档（什么都没触发）根本不记 —— 记了只是噪声。
   // 最后一行把「判开关」与「发射」写在同一行，是仓库日志守卫门禁认的形状（与 gate.js 的 fireDecide 同款）。
-  function logFired(shape: any, rootHash: string, verdict: any, plan: any): void {
+  function logEvent(shape: any, rootHash: string, verdict: any, plan: any, cycle: string, tool: string, waitedMs: number, result: string): void {
     try {
       if (!logCtx || !logCtx.isEnabled('debug')) return
       const t: any = now()
       const prev: number | undefined = firedLogAt.get(rootHash)
       if (prev !== undefined && (t - prev) < 1000) return
       firedLogAt.set(rootHash, t)
-      if (logCtx.isEnabled('debug')) logCtx.fire('debug', 'write.event', { keyHash: rootHash, shape: shape, tier: verdict.tier, reason: verdict.reason, action: plan.action, hasTicket: !!plan.ticket })
+      if (logCtx.isEnabled('debug')) logCtx.fire('debug', 'write.event', { keyHash: rootHash, shape: shape, tool: tool, tier: verdict.tier, reason: verdict.reason, action: plan.action, hasTicket: !!plan.ticket, cycle: cycle, result: result, waitedMs: waitedMs })
+    } catch (eL: any) {}
+  }
+
+  // 一趟取数的终点（按需级 P1）：闸的结论、真发了几条几点、这一步在路上多久。与 write.event 用 cycle 对上。
+  // 为什么不并进 write.event：那一行在过闸之前就写了（要说明判定与是否被合并），这一行要等闸回来才知道结论。
+  function fireSent(rootHash: string, cycle: string, kind: string, out: any, latencyMs: number): void {
+    try {
+      if (!logCtx || !logCtx.isEnabled('debug')) return
+      if (logCtx.isEnabled('debug')) logCtx.fire('debug', 'write.sent', { keyHash: rootHash, cycle: cycle, kind: kind, sent: !!(out && out.sent), verdict: String((out && out.verdict) || ''), reason: String((out && out.reason) || ''), requests: num(out && out.requests, 0), points: num(out && out.points, 0), latencyMs: latencyMs })
     } catch (eL: any) {}
   }
 
@@ -322,52 +282,6 @@ export function createWriteEvents(deps?: WriteEventsDeps | null): any {
     const argsObj: any = parsedArgs(rawArgs)
     const verdict: any = detectWrite({ shape: shape, tool: String(tool || ''), command: commandOf(argsObj), args: argsObj, succeeded: succeeded })
     const plan: any = actionFor(verdict, limits)
-    // #781：先喂处理链，不看白名单。链记的是“发生过”，取数才看“在看谁” ——
-    // 从前这一块在门后，没聚焦的工作区那一笔连链都不进，重启后自然找不到。
-    // 白名单只决定后面取不取数（isOurs 与 fire 那一路），不决定记不记。
-    // note 抛错、认不出根与后端，都不许影响取数那一路。
-    if (typeof opts.note === 'function') {
-      try {
-        const sid = sessionIdOf(session)
-        let rootKey = ''
-        try {
-          if (sessionRootKeys.has(sid)) rootKey = sessionRootKeys.get(sid) || ''
-          else {
-            const cwd: any = session && session.header && session.header.cwd
-            if (cwd && typeof opts.canonicalKey === 'function') {
-              const k: any = await opts.canonicalKey(cwd)
-              if (k) rootKey = String(k)
-            }
-          }
-        } catch (eK: any) { /* 认不出根就不记这一笔 */ }
-        if (sid && rootKey) {
-          let backendName = ''
-          if (typeof opts.backendOf === 'function') { try { backendName = String(await opts.backendOf(rootKey) || '') } catch (eB: any) { backendName = '' } }
-          const verb = actionOf(tool, commandOf(argsObj))
-          // #783：先把这条路喂上 —— 从工具参数里取出被写的文件路径，当路径传给链；
-          // 工具是文件写工具（或读工具）且路径像一张票文件时，来源标成票文件那条。
-          // 用读工具看同一张票文件时来源照样是票文件，链按「读」不记，这条纪律不松。
-          let chainSource = (String(tool || '').toLowerCase().indexOf('deck_') === 0) ? 'tool-args' : 'cli'
-          let chainPath = ''
-          try {
-            const fp = filePathOf(argsObj)
-            if (fp && !isDeckWriterTool(tool) && looksLikeTicketFilePath(fp)) {
-              chainSource = 'markdown-file'
-              chainPath = fp
-            } else if (fp && !isDeckWriterTool(tool)) {
-              // 路径不像票文件时也把路径传下去：链从同一条路径里取编号与工作单元，
-              // 不像就自然落成「说不出是哪一张票」，不记。
-              chainPath = fp
-            }
-          } catch (eP: any) { /* 取不出路径就按原来的两条来源走 */ }
-          await opts.note({
-            sessionId: sid, rootHash: chainRootHash(rootKey), backend: backendName,
-            tool: String(tool || ''), source: chainSource,
-            tier: verdict.tier, reason: verdict.reason, verb: verb, ticketKey: verdict.ticket || '', path: chainPath, args: argsObj,
-          })
-        }
-      } catch (eN: any) { /* 喂链失败不许影响取数 */ }
-    }
     const ours = await isOurs(session)
     if (!ours) return null
     stats.seen += 1
@@ -379,7 +293,9 @@ export function createWriteEvents(deps?: WriteEventsDeps | null): any {
     // 都判成推迟 —— 接线看起来接上了，生产里一次都发不出去。现在与 isOurs 用的是同一个值。
     const keyHash = String(sessionRoots.get(sessionIdOf(session)) || '')
     if (plan.action === 'wait-tick') return { tier: verdict.tier, reason: verdict.reason, action: plan.action }
-    return await fire(shape, verdict, plan, keyHash)
+    // 只有真的要取数的那两档才开一趟 cycle；工具名只留前 40 个字符（它不是凭证，但也没有无限长的道理）。
+    const cycle = nextCycle()
+    return await fire(shape, verdict, plan, keyHash, cycle, String(tool || '').slice(0, 40))
   }
 
   /** 运行时事件的第一条订阅：`ctx.on('tools/result', (exec, result) => …)`（原生与 ptc 内层派发都会到）。 */
@@ -391,7 +307,7 @@ export function createWriteEvents(deps?: WriteEventsDeps | null): any {
   /** 会话事件第二条订阅。第一行先过门：不归我们的会话立刻返回，不留任何痕迹。 */
   async function onSessionEvent(session: any, event: any): Promise<any> {
     const ours = await isOurs(session)
-    if (!ours) { try { if (String(event && event.type || '' || '') === 'assistant/message' && typeof opts.onFirstAssistant === 'function' && typeof isNamingTracked === 'function' && sessionIdOf(session) && await isNamingTracked(sessionIdOf(session))) opts.onFirstAssistant(sessionIdOf(session)) } catch (eN: any) {} return null } // #746 摘要窄门：只走首句摘要这一条，取数记账处理链一律不碰，刷新配额原样不动
+    if (!ours) { try { if (String(event && event.type || '' || '') === 'assistant/message' && typeof opts.onFirstAssistant === 'function' && typeof isNamingTracked === 'function' && sessionIdOf(session) && await isNamingTracked(sessionIdOf(session))) opts.onFirstAssistant(sessionIdOf(session)) } catch (eN: any) {} return null } // #746 摘要窄门：只走首句摘要这一条，取数记账工作路线一律不碰，刷新配额原样不动
     const type: any = event && event.type
     if (String(type || '') === 'user/message') { try { if (onFirstUser) onFirstUser(sessionIdOf(session)) } catch (eU: any) {} return null }
     // #746：首条助手消息即摘要触发（门后、只传会话号与类型名，事件体不进任何 sink）。

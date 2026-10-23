@@ -4,9 +4,9 @@
  * 为什么本文件要单独存在：列表排序、标签热度、红卡收起、导航栈顶镜像这四件事都只和“人在面板里看到什么”
  * 有关，和快照从哪里来无关，所以它们住在偏好这一层，而不是快照那一层；两层混在一起，改快照会误伤偏好。
  * 本文件由 store-prefs.js 转写而来，转写时只加类型标注与环境声明，运行行为一字不改。
- * 构建时会去掉每行行首的 export 关键字，把声明体拼回 src/client/index.js 的拼接标记处（apply 闭包内原位），
- * 与 ctx.js 同模式，一源两物；接口冻结清单见 docs/architecture/kernel-contract.md，改导出名要连那份文档一起改。
- * 反例：不要在这里读写快照内容（那是 store-snapshot.js 的事），也不要在这里决定行该怎么画（那是 store-derived.js 的事）。
+ * 构建时会去掉每行行首的 export 关键字，把声明体拼回 src/client/index.ts 的拼接标记处（apply 闭包内原位），
+ * 与 ctx.ts 同模式，源码树里只有这一份真源；接口冻结清单见 docs/architecture/kernel-contract.md，改导出名要连那份文档一起改。
+ * 反例：不要在这里读写快照内容（那是 store-snapshot.ts 的事），也不要在这里决定行该怎么画（那是 store-derived.ts 的事）。
  */
 // 从中央时间参数目录真引用（与转写前的 .js 一致）。这条 import 不影响拼接：构建的拼接入口
 // scripts/lib/transpile-unit.mjs 的 stripTimeConfigRefs 会把说明符里带 time-config 的这一行删掉，
@@ -23,6 +23,8 @@ declare function saveUiPrefs(...args: any[]): any;
 declare function viewFlagOf(...args: any[]): any;
 declare function setViewFlag(...args: any[]): any;
 declare function h(...args: any[]): any;
+// #1342：布局取值名单由构建从共享真源（src/shared/doc-layout）拼进闭包，本文件只声明、判断读它。
+declare const DOC_LAYOUT_VALUES: readonly ('single' | 'multi')[]
 export const DEFAULT_PANEL_H: number = (function (): number {
   try { return Math.max(240, Math.round((window.innerHeight || 800) * 0.5)) } catch (e) { return 400 }
 })()
@@ -314,7 +316,7 @@ export const setCachedRepository = function (cwd: any, repo: any): void { try { 
 //   而 AI 是照各自收到的那一句去写 docs/agents/domain.md 的。现在按工作区存一份，下次打开直接沿用；
 //   想改随时在黄条那颗按钮弹出的那张卡上改（那条路每次都问，见 prompts.js 的 injectSetupDecision）。
 //   存法沿用选择集同例：归一键 → 'single' | 'multi'；localStorage 不可用时降级为仅内存。
-//   取值只有这两个，与 StatusBackend.js 的 SETUP_LAYOUT_VALUES 是同一套（那边管卡片怎么画，这边管记不记得住）。
+//   取值由拼进闭包的 DOC_LAYOUT_VALUES 把关（与 StatusBackend 的 SETUP_LAYOUT_VALUES 同一份真源；那边管卡片怎么画，这边管记不记得住）。
 export const SETUP_LAYOUT_BY_CWD_KEY: string = 'dsws.setupLayoutByCwd'
 export const setupLayoutByCwd: any = {}
 ;(function (): void {
@@ -330,7 +332,7 @@ export const getCachedSetupLayout = function (cwd: any): any {
     // #683（F1 · ADR 的 R6）：这张表里一条现在存 {layout, pickedAt}（与后端那张同一种形状），
     //   读出来永远只给取值（老版本存的裸字符串照旧认，外面看不出形状变了）。
     const v: string = String((raw && typeof raw === 'object' ? raw.layout : raw) || '').toLowerCase()
-    return (v === 'single' || v === 'multi') ? v : null
+    return ((DOC_LAYOUT_VALUES as readonly string[]).indexOf(v) >= 0) ? v : null
   } catch (e) { return null }
 }
 export const setCachedSetupLayout = function (cwd: any, v: any): void {
@@ -340,7 +342,7 @@ export const setCachedSetupLayout = function (cwd: any, v: any): void {
     let s: string = '', at: number = 0
     if (v && typeof v === 'object') { s = String(v.layout == null ? '' : v.layout).toLowerCase(); at = Number(v.pickedAt) || 0 }
     else { s = String(v == null ? '' : v).toLowerCase(); at = Date.now() }
-    if (s !== 'single' && s !== 'multi') return
+    if ((DOC_LAYOUT_VALUES as readonly string[]).indexOf(s) < 0) return
     const k: any = wsKeyOf(cwd)
     if (cwd && k) {
       const cur: any = setupLayoutByCwd[k]

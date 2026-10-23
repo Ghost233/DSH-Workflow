@@ -1,8 +1,8 @@
 /**
  * src/client/kernel/router.ts — 内核模块（阶段 2 内核迁移 · #96 T3）
  *
- * 契约：本文件为模块真源；构建时去掉行首 export 后拼回 src/client/index.js，
- * 一源两物、src 零复制。同名 .js 是构建产物，改这里。
+ * 契约：本文件为模块真源；构建时去掉行首 export 后拼回 src/client/index.ts，
+ * 源码树里只有这一份真源。源码树里只有这一份真源，改这里就够。
  * 接口冻结清单见 kernel-contract.md，导出名与形状一字不差。
  *
  * 面板只有一条路：本插件在原生右侧边栏的类型登记表里注册一个类型，
@@ -39,9 +39,9 @@ declare const idOf: any;
 declare const renderTemplate: any;
 declare const promptText: any;
 declare const promptTextFor: any;
-declare const promptLang: any;
+declare const uiText: any;
 declare const newWayfinderPrompt: any;
-declare const NEW_BUG_FIELDS_BODY_EN: any;
+declare const newSpecPrompt: any;
 declare const NEW_BUG_FIELDS_BODY: any;
 declare const inspectPrompt: any;
 declare const completePrompt: any;
@@ -194,6 +194,14 @@ export const startText = (st: any, t: any): string => {
 // 契约 #205 会话标题与占位判定已迁至命名守护共享核心（#265 · 单一真源；构建时经 splice 拼入本闭包）。
 // 本文件不再声明任何命名真源，均以上述共享核心为准。
 // v1.5 T6：新增 wayfinder prompt —— /wayfinder + 仓库信息 + 需求引导
-export const newWayfinderText = (st: any): string => newWayfinderPrompt(st) + (promptLang() === 'en' ? '\nRequirement: ' : '\n需求描述：');
+// 注意那个空行：提示词与需求描述之间隔着两个换行（'\n\n'），转写时曾漏成一个、对抗审查抓回来了，别顺手「整理」掉。
+// #1294：需求描述这几个字不再按「是不是 en」二选一，改读 config/copy/word.yaml 的 prompt.requirementPrefix；
+//   两个换行仍在拼接处写死（契约锁着），前缀文字本身随语言链变。
+export const newWayfinderText = (st: any): string => newWayfinderPrompt(st) + '\n\n' + uiText('prompt.requirementPrefix');
 // issue #4：新增 BUG 单 —— 与「+ 新建需求」同构（新会话 + 预填 /wayfinder prompt）
-export const newBugWayfinderText = (st: any): string => promptText('newBugWayfinder', { repo: repoUrlFor(st) }) + (promptLang() === 'en' ? NEW_BUG_FIELDS_BODY_EN() : NEW_BUG_FIELDS_BODY());
+// #1294：bug 字段那段正文按语言链由 NEW_BUG_FIELDS_BODY() 自己取；它自带开头的两个换行
+//   （真源 config/prompts/ticket-creation.yaml 的 newBugFields 片段以 '\n\n' 开头），拼在这里不再另加。
+export const newBugWayfinderText = (st: any): string => promptText('newBugWayfinder', { repo: repoUrlFor(st) }) + NEW_BUG_FIELDS_BODY();
+// #1297：「实施地图」卡 —— 入口浮层里第二张卡（与「+ 新建需求」同构：新会话 + 预填 /grill-with-docs prompt）。
+//   面板与状态栏两处都调这一个函数，开场白因此逐字一致（#1280 验收口径）。
+export const newSpecText = (st: any): string => newSpecPrompt(st) + '\n\n' + uiText('prompt.requirementPrefix');

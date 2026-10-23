@@ -2,14 +2,14 @@
   "schema": 1,
   "harnessVersion": "0.2.1-rc.2",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "249ad3b61d8ee25b3fcd854df6a69c1386e1c0a9faafd94f69a85ddfbabba572",
+  "manifestSha256": "ff6e60db2975328efdb468fc03e90bfb5c6ffc95049773762d62b52bbff9fcd3",
   "plugins": [
     {
       "package": "dsh-context",
-      "version": "0.73.3",
+      "version": "0.74.0",
       "metadata": {
         "name": "dsh-context",
-        "version": "0.73.3",
+        "version": "0.74.0",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -28,7 +28,8 @@
           "compatibility": {
             "dshReleases": {
               "0.1.7-rc.2": "compatible",
-              "0.2.0-rc.2": "compatible"
+              "0.2.0-rc.2": "compatible",
+              "0.2.1-rc.2": "compatible"
             }
           }
         },
@@ -55,10 +56,10 @@
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.23",
+      "version": "1.9.30",
       "metadata": {
         "name": "dsh-cost-meter",
-        "version": "1.9.23",
+        "version": "1.9.30",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -114,10 +115,10 @@
     },
     {
       "package": "billion-context",
-      "version": "0.1.202",
+      "version": "0.1.204",
       "metadata": {
         "name": "billion-context",
-        "version": "0.1.202",
+        "version": "0.1.204",
         "dsh": {
           "bundle": {
             "patch": "./dsh.bundle.patch.yml"
@@ -132,10 +133,10 @@
     },
     {
       "package": "@goodandready/dsh-plugin-notify",
-      "version": "0.4.5",
+      "version": "0.4.6",
       "metadata": {
         "name": "@goodandready/dsh-plugin-notify",
-        "version": "0.4.5",
+        "version": "0.4.6",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -211,11 +212,11 @@
     },
     {
       "package": "ghost-agent-sentinel",
-      "version": "0.1.6",
-      "commit": "042c0feee058121b92c117c11c84ee954c5d7ba6",
+      "version": "0.1.8",
+      "commit": "1a2fc28c088f9c514cf55bb5a0536c0f523eb711",
       "metadata": {
         "name": "ghost-agent-sentinel",
-        "version": "0.1.6",
+        "version": "0.1.8",
         "dsh": {
           "bundle": {
             "patch": "./dsh/cordis.patch.yml"
@@ -261,11 +262,11 @@
     },
     {
       "package": "dsh-our-free-model",
-      "version": "2.5.7",
-      "commit": "d857f8ecb6236608dd97f8f2aa81beacc4994a8d",
+      "version": "2.5.9",
+      "commit": "25ab765d6bb860779dbd8c53062953524f3cac09",
       "metadata": {
         "name": "dsh-our-free-model",
-        "version": "2.5.7",
+        "version": "2.5.9",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"

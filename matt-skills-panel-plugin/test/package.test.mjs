@@ -52,7 +52,7 @@ test('upstream npm update calls cannot replace the project-maintained panel', ()
   assert.equal(check.snapshot.latestVersion, null)
   assert.equal(check.snapshot.blockedReason, 'managed-by-workflow')
   assert.throws(() => handlers.handleUpdateInstall(), /DSH Workflow/)
-  assert.doesNotMatch(read('scripts/build.mjs'), /profilesDir|node_modules\/dsh-mattpocock-skills-deck|process\.env\.HOME/)
+  assert.doesNotMatch(read('scripts/build.mts'), /profilesDir|node_modules\/dsh-mattpocock-skills-deck|process\.env\.HOME/)
 })
 
 test('upstream updater files removed during the upgrade are absent from the shipped package', () => {

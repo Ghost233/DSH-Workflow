@@ -29,11 +29,37 @@ export const STATE = Object.freeze({
   CLOSED: 'closed',
 })
 
-/** 票的类型（wayfinder 语义）：普通票 或 地图。注意：与本地 markdown 的 `Type:`（research/…）正交。 */
+/**
+ * 票的类型（wayfinder 语义）：普通票、探索地图 或 规格（实施地图）。
+ * 注意：与本地 markdown 的 `Type:`（research/…）正交。
+ * 与 `identity.ts` 的 `IssueType` 是同一份取值的两种写法，改一处必须改另一处。
+ */
 export const ISSUE_TYPE = Object.freeze({
   ISSUE: 'issue',
   MAP: 'map',
+  SPEC: 'spec',
 })
+
+/**
+ * 规格（实施地图）容器在正文文件头的隐藏标记。
+ *
+ * 为什么用正文标记而不是标签：探索地图有 `wayfinder:map` 标签可认，规格没有自己的标签
+ * （也不许带 `wayfinder:map` —— 带了就会被认成探索地图），所以靠正文文件头独占一行的
+ * 这段隐藏标记来认。写法：`<!-- DSH-ISSUE-KIND: spec -->`，前后各留空行更好。
+ *
+ * 认法（三个后端的归一层都调 `src/shared/issue-file/src/marker.ts` 的 `markerKindInHeader`）：
+ * 只扫第一个 `#` 标题之前的那一段（没有标题时取前 10 行），整行精确等于这一串才算规格；
+ * 正文别处提到这一串、或标记落在标题之后，都不算数。所以「幂等锚占第一行、标记占第二行」
+ * 的正文照样认——写侧建带锚的票时锚就排在正文最前面。判定顺序上标记排在标签前面
+ * （GLOSSARY.md「对象类型（objectKind）」词条：标记 → 标签 → 形状，标记是唯一真源）。
+ *
+ * #1403 T1 读侧统一：GitHub 房（`src/tracker/rooms/github/normalize.ts` 的 `isSpecBody`）、
+ * GitLab 房（`src/tracker/rooms/gitlab/normalize.ts` 的 `deriveType`）与本地 Markdown 房
+ * （`src/tracker/rooms/markdown/parse.ts`）用同一条判据、同一个共享包函数，结论一致。
+ * 这里只放这一串常量：契约目录只放类型与常量、不放行为，也不许引共享包
+ * （tests/verify-contract-types.ts 第二项），所以判定逻辑留在各房归一层，别把这份常量当成实现。
+ */
+export const SPEC_BODY_MARKER = '<!-- DSH-ISSUE-KIND: spec -->'
 
 /** 面板快照模式（沿用现有面板 snapMode 口径；与 tracker 数据形状解耦，仅客户端面板用）。 */
 export const SNAP_MODE = Object.freeze({

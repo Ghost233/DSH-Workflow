@@ -198,3 +198,7 @@ package/upstream.json
 /src/shared/version-control/write-ticket.js
 /src/shared/workspaceKey.js
 /src/tracker/contract/vocabulary.js
+
+/.build/
+/src/client/kernel/prompt-data.ts
+/src/client/kernel/locale-data.ts

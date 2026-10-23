@@ -1,6 +1,8 @@
 import { STATE, ISSUE_TYPE } from '../../contract/vocabulary.js'
 import type { Issue } from '../../contract/entities.js'
 import type { IssueType, State } from '../../contract/identity.js'
+// #1277：对象类型唯一真源是文件头那行隐藏标记（ADR 2.5），本地房读票时认它。
+import { markerKindInHeader } from '../../../shared/issue-file/src/marker.js'
 
 // parseMd 的元数据：调用方（读路径各处）已知的票身份，不从正文里读；
 // 契约 Issue 的核心字段多由此补齐（key/effortId/parentKey/时间/url）。
@@ -15,8 +17,18 @@ export interface ParseMeta {
   url?: string
 }
 
+// 标题转文件名后缀。保留各语言的字母与数字：中文标题过去会被整串删光、只剩 `untitled`
+// （#1280 验收要求本地不能落成 `01-untitled.md`，本票 #1277 修）。空白与标点压成连字符，
+// 过长截到 40 个字符，首尾不留连字符，空串才回落 untitled。
 function slugify(s: unknown): string {
-  return String(s || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]+/g, '-').replace(/\-+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'untitled'
+  const base = String(s || '').trim().toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\p{L}\p{N}\-]+/gu, '-')
+    .replace(/\-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/^-+|-+$/g, '')
+  return base || 'untitled'
 }
 
 // 票里只写标签名（#312 定版）：颜色由读这份票的人按工作区里的配色文件与内置默认色算出来，
@@ -273,9 +285,22 @@ export function parseMd(text: unknown, meta: ParseMeta): Issue {
     }
   }
   const key = String((meta && meta.key) || '00')
-  const type = (meta && meta.isMap ? ISSUE_TYPE.MAP : ISSUE_TYPE.ISSUE) as IssueType
+  // #1277：对象类型看文件头那行隐藏标记（ADR 2.5：标记是唯一真源，标签与正文形状只作兜底）。
+  // #1403：判定顺序与 T1 三房口径一致 —— 标记 → 类型标签（wayfinder:map）→ 正文形状（地图文件本身 / 老的 Type: map）。
+  //   先把标记判完：spec 标记是规格容器，ticket 标记是实施票（契约类型仍是普通票），这两种都不许被标签改判；
+  //   然后才看 wayfinder:map 标签：新建的地图票不再写 Type: map，只带这一枚标签，不认它就会读成普通票；
+  //   最后才是老的形状判据（map.md 本身、或老文件里的 Type: map），保证老数据照旧读得对。
+  const markedKind = markerKindInHeader(raw)
+  const hasMapLabel = labels.some((one: { name?: unknown }) => String((one && one.name) || '').trim().toLowerCase() === 'wayfinder:map')
+  const type = (markedKind === 'spec'
+    ? ISSUE_TYPE.SPEC
+    : (markedKind === 'ticket'
+      ? ISSUE_TYPE.ISSUE
+      : (((meta && meta.isMap) || hasMapLabel || typeRaw === 'map') ? ISSUE_TYPE.MAP : ISSUE_TYPE.ISSUE))) as IssueType
   // #971：父子关系以文件顶注释为准，有注释就用注释，没有注释的老文件才回落。
   // 地图文件本身没有父票（恒为空）；计划里用票文件冒充的地图（正文写着 Type: map、却没有父注释）同样视作没有父票。
+  // #1403：规格是顶层容器，盘中没写父注释就是没有父票 —— 本地房老数据里规格可能落在默认 00（根地图）下，
+  //   新口径不认这个默认；有老父注释的规格仍按注释读（存量票不回填）。规格的判定看上面的对象类型：标记优先后 type 就是 spec。
   // 其余票没有注释时沿用调用方递进来的固定值（今天是 00，即老单根工作区的地图），保持老数据行为不变。
   const fileParent = parentKeyFromFile(raw)
   let parentKey = null
@@ -283,7 +308,11 @@ export function parseMd(text: unknown, meta: ParseMeta): Issue {
     parentKey = null
   } else if (fileParent.found) {
     parentKey = fileParent.value
-  } else if (typeRaw === 'map') {
+  } else if (hasMapLabel || typeRaw === 'map') {
+    // #1403：带 wayfinder:map 标签的新地图票没有父票（标签就是它的容器身份）；老文件里的 Type: map 同样算。
+    parentKey = null
+  } else if (type === ISSUE_TYPE.SPEC) {
+    // #1403：规格没有父注释时就是顶层容器，不回落调用方给的 00。
     parentKey = null
   } else {
     parentKey = meta && meta.parentKey !== undefined ? meta.parentKey : null

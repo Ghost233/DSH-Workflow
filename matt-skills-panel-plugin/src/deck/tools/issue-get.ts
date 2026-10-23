@@ -7,9 +7,12 @@ import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../shell/call-she
 import { sessionContextOfAsync } from '../shell/session-workdir.js'
 import { EDGE_LANDING, relationsOf } from '../shell/edge-landing.js'
 import { withCallScope } from '../shell/call-budget.js'
-import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/tool-cost.js'
+import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/src/tool-cost.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
-import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/values.js'
+import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
+// #1090：进度区的结构化读回（{percent,note,updatedAt,entries}）与写侧共用同一份解析。
+// #1092：维护者原话区的结构化读回（{text,source,recordedAt}）同样与该区的写侧共用同一份解析。
+import { parseOriginalWords, parseProgressDetail } from '../../tracker/body-parse.js'
 
 /** 数字型参数的统一收口：正的有限数才要（取整），其余一律当「没给」，由调用方退自己的默认。 */
 function numOpt(v: unknown): number | undefined { return (typeof v === 'number' && isFinite(v) && v > 0) ? Math.floor(v) : undefined }
@@ -78,14 +81,14 @@ export interface DeckIssueGetDeps {
 /** 工具定义（唯一事实）：路由、参数名与给 AI 看的那句话都从这里出，别在别处再抄一份。 */
 export const definition = {
   name: 'deck_issue_get',
-  description: '同属 dsh-mattpocock-skills-deck 插件的 ISSUE 与 map 管理能力，只处理当前 workspace 对应的 repo；动 ISSUE 前先调用 deck_context 确认 workspace 与 backend，若它说没 backend 就停下。读一个 ISSUE 的完整关系：正文、评论、label、assignee 与 parent 和 blockedBy 边，每条边标出落点。blocking=false 跳过反向边全仓扫描（快，见 blocking 参数）。',
+  description: '同属 dsh-mattpocock-skills-deck 插件的 ISSUE 与 map 管理能力，只处理当前 workspace 对应的 repo；动 ISSUE 前先调用 deck_context 确认 workspace 与 backend，若它说没 backend 就停下。读一个 ISSUE 的完整关系：正文、评论、label、assignee 与 parent 和 blockedBy 边，每条边标出落点。blocking=false 跳过反向边查询（快，见 blocking 参数）。',
   parameters: {
     type: 'object',
     properties: {
       key: { type: 'string', description: '票号，例如 713' },
       comments: { type: 'number', description: '最多带回几条评论，缺省 50' },
       section: { type: 'string', description: '只回正文里这一节（## 标题子串），缺省回全文前 2000 字' },
-      blocking: { type: 'boolean', description: '要不要反向阻塞边（谁被这张票阻塞）。缺省要：读全量关系。关掉只读单票本身，跳过一次全仓扫描，快一个数量级；反向边记空并注记，要就再调一次。' },
+      blocking: { type: 'boolean', description: '要不要反向阻塞边（谁被这张票阻塞）。缺省要：读全量关系，一次查询就取回反向边，阻塞者的标题与状态随行回来。关掉只读单票本身，跳过一次反向边查询，快；反向边记空并注记，要就再调一次。' },
       effortId: { type: 'string', description: '只有本地后端需要填，填票所在的目录名，根目录的不填' },
     },
     required: ['key'],
@@ -104,6 +107,13 @@ function issueBrief(issue: Record<string, unknown> | null | undefined) {
     labels: Array.isArray(issue.labels) ? issue.labels.map((l) => (l && l.name) || String(l)) : [],
     assignees: Array.isArray(issue.assignees) ? issue.assignees.map((a) => (a && a.login) || String(a)) : [],
     updatedAt: issue.updatedAt || '', closedAt: issue.closedAt || '', url: issue.url || '', body: issue.body !== undefined ? issue.body : null,
+    // #1090：正文里的进度区按结构化形状回一份（旧字段一个不删，读的人想只取数字仍可读 body）。
+    // 没写进度时是 {percent:null,note:'',updatedAt:null,entries:[]}，不是 null——「没写」与「写坏了」分开看。
+    progress: parseProgressDetail(issue.body !== undefined ? issue.body : null),
+    // #1092：正文里「## 维护者原话」区按结构化形状回一份，原话逐字（引用块只去掉一个 > 前缀），
+    // 出处与记录时间随条目返回；recordedAt 只从出处文字里认（出处没写时间时是 null，不拿票的修改时间顶替）。
+    // 没写原话时是 []，不是 null——「没写」与「写坏了」分开看；正文原封不动仍可读 body。
+    originalWords: parseOriginalWords(issue.body !== undefined ? issue.body : null),
   }
 }
 
@@ -197,8 +207,8 @@ export function createDeckIssueGet(deps?: DeckIssueGetDeps) {
         }
       }
       const issue = got.data || {}
-      // 反向边是整笔调用里最贵的一段（算“谁被阻塞”要扫全仓）：关掉就整段跳过，
-      // 只读单票本身；反向边记空并注记，不假装 0 条。
+      // 反向边走单独一次依赖查询（#1304 起改为读后端原生的「我挡住了谁」，不必再扫全仓）：
+      // 关掉（blocking=false）就整段跳过，只读单票本身；反向边记空并注记，不假装 0 条。
       const dep = (wantBlocking && typeof t.getDependencies === 'function') ? await t.getDependencies(repo, key, {}, opCtx) : null
       const depTimeout = wantBlocking ? timeoutMessage(dep as TransportResult) : null
       if (depTimeout) return timeoutValue('这张票读到一半（阻塞边超时了：在限时内没等到后端回话；票本身已读回，阻塞边重调一次就行）。', { key: key, backendId: pick.backendId, error: { kind: 'timeout', message: depTimeout.slice(0, 300) } }, { requests: 1, points: 3 })
@@ -209,15 +219,21 @@ export function createDeckIssueGet(deps?: DeckIssueGetDeps) {
       if (!wantBlocking) rel.blocking = []
       const notes = []
       if (effortId) notes.push('这次带了 effortId（' + effortId.slice(0, 60) + '）：本地后端只在那一个目录里找，远端后端忽略它。')
-      if (!wantBlocking) notes.push('反向阻塞边这次没取（blocking=false，跳过一次全仓扫描）：上面“阻塞别人”记空不是 0 条，要就带 blocking=true 再调一次。')
+      if (!wantBlocking) notes.push('反向阻塞边这次没取（blocking=false，跳过一次反向边查询）：上面“阻塞别人”记空不是 0 条，要就带 blocking=true 再调一次。')
       if (dep && dep.ok !== true) notes.push('阻塞边这次没读到（后端原话：' + String((dep.error && dep.error.message) || '').slice(0, 200) + '）：上面只列了票自己带的那些。')
+      // 反向边全不全由读路径自己交代（原生连接截断、或退回整仓反推）：这里原样带给调用方，
+      // 不替它改写成「0 条」那种看起来确定的说法（#1304）。
+      if (wantBlocking && dependencies && typeof dependencies.blockingNote === 'string' && dependencies.blockingNote) notes.push(dependencies.blockingNote)
       const bodyText = typeof issue.body === 'string' ? issue.body : ''
       const sec = sectionOf(bodyText, a.section)
       if (typeof a.section === 'string' && a.section.trim() !== '' && !sec.found) notes.push('正文里没找到标题含「' + String(a.section).trim().slice(0, 60) + '」的节，回的是全文前 2000 字。')
       const excerpt = (sec.found ? sec.text : bodyText).slice(0, sec.found ? 2000 : 2000)
       const stateText = String(issue.state || '未知状态')
       const closedText = issue.closedAt ? '（关闭于 ' + String(issue.closedAt).slice(0, 10) + '）' : ''
-      const blockingText = wantBlocking ? ('阻塞别人 ' + rel.blocking.length + ' 条。') : '阻塞别人未取（blocking=false）。'
+      // 反向边不全时，条数后面跟一句「可能不全」：数字本身照给（已经看到的那些是真的），但别让读者当成全量。
+      const blockingText = wantBlocking
+        ? ('阻塞别人 ' + rel.blocking.length + ' 条' + (dependencies && dependencies.blockingComplete === false ? '（可能不全，见注记）。' : '。'))
+        : '阻塞别人未取（blocking=false）。'
       return {
         value: {
           status: DECK_STATUS.OK,

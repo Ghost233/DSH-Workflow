@@ -22,6 +22,7 @@ test('upgrade proposals retain local changes, report conflicts and never apply o
   await Promise.all([
     writeFile(join(upstream, 'src/clean.js'), baseText), writeFile(join(upstream, 'src/conflict.js'), 'base\n'),
     writeFile(join(upstream, 'src/removed.js'), 'retained\n'), writeFile(join(upstream, 'src/local-removed.js'), 'base\n'),
+    writeFile(join(upstream, 'src/binary.ts'), 'base\0value\n'),
     writeFile(join(upstream, 'package/package.json'), JSON.stringify({ version: '1.0.0' })),
   ])
   await git('add', '.'); await git('commit', '-m', 'base')
@@ -29,15 +30,17 @@ test('upgrade proposals retain local changes, report conflicts and never apply o
   await writeFile(join(fork, 'upstream.json'), baseline)
   const ours = baseText.replace('left', 'local-left')
   await Promise.all([writeFile(join(fork, 'src/clean.js'), ours), writeFile(join(fork, 'src/conflict.js'), 'local\n'), writeFile(join(fork, 'src/removed.js'), 'retained\n')])
+  await writeFile(join(fork, 'src/binary.ts'), 'local\0value\n')
   await Promise.all([
     writeFile(join(upstream, 'src/clean.js'), baseText.replace('right', 'new-right')), writeFile(join(upstream, 'src/conflict.js'), 'new\n'),
     rm(join(upstream, 'src/removed.js')), writeFile(join(upstream, 'src/local-removed.js'), 'changed\n'),
     writeFile(join(upstream, 'src/added.js'), 'added\n'), writeFile(join(upstream, 'package/package.json'), JSON.stringify({ version: '1.0.1' })),
+    writeFile(join(upstream, 'src/binary.ts'), 'next\0value\n'),
   ])
   await git('add', '.'); await git('commit', '-m', 'next')
   const args = { forkRoot: fork, upstreamRoot: upstream, target: 'HEAD' }
   const compared = await compareUpstream(args)
-  assert.equal(compared.changes.length, 5)
+  assert.equal(compared.changes.length, 6)
   assert.equal(compared.targetVersion, '1.0.1')
   const review = await prepareUpgrade(args)
   const byPath = Object.fromEntries(review.proposals.map(item => [item.path, item.resolution]))
@@ -46,6 +49,9 @@ test('upgrade proposals retain local changes, report conflicts and never apply o
   assert.equal(byPath['src/removed.js'], 'review-deletion')
   assert.equal(byPath['src/local-removed.js'], 'local-removal')
   assert.equal(byPath['src/added.js'], 'new-file')
+  assert.equal(byPath['src/binary.ts'], 'review-binary')
+  assert.equal(await readFile(join(fork, 'src/binary.ts'), 'utf8'), 'local\0value\n')
+  assert.equal(await readFile(join(review.reviewRoot, 'proposed/src/binary.ts'), 'utf8'), 'next\0value\n')
   assert.match(await readFile(join(review.reviewRoot, 'proposed/src/clean.js'), 'utf8'), /local-left[\s\S]*new-right/)
   assert.match(await readFile(join(review.reviewRoot, 'proposed/src/conflict.js'), 'utf8'), /<<<<<<< local/)
   assert.equal(await readFile(join(fork, 'src/clean.js'), 'utf8'), ours)

@@ -191,6 +191,33 @@ export interface DeckShellDeps {
   /** 算账函数的输入拼装（可选）：同样按 unknown 收，壳用之前验是不是函数，不是就退自带那份默认。 */
   costInputFrom?: unknown;
   noteGate?: (info: { phase: string; verdict: string; reason: string }) => unknown;
+  /**
+   * 工作路线记一笔（#1261 起步、#1262 铺满，调用方是工具壳的成功收口）：缺席时跳过，不报错。
+   * 五个写工具（report、create、patch、plan、link）各记一笔，读工具不记；一次调用里每张写到的票各一笔。
+   * 输入 `{ rootKey, sessionId, sessionLabel?, backend?, ticketKey, effortId?, title?, action, source }`，
+   * 其中 rootKey 是 workspace.key（工作区键），落到哪一份文件由存储按 chainRootHash 换算；
+   * 输出 `{ ok: true, ticketKey, count, warnings? }` 或 `{ ok: false, reason }`；
+   * warnings 是「落上了、但有件事要告诉人」的备注（#1083：盘上旧文件读不出来按空账重写、换后端时旧记录改名留档），
+   * 壳原样拼进回执 notes，不改其他格。
+   * 实现住在 work-path-store.ts，生产由宿主接线层绑定（家目录 + 真文件读写），
+   * 门禁绑定同一份实现（临时家目录 + 固定时钟），不造第二套。
+   */
+  workRouteNote?: (input: UnknownRecord) => Promise<unknown>;
+  /**
+   * 工作路线读一笔（#1261 起步、#1262 与上面成对）：缺席时跳过，不报错。
+   * 输入 `{ sessionId, rootKey, at, detail? }`（detail 是 core / standard，缺省 standard），输出 `{ ok: true, readout, summary } 或 { ok: false, reason }`，
+   * 其中 readout 是回执 data.workRoute 的对象，summary 是 notes 里那句摘要（没有在办时为 null），
+   * collisionNote 是有撞车时才出现的提醒（一句，没有撞车为 null，同样进 notes、跟在摘要后面）。
+   * 读出口本身是纯函数（见 work-path-readout.ts），不读盘不看钟，at 由壳按自己的时钟传进来。
+   */
+  workRouteRead?: (input: UnknownRecord) => Promise<unknown>;
+  /**
+   * 工作路线释放一条（#1086，与上面两支同源）：缺席时跳过，不报错。
+   * 输入 `{ rootKey, sessionId, ticketKey }`，输出 `{ ok: true, ticketKey, removed, count }` 或 `{ ok: false, reason }`，
+   * 其中 removed 是「这次有没有真删掉」（false = 本来就不在，不算错）。
+   * 只删本会话自己的那一行，别的会话一概不碰；票本身不动。
+   */
+  workRouteRelease?: (input: UnknownRecord) => Promise<unknown>;
   [key: string]: unknown;
 }
 

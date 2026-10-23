@@ -2,7 +2,7 @@
  * src/client/kernel/probe-stale.ts —— 面板快照那一路的「这一次还算不算数」判断（#669 第 5 件）
  *
  * 契约：模块真源；构建时剥行首 export，把声明体文本拼回
- * src/client/index.js 里那条 probeStale 拼接标记处，一源两物。
+ * src/client/index.ts 里那条 probeStale 拼接标记处，源码树里只有这一份真源。
  * 接口清单见 docs/architecture/kernel-contract.md（G3 · #91 拍板）。
  * 以后谁改它：改「面板拿回来的这份快照还算不算数」「在途的那一次还能不能复用」的人。
  *
@@ -71,6 +71,9 @@ export const _snapReuseInFlight = function (st: any, force: any): any {
     const pend: any = pendingSnapshotByCwd.get(_snapPendKey(st && st.cwd, reqBackend));
     if (!pend || !pend.promise) return null;
     if (force && pend.force !== true) return null; // #366：force 不复用非 force 的在途请求——手动刷新必须走到 wf.refresh
+    // #1355：不是同一个会话发出的请求，回包里的工作路线表是按它那个会话算好的；搭车会把它装进本会话，
+    //   胶囊就显示别人的行。这种不复用，照发自己这一份（宿主侧「同一工作区共用一份缓存」的归属问题另立票）。
+    try { if (String(pend.sessionId || '') !== String((st && st.sessionId) || '')) return null; } catch (eSid) { return null; }
     try { dswsDedupWin.n += 1; if (isEnabled('debug') && dswsDedupWin.n % 10 === 0) log('debug', 'dedup.hit', { scope: 'snapshot', keyHash: dswsLogHash(_snapPendKey(st && st.cwd, reqBackend)) }); } catch (eL) {}
     // 同 cwd 在途复用：新调用方挂载后从共享缓存水合，不再发第二份请求
     return pend.promise.then(function (snap: any): any {

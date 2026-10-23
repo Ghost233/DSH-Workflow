@@ -3,7 +3,7 @@
  *
  * 来源与零变化：本文件由同目录 versionControlWrite.js 逐行转写而来，只加类型标注与注释，
  * 没有改任何运行时语义。原来的 .js 文件保留不动，引用方继续写 `./versionControlWrite.js`，
- * 由 scripts/ts-hook.mjs 在加载时改指到同名 .ts。
+ * 由 scripts/ts-hook.mts 在加载时改指到同名 .ts。
  *
  * 只做四件事：核对票据（状态在确认之后变过就拒绝，一条写命令都不起）→ 走注入的 safeGit（#839 的安全执行层，
  * 最终落到 versionControl.js 那一个 runGit 出口）→ 把结局如实包成扁平信封 → 回包带「做成了没有」的判定依据。
@@ -22,10 +22,10 @@
  */
 // @ts-expect-error
 import { createHash } from 'node:crypto'
-import { fixedPrefix, stageArgs, unstageArgs, commitArgs, pullArgs, pushArgs, fetchArgs, lsFilesStageArgs, remoteListArgs, checkRefArgs, REMOTE_PATTERN } from '../shared/version-control/commands.js'
-import { ticketVerdict, ticketPureVerdict, requestIdProblem, indexRecordCount, fingerprintInputOf } from '../shared/version-control/write-ticket.js'
-import { pushPlanOf } from '../shared/version-control/push-plan.js'
-import { classifyWriteFailure, writeHintFor, pathsProblem, messageProblem, idShapeProblem } from '../shared/version-control/write-reasons.js'
+import { fixedPrefix, stageArgs, unstageArgs, commitArgs, pullArgs, pushArgs, fetchArgs, lsFilesStageArgs, remoteListArgs, checkRefArgs, REMOTE_PATTERN } from '../shared/version-control/src/commands.js'
+import { ticketVerdict, ticketPureVerdict, requestIdProblem, indexRecordCount, fingerprintInputOf } from '../shared/version-control/src/write-ticket.js'
+import { pushPlanOf } from '../shared/version-control/src/push-plan.js'
+import { classifyWriteFailure, writeHintFor, pathsProblem, messageProblem, idShapeProblem } from '../shared/version-control/src/write-reasons.js'
 // 这个文件里的时间分两组，都是可调的，全部住中央 YAML（config/timeouts.yaml），调时间改 YAML：
 //   · 五个写命令的超时（vcAddTimeoutMs / vcCommitTimeoutMs / vcPullTimeoutMs / vcPushTimeoutMs / vcFetchTimeoutMs）：
 //     每条都是「这一条写命令最多跑多久」，下面直接引用中央常量；
@@ -47,7 +47,7 @@ import {
   VC_REMOTE_LIST_CALL_BUDGET_MS,
   VC_PRE_PUSH_CHECK_CALL_BUDGET_MS,
   VC_WRITE_CALL_MARGIN_MS,
-} from '../shared/time-config/values.js'
+} from '../shared/time-config/src/values.js'
 
 // 五个写命令各自的超时（中央 YAML 的 vcAddTimeoutMs / vcCommitTimeoutMs / vcPullTimeoutMs / vcPushTimeoutMs /
 // vcFetchTimeoutMs）：暂存与撤回暂存还把 ADD_TIMEOUT_MS 兼作那一次调用的总预算。

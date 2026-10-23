@@ -2,14 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:net'
 import http from 'node:http'
-import { mkdtemp, rm, chmod, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdtemp, rm, chmod, readFile, lstat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { attachManagerWebSocket, connectManagerChannel } from './manager-websocket.mjs'
 import { listenManagerControl } from './manager-control.mjs'
 import { statusNotifications } from './status-notifications.mjs'
 import { serviceDirectory, serviceSocket } from './service-control.mjs'
 import { startGlobalSupervisor } from './global-supervisor.mjs'
+import { watchLauncherStatus } from './launcher-events.mjs'
 
 async function fixture(t, { revokeGrant = false, initiallyStopped = false, readyAfterRejection = false } = {}) {
   const root = await mkdtemp('/private/tmp/dsh-websocket-')
@@ -48,7 +49,7 @@ async function fixture(t, { revokeGrant = false, initiallyStopped = false, ready
     upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve))
     await rm(root, { recursive: true, force: true })
   })
-  return { root, socket, requests, service, updates, accepted }
+  return { root, socket, requests, service, updates, accepted, server }
 }
 
 test('idle Web uses pushed state and never repeats a connection query', async t => {
@@ -91,6 +92,57 @@ test('one private WebSocket carries commands, correlated replies and pushed chan
     assert.ok(states.every(value => value.connection === undefined), 'status events never contain private connection grants')
     assert.equal(failures.length, 0)
   } finally { channel.close() }
+})
+
+test('a live manager restores a removed control socket and keeps existing channels', async t => {
+  const owned = await fixture(t), failures = []
+  const channel = await connectManagerChannel(owned.socket, { onFailure: error => failures.push(error) })
+  const record = join(serviceDirectory(owned.root), 'manager.json')
+  const identity = await readFile(record, 'utf8')
+  try {
+    for (const path of [owned.socket, dirname(owned.socket)]) {
+      await rm(path, { recursive: true })
+      let reconnected
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try { reconnected = await connectManagerChannel(owned.socket); break }
+        catch (error) {
+          if (!['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw error
+          await delay(10)
+        }
+      }
+      assert.ok(reconnected, 'the running manager must restore its missing control socket')
+      try { assert.equal((await reconnected.request({ type: 'status' })).service.pid, process.pid) }
+      finally { reconnected.close() }
+      assert.equal((await channel.request({ type: 'status' })).service.pid, process.pid)
+      assert.equal(await readFile(record, 'utf8'), identity, 'recovery preserves the manager identity')
+      assert.equal((await lstat(owned.socket)).mode & 0o777, 0o600)
+    }
+    assert.deepEqual(failures, [], 'existing channels survive control path recovery')
+  } finally { channel.close() }
+})
+
+test('a subscriber created while the control socket is absent reconnects after recovery', async t => {
+  const owned = await fixture(t), events = []
+  const listen = owned.server.listen.bind(owned.server)
+  let resume
+  const paused = new Promise(accept => t.mock.method(owned.server, 'listen', (...args) => {
+    const mask = process.umask()
+    resume = () => {
+      const previous = process.umask(mask)
+      try { return listen(...args) } finally { process.umask(previous) }
+    }
+    accept()
+    return owned.server
+  }))
+  await rm(owned.socket)
+  await paused
+  const subscription = await watchLauncherStatus(owned.root, event => events.push(event), { serviceOnly: true })
+  t.after(() => subscription.close())
+  assert.ok(events.some(event => event.error), 'the first connection observes the missing socket')
+  resume()
+  const deadline = Date.now() + 2000
+  while (!events.some(event => event.value?.service.ready) && Date.now() < deadline) await delay(5)
+  assert.ok(events.some(event => event.value?.service.ready), `recovery must announce readiness without a manual refresh: ${JSON.stringify(events)}`)
 })
 
 test('WebSocket connections preserve private socket permission checks', async t => {

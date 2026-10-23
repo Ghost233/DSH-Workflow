@@ -18,7 +18,7 @@ import { canon, createCallMemo, isArr, repoIdOf, rosterAddCreated, rosterAdoptLi
 import { withInFlightLease } from './in-flight-lease.js'
 // 三个预算数住中央 YAML（config/timeouts.yaml 的 tool* 三键）：这里只留别名，
 // 对外导出的仍是 DEFAULT_* 名字，调时间改 YAML。值由 tests/verify-time-config.ts 看守一致。
-import { TOOL_TIMEOUT_MS, TOOL_MARGIN_MS, PER_OP_TIMEOUT_MS } from '../../shared/time-config/values.js'
+import { TOOL_TIMEOUT_MS, TOOL_MARGIN_MS, PER_OP_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
 
 /** 单次执行允许的最长时间（毫秒）：与 agent 注册那份 AGENT_TOOL_TIMEOUT_MS 同值，改一边必须同步另一边。
  *  同值由 tests/verify-895-bulk-deadline.js 第⑦节断言看守（注册侧文件不引用其他层的文件，不能靠 import 收成一份）。
@@ -74,6 +74,19 @@ export interface OpOutcome {
   [key: string]: unknown;
 }
 
+/**
+ * list 的回执（#1304）：在通用回执上多带两格 —— `truncated` 与 `fallback`。
+ * `truncated: true` 表示这份名单可能不全（到了后端安全上限，或降级通道只拿到一部分），
+ * 这时 `data` 只是「拿到的这些」，不许当成整仓；
+ * `fallback: 'rest'` 是「主路不可用、走了 REST 降级通道」的事实，REST 自己也可能只拿到一部分，
+ * 所以单凭它也**不能**把名册标成完整。
+ * 类型源头在契约（`src/tracker/contract/results.ts` 的 `IssueListResult`），这里只把它带进工具层，
+ * 工具不再对回执做强制转换去猜这两格。
+ */
+export interface ListOpOutcome extends OpOutcome {
+  truncated?: boolean;
+  fallback?: string;
+}
 
 /**
  * 注入的后端实现：方法可缺（缺哪个就诚实回「没拿到后端实现」或 unsupported），
@@ -100,7 +113,7 @@ export interface BackendLike {
 /** 本层包给工具用的后端门面：与注入的后端同名方法，但每次调用都过预算与钳制，回执形状统一。 */
 export interface DeckTrackerLike {
   get(repo: unknown, key: unknown, f?: unknown, ctx?: unknown): Promise<OpOutcome>;
-  list(repo: unknown, filter?: unknown, ctx?: unknown): Promise<OpOutcome>;
+  list(repo: unknown, filter?: unknown, ctx?: unknown): Promise<ListOpOutcome>;
   getDependencies(repo: unknown, key: unknown, f?: unknown, ctx?: unknown): Promise<OpOutcome>;
   create(repo: unknown, input?: unknown, ctx?: unknown): Promise<OpOutcome>;
   setParent(repo: unknown, key: unknown, parent: unknown, f?: unknown, ctx?: unknown): Promise<OpOutcome>;
@@ -158,7 +171,7 @@ function num(v: unknown, d: number): number { const n = (typeof v === 'number' &
  *  赢的那一方到了没清它时，进程也能照常退出。**但这不等于「有活干时进程自己就活着」**：一场还没结算的
  *  调用如果只剩这笔等待在手，Node 会带着它收摊（#1157 实测 54 毫秒、退出码 0），所以那一整段
  *  由 in-flight-lease.ts 的存活租约圈住，见下面 execOp 里那句注释。
- *  单次远端调用的钳制计时走它，测试注入假时钟就能把「钳到点」那条路走通，不必真等 30 秒。
+ *  单次远端调用的钳制计时走它，测试注入假时钟就能把「钳到点」那条路走通，不必真等满 60 秒。
  *  为什么必须继续用全局 setTimeout：别的会话（#1052 两房）会把它换成假时钟来压缩等待；
  *  一旦把 setTimeout 捕获进模块级常量，压缩就失效了。 */
 function realSleep(ms: number, signal?: AbortLike | null): Promise<void> {
@@ -321,13 +334,19 @@ export function withCallScope(c: unknown, exec?: unknown, opts?: CallScopeOpts):
         if (out && out.ok === true && out.data) { memoPut('get', k, out); rosterUpsert(memo, out.data) }
         return out
       },
-      list: async function (repo: unknown, filter?: unknown, ctx?: unknown): Promise<OpOutcome> {
+      list: async function (repo: unknown, filter?: unknown, ctx?: unknown): Promise<ListOpOutcome> {
         void ctx
         const k = repoIdOf(repo) + '|' + canon(filter || {})
         const hit = memoGet('list', k)
         if (hit) return hit
-        const out = mapOpOutcome(await execOp('list', function (c2) { return real.list!(repo, filter || {}, c2) }))
-        if (out && out.ok === true && isArr(out.data)) memoPut('list', k, out, rosterAdoptList(memo, out.data, filter))
+        const out: ListOpOutcome = mapOpOutcome(await execOp('list', function (c2) { return real.list!(repo, filter || {}, c2) }))
+        if (out && out.ok === true && isArr(out.data)) {
+          // 后端列表被上限截断过、或走了 REST 降级通道（#1304）：这份数据不能当整仓收进名册，
+          // 否则名册的读者会拿不全的索引静默少边（成环检查会因此把真环判成没有）。
+          // 两个条件都看：truncated 是房间给的显式事实，fallback === 'rest' 是兜底防线。
+          const completeList = out.truncated !== true && out.fallback !== 'rest'
+          memoPut('list', k, out, rosterAdoptList(memo, out.data, filter, { complete: completeList }))
+        }
         return out
       },
       getDependencies: async function (repo: unknown, key: unknown, f?: unknown, ctx?: unknown): Promise<OpOutcome> {

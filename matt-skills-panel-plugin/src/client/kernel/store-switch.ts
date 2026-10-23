@@ -4,7 +4,7 @@
  * 为什么切换确认要单独一层：切换后端会改变整份快照的来源，出错时代价最大，
  * 所以确认窗的开关、校验与绑定回执只住在这里，别处只调 open/close/confirm 三个入口。
  * 本文件由 store-switch.js 转写而来，只加类型标注与环境声明，运行行为一字不改。
- * 反例：不要在这里读写快照内容（那是 store-snapshot.js 的事），也不要在这里决定行该怎么画。
+ * 反例：不要在这里读写快照内容（那是 store-snapshot.ts 的事），也不要在这里决定行该怎么画。
  */
 // 从中央时间参数目录真引用（与转写前的 .js 一致）。这条 import 不影响拼接：构建的拼接入口
 // scripts/lib/transpile-unit.mjs 的 stripTimeConfigRefs 会把说明符里带 time-config 的这一行删掉，
@@ -201,11 +201,18 @@ export const confirmSwitchConfirm = function (st: any): void {
   //   日志里既没有成功那一行也没有失败那一行，事后只能靠猜。补上与其它跨边界调用同形的两行
   //   （事件名沿用现成的 host.call / host.call.fail，不新增事件名）。
   const bindT0: number = Date.now()
-  host.call('wf.bind', { cwd: st.cwd || '', backendId: targetId }).then(function (res: any): void {
+  host.call('wf.bind', { cwd: st.cwd || '', backendId: targetId, sessionId: st.sessionId || '' }).then(function (res: any): void {
     const ok: any = res && (res.ok === true || (res.value && res.value.ok === true) || res.ok)
     try {
-      if (ok) log('info', 'host.call', { method: 'wf.bind', latencyMs: Date.now() - bindT0, ok: true, kind: 'switch-bind' })
-      else log('warn', 'host.call.fail', { method: 'wf.bind', kind: 'switch-bind', errorHash: dswsLogHash(dswsLogTrunc(String((res && (res.error || res.message)) || 'bind-not-ok'), 120, 'error')) })
+      // 切换确认电话的客户端落地行：成功记耗时，失败记原因散列；两行都带工作区散列，方便与宿主那一行的 cwdHash 对上同一趟。
+      // 写法约束：字段对象写直接字面量，不经变量转手（门禁按字面量收集键，走变量会误收无关键）。
+      if (ok) log('info', 'host.call', { method: 'wf.bind', latencyMs: Date.now() - bindT0, ok: true, kind: 'switch-bind', cwdHash: dswsLogHash(st.cwd || '') })
+      else {
+        var _bindEk: any = null
+        try { var _bindRes: any = res; _bindEk = _bindRes && ((_bindRes as any).errorKind || ((_bindRes as any).error && (_bindRes as any).error.reason)) } catch (eEk) {}
+        if (typeof _bindEk === 'string' && _bindEk) log('warn', 'host.call.fail', { method: 'wf.bind', kind: 'switch-bind', errorHash: dswsLogHash(dswsLogTrunc(String((res && (res.error || res.message)) || 'bind-not-ok'), 120, 'error')), cwdHash: dswsLogHash(st.cwd || ''), errorKind: _bindEk })
+        else log('warn', 'host.call.fail', { method: 'wf.bind', kind: 'switch-bind', errorHash: dswsLogHash(dswsLogTrunc(String((res && (res.error || res.message)) || 'bind-not-ok'), 120, 'error')), cwdHash: dswsLogHash(st.cwd || '') })
+      }
     } catch (eL) {}
     if (!ok) { doFail((res && (res.error || res.message)) || 'unknown'); return }
     // #683（F1 · ADR 20260921 的 R2）：宿主这一通接受了用户的选择之后会回一个新修订号，
@@ -297,7 +304,9 @@ export const confirmSwitchConfirm = function (st: any): void {
       if (typeof loadSnapshot === 'function') loadSnapshot(st, true, true)
       // #709（T5）：绑定后端属于「做完可能改变它的动作」这一类事件——走内核那一个事件入口
       //   （chainEventRefresh），头部与状态栏那边等这一次的结果。typeof 兜底见 probe-chain.js 的说明。
-      _chainP = (typeof chainEventRefresh === 'function') ? chainEventRefresh(st, 'action-done') : ((typeof loadChain === 'function') ? loadChain(st, true, 'action-done') : null)
+      // #1363：切换后端是用户亲手点的动作，按 'user-recheck' 报上去（永不降档），否则会被后台退避挡回旧快照；
+      //   'action-done' 这个名字只留在注释里，宿主那边只认 trigger 字符串。
+      _chainP = (typeof chainEventRefresh === 'function') ? chainEventRefresh(st, 'user-recheck') : ((typeof loadChain === 'function') ? loadChain(st, true, 'user-recheck') : null)
     } catch (eLoad) {}
     // 有证据就当场决定；没有就等这次强制重取回来的链（上面那一取，同时也是状态栏要用的那一取）再决定。
     //   _hadToWait 是上面算好的那一份（与 _routed 配对，保证只落一次）。
@@ -305,7 +314,8 @@ export const confirmSwitchConfirm = function (st: any): void {
     else if (_chainP && typeof _chainP.then === 'function') _chainP.then(_route, _route)
     else _route()
   }).catch(function (e: any): void {
-    try { log('warn', 'host.call.fail', { method: 'wf.bind', kind: 'switch-bind', errorHash: dswsLogHash(dswsLogTrunc(String((e && e.message) || e), 120, 'error')) }) } catch (eL) {}
+    // 电话本身抛错（断连、超时）与上面回包 ok:false 是两条不同的失败路，这里单独记一行，同样带工作区散列方便对账。
+    try { log('warn', 'host.call.fail', { method: 'wf.bind', kind: 'switch-bind', errorHash: dswsLogHash(dswsLogTrunc(String((e && e.message) || e), 120, 'error')), cwdHash: dswsLogHash(st.cwd || '') }) } catch (eL) {}
     doFail(e && e.message || e)
   })
 }

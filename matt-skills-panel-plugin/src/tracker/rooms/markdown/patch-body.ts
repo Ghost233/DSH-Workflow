@@ -9,6 +9,11 @@
  */
 
 import { stripFencedCode } from './parse.js'
+// #1277：票面对象类型标记的判据在共享包里；整份替换正文时盘上的标记要以盘上为准搬回来（ADR 2.5）。
+import { countMarkerLines, markerKindOnLine, stripMarkerLines } from '../../../shared/issue-file/src/marker.js'
+// #1091：维护者原话区整份替换时要保住（盘上有、递进来的新正文没有时按原位置搬回），
+// 位置规则与建票/改票写入共用共享层的那一份实现，这里不另写一套「紧跟目的」的正则。
+import { restoreOriginalWordsSection } from '../../../shared/issue-file/src/original-words.js'
 
 /** 递进来的正文是不是「一整份票文件」：自带 H1 标题（或幂等锚）。
  *  为什么要分开判：下面的插入分支把正文插在现有 H1 之后，认错了盘上就会留下两个 H1、两份正文。
@@ -28,6 +33,18 @@ export function fieldLinesOf(text: unknown): string[]{
   return out
 }
 function fieldNameOf(line: string): string{ return String(line).split(/[:\uFF1A]/)[0].trim().toLowerCase() }
+/** 这一行是不是文件头注释（幂等锚 / 类型标记 / parentKey / created）：补一级标题、插类型标记时都要跳过它们。
+ *  标记那一种交给共享包的整行判据认，这里不重复写标记语法；其余三种是本地房自己的文件头格式。 */
+function isFileHeaderCommentLine(line: unknown): boolean{
+  const text=String(line||'')
+  if(markerKindOnLine(text)) return true
+  return /^[ \t]*<!--[ \t]*(DSH-IDEMPOTENCY-KEY|parentKey|created)[ \t]*:/.test(text)
+}
+/** 取文本里第一条合法类型标记行（去掉首尾空白）；没有就回空串。整份替换时用它把盘上的标记搬回。 */
+function firstMarkerLine(text: unknown): string{
+  for(const l of String(text||'').split('\n')){ if(markerKindOnLine(l)) return l.trim() }
+  return ''
+}
 /** 取票文件里某骨架区整段（标题加内容，到下一个二级标题或文末）：改正文时用来把盘上旧评论搬回新正文。 */
 function sectionOf(text: unknown, name: string): string{
   const re=new RegExp('^##\\s*'+name+'\\s*$[\\s\\S]*?(?=^##\\s|$(?![\\s\\S]))', 'im')
@@ -48,6 +65,11 @@ export function checkNoWorseForPatch(oldText: string, newText: string): string{
   if(worse(countRe(o, /^#[ \t]+\S.*/gm), countRe(n, /^#[ \t]+\S.*/gm))) return '一级标题变多了'
   if(worse(countRe(o, /DSH-IDEMPOTENCY-KEY/g), countRe(n, /DSH-IDEMPOTENCY-KEY/g))) return '幂等锚变多了'
   if(countRe(o, /DSH-IDEMPOTENCY-KEY/g)>=1&&countRe(n, /DSH-IDEMPOTENCY-KEY/g)===0) return '幂等锚丢了'
+  // #1277：对象类型标记与幂等锚同一条纪律 —— 变多、或者盘上有的标记被改丢，都算写坏，
+  // 因为标记是「这张票是哪一种对象」的唯一真源（ADR 2.5），丢了规格就降级成普通票。
+  // 数的是整行标记（共享包判据），正文里引用一句标记写法不算数。
+  if(worse(countMarkerLines(o), countMarkerLines(n))) return '类型标记行变多了'
+  if(countMarkerLines(o)>=1&&countMarkerLines(n)===0) return '类型标记丢了'
   if(worse(countRe(of, /^\s*Status\s*[:\uFF1A]/gim), countRe(nf, /^\s*Status\s*[:\uFF1A]/gim))) return 'Status 行变多了'
   if(worse(countRe(of, /^\s*Type\s*[:\uFF1A]/gim), countRe(nf, /^\s*Type\s*[:\uFF1A]/gim))) return 'Type 行变多了'
   if(worse(countRe(of, /^\s*Blocked\s+by\s*[:\uFF1A]/gim), countRe(nf, /^\s*Blocked\s+by\s*[:\uFF1A]/gim))) return 'Blocked by 行变多了'
@@ -56,6 +78,10 @@ export function checkNoWorseForPatch(oldText: string, newText: string): string{
   if(worse(countRe(o, /^##\s*Answer\s*$/gim), countRe(n, /^##\s*Answer\s*$/gim))) return 'Answer 骨架变多了'
   if(countRe(o, /^##\s*Comments\s*$/gim)>=1&&countRe(n, /^##\s*Comments\s*$/gim)===0) return 'Comments 骨架丢了'
   if(countRe(o, /^##\s*Answer\s*$/gim)>=1&&countRe(n, /^##\s*Answer\s*$/gim)===0) return 'Answer 骨架丢了'
+  // #1091：维护者原话区与 Comments/Answer 同一条纪律 —— 变多算写坏（重复标题），盘上有的被改丢也算写坏。
+  // 这一条是「整份替换时到底有没有保住原话」的直接判据：下面的 merge 会搬回，搬不回来时就不许落盘。
+  if(worse(countRe(o, /^##\s*维护者原话\s*$/gim), countRe(n, /^##\s*维护者原话\s*$/gim))) return '维护者原话区变多了'
+  if(countRe(o, /^##\s*维护者原话\s*$/gim)>=1&&countRe(n, /^##\s*维护者原话\s*$/gim)===0) return '维护者原话区丢了'
   // 认领人那一行（#1174 决策 12）：与 Status 同样按行数核对，翻倍才算坏。
   if(worse(countRe(of, /^\s*Assignees\s*[:\uFF1A]/gim), countRe(nf, /^\s*Assignees\s*[:\uFF1A]/gim))) return 'Assignees 行变多了'
   // 关票原因那一行（#1174 复核 P1-1）：同上。它是 close 之后才出现的一行，改正文时必须按字段保住。
@@ -65,6 +91,7 @@ export function checkNoWorseForPatch(oldText: string, newText: string): string{
 /** 整份正文合并：锚一律用盘上旧的，缺一级标题用盘上旧标题补回，缺字段行与骨架区从盘上旧文件搬回（字段插在骨架之前）。 */
 export function mergeWholeBodyForPatch(incomingRaw: unknown, diskText: unknown): string{
   let incoming=String(incomingRaw||'')
+  incoming=stripMarkerLines(incoming)
   incoming=incoming.replace(/^[ \t]*<!--[ \t]*DSH-IDEMPOTENCY-KEY:.*?-->[ \t]*\r?\n?/gim, '')
   const diskAnchor=(String(diskText||'').match(/^[ \t]*<!--[ \t]*DSH-IDEMPOTENCY-KEY:.*?-->[ \t]*$/m)||[])[0]
   if(diskAnchor) incoming=String(diskAnchor).trim()+'\n'+incoming.replace(/^\s*/, '')
@@ -80,7 +107,7 @@ export function mergeWholeBodyForPatch(incomingRaw: unknown, diskText: unknown):
       let at=0
       // created 那行（#1174 决策 10）也是文件头注释：漏了它，标题会被插在它前面，
       // 于是「建票时间」掉出文件头、读不回来，创建时间又变回文件修改时间。
-      while(at<lines.length&&/^[ \t]*<!--[ \t]*(DSH-IDEMPOTENCY-KEY|parentKey|created)[ \t]*:/.test(lines[at])) at++
+      while(at<lines.length&&isFileHeaderCommentLine(lines[at])) at++
       lines.splice(at, 0, String(diskH1).trim(), '')
       incoming=lines.join('\n')
     }
@@ -103,6 +130,21 @@ export function mergeWholeBodyForPatch(incomingRaw: unknown, diskText: unknown):
       if(diskSec) incoming=incoming.replace(/\s*$/, '')+'\n\n'+diskSec+'\n'
       else incoming=incoming.replace(/\s*$/, '')+'\n\n## '+name+'\n\n'
     }
+  }
+  // #1091：维护者原话区不在上面那张名单里，因为它不能像 Comments/Answer 一样补在文末 ——
+  // 它必须紧跟「## 目的」（没有目的区就放正文最前），位置规则只有共享层那一份实现。
+  // 盘上有、递进来的新正文没有时搬回来（内容原样，一个字不改）；两边都有时不动新正文。
+  incoming=restoreOriginalWordsSection(incoming, diskText)
+  // #1277：类型标记以盘上为准搬回（ADR 2.5 的「整份替换正文时从盘上搬回」）。插在文件头注释带里：
+  // 有幂等锚就紧跟锚（与建票落盘顺序一致），没有锚就插在那几行文件头注释之后、一级标题之前。
+  const diskMarker=firstMarkerLine(diskText)
+  if(diskMarker&&firstMarkerLine(incoming)===''){
+    const lines=incoming.split('\n')
+    let at=0
+    if(/^[ \t]*<!--[ \t]*DSH-IDEMPOTENCY-KEY:/.test(lines[0]||'')) at=1
+    else{ while(at<lines.length&&isFileHeaderCommentLine(lines[at])) at++ }
+    lines.splice(at, 0, diskMarker)
+    incoming=lines.join('\n')
   }
   return incoming
 }

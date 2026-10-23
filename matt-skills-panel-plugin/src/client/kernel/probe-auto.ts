@@ -3,11 +3,11 @@
  *
  * 为什么保留这份节拍契约：自动刷新按工作区键去重，同组共享一次探测，
  * 组间零污染；手动刷新走静默路径，不挡渲染。构建侧去掉行首 export 后
- * 拼回 src/client/index.js 的拼接标记处，一源两物、src 零复制。
- * 同名 .js 是构建产物，改这里。接口冻结清单见 kernel-contract.md。
+ * 拼回 src/client/index.ts 的拼接标记处，源码树里只有这一份真源。
+ * 源码树里只有这一份真源，改这里就够。接口冻结清单见 kernel-contract.md。
  *
  * 节拍数字为什么不住这里：兜底探针周期与新鲜度阈值由契约层派生，
- * 正常路径取 tracker/sync.js 契约里的那一份，缺席时兜底取拼进闭包的
+ * 正常路径取 tracker/sync.ts 契约里的那一份，缺席时兜底取拼进闭包的
  * 中央常量（CLIENT_TIME_NAMES 列出的那几个），这里不留第二份数字。
  * 跨文件名字一律 declare，不做运行时引入（拼进浏览器闭包会拒收 import）。
  *
@@ -39,6 +39,8 @@ declare const timer: any;
 declare const document: any;
 declare const window: any;
 declare const hydrateFromCache: any;
+declare const snapshotWithoutWorkRoute: any;
+declare const ensureOwnWorkRoute: any;
 declare const chainEventRefresh: any;
 declare const loadChain: any;
 declare const setupPendingOf: any;
@@ -56,7 +58,7 @@ declare const tr: any;
 // #232 · 节拍真源单源化：兜底探针周期由契约层派生（UI 层不得硬编码知道底层几秒刷一次）。
 // #1215：正常路径取 tracker/sync.js 契约里的那一份（config/intervals.yaml 的 syncFallbackProbeMs /
 //   syncFocusProbeMinMs）；SYNC 缺席时兜底取拼进本闭包的中央常量 SYNC_FALLBACK_PROBE_MS /
-//   SYNC_FOCUS_PROBE_MIN_MS（名字列在 scripts/build.mjs 的 CLIENT_TIME_NAMES 里），这里不留第二份数字。
+//   SYNC_FOCUS_PROBE_MIN_MS（名字列在 scripts/build.mts 的 CLIENT_TIME_NAMES 里），这里不留第二份数字。
 export const PROBE_MS: number = ((typeof SYNC === 'object' && SYNC && SYNC.FALLBACK_PROBE_MS) || SYNC_FALLBACK_PROBE_MS);
 export const FOCUS_PROBE_MIN_MS: number = ((typeof SYNC === 'object' && SYNC && SYNC.FOCUS_PROBE_MIN_MS) || SYNC_FOCUS_PROBE_MIN_MS);
 export let lastFocusProbe: number = 0;
@@ -111,10 +113,12 @@ export const probeNow = function (fromFocus: any): void {
       if (!primary.cwd) primary.cwd = cwd;
       const rest: any[] = group.slice(1);
       // 把一份快照落进本组：主 store 就地更新，同组其余会话按差异带闪烁标记。
-      const applySnap = function (raw: any): boolean {
+      // #1355：探测回包里那一份快照可能带着「上一个向宿主要快照的会话」算出的工作路线读数（宿主缓存对象被原地挂过表）。
+      //   只有请求会话自己的表才信；探测（没带会话号）拿回来的，先剥表再装，随后给正在被看的 store 补一次自己的请求。
+      const applySnap = function (raw: any, ownTable: any): boolean {
         const newSnap: any = raw || primary.snapshot;
         if (!newSnap || newSnap.ok !== true || !Array.isArray(newSnap.maps)) return false;
-        primary.snapshot = newSnap;
+        primary.snapshot = ownTable ? newSnap : snapshotWithoutWorkRoute(newSnap);
         primary.snapMode = 'real';
         primary.snapError = null;
         rest.forEach(function (st2: any): void {
@@ -125,21 +129,23 @@ export const probeNow = function (fromFocus: any): void {
           _df.added.forEach(function (n: any): void { st2.rowFlash[n] = 'added'; });
           _df.changed.forEach(function (n: any): void { st2.rowFlash[n] = 'changed'; });
           if (_df.issueFlash) Object.keys(_df.issueFlash).forEach(function (ki: string): void { st2.issueFlash[Number(ki)] = _df.issueFlash[ki]; });
-          st2.snapshot = newSnap;
+          st2.snapshot = snapshotWithoutWorkRoute(newSnap);
           st2.snapMode = 'real';
           st2.snapError = null;
           scheduleFlashClear(st2);
           emit(st2);
+          ensureOwnWorkRoute(st2, loadSnapshot);
         });
         try { emit(primary); } catch (eEmit) {}
+        ensureOwnWorkRoute(primary, loadSnapshot);
         return true;
       };
       // ① 宿主已经补好行级增量：直接用，一条大查询都不发。
-      if (res.mode === 'patch' && res.snapshot && applySnap(res.snapshot)) return;
+      if (res.mode === 'patch' && res.snapshot && applySnap(res.snapshot, false)) return;
       // ② 宿主说该整池（冷启动 / 票号增减 / 条数过多 / 旧结构），或者这一版宿主没给增量结果：
       //    走原来那条整池重建的路（行为与改动前一致）。
       return loadSnapshot(primary, true, true).then(function (): void {
-        applySnap(primary.snapshot);
+        applySnap(primary.snapshot, true);
       }).catch(function (): void { /* 忽略 */ });
     }).catch(function (e: any): void { try { log('warn', 'host.call.fail', { method: 'wf.probe', kind: 'probe', errorHash: dswsLogHash(dswsLogTrunc(String((e && e.message) || e), 120, 'error')) }); } catch (eL) {} });
   };
@@ -235,7 +241,11 @@ export const startActiveProbeLoop = function (): void {
     if (!_attentionPlan.intervalMs) return;
     if (shared._activeTimer) {
       // 间隔变了（比如从「正在看」掉到「刚离开」）：重排一次，别让旧节拍继续跑。
-      try { clearInterval(shared._activeTimer); } catch (eClr) {}
+      // #1220：宿主交回的是可调用撤销器，全局 clearInterval 对它空操作；先走 timer.clearTimeout。
+      try {
+        if (timer && typeof timer.clearTimeout === 'function') timer.clearTimeout(shared._activeTimer)
+        else clearInterval(shared._activeTimer)
+      } catch (eClr) {}
       shared._activeTimer = null;
     }
     const step = function (): void {
@@ -264,10 +274,15 @@ export const startActiveProbeLoop = function (): void {
       } catch (e) {}
     };
     if (timer === undefined || typeof timer.interval !== 'function') {
+      // #891 复核：宿主没给定时器出口时这条活跃探测节拍根本排不上，而 #891 的「初始化完成后自动重算」
+      //   正挂在这条节拍上。这一行把「没排上」与「排上了」分开记，判「修复代码在、节拍从没跑」时不必再靠猜。
+      //   常驻级：这正是排查「自动重算从没跑」时最需要的一行，调试开关关着也要落盘（#1220 真机取证就卡在这里）。
+      try { log('info', 'probe.loop', { reason: 'no-timer', intervalMs: Math.round(Number(_attentionPlan.intervalMs) || 0), visible: (typeof attentionVisible === 'function' ? !!attentionVisible() : null), timerOk: false }); } catch (ePl) {}
       // 宿主没给定时器出口（单测与无计时器环境）：不排节拍，什么都不做。
       return;
     }
     shared._activeTimer = timer.interval(step, _attentionPlan.intervalMs);
+    try { log('info', 'probe.loop', { reason: 'scheduled', intervalMs: Math.round(Number(_attentionPlan.intervalMs) || 0), visible: (typeof attentionVisible === 'function' ? !!attentionVisible() : null), timerOk: true }); } catch (ePl2) {}
   } catch (e) {}
 };
 // #746：对话框里的焦点/可见性只装一次（无定时器，纯事件）。装上后：切回本对话框即顺带催一次
@@ -339,12 +354,13 @@ export const refreshAll = function (st: any): void {
                 if (_df.removed && _df.removed.length) try { flash(st2, tr('panel.diffRemoved', { n: _df.removed.length }), 'info'); } catch (eFlash) {}
               }
             } catch (e2) {}
-            st2.snapshot = newSnap;
+            st2.snapshot = snapshotWithoutWorkRoute(newSnap);
             st2.snapMode = 'real';
             st2.snapError = null;
             try { if (typeof applySnapshotSelection === 'function') applySnapshotSelection(st2, newSnap); } catch (eSel) {}
             try { scheduleFlashClear(st2); } catch (eSch) {}
             emit(st2);
+            ensureOwnWorkRoute(st2, loadSnapshot);
           });
         }
       }

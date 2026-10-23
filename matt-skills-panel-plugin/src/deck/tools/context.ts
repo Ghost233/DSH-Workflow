@@ -8,11 +8,11 @@
 import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../shell/call-shell.js'
 import { sessionContextOfAsync } from '../shell/session-workdir.js'
 import { withCallScope } from '../shell/call-budget.js'
-import * as budget from '../../shared/refresh/budget.js'
-import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/tool-cost.js'
+import * as budget from '../../shared/refresh/src/budget.js'
+import { estimateToolCost, toolCostInputFrom } from '../../shared/refresh/src/tool-cost.js'
 import { knownWritePermissions } from '../../shared/tracker/backendWritePermissions.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
-import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/values.js'
+import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
 
 /** 数字型参数的统一收口：正的有限数才要（取整），其余一律当「没给」，由调用方退自己的默认。 */
 function numOpt(v: unknown): number | undefined { return (typeof v === 'number' && isFinite(v) && v > 0) ? Math.floor(v) : undefined }
@@ -62,6 +62,27 @@ export const definition = {
   description: '这是 dsh-mattpocock-skills-deck 插件提供的 ISSUE 与 map 管理能力，只处理当前 workspace 对应的 repo。你要创建、查看、更新 ISSUE，查看 map 与 progress 时，先调用 deck_context 一次，确认 workspace 与 backend；如果 repo 里的说法和这里写的不一样，以这里写的为准。如果 deck_context 返回这个 workspace 还没有选 backend，或拿不到 workspace，就说明本插件不适用这个 workspace，直接停下，不再调用其余 deck 开头的工具，后续怎么做由用户决定。',
   // 参数说明不进描述（描述会进所有会话的系统提示）：本工具不要参数，语义全在返回值里。
   parameters: { type: 'object', properties: {}, additionalProperties: false },
+}
+
+/** 给人看的用法说明里所有后端共用的那 381 字：改一个字就是行为变更，非本地后端原样回这一句。 */
+const BASE_HOWTO = '写票之前先用本工具确认工作区与后端；建票用 deck_issue_create，建整张地图骨架用 deck_map_plan_create，补边用 deck_map_link，改票用 deck_issue_patch，上报当前在办哪张票用 deck_issue_report，读一张票用 deck_issue_get，看一张地图的全部子票用 deck_map_snapshot，按状态与 label 和 assignee 列薄行用 deck_issue_list。要快数：扫数先用 deck_issue_list 薄行；单票反向边不急就 deck_issue_get 传 blocking=false（跳过一次全仓扫描）；子票清单要全不断就 deck_map_snapshot 传 detail=thin（统计不变）。工作区与仓库不接受参数：它们只从当前会话取。'
+
+/** 本地后端才追加的那一段建票契约：票就是工作区里的文件，规格与实施票都走 deck 工具，不手写票文件。 */
+const LOCAL_HOWTO_SUFFIX = '本地后端补一条建票契约：票就是工作区里的文件；规格就是票（kind=spec，顶层容器，不挂地图、不传 parentKey）；实施票用 deck_issue_create 建（kind=spec-ticket，parentKey 填规格票号，blockedBy 填依赖）；地图下的工单用 kind=map-ticket 并给一枚 label（wayfinder:research / wayfinder:prototype / wayfinder:grilling / wayfinder:task），parentKey 填探索地图；普通票用 kind=issue（万能兜底），缺陷用 kind=bug；补边用 deck_map_link，改票用 deck_issue_patch，认领会写 Assignees 行；不要手写票文件（不要自己写 .scratch 下的文件），技能原文若让你手写，以上面这段用法说明为准。'
+
+/**
+ * 按后端 id 算出用法说明（纯函数：同一个后端 id 永远回同样的话）。
+ *
+ * 取舍：后端专属的用法说明本应住在每个后端自己的声明里，由后端自己报出 prompts 数据，deck 层只负责透出。
+ * 但 deck 层现在拿不到后端的 prompts 数据（装配层没有把那份数据递进来），所以这次先在 context.ts 里按后端分叉：
+ * 票就存在工作区文件里的那一种后端（本地文件后端）追加建票契约，其它后端原样回改前的那句话。
+ * 将来装配层能把后端声明递进来时，把这段本地契约搬到后端声明里，context.ts 只做透出，不再自己看后端是谁。
+ * 本地文件后端的判断复用共享层的具名判断（不用在这里写后端 id 的等值比较，门禁也不许写）。
+ */
+export function howtoFor(backendId: string | null | undefined): string {
+  const id = (typeof backendId === 'string') ? backendId : ''
+  if (knownWritePermissions(id) !== null) return BASE_HOWTO + LOCAL_HOWTO_SUFFIX
+  return BASE_HOWTO
 }
 
 /** 一张地图在清单里长什么样（只放人需要的那几格，正文不进清单；票本身没有层级格，不带它——带空值整包会被外层拒收）。 */
@@ -196,8 +217,8 @@ export function createDeckContext(deps?: DeckContextDeps) {
             initialized: pre ? pre.ok === true : null,
             preflight: pre ? { ok: pre.ok === true, message: String((pre.error && pre.error.message) || '').slice(0, 300) } : null,
             maps: maps,
-            // 这一句是给 AI 的用法说明（描述只有路由，语义放这里）。
-            howto: '写票之前先用本工具确认工作区与后端；建票用 deck_issue_create，建整张地图骨架用 deck_map_plan_create，补边用 deck_map_link，改票用 deck_issue_patch，上报当前在办哪张票用 deck_issue_report，读一张票用 deck_issue_get，看一张地图的全部子票用 deck_map_snapshot，按状态与 label 和 assignee 列薄行用 deck_issue_list。要快数：扫数先用 deck_issue_list 薄行；单票反向边不急就 deck_issue_get 传 blocking=false（跳过一次全仓扫描）；子票清单要全不断就 deck_map_snapshot 传 detail=thin（统计不变）。工作区与仓库不接受参数：它们只从当前会话取。',
+            // 这一句是给 AI 的用法说明（描述只有路由，语义放这里；本地后端追加建票契约，见上面 howtoFor）。
+            howto: howtoFor(pick.backendId),
             quota: { perCallPoints: budget.AI_TOOL_MAX_POINTS_PER_CALL, perCallRequests: budget.AI_TOOL_MAX_REQUESTS_PER_CALL, perHourPoints: budget.AI_TOOL_MAX_POINTS_PER_HOUR, perHourRequests: budget.AI_TOOL_MAX_REQUESTS_PER_HOUR, maxChildTicketsPerCall: budget.AI_TOOL_MAX_CHILD_TICKETS_PER_CALL },
           },
           notes: notes,

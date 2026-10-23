@@ -3,7 +3,7 @@
  *
  * 来源与零变化：本文件由同目录 versionControlCheck.js 逐行转写而来，只加类型标注与注释，
  * 没有改任何运行时语义。原来的 .js 文件保留不动，引用方继续写 `./versionControlCheck.js`，
- * 由 scripts/ts-hook.mjs 在加载时改指到同名 .ts。
+ * 由 scripts/ts-hook.mts 在加载时改指到同名 .ts。
  *
  * 职责（只做预检，不起任何写命令）：读一次首屏 → 交给核心 rules.judge 判定 → 解析目标（推送目标 / 上游 /
  * 提交信息与索引指纹 / i-t-a）→ 发一张票。写命令一条都不在这里发；所有只读命令都走注入的 safeGit（它就是
@@ -23,11 +23,11 @@
  */
 // @ts-expect-error
 import { createHash } from 'node:crypto'
-import { fixedPrefix, lsFilesStageArgs, remoteListArgs, REMOTE_PATTERN } from '../shared/version-control/commands.js'
-import { judge } from '../shared/version-control/rules.js'
-import { makeTicket, indexRecordCount, fingerprintInputOf, hasIntentToAdd } from '../shared/version-control/write-ticket.js'
-import { pushPlanOf } from '../shared/version-control/push-plan.js'
-import { messageProblem, writeHintFor } from '../shared/version-control/write-reasons.js'
+import { fixedPrefix, lsFilesStageArgs, remoteListArgs, REMOTE_PATTERN } from '../shared/version-control/src/commands.js'
+import { judge } from '../shared/version-control/src/rules.js'
+import { makeTicket, indexRecordCount, fingerprintInputOf, hasIntentToAdd } from '../shared/version-control/src/write-ticket.js'
+import { pushPlanOf } from '../shared/version-control/src/push-plan.js'
+import { messageProblem, writeHintFor } from '../shared/version-control/src/write-reasons.js'
 // 下面三个时间都住中央 YAML（config/timeouts.yaml 的 vcCheckCallBudgetMs / vcLsFilesTimeoutMs /
 // vcRemoteTimeoutMs 键）：这里直接引用中央常量，调时间改 YAML。
 // 它们说的是两件事，别混：
@@ -36,7 +36,7 @@ import { messageProblem, writeHintFor } from '../shared/version-control/write-re
 //   · LSFILES_TIMEOUT_MS 与 REMOTE_TIMEOUT_MS 是「单条只读命令」各自的超时（交给 readOut 的 timeoutMs），
 //     管某一条命令最多跑多久——单条超时相加可以比总预算大，但总预算用完就先停。
 // 路径走域构建产物写法（与 src/host/refresh/chain-ride.ts 引 values.js 同例），值由 tests/verify-time-config.ts 看守一致。
-import { VC_CHECK_CALL_BUDGET_MS as CHECK_CALL_BUDGET_MS, VC_LSFILES_TIMEOUT_MS as LSFILES_TIMEOUT_MS, VC_REMOTE_TIMEOUT_MS as REMOTE_TIMEOUT_MS, TICKET_TTL_MS } from '../shared/time-config/values.js'
+import { VC_CHECK_CALL_BUDGET_MS as CHECK_CALL_BUDGET_MS, VC_LSFILES_TIMEOUT_MS as LSFILES_TIMEOUT_MS, VC_REMOTE_TIMEOUT_MS as REMOTE_TIMEOUT_MS, TICKET_TTL_MS } from '../shared/time-config/src/values.js'
 
 /** 预算（附录第 5 节）：预检调用 60 秒；两条只读命令各自的单次预算。 */
 const LSFILES_LIMIT: number = 8 * 1024 * 1024

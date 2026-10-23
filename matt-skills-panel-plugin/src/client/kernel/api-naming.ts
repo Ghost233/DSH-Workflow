@@ -1,21 +1,21 @@
 /**
  * src/client/kernel/api-naming.ts — 内核模块（#457 由 api.js 拆出之交接头、草稿、预设与建会话、命名守护）
- * （原来是 .js：按「动到哪里转哪里」转成 TypeScript，行为零变化。构建仍读同名 .js，本片只进类型检查与 ts-hook 测试。）
+ * （原来是 .js：按「动到哪里转哪里」转成 TypeScript，行为零变化。本文件是模块真源，同名 .js 已改由构建生成（会被覆盖，不要去改），本 .ts 既进类型检查也进拼接与 ts-hook 测试。）
  *
- * 契约：本文件为模块真源（ESM 导出）；scripts/build.mjs 在构建时去掉每行行首
- * export 关键字，把声明体文本拼回 src/client/index.js 的拼接标记处（apply 闭包内
- * 原位），与 ctx.js/seam 同模式，一源两物，src 零复制。
+ * 契约：本文件为模块真源（ESM 导出）；scripts/build.mts 在构建时去掉每行行首
+ * export 关键字，把声明体文本拼回 src/client/index.ts 的拼接标记处（apply 闭包内
+ * 原位），与 ctx.ts/seam 同模式，源码树里只有这一份真源。
  * 接口冻结清单见 docs/architecture/kernel-contract.md（G3 · #91 拍板）。
  */
 // 跨闭包的值引用按仓里规矩写模块级 declare（实现只在拼好的闭包里有一份，类型检查各看各的）：
-// inject 的真源在 kernel/api-io.js，fixateText/renderTemplate 的真源在 config.js，
-// storeOf 的真源在 kernel/store-snapshot.js，ctx 是客户端上下文，keyOf 的真源在共享工作区键那一片，
+// inject 的真源在 kernel/api-io.ts，fixateText/renderTemplate 的真源在 config.ts，
+// storeOf 的真源在 kernel/store-snapshot.ts，ctx 是客户端上下文，keyOf 的真源在共享工作区键那一片，
 // DIVERGENCE/classifyDivergence 的真源在共享命名那三份（构建经 shared:namingTitles 等 3 个 splice 注入），
 // composeDraftTitle/newSessionTitle/newSessionTitleNew/parseNumberedTitle/isNewPlaceholderTitle 的真源在
-//   prompts.js 与命名那一片，NAMING_STAGES 的真源在宿主跟踪态；isEnabled 判调试开关；
+//   prompts.ts 与命名那一片，NAMING_STAGES 的真源在宿主跟踪态；isEnabled 判调试开关；
 // 本片只在调用时求值，初始化期不碰；类型一律写 any 是刻意的：在这里凭记忆写窄，
 // 只会把那边正常的改动变成这里的假报错（与 kernel/link.ts 同例）。
-// host/emit/tr/log/promptLang/dswsLogHash/dswsLogTrunc 走全局已声明的那一份，这里不重复。
+// host/emit/tr/log/dswsLogHash/dswsLogTrunc 走全局已声明的那一份，这里不重复。
 declare function inject(...args: any[]): any;
 declare function fixateText(...args: any[]): any;
 declare function renderTemplate(...args: any[]): any;
@@ -24,6 +24,9 @@ declare const ctx: any;
 declare function keyOf(...args: any[]): any;
 declare const DIVERGENCE: any;
 declare function composeDraftTitle(...args: any[]): any;
+// #1294：草稿档该用哪门语言的文字由命名内容表自己回答（沿语言链找表里有列的语言），
+//   本片不再拿 promptLang() 判「是不是 en」。真源在 src/shared/naming-titles.ts，构建时拼进同一闭包。
+declare function namingContentLang(...args: any[]): any;
 declare function newSessionTitle(...args: any[]): any;
 declare function classifyDivergence(...args: any[]): any;
 declare const NAMING_STAGES: any;
@@ -31,6 +34,18 @@ declare function newSessionTitleNew(...args: any[]): any;
 declare function parseNumberedTitle(...args: any[]): any;
 declare function isNewPlaceholderTitle(...args: any[]): any;
 declare const isEnabled: any;
+
+    // #1294：草稿标题的正文语言 —— 由命名内容表自己的语言列沿着语言链选（不再「promptLang() 是不是 en」）。
+    //   两处 draft 分支（执行一次、定败化解）共用这一个取法，避免同一段兜底写两遍、慢慢走岔。
+    //   取不到时返回空串：composeDraftTitle 拿到空串会按内容表再推一门，不写死某门语言。
+    const draftContentLang = function (): string {
+      try {
+        const l = namingContentLang()
+        if (l) return String(l)
+      } catch (eLang) {}
+      return ''
+    }
+
     export const injectFixate = (st: any): any => { inject(st, fixateText(st)) }
 
     // v24-48：交接 —— 第一击自动注入 /handoff 模板（带时间戳文件名 + 引导句）并记忆该时间戳；
@@ -213,9 +228,9 @@ declare const isEnabled: any;
       // 先合成目标名，再归因：这样「现名已经就是目标」也能被归因认出来（宿主刚改完、这里拿同一张单再跑一遍是常事）。
       let target: any = null
       if (o.kind === 'draft') {
-        let langIsEn = false
-        try { langIsEn = typeof promptLang === 'function' && promptLang() === 'en' } catch (eLang) {}
-        target = composeDraftTitle({ hint: o.hint, lang: langIsEn ? 'en' : 'zh', baselineTitle: (o.lock && o.lock.baselineTitle) || '' })
+        // #1294：目标名的语言跟随语言链（draftContentLang 在内容表的语言列里选），
+        //   不再用「promptLang() 是不是 en」二选一 —— 清单加语言时这里不用改。
+        target = composeDraftTitle({ hint: o.hint, lang: draftContentLang(), baselineTitle: (o.lock && o.lock.baselineTitle) || '' })
       } else if (o.kind === 'numbered') {
         const num = Number(o.number)
         if (!isFinite(num) || num < 0) return
@@ -278,9 +293,8 @@ declare const isEnabled: any;
         if (!(isFinite(num) && num >= 0)) return false
         try { target = newSessionTitle({ number: num, numberText: f.numberText, title: f.numberTitle || '' }) } catch (eT) { return false }
       } else {
-        let langIsEn = false
-        try { langIsEn = typeof promptLang === 'function' && promptLang() === 'en' } catch (eLang) {}
-        target = composeDraftTitle({ hint: f.hint, lang: langIsEn ? 'en' : 'zh', baselineTitle: (lock && lock.baselineTitle) || '' })
+        // #1294：与 executeNamingOrder 的 draft 分支同款 —— 语言由 draftContentLang 沿语言链选。
+        target = composeDraftTitle({ hint: f.hint, lang: draftContentLang(), baselineTitle: (lock && lock.baselineTitle) || '' })
       }
       if (target && target === cur) { reportNamingResult(sid, 'renamed', { title: cur }); return true }
       return false

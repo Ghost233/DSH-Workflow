@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createBootstrap } from '../matt-skills-panel-plugin/package/lib/bootstrap.js'
-import { MATT_SKILL_CATALOG } from '../matt-skills-panel-plugin/package/shared/matt-skills.js'
+import { SKILLS } from '../matt-skills-panel-plugin/package/shared/matt-skills.js'
 
 test('local Matt board keeps its panel package without registering bundled skills', async () => {
   const packageRoot = fileURLToPath(new URL('../matt-skills-panel-plugin/package/', import.meta.url))
@@ -24,7 +24,7 @@ test('local Matt board keeps its panel package without registering bundled skill
   const providerRoot = fileURLToPath(new URL('../vendor/mattpocock-skills-zh/skills/', import.meta.url))
   const installed = readdirSync(providerRoot).filter(name => existsSync(join(providerRoot, name, 'SKILL.md'))).sort()
   assert.deepEqual([...names].sort(), installed)
-  assert.deepEqual(MATT_SKILL_CATALOG.map(skill => skill.name).sort(), installed)
+  assert.deepEqual(SKILLS.map(skill => skill.name).sort(), installed)
   assert.equal(registered, 0)
 })
 

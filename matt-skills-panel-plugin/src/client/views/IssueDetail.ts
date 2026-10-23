@@ -1,7 +1,7 @@
 /**
  * views/IssueDetail.ts — Issue 详情页（独立叶模块 · v1.7.0 T1/T2/T3）
- * 契约：模块真源（ESM 导出）；scripts/build.mjs 构建时剥行首 export 拼回
- * src/client/index.js 对应叶标记处（一源两物）。
+ * 契约：模块真源（ESM 导出）；scripts/build.mts 构建时剥行首 export 拼回
+ * src/client/index.ts 对应叶标记处（源码树里只有这一份真源）。
  * 设计约束：每个模块可独立并发开发 — 本文件仅依赖内核 seam（store/router/api/locale/shared组件），
  * 同层禁止 import 其他视图（ListTab/MapDetail 等），像插件般隔离；所有共享能力经 DswsCtx 取用。
  * T2 数据通路：fetchIssueDetail(n)（GraphQL+REST 双通道，host 侧 wf.issueDetail），60s 缓存命中即用，loading/real/err 三态。
@@ -21,6 +21,10 @@ declare function rowActionKind(...args: any[]): any;
 declare function actionColorOf(...args: any[]): any;
 declare function isLightHex(...args: any[]): any;
 declare function findMapByIdentity(...args: any[]): any;
+// #1286 收口：规格容器若被当票详情打开（旧导航或直接链接），顶栏按钮要走容器三态，不能按标签算实施票。
+declare function containerKindOf(...args: any[]): any;
+declare function containerStateOf(...args: any[]): any;
+declare function containerTriState(...args: any[]): any;
 declare function pushNav(...args: any[]): any;
 declare function copyText(...args: any[]): any;
 declare function openInNewSession(...args: any[]): any;
@@ -30,6 +34,8 @@ declare function hexA(...args: any[]): any;
 declare function darken(...args: any[]): any;
 declare function idOfParts(...args: any[]): any;
 declare function renderIssueDetailComments(...args: any[]): any;
+// 子票/阻塞票的分流判定住在 views/subIssueRouting.ts；签名 (st, 子票节点, effort) 与那里一致。
+declare function enterSubDetail(st: any, x: any, issueEffort: any): void;
 declare function mdImgOverlay(...args: any[]): any;
 declare function issueUrlFor(...args: any[]): any;
 declare function openIssueUrl(...args: any[]): any;
@@ -38,6 +44,7 @@ declare const Tip: any;
 // 详情页确认提示的停留时间（毫秒）。数值写在 config/ttl.yaml 的 issueDetailConfirmMs，
 // 构建时由生成器变成常量拼进界面闭包；这里的 declare 只是让 TypeScript 知道这个名字存在。
 declare const ISSUE_DETAIL_CONFIRM_MS: number;
+declare const CONTAINER_ACCENT: any;
 export const IssueDetail = function (props: any): any {
       const cx = React.useContext(DswsCtx)
       const h = cx ? cx.h : React.createElement
@@ -100,7 +107,9 @@ export const IssueDetail = function (props: any): any {
         const rawText = errRawOf(e)
         if (!rawText) return null
         return h('details', { style: { width: '100%', marginTop: 2, paddingTop: 4, borderTop: '1px solid rgba(248,113,113,.25)' } }, [
-          h('summary', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, tr('vc.fail.raw', { msg: rawText })),
+          // 本次界面反馈需求：错误原文的折叠条能点，给它悬停反馈、按压态与自己的点击日志。
+          //   原文是自由文本，不进定位串。
+          h('summary', { className: 'dsws-hov', 'data-press': 'button', 'data-log': 'detail.err.raw.toggle', style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, tr('vc.fail.raw', { msg: rawText })),
           h('div', { style: { marginTop: 4, padding: '6px 8px', background: 'rgba(0,0,0,.18)', border: '1px solid rgba(248,113,113,.25)', borderRadius: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto' } }, rawText),
         ])
       }
@@ -133,54 +142,24 @@ export const IssueDetail = function (props: any): any {
         }
         return '#' + issueNumber
       })()
-      // T4 整改 #554：子票与阻塞票点击按地图行同口径分流（T3 的做法）。
-      // 节点自带标签时按标签判：有地图标签且快照里找得到这张地图才进地图详情，否则回落工单详情；
-      // 节点没有标签（阻塞票节点只有编号标题状态）时按快照本地找图：找得到进地图详情，
-      // 找不到回落普通工单详情（有字可看，不静默回列表）。只定种类与编号，取数与评论不动。
-      const subLabelsOf = function (x: any) {
-        if (!x || x.labels == null) return []
-        if (Array.isArray(x.labels)) return x.labels
-        if (typeof x.labels === 'object' && Array.isArray(x.labels.nodes)) return x.labels.nodes
-        return []
-      }
-      const subHasRoutingInfo = function (x: any) {
-        if (!x) return false
-        if (subLabelsOf(x).length > 0) return true
-        return typeof x.type === 'string' && x.type !== ''
-      }
-      const subHasMapTag = function (x: any) {
-        const ls = subLabelsOf(x)
-        for (let i = 0; i < ls.length; i++) { const n = (typeof ls[i] === 'string') ? ls[i] : ls[i].name; if (n === 'wayfinder:map') return true }
-        return x && x.type === 'map'
-      }
-      const enterSubDetail = function (x: any) {
-        if (!x || x.number == null) return
-        // effort 维度：子票/阻塞票的 effort 取节点自带字段，没有就跟当前票同 effort（同 effort 内的引用）
-        const eid = (x.effortId !== undefined && x.effortId !== null) ? String(x.effortId) : issueEffort
-        if (subHasRoutingInfo(x)) {
-          if (subHasMapTag(x) && findMapByIdentity(st.snapshot && st.snapshot.maps, x.number, eid)) pushNav(st, 'map', x.number, eid)
-          else pushNav(st, 'issue', x.number, eid)
-        } else {
-          if (findMapByIdentity(st.snapshot && st.snapshot.maps, x.number, eid)) pushNav(st, 'map', x.number, eid)
-          else pushNav(st, 'issue', x.number, eid)
-        }
-      }
+      // 子票/阻塞票的分流判定整族已移到 views/subIssueRouting.ts（函数名 enterSubDetail 与原文一致），
+      // 判断细节（标签优先、无标签按快照找图、effort 继承）写在那份文件里；这里只负责传当前票的 st 与 effort。
       // loading（首拉无缓存且无 snap 降级）
       if (mode === 'loading' && !src) {
         return h('div', null, [
           h('div', { ref: topBarRef, style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'nowrap', minWidth: 0, overflow: 'hidden' } }, [
-            h('button', { className: 'dsws-btn', onClick: goBack, style: { display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'back', size: 12 }), h('span', { 'data-detail-back-text': 1, 'data-full': tr('list.back'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.back'))]),
+            h('button', { className: 'dsws-btn', 'data-press': 'button', 'data-log': 'issue.top.back', onClick: goBack, style: { display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'back', size: 12 }), h('span', { 'data-detail-back-text': 1, 'data-full': tr('list.back'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.back'))]),
             h('span', { 'data-detail-crumb': 1, 'data-full': navCrumb, style: { color: 'var(--dsw-alias-label-secondary,#a1a1aa)', fontSize: 11, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, navCrumb),
             h('span', { style: { flex: 1 } }),
           ]),
-          h('div', { style: { padding: '24px 0', textAlign: 'center', color: 'var(--dsw-alias-label-secondary,#a1a1aa)', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 } }, [h('div', { className: 'dsws-spinner', style: { width: 14, height: 14, border: '2px solid rgba(255,255,255,.15)', borderTopColor: '#c084fc', borderRadius: '50%', animation: 'dsws-spin 1s linear infinite' } }), h('span', null, tr('list.loading'))]),
+          h('div', { style: { padding: '24px 0', textAlign: 'center', color: 'var(--dsw-alias-label-secondary,#a1a1aa)', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 } }, [h('div', { className: 'dsws-spinner', style: { width: 14, height: 14, border: '2px solid rgba(255,255,255,.15)', borderTopColor: (typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '', borderRadius: '50%', animation: 'dsws-spin 1s linear infinite' } }), h('span', null, tr('list.loading'))]),
         ])
       }
       // err 无 src（且非 snap 降级可显）→ 错误横幅
       if (mode === 'err' && !src) {
         return h('div', null, [
           h('div', { ref: topBarRef, style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'nowrap', minWidth: 0, overflow: 'hidden' } }, [
-            h('button', { className: 'dsws-btn', onClick: goBack, style: { display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'back', size: 12 }), h('span', { 'data-detail-back-text': 1, 'data-full': tr('list.back'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.back'))]),
+            h('button', { className: 'dsws-btn', 'data-press': 'button', 'data-log': 'issue.top.back', onClick: goBack, style: { display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'back', size: 12 }), h('span', { 'data-detail-back-text': 1, 'data-full': tr('list.back'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.back'))]),
             h('span', { 'data-detail-crumb': 1, 'data-full': navCrumb, style: { color: 'var(--dsw-alias-label-secondary,#a1a1aa)', fontSize: 11, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, navCrumb),
             h('span', { style: { flex: 1 } }),
           ]),
@@ -190,17 +169,21 @@ export const IssueDetail = function (props: any): any {
               h('span', { style: { wordBreak: 'break-word' } }, errSayOf(err)),
               errKindOf(err) ? h('span', { style: { fontSize: 10, padding: '0 6px', border: '1px solid rgba(248,113,113,.45)', borderRadius: 10, flex: 'none' } }, errKindOf(err)) : null,
               h('span', { style: { flex: 1 } }),
-              h('button', { className: 'dsws-btn primary', onClick: doRetry, style: { padding: '1px 8px', fontSize: 11, background: '#f87171', borderColor: 'transparent', color: '#fff' } }, '重试'),
+              // 本次界面反馈需求：错误态里「重试」与「在追踪器中查看」是用户此时仅有的两个出口，
+              //   各自带按压态、悬停反馈与点击日志；附近没有带 data-log 的祖先，不接就完全没有日志。
+              h('button', { className: 'dsws-btn primary dsws-hov', 'data-press': 'button', 'data-log': 'detail.err.retry', onClick: doRetry, style: { padding: '1px 8px', fontSize: 11, background: '#f87171', borderColor: 'transparent', color: '#fff' } }, '重试'),
                             // 本地票的 url 是文件路径不是网址：https 走新页，本地走宿主打开（裸 href 点了没反应，#1145）
               (function () {
                 const _u = issueUrlFor(st, issueNumber, issueEffort)
                 const _isHttp = /^https?:\/\//i.test(String(_u || ''))
                 const _openLocal = function (e: any) { e.stopPropagation(); openIssueUrl(st, issueNumber, (typeof host !== 'undefined' ? host : undefined), issueEffort) }
-                const _props = { className: 'dsws-btn ghost', style: { padding: '1px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 } }
+                const _props = { className: 'dsws-btn ghost dsws-hov', style: { padding: '1px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 } }
                 const _kids = [Ic({ n: 'link', size: 11 }), h('span', null, tr('detail.viewOnTracker'))]
+                // 本次界面反馈需求：https 与本地两条分支各带一个定位串，日志里能认出点的是哪一条；
+                //   定位串里不写票号以外的内容，票号是自由文本之外的标识仍不入串。
                 return _isHttp
-                  ? h('a', Object.assign({ href: _u, target: '_blank', rel: 'noreferrer' }, _props), _kids)
-                  : h('button', Object.assign({ type: 'button', onClick: _openLocal }, _props), _kids)
+                  ? h('a', Object.assign({ href: _u, target: '_blank', rel: 'noreferrer', 'data-press': 'link', 'data-log': 'detail.err.open' }, _props), _kids)
+                  : h('button', Object.assign({ type: 'button', onClick: _openLocal, 'data-press': 'button', 'data-log': 'detail.err.open.local' }, _props), _kids)
               })(),
             ]),
             errRawBlockOf(err),
@@ -211,7 +194,7 @@ export const IssueDetail = function (props: any): any {
       if (!src) {
         return h('div', null, [
           h('div', { ref: topBarRef, style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'nowrap', minWidth: 0, overflow: 'hidden' } }, [
-            h('button', { className: 'dsws-btn', onClick: goBack, style: { display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'back', size: 12 }), h('span', { 'data-detail-back-text': 1, 'data-full': tr('list.back'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.back'))]),
+            h('button', { className: 'dsws-btn', 'data-press': 'button', 'data-log': 'issue.top.back', onClick: goBack, style: { display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'back', size: 12 }), h('span', { 'data-detail-back-text': 1, 'data-full': tr('list.back'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.back'))]),
             h('span', { 'data-detail-crumb': 1, 'data-full': navCrumb, style: { color: 'var(--dsw-alias-label-secondary,#a1a1aa)', fontSize: 11, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, navCrumb),
           ]),
           h('div', { style: { padding: '24px 0', textAlign: 'center', color: 'var(--dsw-alias-label-caption,#8b8b95)', fontSize: 12 } }, tr('detail.bodyNotYet')),
@@ -228,7 +211,7 @@ export const IssueDetail = function (props: any): any {
       const stateKind = prStateKind(src)
       const isOpen = stateKind === 'open'
       const isMerged = stateKind === 'merged'
-      const stateColor = isOpen ? '#3fb950' : (isMerged ? '#c084fc' : '#8b949e')
+      const stateColor = isOpen ? '#3fb950' : (isMerged ? ((typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '') : '#8b949e')
       const stateLabel = isOpen ? tr('list.state.open') : (isMerged ? tr('list.state.merged') : tr('list.state.closed'))
       const title = src.title || ('#' + issueNumber)
       // effort 维度：详情页标出这张票属于哪个 effort（只在多 effort 仓库出现，单 effort 界面不变）
@@ -240,18 +223,37 @@ export const IssueDetail = function (props: any): any {
             ? h('div', { style: { fontSize: 12, lineHeight: 1.6, color: 'var(--dsw-alias-label-primary,#e6edf3)' } }, (typeof mdToHtml === 'function' ? mdToHtml(detail.body, { st: st }) : String(detail.body)))
             : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-caption,#8b8b95)' } }, tr('detail.noBody')))
         : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-caption,#8b8b95)', display: 'flex', alignItems: 'center', gap: 6 } }, [
-            mode === 'err' ? null : h('div', { className: 'dsws-spinner', style: { width: 11, height: 11, border: '2px solid rgba(255,255,255,.15)', borderTopColor: '#c084fc', borderRadius: '50%', animation: 'dsws-spin 1s linear infinite' } }),
+            mode === 'err' ? null : h('div', { className: 'dsws-spinner', style: { width: 11, height: 11, border: '2px solid rgba(255,255,255,.15)', borderTopColor: (typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '', borderRadius: '50%', animation: 'dsws-spin 1s linear infinite' } }),
             h('span', null, mode === 'err' ? tr('detail.bodyNotYet') : tr('list.loading')),
           ])
       const has = function (nm: any) { return labelArr.some(function (l: any) { return (l.name || l) === nm }) }
       const _isTriageLikeLocal = !labelArr.length || has('needs-triage')
       const fakeIssue = { number: issueNumber, ['title']: title, labels: labelArr.map(function (l: any) { return typeof l === 'string' ? { name: l } : l }), state: stateRaw }
+      // #1286 收口：这一页正常是「票详情」，规格本该进容器详情；万一被旧导航或直接链接当票打开，
+      //   顶栏按钮也不能按标签把规格当实施票（注入 /implement），按快照里的容器身份走三态口径。
+      const containerInfo = (function (): any {
+        try {
+          if (typeof findMapByIdentity !== 'function' || typeof containerKindOf !== 'function') return null
+          const c: any = findMapByIdentity(st.snapshot && st.snapshot.maps, issueNumber, issueEffort)
+          if (!c) return null
+          const k: any = containerKindOf(c)
+          if (!k) return null
+          return { kind: k, state: (typeof containerStateOf === 'function') ? containerStateOf(c) : 'open', c: c }
+        } catch (e) { return null }
+      })()
       // #763 顶栏主动作按钮：与列表行同口径（图标/文字/注入文本），但自建按钮以便折叠机逐字裁字。
       // 复用行动作的注入文本，不复用它的按钮节点（那个节点写死 flex:none，折叠机裁不动它）。
       // #771 分类走一处 rowActionKind（状态优先于类型：未分流 → 接手 → 补充 → 修复 → 讨论 → 研究 → 原型 → 执行）。
       const primaryInfo = (function () {
         let text = ''
         try { text = (typeof rowActionText === 'function') ? rowActionText(st, fakeIssue) : '' } catch (e) { text = '' }
+        // #1286 收口：容器（规格/地图）的顶栏主动作按三态取图标、文字与悬停，注入文本已由 rowActionText 走容器口径。
+        if (containerInfo && typeof containerTriState === 'function') {
+          try {
+            const tri: any = containerTriState(containerInfo.kind, containerInfo.state)
+            return { icon: tri.icon, label: tr(tri.labelKey), tip: tr(tri.titleKey), text: text }
+          } catch (eC) {}
+        }
         let kind = ''
         try { kind = (typeof rowActionKind === 'function') ? rowActionKind(fakeIssue) : '' } catch (eK) { kind = '' }
         let icon = 'play', label = ''
@@ -288,7 +290,14 @@ export const IssueDetail = function (props: any): any {
         } catch (e2) {}
         return { icon: icon, label: label, tip: tip, text: text }
       })()
-      const actColor = (typeof actionColorOf === 'function') ? actionColorOf(fakeIssue, colorOf) : stateColor
+      let actColor = (typeof actionColorOf === 'function') ? actionColorOf(fakeIssue, colorOf) : stateColor
+      // #1286 收口：容器被当票详情打开时，顶栏主按钮底色也取容器三态色（拆票橙 / 执行蓝 / 完成绿）。
+      try {
+        if (containerInfo && typeof containerTriState === 'function') {
+          const _tri: any = containerTriState(containerInfo.kind, containerInfo.state)
+          if (_tri && _tri.color) actColor = _tri.color
+        }
+      } catch (eAC) {}
       const actTextColor = (typeof isLightHex === 'function' && isLightHex(actColor)) ? '#140a1e' : '#ffffff'
       const subNodes = (src.subIssues && src.subIssues.nodes) ? src.subIssues.nodes : []
       const subTotal = (src.subIssues && typeof src.subIssues.totalCount === 'number') ? src.subIssues.totalCount : subNodes.length
@@ -318,21 +327,21 @@ export const IssueDetail = function (props: any): any {
         // 图标永不消失；看不见的字直接裁掉，不补省略号；完整串留悬停。
         h('div', { ref: topBarRef, className: 'dsws-stickybar', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', minWidth: 0, overflow: 'hidden' } }, [
           // 返回按钮的悬停提示走 Tip（T2/T3 纪律），不再用原生 title
-          h(Tip, { content: tr('list.back') }, h('button', { className: 'dsws-btn', onClick: goBack, style: { display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'back', size: 12 }), h('span', { 'data-detail-back-text': 1, 'data-full': tr('list.back'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.back'))])),
+          h(Tip, { content: tr('list.back') }, h('button', { className: 'dsws-btn', 'data-press': 'button', 'data-log': 'issue.top.back', onClick: goBack, style: { display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'back', size: 12 }), h('span', { 'data-detail-back-text': 1, 'data-full': tr('list.back'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.back'))])),
           h(Tip, { content: navCrumb }, h('span', { 'data-detail-crumb': 1, 'data-full': navCrumb, style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', whiteSpace: 'nowrap', flex: 'none', minWidth: 0, overflow: 'hidden' } }, navCrumb)),
           effortChip,
           h('span', { style: { flex: 1, minWidth: 8 } }),
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 3, flex: 'none', minWidth: 0, overflow: 'hidden', flexWrap: 'nowrap' } }, [
             detail ? h('span', { 'data-detail-snapshot': 1, 'data-full': (isStale ? '快照' : (mode === 'loading' ? tr('list.loading') : '')), style: { fontSize: 10, color: isStale ? '#f59e0b' : '#8b8b95', flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, isStale ? '快照' : (mode === 'loading' ? tr('list.loading') : '')) : null,
-            h(Tip, { content: primaryInfo.tip }, h('button', { className: 'dsws-btn primary', onClick: function (e: any) { e.stopPropagation(); try { inject(st, primaryInfo.text) } catch (err2) {} }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, background: actColor, borderColor: 'transparent', color: actTextColor, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: primaryInfo.icon, size: primaryInfo.icon === 'prototype' ? 12 : 10 }), h('span', { 'data-detail-primary-text': 1, 'data-full': primaryInfo.label, style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, primaryInfo.label)])),
-            h(Tip, { content: tr('tip.newSession', { n: issueNumber }) }, h('button', { className: 'dsws-btn primary', onClick: function (e: any) { e.stopPropagation(); openInNewSession(st, { number: issueNumber, ['title']: title, labels: labelArr }) }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, background: actColor, borderColor: 'transparent', color: actTextColor, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'external-link', size: 10 }), h('span', { 'data-detail-new-text': 1, 'data-full': tr('list.newSessionLabel'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.newSessionLabel'))])),
-            h(Tip, { content: tr('tip.copyLink') }, h('button', { className: 'dsws-btn ghost', onClick: function (e: any) { e.stopPropagation(); copyUrl(issueNumber) }, style: { display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }, Ic({ n: 'clipboard', size: 13 }))),
+            h(Tip, { content: primaryInfo.tip }, h('button', { className: 'dsws-btn primary', 'data-press': 'button', 'data-log': 'issue.top.exec', onClick: function (e: any) { e.stopPropagation(); try { inject(st, primaryInfo.text) } catch (err2) {} }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, background: actColor, borderColor: 'transparent', color: actTextColor, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: primaryInfo.icon, size: primaryInfo.icon === 'prototype' ? 12 : 10 }), h('span', { 'data-detail-primary-text': 1, 'data-full': primaryInfo.label, style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, primaryInfo.label)])),
+            h(Tip, { content: tr('tip.newSession', { n: issueNumber }) }, h('button', { className: 'dsws-btn primary', 'data-press': 'button', 'data-log': 'issue.top.newsession', onClick: function (e: any) { e.stopPropagation(); openInNewSession(st, { number: issueNumber, ['title']: title, labels: labelArr }) }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, background: actColor, borderColor: 'transparent', color: actTextColor, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'external-link', size: 10 }), h('span', { 'data-detail-new-text': 1, 'data-full': tr('list.newSessionLabel'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.newSessionLabel'))])),
+            h(Tip, { content: tr('tip.copyLink') }, h('button', { className: 'dsws-btn ghost', 'data-press': 'icon', 'data-log': 'issue.top.copy', onClick: function (e: any) { e.stopPropagation(); copyUrl(issueNumber) }, style: { display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }, Ic({ n: 'clipboard', size: 13 }))),
                         // 本地票的 url 是文件路径不是网址：https 走新页，本地走宿主打开（裸 href 点了没反应，#1145）
             h(Tip, { content: tr('tip.openInTracker', { n: issueNumber }) }, (function () {
               const _u = issueUrlFor(st, issueNumber, issueEffort)
               const _isHttp = /^https?:\/\//i.test(String(_u || ''))
               const _openLocal = function (e: any) { e.stopPropagation(); openIssueUrl(st, issueNumber, (typeof host !== 'undefined' ? host : undefined), issueEffort) }
-              const _props = { className: 'dsws-btn ghost', style: { display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }
+              const _props = { className: 'dsws-btn ghost', 'data-press': 'icon', 'data-log': 'issue.top.link', style: { display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }
               return _isHttp
                 ? h('a', Object.assign({ href: _u, target: '_blank', rel: 'noreferrer' }, _props), Ic({ n: 'link', size: 13 }))
                 : h('button', Object.assign({ type: 'button', onClick: _openLocal }, _props), Ic({ n: 'link', size: 13 }))
@@ -340,21 +349,25 @@ export const IssueDetail = function (props: any): any {
           ]),
         ]),
         // 顶部 err 横幅（有 src 时可重试，不遮挡主体）：主行给人看的一句话，档位作可选小标签，原文可展开
-        mode === 'err' && err ? h('div', { style: { padding: '8px 10px', background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.25)', borderRadius: 6, fontSize: 11, color: '#f87171', display: 'flex', flexDirection: 'column', gap: 6 } }, [
+        // #1379 收口：横幅挂稳定类名，浅色层才有选择器可命中（颜色字面量不动，深色照旧走内联色）。
+        mode === 'err' && err ? h('div', { className: 'dsws-detail-err', style: { padding: '8px 10px', background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.25)', borderRadius: 6, fontSize: 11, color: '#f87171', display: 'flex', flexDirection: 'column', gap: 6 } }, [
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } }, [
             Ic({ n: 'alert', size: 11 }),
             h('span', { style: { wordBreak: 'break-word' } }, errSayOf(err)),
             errKindOf(err) ? h('span', { style: { fontSize: 10, padding: '0 6px', border: '1px solid rgba(248,113,113,.45)', borderRadius: 10, flex: 'none' } }, errKindOf(err)) : null,
             h('span', { style: { flex: 1 } }),
-            h('button', { className: 'dsws-btn', onClick: doRetry, style: { padding: '1px 6px', fontSize: 11 } }, '重试'),
-            !detail && snapIssue ? h('span', { style: { fontSize: 10, color: '#f59e0b' } }, '（显示快照降级）') : null,
+            // 本次界面反馈需求：顶部错误横幅的「重试」与详情页错误态的「重试」会出现在同一屏，
+            //   两处定位串必须不同，否则日志分不出是哪一颗被点了。
+            h('button', { className: 'dsws-btn dsws-hov', 'data-press': 'button', 'data-log': 'detail.err.retry.banner', onClick: doRetry, style: { padding: '1px 6px', fontSize: 11 } }, '重试'),
+            // #1379 收口：这句「显示快照降级」也压在 8% 红底上（原色是写死的警告橙，只有约 2:1），同样挂类名走浅色层。
+            !detail && snapIssue ? h('span', { className: 'dsws-detail-err-degraded', style: { fontSize: 10, color: '#f59e0b' } }, '（显示快照降级）') : null,
           ]),
           errRawBlockOf(err),
         ]) : null,
         // header
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 2 } }, [
           h('span', { className: 'dsws-idnum', style: { color: actColor, borderColor: actColor, flex: 'none' } }, '#' + issueNumber),
-          h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullTitle')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, title)]) }, h('span', { className: 'dsws-tt-wrap', style: { flex: 1, fontSize: 14, fontWeight: 600 } }, title)),
+          h(Tip, { className: 'dsws-tip', content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullTitle')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, title)]) }, h('span', { className: 'dsws-tt-wrap', style: { flex: 1, fontSize: 14, fontWeight: 600 } }, title)),
           h('span', { className: 'dsws-chip', style: { fontSize: 10, background: isOpen ? 'rgba(63,185,80,.15)' : 'rgba(139,148,158,.15)', color: stateColor, border: '1px solid ' + stateColor, flex: 'none' } }, [Ic({ n: isOpen ? 'dot' : 'check', size: 9 }), h('span', { style: { marginLeft: 3 } }, stateLabel)]),
         ]),
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' } }, [
@@ -377,10 +390,10 @@ export const IssueDetail = function (props: any): any {
           (!isOpen && src.closedAt) ? h('span', { style:{ fontSize:10, color:'#8b8b95' } }, '· 关闭 ' + String(src.closedAt).slice(0,10)) : null,
         ]),
         parentMap ? h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'rgba(188,140,255,.06)', border: '1px solid rgba(188,140,255,.2)', borderRadius: 6, fontSize: 11 } }, [
-          Ic({ n: 'map', size: 11, color: '#c084fc' }),
+          Ic({ n: 'map', size: 11, color: (typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '' }),
           h('span', { style: { color: 'var(--dsw-alias-label-secondary,#a1a1aa)' } }, '属于'),
           // T4 #554：所属地图链接压栈进下一层（保留返回路径，不断掉上一级）。
-          h('a', { href: '#', onClick: function (e: any) { e.preventDefault(); pushNav(st, 'map', parentMap.number, effortOf(parentMap)) }, style: { color: '#c084fc', textDecoration: 'underline', fontWeight: 600 } }, '#' + parentMap.number + ' ' + parentMap.title),
+          h('a', { href: '#', className: 'dsws-hov', 'data-press': 'row', 'data-log': 'issue.parent.' + parentMap.number, onClick: function (e: any) { e.preventDefault(); pushNav(st, 'map', parentMap.number, effortOf(parentMap)) }, style: { color: (typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '', textDecoration: 'underline', fontWeight: 600, display: 'inline-block', borderRadius: 3 } }, '#' + parentMap.number + ' ' + parentMap.title),
         ]) : null,
         // body
         h('div', { style: { padding: '8px 0', borderTop: '1px solid var(--dsw-alias-border-l1,#2a2d35)', borderBottom: '1px solid var(--dsw-alias-border-l1,#2a2d35)' } }, [
@@ -392,11 +405,11 @@ export const IssueDetail = function (props: any): any {
           h('div', { style: { fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', marginBottom: 6 } }, '子票 ' + subTotal + (subNodes.length ? '' : '（无加载）')),
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } }, subNodes.map(function (s: any) {
             const sc = s.state === 'CLOSED' ? '#3fb950' : '#8b8b95'
-            // T4 整改 #554：子票按上面 enterSubDetail 分流（有标签按标签，无标签按快照找图）。
-            return h('div', { key: idOfParts((s.effortId!==undefined&&s.effortId!==null)?s.effortId:issueEffort, s.number), className: 'dsws-aggrow', tabIndex: 0, role: 'button', 'aria-label': '#' + s.number + ' ' + (s.title || ''), onClick: function () { enterSubDetail(s) }, onKeyDown: function (e: any) { if (!e || e.target !== e.currentTarget) return; const k = e && e.key; if (k === 'Enter' || k === ' ') { try { if (e.preventDefault) e.preventDefault() } catch (_) {} try { if (e.currentTarget) e.currentTarget.click() } catch (_) {} } }, style: { cursor: 'pointer', padding: '6px 8px' } }, [
+            // T4 整改 #554：子票走 views/subIssueRouting.ts 的 enterSubDetail 分流（有标签按标签，无标签按快照找图）。
+            return h('div', { key: idOfParts((s.effortId!==undefined&&s.effortId!==null)?s.effortId:issueEffort, s.number), className: 'dsws-aggrow', tabIndex: 0, role: 'button', 'aria-label': '#' + s.number + ' ' + (s.title || ''), 'data-press': 'row', 'data-log': 'issue.sub.' + s.number, onClick: function () { enterSubDetail(st, s, issueEffort) }, onKeyDown: function (e: any) { if (!e || e.target !== e.currentTarget) return; const k = e && e.key; if (k === 'Enter' || k === ' ') { try { if (e.preventDefault) e.preventDefault() } catch (_) {} try { if (e.currentTarget) e.currentTarget.click() } catch (_) {} } }, style: { cursor: 'pointer', padding: '6px 8px' } }, [
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
                 h('span', { className: 'dsws-idnum', style: { color: sc, borderColor: sc, fontSize: 11 } }, '#' + s.number),
-                h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullTitle')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, s.title)]) }, h('span', { className: 'dsws-tt-wrap', style: { flex: 1, fontSize: 12 } }, s.title)),
+                h(Tip, { className: 'dsws-tip', content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullTitle')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, s.title)]) }, h('span', { className: 'dsws-tt-wrap', style: { flex: 1, fontSize: 12 } }, s.title)),
                 h('span', { className: 'dsws-chip', style: { fontSize: 10, background: s.state === 'CLOSED' ? 'rgba(63,185,80,.12)' : 'rgba(139,148,158,.12)', color: sc, border: '1px solid ' + sc } }, s.state === 'CLOSED' ? '已关闭' : 'Open'),
               ])
             ])
@@ -406,12 +419,14 @@ export const IssueDetail = function (props: any): any {
         blockedNodes.length ? h('div', { style: { padding: '6px 0' } }, [
           h('div', { style: { fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', marginBottom: 6 } }, tr('detail.blockedPrefix') + blockedNodes.length),
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } }, blockedNodes.map(function (b: any) {
-            // T4 整改 #554：阻塞票同样按 enterSubDetail 分流（无标签时按快照找图）。
-            return h('div', { key: idOfParts((b.effortId!==undefined&&b.effortId!==null)?b.effortId:issueEffort, b.number), className: 'dsws-aggrow', tabIndex: 0, role: 'button', 'aria-label': '#' + b.number + ' ' + (b.title || ''), onClick: function () { enterSubDetail(b) }, onKeyDown: function (e: any) { if (!e || e.target !== e.currentTarget) return; const k = e && e.key; if (k === 'Enter' || k === ' ') { try { if (e.preventDefault) e.preventDefault() } catch (_) {} try { if (e.currentTarget) e.currentTarget.click() } catch (_) {} } }, style: { cursor: 'pointer', padding: '6px 8px' } }, [
+            // T4 整改 #554：阻塞票同样走 enterSubDetail 分流（无标签时按快照找图）。
+            return h('div', { key: idOfParts((b.effortId!==undefined&&b.effortId!==null)?b.effortId:issueEffort, b.number), className: 'dsws-aggrow', tabIndex: 0, role: 'button', 'aria-label': '#' + b.number + ' ' + (b.title || ''), 'data-press': 'row', 'data-log': 'issue.blocked.' + b.number, onClick: function () { enterSubDetail(st, b, issueEffort) }, onKeyDown: function (e: any) { if (!e || e.target !== e.currentTarget) return; const k = e && e.key; if (k === 'Enter' || k === ' ') { try { if (e.preventDefault) e.preventDefault() } catch (_) {} try { if (e.currentTarget) e.currentTarget.click() } catch (_) {} } }, style: { cursor: 'pointer', padding: '6px 8px' } }, [
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
-                Ic({ n: 'lock', size: 10, color: '#f0883e' }),
-                h('span', { className: 'dsws-idnum', style: { color: '#f0883e', borderColor: '#f0883e', fontSize: 11 } }, '#' + b.number),
-                h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullTitle')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, b.title || ('#' + b.number))]) }, h('span', { style: { flex: 1, fontSize: 12 } }, b.title || ('#' + b.number))),
+                // #1286：被阻塞统一红 #f87171（与地图详情页、列表行同一个红；这个红在本仓原本专指
+                //   错误与失败，这里被重载为「被阻塞」——读代码时别当成同一个语义）
+                Ic({ n: 'lock', size: 10, color: '#f87171' }),
+                h('span', { className: 'dsws-idnum', style: { color: '#f87171', borderColor: '#f87171', fontSize: 11 } }, '#' + b.number),
+                h(Tip, { className: 'dsws-tip', content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullTitle')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, b.title || ('#' + b.number))]) }, h('span', { style: { flex: 1, fontSize: 12 } }, b.title || ('#' + b.number))),
               ])
             ])
           })),

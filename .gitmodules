@@ -2,12 +2,6 @@
 	path = deepseek-harness
 	url = https://github.com/deepseek-ai/deepseek-harness.git
 	branch = master
-[submodule "vendor/SoL-Pi"]
-	path = vendor/SoL-Pi
-	url = https://github.com/NVlabs/SoL-Pi.git
-[submodule "vendor/ZCode"]
-	path = vendor/ZCode
-	url = https://github.com/zai-org/ZCode.git
 [submodule "vendor/dsh-mattpocock-skills-deck"]
 	path = vendor/dsh-mattpocock-skills-deck
 	url = https://github.com/FeatherHunter/dsh-mattpocock-skills-deck.git

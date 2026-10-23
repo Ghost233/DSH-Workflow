@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { transformSync } from 'esbuild'
-import { stripTimeConfigRefs } from '../scripts/lib/transpile-unit.mjs'
+import { stripTimeConfigRefs } from '../scripts/lib/transpile-unit.mts'
 
 function clientModule(path, globals = {}) {
   const source = stripTimeConfigRefs(readFileSync(new URL(`../src/client/${path}`, import.meta.url), 'utf8'))
@@ -85,8 +85,9 @@ test('provider failure offers retry while an explicitly missing document stays m
 })
 
 test('the derived update entry cannot mount the npm updater', () => {
-  const source = readFileSync(new URL('../src/client/views/UpdateEntryHost.js', import.meta.url), 'utf8')
-  const result = vm.runInNewContext(source + '\nUpdateEntryHost()', {
+  const source = readFileSync(new URL('../src/client/views/UpdateEntryHost.ts', import.meta.url), 'utf8')
+  const { code } = transformSync(source, { loader: 'ts', format: 'iife', globalName: 'workflowUpdater' })
+  const result = vm.runInNewContext(code + '\nworkflowUpdater.UpdateEntryHost()', {
     get React() { assert.fail('the disabled updater must not mount a component') },
     get __DshUpdateEntry() { assert.fail('the disabled updater must not load the npm update entry') },
   })

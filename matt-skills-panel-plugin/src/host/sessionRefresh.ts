@@ -3,20 +3,20 @@
 // 接线：由 index.ts 动态 import 加载；早选判据由 index 从启停模块转供给；本文件不引用其他新文件。
 // #652 改动：入口 cwd 由「原样入参」改成与 wf.snapshot 同一把规整钥匙（含工作区根），两条路的宿主单槽快照才同桶。
 // 2026-09-24（真机反馈「读不到处理记录」从来不消失）：本文件从前**自己手写四份信封字面量**，
-//   wf.snapshot 有的 setupLayout / fallback / fallbackAt / refresh / 处理链读数它一概没有——
+//   wf.snapshot 有的 setupLayout / fallback / fallbackAt / refresh / 工作路线读数它一概没有——
 //   界面是 `force ? wf.refresh : wf.snapshot`，回来都装进同一个 st.snapshot，于是强制刷新一次就永久显示读不到。
 //   现在信封与「挂读数」那一步都改用接线处传进来的 snapshotEnvelope（与 wf.snapshot 同一个实例、同一份 buildSnap），
 //   两条路的字段集合由构造保证相等；tests/verify-reply-envelope-parity.js 每次运行都比一遍。
 // #1139：界面描述（发给界面的那份后端数据）的投影只有一处实现，本文件不再自己挑字段。
 import { projectUiDescription } from '../tracker/ui-description.js'
 // 有效期住中央 YAML，调时间改 config/ttl.yaml。
-import { SNAPSHOT_TTL_MS } from '../shared/time-config/values.js'
+import { SNAPSHOT_TTL_MS } from '../shared/time-config/src/values.js'
 
 // ===== 类型契约（#1155）：下面这些声明只给类型检查看，编译后一行都不剩，运行时不引用任何名字 =====
 // 为什么都收在文件顶部：本文件的依赖全部由接线处 index.js 注入（那份是 JS，不检查编译错误），
 // 所以每份类型只描述「本文件实际读写的字段」，字段名与注入方一一对应；多传的字段这里不管。
 // 信封也在这里就地声明形状（而不是 import type 同层文件）：本文件不静态引用同层文件（同层互引门禁），
-// 形状照 snapshotEnvelope.ts 的 buildSnap / withChainReadout 两口写，那边改签名这里要跟着改。
+// 形状照 snapshotEnvelope.ts 的 buildSnap / withWorkRouteTable 两口写，那边改签名这里要跟着改。
 type Fail = { ok: false; error: string }
 type Args = { cwd?: unknown; backendId?: unknown; lang?: unknown; ifNoneMatch?: string | null; version?: string | null; [k: string]: unknown }
 // 标签的 name 是它的身份（后端给的每个标签都有名字）；读的地方还有 `l && l.name` 的兜底，那道兜底不动。
@@ -44,7 +44,7 @@ type Composer = { composeSnapshot(id: string, repo: RepoRef, ctx: unknown, o: Co
 type Levels = { byNumber?: Record<string, unknown>; byKey?: Record<string, unknown>; [k: string]: unknown }
 type Deck = { counts?: { open?: unknown; closed?: unknown } | null; partial?: boolean; [k: string]: unknown }
 // 信封（与 wf.snapshot 同一个实例）：这里只声明本文件用到的两口。
-type Envelope = { buildSnap(o: SnapInput): SnapOut; withChainReadout<T>(reply: T): T }
+type Envelope = { buildSnap(o: SnapInput): SnapOut; withWorkRouteTable<T>(reply: T, args?: Args): Promise<T> }
 type SnapInput = { repo?: unknown; repoRoot?: unknown; workspaceRoot?: unknown; maps?: unknown[]; issues?: unknown[]; thinTickets?: unknown[]; labels?: unknown[]; repository?: unknown; backendModules?: unknown; selection?: unknown; viewer?: unknown; viewerLogin?: unknown; deck?: unknown }
 // 组装出来的快照：本文件读 fromCache / generatedMs / deck / maps / issues / labels，落盘时整份交回去。
 type SnapOut = { [k: string]: unknown; fromCache?: boolean; generatedMs?: number; maps?: unknown[]; issues?: unknown[]; labels?: unknown[]; deck?: Deck | null }
@@ -65,20 +65,25 @@ export function createSessionRefresh(deps: RefreshDeps) {
   // 共用的那份信封（接线处 index.js 传进来，与 wf.snapshot 同一个实例）。
   // 没传就没法组装出与 wf.snapshot 同形的回包 —— 那种情况下宁可如实回一次失败，
   // 也不退回本文件自己拼一份（那正是这次故障的来路：两份信封各自漂）。
-  const env: Envelope | null = (envelope && typeof envelope.buildSnap === 'function' && typeof envelope.withChainReadout === 'function') ? envelope : null
+  const env: Envelope | null = (envelope && typeof envelope.buildSnap === 'function' && typeof envelope.withWorkRouteTable === 'function') ? envelope : null
   // 信封没接上就整条路如实失败（见上面三行），所以真去组装的那两只函数只会在 env 非空时被调用；
   // 但它们是各自独立的函数，收窄不会翻过函数边界，下面四处 env!.buildSnap 就是把这件事写出来。
   // #491 房外埋点 helpers：hash8 只记散列；脏回执与组装返回均为低频常驻，直接落盘（库体内兜底）。
   function hash8(s: unknown) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
   // #689：snapshot.built 多了三个字段（open / closed 是后端计数给的真值、拿不到记 -1；partial 说这份行数据全不全）—— 加在既有事件里不新增一条（每次重建都会走到这里），字段表见 research/489-appendix.md 第 1 章。
-  async function adoptSnapLog(snap: SnapOut, c: string) { try { if (logCtx && snap && snap.fromCache !== true) { const _d: Deck = (snap.deck && typeof snap.deck === 'object') ? snap.deck : {}; const _ct = (_d.counts && typeof _d.counts === 'object') ? _d.counts : null; logCtx.fire('info', 'snapshot.built', { maps: (snap.maps || []).length, issues: (snap.issues || []).length, labels: (snap.labels || []).length, open: _ct ? _ct.open : -1, closed: _ct ? _ct.closed : -1, partial: _d.partial === true, latencyMs: Date.now() - (snap.generatedMs || Date.now()) }) } } catch (e) {} return adoptSnapshot(snap, c) as SnapOut }
+  // #1295：再加一个 specs（这一轮认出几张「实施地图」= 规格容器；maps 是容器总数，maps 减 specs 即探索地图张数）。
+  //   老直连快照路（src/host/snapshotBuild.ts）只认 wayfinder:map 标签、不产规格容器，那条路 specs 恒 0 属正常。
+  //   这里与 src/host/snapshotEnvelope.ts 的 adoptSnapLog 是同一个事件的两份实现，字段必须一起改，否则
+  //   「快照路」与「强制刷新路」记出来的字段不一样，拿日志对账时会被误导。
+  async function adoptSnapLog(snap: SnapOut, c: string) { try { if (logCtx && snap && snap.fromCache !== true) { const _d: Deck = (snap.deck && typeof snap.deck === 'object') ? snap.deck : {}; const _ct = (_d.counts && typeof _d.counts === 'object') ? _d.counts : null; logCtx.fire('info', 'snapshot.built', { maps: (snap.maps || []).length, specs: ((snap.maps || []) as any[]).filter(function (m: any) { return !!m && m.type === 'spec' }).length, issues: (snap.issues || []).length, labels: (snap.labels || []).length, open: _ct ? _ct.open : -1, closed: _ct ? _ct.closed : -1, partial: _d.partial === true, latencyMs: Date.now() - (snap.generatedMs || Date.now()) }) } } catch (e) {} return adoptSnapshot(snap, c) as SnapOut }
   // #589 去重加载器（D7 禁止静态 import，动态接线；与 _dispatchMetaP 同模式）
   let _dedupeP: Promise<typeof import('../shared/tracker/list-dedupe.js')> | null = null
   function _dedupe() { if (!_dedupeP) _dedupeP = import('../shared/tracker/list-dedupe.js'); return _dedupeP }
-  /** 回包交给界面之前，把「每个会话在处理哪些票」的读数挂上（与 wf.snapshot 同一个挂载口）。 */
+  /** 回包交给界面之前，把「跨会话在办表」的读数挂上（与 wf.snapshot 同一个挂载口；#1271 起唯一的读数口）。 */
   async function handleRefresh(args: Args) {
     if (!env) return { ok: false, error: 'snapshot-envelope-not-wired' }
-    return env.withChainReadout(await refreshOf(args))
+    const reply: unknown = await refreshOf(args)
+    return await env.withWorkRouteTable(reply, args)
   }
   // #729 一次性方案：强制刷新也进与快照路共用的在途表（./snapshotInflight.js；D7 禁止静态 import，动态接线）。
   let _sharedInflightP: Promise<typeof import('./snapshotInflight.js')> | null = null

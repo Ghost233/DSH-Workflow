@@ -5,14 +5,14 @@
 // 什么约定不能改：
 //   1. 两件事都由已有事件触发，不起任何自续定时器：首轮摘要只调一次，失败永不补调，未遂可再试。
 //   2. 全文一律不记原文、不记标题、不记错误原文，只记新事件 naming.summary 的散列与结果枚举。
-//   3. 相对导入一律保留 .js 后缀，运行时由 scripts/ts-hook.mjs 改指同名 .ts，本文件不改说明符。
+//   3. 相对导入一律保留 .js 后缀，运行时由 scripts/ts-hook.mts 改指同名 .ts，本文件不改说明符。
 //   4. 只写可剥离类型：类型一律经 import type 引入或就地声明，不新增任何运行时边。
 //   5. 住在平台装配扇出区、不引用任何宿主层文件的格局不变：只引用共享层，状态走命名守护公开方法。
 import { hash8 } from '../../shared/refresh-workspace-key.js'
 import { NAMING_STAGES } from '../../shared/naming-tracking.js'
 // 摘要超时住中央 YAML（config/timeouts.yaml 的 namingSummaryTimeoutMs 键）：这里直接引用中央常量，调时间改 YAML。
 // 路径走域构建产物写法，值由 tests/verify-time-config.ts 看守一致。
-import { NAMING_SUMMARY_TIMEOUT_MS as SUMMARY_TIMEOUT_MS } from '../../shared/time-config/values.js'
+import { NAMING_SUMMARY_TIMEOUT_MS as SUMMARY_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
 import { textOfMessage, pickFirstExchange, latestRoute, cleanSummaryText } from './namingSummaryText.js'
 
 // 纯文本四件事已搬至 ./namingSummaryText.js（#1255）：取文本、选首轮、取路由、洗标题都是纯的，

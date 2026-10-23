@@ -1,15 +1,15 @@
 /**
  * src/client/kernel/probe-snapshot.ts — 内核模块（#456 由 probe.js 拆出之颜色时间小函数、配置广播与快照加载）
  *
- * 为什么这份是真源：构建侧去掉行首 export 后拼回 src/client/index.js 的拼接标记处，
- * 与 ctx.js/seam 同模式，一源两物，src 零复制。同名 .js 是构建产物，改这里。
+ * 为什么这份是真源：构建侧去掉行首 export 后拼回 src/client/index.ts 的拼接标记处，
+ * 与 ctx.ts/seam 同模式，源码树里只有这一份真源。源码树里只有这一份真源，改这里就够。
  * 接口冻结清单见 docs/architecture/kernel-contract.md（G3 · #91 拍板）。
  *
  * 等待上限为什么住中央：快照等待时长由 config/ttl.yaml 的 snapWaitMs 统一管，
  * 调时间改中央 YAML，不要在这里改数字。本文件顶部有一行从中央时间参数单行真引用
  * （构建拼进闭包时由 stripTimeConfigRefs 整行删掉，名字由闭包里另一片提供；单行是硬要求，
  * 写成跨行构建会拒收）。除这一行之外，其余跨闭包名字一律只声明（declare），不做运行时引入。
- * 超时只结束这次等待，不判结果作废，迟到落地见 kernel/probe-select.js。
+ * 超时只结束这次等待，不判结果作废，迟到落地见 kernel/probe-select.ts。
  *
  * 反例：不要在这里加运行时 import；不要把未知当成否去推进状态机；
  * 不要在迟到与正常两路各写一份安装逻辑，分岔迟早长岔。
@@ -39,6 +39,7 @@ declare const _snapRequestKeyWas: any;
 declare const _installLateSnapshot: any;
 declare const _snapInstallBody: any;
 declare const askSelectionOnce: any;
+declare const adoptWorkRouteTableIfNewer: any;
 declare const touchProbeAt: any;
 declare const mergeSelection: any;
 declare const setCachedSetupLayout: any;
@@ -71,7 +72,7 @@ const dswsLogTrunc = function (s: any, n: number, field: any): string { try { co
 const dswsDedupWin: { n: number } = { n: 0 };
 // #707 拆出：颜色小函数（hexA / darken）、数据层增量差异 diffSnapshots、高亮清除 scheduleFlashClear
 //   都搬去了 kernel/probe-snapshot-helpers.js（本文件当时已 349 行、门禁上限 350，没有下脚的地方）。
-//   三样东西的行为一行没改，拼接顺序保证同一个闭包里前后可见；拼接标记在 src/client/index.js 里。
+//   三样东西的行为一行没改，拼接顺序保证同一个闭包里前后可见；拼接标记在 src/client/index.ts 里。
 // #727：这一趟取数里有三处与「子目录会话的第一帧」直接相关，判据与理由都在 kernel/probe-select.js
 //   （本文件贴着上限，所以那一段的文字放在那边）：
 //     ① 进工作区时补问一次 wf.selection（askSelectionOnce，本文件末尾那行接线）；
@@ -144,7 +145,9 @@ export const cacheFirstThenAttend = function (st: any, kind: any): any {
 };
 // 快照（#346：面板数据源；force 走 wf.refresh 全量重建；wf.snapshot 侧 5s 缓存）
 // #58 缓存优先：按 cwd 内存快照 + 空 cwd 同步，避免首开空 cwd 探路 miss 缓存导致 100-400ms 闪 loading
-export const loadSnapshot = function (st: any, force: any, silent: any): any {
+// 第四参 why（#1355）：本次强制刷新是因为手上缺本会话的工作路线表时传 'work-route-missing'，只落到常驻 #26 host.call 的 reason 格
+//   —— 成功那行与发起那行带，host.call.fail 的白名单里没有 reason，失败那行不带。
+export const loadSnapshot = function (st: any, force: any, silent: any, why: any): any {
   // #727（I2 的表达面）：这一趟取数还没回话之前，「这个工作区用哪个后端」是「还不知道」，不是「没有设置」
   //   —— 记在会话上，状态栏那条横幅据此改说「正在读取」（StatusBar 的 _selReading）。为什么放在最外层：
   //   在途复用那条早退（_snapReuseInFlight）之后就没有第二次登记的机会了，而它同样意味着「有取数正飞着」。
@@ -202,14 +205,14 @@ export const loadSnapshot = function (st: any, force: any, silent: any): any {
     // #669 第 6 件（ADR 20260921）：只有用户亲手选过的那条才当 hint 上报 —— 派生值不许冒充意图
     //   （宿主那边带 hint 就压过锚文件，见 store-prefs.js 的 userHintOf 与 ADR 的攻击 1）。
     const _hintBid: any = (typeof userHintOf === 'function') ? userHintOf(st.selection) : undefined;
-    const args: any = Object.assign({}, st.cwd ? { cwd: st.cwd, ifNoneMatch: ver, version: ver } : (ver ? { ifNoneMatch: ver, version: ver } : {}), _hintBid ? { backendId: _hintBid } : {});
+    const args: any = Object.assign({}, st.cwd ? { cwd: st.cwd, ifNoneMatch: ver, version: ver } : (ver ? { ifNoneMatch: ver, version: ver } : {}), st.sessionId ? { sessionId: st.sessionId } : {}, _hintBid ? { backendId: _hintBid } : {}); // #1082：带上会话 id，宿主才算得出「这一条是不是本会话」
     const _normKeyP: any = wsKeyOf(st.cwd || '');
     let _ctrl: any = null; try { _ctrl = typeof AbortController !== 'undefined' ? new AbortController() : { signal: { aborted: false }, abort(): void {} }; } catch (e) { _ctrl = { signal: { aborted: false }, abort(): void {} }; }
     let _timer: any = null;
     const callT0: number = Date.now();
     const callMethod: string = force ? 'wf.refresh' : 'wf.snapshot';
     // #653 日志纪律：发起这条跨边界调用前先记一行，与收到回包时那一行配成一对（按需级，先判开关）
-    try { if (isEnabled('debug')) log('debug', 'host.call', { method: callMethod, kind: force ? 'refresh' : 'snapshot', ok: true, latencyMs: 0 }); } catch (eL) {}
+    try { if (isEnabled('debug')) log('debug', 'host.call', { method: callMethod, kind: force ? 'refresh' : 'snapshot', ok: true, latencyMs: 0, reason: why ? String(why) : undefined }); } catch (eL) {}
     const _rawP: any = force ? host.call('wf.refresh', args) : host.call('wf.snapshot', args);
     // #1009 收口：只等上面那一条 30 秒。超时原文是固定串（散列 246ae7f1），不按等待时长拼。
     const _waitMs: number = SNAP_WAIT_MS;
@@ -217,7 +220,7 @@ export const loadSnapshot = function (st: any, force: any, silent: any): any {
     const p: any = Promise.race([_rawP, _timeoutP]).finally(function (): void { try { clearTimeout(_timer); } catch {} ; });
     // #669 第 5 件：登记这一次请求（序号 + 这次问的后端 + 在途键），发出去就记（判据见 kernel/probe-stale.js）。
     const _mine: any = _snapMarkRequest(st);
-    try { pendingSnapshotByCwd.set(_mine.pendKey, { promise: p, controller: _ctrl, force: !!force, backendId: _mine.reqBackend, seq: _mine.seq }); p.finally(function (): void { try { const cur: any = pendingSnapshotByCwd.get(_mine.pendKey); if (cur && cur.promise === p) pendingSnapshotByCwd.delete(_mine.pendKey); } catch {} }); } catch (e) {}
+    try { pendingSnapshotByCwd.set(_mine.pendKey, { promise: p, controller: _ctrl, force: !!force, backendId: _mine.reqBackend, seq: _mine.seq, sessionId: st.sessionId || '' }); p.finally(function (): void { try { const cur: any = pendingSnapshotByCwd.get(_mine.pendKey); if (cur && cur.promise === p) pendingSnapshotByCwd.delete(_mine.pendKey); } catch {} }); } catch (e) {}
     const _reqNorm: any = _normKeyP; // capture request cwd for H2 stale discard
     // #1009：死线只结束「这一次等待」，不判「这份结果作废」—— 已经发出去的请求，回来时只要还是这把键上
     //   最新的一次、后端没换过、工作区没真的换走，就把**整份**装上（#727 那版只补 selection 与仓库引用
@@ -230,7 +233,7 @@ export const loadSnapshot = function (st: any, force: any, silent: any): any {
       // _snapInstallState.handedOff 已退役：重复安装改按这次请求的 gaveUp/mine.done 判，不跨请求共享。
       _mine.done = true; // #1009：那道判据收窄到「**这一次**请求装过没有」—— 更早的请求装过，不挡这一份迟到结果落地
       try { if (snap && snap.workspaceRoot) rememberWorkspaceRoot(st.cwd, snap.workspaceRoot); } catch (eWr) {}
-      try { const okSnap: boolean = !!(snap && (snap.ok === true || snap.notModified === true || snap.status === 304)); const callKind: string = force ? 'refresh' : 'snapshot'; if (okSnap) log('info', 'host.call', { method: callMethod, latencyMs: Date.now() - callT0, ok: true, kind: callKind }); else log('warn', 'host.call.fail', { method: callMethod, kind: callKind, errorHash: dswsLogHash(dswsLogTrunc(String((snap && snap.error) || 'snapshot-failed'), 120, 'error')) }); } catch (eL) {}
+      try { const okSnap: boolean = !!(snap && (snap.ok === true || snap.notModified === true || snap.status === 304)); const callKind: string = force ? 'refresh' : 'snapshot'; if (okSnap) log('info', 'host.call', { method: callMethod, latencyMs: Date.now() - callT0, ok: true, kind: callKind, reason: why ? String(why) : undefined }); else log('warn', 'host.call.fail', { method: callMethod, kind: callKind, errorHash: dswsLogHash(dswsLogTrunc(String((snap && snap.error) || 'snapshot-failed'), 120, 'error')) }); } catch (eL) {}
       // #327 特性 A：对该工作区完成了一次检查（成功/304/串台落地均算——请求已真实发出并返回）→ 时间走针
       try { if (snap && (snap.ok === true || snap.notModified === true || snap.status === 304)) touchProbeAt(_normKeyP); } catch (ePA) {}
       // fix H2 stale discard — if 工作区根 switched during flight, drop stale fallback (gate flake guard)
@@ -257,6 +260,11 @@ export const loadSnapshot = function (st: any, force: any, silent: any): any {
       if (snap && (snap.notModified === true || snap.status === 304)) {
         // 304 zero emit per spec: version unchanged -> keep old table, no UI change
         st.snapLoading = false;
+        // #1355：版本没变（304）也可能带着本会话的工作路线读数 —— 「缺表补拉撞上内容一个字没变」正是这条路的现场。
+        // #1373：本地那份表「有、但是旧的」时也不能扔掉来者 —— report 只改账本不改版本号，
+        //   旧表不换的话胶囊永远是空的。什么算「更新」只收 work-route-own 那一个函数说了算。
+        //   表只挂到当前会话手上那份快照的浅拷贝上（不替换别的内容、不原地改），也不写按工作区共享的缓存（那边本来也会剥掉它）。
+        try { if (typeof adoptWorkRouteTableIfNewer === 'function') adoptWorkRouteTableIfNewer(st, snap) } catch (eWr304) {}
         // #683（F1 · ADR 的 R4）：304 也要合并权威选择 —— 「只换了后端、快照内容一个字没变」正是这条路的现场：版本号没变所以这里什么都不做，于是面板头与状态栏继续显示旧后端，而同屏的链与横幅（走 wf.detect）已经按新值答了。宿主这一版回包里带着 {selection, rev}，这里合并它。
         try { if (snap.selection && typeof mergeSelection === 'function') { if (mergeSelection(st, snap.selection)) emit(st); } } catch (eSel) {}
         try { if (snap.setupLayout && typeof setCachedSetupLayout === 'function') setCachedSetupLayout(st.cwd, snap.setupLayout); } catch (eSL) {} // #683（F1 · R6）：304 也回填记住的布局（版本号没变不代表布局没变）

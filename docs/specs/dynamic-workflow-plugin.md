@@ -1,13 +1,13 @@
 ---
 status: deferred
-updated: 2026-09-26
+updated: 2026-10-23
 ---
 
 # Dynamic Workflow 插件：暂缓实施的复刻计划
 
 ## 当前状态
 
-2026-09-26 用户决定先继续测试和使用 DSH 官方 `workflow`。本文件保存未来实施计划，**当前不实施、不构建、不注册、不启用新插件**；以下验收条目均为目标，不表示已经通过。`vendor/ZCode` 仅作为固定版本源码参照，已添加的 submodule 记录不使它进入日常启动或插件装配。恢复本计划时，先核对 ZCode 固定提交、DSH 版本与当前工作区状态，再依下面的验收合同实施。
+2026-09-26 用户决定先继续测试和使用 DSH 官方 `workflow`。本文件保存未来实施计划，**当前不实施、不构建、不注册、不启用新插件**；以下验收条目均为目标，不表示已经通过。2026-10-23 用户要求删除 ZCode submodule。下文保留原设计与固定提交的远端源码参照，不构成恢复依赖的授权。恢复本计划前需重新确认来源、交付方式和实施范围。
 
 ## 目标与参照
 
@@ -50,9 +50,9 @@ updated: 2026-09-26
 
 ## 固定源码入口
 
-- 脚本接口、编译和图分析：[facade](../../vendor/ZCode/apps/zcode-cli/packages/dynamic-workflow/src/facade/dts.ts)、[compiler](../../vendor/ZCode/apps/zcode-cli/packages/dynamic-workflow/src/compiler/compile.ts)、[analysis](../../vendor/ZCode/apps/zcode-cli/packages/dynamic-workflow/src/analysis/analyze.ts)。
-- 调度、journal 回放和恢复：[engine](../../vendor/ZCode/apps/zcode-cli/packages/dynamic-workflow/src/engine/engine.ts)、[scheduler](../../vendor/ZCode/apps/zcode-cli/packages/dynamic-workflow/src/engine/scheduler.ts)、[world 节点](../../vendor/ZCode/apps/zcode-cli/packages/dynamic-workflow/src/engine/engine-world.ts)。
-- 子进程与通信：[runtime harness](../../vendor/ZCode/apps/zcode-cli/packages/dynamic-workflow-runtime/src/harness.ts)、[child VM](../../vendor/ZCode/apps/zcode-cli/packages/dynamic-workflow-runtime/src/child-source.ts)、[NDJSON 协议](../../vendor/ZCode/apps/zcode-cli/packages/dynamic-workflow-runtime/src/protocol.ts)。
-- ZCode 应用接线参照：[run service](../../vendor/ZCode/apps/zcode-cli/packages/bootstrap/src/app/dynamic-workflow-run-service.ts)、[actor 工具](../../vendor/ZCode/apps/zcode-cli/packages/bootstrap/src/app/workflow-actor-tools.ts)、[SQLite journal](../../vendor/ZCode/apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/dwf-journal.ts)。这些文件是参照，不直接引入 DSH 插件。
-- UI 参照：[时间线模型](../../vendor/ZCode/packages/ui/src/components/workflow-timeline/timeline-model.ts)、[时间线组件](../../vendor/ZCode/packages/ui/src/components/workflow-timeline/WorkflowTimeline.tsx)、[运行详情](../../vendor/ZCode/packages/ui/src/app-shell/WorkflowRunSidePane.tsx)、[保存中枢](../../vendor/ZCode/packages/ui/src/settings/saved-workflows/SavedWorkflowsSection.tsx)。
+- 脚本接口、编译和图分析：[facade](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/dynamic-workflow/src/facade/dts.ts)、[compiler](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/dynamic-workflow/src/compiler/compile.ts)、[analysis](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/dynamic-workflow/src/analysis/analyze.ts)。
+- 调度、journal 回放和恢复：[engine](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/dynamic-workflow/src/engine/engine.ts)、[scheduler](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/dynamic-workflow/src/engine/scheduler.ts)、[world 节点](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/dynamic-workflow/src/engine/engine-world.ts)。
+- 子进程与通信：[runtime harness](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/dynamic-workflow-runtime/src/harness.ts)、[child VM](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/dynamic-workflow-runtime/src/child-source.ts)、[NDJSON 协议](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/dynamic-workflow-runtime/src/protocol.ts)。
+- ZCode 应用接线参照：[run service](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/bootstrap/src/app/dynamic-workflow-run-service.ts)、[actor 工具](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/bootstrap/src/app/workflow-actor-tools.ts)、[SQLite journal](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/dwf-journal.ts)。这些文件是参照，不直接引入 DSH 插件。
+- UI 参照：[时间线模型](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/packages/ui/src/components/workflow-timeline/timeline-model.ts)、[时间线组件](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/packages/ui/src/components/workflow-timeline/WorkflowTimeline.tsx)、[运行详情](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/packages/ui/src/app-shell/WorkflowRunSidePane.tsx)、[保存中枢](https://github.com/zai-org/ZCode/blob/29628c9acdb81b703bbd4080c207a0e7ce5e276e/packages/ui/src/settings/saved-workflows/SavedWorkflowsSection.tsx)。
 - DSH 接线参照：[官方 workflow 工具](../../deepseek-harness/packages/workflow/tool-workflow/src/index.ts)、[Web 页面插槽](../../deepseek-harness/packages/client/ui-layout/src/client/index.ts)、[官方页面示例](../../deepseek-harness/packages/client/ui-schedule/src/client/index.ts)。

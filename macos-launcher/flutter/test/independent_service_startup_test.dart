@@ -196,19 +196,76 @@ void main() {
           final managerPid =
               (jsonDecode(await manager.readAsString()) as Map)['pid'] as int;
           Process.killPid(managerPid, ProcessSignal.sigterm);
-          for (
-            var attempt = 0;
-            attempt < 300 && await manager.exists();
-            attempt++
-          ) {
-            await Future<void>.delayed(const Duration(milliseconds: 50));
-          }
-          expect(
-            await manager.exists(),
-            false,
-            reason: 'Owned manager and Host must settle before profile cleanup',
-          );
         }
+        final uid = (await Process.run('/usr/bin/id', [
+          '-u',
+        ])).stdout.toString().trim();
+        final fixturePath = (await root.resolveSymbolicLinks()).replaceFirst(
+          '/private/var/',
+          '/var/',
+        );
+        final fixtureArgument = RegExp(
+          r'(^|\s|=)' + RegExp.escape(fixturePath) + r'(/|\s|$)',
+        );
+        final elapsed = Stopwatch()..start();
+        final signaled = <String>{};
+        var ownedPids = <String>[];
+        while (elapsed.elapsed < const Duration(seconds: 15)) {
+          final processes = await Process.run('/bin/ps', [
+            '-ww',
+            '-axo',
+            'uid=,pid=,lstart=,command=',
+          ]);
+          expect(processes.exitCode, 0, reason: '${processes.stderr}');
+          final owned = processes.stdout
+              .toString()
+              .split('\n')
+              .where((line) {
+                final fields = line.trim().split(RegExp(r'\s+'));
+                return fields.length > 7 &&
+                    fields.first == uid &&
+                    fixtureArgument.hasMatch(
+                      line.replaceAll('/private/var/', '/var/'),
+                    );
+              })
+              .map((line) => line.trim())
+              .toList();
+          ownedPids = owned
+              .map((line) => line.split(RegExp(r'\s+'))[1])
+              .toList();
+          if (!await manager.exists()) {
+            // Host shutdown is complete. Recheck each remaining fixture child's
+            // UID, start time and complete command before requesting its exit.
+            for (final identity in owned) {
+              final childPid = identity.split(RegExp(r'\s+'))[1];
+              if (signaled.contains(childPid)) continue;
+              final current = await Process.run('/bin/ps', [
+                '-ww',
+                '-p',
+                childPid,
+                '-o',
+                'uid=,pid=,lstart=,command=',
+              ]);
+              if (current.exitCode == 0 &&
+                  current.stdout.toString().trim() == identity) {
+                Process.killPid(int.parse(childPid), ProcessSignal.sigterm);
+                signaled.add(childPid);
+              }
+            }
+            if (ownedPids.isEmpty) break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        expect(
+          await manager.exists(),
+          false,
+          reason: 'Owned manager and Host must settle before profile cleanup',
+        );
+        expect(
+          ownedPids,
+          isEmpty,
+          reason: 'Fixture processes must exit before deleting their profile',
+        );
         await root.delete(recursive: true);
       }
     },

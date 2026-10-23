@@ -8,7 +8,7 @@
 // 招牌（本文件交出去的名字）与后厨（装配拼出的实现表）必须同源：
 // 名字顺序的真源在装配清单与行数组（实际九个），注释里的“七个”是旧话，已按 #1030 Q1 改齐。
 // 时间数字不住这里：只引用纯数据的中央时间参数目录，不引用别的逻辑层。
-import { TOOL_TIMEOUT_MS, REGISTER_RETRY_WAIT_MS } from '../../shared/time-config/values.js';
+import { TOOL_TIMEOUT_MS, REGISTER_RETRY_WAIT_MS } from '../../shared/time-config/src/values.js';
 
 /** 未知形状的对象（参数模式、定义、表都先按这形接住，守卫函数再逐格验，不猜）。 */
 type UnknownRecord = Record<string, unknown>;
@@ -158,18 +158,33 @@ function projectDetail(v: unknown, budget: { left: number }, depth: number): unk
 }
 
 // 挑出值得交给模型的那几格：data 是各工具的明细；items 装着建票与补边逐条的落点证据
-// （deck_map_link 的说明承诺「如实回报这条边落在哪一列」就靠它）；readBack 是写后回读核对，
-// 但 deck_issue_patch 已经把同一份放进 data.ticket（deckIssuePatch.js:159/161），两处都送会让
-// 同一份内容进历史两遍、白吃预算，所以认得出同一份就只送一次。顶层的 cost / touched 是运行
-// 元数据（touched 恒为空数组）不送；deck_context 的 data 里那几格 workspace / backend / repo /
+// （deck_map_link 的说明承诺「如实回报这条边落在哪一列」就靠它）；readBack 是写后回读核对。
+// deck_issue_patch 曾经把同一份整票同时放进 data.ticket 与 readBack（#1273 已改成顶层只放
+// 核对摘要 {key, state, updatedAt}），这里仍按内容认一次重：别的工具直连时两格仍可能是同一个对象，
+// 将来别的工具再把同一份放进两格也不会白吃两遍预算。顶层的 cost / touched 是运行元数据
+// （touched 恒为空数组）不送；deck_context 的 data 里那几格 workspace / backend / repo /
 // quota / howto 本来就是它要给 AI 看的内容，照送不误。
+/**
+ * 认「同一份内容」：先比引用（直连时就是同一个对象），再比逐字序列化。
+ * 为什么不能只比引用（#1303）：生产路径上 deck 工具由宿主代执行，结果过了一次 RPC 的
+ * 结构化克隆，data.ticket 与 readBack 由同一个对象变成两份内容相同的副本，引用永远不等；
+ * 只比引用会把同一张票面投影两遍（实测一份 2,474 字符）。序列化失败（循环引用等）就当不同。
+ * #1273 已把源头收口（顶层 readBack 只放核对摘要），这一层仍留作护栏：直连时两格同引用、
+ * 以后别的工具把同一份放两格，都不会重复投影。代价是每个候选一次序列化（实测 1000 次约 8ms）。
+ */
+function sameRenderedValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (a === null || b === null || a === undefined || b === undefined) return false
+  if (typeof a !== 'object' || typeof b !== 'object') return false
+  try { return JSON.stringify(a) === JSON.stringify(b) } catch (e) { return false }
+}
 function detailBlock(v: unknown): string {
   const source = v as UnknownRecord;
   const pick: UnknownRecord = {}
   if (source.data !== undefined && source.data !== null) pick.data = source.data
   if (Array.isArray(source.items) && source.items.length) pick.items = source.items
   const d = pick.data as UnknownRecord | null | undefined;
-  const sameTicket = d !== null && typeof d === 'object' && !Array.isArray(d) && d !== undefined && d.ticket === source.readBack
+  const sameTicket = d !== null && typeof d === 'object' && !Array.isArray(d) && d !== undefined && sameRenderedValue(d.ticket, source.readBack)
   if (source.readBack !== undefined && source.readBack !== null && !sameTicket) pick.readBack = source.readBack
   if (typeof source.reason === 'string' && source.reason) pick.reason = source.reason
   if (!Object.keys(pick).length) return ''

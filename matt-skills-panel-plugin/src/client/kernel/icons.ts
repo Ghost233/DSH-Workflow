@@ -1,9 +1,9 @@
 /**
- * src/client/kernel/icons.js — 内核模块（阶段 2 内核迁移 · #96 T3）
+ * src/client/kernel/icons.ts — 内核模块（阶段 2 内核迁移 · #96 T3）
  *
- * 契约：本文件为模块真源（ESM 导出）；scripts/build.mjs 在构建时去掉每行行首
- * export 关键字，把声明体文本拼回 src/client/index.js 的拼接标记处（apply 闭包内
- * 原位），与 ctx.js/seam 同模式，一源两物，src 零复制。
+ * 契约：本文件为模块真源（ESM 导出）；scripts/build.mts 在构建时去掉每行行首
+ * export 关键字，把声明体文本拼回 src/client/index.ts 的拼接标记处（apply 闭包内
+ * 原位），与 ctx.ts/seam 同模式，源码树里只有这一份真源。
  * 接口冻结清单见 docs/architecture/kernel-contract.md（G3 · #91 拍板）。
  */
 /*
@@ -64,6 +64,13 @@ declare const h: any;
         case 'chat': return h('svg', common, [h('path', { d: 'M21 15a2 2 0 01-2 2H8l-5 4V5a2 2 0 012-2h14a2 2 0 012 2z' })])
         case 'clipboard': return h('svg', common, [h('rect', { x: 5, y: 4, width: 14, height: 16, rx: 2 }), h('path', { d: 'M9 2h6v4H9z' }), h('path', { d: 'M9 11h6M9 15h4' })])
         case 'list': return h('svg', common, [h('path', { d: 'M8 6h12M8 12h12M8 18h12' }), h('circle', { cx: 4, cy: 6, r: 0.8, fill: 'currentColor', stroke: 'none' }), h('circle', { cx: 4, cy: 12, r: 0.8, fill: 'currentColor', stroke: 'none' }), h('circle', { cx: 4, cy: 18, r: 0.8, fill: 'currentColor', stroke: 'none' })])
+        // #1285：跨会话在办表的入口图标 —— 一张表（表头行、左边一列、右边两行字），
+        //   与通用集同一套写法（24 的 viewBox、currentColor、描边 1.8）。
+        case 'workroute': return h('svg', common, [h('rect', { x: 3, y: 4, width: 18, height: 16, rx: 2 }), h('path', { d: 'M3 9h18' }), h('path', { d: 'M9 9v11' }), h('path', { d: 'M12 12.5h6' }), h('path', { d: 'M12 16h4' })])
+        // #1288：在办表那一行的悬停提示里用的两枚图标 —— 一张卡片（粗标题行 + 两行正文）代表票标题，
+        //   一个带尾巴、里面有两行字的气泡代表会话名。与通用集同一套写法（24 的 viewBox、currentColor、描边 1.8）。
+        case 'ticket-title': return h('svg', common, [h('rect', { x: 4, y: 3, width: 16, height: 18, rx: 2 }), h('rect', { x: 7, y: 7, width: 9, height: 2.2, rx: 1.1, fill: 'currentColor', stroke: 'none' }), h('path', { d: 'M7 13h10M7 16.5h6' })])
+        case 'session': return h('svg', common, [h('path', { d: 'M20 14a2 2 0 01-2 2H8l-4 3.5V6a2 2 0 012-2h12a2 2 0 012 2z' }), h('path', { d: 'M8 8.5h8M8 12h5' })])
         // #818 版本管理页签：分支图标（一条主干、两个提交点、一条岔出去的弧）。手写、无外部依赖，
         //   与相邻条目同一套写法（24 的 viewBox、currentColor、通用集的描边粗细）；调用点给 12 像素的视觉尺寸。
         case 'branch': return h('svg', common, [h('path', { d: 'M6 3v12' }), h('circle', { cx: 6, cy: 18, r: 3 }), h('circle', { cx: 18, cy: 6, r: 3 }), h('path', { d: 'M18 9a9 9 0 01-9 9' })])

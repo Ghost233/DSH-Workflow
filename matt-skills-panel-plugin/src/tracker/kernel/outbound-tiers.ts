@@ -16,7 +16,7 @@
 
 // 四档时长住中央 YAML（config/timeouts.yaml 的 outbound* 四键）：这里只留同名别名，
 // 调时间改 YAML，不改这里。值由 tests/verify-time-config.ts 看守一致。
-import { OUTBOUND_READ_TIMEOUT_MS, OUTBOUND_WRITE_TIMEOUT_MS, OUTBOUND_PROBE_TIMEOUT_MS, OUTBOUND_DEFAULT_TIMEOUT_MS } from '../../shared/time-config/values.js'
+import { OUTBOUND_READ_TIMEOUT_MS, OUTBOUND_WRITE_TIMEOUT_MS, OUTBOUND_PROBE_TIMEOUT_MS, OUTBOUND_DEFAULT_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
 
 export const READ_TIMEOUT_MS = OUTBOUND_READ_TIMEOUT_MS
 export const WRITE_TIMEOUT_MS = OUTBOUND_WRITE_TIMEOUT_MS
@@ -80,6 +80,32 @@ export function tierForGhArgs(args: unknown): 'write' | 'probe' | 'read' {
   return 'read'
 }
 
+/**
+ * 日志里那一格「哪一类命令」的短标签（#1007 复核补）。
+ *
+ * 为什么要有它：从前 gh.exec / gh.timeout 只记 `argv0: 'gh'`，失败时日志分不出是查登录态、
+ * 列票还是改票 —— 而票面要的正是「失败带命令名」。命令整行不能进日志（带仓库名、票号、
+ * 查询正文），所以只留两段：子命令族与动词（`issue:create`、`auth:status`），
+ * api 只留接口族的第一段（`api:graphql`、`api:repos`），参数部分（owner/repo、编号、查询串）一律丢掉。
+ *
+ * 取值是有限集合，便于按值聚合；认不出的子命令只回第一段（例如 `--version`），不会回空。
+ * 类型说明：收未知参数数组（兼容旧调用），运行时仍按数组判断。
+ */
+export function ghCommandLabel(args: unknown): string {
+  const parts = partsOf(args)
+  if (parts.length === 0) return ''
+  const head = parts[0]
+  if (head === 'api') {
+    // 接口族第一段就够定位：graphql / rate_limit / user / repos …… 后面的 owner、仓库名与编号不进日志。
+    const family = String(parts[1] || '').split('/')[0]
+    return family ? 'api:' + family : 'api'
+  }
+  // 只有第二段是纯小写动词时才拼进去（`issue view` 拼成 issue:view）；第二段是票号或路径时只留族名。
+  const second = String(parts[1] || '')
+  if (parts.length >= 2 && /^[a-z][a-z-]*$/.test(second)) return head + ':' + second
+  return head
+}
+
 /** 这一档等多久（毫秒）。类型说明：档位收字符串，未知档按读档处理，与原来一致。 */
 export function timeoutForTier(tier: string): number {
   if (tier === 'write') return WRITE_TIMEOUT_MS
@@ -91,4 +117,30 @@ export function timeoutForTier(tier: string): number {
 export function timeoutForGhArgs(args: unknown, explicitTimeout?: unknown): number {
   if (typeof explicitTimeout === 'number' && isFinite(explicitTimeout) && explicitTimeout > 0) return explicitTimeout
   return timeoutForTier(tierForGhArgs(args))
+}
+
+/**
+ * 把 GraphQL 调用里的 owner 与 name 从 `-F` 改成 `-f`。
+ *
+ * 为什么要改：`gh api -F` 会按值推断类型，纯数字的 GitHub 账号（例如 776317107）会被发成
+ * JSON 数字；而 GraphQL 查询把 `$owner` 与 `$name` 声明为 `String!`，gh 于是回
+ * `Variable $owner of type String! was provided invalid value`（#1375）。`-f` 是原始字符串，
+ * 不做类型推断。只改这两个字段，`number`、`first` 等整型字段继续用 `-F`。
+ *
+ * 没有要改的地方时原样返回同一个数组，调用方可以放心直接赋值。
+ */
+export function normalizeGhStringFields(args: string[]): string[] {
+  if (!Array.isArray(args) || args[0] !== 'api' || String(args[1] || '').indexOf('graphql') !== 0) return args
+  let changed = false
+  const out: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if ((a === '-F' || a === '--field') && typeof args[i + 1] === 'string' && /^(owner|name)=/.test(args[i + 1])) {
+      out.push('-f')
+      changed = true
+    } else {
+      out.push(a)
+    }
+  }
+  return changed ? out : args
 }

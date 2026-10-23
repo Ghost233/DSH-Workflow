@@ -74,7 +74,7 @@ try {
   await cp(process.execPath, join(resources, 'node'))
   await chmod(join(resources, 'node'), 0o755)
   await copyProjectIntegration(root, join(resources, 'workflow'))
-  await bundleProjectPlugins({ resourcesRoot: resources })
+  await bundleProjectPlugins({ resourcesRoot: resources, npmCache: join(buildRoot, 'npm-cache') })
   await bundleServiceEnvironment(root, resources)
   await bundleServiceNotifications(root, resources)
   await mkdir(join(resources, 'desktop'), { recursive: true })

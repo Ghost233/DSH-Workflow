@@ -7,6 +7,10 @@
  *
  * 约束：本文件必须保持纯函数（不碰 ctx / 不碰 DOM / 无共享状态 / 不自己读文件），否则失去叶子价值。
  *
+ * #1090：进度区的读与写（parseProgressDetail / parseProgress / replaceProgressSection 等）搬到了
+ * src/shared/issue-file/src/progress.ts —— tracker / deck / host 三层共用那一份，本文件只把名字原样转出去，
+ * 调用方的 import 路径不变。
+ *
  * 类型（#1148）：入参一律收成未知值。调用方交进来的是后端回包、老快照与手写数据，
  * 字段可能缺席、可能是别的类型，所以这里不假设形状，读一格收口一格（运行时判断一个字没改，
  * 只是把 jsdoc 里的形状搬成了类型标注）；返回值是本文件说了算的确定形状，调用方按导出的接口读。
@@ -156,27 +160,110 @@ export function parseMapBody(body: unknown): ParsedMapBody {
   return out
 }
 
-// ——— parseProgress：进度块三级锚定（## 进度：N% / 行首变体 / 全文兜底），clamp 0-100 ———
+// ——— parseSpecBody：规格（实施地图）七区块解析 ———
 
 /**
- * 从正文里读进度百分比。
- *
- * 三级锚定按顺序试，先命中先用：① 标题行 `## 进度：90%`；② 行首变体 `进度：90%`（不带标题符号）；
- * ③ 全文兜底（兼容老票随手格式，放最后是为了不劫持前两层）。
- *
- * @returns 0..100 的整数；正文里没有进度、或数字不是合法整数时回 null（不是 0）。
+ * 规格正文的七个区块：中英各一套标题，两两一组指的是同一段内容。
+ * 只有这些标题能切出区块（与地图五区块同一口径：正文里讨论标题本身不算标题）。
  */
-export function parseProgress(body: unknown): number | null {
-  if (!body) return null
-  const s = String(body)
-  const m = s.match(/^\s*#{1,6}\s*(?:进度|Progress)\s*[：:]\s*(\d{1,3})\s*%/im)
-    || s.match(/^\s*(?:进度|Progress)\s*[：:]\s*(\d{1,3})\s*%/im)
-    || s.match(/(?:进度|Progress)\s*[：:]\s*(\d{1,3})\s*%/i)
-  if (!m) return null
-  const n = parseInt(m[1], 10)
-  if (isNaN(n)) return null
-  return Math.max(0, Math.min(100, n))
+export const SPEC_SECTION_TITLES = [
+  '问题陈述', 'Problem Statement',
+  '解决方案', 'Solution',
+  '用户故事', 'User Stories',
+  '实现决策', 'Implementation Decisions',
+  '测试决策', 'Testing Decisions',
+  '不在范围内', 'Out of Scope',
+  '补充说明', 'Further Notes',
+]
+
+/** 规格正文七个区块的解析结果。各区缺了就回空串或空数组，不回 null。 */
+export interface ParsedSpecSections {
+  /** `## 问题陈述` / `## Problem Statement`：要解决的是什么问题。 */
+  problem: string
+  /** `## 解决方案` / `## Solution`：打算怎么做。 */
+  solution: string
+  /** `## 用户故事` / `## User Stories`：使用者视角的场景。 */
+  userStories: string[]
+  /** `## 实现决策` / `## Implementation Decisions`：实现上定下来的事。 */
+  implDecisions: string[]
+  /** `## 测试决策` / `## Testing Decisions`：怎么算做对了。 */
+  testDecisions: string[]
+  /** `## 不在范围内` / `## Out of Scope`：明确不做的。 */
+  outOfScope: string[]
+  /** `## 补充说明` / `## Further Notes`：其余要交代的事。 */
+  furtherNotes: string[]
 }
+
+/** 七段的键：顺序与 SPEC_SECTION_TITLES 的每一对一一对应。 */
+const SPEC_SECTION_KEYS: (keyof ParsedSpecSections)[] = ['problem', 'solution', 'userStories', 'implDecisions', 'testDecisions', 'outOfScope', 'furtherNotes']
+
+/**
+ * 把规格正文按二级标题切成区块，取出七个区块的内容。
+ * 入参收成未知值：正文可能缺席（老票、新建的票），统一按空处理。
+ *
+ * 与地图五区块的两点不同，说清楚免得后来人以为写错了：
+ * 1. HTML 注释行一律不算内容（七段都不收）——正文首行那串隐藏标记就是注释，
+ *    漏进来会污染界面上显示的段落。
+ * 2. 只认行首的 `## 标题`；地图那份还处理「标题粘在上一行末尾」的写法，规格这份不处理
+ *    （规格正文由写侧模板生成，标题自己占一行；真要支持粘行再说）。
+ */
+export function parseSpecBody(body: unknown): ParsedSpecSections {
+  const out: ParsedSpecSections = {
+    problem: '', solution: '', userStories: [], implDecisions: [],
+    testDecisions: [], outOfScope: [], furtherNotes: [],
+  }
+  if (!body) return out
+  // 区块名 → 该区块下的原行；## 标题行本身不入表。键统一小写（英文标题大小写不敏感）。
+  const sec: Record<string, string[]> = {}
+  const lines = normalizeBody(body).split(/\r?\n/)
+  let cur: string | null = null
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^##\s*(.+?)\s*$/)
+    if (m) { cur = m[1].trim().toLowerCase(); sec[cur] = sec[cur] || []; continue }
+    if (cur) sec[cur].push(lines[i])
+  }
+  // 中英两套标题指同一段内容；同一段两套标题都写了时，先遇到的算。
+  const byKey: Record<string, string[]> = {}
+  for (let k = 0; k < SPEC_SECTION_KEYS.length; k++) {
+    for (const title of [SPEC_SECTION_TITLES[k * 2], SPEC_SECTION_TITLES[k * 2 + 1]]) {
+      const t = title.toLowerCase()
+      if (sec[t] && !byKey[SPEC_SECTION_KEYS[k]]) byKey[SPEC_SECTION_KEYS[k]] = sec[t]
+    }
+  }
+  /** 去空白、丢空行、丢 HTML 注释行；区块没出现过时按空数组处理。 */
+  const clean = (arr: string[] | undefined): string[] => (arr || []).map((s) => s.trim()).filter(Boolean).filter((l) => l.indexOf('<!--') !== 0)
+  out.problem = clean(byKey['problem']).join(' ')
+  out.solution = clean(byKey['solution']).join(' ')
+  out.userStories = clean(byKey['userStories'])
+  out.implDecisions = clean(byKey['implDecisions'])
+  out.testDecisions = clean(byKey['testDecisions'])
+  out.outOfScope = clean(byKey['outOfScope'])
+  out.furtherNotes = clean(byKey['furtherNotes'])
+  return out
+}
+
+// ——— 进度区的读与写：唯一真源搬到 `src/shared/issue-file/src/progress.ts`（#1090） ———
+//
+// 为什么搬走：进度原先是三份复制（本文件、面板派生 deck-derive、宿主内联 mapBody）各写一套正则，
+// 写侧与读侧对不上。#1090 把它们统一到 shared 层的那一个文件；本文件只把名字原样转出去，
+// 调用方（宿主、面板、deck 工具、门禁）的 import 路径不用改。
+export {
+  PROGRESS_BODY_LIMIT,
+  parseProgressDetail,
+  parseProgress,
+  formatProgressEntry,
+  replaceProgressSection,
+  stripProgressSections,
+} from '../shared/issue-file/src/progress.js'
+export type { ProgressEntry, ProgressDetail } from '../shared/issue-file/src/progress.js'
+
+// ——— 维护者原话区的读与写：唯一真源在 `src/shared/issue-file/src/original-words.ts`（#1092） ———
+//
+// 写侧一直只住 shared 那一份；#1092 把读一侧（parseOriginalWords）也放进同一个文件、共用同一套
+// 按行扫描，保证「写进去的原话」与「读回来的原话」逐字相同。本文件只把名字转出去，调用方
+// （deck 的读工具、门禁）的 import 路径统一走 tracker/body-parse，与进度区同一模式。
+export { parseOriginalWords } from '../shared/issue-file/src/original-words.js'
+export type { OriginalWordsDetailEntry, OriginalWordsEntry } from '../shared/issue-file/src/original-words.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 二、票的分组与分层（宿主侧同步调用，输入是「票号 + 状态 + 认领 + 阻塞」这几格）

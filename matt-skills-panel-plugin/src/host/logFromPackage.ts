@@ -8,7 +8,13 @@
  * 2. 建库配置必填 prefix（缺了当场抛错，不再给默认），与 pluginId 同值 wf。
  * 3. 旧实现（./logStore.js、./logPhones.js）原地只读留存，本文件不引用它们，包不可用时由调用方回退旧实现。
  * 4. 取哪一份：直接引用已安装的 npm 包 dsh-log 的宿主入口，宿主用哪一版由 package/package.json 里写死的 dsh-log 版本说了算，客户端那半由构建时按同一个包打包出来，两半版本一致由构建脚本里的断言盯着。
+ *
+ * 另外一条（#960 收尾补上）：建库配置必须递常驻事件清单（eventList）。日志包只把不在它内置 43 条里的事件当「按需」，
+ * 不递清单时，附录标成常驻的那些信息级事件在调试开关关着时就悄悄不落盘。清单唯一真源是 src/shared/log-event-list.ts，
+ * 客户端那半由 scripts/derive-log-from-package.mts 在构建期注入同一份清单，两边不要各写一份。
  */
+
+import { LOG_EVENT_LIST } from '../shared/log-event-list.js'
 
 // ---------------------------------------------------------------------------
 // 类型（本次转 TypeScript：只写类型不写实现）。
@@ -40,11 +46,15 @@ interface LogFromPackageDeps {
  * 建一份宿主日志库并拿回日志库（插件标识与电话名前缀都是 wf）。
  *
  * 为什么：日志库是宿主唯一的写日志出口，调用点只从这里拿，旧实现只读留存，真搬迁或真删除旧文件另开票。
- * 什么约定不能改：第二个参数固定是 `{ pluginId: 'wf', prefix: 'wf' }`，少了 prefix 当场抛错是上游包的行为，本文件不兜底。
+ * 什么约定不能改：第二个参数里 pluginId 与 prefix 固定是 'wf'（少了 prefix 当场抛错是上游包的行为，本文件不兜底）；
+ *   pluginVersion 是 #1305 加的第四件「环境自述」，只在读得到服务那一份的版本号时才递（读不到就不写这一格，绝不编）。
  */
 export async function createLogFromPackage(deps: LogFromPackageDeps): Promise<unknown> {
   const input: LogFromPackageDeps = deps || {}
   const mod = await import('dsh-log/host')
+  // 版本号只有一个出口（rpcChannel 的清单读取）：由装配处 index.ts 读好递进来（#1305）。
+  //   本文件不自己去 import rpcChannel —— 宿主层的同层互引被 .dependency-cruiser.ts 的 same-layer-import-host 禁着。
+  const pluginVersion = (typeof input.pluginVersion === 'string') ? input.pluginVersion : ''
   const holder: { store: unknown } = mod.createHostLog(
     {
       fs: input.fs as never,
@@ -53,7 +63,9 @@ export async function createLogFromPackage(deps: LogFromPackageDeps): Promise<un
       getPlatform: input.getPlatform as never,
       DEFAULT_CWD: input.DEFAULT_CWD as never,
     },
-    { pluginId: 'wf', prefix: 'wf' }
+    pluginVersion
+      ? { pluginId: 'wf', prefix: 'wf', pluginVersion: pluginVersion, eventList: LOG_EVENT_LIST }
+      : { pluginId: 'wf', prefix: 'wf', eventList: LOG_EVENT_LIST }
   )
   return (holder as { store: unknown }).store
 }

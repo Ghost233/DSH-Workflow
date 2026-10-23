@@ -7,7 +7,7 @@ import { shortestUniqueSuffix, displayFor, assemble } from '../src/shared/versio
 
 test('Windows executable spellings are not promoted to POSIX issue writes', () => {
   for (const command of ['gh.exe issue close 42', 'gh.bat issue close 42', 'gh.ps1 issue close 42', '"C:\\tools\\gh.cmd" issue close 42', 'powershell -Command "gh issue close 42"']) {
-    assert.deepEqual(readCommand(command), { tier: 'probe-now', ticket: null, reason: 'cmd.unknown' }, command)
+    assert.deepEqual(readCommand(command), { tier: 'default-tick', ticket: null, reason: 'cmd.unknown' }, command)
   }
 })
 

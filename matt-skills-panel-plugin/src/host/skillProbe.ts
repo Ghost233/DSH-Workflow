@@ -4,7 +4,7 @@
  * 为什么要有它（一句话）：安装探测口径、短时记住、单飞与失效广播；只以注册表回答为准，轻探永不产生绿。
  *
  * 三条不能改的约定（改之前先看原 skillProbe.js 头注释与调用点 index.ts）：
- * 1. 行为零变化：逻辑逐行对应，只加类型标注与中文注释，不改任何运行时语义；相对导入保留 .js 后缀，由 scripts/ts-hook.mjs 改指同名 .ts。
+ * 1. 行为零变化：逻辑逐行对应，只加类型标注与中文注释，不改任何运行时语义；相对导入保留 .js 后缀，由 scripts/ts-hook.mts 改指同名 .ts。
  * 2. 只写可剥离 TypeScript：不新增运行时语法（禁用 enum 与构造函数参数属性），类型一律 import type 或内联标注，转译后与原 .js 逐行同义。
  * 3. 不新增任何 import 边：只给已有引用加类型，不引入新模块依赖；Node 内建模块的类型缺席由文件内局部声明与 @ts-expect-error 承接，不装 @types/node。
  */
@@ -32,7 +32,7 @@ import { isSkillCardValid, probeFsExists, directSkillCardRead, directPathExists,
 // 短时缓存的缺省存活时间住中央 YAML（config/ttl.yaml 的 skillListCacheTtlMs 键）：
 // 这里直接读中央常量，调时间改 YAML（缺表时 values.ts 已回落到同一个数 30000，行为与今天一致）。
 // 路径走域构建产物写法，值由 tests/verify-time-config.ts 看守一致。
-import { SKILL_LIST_CACHE_TTL_MS } from '../shared/time-config/values.js'
+import { SKILL_LIST_CACHE_TTL_MS } from '../shared/time-config/src/values.js'
 export function createSkillProbe(deps?: any): any {
   const { ctx, getPlatform, getWorkspaceStore, resetChainCache, resetChainCacheForKey, logCtx } = deps
     // 工作区与技能名只记短指纹，不记原始路径（日志白名单纪律，与仓里别处同一种取法）。

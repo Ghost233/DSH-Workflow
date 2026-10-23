@@ -2,8 +2,8 @@
  * floating/SkillFloatList.ts — 技能悬浮列表（5.2 状态栏末段 · 2026-08-18 需求 2）
  * 自 StatusBar.js 拆出（97 T4）：自持 skillAnchorRef/skillCloseRef 与 show/close/placement 状态机，
  * 互斥逻辑（关 bug 菜单）经 s 状态直接操作。
- * 契约：模块真源（ESM 导出）；scripts/build.mjs 构建时剥行首 export 拼回
- * src/client/index.js 的 `// ==== leaf:... (spliced by build) ====` 标记处（一源两物）。
+ * 契约：模块真源（ESM 导出）；scripts/build.mts 构建时剥行首 export 拼回
+ * src/client/index.ts 的 `// ==== leaf:... (spliced by build) ====` 标记处（源码树里只有这一份真源）。
  * T2 迁移（#381）：每行技能说明悬浮由 HoverTip(mode='anchor') 统一承载，
  *  保留行 hover 高亮经 s.skillHover 轻量驱动，tip 定位/翻转/挂顶由 HoverTip 契约表统一，
  *  移除原 getBoundingClientRect 手算与 s.skillTip 全局 portal。
@@ -27,6 +27,7 @@ declare const PortalOverlay: any;
 declare const SKILLS: any;
 declare const SKILL_FLOAT_CLOSE_DELAY_MS: any;
 declare const Tip: any;
+declare const CONTAINER_ACCENT: any;
 
 export const SkillFloatList = function (props: any) {
   const cx = React.useContext(DswsCtx)
@@ -110,19 +111,25 @@ export const SkillFloatList = function (props: any) {
     ref: skillAnchorRef, onMouseEnter: showSkillPop,
     onMouseLeave: function () { scheduleClose(skillCloseRef, closeSkillPop) },
   }, [
-    h(Tip, { content: tr('nav.skillsTitle') }, h('span', { className: 'dsws-skillbtn' + (s.skillsOpen ? ' on' : ''), onClick: function (e: any) { e.stopPropagation(); if (s.skillsOpen) closeSkillPop(); else showSkillPop() }, 'aria-label': tr('nav.skillsTitle'), style: { display: 'inline-flex', alignItems: 'center', padding: '1px 4px', borderRadius: 4, cursor: 'pointer', color: s.skillsOpen ? '#c084fc' : 'var(--dsw-alias-label-caption,#8b8b95)' } }, [Ic({ n: 'skills', size: 12 })])),
+    h(Tip, { content: tr('nav.skillsTitle') }, h('span', { className: 'dsws-skillbtn' + (s.skillsOpen ? ' on' : ''), onClick: function (e: any) { e.stopPropagation(); if (s.skillsOpen) closeSkillPop(); else showSkillPop() }, 'aria-label': tr('nav.skillsTitle'),
+      // 接线（#1335 界面反馈）：这颗技能按钮是纯图标，只接按压形状（按下压暗即可，小图标下沉会看着歪）。
+      'data-press': 'icon', 'data-log': 'float.skill.trigger', style: { display: 'inline-flex', alignItems: 'center', padding: '1px 4px', borderRadius: 4, cursor: 'pointer', color: s.skillsOpen ? ((typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '') : 'var(--dsw-alias-label-caption,#8b8b95)' } }, [Ic({ n: 'skills', size: 12 })])),
     s.skillsOpen ? PortalOverlay({ className: 'dsws-skillpop-bridge', onMouseEnter: function () { clearClose(skillCloseRef) }, onMouseLeave: function () { scheduleClose(skillCloseRef, closeSkillPop) }, style: { position: 'fixed', right: s.skillPopPos ? s.skillPopPos.right : 0, bottom: s.skillPopPos ? s.skillPopPos.bottom : 0, paddingTop: 4, paddingBottom: 4, zIndex: 2147483000 }, onClick: function (e: any) { e.stopPropagation() } }, [
       h('div', { className: 'dsws-skillpop', style: { minWidth: 150, maxHeight: 'min(300px, calc(100vh - 24px))', overflowY: 'auto', background: 'var(--dsw-alias-bg-layer-2,#16181d)', border: '1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius: 8, boxShadow: '0 8px 30px rgba(0,0,0,.45)', padding: 4 } }, [
-        SKILLS.map(function (sk: any) {
+        SKILLS.map(function (sk: any, i: number) {
           return h(HoverTip, { key: sk.name, content: tr('skilldesc.' + sk.name), mode: 'anchor', maxWidth: 220 }, h('div', chipProps({
-            className: 'dsws-skillpop-row',
+            // 接线（#1335 界面反馈）：每一行技能都是一颗可点的按钮（上面那套共享属性已经给了 role=button 与键盘三件套），
+            //   按整行接 row 形状；日志名用这一行在技能目录里的序号，技能名是行上那段展示文字，按纪律不写进日志。
+            className: 'dsws-skillpop-row dsws-hov',
+            'data-press': 'row',
+            'data-log': 'float.skill.row.' + String(i),
             // #956 评审修正：这一行原来只有按下反馈、键盘走不到（Tab 停不下来）。
             //   补上共享三件套后，Tab 停得住、回车与空格走与鼠标同一条路（调起 click）。
             'aria-label': '/' + sk.name,
             onClick: function (e: any) { e.stopPropagation(); inject(s, '/' + sk.name); closeSkillPop() },
             onMouseEnter: function () { if (s.skillHover !== sk.name) { s.skillHover = sk.name; emit(s) } },
             onMouseLeave: function () { if (s.skillHover !== null) { s.skillHover = null; emit(s) } },
-            style: { padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: s.skillHover === sk.name ? 'var(--dsw-alias-label-primary,#e6edf3)' : 'var(--dsw-alias-label-secondary,#a1a1aa)', whiteSpace: 'nowrap', fontFamily: 'Consolas,Menlo,monospace', background: s.skillHover === sk.name ? 'var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08))' : 'transparent', borderLeft: s.skillHover === sk.name ? '2px solid #c084fc' : '2px solid transparent' }
+            style: { padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: s.skillHover === sk.name ? 'var(--dsw-alias-label-primary,#e6edf3)' : 'var(--dsw-alias-label-secondary,#a1a1aa)', whiteSpace: 'nowrap', fontFamily: 'Consolas,Menlo,monospace', background: s.skillHover === sk.name ? 'var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08))' : 'transparent', borderLeft: s.skillHover === sk.name ? '2px solid ' + ((typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '') : '2px solid transparent' }
           }), sk.name))
         }),
         h('div', { style: { fontSize: 10, color: 'var(--dsw-alias-label-caption,#8b8b95)', padding: '5px 8px 2px', borderTop: '1px solid var(--dsw-alias-border-l1,#2a2d35)', marginTop: 2, whiteSpace: 'nowrap' } }, tr('nav.skillHint')),

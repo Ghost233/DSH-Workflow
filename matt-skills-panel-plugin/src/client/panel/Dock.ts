@@ -1,7 +1,7 @@
 /**
  * panel/Dock.ts — 右侧停靠容器（DetailsDock，5.8b；tabs 行改用共享 Tabs.js）
- * 契约：模块真源（ESM 导出）；scripts/build.mjs 构建时剥行首 export 拼回
- * src/client/index.js 的 `// ==== leaf:... (spliced by build) ====` 标记处（一源两物）。
+ * 契约：模块真源（ESM 导出）；scripts/build.mts 构建时剥行首 export 拼回
+ * src/client/index.ts 的 `// ==== leaf:... (spliced by build) ====` 标记处（源码树里只有这一份真源）。
   * （#1251：本文件由同名 .js 转成 .ts，只补类型标注（形参一律 any）与环境声明，运行时行为一字不动。约束：不许加运行时 import（跨文件名字一律 ambient declare，构建拼闭包时拒收残留 import）；不许 export default；只写可剥离类型。）
  */
 /**
@@ -53,7 +53,7 @@ declare const ChecksTab: any;
 declare const IssueDetail: any;
 declare const LabelColorEntry: any;
 declare const ListTab: any;
-declare const MapDetail: any;
+declare const MapDetailV2Page: any; // #1402：地图详情页入口已切到 V2；老页 MapDetail 的源码与门禁都留着，出问题可以一行切回
 declare const NamingFailBanner: any;
 declare const NOTICE_COLOR: any;
 declare const PrTab: any;
@@ -63,6 +63,7 @@ declare const SubworkspaceMark: any;
 declare const SwitchConfirmModal: any;
 declare const Tip: any;
 declare const VersionControlTab: any;
+declare const WorkRouteTrigger: any; // #1285：头部那一行右端的「跨会话在办表」图标（点开浮层看表）
 
     // ---- 5.8b 右侧停靠（details 槽位 · 三视图完整内容；开合/拖拽/宽度记忆由壳管理）----
     // 契约：details 槽 = 壳右侧第三列（AppFrame grid），scope session；关闭 = ctx.layout.closeDetails()
@@ -128,7 +129,7 @@ export     const DetailsDock = (props: any) => {
       const _isOther = _isOtherRaw && !!s.cwd && s.snapMode==='real' && !!s.snapshot
       const _showBackendFullscreen = _isPending || _isOther
       // #664：门控这个窗只把后端定下来 —— 绑定成功后不再往会话里注入任何文字（原先这里会顺手注入初始化全文）。
-      const _gateOpen=!!s.gateModalOpen && (s.gateModalSource==='dock' || !s.gateModalSource);const _gateModules=otherFiltered(s.backendModules);const _openGateModal=function(){s.gateModalOpen=true;s.gateModalSource='dock';if(!s.gateSelected)s.gateSelected=firstBackendIdOf(_gateModules);s.gateError='';emit(s);if(typeof host!=='undefined'&&host.call){s.gateLoading=true;emit(s);host.call('wf.registry',{cwd:s.cwd||''}).then(function(r: any){s.gateLoading=false;let m=null;if(r&&r.ok&&Array.isArray(r.modules))m=r.modules;else if(r&&Array.isArray(r.modules))m=r.modules;else if(r&&r.value&&Array.isArray(r.value.modules))m=r.value.modules;if(Array.isArray(m)&&m.length){const f=m.filter((x: any)=>String(x.id).toLowerCase()!=='other');const fin=f.length?f:m.filter((x: any)=>String(x.id).toLowerCase()!=='other');if(fin.length){s.backendModules=m;try{if(typeof setPresentationMap==='function')setPresentationMap(m)}catch(e){}const ids=fin.map((x: any)=>x.id);if(!s.gateSelected||ids.indexOf(s.gateSelected)<0)s.gateSelected=fin[0].id}}emit(s)}).catch(function(){s.gateLoading=false;emit(s)})}};const _closeGateModal=function(){s.gateModalOpen=false;s.gateModalSource=null;s.gateError='';emit(s)};const _confirmGate=function(){const id=s.gateSelected||firstBackendIdOf(_gateModules);if(String(id).toLowerCase()==='other'){s.gateError=tr('switch.gateOtherErr');emit(s);return}if(typeof isBackendUnavailable==='function'&&isBackendUnavailable(id)){s.gateError=tr('switch.targetLockedTip');emit(s);return}const prev=s.selection;const repoRef=s.repository||(s.snapshot&&s.snapshot.repository)||null;const nxt=(typeof userPickSelection==='function')?userPickSelection(id,repoRef,prev):{backendId:id,source:'explicit',ref:repoRef,userPicked:true};s.selection=nxt;try{if(s.cwd)setCachedSelection(s.cwd,nxt)}catch(e){}s.gateModalOpen=false;s.gateModalSource=null;emit(s);if(typeof host!=='undefined'&&host.call){host.call('wf.bind',{cwd:s.cwd||'',backendId:id}).then(function(res: any){const ok=res&&(res.ok===true||(res.value&&res.value.ok===true)||res.ok);if(ok){try{if(typeof adoptBoundRev==='function')adoptBoundRev(s,res)}catch(eRev){};try{var _np=res&&(res.persisted===false||(res.value&&res.value.persisted===false));if(_np)flash(s,tr('switch.bindNotPersisted'),'info')}catch(eP){};s.tab='list';emit(s);try{flash(s,tr('switch.bindOkFresh',{label:(typeof labelOf==='function'?labelOf(id):String(id))}),'ok')}catch(e){}
+      const _gateOpen=!!s.gateModalOpen && (s.gateModalSource==='dock' || !s.gateModalSource);const _gateModules=otherFiltered(s.backendModules);const _openGateModal=function(){s.gateModalOpen=true;s.gateModalSource='dock';if(!s.gateSelected)s.gateSelected=firstBackendIdOf(_gateModules);s.gateError='';emit(s);if(typeof host!=='undefined'&&host.call){s.gateLoading=true;emit(s);host.call('wf.registry',{cwd:s.cwd||''}).then(function(r: any){s.gateLoading=false;let m=null;if(r&&r.ok&&Array.isArray(r.modules))m=r.modules;else if(r&&Array.isArray(r.modules))m=r.modules;else if(r&&r.value&&Array.isArray(r.value.modules))m=r.value.modules;if(Array.isArray(m)&&m.length){const f=m.filter((x: any)=>String(x.id).toLowerCase()!=='other');const fin=f.length?f:m.filter((x: any)=>String(x.id).toLowerCase()!=='other');if(fin.length){s.backendModules=m;try{if(typeof setPresentationMap==='function')setPresentationMap(m)}catch(e){}const ids=fin.map((x: any)=>x.id);if(!s.gateSelected||ids.indexOf(s.gateSelected)<0)s.gateSelected=fin[0].id}}emit(s)}).catch(function(){s.gateLoading=false;emit(s)})}};const _closeGateModal=function(){s.gateModalOpen=false;s.gateModalSource=null;s.gateError='';emit(s)};const _confirmGate=function(){const id=s.gateSelected||firstBackendIdOf(_gateModules);if(String(id).toLowerCase()==='other'){s.gateError=tr('switch.gateOtherErr');emit(s);return}if(typeof isBackendUnavailable==='function'&&isBackendUnavailable(id)){s.gateError=tr('switch.targetLockedTip');emit(s);return}const prev=s.selection;const repoRef=s.repository||(s.snapshot&&s.snapshot.repository)||null;const nxt=(typeof userPickSelection==='function')?userPickSelection(id,repoRef,prev):{backendId:id,source:'explicit',ref:repoRef,userPicked:true};s.selection=nxt;try{if(s.cwd)setCachedSelection(s.cwd,nxt)}catch(e){}s.gateModalOpen=false;s.gateModalSource=null;emit(s);if(typeof host!=='undefined'&&host.call){host.call('wf.bind',{cwd:s.cwd||'',backendId:id,sessionId:sid||''}).then(function(res: any){const ok=res&&(res.ok===true||(res.value&&res.value.ok===true)||res.ok);if(ok){try{if(typeof adoptBoundRev==='function')adoptBoundRev(s,res)}catch(eRev){};try{var _np=res&&(res.persisted===false||(res.value&&res.value.persisted===false));if(_np)flash(s,tr('switch.bindNotPersisted'),'info')}catch(eP){};s.tab='list';emit(s);try{flash(s,tr('switch.bindOkFresh',{label:(typeof labelOf==='function'?labelOf(id):String(id))}),'ok')}catch(e){}
 loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(s.cwd,prev)}catch(e){};emit(s);try{flash(s,tr('switch.bindFail',{err:String((res&&(res.error||res.message))||'unknown').slice(0,120)}),'warn')}catch(e){}}}).catch(function(e: any){s.selection=prev;try{if(s.cwd)setCachedSelection(s.cwd,prev)}catch(e2){};emit(s);try{flash(s,tr('switch.bindFail',{err:String(e&&e.message||e).slice(0,120)}),'warn')}catch(e3){}})}};const pickBackend=function(id: any){if(typeof isBackendUnavailable==='function'&&isBackendUnavailable(id)){s.gateError=tr('switch.targetLockedTip');emit(s);return}s.gateSelected=id;emit(s);_confirmGate()}
       const tabsRef = React.useRef(null)
       const tabs = useTabsRow(s, tabsRef)
@@ -138,12 +139,10 @@ loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(
           const t = tabsRef.current
           if (!t) return
           const btns = t.querySelectorAll('[data-priority]')
-          const ver = t.querySelector('.dsws-ver')
           // 测量阶段临时禁用 transition（max-width 动画会污染 scrollWidth 测量 → 0/6 抖动）
           t.classList.add('dsws-no-anim')
           // 1) 全展开 + 强制 reflow（拿到"内容真实放得下"的基准）
           for (let i = 0; i < btns.length; i++) btns[i].classList.remove('collapsed')
-          if (ver) ver.classList.remove('collapsed')
           void t.offsetWidth
           // 2) 从最不重要（priority 大）逐个折叠，直到放得下（scrollWidth 溢出判定）
           const items = Array.from(btns)
@@ -154,9 +153,8 @@ loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(
             it.el.classList.add('collapsed')
             void t.offsetWidth
           }
-          // 3) 版本号让位（原先跟随「刷新」priority=3 一起折叠；那颗按钮 2026-09-22 挪去头部之后，
-          //   这一排再没有 priority=3 的元素，于是改判它自己的真实处境）；记录折叠数供 tooltip 门控。
-          if (ver) ver.classList.toggle('collapsed', t.scrollWidth > t.clientWidth + 1)
+          // 3) 记录折叠数供 tooltip 门控。#1285：原先这里还有「版本号让位」那一步 —— 版本号已从这一行撤走，
+          //   在办表图标（接在最右端）永远不折叠，让位这件事由第 2 步的按优先级折叠负责。
           t.dataset.tabsLevel = String(t.querySelectorAll('[data-priority].collapsed').length)
           t.classList.remove('dsws-no-anim')
         }
@@ -272,14 +270,14 @@ loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(
             // #231（契约动作）：开仓行为由后端 openRepository 声明驱动 —— folder 型注入 wf.openFolder，url 型浏览器原生新窗；无声明且无 url 即无动作（诚实渲染）
             const act = repositoryActionOf(s, bid)
             if (act === 'folder') {
-              return h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullRepo')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, repoRef.name), h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px', marginTop: 2 } }, tr('tip.header.repoAction'))]) }, h('a', { href: 'javascript:void(0)', 'aria-label': repoRef.name, 'data-repo-chip': 1, style: Object.assign({}, chipStyle, { cursor:'pointer' }), onClick: function(e: any){ try{ if(e&&e.preventDefault) e.preventDefault() }catch(_){}; try{ if(typeof host!=='undefined'&&host.call) host.call('wf.openFolder',{cwd: s.cwd||''}) }catch(__){} } }, inner))
+              return h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullRepo')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, repoRef.name), h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px', marginTop: 2 } }, tr('tip.header.repoAction'))]) }, h('a', { href: 'javascript:void(0)', 'aria-label': repoRef.name, 'data-repo-chip': 1, className: 'dsws-hov', 'data-press': 'button', 'data-log': 'head.repochip', style: Object.assign({}, chipStyle, { cursor:'pointer' }), onClick: function(e: any){ try{ if(e&&e.preventDefault) e.preventDefault() }catch(_){}; try{ if(typeof host!=='undefined'&&host.call) host.call('wf.openFolder',{cwd: s.cwd||''}) }catch(__){} } }, inner))
             }
             if (!href) return h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullRepo')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, repoRef.name)]) }, h('span', { 'aria-label': repoRef.name, 'data-repo-chip': 1, style: Object.assign({}, chipStyle, { cursor:'default' }) }, inner))
             // #191（用户反馈）：GitHub/GitLab 路径只 target='_blank'（浏览器原生新窗口），
             //   之前的 onClick openUrl 导致点一次开两个浏览器。Markdown 路径见上方分支（保留 onClick wf.openFolder）
             // 悬停提示里始终摆着**完整**的仓库名（维护者 2026-09-22 定：版面上那一串会随宽度逐字变短，
             //   一个字都不许丢，完整的那串必须能在悬停时读到），再加一句这颗芯片点下去做什么。
-            return h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullRepo')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, repoRef.name), h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px', marginTop: 2 } }, tr('panel.repoTitle'))]) }, h('a', { href: href, target: '_blank', rel: 'noreferrer', 'aria-label': repoRef.name, 'data-repo-chip': 1, style: chipStyle }, inner))
+            return h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullRepo')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, repoRef.name), h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px', marginTop: 2 } }, tr('panel.repoTitle'))]) }, h('a', { href: href, target: '_blank', rel: 'noreferrer', 'aria-label': repoRef.name, 'data-repo-chip': 1, className: 'dsws-hov', 'data-press': 'button', 'data-log': 'head.repochip', style: chipStyle }, inner))
           })(),
           // #653：这枚归属标志只在「会话所选目录 ≠ 工作区根」时出现（根会话、嵌套仓库、无仓库目录都不出现），
           //   放在仓库芯片右侧、与「未识别仓库」琥珀芯片和「该工作区尚未初始化」提示并存，不替代任何一条既有提示。
@@ -287,7 +285,7 @@ loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(
           //   所以 kernel/styles.js 那条 .dsws-folded 规则盖得住；里面那颗按钮自己写着 display，标记不能落在它身上）。
           h('span', { 'data-head-fold': 'icon', 'data-head-icon': 'mark', className: headIconCls('mark'), style: { lineHeight: 0 } }, h(SubworkspaceMark, { key: 'subws', st: s })),
           // #191 · 仓库名右侧切换按钮（已选态常驻 · pending 灰置 · _isOther 隐藏）
-          h('span', { 'data-head-fold': 'icon', 'data-head-icon': 'switch', className: headIconCls('switch'), style: { lineHeight: 0 } }, (function(){ if(_isOther) return null; var _sel=s.selection||(s.snapshot&&s.snapshot.selection)||null, _bid=_sel?_sel.backendId:null; if(_bid==null) return null; var _pend=!!(_sel&&_sel.pending), _col=(typeof backendColorOf==='function'?backendColorOf(_bid):'#6e7681'); return h(Tip, { content: _pend ? '切换后端 · 探测中不可用' : '切换后端' }, h('button',{'data-repo-switch':1,type:'button','aria-label':'切换后端','aria-disabled':_pend?'true':'false',disabled:_pend,onClick:function(e: any){try{if(e&&e.preventDefault)e.preventDefault();if(e&&e.stopPropagation)e.stopPropagation()}catch(_){};if(_pend)return;try{openSwitchConfirm(s,null)}catch(_){}},style:{display:'inline-flex',alignItems:'center',justifyContent:'center',boxSizing:'border-box',width:16,height:16,borderRadius:4,flex:'none',border:'1px solid '+_col,color:_col,background:'transparent',cursor:_pend?'not-allowed':'pointer',opacity:_pend?0.45:1,fontSize:10,lineHeight:1,padding:0,colorScheme:'light dark'}},Ic({n:'swap',size:10}))) })()),
+          h('span', { 'data-head-fold': 'icon', 'data-head-icon': 'switch', className: headIconCls('switch'), style: { lineHeight: 0 } }, (function(){ if(_isOther) return null; var _sel=s.selection||(s.snapshot&&s.snapshot.selection)||null, _bid=_sel?_sel.backendId:null; if(_bid==null) return null; var _pend=!!(_sel&&_sel.pending), _col=(typeof backendColorOf==='function'?backendColorOf(_bid):'#6e7681'); return h(Tip, { content: _pend ? '切换后端 · 探测中不可用' : '切换后端' }, h('button',{'data-repo-switch':1,className:'dsws-hov','data-press':'icon','data-log':'head.switchbackend',type:'button','aria-label':'切换后端','aria-disabled':_pend?'true':'false',disabled:_pend,onClick:function(e: any){try{if(e&&e.preventDefault)e.preventDefault();if(e&&e.stopPropagation)e.stopPropagation()}catch(_){};if(_pend)return;try{openSwitchConfirm(s,null)}catch(_){}},style:{display:'inline-flex',alignItems:'center',justifyContent:'center',boxSizing:'border-box',width:16,height:16,borderRadius:4,flex:'none',border:'1px solid '+_col,color:_col,background:'transparent',cursor:_pend?'not-allowed':'pointer',opacity:_pend?0.45:1,fontSize:10,lineHeight:1,padding:0,colorScheme:'light dark'}},Ic({n:'swap',size:10}))) })()),
           // #621 标签配色入口：16 像素见方的小图标（与左边那颗切换后端按钮同规格），点开改色弹窗；
           //   它和左右两颗单字形图标一样，宽度不够时一颗一颗撤（撤的是外面那层 span，见上面 #667 第三轮那句）。
           //   会话号一起传进去：宿主靠它算「写这个工作区」要用的沙箱政策（#624 的研究结论）。
@@ -305,7 +303,7 @@ loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(
           //   不许用分隔符粘成一句（verify-667 的 A14 / B8 盯着）。宽度不够时它们最先瘦身：刷新的字逐字变少、只剩齿轮图标，
           //   再轮到时间标签那句相对时间逐字变少；时间标签一个字都不剩时，完整说法与精确时刻挪进刷新按钮的悬停提示。
           h(Tip, { content: (headNow && headNow.time === '' && headTip) ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', null, tr('list.refresh')), h('div', null, headTip)]) : tr('list.refresh') }, h('button', {
-            className: 'dsws-btn', 'data-head-refresh': 1, type: 'button', 'aria-label': tr('list.refresh'),
+            className: 'dsws-btn dsws-hov', 'data-press': 'button', 'data-log': 'head.refresh', 'data-head-refresh': 1, type: 'button', 'aria-label': tr('list.refresh'),
             onClick: function () { refreshAll(s) },
             style: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontSize: 11, flex: 'none' },
           }, [h('span', { className: 'dsws-rficon' + (s.refreshing ? ' dsws-spin' : '') }, [Ic({ n: 'refresh', size: 11 })]),
@@ -325,44 +323,52 @@ loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(
           const bg = 'rgba(245,158,11,.12)', bd='rgba(245,158,11,.45)', col='#f59e0b'
           if (isPending) return h('div', { style:{ margin:'0 12px 6px', padding:'4px 8px', background:bg, border:'1px solid '+bd, color:col, fontSize:11, borderRadius:6, display:'flex', alignItems:'center', gap:6 } }, [
             h('span', { className:'dsws-spinner', style:{ width:11, height:11, borderWidth:2, display:'inline-block' } }),
-            h('span', { style:{ flex:1 } }, '正在探测后端 — 若长时间停留请手动选择'),
-            h('button', { className:'dsws-btn', onClick:function(){ if(typeof host!=='undefined'&&host.call) host.call('wf.registry',{cwd:s.cwd||''}).then(function(){ loadSnapshot(s,true,true)}) }, style:{ fontSize:10, padding:'1px 6px', flex:'none' } }, '重试'),
+            h('span', { style:{ flex:1 } }, tr('switch.probeRunningHint')),
+            // 接线（#1335 界面反馈）：黄条上这颗「重试」是用户真的会点的按钮，按压反馈与点击日志都接上。
+            //   日志名只写固定枚举（不写按钮上的字），看日志时凭 panel.pending.retry 认出就是这一颗。
+            h('button', { className:'dsws-btn dsws-hov', 'data-press':'button', 'data-log':'panel.pending.retry', onClick:function(){ if(typeof host!=='undefined'&&host.call) host.call('wf.registry',{cwd:s.cwd||''}).then(function(){ loadSnapshot(s,true,true)}) }, style:{ fontSize:10, padding:'1px 6px', flex:'none' } }, tr('pr.retry')),
           ])
           if (isMulti) return h('div', { style:{ margin:'0 12px 6px', padding:'4px 8px', background:bg, border:'1px solid '+bd, color:col, fontSize:11, borderRadius:6, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' } }, [
             Ic({n:'alert',size:11, color:col}),
-            h('span', { style:{ flex:1 } }, '检测到多个可用后端：' + sel.multiHit.join(', ') + ' — 建议显式绑定'),
-            h('button', { className:'dsws-btn', onClick:function(){ s.tab='list'; emit(s) }, style:{ fontSize:10, padding:'1px 6px', flex:'none', background:'#f59e0b', borderColor:'transparent', color:'#fff' } }, '去设置页绑定'),
+            h('span', { style:{ flex:1 } }, tr('switch.multiHitLine', { list: sel.multiHit.join(', ') })),
+            h('button', { className:'dsws-btn dsws-hov', 'data-press':'button', 'data-log':'panel.pending.bind', onClick:function(){ s.tab='list'; emit(s) }, style:{ fontSize:10, padding:'1px 6px', flex:'none', background:'#f59e0b', borderColor:'transparent', color:'#fff' } }, tr('switch.goSettingsBind')),
           ])
           return null
         })(),
         // #267：命名链路定败面板级常驻提醒 —— 组件自订阅共享 store（NamingFailBanner 叶子，G4 单职责）；
         //   值比对比两路化解（手改锁定 / 值一致收敛）后下一轮拉询自动撤下
         h(NamingFailBanner),
-        // 标签行下沿 = 与对话/轨迹一致的横线；右侧：刷新按钮 + 版本号（v1.3.3）— 门控时隐藏（容器不挂载语义：业务 tabs 不渲染，仅 Banner/Modal 可见）
-        (_isPending || _isOther) ? null : h('div', { className: 'dsws-tabs', ref: tabsRef, style: { padding: '0 12px 7px', borderBottom: '1px solid var(--dsw-alias-border-l1,#2a2d35)', flex: 'none', display: 'flex', alignItems: 'center', gap: 4 } }, tabs.items),
+        // 标签行下沿 = 与对话/轨迹一致的横线；右侧：刷新按钮 + 在办表图标（#1285：版本号撤走，版本号进了图标悬停提示）— 门控时隐藏（容器不挂载语义：业务 tabs 不渲染，仅 Banner/Modal 可见）
+        // 液态墨块要拿这一行当定位容器，折叠机读的仍是 tabsRef：同一个节点挂两个 ref，回调 ref 一次写两处。
+        (_isPending || _isOther) ? null : h('div', { className: 'dsws-tabs dsws-ink-host', ref: function (el: any) { tabsRef.current = el; tabs.inkHostRef.current = el }, style: { padding: '0 12px 7px', borderBottom: '1px solid var(--dsw-alias-border-l1,#2a2d35)', flex: 'none', display: 'flex', alignItems: 'center', gap: 4 } }, [tabs.inkEl].concat(tabs.items, [h(WorkRouteTrigger, { key: 'work-route-trigger', st: s })])),
         _isPending ? h('div', { className: 'dsws-body', style: { flex: 1, overflowY: 'auto', padding: '12px', display:'flex', alignItems:'center', justifyContent:'center' } }, [
           h('div', { style:{ width:'92%', maxWidth:420, background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.35)', borderRadius:12, padding:'14px 16px', display:'flex', flexDirection:'column', gap:10 } }, [
             h('div', { style:{ display:'flex', alignItems:'center', gap:8 } }, [
               h('span', { className:'dsws-spinner', style:{ width:16, height:16, borderWidth:2, display:'inline-block' } }),
               h('div', { style:{ flex:1 } }, [
-                h('div', { style:{ fontSize:13, fontWeight:700, color:'#f59e0b' } }, '正在探测后端'),
-                h('div', { style:{ fontSize:11, color:'#f59e0b', marginTop:2 } }, '探测未决 — 若长时间停留请手动选择'),
+                h('div', { style:{ fontSize:13, fontWeight:700, color:'#f59e0b' } }, tr('switch.probeRunning')),
+                h('div', { style:{ fontSize:11, color:'#f59e0b', marginTop:2 } }, tr('switch.probePendingHint')),
               ]),
             ]),
             h('div', { style:{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:4 } }, [
-              h('button', { className:'dsws-btn', onClick:function(){ s.tab='list'; emit(s); _openGateModal() }, style:{ fontSize:11, padding:'4px 10px' } }, '去设置页选择'),
-              h('button', { className:'dsws-btn primary', onClick:function(){ loadSnapshot(s,true,true) }, style:{ background:'#f59e0b', borderColor:'transparent', color:'#fff', fontSize:11, padding:'4px 10px' } }, '重试探测'),
+              h('button', { className:'dsws-btn dsws-hov', 'data-press':'button', 'data-log':'panel.pending.pick', onClick:function(){ s.tab='list'; emit(s); _openGateModal() }, style:{ fontSize:11, padding:'4px 10px' } }, tr('switch.goSettingsPick')),
+              h('button', { className:'dsws-btn primary dsws-hov', 'data-press':'button', 'data-log':'panel.pending.reprobe', onClick:function(){ loadSnapshot(s,true,true) }, style:{ background:'#f59e0b', borderColor:'transparent', color:'#fff', fontSize:11, padding:'4px 10px' } }, tr('switch.retryProbe')),
             ]),
           ])
         ]) : _isOther ? h('div', { className: 'dsws-body', style: { flex: 1, overflowY: 'auto', padding: '12px', position:'relative', display:'flex', flexDirection:'column', alignItems:'stretch', gap:10 } }, [
-          h('div', { onClick: _openGateModal, style:{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', background:'rgba(56,139,253,.10)', border:'1px solid rgba(56,139,253,.35)', borderRadius:10, cursor:'pointer', color:'#58a6ff', fontSize:12, fontWeight:600 } }, [
+          // 接线（#1335 界面反馈）：这整条提示卡本身就是入口（点它去选后端），按「整卡可点」接 row 形状。
+          //   卡里那颗「去选择」只是行内的一枚字，不是另一颗按钮，点击仍由这张卡接住。
+          h('div', { className:'dsws-hov', 'data-press':'row', 'data-log':'panel.norepo.row', onClick: _openGateModal, style:{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', background:'rgba(56,139,253,.10)', border:'1px solid rgba(56,139,253,.35)', borderRadius:10, cursor:'pointer', color:'#58a6ff', fontSize:12, fontWeight:600 } }, [
             Ic({ n: 'compass', size:14, color:'#58a6ff' }),
             h('span', { style:{ flex:1 } }, '该工作区还没有设置 — 点击选择后端'),
             h('span', { style:{ fontSize:11, color:'#58a6ff', border:'1px solid rgba(56,139,253,.4)', borderRadius:6, padding:'1px 6px', background:'rgba(56,139,253,.12)' } }, '去选择'),
           ]),
           h('div', { style:{ fontSize:11, color:'#8b8b95', padding:'0 2px' } }, '选择后将回到主线流程（列表/状态栏正常可用），仅设置页可见引导已隐藏主线'),
-          _gateOpen ? h('div', { onClick:function(e: any){ if(e.target===e.currentTarget) _closeGateModal() }, style:{ position:'absolute', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'12px 16px', paddingTop:'12px', zIndex:5 } }, [
-            h('div', { style:{ background:'var(--dsw-alias-bg-layer-2,#16181d)', border:'1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius:12, padding:'16px', width:'92%', maxWidth:380, boxShadow:'0 8px 24px rgba(0,0,0,.5)' } }, [
+          // 接线（#1335 界面反馈）：点遮罩空白处会关窗 —— 遮罩是用户真的会点的地方，接 other 形状。
+          //   弹窗盒自己不是控件（它的点击只是不让遮罩那条判定生效），但日志要能把「点空白关窗」与
+          //   「点弹窗里的字」分开，所以盒上单独挂一个 data-log；不挂 data-press，免得一按整块弹窗都变暗。
+          _gateOpen ? h('div', { 'data-press':'other', 'data-log':'panel.gate.overlay', onClick:function(e: any){ if(e.target===e.currentTarget) _closeGateModal() }, style:{ position:'absolute', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'12px 16px', paddingTop:'12px', zIndex:5 } }, [
+            h('div', { 'data-log':'panel.gate.dialog', style:{ background:'var(--dsw-alias-bg-layer-2,#16181d)', border:'1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius:12, padding:'16px', width:'92%', maxWidth:380, boxShadow:'0 8px 24px rgba(0,0,0,.5)' } }, [
               h('div', { style:{ fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6, marginBottom:6 } }, [Ic({n:'compass',size:14}), h('span', null, '请选择 Tracker 后端以继续')]),
               h('div', { style:{ fontSize:11, color:'#8b8b95', marginBottom:10, lineHeight:1.5 } }, '不同后端的初始化与前置检查不同，选择后将回到主线流程（列表/状态栏正常可用）'),
               h('div', { style:{ fontSize:11, color:'#f59e0b', background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.25)', borderRadius:6, padding:'6px 8px', marginBottom:10 } }, tr('gate.wipNotice')),
@@ -373,7 +379,9 @@ loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(
                 // #669 第 6 件（ADR 20260921）：今天能选的只有 GitHub 与本地 Markdown —— 能力不全的后端
                 //   在门控窗里也置灰不可选（判据只问 isBackendUnavailable 一份），理由放鼠标悬停。
                 const locked = (typeof isBackendUnavailable==='function') && isBackendUnavailable(m.id)
-                const row = h('label', { key:m.id, 'data-target-id':m.id, 'data-target-locked': locked ? 1 : 0, style:{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8, border: isSel ? '1px solid '+col : '1px solid var(--dsw-alias-border-l1,#2a2d35)', background: isSel ? 'rgba(88,166,255,.08)' : 'transparent', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.45 : 1 } }, [
+                // 接线（#1335 界面反馈）：整行都是可点的（点行等于点那颗 radio），接 row 形状；
+                //   日志名用后端标识 m.id（固定枚举，不是行上那行展示文字）拼出来，同屏两颗后端行不会撞名。
+                const row = h('label', { key:m.id, className:'dsws-hov', 'data-press':'row', 'data-log':'panel.gate.pick.' + m.id, 'data-target-id':m.id, 'data-target-locked': locked ? 1 : 0, style:{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8, border: isSel ? '1px solid '+col : '1px solid var(--dsw-alias-border-l1,#2a2d35)', background: isSel ? 'rgba(88,166,255,.08)' : 'transparent', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.45 : 1 } }, [
                   h('input', { type:'radio', name:'dsws-gate-pick', checked:isSel, disabled: !!locked, onChange:function(){ if (locked) return; s.gateSelected=m.id; emit(s) } }),
                   h('span', { style:{ width:8, height:8, borderRadius:'50%', background:col, flex:'none' } }),
                   h('span', { style:{ fontSize:12, fontWeight:600 } }, m.label),
@@ -385,16 +393,15 @@ loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(
               })),
               s.gateError ? h('div', { style:{ fontSize:11, color:'#f87171', marginTop:8 } }, s.gateError) : null,
               h('div', { style:{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:12 } }, [
-                h('button', { className:'dsws-btn ghost', onClick: _closeGateModal, style:{ fontSize:12 } }, '取消'),
-                h('button', { className:'dsws-btn primary', onClick: _confirmGate, style:{ background:'#58a6ff', borderColor:'#58a6ff', color:'#0b1220', fontWeight:700, fontSize:12 } }, '确认并继续'),
+                h('button', { className:'dsws-btn ghost dsws-hov', 'data-press':'button', 'data-log':'panel.gate.cancel', onClick: _closeGateModal, style:{ fontSize:12 } }, '取消'),
+                h('button', { className:'dsws-btn primary dsws-hov', 'data-press':'button', 'data-log':'panel.gate.confirm', onClick: _confirmGate, style:{ background:'#58a6ff', borderColor:'#58a6ff', color:'#0b1220', fontWeight:700, fontSize:12 } }, '确认并继续'),
               ]),
             ])
           ]) : null,
         ]) : h('div', { className: 'dsws-body', style: { flex: 1, overflowY: 'auto', padding: '10px 12px' } }, [
-          // 2026-09-24 维护者定：这一行（h(SessionChainStrip, …)「每个会话在处理哪些票」#721）**暂时不挂载** ——
-          //   UI 上先不显示，能力全留着（判据与画法都在 views/shared/sessionChainView.js，文件头有指针与去向）。
-          //   维护者指了票号要显示时，把那一行接回这里即可；在那之前别把它的判据、词条与导出顺手删掉。
-          s.tab === 'list' ? (active ? h(MapDetail, { st: s, g: active }) : hasIssueDetail ? h(IssueDetail, { st: s }) : h(ListTab, { st: s, narrow: narrow })) : null, s.tab === 'versionControl' ? h(VersionControlTab, { st: s, narrow: narrow }) : null, // #818 版本管理页签的内容分发：与上一条同排，Dock.js 正贴着 350 行上限（单独起一行会变 351，撞文件粒度门禁）
+          // #1285：跨会话在办表已从列表页正文撤下（那张表占掉一大块，把票列表往下推）——
+          //   改由头部那一行右端的图标点开一个浮层显示（views/shared/workRouteTable.ts 的 WorkRouteTrigger）。
+          s.tab === 'list' ? (active ? h(MapDetailV2Page, { st: s, g: active }) : hasIssueDetail ? h(IssueDetail, { st: s }) : h(ListTab, { st: s, narrow: narrow })) : null, s.tab === 'versionControl' ? h(VersionControlTab, { st: s, narrow: narrow }) : null, // #818 版本管理页签的内容分发：与上一条同排，Dock.js 正贴着 350 行上限（单独起一行会变 351，撞文件粒度门禁）
           s.tab === 'pr' ? (showPrTab ? (hasIssueDetail ? h(IssueDetail, { st: s }) : h(PrTab, { st: s, narrow: narrow })) : h(ListTab, { st: s, narrow: narrow })) : null,
           s.tab === 'skills' ? h(SkillsTab, { st: s }) : null,
           s.tab === 'checks' ? h(ChecksTab, { st: s }) : null,

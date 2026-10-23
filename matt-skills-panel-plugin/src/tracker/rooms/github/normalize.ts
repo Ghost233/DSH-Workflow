@@ -15,6 +15,7 @@
  */
 
 import { STATE, ISSUE_TYPE } from '../../contract/vocabulary.js'
+import { markerKindInHeader } from '../../../shared/issue-file/src/marker.js'
 import type { Comment, Issue, IssueRef, Label, Milestone, Review } from '../../contract/entities.js';
 import type { Actor, IssueType, State } from '../../contract/identity.js';
 
@@ -106,10 +107,34 @@ function deriveKey(raw: unknown): string {
   return '0'
 }
 
+/**
+ * 规格容器（实施地图）的识别：正文文件头（第一个标题之前）独占一行的隐藏标记
+ * `<!-- DSH-ISSUE-KIND: spec -->`（#1403 T1 读侧统一：三房同一判据，GitHub 房不再只看首行）。
+ *
+ * 认法直接复用共享包 src/shared/issue-file/src/marker.ts 的 markerKindInHeader：
+ * 只扫第一个标题之前的那一段（没有标题时取前 10 行），整行精确匹配才作数。
+ * 这样「幂等锚占第一行、规格标记占第二行」的正文照样认成规格——写侧建带锚的票时锚就排在
+ * 正文最前面，只认首行会把这类票漏掉；而正文里顺手提到这一串字、或标记落在标题之后，
+ * 都不算数。
+ *
+ * 为什么判定住在房里：契约目录只放类型与常量、不放行为；各房拿共享包的纯函数自己调，
+ * 判据只有一份，结论三家一致。
+ */
+export function isSpecBody(body: unknown): boolean {
+  return typeof body === 'string' && markerKindInHeader(body) === 'spec'
+}
+
 function deriveType(raw: unknown): IssueType {
+  const bag = asBag(raw)
+  // 判定顺序的红线是**正文标记最前**，依据是 GLOSSARY.md「对象类型（objectKind）」词条：
+  // 正文首行的隐藏标记 → 表达对象类型的标签 → 正文形状，标记是唯一真源。所以一张既带标记、
+  // 又带 wayfinder:map 标签的脏票按规格算（规格本来就不许带那个标签，写侧会自动给
+  // type==='map' 的票加上它；真遇到两者同时在场，那是写侧该修的数据，不改变这里按标记认）。
+  if (isSpecBody(bag && typeof bag.body === 'string' ? bag.body : '')) return ISSUE_TYPE.SPEC
   const labels = normalizeLabels(raw)
+  // 没有标记才看标签：带 `wayfinder:map` 标签的票是探索地图。
   if (labels.some((l) => l.name === 'wayfinder:map')) return ISSUE_TYPE.MAP
-  const bag = asBag(raw);
+  // 后端形状明说「这是地图」的也算（那是显式声明，不是猜）。
   if (bag && (bag.isMap === true || bag.type === 'map')) return ISSUE_TYPE.MAP
   return ISSUE_TYPE.ISSUE
 }
@@ -176,15 +201,44 @@ function normalizeComments(raw: unknown): Comment[] {
   return out
 }
 
-function normalizeBlockedBy(raw: unknown): IssueRef[] {
-  const bag = asBag(raw);
-  let nodes: unknown = null
-  if (bag && bag.blockedBy && typeof bag.blockedBy === 'object' && Array.isArray((bag.blockedBy as RawBag).nodes)) nodes = (bag.blockedBy as RawBag).nodes
-  else if (bag && bag.blocked_by && Array.isArray(bag.blocked_by)) nodes = bag.blocked_by
-  else if (Array.isArray(bag && (bag as RawBag).blockedBy)) nodes = (bag as RawBag).blockedBy
-  else return [] // 恒实现 → EMPTY
+/**
+ * 读一条边连接的节点与截断位（#1304）。
+ * 两种回包都认：GraphQL 连接形状（nodes + pageInfo.hasNextPage）与 REST 形状（直接数组，没有分页信息）。
+ * 只有 pageInfo.hasNextPage === true 才算截断 —— 缺 pageInfo 时按「不知道上限、没有截断」收下，
+ * 与原来读单条边时的行为一致；REST 数组按完整收下，完整性判不了的那一路由上层自己交代。
+ */
+function edgeNodesOf(raw: unknown, field: string): { nodes: unknown[]; truncated: boolean } {
+  const bag = asBag(raw)
+  const conn = bag && bag[field] && typeof bag[field] === 'object' ? bag[field] as RawBag : null
+  if (conn && Array.isArray(conn.nodes)) {
+    const pageInfo = conn.pageInfo && typeof conn.pageInfo === 'object' ? conn.pageInfo as RawBag : null
+    return { nodes: conn.nodes, truncated: pageInfo ? pageInfo.hasNextPage === true : false }
+  }
+  // REST 回包：边就是数组（列表行、单票都这样），没有分页信息，按完整收下。
+  if (Array.isArray(bag && bag[field])) return { nodes: (bag as RawBag)[field] as unknown[], truncated: false }
+  // REST 字段名的历史写法（blocked_by）只在正向边这一条上有。
+  if (field === 'blockedBy' && bag && Array.isArray(bag.blocked_by)) return { nodes: bag.blocked_by as unknown[], truncated: false }
+  return { nodes: [], truncated: false }
+}
+
+/** 边节点上的 labels 两种形状都认（GraphQL 连接 {nodes:[{name}]}、REST 数组 [{name}]），只取名字。 */
+function labelNamesOfEdge(raw: unknown): string[] {
+  const out: string[] = []
+  const bag = raw && typeof raw === 'object' ? raw as RawBag : null
+  const arr = Array.isArray(raw) ? raw : (bag && Array.isArray(bag.nodes) ? bag.nodes as unknown[] : null)
+  if (!arr) return out
+  for (const l of arr) {
+    if (typeof l === 'string') { if (l) out.push(l); continue }
+    const rec = l && typeof l === 'object' ? l as RawBag : null
+    if (rec && typeof rec.name === 'string' && rec.name) out.push(rec.name)
+  }
+  return out
+}
+
+/** 把边连接的节点归一成一串轻量引用：键 + 标题 + 状态，种类有才补。 */
+function refsOfEdgeNodes(nodes: unknown[]): IssueRef[] {
   const out: IssueRef[] = []
-  for (const n of (nodes as unknown[])) {
+  for (const n of nodes) {
     if (!n || typeof n !== 'object') continue
     const rec = n as RawBag;
     const k = rec.number != null ? String(rec.number) : (typeof rec.key === 'string' ? rec.key : '')
@@ -194,11 +248,42 @@ function normalizeBlockedBy(raw: unknown): IssueRef[] {
     const state: State = stateRaw === 'closed' ? STATE.CLOSED : STATE.OPEN
     // 为什么先装三格必备：阻塞引用只保证 key 与标题状态，种类有才补，与契约轻量引用一致。
     const ref: IssueRef = { key: k, title, state }
-    // type 可选，若来源有 wayfinder:map label 可推断
+    // type 可选：来源明说就用来源的；只有边节点带 labels 时（#1304 的依赖查询会带）才按旧路口径推 ——
+    // 带 wayfinder:map 标签的是探索地图，其余按普通票。这样新路推出来的 ref 与旧路逐票读的完全一致。
     if (rec.type === 'map' || rec.type === 'issue') ref.type = rec.type
+    else if (rec.labels !== undefined && rec.labels !== null) {
+      const names = labelNamesOfEdge(rec.labels)
+      ref.type = names.indexOf('wayfinder:map') >= 0 ? ISSUE_TYPE.MAP : ISSUE_TYPE.ISSUE
+    }
     out.push(ref)
   }
   return out
+}
+
+function normalizeBlockedBy(raw: unknown): IssueRef[] {
+  return refsOfEdgeNodes(edgeNodesOf(raw, 'blockedBy').nodes)
+}
+
+/**
+ * 依赖投影归一（#1304）：一次读回正向与反向两条边，并交代这两条边各自有没有到上限。
+ * 为什么单开这个出口：单票查询只要正向边（normalizeBlockedBy 继续走同一条读法），
+ * 反向边只在 getDependencies 这一条路上要，两条边一起读回来才不用整仓扫描。
+ * 两条边都要带「到没到上限」：正向边同样会在 50 条被封顶，少掉的边看起来就像「没人阻塞它」。
+ */
+export function normalizeDependencyEdges(raw: unknown): {
+  blockedBy: IssueRef[]
+  blocking: IssueRef[]
+  blockedByTruncated: boolean
+  blockingTruncated: boolean
+} {
+  const blocked = edgeNodesOf(raw, 'blockedBy')
+  const blockBy = edgeNodesOf(raw, 'blocking')
+  return {
+    blockedBy: refsOfEdgeNodes(blocked.nodes),
+    blocking: refsOfEdgeNodes(blockBy.nodes),
+    blockedByTruncated: blocked.truncated,
+    blockingTruncated: blockBy.truncated,
+  }
 }
 
 // 拉取请求三字段归一（#504 落 #294 形状 A：复用工单形状加三个可选字段，不新增实体）。
