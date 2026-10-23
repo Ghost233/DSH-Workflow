@@ -19,19 +19,20 @@
 | Dart 格式检查 | 66 个文件通过，退出码 0 |
 | `flutter analyze --no-pub`（Flutter 子目录） | 无问题，退出码 0 |
 | `flutter test --no-pub test/launcher_ui_test.dart` | 3 项通过，退出码 0，包含新增安装状态及最小窗口布局 |
-| Flutter 全套隔离 Host 验收 | 81 项通过，退出码 0；使用当前项目层和既有固定生产运行时 |
+| Flutter 全套隔离 Host 验收 | 首审和修复后各 81 项通过，退出码均为 0；使用当前项目层和既有固定生产运行时 |
 | 上游真实技能查询 | fixed 和 latest 同为固定提交，changed 为空；没有推进子模块 |
 
-完整测试日志保留在忽略目录 `.build/browser-harness-delivery/`。首个已提交候选为 `fdd27121b94a16248c9daf102bae2b47fd131d6c`。[双轴审查](review.md)的 Spec 为 0 发现；Standards 的 1 项 P2 是通用安装状态误报 DSH 可调用，已恢复通用文案并通过定点界面测试，正在完成最终门禁与定点复审。
+完整测试日志保留在忽略目录 `.build/browser-harness-delivery/`。首个已提交候选为 `fdd27121b94a16248c9daf102bae2b47fd131d6c`，修复候选为 `207ab35e2c6e9af4ffd79864b9f466c2b31b908e`。[双轴审查](review.md)确认 Spec 0 发现，Standards 唯一的 P2 已关闭；没有剩余 P0、P1 或 P2。后续提交只补交付证据，不改变产品实现。
 
 初次在沙箱内运行完整测试时，macOS 文件监听返回 `EMFILE`，导致现有恢复用例失败；该次运行已取消，不计通过。相同定点用例在正常 macOS 环境全部通过，随后完整门禁也通过。一次从错误工作目录启动的 Flutter 分析已停止，不计通过；正确子目录分析结果另行记录。
 
-## 完成前检查清单
+## 最终产物与分支
 
-- Flutter 全套验收和最终 Node 门禁已完成。
-- 对已提交候选执行 Standards 与 Spec 双轴审查，关闭确认的 P0、P1 和 P2。
-- 记录最终源码、子模块 hash、本地分支与远端分支状态。
-- 本次交付不正式发布、不更新正在运行的应用。
+首份候选 App 已实际构建、签名并验证，包含 21 份固定官方资料、独立插件版本及真实的未验证状态。最终源码按 `.build/Ghost DSH Station-0.4.1-dsh0.2.1-rc.2-arm64-browser-harness-reviewed.app` 构建与核验，日志和摘要保留在 `.build/browser-harness-delivery/`。
+
+完成核验包括包内项目层与当前源码一致、技能摘要通过、插件固定版本正确，以及签名验证成功。运行端未安装或升级 Browser Harness，没有启动 Chrome，也没有切换既有 DSH 服务。
+
+本次按 implement 流程提交当前 main，不创建分支、worktree、PR 或正式发布。没有约定远程推送，origin/main 保留原提交；本地提交待用户安排推送。完成时核对 main 不落后于 origin/main，并保留完整本地候选。
 
 ## 集中复盘
 
