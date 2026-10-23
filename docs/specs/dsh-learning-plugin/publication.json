@@ -1,0 +1,158 @@
+{
+  "spec": {
+    "number": 48,
+    "url": "https://github.com/Ghost233/DSH-Workflow/issues/48"
+  },
+  "status": "published-and-verified",
+  "implementation": "not-started",
+  "tickets": [
+    {
+      "key": "L01",
+      "number": 49,
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/49",
+      "title": "H2-L01：在 Mac 运行随包 Harness² 核心",
+      "file": "docs/specs/dsh-learning-plugin/tickets/01-local-original-core.md",
+      "blockedByKeys": [],
+      "databaseId": 5953499533,
+      "parentLink": "native",
+      "blockedByNumbers": []
+    },
+    {
+      "key": "L02",
+      "number": 50,
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/50",
+      "title": "H2-L02：工作区学习开关与任务记录",
+      "file": "docs/specs/dsh-learning-plugin/tickets/02-workspace-controls-and-tasks.md",
+      "blockedByKeys": [],
+      "databaseId": 5953500319,
+      "parentLink": "native",
+      "blockedByNumbers": []
+    },
+    {
+      "key": "L03",
+      "number": 51,
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/51",
+      "title": "H2-L03：通过 DSH 执行完整学习实验",
+      "file": "docs/specs/dsh-learning-plugin/tickets/03-dsh-original-learning-experiment.md",
+      "blockedByKeys": [
+        "L01",
+        "L02"
+      ],
+      "databaseId": 5953501055,
+      "parentLink": "native",
+      "blockedByNumbers": [
+        49,
+        50
+      ]
+    },
+    {
+      "key": "L04",
+      "number": 52,
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/52",
+      "title": "H2-L04：检查配置映射并展示候选证据",
+      "file": "docs/specs/dsh-learning-plugin/tickets/04-configuration-mapping-and-evidence.md",
+      "blockedByKeys": [
+        "L03"
+      ],
+      "databaseId": 5953501864,
+      "parentLink": "native",
+      "blockedByNumbers": [
+        51
+      ]
+    },
+    {
+      "key": "L05",
+      "number": 53,
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/53",
+      "title": "H2-L05：人工采用、加载与撤回经验",
+      "file": "docs/specs/dsh-learning-plugin/tickets/05-adopt-use-and-withdraw.md",
+      "blockedByKeys": [
+        "L04"
+      ],
+      "databaseId": 5953502534,
+      "parentLink": "native",
+      "blockedByNumbers": [
+        52
+      ]
+    },
+    {
+      "key": "L06",
+      "number": 54,
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/54",
+      "title": "H2-L06：显式导出项目 skills",
+      "file": "docs/specs/dsh-learning-plugin/tickets/06-explicit-skill-export.md",
+      "blockedByKeys": [
+        "L05"
+      ],
+      "databaseId": 5953503177,
+      "parentLink": "native",
+      "blockedByNumbers": [
+        53
+      ]
+    },
+    {
+      "key": "L07",
+      "number": 55,
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/55",
+      "title": "H2-L07：取消、中断恢复与资源收尾",
+      "file": "docs/specs/dsh-learning-plugin/tickets/07-cancellation-and-recovery.md",
+      "blockedByKeys": [
+        "L03",
+        "L05"
+      ],
+      "databaseId": 5953503788,
+      "parentLink": "native",
+      "blockedByNumbers": [
+        51,
+        53
+      ]
+    },
+    {
+      "key": "L08",
+      "number": 56,
+      "url": "https://github.com/Ghost233/DSH-Workflow/issues/56",
+      "title": "H2-L08：日常启动与打包应用一致交付",
+      "file": "docs/specs/dsh-learning-plugin/tickets/08-source-and-app-delivery.md",
+      "blockedByKeys": [
+        "L06",
+        "L07"
+      ],
+      "databaseId": 5953504403,
+      "parentLink": "native",
+      "blockedByNumbers": [
+        54,
+        55
+      ]
+    }
+  ],
+  "ticketReview": {
+    "skill": "to-tickets",
+    "clientDate": "2026-10-21",
+    "existingTicketsReused": true,
+    "newTicketsCreated": 0,
+    "bodyAndCommentsRead": [
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56
+    ],
+    "nativeParentLinksVerified": 8,
+    "nativeBlockingEdgesVerified": 9,
+    "parentIssueUnchanged": true,
+    "bodyTemplatesNormalized": [
+      51,
+      52,
+      53,
+      54,
+      55,
+      56
+    ],
+    "parentBodySha256": "f7c49e082bf47f61c9ce2fabdb1c9a1f71acb11f9179a2f4f1bb8205a8485949",
+    "implementation": "not-started"
+  }
+}
