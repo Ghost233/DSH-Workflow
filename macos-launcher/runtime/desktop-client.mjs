@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { serviceRequest, serviceSocket } from './service-control.mjs'
 import { newerWorkflowRelease, workflowReleaseEndpoint } from './workflow-release.mjs'
@@ -56,17 +57,17 @@ function privateSession(value) {
 export class WorkflowDesktopConnection {
   constructor(_node, runtime, _profile, _inspect, environment, onFailure, _primary, _packages, onPlatformSession) {
     this.runtime = runtime
-    this.environment = environment
+    // macOS can restore this client without the launcher's per-process environment.
+    this.dataRoot = environment.DSH_WORKFLOW_DATA_ROOT || join(environment.HOME || homedir(), 'Library/Application Support/DSH Workflow')
     this.onFailure = onFailure
     this.onPlatformSession = onPlatformSession
     this.closed = false
   }
 
   async connect() {
-    if (!this.environment.DSH_WORKFLOW_DATA_ROOT) throw new Error('请从 DSH 启动器打开桌面客户端。')
     const { version } = JSON.parse(await readFile(join(this.runtime, 'node_modules/@deepseek-ai/dsh/package.json'), 'utf8'))
     try {
-      const value = await serviceRequest(serviceSocket(this.environment.DSH_WORKFLOW_DATA_ROOT),
+      const value = await serviceRequest(serviceSocket(this.dataRoot),
         { type: 'connect-desktop', runtimeVersion: version }, 5000)
       value.platformSession = privateSession(value.platformSession)
       return value
@@ -101,7 +102,7 @@ export class WorkflowDesktopConnection {
         if (this.closed) return
         if (error.message === unavailable) {
           try {
-            const { service } = await serviceRequest(serviceSocket(this.environment.DSH_WORKFLOW_DATA_ROOT), { type: 'status' }, 5000)
+            const { service } = await serviceRequest(serviceSocket(this.dataRoot), { type: 'status' }, 5000)
             if (this.closed) return
             // A failed readiness probe does not prove that this established instance exited.
             // Keep its current private session; status never supplies a new connection or grant.

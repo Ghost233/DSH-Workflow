@@ -14,11 +14,12 @@ const incompatible = 'DSH 服务接入版本不兼容，请使用配套应用。
 
 // This fixture replaces only the local manager connection boundary. Actual Host,
 // Electron, and private Platform integration remain native scenario obligations.
-async function connectionFixture(t) {
+async function connectionFixture(t, { restored = false } = {}) {
   const root = await mkdtemp('/private/tmp/dsh-s02-connection-')
-  const dataRoot = join(root, 'data'), runtime = join(root, 'runtime')
+  const dataRoot = restored ? join(root, 'Library/Application Support/DSH Workflow') : join(root, 'data')
+  const runtime = join(root, 'runtime')
   await chmod(root, 0o700)
-  await mkdir(dataRoot, { mode: 0o700 })
+  await mkdir(dataRoot, { recursive: true, mode: 0o700 })
   await mkdir(join(runtime, 'node_modules/@deepseek-ai/dsh'), { recursive: true })
   await writeFile(join(runtime, 'node_modules/@deepseek-ai/dsh/package.json'), JSON.stringify({ version }))
   const socketPath = serviceSocket(dataRoot)
@@ -53,7 +54,8 @@ async function connectionFixture(t) {
     })
   })
   const connection = new WorkflowDesktopConnection(null, runtime, null, null,
-    { DSH_WORKFLOW_DATA_ROOT: dataRoot }, error => failures.push(error), null, null, value => sessions.push(value))
+    { HOME: root, ...(!restored ? { DSH_WORKFLOW_DATA_ROOT: dataRoot } : {}) },
+    error => failures.push(error), null, null, value => sessions.push(value))
   t.after(async () => {
     await connection.stop()
     for (const socket of sockets) socket.destroy()
@@ -63,7 +65,7 @@ async function connectionFixture(t) {
   })
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve) })
   await chmod(socketPath, 0o600)
-  return { connection, original, grant, requests, failures, sessions,
+  return { connection, original, grant, requests, failures, sessions, socketPath,
     get refused() { return refused }, set mode(value) { mode = value } }
 }
 
@@ -79,6 +81,32 @@ function readOnly(fixture) {
   assert.ok(fixture.requests.filter(request => request.type === 'connect-desktop')
     .every(request => request.runtimeVersion === version))
 }
+
+test('a macOS-restored Desktop without launcher environment reconnects to its existing local service', { timeout: 6000 }, async t => {
+  const fixture = await connectionFixture(t, { restored: true })
+  const ready = await fixture.connection.start()
+  assert.equal(ready.url, fixture.original.url)
+  assert.equal(fixture.connection.instanceId, fixture.original.instanceId)
+  assert.deepEqual(fixture.sessions, [fixture.grant])
+  assert.equal(fixture.failures.length, 0)
+  fixture.mode = 'unavailable'
+  await observed(() => fixture.refused > 0)
+  fixture.mode = 'ready'
+  await observed(() => fixture.sessions.length >= 2)
+  assert.equal(fixture.failures.length, 0)
+  assert.deepEqual(fixture.sessions.at(-1), fixture.grant)
+  readOnly(fixture)
+})
+
+test('a restored Desktop retains service availability and private-socket checks', async t => {
+  const fixture = await connectionFixture(t, { restored: true })
+  fixture.mode = 'unavailable'
+  await assert.rejects(fixture.connection.start(), error => error.message === unavailable)
+  await chmod(fixture.socketPath, 0o666)
+  await assert.rejects(fixture.connection.start(), /Unsafe DSH service socket/)
+  assert.equal(fixture.sessions.length, 0)
+  readOnly(fixture)
+})
 
 test('opening Desktop refreshes a stale bootstrap revision without restarting its live Host', async t => {
   const fixture = await connectionFixture(t)
