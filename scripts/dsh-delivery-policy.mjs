@@ -6,4 +6,6 @@ export const packageMutationModules = Object.freeze([
   '@deepseek-ai/dsh-plugin-market',
   '@deepseek-ai/dsh-plugin-market/tools',
   '@deepseek-ai/dsh-client-ui-plugin-market',
+  // These launchers depend on the mutable manager that the project replaces.
+  '@deepseek-ai/dsh-client-ui-entry-customization',
 ])

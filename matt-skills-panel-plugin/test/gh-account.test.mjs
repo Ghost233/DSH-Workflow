@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGhAccount } from '../src/host/ghAccount.js'
-import { createRepoKeys } from '../src/host/git-process.js'
+import { createRepoKeys } from '../src/refresh/rooms/host/git-execution.js'
 import { createPlatformChannel } from '../src/host/platformChannel.js'
 import { createGhAccountWiring } from '../src/host/ghAccountWiring.js'
 

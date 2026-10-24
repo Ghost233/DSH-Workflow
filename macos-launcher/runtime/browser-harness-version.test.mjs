@@ -33,7 +33,7 @@ test('launcher browser rows distinguish a fixed skill from a CLI observed in the
     url: `http://127.0.0.1:${server.address().port}/?token=fixture` }), { mode: 0o600 })
   const inspect = () => checkPluginVersions({ resourcesRoot, dataRoot, home: join(root, 'home') })
   let rows = (await inspect()).rows
-  assert.equal(rows.find(row => row.name === 'Browser Harness Skill').current, 'c6a941287424f32e2d20c7b7b892c8493f46808d')
+  assert.equal(rows.find(row => row.name === 'Browser Harness Skill').current, '6d1c39adbcba5599a35182a19bcfbb0859e50abb')
   let cli = rows.find(row => row.name === 'browser-harness')
   assert.equal(cli.current, '0.1.13')
   assert.equal(cli.actualScope, 'dsh-shell')

@@ -56,7 +56,8 @@ test('project MCP configuration preserves an existing user server including its 
 
 test('managed launch disables installer services, tools and pages by module while retaining readonly inventory', () => {
   const names = ['@deepseek-ai/dsh-plugin-manager', '@deepseek-ai/dsh-plugin-manager/tools',
-    '@deepseek-ai/dsh-client-ui-plugin-manager', '@deepseek-ai/dsh-plugin-market', '@deepseek-ai/dsh-plugin-market/tools', '@deepseek-ai/dsh-client-ui-plugin-market']
+    '@deepseek-ai/dsh-client-ui-plugin-manager', '@deepseek-ai/dsh-plugin-market', '@deepseek-ai/dsh-plugin-market/tools', '@deepseek-ai/dsh-client-ui-plugin-market',
+    '@deepseek-ai/dsh-client-ui-entry-customization']
   const entries = [
     ...names.map((name, index) => ({ id: `renamed-manager-${index}`, name })),
     { id: 'saved-group', group: true, config: [{ id: 'another-manager', name: names[0] }] },

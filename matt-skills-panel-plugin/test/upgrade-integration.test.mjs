@@ -42,7 +42,7 @@ test('running markers fall back to Git while preserving a literal macOS director
 
 import { createSkillDoc } from '../src/host/skillDoc.js'
 import { readRepoPermissions } from '../src/tracker/rooms/github/repo-permissions.js'
-import { halfOpenTrialIsDue, recordFailure } from '../src/shared/refresh/src/failure-window.js'
+import { halfOpenTrialIsDue, recordFailure } from '../src/refresh/kernel/failure-window.js'
 
 test('skill details use the registered Chinese provider and preserve the requested workspace', async () => {
   const calls = []

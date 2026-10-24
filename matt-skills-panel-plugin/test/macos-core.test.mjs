@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readCommand, detectWrite } from '../src/shared/refresh/src/write-detect.js'
-import { classifyCreateWriteAttempt, decideCreateWriteRetry } from '../src/shared/refresh/src/create-write.js'
-import { chainTicketAndEffortFromPath } from '../src/shared/refresh/src/chain.js'
+import { readCommand, detectWrite } from '../src/refresh/kernel/write-event-detection.js'
+import { classifyCreateWriteAttempt, decideCreateWriteRetry } from '../src/refresh/kernel/create-write-policy.js'
+import { chainTicketAndEffortFromPath } from '../src/refresh/kernel/refresh-chain.js'
 import { shortestUniqueSuffix, displayFor, assemble } from '../src/shared/version-control/src/state.js'
 
 test('Windows executable spellings are not promoted to POSIX issue writes', () => {

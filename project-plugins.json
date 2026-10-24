@@ -1,14 +1,14 @@
 {
   "registry": "https://registry.npmjs.org/",
   "plugins": [
-    { "package": "dsh-context", "version": "0.74.0", "entryId": "dsh-context", "repository": "https://github.com/bowenliang123/dsh-context", "startup": true },
-    { "package": "dsh-cost-meter", "version": "1.9.30", "entryId": "cost-meter", "repository": "https://github.com/Han-1413141/dsh-cost-meter", "startup": true },
+    { "package": "dsh-context", "version": "0.75.1", "entryId": "dsh-context", "repository": "https://github.com/bowenliang123/dsh-context", "startup": true },
+    { "package": "dsh-cost-meter", "version": "1.9.33", "entryId": "cost-meter", "repository": "https://github.com/Han-1413141/dsh-cost-meter", "startup": true },
     { "package": "@nagi-ovo/dsh-visualize", "version": "0.1.7", "entryId": "dsh-visualize", "repository": "https://github.com/Nagi-ovo/dsh-visualize", "startup": true },
-    { "package": "billion-context", "version": "0.1.204", "entryId": "bili-native", "repository": "https://github.com/ranxianglei/billion-context", "startup": true },
+    { "package": "billion-context", "version": "0.1.206", "entryId": "bili-native", "repository": "https://github.com/ranxianglei/billion-context", "startup": true },
     { "package": "@goodandready/dsh-plugin-notify", "version": "0.4.6", "entryId": "plugin-notify", "repository": "https://github.com/GooDAnDReaDY/dsh-plugin-notify", "startup": true },
     { "package": "dsh-better-sidebar", "version": "0.28.0", "entryId": "better-sidebar", "repository": "https://github.com/omdsh-dev/DSH-better-sidebar", "startup": true },
     { "package": "ghost-agent-sentinel", "version": "0.1.8", "entryId": "ghost-agent-sentinel", "repository": "https://github.com/Ghost233/GhostAgentSentinel", "source": "git", "commit": "1a2fc28c088f9c514cf55bb5a0536c0f523eb711", "startup": true },
-    { "package": "dsh-provider-hub", "version": "0.3.2", "entryId": "dsh-provider-hub", "repository": "https://github.com/DDDMUC/dsh-provider-hub", "startup": true },
+    { "package": "dsh-provider-hub", "version": "0.4.0", "entryId": "dsh-provider-hub", "repository": "https://github.com/DDDMUC/dsh-provider-hub", "startup": true },
     { "package": "dsh-our-free-model", "version": "2.5.9", "entryId": "our-free-model", "repository": "https://github.com/Ebony-Vinyl/dsh-our-free-model", "source": "git", "commit": "25ab765d6bb860779dbd8c53062953524f3cac09", "startup": true }
   ]
 }

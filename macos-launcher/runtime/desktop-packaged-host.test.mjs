@@ -17,6 +17,8 @@ const { boot, loadProfile, createRuntimeResolution, PluginPackages } = req('@dee
 const { provideCmdline } = req('@deepseek-ai/dsh-cmdline')
 
 test('packaged project profile serves authenticated official DSH readiness using its declared local package map', { timeout: 30_000 }, async t => {
+  const runtime = JSON.parse(await readFile(resolve('dsh-runtime.json'), 'utf8'))
+  const sdkLock = JSON.parse(await readFile(resolve('macos-launcher/package-lock.json'), 'utf8')).packages
   const root = await mkdtemp(join(tmpdir(), 'packaged-dsh-ready-'))
   const resourcesRoot = join(root, 'resources'), workflow = join(resourcesRoot, 'workflow')
   const desktopRuntimeRoot = join(root, 'runtime'), home = join(root, 'home'), globalRoot = join(root, 'global')
@@ -64,7 +66,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   await writeFile(join(payloadPackage, 'cordis.patch.yml'), JSON.stringify([{ insert: [{ id: 'owned-delivery-fixture', name: delivered.package }] }]))
   const pluginConfig = JSON.stringify({ registry: 'https://registry.npmjs.org/', plugins: [delivered] })
   await writeFile(join(workflow, 'project-plugins.json'), pluginConfig)
-  await writeFile(join(workflow, 'project-plugins.lock.json'), JSON.stringify({ schema: 1, harnessVersion: '0.2.1-rc.2',
+  await writeFile(join(workflow, 'project-plugins.lock.json'), JSON.stringify({ schema: 1, harnessVersion: runtime.version,
     registry: 'https://registry.npmjs.org/', manifestSha256: createHash('sha256').update(pluginConfig).digest('hex'),
     plugins: [{ package: delivered.package, version: delivered.version, commit: delivered.commit, metadata: deliveredManifest }] }))
   await sealPluginPayload(resourcesRoot, [{ ...delivered, archiveSha256: 'd'.repeat(64) }])
@@ -169,12 +171,12 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(unresolved.status, 'unknown', 'unresolved disabled user choices must remain unknown rather than claim a fixed version')
   const sdkRow = report.rows.find(row => row.package === '@deepseek-ai/dsh-host-plugin-inventory')
   assert.ok(sdkRow, 'the actual readonly inventory package is resolved by this Host')
-  assert.equal(sdkRow.expected, '0.2.1-rc.2', 'SDK fixed versions must come from the packaged npm lock')
+  assert.equal(sdkRow.expected, sdkLock['node_modules/@deepseek-ai/dsh-host-plugin-inventory'].version, 'SDK fixed versions must come from the packaged npm lock')
   const presetRow = report.rows.find(row => row.scope === 'Agent 预设 cordis' && row.moduleName === '@deepseek-ai/dsh-plugin-manager/tools')
   assert.ok(presetRow, 'the versions page must retain the effective agent-preset scope from official inventory')
   assert.equal(presetRow.enabled, false)
-  assert.equal(presetRow.current, '0.2.1-rc.2')
-  assert.equal(presetRow.expected, '0.2.1-rc.2')
+  assert.equal(presetRow.current, sdkLock['node_modules/@deepseek-ai/dsh-plugin-manager'].version)
+  assert.equal(presetRow.expected, sdkLock['node_modules/@deepseek-ai/dsh-plugin-manager'].version)
   const ownRows = report.rows.filter(row => row.moduleName.startsWith('dsh-workflow/'))
   assert.deepEqual(ownRows.map(row => row.entryId).sort(), ['include:workflow-agent-monitor', 'include:workflow-delivery-inventory'])
   assert.equal(new Set(ownRows.map(row => row.source)).size, 1, 'all named project entries resolve from one existing package source')

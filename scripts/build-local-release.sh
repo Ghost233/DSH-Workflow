@@ -55,7 +55,7 @@ step '2/8 准备 Flutter 依赖'
 
 step '3/8 安装固定 DSH 依赖'
 if [[ "$SKIP_DSH_INSTALL" == 0 ]]; then
-  (cd deepseek-harness && pnpm install --frozen-lockfile)
+  (cd deepseek-harness && CI=true pnpm install --frozen-lockfile)
 else
   step '跳过 DSH 依赖安装（--skip-dsh-install）'
 fi

@@ -1,8 +1,10 @@
 import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile, realpath, cp, unlink } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, realpath, unlink } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { join, resolve } from 'node:path'
-import { sealPluginPayload } from '../../runtime/plugin-payload.mjs'
+import { sealPluginPayload, verifyPluginPayload } from '../../runtime/plugin-payload.mjs'
 
 // Two wholly owned acceptance packages; no upstream or third-party code is changed.
 const [resources, root] = process.argv.slice(2).map(value => resolve(value))
@@ -23,7 +25,9 @@ const provenance = JSON.parse(await readFile(payloadPath, 'utf8')).plugins
 // This scenario adds owned packages to its own copy; the frozen release stays immutable.
 const plugins = join(resources, 'plugins'), original = await realpath(plugins)
 await unlink(plugins)
-await cp(original, plugins, { recursive: true })
+// The macOS fixture needs independent files, without copying the payload's data blocks.
+await promisify(execFile)('/bin/cp', ['-cRp', original, plugins])
+await verifyPluginPayload(resources)
 await unlink(payloadPath)
 for (const suffix of ['fails', 'good']) {
   const name = `s08-owned-startup-${suffix}`, directory = join(plugins, 'node_modules', name)
