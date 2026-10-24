@@ -4,6 +4,7 @@ import { cp, mkdir, readFile, writeFile, symlink, lstat, readlink, rename, unlin
 import { existsSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { composeDshLaunch } from '../../scripts/dsh-launch-composition.mjs'
+import { packageMutationModules } from '../../scripts/dsh-delivery-policy.mjs'
 import { readPluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
 import { migrateProjectEntryNames } from '../../scripts/observation-profile.mjs'
 import { prepareStartupPlugins } from './startup-plugins.mjs'
@@ -25,6 +26,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const localPackages = { 'dsh-workflow': workflow,
     'dsh-workflow-matt-panel': join(workflow, 'matt-skills-panel-plugin/package') }
   const identity = { integrationVersion: 4, workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', hostInstance: 'desktop-bridge', stopInspection: 1, agentMonitor: 2, jevCenter: 1, localPackages,
+    packageMutationModules,
     projectMcp: JSON.parse(await readFile(join(workflow, 'project-mcp.json'), 'utf8')) }
   await mkdir(profile, { recursive: true })
   const manifestPath = join(profile, 'package.json')

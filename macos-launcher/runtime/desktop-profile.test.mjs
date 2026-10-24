@@ -102,6 +102,35 @@ test('Desktop migrates a cached stage-one bundle-only profile without changing u
   assert.equal(await readFile(join(prepared.profile, 'package.json'), 'utf8'), stable)
 })
 
+test('Desktop refreshes an older managed policy at the same application path without changing user files', async t => {
+  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
+  const root = await mkdtemp(join(tmpdir(), 'desktop-profile-policy-upgrade-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const resourcesRoot = join(root, 'resources'), desktopRuntimeRoot = join(root, 'runtime')
+  await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
+  await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
+  await mkdir(resourcesRoot)
+  await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
+  const args = { resourcesRoot, desktopRuntimeRoot, globalRoot: join(root, 'global'), home: join(root, 'home') }
+  const prepared = await prepareDesktopProfile(args)
+  const patchPath = join(prepared.bundle, 'cordis.patch.yml'), stampPath = join(prepared.bundle, 'integration.json')
+  const patches = JSON.parse(await readFile(patchPath, 'utf8'))
+  assert.equal(patches.find(row => row.id === 'entry-customization')?.disabled, true)
+  const oldStamp = JSON.parse(await readFile(stampPath, 'utf8'))
+  delete oldStamp.packageMutationModules
+  await writeFile(stampPath, JSON.stringify(oldStamp))
+  await writeFile(patchPath, JSON.stringify(patches.filter(row => row.id !== 'entry-customization')))
+  await writeFile(join(prepared.profile, 'cordis.yml'), '# saved user configuration\n[]\n')
+  const userFiles = await Promise.all(['package.json', 'cordis.patch.yml', 'cordis.yml'].map(async name =>
+    [name, await readFile(join(prepared.profile, name))]))
+  await prepareDesktopProfile(args)
+  assert.equal(JSON.parse(await readFile(patchPath, 'utf8')).find(row => row.id === 'entry-customization')?.disabled, true)
+  for (const [name, bytes] of userFiles) assert.deepEqual(await readFile(join(prepared.profile, name)), bytes)
+  const stable = await readFile(stampPath, 'utf8')
+  await prepareDesktopProfile(args)
+  assert.equal(await readFile(stampPath, 'utf8'), stable)
+})
+
 for (const packageName of ['dsh-workflow', 'dsh-workflow-matt-panel']) test(`cached preparation refuses a foreign ${packageName} link and keeps its data`, async t => {
   const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
   const root = await mkdtemp(join(tmpdir(), 'desktop-foreign-package-'))
