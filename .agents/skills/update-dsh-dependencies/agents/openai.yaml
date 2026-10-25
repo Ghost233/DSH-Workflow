@@ -1,0 +1,4 @@
+interface:
+  display_name: "更新 DSH 依赖与兼容检查"
+  short_description: "检查并更新子模块和 DSH 插件，验证版本声明、随包交付及实际运行兼容性"
+  default_prompt: "使用 $update-dsh-dependencies 检查并更新本仓库的 submodule 和 DSH 插件，完成兼容性验证并报告采用版本与证据。"

@@ -9,7 +9,7 @@
 // 写保底与档位换算全部由调用方注入。这样同一个算式在刷新闸、宿主账本与门禁里是同一份逻辑，
 // 而数字只有 host-budget.ts 一处真源（同一件事不写两遍）。
 
-import type { BackendBudgetModel, BudgetReading } from '../../tracker/contract/budget-model.js'
+import type { BackendBudgetModel, BudgetReading, BucketLevel } from '../../tracker/contract/budget-model.js'
 
 /**
  * 调用方注入的四个额度算式与常量。
@@ -91,6 +91,124 @@ export function isWriteOp(op: string): boolean {
   return WRITE_OPS.indexOf(op) >= 0
 }
 
+/**
+ * 两桶后端里「读」那几条（GitHub：读全走 GraphQL 点数：探测、列表、单票、翻页、子票、标签清单、计数）。
+ *
+ * 名单留在本文件与三份写名单作伴：漏一条就会把这一条当「族不明」，退化成两族都看（旧行为），
+ * 只是保守一点，不会放行不该放行的调用。
+ */
+const GRAPHQL_READ_OPS: readonly string[] = ['list', 'get', 'listPage', 'getDependencies', 'listSubIssues', 'listLabels', 'counts']
+
+/**
+ * 写操作按真实出站通道分四份名单（#1418 P1 复核；2026-10-25 用 GH_DEBUG=api 实测 gh CLI 的请求落点，
+ * 复核第二轮又核对了「一次操作里的前置读」）。
+ *
+ * 为什么不能只看「最后那条写命令」：一次操作里除了写还要先读。建票就是典型 —— 写那一步是
+ * REST（房间直接发 gh api repos/.../issues，gh issue create 不认 --json），但建之前必跑幂等锚回查：
+ * gh search issues 与 gh issue list 都是 GraphQL（见 idempotency.ts 的快路 / 慢路）。
+ * 所以建票同时依赖两族额度；只按 REST 判会让「GraphQL 已见底」时放行、随后建票必然失败。
+ * 反过来，改票 / 关票 / 父子边的前置读与写都在 GraphQL 上，REST 见底时它们照做 —— 这正是
+ * 票面要求的「只停真正依赖已见底那一族的操作」。
+ */
+const BOTH_WRITE_OPS: readonly string[] = ['create']
+
+/**
+ * 只有 GraphQL 一条路的写操作（含前置读）：gh issue edit / close / reopen 这几条子命令内部发
+ * POST /graphql；setParent 的 REST 退路只在「老版本 gh 不认 --parent」时才走（graph.ts 的
+ * isUnknownFlag 分支），额度耗尽不会换路，所以它也只看 GraphQL。
+ */
+const GRAPHQL_WRITE_OPS: readonly string[] = ['update', 'setLabels', 'setAssignees', 'setParent', 'close', 'reopen']
+
+/**
+ * 有退路的写操作：第一条通道失败会真的换另一条重发，只要还剩一条路就能做，两族都见底才拦。
+ *   - 评论先发 REST POST，失败无条件回落 gh issue comment（GraphQL，见 comments.ts）；
+ *   - 阻塞边先走 GraphQL mutation，id 查询或写失败会回落 REST（见 blocked-by-write.ts）。
+ */
+const DUAL_WRITE_OPS: readonly string[] = ['comment', 'setBlockedBy']
+
+/** 这次调用依赖哪几族额度：all 是缺一不可的，anyOf 是两条通道任走一条即可（见 DUAL_WRITE_OPS）。 */
+export interface OpFamilyChoice {
+  /** 少了任何一族就做不成的额度。名单外的操作（切换后端、探测这一类）按两族都看，与改动前一样保守。 */
+  all: string[]
+  /** 有退路的那几族：只有全部见底才拦。 */
+  anyOf: string[]
+}
+
+/**
+ * 这次调用会花哪几族额度（#1418）。
+ *
+ * 判定只认「这一次真正会出站的通道」，不认「写/读」这个大方向：读操作全走 GraphQL 点数；
+ * 写操作里建票两族都要（写 REST、建前回查 GraphQL），改票 / 标签 / 认领 / 关票 / 重开 / 父子边
+ * 只有 GraphQL 一条路，评论与阻塞边两条路都走。
+ */
+export function familiesOfOp(op: string): OpFamilyChoice {
+  if (BOTH_WRITE_OPS.indexOf(op) >= 0) return { all: ['rest', 'graphql'], anyOf: [] }
+  if (GRAPHQL_WRITE_OPS.indexOf(op) >= 0) return { all: ['graphql'], anyOf: [] }
+  if (DUAL_WRITE_OPS.indexOf(op) >= 0) return { all: [], anyOf: ['rest', 'graphql'] }
+  if (GRAPHQL_READ_OPS.indexOf(op) >= 0) return { all: ['graphql'], anyOf: [] }
+  return { all: ['rest', 'graphql'], anyOf: [] }
+}
+
+/** 额度的中文短名：给人看的文案里用它，日志与门禁代号仍是 rest / graphql / requests。 */
+const FAMILY_LABEL: Record<string, string> = { rest: 'REST 请求', graphql: 'GraphQL 点数', requests: '请求次数' }
+
+/** 把额度短名交出去（闸的拒绝文案要按桶点名，不能只写「一个桶」）。 */
+export function familyLabelOf(family: string): string {
+  return FAMILY_LABEL[family] || family
+}
+
+/**
+ * 把服务端给的恢复时刻写成「约 HH:MM 恢复」；没给（或不是个数）就回空串，绝不编一个。
+ * 导出给闸的拒绝文案（refusal-messages.ts）共用：同一句话只写一份，两处不各写一套格式。
+ */
+export function resetClockText(at: unknown): string {
+  const ms = typeof at === 'number' && isFinite(at) ? at : 0
+  if (!(ms > 0)) return ''
+  const d = new Date(ms)
+  return '约 ' + ('0' + String(d.getHours())).slice(-2) + ':' + ('0' + String(d.getMinutes())).slice(-2) + ' 恢复'
+}
+
+/** 一个桶现在还剩多少（单位按额度给：GraphQL 按点、请求按条）。 */
+function remainingTextOf(family: string, level: BucketLevel): string {
+  const left = level && typeof level.remaining === 'number' ? level.remaining : 0
+  return '还剩 ' + left + (family === 'graphql' ? ' 点' : ' 条')
+}
+
+/** 把「还剩多少 + 约几点恢复」拼进括号里；两样都没有就回空串。 */
+function levelDetailText(family: string, level: BucketLevel): string {
+  const clock = resetClockText(level && level.resetAt)
+  const parts = [remainingTextOf(family, level)]
+  if (clock) parts.push(clock)
+  return '（' + parts.join('，') + '）'
+}
+
+/**
+ * 额度见底时给人看的那一句话（#1418）：说清是哪种额度见底、还剩多少、大概什么时候恢复。
+ *
+ * 用「REST 请求额度」「GraphQL 点数额度」这样的完整说法，不用「族」「桶」这类账本内部叫法：
+ * 第一次读这句话的人（用户与 AI）要能直接判断出「等多久、等的是哪一种额度」。
+ */
+export function exhaustedMessage(family: string, level: BucketLevel | null): string {
+  const lv = level || { remaining: 0, limit: 0 }
+  return '额度见底：' + familyLabelOf(family) + '额度不够了' + levelDetailText(family, lv) + '，这次先不执行。'
+}
+
+/**
+ * 两条路都见底时的一句话（评论 / 阻塞边）：两种额度都点名，各自还剩多少。
+ * 恢复时刻取两族里「先恢复的那一个」—— 只要有一族恢复就能重试，写最晚的那个会让人白等。
+ */
+function exhaustedAnyMessage(families: string[], levels: BucketLevel[]): string {
+  const names = families.map(function (f: string): string { return familyLabelOf(f) }).join('与')
+  const left = families.map(function (f: string, i: number): string { return remainingTextOf(f, levels[i]) }).join('、')
+  let earliest = 0
+  for (let i = 0; i < levels.length; i++) {
+    const at = Number(levels[i] && levels[i].resetAt) || 0
+    if (at > 0 && (earliest === 0 || at < earliest)) earliest = at
+  }
+  const clock = resetClockText(earliest)
+  return '额度见底：' + names + '两种额度都不够了（' + left + (clock ? '，最早' + clock : '') + '），这次先不执行。'
+}
+
 /** 硬顶的原话：桥、门禁与给人看的说明共用这一句，不各写各的。 */
 export const HARD_CAP_MESSAGE = '硬顶：这次调用没有写权限，写操作直接拒绝。'
 
@@ -102,7 +220,8 @@ export const HARD_CAP_MESSAGE = '硬顶：这次调用没有写权限，写操�
  *  b. 离网后端（口径或读数任一说离网）：本来就不花额度，直接放行；
  *  c. 读数未知：放行并如实标「读数未知」—— 未知不是 0，绝不套「剩余≤保底」；
  *  d. 只计请求的口径：只看请求桶还有没有剩余，不套 35% 保底、不看档位；
- *  e. 两桶独立口径：逐桶看剩余是否已经降到写保底，是就推迟（现状行为）。
+ *  e. 两桶独立口径：按这次真正会花的那几族判断（#1418）——缺一不可的清单逐族看，
+ *     有退路的清单只在两族都见底时才拦。
  *
  * 为什么把 b 放在 c 前面：离网后端的读数本来就可能缺席，若先判未知就会把「离网免额度」
  * 说成「读数未知」，理由与事实不符。为什么把 c 放在 d/e 前面：读数未知时 remaining 没有值，
@@ -137,18 +256,38 @@ export function decideByBudget(input: BudgetAdmitInput, limits: BudgetLimits): B
     return { allowed: false, kind: 'rate-limit', reason: 'requests-exhausted', message: '这次调用的请求额度已经用完，先不执行。' }
   }
 
-  // e. 两桶独立口径：逐桶看剩余是否已经降到写保底，任意一桶见底就推迟。
-  const levels = bucketLevelsOf(reading)
-  for (const level of levels) {
+  // e. 两桶独立口径：只按这次调用真正会花的那几族判断（#1418）。
+  //    缺一不可的清单（all）逐族看剩余；有退路的清单（anyOf）只在全部见底时才拦。
+  //    这样 REST 见底时改票 / 关票照做、GraphQL 见底时读操作才停，另一族见底不再连累这一条。
+  if (reading.kind === 'two-buckets') {
+    const restLevel = levelOf(reading.buckets.rest)
+    const graphqlLevel = levelOf(reading.buckets.graphql)
+    const levelOfFamily = function (family: string): BucketLevel { return family === 'graphql' ? graphqlLevel : restLevel }
+    const families = familiesOfOp(op)
+    for (let i = 0; i < families.all.length; i++) {
+      const level = levelOfFamily(families.all[i])
+      if (level.remaining <= limits.writeReserve(level.limit)) {
+        return { allowed: false, kind: 'rate-limit', reason: 'exhausted', message: exhaustedMessage(families.all[i], level) }
+      }
+    }
+    if (families.anyOf.length) {
+      const levels = families.anyOf.map(levelOfFamily)
+      const blocked = levels.every(function (level: BucketLevel): boolean { return level.remaining <= limits.writeReserve(level.limit) })
+      if (blocked) return { allowed: false, kind: 'rate-limit', reason: 'exhausted', message: exhaustedAnyMessage(families.anyOf, levels) }
+    }
+    return { allowed: true, reason: 'sufficient' }
+  }
+  // 两桶口径却只拿到「只计请求」的读数（旧缓存）：只剩请求桶可看，按它判（行为与改动前一致）。
+  for (const level of bucketLevelsOf(reading)) {
     if (level.remaining <= limits.writeReserve(level.limit)) {
-      return { allowed: false, kind: 'rate-limit', reason: 'exhausted', message: '额度的一个桶已经见底，这次先不执行。' }
+      return { allowed: false, kind: 'rate-limit', reason: 'exhausted', message: exhaustedMessage('rest', level) }
     }
   }
   return { allowed: true, reason: 'sufficient' }
 }
 
 /** 从读数里取请求桶；两桶读数没有 requests 这一格时返回 null（交给调用方按读数未知处理）。 */
-function requestsLevelOf(reading: BudgetReading): { remaining: number; limit: number } | null {
+function requestsLevelOf(reading: BudgetReading): BucketLevel | null {
   if (reading.known === false) return null
   if (reading.kind === 'requests-only') return levelOf(reading.requests)
   if (reading.kind === 'two-buckets') {
@@ -160,16 +299,17 @@ function requestsLevelOf(reading: BudgetReading): { remaining: number; limit: nu
 }
 
 /** 从读数里取两桶；沿用的旧行为是两桶口径只认 rest 与 graphql 两格。 */
-function bucketLevelsOf(reading: BudgetReading): Array<{ remaining: number; limit: number }> {
+function bucketLevelsOf(reading: BudgetReading): BucketLevel[] {
   if (reading.known === false) return []
   if (reading.kind === 'two-buckets') return [levelOf(reading.buckets.rest), levelOf(reading.buckets.graphql)]
   if (reading.kind === 'requests-only') return [levelOf(reading.requests)]
   return []
 }
 
-/** 读数里的数字可能缺格（旧缓存或手写夹具）：缺格按 0 算，与桥原来的兜底口径一致。 */
-function levelOf(level: { remaining: number; limit: number } | undefined | null): { remaining: number; limit: number } {
+/** 读数里的数字可能缺格（旧缓存或手写夹具）：缺格按 0 算，与桥原来的兜底口径一致；resetAt 原样带出（#1418）。 */
+function levelOf(level: BucketLevel | undefined | null): BucketLevel {
   const remaining = level && typeof level.remaining === 'number' && isFinite(level.remaining) ? level.remaining : 0
   const limit = level && typeof level.limit === 'number' && isFinite(level.limit) ? level.limit : 0
-  return { remaining: remaining, limit: limit }
+  const resetAt = level && typeof level.resetAt === 'number' && isFinite(level.resetAt) ? level.resetAt : 0
+  return { remaining: remaining, limit: limit, resetAt: resetAt }
 }

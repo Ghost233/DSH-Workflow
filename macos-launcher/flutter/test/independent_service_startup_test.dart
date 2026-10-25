@@ -9,6 +9,27 @@ import 'package:launcher_core/launcher_core.dart';
 import '../tool/service_admission_fixture.dart';
 import 'independent_service_test.dart' show ServiceNative;
 
+Future<List<dynamic>> readProfilePatches(
+  String node,
+  String resources,
+  File patchFile,
+) async {
+  final parsed = await Process.run(node, [
+    '--input-type=module',
+    '-e',
+    r'''
+import { createRequire } from 'node:module'
+const [resources, path] = process.argv.slice(1)
+const boot = createRequire(resources + '/desktop/DeepSeek Harness.app/Contents/Resources/app/dsh/package.json')('@deepseek-ai/dsh-app-boot')
+process.stdout.write(JSON.stringify(boot.loadOverlayPatches('dsh', path)))
+''',
+    resources,
+    patchFile.path,
+  ]);
+  expect(parsed.exitCode, 0, reason: '${parsed.stdout}${parsed.stderr}');
+  return jsonDecode(parsed.stdout as String) as List;
+}
+
 void main() {
   final artifact = Platform.environment['DSH_SERVICE_TEST_RESOURCES'];
   test(
@@ -151,7 +172,7 @@ void main() {
         final patchFile = File(
           '${root.path}/home/profiles/desktop/cordis.patch.yml',
         );
-        final patches = jsonDecode(await patchFile.readAsString()) as List;
+        final patches = await readProfilePatches(node, resources, patchFile);
         patches.add({
           'id': 'project-startup-s08-owned-startup-good',
           'disabled': true,
@@ -179,7 +200,7 @@ void main() {
           false,
           reason: 'Same-profile preparation must keep the saved user-disabled patch',
         );
-        expect(jsonDecode(await patchFile.readAsString()), patches);
+        expect(await readProfilePatches(node, resources, patchFile), patches);
         stdout.writeln(
           'S08_AVAILABLE_STARTUP_FACTS=${jsonEncode({'pid': connection['pid'], 'instanceId': connection['instanceId'], 'goodActuallyApplied': true, 'results': results})}',
         );

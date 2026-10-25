@@ -203,3 +203,5 @@ package/upstream.json
 /.build/
 /src/client/kernel/prompt-data.ts
 /src/client/kernel/locale-data.ts
+
+/src/tracker/rooms/markdown/format/generated.ts

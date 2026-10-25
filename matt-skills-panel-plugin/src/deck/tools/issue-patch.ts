@@ -10,6 +10,7 @@
 // 必须带一条收口核对评论（逐张核对结论）；规格下面连实施票都没有时不算核对通过。
 // 没有「看到子票都关了顺手关」的旁路：唯一的触发条件就是收口核对通过，而这条评论本身就是核对通过的证据。
 import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../shell/call-shell.js'
+import { applyMdScope, mdScopeNote } from './md-scope.js'
 import { sessionContextOfAsync } from '../shell/session-workdir.js'
 import { callDeckSession, openDeckSession } from './tracker-session.js'
 import { statusOfItems } from '../shell/edge-landing.js'
@@ -27,7 +28,7 @@ import type { ProgressEntry } from '../../shared/issue-file/src/progress.js'
 import { progressEntryFromArg, stampNow } from '../../shared/issue-file/src/progress-tool.js'
 import type { OriginalWordsEntry } from '../../shared/issue-file/src/original-words.js'
 import { originalWordsFromArg } from '../../shared/issue-file/src/original-words-tool.js'
-import { planBodyWrite } from '../shell/body-write.js'
+import { planBodyWrite, moveLeadingSectionBelowTitle } from '../shell/body-write.js'
 import type { BodyWritePlan } from '../shell/body-write.js'
 import { textWriteVerify } from '../shell/text-write-verify.js'
 import { estimateToolCost, toolCostInputFrom } from '../../refresh/kernel/tool-call-budget.js'
@@ -46,48 +47,10 @@ export interface DeckIssuePatchDeps {
   now?: () => number
 }
 
-/** 工具定义（唯一事实）：路由、参数名与给 AI 看的那句话都从这里出，别在别处再抄一份。 */
-export const definition = {
-  name: 'deck_issue_patch',
-  description: '同属 dsh-mattpocock-skills-deck 插件的 ISSUE 与 map 管理能力，只处理当前 workspace 对应的 repo；动 ISSUE 前先调用 deck_context 确认 workspace 与 backend，若它说没 backend 就停下。改一个 ISSUE：评论、label、assignee、关闭、标题正文、progress 区、维护者原话区，一次只动点名的那些；重开不在这个工具上（只由人在后端做），关规格要先在这一次调用里带收口核对评论、且实施票已全关。本地后端认领会写进票里的 Assignees 行。',
-  parameters: {
-    type: 'object',
-    properties: {
-      key: { type: 'string', description: '要改的那张票' },
-      comment: { type: 'string', description: '要发的评论正文' },
-      addLabels: { type: 'array', items: { type: 'string' }, description: '要加的标签' },
-      removeLabels: { type: 'array', items: { type: 'string' }, description: '要摘掉的标签' },
-      assignees: { type: 'array', items: { type: 'string' }, description: '认领人（整批替换；给空数组就是取掉认领）' },
-      title: { type: 'string', description: '新的标题' },
-      body: { type: 'string', description: '新的正文' },
-      originalWords: {
-        type: 'object',
-        description: '追加一条维护者原话到正文的「## 维护者原话」区（紧跟「## 目的」，没有目的区就放正文最前）：{text, source}，source 必填。原话一字不改（不润色、不改标点、不翻译、不摘要），只追加、不编辑不删除不排序；同一段原话 + 同一出处已经写过时幂等跳过。三个后端都写进票的正文，不进评论。正文超过 60KB 时拒绝写入、一个字节不动。',
-        properties: {
-          text: { type: 'string', description: '维护者的原话正文，一字不改；可以多行，空行原样保留' },
-          source: { type: 'string', description: '出处，必填：票面写完整链接，本会话答复写「本会话（时间）」，文件写「路径:行号」，提交写短哈希' },
-        },
-        required: ['text', 'source'],
-        additionalProperties: false,
-      },
-      progress: {
-        type: 'object',
-        description: '写一条进度记录：{percent, note}（#1090 起不再收一段自由文字）。工具自动盖当前时间、把这条加到「## 进度」区最上面，旧记录原样保留；正文超过 60KB 时拒绝写入、一个字节不动。',
-        properties: {
-          percent: { type: 'integer', description: '进度百分比，0..100 的整数' },
-          note: { type: 'string', description: '做到哪一步了的说明，必填，一句话（不能换行）' },
-        },
-        required: ['percent', 'note'],
-        additionalProperties: false,
-      },
-      close: { type: 'boolean', description: 'true 关闭这张票；关规格时必须在同一次调用里带 comment（逐张核对结论），且实施票全关，否则关闭会被拒绝。重开只能由人在后端做，这个工具不支持 false' },
-      workRouteDetail: { type: 'string', enum: ['core', 'standard'], description: '成功后回执里在办表（data.workRoute）带多细：core 只带票号、会话、时间（缺省，最多 20 条），standard 再加标题与动作（全部条目）' },
-      effortId: { type: 'string', description: '只有本地后端需要填，填票所在的目录名，根目录的不填' },
-    },
-    required: ['key'],
-    additionalProperties: false,
-  },
-}
+// 工具定义搬到了单独一份（本文件有效行贴着每文件 350 行的上限，定义是一段纯数据、与运行逻辑没有耦合）。
+// 对外形状不变：装配层（agent-row）与这里都从同一份定义出路由、参数名与给 AI 看的说明。
+import { definition } from './issue-patch-definition.js'
+export { definition }
 
 /** 从参数里收一束名字：字符串直接用，对象取它的 name，其余一律当空串丢掉（不猜）。 */
 function names(list: unknown) {
@@ -107,7 +70,7 @@ export function createDeckIssuePatch(deps?: DeckIssuePatchDeps) {
 
   /**
    * 跑一次：exec 是 DSH 给的执行上下文（会话与沙箱都从它取），args 是模型填的参数。
-   * 参数先当「未知」再逐项收口（key / effortId 与下面那几件要改的事各收一次），回执形状由壳统一渲染。
+   * 参数先当「未知」再逐项收口（key / effort / feature 与下面那几件要改的事各收一次），回执形状由壳统一渲染。
    * exec 上只声明本文件真正会读的那个字段（取消信号），其余字段一律不碰、照旧整只交给壳，
    * 所以下面取 signal 的地方不必写一串断言。
    */
@@ -131,8 +94,8 @@ export function createDeckIssuePatch(deps?: DeckIssuePatchDeps) {
     const pick = await openDeckSession({ deps: d, exec: exec, session: s, estimate: est, tool: 'deck_issue_patch', kind: 'write' })
     if (!pick.ok) return shell.unsupported('deck_issue_patch', pick.reason, pick.text, { workspace: { root: s.cwd, key: s.workspaceKey }, cost: { estimated: est } })
     const repo = shell.repoOf(pick, s)
-    const effortId = (a.effortId === undefined || a.effortId === null) ? '' : String(a.effortId).trim()
-    if (effortId) repo.effortId = effortId
+    const scope = applyMdScope(repo, a)
+    if (!scope.ok) return shell.unsupported('deck_issue_patch', REFUSAL_REASONS.BAD_ARGS, scope.message, { cost: { estimated: est } })
 
     const addLabels = names(a.addLabels)
     const removeLabels = names(a.removeLabels)
@@ -143,6 +106,14 @@ export function createDeckIssuePatch(deps?: DeckIssuePatchDeps) {
       assignees: Array.isArray(a.assignees),
       text: typeof a.title === 'string' || typeof a.body === 'string' || (a.progress !== undefined && a.progress !== null) || (a.originalWords !== undefined && a.originalWords !== null),
       state: typeof a.close === 'boolean',
+    }
+    // #1495：关闭原因单独成参，不复用 comment：comment 是讨论，closeReason 是结论；地图子票要进 Answer、实施票要进评论，两边不能混。只带原因不带关票时拒写，免得原因没地方落。
+    const rawCloseReason = typeof a.closeReason === 'string' ? a.closeReason.trim() : ''
+    if (a.closeReason !== undefined && a.closeReason !== null && typeof a.closeReason !== 'string') {
+      return shell.unsupported('deck_issue_patch', REFUSAL_REASONS.BAD_ARGS, '关闭原因要写成一段文字：closeReason 只能是字符串，和 close:true 一起用。这次一个字都没动。', { cost: { estimated: est } })
+    }
+    if (rawCloseReason !== '' && a.close !== true) {
+      return shell.unsupported('deck_issue_patch', REFUSAL_REASONS.BAD_ARGS, '只带关闭原因、没说关票：closeReason 必须和 close:true 一起用，单独带它不知道要关哪一张。这次一个字都没动。', { cost: { estimated: est } })
     }
     if (!wants.comment && !wants.labels && !wants.assignees && !wants.text && !wants.state) {
       return shell.unsupported('deck_issue_patch', REFUSAL_REASONS.BAD_ARGS, '这次没说清要改什么：至少点名一件（comment / addLabels / removeLabels / assignees / title / body / progress / originalWords / close）。', { cost: { estimated: est } })
@@ -178,7 +149,7 @@ export function createDeckIssuePatch(deps?: DeckIssuePatchDeps) {
       const opCtx = sc.opCtx
       const items = []
       const notes = []
-      if (effortId) notes.push('这次带了 effortId（' + effortId.slice(0, 60) + '）：本地后端只在那一个目录里找，远端后端忽略它。')
+      if (scope.effortId) notes.push(mdScopeNote(scope.scene, scope.effortId))
       const touched = [key]
       // 锁内超时的传话格：锁回调里不能直接回整笔回执（那只会结束锁回调），超时原话先记在这里，
       // 锁出来以后统一回 timeoutReply；每次进锁前清零。
@@ -358,6 +329,9 @@ export function createDeckIssuePatch(deps?: DeckIssuePatchDeps) {
                 const planned = planBodyWrite(beforeBase, progressEntry, originalWords, PROGRESS_BODY_LIMIT, !explicitBody)
                 if (planned.plan === null) bodyProblem = planned.problem
                 else bodyPlan = planned.plan
+                // #1486：本地票传上来的是整份文件；原话区被共享规则放到标题前时搬回字段行之后，
+                // 否则标题前会多出一段 H2，父注释与字段行都跟着读不到（写后核对也会差一截）。
+                if (bodyPlan && bodyPlan.originalWords) bodyPlan.next = moveLeadingSectionBelowTitle(bodyPlan.next)
               }
               // 幂等：同一段原话 + 同一出处已经在正文里，且这次没有别的正文改动，就不重写正文（只记账）。
               if (bodyProblem === null && bodyPlan !== null && bodyPlan.skipped && !explicitBody && typeof a.title !== 'string') {
@@ -402,7 +376,8 @@ export function createDeckIssuePatch(deps?: DeckIssuePatchDeps) {
           items.push({ key: key, step: 'close', status: 'failed', reason: '收口核对评论没发出去：按规矩规格不能在没有这条评论的情况下关闭，这一步这次没做。先补发评论（同一次调用里带上 comment）再关。' })
         } else if (sc.outOfBudget()) over(a.close === true ? 'close' : 'reopen')
         else {
-          const rawState = a.close === true ? await t.close(repo, key, {}, opCtx) : await t.reopen(repo, key, opCtx)
+          const closeOpts = rawCloseReason !== '' ? { reason: rawCloseReason } : {}
+          const rawState = a.close === true ? await t.close(repo, key, closeOpts, opCtx) : await t.reopen(repo, key, opCtx)
           const stateTimeout = timeoutMessage(rawState as unknown as TransportResult)
           if (stateTimeout) return timeoutReply(stateTimeout)
           const r = must(rawState)

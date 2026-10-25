@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "repository": "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck",
   "submodulePath": "vendor/dsh-mattpocock-skills-deck",
-  "commit": "9f56fcb32b53e57363ea413e28314b0c54d7eb97",
-  "version": "1.9.0-beta.17",
+  "commit": "584127b1152ffdf04eeb2363b0a03d7cbdaa1bd2",
+  "version": "1.9.0-beta.18",
   "sourcePaths": [
     "src",
     "LICENSE",
@@ -28,6 +28,8 @@
     "scripts/generate-time-config.mts",
     "scripts/generate-locale-config.mts",
     "scripts/generate-prompt-config.mts",
-    "scripts/ts-hook.mts"
+    "scripts/ts-hook.mts",
+    "scripts/generate-md-format-config.mts",
+    "scripts/lib/md-format-config.mts"
   ]
 }

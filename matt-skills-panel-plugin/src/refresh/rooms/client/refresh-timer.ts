@@ -46,6 +46,9 @@ declare const loadChain: any;
 declare const setupPendingOf: any;
 declare const attentionVisible: any;
 declare const attentionStoreOf: any;
+// #1418 P1：探测范围与降档都收在注意力那一档（视野模型本来就归它管），这里只调两下。
+declare const probeTargetNow: any;
+declare const noteProbeReply: any;
 declare const namingGuardianEvent: any;
 declare const applySnapshotSelection: any;
 declare const flash: any;
@@ -80,8 +83,12 @@ const groupOf = function (cwd: any): any[] {
   });
   return group;
 };
-export const probeNow = function (fromFocus: any): void {
+export const probeNow = function (fromFocus: any, runtimeOpts?: any): void {
   if (typeof host === 'undefined' || typeof host.call !== 'function') return;
+  // #1418 P1：自动定时器那一拍带 background（降档跟着它走）与 baseMs（这一拍的正常间隔，退避按它乘倍数）；
+  //   人回来 / 焦点 / 动作触发的那几拍不算后台，也一律把退避复位。
+  const background: boolean = !!(runtimeOpts && runtimeOpts.background);
+  const baseMs: number = Math.max(0, Number(runtimeOpts && runtimeOpts.baseMs) || 0);
   if (fromFocus) {
     const now: number = Date.now();
     // #707：宿主已经在活跃集合里给了这个工作区一个探测间隔（正在看的 5 秒），回到前台时按它判；
@@ -130,6 +137,9 @@ export const probeNow = function (fromFocus: any): void {
       });
     };
     return host.call('wf.probe', { cwd: cwd }).then(function (res: any): any {
+      // #1418 P1：先把这一拍的结局记进降档状态（探成且没变化就加一级、有变化或没并进去就清零）。
+      //   集中在这里一处判，不散到每条 return 上：宿主回包里的 changed / mode 已经是全部事实。
+      try { noteProbeReply(res, background); } catch (eNote) {}
       try { if (res && res.ok) log('info', 'host.call', { method: 'wf.probe', latencyMs: Date.now() - probeT0, ok: true, kind: 'probe' }); else log('warn', 'host.call.fail', { method: 'wf.probe', kind: 'probe', errorHash: dswsLogHash(dswsLogTrunc(String((res && res.error) || 'probe-not-ok'), 120, 'error')), errorKind: String((res && res.errorKind) || '') }); } catch (eL) {}
       // #327 特性 A：探测完成即走针（无论是否检出变化）
       try { if (res && res.ok) touchProbeAt(cwd); } catch (ePA) {}
@@ -205,16 +215,13 @@ export const probeNow = function (fromFocus: any): void {
       try { noteProbeTrouble((e && e.message) || e); } catch (eTrouble) {}
     });
   };
-  // 按工作区键去重（#324 · 同工作区只探一次；#653：键走 wsKeyOf，同一工作区根下的多个子目录会话收成一次）
-  const cwdsByNorm: Map<string, any> = new Map();
-  const addCwd = function (cwd: any): void { try { const nk: any = wsKeyOf(cwd); if (!nk) return; if (!cwdsByNorm.has(nk)) cwdsByNorm.set(nk, cwd); } catch (e) { if (cwd && !Array.from(cwdsByNorm.values()).includes(cwd)) cwdsByNorm.set(String(cwd), cwd); } };
-  if (shared.cwd) addCwd(shared.cwd);
-  Object.keys(stores).forEach(function (k: string): void {
-    const c: any = stores[k] && stores[k].cwd;
-    if (c) addCwd(c);
-  });
-  const cwds: any[] = Array.from(cwdsByNorm.values());
-  if (!cwds.length) {
+  // #1418 P1：这一拍只探「人正在看的那个工作区」（probeTargetNow），不再把每个工作区的 cwd 都探一遍。
+  //   旧代码这里收集 shared + 所有 store 的 cwd、去重后逐个 refreshGroup：3 个工作区就是每拍 3 条探测，
+  //   一小时能吃掉两千多点 GraphQL，把插件份额（每小时 1750 点）烧穿；之后 deck 工具会被本地闸整轮拒掉。
+  //   返回 null 表示「这一拍整个跳过」（后台降档还没到点）：一个请求都不发，也不去问 cwd。
+  const target: any = probeTargetNow(background, baseMs);
+  if (target === null) return;
+  if (!target) {
     const sids: any[] = [];
     if (shared.sessionId) sids.push(shared.sessionId);
     Object.keys(stores).forEach(function (k: string): void { if (stores[k].sessionId && sids.indexOf(stores[k].sessionId) < 0) sids.push(stores[k].sessionId); });
@@ -243,11 +250,13 @@ export const probeNow = function (fromFocus: any): void {
         shared.cwd = foundCwds[0];
         if (hydrateFromCache(shared)) emit(shared);
       }
-      foundCwds.forEach(function (cwd: any): void { refreshGroup(cwd); });
+      // 冷启动只补一拍：补完 cwd 再问一次探测目标，探到那个就够了，别把所有会话的目录都扫一遍。
+      const again: any = probeTargetNow(background, baseMs);
+      if (again) refreshGroup(again);
     });
     return;
   }
-  cwds.forEach(function (cwd: any): void { refreshGroup(cwd); });
+  refreshGroup(target);
 };
 export const scheduleActionProbe = function (): void {
   if (_actionProbePending) return;
@@ -273,7 +282,8 @@ export const startAutoProbe = function (): void {
     // #232 R3 · 视线门控：页签隐藏（无人在看）时不发起新扫描 —— 非当前工作区零刷新流量。
     // 回到前台由 focus 探针（下方监听，FOCUS_PROBE_MIN_MS 限流）与轮询栅格自然续上（R2 恢复通道）。
     try { if (typeof document !== 'undefined' && document.visibilityState && document.visibilityState !== 'visible') return; } catch (e232g) {}
-    probeNow(false);
+    // #1418 P1：这一条是唯一的后台全量节拍，标记成 background —— 连续无变化时才会逐步拉长间隔。
+    probeNow(false, { background: true, baseMs: PROBE_MS });
   }, PROBE_MS);
   if (typeof globalThis !== 'undefined') (globalThis as any).__dswsOldProbeTimer = shared._probeTimer;
   if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('focus', function (): void { probeNow(true); });
@@ -317,7 +327,10 @@ export const startActiveProbeLoop = function (): void {
         // #776 只加日志不改行为：记下这一次探测节拍的间隔与工作区（与输入时间戳对齐用）。
         //   按需级，先判开关；节拍 5 秒一拍低频，不采样。
         try { if (isEnabled('debug')) log('debug', 'input.observe', { kind: 'probe-tick', count: 1, latencyMs: Math.round(Number(gap) || 0), keyHash: dswsLogHash(String(cwd || '')) }); } catch (ePt) {}
-        probeNow(false);
+        // #1418 P1 复核补：活跃拍也是「没人动、没变化」的自动拍，累了要按这一拍的间隔退避。
+        //   基数用宿主给的活跃间隔（正在看是 5 秒档）：刚有变化时还是 5 秒一拍，闲下来才逐级拉长；
+        //   人一回到前台 / 一切回窗口，焦点探针就把退避复位，不会把人的动作拖到分钟级。
+        probeNow(false, { background: true, baseMs: gap });
         // #891：初始化那一步还没过时，顺带重算一次链。注入 setupRun 是往会话里写字，写文件发生在链外，
         // 链的那几路事件里没有这一路，黄条就按旧快照常驻。这里复用正在看才跑的这一拍，不新开定时器；
         // 是否真算由宿主按退避裁定，人手重查那一路永不降档不受影响。全绿或根本没这一行时 setupPendingOf 为假，不多算。
