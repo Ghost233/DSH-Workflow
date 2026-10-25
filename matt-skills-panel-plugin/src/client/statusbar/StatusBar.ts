@@ -42,6 +42,8 @@ declare function isBannerFolded(...args: any[]): any;
 declare function isEnabled(...args: any[]): any;
 declare function loadChain(...args: any[]): any;
 declare function loadSnapshot(...args: any[]): any;
+// #1436：首帧/换目录/切会话都顺手读一次本机 work-path 存档（只读电话 wf.workRoute），不等整份快照重建。
+declare function loadOwnWorkRoute(...args: any[]): any;
 declare function newBugWayfinderText(...args: any[]): any;
 declare function newSessionTitleNew(...args: any[]): any;
 declare function newWayfinderText(...args: any[]): any;
@@ -54,6 +56,7 @@ declare function probeHandoffReady(...args: any[]): any;
 declare function refreshAll(...args: any[]): any;
 declare function runCapFold(...args: any[]): any;
 declare function runGuideMissing(...args: any[]): any;
+declare function runGuideRecheck(...args: any[]): any;
 declare function scheduleStatusClose(...args: any[]): any;
 declare function seg(...args: any[]): any;
 declare function setBannerFolded(...args: any[]): any;
@@ -169,7 +172,7 @@ export const StatusBar = (props: any) => {
         loadChain(s, false)
         // #1355：水合来的可能是同工作区别的会话的快照 —— 里面没有当前会话的 workRouteTable，胶囊会一直空着。
         //   要不要补拉、补拉走强制还是静默，全由 kernel/work-route-own 的 snapshotRequestPlan 一处决定，这一行只把它发出去。
-        runSnapshotRequestPlan(s, hydrated, 'apply', snapFresh(s), loadSnapshot)
+        runSnapshotRequestPlan(s, hydrated, 'apply', snapFresh(s), loadSnapshot); loadOwnWorkRoute(s)
       }
     }
     if (summaryCwd) { apply(summaryCwd, 'summary'); return }
@@ -184,17 +187,17 @@ export const StatusBar = (props: any) => {
   React.useEffect(function () {
     loadChain(s, false)
     // #1355：挂载首帧若水合到别的会话的快照，同样要补拉自己的表（判据与上面 apply 那条是同一份）。
-    runSnapshotRequestPlan(s, false, 'mount', snapFresh(s), loadSnapshot)
+    runSnapshotRequestPlan(s, false, 'mount', snapFresh(s), loadSnapshot); loadOwnWorkRoute(s)
   }, [])
   // #1355：切到另一个会话时，cwd 往往已经由会话摘要同步就位（apply 那条路径整个不跑），但新 store 水合来的缓存
   //   可能还是上一个会话的快照。这里单独补一眼：缺自己的 workRouteTable 就补拉一次。
   //   同一次提交里上面两条也走同一个判据，忙不忙由它挡（snapLoading / selPending）；普通冷启动仍走既有的在途复用。
-  React.useEffect(function () { runSnapshotRequestPlan(s, true, 'switch', snapFresh(s), loadSnapshot) }, [sid])
+  React.useEffect(function () { runSnapshotRequestPlan(s, true, 'switch', snapFresh(s), loadSnapshot); loadOwnWorkRoute(s) }, [sid])
   // #1395：胶囊「工作路线」那一段画不画的判据结论（含「有表但没有本会话的行」这一档）由同目录
   //   SessionChainCapsule.ts 的 logStatusFallback 按退化形状变化记一行；这里只负责在状态变化时把状态交给它。
-  React.useEffect(function () { logStatusFallback(s, sid) }, [s.snapshot, s.cwd, s.snapMode, sid])
+  React.useEffect(function () { logStatusFallback(s, sid) }, [s.snapshot, s.cwd, s.snapMode, s.ownWorkRoute, sid])
   const csx = checksumsOf(s)
-  const { fr, bugN, triageN, n, timeStr } = csx
+  const { fr, bugN, triageN, n, timeStr, freshColor, tipOf } = csx
   // 2026-08-28 优化3：胶囊状态栏任何情况下都不隐藏（#187「未选后端隐藏整条」门控退休，仅留导航引导）。
   // _isOtherSBGate 仍用于 go()：未选后端（backendId=null 且非 pending）时点击面板分段 → 设置页引导。
   // Guard: interval transient with empty cwd should not hide capsule (prevent forced empty)
@@ -444,10 +447,10 @@ export const StatusBar = (props: any) => {
       ])),
     ]),
     h(Tip, { content: tr('nav.envTitle', { n: n < 0 ? '?' : String(n), t: String(envTotal(s)) }) }, seg(n < 0 ? 'alert' : (n === envTotal(s) ? 'check' : 'dot'), [h('span', { 'data-fold-priority': 4 }, tr('nav.env')), h('span', { className: 'dsws-num', 'data-fold-priority': 5 }, envLabel(s))], n < 0 ? '#f87171' : n === envTotal(s) ? '#4ade80' : '#f59e0b', function () { go('checks') }, 14, 'status.seg.env')),
-    h(Tip, { content: tr('nav.refreshTitle') }, h('span', { className: 'dsws-timebtn dsws-hov', onClick: function (e: any) { e.stopPropagation(); refreshAll(s) }, 'aria-label': tr('nav.refreshTitle'),
+    h(Tip, { content: tipOf }, h('span', { className: 'dsws-timebtn dsws-hov', onClick: function (e: any) { e.stopPropagation(); refreshAll(s) }, 'aria-label': tr('nav.refreshTitle'),
       // 接线（#1335 界面反馈）：刷新那颗带图标带文字，属于文字类控件；日志标识 status.refresh。
       'data-press': 'button',
-      'data-log': 'status.refresh' }, [h('span', { className: 'dsws-rficon' + (s.refreshing ? ' dsws-spin' : '') }, [Ic({ n: 'refresh', size: 11 })]), h('span', { 'data-fold-priority': 2 }, tr('nav.refresh')), h('span', { key: 'dd', 'data-fold-priority': 3 }, splitTimeStr(' ' + timeStr).date), h('span', { key: 'tt', 'data-fold-priority': 6 }, splitTimeStr(' ' + timeStr).time)])),
+      'data-log': 'status.refresh' }, [h('span', { className: 'dsws-rficon' + (s.refreshing ? ' dsws-spin' : '') }, [Ic({ n: 'refresh', size: 11 })]), h('span', { 'data-fold-priority': 2 }, tr('nav.refresh')), h('span', { key: 'dd', 'data-fold-priority': 3, style: { color: freshColor } }, splitTimeStr(' ' + timeStr).date), h('span', { key: 'tt', 'data-fold-priority': 6, style: { color: freshColor } }, splitTimeStr(' ' + timeStr).time)])),
     h(SkillFloatList, { s: s }),
     logDotOn ? h(StatusLogDot, { s: s }) : null,
     capsuleToggle,
@@ -475,20 +478,20 @@ export const StatusBar = (props: any) => {
     // 无 banner 时为胶囊 + 常驻收起按钮（#422：收起即整个功能区消失）
     return h('div', { style: Object.assign({ display: 'flex', flex: 'none', flexDirection: 'column', alignItems: 'center', gap: 2, overflow: RDOM ? 'hidden' : 'visible' }, dswsStatusDockGeom()) }, [modalSeat, workspaceFileNoteEl(s), capsule])
   }
-  const bann = function (text: any, btnLabel: any, onBtn: any, foldable: any) {
+  const bann = function (text: any, btnLabel: any, onBtn: any, foldable: any, alt: any) {
     // #669：这颗叉（收起整个功能区）与左边那颗主按钮之间留 12px —— 原来只隔 6px，两颗按钮长得一样高、
     //   一样是描边方块，用户冲黄条那颗主按钮点下去、手一偏就落在叉上，于是「点了黄条，整条状态栏全没了」。
     //   留开距离不能让手不偏，但能让两颗按钮在视觉上分成两组，点之前看得出来是两件事。这一段保留。
     // 2026-09-21 按维护者要求还原：2026-09-20 那次一度把它改成带字的「收起」（怕纯图形叉被读成「关掉这条黄条」），
     //   维护者看过真机之后要求退回改动前的图形叉。叉形字形 11px、悬停与无障碍名仍是全称「收起MattSkillsDeck」。
+    // #1438：有些横幅在主按钮旁边还要一颗次要按钮（今天只有登录失败那条 —— 检查已经答对了「没登录」，
+    //   可人到插件外面把登录修好之后，这条横幅上原来没有一颗点了会重查的按钮，只能自己绕到环境检查页）。
+    //   进行中置灰并转圈，点不出第二趟；没声明就不画，那颗叉永远只有一颗。
     return h('div', { className: 'dsws-banner warn', style: { margin: 0, maxWidth: 560, cursor: 'default' } }, [
       Ic({ n: 'alert', size: 13 }),
       h('span', { style: { flex: 1 } }, text),
-      h('button', { className: 'dsws-btn dsws-hov', style: { borderColor: 'rgba(245,158,11,.6)' },
-        // 接线（#1335 界面反馈）：黄条主按钮有文字，按压与悬停都要有；日志标识 status.banner.action。
-        'data-press': 'button',
-        'data-log': 'status.banner.action',
-        onClick: onBtn }, btnLabel),
+      h('button', { className: 'dsws-btn dsws-hov', style: { borderColor: 'rgba(245,158,11,.6)' }, 'data-press': 'button', 'data-log': 'status.banner.action', onClick: onBtn }, btnLabel),
+      alt ? h('button', { className: 'dsws-btn ghost dsws-hov', style: { color: '#f59e0b', borderColor: 'rgba(245,158,11,.6)', marginLeft: 6, opacity: alt.busy ? 0.6 : 1 }, 'data-press': 'button', 'data-log': 'status.banner.recheck', onClick: alt.onClick, disabled: !!alt.busy }, [h('span', { className: 'dsws-rficon' + (alt.busy ? ' dsws-spin' : ''), style: { marginRight: 4 } }, [Ic({ n: 'refresh', size: 11 })]), tr(alt.label)]) : null,
       foldable ? h(Tip, { content: tr('banner.foldDeck') }, h('button', { className: 'dsws-btn ghost dsws-banner-fold-x', 'aria-label': tr('banner.foldDeck'),
         // 接线（#1335 界面反馈）：黄条那颗叉是纯图标，只接按压压暗；日志标识 status.banner.fold。
         'data-press': 'icon',
@@ -513,7 +516,9 @@ export const StatusBar = (props: any) => {
         ? h('div', { className: 'dsws-banner warn', style: { margin: 0, maxWidth: 560, background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.35)', color:'#f59e0b', display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:8 } }, [ h('span', { className:'dsws-spinner', style:{ width:12, height:12, borderWidth:2, display:'inline-block' } }), h('span', { style:{ flex:1, fontSize:12 } }, tr('switch.probeRunning')), h('button', { className:'dsws-btn dsws-hov', style:{ borderColor:'rgba(245,158,11,.6)', fontSize:11 }, 'data-press':'button', 'data-log':'status.banner.retry', onClick:function(){ loadSnapshot(s,true,true) } }, tr('pr.retry')), h(Tip, { content: tr('banner.foldDeck') }, h('button', { className:'dsws-btn ghost dsws-banner-fold-x', 'aria-label': tr('banner.foldDeck'), 'data-press':'icon', 'data-log':'status.banner.pending.fold', style:{ borderColor:'rgba(245,158,11,.6)', color:'#f59e0b', padding:'1px 6px', marginLeft:12, display:'inline-flex', alignItems:'center' }, onClick: foldBanner }, Ic({ n:'x', size:11 }))) ])
         : infoBar(_selReading)
     }
-    const node = bann(tr(meta.text, guideBannerParams(s, bannerStep)), tr(meta.btn), function () { runGuideMissing(s, bannerStep) }, true)
+    // #1438：登录失败那条横幅在主按钮旁边再给一颗「重新检查」（声明里没有就不画）；点下去走 bannerChain 的重查入口。
+    const alt = meta.recheckBtn ? { label: meta.recheckBtn, busy: !!s.refreshing, onClick: function () { if (!s.refreshing) runGuideRecheck(s, bannerStep.id) } } : null
+    const node = bann(tr(meta.text, guideBannerParams(s, bannerStep)), tr(meta.btn), function () { runGuideMissing(s, bannerStep) }, true, alt)
     // #698：这一支原先在黄条正文下面挂那张布局小卡；卡已搬去弹窗座位（上面那一处），
     //   所以这里不再拼它 —— 黄条照旧出，卡在哪个分支都画得出来。
     return node

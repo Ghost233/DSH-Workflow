@@ -31,7 +31,13 @@ test('workspace label operations select the exact macOS session policy', async (
     const tracker = { setLabelColors: async (_repo, _changes, op) => { context = op; return { ok: true, data: { applied: [], failed: [] } } } }
     const registry = { has: id => id === 'markdown', select: async () => ({ backendId: 'markdown' }), get: () => tracker, describe: () => ({ backend: 'markdown', refId: cwd }) }
     const platform = { os: 'darwin', path: nodePath.posix }
-    const api = createWorkspaceCwd({ ctx, DEFAULT_CWD: cwd, canonicalKey: async path => path, getPlatform: async () => platform, getTrackerRegistry: async () => registry, getDecisionFn: async () => ({ decideBackend() {} }), getDetectionService: async () => ({ detect: async () => ({ outlet: { backendId: 'markdown', canWrite: true } }) }) })
+    const api = createWorkspaceCwd({ ctx, DEFAULT_CWD: cwd, canonicalKey: async path => path, getPlatform: async () => platform, getTrackerRegistry: async () => registry,
+      openSession: async (openedCwd, options) => {
+        assert.equal(openedCwd, cwd)
+        assert.equal(options.write, true)
+        assert.equal(options.resolveSelection().backendId, 'markdown')
+        return { ok: true, canWrite: true, repoRef: registry.describe(), call: fn => fn(tracker, {}) }
+      }, getDecisionFn: async () => ({ decideBackend() {} }), getDetectionService: async () => ({ detect: async () => ({ outlet: { backendId: 'markdown', canWrite: true } }) }) })
     assert.equal((await api.handleSetLabelColors({ cwd, changes: [] })).ok, true)
     assert.equal(context.sessionId, 'exact')
     assert.deepEqual(context.sandboxPolicy, { sourceSession: 'exact' })

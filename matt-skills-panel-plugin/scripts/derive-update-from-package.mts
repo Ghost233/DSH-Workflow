@@ -11,7 +11,7 @@
  *      构建时原样复制进 package/lib/updatePkg，随包发布，线上可用）。
  *   2. 客户端侧（#800，本文件这次改的只有这一处）：不再读本地包目录，
  *      改调已安装更新包自带的官方工具 node_modules/dsh-plugin-update/derive-client-values.mjs，
- *      以已安装的 0.2.x 为唯一数据源生成面板取值（电话名与轮询间隔），
+ *      以已安装的锁定版本 为唯一数据源生成面板取值（电话名与轮询间隔），
  *      落到 scripts/generated/updateClient.derived.js，构建时拼进客户端闭包（kernel:updateClient 标记处）。
  *      放 scripts 下是因为内容含中文错误文案，src/client 下会被中文基线门禁误拦；
  *      构建产物里早有中文注释，行为一致，只是换个地方放（与日志包派生同口径）。
@@ -23,13 +23,13 @@
  *   换前缀或换轮询间隔要改多处、还容易改漏。现在这两种取值只有一个来源（已安装更新包的配置面），
  *   改包即改行为；手写源码里不再出现电话名字面量，派生文件里带零变化断言字面供门禁核对。
  *
- * 每次打包的顺序（#800 落实决策 2 的前半句）：先把更新包升到 0.2.x 最新并提交锁文件，
+ * 每次打包的顺序（#800 落实决策 2 的前半句）：先把更新包升到 锁定的更新包版本并提交锁文件，
  * 再跑本脚本派生，最后跑构建。构建脚本 scripts/build.mjs 会在需要时自动调本脚本，
  * 平时不用手工跑；但“升到最新”这一步靠人或发版流程执行，构建时只核对版本、不自动联网升级。
  *
- * 用法（一键走完“最新 0.2.x → 派生 → 构建”）：pnpm run update:latest；
+ * 用法（一键走完“锁定版本 → 派生 → 构建”）：pnpm run update:latest；
  * 分步则是：
- *   先升到 0.2.x 最新：pnpm update dsh-plugin-update@^0.2.0（只取 0.2.x 最新，不跳大版本），把 pnpm-lock.yaml 一起提交；
+ *   先升到 锁定的更新包版本：pnpm update dsh-plugin-update@0.18.39（只取 锁定的更新包版本，不跳大版本），把 pnpm-lock.yaml 一起提交；
  *   再派生：node scripts/derive-update-from-package.mts（插件根目录）；
  *   最后构建：node scripts/build.mjs。
  */
@@ -119,7 +119,7 @@ function installedUpdateDir() {
   } catch {
     const fallback = resolve(ROOT, 'node_modules', 'dsh-plugin-update')
     if (existsSync(join(fallback, 'package.json'))) return fallback
-    throw new Error('[derive-update] 找不到已安装的更新包：请先运行 pnpm install（依赖 dsh-plugin-update@^0.2.0）')
+    throw new Error('[derive-update] 找不到已安装的更新包：请先运行 pnpm install（依赖 dsh-plugin-update@0.18.39）')
   }
 }
 
@@ -147,7 +147,7 @@ export function deriveClient() {
   const version = installedUpdateVersion()
   const tool = join(pkgDir, 'derive-client-values.mjs')
   if (!existsSync(tool)) {
-    throw new Error('[derive-update] 已安装的更新包里没有官方生成工具（' + tool + '）：请确认装的是 0.2.x（含 derive-client-values.mjs），重装一次试试')
+    throw new Error('[derive-update] 已安装的更新包里没有官方生成工具（' + tool + '）：请确认锁定版本含 derive-client-values.mjs，重装一次试试')
   }
   mkdirSync(dirname(CLIENT_OUT), { recursive: true })
   // 第一步：调官方工具生成（唯一数据源是已安装包，版本号写进产物头）。
@@ -174,7 +174,7 @@ export function deriveClient() {
     }
     text = text.replace(anchor, '// 零变化断言（默认前缀 wf 下与旧字面一字不差；门禁直接看到这些字面，运行时走上面的拼名）\n' + assertion + anchor)
   }
-  // 改名说明行（记在产物头之后，产物头首行仍是官方的版本行，保证验收“产物头写明 0.2.0”一眼可见）。
+  // 改名说明行（记在产物头之后，产物头首行仍是官方的版本行，保证验收“产物头写明锁定版本”一眼可见）。
   // 重跑时先去掉上一轮加的说明行，再加一行，保证零 diff。
   const guardNote = '// 派生后处理（#800）：已按 #597 把三个重名函数改名（build* → updBuild*），顶撞检查已过；数据源是已安装的更新包，本地包目录不是来源。\n'
   text = text.split('\n').filter((line) => !line.includes('派生后处理（#800）')).join('\n')
@@ -182,10 +182,16 @@ export function deriveClient() {
   const headCount = lines.slice(0, 5).filter((line) => line.startsWith('//')).length
   lines.splice(headCount, 0, guardNote.replace(/\n$/, ''))
   text = lines.join('\n').replace(/\s+$/, '') + '\n'
+  // 0.18 的客户端入口带有 copyText 等辅助函数；只把面板需要的五个取值暴露给拼接闭包。
+  const values = ['UPD_STATUS', 'UPD_CHECK', 'UPD_INSTALL', 'UPD_POLL', 'UPD_POLL_MIN']
+  const body = text.replace(/^export\s+/gm, '').split('\n').map(line => line ? '  ' + line : '').join('\n')
+  text = 'const workflowUpdateValues = (() => {\n' + body
+    + '\n  return { ' + values.join(', ') + ' }\n})()\n'
+    + values.map(name => 'export const ' + name + ' = workflowUpdateValues.' + name).join('\n') + '\n'
   assertNoShadowing(text)
   writeFileSync(CLIENT_OUT, text, 'utf8')
   console.log('[derive-update] 官方工具派生 + 改名守卫：' + pkgDir + ' (' + version + ') -> scripts/generated/updateClient.derived.js')
-  console.log('[derive-update] 打包前请确认：已先跑 pnpm update dsh-plugin-update@^0.2.0 并提交锁文件（最新 0.2.x → 派生 → 构建）')
+  console.log('[derive-update] 打包前请确认：已先跑 pnpm update dsh-plugin-update@0.18.39 并提交锁文件（锁定版本 → 派生 → 构建）')
   return version
 }
 

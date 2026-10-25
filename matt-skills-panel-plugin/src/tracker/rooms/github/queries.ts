@@ -15,27 +15,54 @@
 
 import { PAGINATION } from '../../contract/pagination.js'
 
+// 评论节点的字段清单：列表与单票共用一份，改这里两处一起变，不会一处多取、一处少取。
+// 这个形状与 normalizeComments 读的字段一一对应（src/tracker/rooms/github/normalize.ts 的 normalizeComments）。
+const COMMENT_NODE_FIELDS = 'id author{login avatarUrl __typename ... on User{name} ... on Organization{name}} authorAssociation body createdAt updatedAt lastEditedAt'
+
+/**
+ * 一条评论连接（comments 字段）。
+ *
+ * 为什么按参数拼：单票详情默认只要 50 条（与列表同一份字段清单），而评论「加载更多」要按调用方
+ * 这一趟要的条数取、还要带着游标一页页翻（#1444）。默认不带 after、不带 pageInfo，拼出来的文本
+ * 与迁移前逐字相同，列表查询因此一行不变。
+ */
+function commentsField(first: number, opts?: { after?: boolean; pageInfo?: boolean }): string {
+  const after = opts && opts.after ? ', after:$after' : ''
+  const pageInfo = opts && opts.pageInfo ? ' pageInfo{hasNextPage endCursor}' : ''
+  return `comments(first:${first}${after}){nodes{${COMMENT_NODE_FIELDS}}${pageInfo}}`
+}
+
+/** 单票字段清单：core 与能力字段来源固定，评论那一栏由调用方给（列表给 50 条、没有分页信息）。 */
+function issueFragmentFields(comments: string): string[] {
+  return [
+    'number', // keySource only → normalize String(number) → Issue.key（不产 number 字段）
+    'title',
+    'state',
+    'body',
+    'url',
+    'createdAt',
+    'updatedAt',
+    'closedAt',
+    'author{login avatarUrl __typename ... on User{name} ... on Organization{name}}',
+    'assignees(first:50){nodes{login name avatarUrl __typename}}',
+    'labels(first:50){nodes{name color description}}',
+    'milestone{title description state dueOn}',
+    comments,
+    'parent{number}',
+    'blockedBy(first:50){nodes{number title state}}',
+  ]
+}
+
 // 单票必需字段（core + 能力字段来源）。`number` 作 keySource 注释明确不外泄。
-export const ISSUE_FRAGMENT = [
-  'number', // keySource only → normalize String(number) → Issue.key（不产 number 字段）
-  'title',
-  'state',
-  'body',
-  'url',
-  'createdAt',
-  'updatedAt',
-  'closedAt',
-  'author{login avatarUrl __typename ... on User{name} ... on Organization{name}}',
-  'assignees(first:50){nodes{login name avatarUrl __typename}}',
-  'labels(first:50){nodes{name color description}}',
-  'milestone{title description state dueOn}',
-  'comments(first:50){nodes{id author{login avatarUrl __typename ... on User{name} ... on Organization{name}} authorAssociation body createdAt updatedAt lastEditedAt}}',
-  'parent{number}',
-  'blockedBy(first:50){nodes{number title state}}',
-].join(' ')
+// 评论条数从共享分页表取默认值（50）：与列表的 comments 一栏同数，默认路径的查询文本保持不变。
+export const ISSUE_FRAGMENT = issueFragmentFields(commentsField(PAGINATION.github.limitDefault)).join(' ')
+
+// 每条查询在 Query 根都带 rateLimit{ cost }（#1482）：回包里这一格是本趟真实点数，记账按它记，
+// 不再把每条 GraphQL 都当成 1 点。mutation 拿不到这一格（RateLimit 只挂在 Query 根），写操作仍按 1 点估。
 
 // GraphQL list 查询（批量取；filter 在内存完成）
 export const LIST_QUERY = `query($owner:String!,$name:String!,$first:Int!,$after:String){
+  rateLimit{ cost }
   repository(owner:$owner,name:$name){
     issues(first:$first, after:$after, states:[OPEN,CLOSED], orderBy:{field:UPDATED_AT, direction:DESC}){
       nodes{ ${ISSUE_FRAGMENT} }
@@ -46,10 +73,30 @@ export const LIST_QUERY = `query($owner:String!,$name:String!,$first:Int!,$after
 
 // 单票查询
 export const GET_QUERY = `query($owner:String!,$name:String!,$number:Int!){
+  rateLimit{ cost }
   repository(owner:$owner,name:$name){
     issue(number:$number){ ${ISSUE_FRAGMENT} }
   }
 }`
+
+/**
+ * 单票查询，评论按这一趟要的条数取（#1444 评论「加载更多」）。
+ *
+ * 为什么单开一个拼查询的出口：GetOpts.comments.first 是调用方这一次要的条数，房间不能把
+ * comments(first:50) 写死再在内存里截（那样要 100 条也只有 50 条）。这里只改 comments 一栏，
+ * 其余字段与 GET_QUERY 完全同源；带 pageInfo 是为了让房间知道还有没有下一页。
+ * withAfter 为 true 时声明 $after 变量并用游标接着翻，false 时查询文本里不出现 after。
+ */
+export function getIssueQuery(commentsFirst: number, withAfter: boolean): string {
+  const vars = withAfter ? ',$after:String' : ''
+  const comments = commentsField(commentsFirst, { after: withAfter, pageInfo: true })
+  return `query($owner:String!,$name:String!,$number:Int!${vars}){
+  rateLimit{ cost }
+  repository(owner:$owner,name:$name){
+    issue(number:$number){ ${issueFragmentFields(comments).join(' ')} }
+  }
+}`
+}
 
 // 依赖投影查询（#1304）：一次取齐正向与反向阻塞边，标题与状态随行回来，不再逐张再读。
 // 为什么不并进 ISSUE_FRAGMENT：列表查询不需要反向边（每行多付一整条连接的钱），
@@ -59,6 +106,7 @@ export const GET_QUERY = `query($owner:String!,$name:String!,$number:Int!){
 export const DEPS_MAX = PAGINATION.github.depsMax
 
 export const DEPS_QUERY = `query($owner:String!,$name:String!,$number:Int!){
+  rateLimit{ cost }
   repository(owner:$owner,name:$name){
     issue(number:$number){
       number
@@ -76,6 +124,7 @@ export const DEPS_QUERY = `query($owner:String!,$name:String!,$number:Int!){
 // 两个别名（openIssues / closedIssues）对应契约里的 open 与 closed，total 由调用方相加（一次查询里
 //   两个数同源同时刻，相加不会出现「两个时刻凑出来的总数」）。
 export const COUNTS_QUERY = `query($owner:String!,$name:String!){
+  rateLimit{ cost }
   repository(owner:$owner,name:$name){
     openIssues: issues(states:[OPEN]){ totalCount }
     closedIssues: issues(states:[CLOSED]){ totalCount }
@@ -84,6 +133,7 @@ export const COUNTS_QUERY = `query($owner:String!,$name:String!){
 
 // 同上，多了「必须同时带上这些标签」这一层筛（GraphQL 的 filterBy.labels 是 AND 语义）。
 export const COUNTS_QUERY_WITH_LABELS = `query($owner:String!,$name:String!,$labels:[String!]!){
+  rateLimit{ cost }
   repository(owner:$owner,name:$name){
     openIssues: issues(states:[OPEN], filterBy:{labels:$labels}){ totalCount }
     closedIssues: issues(states:[CLOSED], filterBy:{labels:$labels}){ totalCount }
@@ -119,9 +169,12 @@ export const PAGE_ISSUE_FRAGMENT = [
 //   totalCount 与 nodes 取自同一个连接，天然同时刻，供界面写「已加载 x / 共 N」。
 // 带标签筛的这一版单独一份查询：filterBy 只在真有标签要筛时才出现 —— 空数组是「不筛」还是「全都要有」
 //   在各版本上行为不一致，没有把握，所以不让它出现（与上面两条计数查询同一处置）。
-export const LIST_PAGE_QUERY = `query($owner:String!,$name:String!,$first:Int!,$after:String,$states:[IssueState!]!){
+// since（#1418）：刷新后台的增量索引窗口，服务端只回「更新时间不早于它」的票。变量可空——
+// 不给（null）时与没有这一格之前完全一样；给了就少翻十几页，探测每拍的额度从「全仓」降到「窗口」。
+export const LIST_PAGE_QUERY = `query($owner:String!,$name:String!,$first:Int!,$after:String,$states:[IssueState!]!,$since:DateTime){
+  rateLimit{ cost }
   repository(owner:$owner,name:$name){
-    issues(first:$first, after:$after, states:$states, orderBy:{field:CREATED_AT, direction:DESC}){
+    issues(first:$first, after:$after, states:$states, orderBy:{field:CREATED_AT, direction:DESC}, filterBy:{since:$since}){
       totalCount
       nodes{ ${PAGE_ISSUE_FRAGMENT} }
       pageInfo{ hasNextPage endCursor }
@@ -130,9 +183,10 @@ export const LIST_PAGE_QUERY = `query($owner:String!,$name:String!,$first:Int!,$
 }`
 
 // 同上，多了「必须同时带上这些标签」这一层筛（GraphQL 的 filterBy.labels 是 AND 语义）。
-export const LIST_PAGE_QUERY_WITH_LABELS = `query($owner:String!,$name:String!,$first:Int!,$after:String,$states:[IssueState!]!,$labels:[String!]!){
+export const LIST_PAGE_QUERY_WITH_LABELS = `query($owner:String!,$name:String!,$first:Int!,$after:String,$states:[IssueState!]!,$labels:[String!]!,$since:DateTime){
+  rateLimit{ cost }
   repository(owner:$owner,name:$name){
-    issues(first:$first, after:$after, states:$states, orderBy:{field:CREATED_AT, direction:DESC}, filterBy:{labels:$labels}){
+    issues(first:$first, after:$after, states:$states, orderBy:{field:CREATED_AT, direction:DESC}, filterBy:{labels:$labels, since:$since}){
       totalCount
       nodes{ ${PAGE_ISSUE_FRAGMENT} }
       pageInfo{ hasNextPage endCursor }
@@ -168,6 +222,7 @@ export const SUB_ISSUE_FRAGMENT = [
 //   连接上的 totalCount 用来核对「拉到的张数 == 总数」，对不上就把差额报出来，不许静默少几条。
 // 代价是每 100 张一页，所以只在用户真的打开一张地图时才跑（唯一调用者：宿主电话 wf.mapTickets）。
 export const SUB_ISSUES_QUERY = `query($owner:String!,$name:String!,$number:Int!,$first:Int!,$after:String){
+  rateLimit{ cost }
   repository(owner:$owner,name:$name){
     issue(number:$number){
       number
@@ -223,6 +278,7 @@ export const PULL_REQUEST_FRAGMENT = [
 //   面板上表现为「本仓 10 条 PR 只出现 5 条」（2026-09-11 真仓查证：写两种回来 5 条，写三种回来 10 条）。
 //   取回来之后归一与显示的口径见 normalize.js 的 normalizeIssue 与 views/shared/stateKind.js。
 export const LIST_PR_QUERY = `query($owner:String!,$name:String!,$first:Int!,$after:String){
+  rateLimit{ cost }
   repository(owner:$owner,name:$name){
     pullRequests(first:$first, after:$after, states:[OPEN,CLOSED,MERGED], orderBy:{field:UPDATED_AT, direction:DESC}){
       nodes{ ${PULL_REQUEST_FRAGMENT} }
@@ -233,6 +289,7 @@ export const LIST_PR_QUERY = `query($owner:String!,$name:String!,$first:Int!,$af
 
 // 拉取请求单票查询（get 按号先查 issue、再查此查询，见 issues.js）
 export const GET_PR_QUERY = `query($owner:String!,$name:String!,$number:Int!){
+  rateLimit{ cost }
   repository(owner:$owner,name:$name){
     pullRequest(number:$number){ ${PULL_REQUEST_FRAGMENT} }
   }
@@ -275,4 +332,4 @@ export function issueNodeIdsQuery(keys: string[]): string {
 
 // 兼容旧命名（#132 登记旧片段迁移）：保留但指向新 fragment
 export const GITHUB_ISSUE_FIELDS = ISSUE_FRAGMENT
-export default { ISSUE_FRAGMENT, GITHUB_ISSUE_FIELDS, LIST_QUERY, GET_QUERY, COUNTS_QUERY, COUNTS_QUERY_WITH_LABELS, PULL_REQUEST_FRAGMENT, LIST_PR_QUERY, GET_PR_QUERY, ADD_BLOCKED_BY_MUTATION, REMOVE_BLOCKED_BY_MUTATION, issueNodeIdsQuery }
+export default { ISSUE_FRAGMENT, GITHUB_ISSUE_FIELDS, LIST_QUERY, GET_QUERY, getIssueQuery, COUNTS_QUERY, COUNTS_QUERY_WITH_LABELS, PULL_REQUEST_FRAGMENT, LIST_PR_QUERY, GET_PR_QUERY, ADD_BLOCKED_BY_MUTATION, REMOVE_BLOCKED_BY_MUTATION, issueNodeIdsQuery }

@@ -14,6 +14,7 @@
 // 每一次远端调用单独钳制，超时只坏自己那一项；同计划标识并发第二跑直接拒绝。
 import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../shell/call-shell.js'
 import { sessionContextOfAsync } from '../shell/session-workdir.js'
+import { callDeckSession, openDeckSession } from './tracker-session.js'
 import { withCallScope } from '../../refresh/rooms/host/tool-call-budget-enforcement.js'
 import { createMemoryPlanStore, createFilePlanStore, planCursorDir } from '../shell/plan-cursor.js'
 import { readbackMapPlan } from './map-plan-readback.js'
@@ -57,10 +58,16 @@ export const definition = {
       },
       edges: {
         type: 'array',
-        description: '子票之间的边；from 是计划内的短标识（也可以是地图自己，写 @map）',
+        // #1421：方向只靠参数名读不出来（from 读成「阻塞方」也说得通），所以必须在这一层用大白话说清
+        // 「这条边写进哪张票、指向哪张票」；宿主把这段交给模型，模型看不到下面的实现。
+        description: '子票之间的边。from 是这条边写进哪张票（写的是它的字段），to 是这条边指向的另一张票。type 只有两个值：省略或写 blocked-by 是阻塞边，{from: "D3", to: "D1"} 表示 D3 的 Blocked by 里加上 D1，也就是 D3 被 D1 阻塞、要先做完 D1；写 parent 是父子边，表示 from 的父票是 to，常规写法是 {from: "C1", to: "@map"}，把子票 C1 挂到本次计划新建的地图票底下。@map 指本次计划建的那张地图票；from 和 to 都可以写，但父子边的常规写法是 to 写 @map。',
         items: {
           type: 'object',
-          properties: { from: { type: 'string' }, to: { type: 'string' }, type: { type: 'string', enum: ['blocked-by', 'parent'] } },
+          properties: {
+            from: { type: 'string', description: '这条边写进哪张票（写的是它的字段）：阻塞边是被阻塞的那张，父子边是子票' },
+            to: { type: 'string', description: '这条边指向的另一张票：阻塞边是阻塞方（要先做完它），父子边是父票，常规写法是 @map' },
+            type: { type: 'string', enum: ['blocked-by', 'parent'], description: '边的类型：省略或写 blocked-by 是阻塞边（from 的 Blocked by 里加上 to），写 parent 是父子边（from 的父票是 to）' },
+          },
           required: ['from', 'to'],
           additionalProperties: false,
         },
@@ -233,6 +240,16 @@ export function createDeckMapPlanCreate(deps?: DeckMapPlanCreateDeps) {
       }
       childKinds.set(planKey, resolved)
     }
+    // #1421：边的 type 只认 blocked-by 与 parent。正常宿主装配会按 schema 的 enum 先挡一次，但退路注册
+    // 与直接调用 run() 不经过宿主校验；旧写法遇到不认识的 type 会静默当成阻塞边（只有等于 'parent' 时才走
+    // 父子），写出来的边与调用方以为的不是一回事。这里在开计划锁、选后端之前整批拒绝，盘上一张票都不动。
+    for (const e of edges) {
+      const rawType = e.type
+      if (rawType === undefined || rawType === null) continue
+      const typeText = String(rawType)
+      if (typeText === 'blocked-by' || typeText === 'parent') continue
+      return shell.unsupported('deck_map_plan_create', REFUSAL_REASONS.BAD_ARGS, '边「' + String(e.from).slice(0, 40) + ' → ' + String(e.to).slice(0, 40) + '」的 type 写成「' + typeText.slice(0, 40) + '」：type 只认 blocked-by 与 parent 两个值（省略 type 按 blocked-by 算）。这一批边一条都没写，整次调用没有动任何票。', { cost: { estimated: est } })
+    }
     // #1245：自动计划标识必须稳定（不带时间窗），否则重试跨过 5 分钟窗口就会变成新计划、按新锚建重复票。
     // 显式 planId 优先；没传时用内容哈希（会话或工作区加标题加子键），同一份输入永远得到同一个标识。
     // 为什么传 now: 0：anchorKeyFor 的锚含窗口序号，传 0 即固定在 0 号窗口；前缀 auto- 与调用方手写的计划标识区分。
@@ -243,7 +260,7 @@ export function createDeckMapPlanCreate(deps?: DeckMapPlanCreateDeps) {
       return shell.unsupported('deck_map_plan_create', REFUSAL_REASONS.BACKEND_UNSUPPORTED, '同一个计划标识（' + planId.slice(0, 60) + '）正在另一次执行里跑（进行中），这次没动手：等它做完再来，或换一个 planId。', { cost: { estimated: est } })
     }
     ACTIVE_PLANS.set(planId, 1)
-    const pick = await shell.pickBackend(exec, s)
+    const pick = await openDeckSession({ deps: d, exec: exec, session: s, estimate: est, tool: 'deck_map_plan_create', kind: 'write' })
     if (!pick.ok) { ACTIVE_PLANS.delete(planId); return shell.unsupported('deck_map_plan_create', pick.reason, pick.text, { workspace: { root: s.cwd, key: s.workspaceKey }, cost: { estimated: est } }) }
     const repo = shell.repoOf(pick, s)
     const effortId = (a.effortId === undefined || a.effortId === null) ? '' : String(a.effortId).trim()
@@ -286,7 +303,7 @@ export function createDeckMapPlanCreate(deps?: DeckMapPlanCreateDeps) {
     // 取值表达式一字不动，所以转译出来的 JS 与转换前逐字节一致。
     let out = null
     try {
-      out = await shell.call({ tool: 'deck_map_plan_create', kind: 'write', session: s, pick: pick, repo: repo, estimate: est, sandbox: (await (async function () { try { if (typeof d.sandboxPolicyFor !== 'function') return null; const raced = await withCap(d.sandboxPolicyFor({ cwd: s.cwd, sessionId: s.sessionId }), DECK_SANDBOX_TIMEOUT_MS); return (raced && raced.ok === true) ? raced.value : null } catch (eS) { return null } })()), signal: (exec && (exec as { signal?: unknown }).signal && typeof (exec as { signal?: unknown }).signal === 'object') ? (exec as { signal?: unknown }).signal : undefined }, async (c: unknown) => {      const sc = withCallScope(c, exec, { timeoutMs: numOpt(d.toolTimeoutMs), marginMs: numOpt(d.toolMarginMs), startedAt: toolEntryAt, now: nowFn })
+      out = await callDeckSession({ deps: d, opened: pick, session: s, repo: repo, estimate: est, tool: 'deck_map_plan_create', sandbox: (await (async function () { try { if (typeof d.sandboxPolicyFor !== 'function') return null; const raced = await withCap(d.sandboxPolicyFor({ cwd: s.cwd, sessionId: s.sessionId }), DECK_SANDBOX_TIMEOUT_MS); return (raced && raced.ok === true) ? raced.value : null } catch (eS) { return null } })()), signal: (exec && (exec as { signal?: unknown }).signal && typeof (exec as { signal?: unknown }).signal === 'object') ? (exec as { signal?: unknown }).signal : undefined }, async (c: unknown) => {      const sc = withCallScope(c, exec, { timeoutMs: numOpt(d.toolTimeoutMs), marginMs: numOpt(d.toolMarginMs), startedAt: toolEntryAt, now: nowFn })
       // 走到这里 tracker 一定在（预算壳自己的约定：能进这一段就是选好后端了）；
       // 断言只为让编译器安静，运行时一个字节都不动 —— 真为空时下面那句照样抛 TypeError 走 backend-threw。
       const t = sc.tracker!

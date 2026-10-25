@@ -6,6 +6,7 @@
 // 校验用计数：改完按父票列一遍子票 / 再读一次依赖，把「要几条、实际几条」对一次，对不上就说 partial。
 import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../shell/call-shell.js'
 import { sessionContextOfAsync } from '../shell/session-workdir.js'
+import { callDeckSession, openDeckSession } from './tracker-session.js'
 import { classifyEdgeLanding, edgeEvidence, statusOfItems, applyParentEdge, applyBlockEdges, precheckBlockBatch } from '../shell/edge-landing.js'
 import { estimateToolCost, toolCostInputFrom } from '../../refresh/kernel/tool-call-budget.js'
 import { withCallScope } from '../../refresh/rooms/host/tool-call-budget-enforcement.js'
@@ -130,7 +131,7 @@ export function createDeckMapLink(deps?: DeckMapLinkDeps) {
     if (!s.ok) return shell.unsupported('deck_map_link', (s as { reason: string }).reason, s.text, { cost: { estimated: est } })
     const jobs = Array.isArray(a.edges) && a.edges.length ? a.edges : (a.key ? [a] : [])
     if (!jobs.length) return shell.unsupported('deck_map_link', REFUSAL_REASONS.BAD_ARGS, '要改哪张票的边：给 key（可带 parentKey / blockedBy），或者给 edges 清单。', { cost: { estimated: est } })
-    const pick = await shell.pickBackend(exec, s)
+    const pick = await openDeckSession({ deps: d, exec: exec, session: s, estimate: est, tool: 'deck_map_link', kind: 'write' })
     if (!pick.ok) return shell.unsupported('deck_map_link', pick.reason, pick.text, { workspace: { root: s.cwd, key: s.workspaceKey }, cost: { estimated: est } })
     const repo = shell.repoOf(pick, s)
     const effortId = (a.effortId === undefined || a.effortId === null) ? '' : String(a.effortId).trim()
@@ -138,7 +139,7 @@ export function createDeckMapLink(deps?: DeckMapLinkDeps) {
 
     // exec 上那个取消信号。契约层还没给 exec 标形状（见 #1040），三处 exec.signal 各按纯类型断言收口：
     // 取值表达式一字不动，所以转译出来的 JS 与转换前逐字节一致。
-    return shell.call({ tool: 'deck_map_link', kind: 'write', session: s, pick: pick, repo: repo, estimate: est, sandbox: (await (async function () { try { if (typeof d.sandboxPolicyFor !== 'function') return null; const raced = await withCap(d.sandboxPolicyFor({ cwd: s.cwd, sessionId: s.sessionId }), DECK_SANDBOX_TIMEOUT_MS); return (raced && raced.ok === true) ? raced.value : null } catch (eS) { return null } })()), signal: (exec && exec.signal && typeof exec.signal === 'object') ? exec.signal : undefined }, async (c: unknown) => {
+    return callDeckSession({ deps: d, opened: pick, session: s, repo: repo, estimate: est, tool: 'deck_map_link', sandbox: (await (async function () { try { if (typeof d.sandboxPolicyFor !== 'function') return null; const raced = await withCap(d.sandboxPolicyFor({ cwd: s.cwd, sessionId: s.sessionId }), DECK_SANDBOX_TIMEOUT_MS); return (raced && raced.ok === true) ? raced.value : null } catch (eS) { return null } })()), signal: (exec && exec.signal && typeof exec.signal === 'object') ? exec.signal : undefined }, async (c: unknown) => {
       const sc = withCallScope(c, exec, { timeoutMs: numOpt(d.toolTimeoutMs), marginMs: numOpt(d.toolMarginMs), startedAt: toolEntryAt, now: (typeof d.now === 'function') ? d.now : Date.now })
       // 走到这里 tracker 一定在（预算壳自己的约定：能进这一段就是选好后端了）；
       // 断言只为让编译器安静，运行时一个字节都不动 —— 真为空时下面那句照样抛 TypeError 走 backend-threw。
@@ -194,7 +195,7 @@ export function createDeckMapLink(deps?: DeckMapLinkDeps) {
             if (pre.refused.has(key)) {
               // 整批预检说这一组边会让图成环：这条边不写，逐条如实报失败（别让 AI 当成建好了）。
               for (const target of asList(job.blockedBy)) {
-                out.items.push(Object.assign({ key: key, status: 'failed' }, (edgeEvidence as EdgeEvidenceFn)('block', target, { kind: 'unknown', ok: false, text: pre.refused.get(key) })))
+                out.items.push(Object.assign({ key: key, status: 'failed' }, (edgeEvidence as EdgeEvidenceFn)('block', target, { kind: 'unknown', ok: false, text: '写前成环预检拒了这一组边，这条没写：要把 #' + target + ' 加进票 #' + key + ' 的 blockedBy（也就是票 #' + key + ' 被 #' + target + ' 阻塞）。预检原话：' + String(pre.refused.get(key) || '（没给出原因）') })))
               }
               continue
             }
@@ -205,9 +206,9 @@ export function createDeckMapLink(deps?: DeckMapLinkDeps) {
                 // readOk 分开看：读失败时只能说「没读回来，判不了」，绝不许说成「这条依赖没出现在票上」（#790）。
                 const hit = out.readback.readOk && !out.readback.failed && out.readback.landed.indexOf(target) >= 0
                 const e2 = out.readback.failed ? out.readback.failed
-                  : !out.readback.readOk ? { kind: 'unknown', ok: false, text: '写后没读回来，判不了这条依赖落上了没有：这一组边已按合并后的完整集合写过一次，读回没成功，别把这条当成已建成、也别当成没建成（同组第一条明细里有后端原话）。' }
-                  : hit ? classifyEdgeLanding('block', target, out.readback.after)
-                  : { kind: 'unknown', ok: false, text: '写后读回：这条依赖没出现在票上（要 ' + target + '，读回来 ' + (out.readback.landed.join('、') || '空') + '）' }
+                  : !out.readback.readOk ? { kind: 'unknown', ok: false, text: '写动作回了成功，但写后没读回票 ' + key + '，判不了 ' + key + ' 的 blockedBy 里有没有 ' + target + '：这一组边已按合并后的完整集合写过一次，读回没成功，别把这条当成已建成、也别当成没建成（同组第一条明细里有后端原话）。' }
+                  : hit ? classifyEdgeLanding('block', target, out.readback.after, key)
+                  : { kind: 'unknown', ok: false, text: '写后读回：票 ' + key + ' 的 blockedBy 里没有 ' + target + '（读回来的是 ' + (out.readback.landed.join('、') || '空') + '）' }
                 out.items.push(Object.assign({ key: key, status: hit ? 'ok' : 'failed' }, (edgeEvidence as EdgeEvidenceFn)('block', target, e2)))
                 if (e2.ok) { out.done += 1; out.touched.push(key) }
               }
@@ -232,7 +233,7 @@ export function createDeckMapLink(deps?: DeckMapLinkDeps) {
           }, { timeoutMs: lockTimeoutMs })
           if (held && held.ok === false && held.timedOut) {
             // 锁没等到：这组一条没动，逐条诚实记（形状与预检拒绝同形，调用方照既有路续跑）。
-            const lockText = '这张票正被另一次调用改着，这次没动：稍后带同样参数再调一次即可。'
+            const lockText = '票 ' + key + ' 正被另一次调用改着，这次没动：稍后带同样参数再调一次即可。'
             for (const job of jobsByKey.get(key)) {
               if (job.parentKey !== undefined && job.parentKey !== null) {
                 out.items.push(Object.assign({ key: key, status: 'failed' }, (edgeEvidence as EdgeEvidenceFn)('parent', String(job.parentKey), { kind: 'unknown', ok: false, text: lockText })))

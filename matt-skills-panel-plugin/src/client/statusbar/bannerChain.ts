@@ -23,6 +23,7 @@ declare function chainSteps(...args: any[]): any;
 declare function checkShowTitle(...args: any[]): any;
 declare function createActionDispatcher(...args: any[]): any;
 declare function currentBackendId(...args: any[]): any;
+declare function emit(...args: any[]): any;
 declare function flash(...args: any[]): any;
 declare function dswsLogHash(...args: any[]): any;
 declare const wsKeyOf: any;
@@ -41,6 +42,7 @@ declare function openStatusGate(...args: any[]): any;
 declare function openUrl(...args: any[]): any;
 declare function promptText(...args: any[]): any;
 declare function promptTextFor(...args: any[]): any;
+declare function refreshAll(...args: any[]): any;
 declare function userHintOf(...args: any[]): any;
 
 
@@ -284,6 +286,60 @@ export const guideBannerMeta = function (st: any, step: any) {
   return (step && step.banner) || {}
 }
 
+// 人亲手点出来的那一次重查（#916 的中性条与 #1438 的第二颗按钮共用；写法与检查页那颗「重新检查」同形）。
+// 两条不变量：① 退避窗口里也照跑 —— 必须带 'user-recheck' 上报（见 chain-backoff），否则宿主会按后台档退避、
+//   用缓存的旧快照直接回包，人点了等于没点；② 链与快照各重取一次 —— 只重取链不重取快照，界面会停在旧读数上。
+const recheckNow = function (st: any) {
+  // 点下去立刻给转圈的依据（StatusBar 胶囊那颗刷新图标看 s.refreshing）：#1463 的主诉之一是「点了完全没反应」——
+  //   从前这里三个后台请求全是静默的，失败吞掉、成功与否界面都不先吱一声。落定后一定收掉，不卡转圈。
+  try { st.refreshing = true; emit(st); } catch (e) {}
+  const settle = function () { try { st.refreshing = false; emit(st); } catch (eD) {} };
+  // 三路只收「落定了」这个事实，值不重要：链与快照各自落盘与重渲染（adopt/emit 在它们自己里面），
+  //   这里只负责把转圈收掉。全部包一层兜底，任何一路抛错都不把转圈卡住、不向调用方抛错
+  //   （runGuideMissing 点完就要回 'action'，不能等网络）。
+  const landed = function (p: any) { try { return (p && typeof p.then === 'function') ? p.then(function () { return null }, function () { return null }) : Promise.resolve(null) } catch (eP) { return Promise.resolve(null) } };
+  let p1: any = null, p2: any = null, p3: any = null;
+  try {
+    if (typeof host !== 'undefined' && host && host.call) {
+      // 与链那一路同令：handleDetect 今天不看退避，但本文件头上那条不变量说的是「重查必须带令牌」——
+      //   以后它若也接退避，这一行缺令牌就会被人当后台档挡回旧快照。宿主多收一个字段直接忽略，不影响今天。
+      const r = host.call('wf.detect', { cwd: st.cwd || '', force: true, backendId: (typeof userHintOf === 'function' ? userHintOf(st.selection) : undefined) || undefined, trigger: 'user-recheck' })
+      if (r && typeof r.catch === 'function') {
+        p1 = landed(r)
+        // #724 同例：异常留一行再吞 —— 从前这里是空 catch，真机查「点了没反应」时日志里一笔都没有。
+        r.catch(function () { try { log('warn', 'host.call.fail', { method: 'wf.detect', kind: 'user-recheck' }) } catch (eL) {} })
+      }
+    }
+  } catch (e) {}
+  try {
+    if (typeof chainEventRefresh === 'function') { const r2 = chainEventRefresh(st, 'user-recheck'); p2 = landed(r2); if (r2 && typeof r2.catch === 'function') r2.catch(function () {}) }
+    else if (typeof loadChain === 'function') { const r3 = loadChain(st, true, 'user-recheck'); p2 = landed(r3); if (r3 && typeof r3.catch === 'function') r3.catch(function () {}) }
+  } catch (e2) {}
+  try { if (typeof loadSnapshot === 'function') { const r4 = loadSnapshot(st, true, true); p3 = landed(r4); if (r4 && typeof r4.catch === 'function') r4.catch(function () {}) } } catch (e3) {}
+  try {
+    const all = (typeof Promise !== 'undefined' && Promise.all) ? Promise.all([p1, p2, p3]) : null
+    if (all && typeof all.then === 'function') { all.then(settle, settle); return all }
+  } catch (eA) {}
+  try { settle(); } catch (eS) {}
+  return null
+}
+
+/**
+ * 横幅上那颗「重新检查」按钮点下去（#1438）：先走环境检查页那颗同一条路（refreshAll —— 它自己带 'user-recheck'
+ *   上报、自己管「重取中」的界面态与取完后的面板刷新）；那条路不在时退回 recheckNow（链与快照各重取一次）。
+ * 为什么不在本文件另起一套重取：那条路已经管着进度态与取完后的刷新，这里再造一份会出现两条进度各报各的。
+ * 日志与 runGuideMissing 同一个落点（guide.inject / action）：排查时「点了有没有真的动」不靠猜。
+ * @returns {'action'} 这条链只记「动了一次」这一类
+ */
+export const runGuideRecheck = function (st: any, stepId: any) {
+  try {
+    if (typeof refreshAll === 'function') refreshAll(st)
+    else recheckNow(st)
+  } catch (e) { try { recheckNow(st) } catch (e2) {} }
+  logGuideInject(stepId ? String(stepId) : '', 'action')
+  return 'action'
+}
+
 /**
  * 横幅那颗按钮点下去：照这一步的有效 missing 走（查不到那一路已换成重查，见上面）。
  * 去向：注入一段文案（text）/ 没有文案可注入（none）/ 弹窗类端点动作或强制重查（action）。
@@ -301,20 +357,8 @@ export const runGuideMissing = function (st: any, step: any) {
   } catch (e) {}
   if (!missing || !missing.type) { logGuideInject(stepId, 'none'); return 'none' }
   if (missing.type === 'recheck') {
-    // #916 人亲手点的这一次永不降档：必须带 'user-recheck' 上去（见 chainBackoff），
-    // 否则宿主会按后台档退避、用缓存的旧快照直接回包，点了等于没点。
-    // 写法与「重新检查」按钮真身同形（chainEventRefresh 优先，loadChain 兜底）。
-    try {
-      if (typeof host !== 'undefined' && host && host.call) {
-        const r = host.call('wf.detect', { cwd: st.cwd || '', force: true, backendId: (typeof userHintOf === 'function' ? userHintOf(st.selection) : undefined) || undefined })
-        if (r && typeof r.catch === 'function') r.catch(function () {})
-      }
-    } catch (e) {}
-    try {
-      if (typeof chainEventRefresh === 'function') { const r2 = chainEventRefresh(st, 'user-recheck'); if (r2 && typeof r2.catch === 'function') r2.catch(function () {}) }
-      else if (typeof loadChain === 'function') { const r3 = loadChain(st, true, 'user-recheck'); if (r3 && typeof r3.catch === 'function') r3.catch(function () {}) }
-    } catch (e2) {}
-    try { if (typeof loadSnapshot === 'function') loadSnapshot(st, true, true) } catch (e3) {}
+    // 人亲手点的这一次永不降档（#916）：recheckNow 带 'user-recheck' 上报，退避窗口里也照跑。
+    recheckNow(st)
     logGuideInject(stepId, 'action'); return 'action'
   }
   if (missing.type === 'open-backend-picker') {

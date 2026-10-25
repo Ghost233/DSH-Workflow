@@ -2,7 +2,7 @@
   "schema": 1,
   "harnessVersion": "0.2.1-rc.3",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "9f401a46234c8632e53bb905a555fcad5b16bd729902e008295a1e089b0089d1",
+  "manifestSha256": "5d097315f2c5639318d59db9760b16c7e28303baecd603399057b556d5fca3dd",
   "plugins": [
     {
       "package": "dsh-context",
@@ -55,10 +55,10 @@
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.33",
+      "version": "1.9.38",
       "metadata": {
         "name": "dsh-cost-meter",
-        "version": "1.9.33",
+        "version": "1.9.38",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -256,6 +256,33 @@
           }
         },
         "peerDependencies": {},
+        "peerDependenciesMeta": {}
+      }
+    },
+    {
+      "package": "dsh-our-free-model",
+      "version": "2.5.9",
+      "commit": "25ab765d6bb860779dbd8c53062953524f3cac09",
+      "metadata": {
+        "name": "dsh-our-free-model",
+        "version": "2.5.9",
+        "dsh": {
+          "bundle": {
+            "patch": "./cordis.patch.yml"
+          },
+          "client": {
+            "platform": "web",
+            "immediately": true,
+            "inject": []
+          }
+        },
+        "peerDependencies": {
+          "@deepseek-ai/cordis": "^4.0.2",
+          "@deepseek-ai/dsh-commands": "^0.1.2-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1",
+          "@deepseek-ai/dsh-credentials": "^0.1.2-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1",
+          "@deepseek-ai/dsh-llm": "^0.1.2-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1",
+          "@deepseek-ai/schemastery": "^3.18.4"
+        },
         "peerDependenciesMeta": {}
       }
     }

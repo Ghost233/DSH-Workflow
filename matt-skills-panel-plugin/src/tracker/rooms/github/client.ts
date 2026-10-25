@@ -25,7 +25,9 @@ import { fail, rawText } from '../../kernel/preflight.js'
 // 记日志那层壳在内核一份（#1182 第 3 件）：本房只管给出级别、事件名与字段。
 import { guardEmit } from '../../kernel/log-emit.js'
 import { ghFailureMessage, ghVerdictOf } from './errors.js'
-import { timeoutForGhArgs, isWriteGhArgs, ghCommandLabel, normalizeGhStringFields, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS, PROBE_TIMEOUT_MS } from '../../kernel/outbound-tiers.js'
+// #1446：每一次真实出站同时记进「这一次操作」的计数器（op-usage.ts 在操作表外层取走）。
+import { noteGithubUsage } from './op-usage.js'
+import { timeoutForGhArgs, isWriteGhArgs, ghCommandLabel, normalizeGhStringFields, ghOutboundEntryOf, graphqlCorrectionOf, ghPointNoteOf, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS, PROBE_TIMEOUT_MS } from '../../kernel/outbound-tiers.js'
 // 默认超时住中央 YAML（config/timeouts.yaml 的 githubClientTimeoutMs 键），这里只留别名。
 import { GITHUB_CLIENT_TIMEOUT_MS } from '../../../shared/time-config/src/values.js'
 // #1159：名额闸与搭车账本不再从宿主 import —— 它们是有状态的运行时能力，形状由契约层声明
@@ -34,6 +36,19 @@ import { GITHUB_CLIENT_TIMEOUT_MS } from '../../../shared/time-config/src/values
 import type { OutboundControl } from '../../contract/outbound.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
 import { GITHUB_PROBE_TIMEOUT_MS } from '../../../shared/time-config/src/values.js'
+
+/**
+ * 一个 gh 客户端自己数到的真实出站（#1446）：请求条数与点数。
+ * 客户端是「谁真正发了命令」的那一层，用量只在这里数一次；上层拿到的永远是这一份的分身。
+ * #1482 起两格的单位分清了：requests 是 REST 请求条数，GraphQL 不占这个数；
+ * points 是 GraphQL 点数，尽量取回包里的真实值（起进程前只能按 1 点估，成功后补差）。
+ */
+export interface GhUsage {
+  /** 真正发出去的 REST 请求条数（一次命令一条；GraphQL 命令不算）。 */
+  requests: number
+  /** 真正花掉的 GraphQL 点数（拿不到真实 cost 时按 1 点估）。 */
+  points: number
+}
 
 /** gh 执行成功的数据：三件套，调用方读 stdout 解析，stderr 留查，code 为 0。 */
 export interface GhExecData {
@@ -88,6 +103,8 @@ function isDeadlineHit(v: unknown): v is DeadlineHit {
 /** 出站闸的最小口：只认记账这一个方法，闸由接线处注入，本房不 import 它。 */
 interface OutboundGate {
   noteOutbound: (r: { requests: number; points: number }) => void;
+  /** 事后补报差额（#1482）：GraphQL 拿到回包里的真实点数后，把比 1 点大的部分补进闸。闸没接上这一口时跳过。 */
+  noteOutboundCorrection?: (r: { requests: number; points: number }) => void;
 }
 
 // 房内埋点（#494 O1）：gh.exec（#5 常驻）/ gh.timeout（#6 告警）/ gh.resolve.fail（#7 告警），字段按 #489 附录 1.4。
@@ -169,13 +186,41 @@ function getOutbound(ctx: OpContext): OutboundControl | null {
  * 房内不报的后果是账对不上（漏网计数会露出来），所以没接上时这里什么都不做 —— 不允许
  * 「没接上就自己发出去还不说」。
  */
-function reportOutbound(ctx: OpContext, args: string[]): void {
+function reportOutbound(ctx: OpContext, args: string[], usage?: GhUsage): void {
   try {
+    // #1482：GraphQL 走点数桶、不占 REST 请求条数。旧写法只看第一段是不是 graphql，
+    // 而真实 argv 是 ['api','graphql',...]，于是每条 GraphQL 都被记成一条 REST 请求 ——
+    // rest 桶被刷新探测刷穿之后，deck 工具被「一个桶已经见底」误停。口径收在共享层一处。
+    const entry = ghOutboundEntryOf(args)
+    // 留在客户端上的计数：这一次操作结束时随成功信封交给记账侧（#1446）。
+    if (usage) { usage.requests += entry.requests; usage.points += entry.points }
+    // 同时记进这一次操作的异步上下文：操作表外层用它拼信封，并发操作各算各的。
+    noteGithubUsage(entry)
     const gate = (ctx && (ctx as unknown as Record<string, unknown>).gate) as OutboundGate | null | undefined;
+    // 没接上闸时也照样留下客户端计数：用量是房间自己数的，不该因为闸缺席就丢。
     if (!gate || typeof gate.noteOutbound !== 'function') return
-    const isGraphql = String(args && args[0] || '').indexOf('graphql') >= 0
-    gate.noteOutbound({ requests: 1, points: isGraphql ? 1 : 0 })
+    gate.noteOutbound(entry)
   } catch { /* 报账失败不许影响已经起来的这一条命令 */ }
+}
+
+/**
+ * GraphQL 成功后按回包里的真实点数补差（#1482）。
+ *
+ * 为什么要有这一支：I1 要求起进程之前就报闸，那时还没看到回包，只能按 1 点估；GraphQL 按 points 计费，
+ * 实测一次列表单页 cost=4、一次 deck 工具调用 cost=5，差出来的点数不补，账上就永远偏低。
+ * 补差只动点数、不动请求条数（GraphQL 不占 REST 请求），客户端计数与操作信封用的是同一份 usage。
+ * 读不到 rateLimit.cost 时什么都不补，沿用 1 点估算。
+ */
+function reportOutboundCorrection(ctx: OpContext, args: string[], stdout: unknown, usage?: GhUsage): void {
+  try {
+    const entry = graphqlCorrectionOf(args, stdout)
+    if (!entry) return
+    if (usage) { usage.requests += entry.requests; usage.points += entry.points }
+    noteGithubUsage(entry)
+    const gate = (ctx && (ctx as unknown as Record<string, unknown>).gate) as OutboundGate | null | undefined;
+    if (!gate || typeof gate.noteOutboundCorrection !== 'function') return
+    gate.noteOutboundCorrection(entry)
+  } catch { /* 补差失败不许影响已经成功的这一条命令 */ }
 }
 
 /** 取平台实例：优先契约的 platform，兼容历史把方法直接挂在 ctx 顶层的写法，都没有就回 null。 */
@@ -199,9 +244,11 @@ function getCwd(ctx: OpContext, explicitCwd: string | undefined): string | undef
  *
  * 为什么收契约上下文：gh 路径走平台解析、进程走上下文执行、超时走分档表，三个底座全在上下文里，不直读全局。
  */
-export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhExecOpts) => Promise<GhExecResult>; execJson: (args: string[], opts?: GhExecOpts) => Promise<GhJsonResult>; run: (args: string[], cwdOrId?: unknown) => Promise<GhExecResult> } {
+export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhExecOpts) => Promise<GhExecResult>; execJson: (args: string[], opts?: GhExecOpts) => Promise<GhJsonResult>; run: (args: string[], cwdOrId?: unknown) => Promise<GhExecResult>; usage: GhUsage } {
   const platform = getPlatform(ctx)
   const exec = getExec(ctx)
+  // 这个客户端实例自己数到的出站：调用方可以在操作结束后原样读走，不需要另做前后相减。
+  const usage: GhUsage = { requests: 0, points: 0 }
 
   // #7 gh.resolve.fail（告警，常驻）：只记是否配备用路径与错误散列，不记路径原文。
   function emitResolveFail(message: unknown): void {
@@ -228,7 +275,7 @@ export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhEx
       // 避免因为 subprocess.resolveExecutable 的 PATH 与 pwsh 的 PATH 不一致导致 414 这类外部建票永远拉不到
       if (exec) {
         try {
-          reportOutbound(ctx, ['--version'])
+          reportOutbound(ctx, ['--version'], usage)
           const probe = await exec('gh', ['--version'], { cwd: cwd || getCwd(ctx, undefined), timeout: GITHUB_PROBE_TIMEOUT_MS })
           if (probe && probe.stdout && String(probe.stdout).includes('gh version')) {
             return { ok: true, ghPath: 'gh' }
@@ -257,12 +304,21 @@ export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhEx
   // 从前只有 argv0='gh'，失败时日志分不出「查登录态坏了」还是「改票坏了」；命令整行又不能进日志
   // （带仓库名、票号与查询正文），所以只留子命令族与动词。形状由 outbound-tiers.ts 的 ghCommandLabel 定，
   // 取值是有限集合，便于按值聚合。行为不变：认不出时回第一段，不回空。
-  function emitGhExec(kind: string, exitCode: number, t0: number, cwd: string | undefined, waitedMs?: number, via?: string, cmd?: string): void {
+  // #1482 起多记两格：points 是这一笔记进账本的点数（GraphQL 按回包 rateLimit.cost 记真实点数，
+  // 拿不到时按 1 点估；REST 记 0），pointSource 说这个点数是哪来的（server 回包给了真实 cost /
+  // estimate 按 1 点估 / 空串 不是 GraphQL）。为什么要这两格：账本记错时，人得能从日志看出
+  // 这一笔是真实点数还是估算 —— 从前只记条数不记点数，记歪了查不出来。
+  function emitGhExec(kind: string, exitCode: number, t0: number, cwd: string | undefined, waitedMs: number | undefined, via: string | undefined, cmd: string | undefined, pointNote: { points: number; pointSource: string }): void {
     try {
       if (!roomInfoEnabled(ctx)) return
-      roomLogEvent(ctx, 'info', 'gh.exec', { argv0: 'gh', via: String(via || ''), opId: String((ctx && ctx.opId) || ''), cwdHash: hash8(cwd || ''), latencyMs: Date.now() - t0, waitedMs: (typeof waitedMs === 'number' && isFinite(waitedMs) && waitedMs > 0) ? Math.floor(waitedMs) : 0, kind: String(kind || 'unknown'), exitCode: typeof exitCode === 'number' ? exitCode : -1, cmd: String(cmd || '') })
+      roomLogEvent(ctx, 'info', 'gh.exec', { argv0: 'gh', via: String(via || ''), opId: String((ctx && ctx.opId) || ''), cwdHash: hash8(cwd || ''), latencyMs: Date.now() - t0, waitedMs: (typeof waitedMs === 'number' && isFinite(waitedMs) && waitedMs > 0) ? Math.floor(waitedMs) : 0, kind: String(kind || 'unknown'), exitCode: typeof exitCode === 'number' ? exitCode : -1, cmd: String(cmd || ''), points: pointNote.points, pointSource: pointNote.pointSource })
     } catch {}
   }
+
+  // 还没进账本的 gh.exec 行用这一格（#1482 复审）：排队被取消、解析执行器失败、执行器没接上这几种
+  // 都发生在报闸之前，账上一条都没有；日志若照 GraphQL 估成「1 点 / estimate」，读日志的人会以为
+  // 已记过账，与账本对不上。只有过了报闸的失败与成功才写真实/估算点数。
+  const NOT_ACCOUNTED = { points: 0, pointSource: '' }
 
   // #6 gh.timeout（告警，常驻）：只记命令名、超时毫秒与「在哪一层到点」。
   // #1007 复核起多记 layer：room-tier = 房内自己掐表到点（本文件 :332 的 selfTimeoutOutcome），
@@ -300,7 +356,7 @@ export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhEx
       //   分不出是网络慢、命令失败，还是这道闸压根没接上。落一行同族告警轨迹（kind=env）：
       //   没起过任何进程，所以 latencyMs 只是走到这里的毫秒数、exitCode 记 -1、waitedMs 记 0。
       try {
-        roomLogEvent(ctx, 'warn', 'gh.exec', { argv0: 'gh', via: String(opts.via || ''), opId: String((ctx && ctx.opId) || ''), cwdHash: hash8(cwd || ''), latencyMs: Date.now() - t0, waitedMs: 0, kind: ERROR_KIND.ENV, exitCode: -1, cmd: String(cmdLabel || '') })
+        roomLogEvent(ctx, 'warn', 'gh.exec', { argv0: 'gh', via: String(opts.via || ''), opId: String((ctx && ctx.opId) || ''), cwdHash: hash8(cwd || ''), latencyMs: Date.now() - t0, waitedMs: 0, kind: ERROR_KIND.ENV, exitCode: -1, cmd: String(cmdLabel || ''), points: 0, pointSource: '' })
       } catch {}
       return { ok: false, error: { kind: ERROR_KIND.ENV, message: '出站控制面没有接上：名额闸、取消判定与搭车账本都拿不到，这一笔不发出去。宿主接线要给两处：装配点造房时的上下文（生产里是 src/host/platformChannel.ts 的 backendCtxForRooms 与 src/refresh/rooms/host/refresh-runtime.js 的 backendObj），以及当次操作的上下文（ctx.outbound，门禁夹具走这一条）。', code: -1, raw: '' } }
     }
@@ -351,7 +407,8 @@ export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhEx
     }
     /** 房内到点的统一回执：横幅按超时记，内容说清等了多久、是哪一档。 */
     function selfTimeoutOutcome(phase?: string): GhExecResult {
-      emitGhExec('network', -1, t0, cwd, slotWaitedMs, opts.via, cmdLabel)
+      // 排队段到点时还没报闸（账上 0 条），命令已起来的到点才按估/真实点数落一行。
+      emitGhExec('network', -1, t0, cwd, slotWaitedMs, opts.via, cmdLabel, phase === 'queue' ? NOT_ACCOUNTED : ghPointNoteOf(args))
       emitGhTimeout(timeout, 'room-tier', opts.via, cmdLabel, slotWaitedMs, phase)
       // 房内到点时执行器还没有交回任何输出，这一处没有原文可交（空串是如实交代，不是漏填）。
       // 括号里那三档按当前档位值现算（毫秒换秒）、不手抄：手抄的数字会在有人调 YAML 之后悄悄变成错的。
@@ -369,20 +426,20 @@ export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhEx
     } catch (eAcquire) {
       if (selfTimedOut) { slotWaitedMs = Date.now() - t0; clearDeadline(); return selfTimeoutOutcome('queue') }
       clearDeadline()
-      emitGhExec('cancelled', -1, t0, cwd, slotWaitedMs, opts.via, cmdLabel)
+      emitGhExec('cancelled', -1, t0, cwd, slotWaitedMs, opts.via, cmdLabel, NOT_ACCOUNTED)
       return { ok: false, error: { kind: ERROR_KIND.NETWORK, message: '已取消排队（出站准入等待中被取消），没有发出请求，可重试', code: -1, cancelled: true, raw: rawText(eAcquire) } }
     }
     try {
     const resolved = await raceDeadline(resolveGh(cwd))
     if (isDeadlineHit(resolved)) return selfTimeoutOutcome('inflight')
     if (!resolved.ok) {
-      emitGhExec(resolved.error && resolved.error.kind ? resolved.error.kind : ERROR_KIND.ENV, -1, t0, cwd, undefined, opts.via, cmdLabel)
+      emitGhExec(resolved.error && resolved.error.kind ? resolved.error.kind : ERROR_KIND.ENV, -1, t0, cwd, undefined, opts.via, cmdLabel, NOT_ACCOUNTED)
       // 补上 code: -1，让「失败时 error 里一定有 code」这条形状对所有失败成立（命令根本没跑起来）
       return { ok: false, error: Object.assign({ code: -1 }, resolved.error) }
     }
 
     if (!exec) {
-      emitGhExec('env', -1, t0, cwd, undefined, opts.via, cmdLabel)
+      emitGhExec('env', -1, t0, cwd, undefined, opts.via, cmdLabel, NOT_ACCOUNTED)
       // 这一处是「执行器根本没接上」，没有跑过任何外部命令，没有原文可交。
       return { ok: false, error: { kind: ERROR_KIND.ENV, message: 'ctx.exec unavailable', code: -1, raw: '' } }
     }
@@ -390,7 +447,7 @@ export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhEx
     try {
       // #723（T19）：这一笔真实出站先报给闸（I1）。报在拿名额之后 —— 排队等待不算这一笔，
       // 真要起进程了才报，取消排队的不进账，账与真实出站一一对应。
-      reportOutbound(ctx, args)
+      reportOutbound(ctx, args, usage)
       // #1007：起进程这一段同样与「到点」赛跑 —— 执行器要是不落地，房内的表到点就掀桌子。
       const raced = await raceDeadline(exec('gh', args, { cwd, timeout, signal: laneSignal }))
       if (isDeadlineHit(raced)) return selfTimeoutOutcome('inflight')
@@ -420,15 +477,17 @@ export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhEx
         // 交给表的这份事实按「执行结果」的形状写：退出码在那个形状里叫 `code`（`factsFromError` 只认这个键，
         // 写 `exitCode` 会被丢掉，规则就看不着了）。
         const verdict = ghVerdictOf({ code: code, text: factsText }, ctx)
-        emitGhExec(verdict.kind, code, t0, cwd, slotWaitedMs, opts.via, cmdLabel)
+        emitGhExec(verdict.kind, code, t0, cwd, slotWaitedMs, opts.via, cmdLabel, ghPointNoteOf(args))
         if (looksTimeout) emitGhTimeout(timeout, 'room-tier', opts.via, cmdLabel, slotWaitedMs, 'inflight')
         // #620：退出码要一起交回调用方（调用方与界面都能看出「不是命令自己报的错」）。
         const own = String(stderr || stdout || note).slice(0, 800)
         return { ok: false, error: { kind: verdict.kind, message: ghFailureMessage(verdict, own), code, raw: rawText(result) } }
       }
-      emitGhExec('ok', 0, t0, cwd, slotWaitedMs, opts.via, cmdLabel)
+      emitGhExec('ok', 0, t0, cwd, slotWaitedMs, opts.via, cmdLabel, ghPointNoteOf(args, stdout))
       // #966 收口：写成功记一笔搭车账，写过东西之后来的探测不搭旧车。
       try { if (bucket === 'write') control.noteWrite() } catch {}
+      // #1482：GraphQL 的真实点数只有拿到回包才知道；在这里补差，账上点数才等于 GitHub 真正收的 cost。
+      reportOutboundCorrection(ctx, args, stdout, usage)
       return { ok: true, data: { stdout, stderr, code } }
     } catch (e) {
       // exec 抛的错误（timeout/network 等）→ 归一化
@@ -437,13 +496,13 @@ export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhEx
       if (selfTimedOut) return selfTimeoutOutcome('inflight')
       // #969：调用方取消（排队/在飞中被杀）按取消返回，不算失败；其余照旧归一。
       if (control.isCancelled(e) || (signal && signal.aborted === true)) {
-        emitGhExec('cancelled', -1, t0, cwd, slotWaitedMs, opts.via, cmdLabel)
+        emitGhExec('cancelled', -1, t0, cwd, slotWaitedMs, opts.via, cmdLabel, ghPointNoteOf(args))
         return { ok: false, error: { kind: ERROR_KIND.NETWORK, message: '已取消（没有发出有效请求，可重试）', code: -1, cancelled: true, raw: rawText(e) } }
       }
       // 抛出来的错误同样只交给规则表判：ctx.exec 抛的 Error 里可能带着 `code`（例如 ENOTFOUND），
       // 那是错误码层认得出的事实，房里不再自己写第二份「像不像网络问题」的说法。
       const verdict = ghVerdictOf(e, ctx)
-      emitGhExec(verdict.kind, -1, t0, cwd, slotWaitedMs, opts.via, cmdLabel)
+      emitGhExec(verdict.kind, -1, t0, cwd, slotWaitedMs, opts.via, cmdLabel, ghPointNoteOf(args))
       // 为什么转一下再读：catch 出来是 unknown，直接读 message 会报缺成员；转成最小形状后表达式与原来一字不差，运行时不变。
       const eb = e as { message?: unknown; stderr?: unknown } | null;
       const looksTimeout = isTimeoutText((eb && (eb.message || eb.stderr)) || e) || elapsedMs >= timeout - 50
@@ -494,6 +553,7 @@ export function ghClient(ctx: OpContext): { execGh: (args: string[], opts?: GhEx
     execGh,
     execJson,
     run, // 兼容旧调用
+    usage, // #1446：这一次客户端生命周期内真正发出去的请求与点数
     // 便捷：gh api --paginate 模拟（简单封装，调用方传 --paginate 时由 execGh 直接交 gh 处理）
   }
 }

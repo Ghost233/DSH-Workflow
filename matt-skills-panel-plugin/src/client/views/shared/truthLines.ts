@@ -44,6 +44,9 @@ declare const lagPromiseFor: any;
 declare const PROBE_INTERVAL_MS: any;
 declare const PATCH_MERGE_WINDOW_MS: any;
 declare const idOfParts: any;
+// #1446：额度档位沿用 host-budget.ts 的 tierFor（0.6 / 0.85 两档只住那一处），这里同样只声明、不 import。
+// 为什么不在界面重写阈值：写第二份就会改一处漏一处，面板的「黄/红」与刷新闸的降档判断必须是同一把尺子。
+declare const tierFor: any;
 import { REST_FALLBACK_STALE_MS } from '../../../shared/time-config/values.js'
 export const truthFreshnessAt = function (st: any) {
   const snap = st && st.snapshot
@@ -66,7 +69,8 @@ const TRUTH_MINUTE_MS = 60000
  *   · `agoKey`/`agoParams` 是控件默认画的那一句相对时间（刚刚 / N 分钟前 / N 小时前 / N 天前）；
  *   · `time` 是精确时刻（'22:41'），调用方把它拼进悬停提示那一句（那条 truth.updatedTip，
  *     完整说法只在悬停时出现，版面上不出现「上次更新」四个字）；
- *   · `tone` 是新鲜度那三档（fresh / yellow / red），调用方据此上色 —— 颜色由调用方定，这里不带颜色。
+ *   · `tone` 是新鲜度那三档（fresh / yellow / red），调用方据此上色；三档颜色共用的那一份映射见下面的
+ *     freshnessToneColor（2026-10-24 起把面板与状态栏这两处调用方的上色口径收成一份）。
  * 没有取数时刻（还没拿到快照）时返回 null：调用方那时一个时间的字都不画，而不是画一个猜的。
  */
 export const truthFreshnessBox = function (st: any, nowMs: any) {
@@ -85,6 +89,74 @@ export const truthFreshnessBox = function (st: any, nowMs: any) {
     agoParams: agoKey === 'truth.updatedJustNow' ? {} : { n: n },
     time: line.params.time,
   }
+}
+/**
+ * 新鲜度三档对应的显示色（2026-10-24 加）：右侧面板头部那个小时间标签与状态栏胶囊上的时刻共用这一份映射，
+ * 免得两处各写一遍、以后改色只改到一处。颜色取宿主设计系统的别名变量，取不到时退回同义兜底色。
+ * 只返回一个颜色字符串，不碰 React；「现在是哪一档」仍只由 truthFreshnessBox 的 tone 决定。
+ */
+export const freshnessToneColor = function (tone: any) {
+  return tone === 'red' ? 'var(--dsw-alias-state-error-primary,#f87171)' : (tone === 'yellow' ? 'var(--dsw-alias-state-warning-primary,#f59e0b)' : 'var(--dsw-alias-label-caption,#8b8b95)')
+}
+// ── 额度读数那一句（#1446）──
+// 后端是哪一种额度形态，只看 refresh.backend.budgetKind（'two-buckets' / 'requests' / 'none' / 'unknown'）：
+// 面板不按后端名字推算类型，将来同一门后端换一种计费方式，这里不用跟着改。
+// 四条硬规矩，改这个函数的人先看：
+//   1. **读数未知不许冒数字**：readKnown 不为真、或者该形态的数字缺了，只说「还没同步上来」，
+//      绝不写 0 —— 0 会被读成「已经耗尽」，把「不知道」说成「用光了」是最坏的一种假话。
+//   2. **只有真耗尽才说 failQuota**：请求额度剩 0，或两个桶都已知且都见底，才算耗尽（红档）；
+//      黄/红档位沿用 host-budget.ts 的 tierFor，这里不新造档位词、也不写阈值。
+//   3. **离网后端没有额度这回事**：说「本后端不出站，不需要额度」，不说「还没同步」。
+//   4. **模型未知也要说话（#1455）**：后端声明 unknown、或声明了本版不认识的口径时，说「额度未知：
+//      这个后端没有可用的预算模型」。不许静默 —— 静默会被读成「这个后端没有额度这回事」，
+//      与「不知道」是两句话；也不许拿读到的旧数字冒充 —— 模型不知道，数字就无从解释。
+const BUDGET_TONE_BY_TIER: any = { green: 'fresh', yellow: 'yellow', red: 'red' }
+// 面板认识、且能念出数字（或明确说「没有额度」）的三种口径；不在这份名单里的都按「模型未知」处理。
+// 这份词表与宿主 src/host/tracker/snapshot.ts 的 BUDGET_KINDS 是同一套词：那边放行 'unknown' 是为了
+// 把「未知」这件事送到面板，不是为了在这里把它当成一种能念数字的形态。
+const KNOWN_BUDGET_KINDS: string[] = ['two-buckets', 'requests', 'none']
+function budgetBucketOf(bucket: any): any {
+  if (!bucket || typeof bucket !== 'object') return null
+  if (typeof bucket.remaining !== 'number' || !isFinite(bucket.remaining) || bucket.remaining < 0) return null
+  if (typeof bucket.limit !== 'number' || !isFinite(bucket.limit) || bucket.limit < 0) return null
+  return bucket
+}
+// 档位按「已经用掉多少」求：剩得越少，used 越接近 1；tierFor 的 0.6 / 0.85 是全局唯一的那把尺子。
+function budgetToneOf(bucket: any): string {
+  if (!(bucket.limit > 0)) return 'fresh'
+  return BUDGET_TONE_BY_TIER[tierFor(1 - bucket.remaining / bucket.limit)] || 'fresh'
+}
+function budgetBucketLine(key: any, bucket: any): any {
+  return { key: key, params: { remaining: bucket.remaining, limit: bucket.limit }, tone: budgetToneOf(bucket), kind: 'budget' }
+}
+export const budgetNoticeLines = function (refresh: any): any[] {
+  const backend = refresh && refresh.backend
+  if (!backend || typeof backend !== 'object') return []
+  if (backend.offNetwork === true) return [{ key: 'truth.budgetOffNetwork', params: {}, tone: 'fresh', kind: 'budget' }]
+  const unknown = function (): any[] { return [{ key: 'truth.budgetUnknown', params: {}, tone: 'fresh', kind: 'budget' }] }
+  // 模型未知排在读数未知之前：连「这个后端的额度怎么算」都说不清时，「这次读没读到」是下一层的问题。
+  // 两句说的是不同的事实 —— 一句是模型不知道（它可能永远说不清），一句是这次还没读到（等一等就有）。
+  if (KNOWN_BUDGET_KINDS.indexOf(String(backend.budgetKind || '')) < 0) {
+    return [{ key: 'truth.budgetUnknownModel', params: {}, tone: 'fresh', kind: 'budget' }]
+  }
+  if (backend.readKnown !== true) return unknown()
+  if (backend.budgetKind === 'requests') {
+    const requests = budgetBucketOf(backend.requests)
+    if (!requests) return unknown()
+    if (requests.remaining === 0) return [{ key: 'truth.failQuota', params: {}, tone: 'red', kind: 'fail' }]
+    return [budgetBucketLine('truth.budgetRequests', requests)]
+  }
+  // 走到这里只剩 none：没有额度可念，就一个字都不说（离网已经在最上面说过「不需要额度」了）。
+  if (backend.budgetKind !== 'two-buckets') return []
+  const graphql = budgetBucketOf(backend.buckets && backend.buckets.graphql)
+  const rest = budgetBucketOf(backend.buckets && backend.buckets.rest)
+  if (!graphql && !rest) return unknown()
+  // 两个桶都已知且都见底才算真耗尽；只要还有一桶能出站，就还没到「等整点恢复」那一步。
+  if (graphql && rest && graphql.remaining === 0 && rest.remaining === 0) return [{ key: 'truth.failQuota', params: {}, tone: 'red', kind: 'fail' }]
+  const lines: any[] = []
+  if (graphql) lines.push(budgetBucketLine('truth.budgetGraphql', graphql))
+  if (rest) lines.push(budgetBucketLine('truth.budgetRest', rest))
+  return lines
 }
 export const truthNoticeLines = function (st: any, nowMs: any) {
   // 这里标 any[]：lines 只在下面那个 push 闭包里被读写，闭包里的演化类型推不出来，标出来才让
@@ -124,6 +196,10 @@ export const truthNoticeLines = function (st: any, nowMs: any) {
   // 四、有更新但被推后了；五、这个窗口没在刷新（同时活跃上限 2 个窗口，第 3 个在这里明说）。
   if (refresh && refresh.deferred === true) push({ key: 'truth.deferred', params: {}, tone: 'yellow', kind: 'deferred' })
   if (refresh && refresh.notRefreshing === true) push({ key: 'truth.notRefreshing', params: {}, tone: 'fresh', kind: 'notRefreshing' })
+  // 六、额度读数（#1446）：面板那一行只调 truthNoticeLines，所以额度这句要并进同一份列表里；
+  //   按键去重，与上面几句不会重复说同一件事。
+  const budgetLines = budgetNoticeLines(refresh)
+  for (let i = 0; i < budgetLines.length; i++) push(budgetLines[i])
   return lines
 }
 // 行上那个「更新中」标记的窗口：一次写入成功之后，这一行在合并窗口内还算「正在更新」。

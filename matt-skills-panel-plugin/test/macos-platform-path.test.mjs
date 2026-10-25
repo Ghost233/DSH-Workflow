@@ -79,11 +79,19 @@ test('public platform composition also rejects unsupported adapter overrides', a
   await assert.rejects(composePlatform({ get() {} }, 'linux', () => ({})), /platform unsupported/)
 })
 
-test('missing CLI guidance exposes only macOS installation without executing a command', async () => {
-  const forbid = () => { throw new Error('no external command expected') }
-  const flow = createPublishFlow({ DEFAULT_CWD: '/Users/Matt/Project', resolveGit: async () => '/mock/git', resolveGh: async () => null, getGhLastError: () => '', runGh: forbid, execProc: forbid, makeCreateErrorClassifier, KIND_UNKNOWN })
+test('missing CLI guidance exposes only macOS installation through the tracker write session', async () => {
+  const commands = []
+  const platform = { resolveExecutable: async name => name === 'git' ? '/mock/git' : null }
+  const flow = createPublishFlow({ DEFAULT_CWD: '/Users/Matt/Project', resolveGit: async () => '/mock/git',
+    execProc: async argv => { commands.push(argv); return { ok: true, code: 0, text: '' } },
+    openSession: async (_cwd, options) => {
+      assert.equal(options.write, true)
+      return { ok: true, call: fn => fn({ initProject }, { platform }) }
+    }, makeCreateErrorClassifier, KIND_UNKNOWN })
   const host = await flow.handleInitPublish({ name: 'project', cwd: '/Users/Matt/Project' })
   assert.equal(host.errorKind, 'no-gh')
+  assert.ok(commands.every(argv => argv[0] === '/mock/git'
+    && (argv.includes('rev-parse') || argv.includes('get-url'))), 'a missing gh must not execute a publish or write command')
   const backend = await initProject({ cwd: '/Users/Matt/Project' }, { name: 'project' }, { platform: { resolveExecutable: async name => name === 'git' ? '/mock/git' : null } })
   assert.equal(backend.error.kind, 'no-gh')
   for (const prompt of [host.prompt, backend.error.prompt]) {

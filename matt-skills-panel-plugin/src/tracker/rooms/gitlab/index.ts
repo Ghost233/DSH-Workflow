@@ -2,7 +2,7 @@
  * src/tracker/rooms/gitlab/index.ts — GitLab 后端适配器（主缝实现），本文件是这个房间的 TypeScript 真源。
  *
  * 定版：#135（labels/milestone分流）+ #144 一页纸（数据归一8文件表 + blocking双路径 + preflight + parentKey归一 + 三底座）
- * 严格对照契约名录（`../../contract/operations-catalog.ts` 的 22 条操作 + 3 条定位口）与实体形状；
+ * 严格对照契约名录（`../../contract/operations-catalog.ts` 的 23 条操作 + 3 条定位口）与实体形状；
  * 按 #113 平台抽象（ctx.platform / ctx.exec / ctx.fs）。
  * 能力诚实：未就绪op由registry Proxy补unsupported桩，此处不再自造布尔capabilities表。
  *
@@ -33,13 +33,16 @@ import { listLabels, setLabelColors } from './labels-ops.js'
 import { getCurrentUser, getRepoPermissions } from './identity-ops.js'
 import { listSubIssues } from './sub-issues.js'
 import { initProject } from './init-project.js'
+// #1446：读额度读数与「每次 glab 调用记一条请求」的用量信封。
+import { readGitlabBudget } from './budget.js'
+import { attachGlabOpUsage } from './client.js'
 import type { PartiallyProvidedCapability, ProvidedCapability } from '../../contract/capability-answer.js'
 // `import type` 取登记数据：转译后不留运行时引用（理由与 GitHub 房那处相同，见 rooms/github/backend.ts）。
 import type { GITLAB_CAPABILITY_REGISTER } from './capability-register.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
 import { GITLAB_FALLBACK_TIMEOUT_MS } from '../../../shared/time-config/src/values.js'
 
-// —— GitLab 交出来的成员：24 条能力 + id（21 条操作 + describe/issueAddress/getRepoKey 三条定位口）——
+// —— GitLab 交出来的成员：25 条能力 + id（22 条操作 + describe/issueAddress/getRepoKey 三条定位口）——
 // 这份集合不再手写，从本房的登记数据推出来：「明确提供功能」的名字才是实例成员；登记里那 1 条
 // 「明确不支持」（ensureLabelColorsFile）因此不会出现在这里（它由注册表按名录补桩）。
 // 为什么集合与形状住在房间文件里（而不是判定文件）：判定收在 src/tracker/capability-assertions.ts，
@@ -243,7 +246,8 @@ export const links = {
  * 仓库坐标 `./repo.ts`。接手的人先读 `./README.md`（这一房与另外两房不一样的地方）。
  */
 export function createGitlabBackend(ctx: BackendContext) {
-  return {
+  // 先按形状装配，再在操作表外层统一包一层用量：包的是同一个对象，成员集合与形状断言都不变。
+  const backend = {
     id: 'gitlab',
     describe: (handle) => describe(handle, 'gitlab'),
     issueAddress: (ref, key) => issueAddress(ref, key),
@@ -274,7 +278,10 @@ export function createGitlabBackend(ctx: BackendContext) {
     // 它回答的是「挂在这张地图上的票」；人手工加的 relates_to 关联不参与归属判定。详见 ./sub-issues.ts 文件头。
     listSubIssues: (repo, mapKey, opts, opCtx) => listSubIssues(repo, mapKey, opts, opCtx || ctx),
     initProject: (handle, input, opCtx) => initProject(handle, input, opCtx || ctx),
+    // 读额度：GitLab 只按请求计数，读数固定是 requests-only；坏路一律回「读数未知」，不抛。
+    readBudget: (opCtx) => readGitlabBudget(opCtx || ctx),
   } satisfies GitlabBackendShape
+  return attachGlabOpUsage(backend)
 }
 
 /** 修复契约注入文案（GitLab 后端，双语单源；供 fixes 引用，host 组装时解析）。 */
@@ -393,6 +400,8 @@ export const gitlabBackend = {
   },
   create: createGitlabBackend,
   matches,
+  // 预算口径（规格 1439 起必填）：只计请求——没有点数那一桶，也没有第二桶可言。
+  budget: { kind: 'requests-only', countsRequests: true, countsPoints: false, independentBuckets: false },
   prompts,
   fixes,
 } satisfies BackendModule

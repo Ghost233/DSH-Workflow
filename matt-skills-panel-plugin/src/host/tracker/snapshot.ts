@@ -59,10 +59,81 @@ interface SnapshotComposerRegistry {
   get: (id: string) => any
 }
 
+// —— 额度读数（#1446）——
+// 快照 refresh 里的 tier / deferred / paused / notRefreshing 四格说的是刷新闸自己的账；
+// 「这个后端还剩多少额度」是另一件事，由宿主的刷数预算按后端报上来（生产者在 refresh-runtime 的
+// budgetState，接线归 Lead）。这一层只做搬运与形状校验：拿到就写进 refresh.backend，拿不到就不写这一格。
+// 为什么不写一个空壳：界面看到「没有 backend」会说「读数还没同步上来」；若塞 remaining: 0，
+// 界面就会报假耗尽 —— 不知道和耗尽必须分得开。
+// 但「模型未知」（后端声明 unknown，或声明了本版不认识的口径）不是「没有读数」：#1455 起它是合法的
+// 一档，必须原样送到界面 —— 旧的白名单少了这个词，未知模型会被整格丢掉，面板静默得像「没有额度这回事」。
+// 字段只增不改：四个旧格子的语义、取值与次序一字不动，老客户端读不到 backend 也不会受影响。
+export type RefreshBudgetKind = 'two-buckets' | 'requests' | 'none' | 'unknown'
+export type RefreshBudgetReason = 'not-measured' | 'unavailable' | 'unsupported'
+export interface RefreshBudgetBucket {
+  remaining: number
+  limit: number
+}
+export interface RefreshBackendBudget {
+  id: string
+  budgetKind: RefreshBudgetKind
+  readKnown: boolean
+  offNetwork: boolean
+  buckets?: { rest?: RefreshBudgetBucket; graphql?: RefreshBudgetBucket }
+  requests?: RefreshBudgetBucket
+  reason?: RefreshBudgetReason
+}
+// 生产者可以只回读数本身，也可以回 {ok, readout} 这层包装（与 workRouteTableReadout 同一种口子）；
+// 只回 null 表示「这一趟拿不到」，编排器保持旧形状。
+export type BudgetReadout = Omit<RefreshBackendBudget, 'id'>
+type BudgetReadoutEnvelope = { ok?: boolean; readout?: BudgetReadout }
+
 interface SnapshotComposerOpts {
   snapshotTtl?: number
   depsTtl?: number
   logCtx?: { fire: (...args: any[]) => unknown; isEnabled: (...args: any[]) => boolean }
+  // 读某个后端当前的额度读数；拿不到就回 null（或干脆不接这个口子）。抛错按拿不到处理，不许打断快照重建。
+  budgetReadout?: (backendId: string) => BudgetReadout | BudgetReadoutEnvelope | null | undefined | Promise<BudgetReadout | BudgetReadoutEnvelope | null | undefined>
+  // #1439 A2：生产路径经 Tracker 会话取数（操作过闸、记账，房间实例不外泄给面板）。
+  // 不接这一格的调用方（门禁单测、老调用点）仍按注册表取实例，形状与今天一致。
+  openSession?: (cwd: string, o?: { write?: boolean }) => Promise<any>
+}
+
+// 读数里的数字只认「非负整数」：额度是条数，出现小数、负数或 NaN 说明上游给的东西不是读数，
+// 当成拿不到比当成 0 安全（界面只会说「还没同步上来」，不会报假耗尽）。
+// 'unknown' 在这一份白名单里是「模型这一层就不知道」，与「读数这次没拿到」是两件事（#1455）：
+// 前者要送到界面说「未知」，后者不写 backend 让界面说「还没同步」。
+const BUDGET_KINDS: string[] = ['two-buckets', 'requests', 'none', 'unknown']
+function isBudgetCount(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && Math.floor(v) === v
+}
+function budgetBucketOf(v: any): RefreshBudgetBucket | null {
+  if (!v || typeof v !== 'object') return null
+  if (!isBudgetCount(v.remaining) || !isBudgetCount(v.limit)) return null
+  return { remaining: v.remaining, limit: v.limit }
+}
+// 把生产者给的东西收敛成客户端认识的那一格；认不出来就回 null（编排器据此不写 backend）。
+function backendBudgetOf(backendId: string, raw: any): RefreshBackendBudget | null {
+  const r = (raw && typeof raw === 'object' && raw.ok === true && raw.readout && typeof raw.readout === 'object') ? raw.readout : raw
+  if (!r || typeof r !== 'object') return null
+  if (typeof r.budgetKind !== 'string' || BUDGET_KINDS.indexOf(r.budgetKind) < 0) return null
+  const out: RefreshBackendBudget = {
+    id: backendId,
+    budgetKind: r.budgetKind as RefreshBudgetKind,
+    readKnown: r.readKnown === true,
+    offNetwork: r.offNetwork === true,
+  }
+  const graphql = budgetBucketOf(r.buckets && r.buckets.graphql)
+  const rest = budgetBucketOf(r.buckets && r.buckets.rest)
+  if (graphql || rest) {
+    out.buckets = {}
+    if (graphql) out.buckets.graphql = graphql
+    if (rest) out.buckets.rest = rest
+  }
+  const requests = budgetBucketOf(r.requests)
+  if (requests) out.requests = requests
+  if (r.reason === 'not-measured' || r.reason === 'unavailable' || r.reason === 'unsupported') out.reason = r.reason
+  return out
 }
 
 interface ComposeOpts {
@@ -107,13 +178,46 @@ export function createSnapshotComposer(registry: SnapshotComposerRegistry, opts:
   // 留在这里只为如实保留原文件的完整面貌，不删除、不改动，调用方仍按原来路径取数。
   void issueIndexVersion
 
+  // 读一次额度读数：没接、抛错、形状不对都算「这一趟拿不到」，一律回 null。
+  // 为什么吞异常：额度读数只是快照上的一个附加事实，读它失败不能连累快照本身（老行为必须保持可用）。
+  const readBackendBudget = async (backendId: string): Promise<RefreshBackendBudget | null> => {
+    const read = opts && opts.budgetReadout
+    if (typeof read !== 'function') return null
+    try {
+      return backendBudgetOf(backendId, await read(backendId))
+    } catch (e) {
+      return null
+    }
+  }
+
+  // #1439 A2：取数的门面。生产接了 openSession 就经 Tracker 会话调操作（过闸、记账、房间实例不外泄）；
+  // 没接（门禁单测、老调用点）或会话这一层开不起来（宿主装配还没就绪）时回落到注册表取实例，形状与今天一致：
+  // 面板取数不能因为会话没接好就整份快照失败（#927 可用性优先）。门面故意不提供 snapshotFast：
+  // 快路径不是契约操作，会话路径退回普通 list，结果正确、只是少一趟捷径。
+  const instanceOf = (backendId: string): any => {
+    try { return registry.get(backendId) } catch (e) { return null }
+  }
+  const trackerFor = async (backendId: string, ctx: any): Promise<any> => {
+    const open = opts && opts.openSession
+    if (typeof open !== 'function') return instanceOf(backendId)
+    const cwd = (ctx && typeof ctx.cwd === 'string') ? ctx.cwd : ''
+    let opened: any = null
+    try { opened = await open(cwd, { write: false }) } catch (e) { opened = null }
+    if (!opened || opened.ok !== true || typeof opened.call !== 'function' || String(opened.backendId) !== String(backendId)) return instanceOf(backendId)
+    return {
+      list: (ref: any) => opened.call((s: any, c: any) => s.list(ref, {}, c)),
+      counts: (ref: any) => opened.call((s: any, c: any) => s.counts(ref, {}, c)),
+      getDependencies: (ref: any, key: any, o: any) => opened.call((s: any, c: any) => s.getDependencies(ref, key, o || {}, c)),
+    }
+  }
+
   return {
     // 宿主编排 composeSnapshot（非 op）：list 全量 → 组装 maps/tickets/未挂图票 → deck 派生 → 缓存。
     // o.force=true 绕过缓存。失败返回 {ok:false,error}（不抛）。
     async composeSnapshot(backendId: string, ref: RepositoryRef, ctx: any = {}, o: ComposeOpts = {}): Promise<any> {
-      const tracker = registry.get(backendId)
+      const tracker = await trackerFor(backendId, ctx)
       if (!tracker) {
-        return { ok: false, error: { kind: (ERROR_KIND as any).UNSUPPORTED, message: `backend '${backendId}' not registered (composition aborted)` } }
+        return { ok: false, error: { kind: (ERROR_KIND as any).UNSUPPORTED, message: `backend '${backendId}' not reachable (composition aborted)` } }
       }
       const sk = snapKeyOf(backendId, ref)
       const cachedEntry = snapCache.get(sk);
@@ -184,7 +288,12 @@ export function createSnapshotComposer(registry: SnapshotComposerRegistry, opts:
       // tier 是额度档位：今天宿主这一侧还没有闸的账本读数（闸与账本接进宿主是后面的事），所以如实留 null。
       //   留 null 的直接后果是界面不说「数据可能落后 X 分钟」——这是对的：不知道就不说，不许编一个。
       //   deferred / paused / notRefreshing 同理：没有那个事实就是 false，界面一个字都不显示。
-      snapshot.refresh = { tier: null, deferred: false, paused: false, notRefreshing: false }
+      // #1446：额度读数与这一趟重建同窗取（快照缓存 TTL 5 秒，版号把它一起带走）；拿不到就不写 backend，
+      //   保持今天这份 refresh 的形状 —— 少一格字段是「不知道」，写成 0 才是谎报耗尽。
+      const backendBudget = await readBackendBudget(backendId)
+      const refresh: any = { tier: null, deferred: false, paused: false, notRefreshing: false }
+      if (backendBudget) refresh.backend = backendBudget
+      snapshot.refresh = refresh
       try{ const ver=snapshotVersionOf(snapshot); snapshot.version=ver; snapshot.etag=ver; }catch(e){}
       const ent={snapshot, version:snapshot.version||'', at:Date.now()};
       touchSnapLRU(sk, ent);
@@ -199,9 +308,9 @@ export function createSnapshotComposer(registry: SnapshotComposerRegistry, opts:
       if (fresh(depsCache.get(dk), depsTtl)) {
         return { ok: true, data: depsCache.get(dk).data, cached: true }
       }
-      const tracker = registry.get(backendId)
+      const tracker = await trackerFor(backendId, ctx)
       if (!tracker) {
-        return { ok: false, error: { kind: (ERROR_KIND as any).UNSUPPORTED, message: `backend '${backendId}' not registered` } }
+        return { ok: false, error: { kind: (ERROR_KIND as any).UNSUPPORTED, message: `backend '${backendId}' not reachable` } }
       }
       const res = await tracker.getDependencies(ref, key, {}, ctx)
       if (res && res.ok === true) depsCache.set(dk, { data: res.data, at: Date.now() })

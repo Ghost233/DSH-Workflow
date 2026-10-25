@@ -19,7 +19,7 @@ export const SUGGEST_Z = 2147482000
  * 一致；改这里就能整体改外观。
  */
 export const SUGGEST_APPEARANCE = {
-  /** 气泡底边离状态胶囊顶边的距离。 */
+  /** 气泡底边离输入框顶边的距离（锚点已改到输入框：折叠不折叠它都在，折叠后不再偏左）。 */
   gapAboveCapsule: 9,
   /** 整组气泡的最大宽度：窄栏靠它和视口宽度一起收，不横向溢出。 */
   maxWidthPx: 720,
@@ -31,6 +31,19 @@ export const SUGGEST_APPEARANCE = {
   pillPadX: 12,
   pillGapPx: 6,
   pillMaxWidthPx: 360,
+  /** 磨砂：选项药丸的背景模糊半径（backdrop-filter:blur），越大越看不清底字；配下面加实的底色一起用。 */
+  pillBlurPx: 12,
+  /** 悬停浮层：底边离选项框顶边的距离、最大宽度、圆角与内边距（#1451 后续：选项框上只留
+   *  简介，理由收进框正上方的浮层，不跟鼠标走）。 */
+  popGapPx: 6,
+  popMaxWidthPx: 280,
+  popRadiusPx: 8,
+  popPadY: 6,
+  popPadX: 10,
+  /** 悬停浮层的背景模糊半径（与药丸同一套磨砂）。 */
+  popBlurPx: 10,
+  /** 浮层里评分泡与后面理由正文的间距：评分贴在第一行开头，跟字之间留一点空，别贴死。 */
+  scoreGapPx: 6,
   /** 选项行与关闭按钮行之间的间距。 */
   groupGapPx: 7,
   closeRowMarginTopPx: 10,
@@ -40,19 +53,21 @@ export const SUGGEST_APPEARANCE = {
   closePadX: 10,
   closeIdleOpacity: 0.6,
 
-  // —— 小泡与动效（原型 C 版定稿的数值，口径与规格 #1397 一致）——
+  // —— 小泡与动效（#1397 定稿原型 C 版，经 #1451 按「出场面要看清、整体约 2 秒」重定）——
   /** 每颗选项配几颗小泡：每 bubblePxPerPill 像素一颗，最少 bubbleMinPerPill 颗。 */
   bubblePxPerPill: 20,
   bubbleMinPerPill: 4,
   /** 一行选项都没量到宽度时，整组退回这么多颗（正常路径量得到宽度，用不到）。 */
   bubbleFallbackCount: 8,
-  /** 小泡直径：bubbleSizeMin 到 bubbleSizeMin + bubbleSizeRange 之间随机。 */
-  bubbleSizeMin: 3.5,
-  bubbleSizeRange: 6,
-  /** 每颗小泡的出发延迟上限、飞行时长区间（毫秒）。 */
-  bubbleDelayMaxMs: 360,
-  bubbleTravelMinMs: 320,
-  bubbleTravelMaxMs: 660,
+  /** 小泡直径：bubbleSizeMin 到 bubbleSizeMin + bubbleSizeRange 之间随机。
+   *  #1451 按「出场的小泡太小、看不清」放大五成：3.5~9.5 → 5.25~14.25。 */
+  bubbleSizeMin: 5.25,
+  bubbleSizeRange: 9,
+  /** 每颗小泡的出发延迟上限、飞行时长区间（毫秒）。
+   *  #1451 把出场整体拉到约 2 秒：最慢一颗 560 出发 + 1030 飞行，再把清尾 400 算上共 1990 毫秒。 */
+  bubbleDelayMaxMs: 560,
+  bubbleTravelMinMs: 500,
+  bubbleTravelMaxMs: 1030,
   /** 出发地：八成从关闭按钮下方，两成从对话区（组底边下方）游离过来。 */
   bubbleFromButtonRatio: 0.8,
   bubbleButtonSpreadPx: 90,
@@ -73,29 +88,49 @@ export const SUGGEST_APPEARANCE = {
   rowOpacitySpan: 0.96,
   rowOpacityCurve: 0.8,
   closeRevealCurve: 2,
-  /** 全部小泡落完后，再等这么久就把小泡节点清掉。 */
-  bubbleCleanupDelayMs: 260,
-  /** 选中一条后整组退场的时长；关闭与第二组覆盖用另一档。 */
-  pickMs: 280,
+  /** 全部小泡落完后，再等这么久就把小泡节点清掉（#1451 从 260 提到 400，给「约 2 秒」留出收尾）。 */
+  bubbleCleanupDelayMs: 400,
+  /** 选中一条后的退场：整组选项胶囊化作小泡向上飘走，关闭按钮同时消失（#1451 用户拍板）。
+   *  每颗胶囊按宽度分 pickBubblePxPerPill 像素一颗，至少 pickBubbleMinPerPill、至多 pickBubbleMaxPerPill 颗。 */
+  pickBubblePxPerPill: 60,
+  pickBubbleMinPerPill: 2,
+  pickBubbleMaxPerPill: 5,
+  /** 这批退场小泡的出发延迟上限、飞行时长区间（毫秒）：整体不到 0.6 秒，比出场短得多。 */
+  pickBubbleDelayMaxMs: 70,
+  pickBubbleTravelMinMs: 400,
+  pickBubbleTravelMaxMs: 500,
+  /** 向上飘多远（比胶囊顶边再高这么多像素）与横向摆动幅度。 */
+  pickBubbleRiseMinPx: 70,
+  pickBubbleRiseMaxPx: 130,
+  pickBubbleSwayPx: 10,
+  /** 全部退场小泡飘完后，再留这么久才真的收起整组（免得最后一颗还没淡出就被卸载）。 */
+  pickBubbleTailMs: 60,
+  /** 关闭与第二组覆盖用的整组淡出时长（毫秒）。 */
   fadeMs: 170,
   /** 小泡飞行的五条速度曲线（随机挑一条）。 */
   easeList: ['ease-out', 'ease-in-out', 'cubic-bezier(.25,.6,.3,1)', 'cubic-bezier(.4,0,.6,1)', 'cubic-bezier(.2,.7,.35,1.1)'],
 
-  // —— 颜色与光感（C 版玻璃质感；亮色主题另给一组，避免深色描边在浅底上看不清）——
-  pillBg: 'linear-gradient(180deg,rgba(208,228,250,.13),rgba(198,218,242,.04) 46%,rgba(150,170,205,.06))',
+  // —— 颜色与光感（C 版玻璃质感；亮色主题另给一组，避免深色描边在浅底上看不清；
+  //    #1451 后续按「磨砂＋底色加实」把深浅两底都加实，配上面的模糊半径一起用）——
+  pillBg: 'linear-gradient(180deg,rgba(208,228,250,.55),rgba(198,218,242,.38) 46%,rgba(150,170,205,.32))',
   pillBorder: 'rgba(170,195,235,.34)',
   pillHoverBorder: 'rgba(182,206,242,.52)',
   pillHoverShadow: '0 1px 14px rgba(150,190,255,.14)',
   pillShadow: 'inset 0 1px 0 rgba(255,255,255,.24),0 1px 10px rgba(140,180,255,.06)',
   pillTextShadow: '0 1px 1px rgba(0,0,0,.3)',
+  /** #1451 后续：悬停浮层的底色要比选项框再淡一档（更白、更透）。
+   *  浮层与选项框只隔几个像素，两层玻璃若用同一个底色会糊成一整块，看不出哪层是提示。 */
+  popBg: 'linear-gradient(180deg,rgba(216,234,254,.56),rgba(211,230,251,.50) 46%,rgba(201,221,246,.46))',
   bubbleBg: 'radial-gradient(circle at 34% 28%,rgba(255,255,255,.55),rgba(186,210,242,.22) 52%,rgba(150,180,220,.07) 78%)',
   bubbleBorder: 'rgba(200,220,250,.35)',
   bubbleGlow: '0 0 6px rgba(150,190,255,.25)',
-  lightPillBg: 'linear-gradient(180deg,rgba(255,255,255,.78),rgba(244,248,255,.55) 46%,rgba(226,235,248,.5))',
+  lightPillBg: 'linear-gradient(180deg,rgba(255,255,255,.88),rgba(244,248,255,.68) 46%,rgba(226,235,248,.62))',
   lightPillBorder: 'rgba(120,150,190,.32)',
   lightPillHoverBorder: 'rgba(96,130,180,.5)',
   lightPillHoverShadow: '0 1px 14px rgba(90,130,190,.18)',
   lightPillShadow: 'inset 0 1px 0 rgba(255,255,255,.8),0 1px 8px rgba(90,120,160,.12)',
+  /** #1451 后续：浅色主题下浮层也要比选项框淡一档（更白、更浅），不能直接复用 lightPillBg。 */
+  lightPopBg: 'linear-gradient(180deg,rgba(255,255,255,.97),rgba(254,255,255,.95) 46%,rgba(252,254,255,.93))',
   lightBubbleBg: 'radial-gradient(circle at 34% 28%,rgba(160,190,230,.5),rgba(180,205,240,.25) 52%,rgba(200,220,245,.1) 78%)',
   lightBubbleBorder: 'rgba(120,150,190,.25)',
   lightBubbleGlow: '0 0 6px rgba(120,160,220,.18)',
