@@ -1,0 +1,17 @@
+{
+  "original": [
+    "cordis.patch.yml",
+    "README.md",
+    "package.json",
+    "scripts/summarize.py"
+  ],
+  "components": [
+    "cordis.patch.yml",
+    "README.md",
+    "package.json",
+    "scripts/summarize.py",
+    "skills/ledger-math/SKILL.md",
+    "skills/ledger-reconciliation/SKILL.md",
+    "skills/ledger-reconciliation/scripts/check.py"
+  ]
+}

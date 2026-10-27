@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "repository": "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck",
   "submodulePath": "vendor/dsh-mattpocock-skills-deck",
-  "commit": "584127b1152ffdf04eeb2363b0a03d7cbdaa1bd2",
-  "version": "1.9.0-beta.18",
+  "commit": "b79bbc4c37eac8f83107bf5321e9cd421b400d2d",
+  "version": "1.9.0-beta.26",
   "sourcePaths": [
     "src",
     "LICENSE",

@@ -48,6 +48,17 @@ declare function h(...args: any[]): any;
 // #1436：只读电话那条链（同闭包更早的片段提供）—— 用户点「重试」时重读本机记录。
 // #1436：首帧只读那条链（同闭包更早的片段提供）—— 取当前会话那一格。
 declare function ownWorkRouteSlotOf(...args: any[]): any;
+// #1511：首列票号写成「#目录/编号」的显示规则住在 kernel/ticket-label.ts，本文件只调用。
+declare function ticketLabelOf(...args: any[]): any;
+// B 方案：同一颗控件的两段子节点走那一份（目录前缀可省略、编号尾巴绝不缩小）。
+declare function ticketLabelNodesOf(...args: any[]): any;
+// B 方案：首列票号控件的上限宽度同样读那一份（180px），与列表行、详情页、胶囊是同一颗控件。
+declare const TICKET_LABEL_MAX_WIDTH: string;
+// #1545：行点击要调的三个函数（findMapByIdentity 按票号找容器、containerKindOf 认它是地图还是规格、
+//   pushNav 跳到目标页）由打包时拼进同一闭包的更早片段提供，这里只声明名字与参数形状，不参与转译。
+declare function findMapByIdentity(...args: any[]): any;
+declare function containerKindOf(...args: any[]): any;
+declare function pushNav(...args: any[]): any;
 
 /** 快照里这个字段的名字；宿主读数模块用的是同一个名字。 */
 export const WORK_ROUTE_TABLE_FIELD = 'workRouteTable'
@@ -119,6 +130,8 @@ const workRouteIsCut = function (el: any): boolean {
 /** 一条能画出来的工作条目；形状不对的格子整格丢掉，宁可少显示也不显示错的。 */
 export interface WorkRouteTableRow {
   ticketKey: string
+  /** #1511：这一条属于哪个工作目录（本地 Markdown 后端才有；单工作单元后端省略）。首列票号靠它带上目录。 */
+  effortId?: string
   title: string
   sessionLabel: string
   action: string
@@ -171,6 +184,8 @@ export const workRouteTableViewOf = function (raw: any): WorkRouteTableView {
       currentSession: e.currentSession === true,
     }
     if (typeof e.progress === 'number' && isFinite(e.progress)) row.progress = e.progress
+    // #1511：目录缺席、空串都按「单工作单元」处理（此时首列只写 #编号），与身份算法同一条口径。
+    if (typeof e.effortId === 'string' && e.effortId !== '') row.effortId = e.effortId
     rows.push(row)
   }
   const staleCount = typeof readout.staleCount === 'number' ? readout.staleCount : rows.filter(function (r) { return !r.active }).length
@@ -193,20 +208,46 @@ export const workRouteTableOf = function (st: any): WorkRouteTableView {
 }
 
 /**
+ * #1545 · 在办表行点击去哪：按票号加工作单元在快照容器表里找容器，找得到且认得出种类
+ *   就进容器详情，否则回落普通票详情（与子票/阻塞票分流 enterSubDetail 同一条口径：
+ *   有字可看，不静默没反应）。导航函数不在（打包单文件求值时外层没拼进来）或票号取不到
+ *   时回空，调用方不挂点击，不跳错地方。
+ */
+export const workRouteNavOf = function (st: any, r: WorkRouteTableRow): any {
+  if (!r || typeof r.ticketKey !== 'string' || r.ticketKey.trim() === '' || typeof pushNav !== 'function') return null
+  const effort = typeof r.effortId === 'string' ? r.effortId : ''
+  let kind = ''
+  try {
+    const maps = st && st.snapshot && st.snapshot.maps
+    if (typeof findMapByIdentity === 'function' && typeof containerKindOf === 'function' && Array.isArray(maps)) {
+      const c = findMapByIdentity(maps, r.ticketKey, effort)
+      if (c) kind = containerKindOf(c) || ''
+    }
+  } catch (e) { /* 容器表损坏时按未知容器处理：回落票详情，不断渲染。 */ }
+  return { kind: kind === 'map' || kind === 'spec' ? 'map' : 'issue', n: r.ticketKey, effortId: effort }
+}
+
+/**
  * 六列的列宽模板：票号、动作、动作时间、是否在办这四列按格子里的内容定固定宽度；
- * 标题与会话两列吃掉全部富余宽度 —— 面板拉宽时先让这两列长出来，票标题和会话名才显示得全。
+ * 标题与会话两列各有保底与上限（#1553）：内容长就撑宽、到上限止步，面板拉宽时也不会无限长。
+ * 上限之外多出来的宽度留在行尾，不再从别的列里抢 —— 六列比例因此稳定。
  * 反例（#1287 以前的写法）：那四列各留着一大片空白（「动作时间」72 像素里只写着 27 像素的时分，
  * 「是否在办」48 像素里只写着 22 像素的「在办」），票标题和会话名被挤成省略号；
  * 现在这四列收窄（动作时间那列还改写缩写，见 workRouteTableStamp），省下的宽度全给了那两列。
  * 表头与数据行是两个 grid，必须用同一份模板（列宽要逐字对齐），所以把它导出来给两边共用。
  */
-export const WORK_ROUTE_TABLE_CELLS = '40px minmax(110px, 1.7fr) minmax(80px, 1fr) 48px 36px 36px'
+/* 首列按本表实际行自适应（#1553）：短编号 56px，长编号按内容分档放宽（目录不缩写），超长封顶 192px。
+ * 分几档、怎么估宽，收在 ticket-label.ts 那一份里（估宽直接调真写法，形状想跑偏都跑偏不了）；
+ * 这里只管用：WorkRouteTable 用算出来的那一份同时画表头与每一行（对齐不变），行内容未知时用默认。 */
+declare function workRouteCellsFor(rows: any): string
+/** 行内容未知时的默认模板（全短编号那一档）；表头与数据行都要显式传算好的那一份。 */
+export const WORK_ROUTE_TABLE_CELLS = '56px minmax(150px, 320px) minmax(104px, 200px) 48px 36px 36px'
 
 const workRouteCellStyle = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as any
 
-const workRouteHeadRow = function (h: any, tr: any) {
-  const cells = ['ticket', 'title', 'session', 'action', 'time', 'state']
-  return h('div', { 'data-work-route-head': 1, style: { display: 'grid', gridTemplateColumns: WORK_ROUTE_TABLE_CELLS, gap: 6, padding: '0 0 4px', fontSize: 10, color: 'var(--dsw-alias-label-caption,#8b8b95)', borderBottom: '1px solid var(--dsw-alias-border-l1,#2a2d35)' } }, cells.map(function (c) {
+const workRouteHeadRow = function (h: any, tr: any, cells?: any) {
+  const names = ['ticket', 'title', 'session', 'action', 'time', 'state']
+  return h('div', { 'data-work-route-head': 1, style: { display: 'grid', gridTemplateColumns: typeof cells === 'string' && cells !== '' ? cells : WORK_ROUTE_TABLE_CELLS, gap: 6, padding: '0 0 4px', fontSize: 10, color: 'var(--dsw-alias-label-caption,#8b8b95)', borderBottom: '1px solid var(--dsw-alias-border-l1,#2a2d35)' } }, names.map(function (c) {
     return h('span', { key: c, style: { whiteSpace: 'nowrap' } }, tr('workRouteTable.col.' + c))
   }))
 }
@@ -238,16 +279,19 @@ const workRouteTipGroup = function (h: any, icon: string, text: string, key: str
  * 才知道动作词有没有被省略号截掉（workRouteIsCut）。
  * 反例（#1287 以前的写法）：提示只挂在标题那一格、只写标题 —— 会话名被截掉时没人说得清是谁在办这张票。
  */
-export const WorkRouteRow = ({ r, nowMs }: any) => {
+export const WorkRouteRow = ({ r, nowMs, st, onNavigate, cells }: any) => {
   const cx = React.useContext(DswsCtx)
   const h = cx ? cx.h : React.createElement
   const actionRef = React.useRef(null)
+  const numberRef = React.useRef(null)
   const actionWord = workRouteActionKeyOf(r.action)
   const actionText = actionWord ? tr(actionWord) : r.action
   const fullAt = workRouteTableClock(r.actionAt, nowMs) || r.actionAt
   const shortAt = workRouteTableStamp(r.actionAt, nowMs) || r.actionAt
+  const fullLabel = ticketLabelOf(r.ticketKey, r.effortId)
   const tipContent = function () {
     const extras: string[] = []
+    if (fullLabel && workRouteIsCut(numberRef.current)) extras.push(fullLabel)
     if (actionText && workRouteIsCut(actionRef.current)) extras.push(actionText)
     if (shortAt !== fullAt) extras.push(fullAt)
     return h('div', { 'data-work-route-tip': 1, style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, maxWidth: 496 } }, [
@@ -259,15 +303,37 @@ export const WorkRouteRow = ({ r, nowMs }: any) => {
       ]),
     ])
   }
-  const row = h('div', {
+  // #1545：行可点才挂点击——导航目标由 workRouteNavOf 定（容器进容器页、其余进票详情）；
+  //   点后调 onNavigate（浮层靠它收起）。导航能力不在时保持今天的纯展示行。
+  const nav = workRouteNavOf(st, r)
+  const openRow = function () {
+    if (!nav) return
+    try { pushNav(st, nav.kind, nav.n, nav.effortId) } catch (e) { /* 跳转失败就停在当前页，不把人带错地方。 */ }
+    if (typeof onNavigate === 'function') { try { onNavigate() } catch (e2) { /* 收浮层失败不影响已发生的跳转。 */ } }
+  }
+  const rowProps: any = {
     'data-work-route-row': 1,
     'data-work-route-active': r.active ? 1 : 0,
-    style: { display: 'grid', gridTemplateColumns: WORK_ROUTE_TABLE_CELLS, gap: 6, alignItems: 'center', padding: '3px 0', borderTop: '1px solid rgba(255,255,255,.045)' },
-  }, [
-    h('span', { style: Object.assign({ fontVariantNumeric: 'tabular-nums', color: 'var(--dsw-alias-label-primary,#e6e6eb)' }, workRouteCellStyle) }, '#' + r.ticketKey),
+    style: { display: 'grid', gridTemplateColumns: typeof cells === 'string' && cells !== '' ? cells : WORK_ROUTE_TABLE_CELLS, gap: 6, alignItems: 'center', padding: '3px 0', borderTop: '1px solid rgba(255,255,255,.045)', cursor: nav ? 'pointer' : undefined },
+  }
+  if (nav) {
+    rowProps.tabIndex = 0
+    rowProps.role = 'button'
+    rowProps['aria-label'] = ticketLabelOf(r.ticketKey, r.effortId) + ' ' + (r.title || '')
+    rowProps['data-press'] = 'row'
+    rowProps['data-log'] = 'workroute.row.' + r.ticketKey
+    rowProps.onClick = openRow
+    rowProps.onKeyDown = function (e: any) {
+      if (!e || e.target !== e.currentTarget) return
+      if (e.key === 'Enter' || e.key === ' ') { if (typeof e.preventDefault === 'function') e.preventDefault(); openRow() }
+    }
+  }
+  const row = h('div', rowProps, [
+    // B 方案：首列同样是上限宽度 + 目录前缀可省略、编号尾巴绝不缩小；完整写法仍走悬停补（见 tipContent）。
+    h('span', { ref: numberRef, style: Object.assign({ fontVariantNumeric: 'tabular-nums', color: 'var(--dsw-alias-label-primary,#e6e6eb)', display: 'inline-flex', alignItems: 'center', maxWidth: TICKET_LABEL_MAX_WIDTH }, workRouteCellStyle) }, ticketLabelNodesOf(h, r.ticketKey, r.effortId)),
     h('span', { style: Object.assign({ color: r.title ? 'inherit' : 'var(--dsw-alias-label-caption,#8b8b95)' }, workRouteCellStyle) }, r.title || tr('workRouteTable.titleMissing')),
     h('span', { style: Object.assign({ display: 'inline-flex', alignItems: 'center', gap: 4 }, workRouteCellStyle) }, [
-      h('span', { key: 's', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, r.sessionLabel),
+      h('span', { key: 's', style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, r.sessionLabel),
       r.currentSession ? h('span', { key: 'me', style: { flex: 'none', fontSize: 9, border: '1px solid rgba(88,166,255,.5)', color: '#58a6ff', borderRadius: 4, padding: '0 3px', lineHeight: 1.5 } }, tr('workRouteTable.thisSession')) : null,
     ]),
     h('span', { ref: actionRef, style: workRouteCellStyle }, actionText),
@@ -277,8 +343,8 @@ export const WorkRouteRow = ({ r, nowMs }: any) => {
   return h(Tip, { content: tipContent, placement: 'above', maxWidth: 520, offset: { x: 0, y: 12 } }, row)
 }
 
-/** 面板里这张表：标题行 + 表头 + 逐条行；空态与读不到也画在这一块里。 */
-export const WorkRouteTable = ({ st }: any) => {
+/** 面板里这张表：标题行 + 表头 + 逐条行；空态与读不到也画在这一块里。点行后调 onNavigate（浮层靠它收起）。 */
+export const WorkRouteTable = ({ st, onNavigate }: any) => {
   const cx = React.useContext(DswsCtx)
   const h = cx ? cx.h : React.createElement
   // #1440：与胶囊同一条选路 —— 本机只读读数优先，快照里挂的那张兜底（304 回包可能挂一张坏表）。
@@ -309,17 +375,20 @@ export const WorkRouteTable = ({ st }: any) => {
       h('div', { 'data-work-route-empty': 1, style: { color: 'var(--dsw-alias-label-caption,#8b8b95)' } }, tr('workRouteTable.empty')),
     ])
   }
+  // 首列按本表实际行自适应（#1553）：表头与每一行用算出来的同一份模板，对齐要求不变。
+  const cells = workRouteCellsFor(view.rows)
   const rows = view.rows.map(function (r: WorkRouteTableRow) {
-    return h(WorkRouteRow, { key: r.ticketKey + ':' + r.sessionLabel + ':' + r.actionAt, r: r, nowMs: nowMs })
+    return h(WorkRouteRow, { key: r.ticketKey + ':' + r.sessionLabel + ':' + r.actionAt, r: r, nowMs: nowMs, st: st, onNavigate: onNavigate, cells: cells })
   })
   return h('section', { 'data-work-route-table': 'ok', style: boxStyle }, [
     titleRow,
-    h('div', { style: { overflowX: 'auto' } }, [workRouteHeadRow(h, tr), h('div', { key: 'rows' }, rows)]),
+    h('div', { style: { overflowX: 'auto' } }, [workRouteHeadRow(h, tr, cells), h('div', { key: 'rows' }, rows)]),
   ])
 }
 
-/** 浮层的最小宽度：六列最少要放下这么多像素，再窄就出现横向滚动。 */
-const WORK_ROUTE_POPOVER_MIN_WIDTH = 520
+/** 浮层的最小宽度：标题保底 150px、会话保底 104px，加上首列最宽那一档，至少要 680 才不挤出横向滚动。
+ * 弹窗是咱们自己画的，窄了只会把标题和会话压成省略号 —— 宁可一开始就给够。面板更宽时浮层跟面板同宽（下）。 */
+const WORK_ROUTE_POPOVER_MIN_WIDTH = 680
 
 /**
  * 面板头部那一行右端的「在办表」入口（#1285）。
@@ -399,7 +468,7 @@ export const WorkRouteTrigger = ({ st }: any) => {
     ? (reading
         ? h('div', { 'data-work-route-loading': 1, style: { color: 'var(--dsw-alias-label-caption,#8b8b95)', fontSize: 11, padding: '4px 2px' } }, tr('chainView.ownRouteLoading'))
         : h('div', { 'data-work-route-idle': 1, style: { color: 'var(--dsw-alias-label-caption,#8b8b95)', fontSize: 11, padding: '4px 2px' } }, tr('workRouteTable.idle')))
-    : h(WorkRouteTable, { st: st })
+    : h(WorkRouteTable, { st: st, onNavigate: close })
   const pop = (ui.open && ui.pos) ? portalTop(h('div', {
     ref: popRef,
     'data-work-route-popover': 1,

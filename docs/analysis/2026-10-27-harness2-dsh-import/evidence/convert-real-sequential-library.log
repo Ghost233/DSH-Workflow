@@ -1,0 +1,19 @@
+{
+  "bundle": "/private/tmp/harness2-dsh-import-audit-20261027/generated/original",
+  "preset_id": "h2-original-import",
+  "preset_row_id": "preset-h2-original-import",
+  "files": [
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/original/README.md",
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/original/cordis.patch.yml",
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/original/package.json",
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/original/scripts/summarize.py"
+  ],
+  "harness": {
+    "always_on_chars": 55,
+    "skills": 0,
+    "subagents": 0,
+    "scripts": 1,
+    "plugins": 0
+  },
+  "warnings": []
+}

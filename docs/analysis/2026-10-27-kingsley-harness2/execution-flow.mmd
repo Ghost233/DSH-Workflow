@@ -1,0 +1,9 @@
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#eef2ff","primaryTextColor":"#172033","primaryBorderColor":"#6366f1","lineColor":"#64748b","fontSize":"16px"},"flowchart":{"htmlLabels":false,"wrappingWidth":380,"nodeSpacing":30,"rankSpacing":25}}}%%
+flowchart TD
+    U["DSH 面板或 h2 命令：提交任务"] --> E["Kingsley JavaScript 引擎：调度实验"]
+    E --> R["独立 DSH SDK 进程：原配置与候选试跑"]
+    E --> M["独立 DSH SDK 进程：提出、组合、选择、反思"]
+    R --> T["任务工具、工作目录与产物"]
+    T --> E
+    M --> E
+    E --> L["实验报告与经验库：供后续实验参考"]

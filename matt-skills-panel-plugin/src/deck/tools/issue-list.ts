@@ -15,6 +15,7 @@ import { estimateToolCost, toolCostInputFrom } from '../../refresh/kernel/tool-c
 import { withCallScope } from '../../refresh/rooms/host/tool-call-budget-enforcement.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
 import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
+import { withCap } from '../shell/capped-wait.js'
 // #1277：类型没标对的规格票靠票面文件头标记兜底认出来（与宿主快照组装层同一口径）。
 import { isSpecHeaderMarked } from '../../shared/issue-file/src/marker.js'
 
@@ -72,15 +73,8 @@ function labelNames(list: unknown): string[] { return namesOf(list, (l) => l.nam
 /** 认领人名字：对象形态取 login，取不到记空串（namesOf 会把它滤掉）。 */
 function assigneeNames(list: unknown): string[] { return namesOf(list, (a) => (a && a.login) || '') }
 
-/** 钳制等待的结果：等到了给值；超时或对方自己失败都算「没等到」，调用方一律退老路。 */
-type CapResult<T> = { ok: true; value: T } | { ok: false; timedOut?: true }
-// 沙箱许可等待上限：超时按缺席走老路（不限权），与既有 catch null 同形。
-function withCap<T>(promise: Promise<T> | T, ms: number): Promise<CapResult<T>> {
-  return Promise.race([
-    Promise.resolve(promise).then(function (v): CapResult<T> { return { ok: true, value: v } }, function (): CapResult<T> { return { ok: false } }),
-    new Promise<CapResult<T>>(function (resolve) { setTimeout(function () { resolve({ ok: false, timedOut: true }) }, ms) }),
-  ])
-}
+// 沙箱许可等待上限见 ../shell/capped-wait.ts（#1114 第二批）：到点就按「没等到」处理并清掉等待定时器；
+// 超时按缺席走老路（不限权），与既有 catch null 同形。
 
 /** 这一行是不是地图：后端回的 type 认地图、或带 isMap 标记、或戴着 wayfinder:map 标签都算。 */
 function isMapRow(issue: Record<string, unknown> | null | undefined): boolean {  try {
@@ -186,6 +180,9 @@ export function createDeckIssueList(deps?: DeckIssueListDeps) {
       // 这两种「可能不全」都要如实转告，别让调用方当成「库里就这么多」（#1304）。
       const backendTruncated = listed.truncated === true
       const backendFallback = listed.fallback === 'rest'
+      // 降级原因与操作编号一起摆出来：配额耗尽与其它失败走的是同一条 REST，日志里按 opId 才能对上同一趟。
+      const fallbackReason = String((listed as { fallbackReason?: unknown }).fallbackReason || '')
+      const opId = String(((opCtx as Record<string, unknown> | null | undefined) || {}).opId || '')
       const wantLabelLow = wantLabels.map((x) => x.toLowerCase())
       const matched = []
       for (const issue of rows) {
@@ -232,14 +229,18 @@ export function createDeckIssueList(deps?: DeckIssueListDeps) {
       if (wantQuery) cond.push('query=' + String(a.query).trim().slice(0, 40))
       const notes = []
       if (scope.effortId) notes.push(mdScopeNote(scope.scene, scope.effortId))
-      if (backendFallback) notes.push('后端主路这次用不了，走的是 REST 降级通道：REST 自己有翻页上限，尾页失败时只回已经拿到的，这份清单可能不全：收窄过滤再查一次。')
+      if (backendFallback) {
+        // 配额耗尽与其它失败分开说：前者等额度恢复，后者按 opId 去日志里查 read.degraded 同一趟的原因。
+        if (fallbackReason === 'quota') notes.push('后端主路这次因配额耗尽走了 REST 降级通道（opId ' + (opId || '未知') + '）：REST 自己有翻页上限，尾页失败时只回已经拿到的，这份清单可能不全：收窄过滤再查一次。')
+        else notes.push('后端主路这次用不了，走的是 REST 降级通道（原因 ' + (fallbackReason || 'other') + '，opId ' + (opId || '未知') + '，日志里按 opId 查 read.degraded 就是同一趟）：REST 自己有翻页上限，尾页失败时只回已经拿到的，这份清单可能不全：收窄过滤再查一次。')
+      }
       else if (backendTruncated) notes.push('后端这次只翻到自己的上限就停了（工单 500 条、拉取请求 1000 条），这份清单可能不全：收窄过滤再查一次。')
       if (truncated) notes.push('只回前 ' + sliced.length + ' 行（共 ' + total + ' 行符合）：收窄过滤或调大 limit 再取一次。')
       return {
         value: {
           status: DECK_STATUS.OK,
           text: 'ISSUE 列表：共 ' + total + ' 行符合（' + cond.join('，') + '），回 ' + sliced.length + ' 行。',
-          data: { total: total, returned: sliced.length, truncated: truncated, issues: sliced },
+          data: { total: total, returned: sliced.length, truncated: truncated, issues: sliced, fallback: backendFallback ? 'rest' : undefined, fallbackReason: backendFallback ? (fallbackReason || 'other') : undefined, opId: opId || undefined },
           notes: notes,
           touched: [],
         },

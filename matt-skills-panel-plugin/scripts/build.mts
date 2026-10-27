@@ -94,7 +94,7 @@ const ROOT: string = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 界面就跟着反复闪烁——验证链跑一次要命中十几回，面板就闪十几回。判据换成内容摘要后（#1326），
 // 除缓存不可用时的回落判据外，全仓没有别处再看 mtime；这里也就不需要再动任何 mtime。
 //
-// 强制重建：node scripts/build.mts --force，或设 DSH_BUILD_NO_CACHE=1。
+// 强制重建：node scripts/build.mts --force，或设 DSH_BUILD_NO_CACHE=1。两者都只跳过命中判断，构建成功后照常写回实际构建的那一档（--force 本身不参与档位命名，见 buildModeKey，#1539）。
 // 缓存文件落在 node_modules/.cache/ 下（不进版本库，不会被提交）。
 
 function printArtifactSizes(devOnly: boolean, pkgOnly: boolean): void {
@@ -452,7 +452,7 @@ const KERNEL_MODULES: { name: string; file: string }[] = [
   // 本次界面反馈需求：全客户端唯一的按压委托与点击日志口（ui.action），必须排在 log 之后、页面组件之前。
   { name: 'uiFeedback', file: 'src/client/kernel/ui-feedback.ts' },
   // 构建内核清单含日志模块（运行时拼上面的派生文件，#564 留派生不搬；
-  //   #1251：旧手写真源 log.js 已删，同内容住在 src/client/kernel/log.ts，只供门禁经钩子直读）。
+  //   #1143：旧手写源 log.ts 已删，门禁改测包与派生文件，不再读旧文件）。
   // #1251：这一片由手写 .js 转成 .ts，这里改指新真源（读源由 readSpliceFragmentSource 按扩展名分派，
   //   它会把 .ts 转译成可拼接的 JavaScript；同名 .js 已删，不再入库）。
   { name: 'storePrefs', file: 'src/client/kernel/store-prefs.ts' },
@@ -507,6 +507,8 @@ const KERNEL_MODULES: { name: string; file: string }[] = [
   { name: 'rowActions', file: 'src/client/kernel/row-actions.ts' },
   // #1286：容器（探索地图与规格）的判定、取色与提示词单一真源。
   { name: 'containerView', file: 'src/client/kernel/container-view.ts' },
+  // #1511：面板上「#目录/编号」的显示写法单一真源（列表行、在办表、会话链、详情页头部共用）。
+  { name: 'ticketLabel', file: 'src/client/kernel/ticket-label.ts' },
   // #1251：这一片由手写 .js 转成 .ts，这里改指新真源（读源由 readSpliceFragmentSource 按扩展名分派，
   //   它会把 .ts 转译成可拼接的 JavaScript；同名 .js 已删，不再入库）。
   { name: 'apiNaming', file: 'src/client/kernel/api-naming.ts' },
@@ -1860,6 +1862,9 @@ const CLIENT_TIME_NAMES: string[] = [
   'SKILL_DETAIL_COPIED_FLASH_MS',
   'NATIVE_TAB_RETRY_INTERVAL_MS',
   'SKILL_SKELETON_DELAY_MS',
+  // 「下一步建议」读自己那份工作路线的两档重试等待（work-route-own.ts 剥掉 import 行之后，名字由这一片提供）。
+  // 数组常量与标量一样摘一行：生成物里这个常量就是一条带方括号的 export const 声明。
+  'OWN_ROUTE_RETRY_MS',
 ]
 function buildTimeConfigClientFragment(): void {
   // 读构建产物而不是源码树：中央时间参数的域产物（values.js）从 2026-10-19 起落在 .build/shared/ 下，

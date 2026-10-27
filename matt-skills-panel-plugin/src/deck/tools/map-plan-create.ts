@@ -20,6 +20,8 @@ import { withCallScope } from '../../refresh/rooms/host/tool-call-budget-enforce
 import { createMemoryPlanStore, createFilePlanStore, planCursorDir } from '../shell/plan-cursor.js'
 import { readbackMapPlan } from './map-plan-readback.js'
 import { adoptAnchoredChildren, repairOrphanParents } from './map-plan-resume.js'
+import { backendMapCreateFailure } from './map-plan-create-failure.js'
+import type { TransportResult } from '../shell/backend-transport.js'
 import { applyParentEdge, applyBlockEdges, statusOfItems, childrenOf } from '../shell/edge-landing.js'
 import { ensureLabels, ensureBody, anchorKeyFor } from '../shell/minimal-spec.js'
 // #1413：子票的位置与标签口径只在 rules/object-kind.ts 那份位置表里写一份，这里照它收口，不再自带一套。
@@ -29,6 +31,7 @@ import * as budget from '../../refresh/kernel/host-budget.js'
 import { estimateToolCost, toolCostInputFrom } from '../../refresh/kernel/tool-call-budget.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
 import { DECK_SANDBOX_TIMEOUT_MS, DECK_STORE_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
+import { withCap } from '../shell/capped-wait.js'
 
 export const definition = {
   name: 'deck_map_plan_create',
@@ -90,10 +93,8 @@ const CHILD_KINDS = ['map-ticket', 'bug', 'issue']
 
 /** 数字型参数的统一收口：正的有限数才要（取整），其余一律当「没给」，由调用方退自己的默认。 */
 function numOpt(v: unknown): number | undefined { return (typeof v === 'number' && isFinite(v) && v > 0) ? Math.floor(v) : undefined }
-/** 钳制等待的结果：等到了给值；超时或对方自己失败都算「没等到」，调用方一律退老路。 */
-type CapResult<T> = { ok: true; value: T } | { ok: false; timedOut?: true }
-// 等待竞速：沙箱超时按缺席走老路；游标读超时按空游标（锚预检与幂等键仍是去重权威，不多出票），写超时吞掉。
-function withCap<T>(promise: Promise<T> | T, ms: number): Promise<CapResult<T>> { return Promise.race([Promise.resolve(promise).then(function (v): CapResult<T> { return { ok: true, value: v } }, function (): CapResult<T> { return { ok: false } }), new Promise<CapResult<T>>(function (resolve) { setTimeout(function () { resolve({ ok: false, timedOut: true }) }, ms) })]) }
+// 等待竞速见 ../shell/capped-wait.ts（#1114 第二批：到点就清等待定时器）：沙箱超时按缺席走老路；
+// 游标读超时按空游标（锚预检与幂等键仍是去重权威，不多出票），写超时吞掉。
 
 /**
  * 宿主的文件读写能力：每样都可能缺（缺了就不落盘），下面用它之前都先判过一次类型。
@@ -326,13 +327,9 @@ export function createDeckMapPlanCreate(deps?: DeckMapPlanCreateDeps) {
           title: title, body: mapEnsured.body, type: 'map', labels: ensureLabels(a.labels, 'map').labels,
           idempotencyKey: 'deck-plan-' + planId + '-map',
         }, opCtx)
-        if (!created || created.ok !== true) {
-          const msg = String((created && created.error && created.error.message) || '后端没给出原因').slice(0, 300)
-          return {
-            value: { status: DECK_STATUS.UNSUPPORTED, reason: REFUSAL_REASONS.BACKEND_UNSUPPORTED, text: '地图票没建成（后端原话：' + msg + '），后面的子票与边都没动。', data: { planId: planId, error: { kind: String((created && created.error && created.error.kind) || ''), message: msg } }, notes: notes },
-            claimed: { requests: 1, points: 4 },
-          }
-        }
+        // #1543：地图票没建成这一支收在同目录 map-plan-create-failure.ts，只为把本文件压回文件粒度基线以下。
+        // 锚回查失败时补拿同一个计划标识原样重试，普通失败不补。
+        if (!created || created.ok !== true) return backendMapCreateFailure(created as TransportResult, planId, notes)
         state.mapKey = String((created.data && created.data.key) || '')
         state.done.push('map')
         await store.save(planId, state)

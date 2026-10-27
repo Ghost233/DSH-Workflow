@@ -1,0 +1,63 @@
+{
+  "sourceSurface": "opencode",
+  "sourceGoogleCommit": "1cfe254e8d25b15f37048c3730134686abe60335",
+  "converterCommit": "56e77dccbb33d51ba1063eb5ae8c87fcd74771aa",
+  "originalDemo": {
+    "domain": "accounting",
+    "n_tasks": 2,
+    "seed": null,
+    "done": 2,
+    "failed": 0,
+    "tasks": [
+      {
+        "task": "ledger-1",
+        "status": "ok",
+        "library_entries_before": {
+          "agg": 0,
+          "seq": 0
+        }
+      },
+      {
+        "task": "ledger-2",
+        "status": "ok",
+        "library_entries_before": {
+          "agg": 1,
+          "seq": 1
+        }
+      }
+    ],
+    "execution_count": 14,
+    "editor_calls": 16
+  },
+  "scriptSha256": "2f0ac38c6f03816dcdc4c7e8032d481e81255ca7b473d11c9139e5ad1e4a44d6",
+  "importedScriptByteEqual": true,
+  "positiveOnlyFilterAbsent": true,
+  "experienceBodyImported": false,
+  "allConvertedPresetDiagnostics": [
+    {
+      "id": "h2-components-import",
+      "name": "Harness2 Components Import",
+      "description": "Harness2-derived agent preset (2 skill(s), 1 script(s))",
+      "order": 50,
+      "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+    },
+    {
+      "id": "h2-original-import",
+      "name": "Harness2 Original Import",
+      "description": "Harness2-derived agent preset (1 script(s))",
+      "order": 50,
+      "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+    },
+    {
+      "id": "h2-components-import--ledger-auditor",
+      "name": "Harness2 Components Import / ledger-auditor",
+      "description": "Reviews a ledger reconciliation for dropped signs.",
+      "order": 51,
+      "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+    }
+  ],
+  "modelInferenceReached": false,
+  "externalModelCalls": 0,
+  "hostExitCode": 0,
+  "cleanupForced": false
+}

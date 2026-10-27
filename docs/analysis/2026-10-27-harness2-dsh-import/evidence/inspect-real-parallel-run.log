@@ -1,0 +1,13 @@
+{
+  "root": "/private/tmp/harness2-dsh-import-audit-20261027/original-demo/runs/demo-oc-agg1/ledger-1/harnesses/agg1",
+  "source": "/private/tmp/harness2-dsh-import-audit-20261027/original-demo/runs/demo-oc-agg1/ledger-1",
+  "source_kind": "adopted harness from summary.json (agg=agg1)",
+  "always_on_chars": 55,
+  "skills": [],
+  "subagents": [],
+  "scripts": [
+    "summarize.py"
+  ],
+  "plugins": [],
+  "warnings": []
+}

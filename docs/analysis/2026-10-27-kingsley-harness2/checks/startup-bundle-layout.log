@@ -1,0 +1,25 @@
+[
+  {
+    "insert": [
+      {
+        "id": "harness2",
+        "name": "file:///private/tmp/harness2-kingsley-audit-20261027/kingsley/src/index.mjs",
+        "config": {
+          "dataDir": ".harness2"
+        }
+      }
+    ]
+  }
+]
+file:///private/tmp/harness2-kingsley-audit-20261027/kingsley/[eval1]:1
+import {createRequire} from 'node:module'; const require=createRequire("/Applications/Ghost DSH Station.app/Contents/Resources/node_modules/@deepseek-ai/dsh/package.json"); const boot=require('@deepseek-ai/dsh-app-boot'); const rows=boot.loadOverlayPatches('dsh',new URL('./cordis.patch.yml',import.meta.url).pathname); console.log(JSON.stringify(rows,null,2)); const [insertion,...overrides]=rows; if(insertion?.insert?.length!==1||insertion.insert[0].id!=='harness2'||insertion.insert[0].name!=='dsh-plugin-harness2'||overrides.some(row=>typeof row.id!=='string'||!row.config||typeof row.config!=='object'||Array.isArray(row.config)||Object.keys(row).some(key=>!['id','config'].includes(key)))) throw Error('Unsupported bundle layout: dsh-plugin-harness2');
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ^
+
+Error: Unsupported bundle layout: dsh-plugin-harness2
+    at file:///private/tmp/harness2-kingsley-audit-20261027/kingsley/[eval1]:1:704
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:268:26)
+    at async ModuleLoader.executeModuleJob (node:internal/modules/esm/loader:265:20)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.12.0

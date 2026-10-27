@@ -1,0 +1,13 @@
+{
+  "name": "dsh-harness2-h2-components-import",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Harness2-derived agent preset (2 skill(s), 1 script(s))",
+  "type": "module",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "Apache-2.0"
+}

@@ -1,0 +1,67 @@
+[
+  {
+    "name": "syntax",
+    "command": [
+      "/Applications/Ghost DSH Station.app/Contents/Resources/node",
+      "scripts/check.mjs"
+    ],
+    "cwd": "/private/tmp/harness2-kingsley-audit-20261027/kingsley",
+    "sourceCommit": "d9b71bf5e065c8c7c0e8b18e02b25f86d1f42c40",
+    "node": "24.12.0",
+    "runtime": "0.2.1-rc.3",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 2.34,
+    "log": "syntax.log"
+  },
+  {
+    "name": "current-runtime-freeze",
+    "command": [
+      "/Applications/Ghost DSH Station.app/Contents/Resources/node",
+      "--input-type=module",
+      "-e",
+      "import {freezeBaseline} from './src/harness.mjs'; import {resolveConfig} from './src/config.mjs'; console.log('Selected current runtime'); await freezeBaseline(resolveConfig());"
+    ],
+    "cwd": "/private/tmp/harness2-kingsley-audit-20261027/kingsley",
+    "sourceCommit": "d9b71bf5e065c8c7c0e8b18e02b25f86d1f42c40",
+    "node": "24.12.0",
+    "runtime": "0.2.1-rc.3",
+    "exitCode": 1,
+    "timedOut": false,
+    "durationSeconds": 0.108,
+    "log": "current-runtime-freeze.log"
+  },
+  {
+    "name": "startup-bundle-layout",
+    "command": [
+      "/Applications/Ghost DSH Station.app/Contents/Resources/node",
+      "--input-type=module",
+      "-e",
+      "import {createRequire} from 'node:module'; const require=createRequire(\"/Applications/Ghost DSH Station.app/Contents/Resources/node_modules/@deepseek-ai/dsh/package.json\"); const boot=require('@deepseek-ai/dsh-app-boot'); const rows=boot.loadOverlayPatches('dsh',new URL('./cordis.patch.yml',import.meta.url).pathname); console.log(JSON.stringify(rows,null,2)); const [insertion,...overrides]=rows; if(insertion?.insert?.length!==1||insertion.insert[0].id!=='harness2'||insertion.insert[0].name!=='dsh-plugin-harness2'||overrides.some(row=>typeof row.id!=='string'||!row.config||typeof row.config!=='object'||Array.isArray(row.config)||Object.keys(row).some(key=>!['id','config'].includes(key)))) throw Error('Unsupported bundle layout: dsh-plugin-harness2');"
+    ],
+    "cwd": "/private/tmp/harness2-kingsley-audit-20261027/kingsley",
+    "sourceCommit": "d9b71bf5e065c8c7c0e8b18e02b25f86d1f42c40",
+    "runtime": "0.2.1-rc.3",
+    "exitCode": 1,
+    "durationSeconds": 0.25,
+    "log": "startup-bundle-layout.log",
+    "scope": "Only scripts/project-plugins.mjs prepare source-route acceptance predicate. The packaged prepareStartupPlugins route differs; this is not a universal startup failure."
+  },
+  {
+    "name": "packaged-startup-composition",
+    "command": [
+      "/Applications/Ghost DSH Station.app/Contents/Resources/node",
+      "--input-type=module",
+      "-e",
+      "import{createRequire}from'node:module';import{prepareStartupPlugins}from\"/Users/ghost233/Ghost233Code/DSH-Workflow/macos-launcher/runtime/startup-plugins.mjs\";const require=createRequire(\"/Applications/Ghost DSH Station.app/Contents/Resources/node_modules/@deepseek-ai/dsh/package.json\");const boot=require('@deepseek-ai/dsh-app-boot');const result=await prepareStartupPlugins({profile:\"/private/tmp/harness2-kingsley-audit-20261027/composition-profile\",entries:[],config:{plugins:[{package:'dsh-plugin-harness2',version:'0.2.0',entryId:'harness2',startup:true}]},boot});console.log(JSON.stringify(result,null,2));if(result.skipped.length||!result.patches.length)throw Error('Packaged composition rejected');"
+    ],
+    "cwd": "/private/tmp/harness2-kingsley-audit-20261027",
+    "sourceCommit": "d9b71bf5e065c8c7c0e8b18e02b25f86d1f42c40",
+    "projectCommit": "5c0571a2a7f24df6f652b6778ba624183a8488c8",
+    "runtime": "0.2.1-rc.3",
+    "exitCode": 0,
+    "durationSeconds": 0.398,
+    "log": "packaged-startup-composition.log",
+    "scope": "Project packaged startup composer with isolated profile link and official DSH YAML loader. No dependency installation, Host, UI or model call."
+  }
+]

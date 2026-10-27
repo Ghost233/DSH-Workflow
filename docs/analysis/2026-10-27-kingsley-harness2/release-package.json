@@ -1,0 +1,42 @@
+{
+  "url": "https://github.com/Kingsleyyyyyyy/dsh-plugin-harness2/releases/download/v0.2.0/dsh-plugin-harness2-0.2.0.tgz",
+  "sha256": "730d50affd48a34ed424ea3038ffd7570ec2971928e0de37defa9cd4d1cd09fb",
+  "matchesReleaseDigest": true,
+  "files": [
+    {
+      "path": "package/package.json",
+      "matchesPinnedSource": true,
+      "sha256": "3748b1fe23c71a5206d9d06783673d084120bb0da97a9e1dc3bfa655e56cb1d1"
+    },
+    {
+      "path": "package/src/harness.mjs",
+      "matchesPinnedSource": true,
+      "sha256": "b5de642799297989d62c0dcd3a9fbed329b1de18e45d392b02a12530f24f1aae"
+    },
+    {
+      "path": "package/src/index.mjs",
+      "matchesPinnedSource": true,
+      "sha256": "e15234dd007af331cdf72a7c11dff0dca8eba223c2c7a67f2c2283dccbd92317"
+    },
+    {
+      "path": "package/cordis.patch.yml",
+      "matchesPinnedSource": true,
+      "sha256": "76629b12d752e6ffd5f74a67d683b37348aeeeb129b8e948cafc8ffa605470c5"
+    },
+    {
+      "path": "package/src/engine.mjs",
+      "matchesPinnedSource": true,
+      "sha256": "e4d442f874c5ccbb8fd6b3e57bceb8a22f2d5a62061766167737e4047f627943"
+    },
+    {
+      "path": "package/src/runner.mjs",
+      "matchesPinnedSource": true,
+      "sha256": "fd82c6b9ea0662d08ff9b081594b79a9957687fa9d8e1582a38e7494203e4b23"
+    },
+    {
+      "path": "package/src/library.mjs",
+      "matchesPinnedSource": true,
+      "sha256": "aaeabf05f601c32dad910f1bbc0d569fcf2e22e03e52206f3e1243d783edbe35"
+    }
+  ]
+}

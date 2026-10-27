@@ -16,6 +16,11 @@ declare function effortOf(...args: any[]): any;
 declare function popNav(...args: any[]): any;
 declare function prStateKind(...args: any[]): any;
 declare function effortNamesOf(...args: any[]): any;
+// #1511：详情页头部的编号写成「#目录/编号」，显示规则住在 kernel/ticket-label.ts（列表行与它同一条）。
+declare function ticketLabelOf(...args: any[]): any;
+// B 方案：同一颗控件的两段子节点与上限宽度同样走那一份（目录可省略、编号绝不缩小）。
+declare function ticketLabelNodesOf(...args: any[]): any;
+declare const TICKET_LABEL_MAX_WIDTH: any;
 declare function rowActionText(...args: any[]): any;
 declare function rowActionKind(...args: any[]): any;
 declare function actionColorOf(...args: any[]): any;
@@ -57,10 +62,11 @@ export const IssueDetail = function (props: any): any {
       const issueEffort = (navTop0 && navTop0.kind === 'issue') ? ((navTop0.effortId !== undefined && navTop0.effortId !== null) ? String(navTop0.effortId) : '') : (st.activeEffortId ? String(st.activeEffortId) : '')
       const repoStrLocal = repoStr(st)
       const colorOf = (typeof buildColorOf === 'function') ? buildColorOf(st) : {}
-      if (!issueNumber) return null
+      // 本地容器的编号是 0（key 00），是合法坐标：只拦缺席、空串与非数字，不拦 0。
+      if (issueNumber === undefined || issueNumber === null || issueNumber === '' || Number.isNaN(Number(issueNumber))) return null
       // 触发拉取（缓存命中则同步回 real，不多发请求；force 重试由按钮控制）
       React.useEffect(function () {
-        if (!issueNumber) return
+        if (issueNumber === undefined || issueNumber === null || issueNumber === '' || Number.isNaN(Number(issueNumber))) return
         if (typeof fetchIssueDetail === 'function') fetchIssueDetail(st, issueNumber, { effortId: issueEffort })
       }, [issueNumber, issueEffort, st.cwd])
       // #255 提交确认闪烁定时清除（类 rowFlash 同语义，防堆积；置于 early-return 之前保 hooks 顺序恒定）
@@ -214,8 +220,12 @@ export const IssueDetail = function (props: any): any {
       const stateColor = isOpen ? '#3fb950' : (isMerged ? ((typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '') : '#8b949e')
       const stateLabel = isOpen ? tr('list.state.open') : (isMerged ? tr('list.state.merged') : tr('list.state.closed'))
       const title = src.title || ('#' + issueNumber)
+      // 2026-10-26 维护者要求：effort 徽标先整体隐藏，代码保留、不删除。
+      //   背景：#1511 起顶栏标题行的编号已经写成「#目录/01」，这枚徽标写的目录名与它重复。
+      //   改回 true 即恢复显示（三处同名开关：ListTabRow、本文件、MapDetailHead）。
+      const SHOW_EFFORT_BADGE = false
       // effort 维度：详情页标出这张票属于哪个 effort（只在多 effort 仓库出现，单 effort 界面不变）
-      const effortChip = (issueEffort && effortNamesOf(st).length > 1) ? h(Tip, { content: issueEffort }, h('span', { className: 'dsws-chip dsws-eff', 'aria-label': issueEffort, style: { fontSize: 10, lineHeight: 1.6, padding: '0 6px', flex: 'none', maxWidth: 140, overflow: 'hidden', whiteSpace: 'nowrap', background: 'rgba(88,166,255,.14)', color: '#58a6ff', border: '1px solid rgba(88,166,255,.45)' } }, issueEffort)) : null
+      const effortChip = (SHOW_EFFORT_BADGE && issueEffort && effortNamesOf(st).length > 1) ? h(Tip, { content: issueEffort }, h('span', { className: 'dsws-chip dsws-eff', 'aria-label': issueEffort, style: { fontSize: 10, lineHeight: 1.6, padding: '0 6px', flex: 'none', maxWidth: 140, overflow: 'hidden', whiteSpace: 'nowrap', background: 'rgba(88,166,255,.14)', color: '#58a6ff', border: '1px solid rgba(88,166,255,.45)' } }, issueEffort)) : null
       // #693 正文格：**只有详情回来了才能说「无描述」**。详情没回来时说加载中，取不到时说「还没拿到」。
       //   取数失败的失败原因与重试在页面顶部那条横幅上（这里不重复放一个按钮）。
       const bodySlot = detail
@@ -303,15 +313,20 @@ export const IssueDetail = function (props: any): any {
       const subTotal = (src.subIssues && typeof src.subIssues.totalCount === 'number') ? src.subIssues.totalCount : subNodes.length
       const blockedNodes = (src.blockedBy && src.blockedBy.nodes) ? src.blockedBy.nodes : []
       // #693 评论也只认详情那次取数：快照那一行可能不带评论，拿它当「没有评论」会说错话。
-      const commentsSource = detail ? detail.comments : undefined
-      const commentsNodes = (commentsSource && commentsSource.nodes) ? commentsSource.nodes : []
+      // #1519：详情回包里的评论只有一种形状 —— GraphQL 连接 {nodes, pageInfo}。宿主
+      // src/refresh/rooms/host/comment-thread-fetch.ts 的 handleIssueDetail 与旧路 issue-detail-fetch.ts
+      // 都按这个形状交回来。界面这边不再兼容数组：多留一条数组分支，只会让「宿主换了形状」这种错
+      // 在界面被悄悄兜住、然后显示成「评论 (0)」——那正是 #1519 之前的样子。
+      const rawComments = detail ? detail.comments : undefined
+      // 同一条判据只算一次：形状对不对（是不是连接）既决定画不画评论列表，也决定显不显示输入框。
+      // 名字沿用 rawComments：门禁 tests/verify-issue-comment.ts 会从构建产物里按这个名字切出判据求值。
+      let canComment = !!rawComments && Array.isArray(rawComments.nodes)
+      const commentsNodes = canComment ? rawComments.nodes : []
       const isStale = !detail && !!snapIssue
       // ======== #255 · 评论输入区（GitHub 单点 · MISSING 零分支）========
       // 显隐以能力字段有无判：comments 存在即渲染（EMPTY=[] 渲染、MISSING=省略 不渲染），
-      // 零后端身份分支。数组形状（契约 Comment[]）与 GraphQL 形状（{nodes,pageInfo}）双兼容。
-      // #693：这个「能力字段」同样只看详情带回来的那一份（commentsSource），不看快照那一行。
-      const rawComments = commentsSource
-      let canComment = !!rawComments && (Array.isArray(rawComments) ? true : !!(typeof rawComments === 'object' && Array.isArray(rawComments.nodes)))
+      // 零后端身份分支。形状只认 GraphQL 连接一种，理由同上（#1519）。
+      // #693：这个「能力字段」同样只看详情带回来的那一份（rawComments），不看快照那一行。
       // #506 首版只读：拉取请求详情只看评论列表，不给输入框（快照与详情任一来源标为拉取请求即只读；评审合并展示留后续，#507 再验）。
       const fromPullRequest = (src && src.isPullRequest === true) || (snapIssue && snapIssue.isPullRequest === true)
       if (fromPullRequest) canComment = false
@@ -366,7 +381,8 @@ export const IssueDetail = function (props: any): any {
         ]) : null,
         // header
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 2 } }, [
-          h('span', { className: 'dsws-idnum', style: { color: actColor, borderColor: actColor, flex: 'none' } }, '#' + issueNumber),
+          // header（B 方案：上限宽度 + 目录前缀可省略、编号尾巴绝不缩小；悬停读完整写法那一串）
+        h(Tip, { content: ticketLabelOf(src.key != null ? src.key : issueNumber, issueEffort) }, h('span', { className: 'dsws-idnum', style: { color: actColor, borderColor: actColor, flex: 'none', display: 'inline-flex', alignItems: 'center', maxWidth: TICKET_LABEL_MAX_WIDTH, overflow: 'hidden' } }, ticketLabelNodesOf(h, src.key != null ? src.key : issueNumber, issueEffort))),
           h(Tip, { className: 'dsws-tip', content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullTitle')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, title)]) }, h('span', { className: 'dsws-tt-wrap', style: { flex: 1, fontSize: 14, fontWeight: 600 } }, title)),
           h('span', { className: 'dsws-chip', style: { fontSize: 10, background: isOpen ? 'rgba(63,185,80,.15)' : 'rgba(139,148,158,.15)', color: stateColor, border: '1px solid ' + stateColor, flex: 'none' } }, [Ic({ n: isOpen ? 'dot' : 'check', size: 9 }), h('span', { style: { marginLeft: 3 } }, stateLabel)]),
         ]),

@@ -125,7 +125,8 @@ export function createCommentThreads(deps: CommentThreadsDeps): any {
     const _rawDetailCwd: string = (args && typeof args.cwd === 'string' && args.cwd.trim()) ? args.cwd : ''
     if (!_rawDetailCwd) return { ok: false, error: '这个工作区还没就绪（还没认出是哪个目录），等面板认出工作区后再试。' }
     const cwd: any = await normCwd(_rawDetailCwd)
-    if (!n) return { ok: false, error: { kind: 'parse', message: '缺少 number' } }
+    // 本地容器的编号是 0（key 00），是合法坐标：只拦缺席、空串与非数字，不拦 0。
+    if (n === undefined || n === null || String(n).trim() === '' || isNaN(Number(n))) return { ok: false, error: { kind: 'parse', message: '缺少 number' } }
     try {
       // 读路径只认会话（#1444）：会话开成之后，后端选择、读额度与记账都由它兜住，本文件不再自己分发。
       const opened: any = await openReadSession(cwd)
@@ -150,7 +151,24 @@ export function createCommentThreads(deps: CommentThreadsDeps): any {
       }
       // 将 key 归一为字符串
       if (iss && iss.key != null) iss.key = String(iss.key)
-      // 详情需要包含 comments / blockedBy 等，markdown 的 get 已包含
+      // 评论：房间契约交回的是 Comment[] 数组，而详情页只认 GraphQL 连接形状 {nodes, pageInfo}
+      // （旧路 src/refresh/rooms/host/issue-detail-fetch.ts 的 detailOf 一直这么给）。#1444 换成经会话 get 之后
+      // 这里把数组原样透传，界面读 comments.nodes 读不到，任意票的评论区都显示「评论 (0)」——#1519 的根因。
+      // 所以在这一层把数组装回连接：每条评论的映射与旧路逐字一致（旧路的 detailOf 也只收窄这五个字段）。
+      // hasNextPage 只能按「取满一页」推：这一趟沿用房间默认首屏（GitHub 房默认 COMMENTS_PAGE = 50 条），
+      // 条数够一页就认为可能还有下一页；endCursor 用已取条数（旧 REST 路就是这么给的；
+      // 「加载更多」另走 fetchIssueComments，不靠这个游标翻详情）。
+      const comments: any = (iss.comments || []).map(function (c: any): any {
+        return {
+          author: { login: (c.author && c.author.login) || '' },
+          authorAssociation: c.authorAssociation || '',
+          body: c.body || '',
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+        }
+      })
+      // 详情需要包含 comments / blockedBy 等：markdown 的 get 在读时回填引用标题（#1537），
+      // 界面拿到的就是带标题的形状，这里只做连接包装、不再补标题。
       return { ok: true, issue: {
         number: iss.number != null ? iss.number : (iss.key ? parseInt(iss.key,10) : n),
         effortId: iss.effortId !== undefined && iss.effortId !== null ? String(iss.effortId) : '',
@@ -164,7 +182,7 @@ export function createCommentThreads(deps: CommentThreadsDeps): any {
         author: iss.author,
         labels: { nodes: (iss.labels || []).map(function(l: any){ return { name: l.name, color: l.color || '' } }) },
         assignees: { nodes: (iss.assignees || []).map(function(a: any){ return typeof a === 'string' ? { login: a } : a }) },
-        comments: iss.comments || { nodes: [] },
+        comments: { nodes: comments, pageInfo: { hasNextPage: comments.length >= COMMENTS_PAGE, endCursor: String(comments.length) } },
         subIssues: iss.subIssues || { totalCount: 0, nodes: [] },
         blockedBy: { nodes: (iss.blockedBy || []).map(function(b: any){ if (typeof b === 'number') return { number: b }; if (b && b.key != null) { const nn = parseInt(b.key,10); return { number: isNaN(nn) ? b.key : nn, title: b.title||'', state: b.state==='closed'?'CLOSED':'OPEN' }; } return b; }) },
         blocking: { nodes: [] },
@@ -178,7 +196,8 @@ export function createCommentThreads(deps: CommentThreadsDeps): any {
     const _rawCommentsCwd: string = (args && typeof args.cwd === 'string' && args.cwd.trim()) ? args.cwd : ''
     if (!_rawCommentsCwd) return { ok: false, error: '这个工作区还没就绪（还没认出是哪个目录），等面板认出工作区后再试。' }
     const cwd: any = await normCwd(_rawCommentsCwd)
-    if (!n) return { ok: false, error: { kind: 'parse', message: '缺少 number' } }
+    // 本地容器的编号是 0（key 00），是合法坐标：只拦缺席、空串与非数字，不拦 0。
+    if (n === undefined || n === null || String(n).trim() === '' || isNaN(Number(n))) return { ok: false, error: { kind: 'parse', message: '缺少 number' } }
     try {
       // 同详情：读评论也只经只读会话；会话开不成时诚实失败，让上层照旧用缓存。
       const opened: any = await openReadSession(cwd)
@@ -218,7 +237,8 @@ export function createCommentThreads(deps: CommentThreadsDeps): any {
     const _rawCommentCwd: string = (args && typeof args.cwd === 'string' && args.cwd.trim()) ? args.cwd : ''
     if (!_rawCommentCwd) return { ok: false, error: '这个工作区还没就绪（还没认出是哪个目录），等面板认出工作区后再试。' }
     const cwd: any = await normCwd(_rawCommentCwd)
-    if (!n || isNaN(Number(n))) return { ok: false, error: { kind: 'parse', message: '缺少 number' } }
+    // 本地容器的编号是 0（key 00），是合法坐标：只拦缺席、空串与非数字，不拦 0。
+    if (n === undefined || n === null || String(n).trim() === '' || isNaN(Number(n))) return { ok: false, error: { kind: 'parse', message: '缺少 number' } }
     if (typeof body !== 'string' || !body.trim()) return { ok: false, error: { kind: 'parse', message: '评论内容为空' } }
     try {
       // #1445：写入只经写会话。上一版在这里自己选后端、拼 opCtx、补 refId、直调房间 comment，

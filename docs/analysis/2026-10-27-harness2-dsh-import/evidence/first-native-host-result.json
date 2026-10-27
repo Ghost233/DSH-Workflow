@@ -1,0 +1,28 @@
+{
+  "runtime": "0.2.1-rc.3",
+  "command": [
+    "/Applications/Ghost DSH Station.app/Contents/Resources/node",
+    "/Applications/Ghost DSH Station.app/Contents/Resources/node_modules/@deepseek-ai/dsh/lib/bin.js",
+    "--profile",
+    "sdk",
+    "--patch",
+    "/private/tmp/harness2-dsh-import-audit-20261027/moved-bundles/original/cordis.patch.yml",
+    "--patch",
+    "/private/tmp/harness2-dsh-import-audit-20261027/moved-bundles/components/cordis.patch.yml",
+    "--patch",
+    "/private/tmp/harness2-dsh-import-audit-20261027/native-probe.patch.yml"
+  ],
+  "cases": [],
+  "externalModelCalls": 0,
+  "fixtureProvider": true,
+  "initialize": {
+    "serverInfo": {
+      "name": "deepseek-harness-sdk-runtime",
+      "version": "0.0.1"
+    }
+  },
+  "status": "failed",
+  "error": "{\"code\": -32603, \"message\": \"tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)\"}",
+  "shutdown": {},
+  "hostExitCode": 0
+}

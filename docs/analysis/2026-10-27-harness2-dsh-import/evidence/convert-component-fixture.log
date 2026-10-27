@@ -1,0 +1,25 @@
+{
+  "bundle": "/private/tmp/harness2-dsh-import-audit-20261027/generated/components",
+  "preset_id": "h2-components-import",
+  "preset_row_id": "preset-h2-components-import",
+  "files": [
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/components/README.md",
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/components/cordis.patch.yml",
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/components/package.json",
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/components/scripts/summarize.py",
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/components/skills/ledger-math/SKILL.md",
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/components/skills/ledger-reconciliation/SKILL.md",
+    "/private/tmp/harness2-dsh-import-audit-20261027/generated/components/skills/ledger-reconciliation/scripts/check.py"
+  ],
+  "harness": {
+    "always_on_chars": 267,
+    "skills": 2,
+    "subagents": 1,
+    "scripts": 1,
+    "plugins": 1
+  },
+  "warnings": [
+    "skill 'ledger_math' renamed to 'ledger-math' (DSH skill names are kebab-case)",
+    "1 Harness2 plugin file(s) were not converted: DSH plugins are Cordis packages, not OpenCode .ts modules. Port them by hand if needed."
+  ]
+}

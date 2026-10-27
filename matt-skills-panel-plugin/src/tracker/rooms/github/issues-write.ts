@@ -16,6 +16,7 @@ import { fail } from '../../kernel/preflight.js'
 import { ghClient } from './client.js'
 import { normalizeIssue } from './normalize.js'
 import { ghFailureMessage, ghVerdictOf } from './errors.js'
+import { planCloseReason } from './close-reason.js'
 import { rosterUpsert } from './roster.js'
 import type { MemoContext } from './roster.js';
 import { getIssue, parseRepo, repoId } from './issues.js'
@@ -227,9 +228,11 @@ async function closeIssueInner(repo: RepositoryRef, key: string, opts: CloseOpts
     const c = ghClient(ctx)
     // gh issue close 不认 --json：先关，再用 view 取回
     const args = ['issue', 'close', k, '--repo', `${parsed.owner}/${parsed.name}`]
-    if (opts && typeof opts.reason === 'string' && opts.reason) {
-      args.push('--reason', opts.reason)
-    }
+    // #1532：关闭原因怎么落到 GitHub 后端（固定值直通、自由文本先评论再关），在 ./close-reason.js 里决定。
+    const reasonPlan = await planCloseReason(repo, k, opts, ctx)
+    if (!reasonPlan.ok) return reasonPlan
+    args.push(...reasonPlan.data.args)
+    const rawReason = reasonPlan.data.raw
     // 从这一步起真会发出写命令：走的是 gh issue 子命令（cli）。
     trail.route = 'cli'
     trail.written += 1
@@ -252,8 +255,9 @@ async function closeIssueInner(repo: RepositoryRef, key: string, opts: CloseOpts
       url: rawb.url || rawb.html_url || '',
       closedAt: rawb.closedAt || rawb.closed_at || new Date().toISOString(),
     }))
-    // reason 回填
-    if (opts && typeof opts.reason === 'string') normalized.reason = opts.reason
+    // reason 回填：回填调用方原话（去首尾空格），而不是实际发给 --reason 的固定值，
+    // 免得自由文本被固定值覆盖、读回时找不到原话。
+    if (rawReason) normalized.reason = rawReason
     return { ok: true, data: normalized }
   } catch (e) {
     // 判档只走本房唯一的出口（`ghVerdictOf`）：档位由规则表判、话术按票面实现决定第 11 条挑；

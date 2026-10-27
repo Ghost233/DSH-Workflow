@@ -43,6 +43,11 @@ declare function setActiveIssue(...args: any[]): any;
 declare function setActiveMap(...args: any[]): any;
 declare function showPop(...args: any[]): any;
 declare function truthWriteWindowOpen(...args: any[]): any;
+// #1511：编号徽标写成「#目录/编号」的显示规则住在 kernel/ticket-label.ts，本文件只调用、不另拼一遍。
+declare function ticketLabelOf(...args: any[]): any;
+// B 方案：同一颗控件的两段子节点与上限宽度同样走那一份（目录可省略、编号绝不缩小）。
+declare function ticketLabelNodesOf(...args: any[]): any;
+declare const TICKET_LABEL_MAX_WIDTH: any;
 declare const COPY_FLASH_MS: any;
 declare const CONTAINER_ACCENT: any;
 declare const CONTAINER_CHIP_CLASS: any;
@@ -128,6 +133,10 @@ export const listSkeletonNode = function (h: any, count: any) {
 }
 
 export const listIssueRow = function (h: any, st: any, x: any, isOpen: any, narrow: any, blockOf: any, colorOf: any, multiEffort: any) {
+      // 2026-10-26 维护者要求：effort 徽标先整体隐藏，代码保留、不删除。
+      //   背景：#1511 起编号已经写成「#目录/01」，这枚徽标里写的目录名与同一行编号里的目录名重复，
+      //   一行里同一段文字出现两次。改回 true 即恢复显示（三处同名开关：ListTabRow、IssueDetail、MapDetailHead）。
+      const SHOW_EFFORT_BADGE = false
       const has = function (x: any, nm: any) { return (x.labels || []).some(function (l: any) { return l.name === nm }) }
       // #949 瞬间底座：行内可点小药丸（+N 更多、被阻塞跳转）也要能被键盘走到。
       //   #956 评审修正：本地那份键盘处理退役，改调共享层的 chipKeyDown（同图收敛只留一处）；
@@ -286,8 +295,9 @@ export const listIssueRow = function (h: any, st: any, x: any, isOpen: any, narr
         return mkRowAction(st, x, narrow, colorOf)
       })()
       // #1286：新会话按钮与主按钮永远同色实心（背景色取主按钮那个色，字色按对比度择优）。
-      const primaryColor = (isSpec && containerTri) ? containerTri.color : (mapEmpty ? emptyColor() : mapDone ? doneColor() : actionColorOf(x, colorOf))
-      const primaryText = (isSpec && containerTri) ? (isLightHex(primaryColor) ? '#140a1e' : '#ffffff')
+      //   #1558：探索进行中态漏了容器色，走了标签色（紫对黄）。容器行一律取 containerTri.color。
+      const primaryColor = (isContainer && containerTri) ? containerTri.color : (mapEmpty ? emptyColor() : mapDone ? doneColor() : actionColorOf(x, colorOf))
+      const primaryText = (isContainer && containerTri) ? (isLightHex(primaryColor) ? '#140a1e' : '#ffffff')
         : (mapEmpty ? '#140a1e' : mapDone ? '#0c1a10' : (isLightHex(actionColorOf(x, colorOf)) ? '#140a1e' : '#ffffff'))
       // v1.3.3 UI：全部标签渲染（渲染后贪心折叠，放不下的隐藏进 +N；+N 弹窗显示全部）
       const labels = x.labels || []
@@ -333,8 +343,10 @@ export const listIssueRow = function (h: any, st: any, x: any, isOpen: any, narr
             //   末尾那个标记类让列表页认出「这一行是容器」（两种容器共用一个类名，不按颜色猜）。
             isContainer ? h('span', { className: 'dsws-chip ' + chipClassOf(kind) + ' ' + containerMarkerClass, style: { fontSize: 11, fontWeight: 600, lineHeight: 1.7, padding: '0 8px' } }, [Ic({ n: 'map', size: 11 }), h('span', null, tr(chipLabelKeyOf(kind)))]) : null,
             // effort 维度：一个仓库多个 effort 时，每行标出它属于哪个 effort（同号票靠这一眼区分）
-            (multiEffort && effortOf(x)) ? h(Tip, { content: effortOf(x) }, h('span', { className: 'dsws-chip dsws-eff', 'aria-label': effortOf(x), style: { fontSize: 10, lineHeight: 1.6, padding: '0 6px', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: 'rgba(88,166,255,.14)', color: '#58a6ff', border: '1px solid rgba(88,166,255,.45)' } }, effortOf(x))) : null,
-            h('span', { className: 'dsws-idnum', style: { color: numColor, borderColor: numColor } }, '#' + (x.key != null ? x.key : x.number)),
+            (SHOW_EFFORT_BADGE && multiEffort && effortOf(x)) ? h(Tip, { content: effortOf(x) }, h('span', { className: 'dsws-chip dsws-eff', 'aria-label': effortOf(x), style: { fontSize: 10, lineHeight: 1.6, padding: '0 6px', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: 'rgba(88,166,255,.14)', color: '#58a6ff', border: '1px solid rgba(88,166,255,.45)' } }, effortOf(x))) : null,
+            // #1511：编号带上目录（#买咖啡积分/01）；容器同样是「#目录/00」。B 方案：外层上限宽度 + 目录前缀可省略、
+            //   编号尾巴绝不缩小；悬停（Tip）与无障碍名都读完整写法那一串。
+            h(Tip, { content: ticketLabelOf(x.key != null ? x.key : x.number, effortOf(x)) }, h('span', { className: 'dsws-idnum', style: { color: numColor, borderColor: numColor, display: 'inline-flex', alignItems: 'center', maxWidth: TICKET_LABEL_MAX_WIDTH, overflow: 'hidden' } }, ticketLabelNodesOf(h, x.key != null ? x.key : x.number, effortOf(x)))),
             // #715：写入窗口期给这一行加一枚极轻的「更新中」标记 —— 不改状态、不改布局：
             //   只是编号下面多一小片虚边框的字，窗口一过（host-budget.ts 的 PATCH_MERGE_WINDOW_MS）自己就不画了。
             //   事实来源：写入成功那一处记下的时刻（kernel/api-io.js 的 markRowWrite → st.writeAt）。

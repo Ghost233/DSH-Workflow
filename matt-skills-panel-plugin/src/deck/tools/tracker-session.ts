@@ -8,10 +8,10 @@
 import { openTracker } from '../../tracker/session/open-tracker.js'
 import type { TrackerSession } from '../../tracker/session/open-tracker.js'
 import { selectionFromOutlet } from '../../tracker/detection/backendDecision.js'
-import { tierFor, writeReserve } from '../../refresh/kernel/host-budget.js'
+import { tierFor, aiToolFloor } from '../../refresh/kernel/host-budget.js'
 import { recordWorkRoute } from '../shell/work-path-record.js'
-import { DECK_STATUS, DECK_TOOL_KIND, REFUSAL_REASONS } from '../shell/call-shell.js'
-import { withInFlightLease } from '../shell/in-flight-lease.js'
+import { DECK_STATUS, DECK_TOOL_KIND, REFUSAL_REASONS, receiptCost } from '../shell/call-shell.js'
+import { withCap } from '../shell/capped-wait.js'
 
 /** 未知形状的记录（依赖袋与会话壳都没标类型，用到哪格验哪格，不猜）。 */
 type UnknownRecord = Record<string, unknown>;
@@ -25,6 +25,12 @@ function hash8(text: unknown): string {
   const s = String(text || '');
   for (let i = 0; i < s.length; i++) h = (((h << 5) + h + s.charCodeAt(i)) >>> 0);
   return ('0000000' + h.toString(16)).slice(-8);
+}
+
+/** deck 工具每趟操作的编号：时间转 36 进制加自增序号，保证同一毫秒内也不重。房间日志里的 opId 就是这一格，工具回执里也带上它，两边才能对上。 */
+let deckOpSeq = 0;
+function newDeckOpId(nowFn: () => number): string {
+  try { return String(nowFn()) + '-' + (++deckOpSeq).toString(36); } catch { return 'op-' + (++deckOpSeq).toString(36); }
 }
 
 /** 打开会话要齐的东西（工具把自己手头现成的递进来，本层不替工具算估算、不探沙箱）。 */
@@ -87,8 +93,9 @@ async function fallbackAdmit(input: UnknownRecord): Promise<UnknownRecord> {
     else if (model.independentBuckets) levels.push((buckets.rest || {}) as { remaining: number; limit: number }, (buckets.graphql || {}) as { remaining: number; limit: number });
     else levels.push((buckets.graphql || {}) as { remaining: number; limit: number });
   }
+  // #1527：保底线改成服务端上限的 5%（以前是本桶份额的 30%），文案照实报服务端剩余与保底，不让人猜。
   for (const level of levels) {
-    if (num(level.remaining) <= writeReserve(num(level.limit))) return { allowed: false, kind: 'rate-limit', reason: 'exhausted', message: '额度见底：剩余额度不够了，这次先不执行。' };
+    if (num(level.remaining) <= aiToolFloor(num(level.limit))) return { allowed: false, kind: 'rate-limit', reason: 'exhausted', message: '额度见底：服务端还剩 ' + num(level.remaining) + '（上限 ' + num(level.limit) + '，保底 ' + aiToolFloor(num(level.limit)) + '），这次先不执行。' };
   }
   return { allowed: true, reason: 'sufficient' };
 }
@@ -153,8 +160,9 @@ export async function openDeckSession(req: DeckSessionRequest): Promise<DeckOpen
   //   评论与阻塞边两条路任一），而开会话前的预检只回答「这一笔值不值得试」——真正的按操作拦截
   //   在每次操作过管线时做（见 src/refresh/kernel/budget-admission.ts 的 familiesOfOp）。
   //   所以预检按族逐个试：一族因为额度见底被拒就换另一族再问一次，两族都见底才拒。
-  //   不自己拿两族的 remaining 绝对值相比：两族的尺子不一样（保底各按本桶额度的 30%），
-  //   余量判断一律交给闸按各桶自己的保底线算。硬顶（单次 / 每小时）与桶无关，被硬顶拒就不再换桶。
+  //   不自己拿两族的 remaining 绝对值相比：两族的尺子不一样（保底各按服务端上限的 5%，#1527），
+  //   余量判断一律交给闸按各桶自己的保底线算。单次硬顶与桶无关，被它拒就不再换桶；
+  //   每小时那条线 #1527 起只是提醒（放行并带一段 warnings），不会让换桶循环多问一次。
   const probeBuckets: string[] = str(model.kind) === 'requests-only'
     ? ['requests']
     : (readCall ? ['graphql'] : ['rest', 'graphql']);
@@ -164,7 +172,7 @@ export async function openDeckSession(req: DeckSessionRequest): Promise<DeckOpen
   let admit: UnknownRecord = {};
   if (offline) {
     // 离网后端没有额度可言：剩余额度探针在这里没有意义（无读数的 0 不能当成耗尽，见 #1435），
-    // 所以只认调用前估算那两道硬顶（单次与每小时），档位与人话都沿用估算那一句（含硬顶二字）。
+    // 所以只认调用前估算的单次硬顶；每小时提醒线越线时照常执行，提醒句留在估算 text 里（#1527）。
     if (est.withinCallCap === false) return { ok: false, reason: REFUSAL_REASONS.OVER_CAP, text: str(est.text) || '这次调用超过了插件给 AI 工具设的硬顶，我没有动手。' };
     admit = { admitted: true, points: admitVolumes.points, requests: admitVolumes.requests, childTickets: admitVolumes.childTickets, reason: 'off-network' };
   } else {
@@ -229,14 +237,10 @@ export async function openDeckSession(req: DeckSessionRequest): Promise<DeckOpen
       const keyFn = sessionAny.getRepoKey as ((cwd: string, ctx: unknown) => Promise<unknown>) | undefined;
       if (typeof keyFn === 'function') {
         const cap = (typeof d.resolveTimeoutMs === 'number' && (d.resolveTimeoutMs as number) > 0) ? Math.floor(d.resolveTimeoutMs as number) : 8000;
-        const sleepFn = (typeof d.sleep === 'function') ? d.sleep as (ms: number) => Promise<unknown> : function (ms: number): Promise<unknown> { return new Promise(function (resolve) { setTimeout(function () { resolve(null); }, ms); }); };
-        const keyed = await withInFlightLease(function () {
-          return Promise.race([
-            Promise.resolve(keyFn.call(sessionAny, cwd, Object.assign({}, backendCtxNow(d), { cwd: cwd, caller: DECK_TOOL_KIND }))),
-            sleepFn(cap).then(function () { return null; }, function () { return null; }),
-          ]);
-        });
-        const kRec = (keyed || null) as UnknownRecord | null;
+        // 竞速实现见 ../shell/capped-wait.ts（#1114 第二批）：到点就清等待定时器；超时与对方抛错
+        // 都回「没等到」，与原来 sleepFn 赢下竞速回 null 同形。
+        const keyed = await withCap(Promise.resolve().then(function () { return keyFn.call(sessionAny, cwd, Object.assign({}, backendCtxNow(d), { cwd: cwd, caller: DECK_TOOL_KIND })); }), cap, (typeof d.sleep === 'function') ? d.sleep as (ms: number) => Promise<unknown> : undefined);
+        const kRec = ((keyed.ok === true) ? keyed.value : null) as UnknownRecord | null;
         if (kRec && typeof kRec.owner === 'string' && kRec.owner && typeof kRec.name === 'string' && kRec.name) {
           const refId = kRec.owner + '/' + kRec.name;
           ref = { backend: backendId, refId: refId, name: refId, url: 'https://github.com/' + refId };
@@ -385,7 +389,7 @@ export async function callDeckSession(req: DeckCallRequest, work: (ctx: unknown)
     repo: req.repo,
     now: nowFn,
     tracker: adaptSession(opened.session),
-    opCtx: Object.assign({}, backendCtxNow(d), { cwd: str(s.cwd), signal: undefined, caller: DECK_TOOL_KIND, sandboxPolicy: sbPolicy, sessionId: sessionId }),
+    opCtx: Object.assign({}, backendCtxNow(d), { cwd: str(s.cwd), signal: undefined, caller: DECK_TOOL_KIND, sandboxPolicy: sbPolicy, sessionId: sessionId, opId: newDeckOpId(nowFn) }),
     admit: opened.admit,
   };
   let value: unknown = null;
@@ -427,11 +431,10 @@ export async function callDeckSession(req: DeckCallRequest, work: (ctx: unknown)
     { requests: num((claimed as UnknownRecord).requests), points: num((claimed as UnknownRecord).points) },
     quota.actual,
   );
-  const cost: UnknownRecord = {
-    estimated: { points: num(est.points), requests: num(est.requests), withinCallCap: est.withinCallCap, shards: est.shards, perShard: est.perShard, text: str(est.text) },
-    actual: actual,
-  };
-  if (quota.note) cost.note = quota.note;
+  // #1527：闸放行时带的提醒（例如这一小时越过了 AI 工具提醒线）要出现在回执里——人翻回执就能看见
+  //   「花得多、该收手」，不用去日志里翻；票面第 5 条点名 cost.note，提醒也写进那一格。拼法在壳里
+  //   （call-shell.ts 的 receiptCost）：这里是接线层，只递料，不各拼一份。没提醒时两格都不出现。
+  const cost = receiptCost(est, actual, opened.admit, quota.note)
   const out = envelope(tool, DECK_STATUS.OK, {
     workspace: { root: str(s.cwd), key: str(s.workspaceKey) },
     backend: { id: backendId, source: opened.source },

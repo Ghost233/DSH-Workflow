@@ -1,0 +1,255 @@
+[
+  {
+    "name": "original-demo",
+    "command": [
+      "/Users/ghost233/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+      "-B",
+      "-m",
+      "harness2.cli.demo",
+      "--output",
+      "/private/tmp/harness2-dsh-import-audit-20261027/original-demo",
+      "--k",
+      "1",
+      "--mode",
+      "both"
+    ],
+    "cwd": "/private/tmp/harness2-kingsley-audit-20261027/google-harness2",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 0.874,
+    "log": "original-demo.log"
+  },
+  {
+    "name": "converter-upstream-tests",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "--basetemp",
+      "/private/tmp/harness2-dsh-import-audit-20261027/pytest-temp",
+      "-o",
+      "cache_dir=/private/tmp/harness2-dsh-import-audit-20261027/pytest-cache"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027/converter",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 0.783,
+    "log": "converter-upstream-tests.log"
+  },
+  {
+    "name": "converter-upstream-lint",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/ruff",
+      "check",
+      "--no-cache",
+      "."
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027/converter",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 0.879,
+    "log": "converter-upstream-lint.log"
+  },
+  {
+    "name": "rc3-sdk-profile-dump",
+    "command": [
+      "/Applications/Ghost DSH Station.app/Contents/Resources/node",
+      "/Applications/Ghost DSH Station.app/Contents/Resources/node_modules/@deepseek-ai/dsh/lib/bin.js",
+      "--profile",
+      "sdk",
+      "--dump-config"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 0.111,
+    "log": "rc3-sdk-profile-dump.log"
+  },
+  {
+    "name": "inspect-real-sequential-library",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "-m",
+      "harness2_dsh.cli",
+      "inspect",
+      "/private/tmp/harness2-dsh-import-audit-20261027/original-demo/library/k1/seq/accounting/harnesses/ledger-1",
+      "--json"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 0.045,
+    "log": "inspect-real-sequential-library.log"
+  },
+  {
+    "name": "convert-real-sequential-library",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "-m",
+      "harness2_dsh.cli",
+      "convert",
+      "/private/tmp/harness2-dsh-import-audit-20261027/original-demo/library/k1/seq/accounting/harnesses/ledger-1",
+      "--out",
+      "/private/tmp/harness2-dsh-import-audit-20261027/generated/original",
+      "--preset-id",
+      "h2-original-import",
+      "--name",
+      "Harness2 Original Import",
+      "--json"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 0.049,
+    "log": "convert-real-sequential-library.log"
+  },
+  {
+    "name": "inspect-real-parallel-run",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "-m",
+      "harness2_dsh.cli",
+      "inspect",
+      "/private/tmp/harness2-dsh-import-audit-20261027/original-demo/runs/demo-oc-agg1/ledger-1",
+      "--json"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 0.047,
+    "log": "inspect-real-parallel-run.log"
+  },
+  {
+    "name": "inspect-real-sequential-run",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "-m",
+      "harness2_dsh.cli",
+      "inspect",
+      "/private/tmp/harness2-dsh-import-audit-20261027/original-demo/runs/demo-oc-seq1/ledger-1",
+      "--json"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 2,
+    "timedOut": false,
+    "durationSeconds": 0.055,
+    "log": "inspect-real-sequential-run.log"
+  },
+  {
+    "name": "convert-component-fixture",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "-m",
+      "harness2_dsh.cli",
+      "convert",
+      "/private/tmp/harness2-dsh-import-audit-20261027/fixture-tree",
+      "--out",
+      "/private/tmp/harness2-dsh-import-audit-20261027/generated/components",
+      "--preset-id",
+      "h2-components-import",
+      "--name",
+      "Harness2 Components Import",
+      "--with-subagents",
+      "--json"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 0.05,
+    "log": "convert-component-fixture.log"
+  },
+  {
+    "name": "inspect-codex-tree",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "-m",
+      "harness2_dsh.cli",
+      "inspect",
+      "/private/tmp/harness2-dsh-import-audit-20261027/codex-tree",
+      "--json"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 2,
+    "timedOut": false,
+    "durationSeconds": 0.056,
+    "log": "inspect-codex-tree.log"
+  },
+  {
+    "name": "rc3-native-host",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "/private/tmp/harness2-dsh-import-audit-20261027/native-probe.py"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 1,
+    "timedOut": false,
+    "durationSeconds": 2.18,
+    "log": "rc3-native-host.log"
+  },
+  {
+    "name": "rc3-native-preset-diagnostics",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "/private/tmp/harness2-dsh-import-audit-20261027/native-probe.py"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 1,
+    "timedOut": false,
+    "durationSeconds": 2.48,
+    "log": "rc3-native-preset-diagnostics.log"
+  },
+  {
+    "name": "rc3-native-fresh-session-diagnostics",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "/private/tmp/harness2-dsh-import-audit-20261027/native-probe.py"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 1,
+    "timedOut": false,
+    "durationSeconds": 2.01,
+    "log": "rc3-native-fresh-session-diagnostics.log"
+  },
+  {
+    "name": "imported-helper-direct-execution",
+    "command": [
+      "/Users/ghost233/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+      "-B",
+      "/private/tmp/harness2-dsh-import-audit-20261027/moved-bundles/original/scripts/summarize.py",
+      "/private/tmp/harness2-dsh-import-audit-20261027/task-workspace/ledger.csv"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027/task-workspace",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 0.032,
+    "log": "imported-helper-direct-execution.log"
+  },
+  {
+    "name": "inspect-real-sequential-harness",
+    "command": [
+      "/private/tmp/harness2-dsh-import-audit-20261027/testenv/bin/python",
+      "-B",
+      "-m",
+      "harness2_dsh.cli",
+      "inspect",
+      "/private/tmp/harness2-dsh-import-audit-20261027/original-demo/runs/demo-oc-seq1/ledger-1/harnesses/c1",
+      "--json"
+    ],
+    "cwd": "/private/tmp/harness2-dsh-import-audit-20261027",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationSeconds": 0.042,
+    "log": "inspect-real-sequential-harness.log"
+  }
+]

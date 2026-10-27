@@ -1,0 +1,16 @@
+{
+  "patches": [
+    {
+      "insert": [
+        {
+          "id": "harness2",
+          "name": "file:///private/tmp/harness2-kingsley-audit-20261027/kingsley/src/index.mjs",
+          "config": {
+            "dataDir": ".harness2"
+          }
+        }
+      ]
+    }
+  ],
+  "skipped": []
+}

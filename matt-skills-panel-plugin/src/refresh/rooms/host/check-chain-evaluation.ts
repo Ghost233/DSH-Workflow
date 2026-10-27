@@ -5,7 +5,7 @@ import { refreshSourceOf } from '../../contract/trigger-classification.js'
 import { workspaceKeyOf } from '../../contract/workspace-keys.js'   // #724：链记账给闸的钥匙，与活跃集合同一把（从前传 cwd 原文 → 同一个工作区在闸里有两格）
 import { getChainRide } from './chain-coalescing.js'   // #964 小账本住共享层；#966 用进程单例，出站写路能记写
 import { PREDICATE_TIMEOUT_MS, GH_LOGIN_PREFETCH_MS, PREDICATE_LOG_SAMPLE_MS } from '../../../shared/time-config/src/values.js'   // #1215 时间参数住中央 YAML（predicateTimeoutMs / ghLoginPrefetchMs / predicateLogSampleMs），本文件只读不写
-import { ghAuthVerdict, probeChainEnv, repoAccessVerdict } from './chain-env-map.js'
+import { ghAuthVerdict, glabAuthVerdict, glabRepoAccessVerdict, probeChainEnv, repoAccessVerdict } from './chain-env-map.js'
 import type { OpenSessionReply } from './chain-env-map.js'
 // #1483：「判定 → 步骤行 / 快照」三件套搬到 chain-step-rows.ts，正常求值与缓存命中重算共用同一套口径；行为逐字保留。
 // 九个形状（判定表、步骤行、单段与拼接快照）也从那里取：两处各写一份时，形状一改就会漂移（审阅指出过）。
@@ -18,6 +18,8 @@ import type { ChainSnapView, EvalMap, FullSnapView, PredicateResultView, Resolve
 // 标注只给编译器看，运行期形状一个字没改——产物逐字节比对是这条约定的验收办法。
 // 共享层的形状按「类型引用」取：那些文件是 JS + JSDoc，这种写法与他们自己的 JSDoc 一致。
 type CheckItem = import('../../../shared/tracker/chain-types.js').CheckItem
+// 谓词注册回调收到的「检查描述」最小形状（#1513 按其中 id 分派三项 Markdown 判据）。
+type Check = import('../../../shared/tracker/chain-types.js').Check
 type Platform = import('../../../host/platform/index.js').Platform
 // 谓词上下文这一格不在上面那排「按类型引用取」里：predicatePrimitives.js 与本文件同属 host 层，
 //   同层互引门禁只放行在册的存量边（tests/same-layer-baseline.json 只许减不许增），所以就地声明。
@@ -84,7 +86,8 @@ type DetectChainDeps = {
   getRepoKey(cwd: string): Promise<{ owner: string; name: string } | null>
   timer: { timeout(ms: number): Promise<unknown> }
   probeSkill(skillName: string, lang: string, cwd: string): Promise<unknown>
-  mdParseOkPredicate(platform: unknown, cwd: string, lang: string): Promise<PredicateResultView>
+  /** 本地 Markdown 三项判据的取用口（#1513）：按检查项 id 调同一份房间判据，sandboxPolicy 供写探测用。 */
+  mdPredicate(platform: unknown, cwd: string, lang: string, checkId: string, sandboxPolicy?: unknown): Promise<PredicateResultView>
   /** 解构出来但本文件没用到（接线给全了，这两格留给别处读）：只声明它们存在。 */
   DEFAULT_CWD: unknown; getChainCache: unknown
   setChainCache(entry: unknown): void
@@ -116,7 +119,7 @@ type DetectChainDeps = {
  * 反例：若把插件挂载时的自动链求值也当成 `user-recheck` 身份送进退避器，每次重渲染都会击穿退避窗口并发起外部 `gh` 子进程调用，瞬间耗尽配额。
  */
 export function createDetectChain(deps: DetectChainDeps) {
-  const { canonicalKey, DEFAULT_CWD, resetGhCache, getDetectionService, getPlatform, getTrackerRegistry, getRepoKey, timer, probeSkill, mdParseOkPredicate, getChainCache, setChainCache, getChainBackoff, logCtx, gate, sandboxPolicyFor, openSession } = deps
+  const { canonicalKey, DEFAULT_CWD, resetGhCache, getDetectionService, getPlatform, getTrackerRegistry, getRepoKey, timer, probeSkill, mdPredicate, getChainCache, setChainCache, getChainBackoff, logCtx, gate, sandboxPolicyFor, openSession } = deps
   // #491 房外埋点 helpers：hash8 只记散列；P1 外层先判开关（采样/节流/按事件），字段函数只在守卫内求值。
   function hash8(s: unknown) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
   const chainInflight = getChainRide({ now: (deps && deps.now) || undefined }) // #696搭车表用进程单例（写信号由出站路记进来）；测试注钟时建隔离新账
@@ -134,8 +137,10 @@ export function createDetectChain(deps: DetectChainDeps) {
   }
 
   // #1444：环境预检探针（会话、preflight、登录名各只问一次）搬到 chain-env-map.ts 的 probeChainEnv；
-  // 这里只把接线给的两条能力交进去，调用点（const envProbe = createChainEnvProbe(cwd)）形状不变。
-  const createChainEnvProbe = (probeCwd: string) => probeChainEnv({ getRepoKey: getRepoKey, openSession: openSession }, probeCwd)
+  // 这里只把接线给的两条能力交进去。
+  // #1187：探针必须等 detect 定下后端才建——GitLab 的仓库身份要经会话 getRepoKey 问房间（宿主那份只认 GitHub），
+  // 而探针把 refId 缓存进这一次求值，先建再定后端就会拿 GitHub 的空结果去问 GitLab。
+  const createChainEnvProbe = (probeCwd: string, backendId: string | null | undefined) => probeChainEnv({ getRepoKey: getRepoKey, openSession: openSession }, probeCwd, { backendId: backendId || 'github' })
 
   // #1483：把「按当前会话解析沙箱许可」收成一处。正常求值与缓存命中后的重算都用这一处解析：
   //   缺省会话号（空串）与「接线没给 sandboxPolicyFor」都不算错，照旧返回空政策，让谓词按平台默认量。
@@ -281,10 +286,10 @@ export function createDetectChain(deps: DetectChainDeps) {
         //   先按本会话补算再交给调用方；不然只读会话搭上可写会话的车，会先看到别人的「可写」。
         if (!force) { const ongoingRide = chainInflight.take(chainDedupKey); if (ongoingRide) { chainInflight.noteRide(); try { if (logCtx && logCtx.isEnabled('debug')) logCtx.fire('debug', 'dedup.hit', function () { return { scope: 'chain', keyHash: hash8(chainDedupKey) } }) } catch (eL) {}; return { reply: await ongoingRide, forCurrentSession: false } } }
         const chainPending = (async function () {
+        // #1475：一次求值只读一次钟，给下面告警级「外层先到点 / 内层迟到回话」两行算本次求值的总耗时。
+        //   这两行是告警级、总是落盘，不受调试开关约束，所以不把它挂在开关后面（一轮一次 Date.now 不算开销）。
+        const evalT0 = Date.now()
         const platform = await getPlatform()
-        // #1444：这次求值的环境预检探针（一次求值只开一次会话、只问一次 preflight；见 createChainEnvProbe）。
-        //   登录态与仓库可达两行、以及修复合约里的当前登录用户名，全都从这一份里取。
-        const envProbe = createChainEnvProbe(cwd)
         // 用户显式选择经写入口直达文件（落盘 + 清缓存），本轮即读到，不再经上报参数。
         // #1444：探测级联不再借一条自己拼的 gh 执行器 —— 后端识别按房间自己的路走；
         //   登录态与仓库可达两行由下面两个谓词问 envProbe（同一次预检结果，各只真问一次）。
@@ -303,14 +308,35 @@ export function createDetectChain(deps: DetectChainDeps) {
         } else {
           backendId = (args && args.backendId) || null
         }
+        // #1444：这次求值的环境预检探针（一次求值只开一次会话、只问一次 preflight；见 createChainEnvProbe）。
+        //   登录态与仓库可达两行、以及修复合约里的当前登录用户名，全都从这一份里取。
+        // #1187：放在这里而不是更前——后端的结论上面才定下来，GitLab 需要它才能问对仓库身份。
+        const envProbe = createChainEnvProbe(cwd, backendId)
         const genMod = await import('../../../host/tracker/generic.js')
         const predMod = await import('../../../host/tracker/predicateCore.js') // V1 #461：predicateRegistry.js 已拆为两块
-        // 2026-08-28 实机修复：单谓词超时 3000ms → 15000ms。
-        //   gh auth status / gh api 是真实网络调用（本机曾多次 TLS schannel 握手失败），3 秒必然超时，
-        //   导致「gh 已登录」「仓库可达」被误判并展示误导性修复指引；15s 给慢网络留余地（runGh 内部 30s 兜底）。
-        // 2026-10-16 全量收拢：这个 15 秒现在住在 config/timeouts.yaml 的 predicateTimeoutMs，
-        //   改时间改那一份；谓词表不传 timeout 时的 3 秒兜底是另一档（predicateFallbackTimeoutMs），由门禁锁住。
-        const registry = predMod.createPredicateRegistry({ timeout: PREDICATE_TIMEOUT_MS })
+        // #1475 预算对齐：这次求值的外层等待 = 60 秒（config/timeouts.yaml 的 predicateTimeoutMs），
+        //   算式是「内层串行最坏 + 余量」：一次环境预检串行问几条真实网络命令，最坏那条路是
+        //   「查登录 15 秒 → 核对登录 15 秒 → 读仓库短名 12 秒 → 读仓库可达 12 秒」合计 54 秒，再加 6 秒余量；
+        //   核对通过不会提前返回（那只说明登录可用，仓库可达还要查），缺仓库短名时才多一条读仓库短名。
+        //   内层最坏不写在这里，由 preflight.ts 的 ghPreflightWorstCaseMs() 按出站档位现算，
+        //   门禁 tests/verify-1475-predicate-budget.ts 断言这个 60 秒确实盖得住它并留有余量。
+        //   旧口径（2026-08-28 的 3 秒 → 15 秒）已作废：15 秒比内层最坏还短，慢网下必然外层先断、结论被丢掉。
+        //   谓词表不传 timeout 时的兜底是另一档（predicateFallbackTimeoutMs = 10 秒），不参与这次对齐。
+        // 两个回调只记边界轨迹（外层预算先到点 / 内层迟到回话），不改任何谓词结论；
+        //   到点仍判「暂时确认不了」（pending），不冒充登录失效、也不冒充缺 gh。
+        const registry = predMod.createPredicateRegistry({
+          timeout: PREDICATE_TIMEOUT_MS,
+          onBudgetHit: function (id: string, info: { budgetMs: number }) {
+            try {
+              if (logCtx) logCtx.fire('warn', 'chain.predicate.timeout', { id: String(id), phase: 'budget', budgetMs: info.budgetMs, status: 'pending', latencyMs: Date.now() - evalT0 })
+            } catch (eH) {}
+          },
+          onLateSettle: function (id: string, info: { status: string; budgetMs: number }) {
+            try {
+              if (logCtx) logCtx.fire('warn', 'chain.predicate.timeout', { id: String(id), phase: 'late', budgetMs: info.budgetMs, status: String(info.status), latencyMs: Date.now() - evalT0 })
+            } catch (eL) {}
+          }
+        })
         if (typeof genMod.registerGenericPredicates === 'function') genMod.registerGenericPredicates(registry)
         // #284 一致性修复（2026-08-28）：客户端显式绑定（backendId）优先——主锚与绑定不一致的过渡态（如锚=GitHub 版、
         //   用户已绑 markdown）链不得两面矛盾（后端段 markdown、开门段 explicit:github）；selection/explicit 归一为绑定侧。
@@ -354,8 +380,42 @@ export function createDetectChain(deps: DetectChainDeps) {
             return ghAuthVerdict(await envProbe.preflightOnce(), zh)
           } catch (e) { return { status: 'pending', detail: String((e && (e as CaughtError).message) || e) } }
         }) } catch (e) {}
-        try { registry.register('backend:markdown:parseOk', async function (check, pctx) {
-          try { return await mdParseOkPredicate(platform, pctx && pctx.cwd || cwd, chainLang) } catch (e) { return { status: 'pending', detail: String((e && (e as CaughtError).message) || e) } }
+        // #1513：本地 Markdown 从「一项地图可读」拆成三项固定判据（工作区 / 本地数据目录可写 / 容器可读）。
+        //   三项共用房间那一份实现，这里只按检查项 id 分派；写探测要当前会话的沙箱写许可，所以把
+        //   pctx.sandboxPolicy（没有就退回本次链求值的 chainPolicy）一路传下去。
+        try {
+          // 谓词注册表传进来的就是这个检查项自己的 check 描述（带 id），这里只读 id 分派三项判据。
+          const mdPred = async function (check: Check, pctx: PredicateCtx): Promise<PredicateResultView> {
+            const checkId = String((check && check['id']) || '')
+            // 写探测要当前会话的沙箱写许可：pctx 上那一格是宿主在契约之外透传的，这里按最小形状读出来；
+            //   没带就退回本次链求值的 chainPolicy（两者是同一个来源，只是调用路径不同）。
+            const policyCtx = pctx as (PredicateCtx & { sandboxPolicy?: unknown }) | undefined
+            const policy = policyCtx && policyCtx.sandboxPolicy !== undefined ? policyCtx.sandboxPolicy : chainPolicy
+            try { return await mdPredicate(platform, (pctx && pctx.cwd) || cwd, chainLang, checkId, policy) } catch (e) { return { status: 'pending', detail: String((e && (e as CaughtError).message) || e) } }
+          }
+          registry.register('backend:markdown:workspace', mdPred)
+          registry.register('backend:markdown:scratchWritable', mdPred)
+          registry.register('backend:markdown:containersReadable', mdPred)
+        } catch (e) {}
+        // #1187：GitLab 后端的两行。目录项要的键是 glab:authed → preflight:glabAuth、glab:repoAccess →
+        //   backend:gitlab:repoAccess；从前全仓一条都没注册，注册表便把这两行如实回成
+        //   「predicate not registered: …」的 pending —— 界面看到的是一句英文内部串，永远查不出结论。
+        // 判定与话术在 chain-env-map.ts 的 glabAuthVerdict / glabRepoAccessVerdict（那边写清了为什么不能
+        //   拿 glabPreflight 的 auth 档直接判未登录：房间把起进程失败与网络超时也归在 auth 档）。
+        try { registry.register('preflight:glabAuth', async function (check, pctx: PredicateCtx) {
+          try {
+            const zh = (pctx && pctx.lang) !== 'en'
+            // 前两关：glab 找没找到、登录态是什么；一次 preflight 的结果两个谓词共用。
+            return glabAuthVerdict(await envProbe.preflightOnce(), zh)
+          } catch (e) { return { status: 'pending', detail: String((e && (e as CaughtError).message) || e) } }
+        }) } catch (e) {}
+        try { registry.register('backend:gitlab:repoAccess', async function (check, pctx: PredicateCtx) {
+          try {
+            const zh = (pctx && pctx.lang) !== 'en'
+            // 第三关：拿会话认出来的仓库地址去问 GitLab 接口；没认出地址时房间会跳过这一关回成功，
+            //   谓词按 pending 说明「暂时确认不了」，不冒充可达。
+            return glabRepoAccessVerdict(await envProbe.preflightOnce(), zh)
+          } catch (e) { return { status: 'pending', detail: String((e && (e as CaughtError).message) || e) } }
         }) } catch (e) {}
         const kind = (args && args.kind) || 'all'
         const chainAndSnap = await genMod.resolveGenericChain(registry, ctx, kind)
@@ -466,14 +526,14 @@ export function createDetectChain(deps: DetectChainDeps) {
         await noteChainEval(chainSource, workspaceKeyOf(cwd))
         // #709（T5 补）这次求值的环境预检收尾：真问了几次、复用省掉了几次。按需级（debug，外层先判
         // 开关，关着连字段对象都不组装；按 docs/design/335-logging-contract.md 第 3 章判定），
-        // 每次求值只落一行，只记工作区短指纹与计数，不记命令原文、不记路径原文、不记任何返回值。
+        // 每次求值只落一行，只记工作区短指纹、计数与这次求值的总耗时，不记命令原文、不记路径原文、不记任何返回值。
         // #1444 起 preflight 改问会话，计数含义照旧：#1444 的探针把「真问了一次 preflight」记成 asked，
         // 第二个谓词搭这一份记成 reused；事件名与字段一个字没改（附录第 1 章条数不动）。
         try {
           // 判断与落点同一行（tests/verify-log-guards.js 的口径：关着开关时连字段对象都不组装）：
           // 这里原来把判断写成上一行的 if 大括号，判断本身一个字没减，只是搬到同一行。
           if (logCtx && logCtx.isEnabled('debug') && envProbe) logCtx.fire('debug', 'chain.preflight.reuse', function () {
-            return { cwdHash: hash8(cwd), checks: envProbe.asked(), reused: envProbe.reused(), userAction: trigger === 'user-recheck' }
+            return { cwdHash: hash8(cwd), checks: envProbe.asked(), reused: envProbe.reused(), userAction: trigger === 'user-recheck', latencyMs: Date.now() - evalT0 }
           })
         } catch (eL) {}
         return result

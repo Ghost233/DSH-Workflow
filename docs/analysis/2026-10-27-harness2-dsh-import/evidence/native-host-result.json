@@ -1,0 +1,93 @@
+{
+  "runtime": "0.2.1-rc.3",
+  "command": [
+    "/Applications/Ghost DSH Station.app/Contents/Resources/node",
+    "/Applications/Ghost DSH Station.app/Contents/Resources/node_modules/@deepseek-ai/dsh/lib/bin.js",
+    "--profile",
+    "sdk",
+    "--patch",
+    "/private/tmp/harness2-dsh-import-audit-20261027/moved-bundles/original/cordis.patch.yml",
+    "--patch",
+    "/private/tmp/harness2-dsh-import-audit-20261027/moved-bundles/components/cordis.patch.yml",
+    "--patch",
+    "/private/tmp/harness2-dsh-import-audit-20261027/native-probe.patch.yml"
+  ],
+  "cases": [
+    {
+      "preset": "h2-original-import",
+      "status": "failed",
+      "error": "{\"code\": -32603, \"message\": \"tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)\"}",
+      "before": {
+        "sessionId": "baa92a0a-dfb9-43b3-95c1-0ca85d9e42a9",
+        "requested": "h2-original-import",
+        "roster": [
+          {
+            "id": "h2-components-import",
+            "name": "Harness2 Components Import",
+            "description": "Harness2-derived agent preset (2 skill(s), 1 script(s))",
+            "order": 50,
+            "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+          },
+          {
+            "id": "h2-original-import",
+            "name": "Harness2 Original Import",
+            "description": "Harness2-derived agent preset (1 script(s))",
+            "order": 50,
+            "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+          },
+          {
+            "id": "h2-components-import--ledger-auditor",
+            "name": "Harness2 Components Import / ledger-auditor",
+            "description": "Reviews a ledger reconciliation for dropped signs.",
+            "order": 51,
+            "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+          }
+        ]
+      }
+    },
+    {
+      "preset": "h2-components-import",
+      "status": "failed",
+      "error": "{\"code\": -32603, \"message\": \"tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)\"}",
+      "before": {
+        "sessionId": "54c00053-815b-4620-9bd2-75d68b60c65f",
+        "requested": "h2-components-import",
+        "roster": [
+          {
+            "id": "h2-components-import",
+            "name": "Harness2 Components Import",
+            "description": "Harness2-derived agent preset (2 skill(s), 1 script(s))",
+            "order": 50,
+            "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+          },
+          {
+            "id": "h2-original-import",
+            "name": "Harness2 Original Import",
+            "description": "Harness2-derived agent preset (1 script(s))",
+            "order": 50,
+            "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+          },
+          {
+            "id": "h2-components-import--ledger-auditor",
+            "name": "Harness2 Components Import / ledger-auditor",
+            "description": "Reviews a ledger reconciliation for dropped signs.",
+            "order": 51,
+            "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+          }
+        ]
+      }
+    }
+  ],
+  "externalModelCalls": 0,
+  "fixtureProvider": true,
+  "initialize": {
+    "serverInfo": {
+      "name": "deepseek-harness-sdk-runtime",
+      "version": "0.0.1"
+    }
+  },
+  "status": "failed",
+  "error": "Converted presets failed activation; see per-case diagnostics",
+  "shutdown": {},
+  "hostExitCode": 0
+}

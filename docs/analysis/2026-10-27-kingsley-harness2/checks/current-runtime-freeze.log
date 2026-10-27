@@ -1,0 +1,11 @@
+Selected current runtime
+file:///private/tmp/harness2-kingsley-audit-20261027/kingsley/src/config.mjs:13
+  if (!condition) throw new Error(message);
+                        ^
+
+Error: Unsupported dsh version 0.2.1-rc.3; this adapter is verified against 0.2.1-rc.2
+    at assert (file:///private/tmp/harness2-kingsley-audit-20261027/kingsley/src/config.mjs:13:25)
+    at freezeBaseline (file:///private/tmp/harness2-kingsley-audit-20261027/kingsley/src/harness.mjs:31:3)
+    at async file:///private/tmp/harness2-kingsley-audit-20261027/kingsley/[eval1]:1:140
+
+Node.js v24.12.0

@@ -1,0 +1,27 @@
+{
+  "sessionId": "baa92a0a-dfb9-43b3-95c1-0ca85d9e42a9",
+  "requested": "h2-original-import",
+  "roster": [
+    {
+      "id": "h2-components-import",
+      "name": "Harness2 Components Import",
+      "description": "Harness2-derived agent preset (2 skill(s), 1 script(s))",
+      "order": 50,
+      "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+    },
+    {
+      "id": "h2-original-import",
+      "name": "Harness2 Original Import",
+      "description": "Harness2-derived agent preset (1 script(s))",
+      "order": 50,
+      "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+    },
+    {
+      "id": "h2-components-import--ledger-auditor",
+      "name": "Harness2 Components Import / ledger-auditor",
+      "description": "Reviews a ledger reconciliation for dropped signs.",
+      "order": 51,
+      "broken": "tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"
+    }
+  ]
+}

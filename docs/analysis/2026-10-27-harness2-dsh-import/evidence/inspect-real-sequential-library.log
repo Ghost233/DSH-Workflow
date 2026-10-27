@@ -1,0 +1,13 @@
+{
+  "root": "/private/tmp/harness2-dsh-import-audit-20261027/original-demo/library/k1/seq/accounting/harnesses/ledger-1/harness",
+  "source": "/private/tmp/harness2-dsh-import-audit-20261027/original-demo/library/k1/seq/accounting/harnesses/ledger-1",
+  "source_kind": "library entry (adopted harness)",
+  "always_on_chars": 55,
+  "skills": [],
+  "subagents": [],
+  "scripts": [
+    "summarize.py"
+  ],
+  "plugins": [],
+  "warnings": []
+}

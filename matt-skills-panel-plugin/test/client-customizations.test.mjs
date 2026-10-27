@@ -84,6 +84,23 @@ test('provider failure offers retry while an explicitly missing document stays m
   assert.equal(store.pixelDetail.isMissing, true)
 })
 
+test('a late detail response cannot populate the next workspace cache or block its own request', async () => {
+  const pending = new Map(), calls = []
+  const api = skillClient(args => new Promise(resolve => { calls.push(args.cwd); pending.set(args.cwd, resolve) }))
+  const store = { cwd: '/workspace/A' }
+  api.pixelOpenDetail(store, 'research', {})
+  store.cwd = '/workspace/B'
+  pending.get('/workspace/A')({ ok: true, md: 'A body', path: '/workspace/A/SKILL.md', refs: ['A.md'] })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(api.pixelDetailCache['/workspace/B|research'], undefined)
+  api.pixelOpenDetail(store, 'research', {})
+  assert.deepEqual(calls, ['/workspace/A', '/workspace/B'])
+  pending.get('/workspace/B')({ ok: true, md: 'B body', path: '/workspace/B/SKILL.md', refs: ['B.md'] })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(store.pixelDetail.mdEn, 'B body')
+  assert.equal(api.pixelDetailCache['/workspace/B|research'].path, '/workspace/B/SKILL.md')
+})
+
 test('the derived update entry cannot mount the npm updater', () => {
   const source = readFileSync(new URL('../src/client/views/UpdateEntryHost.ts', import.meta.url), 'utf8')
   const { code } = transformSync(source, { loader: 'ts', format: 'iife', globalName: 'workflowUpdater' })

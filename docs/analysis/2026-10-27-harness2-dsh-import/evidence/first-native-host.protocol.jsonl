@@ -1,0 +1,9 @@
+{"direction": "request", "frame": {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"cwd": "/private/tmp/harness2-dsh-import-audit-20261027/task-workspace", "provider": "harness2-import-probe", "model": "deterministic", "reasoningEffort": "off", "maxTokens": 2048}}}
+{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"deepseek-harness-sdk-runtime","version":"0.0.1"}}}
+{"direction": "request", "frame": {"jsonrpc": "2.0", "id": 2, "method": "session/working-directory/get", "params": {"sessionId": "b760ab18-4442-48d8-88a3-4a2213d63f46"}}}
+{"jsonrpc":"2.0","method":"session.event","params":{"sessionId":"b760ab18-4442-48d8-88a3-4a2213d63f46","event":{"type":"permission/preset","seq":0,"time":1793083074581,"data":{"preset":"workspace-write"}}}}
+{"jsonrpc":"2.0","method":"session.event","params":{"sessionId":"b760ab18-4442-48d8-88a3-4a2213d63f46","event":{"type":"sandbox/mode","seq":1,"time":1793083074582,"data":{"mode":"workspace-write"}}}}
+{"jsonrpc":"2.0","method":"session.event","params":{"sessionId":"b760ab18-4442-48d8-88a3-4a2213d63f46","event":{"type":"approval/policy","seq":2,"time":1793083074582,"data":{"policy":"ask"}}}}
+{"jsonrpc":"2.0","id":2,"error":{"code":-32603,"message":"tool-todo (@deepseek-ai/dsh-tool-todo): invalid config:\n  - $.allowParallelInProgress missing required value (at allowParallelInProgress)"}}
+{"direction": "request", "frame": {"jsonrpc": "2.0", "id": 3, "method": "shutdown"}}
+{"jsonrpc":"2.0","id":3,"result":{}}

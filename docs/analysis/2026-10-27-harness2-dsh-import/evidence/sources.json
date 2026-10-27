@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-27",
+  "timezone": "Asia/Shanghai",
+  "converter": {
+    "repository": "https://github.com/xisnn/harness2-dsh",
+    "commit": "56e77dccbb33d51ba1063eb5ae8c87fcd74771aa",
+    "sourceVersion": "0.1.0"
+  },
+  "googleHarness2": {
+    "commit": "1cfe254e8d25b15f37048c3730134686abe60335"
+  },
+  "dsh": {
+    "version": "0.2.1-rc.3",
+    "package": "@deepseek-ai/dsh",
+    "commit": "1f81c047fc48fa190a683e469daa699857e9afe8"
+  },
+  "nodeVersion": "24.12.0",
+  "pythonVersion": "3.12.14",
+  "sourceFilesSha256": {
+    "src/harness2_dsh/tree.py": "d71432308ff8e8f91ff830c691429e03d5bcdcf79a4b5a445f0193344306a695",
+    "src/harness2_dsh/convert.py": "0f3f3908656107a85bcd6ca96c5dcba5d37d5de5365bc91c334ef18f1a9a92da",
+    "src/harness2_dsh/__init__.py": "146b59d1ee31b011de6ee6a85d364c924474c6c616b18f76072e7603183db05c",
+    "src/harness2_dsh/cli.py": "80c07582b0afef73ba2e7d3550c5e20d5621cb44c328d9688ed717f02ecbb761",
+    "src/harness2_dsh/yaml_emit.py": "694ad726a97adc505c1b019a9b07e36b868fdfb572a74d87d301254ad71a0b60"
+  }
+}

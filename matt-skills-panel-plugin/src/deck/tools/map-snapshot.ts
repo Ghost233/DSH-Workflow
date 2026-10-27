@@ -16,18 +16,12 @@ import { estimateToolCost, toolCostInputFrom } from '../../refresh/kernel/tool-c
 import { withCallScope } from '../../refresh/rooms/host/tool-call-budget-enforcement.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
 import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
+import { withCap } from '../shell/capped-wait.js'
 
 /** 数字型参数的统一收口：正的有限数才要（取整），其余一律当「没给」，由调用方退自己的默认。 */
 function numOpt(v: unknown): number | undefined { return (typeof v === 'number' && isFinite(v) && v > 0) ? Math.floor(v) : undefined }
-/** 钳制等待的结果：等到了给值；超时或对方自己失败都算「没等到」，调用方一律退老路。 */
-type CapResult<T> = { ok: true; value: T } | { ok: false; timedOut?: true }
-// 沙箱许可等待上限：超时按缺席走老路（不限权），与既有 catch null 同形。
-function withCap<T>(promise: Promise<T> | T, ms: number): Promise<CapResult<T>> {
-  return Promise.race([
-    Promise.resolve(promise).then(function (v): CapResult<T> { return { ok: true, value: v } }, function (): CapResult<T> { return { ok: false } }),
-    new Promise<CapResult<T>>(function (resolve) { setTimeout(function () { resolve({ ok: false, timedOut: true }) }, ms) }),
-  ])
-}
+// 沙箱许可等待上限见 ../shell/capped-wait.ts（#1114 第二批）：到点就按「没等到」处理并清掉等待定时器；
+// 超时按缺席走老路（不限权），与既有 catch null 同形。
 
 /**
  * 装配层注入的依赖袋。壳要用的键原样透传（没列的键也一律接受：壳自己还没标类型，这一层不替它把关）；
@@ -149,9 +143,17 @@ export function createDeckMapSnapshot(deps?: DeckMapSnapshotDeps) {
       const listed = (kids && kids.ok === true && Array.isArray(kids.data)) ? kids.data : []
       const picked = childrenOf(listed, key)
       const children = picked.children
+      // 子票清单走没走降级也要摆出来：日志里按 opId 查 read.degraded 就是同一趟，不用再猜。
+      const kidsFallback = String((kids as { fallback?: unknown } | null | undefined)?.fallback || '')
+      const kidsFallbackReason = String((kids as { fallbackReason?: unknown } | null | undefined)?.fallbackReason || '')
+      const opId = String(((opCtx as Record<string, unknown> | null | undefined) || {}).opId || '')
       const notes = []
       if (scope.effortId) notes.push(mdScopeNote(scope.scene, scope.effortId))
-      if (!kids || kids.ok !== true) notes.push('子票没取全（后端原话：' + String((kids && kids.error && kids.error.message) || '').slice(0, 200) + '）：下面的进度是手上这几张票算出来的，偏乐观。')
+      if (!kids || kids.ok !== true) notes.push('子票没取全（后端原话：' + String((kids && kids.error && kids.error.message) || '').slice(0, 200) + '，opId ' + (opId || '未知') + '）：下面的进度是手上这几张票算出来的，偏乐观。')
+      else if (kidsFallback === 'rest') {
+        if (kidsFallbackReason === 'quota') notes.push('子票清单这次因配额耗尽走了 REST 降级通道（opId ' + (opId || '未知') + '）：只回已经拿到的，数偏乐观，收窄再查一次。')
+        else notes.push('子票清单这次走了 REST 降级通道（原因 ' + (kidsFallbackReason || 'other') + '，opId ' + (opId || '未知') + '，日志里按 opId 查 read.degraded 就是同一趟）：只回已经拿到的，数偏乐观。')
+      }
       if (picked.note) notes.push(picked.note)
       // 进度统计走共享层同一份投影：把它当成只有这一张地图的 deck 来算。
       const projection = deriveDeck({ maps: [Object.assign({}, map, { tickets: children })], issues: [] })
