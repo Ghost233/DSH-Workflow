@@ -42,16 +42,16 @@ test('startup outcomes distinguish actual loading, disabled, failed, drift and a
   const f = await fixture(t, [row('dsh-context', versions['dsh-context']),
     row('dsh-cost-meter', versions['dsh-cost-meter'], { enabled: false, fiberPhase: null }),
     row('@nagi-ovo/dsh-visualize', versions['@nagi-ovo/dsh-visualize'], { fiberPhase: 'failed' }),
-    row('billion-context', '0.1.185', { status: 'drift' })])
+    row('@goodandready/dsh-plugin-notify', '0.4.6', { status: 'drift' })])
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
   assert.deepEqual(results.map(item => [item.package, item.state]),
     Object.keys(versions).map(name => [name, name === 'dsh-context' ? 'loaded' : 'skipped']))
   assert.match(results[1].reason, /停用/)
   assert.match(results[2].reason, /失败/)
   assert.match(results[3].reason, /偏离/)
-  assert.equal(results[3].version, versions['billion-context'])
-  assert.equal(results[3].actualVersion, '0.1.185')
-  assert.equal(results[4].package, '@goodandready/dsh-plugin-notify')
+  assert.equal(results[3].version, versions['@goodandready/dsh-plugin-notify'])
+  assert.equal(results[3].actualVersion, '0.4.6')
+  assert.equal(results[4].package, 'dsh-better-sidebar')
   assert.match(results[4].reason, /未装配/)
   assert.deepEqual(f.requests, [{ method: 'GET', path: '/?token=owned-fixture' },
     { method: 'POST', path: '/api/workflowDelivery/list' }])

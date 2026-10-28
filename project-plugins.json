@@ -4,7 +4,6 @@
     { "package": "dsh-context", "version": "0.77.0", "entryId": "dsh-context", "repository": "https://github.com/bowenliang123/dsh-context", "startup": true },
     { "package": "dsh-cost-meter", "version": "1.9.41", "entryId": "cost-meter", "repository": "https://github.com/Han-1413141/dsh-cost-meter", "startup": true },
     { "package": "@nagi-ovo/dsh-visualize", "version": "0.1.7", "entryId": "dsh-visualize", "repository": "https://github.com/Nagi-ovo/dsh-visualize", "startup": true },
-    { "package": "billion-context", "version": "0.1.208", "entryId": "bili-native", "repository": "https://github.com/ranxianglei/billion-context", "startup": true },
     { "package": "@goodandready/dsh-plugin-notify", "version": "0.4.7", "entryId": "plugin-notify", "repository": "https://github.com/GooDAnDReaDY/dsh-plugin-notify", "startup": true },
     { "package": "dsh-better-sidebar", "version": "0.28.1", "entryId": "better-sidebar", "repository": "https://github.com/omdsh-dev/DSH-better-sidebar", "startup": true },
     { "package": "ghost-agent-sentinel", "version": "0.1.8", "entryId": "ghost-agent-sentinel", "repository": "https://github.com/Ghost233/GhostAgentSentinel", "source": "git", "commit": "1a2fc28c088f9c514cf55bb5a0536c0f523eb711", "startup": true },
