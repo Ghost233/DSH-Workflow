@@ -18,6 +18,30 @@ import { serviceNotification } from './service-notification.mjs'
 import { startupPluginResults } from './startup-plugins.mjs'
 import { statusNotifications } from './status-notifications.mjs'
 
+async function health(host, timeout = 2000) {
+  const signal = AbortSignal.timeout(timeout)
+  const response = await fetch(host.url, { redirect: 'manual', signal })
+  const cookie = response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
+  await response.text()
+  if (!cookie) throw new Error('DSH authentication did not issue a session cookie')
+  return dshReadiness(host.url, { cookie, signal })
+}
+
+export async function waitForInitialHostHealth(host, deadline, isAlive) {
+  let lastTimeout
+  while (Date.now() < deadline) {
+    if (!isAlive()) throw new Error('DSH Host exited during readiness')
+    try { return await health(host, Math.min(2000, Math.max(1, deadline - Date.now()))) }
+    catch (error) {
+      if (error.name !== 'TimeoutError') throw error
+      lastTimeout = error
+      const remaining = deadline - Date.now()
+      if (remaining > 0) await delay(Math.min(100, remaining))
+    }
+  }
+  throw lastTimeout ?? new Error('DSH 服务启动超时，请查看日志')
+}
+
 /** The manager owns the official Host; GUI clients only send explicit management commands. */
 export async function serveManager({ dataRoot, resources, home }) {
   const directory = serviceDirectory(dataRoot), socketPath = serviceSocket(dataRoot)
@@ -51,14 +75,6 @@ export async function serveManager({ dataRoot, resources, home }) {
     logWrites = logWrites.then(() => appendFile(join(directory, 'service.log'), JSON.stringify(entry) + '\n', { mode: 0o600 }))
     void logWrites.catch(() => {})
     updates.publish()
-  }
-  const health = async host => {
-    const signal = AbortSignal.timeout(2000)
-    const response = await fetch(host.url, { redirect: 'manual', signal })
-    const cookie = response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
-    await response.text()
-    if (!cookie) throw new Error('DSH authentication did not issue a session cookie')
-    return dshReadiness(host.url, { cookie, signal })
   }
   const hostRequest = (owned, type, fields = {}, timeout = 2000) => new Promise((accept, reject) => {
     const requestId = ++controlId
@@ -259,6 +275,7 @@ export async function serveManager({ dataRoot, resources, home }) {
         const ready = Promise.withResolvers()
         // Attach rejection handling before any IPC/error event can arrive.
         void ready.promise.catch(() => {})
+        const deadline = Date.now() + 30_000
         const timeout = setTimeout(() => ready.reject(new Error('DSH 服务启动超时，请查看日志')), 30_000)
         createInterface({ input: owned.stdout }).on('line', log)
         createInterface({ input: owned.stderr }).on('line', log)
@@ -303,7 +320,7 @@ export async function serveManager({ dataRoot, resources, home }) {
             catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; await delay(20) }
           }
           if (!actual || actual.pid !== owned.pid || actual.url !== message.url) throw new Error('DSH readiness receipt does not identify the owned Host')
-          validatedReady = (await health(actual)).ready === true
+          validatedReady = (await waitForInitialHostHealth(actual, deadline, () => child === owned && owned.exitCode === null && owned.signalCode === null)).ready === true
           lastHealth = { ready: validatedReady, message: null }
           for (const result of await startupPluginResults({ resourcesRoot: resources, url: actual.url, preparation: profile.startup })) {
             log(`项目启动插件：${JSON.stringify(result)}`)
