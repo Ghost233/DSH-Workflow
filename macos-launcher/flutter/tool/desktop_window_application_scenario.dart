@@ -590,6 +590,36 @@ class DesktopWindowProbe {
   }
 }
 
+Map<String, String> desktopRestartEnvironment({
+  required Directory root,
+  required EndpointLayout layout,
+  required Map<String, String> inherited,
+}) {
+  final home = '${root.path}/os-home';
+  return {
+    ...Map.fromEntries(
+      inherited.entries.where(
+        (entry) =>
+            !entry.key.startsWith('SENTINEL_') &&
+            !entry.key.startsWith('GHOST_SENTINEL_'),
+      ),
+    ),
+    'HOME': home,
+    'ZDOTDIR': home,
+    'XDG_CONFIG_HOME': '$home/config',
+    'XDG_DATA_HOME': '$home/data',
+    'XDG_STATE_HOME': '$home/state',
+    'XDG_CACHE_HOME': '$home/cache',
+    'TMPDIR': '$home/tmp',
+    'DSH_LAUNCHER_TEST_ROOT': '${root.path}/data',
+    'DSH_LAUNCHER_TEST_HOME': '${root.path}/home',
+    'DSH_LAUNCHER_TEST_RESOURCES': '${root.path}/missing-runtime',
+    'DSH_LAUNCHER_TEST_SOCKET': layout.socketPath,
+    'DSH_HOME': '${root.path}/home',
+    'DSH_LAUNCHER_TEST_PORT': '33080',
+  };
+}
+
 /// Reopen the same saved private profile, then reopen only its Launcher while
 /// retaining the exact visible Desktop. This is separate from the cold case.
 Future<void> runDesktopWindowRestarts(
@@ -669,15 +699,35 @@ Future<void> runDesktopWindowRestarts(
   final manifest = '${app.path}/Contents/Resources/maclauncher.json';
   final layout = EndpointLayout(directory: '${root.path}/manager');
   await Directory(layout.directory).create();
-  final environment = {
-    ...Platform.environment,
-    'DSH_LAUNCHER_TEST_ROOT': data.path,
-    'DSH_LAUNCHER_TEST_HOME': '${root.path}/home',
-    'DSH_LAUNCHER_TEST_RESOURCES': '${root.path}/missing-runtime',
-    'DSH_LAUNCHER_TEST_SOCKET': layout.socketPath,
-    'DSH_HOME': '${root.path}/home',
-    'DSH_LAUNCHER_TEST_PORT': '33080',
-  };
+  final privateHome = Directory('${root.path}/os-home');
+  require(
+    await FileSystemEntity.type(privateHome.path, followLinks: false) ==
+            FileSystemEntityType.directory &&
+        await privateHome.resolveSymbolicLinks() == privateHome.path,
+    'restart home is the same physical private directory',
+  );
+  for (final name in ['config', 'data', 'state', 'cache', 'tmp']) {
+    final directory = Directory('${privateHome.path}/$name');
+    final type = await FileSystemEntity.type(
+      directory.path,
+      followLinks: false,
+    );
+    require(
+      type == FileSystemEntityType.notFound ||
+          type == FileSystemEntityType.directory,
+      'restart home child is not a link or special file',
+    );
+    await directory.create(recursive: true);
+    require(
+      await directory.resolveSymbolicLinks() == directory.path,
+      'restart home child stays inside the private directory',
+    );
+  }
+  final environment = desktopRestartEnvironment(
+    root: root,
+    layout: layout,
+    inherited: Platform.environment,
+  );
   // Observe before reopening; outputs have distinct names from the earlier body.
   final windows = await DesktopWindowProbe.start(
     root,
