@@ -14,7 +14,7 @@ const incompatible = 'DSH 服务接入版本不兼容，请使用配套应用。
 
 // This fixture replaces only the local manager connection boundary. Actual Host,
 // Electron, and private Platform integration remain native scenario obligations.
-async function connectionFixture(t, { restored = false } = {}) {
+async function connectionFixture(t, { restored = false, initiallyListening = true } = {}) {
   const root = await mkdtemp('/private/tmp/dsh-s02-connection-')
   const dataRoot = restored ? join(root, 'Library/Application Support/DSH Workflow') : join(root, 'data')
   const runtime = join(root, 'runtime')
@@ -38,13 +38,15 @@ async function connectionFixture(t, { restored = false } = {}) {
       if (!buffer.includes('\n')) return
       const request = JSON.parse(buffer.slice(0, buffer.indexOf('\n')))
       requests.push(request)
-      if (request.type === 'connect-desktop' && ['unavailable', 'incompatible', 'gone'].includes(mode)) {
+      if (request.type === 'connect-desktop' && ['starting', 'transition', 'stopped', 'unavailable', 'incompatible', 'gone'].includes(mode)) {
         refused++
-        socket.end(JSON.stringify({ ok: false, error: mode === 'incompatible' ? incompatible : unavailable }) + '\n')
+        const error = mode === 'incompatible' ? incompatible : unavailable
+        if (mode === 'transition') mode = 'ready'
+        socket.end(JSON.stringify({ ok: false, error }) + '\n')
         return
       }
       const connection = { ...original, ...(mode === 'replaced' ? { instanceId: 's02-new-lease' } : {}) }
-      const service = { state: mode === 'gone' ? 'failed' : 'running', ready: mode === 'ready',
+      const service = { state: mode === 'starting' ? 'starting' : mode === 'stopped' ? 'stopped' : mode === 'gone' ? 'failed' : 'running', ready: mode === 'ready',
         instanceId: mode === 'gone' ? null : original.instanceId,
         pid: mode === 'gone' ? null : original.pid, runtimeVersion: version,
         message: mode === 'unavailable' ? 'temporary health unavailable' : null }
@@ -59,14 +61,17 @@ async function connectionFixture(t, { restored = false } = {}) {
   t.after(async () => {
     await connection.stop()
     for (const socket of sockets) socket.destroy()
-    await new Promise(resolve => server.close(resolve))
+    if (server.listening) await new Promise(resolve => server.close(resolve))
     await rm(dirname(socketPath), { recursive: true, force: true })
     await rm(root, { recursive: true, force: true })
   })
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve) })
-  await chmod(socketPath, 0o600)
+  const listen = async () => {
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve) })
+    await chmod(socketPath, 0o600)
+  }
+  if (initiallyListening) await listen()
   return { connection, original, grant, requests, failures, sessions, socketPath,
-    get refused() { return refused }, set mode(value) { mode = value } }
+    listen, get refused() { return refused }, set mode(value) { mode = value } }
 }
 
 async function observed(predicate) {
@@ -95,6 +100,112 @@ test('a macOS-restored Desktop without launcher environment reconnects to its ex
   await observed(() => fixture.sessions.length >= 2)
   assert.equal(fixture.failures.length, 0)
   assert.deepEqual(fixture.sessions.at(-1), fixture.grant)
+  readOnly(fixture)
+})
+
+test('a restored Desktop waits for the already starting service to become ready', { timeout: 6000 }, async t => {
+  const fixture = await connectionFixture(t, { restored: true })
+  fixture.mode = 'starting'
+  const timer = setTimeout(() => { fixture.mode = 'ready' }, 150)
+  t.after(() => clearTimeout(timer))
+  const ready = await fixture.connection.start()
+  assert.equal(ready.url, fixture.original.url)
+  assert.equal(fixture.connection.instanceId, fixture.original.instanceId)
+  assert.deepEqual(fixture.sessions, [fixture.grant])
+  assert.ok(fixture.requests.some(request => request.type === 'status'))
+  readOnly(fixture)
+})
+
+test('a restored Desktop waits briefly for the service manager to appear at login', { timeout: 6000 }, async t => {
+  const fixture = await connectionFixture(t, { restored: true, initiallyListening: false })
+  const pending = fixture.connection.start()
+  void pending.catch(() => {})
+  await delay(150)
+  await fixture.listen()
+  const ready = await pending
+  assert.equal(ready.url, fixture.original.url)
+  assert.deepEqual(fixture.sessions, [fixture.grant])
+  readOnly(fixture)
+})
+
+test('a restored Desktop waits briefly if the manager has not started the service yet', { timeout: 6000 }, async t => {
+  const fixture = await connectionFixture(t, { restored: true })
+  fixture.mode = 'stopped'
+  const timer = setTimeout(() => { fixture.mode = 'ready' }, 150)
+  t.after(() => clearTimeout(timer))
+  const ready = await fixture.connection.start()
+  assert.equal(ready.url, fixture.original.url)
+  assert.deepEqual(fixture.sessions, [fixture.grant])
+  readOnly(fixture)
+})
+
+test('a restored Desktop reports an unavailable manager after the bounded login grace', { timeout: 8000 }, async t => {
+  const fixture = await connectionFixture(t, { restored: true, initiallyListening: false })
+  await assert.rejects(fixture.connection.start(), error => error.message === unavailable)
+  assert.equal(fixture.sessions.length, 0)
+  assert.equal(fixture.requests.length, 0, 'Desktop does not start a service itself')
+})
+
+test('closing a restored Desktop interrupts the login grace without starting a service', { timeout: 6000 }, async t => {
+  const fixture = await connectionFixture(t, { restored: true, initiallyListening: false })
+  const pending = fixture.connection.start()
+  const rejected = assert.rejects(pending, /DSH 桌面连接已关闭/)
+  await delay(150)
+  await fixture.connection.stop()
+  await rejected
+  assert.deepEqual(fixture.sessions, [null])
+  assert.equal(fixture.requests.length, 0)
+})
+
+test('a restored Desktop reports a service that stays stopped after the bounded login grace', { timeout: 8000 }, async t => {
+  const fixture = await connectionFixture(t, { restored: true })
+  fixture.mode = 'stopped'
+  await assert.rejects(fixture.connection.start(), error => error.message === unavailable)
+  assert.equal(fixture.sessions.length, 0)
+  assert.ok(fixture.requests.filter(request => request.type === 'connect-desktop').length > 1)
+  readOnly(fixture)
+})
+
+test('a Desktop connects when the service becomes ready between connection and status checks', async t => {
+  const fixture = await connectionFixture(t)
+  fixture.mode = 'transition'
+  const ready = await fixture.connection.start()
+  assert.equal(ready.url, fixture.original.url)
+  assert.equal(fixture.requests.filter(request => request.type === 'connect-desktop').length, 2)
+  assert.deepEqual(fixture.sessions, [fixture.grant])
+  readOnly(fixture)
+})
+
+test('a Desktop stops waiting if the service fails during startup', { timeout: 6000 }, async t => {
+  const fixture = await connectionFixture(t)
+  fixture.mode = 'starting'
+  const timer = setTimeout(() => { fixture.mode = 'gone' }, 150)
+  t.after(() => clearTimeout(timer))
+  await assert.rejects(fixture.connection.start(), error => error.message === unavailable)
+  assert.equal(fixture.sessions.length, 0)
+  readOnly(fixture)
+})
+
+test('a deliberately stopped service is reported without waiting or restarting it', async t => {
+  const fixture = await connectionFixture(t)
+  fixture.mode = 'stopped'
+  await assert.rejects(fixture.connection.start(), error => error.message === unavailable)
+  assert.equal(fixture.requests.filter(request => request.type === 'connect-desktop').length, 1)
+  assert.equal(fixture.requests.filter(request => request.type === 'status').length, 1)
+  assert.equal(fixture.sessions.length, 0)
+  readOnly(fixture)
+})
+
+test('closing a Desktop while the service starts does not reconnect or receive a session', { timeout: 6000 }, async t => {
+  const fixture = await connectionFixture(t)
+  fixture.mode = 'starting'
+  const pending = fixture.connection.start()
+  const rejected = assert.rejects(pending, /DSH 桌面连接已关闭/)
+  await observed(() => fixture.requests.some(request => request.type === 'status'))
+  await fixture.connection.stop()
+  await rejected
+  assert.deepEqual(fixture.sessions, [null])
+  assert.equal(fixture.requests.filter(request => request.type === 'connect-desktop').length, 1)
   readOnly(fixture)
 })
 

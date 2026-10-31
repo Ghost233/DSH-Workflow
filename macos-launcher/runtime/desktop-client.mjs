@@ -59,6 +59,7 @@ export class WorkflowDesktopConnection {
     this.runtime = runtime
     // macOS can restore this client without the launcher's per-process environment.
     this.dataRoot = environment.DSH_WORKFLOW_DATA_ROOT || join(environment.HOME || homedir(), 'Library/Application Support/DSH Workflow')
+    this.restored = !environment.DSH_WORKFLOW_DATA_ROOT
     this.onFailure = onFailure
     this.onPlatformSession = onPlatformSession
     this.closed = false
@@ -72,13 +73,42 @@ export class WorkflowDesktopConnection {
       value.platformSession = privateSession(value.platformSession)
       return value
     } catch (error) {
-      if (['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw new Error(unavailable)
+      if (['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw Object.assign(new Error(unavailable), { code: error.code })
       throw error
     }
   }
 
   async start() {
-    const value = await this.connect()
+    const deadline = Date.now() + 45_000
+    const restorationDeadline = Date.now() + (this.restored ? 5000 : 0)
+    let value, retriedReady = false
+    for (;;) {
+      if (this.closed) throw new Error('DSH 桌面连接已关闭。')
+      try { value = await this.connect(); break }
+      catch (error) {
+        if (error.message !== unavailable) throw error
+        if (['ENOENT', 'ECONNREFUSED'].includes(error.code) && Date.now() < restorationDeadline) {
+          await new Promise(resolve => setTimeout(resolve, 250))
+          continue
+        }
+        let service
+        try { ({ service } = await serviceRequest(serviceSocket(this.dataRoot), { type: 'status' }, 5000)) }
+        catch (failure) {
+          if (['ENOENT', 'ECONNREFUSED'].includes(failure.code)) throw error
+          throw failure
+        }
+        if (service?.state === 'running' && service.ready === true && !retriedReady) {
+          retriedReady = true
+          continue
+        }
+        if (service?.state === 'stopped' && Date.now() < restorationDeadline) {
+          await new Promise(resolve => setTimeout(resolve, 250))
+          continue
+        }
+        if (service?.state !== 'starting' || Date.now() >= deadline) throw error
+        await new Promise(resolve => setTimeout(resolve, 250))
+      }
+    }
     const injections = await currentInjections(value.connection)
     if (this.closed) throw new Error('DSH 桌面连接已关闭。')
     this.instanceId = value.connection.instanceId
