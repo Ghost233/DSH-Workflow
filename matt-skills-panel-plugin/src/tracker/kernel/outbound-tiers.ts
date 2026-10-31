@@ -1,13 +1,13 @@
 /**
- * shared/gh-timeout-tiers.js —— 去 GitHub 的分档超时（#969 暂定值）。
+ * 去 GitHub 的分档超时（#969 立，2026-10-28 #1224 按实测把暂定值定为终值）。
  *
  * 为什么分三档：读操作等得久会拖住界面，写操作杀得早会让用户不敢重试，
  * 查登录态与版本号的探活本该最快回来。从前全仓只有一档 30000，谁都要等满才放弃。
  * 慢网下超时一律归网络档（未知、稍后再试），不能说成没登录让用户去重登。
  *
- * 暂定值（终值等 #967 测出耗时分布后回填，由 #966 收口执行）：
- *   读 12000 毫秒、写 30000 毫秒、探活 15000 毫秒。
- * 探活从 3000 提到 15000（#1160）：gh auth status 在插件里是冷启动，
+ * 现行值（2026-10-28 #1224 定为终值）全部住 config/timeouts.yaml 的 outbound* 四键，
+ * 这里不写第二份数字，调时间请改 YAML。探活档从 3 秒提到 15 秒（#1160）再放宽（#1224）：
+ * gh auth status 在插件里是冷启动，
  * keyring 读取加 TLS 握手在代理环境下经常超 3 秒，从前那条 3 秒的上限会把登录态误判成网络异常。
  * 上限参考（4 下限、64 上限）管的是同时在飞几个，不管等多久，这里不混用。
  *
@@ -19,7 +19,7 @@
 
 // 四档时长住中央 YAML（config/timeouts.yaml 的 outbound* 四键）：这里只留同名别名，
 // 调时间改 YAML，不改这里。值由 tests/verify-time-config.ts 看守一致。
-import { OUTBOUND_READ_TIMEOUT_MS, OUTBOUND_WRITE_TIMEOUT_MS, OUTBOUND_PROBE_TIMEOUT_MS, OUTBOUND_DEFAULT_TIMEOUT_MS, OUTBOUND_TRANSPORT_COOLDOWN_MS } from '../../shared/time-config/src/values.js'
+import { OUTBOUND_READ_TIMEOUT_MS, OUTBOUND_WRITE_TIMEOUT_MS, OUTBOUND_PROBE_TIMEOUT_MS, OUTBOUND_DEFAULT_TIMEOUT_MS, OUTBOUND_TRANSPORT_COOLDOWN_MS, GH_QUEUE_WAIT_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
 
 export const READ_TIMEOUT_MS = OUTBOUND_READ_TIMEOUT_MS
 export const WRITE_TIMEOUT_MS = OUTBOUND_WRITE_TIMEOUT_MS
@@ -40,6 +40,22 @@ function partsOf(args: unknown): string[] {
 
 /** 写操作动词：命中即走写档（等得最久，且调用方不许自动重试，见 #969）。 */
 const WRITE_VERBS = new Set(['create', 'edit', 'close', 'reopen', 'comment', 'delete', 'lock', 'unlock', 'pin', 'unpin'])
+
+/**
+ * label / release 两族里的只读子命令（#1614）。
+ *
+ * 为什么不能按族名一刀切：这两族里既有读也有写。旧实现把族名命中的调用一律判成写，
+ * 只读的列表查询于是进写桶；它一失败还会给写桶记一次通路冷却（时长住
+ * config/timeouts.yaml 的 outboundTransportCooldownMs），挡住真正的写操作。
+ *
+ * 取值按 gh 2.97.0 的 --help 实测：label 只有 list（别名 ls）；
+ * release 有 list（别名 ls）、view、download、verify、verify-asset。
+ * 不在这张表里的子命令一律按写（fail-closed）：漏判写的代价（真写操作进并发读桶、
+ * 失败回话按读档说可重试、误清写桶冷却）远高于误判写（多占一个写名额、慢一点）。
+ * 只有族名、没有子命令时（gh 只打帮助）由 isWriteGhArgs 的 parts.length < 2 分支按读返回。
+ */
+const LABEL_READ_SUBCOMMANDS = new Set(['list', 'ls'])
+const RELEASE_READ_SUBCOMMANDS = new Set(['list', 'ls', 'view', 'download', 'verify', 'verify-asset'])
 
 function isApiWrite(parts: string[]): boolean {
   // 经接口写票一定带写方法：-X POST 之类或 --method 覆盖时才是写，默认读。
@@ -64,7 +80,9 @@ export function isWriteGhArgs(args: unknown): boolean {
   if (parts.length < 2) return false
   if (parts[0] === 'issue' || parts[0] === 'pr') return WRITE_VERBS.has(parts[1])
   if (parts[0] === 'api') return isApiWrite(parts)
-  if (parts[0] === 'label' || parts[0] === 'release') return true
+  // #1614：label / release 按子命令判，只有白名单里的子命令是读；白名单外的（含将来新增的）按写。
+  if (parts[0] === 'label') return !LABEL_READ_SUBCOMMANDS.has(parts[1])
+  if (parts[0] === 'release') return !RELEASE_READ_SUBCOMMANDS.has(parts[1])
   return false
 }
 
@@ -122,6 +140,24 @@ export function timeoutForTier(tier: string): number {
 export function timeoutForGhArgs(args: unknown, explicitTimeout?: unknown): number {
   if (typeof explicitTimeout === 'number' && isFinite(explicitTimeout) && explicitTimeout > 0) return explicitTimeout
   return timeoutForTier(tierForGhArgs(args))
+}
+
+/**
+ * 排队拿名额这一段最多等多久：本档预算与中央排队上限取更小的那个（#1560 乙方案）。
+ *
+ * 为什么取更小的那个：名额满时不该把整档预算（读 / 写两档的超时）全花在排队上；
+ * 但本档预算比排队上限还短时（例如调用方显式传了几百毫秒），排队自然只等到本档超时，
+ * 不出现「排队比整档还久」。拿到名额之后起进程的等待仍按本档超时算，总墙钟仍是本档，
+ * 预检与外层预算都不用加账（甲方案要重算 54 秒内层，乙不碰）。
+ *
+ * 为什么住在这里：房间侧不许 import 宿主模块，而这条算式要同时供房间客户端、平台通道与宿主两路使用。
+ * #1570 起「排队最多等多久」由出站准入闸自己执行（闸收 waitMs、到点抛排队超时并归还晚到名额），
+ * 各出口只在这里算出预算再递给闸 —— 计时与归还都只有闸那一份，出口不许再自己起表赛跑。
+ * 值本身仍只在中央 YAML 有一处定义（config/timeouts.yaml 的 ghQueueWaitTimeoutMs 键），
+ * 这里只引用中央常量，不抄数字。
+ */
+export function queueTimeoutForTier(tierTimeoutMs: number): number {
+  return Math.min(tierTimeoutMs, GH_QUEUE_WAIT_TIMEOUT_MS)
 }
 
 /**
@@ -292,6 +328,33 @@ export function outboundCooldownOf(err: unknown): OutboundCooldownInfo | null {
 }
 
 /**
+ * 排队超时错误码（#1570）：准入闸在队列里等过了调用方给的时间预算时，错误对象带这个 code。
+ * 调用方据此返回「排队太久、一次都没跑起来」这类**可重试**的回话，与「排队时被取消」
+ * 「通路冷却」和普通失败分开 —— 它说明名额竞争激烈，不是命令本身错了。
+ */
+export const OUTBOUND_QUEUE_TIMEOUT_CODE = 'admission-queue-timeout'
+
+/** 排队超时错误上能读出的信息：哪只桶、等了多久、当初给的时间预算是多少。 */
+export interface OutboundQueueTimeoutInfo {
+  bucket: string
+  waitedMs: number
+  limitMs: number
+}
+
+/**
+ * 从错误对象上读排队超时信息；不是排队超时错误就回 null。
+ * 类型说明：错误值形状不可控，只按键读取，不改变运行时对象。
+ */
+export function outboundQueueTimeoutOf(err: unknown): OutboundQueueTimeoutInfo | null {
+  if (!err || (err as { code?: unknown }).code !== OUTBOUND_QUEUE_TIMEOUT_CODE) return null
+  const e = err as { bucket?: unknown; waitedMs?: unknown; limitMs?: unknown }
+  const bucket = String(e.bucket == null ? '' : e.bucket)
+  const waitedMs = typeof e.waitedMs === 'number' && isFinite(e.waitedMs) ? e.waitedMs : 0
+  const limitMs = typeof e.limitMs === 'number' && isFinite(e.limitMs) ? e.limitMs : 0
+  return { bucket: bucket, waitedMs: Math.max(0, Math.floor(waitedMs)), limitMs: Math.max(0, Math.floor(limitMs)) }
+}
+
+/**
  * 从失败文本里认 transport 级失败的类别；认不出回空串（调用方不设冷却）。
  * 顺序有意义：超时优先认；「被杀」其次；「起不来」最后 —— 三类都可能出现在同一条错误里，
  * 先命中的那一类才是这次真正让命令停下的原因。
@@ -356,6 +419,17 @@ export function ghCooldownReply(err: unknown, cmd: string): string {
   const remainSec = Math.max(1, Math.round(cool.remainingMs / 1000))
   const reasonLabel = transportFailureReasonLabel(cool.reason)
   return '到 GitHub 的通路现在不通：命令 ' + (cmd || 'gh') + ' 没有起进程（上一笔连续第 ' + cool.failStreak + ' 次' + (reasonLabel ? reasonLabel + '失败' : '通路失败') + '，冷却还剩约 ' + remainSec + ' 秒）。这一笔没有执行。' + outboundFollowUpAdvice(cool.bucket)
+}
+
+/**
+ * 排队到点还没拿到名额时给人的那句话（#1570）：说清是哪条命令、这一笔一次都没起进程、预算多少，
+ * 并按可重试处理。平台通道与 execProc 共用这一句，免得两处各写一份措辞。
+ * 不是排队超时错误返回空串（调用方照旧走原来的取消/冷却回话）。
+ */
+export function ghQueueTimeoutReply(err: unknown, cmd: string): string {
+  const q = outboundQueueTimeoutOf(err)
+  if (!q) return ''
+  return (cmd || 'gh') + ' 在 ' + q.limitMs + ' 毫秒内没等到出站名额（到点时还在排队，一次都没有跑起来）。可重试。'
 }
 
 /** 进程根本没起来也是 transport 级失败（spawn-failed）：同一只桶进入冷却，随后调用立刻回「通路不通」。 */

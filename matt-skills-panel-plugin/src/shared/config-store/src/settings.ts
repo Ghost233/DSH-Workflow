@@ -6,6 +6,22 @@
  * 未知名字一律拒绝（静默丢掉用户手写的键等于丢数据）。
  * 自包含：小工具自己写一遍，不引用别的单元（产物零相对引用，见 workspace.ts 头注）。
  * YAML 入口守卫住宿主适配器的 parseConfig（唯一入口）。
+ *
+ * 每个工作区那一条记录里的两个开关（#1612 维护者拍板）：
+ *   · statusBar（胶囊状态栏）只认 show 显示、hide 收起（缺省收起）。收起时状态栏只剩一条折叠条，
+ *     环境检查类横幅也一起不显示。
+ *   · deckTools（deck 工具箱）只认 on 打开、off 关闭（缺省打开）。关掉时该工作区的模型工具、
+ *     胶囊状态栏、右侧面板三处一起关。
+ * 旧字段 bannerFolded 只保留最少的一步读兼容（#1612 维护者 2026-10-29 拍板删掉旧 localStorage 迁移之后）：
+ *   接受这个键（否则旧文件整份会被判成多出来的名字），只把「展开」那一种旧值换算成 statusBar: show；
+ *   旧版把「收起」记作 true（也是缺省），那种情况按新缺省 hide，不需要换算。写出去的一份里不再出现它。
+ *
+ * 每个工作区那一条记录上还有一个临时标记 unopened（#1641）：设置页的工作区名单里有些工作区还没打开过，
+ *   认不出它的工作区根，只能先按名单上的路径记一条。这条记录带 unopened: true，表示它还没有归到工作区根
+ *   那一条，等工作区打开、认出根以后会合并过去。它只是一个说明，不是开关，缺了与 false 同义。
+ *   带这个标记的记录是「临时记录」（#1640）：只写用户真点过的那几格开关，缺的格不补缺省 ——「格在不在」
+ *   就是「用户点过没点过」，认出工作区根以后靠这一点决定合并时搬哪几格；普通记录（已经归到根的那一条）
+ *   照旧四格齐全。
  */
 
 import type { ConfigParseResult, ConfigStringifyResult } from './ports.js'
@@ -16,13 +32,23 @@ export const SETTINGS_KNOWN_VERSION = 1
 /** 本机设置在用户主目录下的相对位置（调用方拼绝对路径，核里不碰主目录）。 */
 export const SETTINGS_REL_SEGMENTS = ['.dsh', 'mattskillsdeck', 'settings.yaml']
 
+/**
+ * 设置发布槽位的名字（#1612）：实例宿主在每次成功读 / 写本机设置之后，把归一后的设置文档投到
+ * globalThis 上这个槽位，宿主侧的 deck 工具闸门订阅它。名字只在这里定义一次，
+ * src/host/settingsPhones.ts（发布方）与 src/host/deckToolGate.ts（订阅方）都从这里导入。
+ * 放在核里而不是某一边，是因为它是「本机设置」这件事的共享契约：谁都不该独占一份字符串副本。
+ */
+export const DECK_SETTINGS_BUS_SLOT = '__dsh_mattskillsdeck_settings_bus__'
+
 const HEADER = ['# 本文件的注释由插件生成；你自己加的注释会在下次写入时被替换。']
 const COMMENT_UI = '# 界面偏好（本机全工作区默认生效）'
 const COMMENT_STATE = '# 主列表的状态过滤与排序'
 const COMMENT_WORKSPACES = '# 按工作区区分的观看状态（键 = 工作区根目录）'
-const COMMENT_BANNER = '# 状态栏横幅与胶囊是否收起'
+const COMMENT_STATUS_BAR = '# 胶囊状态栏：show 显示、hide 收起（收起后状态栏只剩一条折叠条）'
+const COMMENT_DECK_TOOLS = '# deck 工具箱：on 打开、off 关闭（关掉后模型工具、胶囊状态栏、右侧面板三处一起关）'
 const COMMENT_NOREPO = '# 无仓库红卡是否已收起'
 const COMMENT_SUBWS = '# 红文件夹标志的说明浮层是否已自动展开过'
+const COMMENT_UNOPENED = '# 这条记录暂时按设置页工作区名单上的路径记着（这个工作区还没打开过）；打开、认出工作区根以后会合并到根那一条'
 const COMMENT_DEBUG = '# 本地诊断日志开关'
 const COMMENT_TEMPLATES = '# 动作模板（空 = 用默认文本）'
 
@@ -30,7 +56,13 @@ const TOP_KEYS = ['version', 'ui', 'workspaces', 'debug', 'templates']
 // labelClicks 只在「读」这一侧认得（老文件里可能已经写进去了，读出来不能报错），写出去的一份里没有它：
 // 维护者 2026-10-12 拍板这项不落盘——它只是标签 chip 排序用的热度，丢了不影响功能，没必要占文件。
 const UI_KEYS = ['stateFilter', 'sortKey', 'sortDir', 'labelClicks']
-const WS_KEYS = ['bannerFolded', 'noRepoDismissed', 'subwsMarkAutoShown']
+// workspaces 每条记录认的名字：两个开关（statusBar、deckTools）、两个旧布尔开关（noRepoDismissed、
+// subwsMarkAutoShown），旧字段 bannerFolded（只为让旧文件读得进来；只换算「展开」那一种旧值，见 parseSettings），
+// 以及 #1641 的临时标记 unopened（这条记录先按设置页工作区名单上的路径记着，还没归到工作区根那一条）。
+const WS_KEYS = ['statusBar', 'deckTools', 'bannerFolded', 'noRepoDismissed', 'subwsMarkAutoShown', 'unopened']
+// 两个新开关各自允许的字面量：值必须逐字是其中之一，别的一律按坏形状回。
+const WS_STATUS_BAR_VALUES = ['show', 'hide']
+const WS_DECK_TOOLS_VALUES = ['on', 'off']
 const DEBUG_KEYS = ['enabled', 'sampleRate']
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -118,7 +150,10 @@ export function parseSettings(doc: unknown): ConfigParseResult {
     clicks[name] = n
   }
 
-  // workspaces 节：键是工作区根的可读路径（动态），值里只认三个开关（横幅折叠缺了默认收起，其余缺了默认关）。
+  // workspaces 节：键是工作区根的可读路径（动态），值里认四个开关（胶囊状态栏缺了默认收起、deck 工具箱缺了默认开，
+  // 其余两个旧开关缺了默认关），还可以带一个临时标记 unopened（见文件头；只记录 true，缺了与 false 同义）。
+  // 带标记的临时记录只留写下来的格（#1640），普通记录才把四个开关的缺省补齐。
+  // 旧字段 bannerFolded 只把「展开」（false）换算成 statusBar: show，归一结果里不带它。
   const wsRaw = doc['workspaces'] === undefined ? {} : doc['workspaces']
   if (!isRecord(wsRaw)) return fail('bad-shape', '本机设置文件里的 workspaces 必须是一组「工作区根 → 开关」')
   const workspaces: Record<string, unknown> = {}
@@ -131,8 +166,38 @@ export function parseSettings(doc: unknown): ConfigParseResult {
     if (entryStrange.length > 0) {
       return fail('unknown-keys', '本机设置文件 workspaces 节里「' + root + '」有多出来的名字：' + entryStrange.join('、'), entryStrange)
     }
-    const norm: Record<string, unknown> = { bannerFolded: true, noRepoDismissed: false, subwsMarkAutoShown: false }
-    for (const k of WS_KEYS) {
+    // 先认临时标记 unopened：它决定这一条是普通记录（缺格补默认）还是临时记录（只留写下来的格）。
+    //   值不是真假值一律按坏形状回，免得用户手写的 unopened: yes 被 YAML 读成文字后悄悄当成没写。
+    if (entry['unopened'] !== undefined && typeof entry['unopened'] !== 'boolean') {
+      return fail('bad-shape', '本机设置文件 workspaces 节里「' + root + '」的 unopened 只能是 true 或省略（true 表示这条记录先按工作区名单上的路径记着，那个工作区还没打开过）')
+    }
+    const isTemp: boolean = entry['unopened'] === true
+    // 普通记录缺格补默认；临时记录一格都不补 —— 写下来的才是用户点过的（#1640 合并时按这个判，见文件头）。
+    const norm: Record<string, unknown> = isTemp
+      ? { unopened: true }
+      : { statusBar: 'hide', deckTools: 'on', noRepoDismissed: false, subwsMarkAutoShown: false }
+    // bannerFolded 是已发布过的旧字段：接受它（旧文件里可能有，否则整份会被判 unknown-keys）。
+    // 只保留「展开」这一种旧值的换算（false → statusBar: show）—— 验收 ⑦ 要求升级前手动展开过的工作区，
+    // 升级后胶囊仍显示着；旧版把「收起」记作 true（也是缺省），那种情况按新缺省 hide，不需要换算。
+    // 旧 localStorage 键（dsws.bannerFold）那套迁移已按维护者 2026-10-29 的要求整段删除，这里只剩这一行读兼容。
+    if (entry['bannerFolded'] === false) norm['statusBar'] = 'show'
+    // statusBar 显式写着时以它为准。
+    if (entry['statusBar'] !== undefined) {
+      const okBar: boolean = typeof entry['statusBar'] === 'string' && WS_STATUS_BAR_VALUES.indexOf(entry['statusBar'] as string) >= 0
+      if (!okBar) {
+        return fail('bad-shape', '本机设置文件 workspaces 节里「' + root + '」的 statusBar 必须是 show（显示胶囊状态栏）或 hide（收起胶囊状态栏），读到的是：' + String(entry['statusBar']))
+      }
+      norm['statusBar'] = entry['statusBar']
+    }
+    if (entry['deckTools'] !== undefined) {
+      const okTools: boolean = typeof entry['deckTools'] === 'string' && WS_DECK_TOOLS_VALUES.indexOf(entry['deckTools'] as string) >= 0
+      if (!okTools) {
+        return fail('bad-shape', '本机设置文件 workspaces 节里「' + root + '」的 deckTools 必须是 on（打开 deck 工具箱）或 off（关闭 deck 工具箱），读到的是：' + String(entry['deckTools']))
+      }
+      norm['deckTools'] = entry['deckTools']
+    }
+    // 两个旧布尔开关照旧：值必须是真假值，缺了用默认。
+    for (const k of ['noRepoDismissed', 'subwsMarkAutoShown']) {
       if (entry[k] === undefined) continue
       if (typeof entry[k] !== 'boolean') {
         return fail('bad-shape', '本机设置文件 workspaces 节里「' + root + '」的 ' + k + ' 必须是真假值（YAML 会把没加引号的 yes/no/on 读成文字，那种按坏形状回）')
@@ -224,12 +289,25 @@ export function stringifySettings(value: unknown): ConfigStringifyResult {
     for (const root of wsKeys) {
       const entry = workspaces[root] as Record<string, unknown>
       lines.push('  ' + esc(root) + ':')
-      lines.push('    ' + COMMENT_BANNER)
-      lines.push('    bannerFolded: ' + String(entry['bannerFolded']))
-      lines.push('    ' + COMMENT_NOREPO)
-      lines.push('    noRepoDismissed: ' + String(entry['noRepoDismissed']))
-      lines.push('    ' + COMMENT_SUBWS)
-      lines.push('    subwsMarkAutoShown: ' + String(entry['subwsMarkAutoShown']))
+      // 临时标记写在记录最前面：它说明这条记录为什么用目录路径当键，读的人该先看到它再看下面几个开关。
+      if (entry['unopened'] === true) {
+        lines.push('    ' + COMMENT_UNOPENED)
+        lines.push('    unopened: true')
+      }
+      // 四个开关按固定次序写，每个带着自己的注释行；临时记录只写用户真点过的那几格（#1640，缺的格跳过），
+      // 普通记录四格必在（parseSettings 补的），所以照旧全写。
+      const fields: Array<[string, string]> = [
+        ['statusBar', COMMENT_STATUS_BAR],
+        ['deckTools', COMMENT_DECK_TOOLS],
+        ['noRepoDismissed', COMMENT_NOREPO],
+        ['subwsMarkAutoShown', COMMENT_SUBWS],
+      ]
+      for (const [name, comment] of fields) {
+        const cell = entry[name]
+        if (cell === undefined) continue
+        lines.push('    ' + comment)
+        lines.push('    ' + name + ': ' + (typeof cell === 'string' ? esc(cell) : String(cell)))
+      }
     }
   }
   lines.push(COMMENT_DEBUG)

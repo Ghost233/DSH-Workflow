@@ -6,14 +6,18 @@
  *   拼回 src/client/index.ts 里那一行 kernel:settingsViewWrite 拼接标记处（apply 闭包内原位），
  *   与 ctx.ts/seam 同模式，源码树里只有这一份真源。这一行标记必须排在 kernel:settingsView 之后：
  *   本片要用那一片的键与文档工具（viewFlagWriteKeyOf / viewFlagSetInDoc / viewFlagJournalKeyOf /
- *   viewFlagLegacyWrite / viewFlagLogDocFail），以及 kernel/settings-view-state.ts 的状态对象。
+ *   viewFlagLegacyWrite / viewFlagLogDocFail / viewFlagLogToggle / viewFlagLogMergeFail），
+ *   以及 kernel/settings-view-state.ts 的状态对象。
  *
  * 本片管「写这一趟」：待写队列（journal）、500 毫秒防抖、真正要写之前先重读文件再合并、
  *   回包按值划队列、写失败后留队并重试一趟。
  *
- * 接线：store-prefs.ts 的 isBannerFolded / setBannerFolded 与 views/SubworkspaceMark.js 的「自动展开过没有」
- *   那一段改调这一族（导出名与签名一字不变），旧表那几行原地留着当过渡；本片不在（老产物、渲染替身里）
- *   或回 false 时，调用方照改动前的老办法写旧表。
+ * 接线：views/SubworkspaceMark.js 的「自动展开过没有」那一段改调这一族（导出名与签名一字不变），
+ *   旧表那几行原地留着当过渡；本片不在（老产物、渲染替身里）或回 false 时，调用方照改动前的老办法写旧表。
+ *   胶囊状态栏与 deck 工具箱（#1612）不走旧表：它们只有设置文件一份真源，没有旧 localStorage 键可兜。
+ *   #1612 起多一个写口 setViewFlagValue：它不改写值（不做真假值转换），只负责把字符串原样交给
+ *   「改内存文档 → 进队列 → 防抖 → 写前重读合并」这一条路，给 kernel/deck-state.ts 的
+ *   setDeckStatusBar / setDeckTools 用；返回值含义与 setViewFlag 一致（true ＝ 交给文件这条路了）。
  *
  * 为什么单独一片：settings-view.js 在拆出这一片之前按门禁算法已经 349 行（文件粒度门禁上限 350 行，
  *   见 tests/verify-file-granularity.ts），而本次修复的四个必修点里有三个都落在写这条路上，塞不进去。
@@ -34,6 +38,9 @@
  *       写进去的别的格，照样可能被这一趟整份顶掉（实测），不许说成不会。
  *   四、认不出工作区根时这一片直接返回失败、一个字都不写文件（见 settings-view.ts 的 viewFlagWriteKeyOf）：
  *       会话目录当键写下去会留下永远合并不到一起的孤儿记录。
+ *       只有一个例外（#1641）：设置页总览的行来自工作区名单，调用方明确说这一行在名单上（listed）时，
+ *       名单上的路径就是用户看得见的那条目录、不是会话里的猜测，可以按它先记一条带 unopened 标记的临时
+ *       记录；等工作区打开、认出根以后由 #1640 合并到根那一条。
  */
     import { VIEW_FLAG_WRITE_DEBOUNCE_MS } from '../../shared/time-config/values.js'
     // 跨闭包的值引用按仓里规矩写模块级 declare（实现只在拼好的闭包里有一份，类型检查各看各的）：
@@ -55,6 +62,10 @@
     declare function viewFlagEntryKeyOf(...args: any[]): any;
     declare function viewFlagLegacyWrite(...args: any[]): any;
     declare function viewFlagLogDocFail(...args: any[]): any;
+    // #1642：文字开关点按的结论行（实现住在 kernel/settings-view.ts，与 viewFlagLogDocFail 相邻）。
+    declare function viewFlagLogToggle(...args: any[]): any;
+    // #1642：合并结果没写进文件时的告警行（实现同样住在 kernel/settings-view.ts，与上面那两行相邻）。
+    declare function viewFlagLogMergeFail(...args: any[]): any;
     declare function settingsUiSetInDoc(...args: any[]): any;
     declare function settingsTemplatesSetInDoc(...args: any[]): any;
     declare function settingsDebugSetInDoc(...args: any[]): any;
@@ -64,6 +75,13 @@
     declare function tplLegacyWriteAll(...args: any[]): any;
     declare function settingsViewLoad(...args: any[]): any;
     declare function viewFlagWriteKeyOf(...args: any[]): any;
+    declare function viewFlagNormOf(...args: any[]): any;
+    declare function viewFlagSeedValueOf(...args: any[]): any;
+    declare const VIEW_FLAG_SEED_NAMES: any;
+    // #1612 两个文字开关（statusBar、deckTools）的名字表与允许值表住在 kernel/settings-view.js，
+    //   这里按仓里跨片规矩声明一句（实现只在拼好的闭包里有一份），用来判「这一笔在文件里写进去了没有」。
+    declare function viewFlagIsTextNameOf(...args: any[]): any;
+    declare function viewFlagTextValuesOf(...args: any[]): any;
     declare const timer: any;
     // 防抖窗口取 500 毫秒，理由有三条。第一条：一次收起或展开在界面上往往连着来两下（点按钮那一下，
     //   加同一个工作区别的会话跟着重渲染那一趟），而每一次落盘都是宿主先读整份文件、再整份写回。
@@ -71,6 +89,123 @@
     // 第三条：观看状态是人点一下就期待下次打开还在的东西，窗口太长，点完立刻关掉整个窗口那一下
     //   （页面卸载之后定时器不再有机会跑）就会把最后一次改动丢掉。
     // 这个合并窗住中央：config/intervals.yaml 的 viewFlagWriteDebounceMs，值由 tests/verify-time-config.ts 看守（本文件顶部 import 真引用）。
+    // #1640：认出工作区根以后，把「按名单路径先记下」的临时记录合并到根那一条，文件里不留两处分家。
+    //   判据只有一条：临时记录里写下来的格就是用户真点过的格（#1640 起临时记录不再种缺省，见 settings-view.ts
+    //   的 viewFlagSetInDoc）；合并时把这些格搬到根记录上，用户最后一次明确点过的选择覆盖根记录里更早的值，
+    //   没点过的格一个都不碰，根记录原来的选择（或它自己的缺省）原样留着。
+    //   旧格式（#1641 版临时记录把三格缺省一并种进去了）分不出点过没点过，只能按「值与种子缺省不同才算点过」
+    //   近似处理；那个格式没发布过，这里只兜底，不让它把根记录里用户真正的选择盖成缺省。
+    const viewFlagMergeCarryOf = function (entry: any, tempKey: any): any {
+      const out: any = {}
+      try {
+        if (!entry || typeof entry !== 'object') return out
+        const legacy = entry['noRepoDismissed'] !== undefined || entry['subwsMarkAutoShown'] !== undefined
+        for (let i = 0; i < VIEW_FLAG_SEED_NAMES.length; i++) {
+          const name = VIEW_FLAG_SEED_NAMES[i]
+          const allowed: any = viewFlagTextValuesOf(name)
+          if (!allowed || !allowed.length) continue
+          const v = entry[name]
+          if (typeof v !== 'string' || allowed.indexOf(v) < 0) continue
+          if (legacy && v === viewFlagSeedValueOf(tempKey, name)) continue
+          out[name] = v
+        }
+      } catch (e) {}
+      return out
+    }
+    // 队列里按临时键记着的那几笔挪到根键上：值已经搬进根记录了，再按临时键写一遍会在文件里重新长出
+    //   临时记录（写前重读合并按 d.key 落）。目标格已经在队列里（更新的一笔）时不覆盖，只把旧那笔划掉。
+    const viewFlagMergeMoveJournal = function (tempKey: any, rootKey: any): void {
+      try {
+        if (rootKey === tempKey) return
+        const jks = Object.keys(viewFlagState.journal)
+        for (let i = 0; i < jks.length; i++) {
+          const d = viewFlagState.journal[jks[i]]
+          if (!d || !d.key || viewFlagNormOf(d.key) !== viewFlagNormOf(tempKey)) continue
+          delete viewFlagState.journal[jks[i]]
+          const nk = viewFlagJournalKeyOf(rootKey, d.name)
+          if (viewFlagState.journal[nk]) continue
+          d.key = rootKey
+          delete d.unopened
+          viewFlagState.journal[nk] = d
+        }
+      } catch (e) {}
+    }
+    // 把内存文档里所有「已经认得出根」的临时记录合并掉：返回这次合并了几条（0 = 没有可合的）。
+    //   同一条路径的写法不同（大小写、末尾斜杠、分隔符）折算成同一个根时算「原地毕业」：那条记录本来就是
+    //   根那一条，只需清掉标记、补齐普通记录该有的几格，不搬值。
+    //   合并成功（值已经改进内存文档）时记下待落盘标记与一条待写日志：日志等这一趟写成功才发，
+    //   写失败时不留一行「合了」的假话。
+    const viewFlagMergeDoc = function (doc: any, via: any): any {
+      let merged = 0
+      try {
+        if (!doc || typeof doc !== 'object' || !doc.workspaces || typeof doc.workspaces !== 'object') return 0
+        const tempKeys = Object.keys(doc.workspaces)
+        for (let i = 0; i < tempKeys.length; i++) {
+          const tempKey = tempKeys[i]
+          const rec = doc.workspaces[tempKey]
+          if (!rec || typeof rec !== 'object' || rec.unopened !== true) continue
+          const rootKey = viewFlagDocKeyOf(tempKey)
+          if (!rootKey) continue
+          const carried = viewFlagMergeCarryOf(rec, tempKey)
+          let fields = 0
+          const existing = viewFlagEntryKeyOf(doc, rootKey)
+          if (existing && existing !== tempKey) {
+            // 根那一条已经在：把用户点过的格逐格搬上去，临时记录删掉。
+            for (const name of Object.keys(carried)) {
+              if (viewFlagSetInDoc(doc, rootKey, rootKey, name, carried[name])) fields += 1
+            }
+            delete doc.workspaces[tempKey]
+          } else {
+            // 根那一条还不在（或它就是这条临时记录，只是写法不同）：原地毕业 —— 补齐普通记录该有的几格、
+            //   清掉标记，键换成根的写法（写法相同就不用换）。
+            for (let j = 0; j < VIEW_FLAG_SEED_NAMES.length; j++) {
+              const n = VIEW_FLAG_SEED_NAMES[j]
+              if (rec[n] === undefined) rec[n] = viewFlagSeedValueOf(tempKey, n)
+            }
+            delete rec.unopened
+            if (rootKey !== tempKey) { doc.workspaces[rootKey] = rec; delete doc.workspaces[tempKey] }
+            fields = Object.keys(carried).length
+          }
+          viewFlagMergeMoveJournal(tempKey, rootKey)
+          merged += 1
+          try {
+            if (viewFlagState.mergePending !== true) viewFlagState.mergePending = true
+            if (!viewFlagState.mergeLog || typeof viewFlagState.mergeLog !== 'object') viewFlagState.mergeLog = {}
+            const h = dswsLogHash(String(tempKey))
+            if (!viewFlagState.mergeLog[h]) {
+              viewFlagState.mergeLog[h] = { via: String(via || ''), rootHash: dswsLogHash(String(rootKey)), fields: fields }
+            }
+          } catch (eL) {}
+        }
+      } catch (e) {}
+      return merged
+    }
+    // 试合并一次，合到了就排一次落盘（合并结果写进文件才算数）。设置文档还没到手时什么都不做。
+    //   供 kernel/settings-view.ts 的收口（文档到手那一下）与 snapshot-cache-store.ts 的「刚认出工作区根」
+    //   那一下调用；两条路都可能先到，重复调没有副作用（没有临时记录时直接回 0）。
+    export const viewFlagMergeNow = function (via: any): any {
+      try {
+        if (viewFlagState.status !== 'ready' || !viewFlagState.doc) return 0
+        const merged = viewFlagMergeDoc(viewFlagState.doc, via)
+        if (merged > 0) viewFlagScheduleWrite()
+        return merged
+      } catch (e) { return 0 }
+    }
+    // 这一趟写成功之后才发合并日志：每条临时记录一行，说明是哪条路带起来的、归到哪个根、搬了几格。
+    //   工作区原始路径不进日志，键只记短散列；写失败时这行不发，等下一趟写成功再发。
+    const viewFlagMergeFlushLog = function (): void {
+      try {
+        if (viewFlagState.mergePending !== true) return
+        const hashes = Object.keys(viewFlagState.mergeLog || {})
+        for (let i = 0; i < hashes.length; i++) {
+          const m = viewFlagState.mergeLog[hashes[i]]
+          if (!m) continue
+          try { log('info', 'settings.merge', { via: String(m.via || ''), keyHash: String(hashes[i]), rootHash: String(m.rootHash || ''), fields: Number(m.fields) || 0 }) } catch (eL) {}
+        }
+        viewFlagState.mergeLog = {}
+        viewFlagState.mergePending = false
+      } catch (e) {}
+    }
     // 把这一趟要写的整份文档备好：先重读一次文件，再把本窗改过的那几格合并进刚读回来的那一份。
     //   重读不回来（手机不通、文件是更高版本、内容坏了、还没建出来）就照内存里那一份写：内存那一份至少
     //   带着本窗的改动，比什么都不写强；顶掉别人别的格的风险与改动前一样，不会更差。
@@ -94,6 +229,9 @@
           //   判据取自 kernel/settings-debug.js 同一个产物里的名字；老产物里没有这个函数时按改动前的行为走。
           if (typeof settingsDebugDocLooksReal === 'function' && !settingsDebugDocLooksReal(res.value, true)) return useMemory()
           const fresh = res.value
+          // #1640：盘上那份里可能还留着别窗写进去、本窗内存里没有的临时记录，先按同一套规则合并掉 ——
+          //   这一趟写出去的就是合并后的一份，文件里不留两处分家。
+          try { viewFlagMergeDoc(fresh, 'write') } catch (eM) {}
           for (let i = 0; i < sentKeys.length; i++) {
             const d = viewFlagState.journal[sentKeys[i]]
             if (!d) continue
@@ -106,7 +244,7 @@
             // 用队列里这一笔自带的键，不重算（#1012 后续修复的建议 2）：本会话若在排期与落盘之间跟丢了根，
             //   重算出来的键会换成会话目录那一条，文件里就长出同一工作区的第二条记录、根那条还是旧值。
             const key = d.key || viewFlagDocKeyOf(d.cwd)
-            if (key) viewFlagSetInDoc(fresh, d.cwd, key, d.name, d.value)
+            if (key) viewFlagSetInDoc(fresh, d.cwd, key, d.name, d.value, d.unopened)
           }
           // 内存那一份换成刚读回来的那一份：这样界面接下来读到的，与盘上那一份是同一份（含别人写进去的格）。
           viewFlagState.doc = fresh
@@ -123,22 +261,31 @@
           const k = sentKeys[i]
           const cur = viewFlagState.journal[k]
           if (!cur) continue
+          // #1642：这一笔真写进了文件（宿主回包说成功）——文字开关记一行 written，指路「落盘这一步成了」。
+          if (viewFlagIsTextNameOf(cur.name)) viewFlagLogToggle(cur.name, sentVals[k], cur.unopened === true, true, 'written', cur.key || cur.cwd)
           if (cur.value === sentVals[k]) { delete viewFlagState.journal[k]; continue }
           again = true
         }
         viewFlagState.retryLeft = 1
+        // #1640：合并结果这一趟真写进了文件，才把合并日志发出去（写失败时不发「合了」的假话）。
+        if (viewFlagState.mergePending === true) viewFlagMergeFlushLog()
         if (again) viewFlagScheduleWrite()
+        // 合并可能把队列里的那几笔挪到了新键上（不在这一趟的 sentKeys 里）：还有没确认的就再排一趟。
+        else if (Object.keys(viewFlagState.journal).length > 0) viewFlagScheduleWrite()
       } catch (e) {}
     }
     // 这一笔没写进文件时的过渡兜底 + 留队：
-    //   ① 按旧表的老办法记下来（键与记法与改动前逐字一致）；
+    //   ① 有旧表的几族按老办法记下来（键与记法与改动前逐字一致）：界面偏好、模板、调试开关、红文件夹标志；
+    //      #1612 的 statusBar 与 deckTools 没有旧键可退，不写旧表，只留在队列里等下一趟；
     //   ② 队列里不划掉 —— 下一趟写（用户再动一下，或下面那次自动重试）会带着它们再试一次；
     //   ③ 自动重试只给一趟：额度为 0 就不再自己排，只等用户下一次动作（故障持续时不许自续）。
     //   诚实说明这一手兜底兜得住什么：文件里已经有这个工作区的记录时，写进旧键的这一份读不回来
     //   （读侧「文件里这条记录有值就以它为准」），它只在本窗口内充当记性；页面一关就只剩文件里那一份。
     //   真正让这次改动不丢的是上面第 ② 条：这一格还在队列里，下一趟写会把它落进文件。
-    const viewFlagFallbackToLegacy = function (sentKeys: any): void {
+    const viewFlagFallbackToLegacy = function (sentKeys: any, reason: any): void {
       try {
+        // #1642：写这一趟没成 —— 先给合并条目补告警行（每条只报一次），再照老办法处理待写的那几格。
+        if (viewFlagState.mergePending === true) viewFlagLogMergeFail(reason)
         for (let i = 0; i < sentKeys.length; i++) {
           const d = viewFlagState.journal[sentKeys[i]]
           if (!d) continue
@@ -148,6 +295,10 @@
           if (d.section === 'templates') { tplLegacyWriteAll(); continue }
           // 调试开关那一族兜底：把内存这一份（＝真值）写回旧键 dsws.debug 当秒显快照，理由见 settings-debug.js。
           if (d.section === 'debug') { settingsDebugLegacyWrite(); continue }
+          // #1612 的两个文字开关没有对应的旧 localStorage 键（旧版根本没有这两件事），也不再有旧字段可换算：
+          //   写不进文件就留在队列里等下一趟（下一趟会再试），这里只补一行日志说明这一笔没落地。
+          // #1642：文字开关这一笔没落成 —— 补一行 storage.fail，再记下是宿主不在、文件被拒还是写的过程中抛错。
+          if (viewFlagIsTextNameOf(d.name)) { viewFlagLogDocFail(); viewFlagLogToggle(d.name, d.value, d.unopened === true, false, String(reason || 'write-error'), d.key || d.cwd); continue }
           viewFlagLegacyWrite(d.cwd, d.name, d.value)
         }
         if (viewFlagState.retryLeft > 0) { viewFlagState.retryLeft -= 1; viewFlagScheduleWrite() }
@@ -187,6 +338,11 @@
         if (!key || !snap || !snap.workspaces || typeof snap.workspaces !== 'object') return d.value
         const ek = viewFlagEntryKeyOf(snap, key)
         const v = ek ? (snap.workspaces[ek] || {})[d.name] : undefined
+        // #1612 的两个文字开关：文件里是各自允许的字符串才算「这一笔写进去了」，读不懂就退回队列里的值。
+        if (viewFlagIsTextNameOf(d.name)) {
+          const allowed: any = viewFlagTextValuesOf(d.name)
+          return (typeof v === 'string' && allowed.indexOf(v) >= 0) ? v : d.value
+        }
         return (typeof v === 'boolean') ? v : d.value
       } catch (e) { return d.value }
     }
@@ -202,7 +358,7 @@
     //   sentVals 必须是对着同一份快照算出来的（见 viewFlagSentValIn）：这一趟发的是哪个值只有一个答案。
     const viewFlagSendDoc = function (snap: any, sentKeys: any, sentVals: any, t0: any): void {
       try {
-        if (typeof host === 'undefined' || !host || typeof host.call !== 'function') { viewFlagFallbackToLegacy(sentKeys); return }
+        if (typeof host === 'undefined' || !host || typeof host.call !== 'function') { viewFlagFallbackToLegacy(sentKeys, 'host-missing'); return }
         host.call('wf.setSettings', { value: snap }).then(function (res: any): any {
           const okRes = !!(res && res.ok === true)
           try {
@@ -211,18 +367,21 @@
           } catch (eL) {}
           if (okRes) { viewFlagConfirmSent(sentKeys, sentVals); return }
           // 写失败（含文件只读被拒、手机说不行）：写回旧键做过渡，并把这几个还留在队列里。
-          viewFlagFallbackToLegacy(sentKeys)
-        }, function (): void { viewFlagFallbackToLegacy(sentKeys) })
-      } catch (e) { viewFlagFallbackToLegacy(sentKeys) }
+          viewFlagFallbackToLegacy(sentKeys, 'write-refused')
+        }, function (): void { viewFlagFallbackToLegacy(sentKeys, 'write-error') })
+      } catch (e) { viewFlagFallbackToLegacy(sentKeys, 'write-error') }
     }
     // 真写一趟：先重读合并，再把「真正要发出去的那一份」照一张相，按这一份记下这一趟发出去的值，最后整份写出去。
     const viewFlagWriteNow = function (): void {
       try {
         viewFlagState.timer = 0
         if (viewFlagState.status !== 'ready' || !viewFlagState.doc) return
+        // #1640：写之前先合并一次内存文档里已经认得出根的临时记录 —— 合并会把队列里的那几笔挪到根键上，
+        //   所以必须在取 sentKeys 之前做。只有合并结果、没有待写格子时也要走一趟（结果要落盘才算数）。
+        try { viewFlagMergeDoc(viewFlagState.doc, 'write') } catch (eM) {}
         const sentKeys = Object.keys(viewFlagState.journal)
-        if (!sentKeys.length) return
-        if (typeof host === 'undefined' || !host || typeof host.call !== 'function') { viewFlagFallbackToLegacy(sentKeys); return }
+        if (!sentKeys.length && viewFlagState.mergePending !== true) return
+        if (typeof host === 'undefined' || !host || typeof host.call !== 'function') { viewFlagFallbackToLegacy(sentKeys, 'host-missing'); return }
         const t0 = Date.now()
         // 照相与记值必须对着同一份：先照相，再从这份相里按格取出「这一趟发出去的值」（文件头那一条判据）。
         const sendOf = function (doc: any): void {
@@ -231,13 +390,13 @@
         }
         viewFlagFreshDocFor(sentKeys).then(function (fresh: any): any {
           const value = fresh || viewFlagState.doc
-          if (!value) { viewFlagFallbackToLegacy(sentKeys); return }
+          if (!value) { viewFlagFallbackToLegacy(sentKeys, 'write-error'); return }
           sendOf(value)
         }, function (): void {
           if (viewFlagState.doc) sendOf(viewFlagState.doc)
-          else viewFlagFallbackToLegacy(sentKeys)
+          else viewFlagFallbackToLegacy(sentKeys, 'write-error')
         })
-      } catch (e) { try { viewFlagFallbackToLegacy(Object.keys(viewFlagState.journal)) } catch (e2) {} }
+      } catch (e) { try { viewFlagFallbackToLegacy(Object.keys(viewFlagState.journal), 'write-error') } catch (e2) {} }
     }
     // 撤销上一次排的那支等待。宿主那只 timer 交回的是可调用的撤销器函数，对它调全局 clearTimeout 是
     //   空操作（不报错、也撤不掉，见 #1115），所以句柄一律交给 hostShim 的 timer.clearTimeout 按形状处理；
@@ -316,4 +475,53 @@
         viewFlagScheduleWrite()
         return true
       } catch (e) { return false }
+    }
+    // #1612 写一格文字开关：与 setViewFlag 同一条路（loading 先进 deferred、ready 后改内存文档 + 进队列 + 防抖，
+    //   写前重读合并、写失败留队重试都在同一条路上），只是不做真假值转换 —— 值原样放进去（statusBar 写
+    //   'show'/'hide'，deckTools 写 'on'/'off'）。返回值与 setViewFlag 同义：true ＝ 交给文件这条路了
+    //   （可能还在防抖窗口里），false ＝ 接不下（认不出工作区根、文档问不到、是更高版本，或者名字/值不是这两个
+    //   开关认得出的那几种之一），调用方据此提示。
+    //   第四个参数 listed 只有设置页总览会传（#1641）：这一行来自工作区名单时，认不出根也可以按名单上的路径
+    //   先存一条带 unopened 标记的临时记录；别的调用方不传，口径仍是文件头第四条「认不出根一个字不写」。
+    export const setViewFlagValue = function (cwd: any, name: any, value: any, listed: any): any {
+      try {
+        const raw = value
+        // 只接这两个文字名字、只认各自的那几个字面量：别的名字或值的调用直接回 false，调用方据此知道这一笔没接。
+        //   为什么先挡一道、不交给写盘那一趟去发现：核写盘时会按字面量校验整份文档，认不出的值会让整份写失败，
+        //   然后走旧表兜底 —— 而旧表只有横幅折叠一个布尔键，兜底时只能按「hide」猜，猜出来的那一格与用户点的那一下
+        //   没有关系，等于静默写错。挡在这里，错值一步都进不了内存文档，也就不会有任何一格被猜着写到别处。
+        // #1642：这一笔接不下时也各记一行 toggle，说清是哪一种「没接」——调用方在界面上看到的就是「点了没反应」。
+        if (!viewFlagIsTextNameOf(name)) { viewFlagLogToggle(name, raw, listed === true, false, 'unknown-flag', cwd); return false }
+        if (viewFlagTextValuesOf(name).indexOf(raw) < 0) { viewFlagLogToggle(name, raw, listed === true, false, 'bad-value', cwd); return false }
+        settingsViewLoad()
+        let key = viewFlagWriteKeyOf(cwd)
+        // #1641：名单上的行认不出根时，名单路径本身就可以当临时键 —— 它是用户看得见的目录，不是会话里的猜测。
+        //   这样存下来的记录带 unopened 标记，等工作区打开、认出根以后合并到根那一条（#1640）。
+        let unopened = false
+        if (!key && listed === true) {
+          key = String(cwd == null ? '' : cwd).trim()
+          unopened = key !== ''
+        }
+        if (!key) { viewFlagLogToggle(name, raw, listed === true, false, 'no-root', cwd); return false }
+        if (viewFlagState.status === 'loading') {
+          viewFlagState.deferred[viewFlagJournalKeyOf(key, name)] = (unopened
+            ? { cwd: cwd, name: name, value: raw, key: key, unopened: true }
+            : { cwd: cwd, name: name, value: raw, key: key })
+          viewFlagLogToggle(name, raw, unopened, true, 'deferred', key)
+          return true
+        }
+        if (viewFlagState.status !== 'ready') { viewFlagLogToggle(name, raw, unopened, false, viewFlagState.status === 'readonly' ? 'readonly' : 'unavailable', key); return false }
+        if (!viewFlagSetInDoc(viewFlagState.doc, cwd, key, name, raw, unopened)) {
+          viewFlagLogDocFail()
+          viewFlagLogToggle(name, raw, unopened, false, 'doc-fail', key)
+          return false
+        }
+        viewFlagState.journal[viewFlagJournalKeyOf(key, name)] = (unopened
+          ? { cwd: cwd, name: name, value: raw, key: key, unopened: true }
+          : { cwd: cwd, name: name, value: raw, key: key })
+        viewFlagScheduleWrite()
+        viewFlagLogToggle(name, raw, unopened, true, 'queued', key)
+        return true
+      // #1642：这一笔在接的过程中抛错（内存文档或队列出问题）——记一行再如实回 false，别静默吞掉。
+      } catch (e) { try { viewFlagLogToggle(name, value, listed === true, false, 'error', cwd) } catch (e2) {} return false }
     }

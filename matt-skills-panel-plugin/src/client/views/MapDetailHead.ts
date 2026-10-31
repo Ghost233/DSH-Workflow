@@ -26,15 +26,16 @@ declare function effortOf(...args: any[]): any;
 declare const Tip: any;
 declare const fetchMapTickets: any;
 declare const issueUrlFor: any;
+// #1557：打开方式由后端声明（openContainer），视图不再自己按地址前缀分流。
+declare function openModeFor(...args: any[]): any;
+declare function openTrackerTarget(...args: any[]): any;
 // #1286：容器身份色与计数词表键的真源在 kernel/container-view.ts（列表页同一份）
 declare function containerKindOf(...args: any[]): any;
 declare function containerCountKey(...args: any[]): any;
 declare const CONTAINER_ACCENT: any;
-// #1511：头部编号同样写成「#目录/编号」，显示规则住在 kernel/ticket-label.ts（列表行与它同一条）。
-declare function ticketLabelOf(...args: any[]): any;
-// B 方案：同一颗控件的两段子节点与上限宽度同样走那一份（目录可省略、编号绝不缩小）。
-declare function ticketLabelNodesOf(...args: any[]): any;
-declare const TICKET_LABEL_MAX_WIDTH: any;
+// #1511 / #1564：号码写成「#目录/编号」的显示规则住在 kernel/ticket-label.ts，整颗徽标的画法（四种外壳）
+//   收在 views/shared/ticketBadge.ts；容器页头只提供票身份与容器身份色。
+declare function ticketBadgeOf(...args: any[]): any;
 
 export const MapDetailHead = ({ st, m, mt, multiEffort, kind }: any) => {
   // 2026-10-26 维护者要求：effort 徽标先整体隐藏，代码保留、不删除。
@@ -57,9 +58,8 @@ export const MapDetailHead = ({ st, m, mt, multiEffort, kind }: any) => {
   const retry = function (e: any) { if (e && e.stopPropagation) e.stopPropagation(); if (typeof fetchMapTickets === 'function') fetchMapTickets(st, mapKey, { force: true, effortId: effortOf(m) }) }
   const openWeb = function (e: any) {
     if (e && e.stopPropagation) e.stopPropagation()
-    if (!url) return
-    if (/^https?:\/\//i.test(String(url))) { try { window.open(url, '_blank', 'noreferrer') } catch (err) {} }
-    else { try { if (typeof host !== 'undefined' && host.call) host.call('wf.openPath', { path: url }) } catch (err) {} }
+    // #1557：容器打开方式由后端声明（openContainer），这里只执行，不再按地址前缀分流。
+    try { openTrackerTarget(st, m.number, (typeof host !== 'undefined' ? host : null), effortOf(m), 'container') } catch (err) {}
   }
   // #1286：这一页是哪种容器 —— 探索地图还是规格（实施地图）。身份判定与计数句的词表键
   //   取 container-view.ts 那一份（列表页同一份），别处不再各判一次。
@@ -78,9 +78,9 @@ export const MapDetailHead = ({ st, m, mt, multiEffort, kind }: any) => {
   })()
   const ghostBtn = { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '0 6px', fontSize: 10, flex: 'none' }
   return h('div', null, [
-    // 编号徽章 + 标题（#691 由 MapDetail.js 原样移来；B 方案：上限宽度 + 目录前缀可省略、编号尾巴绝不缩小）
+    // 编号徽章 + 标题（#691 由 MapDetail.js 原样移来；#1564 起徽标本身走共用组件）
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 2 } }, [
-      h(Tip, { content: ticketLabelOf(m.key != null ? m.key : m.number, effortOf(m)) }, h('span', { className: 'dsws-idnum', style: { color: accent, borderColor: accent, flex: 'none', display: 'inline-flex', alignItems: 'center', maxWidth: TICKET_LABEL_MAX_WIDTH, overflow: 'hidden' } }, ticketLabelNodesOf(h, m.key != null ? m.key : m.number, effortOf(m)))),
+      ticketBadgeOf(h, { key: m.key != null ? m.key : m.number, effortId: effortOf(m), surface: 'badge', color: accent }),
       h(Tip, { className: 'dsws-tip', content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullTitle')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, m.title)]) }, h('div', { className: 'dsws-mtitle dsws-tt-wrap', style: { flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 } }, [
         // effort 维度：地图属于哪个 effort 一眼可见（多个 effort 时同号地图不再分不清）
         (SHOW_EFFORT_BADGE && multiEffort && effortOf(m)) ? h(Tip, { content: effortOf(m) }, h('span', { className: 'dsws-chip dsws-eff', 'aria-label': effortOf(m), style: { fontSize: 10, lineHeight: 1.6, padding: '0 6px', flex: 'none', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: 'rgba(88,166,255,.14)', color: '#58a6ff', border: '1px solid rgba(88,166,255,.45)' } }, effortOf(m))) : null,

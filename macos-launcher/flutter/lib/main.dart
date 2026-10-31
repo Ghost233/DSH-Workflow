@@ -387,6 +387,42 @@ class _LauncherPageState extends State<LauncherPage> {
           ],
         ),
       ]),
+      _section('Superagent', [
+        Text('独立服务：${_stateName(model.superagentSnapshot.state)}'),
+        if (model.superagentSnapshot.message?.isNotEmpty == true)
+          SelectableText(model.superagentSnapshot.message!),
+        const Text('首次使用时，请在 Superagent 面板配置模型、GitHub 仓库和代理账号。'),
+        const Text('Superagent 工作任务拥有当前 macOS 用户的完整访问权限。'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _button(
+              '启动 Superagent',
+              model.startSuperagent,
+              enabled: !model.superagentBusy,
+            ),
+            _button(
+              '停止 Superagent',
+              model.stopSuperagent,
+              enabled: !model.superagentBusy,
+            ),
+            _button(
+              '打开 Superagent 面板',
+              model.openSuperagent,
+              enabled:
+                  !model.superagentBusy &&
+                  model.superagentSnapshot.ready == true,
+            ),
+            _button(
+              '刷新 Superagent 状态',
+              model.refreshSuperagent,
+              enabled: !model.superagentBusy,
+            ),
+          ],
+        ),
+        const Text('关闭启动器后，Superagent 继续独立运行。'),
+      ]),
       _section('访问与权限', [
         SwitchListTile(
           contentPadding: EdgeInsets.zero,

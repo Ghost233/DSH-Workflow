@@ -262,7 +262,8 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
         (resources / 'node_modules/@deepseek-ai/dsh/package.json').write_text(json.dumps(
             {'name': '@deepseek-ai/dsh', 'version': '0.2.1-alpha.2'}))
         (resources / 'desktop/DeepSeek Harness.app').mkdir(parents=True)
-        for relative in ['macos-launcher/runtime/plugin-payload.mjs', 'agent-observation-plugin/src/delivery-manifest.mjs']:
+        for relative in ['macos-launcher/runtime/plugin-payload.mjs', 'macos-launcher/runtime/superagent-payload.mjs',
+                         'agent-observation-plugin/src/delivery-manifest.mjs', 'vendor/dsh-superagent.upstream.json']:
             destination = self.repo / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(SOURCE.parent / relative, destination)
@@ -270,10 +271,22 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
         workflow.mkdir()
         for name in ['project-plugins.json', 'project-plugins.lock.json', 'dsh-runtime.json']:
             shutil.copy2(self.repo / name, workflow / name)
+        (workflow / 'vendor').mkdir()
+        shutil.copy2(self.repo / 'vendor/dsh-superagent.upstream.json', workflow / 'vendor/dsh-superagent.upstream.json')
         (resources / 'plugins').mkdir()
         helper = (SOURCE.parent / 'macos-launcher/runtime/plugin-payload.mjs').as_uri()
         subprocess.run(['node', '--input-type=module', '-e',
                         f'import {{sealPluginPayload}} from {json.dumps(helper)}; await sealPluginPayload({json.dumps(str(resources))}, []);'],
+                       env=self.env, check=True, capture_output=True, text=True)
+        superagent = resources / 'superagent/node_modules/dsh-superagent'
+        (superagent / 'lib').mkdir(parents=True)
+        (superagent / 'package.json').write_text(json.dumps({'name': 'dsh-superagent', 'version': '0.1.0',
+                                                           'dsh': {'bundle': {'patch': './cordis.patch.yml'}}}))
+        for name in ['cordis.patch.yml', 'lib/index.js', 'lib/client.js', 'lib/github-watch.js']:
+            (superagent / name).write_text(name)
+        helper = (SOURCE.parent / 'macos-launcher/runtime/superagent-payload.mjs').as_uri()
+        subprocess.run(['node', '--input-type=module', '-e',
+                        f'import {{sealSuperagentPayload}} from {json.dumps(helper)}; await sealSuperagentPayload({json.dumps(str(resources))});'],
                        env=self.env, check=True, capture_output=True, text=True)
         self.wrapper('lipo', "print('arm64')")
         self.wrapper('codesign', 'import os,sys;sys.exit(int(os.environ.get("FIXTURE_SIGN_FAIL","0")))')
@@ -312,6 +325,9 @@ else:sys.exit(2)
         self.assertEqual(manifest['dshVersion'], '0.2.1-alpha.2')
         self.assertRegex(manifest['pluginPayload']['sha256'], r'^[a-f0-9]{64}$')
         self.assertEqual(manifest['pluginPayload']['plugins'], [])
+        self.assertRegex(manifest['superagentPayload']['sha256'], r'^[a-f0-9]{64}$')
+        self.assertEqual(manifest['superagentPayload']['commit'],
+                         json.loads((self.repo / 'vendor/dsh-superagent.upstream.json').read_text())['commit'])
         asset = manifest['assets'][0]
         self.assertEqual(asset['size'], (output / asset['name']).stat().st_size)
         self.assertEqual(asset['sha256'], hashlib.sha256((output / asset['name']).read_bytes()).hexdigest())
@@ -370,6 +386,16 @@ else:sys.exit(2)
         result = self.package_cli(app, output)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('content mismatch', result.stderr)
+        self.assertFalse(output.exists())
+        self.assertFalse((self.root / 'hdiutil.json').exists())
+
+    @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS packaging CLI seam')
+    def test_packaging_rejects_changed_superagent_before_creating_dmg(self):
+        app, output = self.packaging_fixture()
+        (app / 'Contents/Resources/superagent/node_modules/dsh-superagent/lib/client.js').write_text('changed')
+        result = self.package_cli(app, output)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('sealed contents', result.stderr)
         self.assertFalse(output.exists())
         self.assertFalse((self.root / 'hdiutil.json').exists())
 

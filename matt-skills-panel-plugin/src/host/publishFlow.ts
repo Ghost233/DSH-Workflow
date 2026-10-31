@@ -165,9 +165,10 @@ export function createPublishFlow(deps: Deps) {
     }
   }
 
-  // no-gh 那条安装提示由宿主给（面板文案归宿主）。房间自己那份措辞更旧，不拿它换掉界面上已经在用的这一份。
-  //   这是「同一段文案两处各存一份」的已知重复：改文案时两处一起看，房间那份不在本票范围。
-  const NO_GH_PROMPT = '请为 DSH 安装 GitHub CLI（gh）—— 面板所有数据依赖 gh：\n\n1. 先检查：终端执行 `gh --version`；有版本号输出 → 直接汇报已装版本并结束，不要重复安装；\n2. 无 gh 则在 macOS 执行 `brew install gh`;\n3. 安装后验证：重开终端使 PATH 生效，`gh --version` 输出版本号；\n4. 若 gh 已装但 DSH 仍报未安装：点环境检查「重测」按钮或重启 DSH Desktop；\n5. 完成后汇报：gh 版本号 + 「gh CLI 可用」项已变绿。'
+  // #1621：no-gh 那条排查/安装提示由宿主给（面板文案归宿主）。同一段话在房间的 src/tracker/rooms/github/init-project.ts
+  //   里还存着一份（房间回包要自带 prompt），两处必须逐字一致；门禁 tests/verify-1621-gh-missing-copy.ts 盯着这件事，
+  //   改一处就同步改另一处。
+  const NO_GH_PROMPT = 'DSH 进程启动时从父进程继承的 PATH 中未解析到 GitHub CLI（gh）可执行文件。该结果不等同于 gh 未安装。按以下顺序处理：\n\n1. 在 DSH 之外的终端执行 `gh --version`。\n2. 有版本号输出：gh 已安装。无需重复安装。将 gh 所在目录加入用户级或系统级 PATH，或将本插件读取的 DSH_GH_PATH 设为 gh 可执行文件的绝对路径，再重启 DSH 服务；若该目录已在 PATH 中，直接重启 DSH 服务。如通过启动器运行，从 Finder 或 Launchpad 重新打开 Ghost DSH Station，避免从旧终端或旧 IDE 会话启动（其进程环境可能未包含新 PATH）。\n3. 无版本号输出：该终端也无法执行 gh。检查 gh 的安装目录（macOS ARM64 常见：/opt/homebrew/bin/gh）；确认未安装后，按官方说明安装：https://cli.github.com/。安装后重启 DSH。\n4. “重新检查”只重跑检查逻辑，不重新读取进程环境变量；不能替代重启 DSH。\n5. 完成后确认：`gh --version` 有输出，环境检查的 gh 项通过。'
 
   // 失败回包的映射（#1445）：房间的档位名与宿主原来的 errorKind 是同一套（no-git / no-gh / not-logged-in /
   //   already-exists / network / permission / git-ownership / unknown），所以档位原样透传，界面那边的分支不用改。
@@ -207,7 +208,7 @@ export function createPublishFlow(deps: Deps) {
   // ============ 红卡建仓发布（T1 #34 · 无仓库时一键建仓发布）============
   // 输入：{ cwd, name, visibility }（visibility = 'public' | 'private'，默认 private）
   // #1445 起流程：#994 工作区 git 可用性探测（属主不一致则补 safe.directory 重试一次）→ 开一个写会话 →
-  //   把建仓整步交给 GitHub 房的 initProject（gh 解析、登录态、git init/add/commit、repo create、push 全在里面）→
+  //   把建仓整步交给当前后端房间的 initProject（gh 解析、登录态、git init/add/commit、repo create、push 全在里面）→
   //   按房间回包映射成败。为什么宿主还留着 bad-name 与 git 前置：这两件不碰 gh、也不该等开会话才回答，
   //   而属主自愈改的是用户机器上的全局配置，是面板这条路的既有行为，换路不能丢。
   // 返回：{ ok: true, repo: { owner, name } } | { ok: false, errorKind, error, repoUrl? }
@@ -262,8 +263,25 @@ export function createPublishFlow(deps: Deps) {
     if (rk3 && repoKeys[rk3] !== undefined) delete repoKeys[rk3]
     if (rk3 && repoRoots[rk3] !== undefined) delete repoRoots[rk3]
     // URL 以房间给的那份为准；拿不到 owner 时沿用旧口径给空串（没有 owner 拼出来的地址是错的）。
-    const repoUrl = owner ? (String(ref.url || '') || ('https://github.com/' + owner + '/' + repoName)) : ''
+    // #1191：兜底按会话后端选域（GitLab 房走 gitlab.com），房间正常回 url 时这一格不触发。
+    const backendId = String((opened as { backendId?: unknown }).backendId || '')
+    const fallbackBase = backendId === 'gitlab' ? 'https://gitlab.com/' : 'https://github.com/'
+    const repoUrl = owner ? (String(ref.url || '') || (fallbackBase + owner + '/' + repoName)) : ''
     return { ok: true, repo: { owner: owner, name: repoName }, repoUrl: repoUrl }
+  }
+
+  // ============ 契约操作分发（#1191：UI 的 contract-op 落到这里按当前后端执行）============
+  // 入参：{ op, cwd?, name?, visibility? }（op 如 initProject；只取 cwd/name/visibility 三键透给对应操作，其余键丢弃）。
+  // 为什么只有 initProject：今天 UI 只有建仓向导用 contract-op；未知 op 诚实回 unsupported，不猜、不兜。
+  interface ContractOpArgs { op?: unknown; cwd?: unknown; name?: unknown; visibility?: unknown }
+  async function handleContractOp(args?: ContractOpArgs | null) {
+    const op = args && args.op ? String(args.op).trim() : ''
+    if (!op) return { ok: false, errorKind: 'bad-name', error: '缺少 op（契约操作名，如 initProject）' }
+    if (op !== 'initProject') return { ok: false, errorKind: 'unsupported', error: '不支持的契约操作：' + op }
+    const cwd = (args && args.cwd ? String(args.cwd) : '') || DEFAULT_CWD
+    const name = args && args.name ? String(args.name) : ''
+    const visibility = (args && args.visibility) === 'public' ? 'public' : 'private'
+    return handleInitPublish({ cwd: cwd, name: name, visibility: visibility })
   }
 
   // ============ 重试推送（#420/#426 定版：仅推送，不动建仓）============
@@ -283,7 +301,7 @@ export function createPublishFlow(deps: Deps) {
     const pushR = await gitExec([git, 'push', '-u', 'origin', 'HEAD'], cwd)
     if (pushR.ok) {
       try { const rkRetry = await canonicalKey(cwd || DEFAULT_CWD); setCache({ ts: 0, snapshot: null, error: null, cwd: rkRetry }) } catch (eCache) { try { setCache({ ts: 0, snapshot: null, error: null, cwd: null }) } catch {} /* #696 锚根失败兜底清全部（拿不出目录，仅此一条） */ }
-      return { ok: true, repo: { owner: owner, name: name }, repoUrl: owner ? ('https://github.com/' + owner + '/' + name) : '' }
+      return { ok: true, repo: { owner: owner, name: name }, repoUrl: repoUrl || (owner ? ('https://github.com/' + owner + '/' + name) : '') } // 成功回的地址优先用入参那份（半成功结果带的是真域，GitLab 给 gitlab.com）；入参没有才按旧口径拼
     }
     const gf = gitFail(pushR.error, cwd)
     return { ok: false, errorKind: gf.errorKind, error: gf.error, repoUrl: repoUrl || undefined, repo: { owner: owner, name: name }, halfCreated: true }
@@ -298,5 +316,5 @@ export function createPublishFlow(deps: Deps) {
     const wrapped = async function (...a: never[]): Promise<unknown> { const t0 = Date.now(); try { const r = await fn(...a); phoneLog(method, kind, t0, r); return r } catch (e) { phoneLog(method, kind, t0, null, e); throw e } }
     return wrapped as unknown as F
   }
-  return { handleInitPublish: loggedPhone('wf.initPublish', 'publish', handleInitPublish), handleRetryPush: loggedPhone('wf.retryPush', 'publish', handleRetryPush) }
+  return { handleInitPublish: loggedPhone('wf.initPublish', 'publish', handleInitPublish), handleContractOp: loggedPhone('wf.contractOp', 'publish', handleContractOp), handleRetryPush: loggedPhone('wf.retryPush', 'publish', handleRetryPush) }
 }

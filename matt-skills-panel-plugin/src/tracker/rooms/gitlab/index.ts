@@ -24,6 +24,9 @@ import { glabPreflight } from './preflight.js'
 import { emitReadDegraded } from './read-log.js'
 // #1533：认领只看 `.git/config` 里的远端地址，不扫整份文本（分支名带 gitlab 不再误认领）。
 import { remoteUrlsOfGitConfig } from '../../kernel/git-remote.js'
+// #1555：声明文件用判定层同一套解析器，只认「声明」不认「正文里提了一句」。
+// 旧的整篇 /gitlab/i 扫描会把 GitHub / Local Markdown 的工作区也拉进多命中，详情与评论因此读不到。
+import { normalizeTrackerText, parseIssueTracker } from '../../kernel/issue-tracker-declaration.js'
 import { listIssues, getIssue, createIssue, closeIssue, reopenIssue, updateIssue } from './issues.js'
 import { addComment } from './comments.js'
 import { setLabels } from './labels.js'
@@ -35,6 +38,8 @@ import { listLabels, setLabelColors } from './labels-ops.js'
 import { getCurrentUser, getRepoPermissions } from './identity-ops.js'
 import { listSubIssues } from './sub-issues.js'
 import { initProject } from './init-project.js'
+// #1605：地图薄查真实现（此前 planned，注册表补桩；今天起走真实现）。
+import { listMaps } from './maps.js'
 // #1446：读额度读数与「每次 glab 调用记一条请求」的用量信封。
 import { readGitlabBudget } from './budget.js'
 import { attachGlabOpUsage } from './client.js'
@@ -44,7 +49,7 @@ import type { GITLAB_CAPABILITY_REGISTER } from './capability-register.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
 import { GITLAB_FALLBACK_TIMEOUT_MS } from '../../../shared/time-config/src/values.js'
 
-// —— GitLab 交出来的成员：25 条能力 + id（22 条操作 + describe/issueAddress/getRepoKey 三条定位口）——
+// —— GitLab 交出来的成员：26 条能力 + id（23 条操作 + describe/issueAddress/getRepoKey 三条定位口）——
 // 这份集合不再手写，从本房的登记数据推出来：「明确提供功能」的名字才是实例成员；登记里那 1 条
 // 「明确不支持」（ensureLabelColorsFile）因此不会出现在这里（它由注册表按名录补桩）。
 // 为什么集合与形状住在房间文件里（而不是判定文件）：判定收在 src/tracker/capability-assertions.ts，
@@ -113,11 +118,13 @@ async function readWorkspaceFile(fs: MarkerFs, cwd: string, rel: string): Promis
 /**
  * GitLab matches：启发式 boolean —— 这个工作区是不是 GitLab 仓库。
  *
- * 依次看三处，任何一处指向 gitlab 就认（#1533：判据是「指向」，不是「文本里出现过这个词」）：
- *   1. `.git/config` 里记下的远端地址（只看 `[remote ...]` 段的 `url`，分支名等其它文字不看）；
- *   2. `docs/agents/issue-tracker.md` 里声明的后端；
- *   3. 兜底真问一次 `git remote get-url origin`（best-effort，2 秒）。
- * 三处都不认，或者线索不够，一律回 false —— 「不确定就当不是」是既定口径，不是故障。
+ * 依次看四处，任何一处指向 gitlab 就认（#1533：判据是「指向」，不是「文本里出现过这个词」）：
+ *   1. `handle.refId` 显式带 gitlab；
+ *   2. `.git/config` 里记下的远端地址（只看 `[remote ...]` 段的 `url`，分支名等其它文字不看）；
+ *   3. `docs/agents/issue-tracker.md` 里**明写的声明**：与判定层共用 parseIssueTracker，只认
+ *      `# Issue tracker: GitLab` 这种高置信标题行；正文里提到 GitLab 不算声明（#1555）；
+ *   4. 兜底真问一次 `git remote get-url origin`（best-effort，2 秒）。
+ * 四处都不认，或者线索不够，一律回 false —— 「不确定就当不是」是既定口径，不是故障。
  *
  * #1130：这一趟的失败原因必须能从房里报出来（走本房的 `read-log.ts`，事件名沿用全仓登记的
  * `read.degraded`），不能像从前那样被空 catch 吞掉、外面只剩一句「没认出来」。
@@ -155,10 +162,16 @@ async function matches(
     const cfg = await readWorkspaceFile(fs, cwd, '.git/config')
     if (cfg === null) emitReadDegraded(ctx, 'matches', 'matches:git-config', Date.now() - startedAt)
     else if (remoteUrlsOfGitConfig(cfg).some((u) => /gitlab/i.test(u))) return true
-    // 2) issue-tracker.md 是否声明 gitlab
+    // 2) issue-tracker.md 声明的是不是 GitLab：用判定层那套 parseIssueTracker，只认高置信标题行（#1555）。
+    //    旧写法在整篇文本里找 /gitlab/i —— 正文里提一句「GitLab 的 MR 不参与分诊」也会被算成 GitLab 工作区；
+    //    真机上它与 markdown 同时举手，详情/评论开会话判 multi-match，整批子票读不到。
+    //    低置信的正文提及从 #1572 收尾（方案 A）起只留在判定证据里，不产生结论，认领层也不认它。
     const doc = await readWorkspaceFile(fs, cwd, 'docs/agents/issue-tracker.md')
     if (doc === null) emitReadDegraded(ctx, 'matches', 'matches:tracker-doc', Date.now() - startedAt)
-    else if (/gitlab/i.test(doc)) return true
+    else {
+      const parsed = parseIssueTracker(normalizeTrackerText(doc))
+      if (parsed && parsed.confidence === 'high' && parsed.explicitBackendId === 'gitlab') return true
+    }
     // 3) exec git remote 兜底（best-effort，2s）
     const exec = ctx && ctx.exec
     if (exec) {
@@ -233,11 +246,11 @@ export const links = {
 }
 
 /**
- * 创建 GitLab 后端适配器（今天交 24 条：21 条操作 + 3 条定位口；剩下 1 条由注册表补桩）。
+ * 创建 GitLab 后端适配器（今天交 26 条：23 条操作 + 3 条定位口；剩下配色文件那 1 条按设计由注册表补桩）。
  *
  * 返回类型故意不标（理由同 GitHub 房：标成成员全可选的集合就查不出少写，
  * 形状判定收在 `src/tracker/capability-assertions.ts`）：没实现的那些操作由注册表补「我不支持」的桩。
- * 本后端今天的边界是「21 条操作 + describe / issueAddress / getRepoKey 三条定位口」——
+ * 本后端今天的边界是「23 条操作 + describe / issueAddress / getRepoKey 三条定位口」——
  * 唯一没实现的是 `ensureLabelColorsFile`，而且它**不是欠账**：这一条在本后端上形态不成立
  * （颜色真源在远端仓库标签，工作区里那份文件没有读者，改了不算数），登记为「明确不支持」，
  * 理由见 `./capability-register.ts` 那一行的注释与 `docs/tracker/capability-gitlab.md`。
@@ -276,10 +289,12 @@ export function createGitlabBackend(ctx: BackendContext) {
     setLabelColors: (repo, changes, opCtx) => setLabelColors(repo, changes, opCtx || ctx),
     getCurrentUser: (repo, opCtx) => getCurrentUser(repo, opCtx || ctx),
     getRepoPermissions: (repo, opCtx) => getRepoPermissions(repo, opCtx || ctx),
-    // 子票这一条读的是票正文顶部的 `Part of #<地图>` 声明行（setParent / create 建票时写下）：
+    // 子票这一条读的是票文件头的隐藏标记 `<!-- DSH-PARENT: <地图> -->`（setParent / create 建票时写下）：
     // 它回答的是「挂在这张地图上的票」；人手工加的 relates_to 关联不参与归属判定。详见 ./sub-issues.ts 文件头。
     listSubIssues: (repo, mapKey, opts, opCtx) => listSubIssues(repo, mapKey, opts, opCtx || ctx),
     initProject: (handle, input, opCtx) => initProject(handle, input, opCtx || ctx),
+    // #1605 地图薄查：签名 ctx 收在最后一格（与上面地图 10 那几条同列），这里直接透传。
+    listMaps: (repo, opCtx) => listMaps(repo, opCtx || ctx),
     // 读额度：GitLab 只按请求计数，读数固定是 requests-only；坏路一律回「读数未知」，不抛。
     readBudget: (opCtx) => readGitlabBudget(opCtx || ctx),
   } satisfies GitlabBackendShape
@@ -291,10 +306,20 @@ export const prompts = {
   // #716：这个后端自己的命令行名与站点名（提示词模板里的 {cli} / {cliBrand} 由这一格填）。
   commandVocabulary: { cli: 'glab', cliBrand: 'GitLab' },
   glabInstallFix: {
-    zh: '请为 DSH 安装 GitLab CLI（glab）：\n1. 先检查：终端执行 glab --version；\n2. 无 glab 则在 macOS 执行：brew install glab；\n3. 安装完成后请用户点「重查」。',
-    en: 'Install the GitLab CLI (glab) for DSH:\n1. Check first: glab --version;\n2. If missing on macOS, run brew install glab;\n3. After install, ask the user to re-check.',
+    zh: '请为 DSH 安装 GitLab CLI（glab）。官方安装说明只有一处：https://docs.gitlab.com/cli/，按那一页的指引做，不要凭记忆写安装命令。\n1. 先检查：终端执行 glab --version；有版本号就直接汇报已装版本，不要重复安装；\n2. 没有 glab 时，打开上面那一页，按你的系统对应的那一节装；那一页打不开就如实说打不开，不要编命令；\n3. 装完请用户点「重查」；如果重查仍说找不到，先用绝对路径跑一次 glab --version 证明装好了，再请用户重启宿主（宿主只在启动时读 PATH）。',
+    en: 'Install the GitLab CLI (glab) for DSH. The only official install guide is https://docs.gitlab.com/cli/ — follow that page, do not write install commands from memory.\n1. Check first: glab --version; if a version is reported, report it and do not reinstall;\n2. If missing, open the page above and follow the section for your OS; if the page cannot be opened, say so plainly and do not invent commands;\n3. After install, ask the user to re-check; if it still reports missing, prove the install with an absolute-path glab --version, then ask the user to restart the host (the host reads PATH only at startup).',
   },
   glabLoginFix: {
+    zh: '请完成 glab 登录（glab auth login）：按向导选择 GitLab.com → HTTPS → 浏览器授权（OAuth）；完成后 glab auth status 验证；然后请用户点「重查」。',
+    en: 'Complete glab login: glab auth login → GitLab.com → HTTPS → browser OAuth; verify with glab auth status; then ask the user to re-check.',
+  },
+  // #1190 通用键：首开引导清单不写后端名，统一按 cliInstall / cliLogin 向当前后端要文本。
+  //   内容与 glab* 同一份（单源文本、两个键名），老键保留给检查页 fixes 与旧门禁断言。
+  cliInstall: {
+    zh: '请为 DSH 安装 GitLab CLI（glab）。官方安装说明只有一处：https://docs.gitlab.com/cli/，按那一页的指引做，不要凭记忆写安装命令。\n1. 先检查：终端执行 glab --version；有版本号就直接汇报已装版本，不要重复安装；\n2. 没有 glab 时，打开上面那一页，按你的系统对应的那一节装；那一页打不开就如实说打不开，不要编命令；\n3. 装完请用户点「重查」；如果重查仍说找不到，先用绝对路径跑一次 glab --version 证明装好了，再请用户重启宿主（宿主只在启动时读 PATH）。',
+    en: 'Install the GitLab CLI (glab) for DSH. The only official install guide is https://docs.gitlab.com/cli/ — follow that page, do not write install commands from memory.\n1. Check first: glab --version; if a version is reported, report it and do not reinstall;\n2. If missing, open the page above and follow the section for your OS; if the page cannot be opened, say so plainly and do not invent commands;\n3. After install, ask the user to re-check; if it still reports missing, prove the install with an absolute-path glab --version, then ask the user to restart the host (the host reads PATH only at startup).',
+  },
+  cliLogin: {
     zh: '请完成 glab 登录（glab auth login）：按向导选择 GitLab.com → HTTPS → 浏览器授权（OAuth）；完成后 glab auth status 验证；然后请用户点「重查」。',
     en: 'Complete glab login: glab auth login → GitLab.com → HTTPS → browser OAuth; verify with glab auth status; then ask the user to re-check.',
   },
@@ -307,19 +332,19 @@ export const prompts = {
     //   改成这个后端真的能做的动作：在 map 文件的任务清单里引用子票。
     // #716 两处改正：
     //   ① 建边与校验已经搬进契约层的 deck_map_link / deck_map_snapshot，所以这里只讲用哪个工具，不留裸命令；
-    //   ② 原先这段写「建原生父子边」，与本后端的实现不符 —— setParent 落下去的是票正文顶部的
-    //      `Part of #<地图>` 声明行（见 graph-membership.ts），不是原生父子边。以契约为准，文案同步改正。
+    //   ② 原先这段写「建原生父子边」，与本后端的实现不符 —— setParent 落下去的是票文件头的
+    //      隐藏标记 `<!-- DSH-PARENT: <地图> -->`（见 graph-membership.ts），不是原生父子边。以契约为准，文案同步改正。
     // #1176 之后补正（2026-10-15，来自对抗式审查）：原先这里写「GitLab 上没有原生父子关系」，这句是错的
     //   —— 平台有原生的父子层级（官方有整页在讲「Child items」，免费档就有），只是它在 work items 那条路上，
     //   入口是界面与 GraphQL；本房取数一律走 glab api 的 REST issue links，而那个接口的 link_type 只有
     //   relates_to / blocks / is_blocked_by 三种，没有表示层级的那一种。所以准确的说法是「本房这条 REST 路
     //   拿不到层级边」，不是「GitLab 做不到」。差别要留住：读的人据此才能判断要不要另开一票走 GraphQL。
-    zh: '建边用 deck_map_link：父子边传 parentKey、阻塞边传 blockedBy。要注意本后端的能力边界 —— 父子边不走接口，落在票正文顶部的 Part of #<地图> 声明行（读回走契约的父子列）。GitLab 平台本身有原生父子层级，但它在 work items 那条路上（入口是界面与 GraphQL），本房不走那条；要远端认的层级得另开一票换成 GraphQL。阻塞边走原生 is_blocked_by：有能力就真写、写后读回核对；免费档拿不到原生能力时，工具回落到正文首行的那行降级写法。建完用 deck_map_snapshot 读回地图，核对子票张数与预期一致。',
-    en: 'Wire edges with deck_map_link: parentKey for the parent-child edge, blockedBy for blocking edges. Mind this backend\'s limit — the parent-child edge does not go through the API; it lands as a Part of #<map> declaration line at the top of the ticket body (read back through the contract parent column). GitLab itself does have a native parent-child hierarchy, but it lives on the work-items path (reached through the UI and GraphQL), which this backend does not use; a remotely-recognised hierarchy would be a new capability on GraphQL. Blocking edges use native is_blocked_by: written for real with read-back verification when capable; on the free tier without native capability the tool falls back to the first line of the body. Then read the map back with deck_map_snapshot and confirm the child count matches the plan.',
+    zh: '建边用 deck_map_link：父子边传 parentKey、阻塞边传 blockedBy。要注意本后端的能力边界 —— 父子边不走接口，落在票文件头的隐藏标记 <!-- DSH-PARENT: <地图> -->（读回走契约的父子列）。GitLab 平台本身有原生父子层级，但它在 work items 那条路上（入口是界面与 GraphQL），本房不走那条；要远端认的层级得另开一票换成 GraphQL。阻塞边走原生 is_blocked_by：有能力就真写、写后读回核对；免费档拿不到原生能力时，工具回落到正文的成对降级写法（可见行 + 隐藏机器表）。建完用 deck_map_snapshot 读回地图，核对子票张数与预期一致。',
+    en: 'Wire edges with deck_map_link: parentKey for the parent-child edge, blockedBy for blocking edges. Mind this backend\'s limit — the parent-child edge does not go through the API; it lands as a hidden <!-- DSH-PARENT: <map> --> marker in the ticket header (read back through the contract parent column). GitLab itself does have a native parent-child hierarchy, but it lives on the work-items path (reached through the UI and GraphQL), which this backend does not use; a remotely-recognised hierarchy would be a new capability on GraphQL. Blocking edges use native is_blocked_by: written for real with read-back verification when capable; on the free tier without native capability the tool falls back to the paired body fallback (a visible line plus a hidden machine table). Then read the map back with deck_map_snapshot and confirm the child count matches the plan.',
   },
   // #595：正文格式契约归后端单源 —— GitLab 写回用后端自己的命令行，正文从文件读入；
   // #684：「体检」的 GitLab 科目。票仓结构与 GitHub 是同一套（地图 + 子议题 + 阻塞边），所以口径照搬；
-  //   唯一的实话是父子边落在票正文的 `Part of #<地图>` 声明行、解析率还没用真仓库量过 —— 写进文案让人先量再下结论，不硬来。
+  //   唯一的实话是父子边落在票文件头的隐藏标记、解析率还没用真仓库量过 —— 写进文案让人先量再下结论，不硬来。
   // #716：查数与建边改为走工具（deck_context / deck_map_snapshot / deck_map_link），这里一条裸命令都不留。
   // 收口（2026-09-24）：英文那句的结尾原来多挂了一个 {subject}。那个占位符就是总纲用来填「本后端这一份科目」
   //   的位置，也就是这条文本自己 —— 自己引用自己的结果是：总纲补第二遍时把整段文本又抄了一份，
@@ -335,8 +360,8 @@ export const prompts = {
 export const fixes = Object.freeze({
   'glab:installed': {
     hint: {
-      zh: 'glab CLI 未安装。点「安装指引」获取各平台安装命令，完成后重查。',
-      en: 'glab CLI is not installed. Use the install guide, then re-check.',
+      zh: 'glab CLI 未安装。点「安装指引」按官方文档安装，完成后重查。',
+      en: 'glab CLI is not installed. Use the install guide (official docs), then re-check.',
     },
     actions: [
       { type: 'inject-prompt', prompt: 'glabInstallFix', label: { zh: '安装指引', en: 'Install guide' } },
@@ -355,11 +380,30 @@ export const fixes = Object.freeze({
   },
   'glab:repoAccess': {
     hint: {
-      zh: 'GitLab 仓库不可达（可能未定位仓库 / 无权限 / 网络不通）。点「修复指引」排查，完成后重查。',
-      en: 'GitLab repository not reachable (not located / permission / network). Use the fix guide, then re-check.',
+      zh: '此目录未关联 GitLab 仓库。先点「创建并发布」完成建仓推送，再执行初始化；想用本地 Markdown，可在顶端切换后端后再查。',
+      en: 'This directory is not linked to a GitLab repo. First click "Create & publish" to finish creating and pushing the repo, then run initialization. To use local Markdown, switch the backend at the top and re-check.',
     },
+    // 修复动作（#1191：与 GitHub 房同形的两步向导；提交走 contract-op 按当前后端分发，不再直调 wf.initPublish）。
     actions: [
-      { type: 'inject-prompt', prompt: 'glabRepoFix', label: { zh: '修复指引', en: 'Fix guide' } },
+      {
+        type: 'wizard',
+        label: { zh: '创建并发布', en: 'Create & publish' },
+        steps: [
+          {
+            title: { zh: '仓库信息', en: 'Repository info' },
+            schema: [
+              { name: 'name', type: 'text', required: true, label: { zh: '仓库名', en: 'Repo name' }, pattern: '^[A-Za-z0-9._-]{1,100}$', defaultFrom: 'cwd-basename', preview: { zh: '将创建 https://gitlab.com/{owner}/{name}', en: 'Will create https://gitlab.com/{owner}/{name}' } },
+            ],
+          },
+          {
+            title: { zh: '可见性', en: 'Visibility' },
+            schema: [
+              { name: 'visibility', type: 'single', label: { zh: '可见性', en: 'Visibility' }, options: ['private', 'public'], optionSubs: { private: { zh: '仅自己', en: 'Only you' }, public: { zh: '所有人', en: 'Everyone' } }, defaultValue: 'private' },
+            ],
+          },
+        ],
+        submitAction: { type: 'contract-op', op: 'initProject', params: {} },
+      },
       { type: 'refresh', target: 'chain' },
     ],
   },
@@ -393,6 +437,9 @@ export const gitlabBackend = {
   //   lcCopyPlanOf）于是把 GitLab 归到「没读到开仓动作」那一套。这跟 #620 给 GitHub 修掉的是同一处
   //   形状，所以这里挂上同一个值；契约里这个成员本来就是可选的。
   openRepository,
+  // #1557：远程后端的票与容器地址都是网页——开票、开容器都交给浏览器，与开仓库同一个方式。
+  openIssue: 'url',
+  openContainer: 'url',
   // #191：品牌色完整色板（B 方案定版 · #177）
   presentation: {
     color: '#c25100',

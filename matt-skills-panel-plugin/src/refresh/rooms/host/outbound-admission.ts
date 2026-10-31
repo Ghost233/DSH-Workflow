@@ -4,22 +4,20 @@
  * 谁规定进程数不能多？没有人。平台层面没有这条规矩：
  *   · gh 每条调用都是一个独立进程，本身没有并发上限；
  *   · GitHub 的约束是配额（每小时 5000 次请求），由闸按预算管，不是这道门管的事；
- *   · 唯一真实的「并发本身」风险是 GitHub 的二级限流/滥用防护会惩罚突发，但那只对
- *     持续的高并发突发才够得着——本插件一天的峰值是 12（见下），够不着。
+ *   · 唯一真实的「并发本身」风险是 GitHub 的二级限流/滥用防护会惩罚突发；本插件
+ *     10-28 的峰值已经到 64（见下），突发时不能再按“够不着”看，要配合配额一起看。
  * 真正会耗尽的只有**本机资源**：每个 gh 进程几十 MB 内存加一次进程创建开销。
  * #960 那次投诉（弱终端上几十路并发各等满 30 秒把系统拖死）就是这个。
  *
- * 2026-10-10 实测（当天 3120 条 gh.exec，按房内计时区间算并发的上界，含排队重叠，所以偏大）：
- *   同时在飞最多 12 条；291 条 ≥10 秒、172 条 ≥25 秒——挤占名额的是**慢调用**，不是调用量。
- * 原来的读 8 / 写 2 是拍脑袋的暂定值：实测需求 12 > 8，**这道门白天真的会绑到**；一绑就把
- * 调用塞进队列，而队列当时没有属于自己的上限，一路排到外层调用钳制（30 秒）才结束。
- * 一个资源护栏绝不该变成「普通工作会失败、会多等 30 秒」的原因——那是这次要改掉的设计错误。
+ * 2026-10-10 实测（当天 3120 条 gh.exec）：同时在飞最多 12 条；291 条 ≥10 秒、172 条 ≥25 秒——
+ * 挤占名额的是**慢调用**，不是调用量。原来的读 8 / 写 2 是拍脑袋的暂定值：实测需求 12 > 8，
+ * 这道门白天真的会绑到；一绑就把调用塞进队列，而队列当时没有属于自己的上限，一路排到外层
+ * 调用钳制（30 秒）才结束。一个资源护栏绝不该变成「普通工作会失败、会多等 30 秒」的原因。
  *
- * 现行取值：读 64、写 16（读取 #962 当初给的「上限参考 64」，写按读写需求差取四分之一）。
- * 判断标准只有一条：**远高于实测峰值，正常永不介入**；只在明显跑飞（例如某个 bug 扇出上百条）
- * 时熔断，好过让机器被进程吃光。真正让名额不会被长期占住的是房内自己那只表
- * （读 12 秒 / 写 30 秒 / 探活 15 秒，含排队段，见 backends/github/client.js）。
- * 终值仍以测量回填（#967 测量 / #966 收口）为准。
+ * 2026-10-28 #1224 复测（单进程段 10,270 条 gh.exec）：同时在飞峰值 64、需求 65，93.8% 的调用
+ * 不排队；超过 3 秒的排队 9 条，最长 7.4 秒。读 64 / 写 16 据此定为终值：读档贴近需求峰值，
+ * 再低会把正常的窗口聚焦刷新变成排队；写需求峰值 6，16 仍留约两倍半余量。真正让名额不会被
+ * 长期占住的是各档超时（值住 config/timeouts.yaml，见 src/tracker/kernel/outbound-tiers.ts）。
  *
  * #1007 起本道门还管**通路失败后的冷却**：一次 transport 级失败（超时、被杀、进程根本没起来）
  * 之后，同一条通路、同一只桶在冷却窗口里不再起新进程，拿名额直接抛出带 `admission-cooldown` 标记的错误，
@@ -27,10 +25,16 @@
  * 任何一条命令跑完拿到退出码（退出码非零也算）就说明通路是通的，冷却立刻清零。
  * 冷却按「服务 + 读写档」各记一份：gh 与 glab 共用这一道准入闸（名额与上限是一套），
  * 但两者的通路是两条 —— GitLab 的故障不许把去 GitHub 的调用一起挡掉，反之亦然（#1007 复核）。
+ *
+ * #1570 起本道门还管**排队最多等多久**：调用方拿名额时传 `waitMs`（毫秒；缺省维持今天的不设上限），
+ * 到点由闸抛出带 `admission-queue-timeout` 标记的「排队超时」错误（带出等了多久与预算），
+ * 并负责把到点之后晚到的名额归还。排队计时器住这里、不再由每个调用方各写一只：四条出站路
+ * （房间 client / 宿主 runGh 薄封装 / 平台通道 detectionExec / git-execution 的 execProc）
+ * 只传预算、只把错误翻成人话（#1570）。
  */
 
 import { TUNING } from '../../contract/tuning-parameters.js'
-import { TRANSPORT_COOLDOWN_MS } from '../../../tracker/kernel/outbound-tiers.js'
+import { TRANSPORT_COOLDOWN_MS, OUTBOUND_QUEUE_TIMEOUT_CODE, outboundQueueTimeoutOf } from '../../../tracker/kernel/outbound-tiers.js'
 import { LANE_LONG_WAIT_LOG_MS, LANE_WAIT_LOG_INTERVAL_MS } from '../../../shared/time-config/src/values.js'
 
 // 取值住共用调参表（真源 src/refresh/contract/tuning-parameters.ts），这里只留缺表回落的缺省值（与今天一致）。
@@ -53,6 +57,17 @@ function normService(s: unknown): GhService {
   const v = String(s == null ? '' : s).trim().toLowerCase()
   return v === 'gitlab' ? 'gitlab' : (v === 'git' ? 'git' : 'github')
 }
+// 排队预算的计时器接口（#1570）：生产用全局 setTimeout / clearTimeout；门禁可注入假计时器，
+// 在同一只闸上复现「到点」「到点后又放回名额」这类时间点精确的场景。注入只给测试用。
+type GhTimerHandle = ReturnType<typeof setTimeout>
+interface GhTimers {
+  setTimeout(fn: () => void, ms: number): GhTimerHandle
+  clearTimeout(handle: GhTimerHandle): void
+}
+const defaultTimers: GhTimers = {
+  setTimeout: function (fn: () => void, ms: number): GhTimerHandle { return setTimeout(fn, ms) },
+  clearTimeout: function (handle: GhTimerHandle): void { clearTimeout(handle) },
+}
 // 一条通路上的一次冷却：到什么时候、上次为什么失败、连续失败几次、失败的是哪条命令（短标签，仅日志）、
 // 这一轮是否已经记过被挡回的那一行（节流用）。
 interface GhCoolState {
@@ -63,6 +78,7 @@ interface GhCoolState {
   rejectLogged: boolean
 }
 // 排队等待者的形状：创建时放行与取消函数先空着，随后立即补上真正的函数。
+// timer 是 #1570 的排队预算计时器句柄；没给预算时不建表，保持原有路径不多一个定时器。
 interface GhWaiter {
   settled: boolean
   signal: AbortSignal | null
@@ -70,29 +86,59 @@ interface GhWaiter {
   reject: ((e: unknown) => void) | null
   bucket: GhBucket
   service: GhService
+  timer: GhTimerHandle | null
+  /**
+   * #1627：排上队的那一刻（毫秒时间戳）。只给观察器算「队尾那位等了多久」用——
+   * 没有这个时刻就只能报「有人在等」却说不出等了多久，那正好是「门口到底憋没憋人」的答案缺口。
+   */
+  since: number
+}
+
+/**
+ * #1627：准入闸当下的状态（观察器每分钟采样一次，写进 quota.window / quota.incident 的几格）。
+ * 全部是只读快照，不参与任何准入判断；上限用常量而不是实例上覆盖过的 maxOf：
+ * 观察器问的是「按设计这道门能同时放几个」，不是「这条测试路径把门改小成了几个」。
+ */
+export interface QuotaLaneState {
+  /** 读 + 写两桶正在飞的进程数之和。 */
+  inflight: number
+  /** 两桶在飞上限之和（READ_BUCKET_MAX + WRITE_BUCKET_MAX）。 */
+  inflightMax: number
+  /** 两桶排队人数之和。 */
+  queued: number
+  /** 进程启动以来见过的最大排队数（两桶各自峰值相加）。 */
+  queuedPeak: number
+  /** 排队里等得最久那一位已经等了多久（毫秒）；没人排队时是 0。 */
+  oldestWaitMs: number
 }
 // 准入选项与拿名额参数的形状：调用方没给就用缺省桶与缺省配额。
 interface GhAdmissionOpts {
   readMax?: number
   writeMax?: number
   cooldownMs?: number
+  timers?: GhTimers
 }
 interface GhAcquireArgs {
   bucket?: string
   signal?: AbortSignal | null
   cmd?: string
   service?: string
+  waitMs?: number
 }
 interface GhLaneOpts {
   bucket?: string
   signal?: AbortSignal | null | undefined
   service?: string
+  waitMs?: number
 }
 // 取消错误的形状：标准 Error 上加两个标记，调用方靠它们认出取消而非失败。
 type AdmissionCancelledError = Error & { code: string; admissionCancelled: boolean }
 // 冷却错误的形状：标准 Error 上带 code 与「哪只桶、还剩多久、上次为什么失败、连续失败几次」。
 // 调用方用 kernel 的 OUTBOUND_COOLDOWN_CODE / outboundCooldownOf 识别，不靠错误文本。
 type AdmissionCooldownError = Error & { code: string; bucket: string; remainingMs: number; reason: string; failStreak: number }
+// 排队超时错误的形状：标准 Error 上带 code 与「哪只桶、等了多久、当初预算多少」。
+// 调用方用 kernel 的 OUTBOUND_QUEUE_TIMEOUT_CODE / outboundQueueTimeoutOf 识别，同样不靠错误文本。
+type AdmissionQueueTimeoutError = Error & { code: string; admissionQueueTimeout: boolean; bucket: string; waitedMs: number; limitMs: number }
 // 日志出口（#960 复核）：可选注入；没注入时本文件照旧不写任何日志，准入行为一字不变。
 interface GhLogCtxLike {
   fire(level: string, event: string, fields: Record<string, unknown>): void
@@ -111,6 +157,25 @@ export const ADMISSION_CANCELLED = 'admission-cancelled'
  */
 export function isAdmissionCancelled(err: unknown): boolean {
   return !!(err && ((err as { code?: unknown }).code === ADMISSION_CANCELLED || (err as { admissionCancelled?: unknown }).admissionCancelled === true))
+}
+
+/**
+ * 排队超时的标记：调用方据此回「排队太久、一次都没跑起来」，按可重试处理。
+ * 值只有一处真源（kernel 的 OUTBOUND_QUEUE_TIMEOUT_CODE），这里只转出口，不写第二份字面量。
+ */
+export const ADMISSION_QUEUE_TIMEOUT = OUTBOUND_QUEUE_TIMEOUT_CODE
+
+/**
+ * 是不是「排队等过了调用方给的预算」。与取消分开判：取消是调用方主动放弃，排队超时是名额竞争输了。
+ * 判定复用 kernel 的 outboundQueueTimeoutOf，保证闸与四条出站路认的是同一把尺子。
+ */
+export function isAdmissionQueueTimeout(err: unknown): boolean {
+  return outboundQueueTimeoutOf(err) !== null
+}
+
+/** 排队预算归一：只认有限正数（毫秒，向下取整）；没给、非数字、非正数一律按「不设上限」（0）处理。 */
+function normWaitMs(w: unknown): number {
+  return (typeof w === 'number' && isFinite(w) && w > 0) ? Math.floor(w) : 0
 }
 
 function cancelledError(): AdmissionCancelledError {
@@ -136,15 +201,34 @@ function cooldownError(info: { bucket: GhBucket; remainingMs: number; reason: st
 }
 
 /**
- * 建一道准入。opts: { readMax, writeMax }。
- * 用法：const release = await lane.acquire({ bucket: 'read'|'write', signal }); try { … } finally { release() }。
+ * 排队超时错误的标记与载荷：#1570 的验收要「带出等了多久」，所以把 waitedMs 与 limitMs 一起放在错误上，
+ * 各出口按自己的口径拼人话（房间说「排队 X 毫秒、到点还没拿到名额」，宿主说「一次都没跑起来」）。
+ */
+function queueTimeoutError(info: { bucket: GhBucket; waitedMs: number; limitMs: number }): AdmissionQueueTimeoutError {
+  const e = new Error('gh admission: queued longer than allowed') as AdmissionQueueTimeoutError
+  e.code = ADMISSION_QUEUE_TIMEOUT
+  e.admissionQueueTimeout = true
+  e.bucket = info.bucket
+  e.waitedMs = Math.max(0, Math.floor(info.waitedMs))
+  e.limitMs = Math.max(0, Math.floor(info.limitMs))
+  return e
+}
+
+/**
+ * 建一道准入。opts: { readMax, writeMax, cooldownMs, timers }。
+ * 用法：const release = await lane.acquire({ bucket: 'read'|'write', signal, waitMs }); try { … } finally { release() }。
  * service 可选（github / gitlab / git，缺省 github）：冷却按「服务 + 读写档」分开记（#1007 复核），
  * 名额与上限仍是三条路共用的一套 —— 传对服务，GitHub 的故障才不会挡住 GitLab / git 的调用。
  * 排队期间 signal 中止 → acquire 抛取消错误（不占名额、不记失败，调用方按取消返回）。
+ * 排队超过 waitMs（#1570）→ acquire 抛排队超时错误（带 waitedMs / limitMs，不占名额），
+ * 到点后晚到的名额照常放回、由后面的排队者接住；waitMs 缺省不设上限。
  * 类型说明：host 域文件，只做类型标注，不动逻辑不动结构；选项与参数缺省都按读桶处理。
  */
 export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
   const o: GhAdmissionOpts = opts || {}
+  // #1570：排队预算的计时器。缺省用全局 setTimeout/clearTimeout；注入只给门禁用，
+  // 生产四条出站路一律走缺省，避免同一进程里出现两套时钟。
+  const timers: GhTimers = o.timers || defaultTimers
   const maxOf: Record<GhBucket, number> = {
     read: (typeof o.readMax === 'number' && o.readMax > 0) ? Math.floor(o.readMax) : READ_BUCKET_MAX,
     write: (typeof o.writeMax === 'number' && o.writeMax > 0) ? Math.floor(o.writeMax) : WRITE_BUCKET_MAX,
@@ -162,8 +246,9 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
   // 冷却表键：服务名与桶名各取一枚枚举，拼出来只做查表用，不进日志。
   function coolKeyOf(service: GhService, bucket: GhBucket): string { return service + ':' + bucket }
   const stats = {
-    read: { peak: 0, waited: 0, done: 0 },
-    write: { peak: 0, waited: 0, done: 0 },
+    // #1627：queuedPeak 是这只桶排队人数见过的最大值（进程启动以来），给观察器回答「堵到过什么程度」。
+    read: { peak: 0, waited: 0, done: 0, timedOut: 0, queuedPeak: 0 },
+    write: { peak: 0, waited: 0, done: 0, timedOut: 0, queuedPeak: 0 },
     cancelled: 0,
   }
   // 两只桶各记「上一次因长等待落行」的钟点，用来做五分钟节流；0 表示还没记过。
@@ -177,6 +262,13 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
   function normCmd(c: unknown): string {
     const s = String(c == null ? '' : c).replace(/\s+/g, ' ').trim()
     return s.length > 40 ? s.slice(0, 40) : s
+  }
+
+  // 清掉某个等待者的排队计时器：拿到的、取消的、到点的都走这一处，保证不留下悬挂的定时器。
+  function clearQueueTimer(waiter: GhWaiter): void {
+    if (waiter.timer == null) return
+    try { timers.clearTimeout(waiter.timer) } catch (eT) {}
+    waiter.timer = null
   }
 
   /** 常驻事件 gh.transport：冷却设上、被冷却挡回、冷却清零三件事各一行，只在真正发生时记。 */
@@ -195,6 +287,7 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
       if (waiter.settled) continue
       if (waiter.signal && waiter.signal.aborted === true) {
         waiter.settled = true
+        clearQueueTimer(waiter)
         stats.cancelled += 1
         waiter.reject!(cancelledError())
         continue
@@ -206,7 +299,7 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
     }
   }
 
-  // 拿名额：有空位直接给，没空位排队；排队期间取消按取消返回。
+  // 拿名额：有空位直接给，没空位排队；排队期间取消按取消返回，等超预算按排队超时返回。
   function acquire(arg: GhAcquireArgs | null | undefined): Promise<() => void> {
     const a: GhAcquireArgs = arg || {}
     const bucket: GhBucket = normBucket(a.bucket)
@@ -238,14 +331,17 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
       return Promise.resolve(releaseOf(bucket))
     }
     stats[bucket].waited += 1
+    // #1570：排队预算只认显式给的正数毫秒；0 表示不设上限（不建计时器）。
+    const waitMs = normWaitMs(a.waitMs)
     // #960 复核：排上队的那一刻记下钟点，放行时把「等了多久、等候期间这只桶里还有谁」落一行按需日志。
     //   为什么要有：票面问的是「准入这道门到底有没有把人憋死」，只看 gh.exec 的耗时分不清「命令慢」与「排队慢」。
     const waitT0 = Date.now()
     // 类型说明：Promise 泛型只定放行函数的形状，运行时仍是原来那只 Promise。
     return new Promise<() => void>(function (resolve, reject) {
       // 类型说明：放行与取消函数先空着，随后立即补上，空只存在这两行之间。
-      const waiter: GhWaiter = { settled: false, signal: signal, resolve: null, reject: null, bucket: bucket, service: service }
+      const waiter: GhWaiter = { settled: false, signal: signal, resolve: null, reject: null, bucket: bucket, service: service, timer: null, since: waitT0 }
       waiter.resolve = function (): void {
+        clearQueueTimer(waiter)
         // #960：排队拿到名额时落一行 —— 桶名、放行时在飞数、上限、放行时队列残长、等了多久。
         //   只记短枚举与数字，不记命令、路径、票号。按需级（先判调试开关），不采样。
         try {
@@ -264,10 +360,11 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
         } catch (eL) {}
         resolve(releaseOf(bucket))
       }
-      waiter.reject = function (e: unknown): void { reject(e) }
+      waiter.reject = function (e: unknown): void { clearQueueTimer(waiter); reject(e) }
       const onAbort = function (): void {
         if (waiter.settled) return
         waiter.settled = true
+        clearQueueTimer(waiter)
         const idx = queues[bucket].indexOf(waiter)
         if (idx >= 0) queues[bucket].splice(idx, 1)
         stats.cancelled += 1
@@ -288,7 +385,23 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
           origReject!(e)
         }
       }
+      // #1570：排队计时器住闸里。到点先从队列摘下再拒（没拿到名额就不占名额），
+      // 队列因此继续 pump，后面的排队者照常补位 —— 晚到的名额不泄漏。
+      if (waitMs > 0) {
+        waiter.timer = timers.setTimeout(function (): void {
+          if (waiter.settled) return
+          waiter.settled = true
+          clearQueueTimer(waiter)
+          const idx = queues[bucket].indexOf(waiter)
+          if (idx >= 0) queues[bucket].splice(idx, 1)
+          stats[bucket].timedOut += 1
+          waiter.reject!(queueTimeoutError({ bucket: bucket, waitedMs: Date.now() - waitT0, limitMs: waitMs }))
+          pump(bucket)
+        }, waitMs)
+      }
       queues[bucket].push(waiter)
+      // #1627：记下排队人数的峰值（观察器读 lane 状态时用它回答「这只桶历史上堵到过什么程度」）。
+      if (queues[bucket].length > stats[bucket].queuedPeak) stats[bucket].queuedPeak = queues[bucket].length
       pump(bucket)
     })
   }
@@ -329,6 +442,7 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
       if (!waiter || waiter.settled) continue
       if (waiter.service !== service) { kept.push(waiter); continue }
       waiter.settled = true
+      clearQueueTimer(waiter)
       try {
         // 类型说明：排进队时取消函数一定已补上，非空断言只过类型检查。
         waiter.reject!(cooldownError({ bucket: bucket, remainingMs: cooldownMs, reason: reason, failStreak: failStreak }))
@@ -361,7 +475,30 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
       readPeak: stats.read.peak, writePeak: stats.write.peak,
       readWaited: stats.read.waited, writeWaited: stats.write.waited,
       readDone: stats.read.done, writeDone: stats.write.done,
+      readQueueTimedOut: stats.read.timedOut, writeQueueTimedOut: stats.write.timedOut,
       cancelled: stats.cancelled,
+    }
+  }
+
+  /**
+   * #1627：这道闸当下状态的只读快照（观察器采样用，不参与准入判断）。
+   * oldestWaitMs 只看还在队里的那几位：已经 settle 但还没被 pump 摘走的瞬间不单独处理，
+   * 与 queued 的口径保持一致（两者都按队里现有的元素算，免得一个说有人、一个说没人）。
+   */
+  function laneState(): QuotaLaneState {
+    let oldestSince = 0
+    for (const bucket of ['read', 'write'] as GhBucket[]) {
+      for (const waiter of queues[bucket]) {
+        if (waiter.since > 0 && (oldestSince === 0 || waiter.since < oldestSince)) oldestSince = waiter.since
+      }
+    }
+    const queued = queues.read.length + queues.write.length
+    return {
+      inflight: running.read + running.write,
+      inflightMax: READ_BUCKET_MAX + WRITE_BUCKET_MAX,
+      queued: queued,
+      queuedPeak: stats.read.queuedPeak + stats.write.queuedPeak,
+      oldestWaitMs: (queued > 0 && oldestSince > 0) ? Math.max(0, Date.now() - oldestSince) : 0,
     }
   }
 
@@ -370,14 +507,15 @@ export function createGhAdmission(opts: GhAdmissionOpts | null | undefined) {
     reportTransportFailure: reportTransportFailure,
     reportSuccess: reportSuccess,
     snapshot: snapshot,
+    laneState: laneState,
     limits: function (): { readMax: number; writeMax: number } { return { readMax: maxOf.read, writeMax: maxOf.write } },
   }
 }
 
-// 进程内默认的一道准入单例：三条出站路共用同一口径，类型随创建函数走。
+// 进程内默认的一道准入单例：四条出站路共用同一口径，类型随创建函数走。
 let defaultLane: ReturnType<typeof createGhAdmission> | null = null
 
-/** 进程内默认的一道准入：三个出站路（room client / detectionExec / runGh）共用它才叫“同一口径”。 */
+/** 进程内默认的一道准入：四条出站路（房间 client / runGh 薄封装 / detectionExec / execProc）共用它才叫“同一口径”。 */
 export function getGhLane(logCtx?: GhLogCtxLike | null): ReturnType<typeof createGhAdmission> {
   if (logCtx) setGhLaneLogCtx(logCtx)
   if (!defaultLane) defaultLane = createGhAdmission({ readMax: READ_BUCKET_MAX, writeMax: WRITE_BUCKET_MAX })
@@ -388,19 +526,31 @@ export function getGhLane(logCtx?: GhLogCtxLike | null): ReturnType<typeof creat
 export function resetGhLaneForTest(): void { defaultLane = null }
 
 /**
- * 排队拿名额再跑（#965 共用包装器，给行数到顶的文件用，免得每个调用方各写一遍拿与放）。
- * 满了等（等不是失败）；排队被取消调 onQueuedCancel；跑完放名额（成功失败都放，抛错也放）。
- * 用法：return withGhLane({ bucket: 'read', signal: opts.signal }, async function () { …真起进程… },
- *   function () { return { kind: 'cancelled', cancelled: true } })。
- * 类型说明：host 域文件，只做类型标注；取消回调允许缺省（缺省时取消仍会抛，与原来一致）。
+ * #1627：读进程内默认准入闸的当下状态（观察器采样用）。
+ * 还没起过 gh（单例没建）时回 null：调用方要分得清「没有闸」与「闸里一个人都没有」——
+ * 前者是「这个进程还不知道门口的情况」，后者是「门口确实空着」，两者写进日志意思完全不同。
  */
-export async function withGhLane(laneOpts: GhLaneOpts | null | undefined, run: () => unknown, onQueuedCancel?: (e: unknown) => unknown): Promise<unknown> {
+export function getLaneState(): QuotaLaneState | null { if (!defaultLane) return null; return defaultLane.laneState() }
+
+/**
+ * 排队拿名额再跑（#965 共用包装器，给行数到顶的文件用，免得每个调用方各写一遍拿与放）。
+ * 满了等（等不是失败）；排队出队（被取消，或传了 waitMs 且等到预算用完）时调 onQueueFailure：
+ * 回调拿到的是原始错误，调用方用 isAdmissionCancelled / outboundQueueTimeoutOf 分清是哪一种——
+ * 取消按取消返回、排队超时按可重试失败返回，两者不能混成一条回话。
+ * 跑完放名额（成功失败都放，抛错也放）。
+ * 用法：return withGhLane({ bucket: 'read', signal: opts.signal, waitMs: budget }, async function () { …真起进程… },
+ *   function (e) { return outboundQueueTimeoutOf(e) ? RETRY_REPLY : CANCELLED_REPLY })。
+ * 类型说明：host 域文件，只做类型标注；失败回调允许缺省（缺省时错误仍会抛，与原来一致）。
+ */
+export async function withGhLane(laneOpts: GhLaneOpts | null | undefined, run: () => unknown, onQueueFailure?: (e: unknown) => unknown): Promise<unknown> {
   const o: GhLaneOpts = laneOpts || {}
   let release: (() => void) | null = null
   try {
-    release = await getGhLane().acquire({ bucket: o.bucket || 'read', signal: o.signal || undefined, service: o.service })
+    release = await getGhLane().acquire({ bucket: o.bucket || 'read', signal: o.signal || undefined, service: o.service, waitMs: o.waitMs })
   } catch (e) {
-    return onQueuedCancel!(e)
+    // 没传失败回调时原样抛回原始错误（取消就是取消、冷却就是冷却），不能因为缺省回调把它换成 TypeError。
+    if (onQueueFailure) return onQueueFailure(e)
+    throw e
   }
   try {
     return await run()

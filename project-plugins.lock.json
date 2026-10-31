@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "harnessVersion": "0.2.1-rc.3",
+  "harnessVersion": "0.2.1-rc.5",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "008749e1183011a3840448aa1f4127532aa7e73a91d8818f12ab5562ed30d8b7",
+  "manifestSha256": "0327ccb867a3d4e641ef1154ab6b4e86898692a60a6a69098694792155b591bf",
   "plugins": [
     {
       "package": "dsh-context",
-      "version": "0.77.0",
+      "version": "0.78.2",
       "metadata": {
         "name": "dsh-context",
-        "version": "0.77.0",
+        "version": "0.78.2",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -55,10 +55,10 @@
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.41",
+      "version": "1.9.46",
       "metadata": {
         "name": "dsh-cost-meter",
-        "version": "1.9.41",
+        "version": "1.9.46",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -142,10 +142,10 @@
     },
     {
       "package": "dsh-better-sidebar",
-      "version": "0.28.1",
+      "version": "0.28.2",
       "metadata": {
         "name": "dsh-better-sidebar",
-        "version": "0.28.1",
+        "version": "0.28.2",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -193,11 +193,11 @@
     },
     {
       "package": "ghost-agent-sentinel",
-      "version": "0.1.8",
-      "commit": "1a2fc28c088f9c514cf55bb5a0536c0f523eb711",
+      "version": "0.2.4",
+      "commit": "5deeaa49cfc9f2fffe793eb2afb8e483c9ffd47c",
       "metadata": {
         "name": "ghost-agent-sentinel",
-        "version": "0.1.8",
+        "version": "0.2.4",
         "dsh": {
           "bundle": {
             "patch": "./dsh/cordis.patch.yml"
@@ -274,10 +274,10 @@
     },
     {
       "package": "dsh-ops",
-      "version": "0.4.1",
+      "version": "0.4.4",
       "metadata": {
         "name": "dsh-ops",
-        "version": "0.4.1",
+        "version": "0.4.4",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -293,7 +293,7 @@
           }
         },
         "peerDependencies": {
-          "@deepseek-ai/dsh": "^0.2.0-rc.2",
+          "@deepseek-ai/dsh": ">=0.2.0-rc.2 <0.2.2-0",
           "@deepseek-ai/cordis": "^4.0.4"
         },
         "peerDependenciesMeta": {

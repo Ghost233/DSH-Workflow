@@ -20,8 +20,8 @@ declare function emit(...args: any[]): any;
 declare const shared: any;
 declare const stores: any;
 declare function saveUiPrefs(...args: any[]): any;
-declare function viewFlagOf(...args: any[]): any;
-declare function setViewFlag(...args: any[]): any;
+declare function isDeckCapsuleFolded(...args: any[]): any;
+declare function setDeckStatusBar(...args: any[]): any;
 declare function h(...args: any[]): any;
 export const DEFAULT_PANEL_H: number = (function (): number {
   try { return Math.max(240, Math.round((window.innerHeight || 800) * 0.5)) } catch (e) { return 400 }
@@ -184,55 +184,9 @@ export const ISSUE_CACHE_TTL: number = ((typeof SYNC === 'object' && SYNC && SYN
 export const selectionByCwd: any = {}
 export const repositoryByCwd: any = {}
 export const SELECTION_BY_CWD_KEY: string = 'dsws.selectionByCwd'
-// #422 · 提示横幅按工作区收起记忆（默认全部收起；用户点过展开才展开，各类提示横幅都可收，由调用方横幅决定是否给收起入口）。
-//   存法：归一键 → 1（收起）或 0（用户点过展开），缺席是没点过、按收起算；localStorage 不可用时降级为仅内存。
-export const BANNER_FOLD_KEY: string = 'dsws.bannerFold'
-export const bannerFoldByCwd: any = {}
-;(function (): void {
-  try {
-    const raw: any = localStorage.getItem(BANNER_FOLD_KEY)
-    if (raw) { const m: any = JSON.parse(raw); if (m && typeof m === 'object') { for (const k of Object.keys(m)) { const nk: any = (typeof keyOf === 'function' ? keyOf(k) : k); if ((nk in bannerFoldByCwd)) continue; if (m[k]) bannerFoldByCwd[nk] = 1; else if (m[k] === 0 || m[k] === false) bannerFoldByCwd[nk] = 0 } } }
-  } catch (e) { /* 存储不可用降级为仅内存 */ }
-})()
-const persistBannerFold = function (): void { try { localStorage.setItem(BANNER_FOLD_KEY, JSON.stringify(bannerFoldByCwd)) } catch (e) { /* 忽略 */ } }
-// #1012：读写体搬去 kernel/settings-view.js（本机设置文件是唯一真源；旧表只是过渡）。
-//   导出名与签名一字不变，旧表那几行原地留着当过渡 —— 新模块不在（老产物、或渲染替身里）时照旧干活。
-//   新模块会在这四种情况下回 false（认不出工作区根、文档问不到、文件是更高版本、文档在手却写不进这一格），那时才走旧表这条路。
-//   说准这一手兜得住什么：文件里已经有这个工作区的记录时，写进旧表这一份读不回来（读侧以文件里那条为准），
-//   它只在本窗口内充当记性，页面一关就只剩文件里那一份。真正让一次改动不丢的是写那一趟自己：
-//   写失败时把这一格留在待写队列里，下一趟写再试一次（见 kernel/settings-view-write.js）。
-export const isBannerFolded = function (cwd: any): boolean {
-  try { const v: any = (typeof viewFlagOf === 'function') ? viewFlagOf(cwd, 'bannerFolded') : undefined; if (typeof v === 'boolean') return v } catch (eN) {}
-  // 新模块不在（老产物、渲染替身）时才走旧表：记得 1 是收起、0 是点过展开，缺席是没点过、按收起算。
-  try { if (!cwd) return true; const k: any = (typeof keyOf === 'function' ? keyOf(cwd) : String(cwd || '')); if (k in bannerFoldByCwd) return !!bannerFoldByCwd[k]; return true } catch (e) { return true }
-}
-// 把这一次折叠交给新模块（写本机设置文件那条路）：回 true 表示它接下了，旧表一个字都不动；
-//   回 false 表示它接不下（认不出工作区根、文档问不到、文件只读、文档在手却写不进这一格）或根本不在，调用方照老办法写旧表。
-const handoffBannerFold = function (cwd: any, folded: any): boolean {
-  try { if (typeof setViewFlag === 'function' && cwd) return setViewFlag(cwd, 'bannerFolded', !!folded) === true } catch (eN) {}
-  return false
-}
-// 同工作区各会话跟随重渲染（与 touchProbeAt 同例；设置页另有本地刷新兜底）：两条路都要走这一趟。
-const emitBannerFold = function (cwd: any): void {
-  try {
-    const nk: any = (typeof keyOf === 'function' ? keyOf(cwd) : String(cwd || ''))
-    if (typeof shared !== 'undefined' && shared && shared.cwd && keyOf(shared.cwd) === nk) emit(shared)
-  } catch (e1) {}
-  try {
-    if (typeof stores !== 'undefined') Object.keys(stores).forEach(function (kk: any): void { const st2: any = stores[kk]; if (st2 && st2.cwd && keyOf(st2.cwd) === (typeof keyOf === 'function' ? keyOf(cwd) : String(cwd || ''))) emit(st2) })
-  } catch (e2) {}
-}
-export const setBannerFolded = function (cwd: any, folded: any): void {
-  if (handoffBannerFold(cwd, folded)) { emitBannerFold(cwd); return }
-  try {
-    const k: any = (typeof keyOf === 'function' ? keyOf(cwd) : String(cwd || ''))
-    if (!cwd || !k) return
-    if (folded) bannerFoldByCwd[k] = 1
-    else bannerFoldByCwd[k] = 0
-    persistBannerFold()
-  } catch (e) { /* 忽略 */ }
-  emitBannerFold(cwd)
-}
+// #1612 之后胶囊折没折只看 kernel/deck-state.ts 的 statusBar（deck 工具箱关着时一律算折）：
+//   真实的读写都在那里（setDeckStatusBar / isDeckCapsuleFolded），本文件不再留转调的旧名空壳，
+//   旧 localStorage 表（dsws.bannerFold）与旧字段 bannerFolded 一并退役，读都不再读（维护者 2026-10-29 拍板）。
 // #1003 退役：镜像读写已删，这两个只剩空壳（调用方在本次范围外，留名免崩；一律按“无镜像”答）。
 export const getCachedSelection = function (cwd: any): any { return null }
 export const setCachedSelection = function (cwd: any, sel: any): void {}

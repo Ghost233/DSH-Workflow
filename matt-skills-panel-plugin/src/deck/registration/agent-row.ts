@@ -3,10 +3,10 @@
 //
 // 这一行跑在 agent 层（官方教程的正规路：名字、注入工具服务、应用函数），
 // 与宿主插件那一行互不干扰。宿主插件里的兼容钩子留着（别的产品可能是同一容器）。
-// 住在平台区的原因与装配点一样：行模块要读九个工具文件里的定义，
+// 住在平台区的原因与装配点一样：行模块要读十个工具文件里的定义，
 // 宿主层的文件之间不许互相引用，平台区是被排除的位置。
 //
-// 九个工具的执行在代执行通道接通前用诚实占位（只回“还没接好”并指去面板），
+// 十个工具的执行在代执行通道接通前用诚实占位（只回“还没接好”并指去面板），
 // 另加一个探针工具回服务清单——通道设计就靠这份清单定，两个都是通道接通即退役。
 //
 // 为什么这里不引用工具包（零框架引用）：
@@ -17,7 +17,7 @@
 // 所以这里只交纯数据对象（名字、描述、参数、输出、执行函数），
 // 注册表本来就认这种形状，不需要经过创建函数；
 // 参数用定义里写好的那份原样交，输出用共享层的原生形状。
-// 测试重心在退路（#1030 Q5）：接线固定给 defineTool 传空，退路即线上实际走的路。
+// 测试重心在直接交注册表的原生形状写法（#1030 Q5）：接线固定给 defineTool 传空，线上天天走的就是这条。
 import { definition as deckContextDef } from '../tools/context.js'
 import { definition as deckIssueGetDef } from '../tools/issue-get.js'
 import { definition as deckMapSnapshotDef } from '../tools/map-snapshot.js'
@@ -27,6 +27,7 @@ import { definition as deckMapPlanCreateDef } from '../tools/map-plan-create.js'
 import { definition as deckMapLinkDef } from '../tools/map-link.js'
 import { definition as deckIssuePatchDef } from '../tools/issue-patch.js'
 import { definition as deckIssueReportDef } from '../tools/issue-report.js'
+import { definition as deckWorkRouteDef } from '../tools/work-route.js'
 import { AGENT_TOOL_TIMEOUT_MS, deckAgentOutputSchemaRaw, makePendingExecute, probeDefinition, probeServices } from './register-options.js'
 import { registerSuggestNextSteps } from './suggest-steps-register.js'
 import { awaitDeckTable, peekDeckTable, readDeckGate, noteDeckPath, readDeckPath } from '../shell/table-cell.js'
@@ -53,10 +54,10 @@ interface HostValue { status: string; text: string; reason?: unknown }
 export const name = 'dsh-workflow-matt-panel-tools'
 export const inject = ['tools']
 
-/** 九个工具定义（顺序与 tool-order.ts 的 DECK_TOOL_ORDER 一致；这里只负责传全，顺序的真源在那一处）。 */
-const NINE = [deckContextDef, deckIssueGetDef, deckMapSnapshotDef, deckIssueListDef, deckIssueCreateDef, deckMapPlanCreateDef, deckMapLinkDef, deckIssuePatchDef, deckIssueReportDef] as const
-/** 编译期锁死九个：多数少一个这里就报错，不等跑起来才发现（#1030 Q1 按九个验收）。 */
-const _assertNineTools: 9 = NINE.length;
+/** 十个工具定义（顺序与 tool-order.ts 的 DECK_TOOL_ORDER 一致；这里只负责传全，顺序的真源在那一处）。 */
+const NINE = [deckContextDef, deckIssueGetDef, deckMapSnapshotDef, deckIssueListDef, deckIssueCreateDef, deckMapPlanCreateDef, deckMapLinkDef, deckIssuePatchDef, deckIssueReportDef, deckWorkRouteDef] as const
+/** 编译期锁死十个：多数少一个这里就报错，不等跑起来才发现（#1030 Q1 按九个验收，#1561 加到十个）。 */
+const _assertNineTools: 10 = NINE.length;
 
 function isRecord(v: unknown): v is Record<string, unknown> { return v !== null && typeof v === 'object' && !Array.isArray(v) }
 

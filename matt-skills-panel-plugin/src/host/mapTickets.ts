@@ -37,9 +37,11 @@ type WfArgs = any;
 //   3. 补上客户端要的两样：`number`（后端只给 key）与**大写的** `state`（客户端多处按 'CLOSED' 比较）。
 //
 // 接线的纪律：本文件由 index.js 动态 import 加载（D7：新文件不静态 import）；依赖全部由 index 显式传入；
-// 本文件不引用其他新文件。日志沿用既有的 host.call / host.call.fail 两个事件（不新增事件名）。
+// #1584 起只额外静态引用 tracker 层的共享补齐入口（同一把工作区→仓库身份的尺子），不引其它新文件。
+// 日志沿用既有的 host.call / host.call.fail 两个事件（不新增事件名）。
+import { resolveRepoRefForCwd } from '../tracker/session/repo-ref.js'
 export function createMapTickets(deps?: any): any {
-  const { canonicalKey, selectEarly, isComposerSelection, getTrackerRegistry, getPlatform, ctx, DEFAULT_CWD, logCtx, groupTickets, getMapBody, detectionExec } = deps
+  const { canonicalKey, selectEarly, isComposerSelection, getTrackerRegistry, getPlatform, ctx, DEFAULT_CWD, logCtx, groupTickets, getMapBody, detectionExec, openSession } = deps
 
   function hash8(s?: any) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
   // #1052 续：这一趟操作的编号，用来把宿主这一层的日志行与房间那一层的日志行串起来。
@@ -125,13 +127,23 @@ export function createMapTickets(deps?: any): any {
     const key = String((args && (args.key != null ? args.key : args.number)) || '').trim()
     if (!key) return { ok: false, error: { kind: 'parse', message: '缺少地图编号（key）' }, logged: logged }
     const sel = await selectEarly({ cwd, backendId: (args && args.backendId) || undefined })
-    if (!isComposerSelection(sel)) return unsupported('这个后端不能按需取一张地图的子票（在它自己的网页上看全部）', logged)
+    // #1636：只放开门卫对 GitHub 的排除，其余拦法原样不动。
+    // isComposerSelection 是快照、刷新、探针、评论四条路共用的通道选择，今天对 backendId=github 永远返回假；
+    // 但首屏快照本来就不装已关闭容器的已关闭子票，而 GitHub 有按需取子票的读路径，所以这里给 github 单独开口。
+    // 有没有取子票的能力仍由后端自己回答：注册表里没这条读路径就回不支持（下一句），后端自己说不支持也如实透出。
+    if ((!sel || sel.backendId !== 'github') && !isComposerSelection(sel)) return unsupported('这个后端不能按需取一张地图的子票（在它自己的网页上看全部）', logged)
     const reg = await getTrackerRegistry()
     const backendId = sel.backendId
     const tracker = reg.get(backendId)
     if (!tracker || typeof tracker.listSubIssues !== 'function') return unsupported('这个后端不支持按需取一张地图的子票', logged)
     let repoRef: any = null
     try { repoRef = reg.describe({ cwd }, backendId) } catch (e) { repoRef = null }
+    // #1584 F2：空 refId 的壳不算身份（GitHub / GitLab 只给目录时 describe 只回显示名）；
+    // 给不出就问会话（身份真源），拿不到再走原来的兜底。
+    if (!repoRef || !repoRef.refId) {
+      const identified = await resolveRepoRefForCwd({ cwd, backendId, describe: reg.describe, openSession })
+      if (identified) repoRef = identified
+    }
     if (!repoRef) repoRef = { backend: backendId, refId: cwd, name: String(cwd).split(/\//).pop() || backendId, url: '' }
     // effort 维度：地图的身份是 (effortId, key)，同号地图在不同工作单元里是两张 —— 调用方给就带上。
     if (args && args.effortId !== undefined && args.effortId !== null) repoRef = Object.assign({}, repoRef, { effortId: String(args.effortId) })

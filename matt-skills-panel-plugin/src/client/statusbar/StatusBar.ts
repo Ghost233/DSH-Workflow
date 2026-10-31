@@ -38,7 +38,7 @@ declare function Ic(props?: any): any;
 declare function Icon(...args: any[]): any;
 declare function injectFixate(...args: any[]): any;
 declare function isBackendUnavailable(...args: any[]): any;
-declare function isBannerFolded(...args: any[]): any;
+declare function isDeckCapsuleFolded(...args: any[]): any;
 declare function isEnabled(...args: any[]): any;
 declare function loadChain(...args: any[]): any;
 declare function loadSnapshot(...args: any[]): any;
@@ -59,7 +59,7 @@ declare function runGuideMissing(...args: any[]): any;
 declare function runGuideRecheck(...args: any[]): any;
 declare function scheduleStatusClose(...args: any[]): any;
 declare function seg(...args: any[]): any;
-declare function setBannerFolded(...args: any[]): any;
+declare function deckDoorCapsuleTail(...args: any[]): any; declare function deckDoorExpand(...args: any[]): any; declare function deckDoorFold(...args: any[]): any; declare function deckDoorConfirmEl(...args: any[]): any; declare function deckDoorCloseConfirmEl(...args: any[]): any;
 declare function showStatusBugMenu(...args: any[]): any;
 declare function showStatusTakeMenu(...args: any[]): any;
 declare function snapFresh(...args: any[]): any;
@@ -85,6 +85,8 @@ declare const SkillFloatList: any;
 declare const StatusLogDot: any;
 // #1409：建议取数流的挂载组件（同目录叶子 suggestStream.ts）。它返回 null，只做订阅接线，不画任何东西。
 declare const SuggestStreamMount: any;
+// #1220：当前显示会话的登记组件（同目录叶子 shownAttentionMount.ts）。同样返回 null，只把「正在显示哪个会话」交给视野模型。
+declare const ShownAttentionMount: any;
 declare const Tip: any;
 declare const CONTAINER_ACCENT: any;
 
@@ -228,7 +230,7 @@ export const StatusBar = (props: any) => {
   // 胶囊阶梯机（#725）：判据在 statusbar/capFold.js，机器在 statusbar/capFoldMachine.js，这里只留接线。
   //   这两张表（每一段完整那串字 / 机器上一次写下的那串字）必须跨调用带着走，所以挂在 ref 上。
   // 横幅收起态的判定放在折叠接线之前：下面那条挂观察器的副作用依赖它（展开时重挂），放后面会报先用后声明。
-  const deckFolded = isBannerFolded(s.cwd)
+  const deckFolded = isDeckCapsuleFolded(s.cwd)
   const foldKeep = React.useRef({ full: {}, written: {} })
   // #725 真机回归补的一条：观察器盯的是**元素**，而胶囊这个元素是会换代的（功能区先收起、再展开时
   //   React 会新造一个；旧那个已经被摘下来，它的尺寸从此不会再变、观察器也就再不会响）。于是
@@ -322,10 +324,12 @@ export const StatusBar = (props: any) => {
     } catch (e) {}
   }, [_bannerLogKey])
   // #422 · 收起整个功能区：横幅上的叉收起横幅与胶囊状态栏（打破胶囊永不隐藏旧规）；默认收起，用户点过展开才展开，按工作区记住（判定见上面折叠接线之前）。
-  const foldBanner = function () { try { setBannerFolded(s.cwd, true) } catch (e) {} }
-  const expandBanner = function () { try { setBannerFolded(s.cwd, false) } catch (e) {} }
+  const foldBanner = function () { try { deckDoorFold(s) } catch (e) {} }
+  // #1655：展开键本体一并传进门逻辑留锚，跟随浮层按这颗键的矩形定位。
+  const expandBanner = function (e: any) { try { deckDoorExpand(s, e && e.currentTarget) } catch (e2) {} }
   // 收放按钮：胶囊最右侧的“∨”图标（无文字，技能入口之后）；收起态为带文字的小按钮（悬停与无障碍文案保留全称）。
-  const capsuleToggle = h(Tip, { content: tr('banner.foldDeck') }, h('span', { className: 'dsws-fold-toggle', onClick: function (e: any) { e.stopPropagation(); foldBanner() }, 'aria-label': tr('banner.foldDeck'),
+  // key 必填：这颗「∨」与右边那颗红色「X」拼成同一个数组交给胶囊，React 对数组里的每个元素都要求稳定 key（缺了会报错、门禁会红）。
+  const capsuleToggle = h(Tip, { key: 'deckFoldToggle', content: tr('banner.foldDeck') }, h('span', { className: 'dsws-fold-toggle', onClick: function (e: any) { e.stopPropagation(); foldBanner() }, 'aria-label': tr('banner.foldDeck'),
     // 接线（#1335 界面反馈）：收起整块功能区的叉是纯图标控件，只接按压压暗，不加悬停类，
     // 免得小图标按下时下沉一像素看着像错位；日志标识与胶囊本体那条分开。
     'data-press': 'icon',
@@ -366,7 +370,7 @@ export const StatusBar = (props: any) => {
         Ic({ n: 'chev-up', size: 10 }),
         h('span', null, tr('banner.expandDeck')),
       ])),
-      modalSeat, h(SuggestStreamMount, { sid: sid }),
+      modalSeat, deckDoorConfirmEl(h, s), deckDoorCloseConfirmEl(h, s), h(SuggestStreamMount, { sid: sid }), h(ShownAttentionMount, { sid: sid }),
     ])
   }
   // #522：调试开关关闭时小灰点不挂载（胶囊里不留空位）；开时常驻；开关切换经已有的日志开关广播刷新各会话界面，此处只读开关不另加广播。
@@ -390,7 +394,7 @@ export const StatusBar = (props: any) => {
       Icon({ scheme: s.ui.icon, size: 14 }),
       h('span', { 'data-fold-priority': 1 }, tr('panel.title')),
     ]),
-    h(SessionChainCapsule, { st: s, sid: sid }), h(SuggestStreamMount, { sid: sid }),
+    h(SessionChainCapsule, { st: s, sid: sid }), h(SuggestStreamMount, { sid: sid }), h(ShownAttentionMount, { sid: sid }),
     h('span', { ref: takeAnchorRef, style: { position: 'relative', display: 'inline-flex' }, onMouseEnter: showTakeMenu, onMouseLeave: function () { scheduleClose(takeCloseRef, closeTakeMenu) } }, [
       h(Tip, { content: tr('nav.takeableTitle') }, seg('target', [h('span', { 'data-fold-priority': 9 }, tr('nav.takeable')), num(String(fr), '2ch')], '#4ade80', function () { s.stateFilter = 'frontier'; s.lblFilters = []; go('list') }, undefined, 'status.seg.takeable')),
       s.takeMenuOpen ? PortalOverlay({ className: 'dsws-takemenu', onMouseEnter: function () { clearClose(takeCloseRef) }, onMouseLeave: function () { scheduleClose(takeCloseRef, closeTakeMenu) }, onClick: function (e: any) { e.stopPropagation() }, style: { position: 'fixed', left: s.takeMenuPos ? s.takeMenuPos.left : 0, bottom: s.takeMenuPos ? s.takeMenuPos.bottom : 0, padding: 4, zIndex: 2147483000, background: 'var(--dsw-alias-bg-layer-2,#16181d)', border: '1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius: 8, boxShadow: '0 8px 30px rgba(0,0,0,.45)' } }, [
@@ -457,7 +461,7 @@ export const StatusBar = (props: any) => {
       'data-log': 'status.refresh' }, [h('span', { className: 'dsws-rficon' + (s.refreshing ? ' dsws-spin' : '') }, [Ic({ n: 'refresh', size: 11 })]), h('span', { 'data-fold-priority': 2 }, tr('nav.refresh')), h('span', { key: 'dd', 'data-fold-priority': 3, style: { color: freshColor } }, splitTimeStr(' ' + timeStr).date), h('span', { key: 'tt', 'data-fold-priority': 6, style: { color: freshColor } }, splitTimeStr(' ' + timeStr).time)])),
     h(SkillFloatList, { s: s }),
     logDotOn ? h(StatusLogDot, { s: s }) : null,
-    capsuleToggle,
+    ...deckDoorCapsuleTail(h, s, capsuleToggle),
     // #1297：入口浮层挂在状态栏这一层（不是悬停菜单里）：菜单随鼠标离开关门时浮层不受影响，
     //   打开后鼠标可以自由移到浮层上选卡。
     h(EntryChooser, { key: 'entryChooser', st: s, from: 'statusbar' }),
@@ -480,7 +484,7 @@ export const StatusBar = (props: any) => {
   //   这里因此不再声明它；两个转调包装留着，卡的界面在那边直接调用它们。
   if (!bannerStep) {
     // 无 banner 时为胶囊 + 常驻收起按钮（#422：收起即整个功能区消失）
-    return h('div', { style: Object.assign({ display: 'flex', flex: 'none', flexDirection: 'column', alignItems: 'center', gap: 2, overflow: RDOM ? 'hidden' : 'visible' }, dswsStatusDockGeom()) }, [modalSeat, workspaceFileNoteEl(s), capsule])
+    return h('div', { style: Object.assign({ display: 'flex', flex: 'none', flexDirection: 'column', alignItems: 'center', gap: 2, overflow: RDOM ? 'hidden' : 'visible' }, dswsStatusDockGeom()) }, [modalSeat, deckDoorConfirmEl(h, s), deckDoorCloseConfirmEl(h, s), workspaceFileNoteEl(s), capsule])
   }
   const bann = function (text: any, btnLabel: any, onBtn: any, foldable: any, alt: any) {
     // #669：这颗叉（收起整个功能区）与左边那颗主按钮之间留 12px —— 原来只隔 6px，两颗按钮长得一样高、
@@ -491,16 +495,17 @@ export const StatusBar = (props: any) => {
     // #1438：有些横幅在主按钮旁边还要一颗次要按钮（今天只有登录失败那条 —— 检查已经答对了「没登录」，
     //   可人到插件外面把登录修好之后，这条横幅上原来没有一颗点了会重查的按钮，只能自己绕到环境检查页）。
     //   进行中置灰并转圈，点不出第二趟；没声明就不画，那颗叉永远只有一颗。
-    return h('div', { className: 'dsws-banner warn', style: { margin: 0, maxWidth: 560, cursor: 'default' } }, [
+    // #1661 单行自适应：短文案不换行、宽度跟着内容走（窄屏尾巴省略），图标与按钮固定不压缩。
+    return h('div', { className: 'dsws-banner warn', style: { margin: 0, maxWidth: '100%', width: 'max-content', cursor: 'default' } }, [
       Ic({ n: 'alert', size: 13 }),
-      h('span', { style: { flex: 1 } }, text),
-      h('button', { className: 'dsws-btn dsws-hov', style: { borderColor: 'rgba(245,158,11,.6)' }, 'data-press': 'button', 'data-log': 'status.banner.action', onClick: onBtn }, btnLabel),
+      h('span', { style: { flex: '0 1 auto', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, text),
+      h('button', { className: 'dsws-btn dsws-hov', style: { flex: 'none', whiteSpace: 'nowrap', borderColor: 'rgba(245,158,11,.6)' }, 'data-press': 'button', 'data-log': 'status.banner.action', onClick: onBtn }, btnLabel),
       alt ? h('button', { className: 'dsws-btn ghost dsws-hov', style: { color: '#f59e0b', borderColor: 'rgba(245,158,11,.6)', marginLeft: 6, opacity: alt.busy ? 0.6 : 1 }, 'data-press': 'button', 'data-log': 'status.banner.recheck', onClick: alt.onClick, disabled: !!alt.busy }, [h('span', { className: 'dsws-rficon' + (alt.busy ? ' dsws-spin' : ''), style: { marginRight: 4 } }, [Ic({ n: 'refresh', size: 11 })]), tr(alt.label)]) : null,
       foldable ? h(Tip, { content: tr('banner.foldDeck') }, h('button', { className: 'dsws-btn ghost dsws-banner-fold-x', 'aria-label': tr('banner.foldDeck'),
         // 接线（#1335 界面反馈）：黄条那颗叉是纯图标，只接按压压暗；日志标识 status.banner.fold。
         'data-press': 'icon',
         'data-log': 'status.banner.fold',
-        onClick: foldBanner, style: { borderColor: 'rgba(245,158,11,.6)', padding: '1px 6px', marginLeft: 12, display: 'inline-flex', alignItems: 'center' } }, Ic({ n: 'x', size: 11 }))) : null,
+        onClick: foldBanner, style: { flex: 'none', borderColor: 'rgba(245,158,11,.6)', padding: '1px 6px', marginLeft: 12, display: 'inline-flex', alignItems: 'center' } }, Ic({ n: 'x', size: 11 }))) : null,
     ])
   }
   // #663：横幅就这一条 —— 正文与按钮标签用清单里那对词条键，按钮点下去照清单声明的 missing 走
@@ -529,7 +534,7 @@ export const StatusBar = (props: any) => {
   })()
   return h('div', { style: Object.assign({ display: 'flex', flex: 'none', flexDirection: 'column', alignItems: 'center', gap: 4, position: 'relative' }, dswsStatusDockGeom()) }, [
     stepBanner, workspaceFileNoteEl(s),
-    capsule,
+    capsule, deckDoorConfirmEl(h, s), deckDoorCloseConfirmEl(h, s),
     modalSeat,
     (s.gateModalOpen && s.gateModalSource==='status' ? h('div', { onClick:function(e: any){ if(e.target===e.currentTarget) closeGate() },
       // 接线（#1335 界面反馈）：点遮罩空白处会关掉这个窗，遮罩自己也是能点到的，所以接一组标识；
@@ -540,17 +545,15 @@ export const StatusBar = (props: any) => {
       h('div', { style:{ background:'var(--dsw-alias-bg-layer-2,#16181d)', border:'1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius:12, padding:14, width:'92%', maxWidth:380, boxShadow:'0 8px 24px rgba(0,0,0,.5)' } }, [
         h('div', { style:{ fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6, marginBottom:6 } }, [Ic({n:'compass',size:14}), h('span', null, tr('switch.pleaseSelectTracker'))]),
         h('div', { style:{ fontSize:11, color:'#8b8b95', marginBottom:10, lineHeight:1.5 } }, tr('switch.gateIntro')),
-        h('div', { style:{ fontSize:11, color:'#f59e0b', background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.25)', borderRadius:6, padding:'6px 8px', marginBottom:10 } }, tr('gate.wipNotice')),
         s.gateLoading ? h('div', { style:{ fontSize:11, color:'#8b8b95', padding:'6px 0' } }, tr('panel.loadingShort')) : h('div', { style:{ display:'flex', flexDirection:'column', gap:6 } }, otherFiltered(s.backendModules).map(function(m: any){
           const isSel=s.gateSelected===m.id; const col=(typeof backendColorOf==='function'?backendColorOf(m.id):'#6e7681'); const isRec=(s.backendModules||[])[0] && (s.backendModules||[])[0].id===m.id;
-          // #669 第 6 件（ADR 20260921）：能力不全的后端（今天只有 GitLab）在这里也置灰不可选，判据问 isBackendUnavailable 一份
-          const locked=(typeof isBackendUnavailable==='function')&&isBackendUnavailable(m.id);
+          // #1600：三后端全可选，不再置灰（名单已清空，这里不再问锁）。
           // 接线（#1335 界面反馈）：这一行是用户点得到的后端单选行，整行都能点，所以用 row 这一档；
           // data-log 放在 label 上而不是行里的 radio：点行上的字时浏览器会再合成一次 radio 的点击，
           // 放 label 上两次点击记的都是同一颗（重复但认得准），放 radio 上那次点击会被记成遮罩（认错人）。
-          const row = h('label', { key:m.id, 'data-target-id':m.id, 'data-target-locked': locked?1:0, className:'dsws-hov',
-            'data-press':'row', 'data-log':'status.gate.target.' + m.id, style:{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8, border:isSel?'1px solid '+col:'1px solid var(--dsw-alias-border-l1,#2a2d35)', background:isSel?'rgba(88,166,255,.08)':'transparent', cursor: locked?'not-allowed':'pointer', opacity: locked?0.45:1 } }, [ h('input',{type:'radio',checked:isSel,disabled:!!locked,onChange:function(){ if(locked) return; s.gateSelected=m.id;emit(s)}}), h('span',{style:{width:8,height:8,borderRadius:'50%',background:col,flex:'none'}}), h('span',{style:{fontSize:12,fontWeight:600}},m.label), h('span',{style:{fontSize:10,color:'#8b8b95'}},m.id), h('span',{style:{flex:1}}), isRec?h('span',{style:{fontSize:10,color:'#4ade80',border:'1px solid #4ade80',borderRadius:4,padding:'0 4px'}},'推荐'):null ])
-          return locked ? h(Tip, { key:m.id, content: tr('switch.targetLockedTip') }, row) : row
+          const row = h('label', { key:m.id, 'data-target-id':m.id, className:'dsws-hov',
+            'data-press':'row', 'data-log':'status.gate.target.' + m.id, style:{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8, border:isSel?'1px solid '+col:'1px solid var(--dsw-alias-border-l1,#2a2d35)', background:isSel?'rgba(88,166,255,.08)':'transparent', cursor:'pointer' } }, [ h('input',{type:'radio',checked:isSel,onChange:function(){ s.gateSelected=m.id;emit(s)}}), h('span',{style:{width:8,height:8,borderRadius:'50%',background:col,flex:'none'}}), h('span',{style:{fontSize:12,fontWeight:600}},m.label), h('span',{style:{fontSize:10,color:'#8b8b95'}},m.id), h('span',{style:{flex:1}}), isRec?h('span',{style:{fontSize:10,color:'#4ade80',border:'1px solid #4ade80',borderRadius:4,padding:'0 4px'}},'推荐'):null ])
+          return row
         })),
         s.gateError ? h('div', { style:{ fontSize:11, color:'#f87171', marginTop:8 } }, s.gateError) : null,
         // #663：这个窗里那组「域文档布局」单选撤掉了 —— 全新工作区打开时还没装 gh、还没建仓库，

@@ -11,14 +11,19 @@
  * ④ 把宿主回话里的探测间隔与处境交给同一闭包的探测循环，界面自己不做判断。
  *
  * 心跳间隔来自契约层 SYNC.ATTENTION_HEARTBEAT_MS（与预算同一个数同源，
- * 客户端半边不 import 核心产物）。静默阈值住中央 config/ttl.yaml 的 attentionExpiryMs。
+ * 客户端半边不 import 核心产物）。静默阈值住中央 config/ttl.yaml 的 attentionExpiryMs，
+ * 人走开的判据住同一份 YAML 的 attentionHumanInputWindowMs。
  * 本文件为模块真源，同名 .js 是构建产物，构建侧去掉行首 export 后拼回闭包。
+ *
+ * #1220：这个文件还管着「界面正在显示哪个会话」这条指针（_shownAttentionStore）——状态栏挂载的
+ * 挂载组件在这里登记，心跳、焦点上报、探测循环与初始化链重算钩子都经 attentionStoreOf 取它。
+ * 修这条指针时别退回「永远看 shared」：shared.cwd 只在冷启动探针里写一次，之后不再改。
  *
  * 反例：不要把窗口身份放 localStorage；不要在心跳里顺手做探测判断；
  * 中央时间参数走顶部单行真引用（构建剥离后由闭包另一片提供，单行是硬要求），
  * 其余跨闭包名字一律 declare，不要加 export default。
  */
-    import { ATTENTION_EXPIRY_MS, ATTENTION_HEARTBEAT_MS } from '../../../shared/time-config/values.js'
+    import { ATTENTION_EXPIRY_MS, ATTENTION_HEARTBEAT_MS, ATTENTION_HUMAN_INPUT_WINDOW_MS } from '../../../shared/time-config/values.js'
 // 跨闭包的值引用按仓里规矩写模块级 declare（实现只在拼好的闭包里有一份，类型检查各看各的）。
 declare const host: any;
 declare const stores: any;
@@ -61,9 +66,30 @@ export const attentionVisible = function (): boolean {
 /** 最近一次人类输入是什么时候（点击 / 按键 / 滚轮 / 触摸）。心跳只证明「还看着」，这一条才是「真有人在用」。 */
 export let _attentionHumanAt: number = 0;
 export const attentionNoteHuman = function (): void { try { _attentionHumanAt = Date.now(); } catch (e) {} };
-/** 这个工作区根对应的那个会话状态（面板正在看的那个；shared 优先，其次任意一个非空 cwd 的 store）。 */
+// #1220：界面正在显示哪个会话，就登记在这里——存的是那份会话状态对象本身的引用，不是会话号。
+// 为什么不用会话号：状态对象在会话期间长期存活、内容原地更新（snapshot-cache-store.ts 的 storeOf），
+// 引用本身就是「正在显示」的证据；按会话号记会把「刚才看过、现在已经不显示」的会话当成当前显示。
+export let _shownAttentionStore: any = null;
+/** 状态栏挂载时登记它此刻正在显示的那份会话状态（src/client/statusbar/shownAttentionMount.ts 调用）。 */
+export const noteShownAttentionStore = function (st: any): void {
+  try { _shownAttentionStore = st || null; } catch (eShown) {}
+};
+/** 状态栏卸载时清掉登记。按同一引用清除：旧挂载卸载时，指针可能已经指向新挂载登记的那份，不能误擦。 */
+export const forgetShownAttentionStore = function (st: any): void {
+  try { if (_shownAttentionStore === st) _shownAttentionStore = null; } catch (eForget) {}
+};
+/**
+ * 这个工作区根对应的那个会话状态。兜底顺序（#1220 认可的）：
+ *   一、调用处传进来的状态（带 cwd 就用它）；
+ *   二、界面登记的当前显示状态（状态栏正在显示哪个会话，钩子就看哪个）——修好黄条不消失的就是这一级；
+ *   三、shared（冷启动探针留下的那一个工作区）；
+ *   四、任意一个带 cwd 的会话状态。
+ * 反例：以前第二级直接跳到 shared，而 shared.cwd 只在冷启动时写一次，钩子就永远看第一个工作区；
+ * 当前会话初始化完成后它仍按第一个工作区判「初始化还等着」，那条黄条自然收不掉。
+ */
 export const attentionStoreOf = function (st: any): any {
   if (st && st.cwd) return st;
+  try { if (_shownAttentionStore && _shownAttentionStore.cwd) return _shownAttentionStore; } catch (eShown) {}
   try { if (shared && shared.cwd) return shared; } catch (e0) {}
   try {
     const keys: string[] = Object.keys(stores);
@@ -171,14 +197,15 @@ export const attentionStandingOf = function (cwd: any): string {
 };
 /**
  * 20 秒一次的本地心跳。零配额、不出网那一半说的是「它不引发任何探测」：它只上报事实。
- * 三条门在源头上就把它掐掉 —— 面板不可见、窗口不在前台、最近一分钟没有任何人类输入（人走开了的窗口
- * 不该靠心跳一直霸着活跃名额）。三条任何一条不成立，连 host.call 都不发。
+ * 三条门在源头上就把它掐掉 —— 面板不可见、窗口不在前台、最近一段时间没有任何人类输入（人走开了的窗口
+ * 不该靠心跳一直霸着活跃名额；这段判据值见 config/ttl.yaml 的 attentionHumanInputWindowMs）。
+ * 三条任何一条不成立，连 host.call 都不发。
  */
 export const attentionBeat = function (): void {
   try {
     if (!attentionVisible()) return;
     try { if (typeof document !== 'undefined' && typeof document.hasFocus === 'function' && !document.hasFocus()) return; } catch (eF) {}
-    if (!_attentionHumanAt || (Date.now() - _attentionHumanAt) > 60000) return;
+    if (!_attentionHumanAt || (Date.now() - _attentionHumanAt) > ATTENTION_HUMAN_INPUT_WINDOW_MS) return;
     _attentionLastBeatAt = Date.now();
     reportWorkspaceAttention(null, 'heartbeat', null);
   } catch (e) {}

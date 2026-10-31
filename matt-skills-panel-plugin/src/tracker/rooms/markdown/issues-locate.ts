@@ -12,7 +12,8 @@
 //    **写**返回 conflict 诚实失败，绝不猜（猜错文件是数据损坏，不是显示问题）。
 //  - 根级 `.scratch/map.md` 这种扁平历史布局算作 effortId = ''（空串）。
 import { parseMd, parentKeyFromFile } from './parse.js'
-import { readTextFile, listDir, listDirOrThrow, statFile, exists } from './read.js'
+import { readTextFile, listDir, listDirOrThrow, namesOfListingOrThrow, visibleNamesOf, statFile, exists } from './read.js'
+import type { ScratchRootListing } from './scratch-listing.js'
 import { issuesDir } from './path.js'
 import { ERROR_KIND } from '../../contract/vocabulary.js'
 import { failAs, rawJson } from './error-fail.js'
@@ -80,7 +81,7 @@ export async function listEfforts(ctx: OpContext): Promise<{ effortId: string; d
   // 目录在却读不出来，就抛错由调用方如实失败 —— 把「读不成」当「一个 effort 都没有」，
   // 会让 counts 回 0、list 回空表，正是 #1174 要根治的那类谎话。
   const entries=await listDirOrThrow(ctx, root)
-  const names=entries.filter(function(e: string){ return e && !e.startsWith('.') }).sort()
+  const names=visibleNamesOf(entries).sort()
   for(const e of names){
     const dirPath=plat.join(root,e)
     const mapP=plat.join(dirPath,'map.md')
@@ -123,18 +124,28 @@ export async function workUnitKindOf(ctx: OpContext, dir: string): Promise<WorkU
  *
  * 与 listEfforts 的分工：listEfforts 仍是「会写地图的那些单元」的旧口径（写入端与建票取号还要它），
  * 读取端一律用本函数，才能看见只含 spec.md 或 issues/ 的目录。两个口迟早并成一个，等写入端也搬完。
+ *
+ * #1528：第二个参数允许调用方把**已经列好的** `.scratch` 根目录结果（根路径 + 三态结果，ScratchRootListing）
+ *   递进来——一趟环境检查里两项判据要的是同一份名字表，谁先列到就交给后一项，不必再列一次盘。不给就照旧
+ *   自己列一次；解析这份结果的口径与 listDirOrThrow 相同（目录本来不存在算空表，其余没读成的照抛）。
+ *   根路径对不上时当场抛错：宁可停下，也不拿另一个目录的盘面冒充这一份。
  */
-export async function listWorkUnits(ctx: OpContext): Promise<WorkUnit[]> {
+export async function listWorkUnits(ctx: OpContext, prefetchedRootListing?: ScratchRootListing): Promise<WorkUnit[]> {
   const plat=getPlat(ctx)
   const root=await getScratchRoot(ctx)
+  if (prefetchedRootListing && prefetchedRootListing.root !== root) {
+    throw new TypeError('listWorkUnits 收到的预取列举属于 ' + prefetchedRootListing.root + '，不是 ' + root)
+  }
   const out: WorkUnit[]=[]
   const rootKind=await workUnitKindOf(ctx, root)
   if(rootKind) out.push({ effortId:'', dir:root, kind:rootKind })
   // 列不出 `.scratch` 这一层时：目录不存在算空（全新工作区还没有它，这不是故障）；
   // 目录在却读不出来，就抛错由调用方如实失败 —— 把「读不成」当「一个工作单元都没有」，
   // 会让 counts 回 0、list 回空表，正是 #1174 要根治的那类谎话。
-  const entries=await listDirOrThrow(ctx, root)
-  const names=entries.filter(function(e: string){ return e && !e.startsWith('.') }).sort()
+  const entries = prefetchedRootListing
+    ? namesOfListingOrThrow(prefetchedRootListing.listing)
+    : await listDirOrThrow(ctx, root)
+  const names=visibleNamesOf(entries).sort()
   for(const e of names){
     const dirPath=plat.join(root,e)
     const kind=await workUnitKindOf(ctx, dirPath)
@@ -377,7 +388,7 @@ export async function resolveMapFile(ctx: OpContext, repo: RepoWithPath | null, 
  *  调用方用 `mdScene` 说明自己说的是哪套词汇（feature 找 spec、effort 找 map）；没说明时先找 spec、
  *  找不到再回落 map，保证老工作区的 `#00` 链接照旧打开地图。
  *
- *  未给范围且多命中时，读按目录顺序取第一个、写报 conflict —— 与 resolveMapFile 同一口径。 */
+ *  未给范围且多命中时，读写都报 conflict（#1595 Q1=A：读也不猜，原文列出候选）；单候选保持原样直接返回。 */
 export async function resolveSpecFile(ctx: OpContext, repo: RepoWithPath | null, o: LocateOpts = {}): Promise<{ ok: true; path: string; effortId: string } | { ok: false; error: { kind: string; message: string; raw: string } }> {
   const plat=getPlat(ctx)
   const scope=scopeOf(repo, o)
@@ -394,7 +405,7 @@ export async function resolveSpecFile(ctx: OpContext, repo: RepoWithPath | null,
     }
     if(!hits.length){
       const entries=await listDirOrThrow(ctx, scratch)
-      const names=entries.filter(function(e: string){ return e && !e.startsWith('.') }).sort()
+      const names=visibleNamesOf(entries).sort()
       for(const e of names){
         const p=plat.join(scratch,e,'spec.md')
         try{ if(await exists(ctx,p)) hits.push({ path:p, effortId:String(e), key:'00', legacy:false, parentKey:null, degenerate:false }) }catch{}
@@ -402,7 +413,8 @@ export async function resolveSpecFile(ctx: OpContext, repo: RepoWithPath | null,
     }
   }
   if(hits.length===0) return failAs(ERROR_KIND.NOTFOUND, 'spec.md not-found', rawJson({ effortId: scope===undefined?null:scope }))
-  if(hits.length>1 && o.mode==='write') return conflict('00', hits)
+  // #1595 Q1=A：无范围多候选时读也不猜，直接报冲突并在原文列出候选（复用本文件 conflict 写法）；单候选保持原样。
+  if(hits.length>1) return conflict('00', hits)
   return { ok:true, path:hits[0].path, effortId:hits[0].effortId }
 }
 /** 00 号容器（规格或地图）的定位：读取侧与写入侧共用同一顺序（#1480 两轴评审确认的偏差收口）。

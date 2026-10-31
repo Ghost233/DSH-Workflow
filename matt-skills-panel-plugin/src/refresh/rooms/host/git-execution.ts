@@ -14,13 +14,15 @@
 // 需要 `gh repo view` 的那一级属于出站，已经从这里删掉；它改由会话的 getRepoKey 能力在开会话之后
 // 走 Tracker 操作管线（先裁决、再按后端口径记账），见 src/refresh/rooms/host/session-opener.ts。
 // 所以「选哪个后端」这一层永远不会起 gh，也不会花额度。
-import { timeoutForGhArgs, isWriteGhArgs, ghArgsOf, ghOutboundEntryOf, noteGhGraphqlCorrection, type OutboundGateLike } from '../../../tracker/kernel/outbound-tiers.js'
+import { timeoutForGhArgs, queueTimeoutForTier, isWriteGhArgs, ghArgsOf, ghCommandLabel, ghOutboundEntryOf, noteGhGraphqlCorrection, outboundCooldownOf, ghCooldownReply, ghQueueTimeoutReply, type OutboundGateLike } from '../../../tracker/kernel/outbound-tiers.js'
 import { getGhLane } from './outbound-admission.js'
 import { createGhExecution } from './gh-execution.js'
 // #1392：实例销毁时一条外部命令的收尾（还名额、终止子进程、接住 done、建计时器守卫）见 ../shared/command-cleanup/。
 import { onceRelease, abandonCommand, startWaitTimeout, DISPOSED_MESSAGE } from '../../../shared/command-cleanup/src/command-cleanup.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
 import { PROC_GRACE_MS } from '../../../shared/time-config/src/values.js'
+// #1566：第三级要扫 .git/config 里的全部远端，解析那一小段归 tracker/kernel（GitHub/GitLab 两边共用）。
+import { remoteUrlsOfGitConfig } from '../../../tracker/kernel/git-remote.js'
 
 // ---------------------------------------------------------------------------
 // 类型（#1155 类型标注，只写类型不写实现）。
@@ -39,6 +41,15 @@ declare const process: { cwd(): string } | undefined
 
 /** 仓库身份：owner 与 name 两个字段，parseGithubRepo 与缓存文件名都只认这两个。 */
 interface RepoKey { owner: string; name: string }
+
+/**
+ * #1566 仓库身份证据的三态：唯一身份可用；有多个不同地址（不猜）；一个都没有。
+ * 另用 null 表示「连远端列表都读不到」（没有 git、也读不到 .git/config）——那不是「一个都没有」，
+ * 求值侧要按暂时确认不了处理，不许把读不到说成事实。
+ * check-chain-evaluation.ts 按「本文件读什么形状」另声明了一份同名类型：两处结构一致，但不做跨文件类型引用
+ * （同层互引门禁只放行在册的边，tests/same-layer-baseline.json 只许减不许增）。
+ */
+type RepoIdentityEvidence = { kind: 'identity'; owner: string; name: string } | { kind: 'ambiguous'; candidates: RepoKey[] } | { kind: 'none' }
 
 /** 文件服务（宿主注入）：resolve 把路径换成服务认的目标对象，读写只认那个目标对象。 */
 interface FsLike {
@@ -187,12 +198,24 @@ export function createRepoKeys(deps: RepoKeysDeps) {
       const xpIsOutbound = xpIsGh || xpIsGlab
       const xpArgs = Array.isArray(argv) ? argv.slice(1) : []
       const xpBucket = (xpIsGh && isWriteGhArgs(xpArgs)) ? 'write' : 'read'
-      // 出站才拿名额（不传取消信号，拿不到只会等不会抛）；git 本地命令直行。
+      // 出站才拿名额（不传取消信号，到点闸抛排队超时）；git 本地命令直行。
       // #1007 复核：gh 与 glab 共用同一套名额，但通路各是一条 —— 拿名额时带上服务名，
       // 才不会让 GitHub 的冷却把 glab 的调用一起挡住（git 本地命令不进口这道闸）。
+      // #1570：gh 的排队预算递给闸；glab 沿用旧行为（不设排队上限），避免顺手改 GitLab 分档。
+      const xpCmd = xpIsGh ? ghCommandLabel(xpArgs) : xpProg
       let xpRelease = null
       // #1392：归还包成幂等，下面每条退出路径都调 xpReleaseSlot()；git 本地命令没有名额，它是空转。
-      if (xpIsOutbound) xpRelease = await getGhLane().acquire({ bucket: xpBucket, service: xpIsGh ? 'github' : 'gitlab' })
+      if (xpIsOutbound) {
+        try { xpRelease = await getGhLane(logCtx).acquire({ bucket: xpBucket, service: xpIsGh ? 'github' : 'gitlab', cmd: xpIsGh ? xpCmd : undefined, waitMs: xpIsGh ? queueTimeoutForTier(timeoutForGhArgs(xpArgs)) : undefined }) }
+        catch (eAcq) {
+          // 到点还没拿到名额（一次没起进程）：按可重试网络失败回人话，不与「取消排队」混成一条。
+          const xpQueueText = ghQueueTimeoutReply(eAcq, xpIsGh ? 'gh' : 'glab')
+          if (xpQueueText) return { ok: false, error: xpQueueText }
+          // 冷却窗口里的拒绝同理：说清是通路不通，别让调用方以为命令自己慢。
+          if (outboundCooldownOf(eAcq)) return { ok: false, error: ghCooldownReply(eAcq, xpCmd) }
+          throw eAcq
+        }
+      }
       const xpReleaseSlot = onceRelease(xpRelease)
       // #723（T19）：这一笔真实出站先报给闸（I1）。这条路的调用方是 git / glab / gh 三条，
       // 其中 gh 与 glab 是真实出站；git 只读远端地址、不起 HTTP 请求，但它是同一个进程出口，
@@ -337,6 +360,43 @@ export function createRepoKeys(deps: RepoKeysDeps) {
       } catch (e) { /* 写失败不影响主流程 */ }
     }
 
+    // #1566：仓库身份证据（identity / ambiguous / none）。第三级扫全部远端：git 可用时读 git remote -v 的 fetch 行
+    // （git 会把 url.<base>.insteadOf 别名展开成真地址），git 不可用时退回读 .git/config 里全部 [remote …] 段。
+    // 只有一个 GitHub 身份就认它，多个不同身份判歧义、不猜 —— 那是工作区自己的配置问题，面板要说清怎么收口。
+    // 仍然只读本地证据（不起 gh）：起进程那一级留在会话能力里（见文件头 #1453 那段）。
+    async function readGitConfig(execCwd: string) {
+      if (fs === undefined) return null
+      try { const t = await fs.resolve('.git/config', { cwd: execCwd }); const txt = await fs.readText(t); return typeof txt === 'string' ? txt : null } catch (e) { return null }
+    }
+    // 回 null 表示「两条读远端的路都不可用」（没有 git 也读不到配置文件），调用方按暂时确认不了处理；
+    // 回空数组表示「读了、确实一个远端都没有」—— 面板上这是两种不同结局（pending 与 fail），不能合成一种。
+    async function remoteUrlsOf(execCwd: string, git: string | null): Promise<string[] | null> {
+      if (git) {
+        const r = await execProc([git, '-C', execCwd, 'remote', '-v'], execCwd, 'repo-key')
+        if (r.ok) {
+          const urls: string[] = []
+          for (const line of String(r.text || '').split(/\r?\n/)) { const m = line.match(/\s(\S+)\s+\(fetch\)\s*$/); if (m) urls.push(m[1]) }
+          return urls
+        }
+      }
+      const text = await readGitConfig(execCwd)
+      return text === null ? null : remoteUrlsOfGitConfig(text)
+    }
+    // 远端地址按 owner/name 去重后再数：同一个仓库挂了 fetch/push 两个 URL、或 origin 与镜像指向同一处，都算一个身份。
+    function identityFromUrls(urls: string[]): RepoIdentityEvidence {
+      const seen: RepoKey[] = []
+      for (const url of urls) {
+        const k = parseGithubRepo(url)
+        if (!k) continue
+        // 大小写不敏感去重：GitHub 的 owner/name 不区分大小写，同一个仓库写成 SAXEM1997/DSH-Cherry-Bridge
+        // 与 saxem1997/dsh-cherry-bridge 只是写法不同，不能被当成两个身份判成歧义。
+        if (!seen.some(function (c) { return c.owner.toLowerCase() === k.owner.toLowerCase() && c.name.toLowerCase() === k.name.toLowerCase() })) seen.push(k)
+      }
+      if (seen.length === 1) return { kind: 'identity', owner: seen[0].owner, name: seen[0].name }
+      if (seen.length > 1) return { kind: 'ambiguous', candidates: seen }
+      return { kind: 'none' }
+    }
+
     async function getRepoKey(cwd?: string) {
       const rkT0 = Date.now()
       const key = await canonicalKey(cwd || DEFAULT_CWD)
@@ -368,13 +428,35 @@ export function createRepoKeys(deps: RepoKeysDeps) {
           }
         } catch (e) { /* 落 Tier 3 */ }
       }
-      // 两级本地证据都没答上来：如实回 null（#1453）。这里不再退到 gh repo view——那一级是出站，
+      // Tier 3（#1566）：origin 不是 GitHub 时扫全部远端 —— 只有一个 GitHub 身份就认它（不猜）。
+      // 多个不同身份不挑一个凑答案：返回 null，让检查面板如实说「有多个」，并提示删掉多余的远端、
+      // 或把主仓库的远端命名为 origin。
+      const ev3Urls = await remoteUrlsOf(execCwd, git)
+      // 远端列表整条读不到时这里同样回落 null（getRepoKey 只回答「有没有唯一身份」）；
+      // 要区分「读不到」与「一个都没有」的地方走 getRepoIdentity，它把 null 原样交给求值侧。
+      const ev3: RepoIdentityEvidence = ev3Urls === null ? { kind: 'none' } : identityFromUrls(ev3Urls)
+      if (ev3.kind === 'identity') { repoKeys[key] = { owner: ev3.owner, name: ev3.name }; try { if (logCtx) logCtx.fire('info', 'repo.resolve.tier', { tier: 3, ok: true, latencyMs: Date.now() - rkT0 }) } catch (eL) {}; return repoKeys[key] }
+      // 三级本地证据都没答上来：如实回 null（#1453）。这里不再退到 gh repo view——那一级是出站，
       // 会花额度，必须放在会话建立之后、由会话的 getRepoKey 能力过裁决与记账（规格 1439 第 5 节）。
       // 调用方按 null 走降级；需要 GitHub 仓库身份的地方会先去开会话，由会话补出 refId。
       // 这里不另记一行日志：本地证据读不到是正常结局（不是出站失败），而会话那一侧的房间
       // 会把它自己的 tier 结果记进 repo.resolve.tier，排查时看那一条更准。
       return null
     }
+
+    // #1566：检查面板「已关联 GitHub 仓库」的取数口。先按既有三级拿仓库钥匙（命中就是唯一身份），
+    // 拿不到再扫全部远端，回答「有多个不同身份（不猜）」或「一个都没有」—— 两条谓词共用这一份结论。
+    // 无身份时不缓存（远端配置随时会被改，人下一次重新检查要能看到刚改的结果），所以这一步可能扫第二遍；
+    // 那是本地读、不花出站额度，比缓存一个错误结论划算。
+    // 远端列表整条读不到（没有 git，配置文件也读不到）时回 null：求值侧把这一行落 pending（暂时确认不了）。
+    async function getRepoIdentity(cwd?: string) {
+      const key = await canonicalKey(cwd || DEFAULT_CWD)
+      const rk = await getRepoKey(cwd)
+      if (rk && rk.owner && rk.name) return { kind: 'identity', owner: rk.owner, name: rk.name }
+      const root = await getRepoRoot(key)
+      const urls = await remoteUrlsOf(root || key, await resolveGit())
+      return urls === null ? null : identityFromUrls(urls)
+    }
   // #723（T19）：TIMEOUT_MS 一并交出去，供还读它的老调用方兜底；分档由出站两路按命令认，不再两处各写一份。
-  return { resolveGh, resetGhCache, runGh, execProc, resolveGit, getHome, canonicalKey, getRepoRoot, getCacheDir, cacheFileName, readDiskCache, writeDiskCache, getRepoKey, TIMEOUT_MS }
+  return { resolveGh, resetGhCache, runGh, execProc, resolveGit, getHome, canonicalKey, getRepoRoot, getCacheDir, cacheFileName, readDiskCache, writeDiskCache, getRepoKey, getRepoIdentity, TIMEOUT_MS }
 }

@@ -31,6 +31,8 @@ declare function labelOf(...args: any[]): any;
 declare function lcPanelSavedColors(...args: any[]): any;
 declare function loadSnapshot(...args: any[]): any;
 declare function noticeIcon(...args: any[]): any;
+// #1582：打开文件夹的共用函数（实现住在 views/shared/openFolder.ts，由构建拼进同一个闭包）。
+declare function openFolderAt(...args: any[]): any;
 declare function openSwitchConfirm(...args: any[]): any;
 declare function otherFiltered(...args: any[]): any;
 // panelClock 在这里只被读写 renderT0/commitMs 两个字段（调用发生在别处），
@@ -130,8 +132,8 @@ export     const DetailsDock = (props: any) => {
       const _isOther = _isOtherRaw && !!s.cwd && s.snapMode==='real' && !!s.snapshot
       const _showBackendFullscreen = _isPending || _isOther
       // #664：门控这个窗只把后端定下来 —— 绑定成功后不再往会话里注入任何文字（原先这里会顺手注入初始化全文）。
-      const _gateOpen=!!s.gateModalOpen && (s.gateModalSource==='dock' || !s.gateModalSource);const _gateModules=otherFiltered(s.backendModules);const _openGateModal=function(){s.gateModalOpen=true;s.gateModalSource='dock';if(!s.gateSelected)s.gateSelected=firstBackendIdOf(_gateModules);s.gateError='';emit(s);if(typeof host!=='undefined'&&host.call){s.gateLoading=true;emit(s);host.call('wf.registry',{cwd:s.cwd||''}).then(function(r: any){s.gateLoading=false;let m=null;if(r&&r.ok&&Array.isArray(r.modules))m=r.modules;else if(r&&Array.isArray(r.modules))m=r.modules;else if(r&&r.value&&Array.isArray(r.value.modules))m=r.value.modules;if(Array.isArray(m)&&m.length){const f=m.filter((x: any)=>String(x.id).toLowerCase()!=='other');const fin=f.length?f:m.filter((x: any)=>String(x.id).toLowerCase()!=='other');if(fin.length){s.backendModules=m;try{if(typeof setPresentationMap==='function')setPresentationMap(m)}catch(e){}const ids=fin.map((x: any)=>x.id);if(!s.gateSelected||ids.indexOf(s.gateSelected)<0)s.gateSelected=fin[0].id}}emit(s)}).catch(function(){s.gateLoading=false;emit(s)})}};const _closeGateModal=function(){s.gateModalOpen=false;s.gateModalSource=null;s.gateError='';emit(s)};const _confirmGate=function(){const id=s.gateSelected||firstBackendIdOf(_gateModules);if(String(id).toLowerCase()==='other'){s.gateError=tr('switch.gateOtherErr');emit(s);return}if(typeof isBackendUnavailable==='function'&&isBackendUnavailable(id)){s.gateError=tr('switch.targetLockedTip');emit(s);return}const prev=s.selection;const repoRef=s.repository||(s.snapshot&&s.snapshot.repository)||null;const nxt=(typeof userPickSelection==='function')?userPickSelection(id,repoRef,prev):{backendId:id,source:'explicit',ref:repoRef,userPicked:true};s.selection=nxt;try{if(s.cwd)setCachedSelection(s.cwd,nxt)}catch(e){}s.gateModalOpen=false;s.gateModalSource=null;emit(s);if(typeof host!=='undefined'&&host.call){host.call('wf.bind',{cwd:s.cwd||'',backendId:id,sessionId:sid||''}).then(function(res: any){const ok=res&&(res.ok===true||(res.value&&res.value.ok===true)||res.ok);if(ok){try{if(typeof adoptBoundRev==='function')adoptBoundRev(s,res)}catch(eRev){};try{var _np=res&&(res.persisted===false||(res.value&&res.value.persisted===false));if(_np)flash(s,tr('switch.bindNotPersisted'),'info')}catch(eP){};s.tab='list';emit(s);try{flash(s,tr('switch.bindOkFresh',{label:(typeof labelOf==='function'?labelOf(id):String(id))}),'ok')}catch(e){}
-loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(s.cwd,prev)}catch(e){};emit(s);try{flash(s,tr('switch.bindFail',{err:String((res&&(res.error||res.message))||'unknown').slice(0,120)}),'warn')}catch(e){}}}).catch(function(e: any){s.selection=prev;try{if(s.cwd)setCachedSelection(s.cwd,prev)}catch(e2){};emit(s);try{flash(s,tr('switch.bindFail',{err:String(e&&e.message||e).slice(0,120)}),'warn')}catch(e3){}})}};const pickBackend=function(id: any){if(typeof isBackendUnavailable==='function'&&isBackendUnavailable(id)){s.gateError=tr('switch.targetLockedTip');emit(s);return}s.gateSelected=id;emit(s);_confirmGate()}
+      const _gateOpen=!!s.gateModalOpen && (s.gateModalSource==='dock' || !s.gateModalSource);const _gateModules=otherFiltered(s.backendModules);const _openGateModal=function(){s.gateModalOpen=true;s.gateModalSource='dock';if(!s.gateSelected)s.gateSelected=firstBackendIdOf(_gateModules);s.gateError='';emit(s);if(typeof host!=='undefined'&&host.call){s.gateLoading=true;emit(s);host.call('wf.registry',{cwd:s.cwd||''}).then(function(r: any){s.gateLoading=false;let m=null;if(r&&r.ok&&Array.isArray(r.modules))m=r.modules;else if(r&&Array.isArray(r.modules))m=r.modules;else if(r&&r.value&&Array.isArray(r.value.modules))m=r.value.modules;if(Array.isArray(m)&&m.length){const f=m.filter((x: any)=>String(x.id).toLowerCase()!=='other');const fin=f.length?f:m.filter((x: any)=>String(x.id).toLowerCase()!=='other');if(fin.length){s.backendModules=m;try{if(typeof setPresentationMap==='function')setPresentationMap(m)}catch(e){}const ids=fin.map((x: any)=>x.id);if(!s.gateSelected||ids.indexOf(s.gateSelected)<0)s.gateSelected=fin[0].id}}emit(s)}).catch(function(){s.gateLoading=false;emit(s)})}};const _closeGateModal=function(){s.gateModalOpen=false;s.gateModalSource=null;s.gateError='';emit(s)};const _confirmGate=function(){const id=s.gateSelected||firstBackendIdOf(_gateModules);if(String(id).toLowerCase()==='other'){s.gateError=tr('switch.gateOtherErr');emit(s);return}const prev=s.selection;const repoRef=s.repository||(s.snapshot&&s.snapshot.repository)||null;const nxt=(typeof userPickSelection==='function')?userPickSelection(id,repoRef,prev):{backendId:id,source:'explicit',ref:repoRef,userPicked:true};s.selection=nxt;try{if(s.cwd)setCachedSelection(s.cwd,nxt)}catch(e){}s.gateModalOpen=false;s.gateModalSource=null;emit(s);if(typeof host!=='undefined'&&host.call){host.call('wf.bind',{cwd:s.cwd||'',backendId:id,sessionId:sid||''}).then(function(res: any){const ok=res&&(res.ok===true||(res.value&&res.value.ok===true)||res.ok);if(ok){try{if(typeof adoptBoundRev==='function')adoptBoundRev(s,res)}catch(eRev){};try{var _np=res&&(res.persisted===false||(res.value&&res.value.persisted===false));if(_np)flash(s,tr('switch.bindNotPersisted'),'info')}catch(eP){};s.tab='list';emit(s);try{flash(s,tr('switch.bindOkFresh',{label:(typeof labelOf==='function'?labelOf(id):String(id))}),'ok')}catch(e){}
+loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(s.cwd,prev)}catch(e){};emit(s);try{flash(s,tr('switch.bindFail',{err:String((res&&(res.error||res.message))||'unknown').slice(0,120)}),'warn')}catch(e){}}}).catch(function(e: any){s.selection=prev;try{if(s.cwd)setCachedSelection(s.cwd,prev)}catch(e2){};emit(s);try{flash(s,tr('switch.bindFail',{err:String(e&&e.message||e).slice(0,120)}),'warn')}catch(e3){}})}};const pickBackend=function(id: any){s.gateSelected=id;emit(s);_confirmGate()}
       const tabsRef = React.useRef(null)
       const tabs = useTabsRow(s, tabsRef)
       const headRef = React.useRef(null)
@@ -268,14 +270,31 @@ loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(
             //   那条阶梯一格一格地减。boxSizing 必须是 border-box —— minWidth 40 是照「外框 40 像素」写的，默认的
             //   content-box 会把它垫成外框 58（真机实测：名字收到只剩省略号时芯片卡在 58，后面几格一格也省不出宽度）。
             const chipStyle = { textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: col, backgroundColor: bg, border: '1px solid transparent', borderRadius: 6, padding: '1px 8px', flex: 'none', boxSizing: 'border-box', minWidth: 40, maxWidth: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'Consolas,Menlo,monospace', borderColor: bdc, colorScheme: 'light dark' }
-            // #231（契约动作）：开仓行为由后端 openRepository 声明驱动 —— folder 型注入 wf.openFolder，url 型浏览器原生新窗；无声明且无 url 即无动作（诚实渲染）
+            // #231（契约动作）：开仓行为由后端 openRepository 声明驱动 —— folder 型走共用打开函数（#1582），url 型浏览器原生新窗；无声明且无 url 即无动作（诚实渲染）
             const act = repositoryActionOf(s, bid)
             if (act === 'folder') {
-              return h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullRepo')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, repoRef.name), h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px', marginTop: 2 } }, tr('tip.header.repoAction'))]) }, h('a', { href: 'javascript:void(0)', 'aria-label': repoRef.name, 'data-repo-chip': 1, className: 'dsws-hov', 'data-press': 'button', 'data-log': 'head.repochip', style: Object.assign({}, chipStyle, { cursor:'pointer' }), onClick: function(e: any){ try{ if(e&&e.preventDefault) e.preventDefault() }catch(_){}; try{ if(typeof host!=='undefined'&&host.call) host.call('wf.openFolder',{cwd: s.cwd||''}) }catch(__){} } }, inner))
+              // #1582：目录还没同步到手时不再把空串发给宿主，改成当场说一句「目录还没准备好」；
+              //   宿主回 {ok:false,error} 也把原因弹出来（这两条以前都是静默的）。
+              const openRepoFolder = function (e: any) {
+                try { if (e && e.preventDefault) e.preventDefault() } catch (_) {}
+                openFolderAt(host, s.cwd, function (outcome: any, detail: any) {
+                  if (outcome === 'missing') {
+                    try { flash(s, tr('logtoast.openNoDir'), 'warn') } catch (__) {}
+                    return
+                  }
+                  if (outcome === 'open-failed') {
+                    try {
+                      const why = (typeof detail === 'string' && detail) ? detail.slice(0, 120) : ''
+                      flash(s, why ? tr('logtoast.openFailed', { err: why }) : tr('logtoast.openFailedNoReason'), 'warn')
+                    } catch (__) {}
+                  }
+                })
+              }
+              return h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullRepo')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, repoRef.name), h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px', marginTop: 2 } }, tr('tip.header.repoAction'))]) }, h('a', { href: 'javascript:void(0)', 'aria-label': repoRef.name, 'data-repo-chip': 1, className: 'dsws-hov', 'data-press': 'button', 'data-log': 'head.repochip', style: Object.assign({}, chipStyle, { cursor:'pointer' }), onClick: openRepoFolder }, inner))
             }
             if (!href) return h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullRepo')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, repoRef.name)]) }, h('span', { 'aria-label': repoRef.name, 'data-repo-chip': 1, style: Object.assign({}, chipStyle, { cursor:'default' }) }, inner))
             // #191（用户反馈）：GitHub/GitLab 路径只 target='_blank'（浏览器原生新窗口），
-            //   之前的 onClick openUrl 导致点一次开两个浏览器。Markdown 路径见上方分支（保留 onClick wf.openFolder）
+            //   之前的 onClick openUrl 导致点一次开两个浏览器。Markdown 路径见上方分支（那一支已改走共用打开函数 openFolderAt）
             // 悬停提示里始终摆着**完整**的仓库名（维护者 2026-09-22 定：版面上那一串会随宽度逐字变短，
             //   一个字都不许丢，完整的那串必须能在悬停时读到），再加一句这颗芯片点下去做什么。
             return h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullRepo')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, repoRef.name), h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px', marginTop: 2 } }, tr('panel.repoTitle'))]) }, h('a', { href: href, target: '_blank', rel: 'noreferrer', 'aria-label': repoRef.name, 'data-repo-chip': 1, className: 'dsws-hov', 'data-press': 'button', 'data-log': 'head.repochip', style: chipStyle }, inner))
@@ -372,25 +391,23 @@ loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(
             h('div', { 'data-log':'panel.gate.dialog', style:{ background:'var(--dsw-alias-bg-layer-2,#16181d)', border:'1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius:12, padding:'16px', width:'92%', maxWidth:380, boxShadow:'0 8px 24px rgba(0,0,0,.5)' } }, [
               h('div', { style:{ fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6, marginBottom:6 } }, [Ic({n:'compass',size:14}), h('span', null, '请选择 Tracker 后端以继续')]),
               h('div', { style:{ fontSize:11, color:'#8b8b95', marginBottom:10, lineHeight:1.5 } }, '不同后端的初始化与前置检查不同，选择后将回到主线流程（列表/状态栏正常可用）'),
-              h('div', { style:{ fontSize:11, color:'#f59e0b', background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.25)', borderRadius:6, padding:'6px 8px', marginBottom:10 } }, tr('gate.wipNotice')),
+              // #1600：筹备中黄条摘掉——GitLab 已可用，不再提示。
               s.gateLoading ? h('div', { style:{ fontSize:11, color:'#8b8b95', padding:'6px 0' } }, '加载中…') : h('div', { style:{ display:'flex', flexDirection:'column', gap:6 } }, _gateModules.map(function(m: any){
                 const isSel = s.gateSelected===m.id
                 const col = (typeof backendColorOf==='function'? backendColorOf(m.id) : '')
                 const isRec = _gateModules[0] && _gateModules[0].id===m.id
-                // #669 第 6 件（ADR 20260921）：今天能选的只有 GitHub 与本地 Markdown —— 能力不全的后端
-                //   在门控窗里也置灰不可选（判据只问 isBackendUnavailable 一份），理由放鼠标悬停。
-                const locked = (typeof isBackendUnavailable==='function') && isBackendUnavailable(m.id)
+                // #1600：三后端全可选，不再置灰（名单已清空，这里不再问锁）。
                 // 接线（#1335 界面反馈）：整行都是可点的（点行等于点那颗 radio），接 row 形状；
                 //   日志名用后端标识 m.id（固定枚举，不是行上那行展示文字）拼出来，同屏两颗后端行不会撞名。
-                const row = h('label', { key:m.id, className:'dsws-hov', 'data-press':'row', 'data-log':'panel.gate.pick.' + m.id, 'data-target-id':m.id, 'data-target-locked': locked ? 1 : 0, style:{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8, border: isSel ? '1px solid '+col : '1px solid var(--dsw-alias-border-l1,#2a2d35)', background: isSel ? 'rgba(88,166,255,.08)' : 'transparent', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.45 : 1 } }, [
-                  h('input', { type:'radio', name:'dsws-gate-pick', checked:isSel, disabled: !!locked, onChange:function(){ if (locked) return; s.gateSelected=m.id; emit(s) } }),
+                const row = h('label', { key:m.id, className:'dsws-hov', 'data-press':'row', 'data-log':'panel.gate.pick.' + m.id, 'data-target-id':m.id, style:{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8, border: isSel ? '1px solid '+col : '1px solid var(--dsw-alias-border-l1,#2a2d35)', background: isSel ? 'rgba(88,166,255,.08)' : 'transparent', cursor: 'pointer' } }, [
+                  h('input', { type:'radio', name:'dsws-gate-pick', checked:isSel, onChange:function(){ s.gateSelected=m.id; emit(s) } }),
                   h('span', { style:{ width:8, height:8, borderRadius:'50%', background:col, flex:'none' } }),
                   h('span', { style:{ fontSize:12, fontWeight:600 } }, m.label),
                   h('span', { style:{ fontSize:10, color:'#8b8b95' } }, m.id),
                   h('span', { style:{ flex:1 } }),
                   isRec ? h('span', { style:{ fontSize:10, color:'#4ade80', border:'1px solid #4ade80', borderRadius:4, padding:'0 4px', lineHeight:1.6 } }, '推荐') : null,
                 ])
-                return locked ? h(Tip, { key:m.id, content: tr('switch.targetLockedTip') }, row) : row
+                return row
               })),
               s.gateError ? h('div', { style:{ fontSize:11, color:'#f87171', marginTop:8 } }, s.gateError) : null,
               h('div', { style:{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:12 } }, [

@@ -114,6 +114,7 @@ export interface BackendLike {
 export interface DeckTrackerLike {
   get(repo: unknown, key: unknown, f?: unknown, ctx?: unknown): Promise<OpOutcome>;
   list(repo: unknown, filter?: unknown, ctx?: unknown): Promise<ListOpOutcome>;
+  listMaps(repo: unknown, ctx?: unknown): Promise<OpOutcome>;
   getDependencies(repo: unknown, key: unknown, f?: unknown, ctx?: unknown): Promise<OpOutcome>;
   create(repo: unknown, input?: unknown, ctx?: unknown): Promise<OpOutcome>;
   setParent(repo: unknown, key: unknown, parent: unknown, f?: unknown, ctx?: unknown): Promise<OpOutcome>;
@@ -145,6 +146,10 @@ export interface CallScope {
   remainingMs(): number;
   outOfBudget(): boolean;
   execOp(label: string, fn: (ctx: Record<string, unknown>) => unknown): Promise<OpRecord>;
+  /** 这次调用里真的派发出去的远端调用数（#1610）：发出前就被预算或取消拒掉的那些不算数。
+   *  工具侧的报账按它算「实际发出了几条请求」——预算壳把「发出前被拒」与「飞到一半被掐」
+   *  折成同一个 kind，工具那边光看回执分辨不出来，这里才是分辨得清的那一处。 */
+  sentRequests(): number;
   ok: boolean;
 }
 
@@ -243,6 +248,10 @@ export function withCallScope(c: unknown, exec?: unknown, opts?: CallScopeOpts):
 
   function remainingMs(): number { return Math.max(0, budget.startedAt + budget.timeoutMs - nowFn()) }
   function outOfBudget(): boolean { return remainingMs() <= budget.marginMs }
+  // 已经派发出去的远端调用数（#1610）：预发检查通过、真正把这一次调用发出去之前先记一笔。
+  // 预发就被预算或取消拒掉的（execOp 开头那两支 refused）根本没发出去，不记。
+  let sentCount = 0
+  function sentRequests(): number { return sentCount }
 
   async function execOp(label: string, fn: (ctx: Record<string, unknown>) => unknown): Promise<OpRecord> {
     void label
@@ -277,6 +286,8 @@ export function withCallScope(c: unknown, exec?: unknown, opts?: CallScopeOpts):
       // #1157：等这次调用回来 = 这场调用还没结算，整段圈进存活租约。缺了它，被抓的那次调用
       // 只剩钳制那笔 unref 过的等待时（#1114），进程会带着这次调用收摊——调用方永远等不到回执，
       // 契约层记的 timeout / aborted 只会随进程一起消失。
+      // 派发出去的这一次算一条（#1610）：后端回什么都不改这条计数，只有「压根没发出去」才不算。
+      sentCount += 1
       const result = await withInFlightLease(function () { return fn(ctx2) })
       if (timedOut) return { ok: false, timeout: true, result: result }
       if (sig && sig.aborted) return { ok: false, aborted: true, result: result }
@@ -392,6 +403,14 @@ export function withCallScope(c: unknown, exec?: unknown, opts?: CallScopeOpts):
       },
       // #992：仓库写权限旁路（只读探活一次，次次真问；没有这个方法的后端诚实回未知，
       //   不走 backend-threw —— 缺方法不是执行层失败，调用方按未知处理）。
+      // #1603：一次取全量地图薄行（只收仓库）。不进名册（首屏自用快照，不参与成环检查），
+      // 次次真问；没有这个方法的后端诚实回 unsupported，调用方照老路退化。
+      listMaps: async function (repo: unknown, ctx?: unknown): Promise<OpOutcome> {
+        void ctx
+        const listMapsFn = real.listMaps as ((repo: unknown, ctx: unknown) => Promise<unknown>) | undefined
+        if (typeof listMapsFn !== 'function') return { ok: false, error: { kind: 'unsupported', message: '这个后端没有地图薄行，按老路取' } }
+        return mapOpOutcome(await execOp('listMaps', function (c2) { return listMapsFn(repo, c2) }))
+      },
       getRepoPermissions: async function (repo: unknown, ctx?: unknown): Promise<OpOutcome> {
         void ctx
         if (!real.getRepoPermissions) return { ok: false, error: { kind: 'unsupported', message: '这个后端没有仓库写权限旁路，按未知处理' } }
@@ -432,6 +451,7 @@ export function withCallScope(c: unknown, exec?: unknown, opts?: CallScopeOpts):
     remainingMs: remainingMs,
     outOfBudget: outOfBudget,
     execOp: execOp,
+    sentRequests: sentRequests,
     ok: !!real,
   }
 }

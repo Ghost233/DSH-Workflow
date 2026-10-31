@@ -11,10 +11,11 @@
 
 import { AGENT_TOOL_TIMEOUT_MS, deckAgentOutputSchemaRaw } from './register-options.js'
 import { createSuggestNextSteps, definition } from '../tools/suggest-next-steps.js'
-import { REGISTER_RETRY_WAIT_MS } from '../../shared/time-config/src/values.js'
+import { HOST_LOG_SLOT_RETRY_MS, REGISTER_RETRY_WAIT_MS } from '../../shared/time-config/src/values.js'
 import { sleepOnce } from '../shell/capped-wait.js'
 import { withInFlightLease } from '../shell/in-flight-lease.js'
 import { hash8 } from '../../refresh/contract/workspace-keys.js'
+import { readHostLogStore } from '../../shared/host-log-slot.js'
 
 /** 外层递进来的东西（工具服务、上下文、日志）形状都不由本文件定，逐格验，不猜。 */
 type UnknownRecord = Record<string, unknown>
@@ -27,6 +28,62 @@ export interface SuggestRegisterLogLike {
 export interface SuggestRegisterDeps {
   log?: SuggestRegisterLogLike | null
   now?: () => number
+}
+
+// ── 宿主日志兜底口（#1420 第四项；#1620 收成一处） ──
+//
+// 为什么需要：agent-row 直接登记这颗工具时不传依赖袋，工具侧的 log 就是 null，真机上模型每次
+// 调用 suggest_next_steps 一条 host.call 都不落。日志里于是分不清「模型根本没调」与「调了但
+// 界面没拿到事件流」—— 这正是 #1412 关闭评论里记为「预期」、#1420 要求补上的区分能力。
+//
+// 键、槽的形状与读取规则都住在 src/shared/host-log-slot.ts，这里不再写第二份字面量（#1620 的
+// 毛病就是改一处漏一处）。登记发生在启动早期：工具行多数组装可能早于宿主入口那次动态 import
+// 解析，槽那时还没建好——所以一次读不到不代表永远读不到，兜底口在后台按固定退避重读几次。
+// 最多重读 HOST_LOG_RETRY_TIMES 次、每次等一个中央退避窗 HOST_LOG_SLOT_RETRY_MS：fire 立刻返回，
+// 等待只发生在后台；窗口过完还读不到就只丢这一行。日志可缺，登记与工具执行不能受影响（#1620 复审 Blocking-2）。
+//
+// 这里有意不拿存活租约（ADR 20261014 的例外，理由是本文件门禁己6）：这几次等待只是尽力补记一行
+// 诊断日志，不是「没有它这趟就算没跑完」的活；一旦拿租约，每次 fire 都会把进程多留最多 500ms，
+// tests/verify-1114-timer-exit.ts 的「建议工具登记完成后进程里不留 Timeout」会当场红。日志投递
+// 只随进程存活，进程先退出就安静丢掉这一行——这比把登记与工具链的退出时间往后拖更合适。
+const HOST_LOG_RETRY_TIMES = 4
+
+/** 兜底口：每次 fire 都从共享模块读槽，读到后按日志库的开关决定记不记。 */
+function hostLogBridge(): SuggestRegisterLogLike {
+  return {
+    fire: function (level: string, event: string, fields: UnknownRecord): void {
+      // 有意不 await：兜底口不能拖慢登记与工具执行，重读全在后台。也不拿存活租约（见上方说明）：
+      // 日志投递只随进程存活，进程先退出就丢掉这一行，不反过来决定进程何时能退。
+      void deliverHostLog(level, event, fields, 0)
+    },
+  }
+}
+
+/** 一次投递：先读槽，读到了按 isEnabled/log 两格校验后记；读不到且还有次数就等一会再读。 */
+async function deliverHostLog(level: string, event: string, fields: UnknownRecord, attempt: number): Promise<void> {
+  try {
+    const store = (await readHostLogStore()) as UnknownRecord | null
+    if (store) {
+      if (typeof store.isEnabled !== 'function' || typeof store.log !== 'function') return
+      if (!(store.isEnabled as (l: string, e: string) => boolean)(level, event)) return
+      ;(store.log as (l: string, e: string, x: UnknownRecord) => void)(level, event, fields)
+      return
+    }
+    if (attempt >= HOST_LOG_RETRY_TIMES) return
+    await sleepOnce(HOST_LOG_SLOT_RETRY_MS)
+    await deliverHostLog(level, event, fields, attempt + 1)
+  } catch (eDeliver) { /* 记录失败只丢这一行 */ }
+}
+const hostLogBridgeOnce = hostLogBridge()
+
+/**
+ * 依赖袋归一：显式给了 log（包括显式 null —— 测试靠它保持安静）就照用，没给 log 才接宿主
+ * 兜底口。这样 refresh-runtime 那条显式传日志的路一行不变，agent-row 那条不传的路才多出轨迹。
+ */
+function resolveRegisterDeps(deps?: SuggestRegisterDeps): SuggestRegisterDeps {
+  const d = (deps && typeof deps === 'object') ? deps : {}
+  if (Object.prototype.hasOwnProperty.call(d, 'log')) return d
+  return { log: hostLogBridgeOnce, now: d.now }
 }
 
 /** 工具服务的窄形状：只需要 register 一格（返回注销函数，本文件不关心）。 */
@@ -87,7 +144,7 @@ function fireRegisterLog(log: SuggestRegisterLogLike | null, latencyMs: number, 
  * 同一份退路形状（原生模式受支持子集），执行函数调本进程里的 run 并兜底永不抛。
  */
 export function makeSuggestRegistration(deps?: SuggestRegisterDeps): UnknownRecord {
-  const d = (deps || {}) as SuggestRegisterDeps
+  const d = resolveRegisterDeps(deps)
   const runner = createSuggestNextSteps({ log: d.log || null, now: d.now })
   return {
     name: definition.name,
@@ -111,15 +168,33 @@ export function makeSuggestRegistration(deps?: SuggestRegisterDeps): UnknownReco
   }
 }
 
-/** 注册一次：服务不在、注册表拒绝、重名都折成 { registered:false, reason }，绝不抛。 */
-export function registerSuggestNextSteps(toolsSvc: unknown, deps?: SuggestRegisterDeps): SuggestRegisterResult {
+/** 注册一次的附加开关：silent 只表示「调用方自己会记这一趟」，不改变注册结果。 */
+export interface SuggestRegisterOptions {
+  silent?: boolean
+}
+
+/**
+ * 注册一次：服务不在、注册表拒绝、重名都折成 { registered:false, reason }，绝不抛。
+ * 没传 log 时走宿主兜底口记一行登记结论 —— agent-row 那条路就是不传，真机上要能看出工具
+ * 到底登记上没有。钩子那条路自己记「等了多久才登记上」，传 { silent: true } 免得同一趟记两行。
+ */
+export function registerSuggestNextSteps(toolsSvc: unknown, deps?: SuggestRegisterDeps, opts?: SuggestRegisterOptions): SuggestRegisterResult {
+  const d = resolveRegisterDeps(deps)
+  const silent = !!(opts && opts.silent === true)
+  const now: () => number = typeof d.now === 'function' ? d.now : Date.now
+  const t0 = now()
   const service = toolsServiceOf({ tools: toolsSvc })
-  if (!service) return { registered: false, reason: 'no-tools-service' }
+  if (!service) {
+    if (!silent) fireRegisterLog(d.log || null, now() - t0, false, 'no-tools-service')
+    return { registered: false, reason: 'no-tools-service' }
+  }
   try {
-    service.register(makeSuggestRegistration(deps))
+    service.register(makeSuggestRegistration(d))
+    if (!silent) fireRegisterLog(d.log || null, now() - t0, true, '')
     return { registered: true, reason: '' }
   } catch (e) {
     const message = String((e as Error && (e as Error).message) || e || '')
+    if (!silent) fireRegisterLog(d.log || null, now() - t0, false, 'register-failed')
     return { registered: false, reason: 'register-failed:' + message }
   }
 }
@@ -137,7 +212,7 @@ function sleep(ms: number): Promise<void> {
  * 建议工具就永远不会登记 —— 等待定时器不拥有进程存活，有活在跑时显式拿租约（ADR 20261014）。
  */
 export function hookSuggestNextSteps(ctx: unknown, deps?: SuggestRegisterDeps, opts?: { retries?: number; waitMs?: number }): Promise<SuggestRegisterResult> {
-  const d = (deps || {}) as SuggestRegisterDeps
+  const d = resolveRegisterDeps(deps)
   const o = (opts || {}) as UnknownRecord
   const retries = typeof o.retries === 'number' ? o.retries : SUGGEST_REGISTER_RETRIES
   const waitMs = typeof o.waitMs === 'number' ? o.waitMs : SUGGEST_REGISTER_WAIT_MS
@@ -154,7 +229,7 @@ export function hookSuggestNextSteps(ctx: unknown, deps?: SuggestRegisterDeps, o
       fireRegisterLog(d.log || null, now() - t0, false, 'no-tools-service')
       return { registered: false, reason: 'no-tools-service' }
     }
-    const result = registerSuggestNextSteps(service, d)
+    const result = registerSuggestNextSteps(service, d, { silent: true })
     fireRegisterLog(d.log || null, now() - t0, result.registered, result.reason)
     return result
   })

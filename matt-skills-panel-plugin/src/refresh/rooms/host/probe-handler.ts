@@ -14,6 +14,9 @@
  *    配额仍走 REST 池，不烧穿。
  */
 import { idOfParts } from '../../../tracker/kernel/identity-keys.js'
+// #1584 F4：探针的 composer 分支原来也用注册表 describe 自己造身份，空 refId 会被当成「答出来了」；
+// 给不出 refId 时改问会话（身份真源），拿不到再走原兜底。
+import { resolveRepoRefForCwd } from '../../../tracker/session/repo-ref.js'
 
 /** 探针处理器收到的依赖：目录归一、后端选择、注册表、平台、索引与缓存等，全由调用点显式传入。 */
 export interface ProbeHandlerDeps {
@@ -35,11 +38,13 @@ export interface ProbeHandlerDeps {
   // #1472：写事件刚补好的快照（取走即删）。宿主入口与门禁调用方都必传；内部自己兜住异常与过期（回 null）。
   takeWritePatch: any
   errText: any
+  /** #1584 F4：宿主注入的只读会话口；身份真源，注册表 describe 给不出 refId 时问它。 */
+  openSession?: any
 }
 
 /** 造出探针电话：目前只有一个 handleProbe（wf.probe 的处理体）。 */
 export function createProbeHandler(deps: ProbeHandlerDeps): { handleProbe: (args: any) => Promise<any> } {
-  const { canonicalKey, selectEarly, isComposerSelection, getTrackerRegistry, getPlatform, ctx, fetchIssueIndexWindowed, issueIndexChanged, rememberIssueIndex, commitIssueIndex, getCache, setCache, lastIssueIndexByRepo, lastProbeAtByRepo, deltaRefresh, takeWritePatch, errText } = deps
+  const { canonicalKey, selectEarly, isComposerSelection, getTrackerRegistry, getPlatform, ctx, fetchIssueIndexWindowed, issueIndexChanged, rememberIssueIndex, commitIssueIndex, getCache, setCache, lastIssueIndexByRepo, lastProbeAtByRepo, deltaRefresh, takeWritePatch, errText, openSession } = deps
   // #1418：失败回包里带上判档（network / unsupported / env / exception…），客户端日志据此一眼看出「这一拍
   //   为什么没探成」。只回短枚举、不回原文 —— 原文仍在 error 字段里给界面看，日志那边一个字都不记。
   const kindOf = function (e: any): string {
@@ -48,7 +53,7 @@ export function createProbeHandler(deps: ProbeHandlerDeps): { handleProbe: (args
   }
   // v1.5 R2（#2 MVP）：probe 改用 `since` 时间戳探测全 issue 增量（地图 + 子票 + 其他），
   //   1 次 REST 调用覆盖全仓库变化。原实现 `labels=wayfinder:map` 仅匹配地图本身，
-  //   **漏检所有子票变化**——面板可接/阻塞/已认领/已关闭分组（DESIGN.md §5.2）都是子票，
+  //   **漏检所有子票变化**——面板可接/阻塞/已认领/已关闭分组（docs/archive/DESIGN.md §5.2）都是子票，
   //   故"列表不更新状态"。since 语义：返回数组非空 = 自上次快照以来有变化 → 视为 changed。
   //   配额仍走 REST 5000/h 池（独立于 GraphQL 5000 点/h），不烧穿。
   async function handleProbe(args: any): Promise<any> {
@@ -83,6 +88,11 @@ export function createProbeHandler(deps: ProbeHandlerDeps): { handleProbe: (args
         if (tracker && typeof tracker.list === 'function') {
           let repoRef: any = null
           try { repoRef = reg.describe({ cwd }, _selProbe.backendId) } catch {}
+          // #1584 F4：空 refId 的壳不算身份；先问会话，拿不到再走原兜底（不改变无会话时的旧行为）。
+          if (!repoRef || !repoRef.refId) {
+            const identified = await resolveRepoRefForCwd({ cwd, backendId: _selProbe.backendId, describe: reg.describe, openSession })
+            if (identified) repoRef = identified
+          }
           if (!repoRef) repoRef = { backend: _selProbe.backendId, refId: cwd, name: String(cwd).split(/\//).pop() || _selProbe.backendId, url: '' }
           const opCtx: any = { cwd, platform: await getPlatform(), fs: ctx.get('fs') }
           const r: any = await tracker.list(repoRef, {}, opCtx)

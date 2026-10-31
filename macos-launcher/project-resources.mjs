@@ -15,7 +15,7 @@ const scripts = ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-
 
 async function sources(root) {
   const files = ['package.json', 'dsh-runtime.json', 'project-plugins.json', 'project-plugins.lock.json', 'project-mcp.json',
-    'vendor/mattpocock-skills-zh.upstream.json', 'vendor/dsh-skills.upstream.json', 'matt-skills-panel-plugin/upstream.json',
+    'vendor/mattpocock-skills-zh.upstream.json', 'vendor/dsh-skills.upstream.json', 'vendor/dsh-superagent.upstream.json', 'matt-skills-panel-plugin/upstream.json',
     'matt-skills-panel-plugin/LICENSE', 'matt-skills-panel-plugin/THIRD_PARTY_NOTICES.md',
     ...scripts.map(name => `scripts/${name}`)]
   for (const directory of ['agent-observation-plugin', 'browser-harness-plugin', 'vendor/mattpocock-skills-zh', 'vendor/dsh-skills', 'matt-skills-panel-plugin/package', 'skills']) files.push(directory)

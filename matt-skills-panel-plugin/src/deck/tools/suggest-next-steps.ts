@@ -48,20 +48,20 @@ export const REASON_MAX_CHARS = 200
  *  于是搬进下面这几段说明，跟工具定义一起注册，模型在调用前就能读到。 */
 export const definition = {
   name: SUGGEST_TOOL_NAME,
-  description: '在回复末尾推荐 2~4 条下一步提示词，界面会显示成可点的气泡，点一下填进输入框、不会替你发送；只在有明确下一步时调用，活没干完、在等用户回答或只是礼貌收尾时都不调用；每条 prompt 开头尽量写这一步对应的 /xxxx 技能指令，优先从技能角度推荐。',
+  description: '推荐 2~4 条下一步建议。这一轮已经告一段落，且你能说清下一步要做什么、对什么做时才调用；还有活没干完、在等用户回答时不调用。',
   parameters: {
     type: 'object',
     properties: {
       items: {
         type: 'array',
-        description: '要推荐的下一步，2~4 项，按「现在最该先做」从前往后排；多于 4 项时按优先级留下前 4 项，少于 2 项整次拒绝；每条的 prompt 开头先写对应的 /xxxx 技能指令（例如 /to-tickets、/diagnose、/research），确实没有合适技能时才写普通提示词。',
+        description: 'prompt 开头写这一步对应的技能指令（/xxxx）；没有真实对应的技能就写普通提示词。',
         items: {
           type: 'object',
           properties: {
-            intro: { type: 'string', description: '简介：一句话说清这一步做什么，不超过 10 个字；选项框上只显示这一句，完整提示词点选后才填进输入框。' },
-            prompt: { type: 'string', description: '可以直接执行的下一步提示词，开头尽量写这一步对应的技能指令（/xxxx，例如 /to-tickets）：点选后直接进入那个技能的流程；把票号、路径、分支名这类具体对象写进去，不要写「继续推进」这种没有具体对象的话。' },
-            reason: { type: 'string', description: '一句话说清为什么现在做它——卡在哪、做完能解锁什么、不做会怎样；不要复述提示词，不要写空泛评价。' },
-            priority: { type: 'number', description: '推荐优先级：0 到 10 的数字，分越高越建议先做，界面按分从高到低往左排；现在不做会卡住的打 9 到 10，顺手做的打 6 到 8；拿不准就别给，没给的统一排在最后。' },
+            intro: { type: 'string', description: '一句话说清这一步做什么，10 字以内。' },
+            prompt: { type: 'string', description: '用户会原样发出的话：写清具体对象（文件、结论等），不写「继续推进」这类空话；写不清就换一条，不要留空或编值。' },
+            reason: { type: 'string', description: '一句话说清为什么现在做它：卡在哪、做完能解锁什么；不要复述提示词或写空泛评价。' },
+            priority: { type: 'number', description: '0 到 10，分越高越建议先做。' },
           },
           required: ['intro', 'prompt', 'reason'],
           additionalProperties: false,
@@ -268,6 +268,19 @@ function logReasonOf(res: SuggestResolution): string {
 }
 
 /**
+ * 调用编号的短散列（#1420 第四项）：与界面里 suggest.call 的 callIdHash 用同一套算法
+ * （src/client/statusbar/suggestFacts.ts 的 suggestHash：djb2-xor，8 位十六进制、不足补零）。
+ * 两边各写一份是有意的：工具在宿主编译单元里，界面状态栏那一片叶子不进这个单元；两边算出
+ * 同一个值，日志里才能把「模型调用」与「界面拿到的事件」按调用编号对上。
+ * tests/verify-suggest-next-steps.ts 钉住两边对同一串编号算出的值一样。
+ */
+function suggestCallIdHash(text: string): string {
+  let h = 5381
+  for (let i = 0; i < text.length; i += 1) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0
+  return h.toString(16).padStart(8, '0')
+}
+
+/**
  * 造这颗工具：返回 { definition, run }。
  * run(exec, args) 永不抛：参数不对、没有会话上下文、中途被中止都包成统一回执壳里的拒绝信封；
  * 内部真出了意外也兜成 unsupported，不影响对话继续进行。
@@ -278,31 +291,39 @@ export function createSuggestNextSteps(deps?: SuggestDeps) {
   const log = (d.log || null) as SuggestLogLike | null
   const now: () => number = typeof d.now === 'function' ? d.now : Date.now
 
-  /** 落一行轨迹：沿用既有事件 host.call 与字段白名单（工作区只记散列，会话号不进日志）。 */
-  function fireLog(latencyMs: number, ok: boolean, reason: string, cwd: string): void {
+  /**
+   * 落一行轨迹：沿用既有事件 host.call 与字段白名单（工作区只记散列，会话号不进日志）。
+   * callId 是这次调用的编号（平台 exec 自带）：有就记它的短散列，用来和界面 suggest.call
+   * 那行的 callIdHash 对齐 —— 这是日志里分清「模型没调」与「调了但界面没拿到事件流」的关键。
+   */
+  function fireLog(latencyMs: number, ok: boolean, reason: string, cwd: string, callId: string): void {
     try {
       if (!log || typeof log.fire !== 'function') return
       const fields: UnknownRecord = { method: SUGGEST_TOOL_NAME, latencyMs: latencyMs, ok: ok, kind: 'deck-tool' }
       if (reason) fields.reason = reason
       const cwdHash = cwd ? hash8(cwd) : ''
       if (cwdHash) fields.cwdHash = cwdHash
+      if (callId) fields.callIdHash = suggestCallIdHash(callId)
       log.fire('info', 'host.call', fields)
     } catch (e) { /* 日志坏了不影响工具给建议 */ }
   }
 
   async function run(exec: unknown, args: unknown): Promise<UnknownRecord> {
     const t0 = now()
+    // 调用编号在 catch 里也要用（意外分支同样落轨迹），所以放在 try 外面先取。
+    const callId = (exec && typeof exec === 'object') ? (exec as UnknownRecord).callId : undefined
+    const callIdText = typeof callId === 'string' ? callId : ''
     try {
       const execBag = (exec && typeof exec === 'object') ? exec as UnknownRecord : {}
       const signal = execBag.signal as UnknownRecord | null | undefined
       if (signal && signal.aborted === true) {
         const ms = now() - t0
-        fireLog(ms, false, 'aborted', '')
+        fireLog(ms, false, 'aborted', '', callIdText)
         return shell.unsupported(SUGGEST_TOOL_NAME, 'aborted', '这次调用被中止了，没记下任何建议：需要时再调一次。', { tookMs: ms })
       }
       if (!args || typeof args !== 'object' || Array.isArray(args)) {
         const ms = now() - t0
-        fireLog(ms, false, REFUSAL_REASONS.BAD_ARGS + ':args', '')
+        fireLog(ms, false, REFUSAL_REASONS.BAD_ARGS + ':args', '', callIdText)
         return shell.unsupported(SUGGEST_TOOL_NAME, REFUSAL_REASONS.BAD_ARGS,
           '参数不是一个对象，我没法做：请按这个工具的参数说明（items 里的 intro、prompt 与 reason）重调一次。', { tookMs: ms })
       }
@@ -310,7 +331,7 @@ export function createSuggestNextSteps(deps?: SuggestDeps) {
       if (!session.ok) {
         const ms = now() - t0
         const reason = session.reason || REFUSAL_REASONS.NO_SESSION
-        fireLog(ms, false, reason, '')
+        fireLog(ms, false, reason, '', callIdText)
         // 正文用本工具自己的口径：九工具那句「不动任何票」是追踪器的说法，建议工具不写票。
         return shell.unsupported(SUGGEST_TOOL_NAME, reason,
           '这次没拿到当前会话的工作区目录，没法记录建议：请重调一次；一直这样就去看日志。',
@@ -318,7 +339,7 @@ export function createSuggestNextSteps(deps?: SuggestDeps) {
       }
       const resolved = resolveSuggestItems(args)
       const ms = now() - t0
-      fireLog(ms, resolved.accepted, logReasonOf(resolved), session.cwd)
+      fireLog(ms, resolved.accepted, logReasonOf(resolved), session.cwd, callIdText)
       const workspace = { root: session.cwd, key: session.workspaceKey, sessionId: session.sessionId, source: session.source }
       if (!resolved.accepted) {
         return shell.unsupported(SUGGEST_TOOL_NAME, resolved.reason, resolved.text, { workspace: workspace, notes: resolved.notes, tookMs: ms })
@@ -332,7 +353,7 @@ export function createSuggestNextSteps(deps?: SuggestDeps) {
       })
     } catch (e) {
       const ms = now() - t0
-      fireLog(ms, false, 'threw', '')
+      fireLog(ms, false, 'threw', '', callIdText)
       return shell.unsupported(SUGGEST_TOOL_NAME, REFUSAL_REASONS.BACKEND_THREW,
         '这颗工具内部出了意外，没记下任何建议：请重调一次；一直这样就去看日志。', { tookMs: ms })
     }

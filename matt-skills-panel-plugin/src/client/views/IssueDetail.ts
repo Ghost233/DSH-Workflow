@@ -12,15 +12,15 @@ declare function repoStr(...args: any[]): any;
 declare function buildColorOf(...args: any[]): any;
 declare function fetchIssueDetail(...args: any[]): any;
 declare function useIssueDetailFold(...args: any[]): any;
+// #1573：失败横幅三块（主行一句话 / kind 小标签 / 原始说明折叠区）的显示口径在 views/issueDetailErrorView.ts。
+declare function issueErrorViewOf(...args: any[]): any;
 declare function effortOf(...args: any[]): any;
 declare function popNav(...args: any[]): any;
 declare function prStateKind(...args: any[]): any;
 declare function effortNamesOf(...args: any[]): any;
-// #1511：详情页头部的编号写成「#目录/编号」，显示规则住在 kernel/ticket-label.ts（列表行与它同一条）。
-declare function ticketLabelOf(...args: any[]): any;
-// B 方案：同一颗控件的两段子节点与上限宽度同样走那一份（目录可省略、编号绝不缩小）。
-declare function ticketLabelNodesOf(...args: any[]): any;
-declare const TICKET_LABEL_MAX_WIDTH: any;
+// #1511 / #1564：号码写成「#目录/编号」的显示规则住在 kernel/ticket-label.ts，整颗徽标的画法（四种外壳）
+//   收在 views/shared/ticketBadge.ts；详情页头只提供票身份与状态色。
+declare function ticketBadgeOf(...args: any[]): any;
 declare function rowActionText(...args: any[]): any;
 declare function rowActionKind(...args: any[]): any;
 declare function actionColorOf(...args: any[]): any;
@@ -44,12 +44,17 @@ declare function enterSubDetail(st: any, x: any, issueEffort: any): void;
 declare function mdImgOverlay(...args: any[]): any;
 declare function issueUrlFor(...args: any[]): any;
 declare function openIssueUrl(...args: any[]): any;
+// #1557：票与容器的打开方式由后端声明（openIssue / openContainer），视图只问该画链接还是按钮、
+// 点下去走哪个打开动作，不再自己按地址前缀分流。
+declare function openModeFor(...args: any[]): any;
+declare function openTrackerTarget(...args: any[]): any;
 declare function Ic(props?: any): any;
 declare const Tip: any;
 // 详情页确认提示的停留时间（毫秒）。数值写在 config/ttl.yaml 的 issueDetailConfirmMs，
 // 构建时由生成器变成常量拼进界面闭包；这里的 declare 只是让 TypeScript 知道这个名字存在。
 declare const ISSUE_DETAIL_CONFIRM_MS: number;
 declare const CONTAINER_ACCENT: any;
+declare const MOTION: any; // #1236 动效时长统一在 kernel/motion.ts，本文件只引用不写真值
 export const IssueDetail = function (props: any): any {
       const cx = React.useContext(DswsCtx)
       const h = cx ? cx.h : React.createElement
@@ -90,35 +95,15 @@ export const IssueDetail = function (props: any): any {
       const src = detail || snapIssue
       const mode = st.issueMode || 'idle'
       const err = st.issueError
+      // #1573：失败横幅要用的三块（主行一句话 / kind 小标签 / 原始说明折叠区）住在 views/issueDetailErrorView.ts
+      // （从本文件抽出，本文件贴着 350 行上限）；这里算一次，两处横幅共用。
+      const errView = err ? issueErrorViewOf(h, err) : null
       // T4 #554：返回只弹一层（上一级是地图就回到该地图，是工单就回到该工单，
       // 栈空才回列表）。直接调弹栈，不经过按种类守卫的旧入口，混合栈也只退一级。
       const goBack = function () { popNav(st) }
       const doRetry = function () { if (typeof fetchIssueDetail === 'function') fetchIssueDetail(st, issueNumber, { force: true, effortId: issueEffort }) }
-      // #1111 · 失败横幅共用的三小块（整页横幅与「有快照可显」的细横幅都用它们）。
-      // 一条失败拆成三样：主行是给人看的一句话（后端或界面自己写的那句 message），
-      // 档位只当可选的小标签（kind，八档取值，可能没有），后端原文收进可展开区（raw，没有就不渲染这一段）。
-      // 这三样都由 api-io 的 dswsNormalizeError 统一给出；这里不再照着原文另猜档位。
-      const errSayOf = function (e: any) {
-        const said = String((e && e.message) || '').trim()
-        return said || tr('list.loadFail')
-      }
-      const errKindOf = function (e: any) { return String((e && e.kind) || '').trim() }
-      const errRawOf = function (e: any) {
-        const direct = String((e && e.raw) || '').trim()
-        if (direct) return direct
-        // 兼容本次修复之前就已经存进状态里的错误对象：那时后端原文放在 error 字段里
-        return (e && typeof e.error === 'string') ? String(e.error).trim() : ''
-      }
-      const errRawBlockOf = function (e: any) {
-        const rawText = errRawOf(e)
-        if (!rawText) return null
-        return h('details', { style: { width: '100%', marginTop: 2, paddingTop: 4, borderTop: '1px solid rgba(248,113,113,.25)' } }, [
-          // 本次界面反馈需求：错误原文的折叠条能点，给它悬停反馈、按压态与自己的点击日志。
-          //   原文是自由文本，不进定位串。
-          h('summary', { className: 'dsws-hov', 'data-press': 'button', 'data-log': 'detail.err.raw.toggle', style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, tr('vc.fail.raw', { msg: rawText })),
-          h('div', { style: { marginTop: 4, padding: '6px 8px', background: 'rgba(0,0,0,.18)', border: '1px solid rgba(248,113,113,.25)', borderRadius: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto' } }, rawText),
-        ])
-      }
+      // #1111 · 失败横幅三小块（主行/档位小标签/原文折叠区）的显示口径统一在 views/issueDetailErrorView.ts 里算，
+      // 这里只拿结果；errView 在上面按 st.issueError 算好，两处横幅共用同一份。
       const copyUrl = function (n: any) {
         const url = issueUrlFor(st, n, issueEffort)
         copyText(st, url, tr('toast.copiedLink', { n: n }))
@@ -158,7 +143,7 @@ export const IssueDetail = function (props: any): any {
             h('span', { 'data-detail-crumb': 1, 'data-full': navCrumb, style: { color: 'var(--dsw-alias-label-secondary,#a1a1aa)', fontSize: 11, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, navCrumb),
             h('span', { style: { flex: 1 } }),
           ]),
-          h('div', { style: { padding: '24px 0', textAlign: 'center', color: 'var(--dsw-alias-label-secondary,#a1a1aa)', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 } }, [h('div', { className: 'dsws-spinner', style: { width: 14, height: 14, border: '2px solid rgba(255,255,255,.15)', borderTopColor: (typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '', borderRadius: '50%', animation: 'dsws-spin 1s linear infinite' } }), h('span', null, tr('list.loading'))]),
+          h('div', { style: { padding: '24px 0', textAlign: 'center', color: 'var(--dsw-alias-label-secondary,#a1a1aa)', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 } }, [h('div', { className: 'dsws-spinner', style: { width: 14, height: 14, border: '2px solid rgba(255,255,255,.15)', borderTopColor: (typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '', borderRadius: '50%', animation: 'dsws-spin ' + MOTION.inlineSpinnerMs + 'ms linear infinite' } }), h('span', null, tr('list.loading'))]),
         ])
       }
       // err 无 src（且非 snap 降级可显）→ 错误横幅
@@ -172,8 +157,8 @@ export const IssueDetail = function (props: any): any {
           h('div', { style: { padding: '12px', background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.3)', borderRadius: 8, fontSize: 12, color: '#f87171', display: 'flex', flexDirection: 'column', gap: 6 } }, [
             h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } }, [
               Ic({ n: 'alert', size: 13 }),
-              h('span', { style: { wordBreak: 'break-word' } }, errSayOf(err)),
-              errKindOf(err) ? h('span', { style: { fontSize: 10, padding: '0 6px', border: '1px solid rgba(248,113,113,.45)', borderRadius: 10, flex: 'none' } }, errKindOf(err)) : null,
+              h('span', { style: { wordBreak: 'break-word' } }, (errView ? errView.say : '')),
+              (errView ? errView.kind : '') ? h('span', { style: { fontSize: 10, padding: '0 6px', border: '1px solid rgba(248,113,113,.45)', borderRadius: 10, flex: 'none' } }, (errView ? errView.kind : '')) : null,
               h('span', { style: { flex: 1 } }),
               // 本次界面反馈需求：错误态里「重试」与「在追踪器中查看」是用户此时仅有的两个出口，
               //   各自带按压态、悬停反馈与点击日志；附近没有带 data-log 的祖先，不接就完全没有日志。
@@ -181,18 +166,18 @@ export const IssueDetail = function (props: any): any {
                             // 本地票的 url 是文件路径不是网址：https 走新页，本地走宿主打开（裸 href 点了没反应，#1145）
               (function () {
                 const _u = issueUrlFor(st, issueNumber, issueEffort)
-                const _isHttp = /^https?:\/\//i.test(String(_u || ''))
-                const _openLocal = function (e: any) { e.stopPropagation(); openIssueUrl(st, issueNumber, (typeof host !== 'undefined' ? host : undefined), issueEffort) }
+                const _isUrl = openModeFor(st, 'issue', _u) === 'url'
+                const _openLocal = function (e: any) { e.stopPropagation(); openTrackerTarget(st, issueNumber, (typeof host !== 'undefined' ? host : undefined), issueEffort, 'issue') }
                 const _props = { className: 'dsws-btn ghost dsws-hov', style: { padding: '1px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 } }
                 const _kids = [Ic({ n: 'link', size: 11 }), h('span', null, tr('detail.viewOnTracker'))]
-                // 本次界面反馈需求：https 与本地两条分支各带一个定位串，日志里能认出点的是哪一条；
+                // 本次界面反馈需求：网页与本地两条分支各带一个定位串，日志里能认出点的是哪一条；
                 //   定位串里不写票号以外的内容，票号是自由文本之外的标识仍不入串。
-                return _isHttp
+                return _isUrl
                   ? h('a', Object.assign({ href: _u, target: '_blank', rel: 'noreferrer', 'data-press': 'link', 'data-log': 'detail.err.open' }, _props), _kids)
                   : h('button', Object.assign({ type: 'button', onClick: _openLocal, 'data-press': 'button', 'data-log': 'detail.err.open.local' }, _props), _kids)
               })(),
             ]),
-            errRawBlockOf(err),
+            (errView ? errView.rawBlock : null),
           ]),
         ])
       }
@@ -233,12 +218,13 @@ export const IssueDetail = function (props: any): any {
             ? h('div', { style: { fontSize: 12, lineHeight: 1.6, color: 'var(--dsw-alias-label-primary,#e6edf3)' } }, (typeof mdToHtml === 'function' ? mdToHtml(detail.body, { st: st }) : String(detail.body)))
             : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-caption,#8b8b95)' } }, tr('detail.noBody')))
         : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-caption,#8b8b95)', display: 'flex', alignItems: 'center', gap: 6 } }, [
-            mode === 'err' ? null : h('div', { className: 'dsws-spinner', style: { width: 11, height: 11, border: '2px solid rgba(255,255,255,.15)', borderTopColor: (typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '', borderRadius: '50%', animation: 'dsws-spin 1s linear infinite' } }),
+            mode === 'err' ? null : h('div', { className: 'dsws-spinner', style: { width: 11, height: 11, border: '2px solid rgba(255,255,255,.15)', borderTopColor: (typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '', borderRadius: '50%', animation: 'dsws-spin ' + MOTION.inlineSpinnerMs + 'ms linear infinite' } }),
             h('span', null, mode === 'err' ? tr('detail.bodyNotYet') : tr('list.loading')),
           ])
       const has = function (nm: any) { return labelArr.some(function (l: any) { return (l.name || l) === nm }) }
       const _isTriageLikeLocal = !labelArr.length || has('needs-triage')
-      const fakeIssue = { number: issueNumber, ['title']: title, labels: labelArr.map(function (l: any) { return typeof l === 'string' ? { name: l } : l }), state: stateRaw }
+      // #1595：这个假票对象会走行动作那条注入链（rowActionText 按 effort 取链接），必须带上本票所属 effort，否则多 effort 仓库里注入的链接会指到别的目录。
+      const fakeIssue = { number: issueNumber, ['title']: title, labels: labelArr.map(function (l: any) { return typeof l === 'string' ? { name: l } : l }), state: stateRaw, effortId: issueEffort }
       // #1286 收口：这一页正常是「票详情」，规格本该进容器详情；万一被旧导航或直接链接当票打开，
       //   顶栏按钮也不能按标签把规格当实施票（注入 /implement），按快照里的容器身份走三态口径。
       const containerInfo = (function (): any {
@@ -349,15 +335,15 @@ export const IssueDetail = function (props: any): any {
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 3, flex: 'none', minWidth: 0, overflow: 'hidden', flexWrap: 'nowrap' } }, [
             detail ? h('span', { 'data-detail-snapshot': 1, 'data-full': (isStale ? '快照' : (mode === 'loading' ? tr('list.loading') : '')), style: { fontSize: 10, color: isStale ? '#f59e0b' : '#8b8b95', flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, isStale ? '快照' : (mode === 'loading' ? tr('list.loading') : '')) : null,
             h(Tip, { content: primaryInfo.tip }, h('button', { className: 'dsws-btn primary', 'data-press': 'button', 'data-log': 'issue.top.exec', onClick: function (e: any) { e.stopPropagation(); try { inject(st, primaryInfo.text) } catch (err2) {} }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, background: actColor, borderColor: 'transparent', color: actTextColor, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: primaryInfo.icon, size: primaryInfo.icon === 'prototype' ? 12 : 10 }), h('span', { 'data-detail-primary-text': 1, 'data-full': primaryInfo.label, style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, primaryInfo.label)])),
-            h(Tip, { content: tr('tip.newSession', { n: issueNumber }) }, h('button', { className: 'dsws-btn primary', 'data-press': 'button', 'data-log': 'issue.top.newsession', onClick: function (e: any) { e.stopPropagation(); openInNewSession(st, { number: issueNumber, ['title']: title, labels: labelArr }) }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, background: actColor, borderColor: 'transparent', color: actTextColor, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'external-link', size: 10 }), h('span', { 'data-detail-new-text': 1, 'data-full': tr('list.newSessionLabel'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.newSessionLabel'))])),
+            h(Tip, { content: tr('tip.newSession', { n: issueNumber }) }, h('button', { className: 'dsws-btn primary', 'data-press': 'button', 'data-log': 'issue.top.newsession', onClick: function (e: any) { e.stopPropagation(); openInNewSession(st, { number: issueNumber, ['title']: title, labels: labelArr, effortId: issueEffort }) }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, background: actColor, borderColor: 'transparent', color: actTextColor, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'external-link', size: 10 }), h('span', { 'data-detail-new-text': 1, 'data-full': tr('list.newSessionLabel'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.newSessionLabel'))])),
             h(Tip, { content: tr('tip.copyLink') }, h('button', { className: 'dsws-btn ghost', 'data-press': 'icon', 'data-log': 'issue.top.copy', onClick: function (e: any) { e.stopPropagation(); copyUrl(issueNumber) }, style: { display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }, Ic({ n: 'clipboard', size: 13 }))),
                         // 本地票的 url 是文件路径不是网址：https 走新页，本地走宿主打开（裸 href 点了没反应，#1145）
             h(Tip, { content: tr('tip.openInTracker', { n: issueNumber }) }, (function () {
               const _u = issueUrlFor(st, issueNumber, issueEffort)
-              const _isHttp = /^https?:\/\//i.test(String(_u || ''))
-              const _openLocal = function (e: any) { e.stopPropagation(); openIssueUrl(st, issueNumber, (typeof host !== 'undefined' ? host : undefined), issueEffort) }
+              const _isUrl = openModeFor(st, 'issue', _u) === 'url'
+              const _openLocal = function (e: any) { e.stopPropagation(); openTrackerTarget(st, issueNumber, (typeof host !== 'undefined' ? host : undefined), issueEffort, 'issue') }
               const _props = { className: 'dsws-btn ghost', 'data-press': 'icon', 'data-log': 'issue.top.link', style: { display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }
-              return _isHttp
+              return _isUrl
                 ? h('a', Object.assign({ href: _u, target: '_blank', rel: 'noreferrer' }, _props), Ic({ n: 'link', size: 13 }))
                 : h('button', Object.assign({ type: 'button', onClick: _openLocal }, _props), Ic({ n: 'link', size: 13 }))
             })()),
@@ -368,8 +354,8 @@ export const IssueDetail = function (props: any): any {
         mode === 'err' && err ? h('div', { className: 'dsws-detail-err', style: { padding: '8px 10px', background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.25)', borderRadius: 6, fontSize: 11, color: '#f87171', display: 'flex', flexDirection: 'column', gap: 6 } }, [
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } }, [
             Ic({ n: 'alert', size: 11 }),
-            h('span', { style: { wordBreak: 'break-word' } }, errSayOf(err)),
-            errKindOf(err) ? h('span', { style: { fontSize: 10, padding: '0 6px', border: '1px solid rgba(248,113,113,.45)', borderRadius: 10, flex: 'none' } }, errKindOf(err)) : null,
+            h('span', { style: { wordBreak: 'break-word' } }, (errView ? errView.say : '')),
+            (errView ? errView.kind : '') ? h('span', { style: { fontSize: 10, padding: '0 6px', border: '1px solid rgba(248,113,113,.45)', borderRadius: 10, flex: 'none' } }, (errView ? errView.kind : '')) : null,
             h('span', { style: { flex: 1 } }),
             // 本次界面反馈需求：顶部错误横幅的「重试」与详情页错误态的「重试」会出现在同一屏，
             //   两处定位串必须不同，否则日志分不出是哪一颗被点了。
@@ -377,12 +363,12 @@ export const IssueDetail = function (props: any): any {
             // #1379 收口：这句「显示快照降级」也压在 8% 红底上（原色是写死的警告橙，只有约 2:1），同样挂类名走浅色层。
             !detail && snapIssue ? h('span', { className: 'dsws-detail-err-degraded', style: { fontSize: 10, color: '#f59e0b' } }, '（显示快照降级）') : null,
           ]),
-          errRawBlockOf(err),
+          (errView ? errView.rawBlock : null),
         ]) : null,
         // header
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 2 } }, [
-          // header（B 方案：上限宽度 + 目录前缀可省略、编号尾巴绝不缩小；悬停读完整写法那一串）
-        h(Tip, { content: ticketLabelOf(src.key != null ? src.key : issueNumber, issueEffort) }, h('span', { className: 'dsws-idnum', style: { color: actColor, borderColor: actColor, flex: 'none', display: 'inline-flex', alignItems: 'center', maxWidth: TICKET_LABEL_MAX_WIDTH, overflow: 'hidden' } }, ticketLabelNodesOf(h, src.key != null ? src.key : issueNumber, issueEffort))),
+          // header（#1564：上限宽度、两段布局与悬停都走共用徽标组件，本处只给票身份与状态色）
+        ticketBadgeOf(h, { key: src.key != null ? src.key : issueNumber, effortId: issueEffort, surface: 'badge', color: actColor }),
           h(Tip, { className: 'dsws-tip', content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.fullTitle')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, title)]) }, h('span', { className: 'dsws-tt-wrap', style: { flex: 1, fontSize: 14, fontWeight: 600 } }, title)),
           h('span', { className: 'dsws-chip', style: { fontSize: 10, background: isOpen ? 'rgba(63,185,80,.15)' : 'rgba(139,148,158,.15)', color: stateColor, border: '1px solid ' + stateColor, flex: 'none' } }, [Ic({ n: isOpen ? 'dot' : 'check', size: 9 }), h('span', { style: { marginLeft: 3 } }, stateLabel)]),
         ]),

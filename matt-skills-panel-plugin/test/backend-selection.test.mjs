@@ -2,7 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createWorkspaceCwd } from '../src/host/workspaceCwd.js'
 import * as decision from '../src/tracker/detection/backendDecision.js'
+import { parseIssueTracker } from '../src/tracker/detection/parseIssueTracker.js'
 import path from 'node:path'
+
+test('standard Chinese tracker headings stay explicit while body mentions remain evidence', () => {
+  for (const [name, backendId] of [['GitHub', 'github'], ['GitLab', 'gitlab'], ['Markdown', 'markdown']]) {
+    const parsed = parseIssueTracker(`# Issue 跟踪器：${name}\n\n使用对应的 issue 跟踪器。`)
+    assert.equal(parsed.explicitBackendId, backendId)
+    assert.equal(parsed.confidence, 'high')
+  }
+  assert.equal(parseIssueTracker('参考 GitHub Issues 文档。').confidence, 'low')
+})
 
 function fixture(choice) {
   const cwd = '/Users/Matt/GhostCodexInspect'

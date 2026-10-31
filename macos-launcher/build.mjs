@@ -10,7 +10,9 @@ import { bundleServiceNotifications } from './service-notifications.mjs'
 import { assembleDesktopClient } from './desktop-adaptation.mjs'
 import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
 import { bundleProjectPlugins } from './bundle-plugins.mjs'
+import { bundleSuperagent } from './bundle-superagent.mjs'
 import { verifyPluginPayload } from './runtime/plugin-payload.mjs'
+import { verifySuperagentPayload } from './runtime/superagent-payload.mjs'
 import { checkBrowserHarnessUpstream } from '../browser-harness-plugin/build.mjs'
 
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
@@ -96,6 +98,7 @@ try {
   await cp(join(root, 'macos-launcher/package-lock.json'), join(resources, 'package-lock.json'))
   await run('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund',
     '--cache', join(buildRoot, 'npm-cache')], resources)
+  await bundleSuperagent({ resourcesRoot: resources, npmCache: join(buildRoot, 'npm-cache') })
   const settingsClient = join(resources, 'node_modules/@deepseek-ai/dsh-client-ui-settings/lib/client.js')
   await writeFile(settingsClient, allowAuthenticatedLanSettings(await readFile(settingsClient, 'utf8')))
   await mkdir(join(resources, 'bin'), { recursive: true })
@@ -113,6 +116,7 @@ try {
   await run('codesign', ['--force', '--sign', '-', join(resources, 'node')])
   await run('codesign', ['--deep', '--force', '--sign', '-', app])
   await verifyPluginPayload(resources, root)
+  await verifySuperagentPayload(resources, root)
   await rename(app, destination)
   // The no-argument launcher selects the newest completed bundle by directory mtime.
   await utimes(destination, new Date(), new Date())

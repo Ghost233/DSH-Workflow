@@ -1,13 +1,15 @@
 complete:
-  version: 16
+  version: 17
   placeholders:
     - url
     - closed
     - total
-  use: map 完成态 · 按 wayfinder 技能核对探索完成，再按当前状态走分支：已做完的交接步骤跳过；结论需要接着做就提醒手动 /to-spec → /to-tickets，不需要就在正文记下结论、留一条总结评论后关闭这张地图（#1281；#1274 收口后补分支）
+  use: map 完成态 · 按 wayfinder 技能核对探索完成，再按当前状态走分支：已做完的交接步骤跳过；结论需要接着做就提醒手动 /to-spec → /to-tickets，不需要就在正文记下结论、留一条总结评论后关闭这张地图（#1281；#1274 收口后补分支）；v17（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
   zh: |-
     /wayfinder
     {url}
+
+    {{shared:firstPrinciples}}
 
     ## 完成核对
     按 wayfinder 技能要求，确认这张探索地图的探索任务已经真正完成。当前进度 {closed}/{total}，不要只信数字。
@@ -33,6 +35,8 @@ complete:
   en: |-
     /wayfinder
     {url}
+
+    {{shared:firstPrinciples}}
 
     ## Completion check
     Follow the wayfinder skill requirements to confirm the exploration work of this map is truly complete. Current progress {closed}/{total} — do not trust the numbers alone.
@@ -108,11 +112,13 @@ fixate:
 
     {{shared:sharedTools}}
 healthCheck:
-  version: 5
+  version: 6
   placeholders:
     - subject
-  use: 「体检」按钮 · 所有后端共用的总纲（游离票归位：先出建议清单、人点头才动手）；后端自己的科目由后端声明、经 {subject} 填空
+  use: 「体检」按钮 · 所有后端共用的总纲（游离票归位：先出建议清单、人点头才动手）；后端自己的科目由后端声明、经 {subject} 填空；v6（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
   zh: |-
+    {{shared:firstPrinciples}}
+
     ## 体检（把游离的开放票归位）
 
     这次体检的范围是**整个仓库的开放票**（不跟随面板当前的筛选）：把游离的票找出来，给你一份建议清单，你点头之后才动手。
@@ -152,6 +158,8 @@ healthCheck:
 
     {{shared:sharedTools}}
   en: |-
+    {{shared:firstPrinciples}}
+
     ## Health check (put orphaned open tickets where they belong)
 
     This health check covers **every open ticket in the whole repository** (it does not follow the current panel filters): find the orphaned ones, and hand me a suggestion list — act only after I nod.
@@ -191,30 +199,38 @@ healthCheck:
 
     {{shared:sharedTools}}
 mapExecute:
-  version: 20
+  version: 22
   placeholders: []
-  use: map 执行 / 新会话（未完成态）· 只写推进指令与收尾，推进规则交给 wayfinder 技能（#1281）
+  use: map 执行 / 新会话（未完成态）· 只写推进指令与收尾，推进规则交给 wayfinder 技能（#1281）；v22（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
   zh: |-
+    {{shared:firstPrinciples}}
+
     请按 wayfinder 技能推进这张 map。
 
     ## 收尾
+    - [ ] 结束前把这次推进的结果写进这张 map 正文；没做完的写明下一步。
 
     {{shared:sharedTools}}
   en: |-
+    {{shared:firstPrinciples}}
+
     Please advance this map with the wayfinder skill.
 
     ## Wrap-up
+    - [ ] Before finishing, write the result of this pass into this map body; if unfinished, state the next step.
 
     {{shared:sharedTools}}
 mapInspect:
-  version: 12
+  version: 14
   placeholders:
     - n
     - title
     - url
     - subIssue
-  use: map 空态 0/0 检查 · 诊断关联缺失
+  use: map 空态 0/0 检查 · 诊断关联缺失；v14（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
   zh: |-
+    {{shared:firstPrinciples}}
+
     ## 目标 map
     - 编号：#{n}
     - 标题：{title}
@@ -239,6 +255,8 @@ mapInspect:
 
     {{shared:sharedTools}}
   en: |-
+    {{shared:firstPrinciples}}
+
     ## Target map
     - No: #{n}
     - Title: {title}
@@ -253,7 +271,7 @@ mapInspect:
     - [ ] Check whether those sub-issues already exist but are not showing as true sub-issues of this map (count still 0/0, not listed in detail)
 
     ## Fix
-    - [ ] First fetch the map current body into an absolute-path file (keep the `## Destination` section), then wire the sub-issues to this map the way this backend declares: {subIssue}
+    - [ ] First read the map body back (the `## Destination` section must be kept), then wire the sub-issues to this map the way this backend declares: {subIssue}
     - [ ] If the sub-issues do not exist yet, create them per the original plan, then wire them the same way
     - [ ] After fixing, verify the sub-issue count matches the way stated above, and that the panel count is no longer 0/0 and the detail page lists all sub-issues with correct blocking
 
@@ -263,10 +281,11 @@ mapInspect:
 
     {{shared:sharedTools}}
 specComplete:
-  version: 7
+  version: 8
   placeholders: [url, closed, total]
-  use: '规格容器 · 完成态「完成」按钮：先认这次是怎么做的，把改动交付到仓库长期分支（没有版本库则以当前工作区为准），逐条核对用户故事与逐票证据后按边界关闭规格；关闭只经 deck_issue_patch，没有「顺手关」的旁路，重开只能由人做（#1281、#1350）'
+  use: '规格容器 · 完成态「完成」按钮：先认这次是怎么做的，把改动交付到仓库长期分支（没有版本库则以当前工作区为准），逐条核对用户故事与逐票证据后按边界关闭规格；关闭只经 deck_issue_patch，没有「顺手关」的旁路，重开只能由人做（#1281、#1350）；v8（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程'
   zh: |-
+    {{shared:firstPrinciples}}
 
     这张规格 issue（{url}）下面的实施 issue 已经全部关闭（{closed}/{total}）。这只是触发条件，不是完成证据。
 
@@ -304,6 +323,7 @@ specComplete:
 
     {{shared:sharedTools}}
   en: |-
+    {{shared:firstPrinciples}}
 
     This spec issue ({url}) has all its implementation issues closed ({closed}/{total}). That is only the trigger, not proof of completion.
 
@@ -341,13 +361,15 @@ specComplete:
 
     {{shared:sharedTools}}
 specExecute:
-  version: 5
+  version: 7
   placeholders:
     - url
-  use: 规格容器 · 有未关实施票时「执行」按钮（首行 /implement-spec）（#1281）
+  use: 规格容器 · 有未关实施票时「执行」按钮（首行 /implement-spec）（#1281）；v6（2026-10-29）：收尾小节标题从「## 收口」改成「## 收尾」，与其余模板统一；v7（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
   zh: |-
     /implement-spec
     {url}
+
+    {{shared:firstPrinciples}}
 
     按 /implement-spec 技能把这张规格实现完。
 
@@ -358,7 +380,7 @@ specExecute:
     - [ ] 提交与评审基线：git 可用、只是工作树建不出 → 集成分支按技能建，每票完成后由你在分支上串行提交，只暂存本票改动的路径；没有 git → 动手前把仓库复制到仓库外临时目录，收尾用 diff 作评审与回退依据，票里写「未提交」。
     - [ ] 全部票关完后跑一次全量验证；交付时说明降级原因与验证结果。
 
-    ## 收口
+    ## 收尾
     - [ ] 每完成一张实施 issue，如实更新它的状态与正文。
     - [ ] 全部实施 issue 关闭后，提醒用户点规格详情页的「完成」按钮做收口核对（不是自动关闭）。
 
@@ -366,6 +388,8 @@ specExecute:
   en: |-
     /implement-spec
     {url}
+
+    {{shared:firstPrinciples}}
 
     Follow the /implement-spec skill to implement this whole spec.
 
@@ -382,13 +406,15 @@ specExecute:
 
     {{shared:sharedTools}}
 specSplit:
-  version: 5
+  version: 6
   placeholders:
     - url
-  use: 规格容器 · 空态「拆票」按钮（首行 /to-tickets）（#1281）
+  use: 规格容器 · 空态「拆票」按钮（首行 /to-tickets）（#1281）；v6（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
   zh: |-
     /to-tickets
     {url}
+
+    {{shared:firstPrinciples}}
 
     按 /to-tickets 技能把这张规格 issue 拆成实施 issue。
 
@@ -406,6 +432,8 @@ specSplit:
   en: |-
     /to-tickets
     {url}
+
+    {{shared:firstPrinciples}}
 
     Follow the /to-tickets skill to split this spec issue into implementation issues.
 

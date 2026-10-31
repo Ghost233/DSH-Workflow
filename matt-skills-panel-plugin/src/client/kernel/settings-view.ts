@@ -19,10 +19,10 @@
  *
  * 真相只有一份：本机设置文件（用户主目录下的 .dsh/mattskillsdeck/settings.yaml，核校验见
  *   src/shared/config-store/settings.js）里 workspaces 那一节，是按工作区记住的观看状态的唯一真源。
- *   localStorage 那两个旧键（dsws.bannerFold、dsws.subwsAutoShown）从此只是过渡：文档缺席、读失败、
- *   手机不通这三种情况才读它；只有写不进文件（或文件是更高版本、不许写回去）时才把这一次的值写回旧键；
- *   写成功那条路上一个字都不写旧键 —— 那不是双写，是过渡。旧键里也没有（或旧键不可用）时，
- *   横幅折叠按收起算，其余按关算。
+ *   localStorage 只剩一个旧键（dsws.subwsAutoShown）还在过渡：文档缺席、读失败、手机不通这三种情况才读它；
+ *   只有写不进文件（或文件是更高版本、不许写回去）时才把这一次的值写回旧键；写成功那条路上一个字都不写旧键
+ *   —— 那不是双写，是过渡。旧键里也没有（或旧键不可用）时按关算。
+ *   #1612 之后胶囊状态栏与 deck 工具箱两格没有旧键：它们只有设置文件一份真源，缺格按缺省（折叠、开）算。
  *   这一手过渡能兜住什么、兜不住什么必须说准（#1012 后续修复按实测改准）：文件里**已经有**这个工作区的
  *   记录时，写进旧键的这一份读不回来 —— 读侧的口径是「文件里这条记录有值就以它为准」，所以它只在本次
  *   窗口内充当记性（用户当场再点一下，看到的是刚点的那一下），页面一关就只剩文件里那一份。真正让一次改动
@@ -54,7 +54,7 @@
 //   refresh/rooms/client/snapshot-cache-store.ts，viewFlagState 与 viewFlagNotifySettled 的真源在 kernel/settings-view-state.ts，
 //   settingsUiDrainDeferred 的真源在 kernel/settings-ui.ts，settingsTemplatesDrainDeferred 的真源在
 //   kernel/settings-templates.ts，settingsDebugDrainDeferred 与 settingsDebugDocLooksReal 的真源在
-//   kernel/settings-debug.ts，viewFlagScheduleWrite 的真源在 kernel/settings-view-write.ts；
+//   kernel/settings-debug.ts，viewFlagScheduleWrite 与 viewFlagMergeDoc 的真源在 kernel/settings-view-write.ts；
 //   本片只在调用时求值，初始化期不碰；类型一律写 any 是刻意的：在这里凭记忆写窄，
 //   只会把那边正常的改动变成这里的假报错（与 kernel/link.ts 同例）。
 //   host/emit/log 走全局已声明的那一份，这里不重复。process 只在 typeof 里判平台，
@@ -72,26 +72,49 @@ declare function settingsTemplatesDrainDeferred(...args: any[]): any;
 declare function settingsDebugDrainDeferred(...args: any[]): any;
 declare function settingsDebugDocLooksReal(...args: any[]): any;
 declare function viewFlagScheduleWrite(...args: any[]): any;
+declare function viewFlagMergeDoc(...args: any[]): any;
 declare const process: any;
     // 旧键登记表：本模块管的名字 → 旧 localStorage 键名，以及旧表里那一把键是按哪条路径记的。
-    //   「按哪条路径记」不能省：横幅折叠按会话所选目录记（读写在 src/client/kernel/store-prefs.ts 的
-    //   bannerFoldByCwd，键是 keyOf(cwd)），
-    //   红文件夹标志按工作区根记（SubworkspaceMark.js 第 138–157 行，键是 subwsMarkCmpKey(root)）。
-    //   照原样读，行为才与改动前一致。
+    //   「按哪条路径记」不能省：红文件夹标志按工作区根记（SubworkspaceMark.js 第 138–157 行，
+    //   键是 subwsMarkCmpKey(root)），照原样读，行为才与改动前一致。
+    //   #1612 退役了横幅折叠那一格（bannerFolded 与 'dsws.bannerFold'）：胶囊状态栏改由设置文件说了算，
+    //   旧键既不再读也不再写，表里也就不再登记它。
     const VIEW_FLAG_LEGACY: any = {
-      bannerFolded: { key: 'dsws.bannerFold', by: 'cwd' },
       subwsMarkAutoShown: { key: 'dsws.subwsAutoShown', by: 'root' },
     }
-    // 新建一条工作区记录时要顺手种上的那两格：与核（src/shared/config-store/src/settings.ts 的 WS_KEYS
-    //   与归一默认值：横幅折叠默认收起、其余默认关）一字对齐，值取旧表里还知道的那一份 —— 新建的那一刻
-    //   别顺手把用户原来点过展开的横幅重新收起，那不是双写，只是别把已经知道的事忘掉。
+    // #1612 新增的两格是文字开关，不是真假值：文件里只认下面这些字面量，读到别的写法就当「说不清」。
+    //   单独列一张表是为了让读口对旧布尔名字的判据一个字都不变（很多门禁和调用方盯着那几个名字），
+    //   新两格按各自允许的字面量单独判；写这一侧也照同一张表判「这一笔写进去了没有」。
+    const VIEW_FLAG_TEXT_NAMES: any = {
+      statusBar: ['show', 'hide'],
+      deckTools: ['on', 'off'],
+    }
+    // 这个名字是不是新两格之一（是的话读写都按文字处理，不回退旧 localStorage 的布尔键）。
+    const viewFlagIsTextNameOf = function (name: any): any {
+      return Object.prototype.hasOwnProperty.call(VIEW_FLAG_TEXT_NAMES, name)
+    }
+    // 这个名字允许写哪几个字面量；不是新两格就回空清单。写这一侧判「文件里写进去了没有」要用它。
+    const viewFlagTextValuesOf = function (name: any): any {
+      return VIEW_FLAG_TEXT_NAMES[name] || []
+    }
+    // 新建一条工作区记录时要顺手种上的那三格（#1612 起是 statusBar、deckTools 与 subwsMarkAutoShown）：
+    //   与核（src/shared/config-store/src/settings.ts 的归一默认值：胶囊状态栏默认收起、deck 工具箱默认开、
+    //   其余默认关）一字对齐。statusBar 种 hide、deckTools 种 on（两格都不再有旧值可换算）；
+    //   subwsMarkAutoShown 照旧取旧表那份 —— 那不是双写，只是别把已经知道的事忘掉。
     //   为什么这张表里没有 noRepoDismissed（#1012 后续修复的 A4）：无仓库红卡那张卡要退役，本窗口替它写一个
     //   false，等以后红卡的记录也搬进这份文件时，就会拿这个 false 当「用户没收起过」，把人家早就收起的红卡
     //   重新弹出来。所以这一格不由本窗口种。
-    //   说清这一手管得到哪，不许夸大：核在写盘时会把缺的那一格按默认值补上（settings.ts 归一：横幅折叠补
-    //   收起、其余补关，stringifySettings 每次都写全三格），所以文件里那一行照旧出现 —— 这里改掉的只是
-    //   「本窗口不主动替用户答这一格」。真正决定以后红卡弹不弹的是核里那个默认值，不在这里；要真治它得动核或等红卡搬过来那票。
-    const VIEW_FLAG_SEED_NAMES = ['bannerFolded', 'subwsMarkAutoShown']
+    //   说清这一手管得到哪，不许夸大：核在写盘时会把缺的那几格按默认值补上（settings.ts 归一：胶囊状态栏补
+    //   hide、deck 工具箱补 on、其余补默认，stringifySettings 每次都写全四格），所以文件里那几行照旧出现 ——
+    //   这里改掉的只是「本窗口不主动替用户答 noRepoDismissed」。真正决定以后红卡弹不弹的是核里那个默认值，不在这里。
+    const VIEW_FLAG_SEED_NAMES = ['statusBar', 'deckTools', 'subwsMarkAutoShown']
+    // 种一格时用哪个值：两个新开关各按缺省种（statusBar 种 hide、deckTools 种 on），
+    // 其余名字照旧读旧表。新建那一刻要知道的旧事，全从这一处取。
+    const viewFlagSeedValueOf = function (cwd: any, name: any): any {
+      if (name === 'statusBar') return 'hide'
+      if (name === 'deckTools') return 'on'
+      return viewFlagLegacyRead(cwd, name)
+    }
     // 折算到同一把键再比较：这一片一律走闭包里那把 keyOf（与仓库其余位置同口径），拿不到时才退回本地写法。
     const viewFlagNormOf = function (p: any): any {
       try { if (typeof keyOf === 'function') return String(keyOf(p) || '') } catch (e) {}
@@ -183,7 +206,7 @@ declare const process: any;
     const viewFlagEmptyDoc = function (): any {
       return { version: 1, ui: { stateFilter: '', sortKey: '', sortDir: '', labelClicks: {} }, workspaces: {}, debug: { enabled: false, sampleRate: 1 }, templates: {} }
     }
-    // 旧表里那把键（按折算键记，与旧写法一致）：横幅折叠按会话目录，红文件夹标志按工作区根。
+    // 旧表里那把键（按折算键记，与旧写法一致）：红文件夹标志按工作区根。
     const viewFlagLegacyKeyOf = function (cwd: any, name: any): any {
       try {
         const meta = VIEW_FLAG_LEGACY[name]
@@ -191,29 +214,27 @@ declare const process: any;
         return viewFlagNormOf(meta.by === 'root' ? viewFlagDocKeyOf(cwd) : cwd)
       } catch (e) { return '' }
     }
-    // 读旧表：横幅折叠那把键记 1 是收起、记 0 是用户点过展开，缺席是没点过、按默认收起算；
-    //   红文件夹标志沿用老记法（记 1 是展示过，缺席即没展示过）。读的时候两边都折算过再比
-    //   （旧版本可能把原样路径写进去过）。
+    // 读旧表：红文件夹标志沿用老记法（记 1 是展示过，缺席即没展示过），读的时候两边都折算过再比
+    //   （旧版本可能把原样路径写进去过）。表里没登记的名字答 false。
     const viewFlagLegacyRead = function (cwd: any, name: any): any {
       try {
         const meta = VIEW_FLAG_LEGACY[name]
         if (!meta) return false
-        if (typeof localStorage === 'undefined' || !localStorage) return name === 'bannerFolded'
+        if (typeof localStorage === 'undefined' || !localStorage) return false
         const raw = localStorage.getItem(meta.key)
-        if (!raw) return name === 'bannerFolded'
+        if (!raw) return false
         const map = JSON.parse(raw)
-        if (!map || typeof map !== 'object' || Array.isArray(map)) return name === 'bannerFolded'
+        if (!map || typeof map !== 'object' || Array.isArray(map)) return false
         const key = viewFlagLegacyKeyOf(cwd, name)
-        if (!key) return name === 'bannerFolded'
+        if (!key) return false
         if (Object.prototype.hasOwnProperty.call(map, key)) return !!map[key]
         const ks = Object.keys(map)
         for (let i = 0; i < ks.length; i++) { if (viewFlagNormOf(ks[i]) === key) return !!map[ks[i]] }
-      } catch (e) { return name === 'bannerFolded' }
-      return name === 'bannerFolded'
+      } catch (e) { return false }
+      return false
     }
     // 写旧表：只在这一条路接不下这一次改动时才走（写文件失败、文件只读、或认不出工作区根）。
-    //   横幅折叠记 1 是收起、记 0 是展开（缺席留给没点过、读时按收起算）；红文件夹标志沿用老做法
-    //   （置上记 1，取消删掉，与 src/client/kernel/store-prefs.ts 的旧记法同源）；
+    //   红文件夹标志沿用老做法（置上记 1，取消删掉，与 SubworkspaceMark 的旧记法同源）；
     //   表里别的键原样保留，所以只动这一次涉及的那一条。
     //   写旧表本身失败时补一行 storage.fail（既有事件名，字段只有 key 与 op 两个，与全库其余位置一致），
     //   不再一口吞掉：兜不住这件事要在日志里看见，不然排查时只剩「用户点了、什么都没发生」。
@@ -235,8 +256,8 @@ declare const process: any;
         if (!map) map = {}
         let hit = Object.prototype.hasOwnProperty.call(map, key) ? key : ''
         if (!hit) { const ks = Object.keys(map); for (let i = 0; i < ks.length; i++) { if (viewFlagNormOf(ks[i]) === key) { hit = ks[i]; break } } }
-        if (name === 'bannerFolded') { if (on) map[hit || key] = 1; else map[hit || key] = 0 }
-        else { if (on) map[hit || key] = 1; else if (hit) delete map[hit] }
+        if (on) map[hit || key] = 1
+        else if (hit) delete map[hit]
         localStorage.setItem(meta.key, JSON.stringify(map))
         return true
       } catch (e) {
@@ -244,18 +265,27 @@ declare const process: any;
         return false
       }
     }
-    // 把这一格改进内存文档：别的节与别的字段一律不动；新建这一条记录时，按上面 VIEW_FLAG_SEED_NAMES 种上
-    //   另外那两格（值取旧表里还知道的那一份）。这一格自己照旧写在最后一行，所以不管名字是哪一个都落得下。
-    const viewFlagSetInDoc = function (doc: any, cwd: any, key: any, name: any, on: any): any {
+    // 把这一格改进内存文档：别的节与别的字段一律不动；新建一条普通记录时，按上面 VIEW_FLAG_SEED_NAMES 种上
+    //   另外那两格。这一格自己照旧写在最后一行，所以不管名字是哪一个都落得下。
+    //   第六个参数 unopened 只对「新建一条记录」生效（#1641）：设置页工作区名单上还没打开过的工作区认不出根，
+    //   先按名单上的路径记一条临时记录并标上它；已有记录不动这个标记——什么时候合并、什么时候清掉由 #1640
+    //   那一条路负责，写这一格的人不该顺手抹掉别人的标记。临时记录只种这一格 + 标记（#1640），不种缺省：
+    //   「格在不在」就是「用户点过没点过」，合并时靠它决定搬哪几格。
+    const viewFlagSetInDoc = function (doc: any, cwd: any, key: any, name: any, on: any, unopened: any): any {
       try {
         if (!doc || typeof doc !== 'object') return false
         if (!doc.workspaces || typeof doc.workspaces !== 'object' || Array.isArray(doc.workspaces)) doc.workspaces = {}
         let entryKey = viewFlagEntryKeyOf(doc, key)
         if (!entryKey) {
           const seed: any = {}
-          for (let i = 0; i < VIEW_FLAG_SEED_NAMES.length; i++) {
-            const n = VIEW_FLAG_SEED_NAMES[i]
-            seed[n] = (n === name) ? on : viewFlagLegacyRead(cwd, n)
+          if (unopened === true) {
+            seed.unopened = true
+            seed[name] = on
+          } else {
+            for (let i = 0; i < VIEW_FLAG_SEED_NAMES.length; i++) {
+              const n = VIEW_FLAG_SEED_NAMES[i]
+              seed[n] = (n === name) ? on : viewFlagSeedValueOf(cwd, n)
+            }
           }
           doc.workspaces[key] = seed
           entryKey = key
@@ -274,7 +304,47 @@ declare const process: any;
     const viewFlagLogDocFail = function (): void {
       try { log('warn', 'storage.fail', { key: 'settings.workspaces', op: 'write' }) } catch (eL) {}
     }
-    // 文档到手那一刻重画一次（与 touchProbeAt / setBannerFolded 同例：同一个工作区的各会话都跟着重画）。
+    // 用户点一下设置页的「胶囊状态栏」或「deck 工具箱」这两格文字开关，从界面到文件要经过好几步：
+    //   先进待写队列（还没认出工作区根、或设置文档还在路上）、文档到手后并进内存文档、防抖窗口过后整份写进文件；
+    //   任何一步都可能停住（值不认识、文档是更高版本不许写、手机不通、写被拒）。从前这一路只有失败时一行
+    //   storage.fail，它只说「写 localStorage 失败」，看不出用户点的是哪一格、点成什么值、卡在哪一步，于是
+    //   「点了没反应」只能到现场猜（#1642）。这里每一步各记一行 settings.toggle，用 reason 说走到哪一步、
+    //   ok 说这一步成没成；同一趟按时间顺序读下去就知道停在哪一步。
+    //   字段只有白名单里的六个：flag 开关名、value 这一次点成什么值、listed 是不是名单路径上的临时记录
+    //   （在还没形成记录的早期拒绝里，它回显调用方说的「这一行来自工作区名单」）、ok 这一步成没成、
+    //   reason 结论枚举、cwdHash 工作区键的短散列（日志纪律：不记工作区原始路径）。
+    const viewFlagLogToggle = function (name: any, value: any, listed: any, ok: any, reason: any, keyOrCwd: any): void {
+      try {
+        log('info', 'settings.toggle', {
+          flag: String(name == null ? '' : name),
+          value: String(value == null ? '' : value),
+          listed: listed === true,
+          ok: ok === true,
+          reason: String(reason == null ? '' : reason),
+          cwdHash: dswsLogHash(String(keyOrCwd == null ? '' : keyOrCwd))
+        })
+      } catch (eL) {}
+    }
+    // 合并记下的临时记录这一趟没能写进文件时补一行（#1642）：按 #1640 的约定，settings.merge 那行「合了」
+    //   等写成功才发，写失败时一行告警都不发；可「盘上还留着一处分家、因为这一趟写没成」本身正是需要
+    //   事后看见的事，所以另开一条告警级 settings.merge.fail，字段与 settings.merge 前四格相同，
+    //   末格 reason 说为什么没写进文件（host-missing 宿主不在这台机器上 / write-refused 文件是更高版本
+    //   或被拒 / write-error 写的过程中抛错）。每条临时记录只报一次（条目上的 failTold 标记），
+    //   下一趟重试再失败不重复刷；下一趟写成功时仍按原约定发 settings.merge。工作区键只记短散列。
+    //   与上面两行同住这一片（都是「点一下之后日志该怎么写」）；写侧 kernel/settings-view-write.ts 调它。
+    const viewFlagLogMergeFail = function (reason: any): void {
+      try {
+        if (viewFlagState.mergePending !== true) return
+        const hashes = Object.keys(viewFlagState.mergeLog || {})
+        for (let i = 0; i < hashes.length; i++) {
+          const m = viewFlagState.mergeLog[hashes[i]]
+          if (!m || m.failTold === true) continue
+          m.failTold = true
+          try { log('warn', 'settings.merge.fail', { via: String(m.via || ''), keyHash: String(hashes[i]), rootHash: String(m.rootHash || ''), fields: Number(m.fields) || 0, reason: String(reason || '') }) } catch (eL) {}
+        }
+      } catch (e) {}
+    }
+    // 文档到手那一刻重画一次（与 touchProbeAt 同例：同一个工作区的各会话都跟着重画）。
     const viewFlagEmitAll = function (): void {
       try { if (typeof emit === 'function' && typeof shared !== 'undefined' && shared) emit(shared) } catch (e) {}
       try {
@@ -298,8 +368,14 @@ declare const process: any;
           if (d.section === 'templates') { settingsTemplatesDrainDeferred(d, status); continue }
           if (d.section === 'debug') { settingsDebugDrainDeferred(d, status); continue }
           const key = (status === 'ready') ? (d.key || viewFlagWriteKeyOf(d.cwd)) : ''
-          if (key && viewFlagSetInDoc(viewFlagState.doc, d.cwd, key, d.name, d.value)) {
-            viewFlagState.journal[viewFlagJournalKeyOf(key, d.name)] = { cwd: d.cwd, name: d.name, value: d.value, key: key }
+          if (key && viewFlagSetInDoc(viewFlagState.doc, d.cwd, key, d.name, d.value, d.unopened)) {
+            // 临时标记跟着这一笔进队列：写前重读合并时按它把「这条记录是名单路径上的临时记录」重新标上，
+            //   不然后并进来的那一份（刚读回来的盘上文档）会把标记丢掉。
+            viewFlagState.journal[viewFlagJournalKeyOf(key, d.name)] = (d.unopened === true)
+              ? { cwd: d.cwd, name: d.name, value: d.value, key: key, unopened: true }
+              : { cwd: d.cwd, name: d.name, value: d.value, key: key }
+            // #1642：这一笔从队列并进了内存文档，接下来等防抖窗口把它写进文件（写成功那一行由写侧记）。
+            if (viewFlagIsTextNameOf(d.name)) viewFlagLogToggle(d.name, d.value, d.unopened === true, true, 'queued', key)
             continue
           }
           // 这一笔没能进文档：文档没到手、认不出工作区根、或文档形状对不上写不进去 —— 三种都走同一条
@@ -307,9 +383,21 @@ declare const process: any;
           //   既不写也不记，用户在界面上点的那一下就这么静默消失（#1012 后续修复的 A5）。
           viewFlagLegacyWrite(d.cwd, d.name, d.value)
           if (status === 'ready' && key) viewFlagLogDocFail()
+          // #1642：文字开关没能在这一趟并进文档 —— 记下停在哪一步：readonly 文件是更高版本不许写、
+          //   unavailable 问不到文档、no-root 认不出工作区根、doc-fail 文档在手却形状对不上写不进去。
+          //   旧布尔那两格（红文件夹标志等）没有对应的新事件，行为与从前一致。
+          if (viewFlagIsTextNameOf(d.name)) {
+            let why = 'doc-fail'
+            if (status !== 'ready') why = (status === 'readonly') ? 'readonly' : 'unavailable'
+            else if (!key) why = 'no-root'
+            viewFlagLogToggle(d.name, d.value, d.unopened === true, false, why, d.key || d.cwd)
+          }
         }
         viewFlagState.deferred = {}
         if (status === 'ready') {
+          // #1640：文档到手以后先合并一次「已经认得出根」的临时记录 —— 界面重画时看到的、以及下面排的
+          //   这一趟写，都是合并后的那一份；合到了会顺手排一次落盘（合并结果写进文件才算数）。
+          try { viewFlagMergeDoc(viewFlagState.doc, 'load') } catch (eM) {}
           // 文档刚到手要重画一次：不然「上次收起过横幅」这件事得等下一次别的重渲染才生效，
           //   用户会先看见横幅自己弹回来一下。只在真拿到文档时重画（问不到那条路上界面本来就照旧表画着）。
           viewFlagEmitAll()
@@ -350,8 +438,8 @@ declare const process: any;
       } catch (e) { viewFlagSettle('unavailable') }
     }
     // 按调用方手上那个工作区根读一格（2026-10-12 复核 Q2）：返回 { known, value }。known=true ＝ 文件里查得到
-    //   这个工作区这一条记录、且这一格是真假值（以文件为准）；known=false ＝ 问不出（还没写过、读失败、更高
-    //   版本、形状对不上），调用方退回旧表那一份。为什么要按根读：本组件自己认得出根（subwsMarkRootOf），
+    //   这个工作区这一条记录、且这一格的值认得（旧布尔名字要真假值，statusBar/deckTools 要各自允许的字符串）；
+    //   known=false ＝ 问不出（还没写过、读失败、更高版本、形状对不上），调用方退回旧表那一份。为什么要按根读：本组件自己认得出根（subwsMarkRootOf），
     //   而内核那把「所选目录 → 工作区根」的表是快照缓存，同一条目录的根变过时可能还留着旧条目 —— 按会话
     //   目录读会落到另一把键上，文件里明明记过却判成问不出，用户每开一次窗就白弹一次浮层（比搬迁前差）。
     export const viewFlagOfRoot = function (root: any, name: any): any {
@@ -360,17 +448,35 @@ declare const process: any;
         const key = String(root == null ? '' : root).trim()
         const hit = (key && viewFlagState.doc) ? viewFlagEntryKeyOf(viewFlagState.doc, key) : ''
         const entry = hit ? viewFlagState.doc.workspaces[hit] : null
-        if (entry && typeof entry === 'object' && typeof entry[name] === 'boolean') return { known: true, value: entry[name] }
+        if (entry && typeof entry === 'object') {
+          // 旧布尔名字的判据一个字不动：文件里是真正的真假值才算知道。
+          if (!viewFlagIsTextNameOf(name) && typeof entry[name] === 'boolean') return { known: true, value: entry[name] }
+          // #1612 的两个文字开关：文件里是各自允许的字面量才算知道（别的写法当说不清，别猜）。
+          if (viewFlagIsTextNameOf(name)) {
+            const allowed = VIEW_FLAG_TEXT_NAMES[name]
+            if (typeof entry[name] === 'string' && allowed.indexOf(entry[name]) >= 0) return { known: true, value: entry[name] }
+          }
+        }
       } catch (e) {}
-      // 问不出时的默认值按名字走：横幅折叠默认收起，其余默认关。
-      return { known: false, value: name === 'bannerFolded' }
+      // 问不出时的默认值一律是「关」；胶囊状态栏该按折叠算的口径由调用方（deck-state）自己给缺省。
+      return { known: false, value: false }
     }
     // 按所选目录那条路读一格：先按认出来的根问上面那个口子，问不出才回退旧 localStorage 键（这一手兜不住
-    //   「文件里已经有这个工作区的记录」那种情形，见文件头那段）。旧键里也没有时横幅折叠按收起算（见旧键读法）。
+    //   「文件里已经有这个工作区的记录」那种情形，见文件头那段）。
     export const viewFlagOf = function (cwd: any, name: any): any {
       try {
-        const ans = viewFlagOfRoot(viewFlagDocKeyOf(cwd), name)
+        const wantKey = viewFlagDocKeyOf(cwd)
+        let ans = viewFlagOfRoot(wantKey, name)
+        // #1641：认不出工作区根时（wantKey 是空串），这个目录可能是设置页名单上还没打开过的工作区 —— 它的临时记录
+        //   就用名单上的目录原文当键，所以按原文再问一次。认得出根的行不会走这一步，读的口径与 #1612 完全一样。
+        if (!ans.known && wantKey === '') ans = viewFlagOfRoot(String(cwd == null ? '' : cwd), name)
         if (ans.known) return ans.value
+        // #1612 的两个文字开关问不出时直接回「不知道」（undefined），不回退旧 localStorage 的布尔键：
+        //   旧键里没有这两格，硬拿别的布尔值冒充会造出第二份真相。
+        if (viewFlagIsTextNameOf(name)) return undefined
         return viewFlagLegacyRead(cwd, name)
-      } catch (e) { return name === 'bannerFolded' }
+      } catch (e) {
+        if (viewFlagIsTextNameOf(name)) return undefined
+        return false
+      }
     }

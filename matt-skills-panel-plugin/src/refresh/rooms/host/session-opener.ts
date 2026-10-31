@@ -14,14 +14,27 @@
  *     与「花了多少要记下来」是两件事，前者是裁决，后者是量账；1439 之前读路径不记账才让账本越走越偏。
  *     开会话时顺手调一次 ensureBackend：账本按后端建模，桶要先建出来，写第一笔时才不会因为桶缺席当场炸。
  *  3. 仓库身份随会话一起交出去（openTracker 回包里的 repoRef）：写操作要一个 RepositoryRef，
- *     判定出口没带时在这里用 describe 补一次；GitHub 仍缺 refId 时问**会话自己的 getRepoKey 能力**，
+ *     判定出口没带时在这里用 describe 补一次；仍缺 refId 时问**会话自己的 getRepoKey 能力**，
  *     由它先过裁决、再按后端口径记账（#1453，规格 1439 第 5 节：gh repo view 那一级是出站，
  *     必须放在会话建立之后、走操作管线）。宿主那一份 getRepoKey 只读本地证据，这里不用它兜底。
+ *     #1583 起补齐顺序与「不按后端名写死」的口径收在 src/tracker/session/repo-ref.ts，
+ *     远端归属改为「谁提供 getRepoKey 就问谁」，拿到 owner/name 后再问一次后端 describe
+ *     写完整身份（域名不在这里拼，GitHub 与 GitLab 各用各的）。
+ *
+ * 第 4 条（#1555 补）：调用方没有显式给选择时，本文件先问统一判定（deps.decideSelection，\
+ * 工作区文件 > 声明文件 > 自动识别）再开会话；判定层缺席或抛错才退回裸问注册表（#1444 之前的行为）。
+ * 为什么不能像 #1444 那样直接裸问：裸问只看各家 matches，会把「已经定了后端、又有两家同时举手」的
+ * 工作区判成 multi-match；详情与评论于是整批读不到（#1555 的真机现场）。判定自己带着 multiHit 时
+ * 原样交回，由 openTracker 拒绝 —— 这一层不替人挑赢家。
  *
  * 与 1443 的额度同步读数（refresh-runtime 的 readSessionBudget）的关系：那一处只读一条 readBudget、
  * 不开整套读写路径。本文件的开会话也复用它——读数仍然直达房间，不裁决不记账。
  */
 import { openTracker } from '../../../tracker/session/open-tracker.js'
+import { newOpId } from '../../../shared/op-id.js'
+import { resolveSessionRepoRef } from '../../../tracker/session/repo-ref.js'
+import type { QuotaOpEnd, QuotaOpStart } from '../../../tracker/session/pipeline.js'
+import { createSessionDecisionResolver } from './session-decision.js'
 import { createAccountPort } from '../../kernel/backend-accounting.js'
 import type { TrackerSession } from '../../../tracker/session/open-tracker.js'
 import type { SelectionResolver } from '../../../tracker/session/open-tracker.js'
@@ -49,6 +62,21 @@ export interface SessionOpenerDeps {
    * 装配方（refresh-runtime）手里才有账本实例。缺省不调：门禁与单测里不注入就保持旧行为。
    */
   ensureBackend?: (backendId: string, budget: unknown) => void
+  /**
+   * #1555：没有显式选择时，先问统一判定要这次会话的后端。
+   * 回 null 表示判定层这一趟给不出结论（没接线、抛错），本文件退回裸问注册表（#1444 之前的行为）。
+   * 判定自己带着 multiHit 时原样交回，由 openTracker 拒绝 —— 不在这一层替人挑。
+   */
+  decideSelection?: (cwd: string) => Promise<DecidedSelection | null>
+  /** #1555：装配方交来的统一判定函数（refresh-runtime 递 host 的那一份）；给了就在这里现造 decideSelection。 */
+  getDecisionFn?: () => any
+  /**
+   * #1627 配额诊断：每一笔操作的开始/结束钩子，装配方接观察器（Lead 的 quota-observer）。
+   * 类型直接从管线导出，本文件不认识观察器的形状；缺省不传时管线什么都不做。
+   */
+  onOpStart?: (info: QuotaOpStart) => void
+  /** #1627：与 onOpStart 成对的结束钩子（房间回了、账记了，或者房间抛错收成失败信封之后）。 */
+  onOpEnd?: (info: QuotaOpEnd) => void
 }
 
 /** 一层会话：会话本身、这一次的仓库身份、以及「这个会话能不能写」的结论。 */
@@ -89,6 +117,21 @@ export interface OpenSessionOptions {
   resolveSelection?: SelectionResolver
   /** 这一次的起进程出口（写会话可覆盖；不覆盖就用后端上下文里那一份）。 */
   exec?: SessionExec
+  /**
+   * 这趟会话的用途（#1627）：'' 表示普通取数，'naming-index' 表示命名索引那次翻页。
+   * 为什么值得单独标出来：命名索引在陌生工作区里会一页页翻，它和用户点的操作抢同一份额度，
+   * 混在一起看不出「分钟内是谁把额度用掉的」。
+   */
+  purpose?: string
+}
+
+/** 判定层交回来的选择：开会话只读这五格（与契约 Selection 同形；ref 可空）。 */
+interface DecidedSelection {
+  backendId: string | null
+  source?: string
+  ref?: RepositoryRef | null
+  multiHit?: string[]
+  pending?: true
 }
 
 /** 读操作的裁决口：一律放行（见文件头第 1 条）。 */
@@ -106,44 +149,50 @@ export function createSessionOpener(deps: SessionOpenerDeps): (cwd: unknown, opt
   // ledger.spend。桥里那份账号记 'ai-tool'，与本文件这份档位不同（两条路的 caller 不同，账要分开记）。
   const accountPort = createAccountPort({ ledger: deps.ledger, account: 'plugin' })
   const logCtx = deps.logCtx || null
+  // #1555：没显式给选择时先问统一判定；装配方给判定函数就现造一个，门禁也可以直接递 decideSelection。
+  const decideSelection = (typeof deps.decideSelection === 'function') ? deps.decideSelection : ((typeof deps.getDecisionFn === 'function') ? createSessionDecisionResolver({ getDecisionFn: deps.getDecisionFn, getTrackerRegistry: deps.getTrackerRegistry, backendCtx: deps.backendCtx }) : null)
   function openFail(reason: string, detail?: string): SessionFailure {
     try { if (logCtx && typeof logCtx.fire === 'function') logCtx.fire('debug', 'read.session', { ok: false, reason: reason }) } catch (eL: any) {}
     return { ok: false, reason: reason, detail: detail }
   }
   /**
-   * 补出仓库身份：判定出口带的先用；缺 refId 时问 describe；GitHub 仍缺就问会话的 getRepoKey。
-   * 为什么最后一步必须问会话而不是宿主（#1453）：仓库定位的 gh 那一级是出站，规格 1439 第 5 节
-   * 要求它放在会话建立之后、作为操作先过裁决再记账。会话的 getRepoKey 已经接在 Tracker 操作管线上
-   * （open-tracker 把除 describe/issueAddress 之外的能力都包进 runPipelineOp），直接调它就得到同一条路；
-   * 那一笔的用量由房间在回包上自报（OpUsage），账本才按后端的两桶口径记得到。
+   * 补出仓库身份：判定出口带的先用；缺 refId 时按「describe → 会话自己的 getRepoKey → 再问
+   * describe 拿完整身份」补齐。补齐顺序与每一步的失败诊断收在 src/tracker/session/repo-ref.ts
+   * （deck 工具也走同一份，两边不会再各写一套、各说一种后端）。
+   * 为什么远端那一问必须问会话而不是宿主（#1453）：仓库定位的 gh 那一级是出站，规格 1439 第 5 节
+   * 要求它放在会话建立之后、作为操作先过裁决再记账；会话的 getRepoKey 已经接在 Tracker 操作管线上。
+   * #1583：不再按后端名写死「只给 GitHub 问」——谁提供 getRepoKey 就问谁（GitLab 也提供）；
+   * 本地 Markdown 的 getRepoKey 恒回 null，这一问不产生出站、也不会改变结果。
    */
   async function resolveRepoRef(cwdStr: string, backendId: string, session: TrackerSession, fromSelection: RepositoryRef | null): Promise<RepositoryRef | null> {
-    let ref: RepositoryRef | null = (fromSelection && fromSelection.refId) ? fromSelection : null
-    if (!ref) {
-      try {
-        const described: any = (session as any).describe({ cwd: cwdStr }, backendId)
-        if (described) ref = Object.assign({}, described) as RepositoryRef
-      } catch (eD: any) { ref = null }
-    }
-    if (ref && (ref as any).refId) return ref
-    if (backendId !== 'github' || typeof (session as any).getRepoKey !== 'function') return ref
-    // GitHub 的判定出口不一定带 refId，缺它时后端无法定位仓库；这一问可能起 gh，所以先过裁决、再记账。
     let base: Record<string, unknown> = {}
     try { base = deps.backendCtx() || {} } catch (eB: any) { base = {} }
-    try {
-      // 第一格是仓库路径（契约 getRepoKey(cwd, ctx) 的 cwd 是字符串，房间的三级探测都拿它当工作目录）；
-      // 第二格是操作上下文：会话管线只负责裁决与记账，真正起 git/gh 时房间还是要 platform/exec/fs。
-      const located: any = await (session as any).getRepoKey(cwdStr, Object.assign({}, base, { cwd: cwdStr, caller: 'refresh' }))
-      // 房间回的是裸值（契约：{ owner, name } 或 null，用量挂在同一个对象上）；只有管线拒绝时才带 ok:false。
-      if (located && located.ok !== false && located.owner && located.name) {
-        const merged: any = Object.assign({}, ref || {})
-        merged.refId = String(located.owner) + '/' + String(located.name)
-        merged.name = merged.refId
-        merged.url = 'https://github.com/' + merged.refId
-        return merged as RepositoryRef
-      }
-    } catch (eK: any) {}
-    return ref
+    const resolved = await resolveSessionRepoRef({
+      session: session,
+      cwd: cwdStr,
+      backendId: backendId,
+      fromSelection: fromSelection,
+      baseCtx: base,
+      caller: 'refresh',
+    })
+    // 日志只记有诊断价值的三种：某一步抛错、走了远端定位（可能花了出站额度）、最后没补出 refId。
+    // 正常的「判定自带 / describe 一次就成」是每次开会话都会走的寻常路径，记下来就是噪音。
+    const failed = resolved.steps.filter(function (step) { return !step.ok })
+    if (failed.length > 0 || resolved.via === 'remote-locate' || resolved.via === 'none') {
+      try {
+        if (logCtx && typeof logCtx.fire === 'function') {
+          logCtx.fire('debug', 'read.session.repo-ref', {
+            ok: !!(resolved.ref && resolved.ref.refId),
+            backendId: backendId,
+            via: resolved.via,
+            steps: resolved.steps.map(function (step) {
+              return step.step + ':' + (step.ok ? 'ok' : 'fail' + (step.error ? '(' + step.error + ')' : ''))
+            }),
+          })
+        }
+      } catch (eL: any) {}
+    }
+    return resolved.ref
   }
   return async function openSession(cwd: unknown, opts?: OpenSessionOptions): Promise<OpenSessionResult> {
     const cwdStr = (typeof cwd === 'string') ? cwd : String(cwd == null ? '' : cwd)
@@ -159,6 +208,22 @@ export function createSessionOpener(deps: SessionOpenerDeps): (cwd: unknown, opt
     // 选后端仍然只经 openTracker（宿主与刷新机制不许自己调注册表选择）；调用方显式给了选择就尊重它的那份。
     let matchCtx: Partial<OpContext> = {}
     try { matchCtx = (deps.backendCtx() || {}) as Partial<OpContext> } catch (eB: any) { matchCtx = {} }
+    // #1555：没有显式选择时，先问统一判定（只有一份答案）；判定层这一趟给不出结论，才退回裸问注册表。
+    // 为什么不是「判定与裸问都走一遍」：同一个问题只能有一份答案，两套答法正是这次故障的来源。
+    const explicitResolve: SelectionResolver | null = (opts && typeof opts.resolveSelection === 'function') ? opts.resolveSelection : null
+    let resolveSelection: SelectionResolver | null = explicitResolve
+    if (!explicitResolve && typeof decideSelection === 'function') {
+      resolveSelection = async function (handle: any, ctx: any): Promise<any> {
+        let decided: any = null
+        try { decided = await decideSelection(String((handle && handle.cwd) || cwdStr)) } catch (eDS: any) { decided = null }
+        if (decided) return decided
+        // 判定层这一次给不出结论（没接线、抛错）：退回改动前的行为 —— 裸问注册表；后端上下文仍用同一份 matchCtx。
+        let reg: any = null
+        try { reg = await deps.getTrackerRegistry() } catch (eRG: any) { reg = null }
+        if (!reg || typeof reg.select !== 'function') return null
+        return reg.select(handle, Object.assign({}, matchCtx, ctx))
+      }
+    }
     const write: boolean = !!(opts && opts.write === true)
     try {
       const opened: any = await openTracker({ cwd: cwdStr }, {
@@ -166,14 +231,21 @@ export function createSessionOpener(deps: SessionOpenerDeps): (cwd: unknown, opt
         getCachedReading: ports.getCachedReading as any,
         admit: (write ? ports.admit : readAdmit) as any,
         // #1446：读写两条路都记账（读路径的裁决仍恒放行，见文件头第 1 条；记账不是裁决）。
-        account: accountPort as any,
+        // #1627：记账口叫 accountPort，与下面字符串档位 account 分开——同名会让字符串顶掉端口。
+        accountPort: accountPort as any,
         canWrite: !!(opts && opts.canWrite === true),
         ...(write
           ? { canWriteFromSelection: true, canWriteReason: '写会话的写权限由判定出口回答（取不到就是没就绪，不默认放开）' }
           : { canWriteReason: '读会话只读：读路径今天从不因额度推迟，所以裁决一律放行' }),
-        // 调用方显式给了选择就尊重它那份（快照复用判定结论、面板按已核验的后端取数），
-        // 没给才把后端上下文当匹配条件交给缺省选择器。
-        ...((opts && typeof opts.resolveSelection === 'function') ? { resolveSelection: opts.resolveSelection } : { matchContext: matchCtx }),
+        // 调用方显式给了选择就尊重它那份（快照复用判定结论、面板按已核验的后端取数）；
+        // 没给则先按统一判定（判定层不可用时退回裸问注册表，见上面 resolveSelection 的那段）。
+        ...(resolveSelection ? { resolveSelection: resolveSelection } : { matchContext: matchCtx }),
+        // #1627：逐笔钩子与「谁发起 / 记哪一档 / 干什么用的」随会话交给管线。
+        // 刷新后台这条路发起方恒为 refresh、恒记 plugin 档（与文件头第 2 条记账口径一致）。
+        opHooks: { onStart: deps.onOpStart, onEnd: deps.onOpEnd },
+        caller: 'refresh',
+        account: 'plugin',
+        purpose: String((opts && opts.purpose) || ''),
       })
       if (!opened || opened.ok !== true) {
         return openFail(String((opened && opened.reason) || 'open-failed'), String((opened && opened.detail) || ''))
@@ -191,7 +263,9 @@ export function createSessionOpener(deps: SessionOpenerDeps): (cwd: unknown, opt
         call: function <T>(fn: (s: TrackerSession, c: OpContext) => Promise<T>): Promise<T> {
           let base: Record<string, unknown> = {}
           try { base = deps.backendCtx() || {} } catch (eB: any) { base = {} }
-          const over: Record<string, unknown> = { cwd: cwdStr, signal: undefined, caller: 'refresh' }
+          // #1627：一次 call 就是一个操作编号——同一次工具调用里可能有多个会话操作（例如先 describe
+          // 再 listIssues），它们共用这个编号，逐笔行与宿主那层行才串得起来；每次 call 都现造，不复用。
+          const over: Record<string, unknown> = { cwd: cwdStr, signal: undefined, caller: 'refresh', opId: newOpId() }
           if (opts && typeof opts.exec === 'function') over.exec = opts.exec
           const ctx = Object.assign({}, base, over) as unknown as OpContext
           return Promise.resolve(fn(session, ctx))

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { createServer } from 'node:http'
 import { bundleProjectPlugins } from '../bundle-plugins.mjs'
 import { verifyPluginPayload } from './plugin-payload.mjs'
 
@@ -57,4 +58,57 @@ for (const mode of ['full source', 'literal files', 'npm glob', 'root glob']) te
   assert.equal((await import(pathToFileURL(join(resources, 'plugins/node_modules', item.package, 'host.mjs')))).version, '1.2.3')
   await verifyPluginPayload(resources)
   await assert.rejects(bundleProjectPlugins({ resourcesRoot: resources, run }), { code: 'EEXIST' })
+})
+
+test('a newly published pinned plugin is found when the npm cache has older metadata', { timeout: 30_000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'workflow-plugin-registry-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const source = join(root, 'source'), resources = join(root, 'resources'), workflow = join(resources, 'workflow'), cache = join(root, 'cache')
+  await mkdir(source); await mkdir(workflow, { recursive: true })
+  const name = 'workflow-registry-fixture', version = '1.2.3'
+  const pkg = { name, version, type: 'module', exports: { '.': './host.mjs', './client': './client.js' },
+    dsh: { bundle: { patch: './cordis.patch.yml' }, client: {} } }
+  await writeFile(join(source, 'package.json'), JSON.stringify({ ...pkg, version: '1.2.2' }))
+  await writeFile(join(source, 'host.mjs'), 'export function apply() {}\n')
+  await writeFile(join(source, 'client.js'), 'export function apply() {}\n')
+  await writeFile(join(source, 'cordis.patch.yml'), '[]\n')
+  const pack = async () => {
+    const output = JSON.parse((await exec('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', root], { cwd: source })).stdout)
+    return (Array.isArray(output) ? output : Object.values(output))[0]
+  }
+  const oldPacked = await pack()
+  await writeFile(join(source, 'package.json'), JSON.stringify(pkg))
+  const packed = await pack()
+  const tarballs = new Map([[oldPacked.filename, await readFile(join(root, oldPacked.filename))], [packed.filename, await readFile(join(root, packed.filename))]])
+  let published = false, requestsAfterPublish = 0, httpRegistry
+  const server = createServer((request, response) => {
+    if (request.url.startsWith(`/${name}/-/`)) {
+      const tarball = tarballs.get(request.url.split('/').at(-1))
+      response.writeHead(tarball ? 200 : 404, { 'content-type': 'application/octet-stream' }); response.end(tarball); return
+    }
+    if (request.url !== `/${name}`) { response.writeHead(404); response.end(); return }
+    if (published) requestsAfterPublish++
+    const old = { ...pkg, version: '1.2.2', dist: { tarball: `${httpRegistry}/${name}/-/${oldPacked.filename}`, integrity: oldPacked.integrity } }
+    const current = { ...pkg, dist: { tarball: `${httpRegistry}/${name}/-/${packed.filename}`, integrity: packed.integrity } }
+    response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'public, max-age=3600', etag: published ? '"new"' : '"old"' })
+    response.end(JSON.stringify({ name, 'dist-tags': { latest: published ? version : old.version },
+      versions: { [old.version]: old, ...(published ? { [version]: current } : {}) } }))
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  httpRegistry = `http://127.0.0.1:${server.address().port}`
+  const registry = httpRegistry.replace('http:', 'https:')
+  const seed = join(root, 'seed'); await mkdir(seed)
+  await exec('npm', ['pack', `${name}@1.2.2`, '--json', '--pack-destination', seed, '--prefer-offline', '--cache', cache, '--registry', httpRegistry])
+  published = true
+  const item = { package: name, version, source: 'npm', startup: true }, bytes = JSON.stringify({ registry, plugins: [item] })
+  await writeFile(join(workflow, 'project-plugins.json'), bytes)
+  await writeFile(join(workflow, 'dsh-runtime.json'), '{"version":"0.2.1-rc.2"}')
+  await writeFile(join(workflow, 'project-plugins.lock.json'), JSON.stringify({ schema: 1, registry, harnessVersion: '0.2.1-rc.2',
+    manifestSha256: createHash('sha256').update(bytes).digest('hex'), plugins: [{ ...item, metadata: { name, version } }] }))
+  // Keep the test registry local while the real manifest still passes its HTTPS-only validation.
+  const run = (command, args, cwd) => exec(command, args.map(arg => arg === registry ? httpRegistry : arg), { cwd, maxBuffer: 1024 * 1024 })
+  const payload = await bundleProjectPlugins({ resourcesRoot: resources, npmCache: cache, run })
+  assert.equal(payload.plugins[0].version, version)
+  assert.ok(requestsAfterPublish > 0, 'the published registry metadata was actually requested')
 })

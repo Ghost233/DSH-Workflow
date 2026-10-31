@@ -6,7 +6,7 @@
 // #1161：内置房间清单从前写在本文件里（三段 try 各 import 一间房），现在只认装配点
 //   src/tracker/registry/builtins.ts —— 宿主侧不再认识任何具体房间（规则 rooms-imported-only-by-assembly）。
 import type { HostTimerService } from '../refresh/contract/host-timer-ports.js'
-import { timeoutForGhArgs, isWriteGhArgs, ghCommandLabel, reportGhOutbound, noteGhGraphqlCorrection, ghCooldownReply, reportGhSpawnFailure, reportGhOutcome } from '../tracker/kernel/outbound-tiers.js'
+import { timeoutForGhArgs, queueTimeoutForTier, isWriteGhArgs, ghCommandLabel, reportGhOutbound, noteGhGraphqlCorrection, ghCooldownReply, ghQueueTimeoutReply, reportGhSpawnFailure, reportGhOutcome } from '../tracker/kernel/outbound-tiers.js'
 // #1007：这一层的 gh 出站结局上报与冷却回话都走 tracker/kernel/outbound-tiers.ts（界面口径、日志口径与宿主两路共用一份）。
 import { getGhLane } from '../refresh/rooms/host/outbound-admission.js'
 // #1159：给房间的那份后端上下文要挂上出站控制面（实现见 outbound-control.ts，只做转发）。
@@ -158,8 +158,9 @@ export function createPlatformChannel(deps: Deps) {
   function backendLogEnabled(level: string): boolean { try { return backendLogCtx ? backendLogCtx.isEnabled(level) : (level === 'error' || level === 'warn') } catch (e) { return level === 'error' || level === 'warn' } }
   // #1159：出站控制面（名额闸 / 取消判定 / 搭车账本）是进程级能力，随这份后端上下文注入一次。
   // 房间只认契约形状（src/tracker/contract/outbound.ts），不再从宿主 import；这一处与
-  // src/refresh/rooms/host/refresh-runtime.js 的 backendObj 是两处注入点，缺一处那条路上的房间会按环境失败。
-  const backendCtxForRooms = { logEvent: backendLogEvent, isEnabled: backendLogEnabled, outbound: createOutboundControl() }
+  // src/refresh/rooms/host/refresh-runtime.js 与 src/refresh/registry/deck-tool-bridge.ts 的 backendObj 是三处注入点，缺一处那条路上的房间会按环境失败。
+  // #1224：三处都要把各自的 logCtx 带进 createOutboundControl，否则 gh.lane.wait / gh.transport 在生产永不落盘。
+  const backendCtxForRooms = { logEvent: backendLogEvent, isEnabled: backendLogEnabled, outbound: createOutboundControl(backendLogCtx) }
   // #606 房外埋点 helper：工作区只记短指纹，不记原始路径。
   function hash8(s: unknown): string { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch { return '00000000' } }
   // #606 命令名只留程序名：调用方通常给的是 'gh' / 'git' 这种裸名字，但若给了带目录的完整路径，
@@ -279,9 +280,15 @@ export function createPlatformChannel(deps: Deps) {
       // 报闸与补差的口径住在 tracker/kernel/outbound-tiers.ts，这个文件只留「拿到闸、调用两次」。
       let deGate: OutboundGate | null = null
       let deRelease: (() => void) | null = null
+      // #969/#1570：同一个本档值既当排队预算又当执行超时；glab 沿用旧默认、不设排队上限。
+      const timeoutMs = (opts && opts.timeout != null) ? opts.timeout : (deIsGh ? timeoutForGhArgs(args) : TIMEOUT_MS)
       if (deIsOutbound) {
-        try { deRelease = await getGhLane().acquire({ bucket: deBucket, signal: (opts && opts.signal) || undefined, cmd: deIsGh ? deCmd : undefined, service: deIsGh ? 'github' : 'gitlab' }) }
+        // #1570：排队最多等多久由闸管 —— 预算取 min(本档超时, 中央排队上限)，到点闸抛「排队超时」。
+        try { deRelease = await getGhLane(backendLogCtx).acquire({ bucket: deBucket, signal: (opts && opts.signal) || undefined, cmd: deIsGh ? deCmd : undefined, service: deIsGh ? 'github' : 'gitlab', waitMs: deIsGh ? queueTimeoutForTier(timeoutMs) : undefined }) }
         catch (eDeQ) {
+          // #1570：到点时这一笔还没拿到名额（一次都没起进程），按可重试网络失败如实回，不混成「取消排队」。
+          const deQueueText = ghQueueTimeoutReply(eDeQ, cmdBase || 'gh')
+          if (deQueueText) return { stdout: '', stderr: deQueueText, code: -1 }
           // #1007：冷却窗口里的拒绝不是「排队取消」，要如实说成「通路不通」，否则调用方会以为只是排队被人喊停。
           const deCoolText = ghCooldownReply(eDeQ, deCmd || cmdBase || 'gh')
           if (deCoolText) return { stdout: '', stderr: deCoolText, code: -1 }
@@ -306,12 +313,11 @@ export function createPlatformChannel(deps: Deps) {
       } catch (e) {
         // #1007：gh 进程根本没起来也是 transport 级失败（spawn-failed），同一只桶进入冷却。
         // glab 走的不是 GitHub 的通路，不在这里上报，免得 GitLab 的故障把 GitHub 的调用一起挡掉。
-        if (deIsGh) reportGhSpawnFailure(getGhLane(), deBucket, deCmd)
+        if (deIsGh) reportGhSpawnFailure(getGhLane(backendLogCtx), deBucket, deCmd)
         if (deIsOutbound) { try { if (deRelease) deRelease() } catch {} }
         throw new Error('exec spawn failed: ' + String((e && (e as { message?: unknown }).message) || e))
       }
       // #969：gh 默认超时按读写探活分档（调用方显式 timeout 优先）；glab 与 git 沿用旧默认。
-      const timeoutMs = (opts && opts.timeout != null) ? opts.timeout : (deIsGh ? timeoutForGhArgs(args) : TIMEOUT_MS)
       // 调用方取消信号（#895）：中止即杀进程，不留没人等的写入；没有信号时与原来一字不差。
       let onAbortSig: (() => void) | null = null
       const abortP = new Promise<ExecOutcome>(function (resolve) {
@@ -336,7 +342,7 @@ export function createPlatformChannel(deps: Deps) {
       const err = (handle.collected && handle.collected.stderr) ? handle.collected.stderr.readFrom(0) : { text: '' }
       try { if (execT0 && logCtx!.isEnabled('debug')) logCtx!.fire('debug', 'exec.run', { argv0: progName(argv[0]), cwdHash: hash8(c || DEFAULT_CWD), latencyMs: Date.now() - execT0, exitCode: (outcome && typeof outcome.exitCode === 'number') ? outcome.exitCode : -1, via: String(via || 'unspecified') }) } catch (eL) {}
       // #1007：这一趟的结局回写给同一只准入桶（三条口径见 tracker/kernel/outbound-tiers.ts 末尾那一节）。
-      if (deIsGh) reportGhOutcome(getGhLane(), { bucket: deBucket, cmd: deCmd, outcome: outcome, stdout: out.text, stderr: err.text })
+      if (deIsGh) reportGhOutcome(getGhLane(backendLogCtx), { bucket: deBucket, cmd: deCmd, outcome: outcome, stdout: out.text, stderr: err.text })
       if (deIsOutbound) { try { if (deRelease) deRelease() } catch {} }
       // #1482：GraphQL 的真实点数只有拿到回包才知道，成功之后在这里补差；补差口径住 outbound-tiers.ts。
       // 这条通道本身就是起进程的那一层，补差只补这一层；房间的 client.ts 那是另一条报账路，两边不重叠。

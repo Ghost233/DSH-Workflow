@@ -5,8 +5,8 @@ import { refreshSourceOf } from '../../contract/trigger-classification.js'
 import { workspaceKeyOf } from '../../contract/workspace-keys.js'   // #724：链记账给闸的钥匙，与活跃集合同一把（从前传 cwd 原文 → 同一个工作区在闸里有两格）
 import { getChainRide } from './chain-coalescing.js'   // #964 小账本住共享层；#966 用进程单例，出站写路能记写
 import { PREDICATE_TIMEOUT_MS, GH_LOGIN_PREFETCH_MS, PREDICATE_LOG_SAMPLE_MS } from '../../../shared/time-config/src/values.js'   // #1215 时间参数住中央 YAML（predicateTimeoutMs / ghLoginPrefetchMs / predicateLogSampleMs），本文件只读不写
-import { ghAuthVerdict, glabAuthVerdict, glabRepoAccessVerdict, probeChainEnv, repoAccessVerdict } from './chain-env-map.js'
-import type { OpenSessionReply } from './chain-env-map.js'
+import { createRepoIdentityEvidence, ghAuthVerdict, glabAuthVerdict, glabRepoAccessVerdict, probeChainEnv, repoAccessVerdict } from './chain-env-map.js'
+import type { OpenSessionReply, RepoIdentityEvidence } from './chain-env-map.js'
 // #1483：「判定 → 步骤行 / 快照」三件套搬到 chain-step-rows.ts，正常求值与缓存命中重算共用同一套口径；行为逐字保留。
 // 九个形状（判定表、步骤行、单段与拼接快照）也从那里取：两处各写一份时，形状一改就会漂移（审阅指出过）。
 import { assembleFullSnapshot, enrichSnap, stepEvalParallel } from './chain-step-rows.js'
@@ -56,7 +56,7 @@ type BackendChainPack = { chain: CheckItem[]; resolved: ResolvedMap; snapshot: S
 type Selection = { backendId?: string | null; source?: string }
 
 /** 一次探测的回包：本文件只读 selection 与 explicit 两格，其余原样透传给界面。 */
-type DetectResult = { selection?: Selection | null; explicit?: { parsed?: { explicitBackendId?: unknown } } | null }
+type DetectResult = { selection?: Selection | null; explicit?: { parsed?: { explicitBackendId?: unknown; confidence?: unknown } } | null }
 
 /** 探测服务：本文件只调 detect（前后两次调用各带各的选项）。 */
 type DetectionService = { detect(input: unknown, opts: unknown): Promise<DetectResult> }
@@ -76,6 +76,9 @@ type ChainBackoff = {
   note(key: string, snap: unknown, at: number, result: unknown): Promise<unknown>
 }
 
+// #1566：仓库身份证据（宿主 getRepoIdentity 的返回形状）与它的读法搬到 chain-env-map.ts 的
+// createRepoIdentityEvidence；这里只用，形状见那边的 RepoIdentityEvidence。
+
 /** 依赖：接线对象在 src/host/index.ts 里现拼，这里只列本文件用到的那些。 */
 type DetectChainDeps = {
   canonicalKey(cwdIn: string): Promise<string>
@@ -84,8 +87,11 @@ type DetectChainDeps = {
   getPlatform(): Promise<Platform>
   getTrackerRegistry(): Promise<RegistryView>
   getRepoKey(cwd: string): Promise<{ owner: string; name: string } | null>
+  /** #1566：仓库身份证据（可选；旧接线没给这一格时退回 getRepoKey 的单值结论，行为不变）。 */
+  getRepoIdentity?(cwd: string): Promise<RepoIdentityEvidence | null>
   timer: { timeout(ms: number): Promise<unknown> }
-  probeSkill(skillName: string, lang: string, cwd: string): Promise<unknown>
+  // #1227：第四格 force 要透传进 #968 的短时缓存，否则人点「重新检查」后链上技能行最多 30 秒仍显示旧绿。
+  probeSkill(skillName: string, lang: string, cwd: string, opts?: { force?: boolean }): Promise<unknown>
   /** 本地 Markdown 三项判据的取用口（#1513）：按检查项 id 调同一份房间判据，sandboxPolicy 供写探测用。 */
   mdPredicate(platform: unknown, cwd: string, lang: string, checkId: string, sandboxPolicy?: unknown): Promise<PredicateResultView>
   /** 解构出来但本文件没用到（接线给全了，这两格留给别处读）：只声明它们存在。 */
@@ -119,7 +125,7 @@ type DetectChainDeps = {
  * 反例：若把插件挂载时的自动链求值也当成 `user-recheck` 身份送进退避器，每次重渲染都会击穿退避窗口并发起外部 `gh` 子进程调用，瞬间耗尽配额。
  */
 export function createDetectChain(deps: DetectChainDeps) {
-  const { canonicalKey, DEFAULT_CWD, resetGhCache, getDetectionService, getPlatform, getTrackerRegistry, getRepoKey, timer, probeSkill, mdPredicate, getChainCache, setChainCache, getChainBackoff, logCtx, gate, sandboxPolicyFor, openSession } = deps
+  const { canonicalKey, DEFAULT_CWD, resetGhCache, getDetectionService, getPlatform, getTrackerRegistry, getRepoKey, getRepoIdentity, timer, probeSkill, mdPredicate, getChainCache, setChainCache, getChainBackoff, logCtx, gate, sandboxPolicyFor, openSession } = deps
   // #491 房外埋点 helpers：hash8 只记散列；P1 外层先判开关（采样/节流/按事件），字段函数只在守卫内求值。
   function hash8(s: unknown) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
   const chainInflight = getChainRide({ now: (deps && deps.now) || undefined }) // #696搭车表用进程单例（写信号由出站路记进来）；测试注钟时建隔离新账
@@ -140,7 +146,31 @@ export function createDetectChain(deps: DetectChainDeps) {
   // 这里只把接线给的两条能力交进去。
   // #1187：探针必须等 detect 定下后端才建——GitLab 的仓库身份要经会话 getRepoKey 问房间（宿主那份只认 GitHub），
   // 而探针把 refId 缓存进这一次求值，先建再定后端就会拿 GitHub 的空结果去问 GitLab。
-  const createChainEnvProbe = (probeCwd: string, backendId: string | null | undefined) => probeChainEnv({ getRepoKey: getRepoKey, openSession: openSession }, probeCwd, { backendId: backendId || 'github' })
+  // #1505：环境探针开只读会话时，必须沿用上面已经定下的后端（显式、声明、自动识别定下的都算）。
+  // 为什么不能只交目录：会话入口在没有显式选择时会按目录重新问一遍注册表，而「目录里只有
+  //   docs/agents/workspace.yaml、还没有 .git 与远端」的工作区各家都认领不了，会话回 no-backend，
+  //   两行环境检查就永远停在「读会话还没接上，暂时无法确认登录状态」。
+  // 交什么：只交出归一的 { backendId }，不递整份判定结论——它带的 multiHit / pending 会让会话入口
+  //   按「有歧义」处理，开不出会话。
+  // 什么时候不交：backendId 为空说明判定层没有结论、调用方也没给后端，维持原样，绝不凭默认后端伪造会话。
+  const createChainEnvProbe = (probeCwd: string, backendId: string | null | undefined) => {
+    const selectedBackendId = (typeof backendId === 'string' && backendId) ? backendId : ''
+    const rawOpenSession = openSession
+    const envOpenSession = (selectedBackendId && typeof rawOpenSession === 'function')
+      ? function (envCwd: string): Promise<OpenSessionReply> {
+          // 同一个问题「这次用哪个后端」只回答一次：会话入口拿到它，就不再自己重跑各家的认领判断。
+          const resolver = async function (): Promise<{ backendId: string }> { return { backendId: selectedBackendId } }
+          return rawOpenSession(envCwd, { resolveSelection: resolver })
+        }
+      : rawOpenSession
+    // 探针自己那格 backendId 只用来决定「问哪个房间要仓库身份」，沿用原来的 github 兜底；后端为空时
+    // 链上不建后端链、探针不会被问，所以这里不会凭空开出一个 github 会话。
+    return probeChainEnv({ getRepoKey: getRepoKey, openSession: envOpenSession }, probeCwd, { backendId: backendId || 'github' })
+  }
+
+  // #1566：仓库身份证据的读法与两条谓词共用的话术在 chain-env-map.ts 的 createRepoIdentityEvidence
+  // （那边写清了为什么两条谓词共用一份结论、null 与 none 的区别）；这里只把它接上本文件的两条读法。
+  const repoIdentity = createRepoIdentityEvidence({ getRepoKey: getRepoKey, getRepoIdentity: getRepoIdentity })
 
   // #1483：把「按当前会话解析沙箱许可」收成一处。正常求值与缓存命中后的重算都用这一处解析：
   //   缺省会话号（空串）与「接线没给 sandboxPolicyFor」都不算错，照旧返回空政策，让谓词按平台默认量。
@@ -261,7 +291,6 @@ export function createDetectChain(deps: DetectChainDeps) {
       // 带 trigger='user-recheck' 的算人的动作，其余一律归后台档 —— 挂载时那一次强制刷新走的正是后者。
       // 不分开的话，账本会把插件自己的动作记成「人手动过」，而人的动作在闸上永不降档。
       const chainSource = refreshSourceOf(trigger)
-      if (force) resetGhCache()
       try{
         const cacheKey = cwd + '|' + String(args && args.backendId || '') + '|' + chainLang
         // #709（T5）：退避与全绿缓存这一段由纯函数裁定。人亲手点「重新检查」（trigger='user-recheck'）
@@ -280,11 +309,21 @@ export function createDetectChain(deps: DetectChainDeps) {
           return { reply: v.cached, forCurrentSession: false, hit: { cacheKey: cacheKey, reason: v.reason, waitMs: v.waitMs } }
         }
         try { if (logCtx && logCtx.isEnabled('debug')) logCtx.fire('debug', 'chain.cache.miss', function () { return { keyHash: hash8(cacheKey), lang: chainLang, reason: force ? 'force' : (v.reason || 'due') } }) } catch (eL) {}
-        // #696 在途合并：同钥匙同后端同语言同强制标记共用同一份；先回来的写缓存，后到的拿同一份；强制不参与合并
-        const chainDedupKey = cacheKey + '|' + (force ? '1' : '0')
+        // #696 在途合并：同钥匙（工作区 + 后端 + 语言）共用同一份求值；先回来的写缓存，后到的拿同一份。
+        //   #1474 改口径：所有求值（含 force）都登记进同一份在途账 —— 从前 force 用另一把钥匙另起一份，
+        //   于是人手连点两下「重新检查」、或自动复查撞上人手那一次，都会各算一遍；票里要收的正是「同一时刻最多一份求值」。
+        //   但搭车规则不对称（与 #729 快照表同一条口径）：后台请求搭任何车；人手强制请求只搭强制车，
+        //   撞上后台在飞那一轮时先等它收尾、再自己顺序算一轮 —— 按钮承诺的是「点完之后真的重问过」，
+        //   而后台那轮不清 gh 解析缓存、技能探测还可能吃短时缓存，正是人手想打破的东西。等不算并发。
+        //   强制另外两义照旧：退避那一关永不降档（上面 verdict 先判），真算之前清一次 gh 解析缓存。
+        const chainDedupKey = cacheKey
         // #1483：搭车拿到的是「另一轮求值」的结果，那一轮用的是发起那一轮的会话许可。凡是有依赖会话许可的项，
         //   先按本会话补算再交给调用方；不然只读会话搭上可写会话的车，会先看到别人的「可写」。
-        if (!force) { const ongoingRide = chainInflight.take(chainDedupKey); if (ongoingRide) { chainInflight.noteRide(); try { if (logCtx && logCtx.isEnabled('debug')) logCtx.fire('debug', 'dedup.hit', function () { return { scope: 'chain', keyHash: hash8(chainDedupKey) } }) } catch (eL) {}; return { reply: await ongoingRide, forCurrentSession: false } } }
+        let ongoingRide = chainInflight.take(chainDedupKey)
+        while (ongoingRide && force && ongoingRide.kind === 'background') { try { await ongoingRide.promise } catch (eWait) {}; ongoingRide = chainInflight.take(chainDedupKey) }
+        if (ongoingRide) { chainInflight.noteRide(); try { if (logCtx && logCtx.isEnabled('debug')) logCtx.fire('debug', 'dedup.hit', function () { return { scope: 'chain', keyHash: hash8(chainDedupKey) } }) } catch (eL) {}; return { reply: await ongoingRide.promise, forCurrentSession: false } }
+        // 清 gh 解析缓存本身只对「这一轮真去问命令」有意义：搭车、连点第二下都不该白清一次。
+        if (force) resetGhCache()
         const chainPending = (async function () {
         // #1475：一次求值只读一次钟，给下面告警级「外层先到点 / 内层迟到回话」两行算本次求值的总耗时。
         //   这两行是告警级、总是落盘，不受调试开关约束，所以不把它挂在开关后面（一轮一次 Date.now 不算开销）。
@@ -344,28 +383,37 @@ export function createDetectChain(deps: DetectChainDeps) {
         const selConsistent = (selRaw && backendId && selRaw.backendId !== backendId)
           ? Object.assign({}, selRaw, { backendId: backendId })
           : selRaw
+        // #1572 收尾（方案 A）：说明文件里只有正文提及、没有标题行时，判定层不再把它当结论，
+        //   所以这里也只在 parsed 明确是高置信时才把它当「明确选定」；低置信解析只作证据，不撑 explicit:<id>。
+        const parsedDecl = (selMod && selMod.explicit && selMod.explicit.parsed) || null
         const expConsistent = (selConsistent && selConsistent.backendId)
           ? selConsistent.backendId
-          : ((selMod && selMod.explicit && selMod.explicit.parsed && selMod.explicit.parsed.explicitBackendId) || null)
+          : ((parsedDecl && parsedDecl.confidence === 'high' && parsedDecl.explicitBackendId) || null)
         const sbInfo = await resolveSessionPolicy(cwd, args && args.sessionId)
         const chainPolicy = sbInfo.policy; const chainSessionId = sbInfo.sessionId
-        const ctx = { platform: platform, backendId: backendId || null, cwd: cwd, lang: chainLang, selection: selConsistent, explicitBackendId: expConsistent, sandboxPolicy: chainPolicy, sessionId: chainSessionId, skillProbe: async function (skillName: string) { try { return await probeSkill(skillName, chainLang, cwd) } catch (e) { return { ok: false, level: 'pending', detail: String((e && (e as CaughtError).message) || e), hint: 'pending:skills-unavailable' } } } }
+        // #1227：人点「重新检查」带 force 上来时，链上的技能行也要真去重问一次。不把 force 透下去的话，
+        //   #968 的 30 秒绿牌短时缓存会继续把刚被删掉的技能报成「已安装」（链重算了、技能行没重算）。
+        const ctx = { platform: platform, backendId: backendId || null, cwd: cwd, lang: chainLang, selection: selConsistent, explicitBackendId: expConsistent, sandboxPolicy: chainPolicy, sessionId: chainSessionId, skillProbe: async function (skillName: string) { try { return await probeSkill(skillName, chainLang, cwd, { force: force }) } catch (e) { return { ok: false, level: 'pending', detail: String((e && (e as CaughtError).message) || e), hint: 'pending:skills-unavailable' } } } }
         // #284：后端谓词注册（host 既有探测包装；未注册者由 registry 诚实 pending，不猜不误报）
         try { registry.register('backend:github:repoRemote', async function (check, pctx: PredicateCtx) {
           try {
             // 2026-08-29（审查 S1）：detail 双语——中文界面不出现英文黑话行
             const zh = (pctx && pctx.lang) !== 'en'
-            const rk = await getRepoKey(pctx && pctx.cwd || cwd)
-            if (rk && rk.owner && rk.name) return { status: 'pass', detail: rk.owner + '/' + rk.name }
-            return { status: 'fail', detail: zh ? '未找到 GitHub 仓库关联（git remote 未指向 GitHub）' : 'repo not located' }
+            // #1566：身份证据是「origin 之外还有 GitHub 远端」也能认出来的那种（三态 + 读不到），不再只问 origin。
+            const ev = await repoIdentity.forEval(pctx, pctx && pctx.cwd || cwd)
+            if (!ev) return { status: 'pending', detail: repoIdentity.unknownDetail(zh) }
+            if (ev.kind === 'identity') return { status: 'pass', detail: ev.owner + '/' + ev.name }
+            return { status: 'fail', detail: repoIdentity.failDetail(ev, zh) }
           } catch (e) { return { status: 'pending', detail: String((e && (e as CaughtError).message) || e) } }
         }) } catch (e) {}
         try { registry.register('backend:github:repoAccess', async function (check, pctx: PredicateCtx) {
           try {
             // 2026-08-29（审查 S1/S2）：detail 双语；pending 文案如实说明「网络/登录态未知」，不与 fail 混淆
             const zh = (pctx && pctx.lang) !== 'en'
-            const rk = await getRepoKey(pctx && pctx.cwd || cwd)
-            if (!rk || !rk.owner || !rk.name) return { status: 'fail', detail: zh ? '未找到 GitHub 仓库关联' : 'repo not located' }
+            // #1566：判定身份用的是与上一行同一份证据（同一次求值里只扫一遍）；失败话术也同一套，不另说一句。
+            const ev = await repoIdentity.forEval(pctx, pctx && pctx.cwd || cwd)
+            if (!ev) return { status: 'pending', detail: repoIdentity.unknownDetail(zh) }
+            if (ev.kind !== 'identity') return { status: 'fail', detail: repoIdentity.failDetail(ev, zh) }
             // #1444：仓库可达问会话 preflight 的第三关（api repos/o/n）；与登录态那一项共用一次调用。
             // #1444：档位分派与话术在 chain-env-map.ts 的 repoAccessVerdict 里（那边有整段说明）。
             return repoAccessVerdict(await envProbe.preflightOnce(), zh)
@@ -436,7 +484,7 @@ export function createDetectChain(deps: DetectChainDeps) {
             // 格子逐字对齐，直接递进去，不转类型也不改值（运行期原样递进去）。
             // 目录只认这三个后端的表（check-catalog-dirs.ts 的 JSDoc 就是这么写的），别的 id 在表里没有格子；
             // 这里只是把「已经认出来是某个后端」收成表认的那几个，转的是类型、值原样递进去。
-            let items = (catDirs.catalogFor ? catDirs.catalogFor(backendId as 'github' | 'markdown' | 'gitlab') : []).filter(function(c){ return c.scope==='backend' && c.id !== 'gh:labels' }).map(function(ci){ return catViews.catalogItemToCheckItem ? catViews.catalogItemToCheckItem(ci) : null }).filter(Boolean) as CheckItem[]
+            let items = (catDirs.catalogFor ? catDirs.catalogFor(backendId as 'github' | 'markdown' | 'gitlab') : []).filter(function(c){ return c.scope==='backend' }).map(function(ci){ return catViews.catalogItemToCheckItem ? catViews.catalogItemToCheckItem(ci) : null }).filter(Boolean) as CheckItem[]
             // 修复契约（2026-08-28）：后端声明 fixes（hint + 修复动作）→ 按语言解析附到检查项 onFail——
             //   检查失败即有修复入口（注入指引/重查），UI 零派生只渲染分发；后端未声明 fixes 则保持默认（重查）。
             if (items.length) {
@@ -538,8 +586,10 @@ export function createDetectChain(deps: DetectChainDeps) {
         } catch (eL) {}
         return result
         })()
-        if (!force) { const rideEntry = chainInflight.park(chainDedupKey, chainPending); try { return { reply: await chainPending, forCurrentSession: true } } finally { chainInflight.leave(chainDedupKey, rideEntry) } }
-        return { reply: await chainPending, forCurrentSession: true }
+        // #1474：所有求值都登记进同一份在途账（含 force）—— 同一时刻每个钥匙最多一份真算。
+        //   后到的请求（人手连点、自动复查撞上人手那一次）直接搭这趟车，拿同一份回包。
+        const rideEntry = chainInflight.park(chainDedupKey, chainPending, force ? 'force' : 'background')
+        try { return { reply: await chainPending, forCurrentSession: true } } finally { chainInflight.leave(chainDedupKey, rideEntry) }
       }catch(e){
         try { const m = String((e && (e as CaughtError).message) || e); if (logCtx) logCtx.fire('warn', 'host.call.fail', { method: 'wf.chain', kind: 'chain', errorHash: hash8(m), errorKind: (/is not a function|is not defined|of undefined|of null/i.test(m) ? 'missing-dep' : (/timeout|timed out/i.test(m) ? 'timeout' : 'throw')) }) } catch (eL) {}   // #724：异常也留一行（从前静默吞掉，真机查了两天没有原文）；errorKind 把「接线没给全」（missing-dep）与「跑起来真失败」（throw）分开
         return { reply: { ok: false, error: String((e && (e as CaughtError).message)||e) }, forCurrentSession: true }

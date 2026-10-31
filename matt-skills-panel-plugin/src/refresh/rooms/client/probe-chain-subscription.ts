@@ -15,8 +15,13 @@
  * 真源在别的文件里，在这里凭记忆写窄，只会把别处正常的改动变成这里的
  * 假报错、逼着两处一起改（与 kernel/link.ts:10-14 同例）。
  *
- * 反例：不要在这里加运行时 import，不要加 export default（esbuild 会产出
- * as 改名，构建侧 inlineExportDeclarations 拒收）；不要用 enum，
+ * 唯一的例外是中央时间参数：按 docs/adr/20261016-time-config-yaml.md 的界面半边写法，
+ * 这里写一行真 import（值来自 config/intervals.yaml），构建时由 stripTimeConfigRefs
+ * 把那一行整行删掉，改由拼进闭包的 timeConfig 片段提供同名常量。除此之外不要加
+ * 任何运行时 import。
+ *
+ * 反例：不要加 export default（esbuild 会产出 as 改名，构建侧
+ * inlineExportDeclarations 拒收）；不要用 enum，
  * 不要用构造函数参数属性，Node 剥离模式只删类型、不做转换。
  */
 // 跨闭包的值引用按仓里规矩写模块级 declare（实现只在拼好的闭包里有一份，类型检查各看各的）。
@@ -35,6 +40,15 @@ declare const setCachedChain: any;
 declare const userHintOf: any;
 declare const nowStr: any;
 declare const emit: any;
+// #1626：首帧链求值等 selection 落定用的那条专用电话。实现住在 probe-scope-selection 片段里，
+//   这里只声明形状；叶子沙箱没有它时调用点用 typeof 兜底（与其它跨闭包名字同一规矩）。
+declare const askSelectionOnce: any;
+// #1629：自动复查的间隔取中央时间配置 config/timeouts.yaml 的 stepWaitMs——它是「发出一次请求后
+// 等它出结果」这一步的统一等待上限，与 deck 每步、宿主闸求值是同一个数（#1474 原来自带一份冷却值，
+// 现已并入）。这里只管界面多久发起一次；真算不算仍由宿主按退避序列裁定。
+// 这是本文件唯一的运行时 import：构建按 docs/adr/20261016-time-config-yaml.md 的界面半边写法，
+// 把下面这一行整行删掉，再由拼进闭包的 timeConfig 片段提供同名常量。
+import { STEP_WAIT_MS } from '../../../shared/time-config/values.js';
 // #228/#284 链渲染器主机侧数据：wf.chain 全链快照（通用链 + 后端链，按后端动态，refresh 联动）
 // #284 迁移：九格目录视图（wf.status/checks）退役，全部读数点位改从链快照派生。
 // #284 修订（对抗式审查 2026-08-28）：并发门——同 cwd 同轮次的 in-flight 请求复用；
@@ -104,7 +118,15 @@ export const CHAIN_EVENT_REASONS: Record<string, string> = {
   setupPending: 'setup-pending',
   // #1483：跨会话命中共享缓存后，本会话在后台补问一次宿主时带的原因。它不是「人叫起来的事件」，
   //   但同样经 chain.flow.reason 落进日志，所以照枚举登记——日志里不许出现没登记的字面量。
-  crossSessionRevalidate: 'cross-session-revalidate'
+  crossSessionRevalidate: 'cross-session-revalidate',
+  // #1474：链上有一步「暂时确认不了」之后，界面自己隔一会儿再问一次宿主时带的原因。
+  //   它与人手重查的区别只在宿主那一侧：这个原因照常受后台退避约束（8 秒 → 30 秒 → 2 分钟 → 5 分钟），
+  //   人点「重新检查」的那一次永不降档。
+  autoRetry: 'auto-retry',
+  // #1626：冷启动首帧因为 selection 还没落定而推迟，等 wf.selection 回包把链键补齐后补发的那一次。
+  //   和 enter-workspace 一样是后台事件，不豁免退避；单独一个名字是为了在 chain.flow 日志里一眼认出
+  //   「这一次是选择落定带起来的」，不必再靠时间差去猜。
+  selectionResolved: 'selection-resolved'
 };
 /**
  * 初始化那一步还需不需要重算：链快照里有 tracker:initialized 这一行、且它还不是 done 时为真。
@@ -118,6 +140,30 @@ export const setupPendingOf = function (st: any): boolean {
     for (var i: number = 0; i < steps.length; i++) {
       var it: any = steps[i];
       if (it && String(it.id) === 'tracker:initialized') return String(it.status || '') !== 'done';
+    }
+    return false;
+  } catch (e) { return false; }
+};
+/**
+ * 链上「当前卡住的那一步」是不是「暂时确认不了」（pending）。
+ * 只看链头：从第一步往后找第一条不是 done 的步，只有它的 status 是 pending 时才为真。
+ * 为什么不能「任一步 pending 就算」：链快照里排在明确失败或待操作（current）后面的步也会
+ * 标成 pending（被前一步阻塞，见 src/shared/tracker/chain-evaluate.ts:176-293），那不算
+ * 「这次判不出来」；照那样算，人该去处理的事会被自动复查反复求值。
+ * 只读快照，不发请求；快照还没到或没有 steps 时一律为假，不借机多算一次。
+ * 为什么只认 pending：fail 与 current 是「明确没过、界面已经给了下一步」，那是人的事；
+ * pending 才是「这次判不出来」（断网、命令超时、环境没就绪），才需要过一会儿自己再问一次（#1474）。
+ */
+export const chainPendingOf = function (st: any): boolean {
+  try {
+    var steps: any = (typeof chainSteps === 'function') ? chainSteps(st) : (st && st.chainSnapshot && st.chainSnapshot.steps);
+    if (!Array.isArray(steps) || !steps.length) return false;
+    for (var i: number = 0; i < steps.length; i++) {
+      var it: any = steps[i];
+      if (!it) continue;
+      var sts: string = String(it.status || '');
+      if (sts === 'done') continue;
+      return sts === 'pending';
     }
     return false;
   } catch (e) { return false; }
@@ -144,6 +190,31 @@ export const chainEventRefresh = function (st: any, why: any, force: any): any {
 };
 export const loadChain = function (st: any, force: any, trigger: any, opts?: any): any {
   if (typeof host === 'undefined' || typeof host.call !== 'function') return Promise.resolve(null);
+  // #1626：冷启动首帧先等「这个工作区用哪个后端」落定，别带着空 backendId 去算整条链。
+  //   为什么不能照发再补：空键那一次回包注定被 _chainRespStale 按「键变了」判过期丢掉，
+  //   日志里会留下一条 stale 假故障，同一时刻还多出一份注定白算的求值。
+  //   为什么不担心等不到：wf.selection 只读宿主本地的工作区文件，几十毫秒就回；它失败/超时也不影响
+  //   兜底——probe-scope-selection 会在 selPending 收掉之后补发，本函数拿到的是「诚实降级成空键」那一次。
+  //   谁负责补发：selection 落定那一刻由 probe-scope-selection 调 _flushDeferredChain（见本文件下方）。
+  //   判据取「未定」而不是「selection 为空对象」：mergeSelection 会把 fallback 的空结论也装成
+  //   { backendId: null } 的真值对象，但它不是「确实没有后端」（显式空 source=explicit 才是），
+  //   拿它当已定会照旧带着空键发出去，等于只修了冷启动那一种形状。
+  const _selUndecided: boolean = !st.selection || (st.selection.backendId == null && String(st.selection.source || '') !== 'explicit');
+  if (_selUndecided) {
+    try { if (typeof askSelectionOnce === 'function') askSelectionOnce(st); } catch (eAskSel) {}
+    if (st.selPending === true) {
+      try {
+        const deferred: any = st._chainDeferred || { force: false, trigger: '', opts: null };
+        if (force) deferred.force = true;
+        const why: string = String(trigger || '');
+        if (why === CHAIN_EVENT_REASONS.userRecheck) deferred.trigger = why;
+        else if (why && !deferred.trigger) deferred.trigger = why;
+        if (opts) deferred.opts = Object.assign({}, deferred.opts || {}, opts);
+        st._chainDeferred = deferred;
+      } catch (eDef) {}
+      return Promise.resolve(null);
+    }
+  }
   // 链共享键 = 工作区键 + 后端 id + 语言（#324 按工作区单次求值按后端隔离；#529 加语言：host 明细按语言产出，中英快照分开缓存，切换语言即时重取）
   const _backendIdForChain: string = (st.selection && st.selection.backendId) || '';
   const _langForChain: string = (typeof promptLang === 'function' ? promptLang() : 'zh');
@@ -153,6 +224,9 @@ export const loadChain = function (st: any, force: any, trigger: any, opts?: any
   // #1483：跨会话补问的第二次请求要绕过本地缓存（否则又直接命中同一份），但不 force 宿主
   //   ——宿主自己按退避裁定，命中缓存时会按本会话重算依赖沙箱许可的那几行。
   const _skipLocalCache: boolean = !!(opts && opts.skipLocalCache);
+  // #1474：自动复查只借 force 的第一种含义——绕开本地缓存读取。不绕的话下一次读回同一份旧快照，
+  //   等于没复查；宿主那两义一个都不借：不绕宿主在途合并（同一时刻最多一份求值），也不清 gh 解析缓存
+  //   （下一次仍走真实命令）。所以自动复查不能传 force=true，只能另开这一格（opts.bypassLocalCache）。
   if (!force) {
     // #1483：跨会话补问必须自己发一次。在途表里挂的可能是别的会话那一趟，搭车只会拿到别人的回包、
     //   写进别人的会话状态，本会话这一行永远纠正不过来，而补问守卫已经置位（审阅 c2）。
@@ -166,7 +240,7 @@ export const loadChain = function (st: any, force: any, trigger: any, opts?: any
     //   产出者换人（另一个会话又回写了共享条目）就再补问一次。反例（审阅 c1）：只按本会话记守卫，
     //   两个会话交替命中时 B 会一直显示 A 的行，且因为守卫已置位不再纠正。
     // 反例：跨会话命中直接回旧快照不补问——只读会话会一直看到别的会话量出的「可写」。
-    if (!_skipLocalCache) {
+    if (!_skipLocalCache && !(opts && opts.bypassLocalCache)) {
       try {
         const entry: any = (typeof getCachedChainEntry === 'function' ? getCachedChainEntry(wsKeyOf(st.cwd), _backendIdForChain, _langForChain) : null);
         const cached: any = entry ? entry.snapshot : (typeof getCachedChain === 'function' ? getCachedChain(wsKeyOf(st.cwd), _backendIdForChain, _langForChain) : null);
@@ -292,6 +366,106 @@ export const loadChain = function (st: any, force: any, trigger: any, opts?: any
   });
   if (!force) _chainInflightByCwd.set(_scopedKey, p);
   return p;
+};
+/**
+ * 把「因为 selection 还没落定而被推迟」的那一次链求值补发出去（#1626）。
+ * 调用方是 probe-scope-selection：选择落定、迟到选择落地、正常快照带回选择、快照取数失败（诚实降级）
+ *   四处都试一次。
+ * 只在真的记着一次推迟时动手，补发后立刻清账，所以之后每一次选择合并都不会顺手多打一枪。
+ * 来路：默认记 selection-resolved（宿主按后台事件照常退避）；推迟期间若有人亲手点过（user-recheck），
+ *   保留那个来路——宿主对人的动作永不降档，这一条不能替它降。
+ */
+const _flushDeferredChain = function (st: any): any {
+  try {
+    const deferred: any = st && st._chainDeferred;
+    if (!deferred) return null;
+    st._chainDeferred = null;
+    return loadChain(st, !!deferred.force, deferred.trigger || CHAIN_EVENT_REASONS.selectionResolved, deferred.opts);
+  } catch (eFlush) { return null; }
+};
+/**
+ * 自动复查的冷却窗与在途标记（#1474）。
+ * 都按「链键」分开记：同一把键 = 同一个工作区 + 同一个后端 + 同一种语言（再加当前会话号），
+ * 不同工作区或会话各算各的冷却，互不拖累。atByKey 记上一次真正发起的毫秒时刻；
+ * inFlightByKey 记这一键上自动复查还在路上。两张表都留在这一层，不挂界面状态、不进快照。
+ */
+export const _autoRetryState: any = { atByKey: new Map(), inFlightByKey: new Map() };
+/**
+ * 自动复查按哪把钥匙算冷却与单飞：与链求值同一把键（见 _chainKeyOfState 与 _chainScopedKeyOf）。
+ * 键算不出来时退到工作区目录本身，保证同一个工作区至少不会互相踩。
+ */
+export const _autoRetryKeyOf = function (st: any): string {
+  try {
+    return _chainScopedKeyOf(st, _chainKeyOfState(st));
+  } catch (eKey) {
+    return String((st && st.cwd) || '');
+  }
+};
+/**
+ * 这次为什么没发起自动复查的调试日志（#1474）走自己的按需事件 chain.auto.retry，
+ * 不往 chain.event 里塞：那个事件的语义是「哪一路事件带起这次重取」，而这里是
+ * 「没发请求的原因」，混进去会改掉既有字段的含义（见 docs/design/335-logging-contract.md 3.2）。
+ * decision=cooldown 时 waitMs 是冷却还剩多少毫秒；decision=busy 时 waitMs 记 0。
+ */
+export const _logAutoRetrySkip = function (decision: string, waitMs: number): void {
+  try {
+    if (typeof isEnabled === 'function' && isEnabled('debug') && typeof log === 'function') {
+      log('debug', 'chain.auto.retry', { decision: decision, waitMs: (waitMs > 0 ? Math.round(waitMs) : 0) });
+    }
+  } catch (eLogSkip) {}
+};
+/**
+ * 链上还有「暂时确认不了」的步时，自己再问宿主一次（#1474）。
+ * 调用方是活跃探测拍（面板可见、停在正在看的工作区，每 5 秒一拍）；本函数不新建定时器，
+ * 只在这一拍里判断「要不要顺带再算一次」：
+ *   - 冷却：每「一步等待」（默认 30 秒，取 config/timeouts.yaml 的 stepWaitMs）最多发起一次宿主求值，
+ *     冷却内的拍子直接跳过（调试日志 chain.auto.retry，decision=cooldown，waitMs 是还剩多少毫秒）；
+ *   - 单飞：上一轮还没回来就跳过（同一事件的 decision=busy），不会叠着发第二份；
+ *   - 只有链上有 pending 步才会发起；全绿、明确失败（fail/current）都不归这里管。
+ * 发起时走 loadChain(force=false, trigger='auto-retry', {bypassLocalCache:true})：
+ *   只绕本地缓存读取（不绕的话读回同一份旧快照，等于没复查），不绕宿主的在途合并、不清 gh 解析缓存。
+ * 返回这一次的 Promise（拿不到就返回 null），调用方不用等，失败自己吞掉。
+ */
+export const maybeAutoRetryChain = function (st: any): any {
+  if (!st || !st.cwd) return null;
+  if (!chainPendingOf(st)) return null;
+  var key: string = _autoRetryKeyOf(st);
+  if (_autoRetryState.inFlightByKey.get(key)) {
+    _logAutoRetrySkip('busy', 0);
+    return null;
+  }
+  var now: number = Date.now();
+  var cd: number = STEP_WAIT_MS;
+  var at: number = _autoRetryState.atByKey.get(key) || 0;
+  if (cd > 0 && at && now - at < cd) {
+    _logAutoRetrySkip('cooldown', cd - (now - at));
+    return null;
+  }
+  _autoRetryState.atByKey.set(key, now);
+  _autoRetryState.inFlightByKey.set(key, true);
+  try { if (typeof isEnabled === 'function' && isEnabled('debug') && typeof log === 'function') log('debug', 'chain.event', { reason: CHAIN_EVENT_REASONS.autoRetry }); } catch (eLog) {}
+  var p: any = null;
+  try {
+    p = loadChain(st, false, CHAIN_EVENT_REASONS.autoRetry, { bypassLocalCache: true });
+  } catch (eLoad) {
+    _autoRetryState.inFlightByKey.delete(key);
+    return null;
+  }
+  if (!p || typeof p.then !== 'function') {
+    _autoRetryState.inFlightByKey.delete(key);
+    return null;
+  }
+  return p.then(function (r: any): any { _autoRetryState.inFlightByKey.delete(key); return r; }, function (): any { _autoRetryState.inFlightByKey.delete(key); return null; });
+};
+/**
+ * 面板从藏起来回到可见时，把当前这条链的冷却窗清掉（#1474）。
+ * 为什么需要：藏着的那些拍一次都不跑，冷却窗却按钟走；回来第一拍若还落在窗里，
+ * 会白等最多一个「一步等待」（默认 30 秒）才补这一次复查。清掉只影响这一把链键，不动别的链。
+ */
+export const resetAutoRetryCooldown = function (st: any): void {
+  try {
+    _autoRetryState.atByKey.delete(_autoRetryKeyOf(st));
+  } catch (eRst) {}
 };
 // 单源工作区键（#301 / #324）：全库仅一份 keyOf（shared:workspaceKey），此处已无重复定义
 // ---- 链快照派生读数（#284：单一口径，链步骤即检查项）----

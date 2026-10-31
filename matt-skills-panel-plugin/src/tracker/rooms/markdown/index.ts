@@ -3,14 +3,18 @@ import type { BackendModule } from '../../contract/backend-module.js'
 import type { RepositoryRef, Issue, Comment, LabelColor } from '../../contract/entities.js'
 import type { OpContext, RepoHandle } from '../../contract/contexts.js'
 import type { Actor } from '../../contract/identity.js'
-import type { OpResult, PreflightResult, Counts, PageResult, Dependencies, RepoPermissions, SubIssueList, LabelColorsFilePlacement, LabelColorBatchResult } from '../../contract/results.js'
+import type { OpResult, PreflightResult, Counts, PageResult, Dependencies, RepoPermissions, SubIssueList, LabelColorsFilePlacement, LabelColorBatchResult, MapListResult } from '../../contract/results.js'
 import { ERROR_KIND } from '../../contract/vocabulary.js'
 import { readTextFile, exists } from './read.js'
+// #1572：认领与判定层共用同一套声明解析器（GitLab 房 #1555 已是这条口径），避免同一个文件两处各答一套。
+import { normalizeTrackerText, parseIssueTracker } from '../../kernel/issue-tracker-declaration.js'
 // #1513：本地 Markdown 的预检判据与检查链上的三项是同一份实现（票面硬条件：不许各写一套）。
 import { runWorkspaceChecks, workspaceCheckLabel } from './workspace-checks.js'
 import { listIssues, getIssue, createIssue, closeIssue, reopenIssue, updateIssue, setBlockedByIssue, setAssigneesIssue, setParentIssue, setLabelsIssue } from './issues.js'
 import { countIssues } from './counts.js'
 import { listIssuesPage } from './page.js'
+// #1605：地图薄查真实现（此前 planned，注册表补桩；今天起走真实现）。
+import { listMaps } from './maps.js'
 import { getDependenciesForKey } from './graph.js'
 import { addComment } from './comments.js'
 import { listLabels, setLabelColors } from './label-colors-ops.js'
@@ -30,7 +34,7 @@ import type { PartiallyProvidedCapability, ProvidedCapability, StubbedByBackend 
 // `import type` 取登记数据：转译后不留运行时引用（理由与 GitHub 房那处相同，见 rooms/github/backend.ts）。
 import type { MARKDOWN_CAPABILITY_REGISTER } from './capability-register.js'
 
-// —— Markdown 交出来的成员：23 条能力 + id（读预算自 #1446 起「明确提供功能」，随本条进成员集合） ——
+// —— Markdown 交出来的成员：24 条能力 + id（读预算自 #1446 起「明确提供功能」，地图薄行自 #1605 起进成员集合） ——
 // 这份集合不再手写，从本房的登记数据推出来：明说「提供」的名字、明说「做了但没做到位」的名字（#1174 第四档，
 // 它们的实现是有的），再加上「明确不支持、但后端自己在实例上补了显式桩」的那 4 条（登记里 `stubBy: 'backend'`）。
 // 定位口要摘掉两条：本后端只有 `describe` / `issueAddress` 住在模块对象上（`markdownModule`）、不在工厂实例上，
@@ -121,7 +125,8 @@ export async function matches(handle: RepoHandle, ctx: OpContext): Promise<boole
     // 反例：不要把「扫 `.scratch` 找 map.md」加回来，包括「只看子目录」「只看唯一那个子目录」这类变体——
     // 它们同样是猜。要认下一个工作区，就让它把话说明白：`.scratch/map.md` 在，或者声明文件指向 markdown。
     for(const p of candidatePaths){if(await exists(ctx,p))return true}
-    // bug 修复：setup 已选 Local Markdown 但尚未落 map.md 时，仍应算 Markdown 身份（底层 Markdown 格式以 docs/agents/issue-tracker.md 声明为准，非仅 map.md 数据）
+    // setup 已选 Local Markdown 但尚未落 map.md 时，仍应算 Markdown 身份（底层 Markdown 格式以 docs/agents/issue-tracker.md 声明为准，非仅 map.md 数据）。
+    // #1572 起声明必须是高置信的标题行：「正文里顺嘴提到 Local Markdown」不再算身份，与 GitLab 房同口径。
     try{
       const itPath=plat.join(cwd,'docs/agents/issue-tracker.md')
       if(await exists(ctx,itPath)){
@@ -137,10 +142,19 @@ export async function matches(handle: RepoHandle, ctx: OpContext): Promise<boole
             if(fs2&&typeof fs2.resolve==='function'&&typeof fs2.readText==='function'){ const t=await fs2.resolve(itPath,{cwd}); txt=await fs2.readText(t); unreadable=false }
           }catch{}
         }
-        if(typeof txt==='string'&&/Local\s+Markdown/i.test(txt)) return true
+        // #1572：只认「标题行明说 Local Markdown」这种高置信声明，与 GitLab 房 #1555 的判据对齐。
+        // 为什么不再用全文正则：正文里顺嘴提到 Local Markdown（迁移记录、对照说明、模板示例）会被当成
+        // 声明，于是 GitHub 工作区被 Markdown 房错误认领（#1572 的复现）；GitLab 房已经改成只看标题行，
+        // 两层的答案必须对得上。代价是「没有标题行、正文只写 Local Markdown」的旧文档不再被本房认领——
+        // 判定层不会把正文提 markdown 当成身份（#277：markdown 的正文关键词不进标题行判据）；认领层跟它同口径。
+        if(typeof txt==='string'){
+          const parsed=parseIssueTracker(normalizeTrackerText(txt))
+          if(parsed.confidence==='high'&&parsed.explicitBackendId==='markdown') return true
+        }
         // 声明文件在、可房里的读法与平台 fs 那条兜底都没读动：识别最后一道证据没能出声。
         if(unreadable) emitReadDegraded(ctx,'matches','matches:tracker-doc',Date.now()-startedAt)
-        // 走到这里说明声明文件在、也读到了内容，只是里面没写 Local Markdown：这是正常的否定结论，不记。
+        // 走到这里说明声明文件在、也读到了内容，只是没有「标题行写着 markdown」这条声明：
+        // 这是正常的否定结论，不记 —— 正文里提过 Local Markdown 也一样（#1572：认领不认正文关键词）。
       }
     }catch{
       // 声明文件这一层没能给出答案的另一种走法：拼这个路径的时候抛了（平台对象形状怪、join 自己抛）。
@@ -268,6 +282,8 @@ export function createMarkdownBackend(ctx: OpContext) {
     // #691：本地 Markdown 补上契约的 listPage（按「创建时间倒序」切一页票行 + 同口径总数）。
     // 语义见 tracker/contract-page.js 的「分页契约」；本后端的游标是「排好序的票行列表里的下标」。
     listPage:(repo,filter,opts,opCtx)=>asOpResult<PageResult>(listIssuesPage(opCtx||ctx,repo,filter,opts)),
+    // #1605 地图薄查：纯地图筛的列表走这条快速路（与 list 共用同一份枚举，不读正文）。
+    listMaps:(repo,opCtx)=>asOpResult<MapListResult>(listMaps(opCtx||ctx,repo)),
     get:(repo,key,opts,opCtx)=>asOpResult<Issue>(getIssue(opCtx||ctx,repo,key,opts)),
     getDependencies:(repo,key,opts,opCtx)=>asOpResult<Dependencies>(getDependenciesForKey(opCtx||ctx,repo,key,opts)),
     create:(repo,input,opCtx)=>asOpResult<Issue>(createIssue(opCtx||ctx,repo,input)),
@@ -405,6 +421,11 @@ export const markdownModule = {
   // links 仅留提及识别正则；开仓为打开文件夹
   links: { linkPatternSource: "#(\\d+)" },
   openRepository: 'folder',
+  // #1557：本地后端里「票」就是工作区中的一个 .md 文件，所以开票 = 让宿主打开文件；
+  // 「容器」（探索地图 / 实施规格）分别是 map.md / spec.md，开容器 = 打开这两个文件所在的目录，
+  // 而不是打开文件本身（文件打开后对「看这个地图下有哪些票」没有帮助）。
+  openIssue: 'file',
+  openContainer: 'folder',
   prompts,
   fixes,
 } satisfies BackendModule

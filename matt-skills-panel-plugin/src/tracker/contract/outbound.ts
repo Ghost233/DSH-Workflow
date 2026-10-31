@@ -19,7 +19,12 @@
  * `ctx.outbound` 读 —— 与房间里已有的 `ctx.gate`（闸由接线处注入、本房不 import 它）同一条路。
  * 读的人：`src/tracker/rooms/github/client.ts`（起 gh 命令前拿名额、认取消、写完记账）。
  *
- * ── 缺了会怎样 ───────────────────────────────────────────────────────────────
+ * ── 超时之后怎么办：读可重试，写先核对现状、不直接重放（#1224） ───────────
+ * 排队超时、通路冷却、排队取消这些「没有拿到结局」的出口，后续动作按读写分：读可以直接重试；
+ * 写没法确认到底成没成，必须先核对票面现状再决定续做，不许直接重放（会写两次）。
+ * 这句话的唯一实现在 `src/tracker/kernel/outbound-tiers.ts` 的 `outboundFollowUpAdvice`：
+ * 房内与宿主四个出口共用它，不要在调用点另拼措辞。
+ * * ── 缺了会怎样 ───────────────────────────────────────────────────────────────
  * **大声失败，不许静默直通**：名额闸缺了还照发请求，等于并发上限悄悄消失 —— 那种故障事后
  * 只看日志是查不出来的。所以房间读不到 `ctx.outbound` 时直接按环境失败返回，并在回执里说清
  * 「出站控制面没接上」。这一条是本文件存在的全部理由，改的时候别把它改成「没有就跳过」。
@@ -27,7 +32,7 @@
 
 /**
  * 出站分桶：读、写、探活各一桶。
- * 与 `src/tracker/kernel/outbound-tiers.ts` 的档位一一对应（读 12 秒 / 写 30 秒 / 探活 15 秒），
+ * 与 `src/tracker/kernel/outbound-tiers.ts` 的档位一一对应（读 / 写 / 探活三档，值住 `config/timeouts.yaml`，见 `src/tracker/kernel/outbound-tiers.ts`），
  * 两处名字必须一致 —— 改名要一起改，否则档位会静默对不上。
  * 冷却窗口只分读、写两档：探活与读走同一只准入桶，因此也按读档冷却。
  */
@@ -53,8 +58,14 @@ export interface OutboundControl {
    * 取一个出站名额，拿到就返回放行函数；排满了就在这里等。
    * 等待期间 `signal` 中止 → 抛「排队时被取消」的错误（不占名额、不记失败），
    * 由 `isCancelled` 认出来，调用方按取消返回、可以重试。
+   *
+   * `waitMs`（#1570）是调用方给排队这一段的**时间预算**（毫秒）：到点还没拿到名额，
+   * 闸会抛带 `admission-queue-timeout` 码的排队超时错误（由 kernel 的
+   * `outboundQueueTimeoutOf` 识别，带出等了多久与预算），并负责把晚到的名额归还；
+   * 到点之后不会再凭空多出一次「拿名额成功、但没人放回」的泄漏。
+   * 缺省不给就是不设排队上限（与今天一致）——排队预算由闸管，调用方不再自己写计时器。
    */
-  acquire(req: { bucket: OutboundBucket; signal?: AbortSignal; cmd?: string; service?: OutboundService }): Promise<() => void>
+  acquire(req: { bucket: OutboundBucket; signal?: AbortSignal; cmd?: string; service?: OutboundService; waitMs?: number }): Promise<() => void>
 
   /** 这个错误是不是「出站准入等待中被取消」。只有闸自己说得清，房间不猜。 */
   isCancelled(err: unknown): boolean

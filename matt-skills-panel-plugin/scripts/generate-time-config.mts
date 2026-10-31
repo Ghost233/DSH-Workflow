@@ -21,11 +21,17 @@
 // 缺键是故障，不是合法状态：YAML 里没写的键，生成器直接报错退出。调用方一律静态 import
 // 生成的命名常量，不写任何“缺键回落数字”——数字只在 YAML 里有一份，回落表本身就是第二份拷贝。
 // 未知键同样报错——多半是拼错了，静默忽略会让拼错的键看起来“生效了”。
+//
+// 数组项可以引用别的键（#1629）：退避序列里「一步等待」那一档不抄数字，写 stepWaitMs
+// （或 stepWaitMs * 4），生成器在构建期把它算成一个普通数字；支持范围与规则见
+// scripts/lib/time-config-expr.mts 的文件头。为什么允许这种写法：同一个数要在两处生效，
+// 抄一份就会在调参时漏改（#1215 的单源头纪律）。
 
 import fs from 'node:fs'
 import path from 'node:path'
 import url from 'node:url'
 import yaml from 'yaml'
+import { resolveTimeArray } from './lib/time-config-expr.mts'
 
 const ROOT: string = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '..')
 const OUT_PATH: string = path.join(ROOT, 'src', 'shared', 'time-config', 'src', 'values.ts')
@@ -120,7 +126,8 @@ const KEYS: Array<[string, string, string]> = [
   ['deckAssemblyMs', 'DECK_ASSEMBLY_TIMEOUT_MS', 'timeouts'],
   ['bridgeDryTableWaitMs', 'BRIDGE_DRY_TABLE_WAIT_MS', 'timeouts'],
   ['delegatedCellWaitMs', 'DELEGATED_CELL_WAIT_MS', 'timeouts'],
-  ['hostTimeoutMs', 'HOST_TIMEOUT_MS', 'timeouts'],
+  // —— 一步等待的统一值（#1629）：所有「发出一次请求后等它出结果」的上限都引用它 ——
+  ['stepWaitMs', 'STEP_WAIT_MS', 'timeouts'],
   ['hostBootDeferMs', 'HOST_BOOT_DEFER_MS', 'timeouts'],
   ['keyLockMs', 'KEY_LOCK_TIMEOUT_MS', 'timeouts'],
   ['canonicalTimeoutMs', 'CANONICAL_TIMEOUT_MS', 'timeouts'],
@@ -173,6 +180,7 @@ const KEYS: Array<[string, string, string]> = [
   ['predicateLogSampleMs', 'PREDICATE_LOG_SAMPLE_MS', 'intervals'],
   ['logWriteDebounceMs', 'LOG_WRITE_DEBOUNCE_MS', 'intervals'],
   ['logFlushMs', 'LOG_FLUSH_MS', 'intervals'],
+  ['hostLogSlotRetryMs', 'HOST_LOG_SLOT_RETRY_MS', 'intervals'],
   // —— 界面上的一次性延时 ——
   ['clientSessionTickMs', 'CLIENT_SESSION_TICK_MS', 'intervals'],
   ['clientHandoffDelayMs', 'CLIENT_HANDOFF_DELAY_MS', 'intervals'],
@@ -195,12 +203,21 @@ const KEYS: Array<[string, string, string]> = [
   // —— 宿主出站排队段的日志节流（#1101）：等多久才记一行、同一只桶最短多久记一次 ——
   ['laneLongWaitLogMs', 'LANE_LONG_WAIT_LOG_MS', 'intervals'],
   ['laneWaitLogIntervalMs', 'LANE_WAIT_LOG_INTERVAL_MS', 'intervals'],
+  // #1627：deck 工具回执「慢」的日志判据（3 秒），只参与判断，不是等待上限。
+  ['toolReceiptSlowMs', 'TOOL_RECEIPT_SLOW_MS', 'intervals'],
+  // #1627：配额与限流诊断的两个判定窗（告警去重 60 秒 / 恢复安静 30 秒），只参与判断，不改任何出站行为。
+  ['quotaIncidentDedupeMs', 'QUOTA_INCIDENT_DEDUPE_MS', 'intervals'],
+  ['quotaRecoverQuietMs', 'QUOTA_RECOVER_QUIET_MS', 'intervals'],
   // —— ttl：有效期 ——
   ['preflightTtlMs', 'PREFLIGHT_TTL_MS', 'ttl'],
   ['chainAllGreenTtlMs', 'CHAIN_ALL_GREEN_TTL_MS', 'ttl'],
+  // #1528：一趟环境检查里两项判据共用 `.scratch` 根目录列举结果的重合窗口。
+  ['scratchRootListingTtlMs', 'SCRATCH_ROOT_LISTING_TTL_MS', 'ttl'],
   ['deferExpiryMs', 'DEFER_EXPIRY_MS', 'ttl'],
   ['failureHalfOpenDelayMs', 'FAILURE_HALF_OPEN_DELAY_MS', 'ttl'],
   ['attentionExpiryMs', 'ATTENTION_EXPIRY_MS', 'ttl'],
+  // #1240：心跳的人在场判据（最近这段时间没有人类输入就不发心跳）。
+  ['attentionHumanInputWindowMs', 'ATTENTION_HUMAN_INPUT_WINDOW_MS', 'ttl'],
   ['activeLingerMs', 'ACTIVE_LINGER_MS', 'ttl'],
   ['patchMergeWindowMs', 'PATCH_MERGE_WINDOW_MS', 'ttl'],
   ['freshnessYellowMs', 'FRESHNESS_YELLOW_MS', 'ttl'],
@@ -211,6 +228,8 @@ const KEYS: Array<[string, string, string]> = [
   ['snapshotTtlMs', 'SNAPSHOT_TTL_MS', 'ttl'],
   ['statusCacheMs', 'STATUS_CACHE_MS', 'ttl'],
   ['snapshotCacheMs', 'SNAPSHOT_CACHE_MS', 'ttl'],
+  // #1240：刚选中快照的保护窗（别用旧缓存盖掉用户刚点的选择）。
+  ['snapshotPickedGuardMs', 'SNAPSHOT_PICKED_GUARD_MS', 'ttl'],
   ['planCursorTtlMs', 'PLAN_CURSOR_TTL_MS', 'ttl'],
   ['anchorWindowMs', 'ANCHOR_WINDOW_MS', 'ttl'],
   ['idempotencyLookbackMs', 'IDEMPOTENCY_LOOKBACK_MS', 'ttl'],
@@ -251,7 +270,7 @@ const KEYS: Array<[string, string, string]> = [
   ['writePatchTtlMs', 'WRITE_PATCH_TTL_MS', 'ttl'],
   // —— 视野模型上报的去重窗（同一签名在这段时间内只处理一次）——
   ['attentionReportDedupeMs', 'ATTENTION_REPORT_DEDUPE_MS', 'ttl'],
-  // —— backoff：退避序列 ——
+  // —— backoff：退避序列。项可以写引用（#1629），第二档就是一步等待本身 ——
   ['chainBackoffMs', 'CHAIN_BACKOFF_MS', 'backoff'],
   // —— 「下一步建议」选项行的客户端重试退避：两档 ——
   ['ownRouteRetryMs', 'OWN_ROUTE_RETRY_MS', 'backoff'],
@@ -310,23 +329,24 @@ function load(docs: Array<{ rel: string; doc: any }>): { values: Record<string, 
   const warnings: string[] = []
   const values: Record<string, any> = {}
   const provided: Set<string> = new Set()
+  // 第一遍先落标量键：数组项可能引用标量键（#1629 的一步等待），所以标量必须先算出来；
+  // 数组键先把原始值收进清单，等标量都齐了再统一解析（解析规则见 lib/time-config-expr.mts）。
+  const scalarValue: Record<string, number> = {}
+  const pendingArrays: Array<{ key: string; group: string; raw: unknown }> = []
   for (const [key, { group }] of known) {
     const v: any = seen[group][key]
     if (v === undefined) {
       throw new Error('缺键：' + FILE_OF_GROUP[group] + ' 的 ' + group + '.' + key + ' 没写；数字只在 YAML 里有一份，没有回落可顶，先把键补上')
     }
     if (group === ARRAY_GROUP) {
-      if (!Array.isArray(v) || v.length === 0 || !v.every(isPositiveInt)) {
-        throw new Error(FILE_OF_GROUP[group] + ' 的 ' + key + ' 必须是非空正整数数组，读到的是 ' + JSON.stringify(v))
-      }
-      values[key] = [...v]
-      provided.add(key)
+      pendingArrays.push({ key, group, raw: v })
       continue
     }
     if (!isPositiveInt(v)) {
       throw new Error(FILE_OF_GROUP[group] + ' 的 ' + key + ' 必须是正整数毫秒，读到的是 ' + JSON.stringify(v))
     }
     values[key] = v
+    scalarValue[key] = v
     provided.add(key)
     // 越过定时器上限只告警、不报错：TTL 与窗口一类只做大小比较，超出上限是合法的；
     // 但若这个键会直接当延时用，运行时会把大数折成 1 毫秒，行为会从「永不超时」翻成「立刻超时」。
@@ -337,6 +357,17 @@ function load(docs: Array<{ rel: string; doc: any }>): { values: Record<string, 
         '越过定时器上限：' + FILE_OF_GROUP[group] + ' 的 ' + group + '.' + key + ' = ' + v + '，大于 JavaScript 定时器能表达的 ' + JS_TIMER_MAX_MS + ' 毫秒；只做大小比较（TTL、窗口）才安全，直接当延时会变成 1 毫秒',
       )
     }
+  }
+  // 第二遍收数组键：项可以是正整数，也可以写「键名」或「键名 * 倍数」引用上面那些标量键。
+  // 解析与报错住在 lib/time-config-expr.mts（为什么允许引用见那个文件头）；产物里仍是普通数字数组。
+  for (const { key, group, raw } of pendingArrays) {
+    values[key] = resolveTimeArray(raw, {
+      file: FILE_OF_GROUP[group],
+      key,
+      scalarOf: (target: string) => scalarValue[target],
+      isArrayKey: (target: string) => known.get(target)?.group === ARRAY_GROUP,
+    })
+    provided.add(key)
   }
   // 未知键：先找像拼错的（编辑距离 ≤ 2），找不到就直说未知。都不静默。
   for (const [group, table] of Object.entries(seen)) {

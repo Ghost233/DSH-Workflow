@@ -1,14 +1,14 @@
 // src/deck/tools/issue-get.ts —— deck_issue_get（#713 第六批；#1019 换到新树、#1035 转 TypeScript）
 //
 // 一次把一张票的完整关系读回来：正文、评论、标签、认领、父子、阻塞边。
-// 「优先读宿主已有快照」落在实现上是：宿主把快照缓存（snapshot.js 的 get/getDependencies）通过
-// deps.readThrough 注进来时先用它，没注入就现读；两条路的返回值形状一样，调用方看不出区别。
+// 读票与读阻塞边是两次远端调用，#1610 起这两条一起发出去：串行等于把两次等待相加，
+// 并发之后只等较长的那一条，发出去的请求数一条不少。
 import { createDeckShell, DECK_STATUS, REFUSAL_REASONS } from '../shell/call-shell.js'
 import { MD_SCOPE_LOCATE, applyMdScope, mdScopeNote } from './md-scope.js'
 import { sessionContextOfAsync } from '../shell/session-workdir.js'
 import { callDeckSession, openDeckSession } from './tracker-session.js'
 import { EDGE_LANDING, relationsOf } from '../shell/edge-landing.js'
-import { withCallScope } from '../../refresh/rooms/host/tool-call-budget-enforcement.js'
+import { withCallScope, type OpOutcome } from '../../refresh/rooms/host/tool-call-budget-enforcement.js'
 import { estimateToolCost, toolCostInputFrom } from '../../refresh/kernel/tool-call-budget.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
 import { DECK_SANDBOX_TIMEOUT_MS } from '../../shared/time-config/src/values.js'
@@ -16,6 +16,7 @@ import { withCap } from '../shell/capped-wait.js'
 // #1090：进度区的结构化读回（{percent,note,updatedAt,entries}）与写侧共用同一份解析。
 // #1092：维护者原话区的结构化读回（{text,source,recordedAt}）同样与该区的写侧共用同一份解析。
 import { parseOriginalWords, parseProgressDetail } from '../../tracker/body-parse.js'
+import { bodyDigest, chunkBody, BODY_EXCERPT_LEN } from '../shell/body-digest.js'
 
 /** 数字型参数的统一收口：正的有限数才要（取整），其余一律当「没给」，由调用方退自己的默认。 */
 function numOpt(v: unknown): number | undefined { return (typeof v === 'number' && isFinite(v) && v > 0) ? Math.floor(v) : undefined }
@@ -52,6 +53,19 @@ function timeoutValue(text: string, data: Record<string, unknown>, claimed: { re
     claimed: claimed,
   }
 }
+// 执行层失败的回执：原因码与原话跟壳里「后端实现抛错」那一支一字不差，
+// 区别是这里自己把实际用量带上（#1610）：抛给壳的话用量丢在壳的兜底里，回执只能报 0 条。
+function transportValue(message: string, claimed: { requests: number; points: number }, data: Record<string, unknown>) {
+  return {
+    value: {
+      status: DECK_STATUS.UNSUPPORTED,
+      reason: REFUSAL_REASONS.BACKEND_THREW,
+      text: '后端实现抛错了（我没有把它抛给 AI，按三态返回）：' + String(message).slice(0, 300),
+      data: data,
+    },
+    claimed: claimed,
+  }
+}
 
 /**
  * 装配层注入的依赖袋。壳要用的键原样透传（没列的键也一律接受：壳自己还没标类型，这一层不替它把关）；
@@ -82,8 +96,9 @@ export const definition = {
     type: 'object',
     properties: {
       key: { type: 'string', description: '票号，例如 713' },
-      comments: { type: 'number', description: '最多带回几条评论，缺省 50' },
-      section: { type: 'string', description: '只回正文里这一节（## 标题子串），缺省回全文前 2000 字' },
+      body: { type: 'string', description: '正文怎么回：excerpt 只回前 2000 字（缺省，省上下文）；full 回全文分块（大正文不截断，带指纹可验完整）。' },
+      comments: { type: 'number', description: '最多带回几条评论，缺省 0（只回总数不回正文）；要看评论正文再按需取，最大 200' },
+      section: { type: 'string', description: '只回正文里这一节（## 标题子串），缺省回正文前 2000 字' },
       blocking: { type: 'boolean', description: '要不要反向阻塞边（谁被这张票阻塞）。缺省要：读全量关系，一次查询就取回反向边，阻塞者的标题与状态随行回来。关掉只读单票本身，跳过一次反向边查询，快；反向边记空并注记，要就再调一次。' },
       ...MD_SCOPE_LOCATE,
     },
@@ -102,7 +117,9 @@ function issueBrief(issue: Record<string, unknown> | null | undefined) {
     key: issue.key, title: issue.title, state: issue.state, type: issue.type,
     labels: Array.isArray(issue.labels) ? issue.labels.map((l) => (l && l.name) || String(l)) : [],
     assignees: Array.isArray(issue.assignees) ? issue.assignees.map((a) => (a && a.login) || String(a)) : [],
-    updatedAt: issue.updatedAt || '', closedAt: issue.closedAt || '', url: issue.url || '', body: issue.body !== undefined ? issue.body : null,
+    updatedAt: issue.updatedAt || '', closedAt: issue.closedAt || '', url: issue.url || '',
+    commentCount: typeof issue.commentCount === 'number' ? issue.commentCount : (Array.isArray(issue.comments) ? issue.comments.length : 0),
+    body: issue.body !== undefined ? issue.body : null,
     // #1090：正文里的进度区按结构化形状回一份（旧字段一个不删，读的人想只取数字仍可读 body）。
     // 没写进度时是 {percent:null,note:'',updatedAt:null,entries:[]}，不是 null——「没写」与「写坏了」分开看。
     progress: parseProgressDetail(issue.body !== undefined ? issue.body : null),
@@ -165,7 +182,9 @@ export function createDeckIssueGet(deps?: DeckIssueGetDeps) {
     const repo = shell.repoOf(pick, s)
     const scope = applyMdScope(repo, a)
     if (!scope.ok) return shell.unsupported('deck_issue_get', REFUSAL_REASONS.BAD_ARGS, scope.message, { cost: { estimated: est } })
-    const first = Math.max(0, Math.min(200, Number(a.comments) > 0 ? Math.floor(Number(a.comments)) : 50))
+    const rawComments = Number(a.comments)
+    const first = (typeof a.comments === 'number' && isFinite(rawComments) && rawComments >= 0) ? Math.max(0, Math.min(200, Math.floor(rawComments))) : 0
+    const bodyMode = String(a.body || 'excerpt').trim().toLowerCase() === 'full' ? 'full' : 'excerpt'
     // 反向边缺省要：只有显式传 false 才跳过。缺席、true、其它值一律全量，老调用方形状不动。
     const wantBlocking = a.blocking !== false
     // 沙箱策略的快照：等不到（超时、对方失败、没注入）一律按「没有」往下走，与老口径同形。
@@ -185,11 +204,28 @@ export function createDeckIssueGet(deps?: DeckIssueGetDeps) {
       // 断言只为让编译器安静，运行时一个字节都不动 —— 真为空时下面那句照样抛 TypeError 走 backend-threw。
       const t = sc.tracker!
       const opCtx = sc.opCtx
-      const got = await t.get(repo, key, { comments: { first: first } }, opCtx)
+      // 报账按「实际发出了几条请求」算（#1610）：预算壳数得到这次真的派发了几次远端调用，
+      // 发出前就被预算或取消拒掉的那些不算数；点数沿用老口径，一条请求 3 点。
+      const claimedOf = function (): { requests: number; points: number } {
+        const n = sc.sentRequests()
+        return { requests: n, points: n * 3 }
+      }
+      // 两条查询一起发出去（#1610）：读票与读阻塞边各是一次远端调用，串行等于把两次等待相加，
+      // 并发之后只等较长的那一条，发出去的请求数一条不少。
+      const gotP = t.get(repo, key, { comments: { first: first } }, opCtx)
+      // 依赖查询先挂上失败兜底：读票先失败的话整次读会提前返回，这一条的拒绝没人接手就成未处理拒绝。
+      const depP = (wantBlocking && typeof t.getDependencies === 'function')
+        ? t.getDependencies(repo, key, {}, opCtx).catch(function (e: unknown): OpOutcome {
+          return { ok: false, error: { kind: 'backend-threw', message: String((e && (e as Error).message) || e) } }
+        })
+        : null
+      const got = await gotP
       const gotTimeout = timeoutMessage(got as TransportResult)
-      if (gotTimeout) return timeoutValue('这张票这次没读回来（超时了：在限时内没等到后端回话，这次读没动手，重调一次就行）。', { key: key, backendId: pick.backendId, error: { kind: 'timeout', message: gotTimeout.slice(0, 300) } }, { requests: 1, points: 3 })
+      if (gotTimeout) return timeoutValue('这张票这次没读回来（超时了：在限时内没等到后端回话，这次读没动手，重调一次就行）。', { key: key, backendId: pick.backendId, error: { kind: 'timeout', message: gotTimeout.slice(0, 300) } }, claimedOf())
       const gotTransport = transportMessage(got as TransportResult)
-      if (gotTransport) throw new Error(gotTransport)
+      // 执行层失败今天靠抛给壳收成 backend-threw；这里改成回同形的信封，好让回执里的实际用量
+      // 带上真的发出去了几条（抛出去的话用量丢在壳的兜底里，回执只能报 0 条）。
+      if (gotTransport) return transportValue(gotTransport, claimedOf(), { key: key, backendId: pick.backendId, error: { kind: String((got && got.error && got.error.kind) || 'backend-threw'), message: gotTransport.slice(0, 300) } })
       if (!got || got.ok !== true) {
         const msg = String((got && got.error && got.error.message) || '后端没给出原因').slice(0, 300)
         return {
@@ -199,44 +235,57 @@ export function createDeckIssueGet(deps?: DeckIssueGetDeps) {
             text: '这张票没读回来（后端原话：' + msg + '）。',
             data: { key: key, backendId: pick.backendId, error: { kind: String((got && got.error && got.error.kind) || ''), message: msg } },
           },
-          claimed: { requests: 1, points: 3 },
+          claimed: claimedOf(),
         }
       }
       const issue = got.data || {}
       // 反向边走单独一次依赖查询（#1304 起改为读后端原生的「我挡住了谁」，不必再扫全仓）：
       // 关掉（blocking=false）就整段跳过，只读单票本身；反向边记空并注记，不假装 0 条。
-      const dep = (wantBlocking && typeof t.getDependencies === 'function') ? await t.getDependencies(repo, key, {}, opCtx) : null
+      // 依赖查询与读票是一起发出去的（见上面 depP），这里只等它的结果。
+      const dep = depP ? await depP : null
       const depTimeout = wantBlocking ? timeoutMessage(dep as TransportResult) : null
-      if (depTimeout) return timeoutValue('这张票读到一半（阻塞边超时了：在限时内没等到后端回话；票本身已读回，阻塞边重调一次就行）。', { key: key, backendId: pick.backendId, error: { kind: 'timeout', message: depTimeout.slice(0, 300) } }, { requests: 1, points: 3 })
       const depTransport = wantBlocking ? transportMessage(dep as TransportResult) : null
-      if (depTransport) throw new Error(depTransport)
+      // 阻塞边没读到不再毁掉整次读（#1610）：票正文照回，关系那一栏按「没读到」交代清楚。
+      // 只有调用方自己把这次读取消掉（kind=aborted）才仍然整次失败：那是整次读被叫停。
+      if (depTransport && !!(dep && dep.error && dep.error.kind === 'aborted')) return transportValue(depTransport, claimedOf(), { key: key, backendId: pick.backendId, error: { kind: 'aborted', message: depTransport.slice(0, 300) } })
       const dependencies = (dep && dep.ok === true) ? dep.data : null
       const rel = relationsOf(issue, dependencies)
       if (!wantBlocking) rel.blocking = []
       const notes = []
       if (scope.effortId) notes.push(mdScopeNote(scope.scene, scope.effortId))
       if (!wantBlocking) notes.push('反向阻塞边这次没取（blocking=false，跳过一次反向边查询）：上面“阻塞别人”记空不是 0 条，要就带 blocking=true 再调一次。')
-      if (dep && dep.ok !== true) notes.push('阻塞边这次没读到（后端原话：' + String((dep.error && dep.error.message) || '').slice(0, 200) + '）：上面只列了票自己带的那些。')
+      if (dep && dep.ok !== true) notes.push('阻塞边这次没读到（' + (depTimeout ? '阻塞边查询超时了：' + depTimeout.slice(0, 200) : '后端原话：' + String((dep.error && dep.error.message) || '').slice(0, 200)) + '）：上面只列了票自己带的那些。')
       // 反向边全不全由读路径自己交代（原生连接截断、或退回整仓反推）：这里原样带给调用方，
       // 不替它改写成「0 条」那种看起来确定的说法（#1304）。
       if (wantBlocking && dependencies && typeof dependencies.blockingNote === 'string' && dependencies.blockingNote) notes.push(dependencies.blockingNote)
       const bodyText = typeof issue.body === 'string' ? issue.body : ''
+      const digest = bodyDigest(bodyText)
       const sec = sectionOf(bodyText, a.section)
-      if (typeof a.section === 'string' && a.section.trim() !== '' && !sec.found) notes.push('正文里没找到标题含「' + String(a.section).trim().slice(0, 60) + '」的节，回的是全文前 2000 字。')
-      const excerpt = (sec.found ? sec.text : bodyText).slice(0, sec.found ? 2000 : 2000)
+      if (typeof a.section === 'string' && a.section.trim() !== '' && !sec.found) notes.push('正文里没找到标题含「' + String(a.section).trim().slice(0, 60) + '」的节，回的是正文前 2000 字。')
+      const excerpt = (sec.found ? sec.text : bodyText).slice(0, BODY_EXCERPT_LEN)
+      const commentTotal = typeof (issue as { commentCount?: unknown }).commentCount === 'number' ? (issue as { commentCount: number }).commentCount : (Array.isArray(issue.comments) ? issue.comments.length : 0)
+      if (bodyMode === 'excerpt') notes.push(bodyText.length <= BODY_EXCERPT_LEN ? '正文共 ' + bodyText.length + ' 字，已全量在上面 ticket.body / excerpt 里（指纹 ' + digest.slice(0, 12) + '）：写回正文时仍要先 body=\'full\' 取指纹再传 bodyDigest。' : '正文只回前 2000 字（全文共 ' + bodyText.length + ' 字，指纹 ' + digest.slice(0, 12) + '）：要全文带 body=\'full\' 再调一次，按分块回、可验指纹。')
+      if (first === 0) notes.push('评论默认 0 条（共有 ' + commentTotal + ' 条）：要看评论正文带 comments=N 再调一次（最大 200），总数这次已给。')
       const stateText = String(issue.state || '未知状态')
       const closedText = issue.closedAt ? '（关闭于 ' + String(issue.closedAt).slice(0, 10) + '）' : ''
       // 反向边不全时，条数后面跟一句「可能不全」：数字本身照给（已经看到的那些是真的），但别让读者当成全量。
       const blockingText = wantBlocking
         ? ('阻塞别人 ' + rel.blocking.length + ' 条' + (dependencies && dependencies.blockingComplete === false ? '（可能不全，见注记）。' : '。'))
         : '阻塞别人未取（blocking=false）。'
+      const brief = issueBrief(issue)
+      if (brief && bodyMode === 'excerpt') brief.body = excerpt
+      const bodyPayload = bodyMode === 'full'
+        ? { mode: 'full', length: bodyText.length, digest: digest, chunks: chunkBody(bodyText) }
+        : { mode: 'excerpt', length: bodyText.length, digest: digest, text: excerpt }
       return {
         value: {
           status: DECK_STATUS.OK,
           text: '票 ' + key + ' 读回来了：状态 ' + stateText + closedText + '，父票 ' + (rel.parentKey || '（没有）') + '，被阻塞 ' + rel.blockedBy.length + ' 条，' + blockingText,
           data: {
-            ticket: issueBrief(issue),
+            ticket: brief,
             excerpt: excerpt,
+            body: bodyPayload,
+            commentCount: commentTotal,
             section: sec.found ? { name: sec.name, text: excerpt } : null,
             relations: rel,
             landings: {
@@ -251,8 +300,9 @@ export function createDeckIssueGet(deps?: DeckIssueGetDeps) {
           notes: notes,
           touched: [],
         },
-        // 按实际读数报账：跳过反向边就是一次读，与取失败那条路同数，闸对账不报“对不上”。
-        claimed: wantBlocking ? { requests: 2, points: 6 } : { requests: 1, points: 3 },
+        // 按实际发出的请求数报账（#1610）：读票与读阻塞边各发出一条，成功路径仍是 2 条 6 点，
+        // 跳过反向边就只有 1 条 3 点；与失败那几条路用同一把尺，闸对账不报“对不上”。
+        claimed: claimedOf(),
       }
     })
   }

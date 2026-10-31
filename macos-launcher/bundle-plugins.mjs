@@ -21,7 +21,7 @@ export async function bundleProjectPlugins({ resourcesRoot, npmCache, run = comm
   const scratch = await mkdtemp(join(tmpdir(), 'workflow-plugin-build-'))
   const dependencies = {}, provenance = []
   let failure
-  const npmOptions = ['--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false', '--prefer-offline', '--cache', npmCache ?? join(scratch, 'npm-cache'), '--registry', config.registry]
+  const npmOptions = ['--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false', '--prefer-online', '--cache', npmCache ?? join(scratch, 'npm-cache'), '--registry', config.registry]
   try {
     for (const [index, item] of config.plugins.filter(row => row.startup === true).entries()) {
       let source = tarballs, spec = `${item.package}@${item.version}`

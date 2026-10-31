@@ -1,7 +1,15 @@
-# 跨族公共小节（#1298 收尾提示词落地时立）：只写一遍、被多个族的提示词模板引用的正文字句。
-# 模板正文里写 {{shared:sharedTools}}，scripts/lib/prompt-config.mts 在 readPromptConfig 里展开成对应语言的正文。
+# 公共小节（#1298 收尾提示词落地时立）：只写一遍、被多处模板引用的正文字句。
+# 模板正文里写 {{shared:<id>}}（例如 {{shared:sharedTools}}），scripts/lib/prompt-config.mts 在 readPromptConfig 里展开成对应语言的正文。
 # 为什么不放进那五份族 YAML：族的划分是「这条提示词什么时候被注入」，公共小节不属于任何时机，
 # 它只属于「好几处共用同一段话」这一件事；混进族文件会让「按注入时机分族」这条规矩失真。
+# 今天七节：sharedTools（20 条模板引用）与 investigation（10 条）是跨族共用；
+#   mapTicketAdvance（讨论 / 执行 / 研究三条动作模板）与 repoBootstrap（setupRun / switchAlign 两条）是同族内共用，
+#   2026-10-29 收进来 —— 此前各抄一遍，改一句要改好几处、升好几次版本；
+#   mapTicketAdvanceOpening / mapTicketAdvanceWrapUp 是同一天把 mapTicketAdvance 拆成的两段，
+#   好让 tpl.prototype 在开头与收尾之间插自己的一节，开头与收尾仍然各只有一份。
+#   firstPrinciples（2026-10-29 立）：元提示句「从第一性原理出发。」，由 15 条模板与 mapTicketAdvanceOpening 直接引用
+#   （合计覆盖 19 条注入面），放在正文第一句；它管的是「用什么方式想」，不是任务说明，解释性内容不跟着写。
+# 小节之间可以互相引用（mapTicketAdvance 由开头与收尾两节拼成，开头里又嵌着 investigation），读取时逐层展开，成环当场报错。
 # 新增一节：在下面加一条（每个 id 只装 zh/en 两份正文），同时把 PROMPT_SHARED_SECTION_IDS 补上。
 sharedTools:
   zh: |-
@@ -14,3 +22,89 @@ sharedTools:
     - [ ] Prefer the deck_ tools for issue operations; if the deck_ tools fail, choose a suitable approach for the current workspace.
     - [ ] Report processed and in-progress issue numbers with the deck_issue_report tool in a timely manner.
     - [ ] As the last step before replying, based on the current actual scenario and following the /ask-matt rules, determine whether the most suitable skill can be recommended, and call the suggest_next_steps tool to recommend it.
+
+# investigation：「## 调查（建议先查后问）」那四条 —— #1212 加进 10 个模板（七个动作模板 + 三个建票模板），
+#   2026-10-28 汇总到这一处，模板里只写标记，改一次就全改（不再出现十个模板各抄一遍、改一处漏其余）。
+investigation:
+  zh: |-
+    ## 调查（建议先查后问）
+    - [ ] 建议先阅读本票正文、评论及仓内相关内容后再提问。
+    - [ ] 建议优先复用仓内既有相关笔记（查找与存放均循仓内习惯），复用时仅记录路径与一句话结论，不粘贴全文。
+    - [ ] 确认已找到的既有笔记无法回答本次问题后，再按 /research 规则新查一次，并用一句话说明不适用的原因，新笔记路径回填至正文。
+    - [ ] 提问前用一句话说明已查阅范围。
+  en: |-
+    ## Investigate (recommended: look before asking)
+    - [ ] It is recommended to read this ticket body, its comments, and related in-repo material before asking.
+    - [ ] It is recommended to reuse an existing related note in the repo first (where to look and where to store both follow the repo convention); record only its path plus a one-sentence conclusion, never the full text.
+    - [ ] Only after the existing notes you found cannot answer this question, run one new /research pass per its skill rules; state in one sentence why they do not fit, then write the new note path back into the body.
+    - [ ] Before asking, state in one sentence what you checked.
+
+# mapTicketAdvanceOpening：map 子票统一入口的开头一段（首行 /wayfinder + 票链接 + 推进指令 + 调查节）。
+# mapTicketAdvanceWrapUp：同一个入口的收尾段（## 收尾那一节 + 工具节）。
+# mapTicketAdvance 由这两节拼成，讨论 / 执行 / 研究三条动作模板整段引用它；
+#   tpl.prototype 要在这两段中间插自己的一节「## 定版与移交」，所以它分别引用开头与收尾两节。
+# 2026-10-29 收成公共小节：此前四条模板各抄一遍，改一句要改好几处、升好几次版本。
+mapTicketAdvanceOpening:
+  zh: |-
+    /wayfinder
+    {url}
+
+    {{shared:firstPrinciples}}
+
+    请按 wayfinder 技能推进这张票。
+
+    {{shared:investigation}}
+  en: |-
+    /wayfinder
+    {url}
+
+    {{shared:firstPrinciples}}
+
+    Please advance this ticket with the wayfinder skill.
+
+    {{shared:investigation}}
+mapTicketAdvanceWrapUp:
+  zh: |-
+    ## 收尾
+    - [ ] 结束前把这张票的真实状态写进正文；没做完的写明下一步。
+
+    {{shared:sharedTools}}
+  en: |-
+    ## Wrap-up
+    - [ ] Before finishing, write the true state of this ticket into its body; if unfinished, state the next step.
+
+    {{shared:sharedTools}}
+mapTicketAdvance:
+  zh: |-
+    {{shared:mapTicketAdvanceOpening}}
+
+    {{shared:mapTicketAdvanceWrapUp}}
+  en: |-
+    {{shared:mapTicketAdvanceOpening}}
+
+    {{shared:mapTicketAdvanceWrapUp}}
+
+# repoBootstrap：初始化本仓库配置的整段正文（setupRun 与 switchAlign 共用；命令首行 /setup-matt-pocock-skills 留在模板里）。
+# 2026-10-29 收成公共小节：两条模板此前逐字相同，switchAlign 的 use 里还写着一句「主体与 setupRun 一字一致」——
+# 收进公共小节后，这句话从「靠人维护两份拷贝」变成「结构上就是同一份」。
+repoBootstrap:
+  zh: |-
+    初始化本仓库配置（技能套件已安装；本命令仅记录 issue tracker / 标签词汇 / 文档路径，不安装、不克隆任何技能）：
+    1. 按技能流程选择 issue tracker：{trackerLine}，由用户确认；
+    2. 初始化时按 setup-matt-pocock-skills 技能自身流程执行（issue tracker 选择 {trackerChoice}；triage 标签保留默认五角色）{labelReqs}；后续打标签严格遵循技能规则，不额外强制任何标签；
+    3. 完成后核对技能真实产物：docs/agents/issue-tracker.md + triage-labels.md + domain.md 及 AGENTS.md 的 ## Agent skills 块；再复查环境检查（setup 变绿）。{contextLayout}。{backendNote}
+  en: |-
+    Bootstrap this repo configuration (the skill suite is already installed; this command only records the issue tracker / label vocabulary / doc paths — it does not install or clone any skills):
+    1. Follow the skill flow to pick the issue tracker: {trackerLine}, confirm with the user;
+    2. During init, follow the setup-matt-pocock-skills skill own flow (choose {trackerChoice} as the tracker; keep the default triage-role labels){labelReqs}; when labelling issues, strictly follow the skill rules, with no extra mandatory labels;
+    3. Verify the actual outputs of the setup skill: docs/agents/issue-tracker.md + triage-labels.md + domain.md and the ## Agent skills block in AGENTS.md; then re-run the environment check (setup turns green). {contextLayout}.{backendNote}
+
+
+# firstPrinciples（2026-10-29 立）：元提示句，只管「用什么方式想」，不是任务说明。
+# 放法：模板正文第一句（slash 命令与链接之后），单独成行、前后空行；不写成 - [ ] 清单项。
+# 一行就够：解释、锚点、护栏都不跟着写 —— 写长了会从「模式开关」降级成「条款」，威力反而被稀释。
+firstPrinciples:
+  zh: |-
+    从第一性原理出发。
+  en: |-
+    Start from first principles.

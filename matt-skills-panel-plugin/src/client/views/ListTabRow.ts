@@ -43,11 +43,10 @@ declare function setActiveIssue(...args: any[]): any;
 declare function setActiveMap(...args: any[]): any;
 declare function showPop(...args: any[]): any;
 declare function truthWriteWindowOpen(...args: any[]): any;
-// #1511：编号徽标写成「#目录/编号」的显示规则住在 kernel/ticket-label.ts，本文件只调用、不另拼一遍。
-declare function ticketLabelOf(...args: any[]): any;
-// B 方案：同一颗控件的两段子节点与上限宽度同样走那一份（目录可省略、编号绝不缩小）。
-declare function ticketLabelNodesOf(...args: any[]): any;
-declare const TICKET_LABEL_MAX_WIDTH: any;
+// #1511 / #1564：号码写成「#目录/编号」的显示规则住在 kernel/ticket-label.ts，整颗徽标的四种外壳
+//   （上限宽度、两段布局、悬停与无障碍名）收在 views/shared/ticketBadge.ts；本文件只回答
+//   「画哪张票、用哪种外壳、这一处主色是什么」，不再自己拼上限宽度、两段与悬停内容。
+declare function ticketBadgeOf(...args: any[]): any;
 declare const COPY_FLASH_MS: any;
 declare const CONTAINER_ACCENT: any;
 declare const CONTAINER_CHIP_CLASS: any;
@@ -60,6 +59,10 @@ declare const CONTAINER_EMPTY_COLOR: any;
 declare const CONTAINER_TINT: any;
 declare const Tip: any;
 declare const issueUrlFor: any;
+// #1557：打开方式与打开动作收在 kernel/link.ts —— 视图只问「这颗按钮画成链接还是按钮」与「点下去开什么」，
+// 不再自己按地址是不是 http 前缀分流（本地后端的票是文件、容器是文件夹，按地址前缀猜不出开法）。
+declare function openModeFor(...args: any[]): any;
+declare function openTrackerTarget(...args: any[]): any;
 
 // #1302：列表加载时的行形占位。这个文件定义「一票一行长什么样」，所以行形状的真源也放在这里：
 // 真实行与加载占位都从 LIST_ROW_SHAPE 取尺寸，改一处两边一起变；不会出现「真实行改了间距、
@@ -263,7 +266,7 @@ export const listIssueRow = function (h: any, st: any, x: any, isOpen: any, narr
         }
         if (cState === 'done') {
           const s = (containerObj && containerObj.stats) ? containerObj.stats : { total: 0, closed: 0 }
-          return (typeof completePrompt === 'function') ? completePrompt(st, x.number, x.title, s.total, s.closed) : ''
+          return (typeof completePrompt === 'function') ? completePrompt(st, x.number, x.title, s.total, s.closed, effortOf(x)) : ''
         }
         if (cState === 'empty') return '/to-tickets ' + url
         return '/implement-spec ' + url
@@ -285,12 +288,12 @@ export const listIssueRow = function (h: any, st: any, x: any, isOpen: any, narr
         if (mapEmpty) {
           // 探索地图：没有子票 → 检查（这段逻辑照旧，行为不变）
           // 本次界面反馈需求：这颗按钮自己带按压态与点击日志，否则点它记的是整行那条。
-          return h(Tip, { content: tr('map.inspectTitle') }, h('button', { className: 'dsws-btn primary' + (narrow ? ' narrow-icon' : '') + ' dsws-hov', 'data-press': 'button', 'data-log': 'list.row.inspect.' + (x.key != null ? x.key : x.number), onClick: function (e: any) { e.stopPropagation(); let t = ''; try { t = inspectPrompt(st, x.number, x.title) } catch { const u = typeof issueUrlFor === 'function' ? (function () { try { return issueUrlFor(st, x.number, effortOf(x)) } catch (_) { return '' } })() : '', uu = u || (x.number != null ? '#' + String(x.number) : ''); t = uu ? '/wayfinder ' + uu : '/wayfinder'; try { t = promptTextFor(st, 'mapInspect', { n: String(x.number || ''), ['title']: String(x.title || ''), url: u }); if (u) t = '/wayfinder ' + u + '\n\n' + t } catch (_) {} } inject(st, t) }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, flex: 'none', background: emptyColor(), borderColor: 'transparent', color: '#140a1e', fontWeight: 600 } }, [Ic({ n: 'search', size: 10 }), narrow ? null : h('span', null, tr('act.inspect'))]))
+          return h(Tip, { content: tr('map.inspectTitle') }, h('button', { className: 'dsws-btn primary' + (narrow ? ' narrow-icon' : '') + ' dsws-hov', 'data-press': 'button', 'data-log': 'list.row.inspect.' + (x.key != null ? x.key : x.number), onClick: function (e: any) { e.stopPropagation(); let t = ''; try { t = inspectPrompt(st, x.number, x.title, effortOf(x)) } catch { const u = typeof issueUrlFor === 'function' ? (function () { try { return issueUrlFor(st, x.number, effortOf(x)) } catch (_) { return '' } })() : '', uu = u || (x.number != null ? '#' + String(x.number) : ''); t = uu ? '/wayfinder ' + uu : '/wayfinder'; try { t = promptTextFor(st, 'mapInspect', { n: (x.number === undefined || x.number === null ? '' : String(x.number)), ['title']: String(x.title || ''), url: u }); if (u) t = '/wayfinder ' + u + '\n\n' + t } catch (_) {} } inject(st, t) }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, flex: 'none', background: emptyColor(), borderColor: 'transparent', color: '#140a1e', fontWeight: 600 } }, [Ic({ n: 'search', size: 10 }), narrow ? null : h('span', null, tr('act.inspect'))]))
         }
         if (mapDone) {
           // 探索地图：子票全关 → 完成（这段逻辑照旧，行为不变）
           // 本次界面反馈需求：这颗按钮自己带按压态与点击日志，否则点它记的是整行那条。
-          return h(Tip, { content: tr('map.doneTitle') }, h('button', { className: 'dsws-btn primary' + (narrow ? ' narrow-icon' : '') + ' dsws-hov', 'data-press': 'button', 'data-log': 'list.row.done.' + (x.key != null ? x.key : x.number), onClick: function (e: any) { e.stopPropagation(); const t = completePrompt(st, x.number, x.title, containerObj.stats.total, containerObj.stats.closed); inject(st, t) }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, flex: 'none', background: doneColor(), borderColor: 'transparent', color: '#0c1a10', fontWeight: 600 } }, [Ic({ n: 'check', size: 10 }), narrow ? null: h('span', null, tr('act.done'))]))
+          return h(Tip, { content: tr('map.doneTitle') }, h('button', { className: 'dsws-btn primary' + (narrow ? ' narrow-icon' : '') + ' dsws-hov', 'data-press': 'button', 'data-log': 'list.row.done.' + (x.key != null ? x.key : x.number), onClick: function (e: any) { e.stopPropagation(); const t = completePrompt(st, x.number, x.title, containerObj.stats.total, containerObj.stats.closed, effortOf(x)); inject(st, t) }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, flex: 'none', background: doneColor(), borderColor: 'transparent', color: '#0c1a10', fontWeight: 600 } }, [Ic({ n: 'check', size: 10 }), narrow ? null: h('span', null, tr('act.done'))]))
         }
         return mkRowAction(st, x, narrow, colorOf)
       })()
@@ -344,9 +347,9 @@ export const listIssueRow = function (h: any, st: any, x: any, isOpen: any, narr
             isContainer ? h('span', { className: 'dsws-chip ' + chipClassOf(kind) + ' ' + containerMarkerClass, style: { fontSize: 11, fontWeight: 600, lineHeight: 1.7, padding: '0 8px' } }, [Ic({ n: 'map', size: 11 }), h('span', null, tr(chipLabelKeyOf(kind)))]) : null,
             // effort 维度：一个仓库多个 effort 时，每行标出它属于哪个 effort（同号票靠这一眼区分）
             (SHOW_EFFORT_BADGE && multiEffort && effortOf(x)) ? h(Tip, { content: effortOf(x) }, h('span', { className: 'dsws-chip dsws-eff', 'aria-label': effortOf(x), style: { fontSize: 10, lineHeight: 1.6, padding: '0 6px', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: 'rgba(88,166,255,.14)', color: '#58a6ff', border: '1px solid rgba(88,166,255,.45)' } }, effortOf(x))) : null,
-            // #1511：编号带上目录（#买咖啡积分/01）；容器同样是「#目录/00」。B 方案：外层上限宽度 + 目录前缀可省略、
-            //   编号尾巴绝不缩小；悬停（Tip）与无障碍名都读完整写法那一串。
-            h(Tip, { content: ticketLabelOf(x.key != null ? x.key : x.number, effortOf(x)) }, h('span', { className: 'dsws-idnum', style: { color: numColor, borderColor: numColor, display: 'inline-flex', alignItems: 'center', maxWidth: TICKET_LABEL_MAX_WIDTH, overflow: 'hidden' } }, ticketLabelNodesOf(h, x.key != null ? x.key : x.number, effortOf(x)))),
+            // #1511：编号带上目录（#买咖啡积分/01）；容器同样是「#目录/00」。#1564 起整颗徽标（上限宽度、两段
+            //   布局、悬停与无障碍名）都走共用组件，本行只给「哪张票 + 哪种外壳 + 这一处主色」。
+            ticketBadgeOf(h, { key: x.key != null ? x.key : x.number, effortId: effortOf(x), surface: 'badge', color: numColor, borderColor: numColor }),
             // #715：写入窗口期给这一行加一枚极轻的「更新中」标记 —— 不改状态、不改布局：
             //   只是编号下面多一小片虚边框的字，窗口一过（host-budget.ts 的 PATCH_MERGE_WINDOW_MS）自己就不画了。
             //   事实来源：写入成功那一处记下的时刻（kernel/api-io.js 的 markRowWrite → st.writeAt）。
@@ -376,13 +379,20 @@ export const listIssueRow = function (h: any, st: any, x: any, isOpen: any, narr
               h(Tip, { content: tr('tip.newSession', { n: x.number }) }, h('button', { className: 'dsws-btn primary' + (narrow ? ' narrow-icon' : ''), 'data-press': 'button', 'data-log': 'list.row.newsession.' + (x.key != null ? x.key : x.number), onClick: function (e: any) { e.stopPropagation(); openInNewSession(st, x) }, style: { textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, flex: 'none', marginLeft: 4, background: primaryColor, borderColor: 'transparent', color: primaryText } }, [Ic({ n: 'external-link', size: 10 }), narrow ? null : h('span', null, tr('list.newSessionLabel'))])),
             ]) : null,
             isOpen ? h('div', { className: 'dsws-aux', style: { display: 'flex', gap: 2, alignItems: 'center', flex: 'none' } }, [
-              // v1.3.3：复制/外链图标增大 11 → 13；Q6 解耦：复制=绝对路径/链接，跳转=按 url 前缀分流（https 开网页，file 盘符调 wf.openPath）
+              // v1.3.3：复制/外链图标增大 11 → 13；Q6 解耦：复制=绝对路径/链接，跳转按后端声明的打开方式分派
+              //   （远程后端开网页，本地 Markdown 的票开文件、地图/规格容器开所在目录；#1557）
               h(Tip, { content: tr('tip.copyLink') }, h('button', { className: 'dsws-btn ghost' + (copyRes === 'ok' ? ' dsws-fb-okflash dsws-fb-success-ring dsws-fb-pop' : '') + (copyRes === 'fail' ? ' dsws-fb-errflash dsws-fb-shake' : ''), 'data-press': 'icon', 'data-log': 'list.row.copy.' + (x.key != null ? x.key : x.number), onClick: function (e: any) { e.stopPropagation(); copyUrl(x) }, style: { textDecoration: 'none', display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }, copyRes === 'ok' ? Ic({ n: 'check', size: 13 }) : (copyRes === 'fail' ? Ic({ n: 'x', size: 13 }) : Ic({ n: 'clipboard', size: 13 })))),
               (function(){
                 const _u = issueUrlFor(st, x.number, effortOf(x));
-                const _isHttp = /^https?:\/\//i.test(String(_u||''));
-                const _openLocal = function(e: any){ e.stopPropagation(); const u=issueUrlFor(st, x.number, effortOf(x)); if(!u) return; if(/^https?:\/\//i.test(String(u))) { try{ window.open(u,'_blank','noreferrer') }catch{} } else { try{ if(typeof host!=='undefined'&&host.call) host.call('wf.openPath',{path:u}) }catch{} } };
-                return _isHttp ? h(Tip, { content: tr('tip.openInTracker', { n: x.number }) }, h('a', { className: 'dsws-btn ghost', href: _u, target: '_blank', rel: 'noreferrer', 'data-press': 'icon', 'data-log': 'list.row.link.' + x.number, style: { textDecoration: 'none', display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }, Ic({ n: 'link', size: 13 }))) : h(Tip, { content: tr('tip.openInTracker', { n: x.number }) }, h('button', { className: 'dsws-btn ghost', onClick: _openLocal, 'data-press': 'icon', 'data-log': 'list.row.link.' + x.number, style: { textDecoration: 'none', display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }, Ic({ n: 'link', size: 13 })));
+                // #1557：打开方式由后端声明（openIssue / openContainer）——列表里的容器行跟地图走（开文件夹），
+                //   普通票开文件；视图不再自己按地址前缀分流。
+                const _kind = (typeof containerKindOf === 'function' && containerKindOf(x)) ? 'container' : 'issue';
+                const _isUrl = openModeFor(st, _kind, _u) === 'url';
+                const _open = function(e: any){ e.stopPropagation(); openTrackerTarget(st, x.number, (typeof host !== 'undefined' ? host : null), effortOf(x), _kind) };
+                const _tip = tr('tip.openInTracker', { n: x.number });
+                return _isUrl
+                  ? h(Tip, { content: _tip }, h('a', { className: 'dsws-btn ghost', href: _u, target: '_blank', rel: 'noreferrer', 'data-press': 'icon', 'data-log': 'list.row.link.' + x.number, style: { textDecoration: 'none', display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }, Ic({ n: 'link', size: 13 })))
+                  : h(Tip, { content: _tip }, h('button', { className: 'dsws-btn ghost', onClick: _open, 'data-press': 'icon', 'data-log': 'list.row.link.' + x.number, style: { textDecoration: 'none', display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }, Ic({ n: 'link', size: 13 })));
               })(),
             ]) : null,
           ]),

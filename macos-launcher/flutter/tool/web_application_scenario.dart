@@ -194,7 +194,15 @@ class WebProbeOptions {
       copied.exitCode == 0,
       'private project layer matches this candidate source and complete membership: ${copied.stderr}',
     );
-    for (final name in ['node', 'desktop', 'node_modules', 'bin', 'service']) {
+    for (final name in [
+      'node',
+      'desktop',
+      'node_modules',
+      'bin',
+      'service',
+      'plugins',
+      'plugin-payload.json',
+    ]) {
       if (name == 'desktop' &&
           Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] != null) {
         final desktopCopy = await Process.run('/usr/bin/ditto', [
@@ -244,8 +252,7 @@ Future<void> runWebApplicationScenario({
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
   final password = 'isolated-web-probe-password';
   Process? host = prestartedHost;
-  final independentHost =
-      options.backend == 'headless' && prestartedHost == null;
+  final independentHost = prestartedHost == null;
   int? ownedManagerPid;
   late WebSdkRequest sdkControl;
   LauncherServer? server;

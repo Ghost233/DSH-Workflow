@@ -45,6 +45,7 @@ if not (resources / 'desktop/DeepSeek Harness.app').is_dir():
     raise SystemExit('build-release: 缺少完整 Desktop 应用')
 PY
 plugin_report="$(node macos-launcher/runtime/plugin-payload.mjs verify "$APP_PATH/Contents/Resources" "$REPO_ROOT")"
+superagent_report="$(node macos-launcher/runtime/superagent-payload.mjs verify "$APP_PATH/Contents/Resources" "$REPO_ROOT")"
 exe="$APP_PATH/Contents/MacOS/Ghost DSH Station"
 [[ -s "$exe" ]] || die "可执行文件缺失或为空：$exe"
 [[ "$(lipo -archs "$exe")" == arm64 ]] || die '启动器可执行文件必须为 ARM64'
@@ -72,10 +73,10 @@ hdiutil create -format UDZO -volname 'Ghost DSH Station' -srcfolder "$STAGING_DI
 hdiutil verify "$STAGING_DIR/assets/$DMG_NAME"
 [[ -s "$STAGING_DIR/assets/$DMG_NAME" ]] || die 'DMG 为空'
 source_commit="$(git rev-parse HEAD)"
-python3 - "$STAGING_DIR/assets" "$DMG_NAME" "$VERSION" "$DSH_VERSION" "$source_commit" "$plugin_report" <<'PY'
+python3 - "$STAGING_DIR/assets" "$DMG_NAME" "$VERSION" "$DSH_VERSION" "$source_commit" "$plugin_report" "$superagent_report" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
-directory, name, version, dsh, commit, plugins = sys.argv[1:]
+directory, name, version, dsh, commit, plugins, superagent = sys.argv[1:]
 root = Path(directory)
 dmg = root / name
 digest = hashlib.sha256()
@@ -83,7 +84,7 @@ with dmg.open('rb') as file:
     for chunk in iter(lambda: file.read(1024 * 1024), b''):
         digest.update(chunk)
 manifest = {'version': version, 'tag': 'macos-v' + version, 'sourceCommit': commit,
-            'dshVersion': dsh, 'pluginPayload': json.loads(plugins),
+            'dshVersion': dsh, 'pluginPayload': json.loads(plugins), 'superagentPayload': json.loads(superagent),
             'assets': [{'name': name, 'sha256': digest.hexdigest(), 'size': dmg.stat().st_size}]}
 (root / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
 PY

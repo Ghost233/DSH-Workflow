@@ -194,9 +194,10 @@ export function createDeckToolsForHost(toolDeps: unknown): unknown {
   const base = ((toolDeps as UnknownRecord | null | undefined) || {}) as UnknownRecord;
   // #1003 补声明文件这一层：工具壳新增的 readDeclarationId 缺席时，由装配层按现有文件服务现拼一个。
   //   读与解析与探测器同路径同口径（docs/agents/issue-tracker.md + parseIssueTracker），不另起第二套。
-  let readDeclarationId = base.readDeclarationId as ((rootCwd: unknown) => Promise<string | null>) | undefined;
+  // #1572：声明读法要把解析器的置信度一并交回判定层；低置信只作证据（方案 A），不再只回一个 id。
+  let readDeclarationId = base.readDeclarationId as ((rootCwd: unknown) => Promise<unknown>) | undefined;
   if (typeof readDeclarationId !== 'function') {
-    readDeclarationId = async function (rootCwd: unknown): Promise<string | null> {
+    readDeclarationId = async function (rootCwd: unknown): Promise<unknown> {
       try {
         const backendHolder = base as { backendCtx?: () => unknown };
         const backendObj = (typeof backendHolder.backendCtx === 'function' ? backendHolder.backendCtx() : (base.backendCtx || {})) as UnknownRecord | null;
@@ -210,12 +211,16 @@ export function createDeckToolsForHost(toolDeps: unknown): unknown {
         const raw = (raced && raced.ok === true) ? raced.value : null;
         if (!raw) return null;
         const { parseIssueTracker, normalizeTrackerText } = await import('../../tracker/detection/parseIssueTracker.js');
-        const parseFn = parseIssueTracker as (text: string) => { explicitBackendId?: unknown } | null;
+        const parseFn = parseIssueTracker as (text: string) => { explicitBackendId?: unknown; confidence?: unknown; reason?: unknown } | null;
         const normalizeFn = normalizeTrackerText as (text: string) => string;
         const parsed = parseFn(normalizeFn(raw as string));
         if (parsed && parsed.explicitBackendId) {
           // 未注册的 id 由调用方按“未知层跳过”处理，这里只透传文本结论。
-          return parsed.explicitBackendId as string;
+          // 高置信与低置信都回同一形状（#1572）：高置信不带原因，判定层按缺省的 declaration-hit 记；
+          // 低置信把解析器原因一并带上（步骤原因 declaration-low-<原因>），判定层只把它当证据、不当结论。
+          const hint: { id: string; confidence: 'high' | 'low'; reason?: string } = { id: parsed.explicitBackendId as string, confidence: parsed.confidence === 'low' ? 'low' : 'high' };
+          if (parsed.confidence === 'low' && typeof parsed.reason === 'string' && parsed.reason) hint.reason = parsed.reason;
+          return hint;
         }
         return null;
       } catch {
@@ -230,10 +235,25 @@ export function createDeckToolsForHost(toolDeps: unknown): unknown {
   // 本票的读缓存先从账本即时读（同步过就有数，没同步过就诚实报未知，未知不拦事）。
   const ports = buildTrackerPorts(base);
   // 装配后的依赖包换一个名字：与入参同名叫 toolDeps 时是重复声明（TS2300，宿主与刷新两份配置各报一次）。
-  const mergedDeps = Object.assign({}, base, { readDeclarationId, decideBackend: decideBackendFn });
+  // #1627：观察器钩子与「谁发起、记哪一档」随依赖包交给工具壳（B 在 tracker-session 里消费）：
+  //   opHooks 是逐笔操作的开始/结束（桥把宿主传来的 onOpStart/onOpEnd 拼成管线要的两支），
+  //   onToolReceipt 是坏/慢/贵工具的回执；caller/account 标明这条路是工具调用、记 ai-tool 档。
+  //   没传的保持 undefined，下游按缺席处理（老装配方不传，行为不变）。
+  const mergedDeps = Object.assign({}, base, {
+    readDeclarationId,
+    decideBackend: decideBackendFn,
+    opHooks: { onStart: base.onOpStart, onEnd: base.onOpEnd },
+    caller: 'deck-tool',
+    // #1627：这一格是「记到账本哪一档」的字符串；记账口另放 accountPort（见下），
+    // 两个不能同名——tracker-session 把端口递给 openTracker 的 accountPort，档位递给 account。
+    account: 'ai-tool',
+    onToolReceipt: base.onToolReceipt,
+  });
   if (typeof mergedDeps.getCachedReading !== 'function') mergedDeps.getCachedReading = ports.getCachedReading;
   if (typeof mergedDeps.admit !== 'function') mergedDeps.admit = ports.admit;
-  if (typeof mergedDeps.account !== 'function') mergedDeps.account = ports.account;
+  // 记账口：老依赖袋里它叫 account（函数），#1627 起改叫 accountPort —— 装配方若已给了一份
+  // 函数就不覆盖（门禁直调工厂时自带桩），否则用桥自己这一份（写 'ai-tool' 档的那个端口）。
+  if (typeof mergedDeps.accountPort !== 'function') mergedDeps.accountPort = ports.account;
   return createTools(DECK_TOOL_FACTORIES, { toolDeps: mergedDeps })
 }
 
@@ -255,6 +275,10 @@ export function createDeckToolBridge(deps: any): any {
   const ledger = d.ledger
   const logCtx = d.logCtx
   const workspaceKeyOf = d.workspaceKeyOf
+  // #1627：配额诊断观察器的三支（宿主接线时传；没传就是 undefined，一路按缺席处理）。
+  const onOpStart = d.onOpStart
+  const onOpEnd = d.onOpEnd
+  const onToolReceipt = d.onToolReceipt
   let deckToolsP: Promise<any> | null = null
   async function deckToolsForHost(): Promise<any> {
     if (!deckToolsP) {
@@ -289,7 +313,7 @@ export function createDeckToolBridge(deps: any): any {
           isEnabled: function (level: any): any { try { return logCtx ? logCtx.isEnabled(level) : (level === 'error' || level === 'warn') } catch (e: any) { return level === 'error' || level === 'warn' } },
           // #1159：出站控制面（进程级能力，随这份后端上下文注入一次）。房间起 gh 命令前拿名额、
           // 认取消、写完记账都从这里取；缺了房间按环境失败返回，不静默绕过名额闸。
-          outbound: createOutboundControl(),
+          outbound: createOutboundControl(logCtx),
         }
         /**
          * #1150：批量建图的计划游标存储器，按这一次调用的工作区现造一份落盘的。
@@ -371,6 +395,10 @@ export function createDeckToolBridge(deps: any): any {
           //（原先还点着 tests/verify-deck-tools-host-wiring.js，那条门禁 2026-10-14 整份删掉了：
           //  它的判据没有一条是独占的，见 #1173。）
           workspaceKeyOf: workspaceKeyOf,
+          // #1627：观察器三支原样递给工具壳（壳把它们拼进 mergedDeps，见 createDeckToolsForHost）。
+          onOpStart: onOpStart,
+          onOpEnd: onOpEnd,
+          onToolReceipt: onToolReceipt,
           now: Date.now,
         })
         return Object.assign({ reason: '', files: DECK_TOOL_FILES }, built)

@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const sha = value => createHash('sha256').update(value).digest('hex')
-const frozenMainSha256 = 'f05dd366f6c468bedd83f07372bc59d3d6b3f6bcc6950565c8b4173597e3ba93'
+const frozenMainSha256 = '9712da3c65d5d4262da7e6d41dad30586070c8eb47f078c62165de2bdba572c3'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const members = { 'workflow-desktop-client.mjs': 'desktop-client.mjs', 'service-control.mjs': 'service-control.mjs',
   'workflow-release.mjs': 'workflow-release.mjs' }

@@ -61,6 +61,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     state: ServiceState.stopped,
     ready: false,
   );
+  ServiceStatus _superagent = ServiceStatus(
+    state: ServiceState.stopped,
+    ready: false,
+  );
+  bool superagentBusy = false;
   bool _observingWeb = false, _observingService = false;
   bool _windowVisible = true;
   Process? _statusObserver;
@@ -76,6 +81,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void>? _desktopOpen;
   ServiceStatus get snapshot => _web;
   ServiceStatus get serviceSnapshot => _service;
+  ServiceStatus get superagentSnapshot => _superagent;
   String? get logInstanceId => _logInstanceId;
   bool get logsTruncated => _logsDropped;
   bool get isActive =>
@@ -111,6 +117,17 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
     if (File(script('web-cli.mjs')).existsSync()) {
       await _observeWeb();
+    }
+    if (File(script('superagent-service.mjs')).existsSync()) {
+      try {
+        await _superagentCommand('status');
+      } catch (failure) {
+        _superagent = ServiceStatus(
+          state: ServiceState.failed,
+          ready: false,
+          message: failure.toString(),
+        );
+      }
     }
   }
 
@@ -241,6 +258,60 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     sdkMessage = message;
     notifyListeners();
   }
+
+  Future<Map<String, Object?>> _superagentCommand(String action) async {
+    final child = await _startProcess(node, [
+      script('superagent-service.mjs'),
+      action,
+      environment.dataRoot,
+      environment.resources,
+    ], environment: {...Platform.environment}..remove('DSH_LAUNCH_PASSWORD'));
+    final output = child.stdout.transform(utf8.decoder).join();
+    final diagnostics = child.stderr.transform(utf8.decoder).join();
+    final code = await child.exitCode;
+    final text = await output;
+    final stderr = await diagnostics;
+    if (text.trim().isEmpty) {
+      throw StateError('Superagent 管理入口退出 $code：$stderr');
+    }
+    final reply = objectValue(jsonDecode(text));
+    if (code != 0 || reply['ok'] != true) {
+      throw StateError(
+        reply['error'] as String? ?? 'Superagent 管理入口退出 $code：$stderr',
+      );
+    }
+    final value = objectValue(reply['value']);
+    _superagent = ServiceStatus.fromJson(objectValue(value['service']));
+    if (!_closed) notifyListeners();
+    return value;
+  }
+
+  Future<void> _manageSuperagent(String action) async {
+    if (_closed || superagentBusy) return;
+    superagentBusy = true;
+    notifyListeners();
+    try {
+      final value = await _superagentCommand(action);
+      if (action == 'open') await native.openUrl(value['url'] as String);
+    } catch (failure) {
+      if (action == 'start' || action == 'status') {
+        _superagent = ServiceStatus(
+          state: ServiceState.failed,
+          ready: false,
+          message: failure.toString(),
+        );
+      }
+      rethrow;
+    } finally {
+      superagentBusy = false;
+      if (!_closed) notifyListeners();
+    }
+  }
+
+  Future<void> startSuperagent() => _manageSuperagent('start');
+  Future<void> stopSuperagent() => _manageSuperagent('stop');
+  Future<void> refreshSuperagent() => _manageSuperagent('status');
+  Future<void> openSuperagent() => _manageSuperagent('open');
 
   Future<Map<String, Object?>> _serviceCommand(
     String type, {

@@ -40,6 +40,10 @@ plugins = json.loads(Path('project-plugins.json').read_text())['plugins']
 expected_plugins = [dict(package=p['package'], version=p['version'], **({'commit': p['commit']} if p.get('source') == 'git' else {}))
                     for p in plugins if p.get('startup') is True]
 assert payload.get('plugins') == expected_plugins, 'manifest 插件版本、Git 提交或清单覆盖不一致'
+superagent = value.get('superagentPayload', {})
+source = json.loads(Path('vendor/dsh-superagent.upstream.json').read_text())
+assert re.fullmatch(r'[0-9a-f]{64}', superagent.get('sha256', '')), 'manifest 缺少 Superagent 本体交付校验'
+assert all(superagent.get(key) == source.get(key) for key in ('repository', 'commit', 'package', 'version')), 'manifest Superagent 来源不一致'
 assert len(value['assets']) == 1 and value['assets'][0]['name'] == expected, f"manifest assets 不符合预期：{value.get('assets')}"
 assert value['assets'][0]['size'] == (root / expected).stat().st_size, 'manifest size 不一致'
 digest = hashlib.sha256()

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/Ghost233/ghost-agent-market",
-  "commit": "55fcbca4cc807eea5259950f1a9e1639d9f60b4b",
+  "commit": "dff3f83a00a85e24eed5c7952e58c1eae6189b7b",
   "path": "codex-market/plugins/mattpocock-skills-zh",
-  "tree": "ba053df3d4a2467a34566395e570f2e7bafd937a",
-  "version": "0.1.6+codex.20261013165125",
+  "tree": "63525b68a74d00856e4e4d07b9ed5303b9169e78",
+  "version": "0.1.8+codex.20261027155632",
   "license": "MIT"
 }

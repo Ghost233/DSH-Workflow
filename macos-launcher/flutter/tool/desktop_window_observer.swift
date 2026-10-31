@@ -47,13 +47,31 @@ do {
   var previous = ""
   var boundPid: pid_t?, boundStart: (UInt64, UInt64)?
   func sample(_ phase: String = "sample") {
-    let matches = NSWorkspace.shared.runningApplications.filter {
+    let candidates = NSWorkspace.shared.runningApplications.filter {
       !$0.isTerminated && $0.bundleURL.flatMap { canonical($0.path) } == bundlePath
     }
     let frontmost: Any = NSWorkspace.shared.frontmostApplication?.processIdentifier as Any? ?? NSNull()
     var facts: [String: Any] = ["frontmostPid": frontmost, "ownershipKnown": true, "running": false,
       "pid": NSNull(), "onscreenWindowCount": 0, "windows": []]
-    if matches.count > 1 { facts["ownershipKnown"] = false }
+    // The independent Host may run helper commands with the same Electron
+    // executable. Do not bind a transient Host child as the Desktop client.
+    let receiptURL = rootURL.appendingPathComponent("data/global/.dsh-workflow/desktop/desktop-host.json")
+    let receipt = (try? Data(contentsOf: receiptURL)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    let hostPid = (receipt?["pid"] as? NSNumber)?.int32Value
+    var matches: [NSRunningApplication] = []
+    var known = candidates.isEmpty || hostPid != nil
+    if let hostPid {
+      for candidate in candidates {
+        var identity = proc_bsdinfo()
+        let size = MemoryLayout<proc_bsdinfo>.stride
+        if proc_pidinfo(candidate.processIdentifier, PROC_PIDTBSDINFO, 0, &identity, Int32(size)) != Int32(size) || identity.pbi_uid != getuid() {
+          known = false
+        } else if identity.pbi_ppid != UInt32(hostPid) {
+          matches.append(candidate)
+        }
+      }
+    }
+    if !known || matches.count > 1 { facts["ownershipKnown"] = false }
     else if let app = matches.first {
       var identity = proc_bsdinfo()
       let size = MemoryLayout<proc_bsdinfo>.stride

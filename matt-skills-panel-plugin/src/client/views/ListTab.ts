@@ -22,6 +22,8 @@ declare const CONTAINER_CHIP_MARKER_CLASS: any;
 declare function containerKindOf(...args: any[]): any;
 declare function closedPagesNode(...args: any[]): any;
 declare function listFilterRowNode(...args: any[]): any;
+// #1639：顶部那排 md目录签的画法与目录名文字上限（内联流跨行切断，见 views/mdEffortRow.ts）。
+declare function mdEffortRowNode(...args: any[]): any;
 declare function compute(...args: any[]): any;
 declare function darken(...args: any[]): any;
 declare function deckCountsOf(...args: any[]): any;
@@ -176,7 +178,7 @@ export     const ListTab = ({ st, narrow }: any) => {
       // effort 维度：仓库里有几个 effort（去重排序，来自共享小件；单 effort 后端恒 []，界面不变）
       const effortNames = effortNamesOf(st)
       const multiEffort = effortNames.length > 1
-      // effort 筛选（会话私有，不持久化）：没选=全部；选了=只看这些 effort 的行
+      // md目录签筛选（会话私有，不持久化）：没选=全部；选了=只看这一个工作单元的行
       const effPass = function (x: any) {
         const sel = st.effFilters || []
         return !sel.length || sel.indexOf(effortOf(x)) >= 0
@@ -378,21 +380,10 @@ export     const ListTab = ({ st, narrow }: any) => {
           // T2 #2：刷新按钮已上移至面板 tabs 行（页内浮窗退役后，面板只有右侧边栏这一处）
         ]),
         // B Timeline 定版（2026-08-28）：「N 项环境未就绪」红条已移除（顶部无错误信息；状态由检查页行级表达）
-        // effort 筛选行（仅多 effort 仓库出现）：点一下只看某个 effort，再点取消；与状态/label 过滤叠加
-        multiEffort ? h('div', { style: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginBottom: 6 } }, [
-          h('span', chipProps({ key: 'eff-all', className: 'dsws-chip dsws-hov', 'data-press': 'chip', 'data-log': 'list.effort.all', onClick: function (e: any) { e.stopPropagation(); st.effFilters = []; emit(st) }, style: { cursor: 'pointer', fontSize: 10, background: !(st.effFilters || []).length ? 'rgba(88,166,255,.18)' : 'rgba(255,255,255,.06)', color: !(st.effFilters || []).length ? '#58a6ff' : 'var(--dsw-alias-label-secondary,#a1a1aa)', border: '1px solid ' + (!(st.effFilters || []).length ? 'rgba(88,166,255,.6)' : 'rgba(255,255,255,.15)') } }), tr('list.all')),
-          effortNames.map(function (nm: any, i: any) {
-            const on = (st.effFilters || []).indexOf(nm) >= 0
-            // 本次界面反馈需求：effort 药丸能点（只看某个 effort），给它自己的按压态与点击日志；
-            //   定位串用序号（effort 名可能是任意字符，进不了定位串）。
-            return h(Tip, { content: nm }, h('span', chipProps({ key: 'eff-' + nm, className: 'dsws-chip dsws-hov', 'aria-label': nm, 'data-press': 'chip', 'data-log': 'list.effort.' + i, onClick: function (e: any) {
-              e.stopPropagation()
-              const cur = st.effFilters || []
-              st.effFilters = on ? cur.filter(function (x: any) { return x !== nm }) : cur.concat([nm])
-              emit(st)
-            }, style: { cursor: 'pointer', fontSize: 10, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: on ? 'rgba(88,166,255,.18)' : 'rgba(255,255,255,.06)', color: on ? '#58a6ff' : 'var(--dsw-alias-label-secondary,#a1a1aa)', border: '1px solid ' + (on ? 'rgba(88,166,255,.6)' : 'rgba(255,255,255,.15)') } }), nm))
-          }),
-        ]) : null,
+        // md目录签（仅多 effort 仓库出现）：一次只看一个工作单元，再点同一颗回到全部；与状态/label 过滤叠加。
+        // #1639：这排的排布（普通内联流、行尾照字面切断、slice 封口）与目录名的文字上限（19 个数字的宽度 +
+        //   末尾省略号）都住在 views/mdEffortRow.ts —— 排布要能用真浏览器量，画法与判据放在同一份真源。
+        multiEffort ? mdEffortRowNode(h, st, effortNames) : null,
         listFilterRowNode(h, st, colorOf, sortedLabels),
         // #690：历史票翻页那一行 —— 「已加载 x / 共 N」、翻页位置失效、取不到、后端不支持翻页各说各的
         //   （出处见 views/ListTabClosed.js 的注释；x 与折叠行那两个数同源：就是当前列表里真的画出来的行数）。

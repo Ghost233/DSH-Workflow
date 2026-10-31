@@ -112,7 +112,12 @@ export const GENERIC_CATALOG: readonly CatalogItem[] = Object.freeze([
 ])
 
 /** GitHub 后端检查目录（仅 github 适用，物理隔离，其他后端该行不存在）。
- * #227 D7：仓库定位(c1 backend) / gh CLI(c4) / gh 登录(c5) / API 可达(c6) 4 项迁移，语义与 9 项一致；gh:labels 保留作仓库就绪链标签引导。
+ * #227 D7：仓库定位(c1 backend) / gh CLI(c4) / gh 登录(c5) / API 可达(c6) 4 项迁移，语义与 9 项一致。
+ * 2026-10-27（#1223）：删掉一项已退役的旧标签检查。它当时只在这份目录里、不在 GitHub 房的模块检查表里，
+ *   靠运行期一条过滤把多出来的行藏住；删掉之后目录与模块检查表一致。
+ * 2026-10-27 当天稍晚：GitHub 房的模块检查表（src/tracker/rooms/github/checks.ts）改成直接由这份目录派生，
+ *   不再手抄第二份——「目录与检查表各说各话」从此在结构上不可能出现
+ *   （tests/verify-1223-catalog-runtime-parity.ts 里的逐项断言保留作回归锁）。
  */
 export const GITHUB_CATALOG: readonly CatalogItem[] = Object.freeze([
   {
@@ -148,14 +153,6 @@ export const GITHUB_CATALOG: readonly CatalogItem[] = Object.freeze([
     backends: ['github'],
     check: { kind: 'backend', id: 'repoAccess', backendId: 'github' },
     origin: 'backends/github/preflight.js:3 / inventory 类别 8 c6',
-  },
-  {
-    id: 'gh:labels',
-    label: '标签已齐（10 核心标签）',
-    scope: 'backend',
-    backends: ['github'],
-    check: { kind: 'backend', id: 'labels', backendId: 'github' },
-    origin: 'host/checkLabels / inventory 类别 4/6',
   },
 ])
 
@@ -229,6 +226,12 @@ export const MARKDOWN_CATALOG: readonly CatalogItem[] = Object.freeze([
   },
 ])
 
+// 冻结目录项本身（不只是数组）：GitHub 房的模块检查表现在直接引用这些对象、不再各持一份副本；
+// 元素如果可变，谁都能通过模块表改掉目录里的字，唯一真源就被绕过了。
+for (const list of [GENERIC_CATALOG, GITHUB_CATALOG, GITLAB_CATALOG, MARKDOWN_CATALOG]) {
+  for (const item of list) Object.freeze(item)
+}
+
 /** 全量目录（按 scope 分组，供编排链票直接合并）。 */
 export const ALL_CATALOGS = Object.freeze({
   generic: GENERIC_CATALOG,
@@ -268,6 +271,19 @@ export function catalogFor(backendId: 'github' | 'markdown' | 'gitlab' | null | 
 }
 
 /**
+ * 取某个后端的后端段（该后端链上真正要做检查的行，按目录顺序；通用项不在此列）。
+ *
+ * 约定：先按 catalogFor 取「通用 + 该后端」，再只留 scope==='backend'；未知后端得到空数组，不抛错。
+ * 反例是各调用方各写一遍 `scope === 'backend'` 过滤——今天写法一样，明天就可能有一处漏改。
+ *
+ * @param {'github'|'markdown'|'gitlab'|null|undefined} backendId
+ * @returns {CatalogItem[]}
+ */
+export function backendItemsOf(backendId: 'github' | 'markdown' | 'gitlab' | null | undefined): CatalogItem[] {
+  return catalogFor(backendId).filter((item) => item.scope === 'backend')
+}
+
+/**
  * 必迁映射（inventory 类别 8 → 本目录 id），供下游 227-231 直接消费。
  */
 export const MIGRATION_MAP = Object.freeze({
@@ -276,10 +292,9 @@ export const MIGRATION_MAP = Object.freeze({
   'skill:ask-matt': 'GENERIC_CATALOG[2]',
   'env:home': 'GENERIC_CATALOG[3]',
   'tracker:initialized': 'GENERIC_CATALOG[4]',
-  'gh:installed': 'GITHUB_CATALOG[0]',
-  'gh:authed': 'GITHUB_CATALOG[1]',
-  'gh:repoAccess': 'GITHUB_CATALOG[2]',
-  'gh:labels': 'GITHUB_CATALOG[3]',
+  'gh:installed': 'GITHUB_CATALOG[1]',
+  'gh:authed': 'GITHUB_CATALOG[2]',
+  'gh:repoAccess': 'GITHUB_CATALOG[3]',
   'glab:installed': 'GITLAB_CATALOG[0]',
   'glab:authed': 'GITLAB_CATALOG[1]',
   'glab:repoAccess': 'GITLAB_CATALOG[2]',

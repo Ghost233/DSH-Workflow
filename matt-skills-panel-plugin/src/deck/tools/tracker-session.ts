@@ -6,12 +6,16 @@
 // 不花额度），离网后端跳过剩余额度探针（没有额度可言，直接放行），额度只在管线里按
 // 后端口径裁决与记账。九个工具的 work 闭包一个字不动，只换 pick 与 call 两个调用点。
 import { openTracker } from '../../tracker/session/open-tracker.js'
+import { adaptSession } from './tracker-session-adapt.js'
+import { resolveSessionRepoRef } from '../../tracker/session/repo-ref.js'
 import type { TrackerSession } from '../../tracker/session/open-tracker.js'
+import type { RepositoryRef } from '../../tracker/contract/entities.js'
 import { selectionFromOutlet } from '../../tracker/detection/backendDecision.js'
 import { tierFor, aiToolFloor } from '../../refresh/kernel/host-budget.js'
 import { recordWorkRoute } from '../shell/work-path-record.js'
 import { DECK_STATUS, DECK_TOOL_KIND, REFUSAL_REASONS, receiptCost } from '../shell/call-shell.js'
 import { withCap } from '../shell/capped-wait.js'
+import { TOOL_RECEIPT_SLOW_MS } from '../../shared/time-config/src/values.js'
 
 /** 未知形状的记录（依赖袋与会话壳都没标类型，用到哪格验哪格，不猜）。 */
 type UnknownRecord = Record<string, unknown>;
@@ -32,6 +36,14 @@ let deckOpSeq = 0;
 function newDeckOpId(nowFn: () => number): string {
   try { return String(nowFn()) + '-' + (++deckOpSeq).toString(36); } catch { return 'op-' + (++deckOpSeq).toString(36); }
 }
+
+/**
+ * #1627 逐笔回执的三条门槛：失败、慢到 3 秒、贵到 3 点。
+ * 为什么只在这三种时候发：每笔都记会和房间日志重复，还把真正要看的那几笔淹掉；这三条正好
+ * 对应「这一笔为什么不对劲」的三种答案——结果不对、慢得反常、额度花得反常。
+ * 两个数都取整、偏小（3000 毫秒、3 点）：门槛越低越不容易漏掉异常笔，宁可多留几条。
+ */
+const TOOL_RECEIPT_EXPENSIVE_POINTS = 3; // 慢的门槛 TOOL_RECEIPT_SLOW_MS 住 config/intervals.yaml（toolReceiptSlowMs），这里不许写第二份数字
 
 /** 打开会话要齐的东西（工具把自己手头现成的递进来，本层不替工具算估算、不探沙箱）。 */
 export interface DeckSessionRequest {
@@ -209,13 +221,17 @@ export async function openDeckSession(req: DeckSessionRequest): Promise<DeckOpen
   }
   const getCachedReading = (typeof d.getCachedReading === 'function') ? d.getCachedReading as () => unknown : async function (): Promise<unknown> { return { known: false, reason: 'not-measured' }; };
   const admitPort = (typeof d.admit === 'function') ? d.admit as (input: unknown) => Promise<unknown> : fallbackAdmit;
-  const accountPort = (typeof d.account === 'function') ? d.account as (input: unknown) => Promise<unknown> : async function (): Promise<void> { /* 依赖袋没配记账口：无处可记，零记账。 */ };
   const snapshot = selection;
   let opened: { ok: boolean; session?: TrackerSession; reason?: string; detail?: string };
   try {
     opened = (await openTracker({ cwd: cwd } as never, {
       registry: registry as never, getCachedReading: getCachedReading as never,
-      admit: admitPort as never, account: accountPort as never,
+      // #1627：记账口读 d.accountPort（桥从老依赖袋那个函数 account 搬过来，并保证它一定是函数）；
+      // d.account 现在是「记到账本哪一档」的字符串（'ai-tool'），不能再当记账口用。
+      admit: admitPort as never, accountPort: d.accountPort as never,
+      // #1627：deck 工具这条路记 'ai-tool' 档、发起人是工具调用、用途是普通取数；
+      // 逐笔钩子按依赖袋原样递给管线（盒子没装钩子就没有观察，行为与从前一字不差）。
+      caller: DECK_TOOL_KIND, account: 'ai-tool', purpose: '', opHooks: d.opHooks as never,
       canWrite: true, canWriteReason: '1442 在工具侧保留自有写检查，会话写权限先按就绪透传，1444 再收紧。',
       resolveSelection: async function () { return snapshot as never; },
     })) as { ok: boolean; session?: TrackerSession; reason?: string; detail?: string };
@@ -228,46 +244,32 @@ export async function openDeckSession(req: DeckSessionRequest): Promise<DeckOpen
     if (reason === 'no-backend') return { ok: false, reason: REFUSAL_REASONS.NO_BACKEND, text: '这个工作区还没有后端（既没有手动选过，也没有识别到锚文件）。先在面板上选一个后端。' };
     return { ok: false, reason: REFUSAL_REASONS.BACKEND_THREW, text: '选中的后端还没就绪（' + (detail || reason || '没说清原因') + '），我没往下做。' };
   }
-  // 仓库标识补全：与原来同一场竞速（会话定位口与等待上限拼速度）。#1453 起问会话自己的能力：
-  // 仓库定位是出站动作，要过裁决与记账；注册表的取实例口不再对 deck 工具公开。
+  // 仓库标识补全：判定出口带的先用；缺 refId 时与刷新后台走同一份补齐
+  // （src/tracker/session/repo-ref.ts）：先问会话的 describe（本地 Markdown 在这里就能拿到工作区
+  // 路径），仍缺再问会话的 getRepoKey 远端定位口，拿到 owner/name 后由后端 describe 写完整身份
+  // （域名不在这里拼）。#1453 起这一问必须走会话能力：仓库定位是出站动作，要过裁决与记账；
+  // 注册表的取实例口不再对 deck 工具公开。#1583 起不按后端名写死、也不再自己拼 github.com。
   let ref: UnknownRecord | null = (selection.ref || null) as UnknownRecord | null;
   if (!ref || !ref.refId) {
-    try {
-      const sessionAny = opened.session as unknown as UnknownRecord;
-      const keyFn = sessionAny.getRepoKey as ((cwd: string, ctx: unknown) => Promise<unknown>) | undefined;
-      if (typeof keyFn === 'function') {
-        const cap = (typeof d.resolveTimeoutMs === 'number' && (d.resolveTimeoutMs as number) > 0) ? Math.floor(d.resolveTimeoutMs as number) : 8000;
-        // 竞速实现见 ../shell/capped-wait.ts（#1114 第二批）：到点就清等待定时器；超时与对方抛错
-        // 都回「没等到」，与原来 sleepFn 赢下竞速回 null 同形。
-        const keyed = await withCap(Promise.resolve().then(function () { return keyFn.call(sessionAny, cwd, Object.assign({}, backendCtxNow(d), { cwd: cwd, caller: DECK_TOOL_KIND })); }), cap, (typeof d.sleep === 'function') ? d.sleep as (ms: number) => Promise<unknown> : undefined);
-        const kRec = ((keyed.ok === true) ? keyed.value : null) as UnknownRecord | null;
-        if (kRec && typeof kRec.owner === 'string' && kRec.owner && typeof kRec.name === 'string' && kRec.name) {
-          const refId = kRec.owner + '/' + kRec.name;
-          ref = { backend: backendId, refId: refId, name: refId, url: 'https://github.com/' + refId };
-        }
-      }
-    } catch { /* 补不上就用判定出口给的（可能为空），下游照旧诚实失败。 */ }
+    const cap = (typeof d.resolveTimeoutMs === 'number' && (d.resolveTimeoutMs as number) > 0) ? Math.floor(d.resolveTimeoutMs as number) : 8000;
+    // 补身份整段与等待上限赛跑：describe 是同步的，真正可能悬挂的是远端那一问；整段一起限时
+    // 也覆盖将来 describe 换成异步实现的情形。等待口缺席时用真定时器（与旧行为一致）。
+    const resolved = await withCap(
+      resolveSessionRepoRef({
+        session: opened.session,
+        cwd: cwd,
+        backendId: backendId,
+        fromSelection: (ref as unknown as RepositoryRef | null),
+        baseCtx: backendCtxNow(d),
+        caller: DECK_TOOL_KIND,
+      }),
+      cap,
+      (typeof d.sleep === 'function') ? d.sleep as (ms: number) => Promise<unknown> : undefined,
+    );
+    const maybe = (resolved.ok === true) ? (resolved.value as { ref?: RepositoryRef | null } | null) : null;
+    if (maybe && maybe.ref) ref = maybe.ref as unknown as UnknownRecord;
   }
   return { ok: true, backendId: backendId, source: source, ref: ref, pending: !!selection.pending, requests: num(est.requests), points: num(est.points), session: opened.session, admit: admit };
-}
-
-/** 管线执行层失败（房间抛错被管线收成 env）与旧口径的对照：旧壳认 backend-threw 才抛，这里改写一格再交出去。 */
-const ADAPT_OPS = ['get', 'list', 'getDependencies', 'create', 'setParent', 'setBlockedBy', 'preflight', 'getRepoPermissions', 'close', 'reopen', 'comment', 'update', 'setLabels', 'setAssignees'];
-/** 把会话包成预算壳认得的后端门面：方法名与 withCallScope 要的那十四条对齐，env 改写成 backend-threw。 */
-function adaptSession(session: TrackerSession): UnknownRecord {
-  const room = (session || {}) as unknown as UnknownRecord;
-  const out: UnknownRecord = {};
-  for (const name of ADAPT_OPS) {
-    out[name] = async function (...args: unknown[]): Promise<unknown> {
-      const fn = room[name] as ((...a: unknown[]) => Promise<unknown>) | undefined;
-      if (typeof fn !== 'function') throw new Error('这次没拿到后端实现，我没往下做。');
-      const got = (await fn(...args)) as UnknownRecord | null;
-      const err = (got && got.ok === false) ? (got.error || null) as UnknownRecord | null : null;
-      if (err && str(err.kind) === 'env') return { ok: false, error: { kind: 'backend-threw', message: str(err.message) || '执行层没回来' } };
-      return got;
-    };
-  }
-  return out;
 }
 
 /** 调一次会话要齐的东西（openDeckSession 的成功那一支原样递进来，工具再加自己的 repo 与沙箱）。 */
@@ -369,6 +371,23 @@ function openedBackendIdOf(session: TrackerSession): string {
 }
 
 /**
+ * #1627 逐笔回执：只在失败、慢（≥ 3000 毫秒）、贵（≥ 3 点）三种情况发一条 tool.receipt，
+ * 交给接线处（deps.onToolReceipt）写进诊断日志；其余情况直接返回，不记垃圾。
+ * 为什么这三个数放在阈值里：失败不用解释；慢与贵要有一个能收紧也能放宽的常数，
+ * 心算「3 秒 / 3 点」与回执里的 latencyMs / points 两格一一对应，人看到数就知道为什么有这条。
+ * 观测是旁证，不是流程的一环：阈值判断之外什么都不改，回调抛错一律吞掉，绝不把工具结果翻掉。
+ */
+function noteToolReceipt(d: UnknownRecord, nowFn: () => number, info: { tool: string; opId: string; status: string; latencyMs: number; estRequests: number; estPoints: number; requests: number; points: number; remaining: number | null; tier: string | null; backendId: string }): void {
+  const failed = info.status !== DECK_STATUS.OK, slow = info.latencyMs >= TOOL_RECEIPT_SLOW_MS, expensive = info.points >= TOOL_RECEIPT_EXPENSIVE_POINTS;
+  if (!failed && !slow && !expensive) return;
+  const cb = d.onToolReceipt; if (typeof cb !== 'function') return;
+  const flags: string[] = []; if (failed) flags.push('failed'); if (slow) flags.push('slow'); if (expensive) flags.push('expensive');
+  try {
+    (cb as (report: unknown) => void)({ at: nowFn(), tool: info.tool, opId: info.opId, status: info.status, estRequests: info.estRequests, estPoints: info.estPoints, requests: info.requests, points: info.points, latencyMs: info.latencyMs, remaining: info.remaining, tier: info.tier, backendId: info.backendId, note: flags.join(',') });
+  } catch { /* 观测失败不改结果：回执发不出去只少一条日志。 */ }
+}
+
+/**
  * 跑一次会话调用（九个工具的 shell.call 整段搬到这里，work 闭包一字不动）。
  * 不调闸的发送接口：记账走管线里的记账口，回执的实际花费沿用 work 交回来的 claimed（与原来同口径）。
  */
@@ -380,6 +399,8 @@ export async function callDeckSession(req: DeckCallRequest, work: (ctx: unknown)
   const tool = str(req.tool) || 'deck_tool';
   const backendId = opened.backendId;
   const nowFn: () => number = (typeof d.now === 'function') ? d.now as () => number : Date.now;
+  // #1627：回执要量这一笔的真实耗时；操作编号提成局部常量，让房间日志与工具回执用同一个编号对上。
+  const startedAt = nowFn(), opId = newDeckOpId(nowFn);
   const sbM = (req.sandbox && typeof req.sandbox === 'object') ? (req.sandbox as UnknownRecord) : {} as UnknownRecord;
   const sbPolicy = sbM.policy;
   const sessionId = (typeof sbM.sessionId === 'string' && sbM.sessionId) ? sbM.sessionId : str(s.sessionId);
@@ -389,7 +410,7 @@ export async function callDeckSession(req: DeckCallRequest, work: (ctx: unknown)
     repo: req.repo,
     now: nowFn,
     tracker: adaptSession(opened.session),
-    opCtx: Object.assign({}, backendCtxNow(d), { cwd: str(s.cwd), signal: undefined, caller: DECK_TOOL_KIND, sandboxPolicy: sbPolicy, sessionId: sessionId, opId: newDeckOpId(nowFn) }),
+    opCtx: Object.assign({}, backendCtxNow(d), { cwd: str(s.cwd), signal: undefined, caller: DECK_TOOL_KIND, sandboxPolicy: sbPolicy, sessionId: sessionId, opId: opId }),
     admit: opened.admit,
   };
   let value: unknown = null;
@@ -402,6 +423,9 @@ export async function callDeckSession(req: DeckCallRequest, work: (ctx: unknown)
     rawClaimed = (out && typeof out === 'object' && 'claimed' in out) ? (out as UnknownRecord).claimed : null;
   } catch (e) {
     const eh = hash8(String(((e || {}) as UnknownRecord).message || e));
+    // #1627：后端抛错也是「失败」的一种（工具结果是 unsupported），回执照发一条：
+    // 宿主那层的失败与房间日志靠同一个 opId 才对得上，否则这一笔在两个地方各说各话。
+    noteToolReceipt(d, nowFn, { tool: tool, opId: opId, status: DECK_STATUS.UNSUPPORTED, latencyMs: Math.max(0, nowFn() - startedAt), estRequests: num(est.requests), estPoints: num(est.points), requests: 0, points: 0, remaining: null, tier: null, backendId: backendId });
     return envelope(tool, DECK_STATUS.UNSUPPORTED, {
       reason: REFUSAL_REASONS.BACKEND_THREW, text: '后端实现抛错了（我没有把它抛给 AI，按三态返回）：' + String(((e || {}) as UnknownRecord).message || e).slice(0, 300),
       workspace: { root: str(s.cwd), key: str(s.workspaceKey) },
@@ -456,5 +480,10 @@ export async function callDeckSession(req: DeckCallRequest, work: (ctx: unknown)
   if (touched.length && typeof d.invalidate === 'function') {
     try { (d.invalidate as (info: unknown) => void)({ repo: out.repo, backendId: backendId, keys: touched, workspace: out.workspace }); } catch { /* 缓存失效失败不影响已经写成的结果。 */ }
   }
+  // #1627 逐笔回执：慢与贵按这一笔实际花了多少判（claimed 与 est 同口径，不另算第二份），
+  // 失败按工具报回来的状态判。remaining/tier 只在真量到水位时才给数（quotaPart 的契约），
+  // 量不到就如实 null，不拿 -1 或 'unknown' 冒充数字。
+  const quotaActual = (quota.actual || {}) as UnknownRecord, remaining = (typeof quotaActual.remaining === 'number' && isFinite(quotaActual.remaining)) ? quotaActual.remaining as number : null, tier = (typeof quotaActual.tier === 'string' && quotaActual.tier) ? String(quotaActual.tier) : null;
+  noteToolReceipt(d, nowFn, { tool: tool, opId: opId, status: str(out.status), latencyMs: Math.max(0, nowFn() - startedAt), estRequests: num(est.requests), estPoints: num(est.points), requests: num((claimed as UnknownRecord).requests), points: num((claimed as UnknownRecord).points), remaining: remaining, tier: tier, backendId: backendId });
   return out;
 }

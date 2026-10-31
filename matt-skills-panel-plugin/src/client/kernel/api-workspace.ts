@@ -99,7 +99,9 @@ declare function keyOf(...args: any[]): any;
     // 快照形状与设置页工作区总览同口径收集；命中时把编号与登记项同路返回，
     // 供调用方凭登记项名单验复用归属。
     export const resolveWorkspaceEntry = function (workspaces: any, cwd: any): any {
-      if (!workspaces || !cwd) return Promise.resolve({ wid: null, entry: null })
+      // #1580：回执多带溯源字段（source: snapshot/created/none，items: 快照里收到的登记项数），
+      // 让上层日志能分清“没找到”“快照为空”“根本没快照”三种落空，下次查日志不用猜。
+      if (!workspaces || !cwd) return Promise.resolve({ wid: null, entry: null, source: 'none', items: 0 })
       const readSnapSync = function (): any {
         try {
           if (workspaces.list) {
@@ -110,8 +112,13 @@ declare function keyOf(...args: any[]): any;
         return null
       }
       const targetNorm = workspaceNormOf(cwd)
+      // #1580：回执溯源用——seenItems 指向快照收到的登记项数组（同步/异步收集后同一份）。
+      let seenItems: any[] = []
+      const itemsCount = function (): any { try { return seenItems.length } catch (eC) { return 0 } }
+      const mkRes = function (wid: any, entry: any, source: any): any { return { wid: wid, entry: entry, source: source, items: itemsCount() } }
       try {
         let items: any[] = []
+        seenItems = items
         const snap = readSnapSync()
         const thenable = snap && typeof snap.then === 'function' ? snap : null
         const afterSnap = function (realSnap: any): any {
@@ -121,13 +128,13 @@ declare function keyOf(...args: any[]): any;
           const widOfEntry = function (e: any): any { try { return workspaceIdOf(e) || e.workspaceId || e.id || e.workspace_id } catch (eW) { return null } }
           const asyncStep = function (): any {
             const found = workspaceMatchEntry(items, targetNorm)
-            if (found) return Promise.resolve({ wid: widOfEntry(found), entry: found })
-            return workspaceTryCreateWid(workspaces, cwd).then(function (w: any): any { return { wid: w, entry: null } })
+            if (found) return Promise.resolve(mkRes(widOfEntry(found), found, 'snapshot'))
+            return workspaceTryCreateWid(workspaces, cwd).then(function (w: any): any { return w ? mkRes(w, null, 'created') : mkRes(null, null, 'none') })
           }
           if (!needAsync) {
             const found0 = workspaceMatchEntry(items, targetNorm)
-            if (found0) return Promise.resolve({ wid: widOfEntry(found0), entry: found0 })
-            return workspaceTryCreateWid(workspaces, cwd).then(function (w0: any): any { return { wid: w0, entry: null } })
+            if (found0) return Promise.resolve(mkRes(widOfEntry(found0), found0, 'snapshot'))
+            return workspaceTryCreateWid(workspaces, cwd).then(function (w0: any): any { return w0 ? mkRes(w0, null, 'created') : mkRes(null, null, 'none') })
           }
           let p: any = Promise.resolve(null)
           try {
@@ -154,8 +161,43 @@ declare function keyOf(...args: any[]): any;
           } catch (eG2) {}
           return p.then(asyncStep)
         }
-        if (thenable) return thenable.then(afterSnap).catch(function (): any { return workspaceTryCreateWid(workspaces, cwd).then(function (wC: any): any { return { wid: wC, entry: null } }) })
+        if (thenable) return thenable.then(afterSnap).catch(function (): any { return workspaceTryCreateWid(workspaces, cwd).then(function (wC: any): any { return wC ? mkRes(wC, null, 'created') : mkRes(null, null, 'none') }) })
         return afterSnap(snap)
       } catch (e) {}
-      return Promise.resolve({ wid: null, entry: null })
+      return Promise.resolve({ wid: null, entry: null, source: 'none', items: 0 })
+    }
+
+    // #1580：复用一个空白会话之前，除了验它还在工作区名单里，还要验它没有被归档。
+    // 已归档会话在 DSH 里不能当主会话打开：插件打开它之后，宿主下一拍会把主区清回“选择工作区”，
+    // 提示词写进看不见的会话——这张票的现场就是这样。调用方拿到 {known, ids, legacy} 后按此处理：
+    //   known=true → 名单可信，命中 ids 的候选跳过；
+    //   known=false 且 legacy=false → 宿主有归档概念但这次读不到名单，不能证明候选可用，按 fail-closed 跳过；
+    //   legacy=true（老版快照只有 items，或根本没有工作区服务）→ 保持旧行为，不因读不到而改变复用策略。
+    // 为什么把“老版”单独标出来：老版宿主没有归档概念，读不到名单是常态，不能因此把好功能关掉；
+    // 新版宿主（快照带 pinnedSessionIds/state/phase 任一）却缺名单，才说明这次读取异常。
+    export const archivedSessionIdsOf = function (workspaces: any): any {
+      if (!workspaces) return { known: true, ids: [], legacy: true }
+      let snap: any = null
+      try {
+        if (workspaces.list) {
+          if (typeof workspaces.list.getSnapshot === 'function') snap = workspaces.list.getSnapshot()
+          else if (typeof workspaces.list.getCurrent === 'function') snap = workspaces.list.getCurrent()
+        }
+      } catch (eS) { return { known: false, ids: [], legacy: false } }
+      // 读不到同步快照（服务存在但没有同步读法），或拿到的是异步结果：不能证明候选可用，按未知处理。
+      if (!snap || typeof snap.then === 'function') return { known: false, ids: [], legacy: false }
+      const hasArchive = snap.archivedSessionIds !== undefined && snap.archivedSessionIds !== null
+      if (!hasArchive) {
+        const looksNew = snap.pinnedSessionIds !== undefined || snap.state !== undefined || snap.phase !== undefined
+        return { known: !looksNew, ids: [], legacy: !looksNew }
+      }
+      if (!Array.isArray(snap.archivedSessionIds)) return { known: false, ids: [], legacy: false }
+      const ids: any[] = []
+      try {
+        for (let k = 0; k < snap.archivedSessionIds.length; k++) {
+          const id = snap.archivedSessionIds[k]
+          if (typeof id === 'string' && id) ids.push(id)
+        }
+      } catch (eIds) { return { known: false, ids: [], legacy: false } }
+      return { known: true, ids: ids, legacy: false }
     }

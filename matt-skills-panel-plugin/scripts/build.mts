@@ -77,6 +77,17 @@ const HAND_WRITTEN_IN_DOMAINS: Record<string, string[]> = {
 
 const ROOT: string = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
+// #1644 构建一进来就把当前目录固定成仓库根：产物与「谁在哪个目录调用构建」无关。
+// 为什么必须固定：发布时 npm 会在 package/ 目录里重跑构建（package/package.json 的 prepublishOnly
+// 写的是 `node ../scripts/build.mts --pkg-only`），而 esbuild 给打包进来的模块打注释时，写的是
+// 它干活时的当前目录。不固定的话，从仓库根构建的产物写 `// node_modules/...`，发布时从 package/
+// 目录重跑出来的写 `// ../node_modules/...`：34 处各多 3 个字符，客户端产物多 102 字节，
+// 发布出去的包就不再是真机验证过的那个候选包（#1644 的实测就是这三个数）。
+// 为什么固定在这里、而不是逐个调用点传工作目录：构建里起子进程、调第三方工具的地方很多，
+// 漏掉一处产物就还会漂；在入口固定一次，整段构建连同它起的子进程都按同一个当前目录走。
+// 守这件事的门禁是 tests/verify-build-cwd-products.ts：从两个入口各构建一次，逐文件比 sha256。
+process.chdir(ROOT)
+
 // ---------- 构建缓存：输入与产物都没变就跳过这 30 秒 ----------
 //
 // 缓存的事实（输入范围、产物清单、内容摘要算法、缓存读取、以及唯一一份「产物新不新鲜」判据）
@@ -402,6 +413,9 @@ const KERNEL_MODULES: { name: string; file: string }[] = [
   //   它会把 .ts 转译成可拼接的 JavaScript；同名 .js 已删，不再入库）。
   { name: 'backendList', file: 'src/client/kernel/builtin-backends.ts' },
   { name: 'link', file: 'src/client/kernel/link.ts' },
+  // #1236：界面动效时长的唯一真源。样式字符串在模块求值时就把它拼进 CSS，
+  //   所以这一片必须排在 kernel:styles 之前（const 有暂时性死区）。
+  { name: 'motion', file: 'src/client/kernel/motion.ts' },
   // #1251：这一片由手写 .js 转成 .ts，这里改指新真源（读源由 readSpliceFragmentSource 按扩展名分派，
   //   它会把 .ts 转译成可拼接的 JavaScript；同名 .js 已删，不再入库）。
   { name: 'styles', file: 'src/client/kernel/styles.ts' },
@@ -489,6 +503,11 @@ const KERNEL_MODULES: { name: string; file: string }[] = [
   //   与上面三族共用同一个待写队列与同一份文档，所以标记必须排在 settingsViewWrite 之后；它还要用运行时那份
   //   日志内核的名字（上面第 500 行的 log），所以必须排在 log 之后。
   { name: 'settingsDebug', file: 'src/client/kernel/settings-debug.ts' },
+  // #1612：状态栏胶囊与 deck 工具箱两个按工作区的开关（唯一读口与写口），以及「deck 关闭的工作区注入的提示词
+  //   去掉 deck 工具提醒行」这个纯函数。前者要用 settingsViewWrite 那一片的写入口，所以标记排在它之后；
+  //   后者不依赖别的片，紧随其后拼进来，调用方（api-io / api-new-session）在本行之后，次序自然成立。
+  { name: 'deckState', file: 'src/client/kernel/deck-state.ts' },
+  { name: 'deckPromptFilter', file: 'src/client/kernel/deck-prompt-filter.ts' },
   // #1251：这一片由手写 .js 转成 .ts，这里改指新真源（读源由 readSpliceFragmentSource 按扩展名分派，
   //   它会把 .ts 转译成可拼接的 JavaScript；同名 .js 已删，不再入库）。
   { name: 'storeSwitch', file: 'src/client/kernel/store-switch.ts' },
@@ -649,8 +668,15 @@ const SHARED_SPLICE: { marker: string; file: string }[] = [
  *  组件经 React.useContext(DswsCtx) 消费 cx（ARCHITECTURE-CTX.md §2）。 */
 const LEAF_MODULES: { id: string; file: string }[] = [
   { id: 'chips', file: 'src/client/views/shared/chips.ts' },
+  // #1652：悬停提示方位纯函数（提示控件的零件，HoverTip 的锚定分支调它算落点，排在 hoverTip 之前拼进闭包）。
+  { id: 'tipPlace', file: 'src/client/views/primitives/tipPlace.ts' },
   { id: 'hoverTip', file: 'src/client/views/primitives/HoverTip.ts' },
   { id: 'tip', file: 'src/client/views/primitives/Tip.ts' },
+  // #1564：票号徽标的四种外壳（列表行、详情页头、在办表首列、状态栏胶囊）共用这一个画法。
+  //   它依赖 kernel:ticketLabel 的文字规则与 leaf:tip 的悬停，登记在两者之后。
+  { id: 'ticketBadge', file: 'src/client/views/shared/ticketBadge.ts' },
+  // #1582：打开文件夹的共用函数（四处入口共用：判目录可用、只发一次 wf.openFolder、读回包、把结论交回调用方）。
+  { id: 'openFolder', file: 'src/client/views/shared/openFolder.ts' },
   // 本次界面反馈需求：液态墨块（页签与列表筛选药丸共用），必须排在 leaf:tabs 之前登记。
   { id: 'liquidInk', file: 'src/client/views/shared/liquidInk.ts' },
   // 887 技能详情像素风：八个最小组件（无依赖，按使用次序登记）
@@ -745,6 +771,7 @@ const LEAF_MODULES: { id: string; file: string }[] = [
   { id: 'issueDetailFold', file: 'src/client/views/issueDetailFold.ts' }, // #763 新增：详情页顶栏逐字折叠阶梯（纯函数，返回优先收到图标）
   { id: 'useIssueDetailFold', file: 'src/client/views/useIssueDetailFold.ts' }, // #763 新增：同一处的折叠机（读写顶栏 DOM；判据在上一项）
         { id: 'subIssueRouting', file: 'src/client/views/subIssueRouting.ts' }, // 子票/阻塞票分流判定，从 IssueDetail.ts 原样抽出
+  { id: 'issueDetailErrorView', file: 'src/client/views/issueDetailErrorView.ts' }, // #1573 新增：详情页失败横幅三块（主行一句话 / kind 小标签 / 原始说明折叠区），从 IssueDetail.ts 抽出（它贴着 350 行上限）
   { id: 'IssueDetail', file: 'src/client/views/IssueDetail.ts' },
   { id: 'noRepoCard', file: 'src/client/views/NoRepoCard.ts' },
   { id: 'setupCard', file: 'src/client/views/SetupCard.ts' }, // #698 新增：盖住整个应用的「域文档布局」小卡（原先只渲染在黄条下面，工作区一初始化就没有地方可画）
@@ -752,6 +779,9 @@ const LEAF_MODULES: { id: string; file: string }[] = [
   { id: 'ListTabRow', file: 'src/client/views/ListTabRow.ts' },
   // 本次界面反馈需求：列表页三组筛选药丸那一行（含三块液态墨块）从 ListTab 抽出，ListTab 贴着 350 行上限。
   { id: 'listFilterRow', file: 'src/client/views/listFilterRow.ts' },
+  // #1639：顶部那排 md目录签的排布（普通内联流、行尾照字面切断）与目录名文字上限（19 个数字的宽度 + 末尾省略号），
+  //   从 ListTab 抽出，排在 listTab 之前（ListTab 调它画那一排）。
+  { id: 'mdEffortRow', file: 'src/client/views/mdEffortRow.ts' },
   { id: 'listTab', file: 'src/client/views/ListTab.ts' },
   { id: 'prTab', file: 'src/client/views/PrTab.ts' },
   { id: 'skillsTab', file: 'src/client/views/SkillsTab.ts' },
@@ -830,6 +860,10 @@ const LEAF_MODULES: { id: string; file: string }[] = [
   { id: 'suggestAppearance', file: 'src/client/statusbar/suggestAppearance.ts' },
   { id: 'suggestStyles', file: 'src/client/statusbar/suggestStyles.ts' },
   { id: 'suggestBubble', file: 'src/client/statusbar/suggestBubble.ts' },
+  // #1220：状态栏登记「当前显示哪个会话」的空挂载组件，排在 StatusBar 之前（状态栏要挂它）。
+  { id: 'shownAttentionMount', file: 'src/client/statusbar/shownAttentionMount.ts' },
+  // #1612：胶囊上那扇「关/开整个 deck」的门（红色 X、展开确认框）。排在 statusBar 之前 —— 状态栏要调用它导出的那几件。
+  { id: 'deckDoor', file: 'src/client/statusbar/deckDoor.ts' },
   { id: 'statusBar', file: 'src/client/statusbar/StatusBar.ts' },
   // #1251：这一片由手写 .js 转成 .ts，这里改指新真源（读源由 readSpliceFragmentSource 按扩展名分派，
   //   它会把 .ts 转译成可拼接的 JavaScript；同名 .js 已删，不再入库）。
@@ -1807,6 +1841,8 @@ const CLIENT_TIME_NAMES: string[] = [
   'STATUS_MENU_FALLBACK_DELAY_MS',
   'SNAPSHOT_PROBE_MS',
   'STORE_NOTICE_DISMISS_MS',
+  // 刚选中快照的保护窗（snapshot-cache-store.ts 的水合守卫，#1240）。
+  'SNAPSHOT_PICKED_GUARD_MS',
   'ISSUE_DETAIL_CONFIRM_MS',
   'COMMENT_RESULT_FLASH_MS',
   'COMMENTS_MORE_LOADING_MIN_MS',
@@ -1845,6 +1881,9 @@ const CLIENT_TIME_NAMES: string[] = [
   'RECONCILE_INTERVAL_MS',
   'PREFLIGHT_TTL_MS',
   'CHAIN_BACKOFF_MS',
+  // 一步等待的统一值（probe-chain-subscription.ts 也拼进闭包，名字由这一片提供；
+  // 它同时是上面退避序列的第二档，改了这一个数两处一起跟，#1629）。
+  'STEP_WAIT_MS',
   'FAILURE_HALF_OPEN_DELAY_MS',
   'CHAIN_ALL_GREEN_TTL_MS',
   'PATCH_MERGE_WINDOW_MS',
@@ -1852,6 +1891,8 @@ const CLIENT_TIME_NAMES: string[] = [
   'ACTIVE_LINGER_MS',
   'ATTENTION_HEARTBEAT_MS',
   'ATTENTION_EXPIRY_MS',
+  // 心跳的人在场判据（client-attention-heartbeat.ts，#1240）。
+  'ATTENTION_HUMAN_INPUT_WINDOW_MS',
   'QUOTA_SYNC_INTERVAL_MS',
   'FRESHNESS_YELLOW_MS',
   'FRESHNESS_RED_MS',

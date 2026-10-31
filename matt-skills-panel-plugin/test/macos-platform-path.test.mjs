@@ -64,7 +64,7 @@ test('client workspace lookup preserves macOS path case and literal backslashes'
   assert.equal(workspaceNormOf(path + '/'), path)
   const expected = { id: 'case-sensitive', path }
   const workspaces = { list: { getSnapshot: () => ({ items: [{ id: 'other', path: path.toLowerCase() }, expected] }) }, create() { throw new Error('must reuse registered workspace') } }
-  assert.deepEqual(await resolveWorkspaceEntry(workspaces, path), { wid: 'case-sensitive', entry: expected })
+  assert.deepEqual(await resolveWorkspaceEntry(workspaces, path), { wid: 'case-sensitive', entry: expected, source: 'snapshot', items: 2 })
 })
 
 test('Markdown paths retain macOS filename characters and public effort layout', async () => {
@@ -95,9 +95,13 @@ test('missing CLI guidance exposes only macOS installation through the tracker w
   const backend = await initProject({ cwd: '/Users/Matt/Project' }, { name: 'project' }, { platform: { resolveExecutable: async name => name === 'git' ? '/mock/git' : null } })
   assert.equal(backend.error.kind, 'no-gh')
   for (const prompt of [host.prompt, backend.error.prompt]) {
-    assert.match(prompt, /brew install gh/)
+    assert.match(prompt, /https:\/\/cli\.github\.com\//)
+    assert.match(prompt, /\/opt\/homebrew\/bin\/gh/)
+    assert.match(prompt, /不等同于 gh 未安装/)
+    assert.match(prompt, /DSH_GH_PATH/)
     assert.doesNotMatch(prompt, /Windows|Linux|winget|scoop|apt install/)
   }
+  assert.equal(host.prompt, backend.error.prompt)
 
 })
 

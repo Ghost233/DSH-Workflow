@@ -48,12 +48,11 @@ declare function h(...args: any[]): any;
 // #1436：只读电话那条链（同闭包更早的片段提供）—— 用户点「重试」时重读本机记录。
 // #1436：首帧只读那条链（同闭包更早的片段提供）—— 取当前会话那一格。
 declare function ownWorkRouteSlotOf(...args: any[]): any;
-// #1511：首列票号写成「#目录/编号」的显示规则住在 kernel/ticket-label.ts，本文件只调用。
+// #1511：首列票号写成「#目录/编号」的显示规则住在 kernel/ticket-label.ts，本文件只调用（整行提示与行名仍读它）。
 declare function ticketLabelOf(...args: any[]): any;
-// B 方案：同一颗控件的两段子节点走那一份（目录前缀可省略、编号尾巴绝不缩小）。
-declare function ticketLabelNodesOf(...args: any[]): any;
-// B 方案：首列票号控件的上限宽度同样读那一份（180px），与列表行、详情页、胶囊是同一颗控件。
-declare const TICKET_LABEL_MAX_WIDTH: string;
+// #1564：首列那颗票号的画法（两段布局、上限宽度、在办表外壳）收在 views/shared/ticketBadge.ts。
+//   这一处不套自己的悬停提示 —— 整行的 Tip（下面 tipContent）负责，见组件文件头对 cell 外壳的说明。
+declare function ticketBadgeOf(...args: any[]): any;
 // #1545：行点击要调的三个函数（findMapByIdentity 按票号找容器、containerKindOf 认它是地图还是规格、
 //   pushNav 跳到目标页）由打包时拼进同一闭包的更早片段提供，这里只声明名字与参数形状，不参与转译。
 declare function findMapByIdentity(...args: any[]): any;
@@ -236,7 +235,8 @@ export const workRouteNavOf = function (st: any, r: WorkRouteTableRow): any {
  * 现在这四列收窄（动作时间那列还改写缩写，见 workRouteTableStamp），省下的宽度全给了那两列。
  * 表头与数据行是两个 grid，必须用同一份模板（列宽要逐字对齐），所以把它导出来给两边共用。
  */
-/* 首列按本表实际行自适应（#1553）：短编号 56px，长编号按内容分档放宽（目录不缩写），超长封顶 192px。
+/* 首列按本表实际行自适应（#1553）：短编号 56px，长编号按内容分档放宽（目录尽量不缩写），
+ * 封顶就是票号徽标上限（#1565 起两处由同一个数推出，格子不会再比徽标宽）。
  * 分几档、怎么估宽，收在 ticket-label.ts 那一份里（估宽直接调真写法，形状想跑偏都跑偏不了）；
  * 这里只管用：WorkRouteTable 用算出来的那一份同时画表头与每一行（对齐不变），行内容未知时用默认。 */
 declare function workRouteCellsFor(rows: any): string
@@ -269,7 +269,7 @@ const workRouteTipGroup = function (h: any, icon: string, text: string, key: str
  *
  * 提示挂在整行上（不是挂在标题那一格上）：悬停这一行的任何位置都能看到。
  * 提示一行两段（#1288）：左边是完整的票标题，右边是完整的会话名，中间一条竖线分开，两边各带一枚图标；
- * 提示落在指针上方（placement: 'above'），不遮住鼠标正指着的那一格。
+ * 提示落在触发控件上方，不遮住鼠标正指着的那一格（方位由提示控件内部按屏幕边界让位）。
  *
  * 表格里的格子窄，显示不下就用省略号；提示里给的是完整原文，不受列宽限制。
  * 动作词与完整动作时刻在格子里被截掉时，以暗色小字补在提示末尾，信息不丢。
@@ -329,8 +329,8 @@ export const WorkRouteRow = ({ r, nowMs, st, onNavigate, cells }: any) => {
     }
   }
   const row = h('div', rowProps, [
-    // B 方案：首列同样是上限宽度 + 目录前缀可省略、编号尾巴绝不缩小；完整写法仍走悬停补（见 tipContent）。
-    h('span', { ref: numberRef, style: Object.assign({ fontVariantNumeric: 'tabular-nums', color: 'var(--dsw-alias-label-primary,#e6e6eb)', display: 'inline-flex', alignItems: 'center', maxWidth: TICKET_LABEL_MAX_WIDTH }, workRouteCellStyle) }, ticketLabelNodesOf(h, r.ticketKey, r.effortId)),
+    // B 方案：#1564 起首列徽标整颗走共用组件（cell 外壳：上限宽度、两段布局照旧，悬停交给整行 Tip）。
+    ticketBadgeOf(h, { key: r.ticketKey, effortId: r.effortId, surface: 'cell', color: 'var(--dsw-alias-label-primary,#e6e6eb)', ref: numberRef }),
     h('span', { style: Object.assign({ color: r.title ? 'inherit' : 'var(--dsw-alias-label-caption,#8b8b95)' }, workRouteCellStyle) }, r.title || tr('workRouteTable.titleMissing')),
     h('span', { style: Object.assign({ display: 'inline-flex', alignItems: 'center', gap: 4 }, workRouteCellStyle) }, [
       h('span', { key: 's', style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, r.sessionLabel),
@@ -340,7 +340,7 @@ export const WorkRouteRow = ({ r, nowMs, st, onNavigate, cells }: any) => {
     h('span', { style: Object.assign({ fontVariantNumeric: 'tabular-nums', color: 'var(--dsw-alias-label-caption,#8b8b95)' }, workRouteCellStyle) }, shortAt),
     h('span', { 'data-work-route-state': r.active ? 'active' : 'stale', style: { color: r.active ? '#4ade80' : 'var(--dsw-alias-label-caption,#8b8b95)' } }, r.active ? tr('workRouteTable.active') : tr('workRouteTable.stale')),
   ])
-  return h(Tip, { content: tipContent, placement: 'above', maxWidth: 520, offset: { x: 0, y: 12 } }, row)
+  return h(Tip, { content: tipContent, maxWidth: 520 }, row)
 }
 
 /** 面板里这张表：标题行 + 表头 + 逐条行；空态与读不到也画在这一块里。点行后调 onNavigate（浮层靠它收起）。 */
@@ -386,9 +386,11 @@ export const WorkRouteTable = ({ st, onNavigate }: any) => {
   ])
 }
 
-/** 浮层的最小宽度：标题保底 150px、会话保底 104px，加上首列最宽那一档，至少要 680 才不挤出横向滚动。
+/** 浮层的最小宽度：首列最宽一档（徽标上限 85px）+ 标题保底 150px + 会话保底 104px + 三个定宽列 48/36/36
+ * + 五个 6px 列间距 + 内外边距，不出横向滚动只要 576px。这里仍取 680px：多出来的那一段按 grid 的余量分配规则
+ * 分给标题与会话两列 —— #1565 把首列从 192px 收到徽标上限后，省下的 56px 正是这样还给它们的。
  * 弹窗是咱们自己画的，窄了只会把标题和会话压成省略号 —— 宁可一开始就给够。面板更宽时浮层跟面板同宽（下）。 */
-const WORK_ROUTE_POPOVER_MIN_WIDTH = 680
+export const WORK_ROUTE_POPOVER_MIN_WIDTH = 680
 
 /**
  * 面板头部那一行右端的「在办表」入口（#1285）。

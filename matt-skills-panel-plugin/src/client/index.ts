@@ -42,7 +42,7 @@
  * v13：cwd 权威反查（wf.cwd）+ sessionId 变化重探测。v12：repoKey 按 cwd 缓存 /
  * 失败不兜假数据 / 三视图收敛 / 沉淀=注入快照模板。
  * v11：label 颜色 = GitHub 配置色。v10：cwd 关联 / 标签视图 / 圆形技能环。
- * v9：DESIGN.md §12.2 Round 3 定稿 1A-7A 落实。
+ * v9：docs/archive/DESIGN.md §12.2 Round 3 定稿 1A-7A 落实（原 docs/DESIGN.md 已归档）。
  * 本文件内容 = cordis_define 的 code.client（纯 JS 函数体，返回 Cordis Plugin）。
  */
 
@@ -99,6 +99,10 @@ export default {
     // ============================================================
     // ==== kernel:backendList (spliced by build) ====
     // ==== kernel:link (spliced by build) ====
+
+    // #1236：界面动效时长的唯一真源（MOTION）。样式文本在模块求值时就要拼好，
+    //   所以这一片必须排在 kernel:styles 之前（const 有暂时性死区）。
+    // ==== kernel:motion (spliced by build) ====
 
     // ==== kernel:styles (spliced by build) ====
     styles.insert(STYLE_TEXT)
@@ -229,7 +233,7 @@ export default {
     // ==== kernel:storePrefs (spliced by build) ====
     // ==== kernel:settingsViewState (spliced by build) ====
     // ==== kernel:settingsView (spliced by build) ====
-    // ==== kernel:settingsViewWrite (spliced by build) ==== // ==== kernel:settingsUi (spliced by build) ==== // ==== kernel:settingsTemplates (spliced by build) ==== // ==== kernel:settingsDebug (spliced by build) ====
+    // ==== kernel:settingsViewWrite (spliced by build) ==== // ==== kernel:settingsUi (spliced by build) ==== // ==== kernel:settingsTemplates (spliced by build) ==== // ==== kernel:settingsDebug (spliced by build) ==== // ==== kernel:deckState (spliced by build) ==== // ==== kernel:deckPromptFilter (spliced by build) ====
     // ==== kernel:storeSwitch (spliced by build) ====
     // ==== kernel:storeSnapshot (spliced by build) ====
     // #1355：本会话自己的工作路线读数（剥表、补拉、三处接线共用的请求决策）单独一片，理由见 kernel/work-route-own.ts 文件头。
@@ -284,8 +288,15 @@ export default {
     // ==== kernel:slotRendererModalView (spliced by build) ====
 
     // ==== leaf:chips (spliced by build) ====
+    // ==== leaf:tipPlace (spliced by build) ====
     // ==== leaf:hoverTip (spliced by build) ====
     // ==== leaf:tip (spliced by build) ====
+    // #1564：票号徽标（列表行、票详情头、容器详情头、在办表首列、状态栏胶囊单子与主行）的唯一画法。
+    //   四种外壳只决定外面长什么样；文字规则与上限宽度仍来自 kernel:ticketLabel，悬停来自 leaf:tip，
+    //   所以这一片必须排在它们之后。
+    // ==== leaf:ticketBadge (spliced by build) ====
+    // #1582：打开文件夹的共用函数，Dock 仓库芯片、子工作区标志、日志菜单、诊断日志页都走它。
+    // ==== leaf:openFolder (spliced by build) ====
     // 本次界面反馈需求：液态墨块，页签与列表筛选药丸共用的选中块，必须排在 leaf:tabs 之前。
     // ==== leaf:liquidInk (spliced by build) ====
     // 887：八个像素风最小组件。
@@ -336,7 +347,8 @@ export default {
     // ==== leaf:suggestBubble (spliced by build) ====
     // ==== leaf:suggestStream (spliced by build) ====
     // ==== leaf:capFold (spliced by build) ==== // ==== leaf:capFoldMachine (spliced by build) ====
-    // ==== leaf:StatusMenus (spliced by build) ==== // ==== leaf:StatusBackend (spliced by build) ==== // ==== leaf:bannerChain (spliced by build) ==== // ==== leaf:logDangerConfirm (spliced by build) ==== // ==== leaf:StatusLogMenu (spliced by build) ==== // ==== leaf:statusBar (spliced by build) ====
+    // ==== leaf:shownAttentionMount (spliced by build) ====
+    // ==== leaf:deckDoor (spliced by build) ==== // ==== leaf:StatusMenus (spliced by build) ==== // ==== leaf:StatusBackend (spliced by build) ==== // ==== leaf:bannerChain (spliced by build) ==== // ==== leaf:logDangerConfirm (spliced by build) ==== // ==== leaf:StatusLogMenu (spliced by build) ==== // ==== leaf:statusBar (spliced by build) ====
     // ==== leaf:sessionChainCapsule (spliced by build) ====
 
     // ==== leaf:md (spliced by build) ====
@@ -365,13 +377,13 @@ export default {
     // ==== leaf:mapV2CardFlow (spliced by build) ====
     // ==== leaf:mapV2Page (spliced by build) ====
 
-    // ==== leaf:subIssueRouting (spliced by build) ==== // ==== leaf:IssueDetailComments (spliced by build) ==== // ==== leaf:issueDetailFold (spliced by build) ==== // ==== leaf:useIssueDetailFold (spliced by build) ==== // ==== leaf:IssueDetail (spliced by build) ====
+    // ==== leaf:issueDetailErrorView (spliced by build) ==== // ==== leaf:subIssueRouting (spliced by build) ==== // ==== leaf:IssueDetailComments (spliced by build) ==== // ==== leaf:issueDetailFold (spliced by build) ==== // ==== leaf:useIssueDetailFold (spliced by build) ==== // ==== leaf:IssueDetail (spliced by build) ====
 
     // ==== leaf:tagsFit (spliced by build) ====
     // ==== leaf:pop (spliced by build) ====
     // ==== leaf:noRepoCard (spliced by build) ====
     // ==== leaf:setupCard (spliced by build) ====
-    // ==== leaf:ListTabClosed (spliced by build) ==== // ==== leaf:ListTabRow (spliced by build) ==== // ==== leaf:listFilterRow (spliced by build) ==== // ==== leaf:listTab (spliced by build) ====
+    // ==== leaf:ListTabClosed (spliced by build) ==== // ==== leaf:ListTabRow (spliced by build) ==== // ==== leaf:listFilterRow (spliced by build) ==== // ==== leaf:mdEffortRow (spliced by build) ==== // ==== leaf:listTab (spliced by build) ====
 
     // ==== leaf:prTab (spliced by build) ====
 
