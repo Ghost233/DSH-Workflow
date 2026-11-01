@@ -6,7 +6,11 @@
 
 日常入口是无参数 `./start-dsh-workflow.sh`。仅支持 macOS ARM64。启动器启动或复用独立 DSH 服务端，桌面客户端和 Web 连接同一个实例；关闭客户端或启动器后服务继续运行。JEV/监控由 `agent-observation-plugin/` 提供，根包 `dsh-workflow` 的 `/jev-center`、`/agent-monitor` 及 `/client` 入口保持配置与功能。固定配置 entry IDs 延续，迁移仅修改这些 entry 的包入口；用户其他配置和凭据保留。
 
-启动器的 Superagent 入口管理独立进程，使用本机 `127.0.0.1:3082`。首次启动后，打开面板并配置模型、GitHub 仓库、代理账号和允许发起任务的用户。GitHub CLI 需要单独登录代理账号。配置与状态保存在 `~/Library/Application Support/DSH Workflow/superagent`，关闭启动器不会停止 Superagent。上游将其定位为研究原型；执行器以当前系统用户身份运行，具有完整访问权限。详细配置见[上游部署说明](https://github.com/deepseek-ai/dsh-superagent-prototype/blob/main/docs/006-deployment.md)。
+Station 的“模型”页管理 DSH 的模型提供商、API Key 和默认模型。你可以添加或编辑提供商，获取可用模型，并为新会话选择默认模型。配置模型时无需启动 Superagent。移除提供商时，已保存的凭据会保留。模型高级字段保持原值。
+
+Superagent 启动后读取同一份模型配置和 DSH 凭据存储。模型配置变更会同步到运行中的 Superagent，已有任务使用的模型选择保持不变。原有 Superagent 独立配置和凭据保留在原目录；共享启用后，以 DSH 模型配置为准。DSH 主目录 `.env` 中按模型引用命名的凭据在 Superagent 启动时读取，修改环境文件后需要重新启动 Superagent。
+
+启动器的 Superagent 入口管理独立进程，使用本机 `127.0.0.1:3082`。首次启动后，打开面板并配置 GitHub 仓库、代理账号和允许发起任务的用户。GitHub CLI 需要单独登录代理账号。配置与状态保存在 `~/Library/Application Support/DSH Workflow/superagent`，关闭启动器不会停止 Superagent。上游将其定位为研究原型；执行器以当前系统用户身份运行，具有完整访问权限。详细配置见[上游部署说明](https://github.com/deepseek-ai/dsh-superagent-prototype/blob/main/docs/006-deployment.md)。
 
 第三方启动清单由 `project-plugins.json` 和锁文件提供。构建按固定 npm 版本或 Git 提交收集全部 `startup: true` 插件，将包本体和生产依赖放入应用的 `Resources/plugins`，以 `plugin-payload.json` 记录来源和完整内容摘要。缺包、版本或 Git 提交不符、入口缺失均阻止打包；DMG 和上传入口再次校验交付记录。
 

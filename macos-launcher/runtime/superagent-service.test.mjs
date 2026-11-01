@@ -1,11 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { copyFile, cp, mkdir, mkdtemp, readFile, readlink, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, cp, mkdir, mkdtemp, readFile, readlink, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'node:net'
+import { spawn } from 'node:child_process'
+import { dirname } from 'node:path'
 import { sealSuperagentPayload } from './superagent-payload.mjs'
-import { prepareSuperagentProfile } from './superagent-service.mjs'
+import { prepareSuperagentProfile, superagentSocket } from './superagent-service.mjs'
 
 test('Superagent profile keeps user settings when the sealed application moves', async t => {
   const root = await mkdtemp(join(tmpdir(), 'superagent-profile-'))
@@ -46,4 +49,24 @@ exports.initProfile = (dir, bundles) => {
   await writeFile(join(moved, 'superagent/node_modules/dsh-superagent/lib/client.js'), 'tampered')
   await assert.rejects(prepareSuperagentProfile({ dataRoot, resources: moved }), /sealed contents/)
   assert.equal(await readFile(patch, 'utf8'), settings)
+})
+
+test('does not silently start an old manager without model sharing', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-old-manager-'))
+  const dataRoot = join(root, 'data'); await mkdir(dataRoot, { mode: 0o700 })
+  const socket = superagentSocket(dataRoot), socketDirectory = dirname(socket)
+  await mkdir(socketDirectory, { mode: 0o700 })
+  const server = createServer(connection => {
+    connection.once('data', () => connection.end(JSON.stringify({ ok: true, value: {
+      protocol: 1, service: { state: 'stopped', ready: false }, logs: [],
+    } }) + '\n'))
+  })
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve) })
+  await chmod(socket, 0o600)
+  t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(socketDirectory, { recursive: true, force: true }); await rm(root, { recursive: true, force: true }) })
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./superagent-service.mjs', import.meta.url)), 'start', dataRoot, root, join(root, 'home')])
+  let out = ''; child.stdout.setEncoding('utf8'); child.stdout.on('data', chunk => { out += chunk })
+  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
+  assert.equal(code, 1)
+  const result = JSON.parse(out); assert.equal(result.ok, false); assert.match(result.error, /旧版 Superagent/)
 })

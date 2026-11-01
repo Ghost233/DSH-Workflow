@@ -12,6 +12,7 @@ import 'application_probe.dart';
 import 'launcher_controller.dart';
 import 'lifecycle_probe_process.dart';
 import 'maclauncher_integration.dart';
+import 'model_settings_page.dart';
 import 'native_bridge.dart';
 import 'service_stop.dart';
 
@@ -267,7 +268,14 @@ class _LauncherPageState extends State<LauncherPage> {
           NavigationRail(
             selectedIndex: _page,
             labelType: NavigationRailLabelType.all,
-            onDestinationSelected: (value) => setState(() => _page = value),
+            onDestinationSelected: (value) {
+              setState(() => _page = value);
+              if (value == 3 &&
+                  model.modelSettings == null &&
+                  model.serviceSnapshot.ready == true) {
+                unawaited(_act(model.refreshModelSettings));
+              }
+            },
             destinations: const [
               NavigationRailDestination(
                 icon: Icon(Icons.desktop_mac),
@@ -281,6 +289,10 @@ class _LauncherPageState extends State<LauncherPage> {
                 icon: Icon(Icons.receipt_long),
                 label: Text('日志'),
               ),
+              NavigationRailDestination(
+                icon: Icon(Icons.tune),
+                label: Text('模型'),
+              ),
             ],
           ),
           const VerticalDivider(width: 1),
@@ -290,6 +302,7 @@ class _LauncherPageState extends State<LauncherPage> {
               child: switch (_page) {
                 1 => _plugins(),
                 2 => _logs(),
+                3 => ModelSettingsPage(model: model),
                 _ => _overview(),
               },
             ),
@@ -391,7 +404,8 @@ class _LauncherPageState extends State<LauncherPage> {
         Text('独立服务：${_stateName(model.superagentSnapshot.state)}'),
         if (model.superagentSnapshot.message?.isNotEmpty == true)
           SelectableText(model.superagentSnapshot.message!),
-        const Text('首次使用时，请在 Superagent 面板配置模型、GitHub 仓库和代理账号。'),
+        const Text('首次使用时，请在 Superagent 面板配置 GitHub 仓库和代理账号。'),
+        Text(model.modelSharingMessage),
         const Text('Superagent 工作任务拥有当前 macOS 用户的完整访问权限。'),
         Wrap(
           spacing: 8,

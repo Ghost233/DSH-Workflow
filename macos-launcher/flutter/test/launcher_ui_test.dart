@@ -261,4 +261,23 @@ json.dump({'ok': True, 'value': {'service': {'state': 'running', 'ready': True, 
       model.dispose();
     },
   );
+
+  testWidgets('Station provides a model configuration page', (tester) async {
+    tester.view.physicalSize = const Size(980, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final model = LauncherController(UiNative());
+    await model.initialize();
+    await tester.pumpWidget(LauncherApp(controller: model));
+    await tester.tap(find.text('模型'));
+    await tester.pumpAndSettle();
+    expect(find.text('统一模型配置'), findsOneWidget);
+    expect(find.text('加载模型配置'), findsOneWidget);
+    expect(find.text('添加模型提供商'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await model.close();
+    model.dispose();
+  });
 }

@@ -7,12 +7,14 @@ import { realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 import { listenManagerControl } from './manager-control.mjs'
 import { attachManagerWebSocket } from './manager-websocket.mjs'
 import { statusNotifications } from './status-notifications.mjs'
 import { privateDirectory, redact, SERVICE_PROTOCOL, serviceRequest } from './service-control.mjs'
 import { verifySuperagentPayload } from './superagent-payload.mjs'
+import { readSharedModelPatches, sharedModelEnvironment, watchSharedModelConfig } from './shared-model-config.mjs'
 
 const port = 3082
 const absent = promise => promise.catch(error => { if (error.code !== 'ENOENT') throw error })
@@ -98,13 +100,14 @@ async function health() {
   } catch { return undefined }
 }
 
-export async function serveSuperagent({ dataRoot, resources }) {
+export async function serveSuperagent({ dataRoot, resources, home = join(homedir(), '.dsh') }) {
   const directory = superagentDirectory(dataRoot), socketPath = superagentSocket(dataRoot)
   const server = createServer(), logs = []
   let child, url, state = 'stopped', message = '', starting, stopping, writes = Promise.resolve(), revision = 0
+  let closeModelSharing, modelSharing = { state: 'stopped' }
   const snapshot = () => ({ protocol: SERVICE_PROTOCOL, revision: ++revision, service: {
     state, ready: state === 'running', pid: child?.pid ?? null, message: message || null, observedAt: new Date().toISOString(),
-  }, logs: [...logs] })
+  }, modelSharing, logs: [...logs] })
   const updates = statusNotifications(snapshot)
   const log = value => {
     const entry = { text: redact(value).replace(/https?:\/\/[^\s"<>]+/g, '[本地地址已隐藏]').slice(-4096), observedAt: new Date().toISOString() }
@@ -125,7 +128,27 @@ export async function serveSuperagent({ dataRoot, resources }) {
         probe.listen(port, '127.0.0.1', () => probe.close(accept))
       })
       state = 'starting'; message = ''; url = undefined; updates.publish()
-      const environment = { ...process.env, DSH_HOME: prepared.home }
+      let modelEnvironment
+      try {
+        closeModelSharing = await watchSharedModelConfig({ resources, home, target: join(prepared.home, 'cordis.patch.yml'),
+          onError: reason => { modelSharing = { state: 'error', message: reason }; log(reason) },
+          onUpdated: () => { modelSharing = { state: 'ready' }; updates.publish() },
+        })
+        modelEnvironment = await sharedModelEnvironment(home, await readSharedModelPatches({ resources, home }), process.env)
+      } catch (error) {
+        await closeModelSharing?.(); closeModelSharing = undefined
+        const known = [
+          '已有 Superagent 主目录配置，无法自动启用共享模型。',
+          '共享模型配置已被外部修改，已保留原文件。',
+          '请先启动 DSH 服务并在模型配置中完成设置。',
+          'DSH 凭据路径必须是绝对路径。',
+        ]
+        modelSharing = { state: 'error', message: known.includes(error.message) ? error.message
+          : '共享模型配置不可用，请检查 DSH 模型设置和 Superagent 配置。' }
+        state = 'failed'; message = modelSharing.message; updates.publish()
+        throw new Error(modelSharing.message)
+      }
+      const environment = { ...process.env, ...modelEnvironment, DSH_HOME: prepared.home }
       delete environment.DSH_LAUNCH_PASSWORD
       delete environment.DSH_WORKFLOW_DATA_ROOT
       const owned = spawn(join(resources, 'node'), [join(resources, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
@@ -142,6 +165,8 @@ export async function serveSuperagent({ dataRoot, resources }) {
       owned.once('close', (code, signal) => {
         if (child !== owned) return
         child = undefined; url = undefined
+        void closeModelSharing?.().catch(() => log('共享模型配置监听未能正常关闭。'))
+        closeModelSharing = undefined; modelSharing = { state: 'stopped' }
         if (state === 'stopping') { state = 'stopped'; message = '' }
         else { state = 'failed'; message = `Superagent 已退出（${signal ?? code}）。` }
         log(message || 'Superagent 已停止。')
@@ -189,15 +214,19 @@ export async function serveSuperagent({ dataRoot, resources }) {
   return { async close() { await stop(); updates.close(); closeChannels(); await control.close(); await writes } }
 }
 
-async function ensureManager(dataRoot, resources) {
+async function ensureManager(dataRoot, resources, home) {
   const socket = superagentSocket(dataRoot)
-  try { await serviceRequest(socket, { type: 'status' }); return socket }
+  try {
+    const existing = await serviceRequest(socket, { type: 'status' })
+    if (!existing.modelSharing) throw new Error('旧版 Superagent 后台管理器尚未退出，请结束旧管理器或重启电脑后再启动。')
+    return socket
+  }
   catch (error) { if (!['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw error }
   const directory = superagentDirectory(dataRoot)
   await privateDirectory(directory)
   const log = await open(join(directory, 'manager.log'), 'a', 0o600)
   try {
-    const manager = spawn(process.execPath, [fileURLToPath(import.meta.url), 'manager', dataRoot, resources], {
+    const manager = spawn(process.execPath, [fileURLToPath(import.meta.url), 'manager', dataRoot, resources, home], {
       detached: true, stdio: ['ignore', log.fd, log.fd], cwd: resources, env: process.env,
     })
     await new Promise((accept, reject) => { manager.once('spawn', accept); manager.once('error', reject) })
@@ -211,19 +240,19 @@ async function ensureManager(dataRoot, resources) {
 }
 
 if (import.meta.main) {
-  const [action, dataRoot, resources] = process.argv.slice(2)
+  const [action, dataRoot, resources, home = join(homedir(), '.dsh')] = process.argv.slice(2)
   if (action === 'manager') {
-    const manager = await serveSuperagent({ dataRoot, resources })
+    const manager = await serveSuperagent({ dataRoot, resources, home })
     if (manager) for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => void manager.close().then(() => process.exit(0), error => { console.error(redact(error.message)); process.exitCode = 1 }))
   } else {
     try {
       if (!['start', 'stop', 'status', 'open'].includes(action) || !dataRoot || !resources) throw new Error('Invalid Superagent request')
-      const socket = action === 'start' ? await ensureManager(dataRoot, resources) : superagentSocket(dataRoot)
+      const socket = action === 'start' ? await ensureManager(dataRoot, resources, home) : superagentSocket(dataRoot)
       let value
       try { value = await serviceRequest(socket, { type: action }, action === 'stop' ? 310_000 : 70_000) }
       catch (error) {
         if (['status', 'stop'].includes(action) && ['ENOENT', 'ECONNREFUSED'].includes(error.code)) {
-          value = { protocol: SERVICE_PROTOCOL, service: { state: 'stopped', ready: false }, logs: [] }
+          value = { protocol: SERVICE_PROTOCOL, service: { state: 'stopped', ready: false }, modelSharing: { state: 'stopped' }, logs: [] }
         } else throw error
       }
       process.stdout.write(JSON.stringify({ ok: true, value }) + '\n')

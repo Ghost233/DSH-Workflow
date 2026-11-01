@@ -66,6 +66,9 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     ready: false,
   );
   bool superagentBusy = false;
+  bool loadingModelSettings = false;
+  Map<String, Object?>? modelSettings;
+  String modelSharingMessage = 'Superagent 启动后自动共享模型配置。';
   bool _observingWeb = false, _observingService = false;
   bool _windowVisible = true;
   Process? _statusObserver;
@@ -265,6 +268,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       action,
       environment.dataRoot,
       environment.resources,
+      environment.home,
     ], environment: {...Platform.environment}..remove('DSH_LAUNCH_PASSWORD'));
     final output = child.stdout.transform(utf8.decoder).join();
     final diagnostics = child.stderr.transform(utf8.decoder).join();
@@ -282,6 +286,16 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
     final value = objectValue(reply['value']);
     _superagent = ServiceStatus.fromJson(objectValue(value['service']));
+    final sharing = value['modelSharing'];
+    if (sharing is Map) {
+      modelSharingMessage = switch (sharing['state']) {
+        'ready' => 'Superagent 已连接统一模型配置。',
+        'error' => sharing['message'] as String? ?? '共享模型配置不可用。',
+        _ => 'Superagent 启动后自动共享模型配置。',
+      };
+    } else {
+      modelSharingMessage = '当前 Superagent 管理器版本较旧，尚未支持共享模型配置。';
+    }
     if (!_closed) notifyListeners();
     return value;
   }
@@ -312,6 +326,73 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void> stopSuperagent() => _manageSuperagent('stop');
   Future<void> refreshSuperagent() => _manageSuperagent('status');
   Future<void> openSuperagent() => _manageSuperagent('open');
+
+  Future<Map<String, Object?>> _modelSettingsCommand(
+    Map<String, Object?> request,
+  ) async {
+    final child = await _startProcess(node, [
+      script('model-settings.mjs'),
+      environment.dataRoot,
+      environment.resources,
+    ], environment: {...Platform.environment}..remove('DSH_LAUNCH_PASSWORD'));
+    final output = child.stdout.transform(utf8.decoder).join();
+    final diagnostics = child.stderr.drain<void>();
+    child.stdin.writeln(jsonEncode(request));
+    await child.stdin.close();
+    final code = await child.exitCode;
+    final body = await output;
+    await diagnostics;
+    if (body.trim().isEmpty) throw StateError('模型配置服务不可用。');
+    final reply = objectValue(jsonDecode(body));
+    if (code != 0 || reply['ok'] != true) {
+      throw StateError(reply['error'] as String? ?? '模型配置操作失败。');
+    }
+    return objectValue(reply['value']);
+  }
+
+  Future<void> refreshModelSettings() async {
+    if (_closed || loadingModelSettings) return;
+    loadingModelSettings = true;
+    notifyListeners();
+    try {
+      modelSettings = await _modelSettingsCommand({'type': 'list'});
+    } finally {
+      loadingModelSettings = false;
+      if (!_closed) notifyListeners();
+    }
+  }
+
+  Future<void> updateModelSettings(Map<String, Object?> request) async {
+    if (_closed || loadingModelSettings) {
+      throw StateError('模型配置正在处理，请稍后再试。');
+    }
+    loadingModelSettings = true;
+    notifyListeners();
+    try {
+      await _modelSettingsCommand(request);
+      modelSettings = await _modelSettingsCommand({'type': 'list'});
+    } finally {
+      loadingModelSettings = false;
+      if (!_closed) notifyListeners();
+    }
+  }
+
+  Future<List<String>> discoverModelSettings(
+    Map<String, Object?> request,
+  ) async {
+    if (_closed || loadingModelSettings) throw StateError('模型配置正在处理，请稍后再试。');
+    loadingModelSettings = true;
+    notifyListeners();
+    try {
+      final value = await _modelSettingsCommand(request);
+      return (value['models'] as List)
+          .map((row) => objectValue(row)['id'] as String)
+          .toList();
+    } finally {
+      loadingModelSettings = false;
+      if (!_closed) notifyListeners();
+    }
+  }
 
   Future<Map<String, Object?>> _serviceCommand(
     String type, {
