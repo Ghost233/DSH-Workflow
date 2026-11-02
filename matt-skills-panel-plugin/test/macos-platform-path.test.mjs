@@ -8,8 +8,8 @@ import { workspaceNormOf, resolveWorkspaceEntry } from '../src/client/kernel/api
 import { getRoot, mdPath } from '../src/tracker/rooms/markdown/path.js'
 import { getScratchRoot } from '../src/tracker/rooms/markdown/issues-locate.js'
 import { createPublishFlow } from '../src/host/publishFlow.js'
-import { makeCreateErrorClassifier, KIND_UNKNOWN } from '../src/tracker/rooms/github/init-project-error-kinds.js'
-import { initProject } from '../src/tracker/rooms/github/init-project.js'
+import { makeCreateErrorClassifier, KIND_UNKNOWN } from '../src/tracker/rooms/github/support/init-project-error-kinds.js'
+import { initProject } from '../src/tracker/rooms/github/write/init-project.js'
 import { createPlatformChannel } from '../src/host/platformChannel.js'
 import { createSkillProbe } from '../src/host/skillProbe.js'
 

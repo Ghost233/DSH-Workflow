@@ -41,7 +41,7 @@ test('running markers fall back to Git while preserving a literal macOS director
 })
 
 import { createSkillDoc } from '../src/host/skillDoc.js'
-import { readRepoPermissions } from '../src/tracker/rooms/github/repo-permissions.js'
+import { readRepoPermissions } from '../src/tracker/rooms/github/read/repo-permissions.js'
 import { halfOpenTrialIsDue, recordFailure } from '../src/refresh/kernel/failure-window.js'
 
 test('skill details use the registered Chinese provider and preserve the requested workspace', async () => {
@@ -71,7 +71,14 @@ test('permission reads share a request within a batch and preserve triage-only a
   const client = { execGh: async () => { calls++; return { ok: true, data: { stdout: '{"push":false,"triage":true}' } } } }
   const batch = new Map()
   const result = await Promise.all([readRepoPermissions(client, 'owner/repo', {}, batch), readRepoPermissions(client, 'owner/repo', {}, batch)])
-  assert.deepEqual(result, [{ push: false, triage: true }, { push: false, triage: true }])
+  for (const permission of result) {
+    assert.equal(permission.push, false)
+    assert.equal(permission.triage, true)
+    assert.equal(permission.provenance.operation, 'getRepoPermissions')
+    assert.equal(permission.provenance.source, 'rest')
+    assert.equal(permission.provenance.fieldGroups.permissions, 'complete')
+  }
+  assert.deepEqual(result[0], result[1])
   assert.equal(calls, 1)
   assert.equal(await readRepoPermissions({ execGh: async () => ({ ok: false }) }, 'owner/repo', {}), null)
 })

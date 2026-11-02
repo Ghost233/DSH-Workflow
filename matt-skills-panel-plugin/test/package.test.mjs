@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, existsSync } from 'node:fs'
 import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 import vm from 'node:vm'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -81,4 +81,13 @@ test('the relocated package executes log and YAML dependencies without an instal
   assert.equal(workspace.parseWorkspaceText(text).value.backendId, 'github')
   const labels = await load('shared/config-store/labels.js')
   assert.equal(labels.parseLabelsText('version: 1\nbug: "#ff0000"\n').ok, true)
+})
+
+test('the inlined base client ships its upstream MIT license', () => {
+  assert.match(read('package/lib/client.js'), /dsh-featherhunter-plugin-base v0\.1\.5/)
+  assert.ok(JSON.parse(read('package/package.json')).files.includes('dsh-featherhunter-plugin-base.LICENSE'))
+  const manifest = createRequire(new URL('package.json', root)).resolve('dsh-featherhunter-plugin-base/package.json')
+  const license = readFileSync(join(dirname(manifest), 'LICENSE'), 'utf8')
+  assert.equal(read('licenses/dsh-featherhunter-plugin-base.LICENSE'), license)
+  assert.equal(read('package/dsh-featherhunter-plugin-base.LICENSE'), license)
 })

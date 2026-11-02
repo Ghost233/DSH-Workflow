@@ -78,12 +78,12 @@ test('the exportable package includes every built-in backend and its real depend
   const plugin = 'matt-skills-panel-plugin/'
   // TS/YAML inputs are committed; the standard build creates the complete runtime tree.
   const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', plugin + 'src'], { cwd: root, encoding: 'utf8' }).trim().split('\n')
-  for (const id of ['github', 'gitlab', 'markdown']) assert.ok(files.includes(plugin + `src/tracker/rooms/${id}/index.ts`))
+  for (const id of ['github', 'gitlab', 'markdown']) assert.ok(files.includes(plugin + `src/tracker/rooms/${id}/${id === 'github' ? 'room/' : ''}index.ts`))
   const snapshot = await mkdtemp(path.join(tmpdir(), 'matt-exported-backends-'))
   t.after(() => rm(snapshot, { recursive: true, force: true }))
   await cp(fileURLToPath(new URL('../package/', import.meta.url)), snapshot, { recursive: true })
   for (const [id, exported] of [['github', 'githubModule'], ['gitlab', 'gitlabBackend'], ['markdown', 'markdownModule']]) {
-    const module = await import(pathToFileURL(path.join(snapshot, 'tracker/rooms', id, 'index.js')).href)
+    const module = await import(pathToFileURL(path.join(snapshot, 'tracker/rooms', id, ...(id === 'github' ? ['room'] : []), 'index.js')).href)
     assert.equal(module[exported].id, id)
   }
   await import(pathToFileURL(path.join(snapshot, 'lib/logFromPackage.js')).href)

@@ -47,7 +47,8 @@ export const makeStore = (): any => ({
   backendModules: null,
   backendMenuOpen: false,
   backendMenuPos: null,
-  cwd: '', lblFilters: [], effFilters: [], expLabels: false,
+  // expLabels 是第三排分类标签的展开态，expEfforts 是第一排 md目录签的展开态（#1664），都会话私有、默认收起。
+  cwd: '', lblFilters: [], effFilters: [], expLabels: false, expEfforts: false,
   // 由 wf.cwd 带回来的工作区根（2026-09-19 加）：归属标志的早到来源，收下与写表在 probe-snapshot.js。
   sessionWorkspaceRoot: '',
   // 状态过滤 + 排序：默认档是「编号升序」，来自内核 listPrefs 的初始偏好（见 store-prefs）；
@@ -55,7 +56,9 @@ export const makeStore = (): any => ({
   stateFilter: ((typeof listPrefs !== 'undefined' ? listPrefs : {}) as any).stateFilter, sortKey: ((typeof listPrefs !== 'undefined' ? listPrefs : {}) as any).sortKey, sortDir: ((typeof listPrefs !== 'undefined' ? listPrefs : {}) as any).sortDir,
   chainSnapshot: null, chainLoadedAt: '', backendChain: null, fullChain: null,
   snapMode: 'loading', snapError: null, snapLoading: false,
-  // #727：后端那条事实的读取状态。selPending =「这个工作区用哪个后端」还说不准、而且有真的在途原因（面板取数在飞，或那条专用电话在飞）；_selAskedKey = 已经为哪个工作区补问过那条电话（见 probe-select.js）。
+  // #727 / #1767：后端那条事实的读取状态。selPending 只有一个主人——那条问后端的专用电话还在飞时
+  //   由 askSelectionOnce 自己置、自己清（见 probe-scope-selection）；快照取数在飞由 snapLoading 表达，
+  //   两个开关各管一件事。_selAskedKey = 已经为哪个工作区补问过那条电话（同一工作区只问一次）。
   selPending: false, _selAskedKey: '',
   // T2 HoverTip 迁移（#381）：skillTip 已由 HoverTip 局部 state 统一，移除全局，skillHover 保留用于行高亮（后续可改 CSS :hover 再移除）
   refreshing: false, rowFlash: {}, issueFlash: {}, handoffReady: false, handoffSearching: false,

@@ -1,6 +1,6 @@
 {
   "name": "dsh-workflow-matt-panel-source",
-  "version": "1.9.0-beta.32.workflow.1",
+  "version": "1.9.0-beta.33.workflow.1",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -16,7 +16,8 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2",
-    "typescript": "5.6.3"
+    "typescript": "5.6.3",
+    "dsh-featherhunter-plugin-base": "0.1.5"
   },
   "os": [
     "darwin"

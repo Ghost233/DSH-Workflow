@@ -2,7 +2,7 @@
  * src/tracker/rooms/gitlab/read-log.ts —— GitLab 房读路径「这一趟没读成」的结论线。
  *
  * ── 为什么这一房今天才有它 ──────────────────────────────────────────────────────
- * GitHub 房在 #1052 就立起了这条线（`src/tracker/rooms/github/read-log.ts`），GitLab 房当时
+ * GitHub 房在 #1052 就立起了这条线（`src/tracker/rooms/github/support/read-log.ts`），GitLab 房当时
  * 只有 13 条操作、读路径能出问题的分支也少，一直没跟。地图 10（#1062）把这一房补到 26 条能力，
  * 一次多出五条读操作（计数、分页、标签清单、子票、仓库权限）与三条单点读（当前登录人、
  * 仓库坐标、探测），若是继续不记，事后拿导出包的人是同一个处境：**命令成功了（退出码 0），
@@ -32,6 +32,7 @@
  */
 
 import type { OpContext } from '../../contract/contexts.js'
+import { LIST_TRUNCATED_REASON } from '../../contract/results.js'
 import { guardEmit, ms } from '../../kernel/log-emit.js'
 
 /**
@@ -94,6 +95,8 @@ export const READ_DEGRADED_REASONS = Object.freeze([
   'list:transport',
   'list:json',
   'list:shape',
+  // #1770：列表只取了第一页（per_page 上限 100）就按成功返回 —— 拿不全但没失败，交给上层决定怎么说。
+  LIST_TRUNCATED_REASON,
   'get:repo-ref',
   'get:transport',
   'get:json',

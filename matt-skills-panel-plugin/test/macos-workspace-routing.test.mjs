@@ -10,7 +10,7 @@ import { withLabelColorsWriter } from '../src/tracker/rooms/markdown/label-color
 import { createPickerShell } from '../src/host/pickerShell.js'
 import { subwsMarkRootShown, subwsMarkRelOf } from '../src/client/views/SubworkspaceMark.js'
 import { classifyError } from '../src/tracker/kernel/preflight.js'
-import { classifyGhError } from '../src/tracker/rooms/github/errors.js'
+import { classifyGhError } from '../src/tracker/rooms/github/support/errors.js'
 import { classifyGlabError } from '../src/tracker/rooms/gitlab/errors.js'
 
 test('session reuse and handoff paths retain macOS case and literal backslashes', () => {

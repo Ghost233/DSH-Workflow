@@ -11,12 +11,18 @@ declare function peekNav(...args: any[]): any;
 declare function repoStr(...args: any[]): any;
 declare function buildColorOf(...args: any[]): any;
 declare function fetchIssueDetail(...args: any[]): any;
+// #1694：详情读快照投影（这一趟取回的详情优先，没有就读快照行）住在 views/shared/detailProjection.ts，本文件只消费。
+declare function detailViewFor(...args: any[]): any;
+declare function knownBlockedNodes(...args: any[]): any;
 declare function useIssueDetailFold(...args: any[]): any;
 // #1573：失败横幅三块（主行一句话 / kind 小标签 / 原始说明折叠区）的显示口径在 views/issueDetailErrorView.ts。
 declare function issueErrorViewOf(...args: any[]): any;
 declare function effortOf(...args: any[]): any;
 declare function popNav(...args: any[]): any;
 declare function prStateKind(...args: any[]): any;
+// #1668 / #1669：详情顶栏动作按钮能不能点（票已关闭/已合并，或被还没关闭的票阻塞就置灰）的判据
+//   住在 kernel/detail-top-gate.ts。
+declare function detailTopGate(...args: any[]): any;
 declare function effortNamesOf(...args: any[]): any;
 // #1511 / #1564：号码写成「#目录/编号」的显示规则住在 kernel/ticket-label.ts，整颗徽标的画法（四种外壳）
 //   收在 views/shared/ticketBadge.ts；详情页头只提供票身份与状态色。
@@ -83,8 +89,10 @@ export const IssueDetail = function (props: any): any {
       }, [st.cmtConfirm])
       // #763 顶栏折叠机（hook 在 views/useIssueDetailFold.js；返回优先收到图标，一次折一个，不放省略号）
       const topBarRef = useIssueDetailFold(st, issueNumber, issueEffort)
-      // 详情缓存按 (effort, 编号) 键入；比对时 effort 一致才算同一张票（缺字段的旧详情按编号兜底）
-      const detail = (st.issueDetail && st.issueDetail.number === issueNumber && (st.issueDetail.effortId === undefined || String(st.issueDetail.effortId) === issueEffort)) ? st.issueDetail : null
+      // #1694 读投影：这一趟取回的详情优先（live）；没有就先读面板快照投影（上次取到的正文/评论），
+      // 把「进入详情先等网络」变成「先把上次内容画出来」。投影的判据与开关住在 views/shared/detailProjection.ts。
+      const proj = detailViewFor(st, issueNumber, issueEffort)
+      const detail = proj.issue
       const issues = (st.snapshot && Array.isArray(st.snapshot.issues)) ? st.snapshot.issues : []
       const snapIssue = issues.find(function (x: any) { return x.number === issueNumber && effortOf(x) === issueEffort }) || issues.find(function (x: any) { return x.number === issueNumber })
       // #693 取数口径：快照那一行只当**轻量预览**用（标题、状态、标签、指派人、被阻塞、
@@ -213,14 +221,20 @@ export const IssueDetail = function (props: any): any {
       const effortChip = (SHOW_EFFORT_BADGE && issueEffort && effortNamesOf(st).length > 1) ? h(Tip, { content: issueEffort }, h('span', { className: 'dsws-chip dsws-eff', 'aria-label': issueEffort, style: { fontSize: 10, lineHeight: 1.6, padding: '0 6px', flex: 'none', maxWidth: 140, overflow: 'hidden', whiteSpace: 'nowrap', background: 'rgba(88,166,255,.14)', color: '#58a6ff', border: '1px solid rgba(88,166,255,.45)' } }, issueEffort)) : null
       // #693 正文格：**只有详情回来了才能说「无描述」**。详情没回来时说加载中，取不到时说「还没拿到」。
       //   取数失败的失败原因与重试在页面顶部那条横幅上（这里不重复放一个按钮）。
+      // #1692：快照行上的正文曾被清理过（只删内容、留记号）而详情页又还没取回来时，说「未取（曾在某时）」，
+      //   不画「加载中」也不画「无描述」——那两句都会把「取过、后来清掉了」说成别的意思。
+      const evictedAtMs = (!detail && snapIssue && snapIssue.detailEvicted && typeof snapIssue.detailEvicted.lastKnownAtMs === 'number' && snapIssue.detailEvicted.lastKnownAtMs > 0) ? snapIssue.detailEvicted.lastKnownAtMs : 0
+      const evictedTime = evictedAtMs ? (function () { const ed = new Date(evictedAtMs); const epad = function (n: any) { return (n < 10 ? '0' : '') + n }; return epad(ed.getHours()) + ':' + epad(ed.getMinutes()) })() : ''
       const bodySlot = detail
         ? ((detail.body && String(detail.body).trim())
             ? h('div', { style: { fontSize: 12, lineHeight: 1.6, color: 'var(--dsw-alias-label-primary,#e6edf3)' } }, (typeof mdToHtml === 'function' ? mdToHtml(detail.body, { st: st }) : String(detail.body)))
             : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-caption,#8b8b95)' } }, tr('detail.noBody')))
-        : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-caption,#8b8b95)', display: 'flex', alignItems: 'center', gap: 6 } }, [
-            mode === 'err' ? null : h('div', { className: 'dsws-spinner', style: { width: 11, height: 11, border: '2px solid rgba(255,255,255,.15)', borderTopColor: (typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '', borderRadius: '50%', animation: 'dsws-spin ' + MOTION.inlineSpinnerMs + 'ms linear infinite' } }),
-            h('span', null, mode === 'err' ? tr('detail.bodyNotYet') : tr('list.loading')),
-          ])
+        : (evictedTime
+            ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-caption,#8b8b95)' } }, tr('detail.evictedAt', { time: evictedTime }))
+            : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-caption,#8b8b95)', display: 'flex', alignItems: 'center', gap: 6 } }, [
+                mode === 'err' ? null : h('div', { className: 'dsws-spinner', style: { width: 11, height: 11, border: '2px solid rgba(255,255,255,.15)', borderTopColor: (typeof CONTAINER_ACCENT === 'object' && CONTAINER_ACCENT) ? CONTAINER_ACCENT.map : '', borderRadius: '50%', animation: 'dsws-spin ' + MOTION.inlineSpinnerMs + 'ms linear infinite' } }),
+                h('span', null, mode === 'err' ? tr('detail.bodyNotYet') : tr('list.loading')),
+              ]))
       const has = function (nm: any) { return labelArr.some(function (l: any) { return (l.name || l) === nm }) }
       const _isTriageLikeLocal = !labelArr.length || has('needs-triage')
       // #1595：这个假票对象会走行动作那条注入链（rowActionText 按 effort 取链接），必须带上本票所属 effort，否则多 effort 仓库里注入的链接会指到别的目录。
@@ -297,7 +311,23 @@ export const IssueDetail = function (props: any): any {
       const actTextColor = (typeof isLightHex === 'function' && isLightHex(actColor)) ? '#140a1e' : '#ffffff'
       const subNodes = (src.subIssues && src.subIssues.nodes) ? src.subIssues.nodes : []
       const subTotal = (src.subIssues && typeof src.subIssues.totalCount === 'number') ? src.subIssues.totalCount : subNodes.length
-      const blockedNodes = (src.blockedBy && src.blockedBy.nodes) ? src.blockedBy.nodes : []
+      // #1694：被阻塞边两种形状都认（快照行是数组、详情回包是连接），图里点开一张票时首帧就能显示已知阻塞。
+      const blockedNodes = knownBlockedNodes(src)
+      // #1668 / #1669：顶栏两颗动作按钮同进退。被阻塞清单认详情回包与快照里已知的那一份，
+      //   没取到就当没有；判据与原因收在 kernel/detail-top-gate.ts，本文件不自己判。
+      const topGate = detailTopGate(src, blockedNodes)
+      // 悬停只喊一条原因：票已关闭（含已合并）说「已关闭」；被没做完的票阻塞则点名票号，
+      //   票号升序与顿号都来自判据和词表，这里只负责拼句。可点时这句话不用（按钮各有原来的说明）。
+      const gateTip = topGate.clickable ? '' : (topGate.reason === 'blocked'
+        ? tr('tip.detailBlockedBy', { n: topGate.blockedNumbers.map(function (x: any) { return '#' + x }).join(tr('tip.detailBlockedByJoin')) })
+        : tr('tip.detailClosedReadonly'))
+      // 交互决策 6：这两颗按钮不可点时，点击不该被记进日志。点击日志挂在 document 捕获阶段的委托上，
+      //   它见到带 data-log 的元素就写一条 ui.action；所以置灰状态下干脆不挂 data-log（值给 undefined，
+      //   不是空串），可点时才挂回原来的两个枚举值。data-press 照旧挂着：它管的是按压形状，与日志无关。
+      // 两颗动作按钮的灰态属性与底色是同一套，抽成下面两份共用值，各自只留自己的 data-log、onClick 与内容。
+      const gateDisabled = !topGate.clickable
+      const actionStyle = { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, background: gateDisabled ? undefined : actColor, borderColor: 'transparent', color: gateDisabled ? undefined : actTextColor, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }
+      const gateAttrs = { 'aria-disabled': gateDisabled ? 'true' : undefined, tabIndex: gateDisabled ? -1 : undefined }
       // #693 评论也只认详情那次取数：快照那一行可能不带评论，拿它当「没有评论」会说错话。
       // #1519：详情回包里的评论只有一种形状 —— GraphQL 连接 {nodes, pageInfo}。宿主
       // src/refresh/rooms/host/comment-thread-fetch.ts 的 handleIssueDetail 与旧路 issue-detail-fetch.ts
@@ -307,8 +337,10 @@ export const IssueDetail = function (props: any): any {
       // 同一条判据只算一次：形状对不对（是不是连接）既决定画不画评论列表，也决定显不显示输入框。
       // 名字沿用 rawComments：门禁 tests/verify-issue-comment.ts 会从构建产物里按这个名字切出判据求值。
       let canComment = !!rawComments && Array.isArray(rawComments.nodes)
-      const commentsNodes = canComment ? rawComments.nodes : []
-      const isStale = !detail && !!snapIssue
+      // #1694：从快照投影出来、或失败后保留的评论只读 —— 写评论仍要等这一趟详情取数成功。
+      if (proj.source !== 'live') canComment = false
+      const commentsNodes = (proj.source !== 'none' && !!rawComments && Array.isArray(rawComments.nodes)) ? rawComments.nodes : []
+      const isStale = proj.source === 'snapshot'
       // ======== #255 · 评论输入区（GitHub 单点 · MISSING 零分支）========
       // 显隐以能力字段有无判：comments 存在即渲染（EMPTY=[] 渲染、MISSING=省略 不渲染），
       // 零后端身份分支。形状只认 GraphQL 连接一种，理由同上（#1519）。
@@ -326,16 +358,17 @@ export const IssueDetail = function (props: any): any {
         // 再收主动作按钮的字，最后收新会话按钮的字；一次只折一个控件，直至只剩图标再折下一个。
         // 宽度只由阶梯改字数决定，CSS 不并行收缩（除中间空隙外全 flex:none），所以不会多按钮同时半截。
         // 图标永不消失；看不见的字直接裁掉，不补省略号；完整串留悬停。
-        h('div', { ref: topBarRef, className: 'dsws-stickybar', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', minWidth: 0, overflow: 'hidden' } }, [
+        h('div', { ref: topBarRef, className: 'dsws-stickybar', 'data-detail-topbar': 1, style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', minWidth: 0, overflow: 'hidden' } }, [
           // 返回按钮的悬停提示走 Tip（T2/T3 纪律），不再用原生 title
           h(Tip, { content: tr('list.back') }, h('button', { className: 'dsws-btn', 'data-press': 'button', 'data-log': 'issue.top.back', onClick: goBack, style: { display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'back', size: 12 }), h('span', { 'data-detail-back-text': 1, 'data-full': tr('list.back'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.back'))])),
           h(Tip, { content: navCrumb }, h('span', { 'data-detail-crumb': 1, 'data-full': navCrumb, style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', whiteSpace: 'nowrap', flex: 'none', minWidth: 0, overflow: 'hidden' } }, navCrumb)),
           effortChip,
           h('span', { style: { flex: 1, minWidth: 8 } }),
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 3, flex: 'none', minWidth: 0, overflow: 'hidden', flexWrap: 'nowrap' } }, [
-            detail ? h('span', { 'data-detail-snapshot': 1, 'data-full': (isStale ? '快照' : (mode === 'loading' ? tr('list.loading') : '')), style: { fontSize: 10, color: isStale ? '#f59e0b' : '#8b8b95', flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, isStale ? '快照' : (mode === 'loading' ? tr('list.loading') : '')) : null,
-            h(Tip, { content: primaryInfo.tip }, h('button', { className: 'dsws-btn primary', 'data-press': 'button', 'data-log': 'issue.top.exec', onClick: function (e: any) { e.stopPropagation(); try { inject(st, primaryInfo.text) } catch (err2) {} }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, background: actColor, borderColor: 'transparent', color: actTextColor, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: primaryInfo.icon, size: primaryInfo.icon === 'prototype' ? 12 : 10 }), h('span', { 'data-detail-primary-text': 1, 'data-full': primaryInfo.label, style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, primaryInfo.label)])),
-            h(Tip, { content: tr('tip.newSession', { n: issueNumber }) }, h('button', { className: 'dsws-btn primary', 'data-press': 'button', 'data-log': 'issue.top.newsession', onClick: function (e: any) { e.stopPropagation(); openInNewSession(st, { number: issueNumber, ['title']: title, labels: labelArr, effortId: issueEffort }) }, style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', fontSize: 11, background: actColor, borderColor: 'transparent', color: actTextColor, flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, [Ic({ n: 'external-link', size: 10 }), h('span', { 'data-detail-new-text': 1, 'data-full': tr('list.newSessionLabel'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.newSessionLabel'))])),
+            proj.notice ? h('span', { 'data-detail-last-known': 1, 'data-full': proj.notice, style: { fontSize: 10, color: '#f59e0b', flex: 'none', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' } }, proj.notice) : (mode === 'loading' ? h('span', { 'data-detail-snapshot': 1, style: { fontSize: 10, color: '#8b8b95', flex: 'none' } }, tr('list.loading')) : null),
+            // 这两颗动作按钮共用上面的 gateAttrs / actionStyle，各自只留自己的 data-log、onClick 与内容。
+            h(Tip, { content: topGate.clickable ? primaryInfo.tip : gateTip }, h('button', Object.assign({ className: 'dsws-btn primary', 'data-press': 'button', 'data-log': gateDisabled ? undefined : 'issue.top.exec', onClick: function (e: any) { e.stopPropagation(); if (gateDisabled) return; try { inject(st, primaryInfo.text) } catch (err2) {} }, style: actionStyle }, gateAttrs), [Ic({ n: primaryInfo.icon, size: primaryInfo.icon === 'prototype' ? 12 : 10 }), h('span', { 'data-detail-primary-text': 1, 'data-full': primaryInfo.label, style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, primaryInfo.label)])),
+            h(Tip, { content: topGate.clickable ? tr('tip.newSession', { n: issueNumber }) : gateTip }, h('button', Object.assign({ className: 'dsws-btn primary', 'data-press': 'button', 'data-log': gateDisabled ? undefined : 'issue.top.newsession', onClick: function (e: any) { e.stopPropagation(); if (gateDisabled) return; openInNewSession(st, { number: issueNumber, ['title']: title, labels: labelArr, effortId: issueEffort }) }, style: actionStyle }, gateAttrs), [Ic({ n: 'external-link', size: 10 }), h('span', { 'data-detail-new-text': 1, 'data-full': tr('list.newSessionLabel'), style: { overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 } }, tr('list.newSessionLabel'))])),
             h(Tip, { content: tr('tip.copyLink') }, h('button', { className: 'dsws-btn ghost', 'data-press': 'icon', 'data-log': 'issue.top.copy', onClick: function (e: any) { e.stopPropagation(); copyUrl(issueNumber) }, style: { display: 'inline-flex', alignItems: 'center', padding: '2px 4px', flex: 'none' } }, Ic({ n: 'clipboard', size: 13 }))),
                         // 本地票的 url 是文件路径不是网址：https 走新页，本地走宿主打开（裸 href 点了没反应，#1145）
             h(Tip, { content: tr('tip.openInTracker', { n: issueNumber }) }, (function () {

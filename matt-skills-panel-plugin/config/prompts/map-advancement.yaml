@@ -1,10 +1,10 @@
 complete:
-  version: 17
+  version: 18
   placeholders:
     - url
     - closed
     - total
-  use: map 完成态 · 按 wayfinder 技能核对探索完成，再按当前状态走分支：已做完的交接步骤跳过；结论需要接着做就提醒手动 /to-spec → /to-tickets，不需要就在正文记下结论、留一条总结评论后关闭这张地图（#1281；#1274 收口后补分支）；v17（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
+  use: map 完成态 · 按 wayfinder 技能核对探索完成，再按当前状态走分支：已做完的交接步骤跳过；结论需要接着做就提醒手动 /to-spec → /to-tickets，不需要就在正文记下结论、留一条总结评论后关闭这张地图（#1281；#1274 收口后补分支）；v17（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程；v18（2026-10-31）：工具节公共提醒行改为「每轮回复收尾先判断、想得到就调用」
   zh: |-
     /wayfinder
     {url}
@@ -60,9 +60,9 @@ complete:
 
     {{shared:sharedTools}}
 fixate:
-  version: 11
+  version: 12
   placeholders: []
-  use: "沉淀 · 思维对齐 · 成果沉淀 · v9 #1407 加 suggest_next_steps 提醒、删 /retro 提醒"
+  use: "沉淀 · 思维对齐 · 成果沉淀 · v9 #1407 加 suggest_next_steps 提醒、删 /retro 提醒；v12（2026-10-31）：工具节公共提醒行改为「每轮回复收尾先判断、想得到就调用」"
   zh: |-
     告一段落。暂停推进，执行「思维对齐 · 成果沉淀」，从第一性原理出发：
 
@@ -112,10 +112,10 @@ fixate:
 
     {{shared:sharedTools}}
 healthCheck:
-  version: 6
+  version: 7
   placeholders:
     - subject
-  use: 「体检」按钮 · 所有后端共用的总纲（游离票归位：先出建议清单、人点头才动手）；后端自己的科目由后端声明、经 {subject} 填空；v6（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
+  use: 「体检」按钮 · 所有后端共用的总纲（游离票归位：先出建议清单、人点头才动手）；后端自己的科目由后端声明、经 {subject} 填空；v6（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程；v7（2026-10-31）：工具节公共提醒行改为「每轮回复收尾先判断、想得到就调用」
   zh: |-
     {{shared:firstPrinciples}}
 
@@ -199,16 +199,32 @@ healthCheck:
 
     {{shared:sharedTools}}
 mapExecute:
-  version: 22
+  version: 24
   placeholders: []
-  use: map 执行 / 新会话（未完成态）· 只写推进指令与收尾，推进规则交给 wayfinder 技能（#1281）；v22（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
+  use: map 执行 / 新会话（未完成态）· 只写推进指令与收尾，推进规则交给 wayfinder 技能（#1281）；v22（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程；v23（2026-10-31）：补地图推进的开工、推进、关 issue、收尾四节操作约束，仍是插件增量——不复述技能规则、不定义认领生命周期；v24（2026-10-31）：工具节公共提醒行改为「每轮回复收尾先判断、想得到就调用」
   zh: |-
     {{shared:firstPrinciples}}
 
     请按 wayfinder 技能推进这张 map。
 
+    ## 开工
+    - [ ] 可接 issue 以逐张读回为准：先读 open sub-issue 的认领人、以及它被哪些 issue 阻塞，按技能定义的 frontier 自己算一遍，再读候选 issue 的正文。
+    - [ ] 开工先看 deck 后端能力：写不了就只做只读的活，把结论和下一步交回本人。
+    - [ ] 可接 issue 为空时说明原因后停；如果剩下的还只是 fog、但你能把它写成 issue，就先建 issue、写明它被哪些 issue 阻塞，再停。
+
+    ## 推进
+    - [ ] 技能默认按顺序取第一张可接 issue；这次按能解锁最多下游 issue 的排，仍并列按 issue 号从小到大。
+    - [ ] 需要本人拍板时，把选项、各自代价和建议写进那张 issue 的评论，再在回复里说一遍；问完停下。
+
+    ## 关 issue
+    - [ ] 结论先落 issue：决策写 issue 的 resolution comment，研究结论写 research/ 新笔记。写回 map 的 Decisions so far 前重读正文（别的会话可能刚改过），只追加一行「issue 标题（链接）：结论」。
+    - [ ] 写回被拒（工具提示正文已被改）时，重读最新正文，把你那一行并进去再写，保留别人刚写的部分。
+    - [ ] 写完读回核对四项：issue 里的问题被正面回答、结论有据可查（文件路径、命令输出或实测结果）、该建的 issue 已建好且写明被哪些 issue 阻塞、Not yet specified 已按本次发现增减（毕业的移出、新 fog 补上）。四项齐了才关 issue。
+
     ## 收尾
-    - [ ] 结束前把这次推进的结果写进这张 map 正文；没做完的写明下一步。
+    - [ ] 没做成决策时，把停点写进那张 issue 的评论：等本人拍板、等外部资源，还是写不进去；并在回复里说清下次从哪张 issue 读起。
+    - [ ] sub-issue 全部关闭后，提醒本人点详情页的「完成」做最终核对；地图算不算走完由那次核对宣布，你只报告停在哪一步。
+    - [ ] 回复里用三句话报告：推进了哪张 issue、结论放在哪、下一步由谁做什么。
 
     {{shared:sharedTools}}
   en: |-
@@ -216,18 +232,34 @@ mapExecute:
 
     Please advance this map with the wayfinder skill.
 
+    ## Start
+    - [ ] Treat claimable issues as whatever you read back one by one: read each open sub-issue's assignee and which issues block it, work the frontier out yourself by the skill's definition, then read the candidate issue's body.
+    - [ ] Check what the deck backend can do first: if you cannot write, do read-only work only, and hand the conclusions and the next step back to me.
+    - [ ] If no issue is claimable, say why and stop; if what remains is still only fog but you can turn it into an issue, create the issue, write down which issues block it, then stop.
+
+    ## Advancing
+    - [ ] The skill takes the first claimable issue in order; this time order them by how many downstream issues each unlocks, breaking ties by issue number.
+    - [ ] When you need me to decide something, put the options, their costs and your recommendation in that issue's comments, and repeat them in your reply; then stop and wait.
+
+    ## Closing issues
+    - [ ] Record the conclusion in the issue first: decisions go in the issue's resolution comment; research findings go in a new note under research/. Before writing back to the map's Decisions so far, re-read the body (another session may have just changed it), and append only one line: "issue title (link): conclusion".
+    - [ ] If the write-back is rejected (the tool says the body changed), re-read the latest body, merge your line into it, and write again, keeping what others just wrote.
+    - [ ] After writing, read it back and check four things: the question in the issue is answered directly; the conclusion is verifiable (file path, command output, or observed result); the issues that should exist have been created and say which issues block them; and Not yet specified has been updated for what this session found (graduated items removed, new fog added). Close the issue only when all four hold.
+
     ## Wrap-up
-    - [ ] Before finishing, write the result of this pass into this map body; if unfinished, state the next step.
+    - [ ] If you did not reach a decision, write the stopping point in that issue's comments: waiting on me to decide, waiting on external resources, or cannot write. Also say in your reply which issue to start from next time.
+    - [ ] After all sub-issues are closed, remind me to click "Complete" on the detail page for the final check; that check declares whether the map is done, and you only report where you stopped.
+    - [ ] Report in your reply in three sentences: which issue advanced, where the conclusion is, and who does what next.
 
     {{shared:sharedTools}}
 mapInspect:
-  version: 14
+  version: 15
   placeholders:
     - n
     - title
     - url
     - subIssue
-  use: map 空态 0/0 检查 · 诊断关联缺失；v14（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
+  use: map 空态 0/0 检查 · 诊断关联缺失；v14（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程；v15（2026-10-31）：工具节公共提醒行改为「每轮回复收尾先判断、想得到就调用」
   zh: |-
     {{shared:firstPrinciples}}
 
@@ -281,9 +313,9 @@ mapInspect:
 
     {{shared:sharedTools}}
 specComplete:
-  version: 8
+  version: 9
   placeholders: [url, closed, total]
-  use: '规格容器 · 完成态「完成」按钮：先认这次是怎么做的，把改动交付到仓库长期分支（没有版本库则以当前工作区为准），逐条核对用户故事与逐票证据后按边界关闭规格；关闭只经 deck_issue_patch，没有「顺手关」的旁路，重开只能由人做（#1281、#1350）；v8（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程'
+  use: '规格容器 · 完成态「完成」按钮：先认这次是怎么做的，把改动交付到仓库长期分支（没有版本库则以当前工作区为准），逐条核对用户故事与逐票证据后按边界关闭规格；关闭只经 deck_issue_patch，没有「顺手关」的旁路，重开只能由人做（#1281、#1350）；v8（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程；v9（2026-10-31）：工具节公共提醒行改为「每轮回复收尾先判断、想得到就调用」'
   zh: |-
     {{shared:firstPrinciples}}
 
@@ -361,10 +393,10 @@ specComplete:
 
     {{shared:sharedTools}}
 specExecute:
-  version: 7
+  version: 9
   placeholders:
     - url
-  use: 规格容器 · 有未关实施票时「执行」按钮（首行 /implement-spec）（#1281）；v6（2026-10-29）：收尾小节标题从「## 收口」改成「## 收尾」，与其余模板统一；v7（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
+  use: 规格容器 · 有未关实施票时「执行」按钮（首行 /implement-spec）（#1281）；v6（2026-10-29）：收尾小节标题从「## 收口」改成「## 收尾」，与其余模板统一；v7（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程；v8（2026-10-31）：降级路线的实现者子代理一条写明要用全新上下文的子代理、不要 fork 当前对话（#1725），与 /implement-spec 技能 v1.3.2 的「用全新上下文窗口启动子代理」口径一致；v9（2026-10-31）：工具节公共提醒行改为「每轮回复收尾先判断、想得到就调用」
   zh: |-
     /implement-spec
     {url}
@@ -375,7 +407,7 @@ specExecute:
 
     ## 降级路线（技能前提不成立时）
     - [ ] 开工先验证：当前目录在 git 仓库内且有提交。之后建不出技能要的工作树，也切到这条路线。
-    - [ ] 默认串行：一次一个实现者子代理，地基票（类型、数据层、共享组件）先做，该票验证通过并关票后再起下一个。
+    - [ ] 默认串行：一次一个实现者子代理，每次都用全新上下文的子代理、不要 fork 当前对话；地基票（类型、数据层、共享组件）先做，该票验证通过并关票后再起下一个。
     - [ ] 两张票的文件不重叠才并发：子代理只改本票文件、只跑本票单测；构建、代码生成、全量测试与共享清单、索引文件的改动由你串行做。
     - [ ] 提交与评审基线：git 可用、只是工作树建不出 → 集成分支按技能建，每票完成后由你在分支上串行提交，只暂存本票改动的路径；没有 git → 动手前把仓库复制到仓库外临时目录，收尾用 diff 作评审与回退依据，票里写「未提交」。
     - [ ] 全部票关完后跑一次全量验证；交付时说明降级原因与验证结果。
@@ -395,7 +427,7 @@ specExecute:
 
     ## Fallback route (when the skill's prerequisites do not hold)
     - [ ] Verify the premise first: the current directory is inside a git repository and has commits. If you later cannot create the worktrees the skill needs, switch to this route too.
-    - [ ] Default to serial: one implementer subagent at a time; foundation tickets (types, data layer, shared components) first; start the next one only after the current ticket is verified and closed.
+    - [ ] Default to serial: one implementer subagent at a time; use a subagent with a fresh context window, and do not fork the current conversation; foundation tickets (types, data layer, shared components) first; start the next one only after the current ticket is verified and closed.
     - [ ] Go concurrent only when two tickets touch disjoint files: a subagent only edits its own ticket's files and only runs its own ticket's unit tests; builds, code generation, the full test suite, and changes to shared manifests or index files are done by you serially.
     - [ ] Commit and review baseline: when git works and only worktrees cannot be created, build the integration branch per the skill, and after each ticket you commit serially on the branch, staging only that ticket's changed paths; when there is no git, copy the repository to a temporary directory outside the repository before starting, use the diff as the review and rollback basis at the end, and write uncommitted in the tickets.
     - [ ] After all tickets are closed, run one full verification; in the delivery note, state why the fallback was taken and the verification results.
@@ -406,10 +438,10 @@ specExecute:
 
     {{shared:sharedTools}}
 specSplit:
-  version: 6
+  version: 7
   placeholders:
     - url
-  use: 规格容器 · 空态「拆票」按钮（首行 /to-tickets）（#1281）；v6（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程
+  use: 规格容器 · 空态「拆票」按钮（首行 /to-tickets）（#1281）；v6（2026-10-29）：首段加元提示句「从第一性原理出发。」（公共小节 firstPrinciples），不改技能流程；v7（2026-10-31）：工具节公共提醒行改为「每轮回复收尾先判断、想得到就调用」
   zh: |-
     /to-tickets
     {url}

@@ -2,14 +2,14 @@
   "schema": 1,
   "harnessVersion": "0.2.1-rc.5",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "0327ccb867a3d4e641ef1154ab6b4e86898692a60a6a69098694792155b591bf",
+  "manifestSha256": "ad1831f749373e4d7a0272a702ac4ec043ca106307036764b5e00e69bed54954",
   "plugins": [
     {
       "package": "dsh-context",
-      "version": "0.78.2",
+      "version": "0.79.0",
       "metadata": {
         "name": "dsh-context",
-        "version": "0.78.2",
+        "version": "0.79.0",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -55,10 +55,10 @@
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.46",
+      "version": "1.9.48",
       "metadata": {
         "name": "dsh-cost-meter",
-        "version": "1.9.46",
+        "version": "1.9.48",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -218,10 +218,10 @@
     },
     {
       "package": "dsh-provider-hub",
-      "version": "0.4.1",
+      "version": "0.4.2",
       "metadata": {
         "name": "dsh-provider-hub",
-        "version": "0.4.1",
+        "version": "0.4.2",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -243,10 +243,10 @@
     },
     {
       "package": "dsh-skill-mcp-panel",
-      "version": "2.3.5",
+      "version": "2.3.6",
       "metadata": {
         "name": "dsh-skill-mcp-panel",
-        "version": "2.3.5",
+        "version": "2.3.6",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
