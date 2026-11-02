@@ -64,6 +64,10 @@ class NativeBridge {
       channel.invokeMethod<void>('showDesktop', path);
   Future<void> openUrl(String url) =>
       channel.invokeMethod<void>('openUrl', url);
+  Future<String?> chooseProjectDirectory() =>
+      channel.invokeMethod<String>('chooseProjectDirectory');
+  Future<Uint8List?> feishuQRCode(String url) =>
+      channel.invokeMethod<Uint8List>('feishuQRCode', url);
   Future<bool> setEntryManaged(bool managed) async =>
       await channel.invokeMethod<bool>('setEntryManaged', managed) ?? false;
   Future<void> savePreferences(

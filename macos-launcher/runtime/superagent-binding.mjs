@@ -7,6 +7,8 @@ const fields = ['repository', 'githubLogin', 'ghConfigDir', 'ghExecutable', 'fei
 const file = directory => join(directory, 'station-binding.json')
 const fingerprint = (project, accounts) => createHash('sha256').update(JSON.stringify([
   ...fields.map(key => project[key] ?? ''), accounts.github, accounts.feishu ?? '', accounts.feishuAppId ?? '', accounts.prepare ?? '',
+  ...(project.feishuProfile ? [project.feishuProfile] : []),
+  ...(project.deploymentMode ? [project.deploymentMode] : []),
 ])).digest('hex')
 
 /** Do not resume historical tickets under a different repository, identity, or execution directory. */

@@ -38,6 +38,10 @@ dart run tool/native_probe.dart 'build/macos/Build/Products/Debug/DSH Workflow.a
 
 Debug 验收检查真实窗口、菜单显隐与断线恢复。测试配置环境和 VM 原生状态接口仅在 Debug 生效；Release 不提供它们。验收不使用当前用户 profile，不启动用户业务。
 
+给用户交互查看的隔离 Debug 预览，应额外设置 `DSH_LAUNCHER_NATIVE_SEMANTICS=1`，让 macOS 无障碍桥请求初始完整语义树。自动化测试默认持有框架语义句柄；若在这之后才接入系统无障碍检查，Flutter 3.47.7 的原生桥可能只收到增量节点，出现 `Failed to update ui::AXTree` 并闪退。预览模式不关闭无障碍功能，原有自动化测试模式保留。
+
+真实 GitHub 账号的仓库选择回归入口是 `tool/superagent_native_probe.dart`。它依次接收 Debug 可执行文件、已准备的运行资源、隔离数据目录、隔离 DSH 主目录、GitHub 登录名、含 `main` 分支的仓库和一个尚不存在的无障碍就绪标记文件。账号由已有 `gh` 配置管理，脚本不保存项目、不创建任务、不发送消息。打印 `READY_FOR_AX` 后，先由系统无障碍客户端读取该窗口，再创建标记文件，脚本会重复选择账号、仓库和分支 10 次，并检查原生树错误及正常退出。结果与脱敏日志保存在打印的 `EVIDENCE` 目录。将 `DSH_LAUNCHER_NATIVE_SEMANTICS=0` 传给该脚本可运行强制框架语义的失败对照。
+
 生产构建从仓库根目录使用 macos-launcher/build.mjs；先准备现有官方 Desktop 与面板产物。构建将 Flutter Release 应用、现有 Node/DSH 运行时、插件和 Desktop 装配为一个独立应用。CI 在对应原生架构上设置构建架构、测试并生成一份 ARM64 DMG；移动副本继续接受真实 Host、Office、JEV/监控与 Matt 验收。
 
 启动器与桌面端只读检查本仓库的 macos-v 正式发行版本，候选须包含适用的配套 DMG。检查和打开发布页不下载或安装资产，也不停止共享服务；运行端不单独换插件包。MacLauncher SDK 负责服务与入口协作，组件升级统一在仓库中维护并随 DMG 交付。

@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dsh_workflow_launcher/launcher_controller.dart';
 import 'package:dsh_workflow_launcher/main.dart';
@@ -23,6 +25,51 @@ class SuperagentNative extends NativeBridge {
 
   @override
   Future<void> openUrl(String url) async => opened = url;
+
+  @override
+  Future<String?> chooseProjectDirectory() async => '$root/project';
+
+  @override
+  Future<Uint8List?> feishuQRCode(String url) async => base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==',
+  );
+}
+
+class SuperagentTestController extends LauncherController {
+  SuperagentTestController(super.native);
+
+  @override
+  Future<Map<String, Object?>> superagentOnboarding(
+    String action, [
+    Map<String, Object?> input = const {},
+  ]) async => switch (action) {
+    'repositories' => {
+      'user': {'login': 'alice', 'id': 123},
+      'repositories': [
+        {'name': 'alice/example', 'private': true, 'defaultBranch': 'main'},
+      ],
+    },
+    'branches' => {
+      'branches': ['main', 'dev'],
+    },
+    'inspect-project' => {
+      'root': '${environment.dataRoot}/project',
+      'matches': true,
+    },
+    'feishu-bots' => {'available': true, 'bots': []},
+    'feishu-chats' => {
+      'chats': [
+        {'id': 'oc_fixture', 'name': '产品群'},
+      ],
+    },
+    'feishu-members' => {
+      'members': [
+        {'id': 'ou_fixture', 'name': 'Alice'},
+      ],
+      'truncated': false,
+    },
+    _ => throw StateError('Unexpected action: $action'),
+  };
 }
 
 Future<({Directory root, LauncherController model, SuperagentNative native})>
@@ -70,8 +117,27 @@ writeFileSync(file, state);
 const service = { state, ready: state === 'running', message: state === 'running' ? 'Configure repository' : null };
 console.log(JSON.stringify({ ok: true, value: { service, ...(action === 'open' ? { url: 'http://127.0.0.1:3082/?token=fixture' } : {}) } }));
 ''');
+  await File('${scripts.path}/superagent-onboarding.mjs').writeAsString(r'''
+const [action, root] = process.argv.slice(2);
+if (action === 'feishu-register') {
+  console.log(JSON.stringify({ type: 'qr', url: 'https://open.feishu.cn/page/cli?code=fixture' }));
+  await new Promise(resolve => setTimeout(resolve, 800));
+  console.log(JSON.stringify({ type: 'ready', bot: { name: '测试机器人', directory: root + '/bot', profile: 'cli_fixture', executable: '@bundled', ready: true } }));
+  process.exit(0);
+}
+let input = ''; for await (const chunk of process.stdin) input += chunk;
+const values = {
+  repositories: { user: { login: 'alice', id: 123 }, repositories: [{ name: 'alice/example', private: true, defaultBranch: 'main' }] },
+  branches: { branches: ['main', 'dev'] },
+  'inspect-project': { root: root + '/project', matches: true },
+  'feishu-bots': { available: true, bots: [] },
+  'feishu-chats': { chats: [{ id: 'oc_fixture', name: '产品群' }] },
+  'feishu-members': { members: [{ id: 'ou_fixture', name: 'Alice' }], truncated: false },
+};
+console.log(JSON.stringify({ ok: true, value: values[action] }));
+''');
   final native = SuperagentNative(root.path);
-  final model = LauncherController(native);
+  final model = SuperagentTestController(native);
   await model.initialize();
   return (root: root, model: model, native: native);
 }
@@ -131,13 +197,9 @@ void main() {
       await tester.tap(find.text('添加项目'));
       await tester.pumpAndSettle();
       expect(find.text('添加 Superagent 项目'), findsOneWidget);
-      expect(find.text('GitHub 登录账号'), findsOneWidget);
-      expect(find.text('飞书机器人配置目录（留空则禁用飞书）'), findsOneWidget);
-      expect(find.text('本地项目目录（只读保护）'), findsOneWidget);
-      expect(
-        find.text('准备命令可用 WORKFLOW_PROJECT_DIR 引用选中的本地项目。'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('选择 GitHub 账号'), findsOneWidget);
+      expect(find.text('alice'), findsOneWidget);
+      expect(find.text('GitHub 仓库（owner/name）'), findsNothing);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('管理'));
@@ -150,6 +212,131 @@ void main() {
       await tester.runAsync(() => fixture.root.delete(recursive: true));
     }
   });
+
+  testWidgets(
+    'project wizard selects account, repository and QR bot without manual identifiers',
+    (tester) async {
+      final fixture = await tester.runAsync(superagentFixture);
+      expect(fixture, isNotNull);
+      Future<void> waitFor(String label) async {
+        for (var attempt = 0; attempt < 150; attempt++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 40)),
+          );
+          await tester.pump(const Duration(milliseconds: 40));
+          if (find.text(label).evaluate().isNotEmpty) return;
+        }
+        fail(
+          'Timed out waiting for $label; visible text: ${tester.widgetList<Text>(find.byType(Text)).map((w) => w.data).whereType<String>().join(' | ')}',
+        );
+      }
+
+      Future<void> waitUntilIdle() async {
+        for (var attempt = 0; attempt < 150; attempt++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 40)),
+          );
+          await tester.pump();
+          if (find.byType(LinearProgressIndicator).evaluate().isEmpty) return;
+        }
+        fail('Timed out waiting for the wizard to finish loading');
+      }
+
+      try {
+        await tester.pumpWidget(LauncherApp(controller: fixture!.model));
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationRail),
+            matching: find.text('Superagent'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('添加项目'));
+        await tester.tap(find.text('添加项目'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('alice'));
+        await tester.pump();
+        await tester.runAsync(() => tester.tap(find.text('下一步')));
+        await waitFor('alice/example');
+        await tester.runAsync(() => tester.tap(find.text('alice/example')));
+        await waitFor('main');
+        await tester.runAsync(() => tester.tap(find.text('选择专用存放目录（可选）')));
+        await waitFor('${fixture.root.path}/project');
+        expect(find.textContaining('专用仓库和任务与日常工作区分开'), findsOneWidget);
+        await tester.runAsync(() => tester.tap(find.text('下一步')));
+        await waitFor('扫码添加飞书机器人');
+        await waitUntilIdle();
+        await tester.runAsync(() => tester.tap(find.text('扫码添加飞书机器人')));
+        await waitFor('在浏览器打开授权页面');
+        expect(find.byType(Image), findsWidgets);
+        await waitFor('测试机器人');
+        await waitFor('选择飞书群');
+        await tester.ensureVisible(find.text('选择飞书群'));
+        await tester.tap(find.text('选择飞书群'));
+        await tester.pumpAndSettle();
+        await tester.runAsync(() => tester.tap(find.text('产品群').last));
+        await waitFor('允许发起任务的人');
+        await waitUntilIdle();
+        await tester.ensureVisible(find.text('允许发起任务的人'));
+        await tester.tap(find.text('允许发起任务的人'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Alice').last);
+        await tester.pump();
+        await tester.ensureVisible(find.text('仅 @ 机器人').last);
+        await tester.tap(find.text('仅 @ 机器人').last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('接收群内全部消息').last);
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('仅观察').last);
+        await tester.tap(find.text('仅观察').last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('自动接单').last);
+        await tester.pumpAndSettle();
+        await tester.runAsync(() => tester.tap(find.text('完成')));
+        for (
+          var attempt = 0;
+          attempt < 150 && find.text('添加 Superagent 项目').evaluate().isNotEmpty;
+          attempt++
+        ) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 40)),
+          );
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+        expect(
+          find.text('添加 Superagent 项目'),
+          findsNothing,
+          reason: tester
+              .widgetList<Text>(find.byType(Text))
+              .map((w) => w.data)
+              .whereType<String>()
+              .join(' | '),
+        );
+        final projects = jsonDecode(
+          await tester.runAsync(
+            () => File('${fixture.root.path}/projects.json').readAsString(),
+          ) as String,
+        ) as List;
+        final project = projects.last as Map<String, dynamic>;
+        expect(project['guided'], true);
+        expect(project['dedicated'], true);
+        expect(project['policyManaged'], true);
+        expect(project['feishuListen'], 'all');
+        expect(project['acceptMode'], 'auto');
+        expect(project['repository'], 'alice/example');
+        expect(project['baseBranch'], 'main');
+        expect(project['githubLogin'], 'alice');
+        expect(project['authorEmail'], '123+alice@users.noreply.github.com');
+        expect(project['feishuChatId'], 'oc_fixture');
+        expect(project['feishuAllowedId'], 'ou_fixture');
+        expect(project['feishuProfile'], 'cli_fixture');
+      } finally {
+        await tester.runAsync(() => fixture!.model.close());
+        fixture!.model.dispose();
+        await tester.runAsync(() => fixture.root.delete(recursive: true));
+      }
+    },
+  );
 
   test('project selection controls only the chosen Superagent', () async {
     final fixture = await superagentFixture();

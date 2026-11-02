@@ -5,12 +5,13 @@ import { createHash } from 'node:crypto'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { privateDirectory } from './service-control.mjs'
 import { promisify } from 'node:util'
+import { initializeDedicatedRepository } from './superagent-dedicated-repository.mjs'
 
 const run = promisify(execFile)
 
 const quote = value => `'${String(value).replaceAll("'", "'\\''")}'`
 
-async function executable(value, fallback) {
+export async function superagentExecutable(value, fallback) {
   const name = value || fallback
   if (!isAbsolute(name) && (name.includes('/') || !/^[A-Za-z0-9._-]+$/.test(name))) throw new Error(`无效的命令路径：${name}`)
   const candidates = isAbsolute(name) ? [name] : [...new Set([...(process.env.PATH ?? '').split(delimiter), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'])]
@@ -19,6 +20,15 @@ async function executable(value, fallback) {
     try { if ((await lstat(await realpath(path))).isFile()) { await access(path, constants.X_OK); return path } } catch { /* Try the next location. */ }
   }
   throw new Error(`找不到可执行命令：${name}`)
+}
+
+export async function resolveLarkExecutable(resources, value = '') {
+  if (value) return superagentExecutable(value, 'lark-cli')
+  if (resources) {
+    const bundled = join(resources, 'bin/lark-cli')
+    try { return await superagentExecutable(bundled, 'lark-cli') } catch { /* Older installations may use the user's CLI. */ }
+  }
+  return superagentExecutable('', 'lark-cli')
 }
 
 async function ownedScript(directory, label, body) {
@@ -35,17 +45,20 @@ async function ownedScript(directory, label, body) {
 }
 
 /** Bind CLI calls to selected profiles without changing any existing gh or Feishu configuration. */
-export async function prepareSuperagentAccounts({ directory, project }) {
+export async function prepareSuperagentAccounts({ directory, project, resources }) {
   if (!project.githubLogin || !project.ghConfigDir) throw new Error('请先选择 GitHub 账号和其 gh 配置目录。')
-  const gh = await executable(project.ghExecutable, 'gh')
+  const gh = await superagentExecutable(project.ghExecutable, 'gh')
   const env = { ...process.env, GH_CONFIG_DIR: project.ghConfigDir, GH_HOST: 'github.com' }
   for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']) delete env[name]
   try {
-    const { stdout } = await run(gh, ['api', 'user', '--jq', '.login'], { env, timeout: 60_000, maxBuffer: 1024 * 1024 })
+    const token = (await run(gh, ['auth', 'token', '--hostname', 'github.com', '--user', project.githubLogin],
+      { env, timeout: 60_000, maxBuffer: 1024 * 1024 })).stdout.trim()
+    if (!token || /[\r\n\0]/.test(token)) throw new Error('missing token')
+    const { stdout } = await run(gh, ['api', 'user', '--jq', '.login'], { env: { ...env, GH_TOKEN: token }, timeout: 60_000, maxBuffer: 1024 * 1024 })
     let login = stdout.trim()
     try { login = JSON.parse(login).login ?? login } catch { /* gh --jq emits the login as plain text. */ }
     if (String(login).toLowerCase() !== project.githubLogin.toLowerCase()) throw new Error('wrong account')
-  } catch { throw new Error('此 gh 配置目录的活动账号与项目账号不一致，请使用对应账号的独立配置目录。') }
+  } catch { throw new Error('无法验证项目选中的 gh 账号，请检查对应账号的独立配置目录。') }
   const scripts = join(directory, 'station-accounts')
   await privateDirectory(scripts)
   const github = await ownedScript(scripts, 'github', [
@@ -56,21 +69,29 @@ export async function prepareSuperagentAccounts({ directory, project }) {
   ].join('\n'))
   let feishu, feishuAppId
   if (project.feishuConfigDir) {
-    const lark = await executable(project.larkExecutable, 'lark-cli')
+    const bundled = project.larkExecutable === '@bundled'
+    if (bundled && !resources) throw new Error('缺少随应用交付的飞书连接组件。')
+    let lark
+    if (bundled) { await superagentExecutable(join(resources, 'bin/lark-cli'), 'lark-cli'); lark = 'lark-cli' }
+    else lark = await superagentExecutable(project.larkExecutable, 'lark-cli')
     feishu = await ownedScript(scripts, 'feishu', [
       '#!/bin/sh', 'set -eu', `export LARKSUITE_CLI_CONFIG_DIR=${quote(project.feishuConfigDir)}`,
+      ...(project.feishuProfile ? ['unset LARK_APP_ID LARK_APP_SECRET LARKSUITE_CLI_APP_ID LARKSUITE_CLI_APP_SECRET LARKSUITE_CLI_BRAND',
+        `export LARKSUITE_CLI_PROFILE=${quote(project.feishuProfile)}`] : []),
       `exec ${quote(lark)} "$@"`, '',
     ].join('\n'))
     try {
       const { stdout } = await run(feishu, ['auth', 'status'], { timeout: 60_000, maxBuffer: 1024 * 1024,
-        env: { ...process.env, LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1', LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1' } })
+        env: { ...process.env, ...(bundled ? { PATH: `${join(resources, 'bin')}${delimiter}${process.env.PATH ?? ''}` } : {}),
+          LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1', LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1' } })
       const status = JSON.parse(stdout.slice(stdout.indexOf('{')))
       if (!/^cli_[A-Za-z0-9]+$/.test(status.appId) || status.identities?.bot?.status !== 'ready') throw new Error('invalid bot')
       feishuAppId = status.appId
     } catch { throw new Error('无法读取所选飞书机器人的登录状态，请检查 lark-cli 配置。') }
   }
   let prepare = project.prepare ?? ''
-  if (project.authorName && project.authorEmail && prepare.trim()) {
+  if (project.deploymentMode === 'dedicated') await initializeDedicatedRepository({ project, github })
+  if (project.deploymentMode !== 'dedicated' && project.authorName && project.authorEmail && prepare.trim()) {
     const script = await ownedScript(scripts, 'prepare', [
       '#!/bin/sh', 'set -eu', `/bin/sh -c ${quote(prepare)}`,
       'task=$(cd "$DSH_SUPERAGENT_DIR" && pwd -P)',

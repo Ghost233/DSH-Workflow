@@ -308,6 +308,38 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     return objectValue(reply['value']);
   }
 
+  Future<Map<String, Object?>> superagentOnboarding(
+    String action, [
+    Map<String, Object?> input = const {},
+  ]) async {
+    final child = await _startProcess(node, [
+      script('superagent-onboarding.mjs'),
+      action,
+      environment.dataRoot,
+      environment.resources,
+    ], environment: {...Platform.environment}..remove('DSH_LAUNCH_PASSWORD'));
+    final output = child.stdout.transform(utf8.decoder).join();
+    final diagnostics = child.stderr.transform(utf8.decoder).join();
+    child.stdin.writeln(jsonEncode(input));
+    await child.stdin.close();
+    final code = await child.exitCode;
+    final text = await output;
+    await diagnostics;
+    if (text.trim().isEmpty) throw StateError('无法读取向导结果，请重试。');
+    final reply = objectValue(jsonDecode(text));
+    if (code != 0 || reply['ok'] != true) {
+      throw StateError(reply['error'] as String? ?? '向导请求失败，请重试。');
+    }
+    return objectValue(reply['value']);
+  }
+
+  Future<Process> startFeishuRegistration() => _startProcess(node, [
+    script('superagent-onboarding.mjs'),
+    'feishu-register',
+    environment.dataRoot,
+    environment.resources,
+  ], environment: {...Platform.environment}..remove('DSH_LAUNCH_PASSWORD'));
+
   Future<void> refreshSuperagentProjects() async {
     final value = await _superagentRequest('projects');
     final rows = value['projects'];

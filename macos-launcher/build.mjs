@@ -11,6 +11,7 @@ import { assembleDesktopClient } from './desktop-adaptation.mjs'
 import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
 import { bundleProjectPlugins } from './bundle-plugins.mjs'
 import { bundleSuperagent } from './bundle-superagent.mjs'
+import { bundleLarkCli } from './bundle-lark-cli.mjs'
 import { verifyPluginPayload } from './runtime/plugin-payload.mjs'
 import { verifySuperagentPayload } from './runtime/superagent-payload.mjs'
 import { checkBrowserHarnessUpstream } from '../browser-harness-plugin/build.mjs'
@@ -102,6 +103,7 @@ try {
   const settingsClient = join(resources, 'node_modules/@deepseek-ai/dsh-client-ui-settings/lib/client.js')
   await writeFile(settingsClient, allowAuthenticatedLanSettings(await readFile(settingsClient, 'utf8')))
   await mkdir(join(resources, 'bin'), { recursive: true })
+  await bundleLarkCli({ resourcesRoot: resources })
   const pnpmShim = join(resources, 'bin', 'pnpm')
   await writeFile(pnpmShim, '#!/bin/sh\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexec "$ROOT/node" "$ROOT/node_modules/pnpm/bin/pnpm.mjs" "$@"\n')
   await chmod(pnpmShim, 0o755)

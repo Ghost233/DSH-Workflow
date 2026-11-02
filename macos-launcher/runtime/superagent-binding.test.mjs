@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,4 +19,20 @@ test('historical tasks cannot resume under a different project or bot identity',
   await assert.rejects(checkSuperagentBinding({ directory, project, accounts: { ...accounts, feishuAppId: 'cli_b' }, hasTickets: true }), /已有任务历史/)
   await assert.rejects(check({ ...project, localProjectDir: '/different' }, true), /已有任务历史/)
   assert.notEqual(await check({ ...project, repository: 'owner/b' }, false), await check(project, true))
+})
+
+test('preserves the existing binding fingerprint for projects without a Feishu profile', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'superagent-binding-legacy-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const project = { repository: 'owner/a', githubLogin: 'alice', ghConfigDir: '/gh', feishuConfigDir: '/lark',
+    localProjectDir: '/project', executionRoot: '/tasks', prepare: 'clone', feishuChatId: 'oc_a' }
+  const accounts = { github: '/gh-wrapper', feishu: '/lark-wrapper', feishuAppId: 'cli_a', prepare: '/prepare-wrapper' }
+  const keys = ['repository', 'githubLogin', 'ghConfigDir', 'ghExecutable', 'feishuConfigDir', 'larkExecutable',
+    'localProjectDir', 'executionRoot', 'prepare', 'authorName', 'authorEmail', 'feishuChatId']
+  const original = createHash('sha256').update(JSON.stringify([
+    ...keys.map(key => project[key] ?? ''), accounts.github, accounts.feishu, accounts.feishuAppId, accounts.prepare,
+  ])).digest('hex')
+  await saveSuperagentBinding(directory, original)
+  assert.equal(await checkSuperagentBinding({ directory, project: { ...project, feishuProfile: '' }, accounts, hasTickets: true }), original)
+  await assert.rejects(checkSuperagentBinding({ directory, project: { ...project, feishuProfile: 'cli_b' }, accounts, hasTickets: true }), /已有任务历史/)
 })

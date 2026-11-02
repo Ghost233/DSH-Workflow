@@ -5,7 +5,7 @@ import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { open, readFile, writeFile, mkdir, lstat, readlink, realpath, rename, symlink, unlink } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -141,10 +141,10 @@ export async function serveSuperagent({ dataRoot, resources, home = join(homedir
     let accounts, binding, protectedPaths = []
     if (project) {
       if (!project.repository || !project.localProjectDir || !project.executionRoot) throw new Error('请先填写仓库、本地项目和独立执行目录。')
-      accounts = await prepareSuperagentAccounts({ directory, project })
+      accounts = await prepareSuperagentAccounts({ directory, project, resources })
       for (const other of await listSuperagentProjects(dataRoot)) {
         if (other.error) throw new Error('其他 Superagent 项目配置不可读取，无法确认目录保护。')
-        if (other.localProjectDir) protectedPaths.push(...await protectedProjectPaths(other.localProjectDir, project.executionRoot))
+        if (other.localProjectDir && other.deploymentMode !== 'dedicated') protectedPaths.push(...await protectedProjectPaths(other.localProjectDir, project.executionRoot))
       }
       protectedPaths = [...new Set(protectedPaths)]
       if (!child && projectId !== 'legacy') webPort = await new Promise((accept, reject) => {
@@ -211,6 +211,7 @@ export async function serveSuperagent({ dataRoot, resources, home = join(homedir
         const environment = { ...process.env, ...modelEnvironment, DSH_HOME: prepared.home,
           WORKFLOW_PROJECT_DIR: project.localProjectDir, DSH_WORKFLOW_MANAGED_SUPERAGENT: '1',
           GH_CONFIG_DIR: project.ghConfigDir, GH_HOST: 'github.com' }
+        if (project.larkExecutable === '@bundled') environment.PATH = `${join(resources, 'bin')}${delimiter}${environment.PATH ?? ''}`
         delete environment.DSH_LAUNCH_PASSWORD
         delete environment.DSH_WORKFLOW_DATA_ROOT
         for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']) delete environment[key]
@@ -229,7 +230,8 @@ export async function serveSuperagent({ dataRoot, resources, home = join(homedir
         const projectFile = join(directory, projectId === 'legacy' ? 'station-project.json' : 'project.json')
         const stationPaths = [...await Promise.all([projectFile, join(directory, 'station-accounts')].map(path => realpath(path))),
           join(await realpath(directory), 'station-binding.json'), join(await realpath(directory), 'station-host.json')]
-        const writable = await Promise.all([directory, project.executionRoot, temporary].map(path => realpath(path)))
+        const writable = await Promise.all([directory, project.executionRoot, temporary,
+          ...(project.deploymentMode === 'dedicated' ? [project.localProjectDir] : [])].map(path => realpath(path)))
         const feishuEvents = await feishuEventPaths(project.feishuConfigDir, accounts.feishuAppId)
         const launchArgs = project ? [...superagentSandboxArguments([...protectedPaths, ...stationPaths], writable, { credential: credentialPath, feishuEvents }),
           '--', join(resources, 'node'), ...args] : args

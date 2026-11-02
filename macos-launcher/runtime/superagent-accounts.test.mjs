@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,7 +12,7 @@ test('each project selects its own gh account and bot configuration without chan
   const ghDir = join(root, 'gh-profile'), larkDir = join(root, 'lark-profile'), directory = join(root, 'project')
   for (const path of [ghDir, larkDir, directory]) await mkdir(path, { mode: 0o700 })
   const gh = join(root, 'fake-gh'), lark = join(root, 'fake-lark')
-  await writeFile(gh, '#!/bin/sh\nif [ "$1 $2" = "auth token" ]; then printf "fixture-token-%s" "$6"; elif [ -z "$GH_TOKEN" ]; then printf alice; else printf "%s|%s" "$GH_CONFIG_DIR" "$GH_TOKEN"; fi\n')
+  await writeFile(gh, '#!/bin/sh\nif [ "$1 $2" = "auth token" ]; then printf "fixture-token-%s" "$6"; elif [ "$1 $2 $3" = "api user --jq" ]; then [ "$GH_TOKEN" = "fixture-token-alice" ] || exit 1; printf alice; else printf "%s|%s" "$GH_CONFIG_DIR" "$GH_TOKEN"; fi\n')
   await writeFile(lark, '#!/bin/sh\nif [ "$1 $2" = "auth status" ]; then printf \'{"appId":"cli_fixture","identities":{"bot":{"status":"ready"}}}\'; else printf "%s" "$LARKSUITE_CLI_CONFIG_DIR"; fi\n')
   await chmod(gh, 0o700); await chmod(lark, 0o700)
   const result = await prepareSuperagentAccounts({ directory, project: { githubLogin: 'alice', ghConfigDir: ghDir,
@@ -26,7 +26,7 @@ test('each project selects its own gh account and bot configuration without chan
   assert.equal(feishu.stdout, larkDir)
   assert.equal(result.feishuAppId, 'cli_fixture')
   assert.doesNotMatch(await readFile(result.github, 'utf8'), /fixture-token/)
-  await assert.rejects(prepareSuperagentAccounts({ directory, project: { githubLogin: 'bob', ghConfigDir: ghDir, ghExecutable: gh } }), /活动账号/)
+  await assert.rejects(prepareSuperagentAccounts({ directory, project: { githubLogin: 'bob', ghConfigDir: ghDir, ghExecutable: gh } }), /无法验证/)
 })
 
 test('sets the chosen Git author only inside the new task repository', async t => {
@@ -43,4 +43,27 @@ test('sets the chosen Git author only inside the new task repository', async t =
   assert.equal(run.status, 0, run.stderr)
   assert.equal(spawnSync('git', ['-C', task, 'config', '--local', 'user.name'], { encoding: 'utf8' }).stdout.trim(), 'Alice Example')
   assert.equal(spawnSync('git', ['-C', task, 'config', '--local', 'user.email'], { encoding: 'utf8' }).stdout.trim(), 'alice@example.invalid')
+})
+
+test('bundled Feishu CLI can move with the application without changing the project binding', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-bundled-bot-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const ghDir = join(root, 'gh'), botDir = join(root, 'bot'), directory = join(root, 'project')
+  const first = join(root, 'app-a'), second = join(root, 'app-b')
+  for (const path of [ghDir, botDir, directory, join(first, 'bin'), join(second, 'bin')]) await mkdir(path, { recursive: true })
+  const gh = join(root, 'fake-gh'), lark = join(first, 'bin/lark-cli')
+  await writeFile(gh, '#!/bin/sh\nif [ "$1 $2" = "api user" ]; then printf alice; else printf fixture-token; fi\n')
+  await writeFile(lark, '#!/bin/sh\nif [ "$1 $2" = "auth status" ]; then printf \'{"appId":"cli_fixture","identities":{"bot":{"status":"ready"}}}\'; else printf "%s|%s|%s|%s|%s|%s" "$LARKSUITE_CLI_PROFILE" "${LARK_APP_ID:-unset}" "${LARK_APP_SECRET:-unset}" "${LARKSUITE_CLI_APP_ID:-unset}" "${LARKSUITE_CLI_APP_SECRET:-unset}" "${LARKSUITE_CLI_BRAND:-unset}"; fi\n')
+  await chmod(gh, 0o700); await chmod(lark, 0o700); await copyFile(lark, join(second, 'bin/lark-cli')); await chmod(join(second, 'bin/lark-cli'), 0o700)
+  const project = { githubLogin: 'alice', ghConfigDir: ghDir, ghExecutable: gh, feishuConfigDir: botDir,
+    feishuProfile: 'cli_fixture', larkExecutable: '@bundled' }
+  const before = await prepareSuperagentAccounts({ directory, project, resources: first })
+  const after = await prepareSuperagentAccounts({ directory, project, resources: second })
+  assert.equal(before.feishu, after.feishu)
+  assert.equal(before.feishuAppId, after.feishuAppId)
+  assert.match(await readFile(after.feishu, 'utf8'), /LARKSUITE_CLI_PROFILE='cli_fixture'/)
+  const probe = spawnSync(after.feishu, ['probe'], { encoding: 'utf8', env: { ...process.env,
+    PATH: `${join(second, 'bin')}:${process.env.PATH}`, LARK_APP_ID: 'wrong', LARK_APP_SECRET: 'wrong',
+    LARKSUITE_CLI_APP_ID: 'wrong', LARKSUITE_CLI_APP_SECRET: 'wrong', LARKSUITE_CLI_BRAND: 'lark' } })
+  assert.equal(probe.stdout, 'cli_fixture|unset|unset|unset|unset|unset')
 })

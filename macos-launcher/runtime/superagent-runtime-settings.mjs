@@ -38,10 +38,12 @@ export async function applySuperagentProjectSettings({ url, project, accounts, b
   settings = await request('settings')
   const feishu = settings.sources?.find(row => row.id === 'feishu')
   const preserve = project.legacy === true && project.preserveLegacyPolicy === true
+  const managed = project.policyManaged === true
   if (accounts.feishu && !feishu?.installed) throw new Error('Superagent 的飞书来源不可用。')
   if (feishu?.installed) {
     const value = { ...feishu.value, enabled: Boolean(accounts.feishu), config: { ...feishu.value.config, cli: accounts.feishu ?? '',
-      ...(project.feishuChatId ? { chats: [{ chatId: project.feishuChatId, listen: 'mentions' }] } : preserve ? {} : { chats: [] }) } }
+      ...(managed ? { chats: project.feishuChatId ? [{ chatId: project.feishuChatId, listen: project.feishuListen ?? 'mentions' }] : [] }
+        : {}) } }
     if (JSON.stringify(value) !== JSON.stringify(feishu.value)) await save('source:feishu', value, feishu.revision)
     if (accounts.feishu) {
       const current = await ready(value => value.setup.accounts.feishu?.appId === accounts.feishuAppId)
@@ -53,11 +55,20 @@ export async function applySuperagentProjectSettings({ url, project, accounts, b
   if (!policy) throw new Error('Superagent 来源权限设置不可用。')
   const githubAllowed = [...new Set((project.githubAllowed ?? '').split(/[,\s]+/).filter(Boolean))].map(id => ({ id }))
   const sourcePolicies = { ...policy.value.sources,
-    ...(githubAllowed.length || !preserve ? { github: { ...policy.value.sources.github, allowed: githubAllowed } } : {}),
-    ...(accounts.feishu ? { feishu: { ...policy.value.sources.feishu,
+    ...(managed && (githubAllowed.length || !preserve) ? { github: { ...policy.value.sources.github, allowed: githubAllowed } } : {}),
+    ...(managed && accounts.feishu ? { feishu: { ...policy.value.sources.feishu,
+      admission: { ...policy.value.sources.feishu?.admission,
+        ...(project.feishuChatId ? { [project.feishuChatId]: { listedUnaddressed: 'inferred', unlistedAddressed: 'ignore', unlistedUnaddressed: 'ignore' } } : {}) },
       ...(project.feishuAllowedId ? { allowed: [{ id: project.feishuAllowedId }] } : preserve ? {} : { allowed: [] }) } } : {}) }
-  const policyValue = { ...policy.value, sources: sourcePolicies }
+  const policyValue = { ...policy.value, sources: sourcePolicies,
+    ...(managed && project.acceptRules !== undefined ? { rules: project.acceptRules } : {}) }
   if (JSON.stringify(policyValue) !== JSON.stringify(policy.value)) await save('policy', policyValue, policy.revision)
+  if (managed && project.acceptMode) {
+    settings = await request('settings')
+    const evaluation = settings.blocks?.eval
+    if (!evaluation) throw new Error('Superagent 接单模式设置不可用。')
+    if (evaluation.value.mode !== project.acceptMode) await save('eval', { ...evaluation.value, mode: project.acceptMode }, evaluation.revision)
+  }
   settings = await request('settings')
   const executor = settings.blocks?.executor
   if (!executor) throw new Error('Superagent 执行设置不可用。')

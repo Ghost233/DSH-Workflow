@@ -11,7 +11,12 @@ import 'native_bridge.dart';
 /// Callers use the same semantic actions as assistive technology, never
 /// controller methods or replacement business/native implementations.
 void registerApplicationProbe(NativeBridge native) {
-  final semantics = WidgetsBinding.instance.ensureSemantics();
+  // Interactive previews must let the platform request its initial full tree.
+  // Forcing a framework-only tree first leaves a newly attached macOS bridge
+  // with incremental updates whose parents it has never received.
+  final semantics = Platform.environment['DSH_LAUNCHER_NATIVE_SEMANTICS'] == '1'
+      ? null
+      : WidgetsBinding.instance.ensureSemantics();
   var semanticsReleased = false;
   final errors = <String>[];
   final previousErrorHandler = FlutterError.onError;
@@ -117,7 +122,7 @@ void registerApplicationProbe(NativeBridge native) {
           action == 'minimum' ||
           action == 'quit') {
         if (action == 'quit' && !semanticsReleased) {
-          semantics.dispose();
+          semantics?.dispose();
           semanticsReleased = true;
         }
         await native.channel.invokeMethod<void>('debugWindow', action);
