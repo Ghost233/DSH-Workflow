@@ -66,9 +66,13 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     ready: false,
   );
   bool superagentBusy = false;
+  List<Map<String, Object?>> superagentProjects = [];
+  List<Map<String, Object?>> superagentGithubAccounts = [];
+  String? selectedSuperagentProjectId;
+  List<String> superagentSharingWarnings = [];
   bool loadingModelSettings = false;
   Map<String, Object?>? modelSettings;
-  String modelSharingMessage = 'Superagent 启动后自动共享模型配置。';
+  String modelSharingMessage = 'Superagent 启动后读取日常 DSH 的共享配置。';
   bool _observingWeb = false, _observingService = false;
   bool _windowVisible = true;
   Process? _statusObserver;
@@ -85,6 +89,13 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   ServiceStatus get snapshot => _web;
   ServiceStatus get serviceSnapshot => _service;
   ServiceStatus get superagentSnapshot => _superagent;
+  Map<String, Object?>? get selectedSuperagentProject {
+    for (final project in superagentProjects) {
+      if (project['id'] == selectedSuperagentProjectId) return project;
+    }
+    return null;
+  }
+
   String? get logInstanceId => _logInstanceId;
   bool get logsTruncated => _logsDropped;
   bool get isActive =>
@@ -123,7 +134,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
     if (File(script('superagent-service.mjs')).existsSync()) {
       try {
-        await _superagentCommand('status');
+        await refreshSuperagentProjects();
+        if (selectedSuperagentProjectId != null) {
+          await _superagentCommand('status');
+        }
       } catch (failure) {
         _superagent = ServiceStatus(
           state: ServiceState.failed,
@@ -262,16 +276,23 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     notifyListeners();
   }
 
-  Future<Map<String, Object?>> _superagentCommand(String action) async {
+  Future<Map<String, Object?>> _superagentRequest(
+    String action, {
+    String? projectId,
+    Map<String, Object?>? input,
+  }) async {
     final child = await _startProcess(node, [
       script('superagent-service.mjs'),
       action,
       environment.dataRoot,
       environment.resources,
       environment.home,
+      ?projectId,
     ], environment: {...Platform.environment}..remove('DSH_LAUNCH_PASSWORD'));
     final output = child.stdout.transform(utf8.decoder).join();
     final diagnostics = child.stderr.transform(utf8.decoder).join();
+    if (input != null) child.stdin.writeln(jsonEncode(input));
+    await child.stdin.close();
     final code = await child.exitCode;
     final text = await output;
     final stderr = await diagnostics;
@@ -284,17 +305,86 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         reply['error'] as String? ?? 'Superagent 管理入口退出 $code：$stderr',
       );
     }
-    final value = objectValue(reply['value']);
+    return objectValue(reply['value']);
+  }
+
+  Future<void> refreshSuperagentProjects() async {
+    final value = await _superagentRequest('projects');
+    final rows = value['projects'];
+    if (rows is! List) {
+      throw const FormatException('Invalid Superagent projects');
+    }
+    superagentProjects = rows.map(objectValue).toList();
+    if (!superagentProjects.any(
+      (row) => row['id'] == selectedSuperagentProjectId,
+    )) {
+      selectedSuperagentProjectId = superagentProjects.isEmpty
+          ? null
+          : superagentProjects.first['id'] as String;
+    }
+    final accounts = await _superagentRequest('accounts');
+    final accountRows = accounts['accounts'];
+    if (accountRows is! List) {
+      throw const FormatException('Invalid GitHub accounts');
+    }
+    superagentGithubAccounts = accountRows.map(objectValue).toList();
+    if (!_closed) notifyListeners();
+  }
+
+  Future<void> selectSuperagentProject(String id) async {
+    if (!superagentProjects.any((project) => project['id'] == id)) {
+      throw StateError('Superagent 项目不存在。');
+    }
+    selectedSuperagentProjectId = id;
+    _superagent = ServiceStatus(state: ServiceState.stopped, ready: false);
+    await _manageSuperagent('status');
+  }
+
+  Future<void> saveSuperagentProject(
+    Map<String, Object?> input, {
+    String? id,
+  }) async {
+    if (_closed || superagentBusy) return;
+    superagentBusy = true;
+    notifyListeners();
+    try {
+      final value = await _superagentRequest(
+        id == null ? 'create-project' : 'update-project',
+        projectId: id,
+        input: input,
+      );
+      final project = objectValue(value['project']);
+      selectedSuperagentProjectId = project['id'] as String;
+      await refreshSuperagentProjects();
+      await _superagentCommand('status');
+    } finally {
+      superagentBusy = false;
+      if (!_closed) notifyListeners();
+    }
+  }
+
+  Future<Map<String, Object?>> _superagentCommand(String action) async {
+    final id = selectedSuperagentProjectId;
+    if (id == null) throw StateError('请先添加 Superagent 项目。');
+    final value = await _superagentRequest(action, projectId: id);
     _superagent = ServiceStatus.fromJson(objectValue(value['service']));
     final sharing = value['modelSharing'];
     if (sharing is Map) {
       modelSharingMessage = switch (sharing['state']) {
-        'ready' => 'Superagent 已连接统一模型配置。',
-        'error' => sharing['message'] as String? ?? '共享模型配置不可用。',
-        _ => 'Superagent 启动后自动共享模型配置。',
+        'ready' => '已应用可用的模型、Skill、MCP 和插件配置；未加载项会列在下方。',
+        'error' => sharing['message'] as String? ?? '共享配置不可用。',
+        _ => 'Superagent 启动后读取日常 DSH 的共享配置。',
       };
     } else {
       modelSharingMessage = '当前 Superagent 管理器版本较旧，尚未支持共享模型配置。';
+    }
+    final warnings = value['sharingWarnings'];
+    superagentSharingWarnings = warnings is List
+        ? warnings.whereType<String>().toList()
+        : [];
+    if (value['superagentVersion'] != 2 &&
+        _superagent.state == ServiceState.running) {
+      superagentSharingWarnings.add('旧版管理器仍在运行；请停止原实例并重启电脑后，再启用项目保护和共享配置。');
     }
     if (!_closed) notifyListeners();
     return value;

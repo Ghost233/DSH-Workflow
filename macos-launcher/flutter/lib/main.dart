@@ -15,6 +15,7 @@ import 'maclauncher_integration.dart';
 import 'model_settings_page.dart';
 import 'native_bridge.dart';
 import 'service_stop.dart';
+import 'superagent_projects.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -270,7 +271,7 @@ class _LauncherPageState extends State<LauncherPage> {
             labelType: NavigationRailLabelType.all,
             onDestinationSelected: (value) {
               setState(() => _page = value);
-              if (value == 3 &&
+              if (value == 4 &&
                   model.modelSettings == null &&
                   model.serviceSnapshot.ready == true) {
                 unawaited(_act(model.refreshModelSettings));
@@ -280,6 +281,10 @@ class _LauncherPageState extends State<LauncherPage> {
               NavigationRailDestination(
                 icon: Icon(Icons.desktop_mac),
                 label: Text('管理'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.smart_toy_outlined),
+                label: Text('Superagent'),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.extension_outlined),
@@ -300,9 +305,10 @@ class _LauncherPageState extends State<LauncherPage> {
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: switch (_page) {
-                1 => _plugins(),
-                2 => _logs(),
-                3 => ModelSettingsPage(model: model),
+                1 => _superagent(),
+                2 => _plugins(),
+                3 => _logs(),
+                4 => ModelSettingsPage(model: model),
                 _ => _overview(),
               },
             ),
@@ -400,43 +406,6 @@ class _LauncherPageState extends State<LauncherPage> {
           ],
         ),
       ]),
-      _section('Superagent', [
-        Text('独立服务：${_stateName(model.superagentSnapshot.state)}'),
-        if (model.superagentSnapshot.message?.isNotEmpty == true)
-          SelectableText(model.superagentSnapshot.message!),
-        const Text('首次使用时，请在 Superagent 面板配置 GitHub 仓库和代理账号。'),
-        Text(model.modelSharingMessage),
-        const Text('Superagent 工作任务拥有当前 macOS 用户的完整访问权限。'),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _button(
-              '启动 Superagent',
-              model.startSuperagent,
-              enabled: !model.superagentBusy,
-            ),
-            _button(
-              '停止 Superagent',
-              model.stopSuperagent,
-              enabled: !model.superagentBusy,
-            ),
-            _button(
-              '打开 Superagent 面板',
-              model.openSuperagent,
-              enabled:
-                  !model.superagentBusy &&
-                  model.superagentSnapshot.ready == true,
-            ),
-            _button(
-              '刷新 Superagent 状态',
-              model.refreshSuperagent,
-              enabled: !model.superagentBusy,
-            ),
-          ],
-        ),
-        const Text('关闭启动器后，Superagent 继续独立运行。'),
-      ]),
       _section('访问与权限', [
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -531,6 +500,12 @@ class _LauncherPageState extends State<LauncherPage> {
           ],
         ),
       ]),
+    ],
+  );
+
+  Widget _superagent() => ListView(
+    children: [
+      _section('Superagent 项目', [SuperagentProjects(model: model, act: _act)]),
     ],
   );
 

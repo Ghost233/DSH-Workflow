@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { projectSharedModelPatches, sharedModelEnvironment, watchSharedModelConfig, writeSharedModelOverlay } from './shared-model-config.mjs'
+import { projectSharedModelPatches, projectSharedSuperagentPatches, sharedModelEnvironment, watchSharedModelConfig, writeSharedModelOverlay } from './shared-model-config.mjs'
 
 function modelEntries() {
   return [{ group: true, config: [
@@ -26,6 +26,28 @@ test('shares complete provider settings and the same credential store without to
   assert.equal(result.find(row => row.id === 'llm-pi-ai').config.providers.fixture.baseURL, 'https://example.invalid')
 })
 
+test('adds the shared MCP, skills and plugins to the independent Superagent Host without a desktop bridge', () => {
+  const source = [...modelEntries(),
+    { id: 'mcp', name: '@deepseek-ai/dsh-mcp-client', config: { serverName: 'fixture', transport: 'stdio', command: '/fixture' } },
+    { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem', config: {} },
+    { id: 'cost-meter', name: 'dsh-cost-meter', config: { currency: 'CNY' } },
+    { id: 'matt-skills-board', name: 'file:///old/matt.js', config: { ghAccount: true, locale: 'zh' } },
+    { id: 'workflow-desktop-bridge', name: 'file:///desktop-bridge.mjs' },
+  ]
+  const patches = projectSharedSuperagentPatches(source, '/resources', '/daily', ['dsh-cost-meter'])
+  const inserted = patches.find(row => row.insert)?.insert ?? []
+  assert.ok(inserted.some(row => row.id === 'mcp' && row.config.serverName === 'fixture'))
+  assert.ok(inserted.some(row => row.id === 'workflow-superagent-daily-skills'))
+  assert.ok(inserted.some(row => row.id === 'cost-meter' && row.config.currency === 'CNY'))
+  assert.equal(inserted.find(row => row.id === 'matt-skills-board').config.ghAccount, false)
+  assert.equal(inserted.find(row => row.id === 'matt-skills-board').config.locale, 'zh')
+  assert.ok(inserted.some(row => row.id === 'workflow-superagent-mcp'))
+  assert.equal(inserted.some(row => row.id === 'workflow-desktop-bridge'), false)
+  const unavailable = projectSharedSuperagentPatches(source, '/resources', '/daily', ['dsh-cost-meter'], ['dsh-cost-meter'])
+    .find(row => row.insert).insert
+  assert.equal(unavailable.find(row => row.id === 'cost-meter').disabled, true)
+})
+
 test('does not guess ambiguous model entries, relative credential paths or executable expressions', () => {
   const duplicate = modelEntries(); duplicate[0].config.push({ ...duplicate[0].config[2] })
   assert.throws(() => projectSharedModelPatches(duplicate, '/fixture/home'), /llm-pi-ai/)
@@ -38,10 +60,11 @@ test('does not guess ambiguous model entries, relative credential paths or execu
 test('only selected model references are inherited from the DSH home environment', async t => {
   const home = await mkdtemp(join(tmpdir(), 'dsh-model-env-'))
   t.after(() => rm(home, { recursive: true, force: true }))
-  await writeFile(join(home, '.env'), 'FIXTURE_KEY=fixture-value\nDEEPSEEK_API_KEY=another-fixture\nGH_TOKEN=unrelated\n', { mode: 0o600 })
+  await writeFile(join(home, '.env'), 'FIXTURE_KEY=fixture-value\nDEEPSEEK_API_KEY=another-fixture\nMCP_KEY=mcp-fixture\nGH_TOKEN=unrelated\n', { mode: 0o600 })
   const patches = projectSharedModelPatches(modelEntries(), home)
+  patches.push({ insert: [{ name: '@deepseek-ai/dsh-mcp-client', config: { env: { KEY: { __jsExpr: 'process.env.MCP_KEY' } } } }] })
   const result = await sharedModelEnvironment(home, patches, { DEEPSEEK_API_KEY: 'already-inherited' })
-  assert.deepEqual(result, { FIXTURE_KEY: 'fixture-value' })
+  assert.deepEqual(result, { FIXTURE_KEY: 'fixture-value', MCP_KEY: 'mcp-fixture' })
 })
 
 test('managed overlay updates atomically while preserving unowned or modified user files', async t => {

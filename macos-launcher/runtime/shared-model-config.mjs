@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { watch } from 'node:fs'
 import { link, open, readFile, realpath, rename, lstat, unlink } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join } from 'node:path'
 import { parseEnv } from 'node:util'
+import { readSharedProfileEntries, sharedMcpEntries, sharedPluginEntries, sharedSkillEntries } from './shared-profile-config.mjs'
 
 const managed = '# DSH Workflow shared model configuration v1 sha256='
 const entries = new Map([
@@ -41,6 +41,48 @@ export function projectSharedModelPatches(source, home) {
   })
 }
 
+/** Project shared capabilities into the separate Superagent Web Host. */
+export function projectSharedSuperagentPatches(source, resources, home, packageNames, unavailablePackages = []) {
+  const skills = sharedSkillEntries(source, home)
+  const rebased = value => {
+    if (typeof value !== 'string') return value
+    const marker = '/Contents/Resources/workflow/', index = value.indexOf(marker)
+    return index < 0 ? value : join(resources, 'workflow', value.slice(index + marker.length))
+  }
+  for (const row of skills) {
+    if (['workflow-browser-harness-skills', 'mattpocock-skills-zh', 'dsh-workflow-gh-account', 'dsh-workflow-skills'].includes(row.id)
+      && Array.isArray(row.config?.customSkillDirs)) row.config.customSkillDirs = row.config.customSkillDirs.map(rebased)
+  }
+  const plugins = sharedPluginEntries(source, packageNames)
+  const owned = {
+    'workflow-browser-harness': 'browser-harness-plugin/index.mjs',
+    'matt-skills-board': 'matt-skills-panel-plugin/package/lib/index.js',
+  }
+  const owners = { 'workflow-browser-harness': 'dsh-workflow', 'workflow-delivery-inventory': 'dsh-workflow',
+    'matt-skills-board': 'dsh-workflow-matt-panel', 'matt-panel-tools': 'dsh-workflow-matt-panel' }
+  const rebasePlugins = rows => rows.forEach(row => {
+    if (unavailablePackages.some(name => owners[row.id] === name || row.name === name || row.name?.startsWith(name + '/'))) row.disabled = true
+    if (owned[row.id]) row.name = join(resources, 'workflow', owned[row.id])
+    // Superagent already pins gh per project; the daily panel's process-wide
+    // BASH_ENV hook would otherwise select an unrelated repository account.
+    if (row.id === 'matt-skills-board') row.config = { ...row.config, ghAccount: false }
+    if (row.group && Array.isArray(row.config)) rebasePlugins(row.config)
+  })
+  rebasePlugins(plugins)
+  const capabilities = [...skills, ...sharedMcpEntries(source), ...plugins,
+    { id: 'workflow-superagent-mcp', name: join(resources, 'workflow/macos-launcher/runtime/superagent-mcp.mjs') }]
+  return [...projectSharedModelPatches(source, home), { insert: capabilities }]
+}
+
+export async function readSharedSuperagentPatches({ resources, home, onSkipped, unavailablePackages = [] }) {
+  const source = await readSharedProfileEntries({ resources, home, onSkipped })
+  const manifest = JSON.parse(await readFile(join(home, 'profiles/desktop/package.json'), 'utf8'))
+  const delivered = JSON.parse(await readFile(join(resources, 'workflow/project-plugins.json'), 'utf8'))
+  const names = [...new Set([...Object.keys(manifest.dependencies ?? {}), ...delivered.plugins.map(row => row.package),
+    '@deepseek-ai/dsh-skill-office'])]
+  return projectSharedSuperagentPatches(source, resources, home, names, unavailablePackages)
+}
+
 /** Carry only model credential references from the primary DSH home fallback. */
 export async function sharedModelEnvironment(home, patches, inherited) {
   let values
@@ -50,6 +92,16 @@ export async function sharedModelEnvironment(home, patches, inherited) {
   const providers = patches.find(row => row.id === 'llm-pi-ai')?.config?.providers ?? {}
   const refs = new Set([deepseek.apiKeyEnv ?? 'DEEPSEEK_API_KEY', ...Object.entries(providers).map(([id, value]) =>
     value.apiKeyEnv ?? `${id.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`)])
+  const collect = value => {
+    if (value === null || typeof value !== 'object') return
+    if (typeof value.__jsExpr === 'string') {
+      const match = /^process\.env\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(value.__jsExpr)
+      if (match) refs.add(match[1])
+    } else for (const item of Object.values(value)) collect(item)
+  }
+  for (const patch of patches) for (const row of patch.insert ?? []) {
+    if (row.name === '@deepseek-ai/dsh-mcp-client') collect(row.config)
+  }
   const selected = {}
   for (const ref of refs) {
     if (typeof ref === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(ref) && inherited[ref] === undefined && values[ref] !== undefined) selected[ref] = values[ref]
@@ -97,13 +149,7 @@ export async function readSharedModelPatches({ resources, home }) {
     if (error.code === 'ENOENT') throw new Error('请先启动 DSH 服务并在模型配置中完成设置。')
     throw error
   }
-  const anchor = join(resources, 'node_modules/@deepseek-ai/dsh/package.json')
-  const boot = createRequire(anchor)('@deepseek-ai/dsh-app-boot')
-  const profile = boot.loadProfileDirectory('dsh', directory, anchor)
-  const sharedHome = boot.loadOptionalPatches('dsh', join(home, 'cordis.patch.yml')) ?? []
-  return projectSharedModelPatches(boot.composeEntries([
-    ...profile.layers.map(layer => layer.patches), profile.patches, sharedHome,
-  ]), home)
+  return projectSharedModelPatches(await readSharedProfileEntries({ resources, home }), home)
 }
 
 /** Keep a running Superagent's managed model layer current without restarting either Host. */
@@ -126,7 +172,8 @@ export async function watchSharedModelConfig({ resources, home, target, onError 
   try {
     for (const directory of [home, join(home, 'profiles/desktop')]) {
       const watcher = watch(directory, (_event, name) => {
-        if (name == null || ['cordis.patch.yml', 'package.json'].includes(String(name))) queue()
+        const value = String(name ?? '')
+        if (name == null || ['cordis.patch.yml', 'package.json'].some(file => value === file || value.startsWith(file + '.'))) queue()
       })
       watcher.on('error', () => { watchFailure = true; onError('共享模型配置监听失败，请重新启动 Superagent。') })
       watchers.push(watcher)

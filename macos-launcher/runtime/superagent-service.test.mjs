@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process'
 import { dirname } from 'node:path'
 import { sealSuperagentPayload } from './superagent-payload.mjs'
 import { prepareSuperagentProfile, superagentSocket } from './superagent-service.mjs'
+import { createSuperagentProject } from './superagent-projects.mjs'
 
 test('Superagent profile keeps user settings when the sealed application moves', async t => {
   const root = await mkdtemp(join(tmpdir(), 'superagent-profile-'))
@@ -46,6 +47,15 @@ exports.initProfile = (dir, bundles) => {
   assert.equal(await readFile(patch, 'utf8'), settings)
   assert.equal(await readlink(join(first.directory, 'package')), join(moved, 'superagent/node_modules/dsh-superagent'))
   assert.equal((await readdir(join(first.directory, 'package-backups'))).length, 1)
+  const projectA = await createSuperagentProject(dataRoot, { name: 'A' })
+  const projectB = await createSuperagentProject(dataRoot, { name: 'B' })
+  const a = await prepareSuperagentProfile({ dataRoot, resources: moved, projectId: projectA.id, port: 31821 })
+  const b = await prepareSuperagentProfile({ dataRoot, resources: moved, projectId: projectB.id, port: 31822 })
+  assert.notEqual(a.directory, b.directory)
+  assert.notEqual(superagentSocket(dataRoot, projectA.id), superagentSocket(dataRoot, projectB.id))
+  assert.equal(JSON.parse(await readFile(join(a.profile, 'cordis.patch.yml'), 'utf8'))[0].config.port, 31821)
+  assert.equal(JSON.parse(await readFile(join(b.profile, 'cordis.patch.yml'), 'utf8'))[0].config.port, 31822)
+  assert.equal(await readFile(patch, 'utf8'), settings)
   await writeFile(join(moved, 'superagent/node_modules/dsh-superagent/lib/client.js'), 'tampered')
   await assert.rejects(prepareSuperagentProfile({ dataRoot, resources: moved }), /sealed contents/)
   assert.equal(await readFile(patch, 'utf8'), settings)

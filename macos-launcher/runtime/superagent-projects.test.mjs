@@ -1,0 +1,94 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
+import { spawn } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { createSuperagentProject, listSuperagentGithubAccounts, listSuperagentProjects, projectDirectory, updateSuperagentProject } from './superagent-projects.mjs'
+import { superagentSocket } from './superagent-service.mjs'
+
+test('keeps project configuration and the existing Superagent in separate owned directories', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-projects-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const dataRoot = join(root, 'data'), repo = join(root, 'repo'), work = join(root, 'work'), account = join(root, 'gh')
+  for (const path of [dataRoot, repo, work, account]) await mkdir(path, { mode: 0o700 })
+  const repoB = join(root, 'repo-b'), workB = join(root, 'work-b'), repoOld = join(root, 'repo-old'), workOld = join(root, 'work-old')
+  for (const path of [repoB, workB, repoOld, workOld]) await mkdir(path, { mode: 0o700 })
+  await writeFile(join(repo, 'uncommitted.txt'), 'keep this change')
+  const legacy = join(dataRoot, 'superagent'); await mkdir(legacy, { mode: 0o700 })
+  await writeFile(join(legacy, 'profile-owner.json'), '{"legacy":true}\n')
+  const input = { name: 'Project A', repository: 'owner/a', githubLogin: 'alice', ghConfigDir: account,
+    localProjectDir: repo, executionRoot: work, prepare: 'prepare-command' }
+  const first = await createSuperagentProject(dataRoot, input)
+  await assert.rejects(createSuperagentProject(dataRoot, { ...input, name: 'Wrong account', githubLogin: 'bob',
+    localProjectDir: repoB, executionRoot: workB }), /独立的 gh 配置目录/)
+  const second = await createSuperagentProject(dataRoot, { ...input, name: 'Project B', repository: 'owner/b', localProjectDir: repoB, executionRoot: workB })
+  assert.notEqual(first.id, second.id)
+  assert.notEqual(projectDirectory(dataRoot, first.id), projectDirectory(dataRoot, second.id))
+  assert.deepEqual((await listSuperagentProjects(dataRoot)).map(row => row.name).sort(), ['Project A', 'Project B', '原有 Superagent'])
+  assert.equal((await updateSuperagentProject(dataRoot, first.id, { ...input, name: 'Renamed' })).name, 'Renamed')
+  const migrated = await updateSuperagentProject(dataRoot, 'legacy', { ...input, name: '原有项目', localProjectDir: repoOld, executionRoot: workOld })
+  assert.equal(migrated.legacy, true)
+  assert.equal((await listSuperagentProjects(dataRoot)).find(row => row.id === 'legacy').repository, 'owner/a')
+  assert.equal(await readFile(join(repo, 'uncommitted.txt'), 'utf8'), 'keep this change')
+  assert.equal(await readFile(join(legacy, 'profile-owner.json'), 'utf8'), '{"legacy":true}\n')
+})
+
+test('rejects an execution root overlapping the local project and refuses unsafe project identifiers', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-project-safety-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const dataRoot = join(root, 'data'), repo = join(root, 'repo'), account = join(root, 'gh')
+  for (const path of [dataRoot, repo, account]) await mkdir(path, { mode: 0o700 })
+  await assert.rejects(createSuperagentProject(dataRoot, { name: 'A', repository: 'owner/a', githubLogin: 'alice',
+    ghConfigDir: account, localProjectDir: repo, executionRoot: repo, prepare: 'x' }), /执行目录/)
+  assert.throws(() => projectDirectory(dataRoot, '../repo'), /项目标识/)
+})
+
+test('rejects shared, nested, or nonempty task roots without touching existing files', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-project-roots-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const dataRoot = join(root, 'data'), work = join(root, 'work'), nested = join(work, 'nested'), existing = join(root, 'existing')
+  for (const path of [dataRoot, work, existing]) await mkdir(path, { mode: 0o700 })
+  const first = await createSuperagentProject(dataRoot, { name: 'A', executionRoot: work })
+  await mkdir(nested)
+  await writeFile(join(existing, 'uncommitted.txt'), 'keep')
+  await assert.rejects(createSuperagentProject(dataRoot, { name: 'B', executionRoot: work }), /重叠/)
+  await assert.rejects(createSuperagentProject(dataRoot, { name: 'B', executionRoot: nested }), /重叠/)
+  await assert.rejects(createSuperagentProject(dataRoot, { name: 'B', executionRoot: existing }), /必须为空/)
+  await assert.rejects(updateSuperagentProject(dataRoot, first.id, { ...first, executionRoot: existing }), /必须为空/)
+  assert.equal(await readFile(join(existing, 'uncommitted.txt'), 'utf8'), 'keep')
+})
+
+test('lists named gh profiles without reading or changing their credentials', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-gh-profiles-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const profiles = join(root, 'gh-profiles')
+  await mkdir(join(profiles, 'alice'), { recursive: true }); await mkdir(join(profiles, 'bob'))
+  await writeFile(join(profiles, 'alice', 'hosts.yml'), 'private fixture')
+  assert.deepEqual(await listSuperagentGithubAccounts({ home: root, configHome: root }), [
+    { login: 'alice', directory: join(profiles, 'alice') }, { login: 'bob', directory: join(profiles, 'bob') },
+  ])
+  assert.equal(await readFile(join(profiles, 'alice', 'hosts.yml'), 'utf8'), 'private fixture')
+})
+
+test('does not change protected project mappings while any Superagent is running', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-registry-'))
+  const dataRoot = join(root, 'data'); await mkdir(dataRoot, { mode: 0o700 })
+  const project = await createSuperagentProject(dataRoot, { name: 'A' })
+  const socket = superagentSocket(dataRoot, project.id), socketDirectory = dirname(socket)
+  await mkdir(socketDirectory, { mode: 0o700 })
+  const server = createServer(connection => connection.once('data', () => connection.end(JSON.stringify({ ok: true,
+    value: { protocol: 1, service: { state: 'running', pid: 123 } } }) + '\n')))
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve) })
+  await chmod(socket, 0o600)
+  t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(socketDirectory, { recursive: true, force: true }); await rm(root, { recursive: true, force: true }) })
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./superagent-service.mjs', import.meta.url)), 'create-project', dataRoot, root, root])
+  let output = ''; child.stdout.setEncoding('utf8'); child.stdout.on('data', chunk => { output += chunk })
+  child.stdin.end(JSON.stringify({ name: 'B' }))
+  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
+  assert.equal(code, 1)
+  assert.match(JSON.parse(output).error, /先停止所有 Superagent/)
+  assert.deepEqual((await listSuperagentProjects(dataRoot)).map(row => row.name), ['A'])
+})
