@@ -91,6 +91,8 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   // Only a digest of relevant user choices is stamped; user credentials are not copied.
   identity.userMcpFingerprint = createHash('sha256').update(JSON.stringify(flatten(entries)
     .filter(row => row.name === '@deepseek-ai/dsh-mcp-client' && mcpNames.has(row.config?.serverName)))).digest('hex')
+  const launch = composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot })
+  identity.launchPatches = createHash('sha256').update(JSON.stringify(launch)).digest('hex')
   if (current?.dependencies?.[BUNDLE] === `file:${directory}`
     && pendingLinks.length === 0
     && Object.entries(localPackages).every(([name, target]) => current.dependencies[name] === `file:${target}`)
@@ -106,7 +108,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const bundles = manifest.dsh.profile.bundles.filter(name => name !== BUNDLE)
   if (!bundles.includes(TEAM)) bundles.push(TEAM)
   // Compose from the existing profile before adding our own rows, so preparation is idempotent.
-  const patches = [...startup.patches, ...composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot })]
+  const patches = [...startup.patches, ...launch]
   for (const row of flatten(entries)) {
     if (permissionMode && row.name === '@deepseek-ai/dsh-sandbox-policy' && row.disabled !== true) {
       patches.push({ id: row.id, config: { ...structuredClone(row.config ?? {}), mode: permissionMode } })

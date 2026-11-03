@@ -7,7 +7,7 @@ const sha = value => createHash('sha256').update(value).digest('hex')
 const frozenMainSha256 = '9712da3c65d5d4262da7e6d41dad30586070c8eb47f078c62165de2bdba572c3'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const members = { 'workflow-desktop-client.mjs': 'desktop-client.mjs', 'service-control.mjs': 'service-control.mjs',
-  'workflow-release.mjs': 'workflow-release.mjs' }
+  'workflow-release.mjs': 'workflow-release.mjs', 'workflow-desktop-window-presence.mjs': 'desktop-window-presence.mjs' }
 
 /** Only an owned, physical staging copy may receive the project Desktop adaptation. */
 export async function assembleDesktopClient(application) {
@@ -47,12 +47,14 @@ export async function assembleDesktopClient(application) {
     ['new DesktopUpdateCoordinator(', 'new WorkflowDesktopUpdates(autoUpdater, ', 1],
     ['const openUpdatePrompt = (manual = false) => {', 'const openUpdatePrompt = (manual = false) => {\n\t\tpromptOperation ??= updates.check(true, { showMessage: options => ordinaryMessageBox(options), openExternal: url => shell.openExternal(url) }).then(() => {}).finally(() => { promptOperation = void 0; });\n\t\treturn promptOperation;', 1],
     ['inspect: () => backend.host?.inspectQuit()', 'inspect: async () => ({ activeTasks: false, scheduledTasks: false })', 1],
+    ['const trayIconPath = development ? join(app.getAppPath(), "resources", "tray-windows.ico") : join(process.resourcesPath, "tray.ico");',
+      'const trayIconPath = development ? join(app.getAppPath(), "resources", "tray-windows.ico") : join(process.resourcesPath, "tray.ico");\n\tif (process.platform === "darwin") tray = createWorkflowMacWindowPresence({ app, BrowserWindow, Tray, Menu, nativeImage, iconPath: join(process.resourcesPath, "icon.png"), locale: currentDesktopLocale, open: () => focusPrimaryWindow(), quit: () => app.quit() });', 1],
   ]
   for (const [before, after, count] of changes) {
     if (adapted.split(before).length !== count + 1) throw new Error('Desktop adaptation anchor differs from the audited baseline')
     adapted = adapted.replaceAll(before, after)
   }
-  adapted = 'import { WorkflowDesktopConnection, WorkflowReadOnlyProfile, WorkflowDesktopUpdates } from "./workflow-desktop-client.mjs";\n' + adapted
+  adapted = 'import { createWorkflowMacWindowPresence } from "./workflow-desktop-window-presence.mjs";\nimport { WorkflowDesktopConnection, WorkflowReadOnlyProfile, WorkflowDesktopUpdates } from "./workflow-desktop-client.mjs";\n' + adapted
   for (const [name, bytes] of Object.entries(inputs)) await writeFile(join(lib, name), bytes, { flag: 'wx', mode: 0o644 })
   await writeFile(main, adapted)
   const manifest = { schema: 1, workflowVersion, runtimeVersion: target.version, upstreamCommit: target.commit,

@@ -19,7 +19,8 @@ test('Desktop retains the user profile and loads one local board', async t => {
   await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
   const web = join(home, 'profiles/web')
   boot.initProfile(web, boot.PROFILE_TEMPLATES.web.bundles)
-  const userPatch = [{ id: 'web-runtime', config: { openBrowser: false, printUrl: false } }]
+  const userPatch = [{ id: 'web-runtime', config: { openBrowser: false, printUrl: false } },
+    { insert: [{ id: 'bili-native', name: 'billion-context', config: { keep: true } }] }]
   await writeFile(join(web, 'cordis.patch.yml'), JSON.stringify(userPatch))
   const args = { resourcesRoot, desktopRuntimeRoot, globalRoot, home }
   const first = await prepareDesktopProfile(args)
@@ -28,6 +29,7 @@ test('Desktop retains the user profile and loads one local board', async t => {
   assert.equal(await readFile(join(first.profile, 'cordis.patch.yml'), 'utf8'), JSON.stringify(userPatch))
   const patches = JSON.parse(await readFile(join(first.bundle, 'cordis.patch.yml'), 'utf8'))
   const inserts = patches.flatMap(p => p.insert ?? [])
+  assert.deepEqual(patches.find(row => row.id === 'bili-native'), { id: 'bili-native', disabled: true })
   assert.equal(inserts.filter(p => p.id === 'workflow-jev-center').length, 0)
   assert.equal(inserts.filter(p => p.id === 'workflow-agent-monitor' && p.name === 'dsh-workflow/agent-monitor').length, 1)
   assert.equal(inserts.find(p => p.id === 'workflow-agent-monitor').disabled, true)
@@ -40,11 +42,13 @@ test('Desktop retains the user profile and loads one local board', async t => {
   const oldIdentity = JSON.parse(await readFile(stampPath, 'utf8'))
   delete oldIdentity.hostInstance
   delete oldIdentity.projectMcp
+  delete oldIdentity.launchPatches
   await writeFile(stampPath, JSON.stringify(oldIdentity))
   await writeFile(join(first.bundle, 'cordis.patch.yml'), JSON.stringify([{ insert: [{ id: 'workflow-desktop-health-instance', name: '/old-health-adapter.mjs' }] }]))
   await prepareDesktopProfile(args)
   const refreshed = JSON.parse(await readFile(join(first.bundle, 'cordis.patch.yml'), 'utf8'))
   assert.equal(refreshed.flatMap(p => p.insert ?? []).some(row => row.id === 'workflow-desktop-health-instance'), false)
+  assert.equal(refreshed.find(row => row.id === 'bili-native')?.disabled, true)
   assert.equal(await readFile(join(first.profile, 'package.json'), 'utf8'), manifestBefore)
   const staleIdentity = JSON.parse(await readFile(stampPath, 'utf8'))
   staleIdentity.projectMcp[0].config.command = '/previous/codegraph'
@@ -53,6 +57,13 @@ test('Desktop retains the user profile and loads one local board', async t => {
   const currentIdentity = JSON.parse(await readFile(stampPath, 'utf8'))
   assert.equal(currentIdentity.projectMcp[0].config.command, 'codegraph')
   assert.equal(await readFile(join(first.profile, 'cordis.patch.yml'), 'utf8'), JSON.stringify(userPatch))
+  const laterPatch = [...userPatch, { insert: [{ id: 'late-bili', name: 'billion-context/tools' }] }]
+  await writeFile(join(first.profile, 'cordis.patch.yml'), JSON.stringify(laterPatch))
+  await prepareDesktopProfile(args)
+  const later = JSON.parse(await readFile(join(first.bundle, 'cordis.patch.yml'), 'utf8'))
+  assert.equal(later.find(row => row.id === 'late-bili')?.disabled, true)
+  assert.equal(await readFile(join(first.profile, 'cordis.patch.yml'), 'utf8'), JSON.stringify(laterPatch))
+  assert.equal(await readFile(join(first.profile, 'package.json'), 'utf8'), manifestBefore)
 })
 
 test('Desktop migrates a cached stage-one bundle-only profile without changing user dependencies, patches or metadata', async t => {

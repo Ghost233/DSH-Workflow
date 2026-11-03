@@ -27,7 +27,7 @@ class _FaultNative extends NativeBridge {
 void main() {
   final artifact = Platform.environment['DSH_SERVICE_TEST_RESOURCES'];
   test(
-    'official SDK faults stay stopped, notify once per new lease, and keep explicit stop quiet after Launcher exit',
+    'official SDK faults stay stopped, notify once per new lease, and keep explicit stop quiet after SDK disposal',
     () async {
       final root = await Directory.systemTemp.createTemp('dsh-service-fault-');
       stdout.writeln('S05_FIXTURE_DIRECTORY=${root.path}');

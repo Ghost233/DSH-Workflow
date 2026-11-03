@@ -22,5 +22,8 @@ class MainFlutterWindow: NSWindow {
     super.awakeFromNib()
   }
 
-  override func close() { orderOut(nil) }
+  override func close() {
+    orderOut(nil)
+    (NSApp.delegate as? AppDelegate)?.mainWindowDidHide()
+  }
 }

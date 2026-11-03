@@ -97,3 +97,27 @@ test('agent preset package tools are disabled without altering unrelated express
   assert.equal(config.plugins[2].disabled, condition)
   assert.equal(plugins[0].disabled, condition, 'only the launch overlay changes, not saved configuration')
 })
+
+test('managed launch disables retired packages in saved profiles and presets while preserving their settings', () => {
+  const entries = [
+    { id: 'old-group', group: true, config: [
+      { id: 'bili-native', name: 'billion-context', config: { keep: 'saved' } },
+      { id: 'old-tool', name: 'billion-context/tools' },
+      { id: 'insight', name: 'dsh-context' },
+      { id: 'other', name: 'billion-context-other' },
+    ] },
+    { id: 'preset', name: '@deepseek-ai/dsh-agent-preset', config: { plugins: [
+      { id: 'old-agent-tool', name: 'billion-context/tools', config: { keep: true } },
+      { id: 'kept-agent-tool', name: 'dsh-context' },
+    ] } },
+  ]
+  const before = structuredClone(entries)
+  const patches = composeDshLaunch(entries, { projectRoot, catalogRoot: '/catalog' })
+  for (const id of ['bili-native', 'old-tool']) assert.equal(patches.find(row => row.id === id)?.disabled, true)
+  assert.equal(patches.some(row => ['insight', 'other'].includes(row.id)), false)
+  const preset = patches.find(row => row.id === 'preset').config.plugins
+  assert.equal(preset[0].disabled, true)
+  assert.deepEqual(preset[0].config, { keep: true })
+  assert.equal(preset[1].disabled, undefined)
+  assert.deepEqual(entries, before)
+})

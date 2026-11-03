@@ -140,7 +140,7 @@ class SuperagentProjects extends StatelessWidget {
           const Text('尚未绑定项目，请先添加 GitHub 仓库。'),
         for (final project in model.superagentProjects)
           _project(context, project),
-        const Text('关闭 Station 后，已启动的 Superagent 继续运行。'),
+        const Text('关闭窗口后 Superagent 继续运行；退出 Station 会停止全部服务。'),
         const ExpansionTile(
           tilePadding: EdgeInsets.zero,
           title: Text('共享配置与项目保护说明'),

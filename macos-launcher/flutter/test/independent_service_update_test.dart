@@ -25,7 +25,7 @@ class _UpdateNative extends NativeBridge {
 void main() {
   final artifact = Platform.environment['DSH_SERVICE_TEST_RESOURCES'];
   test(
-    'metadata checks and Launcher exit preserve the same Host and accepted task',
+    'metadata checks and SDK disposal preserve the same Host and accepted task',
     () async {
       final root = await Directory.systemTemp.createTemp(
         'dsh-update-continuity-',

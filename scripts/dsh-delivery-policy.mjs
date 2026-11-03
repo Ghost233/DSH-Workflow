@@ -9,3 +9,7 @@ export const packageMutationModules = Object.freeze([
   // These launchers depend on the mutable manager that the project replaces.
   '@deepseek-ai/dsh-client-ui-entry-customization',
 ])
+
+/** Packages explicitly removed from Station delivery stay disabled in older profiles. */
+export const isRetiredPluginModule = name => typeof name === 'string'
+  && (name === 'billion-context' || name.startsWith('billion-context/'))

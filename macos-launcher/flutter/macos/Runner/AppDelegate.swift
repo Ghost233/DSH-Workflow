@@ -186,7 +186,7 @@ class AppDelegate: FlutterAppDelegate {
     menu.addItem(NSMenuItem(title: "打开 DSH", action: #selector(openGlobal), keyEquivalent: ""))
     menu.addItem(NSMenuItem(title: "管理…", action: #selector(showWindow), keyEquivalent: ""))
     menu.addItem(.separator())
-    menu.addItem(NSMenuItem(title: "退出启动器", action: #selector(requestQuit), keyEquivalent: "q"))
+    menu.addItem(NSMenuItem(title: "退出 Station 并停止全部服务", action: #selector(requestQuit), keyEquivalent: "q"))
     for item in menu.items { item.target = self }
     statusItem?.menu = menu
     reopenObserver = DistributedNotificationCenter.default().addObserver(forName: reopen, object: dataRoot.path, queue: .main) { [weak self] _ in
@@ -256,6 +256,7 @@ class AppDelegate: FlutterAppDelegate {
         #if DEBUG
         case "debugState": result(["entryVisible": self.statusItem?.isVisible ?? false,
           "windowVisible": self.mainFlutterWindow?.isVisible ?? false,
+          "activationPolicy": NSApp.activationPolicy().rawValue,
           "windowKey": self.mainFlutterWindow?.isKeyWindow ?? false,
           "appActive": NSApp.isActive,
           "windowOcclusionVisible": self.mainFlutterWindow?.occlusionState.contains(.visible) ?? false,
@@ -355,11 +356,41 @@ class AppDelegate: FlutterAppDelegate {
           self.lastOpenedUrl = text
           #endif
           result(nil)
-        case "desktopRunning", "hideDesktop", "showDesktop":
+        case "desktopRunning", "hideDesktop", "showDesktop", "quitDesktop":
           guard let path = call.arguments as? String else { throw self.failure("无效 Desktop 路径") }
           let application = try self.runningDesktop(path)
           if call.method == "desktopRunning" {
             result(application != nil); return
+          }
+          if call.method == "quitDesktop" {
+            self.releaseColdDesktop("station-quit")
+            guard let application else { result(nil); return }
+            let expected = self.desktopIdentity
+            let accepted = application.terminate()
+            if !accepted {
+              guard let current = try self.runningDesktop(path) else { result(nil); return }
+              guard let actual = self.desktopIdentity, let expected,
+                    actual.0 == expected.0, actual.1 == expected.1, actual.2 == expected.2,
+                    current.processIdentifier > 1, current.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+                throw self.failure("桌面客户端退出期间身份已改变，未终止进程。")
+              }
+              guard kill(current.processIdentifier, SIGTERM) == 0 || errno == ESRCH else {
+                throw self.failure("桌面客户端退出请求失败，请处理窗口提示后重试。")
+              }
+            }
+            #if DEBUG
+            self.desktopQuitObservation = ["source": "station-exit", "pid": application.processIdentifier,
+                                           "appKitAccepted": accepted, "signalFallback": !accepted]
+            #endif
+            let deadline = ProcessInfo.processInfo.systemUptime + 15
+            func completeQuit() {
+              if application.isTerminated || (kill(application.processIdentifier, 0) == -1 && errno == ESRCH) { result(nil); return }
+              guard ProcessInfo.processInfo.systemUptime < deadline else {
+                result(FlutterError(code: "desktop-quit-pending", message: "桌面客户端尚未退出，请处理窗口提示后重试。", details: nil)); return
+              }
+              DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { completeQuit() }
+            }
+            completeQuit(); return
           }
           self.releaseColdDesktop("explicit-window-action")
           guard let application else { throw self.failure("Desktop 未运行，请先启动；仅显示不会启动 Desktop。") }
@@ -552,6 +583,8 @@ class AppDelegate: FlutterAppDelegate {
               }
             }
           }
+        case "cancelQuit":
+          self.quitRequested = false; result(nil)
         case "finishQuit":
           if self.ownQuitTraceEnabled {
             FileHandle.standardError.write(Data("OWN_QUIT_TRACE phase=native-finish-received\n".utf8))
@@ -731,9 +764,15 @@ class AppDelegate: FlutterAppDelegate {
 
   @objc private func showWindow() {
     let window = mainFlutterWindow ?? NSApp.windows.first { $0 is MainFlutterWindow }
-    window?.makeKeyAndOrderFront(nil)
+    guard let window else { return }
+    NSApp.setActivationPolicy(.regular)
+    if window.isMiniaturized { window.deminiaturize(nil) }
+    window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
     channel?.invokeMethod("windowShown", arguments: nil)
+  }
+  func mainWindowDidHide() {
+    NSApp.setActivationPolicy(.accessory)
   }
   @objc private func openGlobal() { channel?.invokeMethod("openGlobal", arguments: nil) }
   @objc private func requestQuit() { NSApp.terminate(nil) }

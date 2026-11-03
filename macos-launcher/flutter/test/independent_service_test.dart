@@ -171,7 +171,7 @@ void main() {
         : false,
   );
   test(
-    'official SDK starts a real independent Host and rediscovers it after launcher exit',
+    'official SDK starts a real independent Host and rediscovers it after SDK disposal',
     () async {
       final root = await Directory.systemTemp.createTemp('dsh-service-sdk-');
       final resources = '${root.path}/resources';

@@ -27,7 +27,7 @@ description: 在 DSH-Workflow 源码仓库检查或更新 submodule、DSH 运行
 
 Matt 更新必须先读 [派生版说明](../../../matt-skills-panel-plugin/README.md)，使用其 `upstream:check -- --prepare` 生成三方提案。审查冲突、自动合并和上游删除，保留项目定制。通过构建与派生版测试后，更新基准、本地版本和包管理器生成的锁文件。其他第三方插件不改源码。
 
-插件更新保持原安装来源、清单范围和启动选择。更新 `project-plugins.lock.json` 时，遵循仓库要求使用 Apple container：容器内执行真实 `npm view 包名@精确版本或标签 --json --registry 清单指定源`，Git 包元数据取固定官方提交。由脚本生成锁文件并核对清单 SHA-256；查询或生成失败时保留原锁文件。只在隔离的准备目录下载和装配依赖，运行中的 profile 不执行在线换包。
+插件更新保持原安装来源、清单范围和启动选择。更新 `project-plugins.lock.json` 时，遵循[本机容器工作流](../../../AGENTS.md#本机容器工作流)，在 OrbStack 的 Docker 容器内执行真实 `npm view 包名@精确版本或标签 --json --registry 清单指定源`，Git 包元数据取固定官方提交。由脚本生成锁文件并核对清单 SHA-256；查询或生成失败时保留原锁文件。只在隔离的准备目录下载和装配依赖，运行中的 profile 不执行在线换包。
 
 Browser Harness 推进后核对所选技能文件、版本、提交和 SHA-256，保持既有交付范围。验证工具需调用 `browser-harness` 时，按当前 Agent 的唯一 `BU_NAME` 规则复用命名空间。
 

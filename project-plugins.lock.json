@@ -2,14 +2,14 @@
   "schema": 1,
   "harnessVersion": "0.2.1-rc.5",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "ad1831f749373e4d7a0272a702ac4ec043ca106307036764b5e00e69bed54954",
+  "manifestSha256": "41a79c1cf56d904390a16b3f72f88c25c39fc0b8e48e6bbb1152b6f12871cf85",
   "plugins": [
     {
       "package": "dsh-context",
-      "version": "0.79.0",
+      "version": "0.80.2",
       "metadata": {
         "name": "dsh-context",
-        "version": "0.79.0",
+        "version": "0.80.2",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -55,10 +55,10 @@
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.48",
+      "version": "1.9.50",
       "metadata": {
         "name": "dsh-cost-meter",
-        "version": "1.9.48",
+        "version": "1.9.50",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -114,10 +114,10 @@
     },
     {
       "package": "@goodandready/dsh-plugin-notify",
-      "version": "0.4.7",
+      "version": "0.4.8",
       "metadata": {
         "name": "@goodandready/dsh-plugin-notify",
-        "version": "0.4.7",
+        "version": "0.4.8",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -218,10 +218,10 @@
     },
     {
       "package": "dsh-provider-hub",
-      "version": "0.4.2",
+      "version": "0.4.3",
       "metadata": {
         "name": "dsh-provider-hub",
-        "version": "0.4.2",
+        "version": "0.4.3",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"

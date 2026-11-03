@@ -4,11 +4,15 @@
 
 应用和 Ghost Launcher 注册名统一为 Ghost DSH Station。项目 ID、bundle ID、服务 ID、旧数据目录和更新资产标识保持兼容，已有配置与运行中的服务继续使用原身份。
 
-日常入口是无参数 `./start-dsh-workflow.sh`。仅支持 macOS ARM64。启动器启动或复用独立 DSH 服务端，桌面客户端和 Web 连接同一个实例；关闭客户端或启动器后服务继续运行。JEV/监控由 `agent-observation-plugin/` 提供，根包 `dsh-workflow` 的 `/jev-center`、`/agent-monitor` 及 `/client` 入口保持配置与功能。固定配置 entry IDs 延续，迁移仅修改这些 entry 的包入口；用户其他配置和凭据保留。
+日常入口是无参数 `./start-dsh-workflow.sh`。仅支持 macOS ARM64。启动器启动或复用独立 DSH 服务端，桌面客户端和 Web 连接同一个实例；关闭客户端窗口后服务继续运行；退出 Station 时统一停止日常 DSH、Web 和全部 Superagent，并回收它们启动的 MCP 与辅助进程。JEV/监控由 `agent-observation-plugin/` 提供，根包 `dsh-workflow` 的 `/jev-center`、`/agent-monitor` 及 `/client` 入口保持配置与功能。固定配置 entry IDs 延续，迁移仅修改这些 entry 的包入口；用户其他配置和凭据保留。
+
+后台 DSH 服务由 Station 随包的独立 Node 运行，不启动桌面应用可执行文件。Electron 应用只用于桌面客户端；从 Station 打开桌面版时连接已有服务，关闭客户端不停止服务。
+
+Station 与 DSH 桌面客户端在窗口打开时显示 Dock 图标，可通过 Command-Tab 切换。关闭所有窗口后，应用继续运行并收回菜单栏；可从菜单栏重新打开窗口。退出 Station 前会检查未完成工作，需确认时展示清单；取消则保留服务，清理失败则保留窗口并显示原因。最小化窗口时保留 Dock 图标。关闭客户端窗口不停止独立 DSH 服务。
 
 Station 的“模型”页管理 DSH 的模型提供商、API Key 和默认模型。你可以添加或编辑提供商，获取可用模型，并为新会话选择默认模型。配置模型时无需启动 Superagent。移除提供商时，已保存的凭据会保留。模型高级字段保持原值。
 
-Station 的左侧“Superagent”栏目列出所有已绑定项目，可分别查看状态、启动或停止独立后端。未绑定项目时显示添加引导，不生成默认实例；未绑定的旧实例数据仍保留。每个实例使用自己的仓库、GitHub 账号和飞书机器人，从浏览器打开自己的管理面板。日常 DSH 的 Web 和桌面客户端继续共用原有后端。关闭 Station 后，已启动的 Superagent 继续运行。
+Station 的左侧“Superagent”栏目列出所有已绑定项目，可分别查看状态、启动或停止独立后端。未绑定项目时显示添加引导，不生成默认实例；未绑定的旧实例数据仍保留。每个实例使用自己的仓库、GitHub 账号和飞书机器人，从浏览器打开自己的管理面板。日常 DSH 的 Web 和桌面客户端继续共用原有后端。关闭 Station 窗口后，Superagent 继续运行；通过菜单或 Command-Q 退出 Station 时，全部受管服务一并停止。
 
 添加项目时，选择已登录的 `gh` 账号、有写入权限的 GitHub 仓库和分支，再选择 Superagent 专用存放目录；留空使用 Station 默认目录。首次启动会克隆专用仓库，每个任务按官方示例创建独立分支和 worktree。日常开发的本地项目无需关联。账号默认从 `~/.config/gh-profiles` 中读取；设置了 `XDG_CONFIG_HOME` 时，从该目录下的 `gh-profiles` 读取。Station 使用选中的账号，不会切换全局活动账号。
 
@@ -18,9 +22,11 @@ Station 的左侧“Superagent”栏目列出所有已绑定项目，可分别�
 
 Station 管理的接收方式、允许用户、接单模式和规则随项目保存，重启时恢复。旧项目缺少这些字段时沿用 Superagent 面板中的设置；在向导中主动开启“由 Station 管理接收与接单设置”后才由 Station 写入。关闭该开关后，保留面板里的当前值。已有任务的旧项目继续使用原任务准备方式，新建项目采用专用仓库和 worktree。详见[上游部署说明](https://github.com/deepseek-ai/dsh-superagent-prototype/blob/main/docs/006-deployment.md)。
 
-各实例读取日常 DSH 的模型、Skill、MCP 和已安装插件配置。正在运行的实例会同步受支持的配置变更；新增插件后要重启对应实例。MCP 服务停用或实例关闭时，对应连接会关闭；实例退出时会通知其进程组停止。主动脱离进程组或忽略终止信号的 MCP 后代进程，仍需由服务自身管理。上游限制了任务会话可用的插件工具；共享插件配置不代表所有插件工具都能由任务调用。DSH 主目录 `.env` 中引用的凭据在实例启动时读取，修改后需要重启实例。
+各实例读取日常 DSH 的模型、Skill、MCP 和已安装插件配置。正在运行的实例会同步受支持的配置变更；新增插件后要重启对应实例。MCP 服务停用或实例关闭时，对应连接会关闭；实例退出时会通知其进程组停止。退出 Station 时还会根据启动前记录的进程身份回收遗留后代进程。上游限制了任务会话可用的插件工具；共享插件配置不代表所有插件工具都能由任务调用。DSH 主目录 `.env` 中引用的凭据在实例启动时读取，修改后需要重启实例。
 
 飞书 CLI 使用仅当前用户可访问的短路径入口，凭据仍保留在原配置目录。这样可避免 macOS 的 Unix socket 路径长度限制。
+
+已从交付清单移除的 `billion-context` 在旧 profile 中仍可能有依赖或 bundle 声明。Station 启动装配会停用其宿主及预设入口，Superagent 共享配置时也会排除它；原设置和旧文件保留。`dsh-context` 是另一个插件，继续按清单提供上下文洞察。
 
 执行器在 macOS 沙箱中运行，可写入实例目录、指定的任务目录、临时目录和所需的共享凭据文件。飞书机器人还需要写入自己的事件运行目录。本地项目及其 Git 目录受到写入保护，原有未提交修改会保留。外部 MCP 服务按其自身权限运行，也可能使用独立账号；请检查它们对本地项目和 GitHub 的访问权限。
 
@@ -37,5 +43,7 @@ Station 管理的接收方式、允许用户、接单模式和规则随项目保
 使用 CodeGraph 时，在需要检索的工程中自行运行 `codegraph init`，再在 DSH 调用 `mcp__codegraph__codegraph_explore` 时传入该工程的绝对 `projectPath`。配置不固定工程目录，适用于共享后端下的多个工程。配置改动后重启宿主；已构建的 macOS 应用读取其打包副本，源码改动需重新构建启动器后生效。连接失败由 DSH 记录，不阻止其他可选插件启动。
 
 工程检查入口是 `node scripts/run-project-tests.mjs` 和 `node agent-observation-plugin/scripts/build-client.mjs --check`；Flutter 按 `macos-launcher/flutter/check.sh` 验证。应用、工程检查和 CI 均只支持 macOS ARM64，构建一份 ARM64 DMG。构建、实际 SDK/窗口及分发结果独立结算。
+
+本机容器使用 OrbStack 的 Docker 引擎和标准 Docker Compose；容器与 macOS 原生构建的执行边界见 [AGENTS.md](AGENTS.md#本机容器工作流)。
 
 领域术语见 [GLOSSARY](GLOSSARY.md)，JEV/监控设计见 [ADR0003](docs/adr/0003-shared-named-jev-center.md)。独立 Dynamic Workflow 的未来计划仍保留，当前未实施。

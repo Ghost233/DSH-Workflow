@@ -330,7 +330,6 @@ Future<void> main(List<String> arguments) async {
   _DesktopCdp? client;
   DesktopWindowProbe? windows;
   ServiceTaskFixture? task;
-  _DesktopApplication? resumedLauncher;
   Process? platformServer;
   Future<String>? platformOutput, platformErrors;
   String? platformOrigin;
@@ -993,33 +992,25 @@ Future<void> main(List<String> arguments) async {
       );
       if (acceptedTaskCase) {
         final launcherPid = launcher.process.pid;
-        await launcher.quit();
+        await launcher.state({'action': 'close'});
+        final hidden = (await launcher.state())['native'] as Map;
         require(
-          (await Process.run('/bin/kill', ['-0', '$launcherPid'])).exitCode !=
-                  0 &&
-              (await Process.run('/bin/kill', [
-                    '-0',
-                    '$desktopPid',
-                  ])).exitCode !=
-                  0,
-          'both actual Electron and Launcher have exited before model release',
+          hidden['windowVisible'] == false && hidden['activationPolicy'] == 1,
+          'red close keeps Station in the menu bar',
         );
         require(
-          (await Process.run('/bin/kill', [
-                '-0',
-                '${before['pid']}',
-              ])).exitCode ==
+          (await Process.run('/bin/kill', ['-0', '$launcherPid'])).exitCode ==
               0,
-          'same independent Host survives both actual client exits',
+          'Station remains alive while its window is hidden',
         );
         final still = jsonDecode(await receiptFile.readAsString()) as Map;
         require(
           still['pid'] == before['pid'] && still['lease'] == before['lease'],
-          'independent Host lease stays unchanged while both clients are absent',
+          'hiding Station preserves the same service and accepted task',
         );
         require(
           !await File('${root.path}/model-canceled-1').exists(),
-          'client exits do not cancel the accepted model request',
+          'hiding Station does not cancel the accepted model request',
         );
         final tasks = task!;
         await tasks.releaseModel(1);
@@ -1029,19 +1020,15 @@ Future<void> main(List<String> arguments) async {
         );
         await File('${root.path}/accepted-task-result.json')
             .writeAsString(jsonEncode(history));
-        evidence['taskCompletedWithoutClients'] = {
+        evidence['taskCompletedWhileStationHidden'] = {
           'sessionId': session['sessionId'],
           'resultFound': true,
           'hostPid': still['pid'],
           'instanceId': still['lease'],
-          'launcherPidGone': launcherPid,
+          'launcherPid': launcherPid,
           'desktopPidGone': desktopPid,
         };
-        resumedLauncher = await _DesktopApplication.start(
-          '$app/Contents/MacOS/${source.uri.pathSegments.last}',
-          environment,
-          '${root.path}/launcher-reopened.log',
-        );
+        await launcher.state({'action': 'ownEntry'});
         final resumedSdk = await currentSdkSession(server);
         final reconnected =
             (await resumedSdk.sendRequest(
@@ -1053,10 +1040,10 @@ Future<void> main(List<String> arguments) async {
         require(
           reconnected['ready'] == true &&
               reconnected['instanceId'] == before['lease'],
-          'reopened actual Launcher observes the same service lease',
+          'showing Station again observes the same service lease',
         );
       }
-      final activeLauncher = resumedLauncher ?? launcher;
+      final activeLauncher = launcher;
       await activeLauncher.tap('打开桌面版');
       client = await _DesktopCdp.connect('${root.path}/data/desktop-user-data');
       await waitFor(
@@ -1142,7 +1129,7 @@ Future<void> main(List<String> arguments) async {
       (
         'owned Desktop',
         () async {
-          final active = resumedLauncher ?? launcher;
+          final active = launcher;
           if (active != null && !active.exited) {
             await active.state({'action': 'quitDesktop'});
           }
@@ -1151,7 +1138,6 @@ Future<void> main(List<String> arguments) async {
       (
         'owned Debug app',
         () async {
-          await resumedLauncher?.quit();
           await launcher?.quit();
         },
       ),

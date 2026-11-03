@@ -72,6 +72,18 @@ test('packaged project profile serves authenticated official DSH readiness using
   await sealPluginPayload(resourcesRoot, [{ ...delivered, archiveSha256: 'd'.repeat(64) }])
   const { prepareDesktopProfile } = await import(pathToFileURL(join(workflow, 'macos-launcher/runtime/desktop-profile.mjs')))
   const prepared = await prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot, globalRoot, home })
+  // An owned import canary under a retired package name exercises legacy bundle removal.
+  const retired = join(prepared.profile, 'node_modules/billion-context'), retiredImport = join(root, 'retired-imported')
+  await mkdir(retired, { recursive: true })
+  await writeFile(join(retired, 'package.json'), JSON.stringify({ name: 'billion-context', version: '0.0.0',
+    type: 'module', main: './index.mjs', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  await writeFile(join(retired, 'index.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(retiredImport)}, 'imported'); export function apply(){}`)
+  await writeFile(join(retired, 'cordis.patch.yml'), JSON.stringify([{ insert: [{ id: 'bili-native', name: 'billion-context' }] }]))
+  const legacyManifestPath = join(prepared.profile, 'package.json')
+  const legacyManifest = JSON.parse(await readFile(legacyManifestPath, 'utf8'))
+  legacyManifest.dependencies['billion-context'] = `file:${retired}`
+  legacyManifest.dsh.profile.bundles.push('billion-context')
+  await writeFile(legacyManifestPath, JSON.stringify(legacyManifest))
   const saved = process.env.DSH_HOME
   process.env.DSH_HOME = home
   let ctx, starting, disposing
@@ -102,6 +114,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   const entries = profile
   const { composeEntries } = req('@deepseek-ai/dsh-app-boot')
   const effective = composeEntries([...entries.layers.map(layer => layer.patches), entries.patches])
+  assert.equal(effective.find(row => row.id === 'bili-native')?.disabled, true)
   assert.equal(effective.filter(row => row.id === 'matt-skills-board').length, 1)
   assert.equal(effective.find(row => row.id === 'matt-skills-board').name, pathToFileURL(join(workflow, 'matt-skills-panel-plugin/package/lib/index.js')).href)
   assert.deepEqual(effective.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true, ghAccount: false })
@@ -146,6 +159,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   }
   const health = await dshReadiness(baseUrl(ctx),{cookie, signal: t.signal, request: observedInventory})
   assert.equal(health.ready,true)
+  await assert.rejects(readFile(retiredImport), { code: 'ENOENT' }, 'retired package must not be imported by the real Host')
   assert.ok(health.plugins.length>0)
   const deliveryResponse = await fetch(new URL('/api/workflowDelivery/list', baseUrl(ctx)), {
     method: 'POST', headers: { 'content-type': 'application/json', cookie }, signal: t.signal,

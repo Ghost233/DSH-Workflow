@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/larksuite/cli",
-  "version": "1.0.90",
-  "archive": "lark-cli-1.0.90-darwin-arm64.tar.gz",
-  "archiveSha256": "894c68176bd4015e8478094ded6d9c7ad76abf9d9cd5679d36b23d0b74d4db02",
-  "binarySha256": "d356ad37c35bc9a2e8e9bde2eb80173953e485bbb764a2735f002460fed5dfb2"
+  "version": "1.0.98",
+  "archive": "lark-cli-1.0.98-darwin-arm64.tar.gz",
+  "archiveSha256": "ee4a3209bbf8b74ea5c00a07d0da89b79f5e7f6abfd518a8b2d78a7a4f7e3f40",
+  "binarySha256": "558a4b3db4beb63ab71f2d2dbc42506846535bc1276f707764ff94809e8441a0"
 }

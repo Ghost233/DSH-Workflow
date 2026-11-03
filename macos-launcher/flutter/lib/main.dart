@@ -68,8 +68,14 @@ Future<void> main() async {
         if (traceEnabled) {
           stderr.writeln('OWN_QUIT_TRACE phase=dart-received');
         }
-        var stage = 'integration-close';
+        var stage = 'services-stop';
         try {
+          await serviceStartup;
+          if (!await model.shutdownForQuit()) {
+            await native.cancelQuit();
+            return;
+          }
+          stage = 'integration-close';
           await integration.close();
           if (traceEnabled) {
             stderr.writeln('OWN_QUIT_TRACE phase=integration-done');
@@ -90,7 +96,11 @@ Future<void> main() async {
               'OWN_QUIT_ERROR stage=$stage errorType=${error.runtimeType}',
             );
           }
-          rethrow;
+          await native.cancelQuit();
+          model.exiting = false;
+          model.exitMessage = '';
+          model.reportError(error);
+          await native.showWindow();
         }
       case 'openGlobal':
         await serviceStartup;
@@ -146,6 +156,7 @@ class _LauncherPageState extends State<LauncherPage> {
   void initState() {
     super.initState();
     model.confirmServiceStop = _confirmServiceStop;
+    model.confirmStationQuit = _confirmStationQuit;
     _lifecycle = AppLifecycleListener(onStateChange: _windowStateChanged);
     final state = WidgetsBinding.instance.lifecycleState;
     if (state != null) _windowStateChanged(state);
@@ -193,12 +204,52 @@ class _LauncherPageState extends State<LauncherPage> {
         false;
   }
 
+  Future<bool> _confirmStationQuit(Map<String, Object?> inspection) async {
+    await model.showWindow();
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('退出 Station 并停止全部服务'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '以下工作尚未完成或状态未知。确认后将关闭桌面客户端，停止日常 DSH、所有 Superagent 和 Web，并回收相关进程。',
+                  ),
+                  if (inspection['message'] is String)
+                    Text(inspection['message'] as String),
+                  for (final work in inspection['work'] as List? ?? [])
+                    Text('• $work'),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('停止全部并退出'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   void dispose() {
     _lifecycle.dispose();
     model.setWindowVisible(false);
     if (model.confirmServiceStop == _confirmServiceStop) {
       model.confirmServiceStop = null;
+    }
+    if (model.confirmStationQuit == _confirmStationQuit) {
+      model.confirmStationQuit = null;
     }
     _password.dispose();
     super.dispose();
@@ -264,64 +315,69 @@ class _LauncherPageState extends State<LauncherPage> {
           ),
         ],
       ),
-      body: Row(
-        children: [
-          NavigationRail(
-            selectedIndex: _page,
-            labelType: NavigationRailLabelType.all,
-            onDestinationSelected: (value) {
-              setState(() => _page = value);
-              if (value == 4 &&
-                  model.modelSettings == null &&
-                  model.serviceSnapshot.ready == true) {
-                unawaited(_act(model.refreshModelSettings));
-              }
-            },
-            destinations: const [
-              NavigationRailDestination(
-                icon: Icon(Icons.desktop_mac),
-                label: Text('管理'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.smart_toy_outlined),
-                label: Text('Superagent'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.extension_outlined),
-                label: Text('插件'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.receipt_long),
-                label: Text('日志'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.tune),
-                label: Text('模型'),
-              ),
-            ],
-          ),
-          const VerticalDivider(width: 1),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: switch (_page) {
-                1 => _superagent(),
-                2 => _plugins(),
-                3 => _logs(),
-                4 => ModelSettingsPage(model: model),
-                _ => _overview(),
+      body: AbsorbPointer(
+        absorbing: model.exiting,
+        child: Row(
+          children: [
+            NavigationRail(
+              selectedIndex: _page,
+              labelType: NavigationRailLabelType.all,
+              onDestinationSelected: (value) {
+                setState(() => _page = value);
+                if (value == 4 &&
+                    model.modelSettings == null &&
+                    model.serviceSnapshot.ready == true) {
+                  unawaited(_act(model.refreshModelSettings));
+                }
               },
+              destinations: const [
+                NavigationRailDestination(
+                  icon: Icon(Icons.desktop_mac),
+                  label: Text('管理'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.smart_toy_outlined),
+                  label: Text('Superagent'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.extension_outlined),
+                  label: Text('插件'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.receipt_long),
+                  label: Text('日志'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.tune),
+                  label: Text('模型'),
+                ),
+              ],
             ),
-          ),
-        ],
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: switch (_page) {
+                  1 => _superagent(),
+                  2 => _plugins(),
+                  3 => _logs(),
+                  4 => ModelSettingsPage(model: model),
+                  _ => _overview(),
+                },
+              ),
+            ),
+          ],
+        ),
       ),
-      bottomNavigationBar: model.error.isEmpty
+      bottomNavigationBar: model.error.isEmpty && model.exitMessage.isEmpty
           ? null
           : Material(
               color: Theme.of(context).colorScheme.errorContainer,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: SelectableText(model.error),
+                child: SelectableText(
+                  model.error.isEmpty ? model.exitMessage : model.error,
+                ),
               ),
             ),
     ),
@@ -352,7 +408,7 @@ class _LauncherPageState extends State<LauncherPage> {
             }),
           ],
         ),
-        const Text('关闭启动器后，已启动的 DSH 服务继续运行。'),
+        const Text('关闭窗口后服务继续运行；退出 Station 会停止全部服务。'),
         SelectableText(model.notificationMessage),
         Wrap(
           spacing: 8,

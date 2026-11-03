@@ -850,6 +850,7 @@ Future<void> main(List<String> arguments) async {
     );
     require(
       native(snapshot)['windowVisible'] == true &&
+          native(snapshot)['activationPolicy'] == 0 &&
           native(snapshot)['entryVisible'] == true &&
           !exited,
       'without manager the actual application owns a visible window and menu',
@@ -898,12 +899,15 @@ Future<void> main(List<String> arguments) async {
     );
     await state({'action': 'close'});
     require(
-      native(await state())['windowVisible'] == false && !exited,
+      native(await state())['windowVisible'] == false &&
+          native(await state())['activationPolicy'] == 1 &&
+          !exited,
       'closing the real native window keeps the application alive',
     );
     await state({'action': 'ownEntry'});
     require(
-      native(await state())['windowVisible'] == true,
+      native(await state())['windowVisible'] == true &&
+          native(await state())['activationPolicy'] == 0,
       'the application own management entry reopens the real native window',
     );
 

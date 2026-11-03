@@ -471,6 +471,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void> _manageSuperagent(String action, {String? projectId}) async {
     final id = projectId ?? selectedSuperagentProjectId;
     if (id == null) throw StateError('请先添加 Superagent 项目。');
+    if (exiting && action == 'start') throw StateError('启动器正在退出');
     if (_closed || isSuperagentBusy(id)) return;
     _busySuperagents.add(id);
     notifyListeners();
@@ -625,7 +626,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   @override
   Future<void> startService() async {
-    if (_closed) throw StateError('启动器正在退出');
+    if (_closed || exiting) throw StateError('启动器正在退出');
     _service = ServiceStatus(state: ServiceState.starting, ready: false);
     notifyListeners();
     try {
@@ -652,7 +653,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void> restartService() => _changeService('restart');
 
   Future<void> _changeService(String action) async {
-    if (_closed) throw StateError('启动器正在退出');
+    if (exiting) throw StateError('正在退出 Station，请等待清理完成。');
+    if (_closed || exiting) throw StateError('启动器正在退出');
     if (_changingService) throw StateError('DSH 服务已有停止或重启操作正在进行');
     _changingService = true;
     String? pending;
@@ -736,7 +738,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   }
 
   Future<void> authorizeServiceNotifications() async {
-    if (_closed) throw StateError('启动器正在退出');
+    if (_closed || exiting) throw StateError('启动器正在退出');
     if (requestingNotificationAuthorization) return;
     requestingNotificationAuthorization = true;
     notificationMessage = '正在等待 macOS 通知授权。';
@@ -752,7 +754,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   }
 
   Future<void> refreshServiceNotificationStatus() async {
-    if (_closed) throw StateError('启动器正在退出');
+    if (_closed || exiting) throw StateError('启动器正在退出');
     await _serviceCommand('notification-status');
   }
 
@@ -775,7 +777,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void> startWeb() => _mutate(_startWeb);
 
   Future<void> _mutate(Future<void> Function() action) async {
-    if (_closed) throw StateError('启动器正在退出');
+    if (_closed || exiting) throw StateError('启动器正在退出');
     if (_mutation != null) {
       throw ProtocolError(ProtocolError.busy, 'Web 服务正在启动或回收');
     }
@@ -851,6 +853,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   }
 
   Future<void> _startWeb() async {
+    if (exiting) throw StateError('启动器正在退出');
     if (!hasPassword) throw StateError('请先设置内网访问密码');
     error = '';
     _web = ServiceStatus(
@@ -939,6 +942,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
           .whenComplete(() => _desktopOpen = null);
 
   Future<void> _openDesktop({required bool hidden}) async {
+    if (exiting) throw StateError('启动器正在退出');
     await _serviceCommand('connect-web');
     if (_service.ready != true) {
       throw StateError('DSH 服务未启动或暂不可用，请先启动 DSH 服务。');
@@ -1096,6 +1100,98 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       throw StateError('检查器退出 ${result.exitCode}：${result.stderr}');
     }
     return objectValue(jsonDecode(result.stdout.toString()));
+  }
+
+  bool exiting = false;
+  String exitMessage = '';
+  Future<bool> Function(Map<String, Object?>)? confirmStationQuit;
+
+  Future<bool> shutdownForQuit() async {
+    if (exiting) return false;
+    exiting = true;
+    error = '';
+    exitMessage = '正在准备退出并停止全部服务…';
+    notifyListeners();
+    Process? child;
+    var completed = false;
+    Object? operationFailure;
+    try {
+      if (!File(script('station-shutdown.mjs')).existsSync()) {
+        // Isolated native UI probes without runtime resources have no services.
+        if (environment.testSocket == null) {
+          throw StateError('退出清理入口缺失，请重新安装完整应用。');
+        }
+        completed = true;
+        return true;
+      }
+      await _mutation;
+      await _desktopOpen?.timeout(const Duration(seconds: 20));
+      for (var attempt = 0; _busySuperagents.isNotEmpty; attempt++) {
+        if (attempt >= 620) {
+          throw StateError('Superagent 操作尚未完成，请稍后重试退出。');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      child = await _startProcess(node, [
+        script('station-shutdown.mjs'),
+        environment.dataRoot,
+      ], environment: processEnvironment);
+      final diagnostics = child.stderr.transform(utf8.decoder).join();
+      bool? stopped;
+      String? failure;
+      await for (final line
+          in child.stdout
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
+        final event = objectValue(jsonDecode(line));
+        switch (event['type']) {
+          case 'progress':
+            exitMessage = event['message'] as String;
+            notifyListeners();
+          case 'inspection':
+            final inspection = objectValue(event['value']);
+            final accepted =
+                inspection['needsConfirmation'] != true ||
+                (await confirmStationQuit?.call(inspection) ?? false);
+            if (accepted &&
+                await File('$desktop/Contents/Info.plist').exists()) {
+              await native.quitDesktop(desktop);
+            }
+            child.stdin.writeln(jsonEncode({'confirmed': accepted}));
+            await child.stdin.flush();
+          case 'result':
+            stopped = event['stopped'] == true;
+          case 'error':
+            failure = event['message'] as String?;
+        }
+      }
+      final code = await child.exitCode;
+      await diagnostics;
+      if (code != 0 || failure != null || stopped == null) {
+        throw StateError(failure ?? '服务清理未完成（$code），Station 已保留。');
+      }
+      completed = stopped;
+      return completed;
+    } catch (failure) {
+      operationFailure = failure;
+      rethrow;
+    } finally {
+      try {
+        await child?.stdin.close();
+        if (child != null) {
+          await child.exitCode.timeout(const Duration(seconds: 10));
+        }
+      } catch (cleanup) {
+        if (operationFailure == null) rethrow;
+        stderr.writeln('Station 退出检查清理失败：${cleanup.runtimeType}');
+      } finally {
+        if (!completed) {
+          exiting = false;
+          exitMessage = '';
+          notifyListeners();
+        }
+      }
+    }
   }
 
   Future<void> close() => _closeFuture ??= _close();

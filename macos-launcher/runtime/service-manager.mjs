@@ -259,15 +259,18 @@ export async function serveManager({ dataRoot, resources, home }) {
         if (closing) throw new Error('DSH 服务管理进程正在退出')
         const profile = await prepareDesktopProfile({ resourcesRoot: resources, desktopRuntimeRoot: runtime,
           globalRoot: join(dataRoot, 'global'), home, permissionMode })
-        const executable = join(contents, 'MacOS/DeepSeek Harness')
+        const executable = join(resources, 'node')
         const primaryRuntime = join(desktopResources, 'runtime/primary-runtime')
         const { resolvePrimaryRuntime } = createRequire(join(runtime, 'package.json'))('@deepseek-ai/dsh-tool-workspace-dependencies')
         const primary = await resolvePrimaryRuntime(primaryRuntime)
+        const hostEnvironment = { ...environment, DSH_HOME: home, DSH_PERMISSION_MODE: permissionMode,
+          DSH_DESKTOP_NODE_EXECUTABLE: executable,
+          PATH: `${join(desktopResources, 'runtime/bin')}${delimiter}${environment.PATH ?? ''}` }
+        delete hostEnvironment.ELECTRON_RUN_AS_NODE
         const owned = fork(join(runtime, 'node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js'),
-          [runtime, profile.profile, primaryRuntime, primary.pnpm, join(contents, 'MacOS')], {
+          [runtime, profile.profile, primaryRuntime, primary.pnpm, resources], {
             execPath: executable, execArgv: ['--expose-internals'], cwd: profile.profile,
-            env: { ...environment, DSH_HOME: home, DSH_PERMISSION_MODE: permissionMode, ELECTRON_RUN_AS_NODE: '1', DSH_DESKTOP_NODE_EXECUTABLE: executable,
-              PATH: `${join(desktopResources, 'runtime/bin')}${delimiter}${environment.PATH ?? ''}` },
+            env: hostEnvironment,
             stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
           })
         child = owned
