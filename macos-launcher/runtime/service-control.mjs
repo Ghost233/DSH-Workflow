@@ -5,6 +5,8 @@ import { realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 export const SERVICE_PROTOCOL = 1
+// Increment when a manager's startup behavior requires the process to be replaced.
+export const SERVICE_MANAGER_GENERATION = 2
 export const serviceDirectory = dataRoot => join(resolve(dataRoot), 'global/.dsh-workflow/service')
 export const serviceSocket = dataRoot => join('/private/tmp', `dsh-wf-${process.getuid()}-${createHash('sha256').update(realpathSync(resolve(dataRoot))).digest('hex').slice(0, 16)}`, 'control.sock')
 export const redact = value => String(value).replace(/token=[^&\s"<>]+/g, '[credential redacted]')

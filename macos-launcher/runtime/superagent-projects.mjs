@@ -187,7 +187,7 @@ async function guidedStorageParent(dataRoot, storageRoot) {
   if (!storageRoot) {
     const path = join(resolve(dataRoot), 'superagent-workspaces')
     await privateDirectory(path)
-    return path
+    return realpath(path)
   }
   const path = await directory(storageRoot, 'Superagent 存放目录')
   let inside = false
@@ -199,12 +199,13 @@ async function guidedStorageParent(dataRoot, storageRoot) {
   return path
 }
 
-export async function createSuperagentProject(dataRoot, input) {
+export async function createSuperagentProject(dataRoot, input, { beforeGuidedCreate } = {}) {
   let work
   try {
     if (input?.guided === true) {
       const parent = await guidedStorageParent(dataRoot, input.storageRoot)
       work = join(parent, randomUUID())
+      await beforeGuidedCreate?.(work)
       await mkdir(work, { mode: 0o700 })
       input = await guidedConfiguration(work, input)
     }

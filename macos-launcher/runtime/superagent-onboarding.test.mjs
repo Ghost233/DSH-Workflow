@@ -78,3 +78,17 @@ test('bot chat and member selectors use the bot identity and return display name
   assert.equal(denied.historyReadable, false)
   await assert.rejects(feishuChoices({ resources: root, bot, action: 'members', chatId: '../bad', run }), /请选择飞书群/)
 })
+
+test('resolves placeholder member names when the bot can read user profiles and keeps IDs otherwise', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'onboarding-member-name-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  await mkdir(join(root, 'bin')); await mkdir(join(root, 'bot'))
+  await writeFile(join(root, 'bin/lark-cli'), '#!/bin/sh\n'); await chmod(join(root, 'bin/lark-cli'), 0o700)
+  const bot = { directory: join(root, 'bot'), profile: 'bot-a', executable: '@bundled' }
+  const run = async (_command, args) => ({ stdout: JSON.stringify(args.includes('+chat-members-list')
+    ? { ok: true, data: { users: [{ member_id: 'ou_one', name: '用户441369' }, { member_id: 'ou_two', name: '' }] } }
+    : args.includes('ou_one') ? { ok: true, data: { name: 'Ghost233' } } : { ok: true, data: { open_id: 'ou_two' } }) })
+  const value = await feishuChoices({ resources: root, bot, action: 'members', chatId: 'oc_one', run })
+  assert.deepEqual(value.members, [{ id: 'ou_one', name: 'Ghost233' }, { id: 'ou_two', name: 'ou_two' }])
+  assert.equal(value.namesIncomplete, true)
+})

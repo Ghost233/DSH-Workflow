@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto'
 import { prepareDesktopProfile } from './desktop-profile.mjs'
 import { readDesktopHost } from './desktop-launch.mjs'
 import { dshReadiness } from '../../scripts/dsh-readiness.mjs'
-import { SERVICE_PROTOCOL, serviceDirectory, serviceSocket, redact } from './service-control.mjs'
+import { SERVICE_PROTOCOL, SERVICE_MANAGER_GENERATION, serviceDirectory, serviceSocket, redact } from './service-control.mjs'
 import { listenManagerControl } from './manager-control.mjs'
 import { attachManagerWebSocket } from './manager-websocket.mjs'
 import { createServiceAdmission } from './service-admission.mjs'
@@ -57,7 +57,7 @@ export async function serveManager({ dataRoot, resources, home }) {
   let validatedReady = false, lastHealth = { ready: false, message: null }
   const publicSnapshot = () => {
     const paused = stopOperation?.owned === child && admission?.locked
-    return { protocol: SERVICE_PROTOCOL, revision: ++statusRevision, service: {
+    return { protocol: SERVICE_PROTOCOL, managerGeneration: SERVICE_MANAGER_GENERATION, revision: ++statusRevision, service: {
       state, ready: state === 'running' && lastHealth.ready && !paused,
       instanceId: receipt?.lease ?? null, pid: child?.pid ?? null,
       runtimeVersion: receipt?.runtimeVersion ?? null,

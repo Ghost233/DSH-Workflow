@@ -86,6 +86,33 @@ test('an invalid ownership record fails before publishing a control socket', asy
   assert.equal((await lstat(join(directory, 'manager.json'))).isDirectory(), true)
 })
 
+for (const { state, generation, request } of [{ state: 'stopped' }, { state: 'running' }, { state: 'stopped', generation: 2 }, { state: 'running', request: { type: 'inspect-stop', action: 'restart' } }, { state: 'running', generation: 2, request: { type: 'inspect-stop', action: 'restart' } }]) test(`manager ${state} generation ${generation ?? 'legacy'} handles ${request?.action ?? 'startup'} safely`, async t => {
+  const root = await mkdtemp('/private/tmp/dsh-legacy-manager-'), resources = join(root, 'resources')
+  await mkdir(resources)
+  const socketPath = serviceSocket(root), directory = serviceDirectory(root), calls = []
+  const server = createServer(socket => {
+    let input = ''
+    socket.on('data', bytes => {
+      input += bytes
+      if (!input.includes('\n')) return
+      const request = JSON.parse(input); calls.push(request.type)
+      socket.end(JSON.stringify({ ok: true, value: { protocol: 1, managerGeneration: generation, service: { state } } }) + '\n')
+    })
+  })
+  const control = await listenManagerControl(server, { directory, socketPath })
+  assert.ok(control)
+  t.after(async () => { await control.close(); await rm(root, { recursive: true, force: true }) })
+  const cli = fileURLToPath(new URL('./service-cli.mjs', import.meta.url))
+  const child = spawn(process.execPath, [cli, root, resources, join(root, 'home')], { stdio: ['pipe', 'pipe', 'pipe'] })
+  let output = ''; child.stdout.on('data', bytes => { output += bytes })
+  child.stdin.end(JSON.stringify(request ?? { type: 'start-service' }) + '\n')
+  const code = await new Promise(resolve => child.once('close', resolve))
+  assert.equal(code, generation === undefined && (state === 'stopped' || request) ? 1 : 0)
+  if (code === 1) assert.match(JSON.parse(output).error, /旧版后台管理器/)
+  else assert.equal(JSON.parse(output).value.service.state, state)
+  assert.deepEqual(calls, generation === 2 ? ['status', request?.type ?? 'start-service'] : ['status'])
+})
+
 for (const role of ['service', 'web']) {
   test(`${role} status reports stopped after a real manager SIGKILL leaves a refused socket`, async t => {
     const owned = await fixture(t, role)

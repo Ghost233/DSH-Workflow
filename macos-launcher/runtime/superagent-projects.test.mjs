@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:net'
 import { spawn } from 'node:child_process'
@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createSuperagentProject, guidedPrepare, listSuperagentGithubAccounts, listSuperagentProjects, projectDirectory, updateSuperagentProject } from './superagent-projects.mjs'
 import { superagentSocket } from './superagent-service.mjs'
+import { superagentSandboxArguments } from './superagent-sandbox.mjs'
 
 test('keeps project configuration and the existing Superagent in separate owned directories', async t => {
   const root = await mkdtemp(join(tmpdir(), 'superagent-projects-'))
@@ -107,6 +108,20 @@ test('guided projects get a private task root without asking for a command', asy
   assert.equal(project.baseBranch, 'main')
 })
 
+test('checks a canonical workspace path before creating anything under an aliased data root', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-canonical-work-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const actual = join(root, 'actual'), alias = join(root, 'alias'), account = join(root, 'gh')
+  await mkdir(actual, { mode: 0o700 }); await mkdir(account, { mode: 0o700 }); await symlink(actual, alias)
+  const canonical = await realpath(actual)
+  await assert.rejects(createSuperagentProject(alias, { guided: true, dedicated: true, name: 'B', repository: 'owner/b',
+    baseBranch: 'main', githubLogin: 'alice', ghConfigDir: account }, { beforeGuidedCreate: work => {
+    assert.ok(work.startsWith(join(canonical, 'superagent-workspaces') + '/'))
+    throw new Error('guard checked')
+  } }), /guard checked/)
+  assert.deepEqual(await readdir(join(actual, 'superagent-workspaces')), [])
+})
+
 test('an unconfigured legacy project can use the wizard without replacing its existing data', async t => {
   const root = await mkdtemp(join(tmpdir(), 'superagent-guided-legacy-'))
   t.after(() => rm(root, { recursive: true, force: true }))
@@ -157,4 +172,50 @@ test('does not change protected project mappings while any Superagent is running
   assert.equal(code, 1)
   assert.match(JSON.parse(output).error, /先停止所有 Superagent/)
   assert.deepEqual((await listSuperagentProjects(dataRoot)).map(row => row.name), ['A'])
+})
+
+test('a dedicated project can be added beside a running dedicated project without exposing either workspace', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-running-create-')), dataRoot = join(root, 'data')
+  const repo = join(root, 'repo-a'), tasks = join(root, 'tasks-a'), account = join(root, 'gh'), feishu = join(root, 'feishu'), runtimeExtra = join(root, 'runtime-extra')
+  for (const path of [dataRoot, repo, tasks, account, feishu, runtimeExtra]) await mkdir(path, { mode: 0o700 })
+  const first = await createSuperagentProject(dataRoot, { name: 'A', localProjectDir: repo, executionRoot: tasks, feishuConfigDir: feishu, deploymentMode: 'dedicated' })
+  const marker = join(repo, 'uncommitted.txt'); await writeFile(marker, 'keep')
+  const socket = superagentSocket(dataRoot, first.id), socketDirectory = dirname(socket)
+  await mkdir(socketDirectory, { mode: 0o700 })
+  let sandboxPolicy, sandboxRoots
+  const server = createServer(connection => connection.once('data', () => connection.end(JSON.stringify({ ok: true,
+    value: { protocol: 1, projectId: first.id, sandboxPolicy, sandboxRoots, service: { state: 'running', pid: 123 } } }) + '\n')))
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve) }); await chmod(socket, 0o600)
+  t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(socketDirectory, { recursive: true, force: true }); await rm(root, { recursive: true, force: true }) })
+  const create = async input => {
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./superagent-service.mjs', import.meta.url)), 'create-project', dataRoot, root, root])
+    let output = ''; child.stdout.setEncoding('utf8'); child.stdout.on('data', chunk => { output += chunk })
+    child.stdin.end(JSON.stringify(input)); const code = await new Promise(resolve => child.once('close', resolve))
+    return { code, reply: JSON.parse(output) }
+  }
+  const input = { guided: true, dedicated: true, name: 'B', repository: 'owner/b', baseBranch: 'main', githubLogin: 'alice', ghConfigDir: account }
+  const unattested = await create(input)
+  assert.equal(unattested.code, 1); assert.match(unattested.reply.error, /未确认目录隔离/)
+  sandboxPolicy = 1
+  const missingRoots = await create(input)
+  assert.equal(missingRoots.code, 1); assert.match(missingRoots.reply.error, /未确认目录隔离/)
+  sandboxRoots = await Promise.all([projectDirectory(dataRoot, first.id), repo, tasks, feishu, runtimeExtra].map(path => realpath(path)))
+  const alias = join(root, 'tasks-alias'); await symlink(tasks, alias)
+  for (const storageRoot of [tasks, alias, projectDirectory(dataRoot, first.id), feishu, runtimeExtra, join(dataRoot, 'superagent-projects')]) {
+    const refused = await create({ ...input, storageRoot })
+    assert.equal(refused.code, 1); assert.match(refused.reply.error, /目录|保护|重叠/)
+  }
+  assert.deepEqual(await readdir(tasks), [])
+  const created = await create(input)
+  assert.equal(created.code, 0, JSON.stringify(created.reply))
+  assert.equal(created.reply.value.project.deploymentMode, 'dedicated')
+  const newRepo = created.reply.value.project.localProjectDir
+  const args = superagentSandboxArguments([join(projectDirectory(dataRoot, first.id), 'project.json')], [projectDirectory(dataRoot, first.id), repo, tasks])
+  assert.throws(() => execFileSync('/usr/bin/sandbox-exec', [...args, '--', '/usr/bin/touch', join(newRepo, 'must-not-write')], { stdio: 'ignore' }))
+  assert.deepEqual(await readdir(newRepo), [])
+  const second = created.reply.value.project
+  const secondArgs = superagentSandboxArguments([join(projectDirectory(dataRoot, second.id), 'project.json')], [projectDirectory(dataRoot, second.id), second.localProjectDir, second.executionRoot])
+  assert.throws(() => execFileSync('/usr/bin/sandbox-exec', [...secondArgs, '--', '/usr/bin/touch', marker], { stdio: 'ignore' }))
+  assert.equal(await readFile(marker, 'utf8'), 'keep')
+  assert.equal((await listSuperagentProjects(dataRoot)).length, 2)
 })

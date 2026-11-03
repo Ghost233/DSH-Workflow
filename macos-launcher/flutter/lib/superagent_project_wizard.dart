@@ -699,9 +699,9 @@ class _SuperagentProjectWizardState extends State<SuperagentProjectWizard> {
                         for (final bot in _bots)
                           ListTile(
                             title: Text(bot['name'] as String? ?? '飞书机器人'),
-                            subtitle: bot['ready'] == true
-                                ? null
-                                : const Text('需要机器人专用身份，请扫码添加'),
+                            subtitle: Text(
+                              'App ID: ${bot['appId'] ?? '未知'}${bot['ready'] == true ? '' : ' · 需要机器人专用身份，请扫码添加'}',
+                            ),
                             selected: _bot == bot,
                             leading: Icon(
                               _bot == bot
@@ -717,7 +717,7 @@ class _SuperagentProjectWizardState extends State<SuperagentProjectWizard> {
                             '使用应用机器人；扫码不能保证完成全部授权。请在飞书开放平台启用机器人、订阅 im.message.receive_v1 并发布应用版本。',
                           ),
                           const Text(
-                            '选择群成员需要 im:chat.members:read 权限。申请后请按飞书提示审批或发布应用，再刷新成员列表。',
+                            '默认申请包含读取群成员和群内全部消息。显示成员姓名可能需要另行申请用户基本信息权限；请按飞书提示审批或发布应用。',
                           ),
                           if (_bot!['appId'] is String)
                             TextButton(
@@ -728,12 +728,28 @@ class _SuperagentProjectWizardState extends State<SuperagentProjectWizard> {
                                     '/page/scope-apply',
                                     {
                                       'clientID': _bot!['appId'] as String,
-                                      'scopes': 'im:chat.members:read',
+                                      'scopes': 'im:chat.members:read im:message.group_msg',
                                     },
                                   ).toString(),
                                 ),
                               ),
-                              child: const Text('申请默认权限：读取群成员'),
+                              child: const Text('申请默认权限：群成员与群消息'),
+                            ),
+                          if (_bot!['appId'] is String)
+                            TextButton(
+                              onPressed: () => unawaited(
+                                widget.model.native.openUrl(
+                                  Uri.https(
+                                    'open.feishu.cn',
+                                    '/page/scope-apply',
+                                    {
+                                      'clientID': _bot!['appId'] as String,
+                                      'scopes': 'contact:user.base:readonly',
+                                    },
+                                  ).toString(),
+                                ),
+                              ),
+                              child: const Text('申请显示成员姓名的权限'),
                             ),
                           const Text(
                             '接收全部群消息需要 im:message.group_msg 等权限，可能需企业管理员审批。群历史读取成功也不能证明实时事件订阅已生效。',
@@ -836,6 +852,14 @@ class _SuperagentProjectWizardState extends State<SuperagentProjectWizard> {
                                 ? _memberId
                                 : null,
                             isExpanded: true,
+                            itemHeight: 64,
+                            selectedItemBuilder: (context) => [
+                              for (final member in _members)
+                                Text(
+                                  member['name'] as String,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
                             decoration: const InputDecoration(
                               labelText: '允许发起任务的人',
                             ),
@@ -843,13 +867,63 @@ class _SuperagentProjectWizardState extends State<SuperagentProjectWizard> {
                               for (final member in _members)
                                 DropdownMenuItem(
                                   value: member['id'] as String,
-                                  child: Text(member['name'] as String),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        member['name'] as String,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        member['id'] as String,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                             ],
                             onChanged: _loading
                                 ? null
                                 : (value) => setState(() => _memberId = value),
                           ),
+                          TextButton.icon(
+                            onPressed: _loading || _chatId == null
+                                ? null
+                                : () async {
+                                    setState(() {
+                                      _loading = true;
+                                      _error = null;
+                                    });
+                                    try {
+                                      await _loadMembers();
+                                    } catch (error) {
+                                      if (mounted) {
+                                        setState(
+                                          () => _error = error.toString(),
+                                        );
+                                      }
+                                    } finally {
+                                      if (mounted) {
+                                        setState(() => _loading = false);
+                                      }
+                                    }
+                                  },
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('刷新群成员'),
+                          ),
+                          if (_members.any(
+                            (member) =>
+                                member['name'] == member['id'] ||
+                                RegExp(r'^用户\d{4,}$')
+                                    .hasMatch(member['name'] as String? ?? ''),
+                          ))
+                            const Text(
+                              '成员名称由飞书返回；如果无法识别，请核对飞书应用的通讯录可见范围和相关权限，然后刷新群成员。',
+                            ),
                           SwitchListTile(
                             contentPadding: EdgeInsets.zero,
                             title: const Text('由 Station 管理接收与接单设置'),

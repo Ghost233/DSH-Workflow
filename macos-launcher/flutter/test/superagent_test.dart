@@ -65,6 +65,7 @@ class SuperagentTestController extends LauncherController {
     'feishu-members' => {
       'members': [
         {'id': 'ou_fixture', 'name': 'Alice'},
+        {'id': 'ou_unknown', 'name': '用户441369'},
       ],
       'truncated': false,
     },
@@ -379,16 +380,30 @@ void main() {
         await waitFor('在浏览器打开授权页面');
         expect(find.byType(Image), findsWidgets);
         await waitFor('测试机器人');
-        await waitFor('申请默认权限：读取群成员');
-        await tester.ensureVisible(find.text('申请默认权限：读取群成员'));
+        await waitFor('App ID: cli_fixture');
+        await waitFor('申请默认权限：群成员与群消息');
+        await tester.ensureVisible(find.text('申请默认权限：群成员与群消息'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('申请默认权限：读取群成员'));
+        await tester.tap(find.text('申请默认权限：群成员与群消息'));
         await tester.pump();
         final permissionUrl = Uri.parse(fixture.native.opened!);
         expect(permissionUrl.host, 'open.feishu.cn');
         expect(permissionUrl.path, '/page/scope-apply');
         expect(permissionUrl.queryParameters['clientID'], 'cli_fixture');
-        expect(permissionUrl.queryParameters['scopes'], 'im:chat.members:read');
+        expect(
+          permissionUrl.queryParameters['scopes'],
+          'im:chat.members:read im:message.group_msg',
+        );
+        await tester.ensureVisible(find.text('申请显示成员姓名的权限'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('申请显示成员姓名的权限'));
+        await tester.pump();
+        final namePermission = Uri.parse(fixture.native.opened!);
+        expect(namePermission.queryParameters['clientID'], 'cli_fixture');
+        expect(
+          namePermission.queryParameters['scopes'],
+          'contact:user.base:readonly',
+        );
         await tester.ensureVisible(find.text('申请群历史与全部群消息读取权限'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('申请群历史与全部群消息读取权限'));
@@ -407,11 +422,18 @@ void main() {
         await tester.runAsync(() => tester.tap(find.text('产品群').last));
         await waitFor('允许发起任务的人');
         await waitUntilIdle();
+        expect(find.textContaining('成员名称由飞书返回'), findsOneWidget);
         await tester.ensureVisible(find.text('允许发起任务的人'));
         await tester.tap(find.text('允许发起任务的人'));
         await tester.pumpAndSettle();
+        expect(find.text('ou_fixture'), findsWidgets);
         await tester.tap(find.text('Alice').last);
         await tester.pump();
+        expect(find.text('Alice'), findsWidgets);
+        await tester.ensureVisible(find.text('刷新群成员'));
+        await tester.runAsync(() => tester.tap(find.text('刷新群成员')));
+        await waitUntilIdle();
+        expect(find.text('Alice'), findsWidgets);
         await tester.ensureVisible(find.text('仅 @ 机器人').last);
         await tester.tap(find.text('仅 @ 机器人').last);
         await tester.pumpAndSettle();

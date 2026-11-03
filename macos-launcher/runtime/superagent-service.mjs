@@ -5,7 +5,7 @@ import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { open, readFile, writeFile, mkdir, lstat, readlink, realpath, rename, symlink, unlink } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
-import { basename, delimiter, dirname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -116,9 +116,10 @@ async function health(webPort) {
 export async function serveSuperagent({ dataRoot, resources, home = join(homedir(), '.dsh'), projectId = 'legacy' }) {
   const directory = superagentDirectory(dataRoot, projectId), socketPath = superagentSocket(dataRoot, projectId)
   const server = createServer(), logs = []
-  let child, url, state = 'stopped', message = '', starting, stopping, writes = Promise.resolve(), revision = 0
+  let child, childSandboxed = false, childSandboxRoots = [], url, state = 'stopped', message = '', starting, stopping, writes = Promise.resolve(), revision = 0
   let closeModelSharing, modelSharing = { state: 'stopped' }, webPort = port, sharingWarnings = []
-  const snapshot = () => ({ protocol: SERVICE_PROTOCOL, superagentVersion: 2, projectId, revision: ++revision, service: {
+  const snapshot = () => ({ protocol: SERVICE_PROTOCOL, superagentVersion: 2, sandboxPolicy: child && childSandboxed ? 1 : null,
+    sandboxRoots: child && childSandboxed ? childSandboxRoots : [], projectId, revision: ++revision, service: {
     state, ready: state === 'running', pid: child?.pid ?? null, message: message || null, observedAt: new Date().toISOString(),
   }, modelSharing, sharingWarnings, logs: [...logs] })
   const updates = statusNotifications(snapshot)
@@ -241,6 +242,8 @@ export async function serveSuperagent({ dataRoot, resources, home = join(homedir
         binding = await checkSuperagentBinding({ directory, project, accounts, hasTickets })
         const owned = spawn(executable, launchArgs, { cwd: prepared.directory, env: environment, detached: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
         child = owned
+        childSandboxed = Boolean(project)
+        childSandboxRoots = [...writable, ...feishuEvents ? [feishuEvents.events, feishuEvents.bot] : []]
         for (const stream of [owned.stdout, owned.stderr]) createInterface({ input: stream }).on('line', line => {
           const match = /^dsh web:\s*(https?:\/\/\S+)/.exec(line)
           if (match) {
@@ -251,7 +254,7 @@ export async function serveSuperagent({ dataRoot, resources, home = join(homedir
         owned.once('error', error => { message = redact(error.message); state = 'failed'; log(message) })
         owned.once('close', (code, signal) => {
           if (child !== owned) return
-          child = undefined; url = undefined
+          child = undefined; childSandboxed = false; childSandboxRoots = []; url = undefined
           try { process.kill(-owned.pid, 'SIGTERM') } catch (error) { if (error.code !== 'ESRCH') log('Superagent 子进程未能全部停止。') }
           void releaseSuperagentHost(directory, owned.pid).catch(() => log('Superagent 进程记录未能清理。'))
           if (launchPatch) void absent(unlink(launchPatch)).catch(error => log(`临时启动配置未能清理：${error.message}`))
@@ -369,6 +372,47 @@ async function requireProjectsStopped(dataRoot) {
   }
 }
 
+// A running sandbox has a fixed allow-list. A new dedicated workspace is safe
+// only when neither it nor the registry is inside any existing writable root.
+async function runningWritableRoots(dataRoot) {
+  const roots = []
+  for (const project of await listSuperagentProjects(dataRoot)) {
+    if (project.error) throw new Error('其他 Superagent 项目配置不可读取，无法确认目录保护。')
+    let status
+    try { status = await serviceRequest(superagentSocket(dataRoot, project.id), { type: 'status' }, 1000) }
+    catch (error) { if (!['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw error }
+    if (!status || status.service?.state === 'stopped' && !status.service?.pid) {
+      await requireSuperagentHostStopped(superagentDirectory(dataRoot, project.id))
+      continue
+    }
+    if (project.deploymentMode !== 'dedicated' || !project.localProjectDir || !project.executionRoot) {
+      throw new Error('运行中的旧项目无法确认目录隔离，请先停止该 Superagent。')
+    }
+    if (status.projectId !== project.id || status.sandboxPolicy !== 1 || !status.service?.pid || !Array.isArray(status.sandboxRoots)
+      || !status.sandboxRoots.length || status.sandboxRoots.some(path => typeof path !== 'string' || !isAbsolute(path) || path.includes('\0'))) {
+      throw new Error('运行中的 Superagent 未确认目录隔离；请先退出 Station 并停止服务，再用新版重新打开。')
+    }
+    roots.push(...status.sandboxRoots)
+    const temporary = `${dirname(superagentSocket(dataRoot, project.id))}-tmp`
+    for (const path of [superagentDirectory(dataRoot, project.id), project.localProjectDir, project.executionRoot, project.feishuConfigDir, temporary].filter(Boolean)) {
+      roots.push(await realpath(path).catch(error => { if (error.code === 'ENOENT' && path === temporary) return resolve(path); throw error }))
+    }
+  }
+  return roots
+}
+
+function protectNewWorkspace(dataRoot, roots, work) {
+  const contains = (parent, child) => {
+    const path = relative(parent, child)
+    return path === '' || path !== '..' && !path.startsWith('../') && !isAbsolute(path)
+  }
+  const registry = realpathSync(join(resolve(dataRoot), 'superagent-projects'))
+  if (contains(registry, work) || contains(work, registry)
+    || roots.some(root => contains(root, registry) || contains(root, work) || contains(work, root))) {
+    throw new Error('新项目目录与运行中的 Superagent 可写目录或项目配置目录重叠，请选择其他存放目录。')
+  }
+}
+
 if (import.meta.main) {
   const [action, dataRoot, resources, home = join(homedir(), '.dsh'), projectId = 'legacy'] = process.argv.slice(2)
   if (action === 'manager') {
@@ -386,9 +430,12 @@ if (import.meta.main) {
         for await (const chunk of process.stdin) { text += chunk; if (text.length > 64 * 1024) throw new Error('项目配置过大。') }
         const input = JSON.parse(text)
         const project = await withRegistryLock(dataRoot, async () => {
+          if (action === 'create-project' && input.guided === true && input.dedicated === true) {
+            const roots = await runningWritableRoots(dataRoot)
+            return createSuperagentProject(dataRoot, input, { beforeGuidedCreate: work => protectNewWorkspace(dataRoot, roots, work) })
+          }
           await requireProjectsStopped(dataRoot)
-          return action === 'create-project' ? createSuperagentProject(dataRoot, input)
-            : updateSuperagentProject(dataRoot, projectId, input)
+          return action === 'create-project' ? createSuperagentProject(dataRoot, input) : updateSuperagentProject(dataRoot, projectId, input)
         })
         process.stdout.write(JSON.stringify({ ok: true, value: { project } }) + '\n')
       } else {
