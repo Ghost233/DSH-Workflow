@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 上传已校验的发布资产并创建 GitHub 正式 Release（不创建 tag）。
+# 上传已校验的发布资产并创建 GitHub Release 草稿（不创建 tag）。
 # 用法：RELEASE_TAG=macos-vX.Y.Z [RELEASE_COMMIT=<sha>] [RELEASE_ASSETS=.build/release-assets] scripts/publish-release.sh
 # 前置：tag 已由 scripts/release.sh 推送；Actions 已完成编译与打包。
 set -euo pipefail
@@ -59,8 +59,9 @@ gh release create "$RELEASE_TAG" \
   "$RELEASE_ASSETS"/manifest.json \
   "$RELEASE_ASSETS"/SHA256SUMS \
   --verify-tag \
+  --draft \
   --repo Ghost233/DSH-Workflow \
   --title "Ghost DSH Station macOS ${RELEASE_TAG#macos-v}" \
   --notes "Automated macOS builds for Apple Silicon (ARM64). Locally ad-hoc signed; not notarized."
 
-echo "publish-release: 完成：$RELEASE_TAG 已创建 Release"
+echo "publish-release: 完成：$RELEASE_TAG 已创建 Release 草稿，等待本地验收"

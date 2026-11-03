@@ -6,16 +6,16 @@ disable-model-invocation: true
 
 # deploy-release
 
-正式发布由 `scripts/release.sh` 推送 `macos-vX.Y.Z` 附注 tag，触发 `.github/workflows/macos-app.yml`。Actions 在 macOS ARM64 runner 编译、签名、打包并上传 Release。发布流程只构建产物，版本、签名、包结构、插件本体和哈希核对属于打包门禁。
+正式发布由 `scripts/release.sh` 推送 `macos-vX.Y.Z` 附注 tag，触发 `.github/workflows/macos-app.yml`。Actions 在 macOS ARM64 runner 编译、签名、打包并上传 Release 草稿；本地验收通过后再公开。发布流程只构建产物，版本、签名、包结构、插件本体和哈希核对属于打包门禁。
 
 ## 发布步骤
 
 1. 确认仓库为 Ghost233/DSH-Workflow，且用户已明确要求正式发布。编辑技能、脚本或 workflow 只完成编辑与本地验证，不据此发布。
-2. 由人按下方规则确定版本，同步启动器 package.json、package-lock.json 和 Flutter pubspec.yaml。在本地完成相关检查、编译与包预检。插件交付按下方“插件随包交付”验收，将已审查内容提交到 main。
-3. 核对当前本地 main、origin/main 和实际远端 main 指向同一完整提交。保留用户未提交文件；仅允许 fast-forward 同步。
-4. 运行 `scripts/release.sh --dry-run`，展示版本、tag 与完整提交。通过后在已有发布授权内运行 `scripts/release.sh`；它只创建并推送 tag，不自动 bump、提交或推送 main。
-5. 按该 tag 和提交跟踪 `macos-app.yml`，确认构建与上传成功。Actions 调用 `scripts/build-local-release.sh` 生成 DMG、manifest.json 和 SHA256SUMS，再调用 `scripts/publish-release.sh`，以 `--verify-tag` 创建正式 Release。
-6. 按“完成验证”核对远端证据和本地同步。通过后报告版本、发布提交、Release 与 Actions 链接。
+2. 由人按下方规则确定版本，同步启动器 package.json、package-lock.json 和 Flutter pubspec.yaml。审查变更并提交到 main，保留用户未提交文件；核对本地 main、origin/main 和实际远端 main 指向同一完整提交，只允许 fast-forward 同步。
+3. 运行 `scripts/release.sh --dry-run`，展示版本、tag 与完整提交。通过后在已有发布授权内运行 `scripts/release.sh` 推送 tag；它不自动 bump、提交或推送 main。
+4. 按 tag 和完整提交定位 `macos-app.yml`，立即与本地检查、候选 App 编译、包预检及“插件随包交付”验收并行执行。记录两侧命令、提交、真实退出码及证据；本地验证必须覆盖该 tag 的源码，测试期间源码变化须重新验证。
+5. Actions 调用 `scripts/build-local-release.sh` 生成 DMG、manifest.json 和 SHA256SUMS，再调用 `scripts/publish-release.sh` 创建 Release 草稿。本地失败且该次 run 仍在运行时，执行 `gh run cancel <run-id> -R Ghost233/DSH-Workflow`，并等待远端结束；Actions 失败时停止本次本地验收进程并等待退出。先确认远端实际状态，保留失败证据和已有草稿，修复后按失败恢复规则重新发布。取消不能撤回已经完成的发布，失败时不得公开草稿。
+6. 两侧均通过后，按“完成验证”核对草稿资产和来源，确认 tag、提交及本地分支同步，再以 Ghost233 执行 `gh release edit <tag> -R Ghost233/DSH-Workflow --draft=false` 公开草稿。重新核对非草稿 Release 和资产；通过后报告版本、发布提交、Release 与 Actions 链接。
 
 Actions 不运行 CI、单元、集成、smoke、运行时验收或独立类型检查任务，也不启动 Host。构建脚本用 `build:official --scope artifacts` 编译生产产物，准备运行时时传入 `--defer-primary-runtime-smoke`，不调用 `verify-desktop-release.mjs`。仓库保留发布工作流，普通 push 和 PR 不触发测试。
 
@@ -34,7 +34,7 @@ Actions 使用本仓库内置 `GITHUB_TOKEN` 和 `contents: write` 权限上传�
 | 分支、工作树、身份、版本或同步检查 | 修复原错误；不创建 tag，不 stash 或覆盖用户文件。 |
 | tag push 失败 | 保留本地 tag。核对远端没有该 tag 后，用 `scripts/release.sh --retry-tag` 重推同一 tag，不移动 tag。 |
 | tag 已在远端 | 跟踪同一提交的既有 Actions run，不重推 tag。 |
-| Actions 编译或打包失败，尚无正式资产 | 保留原始失败。输入未变的临时环境故障可重跑原 run；源码修复使用下一个人工确定的版本，不移动 tag。 |
+| 本地验收失败或 Actions 编译、打包失败，尚无正式资产 | 取消仍在运行的另一侧并等待退出，核对草稿和远端状态并保留原始失败。输入未变的临时环境故障可重跑原 run；源码修复使用下一个人工确定的版本，不移动 tag。 |
 | Release 创建失败或资产不完整 | 先核对远端；不覆盖同版本 DMG。按下方回滚规则撤回并作废该版本，以人工确定的下一个版本重新发布。 |
 
 ## 完成验证
@@ -66,14 +66,14 @@ git ls-remote origin 'refs/tags/macos-vX.Y.Z^{}' refs/heads/main
 
 标准 App 构建调用 `macos-launcher/bundle-plugins.mjs`。`scripts/build-release.sh` 在创建 DMG 前重新验证全部文件、插件入口和来源，`scripts/publish-release.sh` 再核对发布 manifest 的完整插件记录。已有 App 只有清单、缺少本体或摘要时，同样不能通过打包门禁。
 
-发布前在本地完成交付回归：
+与远端构建并行完成本地交付回归，公开 Release 前必须通过：
 
 ```sh
 node scripts/run-project-tests.mjs macos-launcher/runtime/plugin-build.test.mjs macos-launcher/runtime/plugin-payload.test.mjs macos-launcher/runtime/desktop-profile.test.mjs macos-launcher/runtime/startup-plugins.test.mjs macos-launcher/runtime/desktop-packaged-host.test.mjs
 python3 -B scripts/test_release.py
 ```
 
-构建候选 App 后，使用随包资源运行完整 Flutter 验收。`DSH_TEST_NODE` 与 `DSH_TEST_NODE24` 指向本次同版本的独立 Node 文件，路径不得含空格；`DSH_LAUNCHER_TEST_PORT=0` 使真实 Web 验收分配临时端口，避免占用现有服务端口。
+构建候选 App 后，使用随包资源运行完整 Flutter 验收；公开 Release 前必须通过。`DSH_TEST_NODE` 与 `DSH_TEST_NODE24` 指向本次同版本的独立 Node 文件，路径不得含空格；`DSH_LAUNCHER_TEST_PORT=0` 使真实 Web 验收分配临时端口，避免占用现有服务端口。
 
 ```sh
 candidate_resources="/绝对路径/候选.app/Contents/Resources"

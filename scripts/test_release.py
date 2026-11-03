@@ -119,6 +119,7 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
         result = self.cli("--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("发布 tag：macos-v0.2.5", result.stdout)
+        self.assertIn("Release 草稿", result.stdout)
         self.assertNotIn("下一版本", result.stdout)
         self.assertEqual(self.snapshot(), before)
 
@@ -426,6 +427,7 @@ Path(os.environ['FIXTURE_RELEASE_LOG']).write_text(json.dumps(sys.argv[1:]))
         self.assertEqual(args[3:6], ['release-assets/DSH-Workflow-macOS-0.2.5-arm64.dmg',
                                    'release-assets/manifest.json', 'release-assets/SHA256SUMS'])
         self.assertIn('--verify-tag', args)
+        self.assertIn('--draft', args)
         self.assertEqual(args[args.index('--repo') + 1], 'Ghost233/DSH-Workflow')
 
     def test_production_build_packages_without_running_tests_or_runtime_smoke(self):

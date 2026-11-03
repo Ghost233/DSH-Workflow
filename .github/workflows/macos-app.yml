@@ -55,7 +55,7 @@ jobs:
           scripts/build-local-release.sh
           cat .build/release-assets/manifest.json
 
-      - name: Publish GitHub Release
+      - name: Create draft GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
