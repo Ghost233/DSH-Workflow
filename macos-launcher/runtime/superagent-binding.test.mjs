@@ -36,3 +36,21 @@ test('preserves the existing binding fingerprint for projects without a Feishu p
   assert.equal(await checkSuperagentBinding({ directory, project: { ...project, feishuProfile: '' }, accounts, hasTickets: true }), original)
   await assert.rejects(checkSuperagentBinding({ directory, project: { ...project, feishuProfile: 'cli_b' }, accounts, hasTickets: true }), /已有任务历史/)
 })
+
+
+test('short runtime directory upgrade preserves historical bindings but still rejects changed identities', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'superagent-binding-runtime-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const project = { repository: 'owner/a', githubLogin: 'alice', feishuConfigDir: '/original', feishuProfile: 'cli_a' }
+  const old = { github: '/gh', feishu: '/previous-wrapper', feishuAppId: 'cli_a', prepare: '' }
+  const check = (p, accounts, hasTickets) => checkSuperagentBinding({ directory, project: p, accounts, hasTickets })
+  await saveSuperagentBinding(directory, await check(project, old, false))
+  const next = { ...old, feishu: '/short-directory-wrapper', previousFeishu: old.feishu }
+  const upgraded = await check(project, next, true)
+  assert.notEqual(upgraded, await check(project, old, true))
+  await assert.rejects(check({ ...project, repository: 'owner/b' }, next, true), /已有任务历史/)
+  await assert.rejects(check({ ...project, feishuProfile: 'cli_b' }, next, true), /已有任务历史/)
+  await assert.rejects(check(project, { ...next, feishuAppId: 'cli_b' }, true), /已有任务历史/)
+  await saveSuperagentBinding(directory, upgraded)
+  assert.equal(await check(project, next, true), upgraded)
+})

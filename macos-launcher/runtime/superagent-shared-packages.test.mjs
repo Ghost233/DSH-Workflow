@@ -40,3 +40,19 @@ test('does not follow an existing scoped-package link into another directory', a
   assert.equal(result.skipped[0].package, '@scope/plugin')
   await assert.rejects(lstat(join(foreign, 'plugin')), { code: 'ENOENT' })
 })
+
+
+test('a stale daily package link is reported without installing it or changing the daily profile', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-stale-package-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const daily = join(root, 'daily'), profile = join(root, 'profile')
+  for (const directory of [daily, profile]) await mkdir(join(directory, 'node_modules'), { recursive: true })
+  const manifest = JSON.stringify({ dependencies: { 'old-plugin': '1.0.0' } })
+  await writeFile(join(daily, 'package.json'), manifest)
+  await writeFile(join(profile, 'package.json'), '{}')
+  await symlink(join(root, 'old-app/node_modules/old-plugin'), join(daily, 'node_modules/old-plugin'))
+  const result = await syncSuperagentPackages({ daily, profile, packages: ['old-plugin'] })
+  assert.deepEqual(result.skipped, [{ package: 'old-plugin', reason: '日常配置仍引用此插件，但包文件缺失或链接已失效' }])
+  assert.equal(await readFile(join(daily, 'package.json'), 'utf8'), manifest)
+  await assert.rejects(lstat(join(profile, 'node_modules/old-plugin')), { code: 'ENOENT' })
+})

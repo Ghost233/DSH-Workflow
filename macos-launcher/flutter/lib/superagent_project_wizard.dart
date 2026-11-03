@@ -717,8 +717,43 @@ class _SuperagentProjectWizardState extends State<SuperagentProjectWizard> {
                             '使用应用机器人；扫码不能保证完成全部授权。请在飞书开放平台启用机器人、订阅 im.message.receive_v1 并发布应用版本。',
                           ),
                           const Text(
+                            '选择群成员需要 im:chat.members:read 权限。申请后请按飞书提示审批或发布应用，再刷新成员列表。',
+                          ),
+                          if (_bot!['appId'] is String)
+                            TextButton(
+                              onPressed: () => unawaited(
+                                widget.model.native.openUrl(
+                                  Uri.https(
+                                    'open.feishu.cn',
+                                    '/page/scope-apply',
+                                    {
+                                      'clientID': _bot!['appId'] as String,
+                                      'scopes': 'im:chat.members:read',
+                                    },
+                                  ).toString(),
+                                ),
+                              ),
+                              child: const Text('申请默认权限：读取群成员'),
+                            ),
+                          const Text(
                             '接收全部群消息需要 im:message.group_msg 等权限，可能需企业管理员审批。群历史读取成功也不能证明实时事件订阅已生效。',
                           ),
+                          if (_bot!['appId'] is String)
+                            TextButton(
+                              onPressed: () => unawaited(
+                                widget.model.native.openUrl(
+                                  Uri.https(
+                                    'open.feishu.cn',
+                                    '/page/scope-apply',
+                                    {
+                                      'clientID': _bot!['appId'] as String,
+                                      'scopes': 'im:message:readonly im:message.group_msg',
+                                    },
+                                  ).toString(),
+                                ),
+                              ),
+                              child: const Text('申请群历史与全部群消息读取权限'),
+                            ),
                           TextButton(
                             onPressed: () => unawaited(
                               widget.model.native.openUrl(
@@ -909,7 +944,7 @@ class _SuperagentProjectWizardState extends State<SuperagentProjectWizard> {
                           ),
                           if (_feishuCheck != null)
                             Text(
-                              '已加入目标群：${_feishuCheck!['joined'] == true ? '已核验' : '未核验'}；读取群历史：${_feishuCheck!['historyReadable'] == true ? '已核验' : '未通过'}。实时消息事件订阅及应用发布：需在飞书后台确认，并用真实无 @ 消息验收。',
+                              '已加入目标群：${_feishuCheck!['joined'] == true ? '已核验' : '未核验'}；读取群历史：${_feishuCheck!['historyReadable'] == true ? '已核验' : '未通过，请检查消息读取及 im:message.group_msg 权限、审批和应用发布'}。实时消息事件订阅及应用发布：需在飞书后台确认，并用真实无 @ 消息验收。',
                             ),
                         ],
                       ],

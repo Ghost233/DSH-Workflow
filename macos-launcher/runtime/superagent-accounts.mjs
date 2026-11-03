@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { privateDirectory } from './service-control.mjs'
 import { promisify } from 'node:util'
+import { feishuRuntimeDirectory } from './feishu-runtime-directory.mjs'
 import { initializeDedicatedRepository } from './superagent-dedicated-repository.mjs'
 
 const run = promisify(execFile)
@@ -67,19 +68,23 @@ export async function prepareSuperagentAccounts({ directory, project, resources 
     `token=$(${quote(gh)} auth token --hostname github.com --user ${quote(project.githubLogin)})`,
     '[ -n "$token" ] || exit 1', 'export GH_TOKEN="$token"', `exec ${quote(gh)} "$@"`, '',
   ].join('\n'))
-  let feishu, feishuAppId
+  let feishu, feishuAppId, previousFeishu
   if (project.feishuConfigDir) {
     const bundled = project.larkExecutable === '@bundled'
     if (bundled && !resources) throw new Error('缺少随应用交付的飞书连接组件。')
     let lark
     if (bundled) { await superagentExecutable(join(resources, 'bin/lark-cli'), 'lark-cli'); lark = 'lark-cli' }
     else lark = await superagentExecutable(project.larkExecutable, 'lark-cli')
-    feishu = await ownedScript(scripts, 'feishu', [
-      '#!/bin/sh', 'set -eu', `export LARKSUITE_CLI_CONFIG_DIR=${quote(project.feishuConfigDir)}`,
+    const runtimeConfig = await feishuRuntimeDirectory(project.feishuConfigDir)
+    const body = configDir => [
+      '#!/bin/sh', 'set -eu', `export LARKSUITE_CLI_CONFIG_DIR=${quote(configDir)}`,
       ...(project.feishuProfile ? ['unset LARK_APP_ID LARK_APP_SECRET LARKSUITE_CLI_APP_ID LARKSUITE_CLI_APP_SECRET LARKSUITE_CLI_BRAND',
         `export LARKSUITE_CLI_PROFILE=${quote(project.feishuProfile)}`] : []),
       `exec ${quote(lark)} "$@"`, '',
-    ].join('\n'))
+    ].join('\n')
+    feishu = await ownedScript(scripts, 'feishu', body(runtimeConfig))
+    const previousDigest = createHash('sha256').update(body(project.feishuConfigDir)).digest('hex').slice(0, 20)
+    previousFeishu = join(scripts, `feishu-${previousDigest}.sh`)
     try {
       const { stdout } = await run(feishu, ['auth', 'status'], { timeout: 60_000, maxBuffer: 1024 * 1024,
         env: { ...process.env, ...(bundled ? { PATH: `${join(resources, 'bin')}${delimiter}${process.env.PATH ?? ''}` } : {}),
@@ -105,5 +110,5 @@ export async function prepareSuperagentAccounts({ directory, project, resources 
     ].join('\n'))
     prepare = quote(script)
   }
-  return { github, feishu, feishuAppId, prepare }
+  return { github, feishu, feishuAppId, prepare, previousFeishu }
 }

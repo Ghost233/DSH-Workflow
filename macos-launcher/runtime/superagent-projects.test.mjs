@@ -28,7 +28,7 @@ test('keeps project configuration and the existing Superagent in separate owned 
   const second = await createSuperagentProject(dataRoot, { ...input, name: 'Project B', repository: 'owner/b', localProjectDir: repoB, executionRoot: workB })
   assert.notEqual(first.id, second.id)
   assert.notEqual(projectDirectory(dataRoot, first.id), projectDirectory(dataRoot, second.id))
-  assert.deepEqual((await listSuperagentProjects(dataRoot)).map(row => row.name).sort(), ['Project A', 'Project B', '原有 Superagent'])
+  assert.deepEqual((await listSuperagentProjects(dataRoot)).map(row => row.name).sort(), ['Project A', 'Project B'])
   assert.equal((await updateSuperagentProject(dataRoot, first.id, { ...input, name: 'Renamed' })).name, 'Renamed')
   const migrated = await updateSuperagentProject(dataRoot, 'legacy', { ...input, name: '原有项目', localProjectDir: repoOld, executionRoot: workOld })
   assert.equal(migrated.legacy, true)

@@ -21,7 +21,10 @@ export async function checkSuperagentBinding({ directory, project, accounts, has
     if (!/^[a-f0-9]{64}$/.test(previous.fingerprint)) throw new Error('项目绑定记录无效。')
   } catch (error) { if (error.code !== 'ENOENT') throw error }
   const next = fingerprint(project, accounts)
-  if (hasTickets && previous?.fingerprint !== next) {
+  // Only the wrapper's config-directory spelling changed; every binding and identity still participates.
+  const matchesPreviousWrapper = typeof accounts.previousFeishu === 'string'
+    && previous?.fingerprint === fingerprint(project, { ...accounts, feishu: accounts.previousFeishu })
+  if (hasTickets && previous?.fingerprint !== next && !matchesPreviousWrapper) {
     throw new Error('此 Superagent 已有任务历史，不能更换仓库、账号、机器人或执行目录；请恢复原设置或新建项目。原有任务和文件均已保留。')
   }
   return next

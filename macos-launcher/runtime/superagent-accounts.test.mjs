@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { feishuRuntimeDirectory } from './feishu-runtime-directory.mjs'
 import { prepareSuperagentAccounts } from './superagent-accounts.mjs'
 
 test('each project selects its own gh account and bot configuration without changing global state', async t => {
@@ -23,7 +24,8 @@ test('each project selects its own gh account and bot configuration without chan
   assert.equal(github.stdout, `${ghDir}|fixture-token-alice`)
   const feishu = spawnSync(result.feishu, ['probe'], { env, encoding: 'utf8' })
   assert.equal(feishu.status, 0)
-  assert.equal(feishu.stdout, larkDir)
+  assert.equal(await realpath(feishu.stdout), await realpath(larkDir))
+  t.after(() => rm(dirname(feishu.stdout), { recursive: true, force: true }))
   assert.equal(result.feishuAppId, 'cli_fixture')
   assert.doesNotMatch(await readFile(result.github, 'utf8'), /fixture-token/)
   await assert.rejects(prepareSuperagentAccounts({ directory, project: { githubLogin: 'bob', ghConfigDir: ghDir, ghExecutable: gh } }), /无法验证/)
@@ -59,6 +61,8 @@ test('bundled Feishu CLI can move with the application without changing the proj
     feishuProfile: 'cli_fixture', larkExecutable: '@bundled' }
   const before = await prepareSuperagentAccounts({ directory, project, resources: first })
   const after = await prepareSuperagentAccounts({ directory, project, resources: second })
+  const runtime = await feishuRuntimeDirectory(botDir)
+  t.after(() => rm(dirname(runtime), { recursive: true, force: true }))
   assert.equal(before.feishu, after.feishu)
   assert.equal(before.feishuAppId, after.feishuAppId)
   assert.match(await readFile(after.feishu, 'utf8'), /LARKSUITE_CLI_PROFILE='cli_fixture'/)

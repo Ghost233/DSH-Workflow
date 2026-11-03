@@ -8,7 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { attachManagerWebSocket, connectManagerChannel } from './manager-websocket.mjs'
 import { listenManagerControl } from './manager-control.mjs'
 import { statusNotifications } from './status-notifications.mjs'
-import { serviceDirectory, serviceSocket } from './service-control.mjs'
+import { serviceDirectory, serviceSocket, serviceRequest } from './service-control.mjs'
 import { startGlobalSupervisor } from './global-supervisor.mjs'
 import { watchLauncherStatus } from './launcher-events.mjs'
 
@@ -223,4 +223,34 @@ test('a new ready event retries once after an in-flight stopped-Host grant fails
     assert.equal(supervisor.global().ready, true)
     assert.deepEqual(owned.requests, ['connect-web', 'connect-web'], 'only the new ready event triggers one follow-up grant')
   } finally { await supervisor.close() }
+})
+
+// Exercise the real one-shot transport used by Superagent start/stop.
+test('an accepted one-shot command survives the connection idle deadline', async t => {
+  let fired = false
+  // Delay command execution past that deadline without touching client deadlines.
+  const updates = statusNotifications(() => ({ protocol: 1 }))
+  const server = createServer()
+  let accepted
+  server.on('connection', socket => {
+    accepted = socket
+    const setTimeout = socket.setTimeout.bind(socket)
+    socket.setTimeout = (milliseconds, callback) => milliseconds === 45_000
+      ? setTimeout(10, () => { fired = true; callback() }) : setTimeout(milliseconds, callback)
+  })
+  const close = attachManagerWebSocket(server, async () => {
+    await delay(80)
+    return { protocol: 1, service: { state: 'running', ready: true } }
+  }, updates)
+  const root = await mkdtemp('/private/tmp/dsh-slow-control-')
+  const socket = serviceSocket(root)
+  const control = await listenManagerControl(server, { directory: serviceDirectory(root), socketPath: socket })
+  try {
+    const value = await serviceRequest(socket, { type: 'start' }, 1000)
+    assert.equal(value.service.ready, true)
+    assert.equal(fired, false, 'the read timeout must be disabled once a complete command is accepted')
+  } finally {
+    accepted?.destroy(); updates.close(); close(); await control.close()
+    await rm(root, { recursive: true, force: true })
+  }
 })

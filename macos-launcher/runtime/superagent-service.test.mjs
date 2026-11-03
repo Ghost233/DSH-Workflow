@@ -80,3 +80,37 @@ test('does not silently start an old manager without model sharing', async t => 
   assert.equal(code, 1)
   const result = JSON.parse(out); assert.equal(result.ok, false); assert.match(result.error, /旧版 Superagent/)
 })
+
+test('start rediscovers a live manager after its old connection deadline closes the reply', async t => {
+  const root = await mkdtemp('/private/tmp/superagent-start-recovery-')
+  const dataRoot = join(root, 'data')
+  await mkdir(dataRoot, { mode: 0o700 })
+  const socket = superagentSocket(dataRoot, 'legacy'), requests = []
+  await mkdir(dirname(socket), { recursive: true, mode: 0o700 })
+  const server = createServer(connection => {
+    let buffer = ''
+    connection.on('data', bytes => {
+      buffer += bytes
+      if (!buffer.includes('\n')) return
+      const request = JSON.parse(buffer.slice(0, buffer.indexOf('\n')))
+      requests.push(request.type)
+      if (request.type === 'start') { connection.end(); return }
+      connection.end(JSON.stringify({ ok: true, value: { protocol: 1, superagentVersion: 2,
+        projectId: 'legacy', service: { state: requests.includes('start') ? 'starting' : 'stopped', ready: false } } }) + '\n')
+    })
+  })
+  await new Promise(resolve => server.listen(socket, resolve)); await chmod(socket, 0o600)
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve))
+    await rm(dirname(socket), { recursive: true, force: true }); await rm(root, { recursive: true, force: true })
+  })
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./superagent-service.mjs', import.meta.url)),
+    'start', dataRoot, root, join(root, 'home')])
+  let output = ''; child.stdout.setEncoding('utf8'); child.stdout.on('data', chunk => { output += chunk })
+  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
+  assert.equal(code, 0, output)
+  const reply = JSON.parse(output)
+  assert.equal(reply.value.service.state, 'starting')
+  assert.match(reply.value.service.message, /仍在启动/)
+  assert.deepEqual(requests, ['status', 'start', 'status'], 'recovery queries state without starting or stopping twice')
+})

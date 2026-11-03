@@ -35,7 +35,7 @@ export async function syncSuperagentPackages({ daily, profile, packages }) {
         created.push(link)
       }
       manifest.dependencies[name] ??= source.dependencies?.[name] ?? `file:${target}`
-    } catch (error) { skipped.push({ package: name, reason: error.code === 'ENOENT' ? '日常 DSH 插件未安装' : error.message }) }
+    } catch (error) { skipped.push({ package: name, reason: error.code === 'ENOENT' ? '日常配置仍引用此插件，但包文件缺失或链接已失效' : error.message }) }
   }
   const text = JSON.stringify(manifest, null, 2) + '\n'
   if (JSON.stringify(manifest) === JSON.stringify(JSON.parse(before))) return { skipped }

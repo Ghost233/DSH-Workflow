@@ -124,8 +124,12 @@ export async function getSuperagentProject(dataRoot, id) {
 export async function listSuperagentProjects(dataRoot) {
   const rows = []
   const legacy = await missing(lstat(join(projectDirectory(dataRoot, 'legacy'), 'profile-owner.json')))
-  if (legacy?.isFile()) {
-    try { rows.push(await getSuperagentProject(dataRoot, 'legacy')) }
+  const configured = await missing(lstat(join(projectDirectory(dataRoot, 'legacy'), 'station-project.json')))
+  if (legacy?.isFile() && configured) {
+    try {
+      const project = await getSuperagentProject(dataRoot, 'legacy')
+      if (project.repository) rows.push(project)
+    }
     catch (error) { rows.push({ id: 'legacy', name: '原有 Superagent', legacy: true, error: error.message }) }
   }
   const directory = registry(dataRoot), info = await missing(lstat(directory))

@@ -61,18 +61,23 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     state: ServiceState.stopped,
     ready: false,
   );
-  ServiceStatus _superagent = ServiceStatus(
-    state: ServiceState.stopped,
-    ready: false,
-  );
-  bool superagentBusy = false;
+  final Map<String, Map<String, Object?>> _superagentStates = {};
+  final Map<String, int> _superagentRevisions = {};
+  final Set<String> _busySuperagents = {};
+  bool _savingSuperagentProject = false;
+  bool get superagentBusy =>
+      _savingSuperagentProject || _busySuperagents.isNotEmpty;
+  bool isSuperagentBusy(String id) =>
+      _savingSuperagentProject || _busySuperagents.contains(id);
   List<Map<String, Object?>> superagentProjects = [];
   List<Map<String, Object?>> superagentGithubAccounts = [];
   String? selectedSuperagentProjectId;
-  List<String> superagentSharingWarnings = [];
+  List<String> get superagentSharingWarnings =>
+      superagentWarningsFor(selectedSuperagentProjectId);
   bool loadingModelSettings = false;
   Map<String, Object?>? modelSettings;
-  String modelSharingMessage = 'Superagent 启动后读取日常 DSH 的共享配置。';
+  String get modelSharingMessage =>
+      superagentSharingFor(selectedSuperagentProjectId);
   bool _observingWeb = false, _observingService = false;
   bool _windowVisible = true;
   Process? _statusObserver;
@@ -88,7 +93,36 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void>? _desktopOpen;
   ServiceStatus get snapshot => _web;
   ServiceStatus get serviceSnapshot => _service;
-  ServiceStatus get superagentSnapshot => _superagent;
+  ServiceStatus get superagentSnapshot =>
+      superagentStatusFor(selectedSuperagentProjectId);
+  ServiceStatus superagentStatusFor(String? id) => ServiceStatus.fromJson(
+    objectValue(
+      _superagentStates[id]?['service'] ?? {'state': 'unknown', 'ready': false},
+    ),
+  );
+
+  List<String> superagentWarningsFor(String? id) {
+    final value = _superagentStates[id];
+    final warnings = value?['sharingWarnings'];
+    return [
+      if (warnings is List) ...warnings.whereType<String>(),
+      if (value != null &&
+          value['superagentVersion'] != 2 &&
+          superagentStatusFor(id).state == ServiceState.running)
+        '旧版管理器仍在运行；请停止原实例并重启电脑后，再启用项目保护和共享配置。',
+    ];
+  }
+
+  String superagentSharingFor(String? id) {
+    final sharing = _superagentStates[id]?['modelSharing'];
+    if (sharing is! Map) return '启动后读取日常 DSH 的共享配置。';
+    return switch (sharing['state']) {
+      'ready' => '已读取日常 DSH 的模型、Skill、MCP 和可用插件配置。',
+      'error' => sharing['message'] as String? ?? '共享配置不可用。',
+      _ => '启动后读取日常 DSH 的共享配置。',
+    };
+  }
+
   Map<String, Object?>? get selectedSuperagentProject {
     for (final project in superagentProjects) {
       if (project['id'] == selectedSuperagentProjectId) return project;
@@ -135,15 +169,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     if (File(script('superagent-service.mjs')).existsSync()) {
       try {
         await refreshSuperagentProjects();
-        if (selectedSuperagentProjectId != null) {
-          await _superagentCommand('status');
-        }
       } catch (failure) {
-        _superagent = ServiceStatus(
-          state: ServiceState.failed,
-          ready: false,
-          message: failure.toString(),
-        );
+        reportError(failure);
       }
     }
   }
@@ -360,6 +387,20 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       throw const FormatException('Invalid GitHub accounts');
     }
     superagentGithubAccounts = accountRows.map(objectValue).toList();
+    _superagentStates.removeWhere(
+      (id, _) => !superagentProjects.any((row) => row['id'] == id),
+    );
+    await Future.wait(
+      superagentProjects.map((project) async {
+        final id = project['id'] as String;
+        if (_busySuperagents.contains(id)) return;
+        try {
+          await _superagentCommand('status', projectId: id);
+        } catch (_) {
+          // Failure is retained on this project's card.
+        }
+      }),
+    );
     if (!_closed) notifyListeners();
   }
 
@@ -368,7 +409,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       throw StateError('Superagent 项目不存在。');
     }
     selectedSuperagentProjectId = id;
-    _superagent = ServiceStatus(state: ServiceState.stopped, ready: false);
     await _manageSuperagent('status');
   }
 
@@ -377,7 +417,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     String? id,
   }) async {
     if (_closed || superagentBusy) return;
-    superagentBusy = true;
+    _savingSuperagentProject = true;
     notifyListeners();
     try {
       final value = await _superagentRequest(
@@ -388,66 +428,69 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       final project = objectValue(value['project']);
       selectedSuperagentProjectId = project['id'] as String;
       await refreshSuperagentProjects();
-      await _superagentCommand('status');
     } finally {
-      superagentBusy = false;
+      _savingSuperagentProject = false;
       if (!_closed) notifyListeners();
     }
   }
 
-  Future<Map<String, Object?>> _superagentCommand(String action) async {
-    final id = selectedSuperagentProjectId;
-    if (id == null) throw StateError('请先添加 Superagent 项目。');
-    final value = await _superagentRequest(action, projectId: id);
-    _superagent = ServiceStatus.fromJson(objectValue(value['service']));
-    final sharing = value['modelSharing'];
-    if (sharing is Map) {
-      modelSharingMessage = switch (sharing['state']) {
-        'ready' => '已应用可用的模型、Skill、MCP 和插件配置；未加载项会列在下方。',
-        'error' => sharing['message'] as String? ?? '共享配置不可用。',
-        _ => 'Superagent 启动后读取日常 DSH 的共享配置。',
-      };
-    } else {
-      modelSharingMessage = '当前 Superagent 管理器版本较旧，尚未支持共享模型配置。';
-    }
-    final warnings = value['sharingWarnings'];
-    superagentSharingWarnings = warnings is List
-        ? warnings.whereType<String>().toList()
-        : [];
-    if (value['superagentVersion'] != 2 &&
-        _superagent.state == ServiceState.running) {
-      superagentSharingWarnings.add('旧版管理器仍在运行；请停止原实例并重启电脑后，再启用项目保护和共享配置。');
-    }
-    if (!_closed) notifyListeners();
-    return value;
+  void _setSuperagentFailure(String id, Object failure) {
+    _superagentStates[id] = {
+      ...?_superagentStates[id],
+      'service': {
+        'state': 'failed',
+        'ready': false,
+        'message': failure.toString(),
+      },
+    };
   }
 
-  Future<void> _manageSuperagent(String action) async {
-    if (_closed || superagentBusy) return;
-    superagentBusy = true;
-    notifyListeners();
+  Future<Map<String, Object?>> _superagentCommand(
+    String action, {
+    String? projectId,
+  }) async {
+    final id = projectId ?? selectedSuperagentProjectId;
+    if (id == null) throw StateError('请先添加 Superagent 项目。');
+    final revision = (_superagentRevisions[id] ?? 0) + 1;
+    _superagentRevisions[id] = revision;
     try {
-      final value = await _superagentCommand(action);
-      if (action == 'open') await native.openUrl(value['url'] as String);
+      final value = await _superagentRequest(action, projectId: id);
+      if (_superagentRevisions[id] == revision) _superagentStates[id] = value;
+      return value;
     } catch (failure) {
-      if (action == 'start' || action == 'status') {
-        _superagent = ServiceStatus(
-          state: ServiceState.failed,
-          ready: false,
-          message: failure.toString(),
-        );
+      if (_superagentRevisions[id] == revision &&
+          (action == 'start' || action == 'status')) {
+        _setSuperagentFailure(id, failure);
       }
       rethrow;
     } finally {
-      superagentBusy = false;
       if (!_closed) notifyListeners();
     }
   }
 
-  Future<void> startSuperagent() => _manageSuperagent('start');
-  Future<void> stopSuperagent() => _manageSuperagent('stop');
-  Future<void> refreshSuperagent() => _manageSuperagent('status');
-  Future<void> openSuperagent() => _manageSuperagent('open');
+  Future<void> _manageSuperagent(String action, {String? projectId}) async {
+    final id = projectId ?? selectedSuperagentProjectId;
+    if (id == null) throw StateError('请先添加 Superagent 项目。');
+    if (_closed || isSuperagentBusy(id)) return;
+    _busySuperagents.add(id);
+    notifyListeners();
+    try {
+      final value = await _superagentCommand(action, projectId: id);
+      if (action == 'open') await native.openUrl(value['url'] as String);
+    } finally {
+      _busySuperagents.remove(id);
+      if (!_closed) notifyListeners();
+    }
+  }
+
+  Future<void> startSuperagent({String? projectId}) =>
+      _manageSuperagent('start', projectId: projectId);
+  Future<void> stopSuperagent({String? projectId}) =>
+      _manageSuperagent('stop', projectId: projectId);
+  Future<void> refreshSuperagent({String? projectId}) =>
+      _manageSuperagent('status', projectId: projectId);
+  Future<void> openSuperagent({String? projectId}) =>
+      _manageSuperagent('open', projectId: projectId);
 
   Future<Map<String, Object?>> _modelSettingsCommand(
     Map<String, Object?> request,

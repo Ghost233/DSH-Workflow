@@ -111,7 +111,7 @@ export async function feishuChoices({ resources, bot, chatId, action, run = exec
     return { members: (response.data.users ?? []).filter(row => /^ou_[A-Za-z0-9]+$/.test(row.member_id ?? ''))
       .map(row => ({ id: row.member_id, name: row.name || '未命名成员' })),
     truncated: Boolean(response.data.truncations?.length) || response.meta?.pagination?.complete === false }
-  } catch { throw new Error('无法读取飞书群或成员。请确认机器人已加入群聊，并已获得读取群及成员的权限。') }
+  } catch { throw new Error('无法读取飞书群或成员。请确认机器人已加入群聊，并已获得读取群及成员的权限（群成员需要 im:chat.members:read）；新增权限后按飞书提示审批或发布应用。') }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

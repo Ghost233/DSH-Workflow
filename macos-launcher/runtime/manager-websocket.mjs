@@ -51,6 +51,8 @@ export function attachManagerWebSocket(server, command, updates) {
           if (buffer.length > 16 * 1024) { socket.destroy(); return }
           if (handled || !buffer.includes('\n')) return
           handled = true
+          // The client owns the command deadline; startup and graceful stop can exceed 45 seconds.
+          socket.setTimeout(0)
           void (async () => {
             try {
               const input = JSON.parse(buffer.slice(0, buffer.indexOf('\n')))

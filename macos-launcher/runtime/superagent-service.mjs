@@ -177,7 +177,7 @@ export async function serveSuperagent({ dataRoot, resources, home = join(homedir
           const unavailablePackages = [...packageResult.skipped.map(row => row.package), ...added]
           const patches = await readSharedSuperagentPatches({ ...options, unavailablePackages, onSkipped: row => skipped.push(row) })
           sharingWarnings = [...packageResult.skipped.map(row => `${row.package}：${row.reason}`),
-            ...skipped.map(row => `${row.name}：${row.reason}`), ...added.map(name => `${name}：重启此 Superagent 后生效`)]
+            ...skipped.filter(row => !packageResult.skipped.some(item => item.package === row.name)).map(row => `${row.name}：${row.reason}`), ...added.map(name => `${name}：重启此 Superagent 后生效`)]
           return patches
         }
         closeModelSharing = await watchSharedModelConfig({ resources, home, target: join(prepared.home, 'cordis.patch.yml'),
@@ -399,7 +399,7 @@ if (import.meta.main) {
           const socket = action === 'start' ? await ensureManager(dataRoot, resources, home, projectId) : superagentSocket(dataRoot, projectId)
           try { return await serviceRequest(socket, { type: action }, action === 'stop' ? 310_000 : 70_000) }
           catch (error) {
-            if (action !== 'start' || error.message !== 'DSH service control timed out') throw error
+            if (action !== 'start' || !['DSH service control timed out', 'DSH service control disconnected'].includes(error.message)) throw error
             const current = await serviceRequest(socket, { type: 'status' })
             if (current.service?.state === 'starting') current.service.message = 'Superagent 仍在启动，请稍后刷新状态。'
             return current
