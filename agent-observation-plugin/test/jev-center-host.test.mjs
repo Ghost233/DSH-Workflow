@@ -1,3 +1,4 @@
+import { runtimeRequire, browserRequire } from '../../scripts/test-runtime.mjs'
 import { ownerPeer } from './gateway-peer.mjs'
 import '../../scripts/harness-test-loader.mjs'
 import test from 'node:test'
@@ -5,11 +6,10 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 const { default: JevCenter } = await import('../src/jev-center-plugin.mjs')
 
-const req = createRequire(new URL('../../deepseek-harness/apps/cli/package.json', import.meta.url))
+const req = runtimeRequire
 const { boot, initProfile, readProfilePatches } = req('@deepseek-ai/dsh-app-boot')
 const ConfigEditor = req('@deepseek-ai/dsh-config-editor').default
 const Settings = req('@deepseek-ai/dsh-settings').default
@@ -17,7 +17,7 @@ const Credentials = req('@deepseek-ai/dsh-credentials-local').default
 const WebServer = req('@deepseek-ai/dsh-host-webserver').default
 const TypertRegistry = req('@deepseek-ai/dsh-typert-registry').default
 const TypertGateway = req('@deepseek-ai/dsh-api-gateway').default
-const browserReq = createRequire(new URL('../../deepseek-harness/packages/test-support/client-runtime/package.json', import.meta.url))
+const browserReq = browserRequire
 const { JSDOM } = browserReq('jsdom')
 const { getQueriesForElement, fireEvent, waitFor } = browserReq('@testing-library/dom')
 

@@ -1,5 +1,6 @@
 """Exercise the release CLI using real local Git refs and fake external auth."""
 
+import base64
 import hashlib
 import json
 import os
@@ -215,6 +216,26 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
         self.pubspec.write_text('version: 0.2.4+1\n')
         self.assertIn('Flutter', self.cli('--dry-run').stderr)
 
+    def test_npm_runtime_requires_the_exact_registry_integrity(self):
+        integrity = 'sha512-' + base64.b64encode(hashlib.sha512(b'fixture').digest()).decode()
+        runtime_path = self.repo / 'dsh-runtime.json'
+        runtime_path.write_text(json.dumps({'package': '@deepseek-ai/dsh', 'version': '0.2.1-alpha.2',
+                                            'source': 'npm', 'registry': 'https://registry.npmjs.org/', 'integrity': integrity}))
+        lock_path = self.repo / 'macos-launcher/package-lock.json'
+        lock = json.loads(lock_path.read_text())
+        lock['packages']['node_modules/@deepseek-ai/dsh'].update({
+            'integrity': integrity, 'resolved': 'https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.2.1-alpha.2.tgz'})
+        lock_path.write_text(json.dumps(lock))
+        self.git('add', 'dsh-runtime.json', 'macos-launcher/package-lock.json')
+        self.git('commit', '-m', 'npm runtime fixture')
+        self.git('push', str(self.remote), 'main')
+        self.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+        result = self.cli('--dry-run')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lock['packages']['node_modules/@deepseek-ai/dsh']['integrity'] = 'sha512-wrong'
+        lock_path.write_text(json.dumps(lock))
+        self.assertIn('完整性', self.cli('--dry-run').stderr)
+
     def test_stale_tracking_ref_is_rejected(self):
         self.git('update-ref', 'refs/remotes/origin/main', 'HEAD~1')
         result = self.cli('--dry-run')
@@ -262,7 +283,6 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
         (resources / 'node_modules/@deepseek-ai/dsh').mkdir(parents=True)
         (resources / 'node_modules/@deepseek-ai/dsh/package.json').write_text(json.dumps(
             {'name': '@deepseek-ai/dsh', 'version': '0.2.1-alpha.2'}))
-        (resources / 'desktop/DeepSeek Harness.app').mkdir(parents=True)
         for relative in ['macos-launcher/runtime/plugin-payload.mjs', 'macos-launcher/runtime/superagent-payload.mjs',
                          'agent-observation-plugin/src/delivery-manifest.mjs', 'vendor/dsh-superagent.upstream.json']:
             destination = self.repo / relative
@@ -374,6 +394,39 @@ else:sys.exit(2)
         self.assertFalse(output.exists())
 
     @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS packaging CLI seam')
+    def test_packaging_rejects_a_desktop_payload(self):
+        app, output = self.packaging_fixture()
+        (app / 'Contents/Resources/desktop/DeepSeek Harness.app').mkdir(parents=True)
+        result = self.package_cli(app, output)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('不能包含 Desktop', result.stderr)
+        self.assertFalse(output.exists())
+
+    @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS packaging CLI seam')
+    def test_packaging_records_and_checks_npm_runtime_integrity(self):
+        app, output = self.packaging_fixture()
+        integrity = 'sha512-' + base64.b64encode(hashlib.sha512(b'fixture').digest()).decode()
+        runtime = {'package': '@deepseek-ai/dsh', 'version': '0.2.1-alpha.2', 'source': 'npm',
+                   'registry': 'https://registry.npmjs.org/', 'integrity': integrity}
+        (self.repo / 'dsh-runtime.json').write_text(json.dumps(runtime))
+        lock = {'packages': {'node_modules/@deepseek-ai/dsh': {
+            'version': runtime['version'], 'integrity': integrity,
+            'resolved': 'https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.2.1-alpha.2.tgz'}}}
+        packaged_lock = app / 'Contents/Resources/package-lock.json'
+        packaged_lock.write_text(json.dumps(lock))
+        result = self.package_cli(app, output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((output / 'manifest.json').read_text())
+        self.assertEqual(manifest['dshRuntime'], {key: runtime[key] for key in ('source', 'registry', 'integrity')})
+        lock['packages']['node_modules/@deepseek-ai/dsh']['integrity'] = 'sha512-wrong'
+        packaged_lock.write_text(json.dumps(lock))
+        rejected_output = self.root / 'tampered-output'
+        result = self.package_cli(app, rejected_output)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('npm 来源或完整性', result.stderr)
+        self.assertFalse(rejected_output.exists())
+
+    @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS packaging CLI seam')
     def test_packaging_rejects_missing_or_changed_plugin_payload_before_creating_dmg(self):
         app, output = self.packaging_fixture()
         seal = app / 'Contents/Resources/plugin-payload.json'
@@ -444,8 +497,6 @@ elif name=='node':
  if a[:1]==['-p']:
   p='macos-launcher/package.json' if 'macos-launcher' in a[1] else 'dsh-runtime.json'
   print(json.loads((root/p).read_text())['version'])
- elif 'macos-launcher/build-desktop-release.mjs' in a:
-  (root/'.build/desktop-arm64/mac-arm64/DeepSeek Harness.app').mkdir(parents=True)
  elif a==['macos-launcher/build.mjs']:
   (root/'.build/Ghost DSH Station-0.2.5-dsh0.2.1-alpha.2-arm64.app').mkdir(parents=True)
  else:raise SystemExit('Unexpected runtime invocation: '+repr(a))
@@ -471,9 +522,8 @@ for name in ['fixture.dmg','manifest.json']:(root/name).write_bytes(b'fixture as
                                 env=env, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = [json.loads(line) for line in log.read_text().splitlines()]
-        self.assertIn(['pnpm', 'run', 'build:official', '--scope', 'artifacts'], calls)
-        self.assertIn(['pnpm', '--dir', 'apps/desktop', 'run', 'prepare:runtime',
-                       '--defer-primary-runtime-smoke'], calls)
+        self.assertIn(['node', 'macos-launcher/build.mjs'], calls)
+        self.assertFalse(any(any('desktop' in argument.lower() for argument in call) for call in calls))
         self.assertTrue((self.repo / '.build/release-assets/SHA256SUMS').is_file())
 
     @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS release job CLI seam')

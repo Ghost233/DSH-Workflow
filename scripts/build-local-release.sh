@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 在本机或 GitHub macOS ARM64 runner 编译、打包；不运行测试，不访问 GitHub Release。
 # 产物：.build/release-assets/{*.dmg,manifest.json,SHA256SUMS}
-# 用法：scripts/build-local-release.sh [--skip-dsh-install]
+# 用法：scripts/build-local-release.sh
 # 说明：发布入口见 .agents/skills/deploy-release/SKILL.md；本脚本只做编译与打包。
 set -euo pipefail
 
@@ -38,63 +38,25 @@ if otool -L "$LAUNCHER_NODE" 2>/dev/null | grep -q 'libnode'; then
   fail "步骤 6 需要自包含的 Node；$LAUNCHER_NODE 依赖 libnode。请设置 DSH_LAUNCHER_NODE"
 fi
 
-SKIP_DSH_INSTALL=0
-for arg in "$@"; do
-  case "$arg" in
-    --skip-dsh-install) SKIP_DSH_INSTALL=1 ;;
-    *) fail "未知参数：$arg" ;;
-  esac
-done
+[[ $# == 0 ]] || fail "未知参数：$*"
 
-step '1/8 构建项目维护的 Matt 面板'
+step '1/5 构建项目维护的 Matt 面板'
 npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
 npm run build --prefix matt-skills-panel-plugin
 
-step '2/8 准备 Flutter 依赖'
+step '2/5 准备 Flutter 依赖'
 (cd macos-launcher/flutter && flutter pub get --enforce-lockfile)
 
-step '3/8 安装固定 DSH 依赖'
-if [[ "$SKIP_DSH_INSTALL" == 0 ]]; then
-  (cd deepseek-harness && CI=true pnpm install --frozen-lockfile)
-else
-  step '跳过 DSH 依赖安装（--skip-dsh-install）'
-fi
-
-step '4/8 构建 DSH 生产包'
-(
-  cd deepseek-harness
-  export DSH_DESKTOP_TARGET_PLATFORM=darwin DSH_DESKTOP_TARGET_ARCH=arm64
-  TARGET="$PWD/apps/desktop/.desktop-build/targets/mac-${DSH_DESKTOP_TARGET_ARCH}"
-  pnpm run build:official --scope artifacts
-  pnpm run release:pack --family dsh --out "$TARGET/packed/dsh" --concurrency 4
-  pnpm --dir apps/desktop-host pack --pack-destination "$TARGET/packed/dsh"
-  pnpm run release:pack --family vendor --out "$TARGET/packed/vendor" --concurrency 4
-  pnpm --dir native/system run build:ts
-  mkdir -p "$TARGET/packed/landlock"
-  pnpm --dir native/system/packages/entry pack --pack-destination "$TARGET/packed/landlock"
-  pnpm --dir apps/desktop run prepare:runtime --defer-primary-runtime-smoke
-  pnpm --dir apps/desktop run prepare:packages
-)
-
-step '5/8 构建并签名可重定位 Desktop'
-if [[ -e .build/desktop-arm64 ]]; then
-  STALE_APP=".build/desktop-arm64.stale-$(date +%Y%m%d%H%M%S)"
-  step "已有 .build/desktop-arm64，移动到 $STALE_APP"
-  mv .build/desktop-arm64 "$STALE_APP"
-fi
-node deepseek-harness/node_modules/tsx/dist/cli.mjs macos-launcher/build-desktop-release.mjs
-DESKTOP_APP="$ROOT/.build/desktop-arm64/mac-arm64/DeepSeek Harness.app"
-
-step '6/8 构建并签名启动器 App'
-DSH_MACOS_DESKTOP_APP="$DESKTOP_APP" "$LAUNCHER_NODE" macos-launcher/build.mjs
+step '3/5 构建并签名 Web 版 Station'
+"$LAUNCHER_NODE" macos-launcher/build.mjs
 APP="$ROOT/.build/Ghost DSH Station-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
 [[ -d "$APP" ]] || fail "启动器 App 未生成：$APP"
 
-step '7/8 打包 DMG、manifest.json 与 SHA256SUMS'
-rm -rf .build/release-assets
+step '4/5 打包 DMG、manifest.json 与 SHA256SUMS'
+[[ ! -e .build/release-assets ]] || fail '已有 .build/release-assets，已保留原有产物；请先选择空的构建目录'
 scripts/build-release.sh --app-path "$APP" --output-dir .build/release-assets
 
-step '8/8 校验发布资产'
+step '5/5 校验发布资产'
 (cd .build/release-assets && shasum -a 256 -c SHA256SUMS)
 step "完成：$APP"
 step "资产：$ROOT/.build/release-assets"

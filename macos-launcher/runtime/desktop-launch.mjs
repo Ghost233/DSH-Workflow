@@ -1,9 +1,7 @@
 import { readFile, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
-import { startLanGateway } from './lan-gateway.mjs'
 
-/** A receipt comes only from the local Desktop Host, never from a browser request. */
+/** Read the legacy-named receipt shared by the managed DSH Host and Station. */
 export async function readDesktopHost(directory) {
   const path = join(directory, 'desktop-host.json')
   const info = await lstat(path)
@@ -16,33 +14,4 @@ export async function readDesktopHost(directory) {
     || url.username || url.password) throw new Error('Invalid Desktop Host receipt')
   process.kill(value.pid, 0)
   return { ...value, port: Number(url.port) }
-}
-
-/** Attach the remote gate to Electron's existing Host; this function never starts a DSH process. */
-export async function launchDesktopWeb({ globalRoot, gatewayHost, gatewayPort, password,
-  signal, allowLanSettings = false, onGateway = () => {}, onReady = () => {} }) {
-  const directory = join(globalRoot, '.dsh-workflow', 'desktop')
-  let host
-  while (!host) {
-    signal?.throwIfAborted()
-    try { host = await readDesktopHost(directory) }
-    catch (error) {
-      if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error
-      await delay(250, undefined, { signal })
-    }
-  }
-  const gate = await startLanGateway({ host: gatewayHost, port: gatewayPort, upstreamPort: host.port,
-    password, allowLanSettings, authenticatedUrl: () => host.url })
-  try {
-    onGateway(gate)
-    onReady({ port: host.port, desktopPid: host.pid, runtimeVersion: host.runtimeVersion },
-      gate.localUrl)
-    while (!signal?.aborted) {
-      await delay(500, undefined, { signal })
-      const current = await readDesktopHost(directory)
-      if (current.lease !== host.lease) throw new Error('Desktop Host changed; reconnect the Web entry')
-    }
-  } catch (error) {
-    if (!signal?.aborted) throw error
-  } finally { await gate.close() }
 }

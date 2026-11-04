@@ -85,12 +85,12 @@ async function installedPackage(profile, name) {
 
 /** Inspect local package files only; repository DMGs own version changes. */
 export async function checkPluginVersions({ resourcesRoot, dataRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
-  profileName = existsSync(join(resourcesRoot, 'desktop/DeepSeek Harness.app')) ? 'desktop' : 'web' } = {}) {
+  profileName = existsSync(join(home, 'profiles/desktop/package.json')) ? 'desktop' : 'web' } = {}) {
   const resources = resolve(resourcesRoot)
   const workflow = join(resources, 'workflow')
   const rows = []
   const profile = join(home, 'profiles', profileName)
-  const profileSource = profileName === 'desktop' ? 'DSH Desktop profile' : 'DSH Web profile'
+  const profileSource = 'DSH 当前配置'
   const profileManifest = await jsonFile(join(profile, 'package.json'))
   for (const [name, spec] of Object.entries(profileManifest?.dependencies ?? {})) {
     if (!packageName(name) || typeof spec !== 'string') continue

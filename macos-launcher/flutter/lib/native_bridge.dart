@@ -43,25 +43,6 @@ class NativeBridge {
   }
 
   Future<void> showWindow() => channel.invokeMethod<void>('showWindow');
-  Future<void> openDesktop(
-    String path, {
-    required Map<String, String> environment,
-    bool hidden = false,
-  }) => channel.invokeMethod<void>('openDesktop', {
-    'path': path,
-    'environment': environment,
-    'hidden': hidden,
-  });
-  Future<bool> desktopRunning(String path) async {
-    final running = await channel.invokeMethod<bool>('desktopRunning', path);
-    if (running == null) throw StateError('Desktop 运行状态未知');
-    return running;
-  }
-
-  Future<void> hideDesktop(String path) =>
-      channel.invokeMethod<void>('hideDesktop', path);
-  Future<void> showDesktop(String path) =>
-      channel.invokeMethod<void>('showDesktop', path);
   Future<void> openUrl(String url) =>
       channel.invokeMethod<void>('openUrl', url);
   Future<String?> chooseProjectDirectory() =>
@@ -89,8 +70,6 @@ class NativeBridge {
   Future<String> setLoginEnabled(bool enabled) async =>
       await channel.invokeMethod<String>('setLoginEnabled', enabled) ??
       'unknown';
-  Future<void> quitDesktop(String path) =>
-      channel.invokeMethod<void>('quitDesktop', path);
   Future<void> cancelQuit() => channel.invokeMethod<void>('cancelQuit');
   Future<void> finishQuit() => channel.invokeMethod<void>('finishQuit');
 }

@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, realpath, rm } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { createRequire } from 'node:module'
+import { runtimeRequire } from './test-runtime.mjs'
 import { composeDshLaunch } from './dsh-launch-composition.mjs'
 
 // Command-seam fixture: preserve the shell source, replacing only its absolute
@@ -14,9 +14,8 @@ async function shellFixture(t, platform = 'Darwin', arch = 'arm64') {
   t.after(() => rm(root, { recursive: true, force: true }))
   const distribution = join(root, 'distribution'), caller = join(root, 'caller'), bin = join(root, 'bin')
   const launcher = join(distribution, '.build/Owned Fixture.app'), receipt = join(root, 'receipt.json')
-  await Promise.all([mkdir(caller), mkdir(bin), mkdir(join(launcher, 'Contents/Resources/workflow/macos-launcher/runtime'), { recursive: true }),
-    mkdir(join(launcher, 'Contents/Resources/desktop/DeepSeek Harness.app'), { recursive: true })])
-  for (const name of ['global-supervisor.mjs', 'prepare-desktop.mjs']) await writeFile(join(launcher, 'Contents/Resources/workflow/macos-launcher/runtime', name), '')
+  await Promise.all([mkdir(caller), mkdir(bin), mkdir(join(launcher, 'Contents/Resources/workflow/macos-launcher/runtime'), { recursive: true })])
+  for (const name of ['global-supervisor.mjs', 'service-manager.mjs', 'web-host.mjs']) await writeFile(join(launcher, 'Contents/Resources/workflow/macos-launcher/runtime', name), '')
   await writeFile(join(bin, 'uname'), `#!/bin/sh\ncase "$1" in -s) printf '%s\\n' '${platform}' ;; -m) printf '%s\\n' '${arch}' ;; *) exit 2 ;; esac\n`, { mode: 0o755 })
   const recorder = join(bin, 'record-open')
   const record = `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),home:process.env.HOME,dshHome:process.env.DSH_HOME}));\n`
@@ -65,7 +64,7 @@ test('supervised Web readiness publishes its official URL without changing saved
   const before = structuredClone(entries)
   const patches = composeDshLaunch(entries, { projectRoot: resolve('.'), catalogRoot: '/global' })
   assert.deepEqual(entries, before)
-  const { composeEntries } = createRequire(resolve('deepseek-harness/apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
+  const { composeEntries } = runtimeRequire('@deepseek-ai/dsh-app-boot')
   const actual = composeEntries([[{ insert: entries }], patches]).find(row => row.id === 'web-runtime')
   assert.deepEqual(actual.config, { printUrl: true, openBrowser: false })
 })

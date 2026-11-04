@@ -1,3 +1,4 @@
+import { runtimeRequire, browserRequire } from '../../scripts/test-runtime.mjs'
 import { ownerPeer } from './gateway-peer.mjs'
 import '../../scripts/harness-test-loader.mjs'
 import test from 'node:test'
@@ -5,15 +6,15 @@ import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire, syncBuiltinESMExports } from 'node:module'
+import { syncBuiltinESMExports } from 'node:module'
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 const { default: monitorPlugin, apply } = await import('../src/agent-monitor-plugin.mjs')
 const { default: JevCenter } = await import('../src/jev-center-plugin.mjs')
 
-const req = createRequire(new URL('../../deepseek-harness/apps/cli/package.json', import.meta.url))
-const browserReq = createRequire(new URL('../../deepseek-harness/packages/test-support/client-runtime/package.json', import.meta.url))
+const req = runtimeRequire
+const browserReq = browserRequire
 const { JSDOM } = browserReq('jsdom')
 const { waitFor } = browserReq('@testing-library/dom')
 const { boot, initProfile, readProfilePatches } = req('@deepseek-ai/dsh-app-boot')

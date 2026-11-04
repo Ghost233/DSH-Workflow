@@ -3,7 +3,6 @@ import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { appendFile, readFile } from 'node:fs/promises'
 import { join, delimiter } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
@@ -17,6 +16,7 @@ import { createServiceAdmission } from './service-admission.mjs'
 import { serviceNotification } from './service-notification.mjs'
 import { startupPluginResults } from './startup-plugins.mjs'
 import { statusNotifications } from './status-notifications.mjs'
+import { readLoginShellEnvironment } from './login-shell.mjs'
 
 async function health(host, timeout = 2000) {
   const signal = AbortSignal.timeout(timeout)
@@ -43,10 +43,10 @@ export async function waitForInitialHostHealth(host, deadline, isAlive) {
 }
 
 /** The manager owns the official Host; GUI clients only send explicit management commands. */
-export async function serveManager({ dataRoot, resources, home }) {
+export async function serveManager({ dataRoot, resources, home, loginEnvironment = process.env, loginShells }) {
   const directory = serviceDirectory(dataRoot), socketPath = serviceSocket(dataRoot)
   const server = createServer()
-  let child, receipt, injections, admission, platformSession = null, starting, stopping, normalStop, stopOperation, failure = '', state = 'stopped', closing = false
+  let child, receipt, injections, admission, starting, stopping, normalStop, stopOperation, failure = '', state = 'stopped', closing = false
   let controlId = 0, statusRevision = 0
   let notificationAuthorization, authorizing
   let preparingStop = false
@@ -194,7 +194,7 @@ export async function serveManager({ dataRoot, resources, home }) {
           throw new Error(`DSH 未确认完成正常停止（${result.signal || result.code}），请检查日志。`)
         }
         await operation.admission.close()
-        state = 'stopped'; failure = ''; receipt = undefined; injections = undefined; platformSession = null
+        state = 'stopped'; failure = ''; receipt = undefined; injections = undefined
         stopOperation = undefined
         clearTimeout(operation.timer)
         log('DSH 服务已确认正常停止，Host 进程已退出。')
@@ -240,19 +240,14 @@ export async function serveManager({ dataRoot, resources, home }) {
       try {
         try {
           await readDesktopHost(join(dataRoot, 'global/.dsh-workflow/desktop'))
-          throw new Error('检测到已有 DSH 实例。请先保存工作并退出旧版 Desktop，再启动独立服务。')
+          throw new Error('检测到已有 DSH 服务。请先保存工作并停止旧服务，再启动新服务。')
         } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error }
-        state = 'starting'; failure = ''; receipt = undefined; injections = undefined; platformSession = null; validatedReady = false
+        state = 'starting'; failure = ''; receipt = undefined; injections = undefined; validatedReady = false
         log('正在准备原有 DSH profile 与项目插件。')
-        const contents = join(resources, 'desktop/DeepSeek Harness.app/Contents')
-        const desktopResources = join(contents, 'Resources')
-        let runtime = join(desktopResources, 'app/dsh')
-        try { runtime = JSON.parse(await readFile(join(desktopResources, 'dsh-source-runtime.json'), 'utf8')).runtimeRoot }
-        catch (error) { if (error.code !== 'ENOENT') throw error }
+        const runtime = resources
         shellEnvironment ??= (async () => {
-          const { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } = await import(pathToFileURL(join(resources, 'service/login-shell.mjs')).href)
-          const prepared = await readDesktopLoginShellEnvironment(process.env, resolveDesktopLoginShellConfig(process.env), { signal: shellRead.signal })
-          for (const failure of prepared.failures) log(`desktop login shell: ${failure.shell} failed (${failure.reason})`)
+          const prepared = await readLoginShellEnvironment(loginEnvironment, { signal: shellRead.signal, shells: loginShells })
+          for (const failure of prepared.failures) log(`login shell: ${failure.shell} failed (${failure.reason})`)
           return prepared.environment
         })()
         const environment = await shellEnvironment
@@ -260,15 +255,11 @@ export async function serveManager({ dataRoot, resources, home }) {
         const profile = await prepareDesktopProfile({ resourcesRoot: resources, desktopRuntimeRoot: runtime,
           globalRoot: join(dataRoot, 'global'), home, permissionMode })
         const executable = join(resources, 'node')
-        const primaryRuntime = join(desktopResources, 'runtime/primary-runtime')
-        const { resolvePrimaryRuntime } = createRequire(join(runtime, 'package.json'))('@deepseek-ai/dsh-tool-workspace-dependencies')
-        const primary = await resolvePrimaryRuntime(primaryRuntime)
         const hostEnvironment = { ...environment, DSH_HOME: home, DSH_PERMISSION_MODE: permissionMode,
-          DSH_DESKTOP_NODE_EXECUTABLE: executable,
-          PATH: `${join(desktopResources, 'runtime/bin')}${delimiter}${environment.PATH ?? ''}` }
+          PATH: `${join(resources, 'bin')}${delimiter}${resources}${delimiter}${environment.PATH ?? ''}` }
         delete hostEnvironment.ELECTRON_RUN_AS_NODE
-        const owned = fork(join(runtime, 'node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js'),
-          [runtime, profile.profile, primaryRuntime, primary.pnpm, resources], {
+        const owned = fork(join(resources, 'workflow/macos-launcher/runtime/web-host.mjs'),
+          [resources, profile.profile, join(dataRoot, 'global/.dsh-workflow/desktop')], {
             execPath: executable, execArgv: ['--expose-internals'], cwd: profile.profile,
             env: hostEnvironment,
             stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
@@ -288,7 +279,6 @@ export async function serveManager({ dataRoot, resources, home }) {
             && normalStop?.owned === owned && message.requestId === normalStop.requestId
             && message.operationId === normalStop.operationId && message.instanceId === normalStop.instanceId) normalStop.committed = true
           if (message?.type === 'shutdown-complete' && normalStop?.owned === owned && normalStop.committed) normalStop.acknowledged = true
-          if (message?.type === 'platform-session') platformSession = message.session
           if (message?.type === 'ready') ready.resolve(message)
           if (message?.type === 'fatal') ready.reject(new Error(redact(message.diagnostic || message.message)))
         })
@@ -322,7 +312,10 @@ export async function serveManager({ dataRoot, resources, home }) {
             try { actual = await readDesktopHost(join(dataRoot, 'global/.dsh-workflow/desktop')); break }
             catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; await delay(20) }
           }
-          if (!actual || actual.pid !== owned.pid || actual.url !== message.url) throw new Error('DSH readiness receipt does not identify the owned Host')
+          if (!actual || actual.pid !== owned.pid || actual.url !== message.url) {
+            const detail = !actual ? 'receipt missing' : actual.pid !== owned.pid ? 'process identity changed' : 'connection address changed'
+            throw new Error(`DSH readiness receipt does not identify the owned Host (${detail})`)
+          }
           validatedReady = (await waitForInitialHostHealth(actual, deadline, () => child === owned && owned.exitCode === null && owned.signalCode === null)).ready === true
           lastHealth = { ready: validatedReady, message: null }
           for (const result of await startupPluginResults({ resourcesRoot: resources, url: actual.url, preparation: profile.startup })) {
@@ -381,10 +374,10 @@ export async function serveManager({ dataRoot, resources, home }) {
       stopInspection = await stop(input)
       if (!stopInspection && input.type === 'restart-service') await start(input.permissionMode)
     }
-    else if (!['status', 'logs', 'connect-web', 'connect-desktop'].includes(input.type)) throw new Error('Unsupported DSH service command')
+    else if (!['status', 'logs', 'connect-web'].includes(input.type)) throw new Error('Unsupported DSH service command')
     const { value, identityVerified } = await snapshot()
     if (stopInspection) value.stop = stopInspection
-    if (['connect-web', 'connect-desktop'].includes(input.type)) {
+    if (input.type === 'connect-web') {
       const paused = identityVerified && stopOperation?.owned === child && admission?.locked
       if (value.service.ready !== true && !paused || !receipt || !child || !injections || !admission) {
         throw new Error('DSH 服务未启动或暂不可用，请先启动 DSH 服务。')
@@ -392,8 +385,6 @@ export async function serveManager({ dataRoot, resources, home }) {
       if (input.runtimeVersion !== receipt.runtimeVersion) throw new Error('DSH 服务接入版本不兼容，请使用配套应用。')
       value.connection = { instanceId: receipt.lease, pid: receipt.pid,
         runtimeVersion: receipt.runtimeVersion, url: admission.url, injections }
-      // Only Electron main requests this local private response; it is never part of the Web descriptor.
-      if (input.type === 'connect-desktop') value.platformSession = platformSession
     }
     return value
   }

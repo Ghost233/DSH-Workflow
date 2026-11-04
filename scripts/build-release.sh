@@ -41,8 +41,15 @@ resources = Path(sys.argv[1]) / 'Contents/Resources'
 package = json.loads((resources / 'node_modules/@deepseek-ai/dsh/package.json').read_text())
 if package.get('name') != '@deepseek-ai/dsh' or package.get('version') != sys.argv[2]:
     raise SystemExit('build-release: 打包应用的 DSH 版本与固定版本不一致')
-if not (resources / 'desktop/DeepSeek Harness.app').is_dir():
-    raise SystemExit('build-release: 缺少完整 Desktop 应用')
+if (resources / 'desktop').exists():
+    raise SystemExit('build-release: Web 版不能包含 Desktop 应用')
+runtime = json.loads(Path('dsh-runtime.json').read_text())
+if runtime.get('source') == 'npm':
+    lock = json.loads((resources / 'package-lock.json').read_text())
+    locked = lock.get('packages', {}).get('node_modules/@deepseek-ai/dsh', {})
+    archive = f"https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-{sys.argv[2]}.tgz"
+    if locked.get('version') != sys.argv[2] or locked.get('integrity') != runtime.get('integrity') or locked.get('resolved') != archive:
+        raise SystemExit('build-release: 打包应用的 DSH npm 来源或完整性不一致')
 PY
 plugin_report="$(node macos-launcher/runtime/plugin-payload.mjs verify "$APP_PATH/Contents/Resources" "$REPO_ROOT")"
 superagent_report="$(node macos-launcher/runtime/superagent-payload.mjs verify "$APP_PATH/Contents/Resources" "$REPO_ROOT")"
@@ -86,6 +93,9 @@ with dmg.open('rb') as file:
 manifest = {'version': version, 'tag': 'macos-v' + version, 'sourceCommit': commit,
             'dshVersion': dsh, 'pluginPayload': json.loads(plugins), 'superagentPayload': json.loads(superagent),
             'assets': [{'name': name, 'sha256': digest.hexdigest(), 'size': dmg.stat().st_size}]}
+runtime = json.loads(Path('dsh-runtime.json').read_text())
+if runtime.get('source') == 'npm':
+    manifest['dshRuntime'] = {key: runtime[key] for key in ('source', 'registry', 'integrity')}
 (root / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
 PY
 (cd "$STAGING_DIR/assets" && shasum -a 256 "$DMG_NAME" manifest.json > SHA256SUMS && shasum -a 256 -c SHA256SUMS)

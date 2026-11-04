@@ -1,5 +1,4 @@
 import { fork } from 'node:child_process'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -7,20 +6,16 @@ import { prepareDesktopProfile } from '../../runtime/desktop-profile.mjs'
 import { readDesktopHost } from '../../runtime/desktop-launch.mjs'
 import { redact } from '../../runtime/service-control.mjs'
 
-// An actual official Host stands in for an already-running legacy installation.
+// An independently owned Host stands in for an already-running installation.
 // This fixture owns only the freshly staged profile and process, never user work.
 const [resources, dataRoot, home] = process.argv.slice(2)
 if (!resources || !dataRoot || !home) throw new Error('Pass owned resources, data and home')
-const contents = join(resources, 'desktop/DeepSeek Harness.app/Contents')
-const runtime = join(contents, 'Resources/app/dsh')
+const runtime = resources
 const profile = await prepareDesktopProfile({ resourcesRoot: resources, desktopRuntimeRoot: runtime, globalRoot: join(dataRoot, 'global'), home, permissionMode: 'workspace-write' })
-const primaryRuntime = join(contents, 'Resources/runtime/primary-runtime')
-const { resolvePrimaryRuntime } = createRequire(join(runtime, 'package.json'))('@deepseek-ai/dsh-tool-workspace-dependencies')
-const primary = await resolvePrimaryRuntime(primaryRuntime)
-const child = fork(join(runtime, 'node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js'),
-  [runtime, profile.profile, primaryRuntime, primary.pnpm, join(contents, 'MacOS')], {
-    execPath: join(contents, 'MacOS/DeepSeek Harness'), execArgv: ['--expose-internals'], cwd: profile.profile,
-    env: { ...process.env, DSH_HOME: home, ELECTRON_RUN_AS_NODE: '1' }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+const child = fork(join(resources, 'workflow/macos-launcher/runtime/web-host.mjs'),
+  [resources, profile.profile, join(dataRoot, 'global/.dsh-workflow/desktop')], {
+    execPath: join(resources, 'node'), execArgv: ['--expose-internals'], cwd: profile.profile,
+    env: { ...process.env, DSH_HOME: home }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   })
 for (const stream of [child.stdout, child.stderr]) createInterface({ input: stream }).on('line', line => process.stderr.write(redact(line) + '\n'))
 let closing = false, terminate, force

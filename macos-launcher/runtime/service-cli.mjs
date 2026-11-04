@@ -9,8 +9,7 @@ async function ensureServiceManager({ dataRoot, resources, home, requestType }) 
   const socket = serviceSocket(dataRoot)
   const usable = status => {
     if (requestType === 'start-service' && status.managerGeneration !== SERVICE_MANAGER_GENERATION) {
-      if (status.service?.state === 'running') return { socket, existing: status }
-      throw new Error('检测到旧版后台管理器。请从菜单栏选择“退出 Station 并停止全部服务”，再重新打开 Station。')
+      throw new Error('检测到旧版后台管理器，已保留现有服务与任务。请先保存工作，从菜单栏选择“退出 Station 并停止全部服务”，再重新打开 Station。')
     }
     return { socket }
   }
@@ -44,7 +43,7 @@ if (import.meta.main) {
     let body = ''
     for await (const chunk of process.stdin) { body += chunk; if (body.length > 16 * 1024) throw new Error('Control request too large') }
     const request = JSON.parse(body)
-    if (request.type === 'connect-desktop') throw new Error('桌面专用连接仅供本机 Electron 主进程使用。')
+    if (request.type === 'connect-desktop') throw new Error('Station 已改为 Web 服务，不提供桌面客户端连接。')
     if (['start-service', 'restart-service'].includes(request.type)) request.permissionMode = process.env.DSH_PERMISSION_MODE || 'workspace-write'
     if (request.type === 'connect-web') {
       request.runtimeVersion = JSON.parse(await readFile(join(resources, 'workflow/dsh-runtime.json'), 'utf8')).version

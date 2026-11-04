@@ -1,10 +1,10 @@
 {
   "name": "dsh-workflow-macos-runtime",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "type": "module",
   "dependencies": {
-    "@deepseek-ai/dsh": "0.2.2-alpha.3",
+    "@deepseek-ai/dsh": "0.2.2-rc.1",
     "pnpm": "11.24.0",
     "zod": "4.4.3"
   },
@@ -13,5 +13,13 @@
   ],
   "cpu": [
     "arm64"
-  ]
+  ],
+  "devDependencies": {
+    "@deepseek-ai/dsh-client-test-runtime": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tool-testkit": "0.2.2-rc.1",
+    "immer": "10.2.0",
+    "jsdom": "29.1.1",
+    "tsx": "4.23.13",
+    "zustand": "4.5.7"
+  }
 }

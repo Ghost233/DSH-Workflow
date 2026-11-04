@@ -12,7 +12,7 @@ Flutter Widget 负责界面；LauncherController 组织服务控制、客户端�
 
 在 MacLauncher 中关联仓库根目录 maclauncher.json，或已打包应用 Contents/Resources/maclauncher.json。前者打开 /Applications/DSH Workflow.app，后者通过相对路径指向包含它的应用包。
 
-project.id 为 dsh-workflow；保留 web、desktop 服务标识，分别提供 Web 入口与 DSH 服务端的启动、回收、状态和日志。回收 Web 只关闭浏览器访问；停止 DSH 服务前检查工作并按需要确认。MacLauncher 管理端或桌面客户端退出后，Station 仍管理正在运行的服务；退出 Station 时统一停止这些服务。管理端失联时恢复本应用菜单入口。
+project.id 为 dsh-workflow；为兼容已关联的 MacLauncher，保留 web、desktop 服务标识，分别表示 Web 入口和 DSH 服务端。`desktop` 是历史服务 ID，不代表桌面客户端。回收 Web 只关闭浏览器访问；停止 DSH 服务前检查工作并按需要确认。MacLauncher 管理端退出后，Station 仍管理正在运行的服务；退出 Station 时统一停止这些服务。管理端失联时恢复本应用菜单入口。
 
 应用 Bundle ID、UserDefaults 设置键、Application Support/DSH Workflow、lan-password 及旧钥匙串只读迁移沿用原有位置。SDK 不会读取或传递内网密码。
 
@@ -27,13 +27,13 @@ cd macos-launcher/flutter
 FLUTTER_BIN="$HOME/flutter/bin/flutter" DART_BIN="$HOME/flutter/bin/dart" bash check.sh
 ```
 
-每次检查均使用真实 lockfile 解析，格式检查不改写源码，静态分析必须零诊断。真实 Unix socket 测试覆盖 SDK 回调、服务归属、断线与迟到入口动作；真实 Node 进程测试覆盖界面与 SDK 并发控制、Desktop 失联重连、日志实例归属以及暂停子进程时的重复退出；界面测试覆盖最小窗口中的三个页面。
+每次检查均使用真实 lockfile 解析，格式检查不改写源码，静态分析必须零诊断。真实 Unix socket 测试覆盖 SDK 回调、服务归属、断线与迟到入口动作；真实 Node 进程测试覆盖界面与 SDK 并发控制、Web 服务重连、日志实例归属以及暂停子进程时的重复退出。
 
 macOS 原生验收使用独立临时数据目录和 SDK endpoint：
 
 ```sh
 flutter build macos --debug --no-pub
-dart run tool/native_probe.dart 'build/macos/Build/Products/Debug/DSH Workflow.app/Contents/MacOS/DSH Workflow'
+dart run tool/native_probe.dart 'build/macos/Build/Products/Debug/Ghost DSH Station.app/Contents/MacOS/Ghost DSH Station'
 ```
 
 Debug 验收检查真实窗口、菜单显隐与断线恢复。测试配置环境和 VM 原生状态接口仅在 Debug 生效；Release 不提供它们。验收不使用当前用户 profile，不启动用户业务。
@@ -42,6 +42,6 @@ Debug 验收检查真实窗口、菜单显隐与断线恢复。测试配置环�
 
 真实 GitHub 账号的仓库选择回归入口是 `tool/superagent_native_probe.dart`。它依次接收 Debug 可执行文件、已准备的运行资源、隔离数据目录、隔离 DSH 主目录、GitHub 登录名、含 `main` 分支的仓库和一个尚不存在的无障碍就绪标记文件。账号由已有 `gh` 配置管理，脚本不保存项目、不创建任务、不发送消息。打印 `READY_FOR_AX` 后，先由系统无障碍客户端读取该窗口，再创建标记文件，脚本会重复选择账号、仓库和分支 10 次，并检查原生树错误及正常退出。结果与脱敏日志保存在打印的 `EVIDENCE` 目录。将 `DSH_LAUNCHER_NATIVE_SEMANTICS=0` 传给该脚本可运行强制框架语义的失败对照。
 
-生产构建从仓库根目录使用 macos-launcher/build.mjs；先准备现有官方 Desktop 与面板产物。构建将 Flutter Release 应用、现有 Node/DSH 运行时、插件和 Desktop 装配为一个独立应用。CI 在对应原生架构上设置构建架构、测试并生成一份 ARM64 DMG；移动副本继续接受真实 Host、Office、JEV/监控与 Matt 验收。
+生产构建从仓库根目录使用 macos-launcher/build.mjs；先准备面板产物。构建将 Flutter Release 应用、固定的 npm DSH Web 核心和插件装配为一个独立应用，不包含 Desktop。macOS ARM64 上的候选还需验证真实 Web Host、JEV/监控、Matt 与原生窗口。
 
-启动器与桌面端只读检查本仓库的 macos-v 正式发行版本，候选须包含适用的配套 DMG。检查和打开发布页不下载或安装资产，也不停止共享服务；运行端不单独换插件包。MacLauncher SDK 负责服务与入口协作，组件升级统一在仓库中维护并随 DMG 交付。
+启动器只读检查本仓库的 macos-v 正式发行版本，候选须包含适用的配套 DMG。检查和打开发布页不下载或安装资产，也不停止共享服务；运行端不单独换插件包。MacLauncher SDK 负责服务与入口协作，组件升级统一在仓库中维护并随 DMG 交付。

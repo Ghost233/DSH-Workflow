@@ -46,7 +46,7 @@ class SettingsFixture {
       host = await Process.start(
         '$resources/node',
         [
-          File.fromUri(Platform.script.resolve('desktop_host_probe.mjs')).path,
+          File.fromUri(Platform.script.resolve('web_host_probe.mjs')).path,
           resources,
           data,
           '${root.path}/home',

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { createRequire } from 'node:module'
+import { runtimeRequire } from './test-runtime.mjs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { checkBrowserHarnessUpstream, readPinnedBrowserHarness, stageBrowserHarnessSkills, verifyBrowserHarnessSkills } from '../browser-harness-plugin/build.mjs'
@@ -117,7 +117,7 @@ test('the authenticated DSH plugin queries a real Shell provider and returns its
   await writeFile(join(bin, 'browser-harness'), '#!/bin/sh\n[ "$1" = --version ] || exit 9\nprintf "%s" "$BH_TELEMETRY" > "$BROWSER_PROBE_LOG"\necho 0.1.13\n', { mode: 0o755 })
   process.env.PATH = `${bin}:/usr/bin:/bin`
   process.env.BROWSER_PROBE_LOG = log
-  const req = createRequire(new URL('../deepseek-harness/apps/cli/package.json', import.meta.url))
+  const req = runtimeRequire
   const { Context } = req('@deepseek-ai/cordis')
   const ctx = new Context()
   t.after(async () => {

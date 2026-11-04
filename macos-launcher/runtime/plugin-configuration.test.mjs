@@ -75,7 +75,7 @@ test('an installed GitHub plugin is checked against its pinned repository and co
   await assertProfilePluginVersions(f.profile, await readPluginConfiguration(f.resources))
   const { checkPluginVersions } = await import('./plugin-versions.mjs')
   const report = await checkPluginVersions({ resourcesRoot: f.resources, home: f.home, profileName: 'desktop' })
-  assert.equal(report.rows.find(row => row.source === 'DSH Desktop profile' && row.name === item.package).status, 'fixed')
+  assert.equal(report.rows.find(row => row.source === 'DSH 当前配置' && row.name === item.package).status, 'fixed')
   manifest.dependencies[item.package] = item.version
   await writeFile(join(f.profile, 'package.json'), JSON.stringify(manifest))
   await assert.rejects(assertProfilePluginVersions(f.profile, await readPluginConfiguration(f.resources)), /插件版本偏差/)
@@ -187,7 +187,7 @@ test('version table reports packaged/profile drift without offering an automatic
   const f = await fixture(t)
   await f.install('0.1.191', '0.1.184')
   const report = await checkPluginVersions({ resourcesRoot: f.resources, home: f.home, profileName: 'desktop', fetchLatest: async () => '0.1.192' })
-  const row = report.rows.find(row => row.source === 'DSH Desktop profile' && row.name === 'billion-context')
+  const row = report.rows.find(row => row.source === 'DSH 当前配置' && row.name === 'billion-context')
   assert.equal(row.status, 'drift')
   assert.equal(row.updatable, false)
   assert.match(row.note, /仓库固定 0.1.184/)

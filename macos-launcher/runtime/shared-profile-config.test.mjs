@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { runtimeAnchor, linkRuntimeModules } from '../../scripts/test-runtime.mjs'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { readSharedProfileEntries, sharedMcpEntries, sharedSkillEntries, sharedPluginEntries } from './shared-profile-config.mjs'
 import { webProfileBundles } from './profile-templates.mjs'
 
@@ -23,13 +24,10 @@ test('Superagent does not inherit retired packages still declared by an older da
 test('reads layered daily MCP settings without rewriting an existing desktop profile', async t => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-shared-profile-'))
   t.after(() => rm(root, { recursive: true, force: true }))
-  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const cli = join(source, 'apps/cli')
-  const boot = createRequire(join(cli, 'package.json'))('@deepseek-ai/dsh-app-boot')
+  const boot = createRequire(runtimeAnchor)('@deepseek-ai/dsh-app-boot')
   const resources = join(root, 'resources'), home = join(root, 'home'), profile = join(home, 'profiles/desktop')
-  await mkdir(join(resources, 'node_modules/@deepseek-ai'), { recursive: true })
-  await symlink(cli, join(resources, 'node_modules/@deepseek-ai/dsh'))
-  boot.initProfile(profile, webProfileBundles(createRequire(join(cli, 'package.json')), boot))
+  await linkRuntimeModules(resources)
+  boot.initProfile(profile, webProfileBundles(createRequire(runtimeAnchor), boot))
   const manifestPath = join(profile, 'package.json')
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   manifest.dsh.profile.bundles.push('@deepseek-ai/dsh-experimental-schedule-bundle')

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
+import { clientAsset } from '../../scripts/test-runtime.mjs'
 import { allowAuthenticatedLanSettings } from './lan-settings-client.mjs'
 
 test('packaged settings client keeps loopback access and gates LAN access on the login marker', () => {
@@ -24,8 +25,8 @@ test('packaged settings client keeps loopback access and gates LAN access on the
 
 import { readFileSync } from 'node:fs'
 
-test('alpha.5 Host-backed settings need no persistence rewrite', () => {
-  const source = readFileSync(new URL('../../deepseek-harness/packages/client/ui-settings/lib/client.js', import.meta.url), 'utf8')
+test('the current Host-backed settings need no persistence rewrite', () => {
+  const source = readFileSync(clientAsset('@deepseek-ai/dsh-client-ui-settings', 'lib/client.js', 'packages/client/ui-settings/lib/client.js'), 'utf8')
   assert.equal(allowAuthenticatedLanSettings(source), source)
   assert.throws(() => allowAuthenticatedLanSettings('const { writable } = mirrored.view;'), /Pinned DSH settings client/u)
 })

@@ -1,14 +1,14 @@
+import { runtimeRequire } from '../../scripts/test-runtime.mjs'
 import '../../scripts/harness-test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire } from 'node:module'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 const { apply } = await import('../src/agent-monitor-plugin.mjs')
 
-const req = createRequire(new URL('../../deepseek-harness/apps/cli/package.json', import.meta.url))
+const req = runtimeRequire
 const { Context } = req('@deepseek-ai/cordis')
 const { default: LlmRuntime, LlmAdapter, createUserMessage } = req('@deepseek-ai/dsh-llm')
 const [SessionStore, Projections, SystemPrompt, Tools, Agents, AgentLoop] = [

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, readlink, rename, cp, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, relative } from 'node:path'
-import { createRequire } from 'node:module'
+import { runtimeRequire, linkRuntimeModules } from '../../scripts/test-runtime.mjs'
 import { sealPluginPayload, verifyPluginPayload, deployPluginPayload } from './plugin-payload.mjs'
 import { copyProjectIntegration } from '../project-resources.mjs'
 import { prepareDesktopProfile } from './desktop-profile.mjs'
@@ -150,13 +150,11 @@ test('the actual desktop preparation deploys fresh payloads and removes stale au
   }
   await writeFile(join(f.resources, 'workflow/project-mcp.json'), '[]\n')
   await sealPluginPayload(f.resources, f.provenance)
-  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
   const runtime = join(f.root, 'runtime'), globalRoot = join(f.root, 'global'), home = join(f.root, 'home')
-  await mkdir(join(runtime, 'node_modules/@deepseek-ai'), { recursive: true })
-  await symlink(join(source, 'apps/cli'), join(runtime, 'node_modules/@deepseek-ai/dsh'))
+  await linkRuntimeModules(runtime)
   const args = { resourcesRoot: f.resources, desktopRuntimeRoot: runtime, globalRoot, home }
   const prepared = await prepareDesktopProfile(args)
-  const boot = createRequire(join(source, 'apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
+  const boot = runtimeRequire('@deepseek-ai/dsh-app-boot')
   const entries = () => {
     const profile = boot.loadProfileDirectory('dsh', prepared.profile, join(runtime, 'node_modules/@deepseek-ai/dsh/package.json'))
     return boot.composeEntries([...profile.layers.map(layer => layer.patches), profile.patches])

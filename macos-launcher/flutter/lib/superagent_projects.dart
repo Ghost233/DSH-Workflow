@@ -264,7 +264,7 @@ class SuperagentProjects extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('每个项目使用独立的浏览器后端；日常桌面版和 Web 继续共用原有 DSH 服务。'),
+        const Text('每个项目使用独立的浏览器后端；日常 Web 使用单独的 DSH 服务。'),
         OutlinedButton(
           onPressed: model.superagentBusy
               ? null

@@ -129,21 +129,14 @@ class WebProbeOptions {
   static WebProbeOptions? parse(List<String> args) {
     if (args.length != 7 || args[1] != '--web-runtime') return null;
     if (args[3] != '--web-backend' ||
-        !{'headless', 'desktop'}.contains(args[4]) ||
+        args[4] != 'headless' ||
         args[5] != '--web-port') {
       throw ArgumentError(
-        'Use --web-runtime RESOURCES --web-backend headless|desktop --web-port PORT',
+        'Use --web-runtime RESOURCES --web-backend headless --web-port PORT',
       );
     }
     final port = int.parse(args[6]);
     if (port < 0 || port > 65535) throw ArgumentError('Invalid Web probe port');
-    if (args[4] == 'desktop' &&
-        Platform.environment['GITHUB_ACTIONS'] != 'true' &&
-        Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] == null) {
-      throw StateError(
-        'Official Desktop GUI probe requires CI or explicit private local acceptance',
-      );
-    }
     return WebProbeOptions(Directory(args[2]).absolute.path, args[4], port);
   }
 
@@ -196,26 +189,14 @@ class WebProbeOptions {
     );
     for (final name in [
       'node',
-      'desktop',
       'node_modules',
       'bin',
-      'service',
       'plugins',
       'plugin-payload.json',
+      'package.json',
+      'package-lock.json',
     ]) {
-      if (name == 'desktop' &&
-          Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] != null) {
-        final desktopCopy = await Process.run('/usr/bin/ditto', [
-          '$sourceResources/$name',
-          '$resources/$name',
-        ]);
-        require(
-          desktopCopy.exitCode == 0,
-          'local acceptance owns a private Desktop bundle copy',
-        );
-      } else {
-        await Link('$resources/$name').create('$sourceResources/$name');
-      }
+      await Link('$resources/$name').create('$sourceResources/$name');
     }
     return selected;
   }
@@ -356,7 +337,7 @@ Future<void> runWebApplicationScenario({
         hostFields[0] == '$ownedManagerPid' &&
         hostFields[1] == uid &&
         hostIdentity.contains('$home/profiles/desktop') &&
-        hostIdentity.contains('dsh-desktop-host');
+        hostIdentity.contains('web-host.mjs');
     await File('${root.path}/web-independent-host-identity.log').writeAsString(
       'owned=$owned lease=${value['lease']}\n$managerIdentity\n$hostIdentity\n',
       mode: FileMode.append,
@@ -494,7 +475,7 @@ Future<void> runWebApplicationScenario({
     host = await Process.start(
       '$resources/node',
       [
-        File.fromUri(Platform.script.resolve('desktop_host_probe.mjs')).path,
+        File.fromUri(Platform.script.resolve('web_host_probe.mjs')).path,
         resources,
         data,
         home,
@@ -801,14 +782,14 @@ Future<void> runWebApplicationScenario({
     );
     require(
       desktopPage.code == 200 && desktopPage.body.contains('<html'),
-      'direct Desktop Host serves its actual packaged frontend',
+      'direct Web Host serves its actual packaged frontend',
     );
     final directHealth = await health(backendUrl, backendLogin.cookies);
     require(
       webHealth['instanceId'] == lease &&
           directHealth['instanceId'] == lease &&
           webHealth['ready'] == true,
-      'browser entry and direct Desktop Host expose the same real ready DSH instance',
+      'browser entry and direct Web Host expose the same real ready DSH instance',
     );
     require(
       (await sdk('status', service: 'desktop'))['instanceId'] == lease,

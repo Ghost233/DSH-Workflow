@@ -12,7 +12,10 @@ import { startupPluginResults } from './startup-plugins.mjs'
 import { stageBrowserHarnessSkills } from '../../browser-harness-plugin/build.mjs'
 
 const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-const anchor = join(source, 'apps/cli/package.json'), req = createRequire(anchor)
+const cliDirectory = process.env.DSH_WEB_TEST_RUNTIME_ROOT || process.env.DSH_SERVICE_TEST_RESOURCES
+  ? join(process.env.DSH_WEB_TEST_RUNTIME_ROOT ?? process.env.DSH_SERVICE_TEST_RESOURCES, 'node_modules/@deepseek-ai/dsh')
+  : join(source, 'apps/cli')
+const anchor = join(cliDirectory, 'package.json'), req = createRequire(anchor)
 const { boot, loadProfile, createRuntimeResolution, PluginPackages } = req('@deepseek-ai/dsh-app-boot')
 const { provideCmdline } = req('@deepseek-ai/dsh-cmdline')
 
@@ -21,7 +24,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   const sdkLock = JSON.parse(await readFile(resolve('macos-launcher/package-lock.json'), 'utf8')).packages
   const root = await mkdtemp(join(tmpdir(), 'packaged-dsh-ready-'))
   const resourcesRoot = join(root, 'resources'), workflow = join(resourcesRoot, 'workflow')
-  const desktopRuntimeRoot = join(root, 'runtime'), home = join(root, 'home'), globalRoot = join(root, 'global')
+  const desktopRuntimeRoot = resourcesRoot, home = join(root, 'home'), globalRoot = join(root, 'global')
   await mkdir(workflow, { recursive: true })
   // The launcher installs its pinned SDK under Resources/node_modules; copied plugins resolve peers from that ancestor.
   const sdk = await createRuntimeResolution({ installAnchor: anchor })
@@ -30,9 +33,7 @@ test('packaged project profile serves authenticated official DSH readiness using
     await mkdir(join(target, '..'), { recursive: true })
     await symlink(entry.packageDir, target)
   }
-  await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
   // Native SDK package artifacts are fixed external runtime inputs; no source resolver or own-package alias is injected.
-  await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
   for (const path of ['agent-observation-plugin', 'browser-harness-plugin', 'matt-skills-panel-plugin/package', 'vendor/mattpocock-skills-zh/skills', 'vendor/dsh-skills/skills']) {
     await cp(resolve(path), join(workflow, path), { recursive: true, filter: path => !/(?:^|\/)(?:test|tests|node_modules|\.git)(?:\/|$)/.test(path) })
   }
@@ -85,14 +86,18 @@ test('packaged project profile serves authenticated official DSH readiness using
   legacyManifest.dependencies['billion-context'] = `file:${retired}`
   legacyManifest.dsh.profile.bundles.push('billion-context')
   await writeFile(legacyManifestPath, JSON.stringify(legacyManifest))
-  const saved = process.env.DSH_HOME
+  const saved = { home: process.env.DSH_HOME, agents: process.env.DSH_AGENTS_HOME, osHome: process.env.HOME }
   process.env.DSH_HOME = home
+  process.env.DSH_AGENTS_HOME = join(root, 'agents')
+  process.env.HOME = root
   let ctx, starting, disposing
   t.after(async () => {
     await starting?.catch(() => {})
     await disposing?.catch(() => {})
     await ctx?.fiber.dispose()
-    saved === undefined ? delete process.env.DSH_HOME : process.env.DSH_HOME = saved
+    for (const [key, value] of [['DSH_HOME', saved.home], ['DSH_AGENTS_HOME', saved.agents], ['HOME', saved.osHome]]) {
+      value === undefined ? delete process.env[key] : process.env[key] = value
+    }
     await rm(root, { recursive: true, force: true })
   })
   await writeFile(join(prepared.profile, 'cordis.patch.yml'), JSON.stringify([
@@ -242,7 +247,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   await writeFile(join(prepared.profile, 'package.json'), JSON.stringify(beforeMove))
   const movedResources = join(root, 'moved resources')
   await rename(resourcesRoot, movedResources)
-  await prepareDesktopProfile({ resourcesRoot: movedResources, desktopRuntimeRoot, globalRoot, home })
+  await prepareDesktopProfile({ resourcesRoot: movedResources, desktopRuntimeRoot: movedResources, globalRoot, home })
   profile = loadProfile('dsh', 'desktop', anchor, home)
   const movedWorkflow = join(movedResources, 'workflow')
   const movedManifest = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))

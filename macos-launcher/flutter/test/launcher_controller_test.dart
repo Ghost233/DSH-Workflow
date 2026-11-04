@@ -11,37 +11,9 @@ class FixtureNative extends NativeBridge {
   FixtureNative(this.root);
   final String root;
   bool? savedHideWindowOnStart;
-  bool failPreferences = false, failDesktopOpen = false;
-  int desktopOpenCalls = 0;
-  bool desktopIsRunning = false, desktopIsHidden = false;
+  bool failPreferences = false;
   @override
   Future<void> showWindow() async {}
-  @override
-  Future<bool> desktopRunning(String path) async => desktopIsRunning;
-  @override
-  Future<void> hideDesktop(String path) async {
-    if (!desktopIsRunning) throw StateError('Desktop 未运行');
-    desktopIsHidden = true;
-  }
-
-  @override
-  Future<void> showDesktop(String path) async {
-    if (!desktopIsRunning) throw StateError('Desktop 未运行');
-    desktopIsHidden = false;
-  }
-
-  @override
-  Future<void> openDesktop(
-    String path, {
-    required Map<String, String> environment,
-    bool hidden = false,
-  }) async {
-    desktopOpenCalls++;
-    if (failDesktopOpen) throw StateError('Desktop open refused');
-    desktopIsRunning = true;
-    desktopIsHidden = hidden;
-  }
-
   @override
   Future<void> savePreferences(
     bool fullAccess,
@@ -203,22 +175,6 @@ Future<int> responseCode(Uri url) async {
 }
 
 void main() {
-  // The four Desktop launch preference cases moved unchanged in behavior to
-  // desktop_launch_preferences_test.dart, backed by an actual independent Host.
-  test('window-only actions never start a missing Desktop and preserve a running Desktop', () async {
-    final f = await fixture();
-    final native = f.model.native as FixtureNative;
-    await expectLater(f.model.showExistingDesktop(), throwsStateError);
-    await expectLater(f.model.hideDesktop(), throwsStateError);
-    expect(native.desktopIsRunning, isFalse);
-    native.desktopIsRunning = true;
-    await f.model.hideDesktop();
-    expect(native.desktopIsRunning, isTrue);
-    expect(native.desktopIsHidden, isTrue);
-    await f.model.showExistingDesktop();
-    expect(native.desktopIsRunning, isTrue);
-    expect(native.desktopIsHidden, isFalse);
-  });
   test('startup window preference migrates missing values and preserves storage failures', () async {
     final f = await fixture();
     final native = f.model.native as FixtureNative;

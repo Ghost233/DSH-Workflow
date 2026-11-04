@@ -117,7 +117,6 @@ void registerApplicationProbe(NativeBridge native) {
         // The external driver waits for actual UI/HTTP/SDK outcomes.
         // Holding this VM RPC until endOfFrame can stall accessibility actions.
       } else if (action == 'close' ||
-          action == 'quitDesktop' ||
           action == 'ownEntry' ||
           action == 'minimum' ||
           action == 'quit') {

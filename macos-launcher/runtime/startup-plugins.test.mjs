@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { createRequire } from 'node:module'
+import { runtimeRequire } from '../../scripts/test-runtime.mjs'
 import { startupPluginResults, prepareStartupPlugins } from './startup-plugins.mjs'
 
 const versions = Object.fromEntries(JSON.parse(await readFile(new URL('../../project-plugins.json', import.meta.url), 'utf8'))
@@ -89,7 +89,7 @@ test('a rejected startup preparation cannot be reported as loaded by a matching 
 })
 
 test('an optional bundle with an invalid composed group is isolated before a valid sibling', async t => {
-  const require = createRequire(resolve('deepseek-harness/apps/cli/package.json'))
+  const require = runtimeRequire
   const boot = require('@deepseek-ai/dsh-app-boot')
   const root = await mkdtemp(join(tmpdir(), 's08-owned-group-semantic-'))
   t.after(() => rm(root, { recursive: true, force: true }))
@@ -133,7 +133,7 @@ test('an optional bundle with an invalid composed group is isolated before a val
 })
 
 test('Git-pinned startup packages reject a same-version npm declaration while preserving other entries', async t => {
-  const require = createRequire(resolve('deepseek-harness/apps/cli/package.json'))
+  const require = runtimeRequire
   const boot = require('@deepseek-ai/dsh-app-boot')
   for (const existing of [false, true]) await t.test(existing ? 'existing entry' : 'new entry', async t => {
     const root = await mkdtemp(join(tmpdir(), 's08-owned-source-'))

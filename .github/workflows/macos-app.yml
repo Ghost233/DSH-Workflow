@@ -18,11 +18,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout release source and fixed submodules
+      - name: Checkout release source
         uses: actions/checkout@v6
         with:
-          submodules: recursive
           persist-credentials: false
+
+      - name: Prepare pinned Browser Harness skill
+        run: git submodule update --init vendor/browser-harness
 
       - name: Check release source and ARM64 platform
         shell: bash

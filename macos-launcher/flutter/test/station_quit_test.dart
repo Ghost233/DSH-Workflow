@@ -8,8 +8,6 @@ import 'package:flutter_test/flutter_test.dart';
 class ExitNative extends NativeBridge {
   ExitNative(this.root);
   final String root;
-  int desktopQuits = 0;
-  bool refuseDesktopQuit = false;
   @override
   Future<LauncherEnvironment> load() async => LauncherEnvironment({
     'resources': root,
@@ -20,13 +18,6 @@ class ExitNative extends NativeBridge {
   });
   @override
   Future<void> showWindow() async {}
-  @override
-  Future<void> quitDesktop(String path) async {
-    desktopQuits++;
-    if (refuseDesktopQuit) {
-      throw StateError('Desktop still has a pending prompt');
-    }
-  }
 }
 
 Future<({Directory root, ExitNative native, LauncherController model})>
@@ -39,10 +30,6 @@ fixture() async {
   final scripts = await Directory(
     '${root.path}/workflow/macos-launcher/runtime',
   ).create(recursive: true);
-  await Directory('${root.path}/desktop/DeepSeek Harness.app/Contents')
-      .create(recursive: true);
-  await File('${root.path}/desktop/DeepSeek Harness.app/Contents/Info.plist')
-      .writeAsString('owned fixture');
   await File('${scripts.path}/station-shutdown.mjs').writeAsString(r'''
 import{createInterface}from'node:readline';import{writeFileSync,existsSync}from'node:fs';
 const root=process.argv[2];
@@ -74,7 +61,6 @@ void main() {
         expect(find.text('• unfinished task'), findsOneWidget);
         await tester.tap(find.text('取消'));
         expect(await tester.runAsync(() => pending!), false);
-        expect(f.native.desktopQuits, 0);
         expect(f.model.exiting, false);
       } finally {
         await tester.runAsync(() => f.model.close());
@@ -91,12 +77,10 @@ void main() {
       try {
         f.model.confirmStationQuit = (_) async => false;
         expect(await f.model.shutdownForQuit(), false);
-        expect(f.native.desktopQuits, 0);
         expect(f.model.exiting, false);
         expect(await File('${f.root.path}/decision').readAsString(), 'false');
         f.model.confirmStationQuit = (_) async => true;
         expect(await f.model.shutdownForQuit(), true);
-        expect(f.native.desktopQuits, 1);
         expect(f.model.exiting, true);
       } finally {
         await f.model.close();
@@ -106,7 +90,7 @@ void main() {
     },
   );
   test(
-    'idle quit needs no confirmation and still closes the desktop client',
+    'idle quit needs no confirmation and does not open a desktop client',
     () async {
       final f = await fixture();
       try {
@@ -114,7 +98,6 @@ void main() {
         f.model.confirmStationQuit = (_) async =>
             throw StateError('must not prompt when idle');
         expect(await f.model.shutdownForQuit(), true);
-        expect(f.native.desktopQuits, 1);
       } finally {
         await f.model.close();
         f.model.dispose();
@@ -122,31 +105,19 @@ void main() {
       }
     },
   );
-  test(
-    'cleanup failure and a refused desktop quit leave Station retryable',
-    () async {
-      final f = await fixture();
-      try {
-        await File('${f.root.path}/fail').writeAsString('true');
-        await expectLater(
-          f.model.shutdownForQuit(),
-          throwsA(isA<StateError>()),
-        );
-        expect(f.model.exiting, false);
-        await File('${f.root.path}/fail').delete();
-        f.native.refuseDesktopQuit = true;
-        f.model.confirmStationQuit = (_) async => true;
-        await expectLater(
-          f.model.shutdownForQuit(),
-          throwsA(isA<StateError>()),
-        );
-        expect(f.model.exiting, false);
-        expect(await File('${f.root.path}/cancelled').exists(), true);
-      } finally {
-        await f.model.close();
-        f.model.dispose();
-        await f.root.delete(recursive: true);
-      }
-    },
-  );
+  test('cleanup failure leaves Station retryable', () async {
+    final f = await fixture();
+    try {
+      await File('${f.root.path}/fail').writeAsString('true');
+      await expectLater(f.model.shutdownForQuit(), throwsA(isA<StateError>()));
+      expect(f.model.exiting, false);
+      await File('${f.root.path}/fail').delete();
+      f.model.confirmStationQuit = (_) async => true;
+      expect(await f.model.shutdownForQuit(), true);
+    } finally {
+      await f.model.close();
+      f.model.dispose();
+      await f.root.delete(recursive: true);
+    }
+  });
 }

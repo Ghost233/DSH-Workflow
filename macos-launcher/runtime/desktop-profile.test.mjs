@@ -7,19 +7,26 @@ import { join, resolve } from 'node:path'
 import { prepareDesktopProfile } from './desktop-profile.mjs'
 import { webProfileBundles } from './profile-templates.mjs'
 
+const artifact = process.env.DSH_SERVICE_TEST_RESOURCES
+const cliAnchor = source => artifact ? join(artifact, 'node_modules/@deepseek-ai/dsh/package.json') : join(source, 'apps/cli/package.json')
+async function prepareTestRuntime(directory, source) {
+  if (artifact) { await mkdir(directory, { recursive: true }); await symlink(join(artifact, 'node_modules'), join(directory, 'node_modules')); return }
+  await mkdir(join(directory, 'node_modules/@deepseek-ai'), { recursive: true })
+  await symlink(join(source, 'apps/cli'), join(directory, 'node_modules/@deepseek-ai/dsh'))
+}
+
 test('Desktop retains the user profile and loads one local board', async t => {
   const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const boot = createRequire(join(source, 'apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
+  const boot = createRequire(cliAnchor(source))('@deepseek-ai/dsh-app-boot')
   const root = await mkdtemp(join(tmpdir(), 'desktop-profile-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const resourcesRoot = join(root, 'resources'), home = join(root, 'home'), globalRoot = join(root, 'global')
   const desktopRuntimeRoot = join(root, 'runtime')
-  await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
-  await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
+  await prepareTestRuntime(desktopRuntimeRoot, source)
   await mkdir(resourcesRoot)
   await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
   const web = join(home, 'profiles/web')
-  boot.initProfile(web, webProfileBundles(createRequire(join(source, 'apps/cli/package.json')), boot))
+  boot.initProfile(web, webProfileBundles(createRequire(cliAnchor(source)), boot))
   const userPatch = [{ id: 'web-runtime', config: { openBrowser: false, printUrl: false } },
     { insert: [{ id: 'bili-native', name: 'billion-context', config: { keep: true } }] }]
   await writeFile(join(web, 'cordis.patch.yml'), JSON.stringify(userPatch))
@@ -69,16 +76,15 @@ test('Desktop retains the user profile and loads one local board', async t => {
 
 test('Desktop migrates a cached stage-one bundle-only profile without changing user dependencies, patches or metadata', async t => {
   const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const boot = createRequire(join(source, 'apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
+  const boot = createRequire(cliAnchor(source))('@deepseek-ai/dsh-app-boot')
   const root = await mkdtemp(join(tmpdir(), 'desktop-profile-migration-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const resourcesRoot = join(root, 'resources'), home = join(root, 'home'), globalRoot = join(root, 'global')
   const desktopRuntimeRoot = join(root, 'runtime'), web = join(home, 'profiles/web')
-  await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
-  await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
+  await prepareTestRuntime(desktopRuntimeRoot, source)
   await mkdir(resourcesRoot)
   await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
-  boot.initProfile(web, webProfileBundles(createRequire(join(source, 'apps/cli/package.json')), boot))
+  boot.initProfile(web, webProfileBundles(createRequire(cliAnchor(source)), boot))
   const userManifest = JSON.parse(await readFile(join(web, 'package.json'), 'utf8'))
   userManifest.dependencies['user-kept-addon'] = 'file:/user/kept-addon'
   userManifest.userMetadata = { chosenWorkspace: 'keep-this' }
@@ -119,8 +125,7 @@ test('Desktop refreshes an older managed policy at the same application path wit
   const root = await mkdtemp(join(tmpdir(), 'desktop-profile-policy-upgrade-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const resourcesRoot = join(root, 'resources'), desktopRuntimeRoot = join(root, 'runtime')
-  await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
-  await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
+  await prepareTestRuntime(desktopRuntimeRoot, source)
   await mkdir(resourcesRoot)
   await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
   const args = { resourcesRoot, desktopRuntimeRoot, globalRoot: join(root, 'global'), home: join(root, 'home') }
@@ -148,8 +153,7 @@ for (const packageName of ['dsh-workflow', 'dsh-workflow-matt-panel']) test(`cac
   const root = await mkdtemp(join(tmpdir(), 'desktop-foreign-package-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const resourcesRoot = join(root, 'resources'), desktopRuntimeRoot = join(root, 'runtime'), globalRoot = join(root, 'global'), home = join(root, 'home')
-  await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
-  await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
+  await prepareTestRuntime(desktopRuntimeRoot, source)
   await mkdir(resourcesRoot); await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
   const args = { resourcesRoot, desktopRuntimeRoot, globalRoot, home }
   const prepared = await prepareDesktopProfile(args)
@@ -168,14 +172,13 @@ for (const packageName of ['dsh-workflow', 'dsh-workflow-matt-panel']) test(`cac
 
 test('initial Desktop keeps copied Web links already pointing to the same owned packages', async t => {
   const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const boot = createRequire(join(source, 'apps/cli/package.json'))('@deepseek-ai/dsh-app-boot')
+  const boot = createRequire(cliAnchor(source))('@deepseek-ai/dsh-app-boot')
   const root = await mkdtemp(join(tmpdir(), 'desktop-copied-own-link-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const resourcesRoot = join(root, 'resources'), desktopRuntimeRoot = join(root, 'runtime'), globalRoot = join(root, 'global'), home = join(root, 'home')
-  await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
-  await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
+  await prepareTestRuntime(desktopRuntimeRoot, source)
   await mkdir(resourcesRoot); await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
-  const web = join(home, 'profiles/web'); boot.initProfile(web, webProfileBundles(createRequire(join(source, 'apps/cli/package.json')), boot))
+  const web = join(home, 'profiles/web'); boot.initProfile(web, webProfileBundles(createRequire(cliAnchor(source)), boot))
   const target = join(resourcesRoot, 'workflow')
   const manifest = JSON.parse(await readFile(join(web, 'package.json'), 'utf8'))
   manifest.dependencies['dsh-workflow'] = `file:${target}`
@@ -189,14 +192,13 @@ test('initial Desktop keeps copied Web links already pointing to the same owned 
 
 for (const disabled of [false, true]) test(`cached Desktop refreshes a later user MCP choice (disabled=${disabled})`, async t => {
   const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const anchor = join(source, 'apps/cli/package.json')
+  const anchor = cliAnchor(source)
   const boot = createRequire(anchor)('@deepseek-ai/dsh-app-boot')
   const root = await mkdtemp(join(tmpdir(), 'desktop-mcp-choice-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const resourcesRoot = join(root, 'resources'), home = join(root, 'home'), globalRoot = join(root, 'global')
   const desktopRuntimeRoot = join(root, 'runtime')
-  await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
-  await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
+  await prepareTestRuntime(desktopRuntimeRoot, source)
   await mkdir(resourcesRoot); await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
   const args = { resourcesRoot, desktopRuntimeRoot, globalRoot, home }
   const prepared = await prepareDesktopProfile(args)

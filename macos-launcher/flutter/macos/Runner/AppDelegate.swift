@@ -1,5 +1,4 @@
 import Cocoa
-import Carbon
 import CoreImage
 import FlutterMacOS
 import ServiceManagement
@@ -13,27 +12,12 @@ class AppDelegate: FlutterAppDelegate {
   #if DEBUG
   private var lastOpenedUrl: String?
   private var entryGateToken: String?
-  // TEMP cleanup diagnosis, exposed only in DEBUG state.
-  private var desktopQuitObservation: [String: Any] = [:]
-  private var desktopWindowObservation: [String: Any] = [:]
-  private var coldCallerObservation: [String: Any] = [:]
   #endif
   private var instanceLock: Int32 = -1
   private var instanceClaimed = false
   private var quitApproved = false
   private var quitRequested = false
   private var reopenObserver: NSObjectProtocol?
-  private var openedDesktopPid: pid_t?
-  private var desktopIdentity: (pid_t, UInt64, UInt64)?
-  private var coldDesktopIdentity: (pid_t, UInt64, UInt64)?
-  private var coldDesktopObserver: NSObjectProtocol?
-  private var coldFocusObserver: NSObjectProtocol?
-  private var coldFocusRestoreEligible = false
-  private var coldForegroundIdentity: (pid: pid_t, seconds: UInt64, microseconds: UInt64, executable: String, bundle: String)?
-  private var coldInputCounts: [UInt32] = []
-  private var coldRecoveryObserver: NSKeyValueObservation?
-  private var desktopLaunchObserver: NSKeyValueObservation?
-  private var desktopHiddenObserver: NSKeyValueObservation?
   private var reopen: Notification.Name {
     let base = "com.ghostagent.dsh-workflow-launcher.reopen"
     return Notification.Name(testRoot == nil ? base : base + ".test." + dataRoot.path)
@@ -267,11 +251,6 @@ class AppDelegate: FlutterAppDelegate {
           "pid": ProcessInfo.processInfo.processIdentifier,
           "isolated": self.testRoot != nil, "dataRoot": self.dataRoot.path,
           "ownQuitTraceEnabled": self.ownQuitTraceEnabled,
-          "openedDesktopPid": self.openedDesktopPid as Any,
-          "desktopQuitObservation": self.desktopQuitObservation,
-          "desktopWindowObservation": self.desktopWindowObservation,
-          "coldCallerObservation": self.coldCallerObservation,
-          "foregroundObservation": self.foregroundObservation(),
           "lastOpenedUrl": self.lastOpenedUrl as Any,
           "urlOpenMode": self.systemBoundaryTest ? "NSWorkspace" : "guarded",
           "systemBoundaryTest": self.systemBoundaryTest, "loginStatus": self.loginStatus()])
@@ -283,21 +262,6 @@ class AppDelegate: FlutterAppDelegate {
             guard let item = self.statusItem?.menu?.item(withTitle: "管理…"), let action = item.action else { throw self.failure("管理菜单入口不可用") }
             NSApp.sendAction(action, to: item.target, from: item)
           case "quit": NSApp.terminate(nil)
-          case "quitDesktop":
-            var facts: [String: Any] = ["expectedPid": NSNull(), "lookupFound": false,
-                                      "accepted": NSNull(), "hasTerminated": NSNull()]
-            if let pid = self.openedDesktopPid {
-              facts["expectedPid"] = Int(pid)
-              if let desktop = NSRunningApplication(processIdentifier: pid) {
-                facts["lookupFound"] = true
-                let accepted = desktop.terminate()
-                facts["accepted"] = accepted
-                facts["hasTerminated"] = desktop.isTerminated
-                self.desktopQuitObservation = facts
-                guard accepted else { throw self.failure("测试 Desktop 无法退出") }
-              }
-            }
-            self.desktopQuitObservation = facts
           case "minimum":
             if let window = self.mainFlutterWindow { window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: true) }
           default: throw self.failure("无效窗口测试动作")
@@ -357,235 +321,6 @@ class AppDelegate: FlutterAppDelegate {
           self.lastOpenedUrl = text
           #endif
           result(nil)
-        case "desktopRunning", "hideDesktop", "showDesktop", "quitDesktop":
-          guard let path = call.arguments as? String else { throw self.failure("无效 Desktop 路径") }
-          let application = try self.runningDesktop(path)
-          if call.method == "desktopRunning" {
-            result(application != nil); return
-          }
-          if call.method == "quitDesktop" {
-            self.releaseColdDesktop("station-quit")
-            guard let application else { result(nil); return }
-            let expected = self.desktopIdentity
-            let accepted = application.terminate()
-            if !accepted {
-              guard let current = try self.runningDesktop(path) else { result(nil); return }
-              guard let actual = self.desktopIdentity, let expected,
-                    actual.0 == expected.0, actual.1 == expected.1, actual.2 == expected.2,
-                    current.processIdentifier > 1, current.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
-                throw self.failure("桌面客户端退出期间身份已改变，未终止进程。")
-              }
-              guard kill(current.processIdentifier, SIGTERM) == 0 || errno == ESRCH else {
-                throw self.failure("桌面客户端退出请求失败，请处理窗口提示后重试。")
-              }
-            }
-            #if DEBUG
-            self.desktopQuitObservation = ["source": "station-exit", "pid": application.processIdentifier,
-                                           "appKitAccepted": accepted, "signalFallback": !accepted]
-            #endif
-            let deadline = ProcessInfo.processInfo.systemUptime + 15
-            func completeQuit() {
-              if application.isTerminated || (kill(application.processIdentifier, 0) == -1 && errno == ESRCH) { result(nil); return }
-              guard ProcessInfo.processInfo.systemUptime < deadline else {
-                result(FlutterError(code: "desktop-quit-pending", message: "桌面客户端尚未退出，请处理窗口提示后重试。", details: nil)); return
-              }
-              DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { completeQuit() }
-            }
-            completeQuit(); return
-          }
-          self.releaseColdDesktop("explicit-window-action")
-          guard let application else { throw self.failure("Desktop 未运行，请先启动；仅显示不会启动 Desktop。") }
-          if call.method == "hideDesktop" {
-            // AppKit refreshes isHidden on a later run-loop turn. Complete
-            // against the observed state, including already pending requests.
-            let expected = self.desktopIdentity
-            if !application.isHidden { _ = application.hide() }
-            let deadline = ProcessInfo.processInfo.systemUptime + 1
-            func completeHide() {
-              do {
-                guard let current = try self.runningDesktop(path), let actual = self.desktopIdentity,
-                      let expected, actual.0 == expected.0, actual.1 == expected.1, actual.2 == expected.2 else {
-                  throw self.failure("Desktop 隐藏期间进程身份已改变")
-                }
-                if current.isHidden { result(nil); return }
-                guard ProcessInfo.processInfo.systemUptime < deadline else { throw self.failure("Desktop 隐藏失败") }
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { completeHide() }
-              } catch {
-                result(FlutterError(code: "native-error", message: error.localizedDescription, details: nil))
-              }
-            }
-            completeHide()
-            return
-          } else {
-            let expected = self.desktopIdentity
-            let unhideAccepted = !application.isHidden || application.unhide()
-            FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=explicit-unhide-return accepted=\(unhideAccepted) pid=\(application.processIdentifier)\n".utf8))
-            // AppKit can report false when the process has no window. The URL
-            // event below asks the existing Desktop process to recreate it.
-            _ = application.activate(options: [.activateAllWindows])
-            guard let current = try self.runningDesktop(path), let actual = self.desktopIdentity,
-                  let expected, actual.0 == expected.0, actual.1 == expected.1, actual.2 == expected.2 else {
-              throw self.failure("Desktop 显示期间进程身份已改变")
-            }
-            // Reopen the Electron document even when its process is already active.
-            // A PID address and no-reconnect mode cannot launch a missing client.
-            let event = NSAppleEventDescriptor(eventClass: AEEventClass(kInternetEventClass),
-              eventID: AEEventID(kAEGetURL), targetDescriptor: NSAppleEventDescriptor(processIdentifier: current.processIdentifier),
-              returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))
-            event.setParam(NSAppleEventDescriptor(string: "dsh://open"), forKeyword: AEKeyword(keyDirectObject))
-            let options = NSAppleEventDescriptor.SendOptions(rawValue: UInt(
-              kAENoReply | kAENeverInteract | kAEDontReconnect | kAEDoNotPromptForUserConsent))
-            _ = try event.sendEvent(options: options, timeout: 1)
-            guard try self.runningDesktop(path) != nil, let final = self.desktopIdentity,
-                  final.0 == expected.0, final.1 == expected.1, final.2 == expected.2 else {
-              throw self.failure("Desktop 显示期间进程身份已改变")
-            }
-          }
-          result(nil)
-        case "openDesktop":
-          guard let values = call.arguments as? [String: Any], let path = values["path"] as? String,
-                let environment = values["environment"] as? [String: String],
-                let hidden = values["hidden"] as? Bool else { throw self.failure("无效 Desktop 路径") }
-          if try self.runningDesktop(path) != nil { self.releaseColdDesktop("reuse"); result(nil); return }
-          let app = URL(fileURLWithPath: path)
-          let configuration = NSWorkspace.OpenConfiguration()
-          configuration.environment = environment
-          configuration.activates = !hidden
-          configuration.hides = hidden
-          #if DEBUG
-          if self.testRoot != nil {
-            configuration.createsNewApplicationInstance = true
-            configuration.allowsRunningApplicationSubstitution = false
-            configuration.arguments = ["--user-data-dir=" + self.dataRoot.appendingPathComponent("desktop-user-data").path]
-            configuration.environment["DSH_DESKTOP_UPDATE_JOURNAL_DIR"] = self.dataRoot.appendingPathComponent("desktop-update").path
-            configuration.environment["DSH_DESKTOP_DIAGNOSTIC_FILE"] = self.dataRoot.appendingPathComponent("desktop-diagnostic.json").path
-            if self.ownQuitTraceEnabled,
-               ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_DESKTOP_CDP"] == "1" {
-              let fixture = self.dataRoot.deletingLastPathComponent()
-              let shellHome = fixture.appendingPathComponent("os-home").path
-              configuration.environment["HOME"] = shellHome
-              configuration.environment["ZDOTDIR"] = shellHome
-              configuration.environment["TMPDIR"] = fixture.path
-              configuration.arguments += ["--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0"]
-            }
-          }
-          #endif
-          if hidden {
-            let caller = ProcessInfo.processInfo.processIdentifier
-            let foreground = NSWorkspace.shared.frontmostApplication
-            self.coldForegroundIdentity = foreground.flatMap { try? self.foregroundIdentity($0) }
-            self.coldFocusRestoreEligible = self.coldForegroundIdentity != nil && foreground?.isActive == true
-            self.coldInputCounts = self.userInputCounts()
-            #if DEBUG
-            self.coldCallerObservation = ["callerPid": caller, "foregroundPid": foreground?.processIdentifier as Any? ?? NSNull(),
-              "captureUptime": ProcessInfo.processInfo.systemUptime, "restoreSelfEligible": NSApp.isActive && foreground?.processIdentifier == caller,
-              "restoreForegroundEligible": self.coldFocusRestoreEligible, "inputCountsBefore": self.coldInputCounts]
-            #endif
-            FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-caller-captured pid=\(caller) eligible=\(self.coldFocusRestoreEligible) uptime=\(ProcessInfo.processInfo.systemUptime)\n".utf8))
-            self.coldFocusObserver = NSWorkspace.shared.notificationCenter.addObserver(
-              forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
-              guard let self, let activated = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-              if activated.processIdentifier != caller && activated.bundleURL?.resolvingSymlinksInPath().path != app.resolvingSymlinksInPath().path && self.userInputCounts() != self.coldInputCounts {
-                self.coldFocusRestoreEligible = false
-                #if DEBUG
-                self.coldCallerObservation["otherForegroundPid"] = activated.processIdentifier
-                self.coldCallerObservation["otherForegroundUptime"] = ProcessInfo.processInfo.systemUptime
-                #endif
-                FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-caller-interrupted foregroundPid=\(activated.processIdentifier) uptime=\(ProcessInfo.processInfo.systemUptime)\n".utf8))
-              }
-            }
-          }
-          NSWorkspace.shared.openApplication(at: app, configuration: configuration) { application, error in
-            DispatchQueue.main.async {
-              if let error { self.releaseColdDesktop("open-error"); result(FlutterError(code: "open-failed", message: error.localizedDescription, details: nil)) }
-              else {
-                do {
-                  guard let opened = try self.runningDesktop(path),
-                        opened.processIdentifier == application?.processIdentifier else {
-                    throw self.failure("Desktop 启动身份未知")
-                  }
-                  if hidden {
-                    self.coldDesktopIdentity = self.desktopIdentity
-                    self.coldDesktopObserver = NSWorkspace.shared.notificationCenter.addObserver(
-                      forName: NSWorkspace.didUnhideApplicationNotification, object: nil, queue: .main) { [weak self] note in
-                      guard let self, let target = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                            target.processIdentifier == self.coldDesktopIdentity?.0 else { return }
-                      do {
-                        let current = try self.checkedColdDesktop(path)
-                        self.coldRecoveryObserver?.invalidate()
-                        self.coldRecoveryObserver = current.observe(\.isHidden, options: [.new]) { [weak self] _, _ in
-                          guard let self, current.isHidden else { return }
-                          do {
-                            _ = try self.checkedColdDesktop(path)
-                            let inputCountsNow = self.userInputCounts()
-                            let unchanged = inputCountsNow == self.coldInputCounts
-                            #if DEBUG
-                            self.coldCallerObservation["inputCountsAtRecovery"] = inputCountsNow
-                            self.coldCallerObservation["inputUnchangedAtRecovery"] = unchanged
-                            self.coldCallerObservation["hiddenRecoveryUptime"] = ProcessInfo.processInfo.systemUptime
-                            #endif
-                            if self.coldFocusRestoreEligible && unchanged {
-                              guard let captured = self.coldForegroundIdentity,
-                                    let target = NSRunningApplication(processIdentifier: captured.pid) else { throw self.failure("原前台身份未知") }
-                              let actual = try self.foregroundIdentity(target)
-                              guard actual == captured else { throw self.failure("原前台身份已改变") }
-                              if captured.pid == ProcessInfo.processInfo.processIdentifier && self.mainFlutterWindow?.isVisible == true {
-                                self.mainFlutterWindow?.makeKeyAndOrderFront(nil)
-                              }
-                              let accepted = target.activate(options: [.activateAllWindows])
-                              #if DEBUG
-                              self.coldCallerObservation["restoreForegroundPid"] = captured.pid
-                              self.coldCallerObservation["restoreForegroundAccepted"] = accepted
-                              #endif
-                              FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-caller-restore-requested pid=\(captured.pid) accepted=\(accepted) inputUnchanged=true uptime=\(ProcessInfo.processInfo.systemUptime)\n".utf8))
-                            } else {
-                              FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-caller-restore-skipped inputUnchanged=\(unchanged) uptime=\(ProcessInfo.processInfo.systemUptime)\n".utf8))
-                            }
-                          } catch { self.releaseColdDesktop("identity-unknown") }
-                          self.coldRecoveryObserver?.invalidate(); self.coldRecoveryObserver = nil
-                        }
-                        if !current.isHidden && !current.hide() {
-                          FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-hide-refused\n".utf8))
-                        }
-                      } catch { self.releaseColdDesktop("identity-unknown") }
-                    }
-                    var completed = false
-                    let completeWhenHidden = { [weak self] in
-                      guard let self, !completed, opened.isHidden else { return }
-                      completed = true
-                      do {
-                        guard try self.checkedColdDesktop(path).isHidden else { throw self.failure("Desktop 隐藏状态未知") }
-                        result(nil)
-                      } catch {
-                        self.releaseColdDesktop("open-error")
-                        result(FlutterError(code: "open-failed", message: error.localizedDescription, details: nil))
-                      }
-                      self.desktopLaunchObserver?.invalidate(); self.desktopLaunchObserver = nil
-                      self.desktopHiddenObserver?.invalidate(); self.desktopHiddenObserver = nil
-                    }
-                    self.desktopHiddenObserver = opened.observe(\.isHidden, options: [.initial, .new]) { _, _ in completeWhenHidden() }
-                    self.desktopLaunchObserver = opened.observe(\.isFinishedLaunching, options: [.initial, .new]) { [weak self] _, _ in
-                      guard let self, opened.isFinishedLaunching, !completed else { return }
-                      do {
-                        let current = try self.checkedColdDesktop(path)
-                        let accepted = current.isHidden || current.hide()
-                        FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-hide-return accepted=\(accepted)\n".utf8))
-                        completeWhenHidden()
-                      } catch {
-                        completed = true; self.releaseColdDesktop("open-error")
-                        self.desktopHiddenObserver?.invalidate(); self.desktopHiddenObserver = nil
-                        result(FlutterError(code: "open-failed", message: error.localizedDescription, details: nil))
-                      }
-                    }
-                    if completed {
-                      self.desktopLaunchObserver?.invalidate(); self.desktopLaunchObserver = nil
-                      self.desktopHiddenObserver?.invalidate(); self.desktopHiddenObserver = nil
-                    }
-                  } else { result(nil) }
-                } catch { result(FlutterError(code: "open-failed", message: error.localizedDescription, details: nil)) }
-              }
-            }
-          }
         case "cancelQuit":
           self.quitRequested = false; result(nil)
         case "finishQuit":
@@ -597,97 +332,6 @@ class AppDelegate: FlutterAppDelegate {
         }
       } catch { result(FlutterError(code: "native-error", message: error.localizedDescription, details: nil)) }
     }
-  }
-
-  // A window action targets one current-user instance of this exact packaged
-  // Desktop. A private Debug copy cannot substitute a user's installed app.
-  private func runningDesktop(_ path: String) throws -> NSRunningApplication? {
-    let requested = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-    let resources: URL
-    if testRoot != nil {
-      resources = URL(fileURLWithPath: ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_RESOURCES"] ??
-        dataRoot.deletingLastPathComponent().appendingPathComponent("missing-runtime").path)
-    } else {
-      guard let packaged = Bundle.main.resourceURL else { throw failure("应用资源目录不可用") }
-      resources = packaged
-    }
-    let expected = resources.appendingPathComponent("desktop/DeepSeek Harness.app").resolvingSymlinksInPath()
-    guard requested.path == expected.path,
-          let executable = Bundle(url: expected)?.executableURL?.resolvingSymlinksInPath() else {
-      throw failure("Desktop 路径身份未知")
-    }
-    let matches = NSWorkspace.shared.runningApplications.filter {
-      !$0.isTerminated && $0.bundleURL?.resolvingSymlinksInPath().path == expected.path
-    }
-    guard matches.count <= 1 else { throw failure("Desktop 有多个匹配实例，窗口身份未知") }
-    guard let application = matches.first else { return nil }
-    var identity = proc_bsdinfo()
-    let size = MemoryLayout<proc_bsdinfo>.stride
-    guard application.executableURL?.resolvingSymlinksInPath().path == executable.path,
-          proc_pidinfo(application.processIdentifier, PROC_PIDTBSDINFO, 0, &identity, Int32(size)) == Int32(size),
-          identity.pbi_uid == getuid(), identity.pbi_pid == UInt32(application.processIdentifier) else {
-      throw failure("Desktop 进程身份未知")
-    }
-    openedDesktopPid = application.processIdentifier
-    desktopIdentity = (application.processIdentifier, identity.pbi_start_tvsec, identity.pbi_start_tvusec)
-    #if DEBUG
-    desktopWindowObservation = ["pid": application.processIdentifier,
-      "uid": identity.pbi_uid, "parentPid": identity.pbi_ppid,
-      "kernelStartSeconds": identity.pbi_start_tvsec, "kernelStartMicroseconds": identity.pbi_start_tvusec,
-      "bundle": expected.path, "executable": executable.path,
-      "hidden": application.isHidden, "active": application.isActive]
-    #endif
-    return application
-  }
-
-  private func checkedColdDesktop(_ path: String) throws -> NSRunningApplication {
-    guard let captured = coldDesktopIdentity, let current = try runningDesktop(path),
-          let identity = desktopIdentity, identity.0 == captured.0,
-          identity.1 == captured.1, identity.2 == captured.2 else {
-      throw failure("Desktop 后台启动身份已改变")
-    }
-    return current
-  }
-
-  private func foregroundIdentity(_ application: NSRunningApplication) throws -> (pid: pid_t, seconds: UInt64, microseconds: UInt64, executable: String, bundle: String) {
-    var identity = proc_bsdinfo()
-    let size = MemoryLayout<proc_bsdinfo>.stride
-    guard !application.isTerminated,
-          proc_pidinfo(application.processIdentifier, PROC_PIDTBSDINFO, 0, &identity, Int32(size)) == Int32(size),
-          identity.pbi_uid == getuid(), identity.pbi_pid == UInt32(application.processIdentifier),
-          let executable = application.executableURL?.resolvingSymlinksInPath().path,
-          let bundle = application.bundleURL?.resolvingSymlinksInPath().path else { throw failure("原前台物理身份未知") }
-    return (application.processIdentifier, identity.pbi_start_tvsec, identity.pbi_start_tvusec, executable, bundle)
-  }
-
-  #if DEBUG
-  private func foregroundObservation() -> [String: Any] {
-    let cached = NSWorkspace.shared.frontmostApplication
-    let fresh = cached.flatMap { NSRunningApplication(processIdentifier: $0.processIdentifier) }
-    return ["uptime": ProcessInfo.processInfo.systemUptime,
-      "pid": cached?.processIdentifier as Any? ?? NSNull(),
-      "cachedActive": cached?.isActive as Any? ?? NSNull(),
-      "freshActive": fresh?.isActive as Any? ?? NSNull(),
-      "freshHidden": fresh?.isHidden as Any? ?? NSNull(),
-      "inputCounts": userInputCounts()]
-  }
-  #endif
-
-  private func userInputCounts() -> [UInt32] {
-    [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown].map {
-      CGEventSource.counterForEventType(.hidSystemState, eventType: $0)
-    }
-  }
-
-  private func releaseColdDesktop(_ reason: String) {
-    if let captured = coldDesktopIdentity {
-      FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=cold-guard-released reason=\(reason) pid=\(captured.0) uptime=\(ProcessInfo.processInfo.systemUptime)\n".utf8))
-    }
-    if let observer = coldDesktopObserver { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
-    if let observer = coldFocusObserver { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
-    coldRecoveryObserver?.invalidate(); coldRecoveryObserver = nil
-    coldFocusObserver = nil; coldFocusRestoreEligible = false; coldForegroundIdentity = nil; coldInputCounts = []
-    coldDesktopObserver = nil; coldDesktopIdentity = nil
   }
 
   private func failure(_ text: String) -> NSError {

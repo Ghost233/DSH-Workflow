@@ -34,6 +34,9 @@ value = json.loads((root / 'manifest.json').read_text())
 assert value['tag'] == tag and value['version'] == version, f"manifest tag/version 不一致：{value.get('tag')} {value.get('version')}"
 assert json.loads(Path('macos-launcher/package.json').read_text())['version'] == version, '发布 tag 与源码版本不一致'
 assert value['sourceCommit'] == commit, f"manifest sourceCommit 不一致：{value.get('sourceCommit')}"
+runtime = json.loads(Path('dsh-runtime.json').read_text())
+if runtime.get('source') == 'npm':
+    assert value.get('dshRuntime') == {key: runtime[key] for key in ('source', 'registry', 'integrity')}, 'manifest DSH npm 来源或完整性不一致'
 payload = value.get('pluginPayload', {})
 assert re.fullmatch(r'[0-9a-f]{64}', payload.get('sha256', '')), 'manifest 缺少插件本体交付校验'
 plugins = json.loads(Path('project-plugins.json').read_text())['plugins']

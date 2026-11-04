@@ -1,7 +1,6 @@
 import { symlink, mkdir, writeFile, chmod, copyFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { copyProjectIntegration } from '../../project-resources.mjs'
-import { bundleServiceEnvironment } from '../../service-environment.mjs'
 
 const [artifact, destination, scenario] = process.argv.slice(2)
 if (!artifact || !destination) throw new Error('Pass frozen packaged resources and an owned staging directory')
@@ -9,8 +8,7 @@ await mkdir(destination, { recursive: true })
 const projectRoot = resolve(import.meta.dirname, '../../..')
 await copyProjectIntegration(projectRoot, join(destination, 'workflow'))
 await copyFile(join(projectRoot, 'macos-launcher/package-lock.json'), join(destination, 'package-lock.json'))
-await bundleServiceEnvironment(projectRoot, destination)
-for (const name of ['node', 'node_modules', 'desktop', 'plugins', 'plugin-payload.json']) await symlink(join(resolve(artifact), name), join(destination, name))
+for (const name of ['node', 'node_modules', 'plugins', 'plugin-payload.json']) await symlink(join(resolve(artifact), name), join(destination, name))
 // Exclude unrelated network endpoints only in this isolated acceptance profile.
 const home = resolve(destination, '../home')
 await mkdir(join(home, 'profiles/desktop'), { recursive: true })

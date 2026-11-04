@@ -1,5 +1,5 @@
-import { createRequire } from 'node:module'
-const require = createRequire(new URL('../../deepseek-harness/apps/cli/package.json', import.meta.url))
+import { runtimeRequire } from '../../scripts/test-runtime.mjs'
+const require = runtimeRequire
 const { Peer } = require('@deepseek-ai/dsh-client-connection')
 const peers = new WeakMap()
 

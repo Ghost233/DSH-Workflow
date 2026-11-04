@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:dsh_workflow_launcher/launcher_controller.dart';
 import 'package:dsh_workflow_launcher/main.dart';
 import 'package:dsh_workflow_launcher/native_bridge.dart';
@@ -12,23 +10,9 @@ class UiNative extends NativeBridge {
   String? openedUrl;
   @override
   Future<void> openUrl(String url) async => openedUrl = url;
-  bool running = false, hidden = false, hideWindowOnStart = false;
+  bool hideWindowOnStart = false;
   @override
   Future<void> showWindow() async {}
-  @override
-  Future<bool> desktopRunning(String path) async => running;
-  @override
-  Future<void> hideDesktop(String path) async {
-    if (!running) throw StateError('Desktop 未运行，请先启动');
-    hidden = true;
-  }
-
-  @override
-  Future<void> showDesktop(String path) async {
-    if (!running) throw StateError('Desktop 未运行，请先启动');
-    hidden = false;
-  }
-
   @override
   Future<void> savePreferences(
     bool fullAccess,
@@ -57,123 +41,44 @@ class UiNative extends NativeBridge {
 }
 
 void main() {
-  testWidgets(
-    'Desktop window controls retain missing state, reuse and startup preference',
-    (tester) async {
-      tester.view.physicalSize = const Size(1000, 1400);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final native = UiNative();
-      final model = LauncherController(
-        native,
-        // This Widget fixture supplies only the existing-service precondition
-        // at the external process boundary; real Host acceptance is separate.
-        startProcess:
-            (executable, arguments, {workingDirectory, environment}) =>
-                Process.start('/usr/bin/python3', [
-                  '-c',
-                  r'''
-import json, sys
-request = json.load(sys.stdin)
-assert request['type'] == 'connect-web', request['type']
-json.dump({'ok': True, 'value': {'service': {'state': 'running', 'ready': True, 'instanceId': 'widget-existing-service'}, 'logs': []}}, sys.stdout)
-''',
-                ]),
-      );
-      Future<void> tapServiceAction(
-        String label,
-        bool Function() completed,
-      ) async {
-        await tester.runAsync(() async {
-          await tester.tap(find.text(label));
-          final elapsed = Stopwatch()..start();
-          while (!completed()) {
-            if (model.error.isNotEmpty ||
-                elapsed.elapsed >= const Duration(seconds: 5)) {
-              throw StateError(
-                'Widget service precondition did not complete: ${model.error}',
-              );
-            }
-            await Future<void>.delayed(const Duration(milliseconds: 10));
-          }
-        });
-        await tester.pumpAndSettle();
-      }
+  testWidgets('management exposes Web without Desktop controls', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final native = UiNative();
+    final model = LauncherController(native);
+    await model.initialize();
+    await tester.pumpWidget(LauncherApp(controller: model));
+    expect(find.text('启动 DSH 服务'), findsOneWidget);
+    expect(find.text('打开 Web'), findsOneWidget);
+    for (final label in [
+      '桌面版',
+      '打开桌面版',
+      '后台启动',
+      '启动后显示',
+      '隐藏窗口',
+      '仅显示已运行窗口',
+      '启动时隐藏窗口',
+    ]) {
+      expect(find.text(label), findsNothing);
+    }
+    final openWeb = find.widgetWithText(FilledButton, '打开 Web');
+    expect(tester.widget<FilledButton>(openWeb).onPressed, isNull);
+    model.webUrl = Uri.parse('http://127.0.0.1:33080/');
+    model.setSdkMessage('connected');
+    await tester.pumpAndSettle();
+    await tester.tap(openWeb);
+    await tester.pumpAndSettle();
+    expect(native.openedUrl, 'http://127.0.0.1:33080/');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await model.close();
+    model.dispose();
+  });
 
-      await model.initialize();
-      await tester.pumpWidget(LauncherApp(controller: model));
-      expect(find.text('启动 DSH 服务'), findsOneWidget);
-      expect(find.text('DSH 服务：已停止'), findsOneWidget);
-      for (final label in ['后台启动', '启动后显示', '隐藏窗口', '仅显示已运行窗口']) {
-        expect(find.text(label), findsOneWidget);
-      }
-      final desktopGroup = find.ancestor(
-        of: find.text('打开桌面版'),
-        matching: find.byType(Wrap),
-      );
-      final webGroup = find.ancestor(
-        of: find.text('打开 Web'),
-        matching: find.byType(Wrap),
-      );
-      for (final label in ['后台启动', '启动后显示', '隐藏窗口', '仅显示已运行窗口']) {
-        expect(
-          find.descendant(of: desktopGroup, matching: find.text(label)),
-          findsOneWidget,
-        );
-      }
-      for (final label in ['启动 Web', '停止 Web', '重连 Web']) {
-        expect(
-          find.descendant(of: webGroup, matching: find.text(label)),
-          findsOneWidget,
-        );
-      }
-      expect(
-        find.descendant(of: desktopGroup, matching: find.text('打开 Web')),
-        findsNothing,
-      );
-      final openWeb = find.widgetWithText(FilledButton, '打开 Web');
-      expect(tester.widget<FilledButton>(openWeb).onPressed, isNull);
-      model.webUrl = Uri.parse('http://127.0.0.1:33080/');
-      model.setSdkMessage('connected');
-      await tester.pumpAndSettle();
-      await tester.tap(openWeb);
-      await tester.pumpAndSettle();
-      expect(native.openedUrl, 'http://127.0.0.1:33080/');
-      expect(native.running, isFalse);
-      await tester.tap(find.text('仅显示已运行窗口'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Desktop 未运行'), findsOneWidget);
-      expect(native.running, isFalse);
-      native.running = true;
-      await tapServiceAction('后台启动', () => model.serviceSnapshot.ready == true);
-      expect(model.error, isEmpty);
-      expect(native.hidden, isFalse);
-      expect(find.textContaining('Desktop 未运行'), findsNothing);
-      await tester.tap(find.text('隐藏窗口'));
-      await tester.pumpAndSettle();
-      expect(native.hidden, isTrue);
-      await tapServiceAction('打开桌面版', () => !native.hidden);
-      expect(model.error, isEmpty);
-      expect(native.hidden, isFalse);
-      final preference = find.ancestor(
-        of: find.text('启动时隐藏窗口'),
-        matching: find.byType(SwitchListTile),
-      );
-      expect(tester.widget<SwitchListTile>(preference).value, isFalse);
-      await tester.ensureVisible(preference);
-      await tester.tap(preference);
-      await tester.pumpAndSettle();
-      expect(native.hideWindowOnStart, isTrue);
-      await model.initialize();
-      await tester.pumpAndSettle();
-      expect(tester.widget<SwitchListTile>(preference).value, isTrue);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-      await model.close();
-      model.dispose();
-    },
-  );
   testWidgets('pending system approval is shown and can be cancelled', (
     tester,
   ) async {

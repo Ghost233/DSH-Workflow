@@ -1,6 +1,7 @@
 """Guard and push a Ghost DSH Station release tag; adapted from GhostModelDeck."""
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -76,17 +77,33 @@ class Release:
             raise ReleaseError("Flutter pubspec.yaml 的应用版本与启动器不一致")
         runtime = json.loads((ROOT / "dsh-runtime.json").read_text())
         pinned = runtime.get("version")
-        if runtime.get("package") != "@deepseek-ai/dsh" or not re.fullmatch(r"[0-9a-f]{40}", runtime.get("commit", "")):
+        if runtime.get("package") != "@deepseek-ai/dsh":
             raise ReleaseError("DSH 固定来源无效")
         if (app.get("dependencies", {}).get("@deepseek-ai/dsh") != pinned
                 or locked_app.get("dependencies", {}).get("@deepseek-ai/dsh") != pinned
                 or lock.get("packages", {}).get("node_modules/@deepseek-ai/dsh", {}).get("version") != pinned):
             raise ReleaseError("启动器声明和锁定的 DSH 版本必须等于 dsh-runtime.json")
-        if self.git("-C", "deepseek-harness", "rev-parse", "HEAD") != runtime["commit"]:
-            raise ReleaseError("DSH 子模块提交与 dsh-runtime.json 不一致")
-        cli = json.loads((ROOT / "deepseek-harness/apps/cli/package.json").read_text())
-        if cli.get("name") != runtime["package"] or cli.get("version") != pinned:
-            raise ReleaseError("DSH 子模块包版本与固定信息不一致")
+        if runtime.get("source") == "npm":
+            integrity = runtime.get("integrity", "")
+            if not isinstance(integrity, str) or not isinstance(pinned, str) or not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", pinned):
+                raise ReleaseError("DSH npm 来源、完整性或锁文件不一致")
+            try:
+                digest = base64.b64decode(integrity.removeprefix("sha512-"), validate=True)
+            except (ValueError, TypeError):
+                digest = b""
+            entry = lock.get("packages", {}).get("node_modules/@deepseek-ai/dsh", {})
+            archive = f"https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-{pinned}.tgz"
+            if (runtime.get("registry") != "https://registry.npmjs.org/" or not integrity.startswith("sha512-")
+                    or len(digest) != 64 or entry.get("integrity") != integrity or entry.get("resolved") != archive):
+                raise ReleaseError("DSH npm 来源、完整性或锁文件不一致")
+        else:
+            if not re.fullmatch(r"[0-9a-f]{40}", runtime.get("commit", "")):
+                raise ReleaseError("DSH 固定来源无效")
+            if self.git("-C", "deepseek-harness", "rev-parse", "HEAD") != runtime["commit"]:
+                raise ReleaseError("DSH 子模块提交与 dsh-runtime.json 不一致")
+            cli = json.loads((ROOT / "deepseek-harness/apps/cli/package.json").read_text())
+            if cli.get("name") != runtime["package"] or cli.get("version") != pinned:
+                raise ReleaseError("DSH 子模块包版本与固定信息不一致")
         plugin_bytes = (ROOT / "project-plugins.json").read_bytes()
         plugins = json.loads(plugin_bytes)
         plugin_lock = json.loads((ROOT / "project-plugins.lock.json").read_text())
@@ -142,7 +159,7 @@ class Release:
             raise ReleaseError("--retry-tag 仅用于重试已存在的本地 tag")
         print(f"release: 仓库：{REPOSITORY}\nrelease: 版本：{version}\nrelease: 发布 tag：{tag}")
         print(f"release: 提交：{head}")
-        print(f"release: DSH：{pinned} {runtime['commit']}")
+        print(f"release: DSH：{pinned} {runtime.get('commit') or runtime.get('integrity')}")
         return tag, head, bool(local_tags)
 
     def publish(self, tag, head, local_tag):

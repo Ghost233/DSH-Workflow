@@ -6,10 +6,10 @@ import { readFile } from 'node:fs/promises'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire } from 'node:module'
 import vm from 'node:vm'
+import { browserRequire, clientAsset } from '../../scripts/test-runtime.mjs'
 
-const req = createRequire(new URL('../../deepseek-harness/packages/test-support/client-runtime/package.json', import.meta.url))
+const req = browserRequire
 const { Context } = req('@deepseek-ai/cordis')
 const { JSDOM } = req('jsdom')
 const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', { url: 'file:///DSH/index.html' })
@@ -24,7 +24,7 @@ const { render, fireEvent, waitFor, cleanup } = req('@testing-library/react')
 async function browserPlugin(path, window, document) {
   const modules = []
   window.__ModuleLoader__ = { load: item => modules.push(item) }
-  vm.runInNewContext(await readFile(new URL(path, import.meta.url), 'utf8'), {
+  vm.runInNewContext(await readFile(path.startsWith('.') ? new URL(path, import.meta.url) : path, 'utf8'), {
     window, document, console, setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask, structuredClone,
     crypto: globalThis.crypto, AbortController, AbortSignal, TextEncoder, TextDecoder,
   })
@@ -37,9 +37,9 @@ async function fixture(t, hostCtx) {
   const document = { querySelector: () => null, createElement: () => ({ dataset: {} }), head: { appendChild() {} } }
   const ctx = new Context()
   t.after(async () => { cleanup(); await ctx.fiber.dispose() })
-  const renderer = await browserPlugin('../../deepseek-harness/packages/client/ui-renderer/lib/client.js', window, document)
-  const settings = await browserPlugin('../../deepseek-harness/packages/client/ui-settings/lib/client.js', window, document)
-  const gateway = await browserPlugin('../../deepseek-harness/packages/api/gateway/lib/client.browser.js', window, document)
+  const renderer = await browserPlugin(clientAsset('@deepseek-ai/dsh-client-ui-renderer', 'lib/client.js', 'packages/client/ui-renderer/lib/client.js'), window, document)
+  const settings = await browserPlugin(clientAsset('@deepseek-ai/dsh-client-ui-settings', 'lib/client.js', 'packages/client/ui-settings/lib/client.js'), window, document)
+  const gateway = await browserPlugin(clientAsset('@deepseek-ai/dsh-api-gateway', 'lib/client.browser.js', 'packages/api/gateway/lib/client.browser.js'), window, document)
   const own = await browserPlugin('../client.js', window, document)
   await ctx.plugin(renderer)
   ctx.slots.register({ name: 'root', children: {

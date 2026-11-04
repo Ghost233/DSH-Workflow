@@ -1,10 +1,12 @@
 // Test-only resolver: exercise the sibling Harness's built package exports without installing peers.
-import { registerHooks } from 'node:module'
+import { createRequire, registerHooks } from 'node:module'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const root = fileURLToPath(new URL('../deepseek-harness/', import.meta.url))
+const runtimeRoot = process.env.DSH_TEST_RUNTIME_ROOT
+const runtimeRequire = runtimeRoot ? createRequire(join(runtimeRoot, 'package.json')) : undefined
 const packages = new Map()
 function scan(directory, depth) {
   const manifest = join(directory, 'package.json')
@@ -31,12 +33,16 @@ registerHooks({
     const parts = specifier.split('/')
     const name = parts[0].startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]
     const pkg = packages.get(name)
-    if (!pkg) return nextResolve(specifier, context)
     // Temporary host fixtures own their explicitly installed mock packages.
     if (context.parentURL?.startsWith('file:') && !context.parentURL.startsWith(pathToFileURL(root).href)
       && existsSync(join(dirname(fileURLToPath(context.parentURL)), 'node_modules', name, 'package.json'))) {
       return nextResolve(specifier, context)
     }
+    if (runtimeRequire && name.startsWith('@deepseek-ai/')) {
+      try { return { url: pathToFileURL(realpathSync(runtimeRequire.resolve(specifier))).href, shortCircuit: true } }
+      catch (error) { if (error.code !== 'MODULE_NOT_FOUND' && error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error }
+    }
+    if (!pkg) return nextResolve(specifier, context)
     const subpath = specifier.slice(name.length)
     const key = subpath ? `.${subpath}` : '.'
     const target = exportedTarget(pkg.json.exports?.[key]) ?? (!subpath ? pkg.json.module ?? pkg.json.main : undefined)

@@ -140,7 +140,7 @@ Future<void> _sameHost(Directory root, Map original) async {
     identity.stdout.toString(),
     contains('${root.path}/home/profiles/desktop'),
   );
-  expect(identity.stdout.toString(), contains('dsh-desktop-host'));
+  expect(identity.stdout.toString(), contains('web-host.mjs'));
 }
 
 Future<void> _cleanupDaemon(

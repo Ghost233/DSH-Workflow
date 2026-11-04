@@ -31,7 +31,7 @@ test('readonly version inspection uses packaged pins and actual installation wit
     fetchLatest: async value => { requests.push(value); return '9.9.9' },
   })
   assert.deepEqual(requests, [], 'local inventory must not request npm latest')
-  const installed = report.rows.find(row => row.source === 'DSH Desktop profile' && row.name === name)
+  const installed = report.rows.find(row => row.source === 'DSH 当前配置' && row.name === name)
   assert.equal(installed.current, '1.0.0')
   assert.equal(installed.expected, '1.1.0')
   assert.equal(installed.status, 'drift')
@@ -42,7 +42,7 @@ test('readonly version inspection uses packaged pins and actual installation wit
   assert.equal(expected.expected, '1.1.0')
   assert.deepEqual(await readFile(historical), before)
   await rm(join(profile, 'node_modules', name, 'package.json'))
-  const missing = (await checkPluginVersions({ resourcesRoot: resources, home, profileName: 'desktop' })).rows.find(row => row.source === 'DSH Desktop profile' && row.name === name)
+  const missing = (await checkPluginVersions({ resourcesRoot: resources, home, profileName: 'desktop' })).rows.find(row => row.source === 'DSH 当前配置' && row.name === name)
   assert.equal(missing.current, null, 'an absent installation must not inherit the dependency or lock version')
   assert.equal(missing.expected, '1.1.0')
   assert.equal(missing.status, 'unknown')

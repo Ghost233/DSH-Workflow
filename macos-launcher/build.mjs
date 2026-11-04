@@ -5,10 +5,9 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { copyProjectIntegration } from './project-resources.mjs'
-import { bundleServiceEnvironment } from './service-environment.mjs'
 import { bundleServiceNotifications } from './service-notifications.mjs'
-import { assembleDesktopClient } from './desktop-adaptation.mjs'
 import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
+import { verifyNpmRuntimePin } from './runtime/npm-runtime-pin.mjs'
 import { bundleProjectPlugins } from './bundle-plugins.mjs'
 import { bundleSuperagent } from './bundle-superagent.mjs'
 import { bundleLarkCli } from './bundle-lark-cli.mjs'
@@ -21,14 +20,13 @@ if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('
 
 const exec = promisify(execFile)
 const root = fileURLToPath(new URL('../', import.meta.url))
-const harness = join(root, 'deepseek-harness')
 const buildRoot = join(root, '.build')
-const version = JSON.parse(await readFile(join(harness, 'apps/cli/package.json'), 'utf8')).version
 const target = JSON.parse(await readFile(join(root, 'dsh-runtime.json'), 'utf8'))
 const appPackage = JSON.parse(await readFile(join(root, 'macos-launcher/package.json'), 'utf8'))
+const runtimeLock = JSON.parse(await readFile(join(root, 'macos-launcher/package-lock.json'), 'utf8'))
+const version = target.version
 const appVersion = appPackage.version
 const arch = process.arch
-const desktopApp = process.env.DSH_MACOS_DESKTOP_APP
 const flutterRoot = join(root, 'macos-launcher/flutter')
 
 async function run(command, args, cwd = root) {
@@ -40,15 +38,10 @@ async function run(command, args, cwd = root) {
 }
 
 async function verifyInputs() {
-  const { stdout: commit } = await exec('git', ['-C', harness, 'rev-parse', 'HEAD'])
-  const { stdout: changes } = await exec('git', ['-C', harness, 'status', '--porcelain', '--untracked-files=no'])
-  if (changes.trim() || commit.trim() !== target.commit || version !== target.version) throw new Error('DSH source does not match dsh-runtime.json')
+  verifyNpmRuntimePin({ target, app: appPackage, lock: runtimeLock })
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(appVersion)) throw new Error('Invalid macOS app release version')
   if (appPackage.dependencies?.['@deepseek-ai/dsh'] !== version) throw new Error('macOS runtime package does not match pinned DSH')
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Node 22+ is required')
-  if (!desktopApp || !existsSync(join(desktopApp, 'Contents/Info.plist'))) {
-    throw new Error('Set DSH_MACOS_DESKTOP_APP to the prepared official Desktop application')
-  }
   const deck = join(root, 'matt-skills-panel-plugin/package')
   if (!existsSync(join(deck, 'lib/index.js')) || !existsSync(join(deck, 'lib/client.js'))
     || !existsSync(join(deck, 'lib/bootstrap.js'))
@@ -81,18 +74,9 @@ try {
   await chmod(join(resources, 'node'), 0o755)
   await copyProjectIntegration(root, join(resources, 'workflow'))
   await bundleProjectPlugins({ resourcesRoot: resources, npmCache: join(buildRoot, 'npm-cache') })
-  await bundleServiceEnvironment(root, resources)
   await bundleServiceNotifications(root, resources)
-  await mkdir(join(resources, 'desktop'), { recursive: true })
-  await run('/usr/bin/ditto', [desktopApp, join(resources, 'desktop/DeepSeek Harness.app')])
-  const adaptation = await assembleDesktopClient(join(resources, 'desktop/DeepSeek Harness.app'))
   const { stdout: outerVersion } = await exec('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(contents, 'Info.plist')])
-  if (outerVersion.trim() !== appVersion || adaptation.workflowVersion !== outerVersion.trim()) {
-    throw new Error('Workflow app, Desktop adaptation and release metadata versions differ')
-  }
-  // Resources/desktop is not a standard nested-code location; seal the adapted child explicitly.
-  await run('codesign', ['--force', '--sign', '-', '--preserve-metadata=identifier,entitlements,flags,runtime', join(resources, 'desktop/DeepSeek Harness.app')])
-  await run('codesign', ['--verify', '--deep', '--strict', join(resources, 'desktop/DeepSeek Harness.app')])
+  if (outerVersion.trim() !== appVersion) throw new Error('Station app and release metadata versions differ')
   const association = JSON.parse(await readFile(join(root, 'maclauncher.json'), 'utf8'))
   association.entry.path = '../..'
   await writeFile(join(resources, 'maclauncher.json'), JSON.stringify(association, null, 2) + '\n')
@@ -107,7 +91,8 @@ try {
   }
   await bundleSuperagent({ resourcesRoot: resources, npmCache: join(buildRoot, 'npm-cache') })
   const settingsClient = join(resources, 'node_modules/@deepseek-ai/dsh-client-ui-settings/lib/client.js')
-  await writeFile(settingsClient, allowAuthenticatedLanSettings(await readFile(settingsClient, 'utf8')))
+  const settingsSource = await readFile(settingsClient, 'utf8')
+  if (allowAuthenticatedLanSettings(settingsSource) !== settingsSource) throw new Error('DSH settings requires an unsupported upstream change')
   await mkdir(join(resources, 'bin'), { recursive: true })
   await bundleLarkCli({ resourcesRoot: resources })
   const pnpmShim = join(resources, 'bin', 'pnpm')

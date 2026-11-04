@@ -58,7 +58,7 @@ Future<void> runPluginApplicationScenario(WebObservation app) async {
           desktop['instanceId'] == lease &&
           health['instanceId'] == lease &&
           health['ready'] == true,
-      'plugin checking preserves the same live and ready official Desktop Host',
+      'plugin checking preserves the same live and ready official Web Host',
     );
   }
 
@@ -119,7 +119,7 @@ Future<void> runPluginApplicationScenario(WebObservation app) async {
       'plugin page is exercised at the supported 780 × 560 native minimum',
     );
     require(
-      text(snapshot, 'DSH Desktop profile') &&
+      text(snapshot, 'DSH 当前配置') &&
           text(snapshot, 'dsh-t08-ui-local') &&
           text(snapshot, '0.4.2 / 未固定') &&
           text(snapshot, 'dsh-t08-ui-damaged'),

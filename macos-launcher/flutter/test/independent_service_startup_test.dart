@@ -20,7 +20,7 @@ Future<List<dynamic>> readProfilePatches(
     r'''
 import { createRequire } from 'node:module'
 const [resources, path] = process.argv.slice(1)
-const boot = createRequire(resources + '/desktop/DeepSeek Harness.app/Contents/Resources/app/dsh/package.json')('@deepseek-ai/dsh-app-boot')
+const boot = createRequire(resources + '/node_modules/@deepseek-ai/dsh/package.json')('@deepseek-ai/dsh-app-boot')
 process.stdout.write(JSON.stringify(boot.loadOverlayPatches('dsh', path)))
 ''',
     resources,

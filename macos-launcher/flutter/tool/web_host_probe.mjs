@@ -1,26 +1,19 @@
-// Headless supplemental evidence uses the unchanged packaged Desktop Host.
-// It does not cover NSWorkspace, Electron windows, or native Desktop startup.
+// Headless supplemental evidence uses Station's packaged Web Host.
 import { fork } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
 
 const [resources, dataRoot, home, permissionMode = 'danger-full-access'] = process.argv.slice(2)
 if (!resources || !dataRoot || !home) throw new Error('Pass private resources, data root and home')
-const desktop = join(resources, 'desktop/DeepSeek Harness.app/Contents')
-const runtime = join(desktop, 'Resources/app/dsh')
-const { resolvePrimaryRuntime } = createRequire(join(runtime, 'package.json'))('@deepseek-ai/dsh-tool-workspace-dependencies')
-const { pnpm } = await resolvePrimaryRuntime(join(desktop, 'Resources/runtime/primary-runtime'))
-if (!pnpm) throw new Error('Packaged Desktop primary runtime has no pnpm entry')
 const { prepareDesktopProfile } = await import(pathToFileURL(join(resources, 'workflow/macos-launcher/runtime/desktop-profile.mjs')))
 const prepared = await prepareDesktopProfile({ resourcesRoot: resources, globalRoot: join(dataRoot, 'global'),
-  desktopRuntimeRoot: runtime, home, permissionMode })
-const child = fork(join(runtime, 'node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js'), [
-  runtime, prepared.profile, join(desktop, 'Resources/runtime/primary-runtime'),
-  pnpm, join(desktop, 'MacOS'),
-], { execPath: join(desktop, 'MacOS/DeepSeek Harness'), execArgv: ['--expose-internals'],
-  cwd: prepared.profile, env: { ...process.env, DSH_HOME: home, ELECTRON_RUN_AS_NODE: '1' },
+  desktopRuntimeRoot: resources, home, permissionMode })
+const child = fork(join(resources, 'workflow/macos-launcher/runtime/web-host.mjs'), [
+  resources, prepared.profile, join(dataRoot, 'global/.dsh-workflow/desktop'),
+], { execPath: join(resources, 'node'), execArgv: ['--expose-internals'],
+  cwd: prepared.profile, env: { ...process.env, DSH_HOME: home,
+    DSH_AGENTS_HOME: join(home, 'agents'), PATH: [join(resources, 'bin'), resources, process.env.PATH].filter(Boolean).join(delimiter) },
   stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
 console.log(`HOST_PID=${child.pid}`)
 const redact = chunk => chunk.toString().replace(/token=[^&\s]+/g, 'token=<REDACTED>')
@@ -38,8 +31,7 @@ function stop() {
   if (stopping) return
   stopping = true
   if (child.connected) child.send({ type: 'shutdown' })
-  // Mirror the official Desktop owner stop(false) contract: disposal ACK is
-  // distinct from natural exit; the owner reaps only this forked Host PID.
+  // Disposal ACK is distinct from natural exit; reap only this forked Host PID.
   terminateHost = setTimeout(() => {
     forced = true
     console.log('HOST_OWNER_SIGNAL=SIGTERM')

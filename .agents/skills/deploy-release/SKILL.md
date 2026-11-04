@@ -17,7 +17,7 @@ disable-model-invocation: true
 5. Actions 调用 `scripts/build-local-release.sh` 生成 DMG、manifest.json 和 SHA256SUMS，再调用 `scripts/publish-release.sh` 创建 Release 草稿。本地失败且该次 run 仍在运行时，执行 `gh run cancel <run-id> -R Ghost233/DSH-Workflow`，并等待远端结束；Actions 失败时停止本次本地验收进程并等待退出。先确认远端实际状态，保留失败证据和已有草稿，修复后按失败恢复规则重新发布。取消不能撤回已经完成的发布，失败时不得公开草稿。
 6. 两侧均通过后，按“完成验证”核对草稿资产和来源，确认 tag、提交及本地分支同步，再以 Ghost233 执行 `gh release edit <tag> -R Ghost233/DSH-Workflow --draft=false` 公开草稿。重新核对非草稿 Release 和资产；通过后报告版本、发布提交、Release 与 Actions 链接。
 
-Actions 不运行 CI、单元、集成、smoke、运行时验收或独立类型检查任务，也不启动 Host。构建脚本用 `build:official --scope artifacts` 编译生产产物，准备运行时时传入 `--defer-primary-runtime-smoke`，不调用 `verify-desktop-release.mjs`。仓库保留发布工作流，普通 push 和 PR 不触发测试。
+Actions 不运行 CI、单元、集成、smoke、运行时验收或独立类型检查任务，也不启动 Host。构建脚本按锁文件装配官方 npm Web 运行时，不构建或打包 Desktop。仓库保留发布工作流，普通 push 和 PR 不触发测试。
 
 ## 身份与执行边界
 
@@ -66,10 +66,12 @@ git ls-remote origin 'refs/tags/macos-vX.Y.Z^{}' refs/heads/main
 
 标准 App 构建调用 `macos-launcher/bundle-plugins.mjs`。`scripts/build-release.sh` 在创建 DMG 前重新验证全部文件、插件入口和来源，`scripts/publish-release.sh` 再核对发布 manifest 的完整插件记录。已有 App 只有清单、缺少本体或摘要时，同样不能通过打包门禁。
 
-与远端构建并行完成本地交付回归，公开 Release 前必须通过：
+先在独立目录复制 `macos-launcher/package.json` 与 `package-lock.json`，执行 `npm ci --include=dev --ignore-scripts` 准备与候选版本一致的测试工具。使用候选资源和该目录运行交付回归，公开 Release 前必须通过：
 
 ```sh
-node scripts/run-project-tests.mjs macos-launcher/runtime/plugin-build.test.mjs macos-launcher/runtime/plugin-payload.test.mjs macos-launcher/runtime/desktop-profile.test.mjs macos-launcher/runtime/startup-plugins.test.mjs macos-launcher/runtime/desktop-packaged-host.test.mjs
+DSH_TEST_RUNTIME_ROOT="/绝对路径/隔离测试依赖目录" \
+DSH_SERVICE_TEST_RESOURCES="/绝对路径/候选.app/Contents/Resources" \
+node scripts/run-project-tests.mjs macos-launcher/runtime/plugin-build.test.mjs macos-launcher/runtime/plugin-payload.test.mjs macos-launcher/runtime/desktop-profile.test.mjs macos-launcher/runtime/startup-plugins.test.mjs macos-launcher/runtime/web-host.test.mjs macos-launcher/runtime/web-service-integration.test.mjs macos-launcher/runtime/web-packaged-host.test.mjs
 python3 -B scripts/test_release.py
 ```
 

@@ -14,6 +14,7 @@ const missing = error => { if (error.code !== 'ENOENT') throw error }
 const platform = () => ({ node: process.versions.node, platform: process.platform, arch: process.arch })
 
 export async function sourceIdentity(root, expected = target) {
+  if (expected.source === 'npm') throw new Error('The DSH runtime is pinned to npm; a source checkout is not a release input')
   const [head, status, cli, lock] = await Promise.all([
     exec('git', ['-C', root, 'rev-parse', 'HEAD']),
     exec('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no']),

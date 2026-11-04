@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
+import { runtimeAnchor, runtimeRequire } from './test-runtime.mjs'
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { ensureObservationProfile } from './observation-profile.mjs'
 
-const anchor = resolve('deepseek-harness/apps/cli/package.json')
-const req = createRequire(anchor)
+const anchor = runtimeAnchor
+const req = runtimeRequire
 const boot = req('@deepseek-ai/dsh-app-boot')
 const { provideCmdline } = req('@deepseek-ai/dsh-cmdline')
 

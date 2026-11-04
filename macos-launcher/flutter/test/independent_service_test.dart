@@ -11,7 +11,6 @@ class ServiceNative extends NativeBridge {
   ServiceNative(this.root, this.resources, {this.loginStatus = 'disabled'});
   final String root, resources;
   String loginStatus;
-  int desktopOpens = 0;
   bool fullAccess = false;
   @override
   Future<LauncherEnvironment> load() async => LauncherEnvironment({
@@ -37,15 +36,6 @@ class ServiceNative extends NativeBridge {
 
   @override
   Future<bool> setEntryManaged(bool value) async => true;
-  @override
-  Future<void> openDesktop(
-    String path, {
-    required Map<String, String> environment,
-    bool hidden = false,
-  }) async {
-    desktopOpens++;
-    throw StateError('This scenario must never open Electron');
-  }
 }
 
 void main() {
@@ -119,7 +109,7 @@ void main() {
               serviceId: 'desktop',
               timeout: const Duration(seconds: 15),
             );
-        expect((started['error'] as Map)['message'], contains('检测到已有 DSH 实例'));
+        expect((started['error'] as Map)['message'], contains('检测到已有 DSH 服务'));
         final receipt = jsonDecode(
           await File(
             '${root.path}/global/.dsh-workflow/desktop/desktop-host.json',
@@ -134,7 +124,7 @@ void main() {
           ])).exitCode,
           0,
         );
-        expect(native.desktopOpens, 0);
+        expect(await Directory('$resources/desktop').exists(), false);
       } finally {
         await integration?.close();
         await model.close();
@@ -293,7 +283,7 @@ globalThis.fetch = (input, ...args) => {
             greaterThan(10),
           ),
         );
-        expect(native.desktopOpens, 0);
+        expect(await Directory('$resources/desktop').exists(), false);
         expect(
           await File('${root.path}/existing-toolchain-observed').exists(),
           true,
@@ -340,8 +330,8 @@ globalThis.fetch = (input, ...args) => {
             .split('\n')
             .where(
               (line) =>
-                  line.contains('${root.path}/resources/desktop/') &&
-                  line.contains('dsh-desktop-host/lib/index.js'),
+                  line.contains('${root.path}/resources/') &&
+                  line.contains('macos-launcher/runtime/web-host.mjs'),
             )
             .toList();
         expect(
@@ -492,7 +482,7 @@ globalThis.fetch = (input, ...args) => {
           running['instanceId'],
         );
         expect((rediscovered['result'] as Map)['ready'], true);
-        expect(native.desktopOpens, 0);
+        expect(await Directory('$resources/desktop').exists(), false);
         final managerFile = File(
           '${root.path}/global/.dsh-workflow/service/manager.json',
         );

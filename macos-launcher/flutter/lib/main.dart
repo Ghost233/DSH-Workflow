@@ -217,7 +217,7 @@ class _LauncherPageState extends State<LauncherPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    '以下工作尚未完成或状态未知。确认后将关闭桌面客户端，停止日常 DSH、所有 Superagent 和 Web，并回收相关进程。',
+                    '以下工作尚未完成或状态未知。确认后将停止日常 DSH、所有 Superagent 和 Web，并回收相关进程。',
                   ),
                   if (inspection['message'] is String)
                     Text(inspection['message'] as String),
@@ -332,7 +332,7 @@ class _LauncherPageState extends State<LauncherPage> {
               },
               destinations: const [
                 NavigationRailDestination(
-                  icon: Icon(Icons.desktop_mac),
+                  icon: Icon(Icons.dashboard_outlined),
                   label: Text('管理'),
                 ),
                 NavigationRailDestination(
@@ -427,22 +427,6 @@ class _LauncherPageState extends State<LauncherPage> {
         Text('应用版本 ${model.environment.appVersion}'),
         Text('Web 访问：${_stateName(model.snapshot.state)}'),
         const Text('项目目录在 DSH 内选择。'),
-        Text('桌面版', style: Theme.of(context).textTheme.titleMedium),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            FilledButton(
-              onPressed: () => unawaited(_act(model.openDsh)),
-              child: const Text('打开桌面版'),
-            ),
-            _button('后台启动', model.startDesktopInBackground),
-            _button('启动后显示', model.openDsh),
-            _button('隐藏窗口', model.hideDesktop),
-            _button('仅显示已运行窗口', model.showExistingDesktop),
-          ],
-        ),
-        const Divider(),
         Text('Web', style: Theme.of(context).textTheme.titleMedium),
         Wrap(
           spacing: 8,
@@ -463,21 +447,6 @@ class _LauncherPageState extends State<LauncherPage> {
         ),
       ]),
       _section('访问与权限', [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('启动时隐藏窗口'),
-          subtitle: const Text('常规与登录启动时隐藏新启动的 Desktop；已有窗口保持当前状态。'),
-          value: model.hideWindowOnStart,
-          onChanged: (value) => unawaited(
-            _act(
-              () => model.savePreferences(
-                model.fullAccess,
-                model.allowLanSettings,
-                hideWindowOnStart: value,
-              ),
-            ),
-          ),
-        ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('DSH 工具使用完整访问权限'),

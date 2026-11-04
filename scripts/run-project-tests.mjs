@@ -7,10 +7,12 @@ import { spawn } from 'node:child_process'
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Project tests require macOS ARM64')
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const requireHarness = createRequire(new URL('../deepseek-harness/package.json', import.meta.url))
+const requireHarness = process.env.DSH_TEST_RUNTIME_ROOT
+  ? createRequire(join(process.env.DSH_TEST_RUNTIME_ROOT, 'package.json'))
+  : createRequire(new URL('../deepseek-harness/package.json', import.meta.url))
 let loader
 try { loader = requireHarness.resolve('tsx') } catch {
-  throw new Error('The fixed DSH development dependency graph must provide tsx for native integration tests; no test ran.')
+  throw new Error('The fixed DSH test dependencies must provide tsx; no test ran.')
 }
 const specified = process.argv.slice(2)
 const files = specified.length ? specified.map(file => resolve(root, file))
@@ -23,10 +25,10 @@ if (new Set(files).size !== files.length) throw new Error('Duplicate test files 
 for (const file of files) {
   if (!(await lstat(file)).isFile()) throw new Error(`Selected test is not a regular file: ${file}`)
 }
-// Keep the complete profile/relocation fixture outside the native worker pool.
-// Its own 30-second deadline still covers both real Host lifetimes.
-const packagedHost = join(root, 'macos-launcher/runtime/desktop-packaged-host.test.mjs')
-const groups = [files.filter(file => file !== packagedHost), files.filter(file => file === packagedHost)]
+// Real Host fixtures hash large payloads and use independent processes; run them outside the shared worker pool.
+const isolated = ['web-packaged-host.test.mjs', 'web-service-integration.test.mjs', 'service-node-runtime.test.mjs', 'web-host.test.mjs']
+  .map(name => join(root, 'macos-launcher/runtime', name))
+const groups = [files.filter(file => !isolated.includes(file)), ...isolated.filter(file => files.includes(file)).map(file => [file])]
 let child, interrupted = false, exitCode = 0
 const stop = () => { interrupted = true; child?.kill('SIGTERM') }
 process.once('SIGINT', stop); process.once('SIGTERM', stop)

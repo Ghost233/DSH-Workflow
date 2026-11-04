@@ -45,7 +45,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       allowLanSettings = false,
       hideWindowOnStart = false;
   String? _password;
-  bool _coldDesktopBackground = false;
   String loginStatus = 'unknown', error = '', updateMessage = '尚未检查更新';
   String pluginMessage = '尚未检查插件版本';
   String sdkMessage = '等待 MacLauncher';
@@ -94,7 +93,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   bool _logsDropped = false;
   bool _closed = false;
   Future<void>? _mutation, _closeFuture;
-  Future<void>? _desktopOpen;
   ServiceStatus get snapshot => _web;
   ServiceStatus get serviceSnapshot => _service;
   ServiceStatus get superagentSnapshot =>
@@ -144,7 +142,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   String get node => '${environment.resources}/node';
   String script(String name) =>
       '${environment.resources}/workflow/macos-launcher/runtime/$name';
-  String get desktop => '${environment.resources}/desktop/DeepSeek Harness.app';
 
   Future<void> initialize() async {
     environment = await native.load();
@@ -940,57 +937,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     await _startWeb();
   });
 
-  Future<void> hideDesktop() async {
-    await native.showWindow();
-    await native.hideDesktop(desktop);
-  }
-
-  Future<void> showExistingDesktop() => native.showDesktop(desktop);
-  Future<void> startDesktop() async {
-    if (_coldDesktopBackground) {
-      if (_desktopOpen != null) {
-        await _desktopOpen;
-        return;
-      }
-      if (await native.desktopRunning(desktop)) return;
-      _coldDesktopBackground = false;
-    }
-    await _startDesktop(hidden: hideWindowOnStart);
-  }
-
-  Future<void> startDesktopInBackground() => _startDesktop(hidden: true);
-  Future<void> openDsh() async {
-    await _startDesktop(hidden: false);
-    await native.showDesktop(desktop);
-  }
-
-  Future<void> _startDesktop({required bool hidden}) =>
-      _desktopOpen ??= _openDesktop(hidden: hidden)
-          .whenComplete(() => _desktopOpen = null);
-
-  Future<void> _openDesktop({required bool hidden}) async {
-    if (exiting) throw StateError('启动器正在退出');
-    await _serviceCommand('connect-web');
-    if (_service.ready != true) {
-      throw StateError('DSH 服务未启动或暂不可用，请先启动 DSH 服务。');
-    }
-    if (await native.desktopRunning(desktop)) return;
-    _coldDesktopBackground = hidden;
-    try {
-      await native.openDesktop(
-        desktop,
-        hidden: hidden,
-        environment: {
-          'DSH_HOME': environment.home,
-          'DSH_WORKFLOW_DATA_ROOT': environment.dataRoot,
-        },
-      );
-    } catch (_) {
-      _coldDesktopBackground = false;
-      rethrow;
-    }
-  }
-
   @override
   Future<ServiceStatus> webStatus() async {
     await _webCommand('status');
@@ -1152,7 +1098,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         return true;
       }
       await _mutation;
-      await _desktopOpen?.timeout(const Duration(seconds: 20));
       for (var attempt = 0; _busySuperagents.isNotEmpty; attempt++) {
         if (attempt >= 620) {
           throw StateError('Superagent 操作尚未完成，请稍后重试退出。');
@@ -1180,10 +1125,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
             final accepted =
                 inspection['needsConfirmation'] != true ||
                 (await confirmStationQuit?.call(inspection) ?? false);
-            if (accepted &&
-                await File('$desktop/Contents/Info.plist').exists()) {
-              await native.quitDesktop(desktop);
-            }
             child.stdin.writeln(jsonEncode({'confirmed': accepted}));
             await child.stdin.flush();
           case 'result':

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { access, readFile, readdir, realpath } from 'node:fs/promises'
+import { access, readFile, realpath } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
@@ -40,38 +40,8 @@ test('packaged DSH packages resolve and execute the shared zod dependency', { sk
   }
 })
 
-test('desktop runtime resolves compatible zod dependencies from a single package', { skip: resources ? false : 'Requires the packaged Station resources' }, async () => {
-  const modules = join(resources, 'desktop/DeepSeek Harness.app/Contents/Resources/app/dsh/node_modules')
-  const expected = await realpath(join(modules, 'zod/package.json'))
-  const version = JSON.parse(await readFile(expected, 'utf8')).version
-  const semver = createRequire(join(resources, 'node_modules/@deepseek-ai/dsh/package.json'))('semver')
-  let checked = 0
-  async function visit(directory) {
-    const entries = await readdir(directory, { withFileTypes: true }).catch(error => {
-      if (error.code === 'ENOENT') return []
-      throw error
-    })
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
-      const path = join(directory, entry.name)
-      if (entry.name.startsWith('@')) { await visit(path); continue }
-      const manifest = await readFile(join(path, 'package.json'), 'utf8').then(JSON.parse).catch(error => {
-        if (error.code === 'ENOENT') return undefined
-        throw error
-      })
-      if (!manifest) continue
-      const ranges = ['dependencies', 'peerDependencies', 'optionalDependencies'].map(key => manifest[key]?.zod).filter(value => typeof value === 'string')
-      if (ranges.length) {
-        for (const range of ranges) assert.ok(semver.satisfies(version, range, { includePrerelease: true }), `${manifest.name} requires zod ${range}`)
-        const require = createRequire(join(path, 'package.json'))
-        assert.equal(await realpath(require.resolve('zod/package.json')), expected, `${manifest.name} must resolve the shared Desktop zod`)
-        checked++
-      }
-      await visit(join(path, 'node_modules'))
-    }
-  }
-  await visit(modules)
-  assert.ok(checked > 1, 'the Desktop runtime must contain zod consumers')
+test('packaged Web Station does not contain a Desktop application', { skip: resources ? false : 'Requires the packaged Station resources' }, async () => {
+  await assert.rejects(access(join(resources, 'desktop')), { code: 'ENOENT' })
 })
 
 test('packaged macOS terminal runs without Windows prebuilt binaries', { skip: resources ? false : 'Requires the packaged Station resources', timeout: 10000 }, async () => {
@@ -97,8 +67,6 @@ test('audited test files are absent while packaged zod and HTML parsing remain u
     join(resources, 'plugins/node_modules/zod'),
     join(resources, 'plugins/node_modules/dsh-cost-meter/node_modules/zod'),
     join(resources, 'superagent/node_modules/zod'),
-    join(resources, 'desktop/DeepSeek Harness.app/Contents/Resources/app/node_modules/zod'),
-    join(resources, 'desktop/DeepSeek Harness.app/Contents/Resources/app/dsh/node_modules/zod'),
   ]
   for (const root of roots) {
     await access(join(root, 'src/index.ts'))

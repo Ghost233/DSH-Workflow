@@ -10,4 +10,4 @@ dart_command="${DART_BIN:-dart}"
 "$flutter_command" pub get --enforce-lockfile
 "$dart_command" format --output=none --set-exit-if-changed lib test tool
 "$flutter_command" analyze --no-pub
-"$flutter_command" test --no-pub
+"$flutter_command" test --no-pub --concurrency=1

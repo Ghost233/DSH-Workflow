@@ -9,7 +9,7 @@ import { webProfileBundles } from '../../runtime/profile-templates.mjs'
 
 // Two wholly owned acceptance packages; no upstream or third-party code is changed.
 const [resources, root] = process.argv.slice(2).map(value => resolve(value))
-const runtime = join(resources, 'desktop/DeepSeek Harness.app/Contents/Resources/app/dsh')
+const runtime = resources
 const require = createRequire(join(runtime, 'package.json'))
 const boot = require('@deepseek-ai/dsh-app-boot')
 const profile = join(root, 'home/profiles/desktop')
