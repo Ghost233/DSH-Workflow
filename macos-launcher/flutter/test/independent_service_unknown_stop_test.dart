@@ -186,7 +186,9 @@ void main() {
         });
         await tester.pump();
         await tester.runAsync(() async {
-          await pendingRestart!.timeout(const Duration(seconds: 15));
+          // Restart includes both stopping and starting; use the service
+          // control request's 45-second limit for the combined operation.
+          await pendingRestart!.timeout(const Duration(seconds: 45));
           expect(
             (await Process.run('/bin/kill', [
               '-0',

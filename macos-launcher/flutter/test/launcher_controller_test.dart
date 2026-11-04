@@ -150,8 +150,17 @@ Future<({LauncherController model, Directory root})> fixture({
       await File('${launcher.path}/runtime/$name')
           .copy('${scripts.path}/$name');
     }
-    await Link('${root.path}/node_modules')
-        .create('${launcher.path}/node_modules');
+    final candidateResources =
+        Platform.environment['DSH_SERVICE_TEST_RESOURCES'];
+    final modules = candidateResources == null || candidateResources.isEmpty
+        ? '${launcher.path}/node_modules'
+        : '$candidateResources/node_modules';
+    expect(
+      await Directory(modules).exists(),
+      isTrue,
+      reason: 'The Web fixture requires the candidate runtime dependencies',
+    );
+    await Link('${root.path}/node_modules').create(modules);
     await File('${launcher.path}/runtime/web-cli.mjs')
         .copy('${scripts.path}/web-cli-runtime.mjs');
     await File('${launcher.parent.path}/dsh-runtime.json')
