@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 const { default: monitorPlugin, apply } = await import('../src/agent-monitor-plugin.mjs')
 const { default: JevCenter } = await import('../src/jev-center-plugin.mjs')
 
@@ -23,6 +24,7 @@ const modules = Object.fromEntries([
   ['tools', 'dsh-tools'], ['agents', 'dsh-agent'], ['loop', 'dsh-agent-loop'], ['web', 'dsh-host-webserver'],
   ['credentials', 'dsh-credentials-local'],
 ].map(([key, name]) => [key, req(`@deepseek-ai/${name}`).default]))
+modules.executor = NativeToolExecutor
 
 const until = async condition => {
   const end = Date.now() + 3000
@@ -160,7 +162,7 @@ function progressAnswer(model, choice = 'anomaly') {
 }
 
 async function spawnMonitorChild(t, f, model = 'config-child') {
-  await f.ctx.plugin(req('@deepseek-ai/dsh-subagent').default)
+  await f.ctx.plugin((await import('@deepseek-ai/dsh-subagent')).default)
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent-spawn-in-process'))
   const run = await f.ctx.subagents.startActivation({ provider: 'spawn', label: 'child task', delivery: 'caller',
     signal: new AbortController().signal, request: { parent: f.handle.agent,
@@ -948,7 +950,7 @@ test('main and native spawned child semantic states remain independent while sha
   await f.saveEngine()
   await f.ctx.settings.update('monitor', { jevModelName: 'quick', semanticWaitMs: 1000, semanticThreshold: 2, noOutputThreshold: 100, checkIntervalMs: 1000 })
   await f.start(); await f.send({ type: 'reasoning-delta', index: 0, text: 'parent investigates new evidence' })
-  await f.ctx.plugin(req('@deepseek-ai/dsh-subagent').default)
+  await f.ctx.plugin((await import('@deepseek-ai/dsh-subagent')).default)
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent-spawn-in-process'))
   const run = await f.ctx.subagents.startActivation({ provider: 'spawn', label: 'child task', delivery: 'caller',
     signal: new AbortController().signal, request: { parent: f.handle.agent,

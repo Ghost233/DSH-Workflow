@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
 import { readDeliveryManifest } from '../agent-observation-plugin/src/delivery-manifest.mjs'
 import { sealPluginPayload, verifyPluginPayload } from './runtime/plugin-payload.mjs'
+import { pruneKnownDevelopmentFiles } from './production-file-policy.mjs'
 
 const execute = promisify(execFile)
 const command = (name, args, cwd) => execute(name, args, { cwd, maxBuffer: 16 * 1024 * 1024,
@@ -65,6 +66,7 @@ export async function bundleProjectPlugins({ resourcesRoot, npmCache, run = comm
     const installOptions = ['--legacy-peer-deps', '--no-bin-links', ...npmOptions]
     await run('npm', ['install', '--package-lock-only', ...installOptions], directory)
     await run('npm', ['ci', '--omit=dev', ...installOptions], directory)
+    await pruneKnownDevelopmentFiles(join(directory, 'node_modules'))
     await sealPluginPayload(resourcesRoot, provenance)
     return await verifyPluginPayload(resourcesRoot)
   } catch (error) { failure = error; throw error }

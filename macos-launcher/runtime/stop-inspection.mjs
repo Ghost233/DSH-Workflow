@@ -45,7 +45,7 @@ export function apply(ctx) {
       if (['running', 'stopping'].includes(job.status)) work.push({ kind: 'job', id: job.id, agentId: job.owner ?? null, label: job.label, state: job.status })
     }
     for (const reminder of reminders) {
-      work.push({ kind: 'reminder', id: reminder.id, agentId: reminder.sessionId,
+      work.push({ kind: 'reminder', id: reminder.id, agentId: reminder.target?.sessionId ?? reminder.sessionId,
         label: reminder.title, scheduledAt: reminder.scheduledAt })
     }
     if (before !== revision) throw new Error('检查期间有新工作进入，请重新检查。')
@@ -81,7 +81,7 @@ export function apply(ctx) {
     if (since.some(row => row.kind === 'message' && row.source === 'schedule')) {
       for (const reminder of first.work.filter(row => row.kind === 'reminder')) {
         const history = await ctx.get('schedule').history({ id: reminder.id, sessionId: reminder.agentId, limit: 100 })
-        for (const record of history.records ?? []) deliveries.add(`${reminder.agentId}:${record.messageId}`)
+        for (const record of history.records ?? []) deliveries.add(`${record.targetSessionId ?? reminder.agentId}:${record.messageId}`)
       }
     }
     // The event log covers inputs already claimed by a driver, beyond the current inbox projection.

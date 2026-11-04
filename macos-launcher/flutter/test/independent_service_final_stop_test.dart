@@ -113,71 +113,7 @@ void main() {
           }
           final command =
               "echo \$\$ > '${root!.path}/job-pid'; while [ ! -f '${root!.path}/release-job' ]; do sleep 0.05; done";
-          final calls = <Map<String, Object?>>[
-            {
-              'name': 'bash',
-              'args': {
-                'description': 'S04 held background task',
-                'command': command,
-                'workdir': root!.path,
-                'run_in_background': true,
-              },
-            },
-            {
-              'name': 'schedule_create',
-              'args': {
-                'title': 'S04 due reminder',
-                'prompt': 'Continue the confirmed reminder task.',
-                'after_seconds': 12,
-              },
-            },
-            {
-              'name': 'schedule_create',
-              'args': {
-                'title': 'S04 future reminder',
-                'prompt': 'Preserve this future reminder across restart.',
-                'after_seconds': 3600,
-              },
-            },
-          ];
-          final chunks = <Map<String, Object?>>[];
-          for (var i = 0; i < calls.length; i++) {
-            final call = calls[i],
-                id = 's04-tool-$i',
-                args = jsonEncode(calls[i]['args']);
-            chunks.addAll([
-              {'type': 'block-start', 'index': i, 'blockType': 'tool-call'},
-              {
-                'type': 'tool-call-delta',
-                'index': i,
-                'id': id,
-                'name': call['name'],
-                'argumentsDelta': args,
-              },
-              {
-                'type': 'block-end',
-                'index': i,
-                'block': {
-                  'type': 'tool-call',
-                  'id': id,
-                  'name': call['name'],
-                  'arguments': args,
-                },
-              },
-            ]);
-          }
-          chunks.addAll([
-            {
-              'type': 'usage',
-              'usage': {'inputTokens': 10, 'outputTokens': 20},
-            },
-            {
-              'type': 'finish',
-              'reason': {'kind': 'tool-calls'},
-            },
-          ]);
-          await File('${root!.path}/model-response-1.json')
-              .writeAsString(jsonEncode(chunks));
+
           server = await LauncherServer.start(
             layout: EndpointLayout(directory: '${root!.path}/sdk'),
             bindings: InMemoryBindingLookup({'dsh-workflow'}),
@@ -232,6 +168,83 @@ void main() {
             'Start the controlled background task and two reminders.',
           );
           await task!.waitForModelRequest(1);
+          String ruleAfter(int seconds) {
+            final time = DateTime.now().toUtc().add(Duration(seconds: seconds));
+            final stamp = time
+                .toIso8601String()
+                .split('.')
+                .first
+                .replaceAll(RegExp('[-:]'), '');
+            return 'DTSTART:${stamp}Z\nRRULE:FREQ=DAILY;COUNT=1';
+          }
+
+          final calls = <Map<String, Object?>>[
+            {
+              'name': 'bash',
+              'args': {
+                'description': 'S04 held background task',
+                'command': command,
+                'workdir': root!.path,
+                'run_in_background': true,
+              },
+            },
+            {
+              'name': 'schedule_create',
+              'args': {
+                'title': 'S04 due reminder',
+                'prompt': 'Continue the confirmed reminder task.',
+                'rrule': ruleAfter(12),
+                'target': 'this_session',
+              },
+            },
+            {
+              'name': 'schedule_create',
+              'args': {
+                'title': 'S04 future reminder',
+                'prompt': 'Preserve this future reminder across restart.',
+                'rrule': ruleAfter(3600),
+                'target': 'this_session',
+              },
+            },
+          ];
+          final chunks = <Map<String, Object?>>[];
+          for (var i = 0; i < calls.length; i++) {
+            final call = calls[i],
+                id = 's04-tool-$i',
+                args = jsonEncode(calls[i]['args']);
+            chunks.addAll([
+              {'type': 'block-start', 'index': i, 'blockType': 'tool-call'},
+              {
+                'type': 'tool-call-delta',
+                'index': i,
+                'id': id,
+                'name': call['name'],
+                'argumentsDelta': args,
+              },
+              {
+                'type': 'block-end',
+                'index': i,
+                'block': {
+                  'type': 'tool-call',
+                  'id': id,
+                  'name': call['name'],
+                  'arguments': args,
+                },
+              },
+            ]);
+          }
+          chunks.addAll([
+            {
+              'type': 'usage',
+              'usage': {'inputTokens': 10, 'outputTokens': 20},
+            },
+            {
+              'type': 'finish',
+              'reason': {'kind': 'tool-calls'},
+            },
+          ]);
+          await File('${root!.path}/model-response-1.json')
+              .writeAsString(jsonEncode(chunks));
           await task!.releaseModel(1);
           await task!.waitForModelRequest(2);
           final jobPid = int.parse(
@@ -306,7 +319,7 @@ void main() {
             reason: 'Actual ScheduleRuntime must durably deliver the confirmed reminder.',
           );
           final delivered = jsonDecode(await delivery.readAsString()) as Map;
-          expect(delivered['status'], 'inactive');
+          expect(delivered['status'], 'ended');
           expect(delivered['lastDelivery'], isNotNull);
           task!.sendOwnedMarker();
           racedInputs = () async {

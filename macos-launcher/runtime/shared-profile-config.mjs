@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { isAbsolute, join } from 'node:path'
-import { isRetiredPluginModule } from '../../scripts/dsh-delivery-policy.mjs'
+import { isUnavailablePluginModule } from '../../scripts/dsh-delivery-policy.mjs'
 
 // This bundle is retired by the pinned DSH runtime. Its normal profile loader
 // removes it by writing package.json, which a configuration reader must not do.
@@ -25,7 +25,7 @@ export async function readSharedProfileEntries({ resources, home, onSkipped = ()
   const exemptions = boot.readProfileVersionExemptions(directory)
   const layers = []
   for (const name of bundles) {
-    if (retiredBundles.has(name) || isRetiredPluginModule(name)) continue
+    if (retiredBundles.has(name) || isUnavailablePluginModule(name)) continue
     try {
       const bundle = boot.resolveBundleDir('dsh', name, anchor, directory)
       const entry = boot.readProfileManifest('dsh', bundle)
@@ -106,7 +106,7 @@ export function sharedPluginEntries(entries, packageNames) {
   const names = packageNames.filter(name => !['dsh-superagent', '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'].includes(name))
   const projectIds = new Set(['workflow-browser-harness', 'matt-skills-board', 'matt-panel-tools', 'workflow-delivery-inventory'])
   const select = rows => rows.flatMap(row => {
-    if (row.id === 'workflow-desktop-bridge' || isRetiredPluginModule(row.name)) return []
+    if (row.id === 'workflow-desktop-bridge' || isUnavailablePluginModule(row.name)) return []
     if (row.group && Array.isArray(row.config)) {
       const children = select(row.config)
       return children.length ? [{ ...structuredClone(row), config: children }] : []

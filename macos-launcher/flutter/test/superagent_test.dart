@@ -30,6 +30,9 @@ class SuperagentNative extends NativeBridge {
   Future<String?> chooseProjectDirectory() async => '$root/project';
 
   @override
+  Future<String?> chooseWritableDirectory() async => '$root/project';
+
+  @override
   Future<Uint8List?> feishuQRCode(String url) async => base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==',
   );
@@ -89,8 +92,10 @@ const [action, root, , , projectId = 'legacy'] = process.argv.slice(2);
 appendFileSync(root + '/calls', action + '\n');
 const projectsFile = root + '/projects.json';
 const projects = existsSync(projectsFile) ? JSON.parse(readFileSync(projectsFile, 'utf8')) : [{ id: 'project-fixture', name: '已绑定项目', repository: 'alice/example' }];
+const commonFile = root + '/common-roots.json';
 if (action === 'projects') {
-  console.log(JSON.stringify({ ok: true, value: { projects } }));
+  const commonWritableRoots = existsSync(commonFile) ? JSON.parse(readFileSync(commonFile, 'utf8')) : { revision: 0, roots: [] };
+  console.log(JSON.stringify({ ok: true, value: { projects, commonWritableRoots } }));
   process.exit(0);
 }
 if (action === 'accounts') {
@@ -104,6 +109,14 @@ if (action === 'create-project' || action === 'update-project') {
   if (index < 0) projects.push(project); else projects[index] = project;
   writeFileSync(projectsFile, JSON.stringify(projects));
   console.log(JSON.stringify({ ok: true, value: { project } }));
+  process.exit(0);
+}
+if (action === 'save-common-writable-roots') {
+  let input = ''; for await (const chunk of process.stdin) input += chunk;
+  const value = JSON.parse(input);
+  const commonWritableRoots = { revision: value.revision + 1, roots: value.roots };
+  writeFileSync(commonFile, JSON.stringify(commonWritableRoots));
+  console.log(JSON.stringify({ ok: true, value: { commonWritableRoots } }));
   process.exit(0);
 }
 if (action === 'status' && existsSync(root + '/fail-status')) {
@@ -315,6 +328,103 @@ void main() {
       await tester.runAsync(() => fixture.root.delete(recursive: true));
     }
   });
+
+  testWidgets('a project can select and persist an extra writable directory', (
+    tester,
+  ) async {
+    final fixture = (await tester.runAsync(superagentFixture))!;
+    try {
+      await tester.pumpWidget(LauncherApp(controller: fixture.model));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text('Superagent'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('项目可写目录'));
+      await tester.tap(find.text('项目可写目录'));
+      await tester.pumpAndSettle();
+      expect(find.text('尚未添加额外目录。'), findsOneWidget);
+      await tester.runAsync(() => tester.tap(find.text('选择目录')));
+      await tester.pumpAndSettle();
+      expect(find.text('${fixture.root.path}/project'), findsOneWidget);
+      await tester.runAsync(() => tester.tap(find.text('保存')));
+      for (
+        var attempt = 0;
+        attempt < 150 && find.text('选择目录').evaluate().isNotEmpty;
+        attempt++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 40)),
+        );
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+      expect(find.text('选择目录'), findsNothing);
+      final projects = jsonDecode(
+        await tester.runAsync(
+          () => File('${fixture.root.path}/projects.json').readAsString(),
+        ) as String,
+      ) as List;
+      expect((projects.single as Map)['extraWritableRoots'], [
+        '${fixture.root.path}/project',
+      ]);
+      await tester.tap(find.text('项目可写目录'));
+      await tester.pumpAndSettle();
+      expect(find.text('${fixture.root.path}/project'), findsOneWidget);
+      await tester.tap(find.byTooltip('移除目录'));
+      await tester.pumpAndSettle();
+      expect(find.text('尚未添加额外目录。'), findsOneWidget);
+    } finally {
+      await tester.runAsync(() => fixture.model.close());
+      fixture.model.dispose();
+      await tester.runAsync(() => fixture.root.delete(recursive: true));
+    }
+  });
+
+  testWidgets(
+    'common directories persist separately from project directories',
+    (tester) async {
+      final fixture = (await tester.runAsync(superagentFixture))!;
+      try {
+        await tester.pumpWidget(LauncherApp(controller: fixture.model));
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationRail),
+            matching: find.text('Superagent'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('公共可写目录'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('所有 Superagent 项目都会继承'), findsOneWidget);
+        await tester.runAsync(() => tester.tap(find.text('选择目录')));
+        await tester.pumpAndSettle();
+        await tester.runAsync(() => tester.tap(find.text('保存')));
+        for (
+          var attempt = 0;
+          attempt < 150 && find.text('选择目录').evaluate().isNotEmpty;
+          attempt++
+        ) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 40)),
+          );
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+        expect(find.text('选择目录'), findsNothing);
+        expect(fixture.model.commonSuperagentWritableRoots['roots'], [
+          '${fixture.root.path}/project',
+        ]);
+        await tester.tap(find.text('项目可写目录'));
+        await tester.pumpAndSettle();
+        expect(find.text('尚未添加额外目录。'), findsOneWidget);
+      } finally {
+        await tester.runAsync(() => fixture.model.close());
+        fixture.model.dispose();
+        await tester.runAsync(() => fixture.root.delete(recursive: true));
+      }
+    },
+  );
 
   testWidgets(
     'project wizard selects account, repository and QR bot without manual identifiers',

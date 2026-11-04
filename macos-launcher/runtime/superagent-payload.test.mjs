@@ -18,7 +18,7 @@ test('Superagent delivery preserves the pinned source and detects altered runtim
     dsh: { bundle: { patch: './cordis.patch.yml' } } }))
   for (const item of ['cordis.patch.yml', 'lib/index.js', 'lib/client.js', 'lib/github-watch.js']) await writeFile(join(pkg, item), item)
   const sealed = await sealSuperagentPayload(root)
-  assert.equal(sealed.source.commit, '6337fc823ce20251c8de8085948165c81aaa701e')
+  assert.equal(sealed.source.commit, '8c32a9dc5d72c033816c6a8110b37f40cf94fba4')
   await writeFile(join(pkg, 'lib/client.js'), 'changed')
   await assert.rejects(verifySuperagentPayload(root), /sealed contents/)
 })

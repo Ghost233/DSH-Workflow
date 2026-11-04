@@ -5,14 +5,16 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { join, resolve } from 'node:path'
 import { sealPluginPayload, verifyPluginPayload } from '../../runtime/plugin-payload.mjs'
+import { webProfileBundles } from '../../runtime/profile-templates.mjs'
 
 // Two wholly owned acceptance packages; no upstream or third-party code is changed.
 const [resources, root] = process.argv.slice(2).map(value => resolve(value))
 const runtime = join(resources, 'desktop/DeepSeek Harness.app/Contents/Resources/app/dsh')
-const boot = createRequire(join(runtime, 'package.json'))('@deepseek-ai/dsh-app-boot')
+const require = createRequire(join(runtime, 'package.json'))
+const boot = require('@deepseek-ai/dsh-app-boot')
 const profile = join(root, 'home/profiles/desktop')
 const originalPatch = await readFile(join(profile, 'cordis.patch.yml'))
-boot.initProfile(profile, boot.PROFILE_TEMPLATES.web.bundles)
+boot.initProfile(profile, webProfileBundles(require, boot))
 await writeFile(join(profile, 'cordis.patch.yml'), originalPatch)
 const path = join(profile, 'package.json')
 const manifest = JSON.parse(await readFile(path, 'utf8'))

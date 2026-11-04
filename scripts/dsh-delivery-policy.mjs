@@ -13,3 +13,7 @@ export const packageMutationModules = Object.freeze([
 /** Packages explicitly removed from Station delivery stay disabled in older profiles. */
 export const isRetiredPluginModule = name => typeof name === 'string'
   && (name === 'billion-context' || name.startsWith('billion-context/'))
+
+/** dsh-ops is temporarily disabled until its upstream supports this DSH version. */
+export const isUnavailablePluginModule = name => isRetiredPluginModule(name)
+  || typeof name === 'string' && (name === 'dsh-ops' || name.startsWith('dsh-ops/'))

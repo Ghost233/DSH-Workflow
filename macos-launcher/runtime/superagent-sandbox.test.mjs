@@ -25,6 +25,23 @@ test('a Superagent Host cannot change the selected project or its Git data', asy
   assert.equal(await readFile(join(work, 'result'), 'utf8'), 'ok')
 })
 
+test('allows an explicitly selected SDK cache while protecting projects and other directories', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-sdk-sandbox-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const project = join(root, 'project'), work = join(root, 'work'), cache = join(root, 'cache'), other = join(root, 'other')
+  for (const path of [project, work, cache, other]) await mkdir(path)
+  execFileSync('git', ['init', '-q', project])
+  await writeFile(join(project, 'uncommitted'), 'keep')
+  const paths = await protectedProjectPaths(project, work)
+  const script = 'printf ok > "$1/probe"; printf bad > "$2/uncommitted" 2>/dev/null; printf bad > "$3/probe" 2>/dev/null; printf done > "$4/result"'
+  const result = spawnSync('/usr/bin/sandbox-exec', [...superagentSandboxArguments(paths, [await realpath(work), await realpath(cache)]),
+    '--', '/bin/sh', '-c', script, 'fixture', cache, project, other, work], { encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(await readFile(join(cache, 'probe'), 'utf8'), 'ok')
+  assert.equal(await readFile(join(project, 'uncommitted'), 'utf8'), 'keep')
+  await assert.rejects(lstat(join(other, 'probe')), { code: 'ENOENT' })
+})
+
 test('allows only the shared credential store and its atomic-write files outside task directories', async t => {
   const root = await mkdtemp(join(tmpdir(), 'superagent-credential-sandbox-'))
   t.after(() => rm(root, { recursive: true, force: true }))

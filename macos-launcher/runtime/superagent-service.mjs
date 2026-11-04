@@ -16,13 +16,14 @@ import { statusNotifications } from './status-notifications.mjs'
 import { privateDirectory, redact, SERVICE_PROTOCOL, serviceRequest } from './service-control.mjs'
 import { verifySuperagentPayload } from './superagent-payload.mjs'
 import { readSharedSuperagentPatches, sharedModelEnvironment, watchSharedModelConfig } from './shared-model-config.mjs'
-import { createSuperagentProject, getSuperagentProject, listSuperagentGithubAccounts, listSuperagentProjects, projectDirectory, updateSuperagentProject } from './superagent-projects.mjs'
+import { createSuperagentProject, extraWritableRootsForProject, getCommonWritableRoots, getSuperagentProject, listSuperagentGithubAccounts, listSuperagentProjects, projectDirectory, saveCommonWritableRoots, updateSuperagentProject } from './superagent-projects.mjs'
 import { prepareSuperagentAccounts } from './superagent-accounts.mjs'
 import { syncSuperagentPackages } from './superagent-shared-packages.mjs'
 import { feishuEventPaths, protectedProjectPaths, superagentSandboxArguments } from './superagent-sandbox.mjs'
 import { applySuperagentProjectSettings } from './superagent-runtime-settings.mjs'
 import { pauseSuperagentBeforeStartup } from './superagent-bootstrap.mjs'
 import { checkSuperagentBinding, saveSuperagentBinding } from './superagent-binding.mjs'
+import { webProfileBundles } from './profile-templates.mjs'
 import { recordSuperagentHost, releaseSuperagentHost, requireSuperagentHostStopped } from './superagent-host-lease.mjs'
 
 const port = 3082
@@ -77,7 +78,7 @@ export async function prepareSuperagentProfile({ dataRoot, resources, projectId 
     await mkdir(profile, { mode: 0o700 })
     const require = createRequire(join(resources, 'node_modules/@deepseek-ai/dsh/package.json'))
     const boot = require('@deepseek-ai/dsh-app-boot')
-    boot.initProfile(profile, boot.PROFILE_TEMPLATES.web.bundles)
+    boot.initProfile(profile, webProfileBundles(require, boot))
     const manifestPath = join(profile, 'package.json'), manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
     manifest.dependencies['dsh-superagent'] = `link:${link}`
     manifest.dsh.profile.bundles.push('dsh-superagent')
@@ -118,7 +119,7 @@ export async function serveSuperagent({ dataRoot, resources, home = join(homedir
   const server = createServer(), logs = []
   let child, childSandboxed = false, childSandboxRoots = [], url, state = 'stopped', message = '', starting, stopping, writes = Promise.resolve(), revision = 0
   let closeModelSharing, modelSharing = { state: 'stopped' }, webPort = port, sharingWarnings = []
-  const snapshot = () => ({ protocol: SERVICE_PROTOCOL, superagentVersion: 2, sandboxPolicy: child && childSandboxed ? 1 : null,
+  const snapshot = () => ({ protocol: SERVICE_PROTOCOL, superagentVersion: 4, sandboxPolicy: child && childSandboxed ? 1 : null,
     sandboxRoots: child && childSandboxed ? childSandboxRoots : [], projectId, revision: ++revision, service: {
     state, ready: state === 'running', pid: child?.pid ?? null, message: message || null, observedAt: new Date().toISOString(),
   }, modelSharing, sharingWarnings, logs: [...logs] })
@@ -139,9 +140,10 @@ export async function serveSuperagent({ dataRoot, resources, home = join(homedir
     const legacySettings = projectId === 'legacy' ? await absent(lstat(join(directory, 'station-project.json'))) : undefined
     if (projectId === 'legacy' && !legacySettings) throw new Error('请先编辑原有 Superagent，选择本地项目和独立执行目录以启用保护。')
     const project = await getSuperagentProject(dataRoot, projectId)
-    let accounts, binding, protectedPaths = []
+    let accounts, binding, protectedPaths = [], extraWritableRoots = []
     if (project) {
       if (!project.repository || !project.localProjectDir || !project.executionRoot) throw new Error('请先填写仓库、本地项目和独立执行目录。')
+      extraWritableRoots = await extraWritableRootsForProject(dataRoot, project)
       accounts = await prepareSuperagentAccounts({ directory, project, resources })
       for (const other of await listSuperagentProjects(dataRoot)) {
         if (other.error) throw new Error('其他 Superagent 项目配置不可读取，无法确认目录保护。')
@@ -231,7 +233,7 @@ export async function serveSuperagent({ dataRoot, resources, home = join(homedir
         const projectFile = join(directory, projectId === 'legacy' ? 'station-project.json' : 'project.json')
         const stationPaths = [...await Promise.all([projectFile, join(directory, 'station-accounts')].map(path => realpath(path))),
           join(await realpath(directory), 'station-binding.json'), join(await realpath(directory), 'station-host.json')]
-        const writable = await Promise.all([directory, project.executionRoot, temporary,
+        const writable = await Promise.all([directory, project.executionRoot, temporary, ...extraWritableRoots,
           ...(project.deploymentMode === 'dedicated' ? [project.localProjectDir] : [])].map(path => realpath(path)))
         const feishuEvents = await feishuEventPaths(project.feishuConfigDir, accounts.feishuAppId)
         const launchArgs = project ? [...superagentSandboxArguments([...protectedPaths, ...stationPaths], writable, { credential: credentialPath, feishuEvents }),
@@ -326,8 +328,8 @@ async function ensureManager(dataRoot, resources, home, projectId) {
   const socket = superagentSocket(dataRoot, projectId)
   try {
     const existing = await serviceRequest(socket, { type: 'status' })
-    if (existing.superagentVersion === 2 && existing.projectId === projectId) return socket
-    if (projectId !== 'legacy') throw new Error('Superagent 管理器版本不匹配。')
+    if (existing.superagentVersion === 4 && existing.projectId === projectId) return socket
+    if (projectId !== 'legacy') throw new Error('Superagent 管理器版本不匹配，请退出 Station 并重新打开后再启动。')
     if (existing.service?.state !== 'stopped' || existing.service?.pid) throw new Error('旧版 Superagent 仍在运行，请先停止该实例。')
     throw new Error('旧版 Superagent 后台管理器仍在运行。为避免中断并发任务，请重启电脑后再接管原有实例。')
   }
@@ -343,7 +345,11 @@ async function ensureManager(dataRoot, resources, home, projectId) {
     manager.unref()
   } finally { await log.close() }
   for (let attempt = 0; attempt < 100; attempt++) {
-    try { await serviceRequest(socket, { type: 'status' }); return socket }
+    try {
+      const ready = await serviceRequest(socket, { type: 'status' })
+      if (ready.superagentVersion !== 4 || ready.projectId !== projectId) throw new Error('Superagent 管理器版本不匹配，请退出 Station 并重新打开后再启动。')
+      return socket
+    }
     catch (error) { if (!['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw error; await delay(50) }
   }
   throw new Error('Superagent 管理进程未就绪，请检查 manager.log。')
@@ -422,13 +428,20 @@ if (import.meta.main) {
     try {
       if (!dataRoot || !resources) throw new Error('Invalid Superagent request')
       if (action === 'projects') {
-        process.stdout.write(JSON.stringify({ ok: true, value: { projects: await listSuperagentProjects(dataRoot) } }) + '\n')
+        process.stdout.write(JSON.stringify({ ok: true, value: { projects: await listSuperagentProjects(dataRoot), commonWritableRoots: await getCommonWritableRoots(dataRoot) } }) + '\n')
       } else if (action === 'accounts') {
         process.stdout.write(JSON.stringify({ ok: true, value: { accounts: await listSuperagentGithubAccounts() } }) + '\n')
-      } else if (action === 'create-project' || action === 'update-project') {
+      } else if (action === 'create-project' || action === 'update-project' || action === 'save-common-writable-roots') {
         let text = ''
         for await (const chunk of process.stdin) { text += chunk; if (text.length > 64 * 1024) throw new Error('项目配置过大。') }
         const input = JSON.parse(text)
+        if (action === 'save-common-writable-roots') {
+          const commonWritableRoots = await withRegistryLock(dataRoot, async () => {
+            await requireProjectsStopped(dataRoot)
+            return saveCommonWritableRoots(dataRoot, input)
+          })
+          process.stdout.write(JSON.stringify({ ok: true, value: { commonWritableRoots } }) + '\n')
+        } else {
         const project = await withRegistryLock(dataRoot, async () => {
           if (action === 'create-project' && input.guided === true && input.dedicated === true) {
             const roots = await runningWritableRoots(dataRoot)
@@ -438,6 +451,7 @@ if (import.meta.main) {
           return action === 'create-project' ? createSuperagentProject(dataRoot, input) : updateSuperagentProject(dataRoot, projectId, input)
         })
         process.stdout.write(JSON.stringify({ ok: true, value: { project } }) + '\n')
+        }
       } else {
       if (!['start', 'stop', 'status', 'open'].includes(action)) throw new Error('Invalid Superagent request')
       let value

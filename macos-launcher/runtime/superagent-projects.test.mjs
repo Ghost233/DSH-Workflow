@@ -7,9 +7,148 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createSuperagentProject, guidedPrepare, listSuperagentGithubAccounts, listSuperagentProjects, projectDirectory, updateSuperagentProject } from './superagent-projects.mjs'
+import { createSuperagentProject, extraWritableRootsForProject, getCommonWritableRoots, getSuperagentProject, guidedPrepare, listSuperagentGithubAccounts, listSuperagentProjects, projectDirectory, saveCommonWritableRoots, updateSuperagentProject } from './superagent-projects.mjs'
 import { superagentSocket } from './superagent-service.mjs'
 import { superagentSandboxArguments } from './superagent-sandbox.mjs'
+
+test('common writable roots are inherited without sharing project-only roots', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-common-roots-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const data = join(root, 'data'), common = join(root, 'common'), own = join(root, 'own')
+  for (const path of [data, common, own]) await mkdir(path)
+  assert.deepEqual(await getCommonWritableRoots(data), { revision: 0, roots: [] })
+  const a = await createSuperagentProject(data, { name: 'A', extraWritableRoots: [own] })
+  const b = await createSuperagentProject(data, { name: 'B' })
+  const saved = await saveCommonWritableRoots(data, { revision: 0, roots: [common] })
+  assert.deepEqual(saved, { revision: 1, roots: [await realpath(common)] })
+  assert.deepEqual(await extraWritableRootsForProject(data, await getSuperagentProject(data, a.id)), [await realpath(common), await realpath(own)])
+  assert.deepEqual(await extraWritableRootsForProject(data, await getSuperagentProject(data, b.id)), [await realpath(common)])
+  await assert.rejects(saveCommonWritableRoots(data, { revision: 0, roots: [] }), /更改|刷新/)
+  await saveCommonWritableRoots(data, { revision: 1, roots: [] })
+  assert.deepEqual(await extraWritableRootsForProject(data, await getSuperagentProject(data, a.id)), [await realpath(own)])
+})
+
+test('common writable roots cannot overlap project or account directories now or in future projects', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-common-protection-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const data = join(root, 'data'), repo = join(root, 'repo'), tasks = join(root, 'tasks'), account = join(root, 'gh'), common = join(root, 'common')
+  for (const path of [data, repo, tasks, account, common]) await mkdir(path)
+  await createSuperagentProject(data, { name: 'A', localProjectDir: repo, executionRoot: tasks, ghConfigDir: account })
+  for (const path of [root, data, repo, tasks, account, '/']) {
+    await assert.rejects(saveCommonWritableRoots(data, { revision: 0, roots: [path] }), /目录|保护|重叠/)
+  }
+  await saveCommonWritableRoots(data, { revision: 0, roots: [common] })
+  await assert.rejects(createSuperagentProject(data, { name: 'B', localProjectDir: common }), /目录|保护|重叠/)
+  await rm(common, { recursive: true }); await symlink(repo, common)
+  const a = (await listSuperagentProjects(data)).find(row => row.name === 'A')
+  await assert.rejects(extraWritableRootsForProject(data, a), /改变|重叠/)
+})
+
+test('common and project grants cannot expose nested private directories to other projects', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-common-private-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const data = join(root, 'data'), shared = join(root, 'sdk'), privateDir = join(shared, 'private')
+  await mkdir(data); await mkdir(shared); await mkdir(privateDir)
+  const a = await createSuperagentProject(data, { name: 'A', extraWritableRoots: [privateDir] })
+  await assert.rejects(saveCommonWritableRoots(data, { revision: 0, roots: [shared] }), /项目|重叠/)
+  await saveCommonWritableRoots(data, { revision: 0, roots: [privateDir] })
+  await assert.rejects(updateSuperagentProject(data, a.id, { ...a, extraWritableRoots: [shared] }), /公共|重叠/)
+})
+
+test('guided creation checks the common grant before creating a workspace', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-common-guided-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const data = join(root, 'data'), common = join(root, 'common'), account = join(root, 'gh')
+  for (const path of [data, common, account]) await mkdir(path)
+  await saveCommonWritableRoots(data, { revision: 0, roots: [common] })
+  await assert.rejects(createSuperagentProject(data, { guided: true, dedicated: true, name: 'B', repository: 'owner/b',
+    baseBranch: 'main', githubLogin: 'alice', ghConfigDir: account, storageRoot: common }), /公共|重叠/)
+  assert.deepEqual(await readdir(common), [])
+})
+
+test('macOS sandbox combines common and project-only grants without sharing other project roots', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-common-sandbox-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const data = join(root, 'data'), common = join(root, 'common'), own = join(root, 'own'), workA = join(root, 'work-a'), workB = join(root, 'work-b'), guard = join(root, 'guard')
+  for (const path of [data, common, own, workA, workB, guard]) await mkdir(path)
+  const a = await createSuperagentProject(data, { name: 'A', executionRoot: workA, extraWritableRoots: [own] })
+  const b = await createSuperagentProject(data, { name: 'B', executionRoot: workB })
+  await saveCommonWritableRoots(data, { revision: 0, roots: [common] })
+  const invoke = async (project, work, target) => {
+    const roots = await extraWritableRootsForProject(data, await getSuperagentProject(data, project.id))
+    const args = superagentSandboxArguments([await realpath(guard)], [await realpath(work), ...roots])
+    execFileSync('/usr/bin/sandbox-exec', [...args, '--', '/usr/bin/touch', target], { stdio: 'pipe' })
+  }
+  await invoke(a, workA, join(common, 'a'))
+  await invoke(b, workB, join(common, 'b'))
+  await invoke(a, workA, join(own, 'a'))
+  await assert.rejects(invoke(b, workB, join(own, 'b')))
+  await assert.rejects(invoke(a, workA, join(workB, 'a')))
+  assert.deepEqual((await readdir(common)).sort(), ['a', 'b'])
+  assert.deepEqual(await readdir(own), ['a'])
+})
+
+test('stores explicit writable SDK directories per project and preserves them on older updates', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-extra-roots-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const data = join(root, 'data'), cache = join(root, 'flutter-cache'), repo = join(root, 'repo'), tasks = join(root, 'tasks')
+  for (const path of [data, cache, repo, tasks]) await mkdir(path)
+  const first = await createSuperagentProject(data, { name: 'A', localProjectDir: repo, executionRoot: tasks, extraWritableRoots: [cache] })
+  assert.deepEqual(first.extraWritableRoots, [await realpath(cache)])
+  const second = await createSuperagentProject(data, { name: 'B', extraWritableRoots: [cache] })
+  assert.deepEqual(second.extraWritableRoots, first.extraWritableRoots)
+  const { extraWritableRoots, ...oldClientInput } = first
+  const updated = await updateSuperagentProject(data, first.id, { ...oldClientInput, name: 'Renamed' })
+  assert.deepEqual(updated.extraWritableRoots, first.extraWritableRoots)
+  const cleared = await updateSuperagentProject(data, first.id, { ...updated, extraWritableRoots: [] })
+  assert.deepEqual(cleared.extraWritableRoots, [])
+  assert.deepEqual((await listSuperagentProjects(data)).find(row => row.id === second.id).extraWritableRoots, first.extraWritableRoots)
+})
+
+test('rejects unsafe writable directories and prevents future projects from overlapping a shared cache', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-extra-safety-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const data = join(root, 'data'), repo = join(root, 'repo'), tasks = join(root, 'tasks'), cache = join(root, 'cache')
+  for (const path of [data, repo, tasks, cache]) await mkdir(path)
+  await writeFile(join(repo, 'uncommitted'), 'keep')
+  const project = await createSuperagentProject(data, { name: 'A', localProjectDir: repo, executionRoot: tasks, extraWritableRoots: [cache] })
+  for (const path of [data, root, repo, tasks, '/', join(root, 'missing')]) {
+    await assert.rejects(updateSuperagentProject(data, project.id, { ...project, extraWritableRoots: [path] }))
+  }
+  await assert.rejects(createSuperagentProject(data, { name: 'B', executionRoot: cache }), /重叠|保护/)
+  assert.equal(await readFile(join(repo, 'uncommitted'), 'utf8'), 'keep')
+})
+
+test('rechecks a saved writable directory before startup and rejects a redirected path', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-extra-recheck-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const data = join(root, 'data'), cache = join(root, 'cache'), outside = join(root, 'outside')
+  for (const path of [data, cache, outside]) await mkdir(path)
+  const project = await createSuperagentProject(data, { name: 'A', extraWritableRoots: [cache] })
+  assert.deepEqual(await extraWritableRootsForProject(data, project), project.extraWritableRoots)
+  await rm(cache, { recursive: true }); await symlink(outside, cache)
+  await assert.rejects(extraWritableRootsForProject(data, project), /改变/)
+})
+
+test('a saved SDK grant survives reloading and remains isolated to the selected project', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'superagent-extra-restart-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const data = join(root, 'data'), cache = join(root, 'cache'), work = join(root, 'work'), guard = join(root, 'guard')
+  for (const path of [data, cache, work, guard]) await mkdir(path)
+  const a = await createSuperagentProject(data, { name: 'A' })
+  const b = await createSuperagentProject(data, { name: 'B' })
+  const probe = async (project, name) => {
+    const roots = await extraWritableRootsForProject(data, project)
+    const args = superagentSandboxArguments([await realpath(guard)], [await realpath(work), ...roots])
+    execFileSync('/usr/bin/sandbox-exec', [...args, '--', '/usr/bin/touch', join(cache, name)], { stdio: 'pipe' })
+  }
+  await assert.rejects(probe(a, 'before'))
+  await updateSuperagentProject(data, a.id, { ...a, extraWritableRoots: [cache] })
+  await probe(await getSuperagentProject(data, a.id), 'first-start')
+  await probe(await getSuperagentProject(data, a.id), 'restart')
+  await assert.rejects(probe(await getSuperagentProject(data, b.id), 'other-project'))
+  assert.deepEqual((await readdir(cache)).sort(), ['first-start', 'restart'])
+})
 
 test('keeps project configuration and the existing Superagent in separate owned directories', async t => {
   const root = await mkdtemp(join(tmpdir(), 'superagent-projects-'))
@@ -160,8 +299,9 @@ test('does not change protected project mappings while any Superagent is running
   const project = await createSuperagentProject(dataRoot, { name: 'A' })
   const socket = superagentSocket(dataRoot, project.id), socketDirectory = dirname(socket)
   await mkdir(socketDirectory, { mode: 0o700 })
+  let running = true
   const server = createServer(connection => connection.once('data', () => connection.end(JSON.stringify({ ok: true,
-    value: { protocol: 1, service: { state: 'running', pid: 123 } } }) + '\n')))
+    value: { protocol: 1, service: { state: running ? 'running' : 'stopped', pid: running ? 123 : null } } }) + '\n')))
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve) })
   await chmod(socket, 0o600)
   t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(socketDirectory, { recursive: true, force: true }); await rm(root, { recursive: true, force: true }) })
@@ -172,6 +312,18 @@ test('does not change protected project mappings while any Superagent is running
   assert.equal(code, 1)
   assert.match(JSON.parse(output).error, /先停止所有 Superagent/)
   assert.deepEqual((await listSuperagentProjects(dataRoot)).map(row => row.name), ['A'])
+  const saveCommon = () => new Promise((resolve, reject) => {
+    const childProcess = spawn(process.execPath, [fileURLToPath(new URL('./superagent-service.mjs', import.meta.url)), 'save-common-writable-roots', dataRoot, root, root])
+    let text = ''; childProcess.stdout.setEncoding('utf8'); childProcess.stdout.on('data', chunk => { text += chunk })
+    childProcess.stdin.end(JSON.stringify({ revision: 0, roots: [] }))
+    childProcess.once('error', reject); childProcess.once('close', code => resolve({ code, reply: JSON.parse(text) }))
+  })
+  const denied = await saveCommon()
+  assert.equal(denied.code, 1); assert.match(denied.reply.error, /先停止所有 Superagent/)
+  assert.equal((await getCommonWritableRoots(dataRoot)).revision, 0)
+  running = false
+  const accepted = await saveCommon()
+  assert.equal(accepted.code, 0); assert.equal(accepted.reply.value.commonWritableRoots.revision, 1)
 })
 
 test('a dedicated project can be added beside a running dedicated project without exposing either workspace', async t => {

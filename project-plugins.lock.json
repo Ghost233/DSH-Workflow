@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "harnessVersion": "0.2.1-rc.5",
+  "harnessVersion": "0.2.2-alpha.3",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "41a79c1cf56d904390a16b3f72f88c25c39fc0b8e48e6bbb1152b6f12871cf85",
+  "manifestSha256": "4f4c88140769ccf7a9ce7c1ff0b5ffc9140849a6738bc1a5ce1fddc39040abdd",
   "plugins": [
     {
       "package": "dsh-context",
-      "version": "0.80.2",
+      "version": "0.81.0",
       "metadata": {
         "name": "dsh-context",
-        "version": "0.80.2",
+        "version": "0.81.0",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -28,17 +28,18 @@
           "compatibility": {
             "dshReleases": {
               "0.2.0-rc.2": "compatible",
-              "0.2.1-rc.2": "compatible"
+              "0.2.1-rc.2": "compatible",
+              "0.2.2-alpha.3": "compatible"
             }
           }
         },
         "peerDependencies": {
           "react": "^18.3.1",
           "react-dom": "^18.3.1",
-          "@deepseek-ai/cordis": "^4.0.4",
-          "@deepseek-ai/dsh-session": ">=0.2.0-rc.2 || >=0.2.1-rc.2",
-          "@deepseek-ai/schemastery": "^3.18.2",
-          "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.0-rc.2 || >=0.2.1-rc.2"
+          "@deepseek-ai/cordis": "^4.0.4 || >=4.0.6-alpha.2 <5.0.0",
+          "@deepseek-ai/dsh-session": ">=0.2.0-rc.2 || >=0.2.1-rc.2 || >=0.2.2-alpha.3",
+          "@deepseek-ai/schemastery": "^3.18.2 || >=3.18.6-alpha.2 <4.0.0",
+          "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.0-rc.2 || >=0.2.1-rc.2 || >=0.2.2-alpha.3"
         },
         "peerDependenciesMeta": {
           "react": {
@@ -55,10 +56,10 @@
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.50",
+      "version": "1.9.55",
       "metadata": {
         "name": "dsh-cost-meter",
-        "version": "1.9.50",
+        "version": "1.9.55",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -73,13 +74,14 @@
               "0.2.0-rc.2": "compatible",
               "0.2.1-rc.1": "compatible",
               "0.2.1-rc.2": "compatible",
-              "0.2.1-alpha.5": "compatible"
+              "0.2.1-alpha.5": "compatible",
+              "0.2.2-alpha.3": "compatible"
             }
           }
         },
         "peerDependencies": {
-          "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-0 <0.3.0-0",
-          "@deepseek-ai/dsh-credentials": ">=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-0 <0.3.0-0"
+          "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-0 <0.3.0-0 || >=0.2.2-0 <0.3.0-0",
+          "@deepseek-ai/dsh-credentials": ">=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-0 <0.3.0-0 || >=0.2.2-0 <0.3.0-0"
         },
         "peerDependenciesMeta": {}
       }
@@ -304,6 +306,26 @@
             "optional": true
           }
         }
+      }
+    },
+    {
+      "package": "dsh-live-compact",
+      "version": "1.0.1",
+      "commit": "6e38fb0c4aab92c9f77ad4f42985ef480247af38",
+      "metadata": {
+        "name": "dsh-live-compact",
+        "version": "1.0.1",
+        "dsh": {
+          "bundle": {
+            "patch": "./cordis.patch.yml"
+          }
+        },
+        "peerDependencies": {
+          "@deepseek-ai/dsh-compaction": ">=0.2.0-rc.2 <0.3.0",
+          "@deepseek-ai/dsh-compaction-basic": ">=0.2.0-rc.2 <0.3.0",
+          "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2 <0.3.0"
+        },
+        "peerDependenciesMeta": {}
       }
     }
   ]

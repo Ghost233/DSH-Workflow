@@ -5,15 +5,17 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { readSharedProfileEntries, sharedMcpEntries, sharedSkillEntries, sharedPluginEntries } from './shared-profile-config.mjs'
+import { webProfileBundles } from './profile-templates.mjs'
 
 test('Superagent does not inherit retired packages still declared by an older daily profile', () => {
   const entries = [{ id: 'old-group', group: true, config: [
     { id: 'bili-native', name: 'billion-context', config: { keep: true } },
     { id: 'old-tool', name: 'billion-context/tools' },
+    { id: 'ops', name: 'dsh-ops/mode-standard' },
     { id: 'insight', name: 'dsh-context' },
   ] }]
   const before = structuredClone(entries)
-  const shared = sharedPluginEntries(entries, ['billion-context', 'dsh-context'])
+  const shared = sharedPluginEntries(entries, ['billion-context', 'dsh-context', 'dsh-ops'])
   assert.deepEqual(shared[0].config.map(row => row.name), ['dsh-context'])
   assert.deepEqual(entries, before)
 })
@@ -27,7 +29,7 @@ test('reads layered daily MCP settings without rewriting an existing desktop pro
   const resources = join(root, 'resources'), home = join(root, 'home'), profile = join(home, 'profiles/desktop')
   await mkdir(join(resources, 'node_modules/@deepseek-ai'), { recursive: true })
   await symlink(cli, join(resources, 'node_modules/@deepseek-ai/dsh'))
-  boot.initProfile(profile, boot.PROFILE_TEMPLATES.web.bundles)
+  boot.initProfile(profile, webProfileBundles(createRequire(join(cli, 'package.json')), boot))
   const manifestPath = join(profile, 'package.json')
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   manifest.dsh.profile.bundles.push('@deepseek-ai/dsh-experimental-schedule-bundle')
@@ -83,7 +85,7 @@ test('shares configured plugins while excluding the desktop bridge from Superage
     { id: 'local', name: '/Users/example/plugins/local.mjs', config: { enabled: true } },
   ]
   const rows = sharedPluginEntries(entries, ['dsh-cost-meter', 'dsh-ops', '@deepseek-ai/dsh-skill-office'])
-  assert.deepEqual(rows.map(row => row.id), ['cost-meter', 'ops', 'office', 'local'])
+  assert.deepEqual(rows.map(row => row.id), ['cost-meter', 'office', 'local'])
   assert.equal(rows[0].config.currency, 'CNY')
-  assert.equal(rows[1].disabled, true)
+  assert.equal(entries[1].disabled, true)
 })

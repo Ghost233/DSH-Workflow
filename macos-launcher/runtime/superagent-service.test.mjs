@@ -10,6 +10,16 @@ import { dirname } from 'node:path'
 import { sealSuperagentPayload } from './superagent-payload.mjs'
 import { prepareSuperagentProfile, superagentSocket } from './superagent-service.mjs'
 import { createSuperagentProject } from './superagent-projects.mjs'
+import { webProfileBundles } from './profile-templates.mjs'
+
+test('Web profile templates use the installed DSH public export', () => {
+  const old = { PROFILE_TEMPLATES: { web: { bundles: ['old'] } } }
+  assert.deepEqual(webProfileBundles(() => assert.fail('old DSH needs no separate package'), old), ['old'])
+  assert.deepEqual(webProfileBundles(name => {
+    assert.equal(name, '@deepseek-ai/dsh-official-bundles')
+    return { PROFILE_TEMPLATES: { web: { bundles: ['new'] } } }
+  }, {}), ['new'])
+})
 
 test('Superagent profile keeps user settings when the sealed application moves', async t => {
   const root = await mkdtemp(join(tmpdir(), 'superagent-profile-'))
@@ -31,11 +41,14 @@ test('Superagent profile keeps user settings when the sealed application moves',
   await mkdir(join(modules, 'dsh-app-boot'))
   await writeFile(join(modules, 'dsh-app-boot/package.json'), JSON.stringify({ main: 'index.cjs' }))
   await writeFile(join(modules, 'dsh-app-boot/index.cjs'), `const fs = require('node:fs'), path = require('node:path');
-exports.PROFILE_TEMPLATES = { web: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } };
 exports.initProfile = (dir, bundles) => {
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ private: true, dependencies: {}, dsh: { profile: { bundles } } }));
   fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '[]');
 };\n`)
+  await mkdir(join(modules, 'dsh-official-bundles'))
+  await writeFile(join(modules, 'dsh-official-bundles/package.json'), JSON.stringify({ main: 'index.cjs' }))
+  await writeFile(join(modules, 'dsh-official-bundles/index.cjs'),
+    `exports.PROFILE_TEMPLATES = { web: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } };\n`)
   const first = await prepareSuperagentProfile({ dataRoot, resources })
   const patch = join(first.profile, 'cordis.patch.yml'), settings = '[{"id":"custom-user-setting"}]\n'
   await writeFile(patch, settings)
@@ -81,6 +94,33 @@ test('does not silently start an old manager without model sharing', async t => 
   const result = JSON.parse(out); assert.equal(result.ok, false); assert.match(result.error, /旧版 Superagent/)
 })
 
+test('does not start a project with writable directories through an older manager', async t => {
+  const root = await mkdtemp('/private/tmp/superagent-old-sandbox-manager-')
+  const dataRoot = join(root, 'data'), cache = join(root, 'cache')
+  await mkdir(dataRoot, { mode: 0o700 }); await mkdir(cache)
+  const project = await createSuperagentProject(dataRoot, { name: 'A', extraWritableRoots: [cache] })
+  const socket = superagentSocket(dataRoot, project.id), socketDirectory = dirname(socket)
+  await mkdir(socketDirectory, { mode: 0o700 })
+  const requests = []
+  let version = 2
+  const server = createServer(connection => connection.once('data', bytes => {
+    requests.push(JSON.parse(bytes.toString()).type)
+    connection.end(JSON.stringify({ ok: true, value: { protocol: 1, superagentVersion: version,
+      projectId: project.id, service: { state: 'stopped', pid: null } } }) + '\n')
+  }))
+  await new Promise(resolve => server.listen(socket, resolve)); await chmod(socket, 0o600)
+  t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(socketDirectory, { recursive: true, force: true }); await rm(root, { recursive: true, force: true }) })
+  for (const oldVersion of [2, 3]) {
+    version = oldVersion
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./superagent-service.mjs', import.meta.url)), 'start', dataRoot, root, join(root, 'home'), project.id])
+    let output = ''; child.stdout.setEncoding('utf8'); child.stdout.on('data', chunk => { output += chunk })
+    const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
+    assert.equal(code, 1)
+    assert.match(JSON.parse(output).error, /管理器|重新打开/)
+  }
+  assert.deepEqual(requests, ['status', 'status'])
+})
+
 test('start rediscovers a live manager after its old connection deadline closes the reply', async t => {
   const root = await mkdtemp('/private/tmp/superagent-start-recovery-')
   const dataRoot = join(root, 'data')
@@ -95,7 +135,7 @@ test('start rediscovers a live manager after its old connection deadline closes 
       const request = JSON.parse(buffer.slice(0, buffer.indexOf('\n')))
       requests.push(request.type)
       if (request.type === 'start') { connection.end(); return }
-      connection.end(JSON.stringify({ ok: true, value: { protocol: 1, superagentVersion: 2,
+      connection.end(JSON.stringify({ ok: true, value: { protocol: 1, superagentVersion: 4,
         projectId: 'legacy', service: { state: requests.includes('start') ? 'starting' : 'stopped', ready: false } } }) + '\n')
     })
   })

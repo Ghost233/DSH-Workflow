@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 const { apply } = await import('../src/agent-monitor-plugin.mjs')
 
 const req = createRequire(new URL('../../deepseek-harness/apps/cli/package.json', import.meta.url))
@@ -43,6 +44,7 @@ async function fixture(t, config = {}) {
     }
   }
   for (const plugin of [LlmRuntime, SessionStore, Projections, SystemPrompt, Tools, Agents]) await ctx.plugin(plugin)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(req('@deepseek-ai/dsh-fs-local').default)
   await ctx.plugin(req('@deepseek-ai/dsh-working-directory').default, { defaultDirectory: directory })
   await ctx.plugin(AgentLoop, { agents: [] })
@@ -207,7 +209,7 @@ test('delta completion and repeated finalized blocks cannot hide silence while a
 test('native spawn and fork children are visible and independent of their active main Agent', async t => {
   const f = await fixture(t, { checkIntervalMs: 1000, noOutputThreshold: 2 })
   const main = await f.create('parent')
-  const Subagents = req('@deepseek-ai/dsh-subagent').default
+  const Subagents = (await import('@deepseek-ai/dsh-subagent')).default
   await f.ctx.plugin(Subagents)
   for (const provider of ['spawn', 'fork']) {
     await f.ctx.plugin(req(`@deepseek-ai/dsh-subagent-${provider}-in-process`))
@@ -305,10 +307,10 @@ test('a completed model request is not counted while its tool awaits approval or
 
 test('an Agent Team teammate uses the same native monitor path and remains running after an alert', async t => {
   const f = await fixture(t, { checkIntervalMs: 1000, noOutputThreshold: 2 })
-  await f.ctx.plugin(req('@deepseek-ai/dsh-session-persistence-jsonl'), { root: join(f.directory, 'sessions') })
-  await f.ctx.plugin(req('@deepseek-ai/dsh-subagent').default)
-  await f.ctx.plugin(req('@deepseek-ai/dsh-subagent-spawn-in-process'))
-  await f.ctx.plugin(req('@deepseek-ai/dsh-experimental-agent-team').default)
+  await f.ctx.plugin(await import('@deepseek-ai/dsh-session-persistence-jsonl'), { root: join(f.directory, 'sessions') })
+  await f.ctx.plugin((await import('@deepseek-ai/dsh-subagent')).default)
+  await f.ctx.plugin(await import('@deepseek-ai/dsh-subagent-spawn-in-process'))
+  await f.ctx.plugin((await import('@deepseek-ai/dsh-experimental-agent-team')).default)
   const lead = await f.create('team-lead')
   const first = f.streams.get('team-lead')
   const { member } = await f.ctx.agentTeams.spawnTeammate(lead.agent, { name: 'reviewer', description: 'review the task',
@@ -420,7 +422,7 @@ test('a failed native request can be followed by a normal partial-looking answer
 test('a native spawned child error is associated with its own request and main Agent without changing the parent run', async t => {
   const { LlmError } = req('@deepseek-ai/dsh-llm')
   const f = await fixture(t), parent = await f.create('error-parent')
-  await f.ctx.plugin(req('@deepseek-ai/dsh-subagent').default)
+  await f.ctx.plugin((await import('@deepseek-ai/dsh-subagent')).default)
   await f.ctx.plugin(req('@deepseek-ai/dsh-subagent-spawn-in-process'))
   const run = await f.ctx.subagents.startActivation({ provider: 'spawn', label: 'child task', delivery: 'caller',
     signal: new AbortController().signal, request: { parent: parent.agent,

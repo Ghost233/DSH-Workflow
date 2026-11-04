@@ -247,8 +247,11 @@ Future<void> main(List<String> arguments) async {
   final desktopManifest = jsonDecode(
     await File('$desktopResources/app/package.json').readAsString(),
   ) as Map;
+  final runtime = jsonDecode(
+    await File('$artifact/workflow/dsh-runtime.json').readAsString(),
+  ) as Map;
   require(
-    desktopManifest['version'] == '0.2.1-alpha.5' &&
+    desktopManifest['version'] == runtime['version'] &&
         !desktopManifest.containsKey('dshMandatoryUpdatePolicy') &&
         !await File('$desktopResources/app-update.yml').exists(),
     'fixed Desktop fixture has neither a packaged update source nor mandatory policy',
@@ -485,7 +488,7 @@ Future<void> main(List<String> arguments) async {
         );
         evidence['platformLoopbackProviderVerified'] = true;
         final metadata = {
-          'version': '0.2.1-alpha.5',
+          'version': runtime['version'],
           'locale': 'zh-CN',
           'timezoneOffsetSeconds': DateTime.now().timeZoneOffset.inSeconds,
         };
@@ -949,6 +952,12 @@ Future<void> main(List<String> arguments) async {
         () async =>
             afterQuitWindows.current['ownershipKnown'] == true &&
             afterQuitWindows.current['running'] == false,
+      );
+      // Bring Station back onscreen before interacting with its controls.
+      await launcher.state({'action': 'ownEntry'});
+      await waitFor(
+        'Station resumes rendering',
+        () async => (await launcher!.state())['framesEnabled'] == true,
       );
       await launcher.tap('仅显示已运行窗口');
       await waitFor(

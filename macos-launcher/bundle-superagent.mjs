@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { sealSuperagentPayload } from './runtime/superagent-payload.mjs'
+import { pruneKnownDevelopmentFiles } from './production-file-policy.mjs'
 
 const exec = promisify(execFile)
 const command = (name, args, cwd) => exec(name, args, { cwd, maxBuffer: 16 * 1024 * 1024,
@@ -58,6 +59,7 @@ export async function bundleSuperagent({ resourcesRoot, npmCache, pnpm = 'pnpm',
       const actual = JSON.parse(await readFile(join(destination, 'node_modules', name, 'package.json'), 'utf8'))
       if (actual.name !== name || actual.version !== version) throw new Error(`Superagent dependency differs from upstream lock: ${name}`)
     }
+    await pruneKnownDevelopmentFiles(join(destination, 'node_modules'))
     return await sealSuperagentPayload(resourcesRoot)
   } catch (error) { failure = error; throw error }
   finally {

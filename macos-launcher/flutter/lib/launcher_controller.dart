@@ -70,6 +70,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   bool isSuperagentBusy(String id) =>
       _savingSuperagentProject || _busySuperagents.contains(id);
   List<Map<String, Object?>> superagentProjects = [];
+  Map<String, Object?> commonSuperagentWritableRoots = {
+    'revision': 0,
+    'roots': <String>[],
+  };
   List<Map<String, Object?>> superagentGithubAccounts = [];
   String? selectedSuperagentProjectId;
   List<String> get superagentSharingWarnings =>
@@ -107,9 +111,9 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     return [
       if (warnings is List) ...warnings.whereType<String>(),
       if (value != null &&
-          value['superagentVersion'] != 2 &&
+          value['superagentVersion'] != 4 &&
           superagentStatusFor(id).state == ServiceState.running)
-        '旧版管理器仍在运行；请停止原实例并重启电脑后，再启用项目保护和共享配置。',
+        '旧版管理器仍在运行；请退出 Station 并重新打开后，再启用项目保护和共享配置。',
     ];
   }
 
@@ -374,6 +378,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       throw const FormatException('Invalid Superagent projects');
     }
     superagentProjects = rows.map(objectValue).toList();
+    final common = value['commonWritableRoots'];
+    if (common is Map) commonSuperagentWritableRoots = objectValue(common);
     if (!superagentProjects.any(
       (row) => row['id'] == selectedSuperagentProjectId,
     )) {
@@ -427,6 +433,27 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       );
       final project = objectValue(value['project']);
       selectedSuperagentProjectId = project['id'] as String;
+      await refreshSuperagentProjects();
+    } finally {
+      _savingSuperagentProject = false;
+      if (!_closed) notifyListeners();
+    }
+  }
+
+  Future<void> saveCommonSuperagentWritableRoots(
+    Map<String, Object?> input,
+  ) async {
+    if (_closed || superagentBusy) {
+      throw StateError('Superagent 正在处理其他请求，请稍后再试。');
+    }
+    _savingSuperagentProject = true;
+    notifyListeners();
+    try {
+      final value = await _superagentRequest(
+        'save-common-writable-roots',
+        input: input,
+      );
+      commonSuperagentWritableRoots = objectValue(value['commonWritableRoots']);
       await refreshSuperagentProjects();
     } finally {
       _savingSuperagentProject = false;

@@ -50,6 +50,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   await mkdir(join(workflow, 'macos-launcher/runtime'), { recursive: true })
   await cp(resolve('macos-launcher/runtime/plugin-configuration.mjs'), join(workflow, 'macos-launcher/runtime/plugin-configuration.mjs'))
   await cp(resolve('macos-launcher/runtime/desktop-profile.mjs'), join(workflow, 'macos-launcher/runtime/desktop-profile.mjs'))
+  await cp(resolve('macos-launcher/runtime/profile-templates.mjs'), join(workflow, 'macos-launcher/runtime/profile-templates.mjs'))
   await cp(resolve('macos-launcher/runtime/startup-plugins.mjs'), join(workflow, 'macos-launcher/runtime/startup-plugins.mjs'))
   await cp(resolve('macos-launcher/runtime/plugin-payload.mjs'), join(workflow, 'macos-launcher/runtime/plugin-payload.mjs'))
   await cp(resolve('macos-launcher/runtime/desktop-bridge.mjs'), join(workflow, 'macos-launcher/runtime/desktop-bridge.mjs'))

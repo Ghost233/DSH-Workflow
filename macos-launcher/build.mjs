@@ -15,6 +15,7 @@ import { bundleLarkCli } from './bundle-lark-cli.mjs'
 import { verifyPluginPayload } from './runtime/plugin-payload.mjs'
 import { verifySuperagentPayload } from './runtime/superagent-payload.mjs'
 import { checkBrowserHarnessUpstream } from '../browser-harness-plugin/build.mjs'
+import { pruneKnownDevelopmentFiles } from './production-file-policy.mjs'
 
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
 
@@ -99,6 +100,11 @@ try {
   await cp(join(root, 'macos-launcher/package-lock.json'), join(resources, 'package-lock.json'))
   await run('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund',
     '--cache', join(buildRoot, 'npm-cache')], resources)
+  await pruneKnownDevelopmentFiles(join(resources, 'node_modules'))
+  // This app targets macOS ARM64; node-pty's Windows binaries cannot run here.
+  for (const name of ['win32-arm64', 'win32-x64']) {
+    await rm(join(resources, 'node_modules/node-pty/prebuilds', name), { recursive: true, force: true })
+  }
   await bundleSuperagent({ resourcesRoot: resources, npmCache: join(buildRoot, 'npm-cache') })
   const settingsClient = join(resources, 'node_modules/@deepseek-ai/dsh-client-ui-settings/lib/client.js')
   await writeFile(settingsClient, allowAuthenticatedLanSettings(await readFile(settingsClient, 'utf8')))

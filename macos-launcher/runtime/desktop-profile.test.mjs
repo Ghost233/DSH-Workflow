@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, symlink, readFile, rm, writeFile, readlink } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { prepareDesktopProfile } from './desktop-profile.mjs'
+import { webProfileBundles } from './profile-templates.mjs'
 
 test('Desktop retains the user profile and loads one local board', async t => {
   const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
@@ -18,7 +19,7 @@ test('Desktop retains the user profile and loads one local board', async t => {
   await mkdir(resourcesRoot)
   await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
   const web = join(home, 'profiles/web')
-  boot.initProfile(web, boot.PROFILE_TEMPLATES.web.bundles)
+  boot.initProfile(web, webProfileBundles(createRequire(join(source, 'apps/cli/package.json')), boot))
   const userPatch = [{ id: 'web-runtime', config: { openBrowser: false, printUrl: false } },
     { insert: [{ id: 'bili-native', name: 'billion-context', config: { keep: true } }] }]
   await writeFile(join(web, 'cordis.patch.yml'), JSON.stringify(userPatch))
@@ -77,7 +78,7 @@ test('Desktop migrates a cached stage-one bundle-only profile without changing u
   await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
   await mkdir(resourcesRoot)
   await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
-  boot.initProfile(web, boot.PROFILE_TEMPLATES.web.bundles)
+  boot.initProfile(web, webProfileBundles(createRequire(join(source, 'apps/cli/package.json')), boot))
   const userManifest = JSON.parse(await readFile(join(web, 'package.json'), 'utf8'))
   userManifest.dependencies['user-kept-addon'] = 'file:/user/kept-addon'
   userManifest.userMetadata = { chosenWorkspace: 'keep-this' }
@@ -174,7 +175,7 @@ test('initial Desktop keeps copied Web links already pointing to the same owned 
   await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
   await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
   await mkdir(resourcesRoot); await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
-  const web = join(home, 'profiles/web'); boot.initProfile(web, boot.PROFILE_TEMPLATES.web.bundles)
+  const web = join(home, 'profiles/web'); boot.initProfile(web, webProfileBundles(createRequire(join(source, 'apps/cli/package.json')), boot))
   const target = join(resourcesRoot, 'workflow')
   const manifest = JSON.parse(await readFile(join(web, 'package.json'), 'utf8'))
   manifest.dependencies['dsh-workflow'] = `file:${target}`

@@ -121,3 +121,20 @@ test('managed launch disables retired packages in saved profiles and presets whi
   assert.equal(preset[1].disabled, undefined)
   assert.deepEqual(entries, before)
 })
+
+test('temporarily disables dsh-ops from saved profiles and agent presets', () => {
+  const entries = [
+    { id: 'ops-host', name: 'dsh-ops/mode-standard', config: { keep: true } },
+    { id: 'preset', name: '@deepseek-ai/dsh-agent-preset', config: { plugins: [
+      { id: 'ops-worker', name: 'dsh-ops/mode-ptc' },
+      { id: 'other', name: 'dsh-ops-other' },
+    ] } },
+  ]
+  const before = structuredClone(entries)
+  const patches = composeDshLaunch(entries, { projectRoot, catalogRoot: '/catalog' })
+  assert.equal(patches.find(row => row.id === 'ops-host')?.disabled, true)
+  const plugins = patches.find(row => row.id === 'preset').config.plugins
+  assert.equal(plugins[0].disabled, true)
+  assert.equal(plugins[1].disabled, undefined)
+  assert.deepEqual(entries, before)
+})

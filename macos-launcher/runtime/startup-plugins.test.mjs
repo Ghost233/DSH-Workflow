@@ -8,7 +8,7 @@ import { createRequire } from 'node:module'
 import { startupPluginResults, prepareStartupPlugins } from './startup-plugins.mjs'
 
 const versions = Object.fromEntries(JSON.parse(await readFile(new URL('../../project-plugins.json', import.meta.url), 'utf8'))
-  .plugins.map(item => [item.package, item.version]))
+  .plugins.filter(item => item.startup === true).map(item => [item.package, item.version]))
 
 // Only the external authenticated HTTP inventory is controlled here; no DSH or GUI is launched.
 async function fixture(t, rows) {

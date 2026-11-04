@@ -49,6 +49,7 @@ async function validate(input) {
   if (result.feishuAllowedId && !/^ou_[A-Za-z0-9]+$/.test(result.feishuAllowedId)) throw new Error('飞书用户标识无效。')
   for (const [key, label] of [['ghConfigDir', 'GitHub 账号目录'], ['feishuConfigDir', '飞书机器人目录'],
     ['localProjectDir', '本地项目目录'], ['executionRoot', '执行目录']]) result[key] = await directory(result[key], label)
+  result.extraWritableRoots = await normalizeWritableRoots(input.extraWritableRoots === undefined ? [] : input.extraWritableRoots)
   if (result.localProjectDir && result.executionRoot
     && (overlaps(result.localProjectDir, result.executionRoot) || overlaps(result.executionRoot, result.localProjectDir))) {
     throw new Error('执行目录不能与本地项目目录重叠。')
@@ -85,6 +86,20 @@ async function validate(input) {
 }
 
 async function validateProjectRoots(dataRoot, config, id) {
+  const conflicts = (a, b) => a && b && (overlaps(a, b) || overlaps(b, a))
+  const extra = config.extraWritableRoots ?? []
+  const station = await realpath(dataRoot)
+  const common = (await getCommonWritableRoots(dataRoot)).roots
+  if (extra.some(root => overlaps(root, homedir()) || conflicts(root, station)
+    || [config.localProjectDir, config.executionRoot, config.ghConfigDir, config.feishuConfigDir].some(path => conflicts(root, path)))) {
+    throw new Error('额外可写目录不能与 Station、账号或项目目录重叠。')
+  }
+  if (common.some(root => [config.localProjectDir, config.executionRoot, config.ghConfigDir, config.feishuConfigDir].some(path => conflicts(root, path)))) {
+    throw new Error('公共可写目录不能与项目或账号目录重叠。')
+  }
+  if (extra.some(root => common.some(shared => root !== shared && conflicts(root, shared)))) {
+    throw new Error('项目可写目录不能与公共可写目录嵌套。')
+  }
   for (const other of await listSuperagentProjects(dataRoot)) {
     if (other.id === id) continue
     if (other.error) throw new Error('其他 Superagent 项目配置不可读取，无法确认目录隔离。')
@@ -92,12 +107,88 @@ async function validateProjectRoots(dataRoot, config, id) {
       && config.githubLogin.toLowerCase() !== other.githubLogin.toLowerCase()) {
       throw new Error('不同 GitHub 账号需要使用各自独立的 gh 配置目录。')
     }
-    const conflicts = (a, b) => a && b && (overlaps(a, b) || overlaps(b, a))
     if (conflicts(config.executionRoot, other.executionRoot)
       || conflicts(config.executionRoot, other.localProjectDir) || conflicts(config.localProjectDir, other.executionRoot)) {
       throw new Error('任务目录不能与其他项目的任务目录或本地项目重叠。')
     }
+    if (extra.some(root => [other.localProjectDir, other.executionRoot, other.ghConfigDir, other.feishuConfigDir].some(path => conflicts(root, path)))
+      || (other.extraWritableRoots ?? []).some(root => [config.localProjectDir, config.executionRoot, config.ghConfigDir, config.feishuConfigDir].some(path => conflicts(root, path)))) {
+      throw new Error('额外可写目录不能与其他项目或账号目录重叠。')
+    }
   }
+}
+
+async function normalizeWritableRoots(roots) {
+  if (!Array.isArray(roots) || roots.length > 50
+    || roots.some(path => typeof path !== 'string' || !path || path.includes('\0') || path.length > 4096)) {
+    throw new Error('额外可写目录无效。')
+  }
+  return [...new Set(await Promise.all(roots.map(path => directory(path, '额外可写目录'))))]
+}
+
+/** Read the shared grant without creating a configuration for existing installations. */
+export async function getCommonWritableRoots(dataRoot) {
+  const parent = registry(dataRoot), file = join(parent, 'common-writable-roots.json')
+  const info = await missing(lstat(file))
+  if (!info) return { revision: 0, roots: [] }
+  await privateDirectory(parent, { create: false })
+  if (!info.isFile() || info.isSymbolicLink() || info.uid !== process.getuid() || info.nlink !== 1 || (info.mode & 0o077)) {
+    throw new Error('公共可写目录配置的权限不安全。')
+  }
+  const value = JSON.parse(await readFile(file, 'utf8'))
+  if (!Number.isSafeInteger(value.revision) || value.revision < 1 || !Array.isArray(value.roots) || value.roots.length > 50
+    || value.roots.some(path => typeof path !== 'string' || !isAbsolute(path) || path.includes('\0'))) {
+    throw new Error('公共可写目录配置无效。')
+  }
+  return { revision: value.revision, roots: value.roots }
+}
+
+async function validateCommonRoots(dataRoot, roots) {
+  const station = await realpath(dataRoot)
+  const conflicts = (a, b) => a && b && (overlaps(a, b) || overlaps(b, a))
+  const projects = await listSuperagentProjects(dataRoot)
+  if (projects.some(project => project.error)) throw new Error('其他 Superagent 项目配置不可读取，无法确认目录保护。')
+  if (projects.some(project => project.extraWritableRoots !== undefined && !Array.isArray(project.extraWritableRoots))) {
+    throw new Error('项目可写目录配置无效。')
+  }
+  if (roots.some(root => overlaps(root, homedir()) || conflicts(root, station)
+    || projects.some(project => [project.localProjectDir, project.executionRoot, project.ghConfigDir, project.feishuConfigDir]
+      .some(path => conflicts(root, path))
+      || (project.extraWritableRoots ?? []).some(path => root !== path && conflicts(root, path))))) {
+    throw new Error('公共可写目录不能与 Station、账号或项目目录重叠。')
+  }
+}
+
+/** The caller holds the registry lock and ensures all Superagent instances are stopped. */
+export async function saveCommonWritableRoots(dataRoot, input) {
+  if (!input || typeof input !== 'object' || !Number.isSafeInteger(input.revision)) throw new Error('公共可写目录配置无效。')
+  const current = await getCommonWritableRoots(dataRoot)
+  if (current.revision !== input.revision) throw new Error('公共可写目录已被更改，请刷新后重试。')
+  const roots = await normalizeWritableRoots(input.roots)
+  await validateCommonRoots(dataRoot, roots)
+  const parent = registry(dataRoot)
+  await privateDirectory(parent)
+  const file = join(parent, 'common-writable-roots.json'), temp = join(parent, `common-roots.${randomUUID()}.tmp`)
+  const result = { revision: current.revision + 1, roots }
+  try {
+    await writeFile(temp, JSON.stringify(result, null, 2) + '\n', { flag: 'wx', mode: 0o600 })
+    await rename(temp, file)
+  } finally { await missing(unlink(temp)) }
+  return result
+}
+
+/** Recheck the saved physical paths and project isolation before starting a sandbox. */
+export async function extraWritableRootsForProject(dataRoot, project) {
+  const roots = project.extraWritableRoots ?? []
+  if (!Array.isArray(roots) || roots.some(path => typeof path !== 'string' || !isAbsolute(path))) throw new Error('额外可写目录无效。')
+  const resolved = await Promise.all(roots.map(path => directory(path, '额外可写目录')))
+  if (resolved.some((path, index) => path !== roots[index])) throw new Error('额外可写目录已改变，请重新选择。')
+  const common = (await getCommonWritableRoots(dataRoot)).roots
+  const resolvedCommon = await Promise.all(common.map(path => directory(path, '公共可写目录')))
+  if (resolvedCommon.some((path, index) => path !== common[index])) throw new Error('公共可写目录已改变，请重新选择。')
+  await validateCommonRoots(dataRoot, resolvedCommon)
+  await validateProjectRoots(dataRoot, { ...project, extraWritableRoots: resolved }, project.id)
+  return [...new Set([...resolvedCommon, ...resolved])]
 }
 
 async function readProject(dataRoot, id) {
@@ -199,12 +290,21 @@ async function guidedStorageParent(dataRoot, storageRoot) {
   return path
 }
 
+async function protectCommonWorkspace(dataRoot, work) {
+  const roots = (await getCommonWritableRoots(dataRoot)).roots
+  for (const root of roots) {
+    if (await directory(root, '公共可写目录') !== root) throw new Error('公共可写目录已改变，请重新选择。')
+    if (overlaps(root, work) || overlaps(work, root)) throw new Error('项目目录不能与公共可写目录重叠。')
+  }
+}
+
 export async function createSuperagentProject(dataRoot, input, { beforeGuidedCreate } = {}) {
   let work
   try {
     if (input?.guided === true) {
       const parent = await guidedStorageParent(dataRoot, input.storageRoot)
       work = join(parent, randomUUID())
+      await protectCommonWorkspace(dataRoot, work)
       await beforeGuidedCreate?.(work)
       await mkdir(work, { mode: 0o700 })
       input = await guidedConfiguration(work, input)
@@ -241,10 +341,11 @@ export async function updateSuperagentProject(dataRoot, id, input) {
       if (previous?.executionRoot || previous?.prepare) throw new Error('已有任务目录的项目不能重新生成任务配置，请新建项目。')
       const parent = await guidedStorageParent(dataRoot, input.storageRoot)
       work = join(parent, randomUUID())
+      await protectCommonWorkspace(dataRoot, work)
       await mkdir(work, { mode: 0o700 })
       input = await guidedConfiguration(work, input)
     }
-    const config = await validate(input)
+    const config = await validate({ ...input, extraWritableRoots: input.extraWritableRoots === undefined ? previous?.extraWritableRoots : input.extraWritableRoots })
     if (id !== 'legacy') config.preserveLegacyPolicy = false
     await validateProjectRoots(dataRoot, config, id)
     if (id !== 'legacy' && config.executionRoot && config.executionRoot !== previous?.executionRoot

@@ -14,11 +14,15 @@ import { desktopRuntimeFileExclusion } from '../deepseek-harness/apps/desktop/sc
 import { selectOfficeEngine } from '../deepseek-harness/scripts/libreoffice-packages.mjs'
 import { writeDesktopRuntime } from '../deepseek-harness/apps/desktop/src/runtime-tree.ts'
 import { resolvePrimaryRuntime } from '../deepseek-harness/packages/skill/tool-workspace-dependencies/src/index.ts'
+import { configureDesktopZod, verifyDesktopZod } from './desktop-runtime-optimization.mjs'
+import { pruneKnownDevelopmentFiles } from './production-file-policy.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const appRoot = join(root, 'deepseek-harness/apps/desktop')
 const requireDesktop = createRequire(join(appRoot, 'package.json'))
 const { build, Platform, Arch } = requireDesktop('electron-builder')
+const semver = requireDesktop('semver')
+const sharedZod = JSON.parse(await readFile(join(root, 'macos-launcher/package.json'), 'utf8')).dependencies?.zod
 const arch = process.arch
 if (process.platform !== 'darwin' || arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
 const paths = desktopTargetBuildPaths(`mac-${arch}`)
@@ -55,6 +59,7 @@ try {
   await cp(join(paths.packageSet, 'desktop-packages.json'), join(staging, 'desktop-packages.json'))
   await cp(join(paths.packageSet, 'desktop-packages'), join(staging, 'desktop-packages'), { recursive: true })
   createRuntimeProjectMetadata(staging, release)
+  await configureDesktopZod(join(staging, 'pnpm-workspace.yaml'), sharedZod, semver)
   const npmrc = join(staging, '.npmrc')
   await writeFile(npmrc, '')
   const environment = desktopNodeEnvironment(electron, join(paths.runtime, 'bin'), {
@@ -75,6 +80,8 @@ try {
   await mkdir(dsh)
   await cp(modules, join(dsh, 'node_modules'), { recursive: true, dereference: true,
     filter: source => desktopRuntimeFileExclusion(relative(modules, source), target, office) === undefined })
+  await pruneKnownDevelopmentFiles(join(dsh, 'node_modules'))
+  await verifyDesktopZod(join(dsh, 'node_modules'), sharedZod, semver)
   await writeFile(join(dsh, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-desktop-runtime',
     private: true, version, type: 'module', dependencies: Object.fromEntries(packageSet.packages.map(row => [row.name, row.version])) }) + '\n')
   await build({ projectDir: appRoot, targets: Platform.MAC.createTarget('dir', Arch[arch]), config: {
@@ -95,6 +102,7 @@ try {
   } })
   const app = join(output, 'mac-arm64', 'DeepSeek Harness.app')
   const resources = join(app, 'Contents/Resources')
+  await pruneKnownDevelopmentFiles(join(resources, 'app/node_modules'))
   // The unpacked CLI resolves app/runtime beside dsh. Share the bundled payload through a relative path.
   await symlink('../runtime', join(resources, 'app/runtime'))
   const packagedDsh = join(resources, 'app/dsh')

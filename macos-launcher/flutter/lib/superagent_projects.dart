@@ -22,6 +22,133 @@ class SuperagentProjects extends StatelessWidget {
     );
   }
 
+  Future<void> _editWritableDirectories(
+    BuildContext context,
+    Map<String, Object?>? project,
+  ) async {
+    final common = project == null;
+    final initial = common
+        ? model.commonSuperagentWritableRoots['roots']
+        : project['extraWritableRoots'];
+    final revision = model.commonSuperagentWritableRoots['revision'];
+    final directories = (initial as List? ?? []).whereType<String>().toList();
+    var saving = false;
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(common ? '公共可写目录' : '${project['name']}：项目可写目录'),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    common
+                        ? '所有 Superagent 项目都会继承这些目录。共享缓存可能被修改，多个项目同时使用时会互相影响。'
+                        : '这些目录仅授权给此项目。Superagent 可以修改目录中的内容。',
+                  ),
+                  const SizedBox(height: 12),
+                  if (directories.isEmpty) const Text('尚未添加额外目录。'),
+                  for (final directory in directories)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: SelectableText(directory),
+                      trailing: IconButton(
+                        tooltip: '移除目录',
+                        onPressed: saving
+                            ? null
+                            : () => setDialogState(
+                                () => directories.remove(directory),
+                              ),
+                        icon: const Icon(Icons.delete_outline),
+                      ),
+                    ),
+                  TextButton.icon(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            final selected = await model.native
+                                .chooseWritableDirectory();
+                            if (!dialogContext.mounted || selected == null) {
+                              return;
+                            }
+                            setDialogState(() {
+                              if (!directories.contains(selected)) {
+                                directories.add(selected);
+                              }
+                              error = null;
+                            });
+                          },
+                    icon: const Icon(Icons.create_new_folder_outlined),
+                    label: const Text('选择目录'),
+                  ),
+                  Text(
+                    common
+                        ? '保存前请先停止所有 Superagent；重新启动项目后生效。'
+                        : '保存前请先停止所有 Superagent；重新启动此项目后生效。',
+                  ),
+                  if (error != null)
+                    Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      setDialogState(() {
+                        saving = true;
+                        error = null;
+                      });
+                      try {
+                        if (model.superagentBusy) {
+                          throw StateError('Superagent 正在处理其他请求，请稍后再试。');
+                        }
+                        if (common) {
+                          await model.saveCommonSuperagentWritableRoots({
+                            'revision': revision,
+                            'roots': directories,
+                          });
+                        } else {
+                          await model.saveSuperagentProject({
+                            ...project,
+                            'extraWritableRoots': directories,
+                          }, id: project['id'] as String);
+                        }
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      } catch (failure) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => error = failure.toString());
+                        }
+                      } finally {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => saving = false);
+                        }
+                      }
+                    },
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _state(ServiceState state) => switch (state) {
     ServiceState.running => '运行中',
     ServiceState.starting => '启动中',
@@ -82,6 +209,14 @@ class SuperagentProjects extends StatelessWidget {
                   child: const Text('编辑项目'),
                 ),
                 OutlinedButton(
+                  onPressed: model.superagentBusy
+                      ? null
+                      : () => unawaited(
+                          _editWritableDirectories(context, project),
+                        ),
+                  child: const Text('项目可写目录'),
+                ),
+                OutlinedButton(
                   onPressed:
                       busy ||
                           status.state == ServiceState.running ||
@@ -130,6 +265,13 @@ class SuperagentProjects extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('每个项目使用独立的浏览器后端；日常桌面版和 Web 继续共用原有 DSH 服务。'),
+        OutlinedButton(
+          onPressed: model.superagentBusy
+              ? null
+              : () => unawaited(_editWritableDirectories(context, null)),
+          child: const Text('公共可写目录'),
+        ),
+        const Text('公共目录对所有 Superagent 生效；每个项目还可设置自己的可写目录。'),
         OutlinedButton(
           onPressed: model.superagentBusy
               ? null

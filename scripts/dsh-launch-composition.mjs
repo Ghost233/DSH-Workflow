@@ -2,7 +2,7 @@ import { resolve, join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { observationProfilePatches } from './observation-profile.mjs'
-import { packageMutationModules, isRetiredPluginModule } from './dsh-delivery-policy.mjs'
+import { packageMutationModules, isUnavailablePluginModule } from './dsh-delivery-policy.mjs'
 
 const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
 
@@ -10,7 +10,7 @@ const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray
 export function composeDshLaunch(entries, { projectRoot, catalogRoot }) {
   const root = resolve(projectRoot), all = flatten(entries)
   const patches = observationProfilePatches(all, resolve(catalogRoot))
-  const disabledModule = name => packageMutationModules.includes(name) || isRetiredPluginModule(name)
+  const disabledModule = name => packageMutationModules.includes(name) || isUnavailablePluginModule(name)
   const addressable = row => {
     if (typeof row.id !== 'string' || !row.id || all.filter(item => item.id === row.id).length !== 1) {
       throw new Error('Managed readonly package policy requires an unambiguous entry id')

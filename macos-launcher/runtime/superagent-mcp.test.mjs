@@ -3,13 +3,16 @@ import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import { defineContentToolFixture, executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import * as adapter from './superagent-mcp.mjs'
 
 test('exposes shared MCP tools to a live Superagent worker, preserves its guard, and removes them when the task ends', async t => {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   const tickets = new Map([['ticket-a', { id: 'ticket-a' }]])
   const agents = new Map()
   ctx.reflect.provide('agents', { get: id => agents.get(id), list: () => [...agents.values()] })
@@ -41,7 +44,7 @@ test('exposes shared MCP tools to a live Superagent worker, preserves its guard,
   ordinary.ctx.tools.restrict({ allow: ['read'] })
   await ctx.serial('agent/created', { agent: ordinary })
   assert.equal(ctx.tools.schemas(ordinary).some(item => item.name === 'mcp__fixture__echo'), false)
-  const run = () => ctx.tools.execute({ agent, name: 'mcp__fixture__echo', arguments: {}, callId: 'fixture', signal: new AbortController().signal })
+  const run = () => executeModelToolFixture(ctx, { agent, name: 'mcp__fixture__echo', arguments: {}, callId: 'fixture', signal: new AbortController().signal })
   assert.match(JSON.stringify(await run()), /MCP fixture result/)
   assert.equal(calls, 1)
   tickets.set('ticket-a', { id: 'ticket-a', ended: { by: 'worker' } })

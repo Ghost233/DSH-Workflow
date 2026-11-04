@@ -9,6 +9,7 @@ import { readPluginConfiguration, assertProfilePluginVersions } from './plugin-c
 import { migrateProjectEntryNames } from '../../scripts/observation-profile.mjs'
 import { prepareStartupPlugins } from './startup-plugins.mjs'
 import { deployPluginPayload } from './plugin-payload.mjs'
+import { webProfileBundles } from './profile-templates.mjs'
 
 const BUNDLE = 'dsh-workflow-desktop'
 const TEAM = '@deepseek-ai/dsh-experimental-agent-team-profile'
@@ -39,7 +40,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
       if (existsSync(join(web, 'node_modules')) && !existsSync(join(profile, 'node_modules'))) {
         await cp(join(web, 'node_modules'), join(profile, 'node_modules'), { recursive: true, dereference: false })
       }
-    } else boot.initProfile(profile, boot.PROFILE_TEMPLATES.web.bundles)
+    } else boot.initProfile(profile, webProfileBundles(require, boot))
   }
   const deployment = await deployPluginPayload({ resourcesRoot, profile })
   if (deployment?.changed) process.stderr.write(`[project-plugins] 已从应用交付目录部署固定插件，原配置与包链接备份：${deployment.backup}\n`)
@@ -104,7 +105,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   manifest.private = true
   manifest.name = 'dsh-profile-desktop'
   manifest.dsh ??= {}
-  manifest.dsh.profile ??= { bundles: [...boot.PROFILE_TEMPLATES.web.bundles] }
+  manifest.dsh.profile ??= { bundles: [...webProfileBundles(require, boot)] }
   const bundles = manifest.dsh.profile.bundles.filter(name => name !== BUNDLE)
   if (!bundles.includes(TEAM)) bundles.push(TEAM)
   // Compose from the existing profile before adding our own rows, so preparation is idempotent.

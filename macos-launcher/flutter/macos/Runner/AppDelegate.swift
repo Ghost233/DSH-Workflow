@@ -224,14 +224,15 @@ class AppDelegate: FlutterAppDelegate {
             "password": self.loadPassword() as Any, "loginStatus": self.loginStatus(),
           ])
         case "showWindow": self.showWindow(); result(nil)
-        case "chooseProjectDirectory":
+        case "chooseProjectDirectory", "chooseWritableDirectory":
           let panel = NSOpenPanel()
           panel.canChooseDirectories = true
           panel.canChooseFiles = false
           panel.allowsMultipleSelection = false
           panel.canCreateDirectories = false
-          panel.prompt = "选择项目"
-          panel.message = "选择与 GitHub 仓库对应的本地项目目录。"
+          let writable = call.method == "chooseWritableDirectory"
+          panel.prompt = writable ? "选择目录" : "选择项目"
+          panel.message = writable ? "选择允许此 Superagent 写入的目录。" : "选择与 GitHub 仓库对应的本地项目目录。"
           panel.begin { response in result(response == .OK ? panel.url?.path : nil) }
         case "feishuQRCode":
           guard let value = call.arguments as? String, value.utf8.count <= 4096,
@@ -419,7 +420,9 @@ class AppDelegate: FlutterAppDelegate {
             let expected = self.desktopIdentity
             let unhideAccepted = !application.isHidden || application.unhide()
             FileHandle.standardError.write(Data("DESKTOP_WINDOW_TRACE phase=explicit-unhide-return accepted=\(unhideAccepted) pid=\(application.processIdentifier)\n".utf8))
-            guard application.activate(options: [.activateAllWindows]) else { throw self.failure("Desktop 激活失败") }
+            // AppKit can report false when the process has no window. The URL
+            // event below asks the existing Desktop process to recreate it.
+            _ = application.activate(options: [.activateAllWindows])
             guard let current = try self.runningDesktop(path), let actual = self.desktopIdentity,
                   let expected, actual.0 == expected.0, actual.1 == expected.1, actual.2 == expected.2 else {
               throw self.failure("Desktop 显示期间进程身份已改变")
