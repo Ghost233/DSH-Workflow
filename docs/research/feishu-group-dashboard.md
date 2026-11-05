@@ -23,8 +23,14 @@
 - 同一消息 Pin/Unpin 各有 5 QPS 限制；各 API 标示 1000 次/分钟、50 次/秒。已 Pin 再添加返回 Pin 信息；未 Pin 或撤回后移除返回成功。[添加](https://open.feishu.cn/document/server-docs/im-v1/pin/create.md)；[移除](https://open.feishu.cn/document/server-docs/im-v1/pin/delete.md)；[查询](https://open.feishu.cn/document/server-docs/im-v1/pin/list.md)
 - 建议在到期前发送新卡、确认返回 ID、尝试 Pin 新卡后再移除旧卡 Pin，并持久记录步骤以便失败后核对和恢复。这是工程建议，不是平台原子保证：中途可能同时存在两个 Pin 或由于失败无法完成；是否存在其他原子替换 API **未验证**。不得误删不属于本总览的 Pin。
 
+## 既有凭据复用与群选择（源码与官方文档）
+
+- 本仓 [机器人发现逻辑](../../macos-launcher/runtime/superagent-feishu-setup.mjs)扫描用户 CLI 配置、Station 管理目录和项目配置目录，通过 profile list、bot strict-mode 和 auth status 判定候选；[账号入口](../../macos-launcher/runtime/superagent-accounts.mjs)绑定所选配置目录与 profile，清理可能覆盖身份的环境变量，并检查 bot ready。可考虑复用该入口而非复制密钥，但这只是源码路径，不证明授权包含群列表、发卡或 Pin 权限；未读取任何真实凭据。
+- [Lark 官方群列表](https://open.larksuite.com/document/server-docs/group/chat/list.md)支持 tenant/user token，返回对应机器人/用户所在群而非全部租户群，不含单聊；需启用机器人能力及所列群读取权限之一。结果包含 chat_id、name、状态，支持分页（最大 100），按活跃度排序分页可能漏项。建议选择并保存明确 chat_id，不以名称作为唯一标识；可见不等于有发消息或 Pin 的权限。
+- [CLI 上游 README](https://github.com/larksuite/cli/blob/main/README.md)声明支持 bot/user 身份、结构化输出、raw API 和权限检查，同时建议将此工具集成机器人作为私人对话助手使用时不要加入群聊或让其他用户交互，避免权限滥用与泄露。若总览机器人也暴露 AI 对话能力，方案与该安全建议存在张力，必须先确定隔离、权限与交互边界；README 的 main 版本不保证等同仓库锁定的 [1.0.98](../../vendor/lark-cli.upstream.json)，具体命令兼容性未核验。
+
 ## 未验证与后续验收
 
-- Lark 国际版：用户提供的先前调查指出存在等价发送接口；本次未能获取国际版官方正文，因此域名、权限、更新及 Pin 限制不能视为已独立核验，更不能假定与飞书完全一致。
+- Lark 国际版：本次取得上文群列表官方正文；但发送、更新及 Pin 正文仍未独立核验，不能假定与飞书完全一致。
 - 未取得测试租户、应用凭据和目标群，未进行真实发送、共享更新、过期、群管理员权限、Pin 容量或并发替换试验；无证据证明特定租户可用。需在授权测试群验证并记录响应码、创建时间、身份、限流和重试/恢复结果，不记录密钥。14 天边界需真实经过时间或经官方确认，不以模拟时钟代替服务端验证。
-- 工具子代理遇到自动审核错误（PI_AI_ERROR）和浏览器守护进程启动失败；主代理随后成功读取上述飞书官方 Markdown，但国际版正文的读取仍被工具自动审核错误阻断。
+- 浏览器守护进程启动受沙箱限制；搜索服务缺少 API key。本次以公开官方 Markdown 直接读取替代，未进行租户操作。
