@@ -1,6 +1,6 @@
 # Superagent 状态研究：初步结果及未证实范围
 
-问题：[确认 Superagent 状态与无模型数据接入](https://github.com/Ghost233/DSH-Workflow/issues/58)。研究时间：2026-11-05。此文是部分调查，不是“全部状态可可靠获取”的证明。现场无运行时调用，也未调用 Agent 或 LLM。Station 的本地交付源码版本未确定；路径与行号仅对本机当时安装的源码成立。
+问题：[确认 Superagent 状态与无模型数据接入](https://github.com/Ghost233/DSH-Workflow/issues/58)。研究时间：2026-11-05。此文是部分调查，不是“全部状态可可靠获取”的证明。已进行下述只读运行时查询，未调用 Agent 或 LLM。Station 的本地交付源码版本未确定；路径与行号仅对本机当时安装的源码成立。
 
 ## 已观察的接缝
 
@@ -16,6 +16,10 @@
 - `GET state` 返回 setup、load（running、queued、maxWorkers）、masterId、paused 和 health；它并不枚举工单（`src/app/http.ts:93–110,151–158`；`src/app/views/tickets.ts:50–55`）。`GET overview` 返回系统问题、等待人类的工单、执行器负载及 24 小时流量，问题包括 setup、无源、无授权发送者、源/运行时错误、执行器暂停、超时/不可用评估及发送失败（`src/app/views/overview.ts:38–78`）。负载 running 是执行 turn 占槽的 worker session 数，不是全部活跃工单；queued 仅按工单 stage/action 计算，不能单独证明 worker 就绪。
 - `GET tickets?state=...` 支持 open、person、working、idle、ended；默认 open，默认分页 20，最多 1000；ended 才查询全部工单后过滤，其他 stage 查询 open 工单（`src/app/api.ts:12–14,33–34`；`src/app/http.ts:138–141,188–192`；`src/app/views/tickets.ts:35–42`）。详情包含 mandate、暂停状态、channels、decision、assignments、inputs（含 delivered）和关联 threads；启动过的 assignment 指向该 ticket 的同一 worker session（`src/app/views/tickets.ts:56–85`）。还可 GET threads、thread detail、decisions、sources、settings 和 search；接口类型供面板和 host 共享，不构成对外稳定兼容承诺（`src/app/api.ts:1–10,20–34`）。
 - 上游包声明 Node `^22.19.0 || >=24.0.0`、DSH `^0.2.1-alpha.2`、版本 0.1.0 且 private（`package.json:2–6,53–57`）；这只是声明，不证明本机交付版本或实际兼容。
+
+## 本机只读运行验证（2026-11-05）
+
+对 Station 当前运行的两个实例只读查询 `state` 和分页 `tickets`，未发消息、启动或停止服务、调用 Agent 或 LLM。Ghost233/GhostSplash：state HTTP 200，running=0、queued=0，open=0、ended=1；Ghost233/GhostContainerManager：state HTTP 200，running=0、queued=0，open=3、person=3、working=0、idle=0、ended=10。每个状态查询 HTTP 200，响应字段包含 stage、更新时间等，且包含 directory、summary 等敏感字段，应采用白名单。一次查询不是动态变迁、完整分页、权限隔离、重启恢复或上游升级兼容性的验证；端口是运行时动态值，不可硬编码。两实例返回品牌 feishu，不能推断其他实例的 Lark 国际版配置。
 
 ## 进程恢复与限制
 
