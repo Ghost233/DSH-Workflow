@@ -20,7 +20,7 @@
 ## 进程恢复与限制
 
 - 意外退出进入 failed，关闭处理器未自动重启（`superagent-service.mjs:256–267`）；明确命令为 start、stop、open、status（:307–313）。start 检查现存 child 与旧进程 lease（:134–139）；stop 发 SIGINT、等待最多 300 秒且不强杀（:295–305）。管理 IPC 断开时 host 收到 SIGINT，清理时进程组收到 SIGTERM（`/Applications/Ghost DSH Station.app/Contents/Resources/workflow/macos-launcher/runtime/superagent-lifetime.mjs:3–23`）。lease 验证 PID 启动时间和命令，阻止已识别的旧 host 仍活着时重启，并负责记录与释放（`/Applications/Ghost DSH Station.app/Contents/Resources/workflow/macos-launcher/runtime/superagent-host-lease.mjs:14–55`）。以上仅证明进程管理，不能证明工单状态或事件重放恢复。
-- 初步候选是以只读 state 快照与 watch-status 结合，但尚不证明快照跨请求的完整性、原子性、历史和等待原因，或后者断线后恢复。服务状态不得当成工单状态；消费者应将不可达、未知及快照过时明确标记，不能猜测完成。未证实 hook 覆盖面、执行器状态、工单枚举、生命周期事件、并发/丢事件和恢复语义，均须继续对 Superagent 源码和版本固定实例验证。
+- 初步候选是以只读 state 快照与 watch-status 结合，但尚不证明快照跨请求的完整性、原子性、历史和等待原因，或后者断线后恢复。服务状态不得当成工单状态；消费者应将不可达、未知及快照过时明确标记，不能猜测完成。工单枚举和执行器负载已有上述源码依据，但 hook 覆盖面、状态实时准确性、并发/丢事件以及恢复语义仍需在版本固定的运行实例中验证。
 
 ## 失败与后续
 
