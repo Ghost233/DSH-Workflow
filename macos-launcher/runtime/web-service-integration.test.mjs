@@ -45,7 +45,7 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   assert.equal(connected.connection.runtimeVersion, runtime.version)
   assert.equal(await readFile(join(profile, 'cordis.patch.yml'), 'utf8'), userPatch)
   const loaded = started.logs.filter(row => row.text.startsWith('项目启动插件：')).map(row => JSON.parse(row.text.slice('项目启动插件：'.length)))
-  assert.equal(loaded.length, 9)
+  assert.equal(loaded.length, 11)
   assert.ok(loaded.every(row => row.state === 'loaded'), JSON.stringify(loaded))
   const inspection = (await serviceRequest(socket, { type: 'inspect-stop', action: 'stop' })).stop
   assert.ok(inspection.operationId)

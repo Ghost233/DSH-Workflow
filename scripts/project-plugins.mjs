@@ -50,11 +50,20 @@ export async function readPluginMetadata(item, resolution, registry) {
     peerDependencies: manifest.peerDependencies ?? {}, peerDependenciesMeta: manifest.peerDependenciesMeta ?? {} }
 }
 
+// The fixed DSH Web shell seeds these browser modules from client/web/src/platform.ts.
+// Browser-only libraries need not be installed as separate Host packages.
+const webPlatformModules = new Set([
+  'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', '@deepseek-ai/cordis',
+  'zod', '@tanstack/react-virtual', '@deepseek-ai/dsh-client-store',
+  '@deepseek-ai/dsh-client-ui-slots', '@deepseek-ai/dsh-client-ui-primitives',
+  '@deepseek-ai/dsh-client-ui-dockkit',
+])
+
 function assertClientDependencies(items, hostPackages, configuredNames) {
   const missing = []
   for (const item of items) {
     for (const name of item.metadata?.dsh?.client?.inject ?? []) {
-      if (!hostPackages[name] && !configuredNames.has(name)) missing.push(`${item.package}: ${name}`)
+      if (!webPlatformModules.has(name) && !hostPackages[name] && !configuredNames.has(name)) missing.push(`${item.package}: ${name}`)
     }
   }
   if (missing.length) throw new Error(`固定插件依赖当前宿主未提供的客户端模块；安装前已停止，请先适配相关插件：\n${missing.join('\n')}`)

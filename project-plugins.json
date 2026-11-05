@@ -1,7 +1,7 @@
 {
   "registry": "https://registry.npmjs.org/",
   "plugins": [
-    { "package": "dsh-context", "version": "0.81.2", "entryId": "dsh-context", "repository": "https://github.com/bowenliang123/dsh-context", "startup": true },
+    { "package": "dsh-context", "version": "0.82.0", "entryId": "dsh-context", "repository": "https://github.com/bowenliang123/dsh-context", "startup": true },
     { "package": "dsh-cost-meter", "version": "1.9.58", "entryId": "cost-meter", "repository": "https://github.com/Han-1413141/dsh-cost-meter", "startup": true },
     { "package": "@nagi-ovo/dsh-visualize", "version": "0.1.7", "entryId": "dsh-visualize", "repository": "https://github.com/Nagi-ovo/dsh-visualize", "startup": true },
     { "package": "@goodandready/dsh-plugin-notify", "version": "0.4.8", "entryId": "plugin-notify", "repository": "https://github.com/GooDAnDReaDY/dsh-plugin-notify", "startup": true },
@@ -10,7 +10,9 @@
     { "package": "dsh-provider-hub", "version": "0.4.3", "entryId": "dsh-provider-hub", "repository": "https://github.com/DDDMUC/dsh-provider-hub", "startup": true },
     { "package": "dsh-skill-mcp-panel", "version": "2.3.7", "entryId": "skill-mcp-panel", "repository": "https://github.com/Fishquito7/dsh-skill-mcp-panel", "startup": true },
     { "package": "dsh-streamfold", "version": "0.7.12", "entryId": "dsh-streamfold", "repository": "https://github.com/rezon-aki/dsh-streamfold", "startup": true },
+    { "package": "@guowenzhang/dsh-worktree", "version": "2.4.0", "entryId": "worktree", "repository": "https://github.com/zhang-guo-wen/dsh-worktree", "startup": true },
+    { "package": "@michengai/dsh-archive-manager", "version": "1.2.8", "entryId": "ui-workspace-archive-manager", "repository": "https://github.com/MichengAI/dsh-archive-manager", "startup": true },
     { "package": "dsh-ops", "version": "0.4.4", "entryId": "dsh-ops", "repository": "https://github.com/T-Auto/dsh-ops" },
-    { "package": "dsh-live-compact", "version": "1.0.7", "entryId": "compaction-spine", "repository": "https://github.com/MerkyorLynn/dsh-live-compact", "source": "git", "commit": "866a9db7dbd458a088a5fce16b16fcd531bd55d2" }
+    { "package": "dsh-live-compact", "version": "1.0.7", "entryId": "compaction-spine", "repository": "https://github.com/MerkyorLynn/dsh-live-compact", "source": "git", "commit": "c50c58b00cf8545c6524272563f99bc7f2779384" }
   ]
 }

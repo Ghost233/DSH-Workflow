@@ -312,6 +312,24 @@ test('a removed client module is rejected from pinned metadata before installing
   assert.equal(f.calls.length, calls)
 })
 
+test('Web platform libraries satisfy client dependencies without separate host packages', async t => {
+  const f = await fixture(t)
+  f.list.plugins.splice(1)
+  await writeJson(join(f.root, 'project-plugins.json'), f.list)
+  const libraries = ['@deepseek-ai/dsh-client-store', '@deepseek-ai/dsh-client-ui-primitives', '@deepseek-ai/dsh-client-ui-slots']
+  const first = await prepare(f.root, f.anchor, process.pid, { ...f,
+    readMetadata: async item => ({ name: item.package, version: '1.0.0', dsh: { client: { inject: libraries } } }),
+  })
+  assert.deepEqual(first.skipped, [])
+  assert.ok(first.installed.some(item => item.package === f.list.plugins[0].package))
+  for (const name of libraries) assert.equal(first.hostPackages[name], undefined)
+  await releaseLock(first.directory, process.pid)
+  const next = await prepare(f.root, f.anchor, process.pid, { ...f, update: false, scope: 'startup' })
+  assert.deepEqual(next.skipped, [])
+  assert.ok(next.installed.some(item => item.package === f.list.plugins[0].package))
+  await releaseLock(next.directory, process.pid)
+})
+
 // Imported late only to keep the fixture helpers above compact.
 import { fileURLToPath } from 'node:url'
 
