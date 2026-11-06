@@ -218,6 +218,16 @@ class AppDelegate: FlutterAppDelegate {
           panel.prompt = writable ? "选择目录" : "选择项目"
           panel.message = writable ? "选择允许此 Superagent 写入的目录。" : "选择与 GitHub 仓库对应的本地项目目录。"
           panel.begin { response in result(response == .OK ? panel.url?.path : nil) }
+        case "chooseCodexAuthFile":
+          let panel = NSOpenPanel()
+          panel.canChooseDirectories = false
+          panel.canChooseFiles = true
+          panel.allowsMultipleSelection = false
+          panel.showsHiddenFiles = true
+          panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
+          panel.prompt = "选择认证文件"
+          panel.message = "选择 Codex CLI 的 auth.json。"
+          panel.begin { response in result(response == .OK ? panel.url?.path : nil) }
         case "feishuQRCode":
           guard let value = call.arguments as? String, value.utf8.count <= 4096,
                 let url = URL(string: value), url.scheme == "https",

@@ -281,6 +281,10 @@ test('disabled LAN settings refuses authenticated writes while preserving loopba
   for (const path of ['api/settings/update', 'api/settings/replace', 'api/settings/mutate', 'api/credentials/set', 'api/credentials/unset']) {
     assert.equal(await change(lan, lanCookie, path), 403)
   }
+  for (const method of ['status', 'start', 'poll', 'answer', 'cancel']) {
+    assert.equal(await change(lan, lanCookie, `api/station-codex-auth/${method}`), 403)
+    assert.equal(await change(local, localCookie, `api/station-codex-auth/${method}`), 200)
+  }
   assert.equal(await change(lan, lanCookie, 'api/x/../settings/update'), 403)
   assert.equal(enabled, true, 'refused LAN request never reaches the Host writer')
   assert.equal((await fetch(new URL('ordinary-business', lan), { headers: { cookie: lanCookie } })).status, 200)
@@ -291,4 +295,6 @@ test('disabled LAN settings refuses authenticated writes while preserving loopba
   t.after(() => allowed.close())
   assert.equal(await change(allowed.lanUrls[0], await login(allowed.lanUrls[0]), 'api/settings/update'), 200,
     'enabled authenticated LAN settings are forwarded')
+  assert.equal(await change(allowed.lanUrls[0], await login(allowed.lanUrls[0]), 'api/station-codex-auth/start'), 403,
+    'Codex authorization remains local even when LAN settings are enabled')
 })

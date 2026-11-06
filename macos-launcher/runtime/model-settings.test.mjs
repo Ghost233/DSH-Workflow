@@ -1,5 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { executeModelSettings } from './model-settings.mjs'
 
 function fixture() {
@@ -34,6 +37,49 @@ test('model overview omits secret provider fields and reports existing credentia
   assert.equal(existing.credentialConfigured, true)
   assert.deepEqual(existing.models, ['m1'])
   assert.equal(JSON.stringify(result).includes('must-not-leak'), false)
+})
+
+test('Codex provider reports native OAuth status rather than an API key', async () => {
+  const { rpc, namespaces } = fixture()
+  namespaces[0].value.providers['openai-codex'] = { models: [{ id: 'gpt-6.1-terra' }] }
+  const result = await executeModelSettings({ type: 'list' }, rpc, {
+    codexStatus: async () => ({ available: true, configured: false }),
+  })
+  const codex = result.providers.find(row => row.id === 'openai-codex')
+  assert.deepEqual(codex.oauth, { available: true, configured: false })
+})
+
+test('model settings remain usable if the Host authorization bridge is unavailable', async () => {
+  const { rpc, namespaces } = fixture()
+  namespaces[0].value.providers['openai-codex'] = { models: [{ id: 'gpt-6.1-terra' }] }
+  const result = await executeModelSettings({ type: 'list' }, rpc, {
+    codexStatus: async () => { throw new Error('private diagnostics') },
+  })
+  assert.deepEqual(result.providers.find(row => row.id === 'openai-codex').oauth, { available: false, configured: null })
+  assert.equal(JSON.stringify(result).includes('private diagnostics'), false)
+  const interrupted = await executeModelSettings({ type: 'list' }, rpc, {
+    codexStatus: async () => { throw new Error('Codex 认证切换状态无法恢复。') },
+  })
+  assert.equal(interrupted.providers.find(row => row.id === 'openai-codex').oauth.error, 'Codex 认证切换状态无法恢复。')
+})
+
+test('Codex CLI import reads only the selected file and does not return its tokens', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'station-codex-import-test-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, 'auth.json')
+  const claims = Buffer.from(JSON.stringify({ exp: 2_000_000_000 })).toString('base64url')
+  await writeFile(path, JSON.stringify({ auth_mode: 'chatgpt', tokens: {
+    access_token: `head.${claims}.signature`, refresh_token: 'fixture-secret', account_id: 'fixture-account',
+  } }))
+  const { rpc } = fixture()
+  let sent
+  rpc.codex = async (method, args) => { sent = { method, args }; return { id: 'p-fixture' } }
+  const result = await executeModelSettings({ type: 'codex-import', path, name: 'CLI' }, rpc)
+  assert.deepEqual(result, { id: 'p-fixture' })
+  assert.equal(sent.method, 'import')
+  assert.equal(sent.args.record.payload.refresh, 'fixture-secret')
+  assert.equal(JSON.stringify(result).includes('fixture-secret'), false)
+  await assert.rejects(executeModelSettings({ type: 'codex-import', path: directory, name: 'CLI' }, rpc), /无法读取/)
 })
 
 test('model discovery forwards the draft key only to the host and returns model metadata', async () => {

@@ -26,7 +26,7 @@ for (const file of files) {
   if (!(await lstat(file)).isFile()) throw new Error(`Selected test is not a regular file: ${file}`)
 }
 // Real Host fixtures hash large payloads and use independent processes; run them outside the shared worker pool.
-const isolated = ['web-packaged-host.test.mjs', 'web-service-integration.test.mjs', 'service-node-runtime.test.mjs', 'web-host.test.mjs']
+const isolated = ['web-packaged-host.test.mjs', 'web-service-integration.test.mjs', 'model-authorization-integration.test.mjs', 'service-node-runtime.test.mjs', 'web-host.test.mjs']
   .map(name => join(root, 'macos-launcher/runtime', name))
 const groups = [files.filter(file => !isolated.includes(file)), ...isolated.filter(file => files.includes(file)).map(file => [file])]
 let child, interrupted = false, exitCode = 0

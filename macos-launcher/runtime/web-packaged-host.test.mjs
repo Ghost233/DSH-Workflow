@@ -55,6 +55,8 @@ test('packaged project profile serves authenticated official DSH readiness using
   await cp(resolve('macos-launcher/runtime/startup-plugins.mjs'), join(workflow, 'macos-launcher/runtime/startup-plugins.mjs'))
   await cp(resolve('macos-launcher/runtime/plugin-payload.mjs'), join(workflow, 'macos-launcher/runtime/plugin-payload.mjs'))
   await cp(resolve('macos-launcher/runtime/desktop-bridge.mjs'), join(workflow, 'macos-launcher/runtime/desktop-bridge.mjs'))
+  await cp(resolve('macos-launcher/runtime/model-authorization-bridge.mjs'), join(workflow, 'macos-launcher/runtime/model-authorization-bridge.mjs'))
+  await cp(resolve('macos-launcher/runtime/model-codex-accounts.mjs'), join(workflow, 'macos-launcher/runtime/model-codex-accounts.mjs'))
   await cp(resolve('macos-launcher/runtime/stop-inspection.mjs'), join(workflow, 'macos-launcher/runtime/stop-inspection.mjs'))
   const delivered = { package: 'workflow-owned-delivery-fixture', version: '1.2.3', source: 'git',
     repository: 'https://github.com/owned/delivery-fixture', commit: 'c'.repeat(40), startup: true }

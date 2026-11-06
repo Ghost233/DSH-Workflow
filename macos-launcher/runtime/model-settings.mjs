@@ -1,8 +1,8 @@
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { serviceRequest, serviceSocket } from './service-control.mjs'
+import { open } from 'node:fs/promises'
+import { connectModelRpc } from './model-rpc.mjs'
+import { importCodexFile } from './model-codex-accounts.mjs'
 
 const protocols = new Set(['openai-completions', 'openai-responses', 'anthropic-messages'])
 const routePattern = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
@@ -16,6 +16,9 @@ const safeErrors = new Set([
   '模型 ID 不能重复。', '自定义提供商需要地址、协议和至少一个模型。', '提供商已变化，请刷新后重试。',
   '模型设置已保存，但凭据保存失败；请刷新后重试。', 'DSH 本机模型配置连接无效。', '无法连接 DSH 模型配置。',
   'DSH 模型配置连接失败。', 'DSH 拒绝了模型设置，请检查提供商配置。', '缺少 DSH 服务路径。', '模型配置内容过长。',
+  '无法读取 Codex CLI 认证文件。', '请填写认证名称。', 'DSH 拒绝了 Codex 授权操作。',
+  'Codex 认证格式无效。', 'Codex 认证列表无法读取。', 'Codex 认证切换状态无法恢复。', '认证不存在。',
+  '当前认证不是 OAuth，无法安全切换。', '认证正在更新，请稍后重试。', '请先切换到其他认证。',
 ])
 const namespace = (description, id) => {
   const found = description.namespaces?.filter(row => row.ns === id) ?? []
@@ -31,8 +34,28 @@ function validatedInput(input) {
 }
 
 /** Only disclose model settings needed by Station, never provider headers or credentials. */
-export async function executeModelSettings(input, rpc) {
+export async function executeModelSettings(input, rpc, { codexStatus } = {}) {
   validatedInput(input)
+  if (input.type === 'codex-select' || input.type === 'codex-remove') {
+    if (typeof input.id !== 'string' || !rpc.codex) throw new Error('无效的模型配置操作。')
+    return rpc.codex(input.type === 'codex-select' ? 'select' : 'remove', { id: input.id })
+  }
+  if (input.type === 'codex-import') {
+    if (typeof input.path !== 'string' || !input.path || typeof input.name !== 'string' || !input.name.trim() || !rpc.codex) {
+      throw new Error('请填写认证名称。')
+    }
+    let file, contents
+    try {
+      file = await open(input.path, 'r')
+      const stat = await file.stat()
+      if (!stat.isFile() || stat.size > 65_536) throw new Error()
+      const bytes = Buffer.alloc(65_537), { bytesRead } = await file.read(bytes, 0, bytes.length, 0)
+      if (bytesRead > 65_536) throw new Error()
+      contents = bytes.subarray(0, bytesRead).toString('utf8')
+    } catch { throw new Error('无法读取 Codex CLI 认证文件。') }
+    finally { await file?.close() }
+    return rpc.codex('import', { record: importCodexFile(contents), name: input.name.trim() })
+  }
   if (input.type === 'discover') {
     if (typeof input.id !== 'string' || typeof input.baseURL !== 'string' || typeof input.api !== 'string' || typeof input.key !== 'string') {
       throw new Error('无效的模型发现请求。')
@@ -75,6 +98,12 @@ export async function executeModelSettings(input, rpc) {
     const credentials = {}
     for (let index = 0; index < refs.length; index += 64) Object.assign(credentials, await rpc('credentials/describe', { refs: refs.slice(index, index + 64) }))
     for (const row of providers) row.credentialConfigured = obj(credentials[row.keyRef || refFor(row.id)]).configured === true
+    const codex = providers.find(row => row.id === 'openai-codex')
+    if (codex) {
+      try { codex.oauth = codexStatus ? await codexStatus() : { available: false, configured: null } }
+      catch (error) { codex.oauth = { available: false, configured: null,
+        ...(error instanceof Error && ['Codex 认证列表无法读取。', 'Codex 认证切换状态无法恢复。'].includes(error.message) ? { error: error.message } : {}) } }
+    }
     const account = catalog.groups?.find(group => group.id === 'deepseek-account')
     if (account) providers.unshift({ id: 'deepseek-account', displayName: 'DeepSeek 账号', account: true,
       models: (account.models ?? []).map(model => model.id), removable: false })
@@ -164,41 +193,20 @@ export async function executeModelSettings(input, rpc) {
   return { saved: true }
 }
 
-async function connectRpc(dataRoot, resources) {
-  const { version } = JSON.parse(await readFile(join(resources, 'workflow/dsh-runtime.json'), 'utf8'))
-  const connection = (await serviceRequest(serviceSocket(dataRoot), { type: 'connect-web', runtimeVersion: version })).connection
-  const url = new URL(connection.url)
-  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.username || url.password
-    || url.pathname !== '/' || url.hash || url.searchParams.getAll('token').length !== 1 || !url.searchParams.get('token')) {
-    throw new Error('DSH 本机模型配置连接无效。')
-  }
-  const login = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
-  const cookie = login.headers.getSetCookie().map(row => row.split(';', 1)[0]).join('; ')
-  if (![200, 303].includes(login.status) || !cookie) throw new Error('无法连接 DSH 模型配置。')
-  let sequence = 0
-  return async (method, args) => {
-    let response, body
-    try {
-      response = await fetch(new URL(`/api/${method}`, url), { method: 'POST',
-        headers: { cookie, 'content-type': 'application/json' }, signal: AbortSignal.timeout(30_000),
-        body: JSON.stringify({ type: 'client-request', rpcId: `station-model-${++sequence}`, method, payload: { args } }) })
-      body = await response.json()
-    } catch { throw new Error('DSH 模型配置连接失败。') }
-    if (!response.ok || body.result?.ok !== true) {
-      if (body.result?.error?.code === 'settings/conflict') throw new Error('模型设置已在别处更改，请刷新后重试。')
-      throw new Error('DSH 拒绝了模型设置，请检查提供商配置。')
-    }
-    return body.result.value
-  }
-}
-
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [dataRoot, resources] = process.argv.slice(2)
     if (!dataRoot || !resources) throw new Error('缺少 DSH 服务路径。')
     let input = ''
     for await (const chunk of process.stdin) { input += chunk; if (input.length > 256 * 1024) throw new Error('模型配置内容过长。') }
-    const result = await executeModelSettings(JSON.parse(input), await connectRpc(dataRoot, resources))
+    const rpc = await connectModelRpc(dataRoot, resources)
+    const result = await executeModelSettings(JSON.parse(input), rpc, {
+      codexStatus: async () => {
+        const status = await rpc.codex('status', {})
+        return { available: status.available, configured: status.configured, inFlight: status.inFlight,
+          accounts: Array.isArray(status.accounts) ? status.accounts : [] }
+      },
+    })
     process.stdout.write(JSON.stringify({ ok: true, value: result }) + '\n')
   } catch (error) {
     const known = error instanceof Error && safeErrors.has(error.message) ? error.message : '模型配置操作失败，请检查 DSH 服务。'

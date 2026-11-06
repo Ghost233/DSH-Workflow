@@ -540,6 +540,18 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     return objectValue(reply['value']);
   }
 
+  Future<Process> startCodexAuthorization({
+    String method = 'browser',
+    String name = 'Codex 账号',
+  }) => _startProcess(node, [
+    script('model-authorization.mjs'),
+    'login',
+    environment.dataRoot,
+    environment.resources,
+    method,
+    name,
+  ], environment: {...Platform.environment}..remove('DSH_LAUNCH_PASSWORD'));
+
   Future<void> refreshModelSettings() async {
     if (_closed || loadingModelSettings) return;
     loadingModelSettings = true;

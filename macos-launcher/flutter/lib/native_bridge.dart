@@ -50,6 +50,8 @@ class NativeBridge {
 
   Future<String?> chooseWritableDirectory() =>
       channel.invokeMethod<String>('chooseWritableDirectory');
+  Future<String?> chooseCodexAuthFile() =>
+      channel.invokeMethod<String>('chooseCodexAuthFile');
   Future<Uint8List?> feishuQRCode(String url) =>
       channel.invokeMethod<Uint8List>('feishuQRCode', url);
   Future<bool> setEntryManaged(bool managed) async =>

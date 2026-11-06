@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'launcher_controller.dart';
 
@@ -16,6 +18,16 @@ class ModelSettingsPage extends StatefulWidget {
 class _ModelSettingsPageState extends State<ModelSettingsPage> {
   String? selectedDefault;
   LauncherController get model => widget.model;
+  int get codexAccountCount {
+    final providers = model.modelSettings?['providers'] as List? ?? [];
+    for (final raw in providers) {
+      final provider = objectValue(raw);
+      if (provider['id'] == 'openai-codex' && provider['oauth'] is Map) {
+        return ((provider['oauth'] as Map)['accounts'] as List? ?? []).length;
+      }
+    }
+    return 0;
+  }
 
   Future<void> run(Future<void> Function() action) async {
     model.clearError();
@@ -31,6 +43,86 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
       context: context,
       builder: (context) => _ProviderEditor(model: model, provider: provider),
     );
+  }
+
+  Future<void> loginCodex() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _CodexAuthorizationDialog(
+        model: model,
+        defaultName: 'Codex 账号 ${codexAccountCount + 1}',
+      ),
+    );
+  }
+
+  Future<void> importCodex() async {
+    var name = '本机 Codex CLI ${codexAccountCount + 1}';
+    final label = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('导入 Codex CLI 认证'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Station 与 Codex CLI 将使用同一组登录令牌；令牌刷新后，另一边可能需要重新登录。'),
+            const Text('如果 CLI 使用钥匙串或内存保存认证，可能没有 auth.json；可以改用设备码登录。'),
+            TextFormField(
+              initialValue: name,
+              onChanged: (value) => name = value,
+              decoration: const InputDecoration(labelText: '认证名称'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, name.trim()),
+            child: const Text('选择文件'),
+          ),
+        ],
+      ),
+    );
+    if (label == null || label.isEmpty || !mounted) return;
+    final path = await model.native.chooseCodexAuthFile();
+    if (path == null || !mounted) return;
+    await run(
+      () => model.updateModelSettings({
+        'type': 'codex-import',
+        'path': path,
+        'name': label,
+      }),
+    );
+  }
+
+  Future<void> removeCodex(Map<String, Object?> account) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('移除认证'),
+        content: Text('移除 ${account['name']} 的 Station 认证？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('移除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await run(
+        () => model.updateModelSettings({
+          'type': 'codex-remove',
+          'id': account['id'],
+        }),
+      );
+    }
   }
 
   Future<void> remove(Map<String, Object?> provider) async {
@@ -198,45 +290,156 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
                     ),
                     for (final provider in providers)
                       Card(
-                        child: ListTile(
-                          title: Text(
-                            '${provider['displayName']}  ·  ${provider['id']}',
-                          ),
-                          subtitle: Text(
-                            [
-                              provider['account'] == true
-                                  ? '使用已登录的 DeepSeek 账号'
-                                  : provider['credentialConfigured'] == true
-                                  ? 'API Key 已设置'
-                                  : 'API Key 未设置或使用其他登录方式',
-                              if ((provider['baseURL'] as String? ?? '')
-                                  .isNotEmpty)
-                                provider['baseURL'] as String,
-                              (provider['models'] as List? ?? []).isEmpty
-                                  ? '使用提供商默认模型目录'
-                                  : '模型：${(provider['models'] as List).join('、')}',
-                            ].join('\n'),
-                          ),
-                          isThreeLine: true,
-                          trailing: Wrap(
-                            spacing: 4,
-                            children: [
-                              if (provider['account'] != true)
-                                TextButton(
-                                  onPressed: writable
-                                      ? () => unawaited(edit(provider))
-                                      : null,
-                                  child: const Text('编辑'),
+                        child: Column(
+                          children: [
+                            ListTile(
+                              title: Text(
+                                '${provider['displayName']}  ·  ${provider['id']}',
+                              ),
+                              subtitle: Text(
+                                [
+                                  provider['account'] == true
+                                      ? '使用已登录的 DeepSeek 账号'
+                                      : provider['id'] == 'openai-codex'
+                                      ? switch (provider['oauth']) {
+                                          {
+                                            'available': true,
+                                            'configured': true,
+                                          } =>
+                                            '已保存 ChatGPT 授权',
+                                          {
+                                            'available': true,
+                                            'configured': false,
+                                          } =>
+                                            'ChatGPT 未授权',
+                                          {'error': String error} => error,
+                                          _ => 'ChatGPT 授权状态不可用',
+                                        }
+                                      : provider['credentialConfigured'] == true
+                                      ? 'API Key 已设置'
+                                      : 'API Key 未设置或使用其他登录方式',
+                                  if ((provider['baseURL'] as String? ?? '')
+                                      .isNotEmpty)
+                                    provider['baseURL'] as String,
+                                  if (provider['id'] == 'openai-codex' &&
+                                      (provider['keyRef'] as String? ?? '')
+                                          .isNotEmpty)
+                                    '当前 API Key 配置会覆盖 ChatGPT 授权',
+                                  (provider['models'] as List? ?? []).isEmpty
+                                      ? '使用提供商默认模型目录'
+                                      : '模型：${(provider['models'] as List).join('、')}',
+                                ].join('\n'),
+                              ),
+                              isThreeLine: true,
+                              trailing: Wrap(
+                                spacing: 4,
+                                children: [
+                                  if (provider['account'] != true)
+                                    TextButton(
+                                      onPressed: writable
+                                          ? () => unawaited(edit(provider))
+                                          : null,
+                                      child: const Text('编辑'),
+                                    ),
+                                  if (provider['removable'] == true)
+                                    TextButton(
+                                      onPressed: writable
+                                          ? () => unawaited(remove(provider))
+                                          : null,
+                                      child: const Text('移除'),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            if (provider['id'] == 'openai-codex' &&
+                                provider['oauth'] is Map &&
+                                (provider['oauth'] as Map)['available'] == true)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
                                 ),
-                              if (provider['removable'] == true)
-                                TextButton(
-                                  onPressed: writable
-                                      ? () => unawaited(remove(provider))
-                                      : null,
-                                  child: const Text('移除'),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Wrap(
+                                    spacing: 4,
+                                    children: [
+                                      TextButton(
+                                        onPressed: writable
+                                            ? () => unawaited(loginCodex())
+                                            : null,
+                                        child: const Text('添加认证'),
+                                      ),
+                                      TextButton(
+                                        onPressed: writable
+                                            ? () => unawaited(importCodex())
+                                            : null,
+                                        child: const Text('导入本地认证'),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                            ],
-                          ),
+                              ),
+                            if (provider['id'] == 'openai-codex' &&
+                                provider['oauth'] is Map)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 16),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text('一次使用一份认证，切换主要影响后续请求。'),
+                                ),
+                              ),
+                            if (provider['id'] == 'openai-codex' &&
+                                provider['oauth'] is Map)
+                              for (final raw
+                                  in ((provider['oauth'] as Map)['accounts']
+                                          as List? ??
+                                      []))
+                                Builder(
+                                  builder: (context) {
+                                    final account = objectValue(raw);
+                                    return ListTile(
+                                      title: Text(
+                                        account['name'] as String? ??
+                                            'Codex 认证',
+                                      ),
+                                      subtitle: Text(
+                                        account['active'] == true
+                                            ? '当前使用'
+                                            : '已保存',
+                                      ),
+                                      trailing: Wrap(
+                                        children: [
+                                          if (account['active'] != true)
+                                            TextButton(
+                                              onPressed: writable
+                                                  ? () => unawaited(
+                                                      run(
+                                                        () => model
+                                                            .updateModelSettings({
+                                                              'type': 'codex-select',
+                                                              'id':
+                                                                  account['id'],
+                                                            }),
+                                                      ),
+                                                    )
+                                                  : null,
+                                              child: const Text('使用'),
+                                            ),
+                                          if (account['active'] != true)
+                                            TextButton(
+                                              onPressed: writable
+                                                  ? () => unawaited(
+                                                      removeCodex(account),
+                                                    )
+                                                  : null,
+                                              child: const Text('移除'),
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                          ],
                         ),
                       ),
                   ],
@@ -245,6 +448,263 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
       ],
     );
   }
+}
+
+class _CodexAuthorizationDialog extends StatefulWidget {
+  const _CodexAuthorizationDialog({
+    required this.model,
+    required this.defaultName,
+  });
+  final LauncherController model;
+  final String defaultName;
+
+  @override
+  State<_CodexAuthorizationDialog> createState() =>
+      _CodexAuthorizationDialogState();
+}
+
+class _CodexAuthorizationDialogState extends State<_CodexAuthorizationDialog> {
+  final _redirect = TextEditingController();
+  late final _name = TextEditingController(text: widget.defaultName);
+  Process? _process;
+  String _message = '给这份认证起个名字，选择登录方式。';
+  String? _error, _authorizationUrl, _deviceCode;
+  bool _manual = false, _finished = false, _started = false;
+
+  @override
+  void dispose() {
+    _redirect.clear();
+    _redirect.dispose();
+    _name.dispose();
+    final process = _process;
+    if (process != null) unawaited(process.stdin.close());
+    super.dispose();
+  }
+
+  Future<void> _open(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host != 'auth.openai.com' ||
+        (uri.hasPort && uri.port != 443) ||
+        !['/oauth/authorize', '/codex/device'].contains(uri.path) ||
+        uri.userInfo.isNotEmpty) {
+      throw StateError('授权地址无效。');
+    }
+    await widget.model.native.openUrl(url);
+  }
+
+  Future<void> _start(String method) async {
+    final name = _name.text.trim();
+    if (name.isEmpty || name.length > 80) {
+      setState(() => _error = '请填写不超过 80 字的认证名称。');
+      return;
+    }
+    setState(() {
+      _started = true;
+      _error = null;
+      _message = '正在准备 ChatGPT 授权…';
+    });
+    try {
+      final process = await widget.model.startCodexAuthorization(
+        method: method,
+        name: name,
+      );
+      if (!mounted) {
+        await process.stdin.close();
+        return;
+      }
+      _process = process;
+      unawaited(process.stderr.drain<void>());
+      await for (final line
+          in process.stdout
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
+        final event = objectValue(jsonDecode(line));
+        if (!mounted || _process != process) continue;
+        switch (event['type']) {
+          case 'open':
+            final url = event['url'];
+            if (url is! String) {
+              throw const FormatException('Missing authorization URL');
+            }
+            setState(() {
+              _authorizationUrl = url;
+              _message = '请在浏览器中登录并授权 ChatGPT。';
+            });
+            try {
+              await _open(url);
+            } catch (_) {
+              if (mounted) setState(() => _error = '无法打开浏览器，请点击下方按钮重试。');
+            }
+          case 'device':
+            final url = event['url'], code = event['code'];
+            if (url is! String ||
+                code is! String ||
+                !RegExp(r'^[A-Z0-9-]{4,32}$').hasMatch(code)) {
+              throw const FormatException('Invalid device authorization');
+            }
+            setState(() {
+              _authorizationUrl = url;
+              _deviceCode = code;
+              _message = '请在浏览器中输入下面的设备码并完成授权。';
+            });
+            try {
+              await _open(url);
+            } catch (_) {
+              if (mounted) setState(() => _error = '无法打开浏览器，请点击下方按钮重试。');
+            }
+          case 'prompt':
+            setState(() => _manual = true);
+          case 'prompt-withdrawn':
+            _redirect.clear();
+            setState(() => _manual = false);
+          case 'authorized':
+            setState(() {
+              _finished = true;
+              _manual = false;
+              _error = null;
+              _message = 'ChatGPT 授权已保存。';
+            });
+            try {
+              await widget.model.refreshModelSettings();
+            } catch (_) {
+              if (mounted) {
+                setState(() => _message = 'ChatGPT 授权已保存，请刷新模型配置查看状态。');
+              }
+            }
+          case 'cancelled':
+            setState(() {
+              _finished = true;
+              _manual = false;
+              _message = '已取消授权。';
+            });
+          case 'error':
+            setState(() {
+              _finished = true;
+              _manual = false;
+              _error = event['reason'] == 'device-unavailable'
+                  ? '设备码登录不可用，请改用浏览器登录或检查账号设置。'
+                  : 'Codex 登录失败，请检查网络和授权后重试。';
+            });
+        }
+      }
+      final code = await process.exitCode;
+      if (mounted && _process == process && !_finished) {
+        setState(() {
+          _finished = true;
+          _error = code == 0 ? '授权未完成。' : 'Codex 登录失败，请检查网络和授权后重试。';
+        });
+      }
+      if (_process == process) _process = null;
+    } catch (_) {
+      final process = _process;
+      _process = null;
+      if (process != null) await process.stdin.close();
+      if (mounted) {
+        setState(() {
+          _finished = true;
+          _error = '无法启动 Codex 授权，请检查 DSH 服务后重试。';
+        });
+      }
+    }
+  }
+
+  void _submitRedirect() {
+    final value = _redirect.text.trim();
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        uri.scheme != 'http' ||
+        !['localhost', '127.0.0.1'].contains(uri.host) ||
+        uri.port != 1455 ||
+        uri.path != '/auth/callback' ||
+        !uri.queryParameters.containsKey('code') ||
+        !uri.queryParameters.containsKey('state')) {
+      setState(() => _error = '请粘贴浏览器地址栏中的完整回调地址。');
+      return;
+    }
+    _process?.stdin.writeln(jsonEncode({'type': 'answer', 'value': value}));
+    _redirect.clear();
+    setState(() => _error = null);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('登录 ChatGPT'),
+    content: SizedBox(
+      width: 480,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_message),
+            if (!_started) ...[
+              TextField(
+                controller: _name,
+                decoration: const InputDecoration(labelText: '认证名称'),
+              ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  FilledButton(
+                    onPressed: () => unawaited(_start('browser')),
+                    child: const Text('浏览器登录'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => unawaited(_start('device')),
+                    child: const Text('设备码登录'),
+                  ),
+                ],
+              ),
+            ],
+            if (_deviceCode != null && !_finished) ...[
+              SelectableText(
+                _deviceCode!,
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              TextButton(
+                onPressed: () =>
+                    Clipboard.setData(ClipboardData(text: _deviceCode!)),
+                child: const Text('复制设备码'),
+              ),
+            ],
+            if (_authorizationUrl != null && !_finished)
+              TextButton(
+                onPressed: () async {
+                  try {
+                    await _open(_authorizationUrl!);
+                  } catch (_) {
+                    if (mounted) setState(() => _error = '无法打开浏览器。');
+                  }
+                },
+                child: const Text('重新打开授权页面'),
+              ),
+            if (_manual && !_finished) ...[
+              const Text('如果浏览器回调无法连接，请粘贴地址栏中的完整回调地址。'),
+              TextField(
+                controller: _redirect,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: '回调地址'),
+              ),
+              TextButton(onPressed: _submitRedirect, child: const Text('提交地址')),
+            ],
+            if (_error != null)
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: Text(_finished ? '关闭' : '取消'),
+      ),
+    ],
+  );
 }
 
 class _ProviderEditor extends StatefulWidget {

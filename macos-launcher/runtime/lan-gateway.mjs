@@ -240,6 +240,7 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
     const address = request.socket.remoteAddress ?? ''
     const loopback = address === '::1' || address.startsWith('127.') || address.startsWith('::ffff:127.')
     const path = new URL(request.url ?? '/', 'http://gateway.invalid').pathname
+    if (!loopback && path.startsWith('/api/station-codex-auth/')) { reject(response, 403); return }
     if (!allowLanSettings && !loopback && request.method === 'POST' && SETTINGS_WRITES.has(path)) {
       reject(response, 403); return
     }
