@@ -10,8 +10,6 @@ import { shutdownStation } from './station-shutdown.mjs'
 import { stationManager } from './station-processes.mjs'
 import { serviceRequest, serviceSocket } from './service-control.mjs'
 import { webSocket } from './web-control.mjs'
-import { createSuperagentProject } from './superagent-projects.mjs'
-import { superagentSocket } from './superagent-service.mjs'
 
 const artifact = process.env.DSH_SERVICE_TEST_RESOURCES
 const runtime = fileURLToPath(new URL('./', import.meta.url))
@@ -30,7 +28,7 @@ async function ready(socket) {
 }
 const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; throw error } }
 
-test('cancel keeps services running; confirmed exit reaps daily, Web, Superagent and a detached helper', {
+test('cancel keeps services running; confirmed exit reaps daily, Web and a detached helper', {
   skip: artifact ? false : 'Requires frozen packaged resources for actual shutdown acceptance', timeout: 120000,
 }, async t => {
   const root = await mkdtemp('/private/tmp/dsh-station-exit-'), dataRoot = join(root, 'data'), resources = join(root, 'resources'), home = join(root, 'home')
@@ -55,24 +53,19 @@ test('cancel keeps services running; confirmed exit reaps daily, Web, Superagent
   await ready(serviceSocket(dataRoot))
   const started = await serviceRequest(serviceSocket(dataRoot), { type: 'start-service', permissionMode: 'workspace-write' }, 45000)
   assert.equal(started.service.ready, true)
-  const web = launch(join(runtime, 'global-supervisor.mjs'), [dataRoot]); workers.push(web)
+  const script = join(root, 'global-supervisor.mjs')
+  await writeFile(script, `
+import {spawn} from 'node:child_process';import {writeFileSync} from 'node:fs';
+import {serveGlobalSupervisor} from ${JSON.stringify(new URL('./global-supervisor.mjs', import.meta.url).href)};
+const [dataRoot,root]=process.argv.slice(2);
+const helper=spawn(process.execPath,['-e','const fs=require("node:fs");process.on("SIGTERM",()=>fs.writeFileSync(process.argv[1],"seen"));setInterval(()=>{},1000)',root+'/helper-term-seen'],{detached:true,stdio:'ignore'});
+helper.unref();writeFileSync(root+'/helper.pid',String(helper.pid));
+const supervisor=await serveGlobalSupervisor({dataRoot});
+process.once('SIGTERM',()=>{void supervisor.close()});
+`)
+  const web = launch(script, [dataRoot, root]); workers.push(web)
   await ready(webSocket(dataRoot))
   await serviceRequest(webSocket(dataRoot), { type: 'start-web', password: 'isolated-quit-fixture', port: 0 }, 10000)
-  const project = await createSuperagentProject(dataRoot, { name: 'Exit fixture' })
-  const script = join(root, 'superagent-service.mjs')
-  await writeFile(script, `
-import { createServer } from 'node:net';import http from 'node:http';import{spawn}from'node:child_process';import{writeFileSync}from'node:fs';
-import{listenManagerControl}from ${JSON.stringify(new URL('./manager-control.mjs', import.meta.url).href)};
-import{superagentDirectory,superagentSocket}from ${JSON.stringify(new URL('./superagent-service.mjs', import.meta.url).href)};
-const [,dataRoot,id,root]=process.argv.slice(2);let running=true;
-const helper=spawn(process.execPath,['-e','const fs=require("node:fs");process.on("SIGTERM",()=>fs.writeFileSync(process.argv[1],"seen"));setInterval(()=>{},1000)',root+'/helper-term-seen'],{detached:true,stdio:'ignore'});helper.unref();writeFileSync(root+'/helper.pid',String(helper.pid));
-const api=http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({total:2,items:[]}))});await new Promise(r=>api.listen(0,'127.0.0.1',r));
-const server=createServer(socket=>socket.once('data',bytes=>{const q=JSON.parse(bytes.toString().trim());if(q.type==='stop')running=false;socket.end(JSON.stringify({ok:true,value:{protocol:1,service:{state:running?'running':'stopped',ready:running,pid:running?helper.pid:null},...(q.type==='open'?{url:'http://127.0.0.1:'+api.address().port+'/'}:{})}})+'\\n')}));
-const control=await listenManagerControl(server,{directory:superagentDirectory(dataRoot,id),socketPath:superagentSocket(dataRoot,id)});
-process.on('SIGTERM',()=>{api.closeAllConnections();api.close();void control.close()});
-`)
-  const agent = launch(script, ['manager', dataRoot, project.id, root]); workers.push(agent)
-  await ready(superagentSocket(dataRoot, project.id))
   const helperPid = Number(await readFile(join(root, 'helper.pid'), 'utf8'))
   t.after(() => {
     if (!alive(helperPid)) return
@@ -83,8 +76,8 @@ process.on('SIGTERM',()=>{api.closeAllConnections();api.close();void control.clo
   })
   let confirmation
   assert.equal(await shutdownStation({ dataRoot, confirm: async value => { confirmation = value; return false } }), false)
-  assert.equal(confirmation.needsConfirmation, true)
-  assert.ok(confirmation.work.some(text => text.includes('2 个未完工单')))
+  assert.equal(confirmation.needsConfirmation, false)
+  assert.deepEqual(confirmation.work, [])
   assert.equal((await serviceRequest(serviceSocket(dataRoot), { type: 'status' })).service.pid, started.service.pid)
   assert.equal((await serviceRequest(serviceSocket(dataRoot), { type: 'status' })).service.ready, true)
   assert.equal((await serviceRequest(webSocket(dataRoot), { type: 'status' })).web.state, 'running')
@@ -102,5 +95,5 @@ process.on('SIGTERM',()=>{api.closeAllConnections();api.close();void control.clo
   assert.ok(events.some(event => event.type === 'result' && event.stopped === true))
   assert.equal(await readFile(join(root, 'helper-term-seen'), 'utf8'), 'seen', 'graceful termination is attempted before forcing an owned leftover')
   assert.equal(alive(unrelated.pid), true, 'an unrelated Node process must not be terminated')
-  for (const pid of [daily.pid, web.pid, agent.pid, started.service.pid, helperPid]) assert.equal(alive(pid), false, `owned process ${pid} survived Station shutdown`)
+  for (const pid of [daily.pid, web.pid, started.service.pid, helperPid]) assert.equal(alive(pid), false, `owned process ${pid} survived Station shutdown`)
 })

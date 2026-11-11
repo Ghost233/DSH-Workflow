@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, realpath } from 'node:fs/promises'
 import { join, isAbsolute } from 'node:path'
 import { readPluginConfiguration } from './plugin-configuration.mjs'
+import { nativeBundlePatches } from '../../scripts/native-bundle.mjs'
 import { pluginDependencySpec } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 
 /** Only try already-present exact packages; no download, installation or profile dependency rewrite. */
@@ -10,9 +11,10 @@ export async function prepareStartupPlugins({ profile, entries, config, boot }) 
   const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
   const existing = flatten(entries)
   for (const item of config?.plugins.filter(row => row.startup === true) ?? []) {
-    const matches = existing.filter(row => row.name === item.package || row.name?.startsWith(item.package + '/'))
+    const matches = existing.filter(row => row.name === item.package || row.name?.startsWith(item.package + '/')
+      || item.components?.some(component => row.name === component.package))
     // Git pins must also validate existing entries before allowing the normal Host loader to try them.
-    if (matches.length && item.source !== 'git') continue
+    if (matches.length && !['git', 'artifact'].includes(item.source)) continue
     let installedVersion, installedSource
     try {
       installedSource = await realpath(join(profile, 'node_modules', item.package))
@@ -22,6 +24,10 @@ export async function prepareStartupPlugins({ profile, entries, config, boot }) 
       if (manifest.name !== item.package || manifest.version !== item.version) {
         throw new Error(`已安装版本 ${manifest.version ?? '未知'} 偏离包内固定值 ${item.version}，未替换运行包。`)
       }
+      for (const component of [...(item.components ?? []), ...(item.runtimePackages ?? [])]) {
+        const metadata = JSON.parse(await readFile(join(profile, 'node_modules', component.package, 'package.json'), 'utf8'))
+        if (metadata.name !== component.package || metadata.version !== component.version) throw new Error(`组件版本偏离固定值：${component.package}`)
+      }
       if (item.source === 'git') {
         const profileManifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
         const declaration = profileManifest.dependencies?.[item.package], dependency = pluginDependencySpec(item)
@@ -30,9 +36,9 @@ export async function prepareStartupPlugins({ profile, entries, config, boot }) 
         }
       }
       // Keep existing conditions, configuration and user-disabled state after source validation.
-      if (matches.length) continue
+      if (matches.length && item.bundle !== 'native') continue
       // The actual Host owns module resolution and execution, including its public peer mappings.
-      const candidate = manifest.dsh?.bundle
+      const candidate = item.bundle === 'native' ? nativeBundlePatches(boot, installedSource, manifest, entries) : manifest.dsh?.bundle
         ? boot.bundlePatchPaths(installedSource, manifest.dsh.bundle).flatMap(path => boot.loadOverlayPatches('dsh', path))
         : [{ insert: [{ id: `project-startup-${item.entryId ?? item.package}`, name: item.package }] }]
       // Compose a cloned full tree, then use the same traversal as profile preparation before accepting this package.
@@ -73,6 +79,25 @@ export async function startupPluginResults({ resourcesRoot, url, preparation = [
     rows = inventory.rows.filter(row => row.scope === 'Host')
   } catch (error) { unknown = String(error.message).slice(0, 300) }
   return config.plugins.filter(item => item.startup === true).map(item => {
+    if (item.bundle === 'native') {
+      const components = item.components.map(component => {
+        const actual = rows?.find(row => row.package === component.package && row.enabled === true
+          && row.fiberPhase === 'active' && row.current === component.version && row.status === 'fixed'
+          && typeof row.source === 'string' && isAbsolute(row.source) && !row.error)
+        return { ...component, loaded: Boolean(actual), source: actual?.source ?? null }
+      })
+      const attempted = preparation.find(row => row.package === item.package)
+      const requiredEntries = (item.requiredEntries ?? []).map(id => {
+        const matches = rows?.filter(row => row.entryId?.split(':').at(-1) === id) ?? []
+        return { id, loaded: matches.length === 1 && matches[0].enabled === true
+          && matches[0].fiberPhase === 'active' && matches[0].status === 'fixed' && !matches[0].error }
+      })
+      const loaded = !unknown && !attempted && components.every(component => component.loaded) && requiredEntries.every(row => row.loaded)
+      return { package: item.package, version: item.version, versionSource: 'packaged-lock',
+        state: loaded ? 'loaded' : 'skipped', actualVersion: loaded ? item.version : null,
+        components, requiredEntries, reason: attempted?.reason ?? (unknown ? `实际启动状态未知：${unknown}`
+          : loaded ? '当前 Host 已加载全部固定组件。' : '部分组件未加载；请查看组件状态与 Host 日志。') }
+    }
     const matches = rows?.filter(row => row.package === item.package || row.moduleName === item.package) ?? []
     const active = matches.find(row => row.enabled === true && row.fiberPhase === 'active'
       && row.package === item.package && row.current === item.version && row.status === 'fixed'

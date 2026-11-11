@@ -4,37 +4,17 @@
 
 应用和 Ghost Launcher 注册名统一为 Ghost DSH Station。项目 ID、bundle ID、服务 ID、旧数据目录和更新资产标识保持兼容，已有配置与运行中的服务继续使用原身份。
 
-日常入口是无参数 `./start-dsh-workflow.sh`。仅支持 macOS ARM64。Station 启动独立 DSH 服务，使用浏览器访问 Web 界面。关闭浏览器或 Station 窗口后，服务继续运行；退出 Station 时统一停止日常 DSH、Web 和全部 Superagent，并回收它们启动的 MCP 与辅助进程。JEV/监控由 `agent-observation-plugin/` 提供，固定配置 entry ID 保持不变。
+日常入口是无参数 `./start-dsh-workflow.sh`。仅支持 macOS ARM64。Station 启动独立 DSH 服务，使用浏览器访问 Web 界面。关闭浏览器或 Station 窗口后，服务继续运行；退出 Station 时统一停止日常 DSH 和 Web，并回收它们启动的 MCP 与辅助进程。JEV/监控由 `agent-observation-plugin/` 提供，固定配置 entry ID 保持不变。
 
 后台 DSH 服务由 Station 随包的独立 Node 运行。应用只交付 Web 核心，不包含 DSH 桌面客户端。为保留已有模型、插件和会话配置，日常服务继续使用旧版的 `$DSH_HOME/profiles/desktop` 配置目录；目录名称不代表仍有桌面客户端。
 
 Station 窗口打开时显示 Dock 图标，可通过 Command-Tab 切换。关闭窗口后，Station 收回菜单栏；可从菜单栏重新打开。退出前会检查未完成工作，需确认时展示清单；取消则保留服务，清理失败则保留窗口并显示原因。
 
-Station 的“模型”页管理 DSH 的模型提供商、API Key 和默认模型。你可以添加或编辑提供商，获取可用模型，并为新会话选择默认模型。配置模型时无需启动 Superagent。移除提供商时，已保存的凭据会保留。模型高级字段保持原值。
+Station 的“模型”页管理 DSH 的模型提供商、API Key 和默认模型。你可以添加或编辑提供商，获取可用模型，并为新会话选择默认模型。移除提供商时，已保存的凭据会保留。模型高级字段保持原值。
 
-Station 的左侧“Superagent”栏目列出所有已绑定项目，可分别查看状态、启动或停止独立后端。未绑定项目时显示添加引导，不生成默认实例；未绑定的旧实例数据仍保留。每个实例使用自己的仓库、GitHub 账号和飞书机器人，从浏览器打开自己的管理面板。日常 Web 使用独立 DSH 后端。关闭 Station 窗口后，Superagent 继续运行；通过菜单或 Command-Q 退出 Station 时，全部受管服务一并停止。
+已从交付清单移除的 `billion-context` 在旧 profile 中仍可能有依赖或 bundle 声明。Station 启动装配会停用其宿主及预设入口；原设置和旧文件保留。`dsh-context` 是另一个插件，继续按清单提供上下文洞察。
 
-添加项目时，选择已登录的 `gh` 账号、有写入权限的 GitHub 仓库和分支，再选择 Superagent 专用存放目录；留空使用 Station 默认目录。首次启动会克隆专用仓库，每个任务按官方示例创建独立分支和 worktree。日常开发的本地项目无需关联。账号默认从 `~/.config/gh-profiles` 中读取；设置了 `XDG_CONFIG_HOME` 时，从该目录下的 `gh-profiles` 读取。Station 使用选中的账号，不会切换全局活动账号。
-
-已有项目运行时，可以添加目录不重叠的专用项目。为保护现有项目，运行中的实例必须报告已启用目录隔离；旧版实例未提供该证明时，需要先退出 Station 并停止服务，再用新版重新打开。修改已有项目仍需先停止所有 Superagent。
-
-飞书步骤可以选择已有应用机器人，也可以扫码创建新应用。机器人列表显示 App ID，成员列表显示姓名与用户 ID。扫码不保证完成全部授权：默认权限申请入口包含 `im:chat.members:read` 和敏感权限 `im:message.group_msg`；若飞书未返回成员姓名，可以另行申请 `contact:user.base:readonly` 并检查通讯录可见范围。申请后按飞书提示审批或发布应用，再刷新成员列表。实时事件订阅需要在飞书开放平台确认：启用机器人、订阅 `im.message.receive_v1`，并发布应用版本。群历史补收还需要消息读取权限（如 `im:message:readonly`）；读取群历史成功不能证明实时事件已送达。
-
-每个项目可选择“仅 @ 机器人”或“接收群内全部消息”，以及“仅观察”或“自动接单”。全部消息模式下，允许名单用户未 @ 的消息作为候选交给上游评估；自动接单仍须匹配启用的接单规则，普通闲聊不应创建任务。仅观察只记录推断候选，允许用户明确 @ 或私聊提出的请求仍可接收。飞书请求可以直接发起任务，无需先创建 GitHub Issue。
-
-Station 管理的接收方式、允许用户、接单模式和规则随项目保存，重启时恢复。旧项目缺少这些字段时沿用 Superagent 面板中的设置；在向导中主动开启“由 Station 管理接收与接单设置”后才由 Station 写入。关闭该开关后，保留面板里的当前值。已有任务的旧项目继续使用原任务准备方式，新建项目采用专用仓库和 worktree。详见[上游部署说明](https://github.com/deepseek-ai/dsh-superagent-prototype/blob/main/docs/006-deployment.md)。
-
-各实例读取日常 DSH 的模型、Skill、MCP 和已安装插件配置。正在运行的实例会同步受支持的配置变更；新增插件后要重启对应实例。MCP 服务停用或实例关闭时，对应连接会关闭；实例退出时会通知其进程组停止。退出 Station 时还会根据启动前记录的进程身份回收遗留后代进程。上游限制了任务会话可用的插件工具；共享插件配置不代表所有插件工具都能由任务调用。DSH 主目录 `.env` 中引用的凭据在实例启动时读取，修改后需要重启实例。
-
-飞书 CLI 使用仅当前用户可访问的短路径入口，凭据仍保留在原配置目录。这样可避免 macOS 的 Unix socket 路径长度限制。
-
-已从交付清单移除的 `billion-context` 在旧 profile 中仍可能有依赖或 bundle 声明。Station 启动装配会停用其宿主及预设入口，Superagent 共享配置时也会排除它；原设置和旧文件保留。`dsh-context` 是另一个插件，继续按清单提供上下文洞察。
-
-`dsh-ops` 暂时不随 Station 启动，也不共享给 Superagent。旧配置保留；上游支持当前 DSH 版本后可重新评估启用。
-
-执行器在 macOS 沙箱中运行，可写入实例目录、指定的任务目录、临时目录和所需的共享凭据文件。飞书机器人还需要写入自己的事件运行目录。本地项目及其 Git 目录受到写入保护，原有未提交修改会保留。外部 MCP 服务按其自身权限运行，也可能使用独立账号；请检查它们对本地项目和 GitHub 的访问权限。
-
-已有任务历史的实例保留原有仓库、账号、机器人和任务目录等绑定。需要使用不同绑定时，请添加项目。原有单实例的数据保留在原目录；如果缺少可核对的绑定记录且已有任务历史，Station 会保留数据并拒绝自动迁移。旧版管理器仍在后台时，请先停止原实例并重启电脑。添加或修改项目之前，请先停止所有 Superagent 实例。
+`dsh-ops` 暂时不随 Station 启动。旧配置保留；上游支持当前 DSH 版本后可重新评估启用。
 
 第三方启动清单由 `project-plugins.json` 和锁文件提供。构建按固定 npm 版本或 Git 提交收集全部 `startup: true` 插件，将包本体和生产依赖放入应用的 `Resources/plugins`，以 `plugin-payload.json` 记录来源和完整内容摘要。缺包、版本或 Git 提交不符、入口缺失均阻止打包；DMG 和上传入口再次校验交付记录。
 
@@ -51,3 +31,9 @@ Station 管理的接收方式、允许用户、接单模式和规则随项目保
 本机容器使用 OrbStack 的 Docker 引擎和标准 Docker Compose；容器与 macOS 原生构建的执行边界见 [AGENTS.md](AGENTS.md#本机容器工作流)。
 
 领域术语见 [GLOSSARY](GLOSSARY.md)，JEV/监控设计见 [ADR0003](docs/adr/0003-shared-named-jev-center.md)。独立 Dynamic Workflow 的未来计划仍保留，当前未实施。
+
+## Tobs 项目协作
+
+现引入 Tobs 官方固定提交，保留当前 DSH。独立的 `project-coordination-plugin/` 提供 GitHub 轮询、多层任务拆分、原生 Assignment 绑定、验证证据和逐级汇报。插件未配置仓库时保持待配置，不从现有 Git 工作区推断授权。配置步骤见 [Tobs 项目协作插件](project-coordination-plugin/README.md)，定稿需求见 [设计](docs/project-coordination/design.md)。
+
+Tobs 为完整多入口 bundle，包含 Provider、Core、UI、Browser、Computer 和 PersonaBot 预设。版本、提交与制品摘要由项目清单、生成锁和 `vendor/tobs.upstream.json` 共同固定。旧 SuperAgent 集成已从当前启动与交付链路移除。

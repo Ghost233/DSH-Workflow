@@ -189,9 +189,7 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
       children: [
         Text('统一模型配置', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),
-        const Text('在 Station 中管理模型提供商；DSH 与 Superagent 使用同一份配置。'),
-        const Text('原有 Superagent 独立配置会保留，统一后以 DSH 的模型配置为准。'),
-        Text(model.modelSharingMessage),
+        const Text('在 Station 中管理 DSH 的模型提供商、API Key 和默认模型。'),
         const SizedBox(height: 12),
         Wrap(
           spacing: 8,
@@ -229,9 +227,7 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
                             Text(
                               '当前：${defaults['provider'] ?? '未设置'} / ${defaults['model'] ?? '未设置'}',
                             ),
-                            const Text(
-                              '默认选择用于新会话；Superagent 可在自己的任务设置中选择其他模型。',
-                            ),
+                            const Text('默认选择用于新会话。'),
                             if (choices.isNotEmpty)
                               Wrap(
                                 spacing: 12,

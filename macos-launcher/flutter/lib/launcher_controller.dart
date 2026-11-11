@@ -60,27 +60,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     state: ServiceState.stopped,
     ready: false,
   );
-  final Map<String, Map<String, Object?>> _superagentStates = {};
-  final Map<String, int> _superagentRevisions = {};
-  final Set<String> _busySuperagents = {};
-  bool _savingSuperagentProject = false;
-  bool get superagentBusy =>
-      _savingSuperagentProject || _busySuperagents.isNotEmpty;
-  bool isSuperagentBusy(String id) =>
-      _savingSuperagentProject || _busySuperagents.contains(id);
-  List<Map<String, Object?>> superagentProjects = [];
-  Map<String, Object?> commonSuperagentWritableRoots = {
-    'revision': 0,
-    'roots': <String>[],
-  };
-  List<Map<String, Object?>> superagentGithubAccounts = [];
-  String? selectedSuperagentProjectId;
-  List<String> get superagentSharingWarnings =>
-      superagentWarningsFor(selectedSuperagentProjectId);
   bool loadingModelSettings = false;
   Map<String, Object?>? modelSettings;
-  String get modelSharingMessage =>
-      superagentSharingFor(selectedSuperagentProjectId);
   bool _observingWeb = false, _observingService = false;
   bool _windowVisible = true;
   Process? _statusObserver;
@@ -95,43 +76,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void>? _mutation, _closeFuture;
   ServiceStatus get snapshot => _web;
   ServiceStatus get serviceSnapshot => _service;
-  ServiceStatus get superagentSnapshot =>
-      superagentStatusFor(selectedSuperagentProjectId);
-  ServiceStatus superagentStatusFor(String? id) => ServiceStatus.fromJson(
-    objectValue(
-      _superagentStates[id]?['service'] ?? {'state': 'unknown', 'ready': false},
-    ),
-  );
-
-  List<String> superagentWarningsFor(String? id) {
-    final value = _superagentStates[id];
-    final warnings = value?['sharingWarnings'];
-    return [
-      if (warnings is List) ...warnings.whereType<String>(),
-      if (value != null &&
-          value['superagentVersion'] != 4 &&
-          superagentStatusFor(id).state == ServiceState.running)
-        '旧版管理器仍在运行；请退出 Station 并重新打开后，再启用项目保护和共享配置。',
-    ];
-  }
-
-  String superagentSharingFor(String? id) {
-    final sharing = _superagentStates[id]?['modelSharing'];
-    if (sharing is! Map) return '启动后读取日常 DSH 的共享配置。';
-    return switch (sharing['state']) {
-      'ready' => '已读取日常 DSH 的模型、Skill、MCP 和可用插件配置。',
-      'error' => sharing['message'] as String? ?? '共享配置不可用。',
-      _ => '启动后读取日常 DSH 的共享配置。',
-    };
-  }
-
-  Map<String, Object?>? get selectedSuperagentProject {
-    for (final project in superagentProjects) {
-      if (project['id'] == selectedSuperagentProjectId) return project;
-    }
-    return null;
-  }
-
   String? get logInstanceId => _logInstanceId;
   bool get logsTruncated => _logsDropped;
   bool get isActive =>
@@ -166,13 +110,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
     if (File(script('web-cli.mjs')).existsSync()) {
       await _observeWeb();
-    }
-    if (File(script('superagent-service.mjs')).existsSync()) {
-      try {
-        await refreshSuperagentProjects();
-      } catch (failure) {
-        reportError(failure);
-      }
     }
   }
 
@@ -303,219 +240,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     sdkMessage = message;
     notifyListeners();
   }
-
-  Future<Map<String, Object?>> _superagentRequest(
-    String action, {
-    String? projectId,
-    Map<String, Object?>? input,
-  }) async {
-    final child = await _startProcess(node, [
-      script('superagent-service.mjs'),
-      action,
-      environment.dataRoot,
-      environment.resources,
-      environment.home,
-      ?projectId,
-    ], environment: {...Platform.environment}..remove('DSH_LAUNCH_PASSWORD'));
-    final output = child.stdout.transform(utf8.decoder).join();
-    final diagnostics = child.stderr.transform(utf8.decoder).join();
-    if (input != null) child.stdin.writeln(jsonEncode(input));
-    await child.stdin.close();
-    final code = await child.exitCode;
-    final text = await output;
-    final stderr = await diagnostics;
-    if (text.trim().isEmpty) {
-      throw StateError('Superagent 管理入口退出 $code：$stderr');
-    }
-    final reply = objectValue(jsonDecode(text));
-    if (code != 0 || reply['ok'] != true) {
-      throw StateError(
-        reply['error'] as String? ?? 'Superagent 管理入口退出 $code：$stderr',
-      );
-    }
-    return objectValue(reply['value']);
-  }
-
-  Future<Map<String, Object?>> superagentOnboarding(
-    String action, [
-    Map<String, Object?> input = const {},
-  ]) async {
-    final child = await _startProcess(node, [
-      script('superagent-onboarding.mjs'),
-      action,
-      environment.dataRoot,
-      environment.resources,
-    ], environment: {...Platform.environment}..remove('DSH_LAUNCH_PASSWORD'));
-    final output = child.stdout.transform(utf8.decoder).join();
-    final diagnostics = child.stderr.transform(utf8.decoder).join();
-    child.stdin.writeln(jsonEncode(input));
-    await child.stdin.close();
-    final code = await child.exitCode;
-    final text = await output;
-    await diagnostics;
-    if (text.trim().isEmpty) throw StateError('无法读取向导结果，请重试。');
-    final reply = objectValue(jsonDecode(text));
-    if (code != 0 || reply['ok'] != true) {
-      throw StateError(reply['error'] as String? ?? '向导请求失败，请重试。');
-    }
-    return objectValue(reply['value']);
-  }
-
-  Future<Process> startFeishuRegistration() => _startProcess(node, [
-    script('superagent-onboarding.mjs'),
-    'feishu-register',
-    environment.dataRoot,
-    environment.resources,
-  ], environment: {...Platform.environment}..remove('DSH_LAUNCH_PASSWORD'));
-
-  Future<void> refreshSuperagentProjects() async {
-    final value = await _superagentRequest('projects');
-    final rows = value['projects'];
-    if (rows is! List) {
-      throw const FormatException('Invalid Superagent projects');
-    }
-    superagentProjects = rows.map(objectValue).toList();
-    final common = value['commonWritableRoots'];
-    if (common is Map) commonSuperagentWritableRoots = objectValue(common);
-    if (!superagentProjects.any(
-      (row) => row['id'] == selectedSuperagentProjectId,
-    )) {
-      selectedSuperagentProjectId = superagentProjects.isEmpty
-          ? null
-          : superagentProjects.first['id'] as String;
-    }
-    final accounts = await _superagentRequest('accounts');
-    final accountRows = accounts['accounts'];
-    if (accountRows is! List) {
-      throw const FormatException('Invalid GitHub accounts');
-    }
-    superagentGithubAccounts = accountRows.map(objectValue).toList();
-    _superagentStates.removeWhere(
-      (id, _) => !superagentProjects.any((row) => row['id'] == id),
-    );
-    await Future.wait(
-      superagentProjects.map((project) async {
-        final id = project['id'] as String;
-        if (_busySuperagents.contains(id)) return;
-        try {
-          await _superagentCommand('status', projectId: id);
-        } catch (_) {
-          // Failure is retained on this project's card.
-        }
-      }),
-    );
-    if (!_closed) notifyListeners();
-  }
-
-  Future<void> selectSuperagentProject(String id) async {
-    if (!superagentProjects.any((project) => project['id'] == id)) {
-      throw StateError('Superagent 项目不存在。');
-    }
-    selectedSuperagentProjectId = id;
-    await _manageSuperagent('status');
-  }
-
-  Future<void> saveSuperagentProject(
-    Map<String, Object?> input, {
-    String? id,
-  }) async {
-    if (_closed || superagentBusy) return;
-    _savingSuperagentProject = true;
-    notifyListeners();
-    try {
-      final value = await _superagentRequest(
-        id == null ? 'create-project' : 'update-project',
-        projectId: id,
-        input: input,
-      );
-      final project = objectValue(value['project']);
-      selectedSuperagentProjectId = project['id'] as String;
-      await refreshSuperagentProjects();
-    } finally {
-      _savingSuperagentProject = false;
-      if (!_closed) notifyListeners();
-    }
-  }
-
-  Future<void> saveCommonSuperagentWritableRoots(
-    Map<String, Object?> input,
-  ) async {
-    if (_closed || superagentBusy) {
-      throw StateError('Superagent 正在处理其他请求，请稍后再试。');
-    }
-    _savingSuperagentProject = true;
-    notifyListeners();
-    try {
-      final value = await _superagentRequest(
-        'save-common-writable-roots',
-        input: input,
-      );
-      commonSuperagentWritableRoots = objectValue(value['commonWritableRoots']);
-      await refreshSuperagentProjects();
-    } finally {
-      _savingSuperagentProject = false;
-      if (!_closed) notifyListeners();
-    }
-  }
-
-  void _setSuperagentFailure(String id, Object failure) {
-    _superagentStates[id] = {
-      ...?_superagentStates[id],
-      'service': {
-        'state': 'failed',
-        'ready': false,
-        'message': failure.toString(),
-      },
-    };
-  }
-
-  Future<Map<String, Object?>> _superagentCommand(
-    String action, {
-    String? projectId,
-  }) async {
-    final id = projectId ?? selectedSuperagentProjectId;
-    if (id == null) throw StateError('请先添加 Superagent 项目。');
-    final revision = (_superagentRevisions[id] ?? 0) + 1;
-    _superagentRevisions[id] = revision;
-    try {
-      final value = await _superagentRequest(action, projectId: id);
-      if (_superagentRevisions[id] == revision) _superagentStates[id] = value;
-      return value;
-    } catch (failure) {
-      if (_superagentRevisions[id] == revision &&
-          (action == 'start' || action == 'status')) {
-        _setSuperagentFailure(id, failure);
-      }
-      rethrow;
-    } finally {
-      if (!_closed) notifyListeners();
-    }
-  }
-
-  Future<void> _manageSuperagent(String action, {String? projectId}) async {
-    final id = projectId ?? selectedSuperagentProjectId;
-    if (id == null) throw StateError('请先添加 Superagent 项目。');
-    if (exiting && action == 'start') throw StateError('启动器正在退出');
-    if (_closed || isSuperagentBusy(id)) return;
-    _busySuperagents.add(id);
-    notifyListeners();
-    try {
-      final value = await _superagentCommand(action, projectId: id);
-      if (action == 'open') await native.openUrl(value['url'] as String);
-    } finally {
-      _busySuperagents.remove(id);
-      if (!_closed) notifyListeners();
-    }
-  }
-
-  Future<void> startSuperagent({String? projectId}) =>
-      _manageSuperagent('start', projectId: projectId);
-  Future<void> stopSuperagent({String? projectId}) =>
-      _manageSuperagent('stop', projectId: projectId);
-  Future<void> refreshSuperagent({String? projectId}) =>
-      _manageSuperagent('status', projectId: projectId);
-  Future<void> openSuperagent({String? projectId}) =>
-      _manageSuperagent('open', projectId: projectId);
 
   Future<Map<String, Object?>> _modelSettingsCommand(
     Map<String, Object?> request,
@@ -1110,12 +834,6 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         return true;
       }
       await _mutation;
-      for (var attempt = 0; _busySuperagents.isNotEmpty; attempt++) {
-        if (attempt >= 620) {
-          throw StateError('Superagent 操作尚未完成，请稍后重试退出。');
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 500));
-      }
       child = await _startProcess(node, [
         script('station-shutdown.mjs'),
         environment.dataRoot,

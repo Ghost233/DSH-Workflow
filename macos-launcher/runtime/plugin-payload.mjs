@@ -56,6 +56,16 @@ async function assertEntries(resources, config) {
     const root = join(resources, 'plugins/node_modules', item.package)
     const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
     if (manifest.name !== item.package || manifest.version !== item.version) throw new Error(`Plugin payload version mismatch: ${item.package}`)
+    if (item.bundle === 'native') {
+      for (const component of [...item.components, ...(item.runtimePackages ?? [])]) {
+        const metadata = JSON.parse(await readFile(join(resources, 'plugins/node_modules', component.package, 'package.json'), 'utf8'))
+        if (metadata.name !== component.package || metadata.version !== component.version) throw new Error(`Native bundle component mismatch: ${component.package}`)
+      }
+      const patches = manifest.dsh?.bundle?.patch
+      if (!patches) throw new Error(`Native bundle patch missing: ${item.package}`)
+      for (const path of Array.isArray(patches) ? patches : [patches]) await readFile(join(root, path))
+      continue
+    }
     const require = createRequire(join(root, 'package.json'))
     for (const entry of [item.package, `${item.package}/client`]) {
       try { await readFile(require.resolve(entry)) }
@@ -110,7 +120,8 @@ export async function deployPluginPayload({ resourcesRoot, profile }) {
   manifest.dependencies ??= {}
   const config = await readDeliveryManifest(join(resourcesRoot, 'workflow'))
   const changes = []
-  for (const item of selected(config)) {
+  const packages = selected(config).flatMap(item => [item, ...(item.components ?? []), ...(item.runtimePackages ?? [])])
+  for (const item of packages) {
     const link = join(profile, 'node_modules', item.package), target = join(resolve(resourcesRoot), 'plugins/node_modules', item.package)
     const info = await optional(lstat(link))
     const previousLink = info?.isSymbolicLink() ? await readlink(link) : undefined

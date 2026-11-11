@@ -2,14 +2,14 @@
   "schema": 1,
   "harnessVersion": "0.2.2-rc.1",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "57ad5f9dd30b1b9d170a29a45f6553f5acf5a8404fec8f10055f158be3e5722c",
+  "manifestSha256": "976666717fca683533965a4d085a418d971fad327be8fa98cb3480de6ecc5782",
   "plugins": [
     {
       "package": "dsh-context",
-      "version": "0.82.0",
+      "version": "0.83.0",
       "metadata": {
         "name": "dsh-context",
-        "version": "0.82.0",
+        "version": "0.83.0",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -56,10 +56,10 @@
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.58",
+      "version": "1.9.61",
       "metadata": {
         "name": "dsh-cost-meter",
-        "version": "1.9.58",
+        "version": "1.9.61",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -88,10 +88,10 @@
     },
     {
       "package": "@nagi-ovo/dsh-visualize",
-      "version": "0.1.7",
+      "version": "0.1.9",
       "metadata": {
         "name": "@nagi-ovo/dsh-visualize",
-        "version": "0.1.7",
+        "version": "0.1.9",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -196,11 +196,11 @@
     },
     {
       "package": "ghost-agent-sentinel",
-      "version": "0.2.4",
-      "commit": "5deeaa49cfc9f2fffe793eb2afb8e483c9ffd47c",
+      "version": "0.3.3",
+      "commit": "6ba7cc43313a92d7e96376791e398fde69b59740",
       "metadata": {
         "name": "ghost-agent-sentinel",
-        "version": "0.2.4",
+        "version": "0.3.3",
         "dsh": {
           "bundle": {
             "patch": "./dsh/cordis.patch.yml"
@@ -277,10 +277,10 @@
     },
     {
       "package": "dsh-streamfold",
-      "version": "0.7.12",
+      "version": "0.7.14",
       "metadata": {
         "name": "dsh-streamfold",
-        "version": "0.7.12",
+        "version": "0.7.14",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -445,10 +445,10 @@
     },
     {
       "package": "@michengai/dsh-archive-manager",
-      "version": "1.2.8",
+      "version": "1.3.0",
       "metadata": {
         "name": "@michengai/dsh-archive-manager",
-        "version": "1.2.8",
+        "version": "1.3.0",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -463,7 +463,8 @@
               "@deepseek-ai/dsh-client-connection"
             ],
             "platform": "web"
-          }
+          },
+          "manifestVersion": 1
         },
         "peerDependencies": {
           "@deepseek-ai/cordis": ">=4.0.1 <5.0.0",
@@ -491,11 +492,30 @@
       }
     },
     {
+      "package": "dsh-mermaid",
+      "version": "0.4.5",
+      "metadata": {
+        "name": "dsh-mermaid",
+        "version": "0.4.5",
+        "dsh": {
+          "bundle": {
+            "patch": "./cordis.patch.yml"
+          },
+          "client": {
+            "inject": [],
+            "platform": "web"
+          }
+        },
+        "peerDependencies": {},
+        "peerDependenciesMeta": {}
+      }
+    },
+    {
       "package": "dsh-ops",
-      "version": "0.4.4",
+      "version": "0.5.2",
       "metadata": {
         "name": "dsh-ops",
-        "version": "0.4.4",
+        "version": "0.5.2",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -505,14 +525,16 @@
               "@deepseek-ai/dsh-api-gateway",
               "@deepseek-ai/dsh-client-ui-renderer",
               "@deepseek-ai/dsh-client-locale",
-              "@deepseek-ai/dsh-client-ui-plugin-manager"
+              "@deepseek-ai/dsh-client-ui-plugin-manager",
+              "@deepseek-ai/dsh-client-ui-primitives"
             ],
-            "platform": "web"
+            "platform": "web",
+            "immediately": true
           }
         },
         "peerDependencies": {
-          "@deepseek-ai/dsh": ">=0.2.0-rc.2 <0.2.2-0",
-          "@deepseek-ai/cordis": "^4.0.4"
+          "@deepseek-ai/dsh": ">=0.2.2-rc.1 <0.2.3-0",
+          "@deepseek-ai/cordis": "~4.1.0"
         },
         "peerDependenciesMeta": {
           "@deepseek-ai/dsh": {
@@ -526,21 +548,50 @@
     },
     {
       "package": "dsh-live-compact",
-      "version": "1.0.7",
-      "commit": "c50c58b00cf8545c6524272563f99bc7f2779384",
+      "version": "1.1.3",
+      "commit": "3ed5e4054a6ad9d8c6a1edf0909856ea03584c82",
       "metadata": {
         "name": "dsh-live-compact",
-        "version": "1.0.7",
+        "version": "1.1.3",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
+          },
+          "client": {
+            "inject": [
+              "@deepseek-ai/dsh-client-ui-renderer",
+              "@deepseek-ai/dsh-client-locale",
+              "@deepseek-ai/dsh-client-ui-plugin-manager",
+              "@deepseek-ai/dsh-client-ui-settings"
+            ],
+            "platform": "web"
           }
         },
         "peerDependencies": {
           "@deepseek-ai/dsh-compaction": ">=0.2.0-rc.2 <0.3.0",
           "@deepseek-ai/dsh-compaction-basic": ">=0.2.0-rc.2 <0.3.0",
-          "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2 <0.3.0"
+          "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2 <0.3.0",
+          "@deepseek-ai/schemastery": ">=3.18.0 <4",
+          "react": ">=18"
         },
+        "peerDependenciesMeta": {}
+      }
+    },
+    {
+      "package": "@botharness/tobs",
+      "version": "1.6.1-ghost.20261110.2e0562f",
+      "commit": "2e0562f1fb222b1edf1bf4d8bd442a9c10a27cab",
+      "artifactSetSha256": "331882e1333fd46153009cf33eb688f0a1501b54363915b950bf35542cf04697",
+      "metadata": {
+        "name": "@botharness/tobs",
+        "version": "1.6.1-ghost.20261110.2e0562f",
+        "dsh": {
+          "manifestVersion": 1,
+          "bundle": {
+            "patch": "./cordis.im.patch.yml"
+          }
+        },
+        "peerDependencies": {},
         "peerDependenciesMeta": {}
       }
     }

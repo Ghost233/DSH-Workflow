@@ -23,7 +23,8 @@ export async function readDeliveryManifest(workflow) {
     || manifest.plugins.some(item => {
       const pin = lock.plugins.find(row => row.package === item.package)
       return !pin || pin.version !== item.version || pin.metadata?.name !== item.package || pin.metadata?.version !== item.version
-        || item.source === 'git' && pin.commit !== item.commit
+        || ['git', 'artifact'].includes(item.source) && pin.commit !== item.commit
+        || item.source === 'artifact' && !/^[a-f0-9]{64}$/.test(pin.artifactSetSha256 ?? '')
     })) throw new Error('Project plugin lock does not match the packaged manifest')
   const config = manifest
   const names = new Set()
@@ -31,9 +32,11 @@ export async function readDeliveryManifest(workflow) {
   for (const item of config.plugins) {
     if (!/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(item.package)
       || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(item.version)
-      || names.has(item.package) || item.source && !['npm', 'git'].includes(item.source)
-      || item.source === 'git' && (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_-]+$/.test(item.repository)
-        || !/^[a-f0-9]{40}$/.test(item.commit))) throw new Error('Invalid or duplicate project plugin configuration')
+      || names.has(item.package) || item.source && !['npm', 'git', 'artifact'].includes(item.source)
+      || ['git', 'artifact'].includes(item.source) && (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_-]+$/.test(item.repository)
+        || !/^[a-f0-9]{40}$/.test(item.commit))
+      || item.source === 'artifact' && (item.bundle !== 'native' || !Array.isArray(item.components)
+        || !item.components.length || typeof item.artifactSet !== 'string')) throw new Error('Invalid or duplicate project plugin configuration')
     names.add(item.package)
   }
   return config

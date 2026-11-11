@@ -177,3 +177,15 @@ test('Git-pinned startup packages reject a same-version npm declaration while pr
     assert.equal(await readFile(manifestPath, 'utf8'), manifest, 'Preparation must not rewrite dependency declarations')
   })
 })
+
+test('native bundle readiness requires every component and its actual namespaced preset fiber', async t => {
+  const manifest = JSON.parse(await readFile(new URL('../../project-plugins.json', import.meta.url), 'utf8'))
+  const native = manifest.plugins.find(item => item.bundle === 'native')
+  assert.ok(native)
+  const rows = native.components.map(component => row(component.package, component.version))
+  const preset = row('@deepseek-ai/dsh-agent-preset', '0.2.2-rc.1', { entryId: 'include:preset-deepseekbot' })
+  const missing = await fixture(t, rows)
+  assert.equal((await startupPluginResults({ resourcesRoot: missing.root, url: missing.url })).find(item => item.package === native.package).state, 'skipped')
+  const complete = await fixture(t, [...rows, preset])
+  assert.equal((await startupPluginResults({ resourcesRoot: complete.root, url: complete.url })).find(item => item.package === native.package).state, 'loaded')
+})

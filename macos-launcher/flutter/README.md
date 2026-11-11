@@ -6,7 +6,7 @@ Flutter Widget 负责界面；LauncherController 组织服务控制、客户端�
 
 启动器通过本机 Unix socket 订阅 DSH 和 Web 管理进程的状态。管理进程在状态或日志变化时推送快照。订阅连接空闲时不发心跳，也不触发状态查询。启动器首次打开和再次显示窗口时补读状态，MacLauncher 的主动查询继续按请求执行。
 
-启动器只启动一个 Node 通知辅助进程，用文件系统事件发现管理进程重建并恢复订阅。退出 Station 会先停止日常 DSH、Web 和全部 Superagent，回收受管后代进程，再关闭状态订阅及其辅助进程。旧管理进程不支持通知时，启动器明确提示版本不兼容，不启用轮询。更新管理进程仍须遵守未完成工作检查，通知重连不会启动或重启业务服务。
+启动器只启动一个 Node 通知辅助进程，用文件系统事件发现管理进程重建并恢复订阅。退出 Station 会先停止日常 DSH 和 Web，回收受管后代进程，再关闭状态订阅及其辅助进程。旧管理进程不支持通知时，启动器明确提示版本不兼容，不启用轮询。更新管理进程仍须遵守未完成工作检查，通知重连不会启动或重启业务服务。
 
 ## 接入
 
@@ -39,8 +39,6 @@ dart run tool/native_probe.dart 'build/macos/Build/Products/Debug/Ghost DSH Stat
 Debug 验收检查真实窗口、菜单显隐与断线恢复。测试配置环境和 VM 原生状态接口仅在 Debug 生效；Release 不提供它们。验收不使用当前用户 profile，不启动用户业务。
 
 给用户交互查看的隔离 Debug 预览，应额外设置 `DSH_LAUNCHER_NATIVE_SEMANTICS=1`，让 macOS 无障碍桥请求初始完整语义树。自动化测试默认持有框架语义句柄；若在这之后才接入系统无障碍检查，Flutter 3.47.7 的原生桥可能只收到增量节点，出现 `Failed to update ui::AXTree` 并闪退。预览模式不关闭无障碍功能，原有自动化测试模式保留。
-
-真实 GitHub 账号的仓库选择回归入口是 `tool/superagent_native_probe.dart`。它依次接收 Debug 可执行文件、已准备的运行资源、隔离数据目录、隔离 DSH 主目录、GitHub 登录名、含 `main` 分支的仓库和一个尚不存在的无障碍就绪标记文件。账号由已有 `gh` 配置管理，脚本不保存项目、不创建任务、不发送消息。打印 `READY_FOR_AX` 后，先由系统无障碍客户端读取该窗口，再创建标记文件，脚本会重复选择账号、仓库和分支 10 次，并检查原生树错误及正常退出。结果与脱敏日志保存在打印的 `EVIDENCE` 目录。将 `DSH_LAUNCHER_NATIVE_SEMANTICS=0` 传给该脚本可运行强制框架语义的失败对照。
 
 生产构建从仓库根目录使用 macos-launcher/build.mjs；先准备面板产物。构建将 Flutter Release 应用、固定的 npm DSH Web 核心和插件装配为一个独立应用，不包含 Desktop。macOS ARM64 上的候选还需验证真实 Web Host、JEV/监控、Matt 与原生窗口。
 

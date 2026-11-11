@@ -11,7 +11,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare-tobs:
+    uses: ./.github/workflows/prepare-tobs.yml
+
   build:
+    needs: prepare-tobs
     runs-on: macos-15
     steps:
       - name: Checkout candidate source
@@ -41,6 +45,12 @@ jobs:
         with:
           channel: stable
           flutter-version: 3.47.7
+
+      - name: Download the verified Tobs packages
+        uses: actions/download-artifact@v4
+        with:
+          name: pinned-tobs-packages
+          path: .build/tobs-upstream/artifacts/${{ needs.prepare-tobs.outputs.version }}
 
       - name: Build and package ARM64 candidate
         shell: bash

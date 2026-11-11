@@ -17,6 +17,7 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   await copyProjectIntegration(resolve('.'), join(resources, 'workflow'))
   for (const name of ['node', 'node_modules', 'plugins', 'plugin-payload.json']) await symlink(join(artifact, name), join(resources, name))
   await cp(join(artifact, 'package.json'), join(resources, 'package.json'))
+  await cp(join(artifact, 'package-lock.json'), join(resources, 'package-lock.json'))
   const anchor = join(resources, 'node_modules/@deepseek-ai/dsh/package.json'), require = createRequire(anchor)
   const boot = require('@deepseek-ai/dsh-app-boot')
   const templates = boot.PROFILE_TEMPLATES ?? require('@deepseek-ai/dsh-official-bundles').PROFILE_TEMPLATES
@@ -45,7 +46,8 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   assert.equal(connected.connection.runtimeVersion, runtime.version)
   assert.equal(await readFile(join(profile, 'cordis.patch.yml'), 'utf8'), userPatch)
   const loaded = started.logs.filter(row => row.text.startsWith('项目启动插件：')).map(row => JSON.parse(row.text.slice('项目启动插件：'.length)))
-  assert.equal(loaded.length, 11)
+  const configured = JSON.parse(await readFile(join(resources, 'workflow/project-plugins.json'), 'utf8'))
+  assert.equal(loaded.length, configured.plugins.filter(row => row.startup === true).length)
   assert.ok(loaded.every(row => row.state === 'loaded'), JSON.stringify(loaded))
   const inspection = (await serviceRequest(socket, { type: 'inspect-stop', action: 'stop' })).stop
   assert.ok(inspection.operationId)

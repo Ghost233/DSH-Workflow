@@ -9,10 +9,7 @@ import { bundleServiceNotifications } from './service-notifications.mjs'
 import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
 import { verifyNpmRuntimePin } from './runtime/npm-runtime-pin.mjs'
 import { bundleProjectPlugins } from './bundle-plugins.mjs'
-import { bundleSuperagent } from './bundle-superagent.mjs'
-import { bundleLarkCli } from './bundle-lark-cli.mjs'
 import { verifyPluginPayload } from './runtime/plugin-payload.mjs'
-import { verifySuperagentPayload } from './runtime/superagent-payload.mjs'
 import { checkBrowserHarnessUpstream } from '../browser-harness-plugin/build.mjs'
 import { pruneKnownDevelopmentFiles } from './production-file-policy.mjs'
 
@@ -73,7 +70,7 @@ try {
   await cp(process.execPath, join(resources, 'node'))
   await chmod(join(resources, 'node'), 0o755)
   await copyProjectIntegration(root, join(resources, 'workflow'))
-  await bundleProjectPlugins({ resourcesRoot: resources, npmCache: join(buildRoot, 'npm-cache') })
+  await bundleProjectPlugins({ resourcesRoot: resources, sourceRoot: root, npmCache: join(buildRoot, 'npm-cache') })
   await bundleServiceNotifications(root, resources)
   const { stdout: outerVersion } = await exec('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(contents, 'Info.plist')])
   if (outerVersion.trim() !== appVersion) throw new Error('Station app and release metadata versions differ')
@@ -89,12 +86,10 @@ try {
   for (const name of ['win32-arm64', 'win32-x64']) {
     await rm(join(resources, 'node_modules/node-pty/prebuilds', name), { recursive: true, force: true })
   }
-  await bundleSuperagent({ resourcesRoot: resources, npmCache: join(buildRoot, 'npm-cache') })
   const settingsClient = join(resources, 'node_modules/@deepseek-ai/dsh-client-ui-settings/lib/client.js')
   const settingsSource = await readFile(settingsClient, 'utf8')
   if (allowAuthenticatedLanSettings(settingsSource) !== settingsSource) throw new Error('DSH settings requires an unsupported upstream change')
   await mkdir(join(resources, 'bin'), { recursive: true })
-  await bundleLarkCli({ resourcesRoot: resources })
   const pnpmShim = join(resources, 'bin', 'pnpm')
   await writeFile(pnpmShim, '#!/bin/sh\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexec "$ROOT/node" "$ROOT/node_modules/pnpm/bin/pnpm.mjs" "$@"\n')
   await chmod(pnpmShim, 0o755)
@@ -109,7 +104,6 @@ try {
   await run('codesign', ['--force', '--sign', '-', join(resources, 'node')])
   await run('codesign', ['--deep', '--force', '--sign', '-', app])
   await verifyPluginPayload(resources, root)
-  await verifySuperagentPayload(resources, root)
   await rename(app, destination)
   // The no-argument launcher selects the newest completed bundle by directory mtime.
   await utimes(destination, new Date(), new Date())

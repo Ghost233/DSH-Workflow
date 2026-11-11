@@ -7,24 +7,35 @@ import { join, basename } from 'node:path'
 import { readDeliveryManifest } from '../agent-observation-plugin/src/delivery-manifest.mjs'
 import { sealPluginPayload, verifyPluginPayload } from './runtime/plugin-payload.mjs'
 import { pruneKnownDevelopmentFiles } from './production-file-policy.mjs'
+import { stageArtifactSet } from '../scripts/stage-artifact-set.mjs'
 
 const execute = promisify(execFile)
 const command = (name, args, cwd) => execute(name, args, { cwd, maxBuffer: 16 * 1024 * 1024,
-  timeout: 60_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })
+  // The official multi-package product has hundreds of production dependencies.
+  timeout: name === 'npm' && ['ci', 'install'].includes(args[0]) ? 600_000 : 60_000,
+  env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })
 
 /** Build-time acquisition only. Startup consumes this sealed production graph without a package manager. */
-export async function bundleProjectPlugins({ resourcesRoot, npmCache, run = command }) {
+export async function bundleProjectPlugins({ resourcesRoot, sourceRoot = join(resourcesRoot, 'workflow'), npmCache, run = command }) {
   const config = await readDeliveryManifest(join(resourcesRoot, 'workflow'))
   if (!config) throw new Error('Missing packaged plugin manifest')
   const directory = join(resourcesRoot, 'plugins'), tarballs = join(directory, 'tarballs')
   await mkdir(directory) // A previous candidate must never be reused implicitly.
   await mkdir(tarballs)
   const scratch = await mkdtemp(join(tmpdir(), 'workflow-plugin-build-'))
-  const dependencies = {}, provenance = []
+  const dependencies = {}, optionalDependencies = {}, overrides = {}, provenance = []
   let failure
   const npmOptions = ['--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false', '--prefer-online', '--cache', npmCache ?? join(scratch, 'npm-cache'), '--registry', config.registry]
   try {
     for (const [index, item] of config.plugins.filter(row => row.startup === true).entries()) {
+      if (item.source === 'artifact') {
+        const staged = await stageArtifactSet(sourceRoot, item, directory)
+        Object.assign(dependencies, staged.dependencies)
+        Object.assign(optionalDependencies, staged.optionalDependencies)
+        Object.assign(overrides, staged.overrides)
+        provenance.push({ ...item, archiveSha256: staged.product.archiveSha256, artifactSetSha256: staged.artifactSetSha256 })
+        continue
+      }
       let source = tarballs, spec = `${item.package}@${item.version}`
       if (item.source === 'git') {
         source = join(scratch, `git-${index}`)
@@ -61,7 +72,7 @@ export async function bundleProjectPlugins({ resourcesRoot, npmCache, run = comm
       const archiveSha256 = createHash('sha256').update(await readFile(join(tarballs, filename))).digest('hex')
       provenance.push({ ...item, archiveSha256 })
     }
-    await writeFile(join(directory, 'package.json'), JSON.stringify({ name: 'dsh-workflow-packaged-plugins', private: true, dependencies }, null, 2) + '\n')
+    await writeFile(join(directory, 'package.json'), JSON.stringify({ name: 'dsh-workflow-packaged-plugins', private: true, dependencies, optionalDependencies, overrides }, null, 2) + '\n')
     // Peers belong to DSH's public runtime mappings; third-party lifecycle hooks never run in the packager.
     const installOptions = ['--legacy-peer-deps', '--no-bin-links', ...npmOptions]
     await run('npm', ['install', '--package-lock-only', ...installOptions], directory)

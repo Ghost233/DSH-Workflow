@@ -44,6 +44,11 @@ test('packaged Web Station does not contain a Desktop application', { skip: reso
   await assert.rejects(access(join(resources, 'desktop')), { code: 'ENOENT' })
 })
 
+test('packaged Station omits the retired autonomous project runtime', { skip: resources ? false : 'Requires the packaged Station resources' }, async () => {
+  for (const path of ['superagent', 'superagent-payload.json', 'bin/lark-cli', 'workflow/vendor/dsh-superagent.upstream.json',
+    'workflow/macos-launcher/runtime/superagent-service.mjs']) await assert.rejects(access(join(resources, path)), { code: 'ENOENT' })
+})
+
 test('packaged macOS terminal runs without Windows prebuilt binaries', { skip: resources ? false : 'Requires the packaged Station resources', timeout: 10000 }, async () => {
   const prebuilds = join(resources, 'node_modules/node-pty/prebuilds')
   await access(join(prebuilds, 'darwin-arm64'))
@@ -66,7 +71,6 @@ test('audited test files are absent while packaged zod and HTML parsing remain u
     join(resources, 'node_modules/zod'),
     join(resources, 'plugins/node_modules/zod'),
     join(resources, 'plugins/node_modules/dsh-cost-meter/node_modules/zod'),
-    join(resources, 'superagent/node_modules/zod'),
   ]
   for (const root of roots) {
     await access(join(root, 'src/index.ts'))

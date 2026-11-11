@@ -11,14 +11,14 @@ const exec = promisify(execFile)
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
 const ignored = path => path.split('/').some(part => ['test', 'tests', '.git', 'node_modules'].includes(part))
 const scripts = ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-runtime.mjs', 'dsh-launch-composition.mjs',
-  'dsh-readiness.mjs', 'dsh-delivery-policy.mjs', 'observation-profile.mjs', 'web-host-lifecycle.mjs']
+  'dsh-readiness.mjs', 'dsh-delivery-policy.mjs', 'observation-profile.mjs', 'web-host-lifecycle.mjs', 'stage-artifact-set.mjs', 'upstream-artifacts.mjs', 'native-bundle.mjs']
 
 async function sources(root) {
   const files = ['package.json', 'dsh-runtime.json', 'project-plugins.json', 'project-plugins.lock.json', 'project-mcp.json',
-    'vendor/mattpocock-skills-zh.upstream.json', 'vendor/dsh-skills.upstream.json', 'vendor/dsh-superagent.upstream.json', 'vendor/lark-cli.upstream.json', 'matt-skills-panel-plugin/upstream.json',
+    'vendor/mattpocock-skills-zh.upstream.json', 'vendor/dsh-skills.upstream.json', 'vendor/tobs.upstream.json', 'matt-skills-panel-plugin/upstream.json',
     'matt-skills-panel-plugin/LICENSE', 'matt-skills-panel-plugin/THIRD_PARTY_NOTICES.md',
     ...scripts.map(name => `scripts/${name}`)]
-  for (const directory of ['agent-observation-plugin', 'browser-harness-plugin', 'vendor/mattpocock-skills-zh', 'vendor/dsh-skills', 'matt-skills-panel-plugin/package', 'skills']) files.push(directory)
+  for (const directory of ['agent-observation-plugin', 'project-coordination-plugin', 'browser-harness-plugin', 'vendor/mattpocock-skills-zh', 'vendor/dsh-skills', 'matt-skills-panel-plugin/package', 'skills']) files.push(directory)
   files.push(...(await readdir(join(root, 'macos-launcher/runtime'))).filter(name => name.endsWith('.mjs') && !name.endsWith('.test.mjs')).map(name => `macos-launcher/runtime/${name}`))
   for (const name of ['lib/index.js', 'lib/client.js', 'lib/bootstrap.js']) {
     if (!existsSync(join(root, 'matt-skills-panel-plugin/package', name))) throw new Error('Build the current maintained Matt package before staging')

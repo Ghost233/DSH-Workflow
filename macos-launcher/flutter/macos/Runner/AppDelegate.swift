@@ -1,5 +1,4 @@
 import Cocoa
-import CoreImage
 import FlutterMacOS
 import ServiceManagement
 import Security
@@ -208,16 +207,6 @@ class AppDelegate: FlutterAppDelegate {
             "password": self.loadPassword() as Any, "loginStatus": self.loginStatus(),
           ])
         case "showWindow": self.showWindow(); result(nil)
-        case "chooseProjectDirectory", "chooseWritableDirectory":
-          let panel = NSOpenPanel()
-          panel.canChooseDirectories = true
-          panel.canChooseFiles = false
-          panel.allowsMultipleSelection = false
-          panel.canCreateDirectories = false
-          let writable = call.method == "chooseWritableDirectory"
-          panel.prompt = writable ? "选择目录" : "选择项目"
-          panel.message = writable ? "选择允许此 Superagent 写入的目录。" : "选择与 GitHub 仓库对应的本地项目目录。"
-          panel.begin { response in result(response == .OK ? panel.url?.path : nil) }
         case "chooseCodexAuthFile":
           let panel = NSOpenPanel()
           panel.canChooseDirectories = false
@@ -228,26 +217,6 @@ class AppDelegate: FlutterAppDelegate {
           panel.prompt = "选择认证文件"
           panel.message = "选择 Codex CLI 的 auth.json。"
           panel.begin { response in result(response == .OK ? panel.url?.path : nil) }
-        case "feishuQRCode":
-          guard let value = call.arguments as? String, value.utf8.count <= 4096,
-                let url = URL(string: value), url.scheme == "https",
-                ["open.feishu.cn", "open.larksuite.com"].contains(url.host ?? ""), url.path == "/page/cli",
-                let data = value.data(using: .utf8), let filter = CIFilter(name: "CIQRCodeGenerator") else {
-            throw self.failure("飞书扫码链接无效。")
-          }
-          filter.setValue(data, forKey: "inputMessage")
-          filter.setValue("M", forKey: "inputCorrectionLevel")
-          guard let image = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)) else {
-            throw self.failure("无法生成飞书二维码。")
-          }
-          let bounds = image.extent.insetBy(dx: -32, dy: -32)
-          let background = CIImage(color: CIColor(red: 1, green: 1, blue: 1))
-          let qr = image.composited(over: background).cropped(to: bounds)
-          guard let cgImage = CIContext().createCGImage(qr, from: bounds),
-                let png = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else {
-            throw self.failure("无法生成飞书二维码。")
-          }
-          result(FlutterStandardTypedData(bytes: png))
         #if DEBUG
         case "debugState": result(["entryVisible": self.statusItem?.isVisible ?? false,
           "windowVisible": self.mainFlutterWindow?.isVisible ?? false,

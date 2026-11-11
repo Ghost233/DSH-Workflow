@@ -55,6 +55,7 @@ void main() {
     expect(find.text('启动 DSH 服务'), findsOneWidget);
     expect(find.text('打开 Web'), findsOneWidget);
     for (final label in [
+      'Superagent',
       '桌面版',
       '打开桌面版',
       '后台启动',

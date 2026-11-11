@@ -54,6 +54,7 @@ export function composeDshLaunch(entries, { projectRoot, catalogRoot }) {
   ]
   const mcpEntries = JSON.parse(readFileSync(join(root, 'project-mcp.json'), 'utf8'))
   const definitions = [
+    { id: 'workflow-project-coordination', name: 'dsh-workflow/project-coordination', config: { directory: join(catalogRoot, '.dsh-workflow/project-coordination'), configurationFile: '' } },
     { id: 'workflow-delivery-inventory', name: 'dsh-workflow/delivery-inventory', config: { projectRoot: root } },
     { id: 'workflow-browser-harness', name: join(root, 'browser-harness-plugin/index.mjs') },
     { id: 'workflow-browser-harness-skills', name: '@deepseek-ai/dsh-skill-filesystem', config: {

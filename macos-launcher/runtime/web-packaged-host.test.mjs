@@ -34,7 +34,7 @@ test('packaged project profile serves authenticated official DSH readiness using
     await symlink(entry.packageDir, target)
   }
   // Native SDK package artifacts are fixed external runtime inputs; no source resolver or own-package alias is injected.
-  for (const path of ['agent-observation-plugin', 'browser-harness-plugin', 'matt-skills-panel-plugin/package', 'vendor/mattpocock-skills-zh/skills', 'vendor/dsh-skills/skills']) {
+  for (const path of ['agent-observation-plugin', 'project-coordination-plugin', 'browser-harness-plugin', 'matt-skills-panel-plugin/package', 'vendor/mattpocock-skills-zh/skills', 'vendor/dsh-skills/skills']) {
     await cp(resolve(path), join(workflow, path), { recursive: true, filter: path => !/(?:^|\/)(?:test|tests|node_modules|\.git)(?:\/|$)/.test(path) })
   }
   await stageBrowserHarnessSkills(resolve('.'), workflow)
@@ -45,7 +45,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   // User MCP endpoints are unrelated foreign work, absent from the CI input under diagnosis.
   await writeFile(join(workflow, 'project-mcp.json'), '[]\n')
   await mkdir(join(workflow, 'scripts'), { recursive: true })
-  for (const path of ['dsh-launch-composition.mjs', 'dsh-delivery-policy.mjs', 'observation-profile.mjs']) {
+  for (const path of ['dsh-launch-composition.mjs', 'dsh-delivery-policy.mjs', 'observation-profile.mjs', 'native-bundle.mjs']) {
     await cp(resolve('scripts', path), join(workflow, 'scripts', path))
   }
   await mkdir(join(workflow, 'macos-launcher/runtime'), { recursive: true })
@@ -200,9 +200,9 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(presetRow.current, sdkLock['node_modules/@deepseek-ai/dsh-plugin-manager'].version)
   assert.equal(presetRow.expected, sdkLock['node_modules/@deepseek-ai/dsh-plugin-manager'].version)
   const ownRows = report.rows.filter(row => row.moduleName.startsWith('dsh-workflow/'))
-  assert.deepEqual(ownRows.map(row => row.entryId).sort(), ['include:workflow-agent-monitor', 'include:workflow-delivery-inventory'])
+  assert.deepEqual(ownRows.map(row => row.entryId).sort(), ['include:workflow-agent-monitor', 'include:workflow-delivery-inventory', 'include:workflow-project-coordination'])
   assert.equal(new Set(ownRows.map(row => row.source)).size, 1, 'all named project entries resolve from one existing package source')
-  for (const moduleName of ['dsh-workflow/agent-monitor', 'dsh-workflow/delivery-inventory']) {
+  for (const moduleName of ['dsh-workflow/agent-monitor', 'dsh-workflow/delivery-inventory', 'dsh-workflow/project-coordination']) {
     const row = report.rows.find(row => row.moduleName === moduleName)
     assert.equal(row.current, '0.1.1', `${moduleName} actual package version`)
     assert.equal(row.expected, '0.1.1', `${moduleName} repository component pin`)

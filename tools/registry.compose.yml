@@ -1,0 +1,25 @@
+name: dsh-workflow-registry
+services:
+  registry:
+    image: node:24.12.0-bookworm-slim@sha256:7326fb2dbdce998edd72140946851be64ef4a643e8715e138ca467e8e9d92c99
+    working_dir: /workspace
+    read_only: true
+    network_mode: bridge
+    environment:
+      npm_config_cache: /tmp/npm-cache
+    tmpfs:
+      - /tmp
+    volumes:
+      - ../:/workspace:ro
+      - ../.build/project-registry:/output
+    command: ["npm", "--version"]
+  tobs-builder:
+    build:
+      context: .
+      dockerfile: tobs-builder.Dockerfile
+    network_mode: bridge
+    working_dir: /work
+    volumes:
+      - ../:/workspace:ro
+      - ../.build/tobs-upstream:/work
+    command: ["node", "/workspace/scripts/build-tobs-source.mjs", "/work"]

@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/BotHarness/DeepSeekBot.git",
+  "commit": "2e0562f1fb222b1edf1bf4d8bd442a9c10a27cab",
+  "version": "1.6.1-ghost.20261110.2e0562f",
+  "node": "24.21.0",
+  "pnpm": "12.4.2",
+  "provider": {
+    "repository": "https://github.com/DoodleBears/dsh-im.git",
+    "commit": "bb0c7956896f5f5845950a0707837cd7938a11b3"
+  }
+}

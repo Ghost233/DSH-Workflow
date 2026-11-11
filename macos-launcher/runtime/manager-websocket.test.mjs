@@ -225,7 +225,7 @@ test('a new ready event retries once after an in-flight stopped-Host grant fails
   } finally { await supervisor.close() }
 })
 
-// Exercise the real one-shot transport used by Superagent start/stop.
+// Exercise the real one-shot manager control transport.
 test('an accepted one-shot command survives the connection idle deadline', async t => {
   let fired = false
   // Delay command execution past that deadline without touching client deadlines.

@@ -15,7 +15,6 @@ import 'maclauncher_integration.dart';
 import 'model_settings_page.dart';
 import 'native_bridge.dart';
 import 'service_stop.dart';
-import 'superagent_projects.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -216,9 +215,7 @@ class _LauncherPageState extends State<LauncherPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    '以下工作尚未完成或状态未知。确认后将停止日常 DSH、所有 Superagent 和 Web，并回收相关进程。',
-                  ),
+                  const Text('以下工作尚未完成或状态未知。确认后将停止日常 DSH 和 Web，并回收相关进程。'),
                   if (inspection['message'] is String)
                     Text(inspection['message'] as String),
                   for (final work in inspection['work'] as List? ?? [])
@@ -324,7 +321,7 @@ class _LauncherPageState extends State<LauncherPage> {
               labelType: NavigationRailLabelType.all,
               onDestinationSelected: (value) {
                 setState(() => _page = value);
-                if (value == 4 &&
+                if (value == 3 &&
                     model.modelSettings == null &&
                     model.serviceSnapshot.ready == true) {
                   unawaited(_act(model.refreshModelSettings));
@@ -334,10 +331,6 @@ class _LauncherPageState extends State<LauncherPage> {
                 NavigationRailDestination(
                   icon: Icon(Icons.dashboard_outlined),
                   label: Text('管理'),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.smart_toy_outlined),
-                  label: Text('Superagent'),
                 ),
                 NavigationRailDestination(
                   icon: Icon(Icons.extension_outlined),
@@ -358,10 +351,9 @@ class _LauncherPageState extends State<LauncherPage> {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: switch (_page) {
-                  1 => _superagent(),
-                  2 => _plugins(),
-                  3 => _logs(),
-                  4 => ModelSettingsPage(model: model),
+                  1 => _plugins(),
+                  2 => _logs(),
+                  3 => ModelSettingsPage(model: model),
                   _ => _overview(),
                 },
               ),
@@ -525,12 +517,6 @@ class _LauncherPageState extends State<LauncherPage> {
           ],
         ),
       ]),
-    ],
-  );
-
-  Widget _superagent() => ListView(
-    children: [
-      _section('Superagent 项目', [SuperagentProjects(model: model, act: _act)]),
     ],
   );
 

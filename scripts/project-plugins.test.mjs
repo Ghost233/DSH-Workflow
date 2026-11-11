@@ -26,6 +26,7 @@ async function fixture(t) {
   for (const item of list.plugins) {
     item.version = '1.0.0'
     delete item.source; delete item.commit; delete item.ref
+    if (item.bundle === 'native') { delete item.bundle; delete item.components; delete item.artifactSet }
   }
   await writeJson(join(root, 'project-plugins.json'), list)
   await pkg(root, { name: 'dsh-workflow', version: '1.0.0', dsh: { client: { platform: 'web' } } })
@@ -263,7 +264,7 @@ test('failed refresh invalidates previous launch; state stores facts only', asyn
   const f = await fixture(t)
   const state = await prepare(f.root, f.anchor, process.pid, f)
   const saved = JSON.parse(await readFile(join(state.directory, 'launch.json'), 'utf8'))
-  assert.deepEqual(Object.keys(saved).sort(), ['anchor', 'installed'])
+  assert.deepEqual(Object.keys(saved).sort(), ['anchor', 'installed', 'packages'])
   await releaseLock(state.directory, process.pid)
   await assert.rejects(prepare(f.root, f.anchor, process.pid, { ...f, run: async () => { throw new Error('refresh failed') } }), /refresh failed/)
   await assert.rejects(access(join(state.directory, 'launch.json')))

@@ -8,6 +8,8 @@ import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { installProjectResolver } from './project-plugin-resolver.mjs'
 import { target as harnessTarget } from './harness-runtime.mjs'
+import { nativeBundlePatches } from './native-bundle.mjs'
+import { stageArtifactSet } from './stage-artifact-set.mjs'
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'))
 const exec = promisify(execFile)
@@ -182,11 +184,11 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
     }
     if (!/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/.test(item.package) || !/^[a-z0-9._-]+$/i.test(item.version)
       || !/^[a-z0-9-]+$/.test(item.entryId) || names.has(item.package) || ids.has(item.entryId)) throw new Error('Invalid or duplicate plugin list entry')
-    if (item.source && !['npm', 'git'].includes(item.source)) throw new Error(`Unknown plugin source: ${item.source}`)
+    if (item.source && !['npm', 'git', 'artifact'].includes(item.source)) throw new Error(`Unknown plugin source: ${item.source}`)
     if (item.source === 'git' && (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_-]+$/.test(item.repository)
       || (item.commit ? !/^[a-f0-9]{40}$/.test(item.commit) || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(item.version)
         : !/^[A-Za-z0-9_-]+$/.test(item.ref) || item.version !== 'latest'))) throw new Error(`Invalid Git source: ${item.package}`)
-    if (item.bundle && item.bundle !== 'entry') throw new Error(`Unknown bundle adapter: ${item.package}`)
+    if (item.bundle && !['entry', 'native'].includes(item.bundle)) throw new Error(`Unknown bundle adapter: ${item.package}`)
     if (item.startup !== undefined && item.startup !== true) throw new Error(`Invalid startup selection: ${item.package}`)
     if (item.requires && (!Array.isArray(item.requires) || item.requires.some(name => !names.has(name)))) throw new Error(`Required plugin must precede ${item.package}`)
     names.add(item.package); ids.add(item.entryId)
@@ -217,6 +219,7 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
   const ready = []
   for (const item of list.plugins) {
     try {
+      if (update && item.source === 'artifact') throw new Error('Source artifacts require the generated container lock, not a registry update')
       const revision = update ? await resolvePackage(item, list.registry) : locked.plugins.find(row => row.package === item.package)
       if (item.source === 'git' ? !/^[a-f0-9]{40}$/.test(revision.commit) : !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(revision.version)) {
         throw new Error(`Invalid plugin revision: ${item.package}`)
@@ -265,7 +268,8 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
           assertClientDependencies([{ package: item.package, metadata: meta }], hostPackages, activeNames)
         }
         const spec = commit ? `${item.package}@git+${item.repository}.git#${commit}` : `${item.package}@${version}`
-        const pkgRoot = join(directory, 'node_modules', item.package)
+        const artifactRoot = join(directory, 'artifacts', item.entryId)
+        const pkgRoot = item.source === 'artifact' ? join(artifactRoot, 'node_modules', item.package) : join(directory, 'node_modules', item.package)
         const priorPackage = await readJson(join(pkgRoot, 'package.json')).catch(error => { if (error.code !== 'ENOENT') throw error })
         const currentManifest = await readJson(manifestPath)
         const dependencySpec = commit ? `git+${item.repository}.git#${commit}` : version
@@ -273,16 +277,33 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
           && currentManifest.dependencies?.[item.package] === dependencySpec
         // Ordinary startup never resolves latest or moving Git refs. First use
         // installs the pinned target; later starts verify the existing artifacts.
-        if (!reusable) await run('pnpm', ['add', spec, '--save-exact', '--registry', list.registry,
+        if (item.source === 'artifact') {
+          const staged = await stageArtifactSet(root, item, artifactRoot)
+          const receiptPath = join(artifactRoot, 'installed.json')
+          const receipt = await readJson(receiptPath).catch(error => { if (error.code !== 'ENOENT') throw error })
+          if (receipt?.artifactSetSha256 !== staged.artifactSetSha256 || priorPackage?.version !== version) {
+            await writeFile(join(artifactRoot, 'package.json'), JSON.stringify({ name: 'workflow-native-bundle', private: true, dependencies: staged.dependencies, optionalDependencies: staged.optionalDependencies, overrides: staged.overrides }))
+            await run('npm', ['install', '--ignore-scripts', '--legacy-peer-deps', '--no-bin-links', '--no-audit', '--no-fund', '--registry', list.registry], { cwd: artifactRoot })
+            await writeFile(receiptPath, JSON.stringify({ artifactSetSha256: staged.artifactSetSha256 }))
+          }
+          for (const component of [...item.components, ...(item.runtimePackages ?? [])]) {
+            const componentRoot = join(artifactRoot, 'node_modules', component.package)
+            const actual = await readJson(join(componentRoot, 'package.json'))
+            if (actual.name !== component.package || actual.version !== component.version) throw new Error(`Native component version mismatch: ${component.package}`)
+            packages[component.package] = componentRoot
+          }
+        } else if (!reusable) await run('pnpm', ['add', spec, '--save-exact', '--registry', list.registry,
           '--store-dir', join(directory, '.pnpm-store')], { cwd: directory })
         const pkg = await readJson(join(pkgRoot, 'package.json'))
         manifests.set(item.package, pkg)
         if (pkg.name !== item.package || (version && pkg.version !== version)) throw new Error(`Installed version mismatch: ${item.package}`)
         assertClientDependencies([{ package: item.package, metadata: pkg }], hostPackages, activeNames)
         const req = createRequire(join(pkgRoot, 'package.json'))
-        await access(req.resolve(item.package))
-        await access(req.resolve(`${item.package}/client`))
-        if ((!pkg.dsh?.bundle?.patch && item.bundle !== 'entry') || !pkg.dsh?.client) throw new Error(`Missing DSH bundle/client: ${item.package}`)
+        if (item.bundle !== 'native') {
+          await access(req.resolve(item.package))
+          await access(req.resolve(`${item.package}/client`))
+        }
+        if ((!pkg.dsh?.bundle?.patch && item.bundle !== 'entry') || item.bundle !== 'native' && !pkg.dsh?.client) throw new Error(`Missing DSH bundle/client: ${item.package}`)
         packages[item.package] = pkgRoot
         installed.push({ ...item, version: pkg.version, ...(commit ? { commit } : {}) })
         say(`${item.package}@${pkg.version}${commit ? `#${commit}` : ''} 安装产物完整`)
@@ -359,7 +380,7 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
       const extra = existsSync(homePatch) ? boot.loadOverlayPatches('dsh', homePatch) : []
       const entries = boot.composeEntries([...profile.layers.map(layer => layer.patches), profile.patches, extra])
       for (const item of [...installed]) {
-        try { await import(pathToFileURL(createRequire(join(packages[item.package], 'package.json')).resolve(item.package))) }
+        try { if (item.bundle !== 'native') await import(pathToFileURL(createRequire(join(packages[item.package], 'package.json')).resolve(item.package))) }
         catch (error) {
           if (scope !== 'startup' || item.source === 'project') throw error
           drop(item, error)
@@ -376,6 +397,12 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
         if (item.source === 'project') continue
         try {
           const pkg = manifests.get(item.package)
+          if (item.bundle === 'native') {
+            const native = nativeBundlePatches(boot, packages[item.package], pkg, existing)
+            boot.composeEntries([[{ insert: entries }], patches, native])
+            patches.push(...native)
+            continue
+          }
           // Legacy packages register a plain loader row in install.sh; do not run that global installer.
           const bundle = pkg.dsh.bundle?.patch
             ? boot.loadOverlayPatches('dsh', join(packages[item.package], pkg.dsh.bundle.patch))
@@ -410,7 +437,7 @@ export async function prepare(root, anchor, pid, { run = command, resolvePackage
       await rename(`${lockPath}.tmp`, lockPath)
     }
     // Publish the launch receipt last, after the optional lock update succeeds.
-    await writeFile(join(directory, 'launch.json.tmp'), JSON.stringify({ anchor, installed }, null, 2) + '\n')
+    await writeFile(join(directory, 'launch.json.tmp'), JSON.stringify({ anchor, installed, packages }, null, 2) + '\n')
     await rename(join(directory, 'launch.json.tmp'), join(directory, 'launch.json'))
     say(skipped.length ? `${skipped.length} 个第三方插件已跳过，其余插件已准备，可以继续启动 DSH。` : '全部插件准备成功，可以启动 DSH。')
     return state
@@ -429,7 +456,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       const state = await readJson(join(pluginDirectory(resolve(root)), 'launch.json'))
       state.directory = pluginDirectory(resolve(root))
       state.patch = join(state.directory, 'launch.patch.yml')
-      state.packages = Object.fromEntries(state.installed.map(item => [item.package, item.source === 'project'
+      state.packages ??= Object.fromEntries(state.installed.map(item => [item.package, item.source === 'project'
         ? resolve(root, item.directory) : join(state.directory, 'node_modules', item.package)]))
       state.hostPackages = hostPackageMap(state.anchor)
       installProjectResolver(state)

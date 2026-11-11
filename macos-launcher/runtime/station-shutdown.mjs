@@ -1,8 +1,6 @@
 import { createInterface } from 'node:readline'
 import { serviceRequest, serviceSocket, serviceDirectory, redact } from './service-control.mjs'
 import { webSocket, webDirectory } from './web-control.mjs'
-import { superagentSocket, superagentDirectory } from './superagent-service.mjs'
-import { listSuperagentProjects } from './superagent-projects.mjs'
 import { stationManager, stationDescendants, stopStationProcesses } from './station-processes.mjs'
 
 const missing = async run => {
@@ -11,41 +9,20 @@ const missing = async run => {
 
 /** All confirmation happens before service shutdown; controller disposal alone does not own this operation. */
 export async function shutdownStation({ dataRoot, confirm, progress = () => {} }) {
-  const dailySocket = serviceSocket(dataRoot), managers = [], agents = []
+  const dailySocket = serviceSocket(dataRoot), managers = []
   let stop, primary
   const decide = async (daily, extra = []) => confirm({ needsConfirmation: daily?.needsConfirmation === true || daily?.unknown === true || daily?.changed === true || (daily?.work?.length ?? 0) > 0 || extra.length > 0,
     work: [...(daily?.work ?? []).map(row => row.label || row.id), ...extra], message: daily?.message })
   try {
-    progress('正在检查 DSH 与 Superagent 的未完成工作…')
+    progress('正在检查 DSH 的未完成工作…')
     const daily = await missing(() => serviceRequest(dailySocket, { type: 'inspect-stop', action: 'stop' }))
     stop = daily?.stop
     const dailyManager = await stationManager(serviceDirectory(dataRoot), 'service-manager.mjs', dataRoot)
     if (dailyManager && !daily) throw new Error('日常 DSH 管理连接不可用，无法安全退出，请稍后重试。')
     if (dailyManager) managers.push(dailyManager)
-    const projects = await listSuperagentProjects(dataRoot)
-    if (!projects.some(row => row.id === 'legacy')) projects.push({ id: 'legacy', name: '原有 Superagent' })
-    const warnings = []
-    for (const project of projects) {
-      const socket = superagentSocket(dataRoot, project.id)
-      const status = await missing(() => serviceRequest(socket, { type: 'status' }, 10000))
-      const manager = await stationManager(superagentDirectory(dataRoot, project.id), 'superagent-service.mjs manager', dataRoot)
-      if (manager && !status) throw new Error(`${project.name} 管理连接不可用，无法安全退出。`)
-      if (!status) continue
-      if (manager) managers.push(manager)
-      if (status.service?.state === 'stopped') continue
-      agents.push({ project, socket })
-      try {
-        const opened = await serviceRequest(socket, { type: 'open' }, 10000)
-        const response = await fetch(new URL('/orchestrator/api/tickets?state=open&limit=1', opened.url), {
-          headers: { 'x-orchestrator-request': '1' }, signal: AbortSignal.timeout(5000) })
-        const page = await response.json()
-        if (!response.ok || !Number.isSafeInteger(page.total)) throw new Error('unknown tickets')
-        if (page.total) warnings.push(`${project.name}：${page.total} 个未完工单`)
-      } catch { warnings.push(`${project.name}：任务状态无法确认`) }
-    }
     const web = await stationManager(webDirectory(dataRoot), 'global-supervisor.mjs', dataRoot)
     if (web) managers.push(web)
-    if (!await decide(stop, warnings)) return false
+    if (!await decide(stop)) return false
     const descendants = new Map((await stationDescendants(managers)).map(row => [row.pid, row]))
     if (stop && !stop.stopped) {
       progress('正在停止日常 DSH 服务…')
@@ -55,12 +32,6 @@ export async function shutdownStation({ dataRoot, confirm, progress = () => {} }
         if (!stop || stop.stopped) break
         if (!await decide(stop)) return false
       }
-    }
-    for (const { project, socket } of agents) {
-      progress(`正在停止 Superagent：${project.name}…`)
-      for (const row of await stationDescendants(managers)) descendants.set(row.pid, row)
-      const value = await serviceRequest(socket, { type: 'stop' }, 310000)
-      if (value.service?.state !== 'stopped') throw new Error(`${project.name} 尚未停止。`)
     }
     progress('正在关闭 Web 访问…')
     await missing(() => serviceRequest(webSocket(dataRoot), { type: 'recycle-web' }, 45000))

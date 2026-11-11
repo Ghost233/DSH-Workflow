@@ -8,7 +8,3 @@
 [submodule "vendor/browser-harness"]
 	path = vendor/browser-harness
 	url = https://github.com/browser-use/browser-harness.git
-[submodule "vendor/dsh-superagent-prototype"]
-	path = vendor/dsh-superagent-prototype
-	url = https://github.com/Ghost233/dsh-superagent-prototype.git
-	branch = ghost

@@ -10,7 +10,8 @@
     "./jev-center": "./agent-observation-plugin/src/jev-center-plugin.mjs",
     "./agent-monitor": "./agent-observation-plugin/src/agent-monitor-plugin.mjs",
     "./delivery-inventory": "./agent-observation-plugin/src/delivery-inventory.mjs",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./project-coordination": "./project-coordination-plugin/index.mjs"
   },
   "license": "MIT",
   "files": [
@@ -39,7 +40,12 @@
     "skills/",
     "scripts/dsh-launch-composition.mjs",
     "scripts/dsh-readiness.mjs",
-    "scripts/dsh-delivery-policy.mjs"
+    "scripts/dsh-delivery-policy.mjs",
+    "project-coordination-plugin/",
+    "scripts/stage-artifact-set.mjs",
+    "scripts/upstream-artifacts.mjs",
+    "vendor/tobs.upstream.json",
+    "scripts/native-bundle.mjs"
   ],
   "dsh": {
     "client": {
