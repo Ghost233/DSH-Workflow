@@ -40,7 +40,8 @@ if runtime.get('source') == 'npm':
 payload = value.get('pluginPayload', {})
 assert re.fullmatch(r'[0-9a-f]{64}', payload.get('sha256', '')), 'manifest 缺少插件本体交付校验'
 plugins = json.loads(Path('project-plugins.json').read_text())['plugins']
-expected_plugins = [dict(package=p['package'], version=p['version'], **({'commit': p['commit']} if p.get('source') == 'git' else {}))
+expected_plugins = [dict(package=p['package'], version=p['version'],
+                         **({'commit': p['commit']} if p.get('source') in ('git', 'artifact') else {}))
                     for p in plugins if p.get('startup') is True]
 assert payload.get('plugins') == expected_plugins, 'manifest 插件版本、Git 提交或清单覆盖不一致'
 assert len(value['assets']) == 1 and value['assets'][0]['name'] == expected, f"manifest assets 不符合预期：{value.get('assets')}"

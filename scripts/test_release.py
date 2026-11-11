@@ -458,6 +458,27 @@ Path(os.environ['FIXTURE_RELEASE_LOG']).write_text(json.dumps(sys.argv[1:]))
         self.assertIn('--draft', args)
         self.assertEqual(args[args.index('--repo') + 1], 'Ghost233/DSH-Workflow')
 
+    @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS release job CLI seam')
+    def test_release_job_accepts_the_pinned_source_commit_of_an_artifact_plugin(self):
+        app, assets = self.packaging_fixture()
+        result = self.package_cli(app, assets)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plugin = {'package': '@botharness/tobs', 'version': '1.6.1-fixture', 'commit': 'a' * 40}
+        (self.repo / 'project-plugins.json').write_text(json.dumps({
+            'plugins': [{**plugin, 'source': 'artifact', 'startup': True}],
+        }))
+        manifest_path = assets / 'manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        manifest['pluginPayload']['plugins'] = [plugin]
+        manifest_path.write_text(json.dumps(manifest))
+        names = [manifest['assets'][0]['name'], 'manifest.json']
+        (assets / 'SHA256SUMS').write_text(''.join(
+            hashlib.sha256((assets / name).read_bytes()).hexdigest() + '  ' + name + '\n'
+            for name in names))
+        result = self.release_job_cli(assets)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / 'release-command.json').exists())
+
     def test_production_build_packages_without_running_tests_or_runtime_smoke(self):
         shutil.copy2(SOURCE / 'build-local-release.sh', self.repo / 'scripts/build-local-release.sh')
         log = self.root / 'build-commands.jsonl'
