@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { readPluginConfiguration } from './plugin-configuration.mjs'
-import { pluginDependencySpec } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { pluginDependencySpec, isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 import { browserHarnessVersionRows } from '../../browser-harness-plugin/report.mjs'
 
 const owned = [
@@ -83,13 +83,30 @@ async function installedPackage(profile, name) {
   return manifest?.name === name && typeof manifest.version === 'string' ? manifest : undefined
 }
 
-/** Inspect local package files only; repository DMGs own version changes. */
+async function fetchNpmLatest(name, registry) {
+  const response = await fetch(new URL(`${encodeURIComponent(name)}/latest`, registry.endsWith('/') ? registry : `${registry}/`), {
+    signal: AbortSignal.timeout(5000),
+  })
+  if (!response.ok) throw new Error(`Registry HTTP ${response.status}`)
+  const manifest = await response.json()
+  if (manifest?.name !== name || typeof manifest.version !== 'string' || !exactVersion(manifest.version)) {
+    throw new Error('Invalid npm latest metadata')
+  }
+  return manifest.version
+}
+
+/** Read installed versions and query npm latest for profile-managed packages. */
 export async function checkPluginVersions({ resourcesRoot, dataRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
-  profileName = existsSync(join(home, 'profiles/desktop/package.json')) ? 'desktop' : 'web' } = {}) {
+  profileName, fetchLatest = fetchNpmLatest } = {}) {
   const resources = resolve(resourcesRoot)
   const workflow = join(resources, 'workflow')
   const rows = []
-  const profile = join(home, 'profiles', profileName)
+  const npmRows = []
+  let configuration, configurationError
+  try { configuration = await readPluginConfiguration(resources) }
+  catch (error) { configurationError = error.message }
+  const profile = join(home, 'profiles', profileName ?? (configuration?.npmStartup === 'profile'
+    || existsSync(join(home, 'profiles/desktop/package.json')) ? 'desktop' : 'web'))
   const profileSource = 'DSH 当前配置'
   const profileManifest = await jsonFile(join(profile, 'package.json'))
   for (const [name, spec] of Object.entries(profileManifest?.dependencies ?? {})) {
@@ -103,7 +120,7 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
       continue
     }
     const current = installed?.version
-    const local = /^(?:file:|link:|workspace:|git\+|https?:|\.\.?\/|\/)/.test(spec)
+    const local = /[:/#]|^git\+/.test(spec)
     rows.push({ source: profileSource, name, current: current ?? null,
       latest: null, status: local ? 'local' : current ? 'installed' : 'unknown',
       supportedDsh: declaredDshVersions(installed),
@@ -132,14 +149,21 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
   const projectManifest = projectManifestBytes ? JSON.parse(projectManifestBytes) : undefined
   const projectLock = await jsonFile(join(workflow, 'project-plugins.lock.json'))
   const lockMatches = projectManifestBytes && projectLock?.manifestSha256 === createHash('sha256').update(projectManifestBytes).digest('hex')
-  let configuration, configurationError
-  try { configuration = await readPluginConfiguration(resources) }
-  catch (error) { configurationError = error.message }
   const verifiedLock = lockMatches && configuration !== undefined
   const runtime = await jsonFile(join(workflow, 'dsh-runtime.json'))
   for (const item of projectManifest?.plugins ?? []) {
     if (!packageName(item.package)) continue
     const pinned = projectLock?.plugins?.find(row => row.package === item.package)
+    if (verifiedLock && isProfilePlugin(configuration, item)) {
+      const actual = rows.find(row => row.source === profileSource && row.name === item.package)
+      if (!actual && item.startup === true) {
+        const row = { source: '启动检查', name: item.package, current: null,
+          expected: null, latest: null, status: 'unknown', note: '请在 DSH profile 安装此插件后启动' }
+        rows.push(row)
+        npmRows.push(row)
+      }
+      continue
+    }
     rows.push({ source: '项目插件锁定清单（打包快照）', name: item.package,
       current: null, expected: verifiedLock && typeof pinned?.version === 'string' ? pinned.version : null, latest: null,
       supportedDsh: declaredDshVersions(verifiedLock ? pinned?.metadata : undefined),
@@ -181,6 +205,14 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
       continue
     }
     const configuredPlugin = configuration?.plugins?.find(item => item.package === row.name)
+    if (configuredPlugin && isProfilePlugin(configuration, configuredPlugin)) {
+      if (row.status !== 'error') {
+        row.status = row.current === null ? 'unknown' : 'installed'
+        row.note = row.current === null ? '未找到 DSH profile 安装包' : '使用 DSH profile 当前版本；在 DSH 插件页面更新'
+      }
+      npmRows.push(row)
+      continue
+    }
     const configuredTarget = configuredPlugin?.version
     const target = configuredTarget
       ?? rows.find(item => item.name === row.name && item.status === 'bundled')?.expected
@@ -198,11 +230,20 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
       row.note = `仓库固定 ${row.expected}，依赖声明 ${row.declared ?? '缺失'}，实际安装 ${row.current ?? '未知'}；随本仓库 DMG 更新`
     } else if (configurationError) {
       row.status = 'unknown'; row.note = `实际安装 ${row.current ?? '未知'}；仓库固定值无法验证：${configurationError}`
+    } else if (row.status === 'installed' && configuration?.npmStartup === 'profile') {
+      row.note = '使用 DSH profile 当前版本；在 DSH 插件页面更新'
+      npmRows.push(row)
     } else if (row.status === 'installed') {
       row.status = 'untracked'; row.note = '实际安装包未列入仓库固定清单；不查询 npm latest，不在运行端替换'
     }
   }
-  return { checkedAt: new Date().toISOString(), rows, actualScope: 'installed-files', policy: '随本仓库 DMG 统一更新；本地盘点不代表已经在 Host 加载' }
+  await Promise.all(npmRows.map(async row => {
+    try { row.latest = await fetchLatest(row.name, configuration.registry) }
+    catch { row.latestStatus = 'unavailable' }
+  }))
+  return { checkedAt: new Date().toISOString(), rows, actualScope: 'installed-files', policy: configuration?.npmStartup === 'profile'
+    ? 'npm 插件在 DSH profile 管理；最新版本取自 npm latest。本地盘点不代表已经在 Host 加载。'
+    : '随本仓库 DMG 统一更新；本地盘点不代表已经在 Host 加载' }
 }
 
 if (import.meta.main) {

@@ -1,4 +1,4 @@
-import { readDeliveryManifest, pluginDependencySpec } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { readDeliveryManifest, pluginDependencySpec, isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
@@ -32,14 +32,32 @@ export async function savePluginConfiguration(home, config) {
 export async function assertProfilePluginVersions(profile, config, expected = new Map()) {
   const manifest = await readJson(join(profile, 'package.json'))
   for (const item of config?.plugins ?? []) {
+    if (isProfilePlugin(config, item)) continue
     const declaration = manifest?.dependencies?.[item.package]
     const installed = await readJson(join(profile, 'node_modules', item.package, 'package.json'))
     if (declaration === undefined && !installed && !expected.has(item.package)) continue
     const target = expected.get(item.package) ?? item.version
     const dependency = item.source === 'git' ? pluginDependencySpec(item) : target
-    if (declaration !== dependency || installed?.name !== item.package || installed.version !== target) {
+    const bundledLink = config.npmStartup === 'profile' && typeof declaration === 'string' && declaration.startsWith('link:')
+    if ((declaration !== dependency && !bundledLink) || installed?.name !== item.package || installed.version !== target) {
       throw new Error(`插件版本偏差：${item.package}，配置 ${target}，依赖声明 ${declaration ?? '缺失'}，实际安装 ${installed?.version ?? '缺失'}。请先统一配置与安装状态，已停止依赖操作。`)
     }
+  }
+}
+
+/** Check the shared DSH profile before writing any Station integration. */
+export async function assertRequiredProfilePlugins(profile, config, resources) {
+  const missing = []
+  for (const item of config?.plugins ?? []) {
+    if (item.startup !== true || !isProfilePlugin(config, item)) continue
+    const installed = await readJson(join(profile, 'node_modules', item.package, 'package.json'))
+    if (installed?.name !== item.package || typeof installed.version !== 'string' || !installed.version) missing.push(item.package)
+  }
+  if (missing.length) {
+    const quote = value => "'" + value.replaceAll("'", "'\\''") + "'"
+    const install = resources ? '\n安装命令：' + [join(resources, 'node'),
+      join(resources, 'workflow/macos-launcher/runtime/profile-plugin-install.mjs'), ...missing].map(quote).join(' ') : ''
+    throw new Error(`DSH 未启动。请先在 DSH 全局 desktop profile 安装必需插件，再重新启动：\n${missing.join('\n')}${install}`)
   }
 }
 

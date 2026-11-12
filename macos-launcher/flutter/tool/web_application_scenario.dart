@@ -198,6 +198,16 @@ class WebProbeOptions {
     ]) {
       await Link('$resources/$name').create('$sourceResources/$name');
     }
+    final seeded = await Process.run('$sourceResources/node', [
+      '$project/macos-launcher/flutter/tool/independent_service_resources.mjs',
+      sourceResources,
+      resources,
+      '--profile-only',
+    ]);
+    require(
+      seeded.exitCode == 0,
+      'the private test profile has the required plugins installed: ${seeded.stderr}',
+    );
     return selected;
   }
 }
@@ -228,6 +238,11 @@ Future<void> runWebApplicationScenario({
 }) async {
   final data = '${root.path}/data';
   final home = '${root.path}/home';
+  final pluginPolicy = jsonDecode(
+    await File('${root.path}/missing-runtime/workflow/project-plugins.json')
+        .readAsString(),
+  ) as Map;
+  final profilePlugins = pluginPolicy['npmStartup'] == 'profile';
   final resources = '${root.path}/missing-runtime';
   final receipt = File('$data/global/.dsh-workflow/desktop/desktop-host.json');
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
@@ -391,8 +406,9 @@ Future<void> runWebApplicationScenario({
           result?['ok'] == true &&
           result?['value'] is Map &&
           (result?['value'] as Map)['entries'] is List &&
-          (result?['value'] as Map)['managementAvailable'] != true,
-      'authenticated official DSH readonly inventory proves actual Host readiness',
+          ((result?['value'] as Map)['managementAvailable'] == true) ==
+              profilePlugins,
+      'authenticated DSH inventory proves readiness with the packaged plugin policy',
     );
     final bound = await readReceipt();
     require(

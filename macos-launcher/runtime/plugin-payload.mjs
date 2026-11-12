@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { readFile, writeFile, readdir, lstat, readlink, mkdir, rename, symlink, unlink } from 'node:fs/promises'
 import { join, dirname, resolve, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readDeliveryManifest, pluginDependencySpec } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { readDeliveryManifest, pluginDependencySpec, isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const sealPath = resources => join(resources, 'plugin-payload.json')
@@ -120,14 +120,15 @@ export async function deployPluginPayload({ resourcesRoot, profile }) {
   manifest.dependencies ??= {}
   const config = await readDeliveryManifest(join(resourcesRoot, 'workflow'))
   const changes = []
-  const packages = selected(config).flatMap(item => [item, ...(item.components ?? []), ...(item.runtimePackages ?? [])])
+  const packages = selected(config).filter(item => !isProfilePlugin(config, item))
+    .flatMap(item => [item, ...(item.components ?? []), ...(item.runtimePackages ?? [])])
   for (const item of packages) {
     const link = join(profile, 'node_modules', item.package), target = join(resolve(resourcesRoot), 'plugins/node_modules', item.package)
     const info = await optional(lstat(link))
     const previousLink = info?.isSymbolicLink() ? await readlink(link) : undefined
     const same = previousLink !== undefined && resolve(dirname(link), previousLink) === target
     if (!same) changes.push({ link, target, existed: Boolean(info), package: item.package, previousLink })
-    manifest.dependencies[item.package] = pluginDependencySpec(item)
+    manifest.dependencies[item.package] = config.npmStartup === 'profile' ? `link:${target}` : pluginDependencySpec(item)
   }
   const changedManifest = JSON.stringify(manifest) !== JSON.stringify(JSON.parse(before))
   if (!changes.length && !changedManifest) return { changed: false, sha256: seal.sha256 }

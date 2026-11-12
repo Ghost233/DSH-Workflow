@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { readDesktopHost } from './desktop-launch.mjs'
 
 /** Start the official Web profile using the packaged runtime and Station's existing profile. */
-export async function startWebHost({ resources, profile }) {
+export async function startWebHost({ resources, profile, overlay }) {
   const anchor = join(resources, 'node_modules/@deepseek-ai/dsh/package.json')
   const require = createRequire(anchor)
   const boot = require('@deepseek-ai/dsh-app-boot')
@@ -13,14 +13,14 @@ export async function startWebHost({ resources, profile }) {
   boot.reportSkippedBundles('dsh', loaded)
   return runProfile({
     environment: boot.loadLayeredEnv('dsh'), profile: 'web',
-    resolvedProfile: { profile: loaded, installAnchor: anchor }, patchFiles: [],
+    resolvedProfile: { profile: loaded, installAnchor: anchor }, patchFiles: overlay ? [overlay] : [],
     args: ['--no-open', '--host', '127.0.0.1', '--port', '0'],
   })
 }
 
 /** Own the Web Host and the stop-admission handshake without a Desktop process. */
-export async function serveWebHost({ resources, profile, receiptDirectory }) {
-  const application = startWebHost({ resources, profile })
+export async function serveWebHost({ resources, profile, receiptDirectory, overlay }) {
+  const application = startWebHost({ resources, profile, overlay })
   let closing, locked = false, generation = 0
   const pending = new Set()
   const send = message => new Promise((accept, reject) => {
@@ -79,9 +79,9 @@ export async function serveWebHost({ resources, profile, receiptDirectory }) {
 }
 
 if (import.meta.main) {
-  const [resources, profile, receiptDirectory] = process.argv.slice(2)
+  const [resources, profile, receiptDirectory, overlay] = process.argv.slice(2)
   if (!resources || !profile || !receiptDirectory) throw new Error('Missing Web Host paths')
-  serveWebHost({ resources, profile, receiptDirectory }).catch(error => {
+  serveWebHost({ resources, profile, receiptDirectory, overlay }).catch(error => {
     const message = String(error?.message ?? error).replace(/token=[^&\s"<>]+/g, '[credential redacted]')
     if (process.connected) process.send?.({ type: 'fatal', message }, () => process.disconnect())
     console.error(message)

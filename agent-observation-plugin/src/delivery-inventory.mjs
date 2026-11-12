@@ -2,7 +2,7 @@ import { readFile, realpath } from 'node:fs/promises'
 import { dirname, join, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bindTypertRemote } from '@deepseek-ai/dsh-typert-protocol'
-import { readDeliveryManifest } from './delivery-manifest.mjs'
+import { readDeliveryManifest, isProfilePlugin } from './delivery-manifest.mjs'
 import createDeliveryRemoteDescriptor from './delivery-remote.cjs'
 
 export const name = 'dsh-workflow-delivery-inventory'
@@ -27,12 +27,13 @@ export function apply(ctx, { projectRoot }) {
   const service = { list: async () => {
     const config = await readDeliveryManifest(projectRoot)
     if (!config) throw new Error('包内仓库清单缺失，无法核验固定版本')
-    const pins = new Map(config.plugins.map(item => [item.package, item.version]))
+    const profilePackages = new Set(config.plugins.filter(item => isProfilePlugin(config, item)).map(item => item.package))
+    const pins = new Map(config.plugins.filter(item => !profilePackages.has(item.package)).map(item => [item.package, item.version]))
     for (const item of config.plugins) for (const component of [...(item.components ?? []), ...(item.runtimePackages ?? [])]) pins.set(component.package, component.version)
     for (const path of ['package.json', 'matt-skills-panel-plugin/package/package.json', 'browser-harness-plugin/package.json']) {
       let manifest
       try { manifest = await json(join(projectRoot, path)) }
-      catch (error) { if (error.code === 'ENOENT' && path.startsWith('browser-harness-plugin/')) continue; throw error }
+      catch (error) { if (error.code === 'ENOENT' && path !== 'package.json') continue; throw error }
       pins.set(manifest.name, manifest.version)
     }
     const runtime = await json(join(projectRoot, 'dsh-runtime.json'))
@@ -69,13 +70,16 @@ export function apply(ctx, { projectRoot }) {
         pkg = resolved && { ...resolved.manifest, dir: resolved.dir }
         pkg ??= await filePackage(row.moduleName)
       } catch (cause) { error = cause.message }
-      const expected = pins.get(pkg?.name) ?? null
+      const profileManaged = profilePackages.has(pkg?.name)
+      const expected = profileManaged ? null : pins.get(pkg?.name) ?? null
       return { ...row, package: pkg?.name ?? null, current: pkg?.version ?? null, expected,
         source: pkg?.dir ? await realpath(pkg.dir) : '运行解析来源未知', updatable: false,
-        status: !pkg?.version ? 'unknown' : !expected ? 'untracked' : pkg.version === expected ? 'fixed' : 'drift',
+        status: !pkg?.version ? 'unknown' : profileManaged ? 'installed' : !expected ? 'untracked' : pkg.version === expected ? 'fixed' : 'drift',
         ...(error ? { error } : {}) }
     }))
-    return { actualScope: 'runtime-resolution', policy: '组件随本仓库正式 DMG 统一交付；实际值来自当前 Host 解析，固定值来自包内仓库清单。未启用条目仅表示解析结果。', rows }
+    return { actualScope: 'runtime-resolution', policy: config.npmStartup === 'profile'
+      ? 'npm 插件由 DSH profile 管理。源码组件随 Station 交付，运行版本来自当前 Host。'
+      : '组件随本仓库正式 DMG 统一交付；实际值来自当前 Host 解析，固定值来自包内仓库清单。未启用条目仅表示解析结果。', rows }
   } }
   service.typertRemote = bindTypertRemote(service, 'workflowDelivery')
   ctx.provide('workflowDelivery', service)

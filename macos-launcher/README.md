@@ -8,7 +8,7 @@
 
 ## macOS ARM64 构建
 
-DSH Web 核心使用 `dsh-runtime.json` 指定的 npm 版本和完整性摘要。`macos-launcher/package-lock.json` 固定生产依赖；构建校验两者一致，并使用 `npm ci --omit=dev` 安装到隔离的应用资源目录。构建不会修改上游源码或正在运行的 profile。
+默认构建使用 `dsh-runtime.json` 指定的 npm 版本和完整性摘要。`macos-launcher/package-lock.json` 固定生产依赖。构建校验两者一致，再用 `npm ci --omit=dev` 装配应用资源。
 
 先准备独立 Node、Flutter 和 Matt 面板依赖，再运行：
 
@@ -21,13 +21,27 @@ node macos-launcher/build.mjs
 
 应用输出到 `.build/`，已有同名产物不会被覆盖。Node 必须可独立运行；动态链接 `libnode` 的发行版不适合直接放入应用。应用使用本地 ad-hoc 签名。
 
+### 选择 DSH 版本并试编
+
+查询命令按 SemVer 从高到低列出 npm 和 GitHub 的版本。同一版本同时可用时会列出两个渠道。试编时指定渠道和完整版本号。
+
+```sh
+node scripts/dsh-runtime-versions.mjs
+node macos-launcher/build-candidate.mjs npm 0.2.2-rc.1
+node macos-launcher/build-candidate.mjs github 0.2.2-rc.2
+```
+
+试编需要独立的 Node 24.9 或更新版本、Flutter 和 OrbStack。npm 渠道校验固定版本及包摘要。GitHub 渠道从官方 Release 的标签解析提交，并用该提交锁定的工具和依赖编译。若某个插件的预编译制品绑定了其他 DSH 版本，试编会显示原因并跳过该制品。
+
+试编应用输出到 `.build/project-registry/station-*/`，保留本次清单和构建输入。试编只生成应用，日常入口仍从 `.build/` 顶层选择启动包。
+
 正式生产构建使用 `scripts/build-local-release.sh`，产出 DMG、`manifest.json` 和 `SHA256SUMS`。它不会构建或打包 DSH Desktop。已有 `.build/release-assets` 时脚本保留原产物并停止；正式发布流程见 [deploy-release skill](../.agents/skills/deploy-release/SKILL.md)。
 
 ## 启动和关闭
 
 日常入口是无参数 `./start-dsh-workflow.sh`，只支持 macOS ARM64。它通过 `dsh-workflow://open-global` 唤起已构建的启动器。启动失败后显示原因，不循环重试。其他系统或架构在启动应用前明确拒绝。
 
-服务启动时逐项尝试清单中标记 `startup: true`、已部署且版本与仓库固定值一致的插件，保留用户已有的停用选择和条件。日志分别报告实际加载结果或跳过原因；单个插件失败后继续处理其余插件。缺包、版本偏差或来源未知会如实说明，运行端不在线安装或单独更新插件。
+服务启动时检查 `startup: true` 的全局 npm 插件是否已安装，并使用当前安装版本。缺包时列出补装命令。固定 Git 和源码制品使用应用随包版本。各插件的实际加载结果或跳过原因可在日志中查看。
 
 首次使用 Web 需要设置访问密码。启动器提供“打开 Web”入口；服务未运行或版本不兼容时会显示原因。每个工程在 DSH 内选择工作目录。
 
@@ -45,17 +59,15 @@ Web 只有一个端口 `33080`，监听 `0.0.0.0`。本机访问 `http://127.0.0
 
 本机入口用于管理模型和 API Key。局域网设置写入默认关闭；打开“允许局域网修改 DSH 设置”后，密码认证的 Web 代理为客户端提供该能力，规则由项目 Web 代理处理。变更该设置后重连 Web 并重新登录。代理验证密码、有效会话、Host 和 Origin；修改密码会立即撤销旧会话并关闭其 WebSocket。监听所有 IPv4 网卡后，切换网络无需重绑代理，Host 校验和启动器展示的内网地址使用当前网卡 IP，不把 `0.0.0.0` 当作访问地址。
 
-启动器插件页展示磁盘安装版本；DSH 的“设置 → 插件 → 组件版本与来源”展示实际运行解析、全局和代理预设的作用域。两者分别对照打包的仓库固定值和来源，未知或版本偏差如实显示。应用内不查询 npm 最新版本或单独安装插件；DSH Web 核心和插件统一随本仓库 DMG 交付。
-
-官方安装管理侧栏和市场入口停用，原 `plugins.*` 扩展插槽失去该容器。自研 JEV、监控的设置入口及 Matt 的标准设置插槽保留；其他第三方仅注册在旧管理页的扩展内容不再显示。
+打开启动器的“插件”页，可查看当前安装版本和全局 npm 插件的 `latest` 版本。点击“检查插件版本”可刷新。查询失败时仍显示当前安装版本。DSH 的“设置 → 插件”可查看实际加载状态，也可更新全局插件。
 
 启动器的更新检查只读取 Ghost233/DSH-Workflow 的正式 Release，并核对候选包含正确版本、架构和非空大小的配套 DMG。检查更新和打开发布页不自动下载、安装、锁定或停止服务；实际服务替换仍须显式执行并遵守任务确认。
 
 
 ## 插件版本配置
 
-仓库的 `project-plugins.json` 是项目第三方插件发布版本的唯一编辑入口。`project-plugins.lock.json` 是脚本生成的发布快照，禁止手动修改。生成时核对解析版本与清单中的精确版本；启动时也核对两者，锁文件不能覆盖清单中的版本。
+仓库的 `project-plugins.json` 维护启动清单及交付版本。`project-plugins.lock.json` 由脚本生成，记录打包快照及来源。标为 `startup: true` 的 npm 插件必须在共享 DSH profile 中安装，缺少时启动器会给出安装命令。已有插件按实际安装版本启动，在 DSH「插件」页面更新。固定 Git 和源码制品仍按清单版本交付。
 
-运行端以本次应用打包的仓库清单和锁文件展示预期版本，以实际加载或解析到的包展示运行版本。历史 `$DSH_HOME/workflow/project-plugins.json` 可以保留，但不再作为运行端可编辑的插件版本权威。默认 `DSH_HOME` 为 `~/.dsh`。已有模型配置、凭据、工作区和会话历史继续保留。
+运行端展示实际加载或解析到的版本，源码组件另显示包内固定版本。全局插件安装在 `$DSH_HOME/profiles/desktop`，默认 `DSH_HOME` 为 `~/.dsh`。
 
-运行端的单独安装、卸载、更新与同步换包入口已关闭。组件升级在仓库中修改、验证并统一打包；遇到实际版本偏差时报告原因，不静默替换运行服务。构建、正式发布和服务切换分别遵守各自流程。
+Station 不自动安装或更新全局 npm 插件。随包组件在仓库中修改、验证并统一打包。构建、正式发布和服务切换分别遵守各自流程。

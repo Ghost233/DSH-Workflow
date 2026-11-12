@@ -6,8 +6,8 @@ export function allowAuthenticatedLanSettings(source) {
   // alpha.5 delegates persistence and writeability to Host-backed ConfigForms.
   // The authenticated gateway still enforces the LAN write policy.
   if (!source.includes(original) && !source.includes('isLoopback')
-    && source.includes('const { writable } = mirrored.view;')
-    && source.includes('this.scope.set("enabled", enabled)')) return source
+    && /const\s*\{\s*writable\s*\}\s*=\s*mirrored\.view;/.test(source)
+    && /this\.scope\.set\((["'`])enabled\1,\s*enabled\)/.test(source)) return source
   if (source.split(original).length !== 2) throw new Error('Pinned DSH settings client no longer has the expected persistence decision')
   return source.replace(original, enabled)
 }

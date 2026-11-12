@@ -44,6 +44,16 @@ test('unknown inventory or unreadable presets cannot be presented as ready', asy
   }
 })
 
+test('profile-managed plugins allow the user-facing manager but not the agent installer', async () => {
+  const inventory = { managementAvailable: true, entries: [{
+    entryId: 'manager', moduleName: '@deepseek-ai/dsh-plugin-manager', enabled: true, fiberPhase: 'active',
+  }] }
+  const options = { request: response(inventory), profilePlugins: true }
+  assert.equal((await dshReadiness('http://127.0.0.1:8123', options)).ready, true)
+  inventory.entries.push({ entryId: 'tool', moduleName: '@deepseek-ai/dsh-plugin-manager/tools', enabled: true, fiberPhase: 'active' })
+  await assert.rejects(dshReadiness('http://127.0.0.1:8123', options), /受管版本策略/)
+})
+
 test('a disabled installer entry with no live fiber does not prevent readonly access', async () => {
   const inventory = { managementAvailable: false, entries: [{
     entryId: 'disabled', moduleName: '@deepseek-ai/dsh-plugin-manager', enabled: false, fiberPhase: null,

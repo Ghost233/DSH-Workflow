@@ -132,6 +132,13 @@ void main() {
           'status': 'drift',
         }),
         PluginRow({
+          'name': 'a-profile-managed-plugin',
+          'source': 'DSH profile',
+          'current': '2.1.0',
+          'latest': '2.2.0',
+          'status': 'installed',
+        }),
+        PluginRow({
           'name': 'browser-harness',
           'source': 'DSH Shell',
           'current': '0.1.13',
@@ -149,12 +156,21 @@ void main() {
       await tester.tap(find.text('插件'));
       await tester.pumpAndSettle();
       expect(find.text('a-project-maintained-plugin'), findsOneWidget);
-      expect(find.text('实际 / 仓库固定'), findsOneWidget);
-      expect(find.text('1.1.0 / 1.2.0'), findsOneWidget);
+      for (final value in [
+        '当前版本',
+        '最新版本',
+        '仓库固定版本',
+        '1.1.0',
+        '1.2.0',
+        '2.1.0',
+        '2.2.0',
+      ]) {
+        expect(find.text(value), findsOneWidget);
+      }
       expect(find.text('版本偏差'), findsOneWidget);
-      expect(find.text('已安装'), findsOneWidget);
+      expect(find.text('已安装'), findsNWidgets(2));
       expect(find.text('DSH 未找到安装'), findsOneWidget);
-      expect(find.textContaining('正式 DMG'), findsOneWidget);
+      expect(find.textContaining('可在 DSH 的插件页更新'), findsOneWidget);
       expect(find.text('更新全部可更新插件'), findsNothing);
       expect(find.widgetWithText(OutlinedButton, '更新'), findsNothing);
       expect(tester.takeException(), isNull);

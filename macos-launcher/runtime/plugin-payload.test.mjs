@@ -157,7 +157,8 @@ test('the actual desktop preparation deploys fresh payloads and removes stale au
   const boot = runtimeRequire('@deepseek-ai/dsh-app-boot')
   const entries = () => {
     const profile = boot.loadProfileDirectory('dsh', prepared.profile, join(runtime, 'node_modules/@deepseek-ai/dsh/package.json'))
-    return boot.composeEntries([...profile.layers.map(layer => layer.patches), profile.patches])
+    return boot.composeEntries([...profile.layers.map(layer => layer.patches), profile.patches,
+      boot.loadOverlayPatches('dsh', prepared.overlay)])
   }
   assert.equal(entries().find(row => row.id === 'owned-fixture').disabled, undefined)
   const path = join(prepared.bundle, 'cordis.patch.yml')

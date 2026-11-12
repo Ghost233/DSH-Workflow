@@ -30,7 +30,7 @@ export function observationProfilePatches(entries, catalogRoot) {
 export const missingObservationEntries = (entries, catalogRoot) => observationProfilePatches(entries,catalogRoot).flatMap(row => row.insert ?? [])
 
 /** Migrate owned declarations and their name guards; `name` is not a rename patch. */
-export async function migrateProjectEntryNames({ profile, anchor, projectRoot = fileURLToPath(new URL('../', import.meta.url)), previousProjectRoot }) {
+export async function migrateProjectEntryNames({ profile, anchor, projectRoot = fileURLToPath(new URL('../', import.meta.url)), previousProjectRoot, stationMatt = false }) {
   const require = createRequire(anchor), boot = require('@deepseek-ai/dsh-app-boot')
   const { withFileLock, writeFileAtomic } = require('@deepseek-ai/dsh-atomic-write')
   const base = boot.resolveBundleDir('dsh', '@deepseek-ai/dsh-base', anchor, profile.dir)
@@ -38,9 +38,15 @@ export async function migrateProjectEntryNames({ profile, anchor, projectRoot = 
   const names = new Map([
     ['workflow-agent-monitor', 'dsh-workflow/agent-monitor'],
     ['matt-skills-board', pathToFileURL(join(projectRoot, 'matt-skills-panel-plugin/package/lib/index.js')).href],
-    ['matt-panel-tools', 'dsh-workflow-matt-panel/tools'],
+    ['matt-panel-tools', stationMatt ? pathToFileURL(join(projectRoot, 'matt-skills-panel-plugin/package/deck/registration/agent-row.js')).href : 'dsh-workflow-matt-panel/tools'],
     ['mattpocock-skills-zh', '@deepseek-ai/dsh-skill-filesystem'],
     ['workflow-browser-harness', pathToFileURL(join(projectRoot, 'browser-harness-plugin/index.mjs')).href],
+  ])
+  const packagedSkillDirectories = new Map([
+    ['mattpocock-skills-zh', 'vendor/mattpocock-skills-zh/skills'],
+    ['workflow-browser-harness-skills', 'browser-harness-plugin/skills'],
+    ['dsh-workflow-gh-account', 'skills'],
+    ['dsh-workflow-skills', 'vendor/dsh-skills/skills'],
   ])
   return withFileLock(join(profile.dir, 'package.json'), async () => {
     let changed = false
@@ -55,21 +61,23 @@ export async function migrateProjectEntryNames({ profile, anchor, projectRoot = 
         if (!yaml.isSeq(sequence)) return
         for (const row of sequence.items) {
           if (!yaml.isMap(row)) continue
-          if (['workflow-jev-center', 'workflow-agent-monitor'].includes(row.get('id'))) {
+          const id = row.get('id')
+          if (!stationMatt && ['workflow-jev-center', 'workflow-agent-monitor'].includes(id)) {
             if (row.get('group') === true) throw new Error(`Project entry conflicts with group: ${row.get('id')}`)
             if (row.get('disabled') !== true) { row.set('disabled', true); edited = true }
           }
-          const name = names.get(row.get('id'))
+          const name = stationMatt && id === 'workflow-agent-monitor' ? undefined : names.get(id)
           if (name && row.has('name') && row.get('name') !== name) {
             if (row.get('group') === true) throw new Error(`Project entry conflicts with group: ${row.get('id')}`)
             row.set('name', name); edited = true
           }
-          if (row.get('id') === 'mattpocock-skills-zh' && previousProjectRoot && previousProjectRoot !== projectRoot) {
+          const skillDirectory = packagedSkillDirectories.get(id)
+          if (skillDirectory && previousProjectRoot && previousProjectRoot !== projectRoot) {
             const config = row.get('config', true)
             const directories = yaml.isMap(config) && config.get('customSkillDirs', true)
             if (yaml.isSeq(directories)) directories.items.forEach((item, index) => {
-              if (yaml.isScalar(item) && item.value === join(previousProjectRoot, 'vendor/mattpocock-skills-zh/skills')) {
-                directories.set(index, join(projectRoot, 'vendor/mattpocock-skills-zh/skills')); edited = true
+              if (yaml.isScalar(item) && item.value === join(previousProjectRoot, skillDirectory)) {
+                directories.set(index, join(projectRoot, skillDirectory)); edited = true
               }
             })
           }

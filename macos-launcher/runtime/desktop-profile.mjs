@@ -1,18 +1,18 @@
 import { createRequire } from 'node:module'
-import { randomUUID, createHash } from 'node:crypto'
-import { cp, mkdir, readFile, writeFile, symlink, lstat, readlink, rename, unlink } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { cp, mkdir, readFile, writeFile, lstat, rename } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join, dirname, resolve } from 'node:path'
+import { join, dirname } from 'node:path'
 import { composeDshLaunch } from '../../scripts/dsh-launch-composition.mjs'
-import { packageMutationModules } from '../../scripts/dsh-delivery-policy.mjs'
-import { readPluginConfiguration, assertProfilePluginVersions } from './plugin-configuration.mjs'
 import { migrateProjectEntryNames } from '../../scripts/observation-profile.mjs'
+import { readPluginConfiguration, assertProfilePluginVersions, assertRequiredProfilePlugins } from './plugin-configuration.mjs'
 import { prepareStartupPlugins } from './startup-plugins.mjs'
 import { deployPluginPayload } from './plugin-payload.mjs'
 import { webProfileBundles } from './profile-templates.mjs'
 
 const BUNDLE = 'dsh-workflow-desktop'
 const TEAM = '@deepseek-ai/dsh-experimental-agent-team-profile'
+const TEAM_SERVICE = '@deepseek-ai/dsh-agent-team'
 
 /** Prepare the project-owned layer without changing Electron or DSH source. */
 export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot, globalRoot, home, permissionMode }) {
@@ -24,11 +24,8 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const profile = join(home, 'profiles/desktop')
   const directory = join(globalRoot, '.dsh-workflow/desktop-bundle')
   const stampPath = join(directory, 'integration.json')
-  const localPackages = { 'dsh-workflow': workflow,
-    'dsh-workflow-matt-panel': join(workflow, 'matt-skills-panel-plugin/package') }
-  const identity = { integrationVersion: 5, workflow, globalRoot, runtimeVersion: runtime.version, permissionMode, teamProfile: TEAM, mattPanel: 'dsh-workflow-matt-panel', hostInstance: 'desktop-bridge', stopInspection: 1, agentMonitor: 2, jevCenter: 1, localPackages,
-    packageMutationModules,
-    projectMcp: JSON.parse(await readFile(join(workflow, 'project-mcp.json'), 'utf8')) }
+  const pluginConfig = await readPluginConfiguration(resourcesRoot)
+  const profilePlugins = pluginConfig?.npmStartup === 'profile'
   await mkdir(profile, { recursive: true })
   const manifestPath = join(profile, 'package.json')
   if (!existsSync(manifestPath)) {
@@ -42,42 +39,27 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
       }
     } else boot.initProfile(profile, webProfileBundles(require, boot))
   }
+  await assertRequiredProfilePlugins(profile, pluginConfig, resourcesRoot)
+  await retireStationLinks(profile, require)
+  const previousIntegration = await readFile(stampPath, 'utf8').catch(error => {
+    if (error.code !== 'ENOENT') throw error
+    return '{}'
+  })
+  await migrateProjectEntryNames({ profile: { dir: profile, patchPath: join(profile, 'cordis.patch.yml') },
+    anchor, projectRoot: workflow, previousProjectRoot: JSON.parse(previousIntegration).workflow, stationMatt: true })
   const deployment = await deployPluginPayload({ resourcesRoot, profile })
   if (deployment?.changed) process.stderr.write(`[project-plugins] 已从应用交付目录部署固定插件，原配置与包链接备份：${deployment.backup}\n`)
-  if (deployment) identity.pluginPayloadSha256 = deployment.sha256
-  const pluginConfig = await readPluginConfiguration(resourcesRoot, home)
   if (pluginConfig) {
     try { await assertProfilePluginVersions(profile, pluginConfig) }
     catch (error) { process.stderr.write(`[project-plugins] ${error.message}\n`) }
   }
-  const previous = existsSync(stampPath) ? JSON.parse(await readFile(stampPath, 'utf8')) : undefined
-  const current = existsSync(manifestPath) ? JSON.parse(await readFile(manifestPath, 'utf8')) : undefined
-  const pendingLinks = []
-  for (const [name, target] of Object.entries(localPackages)) {
-    const link = join(profile, 'node_modules', name)
-    const existing = await lstat(link).catch(error => { if (error.code !== 'ENOENT') throw error })
-    if (!existing) { pendingLinks.push({ link, target }); continue }
-    const oldTarget = existing.isSymbolicLink() ? resolve(dirname(link), await readlink(link)) : undefined
-    if (oldTarget === resolve(target)) continue
-    const stamped = previous?.localPackages?.[name]
-    const expected = name === 'dsh-workflow' ? previous?.workflow
-      : previous?.workflow && join(previous.workflow, 'matt-skills-panel-plugin/package')
-    if (!existing.isSymbolicLink() || typeof stamped !== 'string' || stamped !== expected
-      || previous.globalRoot !== globalRoot || current?.dependencies?.[BUNDLE] !== `file:${directory}`
-      || current?.dependencies?.[name] !== `file:${stamped}` || oldTarget !== resolve(stamped)) {
-      throw new Error(`Desktop package ${name} is already owned by another installation`)
-    }
-    pendingLinks.push({ link, target, oldTarget })
-  }
-  const installedBundle = join(profile, 'node_modules', BUNDLE)
-  const installed = await lstat(installedBundle).catch(error => { if (error.code !== 'ENOENT') throw error })
-  if (installed && (!installed.isSymbolicLink() || resolve(dirname(installedBundle), await readlink(installedBundle)) !== resolve(directory))) {
-    throw new Error('Desktop integration bundle is already owned by another installation')
-  }
-  const migrated = await migrateProjectEntryNames({ profile: { dir: profile, patchPath: join(profile, 'cordis.patch.yml') }, anchor, projectRoot: workflow, previousProjectRoot: previous?.workflow })
   const resolved = boot.loadProfileDirectory('dsh', profile, anchor)
-  const layers = resolved.layers.filter(layer => layer.packageName !== BUNDLE).map(layer => layer.patches)
-  if (!resolved.layers.some(layer => layer.packageName === TEAM)) {
+  const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
+  const base = resolved.layers.filter(layer => layer.packageName !== BUNDLE)
+  const builtInTeam = flatten(boot.composeEntries(base.filter(layer => layer.packageName !== TEAM).map(layer => layer.patches)))
+    .some(row => row.name === TEAM_SERVICE)
+  const layers = base.filter(layer => !builtInTeam || layer.packageName !== TEAM).map(layer => layer.patches)
+  if (!builtInTeam && !base.some(layer => layer.packageName === TEAM)) {
     const teamDirectory = boot.resolveBundleDir('dsh', TEAM, anchor, profile)
     const teamManifest = JSON.parse(await readFile(join(teamDirectory, 'package.json'), 'utf8'))
     layers.push(boot.bundlePatchPaths(teamDirectory, teamManifest.dsh.bundle)
@@ -85,31 +67,26 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   }
   let entries = boot.composeEntries([...layers, resolved.patches])
   const startup = await prepareStartupPlugins({ profile, entries, config: pluginConfig, boot })
-  entries = boot.composeEntries([...layers, resolved.patches, startup.patches])
-  identity.startupPlugins = createHash('sha256').update(JSON.stringify(startup.patches)).digest('hex')
-  const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
-  const mcpNames = new Set(identity.projectMcp.map(row => row.config.serverName))
-  // Only a digest of relevant user choices is stamped; user credentials are not copied.
-  identity.userMcpFingerprint = createHash('sha256').update(JSON.stringify(flatten(entries)
-    .filter(row => row.name === '@deepseek-ai/dsh-mcp-client' && mcpNames.has(row.config?.serverName)))).digest('hex')
-  const launch = composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot })
-  identity.launchPatches = createHash('sha256').update(JSON.stringify(launch)).digest('hex')
-  if (current?.dependencies?.[BUNDLE] === `file:${directory}`
-    && pendingLinks.length === 0
-    && Object.entries(localPackages).every(([name, target]) => current.dependencies[name] === `file:${target}`)
-    && JSON.stringify(previous) === JSON.stringify(identity)
-    && !migrated) {
-    return { profile, bundle: directory, version: runtime.version, startup: startup.skipped }
-  }
+  // User patches for fixed entries first inserted by the Station overlay
+  // have no target in the base profile. Apply them once those entries exist.
+  const fixedEntries = new Set(flatten(boot.composeEntries([startup.patches])).map(row => row.id))
+  const fixedUserPatches = resolved.patches.filter(row => row.id && fixedEntries.has(row.id))
+  const startupPatches = [...startup.patches, ...fixedUserPatches]
+  entries = boot.composeEntries([...layers, resolved.patches, startupPatches])
+  const billionContextDelivered = profilePlugins || Boolean(deployment
+    && pluginConfig?.plugins.some(row => row.package === 'billion-context' && row.startup === true)
+    && !startup.skipped.some(row => row.package === 'billion-context'))
+  const launch = composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot,
+    billionContextDelivered, profilePlugins, stationInternal: true })
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-  manifest.private = true
-  manifest.name = 'dsh-profile-desktop'
-  manifest.dsh ??= {}
-  manifest.dsh.profile ??= { bundles: [...webProfileBundles(require, boot)] }
-  const bundles = manifest.dsh.profile.bundles.filter(name => name !== BUNDLE)
-  if (!bundles.includes(TEAM)) bundles.push(TEAM)
+  const bundles = manifest.dsh.profile.bundles.filter(name => name !== BUNDLE && (!builtInTeam || name !== TEAM))
+  if (!builtInTeam && !bundles.includes(TEAM)) bundles.push(TEAM)
+  if (JSON.stringify(bundles) !== JSON.stringify(manifest.dsh.profile.bundles)) {
+    manifest.dsh.profile.bundles = bundles
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 })
+  }
   // Compose from the existing profile before adding our own rows, so preparation is idempotent.
-  const patches = [...startup.patches, ...launch]
+  const patches = [...startupPatches, ...launch]
   for (const row of flatten(entries)) {
     if (permissionMode && row.name === '@deepseek-ai/dsh-sandbox-policy' && row.disabled !== true) {
       patches.push({ id: row.id, config: { ...structuredClone(row.config ?? {}), mode: permissionMode } })
@@ -118,26 +95,61 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   patches.push({ insert: [{ id: 'workflow-desktop-bridge', name: join(workflow, 'macos-launcher/runtime/desktop-bridge.mjs'),
     config: { directory: join(globalRoot, '.dsh-workflow/desktop'), runtimeVersion: runtime.version } }] })
   await mkdir(directory, { recursive: true, mode: 0o700 })
-  await writeFile(join(directory, 'package.json'), JSON.stringify({ name: BUNDLE, version: '0.1.0', type: 'module',
-    dsh: { bundle: { patch: './cordis.patch.yml' } } }, null, 2) + '\n')
-  await writeFile(join(directory, 'cordis.patch.yml'), JSON.stringify(patches, null, 2) + '\n', { mode: 0o600 })
-  await mkdir(join(profile, 'node_modules'), { recursive: true })
-  if (!installed) await symlink(directory, installedBundle, 'dir')
-  // Only links proven by the previous project stamp and matching dependency are moved.
-  for (const { link, target, oldTarget } of pendingLinks) {
-    if (oldTarget === undefined) { await symlink(target, link, 'dir'); continue }
-    const fresh = await lstat(link)
-    if (!fresh.isSymbolicLink() || resolve(dirname(link), await readlink(link)) !== oldTarget) {
-      throw new Error('Desktop package link changed during preparation')
+  const overlay = join(directory, 'cordis.patch.yml')
+  await writeFile(overlay, JSON.stringify(patches, null, 2) + '\n', { mode: 0o600 })
+  await writeFile(stampPath, JSON.stringify({ integrationVersion: 6, workflow, globalRoot, runtimeVersion: runtime.version,
+    profilePlugins }) + '\n', { mode: 0o600 })
+  return { profile, bundle: directory, overlay, version: runtime.version, startup: startup.skipped, profilePlugins }
+}
+
+async function retireStationLinks(profile, require) {
+  const names = ['dsh-workflow', 'dsh-workflow-matt-panel', BUNDLE, '@botharness/tobs', '@botharness/core',
+    '@botharness/ui', '@botharness/browser', '@botharness/computer', '@botharness/im-provider', 'deepseekbot',
+    'ghost-agent-sentinel']
+  const { withFileLock, writeFileAtomic } = require('@deepseek-ai/dsh-atomic-write')
+  const manifestPath = join(profile, 'package.json')
+  await withFileLock(manifestPath, async () => {
+    const manifestBytes = await readFile(manifestPath, 'utf8')
+    const manifest = JSON.parse(manifestBytes)
+    const links = names.filter(name => /^(?:link|file):/.test(manifest.dependencies?.[name] ?? ''))
+    if (!links.length) return
+    const lockPath = join(profile, 'pnpm-lock.yaml')
+    const lockBytes = await readFile(lockPath, 'utf8').catch(error => { if (error.code !== 'ENOENT') throw error })
+    const backup = join(profile, '.dsh-workflow/plugin-backups', `retired-${randomUUID()}`)
+    await mkdir(backup, { recursive: true, mode: 0o700 })
+    await writeFile(join(backup, 'package.json'), manifestBytes, { mode: 0o600 })
+    let lock
+    if (lockBytes !== undefined) {
+      const yaml = createRequire(require.resolve('@deepseek-ai/dsh-config-editor/package.json'))('yaml')
+      lock = yaml.parseDocument(lockBytes)
+      if (lock.errors[0]) throw lock.errors[0]
+      await writeFile(join(backup, 'pnpm-lock.yaml'), lockBytes, { mode: 0o600 })
     }
-    const staged = join(dirname(link), `.dsh-workflow-link-${randomUUID()}`)
-    try { await symlink(target, staged, 'dir'); await rename(staged, link) }
-    finally { await unlink(staged).catch(error => { if (error.code !== 'ENOENT') throw error }) }
-  }
-  manifest.dependencies = { ...manifest.dependencies,
-    ...Object.fromEntries(Object.entries(localPackages).map(([name, path]) => [name, `file:${path}`])), [BUNDLE]: `file:${directory}` }
-  manifest.dsh.profile.bundles = [...bundles, BUNDLE]
-  await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 })
-  await writeFile(stampPath, JSON.stringify(identity) + '\n', { mode: 0o600 })
-  return { profile, bundle: directory, version: runtime.version, startup: startup.skipped }
+    const moved = []
+    try {
+      for (const name of links) {
+        const link = join(profile, 'node_modules', name)
+        const saved = join(backup, 'node_modules', name)
+        const exists = await lstat(link).catch(error => { if (error.code !== 'ENOENT') throw error })
+        if (exists) {
+          if (!exists.isSymbolicLink()) throw new Error(`Cannot retire ${name}: expected a local package link`)
+          await mkdir(dirname(saved), { recursive: true })
+          await rename(link, saved)
+          moved.push({ link, saved })
+        }
+        delete manifest.dependencies[name]
+        for (const section of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+          lock?.getIn(['importers', '.', section], true)?.delete?.(name)
+        }
+      }
+      manifest.dsh.profile.bundles = manifest.dsh.profile.bundles.filter(name => !links.includes(name))
+      if (lock) await writeFileAtomic(lockPath, String(lock), { mode: 0o600 })
+      await writeFileAtomic(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 })
+    } catch (error) {
+      if (lockBytes !== undefined) await writeFileAtomic(lockPath, lockBytes, { mode: 0o600 })
+      for (const { link, saved } of moved.reverse()) await rename(saved, link)
+      throw error
+    }
+    process.stderr.write(`[project-plugins] 已移除 Station 旧插件链接，备份：${backup}\n`)
+  }, { waitMs: 120000 })
 }

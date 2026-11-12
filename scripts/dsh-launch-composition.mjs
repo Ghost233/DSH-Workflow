@@ -2,28 +2,39 @@ import { resolve, join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { observationProfilePatches } from './observation-profile.mjs'
-import { packageMutationModules, isUnavailablePluginModule } from './dsh-delivery-policy.mjs'
+import { blocksPackageMutation, isUnavailablePluginModule } from './dsh-delivery-policy.mjs'
 
 const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
 
 /** Project launch overlay; saved user settings are never changed here. */
-export function composeDshLaunch(entries, { projectRoot, catalogRoot }) {
+export function composeDshLaunch(entries, { projectRoot, catalogRoot, billionContextDelivered = false, profilePlugins = false, stationInternal = false }) {
   const root = resolve(projectRoot), all = flatten(entries)
-  const patches = observationProfilePatches(all, resolve(catalogRoot))
-  const disabledModule = name => packageMutationModules.includes(name) || isUnavailablePluginModule(name)
+  const patches = stationInternal ? [] : observationProfilePatches(all, resolve(catalogRoot))
+  const retiredIds = new Set(['workflow-jev-center', 'workflow-agent-monitor', 'workflow-project-coordination',
+    'preset-deepseekbot'])
+  const retired = row => stationInternal && (retiredIds.has(row.id) || /^(?:@botharness\/|deepseekbot(?:\/|$))/.test(row.name ?? ''))
+  const disabledModule = name => blocksPackageMutation(name, profilePlugins)
+    || isUnavailablePluginModule(name, { billionContextDelivered })
   const addressable = row => {
     if (typeof row.id !== 'string' || !row.id || all.filter(item => item.id === row.id).length !== 1) {
       throw new Error('Managed readonly package policy requires an unambiguous entry id')
     }
   }
-  for (const row of all.filter(row => disabledModule(row.name))) {
+  for (const row of all.filter(row => disabledModule(row.name) || retired(row))) {
     addressable(row)
     patches.push({ id: row.id, disabled: true })
+  }
+  if (profilePlugins) {
+    for (const row of all.filter(row => row.name === 'dshmarket' && row.disabled !== true)) {
+      addressable(row)
+      // Station serves the desktop profile through Web. The market must use the Host manager for that profile.
+      patches.push({ id: row.id, config: { ...structuredClone(row.config ?? {}), profile: 'desktop' } })
+    }
   }
   const readonlyPreset = rows => {
     let changed = false
     const result = rows.map(row => {
-      if (disabledModule(row?.name) && row.disabled !== true) {
+      if ((disabledModule(row?.name) || row && retired(row)) && row.disabled !== true) {
         changed = true
         return { ...row, disabled: true }
       }
@@ -50,12 +61,13 @@ export function composeDshLaunch(entries, { projectRoot, catalogRoot }) {
   }
   const replacements = [
     { id: 'matt-skills-board', name: join(root, 'matt-skills-panel-plugin/package/lib/index.js'), names: ['dsh-mattpocock-skills-deck', 'dsh-workflow-matt-panel'] },
-    { id: 'matt-panel-tools', name: 'dsh-workflow-matt-panel/tools', names: ['dsh-mattpocock-skills-deck/tools', 'dsh-workflow-matt-panel/tools'] },
+    { id: 'matt-panel-tools', name: stationInternal ? join(root, 'matt-skills-panel-plugin/package/deck/registration/agent-row.js') : 'dsh-workflow-matt-panel/tools',
+      names: ['dsh-mattpocock-skills-deck/tools', 'dsh-workflow-matt-panel/tools'] },
   ]
   const mcpEntries = JSON.parse(readFileSync(join(root, 'project-mcp.json'), 'utf8'))
   const definitions = [
-    { id: 'workflow-project-coordination', name: 'dsh-workflow/project-coordination', config: { directory: join(catalogRoot, '.dsh-workflow/project-coordination'), configurationFile: '' } },
-    { id: 'workflow-delivery-inventory', name: 'dsh-workflow/delivery-inventory', config: { projectRoot: root } },
+    ...stationInternal ? [] : [{ id: 'workflow-project-coordination', name: 'dsh-workflow/project-coordination', config: { directory: join(catalogRoot, '.dsh-workflow/project-coordination'), configurationFile: '' } }],
+    { id: 'workflow-delivery-inventory', name: stationInternal ? join(root, 'agent-observation-plugin/src/delivery-inventory.mjs') : 'dsh-workflow/delivery-inventory', config: { projectRoot: root } },
     { id: 'workflow-browser-harness', name: join(root, 'browser-harness-plugin/index.mjs') },
     { id: 'workflow-browser-harness-skills', name: '@deepseek-ai/dsh-skill-filesystem', config: {
       providerName: 'workflow-browser-harness', includeDefaultRoots: false, customSkillDirs: [join(root, 'browser-harness-plugin/skills')],

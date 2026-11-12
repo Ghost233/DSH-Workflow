@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { cp, mkdtemp, mkdir, symlink, readFile, rm, writeFile, rename, readlink, realpath } from 'node:fs/promises'
+import { cp, mkdtemp, mkdir, symlink, readFile, rm, writeFile, rename, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,14 +9,14 @@ import {dshReadiness} from '../../scripts/dsh-readiness.mjs'
 import { createHash } from 'node:crypto'
 import { sealPluginPayload } from './plugin-payload.mjs'
 import { startupPluginResults } from './startup-plugins.mjs'
-import { stageBrowserHarnessSkills } from '../../browser-harness-plugin/build.mjs'
+import { copyProjectIntegration } from '../project-resources.mjs'
 
 const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
 const cliDirectory = process.env.DSH_WEB_TEST_RUNTIME_ROOT || process.env.DSH_SERVICE_TEST_RESOURCES
   ? join(process.env.DSH_WEB_TEST_RUNTIME_ROOT ?? process.env.DSH_SERVICE_TEST_RESOURCES, 'node_modules/@deepseek-ai/dsh')
   : join(source, 'apps/cli')
 const anchor = join(cliDirectory, 'package.json'), req = createRequire(anchor)
-const { boot, loadProfile, createRuntimeResolution, PluginPackages } = req('@deepseek-ai/dsh-app-boot')
+const { boot, loadProfile, loadOverlayPatches, createRuntimeResolution, PluginPackages } = req('@deepseek-ai/dsh-app-boot')
 const { provideCmdline } = req('@deepseek-ai/dsh-cmdline')
 
 test('packaged project profile serves authenticated official DSH readiness using its declared local package map', { timeout: 30_000 }, async t => {
@@ -25,7 +25,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   const root = await mkdtemp(join(tmpdir(), 'packaged-dsh-ready-'))
   const resourcesRoot = join(root, 'resources'), workflow = join(resourcesRoot, 'workflow')
   const desktopRuntimeRoot = resourcesRoot, home = join(root, 'home'), globalRoot = join(root, 'global')
-  await mkdir(workflow, { recursive: true })
+  await mkdir(resourcesRoot, { recursive: true })
   // The launcher installs its pinned SDK under Resources/node_modules; copied plugins resolve peers from that ancestor.
   const sdk = await createRuntimeResolution({ installAnchor: anchor })
   for (const entry of sdk.entries) {
@@ -34,30 +34,10 @@ test('packaged project profile serves authenticated official DSH readiness using
     await symlink(entry.packageDir, target)
   }
   // Native SDK package artifacts are fixed external runtime inputs; no source resolver or own-package alias is injected.
-  for (const path of ['agent-observation-plugin', 'project-coordination-plugin', 'browser-harness-plugin', 'matt-skills-panel-plugin/package', 'vendor/mattpocock-skills-zh/skills', 'vendor/dsh-skills/skills']) {
-    await cp(resolve(path), join(workflow, path), { recursive: true, filter: path => !/(?:^|\/)(?:test|tests|node_modules|\.git)(?:\/|$)/.test(path) })
-  }
-  await stageBrowserHarnessSkills(resolve('.'), workflow)
-  for (const name of ['package.json', 'project-plugins.json', 'project-plugins.lock.json', 'dsh-runtime.json']) {
-    await cp(resolve(name), join(workflow, name))
-  }
+  await copyProjectIntegration(resolve('.'), workflow)
   await cp(resolve('macos-launcher/package-lock.json'), join(resourcesRoot, 'package-lock.json'))
   // User MCP endpoints are unrelated foreign work, absent from the CI input under diagnosis.
   await writeFile(join(workflow, 'project-mcp.json'), '[]\n')
-  await mkdir(join(workflow, 'scripts'), { recursive: true })
-  for (const path of ['dsh-launch-composition.mjs', 'dsh-delivery-policy.mjs', 'observation-profile.mjs', 'native-bundle.mjs']) {
-    await cp(resolve('scripts', path), join(workflow, 'scripts', path))
-  }
-  await mkdir(join(workflow, 'macos-launcher/runtime'), { recursive: true })
-  await cp(resolve('macos-launcher/runtime/plugin-configuration.mjs'), join(workflow, 'macos-launcher/runtime/plugin-configuration.mjs'))
-  await cp(resolve('macos-launcher/runtime/desktop-profile.mjs'), join(workflow, 'macos-launcher/runtime/desktop-profile.mjs'))
-  await cp(resolve('macos-launcher/runtime/profile-templates.mjs'), join(workflow, 'macos-launcher/runtime/profile-templates.mjs'))
-  await cp(resolve('macos-launcher/runtime/startup-plugins.mjs'), join(workflow, 'macos-launcher/runtime/startup-plugins.mjs'))
-  await cp(resolve('macos-launcher/runtime/plugin-payload.mjs'), join(workflow, 'macos-launcher/runtime/plugin-payload.mjs'))
-  await cp(resolve('macos-launcher/runtime/desktop-bridge.mjs'), join(workflow, 'macos-launcher/runtime/desktop-bridge.mjs'))
-  await cp(resolve('macos-launcher/runtime/model-authorization-bridge.mjs'), join(workflow, 'macos-launcher/runtime/model-authorization-bridge.mjs'))
-  await cp(resolve('macos-launcher/runtime/model-codex-accounts.mjs'), join(workflow, 'macos-launcher/runtime/model-codex-accounts.mjs'))
-  await cp(resolve('macos-launcher/runtime/stop-inspection.mjs'), join(workflow, 'macos-launcher/runtime/stop-inspection.mjs'))
   const delivered = { package: 'workflow-owned-delivery-fixture', version: '1.2.3', source: 'git',
     repository: 'https://github.com/owned/delivery-fixture', commit: 'c'.repeat(40), startup: true }
   const payloadPackage = join(resourcesRoot, 'plugins/node_modules', delivered.package)
@@ -119,14 +99,16 @@ test('packaged project profile serves authenticated official DSH readiness using
   await writeFile(join(prepared.profile, 'cordis.yml'), '[]\n')
   await prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot, globalRoot, home })
   let profile = loadProfile('dsh', 'desktop', anchor, home)
+  const overlay = () => loadOverlayPatches('dsh', prepared.overlay)
   const entries = profile
   const { composeEntries } = req('@deepseek-ai/dsh-app-boot')
-  const effective = composeEntries([...entries.layers.map(layer => layer.patches), entries.patches])
+  const effective = composeEntries([...entries.layers.map(layer => layer.patches), entries.patches, overlay()])
   assert.equal(effective.find(row => row.id === 'bili-native')?.disabled, true)
   assert.equal(effective.filter(row => row.id === 'matt-skills-board').length, 1)
   assert.equal(effective.find(row => row.id === 'matt-skills-board').name, pathToFileURL(join(workflow, 'matt-skills-panel-plugin/package/lib/index.js')).href)
   assert.deepEqual(effective.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true, ghAccount: false })
-  assert.equal(effective.find(row => row.id === 'matt-panel-tools').name, 'dsh-workflow-matt-panel/tools')
+  assert.equal(effective.find(row => row.id === 'matt-panel-tools').name,
+    pathToFileURL(join(workflow, 'matt-skills-panel-plugin/package/deck/registration/agent-row.js')).href)
   assert.equal(effective.find(row => row.id === 'mattpocock-skills-zh').name, '@deepseek-ai/dsh-skill-filesystem')
   assert.deepEqual(effective.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
   const startHost = () => {
@@ -135,9 +117,11 @@ test('packaged project profile serves authenticated official DSH readiness using
     const resolution = await createRuntimeResolution({ installAnchor: anchor, profile })
     t.signal.throwIfAborted()
     const readyListeners = new Set()
-    ctx = await boot('packaged-dsh-ready', join(prepared.profile, 'cordis.yml'), [...profile.layers.flatMap(layer => layer.patches), ...profile.patches], async c => {
+    const overlays = overlay()
+    ctx = await boot('packaged-dsh-ready', join(prepared.profile, 'cordis.yml'),
+      [...profile.layers.flatMap(layer => layer.patches), ...profile.patches, ...overlays], async c => {
     c.provide('profileContext', { name: 'desktop', dir: profile.dir, patchPath: profile.patchPath, installAnchor: anchor,
-      cwd: globalRoot, home, startedBundles: profile.layers.map(layer => layer.packageName), overlays: [] })
+      cwd: globalRoot, home, startedBundles: profile.layers.map(layer => layer.packageName), overlays })
     provideCmdline(c, { args: [], exit: () => {}, ready: { onReady: listener => {
       readyListeners.add(listener); return () => readyListeners.delete(listener)
     } } })
@@ -199,16 +183,11 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(presetRow.enabled, false)
   assert.equal(presetRow.current, sdkLock['node_modules/@deepseek-ai/dsh-plugin-manager'].version)
   assert.equal(presetRow.expected, sdkLock['node_modules/@deepseek-ai/dsh-plugin-manager'].version)
-  const ownRows = report.rows.filter(row => row.moduleName.startsWith('dsh-workflow/'))
-  assert.deepEqual(ownRows.map(row => row.entryId).sort(), ['include:workflow-agent-monitor', 'include:workflow-delivery-inventory', 'include:workflow-project-coordination'])
-  assert.equal(new Set(ownRows.map(row => row.source)).size, 1, 'all named project entries resolve from one existing package source')
-  for (const moduleName of ['dsh-workflow/agent-monitor', 'dsh-workflow/delivery-inventory', 'dsh-workflow/project-coordination']) {
-    const row = report.rows.find(row => row.moduleName === moduleName)
-    assert.equal(row.current, '0.1.1', `${moduleName} actual package version`)
-    assert.equal(row.expected, '0.1.1', `${moduleName} repository component pin`)
-    assert.ok(row.source.includes(workflow), 'the package source must be the actual staged project')
-    assert.equal(row.updatable, false)
-  }
+  const inventoryRow = report.rows.find(row => row.entryId?.endsWith(':workflow-delivery-inventory'))
+  assert.ok(inventoryRow?.source?.includes(workflow), 'inventory must resolve from the actual staged project')
+  assert.equal(inventoryRow.fiberPhase, 'active')
+  assert.equal(inventoryRow.updatable, false)
+  assert.ok(!report.rows.some(row => /:(workflow-agent-monitor|workflow-project-coordination)$/.test(row.entryId ?? '')))
   const beforeMutationProbe = await readFile(join(prepared.profile, 'package.json'))
   for (const [method, args] of [['pluginManager/installBundle', { spec: '' }], ['pluginManager/removeBundle', { name: 's07-not-installed' }], ['workflowDelivery/installBundle', { spec: '' }]]) {
     const response = await fetch(new URL(`/api/${method}`, baseUrl(ctx)), {
@@ -220,8 +199,8 @@ test('packaged project profile serves authenticated official DSH readiness using
   }
   assert.deepEqual(await readFile(join(prepared.profile, 'package.json')), beforeMutationProbe)
   const manifest = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
-  assert.equal(manifest.dependencies['dsh-workflow'], `file:${workflow}`)
-  assert.equal(manifest.dependencies['dsh-workflow-matt-panel'], `file:${join(workflow, 'matt-skills-panel-plugin/package')}`)
+  assert.equal(manifest.dependencies['dsh-workflow'], undefined)
+  assert.equal(manifest.dependencies['dsh-workflow-matt-panel'], undefined)
   assert.ok(ctx.tools.get('deck_context'), 'the named Matt tools package registers its public tool')
   assert.match((await ctx.skills.get('spec-delivery')).content, /spawn_teammate/, 'the real Host loads the native DSH team skill')
   const browserPlugin = report.rows.find(row => row.package === 'dsh-workflow-browser-harness')
@@ -254,11 +233,11 @@ test('packaged project profile serves authenticated official DSH readiness using
   const movedWorkflow = join(movedResources, 'workflow')
   const movedManifest = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
   assert.deepEqual(movedManifest.userMetadata, { keep: 'same-home' })
-  for (const [name, target] of [['dsh-workflow', movedWorkflow], ['dsh-workflow-matt-panel', join(movedWorkflow, 'matt-skills-panel-plugin/package')]]) {
-    assert.equal(movedManifest.dependencies[name], `file:${target}`)
-    assert.equal(await readlink(join(prepared.profile, 'node_modules', name)), target)
-  }
-  const movedEntries = composeEntries([...profile.layers.map(layer => layer.patches), profile.patches])
+  assert.equal(movedManifest.dependencies['dsh-workflow'], undefined)
+  assert.equal(movedManifest.dependencies['dsh-workflow-matt-panel'], undefined)
+  assert.equal(await realpath(join(prepared.profile, 'node_modules', delivered.package)),
+    await realpath(join(movedResources, 'plugins/node_modules', delivered.package)))
+  const movedEntries = composeEntries([...profile.layers.map(layer => layer.patches), profile.patches, overlay()])
   assert.deepEqual(movedEntries.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true, ghAccount: false })
   assert.deepEqual(movedEntries.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
   await startHost()

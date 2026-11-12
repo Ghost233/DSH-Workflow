@@ -18,20 +18,20 @@ import { startupPluginResults } from './startup-plugins.mjs'
 import { statusNotifications } from './status-notifications.mjs'
 import { readLoginShellEnvironment } from './login-shell.mjs'
 
-async function health(host, timeout = 2000) {
+async function health(host, timeout = 2000, profilePlugins = false) {
   const signal = AbortSignal.timeout(timeout)
   const response = await fetch(host.url, { redirect: 'manual', signal })
   const cookie = response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
   await response.text()
   if (!cookie) throw new Error('DSH authentication did not issue a session cookie')
-  return dshReadiness(host.url, { cookie, signal })
+  return dshReadiness(host.url, { cookie, signal, profilePlugins })
 }
 
-export async function waitForInitialHostHealth(host, deadline, isAlive) {
+export async function waitForInitialHostHealth(host, deadline, isAlive, profilePlugins = false) {
   let lastTimeout
   while (Date.now() < deadline) {
     if (!isAlive()) throw new Error('DSH Host exited during readiness')
-    try { return await health(host, Math.min(2000, Math.max(1, deadline - Date.now()))) }
+    try { return await health(host, Math.min(2000, Math.max(1, deadline - Date.now())), profilePlugins) }
     catch (error) {
       if (error.name !== 'TimeoutError') throw error
       lastTimeout = error
@@ -259,7 +259,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
           PATH: `${join(resources, 'bin')}${delimiter}${resources}${delimiter}${environment.PATH ?? ''}` }
         delete hostEnvironment.ELECTRON_RUN_AS_NODE
         const owned = fork(join(resources, 'workflow/macos-launcher/runtime/web-host.mjs'),
-          [resources, profile.profile, join(dataRoot, 'global/.dsh-workflow/desktop')], {
+          [resources, profile.profile, join(dataRoot, 'global/.dsh-workflow/desktop'), profile.overlay], {
             execPath: executable, execArgv: ['--expose-internals'], cwd: profile.profile,
             env: hostEnvironment,
             stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
@@ -316,7 +316,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
             const detail = !actual ? 'receipt missing' : actual.pid !== owned.pid ? 'process identity changed' : 'connection address changed'
             throw new Error(`DSH readiness receipt does not identify the owned Host (${detail})`)
           }
-          validatedReady = (await waitForInitialHostHealth(actual, deadline, () => child === owned && owned.exitCode === null && owned.signalCode === null)).ready === true
+          validatedReady = (await waitForInitialHostHealth(actual, deadline, () => child === owned && owned.exitCode === null && owned.signalCode === null, profile.profilePlugins)).ready === true
           lastHealth = { ready: validatedReady, message: null }
           for (const result of await startupPluginResults({ resourcesRoot: resources, url: actual.url, preparation: profile.startup })) {
             log(`项目启动插件：${JSON.stringify(result)}`)

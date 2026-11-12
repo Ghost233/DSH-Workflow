@@ -10,10 +10,10 @@ export const packageMutationModules = Object.freeze([
   '@deepseek-ai/dsh-client-ui-entry-customization',
 ])
 
-/** Packages explicitly removed from Station delivery stay disabled in older profiles. */
-export const isRetiredPluginModule = name => typeof name === 'string'
-  && (name === 'billion-context' || name.startsWith('billion-context/'))
+export const blocksPackageMutation = (name, profilePlugins = false) =>
+  packageMutationModules.includes(name) && (!profilePlugins || name.endsWith('/tools'))
 
-/** dsh-ops is temporarily disabled until its upstream supports this DSH version. */
-export const isUnavailablePluginModule = name => isRetiredPluginModule(name)
-  || typeof name === 'string' && (name === 'dsh-ops' || name.startsWith('dsh-ops/'))
+/** Legacy Billion Context entries require a verified Station delivery. */
+export const isUnavailablePluginModule = (name, { billionContextDelivered = false } = {}) => typeof name === 'string'
+  && (name === 'dsh-ops' || name.startsWith('dsh-ops/')
+    || (!billionContextDelivered && (name === 'billion-context' || name.startsWith('billion-context/'))))

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { packageMutationModules } from './dsh-delivery-policy.mjs'
+import { blocksPackageMutation } from './dsh-delivery-policy.mjs'
 
 /** Use the fixed DSH Connection/Remote public transport, without adding a service. */
-export async function dshReadiness(url, { cookie = '', signal, request = fetch } = {}) {
+export async function dshReadiness(url, { cookie = '', signal, request = fetch, profilePlugins = false } = {}) {
   const rpcId = randomUUID()
   const response = await request(new URL('/api/pluginInventory/list', url), {
     method: 'POST', headers: { 'content-type': 'application/json', cookie }, signal,
@@ -30,9 +30,9 @@ export async function dshReadiness(url, { cookie = '', signal, request = fetch }
     || !['pending', 'loading', 'active', 'failed', 'unloading', null].includes(row.fiberPhase))) {
     throw new Error('Official DSH readonly inventory entries are malformed')
   }
-  const mutable = rows.filter(row => packageMutationModules.includes(row.moduleName)
+  const mutable = rows.filter(row => blocksPackageMutation(row.moduleName, profilePlugins)
     && (row.enabled !== false || ['pending', 'loading', 'active', 'unloading'].includes(row.fiberPhase)))
-  if (inventory.managementAvailable === true || mutable.length) {
+  if ((!profilePlugins && inventory.managementAvailable === true) || mutable.length) {
     throw new Error(`DSH 受管版本策略不允许运行端换包通道${mutable.length ? `：${[...new Set(mutable.map(row => row.moduleName))].join('、')}` : '。'}`)
   }
   return { ready: true, plugins: inventory.entries }

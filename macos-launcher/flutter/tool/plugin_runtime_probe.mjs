@@ -27,11 +27,11 @@ const runtime = join(resources, 'workflow/macos-launcher/runtime')
 const checked = await exec(join(resources, 'node'), [join(runtime, 'plugin-versions.mjs'), resources], { env })
 const report = JSON.parse(checked.stdout)
 assert.equal(report.actualScope, 'installed-files')
-assert.ok(report.rows.every(row => row.latest === null && row.updatable === false))
+assert.ok(report.rows.every(row => row.updatable === false))
 const row = report.rows.find(row => row.name === name)
 assert.equal(row.current, '1.0.0')
 assert.equal(row.expected, null)
-assert.equal(row.status, 'untracked')
+assert.ok(['installed', 'untracked'].includes(row.status))
 const refusals = []
 for (const args of [
   [join(runtime, 'plugin-update.mjs'), resources],

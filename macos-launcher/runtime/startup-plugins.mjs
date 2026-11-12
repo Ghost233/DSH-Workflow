@@ -3,14 +3,15 @@ import { readFile, realpath } from 'node:fs/promises'
 import { join, isAbsolute } from 'node:path'
 import { readPluginConfiguration } from './plugin-configuration.mjs'
 import { nativeBundlePatches } from '../../scripts/native-bundle.mjs'
-import { pluginDependencySpec } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { pluginDependencySpec, isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 
-/** Only try already-present exact packages; no download, installation or profile dependency rewrite. */
+/** Compose fixed deliveries. DSH owns the lifecycle of packages in the profile checklist. */
 export async function prepareStartupPlugins({ profile, entries, config, boot }) {
   const patches = [], skipped = []
   const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
   const existing = flatten(entries)
   for (const item of config?.plugins.filter(row => row.startup === true) ?? []) {
+    if (isProfilePlugin(config, item)) continue
     const matches = existing.filter(row => row.name === item.package || row.name?.startsWith(item.package + '/')
       || item.components?.some(component => row.name === component.package))
     // Git pins must also validate existing entries before allowing the normal Host loader to try them.
@@ -31,7 +32,11 @@ export async function prepareStartupPlugins({ profile, entries, config, boot }) 
       if (item.source === 'git') {
         const profileManifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
         const declaration = profileManifest.dependencies?.[item.package], dependency = pluginDependencySpec(item)
-        if (declaration !== dependency) {
+        const linkedPath = config.npmStartup === 'profile' && declaration?.startsWith('link:') ? declaration.slice(5) : ''
+        const linkedSource = isAbsolute(linkedPath) ? await realpath(linkedPath).catch(error => {
+          if (error.code !== 'ENOENT') throw error
+        }) : undefined
+        if (declaration !== dependency && linkedSource !== installedSource) {
           throw new Error(`依赖来源声明 ${declaration ?? '缺失'} 偏离包内固定值 ${dependency}，未替换运行包。`)
         }
       }
@@ -98,27 +103,30 @@ export async function startupPluginResults({ resourcesRoot, url, preparation = [
         components, requiredEntries, reason: attempted?.reason ?? (unknown ? `实际启动状态未知：${unknown}`
           : loaded ? '当前 Host 已加载全部固定组件。' : '部分组件未加载；请查看组件状态与 Host 日志。') }
     }
+    const profileManaged = isProfilePlugin(config, item)
     const matches = rows?.filter(row => row.package === item.package || row.moduleName === item.package) ?? []
+    const versionMatches = row => profileManaged ? Boolean(row.current) : row.current === item.version && row.status === 'fixed'
     const active = matches.find(row => row.enabled === true && row.fiberPhase === 'active'
-      && row.package === item.package && row.current === item.version && row.status === 'fixed'
+      && row.package === item.package && versionMatches(row)
       && typeof row.source === 'string' && isAbsolute(row.source) && !row.error)
     const actual = active ?? matches[0]
     const attempted = preparation.find(row => row.package === item.package)
     let reason
     if (attempted) reason = attempted.reason
     else if (unknown) reason = `实际启动状态未知：${unknown}`
-    else if (active) reason = '当前 Host 已加载包内固定版本。'
-    else if (!matches.length) reason = attempted?.reason ?? '当前 Host 未装配该插件；打包运行端不在线安装或换包。'
+    else if (active) reason = profileManaged ? '当前 Host 已加载 DSH 全局安装版本。' : '当前 Host 已加载包内固定版本。'
+    else if (!matches.length) reason = profileManaged ? '当前 Host 未装配该 profile 插件。' : '当前 Host 未装配该插件；打包运行端不在线安装或换包。'
     else if (matches.every(row => row.enabled === false)) reason = '当前 profile 已停用该插件，保留用户选择。'
     else if (matches.some(row => row.fiberPhase === 'failed')) reason = '当前 Host 插件加载失败；请检查该插件日志。'
     else if (matches.some(row => row.enabled === true && row.fiberPhase === null
-      && row.package === item.package && row.current === item.version
+      && row.package === item.package && versionMatches(row)
       && typeof row.source === 'string' && isAbsolute(row.source) && !row.error)) {
       reason = '当前 Host 插件导入失败：Host 已就绪，但该启用入口没有运行 fiber；请检查插件日志。'
     }
-    else if (actual.current && actual.current !== item.version) reason = `实际版本 ${actual.current} 偏离包内固定值 ${item.version}，未替换运行包。`
+    else if (!profileManaged && actual.current && actual.current !== item.version) reason = `实际版本 ${actual.current} 偏离包内固定值 ${item.version}，未替换运行包。`
     else reason = '实际加载状态或版本来源未知，未把声明当作加载成功。'
-    return { package: item.package, version: item.version, versionSource: 'packaged-lock',
+    return { package: item.package, version: profileManaged ? actual?.current ?? attempted?.installedVersion ?? null : item.version,
+      versionSource: profileManaged ? 'dsh-profile' : 'packaged-lock',
       actualVersion: actual?.current ?? null, source: actual?.source ?? null,
       ...(attempted ? { installedVersion: attempted.installedVersion, installedSource: attempted.installedSource } : {}),
       state: active && !unknown && !attempted ? 'loaded' : 'skipped', reason }

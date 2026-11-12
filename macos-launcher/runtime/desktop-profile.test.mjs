@@ -1,229 +1,147 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdtemp, mkdir, symlink, readFile, rm, writeFile, readlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, symlink, readFile, rm, writeFile, readlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { prepareDesktopProfile } from './desktop-profile.mjs'
 import { webProfileBundles } from './profile-templates.mjs'
 
-const artifact = process.env.DSH_SERVICE_TEST_RESOURCES
-const cliAnchor = source => artifact ? join(artifact, 'node_modules/@deepseek-ai/dsh/package.json') : join(source, 'apps/cli/package.json')
-async function prepareTestRuntime(directory, source) {
-  if (artifact) { await mkdir(directory, { recursive: true }); await symlink(join(artifact, 'node_modules'), join(directory, 'node_modules')); return }
-  await mkdir(join(directory, 'node_modules/@deepseek-ai'), { recursive: true })
-  await symlink(join(source, 'apps/cli'), join(directory, 'node_modules/@deepseek-ai/dsh'))
+async function fixture(t) {
+  const root = await mkdtemp(join(tmpdir(), 'station-profile-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const resourcesRoot = join(root, 'resources'), home = join(root, 'home'), globalRoot = join(root, 'global')
+  const desktopRuntimeRoot = join(root, 'runtime'), workflow = join(resourcesRoot, 'workflow')
+  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
+  const artifact = process.env.DSH_SERVICE_TEST_RESOURCES
+  if (artifact) {
+    await mkdir(desktopRuntimeRoot)
+    await symlink(join(artifact, 'node_modules'), join(desktopRuntimeRoot, 'node_modules'))
+  } else {
+    await mkdir(join(desktopRuntimeRoot, 'node_modules/@deepseek-ai'), { recursive: true })
+    await symlink(join(source, 'apps/cli'), join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh'))
+  }
+  await mkdir(workflow, { recursive: true })
+  await symlink(resolve('project-mcp.json'), join(workflow, 'project-mcp.json'))
+  const anchor = join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh/package.json')
+  const require = createRequire(anchor), boot = require('@deepseek-ai/dsh-app-boot')
+  const profile = join(home, 'profiles/desktop'), web = join(home, 'profiles/web')
+  const args = { resourcesRoot, desktopRuntimeRoot, globalRoot, home }
+  const prepare = () => prepareDesktopProfile(args)
+  const init = (directory = profile) => boot.initProfile(directory, webProfileBundles(require, boot))
+  const entries = ({ overlay }) => {
+    const loaded = boot.loadProfileDirectory('dsh', profile, anchor)
+    return boot.composeEntries([...loaded.layers.map(layer => layer.patches), loaded.patches, boot.loadOverlayPatches('dsh', overlay)])
+  }
+  return { root, workflow, profile, web, prepare, init, entries }
 }
 
-test('Desktop retains the user profile and loads one local board', async t => {
-  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const boot = createRequire(cliAnchor(source))('@deepseek-ai/dsh-app-boot')
-  const root = await mkdtemp(join(tmpdir(), 'desktop-profile-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
-  const resourcesRoot = join(root, 'resources'), home = join(root, 'home'), globalRoot = join(root, 'global')
-  const desktopRuntimeRoot = join(root, 'runtime')
-  await prepareTestRuntime(desktopRuntimeRoot, source)
-  await mkdir(resourcesRoot)
-  await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
-  const web = join(home, 'profiles/web')
-  boot.initProfile(web, webProfileBundles(createRequire(cliAnchor(source)), boot))
-  const userPatch = [{ id: 'web-runtime', config: { openBrowser: false, printUrl: false } },
-    { insert: [{ id: 'bili-native', name: 'billion-context', config: { keep: true } }] }]
-  await writeFile(join(web, 'cordis.patch.yml'), JSON.stringify(userPatch))
-  const args = { resourcesRoot, desktopRuntimeRoot, globalRoot, home }
-  const first = await prepareDesktopProfile(args)
-  const manifestBefore = await readFile(join(first.profile, 'package.json'), 'utf8')
-  assert.ok(JSON.parse(manifestBefore).dsh.profile.bundles.includes('@deepseek-ai/dsh-experimental-agent-team-profile'))
-  assert.equal(await readFile(join(first.profile, 'cordis.patch.yml'), 'utf8'), JSON.stringify(userPatch))
-  const patches = JSON.parse(await readFile(join(first.bundle, 'cordis.patch.yml'), 'utf8'))
-  const inserts = patches.flatMap(p => p.insert ?? [])
-  assert.deepEqual(patches.find(row => row.id === 'bili-native'), { id: 'bili-native', disabled: true })
-  assert.equal(inserts.filter(p => p.id === 'workflow-jev-center').length, 0)
-  assert.equal(inserts.filter(p => p.id === 'workflow-agent-monitor' && p.name === 'dsh-workflow/agent-monitor').length, 1)
-  assert.equal(inserts.find(p => p.id === 'workflow-agent-monitor').disabled, true)
-  assert.equal(inserts.filter(p => p.id === 'matt-skills-board').length, 1)
-  assert.ok(inserts.find(p => p.id === 'matt-skills-board').name.includes('/matt-skills-panel-plugin/package/lib/index.js'))
-  assert.equal(inserts.filter(p => p.id === 'workflow-mcp-codegraph').length, 1)
-  await prepareDesktopProfile(args)
-  assert.equal(await readFile(join(first.profile, 'package.json'), 'utf8'), manifestBefore)
-  const stampPath = join(first.bundle, 'integration.json')
-  const oldIdentity = JSON.parse(await readFile(stampPath, 'utf8'))
-  delete oldIdentity.hostInstance
-  delete oldIdentity.projectMcp
-  delete oldIdentity.launchPatches
-  await writeFile(stampPath, JSON.stringify(oldIdentity))
-  await writeFile(join(first.bundle, 'cordis.patch.yml'), JSON.stringify([{ insert: [{ id: 'workflow-desktop-health-instance', name: '/old-health-adapter.mjs' }] }]))
-  await prepareDesktopProfile(args)
-  const refreshed = JSON.parse(await readFile(join(first.bundle, 'cordis.patch.yml'), 'utf8'))
-  assert.equal(refreshed.flatMap(p => p.insert ?? []).some(row => row.id === 'workflow-desktop-health-instance'), false)
-  assert.equal(refreshed.find(row => row.id === 'bili-native')?.disabled, true)
-  assert.equal(await readFile(join(first.profile, 'package.json'), 'utf8'), manifestBefore)
-  const staleIdentity = JSON.parse(await readFile(stampPath, 'utf8'))
-  staleIdentity.projectMcp[0].config.command = '/previous/codegraph'
-  await writeFile(stampPath, JSON.stringify(staleIdentity))
-  await prepareDesktopProfile(args)
-  const currentIdentity = JSON.parse(await readFile(stampPath, 'utf8'))
-  assert.equal(currentIdentity.projectMcp[0].config.command, 'codegraph')
-  assert.equal(await readFile(join(first.profile, 'cordis.patch.yml'), 'utf8'), JSON.stringify(userPatch))
-  const laterPatch = [...userPatch, { insert: [{ id: 'late-bili', name: 'billion-context/tools' }] }]
-  await writeFile(join(first.profile, 'cordis.patch.yml'), JSON.stringify(laterPatch))
-  await prepareDesktopProfile(args)
-  const later = JSON.parse(await readFile(join(first.bundle, 'cordis.patch.yml'), 'utf8'))
-  assert.equal(later.find(row => row.id === 'late-bili')?.disabled, true)
-  assert.equal(await readFile(join(first.profile, 'cordis.patch.yml'), 'utf8'), JSON.stringify(laterPatch))
-  assert.equal(await readFile(join(first.profile, 'package.json'), 'utf8'), manifestBefore)
-})
-
-test('Desktop migrates a cached stage-one bundle-only profile without changing user dependencies, patches or metadata', async t => {
-  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const boot = createRequire(cliAnchor(source))('@deepseek-ai/dsh-app-boot')
-  const root = await mkdtemp(join(tmpdir(), 'desktop-profile-migration-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
-  const resourcesRoot = join(root, 'resources'), home = join(root, 'home'), globalRoot = join(root, 'global')
-  const desktopRuntimeRoot = join(root, 'runtime'), web = join(home, 'profiles/web')
-  await prepareTestRuntime(desktopRuntimeRoot, source)
-  await mkdir(resourcesRoot)
-  await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
-  boot.initProfile(web, webProfileBundles(createRequire(cliAnchor(source)), boot))
-  const userManifest = JSON.parse(await readFile(join(web, 'package.json'), 'utf8'))
-  userManifest.dependencies['user-kept-addon'] = 'file:/user/kept-addon'
-  userManifest.userMetadata = { chosenWorkspace: 'keep-this' }
-  await writeFile(join(web, 'package.json'), JSON.stringify(userManifest))
-  const patch = '- id: user-kept-addon\n  disabled: true\n  name: user-kept-addon\n'
-  await writeFile(join(web, 'cordis.patch.yml'), patch)
-  const args = { resourcesRoot, desktopRuntimeRoot, globalRoot, home }
-  const prepared = await prepareDesktopProfile(args)
-  const packages = {
-    'dsh-workflow': join(resourcesRoot, 'workflow'),
-    'dsh-workflow-matt-panel': join(resourcesRoot, 'workflow/matt-skills-panel-plugin/package'),
+test('Station keeps the copied Web profile and rebuilds its own overlay without registering a local bundle', async t => {
+  const f = await fixture(t)
+  f.init(f.web)
+  const userPatch = JSON.stringify([
+    { id: 'web-runtime', config: { openBrowser: false, printUrl: false } },
+    { insert: [{ id: 'bili-native', name: 'billion-context', config: { keep: true } }] },
+  ])
+  await writeFile(join(f.web, 'cordis.patch.yml'), userPatch)
+  const prepared = await f.prepare()
+  const manifestPath = join(f.profile, 'package.json'), patchPath = join(f.profile, 'cordis.patch.yml')
+  const before = await readFile(manifestPath, 'utf8')
+  const manifest = JSON.parse(before)
+  for (const name of ['dsh-workflow', 'dsh-workflow-matt-panel', 'dsh-workflow-desktop']) {
+    assert.equal(manifest.dependencies[name], undefined)
+    assert.ok(!manifest.dsh.profile.bundles.includes(name))
   }
-  const old = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
-  for (const name of Object.keys(packages)) {
-    delete old.dependencies[name]
-    await rm(join(prepared.profile, 'node_modules', name))
+  const check = () => {
+    const rows = f.entries(prepared)
+    assert.deepEqual(rows.find(row => row.id === 'bili-native'),
+      { id: 'bili-native', name: 'billion-context', disabled: true, config: { keep: true } })
+    assert.ok(!rows.some(row => ['workflow-jev-center', 'workflow-agent-monitor', 'workflow-project-coordination'].includes(row.id)))
+    const boards = rows.filter(row => row.id === 'matt-skills-board')
+    assert.equal(boards.length, 1)
+    assert.equal(boards[0].name, pathToFileURL(join(f.workflow, 'matt-skills-panel-plugin/package/lib/index.js')).href)
+    assert.equal(rows.find(row => row.id === 'workflow-mcp-codegraph').config.command, 'codegraph')
   }
-  await writeFile(join(prepared.profile, 'package.json'), JSON.stringify(old))
-  const stamp = JSON.parse(await readFile(join(prepared.bundle, 'integration.json'), 'utf8'))
-  delete stamp.localPackages
-  await writeFile(join(prepared.bundle, 'integration.json'), JSON.stringify(stamp))
-  await prepareDesktopProfile(args)
-  const migrated = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
-  for (const [name, target] of Object.entries(packages)) {
-    assert.equal(migrated.dependencies[name], `file:${target}`)
-    assert.equal(await readlink(join(prepared.profile, 'node_modules', name)), target)
+  check()
+  await writeFile(prepared.overlay, JSON.stringify([{ insert: [{ id: 'old-station-entry', name: 'old-station' }] }]))
+  await writeFile(join(prepared.bundle, 'integration.json'), '{}')
+  await f.prepare()
+  check()
+  assert.ok(!f.entries(prepared).some(row => row.id === 'old-station-entry'))
+  assert.equal(await readFile(manifestPath, 'utf8'), before)
+  assert.equal(await readFile(patchPath, 'utf8'), userPatch)
+})
+
+test('Station retires the old local bundle and links with a backup, preserving unrelated profile data', async t => {
+  const f = await fixture(t)
+  f.init(f.profile)
+  const path = join(f.profile, 'package.json'), patchPath = join(f.profile, 'cordis.patch.yml')
+  const manifest = JSON.parse(await readFile(path, 'utf8'))
+  const target = join(f.root, 'previous-installation')
+  const retired = ['dsh-workflow', 'dsh-workflow-matt-panel', 'dsh-workflow-desktop', 'ghost-agent-sentinel']
+  await mkdir(target)
+  await mkdir(join(f.profile, 'node_modules'))
+  await writeFile(join(target, 'keep.txt'), 'original files')
+  for (const name of retired) {
+    manifest.dependencies[name] = `file:${target}`
+    await symlink(target, join(f.profile, 'node_modules', name))
   }
-  assert.equal(migrated.dependencies['user-kept-addon'], 'file:/user/kept-addon')
-  assert.deepEqual(migrated.userMetadata, { chosenWorkspace: 'keep-this' })
-  assert.equal(await readFile(join(prepared.profile, 'cordis.patch.yml'), 'utf8'), patch)
-  const stable = await readFile(join(prepared.profile, 'package.json'), 'utf8')
-  await prepareDesktopProfile(args)
-  assert.equal(await readFile(join(prepared.profile, 'package.json'), 'utf8'), stable)
+  manifest.dependencies['user-kept-addon'] = 'file:/user/kept-addon'
+  manifest.dsh.profile.bundles.push('dsh-workflow-desktop')
+  manifest.userMetadata = { chosenWorkspace: 'keep-this' }
+  const text = JSON.stringify(manifest), patch = '# saved user configuration\n[]\n'
+  await writeFile(path, text)
+  await writeFile(patchPath, patch)
+  await f.prepare()
+  const after = await readFile(path, 'utf8'), updated = JSON.parse(after)
+  assert.equal(updated.dependencies['user-kept-addon'], 'file:/user/kept-addon')
+  assert.deepEqual(updated.userMetadata, manifest.userMetadata)
+  const backups = join(f.profile, '.dsh-workflow/plugin-backups')
+  const [backup] = await readdir(backups)
+  assert.equal(await readFile(join(backups, backup, 'package.json'), 'utf8'), text)
+  for (const name of retired) {
+    assert.equal(updated.dependencies[name], undefined)
+    assert.ok(!updated.dsh.profile.bundles.includes(name))
+    assert.equal(await readlink(join(backups, backup, 'node_modules', name)), target)
+    await assert.rejects(readlink(join(f.profile, 'node_modules', name)), { code: 'ENOENT' })
+  }
+  assert.equal(await readFile(join(target, 'keep.txt'), 'utf8'), 'original files')
+  await f.prepare()
+  assert.equal(await readFile(path, 'utf8'), after)
+  assert.equal(await readFile(patchPath, 'utf8'), patch)
+  assert.deepEqual(await readdir(backups), [backup])
 })
 
-test('Desktop refreshes an older managed policy at the same application path without changing user files', async t => {
-  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const root = await mkdtemp(join(tmpdir(), 'desktop-profile-policy-upgrade-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
-  const resourcesRoot = join(root, 'resources'), desktopRuntimeRoot = join(root, 'runtime')
-  await prepareTestRuntime(desktopRuntimeRoot, source)
-  await mkdir(resourcesRoot)
-  await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
-  const args = { resourcesRoot, desktopRuntimeRoot, globalRoot: join(root, 'global'), home: join(root, 'home') }
-  const prepared = await prepareDesktopProfile(args)
-  const patchPath = join(prepared.bundle, 'cordis.patch.yml'), stampPath = join(prepared.bundle, 'integration.json')
-  const patches = JSON.parse(await readFile(patchPath, 'utf8'))
-  assert.equal(patches.find(row => row.id === 'entry-customization')?.disabled, true)
-  const oldStamp = JSON.parse(await readFile(stampPath, 'utf8'))
-  delete oldStamp.packageMutationModules
-  await writeFile(stampPath, JSON.stringify(oldStamp))
-  await writeFile(patchPath, JSON.stringify(patches.filter(row => row.id !== 'entry-customization')))
-  await writeFile(join(prepared.profile, 'cordis.yml'), '# saved user configuration\n[]\n')
-  const userFiles = await Promise.all(['package.json', 'cordis.patch.yml', 'cordis.yml'].map(async name =>
-    [name, await readFile(join(prepared.profile, name))]))
-  await prepareDesktopProfile(args)
-  assert.equal(JSON.parse(await readFile(patchPath, 'utf8')).find(row => row.id === 'entry-customization')?.disabled, true)
-  for (const [name, bytes] of userFiles) assert.deepEqual(await readFile(join(prepared.profile, name)), bytes)
-  const stable = await readFile(stampPath, 'utf8')
-  await prepareDesktopProfile(args)
-  assert.equal(await readFile(stampPath, 'utf8'), stable)
+test('Station preserves a real directory when a legacy dependency is not a symlink', async t => {
+  const f = await fixture(t)
+  f.init(f.profile)
+  const name = 'dsh-workflow', path = join(f.profile, 'package.json')
+  const target = join(f.profile, 'node_modules', name)
+  await mkdir(target, { recursive: true })
+  await writeFile(join(target, 'keep.txt'), 'foreign data')
+  const manifest = JSON.parse(await readFile(path, 'utf8'))
+  manifest.dependencies[name] = `file:${target}`
+  const before = JSON.stringify(manifest)
+  await writeFile(path, before)
+  await assert.rejects(f.prepare(), /expected a local package link/)
+  assert.equal(await readFile(join(target, 'keep.txt'), 'utf8'), 'foreign data')
+  assert.equal(await readFile(path, 'utf8'), before)
 })
 
-for (const packageName of ['dsh-workflow', 'dsh-workflow-matt-panel']) test(`cached preparation refuses a foreign ${packageName} link and keeps its data`, async t => {
-  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const root = await mkdtemp(join(tmpdir(), 'desktop-foreign-package-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
-  const resourcesRoot = join(root, 'resources'), desktopRuntimeRoot = join(root, 'runtime'), globalRoot = join(root, 'global'), home = join(root, 'home')
-  await prepareTestRuntime(desktopRuntimeRoot, source)
-  await mkdir(resourcesRoot); await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
-  const args = { resourcesRoot, desktopRuntimeRoot, globalRoot, home }
-  const prepared = await prepareDesktopProfile(args)
-  const foreign = join(root, 'foreign'); await mkdir(foreign)
-  await writeFile(join(foreign, 'keep.txt'), 'foreign data')
-  const link = join(prepared.profile, 'node_modules', packageName)
-  await rm(link); await symlink(foreign, link)
-  const before = await readFile(join(prepared.profile, 'package.json'), 'utf8')
-  const stamp = await readFile(join(prepared.bundle, 'integration.json'), 'utf8')
-  await assert.rejects(prepareDesktopProfile(args), /owned by another installation/)
-  assert.equal(await readlink(link), foreign)
-  assert.equal(await readFile(join(foreign, 'keep.txt'), 'utf8'), 'foreign data')
-  assert.equal(await readFile(join(prepared.profile, 'package.json'), 'utf8'), before)
-  assert.equal(await readFile(join(prepared.bundle, 'integration.json'), 'utf8'), stamp)
-})
-
-test('initial Desktop keeps copied Web links already pointing to the same owned packages', async t => {
-  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const boot = createRequire(cliAnchor(source))('@deepseek-ai/dsh-app-boot')
-  const root = await mkdtemp(join(tmpdir(), 'desktop-copied-own-link-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
-  const resourcesRoot = join(root, 'resources'), desktopRuntimeRoot = join(root, 'runtime'), globalRoot = join(root, 'global'), home = join(root, 'home')
-  await prepareTestRuntime(desktopRuntimeRoot, source)
-  await mkdir(resourcesRoot); await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
-  const web = join(home, 'profiles/web'); boot.initProfile(web, webProfileBundles(createRequire(cliAnchor(source)), boot))
-  const target = join(resourcesRoot, 'workflow')
-  const manifest = JSON.parse(await readFile(join(web, 'package.json'), 'utf8'))
-  manifest.dependencies['dsh-workflow'] = `file:${target}`
-  await writeFile(join(web, 'package.json'), JSON.stringify(manifest))
-  await mkdir(join(web, 'node_modules'), { recursive: true })
-  await symlink(target, join(web, 'node_modules/dsh-workflow'))
-  const prepared = await prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot, globalRoot, home })
-  assert.equal(await readlink(join(prepared.profile, 'node_modules/dsh-workflow')), target)
-  assert.equal(JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8')).dependencies['dsh-workflow'], `file:${target}`)
-})
-
-for (const disabled of [false, true]) test(`cached Desktop refreshes a later user MCP choice (disabled=${disabled})`, async t => {
-  const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
-  const anchor = cliAnchor(source)
-  const boot = createRequire(anchor)('@deepseek-ai/dsh-app-boot')
-  const root = await mkdtemp(join(tmpdir(), 'desktop-mcp-choice-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
-  const resourcesRoot = join(root, 'resources'), home = join(root, 'home'), globalRoot = join(root, 'global')
-  const desktopRuntimeRoot = join(root, 'runtime')
-  await prepareTestRuntime(desktopRuntimeRoot, source)
-  await mkdir(resourcesRoot); await symlink(resolve('.'), join(resourcesRoot, 'workflow'))
-  const args = { resourcesRoot, desktopRuntimeRoot, globalRoot, home }
-  const prepared = await prepareDesktopProfile(args)
-  const manifestBefore = await readFile(join(prepared.profile, 'package.json'), 'utf8')
-  const patchPath = join(prepared.profile, 'cordis.patch.yml')
-  const userText = JSON.stringify([{ insert: [{ id: 'user-codegraph', name: '@deepseek-ai/dsh-mcp-client', disabled,
-    config: { serverName: 'codegraph', transport: 'stdio', command: '/user/codegraph', args: ['serve', '--mcp'] } }] }])
+for (const disabled of [false, true]) test(`Station refreshes a later user MCP choice (disabled=${disabled})`, async t => {
+  const f = await fixture(t)
+  const prepared = await f.prepare(), patchPath = join(f.profile, 'cordis.patch.yml')
+  const getCodeGraph = () => f.entries(prepared).filter(row => row.name === '@deepseek-ai/dsh-mcp-client' && row.config?.serverName === 'codegraph')
+  const userRow = { id: 'user-codegraph', name: '@deepseek-ai/dsh-mcp-client', disabled,
+    config: { serverName: 'codegraph', transport: 'stdio', command: '/user/codegraph', args: ['serve', '--mcp'] } }
+  const userText = JSON.stringify([{ insert: [userRow] }])
   await writeFile(patchPath, userText)
-  await prepareDesktopProfile(args)
-  const resolved = boot.loadProfileDirectory('dsh', prepared.profile, anchor)
-  const rows = boot.composeEntries([...resolved.layers.map(layer => layer.patches), resolved.patches])
-  const matching = rows.filter(row => row.name === '@deepseek-ai/dsh-mcp-client' && row.config?.serverName === 'codegraph')
-  assert.equal(matching.length, 1)
-  assert.equal(matching[0].id, 'user-codegraph')
-  assert.equal(matching[0].disabled, disabled)
-  assert.equal(matching[0].config.command, '/user/codegraph')
+  await f.prepare()
+  assert.deepEqual(getCodeGraph(), [userRow])
   assert.equal(await readFile(patchPath, 'utf8'), userText)
-  assert.equal(await readFile(join(prepared.profile, 'package.json'), 'utf8'), manifestBefore)
   await writeFile(patchPath, '[]')
-  await prepareDesktopProfile(args)
-  const restored = boot.loadProfileDirectory('dsh', prepared.profile, anchor)
-  const defaults = boot.composeEntries([...restored.layers.map(layer => layer.patches), restored.patches])
-    .filter(row => row.name === '@deepseek-ai/dsh-mcp-client' && row.config?.serverName === 'codegraph')
-  assert.equal(defaults.length, 1)
-  assert.equal(defaults[0].id, 'workflow-mcp-codegraph')
+  await f.prepare()
+  assert.deepEqual(getCodeGraph().map(row => row.id), ['workflow-mcp-codegraph'])
   assert.equal(await readFile(patchPath, 'utf8'), '[]')
-  assert.equal(await readFile(join(prepared.profile, 'package.json'), 'utf8'), manifestBefore)
 })

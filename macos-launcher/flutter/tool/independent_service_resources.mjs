@@ -1,17 +1,30 @@
 import { symlink, mkdir, writeFile, chmod, copyFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { copyProjectIntegration } from '../../project-resources.mjs'
+import { isProfilePlugin, readDeliveryManifest } from '../../../agent-observation-plugin/src/delivery-manifest.mjs'
 
 const [artifact, destination, scenario] = process.argv.slice(2)
 if (!artifact || !destination) throw new Error('Pass frozen packaged resources and an owned staging directory')
 await mkdir(destination, { recursive: true })
-const projectRoot = resolve(import.meta.dirname, '../../..')
-await copyProjectIntegration(projectRoot, join(destination, 'workflow'))
-await copyFile(join(projectRoot, 'macos-launcher/package-lock.json'), join(destination, 'package-lock.json'))
-for (const name of ['node', 'node_modules', 'plugins', 'plugin-payload.json']) await symlink(join(resolve(artifact), name), join(destination, name))
+if (scenario !== '--profile-only') {
+  const projectRoot = resolve(import.meta.dirname, '../../..')
+  await copyProjectIntegration(projectRoot, join(destination, 'workflow'))
+  await copyFile(join(projectRoot, 'macos-launcher/package-lock.json'), join(destination, 'package-lock.json'))
+  for (const name of ['node', 'node_modules', 'plugins', 'plugin-payload.json']) await symlink(join(resolve(artifact), name), join(destination, name))
+}
 // Exclude unrelated network endpoints only in this isolated acceptance profile.
 const home = resolve(destination, '../home')
-await mkdir(join(home, 'profiles/desktop'), { recursive: true })
+const profile = join(home, 'profiles/desktop')
+await mkdir(profile, { recursive: true })
+const config = await readDeliveryManifest(join(destination, 'workflow'))
+// Model an already provisioned profile. The acceptance service must leave
+// these installed plugins unselected unless the scenario explicitly enables one.
+for (const item of config.plugins.filter(row => row.startup === true && isProfilePlugin(config, row))) {
+  const link = join(profile, 'node_modules', item.package)
+  await mkdir(dirname(link), { recursive: true })
+  await symlink(join(resolve(artifact), 'plugins/node_modules', item.package), link)
+}
+if (scenario === '--profile-only') process.exit(0)
 const patches = [
   { id: 'workflow-mcp-codegraph', disabled: true },
   { id: 'web-runtime', config: { openBrowser: false, printUrl: false } },
@@ -50,4 +63,4 @@ createInterface({ input: process.stdin }).on('line', line => {
     serverName: 's01-existing-tool', transport: 'stdio', command: 's01-existing-tool', args: [], failOnStartupError: true,
   } }] })
 }
-await writeFile(join(home, 'profiles/desktop/cordis.patch.yml'), JSON.stringify(patches))
+await writeFile(join(profile, 'cordis.patch.yml'), JSON.stringify(patches))

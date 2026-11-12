@@ -114,7 +114,6 @@ Future<void> main() async {
   runApp(LauncherApp(controller: model));
   serviceStartup = model.startService().catchError(model.reportError);
   unawaited(model.checkUpdates());
-  unawaited(model.checkPlugins());
 }
 
 class LauncherApp extends StatelessWidget {
@@ -321,6 +320,9 @@ class _LauncherPageState extends State<LauncherPage> {
               labelType: NavigationRailLabelType.all,
               onDestinationSelected: (value) {
                 setState(() => _page = value);
+                if (value == 1 && model.plugins.isEmpty) {
+                  unawaited(model.checkPlugins());
+                }
                 if (value == 3 &&
                     model.modelSettings == null &&
                     model.serviceSnapshot.ready == true) {
@@ -535,9 +537,7 @@ class _LauncherPageState extends State<LauncherPage> {
       ),
       const SizedBox(height: 12),
       Text(model.pluginMessage),
-      const Text(
-        '组件随本仓库正式 DMG 统一更新；插件版本来自本地文件。Browser Harness 安装状态由运行中的 DSH 查询，不代表浏览器已连接。',
-      ),
+      const Text('全局 npm 插件使用已安装版本，可在 DSH 的插件页更新。最新版本取自 npm 的 latest 标签，仅供参考。'),
       const SizedBox(height: 12),
       Expanded(
         child: SingleChildScrollView(
@@ -546,7 +546,9 @@ class _LauncherPageState extends State<LauncherPage> {
             child: DataTable(
               columns: const [
                 DataColumn(label: Text('插件 / 来源')),
-                DataColumn(label: Text('实际 / 仓库固定')),
+                DataColumn(label: Text('当前版本')),
+                DataColumn(label: Text('最新版本')),
+                DataColumn(label: Text('仓库固定版本')),
                 DataColumn(label: Text('DSH 兼容声明')),
                 DataColumn(label: Text('状态')),
               ],
@@ -567,11 +569,14 @@ class _LauncherPageState extends State<LauncherPage> {
                             ],
                           ),
                         ),
+                        DataCell(Text(row.current ?? '未知')),
                         DataCell(
                           Text(
-                            '${row.current ?? '未知'} / ${row.expected ?? '未固定'}',
+                            row.latest ??
+                                (row.latestUnavailable ? '查询失败' : '—'),
                           ),
                         ),
+                        DataCell(Text(row.expected ?? '—')),
                         DataCell(
                           Text(
                             '${row.supportedDsh ?? '未声明'}\n最新支持：${row.latestSupportedDsh ?? '未声明'}',

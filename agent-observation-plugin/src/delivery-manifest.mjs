@@ -10,6 +10,9 @@ const readJson = async path => {
 export const pluginDependencySpec = item => item.source === 'git'
   ? `git+${item.repository}.git#${item.commit}` : item.version
 
+export const isProfilePlugin = (config, item) => config?.npmStartup === 'profile'
+  && (item.source === undefined || item.source === 'npm')
+
 /** The packaged repository manifest and generated lock are the runtime version authority. */
 export async function readDeliveryManifest(workflow) {
   const manifest = await readJson(join(workflow, 'project-plugins.json'))
@@ -28,7 +31,8 @@ export async function readDeliveryManifest(workflow) {
     })) throw new Error('Project plugin lock does not match the packaged manifest')
   const config = manifest
   const names = new Set()
-  if (!Array.isArray(config.plugins) || new URL(config.registry).protocol !== 'https:') throw new Error('Invalid project plugin configuration')
+  if (!Array.isArray(config.plugins) || new URL(config.registry).protocol !== 'https:'
+    || config.npmStartup !== undefined && config.npmStartup !== 'profile') throw new Error('Invalid project plugin configuration')
   for (const item of config.plugins) {
     if (!/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(item.package)
       || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(item.version)

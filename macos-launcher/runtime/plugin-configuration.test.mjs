@@ -4,7 +4,30 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { readPluginConfiguration, savePluginConfiguration, configurationPath, manageProfilePluginOperation, assertProfilePluginVersions } from './plugin-configuration.mjs'
+import { readPluginConfiguration, savePluginConfiguration, configurationPath, manageProfilePluginOperation, assertProfilePluginVersions, assertRequiredProfilePlugins } from './plugin-configuration.mjs'
+
+test('profile startup refuses missing required npm packages and accepts updated installations', async t => {
+  const profile = await mkdtemp(join(tmpdir(), 'workflow-profile-startup-'))
+  t.after(() => rm(profile, { recursive: true, force: true }))
+  const config = { npmStartup: 'profile', plugins: [
+    { package: 'dshmarket', version: '1.0.0', startup: true },
+    { package: 'dsh-context', version: '1.0.0', startup: true },
+    { package: 'optional-plugin', version: '1.0.0' },
+    { package: 'source-plugin', version: '1.0.0', source: 'git', startup: true },
+  ] }
+  const installed = async (name, version) => {
+    const directory = join(profile, 'node_modules', name)
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'package.json'), JSON.stringify({ name, version }))
+  }
+  await installed('dsh-context', '2.0.0')
+  await assert.rejects(assertRequiredProfilePlugins(profile, config, '/Applications/Ghost DSH Station.app/Contents/Resources'),
+    error => error.message.includes('dshmarket') && error.message.includes('profile-plugin-install.mjs')
+      && !error.message.includes('optional-plugin') && !error.message.includes('dsh-context'))
+  await installed('dshmarket', '2.0.0')
+  await assertRequiredProfilePlugins(profile, config)
+  await assertProfilePluginVersions(profile, config)
+})
 import { ensureStartupPlugins, updateProfilePlugins } from './plugin-update.mjs'
 
 async function fixture(t) {

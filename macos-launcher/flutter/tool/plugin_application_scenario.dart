@@ -121,7 +121,7 @@ Future<void> runPluginApplicationScenario(WebObservation app) async {
     require(
       text(snapshot, 'DSH 当前配置') &&
           text(snapshot, 'dsh-t08-ui-local') &&
-          text(snapshot, '0.4.2 / 未固定') &&
+          text(snapshot, '0.4.2') &&
           text(snapshot, 'dsh-t08-ui-damaged'),
       'real plugin page retains source, current version and both self-owned plugin identities',
     );
@@ -133,14 +133,14 @@ Future<void> runPluginApplicationScenario(WebObservation app) async {
     require(
       text(snapshot, '$runtimeVersion（明确标注）') &&
           text(snapshot, '本地依赖') &&
-          text(snapshot, '正式 DMG') &&
+          text(snapshot, '可在 DSH 的插件页更新') &&
           !text(snapshot, '更新全部可更新插件') &&
           !(snapshot['nodes'] as List).cast<Map>().any(
             (node) =>
                 node['label'] == '更新' &&
                 (node['actions'] as List).contains('tap'),
           ),
-      'real horizontal accessibility scrolling reaches declared compatibility, status and the readonly DMG policy without mutation controls',
+      'real horizontal accessibility scrolling reaches compatibility and status while updates stay in DSH',
     );
     final failureTooltips = (snapshot['nodes'] as List)
         .cast<Map>()

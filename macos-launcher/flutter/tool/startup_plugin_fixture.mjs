@@ -43,9 +43,11 @@ for (const suffix of ['fails', 'good']) {
     ? `throw new Error('Owned optional top-level startup failure'); export const name='s08-owned-startup-fails'; export function apply(){}\n`
     : `import {writeFileSync} from 'node:fs'; import * as hostPeer from '@deepseek-ai/dsh-app-boot'; export const name='s08-owned-startup-good'; export function apply(){if(typeof hostPeer.initProfile!=='function')throw new Error('Actual public Host peer missing');writeFileSync(${JSON.stringify(join(root, 'startup-good-applied'))},'actual Host applied this owned package with public peer')}\n`)
   manifest.dependencies[name] = '1.0.0'
-  project.plugins.push({ package: name, version: '1.0.0', entryId: name, startup: true })
-  lock.plugins.push({ package: name, version: '1.0.0', metadata })
-  provenance.push({ package: name, version: '1.0.0', startup: true,
+  const item = { package: name, version: '1.0.0', entryId: name, startup: true,
+    source: 'git', repository: 'https://github.com/owned/startup-fixture', commit: 'e'.repeat(40) }
+  project.plugins.push(item)
+  lock.plugins.push({ package: name, version: '1.0.0', commit: item.commit, metadata })
+  provenance.push({ ...item,
     archiveSha256: createHash('sha256').update(await readFile(join(directory, 'index.mjs'))).digest('hex') })
 }
 await writeFile(path, JSON.stringify(manifest))

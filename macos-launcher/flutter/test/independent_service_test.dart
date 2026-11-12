@@ -384,12 +384,14 @@ globalThis.fetch = (input, ...args) => {
           final envelope =
               jsonDecode(await response.transform(utf8.decoder).join()) as Map;
           final inventory = (envelope['result'] as Map)['value'] as Map;
-          expect(inventory['managementAvailable'], isNot(true));
+          expect(inventory['managementAvailable'], true);
           final plugins = (inventory['entries'] as List).cast<Map>();
           expect(
             plugins.any(
               (row) =>
-                  row['moduleName'] == 'dsh-workflow/delivery-inventory' &&
+                  row['entryId'].toString().endsWith(
+                    ':workflow-delivery-inventory',
+                  ) &&
                   row['fiberPhase'] == 'active',
             ),
             true,
@@ -451,8 +453,11 @@ globalThis.fetch = (input, ...args) => {
           reason: 'The real independent Host must report every startup plugin and continue after an optional failure',
         );
         for (final result in startupResults) {
-          expect(result['version'], isNotEmpty);
           expect(result['state'], isIn(['loaded', 'skipped']));
+          if (result['state'] == 'loaded' ||
+              result['versionSource'] == 'packaged-lock') {
+            expect(result['version'], isNotEmpty);
+          }
           expect(result['reason'], isNotEmpty);
         }
         stdout.writeln('S08_STARTUP_RESULTS=${jsonEncode(startupResults)}');

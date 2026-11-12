@@ -13,7 +13,7 @@ if (!resources || !dataRoot || !home) throw new Error('Pass owned resources, dat
 const runtime = resources
 const profile = await prepareDesktopProfile({ resourcesRoot: resources, desktopRuntimeRoot: runtime, globalRoot: join(dataRoot, 'global'), home, permissionMode: 'workspace-write' })
 const child = fork(join(resources, 'workflow/macos-launcher/runtime/web-host.mjs'),
-  [resources, profile.profile, join(dataRoot, 'global/.dsh-workflow/desktop')], {
+  [resources, profile.profile, join(dataRoot, 'global/.dsh-workflow/desktop'), profile.overlay], {
     execPath: join(resources, 'node'), execArgv: ['--expose-internals'], cwd: profile.profile,
     env: { ...process.env, DSH_HOME: home }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   })

@@ -22,6 +22,8 @@ class PluginRow {
     : name = value['name'] as String,
       source = value['source'] as String,
       current = value['current'] as String?,
+      latest = value['latest'] as String?,
+      latestUnavailable = value['latestStatus'] == 'unavailable',
       expected = value['expected'] as String?,
       supportedDsh = value['supportedDsh'] as String?,
       latestSupportedDsh = value['latestSupportedDsh'] as String?,
@@ -29,8 +31,13 @@ class PluginRow {
       note = value['note'] as String?,
       updatable = value['updatable'] as bool? ?? false;
   final String name, source, status;
-  final String? current, expected, supportedDsh, latestSupportedDsh, note;
-  final bool updatable;
+  final String? current,
+      latest,
+      expected,
+      supportedDsh,
+      latestSupportedDsh,
+      note;
+  final bool updatable, latestUnavailable;
 }
 
 class LauncherController extends ChangeNotifier implements LauncherActions {

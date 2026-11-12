@@ -1,16 +1,24 @@
 {
   "registry": "https://registry.npmjs.org/",
+  "npmStartup": "profile",
   "plugins": [
     {
+      "package": "dshmarket",
+      "version": "1.73.17",
+      "entryId": "dshmarket",
+      "repository": "https://github.com/dsh-market/dsh-market",
+      "startup": true
+    },
+    {
       "package": "dsh-context",
-      "version": "0.83.0",
+      "version": "0.83.1",
       "entryId": "dsh-context",
       "repository": "https://github.com/bowenliang123/dsh-context",
       "startup": true
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.61",
+      "version": "1.9.64",
       "entryId": "cost-meter",
       "repository": "https://github.com/Han-1413141/dsh-cost-meter",
       "startup": true
@@ -37,24 +45,8 @@
       "startup": true
     },
     {
-      "package": "ghost-agent-sentinel",
-      "version": "0.3.3",
-      "entryId": "ghost-agent-sentinel",
-      "repository": "https://github.com/Ghost233/GhostAgentSentinel",
-      "source": "git",
-      "commit": "6ba7cc43313a92d7e96376791e398fde69b59740",
-      "startup": true
-    },
-    {
-      "package": "dsh-provider-hub",
-      "version": "0.4.3",
-      "entryId": "dsh-provider-hub",
-      "repository": "https://github.com/DDDMUC/dsh-provider-hub",
-      "startup": true
-    },
-    {
       "package": "dsh-skill-mcp-panel",
-      "version": "2.3.7",
+      "version": "2.3.12",
       "entryId": "skill-mcp-panel",
       "repository": "https://github.com/Fishquito7/dsh-skill-mcp-panel",
       "startup": true
@@ -75,7 +67,7 @@
     },
     {
       "package": "@michengai/dsh-archive-manager",
-      "version": "1.3.0",
+      "version": "1.3.1",
       "entryId": "ui-workspace-archive-manager",
       "repository": "https://github.com/MichengAI/dsh-archive-manager",
       "startup": true
@@ -88,60 +80,19 @@
       "startup": true
     },
     {
-      "package": "dsh-ops",
-      "version": "0.5.2",
-      "entryId": "dsh-ops",
-      "repository": "https://github.com/T-Auto/dsh-ops"
+      "package": "billion-context",
+      "version": "0.1.213",
+      "entryId": "bili-native",
+      "repository": "https://github.com/ranxianglei/billion-context",
+      "startup": true
     },
     {
       "package": "dsh-live-compact",
-      "version": "1.1.3",
+      "version": "1.1.5",
       "entryId": "compaction-spine",
       "repository": "https://github.com/MerkyorLynn/dsh-live-compact",
       "source": "git",
-      "commit": "3ed5e4054a6ad9d8c6a1edf0909856ea03584c82"
-    },
-    {
-      "package": "@botharness/tobs",
-      "version": "1.6.1-ghost.20261110.2e0562f",
-      "entryId": "botharness-core",
-      "repository": "https://github.com/BotHarness/DeepSeekBot",
-      "source": "artifact",
-      "commit": "2e0562f1fb222b1edf1bf4d8bd442a9c10a27cab",
-      "artifactSet": ".build/tobs-upstream/artifacts/1.6.1-ghost.20261110.2e0562f/artifacts.json",
-      "bundle": "native",
-      "components": [
-        {
-          "package": "@botharness/core",
-          "version": "1.6.1-ghost.20261110.2e0562f"
-        },
-        {
-          "package": "@botharness/ui",
-          "version": "1.6.1-ghost.20261110.2e0562f"
-        },
-        {
-          "package": "@botharness/browser",
-          "version": "1.6.1-ghost.20261110.2e0562f"
-        },
-        {
-          "package": "@botharness/computer",
-          "version": "1.6.1-ghost.20261110.2e0562f"
-        },
-        {
-          "package": "@botharness/im-provider",
-          "version": "4.32.0-botharness.27"
-        }
-      ],
-      "startup": true,
-      "runtimePackages": [
-        {
-          "package": "deepseekbot",
-          "version": "1.6.1-ghost.20261110.2e0562f"
-        }
-      ],
-      "requiredEntries": [
-        "preset-deepseekbot"
-      ]
+      "commit": "de72685288cd4e20e2b7e65b2b253b7d825cf41c"
     }
   ]
 }

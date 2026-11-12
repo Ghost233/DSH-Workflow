@@ -112,6 +112,62 @@ test('version report compares SemVer without treating a prerelease as newer than
   assert.equal(compareVersions('link:../source', '2.0.0'), null)
 })
 
+test('profile versions report registry latest separately from installed and packaged versions', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-profile-versions-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const resources = join(root, 'resources'), workflow = join(resources, 'workflow'), home = join(root, 'home')
+  const profile = join(home, 'profiles/desktop')
+  const tracked = '@example/tracked', optional = 'external-plugin', missing = 'missing-plugin', source = 'source-plugin'
+  const version = '1.1.0', runtime = '0.2.2-rc.1', registry = 'https://registry.example.test/npm/'
+  const plugins = [
+    { package: tracked, version, startup: true }, { package: missing, version, startup: true },
+    { package: source, version, source: 'git', repository: 'https://github.com/example/source', commit: 'a'.repeat(40) },
+  ]
+  const manifest = JSON.stringify({ registry, npmStartup: 'profile', plugins })
+  await mkdir(workflow, { recursive: true })
+  await writeFile(join(workflow, 'project-plugins.json'), manifest)
+  await writeFile(join(workflow, 'dsh-runtime.json'), JSON.stringify({ version: runtime }))
+  await writeFile(join(workflow, 'project-plugins.lock.json'), JSON.stringify({ schema: 1, harnessVersion: runtime, registry,
+    manifestSha256: createHash('sha256').update(manifest).digest('hex'), plugins: plugins.map(item => ({ ...item,
+      metadata: { name: item.package, version },
+    })) }))
+  const installed = { [tracked]: '3.0.0-beta.1', [optional]: '2.0.0', 'linked-plugin': '1.0.0' }
+  for (const [name, version] of Object.entries(installed)) {
+    const directory = join(profile, 'node_modules', name)
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'package.json'), JSON.stringify({ name, version }))
+  }
+  const profilePath = join(profile, 'package.json')
+  const profileBytes = JSON.stringify({ dependencies: {
+    [tracked]: '3.0.0-beta.1', [optional]: '^2.0.0', 'linked-plugin': 'link:/linked/plugin',
+  } })
+  await writeFile(profilePath, profileBytes)
+  const requested = []
+  t.mock.method(globalThis, 'fetch', async url => {
+    requested.push(url.href)
+    if (url.pathname.includes(optional)) throw new Error('registry temporarily unavailable')
+    const name = url.pathname.includes(missing) ? missing : tracked
+    return Response.json({ name, version: '2.3.4' })
+  })
+  const report = await checkPluginVersions({ resourcesRoot: resources, home })
+  const byName = Object.fromEntries(report.rows.map(row => [row.name, row]))
+  assert.deepEqual(requested.sort(), [tracked, missing, optional].map(name => `${registry}${encodeURIComponent(name)}/latest`).sort())
+  assert.equal(byName[tracked].current, installed[tracked])
+  assert.equal(byName[tracked].expected, null)
+  assert.equal(byName[tracked].latest, '2.3.4', 'latest is the npm tag, even if the installed prerelease is newer')
+  assert.equal(byName[tracked].status, 'installed')
+  assert.equal(byName[optional].current, installed[optional])
+  assert.equal(byName[optional].latest, null)
+  assert.equal(byName[optional].latestStatus, 'unavailable')
+  assert.equal(byName[missing].current, null)
+  assert.equal(byName[missing].latest, '2.3.4')
+  assert.equal(byName['linked-plugin'].latest, null)
+  assert.equal(byName[source].latest, null)
+  assert.equal(byName[source].expected, version)
+  assert.ok(report.rows.every(row => row.updatable === false))
+  assert.equal(await readFile(profilePath, 'utf8'), profileBytes)
+})
+
 test('DSH support text uses only compatibility declared by the package', () => {
   assert.equal(declaredDshVersions({ dsh: { compatibility: { dsh: '>=0.1.5-rc.1' } } }), '>=0.1.5-rc.1')
   assert.equal(declaredDshVersions({ dsh: { compatibility: { dshReleases: {

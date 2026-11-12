@@ -28,6 +28,27 @@ test('DSH launch loads the project CodeGraph server while preserving unrelated p
   assert.equal(rows.find(row => row.id === 'workflow-agent-monitor').disabled, true)
 })
 
+test('Station loads the Matt panel and its tools by path without restoring Tobs or the global panel package', () => {
+  const entries = [
+    { id: 'market', name: 'dshmarket', config: { maxSnapshots: 3 } },
+    { id: 'botharness-client', name: '@botharness/ui' },
+    { id: 'old-matt-tools', name: 'dsh-workflow-matt-panel/tools', config: { keep: true } },
+    { id: 'workflow-project-coordination', name: 'dsh-workflow/project-coordination' },
+  ]
+  const patches = composeDshLaunch(entries, { projectRoot, catalogRoot: '/catalog', stationInternal: true, profilePlugins: true })
+  const added = patches.flatMap(patch => patch.insert ?? [])
+  assert.deepEqual(patches.find(row => row.id === 'market').config, { maxSnapshots: 3, profile: 'desktop' })
+  for (const { id } of entries.slice(1)) assert.equal(patches.find(row => row.id === id).disabled, true)
+  assert.equal(added.find(row => row.id === 'workflow-delivery-inventory').name,
+    join(projectRoot, 'agent-observation-plugin/src/delivery-inventory.mjs'))
+  assert.equal(added.find(row => row.id === 'matt-skills-board').name,
+    join(projectRoot, 'matt-skills-panel-plugin/package/lib/index.js'))
+  const tools = added.find(row => row.id === 'matt-panel-tools')
+  assert.equal(tools.name, join(projectRoot, 'matt-skills-panel-plugin/package/deck/registration/agent-row.js'))
+  assert.deepEqual(tools.config, { keep: true })
+  assert.ok(!added.some(row => ['workflow-agent-monitor', 'workflow-project-coordination'].includes(row.id)))
+})
+
 test('launch disables saved JEV and monitoring without changing their settings or an existing MCP server', () => {
   const center = { id: 'workflow-jev-center', name: 'previous-observation/jev-center', config: { engines: [{ credentialRef: 'SAVED_KEY' }] } }
   const monitor = { id: 'workflow-agent-monitor', name: 'dsh-workflow/agent-monitor', config: { jevModelName: 'saved-model' } }
@@ -120,6 +141,9 @@ test('managed launch disables retired packages in saved profiles and presets whi
   assert.deepEqual(preset[0].config, { keep: true })
   assert.equal(preset[1].disabled, undefined)
   assert.deepEqual(entries, before)
+
+  const restored = composeDshLaunch(entries, { projectRoot, catalogRoot: '/catalog', billionContextDelivered: true })
+  assert.equal(restored.some(row => ['bili-native', 'old-tool', 'preset'].includes(row.id)), false)
 })
 
 test('temporarily disables dsh-ops from saved profiles and agent presets', () => {
