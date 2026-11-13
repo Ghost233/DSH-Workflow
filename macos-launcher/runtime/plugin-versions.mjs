@@ -15,15 +15,16 @@ const owned = [
 const agentTeams = [
   '@deepseek-ai/dsh-experimental-agent-team-profile',
 ]
-const packageName = value => /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(value)
-const exactVersion = value => /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value)
+const packageName = value => typeof value === 'string' && /^(?:@[a-z0-9_][a-z0-9._-]*\/)?[a-z0-9_][a-z0-9._-]*$/i.test(value)
+export const exactVersion = value => typeof value === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value)
+export const isRegistryDependency = (name, spec) => packageName(name) && typeof spec === 'string' && !/[:/#]/.test(spec)
 
 async function jsonFile(path) {
   try { return JSON.parse(await readFile(path, 'utf8')) }
   catch (error) { if (error.code === 'ENOENT') return undefined; throw error }
 }
 
-/** A small, strict SemVer ordering for reporting only. No package install decisions use it. */
+/** Compare versions without changing the profile. */
 export function compareVersions(current, latest) {
   const parse = value => {
     if (!exactVersion(value)) return undefined
@@ -102,6 +103,7 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
   const workflow = join(resources, 'workflow')
   const rows = []
   const npmRows = []
+  const installedBundles = new Set()
   let configuration, configurationError
   try { configuration = await readPluginConfiguration(resources) }
   catch (error) { configurationError = error.message }
@@ -121,6 +123,7 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
       continue
     }
     const current = installed?.version
+    if (installed?.dsh?.bundle) installedBundles.add(name)
     const local = /[:/#]|^git\+/.test(spec)
     rows.push({ source: profileSource, name, current: current ?? null,
       latest: null, status: local ? 'local' : current ? 'installed' : 'unknown',
@@ -218,7 +221,7 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
         row.note = row.current === null ? '未找到 DSH profile 安装包' : '使用 DSH profile 当前版本；在 DSH 插件页面更新'
       }
       const declared = profileManifest?.dependencies?.[row.name]
-      if (typeof declared === 'string' && !/[:/#]/.test(declared)) npmRows.push(row)
+      if (isRegistryDependency(row.name, declared)) npmRows.push(row)
       continue
     }
     const configuredTarget = configuredPlugin?.version
@@ -246,7 +249,16 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
     }
   }
   await Promise.all(npmRows.map(async row => {
-    try { row.latest = await fetchLatest(row.name, configuration.registry) }
+    try {
+      row.latest = await fetchLatest(row.name, configuration.registry)
+      const spec = profileManifest?.dependencies?.[row.name]
+      if (configuration.npmStartup === 'profile' && row.source === profileSource && row.status === 'installed'
+        && installedBundles.has(row.name) && !row.name.startsWith('@deepseek-ai/dsh-') && isRegistryDependency(row.name, spec)
+        && compareVersions(row.latest, row.current) === 1) {
+        row.updatable = true
+        row.note = '可在 Station 更新，更新后由 DSH 加载'
+      }
+    }
     catch { row.latestStatus = 'unavailable' }
   }))
   return { checkedAt: new Date().toISOString(), rows, actualScope: 'installed-files', policy: configuration?.npmStartup === 'profile'

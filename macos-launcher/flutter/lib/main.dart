@@ -168,11 +168,12 @@ class _LauncherPageState extends State<LauncherPage> {
     await model.showWindow();
     if (!mounted) return false;
     final verb = inspection.action == 'restart' ? '重启' : '停止';
+    final updating = model.updatingPlugins;
     return await showDialog<bool>(
           context: context,
           barrierDismissible: false,
           builder: (context) => AlertDialog(
-            title: Text('$verb DSH 服务'),
+            title: Text(updating ? '更新插件并重启 DSH' : '$verb DSH 服务'),
             content: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,7 +195,7 @@ class _LauncherPageState extends State<LauncherPage> {
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: Text('确认$verb'),
+                child: Text(updating ? '确认更新' : '确认$verb'),
               ),
             ],
           ),
@@ -531,14 +532,24 @@ class _LauncherPageState extends State<LauncherPage> {
           _button(
             '检查插件版本',
             model.checkPlugins,
-            enabled: !model.checkingPlugins,
+            enabled: !model.checkingPlugins && !model.updatingPlugins,
+          ),
+          _button(
+            '一键更新',
+            model.updatePlugins,
+            enabled:
+                !model.checkingPlugins &&
+                !model.updatingPlugins &&
+                model.plugins.any((row) => row.updatable),
           ),
           _button('编辑启动检查名单', model.openStartupChecklist),
+          if (model.pluginUpdateResults.isNotEmpty)
+            _button('查看更新结果', _showPluginUpdateResults),
         ],
       ),
       const SizedBox(height: 12),
-      Text(model.pluginMessage),
-      const Text('启动时只检查本地名单中的插件是否已安装。启停、更新和卸载在 DSH 的插件页操作。'),
+      Text(model.updatingPlugins ? '正在更新插件…' : model.pluginMessage),
+      const Text('更新 npm 插件会重启正在运行的 DSH。插件的启停和卸载在 DSH 内操作。'),
       const SizedBox(height: 12),
       Expanded(
         child: SingleChildScrollView(
@@ -584,10 +595,23 @@ class _LauncherPageState extends State<LauncherPage> {
                           ),
                         ),
                         DataCell(
-                          Tooltip(
-                            message: row.note ?? '',
-                            child: Text(_pluginState(row.status)),
-                          ),
+                          row.updatable
+                              ? TextButton(
+                                  onPressed:
+                                      model.updatingPlugins ||
+                                          model.checkingPlugins
+                                      ? null
+                                      : () => _act(
+                                          () => model.updatePlugins(
+                                            name: row.name,
+                                          ),
+                                        ),
+                                  child: const Text('更新'),
+                                )
+                              : Tooltip(
+                                  message: row.note ?? '',
+                                  child: Text(_pluginState(row.status)),
+                                ),
                         ),
                       ],
                     ),
@@ -598,6 +622,22 @@ class _LauncherPageState extends State<LauncherPage> {
         ),
       ),
     ],
+  );
+
+  Future<void> _showPluginUpdateResults() => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('插件更新结果'),
+      content: SingleChildScrollView(
+        child: SelectableText(model.pluginUpdateResults.join('\n\n')),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+      ],
+    ),
   );
 
   Widget _logs() => Column(

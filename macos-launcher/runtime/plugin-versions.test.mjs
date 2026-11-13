@@ -135,7 +135,7 @@ test('profile versions report registry latest separately from installed and pack
   for (const [name, version] of Object.entries(installed)) {
     const directory = join(profile, 'node_modules', name)
     await mkdir(directory, { recursive: true })
-    await writeFile(join(directory, 'package.json'), JSON.stringify({ name, version }))
+    await writeFile(join(directory, 'package.json'), JSON.stringify({ name, version, dsh: { bundle: {} } }))
   }
   const profilePath = join(profile, 'package.json')
   const profileBytes = JSON.stringify({ dependencies: {
@@ -173,6 +173,7 @@ test('profile versions report registry latest separately from installed and pack
   const localReport = await checkPluginVersions({ resourcesRoot: resources, home, dataRoot, fetchLatest: async () => '2.3.4' })
   assert.equal(localReport.rows.some(row => row.name === missing), false)
   assert.equal(localReport.rows.find(row => row.name === tracked).current, installed[tracked])
+  assert.equal(localReport.rows.find(row => row.name === optional).updatable, true)
   assert.equal(localReport.rows.find(row => row.name === 'user-checklist-plugin').latest, '2.3.4')
 })
 

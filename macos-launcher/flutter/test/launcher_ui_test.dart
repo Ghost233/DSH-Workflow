@@ -137,6 +137,7 @@ void main() {
           'current': '2.1.0',
           'latest': '2.2.0',
           'status': 'installed',
+          'updatable': true,
         }),
         PluginRow({
           'name': 'browser-harness',
@@ -168,12 +169,17 @@ void main() {
         expect(find.text(value), findsOneWidget);
       }
       expect(find.text('版本偏差'), findsOneWidget);
-      expect(find.text('已安装'), findsNWidgets(2));
+      expect(find.text('已安装'), findsOneWidget);
       expect(find.text('DSH 未找到安装'), findsOneWidget);
       expect(find.text('编辑启动检查名单'), findsOneWidget);
-      expect(find.textContaining('启停、更新和卸载在 DSH 的插件页操作'), findsOneWidget);
-      expect(find.text('更新全部可更新插件'), findsNothing);
-      expect(find.widgetWithText(OutlinedButton, '更新'), findsNothing);
+      expect(find.textContaining('更新 npm 插件会重启正在运行的 DSH'), findsOneWidget);
+      expect(
+        tester
+            .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '一键更新'))
+            .onPressed,
+        isNotNull,
+      );
+      expect(find.widgetWithText(TextButton, '更新'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.tap(find.text('日志'));
       await tester.pumpAndSettle();

@@ -6,7 +6,7 @@ import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { serviceRequest, serviceSocket, serviceDirectory } from './service-control.mjs'
+import { SERVICE_MANAGER_GENERATION, serviceRequest, serviceSocket, serviceDirectory } from './service-control.mjs'
 import { webSocket, webDirectory } from './web-control.mjs'
 import { listenManagerControl } from './manager-control.mjs'
 
@@ -86,7 +86,16 @@ test('an invalid ownership record fails before publishing a control socket', asy
   assert.equal((await lstat(join(directory, 'manager.json'))).isDirectory(), true)
 })
 
-for (const { state, generation, request } of [{ state: 'stopped' }, { state: 'running' }, { state: 'stopped', generation: 2 }, { state: 'running', generation: 2 }, { state: 'running', request: { type: 'inspect-stop', action: 'restart' } }, { state: 'running', generation: 2, request: { type: 'inspect-stop', action: 'restart' } }, { state: 'running', generation: 3 }, { state: 'stopped', generation: 4 }, { state: 'running', generation: 4 }, { state: 'running', generation: 4, request: { type: 'inspect-stop', action: 'restart' } }]) test(`manager ${state} generation ${generation ?? 'legacy'} handles ${request?.action ?? 'startup'} safely`, async t => {
+for (const { state, generation, request } of [
+  { state: 'stopped' }, { state: 'running' },
+  { state: 'stopped', generation: 2 }, { state: 'running', generation: 2 },
+  { state: 'running', generation: 4, request: { type: 'inspect-stop', action: 'restart' } },
+  { state: 'running', generation: 4, request: { type: 'update-plugins' } },
+  { state: 'stopped', generation: SERVICE_MANAGER_GENERATION },
+  { state: 'running', generation: SERVICE_MANAGER_GENERATION },
+  { state: 'running', generation: SERVICE_MANAGER_GENERATION, request: { type: 'inspect-stop', action: 'restart' } },
+  { state: 'running', generation: SERVICE_MANAGER_GENERATION, request: { type: 'update-plugins' } },
+]) test(`manager ${state} generation ${generation ?? 'legacy'} handles ${request?.type ?? 'startup'} safely`, async t => {
   const root = await mkdtemp('/private/tmp/dsh-legacy-manager-'), resources = join(root, 'resources')
   await mkdir(resources)
   const socketPath = serviceSocket(root), directory = serviceDirectory(root), calls = []
@@ -107,10 +116,10 @@ for (const { state, generation, request } of [{ state: 'stopped' }, { state: 'ru
   let output = ''; child.stdout.on('data', bytes => { output += bytes })
   child.stdin.end(JSON.stringify(request ?? { type: 'start-service' }) + '\n')
   const code = await new Promise(resolve => child.once('close', resolve))
-  assert.equal(code, generation === 4 ? 0 : 1)
+  assert.equal(code, generation === SERVICE_MANAGER_GENERATION ? 0 : 1)
   if (code === 1) assert.match(JSON.parse(output).error, /旧版后台管理器/)
   else assert.equal(JSON.parse(output).value.service.state, state)
-  assert.deepEqual(calls, generation === 4 ? ['status', request?.type ?? 'start-service'] : ['status'])
+  assert.deepEqual(calls, generation === SERVICE_MANAGER_GENERATION ? ['status', request?.type ?? 'start-service'] : ['status'])
 })
 
 for (const role of ['service', 'web']) {

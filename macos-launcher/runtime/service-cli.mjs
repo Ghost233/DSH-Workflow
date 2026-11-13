@@ -8,7 +8,7 @@ import { SERVICE_MANAGER_GENERATION, serviceRequest, serviceSocket, serviceDirec
 async function ensureServiceManager({ dataRoot, resources, home, requestType }) {
   const socket = serviceSocket(dataRoot)
   const usable = status => {
-    if (requestType === 'start-service' && status.managerGeneration !== SERVICE_MANAGER_GENERATION) {
+    if (['start-service', 'update-plugins'].includes(requestType) && status.managerGeneration !== SERVICE_MANAGER_GENERATION) {
       throw new Error('检测到旧版后台管理器，已保留现有服务与任务。请先保存工作，从菜单栏选择“退出 Station 并停止全部服务”，再重新打开 Station。')
     }
     return { socket }
@@ -48,7 +48,7 @@ if (import.meta.main) {
     if (request.type === 'connect-web') {
       request.runtimeVersion = JSON.parse(await readFile(join(resources, 'workflow/dsh-runtime.json'), 'utf8')).version
     }
-    const manager = ['start-service', 'authorize-notifications'].includes(request.type)
+    const manager = ['start-service', 'authorize-notifications', 'update-plugins'].includes(request.type)
       ? await ensureServiceManager({ dataRoot, resources, home, requestType: request.type })
       : { socket: serviceSocket(dataRoot) }
     if (request.type === 'restart-service' || request.type === 'inspect-stop' && request.action === 'restart') {
@@ -58,7 +58,7 @@ if (import.meta.main) {
       }
     }
     let value
-    try { value = manager.existing ?? await serviceRequest(manager.socket, request) }
+    try { value = await serviceRequest(manager.socket, request, request.type === 'update-plugins' ? 0 : undefined) }
     catch (error) {
       if (['status', 'logs'].includes(request.type) && ['ENOENT', 'ECONNREFUSED'].includes(error.code)) {
         value = { service: { state: 'stopped', ready: false, observedAt: new Date().toISOString() }, logs: [] }

@@ -17,6 +17,7 @@ import { serviceNotification } from './service-notification.mjs'
 import { startupPluginResults } from './startup-plugins.mjs'
 import { statusNotifications } from './status-notifications.mjs'
 import { readLoginShellEnvironment } from './login-shell.mjs'
+import { updateProfilePlugins, validatePluginUpdates } from './profile-plugin-update.mjs'
 
 async function health(host, timeout = 2000, profilePlugins = false) {
   const signal = AbortSignal.timeout(timeout)
@@ -43,13 +44,14 @@ export async function waitForInitialHostHealth(host, deadline, isAlive, profileP
 }
 
 /** The manager owns the official Host; GUI clients only send explicit management commands. */
-export async function serveManager({ dataRoot, resources, home, loginEnvironment = process.env, loginShells }) {
+export async function serveManager({ dataRoot, resources, home, loginEnvironment = process.env, loginShells, updatePlugins = updateProfilePlugins }) {
   const directory = serviceDirectory(dataRoot), socketPath = serviceSocket(dataRoot)
   const server = createServer()
   let child, receipt, injections, admission, starting, stopping, normalStop, stopOperation, failure = '', state = 'stopped', closing = false
   let controlId = 0, statusRevision = 0
   let notificationAuthorization, authorizing
-  let preparingStop = false
+  let preparingStop = false, pluginUpdate
+  let currentPermissionMode
   const shellRead = new AbortController()
   let shellEnvironment
   let logWrites = Promise.resolve()
@@ -62,6 +64,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
       instanceId: receipt?.lease ?? null, pid: child?.pid ?? null,
       runtimeVersion: receipt?.runtimeVersion ?? null,
       message: paused ? '正在等待停止或重启确认，暂缓接收新工作。'
+        : pluginUpdate && state === 'stopped' ? '正在更新 DSH profile 插件。'
         : failure || (state === 'running' ? lastHealth.message : null),
       observedAt: new Date().toISOString(),
     }, logs: [...logs], notificationAuthorization: notificationAuthorization ?? null,
@@ -329,6 +332,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
           if (child !== owned) { await gate.close(); throw new Error('DSH Host exited during connection preparation') }
           admission = gate
           receipt = actual; injections = message.injections; state = 'running'
+          currentPermissionMode = permissionMode
           log(`DSH 服务已就绪，实例 ${actual.lease}，Host PID ${owned.pid}。`)
         } catch (error) {
           if (child === owned) { startupCleanup = true; owned.kill('SIGTERM') }
@@ -344,7 +348,10 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
   const command = async input => {
     if (input.protocol !== SERVICE_PROTOCOL) throw new Error('DSH 服务协议不兼容，请使用配套应用。')
     if (closing) throw new Error('DSH 服务管理进程正在退出')
-    let stopInspection
+    if (pluginUpdate && ['start-service', 'inspect-stop', 'stop-service', 'restart-service', 'update-plugins'].includes(input.type)) {
+      throw new Error('DSH 插件正在更新，请等待更新结束。')
+    }
+    let stopInspection, pluginUpdates
     if (input.type === 'start-service') await start(input.permissionMode)
     else if (input.type === 'authorize-notifications') {
       if (!authorizing) {
@@ -371,6 +378,35 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         await releaseStop(stopOperation); stopOperation = undefined
       }
     }
+    else if (input.type === 'update-plugins') {
+      validatePluginUpdates(input.targets)
+      if (starting || stopping || preparingStop || (child && !input.operationId)) throw new Error('请先完成 DSH 停止检查')
+      const resume = Boolean(child)
+      const permissionMode = currentPermissionMode
+      pluginUpdate = (async () => {
+        if (resume) {
+          stopInspection = await stop({ ...input, type: 'stop-service' })
+          if (stopInspection) return
+        } else {
+          if (input.operationId) throw new Error('DSH 服务实例已改变，请重新检查。')
+          try {
+            await readDesktopHost(join(dataRoot, 'global/.dsh-workflow/desktop'))
+            throw new Error('检测到已有 DSH 服务。请先停止旧服务，再更新插件。')
+          } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error }
+        }
+        updates.publish()
+        try {
+          pluginUpdates = await updatePlugins({ resources, home, targets: input.targets })
+        } catch (error) {
+          pluginUpdates = input.targets.map(({ name, version }) => ({ name, version, status: 'failed', message: redact(error.message) }))
+        }
+        if (resume && !closing) {
+          try { await start(permissionMode) }
+          catch (error) { log(`插件更新结束，DSH 恢复启动失败：${redact(error.message)}`) }
+        }
+      })()
+      try { await pluginUpdate } finally { pluginUpdate = undefined; updates.publish() }
+    }
     else if (['stop-service', 'restart-service'].includes(input.type)) {
       stopInspection = await stop(input)
       if (!stopInspection && input.type === 'restart-service') await start(input.permissionMode)
@@ -378,6 +414,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     else if (!['status', 'logs', 'connect-web'].includes(input.type)) throw new Error('Unsupported DSH service command')
     const { value, identityVerified } = await snapshot()
     if (stopInspection) value.stop = stopInspection
+    if (pluginUpdates) value.pluginUpdates = pluginUpdates
     if (input.type === 'connect-web') {
       const paused = identityVerified && stopOperation?.owned === child && admission?.locked
       if (value.service.ready !== true && !paused || !receipt || !child || !injections || !admission) {
@@ -398,6 +435,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     updates.close()
     closeChannels()
     shellRead.abort()
+    await pluginUpdate?.catch(() => {})
     await starting?.catch(() => {})
     const owned = child
     if (owned) {

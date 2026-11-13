@@ -33,7 +33,12 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   await writeFile(join(profile, 'cordis.patch.yml'), userPatch)
   const shell = join(root, 'fixture-shell')
   await writeFile(shell, '#!/bin/sh\nexec /bin/sh -c "$2"\n'); await chmod(shell, 0o700)
-  const manager = await serveManager({ dataRoot, resources, home, loginShells: [shell], loginEnvironment: {
+  const updates = []
+  const manager = await serveManager({ dataRoot, resources, home, loginShells: [shell], updatePlugins: async ({ targets }) => {
+    await assert.rejects(readFile(join(dataRoot, 'global/.dsh-workflow/desktop/desktop-host.json')), { code: 'ENOENT' })
+    updates.push(...targets)
+    return targets.map(target => ({ ...target, status: 'failed', message: 'fixture registry failure' }))
+  }, loginEnvironment: {
     HOME: root, ZDOTDIR: root, DSH_AGENTS_HOME: join(root, 'agents'), DSH_TELEMETRY_DISABLED: '1',
     TMPDIR: tmpdir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
   } })
@@ -69,6 +74,15 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
     assert.equal(outcome.state, 'skipped', 'The checklist does not enable the installed package')
     assert.match(outcome.reason, /未装配/)
   }
+  const targets = [{ name: 'dshmarket', version: '2.0.0' }, { name: 'dsh-better-sidebar', version: '2.0.0' }]
+  await assert.rejects(serviceRequest(socket, { type: 'update-plugins', targets }), /停止检查/)
+  assert.equal(updates.length, 0)
+  const approved = (await serviceRequest(socket, { type: 'inspect-stop', action: 'stop' })).stop
+  const updated = await serviceRequest(socket, { type: 'update-plugins', operationId: approved.operationId, targets }, 45000)
+  assert.deepEqual(updates, targets)
+  assert.ok(updated.pluginUpdates.every(row => row.status === 'failed'))
+  assert.equal(updated.service.ready, true, 'Station restores the running service even after update failure')
+  assert.notEqual(updated.service.instanceId, started.service.instanceId)
   const inspection = (await serviceRequest(socket, { type: 'inspect-stop', action: 'stop' })).stop
   assert.ok(inspection.operationId)
   const stopped = await serviceRequest(socket, { type: 'stop-service', operationId: inspection.operationId, confirmed: true }, 30_000)

@@ -58,6 +58,8 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   String notificationMessage = '故障通知：尚未查询授权状态。';
   bool requestingNotificationAuthorization = false;
   bool checkingUpdates = false, checkingPlugins = false;
+  bool updatingPlugins = false;
+  List<String> pluginUpdateResults = [];
   List<PluginRow> plugins = [];
   AppUpdate? update;
   Uri? webUrl;
@@ -394,6 +396,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   @override
   Future<void> startService() async {
     if (_closed || exiting) throw StateError('启动器正在退出');
+    if (updatingPlugins) throw StateError('DSH 插件正在更新');
     _service = ServiceStatus(state: ServiceState.starting, ready: false);
     notifyListeners();
     try {
@@ -411,21 +414,44 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   }
 
   @override
-  Future<void> stopService() => _changeService('stop');
+  Future<void> stopService() async {
+    await _changeService('stop');
+  }
 
   Future<bool> Function(ServiceStopInspection)? confirmServiceStop;
   bool _changingService = false;
   bool _serviceCommitStarted = false;
   String? _pendingServiceStop;
-  Future<void> restartService() => _changeService('restart');
+  Future<void> restartService() async {
+    await _changeService('restart');
+  }
 
-  Future<void> _changeService(String action) async {
+  Future<Map<String, Object?>?> _changeService(
+    String action, {
+    List<Map<String, String>>? targets,
+  }) async {
     if (exiting) throw StateError('正在退出 Station，请等待清理完成。');
     if (_closed || exiting) throw StateError('启动器正在退出');
     if (_changingService) throw StateError('DSH 服务已有停止或重启操作正在进行');
+    if (updatingPlugins && targets == null) throw StateError('DSH 插件正在更新');
+    final verb = targets != null
+        ? '更新插件'
+        : action == 'restart'
+        ? '重启'
+        : '停止';
     _changingService = true;
     String? pending;
     try {
+      if (targets != null) {
+        final service = await serviceStatus();
+        if (service.state == ServiceState.stopped ||
+            service.state == ServiceState.failed) {
+          return await _serviceCommand(
+            'update-plugins',
+            fields: {'targets': targets},
+          );
+        }
+      }
       var value = await _serviceCommand(
         'inspect-stop',
         fields: {'action': action},
@@ -433,8 +459,14 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       while (true) {
         final inspection = ServiceStopInspection(objectValue(value['stop']));
         if (inspection.stopped) {
+          if (targets != null) {
+            return await _serviceCommand(
+              'update-plugins',
+              fields: {'targets': targets},
+            );
+          }
           if (action == 'restart') await startService();
-          return;
+          return null;
         }
         pending = inspection.operationId;
         if (pending == null) throw StateError('DSH 停止检查缺少操作标识');
@@ -445,26 +477,34 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
           final confirm = confirmServiceStop;
           if (confirm == null) {
             throw StateError(
-              '需要在 DSH 启动器中明确确认${action == 'restart' ? '重启' : '停止'}：${inspection.message ?? inspection.work.map((row) => row['label']).join('；')}',
+              '需要在 DSH 启动器中明确确认$verb：${inspection.message ?? inspection.work.map((row) => row['label']).join('；')}',
             );
           }
           confirmed = await confirm(inspection);
           if (!confirmed || _closed) {
-            throw StateError('已取消${action == 'restart' ? '重启' : '停止'} DSH 服务');
+            throw StateError('已取消$verb');
           }
         }
         _serviceCommitStarted = true;
         try {
           value = await _serviceCommand(
-            action == 'restart' ? 'restart-service' : 'stop-service',
-            fields: {'operationId': pending, 'confirmed': confirmed},
+            targets != null
+                ? 'update-plugins'
+                : action == 'restart'
+                ? 'restart-service'
+                : 'stop-service',
+            fields: {
+              'operationId': pending,
+              'confirmed': confirmed,
+              if (targets != null) 'targets': targets,
+            },
           );
         } finally {
           _serviceCommitStarted = false;
         }
         pending = null;
         _pendingServiceStop = null;
-        if (value['stop'] == null) return;
+        if (value['stop'] == null) return value;
       }
     } finally {
       try {
@@ -804,6 +844,40 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
   }
 
+  Future<void> updatePlugins({String? name}) async {
+    if (updatingPlugins || checkingPlugins) return;
+    final targets = [
+      for (final row in plugins)
+        if (row.updatable &&
+            row.latest != null &&
+            (name == null || row.name == name))
+          {'name': row.name, 'version': row.latest!},
+    ];
+    if (targets.isEmpty) return;
+    updatingPlugins = true;
+    pluginUpdateResults = [];
+    notifyListeners();
+    try {
+      final value = await _changeService('stop', targets: targets);
+      final results = value?['pluginUpdates'];
+      if (results is! List) throw const FormatException('缺少插件更新结果');
+      pluginUpdateResults = [
+        for (final row in results.map(objectValue))
+          '${row['name']} ${row['version']}  ${switch (row['status']) {
+            'updated' => '已更新',
+            'skipped' => row['message'] ?? '已跳过',
+            _ => '更新失败 · ${row['message'] ?? '原因未知'}',
+          }}',
+        if (serviceSnapshot.state == ServiceState.failed)
+          'DSH 恢复启动失败 · ${serviceSnapshot.message ?? '请查看服务日志'}',
+      ];
+      await checkPlugins();
+    } finally {
+      updatingPlugins = false;
+      if (!_closed) notifyListeners();
+    }
+  }
+
   Future<void> openStartupChecklist() async {
     final path = '${environment.dataRoot}/startup-plugins.json';
     if (!await File(path).exists()) {
@@ -837,6 +911,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<bool> Function(Map<String, Object?>)? confirmStationQuit;
 
   Future<bool> shutdownForQuit() async {
+    if (updatingPlugins) throw StateError('DSH 插件正在更新，请等待更新结束。');
     if (exiting) return false;
     exiting = true;
     error = '';
