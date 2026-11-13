@@ -57,15 +57,15 @@ test('startup outcomes report the installed profile version, disabled, failed an
   const f = await fixture(t, [row('dsh-context', versions['dsh-context']),
     row('dsh-cost-meter', versions['dsh-cost-meter'], { enabled: false, fiberPhase: null }),
     row('@nagi-ovo/dsh-visualize', versions['@nagi-ovo/dsh-visualize'], { fiberPhase: 'failed' }),
-    row('@goodandready/dsh-plugin-notify', '0.4.6', { status: 'drift' })])
+    row('dsh-skill-mcp-panel', '2.3.11', { status: 'drift' })])
   const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
-  assert.deepEqual(results.filter(row => row.state === 'loaded').map(row => row.package), ['dsh-context', '@goodandready/dsh-plugin-notify'])
+  assert.deepEqual(results.filter(row => row.state === 'loaded').map(row => row.package), ['dsh-context', 'dsh-skill-mcp-panel'])
   assert.match(resultFor(results, 'dsh-cost-meter').reason, /停用/)
   assert.match(resultFor(results, '@nagi-ovo/dsh-visualize').reason, /失败/)
-  const notify = resultFor(results, '@goodandready/dsh-plugin-notify')
-  assert.equal(notify.versionSource, 'dsh-profile')
-  assert.equal(notify.version, '0.4.6')
-  assert.equal(notify.actualVersion, '0.4.6')
+  const panel = resultFor(results, 'dsh-skill-mcp-panel')
+  assert.equal(panel.versionSource, 'dsh-profile')
+  assert.equal(panel.version, '2.3.11')
+  assert.equal(panel.actualVersion, '2.3.11')
   assert.match(resultFor(results, 'dsh-better-sidebar').reason, /未装配/)
   assert.deepEqual(f.requests, [{ method: 'GET', path: '/?token=owned-fixture' },
     { method: 'POST', path: '/api/workflowDelivery/list' }])

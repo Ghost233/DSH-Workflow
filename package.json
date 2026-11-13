@@ -1,17 +1,14 @@
 {
   "name": "dsh-workflow",
   "version": "0.1.1",
-  "description": "DSH launcher, JEV center and native agent observation",
+  "description": "DSH Station integration and component inventory",
   "type": "module",
   "main": "agent-observation-plugin/index.mjs",
   "exports": {
     ".": "./agent-observation-plugin/index.mjs",
     "./client": "./agent-observation-plugin/client.js",
-    "./jev-center": "./agent-observation-plugin/src/jev-center-plugin.mjs",
-    "./agent-monitor": "./agent-observation-plugin/src/agent-monitor-plugin.mjs",
     "./delivery-inventory": "./agent-observation-plugin/src/delivery-inventory.mjs",
-    "./package.json": "./package.json",
-    "./project-coordination": "./project-coordination-plugin/index.mjs"
+    "./package.json": "./package.json"
   },
   "license": "MIT",
   "files": [
@@ -19,15 +16,10 @@
     "project-plugins.json",
     "default-startup-plugins.json",
     "project-mcp.json",
-    "scripts/project-plugins.mjs",
-    "scripts/project-plugin-resolver.mjs",
     "docs/",
     "dsh-runtime.json",
     "project-plugins.lock.json",
-    "scripts/harness-runtime.mjs",
-    "scripts/agent-team-profile.mjs",
-    "scripts/observation-profile.mjs",
-    "scripts/web-host-lifecycle.mjs",
+    "scripts/project-entry-migration.mjs",
     "matt-skills-panel-plugin/package/",
     "matt-skills-panel-plugin/upstream.json",
     "matt-skills-panel-plugin/LICENSE",
@@ -42,10 +34,8 @@
     "scripts/dsh-launch-composition.mjs",
     "scripts/dsh-readiness.mjs",
     "scripts/dsh-delivery-policy.mjs",
-    "project-coordination-plugin/",
     "scripts/stage-artifact-set.mjs",
     "scripts/upstream-artifacts.mjs",
-    "vendor/tobs.upstream.json",
     "scripts/native-bundle.mjs"
   ],
   "dsh": {
@@ -59,13 +49,9 @@
   "scripts": {
     "build:client": "node agent-observation-plugin/scripts/build-client.mjs",
     "check:client": "node agent-observation-plugin/scripts/build-client.mjs --check",
-    "test:project-plugins": "node scripts/run-project-tests.mjs scripts/project-plugins.test.mjs scripts/daily-workflow-launch.test.mjs scripts/agent-team-profile.test.mjs",
     "test": "node scripts/run-project-tests.mjs"
   },
   "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000",
-  "peerDependencies": {
-    "@deepseek-ai/node-addon-system": "^0.1.2"
-  },
   "os": [
     "darwin"
   ],

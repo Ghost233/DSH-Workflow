@@ -483,9 +483,9 @@ Future<void> runIndependentServiceApplicationProbe(
         'launcher disconnect before isolated startup failure',
         () async => server.sessionFor('dsh-workflow') == null,
       );
-      final desktopResource = Link('$resource/desktop');
-      final unavailable = await desktopResource.rename(
-        '$resource/desktop-disabled',
+      final runtimePackages = Link('$resource/node_modules');
+      final unavailable = await runtimePackages.rename(
+        '$resource/node_modules-disabled',
       );
       ServerSession? failedSession;
       var failureObserved = false;
@@ -520,9 +520,9 @@ Future<void> runIndependentServiceApplicationProbe(
       } finally {
         await closeProbeResources([
           (
-            'owned staged Desktop resource',
+            'owned staged DSH packages',
             () async {
-              await unavailable.rename(desktopResource.path);
+              await unavailable.rename(runtimePackages.path);
             },
           ),
         ], preserveFailure: !failureObserved);

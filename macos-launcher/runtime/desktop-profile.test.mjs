@@ -40,9 +40,14 @@ async function fixture(t) {
 test('Station keeps the copied Web profile and rebuilds its own overlay without registering a local bundle', async t => {
   const f = await fixture(t)
   f.init(f.web)
+  const retired = [
+    { id: 'workflow-jev-center', name: 'dsh-workflow/jev-center', config: { keep: 'center' } },
+    { id: 'workflow-agent-monitor', name: 'dsh-workflow/agent-monitor', config: { keep: 'monitor' } },
+    { id: 'workflow-project-coordination', name: 'dsh-workflow/project-coordination', config: { keep: 'coordination' } },
+  ]
   const userPatch = JSON.stringify([
     { id: 'web-runtime', config: { openBrowser: false, printUrl: false } },
-    { insert: [{ id: 'bili-native', name: 'billion-context', config: { keep: true } }] },
+    { insert: [{ id: 'bili-native', name: 'billion-context', config: { keep: true } }, ...retired] },
   ])
   await writeFile(join(f.web, 'cordis.patch.yml'), userPatch)
   const prepared = await f.prepare()
@@ -53,11 +58,14 @@ test('Station keeps the copied Web profile and rebuilds its own overlay without 
     assert.equal(manifest.dependencies[name], undefined)
     assert.ok(!manifest.dsh.profile.bundles.includes(name))
   }
+  assert.ok(!manifest.dsh.profile.bundles.includes('@deepseek-ai/dsh-experimental-agent-team-profile'))
   const check = () => {
     const rows = f.entries(prepared)
     assert.deepEqual(rows.find(row => row.id === 'bili-native'),
       { id: 'bili-native', name: 'billion-context', disabled: true, config: { keep: true } })
-    assert.ok(!rows.some(row => ['workflow-jev-center', 'workflow-agent-monitor', 'workflow-project-coordination'].includes(row.id)))
+    for (const saved of retired) {
+      assert.deepEqual(rows.filter(row => row.id === saved.id), [{ ...saved, disabled: true }])
+    }
     const boards = rows.filter(row => row.id === 'matt-skills-board')
     assert.equal(boards.length, 1)
     assert.equal(boards[0].name, pathToFileURL(join(f.workflow, 'matt-skills-panel-plugin/package/lib/index.js')).href)

@@ -750,7 +750,7 @@ persist(); childenv=os.environ.copy();childenv.update(config.get('environmentOve
 expected={'driver':os.path.realpath(config['command'][0])}; expected.update(config.get('expectedExecutables',{})); ids={}
 def bind(role,pid):
     fact=identity(pid)
-    if fact.get('known') and fact.get('uid')==os.getuid() and fact.get('executable')==expected.get(role) and (role!='host' or 'desktop' in ids and fact.get('parentPid')==ids['desktop']['pid']):
+    if fact.get('known') and fact.get('uid')==os.getuid() and fact.get('executable')==expected.get(role):
         ids[role]=fact; state['identities'][role]=fact;persist()
     else: state.setdefault('identityWarnings',[]).append({'role':role,'observation':fact});persist()
 bind('driver',child.pid); selector=selectors.DefaultSelector(); selector.register(child.stdout,selectors.EVENT_READ); buffer=b''; root=None; phase=0
@@ -763,7 +763,6 @@ with (evidence/'overall-command.log').open('wb') as output:
             if live.is_file() and not live.is_symlink():
                 value=json.loads(live.read_text())
                 app=root/config.get('appRelativePath','moved/Ghost DSH Station.app')/'Contents/MacOS/Ghost DSH Station'; expected['app']=os.path.realpath(app)
-                if config.get('desktopSdkCold'): expected['desktop']=expected['host']=os.path.realpath(root/'missing-runtime/desktop/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness')
                 for role,pid in value.get('pids',{}).items():
                     if role not in ids: bind(role,int(pid))
             actor=root/'public-close-actor.log'

@@ -4,14 +4,14 @@
   "plugins": [
     {
       "package": "dshmarket",
-      "version": "1.73.17",
+      "version": "1.73.19",
       "entryId": "dshmarket",
       "repository": "https://github.com/dsh-market/dsh-market",
       "startup": true
     },
     {
       "package": "dsh-context",
-      "version": "0.83.1",
+      "version": "0.84.1",
       "entryId": "dsh-context",
       "repository": "https://github.com/bowenliang123/dsh-context",
       "startup": true
@@ -31,15 +31,8 @@
       "startup": true
     },
     {
-      "package": "@goodandready/dsh-plugin-notify",
-      "version": "0.4.8",
-      "entryId": "plugin-notify",
-      "repository": "https://github.com/GooDAnDReaDY/dsh-plugin-notify",
-      "startup": true
-    },
-    {
       "package": "dsh-better-sidebar",
-      "version": "0.30.1",
+      "version": "0.32.1",
       "entryId": "better-sidebar",
       "repository": "https://github.com/omdsh-dev/DSH-better-sidebar",
       "startup": true
@@ -59,15 +52,8 @@
       "startup": true
     },
     {
-      "package": "@guowenzhang/dsh-worktree",
-      "version": "2.4.0",
-      "entryId": "worktree",
-      "repository": "https://github.com/zhang-guo-wen/dsh-worktree",
-      "startup": true
-    },
-    {
       "package": "@michengai/dsh-archive-manager",
-      "version": "1.3.1",
+      "version": "1.3.5",
       "entryId": "ui-workspace-archive-manager",
       "repository": "https://github.com/MichengAI/dsh-archive-manager",
       "startup": true
@@ -81,11 +67,11 @@
     },
     {
       "package": "dsh-live-compact",
-      "version": "1.1.5",
+      "version": "1.1.6",
       "entryId": "compaction-spine",
       "repository": "https://github.com/MerkyorLynn/dsh-live-compact",
       "source": "git",
-      "commit": "de72685288cd4e20e2b7e65b2b253b7d825cf41c"
+      "commit": "8f3766ecc46db540adb804b58e840a5e7818669b"
     }
   ]
 }

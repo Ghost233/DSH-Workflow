@@ -42,33 +42,53 @@ void main() {
       expect(caller['name'], 'dsh-workflow');
       expect(caller['caller'], 'function');
       expect(
-        (caller['exports'] as Map)['./jev-center'],
-        './agent-observation-plugin/src/jev-center-plugin.mjs',
+        (caller['exports'] as Map)['./delivery-inventory'],
+        './agent-observation-plugin/src/delivery-inventory.mjs',
       );
+      for (final name in [
+        './jev-center',
+        './agent-monitor',
+        './project-coordination',
+      ]) {
+        expect((caller['exports'] as Map).containsKey(name), false);
+      }
       final entries = (caller['entries'] as List).cast<Map>();
       final inserted = entries
           .expand((row) => (row['insert'] as List?) ?? [])
           .cast<Map>();
       expect(
-        inserted.where((row) => row['id'] == 'workflow-jev-center'),
-        isEmpty,
-      );
-      expect(
         inserted.singleWhere(
-          (row) => row['id'] == 'workflow-agent-monitor',
+          (row) => row['id'] == 'workflow-delivery-inventory',
         )['name'],
-        'dsh-workflow/agent-monitor',
+        '${evidence['resources']}/workflow/agent-observation-plugin/src/delivery-inventory.mjs',
       );
+      for (final id in [
+        'workflow-jev-center',
+        'workflow-agent-monitor',
+        'workflow-project-coordination',
+      ]) {
+        expect(inserted.where((row) => row['id'] == id), isEmpty);
+      }
       expect(
         (entries.singleWhere((row) => row['id'] == 'web-runtime')['config']
             as Map)['openBrowser'],
         false,
       );
-      expect(
-        await Directory('${evidence['resources']}/workflow/previous-module')
-            .exists(),
-        false,
-      );
+      final stagedWorkflow = '${evidence['resources']}/workflow';
+      for (final path in ['previous-module', 'project-coordination-plugin']) {
+        expect(await Directory('$stagedWorkflow/$path').exists(), false);
+      }
+      for (final path in [
+        'agent-observation-plugin/src/jev-center-plugin.mjs',
+        'agent-observation-plugin/src/agent-monitor-plugin.mjs',
+        'macos-launcher/runtime/web-launch.mjs',
+        'macos-launcher/runtime/run-dsh.mjs',
+        'macos-launcher/runtime/lan-settings-client.mjs',
+        'scripts/project-plugins.mjs',
+        'scripts/project-plugin-resolver.mjs',
+      ]) {
+        expect(await File('$stagedWorkflow/$path').exists(), false);
+      }
       expect(
         await File('${workflow.path}/package.json').readAsString(),
         before,

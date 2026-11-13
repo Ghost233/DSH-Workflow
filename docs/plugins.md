@@ -6,21 +6,16 @@
 
 | 插件 | 版本 | 作用 | 源码 |
 |---|---|---|---|
-| `dsh-workflow` | 0.1.1 | 独立 JEV 中心与 DSH 原生代理监控 | [agent-observation-plugin](../agent-observation-plugin/README.md) |
+| `dsh-workflow` | 0.1.1 | 读取 Host 插件的版本、来源和加载状态 | [组件清单模块](../agent-observation-plugin/README.md) |
 
-根目录 `package.json` 声明独立观察模块的入口。
+根目录 `package.json` 声明组件清单的服务端和 Web 入口。
 
 ## 自有技能与项目集成组件
 
 | 名称 | 类型 / 版本 | 作用与状态 | 位置 |
 |---|---|---|---|
 | `mattpocock-skills-zh` | 中文技能插件 / 0.1.8+codex.20261027155632 | Ghost233 维护的 Matt 技能中文翻译；DSH 通过原生技能文件服务加载，包含 `pr` 与需用户明确调用的 `retro` | [中文技能包](../vendor/mattpocock-skills-zh/.codex-plugin/plugin.json) |
-| `dsh-workflow-desktop` | 本地组合包 / 0.1.0 | 装配 Desktop profile 中的自研插件、技能和共享后端桥接组件 | [组合包生成代码](../macos-launcher/runtime/desktop-profile.mjs) |
-| `dsh-workflow-desktop-bridge` | 内部 Cordis 插件 / 无独立版本 | 发布 Desktop Host 的私有就绪信息，供启动器连接同一后端 | [桥接源码](../macos-launcher/runtime/desktop-bridge.mjs) |
-| `dsh-workflow-agent-monitor` | 内部 Cordis 插件 / 测试版本 | 观察主/子代理的模型无输出、异常结束及 JEV 语义停滞；只通知和记录，不恢复或干预 | [行为与验证](./agent-monitor.md) |
-| `dsh-workflow-jev-center` | 内部 Cordis 插件 / 开发中 | 使用标准 Settings/credentials 管理引擎，按调用模型名完成 System One 判断及连接测试 | [正式规格与交付](./specs/jev-center-agent-monitor/delivery.md) |
-| `dynamic-workflow-plugin` | 暂缓实施 / 无发布版本 | 目前只有领域文档，没有可加载的插件实现 | [领域文档](../dynamic-workflow-plugin/CONTEXT.md) |
-
+| `dsh-workflow-desktop-bridge` | 内部 Cordis 插件 | 写入 DSH Web Host 的私有就绪记录，供 Station 确认服务状态 | [桥接源码](../macos-launcher/runtime/desktop-bridge.mjs) |
 
 ## 本地面板与第三方插件
 
@@ -28,26 +23,23 @@
 |---|---|---|
 | `dsh-workflow-matt-panel` | 1.9.0-beta.33.workflow.1 | 本项目维护的 [Matt 面板派生版](../matt-skills-panel-plugin/README.md)，基准与升级对照见 `upstream.json`；使用独立中文技能提供器 |
 | `dsh-mattpocock-skills-deck` | 1.9.0-beta.33（基准） | 原版 submodule 保持上游源码原样，用于跟踪更新；项目装配停用其宿主与工具行 |
-| `dshmarket` | 1.73.17 | DSHMarket，启动清单启用 |
-| `dsh-context` | 0.83.1 | 第三方上下文插件，启动清单启用 |
-| `dsh-cost-meter` | 1.9.64 | 第三方费用统计插件，启动清单启用 |
-| `@nagi-ovo/dsh-visualize` | 0.1.9 | 第三方可视化插件，启动清单启用 |
-| `dsh-better-sidebar` | 0.30.1 | 第三方侧边栏插件，启动清单启用 |
+| `dshmarket` | 1.73.19 | DSH 插件市场 |
+| `dsh-context` | 0.84.1 | 上下文查看插件 |
+| `dsh-cost-meter` | 1.9.64 | 费用统计插件 |
+| `@nagi-ovo/dsh-visualize` | 0.1.9 | 可视化插件 |
+| `dsh-better-sidebar` | 0.32.1 | 侧边栏插件 |
 | `ghost-agent-sentinel` | 由 DSH profile 决定 | 通过 GitHub Release 资产安装的代理状态插件，由 DSH profile 管理 |
-| `dsh-skill-mcp-panel` | 2.3.12 | 第三方技能与 MCP 面板，启动清单启用 |
-| `dsh-streamfold` | 0.7.14 | 第三方流式内容折叠插件，启动清单启用 |
-| `@guowenzhang/dsh-worktree` | 2.4.0 | 第三方工作树插件；新会话创建独立工作区，归档时尝试回收，启动清单启用 |
-| `@michengai/dsh-archive-manager` | 1.3.1 | 第三方会话归档管理插件，启动清单启用 |
-| `dsh-mermaid` | 0.4.5 | 第三方 Mermaid 插件，启动清单启用 |
-| `dsh-live-compact` | 1.1.5 / `de726852` | 固定 Git 来源的压缩插件，未设为日常启动 |
+| `dsh-skill-mcp-panel` | 2.3.12 | 技能与 MCP 面板 |
+| `dsh-streamfold` | 0.7.14 | 流式内容折叠插件 |
+| `@michengai/dsh-archive-manager` | 1.3.5 | 会话归档管理插件 |
+| `dsh-mermaid` | 0.4.5 | Mermaid 插件 |
+| `dsh-live-compact` | 1.1.6 / `8f3766ec` | 固定 Git 来源的压缩插件，未设为日常启动 |
 
 表中的 npm 版本是仓库记录的参考版本。应用只携带[默认启动检查名单](../default-startup-plugins.json)，首次启动时将它复制到本机。你可以在 Station 的“插件 → 编辑启动检查名单”增删包名，也可以设为 `[]`。应用升级会保留本地名单。
 
-Station 启动时检查本地名单中的包是否已安装，接受 DSH profile 中的任意版本。缺包时会列出补装命令。Station 的“插件”页展示当前版本和 npm `latest` 版本，启用、停用、更新和卸载由 DSH 管理。
+Station 启动时检查本地名单中的包是否已安装，接受 DSH profile 中的任意版本。缺包时会列出补装命令。“插件”页显示当前版本和 npm 的 `latest` 版本，也可通过 DSH 包管理器手动更新 npm 插件。启用、停用和卸载在 DSH 内操作。
 
-Git 和源码制品仍使用固定版本。Matt 派生面板通过 [项目装配](../scripts/dsh-launch-composition.mjs) 加载本地构建产物。
-
-`@guowenzhang/dsh-worktree@2.4.0` 已加入启动清单。它使用的 `@deepseek-ai/dsh-client-store`、`@deepseek-ai/dsh-client-ui-primitives` 和 `@deepseek-ai/dsh-client-ui-slots` 由当前 DSH Web 的共享模块表提供，无须额外安装。项目装配的客户端依赖检查同时识别内置模块与已装配的插件模块。
+随包交付的 Git 和源码制品使用固定版本。Matt 派生面板通过[项目装配](../scripts/dsh-launch-composition.mjs)加载构建产物。
 
 ## 引用的自有 Codex 插件市场
 

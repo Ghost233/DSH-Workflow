@@ -10,8 +10,8 @@ import { readPinnedBrowserHarness, stageBrowserHarnessSkills } from '../browser-
 const exec = promisify(execFile)
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
 const ignored = path => path.split('/').some(part => ['test', 'tests', '.git', 'node_modules', '.DS_Store'].includes(part))
-const scripts = ['project-plugins.mjs', 'project-plugin-resolver.mjs', 'harness-runtime.mjs', 'dsh-launch-composition.mjs',
-  'dsh-readiness.mjs', 'dsh-delivery-policy.mjs', 'observation-profile.mjs', 'web-host-lifecycle.mjs', 'stage-artifact-set.mjs', 'upstream-artifacts.mjs', 'native-bundle.mjs']
+const scripts = ['dsh-launch-composition.mjs',
+  'dsh-readiness.mjs', 'dsh-delivery-policy.mjs', 'project-entry-migration.mjs', 'stage-artifact-set.mjs', 'upstream-artifacts.mjs', 'native-bundle.mjs']
 const candidateFiles = ['dsh-runtime.json', 'project-plugins.json', 'project-plugins.lock.json']
 
 async function sources(root) {
@@ -66,8 +66,8 @@ export async function copyProjectIntegration(projectRoot, workflow, candidate) {
   }
   await stageBrowserHarnessSkills(root, workflow)
   const pkg = JSON.parse(await readFile(join(workflow, 'package.json'), 'utf8'))
-  if (pkg.name !== 'dsh-workflow' || pkg.exports?.['./jev-center'] !== './agent-observation-plugin/src/jev-center-plugin.mjs'
-    || pkg.exports?.['./agent-monitor'] !== './agent-observation-plugin/src/agent-monitor-plugin.mjs') throw new Error('Current project module contract is missing')
+  if (pkg.name !== 'dsh-workflow' || pkg.exports?.['./delivery-inventory'] !== './agent-observation-plugin/src/delivery-inventory.mjs'
+    || pkg.exports?.['./client'] !== './agent-observation-plugin/client.js') throw new Error('Current project module contract is missing')
   // The project layer is independent of the frozen official Node/Desktop dependency tree.
   const manifest = { schema: 1, input, members: await inventory(workflow) }
   await writeFile(join(dirname(workflow), 'project-layer.json'), JSON.stringify(manifest, null, 2) + '\n')

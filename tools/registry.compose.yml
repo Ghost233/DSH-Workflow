@@ -13,13 +13,3 @@ services:
       - ../:/workspace:ro
       - ../.build/project-registry:/output
     command: ["npm", "--version"]
-  tobs-builder:
-    build:
-      context: .
-      dockerfile: tobs-builder.Dockerfile
-    network_mode: bridge
-    working_dir: /work
-    volumes:
-      - ../:/workspace:ro
-      - ../.build/tobs-upstream:/work
-    command: ["node", "/workspace/scripts/build-tobs-source.mjs", "/work"]

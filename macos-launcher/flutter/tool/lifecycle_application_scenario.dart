@@ -9,7 +9,7 @@ import 'service_task_fixture.dart';
 class LifecycleProbeOptions {
   LifecycleProbeOptions(this.resources, this.scenario);
   final String resources, scenario;
-  WebProbeOptions get web => WebProbeOptions(resources, 'headless', 0);
+  WebProbeOptions get web => WebProbeOptions(resources, 0);
   static LifecycleProbeOptions? parse(List<String> args) {
     if (args.length != 5 || args[1] != '--lifecycle-runtime') return null;
     if (args[3] != '--lifecycle-case' ||

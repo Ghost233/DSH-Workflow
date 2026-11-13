@@ -9,24 +9,6 @@ import 'application_probe.dart' show require, waitFor;
 import 'web_startup_wait.dart';
 import 'probe_diagnostics.dart' show safeInspectorOutput;
 
-Future<bool> desktopExitObserved(
-  int pid, {
-  void Function(Map<String, Object?>)? observe,
-}) async {
-  final check = await Process.run('/bin/kill', ['-0', '$pid']);
-  final gone =
-      check.exitCode != 0 &&
-      check.stderr.toString().contains('No such process');
-  observe?.call({
-    'pid': pid,
-    'rawExit': check.exitCode,
-    'rawStdout': safeInspectorOutput(check.stdout),
-    'rawStderr': safeInspectorOutput(check.stderr),
-    'predicateGone': gone,
-  });
-  return gone;
-}
-
 Future<bool> ownedReceiptAbsent(File receipt) async {
   final parent = await receipt.parent.resolveSymbolicLinks();
   if (parent != receipt.parent.absolute.path ||
@@ -94,13 +76,7 @@ class WebObservation {
     required this.disconnectManager,
     required this.stopOwnedHost,
     required this.replaceOwnedHost,
-    required this.applicationExit,
-    required this.ownsHostReceipt,
-    required this.startupFailure,
   });
-  final Future<int> applicationExit;
-  final Future<bool> Function(Map<String, Object?>) ownsHostReceipt;
-  final Future<String?> Function(int) startupFailure;
   final Directory root;
   final int port;
   final Map<String, Object?> backend, capabilities;
@@ -123,8 +99,8 @@ class WebObservation {
 }
 
 class WebProbeOptions {
-  WebProbeOptions(this.sourceResources, this.backend, this.port);
-  final String sourceResources, backend;
+  WebProbeOptions(this.sourceResources, this.port);
+  final String sourceResources;
   final int port;
   static WebProbeOptions? parse(List<String> args) {
     if (args.length != 7 || args[1] != '--web-runtime') return null;
@@ -137,7 +113,7 @@ class WebProbeOptions {
     }
     final port = int.parse(args[6]);
     if (port < 0 || port > 65535) throw ArgumentError('Invalid Web probe port');
-    return WebProbeOptions(Directory(args[2]).absolute.path, args[4], port);
+    return WebProbeOptions(Directory(args[2]).absolute.path, port);
   }
 
   Future<int> stage(Directory root) async {
@@ -213,7 +189,6 @@ class WebProbeOptions {
 }
 
 Future<void> runWebApplicationScenario({
-  required WebProbeOptions options,
   required Directory root,
   required EndpointLayout layout,
   required String manifestPath,
@@ -221,19 +196,15 @@ Future<void> runWebApplicationScenario({
   required ApplicationState state,
   required Future<int> applicationExit,
   required Future<bool> Function(Map<String, Object?>) ownsHostReceipt,
-  required Future<String?> Function(int) startupFailure,
   required Future<void> Function(String) tap,
   required Future<void> Function(String) capture,
   Future<void> Function(WebObservation)? onConnected,
   bool startWebBySdk = false,
-  Future<void> Function(ApplicationState, Future<void> Function(String))?
-  beforeWebStart,
   Future<void> Function(int)? observeOwnedHeadlessHost,
   Process? prestartedHost,
   IOSink? prestartedHostLog,
   String? bindingsPath,
   bool passwordPreloaded = false,
-  bool settingsOwnedWebCleanup = false,
   void Function(String, Map<String, Object?>)? diagnose,
 }) async {
   final data = '${root.path}/data';
@@ -263,19 +234,7 @@ Future<void> runWebApplicationScenario({
       final matches = nodes
           .where(
             (node) =>
-                (beforeWebStart != null &&
-                        const [
-                          '后台启动',
-                          '启动后显示',
-                          '隐藏窗口',
-                          '仅显示已运行窗口',
-                          '打开桌面版',
-                        ].contains(label)
-                    ? node['label'].toString().split('\n').first == label
-                    : node['label'].toString().contains(label)) &&
-                (beforeWebStart == null ||
-                    label != '启动时隐藏窗口' ||
-                    node['toggled'] is bool) &&
+                node['label'].toString().contains(label) &&
                 (node['actions'] as List).contains(action),
           )
           .toList();
@@ -293,12 +252,8 @@ Future<void> runWebApplicationScenario({
 
   Future<void> tapUi(String label) async {
     await ui();
-    if (beforeWebStart != null || label == '设置密码') {
-      final node = await control(
-        label,
-        'tap',
-        label == '设置密码' || label == '启动时隐藏窗口' ? 'scrollDown' : 'scrollUp',
-      );
+    if (label == '设置密码') {
+      final node = await control(label, 'tap', 'scrollDown');
       await state({'action': 'tap', 'id': '${node['id']}'});
       await Future<void>.delayed(const Duration(milliseconds: 250));
     } else {
@@ -484,10 +439,6 @@ Future<void> runWebApplicationScenario({
       );
       return;
     }
-    require(
-      options.backend == 'headless',
-      'owned Host helper is headless only',
-    );
     hostExited = false;
     host = await Process.start(
       '$resources/node',
@@ -549,7 +500,7 @@ Future<void> runWebApplicationScenario({
       return;
     }
     require(
-      options.backend == 'headless' && host != null && !hostExited,
+      host != null && !hostExited,
       'only this probe owned headless Host is shut down',
     );
     final pid = (await readReceipt())['pid'] as int;
@@ -582,17 +533,13 @@ Future<void> runWebApplicationScenario({
     if (prestartedHost != null) {
       require(await receipt.exists(), 'private prestarted Host receipt exists');
       unawaited(prestartedHost.exitCode.then((_) => hostExited = true));
-    } else if (independentHost) {
+      await observeOwnedHeadlessHost?.call(prestartedHost.pid);
+    } else {
       require(
         !await receipt.exists() ||
             await File('$data/global/.dsh-workflow/service/manager.json')
                 .exists(),
         'the Web fixture has no external unmanaged Host',
-      );
-    } else if (!passwordPreloaded) {
-      require(
-        !await receipt.exists(),
-        'Desktop-open scenario begins without a backend receipt',
       );
     }
     final bindings = await BindingStore.load(
@@ -730,7 +677,6 @@ Future<void> runWebApplicationScenario({
           (node) => node['label'].toString().contains('修改密码'),
         ),
       );
-      await beforeWebStart?.call(state, tapUi);
       if (startWebBySdk) {
         await sdk('start');
       } else {
@@ -861,9 +807,6 @@ Future<void> runWebApplicationScenario({
       await onConnected(
         WebObservation(
           root: root,
-          applicationExit: applicationExit,
-          ownsHostReceipt: ownsReceipt,
-          startupFailure: startupFailure,
           port: port,
           backend: backend,
           capabilities: server!.registry
@@ -936,41 +879,7 @@ Future<void> runWebApplicationScenario({
           },
         ),
       );
-      if (settingsOwnedWebCleanup) {
-        diagnose?.call('cleanup-web-stop-start', {'service': 'web'});
-        await tapUi('停止 Web');
-        await portReleased();
-        require(
-          (await sdk('status'))['state'] == 'stopped',
-          'settings cleanup stops the owned Web service',
-        );
-        diagnose?.call('cleanup-web-stop-end', {
-          'service': 'web',
-          'present': true,
-        });
-      }
       return;
-    }
-    if (options.backend == 'desktop') {
-      final native = (await state())['native'] as Map;
-      final desktopPid = native['openedDesktopPid'] as int;
-      final parent = await Process.run('/bin/ps', [
-        '-o',
-        'ppid=',
-        '-p',
-        '$backendPid',
-      ]);
-      require(
-        int.parse(parent.stdout.toString().trim()) == desktopPid,
-        'receipt Host is the child of the actual NSWorkspace-opened official Desktop',
-      );
-      require(
-        await Directory('$home/profiles/desktop').exists() &&
-            await Directory('$data/desktop-user-data').exists(),
-        'official Desktop uses the private DSH profile and Electron browser data',
-      );
-      await ui();
-      await capture('web-shared-desktop');
     }
     await sdk('start');
     await sdk('start');
@@ -1000,7 +909,7 @@ Future<void> runWebApplicationScenario({
     await health(backendUrl, backendLogin.cookies);
     await File('${root.path}/web-evidence.json').writeAsString(
       jsonEncode({
-        'backend': options.backend,
+        'backend': 'headless',
         'port': port,
         'hostPid': backendPid,
         'hostLease': lease,
@@ -1009,7 +918,7 @@ Future<void> runWebApplicationScenario({
       }),
     );
     stdout.writeln(
-      'T02 WEB APPLICATION SCENARIO PASSED (${options.backend}, port $port)',
+      'T02 WEB APPLICATION SCENARIO PASSED (headless, port $port)',
     );
   } catch (error, stack) {
     bodyFailed = true;
@@ -1020,14 +929,6 @@ Future<void> runWebApplicationScenario({
     stderr.writeln('WEB_SCENARIO_ERROR: $message\n$stack');
     Error.throwWithStackTrace(StateError(message), stack);
   } finally {
-    if (options.backend == 'desktop') {
-      try {
-        await ui();
-        await capture('web-final');
-      } catch (error) {
-        stderr.writeln('WEB_FINAL_CAPTURE_ERROR: $error');
-      }
-    }
     Object? firstCleanupError;
     StackTrace? firstCleanupStack;
     void cleanupFailed(Object error, StackTrace stack) {
@@ -1079,10 +980,10 @@ Future<void> runWebApplicationScenario({
           () async => !await managerFile.exists(),
         );
       }
-      if (options.backend == 'headless' && await receipt.exists()) {
+      if (await receipt.exists()) {
         await waitFor(
           'owned backend receipt cleanup',
-          () async => !await receipt.exists(),
+          () async => ownedReceiptAbsent(receipt),
         );
       }
     } catch (error, stack) {

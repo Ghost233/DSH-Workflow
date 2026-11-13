@@ -202,6 +202,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(manifest.dependencies['dsh-workflow'], undefined)
   assert.equal(manifest.dependencies['dsh-workflow-matt-panel'], undefined)
   assert.ok(ctx.tools.get('deck_context'), 'the named Matt tools package registers its public tool')
+  assert.ok(ctx.get('agentTeams'), 'DSH supplies the official Agent Team service through its base bundle')
   assert.match((await ctx.skills.get('spec-delivery')).content, /spawn_teammate/, 'the real Host loads the native DSH team skill')
   const browserPlugin = report.rows.find(row => row.package === 'dsh-workflow-browser-harness')
   assert.equal(browserPlugin.current, '0.1.0')

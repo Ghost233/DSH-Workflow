@@ -16,7 +16,7 @@ try { loader = requireHarness.resolve('tsx') } catch {
 }
 const specified = process.argv.slice(2)
 const files = specified.length ? specified.map(file => resolve(root, file))
-  : (await Promise.all(['agent-observation-plugin/test', 'project-coordination-plugin/test', 'scripts', 'macos-launcher/runtime'].map(async directory =>
+  : (await Promise.all(['agent-observation-plugin/test', 'scripts', 'macos-launcher/runtime'].map(async directory =>
     (await readdir(join(root, directory))).filter(file => file.endsWith('.test.mjs') && file !== 'packaged-smoke.test.mjs')
       .sort().map(file => join(root, directory, file))))).flat()
 console.log(JSON.stringify({ projectTestFiles: files.map(file => file.slice(root.length)) }))

@@ -1,6 +1,6 @@
 # 维护范围
 
-本项目维护自研独立模块 `agent-observation-plugin/`，用户授权的本地派生版 `matt-skills-panel-plugin/`，以及项目侧启动、编排和验收代码。
+本项目维护 Station 启动与验收代码、组件版本清单、Browser Harness 集成和 MattSkillsDeck 派生面板。
 
 - 修改或升级 Matt 面板时，先读 `matt-skills-panel-plugin/README.md`。派生版源码与验收在主仓库维护；`vendor/dsh-mattpocock-skills-deck` 保持上游源码原样，用于对照更新。基准由 `upstream.json` 记录，升级先生成三方合并提案，再审查、验证并更新基准。构建只写派生目录；服务切换单独取得用户授权。
 
@@ -10,7 +10,7 @@
 - 安装清单中出现某个包不代表我们维护它。判断归属不明确时先核对来源，再确定修改范围。
 - 新增或更新 `project-plugins.lock.json` 时，在本仓约定的 Docker 容器内用 `npm view <包>@<版本或标签> --json --registry <清单中的 registry>` 查询实际发布版本和元数据，再由脚本生成锁文件并校验清单摘要；禁止手写或猜测锁定条目。npm 命令或生成流程失败时保留原锁文件并报告原因。
 - 旧 Spec、Ticket、报告或测试清单中关于第三方适配的计划已取消，不能据此恢复第三方修复工作。
-- 日常启动入口固定为无参数 `./start-dsh-workflow.sh`。脚本内部装配自研插件，并逐个尝试 `project-plugins.json` 中标记 `startup: true` 的第三方插件；单个第三方插件失败时记录原因并继续。调用者无需拼接环境变量或插件范围参数；完成标准是该命令能够启动 DSH Web 与保留的 JEV/原生监控模块，并如实报告每个启动插件的结果。
+- 日常启动入口固定为无参数 `./start-dsh-workflow.sh`。Station 装配随包组件，按本地名单检查 DSH profile 是否安装所需插件。验证启动时，确认 DSH Web 就绪并报告缺失项。
 
 SoL 和 Synapse 已移除；历史文档中的接入和验收要求不再适用，不得据此恢复。
 
@@ -38,10 +38,6 @@ SoL 和 Synapse 已移除；历史文档中的接入和验收要求不再适用�
 容器用于适合 Linux 环境的依赖查询、元数据核验和装配。macOS ARM64 专用测试、原生窗口验收、Xcode 编译及 App 签名继续按仓库检查入口在 macOS 执行。
 
 ## Agent skills
-
-### 项目 Bot 接入
-
-接入仓库或配置项目 Bot 时，先读 [项目协作插件说明](project-coordination-plugin/README.md)，按“固定账号 → 创建负责人 → 建立或复用项目分组 → 归入成员 → 核对轮询”完成接入；总负责人保留全局位置。
 
 ### Issue 跟踪器
 

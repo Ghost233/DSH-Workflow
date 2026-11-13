@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { copyProjectIntegration, verifyProjectIntegration } from './project-resources.mjs'
 import { bundleServiceNotifications } from './service-notifications.mjs'
-import { allowAuthenticatedLanSettings } from './runtime/lan-settings-client.mjs'
+import { assertHostBackedSettings } from './settings-client-contract.mjs'
 import { verifyNpmRuntimePin } from './runtime/npm-runtime-pin.mjs'
 import { bundleProjectPlugins } from './bundle-plugins.mjs'
 import { verifyPluginPayload } from './runtime/plugin-payload.mjs'
@@ -107,7 +107,7 @@ try {
   }
   const settingsClient = join(resources, 'node_modules/@deepseek-ai/dsh-client-ui-settings/lib/client.js')
   const settingsSource = await readFile(settingsClient, 'utf8')
-  if (allowAuthenticatedLanSettings(settingsSource) !== settingsSource) throw new Error('DSH settings requires an unsupported upstream change')
+  assertHostBackedSettings(settingsSource)
   await mkdir(join(resources, 'bin'), { recursive: true })
   const pnpmShim = join(resources, 'bin', 'pnpm')
   await writeFile(pnpmShim, '#!/bin/sh\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexec "$ROOT/node" "$ROOT/node_modules/pnpm/bin/pnpm.mjs" "$@"\n')

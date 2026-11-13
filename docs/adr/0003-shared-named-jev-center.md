@@ -1,10 +1,11 @@
 ---
-status: accepted
+status: retired
 date: 2026-10-07
-implementation: in-progress
 ---
 
 # 用统一 JEV 中心按名称调用多套引擎配置
+
+Station 已移除自研 JEV 中心和代理监控。以下为历史决策。
 
 JEV 引擎配置由独立的自研 JEV 中心管理，消费插件指定 model 名字，中心选择相应配置发起 System One 判断请求并返回结果。用户要求多套配置可以同时启用，因此不采用全局唯一“当前配置”，也不让各消费插件分别维护 URL、凭据与上游调用实现。
 

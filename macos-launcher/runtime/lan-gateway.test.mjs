@@ -7,11 +7,11 @@ import { isPrivateIPv4, localAddresses, startLanGateway } from './lan-gateway.mj
 const privateLanHost = () => [...localAddresses()].find(address =>
   address !== '127.0.0.1' && address !== 'localhost' && isPrivateIPv4(address))
 
-test('Desktop settings assets are adapted only for an authenticated gate with LAN settings enabled', async t => {
-  const source = 'window.__ModuleLoader__.load({id:"@deepseek-ai/dsh-client-ui-settings",factory(ctx){const persistence = ctx.remote.$host.isLoopback ? "host" : "memory";}});'
+test('authenticated settings assets retain their original bytes and cache headers', async t => {
+  const source = 'window.__ModuleLoader__.load({id:"@deepseek-ai/dsh-client-ui-settings",factory(ctx){const { writable } = mirrored.view;}});'
   const upstream = await server((req, res) => {
     if (req.url.startsWith('/?token=')) { res.writeHead(303, { location: '/', 'set-cookie': 'dsh-auth=test; HttpOnly; Path=/' }); res.end(); return }
-    res.writeHead(200, { 'content-type': 'text/javascript', 'content-length': Buffer.byteLength(source) })
+    res.writeHead(200, { 'content-type': 'text/javascript', 'content-length': Buffer.byteLength(source), etag: '"fixture-client"', 'cache-control': 'public, max-age=3600' })
     res.end(source)
   })
   t.after(() => upstream.close())
@@ -24,9 +24,11 @@ test('Desktop settings assets are adapted only for an authenticated gate with LA
       assert.equal((await fetch(asset)).status, 401)
       const login = await fetch(`${base}/login`, { method: 'POST', redirect: 'manual', body: new URLSearchParams({ password: 'test' }) })
       const cookie = login.headers.get('set-cookie').split(';', 1)[0]
-      const body = await (await fetch(asset, { headers: { cookie } })).text()
-      if (allowLanSettings) assert.match(body, /dsh-workflow-settings-access=1/)
-      else assert.equal(body, source)
+      const response = await fetch(asset, { headers: { cookie } })
+      assert.equal(await response.text(), source)
+      assert.equal(response.headers.get('etag'), '"fixture-client"')
+      assert.equal(response.headers.get('cache-control'), 'public, max-age=3600')
+      assert.equal(login.headers.getSetCookie().length, 1)
     } finally { await gate.close() }
   }
 })
@@ -80,7 +82,7 @@ test('LAN gate requires password, proxies the process URL and revokes sessions o
   const login = await fetch(`${base}/login`, { method: 'POST', body: 'password=first-secret', redirect: 'manual',
     headers: { 'content-type': 'application/x-www-form-urlencoded' } })
   assert.equal(login.status, 303)
-  assert.match(login.headers.get('set-cookie') ?? '', /dsh-workflow-settings-access=; Max-Age=0/u)
+  assert.equal(login.headers.getSetCookie().length, 1)
   assert.equal(login.headers.get('location'), '/')
   assert.doesNotMatch(login.headers.get('set-cookie'), /dsh-auth|process-token/)
   // WebKit webviews submit the login form with the opaque origin "null"; the gate must still serve them.
@@ -108,35 +110,6 @@ test('LAN gate requires password, proxies the process URL and revokes sessions o
     headers: { 'content-type': 'application/x-www-form-urlencoded' } })).status, 401)
   assert.equal((await fetch(`${base}/login`, { method: 'POST', body: 'password=second-secret', redirect: 'manual',
     headers: { 'content-type': 'application/x-www-form-urlencoded' } })).status, 303)
-})
-
-test('LAN settings marker is issued only after login when enabled', async t => {
-  const upstream = await server((request, response) => {
-    if (request.url.startsWith('/?token=')) { response.writeHead(303, { location: '/', 'set-cookie': 'dsh-auth=test; HttpOnly; Path=/' }); response.end() }
-    else response.end(request.headers.cookie ?? '')
-  })
-  t.after(() => upstream.close())
-  const gate = await startLanGateway({ port: 0, host: '127.0.0.1', upstreamPort: upstream.port,
-    password: 'secret', allowLanSettings: true,
-    authenticatedUrl: () => `http://127.0.0.1:${upstream.port}/?token=process-token` })
-  t.after(() => gate.close())
-  const base = `http://127.0.0.1:${gate.port}`
-  assert.equal((await fetch(base)).headers.get('set-cookie'), null)
-  const wrong = await fetch(`${base}/login`, { method: 'POST', body: 'password=wrong', redirect: 'manual',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' } })
-  assert.equal(wrong.headers.get('set-cookie'), null)
-  const login = await fetch(`${base}/login`, { method: 'POST', body: 'password=secret', redirect: 'manual',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' } })
-  assert.equal(login.status, 303)
-  assert.match(login.headers.get('set-cookie') ?? '', /dsh-workflow-settings-access=1; Max-Age=43200; SameSite=Strict; Path=\//u)
-  const gateCookie = login.headers.get('set-cookie')?.split(';', 1)[0]
-  const upstreamResponse = await fetch(`${base}/api/test`, { headers: {
-    cookie: `${gateCookie}; dsh-workflow-settings-access=1; dsh-auth=test`,
-  } })
-  assert.equal(await upstreamResponse.text(), 'dsh-auth=test')
-  assert.equal((await fetch(`${base}/api/test`, { headers: {
-    cookie: 'dsh-workflow-settings-access=1',
-  } })).status, 401, 'settings marker alone must not authenticate the gateway')
 })
 
 async function upgrade(port, cookie) {

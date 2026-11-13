@@ -49,3 +49,14 @@ jobs:
           corepack enable
           scripts/build-local-release.sh
           cat .build/release-assets/manifest.json
+          mkdir -p "$RUNNER_TEMP/station-candidate"
+          cp .build/release-assets/*.dmg .build/release-assets/manifest.json \
+            .build/release-assets/SHA256SUMS "$RUNNER_TEMP/station-candidate/"
+
+      - name: Upload candidate DMG and checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: ghost-dsh-station-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/station-candidate/
+          if-no-files-found: error
+          compression-level: 0

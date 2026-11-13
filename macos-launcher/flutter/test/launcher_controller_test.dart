@@ -142,7 +142,6 @@ Future<({LauncherController model, Directory root})> fixture({
       'manager-control.mjs',
       'manager-websocket.mjs',
       'lan-gateway.mjs',
-      'lan-settings-client.mjs',
       'web-control.mjs',
       'service-control.mjs',
       'status-notifications.mjs',

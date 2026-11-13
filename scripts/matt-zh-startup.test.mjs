@@ -10,8 +10,7 @@ test('startup mounts the Chinese Matt skills and native DSH team delivery skill 
   const projectRoot = process.env.DSH_MATT_ZH_WORKFLOW_ROOT ?? fileURLToPath(new URL('../', import.meta.url))
   const patches = composeDshLaunch([
     { id: 'preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry' },
-  ], { projectRoot, catalogRoot: projectRoot,
-     })
+  ], { projectRoot })
   const row = patches.at(-1).insert.find(item => item.id === 'mattpocock-skills-zh')
   assert.ok(row)
   const ctx = new Context()

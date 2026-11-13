@@ -14,9 +14,9 @@ Station 的“模型”页管理 DSH 的模型提供商、API Key 和默认模�
 
 Station 首次启动时把[默认名单](default-startup-plugins.json)复制到 `~/Library/Application Support/DSH Workflow/startup-plugins.json`。启动时检查 DSH `desktop` profile 是否安装了本地名单中的包。缺少插件时，启动器会列出包名和补装命令，也可以从本地名单移除相应包名。
 
-应用包只携带全局插件的默认名单。已有本地名单会保留。启用、停用、更新和卸载全局插件都在 DSH 中操作。
+应用包只携带全局插件的默认名单。已有本地名单会保留。在 DSH 中启用、停用或卸载全局插件。
 
-打开 Station 的“插件”页，可查看当前安装版本和 npm `latest` 版本。点击“检查插件版本”可刷新。查询失败时仍显示当前版本。启动和版本检查都不会更新全局插件。
+打开 Station 的“插件”页，可查看当前安装版本和 npm 的 `latest` 版本。点击“检查插件版本”可刷新，查询失败时仍显示当前版本。可通过 DSH 的包管理器逐项更新，也可点击“一键更新”。
 
 插件加载失败时，启动日志会记录实际结果。中文技能通过项目装配层加载。Ghost Agent Sentinel 由 DSH profile 从 GitHub 安装和管理。
 
@@ -30,4 +30,4 @@ Station 首次启动时把[默认名单](default-startup-plugins.json)复制到 
 
 本机容器使用 OrbStack 的 Docker 引擎和标准 Docker Compose；容器与 macOS 原生构建的执行边界见 [AGENTS.md](AGENTS.md#本机容器工作流)。
 
-领域术语见 [GLOSSARY](GLOSSARY.md)，JEV/监控设计见 [ADR0003](docs/adr/0003-shared-named-jev-center.md)。独立 Dynamic Workflow 的未来计划仍保留，当前未实施。
+领域术语见 [GLOSSARY](GLOSSARY.md)。

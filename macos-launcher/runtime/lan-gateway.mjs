@@ -1,10 +1,8 @@
 import http from 'node:http'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
-import { allowAuthenticatedLanSettings } from './lan-settings-client.mjs'
 
 const COOKIE_NAME = 'dsh-workflow-gate'
-const SETTINGS_COOKIE_NAME = 'dsh-workflow-settings-access'
 const SETTINGS_WRITES = new Set(['/api/settings/update', '/api/settings/replace', '/api/settings/mutate',
   '/api/credentials/set', '/api/credentials/unset'])
 const MAX_BODY_BYTES = 16 * 1024
@@ -26,12 +24,6 @@ export function isPrivateIPv4(address) {
   const [a, b] = address.split('.').map(Number)
   return a === 10 || a === 192 && b === 168 || a === 172 && b >= 16 && b <= 31
     || a === 100 && b >= 64 && b <= 127 || a === 169 && b === 254
-}
-
-export function privateBindAddress() {
-  const address = [...localAddresses()].find(value => isPrivateIPv4(value))
-  if (!address) throw new Error('No private IPv4 LAN/VPN address is available; connect the network and restart the app')
-  return address
 }
 
 function secureHeaders(type = 'text/html; charset=utf-8') {
@@ -75,8 +67,7 @@ function upstreamHeaders(request, upstreamPort, backendCookie = '') {
   const headers = { ...request.headers, host: `127.0.0.1:${upstreamPort}` }
   if (headers.origin !== undefined) headers.origin = `http://127.0.0.1:${upstreamPort}`
   if (headers.cookie !== undefined) {
-    headers.cookie = headers.cookie.split(';').filter(part => ![COOKIE_NAME, SETTINGS_COOKIE_NAME]
-      .some(name => part.trim().startsWith(`${name}=`))).join('; ')
+    headers.cookie = headers.cookie.split(';').filter(part => !part.trim().startsWith(`${COOKIE_NAME}=`)).join('; ')
   }
   if (backendCookie) {
     const names = new Set(backendCookie.split(';').map(part => part.trim().split('=', 1)[0]))
@@ -146,31 +137,9 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
 
   const proxy = (request, response) => {
     if (response.destroyed) return
-    const clientAsset = allowLanSettings && request.method === 'GET' && request.url?.startsWith('/plugins/')
     const proxyHeaders = upstreamHeaders(request, upstreamPort, backendCookies.get(cookieValue(request)))
-    if (clientAsset) proxyHeaders['accept-encoding'] = 'identity'
     const target = trackRequest(http.request({ hostname: '127.0.0.1', port: upstreamPort, method: request.method,
       path: request.url, headers: proxyHeaders }, upstream => {
-      if (clientAsset && upstream.statusCode === 200 && !upstream.headers['content-encoding']
-        && /javascript/.test(upstream.headers['content-type'] ?? '')) {
-        const chunks = []
-        upstream.on('data', chunk => chunks.push(chunk))
-        upstream.on('error', () => response.destroy())
-        upstream.on('end', () => {
-          let body = Buffer.concat(chunks)
-          const source = body.toString('utf8')
-          if (source.includes('"@deepseek-ai/dsh-client-ui-settings"')
-            && source.includes('const persistence = ctx.remote.$host.isLoopback ? "host" : "memory";')) {
-            body = Buffer.from(allowAuthenticatedLanSettings(source))
-          }
-          const resultHeaders = { ...upstream.headers, 'content-length': body.length, 'cache-control': 'no-store' }
-          delete resultHeaders['transfer-encoding']
-          delete resultHeaders.etag
-          response.writeHead(200, resultHeaders)
-          response.end(body)
-        })
-        return
-      }
       response.writeHead(upstream.statusCode ?? 502, upstream.headers)
       upstream.pipe(response)
     }))
@@ -221,10 +190,7 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
       sessions.set(session, Date.now() + SESSION_MS)
       backendCookies.set(session, backendCookie)
       response.writeHead(303, { ...secureHeaders('text/plain; charset=utf-8'),
-        'set-cookie': [
-          `${COOKIE_NAME}=${session}; Max-Age=${SESSION_MS / 1000}; HttpOnly; SameSite=Strict; Path=/`,
-          `${SETTINGS_COOKIE_NAME}=${allowLanSettings ? '1' : ''}; Max-Age=${allowLanSettings ? SESSION_MS / 1000 : 0}; SameSite=Strict; Path=/`,
-        ],
+        'set-cookie': `${COOKIE_NAME}=${session}; Max-Age=${SESSION_MS / 1000}; HttpOnly; SameSite=Strict; Path=/`,
         location: '/' })
       response.end('redirecting\n')
       return

@@ -28,15 +28,6 @@ Map<String, Object?> publicProbePhase(Map<String, Object?> value) => {
     if (value.containsKey(key)) key: value[key],
 };
 
-Map<String, Object?> desktopQuitFacts(Object? value) {
-  final facts = value is Map ? value : const {};
-  return {
-    'expectedPid': facts['expectedPid'] is int ? facts['expectedPid'] : null,
-    for (final key in ['lookupFound', 'accepted', 'hasTerminated'])
-      key: facts[key] is bool ? facts[key] : null,
-  };
-}
-
 String safeInspectorOutput(Object? value) {
   var text = value?.toString() ?? '';
   text = text.replaceAll(RegExp(r'\x1b\[[0-?]*[ -/]*[@-~]'), '');
@@ -85,25 +76,21 @@ Future<void> preserveHostInspectionFailure(
   Directory root,
   int pid,
   String script,
-  ProcessResult result, {
-  bool headless = false,
-}) async {
-  final runnerPath = headless && root.parent.path == '/private/tmp'
+  ProcessResult result,
+) async {
+  final runnerPath = root.parent.path == '/private/tmp'
       ? '/private/tmp'
       : Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] ??
             Platform.environment['RUNNER_TEMP'];
-  if ((Platform.environment['GITHUB_ACTIONS'] != 'true' &&
-          Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] == null &&
-          !headless) ||
-      runnerPath == null) {
-    throw StateError('Lower observation requires clean CI root');
+  if (runnerPath == null) {
+    throw StateError('Lower observation requires a private root');
   }
   final runner = await Directory(runnerPath).resolveSymbolicLinks();
   final actual = await root.resolveSymbolicLinks();
   if (root.absolute.path != actual ||
       Directory(actual).parent.path != runner ||
       !RegExp(
-        headless ? r'^dsh-t(?:01|06)-' : r'^dsh-t(?:01|05)-',
+        r'^dsh-t(?:01|05|06)-',
       ).hasMatch(root.uri.pathSegments.where((part) => part.isNotEmpty).last)) {
     throw StateError('Unowned lower observation root');
   }
@@ -120,7 +107,7 @@ Future<void> preserveHostInspectionFailure(
     'pid': pid,
     'interpreter': '/usr/bin/python3',
     'script': script,
-    'operation': headless ? '--capture-headless-host' : '--capture-host',
+    'operation': '--capture-headless-host',
     'exit': result.exitCode,
     'stdout': safeInspectorOutput(stdoutText),
     'stderr': safeInspectorOutput(stderrText),
@@ -135,77 +122,28 @@ Future<void> preserveHostInspectionFailure(
   );
 }
 
-const ownProcessIdentityScript = r'''
-import importlib.util, json, os, sys
-from pathlib import Path
-source, root_name, driver_pid, driver_executable = sys.argv[1:]
+const hostKernelInspectionScript = r'''
+import importlib.util, json, sys
+source, root_name, pid = sys.argv[1:]
 spec = importlib.util.spec_from_file_location('settings_startup_cycle', source)
 cycle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cycle)
-runner = cycle.observation_runner()
-root = cycle.validate_root(root_name, runner)
-if root.parent != runner or not root.name.startswith('dsh-t05-'):
-    raise ValueError('Unowned settings probe root')
-probe_file = root / 'probe-process.json'
-probe = cycle.parse_json(probe_file.read_text())
-driver_pid = int(driver_pid)
-expected_app = Path(probe['executable']).resolve(strict=True)
-if expected_app.parent.parent.parent != root / 'candidate.app':
-    raise ValueError('Launcher executable is outside the owned candidate')
-def identity(pid, executable):
-    allowed = {str(executable)}
-    # Dart can report its SDK launcher while libproc observes the actual dartvm.
-    sibling = executable.with_name('dartvm')
-    if pid == driver_pid and executable.name == 'dart' and sibling.is_file():
-        allowed.add(str(sibling.resolve(strict=True)))
-    value = cycle.inspect_host(pid)
-    if (value.get('lookupOk') is not True or value.get('pid') != pid
-        or value.get('executable') not in allowed or value.get('uid') != os.getuid()
-        or value.get('query', {}).get('exit') != 0 or not isinstance(value.get('startUnixSeconds'), (int, float))):
-        raise ValueError('Live process identity is unknown')
-    return {key:value[key] for key in ['pid', 'executable', 'parentPid', 'startUnixSeconds', 'uid']}
-launcher = identity(probe['pid'], expected_app)
-driver = identity(driver_pid, Path(driver_executable).resolve(strict=True))
-if launcher['parentPid'] != driver_pid:
-    raise ValueError('Launcher parent differs from the live Dart driver')
-probe['liveProcesses'] = {'launcher':launcher, 'driver':driver}
-temporary = probe_file.with_suffix('.json.tmp')
-temporary.write_text(json.dumps(probe)+'\n')
-temporary.replace(probe_file)
-print(json.dumps({'launcher':launcher, 'driver':driver}))
-''';
-
-const desktopKernelInspectionScript = r'''
-import importlib.util, json, os, sys
-from pathlib import Path
-source, root_name, pid, headless = sys.argv[1:]
-headless = headless == "true"
-spec = importlib.util.spec_from_file_location('settings_startup_cycle', source)
-cycle = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(cycle)
-cycle.validate_observation_root(root_name, cycle.observation_runner(headless=headless), headless=headless)
+cycle.validate_observation_root(root_name, cycle.observation_runner(headless=True))
 print(json.dumps(cycle.inspect_host(int(pid))))
 ''';
 
-/// External observations and clean-CI normal cleanup for exact owned processes.
+/// Record the Web probe and verify ownership of its standalone Host.
 class ProbeDiagnostics {
-  ProbeDiagnostics(
-    this.root, {
-    this.publishPhases = false,
-    this.observeHostOwnership = false,
-    this.captureCIHostOnce = false,
-  }) : _sink = File('${root.path}/probe-timeline.jsonl').openWrite() {
+  ProbeDiagnostics(this.root, {this.publishPhases = false})
+    : _sink = File('${root.path}/probe-timeline.jsonl').openWrite() {
     _clock.start();
   }
   final Directory root;
-  final bool publishPhases, observeHostOwnership, captureCIHostOnce;
+  final bool publishPhases;
   final IOSink _sink;
   final Stopwatch _clock = Stopwatch();
   Timer? _timer;
   Future<void> _snapshots = Future<void>.value();
-  int? _desktopPid, _appPid;
-  bool _desktopCaptured = false;
-  bool _ciHostCaptureAttempted = false;
   final Map<String, Map<String, Object?>> _hosts = {};
   final Map<String, Map<String, Object?>> _hostIdentities = {};
   Map<String, Object?>? _headlessOwner;
@@ -224,7 +162,6 @@ class ProbeDiagnostics {
   }
 
   Future<void> start(int appPid, String executable) async {
-    _appPid = appPid;
     final facts = {
       'pid': appPid,
       'executable': executable,
@@ -263,21 +200,9 @@ class ProbeDiagnostics {
         ])
           key: value[key],
       });
-      final headless = _headlessOwner != null;
-      if ((headless ||
-              observeHostOwnership ||
-              (captureCIHostOnce &&
-                  _desktopCaptured &&
-                  !_ciHostCaptureAttempted)) &&
-          (Platform.environment['GITHUB_ACTIONS'] == 'true' ||
-              Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
-                  null ||
-              headless) &&
+      if (_headlessOwner != null &&
           value['pid'] is int &&
-          value['lease'] is String &&
-          (headless ||
-              await File('${root.path}/owned-desktop-cleanup.log').exists())) {
-        if (captureCIHostOnce) _ciHostCaptureAttempted = true;
+          value['lease'] is String) {
         final key = '${value['pid']}:${value['lease']}';
         if (revalidate || _hosts[key]?['ownershipKnown'] != true) {
           final result = await Process.run('/usr/bin/python3', [
@@ -286,11 +211,11 @@ class ProbeDiagnostics {
                 '../../../.github/scripts/settings_startup_cycle.py',
               ),
             ).path,
-            headless ? '--capture-headless-host' : '--capture-host',
+            '--capture-headless-host',
             root.path,
             '${value['pid']}',
-            if (headless) '${_headlessOwner!['pid']}',
-            if (headless) '$pid',
+            '${_headlessOwner!['pid']}',
+            '$pid',
           ]);
           if (result.exitCode != 0) {
             await preserveHostInspectionFailure(
@@ -302,7 +227,6 @@ class ProbeDiagnostics {
                 ),
               ).path,
               result,
-              headless: headless,
             );
             _hosts[key] = {
               'pid': value['pid'],
@@ -321,11 +245,10 @@ class ProbeDiagnostics {
                 .cast<String, Object?>();
             final first = _hostIdentities[key];
             if ((first != null && !hostIdentityUnchanged(first, inspection)) ||
-                (headless &&
-                    !hostIdentityUnchanged(
-                      _headlessOwner!,
-                      (bound['ownerInspection'] as Map).cast<String, Object?>(),
-                    ))) {
+                !hostIdentityUnchanged(
+                  _headlessOwner!,
+                  (bound['ownerInspection'] as Map).cast<String, Object?>(),
+                )) {
               bound['ownershipKnown'] = false;
               bound['identityChanged'] = true;
             }
@@ -359,11 +282,8 @@ class ProbeDiagnostics {
       return false;
     }
     final bound = _hosts['${value['pid']}:${value['lease']}'];
-    final ownedParent = _headlessOwner != null
-        ? (bound?['ownerType'] == 'headless' &&
-              bound?['ownerPid'] == _headlessOwner!['pid'])
-        : (_desktopCaptured && bound?['desktopPid'] == _desktopPid);
-    return ownedParent &&
+    return bound?['ownerType'] == 'headless' &&
+        bound?['ownerPid'] == _headlessOwner?['pid'] &&
         bound?['ownershipKnown'] == true &&
         bound?['pid'] == value['pid'] &&
         bound?['lease'] == value['lease'] &&
@@ -371,7 +291,7 @@ class ProbeDiagnostics {
   }
 
   Future<void> observeOwnedHeadlessHost(int ownerPid) async {
-    final observed = await _desktopKernelInspection(ownerPid, headless: true);
+    final observed = await _hostKernelInspection(ownerPid);
     final inspection = (observed['inspection'] as Map?)
         ?.cast<String, Object?>();
     final node = await File('${root.path}/missing-runtime/node')
@@ -390,41 +310,6 @@ class ProbeDiagnostics {
     record('headless-host-owner', {'pid': ownerPid, 'driverPid': pid});
   }
 
-  Future<String?> startupFailure(int oldDesktop) async {
-    for (final row in _hosts.values) {
-      if (row['desktopPid'] == oldDesktop ||
-          row['pendingDesktopCapture'] == true) {
-        continue;
-      }
-      if (row['ownershipKnown'] != true) {
-        return 'Host startup ownership observation is unknown';
-      }
-    }
-    final target = _desktopPid;
-    if (target != null && target != oldDesktop) {
-      if (!_desktopCaptured) return 'New Desktop identity is unknown';
-      final result = await Process.run('/usr/bin/python3', [
-        File.fromUri(
-          Platform.script.resolve(
-            '../../../.github/scripts/settings_startup_cycle.py',
-          ),
-        ).path,
-        '--check-owned-pid',
-        root.path,
-        '$target',
-      ]);
-      if (result.exitCode != 0) {
-        return 'Owned Desktop liveness observation failed';
-      }
-      final check = jsonDecode(result.stdout.toString()) as Map;
-      if (check['state'] == 'gone') {
-        return 'Owned Desktop exited before fresh lease readiness';
-      }
-      if (check['state'] != 'alive') return 'Owned Desktop liveness is unknown';
-    }
-    return null;
-  }
-
   void uiRequest(Map<String, String>? params) {
     record('ui-request', {
       'action': params?['action'] ?? 'observe',
@@ -434,12 +319,11 @@ class ProbeDiagnostics {
     });
   }
 
-  Future<void> uiResponse(Map<String, Object?> state) async {
+  void uiResponse(Map<String, Object?> state) {
     final native = state['native'] as Map? ?? {};
     record('ui-response', {
       for (final key in [
         'pid',
-        'openedDesktopPid',
         'windowVisible',
         'windowKey',
         'appActive',
@@ -449,55 +333,13 @@ class ProbeDiagnostics {
       'framesEnabled': state['framesEnabled'],
       'lifecycleState': state['lifecycleState'],
     });
-    if (publishPhases && native['desktopQuitObservation'] is Map) {
-      final value = native['desktopQuitObservation'] as Map;
-      if (value.isNotEmpty) {
-        record('desktop-quit-observation', {
-          'pid': _appPid,
-          ...desktopQuitFacts(value),
-        });
-      }
-    }
-    final pid = native['openedDesktopPid'];
-    if ((Platform.environment['GITHUB_ACTIONS'] == 'true' ||
-            Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
-                null) &&
-        pid is int &&
-        pid != _desktopPid) {
-      try {
-        final kernelIdentity = (observeHostOwnership || captureCIHostOnce)
-            ? await _desktopKernelInspection(pid)
-            : null;
-        await _desktopCommand('capture', [
-          '${root.path}/missing-runtime/desktop/DeepSeek Harness.app',
-          '$pid',
-          if (kernelIdentity != null) jsonEncode(kernelIdentity),
-        ]);
-        _desktopCaptured =
-            !(observeHostOwnership || captureCIHostOnce) ||
-            kernelIdentity?['state'] == 'observed';
-      } catch (error) {
-        _desktopCaptured = false;
-        record('ci-desktop-identity-unknown', {
-          'pid': pid,
-          'errorType': error.runtimeType.toString(),
-        });
-        stderr.writeln(
-          'CI_DESKTOP_IDENTITY_WARNING: ${safeInspectorOutput(error)}',
-        );
-      }
-      _desktopPid = pid;
-    }
   }
 
-  Future<Map<String, Object?>> _desktopKernelInspection(
-    int targetPid, {
-    bool headless = false,
-  }) async {
+  Future<Map<String, Object?>> _hostKernelInspection(int targetPid) async {
     try {
       final result = await Process.run('/usr/bin/python3', [
         '-c',
-        desktopKernelInspectionScript,
+        hostKernelInspectionScript,
         File.fromUri(
           Platform.script.resolve(
             '../../../.github/scripts/settings_startup_cycle.py',
@@ -505,7 +347,6 @@ class ProbeDiagnostics {
         ).path,
         root.path,
         '$targetPid',
-        '$headless',
       ]);
       final inspection = result.exitCode == 0
           ? jsonDecode(result.stdout.toString()) as Map
@@ -527,71 +368,11 @@ class ProbeDiagnostics {
     }
   }
 
-  Future<void> prepareOwnProcesses() async {
-    final result = await Process.run('/usr/bin/python3', [
-      '-c',
-      ownProcessIdentityScript,
-      File.fromUri(
-        Platform.script.resolve(
-          '../../../.github/scripts/settings_startup_cycle.py',
-        ),
-      ).path,
-      root.path,
-      '$pid',
-      Platform.resolvedExecutable,
-    ]);
-    record('own-process-identity', {'code': result.exitCode});
-    if (result.exitCode != 0) {
-      throw StateError(
-        'Owned Launcher/driver identity failed: ${result.exitCode} ${safeInspectorOutput(result.stderr)}',
-      );
-    }
-  }
-
-  Future<void> _desktopCommand(
-    String mode, [
-    List<String> arguments = const [],
-  ]) async {
-    final result = await Process.run('/usr/bin/swift', [
-      File.fromUri(Platform.script.resolve('owned_desktop_cleanup.swift')).path,
-      root.path,
-      mode,
-      ...arguments,
-    ]);
-    await File('${root.path}/owned-desktop-cleanup.log').writeAsString(
-      '${result.stdout}${result.stderr}HELPER_EXIT=${result.exitCode}\n',
-      mode: FileMode.append,
-    );
-    record('owned-desktop-helper', {'mode': mode, 'exit': result.exitCode});
-    if (result.exitCode != 0) {
-      throw StateError('Owned Desktop $mode failed: ${result.exitCode}');
-    }
-  }
-
   Future<void> close() async {
     _timer?.cancel();
     await _snapshots;
     await _receipt();
-    try {
-      if (_desktopPid != null && _desktopCaptured) {
-        await _desktopCommand('terminate');
-      } else if (_desktopPid != null) {
-        record('ci-desktop-cleanup-unknown', {'pid': _desktopPid});
-        stderr.writeln(
-          'CI_DESKTOP_CLEANUP_WARNING: identity unknown; cleanup refused',
-        );
-      }
-    } catch (error) {
-      record('ci-desktop-cleanup-error', {
-        'mode': 'terminate',
-        'errorType': error.runtimeType.toString(),
-      });
-      stderr.writeln(
-        'CI_DESKTOP_CLEANUP_WARNING: ${safeInspectorOutput(error)}',
-      );
-    } finally {
-      record('diagnostics-close');
-      await _sink.close();
-    }
+    record('diagnostics-close');
+    await _sink.close();
   }
 }

@@ -4,7 +4,7 @@ import { cp, mkdir, readFile, writeFile, lstat, rename } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { composeDshLaunch } from '../../scripts/dsh-launch-composition.mjs'
-import { migrateProjectEntryNames } from '../../scripts/observation-profile.mjs'
+import { migrateProjectEntryNames } from '../../scripts/project-entry-migration.mjs'
 import { readPluginConfiguration, readStartupChecklist, assertProfilePluginVersions, assertRequiredProfilePlugins } from './plugin-configuration.mjs'
 import { prepareStartupPlugins } from './startup-plugins.mjs'
 import { deployPluginPayload } from './plugin-payload.mjs'
@@ -14,7 +14,7 @@ const BUNDLE = 'dsh-workflow-desktop'
 const TEAM = '@deepseek-ai/dsh-experimental-agent-team-profile'
 const TEAM_SERVICE = '@deepseek-ai/dsh-agent-team'
 
-/** Prepare the project-owned layer without changing Electron or DSH source. */
+/** Prepare Station's launch overlay for the DSH profile. */
 export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot, globalRoot, home, permissionMode }) {
   const workflow = join(resourcesRoot, 'workflow')
   const anchor = join(desktopRuntimeRoot, 'node_modules/@deepseek-ai/dsh/package.json')
@@ -48,7 +48,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
     return '{}'
   })
   await migrateProjectEntryNames({ profile: { dir: profile, patchPath: join(profile, 'cordis.patch.yml') },
-    anchor, projectRoot: workflow, previousProjectRoot: JSON.parse(previousIntegration).workflow, stationMatt: true })
+    anchor, projectRoot: workflow, previousProjectRoot: JSON.parse(previousIntegration).workflow })
   const deployment = await deployPluginPayload({ resourcesRoot, profile })
   if (deployment?.changed) process.stderr.write(`[project-plugins] 已从应用交付目录部署固定插件，原配置与包链接备份：${deployment.backup}\n`)
   if (pluginConfig) {
@@ -61,12 +61,6 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const builtInTeam = flatten(boot.composeEntries(base.filter(layer => layer.packageName !== TEAM).map(layer => layer.patches)))
     .some(row => row.name === TEAM_SERVICE)
   const layers = base.filter(layer => !builtInTeam || layer.packageName !== TEAM).map(layer => layer.patches)
-  if (!builtInTeam && !base.some(layer => layer.packageName === TEAM)) {
-    const teamDirectory = boot.resolveBundleDir('dsh', TEAM, anchor, profile)
-    const teamManifest = JSON.parse(await readFile(join(teamDirectory, 'package.json'), 'utf8'))
-    layers.push(boot.bundlePatchPaths(teamDirectory, teamManifest.dsh.bundle)
-      .flatMap(path => boot.loadOverlayPatches('dsh', path)))
-  }
   let entries = boot.composeEntries([...layers, resolved.patches])
   const startup = await prepareStartupPlugins({ profile, entries, config: pluginConfig, boot })
   // User patches for fixed entries first inserted by the Station overlay
@@ -78,11 +72,9 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const billionContextDelivered = profilePlugins || Boolean(deployment
     && pluginConfig?.plugins.some(row => row.package === 'billion-context' && row.startup === true)
     && !startup.skipped.some(row => row.package === 'billion-context'))
-  const launch = composeDshLaunch(entries, { projectRoot: workflow, catalogRoot: globalRoot,
-    billionContextDelivered, profilePlugins, stationInternal: true })
+  const launch = composeDshLaunch(entries, { projectRoot: workflow, billionContextDelivered, profilePlugins })
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   const bundles = manifest.dsh.profile.bundles.filter(name => name !== BUNDLE && (!builtInTeam || name !== TEAM))
-  if (!builtInTeam && !bundles.includes(TEAM)) bundles.push(TEAM)
   if (JSON.stringify(bundles) !== JSON.stringify(manifest.dsh.profile.bundles)) {
     manifest.dsh.profile.bundles = bundles
     await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 })

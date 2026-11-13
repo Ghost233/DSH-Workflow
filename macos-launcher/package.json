@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@deepseek-ai/dsh": "0.2.2-rc.2",
+    "@deepseek-ai/dsh": "0.2.2-rc.3",
     "pnpm": "11.24.0",
     "zod": "4.6.6"
   },
@@ -15,8 +15,8 @@
     "arm64"
   ],
   "devDependencies": {
-    "@deepseek-ai/dsh-client-test-runtime": "0.2.2-rc.2",
-    "@deepseek-ai/dsh-tool-testkit": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-test-runtime": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tool-testkit": "0.2.2-rc.3",
     "immer": "10.2.0",
     "jsdom": "29.1.1",
     "tsx": "4.23.13",

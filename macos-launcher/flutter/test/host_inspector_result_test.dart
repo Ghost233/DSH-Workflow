@@ -5,11 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../tool/probe_diagnostics.dart';
 
-Future<ProcessResult> runFixture(
-  Directory root,
-  Directory runner, {
-  bool reject = false,
-}) async {
+Future<ProcessResult> runFixture(Directory root, Directory runner) async {
   final config = jsonDecode(
     await File('.dart_tool/package_config.json').readAsString(),
   ) as Map;
@@ -18,11 +14,7 @@ Future<ProcessResult> runFixture(
       .toFilePath();
   return Process.run(
     dart,
-    [
-      'test/fixtures/host_inspector_failure.dart',
-      root.path,
-      if (reject) '--guard',
-    ],
+    ['test/fixtures/host_inspector_failure.dart', root.path],
     environment: {
       ...Platform.environment,
       'GITHUB_ACTIONS': 'true',
@@ -32,32 +24,6 @@ Future<ProcessResult> runFixture(
 }
 
 void main() {
-  test(
-    'the real failed inspector call preserves capped safe stderr and exit',
-    () async {
-      final created = await Directory.systemTemp.createTemp(
-        'inspector-result-runner-',
-      );
-      final runner = Directory(await created.resolveSymbolicLinks());
-      final root = await Directory('${runner.path}/dsh-t05-owned').create();
-      addTearDown(() => runner.delete(recursive: true));
-      final result = await runFixture(root, runner);
-      expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
-      final rows = (await File(
-        '${root.path}/host-inspection-results.jsonl',
-      ).readAsLines()).map(jsonDecode).toList();
-      expect(rows, isNotEmpty);
-      expect(rows.first['exit'], 2);
-      expect(rows.first['state'], 'unknown');
-      expect(rows.first['stderr'], contains('open file'));
-      expect(rows.first['interpreter'], '/usr/bin/python3');
-      expect(rows.first['operation'], '--capture-host');
-      expect(
-        utf8.encode(rows.first['stderr'] as String).length,
-        lessThanOrEqualTo(16384),
-      );
-    },
-  );
   test(
     'the actual failed headless inspector keeps its operation and first error',
     () async {
@@ -79,13 +45,7 @@ void main() {
       expect(failure.exitCode, 1);
       expect(failure.stderr, contains('No such file or directory'));
       expect(failure.stderr, contains('synthetic-headless-secret'));
-      await preserveHostInspectionFailure(
-        root,
-        77,
-        script,
-        failure,
-        headless: true,
-      );
+      await preserveHostInspectionFailure(root, 77, script, failure);
       final observation = jsonDecode(
         (await File(
           '${root.path}/host-inspection-results.jsonl',
@@ -136,7 +96,7 @@ void main() {
       final runner = Directory(await created.resolveSymbolicLinks());
       addTearDown(() => runner.delete(recursive: true));
       final wrong = await Directory('${runner.path}/other').create();
-      final rejected = await runFixture(wrong, runner, reject: true);
+      final rejected = await runFixture(wrong, runner);
       expect(
         rejected.exitCode,
         0,
@@ -151,7 +111,7 @@ void main() {
       await outside.writeAsString('original');
       await Link('${root.path}/host-inspection-results.jsonl')
           .create(outside.path);
-      final symlink = await runFixture(root, runner, reject: true);
+      final symlink = await runFixture(root, runner);
       expect(symlink.exitCode, 0, reason: '${symlink.stdout}${symlink.stderr}');
       expect(await outside.readAsString(), 'original');
     },

@@ -1,1 +1,1 @@
-export { default, name, inject, Config, apply } from './src/jev-center-plugin.mjs'
+export { default, name, inject, apply } from './src/delivery-inventory.mjs'

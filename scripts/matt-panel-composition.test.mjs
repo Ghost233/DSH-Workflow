@@ -17,8 +17,7 @@ test('the maintained Matt panel replaces upstream host and tools without changin
     { id: 'unrelated', name: 'unrelated', config: { value: 1 } },
   ]
   const before = structuredClone(entries)
-  const patches = composeDshLaunch(entries, { projectRoot, catalogRoot: '/global',
-     })
+  const patches = composeDshLaunch(entries, { projectRoot })
   assert.deepEqual(entries, before)
   assert.ok(patches.some(row => row.id === 'upstream-panel' && row.disabled))
   assert.ok(patches.some(row => row.id === 'upstream-tools' && row.disabled))
@@ -27,14 +26,14 @@ test('the maintained Matt panel replaces upstream host and tools without changin
   const panel = inserts.find(row => row.id === 'matt-skills-board')
   const tools = inserts.find(row => row.id === 'matt-panel-tools')
   assert.equal(panel.name, join(projectRoot, 'matt-skills-panel-plugin/package/lib/index.js'))
-  assert.equal(tools.name, 'dsh-workflow-matt-panel/tools')
+  assert.equal(tools.name, join(projectRoot, 'matt-skills-panel-plugin/package/deck/registration/agent-row.js'))
   assert.deepEqual(panel.config, { retainedSetting: true })
   assert.deepEqual(tools.config, { retainedToolSetting: true })
   assert.equal(inserts.find(row => row.id === 'mattpocock-skills-zh').config.includeDefaultRoots, false)
 })
 
 test('the launch composition loads the project skills root through a dedicated skill provider', () => {
-  const patches = composeDshLaunch([], { projectRoot, catalogRoot: '/global' })
+  const patches = composeDshLaunch([], { projectRoot })
   const rows = patches.flatMap(row => row.insert ?? [])
   const provider = rows.find(row => row.id === 'dsh-workflow-gh-account')
   assert.ok(provider, 'the shipped skill provider must be inserted')

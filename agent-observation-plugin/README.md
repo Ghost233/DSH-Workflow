@@ -1,7 +1,5 @@
-# DSH agent observation
+# Station 组件清单
 
-JEV 中心与 DSH 原生代理监控独立提供设置和只读监控。根包 `dsh-workflow` 导出 `/jev-center`、`/agent-monitor` 与 `/client`。
+DSH Web 的“组件版本与来源”页显示插件的解析版本、来源和加载状态。根包 `dsh-workflow` 通过 `./delivery-inventory` 提供服务端入口，通过 `./client` 注册页面。
 
-固定配置 entry IDs `workflow-jev-center` 和 `workflow-agent-monitor` 延续使用；入口迁移保留配置和凭据，监控仅检测、通知和记录。
-
-运行 `node agent-observation-plugin/scripts/build-client.mjs --check` 核对客户端产物，`node scripts/run-project-tests.mjs` 执行当前剩余自研测试。
+修改 Web 页面后，在仓库根目录运行 `npm run build:client`。用 `npm run check:client` 核对产物。

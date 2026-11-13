@@ -4,15 +4,12 @@ import 'dart:io';
 
 import 'application_probe.dart' show require, waitFor;
 import 'web_application_scenario.dart';
-import 'web_startup_wait.dart';
-import 'probe_diagnostics.dart' show desktopQuitFacts;
 
 const settingsInitialPassword = 'isolated-web-probe-password';
 
 class SettingsFixture {
-  SettingsFixture(this.root, this.options, this.keychainCi);
+  SettingsFixture(this.root, this.keychainCi);
   final Directory root;
-  final WebProbeOptions options;
   final bool keychainCi;
   Process? host;
   IOSink? hostLog;
@@ -42,41 +39,37 @@ class SettingsFixture {
   }
 
   Future<void> startHeadless() async {
-    if (options.backend == 'headless') {
-      host = await Process.start(
-        '$resources/node',
-        [
-          File.fromUri(Platform.script.resolve('web_host_probe.mjs')).path,
-          resources,
-          data,
-          '${root.path}/home',
-          'workspace-write',
-        ],
-        environment: {...Platform.environment, 'DSH_HOME': '${root.path}/home'},
-      );
-      hostLog = File('${root.path}/host.log').openWrite();
-      host!.stdout
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .listen((line) {
-            hostLog!.writeln(line);
-            if (line == 'HOST_READY' && !hostReady.isCompleted) {
-              hostReady.complete();
-            }
-          });
-      host!.stderr.listen(hostLog!.add);
-      await hostReady.future.timeout(const Duration(seconds: 15));
-      await waitFor(
-        'private preexisting official Host receipt',
-        () =>
-            File('$data/global/.dsh-workflow/desktop/desktop-host.json')
-                .exists(),
-      );
-      require(
-        true,
-        'private official Host is ready before password-triggered application startup',
-      );
-    }
+    host = await Process.start(
+      '$resources/node',
+      [
+        File.fromUri(Platform.script.resolve('web_host_probe.mjs')).path,
+        resources,
+        data,
+        '${root.path}/home',
+        'workspace-write',
+      ],
+      environment: {...Platform.environment, 'DSH_HOME': '${root.path}/home'},
+    );
+    hostLog = File('${root.path}/host.log').openWrite();
+    host!.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(
+      (line) {
+        hostLog!.writeln(line);
+        if (line == 'HOST_READY' && !hostReady.isCompleted) {
+          hostReady.complete();
+        }
+      },
+    );
+    host!.stderr.listen(hostLog!.add);
+    await hostReady.future.timeout(const Duration(seconds: 15));
+    await waitFor(
+      'private preexisting official Host receipt',
+      () =>
+          File('$data/global/.dsh-workflow/desktop/desktop-host.json').exists(),
+    );
+    require(
+      true,
+      'private official Host is ready before password-triggered application startup',
+    );
   }
 
   Future<void> prepareKeychain(String executable) async {
@@ -557,62 +550,6 @@ Future<void> runSettingsApplicationScenario(
       await history.readAsString() == '{"workspace":"pre-migration-workspace","session":"retained-session"}\n',
       'existing isolated history survives settings and credential changes',
     );
-    var permissionReopen = false;
-    int? oldDesktopPid, newDesktopPid;
-    Map<String, Object?>? reopenedBackend, normalRequest;
-    final native = (await o.state())['native'] as Map;
-    if ((Platform.environment['GITHUB_ACTIONS'] == 'true' ||
-            Platform.environment['DSH_LAUNCHER_LOCAL_ACCEPTANCE_ROOT'] !=
-                null) &&
-        native['openedDesktopPid'] is int) {
-      oldDesktopPid = native['openedDesktopPid'] as int;
-      require(
-        await o.ownsHostReceipt(currentBackend),
-        'permission reopen starts from the exact physically bound private Desktop Host',
-      );
-      await o.sdk('recycle');
-      final quitting =
-          (await o.state({'action': 'quitDesktop'}))['native'] as Map;
-      normalRequest = desktopQuitFacts(quitting['desktopQuitObservation']);
-      require(
-        normalRequest['expectedPid'] == oldDesktopPid &&
-            normalRequest['lookupFound'] == true &&
-            normalRequest['accepted'] == true,
-        'the tracked official Desktop accepts one normal permission-reopen request',
-      );
-      await waitFor(
-        'owned official Desktop exits before permission reopen',
-        () async =>
-            await desktopExitObserved(oldDesktopPid!) &&
-            await ownedReceiptAbsent(o.receipt),
-      );
-      await control('打开桌面版', 'tap', 'scrollDown');
-      await o.tap('打开桌面版');
-      reopenedBackend = await waitForActualDesktopLease(
-        oldLease: firstBackend['lease'] as String,
-        receipt: () async =>
-            await ownedReceiptAbsent(o.receipt) ? null : await receipt(),
-        isOwned: o.ownsHostReceipt,
-        ui: () => o.state(),
-        applicationExit: o.applicationExit,
-        dependencyFailure: () => o.startupFailure(oldDesktopPid!),
-      );
-      newDesktopPid =
-          ((await o.state())['native'] as Map)['openedDesktopPid'] as int;
-      require(
-        newDesktopPid != oldDesktopPid &&
-            reopenedBackend['pid'] != firstBackend['pid'] &&
-            reopenedBackend['permissionMode'] == 'danger-full-access',
-        'the new bound official Desktop adopts the saved full-access policy',
-      );
-      await o.sdk('start');
-      await waitFor(
-        'Web reconnects to the reopened real backend',
-        () async => (await o.sdk('status'))['ready'] == true,
-      );
-      await login(local, nextPassword);
-      permissionReopen = true;
-    }
     await o.capture('settings-current');
     await File('${o.root.path}/settings-evidence.json').writeAsString(
       jsonEncode({
@@ -627,22 +564,9 @@ Future<void> runSettingsApplicationScenario(
         'fullAccessSaved': true,
         'reopenHintVisible': true,
         'permissionModeBeforeReopen': firstBackend['permissionMode'],
-        'oldHostPid': firstBackend['pid'],
-        'hostPid': reopenedBackend?['pid'],
-        'oldDesktopPid': oldDesktopPid,
-        'newDesktopPid': newDesktopPid,
-        'permissionNormalRequest': normalRequest,
-        'permissionOriginalExitObserved': permissionReopen,
-        'reopenedBackendLease': reopenedBackend?['lease'],
-        'permissionModeAfterReopen': reopenedBackend?['permissionMode'],
-        'permissionReopenVerified': permissionReopen,
       }),
     );
-    stdout.writeln(
-      permissionReopen
-          ? 'T05 SETTINGS APPLICATION SCENARIO PASSED (official Desktop permission reopen verified)'
-          : 'T05 SETTINGS APPLICATION SCENARIO PASSED (permission reopen pending clean CI)',
-    );
+    stdout.writeln('T05 SETTINGS APPLICATION SCENARIO PASSED');
   } finally {
     client.close(force: true);
   }

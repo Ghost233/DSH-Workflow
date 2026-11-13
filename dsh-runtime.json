@@ -1,7 +1,7 @@
 {
-  "version": "0.2.2-rc.2",
+  "version": "0.2.2-rc.3",
   "package": "@deepseek-ai/dsh",
   "source": "npm",
   "registry": "https://registry.npmjs.org/",
-  "integrity": "sha512-J727r2C471x2cYXGjqZ0D9T1ZyaYQDFH/Ynx8iq+85oslM4nky5YTBnbAuTtxMhW7nhY8wuAEfjjFCQ+K6Swgw=="
+  "integrity": "sha512-S+4oUYVKWuc1SCMMp1mpUa2llxVy0o9gIgp7TDg/Ea7PuvXVkAfnykqSH1/oDXVB+y5VzEm0QIJulo1LIB3qRg=="
 }

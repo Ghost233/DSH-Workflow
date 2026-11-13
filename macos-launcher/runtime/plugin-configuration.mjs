@@ -1,16 +1,9 @@
 import { readDeliveryManifest, pluginDependencySpec, isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 import { randomUUID } from 'node:crypto'
-import { readFile, writeFile, mkdir, rename, unlink, link } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, unlink, link } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
-import { existsSync } from 'node:fs'
 
-export const configurationPath = home => join(home, 'workflow', 'project-plugins.json')
 export const startupChecklistPath = dataRoot => join(dataRoot, 'startup-plugins.json')
-export function assertPackageMaintenanceResource(resources) {
-  if (['project-layer.json', 'maclauncher.json', 'desktop'].some(name => existsSync(join(resources, name)))) {
-    throw new Error('运行端插件随本仓库正式 DMG 统一更新，打包应用不执行插件包维护。')
-  }
-}
 const readJson = async path => {
   try { return JSON.parse(await readFile(path, 'utf8')) }
   catch (error) { if (error.code !== 'ENOENT') throw error }
@@ -60,16 +53,6 @@ export async function readStartupChecklist(dataRoot, config, resources) {
   return await load() ?? defaults
 }
 
-export async function savePluginConfiguration(home, config) {
-  const path = configurationPath(home)
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-  const temporary = `${path}.${randomUUID()}.tmp`
-  try {
-    await writeFile(temporary, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
-    await rename(temporary, path)
-  } finally { await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error }) }
-}
-
 /** Refuse package-manager reconciliation when it would silently replace an installed plugin. */
 export async function assertProfilePluginVersions(profile, config, expected = new Map()) {
   const manifest = await readJson(join(profile, 'package.json'))
@@ -106,31 +89,6 @@ export async function assertRequiredProfilePlugins(profile, required, resources,
     const checklist = dataRoot ? `\n可在 Station「插件」页编辑启动检查名单，或直接编辑 ${startupChecklistPath(dataRoot)}` : ''
     throw new Error(`DSH 未启动。请先在 DSH 全局 desktop profile 安装必需插件，再重新启动：\n${missing.join('\n')}${install}${checklist}`)
   }
-}
-
-/** Maintenance may add only exact packaged pins; runtime replacement and removal stay closed. */
-export async function manageProfilePluginOperation({ resources, home, profileName, args, run }) {
-  assertPackageMaintenanceResource(resources)
-  const config = await readPluginConfiguration(resources)
-  const profile = join(home, 'profiles', profileName)
-  await assertProfilePluginVersions(profile, config)
-  const refused = () => { throw new Error('运行端插件随本仓库正式 DMG 统一更新；维护入口只允许添加清单中精确锁定的版本。') }
-  if (!config || args[0] !== 'add') refused()
-  const selected = new Map()
-  for (let index = 1; index < args.length; index++) {
-    const value = args[index]
-    if (value === '--save-exact') continue
-    if (value === '--registry') {
-      if (args[++index] !== config.registry) refused()
-      continue
-    }
-    const item = config.plugins.find(item => item.source !== 'git' && `${item.package}@${item.version}` === value)
-    if (!item) refused()
-    selected.set(item.package, item.version)
-  }
-  if (!selected.size) refused()
-  await run()
-  await assertProfilePluginVersions(profile, config, selected)
 }
 
 if (import.meta.main) {

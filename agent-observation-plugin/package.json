@@ -1,13 +1,11 @@
 {
   "name": "dsh-workflow",
   "version": "0.1.1",
-  "description": "DSH JEV center and native agent observation",
+  "description": "DSH Station component inventory",
   "type": "module",
   "main": "index.mjs",
   "exports": {
     ".": "./index.mjs",
-    "./jev-center": "./src/jev-center-plugin.mjs",
-    "./agent-monitor": "./src/agent-monitor-plugin.mjs",
     "./client": "./client.js",
     "./delivery-inventory": "./src/delivery-inventory.mjs",
     "./package.json": "./package.json"

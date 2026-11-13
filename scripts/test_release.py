@@ -463,7 +463,7 @@ Path(os.environ['FIXTURE_RELEASE_LOG']).write_text(json.dumps(sys.argv[1:]))
         app, assets = self.packaging_fixture()
         result = self.package_cli(app, assets)
         self.assertEqual(result.returncode, 0, result.stderr)
-        plugin = {'package': '@botharness/tobs', 'version': '1.6.1-fixture', 'commit': 'a' * 40}
+        plugin = {'package': 'owned-artifact-plugin', 'version': '1.2.3', 'commit': 'a' * 40}
         (self.repo / 'project-plugins.json').write_text(json.dumps({
             'npmStartup': 'profile',
             'plugins': [{**plugin, 'source': 'artifact', 'startup': True},

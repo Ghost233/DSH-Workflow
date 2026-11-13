@@ -1,18 +1,17 @@
 import { resolve, join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-import { observationProfilePatches } from './observation-profile.mjs'
 import { blocksPackageMutation, isUnavailablePluginModule } from './dsh-delivery-policy.mjs'
 
 const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
 
 /** Project launch overlay; saved user settings are never changed here. */
-export function composeDshLaunch(entries, { projectRoot, catalogRoot, billionContextDelivered = false, profilePlugins = false, stationInternal = false }) {
+export function composeDshLaunch(entries, { projectRoot, billionContextDelivered = false, profilePlugins = false }) {
   const root = resolve(projectRoot), all = flatten(entries)
-  const patches = stationInternal ? [] : observationProfilePatches(all, resolve(catalogRoot))
+  const patches = []
   const retiredIds = new Set(['workflow-jev-center', 'workflow-agent-monitor', 'workflow-project-coordination',
     'preset-deepseekbot'])
-  const retired = row => stationInternal && (retiredIds.has(row.id) || /^(?:@botharness\/|deepseekbot(?:\/|$))/.test(row.name ?? ''))
+  const retired = row => retiredIds.has(row.id) || /^(?:@botharness\/|deepseekbot(?:\/|$))/.test(row.name ?? '')
   const disabledModule = name => blocksPackageMutation(name, profilePlugins)
     || isUnavailablePluginModule(name, { billionContextDelivered })
   const addressable = row => {
@@ -61,13 +60,12 @@ export function composeDshLaunch(entries, { projectRoot, catalogRoot, billionCon
   }
   const replacements = [
     { id: 'matt-skills-board', name: join(root, 'matt-skills-panel-plugin/package/lib/index.js'), names: ['dsh-mattpocock-skills-deck', 'dsh-workflow-matt-panel'] },
-    { id: 'matt-panel-tools', name: stationInternal ? join(root, 'matt-skills-panel-plugin/package/deck/registration/agent-row.js') : 'dsh-workflow-matt-panel/tools',
+    { id: 'matt-panel-tools', name: join(root, 'matt-skills-panel-plugin/package/deck/registration/agent-row.js'),
       names: ['dsh-mattpocock-skills-deck/tools', 'dsh-workflow-matt-panel/tools'] },
   ]
   const mcpEntries = JSON.parse(readFileSync(join(root, 'project-mcp.json'), 'utf8'))
   const definitions = [
-    ...stationInternal ? [] : [{ id: 'workflow-project-coordination', name: 'dsh-workflow/project-coordination', config: { directory: join(catalogRoot, '.dsh-workflow/project-coordination'), configurationFile: '' } }],
-    { id: 'workflow-delivery-inventory', name: stationInternal ? join(root, 'agent-observation-plugin/src/delivery-inventory.mjs') : 'dsh-workflow/delivery-inventory', config: { projectRoot: root } },
+    { id: 'workflow-delivery-inventory', name: join(root, 'agent-observation-plugin/src/delivery-inventory.mjs'), config: { projectRoot: root } },
     { id: 'workflow-browser-harness', name: join(root, 'browser-harness-plugin/index.mjs') },
     { id: 'workflow-browser-harness-skills', name: '@deepseek-ai/dsh-skill-filesystem', config: {
       providerName: 'workflow-browser-harness', includeDefaultRoots: false, customSkillDirs: [join(root, 'browser-harness-plugin/skills')],
