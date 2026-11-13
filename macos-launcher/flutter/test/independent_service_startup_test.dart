@@ -153,13 +153,18 @@ void main() {
         final configured = jsonDecode(
           await File('$resources/workflow/project-plugins.json').readAsString(),
         ) as Map;
+        final checklist = jsonDecode(
+          await File('${root.path}/startup-plugins.json').readAsString(),
+        ) as List;
         expect(
           results.map((row) => row['package']).toList(),
-          (configured['plugins'] as List)
-              .cast<Map>()
-              .where((row) => row['startup'] == true)
-              .map((row) => row['package'])
-              .toList(),
+          [
+            for (final row in (configured['plugins'] as List).cast<Map>())
+              if (row['startup'] == true &&
+                  (row['source'] == 'git' || row['source'] == 'artifact'))
+                row['package'],
+            ...checklist,
+          ],
           reason:
               'Every configured startup package needs an actual Host outcome',
         );

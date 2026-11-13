@@ -62,9 +62,16 @@ export async function prepareStartupPlugins({ profile, entries, config, boot }) 
 }
 
 /** Report actual Host outcomes; a repository pin never proves that a plugin loaded. */
-export async function startupPluginResults({ resourcesRoot, url, preparation = [] }) {
+export async function startupPluginResults({ resourcesRoot, url, preparation = [], checklist }) {
   const config = await readPluginConfiguration(resourcesRoot)
   if (!config) throw new Error('Missing packaged startup plugin configuration')
+  const items = config.plugins.filter(item => item.startup === true && (checklist === undefined || !isProfilePlugin(config, item)))
+  const profileNames = new Set(checklist)
+  if (checklist !== undefined) {
+    const bundled = new Set(items.map(item => item.package))
+    items.push(...checklist.filter(name => !bundled.has(name)).map(name => ({ package: name })))
+  }
+  if (!items.length) return []
   let rows, unknown
   try {
     const signal = AbortSignal.timeout(2000)
@@ -83,7 +90,7 @@ export async function startupPluginResults({ resourcesRoot, url, preparation = [
       || inventory?.actualScope !== 'runtime-resolution' || !Array.isArray(inventory.rows)) throw new Error('Host startup plugin inventory is unknown')
     rows = inventory.rows.filter(row => row.scope === 'Host')
   } catch (error) { unknown = String(error.message).slice(0, 300) }
-  return config.plugins.filter(item => item.startup === true).map(item => {
+  return items.map(item => {
     if (item.bundle === 'native') {
       const components = item.components.map(component => {
         const actual = rows?.find(row => row.package === component.package && row.enabled === true
@@ -103,7 +110,7 @@ export async function startupPluginResults({ resourcesRoot, url, preparation = [
         components, requiredEntries, reason: attempted?.reason ?? (unknown ? `实际启动状态未知：${unknown}`
           : loaded ? '当前 Host 已加载全部固定组件。' : '部分组件未加载；请查看组件状态与 Host 日志。') }
     }
-    const profileManaged = isProfilePlugin(config, item)
+    const profileManaged = (item.version === undefined && profileNames.has(item.package)) || isProfilePlugin(config, item)
     const matches = rows?.filter(row => row.package === item.package || row.moduleName === item.package) ?? []
     const versionMatches = row => profileManaged ? Boolean(row.current) : row.current === item.version && row.status === 'fixed'
     const active = matches.find(row => row.enabled === true && row.fiberPhase === 'active'

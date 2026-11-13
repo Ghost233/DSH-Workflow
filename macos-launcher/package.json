@@ -1,12 +1,12 @@
 {
   "name": "dsh-workflow-macos-runtime",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "private": true,
   "type": "module",
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.2-rc.2",
     "pnpm": "11.24.0",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "os": [
     "darwin"

@@ -166,6 +166,14 @@ test('profile versions report registry latest separately from installed and pack
   assert.equal(byName[source].expected, version)
   assert.ok(report.rows.every(row => row.updatable === false))
   assert.equal(await readFile(profilePath, 'utf8'), profileBytes)
+
+  const dataRoot = join(root, 'data')
+  await mkdir(dataRoot)
+  await writeFile(join(dataRoot, 'startup-plugins.json'), '["user-checklist-plugin"]')
+  const localReport = await checkPluginVersions({ resourcesRoot: resources, home, dataRoot, fetchLatest: async () => '2.3.4' })
+  assert.equal(localReport.rows.some(row => row.name === missing), false)
+  assert.equal(localReport.rows.find(row => row.name === tracked).current, installed[tracked])
+  assert.equal(localReport.rows.find(row => row.name === 'user-checklist-plugin').latest, '2.3.4')
 })
 
 test('DSH support text uses only compatibility declared by the package', () => {

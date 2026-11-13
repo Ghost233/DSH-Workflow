@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
-import { readDeliveryManifest } from '../agent-observation-plugin/src/delivery-manifest.mjs'
+import { readDeliveryManifest, isProfilePlugin } from '../agent-observation-plugin/src/delivery-manifest.mjs'
 import { sealPluginPayload, verifyPluginPayload } from './runtime/plugin-payload.mjs'
 import { pruneKnownDevelopmentFiles } from './production-file-policy.mjs'
 import { stageArtifactSet } from '../scripts/stage-artifact-set.mjs'
@@ -27,7 +27,7 @@ export async function bundleProjectPlugins({ resourcesRoot, sourceRoot = join(re
   let failure
   const npmOptions = ['--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false', '--prefer-online', '--cache', npmCache ?? join(scratch, 'npm-cache'), '--registry', config.registry]
   try {
-    for (const [index, item] of config.plugins.filter(row => row.startup === true).entries()) {
+    for (const [index, item] of config.plugins.filter(row => row.startup === true && !isProfilePlugin(config, row)).entries()) {
       if (item.source === 'artifact') {
         const staged = await stageArtifactSet(sourceRoot, item, directory)
         Object.assign(dependencies, staged.dependencies)

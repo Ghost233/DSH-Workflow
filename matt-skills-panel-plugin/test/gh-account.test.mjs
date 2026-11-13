@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdtemp, mkdir, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -199,6 +199,43 @@ function runBash(cwd, script, env) {
     child.on('close', function (code) { resolvePromise({ code, stdout, stderr }) })
   })
 }
+
+test('linked worktrees inherit the main checkout account in Deck and Bash, with local declarations taking precedence', async () => withWorld(async ({ root, home }) => {
+  const repo = join(root, 'main checkout')
+  const worktree = join(root, 'linked checkout')
+  const git = (...args) => execFileSync('git', args, { stdio: 'pipe' })
+  git('init', repo)
+  git('-C', repo, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+    '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'Initial commit')
+  git('-C', repo, 'worktree', 'add', '--detach', worktree)
+  await declare(repo, 'Charlotte-765\n')
+  const expected = await accountDir(home, 'Charlotte-765')
+  const processEnv = {}
+  const gh = account(home, { processEnv })
+  const dispose = await gh.installBashEnvShim()
+  try {
+    const cwd = join(worktree, 'src')
+    await mkdir(cwd)
+    const read = async () => {
+      const result = await runBash(cwd, 'printf "%s" "$GH_CONFIG_DIR"', {
+        HOME: home, BASH_ENV: processEnv.BASH_ENV, GH_CONFIG_DIR: '/inherited/global',
+      })
+      assert.equal(result.code, 0, result.stderr)
+      return result.stdout
+    }
+    assert.deepEqual(await gh.accountEnvFor(cwd), { GH_CONFIG_DIR: expected })
+    assert.equal(await read(), expected)
+    await declare(worktree, 'Ghost233')
+    const override = await accountDir(home, 'Ghost233')
+    assert.deepEqual(await gh.accountEnvFor(cwd), { GH_CONFIG_DIR: override })
+    assert.equal(await read(), override)
+    await declare(worktree, '')
+    assert.equal(await gh.accountEnvFor(cwd), null)
+    assert.equal(await read(), '/inherited/global')
+  } finally {
+    await dispose()
+  }
+}))
 
 test('BASH_ENV shim 让真实 bash 读到声明账号；四种回落都不导出 GH_CONFIG_DIR', async () => withWorld(async ({ root, home }) => {
   const repo = join(root, 'repo')

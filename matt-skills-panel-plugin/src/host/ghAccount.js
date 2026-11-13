@@ -9,12 +9,15 @@
  * 边界：只读声明文件与账号目录，不保存凭据、不写 git 配置；账号目录缺省只算「无声明」，静默回落。
  * 状态：不缓存声明结果，每次调用现读（仓库里换声明后下一次命令即生效）。
  */
+import { execFile } from 'node:child_process'
 import { promises as nodeFs } from 'node:fs'
 import os from 'node:os'
 import { isAbsolute, join, parse, resolve } from 'node:path'
+import { promisify } from 'node:util'
 
 /** GitHub 登录名：1–39 位，字母数字开头结尾，中间允许连字符。 */
 const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/
+const runGit = promisify(execFile)
 
 /**
  * @param {object} [deps]
@@ -51,9 +54,21 @@ export function createGhAccount(deps) {
     }
   }
 
+  async function readMainWorktreeDeclaration(dir) {
+    try {
+      const { stdout } = await runGit('git', ['--git-dir=.git', 'worktree', 'list', '--porcelain', '-z'], { cwd: dir })
+      const [worktree, head] = stdout.split('\0', 2)
+      const primary = worktree.startsWith('worktree ') ? worktree.slice('worktree '.length) : ''
+      if (isAbsolute(primary) && head?.startsWith('HEAD ') && resolve(primary) !== dir) {
+        return await readDeclaration(primary)
+      }
+    } catch (e) { /* 无法解析工作树时按未声明处理 */ }
+    return null
+  }
+
   /**
    * 从 cwd 向上解析账号目录。
-   * 停止边界：遇到声明（最近声明说了算，非法/目录缺失都就此回落）、自带 `.git` 的目录、HOME、`/`。
+   * 到仓库根停止上溯。链接 worktree 无本地声明时，读取同仓库主工作区的声明。
    * @param {string} [cwd]
    * @returns {Promise<string|undefined>}
    */
@@ -65,13 +80,19 @@ export function createGhAccount(deps) {
     const home = resolve(homeDir)
     const root = parse(dir).root
     for (;;) {
-      const login = await readDeclaration(dir)
+      let login = await readDeclaration(dir)
+      if (login === null) {
+        const gitEntry = await fs.lstat(join(dir, '.git')).catch(() => null)
+        if (gitEntry) {
+          login = gitEntry.isFile() ? await readMainWorktreeDeclaration(dir) : null
+          if (login === null) return undefined
+        }
+      }
       if (login !== null) {
         if (!LOGIN_RE.test(login)) return undefined
         const accountDir = join(configBase(), 'gh-profiles', login)
         return (await isDirectory(accountDir)) ? accountDir : undefined
       }
-      try { await fs.lstat(join(dir, '.git')) ; return undefined } catch (e) { /* 没有 .git，继续上溯 */ }
       if (dir === home || dir === root) return undefined
       const parent = resolve(dir, '..')
       if (parent === dir) return undefined
@@ -118,23 +139,35 @@ export function createGhAccount(deps) {
       '_gh_home="${HOME:-}"',
       '_gh_dir="${PWD:-$_gh_home}"',
       '_gh_base="${XDG_CONFIG_HOME:-$_gh_home/.config}"',
+      '_gh_declaration=""',
       'case "$_gh_base" in /*) ;; *) _gh_base="$_gh_home/.config" ;; esac',
       'while [ -n "$_gh_dir" ]; do',
       '  if [ -e "$_gh_dir/.ghswitch" ] || [ -L "$_gh_dir/.ghswitch" ]; then',
-      '    _gh_login=$(sed -n \'1{s/^[[:space:]]*//;s/[[:space:]]*$//;p;}\' "$_gh_dir/.ghswitch" 2>/dev/null) || _gh_login=""',
-      '    case "$_gh_login" in',
-      '      \'\'|*[!A-Za-z0-9-]*|-*|*-) ;;',
-      '      *) if [ "${#_gh_login}" -le 39 ] && [ -d "$_gh_base/gh-profiles/$_gh_login" ]; then export GH_CONFIG_DIR="$_gh_base/gh-profiles/$_gh_login"; fi ;;',
-      '    esac',
+      '    _gh_declaration="$_gh_dir/.ghswitch"',
       '    break',
       '  fi',
-      '  if [ -e "$_gh_dir/.git" ] || [ -L "$_gh_dir/.git" ]; then break; fi',
+      '  if [ -e "$_gh_dir/.git" ] || [ -L "$_gh_dir/.git" ]; then',
+      '    if [ -f "$_gh_dir/.git" ] && [ ! -L "$_gh_dir/.git" ]; then',
+      '      if { IFS= read -r -d "" _gh_main && IFS= read -r -d "" _gh_head; } < <(command git -C "$_gh_dir" --git-dir=.git worktree list --porcelain -z 2>/dev/null) &&',
+      '        [[ $_gh_main == "worktree /"* && $_gh_head == "HEAD "* ]]; then',
+      '        _gh_declaration="${_gh_main#worktree }/.ghswitch"',
+      '      fi',
+      '    fi',
+      '    break',
+      '  fi',
       '  if [ "$_gh_dir" = "$_gh_home" ]; then break; fi',
       '  if [ "$_gh_dir" = "/" ]; then break; fi',
       '  _gh_dir="${_gh_dir%/*}"',
       '  if [ -z "$_gh_dir" ]; then _gh_dir="/"; fi',
       'done',
-      'unset _gh_home _gh_dir _gh_base _gh_login',
+      'if [ -n "$_gh_declaration" ]; then',
+      '  _gh_login=$(sed -n \'1{s/^[[:space:]]*//;s/[[:space:]]*$//;p;}\' "$_gh_declaration" 2>/dev/null) || _gh_login=""',
+      '  case "$_gh_login" in',
+      '    \'\'|*[!A-Za-z0-9-]*|-*|*-) ;;',
+      '    *) if [ "${#_gh_login}" -le 39 ] && [ -d "$_gh_base/gh-profiles/$_gh_login" ]; then export GH_CONFIG_DIR="$_gh_base/gh-profiles/$_gh_login"; fi ;;',
+      '  esac',
+      'fi',
+      'unset _gh_home _gh_dir _gh_base _gh_declaration _gh_main _gh_head _gh_login',
     )
     return lines.join('\n') + '\n'
   }

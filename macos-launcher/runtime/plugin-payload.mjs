@@ -8,7 +8,7 @@ import { readDeliveryManifest, pluginDependencySpec, isProfilePlugin } from '../
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const sealPath = resources => join(resources, 'plugin-payload.json')
-const selected = config => config.plugins.filter(item => item.startup === true)
+const selected = config => config.plugins.filter(item => item.startup === true && !isProfilePlugin(config, item))
 const optional = promise => promise.catch(error => { if (error.code !== 'ENOENT') throw error; return undefined })
 
 async function members(root) {
@@ -120,7 +120,7 @@ export async function deployPluginPayload({ resourcesRoot, profile }) {
   manifest.dependencies ??= {}
   const config = await readDeliveryManifest(join(resourcesRoot, 'workflow'))
   const changes = []
-  const packages = selected(config).filter(item => !isProfilePlugin(config, item))
+  const packages = selected(config)
     .flatMap(item => [item, ...(item.components ?? []), ...(item.runtimePackages ?? [])])
   for (const item of packages) {
     const link = join(profile, 'node_modules', item.package), target = join(resolve(resourcesRoot), 'plugins/node_modules', item.package)

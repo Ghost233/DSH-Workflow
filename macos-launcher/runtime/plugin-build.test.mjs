@@ -13,6 +13,29 @@ import { verifyPluginPayload } from './plugin-payload.mjs'
 
 const exec = promisify(execFile)
 
+test('a profile checklist ships without npm plugin archives or a registry lookup', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'station-checklist-payload-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const workflow = join(root, 'workflow')
+  await mkdir(workflow)
+  const item = { package: 'owned-profile-fixture', version: '1.2.3', startup: true }
+  const config = { registry: 'https://registry.npmjs.org/', npmStartup: 'profile', plugins: [item] }
+  const bytes = JSON.stringify(config)
+  await writeFile(join(workflow, 'project-plugins.json'), bytes)
+  await writeFile(join(workflow, 'dsh-runtime.json'), JSON.stringify({ version: '0.2.1-rc.2' }))
+  await writeFile(join(workflow, 'project-plugins.lock.json'), JSON.stringify({ schema: 1, registry: config.registry,
+    harnessVersion: '0.2.1-rc.2', manifestSha256: createHash('sha256').update(bytes).digest('hex'),
+    plugins: [{ ...item, metadata: { name: item.package, version: item.version } }] }))
+  const run = (name, args, cwd) => {
+    assert.equal(name, 'npm')
+    assert.ok(['install', 'ci'].includes(args[0]))
+    return exec(name, [...args, '--offline'], { cwd })
+  }
+  const payload = await bundleProjectPlugins({ resourcesRoot: root, run })
+  assert.deepEqual(payload.plugins, [])
+  assert.ok(!Object.keys(payload.members).some(path => path.includes(item.package)))
+})
+
 for (const mode of ['full source', 'literal files', 'npm glob', 'root glob']) test(`the standard bundler seals a fixed Git package without lifecycle hooks (${mode})`, { timeout: 30_000 }, async t => {
   const sparse = mode === 'literal files'
   const root = await mkdtemp(join(tmpdir(), 'workflow-plugin-source-'))

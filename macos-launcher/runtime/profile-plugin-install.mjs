@@ -2,8 +2,7 @@ import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
-import { readPluginConfiguration } from './plugin-configuration.mjs'
+import { readPluginConfiguration, readStartupChecklist } from './plugin-configuration.mjs'
 import { serviceRequest, serviceSocket } from './service-control.mjs'
 
 // The Web UI is unavailable before the startup checklist passes. Use the same
@@ -11,11 +10,10 @@ import { serviceRequest, serviceSocket } from './service-control.mjs'
 async function install(names) {
   const resources = fileURLToPath(new URL('../../../', import.meta.url))
   const config = await readPluginConfiguration(resources)
-  const required = new Set(config?.plugins.filter(item => item.startup === true && isProfilePlugin(config, item))
-    .map(item => item.package))
-  if (!names.length || names.some(name => !required.has(name))) throw new Error('请指定启动清单中的 npm 插件包名')
   const home = process.env.DSH_HOME || join(homedir(), '.dsh')
   const dataRoot = join(homedir(), 'Library/Application Support/DSH Workflow')
+  const required = new Set(await readStartupChecklist(dataRoot, config, resources))
+  if (!names.length || names.some(name => !required.has(name))) throw new Error('请指定本地启动检查名单中的包名')
   let status
   try { status = await serviceRequest(serviceSocket(dataRoot), { type: 'status' }) }
   catch (error) { if (!['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw error }

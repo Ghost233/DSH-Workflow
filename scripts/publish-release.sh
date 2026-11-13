@@ -39,10 +39,11 @@ if runtime.get('source') == 'npm':
     assert value.get('dshRuntime') == {key: runtime[key] for key in ('source', 'registry', 'integrity')}, 'manifest DSH npm 来源或完整性不一致'
 payload = value.get('pluginPayload', {})
 assert re.fullmatch(r'[0-9a-f]{64}', payload.get('sha256', '')), 'manifest 缺少插件本体交付校验'
-plugins = json.loads(Path('project-plugins.json').read_text())['plugins']
+plugin_config = json.loads(Path('project-plugins.json').read_text())
 expected_plugins = [dict(package=p['package'], version=p['version'],
                          **({'commit': p['commit']} if p.get('source') in ('git', 'artifact') else {}))
-                    for p in plugins if p.get('startup') is True]
+                    for p in plugin_config['plugins'] if p.get('startup') is True
+                    and not (plugin_config.get('npmStartup') == 'profile' and p.get('source', 'npm') == 'npm')]
 assert payload.get('plugins') == expected_plugins, 'manifest 插件版本、Git 提交或清单覆盖不一致'
 assert len(value['assets']) == 1 and value['assets'][0]['name'] == expected, f"manifest assets 不符合预期：{value.get('assets')}"
 assert value['assets'][0]['size'] == (root / expected).stat().st_size, 'manifest size 不一致'

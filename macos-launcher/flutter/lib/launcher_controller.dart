@@ -804,6 +804,20 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
   }
 
+  Future<void> openStartupChecklist() async {
+    final path = '${environment.dataRoot}/startup-plugins.json';
+    if (!await File(path).exists()) {
+      await _runReport('plugin-configuration.mjs', [
+        environment.resources,
+        environment.dataRoot,
+      ]);
+    }
+    final result = await Process.run('/usr/bin/open', ['-t', path]);
+    if (result.exitCode != 0) {
+      throw StateError('无法打开启动检查名单 $path：${result.stderr}');
+    }
+  }
+
   Future<Map<String, Object?>> _runReport(
     String file,
     List<String> arguments,

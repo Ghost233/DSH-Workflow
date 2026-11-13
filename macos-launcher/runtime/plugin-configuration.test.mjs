@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { readPluginConfiguration, savePluginConfiguration, configurationPath, manageProfilePluginOperation, assertProfilePluginVersions, assertRequiredProfilePlugins } from './plugin-configuration.mjs'
+import { readPluginConfiguration, savePluginConfiguration, configurationPath, manageProfilePluginOperation, assertProfilePluginVersions, assertRequiredProfilePlugins, readStartupChecklist, startupChecklistPath } from './plugin-configuration.mjs'
 
 test('profile startup refuses missing required npm packages and accepts updated installations', async t => {
   const profile = await mkdtemp(join(tmpdir(), 'workflow-profile-startup-'))
@@ -15,18 +15,41 @@ test('profile startup refuses missing required npm packages and accepts updated 
     { package: 'optional-plugin', version: '1.0.0' },
     { package: 'source-plugin', version: '1.0.0', source: 'git', startup: true },
   ] }
+  const required = await readStartupChecklist(undefined, config)
   const installed = async (name, version) => {
     const directory = join(profile, 'node_modules', name)
     await mkdir(directory, { recursive: true })
     await writeFile(join(directory, 'package.json'), JSON.stringify({ name, version }))
   }
   await installed('dsh-context', '2.0.0')
-  await assert.rejects(assertRequiredProfilePlugins(profile, config, '/Applications/Ghost DSH Station.app/Contents/Resources'),
+  await assert.rejects(assertRequiredProfilePlugins(profile, required, '/Applications/Ghost DSH Station.app/Contents/Resources'),
     error => error.message.includes('dshmarket') && error.message.includes('profile-plugin-install.mjs')
       && !error.message.includes('optional-plugin') && !error.message.includes('dsh-context'))
   await installed('dshmarket', '2.0.0')
-  await assertRequiredProfilePlugins(profile, config)
+  await assertRequiredProfilePlugins(profile, required)
   await assertProfilePluginVersions(profile, config)
+})
+
+test('packaged defaults seed the local list once; local edits and an empty list survive an app update', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'station-checklist-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const data = join(root, 'data'), resources = join(root, 'resources')
+  await mkdir(join(resources, 'workflow'), { recursive: true })
+  const defaults = join(resources, 'workflow/default-startup-plugins.json')
+  const local = startupChecklistPath(data)
+  const config = { npmStartup: 'profile', plugins: [{ package: 'old-pin', startup: true }] }
+  const read = () => readStartupChecklist(data, config, resources)
+  await writeFile(defaults, '["default-plugin"]')
+  assert.deepEqual(await Promise.all([read(), read()]), [['default-plugin'], ['default-plugin']])
+  assert.deepEqual(JSON.parse(await readFile(local, 'utf8')), ['default-plugin'])
+  await writeFile(local, '["@user/github-plugin"]')
+  await writeFile(defaults, '["new-default"]')
+  assert.deepEqual(await read(), ['@user/github-plugin'])
+  await writeFile(local, '[]')
+  assert.deepEqual(await read(), [])
+  await writeFile(local, '["../invalid"]')
+  await assert.rejects(read(), /启动检查名单须为不重复的包名数组/)
+  assert.equal(await readFile(local, 'utf8'), '["../invalid"]')
 })
 import { ensureStartupPlugins, updateProfilePlugins } from './plugin-update.mjs'
 

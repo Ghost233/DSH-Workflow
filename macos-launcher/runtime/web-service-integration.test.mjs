@@ -3,9 +3,10 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { copyProjectIntegration } from '../project-resources.mjs'
 import { isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { readStartupChecklist, startupChecklistPath } from './plugin-configuration.mjs'
 import { serveManager } from './service-manager.mjs'
 import { serviceRequest, serviceSocket } from './service-control.mjs'
 
@@ -40,17 +41,18 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   assert.ok(manager)
   const socket = serviceSocket(dataRoot)
   const configured = JSON.parse(await readFile(join(resources, 'workflow/project-plugins.json'), 'utf8'))
-  const required = configured.plugins.filter(row => row.startup === true && isProfilePlugin(configured, row))
-  if (required.length) {
+  const required = await readStartupChecklist(undefined, configured, resources)
+  const local = startupChecklistPath(dataRoot)
+  const userPlugin = 'station-owned-checklist-fixture'
+  if (configured.npmStartup === 'profile') {
     await assert.rejects(serviceRequest(socket, { type: 'start-service', permissionMode: 'workspace-write' }, 45_000),
-      error => required.every(row => error.message.includes(row.package)))
+      error => required.every(name => error.message.includes(name)))
     assert.equal((await serviceRequest(socket, { type: 'status' })).service.ready, false)
-    // Simulate the user's installed packages; the Station must not create these links itself.
-    for (const item of required) {
-      const link = join(profile, 'node_modules', item.package)
-      await mkdir(dirname(link), { recursive: true })
-      await symlink(join(artifact, 'plugins/node_modules', item.package), link)
-    }
+    assert.deepEqual(JSON.parse(await readFile(local, 'utf8')), required)
+    await writeFile(local, JSON.stringify([userPlugin]))
+    const directory = join(profile, 'node_modules', userPlugin)
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'package.json'), JSON.stringify({ name: userPlugin, version: '99.1.0' }))
   }
   const started = await serviceRequest(socket, { type: 'start-service', permissionMode: 'workspace-write' }, 45_000)
   assert.equal(started.service.ready, true)
@@ -59,10 +61,12 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   assert.equal(connected.connection.runtimeVersion, runtime.version)
   assert.equal(await readFile(join(profile, 'cordis.patch.yml'), 'utf8'), userPatch)
   const loaded = started.logs.filter(row => row.text.startsWith('项目启动插件：')).map(row => JSON.parse(row.text.slice('项目启动插件：'.length)))
-  assert.equal(loaded.length, configured.plugins.filter(row => row.startup === true).length)
-  for (const item of required) {
-    const outcome = loaded.find(row => row.package === item.package)
-    assert.equal(outcome.state, 'skipped', `${item.package} is installed but unselected in DSH`)
+  const fixed = configured.plugins.filter(row => row.startup === true && !isProfilePlugin(configured, row))
+  assert.deepEqual(loaded.map(row => row.package), [...fixed.map(item => item.package),
+    ...(configured.npmStartup === 'profile' ? [userPlugin] : [])])
+  if (configured.npmStartup === 'profile') {
+    const outcome = loaded.find(row => row.package === userPlugin)
+    assert.equal(outcome.state, 'skipped', 'The checklist does not enable the installed package')
     assert.match(outcome.reason, /未装配/)
   }
   const inspection = (await serviceRequest(socket, { type: 'inspect-stop', action: 'stop' })).stop

@@ -67,30 +67,24 @@ test('packaged macOS terminal runs without Windows prebuilt binaries', { skip: r
 })
 
 test('audited test files are absent while packaged zod and HTML parsing remain usable', { skip: resources ? false : 'Requires the packaged Station resources' }, async () => {
-  const roots = [
-    join(resources, 'node_modules/zod'),
-    join(resources, 'plugins/node_modules/zod'),
-    join(resources, 'plugins/node_modules/dsh-cost-meter/node_modules/zod'),
-  ]
-  for (const root of roots) {
-    await access(join(root, 'src/index.ts'))
-    await assert.rejects(access(join(root, 'src/v3/tests')), { code: 'ENOENT' })
-    await assert.rejects(access(join(root, 'src/v3/benchmarks')), { code: 'ENOENT' })
-    await assert.rejects(access(join(root, 'src/v4/classic/tests')), { code: 'ENOENT' })
-    const require = createRequire(join(root, 'package.json'))
-    assert.equal(require('zod').string().parse('ok'), 'ok')
-  }
+  const zod = join(resources, 'node_modules/zod')
+  await access(join(zod, 'src/index.ts'))
+  await assert.rejects(access(join(zod, 'src/v3/tests')), { code: 'ENOENT' })
+  await assert.rejects(access(join(zod, 'src/v3/benchmarks')), { code: 'ENOENT' })
+  await assert.rejects(access(join(zod, 'src/v4/classic/tests')), { code: 'ENOENT' })
   const domino = join(resources, 'node_modules/@mixmark-io/domino')
   await assert.rejects(access(join(domino, 'test')), { code: 'ENOENT' })
   const require = createRequire(join(resources, 'package.json'))
+  assert.equal(require('zod').string().parse('ok'), 'ok')
   assert.equal(require('@mixmark-io/domino').createWindow('<title>ok</title>').document.title, 'ok')
   await assert.rejects(access(join(resources, 'node_modules/fast-uri/test')), { code: 'ENOENT' })
-  const plugins = join(resources, 'plugins')
-  for (const name of ['@lezer/rust', 'khroma', 'fast-uri']) {
-    await assert.rejects(access(join(plugins, 'node_modules', name, 'test')), { code: 'ENOENT' })
+})
+
+test('the packaged default checklist carries names without the profile plugin binaries', { skip: resources ? false : 'Requires the packaged Station resources' }, async () => {
+  const path = 'default-startup-plugins.json'
+  const defaults = await readFile(join(resources, 'workflow', path), 'utf8')
+  assert.deepEqual(JSON.parse(defaults), JSON.parse(await readFile(join(root, path), 'utf8')))
+  for (const name of JSON.parse(defaults)) {
+    await assert.rejects(access(join(resources, 'plugins/node_modules', name)), { code: 'ENOENT' })
   }
-  const pluginRequire = createRequire(join(plugins, 'package.json'))
-  assert.equal(pluginRequire('@lezer/rust').parser.parse('fn main() {}').topNode.name, 'SourceFile')
-  assert.equal(pluginRequire('fast-uri').normalize('https://example.test/a/../b'), 'https://example.test/b')
-  assert.equal(typeof pluginRequire('khroma').toHex, 'function')
 })

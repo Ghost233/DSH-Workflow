@@ -170,7 +170,8 @@ void main() {
       expect(find.text('版本偏差'), findsOneWidget);
       expect(find.text('已安装'), findsNWidgets(2));
       expect(find.text('DSH 未找到安装'), findsOneWidget);
-      expect(find.textContaining('可在 DSH 的插件页更新'), findsOneWidget);
+      expect(find.text('编辑启动检查名单'), findsOneWidget);
+      expect(find.textContaining('启停、更新和卸载在 DSH 的插件页操作'), findsOneWidget);
       expect(find.text('更新全部可更新插件'), findsNothing);
       expect(find.widgetWithText(OutlinedButton, '更新'), findsNothing);
       expect(tester.takeException(), isNull);

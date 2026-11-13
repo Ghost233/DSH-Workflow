@@ -2,7 +2,7 @@
   "schema": 1,
   "harnessVersion": "0.2.2-rc.2",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "dad749276f3f5e01a1cb492e4c5e8fb14f77489a0bd9f75ebc170333873c2a75",
+  "manifestSha256": "d92c9862564c6a8aec4f6da3f78204d2f979c48723e31aa15375a8c3f2ee3743",
   "plugins": [
     {
       "package": "dshmarket",
@@ -488,24 +488,6 @@
           },
           "client": {
             "inject": [],
-            "platform": "web"
-          }
-        },
-        "peerDependencies": {},
-        "peerDependenciesMeta": {}
-      }
-    },
-    {
-      "package": "billion-context",
-      "version": "0.1.213",
-      "metadata": {
-        "name": "billion-context",
-        "version": "0.1.213",
-        "dsh": {
-          "bundle": {
-            "patch": "./dsh.bundle.patch.yml"
-          },
-          "client": {
             "platform": "web"
           }
         },

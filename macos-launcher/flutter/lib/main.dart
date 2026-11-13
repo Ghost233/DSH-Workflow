@@ -533,11 +533,12 @@ class _LauncherPageState extends State<LauncherPage> {
             model.checkPlugins,
             enabled: !model.checkingPlugins,
           ),
+          _button('编辑启动检查名单', model.openStartupChecklist),
         ],
       ),
       const SizedBox(height: 12),
       Text(model.pluginMessage),
-      const Text('全局 npm 插件使用已安装版本，可在 DSH 的插件页更新。最新版本取自 npm 的 latest 标签，仅供参考。'),
+      const Text('启动时只检查本地名单中的插件是否已安装。启停、更新和卸载在 DSH 的插件页操作。'),
       const SizedBox(height: 12),
       Expanded(
         child: SingleChildScrollView(

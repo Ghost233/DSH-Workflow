@@ -80,13 +80,6 @@
       "startup": true
     },
     {
-      "package": "billion-context",
-      "version": "0.1.213",
-      "entryId": "bili-native",
-      "repository": "https://github.com/ranxianglei/billion-context",
-      "startup": true
-    },
-    {
       "package": "dsh-live-compact",
       "version": "1.1.5",
       "entryId": "compaction-spine",

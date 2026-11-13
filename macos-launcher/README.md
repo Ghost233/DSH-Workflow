@@ -66,7 +66,9 @@ Web 只有一个端口 `33080`，监听 `0.0.0.0`。本机访问 `http://127.0.0
 
 ## 插件版本配置
 
-仓库的 `project-plugins.json` 维护启动清单及交付版本。`project-plugins.lock.json` 由脚本生成，记录打包快照及来源。标为 `startup: true` 的 npm 插件必须在共享 DSH profile 中安装，缺少时启动器会给出安装命令。已有插件按实际安装版本启动，在 DSH「插件」页面更新。固定 Git 和源码制品仍按清单版本交付。
+首次启动时，Station 将[默认名单](../default-startup-plugins.json)复制到 `~/Library/Application Support/DSH Workflow/startup-plugins.json`。在 Station 的“插件 → 编辑启动检查名单”打开文件，增删 JSON 数组中的包名。保存后在下次启动 DSH 时生效。`[]` 表示跳过所有全局插件的启动检查。
+
+检查只要求包已安装，接受 DSH profile 中的任意版本。应用升级会保留本地名单。缺包时，Station 显示包名和安装命令。启用、停用、更新和卸载由 DSH 管理。固定 Git 和源码制品按交付清单验证。
 
 运行端展示实际加载或解析到的版本，源码组件另显示包内固定版本。全局插件安装在 `$DSH_HOME/profiles/desktop`，默认 `DSH_HOME` 为 `~/.dsh`。
 

@@ -441,15 +441,9 @@ globalThis.fetch = (input, ...args) => {
             .toList();
         expect(
           startupResults.map((row) => row['package']).toList(),
-          ((jsonDecode(
-                    await File('$resources/workflow/project-plugins.json')
-                        .readAsString(),
-                  ) as Map)['plugins']
-                  as List)
-              .cast<Map>()
-              .where((row) => row['startup'] == true)
-              .map((row) => row['package'])
-              .toList(),
+          jsonDecode(
+            await File('${root.path}/startup-plugins.json').readAsString(),
+          ) as List,
           reason: 'The real independent Host must report every startup plugin and continue after an optional failure',
         );
         for (final result in startupResults) {

@@ -12,11 +12,9 @@ Station 窗口打开时显示 Dock 图标，可通过 Command-Tab 切换。关�
 
 Station 的“模型”页管理 DSH 的模型提供商、API Key 和默认模型。你可以添加或编辑提供商，获取可用模型，并为新会话选择默认模型。移除提供商时，已保存的凭据会保留。模型高级字段保持原值。
 
-`billion-context` 和 `dsh-context` 都列在全局插件启动清单中。
+Station 首次启动时把[默认名单](default-startup-plugins.json)复制到 `~/Library/Application Support/DSH Workflow/startup-plugins.json`。启动时检查 DSH `desktop` profile 是否安装了本地名单中的包。缺少插件时，启动器会列出包名和补装命令，也可以从本地名单移除相应包名。
 
-第三方启动清单由 `project-plugins.json` 和锁文件提供。固定 Git 和源码制品随应用打包，并校验版本、入口和内容摘要。全局 npm 插件由 DSH profile 管理。
-
-启动时检查共享的 DSH `desktop` profile 是否已安装清单中标为 `startup: true` 的 npm 插件。缺少插件时，启动器列出包名和补装命令。补装命令使用 npm 默认发布版本。已安装的插件使用当前版本，可在 DSH 的“插件”页面更新。
+应用包只携带全局插件的默认名单。已有本地名单会保留。启用、停用、更新和卸载全局插件都在 DSH 中操作。
 
 打开 Station 的“插件”页，可查看当前安装版本和 npm `latest` 版本。点击“检查插件版本”可刷新。查询失败时仍显示当前版本。启动和版本检查都不会更新全局插件。
 

@@ -1,7 +1,8 @@
 import { symlink, mkdir, writeFile, chmod, copyFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { copyProjectIntegration } from '../../project-resources.mjs'
-import { isProfilePlugin, readDeliveryManifest } from '../../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { readDeliveryManifest } from '../../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { readStartupChecklist } from '../../runtime/plugin-configuration.mjs'
 
 const [artifact, destination, scenario] = process.argv.slice(2)
 if (!artifact || !destination) throw new Error('Pass frozen packaged resources and an owned staging directory')
@@ -19,10 +20,10 @@ await mkdir(profile, { recursive: true })
 const config = await readDeliveryManifest(join(destination, 'workflow'))
 // Model an already provisioned profile. The acceptance service must leave
 // these installed plugins unselected unless the scenario explicitly enables one.
-for (const item of config.plugins.filter(row => row.startup === true && isProfilePlugin(config, row))) {
-  const link = join(profile, 'node_modules', item.package)
-  await mkdir(dirname(link), { recursive: true })
-  await symlink(join(resolve(artifact), 'plugins/node_modules', item.package), link)
+for (const name of await readStartupChecklist(undefined, config, destination)) {
+  const directory = join(profile, 'node_modules', name)
+  await mkdir(directory, { recursive: true })
+  await writeFile(join(directory, 'package.json'), JSON.stringify({ name, version: '99.0.0' }))
 }
 if (scenario === '--profile-only') process.exit(0)
 const patches = [

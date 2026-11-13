@@ -318,7 +318,8 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
           }
           validatedReady = (await waitForInitialHostHealth(actual, deadline, () => child === owned && owned.exitCode === null && owned.signalCode === null, profile.profilePlugins)).ready === true
           lastHealth = { ready: validatedReady, message: null }
-          for (const result of await startupPluginResults({ resourcesRoot: resources, url: actual.url, preparation: profile.startup })) {
+          for (const result of await startupPluginResults({ resourcesRoot: resources, url: actual.url,
+            preparation: profile.startup, checklist: profile.startupChecklist })) {
             log(`项目启动插件：${JSON.stringify(result)}`)
           }
           if (child !== owned || owned.exitCode !== null || owned.signalCode !== null) throw new Error('DSH Host exited during readiness')

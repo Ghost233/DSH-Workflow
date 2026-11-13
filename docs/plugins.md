@@ -32,18 +32,18 @@
 | `dsh-context` | 0.83.1 | 第三方上下文插件，启动清单启用 |
 | `dsh-cost-meter` | 1.9.64 | 第三方费用统计插件，启动清单启用 |
 | `@nagi-ovo/dsh-visualize` | 0.1.9 | 第三方可视化插件，启动清单启用 |
-| `@goodandready/dsh-plugin-notify` | 0.4.8 | 第三方通知插件，启动清单启用 |
 | `dsh-better-sidebar` | 0.30.1 | 第三方侧边栏插件，启动清单启用 |
-| `ghost-agent-sentinel` | 0.4.5 / `e49a05ac` | 固定 Git 来源的代理状态插件，启动清单启用 |
+| `ghost-agent-sentinel` | 由 DSH profile 决定 | 通过 GitHub Release 资产安装的代理状态插件，由 DSH profile 管理 |
 | `dsh-skill-mcp-panel` | 2.3.12 | 第三方技能与 MCP 面板，启动清单启用 |
 | `dsh-streamfold` | 0.7.14 | 第三方流式内容折叠插件，启动清单启用 |
 | `@guowenzhang/dsh-worktree` | 2.4.0 | 第三方工作树插件；新会话创建独立工作区，归档时尝试回收，启动清单启用 |
 | `@michengai/dsh-archive-manager` | 1.3.1 | 第三方会话归档管理插件，启动清单启用 |
 | `dsh-mermaid` | 0.4.5 | 第三方 Mermaid 插件，启动清单启用 |
-| `billion-context` | 0.1.213 | 第三方上下文压缩插件，启动清单启用 |
 | `dsh-live-compact` | 1.1.5 / `de726852` | 固定 Git 来源的压缩插件，未设为日常启动 |
 
-表中的 npm 版本来自 [启动清单](../project-plugins.json)，只记录打包快照。Station 使用 DSH 全局 profile 中已安装的版本。缺少必需插件时，Station 会停止启动并列出补装命令。你可以在 Station 的“插件”页比较当前版本和 npm `latest` 版本，在 DSH 的“插件”页更新。
+表中的 npm 版本是仓库记录的参考版本。应用只携带[默认启动检查名单](../default-startup-plugins.json)，首次启动时将它复制到本机。你可以在 Station 的“插件 → 编辑启动检查名单”增删包名，也可以设为 `[]`。应用升级会保留本地名单。
+
+Station 启动时检查本地名单中的包是否已安装，接受 DSH profile 中的任意版本。缺包时会列出补装命令。Station 的“插件”页展示当前版本和 npm `latest` 版本，启用、停用、更新和卸载由 DSH 管理。
 
 Git 和源码制品仍使用固定版本。Matt 派生面板通过 [项目装配](../scripts/dsh-launch-composition.mjs) 加载本地构建产物。
 

@@ -98,7 +98,7 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
                               capture_output=True, text=True).stdout.strip()
 
     def version(self, value):
-        self.pubspec.write_text(f"name: dsh_workflow_launcher\nversion: {value}+1\n")
+        self.pubspec.write_text(f"name: dsh_workflow_launcher\nversion: {value}\n")
         app = {"name": "dsh-workflow-macos-runtime", "version": value, "dependencies": {"@deepseek-ai/dsh": "0.2.1-alpha.2"}}
         (self.repo / "macos-launcher/package.json").write_text(json.dumps(app))
         (self.repo / "macos-launcher/package-lock.json").write_text(json.dumps({"name": app["name"], "version": value, "lockfileVersion": 3, "packages": {"": app, "node_modules/@deepseek-ai/dsh": {"version": "0.2.1-alpha.2"}}}))
@@ -465,7 +465,9 @@ Path(os.environ['FIXTURE_RELEASE_LOG']).write_text(json.dumps(sys.argv[1:]))
         self.assertEqual(result.returncode, 0, result.stderr)
         plugin = {'package': '@botharness/tobs', 'version': '1.6.1-fixture', 'commit': 'a' * 40}
         (self.repo / 'project-plugins.json').write_text(json.dumps({
-            'plugins': [{**plugin, 'source': 'artifact', 'startup': True}],
+            'npmStartup': 'profile',
+            'plugins': [{**plugin, 'source': 'artifact', 'startup': True},
+                        {'package': 'owned-external-plugin', 'version': '1.0.0', 'startup': True}],
         }))
         manifest_path = assets / 'manifest.json'
         manifest = json.loads(manifest_path.read_text())

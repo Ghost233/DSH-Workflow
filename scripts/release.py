@@ -73,7 +73,7 @@ class Release:
             raise ReleaseError("启动器 package-lock.json 版本与 package.json 不一致")
         pubspec = (ROOT / "macos-launcher/flutter/pubspec.yaml").read_text()
         versions = re.findall(r"^version:\s*([^\s#]+)\s*$", pubspec, re.M)
-        if len(versions) != 1 or not re.fullmatch(re.escape(version) + r"(?:\+\d+)?", versions[0]):
+        if versions != [version]:
             raise ReleaseError("Flutter pubspec.yaml 的应用版本与启动器不一致")
         runtime = json.loads((ROOT / "dsh-runtime.json").read_text())
         pinned = runtime.get("version")

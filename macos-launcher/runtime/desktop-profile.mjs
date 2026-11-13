@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { composeDshLaunch } from '../../scripts/dsh-launch-composition.mjs'
 import { migrateProjectEntryNames } from '../../scripts/observation-profile.mjs'
-import { readPluginConfiguration, assertProfilePluginVersions, assertRequiredProfilePlugins } from './plugin-configuration.mjs'
+import { readPluginConfiguration, readStartupChecklist, assertProfilePluginVersions, assertRequiredProfilePlugins } from './plugin-configuration.mjs'
 import { prepareStartupPlugins } from './startup-plugins.mjs'
 import { deployPluginPayload } from './plugin-payload.mjs'
 import { webProfileBundles } from './profile-templates.mjs'
@@ -26,6 +26,8 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   const stampPath = join(directory, 'integration.json')
   const pluginConfig = await readPluginConfiguration(resourcesRoot)
   const profilePlugins = pluginConfig?.npmStartup === 'profile'
+  const dataRoot = dirname(globalRoot)
+  const startupChecklist = await readStartupChecklist(dataRoot, pluginConfig, resourcesRoot)
   await mkdir(profile, { recursive: true })
   const manifestPath = join(profile, 'package.json')
   if (!existsSync(manifestPath)) {
@@ -39,7 +41,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
       }
     } else boot.initProfile(profile, webProfileBundles(require, boot))
   }
-  await assertRequiredProfilePlugins(profile, pluginConfig, resourcesRoot)
+  await assertRequiredProfilePlugins(profile, startupChecklist, resourcesRoot, dataRoot)
   await retireStationLinks(profile, require)
   const previousIntegration = await readFile(stampPath, 'utf8').catch(error => {
     if (error.code !== 'ENOENT') throw error
@@ -99,7 +101,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   await writeFile(overlay, JSON.stringify(patches, null, 2) + '\n', { mode: 0o600 })
   await writeFile(stampPath, JSON.stringify({ integrationVersion: 6, workflow, globalRoot, runtimeVersion: runtime.version,
     profilePlugins }) + '\n', { mode: 0o600 })
-  return { profile, bundle: directory, overlay, version: runtime.version, startup: startup.skipped, profilePlugins }
+  return { profile, bundle: directory, overlay, version: runtime.version, startup: startup.skipped, startupChecklist, profilePlugins }
 }
 
 async function retireStationLinks(profile, require) {

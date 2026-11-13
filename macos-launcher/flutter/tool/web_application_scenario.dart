@@ -238,11 +238,6 @@ Future<void> runWebApplicationScenario({
 }) async {
   final data = '${root.path}/data';
   final home = '${root.path}/home';
-  final pluginPolicy = jsonDecode(
-    await File('${root.path}/missing-runtime/workflow/project-plugins.json')
-        .readAsString(),
-  ) as Map;
-  final profilePlugins = pluginPolicy['npmStartup'] == 'profile';
   final resources = '${root.path}/missing-runtime';
   final receipt = File('$data/global/.dsh-workflow/desktop/desktop-host.json');
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
@@ -254,6 +249,7 @@ Future<void> runWebApplicationScenario({
   LauncherServer? server;
   IOSink? hostLog = prestartedHostLog;
   var hostExited = false;
+  bool? profilePlugins;
   Future<Map<String, Object?>> ui() async {
     await state({'action': 'ownEntry'});
     await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -384,6 +380,11 @@ Future<void> runWebApplicationScenario({
   }
 
   Future<Map<String, Object?>> health(Uri uri, List<Cookie> cookies) async {
+    profilePlugins ??=
+        (jsonDecode(
+          await File('$resources/workflow/project-plugins.json').readAsString(),
+        ) as Map)['npmStartup'] ==
+        'profile';
     final rpcId = 'dsh-ready-${DateTime.now().microsecondsSinceEpoch}';
     final response = await request(
       uri.resolve('/api/pluginInventory/list'),

@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { readPluginConfiguration } from './plugin-configuration.mjs'
+import { readPluginConfiguration, readStartupChecklist } from './plugin-configuration.mjs'
 import { pluginDependencySpec, isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
 import { browserHarnessVersionRows } from '../../browser-harness-plugin/report.mjs'
 
@@ -105,6 +105,7 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
   let configuration, configurationError
   try { configuration = await readPluginConfiguration(resources) }
   catch (error) { configurationError = error.message }
+  const required = new Set(await readStartupChecklist(dataRoot, configuration, resources))
   const profile = join(home, 'profiles', profileName ?? (configuration?.npmStartup === 'profile'
     || existsSync(join(home, 'profiles/desktop/package.json')) ? 'desktop' : 'web'))
   const profileSource = 'DSH 当前配置'
@@ -125,7 +126,7 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
       latest: null, status: local ? 'local' : current ? 'installed' : 'unknown',
       supportedDsh: declaredDshVersions(installed),
       latestSupportedDsh: latestDeclaredDsh(installed),
-      note: local ? '本地或 Git 依赖；随本仓库 DMG 更新' : current ? '实际安装版本；不查询 npm latest' : '未找到实际安装包；不把依赖声明当成实际版本' })
+      note: local ? '本地或 Git 依赖；在 DSH 插件页面管理' : current ? '实际安装版本；不查询 npm latest' : '未找到实际安装包；不把依赖声明当成实际版本' })
   }
   for (const name of profileManifest?.dsh?.profile?.bundles ?? []) {
     if (typeof name !== 'string' || rows.some(row => row.name === name)) continue
@@ -144,6 +145,21 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
       note: bundled ? '随打包的 DSH 更新，不能单独升级' : 'profile Bundle；未在 dependencies 声明' })
   }
 
+  for (const name of required) {
+    const actual = rows.find(row => row.source.startsWith(profileSource) && row.name === name)
+    if (actual) continue
+    try {
+      const installed = await installedPackage(profile, name)
+      const row = { source: '启动检查', name, current: installed?.version ?? null, expected: null, latest: null,
+        status: installed ? 'installed' : 'unknown',
+        note: installed ? '已在 DSH profile 安装；在 DSH 插件页面管理' : '请在 DSH profile 安装，或从本地启动检查名单移除' }
+      rows.push(row)
+      npmRows.push(row)
+    } catch (error) {
+      rows.push({ source: '启动检查', name, current: null, status: 'error', note: `无法读取已安装插件：${error.message}` })
+    }
+  }
+
   const projectManifestPath = join(workflow, 'project-plugins.json')
   const projectManifestBytes = existsSync(projectManifestPath) ? await readFile(projectManifestPath) : undefined
   const projectManifest = projectManifestBytes ? JSON.parse(projectManifestBytes) : undefined
@@ -154,16 +170,7 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
   for (const item of projectManifest?.plugins ?? []) {
     if (!packageName(item.package)) continue
     const pinned = projectLock?.plugins?.find(row => row.package === item.package)
-    if (verifiedLock && isProfilePlugin(configuration, item)) {
-      const actual = rows.find(row => row.source === profileSource && row.name === item.package)
-      if (!actual && item.startup === true) {
-        const row = { source: '启动检查', name: item.package, current: null,
-          expected: null, latest: null, status: 'unknown', note: '请在 DSH profile 安装此插件后启动' }
-        rows.push(row)
-        npmRows.push(row)
-      }
-      continue
-    }
+    if (verifiedLock && isProfilePlugin(configuration, item)) continue
     rows.push({ source: '项目插件锁定清单（打包快照）', name: item.package,
       current: null, expected: verifiedLock && typeof pinned?.version === 'string' ? pinned.version : null, latest: null,
       supportedDsh: declaredDshVersions(verifiedLock ? pinned?.metadata : undefined),
@@ -210,7 +217,8 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
         row.status = row.current === null ? 'unknown' : 'installed'
         row.note = row.current === null ? '未找到 DSH profile 安装包' : '使用 DSH profile 当前版本；在 DSH 插件页面更新'
       }
-      npmRows.push(row)
+      const declared = profileManifest?.dependencies?.[row.name]
+      if (typeof declared === 'string' && !/[:/#]/.test(declared)) npmRows.push(row)
       continue
     }
     const configuredTarget = configuredPlugin?.version

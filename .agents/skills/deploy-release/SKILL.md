@@ -53,7 +53,7 @@ git ls-remote origin 'refs/tags/macos-vX.Y.Z^{}' refs/heads/main
 - Actions 对应发布 tag 和完整提交，结论为 success；运行日志只含编译、签名、打包和上传。
 - Release 非草稿、非预发布；tag 与发布提交中的启动器版本一致。
 - 远端含该版本 ARM64 DMG、manifest.json 和 SHA256SUMS，大小均大于零。
-- Actions 日志中的 manifest 绑定相同 tag、版本和 sourceCommit。`pluginPayload` 覆盖本次清单中全部 `startup: true` 插件，版本和 Git 提交一致，交付摘要及打包哈希校验通过。
+- Actions 日志中的 manifest 绑定相同 tag、版本和 sourceCommit。`pluginPayload` 覆盖随包交付的 `startup: true` 插件，版本和 Git 提交一致，交付摘要及打包哈希校验通过。
 - 本地 main、origin/main 和实际远端 main 一致；本地 tag 与远端 tag 指向同一发布提交。
 
 缺少证据时保持未完成。读取遇到瞬态网络错误时重试同一读取，不创建第二次发布。发布后默认仅读取远端状态、日志和资产元数据。
@@ -62,7 +62,7 @@ git ls-remote origin 'refs/tags/macos-vX.Y.Z^{}' refs/heads/main
 
 ## 插件随包交付
 
-`project-plugins.json` 与生成的锁文件确定版本，清单本身不能证明插件已经交付。构建必须从清单固定的 npm 版本或 Git 提交取得包本体，携带生产依赖和内容摘要。构建失败时保留原始错误，修正来源或版本后重新构建；完整交付范围以原清单为准。
+`project-plugins.json` 和生成的锁文件确定随包组件的版本。构建交付这些组件的本体、生产依赖和内容摘要。DSH profile 管理的插件只随包交付默认检查名单 `default-startup-plugins.json`。验证固定组件的本体和摘要，并核对默认名单已打入应用。
 
 标准 App 构建调用 `macos-launcher/bundle-plugins.mjs`。`scripts/build-release.sh` 在创建 DMG 前重新验证全部文件、插件入口和来源，`scripts/publish-release.sh` 再核对发布 manifest 的完整插件记录。已有 App 只有清单、缺少本体或摘要时，同样不能通过打包门禁。
 
@@ -97,7 +97,7 @@ candidate_node="/绝对路径/无空格目录/node"
 
 ### 版本权威
 
-- 版本号的唯一权威来源是 `macos-launcher/package.json` 的 `version` 字段，使用纯 `x.y.z`。`macos-launcher/package-lock.json` 的顶层与根包版本，以及 `macos-launcher/flutter/pubspec.yaml` 的 semver 部分必须一致；Flutter 可保留 `+build`，不参与版本比较。构建号（`CFBundleVersion`）由 `macos-launcher/build.mjs` 使用应用版本注入。`dsh-runtime.json` 的 DSH 固定版本与应用版本独立。
+- 版本号的唯一权威来源是 `macos-launcher/package.json` 的 `version` 字段，使用纯 `x.y.z`。`macos-launcher/package-lock.json` 的顶层与根包版本，以及 `macos-launcher/flutter/pubspec.yaml` 的 `version` 字段必须完全一致。构建号（`CFBundleVersion`）由打包流程使用同一应用版本注入。`dsh-runtime.json` 的 DSH 固定版本与应用版本独立。
 - 版本号由**人**在每个发布工单的实施中手动递增；禁止 CI 或脚本自动推导、自动 bump。
 - 应用内读取当前版本必须来自打包信息（Info.plist / package_info_plus 等派生值），不得硬编码。
 
