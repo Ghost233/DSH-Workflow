@@ -83,7 +83,7 @@ export function apply(ctx) {
 
   register(ctx, {
     name: 'route_to_owner',
-    description: '把一条消息路由给指定负责人：负责人会话不存在则懒创建（cwd=注册表目录），消息含授权记录注入其会话。同一 triggerRef 重复路由只建一个任务。带 ticketId 时是追问：等验收的票恢复进行中并注入追问，不新建票；ticketId + resolution:"accept" 是用户验收，票转完成、不注入。',
+    description: '把一条消息路由给指定负责人：负责人会话不存在则懒创建（cwd=注册表目录），消息含授权记录注入其会话。任务先存为待触发、由可靠投递转进行中；瞬时失败自动 2 秒退避重试，无需重复调用。同一 triggerRef 重复路由只建一个任务。带 ticketId 时是追问：等验收/等回复/等确认/被卡住/失败的票被释放回进行中并注入追问，不新建票（追问不重新绑定触发与授权）；ticketId + resolution:"accept" 是用户验收、票转完成；resolution:"cancel" 取消一个等确认的票；二者都不注入。',
     parameters: {
       type: 'object',
       properties: {
@@ -91,7 +91,7 @@ export function apply(ctx) {
         message: { type: 'string', description: '要注入的消息原文（追问时即追问内容）' },
         triggerRef: { type: 'string', description: '可选：来源消息 id（幂等键），同一来源重复注入不重复建任务' },
         ticketId: { type: 'string', description: '可选：追问/验收的目标任务票（query_tasks 取得）' },
-        resolution: { type: 'string', enum: ['accept'], description: '可选：accept = 用户验收通过（需配合 ticketId，票须在等验收）' },
+        resolution: { type: 'string', enum: ['accept', 'cancel'], description: '可选：accept = 用户验收通过（票须在等您验收）；cancel = 用户取消（票须在等您确认）' },
       },
       required: ['ownerId', 'message'],
       additionalProperties: false,
@@ -100,11 +100,15 @@ export function apply(ctx) {
       schema: { type: 'object', properties: { ownerId: { type: 'string' }, sessionId: { type: 'string' }, ticketId: { type: 'string' } }, required: ['ownerId'], additionalProperties: true },
       render: (_args, value) => [{ type: 'text', text: value.accepted
         ? '已验收：任务 ' + value.ticketId + ' 完成'
-        : value.deduped
-          ? '已去重：任务 ' + value.ticketId
-          : value.resumed
-            ? '已恢复任务 ' + value.ticketId + ' 并注入追问（会话 ' + value.sessionId + (value.rebuilt ? '，已重建' : '') + '）'
-            : '已路由到 ' + value.ownerId + '（会话 ' + value.sessionId + (value.createdSession ? '，新建' : '') + (value.rebuilt ? '，已重建' : '') + '；任务 ' + value.ticketId + '）' }],
+        : value.cancelled
+          ? '已取消：任务 ' + value.ticketId + ' 完成'
+          : value.deduped
+            ? '已去重：任务 ' + value.ticketId
+            : value.resumed
+              ? '已恢复任务 ' + value.ticketId + ' 并注入追问（会话 ' + value.sessionId + (value.rebuilt ? '，已重建' : '') + '）'
+              : value.stage === 'idle'
+                ? '已存任务 ' + value.ticketId + '（待触发：注入暂未送达，自动重试中，勿重复调用）'
+                : '已路由到 ' + value.ownerId + '（会话 ' + value.sessionId + (value.createdSession ? '，新建' : '') + (value.rebuilt ? '，已重建' : '') + '；任务 ' + value.ticketId + '）' }],
     },
     execute: async args => await api.router.routeToOwner({ ownerId: args.ownerId, message: args.message, triggerRef: args.triggerRef, ticketId: args.ticketId, resolution: args.resolution }),
   })
@@ -124,14 +128,14 @@ export function apply(ctx) {
       schema: { type: 'object', properties: { tasks: { type: 'array' } }, required: ['tasks'], additionalProperties: false },
       render: (_args, value) => [{ type: 'text', text: value.tasks.length === 0
         ? '（无匹配任务）'
-        : value.tasks.map(t => t.id + ' | ' + t.owner + ' | ' + t.stage + ' | ' + t.mechanism + ' | ' + t.createdAt).join('\n') }],
+        : value.tasks.map(t => t.id + ' | ' + t.owner + ' | ' + (t.stageText ?? t.stage) + '(' + t.stage + ')' + ' | ' + t.mechanism + ' | ' + t.createdAt).join('\n') }],
     },
     execute: async args => ({ tasks: api.router.queryTasks({ owner: args.owner, stage: args.stage }) }),
   })
 
   register(ctx, {
     name: 'reply_source',
-    description: '经 Outbox 记录给触发来源的答复（先存后做；外部投递通道随后续工单接入）。',
+    description: '经 Outbox 记录给触发来源的答复（先存后做；超过 100 词由代码截断并提示；外部投递通道随后续工单接入）。',
     parameters: {
       type: 'object',
       properties: {

@@ -71,6 +71,16 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - **report 归类**：report{summary,evidence,at} 存票面，stage 转 review；L1 用 query_tasks 看到摘要。完整汇报链（任务外广播）属 task-5/#67。
 - **追问/验收从 L1 走 route_to_owner**：ticketId=追问（review→working 并注入，working→原样注入，done→拒），ticketId+resolution:"accept"=用户验收（review→done 不注入；working accept 拒——挡板）。
 
+## 等待状态模型与可靠性硬化（#66）
+
+- **九态一票**（src/tasks.js）：待触发 idle、排队中 queued、进行中 working、等您回复 person/answer、等您确认 person/confirm、等您验收 person/review、被卡住 blocked、失败 failed、完成 done。任何时刻恰处一个阶段；全部迁移经 TRANSITIONS 守卫并记 transitions 审计（含 by/at）。等您验收是挡板：done 只能由 person/review（验收）或 person/confirm（取消）到达；人的追问把 person/*、blocked、failed 释放回 working（spec：人的消息直接释放）。#65 旧票 stage 'review' 读出时归一为 person/review，不做迁移。
+- **状态摘要 = 状态朗读**：STAGE_TEXT 逐字文案（进行中/等您验收/被卡住/…），query_tasks 每行带 stageText，summarize 只回 朗读 + 票面既有事实（report 摘要/escalation 原因等），LLM 不即兴总结。
+- **先存后做（src/outbox.js OutboxRunner）**：建票先存 idle（待触发），注入先落 outbox 行再投递；投递成功才转 working。失败 2 秒首次重试、指数退避、上限注入 5 分钟/回复 1 分钟；同一任务的注入严格保序（前一条未送达后一条等待）；连续失败 3 次才记 system-problem 行并绕过（一次性错误不惊动人）；重试沿用行内稳定 requestId。permanent 失败（如票面授权缺失）立即终判不重试。插件启动时 markRestart（working/idle/queued 票的 running assignment 以 "host restarted" 结束、打 recoveryPending）并自动恢复投递，另有 1 秒 tick 定时器；devApi 增 POST /deliver 手动驱动（实证用）。
+- **触发与授权不可变（票面权威）**：追问不绑定新 Trigger；追问带 authorization 参数直接拒绝（authorization-immutable）；票面授权缺失的票拒绝执行——路由侧转 blocked 并拒注入，投递侧 permanent fail 转 failed；会话叙事声称的授权不扩展权限（owner persona 明文 + L2 工具硬约束）。
+- **消息纪律代码化（src/discipline.js）**：对外回复超 100 词由代码截断并附「…（超过 100 词已截断）」；CJK 一字一词、西文一连串一词。
+- **重启恢复注记恰好一次**：恢复后首条注入以「（重启恢复：先检查目录与 git 状态，再重复任何对外动作）」开头，送达即清 recoveryPending。
+- **report 三形态（owner-tools）**：summary→等您验收 / question→等您回复 / failure→失败；escalate→被卡住（原"只打标不改阶段"语义废止）。
+
 ## 已知限制
 
 - `sessionController.prompt()` 注入的消息 source.kind 为 "user"，与人手输入不可区分；Source/Trigger 层需按 superagent AgentDelivery 模式打插件自有 source 标记（幂等 requestId 已由插件生成 `hub-bot-<uuid>`，路由注入为 `hub-bot-route-<uuid>`）。

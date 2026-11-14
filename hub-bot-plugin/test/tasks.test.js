@@ -1,7 +1,8 @@
 /**
- * TaskBoard tests (#65): the minimal three-stage ticket lifecycle 进行中(working) / 等验收(review) / 完成(done),
- * the transition guard, follow-up resume, report classification, escalation flag, and the cwd containment rule
- * behind 越界拒执. RED first.
+ * TaskBoard tests (#66): the full 等待状态 lifecycle — eight waiting stages plus terminal done, exactly one
+ * stage at a time, every transition rule-bound; state summary is a verbatim reading of the stage (STAGE_TEXT),
+ * never LLM improvisation; restart recovery ends running assignments with "host restarted"; legacy 'review'
+ * rows normalize to 'person/review' on read. RED first.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,20 +10,20 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from '../src/store.js'
-import { TaskBoard, TaskError, isWithinCwd, STAGES } from '../src/tasks.js'
+import { TaskBoard, TaskError, isWithinCwd, STAGES, STAGE_TEXT, TRANSITIONS } from '../src/tasks.js'
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'hub-bot-tasks-'))
   const store = new Store(dir)
-  const board = new TaskBoard({ store, now: () => '2026-11-15T00:00:00.000Z' })
+  let clock = 0
+  const board = new TaskBoard({ store, now: () => '2026-11-15T00:00:' + String(clock++).padStart(2, '0') + '.000Z' })
   const cleanup = () => { store.close(); rmSync(dir, { recursive: true, force: true }) }
-  // Seed a ticket the way Router.routeToOwner writes it.
-  const seed = (stage = 'working') => {
+  const seed = (stage = 'working', extra = {}) => {
     const ticket = {
-      id: 'tsk-seed', triggerId: 'trg-seed', owner: 'repo-W', stage, mechanism: 'inject',
+      id: 'tsk-' + Math.random().toString(36).slice(2, 8), triggerId: 'trg-seed', owner: 'repo-W', stage, mechanism: 'inject',
       targetSession: 'session-owner', requestId: 'req-seed',
       authorization: { actor: 'user', source: 'dsh', at: '2026-11-14T00:00:00.000Z' },
-      createdAt: '2026-11-14T00:00:00.000Z', updatedAt: '2026-11-14T00:00:00.000Z',
+      createdAt: '2026-11-14T00:00:00.000Z', updatedAt: '2026-11-14T00:00:00.000Z', ...extra,
     }
     store.db.prepare('INSERT INTO ticket (id, value) VALUES (?, ?)').run(ticket.id, JSON.stringify(ticket))
     return ticket
@@ -30,103 +31,172 @@ function fixture() {
   return { store, board, seed, cleanup }
 }
 
-test('stage vocabulary is exactly 进行中/等验收/完成', () => {
-  assert.deepEqual([...STAGES].sort(), ['done', 'review', 'working'])
+test('stage vocabulary: eight waiting stages + done, each with a verbatim user-facing reading', () => {
+  assert.deepEqual([...STAGES].sort(), ['blocked', 'done', 'failed', 'idle', 'person/answer', 'person/confirm', 'person/review', 'queued', 'working'])
+  assert.equal(STAGE_TEXT['idle'], '待触发')
+  assert.equal(STAGE_TEXT['queued'], '排队中')
+  assert.equal(STAGE_TEXT['working'], '进行中')
+  assert.equal(STAGE_TEXT['person/answer'], '等您回复')
+  assert.equal(STAGE_TEXT['person/confirm'], '等您确认')
+  assert.equal(STAGE_TEXT['person/review'], '等您验收')
+  assert.equal(STAGE_TEXT['blocked'], '被卡住')
+  assert.equal(STAGE_TEXT['failed'], '失败')
+  assert.equal(STAGE_TEXT['done'], '完成')
+  for (const stage of STAGES) assert.ok(STAGE_TEXT[stage], 'every stage has a reading')
 })
 
-test('legal transitions: working→review (report), review→working (追问恢复), review→done (验收)', () => {
+test('transition matrix is total: every stage pair is either a listed edge or rejected', () => {
+  for (const from of STAGES) {
+    for (const to of STAGES) {
+      assert.equal((TRANSITIONS[from] ?? []).includes(to), boardCan(from, to), from + ' → ' + to)
+    }
+  }
+  function boardCan(from, to) { return (TRANSITIONS[from] ?? []).includes(to) }
+  // Spot-check the mandated edges (#66): lifecycle paths the evidence must walk.
+  for (const [from, to] of [['idle', 'working'], ['working', 'person/review'], ['person/review', 'done'],
+    ['working', 'blocked'], ['blocked', 'working'], ['failed', 'working'], ['person/answer', 'working'],
+    ['person/confirm', 'done'], ['working', 'failed'], ['queued', 'working'], ['person/review', 'working']]) {
+    assert.ok(TRANSITIONS[from].includes(to), from + ' → ' + to + ' must be legal')
+  }
+  // And the mandated non-edges: done is terminal; acceptance only from person/review.
+  assert.deepEqual(TRANSITIONS['done'], [])
+  for (const from of STAGES.filter(s => s !== 'person/review' && s !== 'person/confirm')) {
+    assert.ok(!TRANSITIONS[from].includes('done'), from + ' must not reach done directly')
+  }
+})
+
+test('happy path with verbatim readings: idle→working→person/review→done', () => {
   const { board, seed, cleanup } = fixture()
   try {
-    const t1 = seed('working')
-    assert.equal(board.report({ ticketId: t1.id, summary: '做完了' }).stage, 'review')
-    assert.equal(board.resume(t1.id).stage, 'working')
-    assert.equal(board.report({ ticketId: t1.id, summary: '改完了' }).stage, 'review')
+    const t1 = seed('idle')
+    assert.equal(board.markDelivered(t1.id).stage, 'working')
+    assert.equal(board.report({ ticketId: t1.id, summary: '做完了' }).stage, 'person/review')
+    assert.equal(board.summarize(t1.id).text, '等您验收')
     assert.equal(board.accept(t1.id).stage, 'done')
+    assert.equal(board.summarize(t1.id).text, '完成')
     const stored = board.getTicket(t1.id)
-    assert.equal(stored.stage, 'done')
-    assert.equal(stored.transitions.length, 4)
-    assert.deepEqual(stored.transitions.map(t => t.from + '>' + t.to), ['working>review', 'review>working', 'working>review', 'review>done'])
+    assert.deepEqual(stored.transitions.map(t => t.from + '>' + t.to), ['idle>working', 'working>person/review', 'person/review>done'])
+    assert.ok(stored.transitions.every(t => t.by && t.at), 'every transition audited with actor and time')
   } finally { cleanup() }
 })
 
-test('illegal transitions are rejected: working→done, done→*, double-report, resume of done', () => {
+test('follow-up resume works from person/*, blocked and failed — a human message releases the task', () => {
+  const { board, seed, cleanup } = fixture()
+  try {
+    for (const stage of ['person/review', 'person/answer', 'person/confirm', 'blocked', 'failed']) {
+      const t = seed(stage)
+      assert.equal(board.resume(t.id, { by: 'route' }).stage, 'working', stage + ' resumes to working')
+    }
+    const tDone = seed('done')
+    assert.throws(() => board.resume(tDone.id, { by: 'route' }), (e) => e.code === 'illegal-transition')
+    const tIdle = seed('idle')
+    assert.throws(() => board.resume(tIdle.id, { by: 'route' }), (e) => e.code === 'illegal-transition')
+  } finally { cleanup() }
+})
+
+test('ask/askConfirm/escalate/fail reach person/answer, person/confirm, blocked, failed', () => {
   const { board, seed, cleanup } = fixture()
   try {
     const t1 = seed('working')
-    assert.throws(() => board.accept(t1.id), (e) => e instanceof TaskError && e.code === 'illegal-transition')
-    board.report({ ticketId: t1.id, summary: 'ok' })
-    assert.throws(() => board.report({ ticketId: t1.id, summary: 'again' }), (e) => e.code === 'illegal-transition')
-    board.accept(t1.id)
-    assert.throws(() => board.resume(t1.id), (e) => e.code === 'illegal-transition')
-    assert.throws(() => board.report({ ticketId: t1.id, summary: 'late' }), (e) => e.code === 'illegal-transition')
-    assert.throws(() => board.accept(t1.id), (e) => e.code === 'illegal-transition')
-    // Unknown ticket
-    assert.throws(() => board.resume('tsk-nope'), (e) => e.code === 'unknown-ticket')
+    assert.equal(board.ask({ ticketId: t1.id, question: '要用哪个目录？' }).stage, 'person/answer')
+    assert.equal(board.getTicket(t1.id).question.text, '要用哪个目录？')
+    assert.equal(board.summarize(t1.id).text, '等您回复')
+    const t2 = seed('working')
+    assert.equal(board.askConfirm({ ticketId: t2.id, question: 'fork 执行会话？' }).stage, 'person/confirm')
+    assert.equal(board.cancel(t2.id).stage, 'done')
+    const t3 = seed('working')
+    assert.equal(board.escalate({ ticketId: t3.id, reason: '目标超出责任目录' }).stage, 'blocked')
+    assert.equal(board.getTicket(t3.id).escalated.reason, '目标超出责任目录')
+    assert.equal(board.summarize(t3.id).text, '被卡住')
+    const t4 = seed('working')
+    assert.equal(board.fail({ ticketId: t4.id, reason: '目标会话已删除' }).stage, 'failed')
+    assert.equal(board.summarize(t4.id).text, '失败')
+    // done tickets refuse every further move
+    const t5 = seed('done')
+    for (const fn of [() => board.escalate({ ticketId: t5.id, reason: 'x' }), () => board.fail({ ticketId: t5.id, reason: 'x' }),
+      () => board.ask({ ticketId: t5.id, question: 'x' }), () => board.askConfirm({ ticketId: t5.id, question: 'x' })]) {
+      assert.throws(fn, (e) => e.code === 'illegal-transition')
+    }
   } finally { cleanup() }
 })
 
-test('report stores the result classification on the ticket for query_tasks visibility', () => {
+test('report requires a summary; ask requires a question; escalate/fail require a reason', () => {
   const { board, seed, cleanup } = fixture()
   try {
-    const t1 = seed('working')
-    board.report({ ticketId: t1.id, summary: 'hello 脚本已写入 .scratch/hello.js', evidence: 'transcript tail…' })
-    const stored = board.getTicket(t1.id)
-    assert.equal(stored.report.summary, 'hello 脚本已写入 .scratch/hello.js')
-    assert.equal(stored.report.evidence, 'transcript tail…')
-    assert.equal(stored.report.at, '2026-11-15T00:00:00.000Z')
-    // The immutable authorization record from creation is untouched.
-    assert.deepEqual(stored.authorization, { actor: 'user', source: 'dsh', at: '2026-11-14T00:00:00.000Z' })
+    const t = seed('working')
+    assert.throws(() => board.report({ ticketId: t.id }), (e) => e.code === 'summary-required')
+    assert.throws(() => board.ask({ ticketId: t.id }), (e) => e.code === 'question-required')
+    assert.throws(() => board.askConfirm({ ticketId: t.id }), (e) => e.code === 'question-required')
+    assert.throws(() => board.escalate({ ticketId: t.id }), (e) => e.code === 'reason-required')
+    assert.throws(() => board.fail({ ticketId: t.id }), (e) => e.code === 'reason-required')
   } finally { cleanup() }
 })
 
-test('report requires a non-empty summary', () => {
+test('markDelivered only fires idle→working; a second delivery is a no-op, not an error', () => {
   const { board, seed, cleanup } = fixture()
   try {
-    const t1 = seed('working')
-    assert.throws(() => board.report({ ticketId: t1.id, summary: '  ' }), (e) => e.code === 'summary-required')
+    const t = seed('idle')
+    board.markDelivered(t.id)
+    assert.equal(board.markDelivered(t.id).stage, 'working', 'idempotent on an already-working ticket')
+    const t2 = seed('blocked')
+    assert.equal(board.markDelivered(t2.id).stage, 'blocked', 'does not disturb other stages')
   } finally { cleanup() }
 })
 
-test('escalate flags the ticket without leaving its stage, and records the reason', () => {
+test('restart recovery: running assignments end "host restarted"; waiting/blocked/failed tickets untouched', () => {
   const { board, seed, cleanup } = fixture()
   try {
-    const t1 = seed('working')
-    const out = board.escalate({ ticketId: t1.id, reason: '请求超出本仓库范围' })
-    assert.equal(out.escalated, true)
-    const stored = board.getTicket(t1.id)
-    assert.equal(stored.stage, 'working')
-    assert.equal(stored.escalated.reason, '请求超出本仓库范围')
-    assert.equal(stored.escalated.at, '2026-11-15T00:00:00.000Z')
+    const tWork = seed('working', { assignments: [{ state: 'running', startedAt: '2026-11-14T01:00:00.000Z', sessionId: 'session-w' }] })
+    const tIdle = seed('idle', { assignments: [{ state: 'running', startedAt: '2026-11-14T01:00:00.000Z', sessionId: 'session-i' }] })
+    const tReview = seed('person/review', { assignments: [{ state: 'running', startedAt: '2026-11-14T01:00:00.000Z', sessionId: 'session-r' }] })
+    const tBlocked = seed('blocked')
+    board.markRestart()
+    const work = board.getTicket(tWork.id)
+    assert.equal(work.assignments[0].state, 'ended')
+    assert.equal(work.assignments[0].endReason, 'host restarted')
+    assert.equal(work.recoveryPending, true, 'the next injection carries a recovery note')
+    assert.equal(work.stage, 'working', 'stage is continuous across the crash')
+    assert.equal(board.getTicket(tIdle.id).recoveryPending, true, 'idle tickets awaiting injection also get the note')
+    assert.equal(board.getTicket(tReview.id).recoveryPending, undefined, 'person/* keeps as-is (spec: 等待中/等人保持原样)')
+    assert.equal(board.getTicket(tReview.id).assignments[0].state, 'running', 'its assignment is not ended')
+    assert.equal(board.getTicket(tBlocked.id).recoveryPending, undefined)
   } finally { cleanup() }
 })
 
-test('escalate requires a reason; a done ticket cannot be escalated', () => {
+test('a delivered follow-up clears recoveryPending so the note is carried exactly once', () => {
   const { board, seed, cleanup } = fixture()
   try {
-    const t1 = seed('working')
-    assert.throws(() => board.escalate({ ticketId: t1.id, reason: '' }), (e) => e.code === 'reason-required')
-    board.report({ ticketId: t1.id, summary: 'ok' })
-    board.accept(t1.id)
-    assert.throws(() => board.escalate({ ticketId: t1.id, reason: 'late' }), (e) => e.code === 'illegal-transition')
+    const t = seed('working', { recoveryPending: true })
+    const cleared = board.noteRecoveryCarried(t.id)
+    assert.equal(cleared.recoveryPending, undefined)
+    assert.equal(board.getTicket(t.id).recoveryPending, undefined)
   } finally { cleanup() }
 })
 
-test('bindWorkerSession records the execution session on the ticket', () => {
+test("legacy 'review' rows normalize to person/review on read (no migration)", () => {
   const { board, seed, cleanup } = fixture()
   try {
-    const t1 = seed('working')
-    board.bindWorkerSession(t1.id, { sessionId: 'session-worker', cwd: '/w' })
-    const stored = board.getTicket(t1.id)
-    assert.equal(stored.workerSession.sessionId, 'session-worker')
-    assert.equal(stored.workerSession.cwd, '/w')
+    const t = seed('review')
+    assert.equal(board.getTicket(t.id).stage, 'person/review')
+    assert.equal(board.accept(t.id).stage, 'done', 'guards see the normalized stage')
   } finally { cleanup() }
 })
 
-test('isWithinCwd: equal and descendant pass, sibling prefix does not', () => {
-  assert.equal(isWithinCwd('/a/b', '/a/b'), true)
-  assert.equal(isWithinCwd('/a/b', '/a/b/c/d'), true)
-  assert.equal(isWithinCwd('/a/b', '/a/bc'), false)
-  assert.equal(isWithinCwd('/a/b', '/a'), false)
-  assert.equal(isWithinCwd('/a/b/', '/a/b/c'), true)
-  assert.equal(isWithinCwd('/Volumes/X/DSH-Workflow', '/Volumes/X/GhostNexus'), false)
+test('summarize is a reading plus fixed factual context, never free text', () => {
+  const { board, seed, cleanup } = fixture()
+  try {
+    const t = seed('person/review', { report: { summary: 'hello.sh 已写入', at: 'x' } })
+    const s = board.summarize(t.id)
+    assert.equal(s.text, '等您验收')
+    assert.equal(s.detail, 'hello.sh 已写入', 'review readings carry the stored report summary verbatim')
+    const t2 = seed('blocked', { escalated: { reason: '越界', at: 'x' } })
+    assert.equal(board.summarize(t2.id).detail, '越界')
+  } finally { cleanup() }
+})
+
+test('cwd containment rule unchanged (path-segment aware)', () => {
+  assert.ok(isWithinCwd('/a/b', '/a/b'))
+  assert.ok(isWithinCwd('/a/b', '/a/b/c'))
+  assert.ok(!isWithinCwd('/a/b', '/a/bc'))
+  assert.ok(!isWithinCwd('/a/b', '/a'))
 })

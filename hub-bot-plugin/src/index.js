@@ -14,6 +14,11 @@
  *   POST decorate    {sessionId}                 register the hub_bot_ping tool on the Session's Agent
  *   POST wait        {sessionId, timeoutMs?}     wait for the Session to go idle (sessionController.wait)
  *   GET  transcript  ?sessionId=&maxMessages=    durable transcript records (sessionController.page)
+ *   POST deliver                              drive one outbox delivery pass (deterministic retry proof aid)
+ *
+ * Reliability (#66): at startup the plugin ends every running assignment "host restarted" (markRestart — the
+ * next injection carries the recovery note) and resumes queued outbox deliveries; a 1s timer keeps driving
+ * the runner so backed-off retries fire without any new traffic (spec「可靠性」重启恢复).
  */
 import { createHash, timingSafeEqual, randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
@@ -116,9 +121,18 @@ export function apply(ctx, rawConfig) {
       return value
     },
   }
-  const hub = new Hub({ store, config, sessions })
+  const hub = new Hub({ store, config, sessions, onSystemProblem: p => ctx.logger.warn('hub-bot system problem: %s (ticket %s, row %s)', p.reason, p.ticketId, p.rowId) })
   const chief = hub.registry.ensureChief({ cwd: config.homeRepo, workspace: basename(config.homeRepo) })
   setHub(hub)
+  // 重启恢复（#66）: end running assignments "host restarted", then resume any queued stored work — and keep
+  // driving the runner every second so backoff retries fire even when no new traffic arrives.
+  hub.router.markRestart()
+  void hub.router.tick().catch(error => ctx.logger.warn('hub-bot delivery resume failed: %s', error?.message ?? error))
+  const deliveryTimer = setInterval(() => {
+    void hub.router.tick().catch(error => ctx.logger.warn('hub-bot delivery tick failed: %s', error?.message ?? error))
+  }, 1000)
+  deliveryTimer.unref?.()
+  ctx.on('dispose', () => clearInterval(deliveryTimer))
   // The preset-subtree tool plugins (router-tools) run in a separate module realm: neither a module-level singleton
   // nor even globalThis reaches them (observed live). A service provided at this scope is the channel that crosses —
   // the same way the subtree sees Host services like 'tools'. The fiber's unload unregisters it (reflect.provide).
@@ -250,6 +264,9 @@ export function apply(ctx, rawConfig) {
           json(res, 200, await decorate(await readBody(req)))
         } else if (route === 'wait' && method === 'POST') {
           json(res, 200, await waitIdle(await readBody(req)))
+        } else if (route === 'deliver' && method === 'POST') {
+          await hub.router.tick()
+          json(res, 200, { delivered: true })
         } else if (route === 'transcript' && method === 'GET') {
           json(res, 200, await transcript(Object.fromEntries(url.searchParams)))
         } else {
