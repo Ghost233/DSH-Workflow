@@ -12,7 +12,7 @@
 import { isAbsolute } from 'node:path'
 
 /** The configuration keys this plugin understands. Anything else is rejected so typos cannot pass silently. */
-const KNOWN_KEYS = new Set(['stateDir', 'devApi'])
+const KNOWN_KEYS = new Set(['stateDir', 'homeRepo', 'devApi'])
 
 /** The keys the optional development management API understands. */
 const KNOWN_DEV_API_KEYS = new Set(['token'])
@@ -28,8 +28,8 @@ export class ConfigError extends Error {
 /**
  * Validates the raw cordis configuration object and returns the resolved configuration.
  * @param {unknown} config - raw configuration from the profile patch layer.
- * @returns {{ stateDir: string, devApi?: { token: string } }} the resolved configuration; devApi absent = API disabled.
- * @throws {ConfigError} when stateDir is missing/not absolute, unknown keys are present, or devApi lacks a token.
+ * @returns {{ stateDir: string, homeRepo: string, devApi?: { token: string } }} resolved config; devApi absent = API disabled.
+ * @throws {ConfigError} when stateDir/homeRepo is missing or not absolute, unknown keys are present, or devApi lacks a token.
  */
 export function resolveConfig(config) {
   const raw = config ?? {}
@@ -43,7 +43,14 @@ export function resolveConfig(config) {
   }
   if (typeof stateDir !== 'string') throw new ConfigError('hub-bot config.stateDir must be a string')
   if (!isAbsolute(stateDir)) throw new ConfigError(`hub-bot config.stateDir must be absolute, got "${stateDir}"`)
-  const resolved = { stateDir }
+  // The chief owner (L1) is anchored at the Home Repo — the hub has no meaning without it (spec「L1 总负责人的落点」).
+  const { homeRepo } = raw
+  if (homeRepo === undefined || homeRepo === null || homeRepo === '') {
+    throw new ConfigError('hub-bot requires config.homeRepo: an absolute path to the Home Repo (the chief owner cwd)')
+  }
+  if (typeof homeRepo !== 'string') throw new ConfigError('hub-bot config.homeRepo must be a string')
+  if (!isAbsolute(homeRepo)) throw new ConfigError(`hub-bot config.homeRepo must be absolute, got "${homeRepo}"`)
+  const resolved = { stateDir, homeRepo }
   if (raw.devApi !== undefined) {
     const devApi = raw.devApi
     if (typeof devApi !== 'object' || devApi === null || Array.isArray(devApi)) {

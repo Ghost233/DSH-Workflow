@@ -1,12 +1,13 @@
 # dsh-hub-bot (hub-bot-plugin)
 
-中枢 Bot 插件：三层负责人架构的个人 Bot 体系（规格：DSH-Workflow docs/specs/hub-bot-plugin.md；跟踪 issue #62，本包对应工单 #63）。
+中枢 Bot 插件：三层负责人架构的个人 Bot 体系（规格：DSH-Workflow docs/specs/hub-bot-plugin.md；跟踪 issue #62；#63 交付存储与管理面，#64 交付总负责人与路由链路）。
 
 本目录是一个 DSH cordis bundle：
 
-- `package.json` 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`；bundle 层只插入插件条目（无配置）与两个负责人 preset（`hub-bot-router` L1 路由 / `hub-bot-owner` L2 执行管理，名称与说明均标"负责人专用，不供手动选择"；文件工具只读、前台 shell 命令 5 秒转后台、job 等待 5 秒）。
-- `src/index.js` 是插件入口（`name`/`inject`/`apply`）：校验 `stateDir`（必填、绝对路径，否则拒绝启动）、打开版本化 SQLite 存储（`src/store.js`，`PRAGMA user_version` 驱动迁移骨架）。
-- **管理 API 默认关闭**：它能向本 profile 任意会话注入消息，与 #62 Policy 同级敏感，因此仅当配置显式给出 `devApi: { token: "..." }` 时才注册 `/hub-bot/api/*` 路由；请求须带 `x-hub-bot-token: <token>` 头（sha256 后常量时间比对，不符 401），且仍限 loopback。未配置 `devApi` 时插件正常装载、不注册任何路由。路由：`state` 健康检查、`sessions` 建会话、`inject` 经 `sessionController.prompt()` 注入既有会话、`decorate` 给会话注册 `hub_bot_ping` 工具（会话关闭经 `agent/disposed` 自动注销）、`wait` 等空闲、`transcript` 读持久 transcript。
+- `package.json` 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`；bundle 层只插入插件条目（无配置）与两个负责人 preset（`hub-bot-router` L1 路由 / `hub-bot-owner` L2 执行管理，名称与说明均标"负责人专用，不供手动选择"）。**两个 preset 完全只读：无写文件、无命令执行工具**（一切动手只发生在 L3 执行会话）；router preset 另含静态插件行 `dsh-hub-bot/router-tools`，把 L1 五个工具与路由 persona 挂进 preset 的挂载子树。
+- `src/index.js` 是插件入口（`name`/`inject`/`apply`）：校验 `stateDir` 与 `homeRepo`（均必填、绝对路径，否则拒绝启动），打开版本化 SQLite 存储（`src/store.js`），引导总负责人注册（`src/registry.js`，懒创建：启动只落 `chief` 行、status `pending`），装配 `Hub`（`src/hub.js` = store + registry + `src/router.js`）并把 `hubBot` 服务提供到根作用域。
+- `src/router-tools.js` 是 L1 工具插件（cordis 插件形态，静态列进 router preset）：注册 `list_owners` / `create_owner` / `route_to_owner` / `query_tasks` / `reply_source` 五个工具，并以 `deployment:persona-prefix` 同名 section 把路由 persona（`src/persona.js`，≤30 词路由备注、歧义回候选列表+"其他"不猜）挂成 preset 作用域的部署 persona 遮蔽。
+- **管理 API 默认关闭**：它能向本 profile 任意会话注入消息，与 #62 Policy 同级敏感，因此仅当配置显式给出 `devApi: { token: "..." }` 时才注册 `/hub-bot/api/*` 路由；请求须带 `x-hub-bot-token: <token>` 头（sha256 后常量时间比对，不符 401），且仍限 loopback。未配置 `devApi` 时插件正常装载、不注册任何路由。路由：`state` 健康检查、`owners` 读负责人注册表、`sessions` 建会话（带 `owner` 字段则按注册表 cwd/preset 建并绑定）、`route` 直接路由一条消息（与 L1 工具同核心）、`owners/invalidate-session` 把行指向悬挂会话 id（被删重建验收探针）、`inject` 经 `sessionController.prompt()` 注入既有会话（可带幂等 `requestId`）、`decorate` 注册 `hub_bot_ping` 工具（会话关闭经 `agent/disposed` 自动注销）、`wait` 等空闲、`transcript` 读持久 transcript。
 
 ## 开发期装载（独立 DSH_HOME，不触碰正在运行的 DSH）
 
@@ -29,8 +30,9 @@ HUB_BOT_TOKEN=$(openssl rand -hex 16)   # 开发实例启动时生成随机 toke
 #   - id: hub-bot
 #     config:
 #       stateDir: $DSH_HOME/state
-#       devApi: { token: $HUB_BOT_TOKEN }    # 不配 devApi 则管理面整体关闭
-#    注意：profile 层同 id 条目是替换语义——stateDir 与 devApi 必须写在同一条目内，
+#       homeRepo: /Volumes/外挂/Ghost233HomeRepo   # 总负责人 cwd（L1 落点）
+#       devApi: { token: $HUB_BOT_TOKEN }        # 不配 devApi 则管理面整体关闭
+#    注意：profile 层同 id 条目是替换语义——stateDir/homeRepo/devApi 必须写在同一条目内，
 #    拆成两个 "- id: hub-bot" 会让后一条覆盖前一条的 config。
 
 # 4. 启动（独立端口；停止只需 Ctrl-C，用户的 DSH 不受影响）
@@ -39,26 +41,30 @@ node "$DSH/node_modules/@deepseek-ai/dsh/lib/bin.js" --profile hub-bot-dev --no-
 # 调用管理面：curl -H "x-hub-bot-token: $HUB_BOT_TOKEN" http://127.0.0.1:3199/hub-bot/api/state
 ```
 
-生产装载（与 superagent 相同形态）：在用户自己的 profile 里 `dsh plugin --profile <name> add link:<本目录>`（或安装打包后的 tgz），在该 profile 的 `cordis.patch.yml` 里给 `hub-bot` 条目加 `config.stateDir`（生产不建议开 `devApi`），重启该 profile 生效。重启用户正在运行的 DSH 需由交付 Lead 协调时机。
+生产装载（与 superagent 相同形态）：在用户自己的 profile 里 `dsh plugin --profile <name> add link:<本目录>`（或安装打包后的 tgz），在该 profile 的 `cordis.patch.yml` 里给 `hub-bot` 条目加 `config.stateDir` 与 `config.homeRepo`（生产不建议开 `devApi`），重启该 profile 生效。重启用户正在运行的 DSH 需由交付 Lead 协调时机。
 
 ## 测试
 
 ```sh
-npm test    # node --test：config 校验、SQLite schema 版本化迁移、cordis.patch.yml 结构
+npm test    # node --test：config 校验、SQLite schema、负责人注册表、路由核心（懒创建/重建/幂等）、patch 结构
 ```
 
 patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`DSH_TEST_RUNTIME_ROOT` 指向一份装好依赖的 DSH 运行时（如 Station 的 Resources 目录），缺省回退仓内 `deepseek-harness/` 源码检出。两者都不可用时 patch 测试 **skip 而非 fail**（其余测试不受影响）；本仓 CI/验收用 `DSH_TEST_RUNTIME_ROOT="/Applications/Ghost DSH Station.app/Contents/Resources" npm test` 获得真实 cordis include 解析器的全量校验。
 
 ## 设计决定记录
 
-- **store.js 的 schema v1 即建全 trigger/ticket/owner/outbox 四张表**：它们由规格 docs/specs/hub-bot-plugin.md「数据模型」章节定义，是三层架构的既有数据契约而非超前设计；schema v1 建全后，后续工单只追加迁移（v2、v3…）不改历史迁移，保证已部署 stateDir 的升级路径单调可测。
-- **两个 preset 在 cordis.patch.yml 中保持展开（各约 55 行、内容相近）**：与 superagent 先例一致——preset 是给人读的声明式配置，两份各自完整可比 YAML 锚点/生成器的间接层更易审阅；它们的分化（L1/L2 各自增删工具）预期很快发生，届时展开形式 diff 更清晰。
-- **preset 措辞不宣称"完全只读"**：文件工具确为只读（write/edit 关闭），但 shell 命令在 5 秒内完成时不受 preset 拦截——preset 约束的是时延（超时转后台）与工具面，不是 shell 能力。执行纪律由系统提示词与后续 Source/Policy 层承担。
+- **store.js 的 schema v1 即建全 trigger/ticket/owner/outbox 四张表**：它们由规格「数据模型」章节定义，是三层架构的既有数据契约；schema v1 建全后，后续工单只追加迁移不改历史迁移，保证已部署 stateDir 的升级路径单调可测。
+- **两个 preset 在 cordis.patch.yml 中保持展开**：preset 是给人读的声明式配置，两份各自完整可比 YAML 锚点更易审阅；L1/L2 的分化已经发生（router 多一行 router-tools）。
+- **preset 完全只读成立后才在措辞中宣称"完全只读"**：#64 去掉了 shell/jobs 工具行，无写文件、无命令执行工具，工具面即权限边界；此前 5 秒转后台的 shell 语义只是时延约束，不构成只读。
+- **负责人注册表与路由核心是纯领域模块**（registry.js / router.js）：Router 经窄 Sessions 端口（create/prompt）驱动 sessionController，单测用假端口覆盖懒创建、被删重建、triggerRef 幂等，无需 DSH 运行时。先存后做：Trigger→Ticket 先落库再注入，崩溃后可追。
+- **preset 挂载子树是独立模块 realm，跨 realm 通道用"根服务 + inject 链"**（2026-11-15 实测）：子树行的模块实例与根插件不共享（模块单例 ✗、globalThis ✗）；插件作用域 `reflect.provide` ✗、`ctx.root.reflect.provide` 单独使用也 ✗。**实证可用组合**：根插件在 `ctx.root` 提供 `hubBot` 服务，且子树行的 `inject` 声明若干根组合服务（`sessionController`/`sessionPersistence`——只起解析链作用，不被调用），子树内 `ctx.reflect.get('hubBot', false)` 即可解析。去掉这两个 inject 项，工具行会静默 pending（mount 审计容忍 pending），因此 inject 列表是承重的，注释必须保留。
+- **工具 output schema 不支持 type 数组**：`{ type: ['string','null'] }` 在注册期即被拒绝；可空字段改为单类型 + 不列入 `required`。
 - **管理面默认关闭 + token 把守**：注入能力与 #62 Policy 同级，宁可每次开发实例生成一次性 token，不留"静态头即可注入任意会话"的本机面。
 
 ## 已知限制
 
-- **自定义 preset 会话的工具面是独立挂载子树**（dsh-agent-preset-registry 的 mountPreset）：插件经 `agent.ctx.tools.register` 的 decorate 对**默认 preset** 会话可见并已验证，但对 hub-bot-router/owner 这类自定义 preset 会话**不进入模型工具列表**（2026-11-15 实测）。因此"L2 会话管理工具由插件按角色注入"的规格假设需调整为：把会话管理工具做成一个**静态插件放进 owner preset 的 plugins 列表**（在子树内部注册），或另寻 mount 后注入机制——交后续工单（#68 前后）定夺。
-- `sessionController.prompt()` 注入的消息 source.kind 为 "user"，与人手输入不可区分；Source/Trigger 层需按 superagent AgentDelivery 模式打插件自有 source 标记（幂等 requestId 已由插件生成 hub-bot-<uuid>）。
+- `sessionController.prompt()` 注入的消息 source.kind 为 "user"，与人手输入不可区分；Source/Trigger 层需按 superagent AgentDelivery 模式打插件自有 source 标记（幂等 requestId 已由插件生成 `hub-bot-<uuid>`，路由注入为 `hub-bot-route-<uuid>`）。
+- 会话的 permission/sandbox 记录显示 `danger-full-access`（dev profile 默认值）；负责人的只读保证来自 **preset 工具面**（无写/执行工具可调用），不来自会话沙箱模式。收紧沙箱 preset 属 profile 配置，不在本插件范围。
 - 插件配置校验为手写 resolveConfig，未引 schemastery——零运行时依赖的取舍；后续若接 DSH 设置 UI 再评估。
-- 插件尚无 persona/系统提示词（提示词体系属后续工单），preset 仅含工具与沙箱裁剪。
+- L2 会话管理工具（select/read/inject/fork/create_session/report/escalate）按同一静态行模式挂进 owner preset，属 task-3。
+- 被删重建依赖"注入失败"这一信号：`session "<id>" not found` 与 `ApiSessionNotFound` 之外的删除表现（如静默丢弃）不会被识别为重建触发。
