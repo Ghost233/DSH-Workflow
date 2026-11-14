@@ -61,10 +61,20 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - **工具 output schema 不支持 type 数组**：`{ type: ['string','null'] }` 在注册期即被拒绝；可空字段改为单类型 + 不列入 `required`。
 - **管理面默认关闭 + token 把守**：注入能力与 #62 Policy 同级，宁可每次开发实例生成一次性 token，不留"静态头即可注入任意会话"的本机面。
 
+## 任务三态与 L2 执行闭环（#65）
+
+- **三态机（src/tasks.js）**：`working → review → done`；review 是挡板，done 只能由 review 经用户验收（resolution:"accept"）到达。追问把 review 恢复为 working（resume, by:'route'），验收 by:'user'；非法迁移拒绝（如 working 直接 accept、done 后追问、double-report）。全部迁移记 transitions 审计数组。
+- **L2 六工具（src/owner-tools.js，owner preset 静态行）**：search_sessions / read_session / inject_session / create_session / report / escalate。身份解析：工具执行的 exec.agent 经 workingDirectory.ensure 拿会话 cwd，须等于注册表某 owner 的 cwd，否则拒执。
+- **越界拒执**：create/inject/read 的目标会话（或 create_session 的目标 cwd）必须落在 owner 责任子树内（isWithinCwd 路径段感知，`/a/b` 不含 `/a/bc`）；越界抛错并指向 escalate。escalate 不改票阶段、打 escalated 标记并写 outbox(kind=escalation)，L1 经 query_tasks 可见。
+- **执行会话保持用户 preset**：create_session 不传 agentPreset（部署默认），插件永不改写执行会话配置。
+- **授权不可变**：Ticket 创建时记 authorization{actor,source,at}，注入执行会话的文本自动携带它；追问注入文本带"改完请再次 report"提示（首跑实证：L2 追问后忘了再次 report，票卡在 working）。
+- **report 归类**：report{summary,evidence,at} 存票面，stage 转 review；L1 用 query_tasks 看到摘要。完整汇报链（任务外广播）属 task-5/#67。
+- **追问/验收从 L1 走 route_to_owner**：ticketId=追问（review→working 并注入，working→原样注入，done→拒），ticketId+resolution:"accept"=用户验收（review→done 不注入；working accept 拒——挡板）。
+
 ## 已知限制
 
 - `sessionController.prompt()` 注入的消息 source.kind 为 "user"，与人手输入不可区分；Source/Trigger 层需按 superagent AgentDelivery 模式打插件自有 source 标记（幂等 requestId 已由插件生成 `hub-bot-<uuid>`，路由注入为 `hub-bot-route-<uuid>`）。
 - 会话的 permission/sandbox 记录显示 `danger-full-access`（dev profile 默认值）；负责人的只读保证来自 **preset 工具面**（无写/执行工具可调用），不来自会话沙箱模式。收紧沙箱 preset 属 profile 配置，不在本插件范围。
 - 插件配置校验为手写 resolveConfig，未引 schemastery——零运行时依赖的取舍；后续若接 DSH 设置 UI 再评估。
-- L2 会话管理工具（select/read/inject/fork/create_session/report/escalate）按同一静态行模式挂进 owner preset，属 task-3。
 - 被删重建依赖"注入失败"这一信号：`session "<id>" not found` 与 `ApiSessionNotFound` 之外的删除表现（如静默丢弃）不会被识别为重建触发。
+- **owner 重建后的孤儿会话**（#65 首跑实证）：负责人会话被删重建后，旧会话仍在且保持 owner preset；它出现在 search_sessions 结果里（registry 已指向新会话，无法标记 role:'owner'），可能被 L2 误当执行会话注入，形成嵌套委托。功能上闭环仍成立（嵌套层也是 owner，最终完成并 report），但属噪声；后续可考虑按会话的 preset 名或启动侧写登记来识别孤儿。

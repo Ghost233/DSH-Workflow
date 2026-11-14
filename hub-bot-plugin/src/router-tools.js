@@ -83,24 +83,30 @@ export function apply(ctx) {
 
   register(ctx, {
     name: 'route_to_owner',
-    description: '把一条消息路由给指定负责人：负责人会话不存在则懒创建（cwd=注册表目录），消息含授权记录注入其会话。同一 triggerRef 重复路由只建一个任务。',
+    description: '把一条消息路由给指定负责人：负责人会话不存在则懒创建（cwd=注册表目录），消息含授权记录注入其会话。同一 triggerRef 重复路由只建一个任务。带 ticketId 时是追问：等验收的票恢复进行中并注入追问，不新建票；ticketId + resolution:"accept" 是用户验收，票转完成、不注入。',
     parameters: {
       type: 'object',
       properties: {
         ownerId: { type: 'string', description: 'list_owners 返回的负责人 id' },
-        message: { type: 'string', description: '要注入的消息原文' },
+        message: { type: 'string', description: '要注入的消息原文（追问时即追问内容）' },
         triggerRef: { type: 'string', description: '可选：来源消息 id（幂等键），同一来源重复注入不重复建任务' },
+        ticketId: { type: 'string', description: '可选：追问/验收的目标任务票（query_tasks 取得）' },
+        resolution: { type: 'string', enum: ['accept'], description: '可选：accept = 用户验收通过（需配合 ticketId，票须在等验收）' },
       },
       required: ['ownerId', 'message'],
       additionalProperties: false,
     },
     output: {
       schema: { type: 'object', properties: { ownerId: { type: 'string' }, sessionId: { type: 'string' }, ticketId: { type: 'string' } }, required: ['ownerId'], additionalProperties: true },
-      render: (_args, value) => [{ type: 'text', text: value.deduped
-        ? '已去重：任务 ' + value.ticketId
-        : '已路由到 ' + value.ownerId + '（会话 ' + value.sessionId + (value.createdSession ? '，新建' : '') + (value.rebuilt ? '，已重建' : '') + '；任务 ' + value.ticketId + '）' }],
+      render: (_args, value) => [{ type: 'text', text: value.accepted
+        ? '已验收：任务 ' + value.ticketId + ' 完成'
+        : value.deduped
+          ? '已去重：任务 ' + value.ticketId
+          : value.resumed
+            ? '已恢复任务 ' + value.ticketId + ' 并注入追问（会话 ' + value.sessionId + (value.rebuilt ? '，已重建' : '') + '）'
+            : '已路由到 ' + value.ownerId + '（会话 ' + value.sessionId + (value.createdSession ? '，新建' : '') + (value.rebuilt ? '，已重建' : '') + '；任务 ' + value.ticketId + '）' }],
     },
-    execute: async args => await api.router.routeToOwner({ ownerId: args.ownerId, message: args.message, triggerRef: args.triggerRef }),
+    execute: async args => await api.router.routeToOwner({ ownerId: args.ownerId, message: args.message, triggerRef: args.triggerRef, ticketId: args.ticketId, resolution: args.resolution }),
   })
 
   register(ctx, {

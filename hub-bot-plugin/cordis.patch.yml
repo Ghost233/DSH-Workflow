@@ -82,6 +82,9 @@
             name: '@deepseek-ai/dsh-skill-filesystem'
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
+          # L2 会话管理工具（spec #65）与负责人 persona：静态行进 preset 挂载子树，机制同 router-tools。
+          - id: hub-bot-owner-tools
+            name: dsh-hub-bot/owner-tools
           - id: compaction
             name: cordis:group
             group: true

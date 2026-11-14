@@ -93,7 +93,7 @@ for (const preset of ['hub-bot-router', 'hub-bot-owner']) {
   })
 }
 
-test('only the router preset carries the hub-bot router-tools row (L2 tools land with task-3)', async t => {
+test('router preset carries router-tools, owner preset carries owner-tools, never crossed (#64/#65)', async t => {
   const rows = await patched()
   if (!rows) { t.skip(SKIP_REASON); return }
   const router = presetOf(rows, 'hub-bot-router')
@@ -101,4 +101,7 @@ test('only the router preset carries the hub-bot router-tools row (L2 tools land
   assert.equal(named(router.plugins, 'dsh-hub-bot/router-tools').length, 1,
     'L1 tools must be a static row of the preset: runtime decoration cannot reach a mounted preset subtree')
   assert.equal(named(owner.plugins, 'dsh-hub-bot/router-tools').length, 0)
+  assert.equal(named(owner.plugins, 'dsh-hub-bot/owner-tools').length, 1,
+    'L2 session-management tools (#65) mount inside the owner preset the same proven way')
+  assert.equal(named(router.plugins, 'dsh-hub-bot/owner-tools').length, 0)
 })

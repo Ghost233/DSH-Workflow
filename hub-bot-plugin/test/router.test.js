@@ -136,6 +136,98 @@ test('the runtime\'s plain-Error missing-session message ("session \"<id>\" not 
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
 })
 
+
+test('follow-up resume: ticketId on a review ticket resumes it and injects into the same owner session', async () => {
+  const { router, registry, calls, cleanup } = fixture()
+  try {
+    const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    const first = await router.routeToOwner({ ownerId: owner.id, message: '写 hello 脚本' })
+    // Owner reports → 等验收.
+    router.tasks.report({ ticketId: first.ticketId, summary: 'done, see .scratch/hello.js' })
+    assert.equal(router.getTicket(first.ticketId).stage, 'review')
+    // The user follows up: same ticket resumes instead of a new one being created.
+    const resumed = await router.routeToOwner({ ownerId: owner.id, message: '再加一行注释', ticketId: first.ticketId })
+    assert.equal(resumed.resumed, true)
+    assert.equal(resumed.ticketId, first.ticketId)
+    assert.equal(resumed.deduped, false)
+    assert.equal(router.getTicket(first.ticketId).stage, 'working')
+    // One session, two prompts (initial + follow-up); no second ticket.
+    assert.equal(calls.create.length, 1)
+    assert.equal(calls.prompt.length, 2)
+    assert.match(calls.prompt[1].text, /再加一行注释/)
+    assert.match(calls.prompt[1].text, new RegExp(first.ticketId))
+    assert.equal(router.queryTasks({}).length, 1)
+  } finally { cleanup() }
+})
+
+test('follow-up on a working ticket injects without a stage change', async () => {
+  const { router, registry, calls, cleanup } = fixture()
+  try {
+    const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    const first = await router.routeToOwner({ ownerId: owner.id, message: '任务' })
+    const again = await router.routeToOwner({ ownerId: owner.id, message: '补充', ticketId: first.ticketId })
+    assert.equal(again.resumed, false)
+    assert.equal(router.getTicket(first.ticketId).stage, 'working')
+    assert.equal(calls.prompt.length, 2)
+  } finally { cleanup() }
+})
+
+test('user acceptance: resolution accept moves review→done without injecting', async () => {
+  const { router, registry, calls, cleanup } = fixture()
+  try {
+    const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    const first = await router.routeToOwner({ ownerId: owner.id, message: '任务' })
+    router.tasks.report({ ticketId: first.ticketId, summary: 'ok' })
+    const accepted = await router.routeToOwner({ ownerId: owner.id, message: '验收通过', ticketId: first.ticketId, resolution: 'accept' })
+    assert.equal(accepted.accepted, true)
+    assert.equal(accepted.stage, 'done')
+    assert.equal(calls.prompt.length, 1) // acceptance injects nothing
+  } finally { cleanup() }
+})
+
+test('acceptance is gated by review; done tickets reject follow-ups; owner mismatch rejected', async () => {
+  const { router, registry, cleanup } = fixture()
+  try {
+    const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    const other = registry.create({ kind: 'repo', workspace: 'V', cwd: '/v' })
+    const first = await router.routeToOwner({ ownerId: owner.id, message: '任务' })
+    // working 不能直接验收（等验收是挡板）
+    await assert.rejects(
+      () => router.routeToOwner({ ownerId: owner.id, message: '验收', ticketId: first.ticketId, resolution: 'accept' }),
+      (e) => e instanceof RouterError && e.code === 'illegal-transition',
+    )
+    router.tasks.report({ ticketId: first.ticketId, summary: 'ok' })
+    // 别的负责人不能动这张票
+    await assert.rejects(
+      () => router.routeToOwner({ ownerId: other.id, message: '追问', ticketId: first.ticketId }),
+      (e) => e.code === 'ticket-owner-mismatch',
+    )
+    await router.routeToOwner({ ownerId: owner.id, message: '验收', ticketId: first.ticketId, resolution: 'accept' })
+    // done 之后追问被拒
+    await assert.rejects(
+      () => router.routeToOwner({ ownerId: owner.id, message: '再改改', ticketId: first.ticketId }),
+      (e) => e.code === 'illegal-transition',
+    )
+  } finally { cleanup() }
+})
+
+test('resume survives a deleted owner session: rebuild, retarget, inject the follow-up', async () => {
+  const dead = []
+  const { router, registry, calls, cleanup } = fixture({ failSessions: dead })
+  try {
+    const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    const first = await router.routeToOwner({ ownerId: owner.id, message: '任务' })
+    router.tasks.report({ ticketId: first.ticketId, summary: 'ok' })
+    dead.push(first.sessionId)
+    const resumed = await router.routeToOwner({ ownerId: owner.id, message: '再补一点', ticketId: first.ticketId })
+    assert.equal(resumed.resumed, true)
+    assert.equal(resumed.rebuilt, true)
+    assert.notEqual(resumed.sessionId, first.sessionId)
+    assert.equal(registry.get(owner.id).sessionId, resumed.sessionId)
+    assert.equal(router.getTicket(first.ticketId).stage, 'working')
+  } finally { cleanup() }
+})
+
 test('a non-missing-session prompt failure propagates without rebuilding', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'hub-bot-router-'))
   const store = new Store(dir)

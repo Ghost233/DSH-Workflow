@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/index.js",
     "./router-tools": "./src/router-tools.js",
+    "./owner-tools": "./src/owner-tools.js",
     "./package.json": "./package.json"
   },
   "files": [

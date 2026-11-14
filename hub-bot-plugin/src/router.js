@@ -9,6 +9,7 @@
  * Ticket BEFORE the prompt is admitted. A crash after any step leaves the store able to say exactly what happened.
  */
 import { randomUUID } from 'node:crypto'
+import { TaskBoard, TaskError } from './tasks.js'
 
 /** A routing failure with a machine-readable code for tool/API surfaces. */
 export class RouterError extends Error {
@@ -31,14 +32,16 @@ export class Router {
   /**
    * @param {{ store: import('./store.js').Store, registry: import('./registry.js').OwnerRegistry,
    *   sessions: { create: (request: any) => Promise<any>, prompt: (request: any) => Promise<any> },
-   *   now?: () => string, ids?: { uuid: () => string } }} deps
+   *   tasks?: import('./tasks.js').TaskBoard, now?: () => string, ids?: { uuid: () => string } }} deps
    */
-  constructor({ store, registry, sessions, now, ids }) {
+  constructor({ store, registry, sessions, tasks, now, ids }) {
     this.store = store
     this.registry = registry
     this.sessions = sessions
     this.now = now ?? (() => new Date().toISOString())
     this.ids = ids ?? { uuid: () => randomUUID() }
+    // The lifecycle guard lives in TaskBoard (#65); Router drives tickets through it, never around it.
+    this.tasks = tasks ?? new TaskBoard({ store, now: this.now })
   }
 
   #insertTrigger(row) {
@@ -89,13 +92,21 @@ export class Router {
    * Trigger accepted twice produces one task (spec「领域模型」). A missing owner Session (deleted by hand) is
    * detected from the prompt failure, rebuilt once, and the registry updated (spec: 被删自动重建）.
    *
-   * @returns deduped receipt { ownerId, sessionId, ticketId, requestId, createdSession, rebuilt, deduped }
+   * With `ticketId` the message is a follow-up on an existing task (#65 追问恢复): a ticket waiting for
+   * acceptance (review) resumes to working instead of a new task being created; a working ticket just takes the
+   * injection; a done ticket rejects. `resolution: 'accept'` is the user-acceptance gate (review → done) and
+   * injects nothing. The follow-up injection carries the task's immutable authorization record.
+   *
+   * @returns deduped receipt { ownerId, sessionId, ticketId, requestId, createdSession, rebuilt, deduped },
+   *   plus resumed/accepted on the follow-up paths
    */
-  async routeToOwner({ ownerId, message, triggerRef, authorization }) {
+  async routeToOwner({ ownerId, message, triggerRef, ticketId, resolution, authorization }) {
     if (typeof message !== 'string' || !message.trim()) throw new RouterError('message-required', 'route_to_owner: message must be a non-empty string')
     const owner = this.registry.get(ownerId)
     if (!owner) throw new RouterError('unknown-owner', 'route_to_owner: unknown owner "' + ownerId + '" — call list_owners first')
     if (owner.role === 'chief') throw new RouterError('cannot-route-to-chief', 'route_to_owner: the chief is the router, not a route target')
+    if (ticketId !== undefined) return this.#followUp({ owner, message: message.trim(), ticketId, resolution })
+    if (resolution !== undefined) throw new RouterError('resolution-needs-ticket', 'route_to_owner: resolution requires ticketId')
     if (triggerRef !== undefined) {
       const existing = this.getTrigger(triggerRef)
       if (existing) {
@@ -108,28 +119,71 @@ export class Router {
     const trigger = this.#insertTrigger({ id: triggerRef ?? 'trg-' + this.ids.uuid(), kind: 'route', ownerId, message, authorization: auth, at })
     const ensured = await this.#ensureSession(owner)
     const requestId = 'hub-bot-route-' + this.ids.uuid()
-    const ticketId = 'tsk-' + this.ids.uuid()
-    let ticket = this.#insertTicket({
-      id: ticketId, triggerId: trigger.id, owner: ownerId, stage: 'working', mechanism: 'inject',
+    const freshTicketId = 'tsk-' + this.ids.uuid()
+    const ticket = this.#insertTicket({
+      id: freshTicketId, triggerId: trigger.id, owner: ownerId, stage: 'working', mechanism: 'inject',
       targetSession: ensured.sessionId, requestId, authorization: auth, createdAt: at, updatedAt: at,
     })
-    const text = '[hub-bot 路由 ' + ticketId + '] ' + message.trim() + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + ticketId
-    let rebuilt = false
+    const text = '[hub-bot 路由 ' + freshTicketId + '] ' + message.trim() + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + freshTicketId
+    const delivered = await this.#promptOwner(ownerId, ensured, ticket, requestId, text)
+    return { ownerId, sessionId: delivered.sessionId, ticketId: freshTicketId, requestId, createdSession: ensured.created, rebuilt: delivered.rebuilt, deduped: false }
+  }
+
+  /** The #65 follow-up/acceptance path: same task, same owner Session, no new Trigger or Ticket. */
+  async #followUp({ owner, message, ticketId, resolution }) {
+    const ticket = this.tasks.getTicket(ticketId)
+    if (!ticket) throw new RouterError('unknown-ticket', 'route_to_owner: unknown ticket "' + ticketId + '" — call query_tasks first')
+    if (ticket.owner !== owner.id) {
+      throw new RouterError('ticket-owner-mismatch', 'route_to_owner: ticket ' + ticketId + ' belongs to ' + ticket.owner + ', not ' + owner.id)
+    }
+    if (resolution !== undefined) {
+      if (resolution !== 'accept') throw new RouterError('unknown-resolution', 'route_to_owner: resolution must be "accept" when given')
+      try {
+        this.tasks.accept(ticketId)
+      } catch (error) {
+        if (error instanceof TaskError) throw new RouterError(error.code, error.message)
+        throw error
+      }
+      return { ownerId: owner.id, sessionId: owner.sessionId, ticketId, requestId: ticket.requestId, createdSession: false, rebuilt: false, deduped: false, accepted: true, stage: 'done' }
+    }
+    let resumed = false
+    if (ticket.stage === 'review') {
+      try {
+        this.tasks.resume(ticketId)
+      } catch (error) {
+        if (error instanceof TaskError) throw new RouterError(error.code, error.message)
+        throw error
+      }
+      resumed = true
+    } else if (ticket.stage === 'done') {
+      throw new RouterError('illegal-transition', 'route_to_owner: ticket ' + ticketId + ' is done — create a new task instead of reviving it')
+    }
+    const auth = ticket.authorization
+    const text = '[hub-bot 追问 ' + ticketId + '] ' + message + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + ticketId + '（票已恢复进行中，改完请再次 report 转入等验收）'
+    const requestId = 'hub-bot-route-' + this.ids.uuid()
+    const ensured = await this.#ensureSession(owner)
+    const delivered = await this.#promptOwner(owner.id, ensured, this.tasks.getTicket(ticketId), requestId, text)
+    return { ownerId: owner.id, sessionId: delivered.sessionId, ticketId, requestId, createdSession: ensured.created, rebuilt: delivered.rebuilt, deduped: false, resumed }
+  }
+
+  /**
+   * Admits one prompt to the owner Session, rebuilding the Session once when the registry's pointer dangles
+   * (deleted Session) and retargeting the Ticket at the replacement. Shared by first routing and follow-ups.
+   */
+  async #promptOwner(ownerId, ensured, ticket, requestId, text) {
     let sessionId = ensured.sessionId
     try {
       await this.sessions.prompt({ sessionId, requestId, text })
+      return { sessionId, rebuilt: false }
     } catch (error) {
       if (!isMissingSession(error)) throw error
-      // The registry pointed at a deleted Session: forget it, lazily create a replacement, retarget the Ticket,
-      // and admit the same prompt once into the new Session.
       this.registry.markSessionMissing(ownerId)
       const replacement = await this.#ensureSession(this.registry.get(ownerId))
       sessionId = replacement.sessionId
-      ticket = this.#updateTicket({ ...ticket, targetSession: sessionId, updatedAt: this.now() })
+      this.#updateTicket({ ...ticket, targetSession: sessionId, updatedAt: this.now() })
       await this.sessions.prompt({ sessionId, requestId, text })
-      rebuilt = true
+      return { sessionId, rebuilt: true }
     }
-    return { ownerId, sessionId, ticketId, requestId, createdSession: ensured.created, rebuilt, deduped: false }
   }
 
   #ticketByTrigger(triggerId) {

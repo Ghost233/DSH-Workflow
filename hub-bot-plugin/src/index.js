@@ -237,6 +237,8 @@ export function apply(ctx, rawConfig) {
             ownerId: requireString(body, 'ownerId'),
             message: requireString(body, 'message'),
             triggerRef: optionalString(body, 'triggerRef'),
+            ticketId: optionalString(body, 'ticketId'),
+            resolution: optionalString(body, 'resolution'),
           }))
         } else if (route === 'owners/invalidate-session' && method === 'POST') {
           const body = await readBody(req)
