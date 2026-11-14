@@ -4,18 +4,19 @@
 - insert:
     - id: hub-bot
       name: dsh-hub-bot
-    # The agent preset of the L1 routing owner Session. It is a read-only preset: the file tools only read, a foreground
-    # shell command moves to a background job after 5 seconds so a long command never holds back the next routed message,
-    # and a job wait ends after 5 seconds. Left out: everything that asks or shows a person something (ask_user_question,
-    # present), changes the profile (plugin manager/market), schedules work, starts goals, plans, runs workflows, fetches
-    # the web, searches files, or writes files — all execution happens in L3 worker sessions, never here. A preset row has
-    # no setting that hides it from the preset picker, so its name and description say whom it is for.
+    # The agent preset of the L1 routing owner Session. Its file tools only read; a foreground shell command moves to a
+    # background job after 5 seconds so a long command never holds back the next routed message, and a job wait ends after
+    # 5 seconds. (A write command that finishes within those 5 seconds still runs — the preset bounds latency, not shell
+    # capability; execution belongs in L3 worker sessions by convention.) Left out: everything that asks or shows a person
+    # something (ask_user_question, present), changes the profile (plugin manager/market), schedules work, starts goals,
+    # plans, runs workflows, fetches the web, searches files, or writes files. A preset row has no setting that hides it
+    # from the preset picker, so its name and description say whom it is for.
     - id: hub-bot-router-preset
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: hub-bot-router
-        name: hub-bot 总负责人（L1 路由）
-        description: L1 总负责人专用，不供手动选择。完全只读；前台命令超 5 秒转入后台；只含路由所需工具。
+        name: hub-bot 总负责人（L1 路由·负责人专用）
+        description: L1 总负责人专用，不供手动选择。文件工具只读；前台 shell 命令超 5 秒转入后台；只含路由所需工具。
         order: 90
         plugins:
           - id: agent-instructions
@@ -82,15 +83,16 @@
                   thresholdChars: 8192
                   headChars: 4096
                   tailChars: 1024
-    # The agent preset of every L2 owner Session (repo/dir/scratch owners). Same read-only, 5-second-backgrounding base as
-    # the L1 router; the session-management tools (select, inject, fork, report) are decorated onto the Session by the
-    # plugin per role, not by this preset, so the preset itself stays minimal.
+    # The agent preset of every L2 owner Session (repo/dir/scratch owners). Same read-only-file-tools, 5-second-backgrounding base as
+    # the L1 router; the session-management tools (select, inject, fork, report) are supplied per role, not by this
+    # preset, so the preset itself stays minimal. (NOTE: custom-preset Sessions mount an isolated tool subtree —
+    # plugin-side decorate() does not reach it; those tools must ship as a static plugin row here. See README「已知限制」.)
     - id: hub-bot-owner-preset
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: hub-bot-owner
-        name: hub-bot 负责人（L2 执行管理）
-        description: L2 负责人专用，不供手动选择。完全只读；前台命令超 5 秒转入后台；会话管理工具由插件按角色注入。
+        name: hub-bot 负责人（L2 执行管理·负责人专用）
+        description: L2 负责人专用，不供手动选择。文件工具只读；前台 shell 命令超 5 秒转入后台；会话管理工具由插件按角色注入。
         order: 91
         plugins:
           - id: agent-instructions

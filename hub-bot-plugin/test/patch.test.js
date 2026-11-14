@@ -1,33 +1,41 @@
 /**
  * The bundle patch, read with the same entry-list dialect DSH reads bundle patches with (the cordis include plugin's
  * js-yaml schema resolves `!!js` scalars, then applyEntryPatches applies the inserts to an entry list), asserting the
- * two owner presets keep their read-only, 5-second-backgrounding contract.
+ * two owner presets keep their read-only-file-tools, 5-second-backgrounding contract.
  *
- * The parser is resolved from the installed DSH runtime so the test runs with zero installed dependencies; set
- * DSH_RUNTIME_ROOT to a different DSH installation when the default Station path does not apply.
+ * The parser comes from the shared test runtime (scripts/test-runtime.mjs): `DSH_TEST_RUNTIME_ROOT` points at a
+ * lockfile-installed DSH runtime, and the in-repo deepseek-harness/ checkout is the fallback. When neither is
+ * available (no usable cordis include plugin to resolve) these tests SKIP instead of failing — the bundle patch is
+ * then validated by the live `--dump-config` / management-API evidence instead.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { runtimeAnchor, runtimeRequire } from '../../scripts/test-runtime.mjs'
 
-const RUNTIME_ROOT = process.env.DSH_RUNTIME_ROOT ?? '/Applications/Ghost DSH Station.app/Contents/Resources'
 const here = dirname(fileURLToPath(import.meta.url))
+const SKIP_REASON = `no usable DSH test runtime (anchor ${runtimeAnchor}); set DSH_TEST_RUNTIME_ROOT or check out deepseek-harness/ with its dependencies`
 
-/** Parses cordis.patch.yml exactly as the DSH loader parses a bundle patch, and applies it to an empty entry list. */
+/**
+ * Parses cordis.patch.yml exactly as the DSH loader parses a bundle patch, and applies it to an empty entry list.
+ * Returns null when the test runtime cannot resolve the cordis include plugin (uninstalled fallback source, …).
+ */
 async function patched() {
-  const dshRequire = createRequire(join(RUNTIME_ROOT, 'node_modules', '@deepseek-ai', 'dsh', 'package.json'))
-  const cordisRequire = createRequire(dshRequire.resolve('@deepseek-ai/cordis/package.json'))
-  const includePath = cordisRequire.resolve('@deepseek-ai/cordis-plugin-include')
-  const include = await import(includePath)
-  const jsYamlRequire = createRequire(includePath)
-  const yaml = await import(jsYamlRequire.resolve('js-yaml'))
-  const patches = yaml.load(readFileSync(join(here, '..', 'cordis.patch.yml'), 'utf8'), { schema: include.entryListSchema })
-  const warnings = []
-  const rows = include.applyEntryPatches([], patches, message => { throw new Error(`patch warning: ${message}`) })
-  return { rows, warnings }
+  if (!existsSync(runtimeAnchor)) return null
+  try {
+    const cordisRequire = createRequire(runtimeRequire.resolve('@deepseek-ai/cordis/package.json'))
+    const includePath = cordisRequire.resolve('@deepseek-ai/cordis-plugin-include')
+    const include = await import(includePath)
+    const jsYamlRequire = createRequire(includePath)
+    const yaml = await import(jsYamlRequire.resolve('js-yaml'))
+    const patches = yaml.load(readFileSync(join(here, '..', 'cordis.patch.yml'), 'utf8'), { schema: include.entryListSchema })
+    return include.applyEntryPatches([], patches, message => { throw new Error(`patch warning: ${message}`) })
+  } catch {
+    return null
+  }
 }
 
 /** Every plugin row of a preset, including rows nested inside cordis groups. */
@@ -35,8 +43,9 @@ const flat = rows => rows.flatMap(row => [row, ...Array.isArray(row.config) ? fl
 const presetOf = (rows, id) => rows.map(row => row.config).find(config => config?.id === id)
 const named = (rows, name) => flat(rows).filter(row => row.name === name).map(row => row.config)
 
-test('inserts the plugin entry and exactly the two owner presets', async () => {
-  const { rows } = await patched()
+test('inserts the plugin entry and exactly the two owner presets', async t => {
+  const rows = await patched()
+  if (!rows) { t.skip(SKIP_REASON); return }
   assert.deepEqual(rows.map(row => row.id), ['hub-bot', 'hub-bot-router-preset', 'hub-bot-owner-preset'])
   const plugin = rows.find(row => row.id === 'hub-bot')
   assert.equal(plugin.name, 'dsh-hub-bot')
@@ -44,12 +53,14 @@ test('inserts the plugin entry and exactly the two owner presets', async () => {
 })
 
 for (const preset of ['hub-bot-router', 'hub-bot-owner']) {
-  test(`preset ${preset}: read-only, 5s shell backgrounding, 5s job waits, no person-facing tools`, async () => {
-    const { rows } = await patched()
+  test(`preset ${preset}: read-only file tools, 5s shell backgrounding, 5s job waits, no person-facing tools`, async t => {
+    const rows = await patched()
+    if (!rows) { t.skip(SKIP_REASON); return }
     const config = presetOf(rows, preset)
     assert.ok(config, `preset ${preset} missing`)
-    assert.match(config.name, /负责人/)
+    assert.match(config.name, /负责人专用/, 'the preset name itself says it is owner-only (the preset picker has no hide setting)')
     assert.match(config.description, /负责人专用，不供手动选择/)
+    assert.doesNotMatch(config.description, /完全只读/, 'a shell write finishing inside 5 s still runs; do not claim fully read-only')
     assert.equal(typeof config.order, 'number')
     const plugins = config.plugins
     // The file tools only read; a foreground shell command moves to a background job after 5 s; a job wait ends after 5 s.
