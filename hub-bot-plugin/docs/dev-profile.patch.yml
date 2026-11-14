@@ -1,0 +1,46 @@
+# 开发实例（hub-bot-dev profile）的用户层 cordis.patch.yml 实证样本——task-1 注入链路验证即用此配置。
+# 位置：$DSH_HOME/profiles/hub-bot-dev/cordis.patch.yml（DSH_HOME=/tmp/dsh-hub-bot-dev）
+# 注意：这是开发实例的 profile 层；生产装载时只需最后一段（hub-bot stateDir）按需加入目标 profile。
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      magpie:
+        apiKeyEnv: MAGPIE_GATEWAY_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:3425/v1
+        models:
+          - id: zhipu/glm-4.5-air
+            name: GLM-4.5-Air · Zhipu GLM
+            contextWindow: 131072
+            maxTokens: 32768
+            input: [text, image]
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: magpie
+    model: zhipu/glm-4.5-air
+# 开发实例无人值守验证：审批永不停顿（只影响这个 throwaway 实例）。
+- id: permission
+  name: "@deepseek-ai/dsh-permission-presets"
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+    defaultPreset: danger-full-access
+- id: webserver
+  name: "@deepseek-ai/dsh-host-webserver"
+  config:
+    host: 127.0.0.1
+    port: 3199
+# 插件配置：状态目录必填，缺失或相对路径时插件拒绝启动。
+- id: hub-bot
+  config:
+    stateDir: /tmp/dsh-hub-bot-dev/state

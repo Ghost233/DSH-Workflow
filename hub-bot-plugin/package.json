@@ -1,0 +1,31 @@
+{
+  "name": "dsh-hub-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hub Bot: a three-layer owner-agent personal bot as a DSH cordis bundle. Feishu/GitHub sources route into owner sessions through prompt injection; this package is the bundle skeleton: state directory, versioned SQLite store, owner agent presets, and the session injection/inspection API.",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "manifestVersion": 1
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": "^0.2.1-alpha.2"
+  }
+}

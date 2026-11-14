@@ -1,0 +1,156 @@
+# dsh-hub-bot bundle layer: inserts the plugin without configuration and registers the two owner agent presets its
+# Sessions run under. The profile supplies the `hub-bot` entry's stateDir (see README.md); the plugin refuses to start
+# without stateDir.
+- insert:
+    - id: hub-bot
+      name: dsh-hub-bot
+    # The agent preset of the L1 routing owner Session. It is a read-only preset: the file tools only read, a foreground
+    # shell command moves to a background job after 5 seconds so a long command never holds back the next routed message,
+    # and a job wait ends after 5 seconds. Left out: everything that asks or shows a person something (ask_user_question,
+    # present), changes the profile (plugin manager/market), schedules work, starts goals, plans, runs workflows, fetches
+    # the web, searches files, or writes files — all execution happens in L3 worker sessions, never here. A preset row has
+    # no setting that hides it from the preset picker, so its name and description say whom it is for.
+    - id: hub-bot-router-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: hub-bot-router
+        name: hub-bot 总负责人（L1 路由）
+        description: L1 总负责人专用，不供手动选择。完全只读；前台命令超 5 秒转入后台；只含路由所需工具。
+        order: 90
+        plugins:
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          # A foreground command waits at most 5 s, then the shell tool moves it to a background job.
+          - id: shell
+            name: cordis:group
+            group: true
+            isolate:
+              shell: true
+            config:
+              - id: bash-sandbox
+                name: '@deepseek-ai/dsh-bash-sandbox'
+                disabled: !!js process.platform === 'win32'
+                config:
+                  timeoutMs: 5000
+                  maxTimeoutMs: 5000
+              - id: pwsh-sandbox
+                name: '@deepseek-ai/dsh-pwsh-sandbox'
+                disabled: !!js process.platform !== 'win32'
+                config:
+                  timeoutMs: 5000
+                  maxTimeoutMs: 5000
+              - id: tool-bash
+                name: '@deepseek-ai/dsh-tool-bash'
+                disabled: !!js process.platform === 'win32'
+              - id: tool-pwsh
+                name: '@deepseek-ai/dsh-tool-pwsh'
+                disabled: !!js process.platform !== 'win32'
+          # The file tools only read: every write belongs to an L3 worker session.
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              write: false
+              edit: false
+          # A wait for a job ends after 5 s too; the job's end wakes the owner with its result.
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+            config:
+              waitTimeoutMs: 5000
+              maxWaitTimeoutMs: 5000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+    # The agent preset of every L2 owner Session (repo/dir/scratch owners). Same read-only, 5-second-backgrounding base as
+    # the L1 router; the session-management tools (select, inject, fork, report) are decorated onto the Session by the
+    # plugin per role, not by this preset, so the preset itself stays minimal.
+    - id: hub-bot-owner-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: hub-bot-owner
+        name: hub-bot 负责人（L2 执行管理）
+        description: L2 负责人专用，不供手动选择。完全只读；前台命令超 5 秒转入后台；会话管理工具由插件按角色注入。
+        order: 91
+        plugins:
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: shell
+            name: cordis:group
+            group: true
+            isolate:
+              shell: true
+            config:
+              - id: bash-sandbox
+                name: '@deepseek-ai/dsh-bash-sandbox'
+                disabled: !!js process.platform === 'win32'
+                config:
+                  timeoutMs: 5000
+                  maxTimeoutMs: 5000
+              - id: pwsh-sandbox
+                name: '@deepseek-ai/dsh-pwsh-sandbox'
+                disabled: !!js process.platform !== 'win32'
+                config:
+                  timeoutMs: 5000
+                  maxTimeoutMs: 5000
+              - id: tool-bash
+                name: '@deepseek-ai/dsh-tool-bash'
+                disabled: !!js process.platform === 'win32'
+              - id: tool-pwsh
+                name: '@deepseek-ai/dsh-tool-pwsh'
+                disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              write: false
+              edit: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+            config:
+              waitTimeoutMs: 5000
+              maxWaitTimeoutMs: 5000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
