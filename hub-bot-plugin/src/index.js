@@ -140,17 +140,21 @@ export function apply(ctx, rawConfig) {
 
   /** Tool registrations made by /decorate, keyed by Session so they release when the Session's Agent is disposed. */
   const decorations = new Map()
+  // { global: true }: without it this listener only hears events emitted down this plugin's own ctx branch, and the
+  // agent-lifecycle event arrives from the Session's branch — every agent/disposed listener in the runtime passes it.
+  // The map keys are SessionIds while the event carries the Agent: dsh-agent-loop keeps agent.id === session.id for
+  // ordinary Sessions, so the lookup holds.
   ctx.on('agent/disposed', ({ agent }) => {
     const dispose = decorations.get(agent.id)
     if (dispose) { decorations.delete(agent.id); dispose() }
-  })
+  }, { global: true })
 
   /** Registers the ping tool on one live Session's Agent. */
   const decorate = async body => {
     const sessionId = requireString(body, 'sessionId')
     // resolveAgent resolves/resumes the Session and reports failures as a value, not a throw.
     const found = await ctx.sessionController.resolveAgent(sessionId)
-    const agent = found && typeof found === 'object' && 'error' in found ? null : (found.agent ?? found)
+    const agent = found && typeof found === 'object' && 'error' in found ? null : (found?.agent ?? found)
     if (!agent?.ctx) throw new HttpError(404, `Session ${sessionId} could not be resolved to a live Agent`)
     decorations.get(sessionId)?.()
     const dispose = agent.ctx.tools.register(PING_TOOL)

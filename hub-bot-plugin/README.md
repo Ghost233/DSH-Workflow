@@ -51,6 +51,7 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 
 ## 设计决定记录
 
+- **store.js 的 schema v1 即建全 trigger/ticket/owner/outbox 四张表**：它们由规格 docs/specs/hub-bot-plugin.md「数据模型」章节定义，是三层架构的既有数据契约而非超前设计；schema v1 建全后，后续工单只追加迁移（v2、v3…）不改历史迁移，保证已部署 stateDir 的升级路径单调可测。
 - **两个 preset 在 cordis.patch.yml 中保持展开（各约 55 行、内容相近）**：与 superagent 先例一致——preset 是给人读的声明式配置，两份各自完整可比 YAML 锚点/生成器的间接层更易审阅；它们的分化（L1/L2 各自增删工具）预期很快发生，届时展开形式 diff 更清晰。
 - **preset 措辞不宣称"完全只读"**：文件工具确为只读（write/edit 关闭），但 shell 命令在 5 秒内完成时不受 preset 拦截——preset 约束的是时延（超时转后台）与工具面，不是 shell 能力。执行纪律由系统提示词与后续 Source/Policy 层承担。
 - **管理面默认关闭 + token 把守**：注入能力与 #62 Policy 同级，宁可每次开发实例生成一次性 token，不留"静态头即可注入任意会话"的本机面。

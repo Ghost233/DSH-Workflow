@@ -89,7 +89,7 @@ http://127.0.0.1:3199/?token=mEHYsLue3rWvRrcwari1F1OpwzECHYWDbUytKNmfIPY
 
 test/patch.test.js 改复用仓内先例 scripts/test-runtime.mjs（DSH_TEST_RUNTIME_ROOT + 仓内 deepseek-harness/ 兜底），不再硬编码本机路径；运行时不可解析时 skip 而非 fail。
 
-    $ npm test            # 无 DSH_TEST_RUNTIME_ROOT、worktree 无 deepseek-harness/
+    $ npm test            # 无 DSH_TEST_RUNTIME_ROOT；worktree 的 deepseek-harness/ 是存在但未初始化的空 submodule，anchor 缺失故 skip
     ℹ tests 19 / pass 16 / fail 0 / skipped 3（3 个 patch 测试带原因 skip）
     EXIT=0
     $ DSH_TEST_RUNTIME_ROOT="/Applications/Ghost DSH Station.app/Contents/Resources" npm test
@@ -104,7 +104,7 @@ config 新增可选 devApi:{token}；未配置时插件正常装载、不注册�
 2. devApi.token 配置启动：无 token → 401 {"error":"Missing or wrong x-hub-bot-token"}；错误 token → 401；旧静态头 x-hub-bot-request → 401；正确 token → 200 state JSON。
 3. 同配置全链路回归：create（默认 preset）→ decorate {"decorated":true} → inject → wait → transcript（/tmp/dsh-hub-bot-dev/transcript-e.json）：tool/call hub_bot_ping {"text":"post-review-63"} → tool/result "pong: post-review-63" → 助手复述。
 
-config.test.js 新增 5 个用例：无 devApi→disabled、devApi+token 接受、无 token/空/非字符串/非对象/null 拒绝、devApi 内未知键拒绝。
+config.test.js 新增 4 个 test 块（其一含 5 断言）：无 devApi→disabled、devApi+token 接受、无 token/空/非字符串/非对象/null 拒绝、devApi 内未知键拒绝。
 
 ## 顺手 P2
 

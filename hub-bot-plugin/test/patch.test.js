@@ -25,17 +25,21 @@ const SKIP_REASON = `no usable DSH test runtime (anchor ${runtimeAnchor}); set D
  */
 async function patched() {
   if (!existsSync(runtimeAnchor)) return null
+  // Only resolving the parser may fail softly (runtime absent or uninstalled) → skip. Once the parser is in hand,
+  // errors from yaml.load/applyEntryPatches are errors in OUR cordis.patch.yml and must fail the test, not skip it.
+  let include
+  let yaml
   try {
     const cordisRequire = createRequire(runtimeRequire.resolve('@deepseek-ai/cordis/package.json'))
     const includePath = cordisRequire.resolve('@deepseek-ai/cordis-plugin-include')
-    const include = await import(includePath)
+    include = await import(includePath)
     const jsYamlRequire = createRequire(includePath)
-    const yaml = await import(jsYamlRequire.resolve('js-yaml'))
-    const patches = yaml.load(readFileSync(join(here, '..', 'cordis.patch.yml'), 'utf8'), { schema: include.entryListSchema })
-    return include.applyEntryPatches([], patches, message => { throw new Error(`patch warning: ${message}`) })
+    yaml = await import(jsYamlRequire.resolve('js-yaml'))
   } catch {
     return null
   }
+  const patches = yaml.load(readFileSync(join(here, '..', 'cordis.patch.yml'), 'utf8'), { schema: include.entryListSchema })
+  return include.applyEntryPatches([], patches, message => { throw new Error(`patch warning: ${message}`) })
 }
 
 /** Every plugin row of a preset, including rows nested inside cordis groups. */
