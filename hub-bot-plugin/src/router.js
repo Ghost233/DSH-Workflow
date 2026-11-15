@@ -19,6 +19,7 @@ import { randomUUID } from 'node:crypto'
 import { TaskBoard, TaskError, STAGE_TEXT, normalizeStage } from './tasks.js'
 import { OutboxRunner } from './outbox.js'
 import { truncateWords } from './discipline.js'
+import { buildDigestText, buildAutoSummary } from './reporting.js'
 
 /** A routing failure with a machine-readable code for tool/API surfaces. */
 export class RouterError extends Error {
@@ -43,15 +44,20 @@ function isMissingSession(error) {
 export class Router {
   /**
    * @param {{ store: import('./store.js').Store, registry: import('./registry.js').OwnerRegistry,
-   *   sessions: { create: (request: any) => Promise<any>, prompt: (request: any) => Promise<any> },
+   *   sessions: { create: (request: any) => Promise<any>, prompt: (request: any) => Promise<any>, isRunning?: (sessionId: string) => Promise<boolean> },
    *   tasks?: import('./tasks.js').TaskBoard, runner?: import('./outbox.js').OutboxRunner,
+   *   config?: { reporting?: { auto: boolean, intervalMs: number } },
    *   now?: () => string, ids?: { uuid: () => string },
    *   onSystemProblem?: (problem: object) => void }} deps
    */
-  constructor({ store, registry, sessions, tasks, runner, now, ids, onSystemProblem }) {
+  #lastAutoReportAt = null
+  #lastAutoReportText = null
+
+  constructor({ store, registry, sessions, tasks, runner, config, now, ids, onSystemProblem }) {
     this.store = store
     this.registry = registry
     this.sessions = sessions
+    this.config = config ?? { reporting: { auto: false, intervalMs: 60000 } }
     this.now = now ?? (() => new Date().toISOString())
     this.ids = ids ?? { uuid: () => randomUUID() }
     // The lifecycle guard lives in TaskBoard (#66); Router drives tickets through it, never around it.
@@ -100,6 +106,13 @@ export class Router {
   /** Restart recovery: end running assignments "host restarted" and arm the recovery note (spec: 重启恢复）. */
   markRestart() {
     this.tasks.markRestart()
+  }
+
+  /** The chief's own Session (L1 统一出口): digests and replies are admitted here. */
+  async #ensureChiefSession() {
+    const chief = this.registry.get('chief')
+    if (!chief) throw new RouterError('chief-missing', 'the chief owner row is missing from the registry')
+    return this.#ensureSession(chief)
   }
 
   /** Lazily binds an owner Session: create only when the registry names none. */
@@ -237,6 +250,8 @@ export class Router {
    * intents until a real channel deliverer (Feishu) lands — storing them already satisfies 先存后做.
    */
   async #deliverRow(row) {
+    if (row.kind === 'digest') return this.#deliverDigest(row)
+    if (row.kind === 'reply') return this.#deliverReply(row)
     if (row.kind !== 'inject') return
     const ticket = this.tasks.getTicket(row.ticketId)
     const permanent = (message) => { const error = new Error(message); error.permanent = true; return error }
@@ -257,6 +272,7 @@ export class Router {
   /**
    * Admits one prompt to the owner Session, rebuilding the Session once when the registry's pointer dangles
    * (deleted Session) and retargeting the Ticket at the replacement. Shared by first routing and follow-ups.
+   * ticket may be null (chief-bound digest/reply rows carry no ticket — nothing to retarget).
    */
   async #promptOwner(ownerId, ensured, ticket, requestId, text) {
     let sessionId = ensured.sessionId
@@ -268,10 +284,67 @@ export class Router {
       this.registry.markSessionMissing(ownerId)
       const replacement = await this.#ensureSession(this.registry.get(ownerId))
       sessionId = replacement.sessionId
-      this.#updateTicket({ ...ticket, targetSession: sessionId, updatedAt: this.now() })
+      if (ticket) this.#updateTicket({ ...ticket, targetSession: sessionId, updatedAt: this.now() })
       await this.sessions.prompt({ sessionId, requestId, text })
       return { sessionId, rebuilt: true }
     }
+  }
+
+  /**
+   * Digest delivery (#67): the wake ends when the owner's Session goes idle — until then the row postpones
+   * itself WITHOUT burning attempts, so every report of one wake lands as ONE merged message on the chief
+   * (每次唤醒至多一条对外汇报). The text renders stored face facts only (汇报以票面为准).
+   */
+  async #deliverDigest(row) {
+    const owner = this.registry.get(row.ownerId)
+    if (!owner) {
+      const error = new Error('digest ' + row.id + ': owner ' + row.ownerId + ' is gone from the registry')
+      error.permanent = true
+      throw error
+    }
+    const sessionId = owner.sessionId
+    if (sessionId && this.sessions.isRunning && await this.sessions.isRunning(sessionId)) {
+      return { postponeMs: 2000 } // the wake is still running — keep coalescing
+    }
+    const ensured = await this.#ensureChiefSession()
+    await this.#promptOwner('chief', ensured, null, row.requestId, buildDigestText(row))
+  }
+
+  /**
+   * Reply delivery (#67 统一出口): session-addressable rows are admitted to that Session (the chief for
+   * 'dsh:session:chief'); external targets (feishu:…) remain recorded intents until their channel lands.
+   */
+  async #deliverReply(row) {
+    if (row.to === 'dsh:session:chief') {
+      const ensured = await this.#ensureChiefSession()
+      await this.#promptOwner('chief', ensured, null, row.requestId, row.body)
+      return
+    }
+    if (typeof row.to === 'string' && row.to.startsWith('session:')) {
+      await this.sessions.prompt({ sessionId: row.to.slice('session:'.length), requestId: row.requestId, text: row.body })
+    }
+    // external targets: stored intent suffices (先存后做) until the channel deliverer lands
+  }
+
+  /**
+   * Scheduled auto-summary (#67 定时汇总自动汇报, OFF by default): one truncated status summary to the
+   * unified outlet, listing only active stages (结果可用或需要行动). The dev API forces a tick for proofs.
+   */
+  async autoReportTick({ force } = {}) {
+    const reporting = this.config?.reporting ?? { auto: false, intervalMs: 60000 }
+    if (!reporting.auto) return { skipped: 'disabled' }
+    const nowMs = Date.parse(this.now())
+    if (!force && this.#lastAutoReportAt !== null && nowMs - this.#lastAutoReportAt < reporting.intervalMs) {
+      return { skipped: 'interval' }
+    }
+    const text = buildAutoSummary(this.queryTasks({}))
+    if (!text) return { skipped: 'empty' }
+    // 消息纪律: an unchanged status is not news — never repeat the same summary (只在结果可用或需要行动时说话).
+    if (text === this.#lastAutoReportText) return { skipped: 'unchanged' }
+    const receipt = await this.replySource({ text, to: 'dsh:session:chief' })
+    this.#lastAutoReportAt = nowMs
+    this.#lastAutoReportText = text
+    return { outboxId: receipt.outboxId, truncated: receipt.truncated }
   }
 
   #ticketByTrigger(triggerId) {
@@ -292,7 +365,7 @@ export class Router {
       .map(raw => JSON.parse(String(raw.value)))
       .map(ticket => ({ ...ticket, stage: normalizeStage(ticket.stage) }))
       .filter(ticket => (owner === undefined || ticket.owner === owner) && (stage === undefined || ticket.stage === stage))
-      .map(ticket => ({ ...ticket, stageText: STAGE_TEXT[ticket.stage] }))
+      .map(ticket => ({ ...ticket, stageText: STAGE_TEXT[ticket.stage], detail: this.tasks.summarize(ticket.id).detail ?? null }))
     return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }
 

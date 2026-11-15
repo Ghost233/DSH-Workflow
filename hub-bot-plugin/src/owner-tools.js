@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto'
 import { getHub } from './hub.js'
 import { ownerPersona } from './persona.js'
 import { TaskError, isWithinCwd } from './tasks.js'
+import { recordReportFact } from './reporting.js'
 
 export const name = 'hub-bot-owner-tools'
 // See router-tools.js: sessionController/sessionPersistence are load-bearing for cross-realm service
@@ -249,12 +250,16 @@ export function apply(ctx) {
 
   ctx.tools.register({
     name: 'report',
-    description: '把进展归类到任务（三种形态，恰给其一）：summary=干完了（票转等您验收，等用户验收是挡板）；question=需要用户回答（票转等您回复）；failure=不可恢复的失败原因（票转失败）。L1 用 query_tasks 能看到票面阶段。',
+    description: '把进展归类到任务（三种形态，恰给其一）：summary=干完了（票转等您验收，等用户验收是挡板）；question=需要用户回答（票转等您回复）；failure=不可恢复的失败原因（票转失败）。summary 形态建议同时给四段：result/changes/verification/risks（结果/变更/验证/风险，要么全给要么不给）。每次 report 的事实自动并入本次唤醒的归类摘要：唤醒结束时一条报给总负责人（同仓库多任务只产生一条对外汇报）。写进 report 的必须是已发生的票面事实，不写计划与估计。',
     parameters: {
       type: 'object',
       properties: {
         ticketId: { type: 'string', description: '任务票 id' },
         summary: { type: 'string', description: '形态一：结果摘要（一两句，含落点：文件路径等）' },
+        result: { type: 'string', description: '四段之一：结果（做成了什么）' },
+        changes: { type: 'string', description: '四段之二：变更（改了哪些文件/配置）' },
+        verification: { type: 'string', description: '四段之三：验证（怎么确认的：测试/命令/输出）' },
+        risks: { type: 'string', description: '四段之四：风险（遗留问题、需要用户知道的事）' },
         evidence: { type: 'string', description: '可选：证据（transcript 摘录、命令输出要点），配合 summary' },
         question: { type: 'string', description: '形态二：要问用户的一个问题（一两句）' },
         failure: { type: 'string', description: '形态三：不可恢复的失败原因（一两句）' },
@@ -271,12 +276,20 @@ export function apply(ctx) {
       mustOwnTicket(api, owner, args.ticketId)
       const modes = [args.summary !== undefined, args.question !== undefined, args.failure !== undefined].filter(Boolean).length
       if (modes !== 1) throw new Error('report: give exactly one of summary / question / failure')
+      const sectionKeys = ['result', 'changes', 'verification', 'risks']
+      const givenSections = sectionKeys.filter(k => args[k] !== undefined)
+      const sections = givenSections.length === 0 ? undefined
+        : Object.fromEntries(sectionKeys.map(k => [k, args[k]]))
       try {
         const ticket = args.question !== undefined
           ? api.tasks.ask({ ticketId: args.ticketId, question: args.question })
           : args.failure !== undefined
             ? api.tasks.fail({ ticketId: args.ticketId, reason: args.failure })
-            : api.tasks.report({ ticketId: args.ticketId, summary: args.summary, evidence: args.evidence })
+            : api.tasks.report({ ticketId: args.ticketId, summary: args.summary, evidence: args.evidence, sections })
+        // #67 汇报链: the fact joins this wake's single digest row (stored first); the runner flushes it to
+        // the chief once this session goes idle — one wake, one outward message.
+        recordReportFact(api.store, owner.id, ticket)
+        await api.router.tick()
         const { text } = api.tasks.summarize(ticket.id)
         return { ticketId: ticket.id, stage: ticket.stage, stageText: text }
       } catch (error) { throw unwrapTaskError(error) }
@@ -304,7 +317,10 @@ export function apply(ctx) {
       try {
         if (args.ticketId !== undefined) {
           mustOwnTicket(api, owner, args.ticketId)
-          api.tasks.escalate({ ticketId: args.ticketId, reason: args.reason })
+          const ticket = api.tasks.escalate({ ticketId: args.ticketId, reason: args.reason })
+          // #67: 被卡住 = 需要行动 — the fact joins this wake's digest to the chief.
+          recordReportFact(api.store, owner.id, ticket)
+          await api.router.tick()
         } else {
           if (typeof args.reason !== 'string' || !args.reason.trim()) throw new TaskError('reason-required', 'escalate: reason must be a non-empty string')
         }

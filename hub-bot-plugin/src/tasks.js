@@ -134,10 +134,18 @@ export class TaskBoard {
    * The owner reports the execution result onto the task (spec: report 是任务状态的唯一写入通道）.
    * working → person/review; the ticket then waits for user acceptance.
    */
-  report({ ticketId, summary, evidence }) {
+  report({ ticketId, summary, evidence, sections }) {
     if (typeof summary !== 'string' || !summary.trim()) throw new TaskError('summary-required', 'report: summary must be a non-empty string')
+    // 结构化报告（#67）: 结果/变更/验证/风险四段要么全给要么不给 — half a structure is worse than none.
+    if (sections !== undefined) {
+      const ok = typeof sections === 'object' && sections !== null
+        && ['result', 'changes', 'verification', 'risks'].every(k => typeof sections[k] === 'string' && sections[k].trim())
+      if (!ok) throw new TaskError('sections-incomplete', 'report: sections must carry all four non-empty segments: result/changes/verification/risks')
+    }
     const ticket = this.#transition(ticketId, 'person/review', 'owner')
-    return this.#updateTicket({ ...ticket, report: { summary: summary.trim(), evidence: evidence ?? null, at: this.now() } })
+    const report = { summary: summary.trim(), evidence: evidence ?? null, at: this.now() }
+    if (sections !== undefined) report.sections = { result: sections.result.trim(), changes: sections.changes.trim(), verification: sections.verification.trim(), risks: sections.risks.trim() }
+    return this.#updateTicket({ ...ticket, report })
   }
 
   /** The owner cannot continue without an answer from the user (working → person/answer 等您回复）. */

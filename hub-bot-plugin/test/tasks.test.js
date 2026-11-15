@@ -31,6 +31,24 @@ function fixture() {
   return { store, board, seed, cleanup }
 }
 
+
+
+test('report accepts the four segments 结果/变更/验证/风险 only as a complete set (#67)', () => {
+  const { board, seed, cleanup } = fixture()
+  try {
+    const t = seed()
+    assert.throws(() => board.report({ ticketId: t.id, summary: 's', sections: { result: 'r' } }),
+      (e) => e.code === 'sections-incomplete')
+    assert.throws(() => board.report({ ticketId: t.id, summary: 's', sections: { result: 'r', changes: 'c', verification: 'v', risks: '  ' } }),
+      (e) => e.code === 'sections-incomplete')
+    const done = board.report({ ticketId: t.id, summary: '落地完成', sections: { result: 'r', changes: 'c', verification: 'v', risks: 'k' } })
+    assert.deepEqual(done.report.sections, { result: 'r', changes: 'c', verification: 'v', risks: 'k' })
+    const plain = seed()
+    const withoutSections = board.report({ ticketId: plain.id, summary: 'ok' })
+    assert.equal(withoutSections.report.sections, undefined, 'summary-only reports stay valid')
+  } finally { cleanup() }
+})
+
 test('stage vocabulary: eight waiting stages + done, each with a verbatim user-facing reading', () => {
   assert.deepEqual([...STAGES].sort(), ['blocked', 'done', 'failed', 'idle', 'person/answer', 'person/confirm', 'person/review', 'queued', 'working'])
   assert.equal(STAGE_TEXT['idle'], '待触发')

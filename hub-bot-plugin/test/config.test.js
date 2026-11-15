@@ -7,8 +7,18 @@ import { resolveConfig, ConfigError } from '../src/config.js'
 const valid = () => ({ stateDir: '/tmp/hub-bot-state', homeRepo: '/Volumes/home' })
 
 test('accepts an absolute stateDir and homeRepo', () => {
-  assert.deepEqual(resolveConfig(valid()), { stateDir: '/tmp/hub-bot-state', homeRepo: '/Volumes/home' })
+  assert.deepEqual(resolveConfig(valid()), { stateDir: '/tmp/hub-bot-state', homeRepo: '/Volumes/home', reporting: { auto: false, intervalMs: 60000 } })
 })
+
+test('reporting defaults to OFF (无自动汇报) and parses explicit overrides', () => {
+  assert.deepEqual(resolveConfig(valid()).reporting, { auto: false, intervalMs: 60000 })
+  assert.deepEqual(resolveConfig({ ...valid(), reporting: { auto: true } }).reporting, { auto: true, intervalMs: 60000 })
+  assert.deepEqual(resolveConfig({ ...valid(), reporting: { auto: true, intervalMs: 5000 } }).reporting, { auto: true, intervalMs: 5000 })
+  assert.throws(() => resolveConfig({ ...valid(), reporting: { auto: 'yes' } }), ConfigError)
+  assert.throws(() => resolveConfig({ ...valid(), reporting: { intervalMs: 0 } }), ConfigError)
+  assert.throws(() => resolveConfig({ ...valid(), reporting: { nope: true } }), ConfigError)
+})
+
 
 test('rejects a missing stateDir', () => {
   const { stateDir, ...rest } = valid()

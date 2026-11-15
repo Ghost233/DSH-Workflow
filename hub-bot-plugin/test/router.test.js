@@ -327,6 +327,143 @@ test('queryTasks filters by owner/stage and every row carries the verbatim stage
   } finally { cleanup() }
 })
 
+
+// ---------- #67 汇报链: digest/reply delivery to the chief + scheduled auto-summary ----------
+
+/** Fake sessions port with a running-set, tracking prompts per session. */
+function chainFixture({ reporting } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'hub-bot-router-'))
+  const store = new Store(dir)
+  const registry = new OwnerRegistry(store, { scratchRoot: join(dir, 'scratch') })
+  registry.ensureChief({ cwd: '/Volumes/home', workspace: 'Ghost233HomeRepo' })
+  let nowMs = Date.parse('2026-11-15T00:00:00.000Z')
+  const calls = { create: [], prompt: [] }
+  const running = new Set()
+  const sessions = {
+    create: async request => { calls.create.push(request); return { sessionId: 'session-fake-' + (calls.create.length) } },
+    prompt: async request => { calls.prompt.push(request); return { accepted: true } },
+    isRunning: async sessionId => running.has(sessionId),
+  }
+  const config = { stateDir: dir, homeRepo: '/Volumes/home', reporting: reporting ?? { auto: false, intervalMs: 60000 } }
+  const router = new Router({ store, registry, sessions, config, now: () => new Date(nowMs).toISOString() })
+  return { router, registry, store, calls, running, advance: (ms) => { nowMs += ms }, cleanup: () => { store.close(); rmSync(dir, { recursive: true, force: true }) } }
+}
+
+test('digest delivery waits for the owner to go idle, then lands ONE merged message on the chief', async () => {
+  const { router, registry, store, calls, running, advance, cleanup } = chainFixture()
+  try {
+    const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    registry.bindSession('chief', 'session-chief')
+    const t1 = await router.routeToOwner({ ownerId: owner.id, message: 'one' })
+    const t2 = await router.routeToOwner({ ownerId: owner.id, message: 'two' })
+    const { recordReportFact } = await import('../src/reporting.js')
+    router.tasks.report({ ticketId: t1.ticketId, summary: 'one done' })
+    recordReportFact(store, owner.id, router.getTicket(t1.ticketId))
+    router.tasks.report({ ticketId: t2.ticketId, summary: 'two done' })
+    recordReportFact(store, owner.id, router.getTicket(t2.ticketId))
+    const ownerSession = router.getTicket(t1.ticketId).targetSession
+    running.add(ownerSession)
+    await router.tick()
+    const digestPromptsBefore = calls.prompt.filter(p => p.sessionId === 'session-chief')
+    assert.equal(digestPromptsBefore.length, 0, 'owner still running — the digest waits (每次唤醒至多一条)')
+    running.clear()
+    advance(2000) // the postpone backoff elapses
+    await router.tick()
+    const digestPrompts = calls.prompt.filter(p => p.sessionId === 'session-chief')
+    assert.equal(digestPrompts.length, 1, 'one outward digest for two reports')
+    assert.ok(digestPrompts[0].text.includes('[hub-bot 汇报 repo-'))
+    assert.ok(digestPrompts[0].text.includes(t1.ticketId) && digestPrompts[0].text.includes(t2.ticketId))
+    assert.match(digestPrompts[0].text, /one done/)
+    assert.match(digestPrompts[0].text, /two done/)
+  } finally { cleanup() }
+})
+
+test('reply rows addressable to a session are actually delivered (统一出口), others are recorded intents', async () => {
+  const { router, registry, calls, cleanup } = chainFixture()
+  try {
+    registry.bindSession('chief', 'session-chief')
+    const sent = await router.replySource({ text: '给用户的一句话', to: 'dsh:session:chief' })
+    assert.equal(sent.state, 'sent')
+    const prompt = calls.prompt.find(p => p.sessionId === 'session-chief')
+    assert.ok(prompt, 'the reply reached the chief session — the unified outlet')
+    assert.match(prompt.text, /给用户的一句话/)
+    const feishu = await router.replySource({ text: '飞书答复', to: 'feishu:om_9' })
+    assert.equal(feishu.state, 'sent', 'recorded as a persistent intent until the Feishu channel lands')
+    assert.equal(calls.prompt.filter(p => p.text.includes('飞书答复')).length, 0, 'no session delivery for external targets')
+  } finally { cleanup() }
+})
+
+test('autoReport: OFF by default (no rows); when enabled a forced tick posts one truncated summary', async () => {
+  const off = chainFixture()
+  try {
+    const owner = off.registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    await off.router.routeToOwner({ ownerId: owner.id, message: 'x' })
+    const res = await off.router.autoReportTick({ force: true })
+    assert.equal(res.skipped, 'disabled', '开关默认关 — 无自动汇报')
+    assert.equal(off.router.listOutbox().filter(r => r.kind === 'reply').length, 0)
+  } finally { off.cleanup() }
+
+  const on = chainFixture({ reporting: { auto: true, intervalMs: 60000 } })
+  try {
+    const owner = on.registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    on.registry.bindSession('chief', 'session-chief')
+    const t = await on.router.routeToOwner({ ownerId: owner.id, message: 'x' })
+    on.router.tasks.report({ ticketId: t.ticketId, summary: '落地完成' })
+    const first = await on.router.autoReportTick()
+    assert.equal(first.skipped, undefined)
+    const again = await on.router.autoReportTick()
+    assert.equal(again.skipped, 'interval')
+    on.advance(60000)
+    const t2 = await on.router.routeToOwner({ ownerId: owner.id, message: 'y' })
+    on.router.tasks.report({ ticketId: t2.ticketId, summary: '第二个结果落地' })
+    const third = await on.router.autoReportTick()
+    assert.equal(third.skipped, undefined, 'interval elapsed AND the status changed — a fresh summary fires')
+    const replies = on.router.listOutbox().filter(r => r.kind === 'reply')
+    assert.equal(replies.length, 2)
+    assert.ok(replies[0].body.includes('[hub-bot 定时汇总]'))
+    assert.match(replies[0].body, /等您验收/)
+    assert.match(replies[0].body, /落地完成/)
+    const chiefPrompts = on.calls.prompt.filter(p => p.sessionId === 'session-chief')
+    assert.equal(chiefPrompts.length, 2, 'summaries delivered to the chief session')
+  } finally { on.cleanup() }
+})
+
+test('queryTasks rows are lossless JSON (detail null, never undefined — tool output schema)', async () => {
+  const { router, registry, cleanup } = chainFixture()
+  try {
+    const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    const t = await router.routeToOwner({ ownerId: owner.id, message: 'x' })
+    const rows = router.queryTasks({})
+    const row = rows.find(r => r.id === t.ticketId)
+    assert.ok('detail' in row, 'detail key present')
+    assert.equal(row.detail, null, 'working ticket has no face detail — null, not undefined')
+    JSON.parse(JSON.stringify(rows)) // round-trip must not drop anything
+  } finally { cleanup() }
+})
+
+test('autoReport never repeats an unchanged summary (dev 实证: chief 收到第八份重复汇总)', async () => {
+  const { router, registry, cleanup } = chainFixture({ reporting: { auto: true, intervalMs: 60000 } })
+  try {
+    registry.bindSession('chief', 'session-chief')
+    const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    await router.routeToOwner({ ownerId: owner.id, message: 'x' })
+    const first = await router.autoReportTick({ force: true })
+    assert.equal(first.skipped, undefined)
+    const second = await router.autoReportTick({ force: true })
+    assert.equal(second.skipped, 'unchanged', 'same status, no new words')
+    assert.equal(router.listOutbox().filter(r => r.kind === 'reply').length, 1)
+  } finally { cleanup() }
+})
+
+test('autoReport with no active tasks stays silent (只在结果可用或需要行动时说话)', async () => {
+  const { router, registry, cleanup } = chainFixture({ reporting: { auto: true, intervalMs: 60000 } })
+  try {
+    registry.bindSession('chief', 'session-chief')
+    const res = await router.autoReportTick({ force: true })
+    assert.equal(res.skipped, 'empty')
+    assert.equal(router.listOutbox().filter(r => r.kind === 'reply').length, 0)
+  } finally { cleanup() }
+})
 test("legacy 'review' tickets surface as person/review in queryTasks", async () => {
   const { router, registry, store, cleanup } = fixture()
   try {

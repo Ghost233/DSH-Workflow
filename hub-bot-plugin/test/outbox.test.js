@@ -38,6 +38,36 @@ test('store-before-act: the row is queued in the store before the deliverer runs
   } finally { cleanup() }
 })
 
+
+
+test('a deliverer may postpone a row without burning an attempt (wake coalescing waits for idle)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hub-bot-outbox-'))
+  const store = new Store(dir)
+  let clock = 1_000_000
+  let mode = 'postpone'
+  const calls = []
+  const deliver = async (row) => { calls.push(row.id); if (mode === 'postpone') return { postponeMs: 2000 } }
+  const runner = new OutboxRunner({ store, deliver, now: () => clock })
+  try {
+    const row = runner.enqueue({ ticketId: null, kind: 'digest', to: 'dsh:session:chief', body: 'x', requestId: 'r' })
+    await runner.tick()
+    assert.equal(calls.length, 1)
+    let stored = JSON.parse(String(store.db.prepare('SELECT value FROM outbox WHERE id = ?').get(row.id).value))
+    assert.equal(stored.state, 'queued')
+    assert.equal(stored.attempts, 0, 'postponement is not a failure')
+    assert.equal(stored.nextRetryAt, clock + 2000)
+    await runner.tick()
+    assert.equal(calls.length, 1, 'not due yet')
+    clock += 2000
+    mode = 'ok'
+    await runner.tick()
+    assert.equal(calls.length, 2)
+    stored = JSON.parse(String(store.db.prepare('SELECT value FROM outbox WHERE id = ?').get(row.id).value))
+    assert.equal(stored.state, 'sent')
+    assert.equal(stored.attempts, 0)
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
+})
+
 test('success marks the row sent; retries reuse the stable requestId', async () => {
   const { store, runner, calls, setClock, getClock, cleanup } = fixture({ plan: (row, attempt) => attempt >= 2 })
   try {

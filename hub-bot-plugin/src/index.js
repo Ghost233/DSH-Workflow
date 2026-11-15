@@ -120,6 +120,12 @@ export function apply(ctx, rawConfig) {
       await ctx.sessionPersistence.flush()
       return value
     },
+    // Wake coalescing (#67): digests flush once the owner Session goes idle, so one wake = one outward message.
+    isRunning: async sessionId => {
+      const listed = await ctx.sessionController.list({}, deadline(10_000))
+      const item = (listed.items ?? []).find(s => s.sessionId === sessionId)
+      return Boolean(item?.running)
+    },
   }
   const hub = new Hub({ store, config, sessions, onSystemProblem: p => ctx.logger.warn('hub-bot system problem: %s (ticket %s, row %s)', p.reason, p.ticketId, p.rowId) })
   const chief = hub.registry.ensureChief({ cwd: config.homeRepo, workspace: basename(config.homeRepo) })
@@ -130,6 +136,7 @@ export function apply(ctx, rawConfig) {
   void hub.router.tick().catch(error => ctx.logger.warn('hub-bot delivery resume failed: %s', error?.message ?? error))
   const deliveryTimer = setInterval(() => {
     void hub.router.tick().catch(error => ctx.logger.warn('hub-bot delivery tick failed: %s', error?.message ?? error))
+    void hub.router.autoReportTick().catch(error => ctx.logger.warn('hub-bot auto-report tick failed: %s', error?.message ?? error))
   }, 1000)
   deliveryTimer.unref?.()
   ctx.on('dispose', () => clearInterval(deliveryTimer))
@@ -266,7 +273,8 @@ export function apply(ctx, rawConfig) {
           json(res, 200, await waitIdle(await readBody(req)))
         } else if (route === 'deliver' && method === 'POST') {
           await hub.router.tick()
-          json(res, 200, { delivered: true })
+          const autoReport = await hub.router.autoReportTick({ force: true })
+          json(res, 200, { delivered: true, autoReport })
         } else if (route === 'transcript' && method === 'GET') {
           json(res, 200, await transcript(Object.fromEntries(url.searchParams)))
         } else {

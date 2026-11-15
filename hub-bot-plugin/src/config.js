@@ -12,7 +12,10 @@
 import { isAbsolute } from 'node:path'
 
 /** The configuration keys this plugin understands. Anything else is rejected so typos cannot pass silently. */
-const KNOWN_KEYS = new Set(['stateDir', 'homeRepo', 'devApi'])
+const KNOWN_KEYS = new Set(['stateDir', 'homeRepo', 'devApi', 'reporting'])
+
+/** The keys the scheduled auto-summary understands (#67 定时汇总自动汇报 — OFF by default). */
+const KNOWN_REPORTING_KEYS = new Set(['auto', 'intervalMs'])
 
 /** The keys the optional development management API understands. */
 const KNOWN_DEV_API_KEYS = new Set(['token'])
@@ -65,5 +68,27 @@ export function resolveConfig(config) {
     }
     resolved.devApi = { token: devApi.token }
   }
+  // 定时汇总自动汇报 (#67): OFF unless explicitly enabled; intervalMs only paces the tick.
+  const reporting = { auto: false, intervalMs: 60000 }
+  if (raw.reporting !== undefined) {
+    const rawReporting = raw.reporting
+    if (typeof rawReporting !== 'object' || rawReporting === null || Array.isArray(rawReporting)) {
+      throw new ConfigError('hub-bot config.reporting must be an object { auto?: boolean, intervalMs?: number }')
+    }
+    for (const key of Object.keys(rawReporting)) {
+      if (!KNOWN_REPORTING_KEYS.has(key)) throw new ConfigError("hub-bot does not know config.reporting key [\"" + key + "\"]")
+    }
+    if (rawReporting.auto !== undefined) {
+      if (typeof rawReporting.auto !== 'boolean') throw new ConfigError('hub-bot config.reporting.auto must be a boolean')
+      reporting.auto = rawReporting.auto
+    }
+    if (rawReporting.intervalMs !== undefined) {
+      if (typeof rawReporting.intervalMs !== 'number' || !Number.isFinite(rawReporting.intervalMs) || rawReporting.intervalMs <= 0) {
+        throw new ConfigError('hub-bot config.reporting.intervalMs must be a positive number')
+      }
+      reporting.intervalMs = rawReporting.intervalMs
+    }
+  }
+  resolved.reporting = reporting
   return resolved
 }

@@ -35,7 +35,7 @@ export class Hub {
     this.config = config
     this.sessions = sessions
     this.registry = new OwnerRegistry(store, { scratchRoot: join(config.stateDir, 'scratch') })
-    this.router = new Router({ store, registry: this.registry, sessions, onSystemProblem })
+    this.router = new Router({ store, registry: this.registry, sessions, config, onSystemProblem })
     // One TaskBoard over the same store; Router already drives tickets through it, owner-tools reuse it.
     this.tasks = this.router.tasks
   }

@@ -85,7 +85,13 @@ export class OutboxRunner {
    */
   async #attempt(row) {
     try {
-      await this.deliver(row)
+      // The deliverer may ask to be retried later WITHOUT burning an attempt — e.g. a digest waits for the
+      // owner's wake to end (idle session) so one wake coalesces into one outward message (#67).
+      const result = await this.deliver(row)
+      if (result && typeof result.postponeMs === 'number') {
+        this.#writeRow({ ...row, nextRetryAt: this.now() + result.postponeMs })
+        return false
+      }
       this.#writeRow({ ...row, state: 'sent', sentAt: new Date(this.now()).toISOString(), nextRetryAt: null })
       return true
     } catch (error) {
