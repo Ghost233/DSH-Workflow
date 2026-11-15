@@ -236,3 +236,69 @@ test('insertOutbox requires state: a row without delivery state is a dead letter
     assert.equal(row.state, 'queued')
   } finally { cleanup() }
 })
+
+/**
+ * #74 P1-A: the 1s delivery tick does not await the previous pass, and a real channel send (gh api /
+ * feishu im) routinely outlasts one second — an overlapping pass used to re-scan the same 'recorded' rows
+ * and re-send them (live evidence: issue Ghost233/DSH-Workflow#76 received two identical ack comments one
+ * second apart from a single outbox row). The pass must be non-reentrant per channel. RED first.
+ */
+function recordedReplyFixture(send) {
+  const dir = mkdtempSync(join(tmpdir(), 'hub-bot-replies-'))
+  const store = new Store(dir)
+  let clock = 1_000_000
+  const cleanup = () => { store.close(); rmSync(dir, { recursive: true, force: true }) }
+  return { store, cleanup, getClock: () => clock, send }
+}
+
+test('#74 P1-A: overlapping deliverRecordedReplies passes never double-send one recorded row', async () => {
+  const { insertOutbox, deliverRecordedReplies } = await import('../src/outbox.js')
+  let sends = 0
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const fx = recordedReplyFixture(async () => { sends++; await gate })
+  try {
+    insertOutbox(fx.store, { ticketId: null, kind: 'reply', to: 'github:Ghost233/DSH-Workflow:76', body: 'ack', state: 'recorded' }, fx.getClock)
+    const args = {
+      store: fx.store, logger: { warn() {} }, now: fx.getClock,
+      channel: 'github', prefix: 'github:', maxAttempts: 5,
+      parseTarget: () => ({ repo: 'Ghost233/DSH-Workflow', number: 76 }),
+      send: fx.send,
+    }
+    const p1 = deliverRecordedReplies(args)
+    await new Promise(resolve => setImmediate(resolve)) // let pass 1 reach the in-send wait
+    const p2 = deliverRecordedReplies(args) // the next 1s tick, while pass 1 is still sending
+    release()
+    const [first, second] = await Promise.all([p1, p2])
+    assert.equal(second.delivered, 0)
+    assert.equal(second.skipped, 'in-flight', 'overlapping pass is refused instead of re-sending')
+    assert.equal(first.delivered, 1)
+    assert.equal(sends, 1, 'one recorded row is sent exactly once across overlapping ticks')
+    const stored = JSON.parse(String(fx.store.db.prepare('SELECT value FROM outbox').all()[0].value))
+    assert.equal(stored.state, 'sent')
+  } finally { fx.cleanup() }
+})
+
+test('#74 P1-A: the guard is per channel — another channel proceeds while one is mid-send', async () => {
+  const { insertOutbox, deliverRecordedReplies } = await import('../src/outbox.js')
+  let sends = 0
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const fx = recordedReplyFixture(async () => { sends++; await gate })
+  try {
+    insertOutbox(fx.store, { ticketId: null, kind: 'reply', to: 'github:Ghost233/DSH-Workflow:76', body: 'ack', state: 'recorded' }, fx.getClock)
+    const base = {
+      store: fx.store, logger: { warn() {} }, now: fx.getClock,
+      channel: 'github', prefix: 'github:', maxAttempts: 5,
+      parseTarget: () => ({ repo: 'Ghost233/DSH-Workflow', number: 76 }),
+      send: fx.send,
+    }
+    const p1 = deliverRecordedReplies(base)
+    await new Promise(resolve => setImmediate(resolve))
+    const pOther = deliverRecordedReplies({ ...base, channel: 'feishu', prefix: 'feishu:', parseTarget: () => null, send: async () => {} })
+    release()
+    const [, other] = await Promise.all([p1, pOther])
+    assert.notEqual(other.skipped, 'in-flight', 'a different channel is not blocked')
+    assert.equal(sends, 1)
+  } finally { fx.cleanup() }
+})

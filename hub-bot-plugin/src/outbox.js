@@ -54,7 +54,27 @@ export function updateOutboxRow(store, row) {
  *   send: (target: unknown, body: string) => Promise<void>,
  *   prepareBody?: (body: string) => string }} deps
  */
+/**
+ * #74 P1-A: one delivery pass per channel at a time. The 1s tick does not await the previous pass, and a
+ * real channel send (gh api / feishu im) routinely outlasts one second — without this guard an overlapping
+ * pass re-scanned the same 'recorded' rows mid-send and re-sent them (live evidence: issue
+ * Ghost233/DSH-Workflow#76 received two identical ack comments one second apart from a single outbox row).
+ * Process-local and crash-safe by construction: nothing is persisted, a crashed pass simply lets the next
+ * tick retry the still-'recorded' rows. Keyed by channel so feishu and github never block each other.
+ */
+const channelPassInFlight = new Set()
+
 export async function deliverRecordedReplies({ store, logger, now, channel, prefix, maxAttempts, parseTarget, send, prepareBody }) {
+  if (channelPassInFlight.has(channel)) return { delivered: 0, skipped: 'in-flight' }
+  channelPassInFlight.add(channel)
+  try {
+    return await deliverRecordedRepliesPass({ store, logger, now, channel, prefix, maxAttempts, parseTarget, send, prepareBody })
+  } finally {
+    channelPassInFlight.delete(channel)
+  }
+}
+
+async function deliverRecordedRepliesPass({ store, logger, now, channel, prefix, maxAttempts, parseTarget, send, prepareBody }) {
   const rows = store.db.prepare('SELECT value FROM outbox ORDER BY rowid').all()
     .map(raw => JSON.parse(String(raw.value)))
     .filter(row => row.state === 'recorded' && typeof row.to === 'string' && row.to.startsWith(prefix))

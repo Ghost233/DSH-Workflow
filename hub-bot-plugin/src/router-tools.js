@@ -141,8 +141,12 @@ export function apply(ctx) {
       additionalProperties: false,
     },
     output: {
-      schema: { type: 'object', properties: { outboxId: { type: 'string' }, state: { type: 'string' } }, required: ['outboxId', 'state'], additionalProperties: false },
-      render: (_args, value) => [{ type: 'text', text: '已记录答复 ' + value.outboxId + '（' + value.state + '）' }],
+      // #74 P1-B: router.replySource always returns { outboxId, state, truncated } — an undeclared
+      // property failed runtime output validation on EVERY call ("value.truncated is not a declared
+      // property"), so the model saw a tool error while the reply had actually been recorded (live: chief
+      // misreported a recorded feishu reply as undelivered). Declare the full shape.
+      schema: { type: 'object', properties: { outboxId: { type: 'string' }, state: { type: 'string' }, truncated: { type: 'boolean' } }, required: ['outboxId', 'state'], additionalProperties: false },
+      render: (_args, value) => [{ type: 'text', text: '已记录答复 ' + value.outboxId + '（' + value.state + (value.truncated === true ? '，正文超 100 词已截断' : '') + '）' }],
     },
     execute: async args => await api.router.replySource({ text: args.text, to: args.to }),
   })
