@@ -16,7 +16,7 @@
  * missing is failed permanently （缺上下文升级不编造）, never executed on a guess.
  */
 import { randomUUID } from 'node:crypto'
-import { TaskBoard, TaskError, STAGE_TEXT, normalizeStage } from './tasks.js'
+import { TaskBoard, STAGE_TEXT, normalizeStage, translateTaskError } from './tasks.js'
 import { OutboxRunner } from './outbox.js'
 import { truncateWords } from './discipline.js'
 import { buildDigestText, buildAutoSummary } from './reporting.js'
@@ -193,8 +193,7 @@ export class Router {
         try {
           this.tasks.accept(ticketId)
         } catch (error) {
-          if (error instanceof TaskError) throw new RouterError(error.code, error.message)
-          throw error
+          throw translateTaskError(error, (code, message) => new RouterError(code, message))
         }
         return { ownerId: owner.id, sessionId: owner.sessionId, ticketId, requestId: ticket.requestId, createdSession: false, rebuilt: false, deduped: false, accepted: true, stage: 'done' }
       }
@@ -202,8 +201,7 @@ export class Router {
         try {
           this.tasks.cancel(ticketId)
         } catch (error) {
-          if (error instanceof TaskError) throw new RouterError(error.code, error.message)
-          throw error
+          throw translateTaskError(error, (code, message) => new RouterError(code, message))
         }
         return { ownerId: owner.id, sessionId: owner.sessionId, ticketId, requestId: ticket.requestId, createdSession: false, rebuilt: false, deduped: false, cancelled: true, stage: 'done' }
       }
@@ -218,8 +216,7 @@ export class Router {
       try {
         this.tasks.resume(ticketId, { by: 'route' })
       } catch (error) {
-        if (error instanceof TaskError) throw new RouterError(error.code, error.message)
-        throw error
+        throw translateTaskError(error, (code, message) => new RouterError(code, message))
       }
       resumed = true
     }
@@ -264,7 +261,13 @@ export class Router {
     const owner = this.registry.get(ticket.owner)
     if (!owner) throw permanent('ticket ' + ticket.id + ': owner ' + ticket.owner + ' is gone from the registry')
     const ensured = await this.#ensureSession(owner)
-    const delivered = await this.#promptOwner(owner.id, ensured, ticket, row.requestId, row.body)
+    // 重启恢复 (same discipline as follow-ups): a row stored BEFORE a crash carries no recovery note in its
+    // body — prepend it at redelivery time, and clear the flag only after the prompt actually lands (a
+    // failed attempt keeps the flag so the next retry still carries the note — 恰好一次 = delivered once).
+    const needsNote = ticket.recoveryPending === true
+    const body = needsNote ? RECOVERY_NOTE + '\n\n' + row.body : row.body
+    const delivered = await this.#promptOwner(owner.id, ensured, ticket, row.requestId, body)
+    if (needsNote) this.tasks.noteRecoveryCarried(ticket.id)
     const updated = this.tasks.markDelivered(ticket.id) // 待触发 → 进行中 (no-op for later injections)
     this.#updateTicket({ ...updated, targetSession: delivered.sessionId, lastDelivery: { state: 'sent', rebuilt: delivered.rebuilt, at: this.now() }, updatedAt: this.now() })
   }
@@ -322,8 +325,11 @@ export class Router {
     }
     if (typeof row.to === 'string' && row.to.startsWith('session:')) {
       await this.sessions.prompt({ sessionId: row.to.slice('session:'.length), requestId: row.requestId, text: row.body })
+      return
     }
-    // external targets: stored intent suffices (先存后做) until the channel deliverer lands
+    // #64 不假装发了飞书: undeliverable targets (default 'dsh' without a channel, feishu:…) are RECORDED
+    // persistent intents — a future channel scans state:'recorded' rows; only real delivery earns 'sent'.
+    return { recorded: true }
   }
 
   /**

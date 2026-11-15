@@ -11,7 +11,7 @@
  *     ("deployment:persona-prefix"), replacing the deployment persona for agents of this preset.
  */
 import { getHub } from './hub.js'
-import { routerPersona } from './persona.js'
+import { routerPersona, PERSONA_PREFIX_SECTION, PERSONA_PREFIX_ORDER } from './persona.js'
 
 export const name = 'hub-bot-router-tools'
 // tools/systemPrompt are the services the tools and persona use. sessionController/sessionPersistence are
@@ -21,11 +21,6 @@ export const name = 'hub-bot-router-tools'
 // resolved; extending inject with two root-composition services made 'hubBot' — provided by the root plugin at
 // ctx.root — resolvable). Removing them silently leaves the row pending with no tools registered.
 export const inject = ['tools', 'systemPrompt', 'sessionController', 'sessionPersistence']
-
-/** dsh-system-prompt: "deployment:persona-prefix" — a preset shadows the deployment persona by reusing this name. */
-const PERSONA_PREFIX_SECTION = 'deployment:persona-prefix'
-/** The deployment persona prefix's centrally allocated order (SECTION_ORDERS.DEPLOYMENT_PERSONA_PREFIX). */
-const PERSONA_PREFIX_ORDER = 0
 
 /**
  * The installed hub, or a model-readable failure when the root plugin is absent from the composition. The hub

@@ -8,8 +8,14 @@
  *    which the root plugin's singleton was unset). A module-level variable is therefore NOT shared.
  *  - cordis service visibility into a mounted preset subtree is undocumented for profile-level custom services;
  *    only Host services (tools, systemPrompt) are known to be injectable there.
- *  - both module instances run in the same process realm, so a Symbol.for-keyed property on globalThis is the one
- *    channel guaranteed to connect them.
+ *  - both module instances run in the same process realm, so a Symbol.for-keyed property on globalThis is
+ *    available to both loader instances.
+ *
+ * Empirical conclusion (双轴审查 P2, live runs since task-2): the LOAD-BEARING channel is the root plugin's
+ * ctx.root.reflect.provide('hubBot', hub) resolved via the subtree's inject declaration — with only
+ * tools+systemPrompt injected, neither ctx.reflect.get('hubBot') nor this global resolved in the subtree.
+ * The Symbol.for global remains as a fallback for same-realm embedders (tests, scripts), not the mechanism
+ * the production composition relies on.
  */
 import { join } from 'node:path'
 import { OwnerRegistry } from './registry.js'

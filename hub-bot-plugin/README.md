@@ -85,7 +85,7 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 
 - **每次唤醒至多一条对外汇报**（src/reporting.js）：L2 每次 report/escalate 的事实并入该负责人唯一一条 queued digest 行（先存后做）；digest 等负责人会话转空闲（唤醒结束）才由 OutboxRunner 投递到总负责人会话——同仓库 3 个任务一次唤醒只产生 1 条对外汇报。postpone 不烧 attempts（非失败），2 秒后重看；行 sent 后下一 report 开新行（唤醒边界）。
 - **结构化报告四段**：report 的 summary 形态可带 result/changes/verification/risks（结果/变更/验证/风险），四段要么全给要么不给（sections-incomplete），票面存储，digest 逐字渲染（汇报以票面为准，不按会话叙事虚构）。
-- **统一出口接通**：digest 与 to=dsh:session:chief 的 reply 行经 OutboxRunner 实际投递到总负责人会话（被删自动重建沿用 #promptOwner）；feishu: 等外部目标仍是先存后做的持久意图，等真实通道落地。
+- **统一出口接通（不假装送达）**：digest 与 to=dsh:session:chief / session:<id> 的 reply 行经 OutboxRunner 实际投递到目标会话（被删自动重建沿用 #promptOwner）；实际投递成功才标 sent。feishu: 等尚无通道的外部目标标 **recorded**（先存后做的持久意图，终态不重试），等真实通道落地后扫描 recorded 行外投。
 - **定时汇总自动汇报（默认关）**：config.reporting.auto=true 开启后，1 秒 tick 顺带 autoReportTick（intervalMs 间隔闸门，默认 60s）；汇总只列活跃阶段（进行中/排队中/等您回复/等您确认/等您验收/被卡住），done/failed 不列，空列表不发声（只在结果可用或需要行动时说话）；文本经 100 词截断；**内容与上次相同则不重复发**（unchanged，dev 实证曾刷出「第八份重复汇总」后修复）。devApi POST /deliver 返回 autoReport 字段（force 触发一次，实证用）。
 - **DSH 内直接问负责人例外**：谁被问谁答，不绕总负责人（L2 会话本来就是用户可直聊的会话）。
 - **下钻**：总负责人收到 digest 后按票面答复；用户追问明细时 query_tasks 下钻到具体票（stageText 朗读 + 票面 detail）。

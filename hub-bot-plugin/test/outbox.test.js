@@ -207,3 +207,22 @@ test('a permanent failure fails out immediately (no retries) and reports a syste
     assert.equal(problems[0].ticketId, 'tsk-p')
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
 })
+
+test('a deliverer may RECORD an undelivered intent (不假装发了飞书): terminal recorded, never retried, no problem', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hub-bot-outbox-'))
+  const store = new Store(dir)
+  try {
+    const runner = new OutboxRunner({ store, deliver: async () => ({ recorded: true }) })
+    const row = runner.enqueue({ ticketId: null, kind: 'reply', to: 'feishu:om_9', body: 'x', requestId: 'r' })
+    await runner.tick()
+    const stored = JSON.parse(String(store.db.prepare('SELECT value FROM outbox WHERE id = ?').get(row.id).value))
+    assert.equal(stored.state, 'recorded', 'honest: not sent')
+    assert.equal(stored.attempts, 0)
+    assert.ok(stored.recordedAt)
+    await runner.tick()
+    const again = JSON.parse(String(store.db.prepare('SELECT value FROM outbox WHERE id = ?').get(row.id).value))
+    assert.equal(again.state, 'recorded', 'recorded rows are not delivery work — a future channel scans them')
+    const problems = store.db.prepare('SELECT value FROM outbox').all().map(r => JSON.parse(String(r.value))).filter(r => r.kind === 'system-problem')
+    assert.equal(problems.length, 0, 'an honest record is not a failure')
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
+})

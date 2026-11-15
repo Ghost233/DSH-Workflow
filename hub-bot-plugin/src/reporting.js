@@ -10,7 +10,8 @@
  * stored by tools) — never from session narrative.
  */
 import { randomUUID } from 'node:crypto'
-import { STAGE_TEXT } from './tasks.js'
+import { STAGE_TEXT, stageDetail } from './tasks.js'
+import { insertOutbox } from './outbox.js'
 
 /** Digest row prefix delivered to the chief (L1 统一出口). */
 export const DIGEST_PREFIX = '[hub-bot 汇报 '
@@ -30,12 +31,8 @@ export function factLine(ticket) {
       : report.summary
     return head + '｜' + tail
   }
-  // 需要行动的阶段同样带上票面事实（提问/确认/被卡住/失败的原因）。
-  const reason = ticket.stage === 'blocked' ? ticket.escalated?.reason
-    : ticket.stage === 'failed' ? ticket.failed?.reason
-    : ticket.stage === 'person/answer' ? ticket.question?.text
-    : ticket.stage === 'person/confirm' ? ticket.pendingConfirm?.text
-    : undefined
+  // 需要行动的阶段同样带上票面事实 — the mapping lives ONCE in tasks.stageDetail (单一映射源).
+  const reason = stageDetail(ticket)
   return reason ? head + '｜' + reason : head
 }
 
@@ -62,14 +59,10 @@ export function recordReportFact(store, ownerId, ticket) {
     store.db.prepare('UPDATE outbox SET value = ? WHERE id = ?').run(JSON.stringify(next), next.id)
     return next
   }
-  const at = new Date().toISOString()
-  const row = {
-    id: 'out-' + randomUUID(), ticketId: null, kind: 'digest', ownerId, to: 'dsh:session:chief',
-    bodyLines: [line], state: 'queued', attempts: 0, nextRetryAt: null, createdAt: at,
-    requestId: 'hub-bot-digest-' + randomUUID(),
-  }
-  store.db.prepare('INSERT INTO outbox (id, value, at) VALUES (?, ?, ?)').run(row.id, JSON.stringify(row), at)
-  return row
+  return insertOutbox(store, {
+    ticketId: null, kind: 'digest', ownerId, to: 'dsh:session:chief',
+    bodyLines: [line], state: 'queued', requestId: 'hub-bot-digest-' + randomUUID(),
+  })
 }
 
 /**

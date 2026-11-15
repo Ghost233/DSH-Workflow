@@ -57,7 +57,7 @@
                   headChars: 4096
                   tailChars: 1024
     # The L2 owner agent preset (repo/dir/scratch owners). Same fully-read-only base; the L2 session-management tools
-    # (search/read/inject/fork/create_session, report, escalate) arrive with task-3 as a static plugin row of this
+    # (search/read/inject/create_session, report, escalate) arrived with task-3 as a static plugin row of this
     # preset — the mounted-subtree finding rules out runtime injection here too.
     - id: hub-bot-owner-preset
       name: '@deepseek-ai/dsh-agent-preset'

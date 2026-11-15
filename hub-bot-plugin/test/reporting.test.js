@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { Store } from '../src/store.js'
 import { TaskBoard } from '../src/tasks.js'
 import { recordReportFact, factLine, buildDigestText, buildAutoSummary, DIGEST_PREFIX, AUTO_SUMMARY_PREFIX } from '../src/reporting.js'
+import { stageDetail } from '../src/tasks.js'
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'hub-bot-reporting-'))
@@ -104,4 +105,22 @@ test('buildAutoSummary lists only active stages with stageText + face detail; id
   assert.ok(!text.includes('tsk-5'), 'failed tasks were already reported at failure time')
   assert.equal(buildAutoSummary([]), null)
   assert.equal(buildAutoSummary(rows.filter(r => r.stage === 'done')), null)
+})
+
+test('factLine reads the stage→reason mapping from the shared stageDetail (single source — P1 双轴审查)', () => {
+  // stageDetail is the ONE mapping source exported from tasks.js; summarize and factLine must not drift apart.
+  const shapes = [
+    { stage: 'blocked', patch: { escalated: { reason: '越界请求，已上报', at: 't' } }, want: '越界请求，已上报' },
+    { stage: 'failed', patch: { failed: { reason: '执行器崩溃', at: 't' } }, want: '执行器崩溃' },
+    { stage: 'person/answer', patch: { question: { text: '要删哪张表？', at: 't' } }, want: '要删哪张表？' },
+    { stage: 'person/confirm', patch: { pendingConfirm: { text: '确认覆盖？', at: 't' } }, want: '确认覆盖？' },
+    { stage: 'working', patch: {}, want: undefined },
+  ]
+  for (const { stage, patch, want } of shapes) {
+    const ticket = { id: 'tsk-shared', stage, ...patch }
+    assert.equal(stageDetail(ticket), want, stage + ' stageDetail is the mapping')
+    const line = factLine(ticket)
+    if (want === undefined) assert.ok(!line.includes('｜', 6) || line.split('｜').length === 2, stage + ' carries no invented detail')
+    else assert.ok(line.includes(want), stage + ' factLine carries the shared detail')
+  }
 })

@@ -14,11 +14,12 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** A registry rule violation: unknown id, bad kind, missing identity fields. */
+/** A registry rule violation: unknown id, bad kind, missing identity fields. Carries a machine-readable code like TaskError (双轴审查 P2). */
 export class RegistryError extends Error {
-  constructor(message) {
+  constructor(message, code = 'registry-error') {
     super(message)
     this.name = 'RegistryError'
+    this.code = code
   }
 }
 

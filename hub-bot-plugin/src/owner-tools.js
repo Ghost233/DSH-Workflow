@@ -14,18 +14,16 @@
  */
 import { randomUUID } from 'node:crypto'
 import { getHub } from './hub.js'
-import { ownerPersona } from './persona.js'
-import { TaskError, isWithinCwd } from './tasks.js'
+import { ownerPersona, PERSONA_PREFIX_SECTION, PERSONA_PREFIX_ORDER } from './persona.js'
+import { TaskError, translateTaskError } from './tasks.js'
+import { isWithinCwd } from './paths.js'
 import { recordReportFact } from './reporting.js'
+import { insertOutbox } from './outbox.js'
 
 export const name = 'hub-bot-owner-tools'
 // See router-tools.js: sessionController/sessionPersistence are load-bearing for cross-realm service
 // resolution. workingDirectory is the identity channel (session cwd ↔ owner registry row).
 export const inject = ['tools', 'systemPrompt', 'sessionController', 'sessionPersistence', 'workingDirectory']
-
-/** dsh-system-prompt: "deployment:persona-prefix" — a preset shadows the deployment persona by reusing this name. */
-const PERSONA_PREFIX_SECTION = 'deployment:persona-prefix'
-const PERSONA_PREFIX_ORDER = 0
 
 /** The installed hub, or a model-readable failure when the root plugin is absent from the composition. */
 function hub(ctx) {
@@ -76,9 +74,9 @@ function mustOwnTicket(api, owner, ticketId) {
   return ticket
 }
 
+/** Tool surface shape: TaskError → a plain Error carrying the machine-readable code (单一助手 translateTaskError). */
 function unwrapTaskError(error) {
-  if (error instanceof TaskError) return new Error(error.code + ': ' + error.message)
-  return error
+  return translateTaskError(error, (code, message) => new Error(code + ': ' + message))
 }
 
 /** Compacts one transcript page into model-readable lines: role | text, tool calls by name. */
@@ -325,9 +323,7 @@ export function apply(ctx) {
           if (typeof args.reason !== 'string' || !args.reason.trim()) throw new TaskError('reason-required', 'escalate: reason must be a non-empty string')
         }
       } catch (error) { throw unwrapTaskError(error) }
-      const at = new Date().toISOString()
-      const row = { id: 'out-' + randomUUID(), kind: 'escalation', ticketId: args.ticketId ?? null, ownerId: owner.id, to: 'chief', body: args.reason.trim(), state: 'recorded', attempts: 0, at }
-      api.store.db.prepare('INSERT INTO outbox (id, value, at) VALUES (?, ?, ?)').run(row.id, JSON.stringify(row), at)
+      insertOutbox(api.store, { kind: 'escalation', ticketId: args.ticketId ?? null, ownerId: owner.id, to: 'chief', body: args.reason.trim(), state: 'recorded' })
       return { escalated: true }
     },
   })

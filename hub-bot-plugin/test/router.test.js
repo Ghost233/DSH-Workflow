@@ -294,6 +294,22 @@ test('restart recovery: the first injection after markRestart carries the recove
   } finally { cleanup() }
 })
 
+test('redelivery after a crash prepends the recovery note to the STORED body (双轴审查 P2: idle-at-crash gap)', async () => {
+  const { router, registry, calls, cleanup } = fixture()
+  try {
+    const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    const t = await router.routeToOwner({ ownerId: owner.id, message: '干活' })
+    router.markRestart() // crash + restart: the working ticket becomes recoveryPending
+    // a row stored BEFORE the crash (its body carries no note) is what the fresh runner resumes
+    router.runner.enqueue({ ticketId: t.ticketId, kind: 'inject', to: 'session:' + t.sessionId, sessionId: t.sessionId, body: '[hub-bot 追问 ' + t.ticketId + '] 旧正文', requestId: 'r-old' })
+    await router.tick()
+    const redelivered = calls.prompt.at(-1).text
+    assert.ok(redelivered.startsWith(RECOVERY_NOTE), 'the redelivered stored body heads the recovery note')
+    assert.ok(redelivered.includes('旧正文'))
+    assert.equal(router.getTicket(t.ticketId).recoveryPending, undefined, 'carried exactly once')
+  } finally { cleanup() }
+})
+
 test('replySource stores a 100-word-capped reply through the runner and announces truncation', async () => {
   const { router, registry, cleanup } = fixture()
   try {
@@ -388,8 +404,12 @@ test('reply rows addressable to a session are actually delivered (统一出口),
     assert.ok(prompt, 'the reply reached the chief session — the unified outlet')
     assert.match(prompt.text, /给用户的一句话/)
     const feishu = await router.replySource({ text: '飞书答复', to: 'feishu:om_9' })
-    assert.equal(feishu.state, 'sent', 'recorded as a persistent intent until the Feishu channel lands')
+    // P1 双轴审查 (#64 不假装发了飞书): an undelivered external target is a RECORDED persistent intent,
+    // never a fake 'sent' — a future channel scans state:'recorded' rows.
+    assert.equal(feishu.state, 'recorded', 'undelivered intent is recorded, not marked sent')
     assert.equal(calls.prompt.filter(p => p.text.includes('飞书答复')).length, 0, 'no session delivery for external targets')
+    const plain = await router.replySource({ text: '默认去向' })
+    assert.equal(plain.state, 'recorded', 'the default dsh target without a channel is recorded, not sent')
   } finally { cleanup() }
 })
 

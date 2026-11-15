@@ -13,11 +13,24 @@
  * runner over the same store resumes unfinished work (spec: 重启恢复）. Legacy 'recorded' rows (pre-#66
  * reply intents) are not delivery work and are left untouched.
  */
+import { randomUUID } from 'node:crypto'
 
 /** Backoff caps by row kind (spec: 回复上限 1 分钟、注入上限 5 分钟）. */
 const CAP_MS = { inject: 5 * 60_000, reply: 60_000 }
 const BASE_MS = 2_000
 const MAX_ATTEMPTS = 3
+
+/**
+ * THE one writer for outbox rows (双轴审查 P2: enqueue / recordReportFact / owner-tools.escalate /
+ * system-problem used to hand-roll four slightly different rows — field drift on requestId/nextRetryAt/
+ * createdAt). Every row gets: id, attempts 0, nextRetryAt null, createdAt; callers pass the specifics.
+ */
+export function insertOutbox(store, row, now = () => Date.now()) {
+  const createdAt = new Date(now()).toISOString()
+  const full = { attempts: 0, nextRetryAt: null, ...row, id: row.id ?? 'out-' + randomUUID(), createdAt }
+  store.db.prepare('INSERT INTO outbox (id, value, at) VALUES (?, ?, ?)').run(full.id, JSON.stringify(full), createdAt)
+  return full
+}
 
 export class OutboxRunner {
   /**
@@ -35,13 +48,9 @@ export class OutboxRunner {
 
   /** Stores the action first (先存后做） and returns the queued row. */
   enqueue({ ticketId, kind, to, body, sessionId, requestId }) {
-    const at = new Date(this.now()).toISOString()
-    const row = {
-      id: 'out-' + crypto.randomUUID(), ticketId: ticketId ?? null, kind, to, body,
-      sessionId: sessionId ?? null, requestId, state: 'queued', attempts: 0, nextRetryAt: null, createdAt: at,
-    }
-    this.store.db.prepare('INSERT INTO outbox (id, value, at) VALUES (?, ?, ?)').run(row.id, JSON.stringify(row), at)
-    return row
+    return insertOutbox(this.store, {
+      ticketId: ticketId ?? null, kind, to, body, sessionId: sessionId ?? null, requestId, state: 'queued',
+    }, this.now)
   }
 
   #readRow(id) {
@@ -92,6 +101,13 @@ export class OutboxRunner {
         this.#writeRow({ ...row, nextRetryAt: this.now() + result.postponeMs })
         return false
       }
+      // 不假装送达 (#64): the deliverer may declare the intent RECORDED but undelivered (e.g. a Feishu target
+      // whose channel does not exist yet) — a terminal 'recorded' row, kept for a future channel to scan,
+      // never a fake 'sent'. Only an actual delivery earns 'sent'.
+      if (result && result.recorded === true) {
+        this.#writeRow({ ...row, state: 'recorded', recordedAt: new Date(this.now()).toISOString(), nextRetryAt: null })
+        return true
+      }
       this.#writeRow({ ...row, state: 'sent', sentAt: new Date(this.now()).toISOString(), nextRetryAt: null })
       return true
     } catch (error) {
@@ -101,9 +117,7 @@ export class OutboxRunner {
       if (attempts >= MAX_ATTEMPTS) {
         this.#writeRow({ ...row, attempts, state: 'failed', failedAt: new Date(this.now()).toISOString(), nextRetryAt: null })
         const problem = { ticketId: row.ticketId, reason: 'delivery failed ' + attempts + ' times in a row (' + row.kind + ' → ' + row.to + ')', rowId: row.id }
-        const at = new Date(this.now()).toISOString()
-        const sysRow = { id: 'out-' + crypto.randomUUID(), ticketId: row.ticketId, kind: 'system-problem', to: 'chief', body: problem.reason, state: 'recorded', attempts: 0, createdAt: at }
-        this.store.db.prepare('INSERT INTO outbox (id, value, at) VALUES (?, ?, ?)').run(sysRow.id, JSON.stringify(sysRow), at)
+        insertOutbox(this.store, { ticketId: row.ticketId, kind: 'system-problem', to: 'chief', body: problem.reason, state: 'recorded' }, this.now)
         this.onSystemProblem(problem)
         return true // bypass: the tail may proceed
       }

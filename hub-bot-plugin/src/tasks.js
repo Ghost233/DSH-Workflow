@@ -23,6 +23,9 @@
  */
 
 /** The stages of the full lifecycle (spec #66). */
+// 九态模型。注意两个「完整性保留」阶段（双轴审查 P2）：person/confirm 的生产者是后续确认流程工单（#69），
+// queued 的生产者是后续执行槽并发工单（#72）——当前没有代码路径把票推进这两态，它们为模型完整性保留，
+// 转换规则已就位，不要删除。
 export const STAGES = ['idle', 'queued', 'working', 'person/answer', 'person/confirm', 'person/review', 'blocked', 'failed', 'done']
 
 /** The verbatim user-facing reading of each stage (spec: 状态摘要是对状态的朗读）. */
@@ -67,11 +70,13 @@ export class TaskError extends Error {
   }
 }
 
-/** True when candidate equals root or lies inside it (path-segment aware: /a/b does not contain /a/bc). */
-export function isWithinCwd(root, candidate) {
-  if (typeof root !== 'string' || typeof candidate !== 'string' || !root || !candidate) return false
-  const base = root.endsWith('/') ? root.slice(0, -1) : root
-  return candidate === base || candidate.startsWith(base + '/')
+/**
+ * THE one TaskError translation (双轴审查 P2: was three sites in two shapes). TaskErrors crossing a surface
+ * keep their machine-readable code; `wrap` decides the surface's error shape (RouterError for the API,
+ * a plain prefixed Error for tools). Non-TaskErrors pass through untouched.
+ */
+export function translateTaskError(error, wrap) {
+  return error instanceof TaskError ? wrap(error.code, error.message) : error
 }
 
 /** True when a stage transition is legal in the lifecycle. */
@@ -241,13 +246,19 @@ export class TaskBoard {
    */
   summarize(ticketId) {
     const ticket = this.#mustGet(ticketId)
-    const text = STAGE_TEXT[ticket.stage]
-    const detail = ticket.stage === 'person/review' ? ticket.report?.summary
-      : ticket.stage === 'blocked' ? ticket.escalated?.reason
-      : ticket.stage === 'failed' ? ticket.failed?.reason
-      : ticket.stage === 'person/answer' ? ticket.question?.text
-      : ticket.stage === 'person/confirm' ? ticket.pendingConfirm?.text
-      : undefined
-    return { stage: ticket.stage, text, detail }
+    return { stage: ticket.stage, text: STAGE_TEXT[ticket.stage], detail: stageDetail(ticket) }
   }
+}
+
+/**
+ * THE single stage→face-fact mapping (双轴审查 P1: summarize and reporting.factLine both read this —
+ * two readers, one source, no drift). Facts come from the ticket face only, never from session narrative.
+ */
+export function stageDetail(ticket) {
+  return ticket.stage === 'person/review' ? ticket.report?.summary
+    : ticket.stage === 'blocked' ? ticket.escalated?.reason
+    : ticket.stage === 'failed' ? ticket.failed?.reason
+    : ticket.stage === 'person/answer' ? ticket.question?.text
+    : ticket.stage === 'person/confirm' ? ticket.pendingConfirm?.text
+    : undefined
 }

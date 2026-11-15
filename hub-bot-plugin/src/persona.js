@@ -1,5 +1,10 @@
+/** dsh-system-prompt: a preset shadows the deployment persona by reusing this section name (双轴审查 P2: was duplicated verbatim in router-tools.js and owner-tools.js). */
+export const PERSONA_PREFIX_SECTION = 'deployment:persona-prefix'
+/** The deployment persona prefix's centrally allocated order (SECTION_ORDERS.DEPLOYMENT_PERSONA_PREFIX). */
+export const PERSONA_PREFIX_ORDER = 0
+
 /**
- * The L1 router persona (spec「提示词体系」L1 路由 preset: 只路由，路由备注 ≤30 词，不做技术决策).
+ * The L1 router persona (spec「提示词体系」L1 路由 preset: 只路由，路由备注 ≤30 词，不做技术决策）.
  *
  * Registered by src/router-tools.js as the preset-scope shadow of the deployment persona prefix
  * (dsh-system-prompt documents that a preset shadows "deployment:persona-prefix" by naming the same section) — so

@@ -10,7 +10,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from '../src/store.js'
-import { TaskBoard, TaskError, isWithinCwd, STAGES, STAGE_TEXT, TRANSITIONS } from '../src/tasks.js'
+import { TaskBoard, TaskError, STAGES, STAGE_TEXT, TRANSITIONS } from '../src/tasks.js'
+import { isWithinCwd } from '../src/paths.js'
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'hub-bot-tasks-'))
