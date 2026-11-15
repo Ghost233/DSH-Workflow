@@ -1,6 +1,6 @@
 /**
  * FeishuSource (issue #68 飞书入口): normalization of im.message.receive_v1 events, plugin-owned source marks,
- * the allowlist / mention policy, the recorded-outbox reply channel (P1-2 honest intents actually sent), and
+ * the mention policy (授权边界在飞书侧, 插件不做二次过滤), the recorded-outbox reply channel (P1-2 honest intents actually sent), and
  * credential persistence (0600). Tested with an injected fake lark SDK — no network.
  */
 import { test } from 'node:test'
@@ -16,7 +16,7 @@ import { insertOutbox } from '../src/outbox.js'
 import { resolveConfig } from '../src/config.js'
 
 /** A registry+router+source with fake sessions and a fake lark SDK; sent messages land in sent. */
-function fixture({ allowlist = ['ou_me'], botOpenId = 'ou_bot', larkOverrides = {} } = {}) {
+function fixture({ botOpenId = 'ou_bot', larkOverrides = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'hub-bot-feishu-'))
   const store = new Store(dir)
   const registry = new OwnerRegistry(store, { scratchRoot: join(dir, 'scratch') })
@@ -39,7 +39,7 @@ function fixture({ allowlist = ['ou_me'], botOpenId = 'ou_bot', larkOverrides = 
   }
   const source = new FeishuSource({
     store, registry, sessions,
-    config: { openIdAllowlist: allowlist, botOpenId },
+    config: { botOpenId },
     logger: { info() {}, warn() {} },
     lark: fakeLark,
     now: () => new Date(nowMs).toISOString(),
@@ -63,15 +63,15 @@ function event({ messageId = 'om_1', chatId = 'oc_1', openId = 'ou_me', chatType
   }
 }
 
-test('config: the feishu section is validated (keys, allowlist shape) and defaults disabled', () => {
+test('config: the feishu section is validated (keys) and defaults disabled; openIdAllowlist 已移除 (授权边界在飞书侧)', () => {
   assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', feishu: 'x' }), /config\.feishu must be an object/)
   assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', feishu: { nope: 1 } }), /does not know config\.feishu key/)
-  assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', feishu: { openIdAllowlist: 'ou_me' } }), /openIdAllowlist/)
+  // 旧键 openIdAllowlist 现在被严格键校验拒绝（配置里的旧值会在启动时报错指引删除）
+  assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', feishu: { openIdAllowlist: ['ou_me'] } }), /does not know config\.feishu key/)
   const resolved = resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y' })
-  assert.deepEqual(resolved.feishu, { enabled: false, openIdAllowlist: [] })
-  const on = resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', feishu: { enabled: true, openIdAllowlist: ['ou_me'] } })
+  assert.deepEqual(resolved.feishu, { enabled: false })
+  const on = resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', feishu: { enabled: true } })
   assert.equal(on.feishu.enabled, true)
-  assert.deepEqual(on.feishu.openIdAllowlist, ['ou_me'])
 })
 
 test('a p2p text message is normalized, recorded as a Trigger, and injected into L1 with a plugin-owned source mark', async () => {
@@ -98,17 +98,6 @@ test('bot-own messages are dropped (spec: 丢弃 bot 自己的消息)', async ()
   try {
     await source.handleEvent(event({ senderType: 'app' }))
     assert.equal(calls.prompt.length, 0)
-  } finally { cleanup() }
-})
-
-test('non-allowlisted senders are recorded but never processed (spec: 白名单)', async () => {
-  const { source, calls, cleanup } = fixture()
-  try {
-    await source.handleEvent(event({ openId: 'ou_stranger', messageId: 'om_2' }))
-    assert.equal(calls.prompt.length, 0, 'never reaches a session')
-    const row = source.store.db.prepare('SELECT value FROM trigger WHERE id = ?').get('feishu-om_2')
-    const trigger = JSON.parse(String(row.value))
-    assert.equal(trigger.dropped, 'not-allowlisted')
   } finally { cleanup() }
 })
 

@@ -95,7 +95,7 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - **扫码一键建应用**：`POST /hub-bot/api/feishu/register` 启动 `lark.registerApp()` 设备授权流程（RFC 8628）；`GET /hub-bot/api/feishu/status` 轮询拿 `qr.url`（面板可渲染二维码），用户手机飞书确认后 `client_id/client_secret` 写入 `stateDir/feishu-credentials.json`（**0600**）并自动建立长连接。权限一次申请：im:message:send_as_bot / im:message / im:chat:readonly + 事件 im.message.receive_v1。
 - **长连接自动配置**：凭证落地后插件调一次 application-config patch OpenAPI 设长连接模式——**未对真实 API 验证**；失败只记日志（手工降级：开发者后台设一次），不阻断。
 - **消息归一化与来源标记**：im.message.receive_v1 → Trigger（id `feishu-<messageId>`，重启/重连重放去重）→ 注入 L1 总负责人会话，文本带插件自有标记 `[hub-bot 飞书 <chatId>/<messageId>]` 与回投地址（`reply_source to='feishu:chat:<chatId>'`），与人手输入可区分（task-1 遗留修复）。
-- **Policy 代码强制**：bot 自己的消息丢弃；`config.feishu.openIdAllowlist`（默认空=全部只记录不处理，配本人 open_id 即白名单）；群聊只有 @bot 的消息成请求（botOpenId 缺省时任何 @ 宽松算）；非文本消息回「暂不支持该消息类型」。
+- **Policy 代码强制**：bot 自己的消息丢弃；**授权边界在飞书侧**——应用的可用范围与可见成员由飞书管理后台配置，能与 bot 说话即已授权，插件不做二次过滤（原 `openIdAllowlist` 已移除，残留该键的旧配置会被严格校验拒绝）；群聊只有 @bot 的消息成请求（botOpenId 缺省时任何 @ 宽松算）；非文本消息回「暂不支持该消息类型」。
 - **回复回投**：L1 `reply_source to='feishu:chat:oc_…'` 的行是 recorded 持久意图（阶段 2 诚实语义）；FeishuSource.deliverReplies 每秒 tick 扫描、经 im.message.create 实投成功才标 sent；连续失败 5 次标 failed 并报 system-problem。
 - **凭据失效**：`status().credentialState` 为 missing/invalid 时面板提示重新扫码（devApi `feishu/status` 同源）。
 - dev 实证探针：`POST /hub-bot/api/feishu/simulate` 注入 mock 事件走真实归一化/Policy/注入路径（无真实飞书时实证全链）。
@@ -142,14 +142,14 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - **打开**：devApi 开启时（dev 实例）浏览器访问 `http://<host>:<port>/hub-bot/panel?token=<devApi.token>`。面板是 `panel/` 下的**静态 HTML+JS**——无构建链、不依赖 DSH 内部；token 存 sessionStorage，所有数据经 `x-hub-bot-token` 头走 `/hub-bot/api/*`（401 自动弹回 token 输入页）。静态壳 loopback-only、不携带任何数据。
 - **三问视图**（默认页）：**有需要我的吗**（person/confirm 票直接给 确认/拒绝 按钮，person/answer 与 blocked/failed 列出待办，安静默认）；**什么状态**（票按阶段分组、组头计数 = 列表长度，stageText 朗读票面原值）；**结果在哪**（等您验收票的报告四段 + 负责人目录清单）。每票详情折叠授权记录 / Trigger / Assignment 时间线 / 内部 id（一概念一位置）。
 - **确认裁决**：person/confirm 票的一键 confirm/reject 与 `POST /route resolution` 同一条状态机路径（fork 由代码执行、票面记 confirmOutcome）；面板按钮带二次确认（破坏性动作需确认）。验收动作暂留给 L1 聊天裁决，面板只读呈现。
-- **设置页**：飞书（连接状态/重新扫码/open_id 白名单）、GitHub（轮询开关/间隔 ≥30s/login 白名单/逐仓库监听开关）、并发槽（≥1）、定时汇报（开关/间隔）。每个设置块一条保存条、仅变更时出现；写回即时生效（所有读者读同一活 config）并持久化为 `stateDir/hub-bot.settings.json`（0600），重启自动回放——**插件永不编辑 profile**。未知节/键与非法值 HTTP 400 拒绝且不破坏既有 overlay。
+- **设置页**：飞书（连接状态/重新扫码；授权边界由飞书管理后台配置）、GitHub（轮询开关/间隔 ≥30s/login 白名单/逐仓库监听开关）、并发槽（≥1）、定时汇报（开关/间隔）。每个设置块一条保存条、仅变更时出现；写回即时生效（所有读者读同一活 config）并持久化为 `stateDir/hub-bot.settings.json`（0600），重启自动回放——**插件永不编辑 profile**。未知节/键与非法值 HTTP 400 拒绝且不破坏既有 overlay。
 - **系统健康**：飞书凭据/连接、GitHub 轮询错误、outbox 失败与系统级问题计数、正在退避重试的投递（模型等待的可见信号）——健康时该条不占空间（安静默认）。
 - **API**：`GET /overview`（三问数据：票+负责人注册表+健康）、`GET|POST /settings`、`POST /tickets/resolve`。`GET /settings` 返回有效值 = profile ⊕ overlay，标注飞书凭据状态等活 Source 信息。
 - 实证：`docs/evidence-task-11.md`（面板服务与 token 门禁、设置写回即时生效+重启回放、确认/拒绝裁决、三问真实数据）。
 
 ## 危险命令黑名单（spec「Policy」安全兜底，#73 补足）
 
-- **为什么**：经插件注入链路的会话**无人值守执行命令、不弹审批**（对齐 superagent Executor——远程场景下审批即失效），所以安全兜底 = 白名单 + 授权记录可追溯 + **危险命令黑名单**。
+- **为什么**：经插件注入链路的会话**无人值守执行命令、不弹审批**（对齐 superagent Executor——远程场景下审批即失效），所以安全兜底 = 渠道侧授权（飞书可用范围 / GitHub loginAllowlist）+ 授权记录可追溯 + **危险命令黑名单**。
 - **命中即挂起**：任何注入路径（L1 路由、追问、GitHub/飞书自动入口、L2 的 `inject_session`）的消息文本先做黑名单匹配（大小写不敏感子串）。命中 → **不注入**，票转「等您确认」（先存后做：原文、命中模式、目标存入票面 `pendingConfirm.action`），面板三问页给出确认文本（指明模式与风险）。
 - **确认才放行**：用户在面板确认（`POST /tickets/resolve` confirm）后，按票面存储的原文原样注入（携授权记录，注明「已经用户确认放行」）；拒绝 → 票转被卡住且永不注入。与 fork 确认同一条状态机路径（票面记 confirmOutcome）；24 小时未确认由清扫自动取消。
 - **清单可配**：`security.dangerousPatterns`（字符串数组，默认含 `rm -rf` / `sudo` / `git push --force` / `mkfs` / `dd of=/dev` / `chmod -R 777` 等级别模式），面板设置页可编辑（每行一个模式，写回即时生效 + 0600 落盘 + 重启回放）；留空 = 显式关闭兜底。
@@ -160,6 +160,6 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - `sessionController.prompt()` 注入的消息 source.kind 为 "user"，与人手输入不可区分；Source/Trigger 层需按 superagent AgentDelivery 模式打插件自有 source 标记（幂等 requestId 已由插件生成 `hub-bot-<uuid>`，路由注入为 `hub-bot-route-<uuid>`）。
 - 会话的 permission/sandbox 记录显示 `danger-full-access`（dev profile 默认值）；负责人的只读保证来自 **preset 工具面**（无写/执行工具可调用），不来自会话沙箱模式。收紧沙箱 preset 属 profile 配置，不在本插件范围。
 - 插件配置校验为手写 resolveConfig，未引 schemastery——零运行时依赖的取舍；后续若接 DSH 设置 UI 再评估。
-- 危险命令黑名单是**大小写不敏感子串匹配**的启发式兜底：减少误操作与明显危险注入，不能防御刻意混淆（base64/变量拼接等）；真正的边界仍是授权白名单 + preset 工具面 + 用户确认裁决。
+- 危险命令黑名单是**大小写不敏感子串匹配**的启发式兜底：减少误操作与明显危险注入，不能防御刻意混淆（base64/变量拼接等）；真正的边界仍是渠道侧授权 + preset 工具面 + 用户确认裁决。
 - 被删重建依赖"注入失败"这一信号：`session "<id>" not found` 与 `ApiSessionNotFound` 之外的删除表现（如静默丢弃）不会被识别为重建触发。
 - **owner 重建后的孤儿会话**（#65 首跑实证）：负责人会话被删重建后，旧会话仍在且保持 owner preset；它出现在 search_sessions 结果里（registry 已指向新会话，无法标记 role:'owner'），可能被 L2 误当执行会话注入，形成嵌套委托。功能上闭环仍成立（嵌套层也是 owner，最终完成并 report），但属噪声；后续可考虑按会话的 preset 名或启动侧写登记来识别孤儿。

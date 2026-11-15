@@ -12,9 +12,9 @@
  * 消息通道: WSClient im.message.receive_v1 events normalize into Triggers (id feishu-<messageId>, dedup on
  * replay — 重启不重放) and inject the L1 chief Session with a plugin-owned source mark
  * ([hub-bot 飞书 <chatId>/<messageId>]) so channel input is distinguishable from hand-typed input (task-1
- * 遗留). Policy in code: the bot's own messages are dropped; senders outside config.feishu.openIdAllowlist
- * are recorded-and-dropped; group messages count only when they @ the bot; non-text gets the recorded reply
- * 暂不支持该消息类型.
+ * 遗留). Policy in code: the bot's own messages are dropped; 授权边界在飞书侧（应用可用范围由开放平台
+ * 管理后台配置），能与 bot 说话即已授权，插件不做二次过滤; group messages count only when they @ the bot;
+ * non-text gets the recorded reply 暂不支持该消息类型.
  *
  * 回复回投: L1's reply_source to 'feishu:chat:<chatId>' rows sit recorded in the outbox (阶段 2 P1-2 的
  * 诚实意图); deliverReplies() — driven by the plugin's 1s tick — actually sends them via im.message.create
@@ -112,7 +112,6 @@ export class FeishuSource {
       registration: this.registering ? 'pending' : undefined,
       qr: this.lastQr ?? undefined,
       botOpenId: this.config.botOpenId ?? undefined,
-      allowlist: this.config.openIdAllowlist ?? [],
     }
   }
 
@@ -272,10 +271,7 @@ export class FeishuSource {
       source: { kind: 'feishu', chatId: msg.chatId, messageId: msg.messageId, openId: msg.openId, addressing: msg.addressing ?? 'none' },
       at, ...extra,
     })
-    if (!(this.config.openIdAllowlist ?? []).includes(msg.openId)) {
-      record({ dropped: 'not-allowlisted' })
-      return { dropped: 'not-allowlisted' }
-    }
+    // 授权边界在飞书侧（应用可用范围/可见成员由开放平台管理后台配置）——能与 bot 说话即已授权，插件不二次过滤。
     if (msg.addressing === null) {
       record({ dropped: 'no-mention' }) // 群聊中未 @bot 的消息不成为任务
       return { dropped: 'no-mention' }

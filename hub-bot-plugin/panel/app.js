@@ -224,11 +224,7 @@ function renderSettings(view) {
     catch (error) { showError(error); scanBtn.disabled = false }
   })
   fSection.append(scanBtn)
-  const fList = listField(feishu.openIdAllowlist)
-  fSection.append(el('label', {}, text('open_id 白名单（每行一个）')), fList)
-  const fBar = saveBar('feishu', () => ({ openIdAllowlist: readList(fList) }))
-  fSection.append(fBar)
-  watchDirty(fBar, fList)
+  fSection.append(el('p', { class: 'hint' }, text('授权边界在飞书侧：应用的可用范围与可见成员由飞书管理后台配置——能与 bot 说话的人即已授权。')))
   page.append(fSection)
 
   // GitHub

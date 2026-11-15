@@ -33,7 +33,7 @@ const SETTABLE = {
   concurrency: ['slotsPerOwner'],
   reporting: ['auto', 'intervalMs'],
   github: ['enabled', 'intervalMs', 'loginAllowlist', 'repos'],
-  feishu: ['openIdAllowlist'],
+  feishu: [],
   security: ['dangerousPatterns'],
 }
 
@@ -100,11 +100,6 @@ function applyOne(config, section, key, value) {
     }
     config.reporting.intervalMs = value
     return value
-  }
-  if (section === 'feishu' && key === 'openIdAllowlist') {
-    const list = requireStringList(value, 'feishu.openIdAllowlist')
-    config.feishu.openIdAllowlist = list
-    return list
   }
   if (section === 'github' && key === 'enabled') {
     config.github.enabled = requireBoolean(value, 'github.enabled')
@@ -208,7 +203,6 @@ export function buildSettingsView(config, { feishuStatus, githubStatus } = {}) {
     security: { dangerousPatterns: [...(config.security?.dangerousPatterns ?? [])] },
     feishu: {
       enabled: config.feishu.enabled,
-      openIdAllowlist: [...(config.feishu.openIdAllowlist ?? [])],
       status: feishuStatus ?? null,
     },
     github: {

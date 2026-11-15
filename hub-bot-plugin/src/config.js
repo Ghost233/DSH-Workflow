@@ -22,7 +22,7 @@ const KNOWN_REPORTING_KEYS = new Set(['auto', 'intervalMs'])
 const KNOWN_DEV_API_KEYS = new Set(['token'])
 
 /** The keys the Feishu entry (#68) understands. OFF unless enabled; the allowlist names authorized open_ids. */
-const KNOWN_FEISHU_KEYS = new Set(['enabled', 'openIdAllowlist', 'appId', 'appSecret', 'botOpenId'])
+const KNOWN_FEISHU_KEYS = new Set(['enabled', 'appId', 'appSecret', 'botOpenId'])
 
 /** The keys the GitHub loop (#71) understands. Per-repo entries carry the owner identity (workspace + cwd). */
 const KNOWN_GITHUB_KEYS = new Set(['enabled', 'intervalMs', 'loginAllowlist', 'mentionHandle', 'repos'])
@@ -109,11 +109,11 @@ export function resolveConfig(config) {
   }
   resolved.reporting = reporting
   // 飞书入口 (#68): OFF unless explicitly enabled; the allowlist is the ONLY authorization boundary (spec「安全」).
-  const feishu = { enabled: false, openIdAllowlist: [] }
+  const feishu = { enabled: false }
   if (raw.feishu !== undefined) {
     const rawFeishu = raw.feishu
     if (typeof rawFeishu !== 'object' || rawFeishu === null || Array.isArray(rawFeishu)) {
-      throw new ConfigError('hub-bot config.feishu must be an object { enabled?, openIdAllowlist?, appId?, appSecret?, botOpenId? }')
+      throw new ConfigError('hub-bot config.feishu must be an object { enabled?, appId?, appSecret?, botOpenId? }')
     }
     for (const key of Object.keys(rawFeishu)) {
       if (!KNOWN_FEISHU_KEYS.has(key)) throw new ConfigError('hub-bot does not know config.feishu key ["' + key + '"]')
@@ -121,12 +121,6 @@ export function resolveConfig(config) {
     if (rawFeishu.enabled !== undefined) {
       if (typeof rawFeishu.enabled !== 'boolean') throw new ConfigError('hub-bot config.feishu.enabled must be a boolean')
       feishu.enabled = rawFeishu.enabled
-    }
-    if (rawFeishu.openIdAllowlist !== undefined) {
-      if (!Array.isArray(rawFeishu.openIdAllowlist) || !rawFeishu.openIdAllowlist.every(v => typeof v === 'string' && v)) {
-        throw new ConfigError('hub-bot config.feishu.openIdAllowlist must be an array of non-empty open_id strings')
-      }
-      feishu.openIdAllowlist = [...rawFeishu.openIdAllowlist]
     }
     // appId/appSecret here are a manual fallback (凭据失效人工降级); the registerApp flow writes stateDir instead.
     for (const key of ['appId', 'appSecret', 'botOpenId']) {

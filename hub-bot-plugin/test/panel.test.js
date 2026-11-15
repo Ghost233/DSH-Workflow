@@ -23,7 +23,7 @@ function baseConfig() {
   return resolveConfig({
     stateDir: '/tmp/hub-bot-panel-config',
     homeRepo: '/Volumes/home',
-    feishu: { enabled: true, openIdAllowlist: ['ou_a'] },
+    feishu: { enabled: true },
     github: { enabled: true, intervalMs: 300000, loginAllowlist: ['ghost'], repos: [{ repo: 'o/r', workspace: 'w', cwd: '/r' }] },
   })
 }
@@ -49,7 +49,6 @@ test('settings patch applies whitelisted keys live and returns the storable over
     concurrency: { slotsPerOwner: 2 },
     reporting: { auto: true, intervalMs: 5000 },
     github: { enabled: false, intervalMs: 60000, loginAllowlist: ['ghost', 'hub-bot-app'], repos: { 'o/r': false } },
-    feishu: { openIdAllowlist: ['ou_b'] },
   })
   assert.equal(config.concurrency.slotsPerOwner, 2)
   assert.equal(config.reporting.auto, true)
@@ -58,12 +57,10 @@ test('settings patch applies whitelisted keys live and returns the storable over
   assert.equal(config.github.intervalMs, 60000)
   assert.deepEqual(config.github.loginAllowlist, ['ghost', 'hub-bot-app'])
   assert.equal(config.github.repos[0].enabled, false, 'per-repo switch lands on the live repo entry')
-  assert.deepEqual(config.feishu.openIdAllowlist, ['ou_b'])
   assert.deepEqual(overlay, {
     concurrency: { slotsPerOwner: 2 },
     reporting: { auto: true, intervalMs: 5000 },
     github: { enabled: false, intervalMs: 60000, loginAllowlist: ['ghost', 'hub-bot-app'], repos: { 'o/r': false } },
-    feishu: { openIdAllowlist: ['ou_b'] },
   }, 'the overlay is exactly the validated patch — restart replays it onto the profile config')
 })
 
@@ -86,7 +83,7 @@ test('settings patch validates values: slots >= 1, github interval >= 30s, allow
   assert.throws(() => applySettingsPatch(config, { reporting: { intervalMs: 0 } }), /reporting.intervalMs must be a positive number/)
   assert.throws(() => applySettingsPatch(config, { github: { intervalMs: 1000 } }), /github.intervalMs must be an integer >= 30000/)
   assert.throws(() => applySettingsPatch(config, { github: { loginAllowlist: 'ghost' } }), /github.loginAllowlist must be an array of non-empty strings/)
-  assert.throws(() => applySettingsPatch(config, { feishu: { openIdAllowlist: ['ou_a', 1] } }), /feishu.openIdAllowlist must be an array of non-empty strings/)
+  assert.throws(() => applySettingsPatch(config, { feishu: { openIdAllowlist: ['ou_a'] } }), /does not know settings key/, 'feishu.openIdAllowlist 已移除（授权边界在飞书侧）')
   assert.throws(() => applySettingsPatch(config, { github: { repos: { 'unknown/repo': false } } }), /unknown repo "unknown\/repo"/)
   assert.throws(() => applySettingsPatch(config, { github: { repos: { 'o/r': 'off' } } }), /github\.repos\["o\/r"\] must be a boolean/)
 })
@@ -108,10 +105,9 @@ test('settings overlay persists 0600 and round-trips; missing or corrupt files r
 
 test('settings overlay replays onto the profile config at boot (applySettingsOverlay)', () => {
   const config = baseConfig()
-  applySettingsOverlay(config, { concurrency: { slotsPerOwner: 1 }, github: { repos: { 'o/r': false } }, feishu: { openIdAllowlist: [] } })
+  applySettingsOverlay(config, { concurrency: { slotsPerOwner: 1 }, github: { repos: { 'o/r': false } } })
   assert.equal(config.concurrency.slotsPerOwner, 1)
   assert.equal(config.github.repos[0].enabled, false)
-  assert.deepEqual(config.feishu.openIdAllowlist, [])
   // 覆盖层与面板补丁同一条校验路径：坏键同样拒绝（写层即产生，不可能漂移出非法值）
   assert.throws(() => applySettingsOverlay(config, { reporting: { bogus: true } }), /does not know settings key/)
 })
@@ -201,13 +197,13 @@ test('overview skips directory listings for recycled owners (目录已删除)', 
 test('settings view merges the effective config with live source status', () => {
   const config = baseConfig()
   const view = buildSettingsView(config, {
-    feishuStatus: { enabled: true, credentialState: 'ok', connected: true, allowlist: ['ou_a'] },
+    feishuStatus: { enabled: true, credentialState: 'ok', connected: true },
     githubStatus: { enabled: true, intervalMs: 300000, loginAllowlist: ['ghost'], lastPollError: null },
   })
   assert.equal(view.concurrency.slotsPerOwner, 3, '默认值可见')
   assert.deepEqual(view.reporting, { auto: false, intervalMs: 60000 })
   assert.equal(view.feishu.enabled, true)
-  assert.deepEqual(view.feishu.openIdAllowlist, ['ou_a'])
+  assert.equal(view.feishu.openIdAllowlist, undefined, 'openIdAllowlist 不再进视图')
   assert.equal(view.feishu.status.credentialState, 'ok')
   assert.equal(view.github.enabled, true)
   assert.equal(view.github.intervalMs, 300000)
