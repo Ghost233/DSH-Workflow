@@ -111,3 +111,7 @@ textarea { width: 100%; font-family: var(--dsh-mono); font-size: 12.5px; }
   display: flex; gap: 8px; justify-content: flex-end;
   border-top: 1px dashed var(--dsh-border); margin-top: 12px; padding-top: 10px;
 }
+
+/* 飞书授权二维码：浅色底保证可扫 */
+.qr-box { padding: 12px; background: #f5f6f8; border-radius: var(--dsh-radius); display: inline-block; }
+.qr-img { display: block; width: 216px; height: 216px; image-rendering: pixelated; }

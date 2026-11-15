@@ -216,7 +216,19 @@ function renderSettings(view) {
   fSection.append(el('h3', {}, text('飞书')))
   const fState = fs.credentialState === 'ok' ? '凭据有效' + (fs.connected ? ' · 长连接已建立' : ' · 长连接未建立') : (fs.credentialState === 'missing' ? '未配置凭据' : '凭据无效')
   fSection.append(el('p', { class: 'status-line' }, text('状态：' + (feishu.enabled ? fState : '入口关闭（feishu.enabled=false）'))))
-  if (fs.qr) fSection.append(el('p', {}, el('a', { href: fs.qr, target: '_blank' }, text('打开扫码链接'))))
+  if (fs.qr && fs.qr.url) {
+    // 授权页只能在手机飞书 App 内打开（桌面点开是 SPA 壳）——直接渲染二维码, 用飞书 App「扫一扫」。
+    const qrBox = el('div', { class: 'qr-box' })
+    try {
+      const qr = qrcode(0, 'M'); qr.addData(fs.qr.url); qr.make()
+      const img = el('img', { class: 'qr-img', alt: '飞书授权二维码' })
+      img.src = qr.createDataURL(6, 8)
+      qrBox.append(img)
+    } catch { qrBox.append(text('二维码生成失败，请用下方链接')) }
+    fSection.append(qrBox)
+    fSection.append(el('p', { class: 'hint' }, text('用手机飞书 App「扫一扫」扫上方二维码（桌面浏览器打开授权页无效）。用户码有效期 ' + Math.round((fs.qr.expireIn ?? 3600) / 60) + ' 分钟。')))
+    fSection.append(el('p', {}, el('a', { href: fs.qr.url, target: '_blank' }, text('（手机上点我直接打开）'))))
+  }
   const scanBtn = el('button', { class: 'btn' }, text('重新扫码'))
   scanBtn.addEventListener('click', async () => {
     scanBtn.disabled = true

@@ -301,6 +301,7 @@ export function apply(ctx, rawConfig) {
     ['/hub-bot/panel/', ['index.html', 'text/html; charset=utf-8']],
     ['/hub-bot/panel/app.js', ['app.js', 'text/javascript; charset=utf-8']],
     ['/hub-bot/panel/style.css', ['style.css', 'text/css; charset=utf-8']],
+    ['/hub-bot/panel/vendor/qrcode.js', ['vendor/qrcode.js', 'text/javascript; charset=utf-8']],
   ])
 
   /** Serves one allowlisted panel asset, loopback-only; the token guards DATA (/hub-bot/api/*), not the shell. */
