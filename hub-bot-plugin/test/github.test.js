@@ -47,13 +47,14 @@ function comment({ id = 5001, body = '继续', login = 'Ghost233', issueNumber =
   return { id, body, user: { login }, html_url: 'https://github.com/' + REPO + '/issues/' + issueNumber + '#issuecomment-' + id, issue_url: 'https://api.github.com/repos/' + REPO + '/issues/' + issueNumber, created_at: '2026-11-15T01:05:00Z' }
 }
 
-/** registry+router+source with fake sessions and a scripted fake gh. */
+/** registry+router+source with fake sessions and a scripted fake gh. 监听清单跟随注册表（repo owners 的
+ *  origin——fake git 按 cwd 返回 remote URL）；repo owner 已在下方注册，config 不再有 repos 列表。 */
 function fixture({ allowlist = ['Ghost233'], script = {}, repos = [REPO_CFG] } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'hub-bot-gh-'))
   const store = new Store(dir)
   const registry = new OwnerRegistry(store, { scratchRoot: join(dir, 'scratch') })
   registry.ensureChief({ cwd: '/Volumes/home', workspace: 'Ghost233HomeRepo' })
-  registry.create({ kind: 'repo', workspace: 'DSH-Workflow', cwd: '/Volumes/home/DSH-Workflow' })
+  for (const r of repos) registry.create({ kind: 'repo', workspace: r.workspace, cwd: r.cwd })
   let nowMs = Date.parse('2026-11-15T00:00:00.000Z')
   const calls = { create: [], prompt: [] }
   const sessions = {
@@ -62,9 +63,15 @@ function fixture({ allowlist = ['Ghost233'], script = {}, repos = [REPO_CFG] } =
   }
   const router = new Router({ store, registry, sessions, now: () => new Date(nowMs).toISOString() })
   const { gh, posts } = fakeGh(script)
-  const config = { enabled: true, intervalMs: 300000, loginAllowlist: allowlist, mentionHandle: '@hub-bot', repos }
+  const config = { enabled: true, intervalMs: 300000, loginAllowlist: allowlist, mentionHandle: '@hub-bot' }
   const warnings = []
-  const source = new GitHubSource({ store, registry, router, sessions, config, logger: { info() {}, warn: (...a) => warnings.push(a.join(' ')) }, gh, now: () => new Date(nowMs).toISOString() })
+  const git = async (args) => {
+    const cwd = args[args.indexOf('-C') + 1]
+    const match = repos.find(r => r.cwd === cwd)
+    if (!match) throw new Error('git remote get-url: no origin')
+    return 'https://github.com/' + match.repo + '.git\n'
+  }
+  const source = new GitHubSource({ store, registry, router, sessions, config, logger: { info() {}, warn: (...a) => warnings.push(a.join(' ')) }, gh, git, now: () => new Date(nowMs).toISOString() })
   return {
     source, registry, router, store, calls, posts, script, gh, warnings,
     triggers: () => store.db.prepare('SELECT value FROM trigger').all().map(r => JSON.parse(String(r.value))),
@@ -78,11 +85,9 @@ test('config: the github section validates and defaults disabled with 5min polli
   assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', github: 'x' }), /config\.github must be an object/)
   assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', github: { nope: 1 } }), /does not know config\.github key/)
   assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', github: { intervalMs: 1000 } }), /intervalMs/)
-  assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', github: { repos: [{ repo: 'no-slash', workspace: 'w', cwd: '/tmp/w' }] } }), /owner\/name/)
-  assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', github: { repos: [{ repo: 'a/b', workspace: 'w', cwd: 'relative' }] } }), /cwd/)
-  assert.deepEqual(resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y' }).github, { enabled: false, intervalMs: 300000, loginAllowlist: [], repos: [] })
-  const on = resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', github: { enabled: true, repos: [{ repo: 'a/b', workspace: 'b', cwd: '/tmp/b' }] } })
-  assert.equal(on.github.repos[0].enabled, true, '逐仓库监听开关默认全开')
+  // repos 键已移除（监听清单跟随 owner 注册表）——残留旧键被严格校验拒绝
+  assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', github: { repos: [{ repo: 'a/b', workspace: 'w', cwd: '/tmp/w' }] } }), /does not know config\.github key \["repos"\]/)
+  assert.deepEqual(resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y' }).github, { enabled: false, intervalMs: 300000, loginAllowlist: [] })
 })
 
 test('the first poll of a repo records ONLY the watermark — 存量不触发', async () => {
@@ -273,24 +278,31 @@ test('watermarks persist across source instances — 重启不重放', async () 
     const registry2 = new OwnerRegistry(f1.store, { scratchRoot: join(dir, 'scratch') })
     const sessions2 = { create: async () => ({ sessionId: 'session-r2' }), prompt: async () => ({ accepted: true }) }
     const router2 = new Router({ store: f1.store, registry: registry2, sessions: sessions2, now: () => new Date().toISOString() })
-    const restarted = new GitHubSource({ store: f1.store, registry: registry2, router: router2, sessions: sessions2, config: f1.source.config, logger: { info() {}, warn() {} }, gh: f1.gh })
-    assert.equal(restarted.status().repos[REPO].maxNumber, 41, '水位线从落盘恢复')
+    const restarted = new GitHubSource({ store: f1.store, registry: registry2, router: router2, sessions: sessions2, config: f1.source.config, logger: { info() {}, warn() {} }, gh: f1.gh, git: async () => 'https://github.com/' + REPO + '.git\n' })
+    assert.equal((await restarted.status()).repos[REPO].maxNumber, 41, '水位线从落盘恢复')
     const result = await restarted.pollAll()
     assert.equal(result.triggered, 1, '只触发水位线之后的新事件（#42，#41 不重放）')
     assert.ok(!f1.triggers().some(t => t.id === 'github:' + REPO + ':issue:41'), '#41 never triggered')
   } finally { f1.cleanup() }
 })
 
-test('status() reports per-repo watermark, enabled flags, and the polling interval', async () => {
+test('status() follows the registry: watched repos come from repo owners\' origins, with watermarks', async () => {
   const f = fixture({ script: { ['repos/' + REPO + '/issues']: [issue({ number: 41 })] } })
   try {
     await f.source.pollAll()
-    const status = f.source.status()
+    const status = await f.source.status()
     assert.equal(status.enabled, true)
     assert.equal(status.intervalMs, 300000)
     assert.equal(status.loginAllowlist[0], 'Ghost233')
-    assert.equal(status.repos[REPO].enabled, true)
+    assert.equal(status.repos[REPO].ownerId, 'repo-DSH-Workflow', '监听项带来负责人身份')
     assert.equal(status.repos[REPO].maxNumber, 41)
+    assert.deepEqual(status.followed, [{ repo: REPO, ownerId: 'repo-DSH-Workflow' }])
+    // 未注册的 owner 不出现；origin 非 GitHub 记 resolveErrors 不炸
+    f.registry.create({ kind: 'repo', workspace: 'plain', cwd: '/Volumes/home/plain' })
+    await f.source.pollAll()
+    const status2 = await f.source.status()
+    assert.equal(status2.followed.some(w => w.ownerId === 'repo-plain'), false, '无 origin 的 owner 不进监听')
+    assert.ok(status2.resolveErrors['owner:repo-plain'], '解析失败留痕')
   } finally { f.cleanup() }
 })
 

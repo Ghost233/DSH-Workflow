@@ -32,6 +32,20 @@ export const UNSUPPORTED_MESSAGE_TYPE = '暂不支持该消息类型'
 /** The injection source mark prefix (plugin-owned — channel input vs hand-typed input are distinguishable). */
 export const FEISHU_SOURCE_MARK = '[hub-bot 飞书 '
 
+/** The bot identity created by the one-scan registration (createOnly preset). */
+export const BOT_PRESET = { name: 'DSH 中枢 Bot', desc: 'DSH 会话远程触发与状态查询' }
+
+/**
+ * The exact permissions the registration requests (一次性全部申请) — shown verbatim on the panel so the user
+ * knows what they are granting BEFORE scanning (用户决策 2026-11-16: 权限申明要写明).
+ */
+export const DECLARED_PERMISSIONS = [
+  { key: 'im:message:send_as_bot', label: '以 bot 身份发消息（回复你的请求）' },
+  { key: 'im:message', label: '读取消息内容（理解你发来的请求）' },
+  { key: 'im:chat:readonly', label: '读取会话基本信息（识别私聊/群聊与回投地址）' },
+  { key: 'im.message.receive_v1', label: '订阅「收到消息」事件（长连接实时推送，无需轮询）' },
+]
+
 /** Where the registerApp device flow persists the app credentials (owner-read-only). */
 export function credentialPath(stateDir) {
   return join(stateDir, 'feishu-credentials.json')
@@ -98,19 +112,32 @@ export class FeishuSource {
   /** Persists credentials owner-read-only (0600) and refreshes the in-memory state. */
   saveCredentials({ appId, appSecret }) {
     const file = credentialPath(this.store.stateDir)
-    writeFileSync(file, JSON.stringify({ appId, appSecret }, null, 2) + '\n', { mode: 0o600 })
+    writeFileSync(file, JSON.stringify({ appId, appSecret, boundAt: this.now() }, null, 2) + '\n', { mode: 0o600 })
     chmodSync(file, 0o600) // an existing file keeps its wider mode on rewrite without this
     this.#reloadCredentials()
   }
 
-  /** The panel-facing health view (spec「系统健康吗」): credentialState invalid = 提示重新扫码. */
+  /**
+   * The panel-facing bot-management view: one bot only (唯一总 bot). credentialState drives the three states —
+   * missing (预告将创建的 bot + 权限清单 + 二维码), ok (bot 名片 + 连接, 二维码收起), invalid (提示重新扫码).
+   */
   status() {
+    const bound = this.credentialState === 'ok' && this.credentials
+    const appId = bound ? this.credentials.appId : null
     return {
       enabled: this.config.enabled === true,
       credentialState: this.credentialState,
       wsState: this.wsState,
       registration: this.registering ? 'pending' : undefined,
       qr: this.lastQr ?? undefined,
+      preset: BOT_PRESET,
+      permissions: DECLARED_PERMISSIONS,
+      bot: bound ? {
+        name: BOT_PRESET.name,
+        appIdMasked: typeof appId === 'string' && appId.length > 10 ? appId.slice(0, 7) + '…' + appId.slice(-4) : appId,
+        boundAt: this.credentials.boundAt ?? null,
+        connected: this.wsState === 'on',
+      } : undefined,
       botOpenId: this.config.botOpenId ?? undefined,
     }
   }
@@ -127,7 +154,7 @@ export class FeishuSource {
     try {
       const result = await lark.registerApp({
         createOnly: true, // 只允许创建新应用，避免误覆盖已有应用
-        appPreset: { name: 'DSH 中枢 Bot', desc: 'DSH 会话远程触发与状态查询' },
+        appPreset: { name: BOT_PRESET.name, desc: BOT_PRESET.desc },
         addons: {
           preset: true,
           scopes: { tenant: ['im:message:send_as_bot', 'im:message', 'im:chat:readonly'] },

@@ -317,7 +317,7 @@ export function apply(ctx, rawConfig) {
   }
 
   /** 系统健康 (spec「安静默认」的反面数据): Source 状态 + outbox 队列计数 + 正在退避重试的行（模型/投递等待的可见信号）。 */
-  const buildHealth = () => {
+  const buildHealth = async () => {
     const rows = store.db.prepare('SELECT value FROM outbox').all().map(r => JSON.parse(String(r.value)))
     const count = state => rows.filter(r => r.state === state).length
     const retrying = rows
@@ -326,7 +326,7 @@ export function apply(ctx, rawConfig) {
     const problems = rows.filter(r => r.kind === 'system-problem')
     return {
       feishu: feishu.status(),
-      github: github.status(),
+      github: await github.status(),
       outbox: {
         queued: count('queued'), held: count('held'), recorded: count('recorded'),
         failed: count('failed'), sent: count('sent'),
@@ -341,7 +341,7 @@ export function apply(ctx, rawConfig) {
   let settingsOverlay = loadSettingsOverlay(config.stateDir)
 
   /** Reads the effective settings view (config ⊕ overlay + live Source status). */
-  const settingsView = () => buildSettingsView(config, { feishuStatus: feishu.status(), githubStatus: github.status() })
+  const settingsView = async () => buildSettingsView(config, { feishuStatus: feishu.status(), githubStatus: await github.status() })
 
   /** Applies one panel settings patch: validate → mutate live config → persist overlay → live side effects. */
   const applySettings = async req => {
@@ -356,7 +356,7 @@ export function apply(ctx, rawConfig) {
     saveSettingsOverlay(config.stateDir, settingsOverlay)
     restartGithubPolling() // 轮询开关/间隔即时生效（幂等重启）
     ctx.logger.info('hub-bot settings updated via panel: %s', Object.keys(patch).join(', '))
-    return settingsView()
+    return await settingsView()
   }
 
   /** 确认裁决: person/confirm 票的一键 confirm/reject — 与 route_to_owner resolution 同一条状态机路径. */
@@ -435,7 +435,7 @@ export function apply(ctx, rawConfig) {
           json(res, 200, await feishu.handleEvent(body.event ?? body))
         } else if (route === 'github/status' && method === 'GET') {
           // 面板健康视图: 逐仓库开关、水位线与最近一次轮询错误。
-          json(res, 200, github.status())
+          json(res, 200, await github.status())
         } else if (route === 'github/poll' && method === 'POST') {
           // Forces one polling cycle NOW (dev proof without waiting 5min); body {repo?} narrows to one repo.
           const body = await readBody(req)
@@ -450,14 +450,14 @@ export function apply(ctx, rawConfig) {
           // Dev proof aid: one mock issue/PR/comment through the real normalization/policy/route path.
           // { kind: 'issue'|'pr'|'comment', repo: 'owner/name', item|comment: {...} }
           const body = await readBody(req)
-          const cfg = (config.github.repos ?? []).find(r => r.repo === body.repo) ?? { repo: body.repo, workspace: body.workspace ?? basename(config.homeRepo), cwd: config.homeRepo, enabled: true }
+          const cfg = { repo: body.repo, workspace: body.workspace ?? basename(config.homeRepo), cwd: config.homeRepo, enabled: true }
           if (body.kind === 'comment') json(res, 200, await github.handleCommentEvent(body.item ?? body.comment, cfg))
           else json(res, 200, await github.handleIssueEvent(body.item, cfg))
         } else if (route === 'overview' && method === 'GET') {
           // 三问视图数据 (#73): 票面 + 注册表 + 健康快照, 一次取齐
-          json(res, 200, buildOverview({ store, registry: hub.registry, health: buildHealth() }))
+          json(res, 200, buildOverview({ store, registry: hub.registry, health: await buildHealth() }))
         } else if (route === 'settings' && method === 'GET') {
-          json(res, 200, settingsView())
+          json(res, 200, await settingsView())
         } else if (route === 'settings' && method === 'POST') {
           json(res, 200, await applySettings(req))
         } else if (route === 'tickets/resolve' && method === 'POST') {

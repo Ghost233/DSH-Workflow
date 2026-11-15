@@ -24,7 +24,7 @@ function baseConfig() {
     stateDir: '/tmp/hub-bot-panel-config',
     homeRepo: '/Volumes/home',
     feishu: { enabled: true },
-    github: { enabled: true, intervalMs: 300000, loginAllowlist: ['ghost'], repos: [{ repo: 'o/r', workspace: 'w', cwd: '/r' }] },
+    github: { enabled: true, intervalMs: 300000, loginAllowlist: ['ghost'] },
   })
 }
 
@@ -48,7 +48,7 @@ test('settings patch applies whitelisted keys live and returns the storable over
   const overlay = applySettingsPatch(config, {
     concurrency: { slotsPerOwner: 2 },
     reporting: { auto: true, intervalMs: 5000 },
-    github: { enabled: false, intervalMs: 60000, loginAllowlist: ['ghost', 'hub-bot-app'], repos: { 'o/r': false } },
+    github: { enabled: false, intervalMs: 60000, loginAllowlist: ['ghost', 'hub-bot-app'] },
   })
   assert.equal(config.concurrency.slotsPerOwner, 2)
   assert.equal(config.reporting.auto, true)
@@ -56,11 +56,10 @@ test('settings patch applies whitelisted keys live and returns the storable over
   assert.equal(config.github.enabled, false)
   assert.equal(config.github.intervalMs, 60000)
   assert.deepEqual(config.github.loginAllowlist, ['ghost', 'hub-bot-app'])
-  assert.equal(config.github.repos[0].enabled, false, 'per-repo switch lands on the live repo entry')
   assert.deepEqual(overlay, {
     concurrency: { slotsPerOwner: 2 },
     reporting: { auto: true, intervalMs: 5000 },
-    github: { enabled: false, intervalMs: 60000, loginAllowlist: ['ghost', 'hub-bot-app'], repos: { 'o/r': false } },
+    github: { enabled: false, intervalMs: 60000, loginAllowlist: ['ghost', 'hub-bot-app'] },
   }, 'the overlay is exactly the validated patch — restart replays it onto the profile config')
 })
 
@@ -84,15 +83,15 @@ test('settings patch validates values: slots >= 1, github interval >= 30s, allow
   assert.throws(() => applySettingsPatch(config, { github: { intervalMs: 1000 } }), /github.intervalMs must be an integer >= 30000/)
   assert.throws(() => applySettingsPatch(config, { github: { loginAllowlist: 'ghost' } }), /github.loginAllowlist must be an array of non-empty strings/)
   assert.throws(() => applySettingsPatch(config, { feishu: { openIdAllowlist: ['ou_a'] } }), /does not know settings key/, 'feishu.openIdAllowlist 已移除（授权边界在飞书侧）')
-  assert.throws(() => applySettingsPatch(config, { github: { repos: { 'unknown/repo': false } } }), /unknown repo "unknown\/repo"/)
-  assert.throws(() => applySettingsPatch(config, { github: { repos: { 'o/r': 'off' } } }), /github\.repos\["o\/r"\] must be a boolean/)
+  // github.repos 已移除（监听清单跟随 owner 注册表）——旧键按未知键拒绝
+  assert.throws(() => applySettingsPatch(config, { github: { repos: { 'o/r': false } } }), /does not know settings key "github\.repos"/)
 })
 
 test('settings overlay persists 0600 and round-trips; missing or corrupt files read as empty (boot must not break)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hub-bot-overlay-'))
   try {
     assert.deepEqual(loadSettingsOverlay(dir), {}, 'no overlay file → empty')
-    const overlay = { reporting: { auto: true }, github: { repos: { 'o/r': false } } }
+    const overlay = { reporting: { auto: true }, github: { enabled: false } }
     saveSettingsOverlay(dir, overlay)
     assert.equal(statSync(join(dir, SETTINGS_FILE)).mode & 0o777, 0o600, 'owner-only like the credentials file')
     assert.deepEqual(loadSettingsOverlay(dir), overlay)
@@ -105,23 +104,23 @@ test('settings overlay persists 0600 and round-trips; missing or corrupt files r
 
 test('settings overlay replays onto the profile config at boot (applySettingsOverlay)', () => {
   const config = baseConfig()
-  applySettingsOverlay(config, { concurrency: { slotsPerOwner: 1 }, github: { repos: { 'o/r': false } } })
+  applySettingsOverlay(config, { concurrency: { slotsPerOwner: 1 }, github: { intervalMs: 60000 } })
   assert.equal(config.concurrency.slotsPerOwner, 1)
-  assert.equal(config.github.repos[0].enabled, false)
+  assert.equal(config.github.intervalMs, 60000)
   // 覆盖层与面板补丁同一条校验路径：坏键同样拒绝（写层即产生，不可能漂移出非法值）
   assert.throws(() => applySettingsOverlay(config, { reporting: { bogus: true } }), /does not know settings key/)
 })
 
-test('settings overlay merge accumulates sections and per-repo switches instead of clobbering', () => {
+test('settings overlay merge accumulates sections key-wise instead of clobbering', () => {
   let overlay = {}
-  overlay = mergeSettingsOverlay(overlay, { github: { enabled: true, repos: { 'o/r': false } }, reporting: { auto: true } })
-  overlay = mergeSettingsOverlay(overlay, { github: { intervalMs: 60000, repos: { 'x/y': true } } })
+  overlay = mergeSettingsOverlay(overlay, { github: { enabled: true }, reporting: { auto: true } })
+  overlay = mergeSettingsOverlay(overlay, { github: { intervalMs: 60000 } })
   overlay = mergeSettingsOverlay(overlay, { concurrency: { slotsPerOwner: 1 } })
   assert.deepEqual(overlay, {
-    github: { enabled: true, intervalMs: 60000, repos: { 'o/r': false, 'x/y': true } },
+    github: { enabled: true, intervalMs: 60000 },
     reporting: { auto: true },
     concurrency: { slotsPerOwner: 1 },
-  }, '两次补丁的 github 键与逐仓库开关都还在')
+  }, '两次补丁的 github 键都还在')
 })
 
 test('overview answers the three questions from ticket faces: state / doing / outcome', async () => {
@@ -198,7 +197,7 @@ test('settings view merges the effective config with live source status', () => 
   const config = baseConfig()
   const view = buildSettingsView(config, {
     feishuStatus: { enabled: true, credentialState: 'ok', connected: true },
-    githubStatus: { enabled: true, intervalMs: 300000, loginAllowlist: ['ghost'], lastPollError: null },
+    githubStatus: { enabled: true, intervalMs: 300000, loginAllowlist: ['ghost'], lastPollError: null, followed: [{ repo: 'o/r', ownerId: 'repo-w' }] },
   })
   assert.equal(view.concurrency.slotsPerOwner, 3, '默认值可见')
   assert.deepEqual(view.reporting, { auto: false, intervalMs: 60000 })
@@ -208,6 +207,6 @@ test('settings view merges the effective config with live source status', () => 
   assert.equal(view.github.enabled, true)
   assert.equal(view.github.intervalMs, 300000)
   assert.deepEqual(view.github.loginAllowlist, ['ghost'])
-  assert.deepEqual(view.github.repos, [{ repo: 'o/r', workspace: 'w', cwd: '/r', enabled: true }])
+  assert.deepEqual(view.github.followed, [{ repo: 'o/r', ownerId: 'repo-w' }], '监听清单跟随注册表（只读）')
   assert.equal(view.github.status.lastPollError, null)
 })

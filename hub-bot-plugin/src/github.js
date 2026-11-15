@@ -47,6 +47,22 @@ export function watermarkPath(stateDir) {
   return join(stateDir, 'github-watermarks.json')
 }
 
+/** Parses owner/name from a git remote URL (https/ssh/scp-like); null when it is not a GitHub remote. */
+export function parseGitHubRepo(remoteUrl) {
+  const m = String(remoteUrl ?? '').trim().match(/github\.com[:\/]([^/\s]+)\/([^/\s]+?)(?:\.git)?$/)
+  return m ? m[1] + '/' + m[2] : null
+}
+
+/** The real git runner: read-only remote resolution, 10s cap. */
+export async function realGit(args) {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, { timeout: 10000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) reject(new Error('git ' + args.slice(0, 3).join(' ') + ' failed: ' + (stderr || error.message).toString().trim()))
+      else resolve(String(stdout))
+    })
+  })
+}
+
 /** The real gh runner: REST through the local CLI, 30s cap per call. */
 export async function realGh(args) {
   return new Promise((resolve, reject) => {
@@ -63,7 +79,7 @@ export class GitHubSource {
    *   router: import('./router.js').Router, sessions: object, config: object,
    *   logger: { info: Function, warn: Function }, gh?: Function, now?: () => string }} deps
    */
-  constructor({ store, registry, router, sessions, config, logger, gh, now }) {
+  constructor({ store, registry, router, sessions, config, logger, gh, git, now }) {
     this.store = store
     this.registry = registry
     this.router = router
@@ -71,6 +87,7 @@ export class GitHubSource {
     this.config = config ?? {}
     this.logger = logger
     this.gh = gh ?? realGh
+    this.git = git ?? realGit
     this.now = now ?? (() => new Date().toISOString())
     this.watermarks = { repos: {} }
     this.lastErrors = {}
@@ -99,12 +116,38 @@ export class GitHubSource {
     return this.watermarks.repos[repo]
   }
 
-  /** The panel-facing health view: per-repo watermark, switch, and the last polling error if any. */
-  status() {
+  /**
+   * The watched set FOLLOWS the owner registry (用户决策 2026-11-16): every registered repo owner's checkout
+   * (owner.cwd) resolves its GitHub repo from `git remote get-url origin` — no separate config list to keep
+   * in sync. Failures (no origin, not GitHub) are recorded in lastErrors and skipped, never fatal.
+   */
+  async #watchedRepos() {
+    const watched = []
+    const seen = new Set()
+    for (const owner of this.registry.list()) {
+      if (owner.kind !== 'repo' || owner.recycled === true || owner.role === 'chief' || !owner.cwd) continue
+      try {
+        const remote = String(await this.git(['-C', owner.cwd, 'remote', 'get-url', 'origin'])).trim()
+        const repo = parseGitHubRepo(remote)
+        if (!repo) { this.lastErrors['owner:' + owner.id] = 'origin is not a GitHub remote: ' + (remote || '(empty)'); continue }
+        if (seen.has(repo)) continue
+        seen.add(repo)
+        watched.push({ repo, ownerId: owner.id, workspace: owner.workspace, cwd: owner.cwd })
+      } catch (error) {
+        this.lastErrors['owner:' + owner.id] = error?.message ?? String(error)
+      }
+    }
+    this.lastWatched = watched
+    return watched
+  }
+
+  /** The panel-facing health view: watched repos follow the registry; per-repo watermark + last error. */
+  async status() {
+    const watched = this.lastWatched ?? await this.#watchedRepos()
     const repos = {}
-    for (const cfg of this.config.repos ?? []) {
-      const wm = this.watermarks.repos[cfg.repo] ?? { initialized: false, maxNumber: 0, maxCommentId: 0 }
-      repos[cfg.repo] = { enabled: cfg.enabled !== false, workspace: cfg.workspace, initialized: wm.initialized === true, maxNumber: wm.maxNumber ?? 0, maxCommentId: wm.maxCommentId ?? 0, lastError: this.lastErrors[cfg.repo] }
+    for (const w of watched) {
+      const wm = this.watermarks.repos[w.repo] ?? { initialized: false, maxNumber: 0, maxCommentId: 0 }
+      repos[w.repo] = { ownerId: w.ownerId, workspace: w.workspace, initialized: wm.initialized === true, maxNumber: wm.maxNumber ?? 0, maxCommentId: wm.maxCommentId ?? 0, lastError: this.lastErrors[w.repo] }
     }
     return {
       enabled: this.config.enabled === true,
@@ -112,6 +155,8 @@ export class GitHubSource {
       loginAllowlist: this.config.loginAllowlist ?? [],
       mentionHandle: this.config.mentionHandle ?? null,
       repos,
+      followed: watched.map(w => ({ repo: w.repo, ownerId: w.ownerId })),
+      resolveErrors: Object.fromEntries(Object.entries(this.lastErrors).filter(([k]) => k.startsWith('owner:'))),
     }
   }
 
@@ -131,11 +176,12 @@ export class GitHubSource {
     return this.config.loginAllowlist
   }
 
-  /** One full polling cycle over every enabled repo. */
+  /** One full polling cycle over every repo the registry currently yields (跟随注册表，每轮重新推导). */
   async pollAll() {
     const totals = { triggered: 0, dropped: 0, terminated: 0 }
     if (this.config.enabled !== true) return { ...totals, disabled: true }
-    for (const repoCfg of (this.config.repos ?? []).filter(r => r.enabled !== false)) {
+    const watched = await this.#watchedRepos()
+    for (const repoCfg of watched) {
       try {
         const result = await this.pollRepo(repoCfg)
         totals.triggered += result.triggered ?? 0

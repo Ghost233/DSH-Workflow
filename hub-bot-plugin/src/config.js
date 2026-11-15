@@ -24,9 +24,9 @@ const KNOWN_DEV_API_KEYS = new Set(['token'])
 /** The keys the Feishu entry (#68) understands. OFF unless enabled; the allowlist names authorized open_ids. */
 const KNOWN_FEISHU_KEYS = new Set(['enabled', 'appId', 'appSecret', 'botOpenId'])
 
-/** The keys the GitHub loop (#71) understands. Per-repo entries carry the owner identity (workspace + cwd). */
-const KNOWN_GITHUB_KEYS = new Set(['enabled', 'intervalMs', 'loginAllowlist', 'mentionHandle', 'repos'])
-const KNOWN_GITHUB_REPO_KEYS = new Set(['repo', 'workspace', 'cwd', 'enabled'])
+/** The keys the GitHub loop (#71) understands. Watched repos FOLLOW the owner registry (repo owners' origins),
+ *  so there is no config list — a stale `repos` key is rejected by strict validation below. */
+const KNOWN_GITHUB_KEYS = new Set(['enabled', 'intervalMs', 'loginAllowlist', 'mentionHandle'])
 const DEFAULT_GITHUB_INTERVAL_MS = 5 * 60 * 1000
 const MIN_GITHUB_INTERVAL_MS = 30 * 1000
 
@@ -133,7 +133,7 @@ export function resolveConfig(config) {
   resolved.feishu = feishu
   // GitHub 自动处理闭环 (#71): OFF unless explicitly enabled; loginAllowlist 是唯一授权边界（默认空 = 启动时
   // 经 gh api user 解析为本人；解析失败则全部只记录）。repos 逐仓库开关默认全开（spec「逐仓库开关」）。
-  const github = { enabled: false, intervalMs: DEFAULT_GITHUB_INTERVAL_MS, loginAllowlist: [], repos: [] }
+  const github = { enabled: false, intervalMs: DEFAULT_GITHUB_INTERVAL_MS, loginAllowlist: [] }
   if (raw.github !== undefined) {
     const rawGithub = raw.github
     if (typeof rawGithub !== 'object' || rawGithub === null || Array.isArray(rawGithub)) {
@@ -163,20 +163,6 @@ export function resolveConfig(config) {
         throw new ConfigError('hub-bot config.github.mentionHandle must be an @handle string')
       }
       github.mentionHandle = rawGithub.mentionHandle
-    }
-    if (rawGithub.repos !== undefined) {
-      if (!Array.isArray(rawGithub.repos)) throw new ConfigError('hub-bot config.github.repos must be an array of { repo, workspace, cwd, enabled? }')
-      github.repos = rawGithub.repos.map((entry, i) => {
-        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) throw new ConfigError('hub-bot config.github.repos[' + i + '] must be an object')
-        for (const key of Object.keys(entry)) {
-          if (!KNOWN_GITHUB_REPO_KEYS.has(key)) throw new ConfigError('hub-bot does not know config.github.repos[' + i + '] key ["' + key + '"]')
-        }
-        if (typeof entry.repo !== 'string' || !/^[^/\s]+\/[^/\s]+$/.test(entry.repo)) throw new ConfigError('hub-bot config.github.repos[' + i + '].repo must be owner/name')
-        if (typeof entry.workspace !== 'string' || !entry.workspace) throw new ConfigError('hub-bot config.github.repos[' + i + '].workspace must be a non-empty string (the L2 owner identity)')
-        if (typeof entry.cwd !== 'string' || !entry.cwd.startsWith('/')) throw new ConfigError('hub-bot config.github.repos[' + i + '].cwd must be an absolute path (the repo checkout)')
-        if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') throw new ConfigError('hub-bot config.github.repos[' + i + '].enabled must be a boolean')
-        return { repo: entry.repo, workspace: entry.workspace, cwd: entry.cwd, enabled: entry.enabled !== false }
-      })
     }
   }
   resolved.github = github

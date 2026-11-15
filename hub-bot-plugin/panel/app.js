@@ -209,35 +209,58 @@ function renderSettings(view) {
   const page = $('#settings')
   page.replaceChildren()
 
-  // 飞书 (一概念一位置: 连接状态与扫码在这块, 白名单在这块)
+  // 飞书 bot 管理块（唯一总 bot）：三态——已绑定（名片+连接+权限，二维码收起）/ 未绑定（预告+权限+扫码）/ 失效。
   const feishu = view.feishu ?? {}
   const fs = feishu.status ?? {}
   const fSection = el('section', { class: 'setting-block' })
-  fSection.append(el('h3', {}, text('飞书')))
-  const fState = fs.credentialState === 'ok' ? '凭据有效' + (fs.connected ? ' · 长连接已建立' : ' · 长连接未建立') : (fs.credentialState === 'missing' ? '未配置凭据' : '凭据无效')
-  fSection.append(el('p', { class: 'status-line' }, text('状态：' + (feishu.enabled ? fState : '入口关闭（feishu.enabled=false）'))))
-  if (fs.qr && fs.qr.url) {
-    // 授权页只能在手机飞书 App 内打开（桌面点开是 SPA 壳）——直接渲染二维码, 用飞书 App「扫一扫」。
-    const qrBox = el('div', { class: 'qr-box' })
-    try {
-      const qr = qrcode(0, 'M'); qr.addData(fs.qr.url); qr.make()
-      const img = el('img', { class: 'qr-img', alt: '飞书授权二维码' })
-      img.src = qr.createDataURL(6, 8)
-      qrBox.append(img)
-    } catch { qrBox.append(text('二维码生成失败，请用下方链接')) }
-    fSection.append(qrBox)
-    fSection.append(el('p', { class: 'hint' }, text('用手机飞书 App「扫一扫」扫上方二维码（桌面浏览器打开授权页无效）。用户码有效期 ' + Math.round((fs.qr.expireIn ?? 3600) / 60) + ' 分钟。')))
-    fSection.append(el('p', {}, el('a', { href: fs.qr.url, target: '_blank' }, text('（手机上点我直接打开）'))))
+  fSection.append(el('h3', {}, text('飞书 bot')))
+  if (feishu.enabled !== true) {
+    fSection.append(el('p', { class: 'status-line' }, text('入口关闭（profile 里 feishu.enabled=false）')))
+    page.append(fSection)
+  } else {
+    const bound = fs.credentialState === 'ok' && fs.bot
+    const invalid = fs.credentialState === 'invalid'
+    // bot 名片：绑定后展示真实身份；未绑定预告将创建的身份
+    const card = el('div', { class: 'bot-card' + (bound ? '' : ' bot-card--ghost') })
+    card.append(el('div', { class: 'bot-name' }, text(fs.bot?.name ?? fs.preset?.name ?? 'DSH 中枢 Bot')))
+    card.append(el('div', { class: 'quiet small' }, text(fs.bot?.desc ?? fs.preset?.desc ?? '')))
+    if (bound) {
+      card.append(el('div', { class: 'quiet small' }, text('App ID：' + (fs.bot.appIdMasked ?? '—') + (fs.bot.boundAt ? ' · 绑定于 ' + String(fs.bot.boundAt).slice(0, 16).replace('T', ' ') : ''))))
+      const conn = fs.bot.connected ? '长连接已建立' : '长连接未建立'
+      card.append(el('div', { class: 'small ' + (fs.bot.connected ? 'ok-text' : 'warn-text') }, text('● ' + conn)))
+    }
+    fSection.append(card)
+    if (invalid) fSection.append(el('p', { class: 'warn-text small' }, text('凭据无效——请重新扫码绑定。')))
+    // 权限申明（明文）：绑定前告知将申请什么，绑定后展示已授权什么
+    const permTitle = bound ? '已申明权限' : '将申明的权限（扫码时一次确认）'
+    const permList = el('ul', { class: 'perm-list' })
+    for (const p of fs.permissions ?? []) permList.append(el('li', {}, el('code', {}, text(p.key)), text(' — ' + p.label)))
+    fSection.append(el('p', { class: 'small' }, text(permTitle)), permList)
+    // 二维码只在未绑定且注册流 pending 时出现
+    if (!bound && fs.qr && fs.qr.url) {
+      const qrBox = el('div', { class: 'qr-box' })
+      try {
+        const qr = qrcode(0, 'M'); qr.addData(fs.qr.url); qr.make()
+        const img = el('img', { class: 'qr-img', alt: '飞书授权二维码' })
+        img.src = qr.createDataURL(6, 8)
+        qrBox.append(img)
+      } catch { qrBox.append(text('二维码生成失败，请用下方链接')) }
+      fSection.append(qrBox)
+      fSection.append(el('p', { class: 'hint' }, text('用手机飞书 App「扫一扫」扫上方二维码（桌面浏览器打开授权页无效）。用户码 ' + String(fs.qr.url).match(/user_code=([^&]+)/)?.[1] + '，有效期 ' + Math.round((fs.qr.expireIn ?? 3600) / 60) + ' 分钟。')))
+      fSection.append(el('p', {}, el('a', { href: fs.qr.url, target: '_blank' }, text('（手机上点我直接打开）'))))
+    }
+    // 操作按钮：未绑定=开始扫码绑定；已绑定=重新注册（覆盖凭据，需确认）
+    const scanBtn = el('button', { class: 'btn' }, text(bound ? '重新注册（覆盖现有凭据）' : (fs.registration === 'pending' ? '重新生成二维码' : '开始扫码绑定')))
+    scanBtn.addEventListener('click', async () => {
+      if (bound && !confirm('重新注册会创建新应用并覆盖现有凭据，当前绑定即失效。继续？')) return
+      scanBtn.disabled = true
+      try { await api('feishu/register', { method: 'POST', body: {} }); setTimeout(() => void refresh(), 2000) }
+      catch (error) { showError(error); scanBtn.disabled = false }
+    })
+    fSection.append(scanBtn)
+    fSection.append(el('p', { class: 'hint' }, text('授权边界在飞书侧：应用的可用范围与可见成员由飞书管理后台配置——能与 bot 说话的人即已授权。')))
+    page.append(fSection)
   }
-  const scanBtn = el('button', { class: 'btn' }, text('重新扫码'))
-  scanBtn.addEventListener('click', async () => {
-    scanBtn.disabled = true
-    try { await api('feishu/register', { method: 'POST', body: {} }); setTimeout(() => void refresh(), 2000) }
-    catch (error) { showError(error); scanBtn.disabled = false }
-  })
-  fSection.append(scanBtn)
-  fSection.append(el('p', { class: 'hint' }, text('授权边界在飞书侧：应用的可用范围与可见成员由飞书管理后台配置——能与 bot 说话的人即已授权。')))
-  page.append(fSection)
 
   // GitHub
   const github = view.github ?? {}
@@ -251,24 +274,25 @@ function renderSettings(view) {
   gSection.append(el('label', { class: 'inline' }, gEnabled, text(' 轮询监听')))
   gSection.append(el('label', {}, text('轮询间隔（秒，最小 30）')), gInterval)
   gSection.append(el('label', {}, text('login 白名单（每行一个；空 = 启动时解析为本人）')), gList)
-  const repoTable = el('table', { class: 'repo-table' })
-  repoTable.append(el('tr', {}, el('th', {}, text('仓库')), el('th', {}, text('监听'))))
-  const repoChecks = []
-  for (const repo of github.repos ?? []) {
-    const check = el('input', { type: 'checkbox' })
-    check.checked = repo.enabled !== false
-    repoChecks.push({ repo: repo.repo, check })
-    repoTable.append(el('tr', {}, el('td', {}, text(repo.repo), el('div', { class: 'quiet small' }, text(repo.cwd))), el('td', {}, check)))
+  // 监听清单跟随 owner 注册表（只读）：注册了 repo 负责人即自动监听其 origin 仓库，无需在此配置。
+  const followed = github.followed ?? []
+  if (followed.length) {
+    const repoTable = el('table', { class: 'repo-table' })
+    repoTable.append(el('tr', {}, el('th', {}, text('监听中（跟随负责人注册表）')), el('th', {}, text('负责人'))))
+    for (const f of followed) repoTable.append(el('tr', {}, el('td', {}, text(f.repo)), el('td', { class: 'quiet small' }, text(f.ownerId))))
+    gSection.append(repoTable)
+  } else {
+    gSection.append(el('p', { class: 'hint' }, text('暂无监听仓库——向总管说「为 <仓库> 建负责人」后自动开始监听其 origin。')))
   }
-  if (repoChecks.length) gSection.append(repoTable)
+  const resolveErrors = Object.entries(github.resolveErrors ?? {})
+  if (resolveErrors.length) gSection.append(el('p', { class: 'hint' }, text('解析失败：' + resolveErrors.map(([k, v]) => k + ' ' + v).join('；'))))
   const gBar = saveBar('github', () => ({
     enabled: gEnabled.checked,
     intervalMs: Number(gInterval.value) * 1000,
     loginAllowlist: readList(gList),
-    repos: Object.fromEntries(repoChecks.map(({ repo, check }) => [repo, check.checked])),
   }))
   gSection.append(gBar)
-  watchDirty(gBar, gEnabled, gInterval, gList, ...repoChecks.map(r => r.check))
+  watchDirty(gBar, gEnabled, gInterval, gList)
   page.append(gSection)
 
   // 并发

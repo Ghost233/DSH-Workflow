@@ -115,3 +115,12 @@ textarea { width: 100%; font-family: var(--dsh-mono); font-size: 12.5px; }
 /* 飞书授权二维码：浅色底保证可扫 */
 .qr-box { padding: 12px; background: #f5f6f8; border-radius: var(--dsh-radius); display: inline-block; }
 .qr-img { display: block; width: 216px; height: 216px; image-rendering: pixelated; }
+
+/* 飞书 bot 名片 */
+.bot-card { border: 1px solid var(--dsh-border); border-radius: var(--dsh-radius); padding: 12px 14px; margin: 8px 0; background: var(--dsh-bg-raised); }
+.bot-card--ghost { border-style: dashed; opacity: 0.8; }
+.bot-name { font-weight: 600; margin-bottom: 2px; }
+.perm-list { margin: 4px 0 10px; padding-left: 20px; line-height: 1.9; }
+.perm-list code { background: var(--dsh-bg-hover); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.ok-text { color: var(--dsh-ok); }
+.warn-text { color: var(--dsh-warn); }

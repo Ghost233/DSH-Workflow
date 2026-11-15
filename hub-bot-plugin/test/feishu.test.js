@@ -183,8 +183,21 @@ test('credentials persist with mode 0600 and reload; status reports missing/ok',
     source.saveCredentials({ appId: 'cli_1', appSecret: 's_1' })
     const file = credentialPath(store.stateDir)
     assert.equal(statSync(file).mode & 0o777, 0o600, 'credential file is owner-only')
-    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { appId: 'cli_1', appSecret: 's_1' })
+    const persisted = JSON.parse(readFileSync(file, 'utf8'))
+    assert.equal(persisted.appId, 'cli_1')
+    assert.equal(persisted.appSecret, 's_1')
+    assert.equal(typeof persisted.boundAt, 'string', '绑定时间落盘（面板名片用）')
     assert.equal(source.status().credentialState, 'ok')
+    const st = source.status()
+    assert.ok(st.bot, '绑定后出现 bot 名片')
+    assert.equal(st.bot.name, 'DSH 中枢 Bot')
+    assert.ok(st.permissions.length >= 4, '权限明文清单随行')
+    // 未绑定时无名片有预告
+    const s2 = fixture()
+    try {
+      assert.equal(s2.source.status().bot, undefined)
+      assert.equal(s2.source.status().preset.name, 'DSH 中枢 Bot')
+    } finally { s2.cleanup() }
   } finally { cleanup() }
 })
 

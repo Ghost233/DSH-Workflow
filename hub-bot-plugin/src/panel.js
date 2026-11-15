@@ -32,7 +32,7 @@ const MIN_GITHUB_INTERVAL_MS = 30 * 1000
 const SETTABLE = {
   concurrency: ['slotsPerOwner'],
   reporting: ['auto', 'intervalMs'],
-  github: ['enabled', 'intervalMs', 'loginAllowlist', 'repos'],
+  github: ['enabled', 'intervalMs', 'loginAllowlist'],
   feishu: [],
   security: ['dangerousPatterns'],
 }
@@ -123,39 +123,17 @@ function applyOne(config, section, key, value) {
     config.security.dangerousPatterns = list
     return list
   }
-  if (section === 'github' && key === 'repos') {
-    // 逐仓库开关 (spec「逐仓库开关」): a map of repo → enabled, applied onto the configured repo entries.
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      throw new SettingsError('github.repos must be an object mapping repo → enabled')
-    }
-    const applied = {}
-    for (const [repo, enabled] of Object.entries(value)) {
-      const entry = (config.github.repos ?? []).find(r => r.repo === repo)
-      if (!entry) throw new SettingsError('github.repos: unknown repo "' + repo + '" (配置里没有这个仓库)')
-      entry.enabled = requireBoolean(enabled, 'github.repos["' + repo + '"]')
-      applied[repo] = entry.enabled
-    }
-    return applied
-  }
   throw new SettingsError('hub-bot does not know settings key "' + section + '.' + key + '"')
 }
 
 /**
- * Merges one accepted patch into the accumulated overlay: sections merge key-wise, and github.repos merges
- * per repo, so successive panel edits accumulate instead of clobbering each other.
+ * Merges one accepted patch into the accumulated overlay: sections merge key-wise, so successive panel
+ * edits accumulate instead of clobbering each other.
  */
 export function mergeSettingsOverlay(base, patch) {
   const next = { ...base }
   for (const [section, body] of Object.entries(patch)) {
-    const merged = { ...(next[section] ?? {}) }
-    for (const [key, value] of Object.entries(body)) {
-      if (key === 'repos' && typeof value === 'object' && value !== null) {
-        merged.repos = { ...(merged.repos ?? {}), ...value }
-      } else {
-        merged[key] = value
-      }
-    }
-    next[section] = merged
+    next[section] = { ...(next[section] ?? {}), ...body }
   }
   return next
 }
@@ -210,7 +188,9 @@ export function buildSettingsView(config, { feishuStatus, githubStatus } = {}) {
       intervalMs: config.github.intervalMs,
       loginAllowlist: [...(config.github.loginAllowlist ?? [])],
       mentionHandle: config.github.mentionHandle ?? null,
-      repos: (config.github.repos ?? []).map(r => ({ repo: r.repo, workspace: r.workspace, cwd: r.cwd, enabled: r.enabled })),
+      // 监听清单跟随 owner 注册表（只读展示）：githubStatus.followed 由 GitHubSource.status() 提供
+      followed: githubStatus?.followed ?? [],
+      resolveErrors: githubStatus?.resolveErrors ?? {},
       status: githubStatus ?? null,
     },
   }
