@@ -27,6 +27,7 @@ import { Store, SCHEMA_VERSION } from './store.js'
 import { Hub, setHub } from './hub.js'
 import { FeishuSource } from './feishu.js'
 import { GitHubSource } from './github.js'
+import { Recycler } from './recycle.js'
 
 export const name = 'hub-bot'
 export const inject = ['sessionController', 'sessionPersistence', 'webServer']
@@ -152,6 +153,10 @@ export function apply(ctx, rawConfig) {
   }
   // 重启恢复（#66）: end running assignments "host restarted", then resume any queued stored work — and keep
   // driving the runner every second so backoff retries fire even when no new traffic arrives.
+  // scratch 回收 (#70): router 回收触发段负责终态即时判定; sweep 挂 1s tick 兜底不经 Router 的终止
+  // (owner-tools report-failure、github 源头终止)。回收失败不阻断任何任务(记 warn, 下轮重试)。
+  const recycler = new Recycler({ store, registry: hub.registry, logger: ctx.logger })
+  hub.router.onTicketTerminal = ticketId => recycler.maybeRecycleForTicket(ticketId)
   hub.router.markRestart()
   void hub.router.tick().catch(error => ctx.logger.warn('hub-bot delivery resume failed: %s', error?.message ?? error))
   const deliveryTimer = setInterval(() => {
@@ -163,6 +168,7 @@ export function apply(ctx, rawConfig) {
     if (config.github.enabled) {
       void github.deliverReplies().catch(error => ctx.logger.warn('hub-bot github reply tick failed: %s', error?.message ?? error))
     }
+    try { recycler.sweep() } catch (error) { ctx.logger.warn('hub-bot recycle sweep failed: %s', error?.message ?? error) }
   }, 1000)
   deliveryTimer.unref?.()
   ctx.on('dispose', () => clearInterval(deliveryTimer))
@@ -282,6 +288,10 @@ export function apply(ctx, rawConfig) {
         const method = req.method ?? 'GET'
         if (route === 'state' && method === 'GET') {
           json(res, 200, { ok: true, name, stateDir: store.stateDir, database: store.path, schemaVersion: store.schemaVersion, declaredSchemaVersion: SCHEMA_VERSION })
+        } else if (route === 'owners' && method === 'POST') {
+          // Dev proof aid (#70): register a dynamic owner (dir needs cwd; scratch allocates its temp dir).
+          const body = await readBody(req)
+          json(res, 200, hub.registry.create({ kind: requireString(body, 'kind'), cwd: optionalString(body, 'cwd'), workspace: optionalString(body, 'workspace') }))
         } else if (route === 'owners' && method === 'GET') {
           json(res, 200, { owners: hub.registry.list() })
         } else if (route === 'sessions' && method === 'POST') {

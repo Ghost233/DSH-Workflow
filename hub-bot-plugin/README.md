@@ -119,6 +119,24 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - **dsh-badge**：bot 在 GitHub 的一切产出结尾带 powered-by-dsh 徽标（ack/回复由代码强制；PR 描述等 L2/L3 自然产出由注入文本与 persona 约束）。
 - dev 实证探针：`GET github/status`（逐仓库开关/水位线/错误）、`POST github/poll {repo?}`（立即一轮）、`POST github/simulate {kind, repo, item}`（mock 事件走真实归一化/Policy/路由）。
 
+## 三类负责人与 scratch 回收（#70）
+
+- **三类形态**：`repo`（仓库+GitHub 联动，常驻）、`dir`（任意本地目录，纯本地执行不进 GitHub，路由按目录匹配，常驻）、`scratch`（临时目录 `stateDir/scratch/<id>`，即时任务，**任务完成即自动回收**）。b 类目录由用户显式指定（"给 <path> 建个负责人"）；路由不到仓库时 L1 反问"要建目录 bot 吗？目录是？"而非自猜；目录已是 git 仓库则利用（diff 审计/回滚），不是则不强制 init。
+- **回收触发**：票进入终态（done=验收通过 / failed=终止）即做回收判定——Router 终态转移即时触发，1s tick 的 sweep 兜底不经 Router 的终止（report-failure、github 源头终止）。
+- **回收安全**：仅当该 scratch owner 名下无进行中/待确认票时才回收；dir/repo 负责人永不回收；回收失败不阻断任务完成（warn + 下轮重试）。
+- **回收动作（落审计）**：先抓目录内容清单（截断至 50 项+总数）→ 删目录 → 注册表行转 `recycled`（行与 sessionId 保留，**会话历史保留可查**）→ 审计行经 outbox 送达 chief（统一出口）。
+- **产物带出**：L2 报告必须列目录内容清单（persona 纪律）；产物发到飞书/复制到持久目录/写入产出物清单随报告提交；未带出的随目录删除。
+- dev 实证探针：`POST owners {kind,cwd?,workspace?}` 注册动态负责人（scratch 自动分配目录）。
+
+## 可靠性与并发（#72）
+
+- **执行槽**：同 owner 并发 working 任务上限 `config.concurrency.slotsPerOwner`（默认 3，正整数可配，未知键拒绝）。槽只对 **working** 计数——交还给人（person/answer、person/confirm、person/review）立即释放，blocked/failed/done 同样释放。GitHub 自动任务与人的新任务同规则占槽（显式请求豁免的是确认流程，不是槽位）。
+- **queued 排队**：槽满时新票照样先存（trigger + ticket + **held** 注入行，先存后做不丢），票转 排队中 阶段；held 行对投递扫描不可见。槽空出后由 1s tick 按 **createdAt FIFO** 提升最旧票（queued→working）并释放其注入行——提升即投递，同一脉搏完成。提升在转移之后才放行注入行，崩溃只落在可修复侧（working 票配 held 行，下一 tick 崩修释放），永不超额准入。
+- **人的专用槽**：既有票的跟进消息永不排队——对 queued 票的人为跟进立即提升它（绕过槽上限，queued→working），held 行按序先投、跟进注入紧随其后；RELEASABLE 等待态照旧由人的消息直接释放。
+- **多入口串行化**：L1 工具 / devApi / 飞书（经 L1）/ GitHub 轮询四条入口的 routeToOwner 全部经 **per-owner promise 链**串行——槽账本的读-判-写不会与同 owner 的并行调用交错；tick 的提升脉搏也挂在同一链上。SQLite（node:sqlite）语句级同步单写者，链保证的是跨语句决策的原子性。
+- **模型限流/预算耗尽**：属 DSH 运行时行为——运行时按同 requestId 续跑/重试，任务票不转 failed（自动反馈永不恢复暂停的工作）；插件不感知也不干预。
+- 实证：`docs/evidence-task-10.md`（槽矩阵/FIFO 提升/专用槽/多入口串行/pause 跨重启/先存后做全链审计）。
+
 ## 已知限制
 
 - `sessionController.prompt()` 注入的消息 source.kind 为 "user"，与人手输入不可区分；Source/Trigger 层需按 superagent AgentDelivery 模式打插件自有 source 标记（幂等 requestId 已由插件生成 `hub-bot-<uuid>`，路由注入为 `hub-bot-route-<uuid>`）。

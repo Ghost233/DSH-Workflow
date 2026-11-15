@@ -23,9 +23,9 @@
  */
 
 /** The stages of the full lifecycle (spec #66). */
-// 九态模型。注意两个「完整性保留」阶段（双轴审查 P2）：person/confirm 的生产者是后续确认流程工单（#69），
-// queued 的生产者是后续执行槽并发工单（#72）——当前没有代码路径把票推进这两态，它们为模型完整性保留，
-// 转换规则已就位，不要删除。
+// 九态模型。person/confirm 的生产者是确认流程（#69：fork_session 等重操作确认），queued 的生产者是执行槽
+// 并发（#72：同 owner working 数达上限时新票排队，槽空出 FIFO 提升，人的跟进走专用槽立即提升）——两个
+// 阶段均有真实代码路径驱动，转换规则在 TRANSITIONS 就位。
 export const STAGES = ['idle', 'queued', 'working', 'person/answer', 'person/confirm', 'person/review', 'blocked', 'failed', 'done']
 
 /** The verbatim user-facing reading of each stage (spec: 状态摘要是对状态的朗读）. */
@@ -136,6 +136,15 @@ export class TaskBoard {
     const ticket = this.#mustGet(ticketId)
     if (ticket.stage !== 'idle') return ticket
     return this.#transition(ticketId, 'working', 'system')
+  }
+
+  /**
+   * 执行槽 (#72): a queued ticket wins an execution slot (queued → working 排队中 → 进行中）. The Router calls
+   * this when a slot frees (FIFO by createdAt) or when a human follow-up admits the ticket through the
+   * dedicated human slot (人的消息永不被新工作阻塞）.
+   */
+  promote(ticketId, { by } = {}) {
+    return this.#transition(ticketId, 'working', by ?? 'system')
   }
 
   /**

@@ -117,6 +117,15 @@ export class OwnerRegistry {
     return this.#write({ ...row, sessionId, status: 'created', updatedAt: this.now() })
   }
 
+  /**
+   * Lifecycle: the scratch owner's directory was recycled (issue #70). The row — including its sessionId —
+   * is retained: 注册表保留 recycled 记录, 会话历史保留可查. recycled rows never recycle twice.
+   */
+  markRecycled(id) {
+    const row = this.#require(id)
+    return this.#write({ ...row, recycled: true, recycledAt: this.now(), updatedAt: this.now() })
+  }
+
   /** The owner's Session was found gone: forget it so the next route lazily recreates one. */
   markSessionMissing(id) {
     const row = this.#require(id)

@@ -53,6 +53,8 @@ export class Router {
    */
   #lastAutoReportAt = null
   #lastAutoReportText = null
+  /** #72 并发安全： per-owner promise chains — see the constructor note. */
+  #ownerChains = new Map()
 
   constructor({ store, registry, sessions, tasks, runner, config, now, ids, onSystemProblem }) {
     this.store = store
@@ -63,6 +65,14 @@ export class Router {
     this.ids = ids ?? { uuid: () => randomUUID() }
     // The lifecycle guard lives in TaskBoard (#66); Router drives tickets through it, never around it.
     this.tasks = tasks ?? new TaskBoard({ store, now: this.now })
+    // 回收触发段 (#70): optional terminal-ticket callback (Recycler.maybeRecycleForTicket). Assigned by the
+    // plugin root after construction; invoked after every router-initiated done/failed transition. Terminal
+    // transitions that bypass the Router (owner-tools report-failure, channel 终止) are the Recycler sweep's job.
+    this.onTicketTerminal = null
+    // #72 并发安全: per-owner promise chains serialize every routeToOwner (all entries — L1 tool, devApi,
+    // 飞书, GitHub) and every promotion pass for that owner, so read-check-write sequences (slot counting)
+    // never interleave. SQLite writes themselves are synchronous (node:sqlite) — the single-writer
+    // discipline holds per statement; the chain guards the multi-statement admission decision.
     // Stored work lives in the OutboxRunner; its clock derives from this Router's clock so tests stay
     // deterministic. The deliverer is Router-internal: only it knows how to (re)bind owner Sessions.
     this.runner = runner ?? new OutboxRunner({
@@ -107,6 +117,10 @@ export class Router {
   async tick() {
     await this.runner.tick()
     await this.#sweepConfirmTimeouts()
+    // #72 执行槽： a slot freed since the last pulse promotes the oldest queued ticket (FIFO); the second
+    // runner pass delivers the released injection in the same pulse （提升即投递）.
+    await this.#promoteQueued()
+    await this.runner.tick()
   }
 
   /**
@@ -123,6 +137,7 @@ export class Router {
       if (nowMs - Date.parse(at) <= CONFIRM_TIMEOUT_MS) continue
       try {
         this.tasks.cancel(ticket.id, { by: 'system', reason: '确认超过 24 小时未回应，自动取消', kind: 'timeout' })
+        this.#notifyTerminal(ticket.id)
       } catch { continue } // another path resolved it meanwhile — nothing to announce
       await this.replySource({ text: '已取消：任务 ' + ticket.id + ' 的确认请求超过 24 小时未回应（' + ticket.pendingConfirm.text + '）', to: 'dsh:session:chief' })
     }
@@ -205,7 +220,19 @@ export class Router {
     const owner = this.registry.get(ownerId)
     if (!owner) throw new RouterError('unknown-owner', 'route_to_owner: unknown owner "' + ownerId + '" — call list_owners first')
     if (owner.role === 'chief') throw new RouterError('cannot-route-to-chief', 'route_to_owner: the chief is the router, not a route target')
-    if (ticketId !== undefined) return this.#followUp({ owner, message: message.trim(), ticketId, resolution, authorization })
+    // #70: a recycled scratch owner's directory is gone (物理上无法恢复) — follow-ups to its finished task start
+    // a NEW task instead (spec「已结束任务的跟进」例外); never route into a recycled row.
+    if (owner.recycled) throw new RouterError('owner-recycled', 'route_to_owner: owner ' + ownerId + ' 已回收（临时目录已删）——请新建任务，不要复活旧负责人')
+    // #72 并发安全： every entry (L1 tool / devApi / 飞书 / GitHub) serializes per owner through the chain,
+    // so the slot ledger below can never be read mid-write by a same-owner sibling.
+    return this.#serialized(owner.id, () =>
+      this.#routeToOwnerLocked({ owner, message: message.trim(), triggerRef, ticketId, resolution, authorization }))
+  }
+
+  /** routeToOwner's body, run under the per-owner chain (see routeToOwner). */
+  async #routeToOwnerLocked({ owner, message, triggerRef, ticketId, resolution, authorization }) {
+    const ownerId = owner.id
+    if (ticketId !== undefined) return this.#followUp({ owner, message, ticketId, resolution, authorization })
     if (resolution !== undefined) throw new RouterError('resolution-needs-ticket', 'route_to_owner: resolution requires ticketId')
     if (triggerRef !== undefined) {
       const existing = this.getTrigger(triggerRef)
@@ -220,16 +247,77 @@ export class Router {
     const ensured = await this.#ensureSession(owner)
     const requestId = 'hub-bot-route-' + this.ids.uuid()
     const freshTicketId = 'tsk-' + this.ids.uuid()
-    // 先存后做: the ticket waits as 待触发 (idle) until the stored injection is actually delivered.
+    // #72 执行槽： with every per-owner slot busy the new task queues （排队中） — trigger, ticket and the
+    // HELD injection row are all stored now （先存后做）; the row delivers when a slot frees (#promoteQueued).
+    // The ledger counts working tickets only: handing a task back to a person releases the slot at once
+    // (spec「并发与人的优先」). count→insert→enqueue run synchronously — no interleaving mid-decision.
+    const atCapacity = this.#workingCount(ownerId) >= this.#slotsPerOwner()
+    // 先存后做： the ticket waits as 待触发 (idle) — or 排队中 (queued) at capacity — until the stored
+    // injection is actually delivered.
     this.#insertTicket({
-      id: freshTicketId, triggerId: trigger.id, owner: ownerId, stage: 'idle', mechanism: 'inject',
+      id: freshTicketId, triggerId: trigger.id, owner: ownerId, stage: atCapacity ? 'queued' : 'idle', mechanism: 'inject',
       targetSession: ensured.sessionId, requestId, authorization: auth, createdAt: at, updatedAt: at,
     })
-    const text = '[hub-bot 路由 ' + freshTicketId + '] ' + message.trim() + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + freshTicketId
-    this.runner.enqueue({ ticketId: freshTicketId, kind: 'inject', to: 'session:' + ensured.sessionId, sessionId: ensured.sessionId, body: text, requestId })
+    const text = '[hub-bot 路由 ' + freshTicketId + '] ' + message + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + freshTicketId
+    this.runner.enqueue({ ticketId: freshTicketId, kind: 'inject', to: 'session:' + ensured.sessionId, sessionId: ensured.sessionId, body: text, requestId, held: atCapacity })
     await this.runner.tick()
     const stored = this.tasks.getTicket(freshTicketId)
     return { ownerId, sessionId: stored.targetSession, ticketId: freshTicketId, requestId, createdSession: ensured.created, rebuilt: stored.lastDelivery?.rebuilt ?? false, deduped: false, stage: stored.stage }
+  }
+
+  /** #72: runs `fn` after every prior op on the same owner; a rejected op never breaks the chain. */
+  #serialized(ownerId, fn) {
+    const prev = this.#ownerChains.get(ownerId) ?? Promise.resolve()
+    const run = prev.catch(() => {}).then(fn)
+    this.#ownerChains.set(ownerId, run.catch(() => {}))
+    return run
+  }
+
+  /** #72: the per-owner execution-slot cap (config.concurrency.slotsPerOwner; spec default 3). */
+  #slotsPerOwner() {
+    const value = this.config?.concurrency?.slotsPerOwner
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 ? value : 3
+  }
+
+  /** #72: one owner's working-stage ticket count — the slot ledger (person/* stages hold no slot). */
+  #workingCount(ownerId) {
+    return this.store.db.prepare('SELECT value FROM ticket').all()
+      .map(raw => JSON.parse(String(raw.value)))
+      .filter(ticket => ticket.owner === ownerId && normalizeStage(ticket.stage) === 'working')
+      .length
+  }
+
+  /**
+   * #72 执行槽提升： per owner, first repair crash-torn promotions (a working ticket whose injection rows
+   * are still held — the promotion transition ran but the release did not), then admit the oldest queued
+   * tickets while slots are free (FIFO by createdAt). Promotion transitions BEFORE the row release so a
+   * crash between them is the repairable case above, never an over-admission. All reads/writes inside the
+   * per-owner chain are synchronous — the admission decision is atomic.
+   */
+  async #promoteQueued() {
+    const ownerIds = [...new Set(this.store.db.prepare('SELECT value FROM ticket').all()
+      .map(raw => JSON.parse(String(raw.value)).owner))]
+    for (const ownerId of ownerIds) {
+      await this.#serialized(ownerId, () => {
+        const mine = this.store.db.prepare('SELECT value FROM ticket').all()
+          .map(raw => JSON.parse(String(raw.value)))
+          .map(ticket => ({ ...ticket, stage: normalizeStage(ticket.stage) }))
+          .filter(ticket => ticket.owner === ownerId)
+        for (const ticket of mine.filter(t => t.stage === 'working')) this.runner.releaseHeld({ ticketId: ticket.id })
+        let working = mine.filter(t => t.stage === 'working').length
+        const queued = mine
+          .filter(t => t.stage === 'queued')
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        for (const ticket of queued) {
+          if (working >= this.#slotsPerOwner()) break
+          try {
+            this.tasks.promote(ticket.id)
+          } catch { continue } // the ticket raced to another stage meanwhile — leave it to that path
+          this.runner.releaseHeld({ ticketId: ticket.id })
+          working++
+        }
+      })
+    }
   }
 
   /** The follow-up/acceptance path: same task, same owner Session, NO new Trigger and NO new authorization. */
@@ -250,6 +338,7 @@ export class Router {
         } catch (error) {
           throw translateTaskError(error, (code, message) => new RouterError(code, message))
         }
+        this.#notifyTerminal(ticketId) // #70 验收通过即回收判定
         return { ownerId: owner.id, sessionId: owner.sessionId, ticketId, requestId: ticket.requestId, createdSession: false, rebuilt: false, deduped: false, accepted: true, stage: 'done' }
       }
       if (resolution === 'cancel') {
@@ -258,6 +347,7 @@ export class Router {
         } catch (error) {
           throw translateTaskError(error, (code, message) => new RouterError(code, message))
         }
+        this.#notifyTerminal(ticketId) // #70 取消即回收判定
         return { ownerId: owner.id, sessionId: owner.sessionId, ticketId, requestId: ticket.requestId, createdSession: false, rebuilt: false, deduped: false, cancelled: true, stage: 'done' }
       }
       // #69: the user approved the pending fork — execute it (code-driven, never model-discretion),
@@ -278,6 +368,17 @@ export class Router {
     let resumed = false
     if (ticket.stage === 'done') {
       throw new RouterError('illegal-transition', 'route_to_owner: ticket ' + ticketId + ' is done — create a new task instead of reviving it')
+    }
+    if (ticket.stage === 'queued') {
+      // 人的专用槽 (#72): a human message on a QUEUED task admits it immediately — queued new work never
+      // blocks the human from continuing an existing task (spec「并发与人的优先」). The held injections
+      // release in per-ticket order (original first, this follow-up enqueued behind it).
+      try {
+        this.tasks.promote(ticketId, { by: 'route' })
+      } catch (error) {
+        throw translateTaskError(error, (code, message) => new RouterError(code, message))
+      }
+      this.runner.releaseHeld({ ticketId })
     }
     if (['person/review', 'person/answer', 'person/confirm', 'blocked', 'failed'].includes(ticket.stage)) {
       // 人的消息直接释放： waiting/stopped tasks resume to working (spec「状态模型」).
@@ -310,6 +411,14 @@ export class Router {
   }
 
   /**
+   * #70 回收触发段: notify the terminal-ticket listener (Recycler) without ever letting recycling block the
+   * transition itself — a listener failure is swallowed here and retried by the Recycler's sweep.
+   */
+  #notifyTerminal(ticketId) {
+    try { this.onTicketTerminal?.(ticketId) } catch { /* 回收失败不阻断任务完成 — sweep 兜底 */ }
+  }
+
+  /**
    * The runner's deliverer. kind 'inject' prompts the owner Session (rebuilding it once when the registry's
    * pointer dangles) and flips idle → working (待触发 → 进行中）. Reply/escalation rows are recorded durable
    * intents until a real channel deliverer (Feishu) lands — storing them already satisfies 先存后做.
@@ -323,7 +432,10 @@ export class Router {
     if (!ticket) throw permanent('outbox ' + row.id + ': ticket ' + row.ticketId + ' is gone')
     // 缺上下文升级不编造： no authorization record → fail the ticket, never execute on a guess.
     if (!ticket.authorization) {
-      try { this.tasks.fail({ ticketId: ticket.id, reason: '授权记录缺失（票面权威），拒绝执行' }) } catch { /* stage may not allow it */ }
+      try {
+        this.tasks.fail({ ticketId: ticket.id, reason: '授权记录缺失（票面权威），拒绝执行' })
+        this.#notifyTerminal(ticket.id) // #70 回收判定
+      } catch { /* stage may not allow it */ }
       throw permanent('ticket ' + ticket.id + ' has no authorization record')
     }
     const owner = this.registry.get(ticket.owner)
