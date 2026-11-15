@@ -16,10 +16,11 @@
  * missing is failed permanently （缺上下文升级不编造）, never executed on a guess.
  */
 import { randomUUID } from 'node:crypto'
-import { TaskBoard, STAGE_TEXT, normalizeStage, translateTaskError } from './tasks.js'
+import { TaskBoard, STAGE_TEXT, normalizeStage, translateTaskError, CONFIRM_TIMEOUT_MS } from './tasks.js'
 import { OutboxRunner } from './outbox.js'
 import { truncateWords } from './discipline.js'
 import { buildDigestText, buildAutoSummary } from './reporting.js'
+import { confirmTicketFork } from './fork.js'
 
 /** A routing failure with a machine-readable code for tool/API surfaces. */
 export class RouterError extends Error {
@@ -98,9 +99,61 @@ export class Router {
     return this.tasks.getTicket(id)
   }
 
-  /** Drives due outbox deliveries (the dev harness and the plugin timer both call this). */
+  /**
+   * Drives due outbox deliveries (the dev harness and the plugin timer both call this).
+   * #69: the same pulse sweeps person/confirm tickets past the 24h confirmation timeout
+   * (spec「错误场景」: 待确认路由 24 小时未确认自动取消，回复"已取消").
+   */
   async tick() {
     await this.runner.tick()
+    await this.#sweepConfirmTimeouts()
+  }
+
+  /**
+   * 确认超时清扫： a person/confirm request unanswered for CONFIRM_TIMEOUT_MS auto-cancels (person/confirm →
+   * done, by 'system') and the cancellation is announced through the chief （统一出口）. The announce row is
+   * stored-then-delivered by the runner like every outward message （先存后做）; a ticket cancelled once leaves
+   * person/confirm, so the notice fires exactly once.
+   */
+  async #sweepConfirmTimeouts() {
+    const nowMs = Date.parse(this.now())
+    for (const ticket of this.queryTasks({ stage: 'person/confirm' })) {
+      const at = ticket.pendingConfirm?.at
+      if (!at) continue
+      if (nowMs - Date.parse(at) <= CONFIRM_TIMEOUT_MS) continue
+      try {
+        this.tasks.cancel(ticket.id, { by: 'system', reason: '确认超过 24 小时未回应，自动取消', kind: 'timeout' })
+      } catch { continue } // another path resolved it meanwhile — nothing to announce
+      await this.replySource({ text: '已取消：任务 ' + ticket.id + ' 的确认请求超过 24 小时未回应（' + ticket.pendingConfirm.text + '）', to: 'dsh:session:chief' })
+    }
+  }
+
+  /**
+   * resolution:'confirm' (#69): executes the stored fork action (code-driven via the Sessions port), rebinds
+   * the task at the forked Session and wakes the owner to inject the continuation there. The wake carries the
+   * ticket's stored authorization （票面权威） like every owner-bound injection. A fork failure throws and
+   * leaves the ticket at person/confirm — the user may retry, reject or cancel.
+   */
+  async #confirmPendingFork(owner, ticket, ticketId) {
+    let result
+    try {
+      result = await confirmTicketFork({ tasks: this.tasks, sessions: this.sessions, ticketId })
+    } catch (error) {
+      throw translateTaskError(error, (code, message) => new RouterError(code, message))
+    }
+    // 缺上下文升级不编造： the fork executed, but without an authorization record the continuation must not run.
+    if (!ticket.authorization) {
+      try { this.tasks.escalate({ ticketId, reason: '授权记录缺失（票面权威），fork 已执行但拒绝凭会话叙事续作' }) } catch { /* stage may not allow it */ }
+      throw new RouterError('authorization-missing', 'route_to_owner: ticket ' + ticketId + ' has no authorization record — refusing to act on a guess')
+    }
+    const auth = ticket.authorization
+    const ensured = await this.#ensureSession(owner)
+    const text = '[hub-bot 确认 ' + ticketId + '] 用户已确认 fork：原会话 ' + result.fromSessionId + ' → 新会话 ' + result.sessionId + '（cwd=' + result.cwd + '）。'
+      + '任务已绑到新会话并回到进行中；请用 inject_session（带 ticketId）把续作指令注入新会话继续任务。原会话保留可查，勿再注入。'
+      + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + ticketId
+    this.runner.enqueue({ ticketId, kind: 'inject', to: 'session:' + ensured.sessionId, sessionId: ensured.sessionId, body: text, requestId: 'hub-bot-route-' + this.ids.uuid() })
+    await this.runner.tick()
+    return { ownerId: owner.id, sessionId: ensured.sessionId, ticketId, requestId: ticket.requestId, createdSession: ensured.created, rebuilt: false, deduped: false, confirmed: true, fork: { fromSessionId: result.fromSessionId, sessionId: result.sessionId }, stage: 'working' }
   }
 
   /** Restart recovery: end running assignments "host restarted" and arm the recovery note (spec: 重启恢复）. */
@@ -140,10 +193,12 @@ export class Router {
    * answer / confirm) or stopped (blocked / failed) is RELEASED back to working by the human's message
    * (spec: 人的消息直接释放）; a working ticket just takes the injection; a done ticket rejects.
    * `resolution: 'accept'` is the user-acceptance gate (person/review → done); `resolution: 'cancel'`
-   * cancels a pending confirmation (person/confirm → done); neither injects anything.
+   * cancels a pending confirmation (person/confirm → done); `resolution: 'confirm'` executes the pending
+   * fork and wakes the owner (#69); `resolution: 'reject'` refuses it (person/confirm → blocked, 保持原会话）.
+   * accept/cancel/reject inject nothing; confirm injects the owner wake.
    *
    * @returns deduped receipt { ownerId, sessionId, ticketId, requestId, createdSession, rebuilt, deduped,
-   *   stage }, plus resumed/accepted/cancelled on the follow-up paths
+   *   stage }, plus resumed/accepted/cancelled/confirmed/rejected on the follow-up paths
    */
   async routeToOwner({ ownerId, message, triggerRef, ticketId, resolution, authorization }) {
     if (typeof message !== 'string' || !message.trim()) throw new RouterError('message-required', 'route_to_owner: message must be a non-empty string')
@@ -205,7 +260,20 @@ export class Router {
         }
         return { ownerId: owner.id, sessionId: owner.sessionId, ticketId, requestId: ticket.requestId, createdSession: false, rebuilt: false, deduped: false, cancelled: true, stage: 'done' }
       }
-      throw new RouterError('unknown-resolution', 'route_to_owner: resolution must be "accept" or "cancel" when given')
+      // #69: the user approved the pending fork — execute it (code-driven, never model-discretion),
+      // rebind the task to the forked Session and wake the owner to continue the task there.
+      if (resolution === 'confirm') return this.#confirmPendingFork(owner, ticket, ticketId)
+      // #69: the user rejected the proposal — no fork; the ticket keeps its original Session
+      // （保持原会话） and waits 被卡住 for the human's next message to release it.
+      if (resolution === 'reject') {
+        try {
+          this.tasks.rejectConfirm({ ticketId, reason: message, by: 'user' })
+        } catch (error) {
+          throw translateTaskError(error, (code, message) => new RouterError(code, message))
+        }
+        return { ownerId: owner.id, sessionId: owner.sessionId, ticketId, requestId: ticket.requestId, createdSession: false, rebuilt: false, deduped: false, rejected: true, stage: 'blocked' }
+      }
+      throw new RouterError('unknown-resolution', 'route_to_owner: resolution must be "accept", "cancel", "confirm" or "reject" when given')
     }
     let resumed = false
     if (ticket.stage === 'done') {

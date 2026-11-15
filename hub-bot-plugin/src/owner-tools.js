@@ -2,8 +2,10 @@
  * The L2 owner tool plugin — loaded as a STATIC row inside the hub-bot-owner preset's plugins list
  * (cordis.patch.yml), the same proven channel as src/router-tools.js.
  *
- * Six tools (spec #65「L2 会话管理」): search_sessions / read_session / inject_session / create_session /
- * report / escalate. Two disciplines are enforced in code, not left to the prompt:
+ * Seven tools (spec #65「L2 会话管理」+ #69): search_sessions / read_session / inject_session /
+ * create_session / fork_session / report / escalate. fork_session only PROPOSES the fork — the ticket goes
+ * person/confirm and the actual fork runs code-driven on the user's confirm (src/fork.js, #69).
+ * Two disciplines are enforced in code, not left to the prompt:
  *   - identity: the calling session's cwd (workingDirectory service over exec.agent) must match a registered
  *     owner's cwd — owner tools refuse to run anywhere else;
  *   - 越界拒执: create_session/inject_session/read_session targets must live inside the owner's cwd subtree;
@@ -19,6 +21,7 @@ import { TaskError, translateTaskError } from './tasks.js'
 import { isWithinCwd } from './paths.js'
 import { recordReportFact } from './reporting.js'
 import { insertOutbox } from './outbox.js'
+import { buildForkAction, forkConfirmText } from './fork.js'
 
 export const name = 'hub-bot-owner-tools'
 // See router-tools.js: sessionController/sessionPersistence are load-bearing for cross-realm service
@@ -290,6 +293,43 @@ export function apply(ctx) {
         await api.router.tick()
         const { text } = api.tasks.summarize(ticket.id)
         return { ticketId: ticket.id, stage: ticket.stage, stageText: text }
+      } catch (error) { throw unwrapTaskError(error) }
+    },
+  })
+
+  // #69: fork 是重操作，永远先确认 — the tool only PROPOSES: the action is stored on the ticket face
+  // (先存后做), the ticket turns 等您确认, and the code-built confirm text (object + expected outcome + reason)
+  // reaches the user through the report digest. The actual fork runs in src/router.js on resolution:'confirm'.
+  ctx.tools.register({
+    name: 'fork_session',
+    description: '发起 fork 确认（重操作，用户确认后才执行）：把责任边界内某个执行会话 fork 成新会话继续任务——用于会话上下文污染/走偏/工具故障，或独立开发的隔离续作。调用后票转「等您确认」，确认请求经汇报链呈给用户；确认前不要重复发起，也不要再注入该会话。用户确认后系统自动执行 fork 并把任务绑到新会话，你会收到唤醒去注入续作；被拒绝则票转被卡住。',
+    parameters: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '要 fork 的执行会话 id（必须在责任边界内）' },
+        ticketId: { type: 'string', description: '续作的任务票 id' },
+        reason: { type: 'string', description: 'fork 原因与预期结果（一两句，将原样呈给用户）' },
+        atSeq: { type: 'number', description: '可选：从该事件序号（含）处切 fork（丢掉污染的尾巴）；缺省取最近完成回合边界' },
+      },
+      required: ['sessionId', 'ticketId', 'reason'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: { type: 'object', properties: { ticketId: { type: 'string' }, stage: { type: 'string' }, stageText: { type: 'string' } }, required: ['ticketId', 'stage', 'stageText'], additionalProperties: false },
+      render: (_args, value) => [{ type: 'text', text: '已发起 fork 确认：任务 ' + value.ticketId + ' 转「' + value.stageText + '」，用户确认后系统才会执行 fork' }],
+    },
+    execute: async (args, exec) => {
+      const owner = await callerOwner(ctx, api, exec)
+      const signal = exec?.signal ?? AbortSignal.timeout(30000)
+      const cwd = await mustBeInside(ctx, owner, args.sessionId, signal)
+      mustOwnTicket(api, owner, args.ticketId)
+      try {
+        const action = buildForkAction({ sessionId: args.sessionId, cwd, atSeq: args.atSeq, reason: args.reason })
+        const ticket = api.tasks.askConfirm({ ticketId: args.ticketId, question: forkConfirmText(action, args.ticketId), action })
+        // 需要行动 = 汇报事实： the confirm request joins this wake's digest and reaches the user via the chief.
+        recordReportFact(api.store, owner.id, ticket)
+        await api.router.tick()
+        return { ticketId: ticket.id, stage: ticket.stage, stageText: api.tasks.summarize(ticket.id).text }
       } catch (error) { throw unwrapTaskError(error) }
     },
   })

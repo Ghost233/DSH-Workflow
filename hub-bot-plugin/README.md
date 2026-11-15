@@ -100,6 +100,15 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - **凭据失效**：`status().credentialState` 为 missing/invalid 时面板提示重新扫码（devApi `feishu/status` 同源）。
 - dev 实证探针：`POST /hub-bot/api/feishu/simulate` 注入 mock 事件走真实归一化/Policy/注入路径（无真实飞书时实证全链）。
 
+## fork 路径与确认流程（#69）
+
+- **fork 是重操作，永远先确认**：L2 用 `fork_session` 工具只发起**确认**——意图以结构化 action 落票面 `pendingConfirm`（先存后做），票转「等您确认」，确认文本由代码生成（src/fork.js：对象+预期结果+原因，原样呈用户）；确认请求随汇报链 digest 到 L1。确认前 L2 停手，不重复发起、不注入。
+- **确认后由代码执行，不靠模型自觉**：L1 `route_to_owner(ticketId, resolution:"confirm")` → Router 调 sessionController `fork()`（缺省取最近完成回合前缀；`atSeq` 可指定含边界切点，丢掉污染的尾巴）→ 票回进行中、`mechanism:'fork'`、绑新会话（新 Assignment）→ 唤醒 L2 注入续作。fork 失败票保持「等您确认」，可重试/拒绝/取消。
+- **否定与取消**：`resolution:"reject"` 票转被卡住、**保持原会话**，等用户下一句释放；`resolution:"cancel"` 是终态（票转完成）。两种决议与确认一样记 `confirmOutcome` 于票面供审计。
+- **24h 确认超时自动取消**（spec「错误场景」）：1 秒 tick 顺带清扫超时的「等您确认」票——自动取消（by system）并经 L1 统一出口回复「已取消」（先存后做、恰好一次）。
+- **互不干扰**：fork 只读源会话事件切前缀，原会话保留可查、全程不再注入；两个会话用户都可打开。默认注入（inject_session）不改变会话拓扑。
+- **独立开发的代码隔离**：worktree 创建沿用 Home Repo 约定 `scripts/create-worktree.sh <repo> <issue> <slug>`（worktree 落在 `<repo>.worktrees/<issue>-<slug>`，分支 `fix/<issue>-<slug>`），由执行会话在续作中完成。
+
 ## 已知限制
 
 - `sessionController.prompt()` 注入的消息 source.kind 为 "user"，与人手输入不可区分；Source/Trigger 层需按 superagent AgentDelivery 模式打插件自有 source 标记（幂等 requestId 已由插件生成 `hub-bot-<uuid>`，路由注入为 `hub-bot-route-<uuid>`）。

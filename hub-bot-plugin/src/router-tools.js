@@ -78,7 +78,7 @@ export function apply(ctx) {
 
   register(ctx, {
     name: 'route_to_owner',
-    description: '把一条消息路由给指定负责人：负责人会话不存在则懒创建（cwd=注册表目录），消息含授权记录注入其会话。任务先存为待触发、由可靠投递转进行中；瞬时失败自动 2 秒退避重试，无需重复调用。同一 triggerRef 重复路由只建一个任务。带 ticketId 时是追问：等验收/等回复/等确认/被卡住/失败的票被释放回进行中并注入追问，不新建票（追问不重新绑定触发与授权）；ticketId + resolution:"accept" 是用户验收、票转完成；resolution:"cancel" 取消一个等确认的票；二者都不注入。',
+    description: '把一条消息路由给指定负责人：负责人会话不存在则懒创建（cwd=注册表目录），消息含授权记录注入其会话。任务先存为待触发、由可靠投递转进行中；瞬时失败自动 2 秒退避重试，无需重复调用。同一 triggerRef 重复路由只建一个任务。带 ticketId 时是追问：等验收/等回复/等确认/被卡住/失败的票被释放回进行中并注入追问，不新建票（追问不重新绑定触发与授权）；ticketId + resolution:"accept" 是用户验收、票转完成；resolution:"cancel" 取消一个等确认的票；resolution:"confirm" 确认票面提议（fork 由系统自动执行并绑新会话续作）；resolution:"reject" 否定提议（票转被卡住、保持原会话）；除 confirm 外都不注入。',
     parameters: {
       type: 'object',
       properties: {
@@ -86,7 +86,7 @@ export function apply(ctx) {
         message: { type: 'string', description: '要注入的消息原文（追问时即追问内容）' },
         triggerRef: { type: 'string', description: '可选：来源消息 id（幂等键），同一来源重复注入不重复建任务' },
         ticketId: { type: 'string', description: '可选：追问/验收的目标任务票（query_tasks 取得）' },
-        resolution: { type: 'string', enum: ['accept', 'cancel'], description: '可选：accept = 用户验收通过（票须在等您验收）；cancel = 用户取消（票须在等您确认）' },
+        resolution: { type: 'string', enum: ['accept', 'cancel', 'confirm', 'reject'], description: '可选：accept = 用户验收通过（票须在等您验收）；cancel = 用户取消整个任务（票须在等您确认）；confirm = 用户确认票面提议（如 fork，票须在等您确认，确认后系统自动执行）；reject = 用户否定票面提议（票转被卡住、保持原会话）' },
       },
       required: ['ownerId', 'message'],
       additionalProperties: false,

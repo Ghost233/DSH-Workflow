@@ -219,3 +219,98 @@ test('cwd containment rule unchanged (path-segment aware)', () => {
   assert.ok(!isWithinCwd('/a/b', '/a/bc'))
   assert.ok(!isWithinCwd('/a/b', '/a'))
 })
+
+test('askConfirm carries a structured action payload on the ticket face (#69 confirm 转换)', () => {
+  const { board, seed, cleanup } = fixture()
+  try {
+    const t = seed('working')
+    const action = { type: 'fork', sessionId: 'session-a', cwd: '/w', reason: 'r' }
+    const asked = board.askConfirm({ ticketId: t.id, question: '确认 fork？', action })
+    assert.equal(asked.stage, 'person/confirm')
+    assert.deepEqual(board.getTicket(t.id).pendingConfirm.action, action)
+    assert.equal(board.summarize(t.id).detail, '确认 fork？', '朗读仍读确认文本')
+    // action must be an object with a non-empty string type
+    const t2 = seed('working')
+    assert.throws(() => board.askConfirm({ ticketId: t2.id, question: 'q', action: 'fork' }), (e) => e.code === 'action-invalid')
+    assert.throws(() => board.askConfirm({ ticketId: t2.id, question: 'q', action: {} }), (e) => e.code === 'action-invalid')
+    // 不带 action 的旧用法不变
+    const plain = board.askConfirm({ ticketId: t2.id, question: '只是确认' })
+    assert.equal(plain.pendingConfirm.action, undefined)
+  } finally { cleanup() }
+})
+
+test('confirm: person/confirm → working with an audited outcome; guards reject wrong stage and missing pending (#69)', () => {
+  const { board, seed, cleanup } = fixture()
+  try {
+    const t = seed('working')
+    board.askConfirm({ ticketId: t.id, question: '确认？', action: { type: 'fork', sessionId: 's', cwd: '/w', reason: 'r' } })
+    const confirmed = board.confirm({ ticketId: t.id, result: { ok: true } })
+    assert.equal(confirmed.stage, 'working')
+    assert.equal(confirmed.confirmOutcome.kind, 'confirmed')
+    assert.equal(confirmed.confirmOutcome.by, 'user')
+    assert.deepEqual(confirmed.confirmOutcome.result, { ok: true })
+    assert.equal(confirmed.pendingConfirm.text, '确认？', 'pendingConfirm 留票面供审计')
+    // wrong stage
+    const t2 = seed('working')
+    assert.throws(() => board.confirm({ ticketId: t2.id }), (e) => e.code === 'illegal-transition')
+    // person/confirm without a pending request
+    const t3 = seed('person/confirm')
+    assert.throws(() => board.confirm({ ticketId: t3.id }), (e) => e.code === 'no-pending-confirm')
+    // done refuses
+    const t4 = seed('done')
+    assert.throws(() => board.confirm({ ticketId: t4.id }), (e) => e.code === 'illegal-transition')
+  } finally { cleanup() }
+})
+
+test('rejectConfirm: person/confirm → blocked with the rejection reason, original binding untouched (#69)', () => {
+  const { board, seed, cleanup } = fixture()
+  try {
+    const t = seed('working', { workerSession: { sessionId: 'session-orig', cwd: '/w', at: 'x' } })
+    board.askConfirm({ ticketId: t.id, question: '确认 fork？', action: { type: 'fork', sessionId: 's', cwd: '/w', reason: 'r' } })
+    const rejected = board.rejectConfirm({ ticketId: t.id, reason: '不用 fork' })
+    assert.equal(rejected.stage, 'blocked')
+    assert.equal(rejected.confirmOutcome.kind, 'rejected')
+    assert.equal(rejected.confirmOutcome.reason, '不用 fork')
+    assert.equal(rejected.workerSession.sessionId, 'session-orig', '保持原会话')
+    const t2 = seed('working')
+    assert.throws(() => board.rejectConfirm({ ticketId: t2.id, reason: 'x' }), (e) => e.code === 'illegal-transition')
+    const t3 = seed('working')
+    board.askConfirm({ ticketId: t3.id, question: 'q' })
+    assert.throws(() => board.rejectConfirm({ ticketId: t3.id }), (e) => e.code === 'reason-required')
+  } finally { cleanup() }
+})
+
+test('cancel accepts an actor/reason/kind for the 24h auto-cancel audit (#69)', () => {
+  const { board, seed, cleanup } = fixture()
+  try {
+    const t = seed('working')
+    board.askConfirm({ ticketId: t.id, question: '确认 fork？' })
+    const cancelled = board.cancel(t.id, { by: 'system', reason: '确认超过 24 小时未回应，自动取消', kind: 'timeout' })
+    assert.equal(cancelled.stage, 'done')
+    assert.equal(cancelled.confirmOutcome.kind, 'timeout')
+    assert.equal(cancelled.confirmOutcome.by, 'system')
+    assert.match(cancelled.confirmOutcome.reason, /24 小时/)
+    // back-compat: cancel(ticketId) still works and records a user cancel
+    const t2 = seed('working')
+    board.askConfirm({ ticketId: t2.id, question: 'q' })
+    const plain = board.cancel(t2.id)
+    assert.equal(plain.confirmOutcome.kind, 'cancelled')
+    assert.equal(plain.confirmOutcome.by, 'user')
+  } finally { cleanup() }
+})
+
+test('bindWorkerSession can mark the mechanism (fork) while accruing the assignment (#69)', () => {
+  const { board, seed, cleanup } = fixture()
+  try {
+    const t = seed('working')
+    const bound = board.bindWorkerSession(t.id, { sessionId: 'session-new', cwd: '/w', mechanism: 'fork' })
+    assert.equal(bound.mechanism, 'fork')
+    assert.equal(bound.workerSession.sessionId, 'session-new')
+    assert.equal(bound.assignments.at(-1).sessionId, 'session-new')
+    // mechanism omitted → unchanged
+    const t2 = seed('working', { mechanism: 'inject' })
+    const again = board.bindWorkerSession(t2.id, { sessionId: 'session-x', cwd: '/w' })
+    assert.equal(again.mechanism, 'inject')
+  } finally { cleanup() }
+})
+

@@ -127,6 +127,12 @@ export function apply(ctx, rawConfig) {
       const item = (listed.items ?? []).find(s => s.sessionId === sessionId)
       return Boolean(item?.running)
     },
+    // #69 fork 路径（Lead 授权仅此 4 行）: the user-confirmed fork execution over sessionController.
+    fork: async request => {
+      const value = await ctx.sessionController.fork(request, deadline(30_000))
+      await ctx.sessionPersistence.flush()
+      return { sessionId: value.sessionId ?? value.session?.id }
+    },
   }
   const hub = new Hub({ store, config, sessions, onSystemProblem: p => ctx.logger.warn('hub-bot system problem: %s (ticket %s, row %s)', p.reason, p.ticketId, p.rowId) })
   const chief = hub.registry.ensureChief({ cwd: config.homeRepo, workspace: basename(config.homeRepo) })

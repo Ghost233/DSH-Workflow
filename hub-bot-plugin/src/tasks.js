@@ -61,6 +61,9 @@ export const TRANSITIONS = {
 /** Stages a human message (follow-up) releases back to working. */
 const RELEASABLE = ['person/answer', 'person/confirm', 'person/review', 'blocked', 'failed']
 
+/** 确认超时（spec「错误场景」+ #69）: a person/confirm request left unanswered for 24h auto-cancels. */
+export const CONFIRM_TIMEOUT_MS = 24 * 60 * 60 * 1000
+
 /** A lifecycle failure with a machine-readable code for tool/API surfaces. */
 export class TaskError extends Error {
   constructor(code, message) {
@@ -160,11 +163,47 @@ export class TaskBoard {
     return this.#updateTicket({ ...ticket, question: { text: question.trim(), at: this.now() } })
   }
 
-  /** A route/fork decision awaits the user's confirmation (working → person/confirm 等您确认）. */
-  askConfirm({ ticketId, question }) {
+  /**
+   * A route/fork decision awaits the user's confirmation (working → person/confirm 等您确认）.
+   * #69: a heavy action (fork) rides along as a structured `action` payload — the stored intent the user's
+   * confirm later executes （先存后做）; the action survives restarts on the ticket face.
+   */
+  askConfirm({ ticketId, question, action }) {
     if (typeof question !== 'string' || !question.trim()) throw new TaskError('question-required', 'askConfirm: question must be a non-empty string')
+    if (action !== undefined && (typeof action !== 'object' || action === null || Array.isArray(action) || typeof action.type !== 'string' || !action.type.trim())) {
+      throw new TaskError('action-invalid', 'askConfirm: action must be an object with a non-empty string type')
+    }
     const ticket = this.#transition(ticketId, 'person/confirm', 'owner')
-    return this.#updateTicket({ ...ticket, pendingConfirm: { text: question.trim(), at: this.now() } })
+    const pendingConfirm = { text: question.trim(), at: this.now() }
+    if (action !== undefined) pendingConfirm.action = action
+    return this.#updateTicket({ ...ticket, pendingConfirm })
+  }
+
+  /**
+   * person/confirm → working (#69): the user approved the pending confirmation. The outcome is recorded on
+   * the face (confirmOutcome) and the pending request kept for audit; the caller executes the stored action
+   * BEFORE this transition, so a failure leaves the ticket at person/confirm with the intent intact.
+   */
+  confirm({ ticketId, result, by } = {}) {
+    const ticket = this.#mustGet(ticketId)
+    if (ticket.stage !== 'person/confirm') throw new TaskError('illegal-transition', 'ticket ' + ticketId + ': confirm requires person/confirm, got ' + ticket.stage)
+    if (!ticket.pendingConfirm) throw new TaskError('no-pending-confirm', 'ticket ' + ticketId + ' has no pending confirmation')
+    const actor = by ?? 'user'
+    const transitioned = this.#transition(ticketId, 'working', actor)
+    return this.#updateTicket({ ...transitioned, confirmOutcome: { kind: 'confirmed', result: result ?? null, at: this.now(), by: actor } })
+  }
+
+  /**
+   * person/confirm → blocked (#69): the user rejected the proposed action. The ticket keeps its original
+   * session binding （保持原会话） and waits for the human's next message to release it back to working.
+   */
+  rejectConfirm({ ticketId, reason, by } = {}) {
+    if (typeof reason !== 'string' || !reason.trim()) throw new TaskError('reason-required', 'rejectConfirm: reason must be a non-empty string')
+    const ticket = this.#mustGet(ticketId)
+    if (ticket.stage !== 'person/confirm') throw new TaskError('illegal-transition', 'ticket ' + ticketId + ': rejectConfirm requires person/confirm, got ' + ticket.stage)
+    const actor = by ?? 'user'
+    const transitioned = this.#transition(ticketId, 'blocked', actor)
+    return this.#updateTicket({ ...transitioned, confirmOutcome: { kind: 'rejected', reason: reason.trim(), at: this.now(), by: actor } })
   }
 
   /** A follow-up (human message) resumes the task — releasing person/*, blocked and failed stages (spec #66). */
@@ -181,9 +220,17 @@ export class TaskBoard {
     return this.#transition(ticketId, 'done', 'user')
   }
 
-  /** The user cancels a pending confirmation (person/confirm → done). */
-  cancel(ticketId) {
-    return this.#transition(ticketId, 'done', 'user')
+  /**
+   * The user cancels a pending confirmation (person/confirm → done). #69: the 24h auto-cancel passes
+   * { by: 'system', reason, kind: 'timeout' } so the face records WHY the confirmation ended.
+   */
+  cancel(ticketId, { by, reason, kind } = {}) {
+    const ticket = this.#mustGet(ticketId)
+    const actor = by ?? 'user'
+    const wasConfirm = ticket.stage === 'person/confirm'
+    const transitioned = this.#transition(ticketId, 'done', actor)
+    if (!wasConfirm) return transitioned
+    return this.#updateTicket({ ...transitioned, confirmOutcome: { kind: kind ?? 'cancelled', reason: reason ?? null, at: this.now(), by: actor } })
   }
 
   /**
@@ -203,16 +250,21 @@ export class TaskBoard {
     return this.#updateTicket({ ...ticket, failed: { reason: reason.trim(), at: this.now() } })
   }
 
-  /** Binds the execution Session the owner created for this task; one task accrues many Assignments. */
-  bindWorkerSession(ticketId, { sessionId, cwd }) {
+  /**
+   * Binds the execution Session the owner created for this task; one task accrues many Assignments.
+   * #69: a fork binding passes mechanism:'fork' so the face records HOW the task executes (spec 数据模型）.
+   */
+  bindWorkerSession(ticketId, { sessionId, cwd, mechanism }) {
     const ticket = this.#mustGet(ticketId)
     const assignment = { state: 'running', startedAt: this.now(), sessionId, cwd }
-    return this.#updateTicket({
+    const next = {
       ...ticket,
       workerSession: { sessionId, cwd, at: this.now() },
       assignments: [...(ticket.assignments ?? []), assignment],
       updatedAt: this.now(),
-    })
+    }
+    if (mechanism !== undefined) next.mechanism = mechanism
+    return this.#updateTicket(next)
   }
 
   /**
