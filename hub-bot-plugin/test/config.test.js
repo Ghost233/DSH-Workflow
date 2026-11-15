@@ -7,7 +7,7 @@ import { resolveConfig, ConfigError } from '../src/config.js'
 const valid = () => ({ stateDir: '/tmp/hub-bot-state', homeRepo: '/Volumes/home' })
 
 test('accepts an absolute stateDir and homeRepo', () => {
-  assert.deepEqual(resolveConfig(valid()), { stateDir: '/tmp/hub-bot-state', homeRepo: '/Volumes/home', reporting: { auto: false, intervalMs: 60000 }, feishu: { enabled: false, openIdAllowlist: [] } })
+  assert.deepEqual(resolveConfig(valid()), { stateDir: '/tmp/hub-bot-state', homeRepo: '/Volumes/home', reporting: { auto: false, intervalMs: 60000 }, feishu: { enabled: false, openIdAllowlist: [] }, github: { enabled: false, intervalMs: 300000, loginAllowlist: [], repos: [] } })
 })
 
 test('reporting defaults to OFF (无自动汇报) and parses explicit overrides', () => {

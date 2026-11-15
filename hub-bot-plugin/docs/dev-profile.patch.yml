@@ -56,3 +56,13 @@
       enabled: true
       openIdAllowlist: ['ou_your_own_open_id']
       # botOpenId: 'ou_bot_open_id'  # 群聊 @bot 判定用；缺省时任何 @ 即算（MVP 宽松）
+    # GitHub 自动处理闭环（#71）样本：复用本机 gh auth；loginAllowlist 空 = 启动时解析 gh api user 为本人；
+    # repos 逐仓库开关默认全开；cwd 是该仓库的本地 checkout（L2 仓库负责人会话落点）。
+    github:
+      enabled: true
+      intervalMs: 300000
+      mentionHandle: '@hub-bot'
+      repos:
+        - repo: Ghost233/DSH-Workflow
+          workspace: DSH-Workflow
+          cwd: /Volumes/外挂/Ghost233HomeRepo/DSH-Workflow.worktrees/62-hub-bot-plugin

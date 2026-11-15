@@ -26,6 +26,7 @@ import { resolveConfig } from './config.js'
 import { Store, SCHEMA_VERSION } from './store.js'
 import { Hub, setHub } from './hub.js'
 import { FeishuSource } from './feishu.js'
+import { GitHubSource } from './github.js'
 
 export const name = 'hub-bot'
 export const inject = ['sessionController', 'sessionPersistence', 'webServer']
@@ -143,6 +144,12 @@ export function apply(ctx, rawConfig) {
   if (config.feishu.enabled && feishu.credentialState === 'ok') {
     void feishu.connect().catch(error => ctx.logger.warn('hub-bot feishu connect failed: %s (凭据可能失效 — 面板提示重新扫码)', error?.message ?? error))
   }
+  // GitHub 自动处理闭环 (#71): OFF unless config.github.enabled. loginAllowlist 空时经 gh api user 解析为本人；
+  // 每 intervalMs（默认 5min）一轮轮询，首轮只记水位线；recorded github 回复意图随 1s tick 实投。
+  const github = new GitHubSource({ store, registry: hub.registry, router: hub.router, sessions, config: config.github, logger: ctx.logger })
+  if (config.github.enabled) {
+    void github.resolveSelfLogin().catch(() => {})
+  }
   // 重启恢复（#66）: end running assignments "host restarted", then resume any queued stored work — and keep
   // driving the runner every second so backoff retries fire even when no new traffic arrives.
   hub.router.markRestart()
@@ -153,9 +160,20 @@ export function apply(ctx, rawConfig) {
     if (config.feishu.enabled && feishu.credentialState === 'ok') {
       void feishu.deliverReplies().catch(error => ctx.logger.warn('hub-bot feishu reply tick failed: %s', error?.message ?? error))
     }
+    if (config.github.enabled) {
+      void github.deliverReplies().catch(error => ctx.logger.warn('hub-bot github reply tick failed: %s', error?.message ?? error))
+    }
   }, 1000)
   deliveryTimer.unref?.()
   ctx.on('dispose', () => clearInterval(deliveryTimer))
+  let githubPollTimer = null
+  if (config.github.enabled) {
+    githubPollTimer = setInterval(() => {
+      void github.pollAll().catch(error => ctx.logger.warn('hub-bot github poll tick failed: %s', error?.message ?? error))
+    }, config.github.intervalMs)
+    githubPollTimer.unref?.()
+    ctx.on('dispose', () => clearInterval(githubPollTimer))
+  }
   // The preset-subtree tool plugins (router-tools) run in a separate module realm: neither a module-level singleton
   // nor even globalThis reaches them (observed live). A service provided at this scope is the channel that crosses —
   // the same way the subtree sees Host services like 'tools'. The fiber's unload unregisters it (reflect.provide).
@@ -306,6 +324,26 @@ export function apply(ctx, rawConfig) {
           // Dev proof aid: inject one mock im.message.receive_v1 event through the real normalization/policy path.
           const body = await readBody(req)
           json(res, 200, await feishu.handleEvent(body.event ?? body))
+        } else if (route === 'github/status' && method === 'GET') {
+          // 面板健康视图: 逐仓库开关、水位线与最近一次轮询错误。
+          json(res, 200, github.status())
+        } else if (route === 'github/poll' && method === 'POST') {
+          // Forces one polling cycle NOW (dev proof without waiting 5min); body {repo?} narrows to one repo.
+          const body = await readBody(req)
+          if (body.repo) {
+            const cfg = (config.github.repos ?? []).find(r => r.repo === body.repo)
+            if (!cfg) { json(res, 404, { error: 'unknown repo ' + body.repo }); return }
+            json(res, 200, await github.pollRepo(cfg))
+          } else {
+            json(res, 200, await github.pollAll())
+          }
+        } else if (route === 'github/simulate' && method === 'POST') {
+          // Dev proof aid: one mock issue/PR/comment through the real normalization/policy/route path.
+          // { kind: 'issue'|'pr'|'comment', repo: 'owner/name', item|comment: {...} }
+          const body = await readBody(req)
+          const cfg = (config.github.repos ?? []).find(r => r.repo === body.repo) ?? { repo: body.repo, workspace: body.workspace ?? basename(config.homeRepo), cwd: config.homeRepo, enabled: true }
+          if (body.kind === 'comment') json(res, 200, await github.handleCommentEvent(body.item ?? body.comment, cfg))
+          else json(res, 200, await github.handleIssueEvent(body.item, cfg))
         } else {
           throw new HttpError(404, 'Unknown operation: ' + method + ' ' + route)
         }

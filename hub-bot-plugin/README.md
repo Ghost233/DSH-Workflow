@@ -109,6 +109,16 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - **互不干扰**：fork 只读源会话事件切前缀，原会话保留可查、全程不再注入；两个会话用户都可打开。默认注入（inject_session）不改变会话拓扑。
 - **独立开发的代码隔离**：worktree 创建沿用 Home Repo 约定 `scripts/create-worktree.sh <repo> <issue> <slug>`（worktree 落在 `<repo>.worktrees/<issue>-<slug>`，分支 `fix/<issue>-<slug>`），由执行会话在续作中完成。
 
+## GitHub 自动处理闭环（#71）
+
+- **轮询**：逐仓库 REST 轮询复用本机 `gh auth`（认证限额 5000 次/小时，`config.github.intervalMs` 默认 5min，下限 30s）。**首轮只记水位线**（stateDir/github-watermarks.json），历史存量不触发；之后只处理编号更大的新 Issue/PR，重启不重放。
+- **自动处理闭环**：本人新 Issue = 显式请求豁免（无确认）——插件先记 ack 回复意图（先存后做，deliverReplies 实投并强制 dsh-badge）→ 路由进 L2 仓库负责人（triggerRef `github:<repo>:issue:<n>` 幂等）→ 注入文本携带完整链路指令（worktree 修复 → 提 PR → 汇报链通知审核；**永不直推主分支，合并永远由人**）。新 PR 路由初审指令（摘要+风险点）。
+- **Policy**：`loginAllowlist` 默认空 = 启动时经 `gh api user` 解析为本人；非白名单作者与 `bot:ignore` 标签只记录不处理（github-dropped 行）。
+- **喊停与关闭**：白名单评论「停」→ 任务终止（让位于人，人的消息仍可释放）+ chief 通知；普通评论归入已有任务（follow-up 不产生新 Trigger）；`mentionHandle` 提及 → 新 Trigger（mention 寻址）；轮询发现源头关闭/合并 → 自动终止 + 通知。
+- **回复回投**：`reply_source to='github:<repo>:<n>'` 的 recorded 行经 deliverReplies 用 `gh api` 实投为评论——body 缺 badge 由代码补上——实投成功才标 sent；连续 5 次失败标 failed 并报 system-problem。
+- **dsh-badge**：bot 在 GitHub 的一切产出结尾带 powered-by-dsh 徽标（ack/回复由代码强制；PR 描述等 L2/L3 自然产出由注入文本与 persona 约束）。
+- dev 实证探针：`GET github/status`（逐仓库开关/水位线/错误）、`POST github/poll {repo?}`（立即一轮）、`POST github/simulate {kind, repo, item}`（mock 事件走真实归一化/Policy/路由）。
+
 ## 已知限制
 
 - `sessionController.prompt()` 注入的消息 source.kind 为 "user"，与人手输入不可区分；Source/Trigger 层需按 superagent AgentDelivery 模式打插件自有 source 标记（幂等 requestId 已由插件生成 `hub-bot-<uuid>`，路由注入为 `hub-bot-route-<uuid>`）。
