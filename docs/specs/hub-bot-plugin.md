@@ -224,7 +224,7 @@ const result = await lark.registerApp({
 
 - **权限原则：一次性全部申请**。后续版本新增能力时，用 `registerApp({ appId, addons })` 对已建应用增量补权限（确认页展示 diff，重新扫码确认），不手动进开发者后台。
 - **例外**：事件订阅方式（长连接 vs webhook）属敏感配置，不能走 addons；创建后插件用新凭据调一次 [更新应用开发配置 OpenAPI](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/application-v7/application-v7/application-config/patch) 设置为长连接模式，自动完成。
-- 凭据由上述流程自动落盘到插件 stateDir 的凭据文件（`hub-bot.feishu.credentials.json`，0600 仅属主可读），重启自动重载；用户全程不接触字符串。
+- 凭据由上述流程自动落盘到插件 stateDir 的凭据文件（`feishu-credentials.json`，0600 仅属主可读），重启自动重载；用户全程不接触字符串。
 
 ### 消息通道
 
