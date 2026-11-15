@@ -46,11 +46,25 @@ export class OutboxRunner {
     this.onSystemProblem = onSystemProblem ?? (() => {})
   }
 
-  /** Stores the action first (先存后做） and returns the queued row. */
-  enqueue({ ticketId, kind, to, body, sessionId, requestId }) {
+  /**
+   * Stores the action first （先存后做） and returns the queued row. #72 执行槽： `held: true` stores the row
+   * in state 'held' — fully written (the durable intent exists from route time) but invisible to the delivery
+   * scan until releaseHeld() flips it to 'queued' (slot admission). Per-ticket order survives: the held head
+   * and any follow-up rows release together, oldest first.
+   */
+  enqueue({ ticketId, kind, to, body, sessionId, requestId, held }) {
     return insertOutbox(this.store, {
-      ticketId: ticketId ?? null, kind, to, body, sessionId: sessionId ?? null, requestId, state: 'queued',
+      ticketId: ticketId ?? null, kind, to, body, sessionId: sessionId ?? null, requestId, state: held === true ? 'held' : 'queued',
     }, this.now)
+  }
+
+  /** #72: releases every held row of one ticket back into the delivery scan (slot granted). Idempotent. */
+  releaseHeld({ ticketId }) {
+    const rows = this.store.db.prepare('SELECT value FROM outbox ORDER BY at').all()
+      .map(raw => JSON.parse(String(raw.value)))
+      .filter(row => row.ticketId === ticketId && row.state === 'held')
+    for (const row of rows) this.#writeRow({ ...row, state: 'queued' })
+    return rows.length
   }
 
   #readRow(id) {

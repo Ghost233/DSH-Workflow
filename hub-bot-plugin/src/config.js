@@ -12,7 +12,7 @@
 import { isAbsolute } from 'node:path'
 
 /** The configuration keys this plugin understands. Anything else is rejected so typos cannot pass silently. */
-const KNOWN_KEYS = new Set(['stateDir', 'homeRepo', 'devApi', 'reporting', 'feishu', 'github'])
+const KNOWN_KEYS = new Set(['stateDir', 'homeRepo', 'devApi', 'reporting', 'feishu', 'github', 'concurrency'])
 
 /** The keys the scheduled auto-summary understands (#67 定时汇总自动汇报 — OFF by default). */
 const KNOWN_REPORTING_KEYS = new Set(['auto', 'intervalMs'])
@@ -29,6 +29,10 @@ const KNOWN_GITHUB_REPO_KEYS = new Set(['repo', 'workspace', 'cwd', 'enabled'])
 const DEFAULT_GITHUB_INTERVAL_MS = 5 * 60 * 1000
 const MIN_GITHUB_INTERVAL_MS = 30 * 1000
 
+/** The keys the concurrency section (#72 执行槽) understands. Slots count working tickets per owner. */
+const KNOWN_CONCURRENCY_KEYS = new Set(['slotsPerOwner'])
+const DEFAULT_SLOTS_PER_OWNER = 3
+
 /** An invalid plugin configuration; the message names the offending key and the rule it broke. */
 export class ConfigError extends Error {
   constructor(message) {
@@ -40,7 +44,8 @@ export class ConfigError extends Error {
 /**
  * Validates the raw cordis configuration object and returns the resolved configuration.
  * @param {unknown} config - raw configuration from the profile patch layer.
- * @returns {{ stateDir: string, homeRepo: string, devApi?: { token: string } }} resolved config; devApi absent = API disabled.
+ * @returns {{ stateDir: string, homeRepo: string, devApi?: { token: string }, concurrency: { slotsPerOwner: number } }}
+ *   resolved config; devApi absent = API disabled; concurrency always present (#72 执行槽, 默认 3).
  * @throws {ConfigError} when stateDir/homeRepo is missing or not absolute, unknown keys are present, or devApi lacks a token.
  */
 export function resolveConfig(config) {
@@ -177,5 +182,25 @@ export function resolveConfig(config) {
     }
   }
   resolved.github = github
+  // 执行槽 (#72 并发语义): 同 owner 并发 working 任务上限（默认 3，规格「并发与人的优先」）；槽满新票进
+  // queued 排队，人的跟进消息走专用槽不受新工作排队阻塞。执行槽只对 working 计数——交还给人（person/*）
+  // 立即释放。
+  const concurrency = { slotsPerOwner: DEFAULT_SLOTS_PER_OWNER }
+  if (raw.concurrency !== undefined) {
+    const rawConcurrency = raw.concurrency
+    if (typeof rawConcurrency !== 'object' || rawConcurrency === null || Array.isArray(rawConcurrency)) {
+      throw new ConfigError('hub-bot config.concurrency must be an object { slotsPerOwner?: number }')
+    }
+    for (const key of Object.keys(rawConcurrency)) {
+      if (!KNOWN_CONCURRENCY_KEYS.has(key)) throw new ConfigError('hub-bot does not know config.concurrency key ["' + key + '"]')
+    }
+    if (rawConcurrency.slotsPerOwner !== undefined) {
+      if (typeof rawConcurrency.slotsPerOwner !== 'number' || !Number.isSafeInteger(rawConcurrency.slotsPerOwner) || rawConcurrency.slotsPerOwner < 1) {
+        throw new ConfigError('hub-bot config.concurrency.slotsPerOwner must be a positive integer (>= 1)')
+      }
+      concurrency.slotsPerOwner = rawConcurrency.slotsPerOwner
+    }
+  }
+  resolved.concurrency = concurrency
   return resolved
 }
