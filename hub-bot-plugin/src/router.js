@@ -191,7 +191,10 @@ export class Router {
     }
     const auth = ticket.authorization
     if (action.entry === 'owner-inject') {
-      // L2 发起、被挂起的执行会话注入: 确认后按票面存储的完整文本原样投递 (文本构建时已携授权记录)。
+      // L2 发起、被挂起的执行会话注入: 确认后按票面存储的完整文本原样直投 (文本构建时已携授权记录)。
+      // 不经 outbox 的理由: runner 的 inject 行恒投 owner 会话 (#deliverRow 先 ensureSession), 而这里的目标是票面
+      // 存储的执行会话; 执行会话归 L2 管理、失败由 L2 感知, 一次性放行不需要路由注入的重建/重投语义。
+      // 顺序说明: prompt 先于 confirm —— confirm 转移合法实际不抛, 窄窗重复风险已在案 (审查 P2 接受)。
       const requestId = 'hub-bot-owner-' + this.ids.uuid()
       await this.sessions.prompt({ requestId, sessionId: action.sessionId, mode: 'queue', content: [{ type: 'text', text: action.text }] })
       try { this.tasks.confirm({ ticketId, result: { injected: { entry: action.entry, sessionId: action.sessionId, requestId } }, by: 'user' }) } catch (error) { throw translateTaskError(error, (code, message) => new RouterError(code, message)) }
