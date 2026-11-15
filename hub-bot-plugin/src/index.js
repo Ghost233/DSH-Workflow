@@ -21,8 +21,14 @@
  * the runner so backed-off retries fire without any new traffic (spec「可靠性」重启恢复).
  */
 import { createHash, timingSafeEqual, randomUUID } from 'node:crypto'
-import { basename } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { resolveConfig } from './config.js'
+import {
+  SETTINGS_FILE, applySettingsOverlay, applySettingsPatch, loadSettingsOverlay, mergeSettingsOverlay,
+  saveSettingsOverlay, buildOverview, buildSettingsView,
+} from './panel.js'
 import { Store, SCHEMA_VERSION } from './store.js'
 import { Hub, setHub } from './hub.js'
 import { FeishuSource } from './feishu.js'
@@ -107,6 +113,9 @@ const presetForRole = role => role === 'chief' ? 'hub-bot-router' : 'hub-bot-own
  */
 export function apply(ctx, rawConfig) {
   const config = resolveConfig(rawConfig)
+  // 设置写回 (#73): the persisted overlay replays onto the profile config so panel changes survive
+  // restarts; the plugin never edits the profile itself. Unknown keys reject at boot (same validation as POST).
+  applySettingsOverlay(config, loadSettingsOverlay(config.stateDir))
   const store = new Store(config.stateDir)
 
   // The Sessions port of src/router.js over the real sessionController. prompt uses queue mode: an owner Session
@@ -174,14 +183,19 @@ export function apply(ctx, rawConfig) {
   }, 1000)
   deliveryTimer.unref?.()
   ctx.on('dispose', () => clearInterval(deliveryTimer))
+  // #73 设置页: the poll loop is restartable — 轮询开关/间隔 changes via the settings API apply immediately.
   let githubPollTimer = null
-  if (config.github.enabled) {
-    githubPollTimer = setInterval(() => {
-      void github.pollAll().catch(error => ctx.logger.warn('hub-bot github poll tick failed: %s', error?.message ?? error))
-    }, config.github.intervalMs)
-    githubPollTimer.unref?.()
-    ctx.on('dispose', () => clearInterval(githubPollTimer))
+  const restartGithubPolling = () => {
+    if (githubPollTimer) { clearInterval(githubPollTimer); githubPollTimer = null }
+    if (config.github.enabled) {
+      githubPollTimer = setInterval(() => {
+        void github.pollAll().catch(error => ctx.logger.warn('hub-bot github poll tick failed: %s', error?.message ?? error))
+      }, config.github.intervalMs)
+      githubPollTimer.unref?.()
+    }
   }
+  restartGithubPolling()
+  ctx.on('dispose', () => { if (githubPollTimer) clearInterval(githubPollTimer) })
   // The preset-subtree tool plugins (router-tools) run in a separate module realm: neither a module-level singleton
   // nor even globalThis reaches them (observed live). A service provided at this scope is the channel that crosses —
   // the same way the subtree sees Host services like 'tools'. The fiber's unload unregisters it (reflect.provide).
@@ -278,11 +292,93 @@ export function apply(ctx, rawConfig) {
     return await ctx.sessionController.page({ address: { kind: 'session', sessionId }, maxMessages }, deadline(30_000))
   }
 
+  // ---- 面板 (#73 面板三问与设置页) -------------------------------------------------------
+
+  /** The panel static shell lives next to the plugin source: HTML/JS/CSS only, no data, no build chain. */
+  const PANEL_DIR = fileURLToPath(new URL('../panel/', import.meta.url))
+  const PANEL_FILES = new Map([
+    ['/hub-bot/panel', ['index.html', 'text/html; charset=utf-8']],
+    ['/hub-bot/panel/', ['index.html', 'text/html; charset=utf-8']],
+    ['/hub-bot/panel/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+    ['/hub-bot/panel/style.css', ['style.css', 'text/css; charset=utf-8']],
+  ])
+
+  /** Serves one allowlisted panel asset, loopback-only; the token guards DATA (/hub-bot/api/*), not the shell. */
+  const servePanel = (pathname, req, res) => {
+    const host = req.headers.host ?? ''
+    const loopback = host === '127.0.0.1:' + ctx.webServer.port || host === 'localhost:' + ctx.webServer.port || host === '[::1]:' + ctx.webServer.port
+    const entry = PANEL_FILES.get(pathname)
+    if (!loopback || !entry) { res.writeHead(404); res.end(); return }
+    let body
+    try { body = readFileSync(join(PANEL_DIR, entry[0])) } catch { res.writeHead(404); res.end(); return }
+    res.writeHead(200, { 'content-type': entry[1], 'cache-control': 'no-store' })
+    res.end(body)
+  }
+
+  /** 系统健康 (spec「安静默认」的反面数据): Source 状态 + outbox 队列计数 + 正在退避重试的行（模型/投递等待的可见信号）。 */
+  const buildHealth = () => {
+    const rows = store.db.prepare('SELECT value FROM outbox').all().map(r => JSON.parse(String(r.value)))
+    const count = state => rows.filter(r => r.state === state).length
+    const retrying = rows
+      .filter(r => r.state === 'queued' && (r.attempts ?? 0) > 0)
+      .map(r => ({ id: r.id, ticketId: r.ticketId ?? null, to: r.to, attempts: r.attempts, nextRetryAt: r.nextRetryAt ?? null, lastError: r.lastError ?? null }))
+    const problems = rows.filter(r => r.kind === 'system-problem')
+    return {
+      feishu: feishu.status(),
+      github: github.status(),
+      outbox: {
+        queued: count('queued'), held: count('held'), recorded: count('recorded'),
+        failed: count('failed'), sent: count('sent'),
+        retrying,
+        systemProblems: problems.length,
+        recentProblems: problems.slice(-5).map(r => ({ id: r.id, ticketId: r.ticketId ?? null, body: String(r.body ?? '').slice(0, 200) })),
+      },
+    }
+  }
+
+  /** The accumulated settings overlay (boot value), merged with every accepted panel patch and persisted. */
+  let settingsOverlay = loadSettingsOverlay(config.stateDir)
+
+  /** Reads the effective settings view (config ⊕ overlay + live Source status). */
+  const settingsView = () => buildSettingsView(config, { feishuStatus: feishu.status(), githubStatus: github.status() })
+
+  /** Applies one panel settings patch: validate → mutate live config → persist overlay → live side effects. */
+  const applySettings = async req => {
+    const patch = await readBody(req)
+    try {
+      applySettingsPatch(config, patch)
+    } catch (error) {
+      if (error?.name === 'SettingsError') throw new HttpError(400, error.message)
+      throw error
+    }
+    settingsOverlay = mergeSettingsOverlay(settingsOverlay, patch)
+    saveSettingsOverlay(config.stateDir, settingsOverlay)
+    restartGithubPolling() // 轮询开关/间隔即时生效（幂等重启）
+    ctx.logger.info('hub-bot settings updated via panel: %s', Object.keys(patch).join(', '))
+    return settingsView()
+  }
+
+  /** 确认裁决: person/confirm 票的一键 confirm/reject — 与 route_to_owner resolution 同一条状态机路径. */
+  const resolveTicket = async body => {
+    const ticketId = requireString(body, 'ticketId')
+    const resolution = requireString(body, 'resolution')
+    if (resolution !== 'confirm' && resolution !== 'reject') throw new HttpError(400, 'resolution must be "confirm" or "reject"')
+    const ticket = hub.router.getTicket(ticketId)
+    if (!ticket) throw new HttpError(404, 'unknown ticket "' + ticketId + '"')
+    return await hub.router.routeToOwner({
+      ownerId: ticket.owner, ticketId, resolution,
+      message: optionalString(body, 'message') ?? (resolution === 'confirm' ? '面板确认' : '面板拒绝'),
+    })
+  }
+
   const unregister = ctx.webServer.register({
     kind: 'prefix',
     path: '/hub-bot',
     handler: async (req, res) => {
       const url = new URL(req.url ?? '/', 'http://localhost')
+      // 面板静态壳 (#73): served without the token — it carries no data; every fetch inside goes through
+      // the token-guarded API below. Loopback-only like the API itself.
+      if (url.pathname === '/hub-bot/panel' || url.pathname.startsWith('/hub-bot/panel/')) { servePanel(url.pathname, req, res); return }
       if (!url.pathname.startsWith('/hub-bot/api/')) { res.writeHead(404); res.end(); return }
       if (!admitted(req)) { json(res, 401, { error: 'Missing or wrong x-hub-bot-token' }); return }
       try {
@@ -356,6 +452,15 @@ export function apply(ctx, rawConfig) {
           const cfg = (config.github.repos ?? []).find(r => r.repo === body.repo) ?? { repo: body.repo, workspace: body.workspace ?? basename(config.homeRepo), cwd: config.homeRepo, enabled: true }
           if (body.kind === 'comment') json(res, 200, await github.handleCommentEvent(body.item ?? body.comment, cfg))
           else json(res, 200, await github.handleIssueEvent(body.item, cfg))
+        } else if (route === 'overview' && method === 'GET') {
+          // 三问视图数据 (#73): 票面 + 注册表 + 健康快照, 一次取齐
+          json(res, 200, buildOverview({ store, registry: hub.registry, health: buildHealth() }))
+        } else if (route === 'settings' && method === 'GET') {
+          json(res, 200, settingsView())
+        } else if (route === 'settings' && method === 'POST') {
+          json(res, 200, await applySettings(req))
+        } else if (route === 'tickets/resolve' && method === 'POST') {
+          json(res, 200, await resolveTicket(await readBody(req)))
         } else {
           throw new HttpError(404, 'Unknown operation: ' + method + ' ' + route)
         }

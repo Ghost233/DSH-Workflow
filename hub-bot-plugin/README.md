@@ -137,6 +137,16 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - **模型限流/预算耗尽**：属 DSH 运行时行为——运行时按同 requestId 续跑/重试，任务票不转 failed（自动反馈永不恢复暂停的工作）；插件不感知也不干预。
 - 实证：`docs/evidence-task-10.md`（槽矩阵/FIFO 提升/专用槽/多入口串行/pause 跨重启/先存后做全链审计）。
 
+## Web 面板：三问与设置页（#73）
+
+- **打开**：devApi 开启时（dev 实例）浏览器访问 `http://<host>:<port>/hub-bot/panel?token=<devApi.token>`。面板是 `panel/` 下的**静态 HTML+JS**——无构建链、不依赖 DSH 内部；token 存 sessionStorage，所有数据经 `x-hub-bot-token` 头走 `/hub-bot/api/*`（401 自动弹回 token 输入页）。静态壳 loopback-only、不携带任何数据。
+- **三问视图**（默认页）：**有需要我的吗**（person/confirm 票直接给 确认/拒绝 按钮，person/answer 与 blocked/failed 列出待办，安静默认）；**什么状态**（票按阶段分组、组头计数 = 列表长度，stageText 朗读票面原值）；**结果在哪**（等您验收票的报告四段 + 负责人目录清单）。每票详情折叠授权记录 / Trigger / Assignment 时间线 / 内部 id（一概念一位置）。
+- **确认裁决**：person/confirm 票的一键 confirm/reject 与 `POST /route resolution` 同一条状态机路径（fork 由代码执行、票面记 confirmOutcome）；面板按钮带二次确认（破坏性动作需确认）。验收动作暂留给 L1 聊天裁决，面板只读呈现。
+- **设置页**：飞书（连接状态/重新扫码/open_id 白名单）、GitHub（轮询开关/间隔 ≥30s/login 白名单/逐仓库监听开关）、并发槽（≥1）、定时汇报（开关/间隔）。每个设置块一条保存条、仅变更时出现；写回即时生效（所有读者读同一活 config）并持久化为 `stateDir/hub-bot.settings.json`（0600），重启自动回放——**插件永不编辑 profile**。未知节/键与非法值 HTTP 400 拒绝且不破坏既有 overlay。
+- **系统健康**：飞书凭据/连接、GitHub 轮询错误、outbox 失败与系统级问题计数、正在退避重试的投递（模型等待的可见信号）——健康时该条不占空间（安静默认）。
+- **API**：`GET /overview`（三问数据：票+负责人注册表+健康）、`GET|POST /settings`、`POST /tickets/resolve`。`GET /settings` 返回有效值 = profile ⊕ overlay，标注飞书凭据状态等活 Source 信息。
+- 实证：`docs/evidence-task-11.md`（面板服务与 token 门禁、设置写回即时生效+重启回放、确认/拒绝裁决、三问真实数据）。
+
 ## 已知限制
 
 - `sessionController.prompt()` 注入的消息 source.kind 为 "user"，与人手输入不可区分；Source/Trigger 层需按 superagent AgentDelivery 模式打插件自有 source 标记（幂等 requestId 已由插件生成 `hub-bot-<uuid>`，路由注入为 `hub-bot-route-<uuid>`）。
