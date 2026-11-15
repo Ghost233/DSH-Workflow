@@ -98,8 +98,10 @@ export class Recycler {
     }
     this.registry.markRecycled(ownerId)
     const preview = listing.entries.slice(0, 8).join('、') + (listing.total > 8 ? ' 等' : '')
+    // 双轴审查 P1-1（死信修复）: 寻址 dsh:session:chief + state queued — 走 OutboxRunner 真实投递到 chief
+    // 会话（统一出口）；裸 'dsh' 无 state 的行两通行都扫不到，永不投递。
     insertOutbox(this.store, {
-      ticketId: null, kind: 'reply', to: 'dsh',
+      ticketId: null, kind: 'reply', to: 'dsh:session:chief', state: 'queued',
       body: '[hub-bot 回收 ' + ownerId + '] 临时目录 ' + owner.cwd + ' 已删除（共 ' + listing.total + ' 项'
         + (listing.total > 0 ? '：' + preview : '') + '）；注册表保留 recycled 记录；会话 ' + (owner.sessionId ?? '(未建)')
         + ' 历史保留可查。未带出的产物已随目录删除。',

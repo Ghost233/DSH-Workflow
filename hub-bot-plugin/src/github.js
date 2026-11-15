@@ -31,7 +31,7 @@
 import { execFile } from 'node:child_process'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { insertOutbox } from './outbox.js'
+import { insertOutbox, deliverRecordedReplies } from './outbox.js'
 
 /** The official badge (dsh-badge skill): every bot-produced GitHub content ends with it. */
 export const DSH_BADGE = '[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)'
@@ -342,8 +342,9 @@ export class GitHubSource {
     const ticket = this.ticketByRef(this.#refFor(repo, 'issue', number)) ?? this.ticketByRef(this.#refFor(repo, 'pr', number))
     if (!ticket || ['done', 'failed'].includes(ticket.stage)) return null
     this.router.tasks.fail({ ticketId: ticket.id, reason: '源头' + why + '：github ' + repo + '#' + number + '（让位于人）' })
+    // 双轴审查 P1-1（死信修复）: 寻址 dsh:session:chief + state queued，OutboxRunner 真实投递到 chief 会话。
     insertOutbox(this.store, {
-      ticketId: ticket.id, kind: 'reply', to: 'dsh',
+      ticketId: ticket.id, kind: 'reply', to: 'dsh:session:chief', state: 'queued',
       body: '[hub-bot github ' + repo + '#' + number + '] 源头' + why + '，任务 ' + ticket.id + ' 已终止（让位于人）。',
     })
     return ticket.id
@@ -386,40 +387,21 @@ export class GitHubSource {
    * the badge is code-appended when the body lacks it — and only real delivery earns state 'sent'.
    */
   async deliverReplies() {
-    const rows = this.store.db.prepare('SELECT value FROM outbox ORDER BY rowid').all()
-      .map(raw => JSON.parse(String(raw.value)))
-      .filter(row => row.state === 'recorded' && typeof row.to === 'string' && row.to.startsWith('github:'))
-    if (rows.length === 0) return { delivered: 0 }
-    let delivered = 0
-    for (const row of rows) {
-      const target = row.to.slice('github:'.length)
-      const cut = target.lastIndexOf(':')
-      const repo = target.slice(0, cut)
-      const number = Number(target.slice(cut + 1))
-      if (!repo || !number) { this.#writeRow({ ...row, state: 'failed', lastError: 'unparseable github target' }); continue }
-      const body = row.body.includes('powered_by-dsh') ? row.body : row.body + '\n\n' + DSH_BADGE
-      try {
+    // 双轴审查 P1-2: 通道无关驱动在 outbox.js；这里只留通道差异（地址解析、badge 补齐、gh 实投）。
+    return deliverRecordedReplies({
+      store: this.store, logger: this.logger, now: this.now,
+      channel: 'github', prefix: 'github:', maxAttempts: MAX_GITHUB_ATTEMPTS,
+      parseTarget: to => {
+        const target = to.slice('github:'.length)
+        const cut = target.lastIndexOf(':')
+        const repo = target.slice(0, cut)
+        const number = Number(target.slice(cut + 1))
+        return repo && number ? { repo, number } : null
+      },
+      prepareBody: body => body.includes('powered_by-dsh') ? body : body + '\n\n' + DSH_BADGE,
+      send: async ({ repo, number }, body) => {
         await this.gh(['api', '-X', 'POST', 'repos/' + repo + '/issues/' + number + '/comments', '-f', 'body=' + body])
-        this.#writeRow({ ...row, state: 'sent', sentAt: this.now() })
-        delivered++
-      } catch (error) {
-        const attempts = (row.githubAttempts ?? 0) + 1
-        this.logger.warn('hub-bot github: reply to %s failed (%s)', row.to, error?.message ?? error)
-        if (attempts >= MAX_GITHUB_ATTEMPTS) {
-          this.#writeRow({ ...row, state: 'failed', githubAttempts: attempts, lastError: String(error?.message ?? error) })
-          insertOutbox(this.store, {
-            ticketId: row.ticketId ?? null, kind: 'system-problem', to: 'chief',
-            body: 'github reply ' + row.id + ' failed ' + attempts + ' times in a row (' + row.to + ')', state: 'recorded',
-          })
-        } else {
-          this.#writeRow({ ...row, githubAttempts: attempts, lastError: String(error?.message ?? error) })
-        }
-      }
-    }
-    return { delivered }
-  }
-
-  #writeRow(row) {
-    this.store.db.prepare('UPDATE outbox SET value = ? WHERE id = ?').run(JSON.stringify(row), row.id)
+      },
+    })
   }
 }

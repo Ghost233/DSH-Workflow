@@ -78,7 +78,7 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - **先存后做（src/outbox.js OutboxRunner）**：建票先存 idle（待触发），注入先落 outbox 行再投递；投递成功才转 working。失败 2 秒首次重试、指数退避、上限注入 5 分钟/回复 1 分钟；同一任务的注入严格保序（前一条未送达后一条等待）；连续失败 3 次才记 system-problem 行并绕过（一次性错误不惊动人）；重试沿用行内稳定 requestId。permanent 失败（如票面授权缺失）立即终判不重试。插件启动时 markRestart（working/idle/queued 票的 running assignment 以 "host restarted" 结束、打 recoveryPending）并自动恢复投递，另有 1 秒 tick 定时器；devApi 增 POST /deliver 手动驱动（实证用）。
 - **触发与授权不可变（票面权威）**：追问不绑定新 Trigger；追问带 authorization 参数直接拒绝（authorization-immutable）；票面授权缺失的票拒绝执行——路由侧转 blocked 并拒注入，投递侧 permanent fail 转 failed；会话叙事声称的授权不扩展权限（owner persona 明文 + L2 工具硬约束）。
 - **消息纪律代码化（src/discipline.js）**：对外回复超 100 词由代码截断并附「…（超过 100 词已截断）」；CJK 一字一词、西文一连串一词。
-- **重启恢复注记恰好一次**：恢复后首条注入以「（重启恢复：先检查目录与 git 状态，再重复任何对外动作）」开头，送达即清 recoveryPending。
+- **重启自动恢复（#72 AC1，spec「重启恢复」）**：markRestart 后 working 票按**最旧优先**自动补投恢复注入（无人干预即继续干活），过执行槽闸门——槽内票直接补投，溢出票 demote 转排队中、注入行 held 等位（槽空由 #promoteQueued 提升释放）。恢复注记恰好一次：恢复后首条注入以「（重启恢复：先检查目录与 git 状态，再重复任何对外动作）」开头，送达即清 recoveryPending。
 - **report 三形态（owner-tools）**：summary→等您验收 / question→等您回复 / failure→失败；escalate→被卡住（原"只打标不改阶段"语义废止）。
 
 ## 汇报链（#67）

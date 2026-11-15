@@ -15,7 +15,7 @@ import { OwnerRegistry } from '../src/registry.js'
 import { Router, RouterError, RECOVERY_NOTE } from '../src/router.js'
 
 /** A registry+router with a scriptable fake Sessions port and a deterministic clock. */
-function fixture({ failSessions = [] } = {}) {
+function fixture({ failSessions = [], config } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'hub-bot-router-'))
   const store = new Store(dir)
   const registry = new OwnerRegistry(store, { scratchRoot: join(dir, 'scratch') })
@@ -37,7 +37,7 @@ function fixture({ failSessions = [] } = {}) {
       return { accepted: true }
     },
   }
-  const router = new Router({ store, registry, sessions, now: () => new Date(nowMs).toISOString() })
+  const router = new Router({ store, registry, sessions, config, now: () => new Date(nowMs).toISOString() })
   const advance = (ms) => { nowMs += ms }
   return { router, registry, store, calls, advance, cleanup: () => { store.close(); rmSync(dir, { recursive: true, force: true }) } }
 }
@@ -279,18 +279,19 @@ test('a ticket without an authorization record is failed, never executed on a gu
   } finally { cleanup() }
 })
 
-test('restart recovery: the first injection after markRestart carries the recovery note exactly once', async () => {
+test('restart recovery: markRestart auto-resumes working tickets oldest-first with the recovery note (spec L329, #72 AC1)', async () => {
   const { router, registry, calls, cleanup } = fixture()
   try {
     const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
     const first = await router.routeToOwner({ ownerId: owner.id, message: 'x' })
-    router.markRestart()
-    await router.routeToOwner({ ownerId: owner.id, message: '继续干', ticketId: first.ticketId })
-    const carried = calls.prompt[1].text
-    assert.ok(carried.startsWith(RECOVERY_NOTE), 'the recovery note heads the first post-restart injection')
+    await router.markRestart()
+    // 无人干预: the working ticket receives a fresh recovery injection immediately (no human message needed)
+    const resumed = calls.prompt.at(-1).text
+    assert.ok(resumed.startsWith(RECOVERY_NOTE), 'recovery note heads the auto-resume injection')
+    assert.ok(resumed.includes('[hub-bot 恢复 ' + first.ticketId + ']'), '恢复注入语义标记')
     assert.equal(router.getTicket(first.ticketId).recoveryPending, undefined, 'carried exactly once')
     await router.routeToOwner({ ownerId: owner.id, message: '再来', ticketId: first.ticketId })
-    assert.ok(!calls.prompt[2].text.includes(RECOVERY_NOTE), 'the note is not repeated')
+    assert.ok(!calls.prompt.at(-1).text.includes(RECOVERY_NOTE), 'the note is not repeated on later follow-ups')
   } finally { cleanup() }
 })
 
@@ -299,14 +300,16 @@ test('redelivery after a crash prepends the recovery note to the STORED body (�
   try {
     const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
     const t = await router.routeToOwner({ ownerId: owner.id, message: '干活' })
-    router.markRestart() // crash + restart: the working ticket becomes recoveryPending
-    // a row stored BEFORE the crash (its body carries no note) is what the fresh runner resumes
+    // a row stored BEFORE the crash (its body carries no note) is what the fresh runner resumes first
     router.runner.enqueue({ ticketId: t.ticketId, kind: 'inject', to: 'session:' + t.sessionId, sessionId: t.sessionId, body: '[hub-bot 追问 ' + t.ticketId + '] 旧正文', requestId: 'r-old' })
+    await router.markRestart() // crash + restart: working ticket becomes recoveryPending + auto-resume row queues behind
     await router.tick()
-    const redelivered = calls.prompt.at(-1).text
-    assert.ok(redelivered.startsWith(RECOVERY_NOTE), 'the redelivered stored body heads the recovery note')
-    assert.ok(redelivered.includes('旧正文'))
-    assert.equal(router.getTicket(t.ticketId).recoveryPending, undefined, 'carried exactly once')
+    const redelivered = calls.prompt.find(p => p.text.includes('旧正文'))
+    assert.ok(redelivered.text.startsWith(RECOVERY_NOTE), 'the redelivered stored body heads the recovery note')
+    assert.equal(router.getTicket(t.ticketId).recoveryPending, undefined, 'carried exactly once across both rows')
+    const autoResume = calls.prompt.find(p => p.text.includes('[hub-bot 恢复 ' + t.ticketId + ']'))
+    assert.ok(autoResume, 'working 票的自动恢复注入也到达')
+    assert.ok(!autoResume.text.includes(RECOVERY_NOTE), 'note carried exactly once (by the older row)')
   } finally { cleanup() }
 })
 
@@ -493,5 +496,32 @@ test("legacy 'review' tickets surface as person/review in queryTasks", async () 
     const rows = router.queryTasks({})
     assert.equal(rows[0].stage, 'person/review')
     assert.equal(rows[0].stageText, '等您验收')
+  } finally { cleanup() }
+})
+
+test('restart auto-resume respects execution slots: the overflow demotes to queued with a held injection (#72 闸门)', async () => {
+  const { router, registry, store, calls, cleanup } = fixture({ config: { concurrency: { slotsPerOwner: 1 } } })
+  try {
+    const owner = registry.create({ kind: 'repo', workspace: 'W', cwd: '/w' })
+    const a = await router.routeToOwner({ ownerId: owner.id, message: '任务A' })
+    const b = await router.routeToOwner({ ownerId: owner.id, message: '任务B' }) // 槽满 → queued + held
+    assert.equal(router.getTicket(b.ticketId).stage, 'queued')
+    router.tasks.promote(b.ticketId) // 模拟崩溃前 B 也占着槽（如 slot 配置从 2 收紧到 1 前的现场）
+    assert.equal(router.getTicket(b.ticketId).stage, 'working')
+    await router.markRestart()
+    assert.equal(router.getTicket(a.ticketId).stage, 'working', '最旧优先：A 留在槽内')
+    assert.equal(router.getTicket(b.ticketId).stage, 'queued', '溢出票让位排队')
+    const heldRow = router.listOutbox().find(r => r.ticketId === b.ticketId && r.kind === 'inject')
+    assert.ok(heldRow, 'B 的恢复注入已存（先存后做）')
+    assert.equal(heldRow.state, 'held', '溢出注入 held 等位')
+    // A 完成让出槽 → B 被提升、held 行释放、恢复注记随投递带上
+    router.tasks.report({ ticketId: a.ticketId, summary: 'done' })
+    await router.routeToOwner({ ownerId: owner.id, ticketId: a.ticketId, message: '验收', resolution: 'accept' })
+    await router.tick()
+    assert.equal(router.getTicket(b.ticketId).stage, 'working', '槽空后 B 自动提升')
+    const bPrompts = calls.prompt.filter(p => p.text.includes(b.ticketId))
+    assert.ok(bPrompts.some(p => p.text.includes('[hub-bot 恢复 ' + b.ticketId + ']')), 'B 的恢复注入送达')
+    assert.ok(bPrompts.some(p => p.text.startsWith(RECOVERY_NOTE)), 'B 的恢复注记随释放投递（由该票最旧的存行携带，恰好一次）')
+    assert.equal(router.getTicket(b.ticketId).recoveryPending, undefined)
   } finally { cleanup() }
 })

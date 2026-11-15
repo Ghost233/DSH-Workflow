@@ -57,8 +57,8 @@
                   headChars: 4096
                   tailChars: 1024
     # The L2 owner agent preset (repo/dir/scratch owners). Same fully-read-only base; the L2 session-management tools
-    # (search/read/inject/create_session, report, escalate) arrived with task-3 as a static plugin row of this
-    # preset — the mounted-subtree finding rules out runtime injection here too.
+    # (search/read/inject/create_session, fork_session #69 确认流程, report, escalate) arrived with task-3 as a
+    # static plugin row of this preset — the mounted-subtree finding rules out runtime injection here too.
     - id: hub-bot-owner-preset
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -82,7 +82,8 @@
             name: '@deepseek-ai/dsh-skill-filesystem'
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
-          # L2 会话管理工具（spec #65）与负责人 persona：静态行进 preset 挂载子树，机制同 router-tools。
+          # L2 会话管理工具（spec #65，含 #69 fork_session：fork 只发起确认，确认后代码执行）与负责人 persona：
+          # 静态行进 preset 挂载子树，机制同 router-tools。
           - id: hub-bot-owner-tools
             name: dsh-hub-bot/owner-tools
           - id: compaction

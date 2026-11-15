@@ -11,7 +11,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { STAGE_TEXT, stageDetail } from './tasks.js'
-import { insertOutbox } from './outbox.js'
+import { insertOutbox, updateOutboxRow } from './outbox.js'
 
 /** Digest row prefix delivered to the chief (L1 统一出口). */
 export const DIGEST_PREFIX = '[hub-bot 汇报 '
@@ -56,7 +56,7 @@ export function recordReportFact(store, ownerId, ticket) {
     .find(row => row.kind === 'digest' && row.state === 'queued' && row.ownerId === ownerId)
   if (found) {
     const next = { ...found, bodyLines: [...found.bodyLines, line] }
-    store.db.prepare('UPDATE outbox SET value = ? WHERE id = ?').run(JSON.stringify(next), next.id)
+    updateOutboxRow(store, next) // P1-2 收敛：同一个写者
     return next
   }
   return insertOutbox(store, {

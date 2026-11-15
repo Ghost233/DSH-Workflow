@@ -63,9 +63,10 @@ function fixture({ allowlist = ['Ghost233'], script = {}, repos = [REPO_CFG] } =
   const router = new Router({ store, registry, sessions, now: () => new Date(nowMs).toISOString() })
   const { gh, posts } = fakeGh(script)
   const config = { enabled: true, intervalMs: 300000, loginAllowlist: allowlist, mentionHandle: '@hub-bot', repos }
-  const source = new GitHubSource({ store, registry, router, sessions, config, logger: { info() {}, warn() {} }, gh, now: () => new Date(nowMs).toISOString() })
+  const warnings = []
+  const source = new GitHubSource({ store, registry, router, sessions, config, logger: { info() {}, warn: (...a) => warnings.push(a.join(' ')) }, gh, now: () => new Date(nowMs).toISOString() })
   return {
-    source, registry, router, store, calls, posts, script, gh,
+    source, registry, router, store, calls, posts, script, gh, warnings,
     triggers: () => store.db.prepare('SELECT value FROM trigger').all().map(r => JSON.parse(String(r.value))),
     tickets: () => store.db.prepare('SELECT value FROM ticket').all().map(r => JSON.parse(String(r.value))),
     outbox: () => store.db.prepare('SELECT value FROM outbox ORDER BY rowid').all().map(r => JSON.parse(String(r.value))),
@@ -174,8 +175,10 @@ test('a comment 停 from an allowlisted author terminates the task (让位于人
     const ticket = f.router.tasks.getTicket(ticketId)
     assert.equal(ticket.stage, 'failed', '任务终止（terminal，人可再用消息释放）')
     assert.ok(String(ticket.failed.reason).includes('停'), '终止原因落票面')
-    const notice = f.outbox().find(r => r.kind === 'reply' && r.to === 'dsh' && r.body.includes('已终止'))
+    const notice = f.outbox().find(r => r.kind === 'reply' && r.body.includes('已终止'))
     assert.ok(notice, 'chief 得到终止通知（汇报链统一出口）')
+    assert.equal(notice.to, 'dsh:session:chief', '可投递寻址——裸 dsh 是死信（双轴审查 P1-1）')
+    assert.equal(notice.state, 'queued', '进 OutboxRunner 投递扫描（recorded 无通道认领也是死信）')
   } finally { f.cleanup() }
 })
 
@@ -219,8 +222,8 @@ test('source closed / PR merged → the task is terminated and the chief notifie
     assert.deepEqual(result.terminated.sort(), [issueRouted.ticketId, prRouted.ticketId].sort())
     assert.equal(f.router.tasks.getTicket(issueRouted.ticketId).stage, 'failed')
     assert.ok(String(f.router.tasks.getTicket(prRouted.ticketId).failed.reason).includes('合并'), 'PR 合并原因落票面')
-    const notices = f.outbox().filter(r => r.kind === 'reply' && r.to === 'dsh' && r.body.includes('已终止'))
-    assert.equal(notices.length, 2, '两条终止通知')
+    const notices = f.outbox().filter(r => r.kind === 'reply' && r.to === 'dsh:session:chief' && r.state === 'queued' && r.body.includes('已终止'))
+    assert.equal(notices.length, 2, '两条终止通知（可投递寻址，双轴审查 P1-1）')
   } finally { f.cleanup() }
 })
 
@@ -242,7 +245,7 @@ test('deliverReplies posts recorded github replies as real comments with the bad
   } finally { f.cleanup() }
 })
 
-test('deliverReplies failures: recorded stays recorded with feishuAttempts-style counter; five failures fail the row + system problem', async () => {
+test('deliverReplies failures: recorded stays recorded with the shared attempts counter; five failures fail the row + system problem', async () => {
   const f = fixture()
   f.source.gh = async () => { throw new Error('HTTP 403') }
   try {
@@ -251,7 +254,7 @@ test('deliverReplies failures: recorded stays recorded with feishuAttempts-style
     for (let i = 0; i < 4; i++) await f.source.deliverReplies()
     let stored = f.outbox().find(r => r.id === row.id)
     assert.equal(stored.state, 'recorded')
-    assert.equal(stored.githubAttempts, 4)
+    assert.equal(stored.attempts, 4, '统一计数器命名')
     await f.source.deliverReplies()
     stored = f.outbox().find(r => r.id === row.id)
     assert.equal(stored.state, 'failed')
@@ -288,5 +291,15 @@ test('status() reports per-repo watermark, enabled flags, and the polling interv
     assert.equal(status.loginAllowlist[0], 'Ghost233')
     assert.equal(status.repos[REPO].enabled, true)
     assert.equal(status.repos[REPO].maxNumber, 41)
+  } finally { f.cleanup() }
+})
+
+test('resolveSelfLogin failure warns (not silently swallowed) and keeps the allowlist unchanged', async () => {
+  const f = fixture({ allowlist: [] })
+  f.source.gh = async () => { throw new Error('gh not authenticated') }
+  try {
+    const result = await f.source.resolveSelfLogin()
+    assert.deepEqual(result, [], '解析失败白名单恒空')
+    assert.ok(f.warnings.some(w => w.includes('could not resolve')), '至少 warn 一次（全静默 record-drop 是隐患）')
   } finally { f.cleanup() }
 })

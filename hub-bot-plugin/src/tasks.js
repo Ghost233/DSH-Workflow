@@ -148,6 +148,15 @@ export class TaskBoard {
   }
 
   /**
+   * 执行槽 (#72) + 重启恢复自动恢复： a working ticket yields its slot back to the queue (working → queued
+   * 进行中 → 排队中）. The Router uses this when a post-restart auto-resume overflows the slot cap — the
+   * ticket keeps its stored (held) recovery injection and re-enters when a slot frees (#promoteQueued).
+   */
+  demote(ticketId, { by } = {}) {
+    return this.#transition(ticketId, 'queued', by ?? 'system')
+  }
+
+  /**
    * The owner reports the execution result onto the task (spec: report 是任务状态的唯一写入通道）.
    * working → person/review; the ticket then waits for user acceptance.
    */

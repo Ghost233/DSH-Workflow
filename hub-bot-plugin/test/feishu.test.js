@@ -178,7 +178,7 @@ test('deliverReplies leaves failures recorded with an attempt counter; five fail
     for (let i = 0; i < 4; i++) await source.deliverReplies()
     let stored = store.db.prepare('SELECT value FROM outbox WHERE id = ?').all(row.id).map(r => JSON.parse(String(r.value)))[0]
     assert.equal(stored.state, 'recorded')
-    assert.equal(stored.feishuAttempts, 4)
+    assert.equal(stored.attempts, 4, '统一计数器命名（收敛后不再有 per-channel 字段）')
     await source.deliverReplies()
     stored = store.db.prepare('SELECT value FROM outbox WHERE id = ?').all(row.id).map(r => JSON.parse(String(r.value)))[0]
     assert.equal(stored.state, 'failed')
@@ -223,5 +223,18 @@ test('register() runs the device flow: QR surfaced, credentials saved 0600, even
     assert.equal(statSync(credentialPath(store.stateDir)).mode & 0o777, 0o600)
     assert.equal(calls.patch.length, 1, 'event-subscription mode auto-config attempted once')
     assert.ok(String(calls.patch[0].url).includes('application'), 'application-config patch')
+  } finally { cleanup() }
+})
+
+test('deliverReplies sends recorded rows oldest-first (ORDER BY rowid — 收敛修漂移)', async () => {
+  const sent = []
+  const { source, store, cleanup } = fixture({
+    larkOverrides: { client: { im: { message: { create: async req => { sent.push(JSON.parse(req.data.content).text); return { code: 0 } } } }, request: async () => ({ code: 0 }) } },
+  })
+  try {
+    insertOutbox(store, { ticketId: null, kind: 'reply', to: 'feishu:chat:oc_9', body: '第一条', state: 'recorded', requestId: 'ord-1' })
+    insertOutbox(store, { ticketId: null, kind: 'reply', to: 'feishu:chat:oc_9', body: '第二条', state: 'recorded', requestId: 'ord-2' })
+    await source.deliverReplies()
+    assert.deepEqual(sent, ['第一条', '第二条'], '按入队顺序实投')
   } finally { cleanup() }
 })

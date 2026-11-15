@@ -172,8 +172,51 @@ export class Router {
   }
 
   /** Restart recovery: end running assignments "host restarted" and arm the recovery note (spec: 重启恢复）. */
-  markRestart() {
+  /**
+   * Restart recovery (spec「重启恢复」 + #72 AC1 自动恢复）: assignments running at the crash end "host
+   * restarted", then every working ticket gets a FRESH recovery injection automatically — 最旧优先， through
+   * the execution-slot gate: the per-owner overflow demotes to queued and its injection is stored HELD
+   * (#promoteQueued admits it when a slot frees). The recovery note itself is prepended at delivery time
+   * (carried exactly once). Idle/queued tickets already hold their stored rows — the runner redelivers them.
+   */
+  async markRestart() {
     this.tasks.markRestart()
+    const pending = this.store.db.prepare('SELECT value FROM ticket').all()
+      .map(raw => JSON.parse(String(raw.value)))
+      .filter(ticket => ticket.recoveryPending === true && normalizeStage(ticket.stage) === 'working')
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))) // 最旧优先
+    if (pending.length === 0) return { resumed: 0, queued: 0 }
+    let resumed = 0
+    let queued = 0
+    const perOwner = new Map()
+    for (const ticket of pending) {
+      const owner = this.registry.get(ticket.owner)
+      if (!owner || owner.recycled) continue // 负责人已回收：无处可恢复，票面保持原样
+      const existing = this.listOutbox().find(row => row.ticketId === ticket.id && row.kind === 'inject'
+        && (row.state === 'queued' || row.state === 'held') && row.body.startsWith('[hub-bot 恢复 ' + ticket.id + ']'))
+      if (existing) continue // 幂等：恢复注入已存，不重复补投
+      const count = perOwner.get(ticket.owner) ?? 0
+      const atCapacity = count >= this.#slotsPerOwner() // 执行槽闸门：槽满则 queued 等位
+      perOwner.set(ticket.owner, count + 1)
+      if (atCapacity) {
+        try { this.tasks.demote(ticket.id) } catch { continue } // 期间被别的路径改态 — 交给那条路径
+        queued++
+      } else {
+        resumed++
+      }
+      const ensured = await this.#ensureSession(owner)
+      const trigger = ticket.triggerId ? this.getTrigger(ticket.triggerId) : null
+      const auth = ticket.authorization ?? { actor: 'user', source: 'dsh', at: ticket.createdAt }
+      const original = typeof trigger?.message === 'string' && trigger.message ? trigger.message : '（原始指令见会话历史）'
+      const text = '[hub-bot 恢复 ' + ticket.id + '] 宿主重启，任务自动恢复（最旧优先）。原始任务：' + original
+        + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + ticket.id
+      this.runner.enqueue({
+        ticketId: ticket.id, kind: 'inject', to: 'session:' + ensured.sessionId, sessionId: ensured.sessionId,
+        body: text, requestId: 'hub-bot-resume-' + this.ids.uuid(), held: atCapacity,
+      })
+    }
+    await this.runner.tick()
+    return { resumed, queued }
   }
 
   /** The chief's own Session (L1 统一出口): digests and replies are admitted here. */

@@ -71,6 +71,8 @@ test('scratch 全链: done 验收通过 → 目录删除 + 注册表 recycled + 
     assert.ok(row.sessionId, '会话历史保留可查: sessionId 不抹除')
     const audit = f.outbox().find(r => r.body?.includes('[hub-bot 回收 ' + owner.id + ']'))
     assert.ok(audit, '回收动作落审计')
+    assert.equal(audit.to, 'dsh:session:chief', '可投递寻址——裸 dsh 是死信（双轴审查 P1-1）')
+    assert.equal(audit.state, 'queued', '进 OutboxRunner 投递扫描')
     assert.ok(audit.body.includes('result.md') && audit.body.includes('sub/data.json'), '审计含目录内容清单')
     assert.ok(audit.body.includes('会话'), '审计指出会话历史可查')
   } finally { f.cleanup() }

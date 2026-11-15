@@ -138,7 +138,7 @@ tracking: https://github.com/Ghost233/DSH-Workflow/issues/62
 | done | 验收通过（person/review→accept）或确认取消（person/confirm→cancel）的终态 | 完成 |
 
 - `person/*` 阶段：任务没有人参与就无法继续。**人的消息到达 blocked/failed 的任务会直接释放它**继续执行。
-- 实现为九态机（#66）：上表 8 个等待/进行阶段 + 终态 done，idle（待触发）与 queued（排队中）拆分为两阶段；代码以 `src/tasks.js` 的 STAGES/TRANSITIONS 为准。person/confirm 与 queued 的生产者属后续工单（确认流程 / 执行槽并发），当前保留为模型完整性。
+- 实现为九态机（#66）：上表 8 个等待/进行阶段 + 终态 done，idle（待触发）与 queued（排队中）拆分为两阶段；代码以 `src/tasks.js` 的 STAGES/TRANSITIONS 为准。person/confirm 的生产者是确认流程（#69 已落地：fork_session 等重操作先确认后执行）；queued 的生产者是执行槽（#72 已落地：每负责人槽满则排队，槽空按 FIFO 提升）。
 - 状态由插件从存储的任务记录计算，`session_event_read` 只用于补充细节；状态摘要 = 状态的朗读 + 必要的上下文。
 - 负责人视图（面板或会话内查询）按 superagent 面板三问组织：**有需要我的吗？系统健康吗？这个任务的历史？**
 
@@ -224,7 +224,7 @@ const result = await lark.registerApp({
 
 - **权限原则：一次性全部申请**。后续版本新增能力时，用 `registerApp({ appId, addons })` 对已建应用增量补权限（确认页展示 diff，重新扫码确认），不手动进开发者后台。
 - **例外**：事件订阅方式（长连接 vs webhook）属敏感配置，不能走 addons；创建后插件用新凭据调一次 [更新应用开发配置 OpenAPI](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/application-v7/application-v7/application-config/patch) 设置为长连接模式，自动完成。
-- 凭据由上述流程自动写入插件配置，用户全程不接触字符串。
+- 凭据由上述流程自动落盘到插件 stateDir 的凭据文件（`hub-bot.feishu.credentials.json`，0600 仅属主可读），重启自动重载；用户全程不接触字符串。
 
 ### 消息通道
 

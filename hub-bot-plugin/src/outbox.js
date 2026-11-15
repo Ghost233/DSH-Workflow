@@ -26,10 +26,66 @@ const MAX_ATTEMPTS = 3
  * createdAt). Every row gets: id, attempts 0, nextRetryAt null, createdAt; callers pass the specifics.
  */
 export function insertOutbox(store, row, now = () => Date.now()) {
+  // 双轴审查 P1-1（死信）: a row without a delivery state matches no scan — the runner scans 'queued', the
+  // channels scan 'recorded' — so it can never be delivered. Refuse to write it.
+  if (typeof row?.state !== 'string' || !row.state) {
+    throw new Error('insertOutbox: state-required — every outbox row must declare its delivery state (queued/held/recorded)')
+  }
   const createdAt = new Date(now()).toISOString()
   const full = { attempts: 0, nextRetryAt: null, ...row, id: row.id ?? 'out-' + randomUUID(), createdAt }
   store.db.prepare('INSERT INTO outbox (id, value, at) VALUES (?, ?, ?)').run(full.id, JSON.stringify(full), createdAt)
   return full
+}
+
+/** THE one outbox row updater (双轴审查 P1-2: feishu/github/runner hand-rolled the same UPDATE three times). */
+export function updateOutboxRow(store, row) {
+  store.db.prepare('UPDATE outbox SET value = ? WHERE id = ?').run(JSON.stringify(row), row.id)
+}
+
+/**
+ * The channel-agnostic recorded-reply driver (双轴审查 P1-2: feishu/github deliverReplies were ~25-line
+ * isomorphic copies and had already drifted — feishu missed ORDER BY, counters were named per channel).
+ * One scan (oldest first), one counter (`attempts`), one failure ladder: only a real delivery earns 'sent';
+ * `maxAttempts` consecutive failures fail the row and report a system problem (OutboxRunner discipline).
+ *
+ * @param {{ store: import('./store.js').Store, logger: { warn: Function }, now: () => string,
+ *   channel: string, prefix: string, maxAttempts: number,
+ *   parseTarget: (to: string) => unknown,  // null = unparseable → the row fails immediately
+ *   send: (target: unknown, body: string) => Promise<void>,
+ *   prepareBody?: (body: string) => string }} deps
+ */
+export async function deliverRecordedReplies({ store, logger, now, channel, prefix, maxAttempts, parseTarget, send, prepareBody }) {
+  const rows = store.db.prepare('SELECT value FROM outbox ORDER BY rowid').all()
+    .map(raw => JSON.parse(String(raw.value)))
+    .filter(row => row.state === 'recorded' && typeof row.to === 'string' && row.to.startsWith(prefix))
+  if (rows.length === 0) return { delivered: 0 }
+  let delivered = 0
+  for (const row of rows) {
+    const target = parseTarget(row.to)
+    if (!target) {
+      updateOutboxRow(store, { ...row, state: 'failed', lastError: 'unparseable ' + channel + ' target' })
+      continue
+    }
+    const body = prepareBody ? prepareBody(row.body) : row.body
+    try {
+      await send(target, body)
+      updateOutboxRow(store, { ...row, state: 'sent', sentAt: now() })
+      delivered++
+    } catch (error) {
+      const attempts = (row.attempts ?? 0) + 1
+      logger.warn('hub-bot %s: reply to %s failed (%s)', channel, row.to, error?.message ?? error)
+      if (attempts >= maxAttempts) {
+        updateOutboxRow(store, { ...row, state: 'failed', attempts, lastError: String(error?.message ?? error) })
+        insertOutbox(store, {
+          ticketId: row.ticketId ?? null, kind: 'system-problem', to: 'chief',
+          body: channel + ' reply ' + row.id + ' failed ' + attempts + ' times in a row (' + row.to + ')', state: 'recorded',
+        })
+      } else {
+        updateOutboxRow(store, { ...row, attempts, lastError: String(error?.message ?? error) })
+      }
+    }
+  }
+  return { delivered }
 }
 
 export class OutboxRunner {
@@ -73,7 +129,7 @@ export class OutboxRunner {
   }
 
   #writeRow(row) {
-    this.store.db.prepare('UPDATE outbox SET value = ? WHERE id = ?').run(JSON.stringify(row), row.id)
+    updateOutboxRow(this.store, row) // 双轴审查 P1-2: 三处逐字重复收敛到这一个写者
   }
 
   /** All queued delivery rows, oldest first, grouped by ticket (null ticket groups under ''). */

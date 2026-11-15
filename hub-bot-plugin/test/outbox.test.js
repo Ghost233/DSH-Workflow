@@ -226,3 +226,13 @@ test('a deliverer may RECORD an undelivered intent (不假装发了飞书): term
     assert.equal(problems.length, 0, 'an honest record is not a failure')
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
 })
+
+test('insertOutbox requires state: a row without delivery state is a dead letter (双轴审查 P1-1)', async () => {
+  const { insertOutbox } = await import('../src/outbox.js')
+  const { store, cleanup } = fixture()
+  try {
+    assert.throws(() => insertOutbox(store, { kind: 'reply', to: 'dsh', body: 'x' }), /state-required/, '缺 state 直接抛，堵住死信再现')
+    const row = insertOutbox(store, { kind: 'reply', to: 'dsh:session:chief', body: 'x', state: 'queued' })
+    assert.equal(row.state, 'queued')
+  } finally { cleanup() }
+})

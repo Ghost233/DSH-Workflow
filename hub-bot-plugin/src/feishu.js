@@ -24,7 +24,7 @@
 import { writeFileSync, readFileSync, existsSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { insertOutbox } from './outbox.js'
+import { insertOutbox, deliverRecordedReplies } from './outbox.js'
 
 /** The reply never pretends: this exact sentence answers every non-text message (spec「非文本」). */
 export const UNSUPPORTED_MESSAGE_TYPE = '暂不支持该消息类型'
@@ -318,40 +318,19 @@ export class FeishuSource {
    * fail the row and report a system problem (OutboxRunner discipline).
    */
   async deliverReplies() {
-    const rows = this.store.db.prepare('SELECT value FROM outbox').all()
-      .map(raw => JSON.parse(String(raw.value)))
-      .filter(row => row.state === 'recorded' && typeof row.to === 'string' && row.to.startsWith('feishu:'))
-    if (rows.length === 0) return { delivered: 0 }
-    const client = await this.#client()
-    let delivered = 0
-    for (const row of rows) {
-      const chatId = row.to.startsWith('feishu:chat:') ? row.to.slice('feishu:chat:'.length) : row.to.slice('feishu:'.length)
-      try {
+    // 双轴审查 P1-2: 通道无关驱动在 outbox.js（顺序扫描/统一 attempts/失败阶梯一处维护）；这里只留通道差异。
+    return deliverRecordedReplies({
+      store: this.store, logger: this.logger, now: this.now,
+      channel: 'feishu', prefix: 'feishu:', maxAttempts: MAX_FEISHU_ATTEMPTS,
+      parseTarget: to => to.startsWith('feishu:chat:') ? to.slice('feishu:chat:'.length) : to.slice('feishu:'.length),
+      send: async (chatId, body) => {
+        const client = await this.#client()
         const resp = await client.im.message.create({
           params: { receive_id_type: 'chat_id' },
-          data: { receive_id: chatId, msg_type: 'text', content: JSON.stringify({ text: row.body }) },
+          data: { receive_id: chatId, msg_type: 'text', content: JSON.stringify({ text: body }) },
         })
         if (resp && typeof resp.code === 'number' && resp.code !== 0) throw new Error('feishu api code ' + resp.code + ': ' + (resp.msg ?? ''))
-        this.#writeRow({ ...row, state: 'sent', sentAt: this.now() })
-        delivered++
-      } catch (error) {
-        const attempts = (row.feishuAttempts ?? 0) + 1
-        this.logger.warn('hub-bot feishu: reply to %s failed (%s)', row.to, error?.message ?? error)
-        if (attempts >= MAX_FEISHU_ATTEMPTS) {
-          this.#writeRow({ ...row, state: 'failed', feishuAttempts: attempts, lastError: String(error?.message ?? error) })
-          insertOutbox(this.store, {
-            ticketId: row.ticketId ?? null, kind: 'system-problem', to: 'chief',
-            body: 'feishu reply ' + row.id + ' failed ' + attempts + ' times in a row (' + row.to + ')', state: 'recorded',
-          })
-        } else {
-          this.#writeRow({ ...row, feishuAttempts: attempts, lastError: String(error?.message ?? error) })
-        }
-      }
-    }
-    return { delivered }
-  }
-
-  #writeRow(row) {
-    this.store.db.prepare('UPDATE outbox SET value = ? WHERE id = ?').run(JSON.stringify(row), row.id)
+      },
+    })
   }
 }

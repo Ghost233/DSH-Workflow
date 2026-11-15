@@ -149,7 +149,8 @@ export function apply(ctx, rawConfig) {
   // 每 intervalMs（默认 5min）一轮轮询，首轮只记水位线；recorded github 回复意图随 1s tick 实投。
   const github = new GitHubSource({ store, registry: hub.registry, router: hub.router, sessions, config: config.github, logger: ctx.logger })
   if (config.github.enabled) {
-    void github.resolveSelfLogin().catch(() => {})
+    // P2-4: 解析失败必须可闻 — 白名单恒空会让所有作者静默 record-drop，至少 warn 一次
+  void github.resolveSelfLogin().catch(error => ctx.logger.warn('hub-bot github: resolveSelfLogin failed: %s', error?.message ?? error))
   }
   // 重启恢复（#66）: end running assignments "host restarted", then resume any queued stored work — and keep
   // driving the runner every second so backoff retries fire even when no new traffic arrives.
@@ -157,7 +158,8 @@ export function apply(ctx, rawConfig) {
   // (owner-tools report-failure、github 源头终止)。回收失败不阻断任何任务(记 warn, 下轮重试)。
   const recycler = new Recycler({ store, registry: hub.registry, logger: ctx.logger })
   hub.router.onTicketTerminal = ticketId => recycler.maybeRecycleForTicket(ticketId)
-  hub.router.markRestart()
+  // #72 AC1 自动恢复：working 票最旧优先自动补投恢复注入（过执行槽闸门），无人干预即可继续干活
+  void hub.router.markRestart().catch(error => ctx.logger.warn('hub-bot restart recovery failed: %s', error?.message ?? error))
   void hub.router.tick().catch(error => ctx.logger.warn('hub-bot delivery resume failed: %s', error?.message ?? error))
   const deliveryTimer = setInterval(() => {
     void hub.router.tick().catch(error => ctx.logger.warn('hub-bot delivery tick failed: %s', error?.message ?? error))
