@@ -10,8 +10,8 @@
 
 | 阶段 | 工单 | 任务板 | 状态 | 候选 SHA | 证据 |
 |------|------|--------|------|----------|------|
-| 1 注入链路地基 | #63 | task-1 / 验收 task-13 | 进行中 | - | - |
-| 2 三层主干 | #64-#67 | task-2..5 / 验收 task-14 | 未开始 | - | - |
+| 1 注入链路地基 | #63 | task-1 / 验收 task-13 | **完成** | 873bcec | 证据：hub-bot-plugin/docs/evidence-task-1.md；双轴审查+复审通过，P0/P1 清零 |
+| 2 三层主干 | #64-#67 | task-2..5 / 验收 task-14 | **完成** | 1a2dedc | 5314675 路由链 / 337dc2c 执行闭环 / 5efc1c8 状态机 / bf0d0a5 汇报链；双轴审查+复审通过，P0/P1 清零 |
 | 3 渠道与隔离 | #68 #69 #72 | task-6,7,10 / 验收 task-15 | 未开始 | - | - |
 | 4 形态与 GitHub 闭环 | #70 #71 | task-8,9 / 验收 task-16 | 未开始 | - | - |
 | 5 面板与总交付 | #73 #74 | task-11,12 / 验收 task-17 | 未开始 | - | - |
@@ -19,7 +19,10 @@
 ## 当前
 
 - **阻塞已解除（2026-11-15）**：根因是 profile 配置树未组装 spawn provider；用户已在 ~/.dsh/profiles/desktop/cordis.patch.yml 插入官方进程内 spawn 后端 dsh-subagent-spawn-in-process + 工具包 dsh-tool-subagent 并重启 DSH，subagent/list_subagent_models 工具上线。历史失败成员：impl-core、impl-core-2（Codex 运行时 product-error，零产出）
-- 当前：impl-core-a 领取 task-1（#63）实施中；同时活跃队员上限 2 个，队员可再带一层队员
-- 下一动作：等 impl-core-a 回报 → 核对 diff 与证据 → 验收 task-1 → 派 task-2（#64）
+- 阶段 1 完成（2026-11-15）：4 commits（1f02e67 骨架 → 88a220d 规格入库 → b6fff6d 审查修复 → 873bcec 收尾）；#63 issue 已留验收评论
+- 阶段 2 完成（2026-11-15）：#64-#67 四张全绿（83 测试双模式 EXIT=0）；双轴审查 P1×2（summarize/factLine 双映射源、reply 假 sent）已修并复审关闭；证据 task-2..5 已入库 hub-bot-plugin/docs/
+- 审查沉淀的关键机制决定：**preset 会话工具面是独立挂载子树（mountPreset）——角色工具必须做成静态插件行放进各自 preset 的 plugins 列表**，不做运行时 decorate；profile 层同 id 条目是替换语义（stateDir 与 devApi 必须同条目）；reply 对未投递目标标 recorded 终态（不假装 sent），飞书通道落地时扫 recorded 补投
+- 阶段遗留：用户 desktop profile 生产装载未验（插件功能完整后统一做，Lead 与用户协调重启时机）；追问路径清标时机边缘（复审 N1）记录；hub() 助手 5 行重复与 Router 直写 ticket 两个 P2 微项并入后续工单
+- 当前：阶段 3 并行启动——task-6（#68 飞书）→ impl-core-a；task-7（#69 fork 与确认）→ impl-aux；task-8（#70 目录/临时 bot）排队等槽
 - 已知约束：验证插件装载需重启用户正在使用的 DSH 服务——由 Lead 与用户协调时机，成员不自行重启
 - 未关闭问题：无
