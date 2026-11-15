@@ -25,6 +25,7 @@ import { basename } from 'node:path'
 import { resolveConfig } from './config.js'
 import { Store, SCHEMA_VERSION } from './store.js'
 import { Hub, setHub } from './hub.js'
+import { FeishuSource } from './feishu.js'
 
 export const name = 'hub-bot'
 export const inject = ['sessionController', 'sessionPersistence', 'webServer']
@@ -130,6 +131,12 @@ export function apply(ctx, rawConfig) {
   const hub = new Hub({ store, config, sessions, onSystemProblem: p => ctx.logger.warn('hub-bot system problem: %s (ticket %s, row %s)', p.reason, p.ticketId, p.rowId) })
   const chief = hub.registry.ensureChief({ cwd: config.homeRepo, workspace: basename(config.homeRepo) })
   setHub(hub)
+  // 飞书入口 (#68): OFF unless config.feishu.enabled. With credentials present the WSClient long connection
+  // starts at boot; the same source scans recorded feishu reply intents on the 1s tick (阶段 2 留的通道).
+  const feishu = new FeishuSource({ store, registry: hub.registry, sessions, config: config.feishu, logger: ctx.logger })
+  if (config.feishu.enabled && feishu.credentialState === 'ok') {
+    void feishu.connect().catch(error => ctx.logger.warn('hub-bot feishu connect failed: %s (凭据可能失效 — 面板提示重新扫码)', error?.message ?? error))
+  }
   // 重启恢复（#66）: end running assignments "host restarted", then resume any queued stored work — and keep
   // driving the runner every second so backoff retries fire even when no new traffic arrives.
   hub.router.markRestart()
@@ -137,6 +144,9 @@ export function apply(ctx, rawConfig) {
   const deliveryTimer = setInterval(() => {
     void hub.router.tick().catch(error => ctx.logger.warn('hub-bot delivery tick failed: %s', error?.message ?? error))
     void hub.router.autoReportTick().catch(error => ctx.logger.warn('hub-bot auto-report tick failed: %s', error?.message ?? error))
+    if (config.feishu.enabled && feishu.credentialState === 'ok') {
+      void feishu.deliverReplies().catch(error => ctx.logger.warn('hub-bot feishu reply tick failed: %s', error?.message ?? error))
+    }
   }, 1000)
   deliveryTimer.unref?.()
   ctx.on('dispose', () => clearInterval(deliveryTimer))
@@ -144,7 +154,7 @@ export function apply(ctx, rawConfig) {
   // nor even globalThis reaches them (observed live). A service provided at this scope is the channel that crosses —
   // the same way the subtree sees Host services like 'tools'. The fiber's unload unregisters it (reflect.provide).
   const unprovide = ctx.root.reflect.provide('hubBot', hub)
-  ctx.on('dispose', () => { unprovide(); setHub(null); store.close() })
+  ctx.on('dispose', () => { void feishu.disconnect(); unprovide(); setHub(null); store.close() })
   ctx.logger.info('hub-bot ready: state %s (schema %s); chief owner %s (%s)%s',
     store.stateDir, store.schemaVersion, chief.owner.cwd, chief.created ? 'registered pending' : 'already registered',
     config.devApi ? '' : '; management API disabled (no config.devApi)')
@@ -277,6 +287,19 @@ export function apply(ctx, rawConfig) {
           json(res, 200, { delivered: true, autoReport })
         } else if (route === 'transcript' && method === 'GET') {
           json(res, 200, await transcript(Object.fromEntries(url.searchParams)))
+        } else if (route === 'feishu/status' && method === 'GET') {
+          // 面板健康视图: credentialState 'invalid'/'missing' = 提示重新扫码.
+          json(res, 200, feishu.status())
+        } else if (route === 'feishu/register' && method === 'POST') {
+          // 扫码建应用: starts the device flow in the background; poll feishu/status for the QR url, then
+          // for credentialState 'ok' once the user confirmed on the phone.
+          if (feishu.registering) { json(res, 200, { started: false, registration: 'pending', qr: feishu.lastQr ?? null }); return }
+          void feishu.register().catch(error => ctx.logger.warn('hub-bot feishu register failed: %s', error?.message ?? error))
+          json(res, 202, { started: true })
+        } else if (route === 'feishu/simulate' && method === 'POST') {
+          // Dev proof aid: inject one mock im.message.receive_v1 event through the real normalization/policy path.
+          const body = await readBody(req)
+          json(res, 200, await feishu.handleEvent(body.event ?? body))
         } else {
           throw new HttpError(404, 'Unknown operation: ' + method + ' ' + route)
         }
