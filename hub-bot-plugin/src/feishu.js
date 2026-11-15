@@ -136,7 +136,7 @@ export class FeishuSource {
         name: BOT_PRESET.name,
         appIdMasked: typeof appId === 'string' && appId.length > 10 ? appId.slice(0, 7) + '…' + appId.slice(-4) : appId,
         boundAt: this.credentials.boundAt ?? null,
-        connected: this.wsState === 'on',
+        connected: this.wsState === 'connected',
       } : undefined,
       botOpenId: this.config.botOpenId ?? undefined,
     }
@@ -186,7 +186,8 @@ export class FeishuSource {
       })
       this.logger.info('hub-bot feishu: event-subscription mode set to long_connection (未对真实 API 验证)')
     } catch (error) {
-      this.logger.warn('hub-bot feishu: event-mode auto-config failed (%s) — 手工降级: set 长连接 in the developer console once', error?.message ?? error)
+      // 实测（2026-11-16）: 设备流权限包不含 application:application:patch → 404。手工降级为正式路径。
+      this.logger.warn('hub-bot feishu: event-mode auto-config failed (%s) — 请手工配置（一次性）: open.feishu.cn/app →「DSH 中转 Bot」→ 事件与回调 → 订阅方式 → 使用长连接接收事件/回调', error?.message ?? error)
     }
   }
 

@@ -93,7 +93,7 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 ## 飞书入口（#68）
 
 - **扫码一键建应用**：`POST /hub-bot/api/feishu/register` 启动 `lark.registerApp()` 设备授权流程（RFC 8628）；`GET /hub-bot/api/feishu/status` 轮询拿 `qr.url`（面板可渲染二维码），用户手机飞书确认后 `client_id/client_secret` 写入 `stateDir/feishu-credentials.json`（**0600**）并自动建立长连接。权限一次申请：im:message:send_as_bot / im:message / im:chat:readonly + 事件 im.message.receive_v1。
-- **长连接自动配置**：凭证落地后插件调一次 application-config patch OpenAPI 设长连接模式——**未对真实 API 验证**；失败只记日志（手工降级：开发者后台设一次），不阻断。
+- **长连接配置**：凭证落地后插件尝试 application-config patch 设长连接模式——**实测不可行**（2026-11-16：设备流权限包不含 `application:application:patch`，返回 404）；**正式路径是手工一次性配置**：open.feishu.cn/app → 应用 → 事件与回调 → 订阅方式 → 使用长连接接收事件/回调。失败只记日志不阻断。
 - **消息归一化与来源标记**：im.message.receive_v1 → Trigger（id `feishu-<messageId>`，重启/重连重放去重）→ 注入 L1 总负责人会话，文本带插件自有标记 `[hub-bot 飞书 <chatId>/<messageId>]` 与回投地址（`reply_source to='feishu:chat:<chatId>'`），与人手输入可区分（task-1 遗留修复）。
 - **Policy 代码强制**：bot 自己的消息丢弃；**授权边界在飞书侧**——应用的可用范围与可见成员由飞书管理后台配置，能与 bot 说话即已授权，插件不做二次过滤（原 `openIdAllowlist` 已移除，残留该键的旧配置会被严格校验拒绝）；群聊只有 @bot 的消息成请求（botOpenId 缺省时任何 @ 宽松算）；非文本消息回「暂不支持该消息类型」。
 - **回复回投**：L1 `reply_source to='feishu:chat:oc_…'` 的行是 recorded 持久意图（阶段 2 诚实语义）；FeishuSource.deliverReplies 每秒 tick 扫描、经 im.message.create 实投成功才标 sent；连续失败 5 次标 failed 并报 system-problem。
