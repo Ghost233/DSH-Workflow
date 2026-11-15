@@ -274,6 +274,17 @@ function renderSettings(view) {
   watchDirty(cBar, slots)
   page.append(cSection)
 
+  // 安全 (危险命令黑名单 — 命中转确认, spec「Policy」安全兜底)
+  const secSection = el('section', { class: 'setting-block' })
+  secSection.append(el('h3', {}, text('安全')))
+  secSection.append(el('p', { class: 'status-line' }, text('命中黑名单的注入不直接执行：票转等您确认，确认后才注入（三问页可裁决）。留空 = 关闭兜底。')))
+  const secList = listField(view.security?.dangerousPatterns)
+  secSection.append(el('label', {}, text('危险命令黑名单（每行一个模式，大小写不敏感子串匹配）')), secList)
+  const secBar = saveBar('security', () => ({ dangerousPatterns: readList(secList) }))
+  secSection.append(secBar)
+  watchDirty(secBar, secList)
+  page.append(secSection)
+
   // 汇报
   const rSection = el('section', { class: 'setting-block' })
   rSection.append(el('h3', {}, text('定时汇报')))

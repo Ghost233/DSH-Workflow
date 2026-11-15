@@ -34,6 +34,7 @@ const SETTABLE = {
   reporting: ['auto', 'intervalMs'],
   github: ['enabled', 'intervalMs', 'loginAllowlist', 'repos'],
   feishu: ['openIdAllowlist'],
+  security: ['dangerousPatterns'],
 }
 
 function requireBoolean(value, path) {
@@ -121,6 +122,12 @@ function applyOne(config, section, key, value) {
     config.github.loginAllowlist = list
     return list
   }
+  if (section === 'security' && key === 'dangerousPatterns') {
+    // 危险命令黑名单 (spec「Policy」): 整表替换; 空数组 = 显式关闭兜底 (用户自己的选择, 与授权白名单同理)。
+    const list = requireStringList(value, 'security.dangerousPatterns')
+    config.security.dangerousPatterns = list
+    return list
+  }
   if (section === 'github' && key === 'repos') {
     // 逐仓库开关 (spec「逐仓库开关」): a map of repo → enabled, applied onto the configured repo entries.
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -198,6 +205,7 @@ export function buildSettingsView(config, { feishuStatus, githubStatus } = {}) {
   return {
     concurrency: { slotsPerOwner: config.concurrency.slotsPerOwner },
     reporting: { auto: config.reporting.auto, intervalMs: config.reporting.intervalMs },
+    security: { dangerousPatterns: [...(config.security?.dangerousPatterns ?? [])] },
     feishu: {
       enabled: config.feishu.enabled,
       openIdAllowlist: [...(config.feishu.openIdAllowlist ?? [])],

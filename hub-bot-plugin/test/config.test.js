@@ -2,12 +2,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveConfig, ConfigError } from '../src/config.js'
+import { DEFAULT_DANGEROUS_PATTERNS } from '../src/security.js'
 
 /** The minimal valid configuration; tests override one key at a time. */
 const valid = () => ({ stateDir: '/tmp/hub-bot-state', homeRepo: '/Volumes/home' })
 
 test('accepts an absolute stateDir and homeRepo', () => {
-  assert.deepEqual(resolveConfig(valid()), { stateDir: '/tmp/hub-bot-state', homeRepo: '/Volumes/home', reporting: { auto: false, intervalMs: 60000 }, feishu: { enabled: false, openIdAllowlist: [] }, github: { enabled: false, intervalMs: 300000, loginAllowlist: [], repos: [] }, concurrency: { slotsPerOwner: 3 } })
+  assert.deepEqual(resolveConfig(valid()), { stateDir: '/tmp/hub-bot-state', homeRepo: '/Volumes/home', reporting: { auto: false, intervalMs: 60000 }, feishu: { enabled: false, openIdAllowlist: [] }, github: { enabled: false, intervalMs: 300000, loginAllowlist: [], repos: [] }, concurrency: { slotsPerOwner: 3 }, security: { dangerousPatterns: [...DEFAULT_DANGEROUS_PATTERNS] } })
 })
 
 test('reporting defaults to OFF (无自动汇报) and parses explicit overrides', () => {

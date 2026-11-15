@@ -21,6 +21,7 @@ import { OutboxRunner } from './outbox.js'
 import { truncateWords } from './discipline.js'
 import { buildDigestText, buildAutoSummary } from './reporting.js'
 import { confirmTicketFork } from './fork.js'
+import { DANGEROUS_INJECT_ACTION, DEFAULT_DANGEROUS_PATTERNS, findDangerousPattern, dangerousConfirmText } from './security.js'
 
 /** A routing failure with a machine-readable code for tool/API surfaces. */
 export class RouterError extends Error {
@@ -171,6 +172,42 @@ export class Router {
     return { ownerId: owner.id, sessionId: ensured.sessionId, ticketId, requestId: ticket.requestId, createdSession: ensured.created, rebuilt: false, deduped: false, confirmed: true, fork: { fromSessionId: result.fromSessionId, sessionId: result.sessionId }, stage: 'working' }
   }
 
+  /**
+   * resolution:'confirm' for a blacklist-held injection (#73 补足, spec「Policy」): the stored message is
+   * injected exactly as it would have been — route/follow-up entries wake the OWNER session (with the
+   * ticket's authorization record), owner-inject entries deliver the L2's stored text to the execution
+   * session. The confirm transition lands first; the injection then persists through the outbox like
+   * every other (先存后做, retryable).
+   */
+  async #confirmDangerousInject(owner, ticket, ticketId) {
+    const action = ticket.pendingConfirm?.action
+    if (!action || action.type !== DANGEROUS_INJECT_ACTION) {
+      throw new RouterError('no-pending-inject', 'route_to_owner: ticket ' + ticketId + ' has no held dangerous injection to confirm')
+    }
+    // 缺上下文升级不编造： same discipline as the fork path — no authorization record, no execution.
+    if (!ticket.authorization) {
+      try { this.tasks.escalate({ ticketId, reason: '授权记录缺失（票面权威），危险注入确认拒绝凭会话叙事执行' }) } catch { /* stage may not allow it */ }
+      throw new RouterError('authorization-missing', 'route_to_owner: ticket ' + ticketId + ' has no authorization record — refusing to act on a guess')
+    }
+    const auth = ticket.authorization
+    if (action.entry === 'owner-inject') {
+      // L2 发起、被挂起的执行会话注入: 确认后按票面存储的完整文本原样投递 (文本构建时已携授权记录)。
+      const requestId = 'hub-bot-owner-' + this.ids.uuid()
+      await this.sessions.prompt({ requestId, sessionId: action.sessionId, mode: 'queue', content: [{ type: 'text', text: action.text }] })
+      try { this.tasks.confirm({ ticketId, result: { injected: { entry: action.entry, sessionId: action.sessionId, requestId } }, by: 'user' }) } catch (error) { throw translateTaskError(error, (code, message) => new RouterError(code, message)) }
+      return { ownerId: owner.id, sessionId: action.sessionId, ticketId, requestId, createdSession: false, rebuilt: false, deduped: false, confirmed: true, stage: 'working' }
+    }
+    const ensured = await this.#ensureSession(owner)
+    const label = action.entry === 'follow-up' ? '[hub-bot 追问 ' + ticketId + '] ' : '[hub-bot 路由 ' + ticketId + '] '
+    const text = label + action.message + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + ticketId
+      + '\n\n（本条消息命中危险命令黑名单，已经用户确认放行）'
+    const requestId = 'hub-bot-route-' + this.ids.uuid()
+    try { this.tasks.confirm({ ticketId, result: { injected: { entry: action.entry, requestId } }, by: 'user' }) } catch (error) { throw translateTaskError(error, (code, message) => new RouterError(code, message)) }
+    this.runner.enqueue({ ticketId, kind: 'inject', to: 'session:' + ensured.sessionId, sessionId: ensured.sessionId, body: text, requestId })
+    await this.runner.tick()
+    return { ownerId: owner.id, sessionId: ensured.sessionId, ticketId, requestId, createdSession: ensured.created, rebuilt: false, deduped: false, confirmed: true, stage: 'working' }
+  }
+
   /** Restart recovery: end running assignments "host restarted" and arm the recovery note (spec: 重启恢复）. */
   /**
    * Restart recovery (spec「重启恢复」 + #72 AC1 自动恢复）: assignments running at the crash end "host
@@ -258,6 +295,26 @@ export class Router {
    * @returns deduped receipt { ownerId, sessionId, ticketId, requestId, createdSession, rebuilt, deduped,
    *   stage }, plus resumed/accepted/cancelled/confirmed/rejected on the follow-up paths
    */
+  /** 危险命令黑名单 (spec「Policy」): the configured list, falling back to the built-in defaults. */
+  #dangerousPatterns() {
+    return this.config?.security?.dangerousPatterns ?? DEFAULT_DANGEROUS_PATTERNS
+  }
+
+  /**
+   * 命中黑名单的消息不直接注入: 票转 person/confirm, 原文与命中模式存票面 action（先存后做）;
+   * 用户确认后由 #confirmDangerousInject 执行存储的注入。返回 true 表示已挂起。
+   */
+  #holdDangerous(ticketId, message, entry, extra = {}) {
+    const pattern = findDangerousPattern(message, this.#dangerousPatterns())
+    if (!pattern) return false
+    this.tasks.askConfirm({
+      ticketId,
+      question: dangerousConfirmText(pattern, message),
+      action: { type: DANGEROUS_INJECT_ACTION, entry, message, ...extra },
+    })
+    return true
+  }
+
   async routeToOwner({ ownerId, message, triggerRef, ticketId, resolution, authorization }) {
     if (typeof message !== 'string' || !message.trim()) throw new RouterError('message-required', 'route_to_owner: message must be a non-empty string')
     const owner = this.registry.get(ownerId)
@@ -301,6 +358,12 @@ export class Router {
       id: freshTicketId, triggerId: trigger.id, owner: ownerId, stage: atCapacity ? 'queued' : 'idle', mechanism: 'inject',
       targetSession: ensured.sessionId, requestId, authorization: auth, createdAt: at, updatedAt: at,
     })
+    // 危险命令黑名单 (spec「Policy」安全兜底): 命中即挂起 — 票转 person/confirm, 原文落票面 action,
+    // 不 enqueue 任何注入; 用户确认后由 #confirmDangerousInject 放行。GitHub/飞书/L1/devApi 皆汇于此, 同护。
+    if (this.#holdDangerous(freshTicketId, message, 'route')) {
+      const heldTicket = this.tasks.getTicket(freshTicketId)
+      return { ownerId, sessionId: ensured.sessionId, ticketId: freshTicketId, requestId, createdSession: ensured.created, rebuilt: false, deduped: false, stage: heldTicket.stage }
+    }
     const text = '[hub-bot 路由 ' + freshTicketId + '] ' + message + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + freshTicketId
     this.runner.enqueue({ ticketId: freshTicketId, kind: 'inject', to: 'session:' + ensured.sessionId, sessionId: ensured.sessionId, body: text, requestId, held: atCapacity })
     await this.runner.tick()
@@ -395,7 +458,11 @@ export class Router {
       }
       // #69: the user approved the pending fork — execute it (code-driven, never model-discretion),
       // rebind the task to the forked Session and wake the owner to continue the task there.
-      if (resolution === 'confirm') return this.#confirmPendingFork(owner, ticket, ticketId)
+      // 危险命令黑名单挂起的注入走 #confirmDangerousInject — 同一条「确认才执行票面存储动作」的纪律。
+      if (resolution === 'confirm') {
+        if (ticket.pendingConfirm?.action?.type === DANGEROUS_INJECT_ACTION) return this.#confirmDangerousInject(owner, ticket, ticketId)
+        return this.#confirmPendingFork(owner, ticket, ticketId)
+      }
       // #69: the user rejected the proposal — no fork; the ticket keeps its original Session
       // （保持原会话） and waits 被卡住 for the human's next message to release it.
       if (resolution === 'reject') {
@@ -437,6 +504,12 @@ export class Router {
     if (!auth) {
       try { this.tasks.escalate({ ticketId, reason: '授权记录缺失（票面权威），拒绝凭会话叙事执行' }) } catch { /* stage may not allow it */ }
       throw new RouterError('authorization-missing', 'route_to_owner: ticket ' + ticketId + ' has no authorization record — refusing to act on a guess')
+    }
+    // 危险命令黑名单: 追问同样挂起转确认 (askConfirm 转移忠实记录)。检查在 recovery-note 消费之前——
+    // 挂起期间票保持 recoveryPending, 确认放行后的注入才携带重启注记 (恰好一次语义不破)。
+    if (this.#holdDangerous(ticketId, message, 'follow-up')) {
+      const heldTicket = this.tasks.getTicket(ticketId)
+      return { ownerId: owner.id, sessionId: heldTicket.targetSession, ticketId, requestId: heldTicket.requestId, createdSession: false, rebuilt: false, deduped: false, resumed, stage: heldTicket.stage }
     }
     let text = '[hub-bot 追问 ' + ticketId + '] ' + message + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + ticketId
     text += resumed ? '（票已恢复进行中，改完请再次 report 转入等验收）' : '（同一任务追加指令，完成后 report 转入等验收）'

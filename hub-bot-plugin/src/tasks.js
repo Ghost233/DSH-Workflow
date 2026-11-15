@@ -47,8 +47,9 @@ export const STAGE_TEXT = {
  * releases person/*, blocked and failed tasks back to working.
  */
 export const TRANSITIONS = {
-  'idle': ['working', 'failed'],
-  'queued': ['working', 'failed'],
+  // idle/queued → person/confirm: 危险命令黑名单在注入前挂起 (spec「Policy」安全兜底) — 票未投递先转等确认。
+  'idle': ['working', 'failed', 'person/confirm'],
+  'queued': ['working', 'failed', 'person/confirm'],
   'working': ['person/review', 'person/answer', 'person/confirm', 'blocked', 'failed', 'queued'],
   'person/answer': ['working', 'blocked', 'failed'],
   'person/confirm': ['working', 'done', 'blocked', 'failed'],

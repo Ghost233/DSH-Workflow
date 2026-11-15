@@ -22,6 +22,7 @@ import { isWithinCwd } from './paths.js'
 import { recordReportFact } from './reporting.js'
 import { insertOutbox } from './outbox.js'
 import { buildForkAction, forkConfirmText } from './fork.js'
+import { DANGEROUS_INJECT_ACTION, DEFAULT_DANGEROUS_PATTERNS, findDangerousPattern, dangerousConfirmText } from './security.js'
 
 export const name = 'hub-bot-owner-tools'
 // See router-tools.js: sessionController/sessionPersistence are load-bearing for cross-realm service
@@ -240,6 +241,21 @@ export function apply(ctx) {
           + '\n\n授权：' + auth.actor + ' 经 ' + auth.source + ' 于 ' + auth.at + '；任务 ' + args.ticketId + '；负责人 ' + owner.id
       } else {
         text = '[hub-bot 负责人 ' + owner.id + '] ' + args.text.trim()
+      }
+      // 危险命令黑名单 (spec「Policy」安全兜底): 命中即挂起不注入 —— 带 ticketId 时票转 person/confirm
+      // (完整注入文本存票面 action, 先存后做), 用户确认后由路由 #confirmDangerousInject 原样放行;
+      // 无票可挂时直接拒绝。L2 见此错误应停手等待或 escalate, 勿改写文本绕过 (授权纪律同源)。
+      const dangerousHit = findDangerousPattern(text, hub(ctx).config?.security?.dangerousPatterns ?? DEFAULT_DANGEROUS_PATTERNS)
+      if (dangerousHit) {
+        if (args.ticketId !== undefined) {
+          hub(ctx).tasks.askConfirm({
+            ticketId: args.ticketId,
+            question: dangerousConfirmText(dangerousHit, args.text.trim()),
+            action: { type: DANGEROUS_INJECT_ACTION, entry: 'owner-inject', sessionId: args.sessionId, text },
+          })
+          throw new Error('inject_session: 命中危险命令黑名单（模式 "' + dangerousHit + '"）——注入未执行，任务已转等您确认；用户确认后自动按票面原文注入，请勿重试或改写绕过')
+        }
+        throw new Error('inject_session: 命中危险命令黑名单（模式 "' + dangerousHit + '"）——拒绝注入；带 ticketId 的注入会转用户确认')
       }
       const requestId = args.requestId ?? 'hub-bot-owner-' + randomUUID()
       const result = await ctx.sessionController.prompt({

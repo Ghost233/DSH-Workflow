@@ -10,9 +10,10 @@
  * that token. Without `devApi` the plugin loads normally and registers no HTTP routes at all.
  */
 import { isAbsolute } from 'node:path'
+import { DEFAULT_DANGEROUS_PATTERNS, validateDangerousPatterns } from './security.js'
 
 /** The configuration keys this plugin understands. Anything else is rejected so typos cannot pass silently. */
-const KNOWN_KEYS = new Set(['stateDir', 'homeRepo', 'devApi', 'reporting', 'feishu', 'github', 'concurrency'])
+const KNOWN_KEYS = new Set(['stateDir', 'homeRepo', 'devApi', 'reporting', 'feishu', 'github', 'concurrency', 'security'])
 
 /** The keys the scheduled auto-summary understands (#67 定时汇总自动汇报 — OFF by default). */
 const KNOWN_REPORTING_KEYS = new Set(['auto', 'intervalMs'])
@@ -32,6 +33,9 @@ const MIN_GITHUB_INTERVAL_MS = 30 * 1000
 /** The keys the concurrency section (#72 执行槽) understands. Slots count working tickets per owner. */
 const KNOWN_CONCURRENCY_KEYS = new Set(['slotsPerOwner'])
 const DEFAULT_SLOTS_PER_OWNER = 3
+
+/** The keys the security section (spec「Policy」危险命令黑名单) understands. */
+const KNOWN_SECURITY_KEYS = new Set(['dangerousPatterns'])
 
 /** An invalid plugin configuration; the message names the offending key and the rule it broke. */
 export class ConfigError extends Error {
@@ -202,5 +206,21 @@ export function resolveConfig(config) {
     }
   }
   resolved.concurrency = concurrency
+
+  // 危险命令黑名单 (spec「Policy」L260 + #73 设置页): 默认清单在 src/security.js; 显式配置整表替换。
+  const security = { dangerousPatterns: [...DEFAULT_DANGEROUS_PATTERNS] }
+  if (raw.security !== undefined) {
+    const rawSecurity = raw.security
+    if (typeof rawSecurity !== 'object' || rawSecurity === null || Array.isArray(rawSecurity)) {
+      throw new ConfigError('hub-bot config.security must be an object { dangerousPatterns?: string[] }')
+    }
+    for (const key of Object.keys(rawSecurity)) {
+      if (!KNOWN_SECURITY_KEYS.has(key)) throw new ConfigError('hub-bot does not know config.security key ["' + key + '"]')
+    }
+    if (rawSecurity.dangerousPatterns !== undefined) {
+      security.dangerousPatterns = validateDangerousPatterns(rawSecurity.dangerousPatterns, 'hub-bot config.security', ConfigError)
+    }
+  }
+  resolved.security = security
   return resolved
 }

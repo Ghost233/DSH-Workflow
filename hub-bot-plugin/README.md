@@ -147,10 +147,19 @@ patch 结构测试复用仓内先例 `scripts/test-runtime.mjs` 的解析链：`
 - **API**：`GET /overview`（三问数据：票+负责人注册表+健康）、`GET|POST /settings`、`POST /tickets/resolve`。`GET /settings` 返回有效值 = profile ⊕ overlay，标注飞书凭据状态等活 Source 信息。
 - 实证：`docs/evidence-task-11.md`（面板服务与 token 门禁、设置写回即时生效+重启回放、确认/拒绝裁决、三问真实数据）。
 
+## 危险命令黑名单（spec「Policy」安全兜底，#73 补足）
+
+- **为什么**：经插件注入链路的会话**无人值守执行命令、不弹审批**（对齐 superagent Executor——远程场景下审批即失效），所以安全兜底 = 白名单 + 授权记录可追溯 + **危险命令黑名单**。
+- **命中即挂起**：任何注入路径（L1 路由、追问、GitHub/飞书自动入口、L2 的 `inject_session`）的消息文本先做黑名单匹配（大小写不敏感子串）。命中 → **不注入**，票转「等您确认」（先存后做：原文、命中模式、目标存入票面 `pendingConfirm.action`），面板三问页给出确认文本（指明模式与风险）。
+- **确认才放行**：用户在面板确认（`POST /tickets/resolve` confirm）后，按票面存储的原文原样注入（携授权记录，注明「已经用户确认放行」）；拒绝 → 票转被卡住且永不注入。与 fork 确认同一条状态机路径（票面记 confirmOutcome）；24 小时未确认由清扫自动取消。
+- **清单可配**：`security.dangerousPatterns`（字符串数组，默认含 `rm -rf` / `sudo` / `git push --force` / `mkfs` / `dd of=/dev` / `chmod -R 777` 等级别模式），面板设置页可编辑（每行一个模式，写回即时生效 + 0600 落盘 + 重启回放）；留空 = 显式关闭兜底。
+- 实证：`docs/evidence-task-13.md`（路由/GitHub 入口命中挂起→确认放行/拒绝阻断、名单热更新即时生效、设置校验 400）。
+
 ## 已知限制
 
 - `sessionController.prompt()` 注入的消息 source.kind 为 "user"，与人手输入不可区分；Source/Trigger 层需按 superagent AgentDelivery 模式打插件自有 source 标记（幂等 requestId 已由插件生成 `hub-bot-<uuid>`，路由注入为 `hub-bot-route-<uuid>`）。
 - 会话的 permission/sandbox 记录显示 `danger-full-access`（dev profile 默认值）；负责人的只读保证来自 **preset 工具面**（无写/执行工具可调用），不来自会话沙箱模式。收紧沙箱 preset 属 profile 配置，不在本插件范围。
 - 插件配置校验为手写 resolveConfig，未引 schemastery——零运行时依赖的取舍；后续若接 DSH 设置 UI 再评估。
+- 危险命令黑名单是**大小写不敏感子串匹配**的启发式兜底：减少误操作与明显危险注入，不能防御刻意混淆（base64/变量拼接等）；真正的边界仍是授权白名单 + preset 工具面 + 用户确认裁决。
 - 被删重建依赖"注入失败"这一信号：`session "<id>" not found` 与 `ApiSessionNotFound` 之外的删除表现（如静默丢弃）不会被识别为重建触发。
 - **owner 重建后的孤儿会话**（#65 首跑实证）：负责人会话被删重建后，旧会话仍在且保持 owner preset；它出现在 search_sessions 结果里（registry 已指向新会话，无法标记 role:'owner'），可能被 L2 误当执行会话注入，形成嵌套委托。功能上闭环仍成立（嵌套层也是 owner，最终完成并 report），但属噪声；后续可考虑按会话的 preset 名或启动侧写登记来识别孤儿。
