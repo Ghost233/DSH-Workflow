@@ -16,16 +16,17 @@ import { insertOutbox } from '../src/outbox.js'
 import { resolveConfig } from '../src/config.js'
 
 /** A registry+router+source with fake sessions and a fake lark SDK; sent messages land in sent. */
-function fixture({ botOpenId = 'ou_bot', larkOverrides = {} } = {}) {
+function fixture({ botOpenId = 'ou_bot', larkOverrides = {}, chiefConfig } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'hub-bot-feishu-'))
   const store = new Store(dir)
   const registry = new OwnerRegistry(store, { scratchRoot: join(dir, 'scratch') })
   registry.ensureChief({ cwd: '/Volumes/home', workspace: 'Ghost233HomeRepo' })
   let nowMs = Date.parse('2026-11-15T00:00:00.000Z')
-  const calls = { create: [], prompt: [] }
+  const calls = { create: [], prompt: [], selectModel: [] }
   const sessions = {
     create: async request => { calls.create.push(request); return { sessionId: 'session-chief-' + calls.create.length } },
     prompt: async request => { calls.prompt.push(request); return { accepted: true } },
+    selectModel: async request => { calls.selectModel.push(request); return { selected: request } },
   }
   const router = new Router({ store, registry, sessions, now: () => new Date(nowMs).toISOString() })
   const sent = []
@@ -40,6 +41,7 @@ function fixture({ botOpenId = 'ou_bot', larkOverrides = {} } = {}) {
   const source = new FeishuSource({
     store, registry, sessions,
     config: { botOpenId },
+    chiefConfig,
     logger: { info() {}, warn() {} },
     lark: fakeLark,
     now: () => new Date(nowMs).toISOString(),
@@ -91,6 +93,27 @@ test('a p2p text message is normalized, recorded as a Trigger, and injected into
     assert.equal(trigger.source.addressing, 'direct')
     assert.deepEqual(trigger.authorization, { actor: 'ou_me', source: 'feishu', addressing: 'direct', messageId: 'om_1', at: trigger.authorization.at })
   } finally { cleanup() }
+})
+
+test('chief model: config validated; injection aligns the chief session model when configured', async () => {
+  // 配置校验：非法形状拒绝；null 与合法对象通过
+  assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', chief: { model: { provider: 'p' } } }), /model.model must be a non-empty string/)
+  assert.throws(() => resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', chief: { nope: 1 } }), /does not know config.chief key/)
+  assert.equal(resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y' }).chief.model, null)
+  const withModel = resolveConfig({ stateDir: '/tmp/x', homeRepo: '/tmp/y', chief: { model: { provider: 'magpie', model: 'zhipu/glm-4.5', reasoningEffort: 'high' } } })
+  assert.deepEqual(withModel.chief.model, { provider: 'magpie', model: 'zhipu/glm-4.5', reasoningEffort: 'high' })
+  // 注入对齐：chiefConfig.model 存在时每次注入前 selectModel；为 null 时不打扰
+  const aligned = fixture({ chiefConfig: { model: { provider: 'magpie', model: 'zhipu/glm-4.5' } } })
+  try {
+    await aligned.source.handleEvent(event())
+    assert.equal(aligned.calls.selectModel.length, 1)
+    assert.deepEqual(aligned.calls.selectModel[0], { sessionId: 'session-chief-1', provider: 'magpie', model: 'zhipu/glm-4.5' })
+  } finally { aligned.cleanup() }
+  const plain = fixture({ chiefConfig: { model: null } })
+  try {
+    await plain.source.handleEvent(event())
+    assert.equal(plain.calls.selectModel.length, 0)
+  } finally { plain.cleanup() }
 })
 
 test('bot-own messages are dropped (spec: 丢弃 bot 自己的消息)', async () => {

@@ -13,6 +13,7 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { STAGE_TEXT } from './tasks.js'
+import { validateChiefModel } from './config.js'
 
 /** The overlay file holding panel-written settings (stateDir, 0600). */
 export const SETTINGS_FILE = 'hub-bot.settings.json'
@@ -35,6 +36,7 @@ const SETTABLE = {
   github: ['enabled', 'intervalMs', 'loginAllowlist'],
   feishu: [],
   security: ['dangerousPatterns'],
+  chief: ['model'],
 }
 
 function requireBoolean(value, path) {
@@ -123,6 +125,12 @@ function applyOne(config, section, key, value) {
     config.security.dangerousPatterns = list
     return list
   }
+  if (section === 'chief' && key === 'model') {
+    // 总管模型 (面板「总管模型」): null = 跟随部署默认; 否则固定 {provider, model, reasoningEffort?}。
+    const model = validateChiefModel(value, 'chief', SettingsError)
+    config.chief.model = model
+    return model
+  }
   throw new SettingsError('hub-bot does not know settings key "' + section + '.' + key + '"')
 }
 
@@ -179,6 +187,7 @@ export function buildSettingsView(config, { feishuStatus, githubStatus } = {}) {
     concurrency: { slotsPerOwner: config.concurrency.slotsPerOwner },
     reporting: { auto: config.reporting.auto, intervalMs: config.reporting.intervalMs },
     security: { dangerousPatterns: [...(config.security?.dangerousPatterns ?? [])] },
+    chief: { model: config.chief?.model ?? null },
     feishu: {
       enabled: config.feishu.enabled,
       status: feishuStatus ?? null,

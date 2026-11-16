@@ -83,6 +83,16 @@ test('settings patch validates values: slots >= 1, github interval >= 30s, allow
   assert.throws(() => applySettingsPatch(config, { github: { intervalMs: 1000 } }), /github.intervalMs must be an integer >= 30000/)
   assert.throws(() => applySettingsPatch(config, { github: { loginAllowlist: 'ghost' } }), /github.loginAllowlist must be an array of non-empty strings/)
   assert.throws(() => applySettingsPatch(config, { feishu: { openIdAllowlist: ['ou_a'] } }), /does not know settings key/, 'feishu.openIdAllowlist 已移除（授权边界在飞书侧）')
+  // chief.model: null 回到部署默认; 对象需 provider+model; 未知键与坏形状拒绝
+  const config2 = baseConfig()
+  const applied = applySettingsPatch(config2, { chief: { model: { provider: 'magpie', model: 'zhipu/glm-4.5', reasoningEffort: 'high' } } })
+  assert.deepEqual(config2.chief.model, { provider: 'magpie', model: 'zhipu/glm-4.5', reasoningEffort: 'high' })
+  assert.deepEqual(applied.chief.model, config2.chief.model)
+  assert.throws(() => applySettingsPatch(baseConfig(), { chief: { model: { provider: 'magpie' } } }), /model.model must be a non-empty string/)
+  assert.throws(() => applySettingsPatch(baseConfig(), { chief: { model: { provider: 'magpie', model: 'm', bogus: 1 } } }), /does not know key/)
+  const config3 = baseConfig()
+  applySettingsPatch(config3, { chief: { model: null } })
+  assert.equal(config3.chief.model, null, 'null 显式回到部署默认')
   // github.repos 已移除（监听清单跟随 owner 注册表）——旧键按未知键拒绝
   assert.throws(() => applySettingsPatch(config, { github: { repos: { 'o/r': false } } }), /does not know settings key "github\.repos"/)
 })

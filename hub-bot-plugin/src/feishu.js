@@ -61,11 +61,12 @@ export class FeishuSource {
    *   lark?: object, now?: () => string }} deps - lark is the SDK surface ({ registerApp, Client, WSClient,
    *   EventDispatcher }) or a test fake; when absent, connect()/register() load the real SDK lazily.
    */
-  constructor({ store, registry, sessions, config, logger, lark, now }) {
+  constructor({ store, registry, sessions, config, chiefConfig, logger, lark, now }) {
     this.store = store
     this.registry = registry
     this.sessions = sessions
     this.config = config ?? {}
+    this.chiefConfig = chiefConfig ?? { model: null }
     this.logger = logger
     this.lark = lark ?? null
     this.now = now ?? (() => new Date().toISOString())
@@ -127,7 +128,7 @@ export class FeishuSource {
     return {
       enabled: this.config.enabled === true,
       credentialState: this.credentialState,
-      wsState: this.wsState,
+      wsState: this.ws?.getConnectionStatus?.().state ?? this.wsState,
       registration: this.registering ? 'pending' : undefined,
       qr: this.lastQr ?? undefined,
       preset: BOT_PRESET,
@@ -136,7 +137,7 @@ export class FeishuSource {
         name: BOT_PRESET.name,
         appIdMasked: typeof appId === 'string' && appId.length > 10 ? appId.slice(0, 7) + '…' + appId.slice(-4) : appId,
         boundAt: this.credentials.boundAt ?? null,
-        connected: this.wsState === 'connected',
+        connected: (this.ws?.getConnectionStatus?.().state ?? this.wsState) === 'connected',
       } : undefined,
       botOpenId: this.config.botOpenId ?? undefined,
     }
@@ -215,7 +216,16 @@ export class FeishuSource {
       this.logger.warn('hub-bot feishu: SDK without WSClient/EventDispatcher — long connection skipped (手工降级)')
       return { started: false, reason: 'sdk-incomplete' }
     }
-    this.ws = new WSClient({ appId: this.credentials.appId, appSecret: this.credentials.appSecret })
+    // 生命周期回调同步真实连接状态：wsState 不再是一次性乐观标志（实测 2026-11-16：断开后标志位停在
+    // connected 误导排查）。status() 读 ws.getConnectionStatus() 的派生态。
+    this.ws = new WSClient({
+      appId: this.credentials.appId,
+      appSecret: this.credentials.appSecret,
+      onReady: () => { this.wsState = 'connected' },
+      onReconnecting: () => { this.wsState = 'reconnecting'; this.logger.warn('hub-bot feishu: ws reconnecting…') },
+      onReconnected: () => { this.wsState = 'connected'; this.logger.info('hub-bot feishu: ws reconnected') },
+      onError: error => { this.logger.warn('hub-bot feishu: ws error: %s', error?.message ?? error) },
+    })
     const dispatcher = new EventDispatcher({}).register({
       'im.message.receive_v1': async data => {
         this.logger.info('hub-bot feishu: event received message_id=%s chat_type=%s', data?.message?.message_id, data?.message?.chat_type)
@@ -331,10 +341,22 @@ export class FeishuSource {
   async #ensureChiefSession() {
     const chief = this.registry.get('chief')
     if (!chief) throw new Error('hub-bot feishu: the chief owner row is missing from the registry')
-    if (chief.sessionId) return chief.sessionId
-    const created = await this.sessions.create({ cwd: chief.cwd, agentPreset: 'hub-bot-router' })
-    this.registry.bindSession(chief.id, created.sessionId)
-    return created.sessionId
+    if (!chief.sessionId) {
+      const created = await this.sessions.create({ cwd: chief.cwd, agentPreset: 'hub-bot-router' })
+      this.registry.bindSession(chief.id, created.sessionId)
+      chief.sessionId = created.sessionId // registry 实现可换行而非原地改——本方法内以返回值为准
+    }
+    // 总管模型对齐 (面板「总管模型」): 配置存在则每次注入前对齐——面板改模型后下一条消息即生效；
+    // 配置为 null (跟随部署默认) 时不打扰会话。对齐失败不阻塞消息（模型路由故障由 turn 错误自然呈现）。
+    const wanted = this.chiefConfig?.model ?? null
+    if (wanted) {
+      try {
+        await this.sessions.selectModel({ sessionId: chief.sessionId, ...wanted })
+      } catch (error) {
+        this.logger.warn('hub-bot feishu: chief model align failed: %s', error instanceof Error ? error.message : error)
+      }
+    }
+    return chief.sessionId
   }
 
   /**

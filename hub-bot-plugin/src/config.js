@@ -13,7 +13,7 @@ import { isAbsolute } from 'node:path'
 import { DEFAULT_DANGEROUS_PATTERNS, validateDangerousPatterns } from './security.js'
 
 /** The configuration keys this plugin understands. Anything else is rejected so typos cannot pass silently. */
-const KNOWN_KEYS = new Set(['stateDir', 'homeRepo', 'devApi', 'reporting', 'feishu', 'github', 'concurrency', 'security'])
+const KNOWN_KEYS = new Set(['stateDir', 'homeRepo', 'devApi', 'reporting', 'feishu', 'github', 'concurrency', 'security', 'chief'])
 
 /** The keys the scheduled auto-summary understands (#67 定时汇总自动汇报 — OFF by default). */
 const KNOWN_REPORTING_KEYS = new Set(['auto', 'intervalMs'])
@@ -36,6 +36,27 @@ const DEFAULT_SLOTS_PER_OWNER = 3
 
 /** The keys the security section (spec「Policy」危险命令黑名单) understands. */
 const KNOWN_SECURITY_KEYS = new Set(['dangerousPatterns'])
+
+/** The keys the chief section understands — the L1 总管's declared working model (面板「总管模型」). */
+const KNOWN_CHIEF_KEYS = new Set(['model'])
+
+/** Validates one chief.model value: null = follow the deployment default; otherwise {provider, model, reasoningEffort?}. */
+export function validateChiefModel(value, path, ErrorCtor) {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'object' || Array.isArray(value)) throw new ErrorCtor(path + '.model must be null or an object {provider, model, reasoningEffort?}')
+  const { provider, model, reasoningEffort } = value
+  if (typeof provider !== 'string' || !provider.trim()) throw new ErrorCtor(path + '.model.provider must be a non-empty string')
+  if (typeof model !== 'string' || !model.trim()) throw new ErrorCtor(path + '.model.model must be a non-empty string')
+  if (reasoningEffort !== undefined && reasoningEffort !== null && (typeof reasoningEffort !== 'string' || !reasoningEffort.trim())) {
+    throw new ErrorCtor(path + '.model.reasoningEffort must be a non-empty string when present')
+  }
+  for (const key of Object.keys(value)) {
+    if (!['provider', 'model', 'reasoningEffort'].includes(key)) throw new ErrorCtor(path + '.model does not know key "' + key + '"')
+  }
+  const out = { provider: provider.trim(), model: model.trim() }
+  if (reasoningEffort !== undefined && reasoningEffort !== null) out.reasoningEffort = reasoningEffort.trim()
+  return out
+}
 
 /** An invalid plugin configuration; the message names the offending key and the rule it broke. */
 export class ConfigError extends Error {
@@ -202,5 +223,16 @@ export function resolveConfig(config) {
     }
   }
   resolved.security = security
+  // chief 段 (#75 面板总管模型): L1 总管的干活模型; null = 跟随部署默认 (agent-default-model)。
+  const chief = { model: null }
+  const rawChief = raw.chief
+  if (rawChief !== undefined) {
+    if (typeof rawChief !== 'object' || rawChief === null || Array.isArray(rawChief)) throw new ConfigError('hub-bot config.chief must be an object')
+    for (const key of Object.keys(rawChief)) {
+      if (!KNOWN_CHIEF_KEYS.has(key)) throw new ConfigError('hub-bot does not know config.chief key ["' + key + '"]')
+    }
+    if (rawChief.model !== undefined) chief.model = validateChiefModel(rawChief.model, 'hub-bot config.chief', ConfigError)
+  }
+  resolved.chief = chief
   return resolved
 }

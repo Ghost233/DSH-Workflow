@@ -170,6 +170,48 @@ function renderBoard(overview) {
   outBox.replaceChildren()
   if (!review.length) outBox.append(el('p', { class: 'quiet' }, text('没有等验收的任务。')))
   for (const t of review) outBox.append(ticketRow(t))
+
+  // 负责人注册表（观测面）：每个 owner 一行——身份/工作区/会话绑定/状态
+  const ownerBox = $('#owners')
+  ownerBox.replaceChildren()
+  const owners = overview.owners ?? []
+  if (!owners.length) {
+    ownerBox.append(el('p', { class: 'quiet' }, text('暂无负责人。')))
+  } else {
+    const table = el('table', { class: 'data-table' })
+    table.append(el('tr', {},
+      el('th', {}, text('负责人')), el('th', {}, text('工作区')), el('th', {}, text('会话')), el('th', {}, text('状态'))))
+    for (const o of owners) {
+      const label = o.role === 'chief' ? '总管 (L1)' : (o.workspace ?? o.id)
+      const kindText = o.transient ? '临时' : (o.kind === 'repo' ? '仓库' : o.kind)
+      table.append(el('tr', { class: o.recycled ? 'quiet' : '' },
+        el('td', {}, text(label), el('span', { class: 'quiet small' }, text(' · ' + kindText))),
+        el('td', { class: 'quiet small', title: o.cwd ?? '' }, text(o.cwd ?? '—')),
+        el('td', { class: 'quiet small' }, text(o.sessionId ? shortId(o.sessionId) + '…' : '未绑定')),
+        el('td', {}, text(o.recycled ? '已回收' : (o.status ?? '—')))))
+    }
+    ownerBox.append(table)
+  }
+
+  // 最近触发（观测面）：渠道消息与处置——直读 trigger 表，异步加载不阻塞三问
+  const trigBox = $('#triggers')
+  trigBox.replaceChildren(el('p', { class: 'quiet small' }, text('加载中…')))
+  api('triggers?limit=15').then(({ triggers }) => {
+    trigBox.replaceChildren()
+    if (!triggers?.length) { trigBox.append(el('p', { class: 'quiet' }, text('暂无触发记录。'))); return }
+    const table = el('table', { class: 'data-table' })
+    table.append(el('tr', {},
+      el('th', {}, text('时间')), el('th', {}, text('渠道')), el('th', {}, text('内容')), el('th', {}, text('处置'))))
+    for (const t of triggers) {
+      const msg = String(t.message ?? '').replace(/\s+/g, ' ')
+      table.append(el('tr', {},
+        el('td', { class: 'quiet small' }, text(fmtTime(t.at))),
+        el('td', { class: 'quiet small' }, text(t.kind ?? '—')),
+        el('td', { class: 'small', title: msg }, text(msg.length > 40 ? msg.slice(0, 40) + '…' : msg)),
+        el('td', { class: 'quiet small' }, text(t.dropped ? '已丢弃' : (t.authorization ? '已注入' : '已记录')))))
+    }
+    trigBox.append(table)
+  }).catch(() => trigBox.replaceChildren(el('p', { class: 'quiet small' }, text('触发记录加载失败。'))))
 }
 
 /* ---------- 设置 ---------- */
@@ -208,6 +250,50 @@ const readList = area => area.value.split('\n').map(s => s.trim()).filter(Boolea
 function renderSettings(view) {
   const page = $('#settings')
   page.replaceChildren()
+
+  // 总管模型（用户可配）：目录来自 models/catalog；null = 跟随部署默认。改选即时对 L1 会话生效。
+  const mSection = el('section', { class: 'setting-block' })
+  mSection.append(el('h3', {}, text('总管模型')))
+  const mCurrent = el('p', { class: 'status-line' })
+  const cur = view.chief?.model ?? null
+  mCurrent.append(text(cur ? ('当前：' + cur.provider + ' / ' + cur.model + (cur.reasoningEffort ? '（推理强度 ' + cur.reasoningEffort + '）' : '')) : '当前：跟随部署默认模型'))
+  mSection.append(mCurrent)
+  const mSelect = el('select', { class: 'model-select' })
+  mSelect.append(el('option', { value: '' }, text('跟随部署默认')))
+  mSelect.disabled = true
+  mSection.append(mSelect)
+  const mHint = el('p', { class: 'hint' }, text('正在加载可用模型…'))
+  mSection.append(mHint)
+  const mBar = el('div', { class: 'save-bar', hidden: 'hidden' })
+  const mSave = el('button', { class: 'btn primary' }, text('保存模型选择'))
+  mBar.append(mSave)
+  mSection.append(mBar)
+  api('models/catalog').then(({ catalog, chief }) => {
+    mSelect.replaceChildren(el('option', { value: '' }, text('跟随部署默认（' + (catalog?.default ? catalog.default.provider + ' / ' + catalog.default.model : '部署决定') + '）')))
+    for (const entry of catalog?.groups ?? []) {
+      const group = el('optgroup', { label: entry.group.name })
+      for (const m of entry.group.models) group.append(el('option', { value: entry.group.id + '/' + m.id }, text(m.name ?? m.id)))
+      mSelect.append(group)
+    }
+    for (const f of catalog?.failures ?? []) mHint.append(text(' ' + f.name + ' 不可用：' + f.message))
+    const chosen = chief?.model ? chief.model.provider + '/' + chief.model.model : ''
+    mSelect.value = chosen
+    mHint.textContent = mHint.textContent === '正在加载可用模型…' ? '选择后点击保存——立即对总管会话生效，并持久化供未来会话。' : mHint.textContent
+    mSelect.disabled = false
+    const dirty = () => { mBar.hidden = mSelect.value === chosen }
+    mSelect.addEventListener('change', dirty)
+    dirty()
+    mSave.addEventListener('click', async () => {
+      mSave.disabled = true
+      try {
+        const v = mSelect.value
+        const model = v === '' ? null : { provider: v.split('/')[0], model: v.slice(v.indexOf('/') + 1) }
+        await api('settings', { method: 'POST', body: { chief: { model } } })
+        await refresh()
+      } catch (error) { showError(error); mSave.disabled = false }
+    })
+  }).catch(error => { mHint.textContent = '模型目录加载失败：' + String(error?.message ?? error) })
+  page.append(mSection)
 
   // 飞书 bot 管理块（唯一总 bot）：三态——已绑定（名片+连接+权限，二维码收起）/ 未绑定（预告+权限+扫码）/ 失效。
   const feishu = view.feishu ?? {}

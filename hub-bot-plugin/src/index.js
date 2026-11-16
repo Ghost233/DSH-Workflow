@@ -138,6 +138,11 @@ export function apply(ctx, rawConfig) {
       const item = (listed.items ?? []).find(s => s.sessionId === sessionId)
       return Boolean(item?.running)
     },
+    // 总管模型 (面板「总管模型」): sessionController.selectModel —— 配置变更后下一条消息即生效。
+    selectModel: async ({ sessionId, provider, model, reasoningEffort }) =>
+      ctx.sessionController.selectModel({ sessionId, provider, model, ...(reasoningEffort === undefined ? {} : { reasoningEffort }) }, deadline(30_000)),
+    // 面板「总管模型」的数据源：部署内全部可路由模型（provider 分组 + 默认选择 + 隔离故障）。
+    modelCatalog: () => ctx.sessionController.modelCatalog(deadline(30_000)),
     // #69 fork 路径（Lead 授权仅此 4 行）: the user-confirmed fork execution over sessionController.
     fork: async request => {
       const value = await ctx.sessionController.fork(request, deadline(30_000))
@@ -150,7 +155,7 @@ export function apply(ctx, rawConfig) {
   setHub(hub)
   // 飞书入口 (#68): OFF unless config.feishu.enabled. With credentials present the WSClient long connection
   // starts at boot; the same source scans recorded feishu reply intents on the 1s tick (阶段 2 留的通道).
-  const feishu = new FeishuSource({ store, registry: hub.registry, sessions, config: config.feishu, logger: ctx.logger })
+  const feishu = new FeishuSource({ store, registry: hub.registry, sessions, config: config.feishu, chiefConfig: config.chief, logger: ctx.logger })
   if (config.feishu.enabled && feishu.credentialState === 'ok') {
     void feishu.connect().catch(error => ctx.logger.warn('hub-bot feishu connect failed: %s (凭据可能失效 — 面板提示重新扫码)', error?.message ?? error))
   }
@@ -355,6 +360,18 @@ export function apply(ctx, rawConfig) {
     settingsOverlay = mergeSettingsOverlay(settingsOverlay, patch)
     saveSettingsOverlay(config.stateDir, settingsOverlay)
     restartGithubPolling() // 轮询开关/间隔即时生效（幂等重启）
+    if (patch.chief?.model !== undefined) {
+      // 总管模型即时生效：对已绑定的 L1 会话直接 selectModel；失败只告警（会话可能在跑，下条消息还会对齐）。
+      const chiefRow = hub.registry.get('chief')
+      if (chiefRow?.sessionId && config.chief.model) {
+        try {
+          await sessions.selectModel({ sessionId: chiefRow.sessionId, ...config.chief.model })
+          ctx.logger.info('hub-bot chief model applied live: %s/%s', config.chief.model.provider, config.chief.model.model)
+        } catch (error) {
+          ctx.logger.warn('hub-bot chief model live-apply failed (will align on next injection): %s', error instanceof Error ? error.message : error)
+        }
+      }
+    }
     ctx.logger.info('hub-bot settings updated via panel: %s', Object.keys(patch).join(', '))
     return await settingsView()
   }
@@ -458,6 +475,15 @@ export function apply(ctx, rawConfig) {
           json(res, 200, buildOverview({ store, registry: hub.registry, health: await buildHealth() }))
         } else if (route === 'settings' && method === 'GET') {
           json(res, 200, await settingsView())
+        } else if (route === 'models/catalog' && method === 'GET') {
+          // 面板「总管模型」：目录 + 当前配置（配置即时生效后的下一次注入使用）。
+          json(res, 200, { catalog: await sessions.modelCatalog(), chief: config.chief?.model ?? null })
+        } else if (route === 'triggers' && method === 'GET') {
+          // 面板「最近触发」：trigger 表直读，最新在前。
+          const limitRaw = url.searchParams.get('limit')
+          const limit = limitRaw === null ? 20 : Math.max(1, Math.min(100, Number.parseInt(limitRaw, 10) || 20))
+          const rows = store.db.prepare('SELECT value FROM trigger ORDER BY rowid DESC LIMIT ?').all(limit)
+          json(res, 200, { triggers: rows.map(r => JSON.parse(String(r.value))) })
         } else if (route === 'settings' && method === 'POST') {
           json(res, 200, await applySettings(req))
         } else if (route === 'tickets/resolve' && method === 'POST') {

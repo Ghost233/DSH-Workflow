@@ -124,3 +124,11 @@ textarea { width: 100%; font-family: var(--dsh-mono); font-size: 12.5px; }
 .perm-list code { background: var(--dsh-bg-hover); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 .ok-text { color: var(--dsh-ok); }
 .warn-text { color: var(--dsh-warn); }
+
+/* 数据表（负责人注册表 / 最近触发） */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th { text-align: left; font-weight: 600; color: var(--dsh-fg-dim); padding: 4px 8px 6px 0; border-bottom: 1px solid var(--dsh-border); }
+.data-table td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--dsh-border); vertical-align: top; }
+.data-table tr:last-child td { border-bottom: none; }
+.model-select { width: 100%; max-width: 34em; padding: 6px 8px; margin: 4px 0 6px; background: var(--dsh-bg-hover); color: var(--dsh-fg); border: 1px solid var(--dsh-border); border-radius: var(--dsh-radius); font-size: 13px; }
+.model-select:disabled { opacity: .5; }
