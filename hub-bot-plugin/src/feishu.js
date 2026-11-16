@@ -218,6 +218,7 @@ export class FeishuSource {
     this.ws = new WSClient({ appId: this.credentials.appId, appSecret: this.credentials.appSecret })
     const dispatcher = new EventDispatcher({}).register({
       'im.message.receive_v1': async data => {
+        this.logger.info('hub-bot feishu: event received message_id=%s chat_type=%s', data?.message?.message_id, data?.message?.chat_type)
         try { await this.handleEvent(data) } catch (error) { this.logger.warn('hub-bot feishu: event handling failed: %s', error?.message ?? error) }
       },
     })
