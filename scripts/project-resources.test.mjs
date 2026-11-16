@@ -20,7 +20,7 @@ test('the launch composition loads the project skills root through a dedicated s
   assert.deepEqual(provider.config.customSkillDirs, [join(projectRoot, 'skills')])
 })
 
-test('the project layer ships the GitHub account skill without shipping the retired Deck', async t => {
+test('the project layer ships the GitHub account skill and built Matt panel without development sources', async t => {
   const root = await mkdtemp(join(tmpdir(), 'rga-t03-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const workflow = join(root, 'workflow')
@@ -31,5 +31,8 @@ test('the project layer ships the GitHub account skill without shipping the reti
   assert.ok(Object.keys(staged.members).some(name => name.startsWith('skills/')),
     'the project layer must declare the skills root as a member')
   assert.match(staged.members['vendor/mattpocock-skills-zh/.codex-plugin/plugin.json']?.sha256 ?? '', /^[0-9a-f]{64}$/)
-  assert.ok(!Object.keys(staged.members).some(name => name.startsWith('matt-skills-panel-plugin/')))
+  assert.match(staged.members['matt-skills-panel-plugin/package/lib/index.js']?.sha256 ?? '', /^[0-9a-f]{64}$/)
+  assert.match(staged.members['matt-skills-panel-plugin/package/lib/client.js']?.sha256 ?? '', /^[0-9a-f]{64}$/)
+  assert.ok(!Object.keys(staged.members).some(name => ['src/', 'test/', 'scripts/']
+    .some(directory => name.startsWith('matt-skills-panel-plugin/' + directory))))
 })
