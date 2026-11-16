@@ -1,0 +1,105 @@
+# dsh-hub-bot bundle layer: inserts the plugin without configuration and registers the two owner agent presets its
+# Sessions run under. The profile supplies the hub-bot entry's stateDir/homeRepo (see README.md); the plugin refuses
+# to start without them.
+- insert:
+    - id: hub-bot
+      name: dsh-hub-bot
+    # The L1 routing owner's agent preset. Issue #64 AC: an owner is FULLY read-only — no write-file and no
+    # command-execution tools at all; every act of doing belongs to an L3 worker session. Left out: shell and jobs,
+    # anything that asks or shows a person something (ask_user_question, present), profile changes, scheduling,
+    # goals, plans, workflows, web fetch, file search, file writes. The five L1 tools (list_owners / create_owner /
+    # route_to_owner / query_tasks / reply_source) and the router persona ship as a STATIC plugin row
+    # (dsh-hub-bot/router-tools): a custom preset's tool surface is a mounted subtree (dsh-agent-preset-registry
+    # mountPreset) that runtime decoration from the root plugin cannot reach — the stage-1 review proved it.
+    # A preset row has no setting that hides it from the preset picker, so the name and description say whom it is for.
+    - id: hub-bot-router-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: hub-bot-router
+        name: hub-bot 总负责人（L1 路由·负责人专用）
+        description: L1 总负责人专用，不供手动选择。完全只读：无写文件与命令执行工具；只含路由所需工具。
+        order: 90
+        plugins:
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          # The file tools only read: every write belongs to an L3 worker session.
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              write: false
+              edit: false
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          # The L1 tools + router persona, registering from inside the preset's mounted tool subtree.
+          - id: hub-bot-router-tools
+            name: dsh-hub-bot/router-tools
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+    # The L2 owner agent preset (repo/dir/scratch owners). Same fully-read-only base; the L2 session-management tools
+    # (search/read/inject/create_session, fork_session #69 确认流程, report, escalate) arrived with task-3 as a
+    # static plugin row of this preset — the mounted-subtree finding rules out runtime injection here too.
+    - id: hub-bot-owner-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: hub-bot-owner
+        name: hub-bot 负责人（L2 执行管理·负责人专用）
+        description: L2 负责人专用，不供手动选择。完全只读：无写文件与命令执行工具；会话管理工具以静态插件行接入。
+        order: 91
+        plugins:
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              write: false
+              edit: false
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          # L2 会话管理工具（spec #65，含 #69 fork_session：fork 只发起确认，确认后代码执行）与负责人 persona：
+          # 静态行进 preset 挂载子树，机制同 router-tools。
+          - id: hub-bot-owner-tools
+            name: dsh-hub-bot/owner-tools
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
