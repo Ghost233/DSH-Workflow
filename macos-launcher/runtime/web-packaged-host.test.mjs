@@ -256,5 +256,5 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.match((await ctx.skills.get('spec-delivery')).content, /team_task_create/, 'moved Host still loads the native DSH team skill')
   assert.match((await ctx.skills.get('browser-harness')).content, /references\/SKILL.md/)
   assert.deepEqual(await readFile(join(movedWorkflow, 'browser-harness-plugin/skills/browser-harness/references/SKILL.md')),
-    await readFile(resolve('vendor/browser-harness/SKILL.md')), 'relocation keeps original skill bytes')
+    await readFile(resolve('browser-harness-plugin/pinned/vendor/browser-harness/SKILL.md')), 'relocation keeps original skill bytes')
 })

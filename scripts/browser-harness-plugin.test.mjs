@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { runtimeRequire } from './test-runtime.mjs'
@@ -20,7 +20,7 @@ test('the built-in skill carries the pinned original documents and rejects chang
   assert.equal(metadata.commit, 'c7bb3da435477494450aeb4b19a501fd04bb897d')
   assert.equal(metadata.version, '0.1.13')
   const skill = join(destination, 'browser-harness-plugin/skills/browser-harness/references/SKILL.md')
-  assert.deepEqual(await readFile(skill), await readFile(join(root, 'vendor/browser-harness/SKILL.md')))
+  assert.deepEqual(await readFile(skill), await readFile(join(root, 'browser-harness-plugin/pinned/vendor/browser-harness/SKILL.md')))
   assert.ok(metadata.files['interaction-skills/uploads.md'])
   await verifyBrowserHarnessSkills(destination)
   await writeFile(skill, 'different instructions')
@@ -38,31 +38,23 @@ test('the normal project packager seals the Browser Harness skill and its source
   await verifyProjectIntegration(resolve('.'), destination)
 })
 
-test('fixed skill inputs reject an absent checkout, a dirty checkout and a gitlink mismatch', async t => {
+test('fixed skill inputs reject a missing snapshot, a modified snapshot and a broken record', async t => {
   const root = await mkdtemp(join(tmpdir(), 'workflow-browser-pin-'))
   t.after(() => rm(root, { recursive: true, force: true }))
-  const run = async (cwd, ...args) => (await promisify(execFile)('git', ['-C', cwd, ...args])).stdout.trim()
-  await run(root, 'init', '-q')
-  await run(root, 'update-index', '--add', '--cacheinfo', `160000,${'a'.repeat(40)},vendor/browser-harness`)
-  await assert.rejects(readPinnedBrowserHarness(root))
-  const upstream = join(root, 'vendor/browser-harness')
-  await mkdir(upstream, { recursive: true })
-  await run(upstream, 'init', '-q')
-  for (const [path, content] of Object.entries({ 'SKILL.md': 'official skill', 'install.md': 'official setup', LICENSE: 'MIT', 'pyproject.toml': 'version = "0.1.13"\n' })) {
-    await writeFile(join(upstream, path), content)
-  }
-  await run(upstream, 'add', '.')
-  await run(upstream, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-qm', 'fixture')
-  const commit = await run(upstream, 'rev-parse', 'HEAD')
-  await assert.rejects(readPinnedBrowserHarness(root), /gitlink/)
-  await run(root, 'update-index', '--cacheinfo', `160000,${commit},vendor/browser-harness`)
-  assert.equal((await readPinnedBrowserHarness(root)).commit, commit)
-  await writeFile(join(upstream, 'SKILL.md'), 'uncommitted skill')
-  await assert.rejects(readPinnedBrowserHarness(root), /tracked changes/)
+  const pinned = join(root, 'browser-harness-plugin/pinned')
+  await mkdir(pinned, { recursive: true })
+  await assert.rejects(readPinnedBrowserHarness(root), /baseline record/)
+  await cp(join(resolve('.'), 'browser-harness-plugin/pinned'), pinned, { recursive: true })
+  assert.equal((await readPinnedBrowserHarness(root)).commit, 'c7bb3da435477494450aeb4b19a501fd04bb897d')
+  await rm(join(pinned, 'vendor/browser-harness/interaction-skills/uploads.md'))
+  await assert.rejects(readPinnedBrowserHarness(root), /missing/)
+  await writeFile(join(pinned, 'vendor/browser-harness/SKILL.md'), 'edited skill')
+  await assert.rejects(readPinnedBrowserHarness(root), /differs/)
 })
 
-test('upstream checking reports changes and network failures without changing the fixed submodule', async () => {
-  const before = await promisify(execFile)('git', ['-C', 'vendor/browser-harness', 'rev-parse', 'HEAD'])
+test('upstream checking reports changes and network failures without changing the pinned snapshot', async () => {
+  const snapshotSkill = join(resolve('.'), 'browser-harness-plugin/pinned/vendor/browser-harness/SKILL.md')
+  const before = await readFile(snapshotSkill)
   const requests = []
   const changed = await checkBrowserHarnessUpstream(resolve('.'), { fetch: async url => {
     requests.push(url)
@@ -76,7 +68,7 @@ test('upstream checking reports changes and network failures without changing th
   const failed = await checkBrowserHarnessUpstream(resolve('.'), { fetch: async () => { throw new Error('offline') } })
   assert.equal(failed.state, 'check-failed')
   assert.equal(failed.latest, null)
-  assert.equal((await promisify(execFile)('git', ['-C', 'vendor/browser-harness', 'rev-parse', 'HEAD'])).stdout, before.stdout)
+  assert.deepEqual(await readFile(snapshotSkill), before)
 })
 
 test('local availability comes from the DSH shell path and disables telemetry for the version call', async t => {

@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/browser-use/browser-harness",
+  "commit": "c7bb3da435477494450aeb4b19a501fd04bb897d",
+  "version": "0.1.13",
+  "files": {
+    "LICENSE": "5afa3d97bf1e6f998d587fa101e3fe0d0c416840b7fe77bcd6ae97690a334631",
+    "SKILL.md": "2e939c2e58707c57338d5e479b885d694bc7e580ee4207aabd11c08003a41163",
+    "install.md": "ac4d215e62bbab17085c874f53aa0749b6d4a0792e69e56b672d2de1f230f8d1",
+    "interaction-skills/connection.md": "f0222293586140508aa4c774e8e625e3b51d4116c62c2bbddf1f786963ee062d",
+    "interaction-skills/cookies.md": "cce3f46cf48b4662a05eee22c79278112ed12737277de42a1f6252e8ad9e09a8",
+    "interaction-skills/cross-origin-iframes.md": "c8bb661316b137257a5f36c0febb7abbcfd84b8baa41bf6127578e8db73cfa06",
+    "interaction-skills/dialogs.md": "b485e6978024dfbd8c0effd8e0635a4212ccb5732874f601ac525f17e0504d67",
+    "interaction-skills/downloads.md": "cf69b75bfb9cf84a876504ccfef0e9a37b60b60efa5db0aa5acf81644999ee30",
+    "interaction-skills/drag-and-drop.md": "eb2c567770ea51cdfa51ac9d00c8f7f070f211a978de8740c35a4f95c288c847",
+    "interaction-skills/dropdowns.md": "9bf8cbab80425a91898a574eacebbabf83b9d28a7181d88eeecb6f98b430b5f5",
+    "interaction-skills/iframes.md": "05d430364fc39f5778c8fd5d2da8ac1dae4ab69d0245126bc206a5d53cce30d5",
+    "interaction-skills/make-video.md": "4ea880898acd8ec21cccf74314331e1fdd316a0174bfb3c0182827fdd7c9fc19",
+    "interaction-skills/network-requests.md": "a90e83dae83bcf3c9f74e483f1b5bb68e2e43eae5e9fb0bdae8b6ba05e282f4d",
+    "interaction-skills/print-as-pdf.md": "73381a5e0e93d159aeab5afca4326e44eff622d2dd2a0a9d7a9e5d38e22d8429",
+    "interaction-skills/profile-sync.md": "10b07ae48c27837b5c9d939fd03ae7c2972a430097971b0a84bc9b64317295df",
+    "interaction-skills/screenshots.md": "d630a07c3a7338d0699f1a15216c9dff8a7c334432ac359a7316db5e347c6586",
+    "interaction-skills/scrolling.md": "362f91f67fc73249d95f060a1f46f565c4d8ebd43a33a228451516d2f4fcb66a",
+    "interaction-skills/shadow-dom.md": "6f9af297b220f27b82b91d75d7dd49a70c0f087de5da64a24acaadf574b60fe9",
+    "interaction-skills/tabs.md": "ef886a75142c5b87b011ad2bbc9f1f873efd0b6f4806c1dc6067e84e0df7f6db",
+    "interaction-skills/uploads.md": "c45219a4f08287ee76eb363574dee81bc3ca2209033184aa5e23e9fdd430f1f9",
+    "interaction-skills/viewport.md": "361799ad9f82721837869c018ae4c7d6662d14772f713c65deb38534976b48fe"
+  }
+}

@@ -23,9 +23,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Prepare pinned Browser Harness skill
-        run: git submodule update --init vendor/browser-harness
-
       - name: Check release source and ARM64 platform
         shell: bash
         env:

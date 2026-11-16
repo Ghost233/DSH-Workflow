@@ -1,42 +1,44 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { cp, lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-const exec = promisify(execFile)
 const repository = 'https://github.com/browser-use/browser-harness'
-const submodule = 'vendor/browser-harness'
+const pinnedRoot = 'browser-harness-plugin/pinned'
+const pinnedSnapshot = join(pinnedRoot, 'vendor/browser-harness')
+const pinnedRecord = join(pinnedRoot, 'browser-harness.upstream.json')
 const selected = path => ['SKILL.md', 'install.md', 'LICENSE'].includes(path) || /^interaction-skills\/[\w-]+\.md$/.test(path)
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 const blobHash = bytes => createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex')
 const skillRoot = root => join(root, 'browser-harness-plugin/skills/browser-harness')
 
-/** Read only committed, unmodified official skill inputs from the exact gitlink. */
+/** Read the pinned official skill snapshot and recompute integrity from its bytes. */
 export async function readPinnedBrowserHarness(root) {
-  const git = async (cwd, args) => (await exec('git', ['-C', cwd, ...args], { maxBuffer: 2 * 1024 * 1024 })).stdout
-  const pin = (await git(root, ['ls-files', '--stage', '--', submodule])).match(/^160000 ([a-f0-9]{40}) 0\t/)
-  if (!pin) throw new Error('Browser Harness submodule gitlink is missing')
-  const directory = join(root, submodule)
-  const commit = (await git(directory, ['rev-parse', 'HEAD'])).trim()
-  if (commit !== pin[1]) throw new Error('Browser Harness submodule differs from the fixed gitlink')
-  if ((await git(directory, ['status', '--porcelain', '--untracked-files=no'])).trim()) {
-    throw new Error('Browser Harness submodule contains tracked changes')
+  let record
+  try {
+    record = JSON.parse(await readFile(join(root, pinnedRecord), 'utf8'))
+  } catch {
+    throw new Error('Browser Harness pinned baseline record is missing')
   }
-  const paths = (await git(directory, ['ls-tree', '-rz', 'HEAD'])).split('\0').filter(Boolean)
-    .map(row => row.split('\t')[1]).filter(selected).sort()
-  if (!['SKILL.md', 'install.md', 'LICENSE'].every(path => paths.includes(path))) throw new Error('Browser Harness official skill inputs are incomplete')
+  if (record.schema !== 1 || record.repository !== repository || !/^[a-f0-9]{40}$/.test(record.commit)
+    || typeof record.version !== 'string' || !record.files
+    || !['SKILL.md', 'install.md', 'LICENSE'].every(path => record.files[path])) throw new Error('Invalid Browser Harness pinned baseline record')
   const files = {}, blobs = {}
-  for (const path of paths) {
-    const target = join(directory, path)
-    if (!(await lstat(target)).isFile()) throw new Error(`Browser Harness input is not a regular file: ${path}`)
+  for (const path of Object.keys(record.files).sort()) {
+    if (!selected(path)) throw new Error(`Invalid Browser Harness pinned record entry: ${path}`)
+    const target = join(root, pinnedSnapshot, path)
+    let entry
+    try {
+      entry = await lstat(target)
+    } catch {
+      throw new Error(`Browser Harness pinned snapshot is missing: ${path}`)
+    }
+    if (!entry.isFile()) throw new Error(`Browser Harness input is not a regular file: ${path}`)
     const bytes = await readFile(target)
+    if (sha256(bytes) !== record.files[path]) throw new Error(`Browser Harness pinned snapshot differs: ${path}`)
     files[path] = sha256(bytes)
     blobs[path] = blobHash(bytes)
   }
-  const version = (await readFile(join(directory, 'pyproject.toml'), 'utf8')).match(/^version = "([^"]+)"/m)?.[1]
-  if (!version) throw new Error('Browser Harness upstream version is missing')
-  return { schema: 1, repository, commit, version, files, blobs }
+  return { schema: 1, repository, commit: record.commit, version: record.version, files, blobs }
 }
 
 /** Materialize original bytes beside the project skill; no upstream file is rewritten. */
@@ -48,7 +50,7 @@ export async function stageBrowserHarnessSkills(root, destination) {
   for (const path of Object.keys(metadata.files)) {
     const target = join(directory, 'references', path)
     await mkdir(dirname(target), { recursive: true })
-    await cp(join(root, submodule, path), target)
+    await cp(join(root, pinnedSnapshot, path), target)
   }
   await writeFile(join(destination, 'browser-harness-plugin/upstream.json'), JSON.stringify(metadata, null, 2) + '\n')
   await verifyBrowserHarnessSkills(destination)
