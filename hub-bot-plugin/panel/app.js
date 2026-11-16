@@ -271,8 +271,8 @@ function renderSettings(view) {
   api('models/catalog').then(({ catalog, chief }) => {
     mSelect.replaceChildren(el('option', { value: '' }, text('跟随部署默认（' + (catalog?.default ? catalog.default.provider + ' / ' + catalog.default.model : '部署决定') + '）')))
     for (const entry of catalog?.groups ?? []) {
-      const group = el('optgroup', { label: entry.group.name })
-      for (const m of entry.group.models) group.append(el('option', { value: entry.group.id + '/' + m.id }, text(m.name ?? m.id)))
+      const group = el('optgroup', { label: entry.name })
+      for (const m of entry.models ?? []) group.append(el('option', { value: entry.id + '/' + m.id }, text(m.name ?? m.id)))
       mSelect.append(group)
     }
     for (const f of catalog?.failures ?? []) mHint.append(text(' ' + f.name + ' 不可用：' + f.message))
