@@ -44,7 +44,8 @@ export async function waitForInitialHostHealth(host, deadline, isAlive, profileP
 }
 
 /** The manager owns the official Host; GUI clients only send explicit management commands. */
-export async function serveManager({ dataRoot, resources, home, loginEnvironment = process.env, loginShells, updatePlugins = updateProfilePlugins }) {
+export async function serveManager({ dataRoot, resources, home, loginEnvironment = process.env, loginShells,
+  updatePlugins = updateProfilePlugins, stationOwned = false }) {
   const directory = serviceDirectory(dataRoot), socketPath = serviceSocket(dataRoot)
   const server = createServer()
   let child, receipt, injections, admission, starting, stopping, normalStop, stopOperation, failure = '', state = 'stopped', closing = false
@@ -441,9 +442,9 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     if (owned) {
       const exited = new Promise(accept => owned.once('close', accept))
       if (owned.connected) owned.send({ type: 'shutdown' }, () => {})
-      const terminate = setTimeout(() => owned.kill('SIGTERM'), 10_000)
-      const force = setTimeout(() => owned.kill('SIGKILL'), 15_000)
-      try { await exited } finally { clearTimeout(terminate); clearTimeout(force) }
+      // Station owns the single deadline for its entire process tree.
+      const force = stationOwned ? undefined : setTimeout(() => owned.kill('SIGKILL'), 10_000)
+      try { await exited } finally { clearTimeout(force) }
     }
     await authorizing
     await control.close()
@@ -452,9 +453,9 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
 }
 
 if (import.meta.main) {
-  const [dataRoot, resources, home] = process.argv.slice(2)
+  const [dataRoot, resources, home, ownership] = process.argv.slice(2)
   if (!dataRoot || !resources || !home) throw new Error('Missing DSH service paths')
-  const manager = await serveManager({ dataRoot, resources, home })
+  const manager = await serveManager({ dataRoot, resources, home, stationOwned: ownership === '--station-owned' })
   if (manager) {
     let exiting = false
     const close = () => { if (!exiting) { exiting = true; void manager.close().catch(error => { console.error(redact(error.stack)); process.exitCode = 1 }) } }

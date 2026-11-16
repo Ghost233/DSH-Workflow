@@ -11,6 +11,7 @@ class LauncherEnvironment {
       hideWindowOnStart = values['hideWindowOnStart'] as bool? ?? false,
       password = values['password'] as String?,
       testSocket = values['testSocket'] as String?,
+      stationOwnsManagers = values['stationOwnsManagers'] == true,
       testReleaseEndpoint = values['testReleaseEndpoint'] as String?,
       loginStatus = _string(values, 'loginStatus');
 
@@ -24,6 +25,7 @@ class LauncherEnvironment {
 
   final String resources, dataRoot, home, appVersion, loginStatus;
   final bool fullAccess, allowLanSettings, hideWindowOnStart;
+  final bool stationOwnsManagers;
   final String? password, testSocket, testReleaseEndpoint;
 }
 
@@ -43,6 +45,8 @@ class NativeBridge {
   }
 
   Future<void> showWindow() => channel.invokeMethod<void>('showWindow');
+  Future<void> startStationManager(String role) =>
+      channel.invokeMethod<void>('startStationManager', role);
   Future<void> openUrl(String url) =>
       channel.invokeMethod<void>('openUrl', url);
   Future<String?> chooseCodexAuthFile() =>
@@ -65,6 +69,5 @@ class NativeBridge {
   Future<String> setLoginEnabled(bool enabled) async =>
       await channel.invokeMethod<String>('setLoginEnabled', enabled) ??
       'unknown';
-  Future<void> cancelQuit() => channel.invokeMethod<void>('cancelQuit');
   Future<void> finishQuit() => channel.invokeMethod<void>('finishQuit');
 }

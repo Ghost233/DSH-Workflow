@@ -113,7 +113,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       .whenComplete(() => _refreshingStatus = null);
 
   Future<void> _readStatus() async {
-    if (_closed || !initialized) return;
+    if (_closed || exiting || !initialized) return;
     if (File(script('service-cli.mjs')).existsSync()) {
       await _observeService();
     }
@@ -137,6 +137,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   Future<void> _subscribeStatus() async {
     if (_closed ||
+        exiting ||
         !initialized ||
         !File(script('launcher-events.mjs')).existsSync()) {
       return;
@@ -230,6 +231,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     'DSH_ALLOW_LAN_SETTINGS': allowLanSettings ? '1' : '0',
     'DSH_LAUNCH_PASSWORD': ?_password,
   };
+
+  Future<void> _ensureStationManager(String role) async {
+    if (!environment.stationOwnsManagers) return;
+    if (exiting || _closed) throw StateError('Station 正在退出。');
+    await native.startStationManager(role);
+  }
 
   void reportError(Object failure) {
     error = failure.toString().replaceAll(
@@ -333,12 +340,26 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     String type, {
     Map<String, Object?> fields = const {},
   }) async {
-    final child = await _startProcess(node, [
-      script('service-cli.mjs'),
-      environment.dataRoot,
-      environment.resources,
-      environment.home,
-    ], environment: processEnvironment);
+    if (const {
+      'start-service',
+      'update-plugins',
+      'authorize-notifications',
+    }.contains(type)) {
+      await _ensureStationManager('service');
+    }
+    final child = await _startProcess(
+      node,
+      [
+        script('service-cli.mjs'),
+        environment.dataRoot,
+        environment.resources,
+        environment.home,
+      ],
+      environment: {
+        ...processEnvironment,
+        if (environment.stationOwnsManagers) 'DSH_STATION_OWNS_MANAGERS': '1',
+      },
+    );
     final output = child.stdout.transform(utf8.decoder).join();
     final diagnostics = child.stderr.transform(utf8.decoder).join();
     child.stdin.writeln(jsonEncode({'type': type, ...fields}));
@@ -600,11 +621,15 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   }
 
   Future<Map<String, Object?>> _webCommand(String type) async {
-    final child = await _startProcess(node, [
-      script('web-cli.mjs'),
-      environment.dataRoot,
-      environment.resources,
-    ], environment: processEnvironment);
+    if (type == 'start-web') await _ensureStationManager('web');
+    final child = await _startProcess(
+      node,
+      [script('web-cli.mjs'), environment.dataRoot, environment.resources],
+      environment: {
+        ...processEnvironment,
+        if (environment.stationOwnsManagers) 'DSH_STATION_OWNS_MANAGERS': '1',
+      },
+    );
     final output = child.stdout.transform(utf8.decoder).join();
     final diagnostics = child.stderr.transform(utf8.decoder).join();
     child.stdin.writeln(
@@ -908,84 +933,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   bool exiting = false;
   String exitMessage = '';
-  Future<bool> Function(Map<String, Object?>)? confirmStationQuit;
-
-  Future<bool> shutdownForQuit() async {
-    if (updatingPlugins) throw StateError('DSH 插件正在更新，请等待更新结束。');
-    if (exiting) return false;
+  void beginQuit() {
     exiting = true;
     error = '';
-    exitMessage = '正在准备退出并停止全部服务…';
+    exitMessage = '正在退出并停止全部服务…';
     notifyListeners();
-    Process? child;
-    var completed = false;
-    Object? operationFailure;
-    try {
-      if (!File(script('station-shutdown.mjs')).existsSync()) {
-        // Isolated native UI probes without runtime resources have no services.
-        if (environment.testSocket == null) {
-          throw StateError('退出清理入口缺失，请重新安装完整应用。');
-        }
-        completed = true;
-        return true;
-      }
-      await _mutation;
-      child = await _startProcess(node, [
-        script('station-shutdown.mjs'),
-        environment.dataRoot,
-      ], environment: processEnvironment);
-      final diagnostics = child.stderr.transform(utf8.decoder).join();
-      bool? stopped;
-      String? failure;
-      await for (final line
-          in child.stdout
-              .transform(utf8.decoder)
-              .transform(const LineSplitter())) {
-        final event = objectValue(jsonDecode(line));
-        switch (event['type']) {
-          case 'progress':
-            exitMessage = event['message'] as String;
-            notifyListeners();
-          case 'inspection':
-            final inspection = objectValue(event['value']);
-            final accepted =
-                inspection['needsConfirmation'] != true ||
-                (await confirmStationQuit?.call(inspection) ?? false);
-            child.stdin.writeln(jsonEncode({'confirmed': accepted}));
-            await child.stdin.flush();
-          case 'result':
-            stopped = event['stopped'] == true;
-          case 'error':
-            failure = event['message'] as String?;
-        }
-      }
-      final code = await child.exitCode;
-      await diagnostics;
-      if (code != 0 || failure != null || stopped == null) {
-        throw StateError(failure ?? '服务清理未完成（$code），Station 已保留。');
-      }
-      completed = stopped;
-      return completed;
-    } catch (failure) {
-      operationFailure = failure;
-      rethrow;
-    } finally {
-      try {
-        await child?.stdin.close();
-        if (child != null) {
-          await child.exitCode.timeout(const Duration(seconds: 10));
-        }
-      } catch (cleanup) {
-        if (operationFailure == null) rethrow;
-        stderr.writeln('Station 退出检查清理失败：${cleanup.runtimeType}');
-      } finally {
-        if (!completed) {
-          exiting = false;
-          exitMessage = '';
-          notifyListeners();
-        }
-      }
-    }
   }
 
   Future<void> close() => _closeFuture ??= _close();

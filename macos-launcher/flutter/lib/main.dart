@@ -67,14 +67,9 @@ Future<void> main() async {
         if (traceEnabled) {
           stderr.writeln('OWN_QUIT_TRACE phase=dart-received');
         }
-        var stage = 'services-stop';
+        model.beginQuit();
+        var stage = 'integration-close';
         try {
-          await serviceStartup;
-          if (!await model.shutdownForQuit()) {
-            await native.cancelQuit();
-            return;
-          }
-          stage = 'integration-close';
           await integration.close();
           if (traceEnabled) {
             stderr.writeln('OWN_QUIT_TRACE phase=integration-done');
@@ -88,18 +83,15 @@ Future<void> main() async {
           if (traceEnabled) {
             stderr.writeln('OWN_QUIT_TRACE phase=finish-called');
           }
-          await native.finishQuit();
         } catch (error) {
           if (traceEnabled) {
             stderr.writeln(
               'OWN_QUIT_ERROR stage=$stage errorType=${error.runtimeType}',
             );
           }
-          await native.cancelQuit();
-          model.exiting = false;
-          model.exitMessage = '';
           model.reportError(error);
-          await native.showWindow();
+        } finally {
+          await native.finishQuit();
         }
       case 'openGlobal':
         await serviceStartup;
@@ -154,7 +146,6 @@ class _LauncherPageState extends State<LauncherPage> {
   void initState() {
     super.initState();
     model.confirmServiceStop = _confirmServiceStop;
-    model.confirmStationQuit = _confirmStationQuit;
     _lifecycle = AppLifecycleListener(onStateChange: _windowStateChanged);
     final state = WidgetsBinding.instance.lifecycleState;
     if (state != null) _windowStateChanged(state);
@@ -203,50 +194,12 @@ class _LauncherPageState extends State<LauncherPage> {
         false;
   }
 
-  Future<bool> _confirmStationQuit(Map<String, Object?> inspection) async {
-    await model.showWindow();
-    if (!mounted) return false;
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('退出 Station 并停止全部服务'),
-            content: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('以下工作尚未完成或状态未知。确认后将停止日常 DSH 和 Web，并回收相关进程。'),
-                  if (inspection['message'] is String)
-                    Text(inspection['message'] as String),
-                  for (final work in inspection['work'] as List? ?? [])
-                    Text('• $work'),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('停止全部并退出'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-  }
-
   @override
   void dispose() {
     _lifecycle.dispose();
     model.setWindowVisible(false);
     if (model.confirmServiceStop == _confirmServiceStop) {
       model.confirmServiceStop = null;
-    }
-    if (model.confirmStationQuit == _confirmStationQuit) {
-      model.confirmStationQuit = null;
     }
     _password.dispose();
     super.dispose();

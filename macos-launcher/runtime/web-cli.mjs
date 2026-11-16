@@ -10,17 +10,19 @@ async function ensureWeb({ dataRoot, resources }) {
   const socket = webSocket(dataRoot)
   try { await serviceRequest(socket, { type: 'status' }); return socket }
   catch (error) { if (!['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw error }
-  await privateDirectory(webDirectory(dataRoot))
-  const log = await open(join(webDirectory(dataRoot), 'manager.log'), 'a', 0o600)
-  try {
-    const environment = { ...process.env }
-    delete environment.DSH_LAUNCH_PASSWORD
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./global-supervisor.mjs', import.meta.url)), dataRoot], {
-      detached: true, stdio: ['ignore', log.fd, log.fd], env: environment, cwd: resources,
-    })
-    await new Promise((accept, reject) => { child.once('spawn', accept); child.once('error', reject) })
-    child.unref()
-  } finally { await log.close() }
+  if (process.env.DSH_STATION_OWNS_MANAGERS !== '1') {
+    await privateDirectory(webDirectory(dataRoot))
+    const log = await open(join(webDirectory(dataRoot), 'manager.log'), 'a', 0o600)
+    try {
+      const environment = { ...process.env }
+      delete environment.DSH_LAUNCH_PASSWORD
+      const child = spawn(process.execPath, [fileURLToPath(new URL('./global-supervisor.mjs', import.meta.url)), dataRoot], {
+        stdio: ['ignore', log.fd, log.fd], env: environment, cwd: resources,
+      })
+      await new Promise((accept, reject) => { child.once('spawn', accept); child.once('error', reject) })
+      child.unref()
+    } finally { await log.close() }
+  }
   for (let attempt = 0; attempt < 100; attempt++) {
     try { await serviceRequest(socket, { type: 'status' }); return socket }
     catch (error) {

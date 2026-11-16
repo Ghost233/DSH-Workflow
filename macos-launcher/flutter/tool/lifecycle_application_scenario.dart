@@ -216,43 +216,24 @@ Future<void> _quitRunning(
     final elapsed = Stopwatch()..start();
     await actual.state({'action': 'quit'});
     require(
-      await application.exitCode.timeout(const Duration(seconds: 6)) == 0,
-      'the real launcher quits normally with exit code zero',
+      await application.exitCode.timeout(const Duration(seconds: 12)) == 0,
+      'the native launcher exits within the shared shutdown budget',
     );
     if (pause) {
       require(
-        (await Process.run('/bin/ps', [
-          '-o',
-          'stat=',
-          '-p',
-          '$pid',
-        ])).stdout.toString().trim().startsWith('T'),
-        'the independent Web daemon remains OS-paused after launcher quit',
+        elapsed.elapsedMilliseconds >= 9500,
+        'the paused Web manager receives the shared grace period before forcing exit',
       );
-      require(
-        (await actual.backendHealth())['instanceId'] == host['lease'],
-        'the actual Host remains healthy while the independent Web is paused',
-      );
-      require(
-        Process.killPid(pid, ProcessSignal.sigcont),
-        'only the paused fixture Web daemon is resumed',
-      );
-      paused = false;
     }
-    final web = await actual.webHealth();
-    final direct = await actual.backendHealth();
-    require(
-      web['ready'] == true &&
-          web['instanceId'] == host['lease'] &&
-          direct['instanceId'] == host['lease'],
-      'the password-authenticated Web entry and same real Host survive normal launcher quit',
+    await waitFor(
+      'owned Web manager exits',
+      () async =>
+          (await Process.run('/bin/kill', ['-0', '$pid'])).exitCode != 0,
     );
-    await _onlyListener(actual, pid);
-    final current = jsonDecode(await actual.receipt.readAsString()) as Map;
-    require(
-      current['pid'] == host['pid'] && current['lease'] == host['lease'],
-      'launcher quit preserves the exact independent Host receipt',
-    );
+    await _pidGone(pid);
+    paused = false;
+    await _pidGone(host['pid'] as int);
+    await _portReleased(actual);
     await File('${actual.root.path}/lifecycle-quit.json').writeAsString(
       jsonEncode({
         'pause': pause,
@@ -261,20 +242,16 @@ Future<void> _quitRunning(
         'webPid': pid,
         'hostPid': host['pid'],
         'hostLease': host['lease'],
-        'actualWebHealthAfterLauncherQuit': web,
-        'actualHostHealthAfterLauncherQuit': direct,
       }),
     );
-    stdout.writeln(
-      'S03 WEB AND HOST SURVIVE NORMAL LAUNCHER QUIT PASSED (pause=$pause)',
-    );
+    stdout.writeln('S03 STATION QUIT REAPS WEB AND HOST PASSED (pause=$pause)');
   } catch (_) {
     failed = true;
     rethrow;
   } finally {
     await closeProbeResources([
       (
-        'owned surviving Web fixture',
+        'owned Web fixture',
         () async {
           if (paused) Process.killPid(pid, ProcessSignal.sigcont);
           await _cleanupWebFixture(actual);
@@ -571,6 +548,7 @@ Future<void> _cleanupWebFixture(WebObservation actual) async {
     '-u',
   ])).stdout.toString().trim();
   final command = identity.stdout.toString().trim();
+  if (identity.exitCode == 1 && command.isEmpty) return;
   require(
     identity.exitCode == 0 &&
         command.startsWith('$uid ') &&
@@ -696,6 +674,7 @@ Future<void> _hostUnavailable(
 }
 
 Future<void> _lateHandleQuit(WebObservation actual, Process application) async {
+  final webPid = await _webPid(actual);
   final gatePath = '${actual.root.path}/data/start-gate.sock';
   final armed = File('$gatePath.arm');
   final gateServer = await ServerSocket.bind(
@@ -772,6 +751,7 @@ Future<void> _lateHandleQuit(WebObservation actual, Process application) async {
       'only the observed owned Web child is paused',
     );
     paused = true;
+    final elapsed = Stopwatch()..start();
     await actual.state({'action': 'quit'});
     await waitFor(
       'actual cleanup starts before returning the process handle',
@@ -781,43 +761,21 @@ Future<void> _lateHandleQuit(WebObservation actual, Process application) async {
     );
     await actual.state({'action': 'quit'});
     require(
-      (await Process.run('/bin/kill', ['-0', '${application.pid}'])).exitCode ==
-          0,
-      'repeated real quit waits while the start handle remains pending',
+      await application.exitCode.timeout(const Duration(seconds: 12)) == 0 &&
+          elapsed.elapsedMilliseconds >= 9500 &&
+          elapsed.elapsedMilliseconds < 12500,
+      'repeated quit keeps one 10-second deadline while the start handle remains held',
     );
-    await armed.delete();
-    gate.write('release\n');
-    await gate.flush();
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    require(
-      (await Process.run('/bin/kill', ['-0', '${application.pid}'])).exitCode ==
-              0 &&
-          (await Process.run('/bin/ps', [
-            '-o',
-            'stat=',
-            '-p',
-            '$pid',
-          ])).stdout.toString().trim().startsWith('T'),
-      'launcher close waits for the admitted start while its real CLI is paused',
-    );
-    require(
-      Process.killPid(pid, ProcessSignal.sigcont),
-      'only the owned paused transport is resumed to complete the admitted start',
-    );
-    paused = false;
-    require(
-      await application.exitCode.timeout(const Duration(seconds: 6)) == 0,
-      'the admitted Web start settles before the real launcher quits normally',
+    await waitFor(
+      'paused Web transport is forced out',
+      () async =>
+          (await Process.run('/bin/kill', ['-0', '$pid'])).exitCode != 0,
     );
     await _pidGone(pid);
-    final webPid = await _webPid(actual);
-    await _onlyListener(actual, webPid);
-    require(
-      (await actual.webHealth())['instanceId'] == actual.backend['lease'] &&
-          (await actual.backendHealth())['instanceId'] ==
-              actual.backend['lease'],
-      'the independent Web and same Host survive the pending-start launcher quit',
-    );
+    paused = false;
+    await _pidGone(webPid);
+    await _pidGone(actual.backend['pid'] as int);
+    await _portReleased(actual);
     await File('${actual.root.path}/lifecycle-late-handle-quit.json')
         .writeAsString(
           jsonEncode({
@@ -827,9 +785,7 @@ Future<void> _lateHandleQuit(WebObservation actual, Process application) async {
             'hostLease': actual.backend['lease'],
           }),
         );
-    stdout.writeln(
-      'S03 LATE HANDLE SETTLED AND INDEPENDENT WEB SURVIVED QUIT PASSED',
-    );
+    stdout.writeln('S03 STATION QUIT REAPS PAUSED WEB START PASSED');
   } catch (_) {
     failed = true;
     rethrow;

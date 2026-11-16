@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, execFileSync } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
+import { copyFile, mkdtemp, mkdir, symlink, writeFile, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -28,7 +28,7 @@ async function ready(socket) {
 }
 const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; throw error } }
 
-test('cancel keeps services running; confirmed exit reaps daily, Web and a detached helper', {
+test('exit reaps a running daily service, Web and a detached helper', {
   skip: artifact ? false : 'Requires frozen packaged resources for actual shutdown acceptance', timeout: 120000,
 }, async t => {
   const root = await mkdtemp('/private/tmp/dsh-station-exit-'), dataRoot = join(root, 'data'), resources = join(root, 'resources'), home = join(root, 'home')
@@ -74,26 +74,126 @@ process.once('SIGTERM',()=>{void supervisor.close()});
     catch (error) { if (error.status === 1) return; throw error }
     if (command.includes(root + '/helper-term-seen')) process.kill(helperPid, 'SIGKILL')
   })
-  let confirmation
-  assert.equal(await shutdownStation({ dataRoot, confirm: async value => { confirmation = value; return false } }), false)
-  assert.equal(confirmation.needsConfirmation, false)
-  assert.deepEqual(confirmation.work, [])
   assert.equal((await serviceRequest(serviceSocket(dataRoot), { type: 'status' })).service.pid, started.service.pid)
   assert.equal((await serviceRequest(serviceSocket(dataRoot), { type: 'status' })).service.ready, true)
   assert.equal((await serviceRequest(webSocket(dataRoot), { type: 'status' })).web.state, 'running')
   assert.equal(alive(helperPid), true)
   await assert.rejects(readFile(join(root, 'helper-term-seen')), { code: 'ENOENT' })
+  const quittingAt = performance.now()
   const exit = spawn(process.execPath, [join(runtime, 'station-shutdown.mjs'), dataRoot], { stdio: ['pipe', 'pipe', 'pipe'] })
   workers.push(exit); exit.stderr.resume()
   const events = []
   createInterface({ input: exit.stdout }).on('line', line => {
-    const event = JSON.parse(line); events.push(event)
-    if (event.type === 'inspection') exit.stdin.write(JSON.stringify({ confirmed: true }) + '\n')
+    events.push(JSON.parse(line))
   })
-  // Keep the parent's stdin open: the helper must finish its own control stream.
   assert.equal(await new Promise(resolve => exit.once('close', resolve)), 0)
+  const elapsed = performance.now() - quittingAt
+  assert.ok(elapsed >= 9500 && elapsed < 12500, `expected one 10-second deadline, measured ${Math.round(elapsed)} ms`)
   assert.ok(events.some(event => event.type === 'result' && event.stopped === true))
   assert.equal(await readFile(join(root, 'helper-term-seen'), 'utf8'), 'seen', 'graceful termination is attempted before forcing an owned leftover')
   assert.equal(alive(unrelated.pid), true, 'an unrelated Node process must not be terminated')
   for (const pid of [daily.pid, web.pid, started.service.pid, helperPid]) assert.equal(alive(pid), false, `owned process ${pid} survived Station shutdown`)
+})
+
+for (const [reason, lostOwner] of [
+  ['killing Station closes its ownership pipe and reaps both attached managers', true],
+  ['native quit reaps both managers even when the process that started them is paused', false],
+]) test(reason, { timeout: 15000 }, async t => {
+  const root = await mkdtemp('/private/tmp/dsh-station-owner-')
+  await copyFile(join(runtime, 'station-runtime.mjs'), join(root, 'station-runtime.mjs'))
+  for (const name of ['service-control.mjs', 'web-control.mjs', 'station-shutdown.mjs']) {
+    await symlink(join(runtime, name), join(root, name))
+  }
+  for (const script of ['service-manager.mjs', 'global-supervisor.mjs']) {
+    await writeFile(join(root, script), `
+import { writeFileSync } from 'node:fs';
+process.on('SIGTERM', () => process.exit(0));
+writeFileSync(process.argv[1] + '.pid', JSON.stringify({ pid:process.pid, parent:process.ppid }));
+setInterval(()=>{},1000);
+`)
+  }
+  const owner = spawn(process.execPath, ['-e', `
+const {spawn} = require('node:child_process');
+const {writeFileSync} = require('node:fs');
+const root = process.argv[1];
+const runtime = spawn(process.execPath, [root+'/station-runtime.mjs', root, root, root], {stdio:['pipe','ignore','ignore']});
+writeFileSync(root+'/runtime.pid', String(runtime.pid));
+runtime.stdin.write('{"type":"service"}\\n{"type":"web"}\\n');
+process.stdin.once('data', () => {
+  const deadline = String(Date.now() + 650);
+  const cleanup = spawn(process.execPath, [process.argv[2], root, deadline, 'station-parent'], {stdio:'ignore'});
+  cleanup.once('exit', code => process.exit(code ?? 1));
+});
+`, root, join(runtime, 'station-shutdown.mjs')], { stdio: ['pipe', 'ignore', 'pipe'] })
+  owner.stderr.resume()
+  const exited = new Promise(resolve => owner.once('close', (code, signal) => resolve({code, signal})))
+  const verifyGone = async pid => {
+    for (let attempt = 0; attempt < 140 && alive(pid); attempt++) await delay(25)
+    assert.equal(alive(pid), false, 'owned process survived Station exit')
+  }
+  const fixturePids = []
+  t.after(async () => {
+    owner.kill('SIGKILL')
+    await exited
+    for (const pid of fixturePids) if (alive(pid)) process.kill(pid, 'SIGKILL')
+    await rm(root, { recursive: true, force: true })
+  })
+  const readPid = async name => {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try { return JSON.parse(await readFile(join(root, name + '.pid'), 'utf8')) }
+      catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; await delay(25) }
+    }
+    assert.fail(`${name} did not start`)
+  }
+  const runtimePid = await readPid('runtime'); fixturePids.push(runtimePid)
+  for (const name of ['service-manager.mjs', 'global-supervisor.mjs']) {
+    const { pid, parent } = await readPid(name); fixturePids.push(pid)
+    assert.equal(parent, runtimePid)
+  }
+  if (lostOwner) {
+    assert.ok(owner.kill('SIGKILL'))
+    assert.equal((await exited).signal, 'SIGKILL')
+  } else {
+    assert.ok(process.kill(runtimePid, 'SIGSTOP'))
+    owner.stdin.write('quit\n')
+    assert.equal((await exited).code, 0)
+  }
+  await Promise.all(fixturePids.map(verifyGone))
+})
+
+test('an unreachable manager and its child are both forced out at the shared deadline', { timeout: 10000 }, async t => {
+  const dataRoot = await mkdtemp('/private/tmp/dsh-station-deadline-')
+  const script = join(dataRoot, 'service-manager.mjs')
+  const directory = join(dataRoot, 'global/.dsh-workflow/service')
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  await writeFile(script, `
+import { spawn } from 'node:child_process'; import { writeFileSync } from 'node:fs';
+process.on('SIGTERM', () => writeFileSync(process.argv[3] + '/term', 'received'));
+const child = spawn(process.execPath, ['-e', 'process.on("SIGTERM",()=>{}); process.stdout.write("ready"); setInterval(()=>{},1000)'], { detached: true });
+child.stdout.once('data', () => {
+  writeFileSync(process.argv[3] + '/manager.json', JSON.stringify({pid:process.pid, child:child.pid}), { mode:0o600 });
+});
+setInterval(()=>{},1000);
+`)
+  const manager = launch(script, [dataRoot, directory])
+  const exited = new Promise(resolve => manager.once('close', resolve))
+  let childPid
+  t.after(async () => {
+    manager.kill('SIGKILL')
+    if (childPid && alive(childPid)) process.kill(childPid, 'SIGKILL')
+    await exited
+    await rm(dataRoot, { recursive: true, force: true })
+  })
+  for (let attempt = 0; attempt < 100 && !childPid; attempt++) {
+    try { childPid = JSON.parse(await readFile(join(directory, 'manager.json'), 'utf8')).child }
+    catch (error) { if (error.code !== 'ENOENT') throw error; await delay(25) }
+  }
+  assert.ok(childPid)
+  const started = Date.now()
+  assert.equal(await shutdownStation({ dataRoot, deadline: started + 650 }), true)
+  assert.equal(await readFile(join(directory, 'term'), 'utf8'), 'received')
+  assert.ok(Date.now() - started < 2500, 'shutdown gets a single grace period')
+  await exited
+  for (let attempt = 0; attempt < 20 && alive(childPid); attempt++) await delay(25)
+  assert.equal(alive(childPid), false)
 })

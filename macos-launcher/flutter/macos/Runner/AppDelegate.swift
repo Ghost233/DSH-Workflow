@@ -16,6 +16,10 @@ class AppDelegate: FlutterAppDelegate {
   private var instanceClaimed = false
   private var quitApproved = false
   private var quitRequested = false
+  private var flutterQuitFinished = false
+  private var stationRuntime: Process?
+  private var stationInput: FileHandle?
+  private var stationShutdown: Process?
   private var reopenObserver: NSObjectProtocol?
   private var reopen: Notification.Name {
     let base = "com.ghostagent.dsh-workflow-launcher.reopen"
@@ -142,6 +146,72 @@ class AppDelegate: FlutterAppDelegate {
       .appendingPathComponent("DSH Workflow", isDirectory: true)
   }
 
+  private var runtimeResources: URL? {
+    guard testRoot != nil else { return Bundle.main.resourceURL }
+    if let path = ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_RESOURCES"] {
+      return URL(fileURLWithPath: path, isDirectory: true)
+    }
+    return dataRoot.deletingLastPathComponent().appendingPathComponent("missing-runtime", isDirectory: true)
+  }
+
+  private var dshHome: String {
+    let environment = ProcessInfo.processInfo.environment
+    if testRoot != nil { return environment["DSH_LAUNCHER_TEST_HOME"] ?? dataRoot.appendingPathComponent(".dsh").path }
+    return environment["DSH_HOME"] ?? NSHomeDirectory() + "/.dsh"
+  }
+
+  private func runtimeScript(_ name: String, resources: URL) -> URL {
+    resources.appendingPathComponent("workflow/macos-launcher/runtime/\(name)")
+  }
+
+  private func startRuntimeProcess(_ script: URL, resources: URL, arguments: [String], input: Pipe? = nil) throws -> Process {
+    let child = Process()
+    child.executableURL = resources.appendingPathComponent("node")
+    child.arguments = [script.path] + arguments
+    child.currentDirectoryURL = resources
+    var environment = ProcessInfo.processInfo.environment
+    environment["DSH_HOME"] = dshHome
+    environment.removeValue(forKey: "DSH_LAUNCH_PASSWORD")
+    child.environment = environment
+    child.standardInput = input as Any? ?? FileHandle.nullDevice
+    child.standardOutput = FileHandle.nullDevice
+    child.standardError = FileHandle.standardError
+    try child.run()
+    return child
+  }
+
+  private func sendStationCommand(_ command: [String: Any]) throws {
+    if stationRuntime?.isRunning != true || stationInput == nil {
+      guard let resources = runtimeResources else { throw failure("应用资源目录不可用") }
+      let input = Pipe()
+      _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+      stationRuntime = try startRuntimeProcess(runtimeScript("station-runtime.mjs", resources: resources), resources: resources,
+        arguments: [dataRoot.path, resources.path, dshHome], input: input)
+      stationInput = input.fileHandleForWriting
+    }
+    try stationInput!.write(contentsOf: JSONSerialization.data(withJSONObject: command) + Data([10]))
+  }
+
+  private func startStationShutdown(_ deadline: Int) {
+    guard let resources = runtimeResources else { return }
+    let script = runtimeScript("station-shutdown.mjs", resources: resources)
+    guard FileManager.default.fileExists(atPath: script.path) else { return }
+    do {
+      let cleanup = try startRuntimeProcess(script, resources: resources,
+        arguments: [dataRoot.path, String(deadline), "station-parent"])
+      stationShutdown = cleanup
+      cleanup.terminationHandler = { [weak self] _ in
+        DispatchQueue.main.async { self?.finishQuitWhenReady() }
+      }
+    } catch { NSLog("Station 退出清理入口无法启动：%@", error.localizedDescription) }
+  }
+
+  private func finishQuitWhenReady() {
+    guard quitRequested, flutterQuitFinished, !quitApproved, stationShutdown?.isRunning != true else { return }
+    quitApproved = true
+    NSApp.terminate(nil)
+  }
+
   // Called by MainFlutterWindow before creating the engine, so a duplicate
   // never starts Dart, SDK connection or password-triggered business work.
   func claimInstance() -> Bool {
@@ -156,6 +226,8 @@ class AppDelegate: FlutterAppDelegate {
       NSApp.terminate(nil)
       return false
     }
+    // Keep inherited process-group membership scoped to this Station instance.
+    _ = setpgid(0, 0)
     instanceClaimed = true
     return true
   }
@@ -187,17 +259,15 @@ class AppDelegate: FlutterAppDelegate {
       do {
         switch call.method {
         case "environment":
-          guard let resources = Bundle.main.resourceURL else { throw self.failure("应用资源目录不可用") }
+          guard let resources = self.runtimeResources else { throw self.failure("应用资源目录不可用") }
           let preferences = self.loadPreferences()
           result([
-            "resources": self.testRoot == nil ? resources.path :
-              ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_RESOURCES"] ?? self.dataRoot.deletingLastPathComponent().appendingPathComponent("missing-runtime").path,
+            "resources": resources.path,
             "dataRoot": self.dataRoot.path,
+            "stationOwnsManagers": self.testRoot == nil || FileManager.default.fileExists(atPath: self.runtimeScript("station-runtime.mjs", resources: resources).path),
             "testSocket": self.testRoot == nil ? NSNull() :
               (ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_SOCKET"] ?? self.dataRoot.deletingLastPathComponent().appendingPathComponent("manager/sdk-v1.sock").path) as Any,
-            "home": self.testRoot == nil ?
-              ProcessInfo.processInfo.environment["DSH_HOME"] ?? NSHomeDirectory() + "/.dsh" :
-              ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_HOME"] ?? self.dataRoot.appendingPathComponent(".dsh").path,
+            "home": self.dshHome,
             "testReleaseEndpoint": self.testRoot == nil ? NSNull() :
               ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_RELEASE_ENDPOINT"] as Any,
             "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知",
@@ -206,6 +276,11 @@ class AppDelegate: FlutterAppDelegate {
             "hideWindowOnStart": preferences["hideWindowOnStart"] as? Bool ?? false,
             "password": self.loadPassword() as Any, "loginStatus": self.loginStatus(),
           ])
+        case "startStationManager":
+          guard !self.quitRequested, let role = call.arguments as? String, role == "service" || role == "web" else {
+            throw self.failure("Station 无法启动此后台服务。")
+          }
+          try self.sendStationCommand(["type": role]); result(nil)
         case "showWindow": self.showWindow(); result(nil)
         case "chooseCodexAuthFile":
           let panel = NSOpenPanel()
@@ -300,13 +375,11 @@ class AppDelegate: FlutterAppDelegate {
           self.lastOpenedUrl = text
           #endif
           result(nil)
-        case "cancelQuit":
-          self.quitRequested = false; result(nil)
         case "finishQuit":
           if self.ownQuitTraceEnabled {
             FileHandle.standardError.write(Data("OWN_QUIT_TRACE phase=native-finish-received\n".utf8))
           }
-          self.quitApproved = true; result(nil); NSApp.terminate(nil)
+          self.flutterQuitFinished = true; result(nil); self.finishQuitWhenReady()
         default: result(FlutterMethodNotImplemented)
         }
       } catch { result(FlutterError(code: "native-error", message: error.localizedDescription, details: nil)) }
@@ -406,11 +479,18 @@ class AppDelegate: FlutterAppDelegate {
     if quitApproved || channel == nil { return .terminateNow }
     if !quitRequested {
       quitRequested = true
+      let deadline = Int(Date().timeIntervalSince1970 * 1000) + 10_000
       let traceEnabled = ownQuitTraceEnabled
       if traceEnabled {
         FileHandle.standardError.write(Data("OWN_QUIT_TRACE phase=native-first-dispatch\n".utf8))
       }
-      channel?.invokeMethod("quitRequested", arguments: traceEnabled ? ["ownQuitTraceEnabled": true] : nil)
+      DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(10)) { [weak self] in
+        guard let self, !self.quitApproved else { return }
+        self.quitApproved = true
+        NSApp.terminate(nil)
+      }
+      startStationShutdown(deadline)
+      channel?.invokeMethod("quitRequested", arguments: ["ownQuitTraceEnabled": traceEnabled])
     }
     return .terminateCancel
   }
