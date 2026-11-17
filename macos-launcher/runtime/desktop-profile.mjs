@@ -86,7 +86,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
       patches.push({ id: row.id, config: { ...structuredClone(row.config ?? {}), mode: permissionMode } })
     }
   }
-  patches.push({ insert: [{ id: 'workflow-desktop-bridge', name: join(workflow, 'macos-launcher/runtime/desktop-bridge.mjs'),
+  patches.push({ insert: [{ id: 'dsh-station-bridge', name: join(workflow, 'macos-launcher/runtime/station-bridge.mjs'),
     config: { directory: join(globalRoot, '.dsh-workflow/desktop'), runtimeVersion: runtime.version } }] })
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const overlay = join(directory, 'cordis.patch.yml')
@@ -97,7 +97,7 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
 }
 
 async function retireStationLinks(profile, require) {
-  const names = ['dsh-workflow', 'dsh-workflow-matt-panel', BUNDLE, '@botharness/tobs', '@botharness/core',
+  const names = ['dsh-workflow', 'dsh-workflow-matt-panel', 'dsh-workflow-browser-harness', BUNDLE, '@botharness/tobs', '@botharness/core',
     '@botharness/ui', '@botharness/browser', '@botharness/computer', '@botharness/im-provider', 'deepseekbot',
     'ghost-agent-sentinel']
   const { withFileLock, writeFileAtomic } = require('@deepseek-ai/dsh-atomic-write')

@@ -18,11 +18,9 @@ project.id 为 dsh-workflow；为兼容已关联的 MacLauncher，保留 web、d
 
 ## 检查与构建
 
-工程检查使用 Node.js 24.12.0。先在仓库根目录准备当前维护版 Matt 面板；真实项目装配测试需要它的构建产物，再进入 Flutter 目录运行检查：
+工程检查使用 Node.js 24.12.0。从仓库根目录执行以下命令：
 
 ```sh
-npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
-npm run build --prefix matt-skills-panel-plugin
 cd macos-launcher/flutter
 FLUTTER_BIN="$HOME/flutter/bin/flutter" DART_BIN="$HOME/flutter/bin/dart" bash check.sh
 ```
@@ -40,6 +38,6 @@ Debug 验收检查真实窗口、菜单显隐与断线恢复。测试配置环�
 
 给用户交互查看的隔离 Debug 预览，应额外设置 `DSH_LAUNCHER_NATIVE_SEMANTICS=1`，让 macOS 无障碍桥请求初始完整语义树。自动化测试默认持有框架语义句柄；若在这之后才接入系统无障碍检查，Flutter 3.47.7 的原生桥可能只收到增量节点，出现 `Failed to update ui::AXTree` 并闪退。预览模式不关闭无障碍功能，原有自动化测试模式保留。
 
-先准备面板产物，再从仓库根目录运行 `node macos-launcher/build.mjs`。构建把 Flutter 启动器、固定的 DSH Web 核心和随包插件装入应用。macOS ARM64 候选包需验证 Web Host、组件清单、Matt 面板和原生窗口。
+从仓库根目录运行 `node macos-launcher/build.mjs`。构建把 Flutter 启动器、固定的 DSH Web 核心和 Station 桥接装入应用。macOS ARM64 候选包需验证 Web Host、桥接和原生窗口。
 
 启动器只读检查本仓库的 `macos-v` 正式发行版本，候选须包含适用的 DMG。随包组件通过应用更新交付。全局 npm 插件可在 Station 的“插件”页手动更新。

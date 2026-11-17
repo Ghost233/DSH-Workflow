@@ -14,3 +14,7 @@ Browser Harness 管理插件由 DSH Workflow 内部维护。官方上游通过 G
 用户随后调用 spec-delivery 进入交付。上游检查因离线或限流失败时，采用此前推荐的失败策略：如实报告检查未完成，允许继续打包已核验的固定内容。固定输入校验失败仍停止打包。
 
 首版插件只检查和提示。Browser Harness 的本机安装与升级由用户在外部完成，安装状态以 DSH 默认 Shell 实际可调用的路径与版本为准；该结果不代替特定会话的权限或浏览器连接验证。信息放在启动器现有版本管理列表，不增加独立 DSH 管理页或 Browser Harness 检查更新按钮。实施范围见[规格](../specs/browser-harness-plugin/spec.md)，决定来源见[设计访谈](../analysis/2026-10-23-browser-harness-plugin/design-interview.md)。本 ADR 不表示验收已经完成。
+
+## 2026-11-16：移除运行时管理插件
+
+Station 继续打包固定快照中的 Browser Harness 技能和配套文档。启动器插件页停止查询 CLI 的安装和版本状态。打包时仍检查上游差异，采用更新需要单独确认。

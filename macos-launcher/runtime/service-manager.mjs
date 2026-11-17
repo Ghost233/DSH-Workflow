@@ -18,6 +18,7 @@ import { startupPluginResults } from './startup-plugins.mjs'
 import { statusNotifications } from './status-notifications.mjs'
 import { readLoginShellEnvironment } from './login-shell.mjs'
 import { updateProfilePlugins, validatePluginUpdates } from './profile-plugin-update.mjs'
+import { stationDescendants, stationProcessTable } from './station-processes.mjs'
 
 async function health(host, timeout = 2000, profilePlugins = false) {
   const signal = AbortSignal.timeout(timeout)
@@ -45,7 +46,7 @@ export async function waitForInitialHostHealth(host, deadline, isAlive, profileP
 
 /** The manager owns the official Host; GUI clients only send explicit management commands. */
 export async function serveManager({ dataRoot, resources, home, loginEnvironment = process.env, loginShells,
-  updatePlugins = updateProfilePlugins, stationOwned = false }) {
+  updatePlugins = updateProfilePlugins, stationOwned = false, stopGraceMs = 10_000 }) {
   const directory = serviceDirectory(dataRoot), socketPath = serviceSocket(dataRoot)
   const server = createServer()
   let child, receipt, injections, admission, starting, stopping, normalStop, stopOperation, failure = '', state = 'stopped', closing = false
@@ -53,6 +54,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
   let notificationAuthorization, authorizing
   let preparingStop = false, pluginUpdate
   let currentPermissionMode
+  let stopMessage = ''
   const shellRead = new AbortController()
   let shellEnvironment
   let logWrites = Promise.resolve()
@@ -66,7 +68,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
       runtimeVersion: receipt?.runtimeVersion ?? null,
       message: paused ? '正在等待停止或重启确认，暂缓接收新工作。'
         : pluginUpdate && state === 'stopped' ? '正在更新 DSH profile 插件。'
-        : failure || (state === 'running' ? lastHealth.message : null),
+        : failure || (state === 'running' ? lastHealth.message : state === 'stopped' ? stopMessage || null : null),
       observedAt: new Date().toISOString(),
     }, logs: [...logs], notificationAuthorization: notificationAuthorization ?? null,
     notificationAuthorizationPending: Boolean(authorizing) }
@@ -154,6 +156,19 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
       return publishStop(operation, inspection)
     } finally { preparingStop = false }
   }
+  const forceStop = async owned => {
+    try {
+      const table = await stationProcessTable()
+      const host = table.get(owned.pid)
+      if (child === owned && host?.parent === process.pid && host.uid === process.getuid()) {
+        for (const row of stationDescendants([owned.pid], table)) {
+          try { process.kill(row.pid, 'SIGKILL') }
+          catch (error) { if (error.code !== 'ESRCH') log(`结束 DSH 子进程失败：${error.message}`) }
+        }
+      }
+    } catch (error) { log(`读取 DSH 子进程失败：${error.message}`) }
+    return child === owned && owned.kill('SIGKILL')
+  }
   const stop = async input => {
     if (stopping) throw new Error('DSH 服务已有停止操作正在进行')
     if (starting) throw new Error('DSH 服务正在启动，请就绪后再停止')
@@ -164,7 +179,8 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     }
     const owned = child
     stopping = (async () => {
-      let exitTimeout, onExit
+      const timer = new AbortController()
+      let onExit
       try {
         const first = operation.inspection
         if ((first.unknown || first.work.length || first.changed) && input.confirmed !== true) throw new Error('需要明确确认当前 DSH 停止操作。')
@@ -173,10 +189,8 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         await hostRequest(owned, 'update-tasks', { action: 'lock' }, 10_000)
         if (child !== owned || receipt?.lease !== operation.instanceId) throw new Error('DSH 服务实例已改变，请重新检查。')
         const exited = Promise.withResolvers()
-        void exited.promise.catch(() => {})
         onExit = (code, signal) => exited.resolve({ code, signal })
         owned.once('close', onExit)
-        exitTimeout = setTimeout(() => exited.reject(new Error('DSH 服务尚未完成正常停止，请检查日志。')), 12_000)
         normalStop = { owned, operationId: operation.operationId, instanceId: operation.instanceId,
           requestId: controlId + 1, committed: false, acknowledged: false }
         operation.commitRequested = true
@@ -193,15 +207,22 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         }
         state = 'stopping'
         updates.publish()
-        const result = await exited.promise
-        if (!normalStop.acknowledged || result.code !== 0 || result.signal !== null) {
+        let result = await Promise.race([exited.promise, delay(stopGraceMs, null, { signal: timer.signal })])
+        let forced = false
+        if (!result) {
+          forced = await forceStop(owned)
+          result = await exited.promise
+        }
+        if (!(forced && result.signal === 'SIGKILL') && (result.code !== 0 || result.signal !== null)) {
           throw new Error(`DSH 未确认完成正常停止（${result.signal || result.code}），请检查日志。`)
         }
         await operation.admission.close()
         state = 'stopped'; failure = ''; receipt = undefined; injections = undefined
         stopOperation = undefined
         clearTimeout(operation.timer)
-        log('DSH 服务已确认正常停止，Host 进程已退出。')
+        stopMessage = forced && result.signal === 'SIGKILL' ? 'DSH 停止超时，已强制停止。'
+          : !normalStop.acknowledged ? 'DSH 已停止，未收到正常清理回执。' : ''
+        log(stopMessage || 'DSH 服务已确认正常停止，Host 进程已退出。')
       } catch (error) {
         if (normalStop?.committed === true) {
           clearTimeout(operation.timer); stopOperation = undefined
@@ -214,7 +235,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         }
         throw error
       } finally {
-        clearTimeout(exitTimeout)
+        timer.abort()
         if (onExit) owned.removeListener('close', onExit)
         normalStop = undefined
       }
@@ -320,9 +341,10 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
             const detail = !actual ? 'receipt missing' : actual.pid !== owned.pid ? 'process identity changed' : 'connection address changed'
             throw new Error(`DSH readiness receipt does not identify the owned Host (${detail})`)
           }
-          validatedReady = (await waitForInitialHostHealth(actual, deadline, () => child === owned && owned.exitCode === null && owned.signalCode === null, profile.profilePlugins)).ready === true
+          const health = await waitForInitialHostHealth(actual, deadline, () => child === owned && owned.exitCode === null && owned.signalCode === null, profile.profilePlugins)
+          validatedReady = health.ready === true
           lastHealth = { ready: validatedReady, message: null }
-          for (const result of await startupPluginResults({ resourcesRoot: resources, url: actual.url,
+          for (const result of await startupPluginResults({ resourcesRoot: resources, profile: profile.profile, entries: health.plugins,
             preparation: profile.startup, checklist: profile.startupChecklist })) {
             log(`项目启动插件：${JSON.stringify(result)}`)
           }
@@ -388,6 +410,10 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         if (resume) {
           stopInspection = await stop({ ...input, type: 'stop-service' })
           if (stopInspection) return
+          if (stopMessage) {
+            if (!closing) await start(permissionMode)
+            throw new Error(`${stopMessage}本次未更新插件。`)
+          }
         } else {
           if (input.operationId) throw new Error('DSH 服务实例已改变，请重新检查。')
           try {

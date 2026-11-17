@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -18,7 +18,9 @@ test('an isolated packaged daily Host owns Codex authorization and retains its g
   const resources = join(root, 'resources'), home = join(root, 'home'), dataRoot = join(root, 'data')
   const profile = join(home, 'profiles/desktop')
   await mkdir(resources); await mkdir(profile, { recursive: true }); await mkdir(dataRoot, { recursive: true, mode: 0o700 })
+  await writeFile(join(dataRoot, 'startup-plugins.json'), '[]', { mode: 0o600 })
   await copyProjectIntegration(resolve('.'), join(resources, 'workflow'))
+  const { version: runtimeVersion } = JSON.parse(await readFile(join(resources, 'workflow/dsh-runtime.json'), 'utf8'))
   for (const name of ['node', 'node_modules', 'plugins', 'plugin-payload.json']) await symlink(join(artifact, name), join(resources, name))
   await cp(join(artifact, 'package.json'), join(resources, 'package.json'))
   const require = createRequire(join(resources, 'node_modules/@deepseek-ai/dsh/package.json'))
@@ -75,7 +77,7 @@ export function apply(ctx) {
   }
   let rpc = await start()
   const call = (method, args = {}) => rpc.codex(method, args)
-  const url = (await serviceRequest(socket, { type: 'connect-web', runtimeVersion: '0.2.2-rc.1' })).connection.url
+  const url = (await serviceRequest(socket, { type: 'connect-web', runtimeVersion })).connection.url
   const login = await fetch(url, { redirect: 'manual' })
   const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
   await login.arrayBuffer()

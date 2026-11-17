@@ -1,7 +1,7 @@
 import { symlink, mkdir, writeFile, chmod, copyFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { copyProjectIntegration } from '../../project-resources.mjs'
-import { readDeliveryManifest } from '../../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { readDeliveryManifest } from '../../runtime/delivery-manifest.mjs'
 import { readStartupChecklist } from '../../runtime/plugin-configuration.mjs'
 
 const [artifact, destination, scenario] = process.argv.slice(2)

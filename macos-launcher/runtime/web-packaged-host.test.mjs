@@ -21,7 +21,6 @@ const { provideCmdline } = req('@deepseek-ai/dsh-cmdline')
 
 test('packaged project profile serves authenticated official DSH readiness using its declared local package map', { timeout: 30_000 }, async t => {
   const runtime = JSON.parse(await readFile(resolve('dsh-runtime.json'), 'utf8'))
-  const sdkLock = JSON.parse(await readFile(resolve('macos-launcher/package-lock.json'), 'utf8')).packages
   const root = await mkdtemp(join(tmpdir(), 'packaged-dsh-ready-'))
   const resourcesRoot = join(root, 'resources'), workflow = join(resourcesRoot, 'workflow')
   const desktopRuntimeRoot = resourcesRoot, home = join(root, 'home'), globalRoot = join(root, 'global')
@@ -105,10 +104,11 @@ test('packaged project profile serves authenticated official DSH readiness using
   const effective = composeEntries([...entries.layers.map(layer => layer.patches), entries.patches, overlay()])
   assert.equal(effective.find(row => row.id === 'bili-native')?.disabled, true)
   assert.equal(effective.filter(row => row.id === 'matt-skills-board').length, 1)
-  assert.equal(effective.find(row => row.id === 'matt-skills-board').name, pathToFileURL(join(workflow, 'matt-skills-panel-plugin/package/lib/index.js')).href)
-  assert.deepEqual(effective.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true, ghAccount: false })
-  assert.equal(effective.find(row => row.id === 'matt-panel-tools').name,
-    pathToFileURL(join(workflow, 'matt-skills-panel-plugin/package/deck/registration/agent-row.js')).href)
+  assert.deepEqual(effective.find(row => row.id === 'matt-skills-board'), {
+    id: 'matt-skills-board', name: pathToFileURL('/previous location/matt-skills-panel-plugin/package/lib/index.js').href,
+    disabled: true, config: { savedPanelSetting: true, ghAccount: false },
+  })
+  assert.equal(effective.find(row => row.id === 'matt-panel-tools').disabled, true)
   assert.equal(effective.find(row => row.id === 'mattpocock-skills-zh').name, '@deepseek-ai/dsh-skill-filesystem')
   assert.deepEqual(effective.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
   const startHost = () => {
@@ -153,72 +153,36 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(health.ready,true)
   await assert.rejects(readFile(retiredImport), { code: 'ENOENT' }, 'retired package must not be imported by the real Host')
   assert.ok(health.plugins.length>0)
-  const deliveryResponse = await fetch(new URL('/api/workflowDelivery/list', baseUrl(ctx)), {
-    method: 'POST', headers: { 'content-type': 'application/json', cookie }, signal: t.signal,
-    body: JSON.stringify({ type: 'client-request', rpcId: 's07-delivery', method: 'workflowDelivery/list', payload: { args: {} } }),
-  })
-  const deliveryText = await deliveryResponse.text()
-  if (process.env.DSH_TEST_EVIDENCE_DIRECTORY) {
-    await writeFile(join(process.env.DSH_TEST_EVIDENCE_DIRECTORY, 'delivery-response.json'), JSON.stringify({ status: deliveryResponse.status, body: deliveryText }, null, 2) + '\n')
-  }
-  assert.equal(deliveryResponse.status, 200, `the readonly settings page needs a public Host delivery report; received ${deliveryResponse.status}: ${deliveryText}`)
-  const delivery = JSON.parse(deliveryText)
-  assert.equal(delivery.result?.ok, true, `the readonly settings page needs the actual Host delivery report: ${JSON.stringify(delivery)}`)
-  const report = delivery.result.value
-  assert.equal(report.actualScope, 'runtime-resolution')
+  const bridge = health.plugins.find(row => row.entryId?.endsWith(':dsh-station-bridge'))
+  assert.equal(bridge?.fiberPhase, 'active')
+  assert.match(bridge.moduleName, /macos-launcher\/runtime\/station-bridge\.mjs$/)
+  assert.ok(ctx.get('workflowHostInstance'), 'the bridge publishes the Host identity')
+  assert.ok(!health.plugins.some(row => /:(workflow-delivery-inventory|workflow-browser-harness|workflow-agent-monitor|workflow-project-coordination)$/.test(row.entryId ?? '') && row.enabled))
   assert.equal(ctx.get('workflowOwnedDeliveryFixture')?.version, delivered.version)
-  const actualPlugin = (await startupPluginResults({ resourcesRoot, url: baseUrl(ctx) })).find(row => row.package === delivered.package)
+  const actualPlugin = (await startupPluginResults({ resourcesRoot, profile: prepared.profile, entries: health.plugins }))
+    .find(row => row.package === delivered.package)
   assert.equal(actualPlugin.state, 'loaded', JSON.stringify(actualPlugin))
-  assert.equal(actualPlugin.actualVersion, delivered.version)
-  assert.equal(actualPlugin.source, await realpath(payloadPackage))
-  const unresolved = report.rows.find(row => row.moduleName === 'user-choice')
-  assert.equal(unresolved.current, null)
-  assert.equal(unresolved.expected, null)
-  assert.equal(unresolved.status, 'unknown', 'unresolved disabled user choices must remain unknown rather than claim a fixed version')
-  const sdkRow = report.rows.find(row => row.package === '@deepseek-ai/dsh-host-plugin-inventory')
-  assert.ok(sdkRow, 'the actual readonly inventory package is resolved by this Host')
-  assert.equal(sdkRow.expected, sdkLock['node_modules/@deepseek-ai/dsh-host-plugin-inventory'].version, 'SDK fixed versions must come from the packaged npm lock')
-  const presetRow = report.rows.find(row => row.scope === 'Agent 预设 cordis' && row.moduleName === '@deepseek-ai/dsh-plugin-manager/tools')
-  assert.ok(presetRow, 'the versions page must retain the effective agent-preset scope from official inventory')
-  assert.equal(presetRow.enabled, false)
-  assert.equal(presetRow.current, sdkLock['node_modules/@deepseek-ai/dsh-plugin-manager'].version)
-  assert.equal(presetRow.expected, sdkLock['node_modules/@deepseek-ai/dsh-plugin-manager'].version)
-  const inventoryRow = report.rows.find(row => row.entryId?.endsWith(':workflow-delivery-inventory'))
-  assert.ok(inventoryRow?.source?.includes(workflow), 'inventory must resolve from the actual staged project')
-  assert.equal(inventoryRow.fiberPhase, 'active')
-  assert.equal(inventoryRow.updatable, false)
-  assert.ok(!report.rows.some(row => /:(workflow-agent-monitor|workflow-project-coordination)$/.test(row.entryId ?? '')))
+  assert.equal(actualPlugin.installedVersion, delivered.version)
+  assert.equal(actualPlugin.installedSource, await realpath(payloadPackage))
   const beforeMutationProbe = await readFile(join(prepared.profile, 'package.json'))
-  for (const [method, args] of [['pluginManager/installBundle', { spec: '' }], ['pluginManager/removeBundle', { name: 's07-not-installed' }], ['workflowDelivery/installBundle', { spec: '' }]]) {
+  for (const [method, args] of [['pluginManager/installBundle', { spec: '' }], ['pluginManager/removeBundle', { name: 's07-not-installed' }], ['workflowDelivery/list', {}], ['browserHarness/inspect', {}]]) {
     const response = await fetch(new URL(`/api/${method}`, baseUrl(ctx)), {
       method: 'POST', headers: { 'content-type': 'application/json', cookie }, signal: t.signal,
       body: JSON.stringify({ type: 'client-request', rpcId: `s07-${method}`, method, payload: { args } }),
     })
     const body = await response.text()
-    assert.equal(response.status, 404, `runtime package mutation must be unavailable: ${method}: ${body}`)
+    assert.equal(response.status, 404, `removed endpoint must be unavailable: ${method}: ${body}`)
   }
   assert.deepEqual(await readFile(join(prepared.profile, 'package.json')), beforeMutationProbe)
   const manifest = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
   assert.equal(manifest.dependencies['dsh-workflow'], undefined)
   assert.equal(manifest.dependencies['dsh-workflow-matt-panel'], undefined)
-  assert.ok(ctx.tools.get('deck_context'), 'the named Matt tools package registers its public tool')
+  assert.equal(ctx.tools.get('deck_context'), undefined, 'the retired Matt tools are not registered')
   assert.ok(ctx.get('agentTeams'), 'DSH supplies the official Agent Team service through its base bundle')
   assert.match((await ctx.skills.get('spec-delivery')).content, /spawn_teammate/, 'the real Host loads the native DSH team skill')
-  const browserPlugin = report.rows.find(row => row.package === 'dsh-workflow-browser-harness')
-  assert.equal(browserPlugin.current, '0.1.0')
-  assert.equal(browserPlugin.expected, '0.1.0')
   const browserSkill = await ctx.skills.get('browser-harness')
   assert.match(browserSkill.content, /references\/SKILL.md/)
   assert.equal((await ctx.skills.list()).filter(skill => skill.name === 'browser-harness').length, 1)
-  const browserResponse = await fetch(new URL('/api/browserHarness/inspect', baseUrl(ctx)), {
-    method: 'POST', headers: { 'content-type': 'application/json', cookie }, signal: t.signal,
-    body: JSON.stringify({ type: 'client-request', rpcId: 'browser-inspect', method: 'browserHarness/inspect', payload: { args: {} } }),
-  })
-  const browserInspection = await browserResponse.json()
-  assert.equal(browserResponse.status, 200, JSON.stringify(browserInspection))
-  assert.equal(browserInspection.result?.ok, true, JSON.stringify(browserInspection))
-  assert.equal(browserInspection.result.value.actualScope, 'dsh-shell')
-  assert.ok(['installed', 'missing', 'error'].includes(browserInspection.result.value.state))
   assert.equal(ctx.get('jevCenter'), undefined, 'the retired JEV center is not loaded')
   assert.equal(ctx.get('agentMonitor'), undefined, 'the disabled project agent monitor is not loaded')
   disposing = ctx.fiber.dispose()
@@ -240,6 +204,7 @@ test('packaged project profile serves authenticated official DSH readiness using
     await realpath(join(movedResources, 'plugins/node_modules', delivered.package)))
   const movedEntries = composeEntries([...profile.layers.map(layer => layer.patches), profile.patches, overlay()])
   assert.deepEqual(movedEntries.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true, ghAccount: false })
+  assert.equal(movedEntries.find(row => row.id === 'matt-skills-board').disabled, true)
   assert.deepEqual(movedEntries.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
   await startHost()
   t.signal.throwIfAborted()
@@ -251,7 +216,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(ctx.get('workflowOwnedDeliveryFixture')?.version, delivered.version, 'the relocated Host must actually execute the shipped plugin')
   assert.equal(ctx.get('jevCenter'), undefined)
   assert.equal(ctx.get('agentMonitor'), undefined, 'the disabled project agent monitor stays unloaded after moving resources')
-  assert.ok(ctx.tools.get('deck_context'))
+  assert.equal(ctx.tools.get('deck_context'), undefined, 'the retired Matt tools stay unloaded after moving resources')
   assert.ok((await ctx.skills.list()).some(skill => skill.name === 'implement-spec'), 'moved Host still loads the managed Chinese skill directory')
   assert.match((await ctx.skills.get('spec-delivery')).content, /team_task_create/, 'moved Host still loads the native DSH team skill')
   assert.match((await ctx.skills.get('browser-harness')).content, /references\/SKILL.md/)

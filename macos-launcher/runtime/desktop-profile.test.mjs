@@ -4,7 +4,6 @@ import { createRequire } from 'node:module'
 import { mkdtemp, mkdir, readdir, symlink, readFile, rm, writeFile, readlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { prepareDesktopProfile } from './desktop-profile.mjs'
 import { webProfileBundles } from './profile-templates.mjs'
 
@@ -66,9 +65,7 @@ test('Station keeps the copied Web profile and rebuilds its own overlay without 
     for (const saved of retired) {
       assert.deepEqual(rows.filter(row => row.id === saved.id), [{ ...saved, disabled: true }])
     }
-    const boards = rows.filter(row => row.id === 'matt-skills-board')
-    assert.equal(boards.length, 1)
-    assert.equal(boards[0].name, pathToFileURL(join(f.workflow, 'matt-skills-panel-plugin/package/lib/index.js')).href)
+    assert.ok(!rows.some(row => ['matt-skills-board', 'matt-panel-tools'].includes(row.id)))
     assert.equal(rows.find(row => row.id === 'workflow-mcp-codegraph').config.command, 'codegraph')
   }
   check()
@@ -87,7 +84,7 @@ test('Station retires the old local bundle and links with a backup, preserving u
   const path = join(f.profile, 'package.json'), patchPath = join(f.profile, 'cordis.patch.yml')
   const manifest = JSON.parse(await readFile(path, 'utf8'))
   const target = join(f.root, 'previous-installation')
-  const retired = ['dsh-workflow', 'dsh-workflow-matt-panel', 'dsh-workflow-desktop', 'ghost-agent-sentinel']
+  const retired = ['dsh-workflow', 'dsh-workflow-matt-panel', 'dsh-workflow-browser-harness', 'dsh-workflow-desktop', 'ghost-agent-sentinel']
   await mkdir(target)
   await mkdir(join(f.profile, 'node_modules'))
   await writeFile(join(target, 'keep.txt'), 'original files')

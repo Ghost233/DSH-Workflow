@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { isProfilePlugin } from './delivery-manifest.mjs'
 import { readPluginConfiguration } from './plugin-configuration.mjs'
 import { compareVersions, exactVersion, isRegistryDependency } from './plugin-versions.mjs'
 import { redact } from './service-control.mjs'

@@ -39,16 +39,18 @@ void main() {
       final evidence =
           jsonDecode(stage.stdout.toString().trim().split('\n').last) as Map;
       final caller = evidence['stagedCaller'] as Map;
-      expect(caller['name'], 'dsh-workflow');
+      expect(caller['name'], 'dsh-station-bridge');
       expect(caller['caller'], 'function');
       expect(
-        (caller['exports'] as Map)['./delivery-inventory'],
-        './agent-observation-plugin/src/delivery-inventory.mjs',
+        (caller['exports'] as Map)['.'],
+        './macos-launcher/runtime/station-bridge.mjs',
       );
       for (final name in [
         './jev-center',
         './agent-monitor',
         './project-coordination',
+        './delivery-inventory',
+        './client',
       ]) {
         expect((caller['exports'] as Map).containsKey(name), false);
       }
@@ -56,16 +58,12 @@ void main() {
       final inserted = entries
           .expand((row) => (row['insert'] as List?) ?? [])
           .cast<Map>();
-      expect(
-        inserted.singleWhere(
-          (row) => row['id'] == 'workflow-delivery-inventory',
-        )['name'],
-        '${evidence['resources']}/workflow/agent-observation-plugin/src/delivery-inventory.mjs',
-      );
       for (final id in [
         'workflow-jev-center',
         'workflow-agent-monitor',
         'workflow-project-coordination',
+        'workflow-delivery-inventory',
+        'workflow-browser-harness',
       ]) {
         expect(inserted.where((row) => row['id'] == id), isEmpty);
       }
@@ -75,12 +73,16 @@ void main() {
         false,
       );
       final stagedWorkflow = '${evidence['resources']}/workflow';
-      for (final path in ['previous-module', 'project-coordination-plugin']) {
+      for (final path in [
+        'previous-module',
+        'project-coordination-plugin',
+        'agent-observation-plugin',
+      ]) {
         expect(await Directory('$stagedWorkflow/$path').exists(), false);
       }
       for (final path in [
-        'agent-observation-plugin/src/jev-center-plugin.mjs',
-        'agent-observation-plugin/src/agent-monitor-plugin.mjs',
+        'browser-harness-plugin/index.mjs',
+        'macos-launcher/runtime/desktop-bridge.mjs',
         'macos-launcher/runtime/web-launch.mjs',
         'macos-launcher/runtime/run-dsh.mjs',
         'macos-launcher/runtime/lan-settings-client.mjs',

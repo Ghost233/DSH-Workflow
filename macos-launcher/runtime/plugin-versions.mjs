@@ -4,14 +4,7 @@ import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { readPluginConfiguration, readStartupChecklist } from './plugin-configuration.mjs'
-import { pluginDependencySpec, isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
-import { browserHarnessVersionRows } from '../../browser-harness-plugin/report.mjs'
-
-const owned = [
-  ['dsh-workflow', 'agent-observation-plugin'],
-  ['dsh-workflow-matt-panel', 'matt-skills-panel-plugin/package'],
-  ['dsh-workflow-browser-harness', 'browser-harness-plugin'],
-]
+import { pluginDependencySpec, isProfilePlugin } from './delivery-manifest.mjs'
 const packageName = value => typeof value === 'string' && /^(?:@[a-z0-9_][a-z0-9._-]*\/)?[a-z0-9_][a-z0-9._-]*$/i.test(value)
 export const exactVersion = value => typeof value === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value)
 export const isRegistryDependency = (name, spec) => packageName(name) && typeof spec === 'string' && !/[:/#]/.test(spec)
@@ -180,20 +173,15 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
         : `锁定清单无法验证：${configurationError ?? '与打包配置不一致'}` })
   }
 
-  for (const [name, directory] of owned) {
-    const manifest = await jsonFile(join(workflow, directory, 'package.json'))
-    if (manifest?.name === name) {
-      const panel = name === 'dsh-workflow-matt-panel'
-      const upstream = panel ? await jsonFile(join(workflow, 'matt-skills-panel-plugin/upstream.json')) : undefined
-      rows.push({ source: panel ? 'App 内置派生插件' : 'App 内置自研插件', name, current: manifest.version,
-        expected: manifest.version, latest: null, status: 'bundled', note: panel ? `上游基准 ${upstream?.version ?? '未知'}；随 App 构建更新` : '随 App 构建更新，不在运行中替换' })
-    }
+  const bridge = await jsonFile(join(workflow, 'package.json'))
+  if (bridge?.name === 'dsh-station-bridge') {
+    rows.push({ source: 'App 内置桥接', name: bridge.name, current: bridge.version,
+      expected: bridge.version, latest: null, status: 'bundled', note: '随 App 构建更新' })
   }
   const mattZh = await jsonFile(join(workflow, 'vendor/mattpocock-skills-zh/.codex-plugin/plugin.json'))
   if (mattZh?.name === 'mattpocock-skills-zh') rows.push({ source: 'App 内置中文技能', name: mattZh.name,
     current: mattZh.version, expected: mattZh.version, latest: null, status: 'bundled', supportedDsh: '未声明', latestSupportedDsh: '未声明',
     note: '启动时由 DSH 技能文件提供器加载；随 App 构建更新' })
-  rows.push(...await browserHarnessVersionRows({ resourcesRoot: resources, dataRoot }))
   for (const row of rows) {
     row.updatable = false
     row.latest = null

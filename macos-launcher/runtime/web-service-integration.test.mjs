@@ -4,8 +4,9 @@ import { createRequire } from 'node:module'
 import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { copyProjectIntegration } from '../project-resources.mjs'
-import { isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { isProfilePlugin } from './delivery-manifest.mjs'
 import { readStartupChecklist, startupChecklistPath } from './plugin-configuration.mjs'
 import { serveManager } from './service-manager.mjs'
 import { serviceRequest, serviceSocket } from './service-control.mjs'
@@ -15,6 +16,7 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   if (!artifact) throw new Error('DSH_SERVICE_TEST_RESOURCES must identify the packaged Web runtime')
   const root = await mkdtemp(join(tmpdir(), 'station-web-integration-'))
   const resources = join(root, 'resources'), dataRoot = join(root, 'data'), home = join(root, 'home')
+  const helperFile = join(root, 'owned-helper.pid')
   await mkdir(resources); await mkdir(dataRoot, { mode: 0o700 })
   await copyProjectIntegration(resolve('.'), join(resources, 'workflow'), join(artifact, 'workflow'))
   for (const name of ['node', 'node_modules', 'plugins', 'plugin-payload.json']) await symlink(join(artifact, name), join(resources, name))
@@ -34,7 +36,7 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   const shell = join(root, 'fixture-shell')
   await writeFile(shell, '#!/bin/sh\nexec /bin/sh -c "$2"\n'); await chmod(shell, 0o700)
   const updates = []
-  const manager = await serveManager({ dataRoot, resources, home, loginShells: [shell], updatePlugins: async ({ targets }) => {
+  const manager = await serveManager({ dataRoot, resources, home, loginShells: [shell], stopGraceMs: 1000, updatePlugins: async ({ targets }) => {
     await assert.rejects(readFile(join(dataRoot, 'global/.dsh-workflow/desktop/desktop-host.json')), { code: 'ENOENT' })
     updates.push(...targets)
     return targets.map(target => ({ ...target, status: 'failed', message: 'fixture registry failure' }))
@@ -42,7 +44,19 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
     HOME: root, ZDOTDIR: root, DSH_AGENTS_HOME: join(root, 'agents'), DSH_TELEMETRY_DISABLED: '1',
     TMPDIR: tmpdir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
   } })
-  t.after(async () => { await manager?.close(); await rm(root, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => {
+    try { await manager?.close() }
+    finally {
+      const pid = Number(await readFile(helperFile, 'utf8').catch(error => {
+        if (error.code !== 'ENOENT') throw error
+        return '0'
+      }))
+      if (pid > 1) {
+        try { process.kill(pid, 'SIGKILL') } catch (error) { if (error.code !== 'ESRCH') throw error }
+      }
+      await rm(root, { recursive: true, force: true, maxRetries: 5 })
+    }
+  })
   assert.ok(manager)
   const socket = serviceSocket(dataRoot)
   const configured = JSON.parse(await readFile(join(resources, 'workflow/project-plugins.json'), 'utf8'))
@@ -87,4 +101,34 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   assert.ok(inspection.operationId)
   const stopped = await serviceRequest(socket, { type: 'stop-service', operationId: inspection.operationId, confirmed: true }, 30_000)
   assert.equal(stopped.service.state, 'stopped')
+
+  // Fixture the managed Host accepting a stop but never completing its shutdown.
+  const hostEntry = join(resources, 'workflow/macos-launcher/runtime/web-host.mjs')
+  const hostSource = await readFile(hostEntry, 'utf8')
+  await writeFile(hostEntry, `import { spawn } from 'node:child_process'
+    import { existsSync, writeFileSync } from 'node:fs'
+    const helperFile = ${JSON.stringify(helperFile)}
+    const emit = process.emit
+    process.emit = function(event, ...args) {
+      if (event === 'message' && args[0]?.type === 'shutdown' && !existsSync(helperFile)) {
+        const helper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+        writeFileSync(helperFile, String(helper.pid))
+        return true
+      }
+      return emit.call(this, event, ...args)
+    }
+    ${hostSource}`)
+  const stuck = (await serviceRequest(socket, { type: 'start-service', permissionMode: 'workspace-write' })).service
+  const restart = (await serviceRequest(socket, { type: 'inspect-stop', action: 'restart' })).stop
+  const restarted = await serviceRequest(socket, { type: 'restart-service', operationId: restart.operationId,
+    confirmed: true, permissionMode: 'workspace-write' })
+  assert.equal(restarted.service.ready, true)
+  assert.notEqual(restarted.service.instanceId, stuck.instanceId)
+  assert.throws(() => process.kill(stuck.pid, 0), { code: 'ESRCH' })
+  const helperPid = Number(await readFile(helperFile, 'utf8'))
+  const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; throw error } }
+  for (let attempt = 0; attempt < 20 && alive(helperPid); attempt++) await delay(25)
+  assert.equal(alive(helperPid), false, 'the forced stop also reaps work spawned by the stuck Host')
+  assert.ok(restarted.logs.some(row => row.text.includes('已强制停止')))
+  assert.ok(!restarted.logs.some(row => row.text.includes('DSH 服务故障：')))
 })

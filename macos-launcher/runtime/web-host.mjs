@@ -19,7 +19,7 @@ export async function startWebHost({ resources, profile, overlay }) {
 }
 
 /** Own the Web Host and the stop-admission handshake without a Desktop process. */
-export async function serveWebHost({ resources, profile, receiptDirectory, overlay }) {
+export async function serveWebHost({ resources, profile, receiptDirectory, overlay, exit = () => {} }) {
   const application = startWebHost({ resources, profile, overlay })
   let closing, locked = false, generation = 0
   const pending = new Set()
@@ -31,8 +31,12 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
     const app = await application.catch(() => undefined)
     if (!app) return
     await app.shutdown.shutdown(0)
-    await send({ type: 'shutdown-complete' })
-    if (process.connected) process.disconnect()
+    try { await send({ type: 'shutdown-complete' }) }
+    finally {
+      if (process.connected) process.disconnect()
+      // The CLI owns this process; leftover referenced handles must not keep it alive after disposal.
+      exit(0)
+    }
   })()
   const onMessage = message => {
     if (message?.type === 'shutdown') { void stop().catch(error => { console.error(error); process.exitCode = 1 }); return }
@@ -81,7 +85,7 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
 if (import.meta.main) {
   const [resources, profile, receiptDirectory, overlay] = process.argv.slice(2)
   if (!resources || !profile || !receiptDirectory) throw new Error('Missing Web Host paths')
-  serveWebHost({ resources, profile, receiptDirectory, overlay }).catch(error => {
+  serveWebHost({ resources, profile, receiptDirectory, overlay, exit: process.exit }).catch(error => {
     const message = String(error?.message ?? error).replace(/token=[^&\s"<>]+/g, '[credential redacted]')
     if (process.connected) process.send?.({ type: 'fatal', message }, () => process.disconnect())
     console.error(message)

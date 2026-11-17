@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, stat, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { apply } from './desktop-bridge.mjs'
+import { apply } from './station-bridge.mjs'
 
 test('desktop readiness keeps its token private and disposal cannot remove a newer Host lease', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-desktop-bridge-'))

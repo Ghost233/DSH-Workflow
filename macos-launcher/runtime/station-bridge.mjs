@@ -4,10 +4,10 @@ import { randomUUID } from 'node:crypto'
 import { apply as applyStopInspection, inject as stopInspectionServices } from './stop-inspection.mjs'
 import { apply as applyModelAuthorization, inject as modelAuthorizationServices } from './model-authorization-bridge.mjs'
 
-export const name = 'dsh-workflow-desktop-bridge'
+export const name = 'dsh-station-bridge'
 export const inject = ['connection', 'webServer', 'appReady']
 
-/** Publish private readiness facts; Electron remains the sole owner of its Host. */
+/** Publish Station's private Host identity and install its control handlers. */
 export function apply(ctx, { directory, runtimeVersion }) {
   const lease = randomUUID()
   ctx.provide('workflowHostInstance', { instanceId: lease })

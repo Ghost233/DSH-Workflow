@@ -13,7 +13,7 @@ npm test --prefix matt-skills-panel-plugin
 npm run upstream:check --prefix matt-skills-panel-plugin
 ```
 
-派生版随 DSH Workflow 构建更新，面板中的原版 npm 自更新已停用。来源与许可证见 `THIRD_PARTY_NOTICES.md` 和 `LICENSE`。
+此目录保留派生版源码。Station 已停止构建和交付 Matt Deck。来源与许可证见 `THIRD_PARTY_NOTICES.md` 和 `LICENSE`。
 
 ## 对照上游升级
 

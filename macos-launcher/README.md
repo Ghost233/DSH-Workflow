@@ -4,17 +4,15 @@
 
 启动器管理一个独立 DSH Web 服务，浏览器通过带密码的入口访问。应用不包含 DSH 桌面客户端。为保留已有配置，日常服务继续读取旧版 `$DSH_HOME/profiles/desktop` 目录；这个历史目录名不会启动桌面应用。
 
-Station 生成启动覆盖配置，加载组件清单、中文 Matt 技能和派生面板。DSH 服务发布权限为 `0600` 的就绪记录。面板维护方式见 [Matt 面板说明](../matt-skills-panel-plugin/README.md)。
+Station 生成启动覆盖配置并加载 `dsh-station-bridge`。桥接发布权限为 `0600` 的 DSH 就绪记录，提供停机检查和模型授权。启动器通过 DSH 官方清单读取插件加载状态。
 
 ## macOS ARM64 构建
 
 默认构建使用 `dsh-runtime.json` 指定的 npm 版本和完整性摘要。`macos-launcher/package-lock.json` 固定生产依赖。构建校验两者一致，再用 `npm ci --omit=dev` 装配应用资源。
 
-先准备独立 Node、Flutter 和 Matt 面板依赖，再运行：
+先准备独立 Node 和 Flutter，再运行：
 
 ```sh
-npm ci --prefix matt-skills-panel-plugin --ignore-scripts
-npm run build --prefix matt-skills-panel-plugin
 (cd macos-launcher/flutter && flutter pub get --enforce-lockfile)
 node macos-launcher/build.mjs
 ```

@@ -1,9 +1,8 @@
-import { randomUUID } from 'node:crypto'
 import { readFile, realpath } from 'node:fs/promises'
 import { join, isAbsolute } from 'node:path'
 import { readPluginConfiguration } from './plugin-configuration.mjs'
 import { nativeBundlePatches } from '../../scripts/native-bundle.mjs'
-import { pluginDependencySpec, isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { pluginDependencySpec, isProfilePlugin } from './delivery-manifest.mjs'
 
 /** Compose fixed deliveries. DSH owns the lifecycle of packages in the profile checklist. */
 export async function prepareStartupPlugins({ profile, entries, config, boot }) {
@@ -61,81 +60,61 @@ export async function prepareStartupPlugins({ profile, entries, config, boot }) 
   return { patches, skipped }
 }
 
-/** Report actual Host outcomes; a repository pin never proves that a plugin loaded. */
-export async function startupPluginResults({ resourcesRoot, url, preparation = [], checklist }) {
+/** Match Station's startup checklist against the official Host inventory. */
+export async function startupPluginResults({ resourcesRoot, profile, entries, preparation = [], checklist }) {
   const config = await readPluginConfiguration(resourcesRoot)
   if (!config) throw new Error('Missing packaged startup plugin configuration')
   const items = config.plugins.filter(item => item.startup === true && (checklist === undefined || !isProfilePlugin(config, item)))
   const profileNames = new Set(checklist)
-  if (checklist !== undefined) {
-    const bundled = new Set(items.map(item => item.package))
-    items.push(...checklist.filter(name => !bundled.has(name)).map(name => ({ package: name })))
+  const included = new Set(items.map(item => item.package))
+  items.push(...[...profileNames].filter(name => !included.has(name)).map(name => ({ package: name })))
+  const isActive = row => row.enabled === true && row.fiberPhase === 'active'
+  const observe = async (name, expected) => {
+    const matches = entries.filter(row => row.moduleName === name || row.moduleName?.startsWith(name + '/'))
+    let installedVersion, installedSource
+    try {
+      const source = await realpath(join(profile, 'node_modules', name))
+      const pkg = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'))
+      if (pkg.name === name && typeof pkg.version === 'string') {
+        installedVersion = pkg.version
+        installedSource = source
+      }
+    } catch { /* Unverified metadata cannot establish an installed version. */ }
+    const loaded = matches.some(isActive) && Boolean(installedVersion) && (!expected || installedVersion === expected)
+    return { matches, loaded, installedVersion, installedSource }
   }
-  if (!items.length) return []
-  let rows, unknown
-  try {
-    const signal = AbortSignal.timeout(2000)
-    const login = await fetch(url, { redirect: 'manual', signal })
-    const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
-    await login.text()
-    if (!cookie) throw new Error('Host authentication issued no cookie')
-    const rpcId = randomUUID()
-    const response = await fetch(new URL('/api/workflowDelivery/list', url), {
-      method: 'POST', signal, headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ type: 'client-request', rpcId, method: 'workflowDelivery/list', payload: { args: {} } }),
-    })
-    const envelope = await response.json()
-    const inventory = envelope.result?.value
-    if (!response.ok || envelope.type !== 'server-response' || envelope.rpcId !== rpcId || envelope.result?.ok !== true
-      || inventory?.actualScope !== 'runtime-resolution' || !Array.isArray(inventory.rows)) throw new Error('Host startup plugin inventory is unknown')
-    rows = inventory.rows.filter(row => row.scope === 'Host')
-  } catch (error) { unknown = String(error.message).slice(0, 300) }
-  return items.map(item => {
+  return Promise.all(items.map(async item => {
+    const attempted = preparation.find(row => row.package === item.package)
     if (item.bundle === 'native') {
-      const components = item.components.map(component => {
-        const actual = rows?.find(row => row.package === component.package && row.enabled === true
-          && row.fiberPhase === 'active' && row.current === component.version && row.status === 'fixed'
-          && typeof row.source === 'string' && isAbsolute(row.source) && !row.error)
-        return { ...component, loaded: Boolean(actual), source: actual?.source ?? null }
-      })
-      const attempted = preparation.find(row => row.package === item.package)
+      const components = await Promise.all(item.components.map(async component => {
+        const observed = await observe(component.package, component.version)
+        return { ...component, loaded: observed.loaded, installedSource: observed.installedSource ?? null }
+      }))
       const requiredEntries = (item.requiredEntries ?? []).map(id => {
-        const matches = rows?.filter(row => row.entryId?.split(':').at(-1) === id) ?? []
-        return { id, loaded: matches.length === 1 && matches[0].enabled === true
-          && matches[0].fiberPhase === 'active' && matches[0].status === 'fixed' && !matches[0].error }
+        const matches = entries.filter(row => row.entryId?.split(':').at(-1) === id)
+        return { id, loaded: matches.length === 1 && isActive(matches[0]) }
       })
-      const loaded = !unknown && !attempted && components.every(component => component.loaded) && requiredEntries.every(row => row.loaded)
+      const loaded = !attempted && components.every(component => component.loaded) && requiredEntries.every(row => row.loaded)
       return { package: item.package, version: item.version, versionSource: 'packaged-lock',
-        state: loaded ? 'loaded' : 'skipped', actualVersion: loaded ? item.version : null,
-        components, requiredEntries, reason: attempted?.reason ?? (unknown ? `实际启动状态未知：${unknown}`
-          : loaded ? '当前 Host 已加载全部固定组件。' : '部分组件未加载；请查看组件状态与 Host 日志。') }
+        state: loaded ? 'loaded' : 'skipped', components, requiredEntries, reason: attempted?.reason
+          ?? (loaded ? '当前 Host 已加载全部固定组件。' : '部分组件未加载；请查看组件状态与 Host 日志。') }
     }
     const profileManaged = (item.version === undefined && profileNames.has(item.package)) || isProfilePlugin(config, item)
-    const matches = rows?.filter(row => row.package === item.package || row.moduleName === item.package) ?? []
-    const versionMatches = row => profileManaged ? Boolean(row.current) : row.current === item.version && row.status === 'fixed'
-    const active = matches.find(row => row.enabled === true && row.fiberPhase === 'active'
-      && row.package === item.package && versionMatches(row)
-      && typeof row.source === 'string' && isAbsolute(row.source) && !row.error)
-    const actual = active ?? matches[0]
-    const attempted = preparation.find(row => row.package === item.package)
+    const expected = profileManaged ? undefined : item.version
+    const { matches, loaded, installedVersion, installedSource } = await observe(item.package, expected)
     let reason
     if (attempted) reason = attempted.reason
-    else if (unknown) reason = `实际启动状态未知：${unknown}`
-    else if (active) reason = profileManaged ? '当前 Host 已加载 DSH 全局安装版本。' : '当前 Host 已加载包内固定版本。'
-    else if (!matches.length) reason = profileManaged ? '当前 Host 未装配该 profile 插件。' : '当前 Host 未装配该插件；打包运行端不在线安装或换包。'
+    else if (loaded) reason = 'DSH 官方清单确认插件入口已加载。'
+    else if (!matches.length) reason = '当前 Host 未装配该插件。'
     else if (matches.every(row => row.enabled === false)) reason = '当前 profile 已停用该插件，保留用户选择。'
     else if (matches.some(row => row.fiberPhase === 'failed')) reason = '当前 Host 插件加载失败；请检查该插件日志。'
-    else if (matches.some(row => row.enabled === true && row.fiberPhase === null
-      && row.package === item.package && versionMatches(row)
-      && typeof row.source === 'string' && isAbsolute(row.source) && !row.error)) {
-      reason = '当前 Host 插件导入失败：Host 已就绪，但该启用入口没有运行 fiber；请检查插件日志。'
-    }
-    else if (!profileManaged && actual.current && actual.current !== item.version) reason = `实际版本 ${actual.current} 偏离包内固定值 ${item.version}，未替换运行包。`
-    else reason = '实际加载状态或版本来源未知，未把声明当作加载成功。'
-    return { package: item.package, version: profileManaged ? actual?.current ?? attempted?.installedVersion ?? null : item.version,
+    else if (matches.some(row => row.enabled === true && row.fiberPhase === null)) reason = '当前 Host 插件导入失败；请检查 Host 日志。'
+    else if (expected && installedVersion && installedVersion !== expected) reason = '插件安装版本偏离包内固定版本。'
+    else reason = '插件加载状态或安装版本未知。'
+    return { package: item.package, version: expected ?? installedVersion ?? attempted?.installedVersion ?? null,
       versionSource: profileManaged ? 'dsh-profile' : 'packaged-lock',
-      actualVersion: actual?.current ?? null, source: actual?.source ?? null,
-      ...(attempted ? { installedVersion: attempted.installedVersion, installedSource: attempted.installedSource } : {}),
-      state: active && !unknown && !attempted ? 'loaded' : 'skipped', reason }
-  })
+      installedVersion: installedVersion ?? attempted?.installedVersion ?? null,
+      installedSource: installedSource ?? attempted?.installedSource ?? null,
+      state: loaded && !attempted ? 'loaded' : 'skipped', reason }
+  }))
 }

@@ -17,14 +17,10 @@ const candidateFiles = ['dsh-runtime.json', 'project-plugins.json', 'project-plu
 async function sources(root) {
   const files = ['package.json', 'dsh-runtime.json', 'default-startup-plugins.json', 'project-plugins.json', 'project-plugins.lock.json', 'project-mcp.json',
     'vendor/mattpocock-skills-zh.upstream.json', 'vendor/dsh-skills.upstream.json',
-    'matt-skills-panel-plugin/upstream.json', 'matt-skills-panel-plugin/LICENSE', 'matt-skills-panel-plugin/THIRD_PARTY_NOTICES.md',
     ...scripts.map(name => `scripts/${name}`)]
-  for (const directory of ['agent-observation-plugin', 'browser-harness-plugin', 'matt-skills-panel-plugin/package',
+  for (const directory of ['browser-harness-plugin/skills',
     'vendor/mattpocock-skills-zh', 'vendor/dsh-skills', 'skills']) files.push(directory)
   files.push(...(await readdir(join(root, 'macos-launcher/runtime'))).filter(name => name.endsWith('.mjs') && !name.endsWith('.test.mjs')).map(name => `macos-launcher/runtime/${name}`))
-  for (const path of ['lib/index.js', 'lib/client.js', 'deck/registration/agent-row.js']) {
-    if (!existsSync(join(root, 'matt-skills-panel-plugin/package', path))) throw new Error(`Missing MattSkillsDeck build output: ${path}`)
-  }
   return files
 }
 
@@ -66,8 +62,9 @@ export async function copyProjectIntegration(projectRoot, workflow, candidate) {
   }
   await stageBrowserHarnessSkills(root, workflow)
   const pkg = JSON.parse(await readFile(join(workflow, 'package.json'), 'utf8'))
-  if (pkg.name !== 'dsh-workflow' || pkg.exports?.['./delivery-inventory'] !== './agent-observation-plugin/src/delivery-inventory.mjs'
-    || pkg.exports?.['./client'] !== './agent-observation-plugin/client.js') throw new Error('Current project module contract is missing')
+  if (pkg.name !== 'dsh-station-bridge' || pkg.exports?.['.'] !== './macos-launcher/runtime/station-bridge.mjs') {
+    throw new Error('Station bridge package entry is missing')
+  }
   // The project layer is independent of the frozen official Node/Desktop dependency tree.
   const manifest = { schema: 1, input, members: await inventory(workflow) }
   await writeFile(join(dirname(workflow), 'project-layer.json'), JSON.stringify(manifest, null, 2) + '\n')

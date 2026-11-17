@@ -1,16 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-import { runtimeRequire } from './test-runtime.mjs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { checkBrowserHarnessUpstream, readPinnedBrowserHarness, stageBrowserHarnessSkills, verifyBrowserHarnessSkills } from '../browser-harness-plugin/build.mjs'
 import { copyProjectIntegration, verifyProjectIntegration } from '../macos-launcher/project-resources.mjs'
-import { probeBrowserHarness } from '../browser-harness-plugin/probe.mjs'
-import BrowserHarness from '../browser-harness-plugin/index.mjs'
-import { ownerPeer } from '../agent-observation-plugin/test/gateway-peer.mjs'
 
 test('the built-in skill carries the pinned original documents and rejects changed packaged bytes', async t => {
   const destination = await mkdtemp(join(tmpdir(), 'workflow-browser-skill-'))
@@ -69,64 +63,4 @@ test('upstream checking reports changes and network failures without changing th
   assert.equal(failed.state, 'check-failed')
   assert.equal(failed.latest, null)
   assert.deepEqual(await readFile(snapshotSkill), before)
-})
-
-test('local availability comes from the DSH shell path and disables telemetry for the version call', async t => {
-  const root = await mkdtemp(join(tmpdir(), 'workflow-browser-cli-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
-  const bin = join(root, 'owned tools'), log = join(root, 'observed')
-  await mkdir(bin)
-  const path = join(bin, 'browser-harness')
-  await writeFile(path, '#!/bin/sh\n[ "$1" = --version ] || exit 9\nprintf "%s" "$BH_TELEMETRY" > "$PROBE_LOG"\nprintf "0.1.13\\n"\n', { mode: 0o755 })
-  const shell = {
-    resolve: request => request,
-    execute: async spec => ({ result: async () => {
-      try {
-        const value = await promisify(execFile)('/bin/bash', ['-c', spec.command], {
-          cwd: root, env: { PATH: bin, PROBE_LOG: log, ...spec.env }, timeout: spec.timeoutMs,
-        })
-        return { exitCode: 0, stdout: { text: value.stdout }, stderr: { text: value.stderr } }
-      } catch (error) { return { exitCode: error.code, stdout: { text: error.stdout }, stderr: { text: error.stderr } } }
-    } }),
-  }
-  const installed = await probeBrowserHarness(shell)
-  assert.deepEqual({ state: installed.state, path: installed.path, version: installed.version }, { state: 'installed', path, version: '0.1.13' })
-  assert.equal(installed.actualScope, 'dsh-shell')
-  assert.equal(await readFile(log, 'utf8'), '0')
-  await rm(path)
-  assert.equal((await probeBrowserHarness(shell)).state, 'missing')
-  await writeFile(path, '#!/bin/sh\nexit 8\n', { mode: 0o755 })
-  const broken = await probeBrowserHarness(shell)
-  assert.equal(broken.state, 'error')
-  assert.equal(broken.path, path)
-})
-
-test('the authenticated DSH plugin queries a real Shell provider and returns its executable evidence', async t => {
-  const root = await mkdtemp(join(tmpdir(), 'workflow-browser-host-'))
-  const previousPath = process.env.PATH, previousLog = process.env.BROWSER_PROBE_LOG
-  const bin = join(root, 'bin'), log = join(root, 'version-query')
-  await mkdir(bin)
-  await writeFile(join(bin, 'browser-harness'), '#!/bin/sh\n[ "$1" = --version ] || exit 9\nprintf "%s" "$BH_TELEMETRY" > "$BROWSER_PROBE_LOG"\necho 0.1.13\n', { mode: 0o755 })
-  process.env.PATH = `${bin}:/usr/bin:/bin`
-  process.env.BROWSER_PROBE_LOG = log
-  const req = runtimeRequire
-  const { Context } = req('@deepseek-ai/cordis')
-  const ctx = new Context()
-  t.after(async () => {
-    await ctx.fiber.dispose()
-    previousPath === undefined ? delete process.env.PATH : process.env.PATH = previousPath
-    previousLog === undefined ? delete process.env.BROWSER_PROBE_LOG : process.env.BROWSER_PROBE_LOG = previousLog
-    await rm(root, { recursive: true, force: true })
-  })
-  await ctx.plugin(req('@deepseek-ai/dsh-subprocess-local').default)
-  await ctx.plugin(req('@deepseek-ai/dsh-bash-local').default, { cwd: root })
-  await ctx.plugin(req('@deepseek-ai/dsh-typert-registry').default)
-  await ctx.plugin(req('@deepseek-ai/dsh-api-remote-access').default)
-  await ctx.plugin(req('@deepseek-ai/dsh-api-gateway').default)
-  await ctx.plugin(BrowserHarness)
-  const actual = await ctx.typertGateway.invoke({ peer: ownerPeer(ctx), namespace: 'browserHarness', method: 'inspect', args: {} })
-  assert.equal(actual.state, 'installed')
-  assert.equal(actual.version, '0.1.13')
-  assert.equal(actual.path, join(bin, 'browser-harness'))
-  assert.equal(await readFile(log, 'utf8'), '0')
 })

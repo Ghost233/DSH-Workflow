@@ -1,54 +1,21 @@
 {
-  "name": "dsh-workflow",
+  "name": "dsh-station-bridge",
   "version": "0.1.1",
-  "description": "DSH Station integration and component inventory",
+  "description": "Bridge from the DSH Host to Ghost DSH Station",
   "type": "module",
-  "main": "agent-observation-plugin/index.mjs",
+  "main": "macos-launcher/runtime/station-bridge.mjs",
   "exports": {
-    ".": "./agent-observation-plugin/index.mjs",
-    "./client": "./agent-observation-plugin/client.js",
-    "./delivery-inventory": "./agent-observation-plugin/src/delivery-inventory.mjs",
+    ".": "./macos-launcher/runtime/station-bridge.mjs",
     "./package.json": "./package.json"
   },
   "license": "MIT",
   "files": [
-    "start-dsh-workflow.sh",
-    "project-plugins.json",
-    "default-startup-plugins.json",
-    "project-mcp.json",
-    "docs/",
-    "dsh-runtime.json",
-    "project-plugins.lock.json",
-    "scripts/project-entry-migration.mjs",
-    "matt-skills-panel-plugin/package/",
-    "matt-skills-panel-plugin/upstream.json",
-    "matt-skills-panel-plugin/LICENSE",
-    "matt-skills-panel-plugin/THIRD_PARTY_NOTICES.md",
-    "vendor/mattpocock-skills-zh/",
-    "vendor/mattpocock-skills-zh.upstream.json",
-    "vendor/dsh-skills/",
-    "vendor/dsh-skills.upstream.json",
-    "agent-observation-plugin/",
-    "browser-harness-plugin/",
-    "skills/",
-    "scripts/dsh-launch-composition.mjs",
-    "scripts/dsh-readiness.mjs",
-    "scripts/dsh-delivery-policy.mjs",
-    "scripts/stage-artifact-set.mjs",
-    "scripts/upstream-artifacts.mjs",
-    "scripts/native-bundle.mjs"
+    "macos-launcher/runtime/station-bridge.mjs",
+    "macos-launcher/runtime/stop-inspection.mjs",
+    "macos-launcher/runtime/model-authorization-bridge.mjs",
+    "macos-launcher/runtime/model-codex-accounts.mjs"
   ],
-  "dsh": {
-    "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-layout"
-      ],
-      "platform": "web"
-    }
-  },
   "scripts": {
-    "build:client": "node agent-observation-plugin/scripts/build-client.mjs",
-    "check:client": "node agent-observation-plugin/scripts/build-client.mjs --check",
     "test": "node scripts/run-project-tests.mjs"
   },
   "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000",

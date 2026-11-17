@@ -416,6 +416,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   @override
   Future<void> startService() async {
+    if (_changingService) throw StateError('DSH 正在停止或重启');
+    await _startService();
+  }
+
+  Future<void> _startService() async {
     if (_closed || exiting) throw StateError('启动器正在退出');
     if (updatingPlugins) throw StateError('DSH 插件正在更新');
     _service = ServiceStatus(state: ServiceState.starting, ready: false);
@@ -442,6 +447,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<bool> Function(ServiceStopInspection)? confirmServiceStop;
   bool _changingService = false;
   bool _serviceCommitStarted = false;
+  String? serviceActionMessage;
   String? _pendingServiceStop;
   Future<void> restartService() async {
     await _changeService('restart');
@@ -461,6 +467,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         ? '重启'
         : '停止';
     _changingService = true;
+    if (targets == null) {
+      serviceActionMessage = '正在检查未完成的 DSH 工作…';
+      notifyListeners();
+    }
     String? pending;
     try {
       if (targets != null) {
@@ -486,7 +496,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
               fields: {'targets': targets},
             );
           }
-          if (action == 'restart') await startService();
+          if (action == 'restart') await _startService();
           return null;
         }
         pending = inspection.operationId;
@@ -495,6 +505,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
         if (_closed) throw StateError('启动器正在退出，已取消 DSH 停止操作');
         var confirmed = false;
         if (inspection.needsConfirmation) {
+          if (targets == null) {
+            serviceActionMessage = '等待确认$verb DSH 服务…';
+            notifyListeners();
+          }
           final confirm = confirmServiceStop;
           if (confirm == null) {
             throw StateError(
@@ -507,6 +521,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
           }
         }
         _serviceCommitStarted = true;
+        if (targets == null) {
+          serviceActionMessage = '正在$verb DSH 服务…';
+          notifyListeners();
+        }
         try {
           value = await _serviceCommand(
             targets != null
@@ -517,7 +535,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
             fields: {
               'operationId': pending,
               'confirmed': confirmed,
-              if (targets != null) 'targets': targets,
+              'targets': ?targets,
             },
           );
         } finally {
@@ -538,6 +556,10 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       } finally {
         _pendingServiceStop = null;
         _changingService = false;
+        if (targets == null) {
+          serviceActionMessage = null;
+          if (!_closed) notifyListeners();
+        }
       }
     }
   }
@@ -860,7 +882,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       if (rows is! List) throw const FormatException('Missing plugin rows');
       plugins = rows.map((row) => PluginRow(objectValue(row))).toList();
       pluginMessage =
-          '共 ${plugins.length} 项；${plugins.where((p) => p.status == 'drift').length} 项版本偏差。插件运行解析请在 DSH 设置 → 插件查看；Browser Harness 状态来自 DSH Shell。';
+          '共 ${plugins.length} 项；${plugins.where((p) => p.status == 'drift').length} 项版本偏差。实际加载状态请在 DSH 设置 → 插件查看。';
     } catch (failure) {
       pluginMessage = '插件检查失败：$failure';
     } finally {

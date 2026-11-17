@@ -27,24 +27,26 @@ test('DSH launch loads the project CodeGraph server while preserving unrelated p
   assert.equal(rows.some(row => row.id === 'workflow-agent-monitor'), false)
 })
 
-test('Station loads the Matt panel and its tools by path without restoring Tobs or the global panel package', () => {
+test('Station retires the Matt panel and tools while retaining the independent Chinese skill provider', () => {
   const entries = [
     { id: 'market', name: 'dshmarket', config: { maxSnapshots: 3 } },
     { id: 'botharness-client', name: '@botharness/ui' },
     { id: 'old-matt-tools', name: 'dsh-workflow-matt-panel/tools', config: { keep: true } },
     { id: 'workflow-project-coordination', name: 'dsh-workflow/project-coordination' },
+    { id: 'matt-skills-board', name: '/previous/Station/matt-skills-panel-plugin/package/lib/index.js' },
+    { id: 'matt-panel-tools', name: '/previous/Station/matt-skills-panel-plugin/package/deck/registration/agent-row.js' },
+    { id: 'workflow-delivery-inventory', name: 'dsh-workflow/delivery-inventory' },
+    { id: 'workflow-browser-harness', name: 'dsh-workflow-browser-harness' },
+    { id: 'workflow-desktop-bridge', name: '/previous/Station/desktop-bridge.mjs' },
   ]
+  const before = structuredClone(entries)
   const patches = composeDshLaunch(entries, { projectRoot, profilePlugins: true })
   const added = patches.flatMap(patch => patch.insert ?? [])
   assert.deepEqual(patches.find(row => row.id === 'market').config, { maxSnapshots: 3, profile: 'desktop' })
   for (const { id } of entries.slice(1)) assert.equal(patches.find(row => row.id === id).disabled, true)
-  assert.equal(added.find(row => row.id === 'workflow-delivery-inventory').name,
-    join(projectRoot, 'agent-observation-plugin/src/delivery-inventory.mjs'))
-  assert.equal(added.find(row => row.id === 'matt-skills-board').name,
-    join(projectRoot, 'matt-skills-panel-plugin/package/lib/index.js'))
-  const tools = added.find(row => row.id === 'matt-panel-tools')
-  assert.equal(tools.name, join(projectRoot, 'matt-skills-panel-plugin/package/deck/registration/agent-row.js'))
-  assert.deepEqual(tools.config, { keep: true })
+  assert.ok(!added.some(row => entries.some(entry => entry.id === row.id)))
+  assert.equal(added.find(row => row.id === 'mattpocock-skills-zh').config.includeDefaultRoots, false)
+  assert.deepEqual(entries, before)
   assert.ok(!added.some(row => ['workflow-agent-monitor', 'workflow-project-coordination'].includes(row.id)))
 })
 

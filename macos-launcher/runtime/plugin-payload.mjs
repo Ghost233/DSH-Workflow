@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { readFile, writeFile, readdir, lstat, readlink, mkdir, rename, symlink, unlink } from 'node:fs/promises'
 import { join, dirname, resolve, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readDeliveryManifest, pluginDependencySpec, isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { readDeliveryManifest, pluginDependencySpec, isProfilePlugin } from './delivery-manifest.mjs'
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const sealPath = resources => join(resources, 'plugin-payload.json')

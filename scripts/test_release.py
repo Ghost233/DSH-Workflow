@@ -284,7 +284,7 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
         (resources / 'node_modules/@deepseek-ai/dsh/package.json').write_text(json.dumps(
             {'name': '@deepseek-ai/dsh', 'version': '0.2.1-alpha.2'}))
         for relative in ['macos-launcher/runtime/plugin-payload.mjs',
-                         'agent-observation-plugin/src/delivery-manifest.mjs']:
+                         'macos-launcher/runtime/delivery-manifest.mjs']:
             destination = self.repo / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(SOURCE.parent / relative, destination)

@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { setTimeout as delay } from 'node:timers/promises'
 
 test('Web Host starts the real DSH runtime, drains access and exits cleanly', { timeout: 60_000 }, async t => {
   const resources = process.env.DSH_WEB_TEST_RUNTIME_ROOT ?? process.env.DSH_SERVICE_TEST_RESOURCES
@@ -16,13 +17,20 @@ test('Web Host starts the real DSH runtime, drains access and exits cleanly', { 
   const root = await mkdtemp(join(tmpdir(), 'station-web-host-test-'))
   const home = join(root, 'home'), profile = join(home, 'profiles/desktop'), receipt = join(root, 'receipt')
   await mkdir(home); boot.initProfile(profile, templates.web.bundles)
-  const bridge = fileURLToPath(new URL('./desktop-bridge.mjs', import.meta.url))
+  const bridge = fileURLToPath(new URL('./station-bridge.mjs', import.meta.url))
+  const lingering = join(root, 'lingering.mjs'), marker = join(root, 'lingering-loaded')
+  await writeFile(lingering, `import { writeFileSync } from 'node:fs'
+    export function apply() {
+      writeFileSync(${JSON.stringify(marker)}, 'loaded')
+      setInterval(() => {}, 60_000)
+    }`)
   const patch = [{ id: 'webserver', config: { host: '127.0.0.1', port: 0 } },
     { id: 'web-runtime', config: { openBrowser: false, printUrl: false } },
     { id: 'desktop-product-telemetry', disabled: true }, { id: 'product-analytics', disabled: true },
     { id: 'session-telemetry-otel', disabled: true },
     { id: 'workspace-controller', config: { documentsDirectory: join(root, 'documents') } },
-    { insert: [{ id: 'workflow-desktop-bridge', name: bridge, config: { directory: receipt, runtimeVersion: 'fixture' } }] }]
+    { insert: [{ id: 'dsh-station-bridge', name: bridge, config: { directory: receipt, runtimeVersion: 'fixture' } },
+      { id: 'lingering-test-resource', name: lingering }] }]
   await writeFile(join(profile, 'cordis.patch.yml'), JSON.stringify(patch))
   const child = spawn(process.execPath, ['--expose-internals', resolve('macos-launcher/runtime/web-host.mjs'), resources, profile, receipt], {
     env: { HOME: root, DSH_HOME: home, DSH_AGENTS_HOME: join(root, 'agents'), DSH_TELEMETRY_DISABLED: '1',
@@ -49,6 +57,7 @@ test('Web Host starts the real DSH runtime, drains access and exits cleanly', { 
   }
   const ready = await receive(message => message.type === 'ready' || message.type === 'fatal')
   assert.equal(ready.type, 'ready', diagnostics)
+  assert.equal(await readFile(marker, 'utf8'), 'loaded')
   let saved
   for (let attempt = 0; attempt < 100 && !saved; attempt++) {
     try { saved = JSON.parse(await readFile(join(receipt, 'desktop-host.json'), 'utf8')) }
@@ -79,5 +88,6 @@ test('Web Host starts the real DSH runtime, drains access and exits cleanly', { 
   assert.equal((await request()).status, 200)
   child.send({ type: 'shutdown' })
   await receive(message => message.type === 'shutdown-complete')
-  assert.deepEqual(await exited, { code: 0, signal: null })
+  assert.deepEqual(await Promise.race([exited, delay(1500, 'Host stayed alive after its shutdown acknowledgement', { ref: false })]),
+    { code: 0, signal: null })
 })

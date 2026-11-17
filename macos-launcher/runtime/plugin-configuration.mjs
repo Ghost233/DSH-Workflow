@@ -1,4 +1,4 @@
-import { readDeliveryManifest, pluginDependencySpec, isProfilePlugin } from '../../agent-observation-plugin/src/delivery-manifest.mjs'
+import { readDeliveryManifest, pluginDependencySpec, isProfilePlugin } from './delivery-manifest.mjs'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile, mkdir, unlink, link } from 'node:fs/promises'
 import { join, dirname } from 'node:path'

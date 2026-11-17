@@ -1,7 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { createServer } from 'node:http'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -11,7 +10,7 @@ import { startupPluginResults, prepareStartupPlugins } from './startup-plugins.m
 const versions = Object.fromEntries(JSON.parse(await readFile(new URL('../../project-plugins.json', import.meta.url), 'utf8'))
   .plugins.filter(item => item.startup === true).map(item => [item.package, item.version]))
 
-// Only the external authenticated HTTP inventory is controlled here; no DSH or GUI is launched.
+// Supply the official inventory separately from the installed packages on disk.
 async function fixture(t, rows, native) {
   const root = await mkdtemp(join(tmpdir(), 's08-startup-http-'))
   const workflow = join(root, 'workflow')
@@ -31,25 +30,20 @@ async function fixture(t, rows, native) {
     await writeFile(manifestPath, content)
     await writeFile(lockPath, JSON.stringify(lock))
   }
-  const requests = []
-  const server = createServer(async (request, response) => {
-    requests.push({ method: request.method, path: request.url })
-    if (request.method === 'GET') { response.writeHead(303, { 'set-cookie': 'session=owned-fixture; HttpOnly' }); response.end(); return }
-    assert.equal(request.headers.cookie, 'session=owned-fixture')
-    let body = ''
-    for await (const chunk of request) body += chunk
-    const input = JSON.parse(body)
-    response.setHeader('content-type', 'application/json')
-    response.end(JSON.stringify({ type: 'server-response', rpcId: input.rpcId,
-      result: { ok: true, value: { actualScope: 'runtime-resolution', rows } } }))
-  })
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }) })
-  return { root, requests, url: `http://127.0.0.1:${server.address().port}/?token=owned-fixture` }
+  const profile = join(root, 'profile')
+  t.after(() => rm(root, { recursive: true, force: true }))
+  for (const row of rows) {
+    if (row.missingMetadata) continue
+    const directory = join(profile, 'node_modules', row.moduleName)
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'package.json'), JSON.stringify({ name: row.moduleName, version: row.installedVersion }))
+  }
+  const entries = rows.map(({ moduleName, enabled, fiberPhase, entryId }) => ({ moduleName, enabled, fiberPhase, entryId }))
+  return { resourcesRoot: root, profile, entries }
 }
 
-const row = (name, version, extra = {}) => ({ scope: 'Host', moduleName: name, package: name,
-  current: version, source: `/owned/${name}`, status: 'fixed', enabled: true, fiberPhase: 'active', ...extra })
+const row = (moduleName, installedVersion, extra = {}) =>
+  ({ moduleName, installedVersion, enabled: true, fiberPhase: 'active', ...extra })
 
 const resultFor = (results, name) => results.find(row => row.package === name)
 
@@ -57,24 +51,22 @@ test('startup outcomes report the installed profile version, disabled, failed an
   const f = await fixture(t, [row('dsh-context', versions['dsh-context']),
     row('dsh-cost-meter', versions['dsh-cost-meter'], { enabled: false, fiberPhase: null }),
     row('@nagi-ovo/dsh-visualize', versions['@nagi-ovo/dsh-visualize'], { fiberPhase: 'failed' }),
-    row('dsh-skill-mcp-panel', '2.3.11', { status: 'drift' })])
-  const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
+    row('dsh-skill-mcp-panel', '2.3.11')])
+  const results = await startupPluginResults(f)
   assert.deepEqual(results.filter(row => row.state === 'loaded').map(row => row.package), ['dsh-context', 'dsh-skill-mcp-panel'])
   assert.match(resultFor(results, 'dsh-cost-meter').reason, /停用/)
   assert.match(resultFor(results, '@nagi-ovo/dsh-visualize').reason, /失败/)
   const panel = resultFor(results, 'dsh-skill-mcp-panel')
   assert.equal(panel.versionSource, 'dsh-profile')
   assert.equal(panel.version, '2.3.11')
-  assert.equal(panel.actualVersion, '2.3.11')
+  assert.equal(panel.installedVersion, '2.3.11')
   assert.match(resultFor(results, 'dsh-better-sidebar').reason, /未装配/)
-  assert.deepEqual(f.requests, [{ method: 'GET', path: '/?token=owned-fixture' },
-    { method: 'POST', path: '/api/workflowDelivery/list' }])
 })
 
-test('an unknown runtime source is never reported as a loaded fixed package and later startup items remain visible', async t => {
-  const f = await fixture(t, [row('dsh-context', versions['dsh-context'], { source: null }),
+test('an active entry without verified installation metadata still reports an unknown version', async t => {
+  const f = await fixture(t, [row('dsh-context', versions['dsh-context'], { missingMetadata: true }),
     row('dsh-cost-meter', versions['dsh-cost-meter'])])
-  const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
+  const results = await startupPluginResults(f)
   assert.equal(resultFor(results, 'dsh-context').state, 'skipped')
   assert.match(resultFor(results, 'dsh-context').reason, /未知/)
   assert.equal(resultFor(results, 'dsh-cost-meter').state, 'loaded')
@@ -86,7 +78,7 @@ test('a settled enabled entry without a live fiber reports import failure while 
   const f = await fixture(t, [row('dsh-context', versions['dsh-context'], { fiberPhase: null }),
     row('dsh-cost-meter', versions['dsh-cost-meter'], { enabled: false, fiberPhase: null }),
     row('@nagi-ovo/dsh-visualize', versions['@nagi-ovo/dsh-visualize'], { fiberPhase: 'pending' })])
-  const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url })
+  const results = await startupPluginResults(f)
   assert.equal(resultFor(results, 'dsh-context').state, 'skipped')
   assert.match(resultFor(results, 'dsh-context').reason, /导入.*失败/)
   assert.match(resultFor(results, 'dsh-cost-meter').reason, /停用/)
@@ -96,7 +88,7 @@ test('a settled enabled entry without a live fiber reports import failure while 
 test('a rejected startup preparation cannot be reported as loaded by a matching inventory row', async t => {
   const f = await fixture(t, [row('dsh-context', versions['dsh-context'])])
   const reason = '启动插件尝试失败：依赖来源声明与包内 Git 固定值不一致。'
-  const results = await startupPluginResults({ resourcesRoot: f.root, url: f.url,
+  const results = await startupPluginResults({ ...f,
     preparation: [{ package: 'dsh-context', installedVersion: '0.73.3', installedSource: '/owned/dsh-context', reason }] })
   assert.equal(resultFor(results, 'dsh-context').state, 'skipped')
   assert.equal(resultFor(results, 'dsh-context').reason, reason)
@@ -220,7 +212,7 @@ test('native bundle readiness requires every component and its actual namespaced
   const rows = native.components.map(component => row(component.package, component.version))
   const preset = row('@deepseek-ai/dsh-agent-preset', '0.2.2-rc.1', { entryId: 'include:fixture-native-preset' })
   const missing = await fixture(t, rows, native)
-  assert.equal((await startupPluginResults({ resourcesRoot: missing.root, url: missing.url })).find(item => item.package === native.package).state, 'skipped')
+  assert.equal((await startupPluginResults(missing)).find(item => item.package === native.package).state, 'skipped')
   const complete = await fixture(t, [...rows, preset], native)
-  assert.equal((await startupPluginResults({ resourcesRoot: complete.root, url: complete.url })).find(item => item.package === native.package).state, 'loaded')
+  assert.equal((await startupPluginResults(complete)).find(item => item.package === native.package).state, 'loaded')
 })

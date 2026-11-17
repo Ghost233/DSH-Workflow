@@ -173,6 +173,7 @@ void main() {
           await task!.waitForModelRequest(2);
           pendingRestart = model!.restartService();
           pendingRestart!.ignore();
+          expect(model!.serviceActionMessage, '正在检查未完成的 DSH 工作…');
           return true;
         });
         if (firstCanceled != true) return;
@@ -186,9 +187,8 @@ void main() {
         });
         await tester.pump();
         await tester.runAsync(() async {
-          // Restart includes both stopping and starting; use the service
-          // control request's 45-second limit for the combined operation.
-          await pendingRestart!.timeout(const Duration(seconds: 45));
+          await pendingRestart!.timeout(const Duration(seconds: 55));
+          expect(model!.serviceActionMessage, isNull);
           expect(
             (await Process.run('/bin/kill', [
               '-0',

@@ -40,23 +40,19 @@ fi
 
 [[ $# == 0 ]] || fail "未知参数：$*"
 
-step '1/5 构建项目维护的 Matt 面板'
-npm ci --prefix matt-skills-panel-plugin --ignore-scripts --no-audit --no-fund
-npm run build --prefix matt-skills-panel-plugin
-
-step '2/5 准备 Flutter 依赖'
+step '1/4 准备 Flutter 依赖'
 (cd macos-launcher/flutter && flutter pub get --enforce-lockfile)
 
-step '3/5 构建并签名 Web 版 Station'
+step '2/4 构建并签名 Web 版 Station'
 "$LAUNCHER_NODE" macos-launcher/build.mjs
 APP="$ROOT/.build/Ghost DSH Station-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
 [[ -d "$APP" ]] || fail "启动器 App 未生成：$APP"
 
-step '4/5 打包 DMG、manifest.json 与 SHA256SUMS'
+step '3/4 打包 DMG、manifest.json 与 SHA256SUMS'
 [[ ! -e .build/release-assets ]] || fail '已有 .build/release-assets，已保留原有产物；请先选择空的构建目录'
 scripts/build-release.sh --app-path "$APP" --output-dir .build/release-assets
 
-step '5/5 校验发布资产'
+step '4/4 校验发布资产'
 (cd .build/release-assets && shasum -a 256 -c SHA256SUMS)
 step "完成：$APP"
 step "资产：$ROOT/.build/release-assets"

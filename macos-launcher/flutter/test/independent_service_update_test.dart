@@ -129,9 +129,15 @@ void main() {
         await model.checkPlugins();
         expect(model.plugins, isNotEmpty, reason: model.pluginMessage);
         expect(model.plugins.every((row) => !row.updatable), true);
-        final report = await task.rpc('workflowDelivery/list', {}) as Map;
-        expect(report['actualScope'], 'runtime-resolution');
-        expect(report['rows'], isNotEmpty);
+        final report = await task.rpc('pluginInventory/list', {}) as Map;
+        expect(
+          (report['entries'] as List).cast<Map>().any(
+            (row) =>
+                (row['entryId'] as String).endsWith(':dsh-station-bridge') &&
+                row['fiberPhase'] == 'active',
+          ),
+          true,
+        );
         expect(await File('${root.path}/model-canceled-1').exists(), false);
         await model.close();
         reopened = controller();

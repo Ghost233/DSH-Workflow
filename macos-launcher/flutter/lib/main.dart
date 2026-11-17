@@ -338,6 +338,7 @@ class _LauncherPageState extends State<LauncherPage> {
           'DSH 服务：${model.serviceSnapshot.state == ServiceState.running && model.serviceSnapshot.ready != true ? '运行中，尚未就绪' : _stateName(model.serviceSnapshot.state)}',
         ),
         Text('服务实例：${model.serviceSnapshot.instanceId ?? '尚未启动'}'),
+        if (model.serviceActionMessage case final message?) Text(message),
         if (model.serviceSnapshot.message?.isNotEmpty == true)
           SelectableText(model.serviceSnapshot.message!),
         Wrap(
@@ -347,10 +348,20 @@ class _LauncherPageState extends State<LauncherPage> {
             _button(
               '启动 DSH 服务',
               model.startService,
-              enabled: model.serviceSnapshot.state != ServiceState.starting,
+              enabled:
+                  model.serviceActionMessage == null &&
+                  model.serviceSnapshot.state != ServiceState.starting,
             ),
-            _button('停止 DSH 服务', model.stopService),
-            _button('重启 DSH 服务', model.restartService),
+            _button(
+              '停止 DSH 服务',
+              model.stopService,
+              enabled: model.serviceActionMessage == null,
+            ),
+            _button(
+              '重启 DSH 服务',
+              model.restartService,
+              enabled: model.serviceActionMessage == null,
+            ),
             _button('刷新服务状态', () async {
               await model.serviceStatus();
             }),

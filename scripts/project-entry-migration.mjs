@@ -10,10 +10,7 @@ export async function migrateProjectEntryNames({ profile, anchor, projectRoot = 
   const base = boot.resolveBundleDir('dsh', '@deepseek-ai/dsh-base', anchor, profile.dir)
   const yaml = createRequire(createRequire(join(base, 'package.json')).resolve('@deepseek-ai/dsh-config-editor/package.json'))('yaml')
   const names = new Map([
-    ['matt-skills-board', pathToFileURL(join(projectRoot, 'matt-skills-panel-plugin/package/lib/index.js')).href],
-    ['matt-panel-tools', pathToFileURL(join(projectRoot, 'matt-skills-panel-plugin/package/deck/registration/agent-row.js')).href],
     ['mattpocock-skills-zh', '@deepseek-ai/dsh-skill-filesystem'],
-    ['workflow-browser-harness', pathToFileURL(join(projectRoot, 'browser-harness-plugin/index.mjs')).href],
   ])
   const packagedSkillDirectories = new Map([
     ['mattpocock-skills-zh', 'vendor/mattpocock-skills-zh/skills'],

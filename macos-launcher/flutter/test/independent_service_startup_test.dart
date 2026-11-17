@@ -96,13 +96,12 @@ void main() {
         expect(started['error'], isNull, reason: '$started');
         final connection = await task.managedConnection(resources);
         await task.connect(connection);
-        final inventory = await task.rpc('workflowDelivery/list', {}) as Map;
-        final rows = (inventory['rows'] as List).cast<Map>();
+        final inventory = await task.rpc('pluginInventory/list', {}) as Map;
+        final rows = (inventory['entries'] as List).cast<Map>();
         expect(
           rows.any(
             (row) =>
-                row['package'] == 's08-owned-startup-good' &&
-                row['current'] == '1.0.0' &&
+                row['moduleName'] == 's08-owned-startup-good' &&
                 row['fiberPhase'] == 'active',
           ),
           true,
@@ -194,8 +193,8 @@ void main() {
         final nextConnection = await task.managedConnection(resources);
         expect(nextConnection['instanceId'], isNot(connection['instanceId']));
         await task.connect(nextConnection);
-        final after = await task.rpc('workflowDelivery/list', {}) as Map;
-        final disabled = (after['rows'] as List).cast<Map>().singleWhere(
+        final after = await task.rpc('pluginInventory/list', {}) as Map;
+        final disabled = (after['entries'] as List).cast<Map>().singleWhere(
           (row) => row['moduleName'] == 's08-owned-startup-good',
         );
         expect(disabled['enabled'], false);
