@@ -2,11 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
-import SkillRegistry from '@deepseek-ai/dsh-skill'
+import SkillRegistry, { isModelInvocable } from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import { composeDshLaunch } from './dsh-launch-composition.mjs'
 
-test('startup mounts the Chinese Matt skills and native DSH team delivery skill together', async t => {
+test('startup mounts the Chinese Matt skills and bundled DSH workflow skills together', async t => {
   const projectRoot = process.env.DSH_MATT_ZH_WORKFLOW_ROOT ?? fileURLToPath(new URL('../', import.meta.url))
   const patches = composeDshLaunch([
     { id: 'preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry' },
@@ -31,10 +31,15 @@ test('startup mounts the Chinese Matt skills and native DSH team delivery skill 
   assert.ok(account)
   await ctx.plugin(SkillFileSystem, { ...account.config, watch: false })
   const skills = await ctx.skills.list()
-  assert.equal(skills.length, 29)
+  assert.equal(skills.length, 30)
   assert.equal(skills.find(skill => skill.name === 'implement-spec')?.source, 'custom')
   assert.match((await ctx.skills.get('implement-spec')).content, /规格/)
   assert.match((await ctx.skills.get('to-spec')).content, /规格/)
+  const refine = await ctx.skills.get('refine-issue')
+  assert.equal(refine.provider, 'dsh-workflow-skills')
+  assert.match(refine.content, /工单粒度检查/)
+  assert.equal(isModelInvocable(refine), true)
+  assert.equal((await ctx.skills.get('to-tickets')).provider, 'mattpocock-skills-zh')
   const delivery = await ctx.skills.get('spec-delivery')
   assert.equal(delivery.provider, 'dsh-workflow-skills')
   assert.match(delivery.content, /spawn_teammate/)
