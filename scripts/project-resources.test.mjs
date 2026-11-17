@@ -20,7 +20,7 @@ test('the launch composition loads the project skills root through a dedicated s
   assert.deepEqual(provider.config.customSkillDirs, [join(projectRoot, 'skills')])
 })
 
-test('the project layer ships the GitHub account and Chinese Matt skills without Matt Deck', async t => {
+test('the project layer ships the GitHub account and Chinese Matt skills without Matt Deck or Browser Harness', async t => {
   const root = await mkdtemp(join(tmpdir(), 'rga-t03-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const workflow = join(root, 'workflow')
@@ -33,10 +33,10 @@ test('the project layer ships the GitHub account and Chinese Matt skills without
   assert.match(staged.members['vendor/mattpocock-skills-zh/.codex-plugin/plugin.json']?.sha256 ?? '', /^[0-9a-f]{64}$/)
   assert.ok(!Object.keys(staged.members).some(name => name.startsWith('matt-skills-panel-plugin/')))
   assert.ok(!Object.keys(staged.members).some(name => name.startsWith('agent-observation-plugin/')))
-  assert.ok(!staged.members['browser-harness-plugin/index.mjs'])
+  assert.ok(!Object.keys(staged.members).some(name => name.startsWith('browser-harness-plugin/')))
+  assert.equal(staged.input.browserHarness, undefined)
   const bridge = JSON.parse(await readFile(join(workflow, 'package.json'), 'utf8'))
   assert.equal(bridge.name, 'dsh-station-bridge')
   assert.equal(bridge.exports['.'], './macos-launcher/runtime/station-bridge.mjs')
   assert.ok(staged.members['macos-launcher/runtime/station-bridge.mjs'])
-  assert.ok(staged.members['browser-harness-plugin/skills/browser-harness/SKILL.md'])
 })

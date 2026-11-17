@@ -11,7 +11,6 @@ import { assertHostBackedSettings } from './settings-client-contract.mjs'
 import { verifyNpmRuntimePin } from './runtime/npm-runtime-pin.mjs'
 import { bundleProjectPlugins } from './bundle-plugins.mjs'
 import { verifyPluginPayload } from './runtime/plugin-payload.mjs'
-import { checkBrowserHarnessUpstream } from '../browser-harness-plugin/build.mjs'
 import { pruneKnownDevelopmentFiles } from './production-file-policy.mjs'
 import { sourceIdentity } from '../scripts/harness-runtime.mjs'
 
@@ -53,7 +52,6 @@ async function verifyInputs() {
 
 
 await verifyInputs()
-console.log(JSON.stringify({ browserHarnessSkillCheck: await checkBrowserHarnessUpstream(root) }))
 const buildLabel = process.env.DSH_MACOS_BUILD_LABEL
 if (buildLabel !== undefined && !/^[A-Za-z0-9-]{1,32}$/.test(buildLabel)) throw new Error('Invalid DSH_MACOS_BUILD_LABEL')
 const destination = join(buildRoot, `Ghost DSH Station-${appVersion}-dsh${version}-${arch}${buildLabel ? `-${buildLabel}` : ''}.app`)

@@ -6,23 +6,18 @@
 
 | 插件 | 版本 | 作用 | 源码 |
 |---|---|---|---|
-| `dsh-workflow` | 0.1.1 | 读取 Host 插件的版本、来源和加载状态 | [组件清单模块](../agent-observation-plugin/README.md) |
-
-根目录 `package.json` 声明组件清单的服务端和 Web 入口。
+| `dsh-station-bridge` | 0.1.1 | 发布 DSH Web Host 的私有就绪记录，提供停机检查和模型授权 | [桥接源码](../macos-launcher/runtime/station-bridge.mjs) |
 
 ## 自有技能与项目集成组件
 
 | 名称 | 类型 / 版本 | 作用与状态 | 位置 |
 |---|---|---|---|
 | `mattpocock-skills-zh` | 中文技能插件 / 0.1.8+codex.20261027155632 | Ghost233 维护的 Matt 技能中文翻译；DSH 通过原生技能文件服务加载，包含 `pr` 与需用户明确调用的 `retro` | [中文技能包](../vendor/mattpocock-skills-zh/.codex-plugin/plugin.json) |
-| `dsh-workflow-desktop-bridge` | 内部 Cordis 插件 | 写入 DSH Web Host 的私有就绪记录，供 Station 确认服务状态 | [桥接源码](../macos-launcher/runtime/desktop-bridge.mjs) |
 
-## 本地面板与第三方插件
+## 第三方插件
 
 | 名称 | 版本 | 来源与用途 |
 |---|---|---|
-| `dsh-workflow-matt-panel` | 1.9.0-beta.33.workflow.1 | 本项目维护的 [Matt 面板派生版](../matt-skills-panel-plugin/README.md)，基准与升级对照见 `upstream.json`；使用独立中文技能提供器 |
-| `dsh-mattpocock-skills-deck` | 1.9.0-beta.33（基准） | 原版 submodule 保持上游源码原样，用于跟踪更新；项目装配停用其宿主与工具行 |
 | `dshmarket` | 1.73.19 | DSH 插件市场 |
 | `dsh-context` | 0.84.1 | 上下文查看插件 |
 | `dsh-cost-meter` | 1.9.64 | 费用统计插件 |
@@ -39,8 +34,8 @@
 
 Station 启动时检查本地名单中的包是否已安装，接受 DSH profile 中的任意版本。缺包时会列出补装命令。“插件”页显示当前版本和 npm 的 `latest` 版本，也可通过 DSH 包管理器手动更新 npm 插件。启用、停用和卸载在 DSH 内操作。
 
-随包交付的 Git 和源码制品使用固定版本。Matt 派生面板通过[项目装配](../scripts/dsh-launch-composition.mjs)加载构建产物。
+随包交付的 Git 和源码制品使用固定版本。
 
 ## 引用的自有 Codex 插件市场
 
-Matt 技能只引用 `Ghost233/ghost-agent-market` 的中文插件目录，原样快照保存在 `vendor/mattpocock-skills-zh`，来源、完整提交和版本见 [来源记录](../vendor/mattpocock-skills-zh.upstream.json)。DSH 不再引用整份市场仓库，也不初始化其中的英文原版和 SkillOpt 子模块。中文技能更新时从来源仓库的目标提交重新导入该目录并保留许可证，再核对面板目录和构建验收。
+Matt 技能只引用 `Ghost233/ghost-agent-market` 的中文插件目录，原样快照保存在 `vendor/mattpocock-skills-zh`，来源、完整提交和版本见 [来源记录](../vendor/mattpocock-skills-zh.upstream.json)。中文技能更新时从目标提交重新导入该目录并保留许可证，再验证技能在 DSH 中可发现。

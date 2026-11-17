@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { readPinnedBrowserHarness, stageBrowserHarnessSkills } from '../browser-harness-plugin/build.mjs'
 
 const exec = promisify(execFile)
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -18,8 +17,7 @@ async function sources(root) {
   const files = ['package.json', 'dsh-runtime.json', 'default-startup-plugins.json', 'project-plugins.json', 'project-plugins.lock.json', 'project-mcp.json',
     'vendor/mattpocock-skills-zh.upstream.json', 'vendor/dsh-skills.upstream.json',
     ...scripts.map(name => `scripts/${name}`)]
-  for (const directory of ['browser-harness-plugin/skills',
-    'vendor/mattpocock-skills-zh', 'vendor/dsh-skills', 'skills']) files.push(directory)
+  files.push('vendor/mattpocock-skills-zh', 'vendor/dsh-skills', 'skills')
   files.push(...(await readdir(join(root, 'macos-launcher/runtime'))).filter(name => name.endsWith('.mjs') && !name.endsWith('.test.mjs')).map(name => `macos-launcher/runtime/${name}`))
   return files
 }
@@ -43,8 +41,7 @@ async function inventory(root, selections = ['']) {
 async function identity(root) {
   const { stdout } = await exec('git', ['-C', root, 'rev-parse', 'HEAD'])
   const files = await sources(root)
-  const { blobs, ...browserHarness } = await readPinnedBrowserHarness(root)
-  return { sourceCommit: stdout.trim(), files: await inventory(root, files), browserHarness }
+  return { sourceCommit: stdout.trim(), files: await inventory(root, files) }
 }
 
 export async function copyProjectIntegration(projectRoot, workflow, candidate) {
@@ -60,7 +57,6 @@ export async function copyProjectIntegration(projectRoot, workflow, candidate) {
     for (const name of candidateFiles) await cp(join(candidate, name), join(workflow, name))
     input.candidate = await inventory(candidate, candidateFiles)
   }
-  await stageBrowserHarnessSkills(root, workflow)
   const pkg = JSON.parse(await readFile(join(workflow, 'package.json'), 'utf8'))
   if (pkg.name !== 'dsh-station-bridge' || pkg.exports?.['.'] !== './macos-launcher/runtime/station-bridge.mjs') {
     throw new Error('Station bridge package entry is missing')

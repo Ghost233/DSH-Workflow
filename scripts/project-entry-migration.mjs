@@ -14,7 +14,6 @@ export async function migrateProjectEntryNames({ profile, anchor, projectRoot = 
   ])
   const packagedSkillDirectories = new Map([
     ['mattpocock-skills-zh', 'vendor/mattpocock-skills-zh/skills'],
-    ['workflow-browser-harness-skills', 'browser-harness-plugin/skills'],
     ['dsh-workflow-gh-account', 'skills'],
     ['dsh-workflow-skills', 'vendor/dsh-skills/skills'],
   ])

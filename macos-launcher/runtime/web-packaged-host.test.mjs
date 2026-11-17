@@ -86,6 +86,9 @@ test('packaged project profile serves authenticated official DSH readiness using
       { id: 'matt-skills-board', name: '/previous location/matt-skills-panel-plugin/package/lib/index.js', config: { savedPanelSetting: true, ghAccount: false } },
       { id: 'matt-panel-tools', name: 'previous-panel/tools', config: { savedToolSetting: true } },
       { id: 'mattpocock-skills-zh', name: 'previous-skills', config: { providerName: 'mattpocock-skills-zh', includeDefaultRoots: false, customSkillDirs: [join(workflow, 'vendor/mattpocock-skills-zh/skills')] } },
+      { id: 'workflow-browser-harness-skills', name: '@deepseek-ai/dsh-skill-filesystem', config: {
+        providerName: 'workflow-browser-harness', includeDefaultRoots: false, customSkillDirs: [join(workflow, 'browser-harness-plugin/skills')],
+      } },
       { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } },
     ] },
     { id: 'matt-skills-board', name: '/previous location/matt-skills-panel-plugin/package/lib/index.js', config: { savedPanelSetting: true, ghAccount: false } },
@@ -109,6 +112,7 @@ test('packaged project profile serves authenticated official DSH readiness using
     disabled: true, config: { savedPanelSetting: true, ghAccount: false },
   })
   assert.equal(effective.find(row => row.id === 'matt-panel-tools').disabled, true)
+  assert.equal(effective.find(row => row.id === 'workflow-browser-harness-skills').disabled, true)
   assert.equal(effective.find(row => row.id === 'mattpocock-skills-zh').name, '@deepseek-ai/dsh-skill-filesystem')
   assert.deepEqual(effective.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
   const startHost = () => {
@@ -157,7 +161,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(bridge?.fiberPhase, 'active')
   assert.match(bridge.moduleName, /macos-launcher\/runtime\/station-bridge\.mjs$/)
   assert.ok(ctx.get('workflowHostInstance'), 'the bridge publishes the Host identity')
-  assert.ok(!health.plugins.some(row => /:(workflow-delivery-inventory|workflow-browser-harness|workflow-agent-monitor|workflow-project-coordination)$/.test(row.entryId ?? '') && row.enabled))
+  assert.ok(!health.plugins.some(row => /:(workflow-delivery-inventory|workflow-browser-harness(?:-skills)?|workflow-agent-monitor|workflow-project-coordination)$/.test(row.entryId ?? '') && row.enabled))
   assert.equal(ctx.get('workflowOwnedDeliveryFixture')?.version, delivered.version)
   const actualPlugin = (await startupPluginResults({ resourcesRoot, profile: prepared.profile, entries: health.plugins }))
     .find(row => row.package === delivered.package)
@@ -180,9 +184,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(ctx.tools.get('deck_context'), undefined, 'the retired Matt tools are not registered')
   assert.ok(ctx.get('agentTeams'), 'DSH supplies the official Agent Team service through its base bundle')
   assert.match((await ctx.skills.get('spec-delivery')).content, /spawn_teammate/, 'the real Host loads the native DSH team skill')
-  const browserSkill = await ctx.skills.get('browser-harness')
-  assert.match(browserSkill.content, /references\/SKILL.md/)
-  assert.equal((await ctx.skills.list()).filter(skill => skill.name === 'browser-harness').length, 1)
+  assert.ok(!(await ctx.skills.list()).some(skill => skill.name === 'browser-harness'))
   assert.equal(ctx.get('jevCenter'), undefined, 'the retired JEV center is not loaded')
   assert.equal(ctx.get('agentMonitor'), undefined, 'the disabled project agent monitor is not loaded')
   disposing = ctx.fiber.dispose()
@@ -195,7 +197,6 @@ test('packaged project profile serves authenticated official DSH readiness using
   await rename(resourcesRoot, movedResources)
   await prepareDesktopProfile({ resourcesRoot: movedResources, desktopRuntimeRoot: movedResources, globalRoot, home })
   profile = loadProfile('dsh', 'desktop', anchor, home)
-  const movedWorkflow = join(movedResources, 'workflow')
   const movedManifest = JSON.parse(await readFile(join(prepared.profile, 'package.json'), 'utf8'))
   assert.deepEqual(movedManifest.userMetadata, { keep: 'same-home' })
   assert.equal(movedManifest.dependencies['dsh-workflow'], undefined)
@@ -205,6 +206,9 @@ test('packaged project profile serves authenticated official DSH readiness using
   const movedEntries = composeEntries([...profile.layers.map(layer => layer.patches), profile.patches, overlay()])
   assert.deepEqual(movedEntries.find(row => row.id === 'matt-skills-board').config, { savedPanelSetting: true, ghAccount: false })
   assert.equal(movedEntries.find(row => row.id === 'matt-skills-board').disabled, true)
+  const legacyBrowser = movedEntries.find(row => row.id === 'workflow-browser-harness-skills')
+  assert.equal(legacyBrowser.disabled, true)
+  assert.deepEqual(legacyBrowser.config.customSkillDirs, [join(workflow, 'browser-harness-plugin/skills')])
   assert.deepEqual(movedEntries.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
   await startHost()
   t.signal.throwIfAborted()
@@ -219,7 +223,5 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(ctx.tools.get('deck_context'), undefined, 'the retired Matt tools stay unloaded after moving resources')
   assert.ok((await ctx.skills.list()).some(skill => skill.name === 'implement-spec'), 'moved Host still loads the managed Chinese skill directory')
   assert.match((await ctx.skills.get('spec-delivery')).content, /team_task_create/, 'moved Host still loads the native DSH team skill')
-  assert.match((await ctx.skills.get('browser-harness')).content, /references\/SKILL.md/)
-  assert.deepEqual(await readFile(join(movedWorkflow, 'browser-harness-plugin/skills/browser-harness/references/SKILL.md')),
-    await readFile(resolve('browser-harness-plugin/pinned/vendor/browser-harness/SKILL.md')), 'relocation keeps original skill bytes')
+  assert.ok(!(await ctx.skills.list()).some(skill => skill.name === 'browser-harness'))
 })

@@ -27,7 +27,7 @@ test('DSH launch loads the project CodeGraph server while preserving unrelated p
   assert.equal(rows.some(row => row.id === 'workflow-agent-monitor'), false)
 })
 
-test('Station retires the Matt panel and tools while retaining the independent Chinese skill provider', () => {
+test('Station retires its Matt panel and Browser Harness entries while retaining separate skill providers', () => {
   const entries = [
     { id: 'market', name: 'dshmarket', config: { maxSnapshots: 3 } },
     { id: 'botharness-client', name: '@botharness/ui' },
@@ -37,6 +37,8 @@ test('Station retires the Matt panel and tools while retaining the independent C
     { id: 'matt-panel-tools', name: '/previous/Station/matt-skills-panel-plugin/package/deck/registration/agent-row.js' },
     { id: 'workflow-delivery-inventory', name: 'dsh-workflow/delivery-inventory' },
     { id: 'workflow-browser-harness', name: 'dsh-workflow-browser-harness' },
+    { id: 'workflow-browser-harness-skills', name: '@deepseek-ai/dsh-skill-filesystem',
+      config: { customSkillDirs: ['/previous/Station/browser-harness-plugin/skills'] } },
     { id: 'workflow-desktop-bridge', name: '/previous/Station/desktop-bridge.mjs' },
   ]
   const before = structuredClone(entries)
@@ -48,6 +50,9 @@ test('Station retires the Matt panel and tools while retaining the independent C
   assert.equal(added.find(row => row.id === 'mattpocock-skills-zh').config.includeDefaultRoots, false)
   assert.deepEqual(entries, before)
   assert.ok(!added.some(row => ['workflow-agent-monitor', 'workflow-project-coordination'].includes(row.id)))
+  const personal = { id: 'private-browser-skills', name: '@deepseek-ai/dsh-skill-filesystem',
+    config: { customSkillDirs: ['/personal/browser-skills'] } }
+  assert.ok(!composeDshLaunch([personal], { projectRoot }).some(row => row.id === personal.id))
 })
 
 test('launch disables saved JEV and monitoring without changing their settings or an existing MCP server', () => {

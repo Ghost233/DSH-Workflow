@@ -15,7 +15,7 @@ description: 在 DSH-Workflow 源码仓库检查或更新 submodule、DSH 运行
 
 - `.gitmodules` 中的全部子模块，以及 `dsh-runtime.json` 指定的 DSH 运行时。
 - `project-plugins.json` 中的全部插件，包括未标记 `startup: true` 的条目。
-- Matt 派生版、Browser Harness 和 `vendor/*.upstream.json` 记录的技能来源。自研插件按本仓源码验证，不套用同名第三方包。
+- `vendor/*.upstream.json` 记录的技能来源。自研插件按本仓源码验证，不套用同名第三方包。
 
 沿用每个组件已采用的渠道：发布标签选择同渠道最新发布；跟踪主线的基准选择已核实的分支提交。用户明确指定渠道时按其要求执行。npm `latest` 可能比已采用的 `next` 更旧；同一版本号也可能有不同提交，均须核对。Git 来源继续查询原仓库，不切换到同名 npm 包。
 
@@ -25,11 +25,9 @@ description: 在 DSH-Workflow 源码仓库检查或更新 submodule、DSH 运行
 
 更新子模块前确认其源码干净，只切换到已核实的精确提交，保持上游源码原样。DSH 更新时同步 `dsh-runtime.json`、启动器依赖及生成锁文件。Web-only 运行时使用 npm 固定版本、registry 和完整性摘要；上游源码提交不可用时不伪造提交。重建受影响的 Web Host 与生产包，并核验接口和版本约束。
 
-Matt 更新必须先读 [派生版说明](../../../matt-skills-panel-plugin/README.md)，使用其 `upstream:check -- --prepare` 生成三方提案。审查冲突、自动合并和上游删除，保留项目定制。通过构建与派生版测试后，更新基准、本地版本和包管理器生成的锁文件。其他第三方插件不改源码。
-
 插件更新保持原安装来源、清单范围和启动选择。更新 `project-plugins.lock.json` 时，遵循[本机容器工作流](../../../AGENTS.md#本机容器工作流)，在 OrbStack 的 Docker 容器内执行真实 `npm view 包名@精确版本或标签 --json --registry 清单指定源`，Git 包元数据取固定官方提交。由脚本生成锁文件并核对清单 SHA-256；查询或生成失败时保留原锁文件。只在隔离的准备目录下载和装配依赖，运行中的 profile 不执行在线换包。
 
-Browser Harness 推进后核对所选技能文件、版本、提交和 SHA-256，保持既有交付范围。验证工具需调用 `browser-harness` 时，按当前 Agent 的唯一 `BU_NAME` 规则复用命名空间。
+更新随包技能时，从目标提交导入来源记录指定的目录，核对版本、Git tree 和许可证。
 
 完成标准：清单、锁文件、子模块提交和受影响产物一致；所有固定输入可从已记录来源复核。
 
@@ -40,7 +38,7 @@ Browser Harness 推进后核对所选技能文件、版本、提交和 SHA-256�
 读取当前测试入口和 CI 配置，按最终候选输入完成本地检查：
 
 - 准备锁文件对应的隔离测试依赖，并设置 `DSH_TEST_RUNTIME_ROOT` 和 `DSH_SERVICE_TEST_RESOURCES`，运行完整 `node scripts/run-project-tests.mjs`；保留清单、包体、启动结果、profile 迁移和真实 Host 的业务断言。
-- Matt 有变化时，完成其构建、全部派生版测试及维护中的类型检查配置。DSH 或 Web Host 接入有变化时，额外验证精确上游输入、篡改拒绝和重复装配。
+- DSH 或 Web Host 接入有变化时，额外验证精确上游输入、篡改拒绝和重复装配。
 - 构建隔离候选 App，重新验证所有 `startup: true` 插件的本体、生产依赖、来源和文件摘要。使用候选资源完成完整 Flutter 验收；随包 Node 使用无空格路径，Web 测试使用临时端口。
 - 在独立 HOME/profile 中验证全新安装、旧 profile 升级、应用目录迁移和用户主动停用。真实 Host 须报告实际版本、解析路径和加载状态；界面插件须实际打开对应入口。保留用户停用选择，不启动模型任务或操作现有服务来凑验收。
 

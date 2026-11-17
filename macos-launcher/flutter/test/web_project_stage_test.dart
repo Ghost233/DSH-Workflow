@@ -64,6 +64,7 @@ void main() {
         'workflow-project-coordination',
         'workflow-delivery-inventory',
         'workflow-browser-harness',
+        'workflow-browser-harness-skills',
       ]) {
         expect(inserted.where((row) => row['id'] == id), isEmpty);
       }
@@ -77,11 +78,12 @@ void main() {
         'previous-module',
         'project-coordination-plugin',
         'agent-observation-plugin',
+        'browser-harness-plugin',
+        'matt-skills-panel-plugin',
       ]) {
         expect(await Directory('$stagedWorkflow/$path').exists(), false);
       }
       for (final path in [
-        'browser-harness-plugin/index.mjs',
         'macos-launcher/runtime/desktop-bridge.mjs',
         'macos-launcher/runtime/web-launch.mjs',
         'macos-launcher/runtime/run-dsh.mjs',

@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded
 date: 2026-10-23
 ---
 
@@ -18,3 +18,7 @@ Browser Harness 管理插件由 DSH Workflow 内部维护。官方上游通过 G
 ## 2026-11-16：移除运行时管理插件
 
 Station 继续打包固定快照中的 Browser Harness 技能和配套文档。启动器插件页停止查询 CLI 的安装和版本状态。打包时仍检查上游差异，采用更新需要单独确认。
+
+## 2026-11-17：结束随包交付
+
+Station 移除 Browser Harness 官方技能快照、项目技能入口和构建时版本检查。启动时停用旧版 Station 写入的专用技能提供器，用户独立配置的技能提供器继续按原配置加载。

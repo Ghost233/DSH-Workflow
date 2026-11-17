@@ -11,7 +11,7 @@ export function composeDshLaunch(entries, { projectRoot, billionContextDelivered
   const patches = []
   const retiredIds = new Set(['workflow-jev-center', 'workflow-agent-monitor', 'workflow-project-coordination',
     'preset-deepseekbot', 'matt-skills-board', 'matt-panel-tools', 'workflow-delivery-inventory',
-    'workflow-desktop-bridge', 'workflow-browser-harness'])
+    'workflow-desktop-bridge', 'workflow-browser-harness', 'workflow-browser-harness-skills'])
   const retired = row => retiredIds.has(row.id) || /^(?:@botharness\/|(?:deepseekbot|dsh-workflow(?:-matt-panel|-browser-harness)?)(?:\/|$))/.test(row.name ?? '')
   const disabledModule = name => blocksPackageMutation(name, profilePlugins)
     || isUnavailablePluginModule(name, { billionContextDelivered })
@@ -61,9 +61,6 @@ export function composeDshLaunch(entries, { projectRoot, billionContextDelivered
   }
   const mcpEntries = JSON.parse(readFileSync(join(root, 'project-mcp.json'), 'utf8'))
   const definitions = [
-    { id: 'workflow-browser-harness-skills', name: '@deepseek-ai/dsh-skill-filesystem', config: {
-      providerName: 'workflow-browser-harness', includeDefaultRoots: false, customSkillDirs: [join(root, 'browser-harness-plugin/skills')],
-    } },
     { id: 'mattpocock-skills-zh', name: '@deepseek-ai/dsh-skill-filesystem', config: { providerName: 'mattpocock-skills-zh', includeDefaultRoots: false, customSkillDirs: [join(root, 'vendor/mattpocock-skills-zh/skills')] } },
     { id: 'dsh-workflow-gh-account', name: '@deepseek-ai/dsh-skill-filesystem', config: { providerName: 'dsh-workflow-gh-account', includeDefaultRoots: false, customSkillDirs: [join(root, 'skills')] } },
     { id: 'dsh-workflow-skills', name: '@deepseek-ai/dsh-skill-filesystem', config: { providerName: 'dsh-workflow-skills', includeDefaultRoots: false, customSkillDirs: [join(root, 'vendor/dsh-skills/skills')] } },
