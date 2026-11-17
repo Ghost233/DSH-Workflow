@@ -47,12 +47,28 @@ test('Station retires its Matt panel and Browser Harness entries while retaining
   assert.deepEqual(patches.find(row => row.id === 'market').config, { maxSnapshots: 3, profile: 'desktop' })
   for (const { id } of entries.slice(1)) assert.equal(patches.find(row => row.id === id).disabled, true)
   assert.ok(!added.some(row => entries.some(entry => entry.id === row.id)))
-  assert.equal(added.find(row => row.id === 'mattpocock-skills-zh').config.includeDefaultRoots, false)
+  assert.equal(added.some(row => ['mattpocock-skills-zh', 'dsh-workflow-skills'].includes(row.id)), false)
+  assert.equal(added.find(row => row.id === 'dsh-workflow-gh-account').config.includeDefaultRoots, false)
   assert.deepEqual(entries, before)
   assert.ok(!added.some(row => ['workflow-agent-monitor', 'workflow-project-coordination'].includes(row.id)))
   const personal = { id: 'private-browser-skills', name: '@deepseek-ai/dsh-skill-filesystem',
     config: { customSkillDirs: ['/personal/browser-skills'] } }
   assert.ok(!composeDshLaunch([personal], { projectRoot }).some(row => row.id === personal.id))
+})
+
+test('independent skills retire the old providers in groups and presets without changing the Bundle', () => {
+  const legacy = ['mattpocock-skills-zh', 'dsh-workflow-skills'].map(id => ({
+    id, name: '@deepseek-ai/dsh-skill-filesystem', config: { customSkillDirs: ['/previous/skills'] },
+  }))
+  const bundle = { id: 'ghost-matt-skills', name: '/profile/dsh-ghost-matt-skills/index.mjs', disabled: true }
+  const entries = [{ id: 'legacy-group', group: true, config: legacy }, bundle,
+    { id: 'preset', name: '@deepseek-ai/dsh-agent-preset', config: { plugins: legacy } }]
+  const before = structuredClone(entries)
+  const patches = composeDshLaunch(entries, { projectRoot, profilePlugins: true })
+  for (const { id } of legacy) assert.equal(patches.find(row => row.id === id)?.disabled, true)
+  assert.ok(patches.find(row => row.id === 'preset').config.plugins.every(row => row.disabled === true))
+  assert.equal(patches.some(row => row.id === bundle.id), false)
+  assert.deepEqual(entries, before)
 })
 
 test('launch disables saved JEV and monitoring without changing their settings or an existing MCP server', () => {

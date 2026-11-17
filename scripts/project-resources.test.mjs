@@ -20,7 +20,7 @@ test('the launch composition loads the project skills root through a dedicated s
   assert.deepEqual(provider.config.customSkillDirs, [join(projectRoot, 'skills')])
 })
 
-test('the project layer ships the GitHub account and Chinese Matt skills without Matt Deck or Browser Harness', async t => {
+test('the project layer ships the account skill and leaves independently released skills out of the App', async t => {
   const root = await mkdtemp(join(tmpdir(), 'rga-t03-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const workflow = join(root, 'workflow')
@@ -30,7 +30,7 @@ test('the project layer ships the GitHub account and Chinese Matt skills without
   assert.match(staged.members['skills/configure-gh-account/SKILL.md']?.sha256 ?? '', /^[0-9a-f]{64}$/)
   assert.ok(Object.keys(staged.members).some(name => name.startsWith('skills/')),
     'the project layer must declare the skills root as a member')
-  assert.match(staged.members['vendor/mattpocock-skills-zh/.codex-plugin/plugin.json']?.sha256 ?? '', /^[0-9a-f]{64}$/)
+  assert.ok(!Object.keys(staged.members).some(name => name.startsWith('vendor/mattpocock-skills-zh') || name.startsWith('vendor/dsh-skills')))
   assert.ok(!Object.keys(staged.members).some(name => name.startsWith('matt-skills-panel-plugin/')))
   assert.ok(!Object.keys(staged.members).some(name => name.startsWith('agent-observation-plugin/')))
   assert.ok(!Object.keys(staged.members).some(name => name.startsWith('browser-harness-plugin/')))

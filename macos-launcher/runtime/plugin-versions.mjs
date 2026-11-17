@@ -178,10 +178,6 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
     rows.push({ source: 'App 内置桥接', name: bridge.name, current: bridge.version,
       expected: bridge.version, latest: null, status: 'bundled', note: '随 App 构建更新' })
   }
-  const mattZh = await jsonFile(join(workflow, 'vendor/mattpocock-skills-zh/.codex-plugin/plugin.json'))
-  if (mattZh?.name === 'mattpocock-skills-zh') rows.push({ source: 'App 内置中文技能', name: mattZh.name,
-    current: mattZh.version, expected: mattZh.version, latest: null, status: 'bundled', supportedDsh: '未声明', latestSupportedDsh: '未声明',
-    note: '启动时由 DSH 技能文件提供器加载；随 App 构建更新' })
   for (const row of rows) {
     row.updatable = false
     row.latest = null

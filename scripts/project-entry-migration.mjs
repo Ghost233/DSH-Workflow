@@ -3,19 +3,15 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-/** Migrate owned declarations and their name guards; `name` is not a rename patch. */
+/** Retire former bundled skill providers and relocate the Station account skill. */
 export async function migrateProjectEntryNames({ profile, anchor, projectRoot = fileURLToPath(new URL('../', import.meta.url)), previousProjectRoot }) {
   const require = createRequire(anchor), boot = require('@deepseek-ai/dsh-app-boot')
   const { withFileLock, writeFileAtomic } = require('@deepseek-ai/dsh-atomic-write')
   const base = boot.resolveBundleDir('dsh', '@deepseek-ai/dsh-base', anchor, profile.dir)
   const yaml = createRequire(createRequire(join(base, 'package.json')).resolve('@deepseek-ai/dsh-config-editor/package.json'))('yaml')
-  const names = new Map([
-    ['mattpocock-skills-zh', '@deepseek-ai/dsh-skill-filesystem'],
-  ])
+  const retiredSkillIds = new Set(['mattpocock-skills-zh', 'dsh-workflow-skills'])
   const packagedSkillDirectories = new Map([
-    ['mattpocock-skills-zh', 'vendor/mattpocock-skills-zh/skills'],
     ['dsh-workflow-gh-account', 'skills'],
-    ['dsh-workflow-skills', 'vendor/dsh-skills/skills'],
   ])
   return withFileLock(join(profile.dir, 'package.json'), async () => {
     let changed = false
@@ -31,10 +27,9 @@ export async function migrateProjectEntryNames({ profile, anchor, projectRoot = 
         for (const row of sequence.items) {
           if (!yaml.isMap(row)) continue
           const id = row.get('id')
-          const name = names.get(id)
-          if (name && row.has('name') && row.get('name') !== name) {
-            if (row.get('group') === true) throw new Error(`Project entry conflicts with group: ${row.get('id')}`)
-            row.set('name', name); edited = true
+          if (retiredSkillIds.has(id)) {
+            if (row.get('group') === true) throw new Error(`Project entry conflicts with group: ${id}`)
+            if (row.get('disabled') !== true) { row.set('disabled', true); edited = true }
           }
           const skillDirectory = packagedSkillDirectories.get(id)
           if (skillDirectory && previousProjectRoot && previousProjectRoot !== projectRoot) {

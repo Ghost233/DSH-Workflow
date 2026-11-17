@@ -15,9 +15,8 @@ const candidateFiles = ['dsh-runtime.json', 'project-plugins.json', 'project-plu
 
 async function sources(root) {
   const files = ['package.json', 'dsh-runtime.json', 'default-startup-plugins.json', 'project-plugins.json', 'project-plugins.lock.json', 'project-mcp.json',
-    'vendor/mattpocock-skills-zh.upstream.json', 'vendor/dsh-skills.upstream.json',
     ...scripts.map(name => `scripts/${name}`)]
-  files.push('vendor/mattpocock-skills-zh', 'vendor/dsh-skills', 'skills')
+  files.push('skills')
   files.push(...(await readdir(join(root, 'macos-launcher/runtime'))).filter(name => name.endsWith('.mjs') && !name.endsWith('.test.mjs')).map(name => `macos-launcher/runtime/${name}`))
   return files
 }

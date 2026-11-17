@@ -104,6 +104,28 @@ test('verified snapshots distinguish Git pins from npm registry sources without 
   assert.deepEqual(await readFile(lockPath), invalidBefore)
 })
 
+test('an independently installed GitHub skill Bundle appears once with its actual version', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-independent-skills-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const resources = join(root, 'resources'), home = join(root, 'home')
+  const profile = join(home, 'profiles/desktop'), name = 'dsh-ghost-matt-skills'
+  await mkdir(resources, { recursive: true })
+  await mkdir(join(profile, 'node_modules', name), { recursive: true })
+  await writeFile(join(profile, 'package.json'), JSON.stringify({ dependencies: {
+    [name]: 'https://github.com/Ghost233/ghost-agent-market/releases/download/dsh-ghost-matt-skills-v0.2.0/dsh-ghost-matt-skills-0.2.0.tgz',
+  }, dsh: { profile: { bundles: [name] } } }))
+  await writeFile(join(profile, 'node_modules', name, 'package.json'), JSON.stringify({
+    name, version: '0.2.0', dsh: { bundle: { patch: 'cordis.patch.yml' } },
+  }))
+  const report = await checkPluginVersions({ resourcesRoot: resources, home, profileName: 'desktop',
+    fetchLatest: () => assert.fail('GitHub Bundles are not npm registry packages') })
+  const rows = report.rows.filter(row => row.name === name)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].current, '0.2.0')
+  assert.equal(rows[0].expected, null)
+  assert.equal(rows[0].source, 'DSH 当前配置')
+})
+
 test('version report compares SemVer without treating a prerelease as newer than stable', () => {
   assert.equal(compareVersions('1.2.3-rc.2', '1.2.3'), -1)
   assert.equal(compareVersions('1.2.3', '1.2.3-rc.2'), 1)
@@ -262,9 +284,7 @@ test('one check covers profile, project lock and bundled plugins without writing
   assert.equal(byName['dsh-workflow-browser-harness'], undefined)
   assert.equal(byName['dsh-workflow-matt-panel'], undefined)
   assert.equal(queried.includes('dsh-workflow-matt-panel'), false)
-  assert.equal(byName['mattpocock-skills-zh'].status, 'bundled')
-  assert.equal(byName['mattpocock-skills-zh'].current, '0.1.4')
-  assert.equal(byName['mattpocock-skills-zh'].updatable, false)
+  assert.equal(byName['mattpocock-skills-zh'], undefined, 'old App vendor copies are not installed profile plugins')
   assert.equal(byName['external-plugin'].updatable, false)
   assert.equal(byName['disabled-plugin'].updatable, false, 'a dependency outside the enabled bundles is not updatable')
   assert.equal(byName['bundle-only'].updatable, false, 'bundle-only plugins are not npm-managed dependencies')
