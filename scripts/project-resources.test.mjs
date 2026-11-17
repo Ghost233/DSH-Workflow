@@ -20,20 +20,17 @@ test('the launch composition loads the project skills root through a dedicated s
   assert.deepEqual(provider.config.customSkillDirs, [join(projectRoot, 'skills')])
 })
 
-test('the project layer ships the GitHub account, Chinese Matt and DSH workflow skills without Matt Deck or Browser Harness', async t => {
+test('the project layer ships the GitHub account and Chinese Matt skills without Matt Deck or Browser Harness', async t => {
   const root = await mkdtemp(join(tmpdir(), 'rga-t03-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const workflow = join(root, 'workflow')
   await copyProjectIntegration(projectRoot, workflow)
   await access(join(workflow, 'skills/configure-gh-account/SKILL.md'))
-  const refinePath = 'vendor/dsh-skills/skills/refine-issue/SKILL.md'
-  assert.equal(await readFile(join(workflow, refinePath), 'utf8'), await readFile(join(projectRoot, refinePath), 'utf8'))
   const staged = JSON.parse(await readFile(join(dirname(workflow), 'project-layer.json'), 'utf8'))
   assert.match(staged.members['skills/configure-gh-account/SKILL.md']?.sha256 ?? '', /^[0-9a-f]{64}$/)
   assert.ok(Object.keys(staged.members).some(name => name.startsWith('skills/')),
     'the project layer must declare the skills root as a member')
   assert.match(staged.members['vendor/mattpocock-skills-zh/.codex-plugin/plugin.json']?.sha256 ?? '', /^[0-9a-f]{64}$/)
-  assert.match(staged.members[refinePath]?.sha256 ?? '', /^[0-9a-f]{64}$/)
   assert.ok(!Object.keys(staged.members).some(name => name.startsWith('matt-skills-panel-plugin/')))
   assert.ok(!Object.keys(staged.members).some(name => name.startsWith('agent-observation-plugin/')))
   assert.ok(!Object.keys(staged.members).some(name => name.startsWith('browser-harness-plugin/')))

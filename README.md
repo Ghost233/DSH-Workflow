@@ -18,7 +18,7 @@ Station 首次启动时把[默认名单](default-startup-plugins.json)复制到 
 
 打开 Station 的“插件”页，可查看当前安装版本和 npm 的 `latest` 版本。点击“检查插件版本”可刷新，查询失败时仍显示当前版本。可通过 DSH 的包管理器逐项更新，也可点击“一键更新”。
 
-插件加载失败时，启动日志会记录实际结果。中文技能通过项目装配层加载。`refine-issue`（工单粒度检查）与 `spec-delivery` 随 Station 安装包交付，更新 Station 时一并更新；`refine-issue` 可衔接随包的 Matt `to-tickets`。Ghost Agent Sentinel 由 DSH profile 从 GitHub 安装和管理。
+插件加载失败时，启动日志会记录实际结果。中文技能通过项目装配层加载。Ghost Agent Sentinel 由 DSH profile 从 GitHub 安装和管理。
 
 项目 MCP 配置维护在 [project-mcp.json](project-mcp.json)，由 Web 启动层装配，并随 macOS 应用打包。默认连接 CodeGraph：需先在运行 DSH 的机器上安装 `codegraph` 并确保其在 PATH 中；启动层不安装服务或创建索引。用户 profile 中已有相同 `serverName` 的配置（包括禁用项）优先保留。
 
