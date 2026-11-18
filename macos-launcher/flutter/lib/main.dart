@@ -513,7 +513,7 @@ class _LauncherPageState extends State<LauncherPage> {
       ),
       const SizedBox(height: 12),
       Text(model.updatingPlugins ? '正在更新插件…' : model.pluginMessage),
-      const Text('更新 npm 插件会重启正在运行的 DSH。插件的启停和卸载在 DSH 内操作。'),
+      const Text('更新插件会重启正在运行的 DSH。插件的启停和卸载在 DSH 内操作。'),
       const SizedBox(height: 12),
       Expanded(
         child: SingleChildScrollView(

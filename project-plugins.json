@@ -4,28 +4,28 @@
   "plugins": [
     {
       "package": "dshmarket",
-      "version": "1.73.19",
+      "version": "1.73.20",
       "entryId": "dshmarket",
       "repository": "https://github.com/dsh-market/dsh-market",
       "startup": true
     },
     {
       "package": "dsh-context",
-      "version": "0.84.1",
+      "version": "0.85.1",
       "entryId": "dsh-context",
       "repository": "https://github.com/bowenliang123/dsh-context",
       "startup": true
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.64",
+      "version": "1.9.72",
       "entryId": "cost-meter",
       "repository": "https://github.com/Han-1413141/dsh-cost-meter",
       "startup": true
     },
     {
       "package": "@nagi-ovo/dsh-visualize",
-      "version": "0.1.9",
+      "version": "0.1.10",
       "entryId": "dsh-visualize",
       "repository": "https://github.com/Nagi-ovo/dsh-visualize",
       "startup": true
@@ -53,7 +53,7 @@
     },
     {
       "package": "@michengai/dsh-archive-manager",
-      "version": "1.3.5",
+      "version": "1.3.6",
       "entryId": "ui-workspace-archive-manager",
       "repository": "https://github.com/MichengAI/dsh-archive-manager",
       "startup": true
@@ -67,11 +67,11 @@
     },
     {
       "package": "dsh-live-compact",
-      "version": "1.1.6",
+      "version": "1.1.12",
       "entryId": "compaction-spine",
       "repository": "https://github.com/MerkyorLynn/dsh-live-compact",
       "source": "git",
-      "commit": "8f3766ecc46db540adb804b58e840a5e7818669b"
+      "commit": "5593c85eb830d86a96b672dc2df57a9a976efea3"
     }
   ]
 }

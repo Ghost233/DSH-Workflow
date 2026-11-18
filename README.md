@@ -16,9 +16,11 @@ Station 首次启动时把[默认名单](default-startup-plugins.json)复制到 
 
 应用包只携带全局插件的默认名单。已有本地名单会保留。在 DSH 中启用、停用或卸载全局插件。
 
-打开 Station 的“插件”页，可查看当前安装版本和 npm 的 `latest` 版本。点击“检查插件版本”可刷新，查询失败时仍显示当前版本。可通过 DSH 的包管理器逐项更新，也可点击“一键更新”。
+打开 Station 的“插件”页，可查看当前安装版本和最新版本。npm 插件查询 `latest`，已登记的 GitHub Bundle 查询各自发布标签下的最新稳定版。点击“检查插件版本”可刷新，查询失败时仍显示当前版本。可逐项更新，也可点击“一键更新”。
 
-插件加载失败时，启动日志会记录实际结果。[Ghost Matt 技能包](https://github.com/Ghost233/ghost-agent-market/releases/tag/dsh-ghost-matt-skills-v0.2.0) 作为 `dsh-ghost-matt-skills` 独立发布，在 DSH 的「插件 → 添加插件」中安装 GitHub Release 包，包含 27 个 Matt 中文技能、`refine-issue` 和 `spec-delivery`。技能包在 DSH profile 中管理，不随 Station 安装包交付或固定版本；旧的 Station 内置技能来源会停用，避免遮蔽独立包。GitHub Release 包通过 DSH 插件页面单独更新，不纳入 Station 的 npm 一键更新。Ghost Agent Sentinel 同样由 DSH profile 从 GitHub 安装和管理。
+`dsh-ghost-home-repo` 已登记为可选插件。初次安装在 DSH 的「插件 → 添加插件」中使用该插件的 GitHub Release 安装包。已安装的官方 Release Bundle 可从 Station 更新，更新保留 profile 中已有的启停选择。
+
+插件加载失败时，启动日志会记录实际结果。[Ghost Matt 技能包](https://github.com/Ghost233/ghost-agent-market/releases/tag/dsh-ghost-matt-skills-v0.2.0) 作为 `dsh-ghost-matt-skills` 独立发布，在 DSH 的「插件 → 添加插件」中安装 GitHub Release 包，包含 27 个 Matt 中文技能、`refine-issue` 和 `spec-delivery`。技能包在 DSH profile 中管理，不随 Station 安装包交付或固定版本；旧的 Station 内置技能来源会停用，避免遮蔽独立包。Ghost Matt 技能包和 Ghost Agent Sentinel 由 DSH profile 从 GitHub 安装和管理。
 
 项目 MCP 配置维护在 [project-mcp.json](project-mcp.json)，由 Web 启动层装配，并随 macOS 应用打包。默认连接 CodeGraph：需先在运行 DSH 的机器上安装 `codegraph` 并确保其在 PATH 中；启动层不安装服务或创建索引。用户 profile 中已有相同 `serverName` 的配置（包括禁用项）优先保留。
 

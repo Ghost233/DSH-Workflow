@@ -39,4 +39,7 @@ test('the project layer ships the account skill and leaves independently release
   assert.equal(bridge.name, 'dsh-station-bridge')
   assert.equal(bridge.exports['.'], './macos-launcher/runtime/station-bridge.mjs')
   assert.ok(staged.members['macos-launcher/runtime/station-bridge.mjs'])
+  const githubCatalog = JSON.parse(await readFile(join(workflow, 'profile-github-plugins.json'), 'utf8'))
+  assert.ok(githubCatalog.some(item => item.package === 'dsh-ghost-home-repo'))
+  assert.ok(staged.members['profile-github-plugins.json']?.sha256)
 })

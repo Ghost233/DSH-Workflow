@@ -113,7 +113,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   })
   assert.equal(effective.find(row => row.id === 'matt-panel-tools').disabled, true)
   assert.equal(effective.find(row => row.id === 'workflow-browser-harness-skills').disabled, true)
-  assert.equal(effective.find(row => row.id === 'mattpocock-skills-zh').name, '@deepseek-ai/dsh-skill-filesystem')
+  assert.equal(effective.find(row => row.id === 'mattpocock-skills-zh')?.disabled, true, 'the old Matt skill provider stays disabled')
   assert.deepEqual(effective.find(row => row.id === 'user-kept-plugin'), { id: 'user-kept-plugin', name: 'user-choice', disabled: true, config: { keep: true } })
   const startHost = () => {
     starting = (async () => {

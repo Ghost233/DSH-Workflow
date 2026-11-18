@@ -172,7 +172,7 @@ void main() {
       expect(find.text('已安装'), findsOneWidget);
       expect(find.text('DSH 未找到安装'), findsOneWidget);
       expect(find.text('编辑启动检查名单'), findsOneWidget);
-      expect(find.textContaining('更新 npm 插件会重启正在运行的 DSH'), findsOneWidget);
+      expect(find.textContaining('更新插件会重启正在运行的 DSH'), findsOneWidget);
       expect(
         tester
             .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '一键更新'))

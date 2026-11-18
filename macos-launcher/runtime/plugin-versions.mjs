@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { readPluginConfiguration, readStartupChecklist } from './plugin-configuration.mjs'
 import { pluginDependencySpec, isProfilePlugin } from './delivery-manifest.mjs'
+import { fetchGitHubPluginLatest, isGitHubReleaseDependency, readGitHubPluginCatalog } from './github-release-plugins.mjs'
 const packageName = value => typeof value === 'string' && /^(?:@[a-z0-9_][a-z0-9._-]*\/)?[a-z0-9_][a-z0-9._-]*$/i.test(value)
 export const exactVersion = value => typeof value === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value)
 export const isRegistryDependency = (name, spec) => packageName(name) && typeof spec === 'string' && !/[:/#]/.test(spec)
@@ -86,9 +87,9 @@ async function fetchNpmLatest(name, registry) {
   return manifest.version
 }
 
-/** Read installed versions and query npm latest for profile-managed packages. */
+/** Read installed versions and query the configured release channel. */
 export async function checkPluginVersions({ resourcesRoot, dataRoot, home = process.env.DSH_HOME || join(homedir(), '.dsh'),
-  profileName, fetchLatest = fetchNpmLatest } = {}) {
+  profileName, fetchLatest = fetchNpmLatest, fetchGitHubLatest = fetchGitHubPluginLatest } = {}) {
   const resources = resolve(resourcesRoot)
   const workflow = join(resources, 'workflow')
   const rows = []
@@ -138,6 +139,8 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
       note: bundled ? '随打包的 DSH 更新，不能单独升级' : 'profile Bundle；未在 dependencies 声明' })
   }
 
+  const githubCatalog = configuration?.npmStartup === 'profile' ? await readGitHubPluginCatalog(resources) : []
+  const githubNames = new Set(githubCatalog.map(item => item.package))
   for (const name of required) {
     const actual = rows.find(row => row.source.startsWith(profileSource) && row.name === name)
     if (actual) continue
@@ -222,7 +225,7 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
       row.status = 'untracked'; row.note = '实际安装包未列入仓库固定清单；不查询 npm latest，不在运行端替换'
     }
   }
-  await Promise.all(npmRows.map(async row => {
+  await Promise.all(npmRows.filter(row => !githubNames.has(row.name)).map(async row => {
     try {
       row.latest = await fetchLatest(row.name, configuration.registry)
       const spec = profileManifest?.dependencies?.[row.name]
@@ -235,8 +238,31 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
     }
     catch { row.latestStatus = 'unavailable' }
   }))
+  if (githubCatalog.length) {
+    await Promise.all(githubCatalog.map(async item => {
+      const existing = rows.find(row => row.source.startsWith(profileSource) && row.name === item.package)
+      const row = existing ?? { name: item.package, current: null, expected: null, latest: null, status: 'unknown', updatable: false }
+      if (!existing) rows.push(row)
+      row.source = 'GitHub Release · ' + item.repository
+      const tracked = installedBundles.has(item.package)
+        && isGitHubReleaseDependency(item, profileManifest?.dependencies?.[item.package], row.current)
+      if (row.status !== 'error') {
+        row.status = tracked ? 'installed' : row.current ? 'local' : 'unknown'
+        row.note = tracked ? '使用 DSH profile 已安装的 GitHub Release Bundle'
+          : row.current ? '在 DSH 插件页管理当前安装来源' : '可在 DSH 插件页添加该 GitHub Release Bundle'
+      }
+      try {
+        const release = await fetchGitHubLatest(item)
+        row.latest = release.version
+        if (tracked && compareVersions(release.version, row.current) === 1) {
+          row.updatable = true
+          row.note = '可在 Station 更新到该插件最新的稳定发布'
+        }
+      } catch { row.latestStatus = 'unavailable' }
+    }))
+  }
   return { checkedAt: new Date().toISOString(), rows, actualScope: 'installed-files', policy: configuration?.npmStartup === 'profile'
-    ? 'npm 插件在 DSH profile 管理；最新版本取自 npm latest。本地盘点不代表已经在 Host 加载。'
+    ? '插件通过 DSH profile 管理；最新版本来自 npm latest 或指定插件的 GitHub 稳定发布。本地盘点不代表已经在 Host 加载。'
     : '随本仓库 DMG 统一更新；本地盘点不代表已经在 Host 加载' }
 }
 

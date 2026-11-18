@@ -5,6 +5,7 @@ import { isProfilePlugin } from './delivery-manifest.mjs'
 import { readPluginConfiguration } from './plugin-configuration.mjs'
 import { compareVersions, exactVersion, isRegistryDependency } from './plugin-versions.mjs'
 import { redact } from './service-control.mjs'
+import { fetchGitHubPluginLatest, isGitHubReleaseDependency, readGitHubPluginCatalog } from './github-release-plugins.mjs'
 
 export function validatePluginUpdates(targets) {
   if (!Array.isArray(targets) || !targets.length || targets.length > 100
@@ -14,7 +15,7 @@ export function validatePluginUpdates(targets) {
   }
 }
 
-export async function updateProfilePlugins({ resources, home, targets }) {
+export async function updateProfilePlugins({ resources, home, targets, fetchGitHubLatest = fetchGitHubPluginLatest }) {
   validatePluginUpdates(targets)
   const config = await readPluginConfiguration(resources)
   if (config?.npmStartup !== 'profile') throw new Error('当前应用未启用 DSH profile 插件管理')
@@ -24,6 +25,7 @@ export async function updateProfilePlugins({ resources, home, targets }) {
   const { withFileLock } = require('@deepseek-ai/dsh-atomic-write')
   const dir = join(home, 'profiles/desktop')
   const profilePath = join(dir, 'package.json')
+  const github = await readGitHubPluginCatalog(resources)
   return withFileLock(profilePath, async () => {
     const results = []
     for (const { name, version } of targets) {
@@ -32,16 +34,27 @@ export async function updateProfilePlugins({ resources, home, targets }) {
         const pinned = config.plugins.find(item => item.package === name)
         const packagePath = join(dir, 'node_modules', name, 'package.json')
         const installed = JSON.parse(await readFile(packagePath, 'utf8'))
+        const declared = profile.dependencies?.[name]
+        const releaseSource = github.find(item => item.package === name)
+        const githubDependency = releaseSource && isGitHubReleaseDependency(releaseSource, declared, installed.version)
         if (pinned && !isProfilePlugin(config, pinned) || name.startsWith('@deepseek-ai/dsh-')
-          || !isRegistryDependency(name, profile.dependencies?.[name]) || installed.name !== name || !installed.dsh?.bundle) {
-          throw new Error('仅可更新当前 DSH profile 里从 npm 安装的插件')
+          || !(isRegistryDependency(name, declared) || githubDependency) || installed.name !== name || !installed.dsh?.bundle) {
+          throw new Error('仅可更新当前 DSH profile 里的 npm 插件或已登记的 GitHub Release Bundle')
         }
         if (compareVersions(version, installed.version) !== 1) {
           results.push({ name, version: installed.version, status: 'skipped', message: '已安装相同或更新的版本' })
           continue
         }
+        let spec = name + '@' + version
+        if (githubDependency) {
+          const latest = await fetchGitHubLatest(releaseSource)
+          if (latest.version !== version || !isGitHubReleaseDependency(releaseSource, latest.url, version)) {
+            throw new Error('GitHub 最新发布已变化，请刷新插件版本后重试')
+          }
+          spec = name + '@' + latest.url
+        }
         const result = await runProfilePnpm({ profile: 'desktop', dir, home, cwd: dir, installAnchor },
-          ['add', `${name}@${version}`, '--save-exact', '--ignore-scripts', `--registry=${config.registry}`], {
+          ['add', spec, '--save-exact', '--ignore-scripts', '--registry=' + config.registry], {
             command: join(resources, 'bin/pnpm'), execution: 'service', env: { CI: 'true', DSH_HOME: home },
             activateNewBundles: false, expected: { name, version }, outputBytes: 4096,
             idleTimeoutMs: 90_000, lookupTimeoutMs: 60_000,

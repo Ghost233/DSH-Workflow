@@ -332,3 +332,54 @@ test('a malformed self-owned plugin remains a failed row without discarding comp
   assert.equal(byName[damaged].supportedDsh, '无法读取')
   assert.deepEqual(await readFile(damagedManifest), original, 'checking does not repair package sources')
 })
+
+test('the optional GitHub Bundle appears once and offers only a newer tracked release', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-github-profile-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const resources = join(root, 'resources'), workflow = join(resources, 'workflow'), home = join(root, 'home')
+  const profile = join(home, 'profiles/desktop'), name = 'dsh-ghost-home-repo'
+  const repository = 'Ghost233/ghost-agent-market'
+  const config = { npmStartup: 'profile', registry: 'https://registry.npmjs.org/', plugins: [] }
+  const manifest = JSON.stringify(config)
+  await mkdir(workflow, { recursive: true })
+  await writeFile(join(workflow, 'project-plugins.json'), manifest)
+  await writeFile(join(workflow, 'dsh-runtime.json'), JSON.stringify({ version: '0.2.2-rc.4' }))
+  await writeFile(join(workflow, 'project-plugins.lock.json'), JSON.stringify({ schema: 1, harnessVersion: '0.2.2-rc.4',
+    manifestSha256: createHash('sha256').update(manifest).digest('hex'), registry: config.registry, plugins: [] }))
+  await writeFile(join(workflow, 'profile-github-plugins.json'), JSON.stringify([{ package: name, repository }]))
+  const options = { resourcesRoot: resources, home,
+    fetchLatest: () => assert.fail('The GitHub bundle is never queried from npm'),
+    fetchGitHubLatest: async item => {
+      assert.equal(item.package, name)
+      return { version: '0.1.2' }
+    },
+  }
+  const plugin = async (extra = {}) => {
+    const { rows } = await checkPluginVersions({ ...options, ...extra })
+    assert.equal(rows.filter(row => row.name === name).length, 1)
+    return rows.find(row => row.name === name)
+  }
+  const missing = await plugin()
+  assert.equal(missing.current, null)
+  assert.equal(missing.latest, '0.1.2')
+  assert.equal(missing.updatable, false)
+
+  await mkdir(join(profile, 'node_modules', name), { recursive: true })
+  const packagePath = join(profile, 'package.json')
+  const install = spec => writeFile(packagePath, JSON.stringify({ dependencies: { [name]: spec }, dsh: { profile: { bundles: [] } } }))
+  await writeFile(join(profile, 'node_modules', name, 'package.json'), JSON.stringify({ name, version: '0.1.1',
+    dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  await install('https://github.com/' + repository + '/releases/download/' + name + '-v0.1.1/' + name + '-0.1.1.tgz')
+  const tracked = await plugin()
+  assert.equal(tracked.current, '0.1.1')
+  assert.equal(tracked.latest, '0.1.2')
+  assert.equal(tracked.updatable, true)
+  assert.deepEqual(JSON.parse(await readFile(packagePath, 'utf8')).dsh.profile.bundles, [])
+
+  const limited = await plugin({ fetchGitHubLatest: () => { throw new Error('rate limited') } })
+  assert.equal(limited.current, '0.1.1')
+  assert.equal(limited.latestStatus, 'unavailable')
+  assert.equal(limited.updatable, false)
+  await install('file:./development-build.tgz')
+  assert.equal((await plugin()).updatable, false)
+})
