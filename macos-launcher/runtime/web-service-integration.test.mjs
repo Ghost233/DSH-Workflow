@@ -36,7 +36,7 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   const shell = join(root, 'fixture-shell')
   await writeFile(shell, '#!/bin/sh\nexec /bin/sh -c "$2"\n'); await chmod(shell, 0o700)
   const updates = []
-  const manager = await serveManager({ dataRoot, resources, home, loginShells: [shell], stopGraceMs: 1000, updatePlugins: async ({ targets }) => {
+  const manager = await serveManager({ dataRoot, resources, home, loginShells: [shell], updatePlugins: async ({ targets }) => {
     await assert.rejects(readFile(join(dataRoot, 'global/.dsh-workflow/desktop/desktop-host.json')), { code: 'ENOENT' })
     updates.push(...targets)
     return targets.map(target => ({ ...target, status: 'failed', message: 'fixture registry failure' }))
@@ -120,6 +120,7 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
     ${hostSource}`)
   const stuck = (await serviceRequest(socket, { type: 'start-service', permissionMode: 'workspace-write' })).service
   const restart = (await serviceRequest(socket, { type: 'inspect-stop', action: 'restart' })).stop
+  const confirmedAt = Date.now()
   const restarted = await serviceRequest(socket, { type: 'restart-service', operationId: restart.operationId,
     confirmed: true, permissionMode: 'workspace-write' })
   assert.equal(restarted.service.ready, true)
@@ -129,6 +130,8 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; throw error } }
   for (let attempt = 0; attempt < 20 && alive(helperPid); attempt++) await delay(25)
   assert.equal(alive(helperPid), false, 'the forced stop also reaps work spawned by the stuck Host')
-  assert.ok(restarted.logs.some(row => row.text.includes('已强制停止')))
+  const forced = restarted.logs.find(row => row.text.includes('已强制停止'))
+  assert.ok(forced)
+  assert.ok(Date.parse(forced.observedAt) - confirmedAt >= 10_000, 'the Host gets the production grace period')
   assert.ok(!restarted.logs.some(row => row.text.includes('DSH 服务故障：')))
 })

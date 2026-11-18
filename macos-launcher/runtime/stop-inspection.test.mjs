@@ -1,55 +1,49 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { EventEmitter } from 'node:events'
 import { apply } from './stop-inspection.mjs'
 
-async function fixture(t) {
-  const ctx = new EventEmitter()
-  const sessionId = 'owned-session', agent = { id: sessionId, status: 'idle', inbox: { nextStep: [], nextTurn: [] } }
-  let records = []
-  const reminder = { id: 'reminder', title: 'Due', status: 'active', scheduledAt: '2026-11-04T00:00:00Z',
-    target: { kind: 'session', sessionId } }
-  ctx.workflowHostInstance = { instanceId: 'host' }
-  ctx.agents = { list: () => [agent], currentInitiator: () => undefined, isOwnedBy: () => false }
-  ctx.jobs = { list: () => [], events: { subscribe: () => () => {} } }
-  ctx.get = name => name === 'schedule' ? {
-    catalog: async () => [reminder], history: async () => ({ records }),
-  } : undefined
-  ctx.effect = fn => { ctx.dispose = fn() }
+async function inspect(t, change) {
+  const agent = { id: 'session', status: 'idle', inbox: { nextStep: [], nextTurn: [] } }
+  const agents = [agent, { ...agent, id: 'other' }]
+  const jobs = [], terminals = [], reminders = []
+  const services = { schedule: { catalog: async () => reminders }, terminalController: { list: () => terminals } }
+  const ctx = {
+    workflowHostInstance: { instanceId: 'host' },
+    agents: { list: () => agents },
+    jobs: { list: id => jobs.filter(job => job.owner === id) },
+    get: name => services[name],
+    effect: fn => { t.after(fn()) },
+  }
+  change({ agent, jobs, terminals, reminders, services })
   const oldConnected = Object.getOwnPropertyDescriptor(process, 'connected')
   const oldSend = process.send
   Object.defineProperty(process, 'connected', { value: true, configurable: true })
-  let receive
-  process.send = (reply, callback) => { receive(reply); callback?.() }
-  apply(ctx)
+  const reply = Promise.withResolvers()
+  process.send = (value, callback) => { reply.resolve(value); callback?.() }
   t.after(() => {
-    ctx.dispose()
     if (oldConnected) Object.defineProperty(process, 'connected', oldConnected)
     else delete process.connected
     if (oldSend === undefined) delete process.send
     else process.send = oldSend
   })
-  let requestId = 0
-  const request = input => new Promise(resolve => {
-    receive = resolve
-    process.emit('message', { type: 'workflow-stop-inspection', requestId: ++requestId, ...input })
-  })
-  return { ctx, agent, reminder, request, setRecords: value => { records = value } }
+  apply(ctx)
+  process.emit('message', { type: 'workflow-stop-inspection', requestId: 1 })
+  return reply.promise
 }
 
-for (const scenario of ['confirmed-delivery', 'different-target', 'new-user-message']) {
-  test(`stop confirmation tracks ${scenario} under the new schedule API`, async t => {
-    const f = await fixture(t)
-    const first = await f.request({ action: 'inspect' })
-    assert.equal(first.work.find(row => row.kind === 'reminder').agentId, 'owned-session')
-    const message = { id: 'delivered', source: { kind: scenario === 'new-user-message' ? 'user' : 'schedule' } }
-    f.reminder.status = 'ended'
-    f.agent.inbox.nextTurn.push(message)
-    f.setRecords([{ messageId: message.id, targetSessionId: scenario === 'different-target' ? 'other-session' : f.agent.id }])
-    f.ctx.emit('agent/inbox/inserted', { agent: f.agent, message })
-    f.ctx.emit('schedule/changed')
-    const result = await f.request({ action: 'commit', accepted: first, confirmed: true,
-      instanceId: 'host', operationId: 'stop', expiresAt: Date.now() + 10_000 })
-    assert.equal(result.committed, scenario === 'confirmed-delivery')
+for (const [scenario, change, hasWork, unknown] of [
+  ['a running agent and an idle agent', ({ agent }) => { agent.status = 'running' }, true, false],
+  ['a queued message', ({ agent }) => { agent.inbox.nextTurn.push({ id: 'message' }) }, true, false],
+  ['an unowned background job', ({ jobs }) => { jobs.push({ status: 'running', label: 'private command' }) }, true, false],
+  ['an open terminal', ({ terminals }) => { terminals.push({ state: 'running' }) }, true, false],
+  ['a scheduled reminder', ({ reminders }) => { reminders.push({ status: 'active' }) }, true, false],
+  ['only finished work', ({ jobs, terminals, reminders }) => {
+    jobs.push({ status: 'exited' }); terminals.push({ state: 'exited' }); reminders.push({ status: 'ended' })
+  }, false, false],
+  ['an unavailable schedule service', ({ services }) => { delete services.schedule }, false, true],
+]) test(`stop inspection with ${scenario}`, async t => {
+  const reply = await inspect(t, change)
+  assert.deepEqual({ ...reply, message: undefined }, {
+    type: 'workflow-stop-inspection', requestId: 1, instanceId: 'host', hasWork, unknown, message: undefined,
   })
-}
+})

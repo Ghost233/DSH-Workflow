@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:launcher_core/launcher_core.dart';
 
 import '../tool/service_admission_fixture.dart';
+import '../tool/service_task_fixture.dart';
 
 class _FinalStopNative extends NativeBridge {
   _FinalStopNative(this.root, this.resources);
@@ -299,11 +300,9 @@ void main() {
           );
         });
         await _expectStopConfirmation(tester, pending!);
-        expect(find.textContaining('S04 due reminder'), findsWidgets);
-        expect(find.textContaining('S04 future reminder'), findsWidgets);
-        expect(find.textContaining('待处理消息'), findsWidgets);
-        expect(find.textContaining('job-pid'), findsWidgets);
-        expect(find.textContaining('s04-terminal'), findsWidgets);
+        expect(find.text('停止会中断未完成的工作。'), findsOneWidget);
+        expect(find.textContaining(sessionId), findsNothing);
+        expect(find.textContaining('job-pid'), findsNothing);
         await tester.runAsync(() async {
           final delivery = File('${root!.path}/reminder-delivery-$dueId.json');
           for (
@@ -356,6 +355,26 @@ void main() {
           expect(heldInputs, greaterThan(0));
           expect(task!.acknowledged(1), false);
           expect(await File('${root!.path}/ws-input-observed').exists(), false);
+          final direct = ServiceTaskFixture(root!.path);
+          try {
+            await direct.connect(receipt);
+            final queued = await direct.rpc('session/prompt', {
+              'request': {
+                'requestId': 'work-added-after-stop-inspection',
+                'sessionId': sessionId,
+                'mode': 'queue',
+                'content': [
+                  {
+                    'type': 'text',
+                    'text': 'This work arrived after inspection.',
+                  },
+                ],
+              },
+            }) as Map;
+            expect(queued['accepted'], true);
+          } finally {
+            direct.close();
+          }
           await tester.tap(find.text('确认停止'));
           await Future<void>.delayed(const Duration(seconds: 1));
         });
@@ -363,7 +382,7 @@ void main() {
         expect(
           find.byType(AlertDialog),
           findsNothing,
-          reason: 'A reminder already included in this decision must not demand a second confirmation solely because its delivery produced queued work.',
+          reason: 'Work that arrives after inspection must not reopen confirmation for the same Host.',
         );
         final stoppedAndRestarted = await tester.runAsync(() async {
           final stopped = await pending!;
@@ -435,7 +454,7 @@ void main() {
         });
         if (stoppedAndRestarted != true) return;
         await _expectStopConfirmation(tester, pending!);
-        expect(find.textContaining('S04 future reminder'), findsWidgets);
+        expect(find.text('停止会中断未完成的工作。'), findsOneWidget);
         await tester.runAsync(() async {
           await tester.tap(find.text('取消'));
         });

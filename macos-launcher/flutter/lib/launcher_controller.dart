@@ -483,67 +483,64 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
           );
         }
       }
-      var value = await _serviceCommand(
+      final value = await _serviceCommand(
         'inspect-stop',
         fields: {'action': action},
       );
-      while (true) {
-        final inspection = ServiceStopInspection(objectValue(value['stop']));
-        if (inspection.stopped) {
-          if (targets != null) {
-            return await _serviceCommand(
-              'update-plugins',
-              fields: {'targets': targets},
-            );
-          }
-          if (action == 'restart') await _startService();
-          return null;
+      final inspection = ServiceStopInspection(objectValue(value['stop']));
+      if (inspection.stopped) {
+        if (targets != null) {
+          return await _serviceCommand(
+            'update-plugins',
+            fields: {'targets': targets},
+          );
         }
-        pending = inspection.operationId;
-        if (pending == null) throw StateError('DSH 停止检查缺少操作标识');
-        _pendingServiceStop = pending;
-        if (_closed) throw StateError('启动器正在退出，已取消 DSH 停止操作');
-        var confirmed = false;
-        if (inspection.needsConfirmation) {
-          if (targets == null) {
-            serviceActionMessage = '等待确认$verb DSH 服务…';
-            notifyListeners();
-          }
-          final confirm = confirmServiceStop;
-          if (confirm == null) {
-            throw StateError(
-              '需要在 DSH 启动器中明确确认$verb：${inspection.message ?? inspection.work.map((row) => row['label']).join('；')}',
-            );
-          }
-          confirmed = await confirm(inspection);
-          if (!confirmed || _closed) {
-            throw StateError('已取消$verb');
-          }
-        }
-        _serviceCommitStarted = true;
+        if (action == 'restart') await _startService();
+        return null;
+      }
+      pending = inspection.operationId;
+      if (pending == null) throw StateError('DSH 停止检查缺少操作标识');
+      _pendingServiceStop = pending;
+      if (_closed) throw StateError('启动器正在退出，已取消 DSH 停止操作');
+      var confirmed = false;
+      if (inspection.needsConfirmation) {
         if (targets == null) {
-          serviceActionMessage = '正在$verb DSH 服务…';
+          serviceActionMessage = '等待确认$verb DSH 服务…';
           notifyListeners();
         }
-        try {
-          value = await _serviceCommand(
-            targets != null
-                ? 'update-plugins'
-                : action == 'restart'
-                ? 'restart-service'
-                : 'stop-service',
-            fields: {
-              'operationId': pending,
-              'confirmed': confirmed,
-              'targets': ?targets,
-            },
+        final confirm = confirmServiceStop;
+        if (confirm == null) {
+          throw StateError(
+            inspection.unknown
+                ? '任务状态未知，请在 DSH 启动器中确认$verb。'
+                : '请在 DSH 启动器中确认$verb。',
           );
-        } finally {
-          _serviceCommitStarted = false;
         }
+        confirmed = await confirm(inspection);
+        if (!confirmed || _closed) throw StateError('已取消$verb');
+      }
+      _serviceCommitStarted = true;
+      if (targets == null) {
+        serviceActionMessage = '正在$verb DSH 服务…';
+        notifyListeners();
+      }
+      try {
+        final result = await _serviceCommand(
+          targets != null
+              ? 'update-plugins'
+              : action == 'restart'
+              ? 'restart-service'
+              : 'stop-service',
+          fields: {
+            'operationId': pending,
+            'confirmed': confirmed,
+            'targets': ?targets,
+          },
+        );
         pending = null;
-        _pendingServiceStop = null;
-        if (value['stop'] == null) return value;
+        return result;
+      } finally {
+        _serviceCommitStarted = false;
       }
     } finally {
       try {

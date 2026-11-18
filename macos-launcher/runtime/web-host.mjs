@@ -18,11 +18,10 @@ export async function startWebHost({ resources, profile, overlay }) {
   })
 }
 
-/** Own the Web Host and the stop-admission handshake without a Desktop process. */
+/** Own the Web Host without a Desktop process. */
 export async function serveWebHost({ resources, profile, receiptDirectory, overlay, exit = () => {} }) {
   const application = startWebHost({ resources, profile, overlay })
-  let closing, locked = false, generation = 0
-  const pending = new Set()
+  let closing
   const send = message => new Promise((accept, reject) => {
     if (!process.connected || !process.send) return accept()
     process.send(message, error => error ? reject(error) : accept())
@@ -39,35 +38,14 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
     }
   })()
   const onMessage = message => {
-    if (message?.type === 'shutdown') { void stop().catch(error => { console.error(error); process.exitCode = 1 }); return }
-    if (message?.type !== 'update-tasks' || !Number.isSafeInteger(message.requestId)
-      || !['lock', 'unlock'].includes(message.action)) return
-    void (async () => {
-      try {
-        await application
-        if (closing) throw new Error('Web Host is stopping')
-        if (message.action === 'unlock') { locked = false; generation++ }
-        else {
-          locked = true
-          const current = ++generation
-          await Promise.all([...pending])
-          if (closing || current !== generation) throw new Error('Web Host admission lock was superseded')
-        }
-        // Station's separate stop inspection owns task inventory; this response only confirms admission state.
-        await send({ type: 'update-tasks', requestId: message.requestId, active: null })
-      } catch (error) {
-        await send({ type: 'update-tasks', requestId: message.requestId, error: error.message }).catch(() => {})
-      }
-    })()
+    if (message?.type === 'shutdown') void stop().catch(error => { console.error(error); process.exitCode = 1 })
   }
   process.on('message', onMessage)
   process.once('disconnect', () => { void stop().catch(error => { console.error(error); process.exitCode = 1 }) })
   const { ctx } = await application
-  ctx.on('connection/request', async (_request, response, next) => {
-    if (locked) { response.writeHead(503); response.end(); return }
-    const done = Promise.withResolvers()
-    pending.add(done.promise)
-    try { await next() } finally { pending.delete(done.promise); done.resolve() }
+  ctx.on('connection/request', (_request, response, next) => {
+    if (closing) { response.writeHead(503); response.end(); return }
+    return next()
   })
   let receipt
   for (let attempt = 0; attempt < 100 && !receipt; attempt++) {

@@ -124,7 +124,8 @@ void main() {
           );
           return pending!;
         });
-        expect(find.textContaining(sessionId), findsWidgets);
+        expect(find.text('停止会中断未完成的工作。'), findsOneWidget);
+        expect(find.textContaining(sessionId), findsNothing);
         await tester.runAsync(() async {
           await tester.tap(find.text('取消'));
         });

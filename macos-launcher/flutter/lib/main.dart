@@ -165,19 +165,10 @@ class _LauncherPageState extends State<LauncherPage> {
           barrierDismissible: false,
           builder: (context) => AlertDialog(
             title: Text(updating ? '更新插件并重启 DSH' : '$verb DSH 服务'),
-            content: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('实例：${inspection.instanceId}'),
-                  Text('$verb会中断列出的未完成工作及其继续产生的工作。取消后继续使用原实例。'),
-                  if (inspection.unknown) const Text('任务状态未知，可能仍有未完成工作。'),
-                  if (inspection.message != null) Text(inspection.message!),
-                  for (final work in inspection.work)
-                    Text('• ${work['label']}（${work['id']}）'),
-                ],
-              ),
+            content: Text(
+              inspection.unknown
+                  ? '任务状态未知，$verb可能中断未完成的工作。'
+                  : '$verb会中断未完成的工作。',
             ),
             actions: [
               TextButton(

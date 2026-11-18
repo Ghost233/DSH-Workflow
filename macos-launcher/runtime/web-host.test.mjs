@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 
-test('Web Host starts the real DSH runtime, drains access and exits cleanly', { timeout: 60_000 }, async t => {
+test('Web Host starts the real DSH runtime and exits cleanly', { timeout: 60_000 }, async t => {
   const resources = process.env.DSH_WEB_TEST_RUNTIME_ROOT ?? process.env.DSH_SERVICE_TEST_RESOURCES
   if (!resources) throw new Error('Set DSH_WEB_TEST_RUNTIME_ROOT or DSH_SERVICE_TEST_RESOURCES to the candidate runtime')
   const anchor = join(resources, 'node_modules/@deepseek-ai/dsh/package.json')
@@ -77,14 +77,6 @@ test('Web Host starts the real DSH runtime, drains access and exits cleanly', { 
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ type: 'client-request', rpcId: 'fixture', method: 'pluginInventory/list', payload: { args: {} } }),
     signal: AbortSignal.timeout(5000) })
-  assert.equal((await request()).status, 200)
-  child.send({ type: 'update-tasks', action: 'lock', requestId: 1 })
-  const locked = await receive(message => message.type === 'update-tasks' && message.requestId === 1)
-  assert.equal(locked.error, undefined)
-  assert.equal((await request()).status, 503)
-  child.send({ type: 'update-tasks', action: 'unlock', requestId: 2 })
-  const unlocked = await receive(message => message.type === 'update-tasks' && message.requestId === 2)
-  assert.equal(unlocked.error, undefined)
   assert.equal((await request()).status, 200)
   child.send({ type: 'shutdown' })
   await receive(message => message.type === 'shutdown-complete')

@@ -46,7 +46,7 @@ export async function waitForInitialHostHealth(host, deadline, isAlive, profileP
 
 /** The manager owns the official Host; GUI clients only send explicit management commands. */
 export async function serveManager({ dataRoot, resources, home, loginEnvironment = process.env, loginShells,
-  updatePlugins = updateProfilePlugins, stationOwned = false, stopGraceMs = 10_000 }) {
+  updatePlugins = updateProfilePlugins, stationOwned = false }) {
   const directory = serviceDirectory(dataRoot), socketPath = serviceSocket(dataRoot)
   const server = createServer()
   let child, receipt, injections, admission, starting, stopping, normalStop, stopOperation, failure = '', state = 'stopped', closing = false
@@ -61,7 +61,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
   const logs = []
   let validatedReady = false, lastHealth = { ready: false, message: null }
   const publicSnapshot = () => {
-    const paused = stopOperation?.owned === child && admission?.locked
+    const paused = state === 'running' && stopOperation?.owned === child && admission?.locked
     return { protocol: SERVICE_PROTOCOL, managerGeneration: SERVICE_MANAGER_GENERATION, revision: ++statusRevision, service: {
       state, ready: state === 'running' && lastHealth.ready && !paused,
       instanceId: receipt?.lease ?? null, pid: child?.pid ?? null,
@@ -82,7 +82,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     void logWrites.catch(() => {})
     updates.publish()
   }
-  const hostRequest = (owned, type, fields = {}, timeout = 2000) => new Promise((accept, reject) => {
+  const hostRequest = (owned, type) => new Promise((accept, reject) => {
     const requestId = ++controlId
     const finish = (error, value) => {
       clearTimeout(timer)
@@ -97,46 +97,27 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
       else finish(null, value)
     }
     const exited = () => finish(new Error('DSH 服务在任务检查期间退出'))
-    const timer = setTimeout(() => finish(new Error('DSH 任务检查超时，当前工作状态未知。')), timeout)
+    const timer = setTimeout(() => finish(new Error('DSH 任务检查超时，当前工作状态未知。')), 2000)
     owned.on('message', message)
     owned.once('close', exited)
     if (!owned.connected || child !== owned) { finish(new Error('DSH 服务实例已改变')); return }
-    owned.send({ type, requestId, ...fields }, error => { if (error) finish(error) })
+    owned.send({ type, requestId }, error => { if (error) finish(error) })
   })
   const inspect = async owned => {
     try {
       const result = await hostRequest(owned, 'workflow-stop-inspection')
-      if (child !== owned || result.instanceId !== receipt?.lease || !Array.isArray(result.work)
-        || typeof result.unknown !== 'boolean' || !Number.isSafeInteger(result.revision)) throw new Error('DSH 任务检查的实例不匹配')
-      return result
-    } catch (error) { return { unknown: true, work: [], message: redact(error.message) } }
+      if (child !== owned || result.instanceId !== receipt?.lease || typeof result.hasWork !== 'boolean'
+        || typeof result.unknown !== 'boolean') throw new Error('DSH 任务检查回执无效')
+      if (result.unknown) log(`DSH 任务检查失败：${result.message || '原因未知'}`)
+      return { unknown: result.unknown, hasWork: result.hasWork }
+    } catch (error) {
+      log(`DSH 任务检查失败：${error.message}`)
+      return { unknown: true, hasWork: false }
+    }
   }
   const releaseStop = async operation => {
     clearTimeout(operation.timer)
-    const failures = []
-    if (operation.commitRequested && child === operation.owned) {
-      try { await hostRequest(operation.owned, 'workflow-stop-inspection', { action: 'cancel', operationId: operation.operationId }, 2000); operation.commitRequested = false }
-      catch (error) { failures.push(redact(error.message)) }
-    }
-    if (operation.httpLocked && child === operation.owned) {
-      try { await hostRequest(operation.owned, 'update-tasks', { action: 'unlock' }, 10_000); operation.httpLocked = false }
-      catch (error) { failures.push(redact(error.message)) }
-    }
-    try { if (child === operation.owned) await operation.admission.unlock() }
-    catch (error) { failures.push(redact(error.message)) }
-    if (failures.length) throw new Error(`恢复 DSH 服务访问失败：${failures.join('；')}`)
-  }
-  const publishStop = (operation, inspection) => {
-    clearTimeout(operation.timer)
-    operation.operationId = randomUUID(); operation.inspection = inspection
-    stopOperation = operation
-    updates.publish()
-    operation.timer = setTimeout(() => {
-      if (stopOperation !== operation || stopping) return
-      stopOperation = undefined
-      void releaseStop(operation).then(() => log('停止确认已过期，服务继续运行。'), error => { failure = redact(error.message); log(failure) })
-    }, 60_000).unref()
-    return { ...inspection, operationId: operation.operationId, instanceId: operation.instanceId, action: operation.action }
+    if (child === operation.owned) await operation.admission.unlock()
   }
   const prepareStop = async action => {
     if (!['stop', 'restart'].includes(action)) throw new Error('Invalid DSH stop operation')
@@ -147,13 +128,23 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
       if (!child) return { stopped: true, action }
       if (state !== 'running' || !receipt || !admission) throw new Error('DSH 服务尚未就绪，请检查日志后重试。')
       const owned = child, instanceId = receipt.lease
-      const operation = { action, owned, instanceId, admission }
+      const operation = { action, owned, instanceId, admission, operationId: randomUUID() }
       stopOperation = operation
       let inspection
       try { await admission.lock(); updates.publish(); inspection = await inspect(owned) }
-      catch (error) { inspection = { unknown: true, work: [], message: redact(error.message) } }
+      catch (error) {
+        log(`DSH 任务检查失败：${error.message}`)
+        inspection = { unknown: true, hasWork: false }
+      }
       if (child !== owned || receipt?.lease !== instanceId) throw new Error('DSH 服务实例已改变，请重新检查。')
-      return publishStop(operation, inspection)
+      operation.inspection = inspection
+      operation.timer = setTimeout(() => {
+        if (stopOperation !== operation || stopping) return
+        stopOperation = undefined
+        void releaseStop(operation).then(() => log('停止确认已过期，服务继续运行。'), error => { failure = redact(error.message); log(failure) })
+      }, 60_000).unref()
+      updates.publish()
+      return { ...inspection, operationId: operation.operationId, action }
     } finally { preparingStop = false }
   }
   const forceStop = async owned => {
@@ -173,70 +164,47 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     if (stopping) throw new Error('DSH 服务已有停止操作正在进行')
     if (starting) throw new Error('DSH 服务正在启动，请就绪后再停止')
     const operation = stopOperation
-    if (!operation || operation.operationId !== input.operationId || operation.owned !== child
+    if (!operation?.inspection || operation.operationId !== input.operationId || operation.owned !== child
       || operation.instanceId !== receipt?.lease || operation.action !== (input.type === 'restart-service' ? 'restart' : 'stop')) {
       throw new Error('DSH 停止确认已过期或实例已改变，请重新检查。')
+    }
+    if ((operation.inspection.unknown || operation.inspection.hasWork) && input.confirmed !== true) {
+      throw new Error('需要确认停止当前 DSH 服务。')
     }
     const owned = child
     stopping = (async () => {
       const timer = new AbortController()
-      let onExit
+      const exited = Promise.withResolvers()
+      const onExit = (code, signal) => exited.resolve({ code, signal })
+      owned.once('close', onExit)
+      clearTimeout(operation.timer)
+      stopOperation = undefined
+      normalStop = { owned, acknowledged: false }
+      state = 'stopping'
+      updates.publish()
       try {
-        const first = operation.inspection
-        if ((first.unknown || first.work.length || first.changed) && input.confirmed !== true) throw new Error('需要明确确认当前 DSH 停止操作。')
-        // The official lock drains admitted HTTP calls; the Host plugin supplements its inventory.
-        operation.httpLocked = true
-        await hostRequest(owned, 'update-tasks', { action: 'lock' }, 10_000)
-        if (child !== owned || receipt?.lease !== operation.instanceId) throw new Error('DSH 服务实例已改变，请重新检查。')
-        const exited = Promise.withResolvers()
-        onExit = (code, signal) => exited.resolve({ code, signal })
-        owned.once('close', onExit)
-        normalStop = { owned, operationId: operation.operationId, instanceId: operation.instanceId,
-          requestId: controlId + 1, committed: false, acknowledged: false }
-        operation.commitRequested = true
-        const decision = await hostRequest(owned, 'workflow-stop-inspection', { action: 'commit',
-          instanceId: operation.instanceId, operationId: operation.operationId, accepted: first,
-          confirmed: input.confirmed === true, expiresAt: Date.now() + 2000 })
-        operation.commitRequested = false
-        if (decision.committed !== true) {
-          normalStop = undefined
-          await hostRequest(owned, 'update-tasks', { action: 'unlock' }, 10_000)
-          operation.httpLocked = false
-          const inspection = { ...decision, changed: true, message: decision.message || '检查后有新工作或状态发生变化，请重新确认。' }
-          return publishStop(operation, inspection)
+        const deadline = delay(10_000, null, { signal: timer.signal })
+        if (owned.connected) {
+          owned.send({ type: 'shutdown' }, error => { if (error) log(`DSH 停机请求发送失败：${error.message}`) })
         }
-        state = 'stopping'
-        updates.publish()
-        let result = await Promise.race([exited.promise, delay(stopGraceMs, null, { signal: timer.signal })])
+        let result = await Promise.race([exited.promise, deadline])
         let forced = false
         if (!result) {
           forced = await forceStop(owned)
           result = await exited.promise
         }
-        if (!(forced && result.signal === 'SIGKILL') && (result.code !== 0 || result.signal !== null)) {
-          throw new Error(`DSH 未确认完成正常停止（${result.signal || result.code}），请检查日志。`)
-        }
         await operation.admission.close()
         state = 'stopped'; failure = ''; receipt = undefined; injections = undefined
-        stopOperation = undefined
-        clearTimeout(operation.timer)
         stopMessage = forced && result.signal === 'SIGKILL' ? 'DSH 停止超时，已强制停止。'
+          : result.code !== 0 || result.signal !== null ? `DSH 已停止，清理异常（${result.signal || result.code}）。`
           : !normalStop.acknowledged ? 'DSH 已停止，未收到正常清理回执。' : ''
         log(stopMessage || 'DSH 服务已确认正常停止，Host 进程已退出。')
       } catch (error) {
-        if (normalStop?.committed === true) {
-          clearTimeout(operation.timer); stopOperation = undefined
-          failure = redact(error.message); state = 'failed'; log(failure)
-        }
-        else if (child === owned) {
-          normalStop = undefined
-          try { await releaseStop(operation) }
-          catch (unlockError) { throw new Error(`${redact(error.message)}；恢复服务访问失败：${redact(unlockError.message)}`) }
-        }
+        failure = redact(error.message); state = 'failed'; log(failure)
         throw error
       } finally {
         timer.abort()
-        if (onExit) owned.removeListener('close', onExit)
+        owned.removeListener('close', onExit)
         normalStop = undefined
       }
     })()
@@ -300,16 +268,13 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         createInterface({ input: owned.stderr }).on('line', log)
         owned.on('message', message => {
           if (child !== owned) return
-          if (message?.type === 'workflow-stop-inspection' && message.action === 'commit' && message.committed === true
-            && normalStop?.owned === owned && message.requestId === normalStop.requestId
-            && message.operationId === normalStop.operationId && message.instanceId === normalStop.instanceId) normalStop.committed = true
-          if (message?.type === 'shutdown-complete' && normalStop?.owned === owned && normalStop.committed) normalStop.acknowledged = true
+          if (message?.type === 'shutdown-complete' && normalStop?.owned === owned) normalStop.acknowledged = true
           if (message?.type === 'ready') ready.resolve(message)
           if (message?.type === 'fatal') ready.reject(new Error(redact(message.diagnostic || message.message)))
         })
         owned.once('error', error => ready.reject(error))
         owned.once('close', (code, signal) => {
-          const expected = closing || normalStop?.owned === owned && normalStop.committed
+          const expected = closing || normalStop?.owned === owned
           const observed = child === owned
           if (child === owned) { child = undefined; state = expected ? 'stopped' : 'failed' }
           updates.publish()
@@ -408,8 +373,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
       const permissionMode = currentPermissionMode
       pluginUpdate = (async () => {
         if (resume) {
-          stopInspection = await stop({ ...input, type: 'stop-service' })
-          if (stopInspection) return
+          await stop({ ...input, type: 'stop-service' })
           if (stopMessage) {
             if (!closing) await start(permissionMode)
             throw new Error(`${stopMessage}本次未更新插件。`)
@@ -435,8 +399,8 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
       try { await pluginUpdate } finally { pluginUpdate = undefined; updates.publish() }
     }
     else if (['stop-service', 'restart-service'].includes(input.type)) {
-      stopInspection = await stop(input)
-      if (!stopInspection && input.type === 'restart-service') await start(input.permissionMode)
+      await stop(input)
+      if (input.type === 'restart-service') await start(input.permissionMode)
     }
     else if (!['status', 'logs', 'connect-web'].includes(input.type)) throw new Error('Unsupported DSH service command')
     const { value, identityVerified } = await snapshot()

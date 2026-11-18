@@ -206,7 +206,7 @@ void main() {
           );
         });
         await _expectStopConfirmation(tester, pending!);
-        expect(find.textContaining(sessionId), findsWidgets);
+        expect(find.text('停止会中断未完成的工作。'), findsOneWidget);
         await tester.runAsync(() async {
           final unconfirmed = await other!.sendRequest(
             'recycle',

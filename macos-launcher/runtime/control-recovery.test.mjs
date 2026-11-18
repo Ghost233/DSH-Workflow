@@ -91,9 +91,11 @@ for (const { state, generation, request } of [
   { state: 'stopped', generation: 2 }, { state: 'running', generation: 2 },
   { state: 'running', generation: 4, request: { type: 'inspect-stop', action: 'restart' } },
   { state: 'running', generation: 4, request: { type: 'update-plugins' } },
+  { state: 'running', generation: 7, request: { type: 'stop-service' } },
   { state: 'stopped', generation: SERVICE_MANAGER_GENERATION },
   { state: 'running', generation: SERVICE_MANAGER_GENERATION },
   { state: 'running', generation: SERVICE_MANAGER_GENERATION, request: { type: 'inspect-stop', action: 'restart' } },
+  { state: 'running', generation: SERVICE_MANAGER_GENERATION, request: { type: 'stop-service' } },
   { state: 'running', generation: SERVICE_MANAGER_GENERATION, request: { type: 'update-plugins' } },
 ]) test(`manager ${state} generation ${generation ?? 'legacy'} handles ${request?.type ?? 'startup'} safely`, async t => {
   const root = await mkdtemp('/private/tmp/dsh-legacy-manager-'), resources = join(root, 'resources')

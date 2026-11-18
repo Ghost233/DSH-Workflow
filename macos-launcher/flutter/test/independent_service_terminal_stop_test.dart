@@ -131,7 +131,7 @@ void main() {
           );
           return pending!;
         });
-        expect(find.textContaining('s04-terminal'), findsWidgets);
+        expect(find.text('停止会中断未完成的工作。'), findsOneWidget);
         await tester.runAsync(() async {
           await tester.tap(find.text('取消'));
         });

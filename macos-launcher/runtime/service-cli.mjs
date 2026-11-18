@@ -53,10 +53,10 @@ if (import.meta.main) {
     const manager = ['start-service', 'authorize-notifications', 'update-plugins'].includes(request.type)
       ? await ensureServiceManager({ dataRoot, resources, home, requestType: request.type })
       : { socket: serviceSocket(dataRoot) }
-    if (request.type === 'restart-service' || request.type === 'inspect-stop' && request.action === 'restart') {
+    if (['inspect-stop', 'stop-service', 'restart-service'].includes(request.type)) {
       const status = await serviceRequest(manager.socket, { type: 'status' })
       if (status.managerGeneration !== SERVICE_MANAGER_GENERATION) {
-        throw new Error('检测到旧版后台管理器。请从菜单栏选择“退出 Station 并停止全部服务”，再重新打开 Station。')
+        throw new Error('检测到旧版后台管理器。请从菜单栏退出 Station，再重新打开。')
       }
     }
     let value
