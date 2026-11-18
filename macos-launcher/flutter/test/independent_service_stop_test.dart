@@ -104,6 +104,14 @@ void main() {
         await task.releaseModel(1);
         final completed = await task.waitForResult(taskId, 1);
         expect(jsonEncode(completed), contains('S04 persisted task result 1'));
+        final idle = await task.rpc('session/wait', {
+          'request': {'sessionId': taskId, 'timeoutMs': 10000},
+        }) as Map;
+        expect(
+          idle['reason'],
+          'idle',
+          reason: 'The task must be idle before stopping the Host',
+        );
         final stopped = await session.sendRequest(
           'recycle',
           serviceId: 'desktop',
