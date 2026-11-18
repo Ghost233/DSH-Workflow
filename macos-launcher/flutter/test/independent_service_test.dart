@@ -389,13 +389,23 @@ globalThis.fetch = (input, ...args) => {
           expect(
             plugins.any(
               (row) =>
-                  row['entryId'].toString().endsWith(
-                    ':workflow-delivery-inventory',
-                  ) &&
+                  row['entryId'].toString().endsWith(':dsh-station-bridge') &&
+                  row['enabled'] == true &&
                   row['fiberPhase'] == 'active',
             ),
             true,
-            reason: 'The managed delivery inventory must be active in the real Host',
+            reason: 'The Station bridge must be active in the real Host',
+          );
+          expect(
+            plugins.any(
+              (row) =>
+                  row['entryId'].toString().endsWith(
+                    ':workflow-delivery-inventory',
+                  ) &&
+                  row['enabled'] == true,
+            ),
+            false,
+            reason: 'The retired delivery inventory must stay disabled',
           );
           for (final module in [
             'dsh-workflow/jev-center',
