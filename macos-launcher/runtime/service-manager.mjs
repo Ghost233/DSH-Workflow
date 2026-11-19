@@ -253,7 +253,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         delete hostEnvironment.ELECTRON_RUN_AS_NODE
         const owned = fork(join(resources, 'workflow/macos-launcher/runtime/web-host.mjs'),
           [resources, profile.profile, join(dataRoot, 'global/.dsh-workflow/desktop'), profile.overlay], {
-            execPath: executable, execArgv: ['--expose-internals'], cwd: profile.profile,
+            execPath: executable, execArgv: ['--expose-internals', '--max-old-space-size=16384'], cwd: profile.profile,
             env: hostEnvironment,
             stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
           })
