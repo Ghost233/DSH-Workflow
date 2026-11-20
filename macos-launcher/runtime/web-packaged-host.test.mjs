@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { execFileSync } from 'node:child_process'
 import { cp, mkdtemp, mkdir, symlink, readFile, rm, writeFile, rename, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -10,6 +11,75 @@ import { createHash } from 'node:crypto'
 import { sealPluginPayload } from './plugin-payload.mjs'
 import { startupPluginResults } from './startup-plugins.mjs'
 import { copyProjectIntegration } from '../project-resources.mjs'
+
+async function checkRepositoryGh(ctx, root, signal) {
+  const main = join(root, 'main repo'), nested = join(main, 'nested repo')
+  const profileDir = join(root, 'config', 'gh-profiles')
+  const previousConfigHome = process.env.XDG_CONFIG_HOME
+  process.env.XDG_CONFIG_HOME = join(root, 'config')
+  const handles = []
+  try {
+    for (const [directory, login] of [[main, 'MainAccount'], [nested, 'NestedAccount']]) {
+      await mkdir(directory, { recursive: true })
+      await mkdir(join(profileDir, login), { recursive: true })
+      execFileSync('git', ['init', '--quiet', directory])
+      await writeFile(join(directory, '.gitignore'), '/.ghswitch\n')
+      await writeFile(join(directory, '.ghswitch'), login + '\n')
+      handles.push(await ctx.agents.create({ sessionId: 'station-gh-' + login, meta: { cwd: directory },
+        setup: scope => ctx.agentPresets.mount(scope, 'standard').then(() => undefined),
+      }))
+    }
+    let callId = 0
+    const run = async (agent, name, args) => {
+      const batch = await ctx.tools.execute({ agent, signal, calls: [
+        { type: 'tool_call', id: 'station-gh-' + ++callId, name, arguments: JSON.stringify(args) },
+      ] })
+      const { result } = batch.results[0]
+      assert.equal(result.isError, false, JSON.stringify(result))
+      return result.value
+    }
+    const [mainAgent, nestedAgent] = handles.map(handle => handle.agent)
+    const policy = { mode: 'workspace-write', workspaceRoot: main }
+    const spec = ctx.shell.resolve({ command: 'true', workdir: nested, sandboxPolicy: policy,
+      dshEnv: { DSH_SHELL: '1', DSH_SESSION_ID: mainAgent.id },
+    })
+    assert.deepEqual(spec.sandboxPolicy, policy)
+    assert.equal(spec.workdir, nested)
+    assert.equal(spec.env.GH_CONFIG_DIR, join(profileDir, 'MainAccount'))
+    // The test runner can already be confined by macOS, which prohibits nested sandbox-exec.
+    for (const { agent } of handles) ctx.permissionPresets.set(agent.session, 'danger-full-access')
+    const command = 'printenv GH_CONFIG_DIR || printf unset'
+    const args = { command, description: 'Inspect fixture GitHub profile', workdir: nested }
+    const [mainResult, nestedResult] = await Promise.all([
+      run(mainAgent, 'bash', args), run(nestedAgent, 'bash', args),
+    ])
+    assert.equal(mainResult.exitCode, 0, JSON.stringify(mainResult))
+    assert.equal(nestedResult.exitCode, 0, JSON.stringify(nestedResult))
+    assert.equal(mainResult.stdout.text.trim(), join(profileDir, 'MainAccount'))
+    assert.equal(nestedResult.stdout.text.trim(), join(profileDir, 'NestedAccount'))
+    const bg = await run(mainAgent, 'bash', { ...args, run_in_background: true })
+    assert.equal(bg.kind, 'background')
+    const output = await run(mainAgent, 'job_output', { job_id: bg.jobId, wait: true })
+    assert.match(JSON.stringify(output), /MainAccount/)
+    assert.doesNotMatch(JSON.stringify(output), /NestedAccount/)
+    execFileSync('git', ['-C', main, '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false',
+      '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '--quiet', '--allow-empty', '-m', 'Fixture'])
+    const worktree = join(root, 'linked worktree')
+    execFileSync('git', ['-C', main, '-c', 'core.hooksPath=/dev/null', 'worktree', 'add', '--quiet', '--detach', worktree])
+    const linked = await ctx.agents.create({ sessionId: 'station-gh-worktree', meta: { cwd: worktree } })
+    handles.push(linked)
+    const linkedSpec = ctx.shell.resolve({ command: 'true', dshEnv: { DSH_SHELL: '1', DSH_SESSION_ID: linked.agent.id } })
+    assert.equal(linkedSpec.env.GH_CONFIG_DIR, join(profileDir, 'MainAccount'))
+    execFileSync('git', ['-C', main, 'add', '--force', '--', '.ghswitch'])
+    const tracked = await run(mainAgent, 'bash', args)
+    assert.equal(tracked.exitCode, 0, JSON.stringify(tracked))
+    assert.equal(tracked.stdout.text.trim(), process.env.GH_CONFIG_DIR ?? 'unset')
+  } finally {
+    await Promise.all(handles.map(handle => handle.dispose()))
+    if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME
+    else process.env.XDG_CONFIG_HOME = previousConfigHome
+  }
+}
 
 const source = process.env.DSH_BUILT_SOURCE_ROOT ?? resolve('deepseek-harness')
 const cliDirectory = process.env.DSH_WEB_TEST_RUNTIME_ROOT || process.env.DSH_SERVICE_TEST_RESOURCES
@@ -161,6 +231,10 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(bridge?.fiberPhase, 'active')
   assert.match(bridge.moduleName, /macos-launcher\/runtime\/station-bridge\.mjs$/)
   assert.ok(ctx.get('workflowHostInstance'), 'the bridge publishes the Host identity')
+  const bash = health.plugins.find(row => row.entryId?.endsWith(':station-gh-bash-sandbox'))
+  assert.equal(bash?.fiberPhase, 'active')
+  assert.match(bash.moduleName, /macos-launcher\/runtime\/station-gh-bash\.mjs$/)
+  await checkRepositoryGh(ctx, root, t.signal)
   assert.ok(!health.plugins.some(row => /:(workflow-delivery-inventory|workflow-browser-harness(?:-skills)?|workflow-agent-monitor|workflow-project-coordination)$/.test(row.entryId ?? '') && row.enabled))
   assert.equal(ctx.get('workflowOwnedDeliveryFixture')?.version, delivered.version)
   const actualPlugin = (await startupPluginResults({ resourcesRoot, profile: prepared.profile, entries: health.plugins }))

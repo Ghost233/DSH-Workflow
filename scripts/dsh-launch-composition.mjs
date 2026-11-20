@@ -16,10 +16,21 @@ export function composeDshLaunch(entries, { projectRoot, billionContextDelivered
   const retired = row => retiredIds.has(row.id) || /^(?:@botharness\/|(?:deepseekbot|dsh-workflow(?:-matt-panel|-browser-harness)?)(?:\/|$))/.test(row.name ?? '')
   const disabledModule = name => blocksPackageMutation(name, profilePlugins)
     || isUnavailablePluginModule(name, { billionContextDelivered })
-  const addressable = row => {
+  const addressable = (row, purpose = 'Managed readonly package policy') => {
     if (typeof row.id !== 'string' || !row.id || all.filter(item => item.id === row.id).length !== 1) {
-      throw new Error('Managed readonly package policy requires an unambiguous entry id')
+      throw new Error(`${purpose} requires an unambiguous entry id`)
     }
+  }
+  for (const row of all.filter(row => row.name === '@deepseek-ai/dsh-bash-sandbox' && row.disabled !== true)) {
+    addressable(row, 'Station GitHub account injection')
+    const parent = all.find(item => item.group && Array.isArray(item.config) && item.config.includes(row))
+    if (parent) addressable(parent, 'Station GitHub account injection')
+    const id = `station-gh-${row.id}`
+    if (all.some(item => item.id === id)) throw new Error(`Project entry conflicts: ${id}`)
+    patches.push({ id: row.id, disabled: true }, {
+      ...(parent && { id: parent.id }),
+      insert: [{ ...row, id, name: join(root, 'macos-launcher/runtime/station-gh-bash.mjs') }],
+    })
   }
   for (const row of all.filter(row => disabledModule(row.name) || retired(row))) {
     addressable(row)

@@ -5,7 +5,7 @@ description: 为仓库固定 Git/GitHub 账号：写仓库本地提交身份与 
 
 # 配置仓库 Git/GitHub 账号
 
-本 skill 把一个仓库的 Git/GitHub 身份收敛到仓库自身：提交身份与 HTTPS 推认证写入 `.git/config`，账号声明写入仓库根被忽略的单行 `.ghswitch`，凭据复用 `${XDG_CONFIG_HOME:-$HOME/.config}/gh-profiles/<登录名>`。DSH 侧由 deck 的分发脚本在每次 shell 启动时读取声明，不生成额外配置文件；Codex 侧生成项目 `.codex/config.toml`。默认 gh 配置、Git 全局配置、remote 地址和其他仓库的选择保持不变。
+本 skill 把一个仓库的 Git/GitHub 身份收敛到仓库自身：提交身份与 HTTPS 推认证写入 `.git/config`，账号声明写入仓库根被忽略的单行 `.ghswitch`，凭据复用 `${XDG_CONFIG_HOME:-$HOME/.config}/gh-profiles/<登录名>`。Station 的 DSH 原生 Bash 从会话主仓库读取声明并注入 `GH_CONFIG_DIR`。Codex 侧生成项目 `.codex/config.toml`。默认 gh 配置、Git 全局配置、remote 地址和其他仓库的选择保持不变。
 
 ## 适用范围
 
@@ -85,13 +85,14 @@ git -C "$project_root" ls-files -- .ghswitch     # 必须为空
 
 ### DSH（`DSH_SESSION_ID` 非空）
 
-不生成任何额外配置文件，也不为本分支追加 `.codex/config.toml` 忽略项。在仓库目录下验证分发层：
+在以目标仓库为工作区打开的 Station 会话中，用原生 Bash 执行：
 
 ```bash
-cd "$project_root" && bash -c 'echo "${GH_CONFIG_DIR:-}"'
+printenv GH_CONFIG_DIR
+gh api --hostname github.com user --jq .login
 ```
 
-输出应等于账号目录。为空说明宿主 deck 的 `BASH_ENV` 注入未启用或未重启（旧版 deck、未加载 `ghAccount`、当前会话早于安装），这是预期状态，不代表需要手写配置文件：提示用户重启 DSH 或确认 deck 条目启用后重试。不要为此创建 `.codex/config.toml`、shell 启动文件或其他配置。直接账号验证仍使用第 2 步命令。
+输出应分别等于第 2 步验证过的账号目录和登录名。Station 依据会话的工作区寻找主仓库，临时 `cd` 或 Bash 的 `workdir` 都不会切换账号。同一仓库的链接 worktree 可声明自己的账号，缺少声明时沿用主工作区的声明。若当前会话是在其它仓库中打开的，到目标仓库的 Station 会话核对。若主仓库正确但环境未生效，检查声明和账号目录是否有效、Station 是否包含内置注入插件，并报告实际结果。DSH 分支只使用已有仓库声明和账号目录。
 
 ### Codex（`DSH_SESSION_ID` 为空）
 

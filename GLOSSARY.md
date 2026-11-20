@@ -29,13 +29,13 @@ _避免使用_：DSH 后端、业务宿主
 
 ## 按仓库的 Git 账号
 
-**仓库账号声明**：仓库内被 Git 忽略、可选、单行的 `.ghswitch` 文件，记录该仓库使用的 GitHub 登录名。链接 worktree 优先读取自己的声明，缺少文件时读取同一仓库主工作区的声明。声明由 skill 写入，deck 每次用时现读。无有效声明或账号目录缺失时沿用全局登录态。
+**仓库账号声明**：仓库内被 Git 忽略的可选单行 `.ghswitch` 文件，记录该仓库使用的 GitHub 登录名。链接 worktree 可以有自己的声明，缺少文件时沿用同一仓库主工作区的声明。
 _避免使用_：账号绑定、账号快照
 
-**账号目录**：gh CLI 的凭据配置目录，位于 `${XDG_CONFIG_HOME:-$HOME/.config}/gh-profiles/<GitHub 登录名>`。gh 调用与 credential helper 都通过 `GH_CONFIG_DIR` 使用同一目录，声明与账号目录共同决定一次操作的认证身份。deck 只拼路径，不读取其中的凭据。
+**账号目录**：gh CLI 的凭据配置目录，位于 `${XDG_CONFIG_HOME:-$HOME/.config}/gh-profiles/<GitHub 登录名>`。gh 调用与 credential helper 都通过 `GH_CONFIG_DIR` 使用同一目录。
 _避免使用_：gh 登录态、token 文件
 
-**账号注入面**：把仓库账号声明转换成认证身份的通道。首版有四个：提交身份（仓库本地 `user.name`/`user.email`）、HTTPS 推认证（内嵌 `GH_CONFIG_DIR` 的仓库本地 credential helper）、deck 自身 gh 出站（spawn 时显式传环境变量）、模型 bash（`BASH_ENV` 分发脚本导出 `GH_CONFIG_DIR`）。面板界面不属于注入面。
+**账号注入面**：把仓库的账号配置用于 Git 提交身份、GitHub HTTPS 推送凭据或原生 Bash 中 `gh` 认证的通道。
 _避免使用_：账号切换、全局切号
 
 ## 中枢 Bot（hub-bot-plugin）
