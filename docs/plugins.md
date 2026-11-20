@@ -23,12 +23,13 @@
 | `dsh-cost-meter` | 1.9.64 | 费用统计插件 |
 | `@nagi-ovo/dsh-visualize` | 0.1.9 | 可视化插件 |
 | `dsh-better-sidebar` | 0.32.1 | 侧边栏插件 |
-| `ghost-agent-sentinel` | 由 DSH profile 决定 | 通过 GitHub Release 资产安装的代理状态插件，由 DSH profile 管理 |
+| `ghost-agent-sentinel` | 由 DSH profile 决定 | 通过 GitHub Release 资产安装的代理状态插件，Station 可更新已登记来源的安装包 |
 | `dsh-skill-mcp-panel` | 2.3.12 | 技能与 MCP 面板 |
 | `dsh-streamfold` | 0.7.14 | 流式内容折叠插件 |
 | `@michengai/dsh-archive-manager` | 1.3.5 | 会话归档管理插件 |
 | `dsh-mermaid` | 0.4.5 | Mermaid 插件 |
-| `dsh-live-compact` | 1.1.6 / `8f3766ec` | 固定 Git 来源的压缩插件，未设为日常启动 |
+| `dsh-live-compact` | 由 DSH profile 决定 | 通过 npm 安装和更新的压缩插件 |
+| `@deepseek-ai/dsh-subagent-codex` | 与内置 DSH 一致 | 在 DSH profile 安装和管理的 Codex 子代理插件 |
 
 表中的 npm 版本是仓库记录的参考版本。应用只携带[默认启动检查名单](../default-startup-plugins.json)，首次启动时将它复制到本机。你可以在 Station 的“插件 → 编辑启动检查名单”增删包名，也可以设为 `[]`。应用升级会保留本地名单。
 

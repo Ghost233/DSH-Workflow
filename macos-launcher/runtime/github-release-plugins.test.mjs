@@ -40,3 +40,19 @@ test('the update source must match the installed version and canonical tagged as
   assert.equal(isGitHubReleaseDependency(source, 'file:../bundle.tgz', '0.1.1'), false)
   assert.equal(isGitHubReleaseDependency(source, spec.replace('Ghost233/', 'other/'), '0.1.1'), false)
 })
+
+test('Sentinel tracks the existing unversioned URL and selects the versioned release asset', async () => {
+  const sentinel = { package: 'ghost-agent-sentinel', repository: 'Ghost233/GhostAgentSentinel',
+    tagPrefix: 'v', legacyUnversionedAsset: true }
+  const downloads = 'https://github.com/Ghost233/GhostAgentSentinel/releases/download/'
+  const existing = downloads + 'v0.5.3/ghost-agent-sentinel.tgz'
+  assert.equal(isGitHubReleaseDependency(sentinel, existing, '0.5.3'), true)
+  assert.equal(isGitHubReleaseDependency(sentinel, existing, '0.5.4'), false)
+  assert.equal(isGitHubReleaseDependency(sentinel, existing.replace('Ghost233/', 'other/'), '0.5.3'), false)
+  const asset = name => ({ name, state: 'uploaded', size: 100, browser_download_url: downloads + 'v0.5.5/' + name })
+  const versioned = asset('ghost-agent-sentinel-0.5.5.tgz')
+  const stable = tagged('0.5.5', { tag_name: 'v0.5.5', assets: [asset('ghost-agent-sentinel.tgz'), versioned] })
+  const latest = await fetchGitHubPluginLatest(sentinel, async () => reply([tagged('9.0.0'), stable]))
+  assert.deepEqual(latest, { version: '0.5.5', url: versioned.browser_download_url })
+  assert.equal(isGitHubReleaseDependency(sentinel, latest.url, latest.version), true)
+})

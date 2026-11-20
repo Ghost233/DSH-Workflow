@@ -64,14 +64,6 @@
       "entryId": "ui-mermaid",
       "repository": "https://github.com/MrmoLabs/dsh-mermaid",
       "startup": true
-    },
-    {
-      "package": "dsh-live-compact",
-      "version": "1.1.12",
-      "entryId": "compaction-spine",
-      "repository": "https://github.com/MerkyorLynn/dsh-live-compact",
-      "source": "git",
-      "commit": "5593c85eb830d86a96b672dc2df57a9a976efea3"
     }
   ]
 }

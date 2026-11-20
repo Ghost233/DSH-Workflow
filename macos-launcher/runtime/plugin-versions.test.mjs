@@ -153,7 +153,8 @@ test('profile versions report registry latest separately from installed and pack
     manifestSha256: createHash('sha256').update(manifest).digest('hex'), plugins: plugins.map(item => ({ ...item,
       metadata: { name: item.package, version },
     })) }))
-  const installed = { [tracked]: '3.0.0-beta.1', [optional]: '2.0.0', 'linked-plugin': '1.0.0' }
+  const codex = '@deepseek-ai/dsh-subagent-codex'
+  const installed = { [tracked]: '3.0.0-beta.1', [optional]: '2.0.0', 'linked-plugin': '1.0.0', [codex]: runtime }
   for (const [name, version] of Object.entries(installed)) {
     const directory = join(profile, 'node_modules', name)
     await mkdir(directory, { recursive: true })
@@ -161,7 +162,7 @@ test('profile versions report registry latest separately from installed and pack
   }
   const profilePath = join(profile, 'package.json')
   const profileBytes = JSON.stringify({ dependencies: {
-    [tracked]: '3.0.0-beta.1', [optional]: '^2.0.0', 'linked-plugin': 'link:/linked/plugin',
+    [tracked]: '3.0.0-beta.1', [optional]: '^2.0.0', 'linked-plugin': 'link:/linked/plugin', [codex]: runtime,
   } })
   await writeFile(profilePath, profileBytes)
   const requested = []
@@ -181,6 +182,12 @@ test('profile versions report registry latest separately from installed and pack
   assert.equal(byName[optional].current, installed[optional])
   assert.equal(byName[optional].latest, null)
   assert.equal(byName[optional].latestStatus, 'unavailable')
+  assert.equal(byName[codex].source, 'DSH 当前配置')
+  assert.equal(byName[codex].status, 'coupled')
+  assert.equal(byName[codex].expected, runtime)
+  assert.equal(byName[codex].latest, null)
+  assert.match(byName[codex].note, /安装在 DSH profile.*版本需与 Station 内置的 DSH/)
+  assert.doesNotMatch(byName[codex].note, /DMG/)
   assert.equal(byName[missing].current, null)
   assert.equal(byName[missing].latest, '2.3.4')
   assert.equal(byName['linked-plugin'].latest, null)

@@ -13,28 +13,33 @@ export async function readGitHubPluginCatalog(resources) {
   try { entries = JSON.parse(await readFile(join(resources, 'workflow/profile-github-plugins.json'), 'utf8')) }
   catch (error) { if (error.code === 'ENOENT') return []; throw error }
   if (!Array.isArray(entries) || entries.some(item => typeof item?.package !== 'string' || !packageName.test(item.package)
-      || typeof item.repository !== 'string' || !repositoryName.test(item.repository))
+      || typeof item.repository !== 'string' || !repositoryName.test(item.repository)
+      || (item.tagPrefix !== undefined && item.tagPrefix !== 'v')
+      || (item.legacyUnversionedAsset !== undefined && typeof item.legacyUnversionedAsset !== 'boolean'))
     || new Set(entries.map(item => item.package)).size !== entries.length) {
     throw new Error('无效的 GitHub 插件列表')
   }
   return entries
 }
 
-function releaseAsset(item, version) {
-  const tag = item.package + '-v' + version
-  const name = item.package + '-' + version + '.tgz'
+const tagPrefix = item => item.tagPrefix ?? item.package + '-v'
+
+function releaseAsset(item, version, unversioned = false) {
+  const tag = tagPrefix(item) + version
+  const name = item.package + (unversioned ? '' : '-' + version) + '.tgz'
   const url = ['https://github.com', item.repository, 'releases/download', tag, name].join('/')
   return { name, url }
 }
 
-/** An explicitly opted-in release source must match the installed version and tagged asset. */
+/** Match installed versions against the canonical asset or a catalog-approved legacy URL. */
 export function isGitHubReleaseDependency(item, spec, version) {
-  return typeof version === 'string' && stableVersion.test(version) && spec === releaseAsset(item, version).url
+  return typeof version === 'string' && stableVersion.test(version) && (spec === releaseAsset(item, version).url
+    || (item.legacyUnversionedAsset === true && spec === releaseAsset(item, version, true).url))
 }
 
 /** Select the highest published stable tag belonging to this package in a shared repository. */
 export async function fetchGitHubPluginLatest(item, request = fetch) {
-  const prefix = item.package + '-v'
+  const prefix = tagPrefix(item)
   const signal = AbortSignal.timeout(8000)
   let best
   for (let page = 1; page <= maxReleasePages; page++) {

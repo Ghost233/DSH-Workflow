@@ -202,9 +202,9 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
       continue
     }
     const configuredTarget = configuredPlugin?.version
-    const target = configuredTarget
-      ?? rows.find(item => item.name === row.name && item.status === 'bundled')?.expected
-      ?? (row.name.startsWith('@deepseek-ai/dsh-') ? runtime?.version : undefined)
+    const bundledTarget = rows.find(item => item.name === row.name && item.status === 'bundled')?.expected
+    const runtimeTarget = row.name.startsWith('@deepseek-ai/dsh-') ? runtime?.version : undefined
+    const target = configuredTarget ?? bundledTarget ?? runtimeTarget
     row.expected = exactVersion(target) ? target : null
     const declared = profileManifest?.dependencies?.[row.name] ?? null
     const expectedDeclaration = configuredPlugin ? pluginDependencySpec(configuredPlugin) : row.expected
@@ -214,8 +214,11 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
     if (row.status === 'error') continue
     if (row.expected) {
       const declarationMismatch = configuredTarget ? declared !== expectedDeclaration : exactVersion(declared) && declared !== row.expected
-      row.status = row.current === null ? 'unknown' : row.current !== row.expected || declarationMismatch ? 'drift' : 'fixed'
-      row.note = `仓库固定 ${row.expected}，依赖声明 ${row.declared ?? '缺失'}，实际安装 ${row.current ?? '未知'}；随本仓库 DMG 更新`
+      const followsRuntime = configuredTarget === undefined && bundledTarget === undefined && runtimeTarget !== undefined
+      row.status = row.current === null ? 'unknown' : row.current !== row.expected || declarationMismatch ? 'drift' : followsRuntime ? 'coupled' : 'fixed'
+      row.note = followsRuntime
+        ? `安装在 DSH profile，版本需与 Station 内置的 DSH ${row.expected} 一致；在 DSH 插件页管理`
+        : `仓库固定 ${row.expected}，依赖声明 ${row.declared ?? '缺失'}，实际安装 ${row.current ?? '未知'}；随本仓库 DMG 更新`
     } else if (configurationError) {
       row.status = 'unknown'; row.note = `实际安装 ${row.current ?? '未知'}；仓库固定值无法验证：${configurationError}`
     } else if (row.status === 'installed' && configuration?.npmStartup === 'profile') {

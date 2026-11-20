@@ -2,5 +2,11 @@
   {
     "package": "dsh-ghost-home-repo",
     "repository": "Ghost233/ghost-agent-market"
+  },
+  {
+    "package": "ghost-agent-sentinel",
+    "repository": "Ghost233/GhostAgentSentinel",
+    "tagPrefix": "v",
+    "legacyUnversionedAsset": true
   }
 ]
