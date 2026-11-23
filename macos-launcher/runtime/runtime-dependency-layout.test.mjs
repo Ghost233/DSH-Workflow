@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { access, readFile, realpath } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -7,6 +9,37 @@ import { join } from 'node:path'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const resources = process.env.DSH_SERVICE_TEST_RESOURCES
+const desktop = resources && join(resources, 'DSH Desktop.app')
+
+test('Station and Desktop share the official Node and pnpm', {
+  skip: desktop && existsSync(desktop) ? false : 'Requires the combined Station package',
+}, async () => {
+  const runtime = join(desktop, 'Contents/Resources/runtime/primary-runtime')
+  const { node, pnpm } = JSON.parse(await readFile(join(runtime, 'runtime.json'), 'utf8'))
+  const official = JSON.parse(await readFile(join(runtime, 'dependencies/pnpm/package.json'), 'utf8'))
+  assert.equal(official.name, 'pnpm')
+  assert.equal(official.version, pnpm)
+  await assert.rejects(access(join(resources, 'node_modules/pnpm')), { code: 'ENOENT' })
+  const run = (path, ...args) => execFileSync(path, args, { cwd: resources, encoding: 'utf8' }).trim()
+  assert.equal(run(join(resources, 'node'), '--version'), `v${node}`)
+  assert.equal(run(join(runtime, 'dependencies/node/bin/node'), '-p', 'process.execPath'), await realpath(join(resources, 'node')))
+  assert.equal(run(join(resources, 'bin/pnpm'), '--version'), pnpm)
+  const dsh = JSON.parse(await readFile(join(resources, 'node_modules/@deepseek-ai/dsh/package.json'), 'utf8'))
+  assert.equal(run(join(desktop, 'Contents/Resources/runtime/cli/bin/dsh'), '--version'), dsh.version)
+})
+
+test('Desktop keeps the renderer in its archive without unpacking another DSH runtime', {
+  skip: desktop && existsSync(desktop) ? false : 'Requires the combined Station package',
+}, async () => {
+  const desktopResources = join(desktop, 'Contents/Resources')
+  const asar = await readFile(join(desktopResources, 'app.asar'))
+  const header = JSON.parse(asar.subarray(16, 16 + asar.readUInt32LE(12)).toString('utf8'))
+  const packages = header.files.dsh.files['node_modules'].files['@deepseek-ai'].files
+  assert.deepEqual(Object.keys(packages).sort(), ['dsh', 'dsh-web-frontend'])
+  assert.deepEqual(Object.keys(packages.dsh.files), ['package.json'])
+  assert.ok(packages['dsh-web-frontend'].files.dist.files['index.html'])
+  await assert.rejects(access(join(desktopResources, 'app.asar.unpacked/dsh')), { code: 'ENOENT' })
+})
 
 async function dshZodRequirements() {
   const lock = JSON.parse(await readFile(join(root, 'macos-launcher/package-lock.json'), 'utf8'))

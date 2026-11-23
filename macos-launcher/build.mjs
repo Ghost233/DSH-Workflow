@@ -2,7 +2,7 @@ import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile, chmod, utimes } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { copyProjectIntegration, verifyProjectIntegration } from './project-resources.mjs'
@@ -13,7 +13,7 @@ import { bundleProjectPlugins } from './bundle-plugins.mjs'
 import { verifyPluginPayload } from './runtime/plugin-payload.mjs'
 import { pruneKnownDevelopmentFiles } from './production-file-policy.mjs'
 import { sourceIdentity } from '../scripts/harness-runtime.mjs'
-import { bundleStationDesktop, stationDesktopVersion } from './desktop-adaptation.mjs'
+import { bundleStationDesktop, desktopPnpmDirectory, stationDesktopVersion } from './desktop-adaptation.mjs'
 
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
 
@@ -73,13 +73,7 @@ const contents = join(app, 'Contents')
 const resources = join(contents, 'Resources')
 try {
   await run('/usr/bin/ditto', [join(flutterRoot, 'build/macos/Build/Products/Release/Ghost DSH Station.app'), app])
-  await cp(process.execPath, join(resources, 'node'))
-  await chmod(join(resources, 'node'), 0o755)
   await copyProjectIntegration(root, join(resources, 'workflow'), candidate)
-  const desktop = includeDesktop
-    ? await bundleStationDesktop({ archive: desktopArchive ? resolve(desktopArchive) : undefined,
-      resources, staging, runtimeVersion: version })
-    : undefined
   await bundleProjectPlugins({ resourcesRoot: resources, sourceRoot: root, npmCache: join(root, '.build/npm-cache') })
   await bundleServiceNotifications(root, resources)
   const { stdout: outerVersion } = await exec('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(contents, 'Info.plist')])
@@ -93,7 +87,7 @@ try {
     await cp(join(candidate, 'source/pnpm-lock.yaml'), join(resources, 'pnpm-lock.yaml'))
     const identity = await sourceIdentity(join(candidate, 'source'), target)
     await writeFile(join(resources, 'dsh-source.json'), JSON.stringify({ ...target, ...identity }, null, 2) + '\n')
-    await cp(join(candidate, 'toolchain/node_modules/pnpm'), join(resources, 'node_modules/pnpm'), { recursive: true })
+    if (!includeDesktop) await cp(join(candidate, 'toolchain/node_modules/pnpm'), join(resources, 'node_modules/pnpm'), { recursive: true })
     for (const name of Object.keys(appPackage.dependencies)) {
       const pkg = JSON.parse(await readFile(join(resources, 'node_modules', name, 'package.json'), 'utf8'))
       if (pkg.name !== name) throw new Error(`DSH deploy dependency identity mismatch: ${name}`)
@@ -114,28 +108,38 @@ try {
   const settingsClient = join(resources, 'node_modules/@deepseek-ai/dsh-client-ui-settings/lib/client.js')
   const settingsSource = await readFile(settingsClient, 'utf8')
   assertHostBackedSettings(settingsSource)
-  await mkdir(join(resources, 'bin'), { recursive: true })
-  const pnpmShim = join(resources, 'bin', 'pnpm')
-  await writeFile(pnpmShim, '#!/bin/sh\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexec "$ROOT/node" "$ROOT/node_modules/pnpm/bin/pnpm.mjs" "$@"\n')
-  await chmod(pnpmShim, 0o755)
   const dsh = join(resources, 'node_modules', '@deepseek-ai', 'dsh')
   const packaged = JSON.parse(await readFile(join(dsh, 'package.json'), 'utf8'))
   if (packaged.name !== '@deepseek-ai/dsh' || packaged.version !== version) throw new Error('DSH deploy identity mismatch')
-  if (!existsSync(join(dsh, 'lib/bin.js')) || !existsSync(join(resources, 'node_modules/@deepseek-ai/dsh-app-boot/package.json'))
-    || !existsSync(join(resources, 'node_modules/pnpm/bin/pnpm.mjs'))) {
+  if (!existsSync(join(dsh, 'lib/bin.js')) || !existsSync(join(resources, 'node_modules/@deepseek-ai/dsh-app-boot/package.json'))) {
     throw new Error('DSH production runtime is incomplete')
   }
+  const desktop = includeDesktop
+    ? await bundleStationDesktop({ archive: desktopArchive ? resolve(desktopArchive) : undefined,
+      resources, staging, runtimeVersion: version })
+    : undefined
+  const node = join(resources, 'node')
+  if (!desktop) {
+    await cp(process.execPath, node)
+    await chmod(node, 0o755)
+  }
+  await run('codesign', ['--force', '--sign', '-', node])
   if (fromSource) {
     const anchor = join(dsh, 'package.json')
     const require = createRequire(anchor)
     const frontend = require.resolve('@deepseek-ai/dsh-web-frontend/package.json')
     await readFile(new URL('./dist/index.html', pathToFileURL(frontend)))
-    await run(join(resources, 'node'), ['--input-type=module', '-e',
+    await run(node, ['--input-type=module', '-e',
       'import { createRequire } from "node:module"; const boot = createRequire(process.argv[1])("@deepseek-ai/dsh-app-boot"); if (typeof boot.boot !== "function") throw new Error("DSH Host boot entry is missing")',
       anchor], resources)
   }
-  if (!candidate) await run(join(resources, 'node'), [join(dsh, 'lib/bin.js'), '--version'], resources)
-  await run('codesign', ['--force', '--sign', '-', join(resources, 'node')])
+  if (!candidate) await run(node, [join(dsh, 'lib/bin.js'), '--version'], resources)
+  const pnpmPackage = desktop ? join(desktop, desktopPnpmDirectory) : join(resources, 'node_modules/pnpm')
+  if (desktop && existsSync(join(resources, 'node_modules/pnpm'))) throw new Error('Station must use the official Desktop pnpm')
+  const pnpmEntry = relative(resources, join(pnpmPackage, 'bin/pnpm.mjs'))
+  if (!existsSync(join(resources, pnpmEntry))) throw new Error('Packaged pnpm is missing')
+  await mkdir(join(resources, 'bin'), { recursive: true })
+  await writeFile(join(resources, 'bin/pnpm'), `#!/bin/sh\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexec "$ROOT/node" "$ROOT/${pnpmEntry}" "$@"\n`, { mode: 0o755 })
   await run('codesign', ['--deep', '--force', '--sign', '-', app])
   await verifyPluginPayload(resources, candidate ?? root)
   await verifyProjectIntegration(root, join(resources, 'workflow'), candidate)

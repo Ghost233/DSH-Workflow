@@ -3,6 +3,7 @@ import { basename, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveVersion } from '../scripts/dsh-runtime-versions.mjs'
 import { buildGithubRuntime, readJson, run, writeJson } from './github-runtime.mjs'
+import { stationDesktopVersion } from './desktop-adaptation.mjs'
 
 const [channel, version, ...extra] = process.argv.slice(2)
 if (!version || extra.length) throw new Error('Usage: node macos-launcher/build-candidate.mjs npm|github VERSION')
@@ -18,6 +19,11 @@ const stage = await mkdtemp(join(registryOutput, 'station-'))
 console.log(`Candidate directory: ${stage}`)
 const app = await readJson(join(root, 'macos-launcher/package.json'))
 app.dependencies[target.package] = target.version
+if (channel === 'npm' && target.version !== stationDesktopVersion) {
+  // Candidates without Desktop still use the upstream pnpm version.
+  const { packageManager } = await readJson(join(root, 'package.json'))
+  app.dependencies.pnpm = packageManager.split('+')[0].slice('pnpm@'.length)
+}
 delete app.devDependencies
 await writeJson(join(stage, 'package.json'), app)
 await writeJson(join(stage, 'dsh-runtime.json'), target)
