@@ -153,8 +153,9 @@ test('profile versions report registry latest separately from installed and pack
     manifestSha256: createHash('sha256').update(manifest).digest('hex'), plugins: plugins.map(item => ({ ...item,
       metadata: { name: item.package, version },
     })) }))
-  const codex = '@deepseek-ai/dsh-subagent-codex'
-  const installed = { [tracked]: '3.0.0-beta.1', [optional]: '2.0.0', 'linked-plugin': '1.0.0', [codex]: runtime }
+  const codex = '@deepseek-ai/dsh-subagent-codex', liveCompact = 'dsh-live-compact'
+  const installed = { [tracked]: '3.0.0-beta.1', [optional]: '2.0.0', 'linked-plugin': '1.0.0',
+    [codex]: runtime, [liveCompact]: '1.1.12' }
   for (const [name, version] of Object.entries(installed)) {
     const directory = join(profile, 'node_modules', name)
     await mkdir(directory, { recursive: true })
@@ -163,7 +164,8 @@ test('profile versions report registry latest separately from installed and pack
   const profilePath = join(profile, 'package.json')
   const profileBytes = JSON.stringify({ dependencies: {
     [tracked]: '3.0.0-beta.1', [optional]: '^2.0.0', 'linked-plugin': 'link:/linked/plugin', [codex]: runtime,
-  } })
+    [liveCompact]: installed[liveCompact],
+  }, dsh: { profile: { bundles: [liveCompact] } } })
   await writeFile(profilePath, profileBytes)
   const requested = []
   t.mock.method(globalThis, 'fetch', async url => {
@@ -174,6 +176,7 @@ test('profile versions report registry latest separately from installed and pack
   })
   const report = await checkPluginVersions({ resourcesRoot: resources, home })
   const byName = Object.fromEntries(report.rows.map(row => [row.name, row]))
+  assert.equal(byName[liveCompact], undefined, 'Live Compact is managed only by DSH')
   assert.deepEqual(requested.sort(), [tracked, missing, optional].map(name => `${registry}${encodeURIComponent(name)}/latest`).sort())
   assert.equal(byName[tracked].current, installed[tracked])
   assert.equal(byName[tracked].expected, null)

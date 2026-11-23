@@ -81,7 +81,27 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
   }
   // Compose from the existing profile before adding our own rows, so preparation is idempotent.
   const patches = [...startupPatches, ...launch]
-  for (const row of flatten(entries)) {
+  const mountedEntries = flatten(entries)
+  const liveCompact = base.find(layer => layer.packageName === 'dsh-live-compact')
+  if (runtime.version === '0.2.3-alpha.2' && liveCompact
+    && JSON.parse(await readFile(join(liveCompact.packageDir, 'package.json'), 'utf8')).version === '1.1.12') {
+    const withoutLiveCompact = boot.composeEntries([
+      ...layers.filter(layer => layer !== liveCompact.patches), resolved.patches,
+    ])
+    for (const row of mountedEntries.filter(row => row.name === 'dsh-live-compact' && row.disabled !== true)) {
+      patches.push({ id: row.id, disabled: true })
+    }
+    // Restore the Host's own compaction settings. Web keeps the root engine disabled
+    // and starts its compaction engine in the selected agent preset.
+    for (const row of flatten(withoutLiveCompact).filter(row => row.name === '@deepseek-ai/dsh-compaction-basic')) {
+      const configured = mountedEntries.find(entry => entry.id === row.id && entry.name === row.name)
+      if (configured && Boolean(configured.disabled) !== Boolean(row.disabled)) {
+        patches.push({ id: row.id, disabled: Boolean(row.disabled) })
+      }
+    }
+    process.stderr.write('[project-plugins] dsh-live-compact@1.1.12 与 DSH 0.2.3-alpha.2 不兼容，本次启动使用 DSH 原生压缩。\n')
+  }
+  for (const row of mountedEntries) {
     if (permissionMode && row.name === '@deepseek-ai/dsh-sandbox-policy' && row.disabled !== true) {
       patches.push({ id: row.id, config: { ...structuredClone(row.config ?? {}), mode: permissionMode } })
     }

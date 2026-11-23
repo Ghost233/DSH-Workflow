@@ -34,15 +34,13 @@ bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")"
 [[ "$bundle_id" == com.ghostagent.dsh-workflow-launcher ]] || die "bundle id 不匹配：$bundle_id"
 app_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
 [[ "$app_version" == "$VERSION" ]] || die "应用版本不匹配：启动器为 ${VERSION}，实际应用为 $app_version"
-python3 - "$APP_PATH" "$DSH_VERSION" <<'PY'
-import json, sys
+desktop_report="$(python3 - "$APP_PATH" "$DSH_VERSION" <<'PY'
+import hashlib, json, plistlib, sys
 from pathlib import Path
 resources = Path(sys.argv[1]) / 'Contents/Resources'
 package = json.loads((resources / 'node_modules/@deepseek-ai/dsh/package.json').read_text())
 if package.get('name') != '@deepseek-ai/dsh' or package.get('version') != sys.argv[2]:
     raise SystemExit('build-release: 打包应用的 DSH 版本与固定版本不一致')
-if (resources / 'desktop').exists():
-    raise SystemExit('build-release: Web 版不能包含 Desktop 应用')
 runtime = json.loads(Path('dsh-runtime.json').read_text())
 if runtime.get('source') == 'npm':
     lock = json.loads((resources / 'package-lock.json').read_text())
@@ -50,12 +48,39 @@ if runtime.get('source') == 'npm':
     archive = f"https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-{sys.argv[2]}.tgz"
     if locked.get('version') != sys.argv[2] or locked.get('integrity') != runtime.get('integrity') or locked.get('resolved') != archive:
         raise SystemExit('build-release: 打包应用的 DSH npm 来源或完整性不一致')
+pin = json.loads(Path('macos-launcher/desktop-release.json').read_text())
+desktop = resources / 'DSH Desktop.app/Contents'
+desktop_resources = desktop / 'Resources'
+asar = desktop_resources / 'app.asar'
+provenance = desktop_resources / 'station-desktop/source.json'
+members = (desktop / 'Info.plist', desktop / 'MacOS/DeepSeek Harness', asar, provenance,
+           desktop_resources / 'station-desktop/desktop-client.mjs',
+           desktop_resources / 'station-desktop/service-control.mjs')
+if any(not member.is_file() or member.stat().st_size == 0 for member in members):
+    raise SystemExit('build-release: 缺少完整的 Desktop 应用或 Station 适配')
+with (desktop / 'Info.plist').open('rb') as stream:
+    info = plistlib.load(stream)
+if pin['version'] != sys.argv[2] or info.get('CFBundleShortVersionString') != pin['version']:
+    raise SystemExit('build-release: Desktop 和 DSH Host 版本不一致')
+if info.get('CFBundleIdentifier') != 'com.ghostagent.dsh-workflow-desktop' or info.get('CFBundleURLTypes') != [] \
+        or (desktop_resources / 'app-update.yml').exists() or json.loads(provenance.read_text()) != pin:
+    raise SystemExit('build-release: Desktop 来源或 Station 适配不一致')
+digest = hashlib.sha256()
+with asar.open('rb') as stream:
+    for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+        digest.update(chunk)
+print(json.dumps({'version': pin['version'], 'sourceUrl': pin['url'], 'sourceSha512': pin['sha512'],
+                  'appAsarSha256': digest.hexdigest()}))
 PY
+)"
 plugin_report="$(node macos-launcher/runtime/plugin-payload.mjs verify "$APP_PATH/Contents/Resources" "$REPO_ROOT")"
 exe="$APP_PATH/Contents/MacOS/Ghost DSH Station"
 [[ -s "$exe" ]] || die "可执行文件缺失或为空：$exe"
 [[ "$(lipo -archs "$exe")" == arm64 ]] || die '启动器可执行文件必须为 ARM64'
 codesign --verify --deep --strict "$APP_PATH"
+desktop_app="$APP_PATH/Contents/Resources/DSH Desktop.app"
+[[ "$(lipo -archs "$desktop_app/Contents/MacOS/DeepSeek Harness")" == arm64 ]] || die 'Desktop 可执行文件必须为 ARM64'
+codesign --verify --deep --strict "$desktop_app"
 
 # Retain the asset name recognized by existing installations' update checks.
 DMG_NAME="DSH-Workflow-macOS-${VERSION}-arm64.dmg"
@@ -79,10 +104,10 @@ hdiutil create -format UDZO -volname 'Ghost DSH Station' -srcfolder "$STAGING_DI
 hdiutil verify "$STAGING_DIR/assets/$DMG_NAME"
 [[ -s "$STAGING_DIR/assets/$DMG_NAME" ]] || die 'DMG 为空'
 source_commit="$(git rev-parse HEAD)"
-python3 - "$STAGING_DIR/assets" "$DMG_NAME" "$VERSION" "$DSH_VERSION" "$source_commit" "$plugin_report" <<'PY'
+python3 - "$STAGING_DIR/assets" "$DMG_NAME" "$VERSION" "$DSH_VERSION" "$source_commit" "$plugin_report" "$desktop_report" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
-directory, name, version, dsh, commit, plugins = sys.argv[1:]
+directory, name, version, dsh, commit, plugins, desktop = sys.argv[1:]
 root = Path(directory)
 dmg = root / name
 digest = hashlib.sha256()
@@ -90,7 +115,7 @@ with dmg.open('rb') as file:
     for chunk in iter(lambda: file.read(1024 * 1024), b''):
         digest.update(chunk)
 manifest = {'version': version, 'tag': 'macos-v' + version, 'sourceCommit': commit,
-            'dshVersion': dsh, 'pluginPayload': json.loads(plugins),
+            'dshVersion': dsh, 'pluginPayload': json.loads(plugins), 'desktopPayload': json.loads(desktop),
             'assets': [{'name': name, 'sha256': digest.hexdigest(), 'size': dmg.stat().st_size}]}
 runtime = json.loads(Path('dsh-runtime.json').read_text())
 if runtime.get('source') == 'npm':

@@ -725,6 +725,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     }
   }
 
+  Future<void> openDesktop() async {
+    if (exiting) throw StateError('启动器正在退出');
+    await _serviceCommand('open-desktop');
+  }
+
   void _setSnapshot(Map<String, Object?> value) {
     final state = ServiceState.fromJson(value['state'] as String? ?? 'unknown');
     final instance = value['instanceId'] as String?;

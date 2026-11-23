@@ -13,6 +13,7 @@ import { bundleProjectPlugins } from './bundle-plugins.mjs'
 import { verifyPluginPayload } from './runtime/plugin-payload.mjs'
 import { pruneKnownDevelopmentFiles } from './production-file-policy.mjs'
 import { sourceIdentity } from '../scripts/harness-runtime.mjs'
+import { bundleStationDesktop, stationDesktopVersion } from './desktop-adaptation.mjs'
 
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('macOS builds are ARM64-only')
 
@@ -30,6 +31,8 @@ const version = target.version
 const appVersion = appPackage.version
 const arch = process.arch
 const flutterRoot = candidate ? join(candidate, 'flutter') : join(root, 'macos-launcher/flutter')
+const desktopArchive = process.env.DSH_STATION_DESKTOP_ARCHIVE
+const includeDesktop = !candidate || desktopArchive || version === stationDesktopVersion
 
 async function run(command, args, cwd = root) {
   await new Promise((accept, reject) => {
@@ -47,6 +50,7 @@ async function verifyInputs() {
   }
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(appVersion)) throw new Error('Invalid macOS app release version')
   if (appPackage.dependencies?.['@deepseek-ai/dsh'] !== version) throw new Error('macOS runtime package does not match pinned DSH')
+  if (includeDesktop && stationDesktopVersion !== version) throw new Error('Official Desktop and DSH Host must use the same pinned version')
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Node 22+ is required')
 }
 
@@ -72,6 +76,10 @@ try {
   await cp(process.execPath, join(resources, 'node'))
   await chmod(join(resources, 'node'), 0o755)
   await copyProjectIntegration(root, join(resources, 'workflow'), candidate)
+  const desktop = includeDesktop
+    ? await bundleStationDesktop({ archive: desktopArchive ? resolve(desktopArchive) : undefined,
+      resources, staging, runtimeVersion: version })
+    : undefined
   await bundleProjectPlugins({ resourcesRoot: resources, sourceRoot: root, npmCache: join(root, '.build/npm-cache') })
   await bundleServiceNotifications(root, resources)
   const { stdout: outerVersion } = await exec('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(contents, 'Info.plist')])
@@ -132,6 +140,7 @@ try {
   await verifyPluginPayload(resources, candidate ?? root)
   await verifyProjectIntegration(root, join(resources, 'workflow'), candidate)
   await run('codesign', ['--verify', '--deep', '--strict', app])
+  if (desktop) await run('codesign', ['--verify', '--deep', '--strict', desktop])
   await rename(app, destination)
   // The no-argument launcher selects the newest completed bundle by directory mtime.
   await utimes(destination, new Date(), new Date())

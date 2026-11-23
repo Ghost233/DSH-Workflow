@@ -18,7 +18,7 @@ project.id 为 dsh-workflow；为兼容已关联的 MacLauncher，保留 web、d
 
 ## 检查与构建
 
-工程检查使用 Node.js 24.12.0。从仓库根目录执行以下命令：
+工程检查使用 Node.js 24.22.3。从仓库根目录执行以下命令：
 
 ```sh
 cd macos-launcher/flutter

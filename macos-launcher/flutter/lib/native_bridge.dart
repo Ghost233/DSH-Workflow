@@ -12,6 +12,7 @@ class LauncherEnvironment {
       password = values['password'] as String?,
       testSocket = values['testSocket'] as String?,
       stationOwnsManagers = values['stationOwnsManagers'] == true,
+      desktopAvailable = values['desktopAvailable'] == true,
       testReleaseEndpoint = values['testReleaseEndpoint'] as String?,
       loginStatus = _string(values, 'loginStatus');
 
@@ -26,6 +27,7 @@ class LauncherEnvironment {
   final String resources, dataRoot, home, appVersion, loginStatus;
   final bool fullAccess, allowLanSettings, hideWindowOnStart;
   final bool stationOwnsManagers;
+  final bool desktopAvailable;
   final String? password, testSocket, testReleaseEndpoint;
 }
 

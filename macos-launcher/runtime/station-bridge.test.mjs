@@ -3,7 +3,25 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, stat, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { apply } from './station-bridge.mjs'
+import { apply, authenticatedHostUrl } from './station-bridge.mjs'
+
+test('Station uses the registered Web entry URL when Connection has no URL method', () => {
+  const webServer = { port: 40321 }
+  const ctx = { connection: {}, webServer, emit(subject, event, origin, entries) {
+    assert.equal(subject, webServer)
+    assert.equal(event, 'webserver/entry-url')
+    assert.equal(origin, 'http://127.0.0.1:40321')
+    entries.push({ url: origin, open: false }, { url: `${origin}/?token=fixture`, open: true })
+  } }
+  assert.equal(authenticatedHostUrl(ctx), 'http://127.0.0.1:40321/?token=fixture')
+})
+
+test('Station rejects credentials for a different listener', () => {
+  const ctx = { connection: {}, webServer: { port: 40321 }, emit(_subject, _event, _origin, entries) {
+    entries.push({ url: 'http://127.0.0.1:40322/?token=fixture', open: true })
+  } }
+  assert.throws(() => authenticatedHostUrl(ctx), /authenticated loopback address/)
+})
 
 test('desktop readiness keeps its token private and disposal cannot remove a newer Host lease', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-desktop-bridge-'))

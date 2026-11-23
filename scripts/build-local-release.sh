@@ -43,7 +43,7 @@ fi
 step '1/4 准备 Flutter 依赖'
 (cd macos-launcher/flutter && flutter pub get --enforce-lockfile)
 
-step '2/4 构建并签名 Web 版 Station'
+step '2/4 构建并签名 Station、DSH Host 和 Desktop'
 "$LAUNCHER_NODE" macos-launcher/build.mjs
 APP="$ROOT/.build/Ghost DSH Station-${APP_VERSION}-dsh${DSH_VERSION}-arm64.app"
 [[ -d "$APP" ]] || fail "启动器 App 未生成：$APP"

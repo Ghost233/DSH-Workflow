@@ -17,7 +17,7 @@ disable-model-invocation: true
 5. Actions 调用 `scripts/build-local-release.sh` 生成 DMG、manifest.json 和 SHA256SUMS，再调用 `scripts/publish-release.sh` 创建 Release 草稿。本地失败且该次 run 仍在运行时，执行 `gh run cancel <run-id> -R Ghost233/DSH-Workflow`，并等待远端结束；Actions 失败时停止本次本地验收进程并等待退出。先确认远端实际状态，保留失败证据和已有草稿，修复后按失败恢复规则重新发布。取消不能撤回已经完成的发布，失败时不得公开草稿。
 6. 两侧均通过后，按“完成验证”核对草稿资产和来源，确认 tag、提交及本地分支同步，再以 Ghost233 执行 `gh release edit <tag> -R Ghost233/DSH-Workflow --draft=false` 公开草稿。重新核对非草稿 Release 和资产；通过后报告版本、发布提交、Release 与 Actions 链接。
 
-Actions 不运行 CI、单元、集成、smoke、运行时验收或独立类型检查任务，也不启动 Host。构建脚本按锁文件装配官方 npm Web 运行时，不构建或打包 Desktop。仓库保留发布工作流，普通 push 和 PR 不触发测试。
+Actions 不运行 CI、单元、集成、smoke、运行时验收或独立类型检查任务，也不启动 Host。构建脚本按锁文件装配官方 npm Web 运行时，并验证和装配同版本的官方 ARM64 Desktop。Desktop 和 Web 共用 Station 管理的 Host。仓库保留发布工作流，普通 push 和 PR 不触发测试。
 
 ## 身份与执行边界
 
@@ -54,6 +54,7 @@ git ls-remote origin 'refs/tags/macos-vX.Y.Z^{}' refs/heads/main
 - Release 非草稿、非预发布；tag 与发布提交中的启动器版本一致。
 - 远端含该版本 ARM64 DMG、manifest.json 和 SHA256SUMS，大小均大于零。
 - Actions 日志中的 manifest 绑定相同 tag、版本和 sourceCommit。`pluginPayload` 覆盖随包交付的 `startup: true` 插件，版本和 Git 提交一致，交付摘要及打包哈希校验通过。
+- 发布清单中的 `desktopPayload` 包含同版本的 Desktop、官方安装包来源和 SHA-512，以及适配后的 ASAR SHA-256。
 - 本地 main、origin/main 和实际远端 main 一致；本地 tag 与远端 tag 指向同一发布提交。
 
 缺少证据时保持未完成。读取遇到瞬态网络错误时重试同一读取，不创建第二次发布。发布后默认仅读取远端状态、日志和资产元数据。

@@ -2,13 +2,13 @@
 
 启动器界面、应用侧业务控制与 SDK 接入采用 Flutter/Dart，与 MacLauncher 使用同一技术体系并保持独立仓库。Swift 仅保留 macOS 原生接口。接入和统一检查流程见 [Flutter 启动器说明](flutter/README.md)。
 
-启动器管理一个独立 DSH Web 服务，浏览器通过带密码的入口访问。应用不包含 DSH 桌面客户端。为保留已有配置，日常服务继续读取旧版 `$DSH_HOME/profiles/desktop` 目录；这个历史目录名不会启动桌面应用。
+启动器管理一个独立的 DSH Host。官方 Desktop 客户端和浏览器连接同一个 Host。浏览器通过带密码的 Web 入口访问。Host 继续读取 `$DSH_HOME/profiles/desktop`，沿用已有配置。
 
 Station 生成启动覆盖配置并加载 `dsh-station-bridge`。桥接发布权限为 `0600` 的 DSH 就绪记录，提供停机检查和模型授权。启动器通过 DSH 官方清单读取插件加载状态。
 
 ## macOS ARM64 构建
 
-默认构建使用 `dsh-runtime.json` 指定的 npm 版本和完整性摘要。`macos-launcher/package-lock.json` 固定生产依赖。构建校验两者一致，再用 `npm ci --omit=dev` 装配应用资源。
+默认构建使用 `dsh-runtime.json` 指定的 npm 版本和完整性摘要。`macos-launcher/package-lock.json` 固定生产依赖。构建校验两者一致，再用 `npm ci --omit=dev` 装配应用资源。`macos-launcher/desktop-release.json` 固定同版本的官方 ARM64 桌面包。构建验证官方签名与 SHA-512 后，在暂存副本中装配 Station 适配。
 
 先准备独立 Node 和 Flutter，再运行：
 
@@ -33,7 +33,7 @@ node macos-launcher/build-candidate.mjs github 0.2.2-rc.2
 
 试编应用输出到 `.build/project-registry/station-*/`，保留本次清单和构建输入。试编只生成应用，日常入口仍从 `.build/` 顶层选择启动包。
 
-正式生产构建使用 `scripts/build-local-release.sh`，产出 DMG、`manifest.json` 和 `SHA256SUMS`。它不会构建或打包 DSH Desktop。已有 `.build/release-assets` 时脚本保留原产物并停止；正式发布流程见 [deploy-release skill](../.agents/skills/deploy-release/SKILL.md)。
+正式生产构建使用 `scripts/build-local-release.sh`，产出 DMG、`manifest.json` 和 `SHA256SUMS`。打包检查 Desktop 版本、签名和适配文件，并在清单中记录桌面包来源与适配后的 ASAR 摘要。已有 `.build/release-assets` 时脚本保留原产物并停止。发布步骤见 [deploy-release skill](../.agents/skills/deploy-release/SKILL.md)。
 
 ## 启动和关闭
 
@@ -41,7 +41,7 @@ node macos-launcher/build-candidate.mjs github 0.2.2-rc.2
 
 服务启动时按本地名单检查全局插件是否已安装，缺包时列出补装命令。随包组件使用构建时固定的版本。插件的加载结果和跳过原因可在日志中查看。
 
-首次使用 Web 需要设置访问密码。启动器提供“打开 Web”入口；服务未运行或版本不兼容时会显示原因。每个工程在 DSH 内选择工作目录。
+启动器提供“打开桌面版”和“打开 Web”入口。首次使用 Web 需要设置访问密码。服务未运行或版本不兼容时会显示原因。每个工程在 DSH 内选择工作目录。关闭 Desktop 后，共享 Host 和 Web 入口继续运行。
 
 Web 只有一个端口 `33080`，监听 `0.0.0.0`。本机访问 `http://127.0.0.1:33080/`，局域网使用 Mac 当前的内网 IP 和同一个端口。没有有效登录 cookie 时显示密码页；密码正确后，代理在服务器内部通过服务端的私有 token 取得后端认证 cookie，并把它保存在当前 Web 会话中。浏览器只持有代理登录 cookie，登录后回到同一端口的 `/`，随后直接访问 DSH。HTTP 和 WebSocket 使用同一认证会话，不再经过导航页或跨端口跳转。
 

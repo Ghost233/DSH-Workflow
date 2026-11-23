@@ -4,21 +4,21 @@
   "plugins": [
     {
       "package": "dshmarket",
-      "version": "1.73.23",
+      "version": "1.80.0",
       "entryId": "dshmarket",
       "repository": "https://github.com/dsh-market/dsh-market",
       "startup": true
     },
     {
       "package": "dsh-context",
-      "version": "0.86.0",
+      "version": "0.87.1",
       "entryId": "dsh-context",
       "repository": "https://github.com/bowenliang123/dsh-context",
       "startup": true
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.77",
+      "version": "1.9.85",
       "entryId": "cost-meter",
       "repository": "https://github.com/Han-1413141/dsh-cost-meter",
       "startup": true
@@ -60,7 +60,7 @@
     },
     {
       "package": "dsh-mermaid",
-      "version": "0.4.5",
+      "version": "0.5.2",
       "entryId": "ui-mermaid",
       "repository": "https://github.com/MrmoLabs/dsh-mermaid",
       "startup": true

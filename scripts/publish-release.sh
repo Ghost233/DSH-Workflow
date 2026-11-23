@@ -35,8 +35,14 @@ assert value['tag'] == tag and value['version'] == version, f"manifest tag/versi
 assert json.loads(Path('macos-launcher/package.json').read_text())['version'] == version, '发布 tag 与源码版本不一致'
 assert value['sourceCommit'] == commit, f"manifest sourceCommit 不一致：{value.get('sourceCommit')}"
 runtime = json.loads(Path('dsh-runtime.json').read_text())
+assert value.get('dshVersion') == runtime['version'], 'manifest DSH 版本不一致'
 if runtime.get('source') == 'npm':
     assert value.get('dshRuntime') == {key: runtime[key] for key in ('source', 'registry', 'integrity')}, 'manifest DSH npm 来源或完整性不一致'
+desktop = value.get('desktopPayload', {})
+pin = json.loads(Path('macos-launcher/desktop-release.json').read_text())
+assert desktop.get('version') == pin['version'] == runtime['version'] \
+    and desktop.get('sourceUrl') == pin['url'] and desktop.get('sourceSha512') == pin['sha512'] \
+    and re.fullmatch(r'[0-9a-f]{64}', desktop.get('appAsarSha256', '')), 'manifest Desktop 交付记录不一致'
 payload = value.get('pluginPayload', {})
 assert re.fullmatch(r'[0-9a-f]{64}', payload.get('sha256', '')), 'manifest 缺少插件本体交付校验'
 plugin_config = json.loads(Path('project-plugins.json').read_text())
@@ -63,6 +69,6 @@ gh release create "$RELEASE_TAG" \
   --draft \
   --repo Ghost233/DSH-Workflow \
   --title "Ghost DSH Station macOS ${RELEASE_TAG#macos-v}" \
-  --notes "Automated macOS builds for Apple Silicon (ARM64). Locally ad-hoc signed; not notarized."
+  --notes "Includes the DeepSeek Harness Desktop client and Web access backed by one Station-managed DSH Host. Apple Silicon (ARM64). Ad-hoc signed."
 
 echo "publish-release: 完成：$RELEASE_TAG 已创建 Release 草稿，等待本地验收"

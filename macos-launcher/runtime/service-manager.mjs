@@ -1,7 +1,8 @@
-import { fork } from 'node:child_process'
+import { fork, spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
-import { appendFile, readFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { join, delimiter } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createInterface } from 'node:readline'
@@ -82,7 +83,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     void logWrites.catch(() => {})
     updates.publish()
   }
-  const hostRequest = (owned, type) => new Promise((accept, reject) => {
+  const hostRequest = (owned, type, fields = {}, timeout = 2000) => new Promise((accept, reject) => {
     const requestId = ++controlId
     const finish = (error, value) => {
       clearTimeout(timer)
@@ -96,12 +97,13 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
       if (value.error) finish(new Error(redact(value.error)))
       else finish(null, value)
     }
-    const exited = () => finish(new Error('DSH 服务在任务检查期间退出'))
-    const timer = setTimeout(() => finish(new Error('DSH 任务检查超时，当前工作状态未知。')), 2000)
+    const exited = () => finish(new Error('DSH 服务在处理请求期间退出'))
+    const timer = setTimeout(() => finish(new Error(type === 'workflow-stop-inspection'
+      ? 'DSH 任务检查超时，当前工作状态未知。' : 'DSH 桌面请求超时。')), timeout)
     owned.on('message', message)
     owned.once('close', exited)
     if (!owned.connected || child !== owned) { finish(new Error('DSH 服务实例已改变')); return }
-    owned.send({ type, requestId }, error => { if (error) finish(error) })
+    owned.send({ type, requestId, ...fields }, error => { if (error) finish(error) })
   })
   const inspect = async owned => {
     try {
@@ -341,6 +343,22 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     }
     let stopInspection, pluginUpdates
     if (input.type === 'start-service') await start(input.permissionMode)
+    else if (input.type === 'open-desktop') {
+      const { value } = await snapshot()
+      if (!value.service.ready || closing) throw new Error('请先启动 DSH 服务。')
+      const executable = join(resources, 'DSH Desktop.app/Contents/MacOS/DeepSeek Harness')
+      await mkdir(join(dataRoot, 'desktop-ui'), { recursive: true, mode: 0o700 })
+      const desktop = spawn(executable, [], {
+        cwd: resources, env: {
+          DSH_WORKFLOW_DATA_ROOT: dataRoot, DSH_HOME: home,
+          HOME: loginEnvironment.HOME ?? process.env.HOME, PATH: loginEnvironment.PATH ?? process.env.PATH,
+          ...(stationOwned ? {} : { DSH_TELEMETRY_DISABLED: '1' }),
+        },
+        stdio: ['ignore', 'ignore', 'pipe'],
+      })
+      createInterface({ input: desktop.stderr }).on('line', log)
+      await once(desktop, 'spawn')
+    }
     else if (input.type === 'authorize-notifications') {
       if (!authorizing) {
         notificationAuthorization = { authorizationRequest: { state: 'requesting' }, observedAt: new Date().toISOString() }
@@ -402,7 +420,9 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
       await stop(input)
       if (input.type === 'restart-service') await start(input.permissionMode)
     }
-    else if (!['status', 'logs', 'connect-web'].includes(input.type)) throw new Error('Unsupported DSH service command')
+    else if (!['status', 'logs', 'connect-web', 'connect-desktop', 'desktop-session', 'desktop-drag'].includes(input.type)) {
+      throw new Error('Unsupported DSH service command')
+    }
     const { value, identityVerified } = await snapshot()
     if (stopInspection) value.stop = stopInspection
     if (pluginUpdates) value.pluginUpdates = pluginUpdates
@@ -414,6 +434,29 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
       if (input.runtimeVersion !== receipt.runtimeVersion) throw new Error('DSH 服务接入版本不兼容，请使用配套应用。')
       value.connection = { instanceId: receipt.lease, pid: receipt.pid,
         runtimeVersion: receipt.runtimeVersion, url: admission.url, injections }
+    }
+    if (['connect-desktop', 'desktop-session', 'desktop-drag'].includes(input.type)) {
+      if (value.service.ready !== true || !receipt || !child || !admission) throw new Error('DSH 服务未启动或暂不可用，请先启动 DSH 服务。')
+      if (input.runtimeVersion !== receipt.runtimeVersion) throw new Error('DSH 服务接入版本不兼容，请使用配套应用。')
+      const owned = child, instanceId = receipt.lease
+      if (input.type !== 'connect-desktop' && input.instanceId !== instanceId) {
+        throw new Error('DSH 服务实例已改变')
+      }
+      if (input.type === 'desktop-drag') {
+        if (typeof input.address !== 'string' || input.address.length > 8192) {
+          throw new Error('DSH 桌面文件请求无效')
+        }
+        const { value: resource } = await hostRequest(owned, 'workflow-desktop-drag', { address: input.address }, 11_000)
+        value.resource = resource
+      } else if (input.type === 'desktop-session') {
+        const { value: platformSession } = await hostRequest(owned, 'workflow-desktop-session', {}, 5000)
+        value.platformSession = platformSession
+      } else {
+        const url = new URL('/', admission.url).href
+        const { value: connection } = await hostRequest(owned, 'workflow-desktop-connect', {}, 8000)
+        value.connection = { ...connection, url, instanceId, pid: owned.pid, runtimeVersion: receipt?.runtimeVersion }
+      }
+      if (child !== owned || receipt?.lease !== instanceId) throw new Error('DSH 服务实例已改变')
     }
     return value
   }

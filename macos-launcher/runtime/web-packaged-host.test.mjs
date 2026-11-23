@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto'
 import { sealPluginPayload } from './plugin-payload.mjs'
 import { startupPluginResults } from './startup-plugins.mjs'
 import { copyProjectIntegration } from '../project-resources.mjs'
+import { authenticatedHostUrl } from './station-bridge.mjs'
 
 async function checkRepositoryGh(ctx, root, signal) {
   const main = join(root, 'main repo'), nested = join(main, 'nested repo')
@@ -208,7 +209,7 @@ test('packaged project profile serves authenticated official DSH readiness using
   }
   await startHost()
   t.signal.throwIfAborted()
-  const baseUrl = c => c.connection.authenticatedUrl(`http://127.0.0.1:${c.webServer.port}`)
+  const baseUrl = authenticatedHostUrl
   const login = await fetch(baseUrl(ctx), { redirect: 'manual', headers: { connection: 'close' }, signal: t.signal })
   const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
   await login.text()

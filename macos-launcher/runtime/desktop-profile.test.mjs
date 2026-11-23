@@ -36,6 +36,38 @@ async function fixture(t) {
   return { root, workflow, profile, web, prepare, init, entries }
 }
 
+test('Station falls back to the native preset engine without changing the selected profile bundles', async t => {
+  const f = await fixture(t)
+  f.init()
+  const native = await f.prepare()
+  if (native.version !== '0.2.3-alpha.2') {
+    t.skip('Requires the DSH 0.2.3-alpha.2 runtime')
+    return
+  }
+  const nativeDisabled = f.entries(native).find(row => row.id === 'compaction-basic').disabled
+  const bundle = 'dsh-live-compact'
+  const directory = join(f.profile, 'node_modules', bundle)
+  await mkdir(directory, { recursive: true })
+  await writeFile(join(directory, 'package.json'), JSON.stringify({ name: bundle, version: '1.1.12',
+    dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  await writeFile(join(directory, 'cordis.patch.yml'), JSON.stringify([
+    { id: 'compaction-basic', disabled: true }, { insert: [{ id: 'test-compaction', name: bundle }] },
+  ]))
+  const path = join(f.profile, 'package.json')
+  const manifest = JSON.parse(await readFile(path, 'utf8'))
+  manifest.dependencies[bundle] = '1.1.12'
+  manifest.dsh.profile.bundles.push(bundle)
+  const selected = JSON.stringify(manifest)
+  await writeFile(path, selected)
+  const entries = f.entries(await f.prepare())
+  assert.equal(entries.find(row => row.id === 'test-compaction').disabled, true)
+  assert.equal(entries.find(row => row.id === 'compaction-basic').disabled, nativeDisabled)
+  const standard = entries.find(row => row.id === 'preset-standard')
+  assert.ok(standard.config.plugins.find(row => row.id === 'compaction').config.some(
+    row => row.name === '@deepseek-ai/dsh-compaction-basic' && row.disabled !== true))
+  assert.equal(await readFile(path, 'utf8'), selected)
+})
+
 test('Station keeps the copied Web profile and rebuilds its own overlay without registering a local bundle', async t => {
   const f = await fixture(t)
   f.init(f.web)

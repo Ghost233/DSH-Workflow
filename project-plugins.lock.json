@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "harnessVersion": "0.2.2-rc.5",
+  "harnessVersion": "0.2.3-alpha.2",
   "registry": "https://registry.npmjs.org/",
-  "manifestSha256": "57f12092aad4af3783931903438ec993548bbffab198bdabf4a64595a3e2777d",
+  "manifestSha256": "1752c273163174e7091fec051298bf0b0c53704b7f4d5e9438eca3f2f2b0d7c8",
   "plugins": [
     {
       "package": "dshmarket",
-      "version": "1.73.23",
+      "version": "1.80.0",
       "metadata": {
         "name": "dshmarket",
-        "version": "1.73.23",
+        "version": "1.80.0",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -40,10 +40,10 @@
     },
     {
       "package": "dsh-context",
-      "version": "0.86.0",
+      "version": "0.87.1",
       "metadata": {
         "name": "dsh-context",
-        "version": "0.86.0",
+        "version": "0.87.1",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -91,10 +91,10 @@
     },
     {
       "package": "dsh-cost-meter",
-      "version": "1.9.77",
+      "version": "1.9.85",
       "metadata": {
         "name": "dsh-cost-meter",
-        "version": "1.9.77",
+        "version": "1.9.85",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"
@@ -110,13 +110,14 @@
               "0.2.1-rc.1": "compatible",
               "0.2.1-rc.2": "compatible",
               "0.2.1-alpha.5": "compatible",
-              "0.2.2-alpha.3": "compatible"
+              "0.2.2-alpha.3": "compatible",
+              "0.2.3-alpha.2": "compatible"
             }
           }
         },
         "peerDependencies": {
-          "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-0 <0.3.0-0 || >=0.2.2-0 <0.3.0-0",
-          "@deepseek-ai/dsh-credentials": ">=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-0 <0.3.0-0 || >=0.2.2-0 <0.3.0-0"
+          "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-0 <0.3.0-0 || >=0.2.2-0 <0.3.0-0 || >=0.2.3-0 <0.3.0-0",
+          "@deepseek-ai/dsh-credentials": ">=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-0 <0.3.0-0 || >=0.2.2-0 <0.3.0-0 || >=0.2.3-0 <0.3.0-0"
         },
         "peerDependenciesMeta": {}
       }
@@ -319,10 +320,10 @@
     },
     {
       "package": "dsh-mermaid",
-      "version": "0.4.5",
+      "version": "0.5.2",
       "metadata": {
         "name": "dsh-mermaid",
-        "version": "0.4.5",
+        "version": "0.5.2",
         "dsh": {
           "bundle": {
             "patch": "./cordis.patch.yml"

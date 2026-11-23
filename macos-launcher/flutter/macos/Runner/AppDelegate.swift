@@ -265,6 +265,9 @@ class AppDelegate: FlutterAppDelegate {
             "resources": resources.path,
             "dataRoot": self.dataRoot.path,
             "stationOwnsManagers": self.testRoot == nil || FileManager.default.fileExists(atPath: self.runtimeScript("station-runtime.mjs", resources: resources).path),
+            "desktopAvailable": FileManager.default.isExecutableFile(
+              atPath: resources.appendingPathComponent("DSH Desktop.app/Contents/MacOS/DeepSeek Harness").path
+            ),
             "testSocket": self.testRoot == nil ? NSNull() :
               (ProcessInfo.processInfo.environment["DSH_LAUNCHER_TEST_SOCKET"] ?? self.dataRoot.deletingLastPathComponent().appendingPathComponent("manager/sdk-v1.sock").path) as Any,
             "home": self.dshHome,

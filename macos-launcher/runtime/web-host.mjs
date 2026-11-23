@@ -2,6 +2,8 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { readDesktopHost } from './desktop-launch.mjs'
+import { desktopConnection, desktopDrag, desktopPlatformSession } from './desktop-host-control.mjs'
+import { redact } from './service-control.mjs'
 
 /** Start the official Web profile using the packaged runtime and Station's existing profile. */
 export async function startWebHost({ resources, profile, overlay }) {
@@ -39,6 +41,26 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
   })()
   const onMessage = message => {
     if (message?.type === 'shutdown') void stop().catch(error => { console.error(error); process.exitCode = 1 })
+    if (!['workflow-desktop-connect', 'workflow-desktop-session', 'workflow-desktop-drag'].includes(message?.type)) return
+    const { type, requestId } = message
+    void (async () => {
+      try {
+        if (closing) throw new Error('DSH 服务正在停止')
+        const { ctx } = await application
+        let value
+        if (type === 'workflow-desktop-connect') value = await desktopConnection(ctx)
+        else if (type === 'workflow-desktop-session') value = await desktopPlatformSession(ctx)
+        else {
+          const require = createRequire(join(resources, 'node_modules/@deepseek-ai/dsh/package.json'))
+          const { parseFileAddress } = require('@deepseek-ai/dsh-util-workspace-path')
+          value = await desktopDrag(ctx, parseFileAddress, message.address)
+        }
+        await send({ type, requestId, value })
+      } catch (error) {
+        const diagnostic = redact(error?.message ?? error)
+        await send({ type, requestId, error: `DSH 桌面请求未完成：${diagnostic}` })
+      }
+    })().catch(() => {})
   }
   process.on('message', onMessage)
   process.once('disconnect', () => { void stop().catch(error => { console.error(error); process.exitCode = 1 }) })

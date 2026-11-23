@@ -79,6 +79,17 @@ class Release:
         pinned = runtime.get("version")
         if runtime.get("package") != "@deepseek-ai/dsh":
             raise ReleaseError("DSH 固定来源无效")
+        desktop = json.loads((ROOT / "macos-launcher/desktop-release.json").read_text())
+        try:
+            desktop_digest = base64.b64decode(desktop.get("sha512", ""), validate=True)
+        except (ValueError, TypeError):
+            desktop_digest = b""
+        desktop_url = f"https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-{pinned}-mac-arm64.zip"
+        if (desktop.get("version") != pinned or desktop.get("url") != desktop_url or len(desktop_digest) != 64
+                or type(desktop.get("bytes")) is not int or desktop["bytes"] <= 0
+                or not re.fullmatch(r"[A-Z0-9]{10}", desktop.get("signingTeam", ""))
+                or not re.fullmatch(r"[0-9a-f]{64}", desktop.get("mainSha256", ""))):
+            raise ReleaseError("官方 Desktop 固定来源或版本与 DSH Host 不一致")
         if (app.get("dependencies", {}).get("@deepseek-ai/dsh") != pinned
                 or locked_app.get("dependencies", {}).get("@deepseek-ai/dsh") != pinned
                 or lock.get("packages", {}).get("node_modules/@deepseek-ai/dsh", {}).get("version") != pinned):

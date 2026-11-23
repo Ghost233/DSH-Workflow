@@ -295,8 +295,8 @@ Future<void> main(List<String> arguments) async {
     final nodeVersion = await _run('$resources/node', ['--version']);
     require(
       nodeVersion.exitCode == 0 &&
-          nodeVersion.stdout.toString().trim() == 'v24.12.0',
-      'resource controls use fixed Node24.12.0',
+          nodeVersion.stdout.toString().trim() == 'v24.22.3',
+      'resource controls use fixed Node 24.22.3',
     );
     evidence['controlNodeVersion'] = nodeVersion.stdout.toString().trim();
     final helper = '$resources/DSH Service Notifications.app';

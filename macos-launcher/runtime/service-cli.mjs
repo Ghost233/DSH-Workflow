@@ -45,7 +45,9 @@ if (import.meta.main) {
     let body = ''
     for await (const chunk of process.stdin) { body += chunk; if (body.length > 16 * 1024) throw new Error('Control request too large') }
     const request = JSON.parse(body)
-    if (request.type === 'connect-desktop') throw new Error('Station 已改为 Web 服务，不提供桌面客户端连接。')
+    if (['connect-desktop', 'desktop-session', 'desktop-drag'].includes(request.type)) {
+      throw new Error('此请求仅供 Station 随包桌面客户端使用。')
+    }
     if (['start-service', 'restart-service'].includes(request.type)) request.permissionMode = process.env.DSH_PERMISSION_MODE || 'workspace-write'
     if (request.type === 'connect-web') {
       request.runtimeVersion = JSON.parse(await readFile(join(resources, 'workflow/dsh-runtime.json'), 'utf8')).version

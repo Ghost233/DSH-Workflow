@@ -48,6 +48,15 @@ class ReleaseTest(unittest.TestCase):
         self.git("-C", str(harness), "commit", "-m", "upstream fixture")
         runtime = {"package": "@deepseek-ai/dsh", "version": "0.2.1-alpha.2", "commit": self.git("-C", str(harness), "rev-parse", "HEAD")}
         (self.repo / "dsh-runtime.json").write_text(json.dumps(runtime))
+        self.desktop_pin = {
+            'version': runtime['version'],
+            'url': f"https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-{runtime['version']}-mac-arm64.zip",
+            'bytes': 100,
+            'sha512': base64.b64encode(hashlib.sha512(b'official Desktop fixture').digest()).decode(),
+            'signingTeam': 'EXAMPLE123',
+            'mainSha256': 'a' * 64,
+        }
+        (launcher / 'desktop-release.json').write_text(json.dumps(self.desktop_pin))
         plugins = json.dumps({"registry": "https://registry.npmjs.org/", "plugins": []})
         (self.repo / "project-plugins.json").write_text(plugins)
         (self.repo / "project-plugins.lock.json").write_text(json.dumps({"schema": 1, "registry": "https://registry.npmjs.org/", "harnessVersion": runtime["version"], "manifestSha256": hashlib.sha256(plugins.encode()).hexdigest(), "plugins": []}))
@@ -283,6 +292,19 @@ print('unexpected gh operation',file=sys.stderr);sys.exit(2)
         (resources / 'node_modules/@deepseek-ai/dsh').mkdir(parents=True)
         (resources / 'node_modules/@deepseek-ai/dsh/package.json').write_text(json.dumps(
             {'name': '@deepseek-ai/dsh', 'version': '0.2.1-alpha.2'}))
+        desktop = resources / 'DSH Desktop.app/Contents'
+        adapter = desktop / 'Resources/station-desktop'
+        adapter.mkdir(parents=True)
+        (desktop / 'MacOS').mkdir()
+        (desktop / 'MacOS/DeepSeek Harness').write_bytes(b'fixture Desktop executable')
+        (desktop / 'Info.plist').write_bytes(plistlib.dumps({
+            'CFBundleIdentifier': 'com.ghostagent.dsh-workflow-desktop',
+            'CFBundleShortVersionString': self.desktop_pin['version'], 'CFBundleURLTypes': [],
+        }))
+        (desktop / 'Resources/app.asar').write_bytes(b'fixture adapted ASAR')
+        (adapter / 'source.json').write_text(json.dumps(self.desktop_pin))
+        (adapter / 'desktop-client.mjs').write_text('export const fixture = true\n')
+        (adapter / 'service-control.mjs').write_text('export const fixture = true\n')
         for relative in ['macos-launcher/runtime/plugin-payload.mjs',
                          'macos-launcher/runtime/delivery-manifest.mjs']:
             destination = self.repo / relative
@@ -332,6 +354,12 @@ else:sys.exit(2)
         self.assertEqual(manifest['tag'], 'macos-v0.2.5')
         self.assertEqual(manifest['sourceCommit'], self.git('rev-parse', 'HEAD'))
         self.assertEqual(manifest['dshVersion'], '0.2.1-alpha.2')
+        self.assertEqual(manifest['desktopPayload'], {
+            'version': self.desktop_pin['version'],
+            'sourceUrl': self.desktop_pin['url'],
+            'sourceSha512': self.desktop_pin['sha512'],
+            'appAsarSha256': hashlib.sha256(b'fixture adapted ASAR').hexdigest(),
+        })
         self.assertRegex(manifest['pluginPayload']['sha256'], r'^[a-f0-9]{64}$')
         self.assertEqual(manifest['pluginPayload']['plugins'], [])
         asset = manifest['assets'][0]
@@ -379,12 +407,21 @@ else:sys.exit(2)
         self.assertFalse(output.exists())
 
     @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS packaging CLI seam')
-    def test_packaging_rejects_a_desktop_payload(self):
+    def test_packaging_rejects_a_missing_desktop_payload(self):
         app, output = self.packaging_fixture()
-        (app / 'Contents/Resources/desktop/DeepSeek Harness.app').mkdir(parents=True)
+        shutil.rmtree(app / 'Contents/Resources/DSH Desktop.app')
         result = self.package_cli(app, output)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('不能包含 Desktop', result.stderr)
+        self.assertIn('缺少完整的 Desktop', result.stderr)
+        self.assertFalse(output.exists())
+
+    @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS packaging CLI seam')
+    def test_packaging_rejects_an_upstream_desktop_update_feed(self):
+        app, output = self.packaging_fixture()
+        (app / 'Contents/Resources/DSH Desktop.app/Contents/Resources/app-update.yml').write_text('upstream update feed')
+        result = self.package_cli(app, output)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Desktop 来源或 Station 适配', result.stderr)
         self.assertFalse(output.exists())
 
     @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS packaging CLI seam')
@@ -521,7 +558,6 @@ for name in ['fixture.dmg','manifest.json']:(root/name).write_bytes(b'fixture as
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = [json.loads(line) for line in log.read_text().splitlines()]
         self.assertIn(['node', 'macos-launcher/build.mjs'], calls)
-        self.assertFalse(any(any('desktop' in argument.lower() for argument in call) for call in calls))
         self.assertTrue((self.repo / '.build/release-assets/SHA256SUMS').is_file())
 
     @unittest.skipUnless(os.uname().sysname == 'Darwin', 'macOS release job CLI seam')

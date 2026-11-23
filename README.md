@@ -6,7 +6,7 @@
 
 日常入口是无参数 `./start-dsh-workflow.sh`。仅支持 macOS ARM64。Station 启动独立 DSH 服务，使用浏览器访问 Web 界面。关闭浏览器或 Station 窗口后，服务继续运行。退出 Station 时统一停止日常 DSH 和 Web，并回收它们启动的 MCP 与辅助进程。
 
-后台 DSH 服务由 Station 随包的独立 Node 运行。应用只交付 Web 核心，不包含 DSH 桌面客户端。为保留已有模型、插件和会话配置，日常服务继续使用旧版的 `$DSH_HOME/profiles/desktop` 配置目录；目录名称不代表仍有桌面客户端。
+后台 DSH 服务由 Station 随包的独立 Node 运行。官方 Desktop 客户端和 Web 共用这个 Host。Host 从 `$DSH_HOME/profiles/desktop` 读取已有的模型和插件配置，并沿用会话数据。
 
 Station 窗口打开时显示 Dock 图标，可通过 Command-Tab 切换。关闭窗口后，Station 收回菜单栏；可从菜单栏重新打开。退出前会检查未完成工作，需确认时展示清单；取消则保留服务，清理失败则保留窗口并显示原因。
 

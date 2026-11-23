@@ -135,17 +135,15 @@ test('an optional bundle with an invalid composed group is isolated before a val
   const entries = [{ id: 'p2-existing-disabled', name: 's08-owned-kept', disabled: true, config: { saved: 'keep' } }]
   const before = structuredClone(entries)
   const loaded = boot.loadOverlayPatches('s08', join(profile, 'node_modules', badName, 'cordis.patch.yml'))
-  const composed = boot.composeEntries([[{ insert: entries }], loaded])
-  assert.deepEqual(composed.find(row => row.id === 'p2-optional-group').config, [null])
-  let traversalError
-  try { await prepareStartupPlugins({ profile, entries: composed, config: { plugins: [] }, boot }) }
-  catch (error) { traversalError = error }
-  assert.equal(traversalError?.name, 'TypeError')
-  assert.match(traversalError.message, /group/)
-  console.log('S08_GROUP_SEMANTIC_FACTS=' + JSON.stringify({
-    officialBoot: require.resolve('@deepseek-ai/dsh-app-boot'), officialParsePassed: true,
-    officialComposePassed: true, projectTraversalError: { name: traversalError.name, message: traversalError.message },
-  }))
+  let composed, composeError
+  try { composed = boot.composeEntries([[{ insert: entries }], loaded]) }
+  catch (error) { composeError = error }
+  if (composeError) {
+    assert.match(composeError.message, /null/)
+  } else {
+    assert.deepEqual(composed.find(row => row.id === 'p2-optional-group').config, [null])
+    await assert.rejects(prepareStartupPlugins({ profile, entries: composed, config: { plugins: [] }, boot }), /group/)
+  }
   const result = await prepareStartupPlugins({ profile, entries,
     config: { plugins: [badName, goodName].map(name => ({ package: name, version: '1.0.0', startup: true })) }, boot })
   assert.deepEqual(result.skipped.map(row => row.package), [badName], 'Only the malformed optional package must be rejected')

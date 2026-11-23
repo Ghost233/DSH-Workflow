@@ -7,6 +7,25 @@ import { apply as applyModelAuthorization, inject as modelAuthorizationServices 
 export const name = 'dsh-station-bridge'
 export const inject = ['connection', 'webServer', 'appReady']
 
+/** Resolve the browser login URL from the Host's authentication provider. */
+export function authenticatedHostUrl(ctx) {
+  const origin = `http://127.0.0.1:${ctx.webServer.port}`
+  let url
+  if (typeof ctx.connection.authenticatedUrl === 'function') {
+    url = ctx.connection.authenticatedUrl(origin)
+  } else {
+    const entries = []
+    ctx.emit(ctx.webServer, 'webserver/entry-url', origin, entries)
+    url = entries.find(entry => entry.open)?.url
+  }
+  const parsed = url && URL.parse(url)
+  if (!parsed || parsed.origin !== origin || parsed.pathname !== '/' || parsed.username || parsed.password
+    || !parsed.searchParams.get('token')) {
+    throw new Error('Desktop Host did not provide an authenticated loopback address')
+  }
+  return parsed.href
+}
+
 /** Publish Station's private Host identity and install its control handlers. */
 export function apply(ctx, { directory, runtimeVersion }) {
   const lease = randomUUID()
@@ -20,11 +39,7 @@ export function apply(ctx, { directory, runtimeVersion }) {
     published = (async () => {
       await mkdir(directory, { recursive: true, mode: 0o700 })
       if (closed) return
-      const url = ctx.connection.authenticatedUrl(`http://127.0.0.1:${ctx.webServer.port}`)
-      const parsed = new URL(url)
-      if (parsed.hostname !== '127.0.0.1' || parsed.protocol !== 'http:' || !parsed.searchParams.get('token')) {
-        throw new Error('Desktop Host did not provide an authenticated loopback address')
-      }
+      const url = authenticatedHostUrl(ctx)
       let permissionMode = 'unknown'
       try {
         const actual = ctx.get?.('sandboxPolicy')?.resolve().mode

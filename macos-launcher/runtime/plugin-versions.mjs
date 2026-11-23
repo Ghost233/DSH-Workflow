@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { readPluginConfiguration, readStartupChecklist } from './plugin-configuration.mjs'
 import { pluginDependencySpec, isProfilePlugin } from './delivery-manifest.mjs'
 import { fetchGitHubPluginLatest, isGitHubReleaseDependency, readGitHubPluginCatalog } from './github-release-plugins.mjs'
+const LIVE_COMPACT = 'dsh-live-compact'
 const packageName = value => typeof value === 'string' && /^(?:@[a-z0-9_][a-z0-9._-]*\/)?[a-z0-9_][a-z0-9._-]*$/i.test(value)
 export const exactVersion = value => typeof value === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value)
 export const isRegistryDependency = (name, spec) => packageName(name) && typeof spec === 'string' && !/[:/#]/.test(spec)
@@ -104,7 +105,7 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
   const profileSource = 'DSH 当前配置'
   const profileManifest = await jsonFile(join(profile, 'package.json'))
   for (const [name, spec] of Object.entries(profileManifest?.dependencies ?? {})) {
-    if (!packageName(name) || typeof spec !== 'string') continue
+    if (name === LIVE_COMPACT || !packageName(name) || typeof spec !== 'string') continue
     let installed
     try { installed = await installedPackage(profile, name) }
     catch (error) {
@@ -123,7 +124,7 @@ export async function checkPluginVersions({ resourcesRoot, dataRoot, home = proc
       note: local ? '本地或 Git 依赖；在 DSH 插件页面管理' : current ? '实际安装版本；不查询 npm latest' : '未找到实际安装包；不把依赖声明当成实际版本' })
   }
   for (const name of profileManifest?.dsh?.profile?.bundles ?? []) {
-    if (typeof name !== 'string' || rows.some(row => row.name === name)) continue
+    if (name === LIVE_COMPACT || typeof name !== 'string' || rows.some(row => row.name === name)) continue
     if (!packageName(name)) {
       rows.push({ source: `${profileSource} Bundle`, name, current: null, latest: null,
         status: 'local', note: '路径型 Bundle；不按 npm latest 判断' })

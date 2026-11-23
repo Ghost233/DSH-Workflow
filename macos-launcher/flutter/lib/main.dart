@@ -377,6 +377,12 @@ class _LauncherPageState extends State<LauncherPage> {
         Text('应用版本 ${model.environment.appVersion}'),
         Text('Web 访问：${_stateName(model.snapshot.state)}'),
         const Text('项目目录在 DSH 内选择。'),
+        if (model.environment.desktopAvailable)
+          _button(
+            '打开桌面版',
+            model.openDesktop,
+            enabled: model.serviceSnapshot.ready == true,
+          ),
         Text('Web', style: Theme.of(context).textTheme.titleMedium),
         Wrap(
           spacing: 8,
