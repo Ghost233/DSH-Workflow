@@ -47,7 +47,8 @@ export class StationDesktopConnection {
         const status = await this.request('status', 2500).catch(() => null)
         if (this.closed) return
         const current = status?.service
-        if (current?.state !== 'running' || current.instanceId !== this.instanceId || current.pid !== this.pid) {
+        // Keep the window and platform session through a transient control connection failure.
+        if (current && (current.state !== 'running' || current.instanceId !== this.instanceId || current.pid !== this.pid)) {
           await this.stop()
           this.onFailure?.(error)
           return
