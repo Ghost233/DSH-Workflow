@@ -80,7 +80,7 @@ function upstreamHeaders(request, upstreamPort, backendCookie = '') {
   return headers
 }
 
-/** Password-authenticated HTTP/WebSocket bridge; DSH itself remains loopback-only. */
+/** HTTP/WebSocket bridge with automatic loopback access and password-authenticated LAN access. */
 export async function startLanGateway({ port = 3081, host, upstreamPort, password, authenticatedUrl, sessions: sharedSessions,
   allowLanSettings = false, available = () => true }) {
   host ??= '0.0.0.0'
@@ -92,6 +92,8 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
   if (typeof password !== 'string' || password.length === 0 || typeof authenticatedUrl !== 'function') throw new Error('LAN gateway requires a password and DSH URL source')
   let currentPassword = password
   let passwordRevision = 0
+  let upstreamRevision = 0
+  let localAuthentication
   const sessions = sharedSessions ?? new Map()
   const backendCookies = new Map()
   const failures = new Map()
@@ -123,21 +125,61 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
     try { return new URL(request.headers.origin).origin === `http://${request.headers.host}` }
     catch { return false }
   }
-  const authenticated = request => {
-    const key = cookieValue(request)
-    if (!key) return false
-    const expiry = sessions.get(key)
-    if (expiry === undefined || expiry <= Date.now() || !backendCookies.has(key)) { sessions.delete(key); backendCookies.delete(key); return false }
-    return true
+  const directLoopback = request => {
+    const site = request.headers['sec-fetch-site']
+    return request.headers.host === `127.0.0.1:${listeningPort}`
+      && request.socket.localAddress === '127.0.0.1'
+      && request.socket.remoteAddress?.startsWith('127.')
+      && request.headers.origin !== 'null'
+      && (site === undefined || site === 'none' || site === 'same-origin')
+      && request.headers.forwarded === undefined
+      && request.headers['x-forwarded-for'] === undefined
+      && request.headers['x-forwarded-host'] === undefined
+      && request.headers['x-forwarded-proto'] === undefined
   }
+  const sessionCookie = request => {
+    const key = cookieValue(request)
+    if (!key) return undefined
+    const expiry = sessions.get(key)
+    const cookie = backendCookies.get(key)
+    if (expiry === undefined || expiry <= Date.now() || !cookie) {
+      sessions.delete(key)
+      backendCookies.delete(key)
+      return undefined
+    }
+    return cookie
+  }
+  const exchangeHostCookie = async () => {
+    const revision = upstreamRevision
+    const url = new URL(authenticatedUrl())
+    if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.port !== String(upstreamPort)
+      || url.pathname !== '/' || !url.searchParams.has('token') || url.username || url.password) throw new Error('Invalid DSH URL')
+    const exchange = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(5000) })
+    const cookies = exchange.headers.getSetCookie()
+    await exchange.body?.cancel()
+    if (revision !== upstreamRevision || ![200, 303].includes(exchange.status) || cookies.length === 0) {
+      throw new Error('DSH authentication unavailable')
+    }
+    return cookies.map(cookie => cookie.split(';', 1)[0]).join('; ')
+  }
+  const localHostCookie = () => {
+    if (localAuthentication?.expiresAt > Date.now()) return localAuthentication.cookie
+    const entry = { expiresAt: Date.now() + SESSION_MS, cookie: exchangeHostCookie().catch(error => {
+      if (localAuthentication === entry) localAuthentication = undefined
+      throw error
+    }) }
+    localAuthentication = entry
+    return entry.cookie
+  }
+  const hostCookie = async request => directLoopback(request) ? localHostCookie() : sessionCookie(request)
   const reject = (response, code) => {
     response.writeHead(code, secureHeaders('text/plain; charset=utf-8'))
     response.end(code === 403 ? 'forbidden\n' : code === 503 ? 'DSH 服务不可用（service unavailable）。请在启动器检查服务状态后重连 Web。\n' : 'authentication required\n')
   }
 
-  const proxy = (request, response) => {
+  const proxy = (request, response, backendCookie) => {
     if (response.destroyed) return
-    const proxyHeaders = upstreamHeaders(request, upstreamPort, backendCookies.get(cookieValue(request)))
+    const proxyHeaders = upstreamHeaders(request, upstreamPort, backendCookie)
     const target = trackRequest(http.request({ hostname: '127.0.0.1', port: upstreamPort, method: request.method,
       path: request.url, headers: proxyHeaders }, upstream => {
       response.writeHead(upstream.statusCode ?? 502, upstream.headers)
@@ -153,6 +195,11 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
   const onRequest = async (request, response) => {
     if (!validHost(request) || !sameOrigin(request)) { reject(response, 403); return }
     if (request.method === 'GET' && request.url === '/login') {
+      if (directLoopback(request)) {
+        response.writeHead(303, { ...secureHeaders(), location: '/' })
+        response.end()
+        return
+      }
       response.writeHead(200, secureHeaders())
       response.end(loginPage())
       return
@@ -175,14 +222,7 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
       let backendCookie
       try {
         if (!await available() || upstreamPort === null) { reject(response, 503); return }
-        const url = new URL(authenticatedUrl())
-        if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.port !== String(upstreamPort)
-          || url.pathname !== '/' || !url.searchParams.has('token') || url.username || url.password) throw new Error('Invalid DSH URL')
-        const exchange = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(5000) })
-        const cookies = exchange.headers.getSetCookie()
-        await exchange.body?.cancel()
-        if (![200, 303].includes(exchange.status) || cookies.length === 0) throw new Error('Desktop authentication unavailable')
-        backendCookie = cookies.map(cookie => cookie.split(';', 1)[0]).join('; ')
+        backendCookie = await exchangeHostCookie()
       } catch { reject(response, 503); return }
       if (revision !== passwordRevision) { reject(response, 401); return }
       failures.delete(address)
@@ -196,7 +236,10 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
       return
     }
     if (!await available() || upstreamPort === null) { reject(response, 503); return }
-    if (!authenticated(request)) {
+    let backendCookie
+    try { backendCookie = await hostCookie(request) }
+    catch { reject(response, 503); return }
+    if (!backendCookie) {
       if (request.method === 'GET' && (request.url?.split('?', 1)[0] === '/' || request.headers.accept?.includes('text/html'))) {
         response.writeHead(200, secureHeaders())
         response.end(loginPage())
@@ -210,7 +253,7 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
     if (!allowLanSettings && !loopback && request.method === 'POST' && SETTINGS_WRITES.has(path)) {
       reject(response, 403); return
     }
-    proxy(request, response)
+    proxy(request, response, backendCookie)
   }
 
   const onUpgrade = async (request, socket, head) => {
@@ -224,13 +267,19 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
       socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n')
       return
     }
-    if (!authenticated(request)) {
+    let backendCookie
+    try { backendCookie = await hostCookie(request) }
+    catch {
+      socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n')
+      return
+    }
+    if (!backendCookie) {
       socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
       return
     }
     if (socket.destroyed) return
     const target = trackRequest(http.request({ hostname: '127.0.0.1', port: upstreamPort, path: request.url,
-      headers: upstreamHeaders(request, upstreamPort, backendCookies.get(cookieValue(request))) }))
+      headers: upstreamHeaders(request, upstreamPort, backendCookie) }))
     socket.once('close', () => target.destroy())
     target.on('upgrade', (upstream, upstreamSocket, upstreamHead) => {
       pendingUpgrades.delete(socket)
@@ -277,6 +326,8 @@ export async function startLanGateway({ port = 3081, host, upstreamPort, passwor
     setUpstreamPort(next) {
       if (!Number.isSafeInteger(next) || next < 1 || next > 65535 || next === listeningPort) throw new Error('Invalid LAN gateway upstream port')
       upstreamPort = next
+      upstreamRevision++
+      localAuthentication = undefined
       backendCookies.clear()
     },
     get lanUrls() {

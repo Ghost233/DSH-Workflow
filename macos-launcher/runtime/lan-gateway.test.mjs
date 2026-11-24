@@ -19,7 +19,7 @@ test('authenticated settings assets retain their original bytes and cache header
     const gate = await startLanGateway({ port: 0, host: '127.0.0.1', upstreamPort: upstream.port,
       password: 'test', allowLanSettings, authenticatedUrl: () => `http://127.0.0.1:${upstream.port}/?token=fixture` })
     try {
-      const base = `http://127.0.0.1:${gate.port}`
+      const base = `http://localhost:${gate.port}`
       const asset = `${base}/plugins/@deepseek-ai/dsh-client-ui-settings/client.js`
       assert.equal((await fetch(asset)).status, 401)
       const login = await fetch(`${base}/login`, { method: 'POST', redirect: 'manual', body: new URLSearchParams({ password: 'test' }) })
@@ -65,7 +65,7 @@ test('LAN gate requires password, proxies the process URL and revokes sessions o
   const gate = await startLanGateway({ port: 0, host: '127.0.0.1', upstreamPort: upstream.port,
     password: 'first-secret', authenticatedUrl: () => `http://127.0.0.1:${upstream.port}/?token=process-token` })
   t.after(() => gate.close())
-  const base = `http://127.0.0.1:${gate.port}`
+  const base = `http://localhost:${gate.port}`
   const before = await fetch(`${base}/api/test`)
   assert.equal(before.status, 401)
   const direct = await fetch(`${base}/?token=process-token`, { redirect: 'manual' })
@@ -112,7 +112,7 @@ test('LAN gate requires password, proxies the process URL and revokes sessions o
     headers: { 'content-type': 'application/x-www-form-urlencoded' } })).status, 303)
 })
 
-async function upgrade(port, cookie) {
+async function upgrade(port, host, cookie) {
   return await new Promise((resolve, reject) => {
     const socket = net.connect(port, '127.0.0.1')
     const timer = setTimeout(() => { socket.destroy(); reject(new Error(`upgrade timed out: ${response}`)) }, 2000)
@@ -123,14 +123,14 @@ async function upgrade(port, cookie) {
       if (response.includes('\r\n\r\n')) { clearTimeout(timer); resolve({ socket, response }) }
     })
     socket.once('connect', () => socket.write([
-      'GET /api/socket HTTP/1.1', `Host: 127.0.0.1:${port}`, 'Connection: Upgrade',
+      'GET /api/socket HTTP/1.1', `Host: ${host}:${port}`, 'Connection: Upgrade',
       'Upgrade: websocket', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', 'Sec-WebSocket-Version: 13',
       ...(cookie ? [`Cookie: ${cookie}`] : []), '', '',
     ].join('\r\n')))
   })
 }
 
-test('LAN gate rejects unauthenticated upgrades and forwards authenticated WebSockets', async t => {
+test('LAN gate automatically authenticates direct local WebSockets and requires passwords elsewhere', async t => {
   const upstreamSockets = new Set()
   const upstream = await server((request, response) => {
     if (request.url.startsWith('/?token=')) response.writeHead(303, { location: '/', 'set-cookie': 'dsh-auth=test; HttpOnly; Path=/' })
@@ -147,14 +147,17 @@ test('LAN gate rejects unauthenticated upgrades and forwards authenticated WebSo
   const gate = await startLanGateway({ port: 0, host: '127.0.0.1', upstreamPort: upstream.port,
     password: 'secret', authenticatedUrl: () => `http://127.0.0.1:${upstream.port}/?token=process-token` })
   t.after(async () => { await gate.close(); for (const socket of upstreamSockets) socket.destroy(); await upstream.close() })
-  const denied = await upgrade(gate.port)
+  const local = await upgrade(gate.port, '127.0.0.1')
+  assert.match(local.response, /101 Switching Protocols/u)
+  local.socket.destroy()
+  const denied = await upgrade(gate.port, 'localhost')
   assert.match(denied.response, /401 Unauthorized/u)
   denied.socket.destroy()
-  const login = await fetch(`http://127.0.0.1:${gate.port}/login`, { method: 'POST', body: 'password=secret', redirect: 'manual',
+  const login = await fetch(`http://localhost:${gate.port}/login`, { method: 'POST', body: 'password=secret', redirect: 'manual',
     headers: { 'content-type': 'application/x-www-form-urlencoded' } })
   const cookie = login.headers.get('set-cookie')?.split(';', 1)[0]
   assert.ok(cookie)
-  const admitted = await upgrade(gate.port, cookie)
+  const admitted = await upgrade(gate.port, 'localhost', cookie)
   assert.match(admitted.response, /101 Switching Protocols/u)
   const closed = new Promise(resolve => admitted.socket.once('close', resolve))
   gate.setPassword('changed')
@@ -178,17 +181,10 @@ test('a LAN-bound gate answers the same port on loopback', { skip: privateLanHos
   assert.equal(gate.localUrl, `http://127.0.0.1:${gate.port}/`)
   assert.deepEqual(gate.lanUrls, [`http://${lanHost}:${gate.port}/`])
   assert.equal((await fetch(`http://${lanHost}:${gate.port}/`)).status, 200, 'the LAN address still serves the login page')
-  // Loopback shares the port; the login exchange keeps the requesting host.
-  const login = await fetch(`http://127.0.0.1:${gate.port}/login`, { method: 'POST', body: 'password=secret', redirect: 'manual',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' } })
-  assert.equal(login.status, 303)
-  assert.equal(login.headers.get('location'), '/')
-  const gateCookie = login.headers.get('set-cookie')?.split(';', 1)[0]
-  assert.ok(gateCookie)
-  const exchange = await fetch(new URL(login.headers.get('location'), gate.localUrl), { redirect: 'manual', headers: { cookie: gateCookie } })
-  assert.equal(exchange.status, 200)
-  assert.equal(exchange.headers.get('set-cookie'), null)
-  const api = await fetch(`http://127.0.0.1:${gate.port}/api/test`, { headers: { cookie: gateCookie } })
+  const page = await fetch(gate.localUrl)
+  assert.equal(await page.text(), 'DSH page')
+  assert.equal(page.headers.get('set-cookie'), null)
+  const api = await fetch(new URL('api/test', gate.localUrl))
   assert.equal(api.status, 200)
   assert.equal(await api.text(), 'dsh-auth=local')
   // localhost is accepted as a loopback authority; forged hosts still are not.

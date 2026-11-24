@@ -262,6 +262,7 @@ Future<void> runSettingsApplicationScenario(
   }
 
   final local = Uri.parse('http://127.0.0.1:${o.port}/');
+  final passwordEntry = local.replace(host: 'localhost');
   Future<List<Cookie>> login(Uri base, String password) async {
     final result = await request(
       base.resolve('login'),
@@ -337,7 +338,7 @@ Future<void> runSettingsApplicationScenario(
       'native password file has the retained 0600 rule',
     );
     final firstBackend = await receipt();
-    final oldCookies = await login(local, settingsInitialPassword);
+    final oldCookies = await login(passwordEntry, settingsInitialPassword);
     await setPassword('');
     await waitFor(
       'empty password error visible',
@@ -380,7 +381,7 @@ Future<void> runSettingsApplicationScenario(
       'actual live password update',
       () async =>
           (await request(
-            local.resolve('login'),
+            passwordEntry.resolve('login'),
             method: 'POST',
             form: 'password=$nextPassword',
           )).code ==
@@ -388,7 +389,7 @@ Future<void> runSettingsApplicationScenario(
     );
     require(
       (await request(
-            local.resolve('login'),
+            passwordEntry.resolve('login'),
             method: 'POST',
             form: 'password=$settingsInitialPassword',
           )).code ==
@@ -397,7 +398,7 @@ Future<void> runSettingsApplicationScenario(
     );
     require(
       (await request(
-            local.resolve('api/pluginInventory/list'),
+            passwordEntry.resolve('api/pluginInventory/list'),
             cookies: oldCookies,
           )).code ==
           401,

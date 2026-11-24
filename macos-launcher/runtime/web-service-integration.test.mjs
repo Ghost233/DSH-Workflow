@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { copyProjectIntegration } from '../project-resources.mjs'
 import { isProfilePlugin } from './delivery-manifest.mjs'
 import { readStartupChecklist, startupChecklistPath } from './plugin-configuration.mjs'
+import { startGlobalSupervisor } from './global-supervisor.mjs'
 import { serveManager } from './service-manager.mjs'
 import { serviceRequest, serviceSocket } from './service-control.mjs'
 
@@ -78,6 +79,23 @@ test('Station runs the packaged Web Host without Desktop and preserves an existi
   const runtime = JSON.parse(await readFile(join(resources, 'workflow/dsh-runtime.json'), 'utf8'))
   const connected = await serviceRequest(socket, { type: 'connect-web', runtimeVersion: runtime.version })
   assert.equal(connected.connection.runtimeVersion, runtime.version)
+  const gateway = await startGlobalSupervisor({ dataRoot, port: 0, password: 'station-web-fixture' })
+  t.after(() => gateway.close())
+  const localPage = await fetch(gateway.localUrl)
+  assert.equal(localPage.status, 200)
+  assert.equal(localPage.headers.get('set-cookie'), null)
+  assert.match(await localPage.text(), /__DSH_BOOT__/)
+  const inventoryUrl = new URL('/api/pluginInventory/list', gateway.localUrl)
+  const inventory = () => fetch(inventoryUrl, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'client-request', rpcId: 'station-local-inventory', method: 'pluginInventory/list', payload: { args: {} } }) })
+  const localInventory = await inventory()
+  assert.equal(localInventory.status, 200)
+  assert.equal((await localInventory.json()).result.ok, true)
+  inventoryUrl.hostname = 'localhost'
+  const denied = await inventory()
+  assert.equal(denied.status, 401)
+  await denied.body.cancel()
+  await gateway.close()
   const desktop = (await serviceRequest(socket, { type: 'connect-desktop', runtimeVersion: runtime.version })).connection
   assert.equal(desktop.instanceId, connected.connection.instanceId)
   assert.equal(desktop.pid, connected.connection.pid)

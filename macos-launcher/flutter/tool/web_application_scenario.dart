@@ -706,10 +706,19 @@ Future<void> runWebApplicationScenario({
     final backend = await readReceipt();
     final lease = backend['lease'];
     final backendPid = backend['pid'] as int;
-    final url = Uri.parse('http://127.0.0.1:$port/');
+    final localUrl = Uri.parse('http://127.0.0.1:$port/');
+    final url = localUrl.replace(host: 'localhost');
+    final localPage = await request(localUrl);
+    require(
+      localPage.code == 200 &&
+          localPage.body.contains('__DSH_BOOT__') &&
+          localPage.cookies.isEmpty,
+      'direct loopback serves the actual DSH frontend without a password',
+    );
+    await health(localUrl, const []);
     require(
       (await request(url.resolve('api/pluginInventory/list'))).code == 401,
-      'unauthenticated clients cannot access the real backend',
+      'other access addresses require a password before reaching the backend',
     );
     Future<List<Cookie>> authenticate() async {
       final rejected = await request(
@@ -819,7 +828,7 @@ Future<void> runWebApplicationScenario({
           backendHealth: () => health(backendUrl, backendLogin.cookies),
           webHealth: () async => health(url, await authenticate()),
           webEntry: () async {
-            final response = await request(url);
+            final response = await request(localUrl);
             return (code: response.code, body: response.body);
           },
           hostRpc: (method, args) =>
