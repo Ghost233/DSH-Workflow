@@ -4,6 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { readDesktopHost } from './desktop-launch.mjs'
 import { desktopConnection, desktopDrag, desktopPlatformSession } from './desktop-host-control.mjs'
 import { redact } from './service-control.mjs'
+import { loadObservationConfig, startSessionObservation } from './session-observation-mcp.mjs'
 
 /** Start the official Web profile using the packaged runtime and Station's existing profile. */
 export async function startWebHost({ resources, profile, overlay }) {
@@ -23,7 +24,8 @@ export async function startWebHost({ resources, profile, overlay }) {
 /** Own the Web Host without a Desktop process. */
 export async function serveWebHost({ resources, profile, receiptDirectory, overlay, exit = () => {} }) {
   const application = startWebHost({ resources, profile, overlay })
-  let closing
+  let closing, observation
+  let observationStarting
   const send = message => new Promise((accept, reject) => {
     if (!process.connected || !process.send) return accept()
     process.send(message, error => error ? reject(error) : accept())
@@ -31,6 +33,8 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
   const stop = () => closing ??= (async () => {
     const app = await application.catch(() => undefined)
     if (!app) return
+    await observationStarting
+    await observation?.close()
     await app.shutdown.shutdown(0)
     try { await send({ type: 'shutdown-complete' }) }
     finally {
@@ -78,6 +82,16 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
     }
   }
   if (!receipt || receipt.pid !== process.pid) throw new Error('Station Web Host receipt is missing or belongs to another process')
+  if (!closing) {
+    observationStarting = (async () => {
+      const config = await loadObservationConfig(join(receiptDirectory, 'session-observation-mcp.json'))
+      if (config && !closing) observation = await startSessionObservation({
+        config, sessionController: ctx.sessionController,
+        observeTurnEnds: listener => ctx.on("session/event", listener),
+      })
+    })().catch(() => { console.error('会话观测 MCP 未启用：配置、端口或被动会话接口不可用。') })
+    await observationStarting
+  }
   await send({ type: 'ready', url: receipt.url, injections: [] })
   return { stop }
 }
