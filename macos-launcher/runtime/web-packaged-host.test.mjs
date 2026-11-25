@@ -12,6 +12,7 @@ import { sealPluginPayload } from './plugin-payload.mjs'
 import { startupPluginResults } from './startup-plugins.mjs'
 import { copyProjectIntegration } from '../project-resources.mjs'
 import { authenticatedHostUrl } from './station-bridge.mjs'
+import { desktopConnection } from './desktop-host-control.mjs'
 
 async function checkRepositoryGh(ctx, root, signal) {
   const main = join(root, 'main repo'), nested = join(main, 'nested repo')
@@ -232,6 +233,14 @@ test('packaged project profile serves authenticated official DSH readiness using
   assert.equal(bridge?.fiberPhase, 'active')
   assert.match(bridge.moduleName, /macos-launcher\/runtime\/station-bridge\.mjs$/)
   assert.ok(ctx.get('workflowHostInstance'), 'the bridge publishes the Host identity')
+  const desktop = await desktopConnection(ctx)
+  const indicator = desktop.injections.find(row => row.kind === 'style'
+    && row.text.includes('[data-row-key^="session:"] > span > svg[data-state="ongoing"]'))
+  assert.ok(indicator, 'the Desktop connection receives the session status style')
+  assert.match(indicator.text, /animation:\s*none/)
+  const index = await fetch(desktop.url, { headers: { cookie, connection: 'close' }, signal: t.signal })
+  assert.equal(index.status, 200)
+  assert.ok((await index.text()).includes(`<style>${indicator.text}</style>`), 'Web receives the same session status style')
   const bash = health.plugins.find(row => row.entryId?.endsWith(':station-gh-bash-sandbox'))
   assert.equal(bash?.fiberPhase, 'active')
   assert.match(bash.moduleName, /macos-launcher\/runtime\/station-gh-bash\.mjs$/)
