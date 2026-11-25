@@ -106,8 +106,11 @@ export async function prepareDesktopProfile({ resourcesRoot, desktopRuntimeRoot,
       patches.push({ id: row.id, config: { ...structuredClone(row.config ?? {}), mode: permissionMode } })
     }
   }
-  patches.push({ insert: [{ id: 'dsh-station-bridge', name: join(workflow, 'macos-launcher/runtime/station-bridge.mjs'),
-    config: { directory: join(globalRoot, '.dsh-workflow/desktop'), runtimeVersion: runtime.version } }] })
+  patches.push({ insert: [
+    { id: 'dsh-station-bridge', name: join(workflow, 'macos-launcher/runtime/station-bridge.mjs'),
+      config: { directory: join(globalRoot, '.dsh-workflow/desktop'), runtimeVersion: runtime.version } },
+    { id: 'dsh-station-session-indicator', name: join(workflow, 'macos-launcher/runtime/station-session-indicator.mjs') },
+  ] })
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const overlay = join(directory, 'cordis.patch.yml')
   await writeFile(overlay, JSON.stringify(patches, null, 2) + '\n', { mode: 0o600 })
