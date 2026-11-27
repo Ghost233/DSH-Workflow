@@ -36,7 +36,11 @@ test('only authenticated tools use configured scope; no raw status or payload di
  assert.equal((await f.send({}, {headers:{...f.headers,authorization:'Bearer incorrect'}})).status,401)
  assert.equal((await f.send({}, {headers:{...f.headers,origin:'http://evil.example'}})).status,404)
  assert.equal((await fetch(f.root+'/mcp?unsafe=1',{headers:f.headers})).status,404)
- assert.equal((await f.rpc('initialize',{protocolVersion:'2025-06-18'})).result.protocolVersion,'2025-06-18')
+ const init=(await f.rpc('initialize',{protocolVersion:'2025-06-18'})).result
+ assert.equal(init.protocolVersion,'2025-06-18')
+ assert.deepEqual(init.capabilities,{tools:{}})
+ for(const method of ['events/list','events/subscribe','events/unsubscribe'])
+  assert.equal((await f.rpc(method)).error.code,-32601)
  assert.equal((await f.send({jsonrpc:'2.0',method:'notifications/initialized'})).status,202)
  assert.deepEqual((await f.rpc('tools/list',{})).result.tools.map(x=>x.name),['session_status'])
  assert.equal((await f.rpc('tools/call',{name:'session_status',arguments:{id:'another'}})).error.code,-32602)

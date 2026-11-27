@@ -2,9 +2,14 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { readDesktopHost } from './desktop-launch.mjs'
+import { composeBackendDotTunnel } from './dsh-dot-tunnel-composition.mjs'
+import { createDshDotTunnelLifecycle } from './dsh-dot-tunnel-lifecycle.mjs'
 import { desktopConnection, desktopDrag, desktopPlatformSession } from './desktop-host-control.mjs'
 import { redact } from './service-control.mjs'
+import { startStationDotFromHost } from './station-dot-loopback.mjs'
 import { loadObservationConfig, startSessionObservation } from './session-observation-mcp.mjs'
+import { createStationPullTools } from './station-dot-pull-tools.mjs'
+import { loadStationDotTunnelConfig, openStationDotPromptHost } from './station-dot-host-config.mjs'
 
 /** Start the official Web profile using the packaged runtime and Station's existing profile. */
 export async function startWebHost({ resources, profile, overlay }) {
@@ -22,23 +27,29 @@ export async function startWebHost({ resources, profile, overlay }) {
 }
 
 /** Own the Web Host without a Desktop process. */
-export async function serveWebHost({ resources, profile, receiptDirectory, overlay, exit = () => {} }) {
-  const application = startWebHost({ resources, profile, overlay })
-  let closing, observation
-  let observationStarting
+export async function serveWebHost({ resources, profile, receiptDirectory, overlay, dotTunnel, dotTunnelComposition,
+  exit = () => {}, launchHost = startWebHost, readHost = readDesktopHost, ipc = process }) {
+  if (dotTunnel?.enabled && dotTunnelComposition?.enabled) throw Error('multiple_dot_tunnel_owners')
+  const application = launchHost({ resources, profile, overlay })
+  let tunnel = composeBackendDotTunnel(dotTunnelComposition, application) ?? createDshDotTunnelLifecycle(dotTunnel)
+  let closing, observation, observationConfig, stationDot, stationPrompt
+  let observationStarting, stationDotStarting
   const send = message => new Promise((accept, reject) => {
-    if (!process.connected || !process.send) return accept()
-    process.send(message, error => error ? reject(error) : accept())
+    if (!ipc.connected || !ipc.send) return accept()
+    ipc.send(message, error => error ? reject(error) : accept())
   })
   const stop = () => closing ??= (async () => {
+    try { await tunnel?.stop() } catch { console.error('DSH Dot Tunnel 子进程停止未确认。') }
     const app = await application.catch(() => undefined)
     if (!app) return
-    await observationStarting
+    await Promise.all([stationDotStarting, observationStarting])
+    await stationDot?.close()
     await observation?.close()
+    stationPrompt?.close()
     await app.shutdown.shutdown(0)
     try { await send({ type: 'shutdown-complete' }) }
     finally {
-      if (process.connected) process.disconnect()
+      if (ipc.connected) ipc.disconnect()
       // The CLI owns this process; leftover referenced handles must not keep it alive after disposal.
       exit(0)
     }
@@ -66,8 +77,8 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
       }
     })().catch(() => {})
   }
-  process.on('message', onMessage)
-  process.once('disconnect', () => { void stop().catch(error => { console.error(error); process.exitCode = 1 }) })
+  ipc.on('message', onMessage)
+  ipc.once('disconnect', () => { void stop().catch(error => { console.error(error); process.exitCode = 1 }) })
   const { ctx } = await application
   ctx.on('connection/request', (_request, response, next) => {
     if (closing) { response.writeHead(503); response.end(); return }
@@ -75,7 +86,7 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
   })
   let receipt
   for (let attempt = 0; attempt < 100 && !receipt; attempt++) {
-    try { receipt = await readDesktopHost(receiptDirectory) }
+    try { receipt = await readHost(receiptDirectory) }
     catch (error) {
       if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error
       await delay(50)
@@ -85,13 +96,36 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
   if (!closing) {
     observationStarting = (async () => {
       const config = await loadObservationConfig(join(receiptDirectory, 'session-observation-mcp.json'))
-      if (config && !closing) observation = await startSessionObservation({
+      if (!config || closing) return
+      stationPrompt = await openStationDotPromptHost({directory:join(receiptDirectory,'station-dot-approved-prompts'),
+        sessions:config.sessions,bearer:config.bearer,controller:ctx.sessionController})
+        .catch(()=>{ console.error('Station Dot 提示词投递未启用：批准目录或回执不可用。');return null })
+      if (closing) return
+      observation = await startSessionObservation({
         config, sessionController: ctx.sessionController,
+        ...createStationPullTools(ctx, config),
+        approvedPromptDelivery:stationPrompt?.deliver,
+        // Local completion cache for pull-based session status; no outbound subscription.
         observeTurnEnds: listener => ctx.on("session/event", listener),
       })
+      observationConfig = config
     })().catch(() => { console.error('会话观测 MCP 未启用：配置、端口或被动会话接口不可用。') })
-    await observationStarting
+    stationDotStarting = startStationDotFromHost({ctx, receiptDirectory}).then(value => {stationDot = value})
+      .catch(() => { console.error('Station Dot 只读接口未启用：配置、端口或被动会话接口不可用。') })
+    await Promise.all([observationStarting, stationDotStarting])
   }
+  if (!closing && !tunnel && observationConfig) {
+    try {
+      const config=await loadStationDotTunnelConfig(join(receiptDirectory,'station-dot-tunnel.json'))
+      if (config && !closing) tunnel=composeBackendDotTunnel({...config, openDirectPlugin:async()=>({
+        capability:'station.observation.owner_scoped',
+        endpoint:'http://127.0.0.1:'+observationConfig.port+'/mcp',
+        authorization:'Bearer '+observationConfig.bearer,
+        close:async()=>{}, // Web Host owns and closes the listener.
+      })},application)
+    } catch { console.error('Station Dot 隧道未启用：专用配置无效。') }
+  }
+  if (!closing) void tunnel?.start()
   await send({ type: 'ready', url: receipt.url, injections: [] })
   return { stop }
 }
