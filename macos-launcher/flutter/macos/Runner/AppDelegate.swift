@@ -285,6 +285,15 @@ class AppDelegate: FlutterAppDelegate {
           }
           try self.sendStationCommand(["type": role]); result(nil)
         case "showWindow": self.showWindow(); result(nil)
+        case "chooseDotClientDirectory":
+          let panel = NSOpenPanel()
+          panel.canChooseDirectories = true
+          panel.canChooseFiles = false
+          panel.allowsMultipleSelection = false
+          panel.showsHiddenFiles = true
+          panel.prompt = "选择目录"
+          panel.message = "选择现有 Tunnel 客户端及运行凭据所在的私有目录。"
+          panel.begin { response in result(response == .OK ? panel.url?.resolvingSymlinksInPath().path : nil) }
         case "chooseCodexAuthFile":
           let panel = NSOpenPanel()
           panel.canChooseDirectories = false

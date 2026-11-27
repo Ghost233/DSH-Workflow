@@ -93,11 +93,11 @@ export async function loadObservationConfig(path) {
     const bytes = Buffer.alloc(CONFIG_LIMIT + 1)
     const { bytesRead } = await fd.read(bytes, 0, bytes.length, 0)
     if (bytesRead !== st.size || bytesRead > CONFIG_LIMIT) throw new Error('observation_config_invalid')
-    return validateConfig(JSON.parse(bytes.subarray(0, bytesRead).toString('utf8')))
+    return validateObservationConfig(JSON.parse(bytes.subarray(0, bytesRead).toString('utf8')))
   } finally { await fd.close() }
 }
 
-function validateConfig(config) {
+export function validateObservationConfig(config) {
   if (!config || typeof config !== 'object' || Array.isArray(config) ||
       !['bearer,port,sessions','activeSessionIds,bearer,port,sessions'].includes(Object.keys(config).sort().join(',')) ||
       typeof config.bearer !== 'string' || !TOKEN.test(config.bearer) ||
@@ -144,7 +144,7 @@ async function readRequest(request) {
 }
 
 export async function startSessionObservation({ config, sessionController, observeTurnEnds, activeList, terminalEvents, watchedHistory, approvedPromptDelivery }) {
-  config = validateConfig(config)
+  config = validateObservationConfig(config)
   if (typeof sessionController?.state !== 'function') throw new Error('observation_source_unavailable')
   if(activeList!==undefined&&(typeof activeList?.begin!=='function'||typeof activeList?.page!=='function'))
     throw new Error('active_list_source_unavailable')

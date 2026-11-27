@@ -10,6 +10,7 @@ import { startStationDotFromHost } from './station-dot-loopback.mjs'
 import { loadObservationConfig, startSessionObservation } from './session-observation-mcp.mjs'
 import { createStationPullTools } from './station-dot-pull-tools.mjs'
 import { loadStationDotTunnelConfig, openStationDotPromptHost } from './station-dot-host-config.mjs'
+import { readStationDotPairing, saveStationDotPairing } from './station-dot-pairing.mjs'
 import { createStationDotTunnelControl, readTunnelPreference, writeTunnelPreference } from './station-dot-tunnel-control.mjs'
 
 /** Start the official Web profile using the packaged runtime and Station's existing profile. */
@@ -40,14 +41,17 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
     ipc.send(message, error => error ? reject(error) : accept())
   })
   const observationPath = join(receiptDirectory, 'session-observation-mcp.json')
+  const loadObservation = async () => (await readStationDotPairing(receiptDirectory))?.observation
+    ?? await loadObservationConfig(observationPath)
   const preferencePath = join(receiptDirectory, 'station-dot-tunnel-preference.json')
   let hostReady = false
   function ensureObservation(ctx, config) {
     if (closing || observationConfig) return Promise.resolve(observationConfig)
     observationStarting ??= (async () => {
-      config ??= await loadObservationConfig(observationPath)
+      config ??= await loadObservation()
       if (!config || closing) return
-      const prompt = await openStationDotPromptHost({
+      const pairedForRead = await readStationDotPairing(receiptDirectory)
+      const prompt = pairedForRead ? null : await openStationDotPromptHost({
         directory:join(receiptDirectory,'station-dot-approved-prompts'),
         sessions:config.sessions,bearer:config.bearer,controller:ctx.sessionController,
       }).catch(() => { console.error('Station Dot 提示词投递未启用：批准目录或回执不可用。'); return null })
@@ -71,9 +75,14 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
     readEnabled:() => readTunnelPreference(preferencePath),
     writeEnabled:enabled => writeTunnelPreference(preferencePath,enabled),
     getConfig:async () => {
+      const paired = await readStationDotPairing(receiptDirectory)
+      if (paired) return paired.transport
       const transport = await loadStationDotTunnelConfig(join(receiptDirectory,'station-dot-tunnel.json'))
-      if (!transport) return null
-      return (observationConfig ?? await loadObservationConfig(observationPath)) ? transport : null
+      const local = observationConfig ?? await loadObservationConfig(observationPath)
+      if (!transport && !local) return null
+      if (!transport) throw Error('missing_tunnel_config')
+      if (!local) throw Error('missing_mcp_config')
+      return transport
     },
     createTunnel:(config,publish) => composeBackendDotTunnel({
       ...config,publish,
@@ -110,12 +119,37 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
   })()
   const onMessage = message => {
     if (message?.type === 'shutdown') void stop().catch(error => { console.error(error); process.exitCode = 1 })
-    if (message?.type === 'workflow-set-dot-tunnel') {
+    if (message?.type === 'workflow-configure-dot-tunnel') {
+      const {type,requestId,pairing} = message
+      void (async () => {
+        try {
+          if (!hostReady || closing || !managedTunnel) throw Error('tunnel_host_unavailable')
+          const value = await managedTunnel.configure(async () => {
+            await saveStationDotPairing(receiptDirectory, pairing)
+            await observationStarting
+            await observation?.close()
+            observation = undefined
+            observationConfig = undefined
+            stationPrompt?.close()
+            stationPrompt = undefined
+          })
+          await send({type,requestId,value})
+        } catch (error) {
+          const diagnostic = error?.message === 'tunnel_must_be_stopped_before_pairing'
+            ? '请先关闭隧道，再保存新的 Dot 配对。'
+            : '配对未确认。请核对隧道 ID、官方客户端目录与校验值，以及会话 ID。'
+          await send({type,requestId,error:diagnostic})
+        }
+      })().catch(() => {})
+      return
+    }
+    if (['workflow-set-dot-tunnel','workflow-restart-dot-tunnel'].includes(message?.type)) {
       const {type,requestId,enabled} = message
       void (async () => {
         try {
           if (!hostReady || closing || !managedTunnel) throw Error('tunnel_host_unavailable')
-          const value = await managedTunnel.setEnabled(enabled)
+          const value = await (type === 'workflow-restart-dot-tunnel'
+            ? managedTunnel.restart() : managedTunnel.setEnabled(enabled))
           await send({type,requestId,value})
         } catch {
           await send({type,requestId,error:'Station 隧道设置未完成，请查看当前状态。'})

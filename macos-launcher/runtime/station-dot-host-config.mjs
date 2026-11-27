@@ -23,8 +23,11 @@ async function privateJSON(path) {
 
 export async function loadStationDotTunnelConfig(path) {
   const v = await privateJSON(path)
-  if (!v) return null
-  if (Object.keys(v).sort().join(',') !== 'clientSha256,directory,tunnelId' ||
+  return v && validateStationDotTunnelConfig(v)
+}
+
+export function validateStationDotTunnelConfig(v) {
+  if (!v || Object.keys(v).sort().join(',') !== 'clientSha256,directory,tunnelId' ||
       typeof v.directory !== 'string' || !isAbsolute(v.directory) || /[\r\n\0]/.test(v.directory) ||
       !/^tunnel_[a-f0-9]{32}$/.test(v.tunnelId ?? '') || !/^[a-f0-9]{64}$/.test(v.clientSha256 ?? ''))
     throw Error('station_dot_tunnel_config_invalid')

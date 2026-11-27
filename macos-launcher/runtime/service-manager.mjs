@@ -57,7 +57,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
   let dotTunnel = { enabled:false, state:'off', connected:null }
   const acceptDotTunnelStatus = value => {
     if (!value || typeof value.enabled !== 'boolean' || value.connected !== null ||
-        !['off','waiting_host','missing_config','invalid_config','checking_mcp','mcp_unavailable',
+        !['off','waiting_host','configured','missing_config','missing_tunnel_config','missing_mcp_config','invalid_config','checking_mcp','mcp_unavailable',
           'client_running','client_exited','start_failed','stop_failed'].includes(value.state)) return
     dotTunnel = { enabled:value.enabled, state:value.state, connected:null }
     updates.publish()
@@ -373,6 +373,20 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         await writeTunnelPreference(dotTunnelPreference,input.enabled)
         acceptDotTunnelStatus({enabled:input.enabled,state:input.enabled?'waiting_host':'off',connected:null})
       }
+    } else if (input.type === 'configure-dot-tunnel') {
+      const owned = child
+      if (!owned || starting || stopping || preparingStop)
+        throw new Error('请先启动 DSH 服务，再保存 Dot 配对。')
+      const response = await hostRequest(owned, 'workflow-configure-dot-tunnel', {pairing:input.pairing}, 12_000)
+      if (child !== owned) throw new Error('DSH 服务实例已改变')
+      acceptDotTunnelStatus(response.value)
+    } else if (input.type === 'restart-dot-tunnel') {
+      const owned = child
+      if (!owned || starting || stopping || preparingStop || !dotTunnel.enabled)
+        throw new Error('隧道未开启或 DSH 服务尚未就绪。')
+      const response = await hostRequest(owned, 'workflow-restart-dot-tunnel', {}, 12_000)
+      if (child !== owned) throw new Error('DSH 服务实例已改变')
+      acceptDotTunnelStatus(response.value)
     }
 
     else if (input.type === 'open-desktop') {

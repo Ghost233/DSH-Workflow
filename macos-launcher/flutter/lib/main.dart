@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 
 import 'application_probe.dart';
+import 'dot_configuration_dialog.dart';
 import 'launcher_controller.dart';
 import 'lifecycle_probe_process.dart';
 import 'maclauncher_integration.dart';
@@ -291,6 +292,10 @@ class _LauncherPageState extends State<LauncherPage> {
                   icon: Icon(Icons.tune),
                   label: Text('模型'),
                 ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.link),
+                  label: Text('Dot 配置'),
+                ),
               ],
             ),
             const VerticalDivider(width: 1),
@@ -301,6 +306,7 @@ class _LauncherPageState extends State<LauncherPage> {
                   1 => _plugins(),
                   2 => _logs(),
                   3 => ModelSettingsPage(model: model),
+                  4 => _dotConfiguration(),
                   _ => _overview(),
                 },
               ),
@@ -320,6 +326,62 @@ class _LauncherPageState extends State<LauncherPage> {
               ),
             ),
     ),
+  );
+
+  Future<void> _openDotConfiguration() async {
+    final pairing = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (_) => DotConfigurationDialog(native: model.native),
+    );
+    if (pairing != null && mounted) await model.configureDotTunnel(pairing);
+  }
+
+  Widget _dotConfiguration() => ListView(
+    children: [
+      _section('Station 隧道', [
+        Text('状态：${model.dotTunnelMessage}'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _button(
+              '配置连接',
+              _openDotConfiguration,
+              enabled:
+                  !model.changingDotTunnel &&
+                  model.serviceSnapshot.ready == true &&
+                  !const {
+                    'client_running',
+                    'checking_mcp',
+                    'stop_failed',
+                  }.contains(model.dotTunnelState),
+            ),
+            _button(
+              '启动隧道',
+              () => model.setDotTunnelEnabled(true),
+              enabled:
+                  !model.changingDotTunnel &&
+                  (!model.dotTunnelEnabled ||
+                      model.dotTunnelState == 'configured'),
+            ),
+            _button(
+              '关闭隧道',
+              () => model.setDotTunnelEnabled(false),
+              enabled: !model.changingDotTunnel && model.dotTunnelEnabled,
+            ),
+            _button(
+              '重启隧道',
+              model.restartDotTunnel,
+              enabled:
+                  !model.changingDotTunnel &&
+                  model.dotTunnelEnabled &&
+                  model.dotTunnelState != 'configured' &&
+                  model.serviceSnapshot.ready == true,
+            ),
+          ],
+        ),
+      ]),
+    ],
   );
 
   Widget _overview() => ListView(
@@ -375,7 +437,6 @@ class _LauncherPageState extends State<LauncherPage> {
       ]),
       _section('客户端入口', [
         Text('应用版本 ${model.environment.appVersion}'),
-        Text('Web 访问：${_stateName(model.snapshot.state)}'),
         const Text('项目目录在 DSH 内选择。'),
         if (model.environment.desktopAvailable)
           _button(
@@ -383,18 +444,9 @@ class _LauncherPageState extends State<LauncherPage> {
             model.openDesktop,
             enabled: model.serviceSnapshot.ready == true,
           ),
-        Text('Web', style: Theme.of(context).textTheme.titleMedium),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Station 隧道'),
-          subtitle: Text(model.dotTunnelMessage),
-          value: model.dotTunnelEnabled,
-          onChanged: model.changingDotTunnel
-              ? null
-              : (enabled) =>
-                    unawaited(_act(() => model.setDotTunnelEnabled(enabled))),
-        ),
-
+      ]),
+      _section('Web', [
+        Text('状态：${_stateName(model.snapshot.state)}'),
         Wrap(
           spacing: 8,
           runSpacing: 8,

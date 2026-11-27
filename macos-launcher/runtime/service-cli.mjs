@@ -62,7 +62,7 @@ if (import.meta.main) {
       }
     }
     let value
-    const timeout = request.type === 'update-plugins' ? 0 : request.type === 'restart-service' ? 55_000 : undefined
+    const timeout = request.type === 'update-plugins' ? 0 : request.type === 'restart-service' ? 55_000 : ['restart-dot-tunnel', 'configure-dot-tunnel'].includes(request.type) ? 15_000 : undefined
     try { value = await serviceRequest(manager.socket, request, timeout) }
     catch (error) {
       if (['status', 'logs'].includes(request.type) && ['ENOENT', 'ECONNREFUSED'].includes(error.code)) {

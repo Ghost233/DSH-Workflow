@@ -13,6 +13,14 @@ function validate(path,mode,directory=false) {
   return path
 }
 
+export function validateStationDotClientFiles({directory, clientSha256}) {
+  validate(directory,0o700,true)
+  const bin=validate(resolve(directory,'tunnel-client'),0o700)
+  if (lstatSync(bin).size>100_000_000 || createHash('sha256').update(readFileSync(bin)).digest('hex')!==clientSha256)
+    throw Error('dot_tunnel_client_not_pinned')
+  return {bin,runtime:validate(resolve(directory,'runtime.key'),0o600)}
+}
+
 // Opt-in internal composition, not user-supplied executable or upstream URLs.
 export function composeBackendDotTunnel({enabled=false,directory,tunnelId,clientSha256,openDirectPlugin,spawnProcess=spawn,publish}={},application) {
   if(enabled!==true)return null
@@ -34,12 +42,7 @@ export function composeBackendDotTunnel({enabled=false,directory,tunnelId,client
         allowApprovedDraft:entry.capability==='station.observation.owner_scoped' && entry.allowApprovedDraft===true}
     })(),
     launchOwned({endpoint}){
-      validate(directory,0o700,true)
-      const file=(name,mode)=>validate(resolve(directory,name),mode)
-      const bin=file('tunnel-client',0o700)
-      if(lstatSync(bin).size>100_000_000 || createHash('sha256').update(readFileSync(bin)).digest('hex')!==clientSha256)
-        throw Error('dot_tunnel_client_not_pinned')
-      const runtime=file('runtime.key',0o600)
+      const {bin,runtime}=validateStationDotClientFiles({directory,clientSha256})
       if(!/^Bearer [A-Za-z0-9_-]{43,128}$/.test(receipt?.authorization??''))
         throw Error('invalid_local_authorization')
       const lease=mkdtempSync(resolve(directory,'synthetic-upstream-'))

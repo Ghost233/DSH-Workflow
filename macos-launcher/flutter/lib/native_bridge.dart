@@ -51,6 +51,8 @@ class NativeBridge {
       channel.invokeMethod<void>('startStationManager', role);
   Future<void> openUrl(String url) =>
       channel.invokeMethod<void>('openUrl', url);
+  Future<String?> chooseDotClientDirectory() =>
+      channel.invokeMethod<String>('chooseDotClientDirectory');
   Future<String?> chooseCodexAuthFile() =>
       channel.invokeMethod<String>('chooseCodexAuthFile');
   Future<bool> setEntryManaged(bool managed) async =>

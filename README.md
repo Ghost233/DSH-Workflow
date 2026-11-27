@@ -26,6 +26,12 @@ Station 首次启动时把[默认名单](default-startup-plugins.json)复制到 
 
 使用 CodeGraph 时，在需要检索的工程中自行运行 `codegraph init`，再在 DSH 调用 `mcp__codegraph__codegraph_explore` 时传入该工程的绝对 `projectPath`。配置不固定工程目录，适用于共享后端下的多个工程。配置改动后重启宿主；已构建的 macOS 应用读取其打包副本，源码改动需重新构建启动器后生效。连接失败由 DSH 记录，不阻止其他可选插件启动。
 
+### Dot 配置
+
+Station 的「Dot 配置」标签独立于 Web。打开「配置连接」，填现有隧道 ID 和来自可信分发渠道的客户端 SHA-256，选择包含 `tunnel-client` 和 `runtime.key` 的现有私有目录，并填写允许读取的会话 ID。客户端及运行凭据不随 Station 分发；只选择本机目录，不在界面输入密钥。Station 生成本机 MCP 端口和凭据、原子落盘；保存不启动连接。「启动／关闭／重启」只影响隧道，不停止 Web 或 DSH。
+
+从界面保存的配对是只读的，以 `0600` 的单份配置保存在 Station 数据目录，并优先于下述旧的试点文件。需要更换配对时先关闭隧道。显示客户端运行不代表 ChatGPT 已连通，接通后应由 Dot 实际读取一次。
+
 ### 会话观测 MCP（本机试点）
 
 默认关闭。共享 DSH Host 启动时检查其已有的进程回执目录（与 `desktop-host.json` 同目录，即 Station 数据根目录下的 `global/.dsh-workflow/desktop/`）中的 `session-observation-mcp.json`。缺少文件、文件权限或配置不合格时不会启动该 MCP，不影响 DSH 服务。此目录不是 Web 访问服务配置目录。

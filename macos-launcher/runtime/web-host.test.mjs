@@ -105,7 +105,7 @@ test('Web Host starts the real DSH runtime and exits cleanly', { timeout: 60_000
     return await receive(message => message.type === 'workflow-set-dot-tunnel' && message.requestId === requestId)
   }
   const enabled = await toggle(true,1)
-  assert.deepEqual(enabled.value,{enabled:true,state:'missing_config',connected:null})
+  assert.deepEqual(enabled.value,{enabled:true,state:'missing_tunnel_config',connected:null})
   assert.deepEqual(JSON.parse(await readFile(join(receipt,'station-dot-tunnel-preference.json'),'utf8')),{enabled:true})
   const tunnelDirectory = join(await realpath(root), 'fixture-tunnel')
   await mkdir(tunnelDirectory,{mode:0o700})
@@ -113,24 +113,57 @@ test('Web Host starts the real DSH runtime and exits cleanly', { timeout: 60_000
   const client = '#!/bin/sh\nexec /bin/sleep 120\n'
   await writeFile(join(tunnelDirectory,'tunnel-client'),client,{mode:0o700})
   await writeFile(join(tunnelDirectory,'runtime.key'),'synthetic-fixture',{mode:0o600})
-  await writeFile(join(receipt,'station-dot-tunnel.json'),JSON.stringify({
-    directory:tunnelDirectory,tunnelId:'tunnel_'+'a'.repeat(32),
-    clientSha256:createHash('sha256').update(client).digest('hex'),
-  }),{mode:0o600})
+  const pair = async (clientSha256,requestId,id='new-allowed-fixture',label='Paired fixture') => {
+    child.send({type:'workflow-configure-dot-tunnel',requestId,pairing:{
+      directory:tunnelDirectory,tunnelId:'tunnel_'+'a'.repeat(32),clientSha256,
+      sessions:[{id,label}],
+    }})
+    return receive(message => message.type === 'workflow-configure-dot-tunnel' && message.requestId === requestId)
+  }
+  assert.match((await pair('b'.repeat(64),91)).error,/配对未确认/)
+  const hash = createHash('sha256').update(client).digest('hex')
+  assert.equal((await pair(hash,92)).value.state,'configured')
+  const newConfig = JSON.parse(await readFile(join(receipt,'station-dot-pairing.json'),'utf8'))
+  assert.deepEqual(newConfig.observation.sessions,[{id:'new-allowed-fixture',label:'Paired fixture'}])
+  const pairedMcp = (cfg=newConfig,tool='session_status') => fetch('http://127.0.0.1:'+cfg.observation.port+'/mcp', {
+    method:'POST',headers:{authorization:'Bearer '+cfg.observation.bearer,'content-type':'application/json',
+      accept:'application/json, text/event-stream'},
+    body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:tool}}),
+    signal:AbortSignal.timeout(2500),
+  })
   const running = await toggle(true,2)
   assert.deepEqual(running.value,{enabled:true,state:'client_running',connected:null})
+  assert.match((await pair(hash,93)).error,/请先关闭隧道/)
+  assert.deepEqual((await (await pairedMcp()).json()).result.structuredContent.sessions,
+    [{label:'Paired fixture',status:'unavailable'}])
   const leases = async () => (await readdir(tunnelDirectory)).filter(name=>name.startsWith('synthetic-upstream-'))
   assert.equal((await leases()).length,1)
   assert.deepEqual((await toggle(true,3)).value,running.value)
   assert.equal((await leases()).length,1)
-  const disabled = await toggle(false,4)
+  child.send({type:'workflow-restart-dot-tunnel',requestId:4})
+  const restarted = await receive(message => message.type === 'workflow-restart-dot-tunnel' && message.requestId === 4)
+  assert.deepEqual(restarted.value,running.value)
+  assert.equal((await leases()).length,1)
+  assert.equal((await request()).status,200)
+  const disabled = await toggle(false,5)
   assert.deepEqual(disabled.value,{enabled:false,state:'off',connected:null})
   assert.deepEqual(await leases(),[])
   assert.equal((await request()).status,200)
-  assert.equal((await mcp()).status,200)
+  assert.equal((await pairedMcp()).status,200)
+  assert.match((await pair('b'.repeat(64),94,'denied-fixture','Invalid replacement')).error,/配对未确认/)
+  assert.equal((await pairedMcp()).status,200)
+  assert.equal((await pair(hash,95,'replacement-fixture','Replacement fixture')).value.state,'configured')
+  const replacement = JSON.parse(await readFile(join(receipt,'station-dot-pairing.json'),'utf8'))
+  assert.notEqual(replacement.observation.bearer,newConfig.observation.bearer)
+  assert.equal((await toggle(true,6)).value.state,'client_running')
+  const replacementResult = (await (await pairedMcp(replacement)).json()).result.structuredContent
+  assert.deepEqual(replacementResult.sessions,[{label:'Replacement fixture',status:'unavailable'}])
+  await assert.rejects(()=>pairedMcp())
+  assert.equal((await request()).status,200)
+  assert.equal(JSON.parse(await readFile(join(receipt,'desktop-host.json'),'utf8')).pid,saved.pid)
   child.send({ type: 'shutdown' })
   await receive(message => message.type === 'shutdown-complete')
   assert.deepEqual(await Promise.race([exited, delay(1500, 'Host stayed alive after its shutdown acknowledgement', { ref: false })]),
     { code: 0, signal: null })
-  await assert.rejects(()=>mcp())
+  await assert.rejects(()=>pairedMcp(replacement))
 })

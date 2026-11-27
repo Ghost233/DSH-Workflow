@@ -89,7 +89,10 @@ export function createStationDotTunnelControl({
     await stopActive()
     let config
     try { config = await getConfig() }
-    catch { publish('invalid_config'); return status() }
+    catch (error) {
+      publish(['missing_mcp_config','missing_tunnel_config'].includes(error?.message) ? error.message : 'invalid_config')
+      return status()
+    }
     if (!config) { publish('missing_config'); return status() }
     const events = event => {
       if (active !== tunnel || !enabled || disposed) return
@@ -115,13 +118,31 @@ export function createStationDotTunnelControl({
         // Preserve previously configured auto-start on upgrade, but a new
         // installation without the dedicated config has no implicit opt-in.
         enabled = saved ?? Boolean(await getConfig())
-      } catch { publish('invalid_config'); return status() }
+      } catch (error) {
+        // A partial configuration should not turn on first-run auto-start.
+        if (!['missing_mcp_config','missing_tunnel_config'].includes(error?.message)) publish('invalid_config')
+        return status()
+      }
       return reconcile()
     }),
     setEnabled: next => queue(async () => {
       if (disposed || typeof next !== 'boolean') throw Error('tunnel_control_unavailable')
       await writeEnabled(next)
       enabled = next
+      return reconcile()
+    }),
+    configure: update => queue(async () => {
+      if (disposed || ['client_running','checking_mcp','stop_failed'].includes(state))
+        throw Error('tunnel_must_be_stopped_before_pairing')
+      await stopActive()
+      await update()
+      // Preserve the user's desired state but never dial as a side effect of saving.
+      publish('configured')
+      return status()
+    }),
+    restart: () => queue(async () => {
+      if (disposed || !enabled) throw Error('tunnel_control_unavailable')
+      await stopActive()
       return reconcile()
     }),
     dispose: () => queue(async () => {

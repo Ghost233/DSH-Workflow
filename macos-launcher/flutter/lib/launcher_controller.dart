@@ -63,8 +63,11 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   String get dotTunnelMessage => switch (dotTunnelState) {
     'off' => '隧道未开启。',
+    'configured' => '配对已保存，点击启动以核验本机连接。',
     'waiting_host' => '已开启，等待 DSH Host 启动。',
-    'missing_config' => '已开启，但缺少本机 MCP 或隧道配置。',
+    'missing_config' => '缺少隧道连接配置和本机会话观测配置。',
+    'missing_tunnel_config' => '缺少隧道连接配置。',
+    'missing_mcp_config' => '缺少本机会话观测配置。',
     'invalid_config' => '本机隧道配置无效，请检查文件权限和内容。',
     'checking_mcp' => '正在验证本机 MCP 并启动隧道。',
     'mcp_unavailable' => '本机 MCP 未就绪，隧道未启动。',
@@ -609,12 +612,26 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
     return _service;
   }
 
-  Future<void> setDotTunnelEnabled(bool enabled) async {
+  Future<void> setDotTunnelEnabled(bool enabled) =>
+      _runDotTunnelCommand('set-dot-tunnel', fields: {'enabled': enabled});
+
+  Future<void> configureDotTunnel(Map<String, Object?> pairing) =>
+      _runDotTunnelCommand(
+        'configure-dot-tunnel',
+        fields: {'pairing': pairing},
+      );
+
+  Future<void> restartDotTunnel() => _runDotTunnelCommand('restart-dot-tunnel');
+
+  Future<void> _runDotTunnelCommand(
+    String command, {
+    Map<String, Object?> fields = const {},
+  }) async {
     if (_closed || exiting || changingDotTunnel) return;
     changingDotTunnel = true;
     notifyListeners();
     try {
-      await _serviceCommand('set-dot-tunnel', fields: {'enabled': enabled});
+      await _serviceCommand(command, fields: fields);
     } finally {
       changingDotTunnel = false;
       if (!_closed) notifyListeners();
