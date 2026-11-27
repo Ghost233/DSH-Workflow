@@ -1,8 +1,8 @@
 // Owner-local Station setup only; never import from the process PATH or return credentials.
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, mkdtemp, open, realpath, rm, writeFile } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { mkdtemp, open, realpath, rm, writeFile } from 'node:fs/promises'
+import { join, relative, sep } from 'node:path'
 import { readStationDotPairing } from './station-dot-pairing.mjs'
 import { loadStationDotTunnelConfig } from './station-dot-host-config.mjs'
 import { validateStationDotClientFiles } from './dsh-dot-tunnel-composition.mjs'
@@ -14,14 +14,27 @@ const prefixes = ['/opt/homebrew', '/usr/local']
 const scopeError = () => Error('dot_setup_session_scope_invalid')
 
 async function trustedClient(prefix) {
-  const bin = await realpath(join(prefix, 'bin/tunnel-client'))
-  if (!bin.startsWith(join(prefix,'Cellar/tunnel-client')+'/') || basename(bin) !== 'tunnel-client')
+  const launcher = await realpath(join(prefix, 'bin/tunnel-client'))
+  const cellar = join(prefix, 'Cellar/tunnel-client')
+  const parts = relative(cellar, launcher).split(sep)
+  if (parts.length !== 3 || !/^[0-9][0-9A-Za-z.+_-]*$/.test(parts[0]) ||
+      parts[1] !== 'bin' || parts[2] !== 'tunnel-client')
     throw Error('dot_setup_untrusted_client')
-  const metadata = await lstat(bin)
-  if (!metadata.isFile() || ![0,process.getuid()].includes(metadata.uid) || (metadata.mode & 0o022) !== 0 ||
-      (metadata.mode & 0o111) === 0 || metadata.size < 1024 || metadata.size > 100_000_000)
+  const bytes = await readTrustedFile(launcher, 100_000_000, true)
+  if (!bytes.subarray(0, 2).equals(Buffer.from('#!')) && bytes.length >= 1024) return {binary: launcher}
+  const libexec = join(cellar, parts[0], 'libexec')
+  const binary = join(libexec, 'tunnel-client')
+  const cloudflared = join(libexec, 'cloudflared')
+  const manifest = join(libexec, 'cloudflared-manifest.json')
+  // Accept only Homebrew's exact exec trampoline; never interpret or execute it.
+  if (/["\\\r\n$`!]/.test(binary) ||
+      bytes.toString('utf8') !== '#!/bin/bash\nexec "' + binary + '" "$@"\n' ||
+      await realpath(libexec) !== libexec)
     throw Error('dot_setup_untrusted_client')
-  return bin
+  await readMachO(binary)
+  await readMachO(cloudflared)
+  await readTrustedFile(manifest, 16_384)
+  return {binary, cloudflared, manifest}
 }
 
 async function localFile(path, maximum, owner=process.getuid()) {
@@ -99,17 +112,25 @@ export async function dotSetupPreview(directory,controller,options) {
     tunnelId:d.inferred, sessions:rows.map(row=>({...row,selected:approved.has(row.id)}))}
 }
 
-async function readVerifiedExecutable(path) {
+async function readTrustedFile(path, maximum, executable=false, prefixOnly=false) {
   const fd=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK)
   try {
     const m=await fd.stat()
-    if(!m.isFile()||![0,process.getuid()].includes(m.uid)||(m.mode&0o022)!==0||m.size<1024||m.size>100_000_000)
+    if(!m.isFile()||![0,process.getuid()].includes(m.uid)||(m.mode&0o022)!==0||
+       (executable&&(m.mode&0o111)===0)||m.size<(prefixOnly?1024:1)||m.size>maximum)
       throw Error('dot_setup_untrusted_client')
-    const b=Buffer.alloc(m.size+1)
+    const b=Buffer.alloc(prefixOnly?4:m.size+1)
     const {bytesRead}=await fd.read(b,0,b.length,0)
-    if(bytesRead!==m.size)throw Error('dot_setup_untrusted_client')
+    if(bytesRead!==(prefixOnly?4:m.size))throw Error('dot_setup_untrusted_client')
     return b.subarray(0,bytesRead)
   } finally {await fd.close()}
+}
+
+async function readMachO(path, prefixOnly=true) {
+  const bytes=await readTrustedFile(path,100_000_000,true,prefixOnly)
+  if(bytes.length<4 || ![0xcffaedfe,0xfeedfacf,0xcafebabe,0xcafebabf].includes(bytes.readUInt32BE(0)))
+    throw Error('dot_setup_untrusted_client')
+  return bytes
 }
 
 export async function guidedPairing(directory,controller,input,options) {
@@ -135,12 +156,17 @@ export async function guidedPairing(directory,controller,input,options) {
     (from.reusable && (!from.inferred||from.inferred===input.tunnelId)
       ? (await localFile(from.keyPath,260).catch(()=>'' )).trim(): '')
   if(!auth.test(key))throw Error('dot_setup_runtime_key_required')
-  const bytes=await readVerifiedExecutable(binary)
+  const bytes=binary.cloudflared?await readMachO(binary.binary,false):await readTrustedFile(binary.binary,100_000_000,true)
+  if(bytes.length<1024 || bytes.subarray(0,2).equals(Buffer.from('#!')))throw Error('dot_setup_untrusted_client')
   // A new directory per authorized pairing avoids overwriting an already-used key.
   const parent=await realpath(directory)
   const out=await mkdtemp(join(parent,'station-dot-client-'))
   try {
     await writeFile(join(out,'tunnel-client'),bytes,{flag:'wx',mode:0o700})
+    if(binary.cloudflared) {
+      await writeFile(join(out,'cloudflared'),await readMachO(binary.cloudflared,false),{flag:'wx',mode:0o700})
+      await writeFile(join(out,'cloudflared-manifest.json'),await readTrustedFile(binary.manifest,16_384),{flag:'wx',mode:0o600})
+    }
     await writeFile(join(out,'runtime.key'),key+'\n',{flag:'wx',mode:0o600})
     return {directory:out,clientSha256:createHash('sha256').update(bytes).digest('hex'),tunnelId:input.tunnelId,sessions,globalActiveList:true}
   } catch(error) {
