@@ -386,6 +386,26 @@ class _LauncherPageState extends State<LauncherPage> {
 
   Widget _overview() => ListView(
     children: [
+      _section('Web', [
+        Text('状态：${_stateName(model.snapshot.state)}'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton(
+              onPressed: model.webUrl == null
+                  ? null
+                  : () => unawaited(
+                      _act(() => model.native.openUrl(model.webUrl.toString())),
+                    ),
+              child: const Text('打开 Web'),
+            ),
+            _button('启动 Web', model.startWeb, enabled: !model.isActive),
+            _button('停止 Web', model.stopWeb, enabled: model.isActive),
+            _button('重连 Web', model.restartWeb, enabled: model.isActive),
+          ],
+        ),
+      ]),
       _section('DSH 服务', [
         Text(
           'DSH 服务：${model.serviceSnapshot.state == ServiceState.running && model.serviceSnapshot.ready != true ? '运行中，尚未就绪' : _stateName(model.serviceSnapshot.state)}',
@@ -444,26 +464,6 @@ class _LauncherPageState extends State<LauncherPage> {
             model.openDesktop,
             enabled: model.serviceSnapshot.ready == true,
           ),
-      ]),
-      _section('Web', [
-        Text('状态：${_stateName(model.snapshot.state)}'),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            FilledButton(
-              onPressed: model.webUrl == null
-                  ? null
-                  : () => unawaited(
-                      _act(() => model.native.openUrl(model.webUrl.toString())),
-                    ),
-              child: const Text('打开 Web'),
-            ),
-            _button('启动 Web', model.startWeb, enabled: !model.isActive),
-            _button('停止 Web', model.stopWeb, enabled: model.isActive),
-            _button('重连 Web', model.restartWeb, enabled: model.isActive),
-          ],
-        ),
       ]),
       _section('访问与权限', [
         SwitchListTile(

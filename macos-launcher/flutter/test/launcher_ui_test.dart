@@ -152,7 +152,12 @@ void main() {
         }),
       ];
       await tester.pumpWidget(LauncherApp(controller: model));
-      expect(find.text('启动 Web'), findsOneWidget);
+      expect(find.text('启动 Web').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Dot 配置'));
+      await tester.pumpAndSettle();
+      expect(find.text('启动隧道').hitTestable(), findsOneWidget);
+      expect(find.text('启动 Web'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.tap(find.text('插件'));
       await tester.pumpAndSettle();
