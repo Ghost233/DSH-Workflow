@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import {test} from 'node:test'
 import {EventEmitter} from 'node:events'
+import {createServer} from 'node:net'
+import {randomBytes} from 'node:crypto'
+import {startSessionObservation} from './session-observation-mcp.mjs'
 import {mkdtemp,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -37,6 +40,49 @@ test('discovery requires exact authenticated bound MCP and two readonly tool nam
   assert.equal(await verifyDotMcpReady({...config,request:()=>rpc(1,{...expectedDiscover,supportedVersions:'2026-07-28'})}),false)
   assert.equal(await verifyDotMcpReady({...config,request:(_,o)=>JSON.parse(o.body).id===1
     ?rpc(1,expectedDiscover):rpc(2,{tools:[...exactTools,{name:'writer'}]})}),false)
+})
+
+test('production handshake is separate and accepts only exact owner scoped tools',async()=>{
+  const productionDiscover={...expectedDiscover,_meta:{
+    'io.modelcontextprotocol/serverInfo':{name:'station-session-observation',version:'1.0.0'}}}
+  const productionTools=['watch_session','session_status','list_active_sessions'].map(name=>({name,
+    annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}}))
+  const writer={name:'send_approved_draft',annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}}
+  const verify=(tools,discover=productionDiscover,extra={})=>verifyDotMcpReady({...config,
+    capability:'station.observation.owner_scoped',...extra,
+    request:async(_,o)=>JSON.parse(o.body).id===1?rpc(1,discover):rpc(2,{tools})})
+  assert.equal(await verify(productionTools),true)
+  assert.equal(await verify(exactTools),false)
+  assert.equal(await verify(productionTools,expectedDiscover),false)
+  assert.equal(await verify([...productionTools,writer]),false)
+  assert.equal(await verify([...productionTools,writer],productionDiscover,{allowApprovedDraft:true}),true)
+  assert.equal(await verify([...productionTools,{...writer,name:'unknown_writer'}],productionDiscover,{allowApprovedDraft:true}),false)
+  assert.equal(await verify([...productionTools.slice(0,2),productionTools[1]]),false)
+})
+
+test('real loopback observation handshake starts exactly one owned tunnel child',async t=>{
+  const probe=createServer()
+  await new Promise((ok,fail)=>{probe.once('error',fail);probe.listen(0,'127.0.0.1',ok)})
+  const port=probe.address().port
+  await new Promise(ok=>probe.close(ok))
+  const bearer=randomBytes(32).toString('base64url')
+  const server=await startSessionObservation({
+    config:{port,bearer,sessions:[{id:'fixture-session',label:'Fixture'}]},
+    sessionController:{state:async()=>({active:true,running:false,pendingInput:[],cursor:0})},
+    activeList:{begin:async()=>({}),page:async()=>({})},watchedHistory:async()=>null})
+  t.after(()=>server.close())
+  const entry={endpoint:'http://127.0.0.1:'+port+'/mcp',authorization:'Bearer '+bearer}
+  assert.equal(await verifyDotMcpReady(entry),false,'synthetic gate stays strict')
+  let launches=0
+  const stopped=Promise.withResolvers()
+  const life=createDshDotTunnelLifecycle({enabled:true,
+    resolveMcp:()=>({...entry,capability:'station.observation.owner_scoped'}),
+    launchOwned(receipt){assert.deepEqual(receipt,{endpoint:entry.endpoint});launches++
+      return {closed:stopped.promise,stop:async()=>stopped.resolve()}}})
+  t.after(()=>life.stop())
+  await Promise.all([life.start(),life.start()])
+  assert.equal(launches,1)
+  await life.stop()
 })
 
 test('single owned child persists across native reconnect; no supervisor relaunch after close',async()=>{

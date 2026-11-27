@@ -119,6 +119,7 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
       const config=await loadStationDotTunnelConfig(join(receiptDirectory,'station-dot-tunnel.json'))
       if (config && !closing) tunnel=composeBackendDotTunnel({...config, openDirectPlugin:async()=>({
         capability:'station.observation.owner_scoped',
+        allowApprovedDraft:typeof stationPrompt?.deliver==='function',
         endpoint:'http://127.0.0.1:'+observationConfig.port+'/mcp',
         authorization:'Bearer '+observationConfig.bearer,
         close:async()=>{}, // Web Host owns and closes the listener.

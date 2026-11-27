@@ -30,7 +30,8 @@ export function composeBackendDotTunnel({enabled=false,directory,tunnelId,client
         await entry.close();return
       }
       receipt=entry
-      return {endpoint:entry.endpoint,authorization:entry.authorization}
+      return {endpoint:entry.endpoint,authorization:entry.authorization,capability:entry.capability,
+        allowApprovedDraft:entry.capability==='station.observation.owner_scoped' && entry.allowApprovedDraft===true}
     })(),
     launchOwned({endpoint}){
       validate(directory,0o700,true)

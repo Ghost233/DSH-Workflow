@@ -3,7 +3,25 @@ import {setTimeout as delay} from 'node:timers/promises'
 const protocol = '2026-07-28'
 const startupRetryDelays=Object.freeze([50,150,450])
 const recoverable=new Set([502,503,504])
-const exactTools = ['list_active_sessions', 'read_synthetic_pilot']
+const syntheticCapability = 'dsh.synthetic_active.read_only'
+const stationCapability = 'station.observation.owner_scoped'
+const syntheticTools = ['list_active_sessions', 'read_synthetic_pilot']
+const stationReadTools = ['list_active_sessions', 'session_status', 'watch_session']
+const stationApprovedTool = 'send_approved_draft'
+const stationServerMeta = 'io.modelcontextprotocol/serverInfo'
+
+function toolProof(list, capability, allowApprovedDraft) {
+  if (!Array.isArray(list)) return false
+  if (capability === syntheticCapability) {
+    return list.length === syntheticTools.length && list.every(t => t?.annotations?.readOnlyHint === true) &&
+      list.map(t => t.name).sort().join(',') === syntheticTools.join(',')
+  }
+  if (capability !== stationCapability) return false
+  const expected = allowApprovedDraft ? [...stationReadTools, stationApprovedTool].sort() : stationReadTools
+  return list.length === expected.length && list.every(t => t?.annotations?.destructiveHint === false &&
+    t.annotations.openWorldHint === false && t.annotations.readOnlyHint === (t.name !== stationApprovedTool)) &&
+    list.map(t => t.name).sort().join(',') === expected.join(',')
+}
 const safeEndpoint = value => {
   if (typeof value !== 'string' || !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/mcp$/.test(value)) return null
   try {
@@ -31,7 +49,10 @@ async function readLimited(response) {
   }
 }
 
-export async function verifyDotMcpReady({endpoint, authorization, signal, request = fetch, reportTransient=false}) {
+export async function verifyDotMcpReady({endpoint, authorization, signal, request = fetch, reportTransient=false,
+  capability=syntheticCapability, allowApprovedDraft=false}) {
+  if (![syntheticCapability,stationCapability].includes(capability) ||
+      typeof allowApprovedDraft !== 'boolean' || (capability === syntheticCapability && allowApprovedDraft)) return false
   const url = safeEndpoint(endpoint)
   if (!url || typeof authorization !== 'string' || !/^Bearer [A-Za-z0-9_-]{43,128}$/.test(authorization))
     return false
@@ -52,11 +73,9 @@ export async function verifyDotMcpReady({endpoint, authorization, signal, reques
         if (!Array.isArray(doc.result.supportedVersions) || !doc.result.supportedVersions.includes(protocol) ||
             !doc.result.capabilities?.tools || Array.isArray(doc.result.capabilities.tools) ||
             typeof doc.result.capabilities.tools !== 'object') return false
-      } else {
-        const list = doc.result.tools
-        if (!Array.isArray(list) || list.length !== 2 || list.some(t=>t?.annotations?.readOnlyHint !== true) ||
-            list.map(t=>t.name).sort().join(',') !== exactTools.join(',')) return false
-      }
+        if (capability === stationCapability &&
+            doc.result._meta?.[stationServerMeta]?.name !== 'station-session-observation') return false
+      } else if (!toolProof(doc.result.tools, capability, allowApprovedDraft)) return false
     }
     return !signal?.aborted
   } catch(error) {
