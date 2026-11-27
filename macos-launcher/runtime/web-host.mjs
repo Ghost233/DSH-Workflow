@@ -67,7 +67,7 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
           // receiver configuration cannot disable the independent query tools.
           approvalEvents:pairedForRead&&config.globalActiveList===true?async()=> {
             try { return await startPairedStationApprovalEvents({ctx,directory:receiptDirectory,bearer:config.bearer,
-              report:state=>{if(state!=='delivered')console.error('Station Dot 审批事件：'+state)}}) }
+              report:(state,status)=>console.error('Station Dot 审批事件：'+state+(status===undefined?'':' HTTP '+status))}) }
             catch { console.error('Station Dot 审批通知未启用：接收端或事件源不可用。'); return null }
           }:undefined,
           // Independent local completion cache for pull-based session status.

@@ -17,12 +17,13 @@ test('paired MCP advertises approvals in both protocol versions and delivers onl
   const callback='https://callback.xyz/mcp-events/recipient'
   const versions=['2025-06-18','2026-07-28']
   let native, pending=[], detached=false
-  const bodies=[]
+  const bodies=[], reports=[]
   const ctx={on(event,fn){assert.equal(event,'session/event');native=fn;return ()=>{detached=true}},
     typertGateway:{getPendingRemoteEvents:()=>pending}}
   const srv=await startSessionObservation({config:{bearer,port,globalActiveList:true,sessions:[]},
     sessionController:{state:()=>null},
     approvalEvents:()=>startStationApprovalEvents({ctx,key:Buffer.alloc(32,7),principal:'owner',callback,tickMs:5,
+      report:(...args)=>reports.push(args),
       transport:async ({url,headers,body})=>{
         assert.equal(url,callback)
         assert.equal(headers['webhook-signature'],signStationWebhook(secret,headers['webhook-id'],headers['webhook-timestamp'],body))
@@ -55,6 +56,7 @@ test('paired MCP advertises approvals in both protocol versions and delivers onl
   pending=[{event:'user-questions/request',agentId:'real-session'},{event:'approval/request',agentId:'another-session'}]
   await sleep(25)
   assert.equal(bodies.length,0)
+  assert.equal(reports.filter(([state])=>state==='awaiting_pending_match').length,1)
   pending=[{event:'approval/request',agentId:'real-session'}]
   for(let i=0;i<50&&!bodies.length;i++)await sleep(5)
   assert.equal(bodies.length,1)
@@ -62,6 +64,12 @@ test('paired MCP advertises approvals in both protocol versions and delivers onl
   assert.equal(bodies[0].data.kind,'approval')
   assert.match(bodies[0].data.session,/^s_[a-f0-9]{64}$/)
   assert.doesNotMatch(JSON.stringify(bodies),/PRIVATE|real-session/)
+  for(let i=0;i<50&&!reports.some(([state])=>state==='delivered');i++)await sleep(5)
+  assert.deepEqual(reports.slice(-4),[
+    ['pending_matched',undefined],['delivery_started',undefined],['delivery_http',204],['delivered',undefined],
+  ])
+  assert.equal(reports.filter(([state])=>state==='approval_captured').length,2)
+  assert.doesNotMatch(JSON.stringify(reports),/PRIVATE|real-session|callback|evt_|s_[a-f0-9]{64}/)
   const {secret:unused,...noSecret}=subscribe.delivery
   assert.equal((await call(legacy,'events/unsubscribe',{...subscribe,delivery:noSecret})).result.constructor,Object)
   audit('approval/asked','real-session',randomUUID())

@@ -62,25 +62,40 @@ export function startStationApprovalEvents({ctx,key,principal,callback,acceptCal
   const events=createStationMcpEvents({enabled:true,identityKey:key,receipt,receiptPrincipal:principal,
     allows:p=>!closed&&p===principal,callback,acceptCallback,transport,verifyTimeoutMs:10000,eventName:APPROVAL_PENDING,eventDefinition:definition})
   const digest=(domain,...parts)=>createHmac('sha256',key).update(JSON.stringify([domain,...parts])).digest('hex')
-  const note=state=>{try{report(state)}catch{}}
+  // Report only fixed states and numeric HTTP statuses. Never report native IDs,
+  // callback details, payloads, approval reasons or tool arguments.
+  const note=(state,status)=>{try{report(state,status)}catch{}}
+  const onceForRow=(row,state)=>{
+    if(row.reported.has(state))return
+    row.reported.add(state);note(state)
+  }
   function pump(){
     if(closed||pumping||!rows.size)return
     pumping=true
     void (async()=>{
       const at=now()
       for(const [id,row] of rows)if(at-row.at>maxAge)rows.delete(id)
-      if(!rows.size||!events.hasSubscriber(principal))return
+      if(!rows.size)return
+      if(!events.hasSubscriber(principal)){
+        for(const row of rows.values())if(!row.finished)onceForRow(row,'no_subscriber')
+        return
+      }
       const pending=new Set(ctx.typertGateway.getPendingRemoteEvents()
         .filter(x=>x.event==='approval/request').map(x=>String(x.agentId)))
       for(const [id,row] of rows){
-        if(closed||rows.get(id)!==row||row.finished||at<row.retryAt||!pending.has(row.session))continue
+        if(closed||rows.get(id)!==row||row.finished||at<row.retryAt)continue
+        if(!pending.has(row.session)){onceForRow(row,'awaiting_pending_match');continue}
         // The exact occurrence can have resolved while a previous webhook was in flight.
         const samePending=ctx.typertGateway.getPendingRemoteEvents().some(x=>x.event==='approval/request'&&String(x.agentId)===row.session)
-        if(!samePending)continue
+        if(!samePending){onceForRow(row,'awaiting_pending_match');continue}
+        onceForRow(row,'pending_matched')
+        onceForRow(row,'delivery_started')
         let status
         try {({status}=await events.deliverDurable(principal,{eventId:'evt_'+digest('approval',id),
           name:APPROVAL_PENDING,timestamp:new Date(row.at).toISOString(),
           data:{session:'s_'+digest('session',row.session),kind:'approval'}}))}catch{}
+        if(Number.isInteger(status)&&status>=100&&status<=599)note('delivery_http',status)
+        else note('delivery_no_http')
         if(rows.get(id)!==row)continue
         if(status>=200&&status<300){row.finished=true;note('delivered')}
         else if(status!==409&&status!==undefined&&![408,429,500,502,503,504].includes(status)){
@@ -92,11 +107,15 @@ export function startStationApprovalEvents({ctx,key,principal,callback,acceptCal
   detach=ctx.on('session/event',(session,event)=>{
     if(closed||!['approval/asked','approval/decided'].includes(event?.type))return
     const id=event.data?.id, sid=session?.id
-    if(typeof id!=='string'||!requestId.test(id)||typeof sid!=='string'||!sessionId.test(sid))return
+    if(typeof id!=='string'||!requestId.test(id)||typeof sid!=='string'||!sessionId.test(sid)){
+      if(event.type==='approval/asked')note('approval_ignored_invalid')
+      return
+    }
     if(event.type==='approval/decided'){if(rows.get(id)?.session===sid)rows.delete(id);return}
     if(rows.has(id))return
     if(rows.size>=maxRows){note('capacity');return}
-    rows.set(id,{session:sid,at:now(),retryAt:0,retries:0})
+    rows.set(id,{session:sid,at:now(),retryAt:0,retries:0,reported:new Set()})
+    note('approval_captured')
   })
   if(typeof detach!=='function')throw Error('approval_source_unavailable')
   timer=setInterval(pump,tickMs);timer.unref?.()
