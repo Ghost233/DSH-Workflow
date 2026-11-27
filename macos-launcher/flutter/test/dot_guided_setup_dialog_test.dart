@@ -6,7 +6,7 @@ import '../lib/native_bridge.dart';
 
 void main() {
   testWidgets(
-    'global pairing needs no selection; optional detail scope is explicit',
+    'global pairing never requires or shows a session selection',
     (tester) async {
       Map<String, Object?>? output;
       await tester.pumpWidget(
@@ -40,20 +40,15 @@ void main() {
       await tester.tap(find.text('打开配对'));
       await tester.pumpAndSettle();
       expect(find.byType(TextField), findsNothing);
-      expect(find.text('运行中'), findsOneWidget);
+      expect(find.text('运行中'), findsNothing);
+      expect(find.text('明确授权'), findsNothing);
+      expect(find.text('未选中'), findsNothing);
+      expect(find.byType(CheckboxListTile), findsNothing);
       await tester.tap(find.text('保存配对'));
       await tester.pumpAndSettle();
       expect(output?['sessionIds'], isEmpty);
       expect(output?.containsKey('runtimeKey'), isFalse);
-      await tester.tap(find.text('打开配对'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('明确授权'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('保存配对'));
-      await tester.pumpAndSettle();
       expect(output?['mode'], 'guided');
-      expect(output?['sessionIds'], ['test-1']);
-      expect(output?.containsKey('runtimeKey'), isFalse);
     },
   );
 }
