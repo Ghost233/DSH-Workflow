@@ -1,5 +1,6 @@
 // Private Station integration only. No ambient callback URLs, DNS resolution,
 // proxies, retries, custom trust roots, or network setup on module import.
+import { lookup } from 'node:dns/promises'
 import { request } from 'node:https'
 import { isIP } from 'node:net'
 function fixedUrl(value) {
@@ -17,14 +18,39 @@ function publicIpv4(address){
   const [a,b,c]=address.split('.').map(Number)
   return a>0&&a<224&&a!==10&&a!==127&&
     !(a===100&&b>=64&&b<=127)&&!(a===169&&b===254)&&!(a===172&&b>=16&&b<=31)&&
-    !(a===192&&((b===0&&(c===0||c===2))||b===88&&c===99||b===168))&&
+    !(a===192&&(b===168||(b===0&&(c===0||c===2))||b===88&&c===99))&&
     !(a===198&&((b>=18&&b<=19)||b===51&&c===100))&&!(a===203&&b===0&&c===113)
 }
-export function createStationHttpsDelivery({enabled,approval}={}){
+export function createStationHttpsDelivery({enabled,approval,budget}={}){
   if(enabled!==true)return null
   if(!approval||!publicIpv4(approval.address))throw new Error('station_callback_not_approved')
   const url=fixedUrl(approval.url)
-  return buildPinnedPost({logicalUrl:url.href,hostname:url.hostname,path:url.pathname,address:approval.address,port:443})
+  return buildPinnedPost({logicalUrl:url.href,hostname:url.hostname,path:url.pathname,address:approval.address,port:443,budget})
+}
+const officialOrigin='https://connectors.api.openai.com'
+export function isOfficialStationCallback(value){
+  if(typeof value!=='string'||value.length>1024)return false
+  try{
+    const u=fixedUrl(value)
+    return u.origin===officialOrigin&&/^\/webhook\/mcp-events\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+$/.test(u.pathname)
+  }catch{return false}
+}
+export function createOfficialStationHttpsDelivery({resolve=lookup}={}){
+  return async input=>{
+    if(!isOfficialStationCallback(input?.url)||input.method!=='POST'||input.redirect!=='error')
+      throw Error('station_callback_not_approved')
+    const url=new URL(input.url), signal=input.signal
+    const abort=new Promise((_,reject)=>{
+      if(signal?.aborted)reject(Error('station_callback_dns_unavailable'))
+      else signal?.addEventListener('abort',()=>reject(Error('station_callback_dns_unavailable')),{once:true})
+    })
+    const answers=await Promise.race([resolve(url.hostname,{family:4,all:true}),abort])
+    if(!Array.isArray(answers)||!answers.length||answers.length>32||
+       answers.some(row=>row?.family!==4||!publicIpv4(row.address)))
+      throw Error('station_callback_address_rejected')
+    return buildPinnedPost({logicalUrl:url.href,hostname:url.hostname,path:url.pathname,
+      address:answers[0].address,port:443,budget:10000})(input)
+  }
 }
 // Internal transport primitive also used by the disposable TLS fixture; the
 // normal adapter above alone creates production transports (no custom CA).

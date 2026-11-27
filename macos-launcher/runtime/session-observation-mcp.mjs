@@ -151,7 +151,7 @@ async function readRequest(request) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
-export async function startSessionObservation({ config, sessionController, observeTurnEnds, activeList, terminalEvents, watchedHistory, approvedPromptDelivery }) {
+export async function startSessionObservation({ config, sessionController, observeTurnEnds, activeList, terminalEvents, approvalEvents, watchedHistory, approvedPromptDelivery }) {
   config = validateObservationConfig(config)
   if (typeof sessionController?.state !== 'function') throw new Error('observation_source_unavailable')
   if(activeList!==undefined&&(typeof activeList?.begin!=='function'||typeof activeList?.page!=='function'))
@@ -164,7 +164,7 @@ export async function startSessionObservation({ config, sessionController, obser
   const selections = config.sessions.map(({ id, label }) => ({ id, label }))
   const selected = new Set(selections.map(row => row.id))
   // The authenticated endpoint fixes the principal; neither headers nor JSON may choose it.
-  let terminal, ready=false
+  let terminal, approval, ready=false
   const eventOptions=terminalEvents?.options
   const eventPrincipal=eventOptions?.principal
   if(eventOptions?.enabled===true&&(!Array.isArray(eventOptions.sessionIds)||
@@ -228,14 +228,16 @@ export async function startSessionObservation({ config, sessionController, obser
       if ((version!==undefined && metaVersion!==undefined && version!==metaVersion) ||
           (methodHeader!==undefined && methodHeader!==msg.method) ||
           (version===DISCOVERY_PROTOCOL && methodHeader!==msg.method) ||
-          (msg.method==='tools/call' ? typeof params?.name!=='string' || nameHeader!==params.name : nameHeader!==undefined))
+          (msg.method==='tools/call' ? typeof params?.name!=='string' || nameHeader!==params.name :
+            approval&&['events/subscribe','events/unsubscribe'].includes(msg.method)
+              ? nameHeader!==undefined&&nameHeader!==params?.name : nameHeader!==undefined))
         return json(r,400,{error:'invalid_protocol_headers'})
       if (msg.method === 'server/discover') {
         if (Object.keys(params??{}).some(k=>k!=='_meta')) return error(r,id,-32602,'Invalid params')
-        return respond({supportedVersions:[DISCOVERY_PROTOCOL],capabilities:{tools:{}},
+        return respond({supportedVersions:[DISCOVERY_PROTOCOL],capabilities:{tools:{},...(approval?{events:{}}:{})},
           _meta:{[SERVER_INFO_META]:SERVER_INFO}})
       }
-      if (!['ping','tools/list','tools/call'].includes(msg.method))
+      if (!['ping','tools/list','tools/call'].includes(msg.method) && !(approval&&EVENTS.has(msg.method)))
         return error(r,id,-32601,'Method not found')
     } else if (metaVersion === DISCOVERY_PROTOCOL) {
       return json(r,400,{error:'missing_protocol_header'})
@@ -243,14 +245,23 @@ export async function startSessionObservation({ config, sessionController, obser
     if (msg.method === 'initialize') {
       if (typeof msg.params?.protocolVersion !== 'string') return error(r,id,-32602,'Invalid params')
       return respond({protocolVersion:ALLOWED_PROTOCOLS.has(msg.params.protocolVersion)?msg.params.protocolVersion:'2025-06-18',
-        capabilities:{tools:{},...(terminal?{events:{}}:{})},serverInfo:SERVER_INFO})
+        capabilities:{tools:{},...((terminal||approval)?{events:{}}:{})},serverInfo:SERVER_INFO})
     }
-    if (!modern && terminal && EVENTS.has(msg.method)) {
+    if (EVENTS.has(msg.method) && (approval||(!modern&&terminal))) {
       if(closed)return error(r,id,-32000,'Station events unavailable')
       if(Object.keys(msg).some(key=>!['jsonrpc','id','method','params'].includes(key)))
         return error(r,id,-32600,'Invalid Request')
-      const response=await terminal.rpc(eventPrincipal,msg)
-      return json(r,200,response)
+      const { _meta, ...eventParams } = params ?? {}
+      const request=modern?{...msg,params:eventParams}:msg
+      if(msg.method==='events/list'&&approval&&terminal&&!modern){
+        const [a,b]=await Promise.all([approval.rpc(request),terminal.rpc(eventPrincipal,request)])
+        if(a.error||b.error)return json(r,200,a.error?a:b)
+        return respond({events:[...a.result.events,...b.result.events]})
+      }
+      const target=approval&&(msg.method==='events/list'||request.params?.name===approval.name)
+      const response=target?await approval.rpc(request):(!modern&&terminal?await terminal.rpc(eventPrincipal,request):null)
+      if(!response)return error(r,id,-32602,'Unknown event')
+      return modern&&response.result?respond(response.result):json(r,200,response)
     }
     if (msg.method === 'ping') return respond({})
     if (msg.method === 'tools/list') return respond({tools:[tool,...(activeList?[activeTool]:[]),
@@ -337,9 +348,12 @@ export async function startSessionObservation({ config, sessionController, obser
     dispose = observeTurnEnds?.(onSessionEvent)
     terminal = await startStationTerminalEvents(terminalEvents && {ctx:terminalEvents.ctx,
       options:{...eventOptions,endpointBinding:credential.toString('hex')}})
+    approval = await approvalEvents?.()
     ready = true
   } catch (e) {
     try { dispose?.() } catch {}
+    await terminal?.close().catch(()=>{})
+    await approval?.close().catch(()=>{})
     await new Promise(resolve=>{server.close(resolve);server.closeAllConnections()})
     throw e
   }
@@ -348,7 +362,7 @@ export async function startSessionObservation({ config, sessionController, obser
     closed = true; lifecycle.abort(); completions.clear()
     try { dispose?.() } catch { /* Listener lives only with the Host. */ }
     await new Promise(resolve=>{server.close(resolve); server.closeAllConnections()})
-    await terminal?.close()
+    try { await terminal?.close() } finally { await approval?.close() }
   } }
 }
 

@@ -28,7 +28,7 @@ function definition(){return {name:NAME,description:'A Station session turn ende
 // 'transport' is a trusted injected boundary. This prototype only accepts one
 // explicitly declared HTTPS callback and has no arbitrary URL fetch. A real
 // adapter must enforce public-IP connection pinning/TLS/no redirects per docs.
-export function createStationMcpEvents({enabled,identityKey,allows,callback,transport,receipt,receiptPrincipal,now=Date.now,wait=sleep,eventName=NAME,eventDefinition,verifyTimeoutMs=1500}={}){
+export function createStationMcpEvents({enabled,identityKey,allows,callback,acceptCallback,transport,receipt,receiptPrincipal,now=Date.now,wait=sleep,eventName=NAME,eventDefinition,verifyTimeoutMs=1500}={}){
   if(enabled!==true)return null
   if(!Number.isSafeInteger(verifyTimeoutMs)||verifyTimeoutMs<1500||verifyTimeoutMs>10000)throw Error('invalid_verification_deadline')
   if(!Buffer.isBuffer(identityKey)||identityKey.length!==32||typeof allows!=='function'||typeof transport!=='function')
@@ -37,9 +37,17 @@ export function createStationMcpEvents({enabled,identityKey,allows,callback,tran
      (eventName!==NAME&&(eventDefinition?.name!==eventName||eventDefinition?.payloadSchema?.type!=='object')))
     throw Error('invalid_event_definition')
   const advertised=eventDefinition?structuredClone(eventDefinition):definition()
-  const u=new URL(callback)
-  if(u.protocol!=='https:'||u.username||u.password||u.hash||u.search||u.hostname.endsWith('.local')||u.port||u.href!==callback)
-    throw new TypeError('invalid_events_callback')
+  const dynamic=typeof acceptCallback==='function'
+  function allowedCallback(value) {
+    if(typeof value!=='string'||value.length>1024)return false
+    try {
+      const url=new URL(value)
+      return url.protocol==='https:'&&!url.username&&!url.password&&!url.hash&&!url.search&&
+        !url.hostname.endsWith('.local')&&!url.port&&url.href===value&&
+        (dynamic?acceptCallback(value)===true:value===callback)
+    }catch{return false}
+  }
+  if(dynamic?callback!==undefined:!allowedCallback(callback))throw new TypeError('invalid_events_callback')
   const key=Buffer.from(identityKey),epoch=randomUUID(),subs=new Map(),seen=new Set(),verified=new Map()
   let queue=Promise.resolve(), pendingCount=0
   const provisional=new Map()
@@ -55,13 +63,15 @@ export function createStationMcpEvents({enabled,identityKey,allows,callback,tran
     const row=receipt.read(), nowAt=now()
     if(row!==null){
       const restored=keyOf(row?.signingKey)
-      if(!plain(row)||Object.keys(row).sort().join(',')!=='signingKey,until,verifiedAt'||
+      if(!plain(row)||Object.keys(row).sort().join(',')!==(dynamic?'callback,signingKey,until,verifiedAt':'signingKey,until,verifiedAt')||
+         !allowedCallback(dynamic?row.callback:callback)||
          !restored||!Number.isSafeInteger(row.until)||!Number.isSafeInteger(row.verifiedAt)||
          row.until<=row.verifiedAt||row.until-row.verifiedAt>3600000||row.verifiedAt>nowAt)
         throw new Error('station_subscription_receipt_invalid')
       if(row.until>nowAt){
-        const id=subId(receiptPrincipal,callback)
-        subs.set(id,{id,principal:receiptPrincipal,key:restored,until:row.until})
+        const target=dynamic?row.callback:callback
+        const id=subId(receiptPrincipal,target)
+        subs.set(id,{id,principal:receiptPrincipal,key:restored,until:row.until,callback:target})
         verified.set(id,{key:restored.toString('base64'),until:Math.min(row.until,row.verifiedAt+300000)})
       }
     }
@@ -70,20 +80,20 @@ export function createStationMcpEvents({enabled,identityKey,allows,callback,tran
     try {receipt?.write(row);return true}
     catch{persistenceFailed=true;subs.clear();verified.clear();return false}
   }
-  async function send(sub,id,body){
+  async function send(sub,id,body,deadlineMs=1500){
     const headers={'Content-Type':'application/json','webhook-id':id,'webhook-timestamp':String(Math.floor(now()/1000)),
       'X-MCP-Subscription-Id':sub.id}
     headers['webhook-signature']=signStationWebhook(sub.key,id,headers['webhook-timestamp'],body)
     if(sub.previous&&sub.previousUntil>now())headers['webhook-signature']+=' '+signStationWebhook(sub.previous,id,headers['webhook-timestamp'],body)
-    const signal=AbortSignal.timeout(1500)
+    const signal=AbortSignal.timeout(deadlineMs)
     // Abort-aware sender required. The isolated transport is in-memory only.
-    const result=await transport({url:callback,method:'POST',redirect:'error',headers,body,signal})
+    const result=await transport({url:sub.callback,method:'POST',redirect:'error',headers,body,signal})
     signal.throwIfAborted()
     return result
   }
   function match(p,unsubscribe=false){
     if(!plain(p)||p.name!==eventName||!plain(p.arguments)||Object.keys(p.arguments).length||
-       !plain(p.delivery)||p.delivery.mode!=='webhook'||p.delivery.url!==callback||
+       !plain(p.delivery)||p.delivery.mode!=='webhook'||!allowedCallback(p.delivery.url)||
        Object.keys(p.delivery).some(k=>!['mode','url',...(unsubscribe?[]:['secret'])].includes(k))||
        Object.keys(p).some(k=>!(unsubscribe?['name','arguments','delivery']:['name','arguments','delivery','ttlMs','cursor']).includes(k)))return false
     return true
@@ -103,8 +113,8 @@ export function createStationMcpEvents({enabled,identityKey,allows,callback,tran
       case 'events/unsubscribe':
         if(!match(p,true))return fail(-32602,'Invalid params')
         const sid=subId(principal,p.delivery.url)
-        provisional.delete(sid);subs.delete(sid);verified.delete(sid)
-        if(!save(null))return fail(-32000,'Subscription storage unavailable')
+        provisional.delete(sid);const existed=subs.delete(sid);verified.delete(sid)
+        if(existed&&!save(null))return fail(-32000,'Subscription storage unavailable')
         return out({})
       case 'events/subscribe': {
         if(!match(p)||p.cursor!=null||
@@ -113,6 +123,8 @@ export function createStationMcpEvents({enabled,identityKey,allows,callback,tran
         if(!nextKey)return fail(-32602,'Invalid params')
         const sid=subId(principal,p.delivery.url)
         sweep()
+        if(dynamic&&([...subs.keys(),...provisional.keys()].some(id=>id!==sid)))
+          return fail(-32000,'Different subscription already active')
         if(provisional.has(sid)||provisional.size>=16)return fail(-32000,'Subscription verification busy')
         const attempt=Symbol()
         provisional.set(sid,attempt)
@@ -120,7 +132,7 @@ export function createStationMcpEvents({enabled,identityKey,allows,callback,tran
         const old=subs.get(sid)
         if(!old&&subs.size>=16)return fail(-32000,'Subscription capacity reached')
         const ttl=Math.min(p.ttlMs??3600000,3600000)
-        const sub={id:sid,principal,key:nextKey,until:now()+ttl}
+        const sub={id:sid,principal,key:nextKey,until:now()+ttl,callback:p.delivery.url}
         const cached=verified.get(sid)
         const reused=!receipt&&cached&&cached.until>now()&&same(cached.key,nextKey.toString('base64'))
         if(!reused){
@@ -138,7 +150,7 @@ export function createStationMcpEvents({enabled,identityKey,allows,callback,tran
         sub.until=now()+ttl
         // Only activate after successful challenge verification.
         if(!subs.has(sid)&&subs.size>=16)return fail(-32000,'Subscription capacity reached')
-        if(!save({signingKey:'whsec_'+nextKey.toString('base64'),until:sub.until,verifiedAt:sub.until-ttl}))
+        if(!save({...(dynamic?{callback:sub.callback}:{}),signingKey:'whsec_'+nextKey.toString('base64'),until:sub.until,verifiedAt:sub.until-ttl}))
           return fail(-32000,'Subscription storage unavailable')
         subs.set(sid,sub)
         if(verified.size>=16&&!verified.has(sid))verified.delete(verified.keys().next().value)

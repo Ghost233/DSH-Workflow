@@ -8,6 +8,7 @@ import { desktopConnection, desktopDrag, desktopPlatformSession } from './deskto
 import { redact } from './service-control.mjs'
 import { startStationDotFromHost } from './station-dot-loopback.mjs'
 import { loadObservationConfig, startSessionObservation } from './session-observation-mcp.mjs'
+import { startPairedStationApprovalEvents } from './station-dot-approval-events.mjs'
 import { createStationPullTools } from './station-dot-pull-tools.mjs'
 import { loadStationDotTunnelConfig, openStationDotPromptHost } from './station-dot-host-config.mjs'
 import { dotSetupPreview, guidedPairing } from './station-dot-setup.mjs'
@@ -62,7 +63,14 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
           config, sessionController:ctx.sessionController,
           ...createStationPullTools(ctx, config),
           approvedPromptDelivery:prompt?.deliver,
-          // Local completion cache for pull-based session status; no outbound subscription.
+          // The paired endpoint owns approval subscriptions; stale or missing
+          // receiver configuration cannot disable the independent query tools.
+          approvalEvents:pairedForRead&&config.globalActiveList===true?async()=> {
+            try { return await startPairedStationApprovalEvents({ctx,directory:receiptDirectory,bearer:config.bearer,
+              report:state=>{if(state!=='delivered')console.error('Station Dot 审批事件：'+state)}}) }
+            catch { console.error('Station Dot 审批通知未启用：接收端或事件源不可用。'); return null }
+          }:undefined,
+          // Independent local completion cache for pull-based session status.
           observeTurnEnds:listener => ctx.on('session/event', listener),
         })
         stationPrompt = prompt
